@@ -16,6 +16,7 @@ Session 与 Task 作用域中运行。
 - [IR API](ir.md)
 - [MIR API](mir.md)
 - [Target、MC、汇编与目标文件 API](../zh/plugin-api/target-mc-object.md)
+- [DynCode API](dyncode.zh-CN.md)
 - [阶段覆盖证据](coverage.json)
 - [自定义调用约定](custom-callconv/README.zh-CN.md)
 

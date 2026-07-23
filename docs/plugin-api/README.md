@@ -17,6 +17,7 @@ recompile their source against the public headers.
 - [IR API](ir.md)
 - [MIR API](mir.md)
 - [Target, MC, assembly, and object APIs](target-mc-object.md)
+- [DynCode API](dyncode.md)
 - [Phase coverage evidence](coverage.json)
 - [Custom calling conventions](custom-callconv/README.md)
 

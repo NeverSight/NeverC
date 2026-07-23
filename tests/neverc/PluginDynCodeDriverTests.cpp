@@ -95,3 +95,31 @@ TEST_F(PluginDynCodeDriverTest, ProducesRawImageAndKeepsObject) {
   EXPECT_TRUE(fs::exists(Kept));
   EXPECT_GT(fileSize(Kept), 0u);
 }
+
+// -fdyncode-report=<path> writes the canonical audit report as a side output of
+// the same in-process extraction job.  The report is the single source the
+// verbose diagnostics render from; it records the per-phase provider journal and
+// the summary counts.
+TEST_F(PluginDynCodeDriverTest, ProducesReportJSON) {
+  if (!(isDarwin() && isArm64()))
+    GTEST_SKIP() << "host-executed arm64 macOS extraction only";
+
+  const fs::path Source = tmpFile("dyncode_report.c");
+  const fs::path Image = tmpFile("dyncode_report.bin");
+  const fs::path Report = tmpFile("dyncode_report.json");
+  writeFile(Source, "int dyncode_entry(void) { return 9; }\n");
+
+  CmdResult Result =
+      ncc({"-fdyncode", "-target", "arm64-apple-macos",
+           std::string("-fdyncode-report=") + Report.string(), Source.string(),
+           "-o", Image.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.err;
+  ASSERT_TRUE(fs::exists(Report));
+  EXPECT_GT(fileSize(Report), 0u);
+
+  const std::string Json = readFile(Report);
+  // Canonical top-level keys and the sealed final-verifier journal entry.
+  EXPECT_NE(Json.find("\"journal\""), std::string::npos) << Json;
+  EXPECT_NE(Json.find("\"selected_section_count\""), std::string::npos) << Json;
+  EXPECT_NE(Json.find("builtin.final_verifier"), std::string::npos) << Json;
+}

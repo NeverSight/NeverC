@@ -77,6 +77,11 @@ unset(_neverc_tables_out_dir)
 unset(_neverc_dyncode_tables)
 
 add_neverc_library(nevercDynCode
+  Binary/BuiltinDynCodeBinaryVerifier.cpp
+  Binary/DynCodeBinaryPhaseExecutor.cpp
+  Binary/DynCodeCharsetRegistry.cpp
+  Binary/DynCodeRewriteRegistry.cpp
+
   Pipeline/BuiltinMIRTransformProvider.cpp
   Pipeline/DriverIntegration.cpp
   Pipeline/DynCodeMIRVerifier.cpp
@@ -84,16 +89,17 @@ add_neverc_library(nevercDynCode
   Pipeline/Pipeline.cpp
   Pipeline/TargetDesc.cpp
 
-  Extractor/COFFExtractor.cpp
+  Extractor/BuiltinDynCodeRelocationProviders.cpp
   Extractor/DynCodeExtractionPlan.cpp
+  Extractor/DynCodeFinalVerifier.cpp
   Extractor/DynCodeImage.cpp
+  Extractor/DynCodeObjectPipeline.cpp
   Extractor/DynCodeRelocationExecutor.cpp
+  Extractor/DynCodeRelocationVerifier.cpp
   Extractor/DynCodeReport.cpp
   Extractor/DynCodeSectionPlanner.cpp
   Extractor/DynCodeSymbolPlanner.cpp
-  Extractor/ELFExtractor.cpp
   Extractor/ExtractorCommon.cpp
-  Extractor/MachOExtractor.cpp
   Extractor/ObjectGraphExtractor.cpp
   Extractor/DynCodeExtractor.cpp
 

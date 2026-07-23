@@ -13,15 +13,6 @@
 namespace neverc {
 namespace dyncode {
 
-int extractMachO(llvm::StringRef InputObj, llvm::StringRef OutputBin,
-                 const DynCodeOptions &Opts);
-
-int extractELF(llvm::StringRef InputObj, llvm::StringRef OutputBin,
-               const DynCodeOptions &Opts);
-
-int extractCOFF(llvm::StringRef InputObj, llvm::StringRef OutputBin,
-                const DynCodeOptions &Opts);
-
 bool patchArm64Branch26(llvm::MutableArrayRef<uint8_t> Text, uint64_t Off,
                         int64_t PCDisp);
 

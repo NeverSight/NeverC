@@ -7,6 +7,7 @@
 // Pending; applied later) and records the surviving external
 // references as runtime-contract candidates.  Neither writes any bytes.
 
+#include "Extractor/DynCodeRelocationProvider.h"
 #include "Extractor/ExtractorCommon.h"
 #include "Extractor/ObjectGraphExtractor.h"
 #include "neverc/Plugin/Schema/PluginObjectSchema.inc"
@@ -85,6 +86,10 @@ llvm::Error ObjectGraphExtractor::planRelocations() {
     Entry.Width = ByteWidth;
     Entry.IsPCRelative = Reloc.IsPCRelative;
     Entry.Kind = Reloc.Kind;
+    // Recover the precise native relocation type from the "NCRL" extension so
+    // the relocation provider can pick the right fixup form; the coarse Kind
+    // cannot distinguish e.g. CALL26 from ADRP from LO12.
+    decodeNativeRelocationType(Reloc.Extension, Entry.NativeType);
     Entry.Disposition = DynCodeRelocDisposition::Pending;
 
     bool Resolved = false;
@@ -122,7 +127,7 @@ llvm::Error ObjectGraphExtractor::planRelocations() {
         Resolved = true;
       }
     }
-    (void)Resolved;
+    Entry.Resolved = Resolved;
 
     if (llvm::Error E = Plan.addRelocation(Entry).takeError())
       return E;

@@ -1562,6 +1562,8 @@ add_executable(neverc-plugin-dyncode-tests
   PluginDynCodeImageTests.cpp
   PluginDynCodeExtractorTests.cpp
   PluginDynCodeRelocationTests.cpp
+  PluginDynCodeBinaryTests.cpp
+  PluginDynCodeFinalizeTests.cpp
   PluginDynCodeImportTests.cpp
 )
 target_link_libraries(neverc-plugin-dyncode-tests PRIVATE

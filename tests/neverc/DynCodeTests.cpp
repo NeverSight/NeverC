@@ -279,10 +279,13 @@ TEST_F(DynCodeTest, FinalizeAlign16) {
 }
 
 TEST_F(DynCodeTest, FinalizeMaxLengthTooSmall) {
+  // The size budget is now enforced by the DynCodeImage as it is populated, so
+  // an over-budget payload is rejected with the image-level diagnostic rather
+  // than a late driver-side check.
   dyncodeExpectFail(
       "max_length_too_small",
       (testDir() / "dyncode/test_dyncode_add.c").string(),
-      "exceeds -fdyncode-max-length", {"-fdyncode-max-length=2"});
+      "exceeds the image size budget", {"-fdyncode-max-length=2"});
 }
 
 TEST_F(DynCodeTest, FinalizeBadByteAuditFail) {
@@ -291,10 +294,13 @@ TEST_F(DynCodeTest, FinalizeBadByteAuditFail) {
   // 0x00 byte (it does on AArch64), but it always ends in 0xC3 (`ret`); AArch64
   // contains 0x00. Forbidding both makes the audit deterministically trip
   // regardless of the default target (x86_64 on Windows/Linux, arm64 on macOS).
+  // The sealed binary verifier now names the exact forbidden byte and offset it
+  // caught in the final image; disabling the rewrite cannot smuggle it past the
+  // audit.
   dyncodeExpectFail(
       "bad_byte_audit_fail",
       (testDir() / "dyncode/test_dyncode_add.c").string(),
-      "bad-byte audit failed",
+      "forbidden byte",
       {"-fdyncode-bad-bytes=00,c3", "-fno-dyncode-bad-byte-rewrite"});
 }
 

@@ -8,6 +8,7 @@
 #include "Extractor/DynCodeRelocationExecutor.h"
 #include "Extractor/ExtractorCommon.h"
 #include "llvm/Support/Error.h"
+#include <cstring>
 #include <vector>
 
 using namespace llvm;
@@ -44,6 +45,27 @@ llvm::Error applyDynCodeRelocation(MutableArrayRef<uint8_t> Bytes,
                                  static_cast<uint64_t>(FinalAddr),
                                  Work.LdstShift);
     break;
+  case DynCodeRelocApplyKind::AArch64Lo12Auto: {
+    // Mach-O PAGEOFF12 and COFF PAGEOFFSET_12L do not carry the access size in
+    // the relocation type, so decode the instruction: an ADD (imm12) takes
+    // shift 0, everything else is a scaled load/store whose shift comes from
+    // the encoding.  This mirrors the old per-format extractors exactly.
+    if (Work.SiteOffset + 4 > Bytes.size()) {
+      Ok = false;
+      break;
+    }
+    uint32_t Inst;
+    std::memcpy(&Inst, &Bytes[Work.SiteOffset], 4);
+    bool IsAdd = (Inst & 0xFF800000) == 0x91000000;
+    if (IsAdd)
+      Ok = patchArm64Lo12WithShift(Bytes, Work.SiteOffset,
+                                   static_cast<uint64_t>(FinalAddr), 0);
+    else
+      Ok = patchArm64Lo12AutoShift(Bytes, Work.SiteOffset,
+                                   static_cast<uint64_t>(FinalAddr),
+                                   /*IsLdSt=*/true);
+    break;
+  }
   case DynCodeRelocApplyKind::AArch64Prel32:
   case DynCodeRelocApplyKind::X86Rel32:
     Ok = patchRel32(Bytes, Work.SiteOffset, PCDisp);

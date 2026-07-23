@@ -31,6 +31,15 @@ struct DynCodeOptions {
   std::string ObfuscateSpec;
   std::string MirObfuscateSpec;
   TargetDesc Target;
+  /// Normalized target triple the request was frozen for.  The format-agnostic
+  /// extractor uses it to build the built-in TargetKey that the object Reader
+  /// matches against; TargetDesc only keeps the OS/arch/format enums.
+  std::string TargetTriple;
+  /// Requested CPU (``-mcpu``) or empty for the route default.
+  std::string CPU;
+  /// Optional side-output path for the canonical dyncode report JSON
+  /// (``-fdyncode-report=<path>``).
+  std::string ReportPath;
 };
 
 }

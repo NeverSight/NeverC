@@ -810,6 +810,13 @@ OPTION(prefix_1, "-fdyncode-pad=", fdyncode_pad_EQ, Joined, f_Group,
        "bad-byte set, or when neither -fdyncode-align= nor "
        "-fdyncode-max-length= is set.",
        nullptr, nullptr)
+OPTION(prefix_1, "-fdyncode-report=", fdyncode_report_EQ, Joined, f_Group,
+       INVALID, nullptr, NoXarchOption, DefaultVis, 0,
+       "Write the canonical dyncode audit report (selected/rejected sections, "
+       "entry choice, relocation dispositions, bad-byte scan, verifier "
+       "checklist) as JSON to <path>. The verbose -v diagnostics render from "
+       "the same report.",
+       nullptr, nullptr)
 OPTION(prefix_1, "-fdyncode", fdyncode, Flag, f_Group, INVALID, nullptr,
        NoXarchOption | NoArgumentUnused, DefaultVis, 0,
        "Enable dyncode compilation: produce a flat .bin whose .text has zero "

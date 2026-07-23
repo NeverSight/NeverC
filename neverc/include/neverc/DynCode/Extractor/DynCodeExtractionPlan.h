@@ -93,7 +93,17 @@ struct DynCodeRelocationEntry {
   int64_t Addend = 0;
   uint32_t Width = 0;
   bool IsPCRelative = false;
+  /// Generic NevercObjectRelocationKind (coarse: PC-relative / absolute / GOT).
   uint32_t Kind = 0;
+  /// Raw native relocation type (R_AARCH64_CALL26, IMAGE_REL_AMD64_REL32,
+  /// ARM64_RELOC_PAGE21, ...) recovered from the ObjectGraph relocation's
+  /// "NCRL" extension.  The generic Kind cannot distinguish e.g. CALL26 from
+  /// ADRP from LO12, so the relocation provider maps this precise value onto an
+  /// architecture-specific fixup form.
+  uint64_t NativeType = 0;
+  /// True when the relocation target was resolved to an offset inside the
+  /// extracted image (intra-image); false leaves it as a surviving external.
+  bool Resolved = false;
   DynCodeRelocDisposition Disposition = DynCodeRelocDisposition::Pending;
   std::string RuntimeContract;
 };

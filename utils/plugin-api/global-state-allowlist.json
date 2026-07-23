@@ -87,6 +87,18 @@
       "justification": "`char MIRPrepPass::ID` -- LLVM legacy pass identity; only its address is taken, never its value written."
     },
     {
+      "symbol": "neverc::dyncode::(anonymous namespace)::DynCodeMIRTransformPass::ID",
+      "owner": "dyncode BuiltinMIRTransformProvider",
+      "kind": "legacy-pass identity token",
+      "justification": "`char DynCodeMIRTransformPass::ID` -- address-only LLVM legacy machine-pass identity for the built-in MIR transform provider; only its address is taken, never its value written."
+    },
+    {
+      "symbol": "neverc::dyncode::(anonymous namespace)::DynCodeMIRVerifierPass::ID",
+      "owner": "dyncode DynCodeMIRVerifier",
+      "kind": "legacy-pass identity token",
+      "justification": "`char DynCodeMIRVerifierPass::ID` -- address-only LLVM legacy machine-pass identity for the sealed MIR final-verify gate; only its address is taken, never its value written."
+    },
+    {
       "symbol": "neverc::plugin::(anonymous namespace)::IRToMIRPipelinePass::ID",
       "owner": "plugin MIRPipelineHooks",
       "kind": "legacy-pass identity token",

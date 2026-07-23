@@ -230,6 +230,8 @@ bool collectOptions(const llvm::opt::InputArgList &Args,
   }
   if (auto *A = Args.getLastArg(opts::OPT_fdyncode_keep_obj_EQ))
     Out.KeepObjPath = A->getValue();
+  if (auto *A = Args.getLastArg(opts::OPT_fdyncode_report_EQ))
+    Out.ReportPath = A->getValue();
   if (auto *A = Args.getLastArg(opts::OPT_fdyncode_entry_EQ))
     Out.EntrySymbol = A->getValue();
   Out.BadByteProfile.clear();
@@ -366,6 +368,9 @@ int prepareDriverDynCode(SmallVectorImpl<const char *> &Args,
 
   llvm::Triple TT = resolveTriple(Parsed);
   Setup.Opts.Target = describeTriple(TT, Setup.Opts.Level);
+  Setup.Opts.TargetTriple = TT.str();
+  if (auto *A = Parsed.getLastArg(opts::OPT_mcpu_EQ))
+    Setup.Opts.CPU = A->getValue();
   if (Setup.Opts.Target.OS == DynCodeOS::Unknown ||
       Setup.Opts.Target.Arch == DynCodeArch::Unknown) {
     llvm::errs() << "neverc: error: -fdyncode does not support triple '"

@@ -31,6 +31,9 @@ enum class DynCodeRelocApplyKind : uint32_t {
   AArch64Page21,   ///< ADR_PREL_PG_HI21[_NC]
   AArch64AddLo12,  ///< ADD_ABS_LO12_NC (shift 0)
   AArch64LdstLo12, ///< LDST{8,16,32,64,128}_ABS_LO12_NC (shift = log2 access size)
+  AArch64Lo12Auto, ///< PAGEOFF12 / PAGEOFFSET_12L: ADD vs LDST detected from the
+                   ///< instruction (Mach-O and COFF do not encode the size in
+                   ///< the relocation type the way ELF LDST*_ABS_LO12_NC does)
   AArch64Prel32,   ///< PREL32
   AArch64Prel64,   ///< PREL64
   X86Rel32,        ///< PC32 / PLT32

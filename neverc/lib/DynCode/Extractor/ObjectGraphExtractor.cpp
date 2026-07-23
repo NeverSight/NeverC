@@ -10,6 +10,7 @@
 #include "Extractor/ExtractorCommon.h"
 #include "neverc/Plugin/Schema/PluginObjectSchema.inc"
 #include "llvm/Support/Error.h"
+#include <array>
 #include <vector>
 
 using namespace llvm;
@@ -79,7 +80,10 @@ llvm::Error ObjectGraphExtractor::assembleImage(DynCodeImage &Image) {
   if (Opts.MaxLength)
     Image.setBudget(Opts.MaxLength);
 
-  static const std::vector<uint8_t> ZeroPage(4096, 0);
+  // A compile-time zero buffer used to append padding in bounded chunks.  It is
+  // constexpr (read-only, no runtime-initialized function-local static) so it
+  // never shows up as a writable process-global symbol in the dyncode audit.
+  static constexpr std::array<uint8_t, 4096> ZeroPage{};
   auto appendZeros = [&](uint64_t Count) -> llvm::Error {
     while (Count > 0) {
       uint64_t Chunk = std::min<uint64_t>(Count, ZeroPage.size());
