@@ -1560,6 +1560,7 @@ add_executable(neverc-plugin-dyncode-tests
   PluginDynCodeIRProviderTests.cpp
   PluginDynCodeMIRProviderTests.cpp
   PluginDynCodeImageTests.cpp
+  PluginDynCodeExtractorTests.cpp
   PluginDynCodeImportTests.cpp
 )
 target_link_libraries(neverc-plugin-dyncode-tests PRIVATE
@@ -1570,9 +1571,11 @@ target_link_libraries(neverc-plugin-dyncode-tests PRIVATE
   nevercPluginCore
   nevercPluginIO
   nevercPluginTarget
+  nevercPluginMCObject
 )
 target_include_directories(neverc-plugin-dyncode-tests PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/lib/DynCode
   ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/lib/DynCode/Plugin
 )
 target_compile_features(neverc-plugin-dyncode-tests PRIVATE cxx_std_17)

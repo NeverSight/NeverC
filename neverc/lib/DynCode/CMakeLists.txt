@@ -88,9 +88,12 @@ add_neverc_library(nevercDynCode
   Extractor/DynCodeExtractionPlan.cpp
   Extractor/DynCodeImage.cpp
   Extractor/DynCodeReport.cpp
+  Extractor/DynCodeSectionPlanner.cpp
+  Extractor/DynCodeSymbolPlanner.cpp
   Extractor/ELFExtractor.cpp
   Extractor/ExtractorCommon.cpp
   Extractor/MachOExtractor.cpp
+  Extractor/ObjectGraphExtractor.cpp
   Extractor/DynCodeExtractor.cpp
 
   IR/AllBlrPass.cpp
@@ -125,6 +128,7 @@ add_neverc_library(nevercDynCode
   nevercFoundation
   nevercPluginCore
   nevercPluginTarget
+  nevercPluginMCObject
 
   DEPENDS
   NeverCDriverOptions
