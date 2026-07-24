@@ -6,35 +6,27 @@
 #include "Linker/MachO/Emit.h"
 #include "Linker/MachO/InputFiles.h"
 #include "Linker/MachO/InputSection.h"
+#include "Linker/MachO/MachOLinkerContext.h"
 #include "Linker/MachO/OutputSegment.h"
 #include "Linker/MachO/SectionPriorities.h"
 #include "Linker/MachO/SyntheticSections.h"
 #include "Linker/Core/Runtime/LinkerParallel.h"
-#include <mutex>
 
-namespace linker::macho {
-
-struct ArchiveFileInfo {
-  ArchiveFile *file = nullptr;
-  bool isCommandLineLoad = false;
-};
-
-llvm::DenseMap<llvm::CachedHashStringRef, StringRef> &
-machoResolvedLibraries();
-llvm::DenseMap<llvm::CachedHashStringRef, StringRef> &
-machoResolvedFrameworks();
-llvm::DenseMap<StringRef, ArchiveFileInfo> &machoLoadedArchives();
-std::vector<StringRef> &machoMissingAutolinkWarnings();
-llvm::DenseSet<StringRef> &machoLoadedObjectFrameworks();
-llvm::DenseMap<llvm::CachedHashStringRef, DylibFile *> &
-machoLoadedDylibs();
-std::mutex &machoCachedReadsMutex();
-uint32_t &machoLCDylibCount();
-
-} // namespace linker::macho
+// `in` below rewrites an identifier the standard library also uses
+// (std::ios_base::in), so every standard header that spells it must be parsed
+// before the macro exists.  Pulling the stream headers in here keeps the
+// compat layer from depending on include order in its consumers.
+#include <fstream>
+#include <iomanip>
+#include <ios>
+#include <istream>
+#include <ostream>
+#include <sstream>
+#include <streambuf>
 
 // Source-only compatibility spellings while Mach-O routines are incrementally
-// converted to explicit MachOLinkerContext parameters.
+// converted to explicit MachOLinkerContext parameters.  New code calls the
+// accessors declared in MachOLinkerContext.h / SyntheticSections.h directly.
 #define in machoIn()
 #define syntheticSections machoSyntheticSections()
 #define firstTLVDataSection machoFirstTLVDataSection()

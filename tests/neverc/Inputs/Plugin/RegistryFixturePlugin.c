@@ -65,8 +65,7 @@ static const NevercInterfaceRequirement RequiredInterfaces[] = {{
 static const NevercPluginDependency Dependencies[] = {{
     .Header = {sizeof(NevercPluginDependency), NEVERC_PLUGIN_ABI_MAJOR,
                NEVERC_PLUGIN_ABI_MINOR, 0},
-    .PluginID =
-        (NevercStringView)NEVERC_TEST_STRING_VIEW(NEVERC_TEST_DEPENDENCY_ID),
+    .PluginID = NEVERC_TEST_STRING_VIEW(NEVERC_TEST_DEPENDENCY_ID),
     .Version =
         {
             .MinimumInclusive =

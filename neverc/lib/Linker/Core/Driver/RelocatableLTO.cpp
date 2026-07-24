@@ -41,6 +41,17 @@ using namespace llvm;
 
 namespace linker {
 
+namespace {
+// The winning definition of one symbol name.  Kept at namespace scope: MSVC's
+// ARM64 front end hits an internal compiler error (symtable.cpp) when a
+// function-local class is used as a DenseMap value type.
+struct PrevailingDefinition {
+  size_t File = 0;
+  size_t Symbol = 0;
+  bool Weak = true;
+};
+} // namespace
+
 Expected<std::vector<SmallString<0>>>
 runPluginRelocatableLTO(const LinkerDriverConfig &Config,
                         ArrayRef<MemoryBufferRef> BitcodeBuffers,
@@ -80,12 +91,7 @@ runPluginRelocatableLTO(const LinkerDriverConfig &Config,
 
   // Choose one prevailing definition per symbol name across all modules:
   // a non-weak definition beats a weak one; otherwise the first seen wins.
-  struct Winner {
-    size_t File = 0;
-    size_t Symbol = 0;
-    bool Weak = true;
-  };
-  DenseMap<StringRef, Winner> Winners;
+  DenseMap<StringRef, PrevailingDefinition> Winners;
   for (size_t FileIndex = 0; FileIndex != Files.size(); ++FileIndex) {
     size_t SymbolIndex = 0;
     for (const lto::InputFile::Symbol &Symbol : Files[FileIndex]->symbols()) {
@@ -94,9 +100,9 @@ runPluginRelocatableLTO(const LinkerDriverConfig &Config,
         const bool Weak = Symbol.isWeak();
         auto It = Winners.find(Name);
         if (It == Winners.end())
-          Winners[Name] = Winner{FileIndex, SymbolIndex, Weak};
+          Winners[Name] = PrevailingDefinition{FileIndex, SymbolIndex, Weak};
         else if (It->second.Weak && !Weak)
-          It->second = Winner{FileIndex, SymbolIndex, Weak};
+          It->second = PrevailingDefinition{FileIndex, SymbolIndex, Weak};
       }
       ++SymbolIndex;
     }

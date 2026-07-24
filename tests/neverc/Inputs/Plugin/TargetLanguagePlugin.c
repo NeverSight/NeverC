@@ -47,8 +47,7 @@ static NevercStatus NEVERC_CALL validate_cpu(
 static NevercStatus NEVERC_CALL canonicalize_cpu(
     NevercTaskHandle Task, NevercStringView CPU, void *UserData,
     NevercStringView *OutCanonicalCPU) {
-  static const NevercStringView Fast =
-      (NevercStringView)STRING_VIEW("fast");
+  static const NevercStringView Fast = STRING_VIEW("fast");
   (void)Task;
   (void)UserData;
   if (OutCanonicalCPU == NULL ||
@@ -62,8 +61,8 @@ static NevercStatus NEVERC_CALL list_cpus(
     NevercTaskHandle Task, void *UserData,
     NevercStringArrayView *OutCPUs) {
   static const NevercStringView CPUs[] = {
-      (NevercStringView)STRING_VIEW("fast"),
-      (NevercStringView)STRING_VIEW("generic"),
+      STRING_VIEW("fast"),
+      STRING_VIEW("generic"),
   };
   (void)Task;
   (void)UserData;
@@ -83,13 +82,13 @@ static NevercStatus NEVERC_CALL resolve_features(
       {
           .Header = {sizeof(NevercTargetFeatureState),
                      NEVERC_TARGET_API_MAJOR, NEVERC_TARGET_API_MINOR, 0},
-          .Name = (NevercStringView)STRING_VIEW("base"),
+          .Name = STRING_VIEW("base"),
           .Enabled = NEVERC_TRUE,
       },
       {
           .Header = {sizeof(NevercTargetFeatureState),
                      NEVERC_TARGET_API_MAJOR, NEVERC_TARGET_API_MINOR, 0},
-          .Name = (NevercStringView)STRING_VIEW("simd"),
+          .Name = STRING_VIEW("simd"),
           .Enabled = NEVERC_FALSE,
       },
   };
@@ -97,13 +96,13 @@ static NevercStatus NEVERC_CALL resolve_features(
       {
           .Header = {sizeof(NevercTargetFeatureState),
                      NEVERC_TARGET_API_MAJOR, NEVERC_TARGET_API_MINOR, 0},
-          .Name = (NevercStringView)STRING_VIEW("base"),
+          .Name = STRING_VIEW("base"),
           .Enabled = NEVERC_TRUE,
       },
       {
           .Header = {sizeof(NevercTargetFeatureState),
                      NEVERC_TARGET_API_MAJOR, NEVERC_TARGET_API_MINOR, 0},
-          .Name = (NevercStringView)STRING_VIEW("simd"),
+          .Name = STRING_VIEW("simd"),
           .Enabled = NEVERC_TRUE,
       },
   };
@@ -140,8 +139,7 @@ static NevercStatus NEVERC_CALL lower_add_builtin(
     void *UserData,
     const NevercTargetBuiltinLoweringInvocation *Invocation,
     NevercIRValueHandle *OutResult) {
-  static const NevercStringView Name =
-      (NevercStringView)STRING_VIEW("plugin.add");
+  static const NevercStringView Name = STRING_VIEW("plugin.add");
   (void)UserData;
   if (Invocation == NULL || OutResult == NULL ||
       Invocation->Builder == NULL || Invocation->ArgumentCount != 2)
@@ -200,23 +198,23 @@ static NevercStatus register_target(
   static const NevercCallingConventionID CallingConvention = {
       UINT64_C(0x4e43544c43434e01), UINT64_C(1)};
   static const NevercStringView CPUValues[] = {
-      (NevercStringView)STRING_VIEW("fast"),
-      (NevercStringView)STRING_VIEW("generic"),
+      STRING_VIEW("fast"),
+      STRING_VIEW("generic"),
   };
   static const NevercStringView ImpliedBase[] = {
-      (NevercStringView)STRING_VIEW("base"),
+      STRING_VIEW("base"),
   };
   static const NevercTargetFeatureDescriptor Features[] = {
       {
           .Header = {sizeof(NevercTargetFeatureDescriptor),
                      NEVERC_TARGET_API_MAJOR, NEVERC_TARGET_API_MINOR, 0},
-          .Name = (NevercStringView)STRING_VIEW("base"),
+          .Name = STRING_VIEW("base"),
           .EnabledByDefault = NEVERC_TRUE,
       },
       {
           .Header = {sizeof(NevercTargetFeatureDescriptor),
                      NEVERC_TARGET_API_MAJOR, NEVERC_TARGET_API_MINOR, 0},
-          .Name = (NevercStringView)STRING_VIEW("simd"),
+          .Name = STRING_VIEW("simd"),
           .Implies = {ImpliedBase, 1, sizeof(ImpliedBase[0])},
       },
   };
@@ -224,32 +222,32 @@ static NevercStatus register_target(
       {
           .Header = {sizeof(NevercTargetMacroDescriptor),
                      NEVERC_TARGET_API_MAJOR, NEVERC_TARGET_API_MINOR, 0},
-          .Name = (NevercStringView)STRING_VIEW("__LANG_TARGET__"),
-          .Value = (NevercStringView)STRING_VIEW("42"),
+          .Name = STRING_VIEW("__LANG_TARGET__"),
+          .Value = STRING_VIEW("42"),
       },
   };
   static const NevercTargetBuiltinDescriptor Builtins[] = {
       {
           .Header = {sizeof(NevercTargetBuiltinDescriptor),
                      NEVERC_TARGET_API_MAJOR, NEVERC_TARGET_API_MINOR, 0},
-          .Name = (NevercStringView)STRING_VIEW("__builtin_lang_add"),
-          .TypeEncoding = (NevercStringView)STRING_VIEW("iii"),
-          .Attributes = (NevercStringView)STRING_VIEW("nc"),
+          .Name = STRING_VIEW("__builtin_lang_add"),
+          .TypeEncoding = STRING_VIEW("iii"),
+          .Attributes = STRING_VIEW("nc"),
           .Languages = NEVERC_TARGET_BUILTIN_LANGUAGE_C,
           .Lower = lower_add_builtin,
       },
   };
   static const NevercStringView RegisterAliases[] = {
-      (NevercStringView)STRING_VIEW("zero"),
+      STRING_VIEW("zero"),
   };
   static const NevercStringView AdditionalRegisterNames[] = {
-      (NevercStringView)STRING_VIEW("special-zero"),
+      STRING_VIEW("special-zero"),
   };
   static const NevercTargetRegisterDescriptor Registers[] = {
       {
           .Header = {sizeof(NevercTargetRegisterDescriptor),
                      NEVERC_TARGET_API_MAJOR, NEVERC_TARGET_API_MINOR, 0},
-          .Name = (NevercStringView)STRING_VIEW("r0"),
+          .Name = STRING_VIEW("r0"),
           .Aliases = {RegisterAliases, 1, sizeof(RegisterAliases[0])},
           .AdditionalNames = {AdditionalRegisterNames, 1,
                               sizeof(AdditionalRegisterNames[0])},
@@ -261,8 +259,8 @@ static NevercStatus register_target(
       {
           .Header = {sizeof(NevercTargetConstraintDescriptor),
                      NEVERC_TARGET_API_MAJOR, NEVERC_TARGET_API_MINOR, 0},
-          .Spelling = (NevercStringView)STRING_VIEW("I"),
-          .ConvertedConstraint = (NevercStringView)STRING_VIEW("I"),
+          .Spelling = STRING_VIEW("I"),
+          .ConvertedConstraint = STRING_VIEW("I"),
           .Flags = NEVERC_TARGET_CONSTRAINT_IMMEDIATE,
           .ImmediateValues = {ImmediateValues, 3,
                               sizeof(ImmediateValues[0])},
@@ -271,8 +269,8 @@ static NevercStatus register_target(
       {
           .Header = {sizeof(NevercTargetConstraintDescriptor),
                      NEVERC_TARGET_API_MAJOR, NEVERC_TARGET_API_MINOR, 0},
-          .Spelling = (NevercStringView)STRING_VIEW("r"),
-          .ConvertedConstraint = (NevercStringView)STRING_VIEW("r"),
+          .Spelling = STRING_VIEW("r"),
+          .ConvertedConstraint = STRING_VIEW("r"),
           .Flags = NEVERC_TARGET_CONSTRAINT_ALLOWS_REGISTER,
           .RegisterClassID = UINT32_C(0x61000001),
           .MatchingOperand = -1,

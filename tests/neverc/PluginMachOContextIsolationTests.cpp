@@ -1,5 +1,4 @@
 #include "Linker/Core/Runtime/LinkerExecutionContext.h"
-#include "Linker/MachO/MachOContextAccess.h"
 #include "Linker/MachO/MachOLinkerContext.h"
 #include "gtest/gtest.h"
 #include <atomic>
