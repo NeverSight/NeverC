@@ -65,7 +65,8 @@ jobs:
             neverc/llvm
 
       - name: Build plugin fuzzers
-        run: cmake --build build --config ${{ env.BUILD_TYPE }} \
+        run: >-
+          cmake --build build --config ${{ env.BUILD_TYPE }}
           --target neverc-plugin-fuzzers
 
       - name: Fuzz smoke tests
