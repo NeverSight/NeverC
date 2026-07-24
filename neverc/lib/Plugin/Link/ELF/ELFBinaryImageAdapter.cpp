@@ -2,10 +2,11 @@
 #include "Link/BinaryImage.h"
 #include "Link/LinkOutputBundle.h"
 #include "neverc/Linker/ELF/Config.h"
-#include "neverc/Linker/ELF/ELFContextAccess.h"
 #include "neverc/Linker/ELF/Emit.h"
 #include "neverc/Linker/ELF/OutputSections.h"
+#include "neverc/Linker/ELF/SymbolTable.h"
 #include "neverc/Linker/ELF/Symbols.h"
+#include "neverc/Linker/ELF/SyntheticSections.h"
 #include "neverc/Plugin/Host/PluginIOBridge.h"
 #include "neverc/Plugin/Host/PluginInterfaceRegistry.h"
 #include "neverc/Plugin/Host/PluginProcessServices.h"
@@ -16,6 +17,13 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include <algorithm>
 #include <limits>
+
+// NOTE: This adapter deliberately does NOT include ELFContextAccess.h. That
+// header defines source-compatibility macros (`in`, `ctx`, `symtab`) for the
+// incrementally-ported backend .cpp files; in particular `#define in elfIn()`
+// rewrites the ubiquitous identifier `in`, colliding with std::ios_base::in
+// whenever a standard-library <istream>/<ios> header is parsed in the same TU.
+// New code uses the explicit accessors (elfSymtab(), etc.) instead.
 
 using namespace llvm;
 using namespace llvm::ELF;
@@ -166,7 +174,7 @@ Error ELFLinkGraphAdapter::publishImage(ArrayRef<uint8_t> Bytes) {
   Data.TargetID = TargetKey.TargetID;
   Data.FormatID = Graph->formatID();
   if (!config->entry.empty())
-    if (Symbol *Entry = symtab.find(config->entry))
+    if (Symbol *Entry = elfSymtab().find(config->entry))
       Data.EntryAddress = Entry->getVA();
 
   uint64_t ImageEnd = 0;

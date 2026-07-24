@@ -25,20 +25,22 @@ uint64_t widthMask(uint32_t Width) {
   return Width >= 64 ? UINT64_MAX : (UINT64_C(1) << Width) - 1;
 }
 
-bool fitsValue(__int128 Value, uint32_t Width, bool Signed) {
+// Value carries the encoded fixup as a 64-bit two's-complement bit pattern.
+// Width is guaranteed to be in [1, 64] by the caller, so 64-bit arithmetic is
+// sufficient and portable across toolchains that lack a native 128-bit integer
+// type (e.g. MSVC).
+bool fitsValue(uint64_t Value, uint32_t Width, bool Signed) {
   if (Width == 0 || Width > 64)
     return false;
+  if (Width == 64)
+    return true;
   if (Signed) {
-    const __int128 Minimum = -((__int128)1 << (Width - 1));
-    const __int128 Maximum = ((__int128)1 << (Width - 1)) - 1;
-    return Value >= Minimum && Value <= Maximum;
+    const int64_t SignedValue = static_cast<int64_t>(Value);
+    const int64_t Minimum = -(INT64_C(1) << (Width - 1));
+    const int64_t Maximum = (INT64_C(1) << (Width - 1)) - 1;
+    return SignedValue >= Minimum && SignedValue <= Maximum;
   }
-  const unsigned __int128 Maximum =
-      Width == 64
-          ? static_cast<unsigned __int128>(UINT64_MAX)
-          : (static_cast<unsigned __int128>(1) << Width) - 1;
-  return Value >= 0 &&
-         static_cast<unsigned __int128>(Value) <= Maximum;
+  return (Value >> Width) == 0;
 }
 
 } // namespace
@@ -80,8 +82,11 @@ evaluateLinkRelocation(const PluginLinkGraph &Graph,
   if (TargetSymbol)
     Result.Target += TargetSymbol->Value;
 
-  __int128 Value =
-      static_cast<__int128>(Result.Target) + Edge.Addend;
+  // Relocation arithmetic is performed modulo 2^64. Field widths never exceed
+  // 64 bits (validated above), so 64-bit two's-complement math reproduces the
+  // encoded value on every toolchain, including those without a native 128-bit
+  // integer type (e.g. MSVC).
+  uint64_t Value = Result.Target + static_cast<uint64_t>(Edge.Addend);
   if (Edge.RelocationKind ==
           NEVERC_OBJECT_RELOCATION_PC_RELATIVE ||
       Edge.IsPCRelative)
@@ -99,8 +104,7 @@ evaluateLinkRelocation(const PluginLinkGraph &Graph,
 
   if (!fitsValue(Value, Edge.Width, Edge.IsSigned))
     return relocationError("relocation value overflows its field");
-  Result.EncodedValue =
-      static_cast<uint64_t>(Value) & widthMask(Edge.Width);
+  Result.EncodedValue = Value & widthMask(Edge.Width);
   return Result;
 }
 

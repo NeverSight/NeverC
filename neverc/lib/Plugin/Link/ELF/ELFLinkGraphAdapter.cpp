@@ -2,7 +2,6 @@
 #include "llvm/Support/SHA256.h"
 
 #include "neverc/Linker/ELF/Config.h"
-#include "neverc/Linker/ELF/ELFContextAccess.h"
 #include "neverc/Linker/ELF/InputFiles.h"
 #include "neverc/Linker/ELF/InputSection.h"
 #include "neverc/Linker/ELF/OutputSections.h"
@@ -20,6 +19,12 @@
 #include <cstring>
 #include <limits>
 #include <set>
+
+// Included last: ELFContextAccess.h defines source-compatibility macros
+// (`in`, `ctx`, `symtab`) that must not be active while standard-library or
+// LLVM headers are parsed, otherwise the ubiquitous identifier `in` collides
+// with e.g. std::ios_base::in. See Backends/ELF/*.cpp for the same convention.
+#include "neverc/Linker/ELF/ELFContextAccess.h"
 
 using namespace llvm;
 using namespace llvm::ELF;
