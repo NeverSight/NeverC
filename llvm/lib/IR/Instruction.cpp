@@ -451,7 +451,9 @@ void Instruction::dropPoisonGeneratingFlags() {
     break;
 
   case Instruction::GetElementPtr:
-    cast<GetElementPtrInst>(this)->setIsInBounds(false);
+    // Clear all GEP no-wrap flags (inbounds/nuw/nusw); hasPoisonGeneratingFlags
+    // checks nuw too, so dropping only inbounds leaves the two out of sync.
+    cast<GetElementPtrInst>(this)->setNoWrapFlags(GEPNoWrapFlags::none());
     break;
 
   case Instruction::ZExt:

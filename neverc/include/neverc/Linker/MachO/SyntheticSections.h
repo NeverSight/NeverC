@@ -16,6 +16,7 @@
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/raw_ostream.h"
 
+#include <cstring>
 #include <unordered_map>
 
 namespace llvm {
@@ -564,17 +565,27 @@ public:
   }
 
   uint64_t getLiteral16Offset(uintptr_t buf) const {
-    return literal16Map.at(*reinterpret_cast<const UInt128 *>(buf)) * 16;
+    // The literal data pointer is not guaranteed to be aligned, so copy the
+    // bytes out instead of a misaligned load. UInt128 is a std::pair, so read
+    // the two halves individually. This must match how finalizeContents()
+    // populates the map.
+    uint64_t lo, hi;
+    memcpy(&lo, reinterpret_cast<const void *>(buf), sizeof(lo));
+    memcpy(&hi, reinterpret_cast<const void *>(buf + sizeof(lo)), sizeof(hi));
+    return literal16Map.at(UInt128(lo, hi)) * 16;
   }
 
   uint64_t getLiteral8Offset(uintptr_t buf) const {
-    return literal16Map.size() * 16 +
-           literal8Map.at(*reinterpret_cast<const uint64_t *>(buf)) * 8;
+    uint64_t value;
+    memcpy(&value, reinterpret_cast<const void *>(buf), sizeof(value));
+    return literal16Map.size() * 16 + literal8Map.at(value) * 8;
   }
 
   uint64_t getLiteral4Offset(uintptr_t buf) const {
+    uint32_t value;
+    memcpy(&value, reinterpret_cast<const void *>(buf), sizeof(value));
     return literal16Map.size() * 16 + literal8Map.size() * 8 +
-           literal4Map.at(*reinterpret_cast<const uint32_t *>(buf)) * 4;
+           literal4Map.at(value) * 4;
   }
 
 private:

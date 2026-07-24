@@ -1628,7 +1628,10 @@ void WordLiteralSection::finalizeContents() {
       for (size_t off = 0, e = isec->data.size(); off < e; off += 4) {
         if (!isec->isLive(off))
           continue;
-        uint32_t value = *reinterpret_cast<const uint32_t *>(buf + off);
+        // The input section data pointer is not guaranteed to be 4-byte
+        // aligned, so copy the bytes out instead of a misaligned load.
+        uint32_t value;
+        memcpy(&value, buf + off, sizeof(value));
         literal4Map.emplace(value, literal4Map.size());
       }
       break;
@@ -1637,7 +1640,8 @@ void WordLiteralSection::finalizeContents() {
       for (size_t off = 0, e = isec->data.size(); off < e; off += 8) {
         if (!isec->isLive(off))
           continue;
-        uint64_t value = *reinterpret_cast<const uint64_t *>(buf + off);
+        uint64_t value;
+        memcpy(&value, buf + off, sizeof(value));
         literal8Map.emplace(value, literal8Map.size());
       }
       break;
@@ -1646,8 +1650,12 @@ void WordLiteralSection::finalizeContents() {
       for (size_t off = 0, e = isec->data.size(); off < e; off += 16) {
         if (!isec->isLive(off))
           continue;
-        UInt128 value = *reinterpret_cast<const UInt128 *>(buf + off);
-        literal16Map.emplace(value, literal16Map.size());
+        // UInt128 is a std::pair, so read the two halves individually to avoid
+        // a misaligned load without memcpy'ing into a non-trivial type.
+        uint64_t lo, hi;
+        memcpy(&lo, buf + off, sizeof(lo));
+        memcpy(&hi, buf + off + sizeof(lo), sizeof(hi));
+        literal16Map.emplace(UInt128(lo, hi), literal16Map.size());
       }
       break;
     }

@@ -915,10 +915,15 @@ Error PluginSourcePhaseRuntime::Impl::installAndVerify(
                                "replacement source unit is not installable");
     StringRef Contents(reinterpret_cast<const char *>(Unit.Content.data()),
                        Unit.Content.size() - 1);
-    MemoryBufferRef Buffer(Contents, Unit.LogicalPath);
     SrcMgr::CharacteristicKind Kind =
         Unit.System ? SrcMgr::C_System : SrcMgr::C_User;
-    Unit.MainFile = SourceMgr.createFileID(Buffer, Kind);
+    // Give the SourceManager an owned, NUL-terminated buffer instead of
+    // aliasing Unit.Content: the lexer can read one byte past the buffer's
+    // NUL sentinel, which would land in the std::vector's poisoned
+    // [size, capacity) region (an ASan container-overflow) if the vector
+    // storage were aliased directly.
+    Unit.MainFile = SourceMgr.createFileID(
+        llvm::MemoryBuffer::getMemBufferCopy(Contents, Unit.LogicalPath), Kind);
     if (!Unit.MainFile.isValid())
       return createStringError(inconvertibleErrorCode(),
                                "replacement source has no main file");
