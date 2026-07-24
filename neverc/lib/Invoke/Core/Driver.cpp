@@ -1465,6 +1465,19 @@ unsigned pluginDiscoveryDiagnosticID(llvm::StringRef Message) {
   return diag::err_drv_plugin_negotiation;
 }
 
+// Test-only knob (undocumented; never set on a normal run): when
+// NEVERC_TEST_PLUGIN_FULLY_DISABLED holds a non-empty, non-"0" value the driver
+// behaves exactly as if plugin support were compiled out, short-circuiting the
+// bootstrap discovery decision entirely so no plugin argument is honoured.  It
+// exists so the no-plugin performance gate (design completion item 10) can
+// compare the shipped no-plugin path against a fully-disabled baseline produced
+// by the *same* binary, which avoids the build-to-build drift a separately
+// compiled baseline would introduce.
+bool pluginSupportForceDisabledForTest() {
+  const char *Value = ::getenv("NEVERC_TEST_PLUGIN_FULLY_DISABLED");
+  return Value && *Value && llvm::StringRef(Value) != "0";
+}
+
 } // namespace
 
 llvm::Error Driver::finishPluginRuntime(
@@ -1502,8 +1515,9 @@ Driver::prepareDirectPluginInvocation(
   PluginDriverAPIBridgeState.reset();
   FinalArgumentStorage.clear();
 
-  bool HasPluginBootstrap = llvm::any_of(
-      Arguments, [](const char *Argument) {
+  bool HasPluginBootstrap =
+      !pluginSupportForceDisabledForTest() &&
+      llvm::any_of(Arguments, [](const char *Argument) {
         return PluginBootstrap::isReservedBootstrapToken(Argument);
       });
   if (!HasPluginBootstrap)
@@ -1630,12 +1644,13 @@ Compilation *Driver::CreateCompilation(llvm::ArrayRef<const char *> ArgList) {
 
   bool ContainsError = loadConfigFiles();
   bool HasPluginBootstrap =
-      llvm::any_of(RawConfigTokens, [](const RawConfigToken &Token) {
-        return PluginBootstrap::isReservedBootstrapToken(Token.Value);
-      }) ||
-      llvm::any_of(CommandArguments, [](const char *Argument) {
-        return PluginBootstrap::isReservedBootstrapToken(Argument);
-      });
+      !pluginSupportForceDisabledForTest() &&
+      (llvm::any_of(RawConfigTokens, [](const RawConfigToken &Token) {
+         return PluginBootstrap::isReservedBootstrapToken(Token.Value);
+       }) ||
+       llvm::any_of(CommandArguments, [](const char *Argument) {
+         return PluginBootstrap::isReservedBootstrapToken(Argument);
+       }));
   bool UseFastNoPluginPath =
       !HasPluginBootstrap && RawConfigTokens.empty();
   std::vector<NevercArgumentOrigin> FinalOrigins;

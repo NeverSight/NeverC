@@ -2,9 +2,11 @@
 # Builds the shipped compiler once and runs both the PluginPerformance unit
 # tests (per-plugin/phase callback statistics) and the out-of-process overhead
 # harness.  The strict <=1% median wall-time / peak-RSS regression budget is
-# enforced against a separately built, test-only fully-disabled baseline binary
-# via --baseline-compiler; without that baseline the harness reports overhead
-# only and stays green, so this workflow never fails on machine noise alone.
+# enforced against a fully-disabled baseline produced by the *same* binary (the
+# test-only NEVERC_TEST_PLUGIN_FULLY_DISABLED knob), so there is no
+# build-to-build drift and no separate baseline build is required.  Machine
+# noise is handled by re-measuring a fixed number of times (--retries), never by
+# relaxing the threshold.
 name: plugin-performance
 
 permissions:
@@ -65,10 +67,18 @@ jobs:
           ctest --test-dir build \
             -R 'PluginPerformance|PluginCallbackStats' --output-on-failure
 
-      - name: Measure no-plugin overhead (report-only without a baseline build)
+      - name: Measure and gate no-plugin overhead (same-binary fully-disabled baseline)
         run: |
           python3 neverc/utils/plugin-api/measure-plugin-overhead.py \
             --compiler build/bin/neverc \
             --iterations 31 \
             --max-time-regression 0.01 \
-            --max-rss-regression 0.01
+            --max-rss-regression 0.01 \
+            --json plugin-overhead-macos-arm64.json
+
+      - name: Upload overhead artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: plugin-overhead-macos-arm64
+          path: plugin-overhead-macos-arm64.json
