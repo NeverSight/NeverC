@@ -244,6 +244,49 @@ TEST(PluginRegistryTest, SnapshotLeaseBlocksMutation) {
   EXPECT_EQ(Registry.generation(), 2u);
 }
 
+TEST(PluginRegistryTest, RepeatedLoadUnloadLeavesNoResidentModule) {
+  auto Registry = makeRegistry();
+
+  // A snapshot owns strong references to its modules, so a stale published
+  // snapshot would silently keep an unloaded plugin -- and its process state
+  // and dynamic library -- resident. Track each cycle's module weakly to prove
+  // unload republishes and releases.
+  std::weak_ptr<const PluginModule> Unloaded;
+  for (uint64_t Cycle = 0; Cycle != 3; ++Cycle) {
+    EXPECT_TRUE(Unloaded.expired())
+        << "cycle " << Cycle << " began with the previous module resident";
+
+    auto Loaded = Registry.load(NEVERC_TEST_MINIMAL_PLUGIN);
+    if (!Loaded)
+      FAIL() << takeErrorMessage(Loaded);
+    EXPECT_EQ(Registry.moduleCount(), 1u);
+    EXPECT_EQ(Registry.generation(), 2 * Cycle + 1);
+
+    {
+      auto Snapshot = Registry.acquireSnapshot();
+      ASSERT_TRUE(static_cast<bool>(Snapshot));
+      EXPECT_EQ(Snapshot->generation(), 2 * Cycle + 1);
+      EXPECT_EQ(Snapshot->modules().size(), 1u);
+      EXPECT_EQ(Snapshot->findByID("org.neverc.test.minimal"), Loaded->get());
+    }
+    EXPECT_EQ(Registry.activeSnapshotLeases(), 0u);
+
+    Unloaded = *Loaded;
+    *Loaded = std::shared_ptr<const PluginModule>();
+    EXPECT_FALSE(Registry.unload("org.neverc.test.minimal"));
+    EXPECT_EQ(Registry.moduleCount(), 0u);
+    EXPECT_EQ(Registry.generation(), 2 * Cycle + 2);
+    EXPECT_TRUE(Unloaded.expired())
+        << "unload left the module reachable through a published snapshot";
+
+    auto Empty = Registry.acquireSnapshot();
+    ASSERT_TRUE(static_cast<bool>(Empty));
+    EXPECT_EQ(Empty->generation(), 2 * Cycle + 2);
+    EXPECT_TRUE(Empty->modules().empty());
+    EXPECT_EQ(Empty->findByID("org.neverc.test.minimal"), nullptr);
+  }
+}
+
 TEST(PluginRegistryTest, SessionAndCallbackActivityBlockMutation) {
   auto Registry = makeRegistry();
 

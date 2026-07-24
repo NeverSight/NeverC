@@ -3,6 +3,7 @@
 #include "ConformanceEnvironment.h"
 
 #include <atomic>
+#include <cctype>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
@@ -72,6 +73,16 @@ std::string shellQuote(const std::string &Argument) {
   Quoted += "'";
   return Quoted;
 #endif
+}
+
+// cl and clang-cl take MSVC-style switches; every other driver we support
+// (gcc, clang, Apple clang, mingw) takes GNU-style ones. The compiler can be
+// overridden at run time, so this has to key off the name rather than the host.
+bool usesMSVCDriver(const std::string &Compiler) {
+  std::string Stem = fs::path(Compiler).stem().string();
+  for (char &C : Stem)
+    C = static_cast<char>(std::tolower(static_cast<unsigned char>(C)));
+  return Stem == "cl" || Stem == "clang-cl";
 }
 
 int normalizeExit(int Raw) {
@@ -183,6 +194,13 @@ RunResult Environment::runProgram(const std::vector<std::string> &Args,
     Command += shellQuote(Arg) + " ";
   Command += "> " + shellQuote(OutFile) + " 2> " + shellQuote(ErrFile);
 
+#ifdef _WIN32
+  // cmd /c strips the first and last quote of any command line it cannot read
+  // as a single quoted executable name, and the redirections above always
+  // disqualify this one. Add a spare pair for it to strip.
+  Command = "\"" + Command + "\"";
+#endif
+
   Result.exitCode = normalizeExit(std::system(Command.c_str()));
   Result.out = readFile(OutFile);
   Result.err = readFile(ErrFile);
@@ -205,20 +223,40 @@ std::string Environment::buildPlugin(const std::string &Dir,
                                      std::string &Error) const {
   const std::string Output =
       (fs::path(Dir) / (Fixture + pluginExtension())).string();
-  std::vector<std::string> Args = {CC, "-shared"};
+  const std::string Source =
+      (fs::path(FixturesDir) / (Fixture + ".c")).string();
+
+  std::vector<std::string> Args;
+  if (usesMSVCDriver(CC)) {
+    // /Fo names the object explicitly rather than a directory: a directory
+    // argument would end in a backslash, and the trailing backslash would
+    // escape the closing quote runProgram adds.
+    Args = {CC, "/nologo", "/LD", "/std:c11"};
+    Args.push_back("/I");
+    Args.push_back(SDKInclude);
+    Args.push_back("/I");
+    Args.push_back(FixturesDir);
+    for (const std::string &Define : Defines)
+      Args.push_back("/D" + Define);
+    Args.push_back("/Fo" + (fs::path(Dir) / (Fixture + ".obj")).string());
+    Args.push_back("/Fe:" + Output);
+    Args.push_back(Source);
+  } else {
+    Args = {CC, "-shared"};
 #ifndef _WIN32
-  Args.push_back("-fPIC");
+    Args.push_back("-fPIC");
 #endif
-  Args.push_back("-std=c11");
-  Args.push_back("-I");
-  Args.push_back(SDKInclude);
-  Args.push_back("-I");
-  Args.push_back(FixturesDir);
-  for (const std::string &Define : Defines)
-    Args.push_back("-D" + Define);
-  Args.push_back("-o");
-  Args.push_back(Output);
-  Args.push_back((fs::path(FixturesDir) / (Fixture + ".c")).string());
+    Args.push_back("-std=c11");
+    Args.push_back("-I");
+    Args.push_back(SDKInclude);
+    Args.push_back("-I");
+    Args.push_back(FixturesDir);
+    for (const std::string &Define : Defines)
+      Args.push_back("-D" + Define);
+    Args.push_back("-o");
+    Args.push_back(Output);
+    Args.push_back(Source);
+  }
 
   RunResult Result = runProgram(Args);
   if (Result.exitCode != 0) {

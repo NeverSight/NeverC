@@ -9,10 +9,10 @@
 #     artifact with a format check (cross artifacts are parsed, never executed);
 #   * re-checks the capability bindings and phase inventory of the built binary.
 #
-# The POSIX hosts (Linux x86_64, macOS arm64) are covered here with the same
-# proven build recipe as the per-OS build workflows; linux-arm64 and the Windows
-# DLL export / cdecl path run the identical steps on their native runners and
-# can be added to the matrix as capacity allows.
+# All five native hosts run the identical steps with the same build recipe as
+# the per-OS release workflows.  On Windows the fixtures are built by MSVC
+# itself, so the run also proves the SDK's __declspec(dllexport) / __cdecl path
+# against a non-GNU driver.
 name: plugin-conformance
 
 permissions:
@@ -42,14 +42,40 @@ jobs:
         include:
           - host: linux-x64
             runs-on: ubuntu-22.04
+            python: python3
+          - host: linux-arm64
+            runs-on: ubuntu-22.04-arm
+            python: python3
           - host: macos-arm64
             runs-on: macos-15
+            python: python3
+          - host: windows-x64
+            runs-on: windows-latest
+            python: python
+            exe: .exe
+            msvc-arch: x64
+          - host: windows-arm64
+            runs-on: windows-11-arm
+            python: python
+            exe: .exe
+            msvc-arch: arm64
+            cmake-extra: -DCMAKE_SYSTEM_PROCESSOR=ARM64
     runs-on: ${{ matrix.runs-on }}
+    defaults:
+      run:
+        shell: bash
     env:
       BUILD_TYPE: RelWithDebInfo
       LLVM_APT_VER: "22"
       MACOSX_DEPLOYMENT_TARGET: "13.0"
     steps:
+      - name: Free disk space (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android \
+            /opt/ghc /usr/local/share/boost /opt/hostedtoolcache/CodeQL
+          df -h /
+
       - name: Checkout Repo
         uses: actions/checkout@v4
         with:
@@ -76,11 +102,40 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install ninja cmake
 
+      - name: Setup build deps (Windows x64)
+        if: matrix.host == 'windows-x64'
+        run: choco install ninja cmake -y
+
+      # windows-11-arm has no chocolatey packages for these; fetch the
+      # ARM64-native archives the way the arm64 release workflow does.
+      - name: Setup build deps (Windows arm64)
+        if: matrix.host == 'windows-arm64'
+        shell: pwsh
+        run: |
+          $cmakeVer = '3.31.11'
+          Invoke-WebRequest "https://github.com/Kitware/CMake/releases/download/v$cmakeVer/cmake-$cmakeVer-windows-arm64.zip" -OutFile cmake.zip
+          Expand-Archive cmake.zip C:\tools -Force
+          Add-Content $env:GITHUB_PATH "C:\tools\cmake-$cmakeVer-windows-arm64\bin"
+
+          $ninjaVer = '1.13.1'
+          Invoke-WebRequest "https://github.com/ninja-build/ninja/releases/download/v$ninjaVer/ninja-winarm64.zip" -OutFile ninja.zip
+          Expand-Archive ninja.zip C:\tools\ninja -Force
+          Add-Content $env:GITHUB_PATH "C:\tools\ninja"
+
+      # Puts cl.exe on PATH, which is also the system C compiler the
+      # conformance harness builds its fixtures with on Windows.
+      - name: Setup MSVC (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.msvc-arch }}
+
       - name: Configure
         run: |
           cmake -GNinja -Bbuild \
             ${CC:+-DCMAKE_C_COMPILER=$CC} \
             ${CXX:+-DCMAKE_CXX_COMPILER=$CXX} \
+            ${{ matrix.cmake-extra }} \
             -DCMAKE_INSTALL_PREFIX=install \
             -DLLVM_ENABLE_ASSERTIONS=OFF \
             -DLLVM_TOOL_LLVM_SHLIB_BUILD=off \
@@ -98,12 +153,12 @@ jobs:
 
       - name: Capability bindings and phase inventory
         run: |
-          python3 neverc/utils/plugin-api/check-capability-bindings.py \
-            --compiler build/bin/neverc
-          python3 neverc/utils/plugin-api/check-phase-inventory.py \
-            --compiler build/bin/neverc \
+          ${{ matrix.python }} neverc/utils/plugin-api/check-capability-bindings.py \
+            --compiler build/bin/neverc${{ matrix.exe }}
+          ${{ matrix.python }} neverc/utils/plugin-api/check-phase-inventory.py \
+            --compiler build/bin/neverc${{ matrix.exe }} \
             > plugin-phase-inventory-${{ matrix.host }}.txt
-          build/bin/neverc --print-plugin-capabilities=json \
+          build/bin/neverc${{ matrix.exe }} --print-plugin-capabilities=json \
             > plugin-capabilities-${{ matrix.host }}.json
 
       - name: Run plugin conformance suite
@@ -111,8 +166,8 @@ jobs:
 
       - name: Cross-target object / image matrix
         run: |
-          python3 neverc/utils/plugin-api/run-cross-target-matrix.py \
-            --compiler build/bin/neverc \
+          ${{ matrix.python }} neverc/utils/plugin-api/run-cross-target-matrix.py \
+            --compiler build/bin/neverc${{ matrix.exe }} \
             --baseline-current-targets \
             --targets x86_64,aarch64 \
             --formats elf,coff,macho \
