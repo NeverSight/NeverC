@@ -585,7 +585,9 @@ ELFLinkGraphAdapter::capture(const PluginLinkGraph &Previous,
     SymbolValue->Type = symbolType(*Native);
     SymbolValue->AtomID = 0;
     SymbolValue->Value = 0;
-    SymbolValue->Size = Native->getSize();
+    // Only defined, common and shared symbols carry a size; Symbol::getSize()
+    // asserts on the other kinds, so each branch below fills it in.
+    SymbolValue->Size = 0;
     SymbolValue->IsImported = false;
     SymbolValue->IsPrevailing = false;
     SymbolValue->IsExported = Native->includeInDynsym();
@@ -596,6 +598,7 @@ ELFLinkGraphAdapter::capture(const PluginLinkGraph &Previous,
     if (auto *DefinedValue = dyn_cast<Defined>(Native)) {
       SymbolValue->Definition = NEVERC_LINK_SYMBOL_DEFINED;
       SymbolValue->Value = DefinedValue->value;
+      SymbolValue->Size = DefinedValue->size;
       if (auto *Input =
               dyn_cast_or_null<InputSectionBase>(DefinedValue->section)) {
         CaptureSection(Input);
@@ -609,8 +612,9 @@ ELFLinkGraphAdapter::capture(const PluginLinkGraph &Previous,
       SymbolValue->Binding = NEVERC_LINK_SYMBOL_BINDING_COMMON;
       SymbolValue->Size = Common->size;
       SymbolValue->IsPrevailing = true;
-    } else if (isa<SharedSymbol>(Native)) {
+    } else if (auto *Shared = dyn_cast<SharedSymbol>(Native)) {
       SymbolValue->Definition = NEVERC_LINK_SYMBOL_SHARED;
+      SymbolValue->Size = Shared->size;
       SymbolValue->IsImported = true;
       SymbolValue->IsPrevailing = true;
     } else if (isa<Undefined>(Native)) {

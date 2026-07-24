@@ -263,6 +263,12 @@ NevercObjectSymbolType symbolType(SymbolRef::Type Type) {
 
 bool isSyntheticAssemblerSymbol(const ObjectFile &Object, StringRef Name,
                                 uint32_t NativeFlags) {
+  // Section, file and stab symbols encode the container rather than program
+  // content, and the assembler recreates them from the directives the writer
+  // emits.  Keeping them would re-declare names the assembler already owns --
+  // an ELF section symbol collides with its own `.section` directive.
+  if ((NativeFlags & SymbolRef::SF_FormatSpecific) != 0)
+    return true;
   if ((NativeFlags & (SymbolRef::SF_Global | SymbolRef::SF_Weak)) != 0)
     return false;
   if (isa<MachOObjectFile>(Object) && Name.starts_with("ltmp")) {
@@ -575,6 +581,29 @@ SectionMapEntry *findSection(std::vector<SectionMapEntry> &Sections,
   return It == Sections.end() ? nullptr : &*It;
 }
 
+// A relocation may name a symbol that collectSymbols() dropped as a container
+// artifact.  Those symbols label the start of a section, so the reference is
+// really section-relative and the graph can say so directly.
+SectionMapEntry *sectionForDroppedSymbol(
+    const ObjectFile &Object, SymbolRef Symbol,
+    std::vector<SectionMapEntry> &Sections) {
+  Expected<uint32_t> Flags = Symbol.getFlags();
+  if (!Flags) {
+    consumeError(Flags.takeError());
+    return nullptr;
+  }
+  if ((*Flags & SymbolRef::SF_FormatSpecific) == 0)
+    return nullptr;
+  Expected<section_iterator> Section = Symbol.getSection();
+  if (!Section) {
+    consumeError(Section.takeError());
+    return nullptr;
+  }
+  if (*Section == Object.section_end())
+    return nullptr;
+  return findSection(Sections, **Section);
+}
+
 const SymbolMapEntry *findSymbol(
     const std::vector<SymbolMapEntry> &Symbols, SymbolRef Symbol) {
   auto It = std::find_if(
@@ -834,11 +863,18 @@ NevercStatus createRelocations(
       if (Symbol != Object.symbol_end()) {
         const SymbolMapEntry *MappedSymbol =
             findSymbol(Symbols, *Symbol);
-        if (!MappedSymbol)
+        if (MappedSymbol) {
+          Descriptor.TargetKind =
+              NEVERC_OBJECT_RELOCATION_TARGET_SYMBOL;
+          Descriptor.TargetSymbol = MappedSymbol->Handle;
+        } else if (const SectionMapEntry *DroppedTarget =
+                       sectionForDroppedSymbol(Object, *Symbol, Sections)) {
+          Descriptor.TargetKind =
+              NEVERC_OBJECT_RELOCATION_TARGET_SECTION;
+          Descriptor.TargetSection = DroppedTarget->Handle;
+        } else {
           return status(NEVERC_STATUS_VERIFICATION_FAILED, 302);
-        Descriptor.TargetKind =
-            NEVERC_OBJECT_RELOCATION_TARGET_SYMBOL;
-        Descriptor.TargetSymbol = MappedSymbol->Handle;
+        }
       } else if (const auto *MachObject =
                      dyn_cast<MachOObjectFile>(&Object)) {
         MachO::any_relocation_info Native =

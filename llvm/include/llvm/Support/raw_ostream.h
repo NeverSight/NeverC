@@ -808,7 +808,7 @@ inline raw_ostream::~raw_ostream() {
   assert(OutBufCur == OutBufStart &&
          "raw_ostream destructor called with non-empty buffer!");
   if (BufferMode == BufferKind::InternalBuffer)
-    free(OutBufStart);
+    delete[] OutBufStart;
 }
 
 inline size_t raw_ostream::preferred_buffer_size() const {
@@ -834,7 +834,7 @@ inline void raw_ostream::SetBufferAndMode(char *BufferStart, size_t Size,
   assert(GetNumBytesInBuffer() == 0 && "Current buffer is non-empty!");
 
   if (BufferMode == BufferKind::InternalBuffer)
-    free(OutBufStart);
+    delete[] OutBufStart;
   OutBufStart = BufferStart;
   OutBufEnd = OutBufStart + Size;
   OutBufCur = OutBufStart;

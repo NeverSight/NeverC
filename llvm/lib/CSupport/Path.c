@@ -1417,6 +1417,13 @@ int csupport_has_proc_self_fd(void) {
 
 /* -- signal alt stack -- */
 
+#if !defined(_WIN32)
+/* The installed alternate stack has to outlive every signal the process can
+   still take, so it is never freed.  Keeping the pointer here also keeps it
+   reachable for leak checkers. */
+static void *g_sig_alt_stack;
+#endif
+
 void csupport_create_sig_alt_stack(void) {
 #if !defined(_WIN32)
   stack_t old_stack;
@@ -1430,8 +1437,11 @@ void csupport_create_sig_alt_stack(void) {
   new_stack.ss_sp = malloc(alt_stack_size);
   if (!new_stack.ss_sp) return;
   new_stack.ss_size = alt_stack_size;
-  if (sigaltstack(&new_stack, NULL) != 0)
+  g_sig_alt_stack = new_stack.ss_sp;
+  if (sigaltstack(&new_stack, NULL) != 0) {
+    g_sig_alt_stack = NULL;
     free(new_stack.ss_sp);
+  }
 #endif
 }
 

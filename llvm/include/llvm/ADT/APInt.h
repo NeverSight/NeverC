@@ -174,7 +174,7 @@ public:
   /// Destructor.
   ~APInt() {
     if (needsCleanup())
-      delete[] U.pVal;
+      free(U.pVal);
   }
 
   /// @}
@@ -622,7 +622,7 @@ public:
 #endif
     assert(this != &that && "Self-move not supported");
     if (!isSingleWord())
-      delete[] U.pVal;
+      free(U.pVal);
 
     // Use memcpy so that type based alias analysis sees both VAL and pVal
     // as modified.

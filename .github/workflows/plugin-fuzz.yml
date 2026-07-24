@@ -36,6 +36,15 @@ jobs:
       BUILD_TYPE: RelWithDebInfo
       LLVM_APT_VER: "22"
     steps:
+      # Each of the fuzzers statically links the whole toolchain with debug
+      # info, so the runner's stock free space is not enough for the full set.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android \
+            /opt/ghc /usr/local/share/boost /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force || true
+          df -h /
+
       - name: Checkout Repo
         uses: actions/checkout@v4
         with:
@@ -60,6 +69,7 @@ jobs:
             -DLLVM_TOOL_LLVM_SHLIB_BUILD=off \
             -DNEVERC_INCLUDE_TESTS=ON \
             -DNEVERC_ENABLE_PLUGIN_FUZZERS=ON \
+            -DLLVM_PARALLEL_LINK_JOBS=2 \
             -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
             -C neverc/neverc/cmake/caches/NeverC.cmake \
             neverc/llvm

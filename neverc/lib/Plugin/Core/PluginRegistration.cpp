@@ -155,6 +155,14 @@ struct RegistrationTransaction {
   explicit RegistrationTransaction(std::string PluginIDValue)
       : PluginID(std::move(PluginIDValue)) {}
 
+  // Records own plugin userdata, so rollback has to release them in reverse
+  // registration order.  std::vector's own destructor does not promise an
+  // order and the two standard libraries we ship against disagree.
+  ~RegistrationTransaction() {
+    while (!Records.empty())
+      Records.pop_back();
+  }
+
   std::string PluginID;
   std::vector<PluginRegistrationRecord> Records;
   NevercStatus FirstFailure = neverc_status_ok();
@@ -1611,6 +1619,11 @@ Error activatePluginPlan(PluginProcessServices &ProcessServices,
     NewlyBegun.clear();
   };
 
+  auto discardPending = [&] {
+    while (!PendingRegistrations.empty())
+      PendingRegistrations.pop_back();
+  };
+
   for (const auto &ConstModule : Plan.OrderedPlugins) {
     auto Module = std::const_pointer_cast<PluginModule>(ConstModule);
     if (Module->processBegun())
@@ -1655,13 +1668,13 @@ Error activatePluginPlan(PluginProcessServices &ProcessServices,
           Core, &Registrar, Transaction.get(), Module->processState());
     });
     if (!Result) {
-      PendingRegistrations.clear();
+      discardPending();
       Transaction.reset();
       destroyBegun();
       return Result.takeError();
     }
     if (Error E = callbackError(*Module, "Register", *Result)) {
-      PendingRegistrations.clear();
+      discardPending();
       Transaction.reset();
       destroyBegun();
       return std::move(E);
@@ -1669,7 +1682,7 @@ Error activatePluginPlan(PluginProcessServices &ProcessServices,
     if (Transaction->Failed) {
       Error E = callbackError(*Module, "Registrar",
                               Transaction->FirstFailure);
-      PendingRegistrations.clear();
+      discardPending();
       Transaction.reset();
       destroyBegun();
       return std::move(E);
@@ -1690,15 +1703,16 @@ Error activatePluginPlan(PluginProcessServices &ProcessServices,
         std::make_unique<PluginPublishedRegistration>(
             std::move(Pending.second->Records)));
   const auto ClearPendingRegistrations = [&] {
-    for (auto &Pending : PendingRegistrations)
-      Pending.first->clearRegistration();
+    for (auto It = PendingRegistrations.rbegin();
+         It != PendingRegistrations.rend(); ++It)
+      It->first->clearRegistration();
   };
 
   if (Error E =
           ProcessServices.validatePluginRegistrations(
               Plan.Snapshot->modules())) {
     ClearPendingRegistrations();
-    PendingRegistrations.clear();
+    discardPending();
     destroyBegun();
     return E;
   }
@@ -1706,7 +1720,7 @@ Error activatePluginPlan(PluginProcessServices &ProcessServices,
   if (!PendingOptions.empty()) {
     if (!Registry.Options) {
       ClearPendingRegistrations();
-      PendingRegistrations.clear();
+      discardPending();
       destroyBegun();
       return registrationError(
           "plugin options were registered without an option registry");
@@ -1714,7 +1728,7 @@ Error activatePluginPlan(PluginProcessServices &ProcessServices,
     if (Error E =
             Registry.Options->registerBatch(std::move(PendingOptions))) {
       ClearPendingRegistrations();
-      PendingRegistrations.clear();
+      discardPending();
       destroyBegun();
       return std::move(E);
     }

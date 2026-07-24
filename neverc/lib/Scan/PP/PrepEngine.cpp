@@ -79,7 +79,12 @@ PrepEngine::PrepEngine(std::shared_ptr<PrepOptions> PPOpts,
 PrepEngine::~PrepEngine() {
   assert(BacktrackPositions.empty() && "EnableBacktrack/Backtrack imbalance!");
 
+  // Suspended and pooled expansion lexers still own their MacroArgStorage and
+  // hand it back to the free lists below when destroyed, so they have to go
+  // first; member teardown would otherwise refill the lists after the drain.
   CurExpansionLexer.reset();
+  IncludeMacroStack.clear();
+  ExpansionLexerCache.clear();
 
   for (auto &Bucket : MacroArgBuckets)
     for (MacroArgStorage *ArgList = Bucket.Head; ArgList;)
