@@ -244,11 +244,15 @@ TEST(PluginIRCoreTest, TraversesFunctionsCFGOperandsUsesAndPhiIncomingEdges) {
             NEVERC_STATUS_OK);
   EXPECT_EQ(Predecessors, 1U);
   EXPECT_EQ(Successors, 1U);
-  EXPECT_EQ(Bridge.getPredecessor(*MergeHandle, 0)->Value,
-            EntryHandle->Value);
-  EXPECT_EQ(Bridge.getSuccessor(*EntryHandle, 0)->Value,
-            MergeHandle->Value);
-  EXPECT_EQ(Bridge.getTerminator(*MergeHandle)->Value, RetHandle->Value);
+  auto PredecessorHandle = Bridge.getPredecessor(*MergeHandle, 0);
+  ASSERT_TRUE(static_cast<bool>(PredecessorHandle));
+  EXPECT_EQ(PredecessorHandle->Value, EntryHandle->Value);
+  auto SuccessorHandle = Bridge.getSuccessor(*EntryHandle, 0);
+  ASSERT_TRUE(static_cast<bool>(SuccessorHandle));
+  EXPECT_EQ(SuccessorHandle->Value, MergeHandle->Value);
+  auto TerminatorHandle = Bridge.getTerminator(*MergeHandle);
+  ASSERT_TRUE(static_cast<bool>(TerminatorHandle));
+  EXPECT_EQ(TerminatorHandle->Value, RetHandle->Value);
 
   NevercIRValueCursor Cursor{};
   ASSERT_EQ(Bridge.beginValueCursor(*FnHandle,
@@ -316,8 +320,12 @@ TEST(PluginIRCoreTest, ReadsWritesGlobalAndFunctionState) {
             NEVERC_STATUS_OK);
   EXPECT_EQ(Linkage, NEVERC_IR_LINKAGE_EXTERNAL);
   EXPECT_EQ(Visibility, NEVERC_IR_VISIBILITY_HIDDEN);
-  EXPECT_EQ(*Bridge.getGlobalSection(*GlobalHandle), ".plugin");
-  EXPECT_EQ(Bridge.getGlobalComdat(*GlobalHandle)->Value, Comdat->Value);
+  auto GlobalSection = Bridge.getGlobalSection(*GlobalHandle);
+  ASSERT_TRUE(static_cast<bool>(GlobalSection));
+  EXPECT_EQ(*GlobalSection, ".plugin");
+  auto GlobalComdat = Bridge.getGlobalComdat(*GlobalHandle);
+  ASSERT_TRUE(static_cast<bool>(GlobalComdat));
+  EXPECT_EQ(GlobalComdat->Value, Comdat->Value);
 
   EXPECT_EQ(Bridge.setFunctionCallingConvention(
                 *FnHandle, NEVERC_IR_CALLING_CONVENTION_FAST)
@@ -336,10 +344,15 @@ TEST(PluginIRCoreTest, ReadsWritesGlobalAndFunctionState) {
                 .Code,
             NEVERC_STATUS_OK);
   EXPECT_EQ(CallingConvention, NEVERC_IR_CALLING_CONVENTION_FAST);
-  EXPECT_EQ(Bridge.getFunctionPersonality(*FnHandle)->Value,
-            PersonalityHandle->Value);
-  EXPECT_EQ(*Bridge.getFunctionGC(*FnHandle), "plugin-gc");
-  EXPECT_EQ(*Bridge.getFunctionSection(*FnHandle), ".text.plugin");
+  auto FunctionPersonality = Bridge.getFunctionPersonality(*FnHandle);
+  ASSERT_TRUE(static_cast<bool>(FunctionPersonality));
+  EXPECT_EQ(FunctionPersonality->Value, PersonalityHandle->Value);
+  auto FunctionGC = Bridge.getFunctionGC(*FnHandle);
+  ASSERT_TRUE(static_cast<bool>(FunctionGC));
+  EXPECT_EQ(*FunctionGC, "plugin-gc");
+  auto FunctionSection = Bridge.getFunctionSection(*FnHandle);
+  ASSERT_TRUE(static_cast<bool>(FunctionSection));
+  EXPECT_EQ(*FunctionSection, ".text.plugin");
 }
 
 TEST(PluginIRCoreTest, AppliesSchemaCheckedInstructionProperties) {

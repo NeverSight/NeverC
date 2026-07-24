@@ -111,8 +111,9 @@ TEST(PluginDynCodeImageTest, ImageBuilderBoundsAndBudgetChecked) {
 
   // Write within range succeeds; past the end fails.
   ASSERT_FALSE(Image.write(1, bytesOf({9, 9})));
-  EXPECT_TRUE(static_cast<bool>(Image.write(3, bytesOf({9, 9}))));
   {
+    // Must bind the returned Error and consume it: checking a failure Error via
+    // a discarded temporary aborts in assertions/ABI-breaking-checks builds.
     auto E = Image.write(3, bytesOf({9, 9}));
     EXPECT_TRUE(static_cast<bool>(E));
     consumeError(std::move(E));

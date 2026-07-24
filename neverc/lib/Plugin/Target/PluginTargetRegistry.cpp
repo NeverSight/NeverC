@@ -1524,12 +1524,12 @@ PluginTargetRegistry::freeze(
         break;
       }
     }
-    Expected<std::array<std::string, 4>> RequestedTriple =
-        std::array<std::string, 4>{};
+    std::array<std::string, 4> RequestedTriple{};
     if (!Found) {
-      RequestedTriple = parseTriple(Selector);
-      if (!RequestedTriple)
-        return RequestedTriple.takeError();
+      auto Parsed = parseTriple(Selector);
+      if (!Parsed)
+        return Parsed.takeError();
+      RequestedTriple = std::move(*Parsed);
     }
     for (const PluginTargetSnapshot::TargetRecord &Target :
          Snapshot->Targets) {
@@ -1537,7 +1537,7 @@ PluginTargetRegistry::freeze(
         break;
       for (const PluginTargetSnapshot::TripleMatcher &Matcher :
            Target.Matchers) {
-        if (!matcherAccepts(Matcher, *RequestedTriple))
+        if (!matcherAccepts(Matcher, RequestedTriple))
           continue;
         const unsigned Specificity = matcherSpecificity(Matcher);
         if (Found &&

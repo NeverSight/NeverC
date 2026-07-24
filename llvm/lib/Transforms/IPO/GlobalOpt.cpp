@@ -1990,7 +1990,18 @@ OptimizeFunctions(Module &M,
       continue;
     }
 
-    if (hasChangeableCC(&F, ChangeableCCCache)) {
+    // Do not change the calling convention of functions that TargetLibraryInfo
+    // recognizes as C library functions.  Later passes (e.g. SimplifyLibCalls)
+    // identify these by name and require the C calling convention; promoting
+    // them to fastcc/coldcc breaks that invariant and can miscompile calls to
+    // the library function.  This arises when a runtime such as
+    // -fbuiltin-mimalloc links internal definitions named like libc allocation
+    // functions (malloc/free/realloc/...) into the module and GlobalOpt would
+    // otherwise give the internal, directly-called definition a fast CC.
+    LibFunc RecognizedLibFunc;
+    const bool IsCLibraryFunc = GetTLI(F).getLibFunc(F, RecognizedLibFunc);
+
+    if (!IsCLibraryFunc && hasChangeableCC(&F, ChangeableCCCache)) {
       NumInternalFunc++;
       TargetTransformInfo &TTI = GetTTI(F);
       // Change the calling convention to coldcc if either stress testing is
@@ -2008,7 +2019,7 @@ OptimizeFunctions(Module &M,
       }
     }
 
-    if (hasChangeableCC(&F, ChangeableCCCache)) {
+    if (!IsCLibraryFunc && hasChangeableCC(&F, ChangeableCCCache)) {
       // If this function has a calling convention worth changing, is not a
       // varargs function, and is only called directly, promote it to use the
       // Fast calling convention.

@@ -17,6 +17,14 @@
 #ifndef LLVM_SUPPORT_ALLOCATOR_H
 #define LLVM_SUPPORT_ALLOCATOR_H
 
+// The presence of the ASan red-zone member below is gated on
+// LLVM_ENABLE_ABI_BREAKING_CHECKS, which changes BumpPtrAllocator's (and every
+// aggregate that embeds it) object layout.  Include the config header that
+// defines the macro here so every translation unit that sees this header agrees
+// on the value — otherwise TUs that reach Allocator.h without having pulled in
+// abi-breaking.h treat the macro as 0 and disagree on the struct layout (an ODR
+// violation).  This include also activates the link-time mismatch enforcement.
+#include "llvm/Config/abi-breaking.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/Alignment.h"
 #include "llvm/Support/AllocatorBase.h"

@@ -3374,18 +3374,24 @@ Value *FunctionEmitter::genX86BuiltinExpr(unsigned BuiltinID,
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_wbinvd, {});
   }
   case X86::BI_xbegin: {
-    return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_xbegin,
-                                   {ConstantInt::get(Int32Ty, -1)});
+    // llvm.x86.xbegin takes no arguments and returns the i32 abort status
+    // (_xbegin() -> unsigned int).
+    return Builder.CreateIntrinsic(Int32Ty, llvm::Intrinsic::x86_xbegin, {});
   }
   case X86::BI_xend: {
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_xend, {});
   }
   case X86::BI_xabort: {
+    // llvm.x86.xabort takes an i8 immediate; the _xabort() builtin arg is an
+    // unsigned int, so narrow it to match the intrinsic signature.
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_xabort,
-                                   {Ops[0]});
+                                   {Builder.CreateTrunc(Ops[0], Int8Ty)});
   }
   case X86::BI_xtest: {
-    return Builder.CreateIntrinsic(Int8Ty, llvm::Intrinsic::x86_xtest, {});
+    // llvm.x86.xtest returns i32; _xtest() yields unsigned char.
+    return Builder.CreateTrunc(
+        Builder.CreateIntrinsic(Int32Ty, llvm::Intrinsic::x86_xtest, {}),
+        Int8Ty);
   }
   case X86::BI__sidt: {
     return Builder.CreateIntrinsic(VoidTy, llvm::Intrinsic::x86_sidt, {Ops[0]});

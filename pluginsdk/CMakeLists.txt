@@ -268,7 +268,7 @@ function(add_neverc_pluginsdk_example target source)
     COMMAND "$<TARGET_FILE:neverc>" --no-default-config -shared
             "-I${PLUGINSDK_SRC}/../neverc/include"
             -o "${_neverc_output}" "${_source}"
-    DEPENDS neverc "${_source}"
+    DEPENDS neverc "${_source}" ${_pluginsdk_example_runtime_deps}
     COMMENT "Building ${_name} with NeverC"
     VERBATIM)
 
@@ -279,6 +279,40 @@ function(add_neverc_pluginsdk_example target source)
       ${NEVERC_PLUGINSDK_NEVERC_EXAMPLES} "${_neverc_output}"
       PARENT_SCOPE)
 endfunction()
+
+# The NeverC-compiled examples are built with the freshly-built compiler, which
+# locates its system headers/libraries from the bundled SDK staged under
+# <build>/runtime (getBundledMacOSSysroot() looks for <build>/runtime/macos/<arch>,
+# and the Windows toolchain uses the staged MSVC headers). Those copy targets are
+# independent ALL-targets, so without an explicit dependency Ninja may compile an
+# example before the host sysroot is staged, aborting with "'string.h' file not
+# found" / "library not found for -lSystem". Depend on the host sysroot staging
+# so the examples stay self-contained and order-independent.
+set(_pluginsdk_example_runtime_deps)
+if(APPLE)
+  if(TARGET neverc-runtime-macos-arm64)
+    list(APPEND _pluginsdk_example_runtime_deps neverc-runtime-macos-arm64)
+  endif()
+elseif(CMAKE_HOST_WIN32)
+  if(CMAKE_SYSTEM_PROCESSOR MATCHES "ARM64|aarch64")
+    if(TARGET neverc-runtime-arm64-msvc)
+      list(APPEND _pluginsdk_example_runtime_deps neverc-runtime-arm64-msvc)
+    endif()
+  elseif(TARGET neverc-runtime-x64-msvc)
+    list(APPEND _pluginsdk_example_runtime_deps neverc-runtime-x64-msvc)
+  endif()
+  if(TARGET neverc-runtime-shared-msvc)
+    list(APPEND _pluginsdk_example_runtime_deps neverc-runtime-shared-msvc)
+  endif()
+elseif(CMAKE_HOST_UNIX)
+  if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
+    if(TARGET neverc-runtime-linux-arm64)
+      list(APPEND _pluginsdk_example_runtime_deps neverc-runtime-linux-arm64)
+    endif()
+  elseif(TARGET neverc-runtime-linux-x64)
+    list(APPEND _pluginsdk_example_runtime_deps neverc-runtime-linux-x64)
+  endif()
+endif()
 
 add_neverc_pluginsdk_example(neverc-plugin-example-driver-trace
                              DriverTracePlugin.c)

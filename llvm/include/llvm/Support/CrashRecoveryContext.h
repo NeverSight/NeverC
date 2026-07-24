@@ -339,6 +339,12 @@ CrashRecoveryContextImpl_create(llvm::CrashRecoveryContext *CRC) {
 
 inline static void
 CrashRecoveryContextImpl_destroy(CrashRecoveryContextImpl *impl) {
+  // Replaces the upstream `delete CRCI` and must share its null-safety: a
+  // CrashRecoveryContext that never ran keeps a null Impl, so the destructor
+  // calls this with impl == nullptr. Dereferencing it before the guard is
+  // undefined behavior (caught by UBSan).
+  if (!impl)
+    return;
   if (!impl->SwitchedThread)
     CurrentContext = impl->Next;
   free(impl);

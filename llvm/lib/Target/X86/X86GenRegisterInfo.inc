@@ -2848,7 +2848,7 @@ extern const MCRegisterClass X86MCRegisterClasses[] = {
   { GR32, GR32Bits, 26, 32, sizeof(GR32Bits), X86::GR32RegClassID, 32, 1, true },
   { GR32_NOSP, GR32_NOSPBits, 743, 31, sizeof(GR32_NOSPBits), X86::GR32_NOSPRegClassID, 32, 1, true },
   { LOW32_ADDR_ACCESS_RBP_with_sub_16bit_in_GR16_NOREX2, LOW32_ADDR_ACCESS_RBP_with_sub_16bit_in_GR16_NOREX2Bits, 94, 17, sizeof(LOW32_ADDR_ACCESS_RBP_with_sub_16bit_in_GR16_NOREX2Bits), X86::LOW32_ADDR_ACCESS_RBP_with_sub_16bit_in_GR16_NOREX2RegClassID, 32, 1, true },
-  { DEBUG_REG, DEBUG_REGBits, 546, 16, sizeof(DEBUG_REGBits), X86::DEBUG_REGRegClassID, 32, 1, true },
+  { DEBUG_REG, DEBUG_REGBits, 546, 16, sizeof(DEBUG_REGBits), X86::DEBUG_REGRegClassID, 64, 1, true },
   { FR32, FR32Bits, 21, 16, sizeof(FR32Bits), X86::FR32RegClassID, 32, 1, true },
   { GR32_NOREX2, GR32_NOREX2Bits, 35, 16, sizeof(GR32_NOREX2Bits), X86::GR32_NOREX2RegClassID, 32, 1, true },
   { GR32_NOREX2_NOSP, GR32_NOREX2_NOSPBits, 753, 15, sizeof(GR32_NOREX2_NOSPBits), X86::GR32_NOREX2_NOSPRegClassID, 32, 1, true },
@@ -4156,7 +4156,7 @@ static const TargetRegisterInfo::RegClassInfo RegClassInfos[] = {
   { 32, 32, 32, /*VTLists+*/4 },    // GR32
   { 32, 32, 32, /*VTLists+*/4 },    // GR32_NOSP
   { 32, 32, 32, /*VTLists+*/4 },    // LOW32_ADDR_ACCESS_RBP_with_sub_16bit_in_GR16_NOREX2
-  { 32, 32, 32, /*VTLists+*/4 },    // DEBUG_REG
+  { 64, 64, 64, /*VTLists+*/6 },    // DEBUG_REG
   { 32, 32, 32, /*VTLists+*/12 },    // FR32
   { 32, 32, 32, /*VTLists+*/4 },    // GR32_NOREX2
   { 32, 32, 32, /*VTLists+*/4 },    // GR32_NOREX2_NOSP

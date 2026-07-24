@@ -77,14 +77,23 @@ private:
   enum { HASH_LENGTH = 32 };
 
   // Internal State
+  //
+  // This is opaque storage handed to the C implementation as
+  // csupport_sha256_ctx_t (llvm/lib/CSupport/SHA256.c). Its layout, widths and
+  // alignment MUST mirror that struct exactly: the C code addresses these bytes
+  // through the C struct, so a mismatch (e.g. a 32-bit ByteCount or missing
+  // 8-byte alignment for the 64-bit byte counter) makes the C code write past
+  // the end of this object. The historical LLVM layout used a 32-bit byte count
+  // and a different field order, which is 8 bytes too small for this fork's C
+  // context and overruns the object.
   struct {
+    uint32_t State[HASH_LENGTH / 4];
     union {
       uint8_t C[BLOCK_LENGTH];
       uint32_t L[BLOCK_LENGTH / 4];
     } Buffer;
-    uint32_t State[HASH_LENGTH / 4];
-    uint32_t ByteCount;
-    uint8_t BufferOffset;
+    unsigned BufferOffset;
+    uint64_t ByteCount;
   } InternalState;
 
   // Helper

@@ -2,8 +2,24 @@
 #include "neverc/Plugin/Host/PluginProcessServices.h"
 #include "gtest/gtest.h"
 #include "llvm/Config/llvm-config.h"
+#include "llvm/Support/Debug.h"
+#include "llvm/Support/raw_ostream.h"
 
 using namespace neverc::plugin;
+
+// This target deliberately links only nevercPluginCore/nevercPluginIO plus
+// LLVMSupport to prove nevercPluginIO stands alone without the frontend or
+// compiler libraries. In assertions / ABI-breaking-checks builds, LLVM headers
+// emit out-of-line references to the header-inline llvm::dbgs() (reached through
+// Error::fatalUncheckedError, Expected<>::fatalUncheckedExpected and the vfs
+// FileSystem::dump() debug helper). dbgs() has no out-of-line home in this fork,
+// so the higher-level LLVM libraries this target intentionally omits would
+// normally be the ones carrying its weak definition. Force one copy here so the
+// minimal link resolves without pulling in codegen/target libraries.
+namespace {
+[[maybe_unused, gnu::used]] llvm::raw_ostream &(*const ForceDbgsEmission)() =
+    &llvm::dbgs;
+} // namespace
 
 namespace {
 

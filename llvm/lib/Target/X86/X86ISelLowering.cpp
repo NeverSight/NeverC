@@ -26600,19 +26600,23 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget &Subtarget,
       return SDValue(N, 0);
     }
     case llvm::Intrinsic::x86_xbegin: {
+      // llvm.x86.xbegin takes no arguments; it produces the i32 abort status.
+      // X86::XBEGIN is a pseudo expanded by emitXBegin into the transaction
+      // begin plus its fall-back path, defining a single GR32 result.
       SDLoc dl(Op);
       SDValue Chain = Op.getOperand(0);
-      SDValue Imm = Op.getOperand(2);
       SDVTList VTs = DAG.getVTList(MVT::i32, MVT::Other);
-      SDNode *N = DAG.getMachineNode(X86::XBEGIN, dl, VTs, {Imm, Chain});
-      return SDValue(N, 1);
+      SDNode *N = DAG.getMachineNode(X86::XBEGIN, dl, VTs, {Chain});
+      return DAG.getMergeValues({SDValue(N, 0), SDValue(N, 1)}, dl);
     }
     case llvm::Intrinsic::x86_xabort: {
+      // X86::XABORT takes an i8 target immediate abort code.
       SDLoc dl(Op);
       SDValue Chain = Op.getOperand(0);
-      SDValue Imm = Op.getOperand(2);
-      SDNode *N = DAG.getMachineNode(X86::XABORT, dl, MVT::Other,
-                                     {Imm, Chain});
+      uint64_t Imm = Op.getConstantOperandVal(2);
+      SDNode *N = DAG.getMachineNode(
+          X86::XABORT, dl, MVT::Other,
+          {DAG.getTargetConstant(Imm, dl, MVT::i8), Chain});
       return SDValue(N, 0);
     }
     case Intrinsic::x86_lwpins32:

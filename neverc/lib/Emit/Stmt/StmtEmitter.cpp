@@ -3,6 +3,7 @@
 #include "Core/ModuleEmitter.h"
 #include "Debug/DebugEmitterInfo.h"
 #include "neverc/Foundation/Builtin/Builtins.h"
+#include "neverc/Foundation/Core/PrettyStackTrace.h"
 #include "neverc/Foundation/Core/SourceManager.h"
 #include "neverc/Foundation/Diagnostic/DiagnosticSema.h"
 #include "neverc/Tree/Core/Attr.h"

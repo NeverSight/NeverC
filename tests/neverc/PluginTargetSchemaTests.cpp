@@ -78,8 +78,12 @@ TEST(PluginTargetSchemaTest, LookupRejectsUnknownBackendValueAndForeignDigest) {
 
   EXPECT_EQ(findRegisterByBackendValue(*Schema, 0xFFFFFFFFu), nullptr);
 
-  EXPECT_TRUE(bool(validateTargetSchemaToken(*Schema, std::string(64, '0'))));
-  EXPECT_FALSE(bool(validateTargetSchemaToken(*Schema, Schema->Digest)));
+  // errorToBool consumes the error payload in the failure case; a plain
+  // bool(...) only marks the Error checked and would abort under
+  // LLVM_ENABLE_ABI_BREAKING_CHECKS when the failure-state temporary is
+  // destroyed with its payload still unhandled.
+  EXPECT_TRUE(errorToBool(validateTargetSchemaToken(*Schema, std::string(64, '0'))));
+  EXPECT_FALSE(errorToBool(validateTargetSchemaToken(*Schema, Schema->Digest)));
 }
 
 TEST(PluginTargetSchemaTest, CheckScriptRejectsDrift) {

@@ -432,9 +432,15 @@ TEST(PluginIRDataTest, AppliesEveryAttributeFormAtEveryLocation) {
   EXPECT_EQ(Bridge.getAttributeValueKind(*NoUnwind, &ValueKind).Code,
             NEVERC_STATUS_OK);
   EXPECT_EQ(ValueKind, NEVERC_IR_ATTRIBUTE_ENUM);
-  EXPECT_EQ(*Bridge.getAttributeKindName(*Alignment), "align");
-  EXPECT_EQ(*Bridge.getAttributeIntegerValue(*Alignment), 16U);
-  EXPECT_EQ(*Bridge.getAttributeStringValue(*ProbeStack), "__neverc_probe");
+  auto AlignmentKindName = Bridge.getAttributeKindName(*Alignment);
+  ASSERT_TRUE(static_cast<bool>(AlignmentKindName));
+  EXPECT_EQ(*AlignmentKindName, "align");
+  auto AlignmentIntegerValue = Bridge.getAttributeIntegerValue(*Alignment);
+  ASSERT_TRUE(static_cast<bool>(AlignmentIntegerValue));
+  EXPECT_EQ(*AlignmentIntegerValue, 16U);
+  auto ProbeStackStringValue = Bridge.getAttributeStringValue(*ProbeStack);
+  ASSERT_TRUE(static_cast<bool>(ProbeStackStringValue));
+  EXPECT_EQ(*ProbeStackStringValue, "__neverc_probe");
   auto ByValueType = Bridge.getAttributeTypeValue(*ByValue);
   ASSERT_TRUE(static_cast<bool>(ByValueType));
   EXPECT_EQ(ByValueType->Owner, Record->Owner);

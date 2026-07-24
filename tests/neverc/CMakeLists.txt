@@ -1375,6 +1375,10 @@ target_link_libraries(neverc-plugin-frontend-tests PRIVATE
   nevercCompiler
   nevercPluginCore
   nevercPluginFrontend
+  # nevercInvoke's Compilation constructs LinkExecutionHooksBridge, defined in
+  # nevercPluginLink; link it explicitly so a clean/sanitizer build resolves the
+  # symbol instead of depending on static-archive member-pull ordering.
+  nevercPluginLink
 )
 target_include_directories(neverc-plugin-frontend-tests PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}
@@ -1424,6 +1428,11 @@ target_link_libraries(neverc-plugin-ir-tests PRIVATE
   LLVM${LLVM_NATIVE_ARCH}Info
   nevercPluginCore
   nevercPluginIR
+  # nevercPluginIR's MIRPassPlugin references findPluginTargetSnapshot, which is
+  # defined in nevercPluginTarget; link it explicitly instead of relying on the
+  # fragile static-archive member-pull order (a clean/sanitizer build otherwise
+  # fails to resolve the symbol).
+  nevercPluginTarget
 )
 target_include_directories(neverc-plugin-ir-tests PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
@@ -1478,6 +1487,11 @@ target_link_libraries(neverc-plugin-target-mc-tests PRIVATE
   nevercEmit
   nevercPluginMCObject
   nevercPluginTarget
+  # nevercCompiler pulls in nevercInvoke's Compilation/Driver, which reference
+  # LinkExecutionHooksBridge and registerPluginLinkInterfaces (both defined in
+  # nevercPluginLink); link it explicitly so a clean/sanitizer build resolves
+  # the symbols instead of depending on static-archive member-pull ordering.
+  nevercPluginLink
 )
 if("AArch64" IN_LIST LLVM_TARGETS_TO_BUILD)
   target_link_libraries(neverc-plugin-target-mc-tests PRIVATE
@@ -1749,6 +1763,13 @@ target_link_libraries(neverc-plugin-io-tests PRIVATE
   GTest::gtest_main
   nevercPluginCore
   nevercPluginIO
+  # Assertions/ABI-breaking-checks builds pull llvm::dbgs(),
+  # Error::fatalUncheckedError() and the vfs dump helper into the test objects;
+  # link LLVMSupport explicitly for the general Support symbols they need.
+  # llvm::dbgs() itself is header-inline with no out-of-line home, so
+  # PluginIOIsolationTests.cpp forces one weak copy rather than dragging in the
+  # codegen/target libraries this isolation target intentionally excludes.
+  LLVMSupport
 )
 target_include_directories(neverc-plugin-io-tests PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}

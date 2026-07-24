@@ -1471,6 +1471,15 @@ public:
   Parser(StringRef JSON)
       : Start(JSON.begin()), P(JSON.begin()), End(JSON.end()) {}
 
+  ~Parser() {
+    // Err starts as an (unchecked) success value and is only surrendered via
+    // takeError() on the failure path. On the success path it is never taken, so
+    // it must still be consumed before destruction or assertions /
+    // ABI-breaking-checks builds abort with "unhandled Error". consumeError is
+    // also safe on the failure path, where Err has already been moved from.
+    consumeError(std::move(Err));
+  }
+
   bool checkUTF8() {
     size_t ErrOffset;
     if (isUTF8(StringRef(Start, End - Start), &ErrOffset))
