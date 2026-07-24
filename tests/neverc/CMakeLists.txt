@@ -1866,7 +1866,12 @@ set_tests_properties(
   PluginSDKGenerationSingleHeaderCheck
   PluginSDKGenerationManifestCheck
   PluginSDKGenerationConsistency
-  PROPERTIES TIMEOUT 60
+  # These are Python generator/consistency checks, not sanitizer-relevant C++
+  # code paths.  PluginCoverageManifest additionally validates against the full
+  # CTest inventory, so it cannot run in a partial (plugin-targets-only) build
+  # such as the sanitizer CI jobs; the "plugin-meta" label lets those jobs skip
+  # the whole group with -LE while the normal full build still runs them.
+  PROPERTIES TIMEOUT 60 LABELS "plugin-meta"
 )
 
 # Dependency-free contract headers (e.g. LTOCacheContract.h) shared with

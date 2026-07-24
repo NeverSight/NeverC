@@ -6,7 +6,9 @@ inside explicit Process, Session, and Task scopes.
 
 The unreleased prototype API and its `nevercGetPluginInfo` entry point have
 been removed. Prototype binaries are rejected with a migration diagnostic;
-recompile their source against the public headers.
+recompile their source against the public headers. See
+[Migrating from the prototype API](migration-from-prototype.md) for the full
+old-to-new mapping.
 
 ## Start here
 
@@ -18,6 +20,7 @@ recompile their source against the public headers.
 - [MIR API](mir.md)
 - [Target, MC, assembly, and object APIs](target-mc-object.md)
 - [DynCode API](dyncode.md)
+- [Migrating from the prototype API](migration-from-prototype.md)
 - [Phase coverage evidence](coverage.json)
 - [Custom calling conventions](custom-callconv/README.md)
 

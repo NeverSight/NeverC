@@ -355,16 +355,18 @@ endif()
 option(NEVERC_ENABLE_MIMALLOC
   "Replace the system allocator with mimalloc (static)." ON)
 # mimalloc's MI_OVERRIDE=ON replaces malloc/free/new/delete process-wide,
-# which causes ASan's malloc interceptor to flag every free originating
-# from the libc++ side as bad-free. Auto-disable mimalloc when an asan
-# build is detected.
+# which conflicts with any sanitizer that installs its own allocator
+# interceptors: ASan flags every libc++-side free as a bad-free, while
+# TSan/MSan lose the shadow-memory bookkeeping they attach to each
+# allocation and either crash or report spuriously. Auto-disable mimalloc
+# whenever such a sanitizer build is detected.
 if(NEVERC_ENABLE_MIMALLOC AND
-   (LLVM_USE_SANITIZER MATCHES "Address" OR
-    "${CMAKE_CXX_FLAGS}" MATCHES "fsanitize=address" OR
-    "${CMAKE_C_FLAGS}" MATCHES "fsanitize=address"))
+   (LLVM_USE_SANITIZER MATCHES "Address|Thread|Memory" OR
+    "${CMAKE_CXX_FLAGS}" MATCHES "fsanitize=(address|thread|memory)" OR
+    "${CMAKE_C_FLAGS}" MATCHES "fsanitize=(address|thread|memory)"))
   message(STATUS
-    "NeverC: AddressSanitizer detected; disabling mimalloc to avoid "
-    "MI_OVERRIDE conflicts with ASan's malloc interceptor.")
+    "NeverC: allocator-intercepting sanitizer detected; disabling mimalloc "
+    "to avoid MI_OVERRIDE conflicts with the sanitizer's malloc interceptor.")
   set(NEVERC_ENABLE_MIMALLOC OFF)
 endif()
 if(NEVERC_ENABLE_MIMALLOC)

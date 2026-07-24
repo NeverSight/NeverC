@@ -85,8 +85,14 @@ jobs:
 
       - name: Run plugin tests under ${{ matrix.label }}
         run: |
+          # This job builds only the plugin unit-test / conformance targets, not
+          # the full neverc-tests binary.  Exclude the "plugin-meta" label so the
+          # Python generator/consistency checks -- and especially
+          # PluginCoverageManifest, which validates against the full CTest
+          # inventory -- do not fail on the intentionally partial build.  Those
+          # checks are covered by the normal full build and the release-SDK gate.
           ctest --test-dir build \
-            -R 'Plugin|PluginConformance' --output-on-failure
+            -R 'Plugin|PluginConformance' -LE plugin-meta --output-on-failure
 
       - name: Build and smoke fuzzers under ${{ matrix.label }}
         if: matrix.enable_fuzzers == 'ON'
