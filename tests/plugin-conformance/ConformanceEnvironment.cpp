@@ -85,6 +85,20 @@ bool usesMSVCDriver(const std::string &Compiler) {
   return Stem == "cl" || Stem == "clang-cl";
 }
 
+// Unique across both processes and calls: ctest runs each test as its own
+// process, so the pid separates concurrent workers and the counter separates
+// repeated calls inside one of them.
+std::string uniqueToken() {
+#ifndef _WIN32
+  const auto Pid = static_cast<long>(::getpid());
+#else
+  const auto Pid = static_cast<long>(_getpid());
+#endif
+  static std::atomic<uint64_t> Counter{0};
+  return std::to_string(Pid) + "-" +
+         std::to_string(Counter.fetch_add(1, std::memory_order_relaxed));
+}
+
 int normalizeExit(int Raw) {
 #ifndef _WIN32
   if (WIFEXITED(Raw))
@@ -150,16 +164,8 @@ std::string Environment::pluginExtension() {
 }
 
 std::string Environment::makeTempDir(const std::string &Label) const {
-  static std::atomic<uint64_t> Counter{0};
-  const uint64_t Unique = Counter.fetch_add(1, std::memory_order_relaxed);
-#ifndef _WIN32
-  const auto Pid = static_cast<long>(::getpid());
-#else
-  const auto Pid = static_cast<long>(_getpid());
-#endif
-  fs::path Dir = fs::temp_directory_path() /
-                 ("neverc-conf-" + Label + "-" + std::to_string(Pid) + "-" +
-                  std::to_string(Unique));
+  fs::path Dir =
+      fs::temp_directory_path() / ("neverc-conf-" + Label + "-" + uniqueToken());
   std::error_code EC;
   fs::remove_all(Dir, EC);
   fs::create_directories(Dir, EC);
@@ -173,10 +179,7 @@ RunResult Environment::runProgram(const std::vector<std::string> &Args,
     return Result;
 
   fs::path Scratch =
-      fs::temp_directory_path() /
-      ("neverc-conf-run-" +
-       std::to_string(reinterpret_cast<uintptr_t>(&Args)) + "-" +
-       std::to_string(std::rand()));
+      fs::temp_directory_path() / ("neverc-conf-run-" + uniqueToken());
   std::error_code EC;
   fs::create_directories(Scratch, EC);
   const std::string OutFile = (Scratch / "stdout.txt").string();
