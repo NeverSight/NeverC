@@ -87,3 +87,11 @@ target_include_directories(linkerMachO PRIVATE
   ${NEVERC_SOURCE_DIR}/lib/Plugin
   ${NEVERC_SOURCE_DIR}/lib/Plugin/Link
 )
+
+# The Mach-O public headers (e.g. Target.h) include
+# <mach-o/compact_unwind_encoding.h>. The directory-scoped include_directories()
+# above only covers this backend's own sources, so out-of-tree consumers that
+# include those headers (e.g. neverc-plugin-link-tests) fail to find the vendored
+# copy on Linux/Windows. Export the search path on the target interface so any
+# consumer linking linkerMachO inherits it.
+target_include_directories(linkerMachO PUBLIC ${_NEVERC_MACHO_UNWIND_INCLUDE})
