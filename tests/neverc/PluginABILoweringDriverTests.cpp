@@ -185,7 +185,11 @@ TEST_F(PluginTargetLanguageDriverTest,
   CmdResult Result = ncc(
       {std::string("-fplugin=") + NEVERC_TEST_TARGET_LANGUAGE_PLUGIN,
        "-target", "test.language-target", "-mcpu=turbo", "-S",
-       "-emit-llvm", Source.string(), "-o", IR.string()});
+       // Keep IR value names so the `%plugin.add` check below is deterministic:
+       // assertions-off release builds default to -fdiscard-value-names, which
+       // would rename it to a numbered temporary.
+       "-emit-llvm", "-fno-discard-value-names", Source.string(), "-o",
+       IR.string()});
 
   ASSERT_EQ(Result.exitCode, 0) << Result.err;
   EXPECT_EQ(Result.err.find("unsupported option '-mcpu='"),

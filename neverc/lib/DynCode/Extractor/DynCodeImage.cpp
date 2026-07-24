@@ -2,6 +2,8 @@
 #include "llvm/Support/Errc.h"
 #include "llvm/Support/SHA256.h"
 
+#include <cstring>
+
 using namespace llvm;
 
 namespace neverc {

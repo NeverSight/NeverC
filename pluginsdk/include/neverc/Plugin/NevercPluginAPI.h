@@ -8,7 +8,7 @@
 |*  build against one self-contained pure-C header.                           *|
 \*===----------------------------------------------------------------------===*/
 
-/* generated-from-digest: 921a370285d85de25c39c4fbffafa1a9e4e22592e2fcd0620001aa9ddbe67175 */
+/* generated-from-digest: 06cdabff5fe670c61eccb00367de7fb91d1dfe4f049d7d5babe7a24f58305f36 */
 
 #ifndef NEVERC_PLUGIN_NEVERCPLUGINAPI_H
 #define NEVERC_PLUGIN_NEVERCPLUGINAPI_H
@@ -3362,9 +3362,9 @@ typedef NevercStatus(NEVERC_CALL *NevercIOReleaseBufferFn)(
 typedef NevercStatus(NEVERC_CALL *NevercIOPathToBufferFn)(
     void *Context, NevercTaskHandle Task, NevercStringView Path,
     NevercBufferHandle *OutBuffer);
-typedef NevercStatus(NEVERC_CALL *NevercIOGetCurrentDirectoryFn)(
+typedef NevercStatus(NEVERC_CALL *NevercIOGetWorkingDirectoryFn)(
     void *Context, NevercTaskHandle Task, NevercBufferHandle *OutBuffer);
-typedef NevercStatus(NEVERC_CALL *NevercIOSetCurrentDirectoryFn)(
+typedef NevercStatus(NEVERC_CALL *NevercIOSetWorkingDirectoryFn)(
     void *Context, NevercTaskHandle Task, NevercStringView Path);
 typedef NevercStatus(NEVERC_CALL *NevercIOOpenDirectoryFn)(
     void *Context, NevercTaskHandle Task, NevercStringView Path,
@@ -3432,8 +3432,8 @@ typedef struct NevercIOAPI {
   NevercIOGetBufferViewFn GetBufferView;
   NevercIOReleaseBufferFn ReleaseBuffer;
   NevercIOPathToBufferFn Canonicalize;
-  NevercIOGetCurrentDirectoryFn GetCurrentDirectory;
-  NevercIOSetCurrentDirectoryFn SetCurrentDirectory;
+  NevercIOGetWorkingDirectoryFn GetWorkingDirectory;
+  NevercIOSetWorkingDirectoryFn SetWorkingDirectory;
   NevercIOOpenDirectoryFn OpenDirectory;
   NevercIOReadDirectoryFn ReadDirectory;
   NevercIOCloseDirectoryFn CloseDirectory;
@@ -5208,7 +5208,7 @@ typedef struct NevercPrepIncludeEvent {
   NevercSourceRange FilenameRange;
   NevercFileHandle File;
   NevercStringView Filename;
-  NevercStringView SearchPath;
+  NevercStringView IncludeSearchPath;
   NevercStringView RelativePath;
   NevercBool IsAngled;
   NevercFileCharacteristic Characteristic;
@@ -5278,7 +5278,7 @@ typedef struct NevercPrepIncludePhaseInput {
   NevercSourceLocation Location;
   NevercTokenHandle IncludeToken;
   NevercStringView Filename;
-  NevercStringView SearchPath;
+  NevercStringView IncludeSearchPath;
   NevercStringView RelativePath;
   NevercPrepIncludeAction Action;
   NevercBool IsAngled;

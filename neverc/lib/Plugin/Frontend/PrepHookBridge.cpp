@@ -297,7 +297,7 @@ NevercStatus NEVERC_CALL PluginPrepBridge::getIncludePhaseInput(
   }
   Info.IncludeToken = *IncludeToken;
   Info.Filename = stringView(Artifact->Filename);
-  Info.SearchPath = stringView(Artifact->SearchPath);
+  Info.IncludeSearchPath = stringView(Artifact->SearchPath);
   Info.RelativePath = stringView(Artifact->RelativePath);
   Info.Action = Artifact->Action;
   Info.IsAngled = Artifact->IsAngled ? NEVERC_TRUE : NEVERC_FALSE;

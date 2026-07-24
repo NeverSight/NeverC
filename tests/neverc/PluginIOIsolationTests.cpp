@@ -46,8 +46,8 @@ TEST(PluginIOIsolationTest, PublishesCompleteIndependentIOTable) {
   EXPECT_NE(API.GetBufferView, nullptr);
   EXPECT_NE(API.ReleaseBuffer, nullptr);
   EXPECT_NE(API.Canonicalize, nullptr);
-  EXPECT_NE(API.GetCurrentDirectory, nullptr);
-  EXPECT_NE(API.SetCurrentDirectory, nullptr);
+  EXPECT_NE(API.GetWorkingDirectory, nullptr);
+  EXPECT_NE(API.SetWorkingDirectory, nullptr);
   EXPECT_NE(API.OpenDirectory, nullptr);
   EXPECT_NE(API.ReadDirectory, nullptr);
   EXPECT_NE(API.CloseDirectory, nullptr);

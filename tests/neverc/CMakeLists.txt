@@ -79,6 +79,19 @@ add_executable(neverc-tests ${NEVERC_TEST_SOURCES})
 
 target_link_libraries(neverc-tests PRIVATE GTest::gtest GTest::gtest_main)
 
+# Apply the C23 compile feature to an ABI smoke-compile target, falling back to
+# C11 on toolchains whose CMake does not advertise `c_std_23` (for example
+# clang-cl on windows-arm64). The fallback keeps the target graph intact so the
+# scattered add_dependencies() references never dangle; the header still gets a
+# C smoke-compile, just under C11 there.
+function(neverc_abi_compile_c23_feature target)
+  if("c_std_23" IN_LIST CMAKE_C_COMPILE_FEATURES)
+    target_compile_features(${target} PRIVATE c_std_23)
+  else()
+    target_compile_features(${target} PRIVATE c_std_11)
+  endif()
+endfunction()
+
 add_library(neverc-plugin-abi-compile-c11 OBJECT
   Inputs/Plugin/ABICompileC.c
 )
@@ -93,7 +106,7 @@ add_library(neverc-plugin-abi-compile-c23 OBJECT
 target_include_directories(neverc-plugin-abi-compile-c23 PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
 )
-target_compile_features(neverc-plugin-abi-compile-c23 PRIVATE c_std_23)
+neverc_abi_compile_c23_feature(neverc-plugin-abi-compile-c23)
 
 add_library(neverc-plugin-abi-compile-cxx17 OBJECT
   Inputs/Plugin/ABICompileCXX.cpp
@@ -123,7 +136,7 @@ add_library(neverc-plugin-frontend-abi-compile-c23 OBJECT
 target_include_directories(neverc-plugin-frontend-abi-compile-c23 PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
 )
-target_compile_features(neverc-plugin-frontend-abi-compile-c23 PRIVATE c_std_23)
+neverc_abi_compile_c23_feature(neverc-plugin-frontend-abi-compile-c23)
 
 add_library(neverc-plugin-ir-abi-compile-c11 OBJECT
   Inputs/Plugin/IRABICompile.c
@@ -139,7 +152,7 @@ add_library(neverc-plugin-ir-abi-compile-c23 OBJECT
 target_include_directories(neverc-plugin-ir-abi-compile-c23 PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
 )
-target_compile_features(neverc-plugin-ir-abi-compile-c23 PRIVATE c_std_23)
+neverc_abi_compile_c23_feature(neverc-plugin-ir-abi-compile-c23)
 
 add_library(neverc-plugin-mir-abi-compile-c11 OBJECT
   Inputs/Plugin/MIRABICompile.c
@@ -155,7 +168,7 @@ add_library(neverc-plugin-mir-abi-compile-c23 OBJECT
 target_include_directories(neverc-plugin-mir-abi-compile-c23 PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
 )
-target_compile_features(neverc-plugin-mir-abi-compile-c23 PRIVATE c_std_23)
+neverc_abi_compile_c23_feature(neverc-plugin-mir-abi-compile-c23)
 
 add_library(neverc-plugin-target-abi-compile-c11 OBJECT
   Inputs/Plugin/TargetABICompile.c
@@ -171,7 +184,7 @@ add_library(neverc-plugin-target-abi-compile-c23 OBJECT
 target_include_directories(neverc-plugin-target-abi-compile-c23 PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
 )
-target_compile_features(neverc-plugin-target-abi-compile-c23 PRIVATE c_std_23)
+neverc_abi_compile_c23_feature(neverc-plugin-target-abi-compile-c23)
 
 add_library(neverc-plugin-mc-abi-compile-c11 OBJECT
   Inputs/Plugin/MCABICompile.c
@@ -187,7 +200,7 @@ add_library(neverc-plugin-mc-abi-compile-c23 OBJECT
 target_include_directories(neverc-plugin-mc-abi-compile-c23 PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
 )
-target_compile_features(neverc-plugin-mc-abi-compile-c23 PRIVATE c_std_23)
+neverc_abi_compile_c23_feature(neverc-plugin-mc-abi-compile-c23)
 
 add_library(neverc-plugin-object-abi-compile-c11 OBJECT
   Inputs/Plugin/ObjectABICompile.c
@@ -203,7 +216,7 @@ add_library(neverc-plugin-object-abi-compile-c23 OBJECT
 target_include_directories(neverc-plugin-object-abi-compile-c23 PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
 )
-target_compile_features(neverc-plugin-object-abi-compile-c23 PRIVATE c_std_23)
+neverc_abi_compile_c23_feature(neverc-plugin-object-abi-compile-c23)
 
 add_library(neverc-plugin-link-abi-compile-c11 OBJECT
   Inputs/Plugin/LinkABICompile.c
@@ -219,7 +232,7 @@ add_library(neverc-plugin-link-abi-compile-c23 OBJECT
 target_include_directories(neverc-plugin-link-abi-compile-c23 PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
 )
-target_compile_features(neverc-plugin-link-abi-compile-c23 PRIVATE c_std_23)
+neverc_abi_compile_c23_feature(neverc-plugin-link-abi-compile-c23)
 
 add_library(neverc-plugin-lto-abi-compile-c11 OBJECT
   Inputs/Plugin/LTOABICompile.c
@@ -235,7 +248,7 @@ add_library(neverc-plugin-lto-abi-compile-c23 OBJECT
 target_include_directories(neverc-plugin-lto-abi-compile-c23 PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
 )
-target_compile_features(neverc-plugin-lto-abi-compile-c23 PRIVATE c_std_23)
+neverc_abi_compile_c23_feature(neverc-plugin-lto-abi-compile-c23)
 
 add_library(neverc-plugin-dyncode-abi-compile-c11 OBJECT
   Inputs/Plugin/DynCodeABICompile.c
@@ -251,7 +264,7 @@ add_library(neverc-plugin-dyncode-abi-compile-c23 OBJECT
 target_include_directories(neverc-plugin-dyncode-abi-compile-c23 PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
 )
-target_compile_features(neverc-plugin-dyncode-abi-compile-c23 PRIVATE c_std_23)
+neverc_abi_compile_c23_feature(neverc-plugin-dyncode-abi-compile-c23)
 
 add_library(neverc-test-plugin-link-route MODULE
   Inputs/Plugin/LinkRoutePlugin.c

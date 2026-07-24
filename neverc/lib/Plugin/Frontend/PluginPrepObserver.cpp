@@ -315,7 +315,7 @@ void PluginPrepObserver::InclusionDirective(
       makeEvent(NEVERC_PREP_EVENT_INCLUSION_DIRECTIVE);
   auto &Include = Event.Payload.Include;
   Include.Filename = prep_bridge_detail::stringView(FileName);
-  Include.SearchPath = prep_bridge_detail::stringView(SearchPath);
+  Include.IncludeSearchPath = prep_bridge_detail::stringView(SearchPath);
   Include.RelativePath =
       prep_bridge_detail::stringView(RelativePath);
   Include.IsAngled = IsAngled ? NEVERC_TRUE : NEVERC_FALSE;

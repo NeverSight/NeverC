@@ -295,7 +295,7 @@ typedef struct NevercPrepIncludeEvent {
   NevercSourceRange FilenameRange;
   NevercFileHandle File;
   NevercStringView Filename;
-  NevercStringView SearchPath;
+  NevercStringView IncludeSearchPath;
   NevercStringView RelativePath;
   NevercBool IsAngled;
   NevercFileCharacteristic Characteristic;
@@ -365,7 +365,7 @@ typedef struct NevercPrepIncludePhaseInput {
   NevercSourceLocation Location;
   NevercTokenHandle IncludeToken;
   NevercStringView Filename;
-  NevercStringView SearchPath;
+  NevercStringView IncludeSearchPath;
   NevercStringView RelativePath;
   NevercPrepIncludeAction Action;
   NevercBool IsAngled;

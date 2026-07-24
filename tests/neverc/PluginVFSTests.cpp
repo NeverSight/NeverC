@@ -156,7 +156,7 @@ TEST_F(PluginVFSTest, CanonicalizesAndTraversesDirectories) {
   installFileSystem();
 
   NevercBufferHandle Current{};
-  ASSERT_EQ(API->GetCurrentDirectory(
+  ASSERT_EQ(API->GetWorkingDirectory(
                 API->Context, Task->handle(), &Current)
                 .Code,
             NEVERC_STATUS_OK);
@@ -164,7 +164,7 @@ TEST_F(PluginVFSTest, CanonicalizesAndTraversesDirectories) {
   EXPECT_EQ(API->ReleaseBuffer(API->Context, Task->handle(), Current).Code,
             NEVERC_STATUS_OK);
 
-  ASSERT_EQ(API->SetCurrentDirectory(
+  ASSERT_EQ(API->SetWorkingDirectory(
                 API->Context, Task->handle(),
                 stringView("/work/sub"))
                 .Code,

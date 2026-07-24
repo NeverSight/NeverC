@@ -376,9 +376,9 @@ typedef NevercStatus(NEVERC_CALL *NevercIOReleaseBufferFn)(
 typedef NevercStatus(NEVERC_CALL *NevercIOPathToBufferFn)(
     void *Context, NevercTaskHandle Task, NevercStringView Path,
     NevercBufferHandle *OutBuffer);
-typedef NevercStatus(NEVERC_CALL *NevercIOGetCurrentDirectoryFn)(
+typedef NevercStatus(NEVERC_CALL *NevercIOGetWorkingDirectoryFn)(
     void *Context, NevercTaskHandle Task, NevercBufferHandle *OutBuffer);
-typedef NevercStatus(NEVERC_CALL *NevercIOSetCurrentDirectoryFn)(
+typedef NevercStatus(NEVERC_CALL *NevercIOSetWorkingDirectoryFn)(
     void *Context, NevercTaskHandle Task, NevercStringView Path);
 typedef NevercStatus(NEVERC_CALL *NevercIOOpenDirectoryFn)(
     void *Context, NevercTaskHandle Task, NevercStringView Path,
@@ -446,8 +446,8 @@ typedef struct NevercIOAPI {
   NevercIOGetBufferViewFn GetBufferView;
   NevercIOReleaseBufferFn ReleaseBuffer;
   NevercIOPathToBufferFn Canonicalize;
-  NevercIOGetCurrentDirectoryFn GetCurrentDirectory;
-  NevercIOSetCurrentDirectoryFn SetCurrentDirectory;
+  NevercIOGetWorkingDirectoryFn GetWorkingDirectory;
+  NevercIOSetWorkingDirectoryFn SetWorkingDirectory;
   NevercIOOpenDirectoryFn OpenDirectory;
   NevercIOReadDirectoryFn ReadDirectory;
   NevercIOCloseDirectoryFn CloseDirectory;

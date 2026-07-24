@@ -634,8 +634,8 @@ void initializePluginIOAPI(NevercIOAPI &API,
   API.GetBufferView = getBufferView;
   API.ReleaseBuffer = releaseBuffer;
   API.Canonicalize = canonicalize;
-  API.GetCurrentDirectory = getCurrentDirectory;
-  API.SetCurrentDirectory = setCurrentDirectory;
+  API.GetWorkingDirectory = getCurrentDirectory;
+  API.SetWorkingDirectory = setCurrentDirectory;
   API.OpenDirectory = openDirectory;
   API.ReadDirectory = readDirectory;
   API.CloseDirectory = closeDirectory;
