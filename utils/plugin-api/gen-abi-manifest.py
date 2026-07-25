@@ -16,19 +16,17 @@ also measures every struct under an outer ``#pragma pack(1)`` and
 ``#pragma pack(16)`` and fails if any layout changes -- a struct whose size or
 alignment depends on ambient packing is an ABI hazard.
 
-Two measurement modes produce the same facts:
-
-  * Native (the current host): compile *and run* a probe that prints
-    sizeof/_Alignof/offsetof, so the entry reflects what the host compiler
-    actually produces.
-  * Cross (``--all-hosts``): fold the same quantities into a constant array and
-    read them back out of ``-emit-llvm`` output for each supported target
-    triple. The public headers only need freestanding ``<stddef.h>`` and
-    ``<stdint.h>``, so no target SDK or emulator is required.
+Measurement folds sizeof/_Alignof/offsetof into a byte array, compiles that to
+an object, and reads the values back out of it. A layout is a compile-time
+property, so nothing is executed: the same mechanism serves the current host and,
+with ``--all-hosts`` and a target triple, every other supported ABI key. The
+public headers need only freestanding ``<stddef.h>`` and ``<stdint.h>``, so no
+target SDK, emulator, or permission to launch a freshly built binary is needed.
 
 Cross measurement is what lets one machine populate every shipped ABI key; each
-host's CI still re-derives its own key natively under ``--check``, so a host
-whose real layout disagrees with the committed prediction fails loudly there.
+host's CI still re-derives its own key with its own compiler under ``--check``,
+so a host whose real layout disagrees with the committed prediction fails loudly
+there.
 
 ``--check`` recomputes the current host's entry (including the pack-invariance
 proof) and requires it to match the committed manifest exactly; within one ABI
@@ -76,13 +74,13 @@ SUPPORTED_ABI_KEYS = {
     "aarch64-le-64-win": "aarch64-pc-windows-msvc",
 }
 
-# Symbol the cross probe folds its measurements into, and the constant array
-# clang emits for it, e.g. "@NevercAbiProbe = constant [7 x i64] [i64 8, ...]".
+# The probe folds its measurements into a byte array behind this marker, so the
+# values can be read straight back out of the object file. Nothing is executed:
+# a layout is a compile-time property, and running a freshly built binary is the
+# one step that needs the target to be the host and the host to permit it.
 PROBE_SYMBOL = "NevercAbiProbe"
-PROBE_IR = re.compile(
-    r"@" + PROBE_SYMBOL + r"\s*=[^\[]*\[\s*\d+\s+x\s+i64\s*\]\s*\[([^\]]*)\]"
-)
-PROBE_VALUE = re.compile(r"i64\s+(\d+)")
+PROBE_SENTINEL = b"NevercAbiProbeV1"
+PROBE_VALUE_BYTES = 8
 
 
 def strip_comments(text: str) -> str:
@@ -151,112 +149,21 @@ def is_msvc(compiler: str) -> bool:
 
 
 def build_probe(layouts: list[tuple[str, list[str]]], pack: int | None) -> str:
-    lines = []
-    if pack is not None:
-        lines.append(f"#pragma pack({pack})")
-    lines += ['#include "neverc/Plugin/NevercPluginAPI.h"', "#include <stddef.h>",
-              "#include <stdio.h>", "int main(void){"]
-    lines.append('  printf("__ptr %zu\\n", sizeof(void *));')
-    for name, fields in layouts:
-        lines.append(
-            f'  printf("S {name} %zu %zu\\n", sizeof({name}), _Alignof({name}));'
-        )
-        if pack is None:
-            for field in fields:
-                lines.append(
-                    f'  printf("F {name} {field} %zu %zu\\n", '
-                    f"offsetof({name}, {field}), "
-                    f"sizeof((({name} *)0)->{field}));"
-                )
-    lines.append("  return 0;")
-    lines.append("}")
-    return "\n".join(lines) + "\n"
+    """A translation unit whose only content is the measurements, as bytes.
 
-
-def run_probe(compiler: str, program: str) -> str:
-    with tempfile.TemporaryDirectory() as tmp:
-        tmp_path = Path(tmp)
-        source = tmp_path / "abi_probe.c"
-        binary = tmp_path / ("abi_probe.exe" if is_msvc(compiler) else "abi_probe")
-        source.write_text(program, encoding="utf-8")
-        if is_msvc(compiler):
-            # Relative names, so the .obj lands in cwd without a /Fo argument
-            # whose trailing separator Windows argument quoting would mangle.
-            command = [compiler, "/nologo", "/std:c11", f"/I{INCLUDE_DIR}",
-                       source.name, f"/Fe:{binary.name}"]
-        else:
-            command = [compiler, "-std=c11", "-I", str(INCLUDE_DIR), str(source),
-                       "-o", str(binary)]
-        compile_result = subprocess.run(
-            command, cwd=str(tmp_path), capture_output=True, text=True,
-        )
-        if compile_result.returncode != 0:
-            raise ValueError(f"ABI probe failed to compile:\n{compile_result.stderr}")
-        run_result = subprocess.run([str(binary)], capture_output=True, text=True)
-        if run_result.returncode != 0:
-            raise ValueError(f"ABI probe failed to run:\n{run_result.stderr}")
-        return run_result.stdout
-
-
-def parse_probe(output: str) -> tuple[int, dict]:
-    structs: dict = {}
-    pointer_width = None
-    for line in output.splitlines():
-        parts = line.split()
-        if not parts:
-            continue
-        if parts[0] == "__ptr":
-            pointer_width = int(parts[1]) * 8
-        elif parts[0] == "S":
-            name, size, align = parts[1], int(parts[2]), int(parts[3])
-            entry = structs.setdefault(name, {})
-            entry["size"] = size
-            entry["align"] = align
-            entry.setdefault("fields", {})
-        elif parts[0] == "F":
-            name, field, offset, size = parts[1], parts[2], int(parts[3]), int(parts[4])
-            structs.setdefault(name, {}).setdefault("fields", {})[field] = {
-                "offset": offset,
-                "size": size,
-            }
-    if pointer_width is None:
-        raise ValueError("ABI probe did not report pointer width")
-    return pointer_width, structs
-
-
-def size_align_view(structs: dict) -> dict:
-    return {name: (data["size"], data["align"]) for name, data in structs.items()}
-
-
-def measure(compiler: str, layouts: list[tuple[str, list[str]]]) -> dict:
-    pointer_width, structs = parse_probe(
-        run_probe(compiler, build_probe(layouts, None))
-    )
-    baseline = size_align_view(structs)
-    # Prove the ABI layout is invariant under hostile ambient packing.
-    for pack in PACK_VARIANTS:
-        _, packed = parse_probe(run_probe(compiler, build_probe(layouts, pack)))
-        packed_view = size_align_view(packed)
-        for name, sa in baseline.items():
-            if packed_view.get(name) != sa:
-                raise ValueError(
-                    f"struct {name} layout is not pack-invariant: "
-                    f"default size/align {sa} but pack({pack}) gives "
-                    f"{packed_view.get(name)}"
-                )
-    return {"pointer_width": pointer_width, "structs": structs}
-
-
-def build_cross_probe(layouts: list[tuple[str, list[str]]], pack: int | None) -> str:
-    """Fold the same quantities ``build_probe`` prints into a constant array.
-
-    Constant folding happens for the requested target, so the array can be read
-    back out of the IR without running anything on that target.
+    Each quantity is constant-folded for whichever target the compiler is
+    configured for and spelled out little-endian, so the object file carries
+    the answer without anything having to run.
     """
     lines = []
     if pack is not None:
         lines.append(f"#pragma pack({pack})")
     lines += ['#include "neverc/Plugin/NevercPluginAPI.h"', "#include <stddef.h>"]
+    shifts = ", ".join(
+        f"(unsigned char)(((unsigned long long)(v) >> {8 * index}) & 0xffu)"
+        for index in range(PROBE_VALUE_BYTES)
+    )
+    lines.append(f"#define NCB(v) {shifts}")
     values = ["sizeof(void *)"]
     for name, fields in layouts:
         values += [f"sizeof({name})", f"_Alignof({name})"]
@@ -264,45 +171,85 @@ def build_cross_probe(layouts: list[tuple[str, list[str]]], pack: int | None) ->
             for field in fields:
                 values += [f"offsetof({name}, {field})",
                            f"sizeof((({name} *)0)->{field})"]
-    lines.append(f"const unsigned long long {PROBE_SYMBOL}[] = {{")
-    lines += [f"  (unsigned long long)({value})," for value in values]
+    marker = ", ".join(f"'{chr(byte)}'" for byte in PROBE_SENTINEL)
+    lines.append(f"const unsigned char {PROBE_SYMBOL}[] = {{")
+    lines.append(f"  {marker},")
+    lines += [f"  NCB({value})," for value in values]
     lines.append("};")
     return "\n".join(lines) + "\n"
 
 
-def run_cross_probe(compiler: str, triple: str, program: str) -> list[int]:
-    if is_msvc(compiler):
-        raise ValueError(
-            "cross measurement needs a clang-style driver (-target/-emit-llvm); "
-            f"{compiler} cannot retarget, so pass --cc clang"
-        )
+def compile_probe(compiler: str, program: str, triple: str | None) -> bytes:
+    """Compile the probe to an object and hand back its bytes."""
     with tempfile.TemporaryDirectory() as tmp:
-        source = Path(tmp) / "abi_cross_probe.c"
+        tmp_path = Path(tmp)
+        source = tmp_path / "abi_probe.c"
         source.write_text(program, encoding="utf-8")
+        if is_msvc(compiler):
+            if triple is not None:
+                raise ValueError(
+                    f"{compiler} cannot retarget to {triple}; pass --cc clang"
+                )
+            # Relative names, so the object lands in cwd without an argument
+            # whose trailing separator Windows quoting would mangle.
+            obj = tmp_path / "abi_probe.obj"
+            command = [compiler, "/nologo", "/c", "/std:c11", f"/I{INCLUDE_DIR}",
+                       source.name, f"/Fo{obj.name}"]
+        else:
+            obj = tmp_path / "abi_probe.o"
+            command = [compiler]
+            if triple is not None:
+                command += ["-target", triple, "-ffreestanding"]
+            command += ["-std=c11", "-c", "-I", str(INCLUDE_DIR), str(source),
+                        "-o", str(obj)]
         result = subprocess.run(
-            [compiler, "-target", triple, "-ffreestanding", "-std=c11",
-             "-I", str(INCLUDE_DIR), "-S", "-emit-llvm", "-o", "-", str(source)],
-            capture_output=True, text=True,
+            command, cwd=str(tmp_path), capture_output=True, text=True,
         )
         if result.returncode != 0:
-            raise ValueError(
-                f"ABI cross probe failed for {triple}:\n{result.stderr}"
-            )
-    match = PROBE_IR.search(result.stdout)
-    if match is None:
-        raise ValueError(f"ABI cross probe for {triple} emitted no {PROBE_SYMBOL}")
-    return [int(value) for value in PROBE_VALUE.findall(match.group(1))]
+            where = f" for {triple}" if triple else ""
+            raise ValueError(f"ABI probe failed to compile{where}:\n{result.stderr}")
+        if not obj.is_file():
+            raise ValueError(f"ABI probe produced no object at {obj.name}")
+        return obj.read_bytes()
 
 
-def parse_cross_probe(
-    values: list[int], layouts: list[tuple[str, list[str]]], pack: int | None
-) -> tuple[int, dict]:
-    expected = 1 + sum(
+def decode_probe(object_bytes: bytes, count: int) -> list[int]:
+    start = object_bytes.find(PROBE_SENTINEL)
+    if start < 0:
+        raise ValueError(f"ABI probe object has no {PROBE_SYMBOL} marker")
+    if object_bytes.find(PROBE_SENTINEL, start + 1) >= 0:
+        raise ValueError(f"ABI probe object repeats the {PROBE_SYMBOL} marker")
+    base = start + len(PROBE_SENTINEL)
+    end = base + count * PROBE_VALUE_BYTES
+    if end > len(object_bytes):
+        raise ValueError("ABI probe object is shorter than its own measurements")
+    return [
+        int.from_bytes(object_bytes[offset:offset + PROBE_VALUE_BYTES], "little")
+        for offset in range(base, end, PROBE_VALUE_BYTES)
+    ]
+
+
+def probe_value_count(layouts: list[tuple[str, list[str]]],
+                      pack: int | None) -> int:
+    return 1 + sum(
         2 + (2 * len(fields) if pack is None else 0) for _name, fields in layouts
     )
+
+
+def run_probe(compiler: str, layouts: list[tuple[str, list[str]]],
+              pack: int | None, triple: str | None = None) -> list[int]:
+    return decode_probe(
+        compile_probe(compiler, build_probe(layouts, pack), triple),
+        probe_value_count(layouts, pack),
+    )
+
+
+def parse_probe(values: list[int], layouts: list[tuple[str, list[str]]],
+                pack: int | None) -> tuple[int, dict]:
+    expected = probe_value_count(layouts, pack)
     if len(values) != expected:
         raise ValueError(
-            f"ABI cross probe returned {len(values)} values, expected {expected}"
+            f"ABI probe returned {len(values)} values, expected {expected}"
         )
     stream = iter(values)
     pointer_width = next(stream) * 8
@@ -319,24 +266,28 @@ def parse_cross_probe(
     return pointer_width, structs
 
 
-def cross_measure(
-    compiler: str, triple: str, layouts: list[tuple[str, list[str]]]
-) -> dict:
-    pointer_width, structs = parse_cross_probe(
-        run_cross_probe(compiler, triple, build_cross_probe(layouts, None)),
-        layouts, None,
+def size_align_view(structs: dict) -> dict:
+    return {name: (data["size"], data["align"]) for name, data in structs.items()}
+
+
+def measure(compiler: str, layouts: list[tuple[str, list[str]]],
+            triple: str | None = None) -> dict:
+    """Measure one ABI: the host's own when triple is None, else that target."""
+    pointer_width, structs = parse_probe(
+        run_probe(compiler, layouts, None, triple), layouts, None
     )
     baseline = size_align_view(structs)
+    # Prove the ABI layout is invariant under hostile ambient packing.
     for pack in PACK_VARIANTS:
-        _, packed = parse_cross_probe(
-            run_cross_probe(compiler, triple, build_cross_probe(layouts, pack)),
-            layouts, pack,
+        _, packed = parse_probe(
+            run_probe(compiler, layouts, pack, triple), layouts, pack
         )
         packed_view = size_align_view(packed)
         for name, sa in baseline.items():
             if packed_view.get(name) != sa:
+                where = f" on {triple}" if triple else ""
                 raise ValueError(
-                    f"struct {name} layout is not pack-invariant on {triple}: "
+                    f"struct {name} layout is not pack-invariant{where}: "
                     f"default size/align {sa} but pack({pack}) gives "
                     f"{packed_view.get(name)}"
                 )
@@ -402,7 +353,7 @@ def cross_entry(compiler: str, key: str, triple: str,
                 layouts: list[tuple[str, list[str]]]) -> dict:
     arch, short, _width, cc = key.split("-")
     endian = "little" if short == "le" else "big"
-    measured = cross_measure(compiler, triple, layouts)
+    measured = measure(compiler, layouts, triple)
     produced = abi_key(arch, endian, measured["pointer_width"], cc)
     if produced != key:
         raise ValueError(f"target {triple} measures as ABI key {produced}, not {key}")

@@ -8,10 +8,10 @@ any machine:
 
 * the supported-key set covers every architecture/calling-convention pair the
   conformance matrix runs on, and a manifest missing one of them is rejected;
-* the cross probe's value ordering round-trips, so a cross-measured entry means
-  what a natively measured one means;
-* the IR constant parser and its arity check reject malformed probe output
-  rather than silently producing a short entry.
+* the probe's value ordering round-trips, so a cross-measured entry means what a
+  natively measured one means;
+* the object decoder and its arity check reject malformed probe output rather
+  than silently producing a short entry.
 """
 
 from __future__ import annotations
@@ -71,20 +71,23 @@ def main() -> int:
            "empty manifest did not report every supported key", failures)
     checks += 1
 
-    # 3. The cross probe's value ordering round-trips: what build_cross_probe
-    #    emits is what parse_cross_probe reads back.
+    # 3. The probe's value ordering round-trips: what build_probe emits is what
+    #    parse_probe reads back.
     layouts = [("NevercAlpha", ["First", "Second"]), ("NevercBeta", [])]
-    source = mod.build_cross_probe(layouts, None)
+    source = mod.build_probe(layouts, None)
     for fragment in ("sizeof(void *)", "sizeof(NevercAlpha)",
                      "_Alignof(NevercAlpha)", "offsetof(NevercAlpha, First)",
                      "sizeof(((NevercAlpha *)0)->Second)", "sizeof(NevercBeta)"):
         expect(fragment in source,
-               f"cross probe omitted {fragment}", failures)
+               f"probe omitted {fragment}", failures)
         checks += 1
 
     # ptr, then (size, align) + (offset, size) per field, per struct.
     values = [8, 24, 8, 0, 4, 8, 16, 16, 8]
-    width, structs = mod.parse_cross_probe(values, layouts, None)
+    expect(mod.probe_value_count(layouts, None) == len(values),
+           "probe arity disagrees with the emitted ordering", failures)
+    checks += 1
+    width, structs = mod.parse_probe(values, layouts, None)
     expect(width == 64, f"pointer width parsed as {width}", failures)
     expect(structs["NevercAlpha"]["size"] == 24
            and structs["NevercAlpha"]["align"] == 8,
@@ -96,7 +99,7 @@ def main() -> int:
     checks += 4
 
     # Pack variants carry size/align only, so their arity differs.
-    packed_width, packed = mod.parse_cross_probe([8, 24, 8, 16, 8], layouts, 1)
+    packed_width, packed = mod.parse_probe([8, 24, 8, 16, 8], layouts, 1)
     expect(packed_width == 64 and packed["NevercAlpha"]["size"] == 24
            and packed["NevercAlpha"]["fields"] == {},
            "pack-variant probe misparsed", failures)
@@ -104,21 +107,30 @@ def main() -> int:
 
     # 4. A truncated probe is an error, not a short entry.
     try:
-        mod.parse_cross_probe([8, 24], layouts, None)
-        failures.append("truncated cross probe was accepted")
+        mod.parse_probe([8, 24], layouts, None)
+        failures.append("truncated probe was accepted")
     except ValueError:
         pass
     checks += 1
 
-    # 5. The IR constant parser reads clang's real spelling.
-    ir = ("@NevercAbiProbe = dso_local constant [3 x i64] "
-          "[i64 8, i64 16, i64 8], align 16\n")
-    match = mod.PROBE_IR.search(ir)
-    expect(match is not None, "PROBE_IR did not match clang output", failures)
-    if match is not None:
-        parsed = [int(v) for v in mod.PROBE_VALUE.findall(match.group(1))]
-        expect(parsed == [8, 16, 8], f"PROBE_VALUE parsed {parsed}", failures)
-    checks += 2
+    # 5. Values are decoded little-endian from behind the marker, and an object
+    #    without the marker -- or with it twice -- is rejected rather than
+    #    guessed at.
+    payload = b"\x00pad" + mod.PROBE_SENTINEL + (8).to_bytes(8, "little") \
+        + (16).to_bytes(8, "little") + b"trailing"
+    expect(mod.decode_probe(payload, 2) == [8, 16],
+           "decode_probe misread the marked values", failures)
+    checks += 1
+    for bad, why in ((b"no marker here", "unmarked"),
+                     (mod.PROBE_SENTINEL + (8).to_bytes(8, "little")
+                      + mod.PROBE_SENTINEL, "doubly marked"),
+                     (mod.PROBE_SENTINEL + b"\x01\x02", "truncated")):
+        try:
+            mod.decode_probe(bad, 2)
+            failures.append(f"{why} probe object was accepted")
+        except ValueError:
+            pass
+        checks += 1
 
     if failures:
         for failure in failures:
