@@ -13,7 +13,7 @@
 1. **Пишите обычный C** — без специальных приёмов для dyncode.
 2. **Полностью автоматический конвейер** — `static int counter = 0`, `const char s[] = "..."`, рекурсия, `write/exit/read/...` и большие константные массивы обрабатываются внутри без правок пользовательского кода.
 3. **Нулевые внешние зависимости** — выходной `.bin` — чистый поток инструкций без dyld, libSystem и секций данных.
-4. **CLI через TableGen** — каждая `-fdyncode-*` в `neverc/include/neverc/Invoke/Options.td.h` (не жёсткое сопоставление строк). Опечатки → did-you-mean; `--help` показывает все опции.
+4. **CLI через TableGen** — каждая `-fdyncode-*` в [`neverc/include/neverc/Invoke/Options.td.h`] (не жёсткое сопоставление строк). Опечатки → did-you-mean; `--help` показывает все опции.
 5. **Ограничения на выходе проверяемы** — `-fdyncode-bad-bytes=` / `-fdyncode-bad-byte-profile=` сканируют финальный `.bin` после post-extract и отклоняют вывод при запрещённых байтах с offset, байтом и контекстом.
 6. **Единый кроссплатформенный конвейер** — таблица `TargetDesc`. Один исходник C для macOS / Linux / Android / Windows. Новая платформа = строка таблицы + экстрактор, а не пять наборов проходов.
 
@@ -161,7 +161,7 @@ flowchart TD
 
 ## Различия платформ через таблицы
 
-`neverc/include/neverc/DynCode/Pipeline/TargetDesc.h` defines a `TargetDesc` struct describing all differences for each (OS, arch) combination:
+[`neverc/include/neverc/DynCode/Pipeline/TargetDesc.h`] defines a `TargetDesc` struct describing all differences for each (OS, arch) combination:
 
 - `TextSectionName`: Mach-O `__text` / ELF `.text` / COFF `.text`
 - `SyscallABI`: enum value (`DarwinSvc80` / `LinuxSvc0` / `LinuxSyscall` / `WindowsPEB` / `None`)
@@ -319,3 +319,6 @@ docs/dyncode-compiler/
 - **Обход PEB в Windows полностью реализован с multi-DLL dispatch**. `__neverc_win_resolve` принимает пары `(dll_hash, api_hash)`. Текущий whitelist: kernel32.dll (~125 API), ntdll.dll (~26), user32.dll (~13), ws2_32.dll (~23), advapi32.dll (~16), shell32.dll (~6). Добавление API = строка в `Tables/Win32Apis.def` + объявление в `lib/Headers/windows.h`.
 - **Whitelist внешних функций** покрывает только типичные syscalls Darwin BSD / Linux / Android (~80+) + Win32 API (~190). stdio и тяжёлые runtime-интерфейсы не включены — dyncode не может встроить полную машину состояний stdio.
 - C++ / ObjC / CUDA не поддерживаются — NeverC только для C.
+
+[`neverc/include/neverc/DynCode/Pipeline/TargetDesc.h`]: ../../neverc/include/neverc/DynCode/Pipeline/TargetDesc.h
+[`neverc/include/neverc/Invoke/Options.td.h`]: ../../neverc/include/neverc/Invoke/Options.td.h

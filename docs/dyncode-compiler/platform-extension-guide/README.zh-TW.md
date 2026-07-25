@@ -87,12 +87,12 @@ Windows 沒有穩定的 syscall ABI；對 `WriteFile` / `CreateThread` / `Virtua
 
 ### 4. 新增 Loader（僅測試工具）
 
-- 參考 `tests/neverc/dyncode/loader_linux.c` 和 `loader_windows.c`
+- 參考 [`tests/neverc/dyncode/loader_linux.c`] 和 `loader_windows.c`
 - 通常：`mmap(RWX) → memcpy → icache flush → call`
 
 ### 5. 更新測試
 
-- 在 `tests/neverc/DynCodeCrossTargetTests.cpp` 中新增一個交叉編譯檢查
+- 在 [`tests/neverc/DynCodeCrossTargetTests.cpp`] 中新增一個交叉編譯檢查
 - 如果 CI 能在該平台上執行，新增 loader 往返測試
 
 ---
@@ -153,3 +153,6 @@ H.RunAfterPreEmit = [](llvm::TargetPassConfig &TPC,
 ```
 
 內建 MIR 修補也是表驅動的：`Tables/MIRRewritePatterns.def` 記錄模式診斷名、架構過濾器和輔助函式名；`Tables/MIRRewriteOpcodes.def` 記錄後端操作碼名。新增 dyncode 友善的後端形式時，優先新增表項和窄範圍輔助函式，而非在 pass 本體中分散目標特定分支。
+
+[`tests/neverc/dyncode/loader_linux.c`]: ../../../tests/neverc/dyncode/loader_linux.c
+[`tests/neverc/DynCodeCrossTargetTests.cpp`]: ../../../tests/neverc/DynCodeCrossTargetTests.cpp

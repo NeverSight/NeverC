@@ -172,7 +172,7 @@ ExecutionLevel 与 (OS, arch) 正交：
 1. `TargetDesc.cpp::describeTriple` — 一行（约 15 行）
 2. `Syscalls_<OS>[<Arch>].def` — 系统调用号（如 `Syscalls_Darwin.def`、`Syscalls_LinuxArm64.def`、`Syscalls_LinuxX86_64.def`；Windows 跳过）
 3. 对应提取器架构 switch — 一个 case + reloc 表
-4. 测试文件 — `tests/neverc/DynCodeCrossTargetTests.cpp` 中各一个 case
+4. 测试文件 — [`tests/neverc/DynCodeCrossTargetTests.cpp`] 中各一个 case
 
 IR/MIR pass 需要零改动。内核上下文免费 — `KernelImportPass` 使用统一的 `__neverc_kern_resolve` 接口。
 
@@ -182,3 +182,5 @@ IR/MIR pass 需要零改动。内核上下文免费 — `KernelImportPass` 使�
 - **32 位 / 大端 / 小众 ISA**（RISC-V / PowerPC / SPARC / MIPS）
 - **在 dyncode 中嵌入 libc 运行时**（`<stdio.h>` / `<math.h>` / 堆 / setjmp / alloca / 全局构造函数均以可操作诊断明确拒绝）
 - **绝对地址重定位**（所有 `_ABS*` / `_ADDR*` / GOT / TLS reloc 硬失败）
+
+[`tests/neverc/DynCodeCrossTargetTests.cpp`]: ../../../tests/neverc/DynCodeCrossTargetTests.cpp

@@ -24,7 +24,7 @@ NeverC's dyncode pipeline covers:
 
 1. **Size / alignment / padding constraints** — Built-in. `-fdyncode-max-length=`, `-fdyncode-align=`, `-fdyncode-pad=` execute at the end of `finalizeDynCodeBytes`. The driver rejects contradictory configurations (e.g., pad byte in the bad-byte set, or pad without align/max-length).
 
-2. **Out-of-tree C Plugin API** — Pure C ABI plugin interface (`NevercPluginAPI.h`) for custom IR, MIR, binary, and linker passes. Plugins register at 11 dyncode interpose points (`NEVERC_INTERPOSE_SC_*`). Single-header SDK with zero LLVM/CRT dependencies. See the [Plugin API documentation](../../plugin-api/README.md).
+2. **Out-of-tree C Plugin API** — Pure C ABI plugin interface ([`NevercPluginAPI.h`]) for custom IR, MIR, binary, and linker passes. Plugins register at 11 dyncode interpose points (`NEVERC_INTERPOSE_SC_*`). Single-header SDK with zero LLVM/CRT dependencies. See the [Plugin API documentation](../../plugin-api/README.md).
 
 ## Planned — Plugin Layer (via interposes)
 
@@ -80,3 +80,5 @@ See the [Plugin API documentation](../../plugin-api/README.md) for usage and cod
 ## Not Planned
 
 - **Cross-language frontend** — NeverC accepts only its own C23 frontend. The IR pipeline is decoupled from the frontend, but accepting external bitcode (e.g., from `rustc` or `zig`) is not a project goal.
+
+[`NevercPluginAPI.h`]: ../../../neverc/include/neverc/Plugin/NevercPluginAPI.h

@@ -26,7 +26,7 @@
 
 1. **قيود الحجم / المحاذاة / الحشو** — مدمج. `-fdyncode-max-length=`، `-fdyncode-align=`، `-fdyncode-pad=` تُنفَّذ في نهاية `finalizeDynCodeBytes`. يرفض المشغّل التكوينات المتناقضة (مثل بايت الحشو في مجموعة البايتات المحظورة، أو الحشو بدون align/max-length).
 
-2. **واجهة الإضافات C خارج الشجرة** — واجهة إضافات C ABI خالصة (`NevercPluginAPI.h`) لمرورات IR وMIR وBinary وLinker المخصصة. تُسجَّل الإضافات في 11 نقطة ربط dyncode (`NEVERC_INTERPOSE_SC_*`). SDK بملف رأس واحد، صفر تبعيات LLVM/CRT. راجع [وثائق واجهة الإضافات](../../plugin-api/README.ar.md).
+2. **واجهة الإضافات C خارج الشجرة** — واجهة إضافات C ABI خالصة ([`NevercPluginAPI.h`]) لمرورات IR وMIR وBinary وLinker المخصصة. تُسجَّل الإضافات في 11 نقطة ربط dyncode (`NEVERC_INTERPOSE_SC_*`). SDK بملف رأس واحد، صفر تبعيات LLVM/CRT. راجع [وثائق واجهة الإضافات](../../plugin-api/README.ar.md).
 
 ## مخطط — طبقة الإضافات (عبر الخطافات)
 
@@ -82,5 +82,7 @@ applyPostFinalizeObfuscationInterpose      (C Plugin API: NEVERC_INTERPOSE_SC_PO
 ## غير مخطط
 
 - **واجهة أمامية متعددة اللغات** — NeverC يقبل فقط واجهته الأمامية C23 الخاصة. مسار IR منفصل عن الواجهة الأمامية، لكن قبول bitcode خارجي (مثل من `rustc` أو `zig`) ليس هدفاً للمشروع.
+
+[`NevercPluginAPI.h`]: ../../../neverc/include/neverc/Plugin/NevercPluginAPI.h
 
 </div>

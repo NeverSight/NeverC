@@ -44,7 +44,7 @@ Sowohl IR- als auch MIR-globale Callbacks verwenden ein **einmal registrieren, z
 ## 3. Tabellengesteuerte Plattformunterschiede
 
 - **Triple → Verhalten**: Zentralisiert in `TargetDesc.cpp`s `describeTriple()` und `TargetDesc`-Feldern (Sektionsname, Syscall-ABI, Inline-Assemblierung-Template, Treiber-Injektionsflags etc.). Beim Hinzufügen neuer OS/Arch wird das **Hinzufügen von Tabelleneinträgen** gegenüber dem Schreiben langer Verzweigungen in Extraktoren oder Passes bevorzugt.
-- **CLI-Optionen**: Definiert in `neverc/include/neverc/Invoke/Options.td.h`; konsumiert von `DriverIntegration.cpp` über `OPT_*`-Enums, String-Magie vermeidend.
+- **CLI-Optionen**: Definiert in [`neverc/include/neverc/Invoke/Options.td.h`]; konsumiert von `DriverIntegration.cpp` über `OPT_*`-Enums, String-Magie vermeidend.
 
 ## 4. Windows MSVC-Toolchain und SDK-Layout
 
@@ -137,3 +137,5 @@ Wichtige Unterschiede:
 | `O_CLOEXEC` | `0x1000000` | `0x80000` |
 
 Implementierung: `#if defined(__APPLE__)`-Guards in Shim-Headern. `SyscallTables.cpp` POSIX-Kompatibilitätstabelle verwendet Linux-Werte (`AT_FDCWD = -100`), nur auf `SyscallABI::LinuxSvc0` / `LinuxSyscall`-Pfaden aktiv. Windows-Ziele verwenden diese POSIX-Header nicht; POSIX→Win32-Bridging wird von `WinPEBImportPass`-Kompatibilitätswrappern behandelt.
+
+[`neverc/include/neverc/Invoke/Options.td.h`]: ../../../neverc/include/neverc/Invoke/Options.td.h

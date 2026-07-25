@@ -7,7 +7,7 @@
 > Companion document to [ir-pass-design.md](../ir-pass-design/README.md). The IR layer eliminates constructs that are visibly relocation-producing at the IR level. The MIR layer serves as a **catch-all** after instruction selection and register allocation, stripping codegen-introduced pseudo/metadata instructions and exposing interpose points for third-party obfuscation passes to perform final instruction-level transformations.
 >
 > Implementation: `neverc/lib/DynCode/MIR/MIRPrepPass.cpp` + `Pipeline.cpp`.
-> Interpose interface: `neverc/include/neverc/DynCode/Pipeline/Pipeline.h`.
+> Interpose interface: [`neverc/include/neverc/DynCode/Pipeline/Pipeline.h`].
 
 ---
 
@@ -203,3 +203,5 @@ The MIR layer handles **catch-all cleanup + obfuscation interpose points**, not 
 3. **Extractor fallback**: hard-fail on any remaining external relocs or non-empty data sections.
 
 This principle keeps the MIR layer nearly immune to backend ISA upgrades. The only maintenance is: "is there a new pseudo in TargetOpcode? If dyncode doesn't need it, add one case."
+
+[`neverc/include/neverc/DynCode/Pipeline/Pipeline.h`]: ../../../neverc/include/neverc/DynCode/Pipeline/Pipeline.h

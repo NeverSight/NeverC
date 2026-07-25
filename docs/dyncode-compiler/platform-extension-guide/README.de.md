@@ -87,12 +87,12 @@ Für ein völlig neues Objektformat (z.B. WASM-Module):
 
 ### 4. Loader hinzufügen (nur Testwerkzeug)
 
-- Referenz `tests/neverc/dyncode/loader_linux.c` und `loader_windows.c`
+- Referenz [`tests/neverc/dyncode/loader_linux.c`] und `loader_windows.c`
 - Typischerweise: `mmap(RWX) → memcpy → icache flush → call`
 
 ### 5. Tests aktualisieren
 
-- Cross-Compile-Check in `tests/neverc/DynCodeCrossTargetTests.cpp` hinzufügen
+- Cross-Compile-Check in [`tests/neverc/DynCodeCrossTargetTests.cpp`] hinzufügen
 - Wenn CI auf der Plattform ausführen kann, Loader-Roundtrip-Test hinzufügen
 
 ---
@@ -135,3 +135,6 @@ Byte-Stream: RunPostExtract → [finalize Kette] → RunPostFinalize
 ```
 
 Eingebautes MIR-Patching ist ebenfalls tabellengesteuert: `Tables/MIRRewritePatterns.def` und `Tables/MIRRewriteOpcodes.def`. Beim Hinzufügen neuer dyncode-freundlicher Backend-Formen Tabelleneinträge und schmale Helfer bevorzugen statt zielspezifische Verzweigungen im Pass-Body zu verstreuen.
+
+[`tests/neverc/dyncode/loader_linux.c`]: ../../../tests/neverc/dyncode/loader_linux.c
+[`tests/neverc/DynCodeCrossTargetTests.cpp`]: ../../../tests/neverc/DynCodeCrossTargetTests.cpp

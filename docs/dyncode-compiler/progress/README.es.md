@@ -12,7 +12,7 @@
 - [x] `SyscallStubPass`: whitelist basada en tabla para Darwin BSD / Linux arm64 / Linux x86_64 / Android syscalls
 - [x] `AllBlrPass`: reescritura agresiva opcional de llamadas indirectas
 - [x] `DynCodeExtractor`: Mach-O `.o` → `.bin` plano con parcheo de reubicaciones intra-sección
-- [x] Opciones CLI via `neverc/include/neverc/Invoke/Options.td.h` generado: `-fdyncode`, `-fdyncode-all-blr`, `-mdyncode-syscall`, `-fdyncode-keep-obj=`, `-fdyncode-entry=`
+- [x] Opciones CLI via [`neverc/include/neverc/Invoke/Options.td.h`] generado: `-fdyncode`, `-fdyncode-all-blr`, `-mdyncode-syscall`, `-fdyncode-keep-obj=`, `-fdyncode-entry=`
 - [x] PIC por defecto en todas las plataformas (`isPICDefault()` retorna `true` universalmente)
 - [x] Apilamiento recursivo genérico (tablas de punteros a función, tablas de punteros a cadena, tablas de estructuras anidadas, inicializadores ConstantExpr GEP/BitCast)
 - [x] `IndirectBrPass`: GCC computed-goto (`&&label`) → switch, incluyendo compartición de tablas de múltiples sitios de despacho
@@ -47,7 +47,7 @@
 - [x] `<neverc/dyncode/kernel.h>` para convenciones de punto de entrada ring-0
 - [x] Imposición de offset cero del punto de entrada (`placeEntryFirst`)
 - [x] Pipeline de finalización: SDK de reescritor de bytes prohibidos + SDK de codificador de charset + restricciones de tamaño
-- [x] API de Plugins C fuera del árbol (`NevercPluginAPI.h`): 11 puntos de enganche dyncode (`NEVERC_INTERPOSE_SC_*`)
+- [x] API de Plugins C fuera del árbol ([`NevercPluginAPI.h`]): 11 puntos de enganche dyncode (`NEVERC_INTERPOSE_SC_*`)
 - [x] Inyección de `-mno-implicit-float` para x86_64 (previene desbordamiento de pool de constantes SSE del backend)
 - [x] Cargadores multiplataforma (macOS/Linux/Windows)
 
@@ -71,3 +71,6 @@
 - [ ] iOS arm64 (firma de código + escenarios de jailbreak JIT)
 - [ ] Cortex-M / Thumb
 - [ ] RISC-V 64
+
+[`neverc/include/neverc/Invoke/Options.td.h`]: ../../../neverc/include/neverc/Invoke/Options.td.h
+[`NevercPluginAPI.h`]: ../../../neverc/include/neverc/Plugin/NevercPluginAPI.h

@@ -7,7 +7,7 @@
 > [ir-pass-design.md](../ir-pass-design/README.ko.md)의 동반 문서. IR 계층은 IR 수준에서 명백히 재배치를 생성하는 구조를 제거합니다. MIR 계층은 명령 선택과 레지스터 할당 후의 **캐치올**로, 코드 생성이 도입한 의사/메타데이터 명령을 제거하고 서드파티 난독화 pass가 최종 명령 수준 변환을 수행할 훅 포인트를 노출합니다.
 >
 > 구현: `neverc/lib/DynCode/MIR/MIRPrepPass.cpp` + `Pipeline.cpp`.
-> 훅 인터페이스: `neverc/include/neverc/DynCode/Pipeline/Pipeline.h`.
+> 훅 인터페이스: [`neverc/include/neverc/DynCode/Pipeline/Pipeline.h`].
 
 ---
 
@@ -141,3 +141,5 @@ if (Name.starts_with("SEH_"))
 1. **능동 수정**: MachineInstr 직접 변경. 저비용, 타겟 독립.
 2. **진단 패스스루**: 문제 감지 → MIR 수준 오류 보고 → 추출기에서 바이트 수준 거부.
 3. **추출기 폴백**: 남은 외부 reloc 또는 비어있지 않은 데이터 섹션에서 하드 실패.
+
+[`neverc/include/neverc/DynCode/Pipeline/Pipeline.h`]: ../../../neverc/include/neverc/DynCode/Pipeline/Pipeline.h

@@ -44,7 +44,7 @@ IR 和 MIR 全局回调均使用**注册一次、运行时读取当前 `DynCodeO
 ## 3. 表驱动的平台差异
 
 - **Triple → 行为**：集中在 `TargetDesc.cpp` 的 `describeTriple()` 和 `TargetDesc` 字段中（段名、syscall ABI、内联汇编模板、驱动注入标志等）。添加新 OS/Arch 时，优先**添加表项**而非在提取器或 pass 中编写长分支。
-- **CLI 选项**：在 `neverc/include/neverc/Invoke/Options.td.h` 中定义；由 `DriverIntegration.cpp` 使用 `OPT_*` 枚举消费，避免字符串魔法。
+- **CLI 选项**：在 [`neverc/include/neverc/Invoke/Options.td.h`] 中定义；由 `DriverIntegration.cpp` 使用 `OPT_*` 枚举消费，避免字符串魔法。
 
 ## 4. Windows MSVC 工具链与 SDK 布局
 
@@ -137,3 +137,5 @@ Shim 头文件（`sys/mman.h`、`fcntl.h` 等）暴露必须匹配目标内核 A
 | `O_CLOEXEC` | `0x1000000` | `0x80000` |
 
 实现：shim 头文件中的 `#if defined(__APPLE__)` 守卫。`SyscallTables.cpp` POSIX 兼容表使用 Linux 值（`AT_FDCWD = -100`），仅在 `SyscallABI::LinuxSvc0` / `LinuxSyscall` 路径上激活。Windows 目标不使用这些 POSIX 头文件；POSIX→Win32 桥接由 `WinPEBImportPass` 兼容包装器处理。
+
+[`neverc/include/neverc/Invoke/Options.td.h`]: ../../../neverc/include/neverc/Invoke/Options.td.h

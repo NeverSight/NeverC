@@ -12,7 +12,7 @@
 - [x] `SyscallStubPass`: whitelist guidata da tabella per Darwin BSD / Linux arm64 / Linux x86_64 / Android syscall
 - [x] `AllBlrPass`: riscrittura aggressiva opzionale delle chiamate indirette
 - [x] `DynCodeExtractor`: Mach-O `.o` → `.bin` piatto con patching delle rilocazioni intra-sezione
-- [x] Opzioni CLI via `neverc/include/neverc/Invoke/Options.td.h` generato: `-fdyncode`, `-fdyncode-all-blr`, `-mdyncode-syscall`, `-fdyncode-keep-obj=`, `-fdyncode-entry=`
+- [x] Opzioni CLI via [`neverc/include/neverc/Invoke/Options.td.h`] generato: `-fdyncode`, `-fdyncode-all-blr`, `-mdyncode-syscall`, `-fdyncode-keep-obj=`, `-fdyncode-entry=`
 - [x] PIC predefinito su tutte le piattaforme (`isPICDefault()` restituisce `true` universalmente)
 - [x] Impilamento ricorsivo generico (tabelle di puntatori a funzione, tabelle di puntatori a stringa, tabelle di strutture annidate, inizializzatori ConstantExpr GEP/BitCast)
 - [x] `IndirectBrPass`: GCC computed-goto (`&&label`) → switch, inclusa condivisione tabelle multi-sito di dispatch
@@ -47,7 +47,7 @@
 - [x] `<neverc/dyncode/kernel.h>` per le convenzioni di punto d'ingresso ring-0
 - [x] Imposizione offset zero del punto d'ingresso (`placeEntryFirst`)
 - [x] Pipeline di finalizzazione: SDK rewriter byte proibiti + SDK encoder charset + vincoli dimensionali
-- [x] API Plugin C fuori dall'albero (`NevercPluginAPI.h`): 11 interpose point dyncode (`NEVERC_INTERPOSE_SC_*`)
+- [x] API Plugin C fuori dall'albero ([`NevercPluginAPI.h`]): 11 interpose point dyncode (`NEVERC_INTERPOSE_SC_*`)
 - [x] Iniezione `-mno-implicit-float` per x86_64 (previene spill del pool costanti SSE del backend)
 - [x] Loader multipiattaforma (macOS/Linux/Windows)
 
@@ -71,3 +71,6 @@
 - [ ] iOS arm64 (firma del codice + scenari jailbreak JIT)
 - [ ] Cortex-M / Thumb
 - [ ] RISC-V 64
+
+[`neverc/include/neverc/Invoke/Options.td.h`]: ../../../neverc/include/neverc/Invoke/Options.td.h
+[`NevercPluginAPI.h`]: ../../../neverc/include/neverc/Plugin/NevercPluginAPI.h

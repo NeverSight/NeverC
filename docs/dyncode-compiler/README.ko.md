@@ -13,7 +13,7 @@ C 소스를 **위치 독립·제로 재배치·제로 데이터 섹션** 플랫 
 1. **일반 C만 작성** — dyncode 전용 트릭이 필요 없습니다.
 2. **완전 자동 파이프라인** — `static int counter = 0`, `const char s[] = "..."`, 재귀, `write/exit/read/...`, 큰 상수 배열 등은 사용자 코드 수정 없이 내부에서 처리됩니다.
 3. **외부 의존성 제로** — 출력 `.bin`은 dyld·libSystem·데이터 섹션을 참조하지 않는 순수 명령 스트림입니다.
-4. **CLI는 TableGen 정의** — 각 `-fdyncode-*`는 `neverc/include/neverc/Invoke/Options.td.h`에 등록됩니다(하드코딩 문자열 매칭 아님). 오타 시 did-you-mean, `--help`에 모든 옵션 표시.
+4. **CLI는 TableGen 정의** — 각 `-fdyncode-*`는 [`neverc/include/neverc/Invoke/Options.td.h`]에 등록됩니다(하드코딩 문자열 매칭 아님). 오타 시 did-you-mean, `--help`에 모든 옵션 표시.
 5. **출력 수준 제약 검증 가능** — `-fdyncode-bad-bytes=` / `-fdyncode-bad-byte-profile=`는 post-extract 후 최종 `.bin`을 스캔하며, 금지 바이트 적중 시 오프셋·바이트·컨텍스트를 보고하고 출력을 거부합니다.
 6. **크로스 플랫폼 단일 파이프라인** — `TargetDesc` 테이블로 구동. 동일 C 소스로 macOS / Linux / Android / Windows dyncode 생성. 새 플랫폼은 pass 5벌 복제 대신 테이블 한 행 + 추출기 하나 추가.
 
@@ -161,7 +161,7 @@ flowchart TD
 
 ## 테이블 기반 플랫폼 차이
 
-`neverc/include/neverc/DynCode/Pipeline/TargetDesc.h`는 각 (OS, arch) 조합의 차이를 설명하는 `TargetDesc` 구조체를 정의합니다:
+[`neverc/include/neverc/DynCode/Pipeline/TargetDesc.h`]는 각 (OS, arch) 조합의 차이를 설명하는 `TargetDesc` 구조체를 정의합니다:
 
 - `TextSectionName`: Mach-O `__text` / ELF `.text` / COFF `.text`
 - `SyscallABI`: enum value (`DarwinSvc80` / `LinuxSvc0` / `LinuxSyscall` / `WindowsPEB` / `None`)
@@ -319,3 +319,6 @@ dyncode 파이프라인 자체는 "코드가 올바르게 실행됨"만 보장�
 - **Windows PEB 워크는 멀티 DLL 디스패치로 완전 구현**. `__neverc_win_resolve`는 `(dll_hash, api_hash)` 쌍 수용. 화이트리스트: kernel32.dll(~125 API), ntdll.dll(~26), user32.dll(~13), ws2_32.dll(~23), advapi32.dll(~16), shell32.dll(~6). API 추가 = `Tables/Win32Apis.def` 한 행 + `lib/Headers/windows.h` 선언 하나.
 - **외부 함수 화이트리스트**는 Darwin BSD / Linux / Android 일반 syscall(~80+)과 Win32 API(~190)만. stdio 등 무거운 런타임 미포함 — dyncode에 stdio 상태 머신 전체 불가.
 - C++ / ObjC / CUDA 미지원 — NeverC는 설계상 C만.
+
+[`neverc/include/neverc/DynCode/Pipeline/TargetDesc.h`]: ../../neverc/include/neverc/DynCode/Pipeline/TargetDesc.h
+[`neverc/include/neverc/Invoke/Options.td.h`]: ../../neverc/include/neverc/Invoke/Options.td.h

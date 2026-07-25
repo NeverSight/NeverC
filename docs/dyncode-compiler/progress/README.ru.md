@@ -12,7 +12,7 @@
 - [x] `SyscallStubPass`: табличный белый список для Darwin BSD / Linux arm64 / Linux x86_64 / Android syscall
 - [x] `AllBlrPass`: опциональная агрессивная замена прямых вызовов на косвенные
 - [x] `DynCodeExtractor`: Mach-O `.o` → плоский `.bin` с патчами внутрисекционных релокаций
-- [x] CLI-опции через сгенерированный `neverc/include/neverc/Invoke/Options.td.h`: `-fdyncode`, `-fdyncode-all-blr`, `-mdyncode-syscall`, `-fdyncode-keep-obj=`, `-fdyncode-entry=`
+- [x] CLI-опции через сгенерированный [`neverc/include/neverc/Invoke/Options.td.h`]: `-fdyncode`, `-fdyncode-all-blr`, `-mdyncode-syscall`, `-fdyncode-keep-obj=`, `-fdyncode-entry=`
 - [x] PIC по умолчанию на всех платформах (`isPICDefault()` возвращает `true` повсеместно)
 - [x] Обобщённый рекурсивный перенос на стек (таблицы указателей на функции, таблицы строковых указателей, вложенные таблицы структур, инициализаторы ConstantExpr GEP/BitCast)
 - [x] `IndirectBrPass`: GCC computed-goto (`&&label`) → switch, включая разделение таблиц мульти-диспатч-сайтов
@@ -47,7 +47,7 @@
 - [x] `<neverc/dyncode/kernel.h>` для конвенций точки входа ring-0
 - [x] Принудительное смещение точки входа на ноль (`placeEntryFirst`)
 - [x] Конвейер финализации: SDK перезаписи плохих байтов + SDK кодировщика charset + ограничения размера
-- [x] Внедеревный C-плагин API (`NevercPluginAPI.h`): 11 точек подключения dyncode (`NEVERC_INTERPOSE_SC_*`)
+- [x] Внедеревный C-плагин API ([`NevercPluginAPI.h`]): 11 точек подключения dyncode (`NEVERC_INTERPOSE_SC_*`)
 - [x] Инъекция `-mno-implicit-float` для x86_64 (предотвращает вынос SSE-констант бэкенда в пул)
 - [x] Кроссплатформенные загрузчики (macOS/Linux/Windows)
 
@@ -71,3 +71,6 @@
 - [ ] iOS arm64 (подпись кода + сценарии JIT-джейлбрейка)
 - [ ] Cortex-M / Thumb
 - [ ] RISC-V 64
+
+[`neverc/include/neverc/Invoke/Options.td.h`]: ../../../neverc/include/neverc/Invoke/Options.td.h
+[`NevercPluginAPI.h`]: ../../../neverc/include/neverc/Plugin/NevercPluginAPI.h

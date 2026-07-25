@@ -44,7 +44,7 @@ IR과 MIR 전역 콜백 모두 **한 번 등록, 런타임에 현재 `DynCodeOpt
 ## 3. 테이블 기반 플랫폼 차이
 
 - **Triple → 동작**: `TargetDesc.cpp`의 `describeTriple()`와 `TargetDesc` 필드에 집중(섹션 이름, syscall ABI, 인라인 어셈블리 템플릿, 드라이버 주입 플래그 등). 새 OS/Arch 추가 시 추출기나 pass에 긴 분기를 작성하기보다 **테이블 항목 추가**를 우선합니다.
-- **CLI 옵션**: `neverc/include/neverc/Invoke/Options.td.h`에 정의; `DriverIntegration.cpp`가 `OPT_*` 열거형으로 소비하여 문자열 매직을 방지합니다.
+- **CLI 옵션**: [`neverc/include/neverc/Invoke/Options.td.h`]에 정의; `DriverIntegration.cpp`가 `OPT_*` 열거형으로 소비하여 문자열 매직을 방지합니다.
 
 ## 4. Windows MSVC 툴체인 및 SDK 레이아웃
 
@@ -137,3 +137,5 @@ Shim 헤더(`sys/mman.h`, `fcntl.h` 등)는 타겟 커널 ABI에 맞는 상수�
 | `O_CLOEXEC` | `0x1000000` | `0x80000` |
 
 구현: shim 헤더의 `#if defined(__APPLE__)` 가드. `SyscallTables.cpp` POSIX 호환 테이블은 Linux 값(`AT_FDCWD = -100`)을 사용하며, `SyscallABI::LinuxSvc0` / `LinuxSyscall` 경로에서만 활성화됩니다. Windows 타겟은 이 POSIX 헤더를 사용하지 않으며; POSIX→Win32 브리지는 `WinPEBImportPass` 호환 래퍼가 처리합니다.
+
+[`neverc/include/neverc/Invoke/Options.td.h`]: ../../../neverc/include/neverc/Invoke/Options.td.h

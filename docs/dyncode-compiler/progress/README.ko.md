@@ -12,7 +12,7 @@
 - [x] `SyscallStubPass`: 테이블 기반 화이트리스트, Darwin BSD / Linux arm64 / Linux x86_64 / Android syscall 지원
 - [x] `AllBlrPass`: 선택적 적극적 간접 호출 재작성
 - [x] `DynCodeExtractor`: Mach-O `.o` → 플랫 `.bin`, 섹션 내 재배치 패치 포함
-- [x] CLI 옵션 (생성된 `neverc/include/neverc/Invoke/Options.td.h` 경유): `-fdyncode`, `-fdyncode-all-blr`, `-mdyncode-syscall`, `-fdyncode-keep-obj=`, `-fdyncode-entry=`
+- [x] CLI 옵션 (생성된 [`neverc/include/neverc/Invoke/Options.td.h`] 경유): `-fdyncode`, `-fdyncode-all-blr`, `-mdyncode-syscall`, `-fdyncode-keep-obj=`, `-fdyncode-entry=`
 - [x] 전 플랫폼 기본 PIC (`isPICDefault()`가 일괄 `true` 반환)
 - [x] 범용 재귀 스택화 (함수 포인터 테이블, 문자열 포인터 테이블, 중첩 구조체 테이블, ConstantExpr GEP/BitCast 초기화자)
 - [x] `IndirectBrPass`: GCC computed-goto (`&&label`) → switch, 다중 디스패치 사이트 테이블 공유 포함
@@ -47,7 +47,7 @@
 - [x] `<neverc/dyncode/kernel.h>`: ring-0 진입점 규약용
 - [x] 진입점 오프셋 0 강제 (`placeEntryFirst`)
 - [x] 파이널라이즈 파이프라인: 배드바이트 리라이터 SDK + 문자 집합 인코더 SDK + 크기 제약
-- [x] 아웃오브트리 C 플러그인 API (`NevercPluginAPI.h`): 11개 dyncode 훅 포인트 (`NEVERC_INTERPOSE_SC_*`)
+- [x] 아웃오브트리 C 플러그인 API ([`NevercPluginAPI.h`]): 11개 dyncode 훅 포인트 (`NEVERC_INTERPOSE_SC_*`)
 - [x] x86_64 `-mno-implicit-float` 주입 (백엔드 SSE 상수 풀 스필 방지)
 - [x] 크로스 플랫폼 로더 (macOS/Linux/Windows)
 
@@ -71,3 +71,6 @@
 - [ ] iOS arm64 (코드 서명 + JIT 탈옥 시나리오)
 - [ ] Cortex-M / Thumb
 - [ ] RISC-V 64
+
+[`neverc/include/neverc/Invoke/Options.td.h`]: ../../../neverc/include/neverc/Invoke/Options.td.h
+[`NevercPluginAPI.h`]: ../../../neverc/include/neverc/Plugin/NevercPluginAPI.h

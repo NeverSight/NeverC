@@ -44,7 +44,7 @@ IR・MIR のグローバルコールバックはともに**一度登録、実行
 ## 3. テーブル駆動のプラットフォーム差分
 
 - **Triple → 動作**：`TargetDesc.cpp` の `describeTriple()` と `TargetDesc` フィールドに集約（セクション名、syscall ABI、インラインアセンブリテンプレート、ドライバ注入フラグ等）。新 OS/Arch 追加時は抽出器や pass に長い分岐を書くのではなく**テーブルエントリ追加**を優先。
-- **CLI オプション**：`neverc/include/neverc/Invoke/Options.td.h` で定義；`DriverIntegration.cpp` が `OPT_*` 列挙で消費し、文字列マジックを回避。
+- **CLI オプション**：[`neverc/include/neverc/Invoke/Options.td.h`] で定義；`DriverIntegration.cpp` が `OPT_*` 列挙で消費し、文字列マジックを回避。
 
 ## 4. Windows MSVC ツールチェーンと SDK レイアウト
 
@@ -137,3 +137,5 @@ Shim ヘッダ（`sys/mman.h`、`fcntl.h` 等）はターゲットカーネル A
 | `O_CLOEXEC` | `0x1000000` | `0x80000` |
 
 実装：shim ヘッダ内の `#if defined(__APPLE__)` ガード。`SyscallTables.cpp` POSIX 互換テーブルは Linux 値（`AT_FDCWD = -100`）を使用し、`SyscallABI::LinuxSvc0` / `LinuxSyscall` パスでのみアクティブ。Windows ターゲットはこれらの POSIX ヘッダを使用しない；POSIX→Win32 ブリッジは `WinPEBImportPass` 互換ラッパが処理。
+
+[`neverc/include/neverc/Invoke/Options.td.h`]: ../../../neverc/include/neverc/Invoke/Options.td.h

@@ -77,7 +77,7 @@ Windows ليس لديه ABI استدعاء نظام مستقر. القائمة �
 
 ### 5. تحديث الاختبارات
 
-إضافة فحص ترجمة متقاطعة في `tests/neverc/DynCodeCrossTargetTests.cpp`.
+إضافة فحص ترجمة متقاطعة في [`tests/neverc/DynCodeCrossTargetTests.cpp`].
 
 ---
 
@@ -100,5 +100,7 @@ Windows ليس لديه ABI استدعاء نظام مستقر. القائمة �
 ## واجهة توسيع مرور التشويش
 
 مسار dyncode يكشف 11 خطافاً عبر `Pipeline.h::ObfuscationInterposes` لمكتبات التشويش الخارجية. ترقيع MIR المدمج أيضاً مدفوع بالجداول: `Tables/MIRRewritePatterns.def` و`Tables/MIRRewriteOpcodes.def`.
+
+[`tests/neverc/DynCodeCrossTargetTests.cpp`]: ../../../tests/neverc/DynCodeCrossTargetTests.cpp
 
 </div>

@@ -44,7 +44,7 @@ Both IR and MIR global callbacks use a **register-once, read-current-`DynCodeOpt
 ## 3. Table-Driven Platform Differences
 
 - **Triple → behavior**: centralized in `TargetDesc.cpp`'s `describeTriple()` and `TargetDesc` fields (section name, syscall ABI, inline assembly template, driver injection flags, etc.). When adding a new OS/Arch, prefer **adding table entries** rather than writing long branches in extractors or passes.
-- **CLI options**: defined in `neverc/include/neverc/Invoke/Options.td.h`; consumed by `DriverIntegration.cpp` using `OPT_*` enums, avoiding string magic.
+- **CLI options**: defined in [`neverc/include/neverc/Invoke/Options.td.h`]; consumed by `DriverIntegration.cpp` using `OPT_*` enums, avoiding string magic.
 
 ## 4. Windows MSVC Toolchain and SDK Layout
 
@@ -137,3 +137,5 @@ Key differences:
 | `O_CLOEXEC` | `0x1000000` | `0x80000` |
 
 Implementation: `#if defined(__APPLE__)` guards in shim headers. `SyscallTables.cpp` POSIX compat table uses Linux values (`AT_FDCWD = -100`), only active on `SyscallABI::LinuxSvc0` / `LinuxSyscall` paths. Windows targets do not use these POSIX headers; POSIX→Win32 bridging is handled by `WinPEBImportPass` compat wrappers.
+
+[`neverc/include/neverc/Invoke/Options.td.h`]: ../../../neverc/include/neverc/Invoke/Options.td.h

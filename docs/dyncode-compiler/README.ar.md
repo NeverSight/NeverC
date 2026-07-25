@@ -15,7 +15,7 @@
 1. **اكتب C عاديًا** — دون حيل خاصة بـ dyncode.
 2. **مسار تلقائي بالكامل** — `static int counter = 0` و`const char s[] = "..."` والدوال العودية و`write/exit/read/...` والمصفوفات الثابتة الكبيرة تُعالَج داخليًا دون تعديل كود المستخدم.
 3. **صفر تبعيات خارجية** — المخرج `.bin` تيار تعليمات خالص بلا dyld أو libSystem أو قسم بيانات.
-4. **خيارات CLI عبر TableGen** — كل `-fdyncode-*` في `neverc/include/neverc/Invoke/Options.td.h` (لا مطابقة نصوص صلبة). الأخطاء الإملائية → did-you-mean؛ `--help` يعرض الكل.
+4. **خيارات CLI عبر TableGen** — كل `-fdyncode-*` في [`neverc/include/neverc/Invoke/Options.td.h`] (لا مطابقة نصوص صلبة). الأخطاء الإملائية → did-you-mean؛ `--help` يعرض الكل.
 5. **قيود المخرجات قابلة للتحقق** — `-fdyncode-bad-bytes=` / `-fdyncode-bad-byte-profile=` يفحصان `.bin` النهائي بعد post-extract ويرفضان المخرجات عند البايتات المحظورة مع الإزاحة والبايت والسياق.
 6. **مسار واحد متعدد المنصات** — يقوده جدول `TargetDesc`. نفس مصدر C لـ macOS / Linux / Android / Windows. منصة جديدة = صف في الجدول + مُستخرج واحد، لا تكرار خمس مجموعات passes.
 
@@ -163,7 +163,7 @@ flowchart TD
 
 ## اختلافات المنصة المعتمدة على الجداول
 
-يُعرّف `neverc/include/neverc/DynCode/Pipeline/TargetDesc.h` بنية `TargetDesc` لكل تركيبة (OS, arch):
+يُعرّف [`neverc/include/neverc/DynCode/Pipeline/TargetDesc.h`] بنية `TargetDesc` لكل تركيبة (OS, arch):
 
 - `TextSectionName`: Mach-O `__text` / ELF `.text` / COFF `.text`
 - `SyscallABI`: enum value (`DarwinSvc80` / `LinuxSvc0` / `LinuxSyscall` / `WindowsPEB` / `None`)
@@ -321,4 +321,8 @@ docs/dyncode-compiler/
 - **اجتياز PEB في Windows مُنفَّذ بالكامل مع توزيع multi-DLL**. `__neverc_win_resolve` يقبل أزواج `(dll_hash, api_hash)`. القائمة البيضاء الحالية تغطي kernel32.dll (~125 API)، ntdll.dll (~26)، user32.dll (~13)، ws2_32.dll (~23)، advapi32.dll (~16)، shell32.dll (~6). إضافة API = صف في `Tables/Win32Apis.def` + إعلان في `lib/Headers/windows.h`.
 - **القائمة البيضاء للدوال الخارجية** تغطي syscalls شائعة لـ Darwin BSD / Linux / Android (~80+) + Win32 (~190). stdio وواجهات runtime الثقيلة غير مشمولة — dyncode لا يمكنه تضمين آلة حالة stdio كاملة.
 - لا يدعم C++ / ObjC / CUDA — NeverC مخصّص لـ C فقط.
+
+[`neverc/include/neverc/DynCode/Pipeline/TargetDesc.h`]: ../../neverc/include/neverc/DynCode/Pipeline/TargetDesc.h
+[`neverc/include/neverc/Invoke/Options.td.h`]: ../../neverc/include/neverc/Invoke/Options.td.h
+
 </div>

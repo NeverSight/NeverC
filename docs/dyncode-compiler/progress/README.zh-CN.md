@@ -12,7 +12,7 @@
 - [x] `SyscallStubPass`：表驱动白名单，覆盖 Darwin BSD / Linux arm64 / Linux x86_64 / Android 系统调用
 - [x] `AllBlrPass`：可选的激进间接调用改写
 - [x] `DynCodeExtractor`：Mach-O `.o` → 扁平 `.bin`，含节内重定位修补
-- [x] CLI 选项（通过生成的 `neverc/include/neverc/Invoke/Options.td.h`）：`-fdyncode`、`-fdyncode-all-blr`、`-mdyncode-syscall`、`-fdyncode-keep-obj=`、`-fdyncode-entry=`
+- [x] CLI 选项（通过生成的 [`neverc/include/neverc/Invoke/Options.td.h`]）：`-fdyncode`、`-fdyncode-all-blr`、`-mdyncode-syscall`、`-fdyncode-keep-obj=`、`-fdyncode-entry=`
 - [x] 全平台默认 PIC（`isPICDefault()` 统一返回 `true`）
 - [x] 通用递归栈化（函数指针表、字符串指针表、嵌套结构表、ConstantExpr GEP/BitCast 初始化器）
 - [x] `IndirectBrPass`：GCC computed-goto（`&&label`）→ switch，含多分发点表共享
@@ -47,7 +47,7 @@
 - [x] `<neverc/dyncode/kernel.h>` 用于 ring-0 入口约定
 - [x] 入口偏移零强制（`placeEntryFirst`）
 - [x] Finalize 流水线：坏字节重写器 SDK + 字符集编码器 SDK + 大小约束
-- [x] 树外 C 插件 API（`NevercPluginAPI.h`）：11 个 dyncode 钩子点（`NEVERC_INTERPOSE_SC_*`）
+- [x] 树外 C 插件 API（[`NevercPluginAPI.h`]）：11 个 dyncode 钩子点（`NEVERC_INTERPOSE_SC_*`）
 - [x] x86_64 `-mno-implicit-float` 注入（防止后端 SSE 常量池溢出）
 - [x] 跨平台 loader（macOS/Linux/Windows）
 
@@ -71,3 +71,6 @@
 - [ ] iOS arm64（代码签名 + JIT 越狱场景）
 - [ ] Cortex-M / Thumb
 - [ ] RISC-V 64
+
+[`neverc/include/neverc/Invoke/Options.td.h`]: ../../../neverc/include/neverc/Invoke/Options.td.h
+[`NevercPluginAPI.h`]: ../../../neverc/include/neverc/Plugin/NevercPluginAPI.h

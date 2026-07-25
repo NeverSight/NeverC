@@ -24,7 +24,7 @@ NeverC의 dyncode 파이프라인은 다음을 포함합니다:
 
 1. **크기 / 정렬 / 패딩 제약** — 내장 기능. `-fdyncode-max-length=`, `-fdyncode-align=`, `-fdyncode-pad=`는 `finalizeDynCodeBytes` 끝에서 실행. 드라이버는 모순된 구성을 거부 (예: 패드 바이트가 배드바이트 세트에 있거나, align/max-length 없이 pad 사용).
 
-2. **아웃오브트리 C 플러그인 API** — 순수 C ABI 플러그인 인터페이스(`NevercPluginAPI.h`). IR, MIR, Binary, Linker 커스텀 패스를 11개 dyncode 훅 포인트(`NEVERC_INTERPOSE_SC_*`)에 등록 가능. 단일 헤더 SDK, LLVM/CRT 의존성 제로. 자세한 내용은 [Plugin API 문서](../../plugin-api/README.ko.md) 참조.
+2. **아웃오브트리 C 플러그인 API** — 순수 C ABI 플러그인 인터페이스([`NevercPluginAPI.h`]). IR, MIR, Binary, Linker 커스텀 패스를 11개 dyncode 훅 포인트(`NEVERC_INTERPOSE_SC_*`)에 등록 가능. 단일 헤더 SDK, LLVM/CRT 의존성 제로. 자세한 내용은 [Plugin API 문서](../../plugin-api/README.ko.md) 참조.
 
 ## 계획 중 — 플러그인 레이어 (훅을 통해)
 
@@ -80,3 +80,5 @@ applyPostFinalizeObfuscationInterpose      (C Plugin API: NEVERC_INTERPOSE_SC_PO
 ## 계획 없음
 
 - **크로스 언어 프런트엔드** — NeverC는 자체 C23 프런트엔드만 수용. IR 파이프라인은 프런트엔드와 분리되어 있지만, 외부 비트코드 (예: `rustc` 또는 `zig`에서) 수용은 프로젝트 목표가 아님.
+
+[`NevercPluginAPI.h`]: ../../../neverc/include/neverc/Plugin/NevercPluginAPI.h

@@ -87,12 +87,12 @@ Windows には安定した syscall ABI がない；`WriteFile` / `CreateThread` 
 
 ### 4. Loader を追加（テストツールのみ）
 
-- `tests/neverc/dyncode/loader_linux.c` と `loader_windows.c` を参考
+- [`tests/neverc/dyncode/loader_linux.c`] と `loader_windows.c` を参考
 - 典型：`mmap(RWX) → memcpy → icache flush → call`
 
 ### 5. テストを更新
 
-- `tests/neverc/DynCodeCrossTargetTests.cpp` にクロスコンパイルチェックを追加
+- [`tests/neverc/DynCodeCrossTargetTests.cpp`] にクロスコンパイルチェックを追加
 - CI でそのプラットフォーム実行可能なら loader ラウンドトリップテストを追加
 
 ---
@@ -153,3 +153,6 @@ H.RunAfterPreEmit = [](llvm::TargetPassConfig &TPC,
 ```
 
 組み込み MIR パッチもテーブル駆動：`Tables/MIRRewritePatterns.def` にパターン診断名・アーキテクチャフィルタ・ヘルパ名を記録；`Tables/MIRRewriteOpcodes.def` にバックエンドオペコード名を記録。新 dyncode フレンドリーバックエンド形式追加時は、pass 本体にターゲット固有分岐を散在させず、テーブルエントリと狭いヘルパの追加を優先。
+
+[`tests/neverc/dyncode/loader_linux.c`]: ../../../tests/neverc/dyncode/loader_linux.c
+[`tests/neverc/DynCodeCrossTargetTests.cpp`]: ../../../tests/neverc/DynCodeCrossTargetTests.cpp

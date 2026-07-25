@@ -12,7 +12,7 @@
 - [x] `SyscallStubPass`: table-driven whitelist covering Darwin BSD / Linux arm64 / Linux x86_64 / Android syscalls
 - [x] `AllBlrPass`: optional aggressive indirect call rewriting
 - [x] `DynCodeExtractor`: Mach-O `.o` → flat `.bin` with intra-section relocation patching
-- [x] CLI options via generated `neverc/include/neverc/Invoke/Options.td.h` (`-fdyncode`, `-fdyncode-all-blr`, `-mdyncode-syscall`, `-fdyncode-keep-obj=`, `-fdyncode-entry=`)
+- [x] CLI options via generated [`neverc/include/neverc/Invoke/Options.td.h`] (`-fdyncode`, `-fdyncode-all-blr`, `-mdyncode-syscall`, `-fdyncode-keep-obj=`, `-fdyncode-entry=`)
 - [x] All-platform default PIC (`isPICDefault()` returns `true` universally)
 - [x] Generic recursive stack-ification (function pointer tables, string pointer tables, nested struct tables, ConstantExpr GEP/BitCast initializers)
 - [x] `IndirectBrPass`: GCC computed-goto (`&&label`) → switch, including multi-dispatch-site table sharing
@@ -47,7 +47,7 @@
 - [x] `<neverc/dyncode/kernel.h>` for ring-0 entry conventions
 - [x] Entry offset zero enforcement (`placeEntryFirst`)
 - [x] Finalize pipeline: bad-byte rewriter SDK + charset encoder SDK + sizing constraints
-- [x] Out-of-tree C Plugin API (`NevercPluginAPI.h`): 11 dyncode interpose points (`NEVERC_INTERPOSE_SC_*`)
+- [x] Out-of-tree C Plugin API ([`NevercPluginAPI.h`]): 11 dyncode interpose points (`NEVERC_INTERPOSE_SC_*`)
 - [x] x86_64 `-mno-implicit-float` injection (prevents backend SSE constant pool spills)
 - [x] Cross-platform loaders (macOS/Linux/Windows)
 
@@ -71,3 +71,6 @@
 - [ ] iOS arm64 (code signing + JIT jailbreak scenarios)
 - [ ] Cortex-M / Thumb
 - [ ] RISC-V 64
+
+[`neverc/include/neverc/Invoke/Options.td.h`]: ../../../neverc/include/neverc/Invoke/Options.td.h
+[`NevercPluginAPI.h`]: ../../../neverc/include/neverc/Plugin/NevercPluginAPI.h

@@ -87,12 +87,12 @@ Windows에는 안정적인 syscall ABI가 없습니다; `WriteFile` / `CreateThr
 
 ### 4. Loader 추가 (테스트 도구 전용)
 
-- `tests/neverc/dyncode/loader_linux.c`와 `loader_windows.c` 참조
+- [`tests/neverc/dyncode/loader_linux.c`]와 `loader_windows.c` 참조
 - 일반적: `mmap(RWX) → memcpy → icache flush → call`
 
 ### 5. 테스트 업데이트
 
-- `tests/neverc/DynCodeCrossTargetTests.cpp`에 크로스 컴파일 체크 추가
+- [`tests/neverc/DynCodeCrossTargetTests.cpp`]에 크로스 컴파일 체크 추가
 - CI에서 해당 플랫폼 실행 가능하면 loader 왕복 테스트 추가
 
 ---
@@ -153,3 +153,6 @@ H.RunAfterPreEmit = [](llvm::TargetPassConfig &TPC,
 ```
 
 내장 MIR 패치도 테이블 기반: `Tables/MIRRewritePatterns.def`에 패턴 진단 이름, 아키텍처 필터, 헬퍼 이름 기록; `Tables/MIRRewriteOpcodes.def`에 백엔드 연산 코드 이름 기록. 새 dyncode 친화적 백엔드 형태 추가 시 pass 본문에 타겟 특정 분기를 분산시키지 말고 테이블 항목과 좁은 범위 헬퍼 추가를 우선하십시오.
+
+[`tests/neverc/dyncode/loader_linux.c`]: ../../../tests/neverc/dyncode/loader_linux.c
+[`tests/neverc/DynCodeCrossTargetTests.cpp`]: ../../../tests/neverc/DynCodeCrossTargetTests.cpp

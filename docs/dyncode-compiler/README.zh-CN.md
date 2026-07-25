@@ -13,7 +13,7 @@
 1. **用户编写普通 C** — 无需 dyncode 专用技巧。
 2. **全自动流水线** — `static int counter = 0`、`const char s[] = "..."`、递归函数、`write/exit/read/...` 以及大型常量数组均在内部处理，无需修改用户代码。
 3. **零外部依赖** — 输出 `.bin` 为纯指令流，不引用 dyld、libSystem 或任何数据段。
-4. **CLI 选项由 TableGen 定义** — 每个 `-fdyncode-*` 选项在 `neverc/include/neverc/Invoke/Options.td.h` 注册，非硬编码字符串匹配；拼写错误有 did-you-mean 提示，`--help` 列出全部选项。
+4. **CLI 选项由 TableGen 定义** — 每个 `-fdyncode-*` 选项在 [`neverc/include/neverc/Invoke/Options.td.h`] 注册，非硬编码字符串匹配；拼写错误有 did-you-mean 提示，`--help` 列出全部选项。
 5. **输出级约束可验证** — `-fdyncode-bad-bytes=` / `-fdyncode-bad-byte-profile=` 在 post-extract 钩子后扫描最终 `.bin`，命中禁止字节则拒绝输出并报告偏移、字节与上下文。
 6. **跨平台单一流水线** — 由 `TargetDesc` 表驱动。同一份 C 源码可生成 macOS / Linux / Android / Windows dyncode；新增平台只需填表一行 + 实现一个提取器，而非复制五套 pass。
 
@@ -161,7 +161,7 @@ flowchart TD
 
 ## 表驱动的平台差异
 
-`neverc/include/neverc/DynCode/Pipeline/TargetDesc.h` 定义 `TargetDesc` 结构体，描述每个 (OS, arch) 组合的全部差异：
+[`neverc/include/neverc/DynCode/Pipeline/TargetDesc.h`] 定义 `TargetDesc` 结构体，描述每个 (OS, arch) 组合的全部差异：
 
 - `TextSectionName`: Mach-O `__text` / ELF `.text` / COFF `.text`
 - `SyscallABI`: enum value (`DarwinSvc80` / `LinuxSvc0` / `LinuxSyscall` / `WindowsPEB` / `None`)
@@ -322,3 +322,6 @@ DynCode 流水线本身只保证「代码能正确运行」。混淆、多态、
 - **Windows PEB 遍历已完整实现多 DLL 分派**。`__neverc_win_resolve` 接受 `(dll_hash, api_hash)` 对。当前白名单覆盖 kernel32.dll（约 125 API）、ntdll.dll（约 26）、user32.dll（约 13）、ws2_32.dll（约 23）、advapi32.dll（约 16）、shell32.dll（约 6）。新增 API = `Tables/Win32Apis.def` 一行 + `lib/Headers/windows.h` 一个声明。
 - **外部函数白名单**仅覆盖 Darwin BSD / Linux / Android 常见 syscall（约 80+）与 Win32 API（约 190）。stdio 等重度运行时接口未包含 — dyncode 无法嵌入完整 stdio 状态机。
 - 不支持 C++ / ObjC / CUDA — NeverC 设计上仅支持 C。
+
+[`neverc/include/neverc/DynCode/Pipeline/TargetDesc.h`]: ../../neverc/include/neverc/DynCode/Pipeline/TargetDesc.h
+[`neverc/include/neverc/Invoke/Options.td.h`]: ../../neverc/include/neverc/Invoke/Options.td.h

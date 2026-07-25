@@ -7,7 +7,7 @@
 > 與 [ir-pass-design.md](../ir-pass-design/README.zh-TW.md) 配套。IR 層消除在 IR 級別明顯產生重定位的構造。MIR 層作為指令選擇和暫存器分配後的**兜底層**，剝離程式碼產生引入的偽指令/中繼資料指令，並暴露掛鉤點供第三方混淆 pass 進行最終指令級變換。
 >
 > 實作：`neverc/lib/DynCode/MIR/MIRPrepPass.cpp` + `Pipeline.cpp`。
-> 掛鉤介面：`neverc/include/neverc/DynCode/Pipeline/Pipeline.h`。
+> 掛鉤介面：[`neverc/include/neverc/DynCode/Pipeline/Pipeline.h`]。
 
 ---
 
@@ -178,3 +178,5 @@ MIR 層處理**兜底清理 + 混淆掛鉤點**，而非業務邏輯。「寫普
 3. **擷取器兜底**：對任何剩餘外部 reloc 或非空資料段硬失敗。
 
 此原則使 MIR 層幾乎不受後端 ISA 升級影響。唯一的維護是：「TargetOpcode 中有新偽指令嗎？如果 dyncode 不需要它，新增一個 case。」
+
+[`neverc/include/neverc/DynCode/Pipeline/Pipeline.h`]: ../../../neverc/include/neverc/DynCode/Pipeline/Pipeline.h

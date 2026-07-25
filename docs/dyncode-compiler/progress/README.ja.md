@@ -12,7 +12,7 @@
 - [x] `SyscallStubPass`：テーブル駆動ホワイトリスト、Darwin BSD / Linux arm64 / Linux x86_64 / Android syscall をカバー
 - [x] `AllBlrPass`：オプションの積極的間接呼び出し書き換え
 - [x] `DynCodeExtractor`：Mach-O `.o` → フラット `.bin`、セクション内リロケーションパッチ付き
-- [x] CLI オプション（生成された `neverc/include/neverc/Invoke/Options.td.h` 経由）：`-fdyncode`、`-fdyncode-all-blr`、`-mdyncode-syscall`、`-fdyncode-keep-obj=`、`-fdyncode-entry=`
+- [x] CLI オプション（生成された [`neverc/include/neverc/Invoke/Options.td.h`] 経由）：`-fdyncode`、`-fdyncode-all-blr`、`-mdyncode-syscall`、`-fdyncode-keep-obj=`、`-fdyncode-entry=`
 - [x] 全プラットフォームデフォルト PIC（`isPICDefault()` が統一的に `true` を返す）
 - [x] 汎用再帰スタック化（関数ポインタテーブル、文字列ポインタテーブル、ネスト構造体テーブル、ConstantExpr GEP/BitCast 初期化子）
 - [x] `IndirectBrPass`：GCC computed-goto（`&&label`）→ switch、複数ディスパッチサイトテーブル共有を含む
@@ -47,7 +47,7 @@
 - [x] `<neverc/dyncode/kernel.h>`：ring-0 エントリ規約用
 - [x] エントリオフセットゼロ強制（`placeEntryFirst`）
 - [x] ファイナライズパイプライン：バッドバイトリライター SDK + 文字セットエンコーダー SDK + サイズ制約
-- [x] アウトオブツリー C プラグイン API（`NevercPluginAPI.h`）：11 dyncode フックポイント（`NEVERC_INTERPOSE_SC_*`）
+- [x] アウトオブツリー C プラグイン API（[`NevercPluginAPI.h`]）：11 dyncode フックポイント（`NEVERC_INTERPOSE_SC_*`）
 - [x] x86_64 `-mno-implicit-float` インジェクション（バックエンド SSE 定数プールスピル防止）
 - [x] クロスプラットフォームローダー（macOS/Linux/Windows）
 
@@ -71,3 +71,6 @@
 - [ ] iOS arm64（コード署名 + JIT ジェイルブレイクシナリオ）
 - [ ] Cortex-M / Thumb
 - [ ] RISC-V 64
+
+[`neverc/include/neverc/Invoke/Options.td.h`]: ../../../neverc/include/neverc/Invoke/Options.td.h
+[`NevercPluginAPI.h`]: ../../../neverc/include/neverc/Plugin/NevercPluginAPI.h

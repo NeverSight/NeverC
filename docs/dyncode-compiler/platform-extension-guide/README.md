@@ -87,12 +87,12 @@ For an entirely new object format (e.g., WASM modules):
 
 ### 4. Add a Loader (test tooling only)
 
-- Reference `tests/neverc/dyncode/loader_linux.c` and `loader_windows.c`
+- Reference [`tests/neverc/dyncode/loader_linux.c`] and `loader_windows.c`
 - Typically: `mmap(RWX) → memcpy → icache flush → call`
 
 ### 5. Update Tests
 
-- Add a cross-compile check in `tests/neverc/DynCodeCrossTargetTests.cpp`
+- Add a cross-compile check in [`tests/neverc/DynCodeCrossTargetTests.cpp`]
 - If CI can execute on the platform, add a loader round-trip test
 
 ---
@@ -153,3 +153,6 @@ H.RunAfterPreEmit = [](llvm::TargetPassConfig &TPC,
 ```
 
 Built-in MIR patching is also table-driven: `Tables/MIRRewritePatterns.def` records pattern diagnostic names, arch filters, and helper names; `Tables/MIRRewriteOpcodes.def` records backend opcode names. When adding new dyncode-friendly backend forms, prefer adding table entries and narrow helpers over scattering target-specific branches in the pass body.
+
+[`tests/neverc/dyncode/loader_linux.c`]: ../../../tests/neverc/dyncode/loader_linux.c
+[`tests/neverc/DynCodeCrossTargetTests.cpp`]: ../../../tests/neverc/DynCodeCrossTargetTests.cpp

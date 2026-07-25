@@ -13,7 +13,7 @@ Compile C source code directly into **position-independent, zero-relocation, zer
 1. **Users write normal C** — no dyncode-specific tricks required.
 2. **Fully automatic pipeline** — `static int counter = 0`, `const char s[] = "..."`, recursive functions, `write/exit/read/...`, and large constant arrays all work internally without requiring user code modifications.
 3. **Zero external dependencies** — the output `.bin` is pure instruction stream with no references to dyld, libSystem, or any data section.
-4. **CLI options defined via TableGen** — every `-fdyncode-*` option is registered in `neverc/include/neverc/Invoke/Options.td.h`, not hard-coded string matching. Typos get did-you-mean suggestions and `--help` displays all options.
+4. **CLI options defined via TableGen** — every `-fdyncode-*` option is registered in [`neverc/include/neverc/Invoke/Options.td.h`], not hard-coded string matching. Typos get did-you-mean suggestions and `--help` displays all options.
 5. **Output-level constraints are verifiable** — `-fdyncode-bad-bytes=` / `-fdyncode-bad-byte-profile=` scans the final `.bin` after the post-extract interpose and rejects output on forbidden byte hits, reporting offset, byte, and context.
 6. **Cross-platform single pipeline** — driven by `TargetDesc` table lookups. The same C source produces dyncode for macOS / Linux / Android / Windows. Adding a new platform means filling one more table row + writing one extractor implementation, not duplicating five passes.
 
@@ -161,7 +161,7 @@ flowchart TD
 
 ## Table-Driven Platform Differences
 
-`neverc/include/neverc/DynCode/Pipeline/TargetDesc.h` defines a `TargetDesc` struct describing all differences for each (OS, arch) combination:
+[`neverc/include/neverc/DynCode/Pipeline/TargetDesc.h`] defines a `TargetDesc` struct describing all differences for each (OS, arch) combination:
 
 - `TextSectionName`: Mach-O `__text` / ELF `.text` / COFF `.text`
 - `SyscallABI`: enum value (`DarwinSvc80` / `LinuxSvc0` / `LinuxSyscall` / `WindowsPEB` / `None`)
@@ -320,3 +320,6 @@ See the [Plugin API documentation](../plugin-api/README.md) for the full interpo
 - **Windows PEB walk is fully implemented with multi-DLL dispatch**. `__neverc_win_resolve` accepts `(dll_hash, api_hash)` pairs. The current whitelist covers kernel32.dll (~125 APIs), ntdll.dll (~26), user32.dll (~13), ws2_32.dll (~23), advapi32.dll (~16), shell32.dll (~6). Adding an API = one row in `Tables/Win32Apis.def` + one declaration in `lib/Headers/windows.h`.
 - **External function whitelist** only covers Darwin BSD / Linux / Android common syscalls (~80+) + Win32 APIs (~210). stdio and similar runtime-heavy interfaces are not included — dyncode cannot embed the full stdio state machine.
 - Does not support C++ / ObjC / CUDA — NeverC is C-only by design.
+
+[`neverc/include/neverc/DynCode/Pipeline/TargetDesc.h`]: ../../neverc/include/neverc/DynCode/Pipeline/TargetDesc.h
+[`neverc/include/neverc/Invoke/Options.td.h`]: ../../neverc/include/neverc/Invoke/Options.td.h

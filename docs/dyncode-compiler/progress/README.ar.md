@@ -14,7 +14,7 @@
 - [x] `SyscallStubPass`: قائمة بيضاء مدفوعة بجدول تغطي Darwin BSD / Linux arm64 / Linux x86_64 / Android syscalls
 - [x] `AllBlrPass`: إعادة كتابة عدوانية اختيارية للاستدعاءات غير المباشرة
 - [x] `DynCodeExtractor`: Mach-O `.o` → `.bin` مسطح مع ترقيع عمليات النقل داخل القسم
-- [x] خيارات CLI عبر `neverc/include/neverc/Invoke/Options.td.h` المُولَّد: `-fdyncode`، `-fdyncode-all-blr`، `-mdyncode-syscall`، `-fdyncode-keep-obj=`، `-fdyncode-entry=`
+- [x] خيارات CLI عبر [`neverc/include/neverc/Invoke/Options.td.h`] المُولَّد: `-fdyncode`، `-fdyncode-all-blr`، `-mdyncode-syscall`، `-fdyncode-keep-obj=`، `-fdyncode-entry=`
 - [x] PIC افتراضي على جميع المنصات (`isPICDefault()` تعيد `true` عالميًا)
 - [x] نقل تكراري عام إلى المكدس (جداول مؤشرات الدوال، جداول مؤشرات السلاسل، جداول الهياكل المتداخلة، مُهيئات ConstantExpr GEP/BitCast)
 - [x] `IndirectBrPass`: GCC computed-goto (`&&label`) → switch، مع مشاركة جداول مواقع إرسال متعددة
@@ -49,7 +49,7 @@
 - [x] `<neverc/dyncode/kernel.h>` لاتفاقيات نقطة الدخول ring-0
 - [x] فرض إزاحة صفر لنقطة الدخول (`placeEntryFirst`)
 - [x] خط أنابيب الإنهاء: SDK مُعيد كتابة البايتات المحظورة + SDK مشفّر مجموعة الأحرف + قيود الحجم
-- [x] واجهة الإضافات C خارج الشجرة (`NevercPluginAPI.h`): 11 نقطة ربط dyncode (`NEVERC_INTERPOSE_SC_*`)
+- [x] واجهة الإضافات C خارج الشجرة ([`NevercPluginAPI.h`]): 11 نقطة ربط dyncode (`NEVERC_INTERPOSE_SC_*`)
 - [x] حقن `-mno-implicit-float` لـ x86_64 (يمنع تسرب مجمع ثوابت SSE للخلفية)
 - [x] محمّلات عبر المنصات (macOS/Linux/Windows)
 
@@ -73,5 +73,8 @@
 - [ ] iOS arm64 (توقيع الكود + سيناريوهات كسر حماية JIT)
 - [ ] Cortex-M / Thumb
 - [ ] RISC-V 64
+
+[`neverc/include/neverc/Invoke/Options.td.h`]: ../../../neverc/include/neverc/Invoke/Options.td.h
+[`NevercPluginAPI.h`]: ../../../neverc/include/neverc/Plugin/NevercPluginAPI.h
 
 </div>

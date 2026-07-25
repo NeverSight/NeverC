@@ -12,7 +12,7 @@
 - [x] `SyscallStubPass` : liste blanche pilotée par table couvrant Darwin BSD / Linux arm64 / Linux x86_64 / Android syscalls
 - [x] `AllBlrPass` : réécriture agressive optionnelle des appels indirects
 - [x] `DynCodeExtractor` : Mach-O `.o` → `.bin` plat avec correctifs de relocalisations intra-section
-- [x] Options CLI via `neverc/include/neverc/Invoke/Options.td.h` généré : `-fdyncode`, `-fdyncode-all-blr`, `-mdyncode-syscall`, `-fdyncode-keep-obj=`, `-fdyncode-entry=`
+- [x] Options CLI via [`neverc/include/neverc/Invoke/Options.td.h`] généré : `-fdyncode`, `-fdyncode-all-blr`, `-mdyncode-syscall`, `-fdyncode-keep-obj=`, `-fdyncode-entry=`
 - [x] PIC par défaut sur toutes les plateformes (`isPICDefault()` retourne `true` universellement)
 - [x] Empilage récursif générique (tables de pointeurs de fonction, tables de pointeurs de chaîne, tables de structures imbriquées, initialiseurs ConstantExpr GEP/BitCast)
 - [x] `IndirectBrPass` : GCC computed-goto (`&&label`) → switch, y compris partage de tables multi-sites de dispatch
@@ -47,7 +47,7 @@
 - [x] `<neverc/dyncode/kernel.h>` pour les conventions de point d'entrée ring-0
 - [x] Forçage du décalage zéro du point d'entrée (`placeEntryFirst`)
 - [x] Pipeline de finalisation : SDK de réécriture d'octets interdits + SDK d'encodeur de charset + contraintes de taille
-- [x] API Plugin C hors arbre (`NevercPluginAPI.h`) : 11 points d'accroche dyncode (`NEVERC_INTERPOSE_SC_*`)
+- [x] API Plugin C hors arbre ([`NevercPluginAPI.h`]) : 11 points d'accroche dyncode (`NEVERC_INTERPOSE_SC_*`)
 - [x] Injection `-mno-implicit-float` pour x86_64 (empêche le déversement du pool de constantes SSE du backend)
 - [x] Chargeurs multiplateformes (macOS/Linux/Windows)
 
@@ -71,3 +71,6 @@
 - [ ] iOS arm64 (signature de code + scénarios jailbreak JIT)
 - [ ] Cortex-M / Thumb
 - [ ] RISC-V 64
+
+[`neverc/include/neverc/Invoke/Options.td.h`]: ../../../neverc/include/neverc/Invoke/Options.td.h
+[`NevercPluginAPI.h`]: ../../../neverc/include/neverc/Plugin/NevercPluginAPI.h

@@ -24,7 +24,7 @@ NeverC の dyncode パイプラインは以下をカバー：
 
 1. **サイズ / アライメント / パディング制約** — ビルトイン。`-fdyncode-max-length=`、`-fdyncode-align=`、`-fdyncode-pad=` は `finalizeDynCodeBytes` の末尾で実行。ドライバは矛盾する設定を拒否（例：パッドバイトがバッドバイトセット内にある、または align/max-length なしの pad）。
 
-2. **アウトオブツリー C プラグイン API** — 純粋 C ABI プラグインインターフェース（`NevercPluginAPI.h`）。IR、MIR、Binary、Linker のカスタムパスを 11 の dyncode フックポイント（`NEVERC_INTERPOSE_SC_*`）に登録可能。単一ヘッダー SDK、LLVM/CRT 依存ゼロ。詳細は [Plugin API ドキュメント](../../plugin-api/README.ja.md) を参照。
+2. **アウトオブツリー C プラグイン API** — 純粋 C ABI プラグインインターフェース（[`NevercPluginAPI.h`]）。IR、MIR、Binary、Linker のカスタムパスを 11 の dyncode フックポイント（`NEVERC_INTERPOSE_SC_*`）に登録可能。単一ヘッダー SDK、LLVM/CRT 依存ゼロ。詳細は [Plugin API ドキュメント](../../plugin-api/README.ja.md) を参照。
 
 ## 計画中 — プラグインレイヤー（フック経由）
 
@@ -80,3 +80,5 @@ applyPostFinalizeObfuscationInterpose      (C Plugin API: NEVERC_INTERPOSE_SC_PO
 ## 計画なし
 
 - **クロスランゲージフロントエンド** — NeverC は自身の C23 フロントエンドのみを受け入れる。IR パイプラインはフロントエンドから分離されているが、外部 bitcode（例：`rustc` や `zig` から）の受け入れはプロジェクト目標ではない。
+
+[`NevercPluginAPI.h`]: ../../../neverc/include/neverc/Plugin/NevercPluginAPI.h

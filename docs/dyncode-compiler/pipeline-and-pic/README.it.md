@@ -44,7 +44,7 @@ Sia i callback globali IR che MIR usano un pattern **registra una volta, leggi l
 ## 3. Differenze di piattaforma guidate da tabella
 
 - **Triple → comportamento**: Centralizzato in `describeTriple()` di `TargetDesc.cpp` e campi `TargetDesc`. Per nuovi OS/Arch, preferire **aggiunta di voci di tabella**.
-- **Opzioni CLI**: Definite in `neverc/include/neverc/Invoke/Options.td.h`; consumate tramite enum `OPT_*`.
+- **Opzioni CLI**: Definite in [`neverc/include/neverc/Invoke/Options.td.h`]; consumate tramite enum `OPT_*`.
 
 ## 4. Toolchain Windows MSVC e layout SDK
 
@@ -113,3 +113,5 @@ Gli header shim espongono costanti che devono corrispondere all'ABI del kernel t
 | `O_CLOEXEC` | `0x1000000` | `0x80000` |
 
 Implementazione: guard `#if defined(__APPLE__)` negli header shim. La tabella POSIX di `SyscallTables.cpp` usa valori Linux, attiva solo su percorsi `SyscallABI::LinuxSvc0` / `LinuxSyscall`. I target Windows non usano questi header POSIX; il ponte POSIX→Win32 è gestito dai wrapper di compatibilità di `WinPEBImportPass`.
+
+[`neverc/include/neverc/Invoke/Options.td.h`]: ../../../neverc/include/neverc/Invoke/Options.td.h

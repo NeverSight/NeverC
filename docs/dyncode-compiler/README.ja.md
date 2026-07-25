@@ -13,7 +13,7 @@ C ソースを**位置独立・ゼロリロケーション・ゼロデータセ�
 1. **通常の C を書くだけ** — dyncode 専用のテクニックは不要。
 2. **完全自動パイプライン** — `static int counter = 0`、`const char s[] = "..."`、再帰、`write/exit/read/...`、大きな定数配列などはユーザー側の変更なしで内部処理される。
 3. **外部依存ゼロ** — 出力 `.bin` は純粋な命令列で、dyld・libSystem・データセクションを参照しない。
-4. **CLI は TableGen 定義** — 各 `-fdyncode-*` は `neverc/include/neverc/Invoke/Options.td.h` に登録（ハードコードの文字列一致ではない）。 typo には did-you-mean、`--help` に全オプション。
+4. **CLI は TableGen 定義** — 各 `-fdyncode-*` は [`neverc/include/neverc/Invoke/Options.td.h`] に登録（ハードコードの文字列一致ではない）。 typo には did-you-mean、`--help` に全オプション。
 5. **出力制約は検証可能** — `-fdyncode-bad-bytes=` / `-fdyncode-bad-byte-profile=` は post-extract 後に最終 `.bin` を走査し、禁止バイト命中時はオフセット・バイト・文脈を報告して出力を拒否。
 6. **クロスプラットフォーム単一パイプライン** — `TargetDesc` 表で駆動。同一 C ソースから macOS / Linux / Android / Windows 用 dyncode を生成。新規プラットフォームは pass を 5 重化せず、表に 1 行 + 抽出器 1 実装を追加するだけ。
 
@@ -161,7 +161,7 @@ flowchart TD
 
 ## 表駆動のプラットフォーム差分
 
-`neverc/include/neverc/DynCode/Pipeline/TargetDesc.h` は各 (OS, arch) の差分を記述する `TargetDesc` 構造体を定義する：
+[`neverc/include/neverc/DynCode/Pipeline/TargetDesc.h`] は各 (OS, arch) の差分を記述する `TargetDesc` 構造体を定義する：
 
 - `TextSectionName`: Mach-O `__text` / ELF `.text` / COFF `.text`
 - `SyscallABI`: enum value (`DarwinSvc80` / `LinuxSvc0` / `LinuxSyscall` / `WindowsPEB` / `None`)
@@ -320,3 +320,6 @@ dyncode パイプライン自体は「コードが正しく動く」ことのみ
 - **Windows PEB ウォークはマルチ DLL ディスパッチで完全実装**。`__neverc_win_resolve` は `(dll_hash, api_hash)` を受け取る。ホワイトリストは kernel32.dll（約 125 API）、ntdll.dll（約 26）、user32.dll（約 13）、ws2_32.dll（約 23）、advapi32.dll（約 16）、shell32.dll（約 6）。API 追加 = `Tables/Win32Apis.def` 1 行 + `lib/Headers/windows.h` 1 宣言。
 - **外部関数ホワイトリスト**は Darwin BSD / Linux / Android の主要 syscall（約 80+）と Win32 API（約 190）のみ。stdio 等の重いランタイムは非対応 — dyncode に stdio 状態機械全体は埋め込めない。
 - C++ / ObjC / CUDA 非対応 — NeverC は設計上 C のみ。
+
+[`neverc/include/neverc/DynCode/Pipeline/TargetDesc.h`]: ../../neverc/include/neverc/DynCode/Pipeline/TargetDesc.h
+[`neverc/include/neverc/Invoke/Options.td.h`]: ../../neverc/include/neverc/Invoke/Options.td.h

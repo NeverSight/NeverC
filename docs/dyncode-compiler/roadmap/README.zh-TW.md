@@ -24,7 +24,7 @@ NeverC 的 dyncode 管線涵蓋：
 
 1. **大小 / 對齊 / 填充約束** — 內建功能。`-fdyncode-max-length=`、`-fdyncode-align=`、`-fdyncode-pad=` 在 `finalizeDynCodeBytes` 末尾執行。驅動會拒絕矛盾的設定（例如填充位元組在壞位元組集中，或無 align/max-length 時使用 pad）。
 
-2. **樹外 C 外掛 API** — 純 C ABI 外掛介面（`NevercPluginAPI.h`），用於自訂 IR、MIR、Binary 和 Linker pass。外掛透過 11 個 dyncode 掛鈎點（`NEVERC_INTERPOSE_SC_*`）註冊。單一標頭檔 SDK，零 LLVM/CRT 相依性。詳見 [Plugin API 文件](../../plugin-api/README.zh-TW.md)。
+2. **樹外 C 外掛 API** — 純 C ABI 外掛介面（[`NevercPluginAPI.h`]），用於自訂 IR、MIR、Binary 和 Linker pass。外掛透過 11 個 dyncode 掛鈎點（`NEVERC_INTERPOSE_SC_*`）註冊。單一標頭檔 SDK，零 LLVM/CRT 相依性。詳見 [Plugin API 文件](../../plugin-api/README.zh-TW.md)。
 
 ## 計畫中 — 外掛層（透過鉤子）
 
@@ -80,3 +80,5 @@ applyPostFinalizeObfuscationInterpose      (C Plugin API: NEVERC_INTERPOSE_SC_PO
 ## 不計畫實作
 
 - **跨語言前端** — NeverC 僅接受自身的 C23 前端。IR 管線與前端解耦，但接受外部 bitcode（例如來自 `rustc` 或 `zig`）不是專案目標。
+
+[`NevercPluginAPI.h`]: ../../../neverc/include/neverc/Plugin/NevercPluginAPI.h

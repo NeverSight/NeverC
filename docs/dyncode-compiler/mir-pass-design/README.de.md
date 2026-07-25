@@ -7,7 +7,7 @@
 > Begleitdokument zu [ir-pass-design.md](../ir-pass-design/README.de.md). Die IR-Schicht eliminiert Konstrukte, die auf IR-Ebene sichtbar Relocations erzeugen. Die MIR-Schicht dient als **Auffangnetz** nach Befehlsauswahl und Registerallokation: sie entfernt codegen-eingeführte Pseudo-/Metadaten-Befehle und bietet Interpose-Punkte für Drittanbieter-Obfuskations-Passes.
 >
 > Implementierung: `neverc/lib/DynCode/MIR/MIRPrepPass.cpp` + `Pipeline.cpp`.
-> Interpose-Interface: `neverc/include/neverc/DynCode/Pipeline/Pipeline.h`.
+> Interpose-Interface: [`neverc/include/neverc/DynCode/Pipeline/Pipeline.h`].
 
 ---
 
@@ -124,3 +124,5 @@ Zwei registrierte Muster:
 1. **Aktiv**: MachineInstr direkt ändern. Kostengünstig, zielunabhängig.
 2. **Durchleitung**: Erkennen → MIR-Fehler → Extraktor lehnt auf Byte-Ebene ab.
 3. **Fallback**: Harter Fehler bei verbleibenden externen Relocs.
+
+[`neverc/include/neverc/DynCode/Pipeline/Pipeline.h`]: ../../../neverc/include/neverc/DynCode/Pipeline/Pipeline.h

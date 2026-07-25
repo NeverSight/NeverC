@@ -44,7 +44,7 @@ NeverC возвращает **true** из `Generic_GCC::isPICDefaultForced()`, `
 ## 3. Табличные различия платформ
 
 - **Triple → поведение**: В `describeTriple()` и полях `TargetDesc`. Для нового OS/Arch предпочтительно **добавление строки в таблицу**.
-- **Опции CLI**: В `neverc/include/neverc/Invoke/Options.td.h`; потребляются через `OPT_*` перечисления.
+- **Опции CLI**: В [`neverc/include/neverc/Invoke/Options.td.h`]; потребляются через `OPT_*` перечисления.
 
 ## 4. Цепочка инструментов Windows MSVC и расположение SDK
 
@@ -113,3 +113,5 @@ NeverC поддерживает два источника SDK **без жёст�
 | `O_CLOEXEC` | `0x1000000` | `0x80000` |
 
 Реализация: защита `#if defined(__APPLE__)` в заголовках shim. Таблица совместимости POSIX `SyscallTables.cpp` использует значения Linux (`AT_FDCWD = -100`), активна только на путях `SyscallABI::LinuxSvc0` / `LinuxSyscall`. Цели Windows не используют эти POSIX-заголовки; мост POSIX→Win32 обрабатывается обёртками совместимости `WinPEBImportPass`.
+
+[`neverc/include/neverc/Invoke/Options.td.h`]: ../../../neverc/include/neverc/Invoke/Options.td.h

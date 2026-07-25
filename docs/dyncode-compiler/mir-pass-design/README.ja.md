@@ -7,7 +7,7 @@
 > [ir-pass-design.md](../ir-pass-design/README.ja.md) の姉妹文書。IR 層は IR レベルで明らかに reloc を生むコンストラクトを除去する。MIR 層は命令選択・レジスタ割当後の**キャッチオール**であり、コード生成で導入された疑似/メタデータ命令を除去し、サードパーティ難読化パスが最終命令レベル変換を行うためのフックポイントを公開する。
 >
 > 実装：`neverc/lib/DynCode/MIR/MIRPrepPass.cpp` + `Pipeline.cpp`。
-> フックインターフェース：`neverc/include/neverc/DynCode/Pipeline/Pipeline.h`。
+> フックインターフェース：[`neverc/include/neverc/DynCode/Pipeline/Pipeline.h`]。
 
 ---
 
@@ -144,3 +144,5 @@ if (Name.starts_with("SEH_"))
 1. **能動修正**: MachineInstr を直接変更。低コスト・ターゲット非依存。
 2. **診断パススルー**: 問題検出→MIR レベルエラー報告→抽出器でバイトレベル拒否。
 3. **抽出器フォールバック**: 残存外部 reloc / 非空データセクションでハード失敗。
+
+[`neverc/include/neverc/DynCode/Pipeline/Pipeline.h`]: ../../../neverc/include/neverc/DynCode/Pipeline/Pipeline.h

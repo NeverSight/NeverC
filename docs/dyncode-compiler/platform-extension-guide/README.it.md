@@ -75,7 +75,7 @@ Riferimento `loader_linux.c` e `loader_windows.c`. Tipicamente: `mmap(RWX) → m
 
 ### 5. Aggiornare test
 
-Aggiungere un controllo di cross-compilazione in `tests/neverc/DynCodeCrossTargetTests.cpp`.
+Aggiungere un controllo di cross-compilazione in [`tests/neverc/DynCodeCrossTargetTests.cpp`].
 
 ---
 
@@ -98,3 +98,5 @@ Aggiungere un controllo di cross-compilazione in `tests/neverc/DynCodeCrossTarge
 ## Interfaccia estensione pass di offuscamento
 
 La pipeline dyncode espone 11 interpose via `Pipeline.h::ObfuscationInterposes` per librerie di offuscamento terze parti. Il patching MIR integrato è anch'esso guidato da tabelle: `Tables/MIRRewritePatterns.def` e `Tables/MIRRewriteOpcodes.def`. Preferire voci di tabella e helper ristretti rispetto a rami specifici del target dispersi nel corpo del pass.
+
+[`tests/neverc/DynCodeCrossTargetTests.cpp`]: ../../../tests/neverc/DynCodeCrossTargetTests.cpp

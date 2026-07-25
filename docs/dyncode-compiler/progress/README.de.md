@@ -12,7 +12,7 @@
 - [x] `SyscallStubPass`: Tabellengesteuerte Whitelist für Darwin BSD / Linux arm64 / Linux x86_64 / Android-Syscalls
 - [x] `AllBlrPass`: Optionales aggressives Umschreiben indirekter Aufrufe
 - [x] `DynCodeExtractor`: Mach-O `.o` → flache `.bin` mit Intra-Section-Relokationspatching
-- [x] CLI-Optionen via generierte `neverc/include/neverc/Invoke/Options.td.h`: `-fdyncode`, `-fdyncode-all-blr`, `-mdyncode-syscall`, `-fdyncode-keep-obj=`, `-fdyncode-entry=`
+- [x] CLI-Optionen via generierte [`neverc/include/neverc/Invoke/Options.td.h`]: `-fdyncode`, `-fdyncode-all-blr`, `-mdyncode-syscall`, `-fdyncode-keep-obj=`, `-fdyncode-entry=`
 - [x] Plattformübergreifendes Standard-PIC (`isPICDefault()` gibt einheitlich `true` zurück)
 - [x] Generische rekursive Stack-Übernahme (Funktionszeigertabellen, Stringzeigertabellen, verschachtelte Strukturtabellen, ConstantExpr GEP/BitCast-Initialisierer)
 - [x] `IndirectBrPass`: GCC computed-goto (`&&label`) → switch, einschließlich Multi-Dispatch-Site-Tabellenfreigabe
@@ -47,7 +47,7 @@
 - [x] `<neverc/dyncode/kernel.h>` für Ring-0-Eintrittspunktkonventionen
 - [x] Einstiegspunkt-Offset-Null-Erzwingung (`placeEntryFirst`)
 - [x] Finalize-Pipeline: Bad-Byte-Rewriter SDK + Charset-Encoder SDK + Größenbeschränkungen
-- [x] Out-of-Tree C Plugin-API (`NevercPluginAPI.h`): 11 DynCode-Interpose-Punkte (`NEVERC_INTERPOSE_SC_*`)
+- [x] Out-of-Tree C Plugin-API ([`NevercPluginAPI.h`]): 11 DynCode-Interpose-Punkte (`NEVERC_INTERPOSE_SC_*`)
 - [x] x86_64 `-mno-implicit-float`-Injektion (verhindert Backend-SSE-Konstantenpoolauslagerung)
 - [x] Plattformübergreifende Loader (macOS/Linux/Windows)
 
@@ -71,3 +71,6 @@
 - [ ] iOS arm64 (Code-Signierung + JIT Jailbreak-Szenarien)
 - [ ] Cortex-M / Thumb
 - [ ] RISC-V 64
+
+[`neverc/include/neverc/Invoke/Options.td.h`]: ../../../neverc/include/neverc/Invoke/Options.td.h
+[`NevercPluginAPI.h`]: ../../../neverc/include/neverc/Plugin/NevercPluginAPI.h

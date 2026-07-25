@@ -75,7 +75,7 @@ Windows не имеет стабильного ABI системных вызов
 
 ### 5. Обновить тесты
 
-Добавить проверку кросс-компиляции в `tests/neverc/DynCodeCrossTargetTests.cpp`.
+Добавить проверку кросс-компиляции в [`tests/neverc/DynCodeCrossTargetTests.cpp`].
 
 ---
 
@@ -98,3 +98,5 @@ Windows не имеет стабильного ABI системных вызов
 ## Интерфейс расширения прохода обфускации
 
 Конвейер dyncode предоставляет 11 хуков через `Pipeline.h::ObfuscationInterposes` для сторонних библиотек обфускации. Встроенный MIR-патчинг также табличный: `Tables/MIRRewritePatterns.def` и `Tables/MIRRewriteOpcodes.def`. Предпочитайте записи в таблицах и узкие хелперы вместо разбрасывания целевых ветвей в теле прохода.
+
+[`tests/neverc/DynCodeCrossTargetTests.cpp`]: ../../../tests/neverc/DynCodeCrossTargetTests.cpp

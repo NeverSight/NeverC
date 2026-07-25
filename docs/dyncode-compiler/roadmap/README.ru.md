@@ -24,7 +24,7 @@
 
 1. **Ограничения размера / выравнивания / заполнения** — Встроено. `-fdyncode-max-length=`, `-fdyncode-align=`, `-fdyncode-pad=` выполняются в конце `finalizeDynCodeBytes`. Драйвер отклоняет противоречивые конфигурации (например, байт заполнения в наборе запрещённых байтов или заполнение без align/max-length).
 
-2. **Внедеревный C-плагин API** — Чистый C ABI интерфейс плагинов (`NevercPluginAPI.h`) для пользовательских IR, MIR, Binary и Linker проходов. Плагины регистрируются в 11 точках подключения dyncode (`NEVERC_INTERPOSE_SC_*`). SDK с одним заголовком, ноль зависимостей LLVM/CRT. См. [документацию API плагинов](../../plugin-api/README.ru.md).
+2. **Внедеревный C-плагин API** — Чистый C ABI интерфейс плагинов ([`NevercPluginAPI.h`]) для пользовательских IR, MIR, Binary и Linker проходов. Плагины регистрируются в 11 точках подключения dyncode (`NEVERC_INTERPOSE_SC_*`). SDK с одним заголовком, ноль зависимостей LLVM/CRT. См. [документацию API плагинов](../../plugin-api/README.ru.md).
 
 ## Запланировано — Слой плагинов (через хуки)
 
@@ -80,3 +80,5 @@ applyPostFinalizeObfuscationInterpose      (C Plugin API: NEVERC_INTERPOSE_SC_PO
 ## Не запланировано
 
 - **Кросс-языковой фронтенд** — NeverC принимает только собственный C23-фронтенд. IR-конвейер отделён от фронтенда, но приём внешнего биткода (например, от `rustc` или `zig`) не является целью проекта.
+
+[`NevercPluginAPI.h`]: ../../../neverc/include/neverc/Plugin/NevercPluginAPI.h

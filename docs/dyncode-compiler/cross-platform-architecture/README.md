@@ -172,7 +172,7 @@ Total cost:
 1. `TargetDesc.cpp::describeTriple` — one row (~15 lines)
 2. `Syscalls_<OS>[<Arch>].def` — syscall numbers (e.g. `Syscalls_Darwin.def`, `Syscalls_LinuxArm64.def`, `Syscalls_LinuxX86_64.def`; skip for Windows)
 3. Corresponding extractor arch switch — one case + reloc table
-4. Test files — one case each in `tests/neverc/DynCodeCrossTargetTests.cpp`
+4. Test files — one case each in [`tests/neverc/DynCodeCrossTargetTests.cpp`]
 
 IR/MIR passes require zero changes. Kernel context is free — `KernelImportPass` uses a unified `__neverc_kern_resolve` interface.
 
@@ -182,3 +182,5 @@ IR/MIR passes require zero changes. Kernel context is free — `KernelImportPass
 - **32-bit / big-endian / niche ISAs** (RISC-V / PowerPC / SPARC / MIPS)
 - **Embedding libc runtime in dyncode** (`<stdio.h>` / `<math.h>` / setjmp / alloca / global constructors are explicitly rejected with actionable diagnostics; `malloc`/`free`/`calloc`/`realloc` are handled by `HeapArenaPass`)
 - **Absolute address relocations** (all `_ABS*` / `_ADDR*` / GOT / TLS relocs hard fail)
+
+[`tests/neverc/DynCodeCrossTargetTests.cpp`]: ../../../tests/neverc/DynCodeCrossTargetTests.cpp

@@ -13,7 +13,7 @@ Kompiliert C-Quellcode direkt in **positionsunabhängigen, relocationsfreien, da
 1. **Normales C schreiben** — keine dyncode-spezifischen Tricks.
 2. **Vollautomatische Pipeline** — `static int counter = 0`, `const char s[] = "..."`, Rekursion, `write/exit/read/...` und große Konstantenarrays werden intern ohne Änderungen am Benutzercode verarbeitet.
 3. **Keine externen Abhängigkeiten** — die Ausgabe `.bin` ist reiner Instruktionsstrom ohne dyld, libSystem oder Datensektion.
-4. **CLI-Optionen per TableGen** — jede `-fdyncode-*` in `neverc/include/neverc/Invoke/Options.td.h` (kein Hardcoding). Tippfehler → did-you-mean ; `--help` listet alle Optionen.
+4. **CLI-Optionen per TableGen** — jede `-fdyncode-*` in [`neverc/include/neverc/Invoke/Options.td.h`] (kein Hardcoding). Tippfehler → did-you-mean ; `--help` listet alle Optionen.
 5. **Ausgabe-Constraints prüfbar** — `-fdyncode-bad-bytes=` / `-fdyncode-bad-byte-profile=` scannen die finale `.bin` nach post-extract und lehnen bei verbotenen Bytes ab (Offset, Byte, Kontext).
 6. **Plattformübergreifende einzelne Pipeline** — gesteuert durch `TargetDesc`. Gleiche C-Quelle für macOS / Linux / Android / Windows. Neue Plattform = eine Tabellenzeile + ein Extraktor, nicht fünf Pass-Sätze.
 
@@ -161,7 +161,7 @@ flowchart TD
 
 ## Tabellengesteuerte Plattformunterschiede
 
-`neverc/include/neverc/DynCode/Pipeline/TargetDesc.h` definiert `TargetDesc` pro (OS, arch):
+[`neverc/include/neverc/DynCode/Pipeline/TargetDesc.h`] definiert `TargetDesc` pro (OS, arch):
 
 - `TextSectionName`: Mach-O `__text` / ELF `.text` / COFF `.text`
 - `SyscallABI`: enum value (`DarwinSvc80` / `LinuxSvc0` / `LinuxSyscall` / `WindowsPEB` / `None`)
@@ -319,3 +319,6 @@ Die DynCode-Pipeline stellt nur sicher, dass „der Code korrekt läuft“. Obfu
 - **Windows PEB walk is fully implemented with multi-DLL dispatch**. `__neverc_win_resolve` accepts `(dll_hash, api_hash)` pairs. The current whitelist covers kernel32.dll (~125 APIs), ntdll.dll (~26), user32.dll (~13), ws2_32.dll (~23), advapi32.dll (~16), shell32.dll (~6). Adding an API = one row in `Tables/Win32Apis.def` + one declaration in `lib/Headers/windows.h`.
 - **External function whitelist** only covers Darwin BSD / Linux / Android common syscalls (~80+) + Win32 APIs (~210). stdio and similar runtime-heavy interfaces are not included — dyncode cannot embed the full stdio state machine.
 - Kein C++ / ObjC / CUDA — NeverC ist bewusst nur C.
+
+[`neverc/include/neverc/DynCode/Pipeline/TargetDesc.h`]: ../../neverc/include/neverc/DynCode/Pipeline/TargetDesc.h
+[`neverc/include/neverc/Invoke/Options.td.h`]: ../../neverc/include/neverc/Invoke/Options.td.h
