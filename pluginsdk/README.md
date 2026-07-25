@@ -41,6 +41,14 @@ The SDK ships two equivalent forms of the same pure-C ABI:
 version, every public interface ID/version/stability, schema digests, and the
 supported targets, so a consumer can validate an SDK against a host.
 
+`abi/plugin.json` (`utils/plugin-api/gen-abi-manifest.py`) records the measured
+size, alignment and field offsets of every public struct, grouped by host ABI
+key (`{arch}-{endian}-{pointer width}-{calling convention}`). Every supported
+host is listed, so a plugin's build can assert its layout against the key it
+will load into. The layouts are in fact identical across those keys — that is
+what the fixed-width types and `NEVERC_ABI_PACK_BEGIN/END` are for — but a
+plugin binary is still only promised compatibility with its own host ABI key.
+
 ## Installing and consuming the SDK
 
 ```sh

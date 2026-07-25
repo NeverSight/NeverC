@@ -2,8 +2,8 @@
 
 """Generate the NeverC plugin ABI layout manifest (pluginsdk/abi/plugin.json).
 
-For the current host ABI key ``{arch, endian, pointer_width, calling_convention}``
-this records, for every public struct/union in the ABI:
+For each supported host ABI key ``{arch, endian, pointer_width,
+calling_convention}`` this records, for every public struct/union in the ABI:
 
   * the overall size and alignment, and
   * the offset and size of every named field.
@@ -16,12 +16,25 @@ also measures every struct under an outer ``#pragma pack(1)`` and
 ``#pragma pack(16)`` and fails if any layout changes -- a struct whose size or
 alignment depends on ambient packing is an ABI hazard.
 
+Two measurement modes produce the same facts:
+
+  * Native (the current host): compile *and run* a probe that prints
+    sizeof/_Alignof/offsetof, so the entry reflects what the host compiler
+    actually produces.
+  * Cross (``--all-hosts``): fold the same quantities into a constant array and
+    read them back out of ``-emit-llvm`` output for each supported target
+    triple. The public headers only need freestanding ``<stddef.h>`` and
+    ``<stdint.h>``, so no target SDK or emulator is required.
+
+Cross measurement is what lets one machine populate every shipped ABI key; each
+host's CI still re-derives its own key natively under ``--check``, so a host
+whose real layout disagrees with the committed prediction fails loudly there.
+
 ``--check`` recomputes the current host's entry (including the pack-invariance
 proof) and requires it to match the committed manifest exactly; within one ABI
-key an existing field may not move or shrink.
-
-Layouts are measured by compiling a probe that reports sizeof/_Alignof/offsetof,
-so the manifest reflects what the host compiler actually produces.
+key an existing field may not move or shrink. It also requires every supported
+host key to be present, so a missing key is caught on any machine rather than
+only on the host that happens to be absent from the manifest.
 """
 
 from __future__ import annotations
@@ -52,6 +65,24 @@ STRUCT_TYPEDEF = re.compile(
 
 # Outer packings the ABI layout must be invariant under.
 PACK_VARIANTS = (1, 16)
+
+# Host ABI keys the SDK ships layouts for, each with a triple that reproduces
+# that key's C ABI. macOS and Linux on the same architecture share a key: the
+# key records the calling convention family, not the OS.
+SUPPORTED_ABI_KEYS = {
+    "x86_64-le-64-sysv": "x86_64-unknown-linux-gnu",
+    "aarch64-le-64-sysv": "aarch64-unknown-linux-gnu",
+    "x86_64-le-64-win": "x86_64-pc-windows-msvc",
+    "aarch64-le-64-win": "aarch64-pc-windows-msvc",
+}
+
+# Symbol the cross probe folds its measurements into, and the constant array
+# clang emits for it, e.g. "@NevercAbiProbe = constant [7 x i64] [i64 8, ...]".
+PROBE_SYMBOL = "NevercAbiProbe"
+PROBE_IR = re.compile(
+    r"@" + PROBE_SYMBOL + r"\s*=[^\[]*\[\s*\d+\s+x\s+i64\s*\]\s*\[([^\]]*)\]"
+)
+PROBE_VALUE = re.compile(r"i64\s+(\d+)")
 
 
 def strip_comments(text: str) -> str:
@@ -106,11 +137,17 @@ def struct_layouts() -> list[tuple[str, list[str]]]:
 def find_compiler(explicit: str | None) -> str:
     if explicit:
         return explicit
-    for name in ("cc", "clang", "gcc"):
+    # "cl" last: MSVC can measure the native host but not cross targets, and a
+    # Windows runner with the MSVC environment loaded may have nothing else.
+    for name in ("cc", "clang", "gcc", "cl"):
         found = shutil.which(name)
         if found:
             return found
     raise ValueError("no C compiler found to measure ABI layout")
+
+
+def is_msvc(compiler: str) -> bool:
+    return Path(compiler).stem.lower() == "cl"
 
 
 def build_probe(layouts: list[tuple[str, list[str]]], pack: int | None) -> str:
@@ -140,12 +177,18 @@ def run_probe(compiler: str, program: str) -> str:
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
         source = tmp_path / "abi_probe.c"
-        binary = tmp_path / "abi_probe"
+        binary = tmp_path / ("abi_probe.exe" if is_msvc(compiler) else "abi_probe")
         source.write_text(program, encoding="utf-8")
+        if is_msvc(compiler):
+            # Relative names, so the .obj lands in cwd without a /Fo argument
+            # whose trailing separator Windows argument quoting would mangle.
+            command = [compiler, "/nologo", "/std:c11", f"/I{INCLUDE_DIR}",
+                       source.name, f"/Fe:{binary.name}"]
+        else:
+            command = [compiler, "-std=c11", "-I", str(INCLUDE_DIR), str(source),
+                       "-o", str(binary)]
         compile_result = subprocess.run(
-            [compiler, "-std=c11", "-I", str(INCLUDE_DIR), str(source),
-             "-o", str(binary)],
-            capture_output=True, text=True,
+            command, cwd=str(tmp_path), capture_output=True, text=True,
         )
         if compile_result.returncode != 0:
             raise ValueError(f"ABI probe failed to compile:\n{compile_result.stderr}")
@@ -204,6 +247,102 @@ def measure(compiler: str, layouts: list[tuple[str, list[str]]]) -> dict:
     return {"pointer_width": pointer_width, "structs": structs}
 
 
+def build_cross_probe(layouts: list[tuple[str, list[str]]], pack: int | None) -> str:
+    """Fold the same quantities ``build_probe`` prints into a constant array.
+
+    Constant folding happens for the requested target, so the array can be read
+    back out of the IR without running anything on that target.
+    """
+    lines = []
+    if pack is not None:
+        lines.append(f"#pragma pack({pack})")
+    lines += ['#include "neverc/Plugin/NevercPluginAPI.h"', "#include <stddef.h>"]
+    values = ["sizeof(void *)"]
+    for name, fields in layouts:
+        values += [f"sizeof({name})", f"_Alignof({name})"]
+        if pack is None:
+            for field in fields:
+                values += [f"offsetof({name}, {field})",
+                           f"sizeof((({name} *)0)->{field})"]
+    lines.append(f"const unsigned long long {PROBE_SYMBOL}[] = {{")
+    lines += [f"  (unsigned long long)({value})," for value in values]
+    lines.append("};")
+    return "\n".join(lines) + "\n"
+
+
+def run_cross_probe(compiler: str, triple: str, program: str) -> list[int]:
+    if is_msvc(compiler):
+        raise ValueError(
+            "cross measurement needs a clang-style driver (-target/-emit-llvm); "
+            f"{compiler} cannot retarget, so pass --cc clang"
+        )
+    with tempfile.TemporaryDirectory() as tmp:
+        source = Path(tmp) / "abi_cross_probe.c"
+        source.write_text(program, encoding="utf-8")
+        result = subprocess.run(
+            [compiler, "-target", triple, "-ffreestanding", "-std=c11",
+             "-I", str(INCLUDE_DIR), "-S", "-emit-llvm", "-o", "-", str(source)],
+            capture_output=True, text=True,
+        )
+        if result.returncode != 0:
+            raise ValueError(
+                f"ABI cross probe failed for {triple}:\n{result.stderr}"
+            )
+    match = PROBE_IR.search(result.stdout)
+    if match is None:
+        raise ValueError(f"ABI cross probe for {triple} emitted no {PROBE_SYMBOL}")
+    return [int(value) for value in PROBE_VALUE.findall(match.group(1))]
+
+
+def parse_cross_probe(
+    values: list[int], layouts: list[tuple[str, list[str]]], pack: int | None
+) -> tuple[int, dict]:
+    expected = 1 + sum(
+        2 + (2 * len(fields) if pack is None else 0) for _name, fields in layouts
+    )
+    if len(values) != expected:
+        raise ValueError(
+            f"ABI cross probe returned {len(values)} values, expected {expected}"
+        )
+    stream = iter(values)
+    pointer_width = next(stream) * 8
+    structs: dict = {}
+    for name, fields in layouts:
+        entry = structs.setdefault(name, {})
+        entry["size"] = next(stream)
+        entry["align"] = next(stream)
+        entry.setdefault("fields", {})
+        if pack is None:
+            for field in fields:
+                offset = next(stream)
+                entry["fields"][field] = {"offset": offset, "size": next(stream)}
+    return pointer_width, structs
+
+
+def cross_measure(
+    compiler: str, triple: str, layouts: list[tuple[str, list[str]]]
+) -> dict:
+    pointer_width, structs = parse_cross_probe(
+        run_cross_probe(compiler, triple, build_cross_probe(layouts, None)),
+        layouts, None,
+    )
+    baseline = size_align_view(structs)
+    for pack in PACK_VARIANTS:
+        _, packed = parse_cross_probe(
+            run_cross_probe(compiler, triple, build_cross_probe(layouts, pack)),
+            layouts, pack,
+        )
+        packed_view = size_align_view(packed)
+        for name, sa in baseline.items():
+            if packed_view.get(name) != sa:
+                raise ValueError(
+                    f"struct {name} layout is not pack-invariant on {triple}: "
+                    f"default size/align {sa} but pack({pack}) gives "
+                    f"{packed_view.get(name)}"
+                )
+    return {"pointer_width": pointer_width, "structs": structs}
+
+
 def host_arch() -> str:
     machine = platform.machine().lower()
     if machine in ("arm64", "aarch64"):
@@ -233,16 +372,11 @@ def abi_versions() -> dict:
     ]}
 
 
-def current_entry(compiler: str) -> tuple[str, dict]:
-    layouts = struct_layouts()
-    measured = measure(compiler, layouts)
-    arch = host_arch()
-    endian = sys.byteorder
-    cc = calling_convention()
-    key = abi_key(arch, endian, measured["pointer_width"], cc)
+def build_entry(arch: str, endian: str, cc: str, measured: dict) -> dict:
+    """Shape one ABI key's facts. Native and cross measurement must agree here."""
     field_count = sum(len(data.get("fields", {}))
                       for data in measured["structs"].values())
-    entry = {
+    return {
         "arch": arch,
         "endian": endian,
         "pointer_width": measured["pointer_width"],
@@ -252,7 +386,37 @@ def current_entry(compiler: str) -> tuple[str, dict]:
         "field_count": field_count,
         "structs": measured["structs"],
     }
-    return key, entry
+
+
+def current_entry(compiler: str) -> tuple[str, dict]:
+    layouts = struct_layouts()
+    measured = measure(compiler, layouts)
+    arch = host_arch()
+    endian = sys.byteorder
+    cc = calling_convention()
+    key = abi_key(arch, endian, measured["pointer_width"], cc)
+    return key, build_entry(arch, endian, cc, measured)
+
+
+def cross_entry(compiler: str, key: str, triple: str,
+                layouts: list[tuple[str, list[str]]]) -> dict:
+    arch, short, _width, cc = key.split("-")
+    endian = "little" if short == "le" else "big"
+    measured = cross_measure(compiler, triple, layouts)
+    produced = abi_key(arch, endian, measured["pointer_width"], cc)
+    if produced != key:
+        raise ValueError(f"target {triple} measures as ABI key {produced}, not {key}")
+    return build_entry(arch, endian, cc, measured)
+
+
+def missing_supported_keys(manifest: dict) -> list[str]:
+    """Supported host keys the manifest never recorded.
+
+    A key the SDK claims to support but never recorded would otherwise only
+    surface on that host, so this is checked from any machine.
+    """
+    recorded = manifest.get("abi_keys", {})
+    return [name for name in sorted(SUPPORTED_ABI_KEYS) if name not in recorded]
 
 
 def load_manifest() -> dict:
@@ -272,6 +436,8 @@ def render(manifest: dict) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true", help="fail if out of date")
+    parser.add_argument("--all-hosts", action="store_true",
+                        help="also cross-measure every supported host ABI key")
     parser.add_argument("--cc", default=None, help="C compiler to measure with")
     arguments = parser.parse_args()
 
@@ -289,15 +455,24 @@ def main() -> int:
             return 1
         manifest = load_manifest()
         if key not in manifest.get("abi_keys", {}):
-            print(
-                f"ABI manifest has no entry for host key {key}; regenerate on "
-                "this host and commit it",
-                file=sys.stderr,
-            )
+            fix = ("run gen-abi-manifest.py --all-hosts"
+                   if key in SUPPORTED_ABI_KEYS
+                   else "regenerate on this host and commit it")
+            print(f"ABI manifest has no entry for host key {key}; {fix}",
+                  file=sys.stderr)
             return 1
         expected = dict(manifest["abi_keys"][key])
         if expected != entry or manifest.get("versions") != versions:
             print(f"ABI manifest is out of date for host key {key}", file=sys.stderr)
+            return 1
+        missing = missing_supported_keys(manifest)
+        if missing:
+            print(
+                "ABI manifest is missing supported host keys: "
+                + ", ".join(missing)
+                + "; run gen-abi-manifest.py --all-hosts",
+                file=sys.stderr,
+            )
             return 1
         return 0
 
@@ -305,6 +480,29 @@ def main() -> int:
     manifest["manifest_version"] = 2
     manifest["versions"] = versions
     manifest.setdefault("abi_keys", {})[key] = entry
+
+    if arguments.all_hosts:
+        try:
+            layouts = struct_layouts()
+            for name, triple in sorted(SUPPORTED_ABI_KEYS.items()):
+                crossed = cross_entry(compiler, name, triple, layouts)
+                if name == key:
+                    # The current host is measured both ways. Requiring the two
+                    # to agree is what makes the cross-measured entries for the
+                    # other hosts trustworthy rather than merely plausible.
+                    if crossed != entry:
+                        print(
+                            f"cross measurement of {name} via {triple} disagrees "
+                            "with this host's native measurement",
+                            file=sys.stderr,
+                        )
+                        return 1
+                    continue
+                manifest["abi_keys"][name] = crossed
+        except (OSError, ValueError) as error:
+            print(f"ABI manifest error: {error}", file=sys.stderr)
+            return 1
+
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     OUTPUT.write_text(render(manifest), encoding="utf-8")
     return 0

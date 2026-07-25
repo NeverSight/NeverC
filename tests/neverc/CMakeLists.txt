@@ -1869,6 +1869,26 @@ add_test(
   COMMAND ${Python3_EXECUTABLE}
           ${CMAKE_CURRENT_SOURCE_DIR}/../../utils/plugin-api/check-single-header.py
 )
+# Measures with the compiler that built this tree, so the committed layout for
+# this host is re-derived rather than assumed.  A host key the manifest never
+# recorded fails here instead of only on that host's CI runner.
+add_test(
+  NAME PluginSDKGenerationABICheck
+  COMMAND ${Python3_EXECUTABLE}
+          ${CMAKE_CURRENT_SOURCE_DIR}/../../utils/plugin-api/gen-abi-manifest.py
+          --check
+          --cc ${CMAKE_C_COMPILER}
+)
+add_test(
+  NAME PluginABIManifestGeneratorTests
+  COMMAND ${Python3_EXECUTABLE}
+          ${CMAKE_CURRENT_SOURCE_DIR}/../../utils/plugin-api/tests/test-gen-abi-manifest.py
+)
+add_test(
+  NAME PluginGlobalStateCheckerTests
+  COMMAND ${Python3_EXECUTABLE}
+          ${CMAKE_CURRENT_SOURCE_DIR}/../../utils/plugin-api/tests/test-check-global-state.py
+)
 set_tests_properties(
   PluginPhaseSchemaGeneratorTests
   PluginPrepSchemaGeneratorTests
@@ -1879,6 +1899,9 @@ set_tests_properties(
   PluginSDKGenerationSingleHeaderCheck
   PluginSDKGenerationManifestCheck
   PluginSDKGenerationConsistency
+  PluginSDKGenerationABICheck
+  PluginABIManifestGeneratorTests
+  PluginGlobalStateCheckerTests
   # These are Python generator/consistency checks, not sanitizer-relevant C++
   # code paths.  PluginCoverageManifest additionally validates against the full
   # CTest inventory, so it cannot run in a partial (plugin-targets-only) build
