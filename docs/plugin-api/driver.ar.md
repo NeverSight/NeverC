@@ -1,3 +1,5 @@
+<div dir="rtl">
+
 **اللغات**: [English](driver.md) | [简体中文](driver.zh-CN.md) | [繁體中文](driver.zh-TW.md) | [日本語](driver.ja.md) | [한국어](driver.ko.md) | [Français](driver.fr.md) | [Deutsch](driver.de.md) | [Español](driver.es.md) | [Italiano](driver.it.md) | [Русский](driver.ru.md) | [العربية](driver.ar.md)
 
 [← واجهة NeverC الثنائية للإضافات](README.ar.md)
@@ -420,3 +422,5 @@ build-neverc/bin/neverc \
 [`PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
 [`PluginDriver.h`]: ../../neverc/include/neverc/Plugin/PluginDriver.h
 [`pluginsdk/examples/DriverTracePlugin.c`]: ../../pluginsdk/examples/DriverTracePlugin.c
+
+</div>

@@ -1,3 +1,5 @@
+<div dir="rtl">
+
 **اللغات**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
 [→ نظام التشغيل المدمج NeverC](../README.ar.md)
@@ -42,3 +44,5 @@ neverc -fencrypt-call-strings main.c -o main
 | `-fno-encrypt-call-strings` | تعطيل التشفير التلقائي |
 | `-fencrypt-call-strings-max-len=N` | الحد الأقصى للطول بالبايت (الافتراضي: 1024) |
 | `-fstring-encrypt-key=0xHEX` | تجاوز بذرة مفتاح XOR |
+
+</div>

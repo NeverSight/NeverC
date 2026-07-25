@@ -1,3 +1,5 @@
+<div dir="rtl">
+
 **اللغات**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
 [← فهرس التوثيق](../README.ar.md) · [← مشروع NeverC](../i18n/README.ar.md)
@@ -752,3 +754,5 @@ neverc -fplugin=build-neverc/neverc/pluginsdk/examples/host/FunctionPass.so \
 [`Schema/PluginPhaseSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginPhaseSchema.inc
 [`utils/plugin-api/check-global-state.py`]: ../../utils/plugin-api/check-global-state.py
 [`VirtualHeaderPlugin.c`]: ../../pluginsdk/examples/VirtualHeaderPlugin.c
+
+</div>

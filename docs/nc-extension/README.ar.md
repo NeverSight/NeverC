@@ -1,3 +1,5 @@
+<div dir="rtl">
+
 **اللغات**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
 [→ توثيق NeverC](../README.ar.md)
@@ -74,3 +76,5 @@ int main(void) {
 | قاعدة شفرة C موجودة يجب أن تبقى متوافقة مع مترجمات أخرى | استخدم `.c` + أعلام صريحة |
 | مشروع dyncode | كلاهما يصلح — `-fdyncode` يُفعّل `string` في كل الحالات |
 | قاعدة شفرة مختلطة | `.nc` للملفات الخاصة بـ NeverC، `.c` للشفرة المحمولة |
+
+</div>

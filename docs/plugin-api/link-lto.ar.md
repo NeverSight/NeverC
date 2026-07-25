@@ -1,3 +1,5 @@
+<div dir="rtl">
+
 **اللغات**: [English](link-lto.md) | [简体中文](link-lto.zh-CN.md) | [繁體中文](link-lto.zh-TW.md) | [日本語](link-lto.ja.md) | [한국어](link-lto.ko.md) | [Français](link-lto.fr.md) | [Deutsch](link-lto.de.md) | [Español](link-lto.es.md) | [Italiano](link-lto.it.md) | [Русский](link-lto.ru.md) | [العربية](link-lto.ar.md)
 
 [← واجهة NeverC الثنائية للإضافات](README.ar.md)
@@ -444,3 +446,5 @@ LTORegistrar->RegisterProvider(LTORegistrar->Context, RegistrarContext,
 [`PluginLTO.h`]: ../../neverc/include/neverc/Plugin/PluginLTO.h
 [`PluginObject.h`]: ../../neverc/include/neverc/Plugin/PluginObject.h
 [`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+
+</div>

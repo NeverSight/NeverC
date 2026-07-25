@@ -1,3 +1,5 @@
+<div dir="rtl">
+
 **اللغات**: [English](ast-sema.md) | [简体中文](ast-sema.zh-CN.md) | [繁體中文](ast-sema.zh-TW.md) | [日本語](ast-sema.ja.md) | [한국어](ast-sema.ko.md) | [Français](ast-sema.fr.md) | [Deutsch](ast-sema.de.md) | [Español](ast-sema.es.md) | [Italiano](ast-sema.it.md) | [Русский](ast-sema.ru.md) | [العربية](ast-sema.ar.md)
 
 [← واجهة NeverC الثنائية للإضافات](README.ar.md)
@@ -417,3 +419,5 @@ Sema->CreateSemanticUnit(Sema->Context, Frame, &Unit, &Output);
 [`PluginSema.h`]: ../../neverc/include/neverc/Plugin/PluginSema.h
 [`Schema/ASTSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/ASTSchema.json
 [`Schema/PluginASTSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginASTSchema.inc
+
+</div>

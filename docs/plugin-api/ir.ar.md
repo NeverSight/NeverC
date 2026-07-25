@@ -1,3 +1,5 @@
+<div dir="rtl">
+
 **اللغات**: [English](ir.md) | [简体中文](ir.zh-CN.md) | [繁體中文](ir.zh-TW.md) | [日本語](ir.ja.md) | [한국어](ir.ko.md) | [Français](ir.fr.md) | [Deutsch](ir.de.md) | [Español](ir.es.md) | [Italiano](ir.it.md) | [Русский](ir.ru.md) | [العربية](ir.ar.md)
 
 [← واجهة NeverC الثنائية للإضافات](README.ar.md)
@@ -445,3 +447,5 @@ build-neverc/bin/neverc \
 [`pluginsdk/examples/FunctionPass.c`]: ../../pluginsdk/examples/FunctionPass.c
 [`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
 [`Schema/PluginIRSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginIRSchema.inc
+
+</div>
