@@ -4,7 +4,7 @@
 
 # NeverC Plugin-API für Quelltext und E/A
 
-`PluginSource.h` veröffentlicht zwei Tabellen. `NevercIOAPI` ist das
+[`PluginSource.h`] veröffentlicht zwei Tabellen. `NevercIOAPI` ist das
 Dateisystem: Anbieter virtueller Dateien, Lesevorgänge, Verzeichnisdurchläufe,
 Ausgabesenken und Abhängigkeitseinträge. `NevercSourceLocationAPI` bildet
 compilerinterne Positionen zurück auf Dateien, Zeilen und den geschriebenen
@@ -101,7 +101,7 @@ IO->AddMemoryFile(IO->Context, Session, SV("/virtual/config.h"),
                   Content, ModificationTime);
 ```
 
-[`pluginsdk/examples/VirtualHeaderPlugin.c`](../../pluginsdk/examples/VirtualHeaderPlugin.c)
+[`pluginsdk/examples/VirtualHeaderPlugin.c`]
 ist ein vollständig funktionierender Anbieter.
 
 ## Dateien lesen
@@ -308,5 +308,9 @@ und meldet zusätzlich `MemoryBacked`.
 - `AddMemoryFile` hat Sitzungsgültigkeit; hängt der Inhalt von der Aufgabe ab,
   ist ein Anbieter das richtige Werkzeug.
 
-Die normativen Deklarationen stehen in `PluginSource.h`, ein vollständiger
-Anbieter in `pluginsdk/examples/VirtualHeaderPlugin.c`.
+Die normativen Deklarationen stehen in [`PluginSource.h`], ein vollständiger
+Anbieter in [`pluginsdk/examples/VirtualHeaderPlugin.c`].
+
+<!-- reference links -->
+[`pluginsdk/examples/VirtualHeaderPlugin.c`]: ../../pluginsdk/examples/VirtualHeaderPlugin.c
+[`PluginSource.h`]: ../../neverc/include/neverc/Plugin/PluginSource.h

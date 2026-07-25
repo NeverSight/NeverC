@@ -34,7 +34,7 @@ gpr:rcx,rdx,r8,r9; xmm:xmm0,xmm1; ret:rax; ret_xmm:xmm0
 | `ret_fpr` | | `ret_xmm`의 타깃 중립 별칭 |
 | `csr` | | 사용자 정의 callee-saved 레지스터 집합(기본값: 표준 ABI 집합) |
 
-어떤 구간이든 생략할 수 있고, 인식되지 않는 구간은 무시됩니다. 이 키들은 `llvm/include/llvm/CodeGen/NeverCCallConv.h`에 한 번만 정의되므로 생산자와 파서가 어긋날 수 없습니다.
+어떤 구간이든 생략할 수 있고, 인식되지 않는 구간은 무시됩니다. 이 키들은 [`llvm/include/llvm/CodeGen/NeverCCallConv.h`]에 한 번만 정의되므로 생산자와 파서가 어긋날 수 없습니다.
 
 ### 두 가지 인자 모드
 
@@ -74,7 +74,7 @@ GPR은 항상 64비트 표기로 적으며, 백엔드가 각 값의 타입에 �
 
 ### 1. 플러그인 주도(권장)
 
-참조 플러그인 `CustomCallConvPlugin.c`는 `pluginsdk/examples/`에 있습니다. `neverc.ir.pass.post_opt` 단계에 모듈 수준 IR 패스를 등록합니다.
+참조 플러그인 [`CustomCallConvPlugin.c`]는 `pluginsdk/examples/`에 있습니다. `neverc.ir.pass.post_opt` 단계에 모듈 수준 IR 패스를 등록합니다.
 
 **플러그인 빌드:**
 
@@ -185,7 +185,7 @@ Core->SetFunctionCallingConvention(Core->Context, Task, Function,
 
 ## 테스트
 
-GoogleTest 스위트는 `tests/neverc/CustomCallConvTests.cpp`에 있으며 26개의 테스트를 담고 있습니다. 각 테스트는 예제 플러그인을 빌드하고, 주어진 spec 아래에서 작은 프로그램을 어셈블리로 컴파일한 뒤, 결과 레지스터 또는 스택 배치를 확인합니다.
+GoogleTest 스위트는 [`tests/neverc/CustomCallConvTests.cpp`]에 있으며 26개의 테스트를 담고 있습니다. 각 테스트는 예제 플러그인을 빌드하고, 주어진 spec 아래에서 작은 프로그램을 어셈블리로 컴파일한 뒤, 결과 레지스터 또는 스택 배치를 확인합니다.
 
 ```bash
 ninja -C build-neverc neverc-tests
@@ -243,3 +243,8 @@ custom_attr(...)              (neverc.ir.pass.post_opt)
 ```
 
 백엔드 실행기는 **한 번만 구현하는 것**이며, 모든 정책 결정은 플러그인에 있습니다. 새 규약을 추가하는 데 NeverC를 다시 빌드할 일은 결코 없습니다.
+
+<!-- reference links -->
+[`CustomCallConvPlugin.c`]: ../../../pluginsdk/examples/CustomCallConvPlugin.c
+[`llvm/include/llvm/CodeGen/NeverCCallConv.h`]: ../../../llvm/include/llvm/CodeGen/NeverCCallConv.h
+[`tests/neverc/CustomCallConvTests.cpp`]: ../../../tests/neverc/CustomCallConvTests.cpp

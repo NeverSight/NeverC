@@ -4,7 +4,7 @@
 
 # NeverC 外掛前置處理器 API
 
-`PluginPrep.h` 以兩種方式公開前置處理器。**訂閱** 39 種事件種類，可以取得前置
+[`PluginPrep.h`] 以兩種方式公開前置處理器。**訂閱** 39 種事件種類，可以取得前置
 處理器一切作為的唯讀軌跡──進入檔案、巨集定義與展開、條件求值、pragma。六個
 **階段** 則更進一步，讓你改寫結果：把某個 `#include` 導向別處、取代巨集的展開
 token、自己處理某個 pragma，或是讓 `__has_feature` 給出不同的答案。
@@ -21,7 +21,7 @@ Bootstrap->QueryInterface(
 ```
 
 230 種 token 種類（`NEVERC_TOKEN_KIND_COUNT`）與前置處理器關鍵字種類來自
-`Schema/PluginPrepSchema.inc`；標頭檔會包含它，而它的 capability major 必須等
+[`Schema/PluginPrepSchema.inc`]；標頭檔會包含它，而它的 capability major 必須等
 於 `NEVERC_PREP_API_MAJOR`──不一致是編譯錯誤，而不是執行期的意外。每個種類還
 帶有一個分類：`NEVERC_TOKEN_CATEGORY_SPECIAL`、`COMMENT`、`IDENTIFIER`、
 `LITERAL`、`PUNCTUATOR`、`KEYWORD` 或 `ANNOTATION`。
@@ -221,7 +221,7 @@ Prep->DestroyTokenBuilder(Prep->Context, Task, Builder);
 ```
 
 標點與關鍵字用 `TokenBuilderSetKind`，識別字用 `TokenBuilderSetIdentifier`。
-token 種類常數來自 `PluginPrepSchema.inc`。
+token 種類常數來自 [`PluginPrepSchema.inc`]。
 
 若要處理整條串流──也就是 `neverc.prep.build_token_stream` 階段──請累積到串流
 建構器裡，然後一次提交：
@@ -271,5 +271,11 @@ Prep->CreateFeatureQueryPhaseOutput(Prep->Context, Frame, Continuation, &Out,
   裡再次進入前置處理器。
 - 缺少必要指標時回傳 `NEVERC_STATUS_INVALID_ARGUMENT`，並且絕不讓例外跨越邊界。
 
-規範性宣告請見 `PluginPrep.h` 與 `Schema/PluginPrepSchema.inc`，token 種類的
-schema 請見 `Schema/PrepSchema.json`。
+規範性宣告請見 [`PluginPrep.h`] 與 [`Schema/PluginPrepSchema.inc`]，token 種類的
+schema 請見 [`Schema/PrepSchema.json`]。
+
+<!-- reference links -->
+[`PluginPrep.h`]: ../../neverc/include/neverc/Plugin/PluginPrep.h
+[`PluginPrepSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginPrepSchema.inc
+[`Schema/PluginPrepSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginPrepSchema.inc
+[`Schema/PrepSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PrepSchema.json

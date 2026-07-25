@@ -4,7 +4,7 @@
 
 # API MIR плагинов NeverC
 
-`PluginMIR.h` открывает Machine IR: машинные функции, блоки, инструкции,
+[`PluginMIR.h`] открывает Machine IR: машинные функции, блоки, инструкции,
 операнды, виртуальные и физические регистры, кадр стека, пул констант, таблицы
 переходов и операнды памяти. Плагин подключает проходы к девяти стабильным
 точкам генерации кода либо полностью заменяет понижение из IR в MIR.
@@ -58,7 +58,7 @@
 
 ## Схема
 
-`Schema/PluginMIRSchema.inc` генерируется и включается из `PluginMIR.h`:
+[`Schema/PluginMIRSchema.inc`] генерируется и включается из [`PluginMIR.h`]:
 
 ```c
 #define NEVERC_MIR_SCHEMA_DIGEST          "6b523b20…"
@@ -320,7 +320,7 @@ Pass.Run           = run_machine_function;
 PassAPI->RegisterPass(PassAPI->Context, RegistrarContext, &Pass);
 ```
 
-Это дословно `pluginsdk/examples/MachinePass.c`. Уровни — `MODULE`,
+Это дословно [`pluginsdk/examples/MachinePass.c`]. Уровни — `MODULE`,
 `FUNCTION` и `BASIC_BLOCK`. `RequiredAnalyses` и `PreservedAnalyses` — массивы
 `NevercMIRBuiltinAnalysis`, а `RequiredTargetSchemaDigest` заставляет проход
 отказаться работать против схемы, под которую он не собирался.
@@ -431,5 +431,12 @@ build-neverc/bin/neverc \
 - `neverc.mir.final_verify` запечатана. Она выполняется в любом случае.
 
 Нормативные объявления, константы схемы, политики фаз и свидетельства
-покрытия см. в `PluginMIR.h`, `Schema/PluginMIRSchema.inc`,
-`Schema/PhaseSchema.json` и `coverage.json`.
+покрытия см. в [`PluginMIR.h`], [`Schema/PluginMIRSchema.inc`],
+[`Schema/PhaseSchema.json`] и [`coverage.json`].
+
+<!-- reference links -->
+[`coverage.json`]: coverage.json
+[`PluginMIR.h`]: ../../neverc/include/neverc/Plugin/PluginMIR.h
+[`pluginsdk/examples/MachinePass.c`]: ../../pluginsdk/examples/MachinePass.c
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`Schema/PluginMIRSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginMIRSchema.inc

@@ -4,7 +4,7 @@
 
 # NeverC 插件源与 I/O API
 
-`PluginSource.h` 发布两张表。`NevercIOAPI` 是文件系统：虚拟文件 Provider、读
+[`PluginSource.h`] 发布两张表。`NevercIOAPI` 是文件系统：虚拟文件 Provider、读
 取、目录遍历、输出 sink 和依赖记录。`NevercSourceLocationAPI` 把编译器内部的位
 置映射回文件、行号和拼写文本。有了这两者，插件可以提供一个只存在于内存中的头文
 件、把宏展开解析到它的拼写位置，或者写出一个参与构建持久性核算的旁路输出。
@@ -94,8 +94,7 @@ IO->AddMemoryFile(IO->Context, Session, SV("/virtual/config.h"),
                   Content, ModificationTime);
 ```
 
-[`pluginsdk/examples/VirtualHeaderPlugin.c`](../../pluginsdk/examples/VirtualHeaderPlugin.c)
-是一个可运行的完整 Provider。
+[`pluginsdk/examples/VirtualHeaderPlugin.c`] 是一个可运行的完整 Provider。
 
 ## 读文件
 
@@ -288,5 +287,9 @@ Source->CreateMemorySourceUnit(Source->Context, Frame, Frame->Input, &Unit,
   Provider，会污染整个构建缓存。
 - `AddMemoryFile` 是会话作用域的；当内容依赖于任务时，Provider 才是合适的工具。
 
-规范性声明见 `PluginSource.h`，完整 Provider 示例见
-`pluginsdk/examples/VirtualHeaderPlugin.c`。
+规范性声明见 [`PluginSource.h`]，完整 Provider 示例见
+[`pluginsdk/examples/VirtualHeaderPlugin.c`]。
+
+<!-- reference links -->
+[`pluginsdk/examples/VirtualHeaderPlugin.c`]: ../../pluginsdk/examples/VirtualHeaderPlugin.c
+[`PluginSource.h`]: ../../neverc/include/neverc/Plugin/PluginSource.h

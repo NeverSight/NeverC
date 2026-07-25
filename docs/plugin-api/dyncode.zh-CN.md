@@ -64,7 +64,7 @@ DynCode 是一张固定的 34 个 phase 的图。其中 30 个普通 transition 
 7. sealed 镜像验证；
 8. sealed 提交。
 
-ID、policy、稳定层级与 gate 的规范源是 `neverc/include/neverc/Plugin/Schema/PhaseSchema.json`；可执行的覆盖契约是 `docs/plugin-api/coverage.json`。
+ID、policy、稳定层级与 gate 的规范源是 [`neverc/include/neverc/Plugin/Schema/PhaseSchema.json`]；可执行的覆盖契约是 [`docs/plugin-api/coverage.json`]。
 
 ## 内建 transform 也是 provider
 
@@ -104,4 +104,10 @@ bad-byte rewrite 链按冻结的拓扑顺序执行，每步返回一条变更记
 - 返回原始 `NevercStatus`；声明为 `REPLACE` 后失败不会静默回退到内建 provider。
 - 声明最窄且真实的并发与重入模式。
 
-只读 phase 追踪见 `pluginsdk/examples/DynCodeTracePlugin.c`，charset encoder 见 `pluginsdk/examples/DynCodeEncoderPlugin.c`。
+只读 phase 追踪见 [`pluginsdk/examples/DynCodeTracePlugin.c`]，charset encoder 见 [`pluginsdk/examples/DynCodeEncoderPlugin.c`]。
+
+<!-- reference links -->
+[`docs/plugin-api/coverage.json`]: coverage.json
+[`neverc/include/neverc/Plugin/Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`pluginsdk/examples/DynCodeEncoderPlugin.c`]: ../../pluginsdk/examples/DynCodeEncoderPlugin.c
+[`pluginsdk/examples/DynCodeTracePlugin.c`]: ../../pluginsdk/examples/DynCodeTracePlugin.c

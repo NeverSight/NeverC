@@ -4,7 +4,7 @@
 
 # NeverC 플러그인 MIR API
 
-`PluginMIR.h` 는 Machine IR 을 공개합니다. 머신 함수, 블록, 명령어, 오퍼랜드,
+[`PluginMIR.h`] 는 Machine IR 을 공개합니다. 머신 함수, 블록, 명령어, 오퍼랜드,
 가상 및 물리 레지스터, 스택 프레임, 상수 풀, 점프 테이블, 메모리 오퍼랜드가
 그것입니다. 플러그인은 아홉 개의 안정된 코드 생성 훅에 패스를 붙이거나, IR →
 MIR 하강을 통째로 대체할 수 있습니다.
@@ -58,7 +58,7 @@ MIR 단계는 열 개이며, 그중 아홉이 패스 훅입니다:
 
 ## 스키마
 
-`Schema/PluginMIRSchema.inc` 는 생성물이며 `PluginMIR.h` 가 포함합니다:
+[`Schema/PluginMIRSchema.inc`] 는 생성물이며 [`PluginMIR.h`] 가 포함합니다:
 
 ```c
 #define NEVERC_MIR_SCHEMA_DIGEST          "6b523b20…"
@@ -309,7 +309,7 @@ Pass.Run           = run_machine_function;
 PassAPI->RegisterPass(PassAPI->Context, RegistrarContext, &Pass);
 ```
 
-이것은 `pluginsdk/examples/MachinePass.c` 그대로입니다. 수준은 `MODULE`,
+이것은 [`pluginsdk/examples/MachinePass.c`] 그대로입니다. 수준은 `MODULE`,
 `FUNCTION`, `BASIC_BLOCK` 입니다. `RequiredAnalyses` 와 `PreservedAnalyses` 는
 `NevercMIRBuiltinAnalysis` 의 배열이고, `RequiredTargetSchemaDigest` 는 그 패스가
 자신을 위해 만들어지지 않은 스키마에서 실행되기를 거부하게 만듭니다.
@@ -411,6 +411,13 @@ CMake 가 여러분의 플랫폼에 맞게 만든 모듈 접미사를 쓰십시�
   C++ 예외가 그것을 넘게 하지 마십시오.
 - `neverc.mir.final_verify` 는 봉인되어 있습니다. 무슨 일이 있어도 실행됩니다.
 
-규범적 선언, 스키마 상수, 단계 정책, 커버리지 증거는 `PluginMIR.h`,
-`Schema/PluginMIRSchema.inc`, `Schema/PhaseSchema.json`, `coverage.json` 을
+규범적 선언, 스키마 상수, 단계 정책, 커버리지 증거는 [`PluginMIR.h`],
+[`Schema/PluginMIRSchema.inc`], [`Schema/PhaseSchema.json`], [`coverage.json`] 을
 참조하십시오.
+
+<!-- reference links -->
+[`coverage.json`]: coverage.json
+[`PluginMIR.h`]: ../../neverc/include/neverc/Plugin/PluginMIR.h
+[`pluginsdk/examples/MachinePass.c`]: ../../pluginsdk/examples/MachinePass.c
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`Schema/PluginMIRSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginMIRSchema.inc

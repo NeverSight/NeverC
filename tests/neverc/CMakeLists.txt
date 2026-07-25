@@ -1889,6 +1889,11 @@ add_test(
   COMMAND ${Python3_EXECUTABLE}
           ${CMAKE_CURRENT_SOURCE_DIR}/../../utils/plugin-api/tests/test-check-global-state.py
 )
+add_test(
+  NAME PluginDocsNavigation
+  COMMAND ${Python3_EXECUTABLE}
+          ${CMAKE_CURRENT_SOURCE_DIR}/../../utils/plugin-api/check-docs-links.py
+)
 set_tests_properties(
   PluginPhaseSchemaGeneratorTests
   PluginPrepSchemaGeneratorTests
@@ -1902,6 +1907,7 @@ set_tests_properties(
   PluginSDKGenerationABICheck
   PluginABIManifestGeneratorTests
   PluginGlobalStateCheckerTests
+  PluginDocsNavigation
   # These are Python generator/consistency checks, not sanitizer-relevant C++
   # code paths.  PluginCoverageManifest additionally validates against the full
   # CTest inventory, so it cannot run in a partial (plugin-targets-only) build

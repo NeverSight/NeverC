@@ -4,7 +4,7 @@
 
 # NeverC Plugin IR API
 
-`PluginIR.h` exposes LLVM IR through six capability tables and a generated
+[`PluginIR.h`] exposes LLVM IR through six capability tables and a generated
 schema. A plugin reads and rewrites IR, registers passes at five stable
 pipeline points, defines its own analyses, or replaces IR generation and the
 optimization pipeline outright — without including a single LLVM header.
@@ -30,7 +30,7 @@ keep working when the host moves to a new LLVM release.
 
 Each is `NEVERC_INTERFACE_STABLE` at major 1. Negotiate with the matching
 `NEVERC_IR_*_API_MAJOR` / `_MINOR` and verify `TableSize` reaches the last
-slot you call, exactly as `pluginsdk/examples/FunctionPass.c` does:
+slot you call, exactly as [`pluginsdk/examples/FunctionPass.c`] does:
 
 ```c
 Status = Bootstrap->QueryInterface(
@@ -66,7 +66,7 @@ replaced, or skipped by anything — including an optimization provider.
 
 ## The schema
 
-`Schema/PluginIRSchema.inc` is generated and included by `PluginIR.h`. It
+[`Schema/PluginIRSchema.inc`] is generated and included by [`PluginIR.h`]. It
 publishes a digest and the constant sets:
 
 ```c
@@ -220,7 +220,7 @@ Core->HasFunctionAttribute(Core->Context, Task, Function, SV("noinline"),
                            &Present);
 ```
 
-`pluginsdk/examples/CustomCallConvPlugin.c` uses this together with
+[`pluginsdk/examples/CustomCallConvPlugin.c`] uses this together with
 `GetFunctionStringAttribute` to drive a data-defined calling convention.
 
 ## Transactional mutation
@@ -410,9 +410,9 @@ publication fails. `neverc.ir.final_verify` still runs afterwards.
 
 | File | Shows |
 |---|---|
-| `pluginsdk/examples/FunctionPass.c` | A read-only function pass, ABI negotiation included |
-| `pluginsdk/examples/ExamplePlugin.c` | Module-level pass walking functions with a value cursor |
-| `pluginsdk/examples/CustomCallConvPlugin.c` | Attributes and call-site properties |
+| [`pluginsdk/examples/FunctionPass.c`] | A read-only function pass, ABI negotiation included |
+| [`pluginsdk/examples/ExamplePlugin.c`] | Module-level pass walking functions with a value cursor |
+| [`pluginsdk/examples/CustomCallConvPlugin.c`] | Attributes and call-site properties |
 
 ```sh
 cmake --build build-neverc --target neverc-plugin-example-function-pass
@@ -429,7 +429,7 @@ Use the module suffix CMake produced for your platform.
   structured diagnostic; never let an exception cross the C boundary.
 - Zero every output struct and set its `Header` before a call that fills it.
 - Do not hard-code numeric opcode, type, or property values. Use the
-  `PluginIRSchema.inc` names so a schema revision is a compile error.
+  [`PluginIRSchema.inc`] names so a schema revision is a compile error.
 - Every `BeginMutation` reaches exactly one `DestroyMutation`, and every
   `CreateBuilder` exactly one `DestroyBuilder`, including on error paths.
 - Release what `ExportModule` hands you with `ReleaseSerializedBuffer`.
@@ -438,6 +438,16 @@ Use the module suffix CMake produced for your platform.
   `NEVERC_CONCURRENCY_SESSION_SERIAL`.
 - `neverc.ir.final_verify` is sealed. Nothing a plugin does can skip it.
 
-See `PluginIR.h`, `Schema/PluginIRSchema.inc`, `Schema/PhaseSchema.json`, and
-`coverage.json` for the normative declarations, schema constants, phase
+See [`PluginIR.h`], [`Schema/PluginIRSchema.inc`], [`Schema/PhaseSchema.json`], and
+[`coverage.json`] for the normative declarations, schema constants, phase
 policies, and test evidence.
+
+<!-- reference links -->
+[`coverage.json`]: coverage.json
+[`PluginIR.h`]: ../../neverc/include/neverc/Plugin/PluginIR.h
+[`PluginIRSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginIRSchema.inc
+[`pluginsdk/examples/CustomCallConvPlugin.c`]: ../../pluginsdk/examples/CustomCallConvPlugin.c
+[`pluginsdk/examples/ExamplePlugin.c`]: ../../pluginsdk/examples/ExamplePlugin.c
+[`pluginsdk/examples/FunctionPass.c`]: ../../pluginsdk/examples/FunctionPass.c
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`Schema/PluginIRSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginIRSchema.inc

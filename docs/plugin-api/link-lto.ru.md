@@ -5,10 +5,10 @@
 # API компоновки и LTO для плагинов NeverC
 
 Компоновка смоделирована как **конечный автомат над одним графом**.
-`PluginLink.h` раскрывает этот граф — входы, секции, атомы, символы, рёбра,
+[`PluginLink.h`] раскрывает этот граф — входы, секции, атомы, символы, рёбра,
 COMDAT, импорты, экспорты, записи раскрутки, синтетику и ограничения
 размещения — а также двадцать фаз, которые продвигают его от списка файлов до
-зафиксированного двоичного образа. `PluginLTO.h` покрывает две фазы посередине,
+зафиксированного двоичного образа. [`PluginLTO.h`] покрывает две фазы посередине,
 где биткод превращается в объекты.
 
 Плагин может наблюдать каждый шаг, перехватывать большинство из них, заменить
@@ -301,7 +301,7 @@ Link->GetBinaryImageInfo(Link->Context, Task, ImageHandle, &Image);
 сегмента: `READ`, `WRITE` и `EXECUTE`.
 
 `Image.Binary` и `Image.Builder` — это ограниченный транзакционный писатель из
-`PluginObject.h`: `Reserve`, `Write`, `WriteAt`, `Tell`, `ReadAt`, `Insert`,
+[`PluginObject.h`]: `Reserve`, `Write`, `WriteAt`, `Tell`, `ReadAt`, `Insert`,
 `Append`, `Resize`. Перехватчик `post_emit`, который правит байты, обязан идти
 через него; запись за зарезервированную границу прерывает подготовку, а не
 увеличивает файл.
@@ -453,6 +453,13 @@ LTORegistrar->RegisterProvider(LTORegistrar->Context, RegistrarContext,
 - `image_verify`, `side_outputs_verify` и `commit` запечатаны. Наблюдайте за
   ними; не пытайтесь перехватывать или пропускать.
 
-Нормативные объявления смотрите в `PluginLink.h` и `PluginLTO.h`, политики
-двадцати фаз — в `Schema/PhaseSchema.json`, а тесты, закрепляющие каждую из
-них, — в `coverage.json`.
+Нормативные объявления смотрите в [`PluginLink.h`] и [`PluginLTO.h`], политики
+двадцати фаз — в [`Schema/PhaseSchema.json`], а тесты, закрепляющие каждую из
+них, — в [`coverage.json`].
+
+<!-- reference links -->
+[`coverage.json`]: coverage.json
+[`PluginLink.h`]: ../../neverc/include/neverc/Plugin/PluginLink.h
+[`PluginLTO.h`]: ../../neverc/include/neverc/Plugin/PluginLTO.h
+[`PluginObject.h`]: ../../neverc/include/neverc/Plugin/PluginObject.h
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json

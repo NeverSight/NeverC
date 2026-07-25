@@ -4,7 +4,7 @@
 
 # NeverC 插件 MIR API
 
-`PluginMIR.h` 暴露 Machine IR：机器函数、基本块、指令、操作数、虚拟与物理寄存
+[`PluginMIR.h`] 暴露 Machine IR：机器函数、基本块、指令、操作数、虚拟与物理寄存
 器、栈帧、常量池、跳转表和内存操作数。插件可以在九个稳定的代码生成钩子上挂载
 pass，或者整个替换掉 IR 到 MIR 的降级。
 
@@ -53,7 +53,7 @@ pass，或者整个替换掉 IR 到 MIR 的降级。
 
 ## Schema
 
-`Schema/PluginMIRSchema.inc` 由工具生成，并由 `PluginMIR.h` 包含：
+[`Schema/PluginMIRSchema.inc`] 由工具生成，并由 [`PluginMIR.h`] 包含：
 
 ```c
 #define NEVERC_MIR_SCHEMA_DIGEST          "6b523b20…"
@@ -294,7 +294,7 @@ Pass.Run           = run_machine_function;
 PassAPI->RegisterPass(PassAPI->Context, RegistrarContext, &Pass);
 ```
 
-这就是 `pluginsdk/examples/MachinePass.c` 的原文。层级有 `MODULE`、
+这就是 [`pluginsdk/examples/MachinePass.c`] 的原文。层级有 `MODULE`、
 `FUNCTION`、`BASIC_BLOCK`。`RequiredAnalyses` 和 `PreservedAnalyses` 是
 `NevercMIRBuiltinAnalysis` 数组，而 `RequiredTargetSchemaDigest` 会让这个 pass
 拒绝在它并非为之构建的 schema 上运行。
@@ -393,5 +393,12 @@ build-neverc/bin/neverc \
 - 初始化每个表头和保留字段；跨 C 边界返回状态码，绝不让 C++ 异常穿过。
 - `neverc.mir.final_verify` 是 sealed 的，无论如何都会运行。
 
-规范性声明、schema 常量、阶段策略与覆盖证据分别见 `PluginMIR.h`、
-`Schema/PluginMIRSchema.inc`、`Schema/PhaseSchema.json` 和 `coverage.json`。
+规范性声明、schema 常量、阶段策略与覆盖证据分别见 [`PluginMIR.h`]、
+[`Schema/PluginMIRSchema.inc`]、[`Schema/PhaseSchema.json`] 和 [`coverage.json`]。
+
+<!-- reference links -->
+[`coverage.json`]: coverage.json
+[`PluginMIR.h`]: ../../neverc/include/neverc/Plugin/PluginMIR.h
+[`pluginsdk/examples/MachinePass.c`]: ../../pluginsdk/examples/MachinePass.c
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`Schema/PluginMIRSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginMIRSchema.inc

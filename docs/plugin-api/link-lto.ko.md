@@ -4,10 +4,10 @@
 
 # NeverC 플러그인 Link 및 LTO API
 
-링크는 **하나의 그래프 위에서 도는 상태 기계**로 모델링됩니다. `PluginLink.h`
+링크는 **하나의 그래프 위에서 도는 상태 기계**로 모델링됩니다. [`PluginLink.h`]
 는 그 그래프 — 입력, 섹션, 아톰, 심벌, 엣지, COMDAT, 임포트, 익스포트, 언와인드
 레코드, 합성물, 레이아웃 제약 — 과 함께, 파일 목록에서 커밋된 바이너리 이미지
-까지 진행시키는 스무 개의 단계를 공개합니다. `PluginLTO.h` 는 그 중간에서
+까지 진행시키는 스무 개의 단계를 공개합니다. [`PluginLTO.h`] 는 그 중간에서
 비트코드가 오브젝트가 되는 두 단계를 다룹니다.
 
 플러그인은 모든 단계를 관찰하고, 대부분을 가로채고, 한 단계를 교체하고, 링크
@@ -294,7 +294,7 @@ Link->GetBinaryImageInfo(Link->Context, Task, ImageHandle, &Image);
 출력 종류는 `RELOCATABLE`, `EXECUTABLE`, `SHARED_LIBRARY`, `BUNDLE`. 세그먼트
 플래그는 `READ`, `WRITE`, `EXECUTE` 입니다.
 
-`Image.Binary` 와 `Image.Builder` 는 `PluginObject.h` 의 경계 있는 트랜잭션
+`Image.Binary` 와 `Image.Builder` 는 [`PluginObject.h`] 의 경계 있는 트랜잭션
 작성기입니다 — `Reserve`, `Write`, `WriteAt`, `Tell`, `ReadAt`, `Insert`,
 `Append`, `Resize`. 바이트를 패치하는 `post_emit` 인터셉터는 반드시 이것을 거쳐야
 합니다. 예약 경계를 넘는 쓰기는 파일을 키우는 대신 스테이징을 중단시킵니다.
@@ -440,6 +440,13 @@ LTORegistrar->RegisterProvider(LTORegistrar->Context, RegistrarContext,
 - `image_verify`, `side_outputs_verify`, `commit` 은 봉인되어 있습니다. 관찰만
   하고 가로채거나 건너뛰려 하지 마세요.
 
-규범적 선언은 `PluginLink.h` 와 `PluginLTO.h`, 스무 단계의 정책은
-`Schema/PhaseSchema.json`, 각각을 고정하는 테스트는 `coverage.json` 을
+규범적 선언은 [`PluginLink.h`] 와 [`PluginLTO.h`], 스무 단계의 정책은
+[`Schema/PhaseSchema.json`], 각각을 고정하는 테스트는 [`coverage.json`] 을
 참고하세요.
+
+<!-- reference links -->
+[`coverage.json`]: coverage.json
+[`PluginLink.h`]: ../../neverc/include/neverc/Plugin/PluginLink.h
+[`PluginLTO.h`]: ../../neverc/include/neverc/Plugin/PluginLTO.h
+[`PluginObject.h`]: ../../neverc/include/neverc/Plugin/PluginObject.h
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json

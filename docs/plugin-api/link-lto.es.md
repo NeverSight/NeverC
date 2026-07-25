@@ -5,10 +5,10 @@
 # API de enlazado y LTO de plugins de NeverC
 
 El enlazado se modela como una **máquina de estados sobre un único grafo**.
-`PluginLink.h` expone ese grafo —entradas, secciones, átomos, símbolos, aristas,
+[`PluginLink.h`] expone ese grafo —entradas, secciones, átomos, símbolos, aristas,
 COMDAT, importaciones, exportaciones, registros de desenrollado, sintéticos y
 restricciones de disposición— junto con las veinte fases que lo llevan de una
-lista de archivos a una imagen binaria confirmada. `PluginLTO.h` cubre las dos
+lista de archivos a una imagen binaria confirmada. [`PluginLTO.h`] cubre las dos
 fases intermedias donde el bitcode se convierte en objetos.
 
 Un plugin puede observar cada paso, interceptar la mayoría, sustituir un único
@@ -301,7 +301,7 @@ Los tipos de salida son `RELOCATABLE`, `EXECUTABLE`, `SHARED_LIBRARY` y
 `BUNDLE`. Los indicadores de segmento son `READ`, `WRITE` y `EXECUTE`.
 
 `Image.Binary` e `Image.Builder` son el escritor transaccional acotado de
-`PluginObject.h`: `Reserve`, `Write`, `WriteAt`, `Tell`, `ReadAt`, `Insert`,
+[`PluginObject.h`]: `Reserve`, `Write`, `WriteAt`, `Tell`, `ReadAt`, `Insert`,
 `Append`, `Resize`. Un interceptor de `post_emit` que parchee bytes debe pasar
 por él; las escrituras más allá del límite reservado abortan la preparación en
 lugar de agrandar el archivo.
@@ -456,6 +456,13 @@ y su artefacto), opcionalmente `OptimizedBitcode` y `ThinIndex`, y la
 - `image_verify`, `side_outputs_verify` y `commit` están selladas. Obsérvelas;
   no intente interceptarlas ni omitirlas.
 
-Consulte `PluginLink.h` y `PluginLTO.h` para las declaraciones normativas,
-`Schema/PhaseSchema.json` para las políticas de las veinte fases y
-`coverage.json` para las pruebas que fijan cada una.
+Consulte [`PluginLink.h`] y [`PluginLTO.h`] para las declaraciones normativas,
+[`Schema/PhaseSchema.json`] para las políticas de las veinte fases y
+[`coverage.json`] para las pruebas que fijan cada una.
+
+<!-- reference links -->
+[`coverage.json`]: coverage.json
+[`PluginLink.h`]: ../../neverc/include/neverc/Plugin/PluginLink.h
+[`PluginLTO.h`]: ../../neverc/include/neverc/Plugin/PluginLTO.h
+[`PluginObject.h`]: ../../neverc/include/neverc/Plugin/PluginObject.h
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json

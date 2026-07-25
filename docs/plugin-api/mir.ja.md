@@ -4,7 +4,7 @@
 
 # NeverC プラグイン MIR API
 
-`PluginMIR.h` は Machine IR を公開します。マシン関数、ブロック、命令、オペランド、
+[`PluginMIR.h`] は Machine IR を公開します。マシン関数、ブロック、命令、オペランド、
 仮想レジスタと物理レジスタ、スタックフレーム、定数プール、ジャンプテーブル、
 メモリオペランドです。プラグインは 9 つの安定したコード生成フックにパスを取り付け、
 あるいは IR から MIR への低下処理をまるごと置き換えられます。
@@ -58,7 +58,7 @@ MIR フェーズは 10 個あり、うち 9 個がパスのフックです:
 
 ## スキーマ
 
-`Schema/PluginMIRSchema.inc` は生成物で、`PluginMIR.h` が include します:
+[`Schema/PluginMIRSchema.inc`] は生成物で、[`PluginMIR.h`] が include します:
 
 ```c
 #define NEVERC_MIR_SCHEMA_DIGEST          "6b523b20…"
@@ -312,7 +312,7 @@ Pass.Run           = run_machine_function;
 PassAPI->RegisterPass(PassAPI->Context, RegistrarContext, &Pass);
 ```
 
-これは `pluginsdk/examples/MachinePass.c` そのままです。レベルは `MODULE`、
+これは [`pluginsdk/examples/MachinePass.c`] そのままです。レベルは `MODULE`、
 `FUNCTION`、`BASIC_BLOCK`。`RequiredAnalyses` と `PreservedAnalyses` は
 `NevercMIRBuiltinAnalysis` の配列で、`RequiredTargetSchemaDigest` はそのパスが
 想定していないスキーマに対して実行されるのを拒ませます。
@@ -414,6 +414,13 @@ CMake がお使いのプラットフォーム向けに生成したモジュー�
   越しに返し、C++ の例外を決して越えさせないこと。
 - `neverc.mir.final_verify` は封印されています。何があっても走ります。
 
-規範的な宣言、スキーマ定数、フェーズポリシー、カバレッジの証拠は、`PluginMIR.h`、
-`Schema/PluginMIRSchema.inc`、`Schema/PhaseSchema.json`、`coverage.json` を参照して
+規範的な宣言、スキーマ定数、フェーズポリシー、カバレッジの証拠は、[`PluginMIR.h`]、
+[`Schema/PluginMIRSchema.inc`]、[`Schema/PhaseSchema.json`]、[`coverage.json`] を参照して
 ください。
+
+<!-- reference links -->
+[`coverage.json`]: coverage.json
+[`PluginMIR.h`]: ../../neverc/include/neverc/Plugin/PluginMIR.h
+[`pluginsdk/examples/MachinePass.c`]: ../../pluginsdk/examples/MachinePass.c
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`Schema/PluginMIRSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginMIRSchema.inc

@@ -34,7 +34,7 @@ gpr:rcx,rdx,r8,r9; xmm:xmm0,xmm1; ret:rax; ret_xmm:xmm0
 | `ret_fpr` | | Нейтральный к цели псевдоним для `ret_xmm` |
 | `csr` | | Пользовательский набор регистров callee-saved (по умолчанию — стандартный набор ABI) |
 
-Любой сегмент можно опустить, неизвестные сегменты игнорируются. Ключи определены ровно один раз в `llvm/include/llvm/CodeGen/NeverCCallConv.h`, поэтому создатели спецификаций и парсер не могут разойтись.
+Любой сегмент можно опустить, неизвестные сегменты игнорируются. Ключи определены ровно один раз в [`llvm/include/llvm/CodeGen/NeverCCallConv.h`], поэтому создатели спецификаций и парсер не могут разойтись.
 
 ### Два режима для аргументов
 
@@ -74,7 +74,7 @@ GPR всегда записываются в 64-битной форме; бэк�
 
 ### 1. Через плагин (рекомендуется)
 
-Эталонный плагин `CustomCallConvPlugin.c` поставляется в `pluginsdk/examples/`. Он регистрирует IR-проход уровня модуля в фазе `neverc.ir.pass.post_opt`.
+Эталонный плагин [`CustomCallConvPlugin.c`] поставляется в `pluginsdk/examples/`. Он регистрирует IR-проход уровня модуля в фазе `neverc.ir.pass.post_opt`.
 
 **Сборка плагина:**
 
@@ -185,7 +185,7 @@ Core->SetFunctionCallingConvention(Core->Context, Task, Function,
 
 ## Тесты
 
-Набор GoogleTest лежит в `tests/neverc/CustomCallConvTests.cpp` и содержит 26 тестов. Каждый собирает пример плагина, компилирует небольшую программу в ассемблер с заданной спецификацией и проверяет получившееся размещение в регистре или в стеке.
+Набор GoogleTest лежит в [`tests/neverc/CustomCallConvTests.cpp`] и содержит 26 тестов. Каждый собирает пример плагина, компилирует небольшую программу в ассемблер с заданной спецификацией и проверяет получившееся размещение в регистре или в стеке.
 
 ```bash
 ninja -C build-neverc neverc-tests
@@ -243,3 +243,8 @@ custom_attr(...)              (neverc.ir.pass.post_opt)
 ```
 
 Исполнитель в бэкенде — **реализация, написанная один раз**: все решения политики живут в плагине. Добавление нового соглашения никогда не требует пересборки NeverC.
+
+<!-- reference links -->
+[`CustomCallConvPlugin.c`]: ../../../pluginsdk/examples/CustomCallConvPlugin.c
+[`llvm/include/llvm/CodeGen/NeverCCallConv.h`]: ../../../llvm/include/llvm/CodeGen/NeverCCallConv.h
+[`tests/neverc/CustomCallConvTests.cpp`]: ../../../tests/neverc/CustomCallConvTests.cpp

@@ -4,7 +4,7 @@
 
 # واجهة MIR لإضافات NeverC
 
-يكشف `PluginMIR.h` عن Machine IR: دوال الآلة، والكتل، والتعليمات، والمعاملات،
+يكشف [`PluginMIR.h`] عن Machine IR: دوال الآلة، والكتل، والتعليمات، والمعاملات،
 والسجلات الافتراضية والفيزيائية، وإطار المكدس، ومجمّع الثوابت، وجداول القفز،
 ومعاملات الذاكرة. وتُعلِّق الإضافة مروراتها على تسعة خطّافات مستقرة في توليد
 الشيفرة، أو تستبدل خفض IR إلى MIR بالكامل.
@@ -57,7 +57,7 @@
 
 ## المخطط
 
-`Schema/PluginMIRSchema.inc` مُولَّد ويُضمّنه `PluginMIR.h`:
+[`Schema/PluginMIRSchema.inc`] مُولَّد ويُضمّنه [`PluginMIR.h`]:
 
 ```c
 #define NEVERC_MIR_SCHEMA_DIGEST          "6b523b20…"
@@ -312,7 +312,7 @@ Pass.Run           = run_machine_function;
 PassAPI->RegisterPass(PassAPI->Context, RegistrarContext, &Pass);
 ```
 
-هذا هو `pluginsdk/examples/MachinePass.c` حرفيًا. والمستويات هي `MODULE` و
+هذا هو [`pluginsdk/examples/MachinePass.c`] حرفيًا. والمستويات هي `MODULE` و
 `FUNCTION` و`BASIC_BLOCK`. و`RequiredAnalyses` و`PreservedAnalyses` مصفوفتان
 من `NevercMIRBuiltinAnalysis`، و`RequiredTargetSchemaDigest` يجعل المرور يرفض
 العمل مقابل مخطط لم يُبنَ له.
@@ -414,6 +414,13 @@ build-neverc/bin/neverc \
   استثناء C++ يعبرها أبدًا.
 - `neverc.mir.final_verify` مختومة. تعمل مهما حدث.
 
-انظر `PluginMIR.h` و`Schema/PluginMIRSchema.inc` و`Schema/PhaseSchema.json`
-و`coverage.json` للإعلانات المِعيارية وثوابت المخطط وسياسات المراحل وأدلة
+انظر [`PluginMIR.h`] و[`Schema/PluginMIRSchema.inc`] و[`Schema/PhaseSchema.json`]
+و[`coverage.json`] للإعلانات المِعيارية وثوابت المخطط وسياسات المراحل وأدلة
 التغطية.
+
+<!-- reference links -->
+[`coverage.json`]: coverage.json
+[`PluginMIR.h`]: ../../neverc/include/neverc/Plugin/PluginMIR.h
+[`pluginsdk/examples/MachinePass.c`]: ../../pluginsdk/examples/MachinePass.c
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`Schema/PluginMIRSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginMIRSchema.inc

@@ -5,10 +5,10 @@
 # NeverC Plugin-Link- und LTO-API
 
 Das Linken ist als **Zustandsmaschine über einem einzigen Graphen** modelliert.
-`PluginLink.h` legt diesen Graphen offen — Eingaben, Sections, Atome, Symbole,
+[`PluginLink.h`] legt diesen Graphen offen — Eingaben, Sections, Atome, Symbole,
 Kanten, COMDATs, Imports, Exports, Unwind-Datensätze, Synthetics und
 Layout-Constraints — dazu die zwanzig Phasen, die ihn von einer Dateiliste zu
-einem committeten Binärabbild führen. `PluginLTO.h` deckt die beiden Phasen in
+einem committeten Binärabbild führen. [`PluginLTO.h`] deckt die beiden Phasen in
 der Mitte ab, in denen Bitcode zu Objekten wird.
 
 Ein Plugin kann jeden Schritt beobachten, die meisten abfangen, einen einzelnen
@@ -300,7 +300,7 @@ Ausgabearten sind `RELOCATABLE`, `EXECUTABLE`, `SHARED_LIBRARY` und `BUNDLE`.
 Segment-Flags sind `READ`, `WRITE` und `EXECUTE`.
 
 `Image.Binary` und `Image.Builder` sind der begrenzte transaktionale Schreiber
-aus `PluginObject.h` — `Reserve`, `Write`, `WriteAt`, `Tell`, `ReadAt`,
+aus [`PluginObject.h`] — `Reserve`, `Write`, `WriteAt`, `Tell`, `ReadAt`,
 `Insert`, `Append`, `Resize`. Ein `post_emit`-Interceptor, der Bytes patcht,
 muss über ihn gehen; Schreibvorgänge über die reservierte Grenze hinaus brechen
 das Staging ab, statt die Datei wachsen zu lassen.
@@ -455,6 +455,13 @@ verwendeten `CacheKey`.
 - `image_verify`, `side_outputs_verify` und `commit` sind versiegelt. Beobachten
   Sie sie; versuchen Sie nicht, sie abzufangen oder zu überspringen.
 
-Die normativen Deklarationen stehen in `PluginLink.h` und `PluginLTO.h`, die
-Policies der zwanzig Phasen in `Schema/PhaseSchema.json` und die Tests, die
-jede einzelne festnageln, in `coverage.json`.
+Die normativen Deklarationen stehen in [`PluginLink.h`] und [`PluginLTO.h`], die
+Policies der zwanzig Phasen in [`Schema/PhaseSchema.json`] und die Tests, die
+jede einzelne festnageln, in [`coverage.json`].
+
+<!-- reference links -->
+[`coverage.json`]: coverage.json
+[`PluginLink.h`]: ../../neverc/include/neverc/Plugin/PluginLink.h
+[`PluginLTO.h`]: ../../neverc/include/neverc/Plugin/PluginLTO.h
+[`PluginObject.h`]: ../../neverc/include/neverc/Plugin/PluginObject.h
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json

@@ -4,7 +4,7 @@
 
 # واجهة المعالج المسبق لإضافات NeverC
 
-تكشف `PluginPrep.h` المعالج المسبق بطريقتين. **الاشتراك** في 39 نوعًا من الأحداث
+تكشف [`PluginPrep.h`] المعالج المسبق بطريقتين. **الاشتراك** في 39 نوعًا من الأحداث
 يمنحك أثرًا للقراءة فقط لكل ما يفعله المعالج المسبق: دخول الملفات، وتعريف
 وحدات الماكرو وتوسيعها، وتقييم الشروط، والـ pragma. أما المراحل الست **فتمضي
 أبعد** وتتيح لك إعادة كتابة النتيجة: إعادة توجيه `#include`، أو استبدال رموز
@@ -23,7 +23,7 @@ Bootstrap->QueryInterface(
 ```
 
 أنواع الرموز الـ230 (`NEVERC_TOKEN_KIND_COUNT`) وأنواع الكلمات المفتاحية للمعالج
-المسبق تأتي من `Schema/PluginPrepSchema.inc` الذي يضمّه الملف الترويسي، ويجب أن
+المسبق تأتي من [`Schema/PluginPrepSchema.inc`] الذي يضمّه الملف الترويسي، ويجب أن
 يساوي رقمه الرئيسي للقدرات `NEVERC_PREP_API_MAJOR` — فأي اختلاف خطأ ترجمة، لا
 مفاجأة وقت التشغيل. ويحمل كل نوع كذلك فئةً: `NEVERC_TOKEN_CATEGORY_SPECIAL`
 و`COMMENT` و`IDENTIFIER` و`LITERAL` و`PUNCTUATOR` و`KEYWORD` و`ANNOTATION`.
@@ -231,7 +231,7 @@ Prep->DestroyTokenBuilder(Prep->Context, Task, Builder);
 
 استعمل `TokenBuilderSetKind` لعلامات الترقيم والكلمات المفتاحية، و
 `TokenBuilderSetIdentifier` للمعرّفات. وثوابت أنواع الرموز تأتي من
-`PluginPrepSchema.inc`.
+[`PluginPrepSchema.inc`].
 
 وللدفق كاملًا — أي مرحلة `neverc.prep.build_token_stream` — راكِم في بانٍ للدفق
 ثم أودِع مرةً واحدة:
@@ -283,5 +283,11 @@ Prep->CreateFeatureQueryPhaseOutput(Prep->Context, Frame, Continuation, &Out,
 - أعِد `NEVERC_STATUS_INVALID_ARGUMENT` عند غياب مؤشر مطلوب، ولا تدع استثناءً
   يعبر الحدّ أبدًا.
 
-انظر `PluginPrep.h` و`Schema/PluginPrepSchema.inc` للتصريحات المعيارية، و
-`Schema/PrepSchema.json` لمخطط أنواع الرموز.
+انظر [`PluginPrep.h`] و[`Schema/PluginPrepSchema.inc`] للتصريحات المعيارية، و
+[`Schema/PrepSchema.json`] لمخطط أنواع الرموز.
+
+<!-- reference links -->
+[`PluginPrep.h`]: ../../neverc/include/neverc/Plugin/PluginPrep.h
+[`PluginPrepSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginPrepSchema.inc
+[`Schema/PluginPrepSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginPrepSchema.inc
+[`Schema/PrepSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PrepSchema.json

@@ -4,10 +4,10 @@
 
 # API плагинов NeverC: целевая платформа, MC, ассемблер и объектные файлы
 
-Бэкенд — это четыре заголовка и двадцать девять фаз. `PluginTarget.h`
-описывает целевую платформу и маршруты через генерацию кода. `PluginMC.h`
+Бэкенд — это четыре заголовка и двадцать девять фаз. [`PluginTarget.h`]
+описывает целевую платформу и маршруты через генерацию кода. [`PluginMC.h`]
 строит и наблюдает машинный код. Разбор и печать ассемблера живут в том же
-заголовке. `PluginObject.h` превращает перемещаемый файл в нормализованный
+заголовке. [`PluginObject.h`] превращает перемещаемый файл в нормализованный
 граф и обратно.
 
 Вместе они позволяют плагину добавить целевую платформу, заменить один шаг
@@ -204,7 +204,7 @@ plan(void *UserData, const NevercCallingConventionQuery *Query,
 `Query->SchemaDigest` — значение LOCKSTEP: `RegisterNumber` что-то значит
 только относительно схемы, которую он называет. Полный разобранный пример см.
 в [Пользовательские соглашения о вызовах](custom-callconv/README.ru.md) и
-`pluginsdk/examples/CustomCallConvPlugin.c`.
+[`pluginsdk/examples/CustomCallConvPlugin.c`].
 
 ## Маршруты генерации кода
 
@@ -332,7 +332,7 @@ Emission->BeginInstructionReplacement(Emission->Context, Frame, &Builder);
 Emission->PublishInstructionReplacement(Emission->Context, Frame, NewInstr);
 ```
 
-`pluginsdk/examples/MCObserverPlugin.c` — это версия того же самого только для
+[`pluginsdk/examples/MCObserverPlugin.c`] — это версия того же самого только для
 чтения.
 
 ## Кодировщики, декодировщики и раскладка
@@ -483,7 +483,7 @@ ObjectFormat->RegisterFormat(ObjectFormat->Context, RegistrarContext,
 провалившаяся проверка прерывают подготовку, так что сбой никогда не оставляет
 на диске половину файла.
 
-`pluginsdk/examples/ObjectRewritePlugin.c` — полноценная транзакционная
+[`pluginsdk/examples/ObjectRewritePlugin.c`] — полноценная транзакционная
 перезапись.
 
 ## Правила
@@ -509,8 +509,18 @@ ObjectFormat->RegisterFormat(ObjectFormat->Context, RegistrarContext,
 - `codegen.product_verify`, `assembly.final_verify`, `assembly.commit`,
   `object.final_verify` и `object.commit` запечатаны. Только наблюдение.
 
-Нормативные объявления см. в `PluginTarget.h`, `PluginMC.h`,
-`PluginObject.h` и `Schema/PhaseSchema.json`, а `coverage.json` сопоставляет
+Нормативные объявления см. в [`PluginTarget.h`], [`PluginMC.h`],
+[`PluginObject.h`] и [`Schema/PhaseSchema.json`], а [`coverage.json`] сопоставляет
 каждую из этих стабильных фаз с её положительными, отрицательными,
 замещающими, наблюдательными (только чтение) тестами и тестами запечатанных
 шлюзов.
+
+<!-- reference links -->
+[`coverage.json`]: coverage.json
+[`PluginMC.h`]: ../../neverc/include/neverc/Plugin/PluginMC.h
+[`PluginObject.h`]: ../../neverc/include/neverc/Plugin/PluginObject.h
+[`pluginsdk/examples/CustomCallConvPlugin.c`]: ../../pluginsdk/examples/CustomCallConvPlugin.c
+[`pluginsdk/examples/MCObserverPlugin.c`]: ../../pluginsdk/examples/MCObserverPlugin.c
+[`pluginsdk/examples/ObjectRewritePlugin.c`]: ../../pluginsdk/examples/ObjectRewritePlugin.c
+[`PluginTarget.h`]: ../../neverc/include/neverc/Plugin/PluginTarget.h
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json

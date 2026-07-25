@@ -27,7 +27,7 @@
 | `NEVERC_INTERFACE_PARSER_{HIGH,LOW}` | `NevercParserAPI` | `NEVERC_PARSER_API_MAJOR` / `_MINOR` |
 | `NEVERC_INTERFACE_SEMA_{HIGH,LOW}` | `NevercSemaAPI` | `NEVERC_SEMA_API_MAJOR` / `_MINOR` |
 
-يوفّر `Schema/PluginASTSchema.inc` معرّفات أنواع العُقد والخصائص وفتحات الأبناء،
+يوفّر [`Schema/PluginASTSchema.inc`] معرّفات أنواع العُقد والخصائص وفتحات الأبناء،
 ويجب أن يساوي رقمه الرئيسي للقدرات `NEVERC_AST_API_MAJOR`.
 
 ## المراحل
@@ -191,7 +191,7 @@ AST->DestroyASTMutation(AST->Context, Task, Mutation);
 
 يتحقق الإيداع من الشجرة المُهيّأة وينشرها ذريًّا. والإيداع الفاشل يترك الشجرة
 السابقة سليمة، والإجهاض يجعل المقابض التي أنشأها ذلك التعديل بائدة. ويعرض
-[`pluginsdk/examples/ASTRewritePlugin.c`](../../pluginsdk/examples/ASTRewritePlugin.c)
+[`pluginsdk/examples/ASTRewritePlugin.c`]
 الدورة كاملة بما فيها اعتراض المحلل النحوي.
 
 ## أحداث دورة الحياة
@@ -402,10 +402,18 @@ Sema->CreateSemanticUnit(Sema->Context, Frame, &Unit, &Output);
 - لا تعدّل الشجرة من مراقب دورة الحياة — فالمراقبون للقراءة فقط. استعمل معترِضًا
   على المرحلة المقابلة.
 - معرّفات الخصائص وفتحات الأبناء ثوابتُ مخطط. لا تكتب أعدادًا حرفية مباشرة؛
-  استعمل الأسماء من `PluginASTSchema.inc` كي تصبح مراجعةُ المخطط خطأ ترجمة.
+  استعمل الأسماء من [`PluginASTSchema.inc`] كي تصبح مراجعةُ المخطط خطأ ترجمة.
 - تحقّق من وجود `HAS_KNOWN_LAYOUT` في `NevercTypeInfo.Flags` قبل أن تثق بـ
   `SizeInBits` أو `AlignmentInBits`.
 
-انظر `PluginAST.h` و`PluginSema.h` و`Schema/ASTSchema.json` للتصريحات المعيارية،
-و`pluginsdk/examples/ASTRewritePlugin.c` لاعتراض محلل نحوي وإعادة كتابة ذرّية
+انظر [`PluginAST.h`] و[`PluginSema.h`] و[`Schema/ASTSchema.json`] للتصريحات المعيارية،
+و[`pluginsdk/examples/ASTRewritePlugin.c`] لاعتراض محلل نحوي وإعادة كتابة ذرّية
 للشجرة يعملان فعلًا.
+
+<!-- reference links -->
+[`PluginAST.h`]: ../../neverc/include/neverc/Plugin/PluginAST.h
+[`PluginASTSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginASTSchema.inc
+[`pluginsdk/examples/ASTRewritePlugin.c`]: ../../pluginsdk/examples/ASTRewritePlugin.c
+[`PluginSema.h`]: ../../neverc/include/neverc/Plugin/PluginSema.h
+[`Schema/ASTSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/ASTSchema.json
+[`Schema/PluginASTSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginASTSchema.inc

@@ -4,7 +4,7 @@
 
 # NeverC プラグイン プリプロセッサ API
 
-`PluginPrep.h` はプリプロセッサを 2 通りに公開します。39 種類のイベントへの
+[`PluginPrep.h`] はプリプロセッサを 2 通りに公開します。39 種類のイベントへの
 **購読** は、ファイルへの入場、マクロの定義と展開、条件の評価、pragma —— つまり
 プリプロセッサが行うすべての読み取り専用トレースを与えます。6 つの **フェーズ**
 はさらに踏み込み、結果を書き換えさせます。`#include` をリダイレクトする、マクロの
@@ -23,7 +23,7 @@ Bootstrap->QueryInterface(
 ```
 
 230 のトークン種別（`NEVERC_TOKEN_KIND_COUNT`）とプリプロセッサキーワード種別は
-`Schema/PluginPrepSchema.inc` に由来します。ヘッダがこれをインクルードしており、
+[`Schema/PluginPrepSchema.inc`] に由来します。ヘッダがこれをインクルードしており、
 その capability major は `NEVERC_PREP_API_MAJOR` と一致していなければなりません。
 食い違いは実行時の不意打ちではなくコンパイルエラーになります。各種別はカテゴリも
 持ちます: `NEVERC_TOKEN_CATEGORY_SPECIAL`、`COMMENT`、`IDENTIFIER`、`LITERAL`、
@@ -234,7 +234,7 @@ Prep->DestroyTokenBuilder(Prep->Context, Task, Builder);
 
 区切り記号とキーワードには `TokenBuilderSetKind` を、識別子には
 `TokenBuilderSetIdentifier` を使います。トークン種別の定数は
-`PluginPrepSchema.inc` に由来します。
+[`PluginPrepSchema.inc`] に由来します。
 
 ストリーム全体を扱うとき —— `neverc.prep.build_token_stream` フェーズ —— は、
 ストリームビルダに積み上げて一度にコミットします:
@@ -288,5 +288,11 @@ Prep->CreateFeatureQueryPhaseOutput(Prep->Context, Frame, Continuation, &Out,
 - 必須ポインタが欠けていれば `NEVERC_STATUS_INVALID_ARGUMENT` を返し、例外を境界
   の外へ出してはいけません。
 
-規範的な宣言は `PluginPrep.h` と `Schema/PluginPrepSchema.inc` を、トークン種別の
-スキーマは `Schema/PrepSchema.json` を参照してください。
+規範的な宣言は [`PluginPrep.h`] と [`Schema/PluginPrepSchema.inc`] を、トークン種別の
+スキーマは [`Schema/PrepSchema.json`] を参照してください。
+
+<!-- reference links -->
+[`PluginPrep.h`]: ../../neverc/include/neverc/Plugin/PluginPrep.h
+[`PluginPrepSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginPrepSchema.inc
+[`Schema/PluginPrepSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginPrepSchema.inc
+[`Schema/PrepSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PrepSchema.json

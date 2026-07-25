@@ -5,7 +5,7 @@
 # API Driver dei plugin NeverC
 
 Il driver trasforma una riga di comando in un insieme di job eseguiti.
-`PluginDriver.h` espone quella pipeline come sei fasi e una tabella di
+[`PluginDriver.h`] espone quella pipeline come sei fasi e una tabella di
 capacità, `NevercDriverAPI`, così che un plugin possa riscrivere gli argomenti,
 scegliere una toolchain, ristrutturare il grafo delle azioni, aggiungere o
 sostituire job e persino eseguire un job nel processo corrente invece di
@@ -71,7 +71,7 @@ typedef struct NevercOptionDescriptor {
 } NevercOptionDescriptor;
 ```
 
-Da `pluginsdk/examples/DriverTracePlugin.c`:
+Da [`pluginsdk/examples/DriverTracePlugin.c`]:
 
 ```c
 NevercOptionDescriptor Option = {0};
@@ -314,7 +314,7 @@ toolchain, riporta `BuiltinProviderUsed`.
 
 ## Esempio completo: osservare gli argomenti, intercettare l'esecuzione
 
-Condensato da `pluginsdk/examples/DriverTracePlugin.c`. Il plugin non tiene
+Condensato da [`pluginsdk/examples/DriverTracePlugin.c`]. Il plugin non tiene
 variabili globali: lo stato di processo conserva le tabelle negoziate e i
 contatori per sessione e per task vengono richiesti all'host dentro ogni
 callback.
@@ -423,5 +423,11 @@ build-neverc/bin/neverc \
   restituire uno stato diverso da OK per un job che è stato eseguito ed è
   legittimamente fallito.
 
-Vedete `PluginDriver.h` per le dichiarazioni normative, `PhaseSchema.json` per
-le policy delle fasi del driver e `coverage.json` per le prove dei test.
+Vedete [`PluginDriver.h`] per le dichiarazioni normative, [`PhaseSchema.json`] per
+le policy delle fasi del driver e [`coverage.json`] per le prove dei test.
+
+<!-- reference links -->
+[`coverage.json`]: coverage.json
+[`PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`PluginDriver.h`]: ../../neverc/include/neverc/Plugin/PluginDriver.h
+[`pluginsdk/examples/DriverTracePlugin.c`]: ../../pluginsdk/examples/DriverTracePlugin.c

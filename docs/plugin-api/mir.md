@@ -4,7 +4,7 @@
 
 # NeverC Plugin MIR API
 
-`PluginMIR.h` exposes Machine IR: machine functions, blocks, instructions,
+[`PluginMIR.h`] exposes Machine IR: machine functions, blocks, instructions,
 operands, virtual and physical registers, the stack frame, the constant pool,
 jump tables, and memory operands. A plugin attaches passes at nine stable
 code-generation hooks, or replaces IR-to-MIR lowering entirely.
@@ -57,7 +57,7 @@ plugin slot. No plugin can disable, replace, or skip it.
 
 ## The schema
 
-`Schema/PluginMIRSchema.inc` is generated and included by `PluginMIR.h`:
+[`Schema/PluginMIRSchema.inc`] is generated and included by [`PluginMIR.h`]:
 
 ```c
 #define NEVERC_MIR_SCHEMA_DIGEST          "6b523b20…"
@@ -317,7 +317,7 @@ Pass.Run           = run_machine_function;
 PassAPI->RegisterPass(PassAPI->Context, RegistrarContext, &Pass);
 ```
 
-That is `pluginsdk/examples/MachinePass.c` verbatim. Levels are `MODULE`,
+That is [`pluginsdk/examples/MachinePass.c`] verbatim. Levels are `MODULE`,
 `FUNCTION`, and `BASIC_BLOCK`. `RequiredAnalyses` and `PreservedAnalyses` are
 arrays of `NevercMIRBuiltinAnalysis`, and `RequiredTargetSchemaDigest` makes
 the pass refuse to run against a schema it was not built for.
@@ -420,6 +420,13 @@ Use the module suffix CMake produced for your platform.
   the C boundary and never let a C++ exception cross it.
 - `neverc.mir.final_verify` is sealed. It runs no matter what.
 
-See `PluginMIR.h`, `Schema/PluginMIRSchema.inc`, `Schema/PhaseSchema.json`,
-and `coverage.json` for the normative declarations, schema constants, phase
+See [`PluginMIR.h`], [`Schema/PluginMIRSchema.inc`], [`Schema/PhaseSchema.json`],
+and [`coverage.json`] for the normative declarations, schema constants, phase
 policies, and coverage evidence.
+
+<!-- reference links -->
+[`coverage.json`]: coverage.json
+[`PluginMIR.h`]: ../../neverc/include/neverc/Plugin/PluginMIR.h
+[`pluginsdk/examples/MachinePass.c`]: ../../pluginsdk/examples/MachinePass.c
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`Schema/PluginMIRSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginMIRSchema.inc

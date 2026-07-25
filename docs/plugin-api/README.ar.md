@@ -15,7 +15,7 @@ neverc_plugin_entry(const NevercBootstrapAPI *Bootstrap,
                     NevercPluginDescriptor *OutPlugin);
 ```
 
-هذا التوقيع، المُعلَن في `PluginCore.h`، هو عقد الربط بأكمله. كل ما عداه — قراءة
+هذا التوقيع، المُعلَن في [`PluginCore.h`]، هو عقد الربط بأكمله. كل ما عداه — قراءة
 الـ IR، وإعادة كتابة رسم الكائنات، واستبدال خط أنابيب التحسين — يُبلَغ عبر جداول
 تطلبها من المُضيف بالمعرِّف.
 
@@ -139,9 +139,9 @@ typedef struct NevercPhaseFrame {
 } NevercPhaseFrame;
 ```
 
-الملف `Schema/PhaseSchema.json` هو المصدر المِعياري لمعرِّفات المراحل والسياسات
+الملف [`Schema/PhaseSchema.json`] هو المصدر المِعياري لمعرِّفات المراحل والسياسات
 ومستويات الاستقرار وبوابات التدقيق. والملف المُولَّد
-`Schema/PluginPhaseSchema.inc` يكشف كلًّا منها كثابت وقت التصريف — للمرحلة
+[`Schema/PluginPhaseSchema.inc`] يكشف كلًّا منها كثابت وقت التصريف — للمرحلة
 `neverc.ir.pass.pipeline_start`:
 
 ```c
@@ -158,7 +158,7 @@ NEVERC_PHASE_IR_PASS_PIPELINE_START_INPUT_HIGH /* and _INPUT_LOW, _OUTPUT_*     
 
 ## إضافة صغرى كاملة
 
-هذا هو `pluginsdk/templates/minimal/Plugin.c` حرفيًا. يُحمَّل، ويتفاوض على الواجهة
+هذا هو [`pluginsdk/templates/minimal/Plugin.c`] حرفيًا. يُحمَّل، ويتفاوض على الواجهة
 الثنائية، ولا يُسجِّل شيئًا، ويُفرَّغ بنظافة — انسخ المجلد وابنِ عليه من هنا.
 
 ```c
@@ -266,20 +266,20 @@ if (!Table || TableSize < offsetof(NevercIRPassAPI, RegisterPass) +
 
 | زوج ماكرو الواجهة | الجدول | الترويسة |
 |---|---|---|
-| `NEVERC_INTERFACE_CORE_{HIGH,LOW}` | `NevercCoreAPI` | `PluginCore.h` |
-| `NEVERC_INTERFACE_DRIVER_*` | `NevercDriverAPI` | `PluginDriver.h` |
-| `NEVERC_INTERFACE_IO_*`، `..._SOURCE_LOCATION_*` | `NevercIOAPI`، `NevercSourceLocationAPI` | `PluginSource.h` |
-| `NEVERC_INTERFACE_PREP_*` | `NevercPrepAPI` | `PluginPrep.h` |
-| `NEVERC_INTERFACE_AST_*`، `..._PARSER_*` | `NevercASTAPI`، `NevercParserAPI` | `PluginAST.h` |
-| `NEVERC_INTERFACE_SEMA_*` | `NevercSemaAPI` | `PluginSema.h` |
-| `NEVERC_INTERFACE_IR_CORE_*`، `..._IR_BUILDER_*`، `..._IR_ANALYSIS_*`، `..._IR_PASS_*`، `..._IR_GEN_*`، `..._IR_OPTIMIZATION_*` | ستة جداول IR | `PluginIR.h` |
-| `NEVERC_INTERFACE_TARGET_*`، `..._TARGET_ABI_*`، `..._CALLING_CONVENTION_*` | `NevercTargetAPI`، `NevercTargetABIAPI`، `NevercCallingConventionAPI` | `PluginTarget.h` |
-| `NEVERC_INTERFACE_MIR_*`، `..._MIR_ANALYSIS_*`، `..._MIR_PASS_*`، `..._MIR_PROVIDER_*` | أربعة جداول MIR | `PluginMIR.h` |
-| `NEVERC_INTERFACE_MC_*`، `..._MC_EMISSION_*`، `..._MC_PROVIDER_*`، `..._ASSEMBLY_PROVIDER_*` | أربعة جداول MC | `PluginMC.h` |
-| `NEVERC_INTERFACE_OBJECT_*`، `..._OBJECT_FORMAT_*`، `..._OBJECT_PHASE_*` | ثلاثة جداول كائنات | `PluginObject.h` |
-| `NEVERC_INTERFACE_LINK_*`، `..._LINK_REGISTRAR_*`، `..._LINK_PHASE_*` | ثلاثة جداول ربط | `PluginLink.h` |
-| `NEVERC_INTERFACE_LTO_*`، `..._LTO_REGISTRAR_*` | `NevercLTOAPI`، `NevercLTORegistrarAPI` | `PluginLTO.h` |
-| `NEVERC_INTERFACE_DYNCODE_*`، `..._DYNCODE_REGISTRAR_*`، `..._DYNCODE_PHASE_*` | ثلاثة جداول dyncode | `PluginDynCode.h` |
+| `NEVERC_INTERFACE_CORE_{HIGH,LOW}` | `NevercCoreAPI` | [`PluginCore.h`] |
+| `NEVERC_INTERFACE_DRIVER_*` | `NevercDriverAPI` | [`PluginDriver.h`] |
+| `NEVERC_INTERFACE_IO_*`، `..._SOURCE_LOCATION_*` | `NevercIOAPI`، `NevercSourceLocationAPI` | [`PluginSource.h`] |
+| `NEVERC_INTERFACE_PREP_*` | `NevercPrepAPI` | [`PluginPrep.h`] |
+| `NEVERC_INTERFACE_AST_*`، `..._PARSER_*` | `NevercASTAPI`، `NevercParserAPI` | [`PluginAST.h`] |
+| `NEVERC_INTERFACE_SEMA_*` | `NevercSemaAPI` | [`PluginSema.h`] |
+| `NEVERC_INTERFACE_IR_CORE_*`، `..._IR_BUILDER_*`، `..._IR_ANALYSIS_*`، `..._IR_PASS_*`، `..._IR_GEN_*`، `..._IR_OPTIMIZATION_*` | ستة جداول IR | [`PluginIR.h`] |
+| `NEVERC_INTERFACE_TARGET_*`، `..._TARGET_ABI_*`، `..._CALLING_CONVENTION_*` | `NevercTargetAPI`، `NevercTargetABIAPI`، `NevercCallingConventionAPI` | [`PluginTarget.h`] |
+| `NEVERC_INTERFACE_MIR_*`، `..._MIR_ANALYSIS_*`، `..._MIR_PASS_*`، `..._MIR_PROVIDER_*` | أربعة جداول MIR | [`PluginMIR.h`] |
+| `NEVERC_INTERFACE_MC_*`، `..._MC_EMISSION_*`، `..._MC_PROVIDER_*`، `..._ASSEMBLY_PROVIDER_*` | أربعة جداول MC | [`PluginMC.h`] |
+| `NEVERC_INTERFACE_OBJECT_*`، `..._OBJECT_FORMAT_*`، `..._OBJECT_PHASE_*` | ثلاثة جداول كائنات | [`PluginObject.h`] |
+| `NEVERC_INTERFACE_LINK_*`، `..._LINK_REGISTRAR_*`، `..._LINK_PHASE_*` | ثلاثة جداول ربط | [`PluginLink.h`] |
+| `NEVERC_INTERFACE_LTO_*`، `..._LTO_REGISTRAR_*` | `NevercLTOAPI`، `NevercLTORegistrarAPI` | [`PluginLTO.h`] |
+| `NEVERC_INTERFACE_DYNCODE_*`، `..._DYNCODE_REGISTRAR_*`، `..._DYNCODE_PHASE_*` | ثلاثة جداول dyncode | [`PluginDynCode.h`] |
 
 كما تُعرِّف كل ترويسة قيمتي `NEVERC_<DOMAIN>_API_MAJOR` و`_MINOR` المقابلتين اللتين
 ينبغي تمريرهما إلى `QueryInterface`.
@@ -346,7 +346,7 @@ typedef NevercStatus(NEVERC_CALL *NevercPhaseObserverFn)(
 
 `Points` قناع بتّي مكوّن من `NEVERC_OBSERVER_BEFORE` (1) و`NEVERC_OBSERVER_AFTER`
 (2) و`NEVERC_OBSERVER_AFTER_COMMIT` (4)، ويجب ألّا يكون صفرًا؛ ويُخبر الوسيط `Point`
-ردَّ النداء أيُّها وقع. من `pluginsdk/examples/DriverTracePlugin.c`:
+ردَّ النداء أيُّها وقع. من [`pluginsdk/examples/DriverTracePlugin.c`]:
 
 ```c
 NevercObserverDescriptor Observer = {0};
@@ -617,7 +617,7 @@ Core->GetPluginOptionValue(Core->Context, Session, PluginID,
 - خصِّص الذاكرة عبر `NevercCoreAPI.Allocate` / `Reallocate` / `Deallocate` حين
   يجب أن يحتسبها المُضيف.
 - احفظ الحالة القابلة للتغيير في حالة process/session/task التي يوفّرها المُضيف.
-  والحالة العامة القابلة للتغيير يفحصها `utils/plugin-api/check-global-state.py`.
+  والحالة العامة القابلة للتغيير يفحصها [`utils/plugin-api/check-global-state.py`].
 
 جميع البنى العامة مُرتَّبة تحت `NEVERC_ABI_PACK_BEGIN` (حزم بـ8 بايتات) وبأنواع
 ثابتة العرض فقط. وتُلحق الدوال الجديدة بنهاية جداول قدرات مُرقَّمة الإصدارات على نحو
@@ -682,19 +682,19 @@ cmake --build build-neverc --target neverc-pluginsdk-examples
 
 | المثال | هدف CMake | ما يعرضه |
 |---|---|---|
-| `DriverTracePlugin.c` | `neverc-plugin-example-driver-trace` | تسجيل الخيارات، مراقبة المراحل، اعتراض المهام |
-| `VirtualHeaderPlugin.c` | `neverc-plugin-example-virtual-header` | مزوِّد VFS يقدّم ترويسة من الذاكرة |
-| `ASTRewritePlugin.c` | `neverc-plugin-example-ast-rewrite` | اعتراض المُحلِّل وتعديل الشجرة النحوية بشكل ذرّي |
-| `ExamplePlugin.c` | `neverc-plugin-example-ir-overview` | مرور IR على مستوى الوحدة يجتاز قائمة الدوال بمؤشر قيم |
-| `FunctionPass.c` | `neverc-plugin-example-function-pass` | مرور IR مستقر على مستوى الدالة |
-| `MachinePass.c` | `neverc-plugin-example-machine-pass` | مرور MIR مستقر عند خطّاف ما قبل الإصدار |
-| `MCObserverPlugin.c` | `neverc-plugin-example-mc-observer` | أحداث إصدار MC للقراءة فقط |
-| `ObjectRewritePlugin.c` | `neverc-plugin-example-object-rewrite` | إعادة كتابة ObjectGraph معاملاتيًا |
-| `CustomCallConvPlugin.c` | `neverc-plugin-example-custom-callconv` | اصطلاحات استدعاء مُوجَّهة بالبيانات |
-| `DynCodeTracePlugin.c` | `neverc-plugin-example-dyncode-trace` | مراقبة خط أنابيب dyncode |
-| `DynCodeEncoderPlugin.c` | `neverc-plugin-example-dyncode-encoder` | اعتراض ترميز مجموعة محارف dyncode |
-| `CrtShimPlugin.c` | `neverc-plugin-example-crt-shim` | إضافة بلا أي اعتماد على CRT |
-| `BenchPlugin.c` | `neverc-plugin-example-abi-bench` | قياس دقيق لإنتاجية استدعاءات الواجهة الثنائية |
+| [`DriverTracePlugin.c`] | `neverc-plugin-example-driver-trace` | تسجيل الخيارات، مراقبة المراحل، اعتراض المهام |
+| [`VirtualHeaderPlugin.c`] | `neverc-plugin-example-virtual-header` | مزوِّد VFS يقدّم ترويسة من الذاكرة |
+| [`ASTRewritePlugin.c`] | `neverc-plugin-example-ast-rewrite` | اعتراض المُحلِّل وتعديل الشجرة النحوية بشكل ذرّي |
+| [`ExamplePlugin.c`] | `neverc-plugin-example-ir-overview` | مرور IR على مستوى الوحدة يجتاز قائمة الدوال بمؤشر قيم |
+| [`FunctionPass.c`] | `neverc-plugin-example-function-pass` | مرور IR مستقر على مستوى الدالة |
+| [`MachinePass.c`] | `neverc-plugin-example-machine-pass` | مرور MIR مستقر عند خطّاف ما قبل الإصدار |
+| [`MCObserverPlugin.c`] | `neverc-plugin-example-mc-observer` | أحداث إصدار MC للقراءة فقط |
+| [`ObjectRewritePlugin.c`] | `neverc-plugin-example-object-rewrite` | إعادة كتابة ObjectGraph معاملاتيًا |
+| [`CustomCallConvPlugin.c`] | `neverc-plugin-example-custom-callconv` | اصطلاحات استدعاء مُوجَّهة بالبيانات |
+| [`DynCodeTracePlugin.c`] | `neverc-plugin-example-dyncode-trace` | مراقبة خط أنابيب dyncode |
+| [`DynCodeEncoderPlugin.c`] | `neverc-plugin-example-dyncode-encoder` | اعتراض ترميز مجموعة محارف dyncode |
+| [`CrtShimPlugin.c`] | `neverc-plugin-example-crt-shim` | إضافة بلا أي اعتماد على CRT |
+| [`BenchPlugin.c`] | `neverc-plugin-example-abi-bench` | قياس دقيق لإنتاجية استدعاءات الواجهة الثنائية |
 
 تحميل أحدها:
 
@@ -707,10 +707,48 @@ neverc -fplugin=build-neverc/neverc/pluginsdk/examples/host/FunctionPass.so \
 
 | الملف | ما يضمنه |
 |---|---|
-| `neverc/include/neverc/Plugin/Schema/PhaseSchema.json` | معرِّفات المراحل والسياسات والاستقرار وبوابات التدقيق |
-| `pluginsdk/manifest/plugin.json` | إصدار الواجهة الثنائية، ومعرِّفات/إصدارات/استقرار الواجهات، وبصمات المخططات، والأهداف المدعومة |
-| `pluginsdk/abi/plugin.json` | الحجم والمحاذاة وإزاحات الحقول المقيسة لكل بنية عامة، لكل مفتاح واجهة ثنائية للمُضيف |
-| `docs/plugin-api/coverage.json` | يربط كل مرحلة مستقرة باختبارات إيجابية وسلبية واستبدالية ومراقِبة واختبارات البوابات المختومة |
+| [`neverc/include/neverc/Plugin/Schema/PhaseSchema.json`] | معرِّفات المراحل والسياسات والاستقرار وبوابات التدقيق |
+| [`pluginsdk/manifest/plugin.json`] | إصدار الواجهة الثنائية، ومعرِّفات/إصدارات/استقرار الواجهات، وبصمات المخططات، والأهداف المدعومة |
+| [`pluginsdk/abi/plugin.json`] | الحجم والمحاذاة وإزاحات الحقول المقيسة لكل بنية عامة، لكل مفتاح واجهة ثنائية للمُضيف |
+| [`docs/plugin-api/coverage.json`] | يربط كل مرحلة مستقرة باختبارات إيجابية وسلبية واستبدالية ومراقِبة واختبارات البوابات المختومة |
 
 وبذلك يمكن التحقق من حزمة تطوير مقابل مُضيف آليًا، ويمكن لبناء إضافة أن يؤكّد
 ترتيب بناه مقابل مفتاح الواجهة الثنائية الذي ستُحمَّل فيه.
+
+<!-- reference links -->
+[`ASTRewritePlugin.c`]: ../../pluginsdk/examples/ASTRewritePlugin.c
+[`BenchPlugin.c`]: ../../pluginsdk/examples/BenchPlugin.c
+[`CrtShimPlugin.c`]: ../../pluginsdk/examples/CrtShimPlugin.c
+[`CustomCallConvPlugin.c`]: ../../pluginsdk/examples/CustomCallConvPlugin.c
+[`docs/plugin-api/coverage.json`]: coverage.json
+[`DriverTracePlugin.c`]: ../../pluginsdk/examples/DriverTracePlugin.c
+[`DynCodeEncoderPlugin.c`]: ../../pluginsdk/examples/DynCodeEncoderPlugin.c
+[`DynCodeTracePlugin.c`]: ../../pluginsdk/examples/DynCodeTracePlugin.c
+[`ExamplePlugin.c`]: ../../pluginsdk/examples/ExamplePlugin.c
+[`FunctionPass.c`]: ../../pluginsdk/examples/FunctionPass.c
+[`MachinePass.c`]: ../../pluginsdk/examples/MachinePass.c
+[`MCObserverPlugin.c`]: ../../pluginsdk/examples/MCObserverPlugin.c
+[`neverc/include/neverc/Plugin/Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`ObjectRewritePlugin.c`]: ../../pluginsdk/examples/ObjectRewritePlugin.c
+[`PluginAST.h`]: ../../neverc/include/neverc/Plugin/PluginAST.h
+[`PluginCore.h`]: ../../neverc/include/neverc/Plugin/PluginCore.h
+[`PluginDriver.h`]: ../../neverc/include/neverc/Plugin/PluginDriver.h
+[`PluginDynCode.h`]: ../../neverc/include/neverc/Plugin/PluginDynCode.h
+[`PluginIR.h`]: ../../neverc/include/neverc/Plugin/PluginIR.h
+[`PluginLink.h`]: ../../neverc/include/neverc/Plugin/PluginLink.h
+[`PluginLTO.h`]: ../../neverc/include/neverc/Plugin/PluginLTO.h
+[`PluginMC.h`]: ../../neverc/include/neverc/Plugin/PluginMC.h
+[`PluginMIR.h`]: ../../neverc/include/neverc/Plugin/PluginMIR.h
+[`PluginObject.h`]: ../../neverc/include/neverc/Plugin/PluginObject.h
+[`PluginPrep.h`]: ../../neverc/include/neverc/Plugin/PluginPrep.h
+[`pluginsdk/abi/plugin.json`]: ../../pluginsdk/abi/plugin.json
+[`pluginsdk/examples/DriverTracePlugin.c`]: ../../pluginsdk/examples/DriverTracePlugin.c
+[`pluginsdk/manifest/plugin.json`]: ../../pluginsdk/manifest/plugin.json
+[`pluginsdk/templates/minimal/Plugin.c`]: ../../pluginsdk/templates/minimal/Plugin.c
+[`PluginSema.h`]: ../../neverc/include/neverc/Plugin/PluginSema.h
+[`PluginSource.h`]: ../../neverc/include/neverc/Plugin/PluginSource.h
+[`PluginTarget.h`]: ../../neverc/include/neverc/Plugin/PluginTarget.h
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`Schema/PluginPhaseSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginPhaseSchema.inc
+[`utils/plugin-api/check-global-state.py`]: ../../utils/plugin-api/check-global-state.py
+[`VirtualHeaderPlugin.c`]: ../../pluginsdk/examples/VirtualHeaderPlugin.c

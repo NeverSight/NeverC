@@ -4,7 +4,7 @@
 
 # واجهة المصادر والإدخال/الإخراج لإضافات NeverC
 
-تنشر `PluginSource.h` جدولين. `NevercIOAPI` هي نظام الملفات: مزوّدو الملفات
+تنشر [`PluginSource.h`] جدولين. `NevercIOAPI` هي نظام الملفات: مزوّدو الملفات
 الافتراضية، والقراءة، واجتياز الأدلة، ومصارف الإخراج، وتسجيل التبعيات. أما
 `NevercSourceLocationAPI` فتعيد مواضع المترجم الداخلية إلى ملفات وأسطر ونص
 مكتوب. وبهما معًا تستطيع الإضافة أن تقدّم ترويسة لا وجود لها إلا في الذاكرة، أو
@@ -98,8 +98,7 @@ IO->AddMemoryFile(IO->Context, Session, SV("/virtual/config.h"),
                   Content, ModificationTime);
 ```
 
-[`pluginsdk/examples/VirtualHeaderPlugin.c`](../../pluginsdk/examples/VirtualHeaderPlugin.c)
-مزوّد كامل وعامل.
+[`pluginsdk/examples/VirtualHeaderPlugin.c`] مزوّد كامل وعامل.
 
 ## قراءة الملفات
 
@@ -295,5 +294,9 @@ Source->CreateMemorySourceUnit(Source->Context, Frame, Frame->Input, &Unit,
 - نطاق `AddMemoryFile` هو الجلسة؛ وحين يعتمد المحتوى على المهمة يكون المزوّد هو
   الأداة الصحيحة.
 
-انظر `PluginSource.h` للتصريحات المعيارية، و
-`pluginsdk/examples/VirtualHeaderPlugin.c` لمزوّد كامل.
+انظر [`PluginSource.h`] للتصريحات المعيارية، و
+[`pluginsdk/examples/VirtualHeaderPlugin.c`] لمزوّد كامل.
+
+<!-- reference links -->
+[`pluginsdk/examples/VirtualHeaderPlugin.c`]: ../../pluginsdk/examples/VirtualHeaderPlugin.c
+[`PluginSource.h`]: ../../neverc/include/neverc/Plugin/PluginSource.h

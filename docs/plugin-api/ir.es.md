@@ -4,7 +4,7 @@
 
 # API de IR de los plugins de NeverC
 
-`PluginIR.h` expone la representación intermedia de LLVM mediante seis tablas de
+[`PluginIR.h`] expone la representación intermedia de LLVM mediante seis tablas de
 capacidades y un esquema generado. Un plugin lee y reescribe la IR, registra
 pasadas en cinco puntos estables de la cadena, define sus propios análisis o
 sustituye por completo la generación de IR y la cadena de optimización, y todo
@@ -33,7 +33,7 @@ cuando el anfitrión pase a una versión nueva de LLVM.
 Todas son `NEVERC_INTERFACE_STABLE` en el mayor 1. Negocie con los
 `NEVERC_IR_*_API_MAJOR` / `_MINOR` correspondientes y compruebe que `TableSize`
 llega hasta la última ranura que vaya a llamar, tal como hace
-`pluginsdk/examples/FunctionPass.c`:
+[`pluginsdk/examples/FunctionPass.c`]:
 
 ```c
 Status = Bootstrap->QueryInterface(
@@ -70,7 +70,7 @@ optimización.
 
 ## El esquema
 
-`Schema/PluginIRSchema.inc` se genera y lo incluye `PluginIR.h`. Publica un
+[`Schema/PluginIRSchema.inc`] se genera y lo incluye [`PluginIR.h`]. Publica un
 resumen y estos conjuntos de constantes:
 
 ```c
@@ -228,7 +228,7 @@ Core->HasFunctionAttribute(Core->Context, Task, Function, SV("noinline"),
                            &Present);
 ```
 
-`pluginsdk/examples/CustomCallConvPlugin.c` usa esto junto con
+[`pluginsdk/examples/CustomCallConvPlugin.c`] usa esto junto con
 `GetFunctionStringAttribute` para gobernar una convención de llamada definida
 por datos.
 
@@ -422,9 +422,9 @@ después.
 
 | Archivo | Muestra |
 |---|---|
-| `pluginsdk/examples/FunctionPass.c` | Una pasada de función de solo lectura, con negociación de ABI incluida |
-| `pluginsdk/examples/ExamplePlugin.c` | Una pasada de módulo que recorre funciones con un cursor de valores |
-| `pluginsdk/examples/CustomCallConvPlugin.c` | Atributos y propiedades del punto de llamada |
+| [`pluginsdk/examples/FunctionPass.c`] | Una pasada de función de solo lectura, con negociación de ABI incluida |
+| [`pluginsdk/examples/ExamplePlugin.c`] | Una pasada de módulo que recorre funciones con un cursor de valores |
+| [`pluginsdk/examples/CustomCallConvPlugin.c`] | Atributos y propiedades del punto de llamada |
 
 ```sh
 cmake --build build-neverc --target neverc-plugin-example-function-pass
@@ -443,7 +443,7 @@ Use el sufijo de módulo que CMake haya producido para su plataforma.
 - Ponga a cero cada estructura de salida y fije su `Header` antes de la llamada
   que la rellena.
 - No incruste valores numéricos de código de operación, tipo o propiedad. Use los
-  nombres de `PluginIRSchema.inc` para que una revisión del esquema sea un error
+  nombres de [`PluginIRSchema.inc`] para que una revisión del esquema sea un error
   de compilación.
 - Cada `BeginMutation` llega exactamente a un `DestroyMutation`, y cada
   `CreateBuilder` a exactamente un `DestroyBuilder`, también en las rutas de
@@ -455,6 +455,16 @@ Use el sufijo de módulo que CMake haya producido para su plataforma.
 - `neverc.ir.final_verify` está sellada. Nada de lo que haga un plugin puede
   saltársela.
 
-Consulte `PluginIR.h`, `Schema/PluginIRSchema.inc`, `Schema/PhaseSchema.json` y
-`coverage.json` para las declaraciones normativas, las constantes de esquema,
+Consulte [`PluginIR.h`], [`Schema/PluginIRSchema.inc`], [`Schema/PhaseSchema.json`] y
+[`coverage.json`] para las declaraciones normativas, las constantes de esquema,
 las políticas de fase y las pruebas de los tests.
+
+<!-- reference links -->
+[`coverage.json`]: coverage.json
+[`PluginIR.h`]: ../../neverc/include/neverc/Plugin/PluginIR.h
+[`PluginIRSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginIRSchema.inc
+[`pluginsdk/examples/CustomCallConvPlugin.c`]: ../../pluginsdk/examples/CustomCallConvPlugin.c
+[`pluginsdk/examples/ExamplePlugin.c`]: ../../pluginsdk/examples/ExamplePlugin.c
+[`pluginsdk/examples/FunctionPass.c`]: ../../pluginsdk/examples/FunctionPass.c
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`Schema/PluginIRSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginIRSchema.inc

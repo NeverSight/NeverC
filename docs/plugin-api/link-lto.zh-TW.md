@@ -4,9 +4,9 @@
 
 # NeverC 外掛 Link 與 LTO API
 
-連結被建模為**單一圖之上的狀態機**。`PluginLink.h` 公開這張圖——輸入、section、
+連結被建模為**單一圖之上的狀態機**。[`PluginLink.h`] 公開這張圖——輸入、section、
 atom、符號、edge、COMDAT、import、export、unwind 記錄、synthetic 與 layout 約束
-——再加上把它從一組檔案推進到已提交二進位映像的二十個階段。`PluginLTO.h` 涵蓋中
+——再加上把它從一組檔案推進到已提交二進位映像的二十個階段。[`PluginLTO.h`] 涵蓋中
 間那兩個把 bitcode 變成目的檔的階段。
 
 外掛可以觀察每一步、攔截其中大多數、替換單一步驟、替換整個連結，或合併目的檔。
@@ -285,7 +285,7 @@ Link->GetBinaryImageInfo(Link->Context, Task, ImageHandle, &Image);
 輸出種類有 `RELOCATABLE`、`EXECUTABLE`、`SHARED_LIBRARY` 與 `BUNDLE`。Segment 旗
 標有 `READ`、`WRITE` 與 `EXECUTE`。
 
-`Image.Binary` 與 `Image.Builder` 就是 `PluginObject.h` 裡那個有界的交易式寫入器
+`Image.Binary` 與 `Image.Builder` 就是 [`PluginObject.h`] 裡那個有界的交易式寫入器
 ——`Reserve`、`Write`、`WriteAt`、`Tell`、`ReadAt`、`Insert`、`Append`、
 `Resize`。`post_emit` 攔截器要修補位元組就必須經過它；寫超過保留邊界會中止暫存，
 而不是把檔案撐大。
@@ -428,5 +428,12 @@ LTORegistrar->RegisterProvider(LTORegistrar->Context, RegistrarContext,
 - `image_verify`、`side_outputs_verify` 與 `commit` 是 sealed 的。觀察它們即可，
   不要嘗試攔截或跳過。
 
-規範宣告請見 `PluginLink.h` 與 `PluginLTO.h`，二十個階段的 policy 見
-`Schema/PhaseSchema.json`，逐一釘住它們的測試見 `coverage.json`。
+規範宣告請見 [`PluginLink.h`] 與 [`PluginLTO.h`]，二十個階段的 policy 見
+[`Schema/PhaseSchema.json`]，逐一釘住它們的測試見 [`coverage.json`]。
+
+<!-- reference links -->
+[`coverage.json`]: coverage.json
+[`PluginLink.h`]: ../../neverc/include/neverc/Plugin/PluginLink.h
+[`PluginLTO.h`]: ../../neverc/include/neverc/Plugin/PluginLTO.h
+[`PluginObject.h`]: ../../neverc/include/neverc/Plugin/PluginObject.h
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json

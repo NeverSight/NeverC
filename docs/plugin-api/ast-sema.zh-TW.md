@@ -26,7 +26,7 @@ AST 是透過 **schema** 公開的，而不是把 Clang 的類別階層鏡射成
 | `NEVERC_INTERFACE_PARSER_{HIGH,LOW}` | `NevercParserAPI` | `NEVERC_PARSER_API_MAJOR` / `_MINOR` |
 | `NEVERC_INTERFACE_SEMA_{HIGH,LOW}` | `NevercSemaAPI` | `NEVERC_SEMA_API_MAJOR` / `_MINOR` |
 
-`Schema/PluginASTSchema.inc` 提供節點種類、屬性與子槽的 ID；它的 capability
+[`Schema/PluginASTSchema.inc`] 提供節點種類、屬性與子槽的 ID；它的 capability
 major 必須等於 `NEVERC_AST_API_MAJOR`。
 
 ## 階段
@@ -185,8 +185,7 @@ AST->DestroyASTMutation(AST->Context, Task, Mutation);
 ```
 
 提交會驗證暫存的樹並原子性地發布。提交失敗會讓先前的樹保持完好，而中止則會讓該
-變更所建立的控制代碼失效。
-[`pluginsdk/examples/ASTRewritePlugin.c`](../../pluginsdk/examples/ASTRewritePlugin.c)
+變更所建立的控制代碼失效。 [`pluginsdk/examples/ASTRewritePlugin.c`]
 展示了整個循環，包含剖析器攔截。
 
 ## 生命週期事件
@@ -393,10 +392,18 @@ Sema->CreateSemanticUnit(Sema->Context, Frame, &Unit, &Output);
 - 不要從生命週期觀察者裡變更語法樹──觀察者是唯讀的。請改用對應階段上的攔截
   器。
 - 屬性 ID 與子槽 ID 都是 schema 常數。不要寫死數字字面值；請用
-  `PluginASTSchema.inc` 裡的名稱，這樣 schema 一旦改版就會變成編譯錯誤。
+  [`PluginASTSchema.inc`] 裡的名稱，這樣 schema 一旦改版就會變成編譯錯誤。
 - 在信任 `SizeInBits` 或 `AlignmentInBits` 之前，先檢查 `NevercTypeInfo.Flags`
   是否帶有 `HAS_KNOWN_LAYOUT`。
 
-規範性宣告請見 `PluginAST.h`、`PluginSema.h` 與 `Schema/ASTSchema.json`；可運作
+規範性宣告請見 [`PluginAST.h`]、[`PluginSema.h`] 與 [`Schema/ASTSchema.json`]；可運作
 的剖析器攔截與原子性樹重寫範例請見
-`pluginsdk/examples/ASTRewritePlugin.c`。
+[`pluginsdk/examples/ASTRewritePlugin.c`]。
+
+<!-- reference links -->
+[`PluginAST.h`]: ../../neverc/include/neverc/Plugin/PluginAST.h
+[`PluginASTSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginASTSchema.inc
+[`pluginsdk/examples/ASTRewritePlugin.c`]: ../../pluginsdk/examples/ASTRewritePlugin.c
+[`PluginSema.h`]: ../../neverc/include/neverc/Plugin/PluginSema.h
+[`Schema/ASTSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/ASTSchema.json
+[`Schema/PluginASTSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginASTSchema.inc

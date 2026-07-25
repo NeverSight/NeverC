@@ -4,7 +4,7 @@
 
 # NeverC 플러그인 전처리기 API
 
-`PluginPrep.h` 는 전처리기를 두 가지 방식으로 공개합니다. 39가지 이벤트 종류에
+[`PluginPrep.h`] 는 전처리기를 두 가지 방식으로 공개합니다. 39가지 이벤트 종류에
 대한 **구독** 은 전처리기가 하는 모든 일 — 파일 진입, 매크로 정의와 확장, 조건
 평가, 프래그마 — 의 읽기 전용 추적을 제공합니다. 여섯 개의 **단계** 는 한 걸음
 더 나아가 결과를 다시 쓰게 해 줍니다. `#include` 를 다른 곳으로 돌리거나, 매크로
@@ -23,7 +23,7 @@ Bootstrap->QueryInterface(
 ```
 
 230가지 토큰 종류(`NEVERC_TOKEN_KIND_COUNT`)와 전처리기 키워드 종류는
-`Schema/PluginPrepSchema.inc` 에서 옵니다. 헤더가 이를 포함하며, 그 capability
+[`Schema/PluginPrepSchema.inc`] 에서 옵니다. 헤더가 이를 포함하며, 그 capability
 major 는 반드시 `NEVERC_PREP_API_MAJOR` 와 같아야 합니다. 불일치는 런타임의
 뜻밖의 사고가 아니라 컴파일 오류가 됩니다. 각 종류는 범주도 함께 갖습니다:
 `NEVERC_TOKEN_CATEGORY_SPECIAL`, `COMMENT`, `IDENTIFIER`, `LITERAL`,
@@ -233,7 +233,7 @@ Prep->DestroyTokenBuilder(Prep->Context, Task, Builder);
 
 구두점과 키워드에는 `TokenBuilderSetKind` 를, 식별자에는
 `TokenBuilderSetIdentifier` 를 쓰십시오. 토큰 종류 상수는
-`PluginPrepSchema.inc` 에서 옵니다.
+[`PluginPrepSchema.inc`] 에서 옵니다.
 
 스트림 전체를 다룰 때 — `neverc.prep.build_token_stream` 단계 — 는 스트림 빌더에
 쌓아 두었다가 한 번에 커밋합니다:
@@ -287,5 +287,11 @@ Prep->CreateFeatureQueryPhaseOutput(Prep->Context, Frame, Continuation, &Out,
 - 필수 포인터가 없으면 `NEVERC_STATUS_INVALID_ARGUMENT` 를 반환하고, 예외가
   경계를 넘게 하지 마십시오.
 
-규범적 선언은 `PluginPrep.h` 와 `Schema/PluginPrepSchema.inc` 를, 토큰 종류
-스키마는 `Schema/PrepSchema.json` 을 참조하십시오.
+규범적 선언은 [`PluginPrep.h`] 와 [`Schema/PluginPrepSchema.inc`] 를, 토큰 종류
+스키마는 [`Schema/PrepSchema.json`] 을 참조하십시오.
+
+<!-- reference links -->
+[`PluginPrep.h`]: ../../neverc/include/neverc/Plugin/PluginPrep.h
+[`PluginPrepSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginPrepSchema.inc
+[`Schema/PluginPrepSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginPrepSchema.inc
+[`Schema/PrepSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PrepSchema.json

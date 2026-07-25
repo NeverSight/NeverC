@@ -34,7 +34,7 @@ gpr:rcx,rdx,r8,r9; xmm:xmm0,xmm1; ret:rax; ret_xmm:xmm0
 | `ret_fpr` | | Alias neutro rispetto al target per `ret_xmm` |
 | `csr` | | Insieme personalizzato di registri callee-saved (predefinito: l'insieme ABI standard) |
 
-Qualsiasi segmento può essere omesso e i segmenti sconosciuti vengono ignorati. Le chiavi sono definite una sola volta in `llvm/include/llvm/CodeGen/NeverCCallConv.h`, così produttori e parser non possono divergere.
+Qualsiasi segmento può essere omesso e i segmenti sconosciuti vengono ignorati. Le chiavi sono definite una sola volta in [`llvm/include/llvm/CodeGen/NeverCCallConv.h`], così produttori e parser non possono divergere.
 
 ### Due modalità per gli argomenti
 
@@ -74,7 +74,7 @@ I GPR si scrivono sempre nella forma a 64 bit; il backend li restringe al sottor
 
 ### 1. Guidato dal plugin (consigliato)
 
-Il plugin di riferimento `CustomCallConvPlugin.c` è distribuito in `pluginsdk/examples/`. Registra un passo IR a livello di modulo nella fase `neverc.ir.pass.post_opt`.
+Il plugin di riferimento [`CustomCallConvPlugin.c`] è distribuito in `pluginsdk/examples/`. Registra un passo IR a livello di modulo nella fase `neverc.ir.pass.post_opt`.
 
 **Compilare il plugin:**
 
@@ -185,7 +185,7 @@ Un plugin che registra un proprio target può invece fornire una callback `PlanC
 
 ## Test
 
-La suite GoogleTest si trova in `tests/neverc/CustomCallConvTests.cpp` e conta 26 test. Ciascuno compila il plugin di esempio, traduce un piccolo programma in assembly sotto una data spec e verifica il posizionamento in registro o sullo stack ottenuto.
+La suite GoogleTest si trova in [`tests/neverc/CustomCallConvTests.cpp`] e conta 26 test. Ciascuno compila il plugin di esempio, traduce un piccolo programma in assembly sotto una data spec e verifica il posizionamento in registro o sullo stack ottenuto.
 
 ```bash
 ninja -C build-neverc neverc-tests
@@ -243,3 +243,8 @@ custom_attr(...)              (neverc.ir.pass.post_opt)
 ```
 
 L'esecutore nel backend è un'**implementazione fatta una volta per tutte**: tutte le decisioni di politica vivono nel plugin. Aggiungere una nuova convenzione non richiede mai di ricostruire NeverC.
+
+<!-- reference links -->
+[`CustomCallConvPlugin.c`]: ../../../pluginsdk/examples/CustomCallConvPlugin.c
+[`llvm/include/llvm/CodeGen/NeverCCallConv.h`]: ../../../llvm/include/llvm/CodeGen/NeverCCallConv.h
+[`tests/neverc/CustomCallConvTests.cpp`]: ../../../tests/neverc/CustomCallConvTests.cpp

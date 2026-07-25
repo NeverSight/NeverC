@@ -29,7 +29,7 @@ Genau diese Indirektion hält die Oberfläche über LLVM-Versionen hinweg stabil
 | `NEVERC_INTERFACE_PARSER_{HIGH,LOW}` | `NevercParserAPI` | `NEVERC_PARSER_API_MAJOR` / `_MINOR` |
 | `NEVERC_INTERFACE_SEMA_{HIGH,LOW}` | `NevercSemaAPI` | `NEVERC_SEMA_API_MAJOR` / `_MINOR` |
 
-`Schema/PluginASTSchema.inc` liefert die IDs für Knotenarten, Eigenschaften und
+[`Schema/PluginASTSchema.inc`] liefert die IDs für Knotenarten, Eigenschaften und
 Kind-Slots; sein Capability-Major muss gleich `NEVERC_AST_API_MAJOR` sein.
 
 ## Phasen
@@ -199,7 +199,7 @@ AST->DestroyASTMutation(AST->Context, Task, Mutation);
 Das Festschreiben prüft den vorbereiteten Baum und veröffentlicht ihn atomar.
 Ein gescheitertes Festschreiben lässt den vorherigen Baum unangetastet, und ein
 Abbruch macht die von der Veränderung erzeugten Handles ungültig.
-[`pluginsdk/examples/ASTRewritePlugin.c`](../../pluginsdk/examples/ASTRewritePlugin.c)
+[`pluginsdk/examples/ASTRewritePlugin.c`]
 zeigt den gesamten Zyklus einschließlich Parser-Abfangen.
 
 ## Lebenszyklusereignisse
@@ -423,11 +423,19 @@ abgespielt wurde, und eine Zusammenfassung des Prüfers.
   Beobachter sind schreibgeschützt. Nehmen Sie einen Interzeptor auf der
   entsprechenden Phase.
 - Eigenschafts- und Kind-Slot-IDs sind Schemakonstanten. Schreiben Sie keine
-  Zahlenliterale fest ein; verwenden Sie die Namen aus `PluginASTSchema.inc`,
+  Zahlenliterale fest ein; verwenden Sie die Namen aus [`PluginASTSchema.inc`],
   damit eine Schemaüberarbeitung zum Übersetzungsfehler wird.
 - Prüfen Sie `NevercTypeInfo.Flags` auf `HAS_KNOWN_LAYOUT`, bevor Sie
   `SizeInBits` oder `AlignmentInBits` vertrauen.
 
-Die normativen Deklarationen stehen in `PluginAST.h`, `PluginSema.h` und
-`Schema/ASTSchema.json`; ein funktionierendes Parser-Abfangen samt atomarer
-Baumumschreibung zeigt `pluginsdk/examples/ASTRewritePlugin.c`.
+Die normativen Deklarationen stehen in [`PluginAST.h`], [`PluginSema.h`] und
+[`Schema/ASTSchema.json`]; ein funktionierendes Parser-Abfangen samt atomarer
+Baumumschreibung zeigt [`pluginsdk/examples/ASTRewritePlugin.c`].
+
+<!-- reference links -->
+[`PluginAST.h`]: ../../neverc/include/neverc/Plugin/PluginAST.h
+[`PluginASTSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginASTSchema.inc
+[`pluginsdk/examples/ASTRewritePlugin.c`]: ../../pluginsdk/examples/ASTRewritePlugin.c
+[`PluginSema.h`]: ../../neverc/include/neverc/Plugin/PluginSema.h
+[`Schema/ASTSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/ASTSchema.json
+[`Schema/PluginASTSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginASTSchema.inc

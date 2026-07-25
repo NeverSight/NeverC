@@ -31,7 +31,7 @@ l'autre.
 | `NEVERC_INTERFACE_PARSER_{HIGH,LOW}` | `NevercParserAPI` | `NEVERC_PARSER_API_MAJOR` / `_MINOR` |
 | `NEVERC_INTERFACE_SEMA_{HIGH,LOW}` | `NevercSemaAPI` | `NEVERC_SEMA_API_MAJOR` / `_MINOR` |
 
-`Schema/PluginASTSchema.inc` fournit les identifiants de genre de nœud, de
+[`Schema/PluginASTSchema.inc`] fournit les identifiants de genre de nœud, de
 propriété et d'emplacement d'enfant ; son majeur de capacité doit être égal à
 `NEVERC_AST_API_MAJOR`.
 
@@ -202,7 +202,7 @@ AST->DestroyASTMutation(AST->Context, Task, Mutation);
 La validation vérifie l'arbre préparé et le publie atomiquement. Une validation
 qui échoue laisse l'arbre précédent intact, et un abandon périme les
 descripteurs que la modification avait créés.
-[`pluginsdk/examples/ASTRewritePlugin.c`](../../pluginsdk/examples/ASTRewritePlugin.c)
+[`pluginsdk/examples/ASTRewritePlugin.c`]
 montre le cycle complet, interception de l'analyseur comprise.
 
 ## Événements de cycle de vie
@@ -427,11 +427,19 @@ Sema->CreateSemanticUnit(Sema->Context, Frame, &Unit, &Output);
   correspondante.
 - Les identifiants de propriété et d'emplacement d'enfant sont des constantes du
   schéma. N'écrivez pas de littéraux numériques en dur ; utilisez les noms de
-  `PluginASTSchema.inc` afin qu'une révision du schéma devienne une erreur de
+  [`PluginASTSchema.inc`] afin qu'une révision du schéma devienne une erreur de
   compilation.
 - Vérifiez `HAS_KNOWN_LAYOUT` dans `NevercTypeInfo.Flags` avant de vous fier à
   `SizeInBits` ou `AlignmentInBits`.
 
-Voir `PluginAST.h`, `PluginSema.h` et `Schema/ASTSchema.json` pour les
-déclarations normatives, et `pluginsdk/examples/ASTRewritePlugin.c` pour une
+Voir [`PluginAST.h`], [`PluginSema.h`] et [`Schema/ASTSchema.json`] pour les
+déclarations normatives, et [`pluginsdk/examples/ASTRewritePlugin.c`] pour une
 interception d'analyseur et une réécriture atomique d'arbre qui fonctionnent.
+
+<!-- reference links -->
+[`PluginAST.h`]: ../../neverc/include/neverc/Plugin/PluginAST.h
+[`PluginASTSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginASTSchema.inc
+[`pluginsdk/examples/ASTRewritePlugin.c`]: ../../pluginsdk/examples/ASTRewritePlugin.c
+[`PluginSema.h`]: ../../neverc/include/neverc/Plugin/PluginSema.h
+[`Schema/ASTSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/ASTSchema.json
+[`Schema/PluginASTSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginASTSchema.inc

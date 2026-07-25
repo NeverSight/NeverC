@@ -4,10 +4,10 @@
 
 # NeverC 插件链接与 LTO API
 
-链接被建模为**一张图上的状态机**。`PluginLink.h` 暴露这张图——输入、节
+链接被建模为**一张图上的状态机**。[`PluginLink.h`] 暴露这张图——输入、节
 （section）、原子（atom）、符号、边、COMDAT、导入、导出、展开记录、合成对象
 和布局约束——以及把它从一组文件推进到已提交二进制映像的二十个阶段。
-`PluginLTO.h` 覆盖中间那两个把 bitcode 变成目标文件的阶段。
+[`PluginLTO.h`] 覆盖中间那两个把 bitcode 变成目标文件的阶段。
 
 插件可以观察每一步、拦截其中大部分、替换某一步、替换整个链接过程，或者合并目
 标文件。它永远看不到 lld 的数据结构：这张图是一个归一化投影，ELF、COFF 和
@@ -286,7 +286,7 @@ Link->GetBinaryImageInfo(Link->Context, Task, ImageHandle, &Image);
 输出类型有 `RELOCATABLE`、`EXECUTABLE`、`SHARED_LIBRARY`、`BUNDLE`。段标志有
 `READ`、`WRITE`、`EXECUTE`。
 
-`Image.Binary` 和 `Image.Builder` 是来自 `PluginObject.h` 的受界事务写入器——
+`Image.Binary` 和 `Image.Builder` 是来自 [`PluginObject.h`] 的受界事务写入器——
 `Reserve`、`Write`、`WriteAt`、`Tell`、`ReadAt`、`Insert`、`Append`、`Resize`。
 在 `post_emit` 拦截器里修补字节必须走它；越过预留边界的写入会中止暂存，而不是
 把文件撑大。
@@ -429,5 +429,12 @@ LTORegistrar->RegisterProvider(LTORegistrar->Context, RegistrarContext,
 - `image_verify`、`side_outputs_verify` 和 `commit` 是 sealed 的。观察它们即
   可，不要尝试拦截或跳过。
 
-规范性声明见 `PluginLink.h` 与 `PluginLTO.h`，二十个阶段的策略见
-`Schema/PhaseSchema.json`，逐阶段的测试锚点见 `coverage.json`。
+规范性声明见 [`PluginLink.h`] 与 [`PluginLTO.h`]，二十个阶段的策略见
+[`Schema/PhaseSchema.json`]，逐阶段的测试锚点见 [`coverage.json`]。
+
+<!-- reference links -->
+[`coverage.json`]: coverage.json
+[`PluginLink.h`]: ../../neverc/include/neverc/Plugin/PluginLink.h
+[`PluginLTO.h`]: ../../neverc/include/neverc/Plugin/PluginLTO.h
+[`PluginObject.h`]: ../../neverc/include/neverc/Plugin/PluginObject.h
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json

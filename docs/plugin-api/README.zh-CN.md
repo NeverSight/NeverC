@@ -14,7 +14,7 @@ neverc_plugin_entry(const NevercBootstrapAPI *Bootstrap,
                     NevercPluginDescriptor *OutPlugin);
 ```
 
-这个声明在 `PluginCore.h` 里，它就是全部的链接契约。其余的一切——读 IR、改写目
+这个声明在 [`PluginCore.h`] 里，它就是全部的链接契约。其余的一切——读 IR、改写目
 标文件图、替换优化流水线——都要通过你按 ID 向宿主索取的表来完成。
 
 ## 文档入口
@@ -133,8 +133,8 @@ typedef struct NevercPhaseFrame {
 } NevercPhaseFrame;
 ```
 
-`Schema/PhaseSchema.json` 是阶段 ID、策略、稳定性层级和验证器关卡的规范来源。生
-成的 `Schema/PluginPhaseSchema.inc` 把它们全都暴露为编译期常量——以阶段
+[`Schema/PhaseSchema.json`] 是阶段 ID、策略、稳定性层级和验证器关卡的规范来源。生
+成的 [`Schema/PluginPhaseSchema.inc`] 把它们全都暴露为编译期常量——以阶段
 `neverc.ir.pass.pipeline_start` 为例：
 
 ```c
@@ -152,7 +152,7 @@ NEVERC_PHASE_IR_PASS_PIPELINE_START_INPUT_HIGH /* 以及 _INPUT_LOW、_OUTPUT_* 
 
 ## 一个完整的最小插件
 
-下面是 `pluginsdk/templates/minimal/Plugin.c` 的原文。它能加载、能协商 ABI、什么
+下面是 [`pluginsdk/templates/minimal/Plugin.c`] 的原文。它能加载、能协商 ABI、什么
 都不注册，也能干净卸载——把这个目录复制走，从它开始生长。
 
 ```c
@@ -258,20 +258,20 @@ if (!Table || TableSize < offsetof(NevercIRPassAPI, RegisterPass) +
 
 | 接口宏对 | 表 | 头文件 |
 |---|---|---|
-| `NEVERC_INTERFACE_CORE_{HIGH,LOW}` | `NevercCoreAPI` | `PluginCore.h` |
-| `NEVERC_INTERFACE_DRIVER_*` | `NevercDriverAPI` | `PluginDriver.h` |
-| `NEVERC_INTERFACE_IO_*`、`..._SOURCE_LOCATION_*` | `NevercIOAPI`、`NevercSourceLocationAPI` | `PluginSource.h` |
-| `NEVERC_INTERFACE_PREP_*` | `NevercPrepAPI` | `PluginPrep.h` |
-| `NEVERC_INTERFACE_AST_*`、`..._PARSER_*` | `NevercASTAPI`、`NevercParserAPI` | `PluginAST.h` |
-| `NEVERC_INTERFACE_SEMA_*` | `NevercSemaAPI` | `PluginSema.h` |
-| `NEVERC_INTERFACE_IR_CORE_*`、`..._IR_BUILDER_*`、`..._IR_ANALYSIS_*`、`..._IR_PASS_*`、`..._IR_GEN_*`、`..._IR_OPTIMIZATION_*` | 六张 IR 表 | `PluginIR.h` |
-| `NEVERC_INTERFACE_TARGET_*`、`..._TARGET_ABI_*`、`..._CALLING_CONVENTION_*` | `NevercTargetAPI`、`NevercTargetABIAPI`、`NevercCallingConventionAPI` | `PluginTarget.h` |
-| `NEVERC_INTERFACE_MIR_*`、`..._MIR_ANALYSIS_*`、`..._MIR_PASS_*`、`..._MIR_PROVIDER_*` | 四张 MIR 表 | `PluginMIR.h` |
-| `NEVERC_INTERFACE_MC_*`、`..._MC_EMISSION_*`、`..._MC_PROVIDER_*`、`..._ASSEMBLY_PROVIDER_*` | 四张 MC 表 | `PluginMC.h` |
-| `NEVERC_INTERFACE_OBJECT_*`、`..._OBJECT_FORMAT_*`、`..._OBJECT_PHASE_*` | 三张 object 表 | `PluginObject.h` |
-| `NEVERC_INTERFACE_LINK_*`、`..._LINK_REGISTRAR_*`、`..._LINK_PHASE_*` | 三张 link 表 | `PluginLink.h` |
-| `NEVERC_INTERFACE_LTO_*`、`..._LTO_REGISTRAR_*` | `NevercLTOAPI`、`NevercLTORegistrarAPI` | `PluginLTO.h` |
-| `NEVERC_INTERFACE_DYNCODE_*`、`..._DYNCODE_REGISTRAR_*`、`..._DYNCODE_PHASE_*` | 三张 dyncode 表 | `PluginDynCode.h` |
+| `NEVERC_INTERFACE_CORE_{HIGH,LOW}` | `NevercCoreAPI` | [`PluginCore.h`] |
+| `NEVERC_INTERFACE_DRIVER_*` | `NevercDriverAPI` | [`PluginDriver.h`] |
+| `NEVERC_INTERFACE_IO_*`、`..._SOURCE_LOCATION_*` | `NevercIOAPI`、`NevercSourceLocationAPI` | [`PluginSource.h`] |
+| `NEVERC_INTERFACE_PREP_*` | `NevercPrepAPI` | [`PluginPrep.h`] |
+| `NEVERC_INTERFACE_AST_*`、`..._PARSER_*` | `NevercASTAPI`、`NevercParserAPI` | [`PluginAST.h`] |
+| `NEVERC_INTERFACE_SEMA_*` | `NevercSemaAPI` | [`PluginSema.h`] |
+| `NEVERC_INTERFACE_IR_CORE_*`、`..._IR_BUILDER_*`、`..._IR_ANALYSIS_*`、`..._IR_PASS_*`、`..._IR_GEN_*`、`..._IR_OPTIMIZATION_*` | 六张 IR 表 | [`PluginIR.h`] |
+| `NEVERC_INTERFACE_TARGET_*`、`..._TARGET_ABI_*`、`..._CALLING_CONVENTION_*` | `NevercTargetAPI`、`NevercTargetABIAPI`、`NevercCallingConventionAPI` | [`PluginTarget.h`] |
+| `NEVERC_INTERFACE_MIR_*`、`..._MIR_ANALYSIS_*`、`..._MIR_PASS_*`、`..._MIR_PROVIDER_*` | 四张 MIR 表 | [`PluginMIR.h`] |
+| `NEVERC_INTERFACE_MC_*`、`..._MC_EMISSION_*`、`..._MC_PROVIDER_*`、`..._ASSEMBLY_PROVIDER_*` | 四张 MC 表 | [`PluginMC.h`] |
+| `NEVERC_INTERFACE_OBJECT_*`、`..._OBJECT_FORMAT_*`、`..._OBJECT_PHASE_*` | 三张 object 表 | [`PluginObject.h`] |
+| `NEVERC_INTERFACE_LINK_*`、`..._LINK_REGISTRAR_*`、`..._LINK_PHASE_*` | 三张 link 表 | [`PluginLink.h`] |
+| `NEVERC_INTERFACE_LTO_*`、`..._LTO_REGISTRAR_*` | `NevercLTOAPI`、`NevercLTORegistrarAPI` | [`PluginLTO.h`] |
+| `NEVERC_INTERFACE_DYNCODE_*`、`..._DYNCODE_REGISTRAR_*`、`..._DYNCODE_PHASE_*` | 三张 dyncode 表 | [`PluginDynCode.h`] |
 
 每个头文件还定义了你应传给 `QueryInterface` 的对应
 `NEVERC_<DOMAIN>_API_MAJOR` 和 `_MINOR`。
@@ -336,7 +336,7 @@ typedef NevercStatus(NEVERC_CALL *NevercPhaseObserverFn)(
 
 `Points` 是 `NEVERC_OBSERVER_BEFORE`（1）、`NEVERC_OBSERVER_AFTER`（2）和
 `NEVERC_OBSERVER_AFTER_COMMIT`（4）的位掩码，必须非零；回调的 `Point` 参数会告诉
-你触发的是哪一个。取自 `pluginsdk/examples/DriverTracePlugin.c`：
+你触发的是哪一个。取自 [`pluginsdk/examples/DriverTracePlugin.c`]：
 
 ```c
 NevercObserverDescriptor Observer = {0};
@@ -600,7 +600,7 @@ Core->GetPluginOptionValue(Core->Context, Session, PluginID,
 - 当宿主需要为内存记账时，通过 `NevercCoreAPI.Allocate` / `Reallocate` /
   `Deallocate` 分配。
 - 把可变状态放在宿主提供的 process/session/task 状态里。全局可变状态会被
-  `utils/plugin-api/check-global-state.py` 检查出来。
+  [`utils/plugin-api/check-global-state.py`] 检查出来。
 
 所有公开结构体都在 `NEVERC_ABI_PACK_BEGIN`（8 字节对齐打包）之下布局，且只使用定
 宽类型。新函数追加到各自独立版本化的能力表末尾；在第一个 ABI 主版本
@@ -662,19 +662,19 @@ NeverC——这样 ABI 从两侧都得到了验证。模块产物落在
 
 | 示例 | CMake 目标 | 展示内容 |
 |---|---|---|
-| `DriverTracePlugin.c` | `neverc-plugin-example-driver-trace` | 选项注册、阶段观察、job 拦截 |
-| `VirtualHeaderPlugin.c` | `neverc-plugin-example-virtual-header` | 提供内存头文件的 VFS Provider |
-| `ASTRewritePlugin.c` | `neverc-plugin-example-ast-rewrite` | 解析器拦截与原子 AST 修改 |
-| `ExamplePlugin.c` | `neverc-plugin-example-ir-overview` | 用值游标遍历函数列表的模块级 IR pass |
-| `FunctionPass.c` | `neverc-plugin-example-function-pass` | 一个稳定的 IR 函数 pass |
-| `MachinePass.c` | `neverc-plugin-example-machine-pass` | 挂在 pre-emit 钩子上的稳定 MIR pass |
-| `MCObserverPlugin.c` | `neverc-plugin-example-mc-observer` | 只读的 MC 发射事件 |
-| `ObjectRewritePlugin.c` | `neverc-plugin-example-object-rewrite` | 事务式 ObjectGraph 改写 |
-| `CustomCallConvPlugin.c` | `neverc-plugin-example-custom-callconv` | 数据驱动的调用约定 |
-| `DynCodeTracePlugin.c` | `neverc-plugin-example-dyncode-trace` | 观察 dyncode 流水线 |
-| `DynCodeEncoderPlugin.c` | `neverc-plugin-example-dyncode-encoder` | 拦截 dyncode 字符集编码 |
-| `CrtShimPlugin.c` | `neverc-plugin-example-crt-shim` | 零 CRT 依赖的插件 |
-| `BenchPlugin.c` | `neverc-plugin-example-abi-bench` | ABI 调用吞吐量微基准 |
+| [`DriverTracePlugin.c`] | `neverc-plugin-example-driver-trace` | 选项注册、阶段观察、job 拦截 |
+| [`VirtualHeaderPlugin.c`] | `neverc-plugin-example-virtual-header` | 提供内存头文件的 VFS Provider |
+| [`ASTRewritePlugin.c`] | `neverc-plugin-example-ast-rewrite` | 解析器拦截与原子 AST 修改 |
+| [`ExamplePlugin.c`] | `neverc-plugin-example-ir-overview` | 用值游标遍历函数列表的模块级 IR pass |
+| [`FunctionPass.c`] | `neverc-plugin-example-function-pass` | 一个稳定的 IR 函数 pass |
+| [`MachinePass.c`] | `neverc-plugin-example-machine-pass` | 挂在 pre-emit 钩子上的稳定 MIR pass |
+| [`MCObserverPlugin.c`] | `neverc-plugin-example-mc-observer` | 只读的 MC 发射事件 |
+| [`ObjectRewritePlugin.c`] | `neverc-plugin-example-object-rewrite` | 事务式 ObjectGraph 改写 |
+| [`CustomCallConvPlugin.c`] | `neverc-plugin-example-custom-callconv` | 数据驱动的调用约定 |
+| [`DynCodeTracePlugin.c`] | `neverc-plugin-example-dyncode-trace` | 观察 dyncode 流水线 |
+| [`DynCodeEncoderPlugin.c`] | `neverc-plugin-example-dyncode-encoder` | 拦截 dyncode 字符集编码 |
+| [`CrtShimPlugin.c`] | `neverc-plugin-example-crt-shim` | 零 CRT 依赖的插件 |
+| [`BenchPlugin.c`] | `neverc-plugin-example-abi-bench` | ABI 调用吞吐量微基准 |
 
 加载其中一个：
 
@@ -687,10 +687,48 @@ neverc -fplugin=build-neverc/neverc/pluginsdk/examples/host/FunctionPass.so \
 
 | 文件 | 保证什么 |
 |---|---|
-| `neverc/include/neverc/Plugin/Schema/PhaseSchema.json` | 阶段 ID、策略、稳定性、验证器关卡 |
-| `pluginsdk/manifest/plugin.json` | ABI 版本、接口 ID／版本／稳定性、schema 摘要、支持的目标 |
-| `pluginsdk/abi/plugin.json` | 每个公开结构体在各宿主 ABI key 下实测的大小、对齐和字段偏移 |
-| `docs/plugin-api/coverage.json` | 把每个稳定阶段映射到正向、负向、替换、观察者和 sealed gate 测试 |
+| [`neverc/include/neverc/Plugin/Schema/PhaseSchema.json`] | 阶段 ID、策略、稳定性、验证器关卡 |
+| [`pluginsdk/manifest/plugin.json`] | ABI 版本、接口 ID／版本／稳定性、schema 摘要、支持的目标 |
+| [`pluginsdk/abi/plugin.json`] | 每个公开结构体在各宿主 ABI key 下实测的大小、对齐和字段偏移 |
+| [`docs/plugin-api/coverage.json`] | 把每个稳定阶段映射到正向、负向、替换、观察者和 sealed gate 测试 |
 
 因此 SDK 可以对宿主做机械化校验，插件构建也可以针对它将要载入的那个 ABI key 断言
 自己的结构体布局。
+
+<!-- reference links -->
+[`ASTRewritePlugin.c`]: ../../pluginsdk/examples/ASTRewritePlugin.c
+[`BenchPlugin.c`]: ../../pluginsdk/examples/BenchPlugin.c
+[`CrtShimPlugin.c`]: ../../pluginsdk/examples/CrtShimPlugin.c
+[`CustomCallConvPlugin.c`]: ../../pluginsdk/examples/CustomCallConvPlugin.c
+[`docs/plugin-api/coverage.json`]: coverage.json
+[`DriverTracePlugin.c`]: ../../pluginsdk/examples/DriverTracePlugin.c
+[`DynCodeEncoderPlugin.c`]: ../../pluginsdk/examples/DynCodeEncoderPlugin.c
+[`DynCodeTracePlugin.c`]: ../../pluginsdk/examples/DynCodeTracePlugin.c
+[`ExamplePlugin.c`]: ../../pluginsdk/examples/ExamplePlugin.c
+[`FunctionPass.c`]: ../../pluginsdk/examples/FunctionPass.c
+[`MachinePass.c`]: ../../pluginsdk/examples/MachinePass.c
+[`MCObserverPlugin.c`]: ../../pluginsdk/examples/MCObserverPlugin.c
+[`neverc/include/neverc/Plugin/Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`ObjectRewritePlugin.c`]: ../../pluginsdk/examples/ObjectRewritePlugin.c
+[`PluginAST.h`]: ../../neverc/include/neverc/Plugin/PluginAST.h
+[`PluginCore.h`]: ../../neverc/include/neverc/Plugin/PluginCore.h
+[`PluginDriver.h`]: ../../neverc/include/neverc/Plugin/PluginDriver.h
+[`PluginDynCode.h`]: ../../neverc/include/neverc/Plugin/PluginDynCode.h
+[`PluginIR.h`]: ../../neverc/include/neverc/Plugin/PluginIR.h
+[`PluginLink.h`]: ../../neverc/include/neverc/Plugin/PluginLink.h
+[`PluginLTO.h`]: ../../neverc/include/neverc/Plugin/PluginLTO.h
+[`PluginMC.h`]: ../../neverc/include/neverc/Plugin/PluginMC.h
+[`PluginMIR.h`]: ../../neverc/include/neverc/Plugin/PluginMIR.h
+[`PluginObject.h`]: ../../neverc/include/neverc/Plugin/PluginObject.h
+[`PluginPrep.h`]: ../../neverc/include/neverc/Plugin/PluginPrep.h
+[`pluginsdk/abi/plugin.json`]: ../../pluginsdk/abi/plugin.json
+[`pluginsdk/examples/DriverTracePlugin.c`]: ../../pluginsdk/examples/DriverTracePlugin.c
+[`pluginsdk/manifest/plugin.json`]: ../../pluginsdk/manifest/plugin.json
+[`pluginsdk/templates/minimal/Plugin.c`]: ../../pluginsdk/templates/minimal/Plugin.c
+[`PluginSema.h`]: ../../neverc/include/neverc/Plugin/PluginSema.h
+[`PluginSource.h`]: ../../neverc/include/neverc/Plugin/PluginSource.h
+[`PluginTarget.h`]: ../../neverc/include/neverc/Plugin/PluginTarget.h
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`Schema/PluginPhaseSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginPhaseSchema.inc
+[`utils/plugin-api/check-global-state.py`]: ../../utils/plugin-api/check-global-state.py
+[`VirtualHeaderPlugin.c`]: ../../pluginsdk/examples/VirtualHeaderPlugin.c

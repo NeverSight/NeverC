@@ -4,7 +4,7 @@
 
 # NeverC 外掛 MIR API
 
-`PluginMIR.h` 公開 Machine IR：機器函式、區塊、指令、運算元、虛擬與實體暫存器、
+[`PluginMIR.h`] 公開 Machine IR：機器函式、區塊、指令、運算元、虛擬與實體暫存器、
 堆疊框架、常數池、跳躍表，以及記憶體運算元。外掛可以在九個穩定的程式碼產生掛鉤上
 掛載 pass，或是整個取代 IR 到 MIR 的降階。
 
@@ -53,7 +53,7 @@
 
 ## Schema
 
-`Schema/PluginMIRSchema.inc` 是產生出來的，並由 `PluginMIR.h` 包含：
+[`Schema/PluginMIRSchema.inc`] 是產生出來的，並由 [`PluginMIR.h`] 包含：
 
 ```c
 #define NEVERC_MIR_SCHEMA_DIGEST          "6b523b20…"
@@ -299,7 +299,7 @@ Pass.Run           = run_machine_function;
 PassAPI->RegisterPass(PassAPI->Context, RegistrarContext, &Pass);
 ```
 
-那就是 `pluginsdk/examples/MachinePass.c` 的原文。層級有 `MODULE`、`FUNCTION`
+那就是 [`pluginsdk/examples/MachinePass.c`] 的原文。層級有 `MODULE`、`FUNCTION`
 與 `BASIC_BLOCK`。`RequiredAnalyses` 與 `PreservedAnalyses` 是
 `NevercMIRBuiltinAnalysis` 的陣列，而 `RequiredTargetSchemaDigest` 會讓這個 pass
 拒絕在它並非為之建置的 schema 上執行。
@@ -398,5 +398,12 @@ build-neverc/bin/neverc \
 - 初始化每一個表頭與保留欄位；狀態要跨 C 邊界回傳，並且絕不讓 C++ 例外穿過去。
 - `neverc.mir.final_verify` 是封印的。不管怎樣它都會執行。
 
-規範性宣告、schema 常數、階段政策與涵蓋證據，請見 `PluginMIR.h`、
-`Schema/PluginMIRSchema.inc`、`Schema/PhaseSchema.json` 與 `coverage.json`。
+規範性宣告、schema 常數、階段政策與涵蓋證據，請見 [`PluginMIR.h`]、
+[`Schema/PluginMIRSchema.inc`]、[`Schema/PhaseSchema.json`] 與 [`coverage.json`]。
+
+<!-- reference links -->
+[`coverage.json`]: coverage.json
+[`PluginMIR.h`]: ../../neverc/include/neverc/Plugin/PluginMIR.h
+[`pluginsdk/examples/MachinePass.c`]: ../../pluginsdk/examples/MachinePass.c
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`Schema/PluginMIRSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginMIRSchema.inc

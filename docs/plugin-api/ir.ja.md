@@ -4,7 +4,7 @@
 
 # NeverC プラグイン IR API
 
-`PluginIR.h` は 6 枚のケーパビリティテーブルと生成されたスキーマを通じて LLVM IR
+[`PluginIR.h`] は 6 枚のケーパビリティテーブルと生成されたスキーマを通じて LLVM IR
 を公開します。プラグインは IR を読み書きし、5 つの安定したパイプライン地点に
 パスを登録し、自前の解析を定義し、あるいは IR 生成と最適化パイプラインをまるごと
 置き換えられます —— LLVM のヘッダを 1 つも include することなく。
@@ -30,7 +30,7 @@ LLVM リリースへ移っても動き続けます。
 
 いずれも major 1 では `NEVERC_INTERFACE_STABLE` です。対応する
 `NEVERC_IR_*_API_MAJOR` / `_MINOR` で交渉し、`TableSize` が自分の呼ぶ最後の
-スロットまで届いているか、`pluginsdk/examples/FunctionPass.c` と同じように検証して
+スロットまで届いているか、[`pluginsdk/examples/FunctionPass.c`] と同じように検証して
 ください:
 
 ```c
@@ -67,7 +67,7 @@ IR フェーズは 8 つです:
 
 ## スキーマ
 
-`Schema/PluginIRSchema.inc` は生成物で、`PluginIR.h` が include します。ダイジェ
+[`Schema/PluginIRSchema.inc`] は生成物で、[`PluginIR.h`] が include します。ダイジェ
 ストと以下の定数群を公開します:
 
 ```c
@@ -220,7 +220,7 @@ Core->HasFunctionAttribute(Core->Context, Task, Function, SV("noinline"),
                            &Present);
 ```
 
-`pluginsdk/examples/CustomCallConvPlugin.c` はこれを
+[`pluginsdk/examples/CustomCallConvPlugin.c`] はこれを
 `GetFunctionStringAttribute` と組み合わせ、データで定義された呼び出し規約を動かし
 ます。
 
@@ -411,9 +411,9 @@ Gen->PublishModule(Gen->Context, Frame, &Descriptor, &Output);
 
 | ファイル | 示すもの |
 |---|---|
-| `pluginsdk/examples/FunctionPass.c` | ABI 交渉込みの、読み取り専用の関数パス |
-| `pluginsdk/examples/ExamplePlugin.c` | 値カーソルで関数を走査するモジュールレベルのパス |
-| `pluginsdk/examples/CustomCallConvPlugin.c` | 属性と呼び出し位置のプロパティ |
+| [`pluginsdk/examples/FunctionPass.c`] | ABI 交渉込みの、読み取り専用の関数パス |
+| [`pluginsdk/examples/ExamplePlugin.c`] | 値カーソルで関数を走査するモジュールレベルのパス |
+| [`pluginsdk/examples/CustomCallConvPlugin.c`] | 属性と呼び出し位置のプロパティ |
 
 ```sh
 cmake --build build-neverc --target neverc-plugin-example-function-pass
@@ -430,7 +430,7 @@ CMake がお使いのプラットフォーム向けに生成したモジュー�
   構造化された診断になります。例外を C の境界越しに出してはいけません。
 - 値を埋める呼び出しの前に、出力構造体をゼロで初期化し `Header` を設定してくだ
   さい。
-- オペコード、型、プロパティの数値を直書きしないでください。`PluginIRSchema.inc`
+- オペコード、型、プロパティの数値を直書きしないでください。[`PluginIRSchema.inc`]
   の名前を使えば、スキーマ改訂がコンパイルエラーになります。
 - すべての `BeginMutation` にちょうど 1 つの `DestroyMutation` を、すべての
   `CreateBuilder` にちょうど 1 つの `DestroyBuilder` を、エラー経路も含めて対応
@@ -442,6 +442,16 @@ CMake がお使いのプラットフォーム向けに生成したモジュー�
 - `neverc.ir.final_verify` は封印されています。プラグインが何をしてもこれを飛ばす
   ことはできません。
 
-規範的な宣言、スキーマ定数、フェーズポリシー、テストの証拠は、`PluginIR.h`、
-`Schema/PluginIRSchema.inc`、`Schema/PhaseSchema.json`、`coverage.json` を参照して
+規範的な宣言、スキーマ定数、フェーズポリシー、テストの証拠は、[`PluginIR.h`]、
+[`Schema/PluginIRSchema.inc`]、[`Schema/PhaseSchema.json`]、[`coverage.json`] を参照して
 ください。
+
+<!-- reference links -->
+[`coverage.json`]: coverage.json
+[`PluginIR.h`]: ../../neverc/include/neverc/Plugin/PluginIR.h
+[`PluginIRSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginIRSchema.inc
+[`pluginsdk/examples/CustomCallConvPlugin.c`]: ../../pluginsdk/examples/CustomCallConvPlugin.c
+[`pluginsdk/examples/ExamplePlugin.c`]: ../../pluginsdk/examples/ExamplePlugin.c
+[`pluginsdk/examples/FunctionPass.c`]: ../../pluginsdk/examples/FunctionPass.c
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`Schema/PluginIRSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginIRSchema.inc

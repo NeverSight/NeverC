@@ -4,10 +4,10 @@
 
 # NeverC Plugin Target, MC, Assembly, and Object API
 
-The back end is four headers and twenty-nine phases. `PluginTarget.h`
+The back end is four headers and twenty-nine phases. [`PluginTarget.h`]
 describes a target and the routes through code generation.
-`PluginMC.h` builds and observes machine code. Assembly parsing and printing
-live in the same header. `PluginObject.h` turns a relocatable file into a
+[`PluginMC.h`] builds and observes machine code. Assembly parsing and printing
+live in the same header. [`PluginObject.h`] turns a relocatable file into a
 normalized graph and back.
 
 Together they let a plugin add a target, replace one lowering step or all of
@@ -200,7 +200,7 @@ plan(void *UserData, const NevercCallingConventionQuery *Query,
 `Query->SchemaDigest` is a LOCKSTEP value — `RegisterNumber` only means
 anything against the schema it names. See
 [Custom calling conventions](custom-callconv/README.md) and
-`pluginsdk/examples/CustomCallConvPlugin.c` for the full worked example.
+[`pluginsdk/examples/CustomCallConvPlugin.c`] for the full worked example.
 
 ## Code-generation routes
 
@@ -326,7 +326,7 @@ Emission->BeginInstructionReplacement(Emission->Context, Frame, &Builder);
 Emission->PublishInstructionReplacement(Emission->Context, Frame, NewInstr);
 ```
 
-`pluginsdk/examples/MCObserverPlugin.c` is the read-only version of this.
+[`pluginsdk/examples/MCObserverPlugin.c`] is the read-only version of this.
 
 ## Encoders, decoders, and layout
 
@@ -470,7 +470,7 @@ interceptors get only the bounded `NevercMutableBinaryAPI` builder —
 `Resize`. Overflow, a failed callback, or a failed verification aborts
 staging, so a failure never leaves half a file on disk.
 
-`pluginsdk/examples/ObjectRewritePlugin.c` is a complete transactional
+[`pluginsdk/examples/ObjectRewritePlugin.c`] is a complete transactional
 rewrite.
 
 ## Rules
@@ -491,7 +491,17 @@ rewrite.
 - `codegen.product_verify`, `assembly.final_verify`, `assembly.commit`,
   `object.final_verify`, and `object.commit` are sealed. Observe only.
 
-See `PluginTarget.h`, `PluginMC.h`, `PluginObject.h`, and
-`Schema/PhaseSchema.json` for the normative declarations, and
-`coverage.json`, which maps each of these stable phases to its positive,
+See [`PluginTarget.h`], [`PluginMC.h`], [`PluginObject.h`], and
+[`Schema/PhaseSchema.json`] for the normative declarations, and
+[`coverage.json`], which maps each of these stable phases to its positive,
 negative, replacement, read-only-observer, and sealed-gate tests.
+
+<!-- reference links -->
+[`coverage.json`]: coverage.json
+[`PluginMC.h`]: ../../neverc/include/neverc/Plugin/PluginMC.h
+[`PluginObject.h`]: ../../neverc/include/neverc/Plugin/PluginObject.h
+[`pluginsdk/examples/CustomCallConvPlugin.c`]: ../../pluginsdk/examples/CustomCallConvPlugin.c
+[`pluginsdk/examples/MCObserverPlugin.c`]: ../../pluginsdk/examples/MCObserverPlugin.c
+[`pluginsdk/examples/ObjectRewritePlugin.c`]: ../../pluginsdk/examples/ObjectRewritePlugin.c
+[`PluginTarget.h`]: ../../neverc/include/neverc/Plugin/PluginTarget.h
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json

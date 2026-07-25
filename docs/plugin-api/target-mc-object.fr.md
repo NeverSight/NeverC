@@ -4,10 +4,10 @@
 
 # API NeverC cible, MC, assembleur et objet du plugin
 
-Le back-end tient en quatre en-têtes et vingt-neuf phases. `PluginTarget.h`
+Le back-end tient en quatre en-têtes et vingt-neuf phases. [`PluginTarget.h`]
 décrit une cible et les routes qui traversent la génération de code.
-`PluginMC.h` construit et observe le code machine. L'analyse et l'impression
-d'assembleur vivent dans le même en-tête. `PluginObject.h` transforme un
+[`PluginMC.h`] construit et observe le code machine. L'analyse et l'impression
+d'assembleur vivent dans le même en-tête. [`PluginObject.h`] transforme un
 fichier relogeable en graphe normalisé, et inversement.
 
 Ensemble, ils permettent à un plugin d'ajouter une cible, de remplacer une
@@ -206,7 +206,7 @@ plan(void *UserData, const NevercCallingConventionQuery *Query,
 `Query->SchemaDigest` est une valeur LOCKSTEP — `RegisterNumber` n'a de sens
 que face au schéma qu'il nomme. Voir
 [Conventions d'appel personnalisées](custom-callconv/README.fr.md) et
-`pluginsdk/examples/CustomCallConvPlugin.c` pour l'exemple complet.
+[`pluginsdk/examples/CustomCallConvPlugin.c`] pour l'exemple complet.
 
 ## Routes de génération de code
 
@@ -336,7 +336,7 @@ Emission->BeginInstructionReplacement(Emission->Context, Frame, &Builder);
 Emission->PublishInstructionReplacement(Emission->Context, Frame, NewInstr);
 ```
 
-`pluginsdk/examples/MCObserverPlugin.c` en est la version en lecture seule.
+[`pluginsdk/examples/MCObserverPlugin.c`] en est la version en lecture seule.
 
 ## Encodeurs, décodeurs et disposition
 
@@ -488,7 +488,7 @@ borné `NevercMutableBinaryAPI` — `Reserve`, `Write`, `WriteAt`, `Tell`,
 une vérification ratée annule la préparation, si bien qu'un échec ne laisse
 jamais un demi-fichier sur le disque.
 
-`pluginsdk/examples/ObjectRewritePlugin.c` est une réécriture transactionnelle
+[`pluginsdk/examples/ObjectRewritePlugin.c`] est une réécriture transactionnelle
 complète.
 
 ## Règles
@@ -516,8 +516,18 @@ complète.
 - `codegen.product_verify`, `assembly.final_verify`, `assembly.commit`,
   `object.final_verify` et `object.commit` sont scellés. Observez seulement.
 
-Voir `PluginTarget.h`, `PluginMC.h`, `PluginObject.h` et
-`Schema/PhaseSchema.json` pour les déclarations normatives, ainsi que
-`coverage.json`, qui associe chacune de ces phases stables à ses tests
+Voir [`PluginTarget.h`], [`PluginMC.h`], [`PluginObject.h`] et
+[`Schema/PhaseSchema.json`] pour les déclarations normatives, ainsi que
+[`coverage.json`], qui associe chacune de ces phases stables à ses tests
 positifs, négatifs, de remplacement, d'observateur en lecture seule et de
 porte scellée.
+
+<!-- reference links -->
+[`coverage.json`]: coverage.json
+[`PluginMC.h`]: ../../neverc/include/neverc/Plugin/PluginMC.h
+[`PluginObject.h`]: ../../neverc/include/neverc/Plugin/PluginObject.h
+[`pluginsdk/examples/CustomCallConvPlugin.c`]: ../../pluginsdk/examples/CustomCallConvPlugin.c
+[`pluginsdk/examples/MCObserverPlugin.c`]: ../../pluginsdk/examples/MCObserverPlugin.c
+[`pluginsdk/examples/ObjectRewritePlugin.c`]: ../../pluginsdk/examples/ObjectRewritePlugin.c
+[`PluginTarget.h`]: ../../neverc/include/neverc/Plugin/PluginTarget.h
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json

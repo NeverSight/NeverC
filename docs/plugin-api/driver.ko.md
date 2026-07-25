@@ -4,7 +4,7 @@
 
 # NeverC 플러그인 Driver API
 
-드라이버는 명령줄을 실행 가능한 작업(job) 집합으로 바꿉니다. `PluginDriver.h`
+드라이버는 명령줄을 실행 가능한 작업(job) 집합으로 바꿉니다. [`PluginDriver.h`]
 는 그 파이프라인을 여섯 개의 단계와 하나의 기능 테이블 `NevercDriverAPI` 로
 공개하므로, 플러그인은 인자를 다시 쓰고, 툴체인을 고르고, 액션 그래프를 재구성
 하고, 작업을 추가하거나 교체하고, 심지어 프로세스를 새로 띄우는 대신 작업을
@@ -70,7 +70,7 @@ typedef struct NevercOptionDescriptor {
 } NevercOptionDescriptor;
 ```
 
-`pluginsdk/examples/DriverTracePlugin.c` 에서 발췌:
+[`pluginsdk/examples/DriverTracePlugin.c`] 에서 발췌:
 
 ```c
 NevercOptionDescriptor Option = {0};
@@ -310,7 +310,7 @@ typedef struct NevercJobResultDescriptor {
 
 ## 실전 예제: 인자 관찰과 작업 실행 가로채기
 
-`pluginsdk/examples/DriverTracePlugin.c` 를 압축한 것입니다. 이 플러그인은
+[`pluginsdk/examples/DriverTracePlugin.c`] 를 압축한 것입니다. 이 플러그인은
 전역 변수를 전혀 두지 않습니다. 프로세스 상태가 협상된 테이블을 보관하고,
 세션·태스크 단위 카운터는 각 콜백 안에서 호스트로부터 가져옵니다.
 
@@ -413,5 +413,11 @@ build-neverc/bin/neverc \
 - 실제로 실행되어 정당하게 실패한 작업은 OK 가 아닌 상태를 반환하지 말고
   `NevercJobResultDescriptor.ExecutionFailed` 와 `ErrorMessage` 로 보고하세요.
 
-규범적 선언은 `PluginDriver.h`, 드라이버 단계 정책은 `PhaseSchema.json`, 테스트
-근거는 `coverage.json` 을 참고하세요.
+규범적 선언은 [`PluginDriver.h`], 드라이버 단계 정책은 [`PhaseSchema.json`], 테스트
+근거는 [`coverage.json`] 을 참고하세요.
+
+<!-- reference links -->
+[`coverage.json`]: coverage.json
+[`PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`PluginDriver.h`]: ../../neverc/include/neverc/Plugin/PluginDriver.h
+[`pluginsdk/examples/DriverTracePlugin.c`]: ../../pluginsdk/examples/DriverTracePlugin.c

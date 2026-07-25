@@ -34,7 +34,7 @@ gpr:rcx,rdx,r8,r9; xmm:xmm0,xmm1; ret:rax; ret_xmm:xmm0
 | `ret_fpr` | | `ret_xmm` 的目標中立別名 |
 | `csr` | | 自訂 callee-saved 暫存器集合（預設為標準 ABI 集合） |
 
-任何一段都可以省略，無法辨識的段會被忽略。這些 key 只在 `llvm/include/llvm/CodeGen/NeverCCallConv.h` 定義一次，因此產生者與剖析器不會產生偏離。
+任何一段都可以省略，無法辨識的段會被忽略。這些 key 只在 [`llvm/include/llvm/CodeGen/NeverCCallConv.h`] 定義一次，因此產生者與剖析器不會產生偏離。
 
 ### 兩種引數模式
 
@@ -74,7 +74,7 @@ GPR 一律寫成 64 位元形式，後端會依每個值的型別收窄到對應
 
 ### 1. 外掛驅動（建議）
 
-參考外掛 `CustomCallConvPlugin.c` 位於 `pluginsdk/examples/`。它在 `neverc.ir.pass.post_opt` 階段註冊了一個模組層級的 IR pass。
+參考外掛 [`CustomCallConvPlugin.c`] 位於 `pluginsdk/examples/`。它在 `neverc.ir.pass.post_opt` 階段註冊了一個模組層級的 IR pass。
 
 **編譯外掛：**
 
@@ -185,7 +185,7 @@ Core->SetFunctionCallingConvention(Core->Context, Task, Function,
 
 ## 測試
 
-GoogleTest 套件位於 `tests/neverc/CustomCallConvTests.cpp`，共 26 個測試。每個測試都會建置範例外掛、在給定 spec 下把一小段程式編譯成組合語言，然後斷言最終的暫存器或堆疊位置。
+GoogleTest 套件位於 [`tests/neverc/CustomCallConvTests.cpp`]，共 26 個測試。每個測試都會建置範例外掛、在給定 spec 下把一小段程式編譯成組合語言，然後斷言最終的暫存器或堆疊位置。
 
 ```bash
 ninja -C build-neverc neverc-tests
@@ -243,3 +243,8 @@ custom_attr(...)              (neverc.ir.pass.post_opt)
 ```
 
 後端執行器是**一次性實作** —— 所有策略決策都在外掛裡。新增一個慣例永遠不需要重新建置 NeverC。
+
+<!-- reference links -->
+[`CustomCallConvPlugin.c`]: ../../../pluginsdk/examples/CustomCallConvPlugin.c
+[`llvm/include/llvm/CodeGen/NeverCCallConv.h`]: ../../../llvm/include/llvm/CodeGen/NeverCCallConv.h
+[`tests/neverc/CustomCallConvTests.cpp`]: ../../../tests/neverc/CustomCallConvTests.cpp

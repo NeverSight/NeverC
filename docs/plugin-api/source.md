@@ -4,7 +4,7 @@
 
 # NeverC Plugin Source and I/O API
 
-`PluginSource.h` publishes two tables. `NevercIOAPI` is the file system:
+[`PluginSource.h`] publishes two tables. `NevercIOAPI` is the file system:
 virtual-file providers, reads, directory walks, output sinks, and dependency
 records. `NevercSourceLocationAPI` maps compiler positions back to files,
 lines, and spelled text. Between them a plugin can serve a header that exists
@@ -100,8 +100,7 @@ IO->AddMemoryFile(IO->Context, Session, SV("/virtual/config.h"),
                   Content, ModificationTime);
 ```
 
-[`pluginsdk/examples/VirtualHeaderPlugin.c`](../../pluginsdk/examples/VirtualHeaderPlugin.c)
-is a complete working provider.
+[`pluginsdk/examples/VirtualHeaderPlugin.c`] is a complete working provider.
 
 ## Reading files
 
@@ -303,5 +302,9 @@ content changes. `GetSourceUnit` reads a unit back and additionally reports
 - `AddMemoryFile` is session-scoped; a provider is the right tool when the
   content depends on the task.
 
-See `PluginSource.h` for the normative declarations and
-`pluginsdk/examples/VirtualHeaderPlugin.c` for a complete provider.
+See [`PluginSource.h`] for the normative declarations and
+[`pluginsdk/examples/VirtualHeaderPlugin.c`] for a complete provider.
+
+<!-- reference links -->
+[`pluginsdk/examples/VirtualHeaderPlugin.c`]: ../../pluginsdk/examples/VirtualHeaderPlugin.c
+[`PluginSource.h`]: ../../neverc/include/neverc/Plugin/PluginSource.h

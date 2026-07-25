@@ -5,7 +5,7 @@
 # NeverC プラグイン Driver API
 
 ドライバはコマンドラインを実行されるジョブの集合へ変換します。
-`PluginDriver.h` はそのパイプラインを 6 つのフェーズと 1 つのケーパビリティ
+[`PluginDriver.h`] はそのパイプラインを 6 つのフェーズと 1 つのケーパビリティ
 テーブル `NevercDriverAPI` として公開しており、プラグインは引数の書き換え、
 ツールチェーンの選択、アクショングラフの再構成、ジョブの追加や置き換え、さらに
 はプロセスを spawn せずにジョブをインプロセスで実行することまで行えます。
@@ -70,7 +70,7 @@ typedef struct NevercOptionDescriptor {
 } NevercOptionDescriptor;
 ```
 
-`pluginsdk/examples/DriverTracePlugin.c` より:
+[`pluginsdk/examples/DriverTracePlugin.c`] より:
 
 ```c
 NevercOptionDescriptor Option = {0};
@@ -312,7 +312,7 @@ typedef struct NevercJobResultDescriptor {
 
 ## 実例: 引数を観察し、ジョブ実行をインターセプトする
 
-`pluginsdk/examples/DriverTracePlugin.c` を圧縮したものです。このプラグインは
+[`pluginsdk/examples/DriverTracePlugin.c`] を圧縮したものです。このプラグインは
 グローバル変数を一切持ちません。プロセス状態がネゴシエート済みテーブルを保持
 し、セッション単位・タスク単位のカウンタは各コールバック内でホストから取得し
 ます。
@@ -419,5 +419,11 @@ build-neverc/bin/neverc \
   `NevercJobResultDescriptor.ExecutionFailed` と `ErrorMessage` で報告して
   ください。
 
-規範的な宣言は `PluginDriver.h`、ドライバフェーズのポリシーは
-`PhaseSchema.json`、テストの証跡は `coverage.json` を参照してください。
+規範的な宣言は [`PluginDriver.h`]、ドライバフェーズのポリシーは
+[`PhaseSchema.json`]、テストの証跡は [`coverage.json`] を参照してください。
+
+<!-- reference links -->
+[`coverage.json`]: coverage.json
+[`PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`PluginDriver.h`]: ../../neverc/include/neverc/Plugin/PluginDriver.h
+[`pluginsdk/examples/DriverTracePlugin.c`]: ../../pluginsdk/examples/DriverTracePlugin.c

@@ -5,7 +5,7 @@
 # API драйвера плагинов NeverC
 
 Драйвер превращает командную строку в набор выполняемых заданий.
-`PluginDriver.h` раскрывает этот конвейер в виде шести фаз и одной таблицы
+[`PluginDriver.h`] раскрывает этот конвейер в виде шести фаз и одной таблицы
 возможностей `NevercDriverAPI`, так что плагин может переписывать аргументы,
 выбирать инструментальную цепочку, перестраивать граф действий, добавлять или
 заменять задания и даже выполнять задание внутри текущего процесса вместо
@@ -72,7 +72,7 @@ typedef struct NevercOptionDescriptor {
 } NevercOptionDescriptor;
 ```
 
-Из `pluginsdk/examples/DriverTracePlugin.c`:
+Из [`pluginsdk/examples/DriverTracePlugin.c`]:
 
 ```c
 NevercOptionDescriptor Option = {0};
@@ -316,7 +316,7 @@ API ввода-вывода (см. [Source и ввод-вывод](source.ru.md)
 
 ## Разобранный пример: наблюдение за аргументами и перехват выполнения
 
-Сжато из `pluginsdk/examples/DriverTracePlugin.c`. Плагин не держит глобальных
+Сжато из [`pluginsdk/examples/DriverTracePlugin.c`]. Плагин не держит глобальных
 переменных: состояние процесса хранит согласованные таблицы, а счётчики уровня
 сессии и задачи запрашиваются у хоста внутри каждого обратного вызова.
 
@@ -424,5 +424,11 @@ build-neverc/bin/neverc \
   статуса, отличного от OK, для задания, которое выполнилось и закономерно
   завершилось неудачей.
 
-Нормативные объявления смотрите в `PluginDriver.h`, политики фаз драйвера — в
-`PhaseSchema.json`, свидетельства тестов — в `coverage.json`.
+Нормативные объявления смотрите в [`PluginDriver.h`], политики фаз драйвера — в
+[`PhaseSchema.json`], свидетельства тестов — в [`coverage.json`].
+
+<!-- reference links -->
+[`coverage.json`]: coverage.json
+[`PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`PluginDriver.h`]: ../../neverc/include/neverc/Plugin/PluginDriver.h
+[`pluginsdk/examples/DriverTracePlugin.c`]: ../../pluginsdk/examples/DriverTracePlugin.c

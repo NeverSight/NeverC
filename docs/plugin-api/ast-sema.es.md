@@ -30,7 +30,7 @@ LLVM.
 | `NEVERC_INTERFACE_PARSER_{HIGH,LOW}` | `NevercParserAPI` | `NEVERC_PARSER_API_MAJOR` / `_MINOR` |
 | `NEVERC_INTERFACE_SEMA_{HIGH,LOW}` | `NevercSemaAPI` | `NEVERC_SEMA_API_MAJOR` / `_MINOR` |
 
-`Schema/PluginASTSchema.inc` suministra los identificadores de género de nodo,
+[`Schema/PluginASTSchema.inc`] suministra los identificadores de género de nodo,
 de propiedad y de ranura hija; su mayor de capacidad debe ser igual a
 `NEVERC_AST_API_MAJOR`.
 
@@ -199,8 +199,7 @@ AST->DestroyASTMutation(AST->Context, Task, Mutation);
 
 La confirmación verifica el árbol preparado y lo publica atómicamente. Una
 confirmación fallida deja intacto el árbol anterior, y un aborto deja obsoletos
-los descriptores que creó la modificación.
-[`pluginsdk/examples/ASTRewritePlugin.c`](../../pluginsdk/examples/ASTRewritePlugin.c)
+los descriptores que creó la modificación. [`pluginsdk/examples/ASTRewritePlugin.c`]
 muestra el ciclo completo, incluida la interceptación del analizador.
 
 ## Eventos del ciclo de vida
@@ -422,11 +421,19 @@ reproducida y de un resumen del verificador.
 - No modifique el árbol desde un observador del ciclo de vida: los observadores
   son de solo lectura. Use un interceptor en la fase correspondiente.
 - Los identificadores de propiedad y de ranura hija son constantes del esquema.
-  No incruste literales numéricos; use los nombres de `PluginASTSchema.inc` para
+  No incruste literales numéricos; use los nombres de [`PluginASTSchema.inc`] para
   que una revisión del esquema sea un error de compilación.
 - Compruebe `HAS_KNOWN_LAYOUT` en `NevercTypeInfo.Flags` antes de fiarse de
   `SizeInBits` o `AlignmentInBits`.
 
-Consulte `PluginAST.h`, `PluginSema.h` y `Schema/ASTSchema.json` para las
-declaraciones normativas, y `pluginsdk/examples/ASTRewritePlugin.c` para una
+Consulte [`PluginAST.h`], [`PluginSema.h`] y [`Schema/ASTSchema.json`] para las
+declaraciones normativas, y [`pluginsdk/examples/ASTRewritePlugin.c`] para una
 interceptación de analizador y una reescritura atómica de árbol que funcionan.
+
+<!-- reference links -->
+[`PluginAST.h`]: ../../neverc/include/neverc/Plugin/PluginAST.h
+[`PluginASTSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginASTSchema.inc
+[`pluginsdk/examples/ASTRewritePlugin.c`]: ../../pluginsdk/examples/ASTRewritePlugin.c
+[`PluginSema.h`]: ../../neverc/include/neverc/Plugin/PluginSema.h
+[`Schema/ASTSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/ASTSchema.json
+[`Schema/PluginASTSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginASTSchema.inc

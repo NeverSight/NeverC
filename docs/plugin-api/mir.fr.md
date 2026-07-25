@@ -4,7 +4,7 @@
 
 # API MIR des plugins NeverC
 
-`PluginMIR.h` expose la Machine IR : fonctions machine, blocs, instructions,
+[`PluginMIR.h`] expose la Machine IR : fonctions machine, blocs, instructions,
 opérandes, registres virtuels et physiques, cadre de pile, réservoir de
 constantes, tables de saut et opérandes mémoire. Un plugin accroche des passes
 à neuf points d'ancrage stables de la génération de code, ou remplace
@@ -61,7 +61,7 @@ le sauter.
 
 ## Le schéma
 
-`Schema/PluginMIRSchema.inc` est généré et inclus par `PluginMIR.h` :
+[`Schema/PluginMIRSchema.inc`] est généré et inclus par [`PluginMIR.h`] :
 
 ```c
 #define NEVERC_MIR_SCHEMA_DIGEST          "6b523b20…"
@@ -329,7 +329,7 @@ Pass.Run           = run_machine_function;
 PassAPI->RegisterPass(PassAPI->Context, RegistrarContext, &Pass);
 ```
 
-C'est `pluginsdk/examples/MachinePass.c` mot pour mot. Les niveaux sont
+C'est [`pluginsdk/examples/MachinePass.c`] mot pour mot. Les niveaux sont
 `MODULE`, `FUNCTION` et `BASIC_BLOCK`. `RequiredAnalyses` et
 `PreservedAnalyses` sont des tableaux de `NevercMIRBuiltinAnalysis`, et
 `RequiredTargetSchemaDigest` fait que la passe refuse de s'exécuter face à un
@@ -439,6 +439,13 @@ Utilisez le suffixe de module que CMake a produit pour votre plateforme.
   franchir.
 - `neverc.mir.final_verify` est scellée. Elle s'exécute quoi qu'il arrive.
 
-Voir `PluginMIR.h`, `Schema/PluginMIRSchema.inc`, `Schema/PhaseSchema.json` et
-`coverage.json` pour les déclarations normatives, les constantes de schéma,
+Voir [`PluginMIR.h`], [`Schema/PluginMIRSchema.inc`], [`Schema/PhaseSchema.json`] et
+[`coverage.json`] pour les déclarations normatives, les constantes de schéma,
 les politiques de phase et les preuves de couverture.
+
+<!-- reference links -->
+[`coverage.json`]: coverage.json
+[`PluginMIR.h`]: ../../neverc/include/neverc/Plugin/PluginMIR.h
+[`pluginsdk/examples/MachinePass.c`]: ../../pluginsdk/examples/MachinePass.c
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`Schema/PluginMIRSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginMIRSchema.inc

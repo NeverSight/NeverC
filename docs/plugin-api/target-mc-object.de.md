@@ -5,9 +5,9 @@
 # NeverC-Plugin-API für Target, MC, Assembly und Objekte
 
 Das Back-End besteht aus vier Headern und neunundzwanzig Phasen.
-`PluginTarget.h` beschreibt ein Target und die Routen durch die
-Codeerzeugung. `PluginMC.h` baut und beobachtet Maschinencode. Das Parsen und
-Ausgeben von Assembly wohnt im selben Header. `PluginObject.h` verwandelt eine
+[`PluginTarget.h`] beschreibt ein Target und die Routen durch die
+Codeerzeugung. [`PluginMC.h`] baut und beobachtet Maschinencode. Das Parsen und
+Ausgeben von Assembly wohnt im selben Header. [`PluginObject.h`] verwandelt eine
 relozierbare Datei in einen normalisierten Graphen und wieder zurück.
 
 Zusammen erlauben sie einem Plugin, ein Target hinzuzufügen, einen einzelnen
@@ -206,7 +206,7 @@ plan(void *UserData, const NevercCallingConventionQuery *Query,
 etwas gegenüber dem Schema, das er benennt. Das vollständig ausgearbeitete
 Beispiel finden Sie unter
 [Eigene Aufrufkonventionen](custom-callconv/README.de.md) und in
-`pluginsdk/examples/CustomCallConvPlugin.c`.
+[`pluginsdk/examples/CustomCallConvPlugin.c`].
 
 ## Routen der Codeerzeugung
 
@@ -334,7 +334,7 @@ Emission->BeginInstructionReplacement(Emission->Context, Frame, &Builder);
 Emission->PublishInstructionReplacement(Emission->Context, Frame, NewInstr);
 ```
 
-`pluginsdk/examples/MCObserverPlugin.c` ist die rein lesende Variante davon.
+[`pluginsdk/examples/MCObserverPlugin.c`] ist die rein lesende Variante davon.
 
 ## Encoder, Decoder und Layout
 
@@ -486,7 +486,7 @@ Post-Write-Interceptors bekommen nur den begrenzten Builder
 eine gescheiterte Verifikation bricht das Vormerken ab, sodass ein Fehlschlag
 nie eine halbe Datei auf der Platte hinterlässt.
 
-`pluginsdk/examples/ObjectRewritePlugin.c` ist eine vollständige
+[`pluginsdk/examples/ObjectRewritePlugin.c`] ist eine vollständige
 transaktionale Umschreibung.
 
 ## Regeln
@@ -516,7 +516,17 @@ transaktionale Umschreibung.
 - `codegen.product_verify`, `assembly.final_verify`, `assembly.commit`,
   `object.final_verify` und `object.commit` sind versiegelt. Nur beobachten.
 
-Die normativen Deklarationen finden Sie in `PluginTarget.h`, `PluginMC.h`,
-`PluginObject.h` und `Schema/PhaseSchema.json`, und `coverage.json` ordnet
+Die normativen Deklarationen finden Sie in [`PluginTarget.h`], [`PluginMC.h`],
+[`PluginObject.h`] und [`Schema/PhaseSchema.json`], und [`coverage.json`] ordnet
 jeder dieser stabilen Phasen ihre positiven, negativen, Ersetzungs-,
 Nur-Lese-Beobachter- und Sealed-Gate-Tests zu.
+
+<!-- reference links -->
+[`coverage.json`]: coverage.json
+[`PluginMC.h`]: ../../neverc/include/neverc/Plugin/PluginMC.h
+[`PluginObject.h`]: ../../neverc/include/neverc/Plugin/PluginObject.h
+[`pluginsdk/examples/CustomCallConvPlugin.c`]: ../../pluginsdk/examples/CustomCallConvPlugin.c
+[`pluginsdk/examples/MCObserverPlugin.c`]: ../../pluginsdk/examples/MCObserverPlugin.c
+[`pluginsdk/examples/ObjectRewritePlugin.c`]: ../../pluginsdk/examples/ObjectRewritePlugin.c
+[`PluginTarget.h`]: ../../neverc/include/neverc/Plugin/PluginTarget.h
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json

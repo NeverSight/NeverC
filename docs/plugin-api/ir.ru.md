@@ -4,7 +4,7 @@
 
 # API IR плагинов NeverC
 
-`PluginIR.h` открывает LLVM IR через шесть таблиц возможностей и порождённую
+[`PluginIR.h`] открывает LLVM IR через шесть таблиц возможностей и порождённую
 схему. Плагин читает и переписывает IR, регистрирует проходы в пяти устойчивых
 точках конвейера, определяет собственные анализы или целиком заменяет генерацию
 IR и оптимизационный конвейер — не включив при этом ни одного заголовка LLVM.
@@ -32,7 +32,7 @@ IR и оптимизационный конвейер — не включив п
 Каждая при major 1 имеет статус `NEVERC_INTERFACE_STABLE`. Договаривайтесь через
 соответствующие `NEVERC_IR_*_API_MAJOR` / `_MINOR` и проверяйте, что `TableSize`
 дотягивается до последнего вызываемого вами слота — ровно так, как это делает
-`pluginsdk/examples/FunctionPass.c`:
+[`pluginsdk/examples/FunctionPass.c`]:
 
 ```c
 Status = Bootstrap->QueryInterface(
@@ -68,7 +68,7 @@ if (!Table ||
 
 ## Схема
 
-`Schema/PluginIRSchema.inc` порождается и включается из `PluginIR.h`. Он
+[`Schema/PluginIRSchema.inc`] порождается и включается из [`PluginIR.h`]. Он
 публикует дайджест и следующие наборы констант:
 
 ```c
@@ -225,7 +225,7 @@ Core->HasFunctionAttribute(Core->Context, Task, Function, SV("noinline"),
                            &Present);
 ```
 
-`pluginsdk/examples/CustomCallConvPlugin.c` использует это вместе с
+[`pluginsdk/examples/CustomCallConvPlugin.c`] использует это вместе с
 `GetFunctionStringAttribute`, чтобы управлять соглашением о вызовах, заданным
 данными.
 
@@ -417,9 +417,9 @@ Gen->PublishModule(Gen->Context, Frame, &Descriptor, &Output);
 
 | Файл | Что показывает |
 |---|---|
-| `pluginsdk/examples/FunctionPass.c` | Функциональный проход только для чтения, вместе с согласованием ABI |
-| `pluginsdk/examples/ExamplePlugin.c` | Модульный проход, обходящий функции курсором значений |
-| `pluginsdk/examples/CustomCallConvPlugin.c` | Атрибуты и свойства места вызова |
+| [`pluginsdk/examples/FunctionPass.c`] | Функциональный проход только для чтения, вместе с согласованием ABI |
+| [`pluginsdk/examples/ExamplePlugin.c`] | Модульный проход, обходящий функции курсором значений |
+| [`pluginsdk/examples/CustomCallConvPlugin.c`] | Атрибуты и свойства места вызова |
 
 ```sh
 cmake --build build-neverc --target neverc-plugin-example-function-pass
@@ -438,7 +438,7 @@ build-neverc/bin/neverc \
 - Обнуляйте каждую выходную структуру и задавайте её `Header` перед вызовом,
   который её заполняет.
 - Не зашивайте числовые значения опкодов, типов и свойств. Берите имена из
-  `PluginIRSchema.inc`, чтобы пересмотр схемы становился ошибкой компиляции.
+  [`PluginIRSchema.inc`], чтобы пересмотр схемы становился ошибкой компиляции.
 - Каждому `BeginMutation` соответствует ровно один `DestroyMutation`, а каждому
   `CreateBuilder` — ровно один `DestroyBuilder`, включая пути ошибок.
 - Освобождайте то, что вручает `ExportModule`, через
@@ -450,5 +450,15 @@ build-neverc/bin/neverc \
   обойдёт.
 
 Нормативные объявления, константы схемы, политики фаз и свидетельства тестов
-смотрите в `PluginIR.h`, `Schema/PluginIRSchema.inc`,
-`Schema/PhaseSchema.json` и `coverage.json`.
+смотрите в [`PluginIR.h`], [`Schema/PluginIRSchema.inc`],
+[`Schema/PhaseSchema.json`] и [`coverage.json`].
+
+<!-- reference links -->
+[`coverage.json`]: coverage.json
+[`PluginIR.h`]: ../../neverc/include/neverc/Plugin/PluginIR.h
+[`PluginIRSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginIRSchema.inc
+[`pluginsdk/examples/CustomCallConvPlugin.c`]: ../../pluginsdk/examples/CustomCallConvPlugin.c
+[`pluginsdk/examples/ExamplePlugin.c`]: ../../pluginsdk/examples/ExamplePlugin.c
+[`pluginsdk/examples/FunctionPass.c`]: ../../pluginsdk/examples/FunctionPass.c
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`Schema/PluginIRSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginIRSchema.inc

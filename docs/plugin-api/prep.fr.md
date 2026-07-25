@@ -4,7 +4,7 @@
 
 # API du préprocesseur des plugins NeverC
 
-`PluginPrep.h` expose le préprocesseur de deux manières. Un **abonnement** à 39
+[`PluginPrep.h`] expose le préprocesseur de deux manières. Un **abonnement** à 39
 genres d'événements vous donne une trace en lecture seule de tout ce que fait le
 préprocesseur : entrée dans un fichier, définition et expansion de macro,
 évaluation de conditions, pragmas. Six **phases** vont plus loin et vous
@@ -24,7 +24,7 @@ Bootstrap->QueryInterface(
 ```
 
 Les 230 genres de jetons (`NEVERC_TOKEN_KIND_COUNT`) et les genres de mots-clés
-du préprocesseur proviennent de `Schema/PluginPrepSchema.inc`, que l'en-tête
+du préprocesseur proviennent de [`Schema/PluginPrepSchema.inc`], que l'en-tête
 inclut et dont le majeur de capacité doit être égal à `NEVERC_PREP_API_MAJOR` —
 un désaccord est une erreur de compilation, non une surprise à l'exécution.
 Chaque genre porte aussi une catégorie : `NEVERC_TOKEN_CATEGORY_SPECIAL`,
@@ -240,7 +240,7 @@ Prep->DestroyTokenBuilder(Prep->Context, Task, Builder);
 
 Utilisez `TokenBuilderSetKind` pour les signes de ponctuation et les mots-clés,
 et `TokenBuilderSetIdentifier` pour les identifiants. Les constantes de genre de
-jeton viennent de `PluginPrepSchema.inc`.
+jeton viennent de [`PluginPrepSchema.inc`].
 
 Pour un flux entier — la phase `neverc.prep.build_token_stream` — accumulez dans
 un constructeur de flux et validez en une fois :
@@ -296,5 +296,11 @@ Prep->CreateFeatureQueryPhaseOutput(Prep->Context, Frame, Continuation, &Out,
 - Renvoyez `NEVERC_STATUS_INVALID_ARGUMENT` pour un pointeur obligatoire
   manquant, et ne laissez jamais une exception franchir la frontière.
 
-Voir `PluginPrep.h` et `Schema/PluginPrepSchema.inc` pour les déclarations
-normatives, et `Schema/PrepSchema.json` pour le schéma des genres de jetons.
+Voir [`PluginPrep.h`] et [`Schema/PluginPrepSchema.inc`] pour les déclarations
+normatives, et [`Schema/PrepSchema.json`] pour le schéma des genres de jetons.
+
+<!-- reference links -->
+[`PluginPrep.h`]: ../../neverc/include/neverc/Plugin/PluginPrep.h
+[`PluginPrepSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginPrepSchema.inc
+[`Schema/PluginPrepSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginPrepSchema.inc
+[`Schema/PrepSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PrepSchema.json

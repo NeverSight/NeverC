@@ -111,8 +111,8 @@ Die Phasen in ihrer Reihenfolge:
 8. der versiegelte Commit.
 
 Die normative Quelle für IDs, Policies, Stabilitätsstufen und Gates ist
-`neverc/include/neverc/Plugin/Schema/PhaseSchema.json`; der ausführbare
-Abdeckungsvertrag ist `docs/plugin-api/coverage.json`.
+[`neverc/include/neverc/Plugin/Schema/PhaseSchema.json`]; der ausführbare
+Abdeckungsvertrag ist [`docs/plugin-api/coverage.json`].
 
 ## Eingebaute Transformationen sind ebenfalls Provider
 
@@ -220,5 +220,11 @@ wählt die Ausführungsebene.
   Reentrancy-Modelle.
 
 Einen reinen Lese-Tracer für Phasen finden Sie in
-`pluginsdk/examples/DynCodeTracePlugin.c` und einen Charset-Encoder in
-`pluginsdk/examples/DynCodeEncoderPlugin.c`.
+[`pluginsdk/examples/DynCodeTracePlugin.c`] und einen Charset-Encoder in
+[`pluginsdk/examples/DynCodeEncoderPlugin.c`].
+
+<!-- reference links -->
+[`docs/plugin-api/coverage.json`]: coverage.json
+[`neverc/include/neverc/Plugin/Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`pluginsdk/examples/DynCodeEncoderPlugin.c`]: ../../pluginsdk/examples/DynCodeEncoderPlugin.c
+[`pluginsdk/examples/DynCodeTracePlugin.c`]: ../../pluginsdk/examples/DynCodeTracePlugin.c

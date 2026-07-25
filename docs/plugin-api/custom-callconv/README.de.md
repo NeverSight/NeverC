@@ -34,7 +34,7 @@ gpr:rcx,rdx,r8,r9; xmm:xmm0,xmm1; ret:rax; ret_xmm:xmm0
 | `ret_fpr` | | Zielneutraler Alias für `ret_xmm` |
 | `csr` | | Benutzerdefinierter Satz callee-saved Register (Vorgabe: der Standard-ABI-Satz) |
 
-Jedes Segment darf entfallen, unbekannte Segmente werden ignoriert. Die Schlüssel sind genau einmal in `llvm/include/llvm/CodeGen/NeverCCallConv.h` definiert, sodass Erzeuger und Parser nicht auseinanderdriften können.
+Jedes Segment darf entfallen, unbekannte Segmente werden ignoriert. Die Schlüssel sind genau einmal in [`llvm/include/llvm/CodeGen/NeverCCallConv.h`] definiert, sodass Erzeuger und Parser nicht auseinanderdriften können.
 
 ### Zwei Argumentmodi
 
@@ -74,7 +74,7 @@ GPRs werden stets in ihrer 64-Bit-Schreibweise notiert; das Backend verengt sie 
 
 ### 1. Plugin-gesteuert (empfohlen)
 
-Das Referenz-Plugin `CustomCallConvPlugin.c` liegt unter `pluginsdk/examples/`. Es registriert einen modulweiten IR-Pass in der Phase `neverc.ir.pass.post_opt`.
+Das Referenz-Plugin [`CustomCallConvPlugin.c`] liegt unter `pluginsdk/examples/`. Es registriert einen modulweiten IR-Pass in der Phase `neverc.ir.pass.post_opt`.
 
 **Plugin bauen:**
 
@@ -185,7 +185,7 @@ Ein Plugin, das ein eigenes Ziel registriert, kann stattdessen einen `PlanCallin
 
 ## Tests
 
-Die GoogleTest-Suite liegt in `tests/neverc/CustomCallConvTests.cpp` und umfasst 26 Tests. Jeder baut das Beispiel-Plugin, übersetzt ein kleines Programm unter einer gegebenen Spec nach Assembly und prüft die resultierende Register- oder Stack-Platzierung.
+Die GoogleTest-Suite liegt in [`tests/neverc/CustomCallConvTests.cpp`] und umfasst 26 Tests. Jeder baut das Beispiel-Plugin, übersetzt ein kleines Programm unter einer gegebenen Spec nach Assembly und prüft die resultierende Register- oder Stack-Platzierung.
 
 ```bash
 ninja -C build-neverc neverc-tests
@@ -243,3 +243,8 @@ custom_attr(...)              (neverc.ir.pass.post_opt)
 ```
 
 Der Ausführer im Backend ist eine **einmalige Implementierung** — sämtliche Richtlinienentscheidungen leben im Plugin. Eine neue Konvention hinzuzufügen erfordert nie einen Neubau von NeverC.
+
+<!-- reference links -->
+[`CustomCallConvPlugin.c`]: ../../../pluginsdk/examples/CustomCallConvPlugin.c
+[`llvm/include/llvm/CodeGen/NeverCCallConv.h`]: ../../../llvm/include/llvm/CodeGen/NeverCCallConv.h
+[`tests/neverc/CustomCallConvTests.cpp`]: ../../../tests/neverc/CustomCallConvTests.cpp

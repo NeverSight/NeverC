@@ -4,7 +4,7 @@
 
 # NeverC 外掛 IR API
 
-`PluginIR.h` 透過六張能力表與一份產生的 schema 公開 LLVM IR。外掛可以讀寫 IR、
+[`PluginIR.h`] 透過六張能力表與一份產生的 schema 公開 LLVM IR。外掛可以讀寫 IR、
 在五個穩定的流水線點註冊 pass、定義自己的分析，或是乾脆整個取代 IR 產生與最佳化
 流水線──而且完全不需要包含任何一個 LLVM 標頭檔。
 
@@ -28,7 +28,7 @@ opcode、型別種類與指令屬性都是**穩定的 schema ID**，而不是 LL
 
 每一張在 major 1 都是 `NEVERC_INTERFACE_STABLE`。請用對應的
 `NEVERC_IR_*_API_MAJOR` / `_MINOR` 協商，並驗證 `TableSize` 至少涵蓋你會呼叫的
-最後一個槽位，就像 `pluginsdk/examples/FunctionPass.c` 那樣：
+最後一個槽位，就像 [`pluginsdk/examples/FunctionPass.c`] 那樣：
 
 ```c
 Status = Bootstrap->QueryInterface(
@@ -64,7 +64,7 @@ if (!Table ||
 
 ## Schema
 
-`Schema/PluginIRSchema.inc` 是產生出來的，並由 `PluginIR.h` 包含。它發布一份摘要
+[`Schema/PluginIRSchema.inc`] 是產生出來的，並由 [`PluginIR.h`] 包含。它發布一份摘要
 與這些常數集合：
 
 ```c
@@ -212,7 +212,7 @@ Core->HasFunctionAttribute(Core->Context, Task, Function, SV("noinline"),
                            &Present);
 ```
 
-`pluginsdk/examples/CustomCallConvPlugin.c` 就是把這個和
+[`pluginsdk/examples/CustomCallConvPlugin.c`] 就是把這個和
 `GetFunctionStringAttribute` 搭配起來，驅動一個由資料定義的呼叫慣例。
 
 ## 交易式變更
@@ -393,9 +393,9 @@ Gen->PublishModule(Gen->Context, Frame, &Descriptor, &Output);
 
 | 檔案 | 展示 |
 |---|---|
-| `pluginsdk/examples/FunctionPass.c` | 一個唯讀的函式 pass，含 ABI 協商 |
-| `pluginsdk/examples/ExamplePlugin.c` | 用值游標走訪函式的模組層級 pass |
-| `pluginsdk/examples/CustomCallConvPlugin.c` | 屬性與呼叫點屬性 |
+| [`pluginsdk/examples/FunctionPass.c`] | 一個唯讀的函式 pass，含 ABI 協商 |
+| [`pluginsdk/examples/ExamplePlugin.c`] | 用值游標走訪函式的模組層級 pass |
+| [`pluginsdk/examples/CustomCallConvPlugin.c`] | 屬性與呼叫點屬性 |
 
 ```sh
 cmake --build build-neverc --target neverc-plugin-example-function-pass
@@ -411,7 +411,7 @@ build-neverc/bin/neverc \
 - 每個回呼都要回傳 `NevercStatus`。外掛的失敗會變成結構化診斷；絕不要讓例外跨越
   C 邊界。
 - 在會被填值的呼叫之前，把每個輸出結構清零並設好它的 `Header`。
-- 不要寫死 opcode、型別或屬性的數值。請用 `PluginIRSchema.inc` 裡的名稱，這樣
+- 不要寫死 opcode、型別或屬性的數值。請用 [`PluginIRSchema.inc`] 裡的名稱，這樣
   schema 一改版就會變成編譯錯誤。
 - 每個 `BeginMutation` 都恰好對到一個 `DestroyMutation`，每個 `CreateBuilder` 恰
   好對到一個 `DestroyBuilder`，錯誤路徑上也一樣。
@@ -421,5 +421,15 @@ build-neverc/bin/neverc \
   pass 會平行執行。
 - `neverc.ir.final_verify` 是封印的。外掛做什麼都跳不過它。
 
-規範性宣告、schema 常數、階段政策與測試證據，請見 `PluginIR.h`、
-`Schema/PluginIRSchema.inc`、`Schema/PhaseSchema.json` 與 `coverage.json`。
+規範性宣告、schema 常數、階段政策與測試證據，請見 [`PluginIR.h`]、
+[`Schema/PluginIRSchema.inc`]、[`Schema/PhaseSchema.json`] 與 [`coverage.json`]。
+
+<!-- reference links -->
+[`coverage.json`]: coverage.json
+[`PluginIR.h`]: ../../neverc/include/neverc/Plugin/PluginIR.h
+[`PluginIRSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginIRSchema.inc
+[`pluginsdk/examples/CustomCallConvPlugin.c`]: ../../pluginsdk/examples/CustomCallConvPlugin.c
+[`pluginsdk/examples/ExamplePlugin.c`]: ../../pluginsdk/examples/ExamplePlugin.c
+[`pluginsdk/examples/FunctionPass.c`]: ../../pluginsdk/examples/FunctionPass.c
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`Schema/PluginIRSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginIRSchema.inc

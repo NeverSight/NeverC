@@ -4,9 +4,9 @@
 
 # NeverC 플러그인 타깃·MC·어셈블리·오브젝트 API
 
-백엔드는 네 개의 헤더와 스물아홉 개의 페이즈입니다. `PluginTarget.h`는 타깃과 코
-드 생성 경로를 기술합니다. `PluginMC.h`는 기계어를 만들고 관찰합니다. 어셈블리
-파싱과 출력도 같은 헤더에 있습니다. `PluginObject.h`는 재배치 가능 파일을 정규화
+백엔드는 네 개의 헤더와 스물아홉 개의 페이즈입니다. [`PluginTarget.h`]는 타깃과 코
+드 생성 경로를 기술합니다. [`PluginMC.h`]는 기계어를 만들고 관찰합니다. 어셈블리
+파싱과 출력도 같은 헤더에 있습니다. [`PluginObject.h`]는 재배치 가능 파일을 정규화
 된 그래프로 바꾸고 다시 되돌립니다.
 
 이들을 합치면 플러그인은 타깃을 추가하고, 로워링 단계 하나 또는 전부를 교체하고,
@@ -196,7 +196,7 @@ plan(void *UserData, const NevercCallingConventionQuery *Query,
 `Query->SchemaDigest`는 LOCKSTEP 값입니다——`RegisterNumber`는 그것이 지목하는 스
 키마에 대해서만 의미를 가집니다. 완전한 실작업 예시는
 [사용자 정의 호출 규약](custom-callconv/README.ko.md)과
-`pluginsdk/examples/CustomCallConvPlugin.c`를 보세요.
+[`pluginsdk/examples/CustomCallConvPlugin.c`]를 보세요.
 
 ## 코드 생성 경로
 
@@ -319,7 +319,7 @@ Emission->BeginInstructionReplacement(Emission->Context, Frame, &Builder);
 Emission->PublishInstructionReplacement(Emission->Context, Frame, NewInstr);
 ```
 
-`pluginsdk/examples/MCObserverPlugin.c`가 이것의 읽기 전용 버전입니다.
+[`pluginsdk/examples/MCObserverPlugin.c`]가 이것의 읽기 전용 버전입니다.
 
 ## 인코더, 디코더, 레이아웃
 
@@ -461,7 +461,7 @@ ObjectFormat->RegisterFormat(ObjectFormat->Context, RegistrarContext,
 검증 실패는 스테이징을 중단시키므로, 실패가 디스크에 반쪽짜리 파일을 남기는 일은
 없습니다.
 
-`pluginsdk/examples/ObjectRewritePlugin.c`가 완전한 트랜잭션 기반 재작성 예제입니
+[`pluginsdk/examples/ObjectRewritePlugin.c`]가 완전한 트랜잭션 기반 재작성 예제입니
 다.
 
 ## 규칙
@@ -483,6 +483,16 @@ ObjectFormat->RegisterFormat(ObjectFormat->Context, RegistrarContext,
 - `codegen.product_verify`, `assembly.final_verify`, `assembly.commit`,
   `object.final_verify`, `object.commit`은 봉인되어 있다. 관찰만 하라.
 
-규범적 선언은 `PluginTarget.h`, `PluginMC.h`, `PluginObject.h`,
-`Schema/PhaseSchema.json`을 보고, 이 안정 페이즈들을 각각 긍정·부정·교체·읽기 전용
-옵저버·봉인 게이트 테스트에 매핑한 것은 `coverage.json`을 보세요.
+규범적 선언은 [`PluginTarget.h`], [`PluginMC.h`], [`PluginObject.h`],
+[`Schema/PhaseSchema.json`]을 보고, 이 안정 페이즈들을 각각 긍정·부정·교체·읽기 전용
+옵저버·봉인 게이트 테스트에 매핑한 것은 [`coverage.json`]을 보세요.
+
+<!-- reference links -->
+[`coverage.json`]: coverage.json
+[`PluginMC.h`]: ../../neverc/include/neverc/Plugin/PluginMC.h
+[`PluginObject.h`]: ../../neverc/include/neverc/Plugin/PluginObject.h
+[`pluginsdk/examples/CustomCallConvPlugin.c`]: ../../pluginsdk/examples/CustomCallConvPlugin.c
+[`pluginsdk/examples/MCObserverPlugin.c`]: ../../pluginsdk/examples/MCObserverPlugin.c
+[`pluginsdk/examples/ObjectRewritePlugin.c`]: ../../pluginsdk/examples/ObjectRewritePlugin.c
+[`PluginTarget.h`]: ../../neverc/include/neverc/Plugin/PluginTarget.h
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json

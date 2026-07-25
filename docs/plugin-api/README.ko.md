@@ -16,7 +16,7 @@ neverc_plugin_entry(const NevercBootstrapAPI *Bootstrap,
                     NevercPluginDescriptor *OutPlugin);
 ```
 
-`PluginCore.h`에 선언된 이 시그니처가 링크 계약의 전부입니다. 그 밖의 모든 것——IR
+[`PluginCore.h`]에 선언된 이 시그니처가 링크 계약의 전부입니다. 그 밖의 모든 것——IR
 읽기, 오브젝트 그래프 재작성, 최적화 파이프라인 교체——은 ID로 호스트에 요청하는
 테이블을 통해 도달합니다.
 
@@ -139,8 +139,8 @@ typedef struct NevercPhaseFrame {
 } NevercPhaseFrame;
 ```
 
-`Schema/PhaseSchema.json`이 페이즈 ID, 정책, 안정성 등급, 검증기 게이트의 규범적
-출처입니다. 생성되는 `Schema/PluginPhaseSchema.inc`는 그것들을 각각 컴파일 타임
+[`Schema/PhaseSchema.json`]이 페이즈 ID, 정책, 안정성 등급, 검증기 게이트의 규범적
+출처입니다. 생성되는 [`Schema/PluginPhaseSchema.inc`]는 그것들을 각각 컴파일 타임
 상수로 노출합니다——페이즈 `neverc.ir.pass.pipeline_start`의 경우:
 
 ```c
@@ -158,7 +158,7 @@ NEVERC_PHASE_IR_PASS_PIPELINE_START_INPUT_HIGH /* and _INPUT_LOW, _OUTPUT_*     
 
 ## 완전한 최소 플러그인
 
-아래는 `pluginsdk/templates/minimal/Plugin.c` 원문 그대로입니다. 로드되고, ABI를
+아래는 [`pluginsdk/templates/minimal/Plugin.c`] 원문 그대로입니다. 로드되고, ABI를
 협상하고, 아무것도 등록하지 않고, 깔끔하게 언로드됩니다——이 디렉터리를 복사해서
 여기서부터 키워 나가세요.
 
@@ -267,20 +267,20 @@ if (!Table || TableSize < offsetof(NevercIRPassAPI, RegisterPass) +
 
 | 인터페이스 매크로 쌍 | 테이블 | 헤더 |
 |---|---|---|
-| `NEVERC_INTERFACE_CORE_{HIGH,LOW}` | `NevercCoreAPI` | `PluginCore.h` |
-| `NEVERC_INTERFACE_DRIVER_*` | `NevercDriverAPI` | `PluginDriver.h` |
-| `NEVERC_INTERFACE_IO_*`, `..._SOURCE_LOCATION_*` | `NevercIOAPI`, `NevercSourceLocationAPI` | `PluginSource.h` |
-| `NEVERC_INTERFACE_PREP_*` | `NevercPrepAPI` | `PluginPrep.h` |
-| `NEVERC_INTERFACE_AST_*`, `..._PARSER_*` | `NevercASTAPI`, `NevercParserAPI` | `PluginAST.h` |
-| `NEVERC_INTERFACE_SEMA_*` | `NevercSemaAPI` | `PluginSema.h` |
-| `NEVERC_INTERFACE_IR_CORE_*`, `..._IR_BUILDER_*`, `..._IR_ANALYSIS_*`, `..._IR_PASS_*`, `..._IR_GEN_*`, `..._IR_OPTIMIZATION_*` | IR 테이블 6개 | `PluginIR.h` |
-| `NEVERC_INTERFACE_TARGET_*`, `..._TARGET_ABI_*`, `..._CALLING_CONVENTION_*` | `NevercTargetAPI`, `NevercTargetABIAPI`, `NevercCallingConventionAPI` | `PluginTarget.h` |
-| `NEVERC_INTERFACE_MIR_*`, `..._MIR_ANALYSIS_*`, `..._MIR_PASS_*`, `..._MIR_PROVIDER_*` | MIR 테이블 4개 | `PluginMIR.h` |
-| `NEVERC_INTERFACE_MC_*`, `..._MC_EMISSION_*`, `..._MC_PROVIDER_*`, `..._ASSEMBLY_PROVIDER_*` | MC 테이블 4개 | `PluginMC.h` |
-| `NEVERC_INTERFACE_OBJECT_*`, `..._OBJECT_FORMAT_*`, `..._OBJECT_PHASE_*` | 오브젝트 테이블 3개 | `PluginObject.h` |
-| `NEVERC_INTERFACE_LINK_*`, `..._LINK_REGISTRAR_*`, `..._LINK_PHASE_*` | 링크 테이블 3개 | `PluginLink.h` |
-| `NEVERC_INTERFACE_LTO_*`, `..._LTO_REGISTRAR_*` | `NevercLTOAPI`, `NevercLTORegistrarAPI` | `PluginLTO.h` |
-| `NEVERC_INTERFACE_DYNCODE_*`, `..._DYNCODE_REGISTRAR_*`, `..._DYNCODE_PHASE_*` | dyncode 테이블 3개 | `PluginDynCode.h` |
+| `NEVERC_INTERFACE_CORE_{HIGH,LOW}` | `NevercCoreAPI` | [`PluginCore.h`] |
+| `NEVERC_INTERFACE_DRIVER_*` | `NevercDriverAPI` | [`PluginDriver.h`] |
+| `NEVERC_INTERFACE_IO_*`, `..._SOURCE_LOCATION_*` | `NevercIOAPI`, `NevercSourceLocationAPI` | [`PluginSource.h`] |
+| `NEVERC_INTERFACE_PREP_*` | `NevercPrepAPI` | [`PluginPrep.h`] |
+| `NEVERC_INTERFACE_AST_*`, `..._PARSER_*` | `NevercASTAPI`, `NevercParserAPI` | [`PluginAST.h`] |
+| `NEVERC_INTERFACE_SEMA_*` | `NevercSemaAPI` | [`PluginSema.h`] |
+| `NEVERC_INTERFACE_IR_CORE_*`, `..._IR_BUILDER_*`, `..._IR_ANALYSIS_*`, `..._IR_PASS_*`, `..._IR_GEN_*`, `..._IR_OPTIMIZATION_*` | IR 테이블 6개 | [`PluginIR.h`] |
+| `NEVERC_INTERFACE_TARGET_*`, `..._TARGET_ABI_*`, `..._CALLING_CONVENTION_*` | `NevercTargetAPI`, `NevercTargetABIAPI`, `NevercCallingConventionAPI` | [`PluginTarget.h`] |
+| `NEVERC_INTERFACE_MIR_*`, `..._MIR_ANALYSIS_*`, `..._MIR_PASS_*`, `..._MIR_PROVIDER_*` | MIR 테이블 4개 | [`PluginMIR.h`] |
+| `NEVERC_INTERFACE_MC_*`, `..._MC_EMISSION_*`, `..._MC_PROVIDER_*`, `..._ASSEMBLY_PROVIDER_*` | MC 테이블 4개 | [`PluginMC.h`] |
+| `NEVERC_INTERFACE_OBJECT_*`, `..._OBJECT_FORMAT_*`, `..._OBJECT_PHASE_*` | 오브젝트 테이블 3개 | [`PluginObject.h`] |
+| `NEVERC_INTERFACE_LINK_*`, `..._LINK_REGISTRAR_*`, `..._LINK_PHASE_*` | 링크 테이블 3개 | [`PluginLink.h`] |
+| `NEVERC_INTERFACE_LTO_*`, `..._LTO_REGISTRAR_*` | `NevercLTOAPI`, `NevercLTORegistrarAPI` | [`PluginLTO.h`] |
+| `NEVERC_INTERFACE_DYNCODE_*`, `..._DYNCODE_REGISTRAR_*`, `..._DYNCODE_PHASE_*` | dyncode 테이블 3개 | [`PluginDynCode.h`] |
 
 각 헤더는 `QueryInterface`에 넘겨야 할 대응 `NEVERC_<DOMAIN>_API_MAJOR`와
 `_MINOR`도 정의합니다.
@@ -347,7 +347,7 @@ typedef NevercStatus(NEVERC_CALL *NevercPhaseObserverFn)(
 
 `Points`는 `NEVERC_OBSERVER_BEFORE`(1), `NEVERC_OBSERVER_AFTER`(2),
 `NEVERC_OBSERVER_AFTER_COMMIT`(4)의 비트마스크이며 0이 아니어야 합니다. 어느 것이
-발생했는지는 `Point` 인자가 알려줍니다. `pluginsdk/examples/DriverTracePlugin.c`에서:
+발생했는지는 `Point` 인자가 알려줍니다. [`pluginsdk/examples/DriverTracePlugin.c`]에서:
 
 ```c
 NevercObserverDescriptor Observer = {0};
@@ -620,7 +620,7 @@ Core->GetPluginOptionValue(Core->Context, Session, PluginID,
 - 호스트가 메모리를 계상하도록 하려면 `NevercCoreAPI.Allocate` / `Reallocate` /
   `Deallocate`로 할당한다.
 - 가변 상태는 호스트가 제공하는 process/session/task 상태에 둔다. 전역 가변 상태
-  는 `utils/plugin-api/check-global-state.py`가 검사한다.
+  는 [`utils/plugin-api/check-global-state.py`]가 검사한다.
 
 모든 공개 구조체는 `NEVERC_ABI_PACK_BEGIN`(8바이트 패킹) 아래에 배치되며 고정 폭
 타입만 사용합니다. 새 함수는 독립적으로 버전이 매겨진 기능 테이블 끝에 덧붙습니
@@ -683,19 +683,19 @@ cmake --build build-neverc --target neverc-pluginsdk-examples
 
 | 예제 | CMake 타깃 | 보여 주는 것 |
 |---|---|---|
-| `DriverTracePlugin.c` | `neverc-plugin-example-driver-trace` | 옵션 등록, 페이즈 관찰, 잡 가로채기 |
-| `VirtualHeaderPlugin.c` | `neverc-plugin-example-virtual-header` | 메모리 내 헤더를 제공하는 VFS 프로바이더 |
-| `ASTRewritePlugin.c` | `neverc-plugin-example-ast-rewrite` | 파서 가로채기와 원자적 AST 변경 |
-| `ExamplePlugin.c` | `neverc-plugin-example-ir-overview` | 값 커서로 함수 목록을 순회하는 모듈 수준 IR 패스 |
-| `FunctionPass.c` | `neverc-plugin-example-function-pass` | 안정적인 IR 함수 패스 |
-| `MachinePass.c` | `neverc-plugin-example-machine-pass` | pre-emit 훅의 안정적인 MIR 패스 |
-| `MCObserverPlugin.c` | `neverc-plugin-example-mc-observer` | 읽기 전용 MC 방출 이벤트 |
-| `ObjectRewritePlugin.c` | `neverc-plugin-example-object-rewrite` | 트랜잭션 기반 ObjectGraph 재작성 |
-| `CustomCallConvPlugin.c` | `neverc-plugin-example-custom-callconv` | 데이터 주도 호출 규약 |
-| `DynCodeTracePlugin.c` | `neverc-plugin-example-dyncode-trace` | dyncode 파이프라인 관찰 |
-| `DynCodeEncoderPlugin.c` | `neverc-plugin-example-dyncode-encoder` | dyncode 문자셋 인코딩 가로채기 |
-| `CrtShimPlugin.c` | `neverc-plugin-example-crt-shim` | CRT 의존성이 전혀 없는 플러그인 |
-| `BenchPlugin.c` | `neverc-plugin-example-abi-bench` | ABI 호출 처리량 마이크로벤치마크 |
+| [`DriverTracePlugin.c`] | `neverc-plugin-example-driver-trace` | 옵션 등록, 페이즈 관찰, 잡 가로채기 |
+| [`VirtualHeaderPlugin.c`] | `neverc-plugin-example-virtual-header` | 메모리 내 헤더를 제공하는 VFS 프로바이더 |
+| [`ASTRewritePlugin.c`] | `neverc-plugin-example-ast-rewrite` | 파서 가로채기와 원자적 AST 변경 |
+| [`ExamplePlugin.c`] | `neverc-plugin-example-ir-overview` | 값 커서로 함수 목록을 순회하는 모듈 수준 IR 패스 |
+| [`FunctionPass.c`] | `neverc-plugin-example-function-pass` | 안정적인 IR 함수 패스 |
+| [`MachinePass.c`] | `neverc-plugin-example-machine-pass` | pre-emit 훅의 안정적인 MIR 패스 |
+| [`MCObserverPlugin.c`] | `neverc-plugin-example-mc-observer` | 읽기 전용 MC 방출 이벤트 |
+| [`ObjectRewritePlugin.c`] | `neverc-plugin-example-object-rewrite` | 트랜잭션 기반 ObjectGraph 재작성 |
+| [`CustomCallConvPlugin.c`] | `neverc-plugin-example-custom-callconv` | 데이터 주도 호출 규약 |
+| [`DynCodeTracePlugin.c`] | `neverc-plugin-example-dyncode-trace` | dyncode 파이프라인 관찰 |
+| [`DynCodeEncoderPlugin.c`] | `neverc-plugin-example-dyncode-encoder` | dyncode 문자셋 인코딩 가로채기 |
+| [`CrtShimPlugin.c`] | `neverc-plugin-example-crt-shim` | CRT 의존성이 전혀 없는 플러그인 |
+| [`BenchPlugin.c`] | `neverc-plugin-example-abi-bench` | ABI 호출 처리량 마이크로벤치마크 |
 
 하나 로드해 보기:
 
@@ -708,10 +708,48 @@ neverc -fplugin=build-neverc/neverc/pluginsdk/examples/host/FunctionPass.so \
 
 | 파일 | 보장하는 것 |
 |---|---|
-| `neverc/include/neverc/Plugin/Schema/PhaseSchema.json` | 페이즈 ID, 정책, 안정성, 검증기 게이트 |
-| `pluginsdk/manifest/plugin.json` | ABI 버전, 인터페이스 ID/버전/안정성, 스키마 다이제스트, 지원 타깃 |
-| `pluginsdk/abi/plugin.json` | 호스트 ABI 키별로 측정한 모든 공개 구조체의 크기, 정렬, 필드 오프셋 |
-| `docs/plugin-api/coverage.json` | 각 안정 페이즈를 긍정·부정·교체·옵저버·봉인 게이트 테스트에 매핑 |
+| [`neverc/include/neverc/Plugin/Schema/PhaseSchema.json`] | 페이즈 ID, 정책, 안정성, 검증기 게이트 |
+| [`pluginsdk/manifest/plugin.json`] | ABI 버전, 인터페이스 ID/버전/안정성, 스키마 다이제스트, 지원 타깃 |
+| [`pluginsdk/abi/plugin.json`] | 호스트 ABI 키별로 측정한 모든 공개 구조체의 크기, 정렬, 필드 오프셋 |
+| [`docs/plugin-api/coverage.json`] | 각 안정 페이즈를 긍정·부정·교체·옵저버·봉인 게이트 테스트에 매핑 |
 
 따라서 SDK는 호스트에 대해 기계적으로 검증할 수 있고, 플러그인 빌드는 자신이 로드
 될 ABI 키에 대해 구조체 레이아웃을 단언할 수 있습니다.
+
+<!-- reference links -->
+[`ASTRewritePlugin.c`]: ../../pluginsdk/examples/ASTRewritePlugin.c
+[`BenchPlugin.c`]: ../../pluginsdk/examples/BenchPlugin.c
+[`CrtShimPlugin.c`]: ../../pluginsdk/examples/CrtShimPlugin.c
+[`CustomCallConvPlugin.c`]: ../../pluginsdk/examples/CustomCallConvPlugin.c
+[`docs/plugin-api/coverage.json`]: coverage.json
+[`DriverTracePlugin.c`]: ../../pluginsdk/examples/DriverTracePlugin.c
+[`DynCodeEncoderPlugin.c`]: ../../pluginsdk/examples/DynCodeEncoderPlugin.c
+[`DynCodeTracePlugin.c`]: ../../pluginsdk/examples/DynCodeTracePlugin.c
+[`ExamplePlugin.c`]: ../../pluginsdk/examples/ExamplePlugin.c
+[`FunctionPass.c`]: ../../pluginsdk/examples/FunctionPass.c
+[`MachinePass.c`]: ../../pluginsdk/examples/MachinePass.c
+[`MCObserverPlugin.c`]: ../../pluginsdk/examples/MCObserverPlugin.c
+[`neverc/include/neverc/Plugin/Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`ObjectRewritePlugin.c`]: ../../pluginsdk/examples/ObjectRewritePlugin.c
+[`PluginAST.h`]: ../../neverc/include/neverc/Plugin/PluginAST.h
+[`PluginCore.h`]: ../../neverc/include/neverc/Plugin/PluginCore.h
+[`PluginDriver.h`]: ../../neverc/include/neverc/Plugin/PluginDriver.h
+[`PluginDynCode.h`]: ../../neverc/include/neverc/Plugin/PluginDynCode.h
+[`PluginIR.h`]: ../../neverc/include/neverc/Plugin/PluginIR.h
+[`PluginLink.h`]: ../../neverc/include/neverc/Plugin/PluginLink.h
+[`PluginLTO.h`]: ../../neverc/include/neverc/Plugin/PluginLTO.h
+[`PluginMC.h`]: ../../neverc/include/neverc/Plugin/PluginMC.h
+[`PluginMIR.h`]: ../../neverc/include/neverc/Plugin/PluginMIR.h
+[`PluginObject.h`]: ../../neverc/include/neverc/Plugin/PluginObject.h
+[`PluginPrep.h`]: ../../neverc/include/neverc/Plugin/PluginPrep.h
+[`pluginsdk/abi/plugin.json`]: ../../pluginsdk/abi/plugin.json
+[`pluginsdk/examples/DriverTracePlugin.c`]: ../../pluginsdk/examples/DriverTracePlugin.c
+[`pluginsdk/manifest/plugin.json`]: ../../pluginsdk/manifest/plugin.json
+[`pluginsdk/templates/minimal/Plugin.c`]: ../../pluginsdk/templates/minimal/Plugin.c
+[`PluginSema.h`]: ../../neverc/include/neverc/Plugin/PluginSema.h
+[`PluginSource.h`]: ../../neverc/include/neverc/Plugin/PluginSource.h
+[`PluginTarget.h`]: ../../neverc/include/neverc/Plugin/PluginTarget.h
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`Schema/PluginPhaseSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginPhaseSchema.inc
+[`utils/plugin-api/check-global-state.py`]: ../../utils/plugin-api/check-global-state.py
+[`VirtualHeaderPlugin.c`]: ../../pluginsdk/examples/VirtualHeaderPlugin.c

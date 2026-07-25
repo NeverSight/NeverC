@@ -4,9 +4,9 @@
 
 # واجهة إضافات NeverC للهدف وMC والتجميع والكائنات
 
-الواجهة الخلفية أربع ترويسات وتسع وعشرون مرحلة. يصف `PluginTarget.h` هدفًا
-والمسارات المارّة عبر توليد الشيفرة. ويبني `PluginMC.h` شيفرة الآلة ويراقبها.
-أما تحليل التجميع وطباعته فيسكنان الترويسة نفسها. ويحوّل `PluginObject.h` ملفًا
+الواجهة الخلفية أربع ترويسات وتسع وعشرون مرحلة. يصف [`PluginTarget.h`] هدفًا
+والمسارات المارّة عبر توليد الشيفرة. ويبني [`PluginMC.h`] شيفرة الآلة ويراقبها.
+أما تحليل التجميع وطباعته فيسكنان الترويسة نفسها. ويحوّل [`PluginObject.h`] ملفًا
 قابلًا لإعادة التموضع إلى رسم بياني مُطبَّع والعكس.
 
 معًا تتيح هذه الترويسات للإضافة أن تضيف هدفًا، أو تستبدل خطوة خفض واحدة أو كلها،
@@ -196,7 +196,7 @@ plan(void *UserData, const NevercCallingConventionQuery *Query,
 الحقل `Query->SchemaDigest` قيمة LOCKSTEP — و`RegisterNumber` لا يعني شيئًا إلا
 مقابل المخطط الذي يسمّيه. للاطلاع على المثال الكامل انظر
 [اصطلاحات استدعاء مخصّصة](custom-callconv/README.ar.md) و
-`pluginsdk/examples/CustomCallConvPlugin.c`.
+[`pluginsdk/examples/CustomCallConvPlugin.c`].
 
 ## مسارات توليد الشيفرة
 
@@ -321,7 +321,7 @@ Emission->BeginInstructionReplacement(Emission->Context, Frame, &Builder);
 Emission->PublishInstructionReplacement(Emission->Context, Frame, NewInstr);
 ```
 
-و`pluginsdk/examples/MCObserverPlugin.c` هو النسخة للقراءة فقط من هذا.
+و[`pluginsdk/examples/MCObserverPlugin.c`] هو النسخة للقراءة فقط من هذا.
 
 ## المرمِّزات والمفكِّكات والتخطيط
 
@@ -461,7 +461,7 @@ ObjectFormat->RegisterFormat(ObjectFormat->Context, RegistrarContext,
 و`Tell` و`ReadAt` و`Insert` و`Append` و`Resize`. والفيضان أو فشل رد النداء أو
 فشل التدقيق يُجهِض التجهيز، فلا يترك الفشل أبدًا نصف ملف على القرص.
 
-و`pluginsdk/examples/ObjectRewritePlugin.c` مثال كامل على إعادة كتابة معاملاتية.
+و[`pluginsdk/examples/ObjectRewritePlugin.c`] مثال كامل على إعادة كتابة معاملاتية.
 
 ## القواعد
 
@@ -482,7 +482,17 @@ ObjectFormat->RegisterFormat(ObjectFormat->Context, RegistrarContext,
 - المراحل `codegen.product_verify` و`assembly.final_verify` و
   `assembly.commit` و`object.final_verify` و`object.commit` مختومة. راقب فقط.
 
-انظر `PluginTarget.h` و`PluginMC.h` و`PluginObject.h` و
-`Schema/PhaseSchema.json` للإعلانات المِعيارية، و`coverage.json` الذي يربط كل
+انظر [`PluginTarget.h`] و[`PluginMC.h`] و[`PluginObject.h`] و
+[`Schema/PhaseSchema.json`] للإعلانات المِعيارية، و[`coverage.json`] الذي يربط كل
 مرحلة من هذه المراحل المستقرة باختباراتها الإيجابية والسلبية والاستبدالية
 والمراقِبة للقراءة فقط واختبارات البوابات المختومة.
+
+<!-- reference links -->
+[`coverage.json`]: coverage.json
+[`PluginMC.h`]: ../../neverc/include/neverc/Plugin/PluginMC.h
+[`PluginObject.h`]: ../../neverc/include/neverc/Plugin/PluginObject.h
+[`pluginsdk/examples/CustomCallConvPlugin.c`]: ../../pluginsdk/examples/CustomCallConvPlugin.c
+[`pluginsdk/examples/MCObserverPlugin.c`]: ../../pluginsdk/examples/MCObserverPlugin.c
+[`pluginsdk/examples/ObjectRewritePlugin.c`]: ../../pluginsdk/examples/ObjectRewritePlugin.c
+[`PluginTarget.h`]: ../../neverc/include/neverc/Plugin/PluginTarget.h
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json

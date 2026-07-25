@@ -4,7 +4,7 @@
 
 # NeverC 插件驱动 API
 
-驱动把一条命令行变成一组被执行的 job。`PluginDriver.h` 把这条流水线暴露为六个
+驱动把一条命令行变成一组被执行的 job。[`PluginDriver.h`] 把这条流水线暴露为六个
 阶段和一张能力表 `NevercDriverAPI`，于是插件可以改写参数、选择工具链、重构
 action 图、增加或替换 job，甚至在进程内直接运行某个 job 而不是派生一个进程。
 
@@ -66,7 +66,7 @@ typedef struct NevercOptionDescriptor {
 } NevercOptionDescriptor;
 ```
 
-摘自 `pluginsdk/examples/DriverTracePlugin.c`：
+摘自 [`pluginsdk/examples/DriverTracePlugin.c`]：
 
 ```c
 NevercOptionDescriptor Option = {0};
@@ -301,7 +301,7 @@ typedef struct NevercJobResultDescriptor {
 
 ## 完整示例：观察参数、拦截 job 执行
 
-摘自 `pluginsdk/examples/DriverTracePlugin.c`。这个插件没有任何全局变量：进程状
+摘自 [`pluginsdk/examples/DriverTracePlugin.c`]。这个插件没有任何全局变量：进程状
 态保存协商到的表，会话级和任务级计数器在每个回调里从宿主取。
 
 ```c
@@ -403,5 +403,11 @@ build-neverc/bin/neverc \
   `NevercJobResultDescriptor.ExecutionFailed` 和 `ErrorMessage` 报告，而不是返
   回非 OK 状态。
 
-规范性声明见 `PluginDriver.h`，驱动阶段策略见 `PhaseSchema.json`，测试证据见
-`coverage.json`。
+规范性声明见 [`PluginDriver.h`]，驱动阶段策略见 [`PhaseSchema.json`]，测试证据见
+[`coverage.json`]。
+
+<!-- reference links -->
+[`coverage.json`]: coverage.json
+[`PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`PluginDriver.h`]: ../../neverc/include/neverc/Plugin/PluginDriver.h
+[`pluginsdk/examples/DriverTracePlugin.c`]: ../../pluginsdk/examples/DriverTracePlugin.c

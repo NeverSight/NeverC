@@ -4,9 +4,9 @@
 
 # NeverC プラグイン ターゲット・MC・アセンブリ・オブジェクト API
 
-バックエンドは 4 つのヘッダーと 29 のフェーズです。`PluginTarget.h` はターゲット
-とコード生成の経路を記述します。`PluginMC.h` は機械語を構築し観測します。アセン
-ブリの解析と出力も同じヘッダーにあります。`PluginObject.h` は再配置可能ファイル
+バックエンドは 4 つのヘッダーと 29 のフェーズです。[`PluginTarget.h`] はターゲット
+とコード生成の経路を記述します。[`PluginMC.h`] は機械語を構築し観測します。アセン
+ブリの解析と出力も同じヘッダーにあります。[`PluginObject.h`] は再配置可能ファイル
 を正規化されたグラフに変換し、また元に戻します。
 
 これらを合わせると、プラグインはターゲットを追加し、低位化ステップの 1 つまたは
@@ -198,7 +198,7 @@ plan(void *UserData, const NevercCallingConventionQuery *Query,
 `Query->SchemaDigest` は LOCKSTEP の値です——`RegisterNumber` は、それが指し示すス
 キーマに対してのみ意味を持ちます。完全な実例は
 [カスタム呼び出し規約](custom-callconv/README.ja.md) と
-`pluginsdk/examples/CustomCallConvPlugin.c` を参照してください。
+[`pluginsdk/examples/CustomCallConvPlugin.c`] を参照してください。
 
 ## コード生成の経路
 
@@ -322,7 +322,7 @@ Emission->BeginInstructionReplacement(Emission->Context, Frame, &Builder);
 Emission->PublishInstructionReplacement(Emission->Context, Frame, NewInstr);
 ```
 
-`pluginsdk/examples/MCObserverPlugin.c` はこの読み取り専用版です。
+[`pluginsdk/examples/MCObserverPlugin.c`] はこの読み取り専用版です。
 
 ## エンコーダー、デコーダー、レイアウト
 
@@ -467,7 +467,7 @@ ObjectFormat->RegisterFormat(ObjectFormat->Context, RegistrarContext,
 ー、コールバックの失敗、検証の失敗はステージングを中止させるので、失敗が中途半端
 なファイルをディスクに残すことはありません。
 
-`pluginsdk/examples/ObjectRewritePlugin.c` は完全なトランザクショナル書き換えの例
+[`pluginsdk/examples/ObjectRewritePlugin.c`] は完全なトランザクショナル書き換えの例
 です。
 
 ## ルール
@@ -488,7 +488,17 @@ ObjectFormat->RegisterFormat(ObjectFormat->Context, RegistrarContext,
 - `codegen.product_verify`、`assembly.final_verify`、`assembly.commit`、
   `object.final_verify`、`object.commit` は封印されている。観測のみ。
 
-規範的な宣言は `PluginTarget.h`、`PluginMC.h`、`PluginObject.h`、
-`Schema/PhaseSchema.json` を、そしてこれら安定フェーズそれぞれを肯定・否定・置
+規範的な宣言は [`PluginTarget.h`]、[`PluginMC.h`]、[`PluginObject.h`]、
+[`Schema/PhaseSchema.json`] を、そしてこれら安定フェーズそれぞれを肯定・否定・置
 換・読み取り専用オブザーバー・封印ゲートの各テストへ対応付けたものは
-`coverage.json` を参照してください。
+[`coverage.json`] を参照してください。
+
+<!-- reference links -->
+[`coverage.json`]: coverage.json
+[`PluginMC.h`]: ../../neverc/include/neverc/Plugin/PluginMC.h
+[`PluginObject.h`]: ../../neverc/include/neverc/Plugin/PluginObject.h
+[`pluginsdk/examples/CustomCallConvPlugin.c`]: ../../pluginsdk/examples/CustomCallConvPlugin.c
+[`pluginsdk/examples/MCObserverPlugin.c`]: ../../pluginsdk/examples/MCObserverPlugin.c
+[`pluginsdk/examples/ObjectRewritePlugin.c`]: ../../pluginsdk/examples/ObjectRewritePlugin.c
+[`PluginTarget.h`]: ../../neverc/include/neverc/Plugin/PluginTarget.h
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json

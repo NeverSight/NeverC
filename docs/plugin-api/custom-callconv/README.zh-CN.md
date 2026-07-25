@@ -34,7 +34,7 @@ gpr:rcx,rdx,r8,r9; xmm:xmm0,xmm1; ret:rax; ret_xmm:xmm0
 | `ret_fpr` |  | `ret_xmm` 的目标中立别名 |
 | `csr` |  | 自定义 callee-saved 寄存器集合（默认为标准 ABI 集合） |
 
-任何一段都可以省略，无法识别的段会被忽略。这些 key 只在 `llvm/include/llvm/CodeGen/NeverCCallConv.h` 中定义一次，因此生产者与解析器不会产生偏离。
+任何一段都可以省略，无法识别的段会被忽略。这些 key 只在 [`llvm/include/llvm/CodeGen/NeverCCallConv.h`] 中定义一次，因此生产者与解析器不会产生偏离。
 
 ### 两种参数模式
 
@@ -74,7 +74,7 @@ GPR 一律写 64 位形式，后端会按每个值的类型收窄到对应子寄
 
 ### 1. 插件驱动（推荐）
 
-参考插件 `CustomCallConvPlugin.c` 位于 `pluginsdk/examples/`。它在 `neverc.ir.pass.post_opt` 阶段注册了一个模块级 IR pass。
+参考插件 [`CustomCallConvPlugin.c`] 位于 `pluginsdk/examples/`。它在 `neverc.ir.pass.post_opt` 阶段注册了一个模块级 IR pass。
 
 **编译插件：**
 
@@ -185,7 +185,7 @@ Core->SetFunctionCallingConvention(Core->Context, Task, Function,
 
 ## 测试
 
-GoogleTest 套件位于 `tests/neverc/CustomCallConvTests.cpp`，共 26 个测试。每个测试都会构建示例插件、在给定 spec 下把一小段程序编译成汇编，然后断言最终的寄存器或栈位置。
+GoogleTest 套件位于 [`tests/neverc/CustomCallConvTests.cpp`]，共 26 个测试。每个测试都会构建示例插件、在给定 spec 下把一小段程序编译成汇编，然后断言最终的寄存器或栈位置。
 
 ```bash
 ninja -C build-neverc neverc-tests
@@ -243,3 +243,8 @@ custom_attr(...)              (neverc.ir.pass.post_opt)
 ```
 
 后端执行器是**一次性实现** —— 所有策略决策都在插件里。新增一个约定永远不需要重新构建 NeverC。
+
+<!-- reference links -->
+[`CustomCallConvPlugin.c`]: ../../../pluginsdk/examples/CustomCallConvPlugin.c
+[`llvm/include/llvm/CodeGen/NeverCCallConv.h`]: ../../../llvm/include/llvm/CodeGen/NeverCCallConv.h
+[`tests/neverc/CustomCallConvTests.cpp`]: ../../../tests/neverc/CustomCallConvTests.cpp

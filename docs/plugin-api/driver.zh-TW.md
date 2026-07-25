@@ -4,7 +4,7 @@
 
 # NeverC 外掛 Driver API
 
-Driver 把一條命令列轉換成一組實際執行的 job。`PluginDriver.h` 將這條管線公開為
+Driver 把一條命令列轉換成一組實際執行的 job。[`PluginDriver.h`] 將這條管線公開為
 六個階段與一張能力表 `NevercDriverAPI`，讓外掛可以改寫引數、選擇工具鏈、重組
 action 圖、新增或替換 job，甚至在行程內執行某個 job 而不另外 spawn 一個行程。
 
@@ -67,7 +67,7 @@ typedef struct NevercOptionDescriptor {
 } NevercOptionDescriptor;
 ```
 
-取自 `pluginsdk/examples/DriverTracePlugin.c`：
+取自 [`pluginsdk/examples/DriverTracePlugin.c`]：
 
 ```c
 NevercOptionDescriptor Option = {0};
@@ -304,7 +304,7 @@ typedef struct NevercJobResultDescriptor {
 
 ## 實例：觀察引數、攔截 job 執行
 
-濃縮自 `pluginsdk/examples/DriverTracePlugin.c`。這個外掛完全不用全域變數：行程
+濃縮自 [`pluginsdk/examples/DriverTracePlugin.c`]。這個外掛完全不用全域變數：行程
 狀態存放已協商的表，而 session 與 task 層級的計數器則在每個回呼內部向宿主取得。
 
 ```c
@@ -406,5 +406,11 @@ build-neverc/bin/neverc \
   `NevercJobResultDescriptor.ExecutionFailed` 與 `ErrorMessage` 回報，而不是回
   傳非 OK 的 status。
 
-規範宣告請見 `PluginDriver.h`，driver 階段的 policy 見 `PhaseSchema.json`，測試
-證據見 `coverage.json`。
+規範宣告請見 [`PluginDriver.h`]，driver 階段的 policy 見 [`PhaseSchema.json`]，測試
+證據見 [`coverage.json`]。
+
+<!-- reference links -->
+[`coverage.json`]: coverage.json
+[`PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`PluginDriver.h`]: ../../neverc/include/neverc/Plugin/PluginDriver.h
+[`pluginsdk/examples/DriverTracePlugin.c`]: ../../pluginsdk/examples/DriverTracePlugin.c

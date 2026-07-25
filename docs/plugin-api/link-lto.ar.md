@@ -4,11 +4,11 @@
 
 # واجهة الربط وLTO لإضافات NeverC
 
-يُنمذَج الربط بوصفه **آلة حالات فوق مخطط واحد**. تكشف `PluginLink.h` هذا
+يُنمذَج الربط بوصفه **آلة حالات فوق مخطط واحد**. تكشف [`PluginLink.h`] هذا
 المخطط — المدخلات، والمقاطع، والذرّات، والرموز، والحواف، وCOMDAT، والاستيرادات،
 والتصديرات، وسجلات فك الكدس، والعناصر المُصطنَعة، وقيود التخطيط — إضافةً إلى
 المراحل العشرين التي تنقله من قائمة ملفات إلى صورة ثنائية مُثبَّتة. أما
-`PluginLTO.h` فتغطي المرحلتين الوسطيتين حيث يتحول bitcode إلى كائنات.
+[`PluginLTO.h`] فتغطي المرحلتين الوسطيتين حيث يتحول bitcode إلى كائنات.
 
 تستطيع الإضافة مراقبة كل خطوة، واعتراض معظمها، واستبدال خطوة واحدة، أو استبدال
 الربط بأكمله، أو دمج الكائنات. ولا ترى أبدًا بنية بيانات من lld: فالمخطط إسقاط
@@ -289,7 +289,7 @@ Link->GetBinaryImageInfo(Link->Context, Task, ImageHandle, &Image);
 المقاطع هي `READ` و`WRITE` و`EXECUTE`.
 
 `Image.Binary` و`Image.Builder` هما الكاتب المعاملاتي المحدود من
-`PluginObject.h` — `Reserve` و`Write` و`WriteAt` و`Tell` و`ReadAt` و`Insert`
+[`PluginObject.h`] — `Reserve` و`Write` و`WriteAt` و`Tell` و`ReadAt` و`Insert`
 و`Append` و`Resize`. وعلى مُعترِض `post_emit` الذي يُرقِّع بايتات أن يمرّ عبره؛
 والكتابة خارج الحد المحجوز تُجهض التجهيز بدل أن تُكبِّر الملف.
 
@@ -434,6 +434,13 @@ LTORegistrar->RegisterProvider(LTORegistrar->Context, RegistrarContext,
 - `image_verify` و`side_outputs_verify` و`commit` مختومة. راقبها، ولا تحاول
   اعتراضها أو تخطّيها.
 
-راجع `PluginLink.h` و`PluginLTO.h` للتصريحات المعيارية، و
-`Schema/PhaseSchema.json` لسياسات المراحل العشرين، و`coverage.json` للاختبارات
+راجع [`PluginLink.h`] و[`PluginLTO.h`] للتصريحات المعيارية، و
+[`Schema/PhaseSchema.json`] لسياسات المراحل العشرين، و[`coverage.json`] للاختبارات
 التي تثبّت كلًّا منها.
+
+<!-- reference links -->
+[`coverage.json`]: coverage.json
+[`PluginLink.h`]: ../../neverc/include/neverc/Plugin/PluginLink.h
+[`PluginLTO.h`]: ../../neverc/include/neverc/Plugin/PluginLTO.h
+[`PluginObject.h`]: ../../neverc/include/neverc/Plugin/PluginObject.h
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json

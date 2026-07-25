@@ -101,8 +101,8 @@ no-op プロバイダを実行し、その等価な出力をホストの検証�
 8. 封印されたコミット。
 
 ID、ポリシー、安定性ティア、ゲートの規範的な情報源は
-`neverc/include/neverc/Plugin/Schema/PhaseSchema.json` です。実行可能なカバレッジ
-契約は `docs/plugin-api/coverage.json` です。
+[`neverc/include/neverc/Plugin/Schema/PhaseSchema.json`] です。実行可能なカバレッジ
+契約は [`docs/plugin-api/coverage.json`] です。
 
 ## 組み込み変換もまたプロバイダである
 
@@ -193,5 +193,11 @@ ID、ポリシー、安定性ティア、ゲートの規範的な情報源は
   プロバイダへ黙ってフォールバックすることはありません。
 - 並行性モデルと再入モデルは、偽りのない範囲で最も狭いものを宣言してください。
 
-読み取り専用のフェーズトレーサは `pluginsdk/examples/DynCodeTracePlugin.c` を、
-charset エンコーダは `pluginsdk/examples/DynCodeEncoderPlugin.c` を参照してください。
+読み取り専用のフェーズトレーサは [`pluginsdk/examples/DynCodeTracePlugin.c`] を、
+charset エンコーダは [`pluginsdk/examples/DynCodeEncoderPlugin.c`] を参照してください。
+
+<!-- reference links -->
+[`docs/plugin-api/coverage.json`]: coverage.json
+[`neverc/include/neverc/Plugin/Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`pluginsdk/examples/DynCodeEncoderPlugin.c`]: ../../pluginsdk/examples/DynCodeEncoderPlugin.c
+[`pluginsdk/examples/DynCodeTracePlugin.c`]: ../../pluginsdk/examples/DynCodeTracePlugin.c

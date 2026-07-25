@@ -34,7 +34,7 @@ gpr:rcx,rdx,r8,r9; xmm:xmm0,xmm1; ret:rax; ret_xmm:xmm0
 | `ret_fpr` | | اسم بديل محايد تجاه الهدف لـ `ret_xmm` |
 | `csr` | | مجموعة مخصصة من سجلات callee-saved (الافتراضي: مجموعة ABI القياسية) |
 
-يمكن حذف أي مقطع، وتُتجاهَل المقاطع غير المعروفة. وهذه المفاتيح مُعرَّفة مرة واحدة فقط في `llvm/include/llvm/CodeGen/NeverCCallConv.h`، فلا يمكن أن يفترق المنتِجون عن المُحلِّل.
+يمكن حذف أي مقطع، وتُتجاهَل المقاطع غير المعروفة. وهذه المفاتيح مُعرَّفة مرة واحدة فقط في [`llvm/include/llvm/CodeGen/NeverCCallConv.h`]، فلا يمكن أن يفترق المنتِجون عن المُحلِّل.
 
 ### وضعان للمعاملات
 
@@ -74,7 +74,7 @@ args:rcx,stack,r8;ret:rax   # arg0→rcx, arg1→stack, arg2→r8, return→rax
 
 ### 1. بواسطة الإضافة (موصى به)
 
-الإضافة المرجعية `CustomCallConvPlugin.c` تُشحن ضمن `pluginsdk/examples/`، وهي تسجّل تمريرة IR على مستوى الوحدة في الطور `neverc.ir.pass.post_opt`.
+الإضافة المرجعية [`CustomCallConvPlugin.c`] تُشحن ضمن `pluginsdk/examples/`، وهي تسجّل تمريرة IR على مستوى الوحدة في الطور `neverc.ir.pass.post_opt`.
 
 **بناء الإضافة:**
 
@@ -185,7 +185,7 @@ Core->SetFunctionCallingConvention(Core->Context, Task, Function,
 
 ## الاختبارات
 
-مجموعة GoogleTest موجودة في `tests/neverc/CustomCallConvTests.cpp` وتضم 26 اختبارًا. كل اختبار يبني الإضافة المثال، ويترجم برنامجًا صغيرًا إلى لغة التجميع تحت مواصفات معيّنة، ثم يتحقق من موضع السجل أو المكدس الناتج.
+مجموعة GoogleTest موجودة في [`tests/neverc/CustomCallConvTests.cpp`] وتضم 26 اختبارًا. كل اختبار يبني الإضافة المثال، ويترجم برنامجًا صغيرًا إلى لغة التجميع تحت مواصفات معيّنة، ثم يتحقق من موضع السجل أو المكدس الناتج.
 
 ```bash
 ninja -C build-neverc neverc-tests
@@ -245,3 +245,8 @@ custom_attr(...)              (neverc.ir.pass.post_opt)
 ```
 
 المنفِّذ في الواجهة الخلفية **تنفيذ يُكتب مرة واحدة**؛ فكل قرارات السياسة تعيش داخل الإضافة. وإضافة اتفاقية جديدة لا تستلزم أبدًا إعادة بناء NeverC.
+
+<!-- reference links -->
+[`CustomCallConvPlugin.c`]: ../../../pluginsdk/examples/CustomCallConvPlugin.c
+[`llvm/include/llvm/CodeGen/NeverCCallConv.h`]: ../../../llvm/include/llvm/CodeGen/NeverCCallConv.h
+[`tests/neverc/CustomCallConvTests.cpp`]: ../../../tests/neverc/CustomCallConvTests.cpp

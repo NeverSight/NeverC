@@ -34,7 +34,7 @@ gpr:rcx,rdx,r8,r9; xmm:xmm0,xmm1; ret:rax; ret_xmm:xmm0
 | `ret_fpr` | | Target-neutral alias for `ret_xmm` |
 | `csr` | | Custom callee-saved register set (default: the standard ABI set) |
 
-Any segment may be omitted, and unknown segments are ignored. The keys are defined once in `llvm/include/llvm/CodeGen/NeverCCallConv.h`, so producers and the parser cannot drift apart.
+Any segment may be omitted, and unknown segments are ignored. The keys are defined once in [`llvm/include/llvm/CodeGen/NeverCCallConv.h`], so producers and the parser cannot drift apart.
 
 ### Two Argument Modes
 
@@ -74,7 +74,7 @@ GPRs are always written in their 64-bit spelling; the backend narrows them to th
 
 ### 1. Plugin-Driven (Recommended)
 
-The reference plugin `CustomCallConvPlugin.c` ships under `pluginsdk/examples/`. It registers a module-level IR pass at the `neverc.ir.pass.post_opt` phase.
+The reference plugin [`CustomCallConvPlugin.c`] ships under `pluginsdk/examples/`. It registers a module-level IR pass at the `neverc.ir.pass.post_opt` phase.
 
 **Build the plugin:**
 
@@ -185,7 +185,7 @@ A plugin that registers its own target can instead supply a `PlanCallingConventi
 
 ## Testing
 
-The GoogleTest suite lives in `tests/neverc/CustomCallConvTests.cpp` and holds 26 tests. Each one builds the example plugin, compiles a small program to assembly under a given spec, and asserts the resulting register or stack placement.
+The GoogleTest suite lives in [`tests/neverc/CustomCallConvTests.cpp`] and holds 26 tests. Each one builds the example plugin, compiles a small program to assembly under a given spec, and asserts the resulting register or stack placement.
 
 ```bash
 ninja -C build-neverc neverc-tests
@@ -243,3 +243,8 @@ custom_attr(...)              (neverc.ir.pass.post_opt)
 ```
 
 The backend executor is a **one-time implementation** — all policy decisions live in the plugin. Adding a new convention never requires rebuilding NeverC.
+
+<!-- reference links -->
+[`CustomCallConvPlugin.c`]: ../../../pluginsdk/examples/CustomCallConvPlugin.c
+[`llvm/include/llvm/CodeGen/NeverCCallConv.h`]: ../../../llvm/include/llvm/CodeGen/NeverCCallConv.h
+[`tests/neverc/CustomCallConvTests.cpp`]: ../../../tests/neverc/CustomCallConvTests.cpp

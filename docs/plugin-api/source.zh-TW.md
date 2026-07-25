@@ -4,7 +4,7 @@
 
 # NeverC 外掛原始碼與 I/O API
 
-`PluginSource.h` 發布兩張表。`NevercIOAPI` 就是檔案系統：虛擬檔案 Provider、
+[`PluginSource.h`] 發布兩張表。`NevercIOAPI` 就是檔案系統：虛擬檔案 Provider、
 讀取、目錄走訪、輸出 sink 與相依記錄。`NevercSourceLocationAPI` 把編譯器內部的
 位置映射回檔案、行號與拼寫文字。有了這兩者，外掛可以提供一個只存在於記憶體中
 的標頭檔、把巨集展開解析到它的拼寫位置，或是寫出一份參與建置持久性核算的旁路
@@ -95,8 +95,7 @@ IO->AddMemoryFile(IO->Context, Session, SV("/virtual/config.h"),
                   Content, ModificationTime);
 ```
 
-[`pluginsdk/examples/VirtualHeaderPlugin.c`](../../pluginsdk/examples/VirtualHeaderPlugin.c)
-是一個完整可運作的 Provider。
+[`pluginsdk/examples/VirtualHeaderPlugin.c`] 是一個完整可運作的 Provider。
 
 ## 讀取檔案
 
@@ -289,5 +288,9 @@ Source->CreateMemorySourceUnit(Source->Context, Frame, Frame->Input, &Unit,
 - `AddMemoryFile` 的範圍是 session；當內容取決於任務時，Provider 才是正確的工
   具。
 
-規範性宣告請見 `PluginSource.h`，完整的 Provider 範例請見
-`pluginsdk/examples/VirtualHeaderPlugin.c`。
+規範性宣告請見 [`PluginSource.h`]，完整的 Provider 範例請見
+[`pluginsdk/examples/VirtualHeaderPlugin.c`]。
+
+<!-- reference links -->
+[`pluginsdk/examples/VirtualHeaderPlugin.c`]: ../../pluginsdk/examples/VirtualHeaderPlugin.c
+[`PluginSource.h`]: ../../neverc/include/neverc/Plugin/PluginSource.h

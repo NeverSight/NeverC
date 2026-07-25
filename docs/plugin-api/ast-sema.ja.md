@@ -28,7 +28,7 @@ AST は Clang のクラス階層を C に写したものではなく、**スキ�
 | `NEVERC_INTERFACE_PARSER_{HIGH,LOW}` | `NevercParserAPI` | `NEVERC_PARSER_API_MAJOR` / `_MINOR` |
 | `NEVERC_INTERFACE_SEMA_{HIGH,LOW}` | `NevercSemaAPI` | `NEVERC_SEMA_API_MAJOR` / `_MINOR` |
 
-`Schema/PluginASTSchema.inc` がノード種別、プロパティ、子スロットの ID を供給し
+[`Schema/PluginASTSchema.inc`] がノード種別、プロパティ、子スロットの ID を供給し
 ます。その capability major は `NEVERC_AST_API_MAJOR` と等しくなければなりません。
 
 ## フェーズ
@@ -194,7 +194,7 @@ AST->DestroyASTMutation(AST->Context, Task, Mutation);
 
 コミットはステージングされた木を検証し、アトミックに公開します。コミットが失敗
 すれば以前の木がそのまま残り、中止すればその変更が作ったハンドルは失効します。
-[`pluginsdk/examples/ASTRewritePlugin.c`](../../pluginsdk/examples/ASTRewritePlugin.c)
+[`pluginsdk/examples/ASTRewritePlugin.c`]
 がパーサ傍受を含む一連の流れを示しています。
 
 ## ライフサイクルイベント
@@ -404,11 +404,19 @@ Sema->CreateSemanticUnit(Sema->Context, Frame, &Unit, &Output);
 - ライフサイクル観測者から木を変更しないでください —— 観測者は読み取り専用です。
   対応するフェーズのインターセプタを使ってください。
 - プロパティ ID と子スロット ID はスキーマ定数です。数値リテラルを直書きせず、
-  `PluginASTSchema.inc` の名前を使ってください。そうすればスキーマの改訂が
+  [`PluginASTSchema.inc`] の名前を使ってください。そうすればスキーマの改訂が
   コンパイルエラーになります。
 - `SizeInBits` や `AlignmentInBits` を信じる前に、`NevercTypeInfo.Flags` に
   `HAS_KNOWN_LAYOUT` があるか確認してください。
 
-規範的な宣言は `PluginAST.h`、`PluginSema.h`、`Schema/ASTSchema.json` を、動作する
+規範的な宣言は [`PluginAST.h`]、[`PluginSema.h`]、[`Schema/ASTSchema.json`] を、動作する
 パーサ傍受とアトミックな木の書き換えは
-`pluginsdk/examples/ASTRewritePlugin.c` を参照してください。
+[`pluginsdk/examples/ASTRewritePlugin.c`] を参照してください。
+
+<!-- reference links -->
+[`PluginAST.h`]: ../../neverc/include/neverc/Plugin/PluginAST.h
+[`PluginASTSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginASTSchema.inc
+[`pluginsdk/examples/ASTRewritePlugin.c`]: ../../pluginsdk/examples/ASTRewritePlugin.c
+[`PluginSema.h`]: ../../neverc/include/neverc/Plugin/PluginSema.h
+[`Schema/ASTSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/ASTSchema.json
+[`Schema/PluginASTSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginASTSchema.inc

@@ -5,7 +5,7 @@
 # واجهة Driver لإضافات NeverC
 
 يحوّل المشغّل (driver) سطر الأوامر إلى مجموعة من المهام المنفَّذة. تكشف
-`PluginDriver.h` هذا المسار في صورة ست مراحل وجدول قدرات واحد هو
+[`PluginDriver.h`] هذا المسار في صورة ست مراحل وجدول قدرات واحد هو
 `NevercDriverAPI`، فتستطيع الإضافة إعادة كتابة الوسائط، واختيار سلسلة الأدوات،
 وإعادة هيكلة مخطط الإجراءات، وإضافة المهام أو استبدالها، بل وحتى تنفيذ مهمة
 داخل العملية الحالية بدل إطلاق عملية جديدة.
@@ -70,7 +70,7 @@ typedef struct NevercOptionDescriptor {
 } NevercOptionDescriptor;
 ```
 
-من `pluginsdk/examples/DriverTracePlugin.c`:
+من [`pluginsdk/examples/DriverTracePlugin.c`]:
 
 ```c
 NevercOptionDescriptor Option = {0};
@@ -309,7 +309,7 @@ typedef struct NevercJobResultDescriptor {
 
 ## مثال متكامل: مراقبة الوسائط واعتراض تنفيذ المهمة
 
-مُختصَر من `pluginsdk/examples/DriverTracePlugin.c`. لا تحتفظ الإضافة بأي
+مُختصَر من [`pluginsdk/examples/DriverTracePlugin.c`]. لا تحتفظ الإضافة بأي
 متغيرات عامة: حالة العملية تحمل الجداول المُتفاوَض عليها، أما عدّادات الجلسة
 والمَهمة فتُجلب من المضيف داخل كل نداء راجع.
 
@@ -412,5 +412,11 @@ build-neverc/bin/neverc \
 - أبلِغ عن فشل مهمة عبر `NevercJobResultDescriptor.ExecutionFailed` و
   `ErrorMessage` بدل إعادة حالة غير OK لمهمة نُفِّذت وفشلت فشلًا مشروعًا.
 
-راجع `PluginDriver.h` للتصريحات المعيارية، و`PhaseSchema.json` لسياسات مراحل
-المشغّل، و`coverage.json` لأدلة الاختبار.
+راجع [`PluginDriver.h`] للتصريحات المعيارية، و[`PhaseSchema.json`] لسياسات مراحل
+المشغّل، و[`coverage.json`] لأدلة الاختبار.
+
+<!-- reference links -->
+[`coverage.json`]: coverage.json
+[`PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`PluginDriver.h`]: ../../neverc/include/neverc/Plugin/PluginDriver.h
+[`pluginsdk/examples/DriverTracePlugin.c`]: ../../pluginsdk/examples/DriverTracePlugin.c

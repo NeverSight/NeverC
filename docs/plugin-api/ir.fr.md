@@ -4,7 +4,7 @@
 
 # API IR des plugins NeverC
 
-`PluginIR.h` expose la représentation intermédiaire de LLVM à travers six tables
+[`PluginIR.h`] expose la représentation intermédiaire de LLVM à travers six tables
 de capacités et un schéma généré. Un plugin lit et réécrit l'IR, enregistre des
 passes en cinq points stables de la chaîne, définit ses propres analyses, ou
 remplace purement et simplement la génération d'IR et la chaîne d'optimisation —
@@ -33,7 +33,7 @@ C'est cette indirection qui permet à un plugin compilé aujourd'hui de continue
 Chacune est `NEVERC_INTERFACE_STABLE` en majeur 1. Négociez avec les
 `NEVERC_IR_*_API_MAJOR` / `_MINOR` correspondants et vérifiez que `TableSize`
 atteint le dernier créneau que vous appelez, exactement comme le fait
-`pluginsdk/examples/FunctionPass.c` :
+[`pluginsdk/examples/FunctionPass.c`] :
 
 ```c
 Status = Bootstrap->QueryInterface(
@@ -70,7 +70,7 @@ d'optimisation compris.
 
 ## Le schéma
 
-`Schema/PluginIRSchema.inc` est généré et inclus par `PluginIR.h`. Il publie un
+[`Schema/PluginIRSchema.inc`] est généré et inclus par [`PluginIR.h`]. Il publie un
 condensat et les jeux de constantes suivants :
 
 ```c
@@ -225,7 +225,7 @@ Core->HasFunctionAttribute(Core->Context, Task, Function, SV("noinline"),
                            &Present);
 ```
 
-`pluginsdk/examples/CustomCallConvPlugin.c` s'en sert avec
+[`pluginsdk/examples/CustomCallConvPlugin.c`] s'en sert avec
 `GetFunctionStringAttribute` pour piloter une convention d'appel définie par des
 données.
 
@@ -420,9 +420,9 @@ ensuite dans tous les cas.
 
 | Fichier | Montre |
 |---|---|
-| `pluginsdk/examples/FunctionPass.c` | Une passe de fonction en lecture seule, négociation d'ABI comprise |
-| `pluginsdk/examples/ExamplePlugin.c` | Une passe de module parcourant les fonctions avec un curseur de valeurs |
-| `pluginsdk/examples/CustomCallConvPlugin.c` | Attributs et propriétés de site d'appel |
+| [`pluginsdk/examples/FunctionPass.c`] | Une passe de fonction en lecture seule, négociation d'ABI comprise |
+| [`pluginsdk/examples/ExamplePlugin.c`] | Une passe de module parcourant les fonctions avec un curseur de valeurs |
+| [`pluginsdk/examples/CustomCallConvPlugin.c`] | Attributs et propriétés de site d'appel |
 
 ```sh
 cmake --build build-neverc --target neverc-plugin-example-function-pass
@@ -440,7 +440,7 @@ Utilisez le suffixe de module que CMake a produit pour votre plate-forme.
 - Mettez à zéro chaque structure de sortie et fixez son `Header` avant l'appel
   qui la remplit.
 - N'écrivez pas en dur les valeurs numériques de code d'opération, de type ou de
-  propriété. Utilisez les noms de `PluginIRSchema.inc` afin qu'une révision du
+  propriété. Utilisez les noms de [`PluginIRSchema.inc`] afin qu'une révision du
   schéma devienne une erreur de compilation.
 - Chaque `BeginMutation` atteint exactement un `DestroyMutation`, et chaque
   `CreateBuilder` exactement un `DestroyBuilder`, y compris sur les chemins
@@ -452,6 +452,16 @@ Utilisez le suffixe de module que CMake a produit pour votre plate-forme.
 - `neverc.ir.final_verify` est scellée. Rien de ce que fait un plugin ne peut la
   contourner.
 
-Voir `PluginIR.h`, `Schema/PluginIRSchema.inc`, `Schema/PhaseSchema.json` et
-`coverage.json` pour les déclarations normatives, les constantes de schéma, les
+Voir [`PluginIR.h`], [`Schema/PluginIRSchema.inc`], [`Schema/PhaseSchema.json`] et
+[`coverage.json`] pour les déclarations normatives, les constantes de schéma, les
 politiques de phase et les preuves par les tests.
+
+<!-- reference links -->
+[`coverage.json`]: coverage.json
+[`PluginIR.h`]: ../../neverc/include/neverc/Plugin/PluginIR.h
+[`PluginIRSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginIRSchema.inc
+[`pluginsdk/examples/CustomCallConvPlugin.c`]: ../../pluginsdk/examples/CustomCallConvPlugin.c
+[`pluginsdk/examples/ExamplePlugin.c`]: ../../pluginsdk/examples/ExamplePlugin.c
+[`pluginsdk/examples/FunctionPass.c`]: ../../pluginsdk/examples/FunctionPass.c
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`Schema/PluginIRSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginIRSchema.inc

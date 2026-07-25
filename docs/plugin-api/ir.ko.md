@@ -4,7 +4,7 @@
 
 # NeverC 플러그인 IR API
 
-`PluginIR.h` 는 여섯 개의 능력 테이블과 생성된 스키마를 통해 LLVM IR 을
+[`PluginIR.h`] 는 여섯 개의 능력 테이블과 생성된 스키마를 통해 LLVM IR 을
 공개합니다. 플러그인은 IR 을 읽고 다시 쓰고, 다섯 개의 안정된 파이프라인 지점에
 패스를 등록하고, 자체 분석을 정의하고, 심지어 IR 생성과 최적화 파이프라인을
 통째로 대체할 수도 있습니다 — LLVM 헤더를 단 하나도 포함하지 않고서 말입니다.
@@ -30,7 +30,7 @@
 
 모두 major 1 에서 `NEVERC_INTERFACE_STABLE` 입니다. 대응하는
 `NEVERC_IR_*_API_MAJOR` / `_MINOR` 로 협상하고, `TableSize` 가 여러분이 호출할
-마지막 슬롯까지 닿는지를 `pluginsdk/examples/FunctionPass.c` 처럼 확인하십시오:
+마지막 슬롯까지 닿는지를 [`pluginsdk/examples/FunctionPass.c`] 처럼 확인하십시오:
 
 ```c
 Status = Bootstrap->QueryInterface(
@@ -66,7 +66,7 @@ if (!Table ||
 
 ## 스키마
 
-`Schema/PluginIRSchema.inc` 는 생성물이며 `PluginIR.h` 가 포함합니다. 다이제스트와
+[`Schema/PluginIRSchema.inc`] 는 생성물이며 [`PluginIR.h`] 가 포함합니다. 다이제스트와
 다음 상수 집합을 공개합니다:
 
 ```c
@@ -219,7 +219,7 @@ Core->HasFunctionAttribute(Core->Context, Task, Function, SV("noinline"),
                            &Present);
 ```
 
-`pluginsdk/examples/CustomCallConvPlugin.c` 는 이것을
+[`pluginsdk/examples/CustomCallConvPlugin.c`] 는 이것을
 `GetFunctionStringAttribute` 와 함께 써서 데이터로 정의된 호출 규약을 구동합니다.
 
 ## 트랜잭션 방식 변경
@@ -409,9 +409,9 @@ Gen->PublishModule(Gen->Context, Frame, &Descriptor, &Output);
 
 | 파일 | 보여 주는 것 |
 |---|---|
-| `pluginsdk/examples/FunctionPass.c` | ABI 협상을 포함한 읽기 전용 함수 패스 |
-| `pluginsdk/examples/ExamplePlugin.c` | 값 커서로 함수를 훑는 모듈 수준 패스 |
-| `pluginsdk/examples/CustomCallConvPlugin.c` | 속성과 호출 지점 속성 |
+| [`pluginsdk/examples/FunctionPass.c`] | ABI 협상을 포함한 읽기 전용 함수 패스 |
+| [`pluginsdk/examples/ExamplePlugin.c`] | 값 커서로 함수를 훑는 모듈 수준 패스 |
+| [`pluginsdk/examples/CustomCallConvPlugin.c`] | 속성과 호출 지점 속성 |
 
 ```sh
 cmake --build build-neverc --target neverc-plugin-example-function-pass
@@ -428,7 +428,7 @@ CMake 가 여러분의 플랫폼에 맞게 만든 모듈 접미사를 쓰십시�
   됩니다. 예외가 C 경계를 넘게 하지 마십시오.
 - 값을 채우는 호출 전에 모든 출력 구조체를 0 으로 초기화하고 `Header` 를
   설정하십시오.
-- 옵코드, 타입, 속성의 수치를 하드코딩하지 마십시오. `PluginIRSchema.inc` 의
+- 옵코드, 타입, 속성의 수치를 하드코딩하지 마십시오. [`PluginIRSchema.inc`] 의
   이름을 쓰면 스키마 개정이 컴파일 오류가 됩니다.
 - 모든 `BeginMutation` 은 정확히 하나의 `DestroyMutation` 에, 모든
   `CreateBuilder` 는 정확히 하나의 `DestroyBuilder` 에 대응해야 하며, 오류
@@ -440,6 +440,16 @@ CMake 가 여러분의 플랫폼에 맞게 만든 모듈 접미사를 쓰십시�
 - `neverc.ir.final_verify` 는 봉인되어 있습니다. 플러그인이 무슨 짓을 해도 이를
   건너뛸 수 없습니다.
 
-규범적 선언, 스키마 상수, 단계 정책, 테스트 증거는 `PluginIR.h`,
-`Schema/PluginIRSchema.inc`, `Schema/PhaseSchema.json`, `coverage.json` 을
+규범적 선언, 스키마 상수, 단계 정책, 테스트 증거는 [`PluginIR.h`],
+[`Schema/PluginIRSchema.inc`], [`Schema/PhaseSchema.json`], [`coverage.json`] 을
 참조하십시오.
+
+<!-- reference links -->
+[`coverage.json`]: coverage.json
+[`PluginIR.h`]: ../../neverc/include/neverc/Plugin/PluginIR.h
+[`PluginIRSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginIRSchema.inc
+[`pluginsdk/examples/CustomCallConvPlugin.c`]: ../../pluginsdk/examples/CustomCallConvPlugin.c
+[`pluginsdk/examples/ExamplePlugin.c`]: ../../pluginsdk/examples/ExamplePlugin.c
+[`pluginsdk/examples/FunctionPass.c`]: ../../pluginsdk/examples/FunctionPass.c
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`Schema/PluginIRSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginIRSchema.inc

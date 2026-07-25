@@ -4,7 +4,7 @@
 
 # NeverC Plugin Preprocessor API
 
-`PluginPrep.h` exposes the preprocessor two ways. A **subscription** to 39
+[`PluginPrep.h`] exposes the preprocessor two ways. A **subscription** to 39
 event kinds gives you a read-only trace of everything the preprocessor does —
 file entry, macro definition and expansion, conditional evaluation, pragmas.
 Six **phases** go further and let you rewrite the result: redirect an
@@ -23,7 +23,7 @@ Bootstrap->QueryInterface(
 ```
 
 The 230 token kinds (`NEVERC_TOKEN_KIND_COUNT`) and the preprocessor keyword
-kinds come from `Schema/PluginPrepSchema.inc`, which the header includes and
+kinds come from [`Schema/PluginPrepSchema.inc`], which the header includes and
 whose capability major must equal `NEVERC_PREP_API_MAJOR` — a mismatch is a
 compile error, not a runtime surprise. Each kind also carries a category:
 `NEVERC_TOKEN_CATEGORY_SPECIAL`, `COMMENT`, `IDENTIFIER`, `LITERAL`,
@@ -237,7 +237,7 @@ Prep->DestroyTokenBuilder(Prep->Context, Task, Builder);
 
 Use `TokenBuilderSetKind` for punctuators and keywords and
 `TokenBuilderSetIdentifier` for identifiers. Token-kind constants come from
-`PluginPrepSchema.inc`.
+[`PluginPrepSchema.inc`].
 
 For a whole stream — the `neverc.prep.build_token_stream` phase — accumulate
 into a stream builder and commit once:
@@ -292,5 +292,11 @@ Prep->CreateFeatureQueryPhaseOutput(Prep->Context, Frame, Continuation, &Out,
 - Return `NEVERC_STATUS_INVALID_ARGUMENT` for a missing required pointer, and
   never let an exception cross the boundary.
 
-See `PluginPrep.h` and `Schema/PluginPrepSchema.inc` for the normative
-declarations, and `Schema/PrepSchema.json` for the token-kind schema.
+See [`PluginPrep.h`] and [`Schema/PluginPrepSchema.inc`] for the normative
+declarations, and [`Schema/PrepSchema.json`] for the token-kind schema.
+
+<!-- reference links -->
+[`PluginPrep.h`]: ../../neverc/include/neverc/Plugin/PluginPrep.h
+[`PluginPrepSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginPrepSchema.inc
+[`Schema/PluginPrepSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginPrepSchema.inc
+[`Schema/PrepSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PrepSchema.json

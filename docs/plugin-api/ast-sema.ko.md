@@ -27,7 +27,7 @@ AST 는 Clang 클래스 계층을 C 로 옮긴 것이 아니라 **스키마** �
 | `NEVERC_INTERFACE_PARSER_{HIGH,LOW}` | `NevercParserAPI` | `NEVERC_PARSER_API_MAJOR` / `_MINOR` |
 | `NEVERC_INTERFACE_SEMA_{HIGH,LOW}` | `NevercSemaAPI` | `NEVERC_SEMA_API_MAJOR` / `_MINOR` |
 
-`Schema/PluginASTSchema.inc` 가 노드 종류, 속성, 자식 슬롯 ID 를 공급하며, 그
+[`Schema/PluginASTSchema.inc`] 가 노드 종류, 속성, 자식 슬롯 ID 를 공급하며, 그
 capability major 는 반드시 `NEVERC_AST_API_MAJOR` 와 같아야 합니다.
 
 ## 단계
@@ -191,7 +191,7 @@ AST->DestroyASTMutation(AST->Context, Task, Mutation);
 
 커밋은 준비된 트리를 검증하고 원자적으로 공개합니다. 커밋이 실패하면 이전 트리가
 그대로 남고, 중단하면 그 변경이 만든 핸들이 무효가 됩니다.
-[`pluginsdk/examples/ASTRewritePlugin.c`](../../pluginsdk/examples/ASTRewritePlugin.c)
+[`pluginsdk/examples/ASTRewritePlugin.c`]
 가 파서 가로채기를 포함한 전 과정을 보여 줍니다.
 
 ## 수명 주기 이벤트
@@ -401,11 +401,19 @@ Sema->CreateSemanticUnit(Sema->Context, Frame, &Unit, &Output);
 - 수명 주기 관찰자에서 트리를 변경하지 마십시오 — 관찰자는 읽기 전용입니다.
   해당 단계의 인터셉터를 쓰십시오.
 - 속성 ID 와 자식 슬롯 ID 는 스키마 상수입니다. 숫자 리터럴을 하드코딩하지 말고
-  `PluginASTSchema.inc` 의 이름을 쓰십시오. 그래야 스키마 개정이 컴파일 오류가
+  [`PluginASTSchema.inc`] 의 이름을 쓰십시오. 그래야 스키마 개정이 컴파일 오류가
   됩니다.
 - `SizeInBits` 나 `AlignmentInBits` 를 믿기 전에 `NevercTypeInfo.Flags` 에
   `HAS_KNOWN_LAYOUT` 이 있는지 확인하십시오.
 
-규범적 선언은 `PluginAST.h`, `PluginSema.h`, `Schema/ASTSchema.json` 을,
+규범적 선언은 [`PluginAST.h`], [`PluginSema.h`], [`Schema/ASTSchema.json`] 을,
 동작하는 파서 가로채기와 원자적 트리 재작성은
-`pluginsdk/examples/ASTRewritePlugin.c` 를 참조하십시오.
+[`pluginsdk/examples/ASTRewritePlugin.c`] 를 참조하십시오.
+
+<!-- reference links -->
+[`PluginAST.h`]: ../../neverc/include/neverc/Plugin/PluginAST.h
+[`PluginASTSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginASTSchema.inc
+[`pluginsdk/examples/ASTRewritePlugin.c`]: ../../pluginsdk/examples/ASTRewritePlugin.c
+[`PluginSema.h`]: ../../neverc/include/neverc/Plugin/PluginSema.h
+[`Schema/ASTSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/ASTSchema.json
+[`Schema/PluginASTSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginASTSchema.inc

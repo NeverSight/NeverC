@@ -4,7 +4,7 @@
 
 # NeverC Plugin-API für die IR
 
-`PluginIR.h` legt die LLVM-IR über sechs Fähigkeitstabellen und ein generiertes
+[`PluginIR.h`] legt die LLVM-IR über sechs Fähigkeitstabellen und ein generiertes
 Schema offen. Ein Plugin liest und schreibt IR, registriert Durchläufe an fünf
 stabilen Punkten der Pipeline, definiert eigene Analysen oder ersetzt die
 IR-Erzeugung und die Optimierungspipeline vollständig — ohne einen einzigen
@@ -32,7 +32,7 @@ keine LLVM-Enumwerte. Genau diese Indirektion sorgt dafür, dass ein heute
 Jede ist bei Major 1 `NEVERC_INTERFACE_STABLE`. Verhandeln Sie mit den passenden
 `NEVERC_IR_*_API_MAJOR` / `_MINOR` und prüfen Sie, dass `TableSize` bis zum
 letzten von Ihnen aufgerufenen Platz reicht — genau wie es
-`pluginsdk/examples/FunctionPass.c` tut:
+[`pluginsdk/examples/FunctionPass.c`] tut:
 
 ```c
 Status = Bootstrap->QueryInterface(
@@ -69,7 +69,7 @@ Optimierungsanbieter.
 
 ## Das Schema
 
-`Schema/PluginIRSchema.inc` wird generiert und von `PluginIR.h` eingebunden. Es
+[`Schema/PluginIRSchema.inc`] wird generiert und von [`PluginIR.h`] eingebunden. Es
 veröffentlicht einen Digest und diese Konstantenmengen:
 
 ```c
@@ -224,7 +224,7 @@ Core->HasFunctionAttribute(Core->Context, Task, Function, SV("noinline"),
                            &Present);
 ```
 
-`pluginsdk/examples/CustomCallConvPlugin.c` nutzt dies zusammen mit
+[`pluginsdk/examples/CustomCallConvPlugin.c`] nutzt dies zusammen mit
 `GetFunctionStringAttribute`, um eine datengetriebene Aufrufkonvention zu
 steuern.
 
@@ -419,9 +419,9 @@ trotzdem.
 
 | Datei | Zeigt |
 |---|---|
-| `pluginsdk/examples/FunctionPass.c` | Einen schreibgeschützten Funktionsdurchlauf samt ABI-Verhandlung |
-| `pluginsdk/examples/ExamplePlugin.c` | Einen Moduldurchlauf, der Funktionen mit einem Wert-Cursor abläuft |
-| `pluginsdk/examples/CustomCallConvPlugin.c` | Attribute und Aufrufstelleneigenschaften |
+| [`pluginsdk/examples/FunctionPass.c`] | Einen schreibgeschützten Funktionsdurchlauf samt ABI-Verhandlung |
+| [`pluginsdk/examples/ExamplePlugin.c`] | Einen Moduldurchlauf, der Funktionen mit einem Wert-Cursor abläuft |
+| [`pluginsdk/examples/CustomCallConvPlugin.c`] | Attribute und Aufrufstelleneigenschaften |
 
 ```sh
 cmake --build build-neverc --target neverc-plugin-example-function-pass
@@ -440,7 +440,7 @@ Verwenden Sie das Modulsuffix, das CMake für Ihre Plattform erzeugt hat.
 - Nullen Sie jede Ausgabestruktur und setzen Sie ihren `Header` vor dem Aufruf,
   der sie füllt.
 - Schreiben Sie keine numerischen Opcode-, Typ- oder Eigenschaftswerte fest ein.
-  Verwenden Sie die Namen aus `PluginIRSchema.inc`, damit eine Schemarevision
+  Verwenden Sie die Namen aus [`PluginIRSchema.inc`], damit eine Schemarevision
   zum Übersetzungsfehler wird.
 - Jedes `BeginMutation` erreicht genau ein `DestroyMutation`, jedes
   `CreateBuilder` genau ein `DestroyBuilder` — auch auf Fehlerpfaden.
@@ -453,5 +453,15 @@ Verwenden Sie das Modulsuffix, das CMake für Ihre Plattform erzeugt hat.
   überspringen.
 
 Die normativen Deklarationen, Schemakonstanten, Phasenrichtlinien und
-Testnachweise stehen in `PluginIR.h`, `Schema/PluginIRSchema.inc`,
-`Schema/PhaseSchema.json` und `coverage.json`.
+Testnachweise stehen in [`PluginIR.h`], [`Schema/PluginIRSchema.inc`],
+[`Schema/PhaseSchema.json`] und [`coverage.json`].
+
+<!-- reference links -->
+[`coverage.json`]: coverage.json
+[`PluginIR.h`]: ../../neverc/include/neverc/Plugin/PluginIR.h
+[`PluginIRSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginIRSchema.inc
+[`pluginsdk/examples/CustomCallConvPlugin.c`]: ../../pluginsdk/examples/CustomCallConvPlugin.c
+[`pluginsdk/examples/ExamplePlugin.c`]: ../../pluginsdk/examples/ExamplePlugin.c
+[`pluginsdk/examples/FunctionPass.c`]: ../../pluginsdk/examples/FunctionPass.c
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`Schema/PluginIRSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginIRSchema.inc

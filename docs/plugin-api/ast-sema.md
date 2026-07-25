@@ -28,7 +28,7 @@ stable across LLVM versions.
 | `NEVERC_INTERFACE_PARSER_{HIGH,LOW}` | `NevercParserAPI` | `NEVERC_PARSER_API_MAJOR` / `_MINOR` |
 | `NEVERC_INTERFACE_SEMA_{HIGH,LOW}` | `NevercSemaAPI` | `NEVERC_SEMA_API_MAJOR` / `_MINOR` |
 
-`Schema/PluginASTSchema.inc` supplies the node-kind, property, and child-slot
+[`Schema/PluginASTSchema.inc`] supplies the node-kind, property, and child-slot
 IDs; its capability major must equal `NEVERC_AST_API_MAJOR`.
 
 ## Phases
@@ -194,8 +194,7 @@ AST->DestroyASTMutation(AST->Context, Task, Mutation);
 
 Commit verifies the staged tree and publishes atomically. A failed commit
 leaves the previous tree intact, and an abort makes the handles the mutation
-created stale.
-[`pluginsdk/examples/ASTRewritePlugin.c`](../../pluginsdk/examples/ASTRewritePlugin.c)
+created stale. [`pluginsdk/examples/ASTRewritePlugin.c`]
 shows the whole cycle including parser interception.
 
 ## Lifecycle events
@@ -411,11 +410,19 @@ replayed, and a verifier summary.
 - Do not mutate the tree from a lifecycle observer — observers are read-only.
   Use an interceptor on the corresponding phase.
 - Property IDs and child-slot IDs are schema constants. Do not hard-code
-  numeric literals; use the names from `PluginASTSchema.inc` so a schema
+  numeric literals; use the names from [`PluginASTSchema.inc`] so a schema
   revision is a compile error.
 - Check `NevercTypeInfo.Flags` for `HAS_KNOWN_LAYOUT` before trusting
   `SizeInBits` or `AlignmentInBits`.
 
-See `PluginAST.h`, `PluginSema.h`, and `Schema/ASTSchema.json` for the
-normative declarations, and `pluginsdk/examples/ASTRewritePlugin.c` for a
+See [`PluginAST.h`], [`PluginSema.h`], and [`Schema/ASTSchema.json`] for the
+normative declarations, and [`pluginsdk/examples/ASTRewritePlugin.c`] for a
 working parser interception and atomic tree rewrite.
+
+<!-- reference links -->
+[`PluginAST.h`]: ../../neverc/include/neverc/Plugin/PluginAST.h
+[`PluginASTSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginASTSchema.inc
+[`pluginsdk/examples/ASTRewritePlugin.c`]: ../../pluginsdk/examples/ASTRewritePlugin.c
+[`PluginSema.h`]: ../../neverc/include/neverc/Plugin/PluginSema.h
+[`Schema/ASTSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/ASTSchema.json
+[`Schema/PluginASTSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginASTSchema.inc

@@ -4,7 +4,7 @@
 
 # واجهة التمثيل الوسيط لإضافات NeverC
 
-تكشف `PluginIR.h` تمثيلَ LLVM الوسيط عبر ستة جداول قدرات ومخطَّطٍ مولَّد. تستطيع
+تكشف [`PluginIR.h`] تمثيلَ LLVM الوسيط عبر ستة جداول قدرات ومخطَّطٍ مولَّد. تستطيع
 الإضافة أن تقرأ التمثيل الوسيط وتعيد كتابته، وأن تسجّل تمريرات في خمس نقاط مستقرة
 من خط الأنابيب، وأن تعرّف تحليلاتها الخاصة، أو أن تستبدل توليدَ التمثيل الوسيط
 وخط أنابيب التحسين بالكامل — دون أن تضمّ ملفًا ترويسيًا واحدًا من LLVM.
@@ -30,7 +30,7 @@
 
 كلٌّ منها `NEVERC_INTERFACE_STABLE` عند الرقم الرئيسي 1. تفاوض باستخدام
 `NEVERC_IR_*_API_MAJOR` / `_MINOR` المقابلة، وتحقّق أن `TableSize` يبلغ آخر فتحة
-تستدعيها، تمامًا كما يفعل `pluginsdk/examples/FunctionPass.c`:
+تستدعيها، تمامًا كما يفعل [`pluginsdk/examples/FunctionPass.c`]:
 
 ```c
 Status = Bootstrap->QueryInterface(
@@ -66,7 +66,7 @@ if (!Table ||
 
 ## المخطَّط
 
-`Schema/PluginIRSchema.inc` مولَّد ويضمّه `PluginIR.h`. وهو ينشر بصمةً ومجموعات
+[`Schema/PluginIRSchema.inc`] مولَّد ويضمّه [`PluginIR.h`]. وهو ينشر بصمةً ومجموعات
 الثوابت التالية:
 
 ```c
@@ -218,7 +218,7 @@ Core->HasFunctionAttribute(Core->Context, Task, Function, SV("noinline"),
                            &Present);
 ```
 
-ويستعمل `pluginsdk/examples/CustomCallConvPlugin.c` هذا مع
+ويستعمل [`pluginsdk/examples/CustomCallConvPlugin.c`] هذا مع
 `GetFunctionStringAttribute` لقيادة اصطلاح نداءٍ معرَّف بالبيانات.
 
 ## التعديل المعامَلاتي
@@ -404,9 +404,9 @@ Gen->PublishModule(Gen->Context, Frame, &Descriptor, &Output);
 
 | الملف | ما يعرضه |
 |---|---|
-| `pluginsdk/examples/FunctionPass.c` | تمريرة دالة للقراءة فقط، مع مفاوضة ABI |
-| `pluginsdk/examples/ExamplePlugin.c` | تمريرة على مستوى الوحدة تجتاز الدوال بمؤشر قيم |
-| `pluginsdk/examples/CustomCallConvPlugin.c` | السمات وخصائص موضع النداء |
+| [`pluginsdk/examples/FunctionPass.c`] | تمريرة دالة للقراءة فقط، مع مفاوضة ABI |
+| [`pluginsdk/examples/ExamplePlugin.c`] | تمريرة على مستوى الوحدة تجتاز الدوال بمؤشر قيم |
+| [`pluginsdk/examples/CustomCallConvPlugin.c`] | السمات وخصائص موضع النداء |
 
 ```sh
 cmake --build build-neverc --target neverc-plugin-example-function-pass
@@ -423,7 +423,7 @@ build-neverc/bin/neverc \
   تدع استثناءً يعبر حدّ لغة C أبدًا.
 - صفّر كل بنية خرج واضبط `Header` فيها قبل النداء الذي يملؤها.
 - لا تكتب أعدادًا حرفية لرموز العمليات أو الأنواع أو الخصائص. استعمل أسماء
-  `PluginIRSchema.inc` كي تصير مراجعةُ المخطَّط خطأ ترجمة.
+  [`PluginIRSchema.inc`] كي تصير مراجعةُ المخطَّط خطأ ترجمة.
 - كل `BeginMutation` يبلغ `DestroyMutation` واحدًا بالضبط، وكل `CreateBuilder`
   يبلغ `DestroyBuilder` واحدًا بالضبط، على مسارات الخطأ أيضًا.
 - حرّر ما تسلّمه من `ExportModule` بـ`ReleaseSerializedBuffer`.
@@ -432,6 +432,16 @@ build-neverc/bin/neverc \
   `NEVERC_CONCURRENCY_SESSION_SERIAL`.
 - `neverc.ir.final_verify` مختومة. ولا شيء تفعله إضافةٌ يمكنه تخطّيها.
 
-انظر `PluginIR.h` و`Schema/PluginIRSchema.inc` و`Schema/PhaseSchema.json`
-و`coverage.json` للتصريحات المعيارية وثوابت المخطَّط وسياسات المراحل وأدلة
+انظر [`PluginIR.h`] و[`Schema/PluginIRSchema.inc`] و[`Schema/PhaseSchema.json`]
+و[`coverage.json`] للتصريحات المعيارية وثوابت المخطَّط وسياسات المراحل وأدلة
 الاختبارات.
+
+<!-- reference links -->
+[`coverage.json`]: coverage.json
+[`PluginIR.h`]: ../../neverc/include/neverc/Plugin/PluginIR.h
+[`PluginIRSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginIRSchema.inc
+[`pluginsdk/examples/CustomCallConvPlugin.c`]: ../../pluginsdk/examples/CustomCallConvPlugin.c
+[`pluginsdk/examples/ExamplePlugin.c`]: ../../pluginsdk/examples/ExamplePlugin.c
+[`pluginsdk/examples/FunctionPass.c`]: ../../pluginsdk/examples/FunctionPass.c
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`Schema/PluginIRSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginIRSchema.inc

@@ -4,7 +4,7 @@
 
 # NeverC プラグイン ソース／I/O API
 
-`PluginSource.h` は 2 枚のテーブルを公開します。`NevercIOAPI` はファイルシステム
+[`PluginSource.h`] は 2 枚のテーブルを公開します。`NevercIOAPI` はファイルシステム
 そのもので、仮想ファイルプロバイダ、読み取り、ディレクトリ走査、出力シンク、
 依存記録を担当します。`NevercSourceLocationAPI` はコンパイラ内部の位置をファイル、
 行、綴り文字列へと引き戻します。この 2 つがあれば、プラグインはメモリ上にしか
@@ -99,8 +99,7 @@ IO->AddMemoryFile(IO->Context, Session, SV("/virtual/config.h"),
                   Content, ModificationTime);
 ```
 
-[`pluginsdk/examples/VirtualHeaderPlugin.c`](../../pluginsdk/examples/VirtualHeaderPlugin.c)
-が完全に動作するプロバイダです。
+[`pluginsdk/examples/VirtualHeaderPlugin.c`] が完全に動作するプロバイダです。
 
 ## ファイルの読み取り
 
@@ -299,5 +298,9 @@ Source->CreateMemorySourceUnit(Source->Context, Frame, Frame->Input, &Unit,
 - `AddMemoryFile` はセッションスコープです。内容がタスクに依存するなら、プロバイダ
   こそが正しい道具です。
 
-規範的な宣言は `PluginSource.h` を、完全なプロバイダの例は
-`pluginsdk/examples/VirtualHeaderPlugin.c` を参照してください。
+規範的な宣言は [`PluginSource.h`] を、完全なプロバイダの例は
+[`pluginsdk/examples/VirtualHeaderPlugin.c`] を参照してください。
+
+<!-- reference links -->
+[`pluginsdk/examples/VirtualHeaderPlugin.c`]: ../../pluginsdk/examples/VirtualHeaderPlugin.c
+[`PluginSource.h`]: ../../neverc/include/neverc/Plugin/PluginSource.h

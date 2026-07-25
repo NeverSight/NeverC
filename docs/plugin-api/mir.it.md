@@ -4,7 +4,7 @@
 
 # API MIR dei plugin NeverC
 
-`PluginMIR.h` espone la Machine IR: funzioni macchina, blocchi, istruzioni,
+[`PluginMIR.h`] espone la Machine IR: funzioni macchina, blocchi, istruzioni,
 operandi, registri virtuali e fisici, lo stack frame, il pool di costanti, le
 tabelle di salto e gli operandi di memoria. Un plugin aggancia pass a nove
 hook stabili della generazione di codice, oppure sostituisce interamente
@@ -60,7 +60,7 @@ slot per plugin. Nessun plugin può disabilitarlo, sostituirlo o saltarlo.
 
 ## Lo schema
 
-`Schema/PluginMIRSchema.inc` è generato e incluso da `PluginMIR.h`:
+[`Schema/PluginMIRSchema.inc`] è generato e incluso da [`PluginMIR.h`]:
 
 ```c
 #define NEVERC_MIR_SCHEMA_DIGEST          "6b523b20…"
@@ -327,7 +327,7 @@ Pass.Run           = run_machine_function;
 PassAPI->RegisterPass(PassAPI->Context, RegistrarContext, &Pass);
 ```
 
-Questo è `pluginsdk/examples/MachinePass.c` alla lettera. I livelli sono
+Questo è [`pluginsdk/examples/MachinePass.c`] alla lettera. I livelli sono
 `MODULE`, `FUNCTION` e `BASIC_BLOCK`. `RequiredAnalyses` e
 `PreservedAnalyses` sono array di `NevercMIRBuiltinAnalysis`, e
 `RequiredTargetSchemaDigest` fa sì che il pass si rifiuti di girare contro uno
@@ -441,5 +441,12 @@ Usate il suffisso di modulo che CMake ha prodotto per la vostra piattaforma.
 - `neverc.mir.final_verify` è sigillata. Gira in ogni caso.
 
 Per le dichiarazioni normative, le costanti di schema, le policy delle fasi e
-le prove di copertura si vedano `PluginMIR.h`,
-`Schema/PluginMIRSchema.inc`, `Schema/PhaseSchema.json` e `coverage.json`.
+le prove di copertura si vedano [`PluginMIR.h`],
+[`Schema/PluginMIRSchema.inc`], [`Schema/PhaseSchema.json`] e [`coverage.json`].
+
+<!-- reference links -->
+[`coverage.json`]: coverage.json
+[`PluginMIR.h`]: ../../neverc/include/neverc/Plugin/PluginMIR.h
+[`pluginsdk/examples/MachinePass.c`]: ../../pluginsdk/examples/MachinePass.c
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`Schema/PluginMIRSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginMIRSchema.inc

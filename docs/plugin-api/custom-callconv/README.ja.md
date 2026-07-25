@@ -34,7 +34,7 @@ gpr:rcx,rdx,r8,r9; xmm:xmm0,xmm1; ret:rax; ret_xmm:xmm0
 | `ret_fpr` | | `ret_xmm` のターゲット中立な別名 |
 | `csr` | | カスタムの callee-saved レジスタ集合（既定は標準 ABI の集合） |
 
-どのセグメントも省略でき、認識できないセグメントは無視されます。これらのキーは `llvm/include/llvm/CodeGen/NeverCCallConv.h` に一度だけ定義されているため、生成側とパーサが食い違うことはありません。
+どのセグメントも省略でき、認識できないセグメントは無視されます。これらのキーは [`llvm/include/llvm/CodeGen/NeverCCallConv.h`] に一度だけ定義されているため、生成側とパーサが食い違うことはありません。
 
 ### 二つの引数モード
 
@@ -74,7 +74,7 @@ GPR は常に 64 ビット表記で書き、バックエンドが各値の型に
 
 ### 1. プラグイン駆動（推奨）
 
-リファレンスプラグイン `CustomCallConvPlugin.c` は `pluginsdk/examples/` にあります。`neverc.ir.pass.post_opt` フェーズにモジュールレベルの IR パスを登録します。
+リファレンスプラグイン [`CustomCallConvPlugin.c`] は `pluginsdk/examples/` にあります。`neverc.ir.pass.post_opt` フェーズにモジュールレベルの IR パスを登録します。
 
 **プラグインをビルドする：**
 
@@ -185,7 +185,7 @@ Core->SetFunctionCallingConvention(Core->Context, Task, Function,
 
 ## テスト
 
-GoogleTest スイートは `tests/neverc/CustomCallConvTests.cpp` にあり、26 個のテストを含みます。各テストはサンプルプラグインをビルドし、与えられた spec の下で小さなプログラムをアセンブリへコンパイルし、結果のレジスタまたはスタック配置を検証します。
+GoogleTest スイートは [`tests/neverc/CustomCallConvTests.cpp`] にあり、26 個のテストを含みます。各テストはサンプルプラグインをビルドし、与えられた spec の下で小さなプログラムをアセンブリへコンパイルし、結果のレジスタまたはスタック配置を検証します。
 
 ```bash
 ninja -C build-neverc neverc-tests
@@ -243,3 +243,8 @@ custom_attr(...)              (neverc.ir.pass.post_opt)
 ```
 
 バックエンドの実行器は**一度きりの実装**であり、ポリシーの判断はすべてプラグイン側にあります。新しい規約を追加するのに NeverC を再ビルドする必要は決してありません。
+
+<!-- reference links -->
+[`CustomCallConvPlugin.c`]: ../../../pluginsdk/examples/CustomCallConvPlugin.c
+[`llvm/include/llvm/CodeGen/NeverCCallConv.h`]: ../../../llvm/include/llvm/CodeGen/NeverCCallConv.h
+[`tests/neverc/CustomCallConvTests.cpp`]: ../../../tests/neverc/CustomCallConvTests.cpp

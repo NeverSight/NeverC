@@ -4,7 +4,7 @@
 
 # NeverC 플러그인 소스 및 I/O API
 
-`PluginSource.h` 는 두 개의 테이블을 게시합니다. `NevercIOAPI` 는 파일 시스템
+[`PluginSource.h`] 는 두 개의 테이블을 게시합니다. `NevercIOAPI` 는 파일 시스템
 그 자체로, 가상 파일 제공자, 읽기, 디렉터리 순회, 출력 싱크, 의존성 기록을
 담당합니다. `NevercSourceLocationAPI` 는 컴파일러 내부의 위치를 파일, 행,
 철자 텍스트로 되돌려 매핑합니다. 이 둘을 합치면 플러그인은 메모리에만 존재하는
@@ -99,8 +99,7 @@ IO->AddMemoryFile(IO->Context, Session, SV("/virtual/config.h"),
                   Content, ModificationTime);
 ```
 
-[`pluginsdk/examples/VirtualHeaderPlugin.c`](../../pluginsdk/examples/VirtualHeaderPlugin.c)
-가 완전히 동작하는 제공자입니다.
+[`pluginsdk/examples/VirtualHeaderPlugin.c`] 가 완전히 동작하는 제공자입니다.
 
 ## 파일 읽기
 
@@ -299,5 +298,9 @@ Source->CreateMemorySourceUnit(Source->Context, Frame, Frame->Input, &Unit,
 - `AddMemoryFile` 은 세션 범위입니다. 내용이 태스크에 따라 달라진다면 제공자가
   올바른 도구입니다.
 
-규범적 선언은 `PluginSource.h` 를, 완전한 제공자 예제는
-`pluginsdk/examples/VirtualHeaderPlugin.c` 를 참조하십시오.
+규범적 선언은 [`PluginSource.h`] 를, 완전한 제공자 예제는
+[`pluginsdk/examples/VirtualHeaderPlugin.c`] 를 참조하십시오.
+
+<!-- reference links -->
+[`pluginsdk/examples/VirtualHeaderPlugin.c`]: ../../pluginsdk/examples/VirtualHeaderPlugin.c
+[`PluginSource.h`]: ../../neverc/include/neverc/Plugin/PluginSource.h

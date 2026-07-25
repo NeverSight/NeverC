@@ -4,11 +4,11 @@
 
 # NeverC Plugin Link and LTO API
 
-Linking is modelled as a **state machine over one graph**. `PluginLink.h`
+Linking is modelled as a **state machine over one graph**. [`PluginLink.h`]
 exposes that graph — inputs, sections, atoms, symbols, edges, COMDATs,
 imports, exports, unwind records, synthetics, and layout constraints — plus
 the twenty phases that advance it from a list of files to a committed binary
-image. `PluginLTO.h` covers the two phases in the middle where bitcode
+image. [`PluginLTO.h`] covers the two phases in the middle where bitcode
 becomes objects.
 
 A plugin can observe every step, intercept most of them, replace a single
@@ -296,7 +296,7 @@ Output kinds are `RELOCATABLE`, `EXECUTABLE`, `SHARED_LIBRARY`, and `BUNDLE`.
 Segment flags are `READ`, `WRITE`, and `EXECUTE`.
 
 `Image.Binary` and `Image.Builder` are the bounded transactional writer from
-`PluginObject.h` — `Reserve`, `Write`, `WriteAt`, `Tell`, `ReadAt`, `Insert`,
+[`PluginObject.h`] — `Reserve`, `Write`, `WriteAt`, `Tell`, `ReadAt`, `Insert`,
 `Append`, `Resize`. A `post_emit` interceptor patching bytes must go through
 it; writes past the reserved bound abort staging instead of growing the file.
 
@@ -444,6 +444,13 @@ it actually used.
 - `image_verify`, `side_outputs_verify`, and `commit` are sealed. Observe
   them; do not try to intercept or skip them.
 
-See `PluginLink.h` and `PluginLTO.h` for the normative declarations,
-`Schema/PhaseSchema.json` for the twenty phase policies, and `coverage.json`
+See [`PluginLink.h`] and [`PluginLTO.h`] for the normative declarations,
+[`Schema/PhaseSchema.json`] for the twenty phase policies, and [`coverage.json`]
 for the tests that pin each one.
+
+<!-- reference links -->
+[`coverage.json`]: coverage.json
+[`PluginLink.h`]: ../../neverc/include/neverc/Plugin/PluginLink.h
+[`PluginLTO.h`]: ../../neverc/include/neverc/Plugin/PluginLTO.h
+[`PluginObject.h`]: ../../neverc/include/neverc/Plugin/PluginObject.h
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json

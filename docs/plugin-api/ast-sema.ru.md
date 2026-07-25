@@ -28,7 +28,7 @@ AST открывается через **схему**, а не через C-зе�
 | `NEVERC_INTERFACE_PARSER_{HIGH,LOW}` | `NevercParserAPI` | `NEVERC_PARSER_API_MAJOR` / `_MINOR` |
 | `NEVERC_INTERFACE_SEMA_{HIGH,LOW}` | `NevercSemaAPI` | `NEVERC_SEMA_API_MAJOR` / `_MINOR` |
 
-`Schema/PluginASTSchema.inc` поставляет идентификаторы видов узлов, свойств и
+[`Schema/PluginASTSchema.inc`] поставляет идентификаторы видов узлов, свойств и
 дочерних слотов; его capability major обязан равняться `NEVERC_AST_API_MAJOR`.
 
 ## Фазы
@@ -195,8 +195,7 @@ AST->DestroyASTMutation(AST->Context, Task, Mutation);
 
 Фиксация проверяет подготовленное дерево и публикует его атомарно. Неудачная
 фиксация оставляет прежнее дерево нетронутым, а отмена делает созданные этим
-изменением дескрипторы устаревшими.
-[`pluginsdk/examples/ASTRewritePlugin.c`](../../pluginsdk/examples/ASTRewritePlugin.c)
+изменением дескрипторы устаревшими. [`pluginsdk/examples/ASTRewritePlugin.c`]
 показывает весь цикл, включая перехват синтаксического анализатора.
 
 ## События жизненного цикла
@@ -415,11 +414,19 @@ Sema->CreateSemanticUnit(Sema->Context, Frame, &Unit, &Output);
 - Не изменяйте дерево из наблюдателя жизненного цикла — наблюдатели работают
   только на чтение. Используйте перехватчик на соответствующей фазе.
 - Идентификаторы свойств и дочерних слотов — константы схемы. Не зашивайте
-  числовые литералы; берите имена из `PluginASTSchema.inc`, чтобы пересмотр схемы
+  числовые литералы; берите имена из [`PluginASTSchema.inc`], чтобы пересмотр схемы
   становился ошибкой компиляции.
 - Прежде чем доверять `SizeInBits` или `AlignmentInBits`, проверьте
   `NevercTypeInfo.Flags` на `HAS_KNOWN_LAYOUT`.
 
-Нормативные объявления смотрите в `PluginAST.h`, `PluginSema.h` и
-`Schema/ASTSchema.json`, а работающий перехват анализатора с атомарной
-перезаписью дерева — в `pluginsdk/examples/ASTRewritePlugin.c`.
+Нормативные объявления смотрите в [`PluginAST.h`], [`PluginSema.h`] и
+[`Schema/ASTSchema.json`], а работающий перехват анализатора с атомарной
+перезаписью дерева — в [`pluginsdk/examples/ASTRewritePlugin.c`].
+
+<!-- reference links -->
+[`PluginAST.h`]: ../../neverc/include/neverc/Plugin/PluginAST.h
+[`PluginASTSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginASTSchema.inc
+[`pluginsdk/examples/ASTRewritePlugin.c`]: ../../pluginsdk/examples/ASTRewritePlugin.c
+[`PluginSema.h`]: ../../neverc/include/neverc/Plugin/PluginSema.h
+[`Schema/ASTSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/ASTSchema.json
+[`Schema/PluginASTSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginASTSchema.inc

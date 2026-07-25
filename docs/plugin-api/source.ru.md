@@ -4,7 +4,7 @@
 
 # API исходников и ввода-вывода плагинов NeverC
 
-`PluginSource.h` публикует две таблицы. `NevercIOAPI` — это файловая система:
+[`PluginSource.h`] публикует две таблицы. `NevercIOAPI` — это файловая система:
 поставщики виртуальных файлов, чтение, обход каталогов, приёмники вывода и
 записи о зависимостях. `NevercSourceLocationAPI` отображает внутренние позиции
 компилятора обратно в файлы, строки и написанный текст. Вместе они позволяют
@@ -100,7 +100,7 @@ IO->AddMemoryFile(IO->Context, Session, SV("/virtual/config.h"),
                   Content, ModificationTime);
 ```
 
-[`pluginsdk/examples/VirtualHeaderPlugin.c`](../../pluginsdk/examples/VirtualHeaderPlugin.c) —
+[`pluginsdk/examples/VirtualHeaderPlugin.c`] —
 полноценный рабочий поставщик.
 
 ## Чтение файлов
@@ -301,5 +301,9 @@ Source->CreateMemorySourceUnit(Source->Context, Frame, Frame->Input, &Unit,
 - `AddMemoryFile` действует в рамках сессии; когда содержимое зависит от задачи,
   правильный инструмент — поставщик.
 
-Нормативные объявления смотрите в `PluginSource.h`, а полный пример поставщика —
-в `pluginsdk/examples/VirtualHeaderPlugin.c`.
+Нормативные объявления смотрите в [`PluginSource.h`], а полный пример поставщика —
+в [`pluginsdk/examples/VirtualHeaderPlugin.c`].
+
+<!-- reference links -->
+[`pluginsdk/examples/VirtualHeaderPlugin.c`]: ../../pluginsdk/examples/VirtualHeaderPlugin.c
+[`PluginSource.h`]: ../../neverc/include/neverc/Plugin/PluginSource.h

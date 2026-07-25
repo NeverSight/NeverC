@@ -4,7 +4,7 @@
 
 # NeverC 插件预处理器 API
 
-`PluginPrep.h` 用两种方式暴露预处理器。**订阅** 39 种事件可以拿到预处理器所作所
+[`PluginPrep.h`] 用两种方式暴露预处理器。**订阅** 39 种事件可以拿到预处理器所作所
 为的只读轨迹——进入文件、宏定义与展开、条件求值、pragma。六个**阶段**则更进一
 步，允许你改写结果：重定向一个 `#include`、替换某个宏的展开 token、自己处理一条
 pragma，或者给 `__has_feature` 一个不同的答案。
@@ -21,7 +21,7 @@ Bootstrap->QueryInterface(
 ```
 
 230 种 token 种类（`NEVERC_TOKEN_KIND_COUNT`）和预处理器关键字种类来自
-`Schema/PluginPrepSchema.inc`，该文件由头文件包含，其能力主版本必须等于
+[`Schema/PluginPrepSchema.inc`]，该文件由头文件包含，其能力主版本必须等于
 `NEVERC_PREP_API_MAJOR`——不匹配是编译错误，而不是运行期惊喜。每种 token 还带一
 个类别：`NEVERC_TOKEN_CATEGORY_SPECIAL`、`COMMENT`、`IDENTIFIER`、`LITERAL`、
 `PUNCTUATOR`、`KEYWORD` 或 `ANNOTATION`。
@@ -220,7 +220,7 @@ Prep->DestroyTokenBuilder(Prep->Context, Task, Builder);
 ```
 
 标点和关键字用 `TokenBuilderSetKind`，标识符用 `TokenBuilderSetIdentifier`。
-token 种类常量来自 `PluginPrepSchema.inc`。
+token 种类常量来自 [`PluginPrepSchema.inc`]。
 
 对于整个流——即 `neverc.prep.build_token_stream` 阶段——请累积到流 builder 里
 并一次性提交：
@@ -269,5 +269,11 @@ Prep->CreateFeatureQueryPhaseOutput(Prep->Context, Frame, Continuation, &Out,
   理器。
 - 缺少必需指针时返回 `NEVERC_STATUS_INVALID_ARGUMENT`，并且绝不让异常越过边界。
 
-规范性声明见 `PluginPrep.h` 和 `Schema/PluginPrepSchema.inc`，token 种类的
-schema 见 `Schema/PrepSchema.json`。
+规范性声明见 [`PluginPrep.h`] 和 [`Schema/PluginPrepSchema.inc`]，token 种类的
+schema 见 [`Schema/PrepSchema.json`]。
+
+<!-- reference links -->
+[`PluginPrep.h`]: ../../neverc/include/neverc/Plugin/PluginPrep.h
+[`PluginPrepSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginPrepSchema.inc
+[`Schema/PluginPrepSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginPrepSchema.inc
+[`Schema/PrepSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PrepSchema.json

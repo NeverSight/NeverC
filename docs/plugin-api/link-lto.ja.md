@@ -5,10 +5,10 @@
 # NeverC プラグイン Link / LTO API
 
 リンクは**1 つのグラフ上の状態機械**としてモデル化されています。
-`PluginLink.h` はそのグラフ — 入力、セクション、アトム、シンボル、エッジ、
+[`PluginLink.h`] はそのグラフ — 入力、セクション、アトム、シンボル、エッジ、
 COMDAT、インポート、エクスポート、アンワインドレコード、合成物、レイアウト制約
 — に加えて、ファイルの一覧からコミット済みバイナリイメージまで進める 20 個の
-フェーズを公開します。`PluginLTO.h` はその中間、ビットコードがオブジェクトに
+フェーズを公開します。[`PluginLTO.h`] はその中間、ビットコードがオブジェクトに
 なる 2 つのフェーズを扱います。
 
 プラグインはすべての手順を観察し、ほとんどをインターセプトし、単一の手順を置き
@@ -296,7 +296,7 @@ Link->GetBinaryImageInfo(Link->Context, Task, ImageHandle, &Image);
 出力種別は `RELOCATABLE`、`EXECUTABLE`、`SHARED_LIBRARY`、`BUNDLE`。セグメント
 フラグは `READ`、`WRITE`、`EXECUTE` です。
 
-`Image.Binary` と `Image.Builder` は `PluginObject.h` の有界トランザクショナル
+`Image.Binary` と `Image.Builder` は [`PluginObject.h`] の有界トランザクショナル
 ライタです — `Reserve`、`Write`、`WriteAt`、`Tell`、`ReadAt`、`Insert`、
 `Append`、`Resize`。バイトをパッチする `post_emit` インターセプタは必ずこれを
 経由しなければなりません。予約境界を越える書き込みはファイルを拡張せず、ステージ
@@ -444,6 +444,13 @@ LTORegistrar->RegisterProvider(LTORegistrar->Context, RegistrarContext,
 - `image_verify`、`side_outputs_verify`、`commit` は封印されています。観察は
   できますが、インターセプトやスキップを試みないでください。
 
-規範的な宣言は `PluginLink.h` と `PluginLTO.h`、20 フェーズのポリシーは
-`Schema/PhaseSchema.json`、それぞれを固定するテストは `coverage.json` を参照して
+規範的な宣言は [`PluginLink.h`] と [`PluginLTO.h`]、20 フェーズのポリシーは
+[`Schema/PhaseSchema.json`]、それぞれを固定するテストは [`coverage.json`] を参照して
 ください。
+
+<!-- reference links -->
+[`coverage.json`]: coverage.json
+[`PluginLink.h`]: ../../neverc/include/neverc/Plugin/PluginLink.h
+[`PluginLTO.h`]: ../../neverc/include/neverc/Plugin/PluginLTO.h
+[`PluginObject.h`]: ../../neverc/include/neverc/Plugin/PluginObject.h
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json

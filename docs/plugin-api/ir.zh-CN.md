@@ -4,7 +4,7 @@
 
 # NeverC 插件 IR API
 
-`PluginIR.h` 通过六张能力表和一份生成的 schema 暴露 LLVM IR。插件可以读写
+[`PluginIR.h`] 通过六张能力表和一份生成的 schema 暴露 LLVM IR。插件可以读写
 IR、在五个稳定的流水线位置注册 pass、定义自己的分析，或者干脆替换掉 IR 生成和
 整条优化流水线——全程不包含任何一个 LLVM 头文件。
 
@@ -28,7 +28,7 @@ opcode、类型种类和指令属性都是**稳定的 schema ID**，不是 LLVM 
 
 六个都是 major 1 的 `NEVERC_INTERFACE_STABLE`。用对应的
 `NEVERC_IR_*_API_MAJOR` / `_MINOR` 协商，并确认 `TableSize` 覆盖到你要调用的最
-后一个槽位，`pluginsdk/examples/FunctionPass.c` 里就是这么做的：
+后一个槽位，[`pluginsdk/examples/FunctionPass.c`] 里就是这么做的：
 
 ```c
 Status = Bootstrap->QueryInterface(
@@ -64,7 +64,7 @@ if (!Table ||
 
 ## Schema
 
-`Schema/PluginIRSchema.inc` 由工具生成，并由 `PluginIR.h` 包含。它发布一个摘要
+[`Schema/PluginIRSchema.inc`] 由工具生成，并由 [`PluginIR.h`] 包含。它发布一个摘要
 和各类常量集合：
 
 ```c
@@ -212,7 +212,7 @@ Core->HasFunctionAttribute(Core->Context, Task, Function, SV("noinline"),
                            &Present);
 ```
 
-`pluginsdk/examples/CustomCallConvPlugin.c` 把它与
+[`pluginsdk/examples/CustomCallConvPlugin.c`] 把它与
 `GetFunctionStringAttribute` 结合，驱动一个数据定义的调用约定。
 
 ## 事务式修改
@@ -393,9 +393,9 @@ Gen->PublishModule(Gen->Context, Frame, &Descriptor, &Output);
 
 | 文件 | 展示内容 |
 |---|---|
-| `pluginsdk/examples/FunctionPass.c` | 只读函数 pass，含 ABI 协商 |
-| `pluginsdk/examples/ExamplePlugin.c` | 模块级 pass，用值游标遍历函数 |
-| `pluginsdk/examples/CustomCallConvPlugin.c` | 属性与调用点性质 |
+| [`pluginsdk/examples/FunctionPass.c`] | 只读函数 pass，含 ABI 协商 |
+| [`pluginsdk/examples/ExamplePlugin.c`] | 模块级 pass，用值游标遍历函数 |
+| [`pluginsdk/examples/CustomCallConvPlugin.c`] | 属性与调用点性质 |
 
 ```sh
 cmake --build build-neverc --target neverc-plugin-example-function-pass
@@ -411,7 +411,7 @@ build-neverc/bin/neverc \
 - 每个回调都要返回 `NevercStatus`。插件失败会变成结构化诊断；绝不要让异常越过
   C 边界。
 - 在会被填充的调用之前，把输出结构清零并设置好 `Header`。
-- 不要硬编码 opcode、类型或属性的数值。使用 `PluginIRSchema.inc` 里的名字，这
+- 不要硬编码 opcode、类型或属性的数值。使用 [`PluginIRSchema.inc`] 里的名字，这
   样 schema 修订会变成编译错误。
 - 每个 `BeginMutation` 恰好对应一次 `DestroyMutation`，每个 `CreateBuilder` 恰
   好对应一次 `DestroyBuilder`，错误路径上也一样。
@@ -421,5 +421,15 @@ build-neverc/bin/neverc \
   环 pass 是并行运行的。
 - `neverc.ir.final_verify` 是 sealed 的。插件做什么都跳不过它。
 
-规范性声明、schema 常量、阶段策略与测试证据分别见 `PluginIR.h`、
-`Schema/PluginIRSchema.inc`、`Schema/PhaseSchema.json` 和 `coverage.json`。
+规范性声明、schema 常量、阶段策略与测试证据分别见 [`PluginIR.h`]、
+[`Schema/PluginIRSchema.inc`]、[`Schema/PhaseSchema.json`] 和 [`coverage.json`]。
+
+<!-- reference links -->
+[`coverage.json`]: coverage.json
+[`PluginIR.h`]: ../../neverc/include/neverc/Plugin/PluginIR.h
+[`PluginIRSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginIRSchema.inc
+[`pluginsdk/examples/CustomCallConvPlugin.c`]: ../../pluginsdk/examples/CustomCallConvPlugin.c
+[`pluginsdk/examples/ExamplePlugin.c`]: ../../pluginsdk/examples/ExamplePlugin.c
+[`pluginsdk/examples/FunctionPass.c`]: ../../pluginsdk/examples/FunctionPass.c
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`Schema/PluginIRSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginIRSchema.inc
