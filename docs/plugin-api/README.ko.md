@@ -31,7 +31,7 @@ neverc_plugin_entry(const NevercBootstrapAPI *Bootstrap,
 | [타깃, MC, 어셈블리, 오브젝트](target-mc-object.ko.md) | 타깃 등록, 호출 규약, MC 인코딩, 오브젝트 그래프 |
 | [링크와 LTO API](link-lto.ko.md) | 링크 그래프, 심볼 결정, GC/ICF, 링커와 LTO 프로바이더 |
 | [DynCode API](dyncode.ko.md) | 평평한 위치 독립 이미지, 임포트 로워링, 문자셋 인코딩 |
-| [사용자 정의 호출 규약](custom-callconv/README.md) | 데이터 주도 호출 규약 플러그인 |
+| [사용자 정의 호출 규약](custom-callconv/README.ko.md) | 데이터 주도 호출 규약 플러그인 |
 | [페이즈 커버리지 근거](coverage.json) | 모든 안정 페이즈에 대한 테스트 매핑 |
 
 ## 실행 모델

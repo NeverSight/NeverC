@@ -203,7 +203,7 @@ plan(void *UserData, const NevercCallingConventionQuery *Query,
 
 `Query->SchemaDigest` est une valeur LOCKSTEP — `RegisterNumber` n'a de sens
 que face au schéma qu'il nomme. Voir
-[Conventions d'appel personnalisées](custom-callconv/README.md) et
+[Conventions d'appel personnalisées](custom-callconv/README.fr.md) et
 `pluginsdk/examples/CustomCallConvPlugin.c` pour l'exemple complet.
 
 ## Routes de génération de code

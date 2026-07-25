@@ -186,7 +186,7 @@ plan(void *UserData, const NevercCallingConventionQuery *Query,
 
 `Query->SchemaDigest` 是 LOCKSTEP 值——`RegisterNumber` 只有對著它所指名的那個
 schema 才有意義。完整的實作範例請見
-[自訂呼叫慣例](custom-callconv/README.md) 與
+[自訂呼叫慣例](custom-callconv/README.zh-TW.md) 與
 `pluginsdk/examples/CustomCallConvPlugin.c`。
 
 ## 程式碼產生路線

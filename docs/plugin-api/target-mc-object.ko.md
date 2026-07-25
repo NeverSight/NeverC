@@ -193,7 +193,7 @@ plan(void *UserData, const NevercCallingConventionQuery *Query,
 
 `Query->SchemaDigest`는 LOCKSTEP 값입니다——`RegisterNumber`는 그것이 지목하는 스
 키마에 대해서만 의미를 가집니다. 완전한 실작업 예시는
-[사용자 정의 호출 규약](custom-callconv/README.md)과
+[사용자 정의 호출 규약](custom-callconv/README.ko.md)과
 `pluginsdk/examples/CustomCallConvPlugin.c`를 보세요.
 
 ## 코드 생성 경로

@@ -193,7 +193,7 @@ plan(void *UserData, const NevercCallingConventionQuery *Query,
 
 الحقل `Query->SchemaDigest` قيمة LOCKSTEP — و`RegisterNumber` لا يعني شيئًا إلا
 مقابل المخطط الذي يسمّيه. للاطلاع على المثال الكامل انظر
-[اصطلاحات استدعاء مخصّصة](custom-callconv/README.md) و
+[اصطلاحات استدعاء مخصّصة](custom-callconv/README.ar.md) و
 `pluginsdk/examples/CustomCallConvPlugin.c`.
 
 ## مسارات توليد الشيفرة

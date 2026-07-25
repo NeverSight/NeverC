@@ -33,7 +33,7 @@ identificador.
 | [Destino, MC, ensamblador, objeto](target-mc-object.es.md) | Registro de destinos, convenciones de llamada, codificación MC, grafos de objetos |
 | [API de enlazado y LTO](link-lto.es.md) | Grafo de enlazado, resolución de símbolos, GC/ICF, proveedores de enlazador y LTO |
 | [API de DynCode](dyncode.es.md) | Imágenes planas independientes de la posición, rebajado de importaciones, codificación de juegos de caracteres |
-| [Convenciones de llamada personalizadas](custom-callconv/README.md) | Complementos de convención de llamada dirigidos por datos |
+| [Convenciones de llamada personalizadas](custom-callconv/README.es.md) | Complementos de convención de llamada dirigidos por datos |
 | [Evidencia de cobertura de fases](coverage.json) | Correspondencia de pruebas para cada fase estable |
 
 ## Modelo de ejecución

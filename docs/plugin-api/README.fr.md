@@ -33,7 +33,7 @@ vous demandez à l'hôte par identifiant.
 | [Cible, MC, assembleur, objet](target-mc-object.fr.md) | Enregistrement de cible, conventions d'appel, encodage MC, graphes objet |
 | [API Link et LTO](link-lto.fr.md) | Graphe de liaison, résolution de symboles, GC/ICF, fournisseurs de lieur et de LTO |
 | [API DynCode](dyncode.fr.md) | Images plates indépendantes de la position, abaissement des imports, encodage de jeu de caractères |
-| [Conventions d'appel personnalisées](custom-callconv/README.md) | Plugins de convention d'appel pilotés par les données |
+| [Conventions d'appel personnalisées](custom-callconv/README.fr.md) | Plugins de convention d'appel pilotés par les données |
 | [Preuves de couverture des phases](coverage.json) | Correspondance des tests pour chaque phase stable |
 
 ## Modèle d'exécution

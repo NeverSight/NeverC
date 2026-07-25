@@ -28,7 +28,7 @@ neverc_plugin_entry(const NevercBootstrapAPI *Bootstrap,
 | [Target、MC、汇编、目标文件](target-mc-object.zh-CN.md) | 目标注册、调用约定、MC 编码、目标文件图 |
 | [链接与 LTO API](link-lto.zh-CN.md) | 链接图、符号决议、GC/ICF、链接器与 LTO Provider |
 | [DynCode API](dyncode.zh-CN.md) | 扁平位置无关映像、导入降级、字符集编码 |
-| [自定义调用约定](custom-callconv/README.md) | 数据驱动的调用约定插件 |
+| [自定义调用约定](custom-callconv/README.zh-CN.md) | 数据驱动的调用约定插件 |
 | [阶段覆盖证据](coverage.json) | 每个稳定阶段的测试映射 |
 
 ## 执行模型

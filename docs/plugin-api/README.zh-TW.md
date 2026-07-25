@@ -28,7 +28,7 @@ neverc_plugin_entry(const NevercBootstrapAPI *Bootstrap,
 | [Target、MC、組合語言、目的檔](target-mc-object.zh-TW.md) | 目標註冊、呼叫慣例、MC 編碼、目的檔圖 |
 | [連結與 LTO API](link-lto.zh-TW.md) | 連結圖、符號解析、GC/ICF、連結器與 LTO Provider |
 | [DynCode API](dyncode.zh-TW.md) | 扁平位置無關映像、匯入降級、字元集編碼 |
-| [自訂呼叫慣例](custom-callconv/README.md) | 資料驅動的呼叫慣例外掛 |
+| [自訂呼叫慣例](custom-callconv/README.zh-TW.md) | 資料驅動的呼叫慣例外掛 |
 | [階段涵蓋範圍證據](coverage.json) | 每個穩定階段的測試對應 |
 
 ## 執行模型

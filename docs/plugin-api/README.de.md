@@ -33,7 +33,7 @@ per ID anfordert.
 | [Target, MC, Assembly, Objekt](target-mc-object.de.md) | Target-Registrierung, Aufrufkonventionen, MC-Kodierung, Objektgraphen |
 | [Link- und LTO-API](link-lto.de.md) | Link-Graph, Symbolauflösung, GC/ICF, Linker- und LTO-Provider |
 | [DynCode-API](dyncode.de.md) | Flache positionsunabhängige Images, Import-Lowering, Zeichensatzkodierung |
-| [Eigene Aufrufkonventionen](custom-callconv/README.md) | Datengetriebene Aufrufkonventions-Plugins |
+| [Eigene Aufrufkonventionen](custom-callconv/README.de.md) | Datengetriebene Aufrufkonventions-Plugins |
 | [Nachweis der Phasenabdeckung](coverage.json) | Testzuordnung für jede stabile Phase |
 
 ## Ausführungsmodell

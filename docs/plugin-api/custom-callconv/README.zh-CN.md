@@ -1,4 +1,4 @@
-**Languages**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
+**语言**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
 # 自定义调用约定
 
@@ -21,18 +21,16 @@ spec 是分号分隔的字符串。每一段由一个 key 和逗号分隔的寄�
 gpr:rcx,rdx,r8,r9; xmm:xmm0,xmm1; ret:rax; ret_xmm:xmm0
 ```
 
-
-| 段名        | 别名        | 含义                                         |
-| --------- | --------- | ------------------------------------------ |
-| `args`    |           | **位置模式**：每一项是寄存器名或 `stack`/`mem`，按参数索引逐个对应 |
-| `gpr`     | `arg_gpr` | **池模式**：整数/指针参数寄存器，按顺序取用，用尽后溢出到栈           |
-| `xmm`     | `arg_xmm` | **池模式**：浮点/向量参数寄存器                         |
-| `fpr`     |           | `xmm` 的目标中立别名                              |
-| `ret_gpr` | `ret`     | 整数/指针返回值寄存器                                |
-| `ret_xmm` |           | 浮点/向量返回值寄存器                                |
-| `ret_fpr` |           | `ret_xmm` 的目标中立别名                          |
-| `csr`     |           | 自定义 callee-saved 寄存器集合（默认为标准 ABI 集合）       |
-
+| 段名 | 别名 | 含义 |
+|---|---|---|
+| `args` |  | **位置模式**：每一项是寄存器名或 `stack`/`mem`，按参数索引逐个对应 |
+| `gpr` | `arg_gpr` | **池模式**：整数/指针参数寄存器，按顺序取用，用尽后溢出到栈 |
+| `xmm` | `arg_xmm` | **池模式**：浮点/向量参数寄存器 |
+| `fpr` |  | `xmm` 的目标中立别名 |
+| `ret_gpr` | `ret` | 整数/指针返回值寄存器 |
+| `ret_xmm` |  | 浮点/向量返回值寄存器 |
+| `ret_fpr` |  | `ret_xmm` 的目标中立别名 |
+| `csr` |  | 自定义 callee-saved 寄存器集合（默认为标准 ABI 集合） |
 
 任何一段都可以省略，无法识别的段会被忽略。这些 key 只在 `llvm/include/llvm/CodeGen/NeverCCallConv.h` 中定义一次，因此生产者与解析器不会产生偏离。
 
@@ -52,12 +50,10 @@ args:rcx,stack,r8;ret:rax   # 参数0→rcx、参数1→栈、参数2→r8、返
 
 寄存器名通过按目标划分的表来解析，该表是 spec 可以书写哪些名字的唯一依据。
 
-
-| 架构          | GPR 名                                                | SIMD 名         | 位宽选择                                                |
-| ----------- | ---------------------------------------------------- | -------------- | --------------------------------------------------- |
-| **x86-64**  | `rax`、`rbx`、`rcx`、`rdx`、`rsi`、`rdi`、`rbp`、`r8`–`r15` | `xmm0`–`xmm15` | i32 → 32 位子寄存器，i64/指针 → 64 位                        |
-| **AArch64** | `x0`–`x28`                                           | `v0`–`v31`     | i32→`w`，i64→`x`，f16→`h`，f32→`s`，f64→`d`，f128/向量→`q` |
-
+| 架构 | GPR 名 | SIMD 名 | 位宽选择 |
+|---|---|---|---|
+| **x86-64** | `rax`、`rbx`、`rcx`、`rdx`、`rsi`、`rdi`、`rbp`、`r8`–`r15` | `xmm0`–`xmm15` | i32 → 32 位子寄存器，i64/指针 → 64 位 |
+| **AArch64** | `x0`–`x28` | `v0`–`v31` | i32→`w`，i64→`x`，f16→`h`，f32→`s`，f64→`d`，f128/向量→`q` |
 
 GPR 一律写 64 位形式，后端会按每个值的类型收窄到对应子寄存器。AArch64 的向量寄存器写作 `v0`–`v31`，后端按类型挑选 `H`/`S`/`D`/`Q` 形式。
 
@@ -158,14 +154,12 @@ neverc-cc-plan-v1;schema=<摘要>;target=<high>:<low>;cc=<high>:<low>;stack=<字
 
 由于寄存器编号只在定义它的 schema 下才有意义，不匹配会直接报错，而不是静默生成错误代码：
 
-
-| 情形           | 诊断信息                                                                |
-| ------------ | ------------------------------------------------------------------- |
-| plan 字符串无法解析 | `malformed NeverC calling convention plan`                          |
+| 情形 | 诊断信息 |
+|---|---|
+| plan 字符串无法解析 | `malformed NeverC calling convention plan` |
 | schema 摘要不一致 | `NeverC calling convention plan belongs to a foreign target schema` |
-| 目标 ID 不一致    | `NeverC calling convention plan has a foreign target ID`            |
-| 约定 ID 不一致    | `NeverC calling convention plan has a foreign convention ID`        |
-
+| 目标 ID 不一致 | `NeverC calling convention plan has a foreign target ID` |
+| 约定 ID 不一致 | `NeverC calling convention plan has a foreign convention ID` |
 
 正是这一点让 plan 可以安全地嵌入 bitcode 并穿过 LTO：为另一个目标生成的 plan 不可能被误用。
 
@@ -198,15 +192,13 @@ build-neverc/bin/neverc-tests --gtest_filter='CustomCallConvTest.*'
 
 覆盖范围：
 
-
-| 类别                                               | 测试数 |
-| ------------------------------------------------ | --- |
-| x86-64 池 / 位置 / 栈 / 溢出 / i64 / sret / byval / 回退 | 9   |
-| AArch64 GPR / FPR / 栈 / `csr` / 非统一 spec 跨调用     | 5   |
-| 前端 `custom_attr`（GNU / `__declspec` / 端到端）       | 3   |
-| plan 物化与 schema 拒绝                               | 3   |
-| 加固（`csr`、两个目标上的变参、间接调用、`rsp`、csr 冲突）             | 6   |
-
+| 类别 | 测试数 |
+|---|---|
+| x86-64 池 / 位置 / 栈 / 溢出 / i64 / sret / byval / 回退 | 9 |
+| AArch64 GPR / FPR / 栈 / `csr` / 非统一 spec 跨调用 | 5 |
+| 前端 `custom_attr`（GNU / `__declspec` / 端到端） | 3 |
+| plan 物化与 schema 拒绝 | 3 |
+| 加固（`csr`、两个目标上的变参、间接调用、`rsp`、csr 冲突） | 6 |
 
 ## 架构
 

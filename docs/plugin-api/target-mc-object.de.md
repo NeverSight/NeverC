@@ -203,7 +203,7 @@ plan(void *UserData, const NevercCallingConventionQuery *Query,
 `Query->SchemaDigest` ist ein LOCKSTEP-Wert — `RegisterNumber` bedeutet nur
 etwas gegenüber dem Schema, das er benennt. Das vollständig ausgearbeitete
 Beispiel finden Sie unter
-[Eigene Aufrufkonventionen](custom-callconv/README.md) und in
+[Eigene Aufrufkonventionen](custom-callconv/README.de.md) und in
 `pluginsdk/examples/CustomCallConvPlugin.c`.
 
 ## Routen der Codeerzeugung

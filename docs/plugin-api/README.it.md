@@ -33,7 +33,7 @@ chiedono all'host per identificatore.
 | [Target, MC, assembly, oggetto](target-mc-object.it.md) | Registrazione di target, convenzioni di chiamata, codifica MC, grafi oggetto |
 | [API Link e LTO](link-lto.it.md) | Grafo di collegamento, risoluzione dei simboli, GC/ICF, provider di linker e LTO |
 | [API DynCode](dyncode.it.md) | Immagini piatte indipendenti dalla posizione, abbassamento degli import, codifica del set di caratteri |
-| [Convenzioni di chiamata personalizzate](custom-callconv/README.md) | Plugin di convenzione di chiamata guidati dai dati |
+| [Convenzioni di chiamata personalizzate](custom-callconv/README.it.md) | Plugin di convenzione di chiamata guidati dai dati |
 | [Prove di copertura delle fasi](coverage.json) | Corrispondenza dei test per ogni fase stabile |
 
 ## Modello di esecuzione

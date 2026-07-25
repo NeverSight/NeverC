@@ -31,7 +31,7 @@ neverc_plugin_entry(const NevercBootstrapAPI *Bootstrap,
 | [ターゲット、MC、アセンブリ、オブジェクト](target-mc-object.ja.md) | ターゲット登録、呼び出し規約、MC エンコード、オブジェクトグラフ |
 | [リンクと LTO API](link-lto.ja.md) | リンクグラフ、シンボル解決、GC/ICF、リンカーと LTO プロバイダー |
 | [DynCode API](dyncode.ja.md) | フラットな位置独立イメージ、インポートの低位化、文字セットエンコード |
-| [カスタム呼び出し規約](custom-callconv/README.md) | データ駆動の呼び出し規約プラグイン |
+| [カスタム呼び出し規約](custom-callconv/README.ja.md) | データ駆動の呼び出し規約プラグイン |
 | [フェーズカバレッジの根拠](coverage.json) | すべての安定フェーズに対するテストの対応付け |
 
 ## 実行モデル
