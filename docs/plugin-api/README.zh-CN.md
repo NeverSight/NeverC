@@ -294,12 +294,145 @@ typedef struct NevercRegistrarAPI {
 } NevercRegistrarAPI;
 ```
 
+这些调用都以 `RegistrarContext` 为第一个参数、以一个清零的描述符为第二个参数。
+你调用哪一个，决定了宿主在该阶段如何对待你：
+
+| 调用 | 描述符 | 回调 | 阶段必须声明 |
+|---|---|---|---|
+| `RegisterObserver` | `NevercObserverDescriptor` | `NevercPhaseObserverFn` | `OBSERVABLE` |
+| `RegisterInterceptor` | `NevercInterceptorDescriptor` | `NevercPhaseInterceptorFn` | `INTERCEPTABLE` |
+| `RegisterProvider` | `NevercProviderDescriptor` | `NevercPhaseProviderFn` | `REPLACEABLE` |
+| `RegisterPhase` | `NevercPhaseDescriptor` | — | 一个插件自定义 ID |
+| `RegisterOption` | `NevercOptionDescriptor` | 可选的 `Validator` | — |
+| `RegisterInterface` | 直接传参 | — | — |
+
+结构校验不通过的描述符会当场以 `NEVERC_STATUS_INVALID_DESCRIPTOR` 被拒绝。策略检
+查则发生在宿主应用这次注册的时候：未知的阶段，或没有声明你这次调用所需策略的阶
+段，会在那时被拒。sealed gate 只接受观察者这一种注册。
+
 各领域的注册器——`NevercIRPassAPI.RegisterPass`、
 `NevercTargetAPI.RegisterTarget`、`NevercObjectFormatAPI.RegisterFormat` 等
 等——都把同一个 `RegistrarContext` 作为第二个参数，宿主正是靠它把一次注册归属到
 你的插件。
 
-Provider 还要额外声明它的确定性契约，构建缓存依赖于此：
+### 观察者
+
+```c
+typedef struct NevercObserverDescriptor {
+  NevercABITableHeader Header;
+  NevercInterfaceID Phase;
+  NevercObserverPoint Points;
+  uint32_t Reserved;
+  NevercPhaseObserverFn Callback;
+  void *UserData;
+  NevercDestroyUserDataFn DestroyUserData;
+} NevercObserverDescriptor;
+
+typedef NevercStatus(NEVERC_CALL *NevercPhaseObserverFn)(
+    const NevercPhaseFrame *Frame, NevercObserverPoint Point, void *UserData);
+```
+
+`Points` 是 `NEVERC_OBSERVER_BEFORE`（1）、`NEVERC_OBSERVER_AFTER`（2）和
+`NEVERC_OBSERVER_AFTER_COMMIT`（4）的位掩码，必须非零；回调的 `Point` 参数会告诉
+你触发的是哪一个。取自 `pluginsdk/examples/DriverTracePlugin.c`：
+
+```c
+NevercObserverDescriptor Observer = {0};
+Observer.Header = (NevercABITableHeader){
+    sizeof(Observer), NEVERC_PLUGIN_ABI_MAJOR, NEVERC_PLUGIN_ABI_MINOR, 0};
+Observer.Phase = (NevercInterfaceID){NEVERC_PHASE_DRIVER_RAW_ARGUMENTS_HIGH,
+                                     NEVERC_PHASE_DRIVER_RAW_ARGUMENTS_LOW};
+Observer.Points = NEVERC_OBSERVER_BEFORE | NEVERC_OBSERVER_AFTER;
+Observer.Callback = observe_arguments;
+Observer.UserData = Process;
+Status = Registrar->RegisterObserver(RegistrarContext, &Observer);
+```
+
+`UserData` 会原样回传。设置 `DestroyUserData`——本节每个描述符都有这个字段——会让
+宿主在该注册消亡时释放那块内存，于是按注册分配的内存不必再在 `Destroy` 里跟踪。
+
+### 拦截器
+
+```c
+typedef struct NevercInterceptorDescriptor {
+  NevercABITableHeader Header;
+  NevercInterfaceID Phase;
+  NevercPhaseInterceptorFn Callback;
+  void *UserData;
+  NevercDestroyUserDataFn DestroyUserData;
+} NevercInterceptorDescriptor;
+
+typedef NevercStatus(NEVERC_CALL *NevercPhaseInterceptorFn)(
+    const NevercPhaseFrame *Frame, NevercPhaseContinuation *Continuation,
+    NevercPhaseResult *OutResult, void *UserData);
+```
+
+延续（continuation）就是链条的其余部分，而结果是你用来汇报自己做了什么的：
+
+```c
+typedef struct NevercPhaseContinuation {
+  NevercABITableHeader Header;
+  NevercInvokeNextFn InvokeNext;
+  void *Context;
+  uint64_t Generation;
+} NevercPhaseContinuation;
+
+typedef struct NevercPhaseResult {
+  NevercABITableHeader Header;
+  NevercPhaseAction Action;
+  uint32_t Reserved;
+  NevercArtifactHandle Output;
+  NevercProofHandle Proof;
+} NevercPhaseResult;
+```
+
+这三个动作不可互换。宿主会拿结果与你的实际行为对照，一旦不符就以
+`NEVERC_STATUS_POLICY_VIOLATION` 让整条链失败：
+
+| `Action` | `InvokeNext` | `Output` | `Proof` | 另需 |
+|---|---|---|---|---|
+| `NEVERC_PHASE_CONTINUE` | 调用一次 | 空 | 空 | — |
+| `NEVERC_PHASE_REPLACE` | 不调用 | 有值 | 空 | `REPLACEABLE` |
+| `NEVERC_PHASE_SKIP` | 不调用 | 有值 | 有值 | `SKIPPABLE_WITH_PROOF` |
+
+`InvokeNext` 最多调用一次，且只能在回调线程上调用——调用第二次属于策略违规，从别
+的线程调用则报 `NEVERC_STATUS_WRONG_SCOPE`。拦截器没有调用它却返回 `CONTINUE`，
+同样是策略违规，因为那样这个阶段会悄无声息地什么都不产出。
+
+```c
+NevercInterceptorDescriptor Interceptor = {0};
+Interceptor.Header = (NevercABITableHeader){
+    sizeof(Interceptor), NEVERC_PLUGIN_ABI_MAJOR, NEVERC_PLUGIN_ABI_MINOR, 0};
+Interceptor.Phase = (NevercInterfaceID){NEVERC_PHASE_DRIVER_EXECUTE_JOB_HIGH,
+                                        NEVERC_PHASE_DRIVER_EXECUTE_JOB_LOW};
+Interceptor.Callback = intercept_job;
+Interceptor.UserData = Process;
+Status = Registrar->RegisterInterceptor(RegistrarContext, &Interceptor);
+```
+
+### Provider
+
+Provider 会彻底替换掉一个阶段，因此它还要声明构建缓存所依赖的确定性契约：
+
+```c
+typedef struct NevercProviderDescriptor {
+  NevercABITableHeader Header;
+  NevercInterfaceID Phase;
+  NevercStringView ProviderID;
+  NevercPhaseRoute Route;
+  NevercBool Deterministic;
+  NevercBool Cacheable;
+  NevercBool FallbackSafe;
+  uint32_t Reserved;
+  NevercPhaseProviderFn Callback;
+  void *UserData;
+  NevercDestroyUserDataFn DestroyUserData;
+} NevercProviderDescriptor;
+
+typedef NevercStatus(NEVERC_CALL *NevercPhaseProviderFn)(
+    const NevercPhaseFrame *Frame, NevercPhaseResult *OutResult,
+    void *UserData);
+```
 
 ```c
 Provider.ProviderID    = SV("com.example.my-lowering");
@@ -308,6 +441,81 @@ Provider.Deterministic = NEVERC_TRUE;
 Provider.Cacheable     = NEVERC_TRUE;
 Provider.FallbackSafe  = NEVERC_FALSE;  /* 内建实现不得悄悄接管 */
 ```
+
+`ProviderID` 必须是规范名：至多 255 字节，只含小写字母、数字、`.`、`_` 和 `-`，不
+以点开头或结尾，也不含 `..`。哪怕出现一个大写字母，这次注册也会被拒。`Route.Header`
+和其他表头一样必须初始化。
+
+这里没有延续：回调本身就是这个阶段。它必须报告 `NEVERC_PHASE_REPLACE`，带上
+`Output` 且 `Proof` 为空——其他任何组合都是策略违规。
+
+`FallbackSafe` 是这几个标志里唯一在运行时有实际效果、而不只是记账的。当它为
+`NEVERC_TRUE` 且 Provider 以带 `NEVERC_STATUS_FLAG_RECOVERABLE` 的状态失败时，宿
+主可以丢弃已产生的部分效果，改跑内建实现。如果一次半途而废的尝试无法回滚，就让它
+保持 `NEVERC_FALSE`。
+
+### 插件自定义阶段
+
+`RegisterPhase` 用来添加一个宿主并不知道的转换，这正是那 8 个扩展 ID 族被保留下来
+的用途：
+
+```c
+typedef struct NevercPhaseDescriptor {
+  NevercABITableHeader Header;
+  NevercInterfaceID Phase;
+  NevercStringView CanonicalName;
+  NevercInterfaceID InputArtifact;
+  NevercInterfaceID OutputArtifact;
+  NevercPhasePolicy Policy;
+  NevercObserverPoint ObserverPoints;
+  uint32_t Reserved;
+} NevercPhaseDescriptor;
+```
+
+`Phase`、`InputArtifact` 和 `OutputArtifact` 都必须非零，`Policy` 必须非零且只能包
+含已知标志。声明了 `ObserverPoints` 却没有 `NEVERC_PHASE_OBSERVABLE` 会被拒绝；把
+`NEVERC_PHASE_SEALED_HOST_GATE` 与 `INTERCEPTABLE`、`REPLACEABLE` 或
+`SKIPPABLE_WITH_PROOF` 中任何一个组合在一起同样会被拒——这与内建阶段图所校验的是同
+一批不变式。请从你所在领域的族里取 ID，这样才不会与将来的内建阶段撞车：
+
+```c
+#include "neverc/Plugin/Schema/PluginPhaseSchema.inc"
+
+/* NEVERC_EXTENSION_FAMILY_COUNT is 8; family 1 is "neverc.ir.extension". */
+NevercInterfaceID MyPhase = {NEVERC_EXTENSION_FAMILY_1_ID_HIGH,
+                             NEVERC_EXTENSION_FAMILY_1_ID_LOW_MIN};
+```
+
+每个族都会给出 `_NAMESPACE`、`_ID_HIGH`、`_ID_LOW_MIN` 和 `_ID_LOW_MAX`，低 64 位由
+你在该区间内自行分配。
+
+### 向其他插件发布接口
+
+`RegisterInterface` 是唯一不接受描述符的调用。它把你自己的一张表交给宿主，好让另一
+个插件能通过查询内建接口所用的同一个 `QueryInterface` 拿到它：
+
+```c
+Registrar->RegisterInterface(RegistrarContext, MyInterfaceID,
+                             NEVERC_INTERFACE_STABLE, &MyTable,
+                             /* Compatibility = */ NULL);
+```
+
+当表里携带的是经不起版本偏移的目标相关 schema 值时，改传
+`NEVERC_INTERFACE_LOCKSTEP`。lockstep 接口必须提供一个 `NevercCompatibilityKey`，
+把消费者钉死在某一个生产者构建上：
+
+```c
+typedef struct NevercCompatibilityKey {
+  NevercABITableHeader Header;
+  NevercStringView ProducerBuildID;   /* compare against Bootstrap->HostBuildID */
+  NevercStringView TargetABIKey;
+  uint32_t LLVMMajor;                 /* compare against Bootstrap->LLVMMajor   */
+  uint32_t Reserved;
+} NevercCompatibilityKey;
+```
+
+lockstep 注册要求这三个字段全部填好；构建 ID 为空、ABI key 为空，或者 LLVM 主版本号
+为零，都会被当作无效描述符拒绝。
 
 ## 构建
 

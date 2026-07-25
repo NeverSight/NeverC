@@ -306,13 +306,156 @@ typedef struct NevercRegistrarAPI {
 } NevercRegistrarAPI;
 ```
 
+Every one of these takes `RegistrarContext` as its first argument and a
+zero-initialized descriptor as its second. Which call you make is what decides
+how the host treats you at the phase:
+
+| Call | Descriptor | Callback | Phase must advertise |
+|---|---|---|---|
+| `RegisterObserver` | `NevercObserverDescriptor` | `NevercPhaseObserverFn` | `OBSERVABLE` |
+| `RegisterInterceptor` | `NevercInterceptorDescriptor` | `NevercPhaseInterceptorFn` | `INTERCEPTABLE` |
+| `RegisterProvider` | `NevercProviderDescriptor` | `NevercPhaseProviderFn` | `REPLACEABLE` |
+| `RegisterPhase` | `NevercPhaseDescriptor` | — | a plugin-defined ID |
+| `RegisterOption` | `NevercOptionDescriptor` | optional `Validator` | — |
+| `RegisterInterface` | plain arguments | — | — |
+
+A descriptor that fails structural validation is rejected immediately with
+`NEVERC_STATUS_INVALID_DESCRIPTOR`. The policy check happens when the host
+applies the registration: an unknown phase, or one that does not advertise the
+policy your call requires, is refused there. Observers are the only kind a
+sealed gate accepts.
+
 Domain registrars — `NevercIRPassAPI.RegisterPass`,
 `NevercTargetAPI.RegisterTarget`, `NevercObjectFormatAPI.RegisterFormat`, and
 the rest — take that same `RegistrarContext` as their second argument, which
 is how the host attributes a registration to your plugin.
 
-A provider additionally declares its determinism contract, which the build
-cache relies on:
+### Observers
+
+```c
+typedef struct NevercObserverDescriptor {
+  NevercABITableHeader Header;
+  NevercInterfaceID Phase;
+  NevercObserverPoint Points;
+  uint32_t Reserved;
+  NevercPhaseObserverFn Callback;
+  void *UserData;
+  NevercDestroyUserDataFn DestroyUserData;
+} NevercObserverDescriptor;
+
+typedef NevercStatus(NEVERC_CALL *NevercPhaseObserverFn)(
+    const NevercPhaseFrame *Frame, NevercObserverPoint Point, void *UserData);
+```
+
+`Points` is a bitmask of `NEVERC_OBSERVER_BEFORE` (1), `NEVERC_OBSERVER_AFTER`
+(2), and `NEVERC_OBSERVER_AFTER_COMMIT` (4); it must be non-zero, and the
+`Point` argument tells the callback which one fired. From
+`pluginsdk/examples/DriverTracePlugin.c`:
+
+```c
+NevercObserverDescriptor Observer = {0};
+Observer.Header = (NevercABITableHeader){
+    sizeof(Observer), NEVERC_PLUGIN_ABI_MAJOR, NEVERC_PLUGIN_ABI_MINOR, 0};
+Observer.Phase = (NevercInterfaceID){NEVERC_PHASE_DRIVER_RAW_ARGUMENTS_HIGH,
+                                     NEVERC_PHASE_DRIVER_RAW_ARGUMENTS_LOW};
+Observer.Points = NEVERC_OBSERVER_BEFORE | NEVERC_OBSERVER_AFTER;
+Observer.Callback = observe_arguments;
+Observer.UserData = Process;
+Status = Registrar->RegisterObserver(RegistrarContext, &Observer);
+```
+
+`UserData` is passed back untouched. Setting `DestroyUserData` — present on
+every descriptor in this section — makes the host release that memory when the
+registration goes away, so a per-registration allocation does not have to be
+tracked in `Destroy`.
+
+### Interceptors
+
+```c
+typedef struct NevercInterceptorDescriptor {
+  NevercABITableHeader Header;
+  NevercInterfaceID Phase;
+  NevercPhaseInterceptorFn Callback;
+  void *UserData;
+  NevercDestroyUserDataFn DestroyUserData;
+} NevercInterceptorDescriptor;
+
+typedef NevercStatus(NEVERC_CALL *NevercPhaseInterceptorFn)(
+    const NevercPhaseFrame *Frame, NevercPhaseContinuation *Continuation,
+    NevercPhaseResult *OutResult, void *UserData);
+```
+
+The continuation is the rest of the chain, and the result is how you report
+what you did with it:
+
+```c
+typedef struct NevercPhaseContinuation {
+  NevercABITableHeader Header;
+  NevercInvokeNextFn InvokeNext;
+  void *Context;
+  uint64_t Generation;
+} NevercPhaseContinuation;
+
+typedef struct NevercPhaseResult {
+  NevercABITableHeader Header;
+  NevercPhaseAction Action;
+  uint32_t Reserved;
+  NevercArtifactHandle Output;
+  NevercProofHandle Proof;
+} NevercPhaseResult;
+```
+
+The three actions are not interchangeable. The host validates the result
+against what you actually did and fails the chain with
+`NEVERC_STATUS_POLICY_VIOLATION` on any mismatch:
+
+| `Action` | `InvokeNext` | `Output` | `Proof` | Also requires |
+|---|---|---|---|---|
+| `NEVERC_PHASE_CONTINUE` | called once | empty | empty | — |
+| `NEVERC_PHASE_REPLACE` | not called | set | empty | `REPLACEABLE` |
+| `NEVERC_PHASE_SKIP` | not called | set | set | `SKIPPABLE_WITH_PROOF` |
+
+`InvokeNext` may be called at most once and only on the callback thread — a
+second call is a policy violation, and a call from another thread reports
+`NEVERC_STATUS_WRONG_SCOPE`. An interceptor that returns `CONTINUE` without
+having called it is also a policy violation, because the phase would silently
+produce nothing.
+
+```c
+NevercInterceptorDescriptor Interceptor = {0};
+Interceptor.Header = (NevercABITableHeader){
+    sizeof(Interceptor), NEVERC_PLUGIN_ABI_MAJOR, NEVERC_PLUGIN_ABI_MINOR, 0};
+Interceptor.Phase = (NevercInterfaceID){NEVERC_PHASE_DRIVER_EXECUTE_JOB_HIGH,
+                                        NEVERC_PHASE_DRIVER_EXECUTE_JOB_LOW};
+Interceptor.Callback = intercept_job;
+Interceptor.UserData = Process;
+Status = Registrar->RegisterInterceptor(RegistrarContext, &Interceptor);
+```
+
+### Providers
+
+A provider replaces a phase outright, so it also declares the determinism
+contract the build cache relies on:
+
+```c
+typedef struct NevercProviderDescriptor {
+  NevercABITableHeader Header;
+  NevercInterfaceID Phase;
+  NevercStringView ProviderID;
+  NevercPhaseRoute Route;
+  NevercBool Deterministic;
+  NevercBool Cacheable;
+  NevercBool FallbackSafe;
+  uint32_t Reserved;
+  NevercPhaseProviderFn Callback;
+  void *UserData;
+  NevercDestroyUserDataFn DestroyUserData;
+} NevercProviderDescriptor;
+
+typedef NevercStatus(NEVERC_CALL *NevercPhaseProviderFn)(
+    const NevercPhaseFrame *Frame, NevercPhaseResult *OutResult,
+    void *UserData);
+```
 
 ```c
 Provider.ProviderID    = SV("com.example.my-lowering");
@@ -321,6 +464,89 @@ Provider.Deterministic = NEVERC_TRUE;
 Provider.Cacheable     = NEVERC_TRUE;
 Provider.FallbackSafe  = NEVERC_FALSE;  /* built-in cannot silently take over */
 ```
+
+`ProviderID` must be a canonical name: at most 255 bytes of lowercase letters,
+digits, `.`, `_`, and `-`, not starting or ending with a dot and never
+containing `..`. An upper-case character is enough to have the registration
+refused. `Route.Header` must be initialized like any other table header.
+
+There is no continuation: the callback is the phase. It must report
+`NEVERC_PHASE_REPLACE` with an `Output` and an empty `Proof` — anything else is
+a policy violation.
+
+`FallbackSafe` is the one flag with a runtime effect beyond bookkeeping. When
+it is `NEVERC_TRUE` and the provider fails with a status marked
+`NEVERC_STATUS_FLAG_RECOVERABLE`, the host may discard the partial effects and
+run the built-in implementation instead. Leave it `NEVERC_FALSE` when a
+half-finished attempt cannot be rolled back.
+
+### Plugin-defined phases
+
+`RegisterPhase` adds a transition the host does not know about, which is what
+the 8 extension-ID families are reserved for:
+
+```c
+typedef struct NevercPhaseDescriptor {
+  NevercABITableHeader Header;
+  NevercInterfaceID Phase;
+  NevercStringView CanonicalName;
+  NevercInterfaceID InputArtifact;
+  NevercInterfaceID OutputArtifact;
+  NevercPhasePolicy Policy;
+  NevercObserverPoint ObserverPoints;
+  uint32_t Reserved;
+} NevercPhaseDescriptor;
+```
+
+`Phase`, `InputArtifact`, and `OutputArtifact` must all be non-zero, and
+`Policy` must be non-zero and contain only known flags. Declaring
+`ObserverPoints` without `NEVERC_PHASE_OBSERVABLE` is rejected, as is combining
+`NEVERC_PHASE_SEALED_HOST_GATE` with any of `INTERCEPTABLE`, `REPLACEABLE`, or
+`SKIPPABLE_WITH_PROOF` — the same invariants the built-in graph is checked
+against. Take the ID from your domain's family so it cannot collide with a
+future built-in:
+
+```c
+#include "neverc/Plugin/Schema/PluginPhaseSchema.inc"
+
+/* NEVERC_EXTENSION_FAMILY_COUNT is 8; family 1 is "neverc.ir.extension". */
+NevercInterfaceID MyPhase = {NEVERC_EXTENSION_FAMILY_1_ID_HIGH,
+                             NEVERC_EXTENSION_FAMILY_1_ID_LOW_MIN};
+```
+
+Each family publishes `_NAMESPACE`, `_ID_HIGH`, `_ID_LOW_MIN`, and
+`_ID_LOW_MAX`, and the low half is yours to allocate within that range.
+
+### Publishing an interface to other plugins
+
+`RegisterInterface` is the one call that takes no descriptor. It hands the host
+a table of your own so that another plugin can reach it through the same
+`QueryInterface` used for built-in interfaces:
+
+```c
+Registrar->RegisterInterface(RegistrarContext, MyInterfaceID,
+                             NEVERC_INTERFACE_STABLE, &MyTable,
+                             /* Compatibility = */ NULL);
+```
+
+Pass `NEVERC_INTERFACE_LOCKSTEP` instead when the table carries
+target-specific schema values that cannot survive a version skew. A lockstep
+interface must supply a `NevercCompatibilityKey`, which pins the consumer to
+one producer build:
+
+```c
+typedef struct NevercCompatibilityKey {
+  NevercABITableHeader Header;
+  NevercStringView ProducerBuildID;   /* compare against Bootstrap->HostBuildID */
+  NevercStringView TargetABIKey;
+  uint32_t LLVMMajor;                 /* compare against Bootstrap->LLVMMajor   */
+  uint32_t Reserved;
+} NevercCompatibilityKey;
+```
+
+All three fields must be populated for a lockstep registration; an empty build
+ID, an empty ABI key, or a zero LLVM major is rejected as an invalid
+descriptor.
 
 ## Building
 

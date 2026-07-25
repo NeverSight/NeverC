@@ -317,14 +317,157 @@ typedef struct NevercRegistrarAPI {
 } NevercRegistrarAPI;
 ```
 
+Chacun de ces appels prend `RegistrarContext` en premier argument et un descripteur
+mis à zéro en second. L'appel que vous choisissez détermine la manière dont l'hôte
+vous traite à la phase :
+
+| Appel | Descripteur | Rappel | La phase doit déclarer |
+|---|---|---|---|
+| `RegisterObserver` | `NevercObserverDescriptor` | `NevercPhaseObserverFn` | `OBSERVABLE` |
+| `RegisterInterceptor` | `NevercInterceptorDescriptor` | `NevercPhaseInterceptorFn` | `INTERCEPTABLE` |
+| `RegisterProvider` | `NevercProviderDescriptor` | `NevercPhaseProviderFn` | `REPLACEABLE` |
+| `RegisterPhase` | `NevercPhaseDescriptor` | — | un ID défini par le greffon |
+| `RegisterOption` | `NevercOptionDescriptor` | `Validator` facultatif | — |
+| `RegisterInterface` | arguments simples | — | — |
+
+Un descripteur qui échoue à la validation structurelle est rejeté immédiatement avec
+`NEVERC_STATUS_INVALID_DESCRIPTOR`. La vérification de la politique a lieu au moment
+où l'hôte applique l'enregistrement : une phase inconnue, ou une phase qui ne
+déclare pas la politique exigée par votre appel, y est refusée. Une porte scellée
+n'accepte que des observateurs.
+
 Les fonctions d'enregistrement propres à chaque domaine —
 `NevercIRPassAPI.RegisterPass`, `NevercTargetAPI.RegisterTarget`,
 `NevercObjectFormatAPI.RegisterFormat` et les autres — prennent ce même
 `RegistrarContext` en deuxième argument : c'est ainsi que l'hôte attribue un
 enregistrement à votre plugin.
 
-Un fournisseur déclare en outre son contrat de déterminisme, dont dépend le
-cache de compilation :
+### Observateurs
+
+```c
+typedef struct NevercObserverDescriptor {
+  NevercABITableHeader Header;
+  NevercInterfaceID Phase;
+  NevercObserverPoint Points;
+  uint32_t Reserved;
+  NevercPhaseObserverFn Callback;
+  void *UserData;
+  NevercDestroyUserDataFn DestroyUserData;
+} NevercObserverDescriptor;
+
+typedef NevercStatus(NEVERC_CALL *NevercPhaseObserverFn)(
+    const NevercPhaseFrame *Frame, NevercObserverPoint Point, void *UserData);
+```
+
+`Points` est un masque de bits composé de `NEVERC_OBSERVER_BEFORE` (1),
+`NEVERC_OBSERVER_AFTER` (2) et `NEVERC_OBSERVER_AFTER_COMMIT` (4) ; il doit être non
+nul, et l'argument `Point` indique au rappel lequel s'est déclenché. Extrait de
+`pluginsdk/examples/DriverTracePlugin.c` :
+
+```c
+NevercObserverDescriptor Observer = {0};
+Observer.Header = (NevercABITableHeader){
+    sizeof(Observer), NEVERC_PLUGIN_ABI_MAJOR, NEVERC_PLUGIN_ABI_MINOR, 0};
+Observer.Phase = (NevercInterfaceID){NEVERC_PHASE_DRIVER_RAW_ARGUMENTS_HIGH,
+                                     NEVERC_PHASE_DRIVER_RAW_ARGUMENTS_LOW};
+Observer.Points = NEVERC_OBSERVER_BEFORE | NEVERC_OBSERVER_AFTER;
+Observer.Callback = observe_arguments;
+Observer.UserData = Process;
+Status = Registrar->RegisterObserver(RegistrarContext, &Observer);
+```
+
+`UserData` vous est restitué tel quel. Définir `DestroyUserData` — présent sur
+chaque descripteur de cette section — fait libérer cette mémoire par l'hôte lorsque
+l'enregistrement disparaît, si bien qu'une allocation par enregistrement n'a pas à
+être suivie dans `Destroy`.
+
+### Intercepteurs
+
+```c
+typedef struct NevercInterceptorDescriptor {
+  NevercABITableHeader Header;
+  NevercInterfaceID Phase;
+  NevercPhaseInterceptorFn Callback;
+  void *UserData;
+  NevercDestroyUserDataFn DestroyUserData;
+} NevercInterceptorDescriptor;
+
+typedef NevercStatus(NEVERC_CALL *NevercPhaseInterceptorFn)(
+    const NevercPhaseFrame *Frame, NevercPhaseContinuation *Continuation,
+    NevercPhaseResult *OutResult, void *UserData);
+```
+
+La continuation est tout le reste de la chaîne, et le résultat est la façon dont
+vous rapportez ce que vous en avez fait :
+
+```c
+typedef struct NevercPhaseContinuation {
+  NevercABITableHeader Header;
+  NevercInvokeNextFn InvokeNext;
+  void *Context;
+  uint64_t Generation;
+} NevercPhaseContinuation;
+
+typedef struct NevercPhaseResult {
+  NevercABITableHeader Header;
+  NevercPhaseAction Action;
+  uint32_t Reserved;
+  NevercArtifactHandle Output;
+  NevercProofHandle Proof;
+} NevercPhaseResult;
+```
+
+Les trois actions ne sont pas interchangeables. L'hôte confronte le résultat à ce
+que vous avez réellement fait et fait échouer la chaîne avec
+`NEVERC_STATUS_POLICY_VIOLATION` à la moindre discordance :
+
+| `Action` | `InvokeNext` | `Output` | `Proof` | Exige en plus |
+|---|---|---|---|---|
+| `NEVERC_PHASE_CONTINUE` | appelé une fois | vide | vide | — |
+| `NEVERC_PHASE_REPLACE` | non appelé | renseigné | vide | `REPLACEABLE` |
+| `NEVERC_PHASE_SKIP` | non appelé | renseigné | renseigné | `SKIPPABLE_WITH_PROOF` |
+
+`InvokeNext` ne peut être appelé qu'au plus une fois, et uniquement sur le fil du
+rappel : un second appel est une violation de politique, et un appel depuis un autre
+fil signale `NEVERC_STATUS_WRONG_SCOPE`. Un intercepteur qui renvoie `CONTINUE` sans
+l'avoir appelé viole également la politique, car la phase ne produirait alors
+silencieusement rien.
+
+```c
+NevercInterceptorDescriptor Interceptor = {0};
+Interceptor.Header = (NevercABITableHeader){
+    sizeof(Interceptor), NEVERC_PLUGIN_ABI_MAJOR, NEVERC_PLUGIN_ABI_MINOR, 0};
+Interceptor.Phase = (NevercInterfaceID){NEVERC_PHASE_DRIVER_EXECUTE_JOB_HIGH,
+                                        NEVERC_PHASE_DRIVER_EXECUTE_JOB_LOW};
+Interceptor.Callback = intercept_job;
+Interceptor.UserData = Process;
+Status = Registrar->RegisterInterceptor(RegistrarContext, &Interceptor);
+```
+
+### Fournisseurs
+
+Un fournisseur remplace purement et simplement une phase ; il déclare donc aussi le
+contrat de déterminisme dont dépend le cache de compilation :
+
+```c
+typedef struct NevercProviderDescriptor {
+  NevercABITableHeader Header;
+  NevercInterfaceID Phase;
+  NevercStringView ProviderID;
+  NevercPhaseRoute Route;
+  NevercBool Deterministic;
+  NevercBool Cacheable;
+  NevercBool FallbackSafe;
+  uint32_t Reserved;
+  NevercPhaseProviderFn Callback;
+  void *UserData;
+  NevercDestroyUserDataFn DestroyUserData;
+} NevercProviderDescriptor;
+
+typedef NevercStatus(NEVERC_CALL *NevercPhaseProviderFn)(
+    const NevercPhaseFrame *Frame, NevercPhaseResult *OutResult,
+    void *UserData);
+```
 
 ```c
 Provider.ProviderID    = SV("com.example.my-lowering");
@@ -333,6 +476,89 @@ Provider.Deterministic = NEVERC_TRUE;
 Provider.Cacheable     = NEVERC_TRUE;
 Provider.FallbackSafe  = NEVERC_FALSE;  /* built-in cannot silently take over */
 ```
+
+`ProviderID` doit être un nom canonique : au plus 255 octets composés de minuscules,
+de chiffres, de `.`, `_` et `-`, ne commençant ni ne finissant par un point et ne
+contenant jamais `..`. Une seule majuscule suffit à faire refuser l'enregistrement.
+`Route.Header` doit être initialisé comme n'importe quel autre en-tête de table.
+
+Il n'y a pas de continuation : le rappel *est* la phase. Il doit signaler
+`NEVERC_PHASE_REPLACE` avec un `Output` et un `Proof` vide — tout le reste est une
+violation de politique.
+
+`FallbackSafe` est le seul de ces drapeaux à avoir un effet à l'exécution au-delà de
+la comptabilité. Lorsqu'il vaut `NEVERC_TRUE` et que le fournisseur échoue avec un
+statut marqué `NEVERC_STATUS_FLAG_RECOVERABLE`, l'hôte peut écarter les effets
+partiels et exécuter l'implémentation intégrée à la place. Laissez-le à
+`NEVERC_FALSE` lorsqu'une tentative inachevée ne peut pas être annulée.
+
+### Phases définies par un greffon
+
+`RegisterPhase` ajoute une transition que l'hôte ne connaît pas : c'est précisément
+ce à quoi les 8 familles d'ID d'extension sont réservées :
+
+```c
+typedef struct NevercPhaseDescriptor {
+  NevercABITableHeader Header;
+  NevercInterfaceID Phase;
+  NevercStringView CanonicalName;
+  NevercInterfaceID InputArtifact;
+  NevercInterfaceID OutputArtifact;
+  NevercPhasePolicy Policy;
+  NevercObserverPoint ObserverPoints;
+  uint32_t Reserved;
+} NevercPhaseDescriptor;
+```
+
+`Phase`, `InputArtifact` et `OutputArtifact` doivent tous être non nuls, et `Policy`
+doit être non nulle et ne contenir que des drapeaux connus. Déclarer
+`ObserverPoints` sans `NEVERC_PHASE_OBSERVABLE` est refusé, tout comme combiner
+`NEVERC_PHASE_SEALED_HOST_GATE` avec `INTERCEPTABLE`, `REPLACEABLE` ou
+`SKIPPABLE_WITH_PROOF` — ce sont les invariants mêmes auxquels le graphe intégré est
+confronté. Prenez l'ID dans la famille de votre domaine afin qu'il ne puisse pas
+entrer en collision avec une future phase intégrée :
+
+```c
+#include "neverc/Plugin/Schema/PluginPhaseSchema.inc"
+
+/* NEVERC_EXTENSION_FAMILY_COUNT is 8; family 1 is "neverc.ir.extension". */
+NevercInterfaceID MyPhase = {NEVERC_EXTENSION_FAMILY_1_ID_HIGH,
+                             NEVERC_EXTENSION_FAMILY_1_ID_LOW_MIN};
+```
+
+Chaque famille publie `_NAMESPACE`, `_ID_HIGH`, `_ID_LOW_MIN` et `_ID_LOW_MAX`, et
+la moitié basse vous revient, à répartir à l'intérieur de cette plage.
+
+### Publier une interface pour d'autres greffons
+
+`RegisterInterface` est le seul appel qui ne prend pas de descripteur. Il confie à
+l'hôte une table qui vous appartient, de sorte qu'un autre greffon puisse y accéder
+par le même `QueryInterface` que celui des interfaces intégrées :
+
+```c
+Registrar->RegisterInterface(RegistrarContext, MyInterfaceID,
+                             NEVERC_INTERFACE_STABLE, &MyTable,
+                             /* Compatibility = */ NULL);
+```
+
+Passez plutôt `NEVERC_INTERFACE_LOCKSTEP` lorsque la table transporte des valeurs de
+schéma propres à la cible qui ne survivraient pas à un décalage de version. Une
+interface lockstep doit fournir une `NevercCompatibilityKey`, qui arrime le
+consommateur à une unique construction du producteur :
+
+```c
+typedef struct NevercCompatibilityKey {
+  NevercABITableHeader Header;
+  NevercStringView ProducerBuildID;   /* compare against Bootstrap->HostBuildID */
+  NevercStringView TargetABIKey;
+  uint32_t LLVMMajor;                 /* compare against Bootstrap->LLVMMajor   */
+  uint32_t Reserved;
+} NevercCompatibilityKey;
+```
+
+Les trois champs doivent être renseignés pour un enregistrement lockstep ; un
+identifiant de construction vide, une clé ABI vide ou un majeur LLVM nul est rejeté
+comme descripteur invalide.
 
 ## Compilation
 

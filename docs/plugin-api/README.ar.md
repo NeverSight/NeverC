@@ -302,13 +302,150 @@ typedef struct NevercRegistrarAPI {
 } NevercRegistrarAPI;
 ```
 
+يأخذ كلٌّ من هذه الاستدعاءات `RegistrarContext` وسيطًا أولًا، ومُوصِّفًا مُصفَّرًا
+وسيطًا ثانيًا. والاستدعاء الذي تختاره هو ما يُحدِّد كيف يتعامل المُضيف معك عند
+المرحلة:
+
+| الاستدعاء | المُوصِّف | رد النداء | ما يجب أن تُعلنه المرحلة |
+|---|---|---|---|
+| `RegisterObserver` | `NevercObserverDescriptor` | `NevercPhaseObserverFn` | `OBSERVABLE` |
+| `RegisterInterceptor` | `NevercInterceptorDescriptor` | `NevercPhaseInterceptorFn` | `INTERCEPTABLE` |
+| `RegisterProvider` | `NevercProviderDescriptor` | `NevercPhaseProviderFn` | `REPLACEABLE` |
+| `RegisterPhase` | `NevercPhaseDescriptor` | — | معرِّف تُعرِّفه الإضافة |
+| `RegisterOption` | `NevercOptionDescriptor` | `Validator` اختياري | — |
+| `RegisterInterface` | وسائط مباشرة | — | — |
+
+المُوصِّف الذي يفشل في التحقّق البنيوي يُرفَض فورًا بالحالة
+`NEVERC_STATUS_INVALID_DESCRIPTOR`. أمّا فحص السياسة فيقع عندما يُطبِّق المُضيف
+التسجيل: فالمرحلة المجهولة، أو التي لا تُعلن السياسة التي يتطلّبها استدعاؤك،
+تُرفَض عندئذٍ. والبوابة المختومة لا تقبل سوى المراقبين.
+
 ومُسجِّلات المجالات — `NevercIRPassAPI.RegisterPass` و
 `NevercTargetAPI.RegisterTarget` و`NevercObjectFormatAPI.RegisterFormat` وغيرها
 — تأخذ جميعها السياق `RegistrarContext` نفسه وسيطًا ثانيًا، وبه يَنسِب المُضيف
 التسجيل إلى إضافتك.
 
-ويُعلن المزوِّد إضافةً إلى ذلك عقد الحتمية الخاص به، وهو ما تعتمد عليه ذاكرة البناء
-المؤقتة:
+### المراقبون
+
+```c
+typedef struct NevercObserverDescriptor {
+  NevercABITableHeader Header;
+  NevercInterfaceID Phase;
+  NevercObserverPoint Points;
+  uint32_t Reserved;
+  NevercPhaseObserverFn Callback;
+  void *UserData;
+  NevercDestroyUserDataFn DestroyUserData;
+} NevercObserverDescriptor;
+
+typedef NevercStatus(NEVERC_CALL *NevercPhaseObserverFn)(
+    const NevercPhaseFrame *Frame, NevercObserverPoint Point, void *UserData);
+```
+
+`Points` قناع بتّي مكوّن من `NEVERC_OBSERVER_BEFORE` (1) و`NEVERC_OBSERVER_AFTER`
+(2) و`NEVERC_OBSERVER_AFTER_COMMIT` (4)، ويجب ألّا يكون صفرًا؛ ويُخبر الوسيط `Point`
+ردَّ النداء أيُّها وقع. من `pluginsdk/examples/DriverTracePlugin.c`:
+
+```c
+NevercObserverDescriptor Observer = {0};
+Observer.Header = (NevercABITableHeader){
+    sizeof(Observer), NEVERC_PLUGIN_ABI_MAJOR, NEVERC_PLUGIN_ABI_MINOR, 0};
+Observer.Phase = (NevercInterfaceID){NEVERC_PHASE_DRIVER_RAW_ARGUMENTS_HIGH,
+                                     NEVERC_PHASE_DRIVER_RAW_ARGUMENTS_LOW};
+Observer.Points = NEVERC_OBSERVER_BEFORE | NEVERC_OBSERVER_AFTER;
+Observer.Callback = observe_arguments;
+Observer.UserData = Process;
+Status = Registrar->RegisterObserver(RegistrarContext, &Observer);
+```
+
+يُعاد إليك `UserData` كما هو دون مساس. وضبط `DestroyUserData` — وهو موجود في كل
+مُوصِّف في هذا القسم — يجعل المُضيف يُحرِّر تلك الذاكرة عند زوال التسجيل، فلا يعود
+يلزم تتبّع تخصيصٍ لكل تسجيل داخل `Destroy`.
+
+### المُعترِضون
+
+```c
+typedef struct NevercInterceptorDescriptor {
+  NevercABITableHeader Header;
+  NevercInterfaceID Phase;
+  NevercPhaseInterceptorFn Callback;
+  void *UserData;
+  NevercDestroyUserDataFn DestroyUserData;
+} NevercInterceptorDescriptor;
+
+typedef NevercStatus(NEVERC_CALL *NevercPhaseInterceptorFn)(
+    const NevercPhaseFrame *Frame, NevercPhaseContinuation *Continuation,
+    NevercPhaseResult *OutResult, void *UserData);
+```
+
+المتابعة هي بقية السلسلة كلّها، والنتيجة هي الوسيلة التي تُبلِّغ بها عمّا فعلته بها:
+
+```c
+typedef struct NevercPhaseContinuation {
+  NevercABITableHeader Header;
+  NevercInvokeNextFn InvokeNext;
+  void *Context;
+  uint64_t Generation;
+} NevercPhaseContinuation;
+
+typedef struct NevercPhaseResult {
+  NevercABITableHeader Header;
+  NevercPhaseAction Action;
+  uint32_t Reserved;
+  NevercArtifactHandle Output;
+  NevercProofHandle Proof;
+} NevercPhaseResult;
+```
+
+الإجراءات الثلاثة ليست متبادلة. يُقابل المُضيف النتيجة بما فعلته فعليًّا، ويُفشل
+السلسلة بالحالة `NEVERC_STATUS_POLICY_VIOLATION` عند أي تعارض:
+
+| `Action` | `InvokeNext` | `Output` | `Proof` | يتطلّب أيضًا |
+|---|---|---|---|---|
+| `NEVERC_PHASE_CONTINUE` | استُدعي مرة واحدة | فارغ | فارغ | — |
+| `NEVERC_PHASE_REPLACE` | لم يُستدعَ | مضبوط | فارغ | `REPLACEABLE` |
+| `NEVERC_PHASE_SKIP` | لم يُستدعَ | مضبوط | مضبوط | `SKIPPABLE_WITH_PROOF` |
+
+لا يجوز استدعاء `InvokeNext` أكثر من مرة واحدة، ولا إلّا على خيط رد النداء؛
+فالاستدعاء الثاني انتهاكٌ للسياسة، والاستدعاء من خيط آخر يُبلِّغ
+`NEVERC_STATUS_WRONG_SCOPE`. كما أنّ المُعترِض الذي يُرجِع `CONTINUE` دون أن
+يستدعيه ينتهك السياسة أيضًا، لأنّ المرحلة عندئذٍ لن تُنتِج شيئًا في صمت.
+
+```c
+NevercInterceptorDescriptor Interceptor = {0};
+Interceptor.Header = (NevercABITableHeader){
+    sizeof(Interceptor), NEVERC_PLUGIN_ABI_MAJOR, NEVERC_PLUGIN_ABI_MINOR, 0};
+Interceptor.Phase = (NevercInterfaceID){NEVERC_PHASE_DRIVER_EXECUTE_JOB_HIGH,
+                                        NEVERC_PHASE_DRIVER_EXECUTE_JOB_LOW};
+Interceptor.Callback = intercept_job;
+Interceptor.UserData = Process;
+Status = Registrar->RegisterInterceptor(RegistrarContext, &Interceptor);
+```
+
+### المزوِّدون
+
+يستبدل المزوِّد المرحلة استبدالًا كاملًا، ولذلك يُعلن أيضًا عقد الحتمية الذي تعتمد
+عليه ذاكرة البناء المؤقتة:
+
+```c
+typedef struct NevercProviderDescriptor {
+  NevercABITableHeader Header;
+  NevercInterfaceID Phase;
+  NevercStringView ProviderID;
+  NevercPhaseRoute Route;
+  NevercBool Deterministic;
+  NevercBool Cacheable;
+  NevercBool FallbackSafe;
+  uint32_t Reserved;
+  NevercPhaseProviderFn Callback;
+  void *UserData;
+  NevercDestroyUserDataFn DestroyUserData;
+} NevercProviderDescriptor;
+
+typedef NevercStatus(NEVERC_CALL *NevercPhaseProviderFn)(
+    const NevercPhaseFrame *Frame, NevercPhaseResult *OutResult,
+    void *UserData);
+```
 
 ```c
 Provider.ProviderID    = SV("com.example.my-lowering");
@@ -317,6 +454,83 @@ Provider.Deterministic = NEVERC_TRUE;
 Provider.Cacheable     = NEVERC_TRUE;
 Provider.FallbackSafe  = NEVERC_FALSE;  /* built-in cannot silently take over */
 ```
+
+يجب أن يكون `ProviderID` اسمًا قانونيًّا: 255 بايتًا على الأكثر من حروف صغيرة
+وأرقام و`.` و`_` و`-`، لا يبدأ بنقطة ولا ينتهي بها، ولا يحتوي `..` أبدًا. ويكفي
+حرفٌ كبير واحد ليُرفَض التسجيل. ويجب تهيئة `Route.Header` مثل أي ترويسة جدول أخرى.
+
+لا توجد متابعة هنا: فردّ النداء هو المرحلة نفسها. وعليه أن يُبلِّغ
+`NEVERC_PHASE_REPLACE` مع `Output` و`Proof` فارغ — وأي شيء غير ذلك انتهاكٌ للسياسة.
+
+`FallbackSafe` هي الراية الوحيدة بين هذه الرايات التي لها أثر في وقت التشغيل يتجاوز
+مجرّد التسجيل. فإذا كانت `NEVERC_TRUE` وفشل المزوِّد بحالة موسومة بـ
+`NEVERC_STATUS_FLAG_RECOVERABLE`، جاز للمُضيف أن يطرح الآثار الجزئية ويُشغِّل
+التنفيذ المدمج بدلًا منه. اتركها `NEVERC_FALSE` متى تعذّر التراجع عن محاولة ناقصة.
+
+### مراحل تُعرِّفها الإضافة
+
+يُضيف `RegisterPhase` انتقالًا لا يعرفه المُضيف، وهذا بالضبط ما حُجزت من أجله
+عائلات معرِّفات التوسعة الثماني:
+
+```c
+typedef struct NevercPhaseDescriptor {
+  NevercABITableHeader Header;
+  NevercInterfaceID Phase;
+  NevercStringView CanonicalName;
+  NevercInterfaceID InputArtifact;
+  NevercInterfaceID OutputArtifact;
+  NevercPhasePolicy Policy;
+  NevercObserverPoint ObserverPoints;
+  uint32_t Reserved;
+} NevercPhaseDescriptor;
+```
+
+يجب ألّا يكون أيٌّ من `Phase` و`InputArtifact` و`OutputArtifact` صفرًا، ويجب أن
+تكون `Policy` غير صفرية وألّا تحوي سوى رايات معروفة. ويُرفَض إعلان `ObserverPoints`
+دون `NEVERC_PHASE_OBSERVABLE`، كما يُرفَض جمع `NEVERC_PHASE_SEALED_HOST_GATE` مع أيٍّ
+من `INTERCEPTABLE` أو `REPLACEABLE` أو `SKIPPABLE_WITH_PROOF` — وهي عين الثوابت التي
+يُفحَص بها الرسم المدمج. خُذ المعرِّف من عائلة مجالك حتى لا يصطدم بمرحلة مدمجة
+مستقبلية:
+
+```c
+#include "neverc/Plugin/Schema/PluginPhaseSchema.inc"
+
+/* NEVERC_EXTENSION_FAMILY_COUNT is 8; family 1 is "neverc.ir.extension". */
+NevercInterfaceID MyPhase = {NEVERC_EXTENSION_FAMILY_1_ID_HIGH,
+                             NEVERC_EXTENSION_FAMILY_1_ID_LOW_MIN};
+```
+
+تنشر كل عائلة `_NAMESPACE` و`_ID_HIGH` و`_ID_LOW_MIN` و`_ID_LOW_MAX`، والنصف الأدنى
+متروك لك توزّعه داخل ذلك المجال.
+
+### نشر واجهة للإضافات الأخرى
+
+`RegisterInterface` هو الاستدعاء الوحيد الذي لا يأخذ مُوصِّفًا. فهو يُسلِّم المُضيفَ
+جدولًا خاصًّا بك كي تتمكّن إضافة أخرى من الوصول إليه عبر `QueryInterface` نفسه
+المستخدَم مع الواجهات المدمجة:
+
+```c
+Registrar->RegisterInterface(RegistrarContext, MyInterfaceID,
+                             NEVERC_INTERFACE_STABLE, &MyTable,
+                             /* Compatibility = */ NULL);
+```
+
+مرِّر `NEVERC_INTERFACE_LOCKSTEP` بدلًا من ذلك متى حمل الجدول قيم مخطّط خاصة بالهدف
+لا تصمد أمام اختلاف الإصدارات. وعلى واجهة lockstep أن تُوفِّر
+`NevercCompatibilityKey` الذي يُثبِّت المستهلك على بناءٍ واحد للمُنتِج:
+
+```c
+typedef struct NevercCompatibilityKey {
+  NevercABITableHeader Header;
+  NevercStringView ProducerBuildID;   /* compare against Bootstrap->HostBuildID */
+  NevercStringView TargetABIKey;
+  uint32_t LLVMMajor;                 /* compare against Bootstrap->LLVMMajor   */
+  uint32_t Reserved;
+} NevercCompatibilityKey;
+```
+
+يجب ملء الحقول الثلاثة جميعها في تسجيل lockstep؛ فمعرِّف بناء فارغ، أو مفتاح ABI
+فارغ، أو إصدار LLVM رئيسي يساوي صفرًا، يُرفَض بوصفه مُوصِّفًا غير صالح.
 
 ## البناء
 

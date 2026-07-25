@@ -294,12 +294,145 @@ typedef struct NevercRegistrarAPI {
 } NevercRegistrarAPI;
 ```
 
+這些呼叫都以 `RegistrarContext` 為第一個參數、以一個清零的描述符為第二個參數。
+你呼叫哪一個，決定了宿主在該階段如何對待你：
+
+| 呼叫 | 描述符 | 回呼 | 階段必須宣告 |
+|---|---|---|---|
+| `RegisterObserver` | `NevercObserverDescriptor` | `NevercPhaseObserverFn` | `OBSERVABLE` |
+| `RegisterInterceptor` | `NevercInterceptorDescriptor` | `NevercPhaseInterceptorFn` | `INTERCEPTABLE` |
+| `RegisterProvider` | `NevercProviderDescriptor` | `NevercPhaseProviderFn` | `REPLACEABLE` |
+| `RegisterPhase` | `NevercPhaseDescriptor` | — | 一個外掛自訂 ID |
+| `RegisterOption` | `NevercOptionDescriptor` | 選用的 `Validator` | — |
+| `RegisterInterface` | 直接傳參 | — | — |
+
+結構檢核不通過的描述符會當場以 `NEVERC_STATUS_INVALID_DESCRIPTOR` 被拒絕。策略檢
+查則發生在宿主套用這次註冊的時候：未知的階段，或沒有宣告你這次呼叫所需策略的階
+段，會在那時被拒。sealed gate 只接受觀察者這一種註冊。
+
 各領域的註冊函式——`NevercIRPassAPI.RegisterPass`、
 `NevercTargetAPI.RegisterTarget`、`NevercObjectFormatAPI.RegisterFormat` 等等
 ——都把同一個 `RegistrarContext` 當作第二個引數，宿主正是靠它把一次註冊歸屬到你
 的外掛。
 
-Provider 還要額外宣告它的決定性契約，建置快取會依賴這一點：
+### 觀察者
+
+```c
+typedef struct NevercObserverDescriptor {
+  NevercABITableHeader Header;
+  NevercInterfaceID Phase;
+  NevercObserverPoint Points;
+  uint32_t Reserved;
+  NevercPhaseObserverFn Callback;
+  void *UserData;
+  NevercDestroyUserDataFn DestroyUserData;
+} NevercObserverDescriptor;
+
+typedef NevercStatus(NEVERC_CALL *NevercPhaseObserverFn)(
+    const NevercPhaseFrame *Frame, NevercObserverPoint Point, void *UserData);
+```
+
+`Points` 是 `NEVERC_OBSERVER_BEFORE`（1）、`NEVERC_OBSERVER_AFTER`（2）與
+`NEVERC_OBSERVER_AFTER_COMMIT`（4）的位元遮罩，必須非零；回呼的 `Point` 參數會告訴
+你觸發的是哪一個。取自 `pluginsdk/examples/DriverTracePlugin.c`：
+
+```c
+NevercObserverDescriptor Observer = {0};
+Observer.Header = (NevercABITableHeader){
+    sizeof(Observer), NEVERC_PLUGIN_ABI_MAJOR, NEVERC_PLUGIN_ABI_MINOR, 0};
+Observer.Phase = (NevercInterfaceID){NEVERC_PHASE_DRIVER_RAW_ARGUMENTS_HIGH,
+                                     NEVERC_PHASE_DRIVER_RAW_ARGUMENTS_LOW};
+Observer.Points = NEVERC_OBSERVER_BEFORE | NEVERC_OBSERVER_AFTER;
+Observer.Callback = observe_arguments;
+Observer.UserData = Process;
+Status = Registrar->RegisterObserver(RegistrarContext, &Observer);
+```
+
+`UserData` 會原樣回傳。設定 `DestroyUserData`——本節每個描述符都有這個欄位——會讓宿
+主在該註冊消亡時釋放那塊記憶體，於是按註冊配置的記憶體不必再在 `Destroy` 裡追蹤。
+
+### 攔截器
+
+```c
+typedef struct NevercInterceptorDescriptor {
+  NevercABITableHeader Header;
+  NevercInterfaceID Phase;
+  NevercPhaseInterceptorFn Callback;
+  void *UserData;
+  NevercDestroyUserDataFn DestroyUserData;
+} NevercInterceptorDescriptor;
+
+typedef NevercStatus(NEVERC_CALL *NevercPhaseInterceptorFn)(
+    const NevercPhaseFrame *Frame, NevercPhaseContinuation *Continuation,
+    NevercPhaseResult *OutResult, void *UserData);
+```
+
+延續（continuation）就是鏈條的其餘部分，而結果是你用來回報自己做了什麼的：
+
+```c
+typedef struct NevercPhaseContinuation {
+  NevercABITableHeader Header;
+  NevercInvokeNextFn InvokeNext;
+  void *Context;
+  uint64_t Generation;
+} NevercPhaseContinuation;
+
+typedef struct NevercPhaseResult {
+  NevercABITableHeader Header;
+  NevercPhaseAction Action;
+  uint32_t Reserved;
+  NevercArtifactHandle Output;
+  NevercProofHandle Proof;
+} NevercPhaseResult;
+```
+
+這三個動作不可互換。宿主會拿結果與你的實際行為對照，一旦不符就以
+`NEVERC_STATUS_POLICY_VIOLATION` 讓整條鏈失敗：
+
+| `Action` | `InvokeNext` | `Output` | `Proof` | 另需 |
+|---|---|---|---|---|
+| `NEVERC_PHASE_CONTINUE` | 呼叫一次 | 空 | 空 | — |
+| `NEVERC_PHASE_REPLACE` | 不呼叫 | 有值 | 空 | `REPLACEABLE` |
+| `NEVERC_PHASE_SKIP` | 不呼叫 | 有值 | 有值 | `SKIPPABLE_WITH_PROOF` |
+
+`InvokeNext` 最多呼叫一次，且只能在回呼執行緒上呼叫——呼叫第二次屬於策略違規，從別
+的執行緒呼叫則回報 `NEVERC_STATUS_WRONG_SCOPE`。攔截器沒有呼叫它卻回傳 `CONTINUE`，
+同樣是策略違規，因為那樣這個階段會悄無聲息地什麼都不產出。
+
+```c
+NevercInterceptorDescriptor Interceptor = {0};
+Interceptor.Header = (NevercABITableHeader){
+    sizeof(Interceptor), NEVERC_PLUGIN_ABI_MAJOR, NEVERC_PLUGIN_ABI_MINOR, 0};
+Interceptor.Phase = (NevercInterfaceID){NEVERC_PHASE_DRIVER_EXECUTE_JOB_HIGH,
+                                        NEVERC_PHASE_DRIVER_EXECUTE_JOB_LOW};
+Interceptor.Callback = intercept_job;
+Interceptor.UserData = Process;
+Status = Registrar->RegisterInterceptor(RegistrarContext, &Interceptor);
+```
+
+### Provider
+
+Provider 會徹底替換掉一個階段，因此它還要宣告建置快取所依賴的決定性契約：
+
+```c
+typedef struct NevercProviderDescriptor {
+  NevercABITableHeader Header;
+  NevercInterfaceID Phase;
+  NevercStringView ProviderID;
+  NevercPhaseRoute Route;
+  NevercBool Deterministic;
+  NevercBool Cacheable;
+  NevercBool FallbackSafe;
+  uint32_t Reserved;
+  NevercPhaseProviderFn Callback;
+  void *UserData;
+  NevercDestroyUserDataFn DestroyUserData;
+} NevercProviderDescriptor;
+
+typedef NevercStatus(NEVERC_CALL *NevercPhaseProviderFn)(
+    const NevercPhaseFrame *Frame, NevercPhaseResult *OutResult,
+    void *UserData);
+```
 
 ```c
 Provider.ProviderID    = SV("com.example.my-lowering");
@@ -308,6 +441,81 @@ Provider.Deterministic = NEVERC_TRUE;
 Provider.Cacheable     = NEVERC_TRUE;
 Provider.FallbackSafe  = NEVERC_FALSE;  /* built-in cannot silently take over */
 ```
+
+`ProviderID` 必須是規範名稱：至多 255 位元組，只含小寫字母、數字、`.`、`_` 與 `-`，
+不以點開頭或結尾，也不含 `..`。哪怕出現一個大寫字母，這次註冊也會被拒。
+`Route.Header` 和其他表頭一樣必須初始化。
+
+這裡沒有延續：回呼本身就是這個階段。它必須回報 `NEVERC_PHASE_REPLACE`，帶上
+`Output` 且 `Proof` 為空——其他任何組合都是策略違規。
+
+`FallbackSafe` 是這幾個旗標裡唯一在執行時有實際效果、而不只是記帳的。當它為
+`NEVERC_TRUE` 且 Provider 以帶 `NEVERC_STATUS_FLAG_RECOVERABLE` 的狀態失敗時，宿主
+可以丟棄已產生的部分效果，改跑內建實作。如果一次半途而廢的嘗試無法回復，就讓它保
+持 `NEVERC_FALSE`。
+
+### 外掛自訂階段
+
+`RegisterPhase` 用來加入一個宿主並不知道的轉換，這正是那 8 個擴充 ID 族被保留下來的
+用途：
+
+```c
+typedef struct NevercPhaseDescriptor {
+  NevercABITableHeader Header;
+  NevercInterfaceID Phase;
+  NevercStringView CanonicalName;
+  NevercInterfaceID InputArtifact;
+  NevercInterfaceID OutputArtifact;
+  NevercPhasePolicy Policy;
+  NevercObserverPoint ObserverPoints;
+  uint32_t Reserved;
+} NevercPhaseDescriptor;
+```
+
+`Phase`、`InputArtifact` 與 `OutputArtifact` 都必須非零，`Policy` 必須非零且只能包含
+已知旗標。宣告了 `ObserverPoints` 卻沒有 `NEVERC_PHASE_OBSERVABLE` 會被拒絕；把
+`NEVERC_PHASE_SEALED_HOST_GATE` 與 `INTERCEPTABLE`、`REPLACEABLE` 或
+`SKIPPABLE_WITH_PROOF` 中任何一個組合在一起同樣會被拒——這與內建階段圖所檢核的是同
+一批不變式。請從你所在領域的族裡取 ID，這樣才不會與將來的內建階段相撞：
+
+```c
+#include "neverc/Plugin/Schema/PluginPhaseSchema.inc"
+
+/* NEVERC_EXTENSION_FAMILY_COUNT is 8; family 1 is "neverc.ir.extension". */
+NevercInterfaceID MyPhase = {NEVERC_EXTENSION_FAMILY_1_ID_HIGH,
+                             NEVERC_EXTENSION_FAMILY_1_ID_LOW_MIN};
+```
+
+每個族都會給出 `_NAMESPACE`、`_ID_HIGH`、`_ID_LOW_MIN` 與 `_ID_LOW_MAX`，低 64 位元由
+你在該區間內自行配置。
+
+### 向其他外掛發布介面
+
+`RegisterInterface` 是唯一不接受描述符的呼叫。它把你自己的一張表交給宿主，好讓另一
+個外掛能透過查詢內建介面所用的同一個 `QueryInterface` 取得它：
+
+```c
+Registrar->RegisterInterface(RegistrarContext, MyInterfaceID,
+                             NEVERC_INTERFACE_STABLE, &MyTable,
+                             /* Compatibility = */ NULL);
+```
+
+當表裡攜帶的是經不起版本偏移的目標相關 schema 值時，改傳
+`NEVERC_INTERFACE_LOCKSTEP`。lockstep 介面必須提供一個 `NevercCompatibilityKey`，
+把消費者釘死在某一個生產者建置上：
+
+```c
+typedef struct NevercCompatibilityKey {
+  NevercABITableHeader Header;
+  NevercStringView ProducerBuildID;   /* compare against Bootstrap->HostBuildID */
+  NevercStringView TargetABIKey;
+  uint32_t LLVMMajor;                 /* compare against Bootstrap->LLVMMajor   */
+  uint32_t Reserved;
+} NevercCompatibilityKey;
+```
+
+lockstep 註冊要求這三個欄位全部填妥；建置 ID 為空、ABI key 為空，或者 LLVM 主版本號
+為零，都會被當作無效描述符拒絕。
 
 ## 建置
 

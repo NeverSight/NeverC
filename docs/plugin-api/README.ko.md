@@ -303,12 +303,151 @@ typedef struct NevercRegistrarAPI {
 } NevercRegistrarAPI;
 ```
 
+이들 호출은 모두 첫 번째 인자로 `RegistrarContext`를, 두 번째 인자로 0으로 초기화한
+디스크립터를 받습니다. 어느 것을 호출하는지가 해당 페이즈에서 호스트가 여러분을
+어떻게 대할지를 결정합니다:
+
+| 호출 | 디스크립터 | 콜백 | 페이즈가 선언해야 하는 정책 |
+|---|---|---|---|
+| `RegisterObserver` | `NevercObserverDescriptor` | `NevercPhaseObserverFn` | `OBSERVABLE` |
+| `RegisterInterceptor` | `NevercInterceptorDescriptor` | `NevercPhaseInterceptorFn` | `INTERCEPTABLE` |
+| `RegisterProvider` | `NevercProviderDescriptor` | `NevercPhaseProviderFn` | `REPLACEABLE` |
+| `RegisterPhase` | `NevercPhaseDescriptor` | — | 플러그인이 정의한 ID |
+| `RegisterOption` | `NevercOptionDescriptor` | 선택적 `Validator` | — |
+| `RegisterInterface` | 인자를 직접 전달 | — | — |
+
+구조 검증을 통과하지 못한 디스크립터는 그 자리에서
+`NEVERC_STATUS_INVALID_DESCRIPTOR`로 거부됩니다. 정책 검사는 호스트가 그 등록을
+적용할 때 이루어집니다. 알 수 없는 페이즈이거나 해당 호출이 요구하는 정책을 선언하지
+않은 페이즈는 그 시점에 거부됩니다. sealed gate가 받아들이는 것은 옵저버뿐입니다.
+
 도메인별 등록 함수——`NevercIRPassAPI.RegisterPass`,
 `NevercTargetAPI.RegisterTarget`, `NevercObjectFormatAPI.RegisterFormat` 등——는
 모두 같은 `RegistrarContext`를 두 번째 인자로 받습니다. 호스트는 이를 통해 등록을
 여러분의 플러그인에 귀속시킵니다.
 
-프로바이더는 빌드 캐시가 의존하는 결정성 계약을 추가로 선언합니다:
+### 옵저버
+
+```c
+typedef struct NevercObserverDescriptor {
+  NevercABITableHeader Header;
+  NevercInterfaceID Phase;
+  NevercObserverPoint Points;
+  uint32_t Reserved;
+  NevercPhaseObserverFn Callback;
+  void *UserData;
+  NevercDestroyUserDataFn DestroyUserData;
+} NevercObserverDescriptor;
+
+typedef NevercStatus(NEVERC_CALL *NevercPhaseObserverFn)(
+    const NevercPhaseFrame *Frame, NevercObserverPoint Point, void *UserData);
+```
+
+`Points`는 `NEVERC_OBSERVER_BEFORE`(1), `NEVERC_OBSERVER_AFTER`(2),
+`NEVERC_OBSERVER_AFTER_COMMIT`(4)의 비트마스크이며 0이 아니어야 합니다. 어느 것이
+발생했는지는 `Point` 인자가 알려줍니다. `pluginsdk/examples/DriverTracePlugin.c`에서:
+
+```c
+NevercObserverDescriptor Observer = {0};
+Observer.Header = (NevercABITableHeader){
+    sizeof(Observer), NEVERC_PLUGIN_ABI_MAJOR, NEVERC_PLUGIN_ABI_MINOR, 0};
+Observer.Phase = (NevercInterfaceID){NEVERC_PHASE_DRIVER_RAW_ARGUMENTS_HIGH,
+                                     NEVERC_PHASE_DRIVER_RAW_ARGUMENTS_LOW};
+Observer.Points = NEVERC_OBSERVER_BEFORE | NEVERC_OBSERVER_AFTER;
+Observer.Callback = observe_arguments;
+Observer.UserData = Process;
+Status = Registrar->RegisterObserver(RegistrarContext, &Observer);
+```
+
+`UserData`는 그대로 되돌아옵니다. 이 절의 모든 디스크립터에 있는 `DestroyUserData`를
+설정하면 등록이 사라질 때 호스트가 그 메모리를 해제하므로, 등록마다 할당한 메모리를
+`Destroy`에서 따로 추적할 필요가 없습니다.
+
+### 인터셉터
+
+```c
+typedef struct NevercInterceptorDescriptor {
+  NevercABITableHeader Header;
+  NevercInterfaceID Phase;
+  NevercPhaseInterceptorFn Callback;
+  void *UserData;
+  NevercDestroyUserDataFn DestroyUserData;
+} NevercInterceptorDescriptor;
+
+typedef NevercStatus(NEVERC_CALL *NevercPhaseInterceptorFn)(
+    const NevercPhaseFrame *Frame, NevercPhaseContinuation *Continuation,
+    NevercPhaseResult *OutResult, void *UserData);
+```
+
+컨티뉴에이션은 체인의 나머지 전부이고, 결과는 그것에 대해 무엇을 했는지 보고하는
+수단입니다:
+
+```c
+typedef struct NevercPhaseContinuation {
+  NevercABITableHeader Header;
+  NevercInvokeNextFn InvokeNext;
+  void *Context;
+  uint64_t Generation;
+} NevercPhaseContinuation;
+
+typedef struct NevercPhaseResult {
+  NevercABITableHeader Header;
+  NevercPhaseAction Action;
+  uint32_t Reserved;
+  NevercArtifactHandle Output;
+  NevercProofHandle Proof;
+} NevercPhaseResult;
+```
+
+세 가지 액션은 서로 바꿔 쓸 수 없습니다. 호스트는 결과를 실제 동작과 대조하여 어긋나면
+`NEVERC_STATUS_POLICY_VIOLATION`으로 체인을 실패시킵니다:
+
+| `Action` | `InvokeNext` | `Output` | `Proof` | 추가 요건 |
+|---|---|---|---|---|
+| `NEVERC_PHASE_CONTINUE` | 한 번 호출 | 비어 있음 | 비어 있음 | — |
+| `NEVERC_PHASE_REPLACE` | 호출하지 않음 | 설정 | 비어 있음 | `REPLACEABLE` |
+| `NEVERC_PHASE_SKIP` | 호출하지 않음 | 설정 | 설정 | `SKIPPABLE_WITH_PROOF` |
+
+`InvokeNext`는 많아야 한 번, 그리고 콜백 스레드에서만 호출할 수 있습니다. 두 번째
+호출은 정책 위반이고, 다른 스레드에서의 호출은 `NEVERC_STATUS_WRONG_SCOPE`를
+보고합니다. 호출하지 않은 채 `CONTINUE`를 반환하는 인터셉터도 정책 위반입니다. 그렇게
+되면 그 페이즈가 아무것도 만들어내지 못한 채 조용히 끝나기 때문입니다.
+
+```c
+NevercInterceptorDescriptor Interceptor = {0};
+Interceptor.Header = (NevercABITableHeader){
+    sizeof(Interceptor), NEVERC_PLUGIN_ABI_MAJOR, NEVERC_PLUGIN_ABI_MINOR, 0};
+Interceptor.Phase = (NevercInterfaceID){NEVERC_PHASE_DRIVER_EXECUTE_JOB_HIGH,
+                                        NEVERC_PHASE_DRIVER_EXECUTE_JOB_LOW};
+Interceptor.Callback = intercept_job;
+Interceptor.UserData = Process;
+Status = Registrar->RegisterInterceptor(RegistrarContext, &Interceptor);
+```
+
+### 프로바이더
+
+프로바이더는 페이즈를 통째로 대체하므로, 빌드 캐시가 의존하는 결정성 계약도 함께
+선언합니다:
+
+```c
+typedef struct NevercProviderDescriptor {
+  NevercABITableHeader Header;
+  NevercInterfaceID Phase;
+  NevercStringView ProviderID;
+  NevercPhaseRoute Route;
+  NevercBool Deterministic;
+  NevercBool Cacheable;
+  NevercBool FallbackSafe;
+  uint32_t Reserved;
+  NevercPhaseProviderFn Callback;
+  void *UserData;
+  NevercDestroyUserDataFn DestroyUserData;
+} NevercProviderDescriptor;
+
+typedef NevercStatus(NEVERC_CALL *NevercPhaseProviderFn)(
+    const NevercPhaseFrame *Frame, NevercPhaseResult *OutResult,
+    void *UserData);
+```
 
 ```c
 Provider.ProviderID    = SV("com.example.my-lowering");
@@ -317,6 +456,83 @@ Provider.Deterministic = NEVERC_TRUE;
 Provider.Cacheable     = NEVERC_TRUE;
 Provider.FallbackSafe  = NEVERC_FALSE;  /* built-in cannot silently take over */
 ```
+
+`ProviderID`는 정규 이름이어야 합니다. 최대 255바이트이며 소문자, 숫자, `.`, `_`, `-`만
+포함하고, 점으로 시작하거나 끝날 수 없으며 `..`를 담을 수 없습니다. 대문자가 하나만
+있어도 등록은 거부됩니다. `Route.Header`도 다른 테이블 헤더와 똑같이 초기화해야 합니다.
+
+여기에는 컨티뉴에이션이 없습니다. 콜백 자체가 페이즈입니다. `Output`을 담고 `Proof`는
+비운 `NEVERC_PHASE_REPLACE`를 보고해야 하며, 그 밖의 조합은 모두 정책 위반입니다.
+
+`FallbackSafe`는 이 플래그들 중 유일하게 기록을 넘어선 런타임 효과를 갖습니다. 값이
+`NEVERC_TRUE`이고 프로바이더가 `NEVERC_STATUS_FLAG_RECOVERABLE`이 표시된 상태로
+실패하면, 호스트는 부분적으로 발생한 효과를 버리고 내장 구현을 대신 실행할 수 있습니다.
+중도에 멈춘 시도를 되돌릴 수 없다면 `NEVERC_FALSE`로 두십시오.
+
+### 플러그인이 정의하는 페이즈
+
+`RegisterPhase`는 호스트가 알지 못하는 전이를 추가합니다. 8개의 확장 ID 패밀리가
+바로 이를 위해 예약되어 있습니다:
+
+```c
+typedef struct NevercPhaseDescriptor {
+  NevercABITableHeader Header;
+  NevercInterfaceID Phase;
+  NevercStringView CanonicalName;
+  NevercInterfaceID InputArtifact;
+  NevercInterfaceID OutputArtifact;
+  NevercPhasePolicy Policy;
+  NevercObserverPoint ObserverPoints;
+  uint32_t Reserved;
+} NevercPhaseDescriptor;
+```
+
+`Phase`, `InputArtifact`, `OutputArtifact`는 모두 0이 아니어야 하고, `Policy`도 0이
+아니면서 알려진 플래그만 담아야 합니다. `NEVERC_PHASE_OBSERVABLE` 없이
+`ObserverPoints`를 선언하면 거부되며, `NEVERC_PHASE_SEALED_HOST_GATE`를
+`INTERCEPTABLE`, `REPLACEABLE`, `SKIPPABLE_WITH_PROOF` 중 어느 것과 결합해도
+거부됩니다. 내장 그래프가 검사받는 것과 동일한 불변식입니다. 앞으로 추가될 내장
+페이즈와 충돌하지 않도록 ID는 자기 도메인의 패밀리에서 가져오십시오:
+
+```c
+#include "neverc/Plugin/Schema/PluginPhaseSchema.inc"
+
+/* NEVERC_EXTENSION_FAMILY_COUNT is 8; family 1 is "neverc.ir.extension". */
+NevercInterfaceID MyPhase = {NEVERC_EXTENSION_FAMILY_1_ID_HIGH,
+                             NEVERC_EXTENSION_FAMILY_1_ID_LOW_MIN};
+```
+
+각 패밀리는 `_NAMESPACE`, `_ID_HIGH`, `_ID_LOW_MIN`, `_ID_LOW_MAX`를 공개하며, 하위
+64비트는 그 범위 안에서 여러분이 할당하면 됩니다.
+
+### 다른 플러그인에 인터페이스 공개하기
+
+`RegisterInterface`는 디스크립터를 받지 않는 유일한 호출입니다. 자신의 테이블을 호스트에
+넘겨, 다른 플러그인이 내장 인터페이스에 쓰는 것과 똑같은 `QueryInterface`로 그것에
+닿을 수 있게 합니다:
+
+```c
+Registrar->RegisterInterface(RegistrarContext, MyInterfaceID,
+                             NEVERC_INTERFACE_STABLE, &MyTable,
+                             /* Compatibility = */ NULL);
+```
+
+버전 어긋남을 견디지 못하는 타깃 고유의 스키마 값을 테이블이 실어 나른다면 대신
+`NEVERC_INTERFACE_LOCKSTEP`을 전달하십시오. lockstep 인터페이스는 반드시
+`NevercCompatibilityKey`를 제공해야 하며, 이는 소비자를 특정 생산자 빌드에 고정합니다:
+
+```c
+typedef struct NevercCompatibilityKey {
+  NevercABITableHeader Header;
+  NevercStringView ProducerBuildID;   /* compare against Bootstrap->HostBuildID */
+  NevercStringView TargetABIKey;
+  uint32_t LLVMMajor;                 /* compare against Bootstrap->LLVMMajor   */
+  uint32_t Reserved;
+} NevercCompatibilityKey;
+```
+
+lockstep 등록에서는 세 필드를 모두 채워야 합니다. 빌드 ID가 비었거나, ABI 키가 비었거나,
+LLVM 메이저가 0이면 유효하지 않은 디스크립터로 거부됩니다.
 
 ## 빌드
 

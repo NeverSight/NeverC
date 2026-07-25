@@ -316,13 +316,154 @@ typedef struct NevercRegistrarAPI {
 } NevercRegistrarAPI;
 ```
 
+Каждый из этих вызовов принимает `RegistrarContext` первым аргументом и
+обнулённый дескриптор вторым. То, какой именно вызов вы делаете, и определяет,
+как хост будет обращаться с вами на фазе:
+
+| Вызов | Дескриптор | Обратный вызов | Фаза должна объявлять |
+|---|---|---|---|
+| `RegisterObserver` | `NevercObserverDescriptor` | `NevercPhaseObserverFn` | `OBSERVABLE` |
+| `RegisterInterceptor` | `NevercInterceptorDescriptor` | `NevercPhaseInterceptorFn` | `INTERCEPTABLE` |
+| `RegisterProvider` | `NevercProviderDescriptor` | `NevercPhaseProviderFn` | `REPLACEABLE` |
+| `RegisterPhase` | `NevercPhaseDescriptor` | — | идентификатор от плагина |
+| `RegisterOption` | `NevercOptionDescriptor` | необязательный `Validator` | — |
+| `RegisterInterface` | простые аргументы | — | — |
+
+Дескриптор, не прошедший структурную проверку, отвергается сразу же с
+`NEVERC_STATUS_INVALID_DESCRIPTOR`. Проверка политики происходит тогда, когда хост
+применяет регистрацию: неизвестная фаза или фаза, не объявляющая требуемую вашим
+вызовом политику, отклоняется именно там. Запечатанный шлюз принимает только
+наблюдателей.
+
 Регистраторы доменов — `NevercIRPassAPI.RegisterPass`,
 `NevercTargetAPI.RegisterTarget`, `NevercObjectFormatAPI.RegisterFormat` и
 остальные — принимают тот же `RegistrarContext` вторым аргументом; именно так
 хост относит регистрацию к вашему плагину.
 
-Провайдер дополнительно объявляет свой контракт детерминизма, на который
-опирается кеш сборки:
+### Наблюдатели
+
+```c
+typedef struct NevercObserverDescriptor {
+  NevercABITableHeader Header;
+  NevercInterfaceID Phase;
+  NevercObserverPoint Points;
+  uint32_t Reserved;
+  NevercPhaseObserverFn Callback;
+  void *UserData;
+  NevercDestroyUserDataFn DestroyUserData;
+} NevercObserverDescriptor;
+
+typedef NevercStatus(NEVERC_CALL *NevercPhaseObserverFn)(
+    const NevercPhaseFrame *Frame, NevercObserverPoint Point, void *UserData);
+```
+
+`Points` — это битовая маска из `NEVERC_OBSERVER_BEFORE` (1),
+`NEVERC_OBSERVER_AFTER` (2) и `NEVERC_OBSERVER_AFTER_COMMIT` (4); она должна быть
+ненулевой, а аргумент `Point` сообщает обратному вызову, какая именно точка
+сработала. Из `pluginsdk/examples/DriverTracePlugin.c`:
+
+```c
+NevercObserverDescriptor Observer = {0};
+Observer.Header = (NevercABITableHeader){
+    sizeof(Observer), NEVERC_PLUGIN_ABI_MAJOR, NEVERC_PLUGIN_ABI_MINOR, 0};
+Observer.Phase = (NevercInterfaceID){NEVERC_PHASE_DRIVER_RAW_ARGUMENTS_HIGH,
+                                     NEVERC_PHASE_DRIVER_RAW_ARGUMENTS_LOW};
+Observer.Points = NEVERC_OBSERVER_BEFORE | NEVERC_OBSERVER_AFTER;
+Observer.Callback = observe_arguments;
+Observer.UserData = Process;
+Status = Registrar->RegisterObserver(RegistrarContext, &Observer);
+```
+
+`UserData` возвращается вам нетронутым. Если задать `DestroyUserData` — поле есть у
+каждого дескриптора в этом разделе, — хост освободит эту память, когда регистрация
+исчезнет, так что выделение на одну регистрацию не придётся отслеживать в `Destroy`.
+
+### Перехватчики
+
+```c
+typedef struct NevercInterceptorDescriptor {
+  NevercABITableHeader Header;
+  NevercInterfaceID Phase;
+  NevercPhaseInterceptorFn Callback;
+  void *UserData;
+  NevercDestroyUserDataFn DestroyUserData;
+} NevercInterceptorDescriptor;
+
+typedef NevercStatus(NEVERC_CALL *NevercPhaseInterceptorFn)(
+    const NevercPhaseFrame *Frame, NevercPhaseContinuation *Continuation,
+    NevercPhaseResult *OutResult, void *UserData);
+```
+
+Продолжение — это вся оставшаяся часть цепочки, а результат — способ сообщить, что
+вы с ней сделали:
+
+```c
+typedef struct NevercPhaseContinuation {
+  NevercABITableHeader Header;
+  NevercInvokeNextFn InvokeNext;
+  void *Context;
+  uint64_t Generation;
+} NevercPhaseContinuation;
+
+typedef struct NevercPhaseResult {
+  NevercABITableHeader Header;
+  NevercPhaseAction Action;
+  uint32_t Reserved;
+  NevercArtifactHandle Output;
+  NevercProofHandle Proof;
+} NevercPhaseResult;
+```
+
+Три действия невзаимозаменяемы. Хост сверяет результат с тем, что вы сделали на
+самом деле, и при любом расхождении обрывает цепочку с
+`NEVERC_STATUS_POLICY_VIOLATION`:
+
+| `Action` | `InvokeNext` | `Output` | `Proof` | Дополнительно требуется |
+|---|---|---|---|---|
+| `NEVERC_PHASE_CONTINUE` | вызван один раз | пусто | пусто | — |
+| `NEVERC_PHASE_REPLACE` | не вызван | задан | пусто | `REPLACEABLE` |
+| `NEVERC_PHASE_SKIP` | не вызван | задан | задан | `SKIPPABLE_WITH_PROOF` |
+
+`InvokeNext` можно вызвать не более одного раза и только в потоке обратного вызова:
+второй вызов — нарушение политики, а вызов из другого потока даёт
+`NEVERC_STATUS_WRONG_SCOPE`. Перехватчик, вернувший `CONTINUE` без вызова, тоже
+нарушает политику, потому что тогда фаза молча ничего не произведёт.
+
+```c
+NevercInterceptorDescriptor Interceptor = {0};
+Interceptor.Header = (NevercABITableHeader){
+    sizeof(Interceptor), NEVERC_PLUGIN_ABI_MAJOR, NEVERC_PLUGIN_ABI_MINOR, 0};
+Interceptor.Phase = (NevercInterfaceID){NEVERC_PHASE_DRIVER_EXECUTE_JOB_HIGH,
+                                        NEVERC_PHASE_DRIVER_EXECUTE_JOB_LOW};
+Interceptor.Callback = intercept_job;
+Interceptor.UserData = Process;
+Status = Registrar->RegisterInterceptor(RegistrarContext, &Interceptor);
+```
+
+### Провайдеры
+
+Провайдер полностью заменяет фазу, поэтому он объявляет ещё и контракт
+детерминизма, на который опирается кэш сборки:
+
+```c
+typedef struct NevercProviderDescriptor {
+  NevercABITableHeader Header;
+  NevercInterfaceID Phase;
+  NevercStringView ProviderID;
+  NevercPhaseRoute Route;
+  NevercBool Deterministic;
+  NevercBool Cacheable;
+  NevercBool FallbackSafe;
+  uint32_t Reserved;
+  NevercPhaseProviderFn Callback;
+  void *UserData;
+  NevercDestroyUserDataFn DestroyUserData;
+} NevercProviderDescriptor;
+
+typedef NevercStatus(NEVERC_CALL *NevercPhaseProviderFn)(
+    const NevercPhaseFrame *Frame, NevercPhaseResult *OutResult,
+    void *UserData);
+```
 
 ```c
 Provider.ProviderID    = SV("com.example.my-lowering");
@@ -331,6 +472,89 @@ Provider.Deterministic = NEVERC_TRUE;
 Provider.Cacheable     = NEVERC_TRUE;
 Provider.FallbackSafe  = NEVERC_FALSE;  /* built-in cannot silently take over */
 ```
+
+`ProviderID` должен быть каноническим именем: не более 255 байт из строчных букв,
+цифр, `.`, `_` и `-`, не начинаться и не заканчиваться точкой и никогда не содержать
+`..`. Достаточно одной заглавной буквы, чтобы регистрацию отклонили. `Route.Header`
+нужно инициализировать так же, как любой другой заголовок таблицы.
+
+Продолжения здесь нет: обратный вызов и есть фаза. Он обязан сообщить
+`NEVERC_PHASE_REPLACE` с заданным `Output` и пустым `Proof` — всё остальное является
+нарушением политики.
+
+`FallbackSafe` — единственный из этих флагов, у которого есть эффект во время
+выполнения, а не только в учёте. Если он равен `NEVERC_TRUE`, а провайдер завершился
+ошибкой со статусом, помеченным `NEVERC_STATUS_FLAG_RECOVERABLE`, хост может
+отбросить частичные эффекты и вместо этого выполнить встроенную реализацию.
+Оставьте `NEVERC_FALSE`, если недоделанную попытку нельзя откатить.
+
+### Фазы, определяемые плагином
+
+`RegisterPhase` добавляет переход, о котором хост не знает, — именно для этого
+зарезервированы 8 семейств расширяемых идентификаторов:
+
+```c
+typedef struct NevercPhaseDescriptor {
+  NevercABITableHeader Header;
+  NevercInterfaceID Phase;
+  NevercStringView CanonicalName;
+  NevercInterfaceID InputArtifact;
+  NevercInterfaceID OutputArtifact;
+  NevercPhasePolicy Policy;
+  NevercObserverPoint ObserverPoints;
+  uint32_t Reserved;
+} NevercPhaseDescriptor;
+```
+
+`Phase`, `InputArtifact` и `OutputArtifact` должны быть ненулевыми, а `Policy` —
+ненулевой и содержать только известные флаги. Объявление `ObserverPoints` без
+`NEVERC_PHASE_OBSERVABLE` отклоняется, как и сочетание
+`NEVERC_PHASE_SEALED_HOST_GATE` с любым из `INTERCEPTABLE`, `REPLACEABLE` или
+`SKIPPABLE_WITH_PROOF` — это те же инварианты, по которым проверяется встроенный
+граф. Берите идентификатор из семейства своего домена, чтобы он не столкнулся с
+будущей встроенной фазой:
+
+```c
+#include "neverc/Plugin/Schema/PluginPhaseSchema.inc"
+
+/* NEVERC_EXTENSION_FAMILY_COUNT is 8; family 1 is "neverc.ir.extension". */
+NevercInterfaceID MyPhase = {NEVERC_EXTENSION_FAMILY_1_ID_HIGH,
+                             NEVERC_EXTENSION_FAMILY_1_ID_LOW_MIN};
+```
+
+Каждое семейство публикует `_NAMESPACE`, `_ID_HIGH`, `_ID_LOW_MIN` и `_ID_LOW_MAX`, а
+младшая половина остаётся в вашем распоряжении внутри этого диапазона.
+
+### Публикация интерфейса для других плагинов
+
+`RegisterInterface` — единственный вызов, не принимающий дескриптор. Он передаёт
+хосту вашу собственную таблицу, чтобы другой плагин мог добраться до неё через тот
+же `QueryInterface`, которым пользуются встроенные интерфейсы:
+
+```c
+Registrar->RegisterInterface(RegistrarContext, MyInterfaceID,
+                             NEVERC_INTERFACE_STABLE, &MyTable,
+                             /* Compatibility = */ NULL);
+```
+
+Передавайте `NEVERC_INTERFACE_LOCKSTEP`, если таблица несёт специфичные для цели
+значения схемы, которые не переживут расхождения версий. Интерфейс lockstep обязан
+предоставить `NevercCompatibilityKey`, привязывающий потребителя к одной сборке
+производителя:
+
+```c
+typedef struct NevercCompatibilityKey {
+  NevercABITableHeader Header;
+  NevercStringView ProducerBuildID;   /* compare against Bootstrap->HostBuildID */
+  NevercStringView TargetABIKey;
+  uint32_t LLVMMajor;                 /* compare against Bootstrap->LLVMMajor   */
+  uint32_t Reserved;
+} NevercCompatibilityKey;
+```
+
+Для регистрации lockstep должны быть заполнены все три поля; пустой идентификатор
+сборки, пустой ключ ABI или нулевой мажор LLVM отвергаются как недопустимый
+дескриптор.
 
 ## Сборка
 
