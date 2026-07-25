@@ -223,21 +223,56 @@ sectionKind(const ObjectFile &Object, SectionRef Section, StringRef Name,
   return NEVERC_OBJECT_SECTION_KIND_FORMAT_EXTENSION;
 }
 
+// ELF and COFF state a section's protection in its header, so read it instead
+// of inferring it. llvm::object's generic isData() is also true for read-only
+// allocated sections such as .eh_frame and .rdata; calling those writable makes
+// the writer re-emit them with flags the assembler then rejects as a change.
+// Mach-O carries protection on the segment rather than the section, so it has
+// nothing to read here and keeps the inferred answer.
+bool nativeProtectionFlags(const ObjectFile &Object, SectionRef Section,
+                           NevercObjectSectionFlags &Flags) {
+  if (isa<ELFObjectFileBase>(Object)) {
+    const uint64_t Native = ELFSectionRef(Section).getFlags();
+    if ((Native & ELF::SHF_ALLOC) != 0)
+      Flags |= NEVERC_OBJECT_SECTION_ALLOCATED;
+    if ((Native & ELF::SHF_WRITE) != 0)
+      Flags |= NEVERC_OBJECT_SECTION_WRITABLE;
+    if ((Native & ELF::SHF_EXECINSTR) != 0)
+      Flags |= NEVERC_OBJECT_SECTION_EXECUTABLE;
+    return true;
+  }
+  if (const auto *COFFObject = dyn_cast<COFFObjectFile>(&Object)) {
+    const coff_section *Native = COFFObject->getCOFFSection(Section);
+    if (Native == nullptr)
+      return false;
+    const uint32_t Characteristics = Native->Characteristics;
+    if ((Characteristics & COFF::IMAGE_SCN_MEM_READ) != 0)
+      Flags |= NEVERC_OBJECT_SECTION_ALLOCATED;
+    if ((Characteristics & COFF::IMAGE_SCN_MEM_WRITE) != 0)
+      Flags |= NEVERC_OBJECT_SECTION_WRITABLE;
+    if ((Characteristics & COFF::IMAGE_SCN_MEM_EXECUTE) != 0)
+      Flags |= NEVERC_OBJECT_SECTION_EXECUTABLE;
+    return true;
+  }
+  return false;
+}
+
 NevercObjectSectionFlags
-sectionFlags(SectionRef Section, NevercObjectSectionKind Kind) {
+sectionFlags(const ObjectFile &Object, SectionRef Section,
+             NevercObjectSectionKind Kind) {
   NevercObjectSectionFlags Flags = 0;
-  if (Section.isBerkeleyText() || Section.isBerkeleyData() ||
-      Section.isText() || Section.isData() || Section.isBSS())
-    Flags |= NEVERC_OBJECT_SECTION_ALLOCATED;
-  if (Section.isText())
-    Flags |= NEVERC_OBJECT_SECTION_EXECUTABLE;
-  if (Section.isData() || Section.isBSS() ||
-      Kind == NEVERC_OBJECT_SECTION_KIND_TLS_DATA ||
-      Kind == NEVERC_OBJECT_SECTION_KIND_TLS_ZERO_FILL)
-    Flags |= NEVERC_OBJECT_SECTION_WRITABLE;
+  if (!nativeProtectionFlags(Object, Section, Flags)) {
+    if (Section.isBerkeleyText() || Section.isBerkeleyData() ||
+        Section.isText() || Section.isData() || Section.isBSS())
+      Flags |= NEVERC_OBJECT_SECTION_ALLOCATED;
+    if (Section.isText())
+      Flags |= NEVERC_OBJECT_SECTION_EXECUTABLE;
+    if (Section.isData() || Section.isBSS())
+      Flags |= NEVERC_OBJECT_SECTION_WRITABLE;
+  }
   if (Kind == NEVERC_OBJECT_SECTION_KIND_TLS_DATA ||
       Kind == NEVERC_OBJECT_SECTION_KIND_TLS_ZERO_FILL)
-    Flags |= NEVERC_OBJECT_SECTION_TLS;
+    Flags |= NEVERC_OBJECT_SECTION_WRITABLE | NEVERC_OBJECT_SECTION_TLS;
   if (Kind == NEVERC_OBJECT_SECTION_KIND_DEBUG)
     Flags |= NEVERC_OBJECT_SECTION_DEBUG;
   if (Kind == NEVERC_OBJECT_SECTION_KIND_UNWIND)
@@ -294,6 +329,40 @@ uint32_t relocationWidth(const ObjectFile &Object,
         MachObject->getRelocationLength(Relocation.getRawDataRefImpl());
     if (Length <= 4)
       return (UINT32_C(1) << Length) * 8;
+  }
+  // COFF relocation names embed the architecture token ("AMD64", "ARM64"),
+  // whose digits the name heuristic below reads as a field width -- so every
+  // x86_64 and aarch64 COFF relocation would come out 64 bits wide, and a
+  // 32-bit one near a section's end would then be rejected as overrunning it.
+  // Derive the width from the relocation type instead.
+  if (const auto *COFFObject = dyn_cast<COFFObjectFile>(&Object)) {
+    const uint64_t Type = Relocation.getType();
+    switch (COFFObject->getMachine()) {
+    case COFF::IMAGE_FILE_MACHINE_AMD64:
+      switch (Type) {
+      case COFF::IMAGE_REL_AMD64_ADDR64:
+        return 64;
+      case COFF::IMAGE_REL_AMD64_SECTION:
+        return 16;
+      case COFF::IMAGE_REL_AMD64_SECREL7:
+        return 8;
+      default:
+        // Every other AMD64 relocation patches a 32-bit field.
+        return 32;
+      }
+    case COFF::IMAGE_FILE_MACHINE_ARM64:
+      switch (Type) {
+      case COFF::IMAGE_REL_ARM64_ADDR64:
+        return 64;
+      case COFF::IMAGE_REL_ARM64_SECTION:
+        return 16;
+      default:
+        // Instruction-form ARM64 relocations all patch a 32-bit instruction.
+        return 32;
+      }
+    default:
+      break;
+    }
   }
   // AArch64 ELF relocation names embed operand sizes that are not the field
   // width: the architecture token "AARCH64" itself contains "64", and
@@ -645,7 +714,7 @@ NevercStatus createSections(const ObjectFile &Object,
                          NEVERC_OBJECT_API_MINOR, 0};
     Descriptor.Name = stringView(Name);
     Descriptor.Kind = Kind;
-    Descriptor.Flags = sectionFlags(Section, Kind);
+    Descriptor.Flags = sectionFlags(Object, Section, Kind);
     Descriptor.Alignment =
         std::max<uint64_t>(UINT64_C(1), Section.getAlignment().value());
     const uint64_t Size = Section.getSize();

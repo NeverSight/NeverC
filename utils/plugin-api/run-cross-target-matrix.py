@@ -8,6 +8,13 @@ each artifact with a format check that matches the requested object format and
 architecture. Cross artifacts are only parsed/verified, never executed; only the
 host-compatible artifact could be run by a native harness.
 
+With ``--object-plugin`` each object route is compiled a second time with an
+``object.pre_write`` interceptor loaded, and the section that interceptor adds
+must survive into the artifact. That second pass is what exercises the
+ObjectGraph read/rewrite/write round trip: without a plugin the compiler writes
+the object directly and never reads it back, so a format-specific defect in the
+round trip is invisible on every route the plain pass covers.
+
 Missing SDK support or an unsupported route is recorded as a capability-bound
 skip with a reason rather than silently dropped. A required route that produces
 the wrong format, or fails to produce an artifact at all, fails the matrix.
@@ -64,6 +71,9 @@ COFF_MACHINE = {"x86_64": 0x8664, "aarch64": 0xAA64}
 TRIVIAL_TU = "int neverc_cross_matrix(void) { return 0; }\n"
 DYNCODE_TU = "int dyncode_entry(void) { return 0; }\n"
 
+# The section payload pluginsdk/examples/ObjectRewritePlugin.c appends.
+OBJECT_PLUGIN_MARKER = b"NeverC object rewrite example"
+
 
 class Result:
     __slots__ = ("capability", "status", "reason")
@@ -113,12 +123,23 @@ def run_compiler(compiler: str, args: list[str]) -> tuple[int, str]:
     return proc.returncode, proc.stdout
 
 
-def compile_object(compiler: str, triple: str, src: Path, out: Path) -> tuple[int, str]:
-    return run_compiler(
-        compiler,
-        ["--no-default-config", "-fno-lto", "-c", f"--target={triple}",
-         str(src), "-o", str(out)],
-    )
+def compile_object(compiler: str, triple: str, src: Path, out: Path,
+                   plugin: str | None = None) -> tuple[int, str]:
+    args = ["--no-default-config", "-fno-lto", "-c", f"--target={triple}"]
+    if plugin is not None:
+        args.insert(0, f"-fplugin={plugin}")
+    return run_compiler(compiler, [*args, str(src), "-o", str(out)])
+
+
+def verify_plugin_section(path: Path) -> tuple[bool, str]:
+    """Return (ok, detail) for the section the object interceptor appended."""
+    try:
+        data = path.read_bytes()
+    except OSError as error:
+        return False, f"unreadable artifact: {error}"
+    if OBJECT_PLUGIN_MARKER in data:
+        return True, "interceptor section present"
+    return False, "interceptor section missing from the written object"
 
 
 def compile_dyncode(compiler: str, triple: str, src: Path, out: Path) -> tuple[int, str]:
@@ -130,7 +151,8 @@ def compile_dyncode(compiler: str, triple: str, src: Path, out: Path) -> tuple[i
 
 
 def matrix(compiler: str, targets: list[str], formats: list[str],
-           baseline: bool, workdir: Path) -> list[Result]:
+           baseline: bool, workdir: Path,
+           object_plugin: str | None = None) -> list[Result]:
     results: list[Result] = []
     trivial = workdir / "tu.c"
     trivial.write_text(TRIVIAL_TU, encoding="utf-8")
@@ -155,6 +177,24 @@ def matrix(compiler: str, targets: list[str], formats: list[str],
                 continue
             ok, detail = verify_object_format(out, fmt, arch)
             results.append(Result(cap, "pass" if ok else "fail",
+                                  f"{triple}: {detail}"))
+            if not ok or object_plugin is None:
+                continue
+
+            # Same route through the ObjectGraph round trip.
+            plugin_cap = f"{cap}/plugin_rewrite"
+            rewritten = workdir / f"{arch}_{fmt}_plugin.o"
+            code, log = compile_object(compiler, triple, trivial, rewritten,
+                                       object_plugin)
+            if code != 0 or not rewritten.exists():
+                last = log.strip().splitlines()[-1] if log.strip() else code
+                results.append(Result(plugin_cap, "fail",
+                                      f"{triple}: rewrite failed: {last}"))
+                continue
+            ok, detail = verify_object_format(rewritten, fmt, arch)
+            if ok:
+                ok, detail = verify_plugin_section(rewritten)
+            results.append(Result(plugin_cap, "pass" if ok else "fail",
                                   f"{triple}: {detail}"))
 
     if not baseline:
@@ -200,6 +240,9 @@ def main() -> int:
                         help="comma-separated object formats")
     parser.add_argument("--baseline-current-targets", action="store_true",
                         help="also cover the built-in dyncode/iOS inventory")
+    parser.add_argument("--object-plugin", default=None,
+                        help="object.pre_write interceptor to re-run every "
+                             "object route through (ObjectRewritePlugin)")
     parser.add_argument("--output", type=Path, default=None,
                         help="write the summary JSON here")
     parser.add_argument("--keep", action="store_true",
@@ -212,11 +255,16 @@ def main() -> int:
         return 2
     targets = [t.strip() for t in args.targets.split(",") if t.strip()]
     formats = [f.strip() for f in args.formats.split(",") if f.strip()]
+    if args.object_plugin is not None and not Path(args.object_plugin).exists():
+        print(f"error: object plugin not found: {args.object_plugin}",
+              file=sys.stderr)
+        return 2
 
     scratch = Path(tempfile.mkdtemp(prefix="neverc-cross-"))
     try:
         results = matrix(compiler, targets, formats,
-                         args.baseline_current_targets, scratch)
+                         args.baseline_current_targets, scratch,
+                         args.object_plugin)
     finally:
         if not args.keep:
             for child in sorted(scratch.glob("*")):

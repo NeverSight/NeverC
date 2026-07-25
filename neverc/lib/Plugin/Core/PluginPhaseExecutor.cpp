@@ -268,9 +268,15 @@ bool validateCallbackStatus(PluginPhaseExecutor::ChainContext &Context,
                   "' returned an unknown status");
     return false;
   }
-  failChain(Context, Status.Code,
-            Kind + " callback for plugin '" + PluginID +
-                "' failed with status code " + Twine(Status.Code));
+  // Detail is the host-issued locator for where inside the callback the failure
+  // came from, as the object reader/writer providers already report; without it
+  // a builtin provider failure is a bare code with nothing to trace it to.
+  std::string Message = (Kind + " callback for plugin '" + PluginID +
+                         "' failed with status code " + Twine(Status.Code))
+                            .str();
+  if (Status.Detail != 0)
+    Message += " (detail " + std::to_string(Status.Detail) + ")";
+  failChain(Context, Status.Code, Message);
   return false;
 }
 

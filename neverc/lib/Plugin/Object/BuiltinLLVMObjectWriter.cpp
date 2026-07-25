@@ -642,6 +642,31 @@ NevercStatus emitRelocationValue(
   else if (Relocation.Addend < 0)
     Expression << Relocation.Addend;
 
+  // COFF spells image- and section-relative references as their own
+  // directives; there is no expression suffix to hang on a plain .long, and
+  // Windows unwind data (.pdata/.xdata) is built entirely from them.
+  if (Target.isOSBinFormatCOFF() &&
+      (Relocation.Kind == NEVERC_OBJECT_RELOCATION_IMAGE_RELATIVE ||
+       Relocation.Kind == NEVERC_OBJECT_RELOCATION_SECTION_RELATIVE)) {
+    Expression.flush();
+    if (Relocation.Kind == NEVERC_OBJECT_RELOCATION_IMAGE_RELATIVE) {
+      if (Relocation.Width != 32)
+        return writerStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE, 455);
+      OS << "\t.rva\t" << TargetExpression << '\n';
+      return neverc_status_ok();
+    }
+    if (Relocation.Width == 32) {
+      OS << "\t.secrel32\t" << TargetExpression << '\n';
+      return neverc_status_ok();
+    }
+    // A section index has no room for an addend to survive in.
+    if (Relocation.Width == 16 && Relocation.Addend == 0) {
+      OS << "\t.secidx\t" << TargetExpression << '\n';
+      return neverc_status_ok();
+    }
+    return writerStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE, 456);
+  }
+
   if (Relocation.IsPCRelative ||
       Relocation.Kind == NEVERC_OBJECT_RELOCATION_PC_RELATIVE) {
     Expression << "-.";
