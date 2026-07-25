@@ -1,5 +1,7 @@
 #include "NeverCTestFixture.h"
 
+#include <optional>
+
 class BasicTest : public NeverCTest {};
 
 TEST_F(BasicTest, TestBasic) {
@@ -657,17 +659,61 @@ TEST_F(BasicTest, VerboseTrapDebugInfo) {
       << "expected synthetic trap subprogram in IR\n" << ir.substr(0, 500);
 }
 
-TEST_F(BasicTest, LeaksGate) {
-  if (!isDarwin()) {
-    GTEST_SKIP() << "leaks gate requires macOS";
-    return;
+class LeaksGateTest : public NeverCTest {
+protected:
+  // leaks(1) ships with every macOS but can only attach when the host allows
+  // debugging, and when it cannot it blocks forever instead of failing. Bound
+  // the wait so an unusable leaks costs seconds instead of the suite timeout.
+  //
+  // leaks stops the target while it inspects it, so killing leaks alone would
+  // strand the target stopped and holding its inherited stdout open, blocking
+  // the caller anyway. The report therefore goes to a file rather than down
+  // the pipe, and the timeout takes the target down with leaks.
+  //
+  // Returns the report, or nothing if the run had to be killed.
+  std::optional<std::string> runLeaks(const fs::path &exe, int seconds) const {
+    auto report = tmpFile("_leaks_report.txt");
+    // Job control puts leaks and the target it spawns in their own process
+    // group, so the timeout can take down both by group id. Matching on the
+    // target's path instead would also match this script, which carries that
+    // path in its own command line.
+    const std::string script =
+        "set -m\n"
+        "leaks --atExit -- '" + exe.string() + "'"
+        " > '" + report.string() + "' 2>&1 & p=$!\n"
+        "( sleep " + std::to_string(seconds) +
+        "; kill -9 -$p 2>/dev/null ) >/dev/null 2>&1 & w=$!\n"
+        "wait $p; s=$?\n"
+        "kill $w 2>/dev/null\n"
+        "exit $s\n";
+    auto r = exec("/bin/sh", {"-c", script});
+    if (r.exitCode == 128 + 9 || r.exitCode < 0)
+      return std::nullopt;
+    return readFile(report);
   }
+};
 
-  auto leaksCmd = exec("which", {"leaks"});
-  if (leaksCmd.exitCode != 0) {
+TEST_F(LeaksGateTest, BuiltinStringRuntimeIsLeakFree) {
+  if (!isDarwin())
+    GTEST_SKIP() << "leaks gate requires macOS";
+  if (exec("which", {"leaks"}).exitCode != 0)
     GTEST_SKIP() << "leaks(1) not available";
-    return;
-  }
+
+  // Whether leaks can attach at all is a property of the host, so establish it
+  // once on a trivial program rather than discovering it target by target.
+  auto probeSrc = tmpFile("leaks_probe.c");
+  writeFile(probeSrc, "int main(void) { return 0; }\n");
+  auto probeExe = tmpFile("leaks_probe");
+  std::vector<std::string> probeArgs;
+  for (auto &f : sysrootFlags()) probeArgs.push_back(f);
+  for (auto &f : archFlags()) probeArgs.push_back(f);
+  probeArgs.push_back(probeSrc.string());
+  probeArgs.push_back("-o");
+  probeArgs.push_back(probeExe.string());
+  auto probeBuild = ncc(probeArgs);
+  ASSERT_EQ(probeBuild.exitCode, 0) << probeBuild.err;
+  if (!runLeaks(probeExe, 30))
+    GTEST_SKIP() << "leaks(1) cannot attach on this host";
 
   auto stringDir = testDir() / "string";
   std::vector<std::string> targets = {
@@ -691,12 +737,16 @@ TEST_F(BasicTest, LeaksGate) {
     args.push_back(src);
     args.push_back("-o");
     args.push_back(exe.string());
+    // A target that stops building must fail here; continuing would retire its
+    // leak coverage without saying so.
     auto cr = ncc(args);
-    if (cr.exitCode != 0) continue;
+    ASSERT_EQ(cr.exitCode, 0) << cr.err;
 
-    auto lr = exec("leaks", {"--atExit", "--", exe.string()});
-    EXPECT_TRUE(lr.contains("0 leaks for 0 total leaked bytes") ||
-                lr.out.find("0 leaks") != std::string::npos)
-        << "leaks_" << t << ": leaks reported\n" << lr.out;
+    // The probe proved leaks works here, so a stall now is a real defect.
+    auto report = runLeaks(exe, 120);
+    ASSERT_TRUE(report.has_value()) << "leaks_" << t << ": leaks(1) never returned";
+    EXPECT_TRUE(report->find("0 leaks for 0 total leaked bytes") != std::string::npos ||
+                report->find("0 leaks") != std::string::npos)
+        << "leaks_" << t << ": leaks reported\n" << *report;
   }
 }
