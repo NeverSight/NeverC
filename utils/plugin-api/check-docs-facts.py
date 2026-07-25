@@ -14,6 +14,10 @@ Checks, without a build:
 4. The phase totals, policy counts, domain counts and sealed-gate list in
    README match the schema, in every locale.
 5. The example CMake targets README advertises are defined by the SDK.
+
+Check 3 only sees prose that carries a citable name, so a dropped paragraph
+that carries none slips past it; check-docs-links.py compares the shape of
+every translation and catches that.
 """
 
 from __future__ import annotations
@@ -134,14 +138,19 @@ def check_names(pages: list[Path], schema: dict, report: Report) -> dict[Path, C
     return citations
 
 
-def check_locale_parity(
-    pages: list[Path], citations: dict[Path, Counter], report: Report
-) -> None:
+def locale_groups(pages: list[Path]) -> list[dict[str, Path]]:
+    """One entry per guide, mapping locale to page; a page with no English
+    original has nothing to be compared against and is dropped."""
     groups: dict[tuple[Path, str], dict[str, Path]] = defaultdict(dict)
     for page_path in pages:
         groups[(page_path.parent, stem_of(page_path.name))][
             locale_of(page_path.name)] = page_path
+    return [found for _, found in sorted(groups.items()) if "" in found]
 
+
+def check_locale_parity(
+    pages: list[Path], citations: dict[Path, Counter], report: Report
+) -> None:
     def technical(found: Counter) -> set[str]:
         names = set()
         for span in found:
@@ -150,9 +159,7 @@ def check_locale_parity(
                 names.add(span)
         return names
 
-    for (_, _), found in sorted(groups.items()):
-        if "" not in found:
-            continue
+    for found in locale_groups(pages):
         english = technical(citations[found[""]])
         for locale, page_path in sorted(found.items()):
             if not locale:

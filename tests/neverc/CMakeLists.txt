@@ -1890,7 +1890,7 @@ add_test(
           ${CMAKE_CURRENT_SOURCE_DIR}/../../utils/plugin-api/tests/test-check-global-state.py
 )
 add_test(
-  NAME PluginDocsNavigation
+  NAME DocsNavigation
   COMMAND ${Python3_EXECUTABLE}
           ${CMAKE_CURRENT_SOURCE_DIR}/../../utils/plugin-api/check-docs-links.py
 )
@@ -1912,7 +1912,7 @@ set_tests_properties(
   PluginSDKGenerationABICheck
   PluginABIManifestGeneratorTests
   PluginGlobalStateCheckerTests
-  PluginDocsNavigation
+  DocsNavigation
   PluginDocsFacts
   # These are Python generator/consistency checks, not sanitizer-relevant C++
   # code paths.  PluginCoverageManifest additionally validates against the full

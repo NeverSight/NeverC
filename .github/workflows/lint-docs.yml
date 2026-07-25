@@ -1,0 +1,70 @@
+# Static conformance of the documentation tree.
+#
+# check-docs-links covers all of docs/ in every locale; check-docs-facts pins
+# the plugin API guides to the phase schema and the public headers.  Both are
+# registered as CTest cases (DocsNavigation, PluginDocsFacts) under the
+# "plugin-meta" label, but no workflow reaches them: plugin-conformance runs
+# `ctest -R PluginConformance`, and plugin-sanitizers excludes the label with
+# `-LE plugin-meta`.  They need no build at all, so they run here on their own
+# instead of riding along with a multi-hour compiler build.
+name: lint-docs
+
+on:
+  push:
+    paths:
+      - 'docs/**'
+      - 'README.md'
+      - 'neverc/include/neverc/Plugin/**'
+      - 'pluginsdk/**'
+      - 'utils/plugin-api/check-docs-links.py'
+      - 'utils/plugin-api/check-docs-facts.py'
+      - 'utils/plugin-api/docs-translation-debt.json'
+      - '.github/workflows/lint-docs.yml'
+  pull_request:
+    paths:
+      - 'docs/**'
+      - 'README.md'
+      - 'neverc/include/neverc/Plugin/**'
+      - 'pluginsdk/**'
+      - 'utils/plugin-api/check-docs-links.py'
+      - 'utils/plugin-api/check-docs-facts.py'
+      - 'utils/plugin-api/docs-translation-debt.json'
+      - '.github/workflows/lint-docs.yml'
+
+jobs:
+  check-docs-navigation:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Verify every locale is present and every jump resolves
+        run: |
+          python3 utils/plugin-api/check-docs-links.py
+          echo ""
+          echo "If this step fails, a guide is missing a locale, a language bar"
+          echo "entry, or a link/reference definition that the other locales have."
+
+  check-docs-facts:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Verify the guides agree with the schema and the public headers
+        run: |
+          python3 utils/plugin-api/check-docs-facts.py
+          echo ""
+          echo "If this step fails, the guides name a phase, symbol, count or"
+          echo "example target that PhaseSchema.json, the public headers or the"
+          echo "SDK no longer define."
