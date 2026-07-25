@@ -211,8 +211,9 @@ static NevercStatus NEVERC_CALL run_pass(
   return neverc_status_ok();
 }
 
-static NevercStatus NEVERC_CALL process_begin(const NevercCoreAPI *,
+static NevercStatus NEVERC_CALL process_begin(const NevercCoreAPI *Core,
                                                void **OutProcessState) {
+  (void)Core;
   static ProcessState State;
   if (!OutProcessState)
     return status(NEVERC_STATUS_INVALID_ARGUMENT);
@@ -223,8 +224,10 @@ static NevercStatus NEVERC_CALL process_begin(const NevercCoreAPI *,
 }
 
 static NevercStatus NEVERC_CALL register_plugin(
-    const NevercCoreAPI *, const NevercRegistrarAPI *, void *RegistrarContext,
-    void *ProcessStateValue) {
+    const NevercCoreAPI *Core, const NevercRegistrarAPI *Registrar,
+    void *RegistrarContext, void *ProcessStateValue) {
+  (void)Core;
+  (void)Registrar;
   static const NevercInterfaceID Phases[9] = {
       {NEVERC_PHASE_MIR_PASS_POST_LEGALIZE_HIGH,
        NEVERC_PHASE_MIR_PASS_POST_LEGALIZE_LOW},
@@ -303,8 +306,9 @@ static NevercStatus NEVERC_CALL register_plugin(
   return neverc_status_ok();
 }
 
-static NevercStatus NEVERC_CALL destroy_plugin(const NevercCoreAPI *,
+static NevercStatus NEVERC_CALL destroy_plugin(const NevercCoreAPI *Core,
                                                 void *ProcessStateValue) {
+  (void)Core;
   ProcessState *Process = (ProcessState *)ProcessStateValue;
   if (!Process || Process->Seen != UINT32_C(0x1ff))
     return status(NEVERC_STATUS_VERIFICATION_FAILED);

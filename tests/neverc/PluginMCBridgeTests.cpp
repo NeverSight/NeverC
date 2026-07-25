@@ -324,16 +324,20 @@ TEST(PluginMCBridgeTest,
     }
   }
   ASSERT_NE(ReturnOpcode, 0U);
+  // Take whatever register the return opcode itself declares. Naming one
+  // architecture's link register only finds a register on that architecture,
+  // and a return that encodes no register at all is equally valid here: the
+  // test only needs the constructed instruction to match the existing one.
   unsigned ReturnRegister = 0;
-  if (Instructions->get(ReturnOpcode).getNumOperands() != 0) {
-    for (unsigned Register = 1;
-         Register != Registers->getNumRegs(); ++Register)
-      if (StringRef(Registers->getName(Register)) == "X30" ||
-          StringRef(Registers->getName(Register)) == "LR") {
-        ReturnRegister = Register;
-        break;
-      }
-    ASSERT_NE(ReturnRegister, 0U);
+  for (const MCOperandInfo &Operand :
+       Instructions->get(ReturnOpcode).operands()) {
+    if (Operand.RegClass < 0)
+      continue;
+    const MCRegisterClass &Class = Registers->getRegClass(Operand.RegClass);
+    if (Class.getNumRegs() == 0)
+      continue;
+    ReturnRegister = Class.getRegister(0);
+    break;
   }
 
   PluginTargetSnapshot::NamedRecord Schema;
