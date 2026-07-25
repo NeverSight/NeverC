@@ -19,6 +19,20 @@ else()
   set(_NEVERC_CONF_DEPENDS TRUE)
 endif()
 
+# The system compiler that builds the fixtures may default to a different
+# architecture than this build -- an x64 clang running on an arm64 Windows host,
+# for instance -- which makes the fixture object disagree with the CRT it links
+# against. Pin it to this build's triple. Only clang drivers accept --target=,
+# and the harness' MSVC-driver path ignores this.
+set(_NEVERC_CONF_CC_TARGET "")
+if(CMAKE_C_COMPILER_ID MATCHES "Clang")
+  if(CMAKE_C_COMPILER_TARGET)
+    set(_NEVERC_CONF_CC_TARGET "${CMAKE_C_COMPILER_TARGET}")
+  elseif(DEFINED LLVM_HOST_TRIPLE)
+    set(_NEVERC_CONF_CC_TARGET "${LLVM_HOST_TRIPLE}")
+  endif()
+endif()
+
 add_executable(neverc-plugin-conformance
   PluginConformanceMain.cpp
   ConformanceEnvironment.cpp
@@ -40,6 +54,7 @@ target_compile_features(neverc-plugin-conformance PRIVATE cxx_std_17)
 target_compile_definitions(neverc-plugin-conformance PRIVATE
   NEVERC_CONF_NEVERC="${_NEVERC_CONF_BINARY}"
   NEVERC_CONF_CC="${CMAKE_C_COMPILER}"
+  NEVERC_CONF_CC_TARGET="${_NEVERC_CONF_CC_TARGET}"
   NEVERC_CONF_SDK_INCLUDE="${CMAKE_CURRENT_SOURCE_DIR}/../../pluginsdk/include"
   NEVERC_CONF_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
 )

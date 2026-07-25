@@ -210,7 +210,13 @@ TEST(PluginRegistryTest, DeduplicatesHardLinkAliasesByFileIdentity) {
   ASSERT_FALSE(
       sys::fs::createUniqueDirectory(Prefix, TemporaryDirectory));
   SmallString<160> Alias(TemporaryDirectory);
-  sys::path::append(Alias, "minimal-plugin-alias");
+  // LoadLibrary appends ".dll" to a path that carries no extension, so an
+  // extensionless alias is looked up under a name that does not exist.
+  const std::string AliasName =
+      ("minimal-plugin-alias" +
+       sys::path::extension(NEVERC_TEST_MINIMAL_PLUGIN))
+          .str();
+  sys::path::append(Alias, AliasName);
   ASSERT_FALSE(
       sys::fs::create_hard_link(NEVERC_TEST_MINIMAL_PLUGIN, Alias));
 

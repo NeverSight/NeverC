@@ -91,8 +91,11 @@ jobs:
           # PluginCoverageManifest, which validates against the full CTest
           # inventory -- do not fail on the intentionally partial build.  Those
           # checks are covered by the normal full build and the release-SDK gate.
+          # PluginFuzzSmoke matches -R 'Plugin' but its binaries are built by a
+          # later step, so exclude it here and let that step run it.
           ctest --test-dir build \
-            -R 'Plugin|PluginConformance' -LE plugin-meta --output-on-failure
+            -R 'Plugin|PluginConformance' -E 'PluginFuzzSmoke' \
+            -LE plugin-meta --output-on-failure
 
       - name: Build and smoke fuzzers under ${{ matrix.label }}
         if: matrix.enable_fuzzers == 'ON'

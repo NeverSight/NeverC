@@ -829,8 +829,38 @@ std::error_code setPermissions(const Twine &Path, perms Permissions) {
 }
 
 std::error_code setPermissions(int FD, perms Permissions) {
-  // FIXME Not implemented.
-  return std::make_error_code(std::errc::not_supported);
+  HANDLE FileHandle = reinterpret_cast<HANDLE>(_get_osfhandle(FD));
+  if (FileHandle == INVALID_HANDLE_VALUE)
+    return mapWindowsError(ERROR_INVALID_HANDLE);
+
+  FILE_BASIC_INFO Info;
+  if (!::GetFileInformationByHandleEx(FileHandle, FileBasicInfo, &Info,
+                                      sizeof(Info)))
+    return mapWindowsError(::GetLastError());
+
+  // Same model as the path-based overload: the read-only bit is the only
+  // permission Windows records, and unrelated attributes must be preserved.
+  if (Permissions & all_write) {
+    Info.FileAttributes &= ~static_cast<DWORD>(FILE_ATTRIBUTE_READONLY);
+    if (Info.FileAttributes == 0)
+      Info.FileAttributes = FILE_ATTRIBUTE_NORMAL;
+  } else {
+    Info.FileAttributes |= FILE_ATTRIBUTE_READONLY;
+    Info.FileAttributes &= ~static_cast<DWORD>(FILE_ATTRIBUTE_NORMAL);
+  }
+
+  // A zero timestamp tells the call to leave that field alone, so this only
+  // rewrites the attributes.
+  Info.CreationTime.QuadPart = 0;
+  Info.LastAccessTime.QuadPart = 0;
+  Info.LastWriteTime.QuadPart = 0;
+  Info.ChangeTime.QuadPart = 0;
+
+  if (!::SetFileInformationByHandle(FileHandle, FileBasicInfo, &Info,
+                                    sizeof(Info)))
+    return mapWindowsError(::GetLastError());
+
+  return std::error_code();
 }
 
 std::error_code setLastAccessAndModificationTime(int FD, TimePoint<> AccessTime,

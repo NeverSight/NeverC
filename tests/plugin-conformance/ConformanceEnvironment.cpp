@@ -24,6 +24,9 @@
 #ifndef NEVERC_CONF_CC
 #define NEVERC_CONF_CC ""
 #endif
+#ifndef NEVERC_CONF_CC_TARGET
+#define NEVERC_CONF_CC_TARGET ""
+#endif
 #ifndef NEVERC_CONF_SDK_INCLUDE
 #define NEVERC_CONF_SDK_INCLUDE ""
 #endif
@@ -123,6 +126,8 @@ bool RunResult::errContains(const std::string &Needle) const {
 Environment::Environment() {
   Neverc = envOrDefault("NEVERC_UNDER_TEST", NEVERC_CONF_NEVERC);
   CC = envOrDefault("NEVERC_CONFORMANCE_CC", NEVERC_CONF_CC);
+  CCTarget =
+      envOrDefault("NEVERC_CONFORMANCE_CC_TARGET", NEVERC_CONF_CC_TARGET);
   FixturesDir = envOrDefault("NEVERC_CONFORMANCE_FIXTURES", NEVERC_CONF_FIXTURES_DIR);
 
   // A released package can be pointed at with NEVERC_PLUGIN_SDK_ROOT; its public
@@ -246,6 +251,8 @@ std::string Environment::buildPlugin(const std::string &Dir,
     Args.push_back(Source);
   } else {
     Args = {CC, "-shared"};
+    if (!CCTarget.empty())
+      Args.push_back("--target=" + CCTarget);
 #ifndef _WIN32
     Args.push_back("-fPIC");
 #endif

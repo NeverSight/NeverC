@@ -1450,8 +1450,14 @@ void flushPluginDiagnostics(plugin::PluginSession &Session,
     if (Record.Code != 0)
       Prefix += " [plugin-" + llvm::utostr(Record.Code) + "]";
     Diags.Report(DiagnosticID) << Prefix + ": " + Record.Message;
-    for (const std::string &Note : Record.Notes)
+    for (const std::string &Note : Record.Notes) {
+      // The engine drops a note when it believes the diagnostic before it was
+      // ignored. These notes belong to the message just reported, so clear that
+      // bookkeeping instead of letting it swallow them.
+      if (Diags.isLastDiagnosticIgnored())
+        Diags.setLastDiagnosticIgnored(false);
       Diags.Report(diag::note_drv_plugin) << Note;
+    }
   }
 }
 

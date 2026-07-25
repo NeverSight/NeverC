@@ -421,14 +421,16 @@ struct MCEmissionPlan::Impl final : MCEmissionRuntimeAccess {
   Error notify(NevercInterfaceID Phase, NevercMCEmissionEventKind Kind,
                NevercInterfaceID ArtifactType, const void *Payload,
                StringRef FallbackTriple = {}) {
+    // Callers stash event context (ActiveInstruction, ActiveBytes, ...) that
+    // points into their own stack frame before calling here, so every exit has
+    // to clear it -- including the no-bindings early return below. Otherwise a
+    // later event reads a dangling pointer.
+    auto Clear = make_scope_exit([&] { resetInvocation(); });
     if (!Executor->hasBindings(Phase))
       return Error::success();
     if (Error E = beginInvocation(Phase, Kind))
       return E;
-    auto End = make_scope_exit([&] {
-      Service->detach(Task.handle());
-      resetInvocation();
-    });
+    auto End = make_scope_exit([&] { Service->detach(Task.handle()); });
     auto Artifact = Executor->createArtifactView(
         Task, ArtifactType, Payload, ++EventGeneration);
     if (!Artifact)
@@ -562,7 +564,7 @@ struct MCEmissionPlan::Impl final : MCEmissionRuntimeAccess {
       return Resolved;
 
     const MCInst *Instruction = ActiveInstruction;
-    if (sameID(activeArtifactType(), instructionArtifactID()))
+    if (Payload && sameID(activeArtifactType(), instructionArtifactID()))
       Instruction =
           &static_cast<const InstructionArtifact *>(Payload)->Instruction;
     if (Instruction)
@@ -585,11 +587,13 @@ struct MCEmissionPlan::Impl final : MCEmissionRuntimeAccess {
     if (!ActiveSection.empty())
       Value.Flags |= NEVERC_MC_EMISSION_HAS_SECTION;
     if (Instruction) {
+      MCInst *Stored = ReadUnit.at(0);
+      if (!ReadBridge || !Stored)
+        return status(NEVERC_STATUS_RESOURCE_EXHAUSTED);
       Value.Flags |= NEVERC_MC_EMISSION_HAS_INSTRUCTION;
       Value.MC = &ReadBridge->api();
       auto Unit = ReadBridge->unit();
-      auto Wrapped =
-          ReadBridge->wrapInstruction(*ReadUnit.at(0));
+      auto Wrapped = ReadBridge->wrapInstruction(*Stored);
       if (!Unit || !Wrapped) {
         if (!Unit)
           consumeError(Unit.takeError());

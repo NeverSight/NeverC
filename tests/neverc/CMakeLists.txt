@@ -1364,7 +1364,7 @@ add_dependencies(neverc-plugin-core-tests
 gtest_discover_tests(neverc-plugin-core-tests
   PROPERTIES
     TIMEOUT 60
-  DISCOVERY_TIMEOUT 30
+  DISCOVERY_TIMEOUT 300
 )
 
 add_executable(neverc-plugin-frontend-tests
@@ -1414,7 +1414,7 @@ add_dependencies(neverc-plugin-frontend-tests
 gtest_discover_tests(neverc-plugin-frontend-tests
   PROPERTIES
     TIMEOUT 60
-    DISCOVERY_TIMEOUT 30
+    DISCOVERY_TIMEOUT 300
 )
 
 add_executable(neverc-plugin-ir-tests
@@ -1461,7 +1461,7 @@ add_dependencies(neverc-plugin-ir-tests
 gtest_discover_tests(neverc-plugin-ir-tests
   PROPERTIES
     TIMEOUT 60
-    DISCOVERY_TIMEOUT 30
+    DISCOVERY_TIMEOUT 300
 )
 
 add_executable(neverc-plugin-target-mc-tests
@@ -1577,7 +1577,7 @@ add_dependencies(neverc-plugin-target-mc-tests
 gtest_discover_tests(neverc-plugin-target-mc-tests
   PROPERTIES
     TIMEOUT 60
-    DISCOVERY_TIMEOUT 30
+    DISCOVERY_TIMEOUT 300
 )
 
 add_executable(neverc-plugin-dyncode-tests
@@ -1628,7 +1628,7 @@ add_dependencies(neverc-plugin-dyncode-tests
 gtest_discover_tests(neverc-plugin-dyncode-tests
   PROPERTIES
     TIMEOUT 60
-    DISCOVERY_TIMEOUT 30
+    DISCOVERY_TIMEOUT 300
 )
 
 add_executable(neverc-plugin-link-tests
@@ -1691,7 +1691,7 @@ add_dependencies(neverc-plugin-link-tests
 gtest_discover_tests(neverc-plugin-link-tests
   PROPERTIES
     TIMEOUT 60
-    DISCOVERY_TIMEOUT 30
+    DISCOVERY_TIMEOUT 300
 )
 
 add_executable(neverc-plugin-object-merge-tests
@@ -1737,7 +1737,7 @@ add_dependencies(neverc-plugin-object-merge-tests
 gtest_discover_tests(neverc-plugin-object-merge-tests
   PROPERTIES
     TIMEOUT 60
-    DISCOVERY_TIMEOUT 30
+    DISCOVERY_TIMEOUT 300
 )
 
 add_executable(neverc-plugin-lto-input-tests
@@ -1762,7 +1762,7 @@ target_compile_features(
 gtest_discover_tests(neverc-plugin-lto-input-tests
   PROPERTIES
     TIMEOUT 60
-    DISCOVERY_TIMEOUT 30
+    DISCOVERY_TIMEOUT 300
 )
 
 add_executable(neverc-plugin-io-tests
@@ -1808,7 +1808,7 @@ add_dependencies(neverc-plugin-io-tests
 gtest_discover_tests(neverc-plugin-io-tests
   PROPERTIES
     TIMEOUT 60
-    DISCOVERY_TIMEOUT 30
+    DISCOVERY_TIMEOUT 300
 )
 
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
@@ -2088,7 +2088,7 @@ add_dependencies(neverc-tests
 gtest_discover_tests(neverc-tests
   PROPERTIES
     TIMEOUT 900
-  DISCOVERY_TIMEOUT 30
+  DISCOVERY_TIMEOUT 300
 )
 
 # Build module unit tests (Lexer, Parser, VariableEnv, RuleDB, DepGraph)
@@ -2104,7 +2104,7 @@ target_compile_features(neverc-build-tests PRIVATE cxx_std_17)
 gtest_discover_tests(neverc-build-tests
   PROPERTIES
     TIMEOUT 120
-  DISCOVERY_TIMEOUT 30
+  DISCOVERY_TIMEOUT 300
 )
 
 # Object merger unit tests (ELF, COFF, MachO fuzzing + edge cases)
@@ -2137,7 +2137,7 @@ target_compile_features(neverc-merge-tests PRIVATE cxx_std_17)
 gtest_discover_tests(neverc-merge-tests
   PROPERTIES
     TIMEOUT 120
-  DISCOVERY_TIMEOUT 30
+  DISCOVERY_TIMEOUT 300
 )
 
 # Optional libFuzzer target for continuous coverage-guided fuzzing of the
@@ -2199,5 +2199,5 @@ endif()
 gtest_discover_tests(neverc-std-tests
   PROPERTIES
     TIMEOUT 600
-  DISCOVERY_TIMEOUT 30
+  DISCOVERY_TIMEOUT 300
 )

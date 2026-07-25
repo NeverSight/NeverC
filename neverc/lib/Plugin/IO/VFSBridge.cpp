@@ -8,6 +8,7 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Errc.h"
 #include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/Path.h"
 #include <algorithm>
 #include <chrono>
 #include <cstring>
@@ -521,7 +522,12 @@ NevercStatus NEVERC_CALL openDirectory(
   std::vector<vfs::directory_entry> Entries;
   vfs::directory_iterator End;
   while (Iterator != End) {
-    Entries.push_back(*Iterator);
+    // Canonicalize and GetWorkingDirectory hand back host-native separators,
+    // so traversal has to as well. Otherwise a plugin cannot match an entry
+    // against a canonicalized path on Windows. This is a no-op on POSIX.
+    SmallString<256> EntryPath(Iterator->path());
+    sys::path::native(EntryPath);
+    Entries.emplace_back(std::string(EntryPath), Iterator->type());
     Iterator.increment(Error);
     if (Error)
       return errorStatus(Error);

@@ -980,7 +980,10 @@ static Error checkLinkerOptCommand(const MachOObjectFile &Obj,
   uint32_t left = L.cmdsize - sizeof(struct MachO::linker_option_command);
   uint32_t i = 0;
   while (left > 0) {
-    while (*string == '\0' && left > 0) {
+    // The bounds check has to come first: once left reaches zero string is one
+    // past the end of the load command, and a trailing run of NULs would
+    // otherwise make this read it.
+    while (left > 0 && *string == '\0') {
       string++;
       left--;
     }

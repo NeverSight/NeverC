@@ -657,6 +657,11 @@ void NeverCTest::writeFile(const fs::path &path, const std::string &content) {
   // trips and any fixture that checks an exact source length.
   std::ofstream f(path, std::ios::binary);
   f << content;
+  f.close();
+  // A silently truncated source turns "this must fail to compile" fixtures
+  // into vacuous passes, so refuse to continue on a write failure.
+  ASSERT_FALSE(f.fail())
+      << "could not write test input " << path.string();
 }
 
 std::string NeverCTest::readFile(const fs::path &path) const {

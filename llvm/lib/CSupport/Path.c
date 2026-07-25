@@ -1541,8 +1541,26 @@ int csupport_copy_fd(int read_fd, int write_fd) {
 }
 #else
 int csupport_copy_fd(int read_fd, int write_fd) {
-  (void)read_fd; (void)write_fd;
-  return -1;
+  /* Both descriptors come from openFileForRead/openFileForWrite with OF_None,
+     so they are already in binary mode and the bytes go through untranslated.
+     _read/_write do not report EINTR. */
+  char buf[4096];
+  for (;;) {
+    int nr = _read(read_fd, buf, (unsigned int)sizeof(buf));
+    if (nr == 0) break;
+    if (nr < 0)
+      return errno;
+    char *p = buf;
+    int rem = nr;
+    while (rem > 0) {
+      int nw = _write(write_fd, p, (unsigned int)rem);
+      if (nw < 0)
+        return errno;
+      p += nw;
+      rem -= nw;
+    }
+  }
+  return 0;
 }
 #endif
 

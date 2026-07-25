@@ -455,8 +455,13 @@ COFFLinkGraphAdapter::capture(const PluginLinkGraph &Previous,
       Section->ComdatID = ComdatID;
     }
 
-    if (HasLayout && chunkIsLive(Native) &&
-        Native->getOutputSectionIdx() != 0) {
+    // Once layout is frozen the chunk-level section becomes a zero-sized
+    // shell, so a live atom only has somewhere to live if it can be reparented
+    // onto the output section that actually holds it. Chunks with no output
+    // section (osidx 0, which getOutputSection reports as null) and chunks
+    // whose RVA falls outside their output section have no address to report
+    // and must not stay live.
+    if (HasLayout && chunkIsLive(Native)) {
       OutputSection *Output = Context.getOutputSection(Native);
       const uint64_t OutputID = CaptureOutputSection(Output);
       const uint64_t RVA = Native->getRVA();
@@ -719,10 +724,14 @@ COFFLinkGraphAdapter::capture(const PluginLinkGraph &Previous,
   if (State >= NEVERC_LINK_STATE_GC_COMPLETE)
     for (const auto &[Native, AtomID] : AtomIDs)
       if (PluginLinkAtom *Atom = Result->findAtom(AtomID)) {
-        if (chunkIsLive(const_cast<Chunk *>(Native)))
-          Atom->Flags |= NEVERC_LINK_ATOM_LIVE;
-        else
+        // Once a layout exists, CaptureChunk has already withheld liveness from
+        // atoms that survive natively but occupy no output-section range. This
+        // pass may only take liveness away, never restore it, or those atoms
+        // come back with no address and fail layout verification.
+        if (!chunkIsLive(const_cast<Chunk *>(Native)))
           Atom->Flags &= ~NEVERC_LINK_ATOM_LIVE;
+        else if (!HasLayout)
+          Atom->Flags |= NEVERC_LINK_ATOM_LIVE;
       }
 
   if (State >= NEVERC_LINK_STATE_ICF_COMPLETE)

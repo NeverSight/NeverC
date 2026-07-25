@@ -35,6 +35,11 @@ public:
 
   const std::string &neverc() const { return Neverc; }
   const std::string &cc() const { return CC; }
+  /// Target triple the fixture must be built for. The system compiler may
+  /// default to a different architecture than the build (an x64 clang running
+  /// on an arm64 host), which makes the fixture object disagree with the CRT it
+  /// links against. Empty means "trust the compiler default".
+  const std::string &ccTarget() const { return CCTarget; }
   const std::string &sdkInclude() const { return SDKInclude; }
   const std::string &fixturesDir() const { return FixturesDir; }
   bool usable() const { return !Neverc.empty() && !CC.empty() &&
@@ -67,6 +72,7 @@ private:
   Environment();
   std::string Neverc;
   std::string CC;
+  std::string CCTarget;
   std::string SDKInclude;
   std::string FixturesDir;
 };
