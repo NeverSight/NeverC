@@ -2,21 +2,20 @@
 
 # Custom Calling Conventions
 
-NeverC supports **data-driven custom calling conventions** — you can assign arbitrary physical registers to any function's arguments and return values, entirely from an out-of-tree plugin or source-level attributes, without modifying the compiler itself or any TableGen definitions.
+NeverC supports **data-driven custom calling conventions** — you can assign arbitrary physical registers to any function's arguments and return values, entirely from an out-of-tree plugin or from source-level attributes, without modifying the compiler or any TableGen definition.
 
 ## Overview
 
-Traditional LLVM calling conventions are baked into the backend via `.td` / `.inc` files. Adding or modifying one requires editing compiler sources and re-running TableGen. NeverC replaces this with a **runtime data-driven** approach:
+Traditional LLVM calling conventions are baked into the backend via `.td` / `.inc` files. Adding or modifying one requires editing compiler sources and re-running TableGen. NeverC replaces this with a **runtime data-driven** model built from two layers:
 
-- A **register assignment spec** (a plain string) is attached to each function as a string attribute.
-- The backend reads this spec and assigns parameters / return values to the specified physical registers.
-- The spec can come from an **external plugin** (IR pass), **source-level attributes** (`__attribute__` / `__declspec`), or both.
+- A **spec** — a short, human-writable string such as `gpr:rcx,rdx;ret:rax` — is attached to a function as the `"neverc-callconv"` string attribute, either by a plugin or by a source-level attribute.
+- Before code generation the host **materializes** that spec into a `"neverc-cc-plan-v1"` attribute: an immutable, validated table of exact locations bound to a specific target schema. The backend consumes only the plan.
 
-This means calling conventions go from "compile-time hardcoded in the backend" to "runtime data-driven by external policy".
+The spec is what you write; the plan is what the backend trusts. Calling conventions therefore move from "compile-time hardcoded in the backend" to "runtime data-driven by external policy", without giving up verification.
 
 ## Spec Format
 
-The spec is a semicolon-delimited string. Each segment has a key and a comma-separated list of register names (case-insensitive, whitespace-tolerant):
+A spec is a semicolon-delimited string. Each segment has a key and a comma-separated list of register names (case-insensitive, whitespace-tolerant):
 
 ```
 gpr:rcx,rdx,r8,r9; xmm:xmm0,xmm1; ret:rax; ret_xmm:xmm0
@@ -27,45 +26,53 @@ gpr:rcx,rdx,r8,r9; xmm:xmm0,xmm1; ret:rax; ret_xmm:xmm0
 | `args` | | **Positional mode**: each token is a register name or `stack`/`mem`, assigned to arguments by index |
 | `gpr` | `arg_gpr` | **Pool mode**: integer/pointer argument registers, used in order; overflow spills to the stack |
 | `xmm` | `arg_xmm` | **Pool mode**: float/vector argument registers |
-| `fpr` | `arg_fpr` | AArch64 alias for `xmm` |
+| `fpr` | | Target-neutral alias for `xmm` |
 | `ret_gpr` | `ret` | Integer/pointer return registers |
 | `ret_xmm` | | Float/vector return registers |
-| `ret_fpr` | | AArch64 alias for `ret_xmm` |
-| `csr` | | Custom callee-saved register set (default: standard ABI set) |
+| `ret_fpr` | | Target-neutral alias for `ret_xmm` |
+| `csr` | | Custom callee-saved register set (default: the standard ABI set) |
+
+Any segment may be omitted, and unknown segments are ignored. The keys are defined once in `llvm/include/llvm/CodeGen/NeverCCallConv.h`, so producers and the parser cannot drift apart.
 
 ### Two Argument Modes
 
-**Pool mode** (`gpr:` / `xmm:`): Integer arguments take registers from the `gpr` pool in order; float arguments take from `xmm`. When the pool is exhausted, remaining arguments spill to the stack.
+**Pool mode** (`gpr:` / `xmm:`): integer arguments take registers from the `gpr` pool in order; float and vector arguments take from `xmm`. When a pool is exhausted, the remaining arguments spill to the stack.
 
-**Positional mode** (`args:`): Argument *i* uses the *i*-th token. Each token is either a register name or `stack` / `mem` to force that argument onto the stack:
+**Positional mode** (`args:`): argument *i* uses the *i*-th token. Each token is either a register name or `stack` / `mem`, which forces that argument onto the stack:
 
 ```
 args:rcx,stack,r8;ret:rax   # arg0→rcx, arg1→stack, arg2→r8, return→rax
 ```
 
-When `args` is present, it takes precedence over `gpr` / `xmm`. Type mismatches (e.g., an XMM name for an integer argument), out-of-range indices, and already-allocated registers all fall back to a stack slot.
+When `args` is present it takes precedence over `gpr` / `xmm`. A token that names the wrong register class for the argument's type, an index beyond the token list, and an already-allocated register all fall back to a stack slot rather than failing the build.
 
 ### Supported Architectures
 
+Register names are resolved through a per-target table, the single source of truth for what a spec may name.
+
 | Architecture | GPR names | SIMD names | Width selection |
 |---|---|---|---|
-| **x86-64** | `rax`, `rcx`, `rdx`, `rsi`, `rdi`, `r8`–`r11` | `xmm0`–`xmm15` | i32→32-bit sub-register, i64→64-bit |
-| **AArch64** | `x0`–`x28` | `v0`–`v31` | i32→`w`, i64→`x`, f16→`h`, f32→`s`, f64→`d`, f128/vec→`q` |
+| **x86-64** | `rax`, `rbx`, `rcx`, `rdx`, `rsi`, `rdi`, `rbp`, `r8`–`r15` | `xmm0`–`xmm15` | i32 → 32-bit sub-register, i64/pointer → 64-bit |
+| **AArch64** | `x0`–`x28` | `v0`–`v31` | i32→`w`, i64→`x`, f16→`h`, f32→`s`, f64→`d`, f128/vector→`q` |
+
+GPRs are always written in their 64-bit spelling; the backend narrows them to the sub-register that matches each value's type. Vector names are written as `v0`–`v31` on AArch64 and the backend picks the `H`/`S`/`D`/`Q` form by type.
 
 ### Constraints
 
-- **Callee-saved**: Defaults to the standard ABI set. Use `csr:r12,r13` to declare a custom set (the function will only save/restore those registers). Supported on both x86-64 and AArch64.
-- **Reserved registers**: The stack pointer (`rsp` / `sp`) and AArch64 `x29`/`x30` (FP/LR) are never assignable as argument/return registers — a spec naming them simply skips them.
-- **csr conflicts**: If a register appears in both `csr` and an argument/return list, the bridge emits a warning (the callee would save/restore it, clobbering its value-passing role).
-- **Variadic functions**: Not supported — the compiler emits a clear error instead of silently mis-passing arguments.
-- **Indirect calls**: Function-pointer calls cannot carry a custom convention. The plugin warns when a custom-CC function has its address taken; indirect calls fall back to the standard CC.
-- **Tail calls**: Automatically disabled for custom-CC functions (conservative safety).
+- **Reserved registers**: the stack pointer is absent from both tables (`rsp` on x86-64, `sp`/`x31` on AArch64), as are AArch64 `x29`/`x30` (FP/LR). A spec naming one of them simply skips it and the value goes to the next valid location.
+- **Frame pointer**: `rbp` *is* selectable on x86-64 because it is a legitimate callee-saved register, but using it as an argument register is only sound under `-fomit-frame-pointer`. Use at your own risk.
+- **Callee-saved**: defaults to the standard ABI set. `csr:r12,r13` declares a custom set, and the caller builds a matching preserved-register mask so it knows which registers survive the call. Supported on both x86-64 and AArch64.
+- **csr conflicts**: if a register appears in both `csr` and an argument/return list, the plugin emits a warning — the callee would restore it and destroy its value-passing role. Compilation still succeeds.
+- **Variadic functions**: not supported. The compiler emits a clear diagnostic on both backends instead of silently mis-passing the variadic part.
+- **Indirect calls**: a function-pointer call cannot carry a custom convention. The plugin warns when a custom-CC function has its address taken; indirect calls fall back to the standard convention.
+- **Tail calls**: disabled whenever either side of a call uses the custom convention, on both backends.
+- **Unmatched values**: any argument or return value the plan does not cover falls back to the target's standard convention (SysV on x86-64, AAPCS on AArch64).
 
 ## Usage
 
 ### 1. Plugin-Driven (Recommended)
 
-The reference plugin `CustomCallConvPlugin.c` ships under `pluginsdk/examples/`.
+The reference plugin `CustomCallConvPlugin.c` ships under `pluginsdk/examples/`. It registers a module-level IR pass at the `neverc.ir.pass.post_opt` phase.
 
 **Build the plugin:**
 
@@ -73,13 +80,13 @@ The reference plugin `CustomCallConvPlugin.c` ships under `pluginsdk/examples/`.
 cd pluginsdk/examples && make CustomCallConvPlugin.dylib   # or .so / .dll
 ```
 
-**Attribute mode** (default) — only functions with `custom_attr` source annotations are affected:
+**Attribute mode** (default) — only functions carrying a `custom_attr` source annotation are affected:
 
 ```bash
 neverc -fplugin=./CustomCallConvPlugin.dylib input.c -o output.o
 ```
 
-**Global mode** — apply a spec to every defined function (requires explicit `cc-all=1`):
+**Global mode** — apply one spec to every defined function (requires an explicit `cc-all`):
 
 ```bash
 neverc -fplugin=./CustomCallConvPlugin.dylib \
@@ -98,7 +105,7 @@ neverc -fplugin=./CustomCallConvPlugin.dylib \
        input.c -o output.o
 ```
 
-**Diversify** — each function gets a different layout (anti-reverse-engineering):
+**Diversify** — cycle through four built-in layouts so functions do not share one (anti-reverse-engineering):
 
 ```bash
 neverc -fplugin=./CustomCallConvPlugin.dylib \
@@ -107,9 +114,11 @@ neverc -fplugin=./CustomCallConvPlugin.dylib \
        input.c -o output.o
 ```
 
+The four options the plugin registers are `cc-all` and `ccshuffle` (flags, so `=1` or `=true` is optional) plus `ccspec` and `ccprefix` (string values). Without `ccspec`, global mode uses the default `gpr:r10,r11,rsi,rdi;ret:rdx`.
+
 ### 2. Source-Level Attributes
 
-Annotate functions directly in C source using the `custom_attr` attribute (GNU and Microsoft syntax):
+Annotate functions directly in C using the `custom_attr` attribute, in GNU or Microsoft syntax:
 
 ```c
 // GNU syntax
@@ -121,29 +130,60 @@ __declspec(custom_attr("neverc-callconv", "gpr:r10;ret:rdx"))
 int msfunc(int a) { return a; }
 ```
 
-`custom_attr("key", "value")` produces a clean function string attribute (`"key"="value"`) with **no** warnings and **no** `llvm.global.annotations`. It is a **general-purpose** mechanism — any key/value pair works, not just calling conventions. IR and MIR passes read it with `F.getFnAttribute("key")`.
+`custom_attr("key", "value")` produces a clean function string attribute (`"key"="value"`) with **no** warnings and **no** `llvm.global.annotations`. It is a **general-purpose** mechanism — any key/value pair works, not just calling conventions. IR and MIR passes read it back with `F.getFnAttribute("key")`.
 
 ### 3. Combined
 
-Source attributes and plugin arguments work together. A function with a `custom_attr` is processed by the plugin's attribute-mode path; `cc-all=1` covers the rest. Each function is processed at most once.
+Source attributes and plugin arguments work together. A function carrying a `custom_attr` is handled by the plugin's attribute-mode path; `cc-all` covers the rest. Each function is processed at most once.
 
-## LTO Support
+## Materialized Plans
 
-The plugin registers at both `NEVERC_INTERPOSE_POST_OPT` (normal compilation) and `NEVERC_INTERPOSE_LTO_POST_OPT` (after the LTO optimization pipeline). This ensures custom conventions are applied even when Link-Time Optimization merges translation units — enabling cross-TU call-site synchronization with full module visibility.
+A spec names registers; it does not say where each byte of each value lives. After the optimization pipeline and before code generation, the host runs `materializeCallingConventionPlans`, which turns every `CallingConv::NeverC_Custom` function into an exact, validated plan:
+
+- A function that already has a `"neverc-cc-plan-v1"` attribute is **validated, not regenerated** — its schema digest, target ID, and convention ID must match the current target.
+- A function with a `"neverc-callconv"` spec has its register names resolved against the target register table. The resulting plan replaces the spec, which is then removed from the IR.
+- A function with neither, but whose target registers a calling convention through the plugin ABI, is planned by that convention's `PlanCallingConvention` callback.
+
+Every direct call site inherits its callee's plan, which is what keeps caller and callee agreeing on the layout across translation units. The plan is a flat string:
+
+```
+neverc-cc-plan-v1;schema=<digest>;target=<high>:<low>;cc=<high>:<low>;stack=<bytes>;returns=<locations>;arguments=<locations>;callee-saved=<register numbers>
+```
+
+Each location is `<r|s>,<value index>,<piece offset>,<size>,<alignment>,<register number>,<stack offset>,<flags>`, and multiple locations are separated by `|`. For the built-in path the schema digest is `llvm-<target triple>`; a plugin-registered target supplies its own.
+
+Because register numbers are only meaningful against the schema that defines them, a mismatch is a hard error rather than a silent miscompile:
+
+| Situation | Diagnostic |
+|---|---|
+| The plan string does not parse | `malformed NeverC calling convention plan` |
+| The schema digest differs | `NeverC calling convention plan belongs to a foreign target schema` |
+| The target ID differs | `NeverC calling convention plan has a foreign target ID` |
+| The convention ID differs | `NeverC calling convention plan has a foreign convention ID` |
+
+This is what makes a plan safe to embed in bitcode and carry through LTO: a plan produced for another target cannot be applied by accident.
 
 ## Plugin API
 
-The plugin uses a single API entry point added in API version 2:
+The example plugin uses only the stable IR core table — there is no dedicated calling-convention entry point. Applying a convention to a function is three calls plus call-site synchronization:
 
 ```c
-API->FunctionSetCustomCallConv(F, "gpr:r10,r11,rsi;ret:rdx");
+NevercIRAttributeHandle Attribute = {0};
+Core->CreateStringAttribute(Core->Context, Task, SV("neverc-callconv"), Spec,
+                            &Attribute);
+Core->AddFunctionAttribute(Core->Context, Task, Function,
+                           NEVERC_IR_ATTRIBUTE_LOCATION_FUNCTION, 0, Attribute);
+Core->SetFunctionCallingConvention(Core->Context, Task, Function,
+                                   NEVERC_IR_CALLING_CONVENTION_NEVER_C_CUSTOM);
 ```
 
-This sets `CallingConv::NeverC_Custom` (CC 1000) on the function, writes the spec as a `"neverc-callconv"` string attribute, and **synchronizes all direct call sites** (each call instruction also gets the CC and attribute). Passing `NULL` or `""` clears the custom convention.
+`NEVERC_IR_CALLING_CONVENTION_NEVER_C_CUSTOM` is the ABI-stable name for `CallingConv::NeverC_Custom` (LLVM value 1000). The plugin then walks the function's uses with `GetValueUseCount` / `GetValueUse`, and for every use that is the callee operand of a `call`, `invoke`, or `callbr` it sets the same convention on the instruction via `SetInstructionProperty` with `NEVERC_IR_PROPERTY_CALLING_CONVENTION`. Any other use means the address escaped, which is where the address-taken warning comes from.
+
+A plugin that registers its own target can instead supply a `PlanCallingConvention` callback on its `NevercCallingConventionDescriptor` and produce plans directly, skipping the spec layer. See [Target, MC, assembly, object](../target-mc-object.md).
 
 ## Testing
 
-GoogleTest suite in `tests/neverc/CustomCallConvTests.cpp` (22 tests, all PASS):
+The GoogleTest suite lives in `tests/neverc/CustomCallConvTests.cpp` and holds 26 tests. Each one builds the example plugin, compiles a small program to assembly under a given spec, and asserts the resulting register or stack placement.
 
 ```bash
 ninja -C build-neverc neverc-tests
@@ -154,36 +194,50 @@ Coverage:
 
 | Category | Tests |
 |---|---|
-| x86-64 pool/positional/stack/spill/i64/sret/byval/fallback | 9 |
-| AArch64 GPR/FPR/stack/`csr`/mixed-spec cross-call | 5 |
+| x86-64 pool / positional / stack / spill / i64 / sret / byval / fallback | 9 |
+| AArch64 GPR / FPR / stack / `csr` / mixed-spec cross-call | 5 |
 | Frontend `custom_attr` (GNU / `__declspec` / end-to-end) | 3 |
-| Hardening (`csr` / vararg / indirect / rsp rejection / csr-conflict warning) | 5 |
+| Plan materialization and schema rejection | 3 |
+| Hardening (`csr`, varargs on both targets, indirect, `rsp`, csr conflict) | 6 |
 
 ## Architecture
 
 ```
-Source Code                Plugin
-     │                       │
-     ▼                       ▼
-custom_attr("neverc-callconv", spec)
-     │                       │
-     └───────┬───────────────┘
-             ▼
-    "neverc-callconv" = spec   (function string attribute)
-             │
-             ▼
-    ┌─────────────────────────────────┐
-    │  Backend Executor (per-target)  │
-    │  CC_X86_NeverC / RetCC_X86_..  │
-    │  CC_AArch64_NeverC / RetCC_..  │
-    │                                 │
-    │  Reads spec → assigns regs     │
-    │  Caller injects callee spec    │
-    │  Tail calls disabled           │
-    └─────────────────────────────────┘
-             │
-             ▼
-    Machine code with custom register layout
+Source attribute              Plugin IR pass
+custom_attr(...)              (neverc.ir.pass.post_opt)
+       │                            │
+       └─────────────┬──────────────┘
+                     ▼
+   "neverc-callconv" = spec, CallingConv::NeverC_Custom
+   on the function and its direct call sites
+                     │
+                     ▼
+   ┌──────────────────────────────────────────┐
+   │ materializeCallingConventionPlans        │
+   │ (after optimization, before codegen)     │
+   │                                          │
+   │  spec          → names to physregs       │
+   │  plugin CC     → PlanCallingConvention   │
+   │  existing plan → validate schema/target  │
+   └──────────────────────────────────────────┘
+                     │
+                     ▼
+   "neverc-cc-plan-v1" = validated locations
+   spec removed; plan copied to direct call sites
+                     │
+                     ▼
+   ┌──────────────────────────────────────────┐
+   │ Backend CCAssignFn (one per target)      │
+   │  CC_X86_NeverC     / RetCC_X86_NeverC    │
+   │  CC_AArch64_NeverC / RetCC_AArch64_NeverC│
+   │                                          │
+   │  reads the plan → assigns locations      │
+   │  unmatched values → standard convention  │
+   │  tail calls disabled                     │
+   └──────────────────────────────────────────┘
+                     │
+                     ▼
+   Machine code with the custom register layout
 ```
 
-The backend executor is a **one-time implementation** — all policy decisions live in the plugin. Adding new conventions never requires rebuilding NeverC.
+The backend executor is a **one-time implementation** — all policy decisions live in the plugin. Adding a new convention never requires rebuilding NeverC.
