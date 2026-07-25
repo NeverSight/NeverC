@@ -2,37 +2,46 @@
 
 # ABI плагинов NeverC
 
-Первый публичный ABI плагинов NeverC — это интерфейс на чистом C, построенный
-вокруг фаз. Плагин — это разделяемый модуль, который экспортирует ровно одну
-функцию, согласовывает версионированные таблицы возможностей и работает внутри
-явных областей Process, Session и Task. Он не подключает заголовки LLVM, не
-компонуется с компилятором и не передаёт типы C++ через границу.
+Плагин NeverC — это разделяемый модуль, который экспортирует ровно одну
+функцию, согласует версионированные таблицы возможностей по 128-битному
+идентификатору интерфейса и подключается к замороженному графу именованных
+фаз компилятора. Весь интерфейс — чистый C11. Плагин никогда не подключает
+заголовки LLVM, никогда не компонуется с компилятором и никогда не передаёт
+через границу типы C++.
 
-Невыпущенный прототипный API и его точка входа `nevercGetPluginInfo`
-**удалены**. Прототипные бинарники отклоняются с диагностикой миграции;
-пересоберите их исходники с публичными заголовками. Полное соответствие
-«старое → новое» см. в
-[Миграции с прототипного API](migration-from-prototype.ru.md).
+```c
+NEVERC_EXPORT NevercStatus NEVERC_CALL
+neverc_plugin_entry(const NevercBootstrapAPI *Bootstrap,
+                    NevercPluginDescriptor *OutPlugin);
+```
 
-## Начните отсюда
+Эта сигнатура, объявленная в `PluginCore.h`, и есть весь контракт компоновки.
+Всё остальное — чтение IR, перезапись графа объектного файла, замена конвейера
+оптимизации — достигается через таблицы, которые вы запрашиваете у хоста по
+идентификатору.
 
-- [API Source и ввода-вывода](source.ru.md)
-- [API препроцессора](prep.ru.md)
-- [API AST и семантики](ast-sema.ru.md)
-- [API IR](ir.ru.md)
-- [API MIR](mir.ru.md)
-- [API Target, MC, ассемблера и объектных файлов](target-mc-object.ru.md)
-- [API DynCode](dyncode.ru.md)
-- [Пользовательские соглашения о вызовах](custom-callconv/README.ru.md)
-- [Миграция с прототипного API](migration-from-prototype.ru.md)
-- [Доказательства покрытия фаз](coverage.json)
+## Руководства
 
-## Модель исполнения
+| Руководство | Что охватывает |
+|---|---|
+| [API драйвера](driver.ru.md) | Командная строка, выбор тулчейна, граф действий, граф заданий |
+| [API источников и ввода-вывода](source.ru.md) | Провайдеры VFS, позиции в исходниках, буферы, приёмники вывода, зависимости |
+| [API препроцессора](prep.ru.md) | Токены, макросы, прагмы, включения, запросы возможностей, 39 видов событий |
+| [API AST и семантики](ast-sema.ru.md) | Расширение парсера, изменение AST, поиск имён, типы, константы |
+| [API IR](ir.ru.md) | Чтение LLVM IR, транзакционное построение, анализы, проходы, провайдеры |
+| [API MIR](mir.ru.md) | Машинные функции, регистры, кадры стека, проходы и анализы MIR |
+| [Целевая платформа, MC, ассемблер, объектные файлы](target-mc-object.ru.md) | Регистрация целевых платформ, соглашения о вызовах, кодирование MC, графы объектных файлов |
+| [API компоновки и LTO](link-lto.ru.md) | Граф компоновки, разрешение символов, GC/ICF, провайдеры компоновщика и LTO |
+| [API DynCode](dyncode.ru.md) | Плоские позиционно-независимые образы, понижение импортов, кодирование набора символов |
+| [Пользовательские соглашения о вызовах](custom-callconv/README.md) | Плагины соглашений о вызовах, управляемые данными |
+| [Свидетельства покрытия фаз](coverage.json) | Сопоставление тестов для каждой стабильной фазы |
+
+## Модель выполнения
 
 Хост управляет плагином через три вложенные области. Каждая область передаёт
-плагину непрозрачный указатель состояния, который плагин выделяет и которым
-владеет сам, поэтому правильно написанному плагину не нужно никакое глобальное
-изменяемое состояние.
+плагину непрозрачный указатель состояния, который плагин сам выделяет и
+которым владеет, — поэтому правильно написанному плагину не нужно никакое
+глобальное изменяемое состояние.
 
 | Область | Обратные вызовы | Смысл |
 |---|---|---|
@@ -40,52 +49,124 @@
 | Session | `SessionBegin`, `SessionEnd` | Один вызов драйвера. |
 | Task | `TaskBegin`, `TaskEnd` | Одна единица работы, определяемая `NevercTaskKind`. |
 
-Виды задач: `INVOCATION`, `TRANSLATION_UNIT`, `LTO`, `LINK`, `CODEGEN`,
-`OBJECT` и `DYNCODE`.
+```c
+typedef struct NevercPluginDescriptor {
+  NevercABITableHeader Header;
+  NevercStringView PluginID;
+  NevercStringView DisplayName;
+  NevercSemanticVersion Version;
+  NevercConcurrencyModel Concurrency;
+  NevercReentrancyModel Reentrancy;
+  NevercStructArrayView RequiredInterfaces;   /* NevercInterfaceRequirement[] */
+  NevercStructArrayView OptionalInterfaces;   /* NevercInterfaceRequirement[] */
+  NevercStructArrayView Dependencies;         /* NevercPluginDependency[]     */
+  NevercProcessBeginFn ProcessBegin;
+  NevercRegisterPluginFn Register;
+  NevercSessionBeginFn SessionBegin;
+  NevercSessionEndFn SessionEnd;
+  NevercTaskBeginFn TaskBegin;
+  NevercTaskEndFn TaskEnd;
+  NevercPluginDestroyFn Destroy;
+} NevercPluginDescriptor;
+```
+
+Практически обязательны только `PluginID` и `Register`; любой слот обратного
+вызова может остаться `NULL`. Виды задач: `NEVERC_TASK_INVOCATION`,
+`TRANSLATION_UNIT`, `LTO`, `LINK`, `CODEGEN`, `OBJECT` и `DYNCODE`.
 
 Хост сначала вызывает `ProcessBegin`, затем ровно один раз `Register`.
 Регистрация — единственное место, где можно добавить опции, наблюдателей,
-перехватчики и провайдеры; после неё граф фаз замораживается.
+перехватчики и провайдеров; после этого граф фаз заморожен.
+
+Состояние извлекается внутри обратного вызова, а не захватывается заранее:
+
+```c
+Core->GetSessionState(Core->Context, Frame->Session, PluginID, &SessionState);
+Core->GetTaskState(Core->Context, Frame->Task, PluginID, &TaskState);
+```
 
 ## Фазы
 
 Фаза — это именованный версионированный переход от входного артефакта к
-выходному. NeverC содержит **130 встроенных фаз** в доменах драйвера, source,
-препроцессора, синтаксиса, семантики, IR, codegen, MIR, MC, ассемблера,
-объектных файлов, компоновки и dyncode, плюс 8 семейств расширяемых ID,
-зарезервированных для фаз, определяемых плагинами.
+выходному. NeverC поставляет **130 встроенных фаз**, плюс 8 семейств
+идентификаторов расширения, зарезервированных для фаз, определяемых
+плагинами:
 
-Каждая фаза объявляет политику, и плагин может подключиться только так, как эта
-политика разрешает:
+| Домен | Фазы | Домен | Фазы |
+|---|--:|---|--:|
+| `driver` | 6 | `mir` | 10 |
+| `source` | 3 | `codegen` | 4 |
+| `prep` | 6 | `mc` | 13 |
+| `syntax` | 7 | `assembly` | 4 |
+| `sema` | 7 | `object` | 8 |
+| `ir` | 8 | `link` | 20 |
+| | | `dyncode` | 34 |
 
-| Флаг политики | Что может плагин |
-|---|---|
-| `NEVERC_PHASE_OBSERVABLE` | Зарегистрировать наблюдателя для уведомления только на чтение. |
-| `NEVERC_PHASE_INTERCEPTABLE` | Обернуть фазу и решить, вызывать ли остаток цепочки. |
-| `NEVERC_PHASE_REPLACEABLE` | Зарегистрировать провайдер, который сам формирует вывод. |
-| `NEVERC_PHASE_SKIPPABLE_WITH_PROOF` | Пропустить переход, предоставив handle доказательства. |
-| `NEVERC_PHASE_SEALED_HOST_GATE` | Ничего. Верификаторы и фиксации принадлежат хосту: их нельзя заменить, перехватить или пропустить. |
+Все 130 имеют уровень стабильности `stable` в мажорной версии ABI 1. Каждая
+фаза объявляет политику, и плагин может подключиться только теми способами,
+которые эта политика разрешает:
 
-Наблюдатели доставляются в точках, объявленных фазой:
+| Флаг политики | Фазы | Что может плагин |
+|---|--:|---|
+| `NEVERC_PHASE_OBSERVABLE` | 130 | Зарегистрировать наблюдателя для уведомлений только на чтение. |
+| `NEVERC_PHASE_INTERCEPTABLE` | 105 | Обернуть фазу и решить, вызывать ли остальную часть цепочки. |
+| `NEVERC_PHASE_REPLACEABLE` | 86 | Зарегистрировать провайдера, который сам поставляет выход. |
+| `NEVERC_PHASE_SKIPPABLE_WITH_PROOF` | 13 | Пропустить переход, предоставив дескриптор доказательства. |
+| `NEVERC_PHASE_SEALED_HOST_GATE` | 14 | Ничего. Верификаторы и фиксации принадлежат хосту. |
+
+14 запечатанных шлюзов: `ir.final_verify`, `mir.final_verify`,
+`codegen.product_verify`, `assembly.final_verify`, `assembly.commit`,
+`object.final_verify`, `object.commit`, `link.image_verify`,
+`link.side_outputs_verify`, `link.commit`, `dyncode.ir.final_verify`,
+`dyncode.mir.final_verify`, `dyncode.verify` и `dyncode.commit`. За ними можно
+наблюдать, но их нельзя перехватить, заменить или пропустить.
+
+Наблюдатели получают уведомления в точках, объявленных фазой:
 `NEVERC_OBSERVER_BEFORE`, `NEVERC_OBSERVER_AFTER` и
-`NEVERC_OBSERVER_AFTER_COMMIT`.
-
-Перехватчик получает `NevercPhaseContinuation`. Он обязан вызвать `InvokeNext`
-**не более одного раза**, в потоке обратного вызова, и затем сообщить
+`NEVERC_OBSERVER_AFTER_COMMIT`. Перехватчик получает
+`NevercPhaseContinuation` и обязан вызвать `InvokeNext` **не более одного
+раза**, в потоке обратного вызова, а затем сообщить
 `NEVERC_PHASE_CONTINUE`, `NEVERC_PHASE_REPLACE` или `NEVERC_PHASE_SKIP` в
 `NevercPhaseResult.Action`.
 
-Нормативный источник для ID фаз, политик, уровней стабильности и
-верификационных шлюзов —
-`neverc/include/neverc/Plugin/Schema/PhaseSchema.json`. Сгенерированный
-`PluginPhaseSchema.inc` предоставляет их как константы времени компиляции вида
-`NEVERC_PHASE_IR_PASS_PRE_OPT_HIGH` / `_LOW`.
+Каждый обратный вызов фазы получает один и тот же кадр:
+
+```c
+typedef struct NevercPhaseFrame {
+  NevercABITableHeader Header;
+  NevercSessionHandle Session;
+  NevercTaskHandle Task;
+  NevercInterfaceID Phase;
+  NevercPhaseRoute Route;        /* triple, CPU, features, object format */
+  NevercArtifactHandle Input;
+  NevercArtifactHandle CurrentOutput;
+  NevercHandle Cancellation;
+} NevercPhaseFrame;
+```
+
+`Schema/PhaseSchema.json` — нормативный источник идентификаторов фаз, политик,
+уровней стабильности и шлюзов верификации. Сгенерированный
+`Schema/PluginPhaseSchema.inc` открывает каждый из них как константу времени
+компиляции — для фазы `neverc.ir.pass.pipeline_start`:
+
+```c
+NEVERC_PHASE_IR_PASS_PIPELINE_START_NAME       /* "neverc.ir.pass.pipeline_start" */
+NEVERC_PHASE_IR_PASS_PIPELINE_START_HIGH       /* UINT64_C(0x4e43504849520001)     */
+NEVERC_PHASE_IR_PASS_PIPELINE_START_LOW        /* UINT64_C(0x0000000000000004)     */
+NEVERC_PHASE_IR_PASS_PIPELINE_START_POLICY     /* OBSERVABLE | INTERCEPTABLE       */
+NEVERC_PHASE_IR_PASS_PIPELINE_START_STABILITY
+NEVERC_PHASE_IR_PASS_PIPELINE_START_INPUT_HIGH /* and _INPUT_LOW, _OUTPUT_*        */
+```
+
+Константы `NEVERC_BUILTIN_PHASE_COUNT` и подоменные
+`NEVERC_BUILTIN_<DOMAIN>_PHASE_COUNT` позволяют плагину утверждать тот граф, с
+которым он собирался.
 
 ## Полный минимальный плагин
 
-Это `pluginsdk/templates/minimal/Plugin.c`. Он загружается, согласовывает ABI,
-ничего не регистрирует и корректно выгружается — скопируйте каталог и
-развивайте его отсюда.
+Это дословно `pluginsdk/templates/minimal/Plugin.c`. Он загружается,
+согласует ABI, ничего не регистрирует и чисто выгружается — скопируйте
+каталог и растите плагин отсюда.
 
 ```c
 #include "neverc/Plugin/NevercPluginAPI.h"
@@ -124,7 +205,7 @@ register_plugin(const NevercCoreAPI *Core, const NevercRegistrarAPI *Registrar,
   (void)ProcessState;
   if (Registrar == NULL)
     return status_code(NEVERC_STATUS_INVALID_ARGUMENT);
-  /* Здесь регистрируются опции, наблюдатели, перехватчики или провайдеры. */
+  /* Register options, observers, interceptors, or providers here. */
   return neverc_status_ok();
 }
 
@@ -155,14 +236,16 @@ neverc_plugin_entry(const NevercBootstrapAPI *Bootstrap,
 ```
 
 `OutPlugin` — это буфер, принадлежащий вызывающей стороне. На входе его
-`Header.StructSize` — доступная для записи ёмкость; плагин записывает не больше
-этого числа байт и сообщает размер, который фактически сформировал.
+`Header.StructSize` — это доступная для записи ёмкость; плагин пишет не больше
+этого числа байт и сообщает размер, который фактически произвёл. Если сначала
+записать собственный `Header` дескриптора, а затем усечь копию, обе половины
+этого правила выполняются одновременно.
 
 ## Согласование интерфейсов
 
 Таблицы возможностей запрашиваются по 128-битному идентификатору интерфейса, а
-не по символу. Запрашивайте ту мажорную версию, с которой вы компилировались, и
-минимальную минорную, с которой вы можете работать:
+не по символу. Запрашивайте мажорную версию, с которой вы собирались, и
+наименьшую минорную, с которой можете работать:
 
 ```c
 const void *Table = NULL;
@@ -181,42 +264,81 @@ if (!Table || TableSize < offsetof(NevercIRPassAPI, RegisterPass) +
   return fail(NEVERC_STATUS_ABI_MISMATCH);
 ```
 
-Сверка `TableSize` со смещением последней вызываемой функции — именно то
-правило, которое делает этот ABI расширяемым: более новый хост дописывает поля
-в конец, а более старый плагин продолжает работать, потому что никогда не
+Сверка `TableSize` со смещением последней вызываемой вами функции — это то
+правило, которое делает ABI расширяемым: более новый хост дописывает поля в
+конец, а более старый плагин продолжает работать, потому что он никогда не
 читает за пределами проверенного им префикса. Макрос
 `NEVERC_ABI_FIELD_AVAILABLE(header, type, field)` применяет ту же проверку к
-полученной структуре.
+полученной вами структуре. Такая же сигнатура `QueryInterface` есть и в
+`NevercCoreAPI`, так что согласовывать можно позже, а не на входе.
 
-Публичные интерфейсы и их заголовки:
+Публичные интерфейсы, их таблицы и макросы идентификаторов:
 
-| Интерфейс | Таблица | Заголовок |
+| Пара макросов интерфейса | Таблица | Заголовок |
 |---|---|---|
-| `NEVERC_INTERFACE_CORE` | `NevercCoreAPI` | `PluginCore.h` |
-| `NEVERC_INTERFACE_DRIVER` | `NevercDriverAPI` | `PluginDriver.h` |
-| `NEVERC_INTERFACE_IO`, `..._SOURCE_LOCATION` | `NevercIOAPI`, `NevercSourceLocationAPI` | `PluginSource.h` |
-| `NEVERC_INTERFACE_PREP` | `NevercPrepAPI` | `PluginPrep.h` |
-| `NEVERC_INTERFACE_AST`, `..._PARSER` | `NevercASTAPI`, `NevercParserAPI` | `PluginAST.h` |
-| `NEVERC_INTERFACE_SEMA` | `NevercSemaAPI` | `PluginSema.h` |
-| `NEVERC_INTERFACE_IR_CORE`, `..._BUILDER`, `..._ANALYSIS`, `..._PASS`, `..._GEN`, `..._OPTIMIZATION` | Таблицы IR | `PluginIR.h` |
-| `NEVERC_INTERFACE_TARGET`, `..._TARGET_ABI`, `..._CALLING_CONVENTION` | Таблицы Target | `PluginTarget.h` |
-| `NEVERC_INTERFACE_MIR`, `..._MIR_ANALYSIS`, `..._MIR_PASS`, `..._MIR_PROVIDER` | Таблицы MIR | `PluginMIR.h` |
-| `NEVERC_INTERFACE_MC`, `..._MC_EMISSION`, `..._MC_PROVIDER`, `..._ASSEMBLY_PROVIDER` | Таблицы MC | `PluginMC.h` |
-| `NEVERC_INTERFACE_OBJECT`, `..._OBJECT_FORMAT`, `..._OBJECT_PHASE` | Таблицы Object | `PluginObject.h` |
-| `NEVERC_INTERFACE_LINK`, `..._LINK_REGISTRAR`, `..._LINK_PHASE` | Таблицы Link | `PluginLink.h` |
-| `NEVERC_INTERFACE_LTO`, `..._LTO_REGISTRAR` | Таблицы LTO | `PluginLTO.h` |
-| `NEVERC_INTERFACE_DYNCODE`, `..._DYNCODE_REGISTRAR`, `..._DYNCODE_PHASE` | Таблицы DynCode | `PluginDynCode.h` |
+| `NEVERC_INTERFACE_CORE_{HIGH,LOW}` | `NevercCoreAPI` | `PluginCore.h` |
+| `NEVERC_INTERFACE_DRIVER_*` | `NevercDriverAPI` | `PluginDriver.h` |
+| `NEVERC_INTERFACE_IO_*`, `..._SOURCE_LOCATION_*` | `NevercIOAPI`, `NevercSourceLocationAPI` | `PluginSource.h` |
+| `NEVERC_INTERFACE_PREP_*` | `NevercPrepAPI` | `PluginPrep.h` |
+| `NEVERC_INTERFACE_AST_*`, `..._PARSER_*` | `NevercASTAPI`, `NevercParserAPI` | `PluginAST.h` |
+| `NEVERC_INTERFACE_SEMA_*` | `NevercSemaAPI` | `PluginSema.h` |
+| `NEVERC_INTERFACE_IR_CORE_*`, `..._IR_BUILDER_*`, `..._IR_ANALYSIS_*`, `..._IR_PASS_*`, `..._IR_GEN_*`, `..._IR_OPTIMIZATION_*` | шесть таблиц IR | `PluginIR.h` |
+| `NEVERC_INTERFACE_TARGET_*`, `..._TARGET_ABI_*`, `..._CALLING_CONVENTION_*` | `NevercTargetAPI`, `NevercTargetABIAPI`, `NevercCallingConventionAPI` | `PluginTarget.h` |
+| `NEVERC_INTERFACE_MIR_*`, `..._MIR_ANALYSIS_*`, `..._MIR_PASS_*`, `..._MIR_PROVIDER_*` | четыре таблицы MIR | `PluginMIR.h` |
+| `NEVERC_INTERFACE_MC_*`, `..._MC_EMISSION_*`, `..._MC_PROVIDER_*`, `..._ASSEMBLY_PROVIDER_*` | четыре таблицы MC | `PluginMC.h` |
+| `NEVERC_INTERFACE_OBJECT_*`, `..._OBJECT_FORMAT_*`, `..._OBJECT_PHASE_*` | три объектные таблицы | `PluginObject.h` |
+| `NEVERC_INTERFACE_LINK_*`, `..._LINK_REGISTRAR_*`, `..._LINK_PHASE_*` | три таблицы компоновки | `PluginLink.h` |
+| `NEVERC_INTERFACE_LTO_*`, `..._LTO_REGISTRAR_*` | `NevercLTOAPI`, `NevercLTORegistrarAPI` | `PluginLTO.h` |
+| `NEVERC_INTERFACE_DYNCODE_*`, `..._DYNCODE_REGISTRAR_*`, `..._DYNCODE_PHASE_*` | три таблицы dyncode | `PluginDynCode.h` |
 
-Интерфейс бывает либо STABLE (более новый хост может только дописывать), либо
-LOCKSTEP (схемы, специфичные для целевой платформы, должны совпадать точно).
-Сравнивайте дайджест схемы, прежде чем использовать значения LOCKSTEP.
+Каждый заголовок также определяет соответствующие
+`NEVERC_<DOMAIN>_API_MAJOR` и `_MINOR`, которые следует передавать в
+`QueryInterface`.
+
+Интерфейс бывает либо `NEVERC_INTERFACE_STABLE` (более новый хост может только
+дописывать), либо `NEVERC_INTERFACE_LOCKSTEP` (схемы, специфичные для целевой
+платформы, которые должны совпадать точно). Сверяйте дайджест схемы, прежде
+чем использовать значения LOCKSTEP.
+
+## Регистрация
+
+`Register` получает `NevercRegistrarAPI` и непрозрачный `RegistrarContext`:
+
+```c
+typedef struct NevercRegistrarAPI {
+  NevercABITableHeader Header;
+  NevercRegisterInterfaceFn RegisterInterface;
+  NevercRegisterPhaseFn RegisterPhase;
+  NevercRegisterObserverFn RegisterObserver;
+  NevercRegisterInterceptorFn RegisterInterceptor;
+  NevercRegisterProviderFn RegisterProvider;
+  NevercRegisterOptionFn RegisterOption;
+} NevercRegistrarAPI;
+```
+
+Регистраторы доменов — `NevercIRPassAPI.RegisterPass`,
+`NevercTargetAPI.RegisterTarget`, `NevercObjectFormatAPI.RegisterFormat` и
+остальные — принимают тот же `RegistrarContext` вторым аргументом; именно так
+хост относит регистрацию к вашему плагину.
+
+Провайдер дополнительно объявляет свой контракт детерминизма, на который
+опирается кеш сборки:
+
+```c
+Provider.ProviderID    = SV("com.example.my-lowering");
+Provider.Route         = /* triple / CPU / features / object format */;
+Provider.Deterministic = NEVERC_TRUE;
+Provider.Cacheable     = NEVERC_TRUE;
+Provider.FallbackSafe  = NEVERC_FALSE;  /* built-in cannot silently take over */
+```
 
 ## Сборка
 
-Подключайте агрегирующий заголовок или только те домены, которые используете:
+Подключите сводный заголовок или только те домены, которые используете:
 
 ```c
-#include "neverc/Plugin/NevercPluginAPI.h"
+#include "neverc/Plugin/NevercPluginAPI.h"   /* everything */
+#include "neverc/Plugin/PluginIR.h"          /* or one domain */
 ```
 
 Собрать разделяемый модуль самим NeverC:
@@ -227,7 +349,7 @@ neverc --target=arm64-apple-macosx -shared \
   -o MyPlugin.dylib MyPlugin.c
 ```
 
-Или через CMake против установленного SDK:
+Или против установленного SDK с помощью CMake:
 
 ```cmake
 find_package(NevercPluginSDK REQUIRED)
@@ -235,15 +357,15 @@ add_library(my_plugin MODULE my_plugin.c)
 target_link_libraries(my_plugin PRIVATE NevercPluginSDK::headers)
 ```
 
-Или через pkg-config:
+Или с помощью pkg-config:
 
 ```sh
 cc -shared $(pkg-config --cflags neverc-plugin) -o my_plugin.so my_plugin.c
 ```
 
 Используйте `.so`, `.dylib` или `.dll` в зависимости от хоста. SDK не
-компонуется ни с LLVM, ни с рантаймом NeverC — `NevercPluginSDK::headers`
-состоит только из заголовков.
+компонуется ни с LLVM, ни со средой выполнения NeverC —
+`NevercPluginSDK::headers` состоит только из заголовков.
 
 ## Загрузка и настройка
 
@@ -253,68 +375,105 @@ neverc -fplugin=./MyPlugin.dylib -c input.c -o input.o
 
 | Опция | Форма | Назначение |
 |---|---|---|
-| `-fplugin=<path>` | повторяемая | Загрузить разделяемый модуль плагина. |
-| `-fplugin-arg=<plugin-id>:<key>=<value>` | повторяемая | Передать значение с пространством имён зарегистрированной опции плагина. |
-| `-fplugin-provider=<phase>:<plugin-id>` | повторяемая | Выбрать, какой плагин предоставляет заменяемую фазу. |
+| `-fplugin=<path>` | повторяемая | Загрузить разделяемый модуль плагина для всего тулчейна. |
+| `-fplugin-arg=<plugin-id>:<key>=<value>` | повторяемая | Передать значение с пространством имён в зарегистрированную опцию плагина. |
+| `-fplugin-provider=<phase>:<plugin-id>` | повторяемая | Выбрать, какой плагин обеспечивает заменяемую фазу. |
+| `-fplugin-pass=<dsopath>` | повторяемая | Загрузить внешний плагин прохода с C-ABI. |
+| `-fplugin-pass-arg=<key>=<value>` | повторяемая | Передать аргумент плагинам проходов с C-ABI. |
 
-Квалификатор `<plugin-id>:` можно опустить, только когда активен ровно один
-плагин. Опции, зарегистрированные плагином через `RegisterOption`, также
-принимаются напрямую в объявленном написании — в форме флага, слитной,
-раздельной или многоаргументной. Аргументы плагина или выбор провайдера без
-`-fplugin=` — это жёсткая ошибка, а не тихое бездействие.
+Квалификатор `<plugin-id>:` можно опустить, только если активен ровно один
+плагин. Опции, которые плагин регистрирует через `RegisterOption`, также
+принимаются напрямую в объявленном написании — в виде флага, слитной,
+раздельной или многоаргументной формы. Аргументы плагина и выбор провайдера
+без соответствующего `-fplugin=` — это жёсткая ошибка, а не молчаливое
+бездействие.
+
+Зарегистрированную опцию можно в любой момент прочитать через таблицу core:
+
+```c
+uint64_t Count = 0;
+Core->GetPluginOptionValueCount(Core->Context, Session, PluginID,
+                                SV("--driver-trace"), &Count);
+NevercStringView Value;
+Core->GetPluginOptionValue(Core->Context, Session, PluginID,
+                           SV("--driver-trace"), 0, &Value);
+```
 
 ## Правила ABI
 
-- Запрашивайте таблицы через `QueryInterface`; требуйте совпадения мажорной
-  версии и проверяйте `StructSize`, прежде чем обращаться к полю.
-- Инициализируйте `Header` и зарезервированные области каждой публичной
-  структуры. Обнулите структуру, затем задайте `StructSize`, `Major`, `Minor` и
-  `Flags`.
-- Считайте handle-ы и заимствованные представления непрозрачными значениями с
-  областью действия. Никогда не сохраняйте handle области задачи после её
-  обратного вызова, не используйте его в другой сессии или задаче и не
-  конструируйте значение handle самостоятельно.
-- Возвращайте `NevercStatus` из каждого обратного вызова. Не допускайте, чтобы
-  исключение C++ или принадлежащий хосту указатель пересекли границу C.
-- Объявляйте самые узкие **правдивые** `NevercConcurrencyModel`
+- Запрашивайте таблицы возможностей через `QueryInterface`; требуйте
+  совпадения мажорной версии и проверяйте `StructSize` до обращения к полю.
+- Инициализируйте `Header` и зарезервированную память каждой публичной
+  структуры. Обнулите структуру, затем задайте `StructSize`, `Major`, `Minor`
+  и `Flags`.
+- Считайте дескрипторы и заимствованные представления непрозрачными
+  значениями с областью действия. Никогда не сохраняйте дескриптор области
+  задачи после её обратного вызова, не используйте его в другой сессии или
+  задаче и никогда не изготавливайте значение дескриптора сами.
+- Возвращайте `NevercStatus` из каждого обратного вызова. Не позволяйте
+  исключению C++ или принадлежащему хосту указателю пересечь границу C.
+- Объявляйте самую узкую правдивую `NevercConcurrencyModel`
   (`SESSION_SERIAL`, `THREAD_SAFE`, `PROCESS_SERIAL`) и
   `NevercReentrancyModel` (`NONE`, `ALLOWED`).
-- Изменения IR, MIR, AST, графов и артефактов выполняйте через транзакционные
-  API хоста: начать mutation, подготовить изменения, затем зафиксировать или
-  прервать. Фиксация проверяет и публикует атомарно; неудачная фиксация
+- Выполняйте изменения IR, MIR, AST, графов и артефактов через транзакционные
+  API хоста: начните изменение, подготовьте правки, затем зафиксируйте или
+  отмените. Фиксация атомарно проверяет и публикует; неудавшаяся фиксация
   оставляет прежнее состояние нетронутым.
-- Держите изменяемое состояние в предоставленных хостом состояниях
+- Выделяйте память через `NevercCoreAPI.Allocate` / `Reallocate` /
+  `Deallocate`, когда хост должен её учитывать.
+- Держите изменяемое состояние в предоставленном хостом состоянии
   process/session/task. Глобальное изменяемое состояние проверяется скриптом
   `utils/plugin-api/check-global-state.py`.
 
-Новые функции дописываются в конец независимо версионируемых таблиц
-возможностей. Стабильный префикс таблицы не меняется в пределах первой мажорной
-версии ABI (`NEVERC_PLUGIN_ABI_MAJOR` = 1).
+Все публичные структуры размещаются под `NEVERC_ABI_PACK_BEGIN` (упаковка по 8
+байт) и используют только типы фиксированной ширины. Новые функции
+дописываются в конец независимо версионируемых таблиц возможностей; стабильный
+префикс таблицы не меняется в пределах первой мажорной версии ABI
+(`NEVERC_PLUGIN_ABI_MAJOR` = 1).
 
 ## Статусы и диагностика
 
-`NevercStatus` несёт `Code`, `Flags` и слово `Detail`. Частые коды:
+`NevercStatus` несёт `Code`, `Flags` и слово `Detail`. Полный набор кодов:
 
 | Код | Значение |
 |---|---|
 | `NEVERC_STATUS_OK` | Успех. |
-| `NEVERC_STATUS_INVALID_ARGUMENT` | Отсутствует или некорректен обязательный указатель либо значение. |
-| `NEVERC_STATUS_ABI_MISMATCH` | Согласованная таблица слишком мала или отличается мажорная версия. |
-| `NEVERC_STATUS_MISSING_INTERFACE` / `CAPABILITY_UNAVAILABLE` | Хост не предоставляет запрошенную возможность. |
-| `NEVERC_STATUS_STALE_HANDLE` / `WRONG_SESSION` / `WRONG_SCOPE` / `WRONG_TYPE` | Handle использован вне области своей действительности. |
-| `NEVERC_STATUS_POLICY_VIOLATION` | Политика фазы не разрешает эту операцию. |
+| `NEVERC_STATUS_INVALID_ARGUMENT` | Обязательный указатель или значение отсутствовали либо были некорректны. |
+| `NEVERC_STATUS_ABI_MISMATCH` | Согласованная таблица слишком мала или мажорная версия отличается. |
+| `NEVERC_STATUS_MISSING_INTERFACE` | Хост не публикует запрошенный интерфейс. |
+| `NEVERC_STATUS_VERSION_MISMATCH` | Запрошенную мажорную/минорную версию невозможно удовлетворить. |
+| `NEVERC_STATUS_INVALID_DESCRIPTOR` | Дескриптор не прошёл структурную проверку. |
+| `NEVERC_STATUS_DUPLICATE_ID` | Такой идентификатор уже зарегистрирован. |
+| `NEVERC_STATUS_DEPENDENCY_MISSING` | Объявленная зависимость отсутствует. |
+| `NEVERC_STATUS_DEPENDENCY_CYCLE` | Порядок регистрации невозможно удовлетворить. |
+| `NEVERC_STATUS_BUSY` | Ресурс удерживается в другом месте. |
+| `NEVERC_STATUS_CANCELLED` | Запрошена кооперативная отмена. |
+| `NEVERC_STATUS_RESOURCE_EXHAUSTED` | Достигнут бюджет или предел. |
+| `NEVERC_STATUS_STALE_HANDLE` | Дескриптор пережил объект, который он называл. |
+| `NEVERC_STATUS_WRONG_SESSION` | Дескриптор использован в другой сессии. |
+| `NEVERC_STATUS_WRONG_SCOPE` | Дескриптор использован вне своей области. |
+| `NEVERC_STATUS_WRONG_TYPE` | Дескриптор называл сущность другого вида. |
+| `NEVERC_STATUS_INVALID_STATE` | Операция недопустима в текущем состоянии. |
+| `NEVERC_STATUS_POLICY_VIOLATION` | Политика фазы запрещает операцию. |
 | `NEVERC_STATUS_VERIFICATION_FAILED` | Запечатанный верификатор хоста отклонил продукт. |
-| `NEVERC_STATUS_CANCELLED` / `BUSY` / `RESOURCE_EXHAUSTED` | Кооперативная отмена или ограничения ресурсов. |
+| `NEVERC_STATUS_CAPABILITY_UNAVAILABLE` | Хост не может предоставить эту возможность здесь. |
+| `NEVERC_STATUS_PLUGIN_FAILURE` | Плагин сообщил об общей ошибке. |
+| `NEVERC_STATUS_PLUGIN_EXCEPTION` | Из обратного вызова плагина вырвалось исключение. |
+| `NEVERC_STATUS_OUTPUT_PARTIAL` | Вывод записан лишь частично. |
+| `NEVERC_STATUS_REENTRANCY_DENIED` | Реентерабельный вызов отклонён. |
+| `NEVERC_STATUS_NOT_FOUND` | Названная сущность не существует. |
 
-Биты флагов (`RECOVERABLE`, `OUTPUT_ALREADY_COMMITTED`,
-`OUTPUT_MAY_BE_PARTIAL`, `OUTPUT_RECOVERY_REQUIRED`,
-`DURABILITY_UNCONFIRMED`) описывают, что произошло с выводом, — именно это
-нужно системе сборки, чтобы решить, безопасен ли повтор.
+Биты флагов описывают, что произошло с выводом, — именно это нужно системе
+сборки, чтобы решить, безопасен ли повтор:
+`NEVERC_STATUS_FLAG_RECOVERABLE`, `_OUTPUT_ALREADY_COMMITTED`,
+`_OUTPUT_MAY_BE_PARTIAL`, `_OUTPUT_RECOVERY_REQUIRED` и
+`_DURABILITY_UNCONFIRMED`.
 
 Сообщайте о проблемах через `NevercCoreAPI.EmitDiagnostic` и
-`NevercDiagnosticDescriptor`, несущий уровень серьёзности, код, ID плагина, ID
-фазы, сообщение, примечания, позицию в исходнике, диапазоны и fix-it. Перед
-дорогостоящей работой вызывайте `CheckCancelled`.
+`NevercDiagnosticDescriptor`, несущий уровень серьёзности (`NOTE`, `REMARK`,
+`WARNING`, `ERROR`, `FATAL`), код, идентификатор плагина, идентификатор фазы,
+сообщение, примечания, позицию в исходнике, диапазоны и исправления. Перед
+дорогой работой вызывайте `CheckCancelled`.
 
 ## Примеры
 
@@ -324,19 +483,20 @@ neverc -fplugin=./MyPlugin.dylib -c input.c -o input.o
 cmake --build build-neverc --target neverc-pluginsdk-examples
 ```
 
-Каждый пример компилируется дважды — настроенным хостовым компилятором C и
-только что собранным NeverC, — так что ABI подтверждается с обеих сторон.
-Модули появляются в `build-neverc/neverc/pluginsdk/examples/host/`.
+Каждый пример компилируется дважды — один раз настроенным хостовым
+компилятором C и один раз только что собранным NeverC, — так что ABI
+подтверждается с обеих сторон. Модули появляются в
+`build-neverc/neverc/pluginsdk/examples/host/`.
 
-| Пример | Цель CMake | Демонстрирует |
+| Пример | Цель CMake | Что показывает |
 |---|---|---|
-| `DriverTracePlugin.c` | `neverc-plugin-example-driver-trace` | Регистрация опций, наблюдение за фазами, перехват задания |
-| `VirtualHeaderPlugin.c` | `neverc-plugin-example-virtual-header` | VFS-провайдер, отдающий заголовок из памяти |
-| `ASTRewritePlugin.c` | `neverc-plugin-example-ast-rewrite` | Перехват парсера и атомарная мутация AST |
-| `ExamplePlugin.c` | `neverc-plugin-example-ir-overview` | IR-проход уровня модуля, обходящий список функций через курсор значений |
+| `DriverTracePlugin.c` | `neverc-plugin-example-driver-trace` | Регистрация опций, наблюдение за фазами, перехват заданий |
+| `VirtualHeaderPlugin.c` | `neverc-plugin-example-virtual-header` | Провайдер VFS, отдающий заголовок из памяти |
+| `ASTRewritePlugin.c` | `neverc-plugin-example-ast-rewrite` | Перехват парсера и атомарное изменение AST |
+| `ExamplePlugin.c` | `neverc-plugin-example-ir-overview` | Проход IR уровня модуля, обходящий список функций курсором значений |
 | `FunctionPass.c` | `neverc-plugin-example-function-pass` | Стабильный функциональный проход IR |
 | `MachinePass.c` | `neverc-plugin-example-machine-pass` | Стабильный проход MIR на хуке pre-emit |
-| `MCObserverPlugin.c` | `neverc-plugin-example-mc-observer` | События эмиссии MC только для чтения |
+| `MCObserverPlugin.c` | `neverc-plugin-example-mc-observer` | События выдачи MC только на чтение |
 | `ObjectRewritePlugin.c` | `neverc-plugin-example-object-rewrite` | Транзакционная перезапись ObjectGraph |
 | `CustomCallConvPlugin.c` | `neverc-plugin-example-custom-callconv` | Соглашения о вызовах, управляемые данными |
 | `DynCodeTracePlugin.c` | `neverc-plugin-example-dyncode-trace` | Наблюдение за конвейером dyncode |
@@ -355,11 +515,11 @@ neverc -fplugin=build-neverc/neverc/pluginsdk/examples/host/FunctionPass.so \
 
 | Файл | Что гарантирует |
 |---|---|
-| `neverc/include/neverc/Plugin/Schema/PhaseSchema.json` | ID фаз, политики, стабильность, верификационные шлюзы |
-| `pluginsdk/manifest/plugin.json` | Версия ABI, ID/версии/стабильность интерфейсов, дайджесты схем, поддерживаемые цели |
-| `pluginsdk/abi/plugin.json` | Измеренные размер, выравнивание и смещения полей каждой публичной структуры по ключу ABI хоста |
-| `docs/plugin-api/coverage.json` | Сопоставляет каждой стабильной фазе позитивные, негативные, замещающие, наблюдательные тесты и тесты запечатанных шлюзов |
+| `neverc/include/neverc/Plugin/Schema/PhaseSchema.json` | Идентификаторы фаз, политики, стабильность, шлюзы верификации |
+| `pluginsdk/manifest/plugin.json` | Версия ABI, идентификаторы/версии/стабильность интерфейсов, дайджесты схем, поддерживаемые целевые платформы |
+| `pluginsdk/abi/plugin.json` | Измеренные размер, выравнивание и смещения полей каждой публичной структуры для каждого ключа ABI хоста |
+| `docs/plugin-api/coverage.json` | Сопоставляет каждую стабильную фазу с положительными, отрицательными, замещающими, наблюдательными тестами и тестами запечатанных шлюзов |
 
-Благодаря этому SDK можно машинно проверить на соответствие хосту, а сборка
-плагина может утверждать раскладку своих структур относительно того ключа ABI, в
-который она будет загружена.
+Благодаря этому SDK можно механически проверить относительно хоста, а сборка
+плагина может утверждать раскладку своих структур относительно того ключа ABI,
+в который она будет загружена.

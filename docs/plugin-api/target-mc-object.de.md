@@ -1,103 +1,520 @@
 **Sprachen**: [English](target-mc-object.md) | [简体中文](target-mc-object.zh-CN.md) | [繁體中文](target-mc-object.zh-TW.md) | [日本語](target-mc-object.ja.md) | [한국어](target-mc-object.ko.md) | [Français](target-mc-object.fr.md) | [Deutsch](target-mc-object.de.md) | [Español](target-mc-object.es.md) | [Italiano](target-mc-object.it.md) | [Русский](target-mc-object.ru.md) | [العربية](target-mc-object.ar.md)
 
-# Target-, MC-, Assembler- und Objekt-Plugins
+# NeverC-Plugin-API für Target, MC, Assembly und Objekte
 
-Die Plugin-ABI der ersten NeverC-Version erlaubt es einem C-Plugin, ein Ziel zu
-beschreiben, Codegenerierungsrouten zu ersetzen, die Maschinencode-Ausgabe zu
-beobachten, Assembler zu parsen oder auszugeben und Objektdateien zu lesen oder
-zu schreiben. Die öffentliche Grenze ist eine reine C-ABI: Plugins dürfen keine
-C++-Objekte von LLVM, keine STL-Typen, keine Ausnahmen und keine host-eigenen
-Zeiger austauschen, deren Lebensdauer nicht von einer API-Tabelle festgelegt ist.
+Das Back-End besteht aus vier Headern und neunundzwanzig Phasen.
+`PluginTarget.h` beschreibt ein Target und die Routen durch die
+Codeerzeugung. `PluginMC.h` baut und beobachtet Maschinencode. Das Parsen und
+Ausgeben von Assembly wohnt im selben Header. `PluginObject.h` verwandelt eine
+relozierbare Datei in einen normalisierten Graphen und wieder zurück.
 
-## Kompatibilitätsstufen
+Zusammen erlauben sie einem Plugin, ein Target hinzuzufügen, einen einzelnen
+Lowering-Schritt oder alle zu ersetzen, jede Instruktion beim Emittieren zu
+beobachten, einen Assembly-Dialekt zu definieren oder eine Objektdatei
+umzuschreiben — über ein reines C-ABI, das niemals ein `MCInst`, `MCSection`
+oder `object::ObjectFile` von LLVM offenlegt.
 
-Zielunabhängige Deskriptoren, Phasen-IDs, Artefakt-IDs, MC-Container,
-ObjectGraph-Container, Ausgabetransaktionen und Callback-Verträge sind STABLE-ABI
-der ersten Version. Zielspezifische Schemata für Opcodes, Register, Operanden,
-Fixups, Relokationen und Aufrufkonventionen sind LOCKSTEP. Ein Plugin muss
-Ziel-Schema-ID und -Digest vergleichen, bevor es LOCKSTEP-Werte verwendet. NeverC
-weist nicht passende Schemata zurück, bevor der Provider aufgerufen wird.
+## Schnittstellen
 
-## Ziel und Codegenerierungsroute registrieren
+```c
+#include "neverc/Plugin/PluginTarget.h"
+#include "neverc/Plugin/PluginMC.h"
+#include "neverc/Plugin/PluginObject.h"   /* includes both of the above */
+```
 
-Fragen Sie während der Registrierung `NevercTargetAPI` ab, registrieren Sie einen
-oder mehrere `NevercTargetDescriptor`-Einträge und hängen Sie
-Zielmaschinen-Deskriptoren und Codegenerierungskanten an. Eine Route wird anhand
-des kanonischen Zielschlüssels ausgewählt: Ziel-ID, Triple, CPU, Features, ABI,
-Relokationsmodell, Codemodell, Objektformat und Schema-Digest.
+| Schnittstelle | Tabelle | Slots | Zweck |
+|---|---|--:|---|
+| `NEVERC_INTERFACE_TARGET_*` | `NevercTargetAPI` | 2 | `RegisterTarget`, `RegisterCodeGenEdge` |
+| `NEVERC_INTERFACE_TARGET_ABI_*` | `NevercTargetABIAPI` | 1 | `RegisterABI` |
+| `NEVERC_INTERFACE_CALLING_CONVENTION_*` | `NevercCallingConventionAPI` | 1 | `RegisterCallingConvention` |
+| `NEVERC_INTERFACE_MC_*` | `NevercMCAPI` | 53 | Ein `MCUnit` lesen und ändern; Encoder, Decoder, Back-Ends registrieren |
+| `NEVERC_INTERFACE_MC_EMISSION_*` | `NevercMCEmissionAPI` | 7 | Emissionsereignisse und Layout-Momentaufnahmen |
+| `NEVERC_INTERFACE_MC_PROVIDER_*` | `NevercMCProviderAPI` | 4 | MIR → MC ersetzen |
+| `NEVERC_INTERFACE_ASSEMBLY_PROVIDER_*` | `NevercAssemblyProviderAPI` | 8 | Assembly-Parser oder -Printer ersetzen |
+| `NEVERC_INTERFACE_OBJECT_*` | `NevercObjectAPI` | 34 | Einen ObjectGraph lesen und ändern |
+| `NEVERC_INTERFACE_OBJECT_FORMAT_*` | `NevercObjectFormatAPI` | 1 | `RegisterFormat` |
+| `NEVERC_INTERFACE_OBJECT_PHASE_*` | `NevercObjectPhaseAPI` | 2 | `GetGraph`, `GetImage` |
 
-Feingranulare Routen verwenden `IR -> MIR -> MC -> ObjectGraph -> ObjectImage`.
-Eine grobe Kante kann die gesamte Route `IR -> ObjectImage` ersetzen. Auch grobe
-Ausgaben durchlaufen den verpflichtenden Produktverifizierer des Hosts und den
-transaktionalen Ausgabe-Commit; ein Provider kann kein Gate umgehen.
+## Zwei Kompatibilitätsstufen
 
-## MC erzeugen und beobachten
+Das ist die Regel, die alles Weitere hier bestimmt.
 
-`NevercMCAPI` besitzt task-lokale `MCUnit`-Mutationen. Beginnen Sie eine Mutation,
-erzeugen Sie Sections, Fragmente, Symbole, Ausdrücke, Instruktionen und Operanden
-und committen oder verwerfen Sie sie dann. Handles sind task-begrenzt und
-generationsgeprüft.
+**STABLE**, und sicher fest zu verdrahten: target-unabhängige Deskriptoren,
+Phasen-IDs, Artefakt-IDs, die MC- und ObjectGraph-Container,
+Ausgabetransaktionen und jeder Callback-Vertrag.
 
-Der zielunabhängige Emissionsstrom stellt geordnete Ereignisse für
-Section-Wechsel, Labels, Instruktionen, Ausrichtung, Symbolattribute, CFI,
-Debug-Positionen und Daten bereit. `neverc.mc.emission.pre_instruction` ist
-ersetzbar; die übrigen Ereignisphasen sind schreibgeschützte Beobachtungspunkte.
-Siehe `pluginsdk/examples/MCObserverPlugin.c`.
+**LOCKSTEP**, und ohne Prüfung unsicher: target-spezifische Schemata für
+Opcodes, Register, Operanden, Fixups, Relokationen und Aufrufkonventionen. Ihre
+Zahlenwerte sind nur gegenüber genau einer Schema-Revision bedeutsam.
 
-Provider für Kodierung, Dekodierung und Layout arbeiten mit demselben
-Zielschlüssel und Schema-Digest. Das Layout verantwortet die Relaxation und gibt
-einen Beweis-Digest aus. Jede Mutation nach dem Layout entwertet diesen Beweis und
-erzwingt vor dem Schreiben des Objekts ein erneutes Layout.
+Überall, wo ein LOCKSTEP-Wert auftaucht, steht ein Schema-Digest daneben.
+Vergleichen Sie ihn, bevor Sie den Wert lesen:
 
-## Assembler-Syntax ersetzen
+```c
+if (!string_equal(Target.SchemaDigest, MY_COMPILED_SCHEMA_DIGEST))
+  return fail(NEVERC_STATUS_ABI_MISMATCH);
+```
 
-Ein Assembler-Parser-Provider konsumiert Quellbytes und veröffentlicht eine
-`MCUnit`. Ein Assembler-Printer konsumiert eine `MCUnit` und schreibt
-ausschließlich über die bereitgestellte Ausgabetransaktion. Vorverarbeiteter
-Assembler (`.S`) durchläuft vor dem Parser-Provider den normalen
-Frontend-Präprozessor; reiner Assembler (`.s`) gelangt direkt in den Parser.
+NeverC weist ein nicht passendes Schema ebenfalls zurück, bevor es einen
+Provider aufruft — die Prüfung ist also doppelt abgesichert. Ein Plugin, das
+sie überspringt und trotzdem einen rohen Opcode liest, wird Instruktionen
+jedoch stillschweigend falsch deuten.
 
-Provider stellen die Ausgabe zunächst bereit. Parse-/Druckverifikation und das
-Commit-Gate des Hosts laufen, bevor Bytes sichtbar werden, sodass ein Fehlschlag
-keine partielle Ausgabe hinterlässt.
+## Die Phasen
 
-## Objekte lesen, umschreiben und schreiben
+Neunundzwanzig, in vier Domänen.
 
-`NevercObjectAPI` stellt eine relozierbare Datei als normalisierten ObjectGraph
-dar: Sections, Symbole, Relokationen, Gruppen/COMDATs, Importe/Exporte,
-TLS-Metadaten, Unwind-Datensätze und Debug-Datensätze. Eingebaute Adapter decken
-ELF, COFF und Mach-O ab; Plugins können weitere Formate registrieren.
+### `codegen` — Routing (4)
 
-Die Objekt-Pipeline lautet:
+| Phase | Policy |
+|---|---|
+| `neverc.codegen.ir_to_mir` | OBSERVABLE, INTERCEPTABLE, REPLACEABLE |
+| `neverc.codegen.mir_to_mc` | OBSERVABLE, INTERCEPTABLE, REPLACEABLE |
+| `neverc.codegen.coarse_lower` | OBSERVABLE, INTERCEPTABLE, REPLACEABLE |
+| `neverc.codegen.product_verify` | OBSERVABLE, **SEALED** |
 
-1. Bytes prüfen und in einen ObjectGraph einlesen;
-2. `object.pre_write`-Graph-Interceptors ausführen;
-3. Layout erstellen und `object.post_layout` ausführen (nach einer Mutation neu
-   layouten);
+### `mc` — Maschinencode (13)
+
+`neverc.mc.encode`, `neverc.mc.decode` und `neverc.mc.layout` sind
+OBSERVABLE, INTERCEPTABLE, REPLACEABLE.
+
+`neverc.mc.emission.pre_instruction` ist das eine Emissionsereignis, das
+zusätzlich REPLACEABLE ist — dort ersetzt man eine Instruktion. Die anderen
+neun (`unit_begin`, `unit_end`, `section_change`, `post_instruction`,
+`post_encode`, `fixup`, `relaxation_round`, `pre_layout`, `post_layout`)
+dienen nur der Beobachtung.
+
+### `assembly` (4)
+
+`neverc.assembly.parse` und `neverc.assembly.print` sind REPLACEABLE.
+`neverc.assembly.final_verify` und `neverc.assembly.commit` sind SEALED.
+
+### `object` (8)
+
+`neverc.object.probe`, `read`, `write`, `pre_write` und `post_layout` sind
+REPLACEABLE; `neverc.object.post_write` ist nur INTERCEPTABLE;
+`neverc.object.final_verify` und `neverc.object.commit` sind SEALED.
+
+## Ein Target registrieren
+
+`NevercTargetDescriptor` ist der größte Deskriptor im ABI, weil er alles
+transportiert, was Front-End und Back-End wissen müssen:
+
+```c
+typedef struct NevercTargetDescriptor {
+  NevercABITableHeader Header;
+  NevercTargetID TargetID;
+  NevercStringView CanonicalName;
+  NevercStringArrayView Aliases;
+  NevercStructArrayView TripleMatchers;    /* NevercTargetTripleMatcher[] */
+  NevercTargetABIID DefaultABI;
+  NevercCallingConventionID DefaultCallingConvention;
+  NevercInterfaceID MCSchemaID;
+  NevercInterfaceID DefaultObjectFormatID;
+  NevercTargetMachineDescriptor Machine;
+  NevercStructArrayView Macros;            /* predefined macros           */
+  NevercStructArrayView Builtins;          /* target builtins + lowering  */
+  NevercStructArrayView Registers;         /* inline-asm register names   */
+  NevercStructArrayView Constraints;       /* inline-asm constraints      */
+  NevercStringView Clobbers;
+  uint64_t Flags;
+  NevercTargetValidateCPUFn ValidateCPU;
+  NevercTargetCanonicalizeCPUFn CanonicalizeCPU;
+  NevercTargetListCPUsFn ListCPUs;
+  NevercTargetResolveFeaturesFn ResolveFeatures;
+  NevercCreateTargetMachineFn CreateTargetMachine;
+  NevercDestroyTargetMachineFn DestroyTargetMachine;
+  void *UserData;
+  NevercDestroyUserDataFn DestroyUserData;
+} NevercTargetDescriptor;
+```
+
+`TripleMatchers` entscheidet, wann das Target ausgewählt wird: Jeder Matcher
+nennt Architektur, Hersteller, Betriebssystem und Umgebung sowie eine
+`Priority`, die Gleichstände gegenüber den eingebauten Targets auflöst.
+
+`Machine` ist ein `NevercTargetMachineDescriptor` — Datenlayout, Standard- und
+Tuning-CPUs, die Feature-Tabelle, unterstützte ABIs, Aufrufkonventionen und
+Objektformate, Adressräume, Relokations- und Codemodelle (sowohl als Standard
+als auch als Unterstützungsmaske), Ausnahmemodell (`NONE`, `DWARF`, `SJLJ`,
+`SEH`, `WASM`), Unwind-Modell, Endianness, die Breite von
+pointer/int/long/long long, Stack-Ausrichtung, maximale Atom- und
+Vektorbreiten, `va_list`-Art, Ausführungsebenen (`USER`, `KERNEL`,
+`HYPERVISOR`, `FIRMWARE`) sowie TLS-Unterstützung.
+
+Target-Builtins tragen ihren eigenen Lowering-Callback, der einen lebendigen
+IR-Builder erhält:
+
+```c
+static NevercStatus NEVERC_CALL
+lower_builtin(void *UserData,
+              const NevercTargetBuiltinLoweringInvocation *In,
+              NevercIRValueHandle *OutResult) {
+  /* In->Core, In->Builder, In->Mutation, In->IRBuilder,
+     In->ResultType, In->Arguments, In->ArgumentCount */
+  return In->Builder->BuildCall(/* … */);
+}
+```
+
+## ABI und Aufrufkonventionen
+
+Ein ABI klassifiziert Funktionssignaturen:
+
+```c
+static NevercStatus NEVERC_CALL
+classify(void *UserData, const NevercABIFunctionQuery *Query,
+         NevercABIArgumentClassification *ReturnValue,
+         NevercABIArgumentClassificationArray *Arguments) {
+  ReturnValue->Kind = NEVERC_ABI_ARGUMENT_DIRECT;
+  for (uint64_t I = 0; I != Arguments->Count; ++I) {
+    NevercABIArgumentClassification *A = &Arguments->Data[I];
+    A->Kind  = NEVERC_ABI_ARGUMENT_INDIRECT;
+    A->Flags = NEVERC_ABI_ARGUMENT_BYVAL;
+  }
+  return neverc_status_ok();
+}
+```
+
+Argumentarten sind `DIRECT`, `EXTEND`, `INDIRECT`, `IGNORE`, `EXPAND`,
+`INDIRECT_ALIASED` und `COERCE_AND_EXPAND`; Flags sind `BYVAL`, `REALIGN`,
+`INREG`, `SRET_AFTER_THIS`, `CAN_BE_FLATTENED`, `SIGN_EXTEND` und
+`PADDING_INREG`. Die Umwandlung ist `NONE`, `INTEGER`, `FLOAT` oder
+`POINTER`, und `COERCE_AND_EXPAND` liefert ein Array von
+`NevercABICoercionElement`.
+
+Eine Aufrufkonvention geht eine Ebene tiefer und weist die tatsächlichen Orte
+zu:
+
+```c
+static NevercStatus NEVERC_CALL
+plan(void *UserData, const NevercCallingConventionQuery *Query,
+     NevercCallingConventionPlan *Plan) {
+  /* Query->TargetID, ->CallingConventionID, ->SchemaDigest, ->Function */
+  /* Fill Plan->ReturnLocations and Plan->ArgumentLocations with
+     NevercCallingConventionLocation records: REGISTER or STACK,
+     ValueIndex, PieceOffset, Size, Alignment, RegisterNumber,
+     StackOffset, and INDIRECT / BYVAL flags.                       */
+  Plan->CalleeSavedRegisters = MySavedRegisters;
+  Plan->StackAlignment       = 16;
+  return neverc_status_ok();
+}
+```
+
+`Query->SchemaDigest` ist ein LOCKSTEP-Wert — `RegisterNumber` bedeutet nur
+etwas gegenüber dem Schema, das er benennt. Das vollständig ausgearbeitete
+Beispiel finden Sie unter
+[Eigene Aufrufkonventionen](custom-callconv/README.md) und in
+`pluginsdk/examples/CustomCallConvPlugin.c`.
+
+## Routen der Codeerzeugung
+
+Eine Route wird aus dem kanonischen `NevercTargetKey` ausgewählt: Target-ID,
+Triple-Teile, CPU, Tuning-CPU, Features, ABI, Aufrufkonvention, Objektformat,
+Relokationsmodell, Codemodell, Ausführungsebene, Zeigerbreite, Endianness und
+Schema-Digest. Registrieren Sie die Kanten, die Sie bedienen können:
+
+```c
+NevercCodeGenEdgeDescriptor Edge = {0};
+Edge.Header          = /* … */;
+Edge.EdgeID          = MyEdgeID;
+Edge.CanonicalName   = SV("com.example.mir-to-mc");
+Edge.TargetID        = MyTargetID;
+Edge.InputKind       = NEVERC_CODEGEN_PRODUCT_MIR;
+Edge.OutputKind      = NEVERC_CODEGEN_PRODUCT_MC;
+Edge.CompatibilityKey = SV("…");
+Edge.ProviderID      = SV("com.example.backend");
+Target->RegisterCodeGenEdge(Target->Context, RegistrarContext, &Edge);
+```
+
+Produktarten sind `IR`, `MIR`, `MC`, `ASSEMBLY`, `OBJECT_GRAPH`,
+`OBJECT_IMAGE` und `CUSTOM`. Die feingranulare Route lautet
+`IR → MIR → MC → ObjectGraph → ObjectImage`.
+
+`NEVERC_CODEGEN_EDGE_COARSE` zu setzen und `CoarseLower` bereitzustellen,
+ersetzt die gesamte Spanne `IR → ObjectImage` in einem Schritt:
+
+```c
+static NevercStatus NEVERC_CALL
+coarse_lower(void *UserData, NevercTaskHandle Task,
+             const NevercCodeGenRequest *Request,
+             NevercCodeGenProductCandidate *OutCandidate) {
+  /* Request->Target, ->Input, ->InputKind, ->OutputKind,
+     ->OptimizationLevel, ->HasFinalIRProof                */
+  OutCandidate->Kind      = NEVERC_CODEGEN_PRODUCT_OBJECT_IMAGE;
+  OutCandidate->Artifact  = MyImage;
+  OutCandidate->ProductID = MyProductID;
+  return neverc_status_ok();
+}
+```
+
+Auch eine grobe Route durchläuft `neverc.codegen.product_verify` und das
+transaktionale Festschreiben der Ausgabe. `VerifyProduct` wird mit genau den
+Pflichten aufgerufen, deren Erfüllung der Host von Ihnen erwartet —
+`VERIFY_FINAL_IR`, `VERIFY_TARGET_KEY`, `VERIFY_PRODUCT_KIND`,
+`VERIFY_PRODUCT_ID`, `VERIFY_STRUCTURE` —, sodass ein Provider kein Gate
+heimlich durch eine Abkürzung umgehen kann.
+
+## MC bauen
+
+Ein `MCUnit` enthält Sections, Symbole, Ausdrücke, Fragmente, Instruktionen,
+Operanden und Fixups. Gelesen wird per first/next-Iteration:
+
+```c
+NevercMCUnitInfo Unit = {0};
+Unit.Header = /* … */;
+MC->GetUnitInfo(MC->Context, Task, UnitHandle, &Unit);
+
+NevercMCSectionHandle Section;
+MC->GetFirstSection(MC->Context, Task, UnitHandle, &Section);
+while (!neverc_handle_is_null(Section)) {
+  NevercMCFragmentHandle Fragment;
+  MC->GetFirstFragment(MC->Context, Task, Section, &Fragment);
+  /* … */
+  MC->GetNextSection(MC->Context, Task, Section, &Section);
+}
+```
+
+Mutation ist transaktional, wie überall sonst:
+
+```c
+NevercMCMutationHandle Mutation;
+MC->BeginMutation(MC->Context, Task, Unit, &Mutation);
+MC->CreateSection(MC->Context, Task, Mutation, &SectionDescriptor, &Section);
+MC->CreateSymbol(MC->Context, Task, Mutation, &SymbolDescriptor, &Symbol);
+MC->AppendInstruction(MC->Context, Task, Mutation, Section, &Instruction);
+Status = MC->CommitMutation(MC->Context, Task, Mutation);
+if (Status.Code != NEVERC_STATUS_OK)
+  MC->AbandonMutation(MC->Context, Task, Mutation);
+```
+
+Handles sind task-gebunden und generationsgeprüft, sodass ein Handle aus einer
+abgebrochenen Mutation zurückgewiesen statt wiederverwendet wird.
+
+Section-Flags sind `ALLOCATED`, `EXECUTABLE`, `WRITABLE`, `MERGEABLE` und
+`DEBUG`. Symbolbindungen sind `LOCAL`, `GLOBAL` und `WEAK`; Typen sind `NONE`,
+`FUNCTION`, `OBJECT`, `SECTION` und `TLS`; Definitionen sind `UNDEFINED`,
+`SECTION`, `ABSOLUTE` und `COMMON`. Ausdrücke unterstützen die unären
+Operatoren `PLUS`, `MINUS`, `NOT` sowie die binären `ADD`, `SUBTRACT`,
+`MULTIPLY`, `DIVIDE`, `AND`, `OR`, `XOR`, `SHIFT_LEFT`, `SHIFT_RIGHT`.
+Übergeben Sie `NEVERC_MC_AUTOMATIC_OFFSET`, wo der Host etwas für Sie
+platzieren soll.
+
+`RegisterSchema` veröffentlicht ein Target-MC-Schema, und `GetSchemaToken` /
+`GetSchemaTokenInfo` übersetzen zwischen Name und LOCKSTEP-Token.
+
+## Emission beobachten
+
+Der Emissionsstrom meldet elf Ereignisarten der Reihe nach. Abonnieren Sie als
+Beobachter und lesen Sie das Ereignis:
+
+```c
+NevercMCEmissionEventInfo Event = {0};
+Event.Header = /* … */;
+Emission->GetEvent(Emission->Context, Frame, &Event);
+/* Event.Kind, Event.Flags */
+```
+
+`Flags` sagt, welche Teile des Ereignisses gefüllt sind: `HAS_SECTION`,
+`HAS_INSTRUCTION`, `HAS_ENCODING`, `HAS_FIXUP`, `HAS_LAYOUT` und
+`CAN_REPLACE_INSTRUCTION`. Prüfen Sie das Flag, bevor Sie das zugehörige Feld
+lesen — ein Ereignis, das noch keine Kodierung hat, bekommt keine, nur weil Sie
+danach fragen.
+
+`GetLayoutSection`, `GetLayoutFragment`, `GetLayoutSymbol` und
+`GetLayoutFixup` liefern Adressen und Größen, sobald `HAS_LAYOUT` gesetzt ist.
+
+Bei `pre_instruction` und nur dann, wenn `CAN_REPLACE_INSTRUCTION` gesetzt
+ist, können Sie ersetzen:
+
+```c
+Emission->BeginInstructionReplacement(Emission->Context, Frame, &Builder);
+/* build the replacement through the MC builder */
+Emission->PublishInstructionReplacement(Emission->Context, Frame, NewInstr);
+```
+
+`pluginsdk/examples/MCObserverPlugin.c` ist die rein lesende Variante davon.
+
+## Encoder, Decoder und Layout
+
+Drei Registrierungen erweitern das Maschinencode-Back-End, alle über Target
+und Schema-Digest verschlüsselt:
+
+```c
+MC->RegisterEncoder(MC->Context, RegistrarContext, &EncoderDescriptor);
+MC->RegisterDecoder(MC->Context, RegistrarContext, &DecoderDescriptor);
+MC->RegisterAsmBackend(MC->Context, RegistrarContext, &BackendDescriptor);
+```
+
+Ein Encoder schreibt durch eine Senke, statt einen Puffer zurückzugeben — so
+bleibt die Eigentümerschaft auf der Host-Seite:
+
+```c
+Sink->WriteBytes(Sink->Context, Bytes);
+Sink->AddFixup(Sink->Context, &Fixup);
+```
+
+Ein Decoder meldet eines von `NEVERC_MC_DECODE_SUCCESS`, `_SOFT_FAIL`,
+`_UNKNOWN` oder `_FAIL`. Fixup-Arten beschreiben sich selbst über
+`NevercMCFixupKindInfo` mit den Flags `PC_RELATIVE`, `SIGNED`, `RELAXABLE` und
+`TARGET`.
+
+Das Asm-Back-End besitzt die Relaxation. Das Layout gibt einen Beweis-Digest
+aus, und **jede Mutation nach dem Layout entwertet diesen Beweis** und erzwingt
+ein erneutes Layout, bevor das Objekt geschrieben werden kann — dasselbe
+Muster der Generationsprüfung, das auch der Link-Graph verwendet.
+
+## Assembly
+
+Ein Parser-Provider verbraucht Quellbytes und veröffentlicht ein `MCUnit`:
+
+```c
+NevercAssemblyParseInputInfo In = {0};
+In.Header = /* … */;
+Asm->GetParseInput(Asm->Context, Frame, &In);
+
+NevercAssemblyTokenInfo Token = {0};
+Asm->PeekSourceToken(Asm->Context, Frame, &Token);
+Asm->AdvanceSourceToken(Asm->Context, Frame);
+
+const NevercMCAPI *MC;
+NevercMCUnitHandle Unit;
+Asm->GetParseMCBuilder(Asm->Context, Frame, &MC, &Unit);
+/* … build … */
+Asm->PublishParsedMCUnit(Asm->Context, Frame, Unit, &Output);
+```
+
+Quellen sind entweder `NEVERC_ASSEMBLY_SOURCE_BUFFER` oder
+`NEVERC_ASSEMBLY_SOURCE_RENDERED_TOKENS`. Vorverarbeitete Assembly (`.S`)
+durchläuft zuerst den normalen Frontend-Präprozessor und kommt als gerenderte
+Token an; einfache Assembly (`.s`) gelangt direkt als Puffer in den Parser.
+
+Ein Printer geht den umgekehrten Weg — `GetPrintInput`, dann
+`WritePrintOutput` in die bereitgestellte Ausgabetransaktion, dann
+`PublishAssemblyOutput`. Anderswohin zu schreiben wird nicht unterstützt: Die
+Parse-/Print-Verifikation und das Commit-Gate des Hosts laufen, bevor Bytes
+sichtbar werden, sodass ein fehlgeschlagenes Ausgeben keine halbe Datei
+zurücklässt.
+
+## Objektgraphen
+
+`NevercObjectAPI` normalisiert eine relozierbare Datei zu Sections, Symbolen,
+Relokationen und COMDATs. Eingebaute Adapter decken ELF, COFF und Mach-O ab;
+`RegisterFormat` fügt ein weiteres hinzu.
+
+```c
+NevercObjectGraphInfo Info = {0};
+Info.Header = /* … */;
+Object->GetGraphInfo(Object->Context, Task, Graph, &Info);
+/* Info.Target, .ObjectSchemaDigest, .Generation, .SectionCount,
+   .SymbolCount, .RelocationCount, .ComdatCount, .HasLayoutProof */
+
+NevercObjectSymbolHandle Symbol;
+Object->GetFirstSymbol(Object->Context, Task, Graph, &Symbol);
+while (!neverc_handle_is_null(Symbol)) {
+  NevercObjectSymbolInfo SymInfo = {0};
+  SymInfo.Header = /* … */;
+  Object->GetSymbolInfo(Object->Context, Task, Symbol, &SymInfo);
+  Object->GetNextSymbol(Object->Context, Task, Symbol, &Symbol);
+}
+```
+
+Die Mutation folgt für alle vier Entitätsarten dem Muster
+create/replace/move/erase und wird innerhalb von `BeginMutation` …
+`CommitMutation` / `AbandonMutation` vorgemerkt.
+
+Section-Flags sind `ALLOCATED`, `EXECUTABLE`, `WRITABLE`, `MERGEABLE`,
+`STRINGS`, `TLS`, `DEBUG`, `UNWIND`, `DISCARDABLE` und `RETAIN`. Ziele von
+Relokationen sind `SYMBOL`, `SECTION`, `ABSOLUTE` oder `FORMAT_EXTENSION`.
+
+Jeder Deskriptor hat ein Tripel aus `ExtensionOwner` / `ExtensionVersion` /
+`Extension`. So bewahrt ein Format Daten auf, für die der normalisierte Graph
+kein Feld hat — die Bytes reisen mit der Entität mit und kommen beim Schreiben
+zurück, statt beim Hin und Her verloren zu gehen.
+
+### Ein Format registrieren
+
+```c
+NevercObjectFormatDescriptor Format = {0};
+Format.Header           = /* … */;
+Format.FormatID         = MyFormatID;
+Format.CanonicalName    = SV("com.example.myfmt");
+Format.SupportedTargets = MyTargets;
+Format.DefaultExtension = SV(".mof");
+Format.Flags            = NEVERC_OBJECT_FORMAT_CAN_PROBE |
+                          NEVERC_OBJECT_FORMAT_CAN_READ  |
+                          NEVERC_OBJECT_FORMAT_CAN_WRITE;
+Format.Probe            = probe;
+Format.Reader           = read;
+Format.Writer           = write;
+ObjectFormat->RegisterFormat(ObjectFormat->Context, RegistrarContext,
+                             &Format);
+```
+
+`Probe` meldet eine `Confidence` von 0 bis
+`NEVERC_OBJECT_PROBE_MAX_CONFIDENCE` (1000), die erkannte
+`NevercObjectArtifactKind` (`RELOCATABLE`, `ARCHIVE`, `EXECUTABLE_IMAGE`,
+`SHARED_IMAGE`, `UNIVERSAL_BINARY`) und ein `ConsumedMinimum` — wie viele
+Bytes es zur Gewissheit brauchte, begrenzt auf
+`NEVERC_OBJECT_PROBE_MAX_CONSUMED_MINIMUM` (65536). Die höchste Zuversicht
+gewinnt.
+
+`Reader` bekommt einen Graphen und eine offene Mutation und füllt beide.
+`Writer` bekommt den Graphen, seinen Layout-Beweis und den begrenzten
+Binär-Builder.
+
+### Die Schreib-Pipeline
+
+1. sondieren und Bytes in einen ObjectGraph einlesen;
+2. die Graph-Interceptors `object.pre_write` ausführen;
+3. Layout erstellen, dann `object.post_layout` ausführen (nach jeder Mutation
+   neu layouten);
 4. ein begrenztes Kandidaten-Image schreiben;
-5. `object.post_write`-Binär-Interceptors ausführen;
-6. den versiegelten Endverifizierer und den atomaren Host-Commit ausführen.
+5. die Binär-Interceptors `object.post_write` ausführen;
+6. das versiegelte `object.final_verify` und das atomare `object.commit`
+   ausführen.
 
-Observer erhalten schreibgeschützte Brücken. Aus einem Observer versuchte
-Mutationen werden mit `NEVERC_STATUS_POLICY_VIOLATION` abgelehnt. Writer und
-Post-Write-Interceptors können nur auf den begrenzten transaktionalen Builder
-zugreifen; Überlauf, ein fehlgeschlagener Callback oder eine fehlgeschlagene
-Verifikation brechen die Bereitstellung ab. Siehe
-`pluginsdk/examples/ObjectRewritePlugin.c`.
+Der Image-Zustand wandert `CANDIDATE` → `VERIFIED` → `COMMITTED` oder
+`ABORTED` / `FAILED_PARTIAL`.
 
-## Regeln für Nebenläufigkeit und Fehler
+Beobachter erhalten rein lesende Brücken; eine aus einem Beobachter versuchte
+Mutation wird mit `NEVERC_STATUS_POLICY_VIOLATION` abgelehnt. Writer und
+Post-Write-Interceptors bekommen nur den begrenzten Builder
+`NevercMutableBinaryAPI` — `Reserve`, `Write`, `WriteAt`, `Tell`, `ReadAt`,
+`Insert`, `Append`, `Resize`. Ein Überlauf, ein fehlgeschlagener Callback oder
+eine gescheiterte Verifikation bricht das Vormerken ab, sodass ein Fehlschlag
+nie eine halbe Datei auf der Platte hinterlässt.
 
-- Halten Sie veränderlichen Zustand im vom Host bereitgestellten
-  Process-/Session-/Task-Zustand.
-- Cachen Sie keine Task-Handles oder geliehenen Sichten über die Rückkehr eines
-  Callbacks hinaus.
-- Rufen Sie eine Interceptor-Continuation höchstens einmal und im Callback-Thread
-  auf.
-- Geben Sie den ursprünglichen `NevercStatus` zurück; veröffentlichen Sie keine
-  Teilprodukte.
-- Deklarieren Sie die engsten wahrheitsgemäßen Nebenläufigkeits- und
-  Reentrancy-Modi.
+`pluginsdk/examples/ObjectRewritePlugin.c` ist eine vollständige
+transaktionale Umschreibung.
 
-Der ausführbare Abdeckungsvertrag ist `docs/plugin-api/coverage.json`. Er ordnet
-jeder stabilen Phase positive, negative, Ersetzungs-, Nur-Lese-Observer- und
-Sealed-Gate-Tests zu.
+## Regeln
+
+- Vergleichen Sie den Schema-Digest, bevor Sie irgendeinen LOCKSTEP-Wert für
+  Opcode, Register, Operand, Fixup, Relokation oder Aufrufkonvention
+  verwenden.
+- Halten Sie veränderlichen Zustand im vom Host bereitgestellten Process-,
+  Session- und Task-Zustand.
+- Cachen Sie keine Task-Handles oder geliehenen Views, nachdem ein Callback
+  zurückgekehrt ist.
+- Rufen Sie die Fortsetzung eines Interceptors höchstens einmal auf, und zwar
+  auf dem Callback-Thread.
+- Jedes `BeginMutation` erreicht genau ein Commit oder ein Abandon.
+- Layouten Sie neu, nachdem Sie ein bereits layoutetes MCUnit oder einen
+  ObjectGraph verändert haben; der alte Layout-Beweis ist veraltet und der Host
+  wird ihn zurückweisen.
+- Prüfen Sie `NevercMCEmissionEventInfo.Flags`, bevor Sie ein Ereignisfeld
+  lesen, und ersetzen Sie eine Instruktion nur, wenn
+  `CAN_REPLACE_INSTRUCTION` gesetzt ist.
+- Schreiben Sie Ausgaben ausschließlich über die bereitgestellte Transaktion
+  oder Byte-Senke.
+- Geben Sie im Fehlerfall den ursprünglichen `NevercStatus` zurück und
+  veröffentlichen Sie nichts Teilweises.
+- Deklarieren Sie die engsten zutreffenden Modelle für Nebenläufigkeit und
+  Reentranz.
+- `codegen.product_verify`, `assembly.final_verify`, `assembly.commit`,
+  `object.final_verify` und `object.commit` sind versiegelt. Nur beobachten.
+
+Die normativen Deklarationen finden Sie in `PluginTarget.h`, `PluginMC.h`,
+`PluginObject.h` und `Schema/PhaseSchema.json`, und `coverage.json` ordnet
+jeder dieser stabilen Phasen ihre positiven, negativen, Ersetzungs-,
+Nur-Lese-Beobachter- und Sealed-Gate-Tests zu.

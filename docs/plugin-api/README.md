@@ -18,11 +18,6 @@ That signature, declared in `PluginCore.h`, is the entire linkage contract.
 Everything else — reading IR, rewriting an object graph, replacing the
 optimization pipeline — is reached through tables you ask the host for by ID.
 
-The unreleased prototype API and its `nevercGetPluginInfo` entry point have
-been removed. Prototype binaries are rejected with a migration diagnostic;
-recompile their source against the public headers. See
-[Migrating from the prototype API](migration-from-prototype.md).
-
 ## Guides
 
 | Guide | Covers |
@@ -37,7 +32,6 @@ recompile their source against the public headers. See
 | [Link and LTO API](link-lto.md) | Link graph, symbol resolution, GC/ICF, linker and LTO providers |
 | [DynCode API](dyncode.md) | Flat position-independent images, import lowering, charset encoding |
 | [Custom calling conventions](custom-callconv/README.md) | Data-driven calling-convention plugins |
-| [Migrating from the prototype API](migration-from-prototype.md) | Old-to-new mapping |
 | [Phase coverage evidence](coverage.json) | Test mapping for every stable phase |
 
 ## Execution model

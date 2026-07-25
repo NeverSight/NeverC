@@ -15,10 +15,6 @@ neverc_plugin_entry(const NevercBootstrapAPI *Bootstrap,
 这个声明在 `PluginCore.h` 里，它就是全部的链接契约。其余的一切——读 IR、改写目
 标文件图、替换优化流水线——都要通过你按 ID 向宿主索取的表来完成。
 
-未发布的原型 API 及其 `nevercGetPluginInfo` 入口点已被移除。原型二进制会被带迁移
-诊断地拒绝；请用公开头文件重新编译它们的源码。见
-[从原型 API 迁移](migration-from-prototype.zh-CN.md)。
-
 ## 文档入口
 
 | 指南 | 覆盖内容 |
@@ -33,7 +29,6 @@ neverc_plugin_entry(const NevercBootstrapAPI *Bootstrap,
 | [链接与 LTO API](link-lto.zh-CN.md) | 链接图、符号决议、GC/ICF、链接器与 LTO Provider |
 | [DynCode API](dyncode.zh-CN.md) | 扁平位置无关映像、导入降级、字符集编码 |
 | [自定义调用约定](custom-callconv/README.md) | 数据驱动的调用约定插件 |
-| [从原型 API 迁移](migration-from-prototype.zh-CN.md) | 新旧对照 |
 | [阶段覆盖证据](coverage.json) | 每个稳定阶段的测试映射 |
 
 ## 执行模型

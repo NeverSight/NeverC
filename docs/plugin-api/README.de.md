@@ -2,91 +2,172 @@
 
 # NeverC-Plugin-ABI
 
-Das erste öffentliche Plugin-ABI von NeverC ist eine reine C-Schnittstelle auf
-Phasenbasis. Ein Plugin ist ein Shared Module, das genau eine Funktion
-exportiert, versionierte Fähigkeitstabellen aushandelt und innerhalb expliziter
-Process-, Session- und Task-Gültigkeitsbereiche läuft. Es bindet keinen
-LLVM-Header ein, linkt den Compiler nicht und tauscht über die Grenze hinweg
-keinen C++-Typ aus.
+Ein NeverC-Plugin ist ein Shared Module, das genau eine Funktion exportiert,
+versionierte Fähigkeitstabellen über eine 128-Bit-Schnittstellen-ID aushandelt
+und sich an einen eingefrorenen Graphen benannter Compiler-Phasen anhängt. Die
+gesamte Schnittstelle ist reines C11. Ein Plugin bindet niemals einen
+LLVM-Header ein, linkt niemals den Compiler und reicht niemals einen C++-Typ
+über die Grenze.
 
-Die unveröffentlichte Prototyp-API und ihr Einstiegspunkt
-`nevercGetPluginInfo` wurden **entfernt**. Prototyp-Binärdateien werden mit
-einer Migrationsdiagnose abgewiesen; kompilieren Sie deren Quellen gegen die
-öffentlichen Header neu. Die vollständige Zuordnung alt → neu finden Sie unter
-[Migration von der Prototyp-API](migration-from-prototype.de.md).
+```c
+NEVERC_EXPORT NevercStatus NEVERC_CALL
+neverc_plugin_entry(const NevercBootstrapAPI *Bootstrap,
+                    NevercPluginDescriptor *OutPlugin);
+```
 
-## Hier beginnen
+Diese in `PluginCore.h` deklarierte Signatur ist der gesamte Linkage-Vertrag.
+Alles andere — IR lesen, einen Objektgraphen umschreiben, die
+Optimierungspipeline ersetzen — erreicht man über Tabellen, die man beim Host
+per ID anfordert.
 
-- [Source- und E/A-API](source.de.md)
-- [Präprozessor-API](prep.de.md)
-- [AST- und Semantik-API](ast-sema.de.md)
-- [IR-API](ir.de.md)
-- [MIR-API](mir.de.md)
-- [Target-, MC-, Assembler- und Objekt-APIs](target-mc-object.de.md)
-- [DynCode-API](dyncode.de.md)
-- [Benutzerdefinierte Aufrufkonventionen](custom-callconv/README.de.md)
-- [Migration von der Prototyp-API](migration-from-prototype.de.md)
-- [Nachweis der Phasenabdeckung](coverage.json)
+## Leitfäden
+
+| Leitfaden | Inhalt |
+|---|---|
+| [Driver-API](driver.de.md) | Kommandozeile, Toolchain-Auswahl, Aktionsgraph, Job-Graph |
+| [Source- und E/A-API](source.de.md) | VFS-Provider, Quellpositionen, Puffer, Ausgabesenken, Abhängigkeiten |
+| [Präprozessor-API](prep.de.md) | Token, Makros, Pragmas, Includes, Feature-Abfragen, 39 Ereignisarten |
+| [AST- und Semantik-API](ast-sema.de.md) | Parser-Erweiterung, AST-Mutation, Namensauflösung, Typen, Konstanten |
+| [IR-API](ir.de.md) | LLVM-IR lesen, transaktionales Bauen, Analysen, Passes, Provider |
+| [MIR-API](mir.de.md) | Maschinenfunktionen, Register, Stackframes, MIR-Passes und -Analysen |
+| [Target, MC, Assembly, Objekt](target-mc-object.de.md) | Target-Registrierung, Aufrufkonventionen, MC-Kodierung, Objektgraphen |
+| [Link- und LTO-API](link-lto.de.md) | Link-Graph, Symbolauflösung, GC/ICF, Linker- und LTO-Provider |
+| [DynCode-API](dyncode.de.md) | Flache positionsunabhängige Images, Import-Lowering, Zeichensatzkodierung |
+| [Eigene Aufrufkonventionen](custom-callconv/README.md) | Datengetriebene Aufrufkonventions-Plugins |
+| [Nachweis der Phasenabdeckung](coverage.json) | Testzuordnung für jede stabile Phase |
 
 ## Ausführungsmodell
 
-Der Host steuert ein Plugin über drei verschachtelte Gültigkeitsbereiche. Jeder
+Der Host steuert ein Plugin über drei verschachtelte Geltungsbereiche. Jeder
 Bereich übergibt dem Plugin einen opaken Zustandszeiger, den das Plugin selbst
-alloziert und besitzt. Ein korrekt geschriebenes Plugin braucht daher keinen
+alloziert und besitzt — ein korrekt geschriebenes Plugin braucht daher keinen
 globalen veränderlichen Zustand.
 
-| Bereich | Rückrufe | Bedeutung |
+| Bereich | Callbacks | Bedeutung |
 |---|---|---|
-| Process | `ProcessBegin`, `Register`, `Destroy` | Ein Compilerprozess. Hier werden Schnittstellen abgefragt und Fähigkeiten registriert. |
-| Session | `SessionBegin`, `SessionEnd` | Ein Treiberaufruf. |
-| Task | `TaskBegin`, `TaskEnd` | Eine Arbeitseinheit, gekennzeichnet durch `NevercTaskKind`. |
+| Process | `ProcessBegin`, `Register`, `Destroy` | Ein Compilerprozess. Hier Schnittstellen abfragen und Fähigkeiten registrieren. |
+| Session | `SessionBegin`, `SessionEnd` | Ein Driver-Aufruf. |
+| Task | `TaskBegin`, `TaskEnd` | Eine Arbeitseinheit, identifiziert durch `NevercTaskKind`. |
 
-Die Task-Arten sind `INVOCATION`, `TRANSLATION_UNIT`, `LTO`, `LINK`, `CODEGEN`,
-`OBJECT` und `DYNCODE`.
+```c
+typedef struct NevercPluginDescriptor {
+  NevercABITableHeader Header;
+  NevercStringView PluginID;
+  NevercStringView DisplayName;
+  NevercSemanticVersion Version;
+  NevercConcurrencyModel Concurrency;
+  NevercReentrancyModel Reentrancy;
+  NevercStructArrayView RequiredInterfaces;   /* NevercInterfaceRequirement[] */
+  NevercStructArrayView OptionalInterfaces;   /* NevercInterfaceRequirement[] */
+  NevercStructArrayView Dependencies;         /* NevercPluginDependency[]     */
+  NevercProcessBeginFn ProcessBegin;
+  NevercRegisterPluginFn Register;
+  NevercSessionBeginFn SessionBegin;
+  NevercSessionEndFn SessionEnd;
+  NevercTaskBeginFn TaskBegin;
+  NevercTaskEndFn TaskEnd;
+  NevercPluginDestroyFn Destroy;
+} NevercPluginDescriptor;
+```
 
-Der Host ruft zuerst `ProcessBegin` auf, danach genau einmal `Register`. Die
-Registrierung ist die einzige Stelle, an der Optionen, Beobachter, Interceptoren
-und Provider hinzugefügt werden dürfen; danach ist der Phasengraph eingefroren.
+Praktisch zwingend sind nur `PluginID` und `Register`; jeder Callback-Slot darf
+`NULL` bleiben. Die Task-Arten sind `NEVERC_TASK_INVOCATION`,
+`TRANSLATION_UNIT`, `LTO`, `LINK`, `CODEGEN`, `OBJECT` und `DYNCODE`.
+
+Der Host ruft zuerst `ProcessBegin` auf, dann genau einmal `Register`. Die
+Registrierung ist die einzige Stelle, an der Optionen, Beobachter,
+Interceptors und Provider hinzugefügt werden dürfen; danach ist der
+Phasengraph eingefroren.
+
+Zustand wird innerhalb eines Callbacks geholt, statt vorher festgehalten:
+
+```c
+Core->GetSessionState(Core->Context, Frame->Session, PluginID, &SessionState);
+Core->GetTaskState(Core->Context, Frame->Task, PluginID, &TaskState);
+```
 
 ## Phasen
 
-Eine Phase ist ein benannter, versionierter Übergang von einem Eingabe- zu einem
-Ausgabeartefakt. NeverC liefert **130 eingebaute Phasen** über die Bereiche
-Treiber, Source, Präprozessor, Syntax, Semantik, IR, Codegen, MIR, MC,
-Assembler, Objekt, Linken und DynCode, dazu 8 Erweiterungs-ID-Familien, die für
-plugindefinierte Phasen reserviert sind.
+Eine Phase ist ein benannter, versionierter Übergang von einem
+Eingabeartefakt zu einem Ausgabeartefakt. NeverC liefert **130 eingebaute
+Phasen** aus, dazu 8 Erweiterungs-ID-Familien, die für plugin-definierte
+Phasen reserviert sind:
 
-Jede Phase kündigt eine Richtlinie an, und ein Plugin darf sich nur so
-anhängen, wie diese Richtlinie es erlaubt:
+| Domäne | Phasen | Domäne | Phasen |
+|---|--:|---|--:|
+| `driver` | 6 | `mir` | 10 |
+| `source` | 3 | `codegen` | 4 |
+| `prep` | 6 | `mc` | 13 |
+| `syntax` | 7 | `assembly` | 4 |
+| `sema` | 7 | `object` | 8 |
+| `ir` | 8 | `link` | 20 |
+| | | `dyncode` | 34 |
 
-| Richtlinien-Flag | Was ein Plugin tun darf |
-|---|---|
-| `NEVERC_PHASE_OBSERVABLE` | Einen Beobachter für rein lesende Benachrichtigung registrieren. |
-| `NEVERC_PHASE_INTERCEPTABLE` | Die Phase umschließen und entscheiden, ob der Rest der Kette aufgerufen wird. |
-| `NEVERC_PHASE_REPLACEABLE` | Einen Provider registrieren, der die Ausgabe selbst liefert. |
-| `NEVERC_PHASE_SKIPPABLE_WITH_PROOF` | Den Übergang überspringen und dabei ein Proof-Handle liefern. |
-| `NEVERC_PHASE_SEALED_HOST_GATE` | Nichts. Verifizierer und Commits gehören dem Host und lassen sich weder ersetzen noch abfangen noch überspringen. |
+Alle 130 haben in ABI-Major 1 die Stabilitätsstufe `stable`. Jede Phase gibt
+eine Policy bekannt, und ein Plugin darf sich nur auf die von dieser Policy
+erlaubten Arten anhängen:
 
-Beobachter werden an den von der Phase deklarierten Punkten zugestellt:
+| Policy-Flag | Phasen | Was ein Plugin darf |
+|---|--:|---|
+| `NEVERC_PHASE_OBSERVABLE` | 130 | Einen Beobachter für rein lesende Benachrichtigung registrieren. |
+| `NEVERC_PHASE_INTERCEPTABLE` | 105 | Die Phase umhüllen und entscheiden, ob der Rest der Kette aufgerufen wird. |
+| `NEVERC_PHASE_REPLACEABLE` | 86 | Einen Provider registrieren, der die Ausgabe selbst liefert. |
+| `NEVERC_PHASE_SKIPPABLE_WITH_PROOF` | 13 | Den Übergang überspringen und dabei ein Beweis-Handle liefern. |
+| `NEVERC_PHASE_SEALED_HOST_GATE` | 14 | Nichts. Verifizierer und Commits gehören dem Host. |
+
+Die 14 versiegelten Gates sind `ir.final_verify`, `mir.final_verify`,
+`codegen.product_verify`, `assembly.final_verify`, `assembly.commit`,
+`object.final_verify`, `object.commit`, `link.image_verify`,
+`link.side_outputs_verify`, `link.commit`, `dyncode.ir.final_verify`,
+`dyncode.mir.final_verify`, `dyncode.verify` und `dyncode.commit`. Sie lassen
+sich beobachten, aber niemals abfangen, ersetzen oder überspringen.
+
+Beobachter werden an den Punkten benachrichtigt, die eine Phase deklariert:
 `NEVERC_OBSERVER_BEFORE`, `NEVERC_OBSERVER_AFTER` und
-`NEVERC_OBSERVER_AFTER_COMMIT`.
+`NEVERC_OBSERVER_AFTER_COMMIT`. Ein Interceptor erhält eine
+`NevercPhaseContinuation` und muss `InvokeNext` **höchstens einmal** auf dem
+Callback-Thread aufrufen und dann in `NevercPhaseResult.Action`
+`NEVERC_PHASE_CONTINUE`, `NEVERC_PHASE_REPLACE` oder `NEVERC_PHASE_SKIP`
+melden.
 
-Ein Interceptor erhält eine `NevercPhaseContinuation`. Er muss `InvokeNext`
-**höchstens einmal** und im Rückruf-Thread aufrufen und danach in
-`NevercPhaseResult.Action` eines von `NEVERC_PHASE_CONTINUE`,
-`NEVERC_PHASE_REPLACE` oder `NEVERC_PHASE_SKIP` melden.
+Jeder Phasen-Callback erhält denselben Frame:
 
-Normative Quelle für Phasen-IDs, Richtlinien, Stabilitätsstufen und
-Verifizierer-Gates ist
-`neverc/include/neverc/Plugin/Schema/PhaseSchema.json`. Die generierte Datei
-`PluginPhaseSchema.inc` stellt sie als Übersetzungszeitkonstanten wie
-`NEVERC_PHASE_IR_PASS_PRE_OPT_HIGH` / `_LOW` bereit.
+```c
+typedef struct NevercPhaseFrame {
+  NevercABITableHeader Header;
+  NevercSessionHandle Session;
+  NevercTaskHandle Task;
+  NevercInterfaceID Phase;
+  NevercPhaseRoute Route;        /* triple, CPU, features, object format */
+  NevercArtifactHandle Input;
+  NevercArtifactHandle CurrentOutput;
+  NevercHandle Cancellation;
+} NevercPhaseFrame;
+```
+
+`Schema/PhaseSchema.json` ist die normative Quelle für Phasen-IDs, Policies,
+Stabilitätsstufen und Verifizierer-Gates. Das generierte
+`Schema/PluginPhaseSchema.inc` legt jede davon als Compile-Zeit-Konstante
+offen — für die Phase `neverc.ir.pass.pipeline_start`:
+
+```c
+NEVERC_PHASE_IR_PASS_PIPELINE_START_NAME       /* "neverc.ir.pass.pipeline_start" */
+NEVERC_PHASE_IR_PASS_PIPELINE_START_HIGH       /* UINT64_C(0x4e43504849520001)     */
+NEVERC_PHASE_IR_PASS_PIPELINE_START_LOW        /* UINT64_C(0x0000000000000004)     */
+NEVERC_PHASE_IR_PASS_PIPELINE_START_POLICY     /* OBSERVABLE | INTERCEPTABLE       */
+NEVERC_PHASE_IR_PASS_PIPELINE_START_STABILITY
+NEVERC_PHASE_IR_PASS_PIPELINE_START_INPUT_HIGH /* and _INPUT_LOW, _OUTPUT_*        */
+```
+
+Mit `NEVERC_BUILTIN_PHASE_COUNT` und den domänenweisen
+`NEVERC_BUILTIN_<DOMAIN>_PHASE_COUNT`-Konstanten kann ein Plugin den Graphen
+zusichern, gegen den es übersetzt wurde.
 
 ## Ein vollständiges Minimal-Plugin
 
-Dies ist `pluginsdk/templates/minimal/Plugin.c`. Es lädt, handelt das ABI aus,
-registriert nichts und entlädt sauber — kopieren Sie das Verzeichnis und bauen
-Sie darauf auf.
+Dies ist `pluginsdk/templates/minimal/Plugin.c` wortwörtlich. Es lädt,
+handelt das ABI aus, registriert nichts und entlädt sich sauber — kopieren Sie
+das Verzeichnis und bauen Sie von hier aus weiter.
 
 ```c
 #include "neverc/Plugin/NevercPluginAPI.h"
@@ -125,7 +206,7 @@ register_plugin(const NevercCoreAPI *Core, const NevercRegistrarAPI *Registrar,
   (void)ProcessState;
   if (Registrar == NULL)
     return status_code(NEVERC_STATUS_INVALID_ARGUMENT);
-  /* Hier Optionen, Beobachter, Interceptoren oder Provider registrieren. */
+  /* Register options, observers, interceptors, or providers here. */
   return neverc_status_ok();
 }
 
@@ -155,15 +236,17 @@ neverc_plugin_entry(const NevercBootstrapAPI *Bootstrap,
 }
 ```
 
-`OutPlugin` ist ein Puffer im Besitz des Aufrufers. Beim Eintritt gibt
-`Header.StructSize` die beschreibbare Kapazität an; das Plugin schreibt höchstens
-so viele Bytes und meldet die tatsächlich erzeugte Größe.
+`OutPlugin` ist ein Puffer, der dem Aufrufer gehört. Beim Eintritt gibt sein
+`Header.StructSize` die beschreibbare Kapazität an; das Plugin schreibt
+höchstens so viele Bytes und meldet die tatsächlich erzeugte Größe. Erst den
+`Header` des Deskriptors selbst zu schreiben und dann die Kopie zu kürzen,
+erfüllt beide Hälften dieser Regel.
 
 ## Aushandeln von Schnittstellen
 
-Fähigkeitstabellen werden über eine 128-Bit-Schnittstellen-ID geholt, nicht über
-Symbole. Fordern Sie die Hauptversion an, gegen die Sie übersetzt haben, sowie
-die kleinste Nebenversion, mit der Sie arbeiten können:
+Fähigkeitstabellen werden über eine 128-Bit-Schnittstellen-ID geholt, nicht
+über Symbole. Fordern Sie die Major-Version an, gegen die Sie übersetzt haben,
+und die niedrigste Minor-Version, mit der Sie arbeiten können:
 
 ```c
 const void *Table = NULL;
@@ -182,42 +265,82 @@ if (!Table || TableSize < offsetof(NevercIRPassAPI, RegisterPass) +
   return fail(NEVERC_STATUS_ABI_MISMATCH);
 ```
 
-`TableSize` gegen den Offset der zuletzt aufgerufenen Funktion zu prüfen ist die
-Regel, die dieses ABI erweiterbar macht: Ein neuerer Host hängt Felder an, und
-ein älteres Plugin funktioniert weiter, weil es nie über das von ihm geprüfte
-Präfix hinaus liest. Das Makro
-`NEVERC_ABI_FIELD_AVAILABLE(header, type, field)` wendet dieselbe Prüfung auf
-eine empfangene Struktur an.
+`TableSize` gegen den Offset der letzten Funktion zu prüfen, die Sie aufrufen,
+ist die Regel, die dieses ABI erweiterbar macht: Ein neuerer Host hängt Felder
+an, und ein älteres Plugin funktioniert weiter, weil es nie über das von ihm
+geprüfte Präfix hinaus liest. Das Makro
+`NEVERC_ABI_FIELD_AVAILABLE(header, type, field)` wendet denselben Test auf
+eine empfangene Struktur an. Dieselbe `QueryInterface`-Signatur gibt es auch
+auf `NevercCoreAPI`, sodass Sie spät statt beim Eintritt aushandeln können.
 
-Die öffentlichen Schnittstellen und ihre Header:
+Die öffentlichen Schnittstellen, ihre Tabellen und ihre ID-Makros:
 
-| Schnittstelle | Tabelle | Header |
+| Schnittstellen-Makropaar | Tabelle | Header |
 |---|---|---|
-| `NEVERC_INTERFACE_CORE` | `NevercCoreAPI` | `PluginCore.h` |
-| `NEVERC_INTERFACE_DRIVER` | `NevercDriverAPI` | `PluginDriver.h` |
-| `NEVERC_INTERFACE_IO`, `..._SOURCE_LOCATION` | `NevercIOAPI`, `NevercSourceLocationAPI` | `PluginSource.h` |
-| `NEVERC_INTERFACE_PREP` | `NevercPrepAPI` | `PluginPrep.h` |
-| `NEVERC_INTERFACE_AST`, `..._PARSER` | `NevercASTAPI`, `NevercParserAPI` | `PluginAST.h` |
-| `NEVERC_INTERFACE_SEMA` | `NevercSemaAPI` | `PluginSema.h` |
-| `NEVERC_INTERFACE_IR_CORE`, `..._BUILDER`, `..._ANALYSIS`, `..._PASS`, `..._GEN`, `..._OPTIMIZATION` | IR-Tabellen | `PluginIR.h` |
-| `NEVERC_INTERFACE_TARGET`, `..._TARGET_ABI`, `..._CALLING_CONVENTION` | Target-Tabellen | `PluginTarget.h` |
-| `NEVERC_INTERFACE_MIR`, `..._MIR_ANALYSIS`, `..._MIR_PASS`, `..._MIR_PROVIDER` | MIR-Tabellen | `PluginMIR.h` |
-| `NEVERC_INTERFACE_MC`, `..._MC_EMISSION`, `..._MC_PROVIDER`, `..._ASSEMBLY_PROVIDER` | MC-Tabellen | `PluginMC.h` |
-| `NEVERC_INTERFACE_OBJECT`, `..._OBJECT_FORMAT`, `..._OBJECT_PHASE` | Object-Tabellen | `PluginObject.h` |
-| `NEVERC_INTERFACE_LINK`, `..._LINK_REGISTRAR`, `..._LINK_PHASE` | Link-Tabellen | `PluginLink.h` |
-| `NEVERC_INTERFACE_LTO`, `..._LTO_REGISTRAR` | LTO-Tabellen | `PluginLTO.h` |
-| `NEVERC_INTERFACE_DYNCODE`, `..._DYNCODE_REGISTRAR`, `..._DYNCODE_PHASE` | DynCode-Tabellen | `PluginDynCode.h` |
+| `NEVERC_INTERFACE_CORE_{HIGH,LOW}` | `NevercCoreAPI` | `PluginCore.h` |
+| `NEVERC_INTERFACE_DRIVER_*` | `NevercDriverAPI` | `PluginDriver.h` |
+| `NEVERC_INTERFACE_IO_*`, `..._SOURCE_LOCATION_*` | `NevercIOAPI`, `NevercSourceLocationAPI` | `PluginSource.h` |
+| `NEVERC_INTERFACE_PREP_*` | `NevercPrepAPI` | `PluginPrep.h` |
+| `NEVERC_INTERFACE_AST_*`, `..._PARSER_*` | `NevercASTAPI`, `NevercParserAPI` | `PluginAST.h` |
+| `NEVERC_INTERFACE_SEMA_*` | `NevercSemaAPI` | `PluginSema.h` |
+| `NEVERC_INTERFACE_IR_CORE_*`, `..._IR_BUILDER_*`, `..._IR_ANALYSIS_*`, `..._IR_PASS_*`, `..._IR_GEN_*`, `..._IR_OPTIMIZATION_*` | sechs IR-Tabellen | `PluginIR.h` |
+| `NEVERC_INTERFACE_TARGET_*`, `..._TARGET_ABI_*`, `..._CALLING_CONVENTION_*` | `NevercTargetAPI`, `NevercTargetABIAPI`, `NevercCallingConventionAPI` | `PluginTarget.h` |
+| `NEVERC_INTERFACE_MIR_*`, `..._MIR_ANALYSIS_*`, `..._MIR_PASS_*`, `..._MIR_PROVIDER_*` | vier MIR-Tabellen | `PluginMIR.h` |
+| `NEVERC_INTERFACE_MC_*`, `..._MC_EMISSION_*`, `..._MC_PROVIDER_*`, `..._ASSEMBLY_PROVIDER_*` | vier MC-Tabellen | `PluginMC.h` |
+| `NEVERC_INTERFACE_OBJECT_*`, `..._OBJECT_FORMAT_*`, `..._OBJECT_PHASE_*` | drei Objekt-Tabellen | `PluginObject.h` |
+| `NEVERC_INTERFACE_LINK_*`, `..._LINK_REGISTRAR_*`, `..._LINK_PHASE_*` | drei Link-Tabellen | `PluginLink.h` |
+| `NEVERC_INTERFACE_LTO_*`, `..._LTO_REGISTRAR_*` | `NevercLTOAPI`, `NevercLTORegistrarAPI` | `PluginLTO.h` |
+| `NEVERC_INTERFACE_DYNCODE_*`, `..._DYNCODE_REGISTRAR_*`, `..._DYNCODE_PHASE_*` | drei dyncode-Tabellen | `PluginDynCode.h` |
 
-Eine Schnittstelle ist entweder STABLE (ein neuerer Host darf nur anhängen) oder
-LOCKSTEP (zielspezifische Schemata, die exakt übereinstimmen müssen).
-Vergleichen Sie den Schema-Digest, bevor Sie LOCKSTEP-Werte verwenden.
+Jeder Header definiert außerdem die passenden `NEVERC_<DOMAIN>_API_MAJOR` und
+`_MINOR`, die Sie an `QueryInterface` übergeben sollten.
+
+Eine Schnittstelle ist entweder `NEVERC_INTERFACE_STABLE` (ein neuerer Host
+darf nur anhängen) oder `NEVERC_INTERFACE_LOCKSTEP` (target-spezifische
+Schemata, die exakt übereinstimmen müssen). Vergleichen Sie den Schema-Digest,
+bevor Sie LOCKSTEP-Werte verwenden.
+
+## Registrierung
+
+`Register` erhält eine `NevercRegistrarAPI` und einen opaken
+`RegistrarContext`:
+
+```c
+typedef struct NevercRegistrarAPI {
+  NevercABITableHeader Header;
+  NevercRegisterInterfaceFn RegisterInterface;
+  NevercRegisterPhaseFn RegisterPhase;
+  NevercRegisterObserverFn RegisterObserver;
+  NevercRegisterInterceptorFn RegisterInterceptor;
+  NevercRegisterProviderFn RegisterProvider;
+  NevercRegisterOptionFn RegisterOption;
+} NevercRegistrarAPI;
+```
+
+Die domänenspezifischen Registrierungsfunktionen —
+`NevercIRPassAPI.RegisterPass`, `NevercTargetAPI.RegisterTarget`,
+`NevercObjectFormatAPI.RegisterFormat` und die übrigen — nehmen denselben
+`RegistrarContext` als zweites Argument; so ordnet der Host eine Registrierung
+Ihrem Plugin zu.
+
+Ein Provider deklariert zusätzlich seinen Determinismus-Vertrag, auf den sich
+der Build-Cache stützt:
+
+```c
+Provider.ProviderID    = SV("com.example.my-lowering");
+Provider.Route         = /* triple / CPU / features / object format */;
+Provider.Deterministic = NEVERC_TRUE;
+Provider.Cacheable     = NEVERC_TRUE;
+Provider.FallbackSafe  = NEVERC_FALSE;  /* built-in cannot silently take over */
+```
 
 ## Bauen
 
-Binden Sie den Sammelheader ein oder nur die Bereiche, die Sie nutzen:
+Binden Sie den Sammel-Header ein oder nur die Domänen, die Sie nutzen:
 
 ```c
-#include "neverc/Plugin/NevercPluginAPI.h"
+#include "neverc/Plugin/NevercPluginAPI.h"   /* everything */
+#include "neverc/Plugin/PluginIR.h"          /* or one domain */
 ```
 
 Ein Shared Module mit NeverC selbst bauen:
@@ -228,7 +351,7 @@ neverc --target=arm64-apple-macosx -shared \
   -o MyPlugin.dylib MyPlugin.c
 ```
 
-Oder mit CMake gegen ein installiertes SDK:
+Oder gegen ein installiertes SDK mit CMake:
 
 ```cmake
 find_package(NevercPluginSDK REQUIRED)
@@ -242,9 +365,9 @@ Oder mit pkg-config:
 cc -shared $(pkg-config --cflags neverc-plugin) -o my_plugin.so my_plugin.c
 ```
 
-Verwenden Sie je nach Host `.so`, `.dylib` oder `.dll`. Das SDK linkt weder LLVM
-noch die NeverC-Laufzeit — `NevercPluginSDK::headers` ist ein reines
-Header-Target.
+Verwenden Sie je nach Host `.so`, `.dylib` oder `.dll`. Das SDK linkt weder
+LLVM noch eine NeverC-Laufzeit — `NevercPluginSDK::headers` ist reines
+Header-Material.
 
 ## Laden und Konfigurieren
 
@@ -254,68 +377,107 @@ neverc -fplugin=./MyPlugin.dylib -c input.c -o input.o
 
 | Option | Form | Zweck |
 |---|---|---|
-| `-fplugin=<path>` | wiederholbar | Ein Plugin-Shared-Module laden. |
+| `-fplugin=<path>` | wiederholbar | Ein Plugin-Shared-Module für die gesamte Toolchain laden. |
 | `-fplugin-arg=<plugin-id>:<key>=<value>` | wiederholbar | Einen namensraumqualifizierten Wert an eine registrierte Plugin-Option übergeben. |
 | `-fplugin-provider=<phase>:<plugin-id>` | wiederholbar | Auswählen, welches Plugin eine ersetzbare Phase bereitstellt. |
+| `-fplugin-pass=<dsopath>` | wiederholbar | Ein Out-of-Tree-Pass-Plugin mit C-ABI laden. |
+| `-fplugin-pass-arg=<key>=<value>` | wiederholbar | Ein Argument an C-ABI-Pass-Plugins übergeben. |
 
-Der Qualifizierer `<plugin-id>:` darf nur entfallen, wenn genau ein Plugin aktiv
-ist. Optionen, die ein Plugin mit `RegisterOption` registriert, werden auch
-direkt unter ihrer deklarierten Schreibweise akzeptiert — als Flag, verbunden,
-getrennt oder mit mehreren Argumenten. Plugin-Argumente oder Provider-Auswahlen
-ohne `-fplugin=` sind ein harter Fehler und keine stille Wirkungslosigkeit.
+Der Qualifizierer `<plugin-id>:` darf nur entfallen, wenn genau ein Plugin
+aktiv ist. Optionen, die ein Plugin mit `RegisterOption` registriert, werden
+auch direkt in ihrer deklarierten Schreibweise akzeptiert — als Flag, in
+verbundener, getrennter oder mehrargumentiger Form. Plugin-Argumente und
+Provider-Auswahlen ohne passendes `-fplugin=` sind ein harter Fehler und
+werden nicht stillschweigend ignoriert.
+
+Eine registrierte Option lässt sich jederzeit über die Core-Tabelle
+zurücklesen:
+
+```c
+uint64_t Count = 0;
+Core->GetPluginOptionValueCount(Core->Context, Session, PluginID,
+                                SV("--driver-trace"), &Count);
+NevercStringView Value;
+Core->GetPluginOptionValue(Core->Context, Session, PluginID,
+                           SV("--driver-trace"), 0, &Value);
+```
 
 ## ABI-Regeln
 
-- Fähigkeitstabellen über `QueryInterface` abfragen; die passende Hauptversion
+- Fähigkeitstabellen über `QueryInterface` abfragen; die passende Major
   verlangen und `StructSize` prüfen, bevor ein Feld angefasst wird.
-- `Header` und reservierten Speicher jeder öffentlichen Struktur initialisieren.
-  Struktur nullen, dann `StructSize`, `Major`, `Minor` und `Flags` setzen.
-- Handles und geliehene Sichten als bereichsgebundene, opake Werte behandeln.
-  Ein Task-Handle nie über seinen Rückruf hinaus aufbewahren, nie in einer
-  anderen Session oder Task verwenden und nie einen Handle-Wert selbst
-  konstruieren.
-- Aus jedem Rückruf ein `NevercStatus` zurückgeben. Weder eine C++-Ausnahme noch
-  einen hosteigenen Zeiger über die C-Grenze lassen.
-- Das engste wahrheitsgemäße `NevercConcurrencyModel` (`SESSION_SERIAL`,
+- Den `Header` und den reservierten Speicher jeder öffentlichen Struktur
+  initialisieren. Die Struktur nullen, dann `StructSize`, `Major`, `Minor` und
+  `Flags` setzen.
+- Handles und geliehene Views als bereichsgebundene, opake Werte behandeln. Ein
+  Task-gebundenes Handle nie über seinen Callback hinaus aufbewahren, nie in
+  einer anderen Session oder Task verwenden und nie einen Handle-Wert
+  erfinden.
+- Aus jedem Callback ein `NevercStatus` zurückgeben. Weder eine C++-Ausnahme
+  noch einen host-eigenen Zeiger über die C-Grenze lassen.
+- Das engste zutreffende `NevercConcurrencyModel` (`SESSION_SERIAL`,
   `THREAD_SAFE`, `PROCESS_SERIAL`) und `NevercReentrancyModel` (`NONE`,
   `ALLOWED`) deklarieren.
 - Änderungen an IR, MIR, AST, Graphen und Artefakten über die transaktionalen
-  Host-APIs vornehmen: Mutation beginnen, Änderungen vormerken, dann committen
-  oder abbrechen. Der Commit verifiziert und veröffentlicht atomar; ein
-  fehlgeschlagener Commit lässt den vorherigen Zustand unangetastet.
-- Veränderlichen Zustand in den vom Host bereitgestellten Process-/Session-/
-  Task-Zuständen halten. Globalen veränderlichen Zustand prüft
-  `utils/plugin-api/check-global-state.py`.
+  Host-APIs vornehmen: eine Mutation beginnen, Änderungen vormerken, dann
+  committen oder abbrechen. Der Commit verifiziert und veröffentlicht atomar;
+  ein fehlgeschlagener Commit lässt den vorherigen Zustand unangetastet.
+- Über `NevercCoreAPI.Allocate` / `Reallocate` / `Deallocate` allozieren, wenn
+  der Host den Speicher verbuchen soll.
+- Veränderlichen Zustand im host-bereitgestellten Process-/Session-/Task-
+  Zustand halten. Globaler veränderlicher Zustand wird von
+  `utils/plugin-api/check-global-state.py` geprüft.
 
-Neue Funktionen werden an unabhängig versionierte Fähigkeitstabellen angehängt.
-Das stabile Präfix einer Tabelle ändert sich innerhalb der ersten ABI-Hauptversion
+Alle öffentlichen Strukturen liegen unter `NEVERC_ABI_PACK_BEGIN`
+(8-Byte-Packing) und verwenden ausschließlich Typen fester Breite. Neue
+Funktionen werden an unabhängig versionierte Fähigkeitstabellen angehängt; das
+stabile Präfix einer Tabelle ändert sich innerhalb der ersten ABI-Major
 (`NEVERC_PLUGIN_ABI_MAJOR` = 1) nicht.
 
 ## Status und Diagnosen
 
-`NevercStatus` trägt einen `Code`, `Flags` und ein `Detail`-Wort. Häufige Codes:
+`NevercStatus` trägt einen `Code`, `Flags` und ein `Detail`-Wort. Der
+vollständige Codesatz:
 
 | Code | Bedeutung |
 |---|---|
 | `NEVERC_STATUS_OK` | Erfolg. |
 | `NEVERC_STATUS_INVALID_ARGUMENT` | Ein erforderlicher Zeiger oder Wert fehlte oder war fehlerhaft. |
-| `NEVERC_STATUS_ABI_MISMATCH` | Die ausgehandelte Tabelle ist zu klein oder die Hauptversion weicht ab. |
-| `NEVERC_STATUS_MISSING_INTERFACE` / `CAPABILITY_UNAVAILABLE` | Der Host bietet die angeforderte Fähigkeit nicht an. |
-| `NEVERC_STATUS_STALE_HANDLE` / `WRONG_SESSION` / `WRONG_SCOPE` / `WRONG_TYPE` | Ein Handle wurde außerhalb seiner Gültigkeit verwendet. |
-| `NEVERC_STATUS_POLICY_VIOLATION` | Die Phasenrichtlinie erlaubt die Operation nicht. |
+| `NEVERC_STATUS_ABI_MISMATCH` | Die ausgehandelte Tabelle ist zu klein oder die Major weicht ab. |
+| `NEVERC_STATUS_MISSING_INTERFACE` | Der Host veröffentlicht die angeforderte Schnittstelle nicht. |
+| `NEVERC_STATUS_VERSION_MISMATCH` | Die angeforderte Major/Minor lässt sich nicht erfüllen. |
+| `NEVERC_STATUS_INVALID_DESCRIPTOR` | Ein Deskriptor bestand die Strukturprüfung nicht. |
+| `NEVERC_STATUS_DUPLICATE_ID` | Eine ID war bereits registriert. |
+| `NEVERC_STATUS_DEPENDENCY_MISSING` | Eine deklarierte Abhängigkeit fehlt. |
+| `NEVERC_STATUS_DEPENDENCY_CYCLE` | Die Registrierungsreihenfolge ist nicht erfüllbar. |
+| `NEVERC_STATUS_BUSY` | Eine Ressource wird anderswo gehalten. |
+| `NEVERC_STATUS_CANCELLED` | Kooperativer Abbruch wurde angefordert. |
+| `NEVERC_STATUS_RESOURCE_EXHAUSTED` | Ein Budget oder Limit wurde erreicht. |
+| `NEVERC_STATUS_STALE_HANDLE` | Ein Handle überlebte das benannte Objekt. |
+| `NEVERC_STATUS_WRONG_SESSION` | Ein Handle wurde in einer anderen Session benutzt. |
+| `NEVERC_STATUS_WRONG_SCOPE` | Ein Handle wurde außerhalb seines Bereichs benutzt. |
+| `NEVERC_STATUS_WRONG_TYPE` | Ein Handle benannte eine andere Entitätsart. |
+| `NEVERC_STATUS_INVALID_STATE` | Die Operation ist im aktuellen Zustand unzulässig. |
+| `NEVERC_STATUS_POLICY_VIOLATION` | Die Phasen-Policy verbietet die Operation. |
 | `NEVERC_STATUS_VERIFICATION_FAILED` | Ein versiegelter Host-Verifizierer hat das Produkt abgelehnt. |
-| `NEVERC_STATUS_CANCELLED` / `BUSY` / `RESOURCE_EXHAUSTED` | Kooperativer Abbruch oder Ressourcengrenzen. |
+| `NEVERC_STATUS_CAPABILITY_UNAVAILABLE` | Der Host kann die Fähigkeit hier nicht anbieten. |
+| `NEVERC_STATUS_PLUGIN_FAILURE` | Das Plugin meldete einen generischen Fehler. |
+| `NEVERC_STATUS_PLUGIN_EXCEPTION` | Eine Ausnahme entkam einem Plugin-Callback. |
+| `NEVERC_STATUS_OUTPUT_PARTIAL` | Die Ausgabe wurde nur teilweise geschrieben. |
+| `NEVERC_STATUS_REENTRANCY_DENIED` | Ein reentranter Aufruf wurde abgelehnt. |
+| `NEVERC_STATUS_NOT_FOUND` | Die benannte Entität existiert nicht. |
 
-Die Flag-Bits (`RECOVERABLE`, `OUTPUT_ALREADY_COMMITTED`,
-`OUTPUT_MAY_BE_PARTIAL`, `OUTPUT_RECOVERY_REQUIRED`,
-`DURABILITY_UNCONFIRMED`) beschreiben, was mit der Ausgabe geschehen ist — genau
-das, was ein Build-System braucht, um zu entscheiden, ob ein erneuter Versuch
-sicher ist.
+Die Flag-Bits beschreiben, was mit der Ausgabe geschehen ist — genau das, was
+ein Build-System braucht, um zu entscheiden, ob ein erneuter Versuch sicher
+ist: `NEVERC_STATUS_FLAG_RECOVERABLE`, `_OUTPUT_ALREADY_COMMITTED`,
+`_OUTPUT_MAY_BE_PARTIAL`, `_OUTPUT_RECOVERY_REQUIRED` und
+`_DURABILITY_UNCONFIRMED`.
 
 Melden Sie Probleme mit `NevercCoreAPI.EmitDiagnostic` und einem
-`NevercDiagnosticDescriptor` mit Schweregrad, Code, Plugin-ID, Phasen-ID,
-Nachricht, Anmerkungen, Quellposition, Bereichen und Fix-its. Rufen Sie vor
-aufwendiger Arbeit `CheckCancelled` auf.
+`NevercDiagnosticDescriptor` mit Schweregrad (`NOTE`, `REMARK`, `WARNING`,
+`ERROR`, `FATAL`), Code, Plugin-ID, Phasen-ID, Meldung, Notizen,
+Quellposition, Bereichen und Fix-its. Rufen Sie `CheckCancelled` vor teurer
+Arbeit auf.
 
 ## Beispiele
 
@@ -326,8 +488,8 @@ cmake --build build-neverc --target neverc-pluginsdk-examples
 ```
 
 Jedes Beispiel wird zweimal übersetzt — einmal mit dem konfigurierten
-Host-C-Compiler und einmal mit dem frisch gebauten NeverC — so wird das ABI von
-beiden Seiten belegt. Die Module landen in
+Host-C-Compiler und einmal mit dem frisch gebauten NeverC — sodass das ABI von
+beiden Seiten bewiesen ist. Die Module landen in
 `build-neverc/neverc/pluginsdk/examples/host/`.
 
 | Beispiel | CMake-Target | Zeigt |
@@ -335,16 +497,16 @@ beiden Seiten belegt. Die Module landen in
 | `DriverTracePlugin.c` | `neverc-plugin-example-driver-trace` | Optionsregistrierung, Phasenbeobachtung, Job-Interception |
 | `VirtualHeaderPlugin.c` | `neverc-plugin-example-virtual-header` | Ein VFS-Provider, der einen Header aus dem Speicher liefert |
 | `ASTRewritePlugin.c` | `neverc-plugin-example-ast-rewrite` | Parser-Interception und atomare AST-Mutation |
-| `ExamplePlugin.c` | `neverc-plugin-example-ir-overview` | IR-Pass auf Modulebene, der die Funktionsliste mit einem Wert-Cursor durchläuft |
-| `FunctionPass.c` | `neverc-plugin-example-function-pass` | Ein stabiler IR-Funktionspass |
+| `ExamplePlugin.c` | `neverc-plugin-example-ir-overview` | Ein IR-Pass auf Modulebene, der die Funktionsliste mit einem Wert-Cursor durchläuft |
+| `FunctionPass.c` | `neverc-plugin-example-function-pass` | Ein stabiler IR-Funktions-Pass |
 | `MachinePass.c` | `neverc-plugin-example-machine-pass` | Ein stabiler MIR-Pass am Pre-Emit-Hook |
 | `MCObserverPlugin.c` | `neverc-plugin-example-mc-observer` | Rein lesende MC-Emissionsereignisse |
-| `ObjectRewritePlugin.c` | `neverc-plugin-example-object-rewrite` | Transaktionales Umschreiben des ObjectGraph |
+| `ObjectRewritePlugin.c` | `neverc-plugin-example-object-rewrite` | Transaktionales Umschreiben eines ObjectGraph |
 | `CustomCallConvPlugin.c` | `neverc-plugin-example-custom-callconv` | Datengetriebene Aufrufkonventionen |
-| `DynCodeTracePlugin.c` | `neverc-plugin-example-dyncode-trace` | Beobachtung der DynCode-Pipeline |
-| `DynCodeEncoderPlugin.c` | `neverc-plugin-example-dyncode-encoder` | Interception der DynCode-Zeichensatzkodierung |
+| `DynCodeTracePlugin.c` | `neverc-plugin-example-dyncode-trace` | Beobachtung der dyncode-Pipeline |
+| `DynCodeEncoderPlugin.c` | `neverc-plugin-example-dyncode-encoder` | Abfangen der dyncode-Zeichensatzkodierung |
 | `CrtShimPlugin.c` | `neverc-plugin-example-crt-shim` | Ein Plugin ganz ohne CRT-Abhängigkeit |
-| `BenchPlugin.c` | `neverc-plugin-example-abi-bench` | Mikrobenchmark für ABI-Aufrufdurchsatz |
+| `BenchPlugin.c` | `neverc-plugin-example-abi-bench` | Mikrobenchmark des ABI-Aufrufdurchsatzes |
 
 Eines laden:
 
@@ -357,11 +519,11 @@ neverc -fplugin=build-neverc/neverc/pluginsdk/examples/host/FunctionPass.so \
 
 | Datei | Garantien |
 |---|---|
-| `neverc/include/neverc/Plugin/Schema/PhaseSchema.json` | Phasen-IDs, Richtlinien, Stabilität, Verifizierer-Gates |
-| `pluginsdk/manifest/plugin.json` | ABI-Version, Schnittstellen-IDs/-Versionen/-Stabilität, Schema-Digests, unterstützte Ziele |
+| `neverc/include/neverc/Plugin/Schema/PhaseSchema.json` | Phasen-IDs, Policies, Stabilität, Verifizierer-Gates |
+| `pluginsdk/manifest/plugin.json` | ABI-Version, Schnittstellen-IDs/-Versionen/-Stabilität, Schema-Digests, unterstützte Targets |
 | `pluginsdk/abi/plugin.json` | Gemessene Größe, Ausrichtung und Feld-Offsets jeder öffentlichen Struktur, je Host-ABI-Schlüssel |
 | `docs/plugin-api/coverage.json` | Ordnet jeder stabilen Phase positive, negative, Ersetzungs-, Beobachter- und Sealed-Gate-Tests zu |
 
 Ein SDK lässt sich damit maschinell gegen einen Host validieren, und ein
-Plugin-Build kann sein Struktur-Layout gegen den ABI-Schlüssel behaupten, in den
-es geladen wird.
+Plugin-Build kann sein Struktur-Layout gegen den ABI-Schlüssel zusichern, in
+den es geladen wird.
