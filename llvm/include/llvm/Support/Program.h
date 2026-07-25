@@ -372,7 +372,11 @@ inline int llvm::sys::ExecuteAndWaitMP(
       *ExecutionFailed = false;
     bool Ret = WaitMP({PI}, true, SecondsToWait == 0 ? UINT_MAX : SecondsToWait,
                       ErrMsg, ProcStat);
-    return Ret ? 0 : 1;
+    // WaitMP reports whether the wait itself completed and records the child's
+    // status in PI->ReturnCode. Returning the wait's own success would tell
+    // every caller that the program exited cleanly, whatever it actually did.
+    // -2 is this API's documented "crashed or timed out" code.
+    return Ret ? PI->ReturnCode : -2;
   }
   if (ExecutionFailed)
     *ExecutionFailed = true;

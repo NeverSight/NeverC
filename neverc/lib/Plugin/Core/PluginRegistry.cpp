@@ -14,6 +14,15 @@
 #include <limits>
 #include <system_error>
 #include <utility>
+#ifdef _WIN32
+#include "llvm/Support/ConvertUTF.h"
+#define WIN32_LEAN_AND_MEAN
+#define NOGDI
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 
 using namespace llvm;
 
@@ -22,6 +31,39 @@ namespace {
 
 Error pluginError(const Twine &Message) {
   return createStringError(inconvertibleErrorCode(), Message);
+}
+
+/// Identify the file behind \p Path the way the filesystem itself keys it.
+///
+/// sys::fs::getUniqueID() derives a Windows file's identity from a hash of its
+/// canonical path, so the two names of a hard link report two distinct IDs.
+/// Deduplicating plugins needs the volume/index pair instead, which only
+/// GetFileInformationByHandle reports.
+std::error_code getFileIdentity(StringRef Path, sys::fs::UniqueID &Result) {
+#ifdef _WIN32
+  SmallVector<wchar_t, 256> WidePath;
+  if (!sys::windows::UTF8ToUTF16(Path, WidePath)) {
+    HANDLE File = ::CreateFileW(
+        WidePath.data(), /*dwDesiredAccess=*/0,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        /*lpSecurityAttributes=*/nullptr, OPEN_EXISTING,
+        FILE_FLAG_BACKUP_SEMANTICS, /*hTemplateFile=*/nullptr);
+    if (File != INVALID_HANDLE_VALUE) {
+      auto CloseFile = make_scope_exit([File] { ::CloseHandle(File); });
+      BY_HANDLE_FILE_INFORMATION Info;
+      if (::GetFileInformationByHandle(File, &Info)) {
+        Result = sys::fs::UniqueID(
+            Info.dwVolumeSerialNumber,
+            (static_cast<uint64_t>(Info.nFileIndexHigh) << 32) |
+                static_cast<uint64_t>(Info.nFileIndexLow));
+        return std::error_code();
+      }
+    }
+  }
+  // A path we cannot open for metadata still has a usable path-derived
+  // identity; it just cannot recognize aliases of the same file.
+#endif
+  return sys::fs::getUniqueID(Path, Result);
 }
 
 Expected<StringRef> checkedStringView(NevercStringView View,
@@ -541,7 +583,7 @@ PluginRegistry::load(StringRef Path) {
     return pluginError("cannot resolve plugin path '" + Path + "': " +
                        EC.message());
   sys::fs::UniqueID BeforeLoad;
-  if (std::error_code EC = sys::fs::getUniqueID(CanonicalPath, BeforeLoad))
+  if (std::error_code EC = getFileIdentity(CanonicalPath, BeforeLoad))
     return pluginError("cannot identify plugin '" + CanonicalPath + "': " +
                        EC.message());
 
@@ -559,7 +601,7 @@ PluginRegistry::load(StringRef Path) {
   auto CloseOnError = make_scope_exit(
       [&Library] { sys::DynamicLibrary::closeLibrary(Library); });
   sys::fs::UniqueID AfterLoad;
-  if (std::error_code EC = sys::fs::getUniqueID(CanonicalPath, AfterLoad))
+  if (std::error_code EC = getFileIdentity(CanonicalPath, AfterLoad))
     return pluginError("cannot revalidate plugin identity: " + EC.message());
   if (BeforeLoad != AfterLoad)
     return pluginError("plugin file identity changed while it was loading");

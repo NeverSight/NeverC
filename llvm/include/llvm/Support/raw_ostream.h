@@ -1116,7 +1116,13 @@ inline raw_fd_ostream::raw_fd_ostream(StringRef Filename, std::error_code &EC,
 
 inline raw_fd_ostream::raw_fd_ostream(StringRef Filename, std::error_code &EC,
                                       sys::fs::OpenFlags Flags)
-    : raw_fd_ostream(Filename, EC, static_cast<sys::fs::CreationDisposition>(0),
+    // OF_Append(4) must keep what the file already holds, so it asks for
+    // CD_OpenAlways(3) rather than the CD_CreateAlways(0) the other overloads
+    // use, which truncates. The enumerators are only forward-declared in this
+    // header, hence the literals.
+    : raw_fd_ostream(Filename, EC,
+                     static_cast<sys::fs::CreationDisposition>(
+                         (static_cast<unsigned>(Flags) & 4u) ? 3 : 0),
                      static_cast<sys::fs::FileAccess>(2), Flags) {}
 
 inline raw_fd_ostream::raw_fd_ostream(StringRef Filename, std::error_code &EC,

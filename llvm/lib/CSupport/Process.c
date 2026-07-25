@@ -189,16 +189,26 @@ int csupport_fd_open(const char *filename, size_t filename_len,
   else
     oflags = O_WRONLY;
 
+  /* flags mirrors llvm::sys::fs::OpenFlags: OF_Text=1, OF_CRLF=2, OF_Append=4,
+     OF_Delete=8, OF_ChildInherit=16, OF_UpdateAtime=32. */
+  int append = (flags & 4) != 0;
+
+  /* Callers have always assumed append implies opening an existing file, so
+     honour that over the requested disposition instead of truncating the very
+     content the append was meant to extend. */
+  if (append)
+    create_disp = 3;
+
   switch (create_disp) {
   case 0: oflags |= O_CREAT | O_TRUNC; break;
   case 1: oflags |= O_CREAT | O_EXCL;  break;
   case 2: break;
   case 3: oflags |= O_CREAT;           break;
   }
-  if (flags & 2)
+  if (append)
     oflags |= O_APPEND;
 #ifdef O_CLOEXEC
-  if (!(flags & 8))
+  if (!(flags & 16))
     oflags |= O_CLOEXEC;
 #endif
 
@@ -491,6 +501,16 @@ int csupport_fd_open(const char *filename, size_t filename_len,
   else
     oflags = _O_WRONLY;
 
+  /* flags mirrors llvm::sys::fs::OpenFlags: OF_Text=1, OF_CRLF=2, OF_Append=4,
+     OF_Delete=8, OF_ChildInherit=16, OF_UpdateAtime=32. */
+  int append = (flags & 4) != 0;
+
+  /* Callers have always assumed append implies opening an existing file, so
+     honour that over the requested disposition instead of truncating the very
+     content the append was meant to extend. */
+  if (append)
+    create_disp = 3;
+
   switch (create_disp) {
   case 0: oflags |= _O_CREAT | _O_TRUNC; break;
   case 1: oflags |= _O_CREAT | _O_EXCL;  break;
@@ -499,7 +519,7 @@ int csupport_fd_open(const char *filename, size_t filename_len,
   }
   if (!(flags & 1))
     oflags |= _O_BINARY;
-  if (flags & 2)
+  if (append)
     oflags |= _O_APPEND;
 
   int fd = _open(filename, oflags, _S_IREAD | _S_IWRITE);

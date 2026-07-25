@@ -545,9 +545,13 @@ void Compilation::ExecuteJobs(const JobList &Jobs,
 
         llvm::SmallString<256> ErrMsg;
         bool ExecFailed = false;
+        // Each worker owns exactly one child, so wait on it directly the way
+        // Command::Execute does rather than through the multi-process path.
         int R = llvm::sys::ExecuteAndWait(
             Job->getExecutable(), Argv, std::nullopt, {},
-            /*secondsToWait=*/0, /*memoryLimit=*/0, &ErrMsg, &ExecFailed);
+            /*secondsToWait=*/0, /*memoryLimit=*/0, &ErrMsg, &ExecFailed,
+            /*ProcStat=*/nullptr, /*AffinityMask=*/nullptr, /*PI=*/nullptr,
+            /*SupportMP=*/false);
         Results[idx].ExitCode = R;
         if (R != 0)
           Results[idx].Cmd = Job;

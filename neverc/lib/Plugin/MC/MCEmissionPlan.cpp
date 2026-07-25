@@ -830,9 +830,14 @@ struct MCEmissionPlan::Impl final : MCEmissionRuntimeAccess {
     for (const MCSection &Section : Assembler) {
       SectionLayoutRecord SectionRecord;
       SectionRecord.Name = Section.getName().str();
+      // MCAsmLayout measures a section through its last fragment, so a section
+      // that the streamer registered but never emitted into has nothing to
+      // measure and must not reach those queries.
+      const bool HasFragments = !Section.getFragmentList().empty();
       SectionRecord.AddressSize =
-          Layout.getSectionAddressSize(&Section);
-      SectionRecord.FileSize = Layout.getSectionFileSize(&Section);
+          HasFragments ? Layout.getSectionAddressSize(&Section) : 0;
+      SectionRecord.FileSize =
+          HasFragments ? Layout.getSectionFileSize(&Section) : 0;
       uint64_t FragmentIndex = 0;
       for (const MCFragment &Fragment : Section) {
         FragmentLayoutRecord Record;

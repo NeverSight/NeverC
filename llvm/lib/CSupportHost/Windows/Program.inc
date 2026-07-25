@@ -365,19 +365,21 @@ static bool cleanUpProcess(ProcessInfo &PI) {
   DWORD ExitStatus = 0;
 
   BOOL Result = GetExitCodeProcess(PI.Process, &ExitStatus);
+  DWORD LastError = GetLastError();
   if (Result && ExitStatus == STILL_ACTIVE) {
     // Process is still running
     return true;
   }
 
-  PI.Pid = procid_t();
-  PI.Process = process_t();
-  PI.IsRunning = false;
-
-  DWORD LastError = GetLastError();
+  // Close before dropping the handle: releasing it afterwards only closes the
+  // cleared field and leaks one process handle per waited-on child.
   if (LastError != ERROR_INVALID_HANDLE) {
     CloseHandle(PI.Process);
   }
+
+  PI.Pid = procid_t();
+  PI.Process = process_t();
+  PI.IsRunning = false;
 
   if (!Result) {
     // Failed to get exit code

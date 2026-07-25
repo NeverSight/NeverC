@@ -107,9 +107,20 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install ninja cmake
 
+      # CMake is pinned to the arm64 runner's version: 4.4's
+      # gtest_discover_tests only appends to the generated CTest file, where
+      # 3.31 truncated it first, so a target whose POST_BUILD discovery runs
+      # twice registers its tests twice.
       - name: Setup build deps (Windows x64)
         if: matrix.host == 'windows-x64'
-        run: choco install ninja cmake -y
+        shell: pwsh
+        run: |
+          choco install ninja -y
+
+          $cmakeVer = '3.31.11'
+          Invoke-WebRequest "https://github.com/Kitware/CMake/releases/download/v$cmakeVer/cmake-$cmakeVer-windows-x86_64.zip" -OutFile cmake.zip
+          Expand-Archive cmake.zip C:\tools -Force
+          Add-Content $env:GITHUB_PATH "C:\tools\cmake-$cmakeVer-windows-x86_64\bin"
 
       # windows-11-arm has no chocolatey packages for these; fetch the
       # ARM64-native archives the way the arm64 release workflow does.

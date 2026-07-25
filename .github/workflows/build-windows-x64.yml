@@ -28,7 +28,19 @@ jobs:
         path: neverc
 
     - name: Setup build deps
-      run: choco install ninja cmake 7zip -y
+      shell: pwsh
+      run: |
+        choco install ninja 7zip -y
+
+        # Pin CMake to the version the arm64 runner uses. CMake 4.4's
+        # gtest_discover_tests only appends to the generated CTest file, where
+        # 3.31 truncated it first, so any target whose POST_BUILD discovery runs
+        # twice registers its tests twice and the suite inventory stops being
+        # reproducible across runs.
+        $cmakeVer = '3.31.11'
+        Invoke-WebRequest "https://github.com/Kitware/CMake/releases/download/v$cmakeVer/cmake-$cmakeVer-windows-x86_64.zip" -OutFile cmake.zip
+        Expand-Archive cmake.zip C:\tools -Force
+        Add-Content $env:GITHUB_PATH "C:\tools\cmake-$cmakeVer-windows-x86_64\bin"
 
     - name: Setup MSVC
       uses: ilammy/msvc-dev-cmd@v1
