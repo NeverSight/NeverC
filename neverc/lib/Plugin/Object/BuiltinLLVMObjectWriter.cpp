@@ -132,11 +132,28 @@ bool copyBytes(NevercByteView View, std::vector<uint8_t> &Output) {
 
 bool supportedExtension(NevercObjectFormatID FormatID,
                         NevercObjectFormatID Owner, uint32_t Version,
-                        ArrayRef<uint8_t> Bytes, StringRef Tag) {
+                        ArrayRef<uint8_t> Bytes, StringRef Tag,
+                        uint32_t MaxVersion = 1) {
   if (Bytes.empty())
     return Owner.High == 0 && Owner.Low == 0 && Version == 0;
-  return sameID(Owner, FormatID) && Version == 1 && Bytes.size() >= 8 &&
+  return sameID(Owner, FormatID) && Version >= 1 && Version <= MaxVersion &&
+         Bytes.size() >= 8 &&
          StringRef(reinterpret_cast<const char *>(Bytes.data()), 4) == Tag;
+}
+
+// Layout of the "NCSE" section extension: tag[4], version[4], then u64 index,
+// address, type, flags, offset, and -- from version 2 -- entry size.
+constexpr size_t NCSEEntrySizeOffset = 8 + 5 * 8;
+
+uint64_t nativeEntrySize(const SectionRecord &Section) {
+  if (Section.ExtensionVersion < 2 ||
+      Section.Extension.size() < NCSEEntrySizeOffset + 8)
+    return 0;
+  uint64_t Value = 0;
+  for (unsigned I = 0; I != 8; ++I)
+    Value |= static_cast<uint64_t>(Section.Extension[NCSEEntrySizeOffset + I])
+             << (I * 8);
+  return Value;
 }
 
 NevercStatus collectComdats(const NevercObjectWriteRequest &Request,
@@ -239,7 +256,7 @@ NevercStatus collectSections(const NevercObjectWriteRequest &Request,
     Record.ExtensionVersion = Info.ExtensionVersion;
     if (!supportedExtension(Request.FormatID, Record.ExtensionOwner,
                             Record.ExtensionVersion, Record.Extension,
-                            "NCSE"))
+                            "NCSE", NevercObjectNCSEVersion))
       return writerStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE, 241);
     Sections.push_back(std::move(Record));
 
@@ -418,6 +435,20 @@ StringRef coffComdatSelection(NevercObjectComdatSelection Selection) {
   }
 }
 
+// SHF_MERGE is only meaningful with an entry size, and the assembler rejects
+// "M" without one. A section that lost its entry size on the way in is written
+// back as a plain section rather than as an ill-formed mergeable one.
+bool elfMergeFlags(const SectionRecord &Section, std::string &Flags,
+                   uint64_t &EntrySize) {
+  EntrySize = nativeEntrySize(Section);
+  if ((Section.Flags & NEVERC_OBJECT_SECTION_MERGEABLE) == 0 || EntrySize == 0)
+    return false;
+  Flags.push_back('M');
+  if ((Section.Flags & NEVERC_OBJECT_SECTION_STRINGS) != 0)
+    Flags.push_back('S');
+  return true;
+}
+
 NevercStatus emitSectionDirective(raw_ostream &OS,
                                   const SectionRecord &Section,
                                   const Triple &Target,
@@ -438,12 +469,16 @@ NevercStatus emitSectionDirective(raw_ostream &OS,
         Flags.push_back('w');
       if ((Section.Flags & NEVERC_OBJECT_SECTION_EXECUTABLE) != 0)
         Flags.push_back('x');
+      uint64_t EntrySize = 0;
+      const bool Mergeable = elfMergeFlags(Section, Flags, EntrySize);
       if ((Section.Flags & NEVERC_OBJECT_SECTION_TLS) != 0)
         Flags.push_back('T');
       Flags.push_back('G');
       OS << "\t.section\t" << Section.Name << ",\"" << Flags << "\",@"
-         << (ZeroFill ? "nobits" : "progbits") << ',' << Comdat->Name
-         << ",comdat\n";
+         << (ZeroFill ? "nobits" : "progbits");
+      if (Mergeable)
+        OS << ',' << EntrySize;
+      OS << ',' << Comdat->Name << ",comdat\n";
       return neverc_status_ok();
     }
     StringRef Selection = coffComdatSelection(Comdat->Selection);
@@ -512,10 +547,15 @@ NevercStatus emitSectionDirective(raw_ostream &OS,
       Flags.push_back('w');
     if ((Section.Flags & NEVERC_OBJECT_SECTION_EXECUTABLE) != 0)
       Flags.push_back('x');
+    uint64_t EntrySize = 0;
+    const bool Mergeable = elfMergeFlags(Section, Flags, EntrySize);
     const bool ZeroFill =
         Section.Kind == NEVERC_OBJECT_SECTION_KIND_ZERO_FILL;
     OS << "\t.section\t" << Section.Name << ",\"" << Flags << "\",@"
-       << (ZeroFill ? "nobits" : "progbits") << '\n';
+       << (ZeroFill ? "nobits" : "progbits");
+    if (Mergeable)
+      OS << ',' << EntrySize;
+    OS << '\n';
     return neverc_status_ok();
   }
   std::string Flags;

@@ -8,14 +8,15 @@
 #include <stdlib.h>
 #if defined(_MSC_VER) && defined(_M_X64)
 #include <intrin.h>
-#if defined(__clang__) && !__has_builtin(_udiv128)
-static inline uint64_t _neverc_udiv128(uint64_t hi, uint64_t lo,
-                                       uint64_t divisor, uint64_t *rem) {
-  __uint128_t n = ((__uint128_t)hi << 64) | lo;
-  *rem = (uint64_t)(n % divisor);
-  return (uint64_t)(n / divisor);
-}
-#define _udiv128 _neverc_udiv128
+/* clang targeting MSVC defines _MSC_VER but has no _udiv128. Standing in for it
+   with __uint128_t division emits a call to compiler-rt's __udivti3, which is
+   not linked into these -nostdlib builds; the portable 64-bit path below needs
+   no runtime support, so fall through to it instead. */
+#define NEVERC_HAS_UDIV128 1
+#if defined(__clang__)
+#if !__has_builtin(_udiv128)
+#undef NEVERC_HAS_UDIV128
+#endif
 #endif
 #endif
 
@@ -726,7 +727,7 @@ void csupport_apint_to_string(const uint64_t *data, unsigned bit_width,
     while (!csupport_apint_tc_is_zero(tmp, num_words)) {
       uint64_t r = 0;
       for (int i = (int)num_words - 1; i >= 0; i--) {
-#if defined(_MSC_VER) && defined(_M_X64)
+#if defined(NEVERC_HAS_UDIV128)
         uint64_t remainder;
         tmp[i] = _udiv128(r, tmp[i], (uint64_t)radix, &remainder);
         r = remainder;

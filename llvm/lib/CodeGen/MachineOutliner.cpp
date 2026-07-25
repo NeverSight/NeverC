@@ -760,6 +760,20 @@ MachineFunction *MachineOutliner::createOutlinedFunction(
   MF.getProperties().set(MachineFunctionProperties::Property::TracksLiveness);
   MF.getRegInfo().freezeReservedRegs(MF);
 
+  // The cloned instructions carry renamable flags computed against the function
+  // they came from, but this one reserves its own set: it is a fresh IR
+  // function, so a frame pointer the original was free to allocate is reserved
+  // here, and a renamable flag on a reserved register is invalid MIR. Renamable
+  // only tells register allocation it may substitute another register, and that
+  // has already run by now, so clearing it costs nothing.
+  for (MachineBasicBlock &Block : MF)
+    for (MachineInstr &Instruction : Block)
+      for (MachineOperand &Operand : Instruction.operands())
+        if (Operand.isReg() && Operand.getReg().isPhysical() &&
+            Operand.isRenamable() &&
+            MF.getRegInfo().isReserved(Operand.getReg()))
+          Operand.setIsRenamable(false);
+
   // Compute live-in set for outlined fn
   const MachineRegisterInfo &MRI = MF.getRegInfo();
   const TargetRegisterInfo &TRI = *MRI.getTargetRegisterInfo();

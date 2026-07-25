@@ -105,20 +105,45 @@ bool isTLSSection(const ObjectFile &Object, SectionRef Section,
   return isTLSName(Name);
 }
 
+// ELFSectionRef exposes sh_flags and sh_offset but not sh_entsize, and a
+// mergeable section cannot be re-emitted without its entry size, so reach the
+// section header through the concrete ELF type.
+template <typename ELFT>
+bool elfEntrySizeFor(const ObjectFile &Object, SectionRef Section,
+                     uint64_t &EntrySize) {
+  const auto *Typed = dyn_cast<ELFObjectFile<ELFT>>(&Object);
+  if (Typed == nullptr)
+    return false;
+  EntrySize = Typed->getSection(Section.getRawDataRefImpl())->sh_entsize;
+  return true;
+}
+
+uint64_t elfEntrySize(const ObjectFile &Object, SectionRef Section) {
+  uint64_t EntrySize = 0;
+  if (elfEntrySizeFor<ELF64LE>(Object, Section, EntrySize) ||
+      elfEntrySizeFor<ELF32LE>(Object, Section, EntrySize) ||
+      elfEntrySizeFor<ELF64BE>(Object, Section, EntrySize) ||
+      elfEntrySizeFor<ELF32BE>(Object, Section, EntrySize))
+    return EntrySize;
+  return 0;
+}
+
 void nativeSectionExtension(const ObjectFile &Object, SectionRef Section,
                             SmallVectorImpl<uint8_t> &Bytes) {
   appendTag(Bytes, "NCSE");
-  appendU32(Bytes, 1);
+  appendU32(Bytes, NevercObjectNCSEVersion);
   appendU64(Bytes, Section.getIndex());
   appendU64(Bytes, Section.getAddress());
   uint64_t Type = 0;
   uint64_t Flags = 0;
   uint64_t Offset = 0;
+  uint64_t EntrySize = 0;
   if (isa<ELFObjectFileBase>(Object)) {
     ELFSectionRef ELFSection(Section);
     Type = ELFSection.getType();
     Flags = ELFSection.getFlags();
     Offset = ELFSection.getOffset();
+    EntrySize = elfEntrySize(Object, Section);
   } else if (const auto *COFF = dyn_cast<COFFObjectFile>(&Object)) {
     if (const coff_section *Native = COFF->getCOFFSection(Section)) {
       Flags = Native->Characteristics;
@@ -143,6 +168,7 @@ void nativeSectionExtension(const ObjectFile &Object, SectionRef Section,
   appendU64(Bytes, Type);
   appendU64(Bytes, Flags);
   appendU64(Bytes, Offset);
+  appendU64(Bytes, EntrySize);
 }
 
 void nativeSymbolExtension(const ObjectFile &Object, SymbolRef Symbol,
@@ -223,14 +249,14 @@ sectionKind(const ObjectFile &Object, SectionRef Section, StringRef Name,
   return NEVERC_OBJECT_SECTION_KIND_FORMAT_EXTENSION;
 }
 
-// ELF and COFF state a section's protection in its header, so read it instead
-// of inferring it. llvm::object's generic isData() is also true for read-only
+// ELF and COFF state a section's attributes in its header, so read them instead
+// of inferring them. llvm::object's generic isData() is also true for read-only
 // allocated sections such as .eh_frame and .rdata; calling those writable makes
 // the writer re-emit them with flags the assembler then rejects as a change.
 // Mach-O carries protection on the segment rather than the section, so it has
 // nothing to read here and keeps the inferred answer.
-bool nativeProtectionFlags(const ObjectFile &Object, SectionRef Section,
-                           NevercObjectSectionFlags &Flags) {
+bool nativeSectionFlags(const ObjectFile &Object, SectionRef Section,
+                        NevercObjectSectionFlags &Flags) {
   if (isa<ELFObjectFileBase>(Object)) {
     const uint64_t Native = ELFSectionRef(Section).getFlags();
     if ((Native & ELF::SHF_ALLOC) != 0)
@@ -239,6 +265,13 @@ bool nativeProtectionFlags(const ObjectFile &Object, SectionRef Section,
       Flags |= NEVERC_OBJECT_SECTION_WRITABLE;
     if ((Native & ELF::SHF_EXECINSTR) != 0)
       Flags |= NEVERC_OBJECT_SECTION_EXECUTABLE;
+    // Mergeability is part of a section's identity, not a hint: dropping it
+    // turns .rodata.cstN back into a plain section and the assembler rejects
+    // the changed flags and entry size.
+    if ((Native & ELF::SHF_MERGE) != 0)
+      Flags |= NEVERC_OBJECT_SECTION_MERGEABLE;
+    if ((Native & ELF::SHF_STRINGS) != 0)
+      Flags |= NEVERC_OBJECT_SECTION_STRINGS;
     return true;
   }
   if (const auto *COFFObject = dyn_cast<COFFObjectFile>(&Object)) {
@@ -261,7 +294,7 @@ NevercObjectSectionFlags
 sectionFlags(const ObjectFile &Object, SectionRef Section,
              NevercObjectSectionKind Kind) {
   NevercObjectSectionFlags Flags = 0;
-  if (!nativeProtectionFlags(Object, Section, Flags)) {
+  if (!nativeSectionFlags(Object, Section, Flags)) {
     if (Section.isBerkeleyText() || Section.isBerkeleyData() ||
         Section.isText() || Section.isData() || Section.isBSS())
       Flags |= NEVERC_OBJECT_SECTION_ALLOCATED;
@@ -734,7 +767,7 @@ NevercStatus createSections(const ObjectFile &Object,
           static_cast<uint64_t>(ContentsOrError->size())};
     }
     Descriptor.ExtensionOwner = Request.Target.ObjectFormatID;
-    Descriptor.ExtensionVersion = 1;
+    Descriptor.ExtensionVersion = NevercObjectNCSEVersion;
     Descriptor.Extension = byteView(Extension);
     auto Comdat = llvm::find_if(
         Comdats, [&](const ComdatMapEntry &Entry) {
