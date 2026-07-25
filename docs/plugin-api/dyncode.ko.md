@@ -1,5 +1,7 @@
 **언어**: [English](dyncode.md) | [简体中文](dyncode.zh-CN.md) | [繁體中文](dyncode.zh-TW.md) | [日本語](dyncode.ja.md) | [한국어](dyncode.ko.md) | [Français](dyncode.fr.md) | [Deutsch](dyncode.de.md) | [Español](dyncode.es.md) | [Italiano](dyncode.it.md) | [Русский](dyncode.ru.md) | [العربية](dyncode.ar.md)
 
+[← NeverC 플러그인 ABI](README.ko.md)
+
 # DynCode 플러그인
 
 `-fdyncode`는 하나의 번역 단위를, 코드에 재배치가 전혀 없고 데이터 섹션도 없는

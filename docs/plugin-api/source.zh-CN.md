@@ -1,5 +1,7 @@
 **语言**: [English](source.md) | [简体中文](source.zh-CN.md) | [繁體中文](source.zh-TW.md) | [日本語](source.ja.md) | [한국어](source.ko.md) | [Français](source.fr.md) | [Deutsch](source.de.md) | [Español](source.es.md) | [Italiano](source.it.md) | [Русский](source.ru.md) | [العربية](source.ar.md)
 
+[← NeverC 插件 ABI](README.zh-CN.md)
+
 # NeverC 插件源与 I/O API
 
 `PluginSource.h` 发布两张表。`NevercIOAPI` 是文件系统：虚拟文件 Provider、读

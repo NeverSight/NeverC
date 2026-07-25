@@ -35,7 +35,7 @@ C is already the simplest systems language. NeverC makes it even simpler:
 - **Single binary** — Compiler + linker + runtimes ship as one executable. Zero external dependencies to set up.
 - **LLM-friendly** — Minimal grammar and deterministic semantics mean AI-generated NeverC code compiles correctly more often than C++ alternatives.
 - **True cross-compilation** — Build Windows PE, Linux ELF, macOS Mach-O, Android ELF, and dyncode from macOS or Linux — no VM, no dual boot, no SDK hunting. Platform SDKs ship inside the compiler.
-- **Extensible with zero friction** — A single C header, 20+ interpose points, and you have a [compiler plugin](docs/plugin-api/README.md) that can intercept any stage from IR optimization to final binary output — no LLVM knowledge needed.
+- **Extensible with zero friction** — A single C header, 130 named compiler phases, and you have a [compiler plugin](docs/plugin-api/README.md) that can intercept any stage from IR optimization to final binary output — no LLVM knowledge needed.
 - **Security research built in** — DynCode compilation, compile-time string encryption, and cross-platform PE generation are native to the toolchain — not afterthoughts bolted on with external scripts.
 
 ## Features
@@ -44,7 +44,7 @@ C is already the simplest systems language. NeverC makes it even simpler:
 - **Integrated linker** — COFF, ELF, and Mach-O in one binary; no external `ld` or `link.exe`
 - **Cross-compilation** — build Windows PE, Linux ELF, macOS Mach-O, and Android ELF from any host with bundled platform SDKs
 - **[Built-in runtimes](docs/builtins/README.md)** — opt-in LLVM bitcode runtimes embedded in the compiler: [`string`](docs/builtins/string/README.md) (value-semantic string with dot-call methods and automatic memory management), [`mimalloc`](docs/builtins/mimalloc/README.md) (transparent high-performance allocator override), [`xorstr`](docs/builtins/xorstr/README.md) (compile-time string encryption with anti-signature decryption), and [`strhash`](docs/builtins/strhash/README.md) (compile-time string hashing with matching runtime)
-- **[Plugin API](docs/plugin-api/README.md)** — pure C ABI for out-of-tree pass plugins; single-header SDK with zero LLVM/CRT dependencies, supporting IR, MIR, binary, and linker interpose points
+- **[Plugin API](docs/plugin-api/README.md)** — pure C ABI for out-of-tree plugins; single-header SDK with zero LLVM/CRT dependencies, spanning driver, preprocessor, AST, IR, MIR, MC, object, link, LTO, and dyncode phases
 - **[`.nc` extension](docs/nc-extension/README.md)** — use `.nc` as file extension to auto-enable all NeverC features (`string`, Rust-style integer types) without extra flags
 - **Lean LLVM build** — only x86_64 and AArch64 backends; C++/ObjC/OpenMP paths stripped
 

@@ -1,5 +1,7 @@
 **언어**: [English](mir.md) | [简体中文](mir.zh-CN.md) | [繁體中文](mir.zh-TW.md) | [日本語](mir.ja.md) | [한국어](mir.ko.md) | [Français](mir.fr.md) | [Deutsch](mir.de.md) | [Español](mir.es.md) | [Italiano](mir.it.md) | [Русский](mir.ru.md) | [العربية](mir.ar.md)
 
+[← NeverC 플러그인 ABI](README.ko.md)
+
 # NeverC 플러그인 MIR API
 
 `PluginMIR.h` 는 Machine IR 을 공개합니다. 머신 함수, 블록, 명령어, 오퍼랜드,

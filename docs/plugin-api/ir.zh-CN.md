@@ -1,5 +1,7 @@
 **语言**: [English](ir.md) | [简体中文](ir.zh-CN.md) | [繁體中文](ir.zh-TW.md) | [日本語](ir.ja.md) | [한국어](ir.ko.md) | [Français](ir.fr.md) | [Deutsch](ir.de.md) | [Español](ir.es.md) | [Italiano](ir.it.md) | [Русский](ir.ru.md) | [العربية](ir.ar.md)
 
+[← NeverC 插件 ABI](README.zh-CN.md)
+
 # NeverC 插件 IR API
 
 `PluginIR.h` 通过六张能力表和一份生成的 schema 暴露 LLVM IR。插件可以读写

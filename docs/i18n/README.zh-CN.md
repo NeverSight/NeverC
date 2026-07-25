@@ -35,7 +35,7 @@ C 已经是最简单的系统编程语言。NeverC 让它更简单：
 - **单一二进制** — 编译器 + 链接器 + 运行时打包成一个可执行文件，零外部依赖。
 - **LLM 友好** — 极简语法与确定性语义，让 AI 生成的 NeverC 代码比 C++ 更容易编译正确。
 - **真正的跨平台编译** — 在 macOS 或 Linux 上直接编译 Windows PE、Linux ELF、macOS Mach-O、Android ELF 和 dyncode——不需要虚拟机、不需要双系统、不需要找 SDK。各平台 SDK 已内置在编译器里。
-- **零门槛可扩展** — 单个 C 头文件、20+ 钩子点，就能写出[编译器插件](../plugin-api/README.zh-CN.md)，介入从 IR 优化到最终产物输出的任何阶段——不需要懂 LLVM。
+- **零门槛可扩展** — 单个 C 头文件、130 个具名编译阶段，就能写出[编译器插件](../plugin-api/README.zh-CN.md)，介入从 IR 优化到最终产物输出的任何阶段——不需要懂 LLVM。
 - **安全研究开箱即用** — DynCode 编译、编译期字符串加密、跨平台 PE 生成全部原生集成在编译器中——不需要靠外部脚本拼凑。
 
 ## 特性
@@ -44,7 +44,7 @@ C 已经是最简单的系统编程语言。NeverC 让它更简单：
 - **集成链接器** — 单一二进制内完成 COFF、ELF、Mach-O 链接，无需外部 `ld` 或 `link.exe`
 - **交叉编译** — 从任意宿主构建 Windows PE、Linux ELF、macOS Mach-O 和 Android ELF，内置各平台 SDK
 - **[内置运行时](../builtins/README.zh-CN.md)** — 嵌入编译器的 LLVM bitcode 运行时：[`string`](../builtins/string/README.zh-CN.md)（值语义字符串，自动内存管理）、[`mimalloc`](../builtins/mimalloc/README.zh-CN.md)（透明高性能分配器覆盖）、[`xorstr`](../builtins/xorstr/README.zh-CN.md)（编译期字符串加密，反特征码解密）和 [`strhash`](../builtins/strhash/README.zh-CN.md)（编译期字符串哈希，与运行时算法一致）
-- **[插件 API](../plugin-api/README.zh-CN.md)** — 纯 C ABI 的树外 pass 插件接口；单头文件 SDK，零 LLVM/CRT 依赖，支持 IR、MIR、Binary、Linker 钩子点
+- **[插件 API](../plugin-api/README.zh-CN.md)** — 纯 C ABI 的树外插件接口；单头文件 SDK，零 LLVM/CRT 依赖，覆盖驱动、预处理、AST、IR、MIR、MC、目标文件、链接、LTO、dyncode 各阶段
 - **[`.nc` 扩展名](../nc-extension/README.zh-CN.md)** — 使用 `.nc` 文件扩展名自动启用所有 NeverC 功能（`string`、Rust 风格整数类型），无需额外标志
 - **精简 LLVM 构建** — 仅 x86_64 / AArch64 后端；剥离 C++/ObjC/OpenMP 等路径
 

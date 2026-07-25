@@ -1,5 +1,7 @@
 **语言**: [English](link-lto.md) | [简体中文](link-lto.zh-CN.md) | [繁體中文](link-lto.zh-TW.md) | [日本語](link-lto.ja.md) | [한국어](link-lto.ko.md) | [Français](link-lto.fr.md) | [Deutsch](link-lto.de.md) | [Español](link-lto.es.md) | [Italiano](link-lto.it.md) | [Русский](link-lto.ru.md) | [العربية](link-lto.ar.md)
 
+[← NeverC 插件 ABI](README.zh-CN.md)
+
 # NeverC 插件链接与 LTO API
 
 链接被建模为**一张图上的状态机**。`PluginLink.h` 暴露这张图——输入、节

@@ -1,5 +1,7 @@
 **언어**: [English](target-mc-object.md) | [简体中文](target-mc-object.zh-CN.md) | [繁體中文](target-mc-object.zh-TW.md) | [日本語](target-mc-object.ja.md) | [한국어](target-mc-object.ko.md) | [Français](target-mc-object.fr.md) | [Deutsch](target-mc-object.de.md) | [Español](target-mc-object.es.md) | [Italiano](target-mc-object.it.md) | [Русский](target-mc-object.ru.md) | [العربية](target-mc-object.ar.md)
 
+[← NeverC 플러그인 ABI](README.ko.md)
+
 # NeverC 플러그인 타깃·MC·어셈블리·오브젝트 API
 
 백엔드는 네 개의 헤더와 스물아홉 개의 페이즈입니다. `PluginTarget.h`는 타깃과 코

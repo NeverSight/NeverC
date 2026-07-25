@@ -1,5 +1,7 @@
 **언어**: [English](ir.md) | [简体中文](ir.zh-CN.md) | [繁體中文](ir.zh-TW.md) | [日本語](ir.ja.md) | [한국어](ir.ko.md) | [Français](ir.fr.md) | [Deutsch](ir.de.md) | [Español](ir.es.md) | [Italiano](ir.it.md) | [Русский](ir.ru.md) | [العربية](ir.ar.md)
 
+[← NeverC 플러그인 ABI](README.ko.md)
+
 # NeverC 플러그인 IR API
 
 `PluginIR.h` 는 여섯 개의 능력 테이블과 생성된 스키마를 통해 LLVM IR 을

@@ -1,5 +1,7 @@
 **Languages**: [English](ir.md) | [简体中文](ir.zh-CN.md) | [繁體中文](ir.zh-TW.md) | [日本語](ir.ja.md) | [한국어](ir.ko.md) | [Français](ir.fr.md) | [Deutsch](ir.de.md) | [Español](ir.es.md) | [Italiano](ir.it.md) | [Русский](ir.ru.md) | [العربية](ir.ar.md)
 
+[← NeverC Plugin ABI](README.md)
+
 # NeverC Plugin IR API
 
 `PluginIR.h` exposes LLVM IR through six capability tables and a generated

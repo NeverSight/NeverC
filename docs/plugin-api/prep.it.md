@@ -1,5 +1,7 @@
 **Lingue**: [English](prep.md) | [简体中文](prep.zh-CN.md) | [繁體中文](prep.zh-TW.md) | [日本語](prep.ja.md) | [한국어](prep.ko.md) | [Français](prep.fr.md) | [Deutsch](prep.de.md) | [Español](prep.es.md) | [Italiano](prep.it.md) | [Русский](prep.ru.md) | [العربية](prep.ar.md)
 
+[← ABI dei plugin NeverC](README.it.md)
+
 # API del preprocessore dei plugin NeverC
 
 `PluginPrep.h` espone il preprocessore in due modi. Una **sottoscrizione** a 39

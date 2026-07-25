@@ -1,5 +1,7 @@
 **言語**: [English](source.md) | [简体中文](source.zh-CN.md) | [繁體中文](source.zh-TW.md) | [日本語](source.ja.md) | [한국어](source.ko.md) | [Français](source.fr.md) | [Deutsch](source.de.md) | [Español](source.es.md) | [Italiano](source.it.md) | [Русский](source.ru.md) | [العربية](source.ar.md)
 
+[← NeverC プラグイン ABI](README.ja.md)
+
 # NeverC プラグイン ソース／I/O API
 
 `PluginSource.h` は 2 枚のテーブルを公開します。`NevercIOAPI` はファイルシステム

@@ -56,9 +56,23 @@ NeverC estende il C standard con runtime integrati come bitcode LLVM. Ciascuno �
 
 ## API Plugin
 
-NeverC fornisce un'ABI C pura per plugin di pass fuori dall'albero. Un plugin è una libreria condivisa (`.dll` / `.so` / `.dylib`) che registra pass personalizzati nei punti di aggancio designati della pipeline. Un solo header, zero dipendenze LLVM/CRT.
+NeverC apre l'intera toolchain attraverso una ABI C pura. Un plugin è un modulo condiviso (`.dll` / `.so` / `.dylib`) che si aggancia a una qualsiasi delle 130 fasi di compilazione con nome — dall'analisi della riga di comando fino all'immagine collegata finale — come osservatore, come intercettore o come provider sostitutivo. L'SDK è di soli header: nessun header LLVM e nessun collegamento al compilatore.
 
 **[API Plugin →](plugin-api/README.it.md)**
+
+| Documento | Descrizione |
+|-----------|-------------|
+| [README](plugin-api/README.it.md) | Punto di ingresso, fasi, negoziazione delle interfacce, registrazione, regole ABI |
+| [API Driver](plugin-api/driver.it.md) | Riga di comando, scelta della toolchain, grafo delle azioni, grafo dei job |
+| [API Source e I/O](plugin-api/source.it.md) | Provider VFS, posizioni sorgente, buffer, sink di output, dipendenze |
+| [API Preprocessore](plugin-api/prep.it.md) | Token, macro, pragma, inclusioni, interrogazioni sulle funzionalità, 39 tipi di evento |
+| [API AST e semantica](plugin-api/ast-sema.it.md) | Estensione del parser, mutazione dell'AST, ricerca dei nomi, tipi, costanti |
+| [API IR](plugin-api/ir.it.md) | Lettura dell'IR LLVM, costruzione transazionale, analisi, pass, provider |
+| [API MIR](plugin-api/mir.it.md) | Funzioni macchina, registri, stack frame, pass e analisi MIR |
+| [Target, MC, assembly, oggetto](plugin-api/target-mc-object.it.md) | Registrazione di target, convenzioni di chiamata, codifica MC, grafi oggetto |
+| [API Link e LTO](plugin-api/link-lto.it.md) | Grafo di collegamento, risoluzione dei simboli, GC/ICF, provider di linker e LTO |
+| [API DynCode](plugin-api/dyncode.it.md) | Immagini piatte indipendenti dalla posizione, abbassamento degli import, codifica del set di caratteri |
+| [Convenzioni di chiamata personalizzate](plugin-api/custom-callconv/README.it.md) | Plugin di convenzione di chiamata guidati dai dati |
 
 ---
 

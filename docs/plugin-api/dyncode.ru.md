@@ -1,5 +1,7 @@
 **Языки**: [English](dyncode.md) | [简体中文](dyncode.zh-CN.md) | [繁體中文](dyncode.zh-TW.md) | [日本語](dyncode.ja.md) | [한국어](dyncode.ko.md) | [Français](dyncode.fr.md) | [Deutsch](dyncode.de.md) | [Español](dyncode.es.md) | [Italiano](dyncode.it.md) | [Русский](dyncode.ru.md) | [العربية](dyncode.ar.md)
 
+[← ABI плагинов NeverC](README.ru.md)
+
 # Плагины DynCode
 
 `-fdyncode` компилирует единицу трансляции в плоский позиционно-независимый

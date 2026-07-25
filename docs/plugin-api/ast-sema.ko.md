@@ -1,5 +1,7 @@
 **언어**: [English](ast-sema.md) | [简体中文](ast-sema.zh-CN.md) | [繁體中文](ast-sema.zh-TW.md) | [日本語](ast-sema.ja.md) | [한국어](ast-sema.ko.md) | [Français](ast-sema.fr.md) | [Deutsch](ast-sema.de.md) | [Español](ast-sema.es.md) | [Italiano](ast-sema.it.md) | [Русский](ast-sema.ru.md) | [العربية](ast-sema.ar.md)
 
+[← NeverC 플러그인 ABI](README.ko.md)
+
 # NeverC 플러그인 AST 및 의미 분석 API
 
 프런트엔드는 세 개의 테이블이 담당합니다. `NevercParserAPI` 는 체크포인트가

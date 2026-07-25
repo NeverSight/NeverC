@@ -1,5 +1,7 @@
 **Idiomas**: [English](ast-sema.md) | [简体中文](ast-sema.zh-CN.md) | [繁體中文](ast-sema.zh-TW.md) | [日本語](ast-sema.ja.md) | [한국어](ast-sema.ko.md) | [Français](ast-sema.fr.md) | [Deutsch](ast-sema.de.md) | [Español](ast-sema.es.md) | [Italiano](ast-sema.it.md) | [Русский](ast-sema.ru.md) | [العربية](ast-sema.ar.md)
 
+[← ABI de complementos de NeverC](README.es.md)
+
 # API de AST y semántica de los plugins de NeverC
 
 Tres tablas cubren el frontal del compilador. `NevercParserAPI` permite que un

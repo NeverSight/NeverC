@@ -1,5 +1,7 @@
 **Lingue**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
+[← ABI dei plugin NeverC](../README.it.md)
+
 # Convenzioni di chiamata personalizzate
 
 NeverC supporta **convenzioni di chiamata personalizzate guidate dai dati**: puoi assegnare registri fisici arbitrari agli argomenti e ai valori di ritorno di qualsiasi funzione, interamente da un plugin esterno o da attributi a livello di sorgente, senza modificare il compilatore né alcuna definizione TableGen.

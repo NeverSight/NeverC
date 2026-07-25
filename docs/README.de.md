@@ -56,9 +56,23 @@ NeverC erweitert Standard-C mit integrierten Laufzeiten als LLVM-Bitcode. Jede w
 
 ## Plugin-API
 
-NeverC bietet eine reine C-ABI für Out-of-Tree-Pass-Plugins. Ein Plugin ist eine Shared Library (`.dll` / `.so` / `.dylib`), die benutzerdefinierte Passes an festgelegten Extension-Punkten der Pipeline registriert. Nur ein Header, null LLVM/CRT-Abhängigkeiten.
+NeverC öffnet seine gesamte Toolchain über eine reine C-ABI. Ein Plugin ist ein gemeinsames Modul (`.dll` / `.so` / `.dylib`), das sich an jede der 130 benannten Compilerphasen hängen kann — von der Kommandozeilenanalyse bis zum fertig gelinkten Abbild — als Beobachter, als Interceptor oder als ersetzender Provider. Das SDK besteht nur aus Headern: keine LLVM-Header, keine Compiler-Anbindung.
 
 **[Plugin-API →](plugin-api/README.de.md)**
+
+| Dokument | Beschreibung |
+|----------|--------------|
+| [README](plugin-api/README.de.md) | Einstiegspunkt, Phasen, Schnittstellenaushandlung, Registrierung, ABI-Regeln |
+| [Driver-API](plugin-api/driver.de.md) | Kommandozeile, Toolchain-Auswahl, Aktionsgraph, Job-Graph |
+| [Source- und E/A-API](plugin-api/source.de.md) | VFS-Provider, Quellpositionen, Puffer, Ausgabesenken, Abhängigkeiten |
+| [Präprozessor-API](plugin-api/prep.de.md) | Token, Makros, Pragmas, Includes, Feature-Abfragen, 39 Ereignisarten |
+| [AST- und Semantik-API](plugin-api/ast-sema.de.md) | Parser-Erweiterung, AST-Mutation, Namensauflösung, Typen, Konstanten |
+| [IR-API](plugin-api/ir.de.md) | LLVM-IR lesen, transaktionales Bauen, Analysen, Passes, Provider |
+| [MIR-API](plugin-api/mir.de.md) | Maschinenfunktionen, Register, Stackframes, MIR-Passes und -Analysen |
+| [Target, MC, Assembly, Objekt](plugin-api/target-mc-object.de.md) | Target-Registrierung, Aufrufkonventionen, MC-Kodierung, Objektgraphen |
+| [Link- und LTO-API](plugin-api/link-lto.de.md) | Link-Graph, Symbolauflösung, GC/ICF, Linker- und LTO-Provider |
+| [DynCode-API](plugin-api/dyncode.de.md) | Flache positionsunabhängige Images, Import-Lowering, Zeichensatzkodierung |
+| [Eigene Aufrufkonventionen](plugin-api/custom-callconv/README.de.md) | Datengetriebene Aufrufkonventions-Plugins |
 
 ---
 

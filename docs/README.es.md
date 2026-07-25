@@ -56,9 +56,23 @@ NeverC extiende el C estándar con runtimes integrados como bitcode LLVM. Cada u
 
 ## API de Plugins
 
-NeverC proporciona una ABI C pura para plugins de pases fuera del árbol. Un plugin es una biblioteca compartida (`.dll` / `.so` / `.dylib`) que registra pases personalizados en puntos de enganche designados del pipeline. Un solo encabezado, cero dependencias LLVM/CRT.
+NeverC abre toda su cadena de herramientas mediante una ABI C pura. Un complemento es un módulo compartido (`.dll` / `.so` / `.dylib`) que se engancha a cualquiera de las 130 fases de compilación con nombre —desde el análisis de la línea de órdenes hasta la imagen enlazada final— como observador, como interceptor o como proveedor sustituto. El SDK es solo de cabeceras: sin cabeceras de LLVM y sin enlazar con el compilador.
 
 **[API de Plugins →](plugin-api/README.es.md)**
+
+| Documento | Descripción |
+|-----------|-------------|
+| [README](plugin-api/README.es.md) | Punto de entrada, fases, negociación de interfaces, registro, reglas ABI |
+| [API del driver](plugin-api/driver.es.md) | Línea de órdenes, selección de cadena de herramientas, grafo de acciones, grafo de trabajos |
+| [API de fuentes y E/S](plugin-api/source.es.md) | Proveedores VFS, ubicaciones de origen, búferes, sumideros de salida, dependencias |
+| [API del preprocesador](plugin-api/prep.es.md) | Tokens, macros, pragmas, inclusiones, consultas de características, 39 tipos de eventos |
+| [API de AST y semántica](plugin-api/ast-sema.es.md) | Extensión del analizador, mutación del AST, búsqueda de nombres, tipos, constantes |
+| [API de IR](plugin-api/ir.es.md) | Lectura de IR de LLVM, construcción transaccional, análisis, pases, proveedores |
+| [API de MIR](plugin-api/mir.es.md) | Funciones máquina, registros, marcos de pila, pases y análisis de MIR |
+| [Destino, MC, ensamblador, objeto](plugin-api/target-mc-object.es.md) | Registro de destinos, convenciones de llamada, codificación MC, grafos de objetos |
+| [API de enlazado y LTO](plugin-api/link-lto.es.md) | Grafo de enlazado, resolución de símbolos, GC/ICF, proveedores de enlazador y LTO |
+| [API de DynCode](plugin-api/dyncode.es.md) | Imágenes planas independientes de la posición, rebajado de importaciones, codificación de juegos de caracteres |
+| [Convenciones de llamada personalizadas](plugin-api/custom-callconv/README.es.md) | Complementos de convención de llamada dirigidos por datos |
 
 ---
 

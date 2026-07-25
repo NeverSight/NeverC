@@ -1,5 +1,7 @@
 **언어**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
+[← NeverC 플러그인 ABI](../README.ko.md)
+
 # 사용자 정의 호출 규약
 
 NeverC는 **데이터 기반 사용자 정의 호출 규약**을 지원합니다. 컴파일러 본체나 TableGen 정의를 전혀 건드리지 않고, 아웃오브트리 플러그인이나 소스 수준 속성만으로 임의 함수의 인자와 반환값에 임의의 물리 레지스터를 배정할 수 있습니다.

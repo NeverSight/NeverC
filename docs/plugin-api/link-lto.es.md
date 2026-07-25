@@ -1,5 +1,7 @@
 **Idiomas**: [English](link-lto.md) | [简体中文](link-lto.zh-CN.md) | [繁體中文](link-lto.zh-TW.md) | [日本語](link-lto.ja.md) | [한국어](link-lto.ko.md) | [Français](link-lto.fr.md) | [Deutsch](link-lto.de.md) | [Español](link-lto.es.md) | [Italiano](link-lto.it.md) | [Русский](link-lto.ru.md) | [العربية](link-lto.ar.md)
 
+[← ABI de complementos de NeverC](README.es.md)
+
 # API de enlazado y LTO de plugins de NeverC
 
 El enlazado se modela como una **máquina de estados sobre un único grafo**.

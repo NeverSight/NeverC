@@ -1,5 +1,7 @@
 **語言**: [English](ir.md) | [简体中文](ir.zh-CN.md) | [繁體中文](ir.zh-TW.md) | [日本語](ir.ja.md) | [한국어](ir.ko.md) | [Français](ir.fr.md) | [Deutsch](ir.de.md) | [Español](ir.es.md) | [Italiano](ir.it.md) | [Русский](ir.ru.md) | [العربية](ir.ar.md)
 
+[← NeverC 外掛 ABI](README.zh-TW.md)
+
 # NeverC 外掛 IR API
 
 `PluginIR.h` 透過六張能力表與一份產生的 schema 公開 LLVM IR。外掛可以讀寫 IR、

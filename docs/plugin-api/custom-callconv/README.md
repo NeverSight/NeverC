@@ -1,5 +1,7 @@
 **Languages**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
+[← NeverC Plugin ABI](../README.md)
+
 # Custom Calling Conventions
 
 NeverC supports **data-driven custom calling conventions** — you can assign arbitrary physical registers to any function's arguments and return values, entirely from an out-of-tree plugin or from source-level attributes, without modifying the compiler or any TableGen definition.

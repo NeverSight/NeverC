@@ -35,7 +35,7 @@ C는 이미 가장 단순한 시스템 프로그래밍 언어입니다. NeverC�
 - **단일 바이너리** — 컴파일러 + 링커 + 런타임이 하나의 실행 파일에. 외부 의존성 제로.
 - **LLM 친화적** — 최소한의 문법과 결정론적 의미론 덕분에 AI가 생성한 NeverC 코드가 C++보다 올바르게 컴파일될 확률이 높습니다.
 - **진정한 크로스 컴파일** — macOS나 Linux에서 Windows PE, Linux ELF, macOS Mach-O, Android ELF, dyncode를 빌드——VM 불필요, 듀얼 부팅 불필요, SDK 찾기 불필요. 각 플랫폼 SDK가 컴파일러에 내장되어 있습니다.
-- **제로 프릭션 확장** — 단 하나의 C 헤더와 20+ 훅 포인트로 IR 최적화부터 최종 바이너리 출력까지 모든 단계에 개입하는 [컴파일러 플러그인](../plugin-api/README.ko.md)을 작성 가능——LLVM 지식 불필요.
+- **제로 프릭션 확장** — 단 하나의 C 헤더와 130개의 이름 붙은 컴파일 페이즈로 IR 최적화부터 최종 바이너리 출력까지 모든 단계에 개입하는 [컴파일러 플러그인](../plugin-api/README.ko.md)을 작성 가능——LLVM 지식 불필요.
 - **보안 연구 내장** — DynCode 컴파일, 컴파일 타임 문자열 암호화, 크로스 플랫폼 PE 생성이 컴파일러에 네이티브 통합——외부 스크립트로 덧붙인 것이 아닙니다.
 
 ## 기능
@@ -44,7 +44,7 @@ C는 이미 가장 단순한 시스템 프로그래밍 언어입니다. NeverC�
 - **통합 링커** — 단일 바이너리에서 COFF, ELF, Mach-O; 외부 `ld` / `link.exe` 불필요
 - **크로스 컴파일** — 모든 호스트에서 Windows PE, Linux ELF, macOS Mach-O, Android ELF 빌드 (플랫폼 SDK 내장)
 - **[내장 런타임](../builtins/README.ko.md)** — 컴파일러 임베디드 LLVM bitcode 런타임: [`string`](../builtins/string/README.ko.md) (값 의미론 문자열, 자동 메모리 관리), [`mimalloc`](../builtins/mimalloc/README.ko.md) (투명 고성능 할당자 오버라이드), [`xorstr`](../builtins/xorstr/README.ko.md) (컴파일 타임 문자열 암호화, 시그니처 우회 복호화) 및 [`strhash`](../builtins/strhash/README.ko.md) (컴파일 타임 문자열 해시, 런타임과 동일 알고리즘)
-- **[플러그인 API](../plugin-api/README.ko.md)** — 아웃오브트리 패스 플러그인용 순수 C ABI; 단일 헤더 SDK, LLVM/CRT 의존성 제로, IR·MIR·Binary·Linker 훅 포인트 지원
+- **[플러그인 API](../plugin-api/README.ko.md)** — 아웃오브트리 플러그인용 순수 C ABI; 단일 헤더 SDK, LLVM/CRT 의존성 제로, 드라이버·전처리기·AST·IR·MIR·MC·오브젝트·링크·LTO·dyncode 페이즈 전반을 포괄
 - **[`.nc` 확장자](../nc-extension/README.ko.md)** — `.nc` 파일 확장자로 모든 NeverC 기능(`string`, Rust 스타일 정수 타입)을 자동 활성화, 추가 플래그 불필요
 - **경량 LLVM 빌드** — x86_64 / AArch64 백엔드만; C++/ObjC/OpenMP 경로 제거
 

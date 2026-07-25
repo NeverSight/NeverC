@@ -56,9 +56,23 @@ NeverC 通过嵌入 LLVM bitcode 的内置运行时扩展标准 C，每个由 `-
 
 ## 插件 API
 
-NeverC 提供纯 C ABI 的树外 pass 插件接口。插件是一个共享库（`.dll` / `.so` / `.dylib`），可在编译流水线的指定钩子点注册自定义 pass。只需一个头文件，零 LLVM/CRT 依赖。
+NeverC 通过一套纯 C ABI 开放整条工具链。插件是一个共享模块（`.dll` / `.so` / `.dylib`），可以观察者、拦截器或替换 Provider 的身份，附着到 130 个具名编译阶段中的任意一个——从命令行解析一直到最终链接产物。SDK 只有头文件：不含 LLVM 头文件，也不链接编译器。
 
 **[插件 API →](plugin-api/README.zh-CN.md)**
+
+| 文档 | 说明 |
+|------|------|
+| [README](plugin-api/README.zh-CN.md) | 入口点、阶段、接口协商、注册、ABI 规则 |
+| [驱动 API](plugin-api/driver.zh-CN.md) | 命令行、工具链选择、action 图、job 图 |
+| [源与 I/O API](plugin-api/source.zh-CN.md) | VFS Provider、源位置、缓冲区、输出 sink、依赖 |
+| [预处理器 API](plugin-api/prep.zh-CN.md) | token、宏、pragma、include、特性查询、39 种事件 |
+| [AST 与语义 API](plugin-api/ast-sema.zh-CN.md) | 解析器扩展、AST 修改、名字查找、类型、常量 |
+| [IR API](plugin-api/ir.zh-CN.md) | LLVM IR 读取、事务式构造、分析、pass、Provider |
+| [MIR API](plugin-api/mir.zh-CN.md) | 机器函数、寄存器、栈帧、MIR pass 与分析 |
+| [Target、MC、汇编、目标文件](plugin-api/target-mc-object.zh-CN.md) | 目标注册、调用约定、MC 编码、目标文件图 |
+| [链接与 LTO API](plugin-api/link-lto.zh-CN.md) | 链接图、符号决议、GC/ICF、链接器与 LTO Provider |
+| [DynCode API](plugin-api/dyncode.zh-CN.md) | 扁平位置无关映像、导入降级、字符集编码 |
+| [自定义调用约定](plugin-api/custom-callconv/README.zh-CN.md) | 数据驱动的调用约定插件 |
 
 ---
 

@@ -1,5 +1,7 @@
 **言語**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
+[← NeverC プラグイン ABI](../README.ja.md)
+
 # カスタム呼び出し規約
 
 NeverC は**データ駆動のカスタム呼び出し規約**をサポートします。コンパイラ本体や TableGen 定義に一切手を入れることなく、アウトオブツリーのプラグインまたはソースレベル属性だけで、任意の関数の引数と戻り値に任意の物理レジスタを割り当てられます。

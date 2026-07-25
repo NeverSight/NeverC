@@ -1,5 +1,7 @@
 **Lingue**: [English](source.md) | [简体中文](source.zh-CN.md) | [繁體中文](source.zh-TW.md) | [日本語](source.ja.md) | [한국어](source.ko.md) | [Français](source.fr.md) | [Deutsch](source.de.md) | [Español](source.es.md) | [Italiano](source.it.md) | [Русский](source.ru.md) | [العربية](source.ar.md)
 
+[← ABI dei plugin NeverC](README.it.md)
+
 # API sorgenti e I/O dei plugin NeverC
 
 `PluginSource.h` pubblica due tabelle. `NevercIOAPI` è il file system: provider

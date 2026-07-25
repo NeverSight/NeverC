@@ -1,5 +1,7 @@
 **語言**: [English](link-lto.md) | [简体中文](link-lto.zh-CN.md) | [繁體中文](link-lto.zh-TW.md) | [日本語](link-lto.ja.md) | [한국어](link-lto.ko.md) | [Français](link-lto.fr.md) | [Deutsch](link-lto.de.md) | [Español](link-lto.es.md) | [Italiano](link-lto.it.md) | [Русский](link-lto.ru.md) | [العربية](link-lto.ar.md)
 
+[← NeverC 外掛 ABI](README.zh-TW.md)
+
 # NeverC 外掛 Link 與 LTO API
 
 連結被建模為**單一圖之上的狀態機**。`PluginLink.h` 公開這張圖——輸入、section、

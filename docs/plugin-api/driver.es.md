@@ -1,5 +1,7 @@
 **Idiomas**: [English](driver.md) | [简体中文](driver.zh-CN.md) | [繁體中文](driver.zh-TW.md) | [日本語](driver.ja.md) | [한국어](driver.ko.md) | [Français](driver.fr.md) | [Deutsch](driver.de.md) | [Español](driver.es.md) | [Italiano](driver.it.md) | [Русский](driver.ru.md) | [العربية](driver.ar.md)
 
+[← ABI de complementos de NeverC](README.es.md)
+
 # API Driver de plugins de NeverC
 
 El driver convierte una línea de órdenes en un conjunto de trabajos ejecutados.

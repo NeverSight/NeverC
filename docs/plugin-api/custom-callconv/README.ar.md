@@ -1,5 +1,7 @@
 **اللغات**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
+[← واجهة NeverC الثنائية للإضافات](../README.ar.md)
+
 # اتفاقيات الاستدعاء المخصصة
 
 يدعم NeverC **اتفاقيات استدعاء مخصصة مبنية على البيانات**؛ إذ يمكنك إسناد أي سجلات فيزيائية إلى معاملات أي دالة وقيم إرجاعها، بالكامل من إضافة خارجية أو من سمات على مستوى الكود المصدري، دون تعديل المترجم ولا أي تعريف من تعريفات TableGen.

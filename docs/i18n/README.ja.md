@@ -35,7 +35,7 @@ C は既に最もシンプルなシステムプログラミング言語です。
 - **単一バイナリ** — コンパイラ + リンカ + ランタイムが一つの実行ファイルに。外部依存ゼロ。
 - **LLM フレンドリー** — 最小限の文法と決定的なセマンティクスにより、AI が生成する NeverC コードは C++ より正しくコンパイルされやすい。
 - **真のクロスコンパイル** — macOS や Linux から Windows PE、Linux ELF、macOS Mach-O、Android ELF、dyncode をビルド——VM 不要、デュアルブート不要、SDK 探し不要。各プラットフォーム SDK はコンパイラに内蔵。
-- **ゼロフリクションで拡張可能** — たった1つの C ヘッダーと 20+ のフックポイントで、IR 最適化から最終バイナリ出力まであらゆる段階に介入する[コンパイラプラグイン](../plugin-api/README.ja.md)が書ける——LLVM の知識不要。
+- **ゼロフリクションで拡張可能** — たった1つの C ヘッダーと 130 の名前付きコンパイルフェーズで、IR 最適化から最終バイナリ出力まであらゆる段階に介入する[コンパイラプラグイン](../plugin-api/README.ja.md)が書ける——LLVM の知識不要。
 - **セキュリティ研究を組み込み済み** — DynCode コンパイル、コンパイル時文字列暗号化、クロスプラットフォーム PE 生成がコンパイラにネイティブ統合——外部スクリプトによる後付けではありません。
 
 ## 機能
@@ -44,7 +44,7 @@ C は既に最もシンプルなシステムプログラミング言語です。
 - **統合リンカ** — 単一バイナリで COFF・ELF・Mach-O；外部 `ld` / `link.exe` 不要
 - **クロスコンパイル** — 任意のホストから Windows PE、Linux ELF、macOS Mach-O、Android ELF をビルド（各プラットフォーム SDK 内蔵）
 - **[組み込みランタイム](../builtins/README.ja.md)** — コンパイラ埋め込みの LLVM bitcode ランタイム：[`string`](../builtins/string/README.ja.md)（値セマンティクス文字列、自動メモリ管理）、[`mimalloc`](../builtins/mimalloc/README.ja.md)（透過的高性能アロケータオーバーライド）、[`xorstr`](../builtins/xorstr/README.ja.md)（コンパイル時文字列暗号化、シグネチャ対策の復号）、[`strhash`](../builtins/strhash/README.ja.md)（コンパイル時文字列ハッシュ、実行時と同一アルゴリズム）
-- **[プラグイン API](../plugin-api/README.ja.md)** — アウトオブツリーパスプラグイン用純粋 C ABI；単一ヘッダー SDK、LLVM/CRT 依存ゼロ、IR・MIR・Binary・Linker フックポイント対応
+- **[プラグイン API](../plugin-api/README.ja.md)** — アウトオブツリープラグイン用純粋 C ABI；単一ヘッダー SDK、LLVM/CRT 依存ゼロ、ドライバー・プリプロセッサー・AST・IR・MIR・MC・オブジェクト・リンク・LTO・dyncode の各フェーズを網羅
 - **[`.nc` 拡張子](../nc-extension/README.ja.md)** — `.nc` ファイル拡張子ですべての NeverC 機能（`string`、Rust スタイル整数型）を自動有効化、追加フラグ不要
 - **スリム LLVM ビルド** — x86_64 / AArch64 バックエンドのみ；C++/ObjC/OpenMP 経路を除去
 

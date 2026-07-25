@@ -35,7 +35,7 @@ C est déjà le langage système le plus simple. NeverC le rend encore plus simp
 - **Binaire unique** — Compilateur + éditeur de liens + runtimes dans un seul exécutable. Zéro dépendance externe.
 - **Compatible LLM** — Grammaire minimale et sémantique déterministe : le code NeverC généré par IA compile correctement plus souvent que les alternatives C++.
 - **Véritable compilation croisée** — Compilez Windows PE, Linux ELF, macOS Mach-O, Android ELF et du dyncode depuis macOS ou Linux — pas de VM, pas de dual boot, pas de SDK à chercher. Les SDK de plateforme sont intégrés au compilateur.
-- **Extensible sans friction** — Un seul en-tête C, 20+ points d'accroche, et vous avez un [plugin compilateur](../plugin-api/README.fr.md) capable d'intervenir à toute étape — de l'optimisation IR à la sortie binaire finale — sans connaître LLVM.
+- **Extensible sans friction** — Un seul en-tête C, 130 phases de compilation nommées, et vous avez un [plugin compilateur](../plugin-api/README.fr.md) capable d'intervenir à toute étape — de l'optimisation IR à la sortie binaire finale — sans connaître LLVM.
 - **Recherche en sécurité intégrée** — Compilation dyncode, chiffrement de chaînes à la compilation et génération PE multiplateforme sont nativement intégrés au compilateur — pas des ajouts bricolés avec des scripts externes.
 
 ## Fonctionnalités
@@ -44,7 +44,7 @@ C est déjà le langage système le plus simple. NeverC le rend encore plus simp
 - **Éditeur de liens intégré** — COFF, ELF et Mach-O dans un seul binaire ; pas de `ld` ou `link.exe` externe
 - **Compilation croisée** — Windows PE, Linux ELF, macOS Mach-O et Android ELF depuis n'importe quel hôte avec SDK de plateforme intégrés
 - **[Runtimes intégrés](../builtins/README.fr.md)** — runtimes LLVM bitcode intégrés au compilateur : [`string`](../builtins/string/README.fr.md) (chaîne à sémantique de valeur, gestion mémoire automatique), [`mimalloc`](../builtins/mimalloc/README.fr.md) (remplacement transparent d'allocateur haute performance), [`xorstr`](../builtins/xorstr/README.fr.md) (chiffrement de chaînes à la compilation avec déchiffrement anti-signature) et [`strhash`](../builtins/strhash/README.fr.md) (hachage de chaînes à la compilation, même algorithme à l'exécution)
-- **[API Plugin](../plugin-api/README.fr.md)** — ABI C pure pour les plugins de passes hors arbre ; SDK à en-tête unique, zéro dépendance LLVM/CRT, points d'accroche IR, MIR, Binary et Linker
+- **[API Plugin](../plugin-api/README.fr.md)** — ABI C pure pour les greffons hors arbre ; SDK à en-tête unique, zéro dépendance LLVM/CRT, couvrant les phases pilote, préprocesseur, AST, IR, MIR, MC, objet, édition de liens, LTO et dyncode
 - **[Extension `.nc`](../nc-extension/README.fr.md)** — utilisez `.nc` pour activer automatiquement toutes les fonctionnalités NeverC (`string`, types entiers style Rust) sans drapeaux supplémentaires
 - **Build LLVM allégé** — backends x86_64 / AArch64 uniquement ; chemins C++/ObjC/OpenMP retirés
 

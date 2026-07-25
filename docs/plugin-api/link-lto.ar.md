@@ -1,5 +1,7 @@
 **اللغات**: [English](link-lto.md) | [简体中文](link-lto.zh-CN.md) | [繁體中文](link-lto.zh-TW.md) | [日本語](link-lto.ja.md) | [한국어](link-lto.ko.md) | [Français](link-lto.fr.md) | [Deutsch](link-lto.de.md) | [Español](link-lto.es.md) | [Italiano](link-lto.it.md) | [Русский](link-lto.ru.md) | [العربية](link-lto.ar.md)
 
+[← واجهة NeverC الثنائية للإضافات](README.ar.md)
+
 # واجهة الربط وLTO لإضافات NeverC
 
 يُنمذَج الربط بوصفه **آلة حالات فوق مخطط واحد**. تكشف `PluginLink.h` هذا

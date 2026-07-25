@@ -56,9 +56,23 @@ NeverC étend le C standard avec des runtimes intégrés sous forme de bitcode L
 
 ## API Plugin
 
-NeverC fournit une ABI C pure pour les plugins de passes hors arbre. Un plugin est une bibliothèque partagée (`.dll` / `.so` / `.dylib`) qui enregistre des passes personnalisées aux points d'accroche désignés du pipeline. Un seul en-tête, zéro dépendance LLVM/CRT.
+NeverC expose l'intégralité de sa chaîne d'outils via une ABI C pure. Un greffon est un module partagé (`.dll` / `.so` / `.dylib`) qui se rattache à n'importe laquelle des 130 phases de compilation nommées — de l'analyse de la ligne de commande à l'image liée finale — en tant qu'observateur, intercepteur ou fournisseur de remplacement. Le SDK se limite à des en-têtes : aucun en-tête LLVM, aucune liaison avec le compilateur.
 
 **[API Plugin →](plugin-api/README.fr.md)**
+
+| Document | Description |
+|----------|-------------|
+| [README](plugin-api/README.fr.md) | Point d'entrée, phases, négociation d'interface, enregistrement, règles ABI |
+| [API Driver](plugin-api/driver.fr.md) | Ligne de commande, choix de la chaîne d'outils, graphe d'actions, graphe de jobs |
+| [API Source et E/S](plugin-api/source.fr.md) | Fournisseurs VFS, positions source, tampons, puits de sortie, dépendances |
+| [API Préprocesseur](plugin-api/prep.fr.md) | Jetons, macros, pragmas, inclusions, requêtes de fonctionnalités, 39 types d'événements |
+| [API AST et sémantique](plugin-api/ast-sema.fr.md) | Extension du parseur, mutation de l'AST, recherche de noms, types, constantes |
+| [API IR](plugin-api/ir.fr.md) | Lecture de l'IR LLVM, construction transactionnelle, analyses, passes, fournisseurs |
+| [API MIR](plugin-api/mir.fr.md) | Fonctions machine, registres, cadres de pile, passes et analyses MIR |
+| [Cible, MC, assembleur, objet](plugin-api/target-mc-object.fr.md) | Enregistrement de cible, conventions d'appel, encodage MC, graphes objet |
+| [API Link et LTO](plugin-api/link-lto.fr.md) | Graphe de liaison, résolution de symboles, GC/ICF, fournisseurs de lieur et de LTO |
+| [API DynCode](plugin-api/dyncode.fr.md) | Images plates indépendantes de la position, abaissement des imports, encodage de jeu de caractères |
+| [Conventions d'appel personnalisées](plugin-api/custom-callconv/README.fr.md) | Plugins de convention d'appel pilotés par les données |
 
 ---
 

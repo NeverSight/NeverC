@@ -1,5 +1,7 @@
 **語言**: [English](dyncode.md) | [简体中文](dyncode.zh-CN.md) | [繁體中文](dyncode.zh-TW.md) | [日本語](dyncode.ja.md) | [한국어](dyncode.ko.md) | [Français](dyncode.fr.md) | [Deutsch](dyncode.de.md) | [Español](dyncode.es.md) | [Italiano](dyncode.it.md) | [Русский](dyncode.ru.md) | [العربية](dyncode.ar.md)
 
+[← NeverC 外掛 ABI](README.zh-TW.md)
+
 # DynCode 外掛
 
 `-fdyncode` 會把一個翻譯單元編譯成扁平、位置無關的映像（`.bin`），其程式碼沒有任何

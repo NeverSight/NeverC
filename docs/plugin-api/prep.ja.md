@@ -1,5 +1,7 @@
 **言語**: [English](prep.md) | [简体中文](prep.zh-CN.md) | [繁體中文](prep.zh-TW.md) | [日本語](prep.ja.md) | [한국어](prep.ko.md) | [Français](prep.fr.md) | [Deutsch](prep.de.md) | [Español](prep.es.md) | [Italiano](prep.it.md) | [Русский](prep.ru.md) | [العربية](prep.ar.md)
 
+[← NeverC プラグイン ABI](README.ja.md)
+
 # NeverC プラグイン プリプロセッサ API
 
 `PluginPrep.h` はプリプロセッサを 2 通りに公開します。39 種類のイベントへの

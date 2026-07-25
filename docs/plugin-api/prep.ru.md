@@ -1,5 +1,7 @@
 **Языки**: [English](prep.md) | [简体中文](prep.zh-CN.md) | [繁體中文](prep.zh-TW.md) | [日本語](prep.ja.md) | [한국어](prep.ko.md) | [Français](prep.fr.md) | [Deutsch](prep.de.md) | [Español](prep.es.md) | [Italiano](prep.it.md) | [Русский](prep.ru.md) | [العربية](prep.ar.md)
 
+[← ABI плагинов NeverC](README.ru.md)
+
 # API препроцессора плагинов NeverC
 
 `PluginPrep.h` открывает препроцессор двумя способами. **Подписка** на 39 видов

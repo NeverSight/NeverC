@@ -1,5 +1,7 @@
 **语言**: [English](dyncode.md) | [简体中文](dyncode.zh-CN.md) | [繁體中文](dyncode.zh-TW.md) | [日本語](dyncode.ja.md) | [한국어](dyncode.ko.md) | [Français](dyncode.fr.md) | [Deutsch](dyncode.de.md) | [Español](dyncode.es.md) | [Italiano](dyncode.it.md) | [Русский](dyncode.ru.md) | [العربية](dyncode.ar.md)
 
+[← NeverC 插件 ABI](README.zh-CN.md)
+
 # DynCode 插件
 
 `-fdyncode` 把一个翻译单元编译成扁平的、位置无关的镜像（`.bin`）：其代码零重定位、无数据节。它支持 macOS / Linux / Android / Windows 上的 arm64/x86_64，可选 user 或 kernel 执行级。插件通过与其他领域相同的纯 C ABI，观察、拦截或替换把 C 变成该镜像的各个 typed phase：不跨边界传递 LLVM C++ 对象、STL 类型、异常，或生命周期未由 API 表声明的宿主指针。

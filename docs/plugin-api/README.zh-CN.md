@@ -1,5 +1,7 @@
 **语言**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
+[← 文档索引](../README.zh-CN.md) · [← NeverC 项目主页](../i18n/README.zh-CN.md)
+
 # NeverC 插件 ABI
 
 一个 NeverC 插件是这样一个共享模块：它只导出一个函数，按 128 位接口 ID 协商带版

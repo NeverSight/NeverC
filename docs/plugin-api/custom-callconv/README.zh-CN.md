@@ -1,5 +1,7 @@
 **语言**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
+[← NeverC 插件 ABI](../README.zh-CN.md)
+
 # 自定义调用约定
 
 NeverC 支持**数据驱动的自定义调用约定** —— 你可以完全通过外部插件或源码属性，把任意物理寄存器分配给任意函数的参数和返回值，无需修改编译器本体，也不用改动任何 TableGen 定义。

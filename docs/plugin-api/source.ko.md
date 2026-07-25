@@ -1,5 +1,7 @@
 **언어**: [English](source.md) | [简体中文](source.zh-CN.md) | [繁體中文](source.zh-TW.md) | [日本語](source.ja.md) | [한국어](source.ko.md) | [Français](source.fr.md) | [Deutsch](source.de.md) | [Español](source.es.md) | [Italiano](source.it.md) | [Русский](source.ru.md) | [العربية](source.ar.md)
 
+[← NeverC 플러그인 ABI](README.ko.md)
+
 # NeverC 플러그인 소스 및 I/O API
 
 `PluginSource.h` 는 두 개의 테이블을 게시합니다. `NevercIOAPI` 는 파일 시스템

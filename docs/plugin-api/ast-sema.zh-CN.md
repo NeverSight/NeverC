@@ -1,5 +1,7 @@
 **语言**: [English](ast-sema.md) | [简体中文](ast-sema.zh-CN.md) | [繁體中文](ast-sema.zh-TW.md) | [日本語](ast-sema.ja.md) | [한국어](ast-sema.ko.md) | [Français](ast-sema.fr.md) | [Deutsch](ast-sema.de.md) | [Español](ast-sema.es.md) | [Italiano](ast-sema.it.md) | [Русский](ast-sema.ru.md) | [العربية](ast-sema.ar.md)
 
+[← NeverC 插件 ABI](README.zh-CN.md)
+
 # NeverC 插件 AST 与语义 API
 
 三张表覆盖整个前端。`NevercParserAPI` 让插件接管一部分解析工作——一种新的声明

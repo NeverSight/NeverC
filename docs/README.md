@@ -56,9 +56,23 @@ NeverC extends standard C with opt-in built-in runtimes embedded as LLVM bitcode
 
 ## Plugin API
 
-NeverC provides a pure C ABI for out-of-tree pass plugins. A plugin is a shared library (`.dll` / `.so` / `.dylib`) that registers custom passes at designated pipeline extension points. The plugin compiles against a single header with zero LLVM or CRT dependencies.
+NeverC exposes its whole toolchain through a pure C ABI. A plugin is a shared module (`.dll` / `.so` / `.dylib`) that attaches to any of 130 named compiler phases — from command-line parsing to the final linked image — as an observer, an interceptor, or a replacement provider. The SDK is header-only: no LLVM headers, no compiler linkage.
 
 **[Plugin API →](plugin-api/README.md)**
+
+| Document | Description |
+|----------|-------------|
+| [README](plugin-api/README.md) | Entry point, phases, interface negotiation, registration, ABI rules |
+| [Driver API](plugin-api/driver.md) | Command line, toolchain selection, action graph, job graph |
+| [Source and I/O API](plugin-api/source.md) | VFS providers, source locations, buffers, output sinks, dependencies |
+| [Preprocessor API](plugin-api/prep.md) | Tokens, macros, pragmas, includes, feature queries, 39 event kinds |
+| [AST and semantic API](plugin-api/ast-sema.md) | Parser extension, AST mutation, name lookup, types, constants |
+| [IR API](plugin-api/ir.md) | LLVM IR reading, transactional building, analyses, passes, providers |
+| [MIR API](plugin-api/mir.md) | Machine functions, registers, frames, MIR passes and analyses |
+| [Target, MC, assembly, object](plugin-api/target-mc-object.md) | Target registration, calling conventions, MC encoding, object graphs |
+| [Link and LTO API](plugin-api/link-lto.md) | Link graph, symbol resolution, GC/ICF, linker and LTO providers |
+| [DynCode API](plugin-api/dyncode.md) | Flat position-independent images, import lowering, charset encoding |
+| [Custom calling conventions](plugin-api/custom-callconv/README.md) | Data-driven calling-convention plugins |
 
 ---
 

@@ -1,5 +1,7 @@
 **언어**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
+[← 문서 색인](../README.ko.md) · [← NeverC 프로젝트](../i18n/README.ko.md)
+
 # NeverC 플러그인 ABI
 
 NeverC 플러그인은 함수를 정확히 하나만 내보내고, 128비트 인터페이스 ID로 버전이

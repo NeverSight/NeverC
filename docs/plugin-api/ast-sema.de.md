@@ -1,5 +1,7 @@
 **Sprachen**: [English](ast-sema.md) | [简体中文](ast-sema.zh-CN.md) | [繁體中文](ast-sema.zh-TW.md) | [日本語](ast-sema.ja.md) | [한국어](ast-sema.ko.md) | [Français](ast-sema.fr.md) | [Deutsch](ast-sema.de.md) | [Español](ast-sema.es.md) | [Italiano](ast-sema.it.md) | [Русский](ast-sema.ru.md) | [العربية](ast-sema.ar.md)
 
+[← NeverC-Plugin-ABI](README.de.md)
+
 # NeverC Plugin-API für AST und Semantik
 
 Drei Tabellen decken das Frontend ab. `NevercParserAPI` lässt ein Plugin ein

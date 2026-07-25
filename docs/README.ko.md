@@ -56,9 +56,23 @@ NeverC는 LLVM bitcode로 임베디드된 내장 런타임으로 표준 C를 확
 
 ## 플러그인 API
 
-NeverC는 아웃오브트리 패스 플러그인을 위한 순수 C ABI를 제공합니다. 플러그인은 공유 라이브러리(`.dll` / `.so` / `.dylib`)로, 파이프라인의 지정된 훅 포인트에 커스텀 패스를 등록합니다. 단일 헤더만 필요하며 LLVM/CRT 의존성이 없습니다.
+NeverC는 순수 C ABI로 툴체인 전체를 개방합니다. 플러그인은 공유 모듈(`.dll` / `.so` / `.dylib`)로서, 명령줄 파싱부터 최종 링크 이미지까지 130개의 이름 붙은 컴파일 페이즈 중 어디에나 옵저버, 인터셉터, 또는 대체 프로바이더로 붙을 수 있습니다. SDK는 헤더 전용이라 LLVM 헤더도, 컴파일러 링크도 필요 없습니다.
 
 **[플러그인 API →](plugin-api/README.ko.md)**
+
+| 문서 | 설명 |
+|------|------|
+| [README](plugin-api/README.ko.md) | 진입점, 페이즈, 인터페이스 협상, 등록, ABI 규칙 |
+| [드라이버 API](plugin-api/driver.ko.md) | 명령줄, 툴체인 선택, 액션 그래프, 잡 그래프 |
+| [소스와 I/O API](plugin-api/source.ko.md) | VFS 프로바이더, 소스 위치, 버퍼, 출력 싱크, 의존성 |
+| [전처리기 API](plugin-api/prep.ko.md) | 토큰, 매크로, pragma, include, 기능 질의, 39가지 이벤트 |
+| [AST와 의미 분석 API](plugin-api/ast-sema.ko.md) | 파서 확장, AST 변경, 이름 조회, 타입, 상수 |
+| [IR API](plugin-api/ir.ko.md) | LLVM IR 읽기, 트랜잭션 기반 구성, 분석, 패스, 프로바이더 |
+| [MIR API](plugin-api/mir.ko.md) | 머신 함수, 레지스터, 스택 프레임, MIR 패스와 분석 |
+| [타깃, MC, 어셈블리, 오브젝트](plugin-api/target-mc-object.ko.md) | 타깃 등록, 호출 규약, MC 인코딩, 오브젝트 그래프 |
+| [링크와 LTO API](plugin-api/link-lto.ko.md) | 링크 그래프, 심볼 결정, GC/ICF, 링커와 LTO 프로바이더 |
+| [DynCode API](plugin-api/dyncode.ko.md) | 평평한 위치 독립 이미지, 임포트 로워링, 문자셋 인코딩 |
+| [사용자 정의 호출 규약](plugin-api/custom-callconv/README.ko.md) | 데이터 주도 호출 규약 플러그인 |
 
 ---
 

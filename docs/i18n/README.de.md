@@ -35,7 +35,7 @@ C ist bereits die einfachste Systemsprache. NeverC macht sie noch einfacher:
 - **Einzelne Binärdatei** — Compiler + Linker + Laufzeiten in einer einzigen ausführbaren Datei. Null externe Abhängigkeiten.
 - **LLM-freundlich** — Minimale Grammatik und deterministische Semantik sorgen dafür, dass KI-generierter NeverC-Code häufiger korrekt kompiliert als C++-Alternativen.
 - **Echte Cross-Kompilierung** — Windows PE, Linux ELF, macOS Mach-O, Android ELF und DynCode von macOS oder Linux bauen — keine VM, kein Dual-Boot, keine SDK-Suche. Plattform-SDKs sind im Compiler integriert.
-- **Erweiterbar ohne Reibung** — Ein einziger C-Header, 20+ Extension Points, und Sie haben ein [Compiler-Plugin](../plugin-api/README.de.md), das in jede Phase eingreifen kann — von der IR-Optimierung bis zur finalen Binärausgabe — ohne LLVM-Kenntnisse.
+- **Erweiterbar ohne Reibung** — Ein einziger C-Header, 130 benannte Compilerphasen, und Sie haben ein [Compiler-Plugin](../plugin-api/README.de.md), das in jede Phase eingreifen kann — von der IR-Optimierung bis zur finalen Binärausgabe — ohne LLVM-Kenntnisse.
 - **Sicherheitsforschung eingebaut** — DynCode-Kompilierung, Kompilierzeit-Stringverschlüsselung und plattformübergreifende PE-Generierung sind nativ in den Compiler integriert — keine nachträglich angehängten externen Skripte.
 
 ## Funktionen
@@ -44,7 +44,7 @@ C ist bereits die einfachste Systemsprache. NeverC macht sie noch einfacher:
 - **Integrierter Linker** — COFF, ELF und Mach-O in einem Binary; kein externes `ld` oder `link.exe`
 - **Cross-Kompilierung** — Windows PE, Linux ELF, macOS Mach-O und Android ELF von jedem Host mit integrierten Plattform-SDKs
 - **[Integrierte Laufzeiten](../builtins/README.de.md)** — in den Compiler eingebettete LLVM-Bitcode-Laufzeiten: [`string`](../builtins/string/README.de.md) (Werttyp-String, automatische Speicherverwaltung), [`mimalloc`](../builtins/mimalloc/README.de.md) (transparenter Hochleistungs-Allokator-Override), [`xorstr`](../builtins/xorstr/README.de.md) (Kompilierzeit-Stringverschlüsselung mit Anti-Signatur-Entschlüsselung) und [`strhash`](../builtins/strhash/README.de.md) (Kompilierzeit-Zeichenketten-Hashing mit übereinstimmender Laufzeit)
-- **[Plugin-API](../plugin-api/README.de.md)** — Reine C-ABI für Out-of-Tree-Pass-Plugins; Single-Header-SDK, null LLVM/CRT-Abhängigkeiten, IR-, MIR-, Binary- und Linker-Extension Points
+- **[Plugin-API](../plugin-api/README.de.md)** — Reine C-ABI für Out-of-Tree-Plugins; Single-Header-SDK, null LLVM/CRT-Abhängigkeiten, über Treiber-, Präprozessor-, AST-, IR-, MIR-, MC-, Objekt-, Link-, LTO- und dyncode-Phasen hinweg
 - **[`.nc`-Erweiterung](../nc-extension/README.de.md)** — `.nc`-Dateierweiterung aktiviert automatisch alle NeverC-Funktionen (`string`, Integer-Typen im Rust-Stil) ohne zusätzliche Flags
 - **Schlanker LLVM-Build** — nur x86_64 / AArch64-Backends; C++/ObjC/OpenMP-Pfade entfernt
 

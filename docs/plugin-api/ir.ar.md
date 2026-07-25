@@ -1,5 +1,7 @@
 **اللغات**: [English](ir.md) | [简体中文](ir.zh-CN.md) | [繁體中文](ir.zh-TW.md) | [日本語](ir.ja.md) | [한국어](ir.ko.md) | [Français](ir.fr.md) | [Deutsch](ir.de.md) | [Español](ir.es.md) | [Italiano](ir.it.md) | [Русский](ir.ru.md) | [العربية](ir.ar.md)
 
+[← واجهة NeverC الثنائية للإضافات](README.ar.md)
+
 # واجهة التمثيل الوسيط لإضافات NeverC
 
 تكشف `PluginIR.h` تمثيلَ LLVM الوسيط عبر ستة جداول قدرات ومخطَّطٍ مولَّد. تستطيع

@@ -56,9 +56,23 @@ NeverC は LLVM bitcode として埋め込まれた組み込みランタイム�
 
 ## プラグイン API
 
-NeverC はアウトオブツリーのパスプラグイン用に純粋な C ABI を提供します。プラグインは共有ライブラリ（`.dll` / `.so` / `.dylib`）で、パイプラインの指定されたフックポイントにカスタムパスを登録します。単一ヘッダーのみ、LLVM/CRT 依存なし。
+NeverC は純粋な C ABI を通じてツールチェーン全体を公開します。プラグインは共有モジュール（`.dll` / `.so` / `.dylib`）であり、コマンドライン解析から最終的なリンク済みイメージまで、130 の名前付きコンパイルフェーズのいずれにも、オブザーバー・インターセプター・置換プロバイダーとして接続できます。SDK はヘッダーのみで、LLVM ヘッダーもコンパイラへのリンクも不要です。
 
 **[プラグイン API →](plugin-api/README.ja.md)**
+
+| ドキュメント | 説明 |
+|-------------|------|
+| [README](plugin-api/README.ja.md) | エントリーポイント、フェーズ、インターフェース交渉、登録、ABI 規則 |
+| [ドライバー API](plugin-api/driver.ja.md) | コマンドライン、ツールチェーン選択、アクショングラフ、ジョブグラフ |
+| [ソースと I/O API](plugin-api/source.ja.md) | VFS プロバイダー、ソース位置、バッファー、出力シンク、依存関係 |
+| [プリプロセッサー API](plugin-api/prep.ja.md) | トークン、マクロ、pragma、include、機能クエリ、39 種類のイベント |
+| [AST と意味解析 API](plugin-api/ast-sema.ja.md) | パーサー拡張、AST 変更、名前探索、型、定数 |
+| [IR API](plugin-api/ir.ja.md) | LLVM IR の読み取り、トランザクショナルな構築、解析、パス、プロバイダー |
+| [MIR API](plugin-api/mir.ja.md) | マシン関数、レジスター、スタックフレーム、MIR パスと解析 |
+| [ターゲット、MC、アセンブリ、オブジェクト](plugin-api/target-mc-object.ja.md) | ターゲット登録、呼び出し規約、MC エンコード、オブジェクトグラフ |
+| [リンクと LTO API](plugin-api/link-lto.ja.md) | リンクグラフ、シンボル解決、GC/ICF、リンカーと LTO プロバイダー |
+| [DynCode API](plugin-api/dyncode.ja.md) | フラットな位置独立イメージ、インポートの低位化、文字セットエンコード |
+| [カスタム呼び出し規約](plugin-api/custom-callconv/README.ja.md) | データ駆動の呼び出し規約プラグイン |
 
 ---
 

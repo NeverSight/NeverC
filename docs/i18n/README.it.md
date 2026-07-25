@@ -35,7 +35,7 @@ C è già il linguaggio di sistema più semplice. NeverC lo rende ancora più se
 - **Singolo binario** — Compilatore + linker + runtime in un unico eseguibile. Zero dipendenze esterne.
 - **Compatibile con LLM** — Grammatica minimale e semantica deterministica: il codice NeverC generato dall'IA compila correttamente più spesso delle alternative C++.
 - **Vera cross-compilazione** — Compilare Windows PE, Linux ELF, macOS Mach-O, Android ELF e dyncode da macOS o Linux — nessuna VM, nessun dual boot, nessuna ricerca di SDK. Gli SDK di piattaforma sono integrati nel compilatore.
-- **Estensibile senza frizioni** — Un singolo header C, 20+ extension point, e hai un [plugin del compilatore](../plugin-api/README.it.md) capace di intervenire in qualsiasi fase — dall'ottimizzazione IR all'output binario finale — senza conoscere LLVM.
+- **Estensibile senza frizioni** — Un singolo header C, 130 fasi di compilazione con nome, e hai un [plugin del compilatore](../plugin-api/README.it.md) capace di intervenire in qualsiasi fase — dall'ottimizzazione IR all'output binario finale — senza conoscere LLVM.
 - **Ricerca sulla sicurezza integrata** — Compilazione dyncode, cifratura stringhe a tempo di compilazione e generazione PE multipiattaforma sono nativamente integrati nel compilatore — non aggiunte posticce con script esterni.
 
 ## Funzionalità
@@ -44,7 +44,7 @@ C è già il linguaggio di sistema più semplice. NeverC lo rende ancora più se
 - **Linker integrato** — COFF, ELF e Mach-O in un solo binario; nessun `ld` o `link.exe` esterno
 - **Cross-compilazione** — Windows PE, Linux ELF, macOS Mach-O e Android ELF da qualsiasi host con SDK di piattaforma integrati
 - **[Runtime integrati](../builtins/README.it.md)** — runtime LLVM bitcode integrati nel compilatore: [`string`](../builtins/string/README.it.md) (stringa a semantica di valore, gestione automatica della memoria), [`mimalloc`](../builtins/mimalloc/README.it.md) (sostituzione trasparente allocatore ad alte prestazioni), [`xorstr`](../builtins/xorstr/README.it.md) (cifratura di stringhe a tempo di compilazione con decifratura anti-firma) e [`strhash`](../builtins/strhash/README.it.md) (hash di stringhe a tempo di compilazione con lo stesso algoritmo a runtime)
-- **[API Plugin](../plugin-api/README.it.md)** — ABI C pura per plugin di pass fuori dall'albero; SDK a singolo header, zero dipendenze LLVM/CRT, extension point IR, MIR, Binary e Linker
+- **[API Plugin](../plugin-api/README.it.md)** — ABI C pura per plugin fuori dall'albero; SDK a singolo header, zero dipendenze LLVM/CRT, che copre le fasi di driver, preprocessore, AST, IR, MIR, MC, oggetto, collegamento, LTO e dyncode
 - **[Estensione `.nc`](../nc-extension/README.it.md)** — usa `.nc` per abilitare automaticamente tutte le funzionalità NeverC (`string`, tipi interi stile Rust) senza flag aggiuntivi
 - **Build LLVM snella** — solo backend x86_64 / AArch64; percorsi C++/ObjC/OpenMP rimossi
 

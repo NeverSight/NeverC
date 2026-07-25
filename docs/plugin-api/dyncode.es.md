@@ -1,5 +1,7 @@
 **Idiomas**: [English](dyncode.md) | [简体中文](dyncode.zh-CN.md) | [繁體中文](dyncode.zh-TW.md) | [日本語](dyncode.ja.md) | [한국어](dyncode.ko.md) | [Français](dyncode.fr.md) | [Deutsch](dyncode.de.md) | [Español](dyncode.es.md) | [Italiano](dyncode.it.md) | [Русский](dyncode.ru.md) | [العربية](dyncode.ar.md)
 
+[← ABI de complementos de NeverC](README.es.md)
+
 # Plugins de DynCode
 
 `-fdyncode` compila una unidad de traducción en una imagen plana e independiente

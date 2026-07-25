@@ -1,5 +1,7 @@
 **Языки**: [English](ir.md) | [简体中文](ir.zh-CN.md) | [繁體中文](ir.zh-TW.md) | [日本語](ir.ja.md) | [한국어](ir.ko.md) | [Français](ir.fr.md) | [Deutsch](ir.de.md) | [Español](ir.es.md) | [Italiano](ir.it.md) | [Русский](ir.ru.md) | [العربية](ir.ar.md)
 
+[← ABI плагинов NeverC](README.ru.md)
+
 # API IR плагинов NeverC
 
 `PluginIR.h` открывает LLVM IR через шесть таблиц возможностей и порождённую

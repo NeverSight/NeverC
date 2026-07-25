@@ -1,5 +1,7 @@
 **Langues**: [English](link-lto.md) | [简体中文](link-lto.zh-CN.md) | [繁體中文](link-lto.zh-TW.md) | [日本語](link-lto.ja.md) | [한국어](link-lto.ko.md) | [Français](link-lto.fr.md) | [Deutsch](link-lto.de.md) | [Español](link-lto.es.md) | [Italiano](link-lto.it.md) | [Русский](link-lto.ru.md) | [العربية](link-lto.ar.md)
 
+[← ABI de plugin NeverC](README.fr.md)
+
 # API Link et LTO des plugins NeverC
 
 L'édition de liens est modélisée comme une **machine à états sur un seul
