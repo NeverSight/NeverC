@@ -89,7 +89,7 @@ IR 控制代碼是範圍限於單一任務的不透明 `{Owner, Value}` 對，�
 - 絕不要在另一個 session 或任務裡使用某個控制代碼。
 - 已提交的替換會讓被替換物件的控制代碼失效。
 - 被中止的變更會讓該變更所建立的控制代碼變成過期。
-- 錯誤是 `NEVERC_STATUS_STALE_HANDLE`、`WRONG_OWNER` 或 `WRONG_TYPE`──絕不會是
+- 錯誤是 `NEVERC_STATUS_STALE_HANDLE`、`WRONG_SCOPE` 或 `WRONG_TYPE`──絕不會是
   一個裸的 LLVM 指標。
 
 查詢回傳的字串與位元組 view 只在該回呼期間借用。唯一的例外是 `ExportModule`，

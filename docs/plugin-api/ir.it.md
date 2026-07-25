@@ -96,7 +96,7 @@ e tutto ciò che sta dietro appartiene all'host.
 - Non usate mai un handle in un'altra sessione o in un altro task.
 - Una sostituzione confermata invalida gli handle degli oggetti sostituiti.
 - Una modifica abortita rende obsoleti gli handle che essa aveva creato.
-- Gli errori sono `NEVERC_STATUS_STALE_HANDLE`, `WRONG_OWNER` o `WRONG_TYPE` —
+- Gli errori sono `NEVERC_STATUS_STALE_HANDLE`, `WRONG_SCOPE` o `WRONG_TYPE` —
   mai un puntatore LLVM grezzo.
 
 Le stringhe e le viste di byte restituite da un'interrogazione sono prestate per

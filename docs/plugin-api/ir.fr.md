@@ -97,7 +97,7 @@ tâche, et l'hôte possède tout ce qui se trouve derrière.
 - N'utilisez jamais un descripteur dans une autre session ou une autre tâche.
 - Un remplacement validé invalide les descripteurs des objets remplacés.
 - Une modification abandonnée périme les descripteurs qu'elle avait créés.
-- Les erreurs sont `NEVERC_STATUS_STALE_HANDLE`, `WRONG_OWNER` ou
+- Les erreurs sont `NEVERC_STATUS_STALE_HANDLE`, `WRONG_SCOPE` ou
   `WRONG_TYPE` — jamais un pointeur LLVM brut.
 
 Les chaînes et vues d'octets issues d'une requête sont empruntées pour la durée

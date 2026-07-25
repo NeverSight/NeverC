@@ -92,7 +92,7 @@ owns everything behind them.
 - Never use a handle in another session or task.
 - A committed replacement invalidates handles for the objects it replaced.
 - An aborted mutation makes the handles that mutation created stale.
-- Errors are `NEVERC_STATUS_STALE_HANDLE`, `WRONG_OWNER`, or `WRONG_TYPE` —
+- Errors are `NEVERC_STATUS_STALE_HANDLE`, `WRONG_SCOPE`, or `WRONG_TYPE` —
   never a raw LLVM pointer.
 
 Strings and byte views from a query are borrowed for the callback. The one

@@ -90,7 +90,7 @@ IR 句柄是限定在单个任务内的不透明 `{Owner, Value}` 对，背后�
 - 不要跨会话或跨任务使用句柄。
 - 一次已提交的替换会让被替换对象的句柄失效。
 - 一次被中止的 mutation 会让它创建的句柄变成陈旧句柄。
-- 错误以 `NEVERC_STATUS_STALE_HANDLE`、`WRONG_OWNER` 或 `WRONG_TYPE` 报出——
+- 错误以 `NEVERC_STATUS_STALE_HANDLE`、`WRONG_SCOPE` 或 `WRONG_TYPE` 报出——
   永远不会给你一个裸的 LLVM 指针。
 
 查询返回的字符串和字节视图只在回调期间有效。唯一的例外是 `ExportModule`，它返

@@ -95,7 +95,7 @@ und alles dahinter gehört dem Host.
 - Verwenden Sie ein Handle niemals in einer anderen Sitzung oder Aufgabe.
 - Ein festgeschriebener Ersatz macht die Handles der ersetzten Objekte ungültig.
 - Eine abgebrochene Veränderung lässt die von ihr erzeugten Handles veralten.
-- Fehler sind `NEVERC_STATUS_STALE_HANDLE`, `WRONG_OWNER` oder `WRONG_TYPE` —
+- Fehler sind `NEVERC_STATUS_STALE_HANDLE`, `WRONG_SCOPE` oder `WRONG_TYPE` —
   niemals ein roher LLVM-Zeiger.
 
 Zeichenketten und Bytesichten aus einer Abfrage sind für den Rückruf geliehen.

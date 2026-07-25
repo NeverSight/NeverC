@@ -92,7 +92,7 @@ IR 핸들은 하나의 태스크에 한정된 불투명한 `{Owner, Value}` 쌍�
 - 다른 세션이나 태스크에서 핸들을 쓰지 마십시오.
 - 커밋된 교체는 교체된 객체의 핸들을 무효로 만듭니다.
 - 중단된 변경은 그 변경이 만든 핸들을 낡은 것으로 만듭니다.
-- 오류는 `NEVERC_STATUS_STALE_HANDLE`, `WRONG_OWNER`, `WRONG_TYPE` 이며, 결코
+- 오류는 `NEVERC_STATUS_STALE_HANDLE`, `WRONG_SCOPE`, `WRONG_TYPE` 이며, 결코
   날것의 LLVM 포인터가 아닙니다.
 
 질의에서 나온 문자열과 바이트 뷰는 콜백 동안만 빌려온 것입니다. 유일한 예외는

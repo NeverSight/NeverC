@@ -99,7 +99,7 @@ tarea, y el anfitrión es dueño de todo lo que hay detrás.
 - Una sustitución confirmada invalida los descriptores de los objetos
   sustituidos.
 - Una modificación abortada deja obsoletos los descriptores que ella creó.
-- Los errores son `NEVERC_STATUS_STALE_HANDLE`, `WRONG_OWNER` o `WRONG_TYPE`,
+- Los errores son `NEVERC_STATUS_STALE_HANDLE`, `WRONG_SCOPE` o `WRONG_TYPE`,
   nunca un puntero de LLVM en crudo.
 
 Las cadenas y vistas de bytes que devuelve una consulta están prestadas durante
