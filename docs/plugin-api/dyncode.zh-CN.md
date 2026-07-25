@@ -4,6 +4,35 @@
 
 `-fdyncode` 把一个翻译单元编译成扁平的、位置无关的镜像（`.bin`）：其代码零重定位、无数据节。它支持 macOS / Linux / Android / Windows 上的 arm64/x86_64，可选 user 或 kernel 执行级。插件通过与其他领域相同的纯 C ABI，观察、拦截或替换把 C 变成该镜像的各个 typed phase：不跨边界传递 LLVM C++ 对象、STL 类型、异常，或生命周期未由 API 表声明的宿主指针。
 
+## 接口
+
+```c
+#include "neverc/Plugin/PluginDynCode.h"
+```
+
+| 接口 | 表 | 槽位 | 用途 |
+|---|---|--:|---|
+| `NEVERC_INTERFACE_DYNCODE_{HIGH,LOW}` | `NevercDynCodeAPI` | 16 | 读取 request、image、report 以及 section/symbol/relocation/external 映射 |
+| `NEVERC_INTERFACE_DYNCODE_REGISTRAR_{HIGH,LOW}` | `NevercDynCodeRegistrarAPI` | 5 | `RegisterTarget`、`RegisterImportProvider`、`RegisterExtractor`、`RegisterCharsetEncoder`、`RegisterBinaryVerifier` |
+| `NEVERC_INTERFACE_DYNCODE_PHASE_{HIGH,LOW}` | `NevercDynCodePhaseAPI` | 4 | `GetPhaseInfo`、`GetRequest`、`GetImage`、`GetReport` |
+
+三者在 major 1 上都是 `NEVERC_INTERFACE_STABLE`。在 phase 回调内部，
+`NevercDynCodePhaseAPI` 是入口——它把帧转换成另一张表所消费的句柄：
+
+```c
+NevercDynCodeRequestHandle Request;
+Phase->GetRequest(Phase->Context, Frame, Frame->Input, &Request);
+
+NevercDynCodeRequestInfo Info = {0};
+Info.Header = (NevercABITableHeader){sizeof(Info), NEVERC_DYNCODE_API_MAJOR,
+                                     NEVERC_DYNCODE_API_MINOR, 0};
+DynCode->GetRequestInfo(DynCode->Context, Task, Request, &Info);
+```
+
+四类映射——section 映射、symbol 映射、重定位和外部引用——都用同一组
+first/next/info 三元组遍历，例如 `GetFirstRelocation`、`GetNextRelocation`、
+`GetRelocationInfo`。插件借此读取提取阶段的决策，而不必去解析 report JSON。
+
 ## DynCode 是编译产物，不是 `main()` 后处理
 
 `-fdyncode` 是驱动 DAG 里的正常 Action/Job。编译 job 发布一个已验证的内存 `ObjectGraph`；一个 `-dyncode-extract` job 消费该图并写出用户的 `-o` 镜像。`-###`、phase 打印和 job 图都能看到该提取 job，因此插件无需靠还原被改写的 argv 来发现该模式。冻结后的 request 以 task-local 方式与 in-process codegen 共享；不存在 `getCurrentDynCodeOptions()`、进程级 mode flag，也没有临时对象往返。

@@ -109,7 +109,7 @@ phase ID、policy、稳定层级与 verifier gate 的规范源是
 
 | 原型 | 首版 |
 |---|---|
-| `NevercModulePassFn(NevercModuleRef, API, ud)` 等 | 回调接收 `NevercPhaseFrame`；IR/MIR/AST/图对象是从相应能力表获取的 typed、有作用域的 opaque 句柄（见 [ir.md](ir.md)、[mir.md](mir.md)、[ast-sema.md](ast-sema.md)、[target-mc-object.md](../zh/plugin-api/target-mc-object.md)） |
+| `NevercModulePassFn(NevercModuleRef, API, ud)` 等 | 回调接收 `NevercPhaseFrame`；IR/MIR/AST/图对象是从相应能力表获取的 typed、有作用域的 opaque 句柄（见 [ir.md](ir.zh-CN.md)、[mir.md](mir.zh-CN.md)、[ast-sema.md](ast-sema.zh-CN.md)、[target-mc-object.md](target-mc-object.zh-CN.md)） |
 | 通用 `NevercValueRef` | 已删除，改用 typed IR 句柄 |
 | 就地修改活跃 `Ref` | 所有修改都经事务式宿主 API |
 | `NevercBinaryPassFn(uint8_t **Data, uint64_t *Len, ...)` | 已删除；dyncode 字节修改用受检 image builder（read/write/insert/append/resize），见 [dyncode.md](dyncode.zh-CN.md) |

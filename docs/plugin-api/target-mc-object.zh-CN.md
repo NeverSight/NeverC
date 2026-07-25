@@ -1,76 +1,465 @@
 **语言**: [English](target-mc-object.md) | [简体中文](target-mc-object.zh-CN.md) | [繁體中文](target-mc-object.zh-TW.md) | [日本語](target-mc-object.ja.md) | [한국어](target-mc-object.ko.md) | [Français](target-mc-object.fr.md) | [Deutsch](target-mc-object.de.md) | [Español](target-mc-object.es.md) | [Italiano](target-mc-object.it.md) | [Русский](target-mc-object.ru.md) | [العربية](target-mc-object.ar.md)
 
-# Target、MC、汇编与目标文件插件
+# NeverC 插件 Target、MC、汇编与目标文件 API
 
-NeverC 首个发布版的插件 ABI 允许一个 C 插件描述目标平台、替换代码生成路线、观察机器
-码发射、解析或打印汇编，以及读写目标文件。公开边界是纯 C ABI：插件不得跨界传递 LLVM
-的 C++ 对象、STL 类型、异常，或生命周期未由某个 API 表明确声明的宿主指针。
+后端是四个头文件、二十九个阶段。`PluginTarget.h` 描述一个目标以及穿过代码生成
+的各条路由。`PluginMC.h` 构造并观察机器码，汇编的解析与打印也在同一个头文件
+里。`PluginObject.h` 把可重定位文件变成归一化的图，再变回去。
 
-## 兼容性层级
+它们合起来让插件可以新增一个目标、替换某一个降级步骤或全部步骤、在每条指令发射
+时观察它、定义一种汇编方言，或者改写一个目标文件——全程通过纯 C ABI，永远不会
+暴露 LLVM 的 `MCInst`、`MCSection` 或 `object::ObjectFile`。
 
-与目标无关的描述符、阶段 ID、产物 ID、MC 容器、ObjectGraph 容器、输出事务和回调契约
-属于首发版的 STABLE ABI。目标相关的 opcode、寄存器、操作数、fixup、重定位和调用约定
-schema 属于 LOCKSTEP。插件在消费 LOCKSTEP 值之前必须比对目标 schema ID 和摘要。
-NeverC 会在调用 Provider 之前拒绝不匹配的 schema。
+## 接口
 
-## 注册目标与代码生成路线
+```c
+#include "neverc/Plugin/PluginTarget.h"
+#include "neverc/Plugin/PluginMC.h"
+#include "neverc/Plugin/PluginObject.h"   /* 已包含上面两个 */
+```
 
-在注册期间查询 `NevercTargetAPI`，注册一条或多条 `NevercTargetDescriptor` 记录，并
-挂上 target-machine 描述符和代码生成边。路线由规范目标键来选择：目标 ID、triple、
-CPU、特性、ABI、重定位模型、代码模型、目标文件格式和 schema 摘要。
+| 接口 | 表 | 槽位 | 用途 |
+|---|---|--:|---|
+| `NEVERC_INTERFACE_TARGET_*` | `NevercTargetAPI` | 2 | `RegisterTarget`、`RegisterCodeGenEdge` |
+| `NEVERC_INTERFACE_TARGET_ABI_*` | `NevercTargetABIAPI` | 1 | `RegisterABI` |
+| `NEVERC_INTERFACE_CALLING_CONVENTION_*` | `NevercCallingConventionAPI` | 1 | `RegisterCallingConvention` |
+| `NEVERC_INTERFACE_MC_*` | `NevercMCAPI` | 53 | 读写 `MCUnit`；注册编码器、解码器、后端 |
+| `NEVERC_INTERFACE_MC_EMISSION_*` | `NevercMCEmissionAPI` | 7 | 发射事件与布局快照 |
+| `NEVERC_INTERFACE_MC_PROVIDER_*` | `NevercMCProviderAPI` | 4 | 替换 MIR → MC |
+| `NEVERC_INTERFACE_ASSEMBLY_PROVIDER_*` | `NevercAssemblyProviderAPI` | 8 | 替换汇编解析器或打印器 |
+| `NEVERC_INTERFACE_OBJECT_*` | `NevercObjectAPI` | 34 | 读写 ObjectGraph |
+| `NEVERC_INTERFACE_OBJECT_FORMAT_*` | `NevercObjectFormatAPI` | 1 | `RegisterFormat` |
+| `NEVERC_INTERFACE_OBJECT_PHASE_*` | `NevercObjectPhaseAPI` | 2 | `GetGraph`、`GetImage` |
 
-细粒度路线使用 `IR -> MIR -> MC -> ObjectGraph -> ObjectImage`。粗粒度的边可以替换
-整条 `IR -> ObjectImage` 路线。粗粒度输出仍要通过宿主强制的产物验证器和事务式输出
-提交；Provider 无法绕过其中任何一道关卡。
+## 两个兼容性层级
 
-## 构建与观察 MC
+这条规则统辖本文其余所有内容。
 
-`NevercMCAPI` 负责任务局部的 `MCUnit` 变更。开启一次变更，创建 section、fragment、
-符号、表达式、指令和操作数，然后提交或放弃。句柄限定在任务作用域内，并做代数检查。
+**STABLE**，可以放心硬编码：与目标无关的描述符、阶段 ID、artifact ID、MC 与
+ObjectGraph 容器、输出事务，以及所有回调契约。
 
-与目标无关的发射流暴露有序事件，涵盖 section 切换、标签、指令、对齐、符号属性、CFI、
-调试位置和数据。`neverc.mc.emission.pre_instruction` 可替换，其余事件阶段是只读的
-观察点。参见 `pluginsdk/examples/MCObserverPlugin.c`。
+**LOCKSTEP**，不检查就用是不安全的：目标相关的 opcode、寄存器、操作数、fixup、
+重定位和调用约定 schema。它们的数值只对某一个确切的 schema 修订版有意义。
 
-编码、解码和布局 Provider 基于相同的目标键和 schema 摘要工作。布局负责 relaxation
-并给出证明摘要。布局之后的任何变更都会使该证明失效，并在写目标文件前强制重新布局。
+凡是出现 LOCKSTEP 值的地方，旁边都会有一个 schema 摘要。读值之前先比对它：
 
-## 替换汇编语法
+```c
+if (!string_equal(Target.SchemaDigest, MY_COMPILED_SCHEMA_DIGEST))
+  return fail(NEVERC_STATUS_ABI_MISMATCH);
+```
 
-汇编解析器 Provider 消费源字节并发布一个 `MCUnit`。汇编打印器消费 `MCUnit`，且只能
-通过给定的输出事务写出。经过预处理的汇编（`.S`）先走正常的前端预处理器再进入解析器
-Provider；纯汇编（`.s`）直接进入解析器。
+NeverC 也会在调用 Provider 之前拒绝不匹配的 schema，所以这道检查是双保险——但
+跳过它、照样去读裸 opcode 的插件，会默默地把指令解释错。
 
-Provider 先暂存输出。解析／打印验证和宿主提交关卡都在字节可见之前运行，因此失败不会
-留下任何部分输出。
+## 阶段
 
-## 读取、改写与写出目标文件
+一共二十九个，分属四个域。
 
-`NevercObjectAPI` 把可重定位文件表示为规范化的 ObjectGraph：section、符号、重定位、
-group/COMDAT、导入／导出、TLS 元数据、展开记录和调试记录。内建适配器覆盖 ELF、COFF
-和 Mach-O，插件还可以注册更多格式。
+### `codegen` —— 路由（4 个）
 
-目标文件流水线是：
+| 阶段 | 策略 |
+|---|---|
+| `neverc.codegen.ir_to_mir` | OBSERVABLE, INTERCEPTABLE, REPLACEABLE |
+| `neverc.codegen.mir_to_mc` | OBSERVABLE, INTERCEPTABLE, REPLACEABLE |
+| `neverc.codegen.coarse_lower` | OBSERVABLE, INTERCEPTABLE, REPLACEABLE |
+| `neverc.codegen.product_verify` | OBSERVABLE, **SEALED** |
+
+### `mc` —— 机器码（13 个）
+
+`neverc.mc.encode`、`neverc.mc.decode`、`neverc.mc.layout` 是 OBSERVABLE、
+INTERCEPTABLE、REPLACEABLE。
+
+`neverc.mc.emission.pre_instruction` 是唯一同时可 REPLACEABLE 的发射事件——替
+换指令就在这里做。另外九个（`unit_begin`、`unit_end`、`section_change`、
+`post_instruction`、`post_encode`、`fixup`、`relaxation_round`、`pre_layout`、
+`post_layout`）只能观察。
+
+### `assembly`（4 个）
+
+`neverc.assembly.parse` 与 `neverc.assembly.print` 可替换；
+`neverc.assembly.final_verify` 和 `neverc.assembly.commit` 是 SEALED。
+
+### `object`（8 个）
+
+`neverc.object.probe`、`read`、`write`、`pre_write`、`post_layout` 可替换；
+`neverc.object.post_write` 只可拦截；`neverc.object.final_verify` 与
+`neverc.object.commit` 是 SEALED。
+
+## 注册目标
+
+`NevercTargetDescriptor` 是整个 ABI 里最大的描述符，因为它要携带前端和后端需要
+知道的全部信息：
+
+```c
+typedef struct NevercTargetDescriptor {
+  NevercABITableHeader Header;
+  NevercTargetID TargetID;
+  NevercStringView CanonicalName;
+  NevercStringArrayView Aliases;
+  NevercStructArrayView TripleMatchers;    /* NevercTargetTripleMatcher[] */
+  NevercTargetABIID DefaultABI;
+  NevercCallingConventionID DefaultCallingConvention;
+  NevercInterfaceID MCSchemaID;
+  NevercInterfaceID DefaultObjectFormatID;
+  NevercTargetMachineDescriptor Machine;
+  NevercStructArrayView Macros;            /* 预定义宏                   */
+  NevercStructArrayView Builtins;          /* 目标 builtin 及其降级      */
+  NevercStructArrayView Registers;         /* 内联汇编寄存器名           */
+  NevercStructArrayView Constraints;       /* 内联汇编约束               */
+  NevercStringView Clobbers;
+  uint64_t Flags;
+  NevercTargetValidateCPUFn ValidateCPU;
+  NevercTargetCanonicalizeCPUFn CanonicalizeCPU;
+  NevercTargetListCPUsFn ListCPUs;
+  NevercTargetResolveFeaturesFn ResolveFeatures;
+  NevercCreateTargetMachineFn CreateTargetMachine;
+  NevercDestroyTargetMachineFn DestroyTargetMachine;
+  void *UserData;
+  NevercDestroyUserDataFn DestroyUserData;
+} NevercTargetDescriptor;
+```
+
+`TripleMatchers` 决定何时选中这个目标：每个匹配器指明架构、厂商、操作系统和环
+境，外加一个 `Priority`，用来在与内建目标冲突时决出胜负。
+
+`Machine` 是一个 `NevercTargetMachineDescriptor`——数据布局、默认与可调 CPU、
+特性表、支持的 ABI／调用约定／目标文件格式、地址空间、重定位与代码模型（同时给
+出默认值和支持位掩码）、异常模型（`NONE`、`DWARF`、`SJLJ`、`SEH`、`WASM`）、展
+开模型、字节序、指针／int／long／long long 的宽度、栈对齐、最大原子与向量宽度、
+`va_list` 种类、执行级（`USER`、`KERNEL`、`HYPERVISOR`、`FIRMWARE`）以及 TLS 支
+持。
+
+目标 builtin 自带降级回调，回调会收到一个可用的 IR builder：
+
+```c
+static NevercStatus NEVERC_CALL
+lower_builtin(void *UserData,
+              const NevercTargetBuiltinLoweringInvocation *In,
+              NevercIRValueHandle *OutResult) {
+  /* In->Core, In->Builder, In->Mutation, In->IRBuilder,
+     In->ResultType, In->Arguments, In->ArgumentCount */
+  return In->Builder->BuildCall(/* … */);
+}
+```
+
+## ABI 与调用约定
+
+ABI 负责对函数签名分类：
+
+```c
+static NevercStatus NEVERC_CALL
+classify(void *UserData, const NevercABIFunctionQuery *Query,
+         NevercABIArgumentClassification *ReturnValue,
+         NevercABIArgumentClassificationArray *Arguments) {
+  ReturnValue->Kind = NEVERC_ABI_ARGUMENT_DIRECT;
+  for (uint64_t I = 0; I != Arguments->Count; ++I) {
+    NevercABIArgumentClassification *A = &Arguments->Data[I];
+    A->Kind  = NEVERC_ABI_ARGUMENT_INDIRECT;
+    A->Flags = NEVERC_ABI_ARGUMENT_BYVAL;
+  }
+  return neverc_status_ok();
+}
+```
+
+参数种类有 `DIRECT`、`EXTEND`、`INDIRECT`、`IGNORE`、`EXPAND`、
+`INDIRECT_ALIASED`、`COERCE_AND_EXPAND`；标志有 `BYVAL`、`REALIGN`、`INREG`、
+`SRET_AFTER_THIS`、`CAN_BE_FLATTENED`、`SIGN_EXTEND`、`PADDING_INREG`。强制转换
+是 `NONE`、`INTEGER`、`FLOAT` 或 `POINTER`，`COERCE_AND_EXPAND` 另外提供一组
+`NevercABICoercionElement`。
+
+调用约定再低一层，负责分配实际位置：
+
+```c
+static NevercStatus NEVERC_CALL
+plan(void *UserData, const NevercCallingConventionQuery *Query,
+     NevercCallingConventionPlan *Plan) {
+  /* Query->TargetID, ->CallingConventionID, ->SchemaDigest, ->Function */
+  /* 用 NevercCallingConventionLocation 记录填充 Plan->ReturnLocations
+     和 Plan->ArgumentLocations：REGISTER 或 STACK、ValueIndex、
+     PieceOffset、Size、Alignment、RegisterNumber、StackOffset，
+     以及 INDIRECT / BYVAL 标志。                                    */
+  Plan->CalleeSavedRegisters = MySavedRegisters;
+  Plan->StackAlignment       = 16;
+  return neverc_status_ok();
+}
+```
+
+`Query->SchemaDigest` 是 LOCKSTEP 值——`RegisterNumber` 只在它指名的那个 schema
+下才有意义。完整示例见
+[自定义调用约定](custom-callconv/README.md) 和
+`pluginsdk/examples/CustomCallConvPlugin.c`。
+
+## 代码生成路由
+
+路由由规范的 `NevercTargetKey` 选出：目标 ID、triple 各部分、CPU、tune CPU、特
+性、ABI、调用约定、目标文件格式、重定位模型、代码模型、执行级、指针宽度、字节序
+和 schema 摘要。注册你能承担的边：
+
+```c
+NevercCodeGenEdgeDescriptor Edge = {0};
+Edge.Header          = /* … */;
+Edge.EdgeID          = MyEdgeID;
+Edge.CanonicalName   = SV("com.example.mir-to-mc");
+Edge.TargetID        = MyTargetID;
+Edge.InputKind       = NEVERC_CODEGEN_PRODUCT_MIR;
+Edge.OutputKind      = NEVERC_CODEGEN_PRODUCT_MC;
+Edge.CompatibilityKey = SV("…");
+Edge.ProviderID      = SV("com.example.backend");
+Target->RegisterCodeGenEdge(Target->Context, RegistrarContext, &Edge);
+```
+
+产物种类有 `IR`、`MIR`、`MC`、`ASSEMBLY`、`OBJECT_GRAPH`、`OBJECT_IMAGE`、
+`CUSTOM`。细粒度路由是 `IR → MIR → MC → ObjectGraph → ObjectImage`。
+
+设置 `NEVERC_CODEGEN_EDGE_COARSE` 并提供 `CoarseLower`，就能一步替换掉整个
+`IR → ObjectImage` 区间：
+
+```c
+static NevercStatus NEVERC_CALL
+coarse_lower(void *UserData, NevercTaskHandle Task,
+             const NevercCodeGenRequest *Request,
+             NevercCodeGenProductCandidate *OutCandidate) {
+  /* Request->Target, ->Input, ->InputKind, ->OutputKind,
+     ->OptimizationLevel, ->HasFinalIRProof                */
+  OutCandidate->Kind      = NEVERC_CODEGEN_PRODUCT_OBJECT_IMAGE;
+  OutCandidate->Artifact  = MyImage;
+  OutCandidate->ProductID = MyProductID;
+  return neverc_status_ok();
+}
+```
+
+粗粒度路由同样要过 `neverc.codegen.product_verify` 和事务式输出提交。
+`VerifyProduct` 被调用时会带上宿主期望你已经履行的义务——`VERIFY_FINAL_IR`、
+`VERIFY_TARGET_KEY`、`VERIFY_PRODUCT_KIND`、`VERIFY_PRODUCT_ID`、
+`VERIFY_STRUCTURE`——所以 Provider 无法靠抄近路悄悄绕过某道关卡。
+
+## 构造 MC
+
+一个 `MCUnit` 承载节、符号、表达式、片段、指令、操作数和 fixup。读取采用
+first/next 迭代：
+
+```c
+NevercMCUnitInfo Unit = {0};
+Unit.Header = /* … */;
+MC->GetUnitInfo(MC->Context, Task, UnitHandle, &Unit);
+
+NevercMCSectionHandle Section;
+MC->GetFirstSection(MC->Context, Task, UnitHandle, &Section);
+while (!neverc_handle_is_null(Section)) {
+  NevercMCFragmentHandle Fragment;
+  MC->GetFirstFragment(MC->Context, Task, Section, &Fragment);
+  /* … */
+  MC->GetNextSection(MC->Context, Task, Section, &Section);
+}
+```
+
+修改是事务式的，和别处一样：
+
+```c
+NevercMCMutationHandle Mutation;
+MC->BeginMutation(MC->Context, Task, Unit, &Mutation);
+MC->CreateSection(MC->Context, Task, Mutation, &SectionDescriptor, &Section);
+MC->CreateSymbol(MC->Context, Task, Mutation, &SymbolDescriptor, &Symbol);
+MC->AppendInstruction(MC->Context, Task, Mutation, Section, &Instruction);
+Status = MC->CommitMutation(MC->Context, Task, Mutation);
+if (Status.Code != NEVERC_STATUS_OK)
+  MC->AbandonMutation(MC->Context, Task, Mutation);
+```
+
+句柄是任务作用域且带代号校验的，所以来自已放弃 mutation 的句柄会被拒绝而不是被
+重用。
+
+节标志有 `ALLOCATED`、`EXECUTABLE`、`WRITABLE`、`MERGEABLE`、`DEBUG`。符号绑定
+有 `LOCAL`、`GLOBAL`、`WEAK`；类型有 `NONE`、`FUNCTION`、`OBJECT`、`SECTION`、
+`TLS`；定义状态有 `UNDEFINED`、`SECTION`、`ABSOLUTE`、`COMMON`。表达式支持一元
+`PLUS`、`MINUS`、`NOT` 和二元 `ADD`、`SUBTRACT`、`MULTIPLY`、`DIVIDE`、`AND`、
+`OR`、`XOR`、`SHIFT_LEFT`、`SHIFT_RIGHT`。想让宿主替你决定位置时传
+`NEVERC_MC_AUTOMATIC_OFFSET`。
+
+`RegisterSchema` 发布一份目标 MC schema，`GetSchemaToken` /
+`GetSchemaTokenInfo` 在名字与 LOCKSTEP token 之间互相解析。
+
+## 观察发射过程
+
+发射流按顺序报告十一种事件。以观察者身份订阅并读取事件：
+
+```c
+NevercMCEmissionEventInfo Event = {0};
+Event.Header = /* … */;
+Emission->GetEvent(Emission->Context, Frame, &Event);
+/* Event.Kind, Event.Flags */
+```
+
+`Flags` 说明事件里哪些部分是有效的：`HAS_SECTION`、`HAS_INSTRUCTION`、
+`HAS_ENCODING`、`HAS_FIXUP`、`HAS_LAYOUT`、`CAN_REPLACE_INSTRUCTION`。读取对应字
+段之前先检查标志——一个尚无编码结果的事件不会因为你问了就凭空有一个。
+
+一旦 `HAS_LAYOUT` 置位，`GetLayoutSection`、`GetLayoutFragment`、
+`GetLayoutSymbol`、`GetLayoutFixup` 就能给出地址和大小。
+
+在 `pre_instruction` 处，且仅当 `CAN_REPLACE_INSTRUCTION` 置位时，可以替换指
+令：
+
+```c
+Emission->BeginInstructionReplacement(Emission->Context, Frame, &Builder);
+/* 通过 MC builder 构造替换指令 */
+Emission->PublishInstructionReplacement(Emission->Context, Frame, NewInstr);
+```
+
+`pluginsdk/examples/MCObserverPlugin.c` 是它的只读版本。
+
+## 编码器、解码器与布局
+
+三种注册扩展机器码后端，全部按目标和 schema 摘要索引：
+
+```c
+MC->RegisterEncoder(MC->Context, RegistrarContext, &EncoderDescriptor);
+MC->RegisterDecoder(MC->Context, RegistrarContext, &DecoderDescriptor);
+MC->RegisterAsmBackend(MC->Context, RegistrarContext, &BackendDescriptor);
+```
+
+编码器通过 sink 写出而不是返回缓冲区，这样所有权始终留在宿主一侧：
+
+```c
+Sink->WriteBytes(Sink->Context, Bytes);
+Sink->AddFixup(Sink->Context, &Fixup);
+```
+
+解码器报告 `NEVERC_MC_DECODE_SUCCESS`、`_SOFT_FAIL`、`_UNKNOWN` 或 `_FAIL` 之
+一。fixup 种类通过 `NevercMCFixupKindInfo` 自我描述，带 `PC_RELATIVE`、
+`SIGNED`、`RELAXABLE`、`TARGET` 标志。
+
+汇编后端负责松弛（relaxation）。布局会产出一个证明摘要，而**布局之后的任何修改
+都会让该证明失效**，必须重新布局才能写出目标文件——和链接图用的是同一套代号校
+验模式。
+
+## 汇编
+
+解析器 Provider 消费源字节并发布一个 `MCUnit`：
+
+```c
+NevercAssemblyParseInputInfo In = {0};
+In.Header = /* … */;
+Asm->GetParseInput(Asm->Context, Frame, &In);
+
+NevercAssemblyTokenInfo Token = {0};
+Asm->PeekSourceToken(Asm->Context, Frame, &Token);
+Asm->AdvanceSourceToken(Asm->Context, Frame);
+
+const NevercMCAPI *MC;
+NevercMCUnitHandle Unit;
+Asm->GetParseMCBuilder(Asm->Context, Frame, &MC, &Unit);
+/* … 构造 … */
+Asm->PublishParsedMCUnit(Asm->Context, Frame, Unit, &Output);
+```
+
+源要么是 `NEVERC_ASSEMBLY_SOURCE_BUFFER`，要么是
+`NEVERC_ASSEMBLY_SOURCE_RENDERED_TOKENS`。经预处理的汇编（`.S`）先走正常的前端
+预处理器，以渲染后的 token 形式到达；纯汇编（`.s`）直接以缓冲区进入解析器。
+
+打印器方向相反——`GetPrintInput`，然后 `WritePrintOutput` 写进提供的输出事务，
+最后 `PublishAssemblyOutput`。往别处写是不支持的：解析／打印校验和宿主提交关卡
+都在字节可见之前运行，所以打印失败不会留下半个文件。
+
+## 目标文件图
+
+`NevercObjectAPI` 把可重定位文件归一化为节、符号、重定位和 COMDAT。内建适配器覆
+盖 ELF、COFF、Mach-O；`RegisterFormat` 可以再加一种。
+
+```c
+NevercObjectGraphInfo Info = {0};
+Info.Header = /* … */;
+Object->GetGraphInfo(Object->Context, Task, Graph, &Info);
+/* Info.Target, .ObjectSchemaDigest, .Generation, .SectionCount,
+   .SymbolCount, .RelocationCount, .ComdatCount, .HasLayoutProof */
+
+NevercObjectSymbolHandle Symbol;
+Object->GetFirstSymbol(Object->Context, Task, Graph, &Symbol);
+while (!neverc_handle_is_null(Symbol)) {
+  NevercObjectSymbolInfo SymInfo = {0};
+  SymInfo.Header = /* … */;
+  Object->GetSymbolInfo(Object->Context, Task, Symbol, &SymInfo);
+  Object->GetNextSymbol(Object->Context, Task, Symbol, &Symbol);
+}
+```
+
+四类实体的修改都遵循 create/replace/move/erase 模式，暂存在
+`BeginMutation` … `CommitMutation` / `AbandonMutation` 之间。
+
+节标志有 `ALLOCATED`、`EXECUTABLE`、`WRITABLE`、`MERGEABLE`、`STRINGS`、`TLS`、
+`DEBUG`、`UNWIND`、`DISCARDABLE`、`RETAIN`。重定位目标是 `SYMBOL`、`SECTION`、
+`ABSOLUTE` 或 `FORMAT_EXTENSION`。
+
+每个描述符都有 `ExtensionOwner` / `ExtensionVersion` / `Extension` 三元组。格式
+借此保留归一化图里没有字段可放的数据——这些字节跟着实体走，写回时原样带回，而
+不是在往返过程中被丢掉。
+
+### 注册一种格式
+
+```c
+NevercObjectFormatDescriptor Format = {0};
+Format.Header           = /* … */;
+Format.FormatID         = MyFormatID;
+Format.CanonicalName    = SV("com.example.myfmt");
+Format.SupportedTargets = MyTargets;
+Format.DefaultExtension = SV(".mof");
+Format.Flags            = NEVERC_OBJECT_FORMAT_CAN_PROBE |
+                          NEVERC_OBJECT_FORMAT_CAN_READ  |
+                          NEVERC_OBJECT_FORMAT_CAN_WRITE;
+Format.Probe            = probe;
+Format.Reader           = read;
+Format.Writer           = write;
+ObjectFormat->RegisterFormat(ObjectFormat->Context, RegistrarContext,
+                             &Format);
+```
+
+`Probe` 报告一个从 0 到 `NEVERC_OBJECT_PROBE_MAX_CONFIDENCE`（1000）的
+`Confidence`、它识别出的 `NevercObjectArtifactKind`（`RELOCATABLE`、`ARCHIVE`、
+`EXECUTABLE_IMAGE`、`SHARED_IMAGE`、`UNIVERSAL_BINARY`），以及一个
+`ConsumedMinimum`——它为了确认需要读多少字节，上限是
+`NEVERC_OBJECT_PROBE_MAX_CONSUMED_MINIMUM`（65536）。置信度最高者胜出。
+
+`Reader` 会拿到一张图和一个已打开的 mutation，负责填充它们。`Writer` 会拿到
+图、它的布局证明，以及受界的二进制 builder。
+
+### 写出流水线
 
 1. 探测并把字节读入 ObjectGraph；
 2. 运行 `object.pre_write` 图拦截器；
-3. 布局并运行 `object.post_layout`（变更之后重新布局）；
-4. 写出有界的候选镜像；
+3. 布局，然后运行 `object.post_layout`（任何修改之后要重新布局）；
+4. 写出一个受界的候选映像；
 5. 运行 `object.post_write` 二进制拦截器；
-6. 执行密封的最终验证器和原子的宿主提交。
+6. 运行 sealed 的 `object.final_verify` 和原子的 `object.commit`。
 
-观察者拿到的是只读桥接。从观察者发起的变更会以
-`NEVERC_STATUS_POLICY_VIOLATION` 被拒绝。写出器和 post-write 拦截器只能访问有界的
-事务式构建器；溢出、回调失败或验证失败都会中止暂存。参见
-`pluginsdk/examples/ObjectRewritePlugin.c`。
+映像状态依次是 `CANDIDATE` → `VERIFIED` → `COMMITTED`，或者 `ABORTED` /
+`FAILED_PARTIAL`。
 
-## 并发与失败规则
+观察者拿到的是只读桥接；从观察者里尝试修改会被
+`NEVERC_STATUS_POLICY_VIOLATION` 拒绝。写入器和 post-write 拦截器只拿得到受界
+的 `NevercMutableBinaryAPI` builder——`Reserve`、`Write`、`WriteAt`、`Tell`、
+`ReadAt`、`Insert`、`Append`、`Resize`。越界、回调失败或校验失败都会中止暂存，
+所以失败绝不会在磁盘上留下半个文件。
 
-- 把可变状态放在宿主提供的 process/session/task 状态里。
-- 回调返回后不要缓存任务句柄或借用的视图。
-- 拦截器续延最多调用一次，且必须在回调线程上调用。
-- 返回原始的 `NevercStatus`；不要发布部分产物。
-- 声明最窄且真实的并发与可重入模式。
+`pluginsdk/examples/ObjectRewritePlugin.c` 是一个完整的事务式改写示例。
 
-可执行的覆盖率契约是 `docs/plugin-api/coverage.json`。它把每个稳定阶段映射到正向、
-负向、替换、只读观察者和密封 gate 的测试。
+## 规则
+
+- 消费任何 LOCKSTEP 的 opcode、寄存器、操作数、fixup、重定位或调用约定值之前，
+  先比对 schema 摘要。
+- 把可变状态放进宿主提供的 process、session、task 作用域里。
+- 回调返回后不要缓存任务句柄或借来的视图。
+- 拦截器的 continuation 最多调用一次，且必须在回调线程上。
+- 每个 `BeginMutation` 恰好对应一次 commit 或 abandon。
+- 修改过已布局的 MCUnit 或 ObjectGraph 之后要重新布局；旧的布局证明已经陈旧，
+  宿主会拒绝它。
+- 读取事件字段之前先检查 `NevercMCEmissionEventInfo.Flags`，且只在
+  `CAN_REPLACE_INSTRUCTION` 置位时才替换指令。
+- 只能通过提供的事务或字节 sink 写输出。
+- 失败时返回原始的 `NevercStatus`，不要发布任何半成品。
+- 声明最窄的、真实的并发与可重入模型。
+- `codegen.product_verify`、`assembly.final_verify`、`assembly.commit`、
+  `object.final_verify`、`object.commit` 是 sealed 的，只能观察。
+
+规范性声明见 `PluginTarget.h`、`PluginMC.h`、`PluginObject.h` 和
+`Schema/PhaseSchema.json`；`coverage.json` 把这里每个稳定阶段映射到它的正向、负
+向、替换、只读观察者和 sealed gate 测试。

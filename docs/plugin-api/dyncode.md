@@ -10,6 +10,37 @@ turn C into that image through the same pure C ABI used by the other domains:
 no LLVM C++ objects, STL types, exceptions, or host pointers whose lifetime is
 not stated by an API table.
 
+## Interfaces
+
+```c
+#include "neverc/Plugin/PluginDynCode.h"
+```
+
+| Interface | Table | Slots | Purpose |
+|---|---|--:|---|
+| `NEVERC_INTERFACE_DYNCODE_{HIGH,LOW}` | `NevercDynCodeAPI` | 16 | Read the request, image, report, and the section/symbol/relocation/external maps |
+| `NEVERC_INTERFACE_DYNCODE_REGISTRAR_{HIGH,LOW}` | `NevercDynCodeRegistrarAPI` | 5 | `RegisterTarget`, `RegisterImportProvider`, `RegisterExtractor`, `RegisterCharsetEncoder`, `RegisterBinaryVerifier` |
+| `NEVERC_INTERFACE_DYNCODE_PHASE_{HIGH,LOW}` | `NevercDynCodePhaseAPI` | 4 | `GetPhaseInfo`, `GetRequest`, `GetImage`, `GetReport` |
+
+All three are `NEVERC_INTERFACE_STABLE` at major 1. From inside a phase
+callback, `NevercDynCodePhaseAPI` is the entry point — it turns the frame
+into the handles the other table consumes:
+
+```c
+NevercDynCodeRequestHandle Request;
+Phase->GetRequest(Phase->Context, Frame, Frame->Input, &Request);
+
+NevercDynCodeRequestInfo Info = {0};
+Info.Header = (NevercABITableHeader){sizeof(Info), NEVERC_DYNCODE_API_MAJOR,
+                                     NEVERC_DYNCODE_API_MINOR, 0};
+DynCode->GetRequestInfo(DynCode->Context, Task, Request, &Info);
+```
+
+The four map families — section maps, symbol maps, relocations, and external
+references — are all walked with the same first/next/info triple, for example
+`GetFirstRelocation`, `GetNextRelocation`, `GetRelocationInfo`. That is how a
+plugin reads what extraction decided without parsing the report JSON.
+
 ## DynCode is a compilation product, not a `main()` post-step
 
 `-fdyncode` is a normal Action/Job in the driver DAG. The compile job publishes
