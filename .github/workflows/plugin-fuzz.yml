@@ -1,4 +1,4 @@
-# Volume 6 task 23: build and exercise the six-volume plugin fuzzers.
+# Builds and exercises the plugin fuzzers.
 #
 # On touched PRs it runs the fixed-budget PluginFuzzSmoke.* CTest targets; on a
 # nightly schedule and on manual dispatch it runs longer soak sessions.  Fuzzers

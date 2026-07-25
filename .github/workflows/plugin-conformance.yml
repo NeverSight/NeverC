@@ -1,4 +1,4 @@
-# Volume 6 task 22: host / target / object-format cross-platform conformance.
+# Host / target / object-format cross-platform conformance.
 #
 # For every native host it builds the shipped compiler plus the standalone
 # PluginConformanceTests and the plugin SDK, then:

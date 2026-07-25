@@ -13,10 +13,10 @@ using namespace llvm;
 namespace neverc {
 namespace dyncode {
 
-// Reads the relocatable object into a volume-4 ObjectGraph and runs the single
+// Reads the relocatable object into an ObjectGraph and runs the single
 // format-agnostic extraction pipeline (plan -> relocate -> binary phases ->
 // sealed verify), then atomically publishes the verified image (and optional
-// report) through the volume-5 OutputBundleTransaction.  This replaces the old
+// report) through the OutputBundleTransaction.  This replaces the old
 // per-format extractELF / extractCOFF / extractMachO dispatch: nothing is read
 // from disk a second time and there is no hard-coded format switch.
 int extractDynCode(StringRef InputObj, StringRef OutputBin,
@@ -39,7 +39,7 @@ int extractDynCode(StringRef InputObj, StringRef OutputBin,
   }
 
   // Stage the verified image and its optional report side output, then publish
-  // them as one atomic bundle through the volume-5 OutputBundleTransaction.
+  // them as one atomic bundle through the OutputBundleTransaction.
   // The sealed verify gate has already run, so nothing may mutate the bytes
   // after this point; a failure anywhere during publication rolls back to any
   // pre-existing content and leaves no partial file behind.

@@ -1,4 +1,4 @@
-# Volume 6 task 23: ASan/UBSan and TSan coverage for the plugin runtime.
+# ASan/UBSan and TSan coverage for the plugin runtime.
 #
 # The address/undefined job builds the plugin unit tests, the standalone
 # conformance suite and the fuzz smoke corpus under ASan+UBSan.  The thread job

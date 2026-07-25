@@ -7,7 +7,7 @@
 // produced a relocatable object.  It replaces the old per-format extractDynCode
 // dispatch (extractELF / extractCOFF / extractMachO) with one path that:
 //
-//   1. reads the relocatable object bytes into a volume-4 ObjectGraph through
+//   1. reads the relocatable object bytes into an ObjectGraph through
 //      the built-in LLVM object Reader (no second on-disk parse, no format
 //      switch);
 //   2. runs the ObjectGraphExtractor planner (section/symbol/relocation plan +

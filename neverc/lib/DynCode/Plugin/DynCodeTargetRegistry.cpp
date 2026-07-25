@@ -12,8 +12,8 @@ namespace dyncode {
 namespace {
 
 // Stable interface-ID name spaces for the built-in dyncode adapters. The low
-// word reuses the Volume 4 built-in target route number so a dyncode target ID
-// is 1:1 with its underlying TargetKey.
+// word reuses the built-in target route number so a dyncode target ID is 1:1
+// with its underlying TargetKey.
 constexpr uint64_t DynCodeTargetIDHigh = UINT64_C(0x4e43444354475401);   // NCDCTGT
 constexpr uint64_t RelocApplicatorHigh = UINT64_C(0x4e43444352454c01);   // NCDCREL
 constexpr uint64_t UserImportHigh = UINT64_C(0x4e434443554d5501);        // NCDCUMU

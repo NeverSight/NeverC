@@ -2,8 +2,8 @@
 """Measure the no-plugin / empty-plugin compilation overhead of the NeverC
 first-version plugin runtime and enforce the design's <=1% regression budget.
 
-Design requirement (spec section 16.5 / volume 6 completion item 10): with no
-plugin selected, bootstrap only makes the single nullable activation-plan
+Design requirement: with no plugin selected, bootstrap only makes the single
+nullable activation-plan
 decision and constructs no Session/task/domain tables/arena/locks, so the median
 wall time and peak RSS of an ordinary compile must not regress relative to a
 fully-disabled baseline.  The design mandates that the baseline be produced by
@@ -27,8 +27,8 @@ budget the gate fails.  ``empty-plugin`` / ``observer`` legitimately pay
 ``dlopen`` + session setup cost, so they are reported for information only and
 are NOT subject to the <=1% no-plugin budget.
 
-Machine noise is never absorbed by relaxing the threshold (design task 24 step
-8): if the gate is over budget the whole measurement is repeated a fixed number
+Machine noise is never absorbed by relaxing the threshold: if the gate is over
+budget the whole measurement is repeated a fixed number
 of times (``--retries``) and only a run that is still over budget on the final
 attempt fails.  Raw per-scenario medians and samples can be persisted with
 ``--json`` for post-mortem.
@@ -62,7 +62,7 @@ _RU_MAXRSS_SCALE = 1 if sys.platform == "darwin" else 1024
 # decision entirely, i.e. behaves as if plugin support were compiled out.
 # Running the fully-disabled baseline and the normal no-plugin compile from one
 # binary removes the build-to-build drift a separately compiled baseline would
-# introduce -- exactly what design completion item 10 requires.
+# introduce -- exactly what the no-plugin overhead requirement asks for.
 FULLY_DISABLED_ENV = "NEVERC_TEST_PLUGIN_FULLY_DISABLED"
 
 

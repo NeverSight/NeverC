@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Cross-target object / image matrix for the NeverC plugin toolchain.
 
-Volume 6 task 22. Drives the compiler-under-test across the built-in target and
-object-format inventory, produces a relocatable object (and, for the baseline
+Drives the compiler-under-test across the built-in target and object-format
+inventory, produces a relocatable object (and, for the baseline
 dyncode triples, a raw dyncode image) for every applicable route, and verifies
 each artifact with a format check that matches the requested object format and
 architecture. Cross artifacts are only parsed/verified, never executed; only the

@@ -48,14 +48,15 @@ struct OwnedDynCodeTargetDescriptor {
 };
 
 /// Builds the read-only built-in dyncode target descriptor for a triple by
-/// reusing the Volume 4 built-in TargetKey route. Fails for unsupported triples.
+/// reusing the built-in TargetKey route. Fails for unsupported triples.
 llvm::Expected<OwnedDynCodeTargetDescriptor>
 buildBuiltinDynCodeTarget(llvm::StringRef Triple,
                           NevercDynCodeExecutionLevel Level);
 
-/// Session-scoped dyncode target/provider registry. Applies Volume 4 style
-/// conflict rules: no two descriptors may claim the same (TargetKey, object
-/// format) pair, and no plugin-reported numeric priority disambiguation exists.
+/// Session-scoped dyncode target/provider registry. Applies the same conflict
+/// rules as the target registry: no two descriptors may claim the same
+/// (TargetKey, object format) pair, and no plugin-reported numeric priority
+/// disambiguation exists.
 class DynCodeRegistry {
 public:
   /// Seeds the registry with the eight built-in user + kernel dyncode targets.

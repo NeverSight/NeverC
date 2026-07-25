@@ -1,4 +1,4 @@
-// Volume 6 task 23: fuzz the dyncode request freeze path.
+// Fuzzes the dyncode request freeze path.
 //
 // `freezeDynCodeRequest` normalizes hostile driver options against a resolved
 // TargetKey/object format into an immutable, digest-stamped request.  This

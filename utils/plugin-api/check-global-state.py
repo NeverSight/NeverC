@@ -2,9 +2,9 @@
 """Audit the plugin/dyncode/linker trees for plugin-related process-global
 mutable compilation state.
 
-This is the first-release hard gate for design requirement "frontend, LTO,
-linker and dyncode carry no plugin-related process-global mutable compilation
-state" (spec section 20 and volume 6 completion item 11).
+This is the first-release hard gate for the design requirement that "frontend,
+LTO, linker and dyncode carry no plugin-related process-global mutable
+compilation state".
 
 Two layers of checking:
 
@@ -62,10 +62,10 @@ EXTRA_AUDIT_FILES = (
 
 # Zero-tolerance symbols: any hit in runtime code fails the gate.
 FORBIDDEN_SYMBOLS = (
-    # Prototype loader / global plugin state (removed in volume 3).
+    # Prototype loader / global plugin state, since removed.
     "getGlobalPluginLoader",
     "pluginArgStorage",
-    # dyncode current-options / mode singletons (removed in volume 6 task 4).
+    # dyncode current-options / mode singletons, since removed.
     "getCurrentDynCodeOptions",
     "currentDynCodeOptionsStorage",
     "setDynCodeModeState",
@@ -73,14 +73,14 @@ FORBIDDEN_SYMBOLS = (
     "dyncodeModeStorage",
     "machinePassCallbackInstalled",
     "passBuilderCallbackInstalled",
-    # NeverC-added process-global LLVM callback vectors (removed in volume 3).
+    # NeverC-added process-global LLVM callback vectors, since removed.
     "ListRegisterPassBuilderCallbacks",
     "ListRegisterTargetPassConfigCallbacks",
     "ListRegisterTargetPassConfigPostPreEmitCallbacks",
-    # Linker per-process parallel strategy dependence (removed in volume 5).
+    # Linker per-process parallel strategy dependence, since removed.
     "parallel::strategy",
     "parallel::getThreadIndex",
-    # Old linker context singleton (removed in volume 5 task 3).
+    # Old linker context singleton, since removed.
     "CommonLinkerContext::destroy",
 )
 

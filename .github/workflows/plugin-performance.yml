@@ -1,4 +1,4 @@
-# Volume 6 task 24: no-plugin overhead gate for the first-version plugin ABI.
+# No-plugin overhead gate for the first-version plugin ABI.
 # Builds the shipped compiler once and runs both the PluginPerformance unit
 # tests (per-plugin/phase callback statistics) and the out-of-process overhead
 # harness.  The strict <=1% median wall-time / peak-RSS regression budget is

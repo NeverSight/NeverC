@@ -7,7 +7,7 @@
 // the read-only NevercDynCodePhaseAPI, and the active DynCodePhasePipeline
 // attaches itself for the current task so callbacks resolve back to the running
 // pipeline.  The table is read-only -- dyncode phase replacement produces its
-// output through the Volume 3/4 IR/MIR/Object/Image builders, not through a
+// output through the shared IR/MIR/Object/Image builders, not through a
 // dyncode-specific publish entry.
 
 #include "neverc/Plugin/Host/PluginProcessServices.h"

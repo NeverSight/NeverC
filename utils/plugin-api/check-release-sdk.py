@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-"""Volume 6 task 25: end-to-end release SDK smoke check.
+"""End-to-end release SDK smoke check.
 
 Installs the packaged plugin SDK (the ``neverc-pluginsdk`` install component)
 from a build directory into a throwaway prefix, consumes it from that clean

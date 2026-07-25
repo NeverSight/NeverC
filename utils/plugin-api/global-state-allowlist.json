@@ -38,7 +38,7 @@
       "symbol": "ActiveLinkerContext",
       "owner": "LinkerExecutionContext",
       "lifetime": "stack-scoped RAII guard per LinkTask/worker scope",
-      "justification": "Volume 5 legacy allocator/diagnostic facade guard. Installed/restored by nestable RAII; cleared on worker join and thread-pool reuse. Never queried by plugin callbacks (they receive explicit task/context handles).",
+      "justification": "Legacy allocator/diagnostic facade guard. Installed/restored by nestable RAII; cleared on worker join and thread-pool reuse. Never queried by plugin callbacks (they receive explicit task/context handles).",
       "cleared_by_test": "PluginLinkContextTests"
     },
     {

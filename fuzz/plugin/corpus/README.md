@@ -1,7 +1,7 @@
 # NeverC plugin fuzzer corpus
 
-Seed inputs and regression cases for the `neverc-plugin-fuzzers` umbrella
-(volume 6 task 23).  Each fuzzer keeps its corpus in a sibling subdirectory
+Seed inputs and regression cases for the `neverc-plugin-fuzzers` umbrella.
+Each fuzzer keeps its corpus in a sibling subdirectory
 named after its libFuzzer target, e.g. `dyncode-request/` for
 `plugin-dyncode-request-fuzzer`.
 

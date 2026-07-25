@@ -91,7 +91,8 @@ TEST(PluginIRMIRABITest, PublishesFirstVersionIRAndMIRPhasePolicies) {
   EXPECT_EQ(NEVERC_PHASE_MIR_FINAL_VERIFY_GATE,
             NEVERC_PHASE_GATE_SEALED_VERIFIER);
 
-  // Volume 3 publishes the real executors and sealed verifier barriers.
+  // The real executors and sealed verifier barriers are published, so these
+  // phases report as stable rather than provisional.
   EXPECT_EQ(NEVERC_PHASE_IR_GENERATE_STABILITY,
             NEVERC_PHASE_STABILITY_STABLE);
   EXPECT_EQ(NEVERC_PHASE_MIR_PASS_FINAL_STABILITY,

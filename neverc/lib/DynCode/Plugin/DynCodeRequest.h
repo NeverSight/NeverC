@@ -5,7 +5,7 @@
 //
 // The driver parses -fdyncode options into a plain `DynCodeOptions`. Before any
 // task runs, `freezeDynCodeRequest` normalizes those options against a resolved
-// Volume 4 TargetKey/object format into an immutable `FrozenDynCodeRequest` and
+// TargetKey/object format into an immutable `FrozenDynCodeRequest` and
 // computes a deterministic 32-byte digest. Child tasks only borrow the frozen
 // snapshot; there is no process-global "current dyncode options".
 

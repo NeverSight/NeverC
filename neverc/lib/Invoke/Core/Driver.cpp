@@ -1469,10 +1469,10 @@ unsigned pluginDiscoveryDiagnosticID(llvm::StringRef Message) {
 // NEVERC_TEST_PLUGIN_FULLY_DISABLED holds a non-empty, non-"0" value the driver
 // behaves exactly as if plugin support were compiled out, short-circuiting the
 // bootstrap discovery decision entirely so no plugin argument is honoured.  It
-// exists so the no-plugin performance gate (design completion item 10) can
-// compare the shipped no-plugin path against a fully-disabled baseline produced
-// by the *same* binary, which avoids the build-to-build drift a separately
-// compiled baseline would introduce.
+// exists so the no-plugin performance gate can compare the shipped no-plugin
+// path against a fully-disabled baseline produced by the *same* binary, which
+// avoids the build-to-build drift a separately compiled baseline would
+// introduce.
 bool pluginSupportForceDisabledForTest() {
   const char *Value = ::getenv("NEVERC_TEST_PLUGIN_FULLY_DISABLED");
   return Value && *Value && llvm::StringRef(Value) != "0";

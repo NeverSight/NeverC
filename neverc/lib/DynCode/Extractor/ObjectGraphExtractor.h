@@ -3,8 +3,8 @@
 
 // The format-agnostic dyncode code extractor.
 //
-// The extractor consumes a verified plugin::PluginObjectGraph (the volume 4
-// in-memory object) and produces a typed DynCodeExtractionPlan plus a candidate
+// The extractor consumes a verified plugin::PluginObjectGraph (the in-memory
+// object) and produces a typed DynCodeExtractionPlan plus a candidate
 // DynCodeImage (the selected code bytes laid out entry-first) and a
 // DynCodeReport.  It replaces the old per-format ELF/COFF/Mach-O readers that
 // each re-parsed a file on disk: here nothing is read from a path and no format
