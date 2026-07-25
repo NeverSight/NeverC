@@ -1,3 +1,5 @@
+**Languages**: [English](mir.md) | [简体中文](mir.zh-CN.md) | [繁體中文](mir.zh-TW.md) | [日本語](mir.ja.md) | [한국어](mir.ko.md) | [Français](mir.fr.md) | [Deutsch](mir.de.md) | [Español](mir.es.md) | [Italiano](mir.it.md) | [Русский](mir.ru.md) | [العربية](mir.ar.md)
+
 # NeverC Plugin MIR API
 
 The first public plugin ABI exposes Machine IR through `PluginMIR.h`. The API

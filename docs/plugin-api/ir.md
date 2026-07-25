@@ -1,3 +1,5 @@
+**Languages**: [English](ir.md) | [简体中文](ir.zh-CN.md) | [繁體中文](ir.zh-TW.md) | [日本語](ir.ja.md) | [한국어](ir.ko.md) | [Français](ir.fr.md) | [Deutsch](ir.de.md) | [Español](ir.es.md) | [Italiano](ir.it.md) | [Русский](ir.ru.md) | [العربية](ir.ar.md)
+
 # NeverC Plugin IR API
 
 The first public plugin ABI exposes LLVM IR through stable C tables. Plugins do
