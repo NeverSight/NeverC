@@ -151,6 +151,13 @@ Error verifyLinkComdatSelection(const PluginLinkGraph &Graph) {
       if (ComdatID != SelectedID)
         return resolutionError(
             "losing COMDAT owns a prevailing symbol for '" + Name + "'");
+      // File-local definitions repeat their name across translation units by
+      // design, which is why verifyPluginLinkGraph keys local prevailing
+      // symbols per input and ID. Apply the same rule here: COFF emits one
+      // `$unwind$f` label per object for a single COMDAT function, so counting
+      // those by name alone would reject a well-formed selection.
+      if (Symbol.Binding == NEVERC_LINK_SYMBOL_BINDING_LOCAL)
+        continue;
       if (++PrevailingByName[{Symbol.Name, Symbol.Version}] > 1)
         return resolutionError(
             "selected COMDAT has duplicate prevailing symbol '" +

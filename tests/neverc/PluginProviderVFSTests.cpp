@@ -7,6 +7,7 @@
 #include "llvm/Config/llvm-config.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/Path.h"
 #include "llvm/Support/VirtualFileSystem.h"
 #include <memory>
 #include <optional>
@@ -19,6 +20,14 @@ namespace {
 
 std::string providerErrorMessage(Error ErrorValue) {
   return toString(std::move(ErrorValue)).str().str();
+}
+
+// A trailing separator keeps the provider predicate from matching, so the base
+// file system answers and returns a path in the host's separator style.
+std::string nativePath(StringRef Path) {
+  SmallString<128> Native(Path);
+  sys::path::native(Native);
+  return std::string(Native);
 }
 
 class ProviderVFSHarness {
@@ -131,7 +140,7 @@ TEST(PluginProviderVFSTest, ServesCopiedFilesDirectoriesAndCanonicalPaths) {
 
   SmallString<64> Canonical;
   ASSERT_FALSE(Harness.fs().getRealPath("/plugin/", Canonical));
-  EXPECT_EQ(Canonical, "/plugin");
+  EXPECT_EQ(Canonical.str().str(), nativePath("/plugin"));
 
   std::error_code Error;
   vfs::directory_iterator Iterator =

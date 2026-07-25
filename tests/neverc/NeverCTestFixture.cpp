@@ -652,7 +652,10 @@ void NeverCTest::dyncodeCrossCompileKernel(
 // ---- File utilities ----
 
 void NeverCTest::writeFile(const fs::path &path, const std::string &content) {
-  std::ofstream f(path);
+  // Binary mode keeps the bytes on disk identical to `content`. A text-mode
+  // stream expands "\n" to "\r\n" on Windows, which breaks readFile round
+  // trips and any fixture that checks an exact source length.
+  std::ofstream f(path, std::ios::binary);
   f << content;
 }
 

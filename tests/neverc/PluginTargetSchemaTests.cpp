@@ -110,11 +110,15 @@ TEST(PluginTargetSchemaTest, CheckScriptRejectsValidButStaleGoldenFile) {
       [&] { (void)sys::fs::remove_directories(TemporaryDirectory); });
 
   for (StringRef Architecture : {"x86_64", "aarch64"}) {
+    const std::string File = (Architecture + ".json").str();
     SmallString<256> Source(schemaRoot());
-    sys::path::append(Source, Architecture + ".json");
+    sys::path::append(Source, File);
     SmallString<256> Destination(TemporaryDirectory);
-    sys::path::append(Destination, Architecture + ".json");
-    ASSERT_FALSE(sys::fs::copy_file(Source, Destination));
+    sys::path::append(Destination, File);
+    const std::error_code CopyError = sys::fs::copy_file(Source, Destination);
+    ASSERT_FALSE(CopyError)
+        << "copy " << Source.str().str() << " -> " << Destination.str().str()
+        << ": " << CopyError.message();
   }
 
   SmallString<256> StaleSchema(TemporaryDirectory);

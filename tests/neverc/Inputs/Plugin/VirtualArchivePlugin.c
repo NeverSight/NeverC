@@ -27,10 +27,19 @@ static NevercStatus failed(NevercStatusCode Code) {
 static int path_ends_with(NevercStringView Path, const char *Suffix) {
   size_t SuffixLength = strlen(Suffix);
   size_t Start;
+  size_t Index;
   if (Path.Length < SuffixLength)
     return 0;
   Start = (size_t)Path.Length - SuffixLength;
-  return memcmp(Path.Data + Start, Suffix, SuffixLength) == 0;
+  for (Index = 0; Index != SuffixLength; ++Index) {
+    /* The host hands back paths in its own separator style. */
+    char PathCharacter = Path.Data[Start + Index];
+    if (PathCharacter == '\\')
+      PathCharacter = '/';
+    if (PathCharacter != Suffix[Index])
+      return 0;
+  }
+  return 1;
 }
 
 static const uint8_t *content_for_path(NevercStringView Path,

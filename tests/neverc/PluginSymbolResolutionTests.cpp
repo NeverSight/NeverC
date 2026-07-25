@@ -1,6 +1,7 @@
 #include "PluginLinkTestSupport.h"
 #include "Inputs/Plugin/SymbolResolutionPlugin.h"
 #include "Link/LinkPhaseExecutor.h"
+#include "Link/ResolutionVerifier.h"
 #include "neverc/Plugin/Schema/PluginPhaseSchema.inc"
 #include "gtest/gtest.h"
 
@@ -306,6 +307,67 @@ TEST(PluginSymbolResolutionTest,
             LargeComdatID);
   EXPECT_FALSE((*Output)->findSymbol(SmallSymbolID)->IsPrevailing);
   EXPECT_TRUE((*Output)->findSymbol(LargeSymbolID)->IsPrevailing);
+}
+
+// COFF projects every same-named COMDAT candidate onto a single group ID and
+// emits one file-local `$unwind$f` label per object, so a well-formed selection
+// legitimately owns several identically named local definitions.
+std::shared_ptr<PluginLinkGraph> makeSharedComdatGraph() {
+  auto Target = makeTargetKey();
+  if (!Target) {
+    ADD_FAILURE() << errorText(Target.takeError());
+    return {};
+  }
+  auto Graph = std::make_shared<PluginLinkGraph>(
+      std::move(*Target), NEVERC_LINK_STATE_COMDAT_SELECTED);
+
+  PluginLinkSection Section;
+  Section.Name = ".xdata";
+  Section.Kind = NEVERC_OBJECT_SECTION_KIND_UNWIND;
+  Section.Flags = NEVERC_OBJECT_SECTION_ALLOCATED;
+  Section.Alignment = 4;
+  Section.Size = 8;
+  const uint64_t SectionID = Graph->addSection(std::move(Section)).ID;
+
+  PluginLinkComdat Comdat;
+  Comdat.Name = "unwind_owner";
+  Comdat.Selection = NEVERC_LINK_COMDAT_ANY;
+  PluginLinkComdat &Stored = Graph->addComdat(std::move(Comdat));
+  Stored.SelectedID = Stored.ID;
+  const uint64_t ComdatID = Stored.ID;
+
+  for (const char *URI : {"vfs:///first.o", "vfs:///second.o"}) {
+    PluginLinkInput Input;
+    Input.Kind = NEVERC_LINK_INPUT_OBJECT;
+    Input.LogicalURI = URI;
+    const uint64_t InputID = Graph->addInput(std::move(Input)).ID;
+
+    PluginLinkAtom Atom;
+    Atom.SectionID = SectionID;
+    Atom.ComdatID = ComdatID;
+    Atom.Name = ".xdata";
+    Atom.Alignment = 4;
+    Atom.Content.assign(4, 0);
+    Atom.Origin.InputID = InputID;
+    const uint64_t AtomID = Graph->addAtom(std::move(Atom)).ID;
+
+    PluginLinkSymbol Symbol;
+    Symbol.Name = "$unwind$f";
+    Symbol.Binding = NEVERC_LINK_SYMBOL_BINDING_LOCAL;
+    Symbol.Definition = NEVERC_LINK_SYMBOL_DEFINED;
+    Symbol.AtomID = AtomID;
+    Symbol.IsPrevailing = true;
+    Symbol.Origin.InputID = InputID;
+    Graph->addSymbol(std::move(Symbol));
+  }
+  return Graph;
+}
+
+TEST(PluginSymbolResolutionTest,
+     ComdatSelectionAcceptsRepeatedFileLocalUnwindLabels) {
+  auto Graph = makeSharedComdatGraph();
+  ASSERT_TRUE(static_cast<bool>(Graph));
+  EXPECT_EQ(errorText(verifyLinkComdatSelection(*Graph)), "");
 }
 
 } // namespace

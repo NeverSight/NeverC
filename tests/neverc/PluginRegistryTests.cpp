@@ -200,9 +200,15 @@ TEST(PluginRegistryTest, DeduplicatesHardLinkAliasesByFileIdentity) {
   if (!First)
     FAIL() << takeErrorMessage(First);
 
+  // A hard link cannot cross volumes and the system temporary directory does
+  // not always share a drive with the build tree, so stage the alias beside
+  // the plugin it aliases.
+  SmallString<160> Prefix(NEVERC_TEST_MINIMAL_PLUGIN);
+  sys::path::remove_filename(Prefix);
+  sys::path::append(Prefix, "neverc-plugin-registry");
   SmallString<128> TemporaryDirectory;
-  ASSERT_FALSE(sys::fs::createUniqueDirectory(
-      "neverc-plugin-registry", TemporaryDirectory));
+  ASSERT_FALSE(
+      sys::fs::createUniqueDirectory(Prefix, TemporaryDirectory));
   SmallString<160> Alias(TemporaryDirectory);
   sys::path::append(Alias, "minimal-plugin-alias");
   ASSERT_FALSE(

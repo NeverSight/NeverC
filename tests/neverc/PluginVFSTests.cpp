@@ -9,6 +9,7 @@
 #include "llvm/Config/llvm-config.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/Path.h"
 #include "llvm/Support/VirtualFileSystem.h"
 #include <memory>
 #include <optional>
@@ -25,6 +26,14 @@ std::string takeErrorMessage(Error ErrorValue) {
 
 NevercStringView stringView(StringRef Value) {
   return {Value.data(), static_cast<uint64_t>(Value.size())};
+}
+
+// The VFS reports whatever LLVM's path normalization produces, which uses the
+// host separator, so expectations must be spelled in native form.
+std::string nativePath(StringRef Path) {
+  SmallString<128> Native(Path);
+  sys::path::native(Native);
+  return std::string(Native);
 }
 
 class PluginVFSTest : public testing::Test {
@@ -160,7 +169,7 @@ TEST_F(PluginVFSTest, CanonicalizesAndTraversesDirectories) {
                 API->Context, Task->handle(), &Current)
                 .Code,
             NEVERC_STATUS_OK);
-  EXPECT_EQ(bufferText(Current), "/work");
+  EXPECT_EQ(bufferText(Current), nativePath("/work"));
   EXPECT_EQ(API->ReleaseBuffer(API->Context, Task->handle(), Current).Code,
             NEVERC_STATUS_OK);
 
@@ -174,7 +183,7 @@ TEST_F(PluginVFSTest, CanonicalizesAndTraversesDirectories) {
                               stringView("../input.c"), &Canonical)
                 .Code,
             NEVERC_STATUS_OK);
-  EXPECT_EQ(bufferText(Canonical), "/work/input.c");
+  EXPECT_EQ(bufferText(Canonical), nativePath("/work/input.c"));
   EXPECT_EQ(API->ReleaseBuffer(API->Context, Task->handle(), Canonical).Code,
             NEVERC_STATUS_OK);
 
@@ -198,8 +207,8 @@ TEST_F(PluginVFSTest, CanonicalizesAndTraversesDirectories) {
                            static_cast<size_t>(Entry.Path.Length))
                      .str());
   }
-  EXPECT_TRUE(Paths.count("/work/input.c"));
-  EXPECT_TRUE(Paths.count("/work/sub"));
+  EXPECT_TRUE(Paths.count(nativePath("/work/input.c")));
+  EXPECT_TRUE(Paths.count(nativePath("/work/sub")));
   EXPECT_EQ(API->CloseDirectory(API->Context, Task->handle(), Cursor).Code,
             NEVERC_STATUS_OK);
 }

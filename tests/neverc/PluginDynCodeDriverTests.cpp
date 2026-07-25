@@ -2,8 +2,23 @@
 // DAG.  The dyncode image extraction is an in-process job (DynCodeJobAction /
 // DynCodeCommand) rather than a post-`main()` step over a private temp object.
 #include "NeverCTestFixture.h"
+#include <algorithm>
 
 class PluginDynCodeDriverTest : public NeverCTest {};
+
+namespace {
+// `-###` renders quoted arguments and escapes each separator, so a Windows path
+// comes back doubled. Compare on a separator-insensitive form instead.
+std::string collapseSeparators(std::string Text) {
+  std::replace(Text.begin(), Text.end(), '\\', '/');
+  Text.erase(std::unique(Text.begin(), Text.end(),
+                         [](char Left, char Right) {
+                           return Left == '/' && Right == '/';
+                         }),
+             Text.end());
+  return Text;
+}
+} // namespace
 
 // -### shows the compile job followed by an in-process dyncode extraction job
 // that writes the user's -o image directly; no separate dyncode temp file.
@@ -20,7 +35,10 @@ TEST_F(PluginDynCodeDriverTest, ExtractionIsAnInProcessDagJob) {
   EXPECT_NE(Result.err.find("-dyncode-extract"), std::string::npos)
       << Result.err;
   EXPECT_NE(Result.err.find("(in-process)"), std::string::npos) << Result.err;
-  EXPECT_NE(Result.err.find(Image.string()), std::string::npos) << Result.err;
+  EXPECT_NE(collapseSeparators(Result.err)
+                .find(collapseSeparators(Image.string())),
+            std::string::npos)
+      << Result.err;
 
   // Exactly one dyncode extraction job is scheduled.
   size_t Count = 0;

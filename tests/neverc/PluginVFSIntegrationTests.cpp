@@ -1,4 +1,5 @@
 #include "NeverCTestFixture.h"
+#include <algorithm>
 
 class PluginVFSIntegrationTest : public NeverCTest {};
 
@@ -17,6 +18,8 @@ TEST_F(PluginVFSIntegrationTest,
 
   ASSERT_EQ(Result.exitCode, 0) << Result.err;
   ASSERT_TRUE(fs::exists(Dependencies));
-  EXPECT_NE(readFile(Dependencies).find("plugin/virtual.h"),
-            std::string::npos);
+  // Dependency files record paths with the host separator.
+  std::string Recorded = readFile(Dependencies);
+  std::replace(Recorded.begin(), Recorded.end(), '\\', '/');
+  EXPECT_NE(Recorded.find("plugin/virtual.h"), std::string::npos);
 }
