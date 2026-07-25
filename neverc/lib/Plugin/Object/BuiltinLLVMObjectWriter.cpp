@@ -108,6 +108,21 @@ bool validName(StringRef Name) {
   });
 }
 
+// A symbol name can hold characters the assembler reads as syntax rather than
+// as part of the name: '@' introduces a relocation variant and '-' subtracts.
+// LLVM spells COFF floating-point constants "__real@<bits>", so this is routine
+// rather than hypothetical. Quoting keeps such a name whole, and the assembler
+// takes a quoted name anywhere a bare one is allowed. validName() already
+// excludes quotes and backslashes, so nothing inside needs escaping.
+std::string assemblyName(StringRef Name) {
+  const bool Plain = llvm::all_of(Name, [](unsigned char C) {
+    return std::isalnum(C) || C == '_' || C == '.' || C == '$';
+  });
+  if (Plain)
+    return Name.str();
+  return ("\"" + Name + "\"").str();
+}
+
 bool copyString(NevercStringView View, std::string &Output) {
   if (View.Length > std::numeric_limits<size_t>::max() ||
       (!View.Data && View.Length != 0))
@@ -449,10 +464,14 @@ bool elfMergeFlags(const SectionRecord &Section, std::string &Flags,
   return true;
 }
 
+// \p AssociatedName is the parent COMDAT's name, set only for an associative
+// COFF COMDAT. The directive has to name the section it is tied to -- naming
+// itself is what "associative with sectionless symbol" means to the assembler.
 NevercStatus emitSectionDirective(raw_ostream &OS,
                                   const SectionRecord &Section,
                                   const Triple &Target,
-                                  const ComdatRecord *Comdat) {
+                                  const ComdatRecord *Comdat,
+                                  StringRef AssociatedName) {
   if (Comdat) {
     if (Target.isOSBinFormatMachO())
       return writerStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE, 470);
@@ -478,7 +497,7 @@ NevercStatus emitSectionDirective(raw_ostream &OS,
          << (ZeroFill ? "nobits" : "progbits");
       if (Mergeable)
         OS << ',' << EntrySize;
-      OS << ',' << Comdat->Name << ",comdat\n";
+      OS << ',' << assemblyName(Comdat->Name) << ",comdat\n";
       return neverc_status_ok();
     }
     StringRef Selection = coffComdatSelection(Comdat->Selection);
@@ -493,7 +512,10 @@ NevercStatus emitSectionDirective(raw_ostream &OS,
     if (ZeroFill)
       Flags.push_back('b');
     OS << "\t.section\t" << Section.Name << ",\"" << Flags << "\","
-       << Selection << ',' << Comdat->Name << '\n';
+       << Selection << ','
+       << assemblyName(AssociatedName.empty() ? StringRef(Comdat->Name)
+                                                : AssociatedName)
+       << '\n';
     return neverc_status_ok();
   }
   if (Section.Kind == NEVERC_OBJECT_SECTION_KIND_TLS_DATA) {
@@ -574,29 +596,29 @@ NevercStatus emitSectionDirective(raw_ostream &OS,
 void emitSymbolAttributes(raw_ostream &OS, const SymbolRecord &Symbol,
                           const Triple &Target) {
   if (Symbol.Binding == NEVERC_OBJECT_SYMBOL_BINDING_GLOBAL)
-    OS << "\t.globl\t" << Symbol.Name << '\n';
+    OS << "\t.globl\t" << assemblyName(Symbol.Name) << '\n';
   else if (Symbol.Binding == NEVERC_OBJECT_SYMBOL_BINDING_WEAK) {
     if (Target.isOSBinFormatMachO())
       OS << (Symbol.Definition == NEVERC_OBJECT_SYMBOL_DEFINITION_DEFINED
                  ? "\t.weak_definition\t"
                  : "\t.weak_reference\t")
-         << Symbol.Name << '\n';
+         << assemblyName(Symbol.Name) << '\n';
     else
-      OS << "\t.weak\t" << Symbol.Name << '\n';
+      OS << "\t.weak\t" << assemblyName(Symbol.Name) << '\n';
   }
   if (Symbol.Visibility == NEVERC_OBJECT_SYMBOL_VISIBILITY_HIDDEN) {
     if (Target.isOSBinFormatMachO())
-      OS << "\t.private_extern\t" << Symbol.Name << '\n';
+      OS << "\t.private_extern\t" << assemblyName(Symbol.Name) << '\n';
     else if (Target.isOSBinFormatELF())
-      OS << "\t.hidden\t" << Symbol.Name << '\n';
+      OS << "\t.hidden\t" << assemblyName(Symbol.Name) << '\n';
   }
   if (Target.isOSBinFormatELF() &&
       Symbol.Definition == NEVERC_OBJECT_SYMBOL_DEFINITION_DEFINED) {
     if (Symbol.Type == NEVERC_OBJECT_SYMBOL_TYPE_FUNCTION)
-      OS << "\t.type\t" << Symbol.Name << ",@function\n";
+      OS << "\t.type\t" << assemblyName(Symbol.Name) << ",@function\n";
     else if (Symbol.Type == NEVERC_OBJECT_SYMBOL_TYPE_OBJECT ||
              Symbol.Type == NEVERC_OBJECT_SYMBOL_TYPE_TLS)
-      OS << "\t.type\t" << Symbol.Name << ",@object\n";
+      OS << "\t.type\t" << assemblyName(Symbol.Name) << ",@object\n";
   }
 }
 
@@ -634,6 +656,85 @@ std::string sectionLabel(size_t Index, const Triple &Target) {
          std::to_string(Index);
 }
 
+// Renders what a relocation points at -- "symbol", "section_label", with any
+// addend folded in -- shared by the data-patching and .reloc paths.
+NevercStatus relocationTargetExpression(const RelocationRecord &Relocation,
+                                        ArrayRef<SectionRecord> Sections,
+                                        ArrayRef<SymbolRecord> Symbols,
+                                        const Triple &Target,
+                                        std::string &TargetExpression) {
+  raw_string_ostream Expression(TargetExpression);
+  if (Relocation.TargetKind ==
+      NEVERC_OBJECT_RELOCATION_TARGET_SYMBOL) {
+    const SymbolRecord *Symbol =
+        findSymbol(Symbols, Relocation.TargetSymbol);
+    if (!Symbol)
+      return writerStatus(NEVERC_STATUS_VERIFICATION_FAILED, 451);
+    Expression << assemblyName(Symbol->Name);
+  } else if (Relocation.TargetKind ==
+             NEVERC_OBJECT_RELOCATION_TARGET_SECTION) {
+    const SectionRecord *Section =
+        findSection(Sections, Relocation.TargetSection);
+    if (!Section)
+      return writerStatus(NEVERC_STATUS_VERIFICATION_FAILED, 452);
+    const size_t Index =
+        static_cast<size_t>(Section - Sections.data());
+    Expression << sectionLabel(Index, Target);
+  } else {
+    return writerStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE, 453);
+  }
+  if (Relocation.Addend > 0)
+    Expression << '+' << Relocation.Addend;
+  else if (Relocation.Addend < 0)
+    Expression << Relocation.Addend;
+  Expression.flush();
+  return neverc_status_ok();
+}
+
+// Layout of the "NCRL" relocation extension: tag[4], version[4], u64 native
+// type, u32 name length, then the name bytes.
+StringRef nativeRelocationName(const RelocationRecord &Relocation) {
+  constexpr size_t NameLengthOffset = 8 + 8;
+  const std::vector<uint8_t> &Bytes = Relocation.Extension;
+  if (Bytes.size() < NameLengthOffset + 4)
+    return StringRef();
+  uint32_t Length = 0;
+  for (unsigned I = 0; I != 4; ++I)
+    Length |= static_cast<uint32_t>(Bytes[NameLengthOffset + I]) << (I * 8);
+  if (Length == 0 || Bytes.size() - NameLengthOffset - 4 < Length)
+    return StringRef();
+  return StringRef(
+      reinterpret_cast<const char *>(Bytes.data() + NameLengthOffset + 4),
+      Length);
+}
+
+// ELF states a relocation as a .reloc directive over bytes that stay exactly as
+// they were read. Patching the covered bytes with a .long instead only works
+// when the relocated field occupies whole bytes of its own; for a field that
+// lives inside an instruction -- AArch64 CALL26, ADR_PREL_PG_HI21, the LO12
+// forms -- it overwrites the opcode along with the field and silently produces
+// a different instruction. Naming the relocation also removes the need to infer
+// its width or PC-relativeness, which no name-derived guess gets right for the
+// GOT, PLT and TLS forms every real translation unit contains.
+NevercStatus emitRelocDirective(raw_ostream &OS,
+                                const RelocationRecord &Relocation,
+                                size_t SectionIndex,
+                                ArrayRef<SectionRecord> Sections,
+                                ArrayRef<SymbolRecord> Symbols,
+                                const Triple &Target) {
+  const StringRef Name = nativeRelocationName(Relocation);
+  if (Name.empty())
+    return writerStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE, 457);
+  std::string TargetExpression;
+  NevercStatus Status = relocationTargetExpression(
+      Relocation, Sections, Symbols, Target, TargetExpression);
+  if (!neverc_status_is_ok(Status))
+    return Status;
+  OS << "\t.reloc\t" << sectionLabel(SectionIndex, Target) << '+'
+     << Relocation.Offset << ", " << Name << ", " << TargetExpression << '\n';
+  return neverc_status_ok();
+}
+
 NevercStatus emitRelocationValue(
     raw_ostream &OS, const RelocationRecord &Relocation,
     ArrayRef<SectionRecord> Sections, ArrayRef<SymbolRecord> Symbols,
@@ -657,30 +758,11 @@ NevercStatus emitRelocationValue(
   }
 
   std::string TargetExpression;
+  NevercStatus TargetStatus = relocationTargetExpression(
+      Relocation, Sections, Symbols, Target, TargetExpression);
+  if (!neverc_status_is_ok(TargetStatus))
+    return TargetStatus;
   raw_string_ostream Expression(TargetExpression);
-  if (Relocation.TargetKind ==
-      NEVERC_OBJECT_RELOCATION_TARGET_SYMBOL) {
-    const SymbolRecord *Symbol =
-        findSymbol(Symbols, Relocation.TargetSymbol);
-    if (!Symbol)
-      return writerStatus(NEVERC_STATUS_VERIFICATION_FAILED, 451);
-    Expression << Symbol->Name;
-  } else if (Relocation.TargetKind ==
-             NEVERC_OBJECT_RELOCATION_TARGET_SECTION) {
-    const SectionRecord *Section =
-        findSection(Sections, Relocation.TargetSection);
-    if (!Section)
-      return writerStatus(NEVERC_STATUS_VERIFICATION_FAILED, 452);
-    const size_t Index =
-        static_cast<size_t>(Section - Sections.data());
-    Expression << sectionLabel(Index, Target);
-  } else {
-    return writerStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE, 453);
-  }
-  if (Relocation.Addend > 0)
-    Expression << '+' << Relocation.Addend;
-  else if (Relocation.Addend < 0)
-    Expression << Relocation.Addend;
 
   // COFF spells image- and section-relative references as their own
   // directives; there is no expression suffix to hang on a plain .long, and
@@ -760,11 +842,49 @@ NevercStatus emitSectionContents(
                         .slice(static_cast<size_t>(Offset),
                                static_cast<size_t>(Symbol.Value - Offset)));
       Offset = Symbol.Value;
-      OS << Symbol.Name << ":\n";
+      OS << assemblyName(Symbol.Name) << ":\n";
       ++SymbolIndex;
     }
     return neverc_status_ok();
   };
+
+  // Mach-O has no .reloc directive, so a relocation there can only be written
+  // by replacing the bytes it covers with a symbol expression. Inside executable
+  // content that is not faithful: an AArch64 relocation patches a field within a
+  // 32-bit instruction, so replacing those four bytes overwrites the opcode as
+  // well and silently assembles a different instruction, and a PC-relative
+  // reference to an undefined symbol cannot be spelled as a subtraction at all.
+  // Refuse rather than miscompile.
+  if (Target.isOSBinFormatMachO() && !SectionRelocations.empty() &&
+      (Section.Flags & NEVERC_OBJECT_SECTION_EXECUTABLE) != 0)
+    return writerStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE, 465);
+
+  if (Target.isOSBinFormatELF()) {
+    for (const RelocationRecord *Relocation : SectionRelocations) {
+      if (Relocation->Width == 0 || (Relocation->Width % 8) != 0)
+        return writerStatus(NEVERC_STATUS_VERIFICATION_FAILED, 461);
+      const uint64_t Width = Relocation->Width / 8;
+      if (Relocation->Offset > Section.Data.size() ||
+          Width > Section.Data.size() - Relocation->Offset)
+        return writerStatus(NEVERC_STATUS_VERIFICATION_FAILED, 462);
+    }
+    NevercStatus Status = emitSymbolsThrough(Section.Data.size(), true);
+    if (!neverc_status_is_ok(Status))
+      return Status;
+    emitBytes(OS, ArrayRef<uint8_t>(Section.Data)
+                      .drop_front(static_cast<size_t>(Offset)));
+    if (SymbolIndex != Defined.size())
+      return writerStatus(NEVERC_STATUS_VERIFICATION_FAILED, 464);
+    for (const RelocationRecord *Relocation : SectionRelocations) {
+      Status = emitRelocDirective(OS, *Relocation, SectionIndex, Sections,
+                                  Symbols, Target);
+      if (!neverc_status_is_ok(Status))
+        return Status;
+    }
+    if (Section.ZeroFillSize != 0)
+      OS << "\t.zero\t" << Section.ZeroFillSize << '\n';
+    return neverc_status_ok();
+  }
 
   for (const RelocationRecord *Relocation : SectionRelocations) {
     if (Relocation->Width == 0 || (Relocation->Width % 8) != 0)
@@ -839,11 +959,11 @@ NevercStatus buildAssembly(const NevercObjectWriteRequest &Request,
   for (const SymbolRecord &Symbol : Symbols) {
     emitSymbolAttributes(OS, Symbol, Target);
     if (Symbol.Definition == NEVERC_OBJECT_SYMBOL_DEFINITION_COMMON)
-      OS << "\t.comm\t" << Symbol.Name << ',' << Symbol.Size << ','
+      OS << "\t.comm\t" << assemblyName(Symbol.Name) << ',' << Symbol.Size << ','
          << std::max<uint64_t>(Symbol.Alignment, 1) << '\n';
     else if (Symbol.Definition ==
              NEVERC_OBJECT_SYMBOL_DEFINITION_ABSOLUTE)
-      OS << "\t.set\t" << Symbol.Name << ',' << Symbol.Value << '\n';
+      OS << "\t.set\t" << assemblyName(Symbol.Name) << ',' << Symbol.Value << '\n';
   }
 
   for (size_t SectionIndex = 0; SectionIndex != Sections.size();
@@ -853,7 +973,17 @@ NevercStatus buildAssembly(const NevercObjectWriteRequest &Request,
         findComdat(Comdats, Section.Comdat);
     if (!neverc_handle_is_null(Section.Comdat) && !Comdat)
       return writerStatus(NEVERC_STATUS_VERIFICATION_FAILED, 473);
-    Status = emitSectionDirective(OS, Section, Target, Comdat);
+    StringRef AssociatedName;
+    if (Comdat &&
+        Comdat->Selection == NEVERC_OBJECT_COMDAT_ASSOCIATIVE) {
+      const ComdatRecord *Parent =
+          findComdat(Comdats, Comdat->AssociatedComdat);
+      if (!Parent)
+        return writerStatus(NEVERC_STATUS_VERIFICATION_FAILED, 474);
+      AssociatedName = Parent->Name;
+    }
+    Status = emitSectionDirective(OS, Section, Target, Comdat,
+                                  AssociatedName);
     if (!neverc_status_is_ok(Status))
       return Status;
     if (Section.Alignment > 1 && isPowerOf2_64(Section.Alignment))
@@ -869,7 +999,7 @@ NevercStatus buildAssembly(const NevercObjectWriteRequest &Request,
       if (Symbol.Definition ==
               NEVERC_OBJECT_SYMBOL_DEFINITION_DEFINED &&
           Symbol.Size != 0)
-        OS << "\t.size\t" << Symbol.Name << ',' << Symbol.Size << '\n';
+        OS << "\t.size\t" << assemblyName(Symbol.Name) << ',' << Symbol.Size << '\n';
   OS.flush();
   return neverc_status_ok();
 }

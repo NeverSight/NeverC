@@ -420,6 +420,39 @@ uint32_t relocationWidth(const ObjectFile &Object,
         return 32;
       }
     }
+    // The x86-64 GOT and TLS relocation names carry no width at all --
+    // R_X86_64_REX_GOTPCRELX patches 32 bits but has no digits for the name
+    // heuristic to read, so it would fall back to the pointer width and then be
+    // rejected as overrunning a section it actually fits in.
+    if (ELFObject->getEMachine() == ELF::EM_X86_64) {
+      switch (Relocation.getType()) {
+      case ELF::R_X86_64_64:
+      case ELF::R_X86_64_PC64:
+      case ELF::R_X86_64_GOT64:
+      case ELF::R_X86_64_GOTOFF64:
+      case ELF::R_X86_64_GOTPC64:
+      case ELF::R_X86_64_GOTPCREL64:
+      case ELF::R_X86_64_PLTOFF64:
+      case ELF::R_X86_64_SIZE64:
+      case ELF::R_X86_64_DTPOFF64:
+      case ELF::R_X86_64_TPOFF64:
+      case ELF::R_X86_64_GLOB_DAT:
+      case ELF::R_X86_64_JUMP_SLOT:
+      case ELF::R_X86_64_RELATIVE:
+      case ELF::R_X86_64_IRELATIVE:
+        return 64;
+      case ELF::R_X86_64_16:
+      case ELF::R_X86_64_PC16:
+        return 16;
+      case ELF::R_X86_64_8:
+      case ELF::R_X86_64_PC8:
+        return 8;
+      default:
+        // Everything else -- PC32, PLT32, the GOTPCREL forms, the 32-bit TLS
+        // forms -- patches a 32-bit field.
+        return 32;
+      }
+    }
   }
   const auto Lower = TypeName.lower();
   if (Lower.find("128") != std::string::npos)
@@ -580,10 +613,19 @@ NevercStatus createELFComdats(
   return neverc_status_ok();
 }
 
+struct COFFComdatPlan {
+  uint64_t SectionIndex = 0;
+  std::string Name;
+  NevercObjectComdatSelection Selection = NEVERC_OBJECT_COMDAT_ANY;
+  // 1-based COFF section number of the parent, for associative COMDATs only.
+  int32_t AssociatedSectionNumber = 0;
+};
+
 NevercStatus createCOFFComdats(
     const COFFObjectFile &Object,
     const NevercObjectReadRequest &Request,
     std::vector<ComdatMapEntry> &Comdats) {
+  std::vector<COFFComdatPlan> Plans;
   for (SectionRef Section : Object.sections()) {
     const coff_section *Native = Object.getCOFFSection(Section);
     if (!Native ||
@@ -591,8 +633,8 @@ NevercStatus createCOFFComdats(
       continue;
     const int32_t SectionNumber =
         static_cast<int32_t>(Section.getIndex() + 1);
-    NevercObjectComdatSelection Selection = NEVERC_OBJECT_COMDAT_ANY;
-    std::string Name;
+    COFFComdatPlan Plan;
+    Plan.SectionIndex = Section.getIndex();
     for (SymbolRef Symbol : Object.symbols()) {
       COFFSymbolRef NativeSymbol = Object.getCOFFSymbol(Symbol);
       if (NativeSymbol.getSectionNumber() != SectionNumber)
@@ -602,7 +644,14 @@ NevercStatus createCOFFComdats(
         const NevercObjectComdatSelection Mapped =
             coffComdatSelection(Definition->Selection);
         if (Mapped != 0)
-          Selection = Mapped;
+          Plan.Selection = Mapped;
+        // An associative COMDAT names the section it lives or dies with --
+        // this is how .pdata and .xdata stay attached to the .text they
+        // describe. The graph requires that parent, so read it rather than
+        // leaving the association dangling.
+        if (Mapped == NEVERC_OBJECT_COMDAT_ASSOCIATIVE)
+          Plan.AssociatedSectionNumber =
+              Definition->getNumber(NativeSymbol.isBigObj());
       }
       if (NativeSymbol.isExternal()) {
         auto SymbolName = Symbol.getName();
@@ -611,29 +660,68 @@ NevercStatus createCOFFComdats(
           return status(NEVERC_STATUS_VERIFICATION_FAILED, 55);
         }
         if (!SymbolName->empty())
-          Name = SymbolName->str();
+          Plan.Name = SymbolName->str();
       }
     }
-    if (Name.empty()) {
+    if (Plan.Name.empty()) {
       auto SectionName = Section.getName();
       if (!SectionName) {
         consumeError(SectionName.takeError());
         return status(NEVERC_STATUS_VERIFICATION_FAILED, 56);
       }
-      Name = SectionName->str();
+      Plan.Name = SectionName->str();
     }
-    NevercObjectComdatDescriptor Descriptor{};
-    Descriptor.Header = {sizeof(Descriptor), NEVERC_OBJECT_API_MAJOR,
-                         NEVERC_OBJECT_API_MINOR, 0};
-    Descriptor.Name = stringView(Name);
-    Descriptor.Selection = Selection;
-    NevercObjectComdatHandle Handle{};
-    NevercStatus Result = Request.Object->CreateComdat(
-        Request.Object->Context, Request.Task, Request.Mutation,
-        &Descriptor, &Handle);
-    if (!neverc_status_is_ok(Result))
-      return Result;
-    Comdats.push_back({Section.getIndex(), Handle});
+    Plans.push_back(std::move(Plan));
+  }
+
+  // A parent has to exist before the COMDAT that points at it, and section
+  // order does not guarantee that, so create whatever is ready each round
+  // until nothing new can be.
+  std::vector<bool> Created(Plans.size(), false);
+  size_t Remaining = Plans.size();
+  while (Remaining != 0) {
+    size_t CreatedThisRound = 0;
+    for (size_t I = 0; I != Plans.size(); ++I) {
+      if (Created[I])
+        continue;
+      const COFFComdatPlan &Plan = Plans[I];
+      NevercObjectComdatHandle Associated{};
+      if (Plan.Selection == NEVERC_OBJECT_COMDAT_ASSOCIATIVE) {
+        if (Plan.AssociatedSectionNumber <= 0)
+          return status(NEVERC_STATUS_VERIFICATION_FAILED, 57);
+        const uint64_t ParentIndex =
+            static_cast<uint64_t>(Plan.AssociatedSectionNumber - 1);
+        if (ParentIndex == Plan.SectionIndex)
+          return status(NEVERC_STATUS_VERIFICATION_FAILED, 58);
+        auto Parent = llvm::find_if(
+            Comdats, [&](const ComdatMapEntry &Entry) {
+              return Entry.SectionIndex == ParentIndex;
+            });
+        if (Parent == Comdats.end())
+          continue; // Parent not created yet; try again next round.
+        Associated = Parent->Handle;
+      }
+      NevercObjectComdatDescriptor Descriptor{};
+      Descriptor.Header = {sizeof(Descriptor), NEVERC_OBJECT_API_MAJOR,
+                           NEVERC_OBJECT_API_MINOR, 0};
+      Descriptor.Name = stringView(Plan.Name);
+      Descriptor.Selection = Plan.Selection;
+      Descriptor.AssociatedComdat = Associated;
+      NevercObjectComdatHandle Handle{};
+      NevercStatus Result = Request.Object->CreateComdat(
+          Request.Object->Context, Request.Task, Request.Mutation,
+          &Descriptor, &Handle);
+      if (!neverc_status_is_ok(Result))
+        return Result;
+      Comdats.push_back({Plan.SectionIndex, Handle});
+      Created[I] = true;
+      --Remaining;
+      ++CreatedThisRound;
+    }
+    // Nothing moved: the remaining associations form a cycle or name a
+    // section that is not a COMDAT at all.
+    if (CreatedThisRound == 0)
+      return status(NEVERC_STATUS_VERIFICATION_FAILED, 59);
   }
   return neverc_status_ok();
 }

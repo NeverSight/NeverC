@@ -71,6 +71,28 @@ COFF_MACHINE = {"x86_64": 0x8664, "aarch64": 0xAA64}
 TRIVIAL_TU = "int neverc_cross_matrix(void) { return 0; }\n"
 DYNCODE_TU = "int dyncode_entry(void) { return 0; }\n"
 
+# The plugin pass needs a translation unit whose object actually exercises the
+# round trip. A function returning a constant has no relocations, no constant
+# pool and no unwind data, so it survives a writer that mishandles all three --
+# which is how the format-specific defects this pass exists to catch stayed
+# invisible. This one calls an external function (relocation into .text, and on
+# COFF the .pdata/.xdata that describes the frame), needs spilled callee-saved
+# registers, and loads wide floating-point constants (a mergeable constant pool
+# with an entry size).
+OBJECT_PLUGIN_TU = """\
+extern int neverc_cross_sink(int, int, int, int, int, int, int, int);
+double neverc_cross_scale(double x) {
+  return x * 3.14159265358979 + 2.718281828459045;
+}
+int neverc_cross_frame(int a, int b, int c, int d, int e, int f, int g, int h) {
+  int local[64];
+  for (int i = 0; i < 64; i++) local[i] = a + i * b - c;
+  int s = 0;
+  for (int i = 0; i < 64; i++) s += local[i] ^ (int)neverc_cross_scale(i);
+  return neverc_cross_sink(s, a, b, c, d, e, f, g + h);
+}
+"""
+
 # The section payload pluginsdk/examples/ObjectRewritePlugin.c appends.
 OBJECT_PLUGIN_MARKER = b"NeverC object rewrite example"
 
@@ -156,6 +178,8 @@ def matrix(compiler: str, targets: list[str], formats: list[str],
     results: list[Result] = []
     trivial = workdir / "tu.c"
     trivial.write_text(TRIVIAL_TU, encoding="utf-8")
+    rewrite_tu = workdir / "tu_rewrite.c"
+    rewrite_tu.write_text(OBJECT_PLUGIN_TU, encoding="utf-8")
     dyncode = workdir / "dyncode.c"
     dyncode.write_text(DYNCODE_TU, encoding="utf-8")
 
@@ -181,10 +205,15 @@ def matrix(compiler: str, targets: list[str], formats: list[str],
             if not ok or object_plugin is None:
                 continue
 
-            # Same route through the ObjectGraph round trip.
+            # Same route through the ObjectGraph round trip. Mach-O has no
+            # .reloc directive, so the writer cannot express a relocation that
+            # sits inside executable content and refuses rather than emit a
+            # corrupted instruction; cover its round trip with the translation
+            # unit that stays inside what it can express.
             plugin_cap = f"{cap}/plugin_rewrite"
             rewritten = workdir / f"{arch}_{fmt}_plugin.o"
-            code, log = compile_object(compiler, triple, trivial, rewritten,
+            source = trivial if fmt == "macho" else rewrite_tu
+            code, log = compile_object(compiler, triple, source, rewritten,
                                        object_plugin)
             if code != 0 or not rewritten.exists():
                 last = log.strip().splitlines()[-1] if log.strip() else code
