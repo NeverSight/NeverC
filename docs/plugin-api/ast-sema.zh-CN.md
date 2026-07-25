@@ -185,8 +185,9 @@ AST->DestroyASTMutation(AST->Context, Task, Mutation);
 ```
 
 提交会校验暂存的树并原子发布。提交失败会让之前的树保持完好，而中止会让该
-mutation 创建的句柄变成陈旧句柄。`pluginsdk/examples/ASTRewritePlugin.c` 展示了
-包含解析器拦截在内的完整流程。
+mutation 创建的句柄变成陈旧句柄。
+[`pluginsdk/examples/ASTRewritePlugin.c`](../../pluginsdk/examples/ASTRewritePlugin.c)
+展示了包含解析器拦截在内的完整流程。
 
 ## 生命周期事件
 

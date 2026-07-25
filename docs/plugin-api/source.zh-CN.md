@@ -94,7 +94,8 @@ IO->AddMemoryFile(IO->Context, Session, SV("/virtual/config.h"),
                   Content, ModificationTime);
 ```
 
-`pluginsdk/examples/VirtualHeaderPlugin.c` 是一个可运行的完整 Provider。
+[`pluginsdk/examples/VirtualHeaderPlugin.c`](../../pluginsdk/examples/VirtualHeaderPlugin.c)
+是一个可运行的完整 Provider。
 
 ## 读文件
 

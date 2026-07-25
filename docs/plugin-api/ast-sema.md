@@ -194,8 +194,9 @@ AST->DestroyASTMutation(AST->Context, Task, Mutation);
 
 Commit verifies the staged tree and publishes atomically. A failed commit
 leaves the previous tree intact, and an abort makes the handles the mutation
-created stale. `pluginsdk/examples/ASTRewritePlugin.c` shows the whole cycle
-including parser interception.
+created stale.
+[`pluginsdk/examples/ASTRewritePlugin.c`](../../pluginsdk/examples/ASTRewritePlugin.c)
+shows the whole cycle including parser interception.
 
 ## Lifecycle events
 

@@ -100,7 +100,8 @@ IO->AddMemoryFile(IO->Context, Session, SV("/virtual/config.h"),
                   Content, ModificationTime);
 ```
 
-`pluginsdk/examples/VirtualHeaderPlugin.c` is a complete working provider.
+[`pluginsdk/examples/VirtualHeaderPlugin.c`](../../pluginsdk/examples/VirtualHeaderPlugin.c)
+is a complete working provider.
 
 ## Reading files
 
