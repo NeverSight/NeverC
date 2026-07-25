@@ -2,121 +2,416 @@
 
 # NeverC プラグイン IR API
 
-最初の公開プラグイン ABI は、安定した C のテーブルを通じて LLVM IR を公開します。
-プラグインは LLVM のヘッダをインクルードせず、NeverC のハンドルを LLVM オブジェクト
-にキャストしてはいけません。
+`PluginIR.h` は 6 枚のケーパビリティテーブルと生成されたスキーマを通じて LLVM IR
+を公開します。プラグインは IR を読み書きし、5 つの安定したパイプライン地点に
+パスを登録し、自前の解析を定義し、あるいは IR 生成と最適化パイプラインをまるごと
+置き換えられます —— LLVM のヘッダを 1 つも include することなく。
+
+オペコード、型種別、命令プロパティは LLVM の列挙値ではなく **安定したスキーマ
+ID** です。この間接性があるからこそ、今日コンパイルしたプラグインはホストが新しい
+LLVM リリースへ移っても動き続けます。
 
 ## インターフェイス
 
-`neverc_plugin_entry` の中で `NevercBootstrapAPI.QueryInterface` を使って
-インターフェイスを照会します。
+```c
+#include "neverc/Plugin/PluginIR.h"
+```
 
-- `NEVERC_INTERFACE_IR_CORE` — モジュール、型、値、CFG、メタデータ、属性、定数、
-  シリアライズの各問い合わせ。
-- `NEVERC_INTERFACE_IR_BUILDER` — トランザクショナルな IR の構築と変更。
-- `NEVERC_INTERFACE_IR_ANALYSIS` — 組み込み解析とプラグイン定義の解析。
-- `NEVERC_INTERFACE_IR_PASS` — Module、CGSCC、Function、Loop の各パス。
-- `NEVERC_INTERFACE_IR_GEN` — SemanticUnit から IR への低下処理の置換。
-- `NEVERC_INTERFACE_IR_OPTIMIZATION` — 最適化パイプライン全体の置換。
+| インターフェイス | テーブル | スロット | 目的 |
+|---|---|--:|---|
+| `NEVERC_INTERFACE_IR_CORE_{HIGH,LOW}` | `NevercIRCoreAPI` | 99 | モジュール、値、型、定数、メタデータ、属性の読み書き |
+| `NEVERC_INTERFACE_IR_BUILDER_{HIGH,LOW}` | `NevercIRBuilderAPI` | 29 | トランザクショナルな構築 |
+| `NEVERC_INTERFACE_IR_ANALYSIS_{HIGH,LOW}` | `NevercIRAnalysisAPI` | 13 | 組み込み解析とプラグイン解析 |
+| `NEVERC_INTERFACE_IR_PASS_{HIGH,LOW}` | `NevercIRPassAPI` | 1 | `RegisterPass` |
+| `NEVERC_INTERFACE_IR_GEN_{HIGH,LOW}` | `NevercIRGenAPI` | 5 | SemanticUnit → IR の低下処理を置き換える |
+| `NEVERC_INTERFACE_IR_OPTIMIZATION_{HIGH,LOW}` | `NevercIROptimizationAPI` | 7 | 最適化パイプライン全体を置き換える |
 
-必ずヘッダのメジャー／マイナーの組を要求し、返された `StructSize` がプラグインの
-使う最後の関数ポインタまで届いていることを検証してください。新しいホストは
-フィールドを追加することがあります。プラグインは未知の末尾を無視しなければなりま
-せん。
+いずれも major 1 では `NEVERC_INTERFACE_STABLE` です。対応する
+`NEVERC_IR_*_API_MAJOR` / `_MINOR` で交渉し、`TableSize` が自分の呼ぶ最後の
+スロットまで届いているか、`pluginsdk/examples/FunctionPass.c` と同じように検証して
+ください:
+
+```c
+Status = Bootstrap->QueryInterface(
+    Bootstrap->Context,
+    (NevercInterfaceID){NEVERC_INTERFACE_IR_PASS_HIGH,
+                        NEVERC_INTERFACE_IR_PASS_LOW},
+    NEVERC_IR_PASS_API_MAJOR, NEVERC_IR_PASS_API_MINOR, &Table, &Minor,
+    &StructSize);
+if (!Table ||
+    StructSize < offsetof(NevercIRPassAPI, RegisterPass) +
+                     sizeof(((NevercIRPassAPI *)0)->RegisterPass))
+  return fail(NEVERC_STATUS_ABI_MISMATCH);
+```
+
+## フェーズ
+
+IR フェーズは 8 つです:
+
+| フェーズ | ポリシー |
+|---|---|
+| `neverc.ir.generate` | OBSERVABLE、INTERCEPTABLE、REPLACEABLE |
+| `neverc.ir.optimize` | OBSERVABLE、INTERCEPTABLE、REPLACEABLE |
+| `neverc.ir.pass.pre_opt` | OBSERVABLE、INTERCEPTABLE |
+| `neverc.ir.pass.pipeline_start` | OBSERVABLE、INTERCEPTABLE |
+| `neverc.ir.pass.optimizer_last` | OBSERVABLE、INTERCEPTABLE |
+| `neverc.ir.pass.post_opt` | OBSERVABLE、INTERCEPTABLE |
+| `neverc.ir.pass.pre_codegen` | OBSERVABLE、INTERCEPTABLE |
+| `neverc.ir.final_verify` | OBSERVABLE、**封印されたホストゲート** |
+
+5 つの `pass.*` フェーズが `NevercIRPassDescriptor.Phase` の指す先です。
+`neverc.ir.final_verify` は LLVM の検証器を走らせ、最適化プロバイダを含め、何者に
+も傍受・置換・スキップされません。
+
+## スキーマ
+
+`Schema/PluginIRSchema.inc` は生成物で、`PluginIR.h` が include します。ダイジェ
+ストと以下の定数群を公開します:
+
+```c
+#define NEVERC_IR_SCHEMA_CAPABILITY_MAJOR   UINT16_C(1)
+#define NEVERC_IR_SCHEMA_DIGEST             "4302919d…"
+#define NEVERC_IR_TYPE_KIND_COUNT           UINT32_C(22)
+#define NEVERC_IR_VALUE_KIND_COUNT          UINT32_C(29)
+#define NEVERC_IR_OPCODE_COUNT              UINT32_C(67)
+#define NEVERC_IR_PREDICATE_COUNT           UINT32_C(26)
+#define NEVERC_IR_LINKAGE_COUNT             UINT32_C(11)
+#define NEVERC_IR_CALLING_CONVENTION_COUNT  UINT32_C(21)
+#define NEVERC_IR_PROPERTY_COUNT            UINT32_C(23)
+```
+
+ID は上位バイトで領域が付されます —— 型は `0x41……`、値種別は `0x42……`、
+オペコードは `0x43……`、プロパティは `0x49……` —— ので、誤った位置で使われた値は
+読み違えられるのではなく拒否されます。
 
 ## ハンドルと所有権
 
-IR ハンドルは、タスクにスコープされた不透明な `{Owner, Value}` の組です。それらが
-参照するオブジェクトはすべてホストが所有します。
+IR ハンドルは 1 つのタスクにスコープされた不透明な `{Owner, Value}` の組で、その
+背後にあるものはすべてホストの所有物です。
 
-- タスクスコープのハンドルを、コールバックやタスクの終了後に保持しない。
-- ハンドルを別のセッションやタスクで使わない。
-- コミットされた置換は、置き換えられたオブジェクトのハンドルを無効化する。
-- 中止された変更は、その変更が作成したハンドルを失効させる。
-- API は LLVM ポインタを公開せず、`NEVERC_STATUS_STALE_HANDLE`、`WRONG_OWNER`、
-  `WRONG_TYPE` を返す。
+- コールバックやタスクが終わった後にハンドルを保持しないこと。
+- 別のセッションやタスクでハンドルを使わないこと。
+- コミットされた置換は、置き換えられたオブジェクトのハンドルを無効化します。
+- 中止された変更は、その変更が作ったハンドルを失効させます。
+- エラーは `NEVERC_STATUS_STALE_HANDLE`、`WRONG_OWNER`、`WRONG_TYPE` であり、
+  生の LLVM ポインタが返ることは決してありません。
 
-問い合わせ呼び出しが返す文字列やバイトのビューは、API が解放可能なバッファを返すと
-明記していない限り借用されたものです。
+問い合わせから返る文字列やバイトのビューはコールバックの間だけ借用されます。唯一
+の例外は `ExportModule` で、これは `NevercIRSerializedBufferHandle` を返すので、
+`ReleaseSerializedBuffer` へ返さなければなりません。
 
-## IR の読み取り
+## モジュールの走査
 
-`NevercIRCoreAPI` が提供するもの:
+コレクションは自身の世代を持つカーソル経由で読みます。そのため走査の途中で変更が
+起きても、黙って項目を飛ばすのではなく検出されます:
 
-- モジュール識別子、トリプル、データレイアウト、インラインアセンブリ;
-- 関数、グローバル、ブロック、命令、use、オペランドに対する安定した値カーソル;
-- 安定した型 ID とオペコード ID;
-- 関数、グローバル、命令、メタデータ、属性の各プロパティ;
-- 整数、浮動小数点、集約、null、poison、undef の定数;
-- ビットコードのエクスポート／インポートと、検証済みモジュール成果物。
+```c
+NevercIRValueCursor Cursor = {0};
+Cursor.Header = (NevercABITableHeader){sizeof(Cursor),
+                                       NEVERC_IR_CORE_API_MAJOR,
+                                       NEVERC_IR_CORE_API_MINOR, 0};
+Core->BeginValueCursor(Core->Context, Task, Module,
+                       NEVERC_IR_COLLECTION_MODULE_FUNCTIONS, &Cursor);
 
-コレクションカーソルは上限付きです。出力容量を渡し、返された個数が 0 になるまで収集
-を繰り返してください。
+NevercIRValueHandle Batch[32];
+uint64_t Count = 0;
+for (;;) {
+  Core->CollectValueCursor(Core->Context, Task, &Cursor, Batch, 32, &Count);
+  if (Count == 0)
+    break;
+  for (uint64_t I = 0; I != Count; ++I) {
+    NevercStringView Name;
+    Core->GetValueName(Core->Context, Task, Batch[I], &Name);
+  }
+}
+```
+
+`Count` が 0 で返るまで繰り返します。7 つのコレクションは
+`MODULE_FUNCTIONS`、`MODULE_GLOBALS`、`MODULE_ALIASES`、`MODULE_I_FUNCS`、
+`FUNCTION_ARGUMENTS`、`FUNCTION_BLOCKS`、`BLOCK_INSTRUCTIONS` です。
+
+それ以外はすべて直接の問い合わせです: `GetValueKind`、`GetValueType`、
+`GetOperandCount` / `GetOperand` / `SetOperand`、`GetValueUseCount` /
+`GetValueUse`、`GetTerminator`、`GetPredecessor*`、`GetSuccessor*`、
+`GetPHIIncoming*`、そしてモジュール単位の `GetModuleIdentifier`、
+`GetModuleTargetTriple`、`GetModuleDataLayout`、`GetModuleInlineAssembly` と
+それらのセッター。
+
+## 型と定数
+
+型はインターン化されているので、二度尋ねても同じハンドルが返ります:
+
+```c
+NevercIRTypeHandle I32, Ptr, Fn;
+Core->GetIntegerType(Core->Context, Task, 32, &I32);
+Core->GetPointerType(Core->Context, Task, /*AddressSpace=*/0, &Ptr);
+
+NevercIRTypeHandle Params[] = {I32, Ptr};
+Core->GetFunctionType(Core->Context, Task, I32, Params, 2,
+                      /*Variadic=*/0, &Fn);
+```
+
+`GetPrimitiveType` は `NEVERC_IR_TYPE_VOID`、`_FLOAT`、`_DOUBLE`、`_TOKEN` の
+ようなスキーマ種別を取ります。残りは `GetArrayType`、`GetVectorType`
+（`Scalable` フラグ付き）、`GetStructType`（名前付きかリテラルか、packed かどうか）
+が担います。
+
+整数と浮動小数点の定数はリトルエンディアンの 64 ビットワードから組み立てるので、
+`i128` にも特別な経路は要りません:
+
+```c
+uint64_t Words[2] = {0xFFFFFFFFFFFFFFFFULL, 0x1ULL};
+NevercIRValueHandle C;
+Core->CreateIntegerConstant(Core->Context, Task, I128, Words, 2, &C);
+```
+
+`GetNullConstant`、`GetPoisonConstant`、`GetUndefConstant`、
+`CreateAggregateConstant`、`GetGlobalAddressConstant` が単純な場合を、
+`CreateConstantBinaryExpression`、`CreateConstantCastExpression`、
+`CreateConstantCompareExpression`、`CreateConstantGEPExpression` が定数式を
+構築します。
+
+## 命令プロパティ
+
+フラグごとにアクセサを置く代わりに、命令の細部はスキーマ ID をキーとするタグ付き
+プロパティ値を通ります:
+
+```c
+typedef struct NevercIRPropertyValue {
+  NevercABITableHeader Header;
+  NevercIRPropertyValueKind Kind;   /* BOOL, UINT, ENUM, FLAGS, STRING, TYPE */
+  uint32_t Reserved;
+  uint64_t UnsignedValue;
+  NevercIRTypeHandle TypeValue;
+  NevercStringView StringValue;
+} NevercIRPropertyValue;
+
+NevercIRPropertyValue Value = {0};
+Value.Header = /* … */;
+Core->GetInstructionProperty(Core->Context, Task, Instruction,
+                             NEVERC_IR_PROPERTY_ALIGNMENT, &Value);
+```
+
+23 のプロパティは `NAME`、`FAST_MATH_FLAGS`、`NUW`、`NSW`、`EXACT`、
+`DISJOINT`、`VOLATILE`、`ALIGNMENT`、`ATOMIC_ORDERING`、`SYNC_SCOPE`、
+`PREDICATE`、`CALLING_CONVENTION`、`TAIL_CALL_KIND`、`INDICES`、`WEAK`、
+`SUCCESS_ORDERING`、`FAILURE_ORDERING`、`INBOUNDS`、`SOURCE_ELEMENT_TYPE`、
+`ALLOCATED_TYPE`、`ATTRIBUTES`、`CLEANUP`、`NUSW` です。アトミック順序は
+`NOT_ATOMIC` から `SEQUENTIALLY_CONSISTENT` まで、tail-call 種別は `NONE`、
+`TAIL`、`MUST_TAIL`、`NO_TAIL`、fast-math フラグは `ALLOW_REASSOC` から
+`APPROX_FUNC` までのおなじみの 7 ビットです。
+
+## 属性
+
+属性は作ってから付ける値であり、そのおかげで 4 つの種類（`ENUM`、`INTEGER`、
+`STRING`、`TYPE`）が一様に扱えます:
+
+```c
+NevercIRAttributeHandle NoInline;
+Core->CreateEnumAttribute(Core->Context, Task, SV("noinline"), &NoInline);
+Core->AddFunctionAttribute(Core->Context, Task, Function,
+                           NEVERC_IR_ATTRIBUTE_LOCATION_FUNCTION,
+                           /*ParameterIndex=*/0, NoInline);
+
+NevercBool Present = NEVERC_FALSE;
+Core->HasFunctionAttribute(Core->Context, Task, Function, SV("noinline"),
+                           &Present);
+```
+
+`pluginsdk/examples/CustomCallConvPlugin.c` はこれを
+`GetFunctionStringAttribute` と組み合わせ、データで定義された呼び出し規約を動かし
+ます。
 
 ## トランザクショナルな変更
 
-構造的な変更はすべて `NevercIRBuilderAPI` を使います。
+構造的な変更は `NevercIRBuilderAPI` を通ります。変更（mutation）がトランザク
+ションで、ビルダはその内側のカーソルです。
 
-1. モジュールまたは関数の変更を開始する。
-2. その変更に束縛されたビルダを作成する。
-3. 挿入位置を設定し、命令、関数、ブロックを構築する。
-4. 変更をコミットする。
-5. ビルダと変更ハンドルを破棄する。
+```c
+NevercIRMutationHandle Mutation;
+NevercIRBuilderHandle Builder;
 
-コミットは候補 IR を検証し、アトミックに公開します。検証器が失敗した場合、ホストは
-変更をロールバックして以前のモジュールを保持します。`AbortMutation` は常に
-ステージングされた変更を巻き戻します。
+Builders->BeginMutation(Builders->Context, Task,
+                        NEVERC_IR_MUTATION_SCOPE_FUNCTION, Function,
+                        &Mutation);
+Builders->CreateBuilder(Builders->Context, Task, Mutation, &Builder);
+Builders->SetInsertBefore(Builders->Context, Task, Builder, Terminator);
 
-IR を変更した後に `NEVERC_IR_PRESERVE_ALL` を主張してはいけません。パスアダプタは
-モジュール世代を確認し、矛盾する保存宣言を拒否します。
+NevercIRValueHandle Sum;
+Builders->BuildBinary(Builders->Context, Task, Builder,
+                      NEVERC_IR_OPCODE_ADD, Left, Right, SV("sum"), &Sum);
 
-## パスのレベルとフェーズ
+Status = Builders->CommitMutation(Builders->Context, Task, Mutation);
+if (Status.Code != NEVERC_STATUS_OK)
+  Builders->AbortMutation(Builders->Context, Task, Mutation);
 
-`NevercIRPassDescriptor.Level` がサポートするもの:
+Builders->DestroyBuilder(Builders->Context, Task, Builder);
+Builders->DestroyMutation(Builders->Context, Task, Mutation);
+```
 
-- `NEVERC_IR_PASS_LEVEL_MODULE`
-- `NEVERC_IR_PASS_LEVEL_CGSCC`
-- `NEVERC_IR_PASS_LEVEL_FUNCTION`
-- `NEVERC_IR_PASS_LEVEL_LOOP`
+スコープは `NEVERC_IR_MUTATION_SCOPE_MODULE`、`_FUNCTION`、`_LOOP` で、
+`ScopeRoot` が対象の関数やループヘッダを指名します。コミットは候補を検証して
+アトミックに公開します —— 検証器が失敗すればホストはロールバックし、以前の
+モジュールは手つかずで残ります。
 
-安定した挿入フェーズは `PRE_OPT`、`PIPELINE_START`、`OPTIMIZER_LAST`、`POST_OPT`、
-`PRE_CODEGEN` です。呼び出しにはそのレベルで有効なハンドルだけが含まれます。関数
-パスとループパスは並行実行される可能性があるため、可変のプラグイン状態は宣言した
-並行性契約に従わなければなりません。
+構築呼び出しは `BuildBinary`、`BuildUnary`、`BuildCompare`、`BuildCast`、
+`BuildSelect`、`BuildAlloca`、`BuildLoad`、`BuildStore`、`BuildGetElementPtr`、
+`BuildCall`、`BuildPhi`、`BuildBranch`、`BuildConditionalBranch`、
+`BuildUnreachable`、`BuildReturn`、`BuildReturnVoid` です。`SetDebugLocation` と
+`SetFastMathFlags` は、それ以降ビルダが発行するすべてに適用されます。
 
-ホストは常に最終の封印された IR 検証器を実行します。プラグインがそのゲートを置換、
-傍受、スキップすることはできません。
+非対称性に注意してください。`AddPhiIncoming`、`CreateFunction`、
+`CreateBasicBlock` はビルダではなく **mutation** を取ります。挿入位置に縛られない
+からです。
+
+`DestroyMutation` はコミットや中止とは別物です。すべての `BeginMutation` に
+ちょうど 1 つの `DestroyMutation` が要ります。トランザクションがどう終わったかに
+関わらず、です。
+
+## パス
+
+```c
+NevercIRPassDescriptor Pass = {0};
+Pass.Header = (NevercABITableHeader){sizeof(Pass), NEVERC_IR_PASS_API_MAJOR,
+                                     NEVERC_IR_PASS_API_MINOR, 0};
+Pass.PassID        = SV("example.function-pass");
+Pass.Phase         = (NevercInterfaceID){
+                         NEVERC_PHASE_IR_PASS_PIPELINE_START_HIGH,
+                         NEVERC_PHASE_IR_PASS_PIPELINE_START_LOW};
+Pass.Level         = NEVERC_IR_PASS_LEVEL_FUNCTION;
+Pass.Deterministic = NEVERC_TRUE;
+Pass.Cacheable     = NEVERC_TRUE;
+Pass.Run           = run_function;
+PassAPI->RegisterPass(PassAPI->Context, RegistrarContext, &Pass);
+```
+
+レベルは `MODULE`、`CGSCC`、`FUNCTION`、`LOOP` です。呼び出しにはそのレベルで有効
+なハンドルだけが載ります:
+
+```c
+typedef struct NevercIRPassInvocation {
+  NevercABITableHeader Header;
+  NevercTaskHandle Task;
+  NevercInterfaceID Phase;
+  NevercStringView PassID;
+  NevercIRPassLevel Level;
+  NevercIROptimizationLevel OptimizationLevel;  /* O0…O3, Os, Oz */
+  NevercIRModuleHandle Module;
+  NevercIRValueHandle Function;                 /* FUNCTION と LOOP      */
+  NevercIRValueHandle LoopHeader;               /* LOOP のみ             */
+  const NevercIRValueHandle *SCCFunctions;      /* CGSCC のみ            */
+  uint64_t SCCFunctionCount;
+  const NevercIRCoreAPI *Core;
+  const NevercIRBuilderAPI *Builder;
+  const NevercIRAnalysisAPI *Analyses;
+  uint64_t Reserved[2];
+} NevercIRPassInvocation;
+```
+
+3 つの API ポインタは呼び出しと一緒に来るので、パス本体はテーブルを持ち歩く必要が
+ありません。
+
+何が保たれたかは `OutPreserved` で報告します:
+
+```c
+OutPreserved->Flags = NEVERC_IR_PRESERVE_ALL;   /* または _NONE、_CFG */
+```
+
+`NEVERC_IR_PRESERVE_CFG` は、命令が変わっても制御フローグラフは無傷だという意味
+です。独自解析は `CustomAnalyses` に列挙することで保存されます。IR を変更した後に
+`PRESERVE_ALL` を主張してはいけません —— アダプタはモジュール世代を比較し、偽の
+主張を拒否します。
+
+関数パスとループパスは並行して走りうるので、可変のプラグイン状態はそのプラグインが
+宣言した `NevercConcurrencyModel` に従わなければなりません。
 
 ## 解析
 
-組み込み解析の ID は、コールグラフ、支配木、後支配木、ループ情報、スカラー展開、
-MemorySSA、エイリアス解析を対象とします。
+7 つの組み込み解析が ID で問い合わせ可能です: `DOMINATOR_TREE`、
+`POST_DOMINATOR_TREE`、`LOOP_INFO`、`SCALAR_EVOLUTION`、`MEMORY_SSA`、
+`CALL_GRAPH`、`ALIAS`。
 
-プラグイン解析は依存関係とライフサイクルコールバックを宣言します。結果は呼び出し
-ごとにキャッシュされ、パスの保存結果に従って無効化されます。再帰的な依存の循環や、
-解析コールバックからの変更は拒否されます。
+```c
+NevercIRAnalysisResultHandle Loops;
+Analyses->QueryBuiltin(Analyses->Context, Task,
+                       NEVERC_IR_ANALYSIS_LOOP_INFO, Function, &Loops);
 
-## 完全なプロバイダ
+uint64_t LoopCount = 0;
+Analyses->GetLoopCount(Analyses->Context, Task, Loops, &LoopCount);
+for (uint64_t I = 0; I != LoopCount; ++I) {
+  NevercIRValueHandle Header;
+  Analyses->GetLoopHeader(Analyses->Context, Task, Loops, I, &Header);
+}
+```
 
-IR 生成プロバイダは組み込みの低下処理を置き換え、検証済みのモジュール成果物を発行
-できます。最適化プロバイダは組み込みの最適化パイプライン全体を置き換えられます。
-どちらの経路でも:
+いずれも不透明な塊ではなく型付きのアクセサを持ちます:
+`DominatorTreeDominates`、`GetLoopCount` / `GetLoopHeader` /
+`GetLoopForBlock`、`GetScalarEvolutionConstantTripCount`、
+`GetMemoryAccessKind`（`NONE`、`USE`、`DEF`、`PHI`、`LIVE_ON_ENTRY`）、
+`GetDirectCalleeCount` / `GetDirectCallee`、そして `Alias`（`NO`、`MAY`、
+`PARTIAL`、`MUST`）。
 
-- 明示的なフェーズ入力を消費する;
-- LLVM ポインタを返すのではなくホスト API を通じて公開する;
-- ターゲット互換性とモジュールの妥当性を検証する;
-- 公開に失敗した場合は古いモジュールをアトミックに保持する。
+プラグイン解析は自前のライフサイクルとともに登録します:
 
-最適化プロバイダの後でも、最終検証器は必須のままです。
+```c
+NevercIRAnalysisDescriptor Analysis = {0};
+Analysis.Header          = /* … */;
+Analysis.AnalysisID      = MyAnalysisID;
+Analysis.Name            = SV("example.my-analysis");
+Analysis.Level           = NEVERC_IR_PASS_LEVEL_FUNCTION;
+Analysis.Dependencies    = Deps;
+Analysis.DependencyCount = DepCount;
+Analysis.Compute         = compute;
+Analysis.Query           = query;
+Analysis.Invalidate      = invalidate;
+Analysis.Destroy         = destroy;
+Analyses->RegisterAnalysis(Analyses->Context, RegistrarContext, &Analysis);
+```
 
-## 最小の例
+`Invalidate` には理由が伝えられます —— `INVALIDATED_BY_PASS` か
+`INVALIDATED_BY_PLAN_DESTROY`。結果は呼び出しごとにキャッシュされ、走っている
+パスが何を保存したかに応じて捨てられます。依存の循環は登録時に拒否され、解析
+コールバックの中から IR を変更することも拒まれます。
 
-`pluginsdk/examples/FunctionPass.c` は読み取り専用の関数パスです。
-`pluginsdk/examples/ExamplePlugin.c` はモジュールの列挙を示し、
-`pluginsdk/examples/CustomCallConvPlugin.c` は属性と呼び出し位置のプロパティを
-実演します。
+## 生成と最適化の置き換え
 
-例をビルドしてロードする:
+`NevercIRGenAPI` は `neverc.ir.generate` を置き換えます:
+
+```c
+NevercIRGeneratePhaseInput In = {0};
+In.Header = /* … */;
+Gen->GetGeneratePhaseInput(Gen->Context, Frame, Frame->Input, &In);
+/* In.SemanticUnit、.TargetTriple、.DataLayout、.SourceIdentity、
+   .SourceDigest */
+
+const NevercIRCoreAPI *Core;
+const NevercIRBuilderAPI *Builders;
+Gen->CreateModule(Gen->Context, Frame, SV("my.module"), &Core, &Builders);
+/* … モジュールを構築する … */
+
+NevercIRModuleArtifactDescriptor Descriptor = {0};
+Descriptor.Header           = /* … */;
+Descriptor.Product          = MyProductID;
+Descriptor.DependencyDigest = Digest;
+Gen->PublishModule(Gen->Context, Frame, &Descriptor, &Output);
+```
+
+`ImportModule` は空のモジュールではなく、ビットコードやテキスト IR から始めます。
+`NevercIROptimizationAPI` は `neverc.ir.optimize` に対して同じ形をしており、
+加えて入力モジュールへ届く `GetInputModule` と、組み込みパイプラインへ委譲して
+その結果を後処理する `RunBuiltinPipeline` を備えます。
+
+どちらの経路もポインタを返すのではなくホストを通じて公開し、ターゲット互換性を
+検証し、公開に失敗すれば古いモジュールをアトミックに保ちます。その後も
+`neverc.ir.final_verify` は必ず走ります。
+
+## 例
+
+| ファイル | 示すもの |
+|---|---|
+| `pluginsdk/examples/FunctionPass.c` | ABI 交渉込みの、読み取り専用の関数パス |
+| `pluginsdk/examples/ExamplePlugin.c` | 値カーソルで関数を走査するモジュールレベルのパス |
+| `pluginsdk/examples/CustomCallConvPlugin.c` | 属性と呼び出し位置のプロパティ |
 
 ```sh
 cmake --build build-neverc --target neverc-plugin-example-function-pass
@@ -125,14 +420,26 @@ build-neverc/bin/neverc \
   -O2 -c input.c -o input.o
 ```
 
-CMake が生成するプラットフォーム固有のモジュール拡張子を使ってください。
+CMake がお使いのプラットフォーム向けに生成したモジュール拡張子を使ってください。
 
-## 失敗の規則
+## 規則
 
-すべてのコールバックから `NevercStatus` を返してください。プラグインの失敗は構造化
-された診断になります。例外を C の境界越しに投げてはいけません。すべての出力
-テーブルヘッダと予約フィールドを初期化し、必須ポインタが欠けている場合は
-`INVALID_ARGUMENT` を返してください。
+- すべてのコールバックから `NevercStatus` を返してください。プラグインの失敗は
+  構造化された診断になります。例外を C の境界越しに出してはいけません。
+- 値を埋める呼び出しの前に、出力構造体をゼロで初期化し `Header` を設定してくだ
+  さい。
+- オペコード、型、プロパティの数値を直書きしないでください。`PluginIRSchema.inc`
+  の名前を使えば、スキーマ改訂がコンパイルエラーになります。
+- すべての `BeginMutation` にちょうど 1 つの `DestroyMutation` を、すべての
+  `CreateBuilder` にちょうど 1 つの `DestroyBuilder` を、エラー経路も含めて対応
+  させてください。
+- `ExportModule` が渡すものは `ReleaseSerializedBuffer` で解放してください。
+- IR を変更した後に `NEVERC_IR_PRESERVE_ALL` を主張しないでください。
+- プラグインが `NEVERC_CONCURRENCY_SESSION_SERIAL` を宣言していない限り、関数
+  パスとループパスは並列に走ると想定してください。
+- `neverc.ir.final_verify` は封印されています。プラグインが何をしてもこれを飛ばす
+  ことはできません。
 
-規範的な ABI 宣言、フェーズポリシー、テストの証拠は、`PluginIR.h`、
-`PluginPhaseSchema.h`、`coverage.json` を参照してください。
+規範的な宣言、スキーマ定数、フェーズポリシー、テストの証拠は、`PluginIR.h`、
+`Schema/PluginIRSchema.inc`、`Schema/PhaseSchema.json`、`coverage.json` を参照して
+ください。
