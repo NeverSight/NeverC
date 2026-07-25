@@ -250,7 +250,12 @@ COFFLinkGraphAdapter::capture(const PluginLinkGraph &Previous,
       Input->Flags |= NEVERC_LINK_INPUT_FLAG_LAZY;
     std::vector<uint8_t> Payload;
     appendU32(Payload, File->kind());
-    appendU32(Payload, File->getMachineType());
+    // LTO takes ownership of a bitcode file's lto::InputFile when it adds it,
+    // so BitcodeFile::getMachineType() dereferences null on every capture that
+    // runs after LTO. Such a file can no longer state a machine type.
+    auto *Bitcode = dyn_cast<BitcodeFile>(File);
+    appendU32(Payload, Bitcode && !Bitcode->obj ? IMAGE_FILE_MACHINE_UNKNOWN
+                                                : File->getMachineType());
     appendU32(Payload, File->lazy ? 1 : 0);
     appendU32(Payload, File->builtFromBitcode ? 1 : 0);
     setExtension(Input->Extensions, COFFFileExtension, 1, std::move(Payload));

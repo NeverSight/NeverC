@@ -90,6 +90,55 @@ void setExtension(PluginLinkExtensionSet &Extensions,
   Extensions.values().push_back(std::move(Value));
 }
 
+// The LinkGraph edge width is expressed in bits ({8,16,32,64}), not bytes, and
+// names the storage field the relocation writes -- not the narrower immediate
+// an instruction encodes inside it, so AArch64's 26-bit branches report 32.
+// The scanner drops R_*_NONE before relocations reach here, so every edge that
+// gets this far does write a field.
+uint32_t relocationWidth(uint16_t Machine, uint32_t Type) {
+  if (Machine == EM_X86_64)
+    switch (Type) {
+    case R_X86_64_8:
+    case R_X86_64_PC8:
+      return 8;
+    case R_X86_64_16:
+    case R_X86_64_PC16:
+      return 16;
+    case R_X86_64_64:
+    case R_X86_64_PC64:
+    case R_X86_64_GOT64:
+    case R_X86_64_GOTOFF64:
+    case R_X86_64_GOTPC64:
+    case R_X86_64_GOTPCREL64:
+    case R_X86_64_GOTPLT64:
+    case R_X86_64_PLTOFF64:
+    case R_X86_64_SIZE64:
+    case R_X86_64_DTPMOD64:
+    case R_X86_64_DTPOFF64:
+    case R_X86_64_TPOFF64:
+      return 64;
+    default:
+      return 32;
+    }
+  if (Machine == EM_AARCH64)
+    switch (Type) {
+    case R_AARCH64_ABS16:
+    case R_AARCH64_PREL16:
+      return 16;
+    case R_AARCH64_ABS64:
+    case R_AARCH64_PREL64:
+    case R_AARCH64_GOTREL64:
+    case R_AARCH64_AUTH_ABS64:
+    case R_AARCH64_TLS_DTPMOD64:
+    case R_AARCH64_TLS_DTPREL64:
+    case R_AARCH64_TLS_TPREL64:
+      return 64;
+    default:
+      return 32;
+    }
+  return 32;
+}
+
 NevercObjectSectionFlags sectionFlags(const InputSectionBase &Section) {
   NevercObjectSectionFlags Flags = 0;
   if ((Section.flags & SHF_ALLOC) != 0)
@@ -522,7 +571,14 @@ ELFLinkGraphAdapter::capture(const PluginLinkGraph &Previous,
       const uint64_t OutputID = CaptureOutputSection(Output);
       const uint64_t OutputOffset = Output ? Native->getOffset(0) : UINT64_MAX;
       const uint64_t NativeSize = NativeMemorySize;
-      if (OutputID != 0 && OutputOffset <= Output->size &&
+      // SHF_MERGE and .eh_frame sections are split into pieces that are
+      // deduplicated and repacked, so the input section spans no contiguous
+      // run of the output: its size stops describing the output, and its
+      // first piece can land at an offset the input's own alignment does not
+      // divide. Neither can be expressed as one laid-out atom.
+      const bool Fragmented = Native->kind() == SectionBase::Merge ||
+                              Native->kind() == SectionBase::EHFrame;
+      if (!Fragmented && OutputID != 0 && OutputOffset <= Output->size &&
           NativeSize <= Output->size - OutputOffset) {
         Atom->SectionID = OutputID;
         Atom->Address = Native->getVA();
@@ -530,8 +586,10 @@ ELFLinkGraphAdapter::capture(const PluginLinkGraph &Previous,
         if (Native->type == SHT_NOBITS)
           Atom->Content.clear();
       } else {
-        // ELF uses isLive() for some synthetic sections that are not selected
-        // into any output section. They are not part of the final layout.
+        // The atom covers no addressable range of any output section, either
+        // because it is fragmented as above or because ELF keeps some
+        // synthetic sections isLive() without selecting them into an output
+        // section. Neither belongs in the laid-out graph.
         Atom->Flags &= ~NEVERC_LINK_ATOM_LIVE;
       }
     }
@@ -684,7 +742,7 @@ ELFLinkGraphAdapter::capture(const PluginLinkGraph &Previous,
       Edge->SourceAtomID = SourceAtomID;
       Edge->Offset = Reloc.offset;
       Edge->RelocationKind = NEVERC_OBJECT_RELOCATION_TARGET_EXTENSION;
-      Edge->Width = 8;
+      Edge->Width = relocationWidth(config->emachine, Reloc.type);
       Edge->Addend = Reloc.addend;
       Edge->IsPCRelative = Reloc.expr == R_PC || Reloc.expr == R_PLT_PC;
       Edge->IsSigned = Edge->IsPCRelative;
@@ -709,10 +767,14 @@ ELFLinkGraphAdapter::capture(const PluginLinkGraph &Previous,
           Native->isLive() &&
           (!HasLayout || !Synthetic ||
            (Synthetic->getParent() && Synthetic->isNeeded()));
-      if (NativeIsMaterialized)
-        Atom->Flags |= NEVERC_LINK_ATOM_LIVE;
-      else
+      // Once a layout exists, CaptureSection has already withheld liveness from
+      // atoms that survive natively but occupy no output-section range. This
+      // pass may only take liveness away, never restore it, or those atoms come
+      // back with no address and fail layout verification.
+      if (!NativeIsMaterialized)
         Atom->Flags &= ~NEVERC_LINK_ATOM_LIVE;
+      else if (!HasLayout)
+        Atom->Flags |= NEVERC_LINK_ATOM_LIVE;
     }
   }
 
