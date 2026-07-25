@@ -314,14 +314,22 @@ TEST(PluginMCBridgeTest,
       Target->createMCCodeEmitter(*Instructions, Context));
   ASSERT_NE(Emitter, nullptr);
 
+  // Prefer the width-suffixed spelling. A target may define both, with the
+  // unsuffixed one being a pseudo it expands later -- x86 does, and its "RET"
+  // sorts first -- and a pseudo encodes to no bytes, which would leave the
+  // comparison below passing vacuously on two empty buffers. AArch64, which
+  // spells its only return "RET", still resolves on the second pass.
   unsigned ReturnOpcode = 0;
-  for (unsigned Opcode = 0;
-       Opcode != Instructions->getNumOpcodes(); ++Opcode) {
-    StringRef Name = Instructions->getName(Opcode);
-    if (Name == "RET64" || Name == "RET") {
+  for (StringRef Wanted : {StringRef("RET64"), StringRef("RET")}) {
+    for (unsigned Opcode = 0;
+         Opcode != Instructions->getNumOpcodes(); ++Opcode) {
+      if (Instructions->getName(Opcode) != Wanted)
+        continue;
       ReturnOpcode = Opcode;
       break;
     }
+    if (ReturnOpcode != 0)
+      break;
   }
   ASSERT_NE(ReturnOpcode, 0U);
   // Take whatever register the return opcode itself declares. Naming one
