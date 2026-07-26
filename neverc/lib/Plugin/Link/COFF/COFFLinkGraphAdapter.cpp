@@ -518,6 +518,14 @@ COFFLinkGraphAdapter::capture(const PluginLinkGraph &Previous,
   const auto CaptureSymbol = [&](Symbol *Native) -> uint64_t {
     if (!Native || Native->isLazy() || Native->getName().empty())
       return 0;
+    // LTO leaves behind undefined symbols that nothing outside bitcode ever
+    // referenced: the definition was internalized (or renamed by parallel
+    // codegen) and the reference it answered was optimized away with it.
+    // resolveRemainingUndefines skips exactly these, so the native link
+    // succeeds; projecting them anyway would make the graph report an
+    // unresolved symbol that the link does not actually have.
+    if (isa<Undefined>(Native) && !Native->isUsedInRegularObj)
+      return 0;
     const uint64_t ID =
         ensureID(SymbolIDs, Native, [&]() -> PluginLinkSymbol & {
           return Result->addSymbol(PluginLinkSymbol{});
