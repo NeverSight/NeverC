@@ -1,6 +1,6 @@
 #!/bin/sh
 # NeverC installer
-# Usage: curl -fsSL https://raw.githubusercontent.com/NeverSight/NeverC/main/install.sh | sh
+# Usage: curl -fsSL https://raw.githubusercontent.com/NeverSight/NeverC/HEAD/install.sh | sh
 #
 # Environment variables:
 #   NEVERC_INSTALL_DIR  Override install directory (default: ~/.neverc)

@@ -207,7 +207,7 @@ jobs:
             ### Quick install (macOS / Linux)
 
             ```
-            curl -fsSL https://raw.githubusercontent.com/NeverSight/NeverC/main/install.sh | sh
+            curl -fsSL https://raw.githubusercontent.com/NeverSight/NeverC/HEAD/install.sh | sh
             ```
 
             ### macOS note
