@@ -43,6 +43,115 @@ jobs:
       - name: Install deps
         run: brew install ninja cmake p7zip
 
+      # ── Apple Developer ID signing + notarization ───────────
+      # Imported before the build, not after it: the credentials do not depend
+      # on anything the build produces, and a bad one previously surfaced only
+      # once the hour-long compile had already been paid for -- taking the
+      # binaries with it, since packaging and artifact upload sit downstream of
+      # signing.  Failing here costs a minute instead.
+      - name: Import Apple signing certificate
+        env:
+          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${APPLE_CERTIFICATE_BASE64:-}" ]; then
+            echo "::error::APPLE_CERTIFICATE_BASE64 is empty or not set."
+            exit 1
+          fi
+
+          CERT_PATH="$RUNNER_TEMP/certificate.p12"
+          if ! printf '%s' "$APPLE_CERTIFICATE_BASE64" | base64 --decode > "$CERT_PATH"; then
+            echo "::error::APPLE_CERTIFICATE_BASE64 is not valid base64. Re-create it with: base64 -i cert.p12 | pbcopy"
+            exit 1
+          fi
+
+          CERT_SIZE=$(wc -c < "$CERT_PATH" | tr -d ' ')
+          echo "Decoded certificate: ${CERT_SIZE} bytes"
+          if [ "$CERT_SIZE" -lt 512 ]; then
+            echo "::error::Decoded certificate is only ${CERT_SIZE} bytes, so the secret is truncated or holds something other than a .p12."
+            exit 1
+          fi
+
+          # Homebrew's OpenSSL 3 where available: the system LibreSSL cannot
+          # rewrite a PKCS#12 into the legacy encryption security(1) accepts.
+          OPENSSL=/opt/homebrew/opt/openssl@3/bin/openssl
+          [ -x "$OPENSSL" ] || OPENSSL=$(command -v openssl)
+          echo "Using $("$OPENSSL" version)"
+
+          # Separate a wrong password from an unreadable file up front, so the
+          # import failure below can only mean an encryption-algorithm mismatch.
+          if ! "$OPENSSL" pkcs12 -in "$CERT_PATH" -passin "pass:${APPLE_CERTIFICATE_PASSWORD}" \
+                 -nokeys -noout 2> "$RUNNER_TEMP/p12.err"; then
+            echo "::error::APPLE_CERTIFICATE_PASSWORD does not open the .p12, or the file is not a PKCS#12 archive."
+            sed 's/^/  openssl: /' "$RUNNER_TEMP/p12.err"
+            exit 1
+          fi
+          echo "PKCS#12 opens with the configured password."
+
+          KEYCHAIN_PATH="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD="$("$OPENSSL" rand -base64 32)"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          import_cert() {
+            security import "$1" \
+              -k "$KEYCHAIN_PATH" \
+              -P "${APPLE_CERTIFICATE_PASSWORD}" \
+              -T /usr/bin/codesign \
+              -T /usr/bin/security
+          }
+
+          if ! import_cert "$CERT_PATH"; then
+            # The password already opened the archive above, so the only thing
+            # left for security(1) to object to is the encryption itself: it
+            # cannot read the AES-256-CBC/PBKDF2 PKCS#12 that OpenSSL 3 writes
+            # by default, and reports that as "MAC verification failed (wrong
+            # password?)".  Re-encrypt with the algorithms it does accept.
+            echo "Direct import failed; re-encrypting the archive with legacy PKCS#12 algorithms."
+            PLAIN_PATH="$RUNNER_TEMP/certificate-plain.pem"
+            LEGACY_PATH="$RUNNER_TEMP/certificate-legacy.p12"
+            trap 'rm -f "$PLAIN_PATH" "$LEGACY_PATH"' EXIT
+
+            "$OPENSSL" pkcs12 -in "$CERT_PATH" -passin "pass:${APPLE_CERTIFICATE_PASSWORD}" \
+              -nodes -out "$PLAIN_PATH"
+            # -legacy exists only on OpenSSL 3; LibreSSL both lacks the flag and
+            # already defaults to the older algorithms, so plain -export is the
+            # right call there.
+            "$OPENSSL" pkcs12 -export -legacy -in "$PLAIN_PATH" -out "$LEGACY_PATH" \
+                -passout "pass:${APPLE_CERTIFICATE_PASSWORD}" 2>/dev/null \
+              || "$OPENSSL" pkcs12 -export -in "$PLAIN_PATH" -out "$LEGACY_PATH" \
+                   -passout "pass:${APPLE_CERTIFICATE_PASSWORD}"
+            rm -f "$PLAIN_PATH"
+
+            import_cert "$LEGACY_PATH"
+            rm -f "$LEGACY_PATH"
+          fi
+          rm -f "$CERT_PATH"
+
+          # Dumps the whole keychain to stdout on success; only failures matter.
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH" > /dev/null
+
+          security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain-db
+
+          echo "SIGNING_KEYCHAIN=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+          echo "SIGNING_KEYCHAIN_PASSWORD=$KEYCHAIN_PASSWORD" >> "$GITHUB_ENV"
+
+          # find-identity exits 0 even when it matched nothing, so the identity
+          # the signing step needs has to be checked for by name.
+          echo "Available signing identities:"
+          IDENTITIES=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH")
+          echo "$IDENTITIES"
+          if ! printf '%s' "$IDENTITIES" | grep -q "Developer ID Application"; then
+            echo "::error::The certificate imported, but it is not a 'Developer ID Application' certificate, which is the only kind that can sign software for distribution outside the App Store."
+            exit 1
+          fi
+
       - name: Build neverc
         run: |
           cmake -GNinja -Bbuild \
@@ -79,40 +188,6 @@ jobs:
 
       - name: Install neverc
         run: cmake --build build --config ${{ env.BUILD_TYPE }} --target install
-
-      # ── Apple Developer ID signing + notarization ───────────
-      - name: Import Apple signing certificate
-        if: github.repository == 'NeverSight/NeverC'
-        env:
-          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-        run: |
-          KEYCHAIN_PATH="$RUNNER_TEMP/signing.keychain-db"
-          KEYCHAIN_PASSWORD="$(openssl rand -base64 32)"
-
-          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-
-          CERT_PATH="$RUNNER_TEMP/certificate.p12"
-          echo "$APPLE_CERTIFICATE_BASE64" | base64 --decode -o "$CERT_PATH"
-          security import "$CERT_PATH" \
-            -k "$KEYCHAIN_PATH" \
-            -P "$APPLE_CERTIFICATE_PASSWORD" \
-            -T /usr/bin/codesign \
-            -T /usr/bin/security
-          rm -f "$CERT_PATH"
-
-          security set-key-partition-list \
-            -S apple-tool:,apple:,codesign: \
-            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain-db
-
-          echo "SIGNING_KEYCHAIN=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
-          echo "SIGNING_KEYCHAIN_PASSWORD=$KEYCHAIN_PASSWORD" >> "$GITHUB_ENV"
-
-          echo "Available signing identities:"
-          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
 
       - name: Sign neverc binaries
         if: github.repository == 'NeverSight/NeverC'
