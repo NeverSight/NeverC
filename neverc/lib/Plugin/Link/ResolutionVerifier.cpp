@@ -42,9 +42,18 @@ Error verifyLinkSymbolResolution(
     return E;
 
   std::map<SymbolKey, std::vector<const PluginLinkSymbol *>> Groups;
-  for (const PluginLinkSymbol &Symbol : Graph.symbols())
-    if (Symbol.Binding != NEVERC_LINK_SYMBOL_BINDING_LOCAL)
+  // Resolution only arbitrates between symbols that participate in it, but a
+  // name reported as unresolved is nearly always one whose definition was
+  // classified out of the group, so keep a count to say so.
+  std::map<SymbolKey, unsigned> ExcludedLocalDefinitions;
+  for (const PluginLinkSymbol &Symbol : Graph.symbols()) {
+    if (Symbol.Binding != NEVERC_LINK_SYMBOL_BINDING_LOCAL) {
       Groups[{Symbol.Name, Symbol.Version}].push_back(&Symbol);
+      continue;
+    }
+    if (Symbol.Definition != NEVERC_LINK_SYMBOL_UNDEFINED)
+      ++ExcludedLocalDefinitions[{Symbol.Name, Symbol.Version}];
+  }
 
   for (const auto &[Key, Candidates] : Groups) {
     const PluginLinkSymbol *Prevailing = nullptr;
@@ -70,8 +79,17 @@ Error verifyLinkSymbolResolution(
       return resolutionError("definition set has no prevailing symbol for '" +
                              Key.Name + "'");
     if (!HasDefinition && !Options.AllowUndefined &&
-        !Options.Relocatable && !WeakUndefinedOnly)
-      return resolutionError("unresolved symbol '" + Key.Name + "'");
+        !Options.Relocatable && !WeakUndefinedOnly) {
+      std::string Detail = "unresolved symbol '" + Key.Name + "': " +
+                           std::to_string(Candidates.size()) +
+                           " reference(s), no definition";
+      const auto LocalIt = ExcludedLocalDefinitions.find(Key);
+      if (LocalIt != ExcludedLocalDefinitions.end())
+        Detail += ", though " + std::to_string(LocalIt->second) +
+                  " local definition(s) of the same name were excluded from "
+                  "resolution";
+      return resolutionError(Detail);
+    }
     if (Prevailing) {
       for (const PluginLinkEdge &Edge : Graph.edges())
         if (llvm::any_of(
