@@ -7,6 +7,7 @@
 > Documento acompañante de [ir-pass-design.md](../ir-pass-design/README.es.md). La capa IR elimina construcciones que visiblemente producen relocalizaciones. La capa MIR sirve como **red de captura** después de la selección de instrucciones y asignación de registros: elimina pseudo-instrucciones/metadatos introducidos por codegen y expone puntos de interpose para pasadas de ofuscación de terceros.
 >
 > Implementación: `neverc/lib/DynCode/MIR/MIRPrepPass.cpp` + `Pipeline.cpp`.
+> Interfaz de interpose: [`neverc/include/neverc/DynCode/Pipeline/Pipeline.h`].
 
 ---
 
@@ -152,3 +153,5 @@ static void myMirObfInit() {
 3. **Reserva del extractor**: falla dura ante cualquier reloc externo restante o secciones de datos no vacías.
 
 Este principio mantiene la capa MIR casi inmune a las actualizaciones de ISA del backend. El único mantenimiento es: "¿hay un nuevo pseudo en TargetOpcode? Si dyncode no lo necesita, agrega un case."
+
+[`neverc/include/neverc/DynCode/Pipeline/Pipeline.h`]: ../../../neverc/include/neverc/DynCode/Pipeline/Pipeline.h

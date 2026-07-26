@@ -7,6 +7,7 @@
 > Document compagnon de [ir-pass-design.md](../ir-pass-design/README.fr.md). La couche IR élimine les constructions qui produisent visiblement des relocalisations. La couche MIR sert de **filet de sécurité** après la sélection d'instructions et l'allocation de registres : elle supprime les pseudo-instructions/métadonnées introduites par le codegen et expose des points de interpose pour les passes d'obfuscation tierces.
 >
 > Implémentation : `neverc/lib/DynCode/MIR/MIRPrepPass.cpp` + `Pipeline.cpp`.
+> Interface d'interpose : [`neverc/include/neverc/DynCode/Pipeline/Pipeline.h`].
 
 ---
 
@@ -151,3 +152,5 @@ static void myMirObfInit() {
 3. **Repli de l'extracteur** : échec dur sur tout reloc externe restant ou sections de données non vides.
 
 Ce principe garde la couche MIR presque immunisée contre les mises à niveau de l'ISA du backend. La seule maintenance est : « y a-t-il un nouveau pseudo dans TargetOpcode ? Si dyncode n'en a pas besoin, ajoutez un case. »
+
+[`neverc/include/neverc/DynCode/Pipeline/Pipeline.h`]: ../../../neverc/include/neverc/DynCode/Pipeline/Pipeline.h
