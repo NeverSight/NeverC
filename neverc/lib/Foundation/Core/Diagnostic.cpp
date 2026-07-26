@@ -2071,6 +2071,12 @@ void neverc::ProcessWarningOptions(DiagnosticsEngine &Diags,
   Diags.setSuppressSystemWarnings(true); // Default to -Wno-system-headers
   Diags.setIgnoreAllWarnings(Opts.IgnoreWarnings);
 
+  // -ftreat-warnings-as-errors seeds the state -Werror sets.  It belongs here
+  // rather than inside the option loop below: it has to apply when no -W option
+  // is present at all, and a later -Wno-error still has to be able to win.
+  if (Diags.TreatWarningsAsErrors)
+    Diags.setWarningsAsErrors(true);
+
   Diags.setShowColors(Opts.ShowColors);
 
   if (Opts.ErrorLimit)
@@ -2145,14 +2151,6 @@ void neverc::ProcessWarningOptions(DiagnosticsEngine &Diags,
       // table. It also has the "specifier" form of -Werror=foo. GCC supports
       // the deprecated -Werror-implicit-function-declaration which is used by
       // a few projects.
-#ifdef _WIN32
-      if (Opt == "error")
-        isPositive = false;
-#endif
-      if (Diags.TreatWarningsAsErrors) {
-        isPositive = true;
-        Diags.setWarningsAsErrors(isPositive);
-      }
       if (Opt.starts_with("error")) {
         llvm::StringRef Specifier;
         if (Opt.size() > 5) { // Specifier must be present.
