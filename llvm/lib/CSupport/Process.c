@@ -486,7 +486,10 @@ int csupport_stdout_fileno(void) { return 1; }
 int csupport_stderr_fileno(void) { return 2; }
 
 void csupport_change_stdout_mode(int flags) {
-  if (!(flags & 1))
+  /* OF_CRLF(2), not OF_Text(1), is what asks for newline translation on
+     Windows; OF_Text alone only means something on z/OS. ChangeStdoutMode()
+     already tests OF_CRLF. */
+  if (!(flags & 2))
     _setmode(1, _O_BINARY);
 }
 
@@ -517,7 +520,11 @@ int csupport_fd_open(const char *filename, size_t filename_len,
   case 2: break;
   case 3: oflags |= _O_CREAT;            break;
   }
-  if (!(flags & 1))
+  /* Only OF_CRLF(2) asks for newline translation. Keying this off OF_Text(1)
+     turned every text-mode writer into a CRLF writer, which is why the target
+     schema generator produced a golden file that differed from the checked-in
+     one by its trailing newline. */
+  if (!(flags & 2))
     oflags |= _O_BINARY;
   if (append)
     oflags |= _O_APPEND;

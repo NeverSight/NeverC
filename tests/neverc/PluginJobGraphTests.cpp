@@ -63,7 +63,7 @@ TEST_F(PluginJobGraphTest, InterceptorRemovesSelectedFrontendJob) {
   writeFile(Bad, "int job_graph_bad( { return 0; }\n");
 
   CmdResult Baseline = ncc({"-fsyntax-only", Good.string(), Bad.string()});
-  EXPECT_NE(Baseline.exitCode, 0);
+  EXPECT_NE(Baseline.exitCode, 0) << Baseline.err;
 
   CmdResult Result =
       ncc({std::string("-fplugin=") + NEVERC_TEST_JOB_GRAPH_REMOVE_PLUGIN,

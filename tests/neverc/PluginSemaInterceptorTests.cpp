@@ -97,7 +97,7 @@ plugin_int sema_type_result(void) {
 )");
 
   CmdResult Baseline = ncc({"-std=c11", "-fsyntax-only", Source.string()});
-  EXPECT_NE(Baseline.exitCode, 0);
+  EXPECT_NE(Baseline.exitCode, 0) << Baseline.err;
 
   CmdResult Replaced =
       ncc({std::string("-fplugin=") + NEVERC_TEST_SEMA_INTERCEPTOR_PLUGIN,
@@ -119,7 +119,7 @@ int sema_lookup_result(void) {
 )");
 
   CmdResult Baseline = ncc({"-std=c11", "-fsyntax-only", Source.string()});
-  EXPECT_NE(Baseline.exitCode, 0);
+  EXPECT_NE(Baseline.exitCode, 0) << Baseline.err;
 
   CmdResult Replaced =
       ncc({std::string("-fplugin=") + NEVERC_TEST_SEMA_INTERCEPTOR_PLUGIN,
@@ -142,7 +142,7 @@ int *sema_conversion_result(void) {
 
   CmdResult Baseline =
       ncc({"-std=c11", "-Werror", "-fsyntax-only", Source.string()});
-  EXPECT_NE(Baseline.exitCode, 0);
+  EXPECT_NE(Baseline.exitCode, 0) << Baseline.err;
 
   CmdResult Replaced =
       ncc({std::string("-fplugin=") + NEVERC_TEST_SEMA_INTERCEPTOR_PLUGIN,
