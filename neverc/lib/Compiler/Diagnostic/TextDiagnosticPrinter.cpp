@@ -10,7 +10,8 @@ using namespace neverc;
 TextDiagnosticPrinter::TextDiagnosticPrinter(llvm::raw_ostream &os,
                                              DiagnosticOptions *diags,
                                              bool _OwnsOutputStream)
-    : OS(os), DiagOpts(diags), OwnsOutputStream(_OwnsOutputStream) {}
+    : OS(os), DiagOpts(diags), OwnsOutputStream(_OwnsOutputStream),
+      SuppressedLastDiagnostic(false) {}
 
 TextDiagnosticPrinter::~TextDiagnosticPrinter() {
   if (OwnsOutputStream)
@@ -87,8 +88,13 @@ void printDiagnosticOptions(llvm::raw_ostream &OS,
 void TextDiagnosticPrinter::ProcessDiagnostic(DiagnosticsEngine::Level Level,
                                               const Diagnostic &Info) {
 #ifdef _WIN32
-  if (Level == DiagnosticsEngine::Level::Note)
-    return;
+  // Diagnostics pointing into the Windows SDK headers are noise the user
+  // cannot act on. Drop them, and drop the notes that elaborate on them, but
+  // keep every other note: a note carries no diagnostic of its own, so
+  // discarding the whole class also discards "candidate function is here",
+  // "previous declaration is here", and the notes the driver attaches to a
+  // structured plugin diagnostic.
+  const bool IsNote = Level == DiagnosticsEngine::Level::Note;
   if (Info.hasSourceManager() && Level != DiagnosticsEngine::Level::Error &&
       Level != DiagnosticsEngine::Level::Fatal) {
     static const char *const WinSDKPaths[] = {
@@ -97,8 +103,17 @@ void TextDiagnosticPrinter::ProcessDiagnostic(DiagnosticsEngine::Level Level,
     auto LocationStr =
         Info.getLocation().printToString(Info.getSourceManager());
     for (auto *P : WinSDKPaths)
-      if (LocationStr.find(P) != std::string::npos)
+      if (LocationStr.find(P) != std::string::npos) {
+        if (!IsNote)
+          SuppressedLastDiagnostic = true;
         return;
+      }
+  }
+  if (IsNote) {
+    if (SuppressedLastDiagnostic)
+      return;
+  } else {
+    SuppressedLastDiagnostic = false;
   }
 #endif
 

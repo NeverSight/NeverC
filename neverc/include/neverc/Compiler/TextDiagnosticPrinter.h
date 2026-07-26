@@ -22,6 +22,11 @@ class TextDiagnosticPrinter : public DiagnosticConsumer {
   LLVM_PREFERRED_TYPE(bool)
   unsigned OwnsOutputStream : 1;
 
+  /// Whether the last non-note diagnostic was dropped as Windows SDK noise, so
+  /// the notes hanging off it can be dropped with it.
+  LLVM_PREFERRED_TYPE(bool)
+  unsigned SuppressedLastDiagnostic : 1;
+
 public:
   TextDiagnosticPrinter(llvm::raw_ostream &os, DiagnosticOptions *diags,
                         bool OwnsOutputStream = false);
