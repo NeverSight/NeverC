@@ -197,7 +197,7 @@ plan(void *UserData, const NevercCallingConventionQuery *Query,
 
 الحقل `Query->SchemaDigest` قيمة LOCKSTEP — و`RegisterNumber` لا يعني شيئًا إلا
 مقابل المخطط الذي يسمّيه. للاطلاع على المثال الكامل انظر
-[اصطلاحات استدعاء مخصّصة](custom-callconv/README.ar.md) و
+[اصطلاحات استدعاء مخصّصة](custom-callconv/README.ar.md#الخطط-المُجسَّدة) و
 [`pluginsdk/examples/CustomCallConvPlugin.c`].
 
 ## مسارات توليد الشيفرة
@@ -485,9 +485,12 @@ ObjectFormat->RegisterFormat(ObjectFormat->Context, RegistrarContext,
   `assembly.commit` و`object.final_verify` و`object.commit` مختومة. راقب فقط.
 
 انظر [`PluginTarget.h`] و[`PluginMC.h`] و[`PluginObject.h`] و
-[`Schema/PhaseSchema.json`] للإعلانات المِعيارية، و[`coverage.json`] الذي يربط كل
-مرحلة من هذه المراحل المستقرة باختباراتها الإيجابية والسلبية والاستبدالية
-والمراقِبة للقراءة فقط واختبارات البوابات المختومة.
+[`Schema/PhaseSchema.json`] للإعلانات المِعيارية؛ وأنواع الكيانات والمعاملات
+وعمليات الإصلاح والأقسام التي تستخدمها تأتي من [`Schema/MCSchema.json`]
+و[`Schema/ObjectSchema.json`]، اللذين يولّدان [`Schema/PluginMCSchema.inc`]
+و[`Schema/PluginObjectSchema.inc`]. و[`coverage.json`] يربط كل مرحلة من هذه
+المراحل المستقرة باختباراتها الإيجابية والسلبية والاستبدالية والمراقِبة
+للقراءة فقط واختبارات البوابات المختومة.
 
 <!-- reference links -->
 [`coverage.json`]: coverage.json
@@ -497,6 +500,10 @@ ObjectFormat->RegisterFormat(ObjectFormat->Context, RegistrarContext,
 [`pluginsdk/examples/MCObserverPlugin.c`]: ../../pluginsdk/examples/MCObserverPlugin.c
 [`pluginsdk/examples/ObjectRewritePlugin.c`]: ../../pluginsdk/examples/ObjectRewritePlugin.c
 [`PluginTarget.h`]: ../../neverc/include/neverc/Plugin/PluginTarget.h
+[`Schema/MCSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/MCSchema.json
+[`Schema/ObjectSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/ObjectSchema.json
 [`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`Schema/PluginMCSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginMCSchema.inc
+[`Schema/PluginObjectSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginObjectSchema.inc
 
 </div>

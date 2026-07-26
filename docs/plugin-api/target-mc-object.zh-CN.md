@@ -188,7 +188,7 @@ plan(void *UserData, const NevercCallingConventionQuery *Query,
 
 `Query->SchemaDigest` 是 LOCKSTEP 值——`RegisterNumber` 只在它指名的那个 schema
 下才有意义。完整示例见
-[自定义调用约定](custom-callconv/README.zh-CN.md) 和
+[自定义调用约定](custom-callconv/README.zh-CN.md#物化的-plan) 和
 [`pluginsdk/examples/CustomCallConvPlugin.c`]。
 
 ## 代码生成路由
@@ -463,8 +463,11 @@ ObjectFormat->RegisterFormat(ObjectFormat->Context, RegistrarContext,
   `object.final_verify`、`object.commit` 是 sealed 的，只能观察。
 
 规范性声明见 [`PluginTarget.h`]、[`PluginMC.h`]、[`PluginObject.h`] 和
-[`Schema/PhaseSchema.json`]；[`coverage.json`] 把这里每个稳定阶段映射到它的正向、负
-向、替换、只读观察者和 sealed gate 测试。
+[`Schema/PhaseSchema.json`]；它们使用的实体、操作数、fixup 与节区种类来自
+[`Schema/MCSchema.json`] 与 [`Schema/ObjectSchema.json`]，二者分别生成
+[`Schema/PluginMCSchema.inc`] 和 [`Schema/PluginObjectSchema.inc`]。
+[`coverage.json`] 把这里每个稳定阶段映射到它的正向、负向、替换、只读观察者和
+sealed gate 测试。
 
 <!-- reference links -->
 [`coverage.json`]: coverage.json
@@ -474,4 +477,8 @@ ObjectFormat->RegisterFormat(ObjectFormat->Context, RegistrarContext,
 [`pluginsdk/examples/MCObserverPlugin.c`]: ../../pluginsdk/examples/MCObserverPlugin.c
 [`pluginsdk/examples/ObjectRewritePlugin.c`]: ../../pluginsdk/examples/ObjectRewritePlugin.c
 [`PluginTarget.h`]: ../../neverc/include/neverc/Plugin/PluginTarget.h
+[`Schema/MCSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/MCSchema.json
+[`Schema/ObjectSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/ObjectSchema.json
 [`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`Schema/PluginMCSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginMCSchema.inc
+[`Schema/PluginObjectSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginObjectSchema.inc

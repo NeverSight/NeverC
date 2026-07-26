@@ -409,9 +409,9 @@ Sema->CreateSemanticUnit(Sema->Context, Frame, &Unit, &Output);
 - `SizeInBits` や `AlignmentInBits` を信じる前に、`NevercTypeInfo.Flags` に
   `HAS_KNOWN_LAYOUT` があるか確認してください。
 
-規範的な宣言は [`PluginAST.h`]、[`PluginSema.h`]、[`Schema/ASTSchema.json`] を、動作する
-パーサ傍受とアトミックな木の書き換えは
-[`pluginsdk/examples/ASTRewritePlugin.c`] を参照してください。
+規範的な宣言は [`PluginAST.h`]、[`PluginSema.h`]、[`Schema/ASTSchema.json`] を、フェーズ
+ポリシーは [`Schema/PhaseSchema.json`] を、動作するパーサ傍受とアトミックな木の
+書き換えは [`pluginsdk/examples/ASTRewritePlugin.c`] を参照してください。
 
 <!-- reference links -->
 [`PluginAST.h`]: ../../neverc/include/neverc/Plugin/PluginAST.h
@@ -419,4 +419,5 @@ Sema->CreateSemanticUnit(Sema->Context, Frame, &Unit, &Output);
 [`pluginsdk/examples/ASTRewritePlugin.c`]: ../../pluginsdk/examples/ASTRewritePlugin.c
 [`PluginSema.h`]: ../../neverc/include/neverc/Plugin/PluginSema.h
 [`Schema/ASTSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/ASTSchema.json
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
 [`Schema/PluginASTSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginASTSchema.inc

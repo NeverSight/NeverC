@@ -199,7 +199,7 @@ plan(void *UserData, const NevercCallingConventionQuery *Query,
 
 `Query->SchemaDigest` is a LOCKSTEP value — `RegisterNumber` only means
 anything against the schema it names. See
-[Custom calling conventions](custom-callconv/README.md) and
+[Custom calling conventions](custom-callconv/README.md#materialized-plans) and
 [`pluginsdk/examples/CustomCallConvPlugin.c`] for the full worked example.
 
 ## Code-generation routes
@@ -492,9 +492,12 @@ rewrite.
   `object.final_verify`, and `object.commit` are sealed. Observe only.
 
 See [`PluginTarget.h`], [`PluginMC.h`], [`PluginObject.h`], and
-[`Schema/PhaseSchema.json`] for the normative declarations, and
-[`coverage.json`], which maps each of these stable phases to its positive,
-negative, replacement, read-only-observer, and sealed-gate tests.
+[`Schema/PhaseSchema.json`] for the normative declarations; the entity,
+operand, fixup, and section kinds they use come from
+[`Schema/MCSchema.json`] and [`Schema/ObjectSchema.json`], which generate
+[`Schema/PluginMCSchema.inc`] and [`Schema/PluginObjectSchema.inc`]. See
+also [`coverage.json`], which maps each of these stable phases to its
+positive, negative, replacement, read-only-observer, and sealed-gate tests.
 
 <!-- reference links -->
 [`coverage.json`]: coverage.json
@@ -504,4 +507,8 @@ negative, replacement, read-only-observer, and sealed-gate tests.
 [`pluginsdk/examples/MCObserverPlugin.c`]: ../../pluginsdk/examples/MCObserverPlugin.c
 [`pluginsdk/examples/ObjectRewritePlugin.c`]: ../../pluginsdk/examples/ObjectRewritePlugin.c
 [`PluginTarget.h`]: ../../neverc/include/neverc/Plugin/PluginTarget.h
+[`Schema/MCSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/MCSchema.json
+[`Schema/ObjectSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/ObjectSchema.json
 [`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`Schema/PluginMCSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginMCSchema.inc
+[`Schema/PluginObjectSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginObjectSchema.inc

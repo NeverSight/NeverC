@@ -10,7 +10,7 @@ Linker integrato · Pipeline dyncode · Runtime integrati (`string` · `mimalloc
 
 [![AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](../../LICENSE)
 [![C23](https://img.shields.io/badge/Standard-C23-brightgreen.svg)](#funzionalità)
-[![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-informational.svg)](#cross-compilazione-verso-windows)
+![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-informational.svg)
 [![Arch](https://img.shields.io/badge/Arch-x86__64%20%7C%20AArch64-orange.svg)](#funzionalità)
 
 [Documentazione](../README.it.md) · [Guida dyncode](../dyncode-compiler/README.it.md) · [Runtime integrati](../builtins/README.it.md) · [API Plugin](../plugin-api/README.it.md) · [Roadmap](../roadmap/README.it.md)

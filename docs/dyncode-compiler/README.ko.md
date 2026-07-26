@@ -6,6 +6,18 @@
 
 C 소스를 **위치 독립·제로 재배치·제로 데이터 섹션** 플랫 바이너리 dyncode로 직접 컴파일합니다.
 
+## 가이드
+
+- [ARM64 (AArch64) 어셈블리 튜토리얼 — DynCode 관점](arm64-assembly-tutorial/README.ko.md)
+- [NeverC DynCode 크로스 플랫폼 아키텍처 개요](cross-platform-architecture/README.ko.md)
+- [IR Pass 설계 — 원칙, 파이프라인, 전후 비교](ir-pass-design/README.ko.md)
+- [커널 모드 (Ring-0) DynCode 지원](kernel-mode-dyncode/README.ko.md)
+- [MIR Pass 설계 — 원칙과 훅 포인트](mir-pass-design/README.ko.md)
+- [DynCode 파이프라인, MIR 및 PIC 전략 (설계 노트)](pipeline-and-pic/README.ko.md)
+- [플랫폼 확장 가이드](platform-extension-guide/README.ko.md)
+- [DynCode 컴파일러 — 진행 상황 추적](progress/README.ko.md)
+- [로드맵](roadmap/README.ko.md)
+
 ---
 
 ## 핵심 목표
@@ -99,7 +111,7 @@ neverc -v -fdyncode -target arm64-apple-macos fib.c -o fib.bin
 | `-fdyncode-bad-bytes=<hex-list>` | 금지 바이트 쉼표 목록(예 `00,0a,0d`). post-extract 후 최종 `.bin` 스캔; 적중 시 실패·파일 미기록. |
 | `-fdyncode-bad-byte-profile=<name>` | 내장 금지 바이트 프로필: `null`, `c-string`, `http-newline`, `line`, `whitespace`, `ascii-control`. `-fdyncode-bad-bytes=`와 병용. |
 | `-fdyncode-obfuscate=<spec>` | [Plugin API](../plugin-api/README.ko.md)로 등록된 **IR 수준** 플러그인 훅으로 전달. 플러그인 미로드 시 no-op. [ir-pass-design.md §9 — Obfuscation Interposes](ir-pass-design/README.ko.md#9-obfuscation-interposes). |
-| `-fdyncode-mir-obfuscate=<spec>` | **MIR 수준** 난독화 훅(`RunBeforePreEmit` / `RunAfterPreEmit`)으로 전달. 미설정 시 `-fdyncode-obfuscate=`로 폴백. [mir-pass-design.md §3 — User Obfuscation Interposes](mir-pass-design/README.ko.md#3-user-obfuscation-interposes). |
+| `-fdyncode-mir-obfuscate=<spec>` | **MIR 수준** 난독화 훅(`RunBeforePreEmit` / `RunAfterPreEmit`)으로 전달. 미설정 시 `-fdyncode-obfuscate=`로 폴백. [mir-pass-design.md §3 — User Obfuscation Interposes](mir-pass-design/README.ko.md#3-사용자-난독화-훅). |
 
 ---
 
@@ -286,31 +298,33 @@ docs/dyncode-compiler/
    - Windows: Win64 (rcx/rdx/r8/r9)
 3. i-cache flush(arm64) / FlushInstructionCache(Windows)는 loader 책임.
 
-## 난독화 Pass 확장(예약 인터페이스)
+## 난독화 및 플러그인 확장
 
-dyncode 파이프라인 자체는 "코드가 올바르게 실행됨"만 보장합니다. CFF·가짜 제어 흐름·불투명 술어·문자열 암호화·명령 치환·레지스터 이름 변경 등 난독화는 별도 작업입니다. `Pipeline.h`는 3계층 **11개 훅**의 `ObfuscationInterposes`를 노출합니다:
+dyncode 파이프라인 자체는 "코드가 올바르게 실행됨"만 보장합니다. 난독화·다형성·단계별 인코더 등 전략 계층 기능은 **의도적으로 내장되지 않으며**, [Plugin API](../plugin-api/README.ko.md)를 통해 아웃오브트리 플러그인으로 제공됩니다.
 
-**IR 계층(6 훅, `ModulePassManager &`)**:
-- `RunBeforePrep` — dyncode pass 이전
-- `RunAfterPrep` — 링크 속성 통일(internal + always_inline)
-- `RunBeforeInlining` — AlwaysInliner 전 마지막 기회
-- `RunAfterInlining` — IR이 하나의 큰 함수로 압축된 후
-- `RunAfterStackify` — 최종 IR 형태, 다음은 코드 생성
-- `RunAfterFinalIR` — AllBlrPass 후, 진짜 마지막 IR 훅
+파이프라인은 3계층에 걸쳐 **11개 훅 포인트**를 노출하며, 모두 C Plugin API(`NEVERC_INTERPOSE_SC_*`)로 접근할 수 있습니다:
 
-**MIR 계층(3 훅, `TargetPassConfig &`)**:
-- `RunBeforePreEmit` — 레지스터 할당됨, **CFI/EH 의사 명령 남음**
-- `RunAfterPreEmit` — **내장 MIRPrepPass가 의사 명령 제거**, AsmPrinter가 볼 바이트에 가장 가까움; 명령 수준 난독화·레지스터 이름 변경에 적합
-- `RunAfterFinalMIR` — LLVM `addPreEmitPass2()` 후, AsmPrinter 직전의 진짜 마지막 MIR 훅
+**IR 계층(6 훅)**:
+- `NEVERC_INTERPOSE_SC_BEFORE_PREP` — dyncode pass 이전
+- `NEVERC_INTERPOSE_SC_AFTER_PREP` — 링크 속성 통일(internal + always_inline)
+- `NEVERC_INTERPOSE_SC_BEFORE_INLINING` — AlwaysInliner 전 마지막 기회
+- `NEVERC_INTERPOSE_SC_AFTER_INLINING` — IR이 하나의 큰 함수로 압축된 후
+- `NEVERC_INTERPOSE_SC_AFTER_STACKIFY` — 최종 IR 형태, 다음은 코드 생성
+- `NEVERC_INTERPOSE_SC_AFTER_FINAL_IR` — AllBlrPass 후, 진짜 마지막 IR 훅
 
-**바이트 스트림 계층(2 훅, `SmallVectorImpl<uint8_t> &`)**:
-- `RunPostExtract` — 추출기가 .text 내 reloc 패치·데이터 섹션 감사 완료 후 `.bin` 기록 전. 전체 페이로드 암호화·정크 바이트·커스텀 헤더용.
-- `RunPostFinalize` — 모든 finalize 후; NeverC는 더 이상 감사하지 않음.
+**MIR 계층(3 훅)**:
+- `NEVERC_INTERPOSE_SC_BEFORE_PREEMIT` — 레지스터 할당됨, **CFI/EH 의사 명령 남음**
+- `NEVERC_INTERPOSE_SC_AFTER_PREEMIT` — **내장 MIRPrepPass가 의사 명령 제거**, AsmPrinter가 볼 바이트에 가장 가까움; 명령 수준 난독화·레지스터 이름 변경에 적합
+- `NEVERC_INTERPOSE_SC_AFTER_FINAL_MIR` — LLVM `addPreEmitPass2()` 후, AsmPrinter 직전의 진짜 마지막 MIR 훅
 
-`-fdyncode-obfuscate=<spec>`와 `-fdyncode-mir-obfuscate=<spec>`는 문자열을 `DynCodeOptions::ObfuscateSpec` / `MirObfuscateSpec`로 전달. MIR spec 기본값은 IR spec. 파이프라인은 내용을 파싱하지 않으며 난독화 라이브러리가 DSL 정의. 자세히:
+**바이트 스트림 계층(2 훅)**:
+- `NEVERC_INTERPOSE_SC_POST_EXTRACT` — 추출기가 .text 내 reloc 패치·데이터 섹션 감사 완료 후 `.bin` 기록 전. 전체 페이로드 암호화·정크 바이트·커스텀 헤더용.
+- `NEVERC_INTERPOSE_SC_POST_FINALIZE` — 모든 finalize 후; NeverC는 더 이상 감사하지 않음.
+
+전체 훅 목록, pass 등록, 코드 예제는 [Plugin API 문서](../plugin-api/README.ko.md)를 참조하세요.
 
 - IR 계층: [ir-pass-design.md §9 — Obfuscation Interposes](ir-pass-design/README.ko.md#9-obfuscation-interposes).
-- MIR 계층: [mir-pass-design.md §3 — User Obfuscation Interposes](mir-pass-design/README.ko.md#3-user-obfuscation-interposes).
+- MIR 계층: [mir-pass-design.md §3 — User Obfuscation Interposes](mir-pass-design/README.ko.md#3-사용자-난독화-훅).
 ---
 
 ## 현재 제한

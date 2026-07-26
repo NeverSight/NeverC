@@ -298,9 +298,11 @@ Source->CreateMemorySourceUnit(Source->Context, Frame, Frame->Input, &Unit,
 - `AddMemoryFile` 은 세션 범위입니다. 내용이 태스크에 따라 달라진다면 제공자가
   올바른 도구입니다.
 
-규범적 선언은 [`PluginSource.h`] 를, 완전한 제공자 예제는
+규범적 선언은 [`PluginSource.h`] 를, 세 개의 source 페이즈와 그 정책은
+[`Schema/PhaseSchema.json`] 을, 완전한 제공자 예제는
 [`pluginsdk/examples/VirtualHeaderPlugin.c`] 를 참조하십시오.
 
 <!-- reference links -->
 [`pluginsdk/examples/VirtualHeaderPlugin.c`]: ../../pluginsdk/examples/VirtualHeaderPlugin.c
 [`PluginSource.h`]: ../../neverc/include/neverc/Plugin/PluginSource.h
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json

@@ -56,15 +56,17 @@ ListRegisterTargetPassConfigCallbacks.push_back(
 
 ### 2.1 부속 섹션 메타데이터 (`TargetOpcode::*`, 크로스 플랫폼)
 
-| 연산 코드 | 소스 | 미제거 시 결과 |
-|-----------|------|------------|
-| `CFI_INSTRUCTION` | 모든 플랫폼의 프레임 하강 / `-g` | `.eh_frame` / `__compact_unwind` / `.pdata` 비어있지 않음 |
-| `EH_LABEL` | EH / try-catch setjmp 포인트 | LSDA 부속 섹션 비어있지 않음 |
-| `STATEPOINT` / `STACKMAP` / `PATCHPOINT` | GC / 샌드박스 stackmap | `.llvm_stackmaps` |
-| `PSEUDO_PROBE` | `-fprofile-sample-use` | `.pseudo_probe` |
-| `PATCHABLE_*` 패밀리 | XRay / Kcov 스텁 | `.xray_instr_map` |
+| 옵코드 | 소스 | 제거하지 않으면 |
+|--------|------|----------------|
+| `CFI_INSTRUCTION` | 모든 플랫폼의 frame-lowering / `-g` | `.eh_frame` / `__compact_unwind` / `.pdata` 비어있지 않음 |
+| `EH_LABEL` | EH / try-catch setjmp 지점 | LSDA 사이드 섹션 비어있지 않음 |
+| `GC_LABEL` / `ANNOTATION_LABEL` | GC / 어노테이션 마커 | 섹션 상대 메타데이터를 가진 MCSymbol |
+| `STATEPOINT` / `STACKMAP` / `PATCHPOINT` | GC / 샌드박스 stackmap | `.llvm_stackmaps` 사이드 섹션 |
+| `PSEUDO_PROBE` | `-fprofile-sample-use` | `.pseudo_probe` 사이드 섹션 |
+| `PATCHABLE_*` 계열 | XRay / Kcov 스텁 | `.xray_instr_map` / `.xray_fn_idx` |
 | `FENTRY_CALL` | `-mfentry` 진입 프로브 | extern `__fentry__` 호출 |
-| `LOCAL_ESCAPE` | Microsoft SEH | SEH 핸들러 참조 유입 |
+| `LOCAL_ESCAPE` | Microsoft SEH frame-escape | `_local_unwind2` / `__except_handler3` 끌어들임 |
+| `JUMP_TABLE_DEBUG_INFO` | 점프 테이블 디버그 정보 | `.debug_rnglists` 항목 |
 
 ### 2.2 Windows SEH (`TargetInstrInfo::getName()` 접두사 매칭)
 
@@ -87,9 +89,32 @@ if (Name.starts_with("SEH_"))
 
 `ObfuscationInterposes`는 **11개 훅 포인트**를 노출합니다: 6 IR + 3 MIR + 2 바이트 수준.
 
+세 가지 시그니처 타입:
+
+```cpp
+using ObfuscationInterpose = std::function<void(
+    llvm::ModulePassManager &, const DynCodeOptions &)>;
+using MachineObfuscationInterpose = std::function<void(
+    llvm::TargetPassConfig &, const DynCodeOptions &)>;
+using BinaryObfuscationInterpose = std::function<void(
+    llvm::SmallVectorImpl<uint8_t> &, const DynCodeOptions &)>;
+```
+
 - `RunBeforePreEmit`: MIR에 **CFI/EH 의사 명령이 아직 있음** — 프롤로그/에필로그 메타데이터 조작용.
 - `RunAfterPreEmit`: **정리된 MIR** — AsmPrinter에 가장 가까움, 명령 치환 / 레지스터 리네이밍에 적합.
 - `RunPostExtract`: **순수 바이트 스트림** — XOR/RC4 래핑, 정크 바이트, 커스텀 헤더용.
+
+```cpp
+__attribute__((constructor))
+static void myMirObfInit() {
+  auto H = neverc::dyncode::getDynCodeObfuscationInterposes();
+  H.RunAfterPreEmit = [](llvm::TargetPassConfig &TPC,
+                         const neverc::dyncode::DynCodeOptions &Opts) {
+    TPC.addExternalPass(new MyInstructionSubstitutionPass(Opts.MirObfuscateSpec));
+  };
+  // Register via Plugin API: NEVERC_INTERPOSE_SC_BEFORE_PREEMIT / AFTER_PREEMIT / AFTER_FINAL_MIR
+}
+```
 
 ---
 
@@ -114,12 +139,16 @@ if (Name.starts_with("SEH_"))
 ## 5. 설계 근거
 
 | 문제 | IR 계층? | MIR 계층? |
-|------|---------|---------|
-| 상수 GV 제거 | 예 | 불필요 |
-| extern libc 제거 | 예 | 불필요 |
-| CFI 의사 명령 | 아니오 | 예 (스캔 후 삭제) |
-| 명령 수준 난독화 | 아니오 | 예 (실제 레지스터/MI 있음) |
+|------|----------|-----------|
+| 상수 GV 제거 | 예(Data2Text) | 불필요 |
+| extern libc 제거 | 예(SyscallStub / WinPEB) | 불필요 |
+| 가변 전역 스택화 | 예(ZeroReloc) | 불필요 |
+| Computed goto | 예(IndirectBr) | 불필요 |
+| CFI 의사 명령 | 아니오(백엔드 생성) | 예(스캔 후 삭제) |
+| XRay 스텁 | 아니오(백엔드 생성) | 예(스캔 후 삭제) |
+| 명령 수준 난독화 | 아니오(IR에 물리 레지스터 없음) | 예(실제 레지스터/MI 있음) |
 | 레지스터 리네이밍 | 아니오 | 예 |
+| Peephole 상수 확장 | 부분적 | 예(더 깔끔) |
 
 ## 6. 확장 가이드
 

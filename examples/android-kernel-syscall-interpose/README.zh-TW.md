@@ -1,5 +1,7 @@
 **語言**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
+[← NeverC 範例](../../docs/examples/README.zh-TW.md)
+
 # Android 核心 Syscall Interpose
 
 透過替換 `sys_call_table` 中的指標來 interpose `openat`。演示 ARM64 GKI 核心上使用 `neverc_krt_syscall_replace` / `neverc_krt_syscall_restore` 進行經典 syscall 攔截。

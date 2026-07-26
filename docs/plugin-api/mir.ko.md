@@ -411,13 +411,14 @@ CMake 가 여러분의 플랫폼에 맞게 만든 모듈 접미사를 쓰십시�
   C++ 예외가 그것을 넘게 하지 마십시오.
 - `neverc.mir.final_verify` 는 봉인되어 있습니다. 무슨 일이 있어도 실행됩니다.
 
-규범적 선언, 스키마 상수, 단계 정책, 커버리지 증거는 [`PluginMIR.h`],
-[`Schema/PluginMIRSchema.inc`], [`Schema/PhaseSchema.json`], [`coverage.json`] 을
-참조하십시오.
+규범적 선언, 스키마 자체, 생성된 상수, 단계 정책, 커버리지 증거는 [`PluginMIR.h`],
+[`Schema/MIRSchema.json`], [`Schema/PluginMIRSchema.inc`],
+[`Schema/PhaseSchema.json`], [`coverage.json`] 을 참조하십시오.
 
 <!-- reference links -->
 [`coverage.json`]: coverage.json
 [`PluginMIR.h`]: ../../neverc/include/neverc/Plugin/PluginMIR.h
 [`pluginsdk/examples/MachinePass.c`]: ../../pluginsdk/examples/MachinePass.c
+[`Schema/MIRSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/MIRSchema.json
 [`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
 [`Schema/PluginMIRSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginMIRSchema.inc

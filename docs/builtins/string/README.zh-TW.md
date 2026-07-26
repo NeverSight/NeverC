@@ -553,6 +553,20 @@ string f = R"(line1\nline2)".encrypt();        // raw
 | 計數 | `s.count("pattern".encrypt())` |
 | 大小寫不敏感搜尋 | `s.find_ic("needle".encrypt())` |
 
+```c
+string input = get_user_input();
+
+// Zero-allocation: decrypts and compares byte-by-byte, short-circuits on mismatch
+if (input == "admin".encrypt()) {
+    grant_access();
+}
+
+// Also zero-allocation
+if (input.starts_with("/api/v1".encrypt())) {
+    handle_api_request();
+}
+```
+
 ### 限制
 
 - `.encrypt()` **只能**用於字串字面量。在變數上呼叫會產生編譯錯誤：
@@ -578,10 +592,18 @@ string e = "hello".encrypt().encrypt();  // 錯誤：.encrypt() can only be appl
 
 加密和解密操作由兩個巨集控制：
 
-- `NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx)` — 編譯時：明文→密文
-- `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` — 執行時：密文→明文
+```c
+NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx)  // 編譯時：明文 → 密文
+NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)  // 執行時：密文 → 明文
+```
 
-`ENCRYPT_BYTE` 預設為 XOR。`DECRYPT_BYTE` 預設使用**無 XOR 指令的算術分解**——透過 `(a + b) - (a & b) - (b & a)` 計算 `a ^ b`，使用 `volatile` 中間變數阻止 LLVM 最佳化回 `xor` 指令。後續可透過 MBA（Mixed Boolean-Arithmetic）混淆 pass 進一步加強。
+`ENCRYPT_BYTE` 預設為 XOR：
+
+```c
+((char)((unsigned char)(byte) ^ (unsigned char)((key) >> (8 * ((idx) % sizeof(size_t))))))
+```
+
+`DECRYPT_BYTE` 預設使用**無 XOR 指令的算術分解**——透過 `(a + b) - (a & b) - (b & a)` 計算 `a ^ b`，使用 `volatile` 中間變數阻止 LLVM 最佳化回 `xor` 指令。後續可透過 MBA（Mixed Boolean-Arithmetic）混淆 pass 進一步加強。
 
 如需使用非 XOR 演算法，**同時**定義兩個巨集，且它們**必須互為數學逆操作**：
 
@@ -602,15 +624,41 @@ string e = "hello".encrypt().encrypt();  // 錯誤：.encrypt() can only be appl
 
 | 巨集 | 預設值 | 說明 |
 |------|--------|------|
-| `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` | 使用旋轉金鑰位元組的 XOR | 逐位元組解密操作 |
+| `NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx)` | 使用旋轉金鑰位元組的 XOR | 逐位元組加密操作（編譯時） |
+| `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` | 使用旋轉金鑰位元組的 XOR | 逐位元組解密操作（執行時）；必須是 `ENCRYPT_BYTE` 的逆操作 |
 
 ### 結構體與陣列中的加密字串
 
-`.encrypt()` 可用於聚合初始化；擁有的 `string` 成員在作用域結束時自動釋放（見 [複合類型清理](#複合類型清理)）。`string[]`、`struct { string; }`、二維陣列與巢狀組合均支援，且零分配比較路徑同樣有效。
+`.encrypt()` 可用於聚合初始化；擁有的 `string` 成員在作用域結束時自動釋放（見 [複合型別自動清理](#複合型別自動清理)）：
+
+```c
+typedef struct { string user; string pass; } creds;
+
+creds login = {.user = "admin".encrypt(), .pass = "s3cret".encrypt()};
+string routes[] = {"/api/v1".encrypt(), "/api/v2".encrypt()};
+string grid[2][2] = {
+    {"a".encrypt(), "b".encrypt()},
+    {"c".encrypt(), "d".encrypt()}
+};
+
+// Zero-allocation comparisons still apply
+if (login.user == "admin".encrypt()) { /* ... */ }
+```
 
 ### DynCode 模式相容
 
 字串加密在所有編譯模式下均可使用，包括 dyncode（`-fdyncode`）。在 dyncode 模式下，加密字串的解密使用 dyncode 本地 arena 分配器。用戶態和核心態 dyncode 上下文（`-mdyncode-context=kernel`）均受支援。
+
+```c
+// DynCode with encrypted strings — compiles to position-independent flat binary
+int main(int a, int b) {
+    string secret = "dyncode_secret".encrypt();
+    if (secret.starts_with("shell".encrypt())) {
+        // ...
+    }
+    return 0;
+}
+```
 
 ---
 

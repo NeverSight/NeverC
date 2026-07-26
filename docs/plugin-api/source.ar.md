@@ -296,11 +296,13 @@ Source->CreateMemorySourceUnit(Source->Context, Frame, Frame->Input, &Unit,
 - نطاق `AddMemoryFile` هو الجلسة؛ وحين يعتمد المحتوى على المهمة يكون المزوّد هو
   الأداة الصحيحة.
 
-انظر [`PluginSource.h`] للتصريحات المعيارية، و
+انظر [`PluginSource.h`] للتصريحات المعيارية، و[`Schema/PhaseSchema.json`]
+لمراحل المصدر الثلاث وسياساتها، و
 [`pluginsdk/examples/VirtualHeaderPlugin.c`] لمزوّد كامل.
 
 <!-- reference links -->
 [`pluginsdk/examples/VirtualHeaderPlugin.c`]: ../../pluginsdk/examples/VirtualHeaderPlugin.c
 [`PluginSource.h`]: ../../neverc/include/neverc/Plugin/PluginSource.h
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
 
 </div>

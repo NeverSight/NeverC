@@ -302,9 +302,11 @@ content changes. `GetSourceUnit` reads a unit back and additionally reports
 - `AddMemoryFile` is session-scoped; a provider is the right tool when the
   content depends on the task.
 
-See [`PluginSource.h`] for the normative declarations and
-[`pluginsdk/examples/VirtualHeaderPlugin.c`] for a complete provider.
+See [`PluginSource.h`] for the normative declarations,
+[`Schema/PhaseSchema.json`] for the three source phases and their policies,
+and [`pluginsdk/examples/VirtualHeaderPlugin.c`] for a complete provider.
 
 <!-- reference links -->
 [`pluginsdk/examples/VirtualHeaderPlugin.c`]: ../../pluginsdk/examples/VirtualHeaderPlugin.c
 [`PluginSource.h`]: ../../neverc/include/neverc/Plugin/PluginSource.h
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json

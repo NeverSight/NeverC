@@ -55,7 +55,7 @@ Phase 1: Konstant-GVs → Immediates/Stack-Stores. Phase 2: SROA-Residual-Split 
 Direkte Aufrufe → indirekte via volatile Slot.
 
 ## 9. Obfuskations-Interposes
-11 Interpose-Punkte (`NEVERC_INTERPOSE_SC_*`). Siehe [Plugin API — Interpose-Punkte](../../plugin-api/README.de.md#5-interpose-punkte).
+11 Interpose-Punkte. Siehe [mir-pass-design.md §3](../mir-pass-design/README.de.md#3-benutzer-obfuskations-interposes).
 
 ## 10. Zwei-Phasen-Design
 Phase 1 reinigt originales IR; Phase 2 reinigt optimizer-eingeführte Konstrukte.

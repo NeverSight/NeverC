@@ -289,7 +289,7 @@ void *__sc_ptr_decrypt(uint64_t enc) {
 
 ## 9. 混淆钩子
 
-out-of-tree C 插件 API 为第三方混淆 pass 提供 11 个 dyncode 钩子点（`NEVERC_INTERPOSE_SC_*`）。详见 [Plugin API — 钩子点](../../plugin-api/README.zh-CN.md#5-钩子点)。
+DynCode 为第三方混淆 pass 提供 11 个混淆钩子点（6 个 IR 级、3 个 MIR 级、2 个字节级）。完整清单详见 [mir-pass-design.md 第 3 节](../mir-pass-design/README.zh-CN.md#3-用户混淆钩子)。
 
 关键设计原则：
 - **注册位置是契约**：越早注册越有更广的内置 PIC 修复覆盖

@@ -610,10 +610,18 @@ string e = "hello".encrypt().encrypt();  // 错误：.encrypt() can only be appl
 
 加密和解密操作由两个宏控制：
 
-- `NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx)` — 编译时：明文→密文
-- `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` — 运行时：密文→明文
+```c
+NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx)  // 编译时：明文 → 密文
+NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)  // 运行时：密文 → 明文
+```
 
-`ENCRYPT_BYTE` 默认为 XOR。`DECRYPT_BYTE` 默认使用**无 XOR 指令的算术分解**——通过 `(a + b) - (a & b) - (b & a)` 计算 `a ^ b`，使用 `volatile` 中间变量阻止 LLVM 优化回 `xor` 指令。这使得解密代码在简单的反汇编 XOR 模式匹配中不可见。后续可通过 MBA（Mixed Boolean-Arithmetic）混淆 pass 进一步加强。
+`ENCRYPT_BYTE` 默认为 XOR：
+
+```c
+((char)((unsigned char)(byte) ^ (unsigned char)((key) >> (8 * ((idx) % sizeof(size_t))))))
+```
+
+`DECRYPT_BYTE` 默认使用**无 XOR 指令的算术分解**——通过 `(a + b) - (a & b) - (b & a)` 计算 `a ^ b`，使用 `volatile` 中间变量阻止 LLVM 优化回 `xor` 指令。这使得解密代码在简单的反汇编 XOR 模式匹配中不可见。后续可通过 MBA（Mixed Boolean-Arithmetic）混淆 pass 进一步加强。
 
 如需使用非 XOR 算法，在 string prelude 之前**同时**定义两个宏，且它们**必须互为数学逆操作**——`DECRYPT(ENCRYPT(b, k, i), k, i) == b`：
 
@@ -627,7 +635,7 @@ string e = "hello".encrypt().encrypt();  // 错误：.encrypt() can only be appl
 
 ### 结构体与数组中的加密字符串
 
-`.encrypt()` 可用于聚合初始化。拥有的 `string` 成员在作用域退出时自动释放（见 [复合类型清理](#复合类型清理)）：
+`.encrypt()` 可用于聚合初始化。拥有的 `string` 成员在作用域退出时自动释放（见 [复合类型自动清理](#复合类型自动清理)）：
 
 ```c
 typedef struct { string user; string pass; } creds;
@@ -670,7 +678,8 @@ int main(int a, int b) {
 
 | 宏 | 默认值 | 说明 |
 |----|--------|------|
-| `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` | 使用旋转密钥字节的 XOR | 逐字节解密操作 |
+| `NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx)` | 使用旋转密钥字节的 XOR | 逐字节加密操作（编译时） |
+| `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` | 使用旋转密钥字节的 XOR | 逐字节解密操作（运行时）；必须是 `ENCRYPT_BYTE` 的逆操作 |
 
 ---
 

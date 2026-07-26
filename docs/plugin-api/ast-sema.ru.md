@@ -420,8 +420,9 @@ Sema->CreateSemanticUnit(Sema->Context, Frame, &Unit, &Output);
   `NevercTypeInfo.Flags` на `HAS_KNOWN_LAYOUT`.
 
 Нормативные объявления смотрите в [`PluginAST.h`], [`PluginSema.h`] и
-[`Schema/ASTSchema.json`], а работающий перехват анализатора с атомарной
-перезаписью дерева — в [`pluginsdk/examples/ASTRewritePlugin.c`].
+[`Schema/ASTSchema.json`], политики фаз — в [`Schema/PhaseSchema.json`], а
+работающий перехват анализатора с атомарной перезаписью дерева — в
+[`pluginsdk/examples/ASTRewritePlugin.c`].
 
 <!-- reference links -->
 [`PluginAST.h`]: ../../neverc/include/neverc/Plugin/PluginAST.h
@@ -429,4 +430,5 @@ Sema->CreateSemanticUnit(Sema->Context, Frame, &Unit, &Output);
 [`pluginsdk/examples/ASTRewritePlugin.c`]: ../../pluginsdk/examples/ASTRewritePlugin.c
 [`PluginSema.h`]: ../../neverc/include/neverc/Plugin/PluginSema.h
 [`Schema/ASTSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/ASTSchema.json
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
 [`Schema/PluginASTSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginASTSchema.inc

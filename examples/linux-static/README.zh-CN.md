@@ -1,5 +1,7 @@
 **语言**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
+[← NeverC 示例](../../docs/examples/README.zh-CN.md)
+
 # Linux 全静态链接示例
 
 使用 NeverC 构建的自包含全静态链接 Linux 可执行文件。输出二进制零运行时依赖——可在任何 Linux 系统上运行，无需共享库。

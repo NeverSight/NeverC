@@ -26,16 +26,16 @@ per ID anfordert.
 
 | Leitfaden | Inhalt |
 |---|---|
-| [Driver-API](driver.de.md) | Kommandozeile, Toolchain-Auswahl, Aktionsgraph, Job-Graph |
-| [Source- und E/A-API](source.de.md) | VFS-Provider, Quellpositionen, Puffer, Ausgabesenken, Abhängigkeiten |
-| [Präprozessor-API](prep.de.md) | Token, Makros, Pragmas, Includes, Feature-Abfragen, 39 Ereignisarten |
-| [AST- und Semantik-API](ast-sema.de.md) | Parser-Erweiterung, AST-Mutation, Namensauflösung, Typen, Konstanten |
-| [IR-API](ir.de.md) | LLVM-IR lesen, transaktionales Bauen, Analysen, Passes, Provider |
-| [MIR-API](mir.de.md) | Maschinenfunktionen, Register, Stackframes, MIR-Passes und -Analysen |
-| [Target, MC, Assembly, Objekt](target-mc-object.de.md) | Target-Registrierung, Aufrufkonventionen, MC-Kodierung, Objektgraphen |
-| [Link- und LTO-API](link-lto.de.md) | Link-Graph, Symbolauflösung, GC/ICF, Linker- und LTO-Provider |
-| [DynCode-API](dyncode.de.md) | Flache positionsunabhängige Images, Import-Lowering, Zeichensatzkodierung |
-| [Eigene Aufrufkonventionen](custom-callconv/README.de.md) | Datengetriebene Aufrufkonventions-Plugins |
+| [Driver-API](driver.de.md) | [Kommandozeile](driver.de.md#rohe-argumente), [Toolchain-Auswahl](driver.de.md#toolchain-auswahl), [Aktionsgraph](driver.de.md#der-aktionsgraph), [Job-Graph](driver.de.md#der-job-graph) |
+| [Source- und E/A-API](source.de.md) | [VFS-Provider](source.de.md#anbieter-für-virtuelle-dateisysteme), [Quellpositionen](source.de.md#quelltextpositionen), [Puffer](source.de.md#dateien-lesen), [Ausgabesenken](source.de.md#ausgaben-schreiben), [Abhängigkeiten](source.de.md#abhängigkeiten-festhalten) |
+| [Präprozessor-API](prep.de.md) | [Token](prep.de.md#token-lesen), [Makros](prep.de.md#bezeichner-und-makros), [Pragmas](prep.de.md#pragmas-und-feature-abfragen), [Includes](prep.de.md#ein-include-umleiten), [Feature-Abfragen](prep.de.md#pragmas-und-feature-abfragen), [39 Ereignisarten](prep.de.md#ereignisabonnement) |
+| [AST- und Semantik-API](ast-sema.de.md) | [Parser-Erweiterung](ast-sema.de.md#parser-erweiterung), [AST-Mutation](ast-sema.de.md#bauen-und-verändern), [Namensauflösung](ast-sema.de.md#semantische-abfragen), [Typen](ast-sema.de.md#typisierte-zugriffsfunktionen), [Konstanten](ast-sema.de.md#semantische-abfragen) |
+| [IR-API](ir.de.md) | [LLVM-IR lesen](ir.de.md#ein-modul-durchlaufen), [transaktionales Bauen](ir.de.md#transaktionale-veränderung), [Analysen](ir.de.md#analysen), [Passes](ir.de.md#durchläufe), [Provider](ir.de.md#erzeugung-und-optimierung-ersetzen) |
+| [MIR-API](mir.de.md) | [Maschinenfunktionen](mir.de.md#mir-lesen), [Register](mir.de.md#register), [Stackframes](mir.de.md#der-stackframe), [MIR-Passes und -Analysen](mir.de.md#passes) |
+| [Target, MC, Assembly, Objekt](target-mc-object.de.md) | [Target-Registrierung](target-mc-object.de.md#ein-target-registrieren), [Aufrufkonventionen](target-mc-object.de.md#abi-und-aufrufkonventionen), [MC-Kodierung](target-mc-object.de.md#encoder-decoder-und-layout), [Objektgraphen](target-mc-object.de.md#objektgraphen) |
+| [Link- und LTO-API](link-lto.de.md) | [Link-Graph](link-lto.de.md#den-graphen-lesen), [Symbolauflösung](link-lto.de.md#den-graphen-verändern), [GC/ICF](link-lto.de.md#die-zustandsmaschine), [Linker- und LTO-Provider](link-lto.de.md#provider) |
+| [DynCode-API](dyncode.de.md) | [Flache positionsunabhängige Images](dyncode.de.md#abbild-bericht-und-begrenzte-byte-änderungen), [Import-Lowering](dyncode.de.md#externe-referenzen-und-import-absenkung), [Zeichensatzkodierung](dyncode.de.md#abbild-bericht-und-begrenzte-byte-änderungen) |
+| [Eigene Aufrufkonventionen](custom-callconv/README.de.md) | [Datengetriebene Aufrufkonventions-Plugins](custom-callconv/README.de.md#spec-format) |
 | [Nachweis der Phasenabdeckung](coverage.json) | Testzuordnung für jede stabile Phase |
 
 ## Ausführungsmodell
@@ -148,9 +148,9 @@ typedef struct NevercPhaseFrame {
 ```
 
 [`Schema/PhaseSchema.json`] ist die normative Quelle für Phasen-IDs, Policies,
-Stabilitätsstufen und Verifizierer-Gates. Das generierte
-[`Schema/PluginPhaseSchema.inc`] legt jede davon als Compile-Zeit-Konstante
-offen — für die Phase `neverc.ir.pass.pipeline_start`:
+Stabilitätsstufen und Verifizierer-Gates. [`PluginPhaseSchema.h`] und das darin
+eingebundene generierte [`Schema/PluginPhaseSchema.inc`] legen jede davon als
+Compile-Zeit-Konstante offen — für die Phase `neverc.ir.pass.pipeline_start`:
 
 ```c
 NEVERC_PHASE_IR_PASS_PIPELINE_START_NAME       /* "neverc.ir.pass.pipeline_start" */
@@ -567,7 +567,8 @@ Deskriptor abgelehnt.
 
 ## Bauen
 
-Binden Sie den Sammel-Header ein oder nur die Domänen, die Sie nutzen:
+Binden Sie den Sammel-Header [`NevercPluginAPI.h`] ein oder nur die Domänen,
+die Sie nutzen:
 
 ```c
 #include "neverc/Plugin/NevercPluginAPI.h"   /* everything */
@@ -773,6 +774,7 @@ den es geladen wird.
 [`MachinePass.c`]: ../../pluginsdk/examples/MachinePass.c
 [`MCObserverPlugin.c`]: ../../pluginsdk/examples/MCObserverPlugin.c
 [`neverc/include/neverc/Plugin/Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`NevercPluginAPI.h`]: ../../neverc/include/neverc/Plugin/NevercPluginAPI.h
 [`ObjectRewritePlugin.c`]: ../../pluginsdk/examples/ObjectRewritePlugin.c
 [`PluginAST.h`]: ../../neverc/include/neverc/Plugin/PluginAST.h
 [`PluginCore.h`]: ../../neverc/include/neverc/Plugin/PluginCore.h
@@ -784,6 +786,7 @@ den es geladen wird.
 [`PluginMC.h`]: ../../neverc/include/neverc/Plugin/PluginMC.h
 [`PluginMIR.h`]: ../../neverc/include/neverc/Plugin/PluginMIR.h
 [`PluginObject.h`]: ../../neverc/include/neverc/Plugin/PluginObject.h
+[`PluginPhaseSchema.h`]: ../../neverc/include/neverc/Plugin/PluginPhaseSchema.h
 [`PluginPrep.h`]: ../../neverc/include/neverc/Plugin/PluginPrep.h
 [`pluginsdk/abi/plugin.json`]: ../../pluginsdk/abi/plugin.json
 [`pluginsdk/examples/DriverTracePlugin.c`]: ../../pluginsdk/examples/DriverTracePlugin.c

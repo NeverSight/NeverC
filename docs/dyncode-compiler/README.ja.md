@@ -6,6 +6,18 @@
 
 C ソースを**位置独立・ゼロリロケーション・ゼロデータセクション**のフラットバイナリ dyncode に直接コンパイルする。
 
+## ガイド
+
+- [ARM64 (AArch64) アセンブリチュートリアル — DynCode の観点から](arm64-assembly-tutorial/README.ja.md)
+- [NeverC DynCode クロスプラットフォームアーキテクチャ概要](cross-platform-architecture/README.ja.md)
+- [IR パス設計 — 原則、パイプライン、前後比較](ir-pass-design/README.ja.md)
+- [カーネルモード（Ring-0）DynCode サポート](kernel-mode-dyncode/README.ja.md)
+- [MIR パス設計 — 原則とフックポイント](mir-pass-design/README.ja.md)
+- [DynCode パイプライン、MIR、PIC 戦略（設計メモ）](pipeline-and-pic/README.ja.md)
+- [プラットフォーム拡張ガイド](platform-extension-guide/README.ja.md)
+- [DynCode コンパイラ — 進捗トラッカー](progress/README.ja.md)
+- [ロードマップ](roadmap/README.ja.md)
+
 ---
 
 ## コア目標
@@ -99,7 +111,7 @@ neverc -v -fdyncode -target arm64-apple-macos fib.c -o fib.bin
 | `-fdyncode-bad-bytes=<hex-list>` | 禁止バイトのカンマ区切りリスト（例 `00,0a,0d`）。post-extract 後に最終 `.bin` を走査；命中時は失敗しファイルは書かない。 |
 | `-fdyncode-bad-byte-profile=<name>` | 組み込み禁止バイトプロファイル：`null`、`c-string`、`http-newline`、`line`、`whitespace`、`ascii-control`。`-fdyncode-bad-bytes=` と併用可。 |
 | `-fdyncode-obfuscate=<spec>` | [Plugin API](../plugin-api/README.ja.md) 経由で登録された **IR レベル**プラグインフックへ渡す。プラグイン未ロード時は no-op。[ir-pass-design.md §9 — Obfuscation Interposes](ir-pass-design/README.ja.md#9-obfuscation-interposes)。 |
-| `-fdyncode-mir-obfuscate=<spec>` | **MIR レベル**難読化フック（`RunBeforePreEmit` / `RunAfterPreEmit`）へ渡す。未設定時は `-fdyncode-obfuscate=` にフォールバック。[mir-pass-design.md §3 — User Obfuscation Interposes](mir-pass-design/README.ja.md#3-user-obfuscation-interposes)。 |
+| `-fdyncode-mir-obfuscate=<spec>` | **MIR レベル**難読化フック（`RunBeforePreEmit` / `RunAfterPreEmit`）へ渡す。未設定時は `-fdyncode-obfuscate=` にフォールバック。[mir-pass-design.md §3 — User Obfuscation Interposes](mir-pass-design/README.ja.md#3-ユーザー難読化フック)。 |
 
 ---
 
@@ -286,31 +298,33 @@ docs/dyncode-compiler/
    - Windows: Win64 (rcx/rdx/r8/r9)
 3. i-cache flush (arm64) / FlushInstructionCache (Windows) は loader の責務。
 
-## 難読化 Pass 拡張（予約インターフェース）
+## 難読化とプラグイン拡張
 
-dyncode パイプライン自体は「コードが正しく動く」ことのみ保証。CFF・偽制御フロー・不透明述語・文字列暗号化・命令置換・レジスタ改名などの難読化は別作業。`Pipeline.h` は 3 層で **11 フック**の `ObfuscationInterposes` を公開：
+dyncode パイプライン自体は「コードが正しく動く」ことのみ保証する。難読化・多態化・段階的エンコーダなど戦略層の機能は**意図的に組み込まれておらず**、[Plugin API](../plugin-api/README.ja.md) を通じてツリー外プラグインとして提供される。
 
-**IR 層（6 フック、`ModulePassManager &`）**：
-- `RunBeforePrep` — いかなる dyncode pass より前
-- `RunAfterPrep` — リンク属性統一（internal + always_inline）
-- `RunBeforeInlining` — AlwaysInliner 前の最後の機会
-- `RunAfterInlining` — IR が 1 つの大関数に圧縮された後
-- `RunAfterStackify` — 最終 IR 形状、次はコード生成
-- `RunAfterFinalIR` — AllBlrPass 後、真の最終 IR フック
+パイプラインは 3 層にわたる **11 個のフックポイント**を公開し、すべて C Plugin API（`NEVERC_INTERPOSE_SC_*`）経由でアクセスできる：
 
-**MIR 層（3 フック、`TargetPassConfig &`）**：
-- `RunBeforePreEmit` — レジスタ割当済、**CFI/EH 疑似命令は残存**
-- `RunAfterPreEmit` — **組み込み MIRPrepPass が疑似命令を除去済**、AsmPrinter が見るバイト列に最も近い；命令レベル難読化・レジスタ改名に最適
-- `RunAfterFinalMIR` — LLVM `addPreEmitPass2()` 後、AsmPrinter 直前の真の最終 MIR フック
+**IR 層（6 フック）**：
+- `NEVERC_INTERPOSE_SC_BEFORE_PREP` — いかなる dyncode pass より前
+- `NEVERC_INTERPOSE_SC_AFTER_PREP` — リンク属性統一（internal + always_inline）
+- `NEVERC_INTERPOSE_SC_BEFORE_INLINING` — AlwaysInliner 前の最後の機会
+- `NEVERC_INTERPOSE_SC_AFTER_INLINING` — IR が 1 つの大関数に圧縮された後
+- `NEVERC_INTERPOSE_SC_AFTER_STACKIFY` — 最終 IR 形状、次はコード生成
+- `NEVERC_INTERPOSE_SC_AFTER_FINAL_IR` — AllBlrPass 後、真の最終 IR フック
 
-**バイトストリーム層（2 フック、`SmallVectorImpl<uint8_t> &`）**：
-- `RunPostExtract` — 抽出器が .text 内 reloc パッチとデータセクション監査を完了後、`.bin` 書込前。ペイロード全体の暗号化・ジャンクバイト・カスタムヘッダ用。
-- `RunPostFinalize` — 全 finalize 後；NeverC はこれ以上監査しない。
+**MIR 層（3 フック）**：
+- `NEVERC_INTERPOSE_SC_BEFORE_PREEMIT` — レジスタ割当済、**CFI/EH 疑似命令は残存**
+- `NEVERC_INTERPOSE_SC_AFTER_PREEMIT` — **組み込み MIRPrepPass が疑似命令を除去済**、AsmPrinter が見るバイト列に最も近い；命令レベル難読化・レジスタ改名に最適
+- `NEVERC_INTERPOSE_SC_AFTER_FINAL_MIR` — LLVM `addPreEmitPass2()` 後、AsmPrinter 直前の真の最終 MIR フック
 
-`-fdyncode-obfuscate=<spec>` と `-fdyncode-mir-obfuscate=<spec>` は文字列を `DynCodeOptions::ObfuscateSpec` / `MirObfuscateSpec` へ。MIR spec は IR spec がデフォルト。パイプラインは内容を解析せず、難読化ライブラリが DSL を定義。詳細：
+**バイトストリーム層（2 フック）**：
+- `NEVERC_INTERPOSE_SC_POST_EXTRACT` — 抽出器が .text 内 reloc パッチとデータセクション監査を完了後、`.bin` 書込前。ペイロード全体の暗号化・ジャンクバイト・カスタムヘッダ用。
+- `NEVERC_INTERPOSE_SC_POST_FINALIZE` — 全 finalize 後；NeverC はこれ以上監査しない。
+
+フックの完全な一覧、pass 登録、コード例は [Plugin API ドキュメント](../plugin-api/README.ja.md) を参照。
 
 - IR 層：[ir-pass-design.md §9 — Obfuscation Interposes](ir-pass-design/README.ja.md#9-obfuscation-interposes).
-- MIR 層：[mir-pass-design.md §3 — User Obfuscation Interposes](mir-pass-design/README.ja.md#3-user-obfuscation-interposes)
+- MIR 層：[mir-pass-design.md §3 — User Obfuscation Interposes](mir-pass-design/README.ja.md#3-ユーザー難読化フック)
 
 ---
 

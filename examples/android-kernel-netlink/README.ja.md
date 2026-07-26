@@ -1,5 +1,7 @@
 **言語**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
+[← NeverC サンプル](../../docs/examples/README.ja.md)
+
 # Android カーネル Netlink
 
 双方向 Netlink IPC チャネル。ユーザ↔カーネル通信用の netlink ソケットを作成。PING（PONG応答）、VERSION（カーネルバージョン文字列）、ECHO（ペイロードエコー）に対応。`nvk_nl_open`、`nvk_nl_reply`、ディスパッチコールバックパターンを実演。

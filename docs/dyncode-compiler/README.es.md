@@ -6,6 +6,18 @@
 
 Compila código C directamente en dyncode binario plano **independiente de la posición, sin reubicaciones y sin sección de datos**.
 
+## Guías
+
+- [Tutorial de ensamblaje ARM64 (AArch64) — Perspectiva DynCode](arm64-assembly-tutorial/README.es.md)
+- [Arquitectura multiplataforma de NeverC DynCode — Resumen](cross-platform-architecture/README.es.md)
+- [Diseño de pasadas IR — Principios, pipeline y ejemplos antes/después](ir-pass-design/README.es.md)
+- [Soporte de dyncode modo kernel (Ring-0)](kernel-mode-dyncode/README.es.md)
+- [Diseño de pasadas MIR — Principios y puntos de interpose](mir-pass-design/README.es.md)
+- [Pipeline de DynCode, MIR y Estrategia PIC (Notas de Diseño)](pipeline-and-pic/README.es.md)
+- [Guía de extensión de plataforma](platform-extension-guide/README.es.md)
+- [Compilador de dyncode — Seguimiento de progreso](progress/README.es.md)
+- [Hoja de ruta](roadmap/README.es.md)
+
 ---
 
 ## Objetivos principales
@@ -99,7 +111,7 @@ neverc -v -fdyncode -target arm64-apple-macos fib.c -o fib.bin
 | `-fdyncode-bad-bytes=<hex-list>` | Lista de bytes prohibidos separados por comas. Escanea el `.bin` final tras post-extract; falla sin escribir archivo si hay coincidencia. |
 | `-fdyncode-bad-byte-profile=<name>` | Perfiles integrados : `null`, `c-string`, `http-newline`, `line`, `whitespace`, `ascii-control`. Combinable con `-fdyncode-bad-bytes=`. |
 | `-fdyncode-obfuscate=<spec>` | Pasa a interposes de plugin **nivel IR** vía la [API de Plugins](../plugin-api/README.es.md). No-op sin plugin cargado. Ver [ir-pass-design.md §9 — Obfuscation Interposes](ir-pass-design/README.es.md#9-obfuscation-interposes). |
-| `-fdyncode-mir-obfuscate=<spec>` | Pasa a interposes **nivel MIR** (`RunBeforePreEmit` / `RunAfterPreEmit`). Por defecto `-fdyncode-obfuscate=` si no se define. Ver [mir-pass-design.md §3 — User Obfuscation Interposes](mir-pass-design/README.es.md#3-user-obfuscation-interposes). |
+| `-fdyncode-mir-obfuscate=<spec>` | Pasa a interposes **nivel MIR** (`RunBeforePreEmit` / `RunAfterPreEmit`). Por defecto `-fdyncode-obfuscate=` si no se define. Ver [mir-pass-design.md §3 — User Obfuscation Interposes](mir-pass-design/README.es.md#3-interposes-de-ofuscación-del-usuario). |
 
 ---
 
@@ -286,31 +298,33 @@ docs/dyncode-compiler/
    - Windows: Win64 (rcx/rdx/r8/r9)
 3. El loader gestiona el vaciado de caché de instrucciones (arm64) / FlushInstructionCache (Windows).
 
-## Extensión de passes de ofuscación (interfaz reservada)
+## Ofuscación y extensión de plugins
 
-El pipeline dyncode solo garantiza que «el código se ejecute correctamente». La ofuscación (CFF, flujo falso, predicados opacos, cifrado de cadenas, sustitución de instrucciones, renombrado de registros, etc.) es trabajo aparte. `Pipeline.h` expone `ObfuscationInterposes` con **11 puntos de enganche** en tres capas :
+El pipeline dyncode en sí solo garantiza que «el código se ejecute correctamente». La ofuscación, el polimorfismo, los codificadores por etapas y funciones similares de la capa de estrategia **no están integrados a propósito** — los proporcionan plugins fuera del árbol a través de la [API de Plugins](../plugin-api/README.es.md).
 
-**Nivel IR (6 interposes, `ModulePassManager &`)**:
-- `RunBeforePrep` — Before any dyncode pass
-- `RunAfterPrep` — Linkage unified (internal + always_inline)
-- `RunBeforeInlining` — Last chance before AlwaysInliner
-- `RunAfterInlining` — IR fully compressed into one large function
-- `RunAfterStackify` — Final IR shape, next step is codegen
-- `RunAfterFinalIR` — After AllBlrPass, the true last IR interpose
+El pipeline expone **11 puntos de enganche** en tres capas, todos accesibles vía la C Plugin API (`NEVERC_INTERPOSE_SC_*`):
 
-**Nivel MIR (3 interposes, `TargetPassConfig &`)**:
-- `RunBeforePreEmit` — Registers allocated, **CFI/EH pseudos still present**
-- `RunAfterPreEmit` — **Built-in MIRPrepPass has stripped pseudos**, closest to the byte form AsmPrinter will see; ideal for instruction-level obfuscation/register renaming
-- `RunAfterFinalMIR` — True last MIR interpose, after LLVM `addPreEmitPass2()`, just before AsmPrinter
+**Nivel IR (6 interposes)**:
+- `NEVERC_INTERPOSE_SC_BEFORE_PREP` — Before any dyncode pass
+- `NEVERC_INTERPOSE_SC_AFTER_PREP` — Linkage unified (internal + always_inline)
+- `NEVERC_INTERPOSE_SC_BEFORE_INLINING` — Last chance before AlwaysInliner
+- `NEVERC_INTERPOSE_SC_AFTER_INLINING` — IR fully compressed into one large function
+- `NEVERC_INTERPOSE_SC_AFTER_STACKIFY` — Final IR shape, next step is codegen
+- `NEVERC_INTERPOSE_SC_AFTER_FINAL_IR` — After AllBlrPass, the true last IR interpose
 
-**Nivel flujo de bytes (2 interposes, `SmallVectorImpl<uint8_t> &`)**:
-- `RunPostExtract` — After extractor completes intra-text relocation patching and data-section audit; before `.bin` is written. Use for whole-payload encryption, junk byte insertion, or custom headers.
-- `RunPostFinalize` — After all finalize steps; NeverC performs no further auditing.
+**Nivel MIR (3 interposes)**:
+- `NEVERC_INTERPOSE_SC_BEFORE_PREEMIT` — Registers allocated, **CFI/EH pseudos still present**
+- `NEVERC_INTERPOSE_SC_AFTER_PREEMIT` — **Built-in MIRPrepPass has stripped pseudos**, closest to the byte form AsmPrinter will see; ideal for instruction-level obfuscation/register renaming
+- `NEVERC_INTERPOSE_SC_AFTER_FINAL_MIR` — True last MIR interpose, after LLVM `addPreEmitPass2()`, just before AsmPrinter
 
-`-fdyncode-obfuscate=<spec>` y `-fdyncode-mir-obfuscate=<spec>` pasan cadenas a `DynCodeOptions::ObfuscateSpec` / `MirObfuscateSpec`. La spec MIR coincide con la IR por defecto. El pipeline no analiza el contenido — la biblioteca de ofuscación define su propio DSL. Detalles:
+**Nivel flujo de bytes (2 interposes)**:
+- `NEVERC_INTERPOSE_SC_POST_EXTRACT` — After extractor completes intra-text relocation patching and data-section audit; before `.bin` is written. Use for whole-payload encryption, junk byte insertion, or custom headers.
+- `NEVERC_INTERPOSE_SC_POST_FINALIZE` — After all finalize steps; NeverC performs no further auditing.
+
+Consulta la [documentación de la API de Plugins](../plugin-api/README.es.md) para la lista completa de interposes, registro de pases y ejemplos de código.
 
 - IR-level: [ir-pass-design.md §9 — Obfuscation Interposes](ir-pass-design/README.es.md#9-obfuscation-interposes).
-- MIR-level: [mir-pass-design.md §3 — User Obfuscation Interposes](mir-pass-design/README.es.md#3-user-obfuscation-interposes)
+- MIR-level: [mir-pass-design.md §3 — User Obfuscation Interposes](mir-pass-design/README.es.md#3-interposes-de-ofuscación-del-usuario)
 ---
 
 ## Limitaciones actuales

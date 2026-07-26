@@ -71,7 +71,7 @@ Windows не имеет стабильного ABI системных вызов
 
 ### 4. Добавить Loader (только инструмент тестирования)
 
-Ссылка `loader_linux.c` и `loader_windows.c`. Типично: `mmap(RWX) → memcpy → icache flush → call`.
+Ссылка [`tests/neverc/dyncode/loader_linux.c`] и `loader_windows.c`. Типично: `mmap(RWX) → memcpy → icache flush → call`.
 
 ### 5. Обновить тесты
 
@@ -97,6 +97,44 @@ Windows не имеет стабильного ABI системных вызов
 
 ## Интерфейс расширения прохода обфускации
 
-Конвейер dyncode предоставляет 11 хуков через `Pipeline.h::ObfuscationInterposes` для сторонних библиотек обфускации. Встроенный MIR-патчинг также табличный: `Tables/MIRRewritePatterns.def` и `Tables/MIRRewriteOpcodes.def`. Предпочитайте записи в таблицах и узкие хелперы вместо разбрасывания целевых ветвей в теле прохода.
+Конвейер dyncode предоставляет 11 хуков через `Pipeline.h::ObfuscationInterposes` для сторонних библиотек обфускации:
 
+```
+PipelineStartEP:
+  RunBeforePrep → [ZeroReloc Prep] → RunAfterPrep →
+  [IndirectBr → MemIntrin → CompilerRt → SyscallStub →
+   WinPEBImport → KernelImport → Data2Text phase 1] →
+  RunBeforeInlining
+
+OptimizerLastEP:
+  RunAfterInlining → [Data2Text phase 2 → ZeroReloc Stackify] →
+  RunAfterStackify → [AllBlrPass] → RunAfterFinalIR
+
+MIR: RunBeforePreEmit → [MIRPrepPass] → RunAfterPreEmit →
+     [LLVM addPreEmitPass/addPreEmitPass2] → RunAfterFinalMIR
+
+Byte-stream: RunPostExtract → [finalize chain] → RunPostFinalize
+```
+
+Использование на уровне IR:
+```cpp
+neverc::dyncode::ObfuscationInterposes H;
+H.RunAfterInlining = [](llvm::ModulePassManager &MPM,
+                        const neverc::dyncode::DynCodeOptions &Opts) {
+  MPM.addPass(MyCFFPass(Opts.ObfuscateSpec));
+};
+// Регистрация через Plugin API: интерпозы NEVERC_INTERPOSE_SC_* (см. документацию plugin-api)
+```
+
+Использование на уровне MIR:
+```cpp
+H.RunAfterPreEmit = [](llvm::TargetPassConfig &TPC,
+                       const neverc::dyncode::DynCodeOptions &Opts) {
+  TPC.addExternalPass(new MyInstructionSubstitutionPass(Opts.MirObfuscateSpec));
+};
+```
+
+Встроенный MIR-патчинг также табличный: `Tables/MIRRewritePatterns.def` записывает диагностические имена паттернов, архитектурные фильтры и имена хелперов; `Tables/MIRRewriteOpcodes.def` записывает имена опкодов бэкенда. При добавлении новых dyncode-совместимых форм бэкенда предпочитайте записи в таблицах и узкие хелперы вместо разбрасывания целевых ветвей в теле прохода.
+
+[`tests/neverc/dyncode/loader_linux.c`]: ../../../tests/neverc/dyncode/loader_linux.c
 [`tests/neverc/DynCodeCrossTargetTests.cpp`]: ../../../tests/neverc/DynCodeCrossTargetTests.cpp

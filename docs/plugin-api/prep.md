@@ -293,10 +293,13 @@ Prep->CreateFeatureQueryPhaseOutput(Prep->Context, Frame, Continuation, &Out,
   never let an exception cross the boundary.
 
 See [`PluginPrep.h`] and [`Schema/PluginPrepSchema.inc`] for the normative
-declarations, and [`Schema/PrepSchema.json`] for the token-kind schema.
+declarations, [`Schema/PrepSchema.json`] for the token-kind schema, and
+[`Schema/PhaseSchema.json`] for the six preprocessor phases and their
+policies.
 
 <!-- reference links -->
 [`PluginPrep.h`]: ../../neverc/include/neverc/Plugin/PluginPrep.h
 [`PluginPrepSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginPrepSchema.inc
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
 [`Schema/PluginPrepSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginPrepSchema.inc
 [`Schema/PrepSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PrepSchema.json

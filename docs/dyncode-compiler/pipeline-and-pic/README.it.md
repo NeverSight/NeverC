@@ -82,7 +82,25 @@ Vedere [kernel-mode-dyncode.md](../kernel-mode-dyncode/README.it.md).
 
 ## 7. Livello compatibilità Windows POSIX
 
-**Zero consapevolezza utente**: Stesso sorgente C compila su tutti gli 8 triple senza `#ifdef _WIN32`. `WinPEBImportPass` implementa 3 fasi: scansione POSIX, generazione wrapper ponte (13 gruppi funzioni), risoluzione PEB. Dettagli: `write` → `GetStdHandle` + `WriteFile`, `mmap` → `VirtualAlloc`, `exit` → `ExitProcess`, ecc.
+### 7.1 Problema
+
+Il codice C multipiattaforma usa comunemente `write(fd, buf, n)`, `read(fd, buf, n)`, `exit(code)`, ecc. Sulle piattaforme Unix, `SyscallStubPass` li sostituisce con syscall inline. Su Windows questi nomi POSIX non hanno API Win32 corrispondenti, causando errori di "rilocazione non risolta".
+
+### 7.2 Obiettivo di progettazione
+
+**Zero consapevolezza utente**: lo stesso sorgente C compila su tutte le 8 triple target senza `#ifdef _WIN32` né chiamate manuali alle API Win32.
+
+### 7.3 Implementazione
+
+`WinPEBImportPass` implementa un'elaborazione in tre fasi:
+
+1. **Fase 1 — scansione POSIX**: scansiona le dichiarazioni extern non risolte rispetto a una tabella di compatibilità POSIX.
+2. **Fase 2 — generazione wrapper ponte**: `Win32PosixCompat.def` smista i nomi POSIX ai costruttori di wrapper che generano wrapper `always_inline` (es. `write` → `GetStdHandle` + `WriteFile`, `mmap` → `VirtualAlloc` con mappatura delle protezioni, `exit` → `ExitProcess`, ecc.). Coperti 13 gruppi di funzioni POSIX.
+3. **Fase 3 — risoluzione PEB**: le API Win32 referenziate dai wrapper vengono risolte tramite il normale resolver PEB walk.
+
+### 7.4 Estensibilità
+
+Aggiungere nuove funzioni di compatibilità POSIX: le aggiunte di soli alias cambiano solo `Win32PosixCompat.def`; nuove semantiche richiedono un piccolo IR builder + una voce di tabella. Le operazioni con stato come `open→CreateFileA` che necessitano di tabelle di durata fd/handle non sono emulate intenzionalmente.
 
 ## 8. Auto-correzione dichiarazione implicita K&R
 

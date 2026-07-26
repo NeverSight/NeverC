@@ -96,9 +96,8 @@ DynCode는 34개 페이즈로 이루어진 고정 그래프입니다. 30개의 �
 7. 봉인된 이미지 검증;
 8. 봉인된 커밋.
 
-ID, 정책, 안정성 등급, 게이트의 규범적 출처는
-[`neverc/include/neverc/Plugin/Schema/PhaseSchema.json`]이며, 실행 가능한 커버리지
-계약은 [`docs/plugin-api/coverage.json`]입니다.
+ID, 정책, 안정성 등급, 게이트의 규범적 출처는 [`Schema/PhaseSchema.json`]이며,
+실행 가능한 커버리지 계약은 [`coverage.json`]입니다.
 
 ## 내장 변환도 프로바이더다
 
@@ -185,11 +184,13 @@ read/write/insert/append/resize API를 거치며, `uint8_t **`는 존재하지 �
   프로바이더로 조용히 대체되지 않습니다.
 - 동시성 모드와 재진입 모드는 사실에 부합하는 가장 좁은 값으로 선언하십시오.
 
-읽기 전용 페이즈 트레이서는 [`pluginsdk/examples/DynCodeTracePlugin.c`]를, charset
-인코더는 [`pluginsdk/examples/DynCodeEncoderPlugin.c`]를 참고하십시오.
+규범적 선언은 [`PluginDynCode.h`]를, 읽기 전용 페이즈 트레이서는
+[`pluginsdk/examples/DynCodeTracePlugin.c`]를, charset 인코더는
+[`pluginsdk/examples/DynCodeEncoderPlugin.c`]를 참고하십시오.
 
 <!-- reference links -->
-[`docs/plugin-api/coverage.json`]: coverage.json
-[`neverc/include/neverc/Plugin/Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`coverage.json`]: coverage.json
+[`PluginDynCode.h`]: ../../neverc/include/neverc/Plugin/PluginDynCode.h
 [`pluginsdk/examples/DynCodeEncoderPlugin.c`]: ../../pluginsdk/examples/DynCodeEncoderPlugin.c
 [`pluginsdk/examples/DynCodeTracePlugin.c`]: ../../pluginsdk/examples/DynCodeTracePlugin.c
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json

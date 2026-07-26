@@ -552,6 +552,20 @@ string f = R"(line1\nline2)".encrypt();        // raw
 | 카운트 | `s.count("pattern".encrypt())` |
 | 대소문자 무시 검색 | `s.find_ic("needle".encrypt())` |
 
+```c
+string input = get_user_input();
+
+// Zero-allocation: decrypts and compares byte-by-byte, short-circuits on mismatch
+if (input == "admin".encrypt()) {
+    grant_access();
+}
+
+// Also zero-allocation
+if (input.starts_with("/api/v1".encrypt())) {
+    handle_api_request();
+}
+```
+
 ### 제한 사항
 
 - `.encrypt()`는 문자열 리터럴**에만** 적용 가능합니다. 변수에서 호출하면 컴파일 오류:
@@ -577,10 +591,18 @@ string e = "hello".encrypt().encrypt();  // 오류: .encrypt() can only be appli
 
 암호화와 복호화는 두 개의 매크로로 제어됩니다:
 
-- `NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx)` — 컴파일 타임: 평문→암호문
-- `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` — 런타임: 암호문→평문
+```c
+NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx)  // 컴파일 타임: 평문 → 암호문
+NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)  // 런타임: 암호문 → 평문
+```
 
-`ENCRYPT_BYTE` 기본값은 XOR. `DECRYPT_BYTE` 기본값은 **XOR 명령어 없는 산술 분해** — `(a + b) - (a & b) - (b & a)`로 `a ^ b`를 계산하며, `volatile` 중간 변수로 LLVM의 `xor` 재최적화를 방지. MBA (Mixed Boolean-Arithmetic) 난독화 패스로 추가 강화 가능.
+`ENCRYPT_BYTE` 기본값은 XOR:
+
+```c
+((char)((unsigned char)(byte) ^ (unsigned char)((key) >> (8 * ((idx) % sizeof(size_t))))))
+```
+
+`DECRYPT_BYTE` 기본값은 **XOR 명령어 없는 산술 분해** — `(a + b) - (a & b) - (b & a)`로 `a ^ b`를 계산하며, `volatile` 중간 변수로 LLVM의 `xor` 재최적화를 방지. MBA (Mixed Boolean-Arithmetic) 난독화 패스로 추가 강화 가능.
 
 비-XOR 알고리즘을 사용하려면 **두 매크로를 모두** 정의하며, 수학적 역함수여야 합니다:
 
@@ -601,15 +623,41 @@ string e = "hello".encrypt().encrypt();  // 오류: .encrypt() can only be appli
 
 | 매크로 | 기본값 | 설명 |
 |--------|--------|------|
-| `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` | 회전 키 바이트를 사용한 XOR | 바이트 단위 복호화 연산 |
+| `NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx)` | 회전 키 바이트를 사용한 XOR | 바이트 단위 암호화 연산 (컴파일 타임) |
+| `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` | 회전 키 바이트를 사용한 XOR | 바이트 단위 복호화 연산 (런타임); `ENCRYPT_BYTE` 의 역이어야 함 |
 
 ### 배열 및 구조체의 암호화 문자열
 
-`.encrypt()`는 집계 초기화자(`string[]`, `struct { string; }`, 2D 배열, 중첩 조합)에서 동작합니다. owned 멤버는 스코프 종료 시 자동 해제되며, 무할당 비교 경로도 동일하게 적용됩니다.
+`.encrypt()`는 집계 초기화자에서 동작합니다. owned `string` 멤버는 스코프 종료 시 자동 해제됩니다([복합 타입 자동 정리](#복합-타입-자동-정리) 참조):
+
+```c
+typedef struct { string user; string pass; } creds;
+
+creds login = {.user = "admin".encrypt(), .pass = "s3cret".encrypt()};
+string routes[] = {"/api/v1".encrypt(), "/api/v2".encrypt()};
+string grid[2][2] = {
+    {"a".encrypt(), "b".encrypt()},
+    {"c".encrypt(), "d".encrypt()}
+};
+
+// Zero-allocation comparisons still apply
+if (login.user == "admin".encrypt()) { /* ... */ }
+```
 
 ### DynCode 모드 호환성
 
 문자열 암호화는 dyncode(`-fdyncode`)를 포함한 모든 컴파일 모드에서 작동합니다. DynCode 모드에서는 암호화 문자열의 복호화에 로컬 arena 할당기를 사용합니다. 사용자 모드와 커널 모드(`-mdyncode-context=kernel`) 모두 지원됩니다.
+
+```c
+// DynCode with encrypted strings — compiles to position-independent flat binary
+int main(int a, int b) {
+    string secret = "dyncode_secret".encrypt();
+    if (secret.starts_with("shell".encrypt())) {
+        // ...
+    }
+    return 0;
+}
+```
 
 ---
 

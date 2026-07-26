@@ -1,5 +1,7 @@
 **語言**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
+[← NeverC 範例](../../docs/examples/README.zh-TW.md)
+
 # Android 核心低可見性模組
 
 模組可見性管理展示。編譯旗標：無=基本清單可見性，`-DNVK_LOWVIS_FILTER`=完整可見性過濾（清單+sysfs+proc），`-DNVK_LOWVIS_FILTER_FULL`=擴展（dmesg+PID+掛載+maps），`-DNVK_LOWVIS_CRED`=憑證包裝展示（`struct cred`），`-DNVK_LOWVIS_SELINUX`=SELinux 強制狀態展示（permissive）。

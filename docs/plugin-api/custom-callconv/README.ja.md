@@ -181,7 +181,7 @@ Core->SetFunctionCallingConvention(Core->Context, Task, Function,
 
 `NEVERC_IR_CALLING_CONVENTION_NEVER_C_CUSTOM` は `CallingConv::NeverC_Custom`（LLVM 値 1000）の ABI 安定な名前です。続いてプラグインは `GetValueUseCount` / `GetValueUse` でその関数の使用箇所をたどり、`call`、`invoke`、`callbr` の被呼び出しオペランドである使用箇所ごとに、`SetInstructionProperty` と `NEVERC_IR_PROPERTY_CALLING_CONVENTION` で同じ規約を命令に設定します。それ以外の使用箇所はアドレスが漏れたことを意味し、これが「アドレスが取られた」警告の出どころです。
 
-自前のターゲットを登録するプラグインは、代わりに `NevercCallingConventionDescriptor` に `PlanCallingConvention` コールバックを提供し、spec の層を飛ばして直接 plan を生成することもできます。[ターゲット、MC、アセンブリ、オブジェクト](../target-mc-object.ja.md) を参照してください。
+自前のターゲットを登録するプラグインは、代わりに `NevercCallingConventionDescriptor` に `PlanCallingConvention` コールバックを提供し、spec の層を飛ばして直接 plan を生成することもできます。[ターゲット、MC、アセンブリ、オブジェクト](../target-mc-object.ja.md#abi-と呼び出し規約) を参照してください。
 
 ## テスト
 
@@ -244,7 +244,12 @@ custom_attr(...)              (neverc.ir.pass.post_opt)
 
 バックエンドの実行器は**一度きりの実装**であり、ポリシーの判断はすべてプラグイン側にあります。新しい規約を追加するのに NeverC を再ビルドする必要は決してありません。
 
+上で使ったコアテーブルは [`PluginIR.h`] を、`NevercCallingConventionDescriptor` は [`PluginTarget.h`] を、この pass が接続する `neverc.ir.pass.post_opt` フェーズは [`Schema/PhaseSchema.json`] を参照してください。
+
 <!-- reference links -->
 [`CustomCallConvPlugin.c`]: ../../../pluginsdk/examples/CustomCallConvPlugin.c
 [`llvm/include/llvm/CodeGen/NeverCCallConv.h`]: ../../../llvm/include/llvm/CodeGen/NeverCCallConv.h
+[`PluginIR.h`]: ../../../neverc/include/neverc/Plugin/PluginIR.h
+[`PluginTarget.h`]: ../../../neverc/include/neverc/Plugin/PluginTarget.h
+[`Schema/PhaseSchema.json`]: ../../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
 [`tests/neverc/CustomCallConvTests.cpp`]: ../../../tests/neverc/CustomCallConvTests.cpp

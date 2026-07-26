@@ -183,7 +183,7 @@ Core->SetFunctionCallingConvention(Core->Context, Task, Function,
 
 و`NEVERC_IR_CALLING_CONVENTION_NEVER_C_CUSTOM` هو الاسم المستقر على مستوى ABI لـ `CallingConv::NeverC_Custom` (القيمة 1000 في LLVM). بعد ذلك تجوب الإضافة استخدامات الدالة عبر `GetValueUseCount` / `GetValueUse`، وفي كل استخدام يكون معامل المستدعَى في `call` أو `invoke` أو `callbr` تضبط الاتفاقية نفسها على التعليمة عبر `SetInstructionProperty` مع `NEVERC_IR_PROPERTY_CALLING_CONVENTION`. وأي استخدام آخر يعني أن العنوان قد تسرّب، ومن هنا يأتي التحذير الخاص بأخذ العنوان.
 
-أما الإضافة التي تسجّل هدفًا خاصًا بها فبإمكانها بدلًا من ذلك أن توفّر رد النداء `PlanCallingConvention` في `NevercCallingConventionDescriptor` الخاص بها وتنتج الخطط مباشرة، متخطيةً طبقة المواصفات. انظر [الهدف وMC والتجميع والكائنات](../target-mc-object.ar.md).
+أما الإضافة التي تسجّل هدفًا خاصًا بها فبإمكانها بدلًا من ذلك أن توفّر رد النداء `PlanCallingConvention` في `NevercCallingConventionDescriptor` الخاص بها وتنتج الخطط مباشرة، متخطيةً طبقة المواصفات. انظر [الهدف وMC والتجميع والكائنات](../target-mc-object.ar.md#abi-واصطلاحات-الاستدعاء).
 
 ## الاختبارات
 
@@ -248,9 +248,14 @@ custom_attr(...)              (neverc.ir.pass.post_opt)
 
 المنفِّذ في الواجهة الخلفية **تنفيذ يُكتب مرة واحدة**؛ فكل قرارات السياسة تعيش داخل الإضافة. وإضافة اتفاقية جديدة لا تستلزم أبدًا إعادة بناء NeverC.
 
+انظر [`PluginIR.h`] للجدول الأساسي المستخدَم أعلاه، و[`PluginTarget.h`] لـ `NevercCallingConventionDescriptor`، و[`Schema/PhaseSchema.json`] للمرحلة `neverc.ir.pass.post_opt` التي يرتبط بها التمرير.
+
 <!-- reference links -->
 [`CustomCallConvPlugin.c`]: ../../../pluginsdk/examples/CustomCallConvPlugin.c
 [`llvm/include/llvm/CodeGen/NeverCCallConv.h`]: ../../../llvm/include/llvm/CodeGen/NeverCCallConv.h
+[`PluginIR.h`]: ../../../neverc/include/neverc/Plugin/PluginIR.h
+[`PluginTarget.h`]: ../../../neverc/include/neverc/Plugin/PluginTarget.h
+[`Schema/PhaseSchema.json`]: ../../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
 [`tests/neverc/CustomCallConvTests.cpp`]: ../../../tests/neverc/CustomCallConvTests.cpp
 
 </div>

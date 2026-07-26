@@ -312,7 +312,7 @@ typedef struct NevercJobResultDescriptor {
 ```
 
 `OutputSeals` porte les `NevercOutputSealHandle` produits via l'API d'E/S (voir
-[Source et E/S](source.fr.md)) : c'est ainsi que l'hôte confirme que les
+[Source et E/S](source.fr.md#écrire-des-sorties)) : c'est ainsi que l'hôte confirme que les
 fichiers qu'une tâche a prétendu écrire existent réellement avec les empreintes
 annoncées. `GetJobResult` lit un résultat validé et, comme la sélection de
 chaîne d'outils, rapporte `BuiltinProviderUsed`.

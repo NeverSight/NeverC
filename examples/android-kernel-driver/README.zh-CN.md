@@ -1,5 +1,7 @@
 **语言**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
+[← NeverC 示例](../../docs/examples/README.zh-CN.md)
+
 # Android 内核驱动模板
 
 通过 `kallsyms_lookup_name` 动态解析符号的驱动模板。仅导入 `register_kprobe`/`unregister_kprobe`（GKI 稳定 ABI）。单一源码兼容所有 GKI 内核 5.10–6.12。

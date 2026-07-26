@@ -111,8 +111,8 @@ Die Phasen in ihrer Reihenfolge:
 8. der versiegelte Commit.
 
 Die normative Quelle für IDs, Policies, Stabilitätsstufen und Gates ist
-[`neverc/include/neverc/Plugin/Schema/PhaseSchema.json`]; der ausführbare
-Abdeckungsvertrag ist [`docs/plugin-api/coverage.json`].
+[`Schema/PhaseSchema.json`]; der ausführbare Abdeckungsvertrag ist
+[`coverage.json`].
 
 ## Eingebaute Transformationen sind ebenfalls Provider
 
@@ -219,12 +219,14 @@ wählt die Ausführungsebene.
 - Deklarieren Sie die engsten wahrheitsgemäßen Nebenläufigkeits- und
   Reentrancy-Modelle.
 
-Einen reinen Lese-Tracer für Phasen finden Sie in
+Die normativen Deklarationen stehen in [`PluginDynCode.h`], einen reinen
+Lese-Tracer für Phasen finden Sie in
 [`pluginsdk/examples/DynCodeTracePlugin.c`] und einen Charset-Encoder in
 [`pluginsdk/examples/DynCodeEncoderPlugin.c`].
 
 <!-- reference links -->
-[`docs/plugin-api/coverage.json`]: coverage.json
-[`neverc/include/neverc/Plugin/Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`coverage.json`]: coverage.json
+[`PluginDynCode.h`]: ../../neverc/include/neverc/Plugin/PluginDynCode.h
 [`pluginsdk/examples/DynCodeEncoderPlugin.c`]: ../../pluginsdk/examples/DynCodeEncoderPlugin.c
 [`pluginsdk/examples/DynCodeTracePlugin.c`]: ../../pluginsdk/examples/DynCodeTracePlugin.c
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json

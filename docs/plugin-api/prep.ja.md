@@ -289,10 +289,12 @@ Prep->CreateFeatureQueryPhaseOutput(Prep->Context, Frame, Continuation, &Out,
   の外へ出してはいけません。
 
 規範的な宣言は [`PluginPrep.h`] と [`Schema/PluginPrepSchema.inc`] を、トークン種別の
-スキーマは [`Schema/PrepSchema.json`] を参照してください。
+スキーマは [`Schema/PrepSchema.json`] を、6 つのプリプロセッサフェーズとその
+ポリシーは [`Schema/PhaseSchema.json`] を参照してください。
 
 <!-- reference links -->
 [`PluginPrep.h`]: ../../neverc/include/neverc/Plugin/PluginPrep.h
 [`PluginPrepSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginPrepSchema.inc
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
 [`Schema/PluginPrepSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginPrepSchema.inc
 [`Schema/PrepSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PrepSchema.json

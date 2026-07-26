@@ -10,7 +10,7 @@
 
 [![AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](../../LICENSE)
 [![C23](https://img.shields.io/badge/Standard-C23-brightgreen.svg)](#fonctionnalités)
-[![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-informational.svg)](#compilation-croisée-vers-windows)
+![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-informational.svg)
 [![Arch](https://img.shields.io/badge/Arch-x86__64%20%7C%20AArch64-orange.svg)](#fonctionnalités)
 
 [Documentation](../README.fr.md) · [Guide dyncode](../dyncode-compiler/README.fr.md) · [Runtimes intégrés](../builtins/README.fr.md) · [API Plugin](../plugin-api/README.fr.md) · [Feuille de route](../roadmap/README.fr.md)

@@ -393,12 +393,14 @@ build-neverc/bin/neverc \
 - 初始化每个表头和保留字段；跨 C 边界返回状态码，绝不让 C++ 异常穿过。
 - `neverc.mir.final_verify` 是 sealed 的，无论如何都会运行。
 
-规范性声明、schema 常量、阶段策略与覆盖证据分别见 [`PluginMIR.h`]、
-[`Schema/PluginMIRSchema.inc`]、[`Schema/PhaseSchema.json`] 和 [`coverage.json`]。
+规范性声明、schema 本身、其生成的常量、阶段策略与覆盖证据分别见
+[`PluginMIR.h`]、[`Schema/MIRSchema.json`]、[`Schema/PluginMIRSchema.inc`]、
+[`Schema/PhaseSchema.json`] 和 [`coverage.json`]。
 
 <!-- reference links -->
 [`coverage.json`]: coverage.json
 [`PluginMIR.h`]: ../../neverc/include/neverc/Plugin/PluginMIR.h
 [`pluginsdk/examples/MachinePass.c`]: ../../pluginsdk/examples/MachinePass.c
+[`Schema/MIRSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/MIRSchema.json
 [`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
 [`Schema/PluginMIRSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginMIRSchema.inc

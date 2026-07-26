@@ -1,5 +1,7 @@
 **언어**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
+[← NeverC 예제](../../docs/examples/README.ko.md)
+
 # Linux 완전 정적 링크 예제
 
 NeverC로 빌드한 자체 포함형 정적 링크 Linux 실행 파일. 런타임 의존성 없음.

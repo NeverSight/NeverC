@@ -10,7 +10,7 @@ Enlazador integrado · Pipeline dyncode · Runtimes integrados (`string` · `mim
 
 [![AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](../../LICENSE)
 [![C23](https://img.shields.io/badge/Standard-C23-brightgreen.svg)](#características)
-[![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-informational.svg)](#compilación-cruzada-a-windows)
+![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-informational.svg)
 [![Arch](https://img.shields.io/badge/Arch-x86__64%20%7C%20AArch64-orange.svg)](#características)
 
 [Documentación](../README.es.md) · [Guía dyncode](../dyncode-compiler/README.es.md) · [Runtimes integrados](../builtins/README.es.md) · [API de Plugins](../plugin-api/README.es.md) · [Hoja de ruta](../roadmap/README.es.md)

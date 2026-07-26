@@ -552,6 +552,20 @@ Cuando un literal cifrado se usa directamente en una expresión de comparación 
 | Conteo | `s.count(...)` |
 | Búsqueda sin distinción | `s.find_ic(...)` |
 
+```c
+string input = get_user_input();
+
+// Zero-allocation: decrypts and compares byte-by-byte, short-circuits on mismatch
+if (input == "admin".encrypt()) {
+    grant_access();
+}
+
+// Also zero-allocation
+if (input.starts_with("/api/v1".encrypt())) {
+    handle_api_request();
+}
+```
+
 ### Restricciones
 
 - `.encrypt()` **solo** puede aplicarse a literales de cadena. Llamarlo en una variable produce un error de compilación:
@@ -577,10 +591,18 @@ string e = "hello".encrypt().encrypt();  // ERROR: .encrypt() can only be applie
 
 El cifrado y descifrado se controlan mediante dos macros:
 
-- `NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx)` — compilación: texto plano→texto cifrado
-- `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` — ejecución: texto cifrado→texto plano
+```c
+NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx)  // compilación: texto plano → texto cifrado
+NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)  // ejecución: texto cifrado → texto plano
+```
 
-`ENCRYPT_BYTE` usa XOR por defecto. `DECRYPT_BYTE` usa por defecto una **descomposición aritmética sin instrucción XOR** — calcula `a ^ b` como `(a + b) - (a & b) - (b & a)` con intermediarios `volatile` para prevenir la re-optimización de LLVM a `xor`. Puede reforzarse con pasadas de ofuscación MBA (Mixed Boolean-Arithmetic).
+`ENCRYPT_BYTE` usa XOR por defecto:
+
+```c
+((char)((unsigned char)(byte) ^ (unsigned char)((key) >> (8 * ((idx) % sizeof(size_t))))))
+```
+
+`DECRYPT_BYTE` usa por defecto una **descomposición aritmética sin instrucción XOR** — calcula `a ^ b` como `(a + b) - (a & b) - (b & a)` con intermediarios `volatile` para prevenir la re-optimización de LLVM a `xor`. Puede reforzarse con pasadas de ofuscación MBA (Mixed Boolean-Arithmetic).
 
 Para un algoritmo no-XOR, defina **ambas** macros (deben ser inversas matemáticas):
 
@@ -601,15 +623,41 @@ Para un algoritmo no-XOR, defina **ambas** macros (deben ser inversas matemátic
 
 | Macro | Por defecto | Descripción |
 |-------|------------|-------------|
-| `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` | XOR con bytes de clave rotativa | Operación de descifrado por byte |
+| `NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx)` | XOR con bytes de clave rotativa | Operación de cifrado por byte (tiempo de compilación) |
+| `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` | XOR con bytes de clave rotativa | Operación de descifrado por byte (tiempo de ejecución); debe ser la inversa de `ENCRYPT_BYTE` |
 
 ### Cadenas cifradas en arrays y estructuras
 
-`.encrypt()` funciona en inicializadores agregados (`string[]`, `struct { string; }`, arrays 2D, combinaciones anidadas). Los miembros owned se liberan al salir del ámbito; las comparaciones sin asignación siguen aplicando.
+`.encrypt()` funciona en inicializadores agregados. Los miembros `string` owned se liberan automáticamente al salir del ámbito (ver [Limpieza automática de tipos compuestos](#limpieza-automática-de-tipos-compuestos)):
+
+```c
+typedef struct { string user; string pass; } creds;
+
+creds login = {.user = "admin".encrypt(), .pass = "s3cret".encrypt()};
+string routes[] = {"/api/v1".encrypt(), "/api/v2".encrypt()};
+string grid[2][2] = {
+    {"a".encrypt(), "b".encrypt()},
+    {"c".encrypt(), "d".encrypt()}
+};
+
+// Zero-allocation comparisons still apply
+if (login.user == "admin".encrypt()) { /* ... */ }
+```
 
 ### Compatibilidad con modo DynCode
 
 La encriptación de cadenas funciona en todos los modos de compilación, incluyendo dyncode (`-fdyncode`). En modo dyncode, el descifrado utiliza el asignador arena local. Se admiten los contextos de usuario y kernel (`-mdyncode-context=kernel`).
+
+```c
+// DynCode with encrypted strings — compiles to position-independent flat binary
+int main(int a, int b) {
+    string secret = "dyncode_secret".encrypt();
+    if (secret.starts_with("shell".encrypt())) {
+        // ...
+    }
+    return 0;
+}
+```
 
 ---
 

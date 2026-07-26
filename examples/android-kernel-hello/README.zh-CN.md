@@ -1,5 +1,7 @@
 **语言**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
+[← NeverC 示例](../../docs/examples/README.zh-CN.md)
+
 # Android 内核 Hello
 
 最小的 NeverC Android 内核模块（.ko）。通过 kprobe 引导 `kallsyms_lookup_name`，打印加载消息后干净退出。用于验证编译→链接→insmod 完整流程的最简冒烟测试。

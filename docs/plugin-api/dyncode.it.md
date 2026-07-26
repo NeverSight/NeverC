@@ -112,8 +112,8 @@ Le fasi, in ordine, sono:
 8. il commit sigillato.
 
 La fonte normativa di ID, policy, livelli di stabilità e cancelli è
-[`neverc/include/neverc/Plugin/Schema/PhaseSchema.json`]; il contratto di copertura
-eseguibile è [`docs/plugin-api/coverage.json`].
+[`Schema/PhaseSchema.json`]; il contratto di copertura eseguibile è
+[`coverage.json`].
 
 ## Anche le trasformazioni integrate sono provider
 
@@ -216,12 +216,14 @@ intermedio e `-fdyncode-report=` scrive il report di audit.
   non ripiega in silenzio sul provider integrato.
 - Dichiarate i modelli di concorrenza e rientranza più stretti che siano veri.
 
-Vedete [`pluginsdk/examples/DynCodeTracePlugin.c`] per un tracciatore di fasi in
-sola lettura e [`pluginsdk/examples/DynCodeEncoderPlugin.c`] per un codificatore di
+Vedete [`PluginDynCode.h`] per le dichiarazioni normative,
+[`pluginsdk/examples/DynCodeTracePlugin.c`] per un tracciatore di fasi in sola
+lettura e [`pluginsdk/examples/DynCodeEncoderPlugin.c`] per un codificatore di
 charset.
 
 <!-- reference links -->
-[`docs/plugin-api/coverage.json`]: coverage.json
-[`neverc/include/neverc/Plugin/Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`coverage.json`]: coverage.json
+[`PluginDynCode.h`]: ../../neverc/include/neverc/Plugin/PluginDynCode.h
 [`pluginsdk/examples/DynCodeEncoderPlugin.c`]: ../../pluginsdk/examples/DynCodeEncoderPlugin.c
 [`pluginsdk/examples/DynCodeTracePlugin.c`]: ../../pluginsdk/examples/DynCodeTracePlugin.c
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json

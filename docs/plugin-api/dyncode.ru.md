@@ -109,8 +109,8 @@ IR, финальная проверка MIR, проверка образа и ф
 8. запечатанная фиксация.
 
 Нормативным источником идентификаторов, политик, уровней стабильности и ворот
-служит [`neverc/include/neverc/Plugin/Schema/PhaseSchema.json`]; исполняемый
-контракт покрытия — [`docs/plugin-api/coverage.json`].
+служит [`Schema/PhaseSchema.json`]; исполняемый контракт покрытия —
+[`coverage.json`].
 
 ## Встроенные преобразования тоже поставщики
 
@@ -213,12 +213,14 @@ PIC-доказательство над финальным неизменяем�
   неудачу, не откатывается молча к встроенному поставщику.
 - Объявляйте самые узкие правдивые модели параллелизма и реентерабельности.
 
-См. [`pluginsdk/examples/DynCodeTracePlugin.c`] для трассировщика фаз только для
+См. [`PluginDynCode.h`] для нормативных объявлений,
+[`pluginsdk/examples/DynCodeTracePlugin.c`] для трассировщика фаз только для
 чтения и [`pluginsdk/examples/DynCodeEncoderPlugin.c`] для кодировщика набора
 символов.
 
 <!-- reference links -->
-[`docs/plugin-api/coverage.json`]: coverage.json
-[`neverc/include/neverc/Plugin/Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`coverage.json`]: coverage.json
+[`PluginDynCode.h`]: ../../neverc/include/neverc/Plugin/PluginDynCode.h
 [`pluginsdk/examples/DynCodeEncoderPlugin.c`]: ../../pluginsdk/examples/DynCodeEncoderPlugin.c
 [`pluginsdk/examples/DynCodeTracePlugin.c`]: ../../pluginsdk/examples/DynCodeTracePlugin.c
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json

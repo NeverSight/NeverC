@@ -1,5 +1,7 @@
 **語言**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
+[← NeverC 範例](../../docs/examples/README.zh-TW.md)
+
 # Android 核心 Probe
 
 使用 `neverc_krt_probe_register` 在 `do_faccessat` 內部的任意指令處（非函數入口）進行 interpose。演示：

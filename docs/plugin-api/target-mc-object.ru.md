@@ -203,7 +203,7 @@ plan(void *UserData, const NevercCallingConventionQuery *Query,
 
 `Query->SchemaDigest` — значение LOCKSTEP: `RegisterNumber` что-то значит
 только относительно схемы, которую он называет. Полный разобранный пример см.
-в [Пользовательские соглашения о вызовах](custom-callconv/README.ru.md) и
+в [Пользовательские соглашения о вызовах](custom-callconv/README.ru.md#материализованные-планы) и
 [`pluginsdk/examples/CustomCallConvPlugin.c`].
 
 ## Маршруты генерации кода
@@ -510,10 +510,13 @@ ObjectFormat->RegisterFormat(ObjectFormat->Context, RegistrarContext,
   `object.final_verify` и `object.commit` запечатаны. Только наблюдение.
 
 Нормативные объявления см. в [`PluginTarget.h`], [`PluginMC.h`],
-[`PluginObject.h`] и [`Schema/PhaseSchema.json`], а [`coverage.json`] сопоставляет
-каждую из этих стабильных фаз с её положительными, отрицательными,
-замещающими, наблюдательными (только чтение) тестами и тестами запечатанных
-шлюзов.
+[`PluginObject.h`] и [`Schema/PhaseSchema.json`]; используемые ими виды
+сущностей, операндов, fixup-ов и секций происходят из
+[`Schema/MCSchema.json`] и [`Schema/ObjectSchema.json`], из которых
+порождаются [`Schema/PluginMCSchema.inc`] и
+[`Schema/PluginObjectSchema.inc`]. А [`coverage.json`] сопоставляет каждую из
+этих стабильных фаз с её положительными, отрицательными, замещающими,
+наблюдательными (только чтение) тестами и тестами запечатанных шлюзов.
 
 <!-- reference links -->
 [`coverage.json`]: coverage.json
@@ -523,4 +526,8 @@ ObjectFormat->RegisterFormat(ObjectFormat->Context, RegistrarContext,
 [`pluginsdk/examples/MCObserverPlugin.c`]: ../../pluginsdk/examples/MCObserverPlugin.c
 [`pluginsdk/examples/ObjectRewritePlugin.c`]: ../../pluginsdk/examples/ObjectRewritePlugin.c
 [`PluginTarget.h`]: ../../neverc/include/neverc/Plugin/PluginTarget.h
+[`Schema/MCSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/MCSchema.json
+[`Schema/ObjectSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/ObjectSchema.json
 [`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`Schema/PluginMCSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginMCSchema.inc
+[`Schema/PluginObjectSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginObjectSchema.inc

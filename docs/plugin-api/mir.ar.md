@@ -416,14 +416,15 @@ build-neverc/bin/neverc \
   استثناء C++ يعبرها أبدًا.
 - `neverc.mir.final_verify` مختومة. تعمل مهما حدث.
 
-انظر [`PluginMIR.h`] و[`Schema/PluginMIRSchema.inc`] و[`Schema/PhaseSchema.json`]
-و[`coverage.json`] للإعلانات المِعيارية وثوابت المخطط وسياسات المراحل وأدلة
-التغطية.
+انظر [`PluginMIR.h`] و[`Schema/MIRSchema.json`] و[`Schema/PluginMIRSchema.inc`]
+و[`Schema/PhaseSchema.json`] و[`coverage.json`] للإعلانات المِعيارية وللمخطط
+نفسه ولثوابته المولَّدة وسياسات المراحل وأدلة التغطية.
 
 <!-- reference links -->
 [`coverage.json`]: coverage.json
 [`PluginMIR.h`]: ../../neverc/include/neverc/Plugin/PluginMIR.h
 [`pluginsdk/examples/MachinePass.c`]: ../../pluginsdk/examples/MachinePass.c
+[`Schema/MIRSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/MIRSchema.json
 [`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
 [`Schema/PluginMIRSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginMIRSchema.inc
 

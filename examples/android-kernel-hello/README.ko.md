@@ -1,5 +1,7 @@
 **언어**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
+[← NeverC 예제](../../docs/examples/README.ko.md)
+
 # Android 커널 Hello
 
 최소한의 NeverC Android 커널 모듈(.ko). kprobe를 통해 `kallsyms_lookup_name`을 부트스트랩하고 로드 메시지를 출력한 후 정상 종료합니다. 컴파일→링크→insmod 전체 흐름 검증.

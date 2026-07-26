@@ -181,7 +181,7 @@ Core->SetFunctionCallingConvention(Core->Context, Task, Function,
 
 `NEVERC_IR_CALLING_CONVENTION_NEVER_C_CUSTOM` 是 `CallingConv::NeverC_Custom`（LLVM 值 1000）在 ABI 層的穩定名稱。接著外掛用 `GetValueUseCount` / `GetValueUse` 走訪該函式的所有使用點，對每一個作為 `call`、`invoke` 或 `callbr` 被呼叫方運算元的使用點，透過 `SetInstructionProperty` 搭配 `NEVERC_IR_PROPERTY_CALLING_CONVENTION` 為指令設定相同的慣例。其餘任何使用點都代表位址發生了逃逸，這正是「位址被取用」警告的來源。
 
-如果外掛註冊了自己的目標，也可以在其 `NevercCallingConventionDescriptor` 上提供 `PlanCallingConvention` 回呼直接產出 plan，跳過 spec 這一層。參見[目標、MC、組譯與目的檔](../target-mc-object.zh-TW.md)。
+如果外掛註冊了自己的目標，也可以在其 `NevercCallingConventionDescriptor` 上提供 `PlanCallingConvention` 回呼直接產出 plan，跳過 spec 這一層。參見[目標、MC、組譯與目的檔](../target-mc-object.zh-TW.md#abi-與呼叫慣例)。
 
 ## 測試
 
@@ -244,7 +244,12 @@ custom_attr(...)              (neverc.ir.pass.post_opt)
 
 後端執行器是**一次性實作** —— 所有策略決策都在外掛裡。新增一個慣例永遠不需要重新建置 NeverC。
 
+上面用到的核心表請見 [`PluginIR.h`]，`NevercCallingConventionDescriptor` 請見 [`PluginTarget.h`]，該 pass 掛載的 `neverc.ir.pass.post_opt` 階段請見 [`Schema/PhaseSchema.json`]。
+
 <!-- reference links -->
 [`CustomCallConvPlugin.c`]: ../../../pluginsdk/examples/CustomCallConvPlugin.c
 [`llvm/include/llvm/CodeGen/NeverCCallConv.h`]: ../../../llvm/include/llvm/CodeGen/NeverCCallConv.h
+[`PluginIR.h`]: ../../../neverc/include/neverc/Plugin/PluginIR.h
+[`PluginTarget.h`]: ../../../neverc/include/neverc/Plugin/PluginTarget.h
+[`Schema/PhaseSchema.json`]: ../../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
 [`tests/neverc/CustomCallConvTests.cpp`]: ../../../tests/neverc/CustomCallConvTests.cpp

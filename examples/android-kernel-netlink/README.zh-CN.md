@@ -1,5 +1,7 @@
 **语言**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
+[← NeverC 示例](../../docs/examples/README.zh-CN.md)
+
 # Android 内核 Netlink
 
 双向 Netlink IPC 通道。创建 netlink socket 用于用户态↔内核态通信。支持 PING（返回 PONG）、VERSION（内核版本字符串）和 ECHO（负载回显）。演示 `nvk_nl_open`、`nvk_nl_reply` 和分发回调模式。

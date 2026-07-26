@@ -58,6 +58,8 @@
 | [内核全功能 SDK](../../examples/android-kernel-full/README.zh-CN.md) | 完整 SDK 集成 | Netlink IPC、interpose、凭证包装、模块可见性、SELinux 策略控制、VMA、文件 I/O |
 | [内核字符设备](../../examples/android-kernel-chardev/README.zh-CN.md) | 字符设备 + ioctl | `misc_register`，ioctl 分发，`/proc` seq_file |
 | [内核 Netlink](../../examples/android-kernel-netlink/README.zh-CN.md) | 双向 netlink IPC | PING/VERSION/ECHO 命令，`nvk_nl_open`/`nvk_nl_reply` |
+| [内核 Probe](../../examples/android-kernel-probe/README.zh-CN.md) | 探测任意一条指令 | `neverc_krt_probe_register`、完整寄存器上下文、按优先级链式派发、跳过/重定向 |
+| [内核多文件模块](../../examples/android-kernel-multifile/README.zh-CN.md) | 多文件内核模块 | 只需一次 `NEVERC_KRT_BOOTSTRAP()`、`weak_odr` 共享状态、init/interpose/helper 分文件 |
 
 ---
 

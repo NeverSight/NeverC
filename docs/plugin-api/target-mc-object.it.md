@@ -206,7 +206,7 @@ plan(void *UserData, const NevercCallingConventionQuery *Query,
 
 `Query->SchemaDigest` è un valore LOCKSTEP: `RegisterNumber` significa
 qualcosa solo rispetto allo schema che nomina. Per l'esempio completo si vedano
-[Convenzioni di chiamata personalizzate](custom-callconv/README.it.md) e
+[Convenzioni di chiamata personalizzate](custom-callconv/README.it.md#piani-materializzati) e
 [`pluginsdk/examples/CustomCallConvPlugin.c`].
 
 ## Rotte di generazione del codice
@@ -517,7 +517,10 @@ completa.
   `object.final_verify` e `object.commit` sono sigillati. Solo osservazione.
 
 Per le dichiarazioni normative si vedano [`PluginTarget.h`], [`PluginMC.h`],
-[`PluginObject.h`] e [`Schema/PhaseSchema.json`], e [`coverage.json`], che mappa
+[`PluginObject.h`] e [`Schema/PhaseSchema.json`]; i generi di entità, operando,
+fixup e sezione che usano provengono da [`Schema/MCSchema.json`] e
+[`Schema/ObjectSchema.json`], che generano [`Schema/PluginMCSchema.inc`] e
+[`Schema/PluginObjectSchema.inc`]. Si veda anche [`coverage.json`], che mappa
 ciascuna di queste fasi stabili sui suoi test positivi, negativi, di
 sostituzione, di osservatore in sola lettura e di gate sigillato.
 
@@ -529,4 +532,8 @@ sostituzione, di osservatore in sola lettura e di gate sigillato.
 [`pluginsdk/examples/MCObserverPlugin.c`]: ../../pluginsdk/examples/MCObserverPlugin.c
 [`pluginsdk/examples/ObjectRewritePlugin.c`]: ../../pluginsdk/examples/ObjectRewritePlugin.c
 [`PluginTarget.h`]: ../../neverc/include/neverc/Plugin/PluginTarget.h
+[`Schema/MCSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/MCSchema.json
+[`Schema/ObjectSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/ObjectSchema.json
 [`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`Schema/PluginMCSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginMCSchema.inc
+[`Schema/PluginObjectSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginObjectSchema.inc

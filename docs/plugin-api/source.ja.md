@@ -298,9 +298,11 @@ Source->CreateMemorySourceUnit(Source->Context, Frame, Frame->Input, &Unit,
 - `AddMemoryFile` はセッションスコープです。内容がタスクに依存するなら、プロバイダ
   こそが正しい道具です。
 
-規範的な宣言は [`PluginSource.h`] を、完全なプロバイダの例は
+規範的な宣言は [`PluginSource.h`] を、3 つの source フェーズとそのポリシーは
+[`Schema/PhaseSchema.json`] を、完全なプロバイダの例は
 [`pluginsdk/examples/VirtualHeaderPlugin.c`] を参照してください。
 
 <!-- reference links -->
 [`pluginsdk/examples/VirtualHeaderPlugin.c`]: ../../pluginsdk/examples/VirtualHeaderPlugin.c
 [`PluginSource.h`]: ../../neverc/include/neverc/Plugin/PluginSource.h
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json

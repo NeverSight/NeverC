@@ -420,13 +420,15 @@ Use the module suffix CMake produced for your platform.
   the C boundary and never let a C++ exception cross it.
 - `neverc.mir.final_verify` is sealed. It runs no matter what.
 
-See [`PluginMIR.h`], [`Schema/PluginMIRSchema.inc`], [`Schema/PhaseSchema.json`],
-and [`coverage.json`] for the normative declarations, schema constants, phase
-policies, and coverage evidence.
+See [`PluginMIR.h`], [`Schema/MIRSchema.json`], [`Schema/PluginMIRSchema.inc`],
+[`Schema/PhaseSchema.json`], and [`coverage.json`] for the normative
+declarations, the schema itself, its generated constants, phase policies, and
+coverage evidence.
 
 <!-- reference links -->
 [`coverage.json`]: coverage.json
 [`PluginMIR.h`]: ../../neverc/include/neverc/Plugin/PluginMIR.h
 [`pluginsdk/examples/MachinePass.c`]: ../../pluginsdk/examples/MachinePass.c
+[`Schema/MIRSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/MIRSchema.json
 [`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
 [`Schema/PluginMIRSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginMIRSchema.inc

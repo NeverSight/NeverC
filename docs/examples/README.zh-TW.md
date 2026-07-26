@@ -10,6 +10,8 @@
 
 ## 可用範例
 
+### Windows
+
 | 範例 | 說明 | 關鍵特性 |
 |------|------|---------|
 | [Windows 核心驅動](../../examples/windows-driver/README.zh-TW.md) | 最小 WDM 核心驅動 | 從 macOS/Linux 交叉編譯 `.sys`，自動 LTO，內建連結器，`DbgPrint` 裝置 I/O |
@@ -56,6 +58,8 @@
 | [核心全功能 SDK](../../examples/android-kernel-full/README.zh-TW.md) | 完整 SDK 整合 | Netlink IPC、interpose、憑證包裝、模組可見性、SELinux 策略控制、VMA、檔案 I/O |
 | [核心字元裝置](../../examples/android-kernel-chardev/README.zh-TW.md) | 字元裝置 + ioctl | `misc_register`，ioctl 分派，`/proc` seq_file |
 | [核心 Netlink](../../examples/android-kernel-netlink/README.zh-TW.md) | 雙向 netlink IPC | PING/VERSION/ECHO 命令，`nvk_nl_open`/`nvk_nl_reply` |
+| [核心 Probe](../../examples/android-kernel-probe/README.zh-TW.md) | 探測任意一條指令 | `neverc_krt_probe_register`、完整暫存器上下文、依優先權鏈式派發、略過/重導向 |
+| [核心多檔案模組](../../examples/android-kernel-multifile/README.zh-TW.md) | 多檔案核心模組 | 只需一次 `NEVERC_KRT_BOOTSTRAP()`、`weak_odr` 共享狀態、init/interpose/helper 分檔 |
 
 ---
 
@@ -64,7 +68,7 @@
 所有範例遵循相同模式：
 
 ```bash
-cd examples/<範例名>
+cd examples/範例名
 neverc make
 ```
 
@@ -74,4 +78,34 @@ neverc make
 neverc make NEVERC=/path/to/neverc
 ```
 
-所有範例使用 **neverc** 作為編譯器，透過 NeverC 的內建連結器產生 Windows PE 二進位（`.sys` 驅動）— 無需外部 `link.exe` 或 Windows SDK 安裝。
+Linux 範例支援架構選擇：
+
+```bash
+neverc make TARGET=aarch64-linux-gnu   # 建置 ARM64 版本
+neverc make TARGET=x86_64-linux-gnu    # 建置 x86_64 版本（預設）
+```
+
+macOS 範例支援架構選擇：
+
+```bash
+neverc make TARGET=arm64-apple-macos     # 建置 Apple Silicon 版本（預設）
+neverc make TARGET=x86_64-apple-macos    # 建置 Intel 版本
+```
+
+Android 範例預設面向 ARM64：
+
+```bash
+cd examples/android-elf
+neverc make            # 建置
+neverc make run        # 建置 + 推送到裝置 + 透過 adb 執行
+```
+
+---
+
+## 跨平台亮點
+
+- **單一工具鏈**：NeverC 在一次呼叫中處理預處理、編譯、最佳化（自動 LTO）與連結
+- **捆綁 SDK**：Windows SDK/WDK、Linux sysroot（Ubuntu 22.04）、macOS sysroot（macOS 14）與 Android sysroot（NDK r26c, API 21+）標頭/函式庫已捆綁於 `runtime/` — 零外部相依
+- **宿主無關**：從 macOS（arm64/x86_64）、Linux（x86_64/aarch64）或 Windows 使用相同命令建置
+- **多目標**：從任意宿主交叉編譯到 Windows PE（`.sys`/`.exe`/`.dll`）、Linux ELF、macOS Mach-O（`.dylib`）與 Android ELF
+- **除錯支援**：傳入 `-g` 以嵌入 DWARF 除錯資訊；使用 `llvm-dwarfdump` 檢查

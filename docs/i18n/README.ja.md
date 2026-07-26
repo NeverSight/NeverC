@@ -10,7 +10,7 @@
 
 [![AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](../../LICENSE)
 [![C23](https://img.shields.io/badge/Standard-C23-brightgreen.svg)](#機能)
-[![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-informational.svg)](#windows-へのクロスコンパイル)
+![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-informational.svg)
 [![Arch](https://img.shields.io/badge/Arch-x86__64%20%7C%20AArch64-orange.svg)](#機能)
 
 [ドキュメント索引](../README.ja.md) · [DynCode ガイド](../dyncode-compiler/README.ja.md) · [組み込みランタイム](../builtins/README.ja.md) · [プラグイン API](../plugin-api/README.ja.md) · [ロードマップ](../roadmap/README.ja.md)

@@ -6,6 +6,18 @@
 
 将 C 源码直接编译为**位置无关、零重定位、零数据段**的扁平二进制 dyncode。
 
+## 指南
+
+- [ARM64 (AArch64) 汇编教程 — DynCode 视角](arm64-assembly-tutorial/README.zh-CN.md)
+- [NeverC DynCode 跨平台架构概览](cross-platform-architecture/README.zh-CN.md)
+- [IR Pass 设计 — 原则、流水线与前后对比](ir-pass-design/README.zh-CN.md)
+- [内核模式（Ring-0）DynCode 支持](kernel-mode-dyncode/README.zh-CN.md)
+- [MIR Pass 设计 — 原则与钩子点](mir-pass-design/README.zh-CN.md)
+- [DynCode 流水线、MIR 与 PIC 策略（设计笔记）](pipeline-and-pic/README.zh-CN.md)
+- [平台扩展指南](platform-extension-guide/README.zh-CN.md)
+- [DynCode 编译器 — 进度追踪](progress/README.zh-CN.md)
+- [路线图](roadmap/README.zh-CN.md)
+
 ---
 
 ## 核心目标
@@ -98,8 +110,8 @@ neverc -v -fdyncode -target arm64-apple-macos fib.c -o fib.bin
 | `-fdyncode-entry=<name>` | 覆盖默认入口名。默认可接受 `main` / `_main` / `dyncode_entry` / `_dyncode_entry`。 |
 | `-fdyncode-bad-bytes=<hex-list>` | 逗号分隔的禁止字节列表，如 `00,0a,0d`。提取器在 post-extract 钩子后扫描最终 `.bin`；命中则失败且不写文件。 |
 | `-fdyncode-bad-byte-profile=<name>` | 内置禁止字节配置：`null`、`c-string`、`http-newline`、`line`、`whitespace`、`ascii-control`。可与 `-fdyncode-bad-bytes=` 组合。 |
-| `-fdyncode-obfuscate=<spec>` | 传递给通过 [Plugin API](../plugin-api/README.zh-CN.md) 注册的 **IR 级**插件钩子。未加载插件时为 no-op。见 [ir-pass-design.md 第 9 节](ir-pass-design/README.zh-CN.md#9-obfuscation-interposes)。 |
-| `-fdyncode-mir-obfuscate=<spec>` | 传递给 **MIR 级**混淆钩子（`RunBeforePreEmit` / `RunAfterPreEmit`）。未设置时回退到 `-fdyncode-obfuscate=`。见 [mir-pass-design.md 第 3 节](mir-pass-design/README.zh-CN.md#3-user-obfuscation-interposes)（User Obfuscation Interposes）。 |
+| `-fdyncode-obfuscate=<spec>` | 传递给通过 [Plugin API](../plugin-api/README.zh-CN.md) 注册的 **IR 级**插件钩子。未加载插件时为 no-op。见 [ir-pass-design.md 第 9 节](ir-pass-design/README.zh-CN.md#9-混淆钩子)。 |
+| `-fdyncode-mir-obfuscate=<spec>` | 传递给 **MIR 级**混淆钩子（`RunBeforePreEmit` / `RunAfterPreEmit`）。未设置时回退到 `-fdyncode-obfuscate=`。见 [mir-pass-design.md 第 3 节](mir-pass-design/README.zh-CN.md#3-用户混淆钩子)（User Obfuscation Interposes）。 |
 
 ---
 
@@ -311,8 +323,8 @@ DynCode 流水线本身只保证「代码能正确运行」。混淆、多态、
 
 详见 [Plugin API 文档](../plugin-api/README.zh-CN.md)了解完整钩子列表、pass 注册和代码示例。
 
-- IR 层设计：[ir-pass-design.md 第 9 节](ir-pass-design/README.zh-CN.md#9-obfuscation-interposes)。
-- MIR 层设计：[mir-pass-design.md 第 3 节](mir-pass-design/README.zh-CN.md#3-user-obfuscation-interposes)。
+- IR 层设计：[ir-pass-design.md 第 9 节](ir-pass-design/README.zh-CN.md#9-混淆钩子)。
+- MIR 层设计：[mir-pass-design.md 第 3 节](mir-pass-design/README.zh-CN.md#3-用户混淆钩子)。
 
 ---
 

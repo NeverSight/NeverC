@@ -49,15 +49,17 @@ Plattformübergreifend, einzelne Verantwortung: Scannt jeden `MachineBasicBlock`
 
 ### 2.1 Seitenabschnitt-Metadaten
 
-| Opcode | Quelle | Auswirkung bei Nicht-Entfernung |
-|--------|--------|-------------------------------|
-| `CFI_INSTRUCTION` | Frame-Lowering / `-g` | `.eh_frame` / `.pdata` nicht leer |
-| `EH_LABEL` | EH / try-catch | LSDA nicht leer |
-| `STATEPOINT` / `STACKMAP` / `PATCHPOINT` | GC / Sandbox | `.llvm_stackmaps` |
-| `PSEUDO_PROBE` | Profiling | `.pseudo_probe` |
-| `PATCHABLE_*` | XRay / Kcov | `.xray_instr_map` |
-| `FENTRY_CALL` | `-mfentry` | extern `__fentry__` |
-| `LOCAL_ESCAPE` | Microsoft SEH | SEH-Handler-Referenzen |
+| Opcode | Quelle | Wenn nicht entfernt |
+|--------|--------|--------------------|
+| `CFI_INSTRUCTION` | Frame-Lowering aller Plattformen / `-g` | `.eh_frame` / `__compact_unwind` / `.pdata` nicht leer |
+| `EH_LABEL` | EH / try-catch setjmp-Punkte | LSDA-Seitensektion nicht leer |
+| `GC_LABEL` / `ANNOTATION_LABEL` | GC / Annotation-Marker | MCSymbol mit sektionsrelativen Metadaten |
+| `STATEPOINT` / `STACKMAP` / `PATCHPOINT` | GC / Sandbox-Stackmap | `.llvm_stackmaps`-Seitensektion |
+| `PSEUDO_PROBE` | `-fprofile-sample-use` | `.pseudo_probe`-Seitensektion |
+| `PATCHABLE_*`-Familie | XRay / Kcov-Stubs | `.xray_instr_map` / `.xray_fn_idx` |
+| `FENTRY_CALL` | `-mfentry` Entry-Probe | extern `__fentry__`-Aufruf |
+| `LOCAL_ESCAPE` | Microsoft SEH Frame-Escape | zieht `_local_unwind2` / `__except_handler3` herein |
+| `JUMP_TABLE_DEBUG_INFO` | Jump-Table-Debug-Info | `.debug_rnglists`-Eintrag |
 
 ### 2.2 Windows SEH (Prefix-Match)
 
@@ -77,9 +79,32 @@ Zwei registrierte Muster:
 
 11 Interpose-Punkte: 6 IR + 3 MIR + 2 Byte-Level.
 
+Drei Signaturtypen:
+
+```cpp
+using ObfuscationInterpose = std::function<void(
+    llvm::ModulePassManager &, const DynCodeOptions &)>;
+using MachineObfuscationInterpose = std::function<void(
+    llvm::TargetPassConfig &, const DynCodeOptions &)>;
+using BinaryObfuscationInterpose = std::function<void(
+    llvm::SmallVectorImpl<uint8_t> &, const DynCodeOptions &)>;
+```
+
 - `RunBeforePreEmit`: MIR mit CFI/EH-Pseudos.
 - `RunAfterPreEmit`: Bereinigte MIR — nächster Zustand zu AsmPrinter.
 - `RunPostExtract`: Reiner Byte-Stream.
+
+```cpp
+__attribute__((constructor))
+static void myMirObfInit() {
+  auto H = neverc::dyncode::getDynCodeObfuscationInterposes();
+  H.RunAfterPreEmit = [](llvm::TargetPassConfig &TPC,
+                         const neverc::dyncode::DynCodeOptions &Opts) {
+    TPC.addExternalPass(new MyInstructionSubstitutionPass(Opts.MirObfuscateSpec));
+  };
+  // Register via Plugin API: NEVERC_INTERPOSE_SC_BEFORE_PREEMIT / AFTER_PREEMIT / AFTER_FINAL_MIR
+}
+```
 
 ---
 
@@ -99,12 +124,17 @@ Zwei registrierte Muster:
 
 ## 5. Design-Begründung
 
-| Problem | IR? | MIR? |
-|---------|-----|------|
-| Konstant-GV-Eliminierung | Ja | Nicht nötig |
-| CFI-Pseudo-Befehle | Nein (Backend) | Ja |
-| Befehlsebene-Obfuskation | Nein | Ja |
+| Problem | IR-Ebene? | MIR-Ebene? |
+|---------|-----------|-----------|
+| Konstante GV-Eliminierung | Ja (Data2Text) | Nicht nötig |
+| extern libc-Eliminierung | Ja (SyscallStub / WinPEB) | Nicht nötig |
+| Stack-ifizierung veränderlicher Globals | Ja (ZeroReloc) | Nicht nötig |
+| Computed goto | Ja (IndirectBr) | Nicht nötig |
+| CFI-Pseudo-Instruktionen | Nein (backend-generiert) | Ja (scannen und löschen) |
+| XRay-Stubs | Nein (backend-generiert) | Ja (scannen und löschen) |
+| Instruktionsebenen-Obfuskation | Nein (IR fehlen physische Register) | Ja (echte Register/MI) |
 | Registerumbenennung | Nein | Ja |
+| Peephole-Konstantenexpansion | Teilweise | Ja (sauberer) |
 
 ## 6. Erweiterungsanleitung
 

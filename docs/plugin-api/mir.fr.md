@@ -439,13 +439,15 @@ Utilisez le suffixe de module que CMake a produit pour votre plateforme.
   franchir.
 - `neverc.mir.final_verify` est scellée. Elle s'exécute quoi qu'il arrive.
 
-Voir [`PluginMIR.h`], [`Schema/PluginMIRSchema.inc`], [`Schema/PhaseSchema.json`] et
-[`coverage.json`] pour les déclarations normatives, les constantes de schéma,
-les politiques de phase et les preuves de couverture.
+Voir [`PluginMIR.h`], [`Schema/MIRSchema.json`],
+[`Schema/PluginMIRSchema.inc`], [`Schema/PhaseSchema.json`] et
+[`coverage.json`] pour les déclarations normatives, le schéma lui-même, ses
+constantes générées, les politiques de phase et les preuves de couverture.
 
 <!-- reference links -->
 [`coverage.json`]: coverage.json
 [`PluginMIR.h`]: ../../neverc/include/neverc/Plugin/PluginMIR.h
 [`pluginsdk/examples/MachinePass.c`]: ../../pluginsdk/examples/MachinePass.c
+[`Schema/MIRSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/MIRSchema.json
 [`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
 [`Schema/PluginMIRSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginMIRSchema.inc

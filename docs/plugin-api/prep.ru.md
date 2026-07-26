@@ -290,11 +290,13 @@ Prep->CreateFeatureQueryPhaseOutput(Prep->Context, Frame, Continuation, &Out,
   указателя и никогда не позволяйте исключению пересечь границу.
 
 Нормативные объявления смотрите в [`PluginPrep.h`] и
-[`Schema/PluginPrepSchema.inc`], а схему видов токенов — в
-[`Schema/PrepSchema.json`].
+[`Schema/PluginPrepSchema.inc`], схему видов токенов — в
+[`Schema/PrepSchema.json`], а шесть фаз препроцессора и их политики — в
+[`Schema/PhaseSchema.json`].
 
 <!-- reference links -->
 [`PluginPrep.h`]: ../../neverc/include/neverc/Plugin/PluginPrep.h
 [`PluginPrepSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginPrepSchema.inc
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
 [`Schema/PluginPrepSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginPrepSchema.inc
 [`Schema/PrepSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PrepSchema.json

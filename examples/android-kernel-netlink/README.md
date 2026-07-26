@@ -1,5 +1,7 @@
 **Languages**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
+[← NeverC Examples](../../docs/examples/README.md)
+
 # Android Kernel Netlink
 
 Bidirectional netlink IPC channel. Creates a netlink socket for user↔kernel communication. Supports PING (returns PONG), VERSION (kernel version string), and ECHO (payload echo). Demonstrates `nvk_nl_open`, `nvk_nl_reply`, and dispatch-callback pattern.

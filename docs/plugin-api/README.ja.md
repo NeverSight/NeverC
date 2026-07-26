@@ -24,16 +24,16 @@ neverc_plugin_entry(const NevercBootstrapAPI *Bootstrap,
 
 | ガイド | 扱う範囲 |
 |---|---|
-| [ドライバー API](driver.ja.md) | コマンドライン、ツールチェーン選択、アクショングラフ、ジョブグラフ |
-| [ソースと I/O API](source.ja.md) | VFS プロバイダー、ソース位置、バッファー、出力シンク、依存関係 |
-| [プリプロセッサー API](prep.ja.md) | トークン、マクロ、pragma、include、機能クエリ、39 種類のイベント |
-| [AST と意味解析 API](ast-sema.ja.md) | パーサー拡張、AST 変更、名前探索、型、定数 |
-| [IR API](ir.ja.md) | LLVM IR の読み取り、トランザクショナルな構築、解析、パス、プロバイダー |
-| [MIR API](mir.ja.md) | マシン関数、レジスター、スタックフレーム、MIR パスと解析 |
-| [ターゲット、MC、アセンブリ、オブジェクト](target-mc-object.ja.md) | ターゲット登録、呼び出し規約、MC エンコード、オブジェクトグラフ |
-| [リンクと LTO API](link-lto.ja.md) | リンクグラフ、シンボル解決、GC/ICF、リンカーと LTO プロバイダー |
-| [DynCode API](dyncode.ja.md) | フラットな位置独立イメージ、インポートの低位化、文字セットエンコード |
-| [カスタム呼び出し規約](custom-callconv/README.ja.md) | データ駆動の呼び出し規約プラグイン |
+| [ドライバー API](driver.ja.md) | [コマンドライン](driver.ja.md#生の引数)、[ツールチェーン選択](driver.ja.md#ツールチェーンの選択)、[アクショングラフ](driver.ja.md#アクショングラフ)、[ジョブグラフ](driver.ja.md#ジョブグラフ) |
+| [ソースと I/O API](source.ja.md) | [VFS プロバイダー](source.ja.md#仮想ファイルシステムプロバイダ)、[ソース位置](source.ja.md#ソース位置)、[バッファー](source.ja.md#ファイルの読み取り)、[出力シンク](source.ja.md#出力の書き出し)、[依存関係](source.ja.md#依存関係の記録) |
+| [プリプロセッサー API](prep.ja.md) | [トークン](prep.ja.md#トークンの読み取り)、[マクロ](prep.ja.md#識別子とマクロ)、[pragma](prep.ja.md#pragma-と機能問い合わせ)、[include](prep.ja.md#include-のリダイレクト)、[機能クエリ](prep.ja.md#pragma-と機能問い合わせ)、[39 種類のイベント](prep.ja.md#イベントの購読) |
+| [AST と意味解析 API](ast-sema.ja.md) | [パーサー拡張](ast-sema.ja.md#パーサ拡張)、[AST 変更](ast-sema.ja.md#構築と変更)、[名前探索](ast-sema.ja.md#意味問い合わせ)、[型](ast-sema.ja.md#型付きアクセサ)、[定数](ast-sema.ja.md#意味問い合わせ) |
+| [IR API](ir.ja.md) | [LLVM IR の読み取り](ir.ja.md#モジュールの走査)、[トランザクショナルな構築](ir.ja.md#トランザクショナルな変更)、[解析](ir.ja.md#解析)、[パス](ir.ja.md#パス)、[プロバイダー](ir.ja.md#生成と最適化の置き換え) |
+| [MIR API](mir.ja.md) | [マシン関数](mir.ja.md#mir-の読み取り)、[レジスター](mir.ja.md#レジスタ)、[スタックフレーム](mir.ja.md#スタックフレーム)、[MIR パスと解析](mir.ja.md#パス) |
+| [ターゲット、MC、アセンブリ、オブジェクト](target-mc-object.ja.md) | [ターゲット登録](target-mc-object.ja.md#ターゲットの登録)、[呼び出し規約](target-mc-object.ja.md#abi-と呼び出し規約)、[MC エンコード](target-mc-object.ja.md#エンコーダーデコーダーレイアウト)、[オブジェクトグラフ](target-mc-object.ja.md#オブジェクトグラフ) |
+| [リンクと LTO API](link-lto.ja.md) | [リンクグラフ](link-lto.ja.md#グラフを読む)、[シンボル解決](link-lto.ja.md#グラフを変更する)、[GC/ICF](link-lto.ja.md#状態機械)、[リンカーと LTO プロバイダー](link-lto.ja.md#プロバイダ) |
+| [DynCode API](dyncode.ja.md) | [フラットな位置独立イメージ](dyncode.ja.md#イメージレポート範囲限定のバイト編集)、[インポートの低位化](dyncode.ja.md#外部参照とインポートの低位化)、[文字セットエンコード](dyncode.ja.md#イメージレポート範囲限定のバイト編集) |
+| [カスタム呼び出し規約](custom-callconv/README.ja.md) | [データ駆動の呼び出し規約プラグイン](custom-callconv/README.ja.md#spec-の形式) |
 | [フェーズカバレッジの根拠](coverage.json) | すべての安定フェーズに対するテストの対応付け |
 
 ## 実行モデル
@@ -142,8 +142,9 @@ typedef struct NevercPhaseFrame {
 ```
 
 [`Schema/PhaseSchema.json`] が、フェーズ ID・ポリシー・安定性ティア・検証器ゲートの
-規範的な出典です。生成される [`Schema/PluginPhaseSchema.inc`] は、それらをコンパイ
-ル時定数として公開します。フェーズ `neverc.ir.pass.pipeline_start` の場合:
+規範的な出典です。[`PluginPhaseSchema.h`] と、それが include する生成物
+[`Schema/PluginPhaseSchema.inc`] は、それらをコンパイル時定数として公開します。
+フェーズ `neverc.ir.pass.pipeline_start` の場合:
 
 ```c
 NEVERC_PHASE_IR_PASS_PIPELINE_START_NAME       /* "neverc.ir.pass.pipeline_start" */
@@ -548,7 +549,8 @@ lockstep 登録では 3 つのフィールドすべてを埋める必要があ�
 
 ## ビルド
 
-集約ヘッダーを include するか、使うドメインだけを include します:
+集約ヘッダー [`NevercPluginAPI.h`] を include するか、使うドメインだけを include
+します:
 
 ```c
 #include "neverc/Plugin/NevercPluginAPI.h"   /* everything */
@@ -742,6 +744,7 @@ neverc -fplugin=build-neverc/neverc/pluginsdk/examples/host/FunctionPass.so \
 [`MachinePass.c`]: ../../pluginsdk/examples/MachinePass.c
 [`MCObserverPlugin.c`]: ../../pluginsdk/examples/MCObserverPlugin.c
 [`neverc/include/neverc/Plugin/Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`NevercPluginAPI.h`]: ../../neverc/include/neverc/Plugin/NevercPluginAPI.h
 [`ObjectRewritePlugin.c`]: ../../pluginsdk/examples/ObjectRewritePlugin.c
 [`PluginAST.h`]: ../../neverc/include/neverc/Plugin/PluginAST.h
 [`PluginCore.h`]: ../../neverc/include/neverc/Plugin/PluginCore.h
@@ -753,6 +756,7 @@ neverc -fplugin=build-neverc/neverc/pluginsdk/examples/host/FunctionPass.so \
 [`PluginMC.h`]: ../../neverc/include/neverc/Plugin/PluginMC.h
 [`PluginMIR.h`]: ../../neverc/include/neverc/Plugin/PluginMIR.h
 [`PluginObject.h`]: ../../neverc/include/neverc/Plugin/PluginObject.h
+[`PluginPhaseSchema.h`]: ../../neverc/include/neverc/Plugin/PluginPhaseSchema.h
 [`PluginPrep.h`]: ../../neverc/include/neverc/Plugin/PluginPrep.h
 [`pluginsdk/abi/plugin.json`]: ../../pluginsdk/abi/plugin.json
 [`pluginsdk/examples/DriverTracePlugin.c`]: ../../pluginsdk/examples/DriverTracePlugin.c

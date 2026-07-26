@@ -1,5 +1,7 @@
 **Языки**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
+[← Примеры NeverC](../../docs/examples/README.ru.md)
+
 # Полная демо SDK ядра Android
 
 Полная интеграция SDK — инициализирует все подсистемы NVK и предоставляет их через интерфейс команд netlink. Эталонная реализация для продакшн-модулей. Охватывает: движок interpose, обёртки учётных данных, видимость модуля, управление политикой SELinux, перечисление процессов, инспекцию VMA, файловый ввод/вывод, определение окружения и статистику.

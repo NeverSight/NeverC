@@ -40,7 +40,7 @@ NeverC يُرجع **true** من `Generic_GCC::isPICDefaultForced()` و`MachO::is
 ## 3. اختلافات المنصات المدفوعة بالجداول
 
 - **Triple → سلوك**: مركزي في `describeTriple()` وحقول `TargetDesc`. لإضافة OS/Arch جديد، يُفضَّل **إضافة صفوف في الجدول**.
-- **خيارات CLI**: معرفة في `Options.td.h`؛ تُستهلك عبر تعدادات `OPT_*`.
+- **خيارات CLI**: معرفة في [`neverc/include/neverc/Invoke/Options.td.h`]؛ تُستهلك عبر تعدادات `OPT_*`.
 
 ## 4. سلسلة أدوات Windows MSVC وتخطيط SDK
 
@@ -76,7 +76,25 @@ NeverC يدعم مصدرين لـ SDK **بدون مسارات مطلقة مشف�
 
 ## 7. طبقة توافق Windows POSIX
 
-**صفر وعي من المستخدم**: نفس مصدر C يُجمَّع على جميع الثلاثيات الثمانية بدون `#ifdef _WIN32`. `WinPEBImportPass` ينفذ 3 مراحل: مسح POSIX، توليد أغلفة جسرية (13 مجموعة دوال)، حل PEB. التفاصيل: `write` → `GetStdHandle` + `WriteFile`، `mmap` → `VirtualAlloc`، `exit` → `ExitProcess`، إلخ.
+### 7.1 المشكلة
+
+شيفرة C عبر المنصات تستخدم عادةً `write(fd, buf, n)` و`read(fd, buf, n)` و`exit(code)` إلخ. على منصات Unix، يستبدل `SyscallStubPass` هذه باستدعاءات نظام مضمّنة. على Windows، لا يوجد لهذه الأسماء POSIX واجهة Win32 مقابلة، مما يسبب أخطاء "إعادة تحديد غير محلولة".
+
+### 7.2 هدف التصميم
+
+**صفر وعي من المستخدم**: نفس مصدر C يُجمَّع على جميع الثلاثيات الثمانية المستهدفة بدون `#ifdef _WIN32` أو استدعاءات Win32 API يدوية.
+
+### 7.3 التنفيذ
+
+`WinPEBImportPass` ينفّذ معالجة ثلاثية المراحل:
+
+1. **المرحلة 1 — مسح POSIX**: يمسح التصريحات الخارجية غير المطابَقة مقابل جدول توافق POSIX.
+2. **المرحلة 2 — توليد أغلفة جسرية**: `Win32PosixCompat.def` يوزّع أسماء POSIX إلى بُناة أغلفة يولّدون أغلفة `always_inline` (مثلاً `write` → `GetStdHandle` + `WriteFile`، `mmap` → `VirtualAlloc` مع تعيين الحماية، `exit` → `ExitProcess`، إلخ). 13 مجموعة دوال POSIX مغطّاة.
+3. **المرحلة 3 — حل PEB**: واجهات Win32 التي تشير إليها الأغلفة تُحلّ عبر محلّل مسح PEB العادي.
+
+### 7.4 القابلية للتوسّع
+
+إضافة دوال توافق POSIX جديدة: الإضافات المستعارة فقط تغيّر `Win32PosixCompat.def`؛ الدلالات الجديدة تتطلب بانِي IR صغيراً + إدخال جدول واحد. العمليات ذات الحالة مثل `open→CreateFileA` التي تحتاج جداول عمر fd/handle غير مُحاكاة عمداً.
 
 ## 8. إصلاح تلقائي لتصريح K&R الضمني
 
@@ -107,5 +125,7 @@ NeverC يدعم مصدرين لـ SDK **بدون مسارات مطلقة مشف�
 | `O_CLOEXEC` | `0x1000000` | `0x80000` |
 
 التنفيذ: حراس `#if defined(__APPLE__)` في ملفات الرأس shim. جدول توافق POSIX في `SyscallTables.cpp` يستخدم قيم Linux (`AT_FDCWD = -100`)، نشط فقط على مسارات `SyscallABI::LinuxSvc0` / `LinuxSyscall`. أهداف Windows لا تستخدم ملفات POSIX هذه؛ جسر POSIX→Win32 تتولاه أغلفة توافق `WinPEBImportPass`.
+
+[`neverc/include/neverc/Invoke/Options.td.h`]: ../../../neverc/include/neverc/Invoke/Options.td.h
 
 </div>

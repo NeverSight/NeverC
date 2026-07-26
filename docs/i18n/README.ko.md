@@ -10,7 +10,7 @@
 
 [![AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](../../LICENSE)
 [![C23](https://img.shields.io/badge/Standard-C23-brightgreen.svg)](#기능)
-[![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-informational.svg)](#windows로-크로스-컴파일)
+![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-informational.svg)
 [![Arch](https://img.shields.io/badge/Arch-x86__64%20%7C%20AArch64-orange.svg)](#기능)
 
 [문서 색인](../README.ko.md) · [DynCode 가이드](../dyncode-compiler/README.ko.md) · [내장 런타임](../builtins/README.ko.md) · [플러그인 API](../plugin-api/README.ko.md) · [로드맵](../roadmap/README.ko.md)

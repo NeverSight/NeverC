@@ -440,13 +440,15 @@ Usate il suffisso di modulo che CMake ha prodotto per la vostra piattaforma.
   attraversi.
 - `neverc.mir.final_verify` è sigillata. Gira in ogni caso.
 
-Per le dichiarazioni normative, le costanti di schema, le policy delle fasi e
-le prove di copertura si vedano [`PluginMIR.h`],
-[`Schema/PluginMIRSchema.inc`], [`Schema/PhaseSchema.json`] e [`coverage.json`].
+Per le dichiarazioni normative, lo schema stesso, le sue costanti generate, le
+policy delle fasi e le prove di copertura si vedano [`PluginMIR.h`],
+[`Schema/MIRSchema.json`], [`Schema/PluginMIRSchema.inc`],
+[`Schema/PhaseSchema.json`] e [`coverage.json`].
 
 <!-- reference links -->
 [`coverage.json`]: coverage.json
 [`PluginMIR.h`]: ../../neverc/include/neverc/Plugin/PluginMIR.h
 [`pluginsdk/examples/MachinePass.c`]: ../../pluginsdk/examples/MachinePass.c
+[`Schema/MIRSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/MIRSchema.json
 [`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
 [`Schema/PluginMIRSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginMIRSchema.inc

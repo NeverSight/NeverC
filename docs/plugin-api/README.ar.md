@@ -25,16 +25,16 @@ neverc_plugin_entry(const NevercBootstrapAPI *Bootstrap,
 
 | الدليل | ما يغطيه |
 |---|---|
-| [واجهة المُشغِّل](driver.ar.md) | سطر الأوامر، اختيار سلسلة الأدوات، رسم الإجراءات، رسم المهام |
-| [واجهة المصادر والإدخال/الإخراج](source.ar.md) | مزوِّدو VFS، مواقع المصدر، المخازن المؤقتة، مصارف الإخراج، التبعيات |
-| [واجهة المعالج المسبق](prep.ar.md) | الرموز، الماكرو، البراغما، التضمينات، استعلامات الميزات، 39 نوعًا من الأحداث |
-| [واجهة الشجرة النحوية والدلالات](ast-sema.ar.md) | توسيع المُحلِّل، تعديل الشجرة النحوية، البحث عن الأسماء، الأنواع، الثوابت |
-| [واجهة IR](ir.ar.md) | قراءة LLVM IR، البناء المعاملاتي، التحليلات، المرورات، المزوِّدون |
-| [واجهة MIR](mir.ar.md) | دوال الآلة، السجلات، إطارات المكدس، مرورات وتحليلات MIR |
-| [الهدف وMC والتجميع والكائنات](target-mc-object.ar.md) | تسجيل الأهداف، اصطلاحات الاستدعاء، ترميز MC، رسوم الكائنات |
-| [واجهة الربط وLTO](link-lto.ar.md) | رسم الربط، حل الرموز، GC/ICF، مزوِّدو الرابط وLTO |
-| [واجهة DynCode](dyncode.ar.md) | صور مسطّحة مستقلة عن الموضع، خفض الاستيرادات، ترميز مجموعة المحارف |
-| [اصطلاحات استدعاء مخصّصة](custom-callconv/README.ar.md) | إضافات اصطلاحات الاستدعاء المُوجَّهة بالبيانات |
+| [واجهة المُشغِّل](driver.ar.md) | [سطر الأوامر](driver.ar.md#الوسائط-الخام)، [اختيار سلسلة الأدوات](driver.ar.md#اختيار-سلسلة-الأدوات)، [رسم الإجراءات](driver.ar.md#مخطط-الإجراءات)، [رسم المهام](driver.ar.md#مخطط-المهام) |
+| [واجهة المصادر والإدخال/الإخراج](source.ar.md) | [مزوِّدو VFS](source.ar.md#مزوّدو-نظام-الملفات-الافتراضي)، [مواقع المصدر](source.ar.md#مواضع-المصدر)، [المخازن المؤقتة](source.ar.md#قراءة-الملفات)، [مصارف الإخراج](source.ar.md#كتابة-المخرجات)، [التبعيات](source.ar.md#تسجيل-التبعيات) |
+| [واجهة المعالج المسبق](prep.ar.md) | [الرموز](prep.ar.md#قراءة-الرموز)، [الماكرو](prep.ar.md#المعرّفات-ووحدات-الماكرو)، [البراغما](prep.ar.md#الـ-pragma-واستعلامات-الخصائص)، [التضمينات](prep.ar.md#إعادة-توجيه-تضمين)، [استعلامات الميزات](prep.ar.md#الـ-pragma-واستعلامات-الخصائص)، [39 نوعًا من الأحداث](prep.ar.md#الاشتراك-في-الأحداث) |
+| [واجهة الشجرة النحوية والدلالات](ast-sema.ar.md) | [توسيع المُحلِّل](ast-sema.ar.md#امتداد-المحلل-النحوي)، [تعديل الشجرة النحوية](ast-sema.ar.md#البناء-والتعديل)، [البحث عن الأسماء](ast-sema.ar.md#الاستعلامات-الدلالية)، [الأنواع](ast-sema.ar.md#الموصِّلات-المُنمّطة)، [الثوابت](ast-sema.ar.md#الاستعلامات-الدلالية) |
+| [واجهة IR](ir.ar.md) | [قراءة LLVM IR](ir.ar.md#اجتياز-وحدة)، [البناء المعاملاتي](ir.ar.md#التعديل-المعامَلاتي)، [التحليلات](ir.ar.md#التحليلات)، [المرورات](ir.ar.md#التمريرات)، [المزوِّدون](ir.ar.md#استبدال-التوليد-والتحسين) |
+| [واجهة MIR](mir.ar.md) | [دوال الآلة](mir.ar.md#قراءة-mir)، [السجلات](mir.ar.md#السجلات)، [إطارات المكدس](mir.ar.md#إطار-المكدس)، [مرورات وتحليلات MIR](mir.ar.md#المرورات) |
+| [الهدف وMC والتجميع والكائنات](target-mc-object.ar.md) | [تسجيل الأهداف](target-mc-object.ar.md#تسجيل-هدف)، [اصطلاحات الاستدعاء](target-mc-object.ar.md#abi-واصطلاحات-الاستدعاء)، [ترميز MC](target-mc-object.ar.md#المرمِّزات-والمفكِّكات-والتخطيط)، [رسوم الكائنات](target-mc-object.ar.md#رسوم-الكائنات) |
+| [واجهة الربط وLTO](link-lto.ar.md) | [رسم الربط](link-lto.ar.md#قراءة-المخطط)، [حل الرموز](link-lto.ar.md#تعديل-المخطط)، [GC/ICF](link-lto.ar.md#آلة-الحالات)، [مزوِّدو الرابط وLTO](link-lto.ar.md#المزوِّدون) |
+| [واجهة DynCode](dyncode.ar.md) | [صور مسطّحة مستقلة عن الموضع](dyncode.ar.md#الصورة-والتقرير-وتحرير-البايتات-المحدود)، [خفض الاستيرادات](dyncode.ar.md#المراجع-الخارجية-وخفض-الاستيراد)، [ترميز مجموعة المحارف](dyncode.ar.md#الصورة-والتقرير-وتحرير-البايتات-المحدود) |
+| [اصطلاحات استدعاء مخصّصة](custom-callconv/README.ar.md) | [إضافات اصطلاحات الاستدعاء المُوجَّهة بالبيانات](custom-callconv/README.ar.md#صيغة-المواصفات) |
 | [أدلة تغطية المراحل](coverage.json) | ربط الاختبارات بكل مرحلة مستقرة |
 
 ## نموذج التنفيذ
@@ -142,9 +142,9 @@ typedef struct NevercPhaseFrame {
 ```
 
 الملف [`Schema/PhaseSchema.json`] هو المصدر المِعياري لمعرِّفات المراحل والسياسات
-ومستويات الاستقرار وبوابات التدقيق. والملف المُولَّد
-[`Schema/PluginPhaseSchema.inc`] يكشف كلًّا منها كثابت وقت التصريف — للمرحلة
-`neverc.ir.pass.pipeline_start`:
+ومستويات الاستقرار وبوابات التدقيق. والملف [`PluginPhaseSchema.h`] مع الملف
+المُولَّد [`Schema/PluginPhaseSchema.inc`] الذي يضمّه يكشفان كلًّا منها كثابت وقت
+التصريف — للمرحلة `neverc.ir.pass.pipeline_start`:
 
 ```c
 NEVERC_PHASE_IR_PASS_PIPELINE_START_NAME       /* "neverc.ir.pass.pipeline_start" */
@@ -538,7 +538,7 @@ typedef struct NevercCompatibilityKey {
 
 ## البناء
 
-ضمِّن الترويسة الجامعة، أو المجالات التي تستخدمها فقط:
+ضمِّن الترويسة الجامعة [`NevercPluginAPI.h`]، أو المجالات التي تستخدمها فقط:
 
 ```c
 #include "neverc/Plugin/NevercPluginAPI.h"   /* everything */
@@ -731,6 +731,7 @@ neverc -fplugin=build-neverc/neverc/pluginsdk/examples/host/FunctionPass.so \
 [`MachinePass.c`]: ../../pluginsdk/examples/MachinePass.c
 [`MCObserverPlugin.c`]: ../../pluginsdk/examples/MCObserverPlugin.c
 [`neverc/include/neverc/Plugin/Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`NevercPluginAPI.h`]: ../../neverc/include/neverc/Plugin/NevercPluginAPI.h
 [`ObjectRewritePlugin.c`]: ../../pluginsdk/examples/ObjectRewritePlugin.c
 [`PluginAST.h`]: ../../neverc/include/neverc/Plugin/PluginAST.h
 [`PluginCore.h`]: ../../neverc/include/neverc/Plugin/PluginCore.h
@@ -742,6 +743,7 @@ neverc -fplugin=build-neverc/neverc/pluginsdk/examples/host/FunctionPass.so \
 [`PluginMC.h`]: ../../neverc/include/neverc/Plugin/PluginMC.h
 [`PluginMIR.h`]: ../../neverc/include/neverc/Plugin/PluginMIR.h
 [`PluginObject.h`]: ../../neverc/include/neverc/Plugin/PluginObject.h
+[`PluginPhaseSchema.h`]: ../../neverc/include/neverc/Plugin/PluginPhaseSchema.h
 [`PluginPrep.h`]: ../../neverc/include/neverc/Plugin/PluginPrep.h
 [`pluginsdk/abi/plugin.json`]: ../../pluginsdk/abi/plugin.json
 [`pluginsdk/examples/DriverTracePlugin.c`]: ../../pluginsdk/examples/DriverTracePlugin.c

@@ -82,7 +82,7 @@ Pour un format objet entièrement nouveau (ex. modules WASM) :
 
 ### 4. Ajouter Loader (outil de test uniquement)
 
-Référence `loader_linux.c` et `loader_windows.c`. Typiquement : `mmap(RWX) → memcpy → icache flush → call`.
+Référence [`tests/neverc/dyncode/loader_linux.c`] et `loader_windows.c`. Typiquement : `mmap(RWX) → memcpy → icache flush → call`.
 
 ### 5. Mettre à jour les tests
 
@@ -108,6 +108,44 @@ Ajouter un test de compilation croisée dans [`tests/neverc/DynCodeCrossTargetTe
 
 ## Interface d'extension de passe d'obfuscation
 
-La pipeline dyncode expose 11 interposes via `Pipeline.h::ObfuscationInterposes` pour les bibliothèques d'obfuscation tierces. Le patching MIR intégré est aussi piloté par table : `Tables/MIRRewritePatterns.def` et `Tables/MIRRewriteOpcodes.def`. Préférer les entrées de table et helpers étroits plutôt que disperser des branches spécifiques à la cible dans le corps de la passe.
+La pipeline dyncode expose 11 interposes via `Pipeline.h::ObfuscationInterposes` pour les bibliothèques d'obfuscation tierces :
 
+```
+PipelineStartEP:
+  RunBeforePrep → [ZeroReloc Prep] → RunAfterPrep →
+  [IndirectBr → MemIntrin → CompilerRt → SyscallStub →
+   WinPEBImport → KernelImport → Data2Text phase 1] →
+  RunBeforeInlining
+
+OptimizerLastEP:
+  RunAfterInlining → [Data2Text phase 2 → ZeroReloc Stackify] →
+  RunAfterStackify → [AllBlrPass] → RunAfterFinalIR
+
+MIR: RunBeforePreEmit → [MIRPrepPass] → RunAfterPreEmit →
+     [LLVM addPreEmitPass/addPreEmitPass2] → RunAfterFinalMIR
+
+Byte-stream: RunPostExtract → [finalize chain] → RunPostFinalize
+```
+
+Utilisation au niveau IR :
+```cpp
+neverc::dyncode::ObfuscationInterposes H;
+H.RunAfterInlining = [](llvm::ModulePassManager &MPM,
+                        const neverc::dyncode::DynCodeOptions &Opts) {
+  MPM.addPass(MyCFFPass(Opts.ObfuscateSpec));
+};
+// Enregistrer via l'API Plugin : interposes NEVERC_INTERPOSE_SC_* (voir docs plugin-api)
+```
+
+Utilisation au niveau MIR :
+```cpp
+H.RunAfterPreEmit = [](llvm::TargetPassConfig &TPC,
+                       const neverc::dyncode::DynCodeOptions &Opts) {
+  TPC.addExternalPass(new MyInstructionSubstitutionPass(Opts.MirObfuscateSpec));
+};
+```
+
+Le patching MIR intégré est aussi piloté par table : `Tables/MIRRewritePatterns.def` enregistre les noms de diagnostic de motifs, les filtres d'architecture et les noms de helpers ; `Tables/MIRRewriteOpcodes.def` enregistre les noms d'opcodes du backend. Lors de l'ajout de nouvelles formes de backend compatibles dyncode, préférer les entrées de table et les helpers étroits plutôt que de disperser des branches spécifiques à la cible dans le corps de la passe.
+
+[`tests/neverc/dyncode/loader_linux.c`]: ../../../tests/neverc/dyncode/loader_linux.c
 [`tests/neverc/DynCodeCrossTargetTests.cpp`]: ../../../tests/neverc/DynCodeCrossTargetTests.cpp

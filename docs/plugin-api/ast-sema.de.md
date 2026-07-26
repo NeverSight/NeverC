@@ -429,8 +429,9 @@ abgespielt wurde, und eine Zusammenfassung des Prüfers.
   `SizeInBits` oder `AlignmentInBits` vertrauen.
 
 Die normativen Deklarationen stehen in [`PluginAST.h`], [`PluginSema.h`] und
-[`Schema/ASTSchema.json`]; ein funktionierendes Parser-Abfangen samt atomarer
-Baumumschreibung zeigt [`pluginsdk/examples/ASTRewritePlugin.c`].
+[`Schema/ASTSchema.json`], die Phasenrichtlinien in
+[`Schema/PhaseSchema.json`]; ein funktionierendes Parser-Abfangen samt
+atomarer Baumumschreibung zeigt [`pluginsdk/examples/ASTRewritePlugin.c`].
 
 <!-- reference links -->
 [`PluginAST.h`]: ../../neverc/include/neverc/Plugin/PluginAST.h
@@ -438,4 +439,5 @@ Baumumschreibung zeigt [`pluginsdk/examples/ASTRewritePlugin.c`].
 [`pluginsdk/examples/ASTRewritePlugin.c`]: ../../pluginsdk/examples/ASTRewritePlugin.c
 [`PluginSema.h`]: ../../neverc/include/neverc/Plugin/PluginSema.h
 [`Schema/ASTSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/ASTSchema.json
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
 [`Schema/PluginASTSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginASTSchema.inc

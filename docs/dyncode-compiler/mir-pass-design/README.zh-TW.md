@@ -61,17 +61,17 @@ ListRegisterTargetPassConfigCallbacks.push_back(
 
 ### 2.1 側段中繼資料（透過 `TargetOpcode::*`，跨平台）
 
-| 操作碼 | 來源 | 不剝離的後果 |
-|--------|------|------------|
-| `CFI_INSTRUCTION` | 所有平台的框架降低 / `-g` | `.eh_frame` / `__compact_unwind` / `.pdata` 非空 |
-| `EH_LABEL` | EH / try-catch setjmp 點 | LSDA 側段非空 |
-| `GC_LABEL` / `ANNOTATION_LABEL` | GC / 註解標記 | MCSymbol 帶段相對中繼資料 |
-| `STATEPOINT` / `STACKMAP` / `PATCHPOINT` | GC / 沙箱 stackmap | `.llvm_stackmaps` 側段 |
-| `PSEUDO_PROBE` | `-fprofile-sample-use` | `.pseudo_probe` 側段 |
-| `PATCHABLE_*` 系列 | XRay / Kcov 樁 | `.xray_instr_map` / `.xray_fn_idx` |
+| 操作碼 | 來源 | 若不移除 |
+|--------|------|---------|
+| `CFI_INSTRUCTION` | 所有平台的 frame-lowering / `-g` | `.eh_frame` / `__compact_unwind` / `.pdata` 非空 |
+| `EH_LABEL` | EH / try-catch setjmp 點 | LSDA 側區段非空 |
+| `GC_LABEL` / `ANNOTATION_LABEL` | GC / annotation 標記 | 帶區段相對中繼資料的 MCSymbol |
+| `STATEPOINT` / `STACKMAP` / `PATCHPOINT` | GC / sandbox stackmap | `.llvm_stackmaps` 側區段 |
+| `PSEUDO_PROBE` | `-fprofile-sample-use` | `.pseudo_probe` 側區段 |
+| `PATCHABLE_*` 系列 | XRay / Kcov stub | `.xray_instr_map` / `.xray_fn_idx` |
 | `FENTRY_CALL` | `-mfentry` 入口探針 | extern `__fentry__` 呼叫 |
-| `LOCAL_ESCAPE` | Microsoft SEH 框架逃逸 | 拉入 `_local_unwind2` / `__except_handler3` |
-| `JUMP_TABLE_DEBUG_INFO` | 跳躍表除錯資訊 | `.debug_rnglists` 條目 |
+| `LOCAL_ESCAPE` | Microsoft SEH frame-escape | 拉入 `_local_unwind2` / `__except_handler3` |
+| `JUMP_TABLE_DEBUG_INFO` | 跳轉表除錯資訊 | `.debug_rnglists` 條目 |
 
 ### 2.2 Windows SEH（透過 `TargetInstrInfo::getName()` 前綴匹配）
 
@@ -101,10 +101,33 @@ if (Name.starts_with("SEH_"))
 
 `ObfuscationInterposes` 暴露 **11 個掛鉤點**：6 個 IR 級、3 個 MIR 級、2 個位元組級。
 
+三種簽章型別：
+
+```cpp
+using ObfuscationInterpose = std::function<void(
+    llvm::ModulePassManager &, const DynCodeOptions &)>;
+using MachineObfuscationInterpose = std::function<void(
+    llvm::TargetPassConfig &, const DynCodeOptions &)>;
+using BinaryObfuscationInterpose = std::function<void(
+    llvm::SmallVectorImpl<uint8_t> &, const DynCodeOptions &)>;
+```
+
 關鍵差異：
 - `RunBeforePreEmit`：MIR **仍有 CFI/EH/XRay 偽指令** — 用於序言/結語中繼資料操作。
 - `RunAfterPreEmit`：**已清理的 MIR** — 最接近 AsmPrinter 形態，適合指令替換 / 暫存器重新命名。
 - `RunPostExtract`：**純位元組流** — 用於全載荷 XOR/RC4、垃圾位元組、自訂標頭。
+
+```cpp
+__attribute__((constructor))
+static void myMirObfInit() {
+  auto H = neverc::dyncode::getDynCodeObfuscationInterposes();
+  H.RunAfterPreEmit = [](llvm::TargetPassConfig &TPC,
+                         const neverc::dyncode::DynCodeOptions &Opts) {
+    TPC.addExternalPass(new MyInstructionSubstitutionPass(Opts.MirObfuscateSpec));
+  };
+  // Register via Plugin API: NEVERC_INTERPOSE_SC_BEFORE_PREEMIT / AFTER_PREEMIT / AFTER_FINAL_MIR
+}
+```
 
 ---
 
@@ -144,15 +167,16 @@ MIR 層處理**兜底清理 + 混淆掛鉤點**，而非業務邏輯。「寫普
 ## 5. 設計理據
 
 | 問題 | IR 層？ | MIR 層？ |
-|------|---------|---------|
+|------|---------|----------|
 | 常數 GV 消除 | 是（Data2Text） | 不需要 |
 | extern libc 消除 | 是（SyscallStub / WinPEB） | 不需要 |
-| 可變全域變數棧化 | 是（ZeroReloc） | 不需要 |
-| 計算跳躍 | 是（IndirectBr） | 不需要 |
-| CFI 偽指令 | 否（後端產生） | 是（掃描並刪除） |
-| XRay 樁 | 否（後端產生） | 是（掃描並刪除） |
+| 可變全域堆疊化 | 是（ZeroReloc） | 不需要 |
+| Computed goto | 是（IndirectBr） | 不需要 |
+| CFI 偽指令 | 否（後端生成） | 是（掃描並清除） |
+| XRay stub | 否（後端生成） | 是（掃描並清除） |
 | 指令級混淆 | 否（IR 無實體暫存器） | 是（有真實暫存器/MI） |
 | 暫存器重新命名 | 否 | 是 |
+| Peephole 常數展開 | 部分 | 是（更乾淨） |
 
 ## 6. 擴充指南
 

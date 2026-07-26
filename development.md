@@ -25,14 +25,14 @@ Frontend (BuiltinEmitterX86.cpp)
 
 | File | Role |
 |------|------|
-| `llvm/include/llvm/IR/IntrinsicEnums.inc` | Total intrinsic count (`num_intrinsics`) |
-| `llvm/include/llvm/IR/IntrinsicImpl.inc` | Name table, IIT type encoding, attribute map |
-| `llvm/include/llvm/IR/IntrinsicsX86.h` | X86 intrinsic enum (sorted alphabetically) |
-| `llvm/lib/Target/X86/X86ISelLowering.cpp` | SelectionDAG lowering for each intrinsic |
-| `llvm/lib/Target/X86/X86GenDAGISel.inc` | ISel pattern-matching table (hardcoded IDs) |
-| `llvm/lib/Target/X86/X86RegisterInfo.cpp` | CR/DR register reservation (prevents DCE) |
-| `llvm/lib/Target/X86/X86InstrInfo.cpp` | Physical register copy support |
-| `neverc/lib/Emit/Builtin/BuiltinEmitterX86.cpp` | Frontend intrinsic emission |
+| [`llvm/include/llvm/IR/IntrinsicEnums.inc`](llvm/include/llvm/IR/IntrinsicEnums.inc) | Total intrinsic count (`num_intrinsics`) |
+| [`llvm/include/llvm/IR/IntrinsicImpl.inc`](llvm/include/llvm/IR/IntrinsicImpl.inc) | Name table, IIT type encoding, attribute map |
+| [`llvm/include/llvm/IR/IntrinsicsX86.h`](llvm/include/llvm/IR/IntrinsicsX86.h) | X86 intrinsic enum (sorted alphabetically) |
+| [`llvm/lib/Target/X86/X86ISelLowering.cpp`](llvm/lib/Target/X86/X86ISelLowering.cpp) | SelectionDAG lowering for each intrinsic |
+| [`llvm/lib/Target/X86/X86GenDAGISel.inc`](llvm/lib/Target/X86/X86GenDAGISel.inc) | ISel pattern-matching table (hardcoded IDs) |
+| [`llvm/lib/Target/X86/X86RegisterInfo.cpp`](llvm/lib/Target/X86/X86RegisterInfo.cpp) | CR/DR register reservation (prevents DCE) |
+| [`llvm/lib/Target/X86/X86InstrInfo.cpp`](llvm/lib/Target/X86/X86InstrInfo.cpp) | Physical register copy support |
+| [`neverc/lib/Emit/Builtin/BuiltinEmitterX86.cpp`](neverc/lib/Emit/Builtin/BuiltinEmitterX86.cpp) | Frontend intrinsic emission |
 
 ## Critical Invariant: Enum ID ↔ ISel Table Synchronization
 
@@ -261,13 +261,13 @@ segfaults:**
 
 ## Testing
 
-### GTest suite (`tests/neverc/X86PrivilegedIntrinTests.cpp`)
+### GTest suite ([`tests/neverc/X86PrivilegedIntrinTests.cpp`](tests/neverc/X86PrivilegedIntrinTests.cpp))
 
 23 tests that compile C source to assembly and check for expected instruction
 mnemonics. Uses `compileToAsm()` helper with `--target=x86_64-pc-windows-msvc
 -O2 -S`. Also verifies `#APP` (InlineAsm marker) is absent.
 
-### Unicorn binary verification (`tests/verify-x86-intrin-binary.py`)
+### Unicorn binary verification ([`tests/verify-x86-intrin-binary.py`](tests/verify-x86-intrin-binary.py))
 
 81 standalone tests. Requires: `pip install unicorn capstone lief`
 

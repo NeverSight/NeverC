@@ -1,5 +1,7 @@
 **Sprachen**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
+[← NeverC Beispiele](../../docs/examples/README.de.md)
+
 # macOS Dynamische Bibliothek — Beispiel
 
 Eine native macOS `.dylib`, die mit NeverC cross-kompiliert wurde. Kapselt Mach-Kernel-Schnittstellen für Task-Informationen und virtuelle Speicheroperationen — für die Sicherheitsforschung konzipiert. Kompilierung von macOS, Windows oder Linux — kein Xcode erforderlich.

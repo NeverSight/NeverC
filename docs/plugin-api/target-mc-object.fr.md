@@ -205,7 +205,7 @@ plan(void *UserData, const NevercCallingConventionQuery *Query,
 
 `Query->SchemaDigest` est une valeur LOCKSTEP — `RegisterNumber` n'a de sens
 que face au schéma qu'il nomme. Voir
-[Conventions d'appel personnalisées](custom-callconv/README.fr.md) et
+[Conventions d'appel personnalisées](custom-callconv/README.fr.md#plans-matérialisés) et
 [`pluginsdk/examples/CustomCallConvPlugin.c`] pour l'exemple complet.
 
 ## Routes de génération de code
@@ -517,10 +517,13 @@ complète.
   `object.final_verify` et `object.commit` sont scellés. Observez seulement.
 
 Voir [`PluginTarget.h`], [`PluginMC.h`], [`PluginObject.h`] et
-[`Schema/PhaseSchema.json`] pour les déclarations normatives, ainsi que
-[`coverage.json`], qui associe chacune de ces phases stables à ses tests
-positifs, négatifs, de remplacement, d'observateur en lecture seule et de
-porte scellée.
+[`Schema/PhaseSchema.json`] pour les déclarations normatives ; les genres
+d'entité, d'opérande, de fixup et de section qu'ils emploient viennent de
+[`Schema/MCSchema.json`] et [`Schema/ObjectSchema.json`], qui engendrent
+[`Schema/PluginMCSchema.inc`] et [`Schema/PluginObjectSchema.inc`]. Voir
+aussi [`coverage.json`], qui associe chacune de ces phases stables à ses
+tests positifs, négatifs, de remplacement, d'observateur en lecture seule et
+de porte scellée.
 
 <!-- reference links -->
 [`coverage.json`]: coverage.json
@@ -530,4 +533,8 @@ porte scellée.
 [`pluginsdk/examples/MCObserverPlugin.c`]: ../../pluginsdk/examples/MCObserverPlugin.c
 [`pluginsdk/examples/ObjectRewritePlugin.c`]: ../../pluginsdk/examples/ObjectRewritePlugin.c
 [`PluginTarget.h`]: ../../neverc/include/neverc/Plugin/PluginTarget.h
+[`Schema/MCSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/MCSchema.json
+[`Schema/ObjectSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/ObjectSchema.json
 [`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`Schema/PluginMCSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginMCSchema.inc
+[`Schema/PluginObjectSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginObjectSchema.inc

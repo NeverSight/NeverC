@@ -1,5 +1,7 @@
 **Idiomas**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
+[← Ejemplos NeverC](../../docs/examples/README.es.md)
+
 # Controlador de kernel Windows con CET Shadow Stack
 
 Un controlador de kernel WDM mínimo construido con NeverC, con Intel CET
@@ -86,9 +88,38 @@ El hardware mantiene una segunda pila (shadow stack) que refleja las operaciones
 └────────────────────────────────────────────────┘
 ```
 
+Instrucciones de gestión del shadow stack (usadas por el sistema operativo para
+el cambio de contexto, no colocadas al inicio de las funciones):
+
+```asm
+RDSSPQ  rax         ; leer el Shadow Stack Pointer actual
+INCSSPQ rax         ; avanzar SSP (descartar entradas)
+SAVEPREVSSP         ; guardar el token del shadow stack anterior
+RSTORSSP [addr]     ; restaurar a un shadow stack guardado
+WRSS  [addr], rax   ; escribir en el shadow stack de supervisor
+WRUSS [addr], rax   ; escribir en el shadow stack de usuario (solo ring 0)
+SETSSBSY            ; marcar el shadow stack actual como ocupado
+CLRSSBSY [addr]     ; limpiar el indicador de ocupado
+```
+
 ### 2. Indirect Branch Tracking (IBT) — protección del borde anterior (CALL/JMP indirecto)
 
 Requiere una instrucción `ENDBR64` (`F3 0F 1E FA`, 4 bytes) en cada objetivo válido de llamada/salto indirecto. En CPUs sin CET, `ENDBR64` es un NOP.
+
+```
+┌─ CALL/JMP indirecto ─────────────────────────┐
+│                                               │
+│  La CPU fija TRACKER = WAIT_FOR_ENDBR         │
+│  Salto a la dirección objetivo...             │
+│                                               │
+│  ¿Primera instrucción del objetivo ENDBR64 ?  │
+│    ✓ sí → limpiar TRACKER, ejecución normal   │
+│    ✗ no → excepción #CP                       │
+│                                               │
+│  CALL/JMP directo NO fija TRACKER             │
+│                                               │
+└───────────────────────────────────────────────┘
+```
 
 ### Elección del kernel de Windows
 

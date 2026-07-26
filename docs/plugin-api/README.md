@@ -24,16 +24,16 @@ optimization pipeline — is reached through tables you ask the host for by ID.
 
 | Guide | Covers |
 |---|---|
-| [Driver API](driver.md) | Command line, toolchain selection, action graph, job graph |
-| [Source and I/O API](source.md) | VFS providers, source locations, buffers, output sinks, dependencies |
-| [Preprocessor API](prep.md) | Tokens, macros, pragmas, includes, feature queries, 39 event kinds |
-| [AST and semantic API](ast-sema.md) | Parser extension, AST mutation, name lookup, types, constants |
-| [IR API](ir.md) | LLVM IR reading, transactional building, analyses, passes, providers |
-| [MIR API](mir.md) | Machine functions, registers, frames, MIR passes and analyses |
-| [Target, MC, assembly, object](target-mc-object.md) | Target registration, calling conventions, MC encoding, object graphs |
-| [Link and LTO API](link-lto.md) | Link graph, symbol resolution, GC/ICF, linker and LTO providers |
-| [DynCode API](dyncode.md) | Flat position-independent images, import lowering, charset encoding |
-| [Custom calling conventions](custom-callconv/README.md) | Data-driven calling-convention plugins |
+| [Driver API](driver.md) | [Command line](driver.md#raw-arguments), [toolchain selection](driver.md#toolchain-selection), [action graph](driver.md#the-action-graph), [job graph](driver.md#the-job-graph) |
+| [Source and I/O API](source.md) | [VFS providers](source.md#virtual-file-system-providers), [source locations](source.md#source-locations), [buffers](source.md#reading-files), [output sinks](source.md#writing-outputs), [dependencies](source.md#recording-dependencies) |
+| [Preprocessor API](prep.md) | [Tokens](prep.md#reading-tokens), [macros](prep.md#identifiers-and-macros), [pragmas](prep.md#pragmas-and-feature-queries), [includes](prep.md#redirecting-an-include), [feature queries](prep.md#pragmas-and-feature-queries), [39 event kinds](prep.md#event-subscription) |
+| [AST and semantic API](ast-sema.md) | [Parser extension](ast-sema.md#parser-extension), [AST mutation](ast-sema.md#building-and-mutating), [name lookup](ast-sema.md#semantic-queries), [types](ast-sema.md#typed-accessors), [constants](ast-sema.md#semantic-queries) |
+| [IR API](ir.md) | [LLVM IR reading](ir.md#walking-a-module), [transactional building](ir.md#transactional-mutation), [analyses](ir.md#analyses), [passes](ir.md#passes), [providers](ir.md#replacing-generation-and-optimization) |
+| [MIR API](mir.md) | [Machine functions](mir.md#reading-mir), [registers](mir.md#registers), [frames](mir.md#the-stack-frame), [MIR passes and analyses](mir.md#passes) |
+| [Target, MC, assembly, object](target-mc-object.md) | [Target registration](target-mc-object.md#registering-a-target), [calling conventions](target-mc-object.md#abi-and-calling-conventions), [MC encoding](target-mc-object.md#encoders-decoders-and-layout), [object graphs](target-mc-object.md#object-graphs) |
+| [Link and LTO API](link-lto.md) | [Link graph](link-lto.md#reading-the-graph), [symbol resolution](link-lto.md#mutating-the-graph), [GC/ICF](link-lto.md#the-state-machine), [linker and LTO providers](link-lto.md#providers) |
+| [DynCode API](dyncode.md) | [Flat position-independent images](dyncode.md#image-report-and-bounded-byte-edits), [import lowering](dyncode.md#external-references-and-import-lowering), [charset encoding](dyncode.md#image-report-and-bounded-byte-edits) |
+| [Custom calling conventions](custom-callconv/README.md) | [Data-driven calling-convention plugins](custom-callconv/README.md#spec-format) |
 | [Phase coverage evidence](coverage.json) | Test mapping for every stable phase |
 
 ## Execution model
@@ -142,9 +142,9 @@ typedef struct NevercPhaseFrame {
 ```
 
 [`Schema/PhaseSchema.json`] is the normative source for phase IDs, policies,
-stability tiers, and verifier gates. The generated
-[`Schema/PluginPhaseSchema.inc`] exposes each of them as compile-time
-constants — for phase `neverc.ir.pass.pipeline_start`:
+stability tiers, and verifier gates. [`PluginPhaseSchema.h`] and the generated
+[`Schema/PluginPhaseSchema.inc`] it includes expose each of them as
+compile-time constants — for phase `neverc.ir.pass.pipeline_start`:
 
 ```c
 NEVERC_PHASE_IR_PASS_PIPELINE_START_NAME       /* "neverc.ir.pass.pipeline_start" */
@@ -552,7 +552,8 @@ descriptor.
 
 ## Building
 
-Include the aggregate header or only the domains you use:
+Include [`NevercPluginAPI.h`], the aggregate header, or only the domains you
+use:
 
 ```c
 #include "neverc/Plugin/NevercPluginAPI.h"   /* everything */
@@ -748,6 +749,7 @@ build can assert its struct layout against the ABI key it will load into.
 [`MachinePass.c`]: ../../pluginsdk/examples/MachinePass.c
 [`MCObserverPlugin.c`]: ../../pluginsdk/examples/MCObserverPlugin.c
 [`neverc/include/neverc/Plugin/Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`NevercPluginAPI.h`]: ../../neverc/include/neverc/Plugin/NevercPluginAPI.h
 [`ObjectRewritePlugin.c`]: ../../pluginsdk/examples/ObjectRewritePlugin.c
 [`PluginAST.h`]: ../../neverc/include/neverc/Plugin/PluginAST.h
 [`PluginCore.h`]: ../../neverc/include/neverc/Plugin/PluginCore.h
@@ -759,6 +761,7 @@ build can assert its struct layout against the ABI key it will load into.
 [`PluginMC.h`]: ../../neverc/include/neverc/Plugin/PluginMC.h
 [`PluginMIR.h`]: ../../neverc/include/neverc/Plugin/PluginMIR.h
 [`PluginObject.h`]: ../../neverc/include/neverc/Plugin/PluginObject.h
+[`PluginPhaseSchema.h`]: ../../neverc/include/neverc/Plugin/PluginPhaseSchema.h
 [`PluginPrep.h`]: ../../neverc/include/neverc/Plugin/PluginPrep.h
 [`pluginsdk/abi/plugin.json`]: ../../pluginsdk/abi/plugin.json
 [`pluginsdk/examples/DriverTracePlugin.c`]: ../../pluginsdk/examples/DriverTracePlugin.c

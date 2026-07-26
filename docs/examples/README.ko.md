@@ -10,6 +10,8 @@ NeverC의 크로스 플랫폼 컴파일 기능을 보여주는 빌드 가능한 
 
 ## 예제 목록
 
+### Windows
+
 | 예제 | 설명 | 주요 기능 |
 |------|------|---------|
 | [Windows 커널 드라이버](../../examples/windows-driver/README.ko.md) | 최소 WDM 커널 드라이버 | macOS/Linux에서 `.sys` 크로스 컴파일, 자동 LTO, 내장 링커 |
@@ -56,16 +58,54 @@ NeverC의 크로스 플랫폼 컴파일 기능을 보여주는 빌드 가능한 
 | [커널 Full SDK](../../examples/android-kernel-full/README.ko.md) | 완전 SDK 통합 | Netlink IPC, interpose, 자격 증명 래퍼, 모듈 가시성, SELinux 정책 제어, VMA, 파일 I/O |
 | [커널 Chardev](../../examples/android-kernel-chardev/README.ko.md) | 문자 장치 + ioctl | `misc_register`, ioctl 디스패치, `/proc` seq_file |
 | [커널 Netlink](../../examples/android-kernel-netlink/README.ko.md) | 양방향 netlink IPC | PING/VERSION/ECHO 명령, `nvk_nl_open`/`nvk_nl_reply` |
+| [커널 Probe](../../examples/android-kernel-probe/README.ko.md) | 임의 명령어 프로브 | `neverc_krt_probe_register`, 전체 레지스터 컨텍스트, 우선순위 체이닝, 건너뛰기/리다이렉트 |
+| [커널 다중 파일 모듈](../../examples/android-kernel-multifile/README.ko.md) | 다중 파일 커널 모듈 | `NEVERC_KRT_BOOTSTRAP()` 한 번만, `weak_odr` 공유 상태, init/interpose/helper 분리 |
 
 ---
 
 ## 빠른 시작
 
+모든 예제는 동일한 패턴을 따릅니다:
+
 ```bash
-cd examples/<예제명>
+cd examples/example-name
 neverc make
 ```
 
-컴파일러 경로 지정: `neverc make NEVERC=/path/to/neverc`
+필요하면 컴파일러 경로를 재정의합니다:
 
-모든 예제는 **neverc**를 컴파일러로 사용하며 내장 링커를 통해 Windows PE 바이너리(`.sys`)를 생성합니다.
+```bash
+neverc make NEVERC=/path/to/neverc
+```
+
+Linux 예제는 아키텍처 선택을 지원합니다:
+
+```bash
+neverc make TARGET=aarch64-linux-gnu   # Build for ARM64
+neverc make TARGET=x86_64-linux-gnu    # Build for x86_64 (default)
+```
+
+macOS 예제는 아키텍처 선택을 지원합니다:
+
+```bash
+neverc make TARGET=arm64-apple-macos     # Build for Apple Silicon (default)
+neverc make TARGET=x86_64-apple-macos    # Build for Intel
+```
+
+Android 예제는 기본적으로 ARM64를 대상으로 합니다:
+
+```bash
+cd examples/android-elf
+neverc make            # Build
+neverc make run        # Build + push to device + run via adb
+```
+
+---
+
+## 크로스 플랫폼 하이라이트
+
+- **단일 툴체인**: NeverC는 전처리, 컴파일, 최적화(자동 LTO), 링크를 한 번의 호출로 처리합니다
+- **번들 SDK**: Windows SDK/WDK, Linux sysroot(Ubuntu 22.04), macOS sysroot(macOS 14), Android sysroot(NDK r26c, API 21+)가 `runtime/`에 번들되어 있습니다 — 외부 의존성 제로
+- **호스트 독립적**: macOS(arm64/x86_64), Linux(x86_64/aarch64), Windows에서 동일한 명령으로 빌드
+- **멀티 타깃**: 임의의 호스트에서 Windows PE(`.sys`/`.exe`/`.dll`), Linux ELF, macOS Mach-O(`.dylib`), Android ELF로 크로스 컴파일
+- **디버그 지원**: `-g`를 전달하면 DWARF 디버그 정보 포함; `llvm-dwarfdump`로 검사

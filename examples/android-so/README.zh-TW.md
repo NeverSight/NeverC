@@ -1,5 +1,7 @@
 **Languages**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
+[← NeverC 範例](../../docs/examples/README.zh-TW.md)
+
 # Android 共享庫範例
 
 使用 NeverC 交叉編譯的 ARM64 原生 `.so` 共享庫，用於 Android 平台。可從 macOS、Windows 或 Linux 建置——無需 Android NDK 或 CMake。

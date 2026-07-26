@@ -73,7 +73,7 @@ Windows ليس لديه ABI استدعاء نظام مستقر. القائمة �
 
 ### 4. إضافة Loader (أداة اختبار فقط)
 
-مرجع `loader_linux.c` و`loader_windows.c`. عادةً: `mmap(RWX) → memcpy → icache flush → call`.
+مرجع [`tests/neverc/dyncode/loader_linux.c`] و`loader_windows.c`. عادةً: `mmap(RWX) → memcpy → icache flush → call`.
 
 ### 5. تحديث الاختبارات
 
@@ -99,8 +99,46 @@ Windows ليس لديه ABI استدعاء نظام مستقر. القائمة �
 
 ## واجهة توسيع مرور التشويش
 
-مسار dyncode يكشف 11 خطافاً عبر `Pipeline.h::ObfuscationInterposes` لمكتبات التشويش الخارجية. ترقيع MIR المدمج أيضاً مدفوع بالجداول: `Tables/MIRRewritePatterns.def` و`Tables/MIRRewriteOpcodes.def`.
+مسار dyncode يكشف 11 خطافاً عبر `Pipeline.h::ObfuscationInterposes` لمكتبات التشويش الخارجية:
 
+```
+PipelineStartEP:
+  RunBeforePrep → [ZeroReloc Prep] → RunAfterPrep →
+  [IndirectBr → MemIntrin → CompilerRt → SyscallStub →
+   WinPEBImport → KernelImport → Data2Text phase 1] →
+  RunBeforeInlining
+
+OptimizerLastEP:
+  RunAfterInlining → [Data2Text phase 2 → ZeroReloc Stackify] →
+  RunAfterStackify → [AllBlrPass] → RunAfterFinalIR
+
+MIR: RunBeforePreEmit → [MIRPrepPass] → RunAfterPreEmit →
+     [LLVM addPreEmitPass/addPreEmitPass2] → RunAfterFinalMIR
+
+Byte-stream: RunPostExtract → [finalize chain] → RunPostFinalize
+```
+
+الاستخدام على مستوى IR:
+```cpp
+neverc::dyncode::ObfuscationInterposes H;
+H.RunAfterInlining = [](llvm::ModulePassManager &MPM,
+                        const neverc::dyncode::DynCodeOptions &Opts) {
+  MPM.addPass(MyCFFPass(Opts.ObfuscateSpec));
+};
+// التسجيل عبر Plugin API: خطافات NEVERC_INTERPOSE_SC_* (انظر وثائق plugin-api)
+```
+
+الاستخدام على مستوى MIR:
+```cpp
+H.RunAfterPreEmit = [](llvm::TargetPassConfig &TPC,
+                       const neverc::dyncode::DynCodeOptions &Opts) {
+  TPC.addExternalPass(new MyInstructionSubstitutionPass(Opts.MirObfuscateSpec));
+};
+```
+
+ترقيع MIR المدمج أيضاً مدفوع بالجداول: `Tables/MIRRewritePatterns.def` يسجّل أسماء تشخيص الأنماط ومرشّحات البنية وأسماء المساعدات؛ `Tables/MIRRewriteOpcodes.def` يسجّل أسماء أوبكودات الخلفية. عند إضافة أشكال خلفية جديدة صديقة لـ dyncode، فضّل إدخالات الجداول والمساعدات الضيقة على تشتيت الفروع الخاصة بالهدف في جسم المرور.
+
+[`tests/neverc/dyncode/loader_linux.c`]: ../../../tests/neverc/dyncode/loader_linux.c
 [`tests/neverc/DynCodeCrossTargetTests.cpp`]: ../../../tests/neverc/DynCodeCrossTargetTests.cpp
 
 </div>

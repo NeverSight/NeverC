@@ -305,9 +305,11 @@ che cambia il contenuto. `GetSourceUnit` rilegge un'unità e riporta in più
 - `AddMemoryFile` ha ambito di sessione; quando il contenuto dipende dal task,
   il provider è lo strumento giusto.
 
-Vedere [`PluginSource.h`] per le dichiarazioni normative e
+Vedere [`PluginSource.h`] per le dichiarazioni normative,
+[`Schema/PhaseSchema.json`] per le tre fasi source e le loro policy, e
 [`pluginsdk/examples/VirtualHeaderPlugin.c`] per un provider completo.
 
 <!-- reference links -->
 [`pluginsdk/examples/VirtualHeaderPlugin.c`]: ../../pluginsdk/examples/VirtualHeaderPlugin.c
 [`PluginSource.h`]: ../../neverc/include/neverc/Plugin/PluginSource.h
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json

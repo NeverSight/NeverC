@@ -398,12 +398,14 @@ build-neverc/bin/neverc \
 - 初始化每一個表頭與保留欄位；狀態要跨 C 邊界回傳，並且絕不讓 C++ 例外穿過去。
 - `neverc.mir.final_verify` 是封印的。不管怎樣它都會執行。
 
-規範性宣告、schema 常數、階段政策與涵蓋證據，請見 [`PluginMIR.h`]、
-[`Schema/PluginMIRSchema.inc`]、[`Schema/PhaseSchema.json`] 與 [`coverage.json`]。
+規範性宣告、schema 本身、其產生的常數、階段政策與涵蓋證據，請見
+[`PluginMIR.h`]、[`Schema/MIRSchema.json`]、[`Schema/PluginMIRSchema.inc`]、
+[`Schema/PhaseSchema.json`] 與 [`coverage.json`]。
 
 <!-- reference links -->
 [`coverage.json`]: coverage.json
 [`PluginMIR.h`]: ../../neverc/include/neverc/Plugin/PluginMIR.h
 [`pluginsdk/examples/MachinePass.c`]: ../../pluginsdk/examples/MachinePass.c
+[`Schema/MIRSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/MIRSchema.json
 [`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
 [`Schema/PluginMIRSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginMIRSchema.inc

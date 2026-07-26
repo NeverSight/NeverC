@@ -21,16 +21,16 @@ neverc_plugin_entry(const NevercBootstrapAPI *Bootstrap,
 
 | 指南 | 涵蓋內容 |
 |---|---|
-| [驅動程式 API](driver.zh-TW.md) | 命令列、工具鏈選擇、action 圖、job 圖 |
-| [Source 與 I/O API](source.zh-TW.md) | VFS Provider、原始碼位置、緩衝區、輸出 sink、相依性 |
-| [前置處理器 API](prep.zh-TW.md) | token、巨集、pragma、include、特性查詢、39 種事件 |
-| [AST 與語意 API](ast-sema.zh-TW.md) | 剖析器擴充、AST 變更、名稱查找、型別、常數 |
-| [IR API](ir.zh-TW.md) | LLVM IR 讀取、交易式建構、分析、pass、Provider |
-| [MIR API](mir.zh-TW.md) | 機器函式、暫存器、堆疊框、MIR pass 與分析 |
-| [Target、MC、組合語言、目的檔](target-mc-object.zh-TW.md) | 目標註冊、呼叫慣例、MC 編碼、目的檔圖 |
-| [連結與 LTO API](link-lto.zh-TW.md) | 連結圖、符號解析、GC/ICF、連結器與 LTO Provider |
-| [DynCode API](dyncode.zh-TW.md) | 扁平位置無關映像、匯入降級、字元集編碼 |
-| [自訂呼叫慣例](custom-callconv/README.zh-TW.md) | 資料驅動的呼叫慣例外掛 |
+| [驅動程式 API](driver.zh-TW.md) | [命令列](driver.zh-TW.md#原始引數)、[工具鏈選擇](driver.zh-TW.md#工具鏈選擇)、[action 圖](driver.zh-TW.md#action-圖)、[job 圖](driver.zh-TW.md#job-圖) |
+| [Source 與 I/O API](source.zh-TW.md) | [VFS Provider](source.zh-TW.md#虛擬檔案系統-provider)、[原始碼位置](source.zh-TW.md#原始碼位置)、[緩衝區](source.zh-TW.md#讀取檔案)、[輸出 sink](source.zh-TW.md#寫出輸出)、[相依性](source.zh-TW.md#記錄相依) |
+| [前置處理器 API](prep.zh-TW.md) | [token](prep.zh-TW.md#讀取-token)、[巨集](prep.zh-TW.md#識別字與巨集)、[pragma](prep.zh-TW.md#pragma-與功能查詢)、[include](prep.zh-TW.md#導向另一個-include)、[特性查詢](prep.zh-TW.md#pragma-與功能查詢)、[39 種事件](prep.zh-TW.md#事件訂閱) |
+| [AST 與語意 API](ast-sema.zh-TW.md) | [剖析器擴充](ast-sema.zh-TW.md#剖析器擴充)、[AST 變更](ast-sema.zh-TW.md#建構與變更)、[名稱查找](ast-sema.zh-TW.md#語意查詢)、[型別](ast-sema.zh-TW.md#具型別的存取器)、[常數](ast-sema.zh-TW.md#語意查詢) |
+| [IR API](ir.zh-TW.md) | [LLVM IR 讀取](ir.zh-TW.md#走訪模組)、[交易式建構](ir.zh-TW.md#交易式變更)、[分析](ir.zh-TW.md#分析)、[pass](ir.zh-TW.md#pass)、[Provider](ir.zh-TW.md#取代產生與最佳化) |
+| [MIR API](mir.zh-TW.md) | [機器函式](mir.zh-TW.md#讀取-mir)、[暫存器](mir.zh-TW.md#暫存器)、[堆疊框](mir.zh-TW.md#堆疊框架)、[MIR pass 與分析](mir.zh-TW.md#pass) |
+| [Target、MC、組合語言、目的檔](target-mc-object.zh-TW.md) | [目標註冊](target-mc-object.zh-TW.md#註冊一個目標)、[呼叫慣例](target-mc-object.zh-TW.md#abi-與呼叫慣例)、[MC 編碼](target-mc-object.zh-TW.md#編碼器解碼器與版面配置)、[目的檔圖](target-mc-object.zh-TW.md#目的檔圖) |
+| [連結與 LTO API](link-lto.zh-TW.md) | [連結圖](link-lto.zh-TW.md#讀取圖)、[符號解析](link-lto.zh-TW.md#變更圖)、[GC/ICF](link-lto.zh-TW.md#狀態機)、[連結器與 LTO Provider](link-lto.zh-TW.md#provider) |
+| [DynCode API](dyncode.zh-TW.md) | [扁平位置無關映像](dyncode.zh-TW.md#映像報告與有界的位元組編輯)、[匯入降級](dyncode.zh-TW.md#外部參考與匯入降階)、[字元集編碼](dyncode.zh-TW.md#映像報告與有界的位元組編輯) |
+| [自訂呼叫慣例](custom-callconv/README.zh-TW.md) | [資料驅動的呼叫慣例外掛](custom-callconv/README.zh-TW.md#spec-格式) |
 | [階段涵蓋範圍證據](coverage.json) | 每個穩定階段的測試對應 |
 
 ## 執行模型
@@ -134,8 +134,8 @@ typedef struct NevercPhaseFrame {
 ```
 
 [`Schema/PhaseSchema.json`] 是階段 ID、policy、穩定性層級與驗證器 gate 的規範事實
-來源。產生出的 [`Schema/PluginPhaseSchema.inc`] 會把它們每一個都公開為編譯期常數
-——以階段 `neverc.ir.pass.pipeline_start` 為例：
+來源。[`PluginPhaseSchema.h`] 及其引入的產生檔 [`Schema/PluginPhaseSchema.inc`] 會把
+它們每一個都公開為編譯期常數——以階段 `neverc.ir.pass.pipeline_start` 為例：
 
 ```c
 NEVERC_PHASE_IR_PASS_PIPELINE_START_NAME       /* "neverc.ir.pass.pipeline_start" */
@@ -521,7 +521,7 @@ lockstep 註冊要求這三個欄位全部填妥；建置 ID 為空、ABI key �
 
 ## 建置
 
-可以引入彙總標頭檔，也可以只引入你會用到的領域：
+可以引入彙總標頭檔 [`NevercPluginAPI.h`]，也可以只引入你會用到的領域：
 
 ```c
 #include "neverc/Plugin/NevercPluginAPI.h"   /* everything */
@@ -708,6 +708,7 @@ key 斷言自己的結構佈局。
 [`MachinePass.c`]: ../../pluginsdk/examples/MachinePass.c
 [`MCObserverPlugin.c`]: ../../pluginsdk/examples/MCObserverPlugin.c
 [`neverc/include/neverc/Plugin/Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`NevercPluginAPI.h`]: ../../neverc/include/neverc/Plugin/NevercPluginAPI.h
 [`ObjectRewritePlugin.c`]: ../../pluginsdk/examples/ObjectRewritePlugin.c
 [`PluginAST.h`]: ../../neverc/include/neverc/Plugin/PluginAST.h
 [`PluginCore.h`]: ../../neverc/include/neverc/Plugin/PluginCore.h
@@ -719,6 +720,7 @@ key 斷言自己的結構佈局。
 [`PluginMC.h`]: ../../neverc/include/neverc/Plugin/PluginMC.h
 [`PluginMIR.h`]: ../../neverc/include/neverc/Plugin/PluginMIR.h
 [`PluginObject.h`]: ../../neverc/include/neverc/Plugin/PluginObject.h
+[`PluginPhaseSchema.h`]: ../../neverc/include/neverc/Plugin/PluginPhaseSchema.h
 [`PluginPrep.h`]: ../../neverc/include/neverc/Plugin/PluginPrep.h
 [`pluginsdk/abi/plugin.json`]: ../../pluginsdk/abi/plugin.json
 [`pluginsdk/examples/DriverTracePlugin.c`]: ../../pluginsdk/examples/DriverTracePlugin.c

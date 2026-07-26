@@ -12,6 +12,8 @@
 
 ## الأمثلة المتاحة
 
+### Windows
+
 | المثال | الوصف | الميزات الرئيسية |
 |--------|-------|-----------------|
 | [برنامج تشغيل نواة Windows](../../examples/windows-driver/README.ar.md) | برنامج WDM أدنى | تجميع متقاطع `.sys` من macOS/Linux، LTO تلقائي، مُرابط مدمج |
@@ -58,18 +60,56 @@
 | [Kernel Full SDK](../../examples/android-kernel-full/README.ar.md) | تكامل SDK كامل | Netlink IPC، interposes، أغلفة بيانات الاعتماد، رؤية الوحدة، التحكم في سياسة SELinux، VMA، ملفات |
 | [Kernel Chardev](../../examples/android-kernel-chardev/README.ar.md) | جهاز حرفي + ioctl | `misc_register`، إرسال ioctl، `/proc` seq_file |
 | [Kernel Netlink](../../examples/android-kernel-netlink/README.ar.md) | IPC netlink ثنائي الاتجاه | أوامر PING/VERSION/ECHO، `nvk_nl_open`/`nvk_nl_reply` |
+| [Kernel Probe](../../examples/android-kernel-probe/README.ar.md) | فحص تعليمة عشوائية | `neverc_krt_probe_register`، سياق كامل للمسجلات، تسلسل حسب الأولوية، تخطٍّ/إعادة توجيه |
+| [Kernel Multi-File](../../examples/android-kernel-multifile/README.ar.md) | وحدة نواة متعددة الملفات | استدعاء واحد لـ `NEVERC_KRT_BOOTSTRAP()`، حالة مشتركة `weak_odr`، تقسيم init/interpose/الأدوات |
 
 ---
 
 ## بدء سريع
 
+كل مثال يتبع النمط نفسه:
+
 ```bash
-cd examples/<اسم-المثال>
+cd examples/اسم-المثال
 neverc make
 ```
 
-تحديد مسار المترجم: `neverc make NEVERC=/path/to/neverc`
+تجاوز مسار المترجم عند الحاجة:
 
-جميع الأمثلة تستخدم **neverc** وتُنتج ثنائيات Windows PE (`.sys`) عبر المُرابط المدمج.
+```bash
+neverc make NEVERC=/path/to/neverc
+```
+
+أمثلة Linux تدعم اختيار البنية:
+
+```bash
+neverc make TARGET=aarch64-linux-gnu   # Build for ARM64
+neverc make TARGET=x86_64-linux-gnu    # Build for x86_64 (default)
+```
+
+أمثلة macOS تدعم اختيار البنية:
+
+```bash
+neverc make TARGET=arm64-apple-macos     # Build for Apple Silicon (default)
+neverc make TARGET=x86_64-apple-macos    # Build for Intel
+```
+
+أمثلة Android تستهدف ARM64 افتراضيًا:
+
+```bash
+cd examples/android-elf
+neverc make            # Build
+neverc make run        # Build + push to device + run via adb
+```
+
+---
+
+## أبرز ميزات تعدد المنصات
+
+- **سلسلة أدوات واحدة**: يتولى NeverC المعالجة المسبقة والترجمة والتحسين (LTO تلقائي) والربط في استدعاء واحد
+- **SDK مضمَّن**: Windows SDK/WDK وLinux sysroot (Ubuntu 22.04) وmacOS sysroot (macOS 14) وAndroid sysroot (NDK r26c, API 21+) مضمَّنة في `runtime/` — صفر تبعيات خارجية
+- **مستقل عن المضيف**: البناء من macOS (arm64/x86_64) أو Linux (x86_64/aarch64) أو Windows بأوامر متطابقة
+- **متعدد الأهداف**: ترجمة متقاطعة إلى Windows PE (`.sys`/`.exe`/`.dll`) وLinux ELF وmacOS Mach-O (`.dylib`) وAndroid ELF من أي مضيف
+- **دعم التصحيح**: مرّر `-g` لمعلومات تصحيح DWARF؛ افحص باستخدام `llvm-dwarfdump`
 
 </div>

@@ -1,5 +1,7 @@
 **Lingue**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
+[← Esempi NeverC](../../docs/examples/README.it.md)
+
 # Demo completa SDK kernel Android
 
 Integrazione completa SDK — inizializza tutti i sottosistemi NVK e li espone tramite interfaccia comandi netlink. Implementazione di riferimento per moduli in produzione. Include: motore interpose, wrapper credenziali, visibilità moduli, controllo policy SELinux, enumerazione processi, ispezione VMA, I/O file, rilevamento ambiente e statistiche.

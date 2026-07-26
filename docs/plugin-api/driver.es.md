@@ -312,10 +312,11 @@ typedef struct NevercJobResultDescriptor {
 ```
 
 `OutputSeals` transporta los `NevercOutputSealHandle` producidos a través de la
-API de E/S (véase [Source y E/S](source.es.md)), que es como el anfitrión
-confirma que los archivos que un trabajo afirmó escribir existen realmente con
-los resúmenes informados. `GetJobResult` lee un resultado confirmado y, igual
-que la selección de cadena, informa de `BuiltinProviderUsed`.
+API de E/S (véase [Source y E/S](source.es.md#escribir-salidas)), que es como
+el anfitrión confirma que los archivos que un trabajo afirmó escribir existen
+realmente con los resúmenes informados. `GetJobResult` lee un resultado
+confirmado y, igual que la selección de cadena, informa de
+`BuiltinProviderUsed`.
 
 ## Ejemplo completo: observar argumentos, interceptar la ejecución
 

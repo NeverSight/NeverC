@@ -421,8 +421,9 @@ build-neverc/bin/neverc \
   pass 會平行執行。
 - `neverc.ir.final_verify` 是封印的。外掛做什麼都跳不過它。
 
-規範性宣告、schema 常數、階段政策與測試證據，請見 [`PluginIR.h`]、
-[`Schema/PluginIRSchema.inc`]、[`Schema/PhaseSchema.json`] 與 [`coverage.json`]。
+規範性宣告、schema 本身、其產生的常數、階段政策與測試證據，請見
+[`PluginIR.h`]、[`Schema/IRSchema.json`]、[`Schema/PluginIRSchema.inc`]、
+[`Schema/PhaseSchema.json`] 與 [`coverage.json`]。
 
 <!-- reference links -->
 [`coverage.json`]: coverage.json
@@ -431,5 +432,6 @@ build-neverc/bin/neverc \
 [`pluginsdk/examples/CustomCallConvPlugin.c`]: ../../pluginsdk/examples/CustomCallConvPlugin.c
 [`pluginsdk/examples/ExamplePlugin.c`]: ../../pluginsdk/examples/ExamplePlugin.c
 [`pluginsdk/examples/FunctionPass.c`]: ../../pluginsdk/examples/FunctionPass.c
+[`Schema/IRSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/IRSchema.json
 [`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
 [`Schema/PluginIRSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginIRSchema.inc

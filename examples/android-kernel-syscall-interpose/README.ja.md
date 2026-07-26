@@ -1,5 +1,7 @@
 **言語**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
+[← NeverC サンプル](../../docs/examples/README.ja.md)
+
 # Android カーネル Syscall Interpose
 
 `sys_call_table` のポインタを置き換えて `openat` をフックします。ARM64 GKI カーネルでの `neverc_krt_syscall_replace` / `neverc_krt_syscall_restore` による従来型 syscall インターセプションを実演します。

@@ -181,7 +181,7 @@ Core->SetFunctionCallingConvention(Core->Context, Task, Function,
 
 `NEVERC_IR_CALLING_CONVENTION_NEVER_C_CUSTOM` 是 `CallingConv::NeverC_Custom`（LLVM 值 1000）在 ABI 层的稳定名称。随后插件用 `GetValueUseCount` / `GetValueUse` 遍历该函数的所有使用点，对每一个作为 `call`、`invoke` 或 `callbr` 被调用方操作数的使用点，通过 `SetInstructionProperty` 配合 `NEVERC_IR_PROPERTY_CALLING_CONVENTION` 给指令设置相同的约定。其余任何使用点都意味着地址发生了逃逸，这正是"地址被取用"警告的来源。
 
-如果插件注册了自己的目标，也可以在其 `NevercCallingConventionDescriptor` 上提供 `PlanCallingConvention` 回调直接产出 plan，跳过 spec 这一层。参见[目标、MC、汇编与目标文件](../target-mc-object.zh-CN.md)。
+如果插件注册了自己的目标，也可以在其 `NevercCallingConventionDescriptor` 上提供 `PlanCallingConvention` 回调直接产出 plan，跳过 spec 这一层。参见[目标、MC、汇编与目标文件](../target-mc-object.zh-CN.md#abi-与调用约定)。
 
 ## 测试
 
@@ -244,7 +244,12 @@ custom_attr(...)              (neverc.ir.pass.post_opt)
 
 后端执行器是**一次性实现** —— 所有策略决策都在插件里。新增一个约定永远不需要重新构建 NeverC。
 
+上面用到的核心表见 [`PluginIR.h`]，`NevercCallingConventionDescriptor` 见 [`PluginTarget.h`]，该 pass 挂载的 `neverc.ir.pass.post_opt` 阶段见 [`Schema/PhaseSchema.json`]。
+
 <!-- reference links -->
 [`CustomCallConvPlugin.c`]: ../../../pluginsdk/examples/CustomCallConvPlugin.c
 [`llvm/include/llvm/CodeGen/NeverCCallConv.h`]: ../../../llvm/include/llvm/CodeGen/NeverCCallConv.h
+[`PluginIR.h`]: ../../../neverc/include/neverc/Plugin/PluginIR.h
+[`PluginTarget.h`]: ../../../neverc/include/neverc/Plugin/PluginTarget.h
+[`Schema/PhaseSchema.json`]: ../../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
 [`tests/neverc/CustomCallConvTests.cpp`]: ../../../tests/neverc/CustomCallConvTests.cpp

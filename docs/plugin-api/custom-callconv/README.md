@@ -181,7 +181,7 @@ Core->SetFunctionCallingConvention(Core->Context, Task, Function,
 
 `NEVERC_IR_CALLING_CONVENTION_NEVER_C_CUSTOM` is the ABI-stable name for `CallingConv::NeverC_Custom` (LLVM value 1000). The plugin then walks the function's uses with `GetValueUseCount` / `GetValueUse`, and for every use that is the callee operand of a `call`, `invoke`, or `callbr` it sets the same convention on the instruction via `SetInstructionProperty` with `NEVERC_IR_PROPERTY_CALLING_CONVENTION`. Any other use means the address escaped, which is where the address-taken warning comes from.
 
-A plugin that registers its own target can instead supply a `PlanCallingConvention` callback on its `NevercCallingConventionDescriptor` and produce plans directly, skipping the spec layer. See [Target, MC, assembly, object](../target-mc-object.md).
+A plugin that registers its own target can instead supply a `PlanCallingConvention` callback on its `NevercCallingConventionDescriptor` and produce plans directly, skipping the spec layer. See [Target, MC, assembly, object](../target-mc-object.md#abi-and-calling-conventions).
 
 ## Testing
 
@@ -244,7 +244,12 @@ custom_attr(...)              (neverc.ir.pass.post_opt)
 
 The backend executor is a **one-time implementation** — all policy decisions live in the plugin. Adding a new convention never requires rebuilding NeverC.
 
+See [`PluginIR.h`] for the core table used above, [`PluginTarget.h`] for `NevercCallingConventionDescriptor`, and [`Schema/PhaseSchema.json`] for the `neverc.ir.pass.post_opt` phase the pass attaches to.
+
 <!-- reference links -->
 [`CustomCallConvPlugin.c`]: ../../../pluginsdk/examples/CustomCallConvPlugin.c
 [`llvm/include/llvm/CodeGen/NeverCCallConv.h`]: ../../../llvm/include/llvm/CodeGen/NeverCCallConv.h
+[`PluginIR.h`]: ../../../neverc/include/neverc/Plugin/PluginIR.h
+[`PluginTarget.h`]: ../../../neverc/include/neverc/Plugin/PluginTarget.h
+[`Schema/PhaseSchema.json`]: ../../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
 [`tests/neverc/CustomCallConvTests.cpp`]: ../../../tests/neverc/CustomCallConvTests.cpp

@@ -134,7 +134,25 @@ MIR: RunBeforePreEmit → [MIRPrepPass] → RunAfterPreEmit →
 Byte-Stream: RunPostExtract → [finalize Kette] → RunPostFinalize
 ```
 
-Eingebautes MIR-Patching ist ebenfalls tabellengesteuert: `Tables/MIRRewritePatterns.def` und `Tables/MIRRewriteOpcodes.def`. Beim Hinzufügen neuer dyncode-freundlicher Backend-Formen Tabelleneinträge und schmale Helfer bevorzugen statt zielspezifische Verzweigungen im Pass-Body zu verstreuen.
+Verwendung auf IR-Ebene:
+```cpp
+neverc::dyncode::ObfuscationInterposes H;
+H.RunAfterInlining = [](llvm::ModulePassManager &MPM,
+                        const neverc::dyncode::DynCodeOptions &Opts) {
+  MPM.addPass(MyCFFPass(Opts.ObfuscateSpec));
+};
+// Registrierung über die Plugin-API: NEVERC_INTERPOSE_SC_*-Interposes (siehe plugin-api-Doku)
+```
+
+Verwendung auf MIR-Ebene:
+```cpp
+H.RunAfterPreEmit = [](llvm::TargetPassConfig &TPC,
+                       const neverc::dyncode::DynCodeOptions &Opts) {
+  TPC.addExternalPass(new MyInstructionSubstitutionPass(Opts.MirObfuscateSpec));
+};
+```
+
+Eingebautes MIR-Patching ist ebenfalls tabellengesteuert: `Tables/MIRRewritePatterns.def` erfasst Muster-Diagnosenamen, Arch-Filter und Helfernamen; `Tables/MIRRewriteOpcodes.def` erfasst Backend-Opcode-Namen. Beim Hinzufügen neuer dyncode-freundlicher Backend-Formen sollten Tabelleneinträge und schmale Helfer bevorzugt werden, statt zielspezifische Verzweigungen im Pass-Body zu verstreuen.
 
 [`tests/neverc/dyncode/loader_linux.c`]: ../../../tests/neverc/dyncode/loader_linux.c
 [`tests/neverc/DynCodeCrossTargetTests.cpp`]: ../../../tests/neverc/DynCodeCrossTargetTests.cpp

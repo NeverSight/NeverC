@@ -10,6 +10,8 @@ NeverC のクロスプラットフォームコンパイル機能を示すビル�
 
 ## サンプル一覧
 
+### Windows
+
 | サンプル | 説明 | 主要機能 |
 |---------|------|---------|
 | [Windows カーネルドライバ](../../examples/windows-driver/README.ja.md) | 最小 WDM カーネルドライバ | macOS/Linux から `.sys` をクロスコンパイル、自動 LTO、内蔵リンカ |
@@ -56,16 +58,54 @@ NeverC のクロスプラットフォームコンパイル機能を示すビル�
 | [カーネル Full SDK](../../examples/android-kernel-full/README.ja.md) | 完全 SDK 統合 | Netlink IPC、interpose、資格情報ラッパー、モジュール可視性、SELinux ポリシー制御、VMA、ファイル I/O |
 | [カーネル Chardev](../../examples/android-kernel-chardev/README.ja.md) | キャラクタデバイス + ioctl | `misc_register`、ioctl ディスパッチ、`/proc` seq_file |
 | [カーネル Netlink](../../examples/android-kernel-netlink/README.ja.md) | 双方向 netlink IPC | PING/VERSION/ECHO コマンド、`nvk_nl_open`/`nvk_nl_reply` |
+| [カーネル Probe](../../examples/android-kernel-probe/README.ja.md) | 任意の命令をプローブ | `neverc_krt_probe_register`、全レジスタコンテキスト、優先度チェーン、スキップ/リダイレクト |
+| [カーネル複数ファイルモジュール](../../examples/android-kernel-multifile/README.ja.md) | 複数ファイルのカーネルモジュール | `NEVERC_KRT_BOOTSTRAP()` は一度だけ、`weak_odr` 共有状態、init/interpose/helper の分割 |
 
 ---
 
 ## クイックスタート
 
+すべての例は同じパターンに従います：
+
 ```bash
-cd examples/<サンプル名>
+cd examples/example-name
 neverc make
 ```
 
-コンパイラパス指定：`neverc make NEVERC=/path/to/neverc`
+必要に応じてコンパイラパスを上書きします：
 
-すべてのサンプルは **neverc** をコンパイラとして使用し、内蔵リンカ経由で Windows PE バイナリ（`.sys`）を生成します。
+```bash
+neverc make NEVERC=/path/to/neverc
+```
+
+Linux の例はアーキテクチャ選択をサポートします：
+
+```bash
+neverc make TARGET=aarch64-linux-gnu   # Build for ARM64
+neverc make TARGET=x86_64-linux-gnu    # Build for x86_64 (default)
+```
+
+macOS の例はアーキテクチャ選択をサポートします：
+
+```bash
+neverc make TARGET=arm64-apple-macos     # Build for Apple Silicon (default)
+neverc make TARGET=x86_64-apple-macos    # Build for Intel
+```
+
+Android の例はデフォルトで ARM64 を対象とします：
+
+```bash
+cd examples/android-elf
+neverc make            # Build
+neverc make run        # Build + push to device + run via adb
+```
+
+---
+
+## クロスプラットフォームのハイライト
+
+- **単一ツールチェーン**：NeverC は前処理、コンパイル、最適化（自動 LTO）、リンクを 1 回の呼び出しで処理します
+- **バンドル SDK**：Windows SDK/WDK、Linux sysroot（Ubuntu 22.04）、macOS sysroot（macOS 14）、Android sysroot（NDK r26c, API 21+）が `runtime/` にバンドルされています — 外部依存ゼロ
+- **ホスト非依存**：macOS（arm64/x86_64）、Linux（x86_64/aarch64）、Windows から同一コマンドでビルド
+- **マルチターゲット**：任意のホストから Windows PE（`.sys`/`.exe`/`.dll`）、Linux ELF、macOS Mach-O（`.dylib`）、Android ELF へクロスコンパイル
+- **デバッグ対応**：`-g` を渡すと DWARF デバッグ情報を埋め込み、`llvm-dwarfdump` で検査可能

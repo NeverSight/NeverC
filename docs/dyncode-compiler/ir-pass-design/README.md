@@ -289,7 +289,7 @@ Activated by `-fdyncode-all-blr`. Converts remaining intra-module direct calls t
 
 ## 9. Obfuscation Interposes
 
-The out-of-tree C plugin API provides 11 dyncode interpose points (`NEVERC_INTERPOSE_SC_*`) for third-party obfuscation passes. See [Plugin API — Interpose Points](../../plugin-api/README.md#5-interpose-points) for the full list.
+DynCode exposes 11 obfuscation interpose points (6 IR-level, 3 MIR-level, 2 byte-level) for third-party obfuscation passes. See [mir-pass-design.md §3 — User Obfuscation Interposes](../mir-pass-design/README.md#3-user-obfuscation-interposes) for the full list.
 
 Key design principles:
 - **Registration position is a contract**: earlier interposes have broader built-in fixup coverage

@@ -1,5 +1,7 @@
 **Lingue**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
+[← Esempi NeverC](../../docs/examples/README.it.md)
+
 # Esempio applicazione macOS
 
 Un eseguibile nativo macOS Mach-O compilato in modo incrociato con NeverC. Dimostra sysctl, uname e le API del kernel Mach per l'introspezione del sistema e dei processi. Compilazione da macOS, Windows o Linux — senza Xcode.

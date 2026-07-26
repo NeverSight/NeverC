@@ -416,8 +416,9 @@ replayed, and a verifier summary.
   `SizeInBits` or `AlignmentInBits`.
 
 See [`PluginAST.h`], [`PluginSema.h`], and [`Schema/ASTSchema.json`] for the
-normative declarations, and [`pluginsdk/examples/ASTRewritePlugin.c`] for a
-working parser interception and atomic tree rewrite.
+normative declarations, [`Schema/PhaseSchema.json`] for the phase policies,
+and [`pluginsdk/examples/ASTRewritePlugin.c`] for a working parser
+interception and atomic tree rewrite.
 
 <!-- reference links -->
 [`PluginAST.h`]: ../../neverc/include/neverc/Plugin/PluginAST.h
@@ -425,4 +426,5 @@ working parser interception and atomic tree rewrite.
 [`pluginsdk/examples/ASTRewritePlugin.c`]: ../../pluginsdk/examples/ASTRewritePlugin.c
 [`PluginSema.h`]: ../../neverc/include/neverc/Plugin/PluginSema.h
 [`Schema/ASTSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/ASTSchema.json
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
 [`Schema/PluginASTSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginASTSchema.inc

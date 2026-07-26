@@ -1,4 +1,8 @@
+<div dir="rtl">
+
 **اللغات**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
+
+[← أمثلة NeverC](../../docs/examples/README.ar.md)
 
 # مثال Android ELF
 
@@ -50,3 +54,5 @@ adb shell /data/local/tests/android-elf
 - يحمّل `liblog.so` ديناميكياً ويستدعي `__android_log_print`
 - يقرأ `/proc/self/maps` لعرض خريطة الذاكرة
 - يوضح `dlopen`/`dlsym` و`readlink` و`fopen` على Android
+
+</div>

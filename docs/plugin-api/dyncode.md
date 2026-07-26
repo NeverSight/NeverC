@@ -102,8 +102,8 @@ The phases, in order, are:
 8. the sealed commit.
 
 The normative source for the IDs, policies, stability tiers, and gates is
-[`neverc/include/neverc/Plugin/Schema/PhaseSchema.json`]; the executable coverage
-contract is [`docs/plugin-api/coverage.json`].
+[`Schema/PhaseSchema.json`]; the executable coverage contract is
+[`coverage.json`].
 
 ## Built-in transforms are providers too
 
@@ -197,11 +197,13 @@ report. `-mdyncode-context=user|kernel` selects the execution level.
   silently fall back to the built-in provider.
 - Declare the narrowest truthful concurrency and reentrancy modes.
 
-See [`pluginsdk/examples/DynCodeTracePlugin.c`] for a read-only phase tracer and
+See [`PluginDynCode.h`] for the normative declarations,
+[`pluginsdk/examples/DynCodeTracePlugin.c`] for a read-only phase tracer, and
 [`pluginsdk/examples/DynCodeEncoderPlugin.c`] for a charset encoder.
 
 <!-- reference links -->
-[`docs/plugin-api/coverage.json`]: coverage.json
-[`neverc/include/neverc/Plugin/Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`coverage.json`]: coverage.json
+[`PluginDynCode.h`]: ../../neverc/include/neverc/Plugin/PluginDynCode.h
 [`pluginsdk/examples/DynCodeEncoderPlugin.c`]: ../../pluginsdk/examples/DynCodeEncoderPlugin.c
 [`pluginsdk/examples/DynCodeTracePlugin.c`]: ../../pluginsdk/examples/DynCodeTracePlugin.c
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json

@@ -552,6 +552,20 @@ Lorsqu'un littéral chiffré est utilisé directement dans une expression de com
 | Comptage | `s.count(...)` |
 | Recherche insensible | `s.find_ic(...)` |
 
+```c
+string input = get_user_input();
+
+// Zero-allocation: decrypts and compares byte-by-byte, short-circuits on mismatch
+if (input == "admin".encrypt()) {
+    grant_access();
+}
+
+// Also zero-allocation
+if (input.starts_with("/api/v1".encrypt())) {
+    handle_api_request();
+}
+```
+
 ### Restrictions
 
 - `.encrypt()` ne peut être appliqué qu'aux littéraux de chaîne. L'appeler sur une variable produit une erreur de compilation :
@@ -577,10 +591,18 @@ string e = "hello".encrypt().encrypt();  // ERREUR : .encrypt() can only be appl
 
 Le chiffrement et le déchiffrement sont contrôlés par deux macros :
 
-- `NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx)` — compilation : clair→chiffré
-- `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` — exécution : chiffré→clair
+```c
+NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx)  // compilation : clair → chiffré
+NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)  // exécution : chiffré → clair
+```
 
-`ENCRYPT_BYTE` utilise XOR par défaut. `DECRYPT_BYTE` utilise par défaut une **décomposition arithmétique sans instruction XOR** — calcule `a ^ b` via `(a + b) - (a & b) - (b & a)` avec des intermédiaires `volatile` pour empêcher LLVM de ré-optimiser en `xor`. Peut être renforcé avec des passes d'obfuscation MBA (Mixed Boolean-Arithmetic).
+`ENCRYPT_BYTE` utilise XOR par défaut :
+
+```c
+((char)((unsigned char)(byte) ^ (unsigned char)((key) >> (8 * ((idx) % sizeof(size_t))))))
+```
+
+`DECRYPT_BYTE` utilise par défaut une **décomposition arithmétique sans instruction XOR** — calcule `a ^ b` via `(a + b) - (a & b) - (b & a)` avec des intermédiaires `volatile` pour empêcher LLVM de ré-optimiser en `xor`. Peut être renforcé avec des passes d'obfuscation MBA (Mixed Boolean-Arithmetic).
 
 Pour un algorithme non-XOR, définissez **les deux** macros (elles doivent être des inverses mathématiques) :
 
@@ -601,15 +623,41 @@ Pour un algorithme non-XOR, définissez **les deux** macros (elles doivent être
 
 | Macro | Par défaut | Description |
 |-------|-----------|-------------|
-| `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` | XOR avec octets de clé rotatifs | Opération de déchiffrement par octet |
+| `NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx)` | XOR avec octets de clé rotatifs | Opération de chiffrement par octet (compilation) |
+| `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` | XOR avec octets de clé rotatifs | Opération de déchiffrement par octet (exécution) ; doit être l'inverse de `ENCRYPT_BYTE` |
 
 ### Chaînes chiffrées dans tableaux et structures
 
-`.encrypt()` fonctionne dans les initialiseurs agrégés (`string[]`, `struct { string; }`, tableaux 2D, combinaisons imbriquées). Les membres possédés sont libérés automatiquement à la sortie de portée ; les comparaisons sans allocation restent valides.
+`.encrypt()` fonctionne dans les initialiseurs agrégés. Les membres `string` possédés sont libérés automatiquement à la sortie de portée (voir [Nettoyage automatique des types composites](#nettoyage-automatique-des-types-composites)) :
+
+```c
+typedef struct { string user; string pass; } creds;
+
+creds login = {.user = "admin".encrypt(), .pass = "s3cret".encrypt()};
+string routes[] = {"/api/v1".encrypt(), "/api/v2".encrypt()};
+string grid[2][2] = {
+    {"a".encrypt(), "b".encrypt()},
+    {"c".encrypt(), "d".encrypt()}
+};
+
+// Zero-allocation comparisons still apply
+if (login.user == "admin".encrypt()) { /* ... */ }
+```
 
 ### Compatibilité mode DynCode
 
 Le chiffrement de chaînes fonctionne dans tous les modes de compilation, y compris dyncode (`-fdyncode`). En mode dyncode, le déchiffrement utilise l'allocateur arena local. Les contextes utilisateur et noyau (`-mdyncode-context=kernel`) sont pris en charge.
+
+```c
+// DynCode with encrypted strings — compiles to position-independent flat binary
+int main(int a, int b) {
+    string secret = "dyncode_secret".encrypt();
+    if (secret.starts_with("shell".encrypt())) {
+        // ...
+    }
+    return 0;
+}
+```
 
 ---
 

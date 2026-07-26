@@ -452,8 +452,9 @@ Verwenden Sie das Modulsuffix, das CMake für Ihre Plattform erzeugt hat.
 - `neverc.ir.final_verify` ist versiegelt. Nichts, was ein Plugin tut, kann sie
   überspringen.
 
-Die normativen Deklarationen, Schemakonstanten, Phasenrichtlinien und
-Testnachweise stehen in [`PluginIR.h`], [`Schema/PluginIRSchema.inc`],
+Die normativen Deklarationen, das Schema selbst, seine erzeugten Konstanten,
+Phasenrichtlinien und Testnachweise stehen in [`PluginIR.h`],
+[`Schema/IRSchema.json`], [`Schema/PluginIRSchema.inc`],
 [`Schema/PhaseSchema.json`] und [`coverage.json`].
 
 <!-- reference links -->
@@ -463,5 +464,6 @@ Testnachweise stehen in [`PluginIR.h`], [`Schema/PluginIRSchema.inc`],
 [`pluginsdk/examples/CustomCallConvPlugin.c`]: ../../pluginsdk/examples/CustomCallConvPlugin.c
 [`pluginsdk/examples/ExamplePlugin.c`]: ../../pluginsdk/examples/ExamplePlugin.c
 [`pluginsdk/examples/FunctionPass.c`]: ../../pluginsdk/examples/FunctionPass.c
+[`Schema/IRSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/IRSchema.json
 [`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
 [`Schema/PluginIRSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginIRSchema.inc

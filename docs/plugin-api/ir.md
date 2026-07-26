@@ -438,9 +438,10 @@ Use the module suffix CMake produced for your platform.
   `NEVERC_CONCURRENCY_SESSION_SERIAL`.
 - `neverc.ir.final_verify` is sealed. Nothing a plugin does can skip it.
 
-See [`PluginIR.h`], [`Schema/PluginIRSchema.inc`], [`Schema/PhaseSchema.json`], and
-[`coverage.json`] for the normative declarations, schema constants, phase
-policies, and test evidence.
+See [`PluginIR.h`], [`Schema/IRSchema.json`], [`Schema/PluginIRSchema.inc`],
+[`Schema/PhaseSchema.json`], and [`coverage.json`] for the normative
+declarations, the schema itself, its generated constants, phase policies, and
+test evidence.
 
 <!-- reference links -->
 [`coverage.json`]: coverage.json
@@ -449,5 +450,6 @@ policies, and test evidence.
 [`pluginsdk/examples/CustomCallConvPlugin.c`]: ../../pluginsdk/examples/CustomCallConvPlugin.c
 [`pluginsdk/examples/ExamplePlugin.c`]: ../../pluginsdk/examples/ExamplePlugin.c
 [`pluginsdk/examples/FunctionPass.c`]: ../../pluginsdk/examples/FunctionPass.c
+[`Schema/IRSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/IRSchema.json
 [`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
 [`Schema/PluginIRSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginIRSchema.inc

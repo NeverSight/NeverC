@@ -8,6 +8,18 @@
 
 يُحوِّل مصدر C مباشرةً إلى dyncode ثنائي مسطح **مستقل عن الموضع، بلا إعادة تموضع، بلا قسم بيانات**.
 
+## الأدلة
+
+- [دليل تجميع ARM64 (AArch64) — منظور DynCode](arm64-assembly-tutorial/README.ar.md)
+- [نظرة عامة على البنية متعددة المنصات لـ NeverC DynCode](cross-platform-architecture/README.ar.md)
+- [تصميم مرورات IR — المبادئ، المسار، وأمثلة قبل/بعد](ir-pass-design/README.ar.md)
+- [دعم dyncode وضع النواة (Ring-0)](kernel-mode-dyncode/README.ar.md)
+- [تصميم مرورات MIR — المبادئ ونقاط الخطاف](mir-pass-design/README.ar.md)
+- [مسار DynCode وMIR واستراتيجية PIC (ملاحظات التصميم)](pipeline-and-pic/README.ar.md)
+- [دليل توسيع المنصة](platform-extension-guide/README.ar.md)
+- [مُجمِّع dyncode — تتبع التقدم](progress/README.ar.md)
+- [خارطة الطريق](roadmap/README.ar.md)
+
 ---
 
 ## الأهداف الأساسية
@@ -101,7 +113,7 @@ neverc -v -fdyncode -target arm64-apple-macos fib.c -o fib.bin
 | `-fdyncode-bad-bytes=<hex-list>` | قائمة بايتات محظورة مفصولة بفواصل. فحص `.bin` النهائي بعد post-extract؛ عند التطابق يفشل التجميع دون كتابة ملف. |
 | `-fdyncode-bad-byte-profile=<name>` | ملفات محظورة مدمجة: `null`, `c-string`, `http-newline`, `line`, `whitespace`, `ascii-control`. قابلة للجمع مع `-fdyncode-bad-bytes=`. |
 | `-fdyncode-obfuscate=<spec>` | يُمرَّر إلى خطافات التشويش **مستوى IR** عبر [واجهة الإضافات](../plugin-api/README.ar.md). no-op بدون إضافة. راجع [ir-pass-design.md §9](ir-pass-design/README.ar.md#9-obfuscation-interposes). |
-| `-fdyncode-mir-obfuscate=<spec>` | يُمرَّر إلى خطافات **مستوى MIR**. الافتراضي `-fdyncode-obfuscate=` إن لم يُحدَّد. راجع [mir-pass-design.md §3](mir-pass-design/README.ar.md#3-user-obfuscation-interposes). |
+| `-fdyncode-mir-obfuscate=<spec>` | يُمرَّر إلى خطافات **مستوى MIR**. الافتراضي `-fdyncode-obfuscate=` إن لم يُحدَّد. راجع [mir-pass-design.md §3](mir-pass-design/README.ar.md#3-خطافات-التشويش-من-المستخدم). |
 
 ---
 
@@ -288,31 +300,33 @@ docs/dyncode-compiler/
    - Windows: Win64 (rcx/rdx/r8/r9)
 3. المُحمّل مسؤول عن تفريغ ذاكرة التعليمات (arm64) / FlushInstructionCache (Windows).
 
-## توسيع مرورات التشويش (واجهة محجوزة)
+## التشويش وتوسعة الإضافات
 
-مسار dyncode يضمن فقط «أن الكود يعمل بشكل صحيح». التشويش (CFF، تدفق وهمي، مسندات معتمة، تشفير سلاسل، استبدال تعليمات، إعادة تسمية سجلات، إلخ) عمل منفصل. `Pipeline.h` يعرّض `ObfuscationInterposes` بـ **11 نقطة ربط** على ثلاث طبقات:
+مسار dyncode نفسه يضمن فقط «أن الكود يعمل بشكل صحيح». التشويش وتعدّد الأشكال والمُشفّرات المرحلية وميزات طبقة الاستراتيجية المشابهة **غير مضمّنة عمداً** — توفّرها إضافات خارج الشجرة عبر [واجهة الإضافات](../plugin-api/README.ar.md).
 
-**مستوى IR (6 خطافات، `ModulePassManager &`)**:
-- `RunBeforePrep` — Before any dyncode pass
-- `RunAfterPrep` — Linkage unified (internal + always_inline)
-- `RunBeforeInlining` — Last chance before AlwaysInliner
-- `RunAfterInlining` — IR fully compressed into one large function
-- `RunAfterStackify` — Final IR shape, next step is codegen
-- `RunAfterFinalIR` — After AllBlrPass, the true last IR interpose
+يعرض المسار **11 نقطة ربط** عبر ثلاث طبقات، جميعها متاحة عبر واجهة C Plugin API (`NEVERC_INTERPOSE_SC_*`):
 
-**مستوى MIR (3 خطافات، `TargetPassConfig &`)**:
-- `RunBeforePreEmit` — Registers allocated, **CFI/EH pseudos still present**
-- `RunAfterPreEmit` — **Built-in MIRPrepPass has stripped pseudos**, closest to the byte form AsmPrinter will see; ideal for instruction-level obfuscation/register renaming
-- `RunAfterFinalMIR` — True last MIR interpose, after LLVM `addPreEmitPass2()`, just before AsmPrinter
+**مستوى IR (6 خطافات)**:
+- `NEVERC_INTERPOSE_SC_BEFORE_PREP` — Before any dyncode pass
+- `NEVERC_INTERPOSE_SC_AFTER_PREP` — Linkage unified (internal + always_inline)
+- `NEVERC_INTERPOSE_SC_BEFORE_INLINING` — Last chance before AlwaysInliner
+- `NEVERC_INTERPOSE_SC_AFTER_INLINING` — IR fully compressed into one large function
+- `NEVERC_INTERPOSE_SC_AFTER_STACKIFY` — Final IR shape, next step is codegen
+- `NEVERC_INTERPOSE_SC_AFTER_FINAL_IR` — After AllBlrPass, the true last IR interpose
 
-**مستوى تيار البايتات (2 خطافات، `SmallVectorImpl<uint8_t> &`)**:
-- `RunPostExtract` — After extractor completes intra-text relocation patching and data-section audit; before `.bin` is written. Use for whole-payload encryption, junk byte insertion, or custom headers.
-- `RunPostFinalize` — After all finalize steps; NeverC performs no further auditing.
+**مستوى MIR (3 خطافات)**:
+- `NEVERC_INTERPOSE_SC_BEFORE_PREEMIT` — Registers allocated, **CFI/EH pseudos still present**
+- `NEVERC_INTERPOSE_SC_AFTER_PREEMIT` — **Built-in MIRPrepPass has stripped pseudos**, closest to the byte form AsmPrinter will see; ideal for instruction-level obfuscation/register renaming
+- `NEVERC_INTERPOSE_SC_AFTER_FINAL_MIR` — True last MIR interpose, after LLVM `addPreEmitPass2()`, just before AsmPrinter
 
-`-fdyncode-obfuscate=<spec>` و`-fdyncode-mir-obfuscate=<spec>` يمرّران النصوص إلى `DynCodeOptions::ObfuscateSpec` / `MirObfuscateSpec`. مواصفات MIR تطابق IR افتراضياً. المسار لا يحلّل المحتوى — مكتبة التشويش تحدد DSL خاصاً. التفاصيل:
+**مستوى تيار البايتات (2 خطافات)**:
+- `NEVERC_INTERPOSE_SC_POST_EXTRACT` — After extractor completes intra-text relocation patching and data-section audit; before `.bin` is written. Use for whole-payload encryption, junk byte insertion, or custom headers.
+- `NEVERC_INTERPOSE_SC_POST_FINALIZE` — After all finalize steps; NeverC performs no further auditing.
+
+راجع [وثائق واجهة الإضافات](../plugin-api/README.ar.md) للاطلاع على قائمة نقاط الربط الكاملة وتسجيل المرورات وأمثلة الكود.
 
 - IR-level: [ir-pass-design.md §9 — Obfuscation Interposes](ir-pass-design/README.ar.md#9-obfuscation-interposes).
-- MIR-level: [mir-pass-design.md §3 — User Obfuscation Interposes](mir-pass-design/README.ar.md#3-user-obfuscation-interposes).
+- MIR-level: [mir-pass-design.md §3 — User Obfuscation Interposes](mir-pass-design/README.ar.md#3-خطافات-التشويش-من-المستخدم).
 ---
 
 ## القيود الحالية

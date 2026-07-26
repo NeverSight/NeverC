@@ -425,9 +425,9 @@ ripercorsa, e un riepilogo del verificatore.
   `SizeInBits` o `AlignmentInBits`.
 
 Vedere [`PluginAST.h`], [`PluginSema.h`] e [`Schema/ASTSchema.json`] per le
-dichiarazioni normative, e [`pluginsdk/examples/ASTRewritePlugin.c`] per
-un'intercettazione del parser e una riscrittura atomica dell'albero
-funzionanti.
+dichiarazioni normative, [`Schema/PhaseSchema.json`] per le policy delle fasi,
+e [`pluginsdk/examples/ASTRewritePlugin.c`] per un'intercettazione del parser
+e una riscrittura atomica dell'albero funzionanti.
 
 <!-- reference links -->
 [`PluginAST.h`]: ../../neverc/include/neverc/Plugin/PluginAST.h
@@ -435,4 +435,5 @@ funzionanti.
 [`pluginsdk/examples/ASTRewritePlugin.c`]: ../../pluginsdk/examples/ASTRewritePlugin.c
 [`PluginSema.h`]: ../../neverc/include/neverc/Plugin/PluginSema.h
 [`Schema/ASTSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/ASTSchema.json
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
 [`Schema/PluginASTSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginASTSchema.inc

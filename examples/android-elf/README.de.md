@@ -1,5 +1,7 @@
 **Sprachen**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
+[← NeverC Beispiele](../../docs/examples/README.de.md)
+
 # Android ELF Beispiel
 
 Eine native ARM64-ELF-Binärdatei, cross-kompiliert für Android mit NeverC. Entwickelt für die direkte Ausführung auf gerooteten Android-Geräten über `adb shell`. Kann von macOS, Windows oder Linux aus gebaut werden — kein Android NDK oder CMake erforderlich.

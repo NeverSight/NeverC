@@ -554,6 +554,20 @@ string f = R"(line1\nline2)".encrypt();        // raw
 | العد | `s.count(...)` |
 | البحث دون تمييز | `s.find_ic(...)` |
 
+```c
+string input = get_user_input();
+
+// Zero-allocation: decrypts and compares byte-by-byte, short-circuits on mismatch
+if (input == "admin".encrypt()) {
+    grant_access();
+}
+
+// Also zero-allocation
+if (input.starts_with("/api/v1".encrypt())) {
+    handle_api_request();
+}
+```
+
 ### القيود
 
 - `.encrypt()` يمكن تطبيقه **فقط** على النصوص الحرفية. استدعاؤه على متغير ينتج خطأ ترجمة:
@@ -579,10 +593,18 @@ string e = "hello".encrypt().encrypt();  // خطأ: .encrypt() can only be appli
 
 يتم التحكم في التشفير وفك التشفير بماكروين:
 
-- `NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx)` — وقت الترجمة: نص واضح→نص مشفر
-- `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` — وقت التشغيل: نص مشفر→نص واضح
+```c
+NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx)  // وقت الترجمة: نص واضح → نص مشفر
+NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)  // وقت التشغيل: نص مشفر → نص واضح
+```
 
-`ENCRYPT_BYTE` يستخدم XOR افتراضياً. `DECRYPT_BYTE` يستخدم افتراضياً **تفكيك حسابي بدون تعليمات XOR** — يحسب `a ^ b` كـ `(a + b) - (a & b) - (b & a)` مع متغيرات وسيطة `volatile` لمنع LLVM من إعادة التحسين إلى `xor`. يمكن تعزيزه بمرورات تشويش MBA (Mixed Boolean-Arithmetic).
+`ENCRYPT_BYTE` يستخدم XOR افتراضياً:
+
+```c
+((char)((unsigned char)(byte) ^ (unsigned char)((key) >> (8 * ((idx) % sizeof(size_t))))))
+```
+
+`DECRYPT_BYTE` يستخدم افتراضياً **تفكيك حسابي بدون تعليمات XOR** — يحسب `a ^ b` كـ `(a + b) - (a & b) - (b & a)` مع متغيرات وسيطة `volatile` لمنع LLVM من إعادة التحسين إلى `xor`. يمكن تعزيزه بمرورات تشويش MBA (Mixed Boolean-Arithmetic).
 
 لاستخدام خوارزمية غير XOR، عرّف **كلا** الماكروين (يجب أن يكونا معكوسين رياضياً):
 
@@ -603,15 +625,41 @@ string e = "hello".encrypt().encrypt();  // خطأ: .encrypt() can only be appli
 
 | الماكرو | الافتراضي | الوصف |
 |---------|----------|-------|
-| `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` | XOR مع بايتات مفتاح دوارة | عملية فك التشفير لكل بايت |
+| `NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx)` | XOR مع بايتات مفتاح دوارة | عملية التشفير لكل بايت (وقت الترجمة) |
+| `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` | XOR مع بايتات مفتاح دوارة | عملية فك التشفير لكل بايت (وقت التشغيل)؛ يجب أن تكون معكوس `ENCRYPT_BYTE` |
 
 ### سلاسل مشفرة في المصفوفات والبنى
 
-يعمل `.encrypt()` في مهيئات التجميع (`string[]`، `struct { string; }`، مصفوفات ثنائية الأبعاد، تركيبات متداخلة). يُحرَّر الأعضاء المملوكة تلقائيًا عند الخروج من النطاق؛ تبقى المقارنات بدون تخصيص سارية.
+يعمل `.encrypt()` في مهيئات التجميع. تُحرَّر أعضاء `string` المملوكة تلقائيًا عند الخروج من النطاق (انظر [التنظيف التلقائي للأنواع المركبة](#التنظيف-التلقائي-للأنواع-المركبة)):
+
+```c
+typedef struct { string user; string pass; } creds;
+
+creds login = {.user = "admin".encrypt(), .pass = "s3cret".encrypt()};
+string routes[] = {"/api/v1".encrypt(), "/api/v2".encrypt()};
+string grid[2][2] = {
+    {"a".encrypt(), "b".encrypt()},
+    {"c".encrypt(), "d".encrypt()}
+};
+
+// Zero-allocation comparisons still apply
+if (login.user == "admin".encrypt()) { /* ... */ }
+```
 
 ### توافق وضع DynCode
 
 يعمل تشفير السلاسل في جميع أوضاع التجميع بما في ذلك dyncode (`-fdyncode`). في وضع dyncode، يستخدم فك التشفير مخصص arena المحلي. يتم دعم كل من سياق المستخدم والنواة (`-mdyncode-context=kernel`).
+
+```c
+// DynCode with encrypted strings — compiles to position-independent flat binary
+int main(int a, int b) {
+    string secret = "dyncode_secret".encrypt();
+    if (secret.starts_with("shell".encrypt())) {
+        // ...
+    }
+    return 0;
+}
+```
 
 ---
 

@@ -449,9 +449,10 @@ build-neverc/bin/neverc \
 - `neverc.ir.final_verify` запечатана. Ничто из того, что делает плагин, её не
   обойдёт.
 
-Нормативные объявления, константы схемы, политики фаз и свидетельства тестов
-смотрите в [`PluginIR.h`], [`Schema/PluginIRSchema.inc`],
-[`Schema/PhaseSchema.json`] и [`coverage.json`].
+Нормативные объявления, саму схему, порождённые из неё константы, политики фаз
+и свидетельства тестов смотрите в [`PluginIR.h`], [`Schema/IRSchema.json`],
+[`Schema/PluginIRSchema.inc`], [`Schema/PhaseSchema.json`] и
+[`coverage.json`].
 
 <!-- reference links -->
 [`coverage.json`]: coverage.json
@@ -460,5 +461,6 @@ build-neverc/bin/neverc \
 [`pluginsdk/examples/CustomCallConvPlugin.c`]: ../../pluginsdk/examples/CustomCallConvPlugin.c
 [`pluginsdk/examples/ExamplePlugin.c`]: ../../pluginsdk/examples/ExamplePlugin.c
 [`pluginsdk/examples/FunctionPass.c`]: ../../pluginsdk/examples/FunctionPass.c
+[`Schema/IRSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/IRSchema.json
 [`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
 [`Schema/PluginIRSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginIRSchema.inc

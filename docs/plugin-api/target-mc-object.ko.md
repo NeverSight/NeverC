@@ -195,7 +195,7 @@ plan(void *UserData, const NevercCallingConventionQuery *Query,
 
 `Query->SchemaDigest`는 LOCKSTEP 값입니다——`RegisterNumber`는 그것이 지목하는 스
 키마에 대해서만 의미를 가집니다. 완전한 실작업 예시는
-[사용자 정의 호출 규약](custom-callconv/README.ko.md)과
+[사용자 정의 호출 규약](custom-callconv/README.ko.md#구체화된-plan)과
 [`pluginsdk/examples/CustomCallConvPlugin.c`]를 보세요.
 
 ## 코드 생성 경로
@@ -484,8 +484,11 @@ ObjectFormat->RegisterFormat(ObjectFormat->Context, RegistrarContext,
   `object.final_verify`, `object.commit`은 봉인되어 있다. 관찰만 하라.
 
 규범적 선언은 [`PluginTarget.h`], [`PluginMC.h`], [`PluginObject.h`],
-[`Schema/PhaseSchema.json`]을 보고, 이 안정 페이즈들을 각각 긍정·부정·교체·읽기 전용
-옵저버·봉인 게이트 테스트에 매핑한 것은 [`coverage.json`]을 보세요.
+[`Schema/PhaseSchema.json`]을 보세요. 이들이 쓰는 엔티티·오퍼랜드·fixup·섹션 종류는
+[`Schema/MCSchema.json`]과 [`Schema/ObjectSchema.json`]에서 오며, 각각
+[`Schema/PluginMCSchema.inc`]와 [`Schema/PluginObjectSchema.inc`]를 생성합니다. 이
+안정 페이즈들을 각각 긍정·부정·교체·읽기 전용 옵저버·봉인 게이트 테스트에 매핑한
+것은 [`coverage.json`]을 보세요.
 
 <!-- reference links -->
 [`coverage.json`]: coverage.json
@@ -495,4 +498,8 @@ ObjectFormat->RegisterFormat(ObjectFormat->Context, RegistrarContext,
 [`pluginsdk/examples/MCObserverPlugin.c`]: ../../pluginsdk/examples/MCObserverPlugin.c
 [`pluginsdk/examples/ObjectRewritePlugin.c`]: ../../pluginsdk/examples/ObjectRewritePlugin.c
 [`PluginTarget.h`]: ../../neverc/include/neverc/Plugin/PluginTarget.h
+[`Schema/MCSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/MCSchema.json
+[`Schema/ObjectSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/ObjectSchema.json
 [`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`Schema/PluginMCSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginMCSchema.inc
+[`Schema/PluginObjectSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginObjectSchema.inc

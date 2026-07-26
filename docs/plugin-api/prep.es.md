@@ -298,10 +298,13 @@ Prep->CreateFeatureQueryPhaseOutput(Prep->Context, Frame, Continuation, &Out,
   y nunca deje que una excepción cruce la frontera.
 
 Consulte [`PluginPrep.h`] y [`Schema/PluginPrepSchema.inc`] para las declaraciones
-normativas, y [`Schema/PrepSchema.json`] para el esquema de géneros de token.
+normativas, [`Schema/PrepSchema.json`] para el esquema de géneros de token, y
+[`Schema/PhaseSchema.json`] para las seis fases del preprocesador y sus
+políticas.
 
 <!-- reference links -->
 [`PluginPrep.h`]: ../../neverc/include/neverc/Plugin/PluginPrep.h
 [`PluginPrepSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginPrepSchema.inc
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
 [`Schema/PluginPrepSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginPrepSchema.inc
 [`Schema/PrepSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PrepSchema.json

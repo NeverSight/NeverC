@@ -298,7 +298,7 @@ typedef struct NevercJobResultDescriptor {
 ```
 
 `OutputSeals` 攜帶透過 I/O API 產生的 `NevercOutputSealHandle`（見
-[Source 與 I/O](source.zh-TW.md)），宿主藉此確認某個 job 宣稱寫出的檔案確實存
+[Source 與 I/O](source.zh-TW.md#寫出輸出)），宿主藉此確認某個 job 宣稱寫出的檔案確實存
 在、且 digest 與回報的一致。`GetJobResult` 讀取已提交的結果，並且與工具鏈選擇
 一樣會回報 `BuiltinProviderUsed`。
 

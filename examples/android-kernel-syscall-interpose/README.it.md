@@ -1,5 +1,7 @@
 **Lingue**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
+[← Esempi NeverC](../../docs/examples/README.it.md)
+
 # Android Kernel Syscall Interpose
 
 Interpose di `openat` sostituendo il puntatore in `sys_call_table`. Dimostra l'intercettazione classica di syscall su kernel ARM64 GKI con `neverc_krt_syscall_replace` / `neverc_krt_syscall_restore`.

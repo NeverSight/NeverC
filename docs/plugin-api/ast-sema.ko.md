@@ -407,8 +407,8 @@ Sema->CreateSemanticUnit(Sema->Context, Frame, &Unit, &Output);
   `HAS_KNOWN_LAYOUT` 이 있는지 확인하십시오.
 
 규범적 선언은 [`PluginAST.h`], [`PluginSema.h`], [`Schema/ASTSchema.json`] 을,
-동작하는 파서 가로채기와 원자적 트리 재작성은
-[`pluginsdk/examples/ASTRewritePlugin.c`] 를 참조하십시오.
+페이즈 정책은 [`Schema/PhaseSchema.json`] 을, 동작하는 파서 가로채기와 원자적
+트리 재작성은 [`pluginsdk/examples/ASTRewritePlugin.c`] 를 참조하십시오.
 
 <!-- reference links -->
 [`PluginAST.h`]: ../../neverc/include/neverc/Plugin/PluginAST.h
@@ -416,4 +416,5 @@ Sema->CreateSemanticUnit(Sema->Context, Frame, &Unit, &Output);
 [`pluginsdk/examples/ASTRewritePlugin.c`]: ../../pluginsdk/examples/ASTRewritePlugin.c
 [`PluginSema.h`]: ../../neverc/include/neverc/Plugin/PluginSema.h
 [`Schema/ASTSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/ASTSchema.json
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
 [`Schema/PluginASTSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginASTSchema.inc

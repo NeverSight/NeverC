@@ -181,7 +181,7 @@ Core->SetFunctionCallingConvention(Core->Context, Task, Function,
 
 `NEVERC_IR_CALLING_CONVENTION_NEVER_C_CUSTOM` est le nom stable au niveau ABI de `CallingConv::NeverC_Custom` (valeur LLVM 1000). Le plugin parcourt ensuite les usages de la fonction avec `GetValueUseCount` / `GetValueUse` et, pour chaque usage qui est l'opérande appelé d'un `call`, `invoke` ou `callbr`, applique la même convention à l'instruction via `SetInstructionProperty` avec `NEVERC_IR_PROPERTY_CALLING_CONVENTION`. Tout autre usage signifie que l'adresse s'est échappée, d'où l'avertissement sur l'adresse prise.
 
-Un plugin qui enregistre sa propre cible peut au contraire fournir un rappel `PlanCallingConvention` sur son `NevercCallingConventionDescriptor` et produire directement des plans, en sautant la couche spec. Voir [Cible, MC, assembleur, objet](../target-mc-object.fr.md).
+Un plugin qui enregistre sa propre cible peut au contraire fournir un rappel `PlanCallingConvention` sur son `NevercCallingConventionDescriptor` et produire directement des plans, en sautant la couche spec. Voir [Cible, MC, assembleur, objet](../target-mc-object.fr.md#abi-et-conventions-dappel).
 
 ## Tests
 
@@ -244,7 +244,12 @@ custom_attr(...)              (neverc.ir.pass.post_opt)
 
 L'exécuteur du backend est une **implémentation faite une fois pour toutes** — toutes les décisions de politique vivent dans le plugin. Ajouter une convention n'exige jamais de reconstruire NeverC.
 
+Voir [`PluginIR.h`] pour la table de base utilisée ci-dessus, [`PluginTarget.h`] pour `NevercCallingConventionDescriptor`, et [`Schema/PhaseSchema.json`] pour la phase `neverc.ir.pass.post_opt` à laquelle la passe s'attache.
+
 <!-- reference links -->
 [`CustomCallConvPlugin.c`]: ../../../pluginsdk/examples/CustomCallConvPlugin.c
 [`llvm/include/llvm/CodeGen/NeverCCallConv.h`]: ../../../llvm/include/llvm/CodeGen/NeverCCallConv.h
+[`PluginIR.h`]: ../../../neverc/include/neverc/Plugin/PluginIR.h
+[`PluginTarget.h`]: ../../../neverc/include/neverc/Plugin/PluginTarget.h
+[`Schema/PhaseSchema.json`]: ../../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
 [`tests/neverc/CustomCallConvTests.cpp`]: ../../../tests/neverc/CustomCallConvTests.cpp

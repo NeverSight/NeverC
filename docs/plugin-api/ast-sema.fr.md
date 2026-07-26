@@ -433,8 +433,9 @@ Sema->CreateSemanticUnit(Sema->Context, Frame, &Unit, &Output);
   `SizeInBits` ou `AlignmentInBits`.
 
 Voir [`PluginAST.h`], [`PluginSema.h`] et [`Schema/ASTSchema.json`] pour les
-déclarations normatives, et [`pluginsdk/examples/ASTRewritePlugin.c`] pour une
-interception d'analyseur et une réécriture atomique d'arbre qui fonctionnent.
+déclarations normatives, [`Schema/PhaseSchema.json`] pour les politiques de
+phase, et [`pluginsdk/examples/ASTRewritePlugin.c`] pour une interception
+d'analyseur et une réécriture atomique d'arbre qui fonctionnent.
 
 <!-- reference links -->
 [`PluginAST.h`]: ../../neverc/include/neverc/Plugin/PluginAST.h
@@ -442,4 +443,5 @@ interception d'analyseur et une réécriture atomique d'arbre qui fonctionnent.
 [`pluginsdk/examples/ASTRewritePlugin.c`]: ../../pluginsdk/examples/ASTRewritePlugin.c
 [`PluginSema.h`]: ../../neverc/include/neverc/Plugin/PluginSema.h
 [`Schema/ASTSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/ASTSchema.json
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
 [`Schema/PluginASTSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginASTSchema.inc

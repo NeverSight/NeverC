@@ -286,11 +286,13 @@ Prep->CreateFeatureQueryPhaseOutput(Prep->Context, Frame, Continuation, &Out,
   يعبر الحدّ أبدًا.
 
 انظر [`PluginPrep.h`] و[`Schema/PluginPrepSchema.inc`] للتصريحات المعيارية، و
-[`Schema/PrepSchema.json`] لمخطط أنواع الرموز.
+[`Schema/PrepSchema.json`] لمخطط أنواع الرموز، و[`Schema/PhaseSchema.json`]
+لمراحل المعالِج المسبق الست وسياساتها.
 
 <!-- reference links -->
 [`PluginPrep.h`]: ../../neverc/include/neverc/Plugin/PluginPrep.h
 [`PluginPrepSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginPrepSchema.inc
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
 [`Schema/PluginPrepSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginPrepSchema.inc
 [`Schema/PrepSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PrepSchema.json
 

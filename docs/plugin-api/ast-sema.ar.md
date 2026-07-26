@@ -409,6 +409,7 @@ Sema->CreateSemanticUnit(Sema->Context, Frame, &Unit, &Output);
   `SizeInBits` أو `AlignmentInBits`.
 
 انظر [`PluginAST.h`] و[`PluginSema.h`] و[`Schema/ASTSchema.json`] للتصريحات المعيارية،
+و[`Schema/PhaseSchema.json`] لسياسات المراحل،
 و[`pluginsdk/examples/ASTRewritePlugin.c`] لاعتراض محلل نحوي وإعادة كتابة ذرّية
 للشجرة يعملان فعلًا.
 
@@ -418,6 +419,7 @@ Sema->CreateSemanticUnit(Sema->Context, Frame, &Unit, &Output);
 [`pluginsdk/examples/ASTRewritePlugin.c`]: ../../pluginsdk/examples/ASTRewritePlugin.c
 [`PluginSema.h`]: ../../neverc/include/neverc/Plugin/PluginSema.h
 [`Schema/ASTSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/ASTSchema.json
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
 [`Schema/PluginASTSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginASTSchema.inc
 
 </div>

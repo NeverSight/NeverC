@@ -434,9 +434,9 @@ build-neverc/bin/neverc \
   `NEVERC_CONCURRENCY_SESSION_SERIAL`.
 - `neverc.ir.final_verify` مختومة. ولا شيء تفعله إضافةٌ يمكنه تخطّيها.
 
-انظر [`PluginIR.h`] و[`Schema/PluginIRSchema.inc`] و[`Schema/PhaseSchema.json`]
-و[`coverage.json`] للتصريحات المعيارية وثوابت المخطَّط وسياسات المراحل وأدلة
-الاختبارات.
+انظر [`PluginIR.h`] و[`Schema/IRSchema.json`] و[`Schema/PluginIRSchema.inc`]
+و[`Schema/PhaseSchema.json`] و[`coverage.json`] للتصريحات المعيارية وللمخطَّط
+نفسه ولثوابته المولَّدة وسياسات المراحل وأدلة الاختبارات.
 
 <!-- reference links -->
 [`coverage.json`]: coverage.json
@@ -445,6 +445,7 @@ build-neverc/bin/neverc \
 [`pluginsdk/examples/CustomCallConvPlugin.c`]: ../../pluginsdk/examples/CustomCallConvPlugin.c
 [`pluginsdk/examples/ExamplePlugin.c`]: ../../pluginsdk/examples/ExamplePlugin.c
 [`pluginsdk/examples/FunctionPass.c`]: ../../pluginsdk/examples/FunctionPass.c
+[`Schema/IRSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/IRSchema.json
 [`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
 [`Schema/PluginIRSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginIRSchema.inc
 

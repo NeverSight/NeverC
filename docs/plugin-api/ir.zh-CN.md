@@ -421,8 +421,9 @@ build-neverc/bin/neverc \
   环 pass 是并行运行的。
 - `neverc.ir.final_verify` 是 sealed 的。插件做什么都跳不过它。
 
-规范性声明、schema 常量、阶段策略与测试证据分别见 [`PluginIR.h`]、
-[`Schema/PluginIRSchema.inc`]、[`Schema/PhaseSchema.json`] 和 [`coverage.json`]。
+规范性声明、schema 本身、其生成的常量、阶段策略与测试证据分别见
+[`PluginIR.h`]、[`Schema/IRSchema.json`]、[`Schema/PluginIRSchema.inc`]、
+[`Schema/PhaseSchema.json`] 和 [`coverage.json`]。
 
 <!-- reference links -->
 [`coverage.json`]: coverage.json
@@ -431,5 +432,6 @@ build-neverc/bin/neverc \
 [`pluginsdk/examples/CustomCallConvPlugin.c`]: ../../pluginsdk/examples/CustomCallConvPlugin.c
 [`pluginsdk/examples/ExamplePlugin.c`]: ../../pluginsdk/examples/ExamplePlugin.c
 [`pluginsdk/examples/FunctionPass.c`]: ../../pluginsdk/examples/FunctionPass.c
+[`Schema/IRSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/IRSchema.json
 [`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
 [`Schema/PluginIRSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginIRSchema.inc

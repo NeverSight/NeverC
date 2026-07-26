@@ -1,5 +1,7 @@
 **Langues** : [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
+[← Exemples NeverC](../../docs/examples/README.fr.md)
+
 # Exemple Linux Hello World
 
 Un programme C minimal cross-compilé vers un ELF Linux avec NeverC. Compilation depuis macOS, Windows ou Linux — aucune chaîne d'outils cible requise.

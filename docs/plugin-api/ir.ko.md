@@ -440,9 +440,9 @@ CMake 가 여러분의 플랫폼에 맞게 만든 모듈 접미사를 쓰십시�
 - `neverc.ir.final_verify` 는 봉인되어 있습니다. 플러그인이 무슨 짓을 해도 이를
   건너뛸 수 없습니다.
 
-규범적 선언, 스키마 상수, 단계 정책, 테스트 증거는 [`PluginIR.h`],
-[`Schema/PluginIRSchema.inc`], [`Schema/PhaseSchema.json`], [`coverage.json`] 을
-참조하십시오.
+규범적 선언, 스키마 자체, 생성된 상수, 단계 정책, 테스트 증거는 [`PluginIR.h`],
+[`Schema/IRSchema.json`], [`Schema/PluginIRSchema.inc`],
+[`Schema/PhaseSchema.json`], [`coverage.json`] 을 참조하십시오.
 
 <!-- reference links -->
 [`coverage.json`]: coverage.json
@@ -451,5 +451,6 @@ CMake 가 여러분의 플랫폼에 맞게 만든 모듈 접미사를 쓰십시�
 [`pluginsdk/examples/CustomCallConvPlugin.c`]: ../../pluginsdk/examples/CustomCallConvPlugin.c
 [`pluginsdk/examples/ExamplePlugin.c`]: ../../pluginsdk/examples/ExamplePlugin.c
 [`pluginsdk/examples/FunctionPass.c`]: ../../pluginsdk/examples/FunctionPass.c
+[`Schema/IRSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/IRSchema.json
 [`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
 [`Schema/PluginIRSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginIRSchema.inc

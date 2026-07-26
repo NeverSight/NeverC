@@ -301,9 +301,11 @@ Source->CreateMemorySourceUnit(Source->Context, Frame, Frame->Input, &Unit,
 - `AddMemoryFile` действует в рамках сессии; когда содержимое зависит от задачи,
   правильный инструмент — поставщик.
 
-Нормативные объявления смотрите в [`PluginSource.h`], а полный пример поставщика —
+Нормативные объявления смотрите в [`PluginSource.h`], три фазы source и их
+политики — в [`Schema/PhaseSchema.json`], а полный пример поставщика —
 в [`pluginsdk/examples/VirtualHeaderPlugin.c`].
 
 <!-- reference links -->
 [`pluginsdk/examples/VirtualHeaderPlugin.c`]: ../../pluginsdk/examples/VirtualHeaderPlugin.c
 [`PluginSource.h`]: ../../neverc/include/neverc/Plugin/PluginSource.h
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json

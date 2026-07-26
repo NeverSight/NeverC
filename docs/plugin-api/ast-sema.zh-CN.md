@@ -395,8 +395,9 @@ Sema->CreateSemanticUnit(Sema->Context, Frame, &Unit, &Output);
 - 在信任 `SizeInBits` 或 `AlignmentInBits` 之前，先检查
   `NevercTypeInfo.Flags` 里的 `HAS_KNOWN_LAYOUT`。
 
-规范性声明见 [`PluginAST.h`]、[`PluginSema.h`] 和 [`Schema/ASTSchema.json`]；一个可运
-行的解析器拦截与原子树改写示例见 [`pluginsdk/examples/ASTRewritePlugin.c`]。
+规范性声明见 [`PluginAST.h`]、[`PluginSema.h`] 和 [`Schema/ASTSchema.json`]；阶段策略
+见 [`Schema/PhaseSchema.json`]；一个可运行的解析器拦截与原子树改写示例见
+[`pluginsdk/examples/ASTRewritePlugin.c`]。
 
 <!-- reference links -->
 [`PluginAST.h`]: ../../neverc/include/neverc/Plugin/PluginAST.h
@@ -404,4 +405,5 @@ Sema->CreateSemanticUnit(Sema->Context, Frame, &Unit, &Output);
 [`pluginsdk/examples/ASTRewritePlugin.c`]: ../../pluginsdk/examples/ASTRewritePlugin.c
 [`PluginSema.h`]: ../../neverc/include/neverc/Plugin/PluginSema.h
 [`Schema/ASTSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/ASTSchema.json
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
 [`Schema/PluginASTSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginASTSchema.inc

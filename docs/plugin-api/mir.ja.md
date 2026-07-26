@@ -414,13 +414,14 @@ CMake がお使いのプラットフォーム向けに生成したモジュー�
   越しに返し、C++ の例外を決して越えさせないこと。
 - `neverc.mir.final_verify` は封印されています。何があっても走ります。
 
-規範的な宣言、スキーマ定数、フェーズポリシー、カバレッジの証拠は、[`PluginMIR.h`]、
-[`Schema/PluginMIRSchema.inc`]、[`Schema/PhaseSchema.json`]、[`coverage.json`] を参照して
-ください。
+規範的な宣言、スキーマそのもの、生成される定数、フェーズポリシー、カバレッジの証拠は、
+[`PluginMIR.h`]、[`Schema/MIRSchema.json`]、[`Schema/PluginMIRSchema.inc`]、
+[`Schema/PhaseSchema.json`]、[`coverage.json`] を参照してください。
 
 <!-- reference links -->
 [`coverage.json`]: coverage.json
 [`PluginMIR.h`]: ../../neverc/include/neverc/Plugin/PluginMIR.h
 [`pluginsdk/examples/MachinePass.c`]: ../../pluginsdk/examples/MachinePass.c
+[`Schema/MIRSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/MIRSchema.json
 [`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
 [`Schema/PluginMIRSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginMIRSchema.inc

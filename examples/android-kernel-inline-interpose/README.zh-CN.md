@@ -1,5 +1,7 @@
 **语言**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
+[← NeverC 示例](../../docs/examples/README.zh-CN.md)
+
 # Android 内核函数 Interpose
 
 使用 `neverc_krt_interpose_register` 在 `do_faccessat` 函数入口处进行 interpose。演示：

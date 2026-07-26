@@ -1,5 +1,7 @@
 **Lingue**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
+[← Esempi NeverC](../../docs/examples/README.it.md)
+
 # Dispositivo a caratteri kernel Android
 
 Dispositivo a caratteri misc con interfaccia ioctl e pagina di stato `/proc`. Dimostra `misc_register`, dispatch comandi ioctl e voce proc basata su `seq_file` — il pattern IPC standard utente↔kernel su Android.

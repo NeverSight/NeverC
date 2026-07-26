@@ -1,5 +1,7 @@
 **Sprachen**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
+[← NeverC Beispiele](../../docs/examples/README.de.md)
+
 # Windows-Kerneltreiber mit CET Shadow Stack
 
 Ein minimaler WDM-Kerneltreiber, erstellt mit NeverC, mit aktiviertem Intel CET
@@ -85,9 +87,38 @@ Die Hardware unterhält einen zweiten Stack (Shadow Stack), der CALL/RET spiegel
 └────────────────────────────────────────────────┘
 ```
 
+Shadow-Stack-Verwaltungsinstruktionen (vom Betriebssystem für den
+Kontextwechsel verwendet, nicht am Funktionskopf platziert):
+
+```asm
+RDSSPQ  rax         ; aktuellen Shadow Stack Pointer lesen
+INCSSPQ rax         ; SSP vorrücken (Einträge verwerfen)
+SAVEPREVSSP         ; vorheriges Shadow-Stack-Token sichern
+RSTORSSP [addr]     ; auf einen gesicherten Shadow Stack zurücksetzen
+WRSS  [addr], rax   ; in den Supervisor-Shadow-Stack schreiben
+WRUSS [addr], rax   ; in den User-Shadow-Stack schreiben (nur Ring 0)
+SETSSBSY            ; aktuellen Shadow Stack als belegt markieren
+CLRSSBSY [addr]     ; Belegt-Flag löschen
+```
+
 ### 2. Indirect Branch Tracking (IBT) — Vorwärtskantenschutz (indirektes CALL/JMP)
 
 Erfordert eine `ENDBR64`-Instruktion (`F3 0F 1E FA`, 4 Bytes) an jedem gültigen indirekten Aufruf-/Sprungziel. Auf CPUs ohne CET ist `ENDBR64` ein NOP.
+
+```
+┌─ Indirektes CALL/JMP ────────────────────────┐
+│                                               │
+│  CPU setzt internen TRACKER = WAIT_FOR_ENDBR  │
+│  Sprung zur Zieladresse...                    │
+│                                               │
+│  Erste Instruktion am Ziel ist ENDBR64 ?      │
+│    ✓ ja   → TRACKER löschen, normal ausführen │
+│    ✗ nein → #CP-Ausnahme                      │
+│                                               │
+│  Direktes CALL/JMP setzt TRACKER nicht        │
+│                                               │
+└───────────────────────────────────────────────┘
+```
 
 ### Wahl des Windows-Kernels
 

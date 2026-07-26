@@ -26,16 +26,16 @@ chiedono all'host per identificatore.
 
 | Guida | Contenuto |
 |---|---|
-| [API Driver](driver.it.md) | Riga di comando, scelta della toolchain, grafo delle azioni, grafo dei job |
-| [API Source e I/O](source.it.md) | Provider VFS, posizioni sorgente, buffer, sink di output, dipendenze |
-| [API Preprocessore](prep.it.md) | Token, macro, pragma, inclusioni, interrogazioni sulle funzionalità, 39 tipi di evento |
-| [API AST e semantica](ast-sema.it.md) | Estensione del parser, mutazione dell'AST, ricerca dei nomi, tipi, costanti |
-| [API IR](ir.it.md) | Lettura dell'IR LLVM, costruzione transazionale, analisi, pass, provider |
-| [API MIR](mir.it.md) | Funzioni macchina, registri, stack frame, pass e analisi MIR |
-| [Target, MC, assembly, oggetto](target-mc-object.it.md) | Registrazione di target, convenzioni di chiamata, codifica MC, grafi oggetto |
-| [API Link e LTO](link-lto.it.md) | Grafo di collegamento, risoluzione dei simboli, GC/ICF, provider di linker e LTO |
-| [API DynCode](dyncode.it.md) | Immagini piatte indipendenti dalla posizione, abbassamento degli import, codifica del set di caratteri |
-| [Convenzioni di chiamata personalizzate](custom-callconv/README.it.md) | Plugin di convenzione di chiamata guidati dai dati |
+| [API Driver](driver.it.md) | [Riga di comando](driver.it.md#argomenti-grezzi), [scelta della toolchain](driver.it.md#selezione-della-toolchain), [grafo delle azioni](driver.it.md#il-grafo-delle-azioni), [grafo dei job](driver.it.md#il-grafo-dei-job) |
+| [API Source e I/O](source.it.md) | [Provider VFS](source.it.md#provider-di-file-system-virtuale), [posizioni sorgente](source.it.md#posizioni-sorgente), [buffer](source.it.md#leggere-file), [sink di output](source.it.md#scrivere-output), [dipendenze](source.it.md#registrare-le-dipendenze) |
+| [API Preprocessore](prep.it.md) | [Token](prep.it.md#leggere-i-token), [macro](prep.it.md#identificatori-e-macro), [pragma](prep.it.md#pragma-e-interrogazioni-di-funzionalità), [inclusioni](prep.it.md#reindirizzare-uninclusione), [interrogazioni sulle funzionalità](prep.it.md#pragma-e-interrogazioni-di-funzionalità), [39 tipi di evento](prep.it.md#sottoscrizione-agli-eventi) |
+| [API AST e semantica](ast-sema.it.md) | [Estensione del parser](ast-sema.it.md#estensione-del-parser), [mutazione dell'AST](ast-sema.it.md#costruire-e-modificare), [ricerca dei nomi](ast-sema.it.md#interrogazioni-semantiche), [tipi](ast-sema.it.md#accessori-tipizzati), [costanti](ast-sema.it.md#interrogazioni-semantiche) |
+| [API IR](ir.it.md) | [Lettura dell'IR LLVM](ir.it.md#percorrere-un-modulo), [costruzione transazionale](ir.it.md#modifica-transazionale), [analisi](ir.it.md#analisi), [pass](ir.it.md#passi), [provider](ir.it.md#sostituire-generazione-e-ottimizzazione) |
+| [API MIR](mir.it.md) | [Funzioni macchina](mir.it.md#leggere-la-mir), [registri](mir.it.md#registri), [stack frame](mir.it.md#lo-stack-frame), [pass e analisi MIR](mir.it.md#pass) |
+| [Target, MC, assembly, oggetto](target-mc-object.it.md) | [Registrazione di target](target-mc-object.it.md#registrare-un-target), [convenzioni di chiamata](target-mc-object.it.md#abi-e-convenzioni-di-chiamata), [codifica MC](target-mc-object.it.md#encoder-decoder-e-layout), [grafi oggetto](target-mc-object.it.md#grafi-oggetto) |
+| [API Link e LTO](link-lto.it.md) | [Grafo di collegamento](link-lto.it.md#leggere-il-grafo), [risoluzione dei simboli](link-lto.it.md#modificare-il-grafo), [GC/ICF](link-lto.it.md#la-macchina-a-stati), [provider di linker e LTO](link-lto.it.md#provider) |
+| [API DynCode](dyncode.it.md) | [Immagini piatte indipendenti dalla posizione](dyncode.it.md#immagine-report-e-modifiche-di-byte-limitate), [abbassamento degli import](dyncode.it.md#riferimenti-esterni-e-abbassamento-degli-import), [codifica del set di caratteri](dyncode.it.md#immagine-report-e-modifiche-di-byte-limitate) |
+| [Convenzioni di chiamata personalizzate](custom-callconv/README.it.md) | [Plugin di convenzione di chiamata guidati dai dati](custom-callconv/README.it.md#formato-della-spec) |
 | [Prove di copertura delle fasi](coverage.json) | Corrispondenza dei test per ogni fase stabile |
 
 ## Modello di esecuzione
@@ -147,9 +147,10 @@ typedef struct NevercPhaseFrame {
 ```
 
 [`Schema/PhaseSchema.json`] è la fonte normativa per identificatori di fase,
-policy, livelli di stabilità e gate di verifica. Il file generato
-[`Schema/PluginPhaseSchema.inc`] espone ciascuno di essi come costante di
-compilazione — per la fase `neverc.ir.pass.pipeline_start`:
+policy, livelli di stabilità e gate di verifica. [`PluginPhaseSchema.h`] e il
+file generato [`Schema/PluginPhaseSchema.inc`] che include espongono ciascuno
+di essi come costante di compilazione — per la fase
+`neverc.ir.pass.pipeline_start`:
 
 ```c
 NEVERC_PHASE_IR_PASS_PIPELINE_START_NAME       /* "neverc.ir.pass.pipeline_start" */
@@ -562,7 +563,8 @@ descrittore non valido.
 
 ## Compilazione
 
-Includete l'header aggregato oppure solo i domini che usate:
+Includete l'header aggregato [`NevercPluginAPI.h`] oppure solo i domini che
+usate:
 
 ```c
 #include "neverc/Plugin/NevercPluginAPI.h"   /* everything */
@@ -766,6 +768,7 @@ in cui verrà caricata.
 [`MachinePass.c`]: ../../pluginsdk/examples/MachinePass.c
 [`MCObserverPlugin.c`]: ../../pluginsdk/examples/MCObserverPlugin.c
 [`neverc/include/neverc/Plugin/Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`NevercPluginAPI.h`]: ../../neverc/include/neverc/Plugin/NevercPluginAPI.h
 [`ObjectRewritePlugin.c`]: ../../pluginsdk/examples/ObjectRewritePlugin.c
 [`PluginAST.h`]: ../../neverc/include/neverc/Plugin/PluginAST.h
 [`PluginCore.h`]: ../../neverc/include/neverc/Plugin/PluginCore.h
@@ -777,6 +780,7 @@ in cui verrà caricata.
 [`PluginMC.h`]: ../../neverc/include/neverc/Plugin/PluginMC.h
 [`PluginMIR.h`]: ../../neverc/include/neverc/Plugin/PluginMIR.h
 [`PluginObject.h`]: ../../neverc/include/neverc/Plugin/PluginObject.h
+[`PluginPhaseSchema.h`]: ../../neverc/include/neverc/Plugin/PluginPhaseSchema.h
 [`PluginPrep.h`]: ../../neverc/include/neverc/Plugin/PluginPrep.h
 [`pluginsdk/abi/plugin.json`]: ../../pluginsdk/abi/plugin.json
 [`pluginsdk/examples/DriverTracePlugin.c`]: ../../pluginsdk/examples/DriverTracePlugin.c

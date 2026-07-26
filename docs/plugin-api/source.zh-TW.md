@@ -288,9 +288,11 @@ Source->CreateMemorySourceUnit(Source->Context, Frame, Frame->Input, &Unit,
 - `AddMemoryFile` 的範圍是 session；當內容取決於任務時，Provider 才是正確的工
   具。
 
-規範性宣告請見 [`PluginSource.h`]，完整的 Provider 範例請見
+規範性宣告請見 [`PluginSource.h`]，三個 source 階段及其政策請見
+[`Schema/PhaseSchema.json`]，完整的 Provider 範例請見
 [`pluginsdk/examples/VirtualHeaderPlugin.c`]。
 
 <!-- reference links -->
 [`pluginsdk/examples/VirtualHeaderPlugin.c`]: ../../pluginsdk/examples/VirtualHeaderPlugin.c
 [`PluginSource.h`]: ../../neverc/include/neverc/Plugin/PluginSource.h
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json

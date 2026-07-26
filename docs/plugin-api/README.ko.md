@@ -24,16 +24,16 @@ neverc_plugin_entry(const NevercBootstrapAPI *Bootstrap,
 
 | 가이드 | 다루는 범위 |
 |---|---|
-| [드라이버 API](driver.ko.md) | 명령줄, 툴체인 선택, 액션 그래프, 잡 그래프 |
-| [소스와 I/O API](source.ko.md) | VFS 프로바이더, 소스 위치, 버퍼, 출력 싱크, 의존성 |
-| [전처리기 API](prep.ko.md) | 토큰, 매크로, pragma, include, 기능 질의, 39가지 이벤트 |
-| [AST와 의미 분석 API](ast-sema.ko.md) | 파서 확장, AST 변경, 이름 조회, 타입, 상수 |
-| [IR API](ir.ko.md) | LLVM IR 읽기, 트랜잭션 기반 구성, 분석, 패스, 프로바이더 |
-| [MIR API](mir.ko.md) | 머신 함수, 레지스터, 스택 프레임, MIR 패스와 분석 |
-| [타깃, MC, 어셈블리, 오브젝트](target-mc-object.ko.md) | 타깃 등록, 호출 규약, MC 인코딩, 오브젝트 그래프 |
-| [링크와 LTO API](link-lto.ko.md) | 링크 그래프, 심볼 결정, GC/ICF, 링커와 LTO 프로바이더 |
-| [DynCode API](dyncode.ko.md) | 평평한 위치 독립 이미지, 임포트 로워링, 문자셋 인코딩 |
-| [사용자 정의 호출 규약](custom-callconv/README.ko.md) | 데이터 주도 호출 규약 플러그인 |
+| [드라이버 API](driver.ko.md) | [명령줄](driver.ko.md#원시-인자), [툴체인 선택](driver.ko.md#툴체인-선택), [액션 그래프](driver.ko.md#액션-그래프), [잡 그래프](driver.ko.md#작업-그래프) |
+| [소스와 I/O API](source.ko.md) | [VFS 프로바이더](source.ko.md#가상-파일-시스템-제공자), [소스 위치](source.ko.md#소스-위치), [버퍼](source.ko.md#파일-읽기), [출력 싱크](source.ko.md#출력-쓰기), [의존성](source.ko.md#의존성-기록) |
+| [전처리기 API](prep.ko.md) | [토큰](prep.ko.md#토큰-읽기), [매크로](prep.ko.md#식별자와-매크로), [pragma](prep.ko.md#프래그마와-기능-질의), [include](prep.ko.md#include-방향-바꾸기), [기능 질의](prep.ko.md#프래그마와-기능-질의), [39가지 이벤트](prep.ko.md#이벤트-구독) |
+| [AST와 의미 분석 API](ast-sema.ko.md) | [파서 확장](ast-sema.ko.md#파서-확장), [AST 변경](ast-sema.ko.md#만들기와-변경하기), [이름 조회](ast-sema.ko.md#의미-질의), [타입](ast-sema.ko.md#타입이-붙은-접근자), [상수](ast-sema.ko.md#의미-질의) |
+| [IR API](ir.ko.md) | [LLVM IR 읽기](ir.ko.md#모듈-훑기), [트랜잭션 기반 구성](ir.ko.md#트랜잭션-방식-변경), [분석](ir.ko.md#분석), [패스](ir.ko.md#패스), [프로바이더](ir.ko.md#생성과-최적화-대체) |
+| [MIR API](mir.ko.md) | [머신 함수](mir.ko.md#mir-읽기), [레지스터](mir.ko.md#레지스터), [스택 프레임](mir.ko.md#스택-프레임), [MIR 패스와 분석](mir.ko.md#패스) |
+| [타깃, MC, 어셈블리, 오브젝트](target-mc-object.ko.md) | [타깃 등록](target-mc-object.ko.md#타깃-등록), [호출 규약](target-mc-object.ko.md#abi와-호출-규약), [MC 인코딩](target-mc-object.ko.md#인코더-디코더-레이아웃), [오브젝트 그래프](target-mc-object.ko.md#오브젝트-그래프) |
+| [링크와 LTO API](link-lto.ko.md) | [링크 그래프](link-lto.ko.md#그래프-읽기), [심볼 결정](link-lto.ko.md#그래프-변경), [GC/ICF](link-lto.ko.md#상태-기계), [링커와 LTO 프로바이더](link-lto.ko.md#프로바이더) |
+| [DynCode API](dyncode.ko.md) | [평평한 위치 독립 이미지](dyncode.ko.md#이미지-리포트-범위가-제한된-바이트-편집), [임포트 로워링](dyncode.ko.md#외부-참조와-임포트-낮추기), [문자셋 인코딩](dyncode.ko.md#이미지-리포트-범위가-제한된-바이트-편집) |
+| [사용자 정의 호출 규약](custom-callconv/README.ko.md) | [데이터 주도 호출 규약 플러그인](custom-callconv/README.ko.md#spec-형식) |
 | [페이즈 커버리지 근거](coverage.json) | 모든 안정 페이즈에 대한 테스트 매핑 |
 
 ## 실행 모델
@@ -140,8 +140,9 @@ typedef struct NevercPhaseFrame {
 ```
 
 [`Schema/PhaseSchema.json`]이 페이즈 ID, 정책, 안정성 등급, 검증기 게이트의 규범적
-출처입니다. 생성되는 [`Schema/PluginPhaseSchema.inc`]는 그것들을 각각 컴파일 타임
-상수로 노출합니다——페이즈 `neverc.ir.pass.pipeline_start`의 경우:
+출처입니다. [`PluginPhaseSchema.h`]와 그것이 포함하는 생성물
+[`Schema/PluginPhaseSchema.inc`]는 그것들을 각각 컴파일 타임 상수로
+노출합니다——페이즈 `neverc.ir.pass.pipeline_start`의 경우:
 
 ```c
 NEVERC_PHASE_IR_PASS_PIPELINE_START_NAME       /* "neverc.ir.pass.pipeline_start" */
@@ -538,7 +539,7 @@ LLVM 메이저가 0이면 유효하지 않은 디스크립터로 거부됩니다
 
 ## 빌드
 
-통합 헤더를 포함하거나, 사용하는 도메인만 포함하세요:
+통합 헤더 [`NevercPluginAPI.h`] 를 포함하거나, 사용하는 도메인만 포함하세요:
 
 ```c
 #include "neverc/Plugin/NevercPluginAPI.h"   /* everything */
@@ -730,6 +731,7 @@ neverc -fplugin=build-neverc/neverc/pluginsdk/examples/host/FunctionPass.so \
 [`MachinePass.c`]: ../../pluginsdk/examples/MachinePass.c
 [`MCObserverPlugin.c`]: ../../pluginsdk/examples/MCObserverPlugin.c
 [`neverc/include/neverc/Plugin/Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`NevercPluginAPI.h`]: ../../neverc/include/neverc/Plugin/NevercPluginAPI.h
 [`ObjectRewritePlugin.c`]: ../../pluginsdk/examples/ObjectRewritePlugin.c
 [`PluginAST.h`]: ../../neverc/include/neverc/Plugin/PluginAST.h
 [`PluginCore.h`]: ../../neverc/include/neverc/Plugin/PluginCore.h
@@ -741,6 +743,7 @@ neverc -fplugin=build-neverc/neverc/pluginsdk/examples/host/FunctionPass.so \
 [`PluginMC.h`]: ../../neverc/include/neverc/Plugin/PluginMC.h
 [`PluginMIR.h`]: ../../neverc/include/neverc/Plugin/PluginMIR.h
 [`PluginObject.h`]: ../../neverc/include/neverc/Plugin/PluginObject.h
+[`PluginPhaseSchema.h`]: ../../neverc/include/neverc/Plugin/PluginPhaseSchema.h
 [`PluginPrep.h`]: ../../neverc/include/neverc/Plugin/PluginPrep.h
 [`pluginsdk/abi/plugin.json`]: ../../pluginsdk/abi/plugin.json
 [`pluginsdk/examples/DriverTracePlugin.c`]: ../../pluginsdk/examples/DriverTracePlugin.c

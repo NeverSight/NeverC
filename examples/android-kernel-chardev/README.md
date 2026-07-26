@@ -1,5 +1,7 @@
 **Languages**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
+[← NeverC Examples](../../docs/examples/README.md)
+
 # Android Kernel Chardev
 
 Misc character device with ioctl interface and `/proc` status page. Demonstrates `misc_register`, ioctl command dispatch, and `seq_file`-based proc entry — the standard user↔kernel IPC pattern on Android.

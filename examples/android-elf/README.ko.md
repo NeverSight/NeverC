@@ -1,5 +1,7 @@
 **언어**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
+[← NeverC 예제](../../docs/examples/README.ko.md)
+
 # Android ELF 예제
 
 NeverC를 사용하여 Android용으로 크로스 컴파일한 ARM64 네이티브 ELF 바이너리입니다. 루팅된 Android 기기에서 `adb shell`을 통해 직접 실행할 수 있습니다. macOS, Windows, Linux에서 빌드 가능 — Android NDK나 CMake가 필요 없습니다.

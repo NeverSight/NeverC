@@ -287,9 +287,11 @@ Source->CreateMemorySourceUnit(Source->Context, Frame, Frame->Input, &Unit,
   Provider，会污染整个构建缓存。
 - `AddMemoryFile` 是会话作用域的；当内容依赖于任务时，Provider 才是合适的工具。
 
-规范性声明见 [`PluginSource.h`]，完整 Provider 示例见
+规范性声明见 [`PluginSource.h`]，三个 source 阶段及其策略见
+[`Schema/PhaseSchema.json`]，完整 Provider 示例见
 [`pluginsdk/examples/VirtualHeaderPlugin.c`]。
 
 <!-- reference links -->
 [`pluginsdk/examples/VirtualHeaderPlugin.c`]: ../../pluginsdk/examples/VirtualHeaderPlugin.c
 [`PluginSource.h`]: ../../neverc/include/neverc/Plugin/PluginSource.h
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json

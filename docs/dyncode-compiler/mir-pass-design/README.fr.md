@@ -47,13 +47,17 @@ Multiplateforme, responsabilité unique : scanne chaque `MachineBasicBlock` et s
 
 ### 2.1 Métadonnées de sections latérales
 
-| Opcode | Source | Impact si non supprimé |
-|--------|--------|----------------------|
-| `CFI_INSTRUCTION` | Frame lowering / `-g` | `.eh_frame` / `.pdata` non vide |
-| `EH_LABEL` | EH / try-catch | LSDA non vide |
-| `STATEPOINT` / `STACKMAP` / `PATCHPOINT` | GC / sandbox | `.llvm_stackmaps` |
-| `PATCHABLE_*` | XRay / Kcov | `.xray_instr_map` |
-| `FENTRY_CALL` | `-mfentry` | extern `__fentry__` |
+| Opcode | Source | Si non supprimé |
+|--------|--------|-----------------|
+| `CFI_INSTRUCTION` | frame-lowering de toutes les plateformes / `-g` | `.eh_frame` / `__compact_unwind` / `.pdata` non vide |
+| `EH_LABEL` | Points EH / try-catch setjmp | Section latérale LSDA non vide |
+| `GC_LABEL` / `ANNOTATION_LABEL` | Marqueurs GC / annotation | MCSymbol avec métadonnées relatives à la section |
+| `STATEPOINT` / `STACKMAP` / `PATCHPOINT` | Stackmap GC / sandbox | Section latérale `.llvm_stackmaps` |
+| `PSEUDO_PROBE` | `-fprofile-sample-use` | Section latérale `.pseudo_probe` |
+| Famille `PATCHABLE_*` | Stubs XRay / Kcov | `.xray_instr_map` / `.xray_fn_idx` |
+| `FENTRY_CALL` | Sonde d'entrée `-mfentry` | Appel extern `__fentry__` |
+| `LOCAL_ESCAPE` | Frame-escape SEH Microsoft | Tire `_local_unwind2` / `__except_handler3` |
+| `JUMP_TABLE_DEBUG_INFO` | Info de débogage de table de sauts | Entrée `.debug_rnglists` |
 
 ### 2.2 Windows SEH (correspondance de préfixe)
 
@@ -73,9 +77,32 @@ Deux motifs enregistrés :
 
 11 points de interpose : 6 IR + 3 MIR + 2 niveau octets.
 
+Trois types de signature :
+
+```cpp
+using ObfuscationInterpose = std::function<void(
+    llvm::ModulePassManager &, const DynCodeOptions &)>;
+using MachineObfuscationInterpose = std::function<void(
+    llvm::TargetPassConfig &, const DynCodeOptions &)>;
+using BinaryObfuscationInterpose = std::function<void(
+    llvm::SmallVectorImpl<uint8_t> &, const DynCodeOptions &)>;
+```
+
 - `RunBeforePreEmit` : MIR avec pseudos CFI/EH.
 - `RunAfterPreEmit` : MIR nettoyé — le plus proche d'AsmPrinter.
 - `RunPostExtract` : Flux d'octets pur.
+
+```cpp
+__attribute__((constructor))
+static void myMirObfInit() {
+  auto H = neverc::dyncode::getDynCodeObfuscationInterposes();
+  H.RunAfterPreEmit = [](llvm::TargetPassConfig &TPC,
+                         const neverc::dyncode::DynCodeOptions &Opts) {
+    TPC.addExternalPass(new MyInstructionSubstitutionPass(Opts.MirObfuscateSpec));
+  };
+  // Register via Plugin API: NEVERC_INTERPOSE_SC_BEFORE_PREEMIT / AFTER_PREEMIT / AFTER_FINAL_MIR
+}
+```
 
 ---
 
@@ -89,11 +116,17 @@ Deux motifs enregistrés :
 
 ## 5. Fondement de conception
 
-| Problème | IR ? | MIR ? |
-|----------|------|-------|
-| Élimination GV constant | Oui | Pas nécessaire |
-| Pseudo-instructions CFI | Non (backend) | Oui |
-| Obfuscation niveau instruction | Non | Oui |
+| Problème | Couche IR ? | Couche MIR ? |
+|----------|-------------|--------------|
+| Élimination de GV constante | Oui (Data2Text) | Non nécessaire |
+| Élimination de libc extern | Oui (SyscallStub / WinPEB) | Non nécessaire |
+| Stack-ification de globales mutables | Oui (ZeroReloc) | Non nécessaire |
+| Computed goto | Oui (IndirectBr) | Non nécessaire |
+| Pseudo-instructions CFI | Non (générées par backend) | Oui (scanner et effacer) |
+| Stubs XRay | Non (générées par backend) | Oui (scanner et effacer) |
+| Obfuscation au niveau instruction | Non (IR manque de registres physiques) | Oui (a de vrais registres/MI) |
+| Renommage de registres | Non | Oui |
+| Expansion de constantes peephole | Partielle | Oui (plus propre) |
 
 ## 6. Guide d'extension
 
@@ -109,3 +142,12 @@ Deux motifs enregistrés :
 | Extracteur | Après AsmPrinter | Modifier octets ou rejeter uniquement |
 
 **Principe** : Corriger d'abord en MIR ; ne recourir à l'extracteur que pour les patches au niveau octets.
+
+
+## 8. Correction active vs passthrough de diagnostic
+
+1. **Correction active** : modifie directement les MachineInstrs (supprime les pseudos, réécrit CPI→FMOV). Faible coût, indépendant de la cible.
+2. **Passthrough de diagnostic** : détecte les problèmes, signale les erreurs au niveau MIR, laisse l'extracteur rejeter au niveau octet. Utilisé pour les constructions où la réécriture MIR nécessiterait du code spécifique à la cible étendu (p. ex., remplacer `adrp+ldr CPI` par des séquences `mov/movk`).
+3. **Repli de l'extracteur** : échec dur sur tout reloc externe restant ou sections de données non vides.
+
+Ce principe garde la couche MIR presque immunisée contre les mises à niveau de l'ISA du backend. La seule maintenance est : « y a-t-il un nouveau pseudo dans TargetOpcode ? Si dyncode n'en a pas besoin, ajoutez un case. »

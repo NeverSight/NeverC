@@ -303,9 +303,10 @@ typedef struct NevercJobResultDescriptor {
 ```
 
 `OutputSeals` 는 I/O API 를 통해 만들어진 `NevercOutputSealHandle` 들을 담습니다
-([Source 와 I/O](source.ko.md) 참고). 호스트는 이를 통해 작업이 썼다고 주장한
-파일이 보고된 다이제스트 그대로 실제로 존재하는지 확인합니다. `GetJobResult` 는
-커밋된 결과를 읽으며, 툴체인 선택과 마찬가지로 `BuiltinProviderUsed` 를 보고
+([Source 와 I/O](source.ko.md#출력-쓰기) 참고). 호스트는 이를 통해 작업이 썼다고
+주장한 파일이 보고된 다이제스트 그대로 실제로 존재하는지 확인합니다.
+`GetJobResult` 는 커밋된 결과를 읽으며, 툴체인 선택과 마찬가지로
+`BuiltinProviderUsed` 를 보고
 합니다.
 
 ## 실전 예제: 인자 관찰과 작업 실행 가로채기

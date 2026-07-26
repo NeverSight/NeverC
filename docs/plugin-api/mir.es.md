@@ -436,13 +436,15 @@ Use el sufijo de módulo que CMake haya producido para su plataforma.
   través de la frontera de C y nunca deje que una excepción de C++ la cruce.
 - `neverc.mir.final_verify` está sellada. Se ejecuta pase lo que pase.
 
-Vea [`PluginMIR.h`], [`Schema/PluginMIRSchema.inc`], [`Schema/PhaseSchema.json`] y
-[`coverage.json`] para las declaraciones normativas, las constantes de esquema,
-las políticas de fase y la evidencia de cobertura.
+Vea [`PluginMIR.h`], [`Schema/MIRSchema.json`], [`Schema/PluginMIRSchema.inc`],
+[`Schema/PhaseSchema.json`] y [`coverage.json`] para las declaraciones
+normativas, el esquema en sí, sus constantes generadas, las políticas de fase y
+la evidencia de cobertura.
 
 <!-- reference links -->
 [`coverage.json`]: coverage.json
 [`PluginMIR.h`]: ../../neverc/include/neverc/Plugin/PluginMIR.h
 [`pluginsdk/examples/MachinePass.c`]: ../../pluginsdk/examples/MachinePass.c
+[`Schema/MIRSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/MIRSchema.json
 [`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
 [`Schema/PluginMIRSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginMIRSchema.inc

@@ -1,5 +1,7 @@
 **语言**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
+[← NeverC 示例](../../docs/examples/README.zh-CN.md)
+
 # Android 内核完整 SDK 演示
 
 完整 SDK 集成 —— 初始化所有 NVK 子系统，通过 netlink 命令接口暴露。生产模块的参考实现。涵盖：interpose 引擎、凭证包装、模块可见性、SELinux 策略控制、进程枚举、VMA 检查、文件 I/O、环境检测和统计。

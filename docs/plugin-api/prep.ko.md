@@ -288,10 +288,12 @@ Prep->CreateFeatureQueryPhaseOutput(Prep->Context, Frame, Continuation, &Out,
   경계를 넘게 하지 마십시오.
 
 규범적 선언은 [`PluginPrep.h`] 와 [`Schema/PluginPrepSchema.inc`] 를, 토큰 종류
-스키마는 [`Schema/PrepSchema.json`] 을 참조하십시오.
+스키마는 [`Schema/PrepSchema.json`] 을, 여섯 개의 전처리기 페이즈와 그 정책은
+[`Schema/PhaseSchema.json`] 을 참조하십시오.
 
 <!-- reference links -->
 [`PluginPrep.h`]: ../../neverc/include/neverc/Plugin/PluginPrep.h
 [`PluginPrepSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginPrepSchema.inc
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
 [`Schema/PluginPrepSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginPrepSchema.inc
 [`Schema/PrepSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PrepSchema.json

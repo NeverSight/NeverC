@@ -10,7 +10,7 @@
 
 [![AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](../../LICENSE)
 [![C23](https://img.shields.io/badge/Standard-C23-brightgreen.svg)](#特色)
-[![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-informational.svg)](#交叉編譯到-windows)
+![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-informational.svg)
 [![Arch](https://img.shields.io/badge/Arch-x86__64%20%7C%20AArch64-orange.svg)](#特色)
 
 [文件索引](../README.zh-TW.md) · [DynCode 指南](../dyncode-compiler/README.zh-TW.md) · [內建執行時](../builtins/README.zh-TW.md) · [外掛 API](../plugin-api/README.zh-TW.md) · [路線圖](../roadmap/README.zh-TW.md)

@@ -1,4 +1,8 @@
+<div dir="rtl">
+
 **اللغات**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
+
+[← أمثلة NeverC](../../docs/examples/README.ar.md)
 
 # برنامج تشغيل نواة Windows مع CET Shadow Stack
 
@@ -84,9 +88,38 @@ neverc --target=x86_64-pc-windows-msvc \
 └────────────────────────────────────────────────┘
 ```
 
+تعليمات إدارة Shadow Stack (يستخدمها نظام التشغيل لتبديل السياق، ولا تُوضع في
+رأس الدالة):
+
+```asm
+RDSSPQ  rax         ; قراءة مؤشر Shadow Stack الحالي
+INCSSPQ rax         ; تقديم SSP (إسقاط المدخلات)
+SAVEPREVSSP         ; حفظ رمز Shadow Stack السابق
+RSTORSSP [addr]     ; الاستعادة إلى Shadow Stack محفوظ
+WRSS  [addr], rax   ; الكتابة في Shadow Stack المشرف
+WRUSS [addr], rax   ; الكتابة في Shadow Stack المستخدم (ring 0 فقط)
+SETSSBSY            ; تعليم Shadow Stack الحالي كمشغول
+CLRSSBSY [addr]     ; مسح راية الانشغال
+```
+
 ### 2. تتبع الفروع غير المباشرة (IBT) — حماية الحافة الأمامية (CALL/JMP غير مباشر)
 
 يتطلب تعليمة `ENDBR64` (`F3 0F 1E FA`، 4 بايت) في كل هدف صالح لاستدعاء/قفزة غير مباشرة. على المعالجات بدون CET، تعمل `ENDBR64` كـ NOP.
+
+```
+┌─ CALL/JMP غير مباشر ─────────────────────────┐
+│                                               │
+│  يضبط المعالج TRACKER = WAIT_FOR_ENDBR        │
+│  القفز إلى العنوان الهدف...                    │
+│                                               │
+│  أول تعليمة في الهدف هي ENDBR64 ؟              │
+│    ✓ نعم → مسح TRACKER، تنفيذ طبيعي            │
+│    ✗ لا  → استثناء CP#                        │
+│                                               │
+│  الـ CALL/JMP المباشر لا يضبط TRACKER          │
+│                                               │
+└───────────────────────────────────────────────┘
+```
 
 ### اختيار نواة Windows
 
@@ -248,3 +281,5 @@ sc delete CetDriver
 ```
 
 قم بتفعيل التوقيع التجريبي أو استخدم شهادة توقيع الكود للإنتاج.
+
+</div>

@@ -454,9 +454,10 @@ Usate il suffisso di modulo che CMake ha prodotto per la vostra piattaforma.
 - `neverc.ir.final_verify` è sigillata. Nulla di ciò che un plugin fa può
   saltarla.
 
-Vedere [`PluginIR.h`], [`Schema/PluginIRSchema.inc`], [`Schema/PhaseSchema.json`] e
-[`coverage.json`] per le dichiarazioni normative, le costanti di schema, le
-politiche di fase e le prove dei test.
+Vedere [`PluginIR.h`], [`Schema/IRSchema.json`], [`Schema/PluginIRSchema.inc`],
+[`Schema/PhaseSchema.json`] e [`coverage.json`] per le dichiarazioni normative,
+lo schema stesso, le sue costanti generate, le politiche di fase e le prove dei
+test.
 
 <!-- reference links -->
 [`coverage.json`]: coverage.json
@@ -465,5 +466,6 @@ politiche di fase e le prove dei test.
 [`pluginsdk/examples/CustomCallConvPlugin.c`]: ../../pluginsdk/examples/CustomCallConvPlugin.c
 [`pluginsdk/examples/ExamplePlugin.c`]: ../../pluginsdk/examples/ExamplePlugin.c
 [`pluginsdk/examples/FunctionPass.c`]: ../../pluginsdk/examples/FunctionPass.c
+[`Schema/IRSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/IRSchema.json
 [`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
 [`Schema/PluginIRSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginIRSchema.inc

@@ -6,6 +6,18 @@
 
 Compile C source code directly into **position-independent, zero-relocation, zero-data-section** flat binary dyncode.
 
+## Guides
+
+- [ARM64 (AArch64) Assembly Tutorial — DynCode Perspective](arm64-assembly-tutorial/README.md)
+- [NeverC DynCode Cross-Platform Architecture Overview](cross-platform-architecture/README.md)
+- [IR Pass Design — Principles, Pipeline, and Before/After Examples](ir-pass-design/README.md)
+- [Kernel-Mode (Ring-0) DynCode Support](kernel-mode-dyncode/README.md)
+- [MIR Pass Design — Principles and Interpose Points](mir-pass-design/README.md)
+- [DynCode Pipeline, MIR & PIC Strategy (Design Notes)](pipeline-and-pic/README.md)
+- [Platform Extension Guide](platform-extension-guide/README.md)
+- [DynCode Compiler — Progress Tracker](progress/README.md)
+- [Roadmap](roadmap/README.md)
+
 ---
 
 ## Core Goals

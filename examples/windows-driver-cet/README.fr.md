@@ -1,5 +1,7 @@
 **Langues**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
+[← Exemples NeverC](../../docs/examples/README.fr.md)
+
 # Pilote noyau Windows avec CET Shadow Stack
 
 Un pilote noyau WDM minimal construit avec NeverC, avec le Shadow Stack CET
@@ -84,9 +86,39 @@ Le matériel maintient une seconde pile (shadow stack) qui reflète les opérati
 └────────────────────────────────────────────────┘
 ```
 
+Instructions de gestion de la shadow stack (utilisées par le système
+d'exploitation pour le changement de contexte, pas placées en tête de
+fonction) :
+
+```asm
+RDSSPQ  rax         ; lire le Shadow Stack Pointer courant
+INCSSPQ rax         ; avancer SSP (abandonner des entrées)
+SAVEPREVSSP         ; sauvegarder le jeton de la shadow stack précédente
+RSTORSSP [addr]     ; restaurer vers une shadow stack sauvegardée
+WRSS  [addr], rax   ; écrire dans la shadow stack superviseur
+WRUSS [addr], rax   ; écrire dans la shadow stack utilisateur (ring 0 seul)
+SETSSBSY            ; marquer la shadow stack courante comme occupée
+CLRSSBSY [addr]     ; effacer l'indicateur d'occupation
+```
+
 ### 2. Indirect Branch Tracking (IBT) — protection du bord avant (CALL/JMP indirect)
 
 Nécessite une instruction `ENDBR64` (`F3 0F 1E FA`, 4 octets) à chaque cible valide d'appel/saut indirect. Sur les CPU sans CET, `ENDBR64` est un NOP.
+
+```
+┌─ CALL/JMP indirect ──────────────────────────┐
+│                                               │
+│  Le CPU fixe TRACKER = WAIT_FOR_ENDBR         │
+│  Saut vers l'adresse cible...                 │
+│                                               │
+│  Première instruction de la cible ENDBR64 ?   │
+│    ✓ oui → effacer TRACKER, exécution normale │
+│    ✗ non → exception #CP                      │
+│                                               │
+│  Un CALL/JMP direct ne fixe PAS TRACKER       │
+│                                               │
+└───────────────────────────────────────────────┘
+```
 
 ### Choix du noyau Windows
 

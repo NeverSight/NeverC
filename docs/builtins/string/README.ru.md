@@ -552,6 +552,20 @@ string f = R"(line1\nline2)".encrypt();        // raw
 | Подсчёт | `s.count(...)` |
 | Поиск без учёта регистра | `s.find_ic(...)` |
 
+```c
+string input = get_user_input();
+
+// Zero-allocation: decrypts and compares byte-by-byte, short-circuits on mismatch
+if (input == "admin".encrypt()) {
+    grant_access();
+}
+
+// Also zero-allocation
+if (input.starts_with("/api/v1".encrypt())) {
+    handle_api_request();
+}
+```
+
 ### Ограничения
 
 - `.encrypt()` можно применять **только** к строковым литералам. Вызов на переменной приводит к ошибке компиляции:
@@ -577,10 +591,18 @@ string e = "hello".encrypt().encrypt();  // ОШИБКА: .encrypt() can only be
 
 Шифрование и дешифрование контролируются двумя макросами:
 
-- `NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx)` — компиляция: открытый текст→шифротекст
-- `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` — выполнение: шифротекст→открытый текст
+```c
+NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx)  // компиляция: открытый текст → шифротекст
+NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)  // выполнение: шифротекст → открытый текст
+```
 
-`ENCRYPT_BYTE` по умолчанию XOR. `DECRYPT_BYTE` по умолчанию использует **безXOR арифметическую декомпозицию** — вычисляет `a ^ b` как `(a + b) - (a & b) - (b & a)` с `volatile` промежуточными для предотвращения реоптимизации LLVM в `xor`. Может быть усилена проходами обфускации MBA (Mixed Boolean-Arithmetic).
+`ENCRYPT_BYTE` по умолчанию XOR:
+
+```c
+((char)((unsigned char)(byte) ^ (unsigned char)((key) >> (8 * ((idx) % sizeof(size_t))))))
+```
+
+`DECRYPT_BYTE` по умолчанию использует **безXOR арифметическую декомпозицию** — вычисляет `a ^ b` как `(a + b) - (a & b) - (b & a)` с `volatile` промежуточными для предотвращения реоптимизации LLVM в `xor`. Может быть усилена проходами обфускации MBA (Mixed Boolean-Arithmetic).
 
 Для не-XOR алгоритма определите **оба** макроса (они должны быть математическими обратными):
 
@@ -601,15 +623,41 @@ string e = "hello".encrypt().encrypt();  // ОШИБКА: .encrypt() can only be
 
 | Макрос | По умолчанию | Описание |
 |--------|-------------|----------|
-| `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` | XOR с ротирующими байтами ключа | Побайтовая операция расшифровки |
+| `NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx)` | XOR с ротирующими байтами ключа | Побайтовая операция шифрования (время компиляции) |
+| `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` | XOR с ротирующими байтами ключа | Побайтовая операция расшифровки (время выполнения); должна быть обратной к `ENCRYPT_BYTE` |
 
 ### Зашифрованные строки в массивах и структурах
 
-`.encrypt()` работает в агрегатных инициализаторах (`string[]`, `struct { string; }`, 2D-массивы, вложенные комбинации). Owned-члены освобождаются при выходе из области видимости; сравнения без аллокации по-прежнему действуют.
+`.encrypt()` работает в агрегатных инициализаторах. Owned-члены `string` автоматически освобождаются при выходе из области видимости (см. [Автоматическая очистка составных типов](#автоматическая-очистка-составных-типов)):
+
+```c
+typedef struct { string user; string pass; } creds;
+
+creds login = {.user = "admin".encrypt(), .pass = "s3cret".encrypt()};
+string routes[] = {"/api/v1".encrypt(), "/api/v2".encrypt()};
+string grid[2][2] = {
+    {"a".encrypt(), "b".encrypt()},
+    {"c".encrypt(), "d".encrypt()}
+};
+
+// Zero-allocation comparisons still apply
+if (login.user == "admin".encrypt()) { /* ... */ }
+```
 
 ### Совместимость с режимом DynCode
 
 Шифрование строк работает во всех режимах компиляции, включая dyncode (`-fdyncode`). В режиме dyncode расшифровка использует локальный arena-аллокатор. Поддерживаются как пользовательский, так и ядерный контексты (`-mdyncode-context=kernel`).
+
+```c
+// DynCode with encrypted strings — compiles to position-independent flat binary
+int main(int a, int b) {
+    string secret = "dyncode_secret".encrypt();
+    if (secret.starts_with("shell".encrypt())) {
+        // ...
+    }
+    return 0;
+}
+```
 
 ---
 

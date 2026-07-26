@@ -181,7 +181,7 @@ Core->SetFunctionCallingConvention(Core->Context, Task, Function,
 
 `NEVERC_IR_CALLING_CONVENTION_NEVER_C_CUSTOM`은 `CallingConv::NeverC_Custom`(LLVM 값 1000)의 ABI 안정 이름입니다. 이어서 플러그인은 `GetValueUseCount` / `GetValueUse`로 그 함수의 사용처를 훑고, `call`, `invoke`, `callbr`의 피호출 피연산자인 사용처마다 `SetInstructionProperty`와 `NEVERC_IR_PROPERTY_CALLING_CONVENTION`으로 명령에 같은 규약을 설정합니다. 그 밖의 사용처는 주소가 새어 나갔다는 뜻이고, 이것이 "주소가 취해졌다"는 경고의 출처입니다.
 
-자체 타깃을 등록하는 플러그인은 대신 `NevercCallingConventionDescriptor`에 `PlanCallingConvention` 콜백을 제공해 spec 계층을 건너뛰고 plan을 직접 만들 수도 있습니다. [타깃, MC, 어셈블리, 오브젝트](../target-mc-object.ko.md)를 참고하세요.
+자체 타깃을 등록하는 플러그인은 대신 `NevercCallingConventionDescriptor`에 `PlanCallingConvention` 콜백을 제공해 spec 계층을 건너뛰고 plan을 직접 만들 수도 있습니다. [타깃, MC, 어셈블리, 오브젝트](../target-mc-object.ko.md#abi와-호출-규약)를 참고하세요.
 
 ## 테스트
 
@@ -244,7 +244,12 @@ custom_attr(...)              (neverc.ir.pass.post_opt)
 
 백엔드 실행기는 **한 번만 구현하는 것**이며, 모든 정책 결정은 플러그인에 있습니다. 새 규약을 추가하는 데 NeverC를 다시 빌드할 일은 결코 없습니다.
 
+위에서 사용한 코어 테이블은 [`PluginIR.h`] 를, `NevercCallingConventionDescriptor` 는 [`PluginTarget.h`] 를, 이 pass 가 붙는 `neverc.ir.pass.post_opt` 페이즈는 [`Schema/PhaseSchema.json`] 을 참조하십시오.
+
 <!-- reference links -->
 [`CustomCallConvPlugin.c`]: ../../../pluginsdk/examples/CustomCallConvPlugin.c
 [`llvm/include/llvm/CodeGen/NeverCCallConv.h`]: ../../../llvm/include/llvm/CodeGen/NeverCCallConv.h
+[`PluginIR.h`]: ../../../neverc/include/neverc/Plugin/PluginIR.h
+[`PluginTarget.h`]: ../../../neverc/include/neverc/Plugin/PluginTarget.h
+[`Schema/PhaseSchema.json`]: ../../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
 [`tests/neverc/CustomCallConvTests.cpp`]: ../../../tests/neverc/CustomCallConvTests.cpp

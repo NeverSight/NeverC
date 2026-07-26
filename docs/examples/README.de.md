@@ -10,6 +10,8 @@ Vollständig kompilierbare Beispiele für die plattformübergreifende Kompilieru
 
 ## Verfügbare Beispiele
 
+### Windows
+
 | Beispiel | Beschreibung | Kernfunktionen |
 |----------|--------------|---------------|
 | [Windows Kerneltreiber](../../examples/windows-driver/README.de.md) | Minimaler WDM-Kerneltreiber | Cross-Kompilierung `.sys` von macOS/Linux, Auto-LTO, integrierter Linker |
@@ -56,16 +58,54 @@ Kein Kernel-Quellbaum erforderlich — NeverC kompiliert gegen die integrierte m
 | [Kernel Full SDK](../../examples/android-kernel-full/README.de.md) | Vollständige SDK-Integration | Netlink IPC, Interposes, Credential-Wrapper, Modul-Sichtbarkeit, SELinux-Richtliniensteuerung, VMA, Datei-I/O |
 | [Kernel Chardev](../../examples/android-kernel-chardev/README.de.md) | Zeichengerät + ioctl | `misc_register`, ioctl-Dispatch, `/proc` seq_file |
 | [Kernel Netlink](../../examples/android-kernel-netlink/README.de.md) | Bidirektionales Netlink IPC | PING/VERSION/ECHO-Befehle, `nvk_nl_open`/`nvk_nl_reply` |
+| [Kernel Probe](../../examples/android-kernel-probe/README.de.md) | Beliebige Instruktion sondieren | `neverc_krt_probe_register`, vollständiger Registerkontext, Prioritätsverkettung, Überspringen/Umleiten |
+| [Kernel Mehrdatei-Modul](../../examples/android-kernel-multifile/README.de.md) | Kernelmodul aus mehreren Dateien | Nur ein `NEVERC_KRT_BOOTSTRAP()`, `weak_odr`-Zustand geteilt, Aufteilung in Init/Interpose/Hilfsdateien |
 
 ---
 
 ## Schnellstart
 
+Jedes Beispiel folgt demselben Muster:
+
 ```bash
-cd examples/<beispiel-name>
+cd examples/beispiel-name
 neverc make
 ```
 
-Compilerpfad angeben: `neverc make NEVERC=/path/to/neverc`
+Bei Bedarf den Compilerpfad überschreiben:
 
-Alle Beispiele verwenden **neverc** und erzeugen Windows-PE-Binärdateien (`.sys`) über den integrierten Linker.
+```bash
+neverc make NEVERC=/path/to/neverc
+```
+
+Linux-Beispiele unterstützen die Architekturauswahl:
+
+```bash
+neverc make TARGET=aarch64-linux-gnu   # Build for ARM64
+neverc make TARGET=x86_64-linux-gnu    # Build for x86_64 (default)
+```
+
+macOS-Beispiele unterstützen die Architekturauswahl:
+
+```bash
+neverc make TARGET=arm64-apple-macos     # Build for Apple Silicon (default)
+neverc make TARGET=x86_64-apple-macos    # Build for Intel
+```
+
+Android-Beispiele zielen standardmäßig auf ARM64:
+
+```bash
+cd examples/android-elf
+neverc make            # Build
+neverc make run        # Build + push to device + run via adb
+```
+
+---
+
+## Plattformübergreifende Highlights
+
+- **Einzige Toolchain**: NeverC übernimmt Präprozessierung, Kompilierung, Optimierung (Auto-LTO) und Linken in einem Aufruf
+- **Integriertes SDK**: Windows SDK/WDK, Linux-Sysroot (Ubuntu 22.04), macOS-Sysroot (macOS 14) und Android-Sysroot (NDK r26c, API 21+) sind in `runtime/` integriert — keine externen Abhängigkeiten
+- **Host-unabhängig**: Build von macOS (arm64/x86_64), Linux (x86_64/aarch64) oder Windows mit identischen Befehlen
+- **Multi-Target**: Cross-Kompilierung zu Windows PE (`.sys`/`.exe`/`.dll`), Linux ELF, macOS Mach-O (`.dylib`) und Android ELF von jedem Host
+- **Debug-Unterstützung**: `-g` für DWARF-Debug-Infos übergeben; mit `llvm-dwarfdump` inspizieren

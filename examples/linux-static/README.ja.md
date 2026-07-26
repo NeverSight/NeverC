@@ -1,5 +1,7 @@
 **言語**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
+[← NeverC サンプル](../../docs/examples/README.ja.md)
+
 # Linux 完全静的リンクサンプル
 
 NeverC で構築した自己完結型の静的リンク Linux 実行ファイル。ランタイム依存関係なし。

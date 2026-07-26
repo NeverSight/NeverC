@@ -270,10 +270,12 @@ Prep->CreateFeatureQueryPhaseOutput(Prep->Context, Frame, Continuation, &Out,
 - 缺少必需指针时返回 `NEVERC_STATUS_INVALID_ARGUMENT`，并且绝不让异常越过边界。
 
 规范性声明见 [`PluginPrep.h`] 和 [`Schema/PluginPrepSchema.inc`]，token 种类的
-schema 见 [`Schema/PrepSchema.json`]。
+schema 见 [`Schema/PrepSchema.json`]，六个预处理阶段及其策略见
+[`Schema/PhaseSchema.json`]。
 
 <!-- reference links -->
 [`PluginPrep.h`]: ../../neverc/include/neverc/Plugin/PluginPrep.h
 [`PluginPrepSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginPrepSchema.inc
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
 [`Schema/PluginPrepSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginPrepSchema.inc
 [`Schema/PrepSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PrepSchema.json

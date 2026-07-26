@@ -1,4 +1,8 @@
+<div dir="rtl">
+
 **اللغات**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
+
+[← أمثلة NeverC](../../docs/examples/README.ar.md)
 
 # مثال مكتبة macOS الديناميكية
 
@@ -37,3 +41,5 @@ neverc --target=arm64-apple-macos -Wall -dynamiclib -o libneverc.dylib lib.c
 - توفير `nc_vm_read`/`nc_vm_write` لقراءة/كتابة الذاكرة الافتراضية Mach
 - `nc_vm_alloc`/`nc_vm_dealloc` لتخصيص وتحرير ذاكرة Mach VM
 - دالة مساعدة لتشفير XOR واستعلامات PID/المهمة
+
+</div>

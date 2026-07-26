@@ -181,7 +181,7 @@ Core->SetFunctionCallingConvention(Core->Context, Task, Function,
 
 `NEVERC_IR_CALLING_CONVENTION_NEVER_C_CUSTOM` — стабильное на уровне ABI имя для `CallingConv::NeverC_Custom` (значение 1000 в LLVM). Затем плагин обходит использования функции через `GetValueUseCount` / `GetValueUse` и для каждого использования, которое является операндом-вызываемым в `call`, `invoke` или `callbr`, ставит то же соглашение на инструкцию через `SetInstructionProperty` с `NEVERC_IR_PROPERTY_CALLING_CONVENTION`. Любое другое использование означает, что адрес утёк, — отсюда и предупреждение о взятии адреса.
 
-Плагин, регистрирующий собственную цель, может вместо этого предоставить обратный вызов `PlanCallingConvention` в своём `NevercCallingConventionDescriptor` и выпускать планы напрямую, минуя слой спецификаций. См. [Целевая платформа, MC, ассемблер, объектные файлы](../target-mc-object.ru.md).
+Плагин, регистрирующий собственную цель, может вместо этого предоставить обратный вызов `PlanCallingConvention` в своём `NevercCallingConventionDescriptor` и выпускать планы напрямую, минуя слой спецификаций. См. [Целевая платформа, MC, ассемблер, объектные файлы](../target-mc-object.ru.md#abi-и-соглашения-о-вызовах).
 
 ## Тесты
 
@@ -244,7 +244,12 @@ custom_attr(...)              (neverc.ir.pass.post_opt)
 
 Исполнитель в бэкенде — **реализация, написанная один раз**: все решения политики живут в плагине. Добавление нового соглашения никогда не требует пересборки NeverC.
 
+Использованную выше основную таблицу см. в [`PluginIR.h`], `NevercCallingConventionDescriptor` — в [`PluginTarget.h`], а фазу `neverc.ir.pass.post_opt`, к которой подключается проход, — в [`Schema/PhaseSchema.json`].
+
 <!-- reference links -->
 [`CustomCallConvPlugin.c`]: ../../../pluginsdk/examples/CustomCallConvPlugin.c
 [`llvm/include/llvm/CodeGen/NeverCCallConv.h`]: ../../../llvm/include/llvm/CodeGen/NeverCCallConv.h
+[`PluginIR.h`]: ../../../neverc/include/neverc/Plugin/PluginIR.h
+[`PluginTarget.h`]: ../../../neverc/include/neverc/Plugin/PluginTarget.h
+[`Schema/PhaseSchema.json`]: ../../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
 [`tests/neverc/CustomCallConvTests.cpp`]: ../../../tests/neverc/CustomCallConvTests.cpp

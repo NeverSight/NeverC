@@ -114,8 +114,8 @@ Les phases, dans l'ordre, sont :
 8. la validation finale scellée.
 
 La source normative des identifiants, politiques, niveaux de stabilité et
-portes est [`neverc/include/neverc/Plugin/Schema/PhaseSchema.json`] ; le contrat
-de couverture exécutable est [`docs/plugin-api/coverage.json`].
+portes est [`Schema/PhaseSchema.json`] ; le contrat de couverture exécutable est
+[`coverage.json`].
 
 ## Les transformations intégrées sont aussi des fournisseurs
 
@@ -225,12 +225,14 @@ sélectionne le niveau d'exécution.
 - Déclarez les modèles de concurrence et de réentrance les plus étroits qui
   soient exacts.
 
-Voir [`pluginsdk/examples/DynCodeTracePlugin.c`] pour un traceur de phases en
-lecture seule et [`pluginsdk/examples/DynCodeEncoderPlugin.c`] pour un encodeur de
-jeu de caractères.
+Voir [`PluginDynCode.h`] pour les déclarations normatives,
+[`pluginsdk/examples/DynCodeTracePlugin.c`] pour un traceur de phases en
+lecture seule et [`pluginsdk/examples/DynCodeEncoderPlugin.c`] pour un encodeur
+de jeu de caractères.
 
 <!-- reference links -->
-[`docs/plugin-api/coverage.json`]: coverage.json
-[`neverc/include/neverc/Plugin/Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`coverage.json`]: coverage.json
+[`PluginDynCode.h`]: ../../neverc/include/neverc/Plugin/PluginDynCode.h
 [`pluginsdk/examples/DynCodeEncoderPlugin.c`]: ../../pluginsdk/examples/DynCodeEncoderPlugin.c
 [`pluginsdk/examples/DynCodeTracePlugin.c`]: ../../pluginsdk/examples/DynCodeTracePlugin.c
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json

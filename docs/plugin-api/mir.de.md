@@ -438,13 +438,15 @@ Verwenden Sie das Modul-Suffix, das CMake für Ihre Plattform erzeugt hat.
   C++-Ausnahme hinüber.
 - `neverc.mir.final_verify` ist versiegelt. Sie läuft in jedem Fall.
 
-Siehe [`PluginMIR.h`], [`Schema/PluginMIRSchema.inc`], [`Schema/PhaseSchema.json`]
-und [`coverage.json`] für die normativen Deklarationen, Schema-Konstanten,
-Phasen-Policies und Abdeckungsnachweise.
+Siehe [`PluginMIR.h`], [`Schema/MIRSchema.json`],
+[`Schema/PluginMIRSchema.inc`], [`Schema/PhaseSchema.json`] und
+[`coverage.json`] für die normativen Deklarationen, das Schema selbst, seine
+erzeugten Konstanten, Phasen-Policies und Abdeckungsnachweise.
 
 <!-- reference links -->
 [`coverage.json`]: coverage.json
 [`PluginMIR.h`]: ../../neverc/include/neverc/Plugin/PluginMIR.h
 [`pluginsdk/examples/MachinePass.c`]: ../../pluginsdk/examples/MachinePass.c
+[`Schema/MIRSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/MIRSchema.json
 [`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
 [`Schema/PluginMIRSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginMIRSchema.inc

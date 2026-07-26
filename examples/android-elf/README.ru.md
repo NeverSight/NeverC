@@ -1,5 +1,7 @@
 **Языки**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
+[← Примеры NeverC](../../docs/examples/README.ru.md)
+
 # Пример Android ELF
 
 Нативный ARM64 ELF-бинарник, кросс-компилированный для Android с помощью NeverC. Предназначен для прямого запуска на рутированных Android-устройствах через `adb shell`. Сборка возможна с macOS, Windows или Linux — без Android NDK или CMake.

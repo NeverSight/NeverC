@@ -197,7 +197,7 @@ plan(void *UserData, const NevercCallingConventionQuery *Query,
 
 `Query->SchemaDigest` は LOCKSTEP の値です——`RegisterNumber` は、それが指し示すス
 キーマに対してのみ意味を持ちます。完全な実例は
-[カスタム呼び出し規約](custom-callconv/README.ja.md) と
+[カスタム呼び出し規約](custom-callconv/README.ja.md#マテリアライズされた-plan) と
 [`pluginsdk/examples/CustomCallConvPlugin.c`] を参照してください。
 
 ## コード生成の経路
@@ -489,8 +489,11 @@ ObjectFormat->RegisterFormat(ObjectFormat->Context, RegistrarContext,
   `object.final_verify`、`object.commit` は封印されている。観測のみ。
 
 規範的な宣言は [`PluginTarget.h`]、[`PluginMC.h`]、[`PluginObject.h`]、
-[`Schema/PhaseSchema.json`] を、そしてこれら安定フェーズそれぞれを肯定・否定・置
-換・読み取り専用オブザーバー・封印ゲートの各テストへ対応付けたものは
+[`Schema/PhaseSchema.json`] を参照してください。それらが使うエンティティ・オペラ
+ンド・fixup・セクションの種別は [`Schema/MCSchema.json`] と
+[`Schema/ObjectSchema.json`] に由来し、そこから [`Schema/PluginMCSchema.inc`] と
+[`Schema/PluginObjectSchema.inc`] が生成されます。これら安定フェーズそれぞれを肯
+定・否定・置換・読み取り専用オブザーバー・封印ゲートの各テストへ対応付けたものは
 [`coverage.json`] を参照してください。
 
 <!-- reference links -->
@@ -501,4 +504,8 @@ ObjectFormat->RegisterFormat(ObjectFormat->Context, RegistrarContext,
 [`pluginsdk/examples/MCObserverPlugin.c`]: ../../pluginsdk/examples/MCObserverPlugin.c
 [`pluginsdk/examples/ObjectRewritePlugin.c`]: ../../pluginsdk/examples/ObjectRewritePlugin.c
 [`PluginTarget.h`]: ../../neverc/include/neverc/Plugin/PluginTarget.h
+[`Schema/MCSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/MCSchema.json
+[`Schema/ObjectSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/ObjectSchema.json
 [`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`Schema/PluginMCSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginMCSchema.inc
+[`Schema/PluginObjectSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginObjectSchema.inc

@@ -6,6 +6,18 @@
 
 将 C 源码直接編譯为**位置无关、零重定位、零数据段**的扁平二进制 dyncode。
 
+## 指南
+
+- [ARM64 (AArch64) 組語教學 — DynCode 視角](arm64-assembly-tutorial/README.zh-TW.md)
+- [NeverC DynCode 跨平台架構概覽](cross-platform-architecture/README.zh-TW.md)
+- [IR Pass 設計 — 原則、流水線與前後對比](ir-pass-design/README.zh-TW.md)
+- [核心模式（Ring-0）DynCode 支援](kernel-mode-dyncode/README.zh-TW.md)
+- [MIR Pass 設計 — 原則與掛鉤點](mir-pass-design/README.zh-TW.md)
+- [DynCode 流水線、MIR 與 PIC 策略（設計筆記）](pipeline-and-pic/README.zh-TW.md)
+- [平台擴充指南](platform-extension-guide/README.zh-TW.md)
+- [DynCode 編譯器 — 進度追蹤](progress/README.zh-TW.md)
+- [路線圖](roadmap/README.zh-TW.md)
+
 ---
 
 ## 核心目標
@@ -99,7 +111,7 @@ neverc -v -fdyncode -target arm64-apple-macos fib.c -o fib.bin
 | `-fdyncode-bad-bytes=<hex-list>` | 逗号分隔的禁止字节列表，如 `00,0a,0d`。提取器在 post-extract 钩子后扫描最终 `.bin`；命中则失败且不写文件。 |
 | `-fdyncode-bad-byte-profile=<name>` | 内置禁止字节配置：`null`、`c-string`、`http-newline`、`line`、`whitespace`、`ascii-control`。可与 `-fdyncode-bad-bytes=` 组合。 |
 | `-fdyncode-obfuscate=<spec>` | 傳遞給透過 [Plugin API](../plugin-api/README.zh-TW.md) 註冊的 **IR 級**外掛掛鈎。未載入外掛時為 no-op。見 [ir-pass-design.md 第 9 節](ir-pass-design/README.zh-TW.md#9-obfuscation-interposes)。 |
-| `-fdyncode-mir-obfuscate=<spec>` | 传递给 **MIR 级**混淆钩子（`RunBeforePreEmit` / `RunAfterPreEmit`）。未设置时回退到 `-fdyncode-obfuscate=`。见 [mir-pass-design.md 第 3 節](mir-pass-design/README.zh-TW.md#3-user-obfuscation-interposes)（User Obfuscation Interposes）。 |
+| `-fdyncode-mir-obfuscate=<spec>` | 传递给 **MIR 级**混淆钩子（`RunBeforePreEmit` / `RunAfterPreEmit`）。未设置时回退到 `-fdyncode-obfuscate=`。见 [mir-pass-design.md 第 3 節](mir-pass-design/README.zh-TW.md#3-使用者混淆掛鉤)（User Obfuscation Interposes）。 |
 
 ---
 
@@ -292,27 +304,27 @@ DynCode 流水線本身只保證「程式碼能正確執行」。混淆、多型
 
 流水線暴露 **11 個掛鈎點**，全部透過 C Plugin API（`NEVERC_INTERPOSE_SC_*`）存取：
 
-**IR 层（6 个钩子，接收 `ModulePassManager &`）**：
-- `RunBeforePrep` — 任何 dyncode pass 之前
-- `RunAfterPrep` — 链接属性已统一（internal + always_inline）
-- `RunBeforeInlining` — AlwaysInliner 前最后机会
-- `RunAfterInlining` — IR 已压缩为单一大函数
-- `RunAfterStackify` — 最终 IR 形态，下一步为代码生成
-- `RunAfterFinalIR` — AllBlrPass 之后，真正的最后 IR 钩子
+**IR 層（6 個掛鈎）**：
+- `NEVERC_INTERPOSE_SC_BEFORE_PREP` — 任何 dyncode pass 之前
+- `NEVERC_INTERPOSE_SC_AFTER_PREP` — 連結屬性已統一（internal + always_inline）
+- `NEVERC_INTERPOSE_SC_BEFORE_INLINING` — AlwaysInliner 前最後機會
+- `NEVERC_INTERPOSE_SC_AFTER_INLINING` — IR 已壓縮為單一大函式
+- `NEVERC_INTERPOSE_SC_AFTER_STACKIFY` — 最終 IR 形態，下一步為程式碼生成
+- `NEVERC_INTERPOSE_SC_AFTER_FINAL_IR` — AllBlrPass 之後，真正的最後 IR 掛鈎
 
-**MIR 层（3 个钩子，接收 `TargetPassConfig &`）**：
-- `RunBeforePreEmit` — 寄存器已分配，**CFI/EH 伪指令仍在**
-- `RunAfterPreEmit` — **内置 MIRPrepPass 已剥离伪指令**，最接近 AsmPrinter 将看到的字节形态；适合指令级混淆/寄存器重命名
-- `RunAfterFinalMIR` — 真正的最后 MIR 钩子，在 LLVM `addPreEmitPass2()` 之后、AsmPrinter 之前
+**MIR 層（3 個掛鈎）**：
+- `NEVERC_INTERPOSE_SC_BEFORE_PREEMIT` — 暫存器已分配，**CFI/EH 偽指令仍在**
+- `NEVERC_INTERPOSE_SC_AFTER_PREEMIT` — **內建 MIRPrepPass 已剝離偽指令**，最接近 AsmPrinter 將看到的位元組形態；適合指令級混淆/暫存器重新命名
+- `NEVERC_INTERPOSE_SC_AFTER_FINAL_MIR` — 真正的最後 MIR 掛鈎，在 LLVM `addPreEmitPass2()` 之後、AsmPrinter 之前
 
-**位元組流層（2 個鉤子，接收 `SmallVectorImpl<uint8_t> &`）**：
-- `RunPostExtract` — 提取器完成段内重定位修补与数据段审计之后、写入 `.bin` 之前。用于整包加密、垃圾字节插入或自定义头。
-- `RunPostFinalize` — 全部 finalize 步骤之后；NeverC 不再审计。
+**位元組流層（2 個掛鈎）**：
+- `NEVERC_INTERPOSE_SC_POST_EXTRACT` — 提取器完成段內重定位修補與資料段稽核之後、寫入 `.bin` 之前。用於整包加密、垃圾位元組插入或自訂標頭。
+- `NEVERC_INTERPOSE_SC_POST_FINALIZE` — 全部 finalize 步驟之後；NeverC 不再稽核。
 
-`-fdyncode-obfuscate=<spec>` 与 `-fdyncode-mir-obfuscate=<spec>` 将字符串传入 `DynCodeOptions::ObfuscateSpec` / `MirObfuscateSpec`。MIR spec 默认与 IR spec 相同。流水线不解析内容 — 由混淆库定义自有 DSL。详情：
+完整掛鈎清單、pass 註冊與程式碼範例，詳見 [Plugin API 文件](../plugin-api/README.zh-TW.md)。
 
 - IR 层：[ir-pass-design.md 第 9 節](ir-pass-design/README.zh-TW.md#9-obfuscation-interposes)（Obfuscation Interposes）。
-- MIR 层：[mir-pass-design.md 第 3 節](mir-pass-design/README.zh-TW.md#3-user-obfuscation-interposes)（User Obfuscation Interposes）。
+- MIR 层：[mir-pass-design.md 第 3 節](mir-pass-design/README.zh-TW.md#3-使用者混淆掛鉤)（User Obfuscation Interposes）。
 
 ---
 

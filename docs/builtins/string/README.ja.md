@@ -552,6 +552,20 @@ string f = R"(line1\nline2)".encrypt();        // raw
 | カウント | `s.count("pattern".encrypt())` |
 | 大文字小文字無視検索 | `s.find_ic("needle".encrypt())` |
 
+```c
+string input = get_user_input();
+
+// Zero-allocation: decrypts and compares byte-by-byte, short-circuits on mismatch
+if (input == "admin".encrypt()) {
+    grant_access();
+}
+
+// Also zero-allocation
+if (input.starts_with("/api/v1".encrypt())) {
+    handle_api_request();
+}
+```
+
 ### 制限
 
 - `.encrypt()` は文字列リテラル**のみ**に適用可能。変数での呼び出しはコンパイルエラー:
@@ -577,10 +591,18 @@ string e = "hello".encrypt().encrypt();  // エラー: .encrypt() can only be ap
 
 暗号化と復号は 2 つのマクロで制御されます：
 
-- `NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx)` — コンパイル時：平文→暗号文
-- `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` — 実行時：暗号文→平文
+```c
+NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx)  // コンパイル時：平文 → 暗号文
+NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)  // 実行時：暗号文 → 平文
+```
 
-`ENCRYPT_BYTE` のデフォルトは XOR。`DECRYPT_BYTE` のデフォルトは **XOR 命令なしの算術分解**——`(a + b) - (a & b) - (b & a)` で `a ^ b` を計算し、`volatile` 中間変数で LLVM の `xor` への最適化を防止。MBA（Mixed Boolean-Arithmetic）難読化パスでさらに強化可能。
+`ENCRYPT_BYTE` のデフォルトは XOR：
+
+```c
+((char)((unsigned char)(byte) ^ (unsigned char)((key) >> (8 * ((idx) % sizeof(size_t))))))
+```
+
+`DECRYPT_BYTE` のデフォルトは **XOR 命令なしの算術分解**——`(a + b) - (a & b) - (b & a)` で `a ^ b` を計算し、`volatile` 中間変数で LLVM の `xor` への最適化を防止。MBA（Mixed Boolean-Arithmetic）難読化パスでさらに強化可能。
 
 非 XOR アルゴリズムを使用するには**両方**を定義し、数学的逆関数である必要があります：
 
@@ -601,15 +623,41 @@ string e = "hello".encrypt().encrypt();  // エラー: .encrypt() can only be ap
 
 | マクロ | デフォルト | 説明 |
 |--------|-----------|------|
-| `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` | ローテーション鍵バイトによる XOR | バイト単位の復号操作 |
+| `NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx)` | ローテーション鍵バイトによる XOR | バイト単位の暗号化操作（コンパイル時） |
+| `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` | ローテーション鍵バイトによる XOR | バイト単位の復号操作（実行時）；`ENCRYPT_BYTE` の逆でなければならない |
 
 ### 配列・構造体内の暗号化文字列
 
-`.encrypt()` は集約初期化子（`string[]`、`struct { string; }`、2D 配列、ネストした組み合わせ）で使用可能。owned メンバーはスコープ終了時に自動解放され、ゼロアロケーション比較も同様に有効。
+`.encrypt()` は集約初期化子で使用可能。owned な `string` メンバーはスコープ終了時に自動解放されます（[コンポジット型の自動クリーンアップ](#コンポジット型の自動クリーンアップ)を参照）：
+
+```c
+typedef struct { string user; string pass; } creds;
+
+creds login = {.user = "admin".encrypt(), .pass = "s3cret".encrypt()};
+string routes[] = {"/api/v1".encrypt(), "/api/v2".encrypt()};
+string grid[2][2] = {
+    {"a".encrypt(), "b".encrypt()},
+    {"c".encrypt(), "d".encrypt()}
+};
+
+// Zero-allocation comparisons still apply
+if (login.user == "admin".encrypt()) { /* ... */ }
+```
 
 ### DynCode モード互換性
 
 文字列暗号化は dyncode（`-fdyncode`）を含むすべてのコンパイルモードで動作します。dyncode モードでは暗号化文字列の復号にローカル arena アロケータを使用。ユーザモードとカーネルモード（`-mdyncode-context=kernel`）の両方をサポート。
+
+```c
+// DynCode with encrypted strings — compiles to position-independent flat binary
+int main(int a, int b) {
+    string secret = "dyncode_secret".encrypt();
+    if (secret.starts_with("shell".encrypt())) {
+        // ...
+    }
+    return 0;
+}
+```
 
 ---
 

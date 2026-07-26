@@ -552,6 +552,20 @@ Wenn ein verschlüsseltes Literal direkt in einem Vergleichs- oder Suchausdruck 
 | Zählung | `s.count(...)` |
 | Suche (case-insensitive) | `s.find_ic(...)` |
 
+```c
+string input = get_user_input();
+
+// Zero-allocation: decrypts and compares byte-by-byte, short-circuits on mismatch
+if (input == "admin".encrypt()) {
+    grant_access();
+}
+
+// Also zero-allocation
+if (input.starts_with("/api/v1".encrypt())) {
+    handle_api_request();
+}
+```
+
 ### Einschränkungen
 
 - `.encrypt()` kann **nur** auf String-Literale angewendet werden. Der Aufruf auf einer Variable erzeugt einen Kompilierfehler:
@@ -577,10 +591,18 @@ string e = "hello".encrypt().encrypt();  // FEHLER: .encrypt() can only be appli
 
 Verschlüsselung und Entschlüsselung werden durch zwei Makros gesteuert:
 
-- `NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx)` — Kompilierzeit: Klartext→Chiffretext
-- `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` — Laufzeit: Chiffretext→Klartext
+```c
+NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx)  // Kompilierzeit: Klartext → Chiffretext
+NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)  // Laufzeit: Chiffretext → Klartext
+```
 
-`ENCRYPT_BYTE` verwendet standardmäßig XOR. `DECRYPT_BYTE` verwendet standardmäßig eine **XOR-freie arithmetische Zerlegung** — berechnet `a ^ b` als `(a + b) - (a & b) - (b & a)` mit `volatile` Zwischenvariablen, um LLVMs Re-Optimierung zu `xor` zu verhindern. Kann mit MBA-Obfuskationspässen (Mixed Boolean-Arithmetic) weiter verstärkt werden.
+`ENCRYPT_BYTE` verwendet standardmäßig XOR:
+
+```c
+((char)((unsigned char)(byte) ^ (unsigned char)((key) >> (8 * ((idx) % sizeof(size_t))))))
+```
+
+`DECRYPT_BYTE` verwendet standardmäßig eine **XOR-freie arithmetische Zerlegung** — berechnet `a ^ b` als `(a + b) - (a & b) - (b & a)` mit `volatile` Zwischenvariablen, um LLVMs Re-Optimierung zu `xor` zu verhindern. Kann mit MBA-Obfuskationspässen (Mixed Boolean-Arithmetic) weiter verstärkt werden.
 
 Für einen Nicht-XOR-Algorithmus definieren Sie **beide** Makros (sie müssen mathematische Inverse sein):
 
@@ -601,15 +623,41 @@ Für einen Nicht-XOR-Algorithmus definieren Sie **beide** Makros (sie müssen ma
 
 | Makro | Standard | Beschreibung |
 |-------|----------|-------------|
-| `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` | XOR mit rotierenden Schlüsselbytes | Byte-weise Entschlüsselungsoperation |
+| `NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx)` | XOR mit rotierenden Schlüsselbytes | Byte-weise Verschlüsselungsoperation (Kompilierzeit) |
+| `NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)` | XOR mit rotierenden Schlüsselbytes | Byte-weise Entschlüsselungsoperation (Laufzeit); muss die Umkehrung von `ENCRYPT_BYTE` sein |
 
 ### Verschlüsselte Strings in Arrays und Structs
 
-`.encrypt()` funktioniert in Aggregat-Initialisierern (`string[]`, `struct { string; }`, 2D-Arrays, verschachtelte Kombinationen). Owned-Member werden beim Verlassen des Scopes freigegeben; Zero-Allocation-Vergleiche bleiben gültig.
+`.encrypt()` funktioniert in Aggregat-Initialisierern. Owned-`string`-Member werden beim Verlassen des Scopes automatisch freigegeben (siehe [Automatische Bereinigung zusammengesetzter Typen](#automatische-bereinigung-zusammengesetzter-typen)):
+
+```c
+typedef struct { string user; string pass; } creds;
+
+creds login = {.user = "admin".encrypt(), .pass = "s3cret".encrypt()};
+string routes[] = {"/api/v1".encrypt(), "/api/v2".encrypt()};
+string grid[2][2] = {
+    {"a".encrypt(), "b".encrypt()},
+    {"c".encrypt(), "d".encrypt()}
+};
+
+// Zero-allocation comparisons still apply
+if (login.user == "admin".encrypt()) { /* ... */ }
+```
 
 ### DynCode-Modus-Kompatibilität
 
 String-Verschlüsselung funktioniert in allen Kompilierungsmodi einschließlich DynCode (`-fdyncode`). Im DynCode-Modus verwendet die Entschlüsselung den lokalen Arena-Allokator. Sowohl Usermode als auch Kernelmode (`-mdyncode-context=kernel`) werden unterstützt.
+
+```c
+// DynCode with encrypted strings — compiles to position-independent flat binary
+int main(int a, int b) {
+    string secret = "dyncode_secret".encrypt();
+    if (secret.starts_with("shell".encrypt())) {
+        // ...
+    }
+    return 0;
+}
+```
 
 ---
 

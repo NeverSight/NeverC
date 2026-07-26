@@ -1,5 +1,7 @@
 **Языки**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
+[← Примеры NeverC](../../docs/examples/README.ru.md)
+
 # Пример динамической библиотеки macOS
 
 Нативная динамическая библиотека macOS `.dylib`, кросс-скомпилированная с помощью NeverC. Оборачивает интерфейсы ядра Mach для получения информации о задачах и операций с виртуальной памятью — для исследований безопасности. Сборка из macOS, Windows или Linux — Xcode не требуется.

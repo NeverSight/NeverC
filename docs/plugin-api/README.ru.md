@@ -26,16 +26,16 @@ neverc_plugin_entry(const NevercBootstrapAPI *Bootstrap,
 
 | Руководство | Что охватывает |
 |---|---|
-| [API драйвера](driver.ru.md) | Командная строка, выбор тулчейна, граф действий, граф заданий |
-| [API источников и ввода-вывода](source.ru.md) | Провайдеры VFS, позиции в исходниках, буферы, приёмники вывода, зависимости |
-| [API препроцессора](prep.ru.md) | Токены, макросы, прагмы, включения, запросы возможностей, 39 видов событий |
-| [API AST и семантики](ast-sema.ru.md) | Расширение парсера, изменение AST, поиск имён, типы, константы |
-| [API IR](ir.ru.md) | Чтение LLVM IR, транзакционное построение, анализы, проходы, провайдеры |
-| [API MIR](mir.ru.md) | Машинные функции, регистры, кадры стека, проходы и анализы MIR |
-| [Целевая платформа, MC, ассемблер, объектные файлы](target-mc-object.ru.md) | Регистрация целевых платформ, соглашения о вызовах, кодирование MC, графы объектных файлов |
-| [API компоновки и LTO](link-lto.ru.md) | Граф компоновки, разрешение символов, GC/ICF, провайдеры компоновщика и LTO |
-| [API DynCode](dyncode.ru.md) | Плоские позиционно-независимые образы, понижение импортов, кодирование набора символов |
-| [Пользовательские соглашения о вызовах](custom-callconv/README.ru.md) | Плагины соглашений о вызовах, управляемые данными |
+| [API драйвера](driver.ru.md) | [Командная строка](driver.ru.md#сырые-аргументы), [выбор тулчейна](driver.ru.md#выбор-инструментальной-цепочки), [граф действий](driver.ru.md#граф-действий), [граф заданий](driver.ru.md#граф-заданий) |
+| [API источников и ввода-вывода](source.ru.md) | [Провайдеры VFS](source.ru.md#поставщики-виртуальной-файловой-системы), [позиции в исходниках](source.ru.md#позиции-в-исходниках), [буферы](source.ru.md#чтение-файлов), [приёмники вывода](source.ru.md#запись-вывода), [зависимости](source.ru.md#запись-зависимостей) |
+| [API препроцессора](prep.ru.md) | [Токены](prep.ru.md#чтение-токенов), [макросы](prep.ru.md#идентификаторы-и-макросы), [прагмы](prep.ru.md#прагмы-и-запросы-возможностей), [включения](prep.ru.md#перенаправление-включения), [запросы возможностей](prep.ru.md#прагмы-и-запросы-возможностей), [39 видов событий](prep.ru.md#подписка-на-события) |
+| [API AST и семантики](ast-sema.ru.md) | [Расширение парсера](ast-sema.ru.md#расширение-синтаксического-анализатора), [изменение AST](ast-sema.ru.md#построение-и-изменение), [поиск имён](ast-sema.ru.md#семантические-запросы), [типы](ast-sema.ru.md#типизированные-аксессоры), [константы](ast-sema.ru.md#семантические-запросы) |
+| [API IR](ir.ru.md) | [Чтение LLVM IR](ir.ru.md#обход-модуля), [транзакционное построение](ir.ru.md#транзакционное-изменение), [анализы](ir.ru.md#анализы), [проходы](ir.ru.md#проходы), [провайдеры](ir.ru.md#замена-генерации-и-оптимизации) |
+| [API MIR](mir.ru.md) | [Машинные функции](mir.ru.md#чтение-mir), [регистры](mir.ru.md#регистры), [кадры стека](mir.ru.md#кадр-стека), [проходы и анализы MIR](mir.ru.md#проходы) |
+| [Целевая платформа, MC, ассемблер, объектные файлы](target-mc-object.ru.md) | [Регистрация целевых платформ](target-mc-object.ru.md#регистрация-целевой-платформы), [соглашения о вызовах](target-mc-object.ru.md#abi-и-соглашения-о-вызовах), [кодирование MC](target-mc-object.ru.md#кодировщики-декодировщики-и-раскладка), [графы объектных файлов](target-mc-object.ru.md#объектные-графы) |
+| [API компоновки и LTO](link-lto.ru.md) | [Граф компоновки](link-lto.ru.md#чтение-графа), [разрешение символов](link-lto.ru.md#изменение-графа), [GC/ICF](link-lto.ru.md#конечный-автомат), [провайдеры компоновщика и LTO](link-lto.ru.md#провайдеры) |
+| [API DynCode](dyncode.ru.md) | [Плоские позиционно-независимые образы](dyncode.ru.md#образ-отчёт-и-ограниченные-правки-байтов), [понижение импортов](dyncode.ru.md#внешние-ссылки-и-понижение-импортов), [кодирование набора символов](dyncode.ru.md#образ-отчёт-и-ограниченные-правки-байтов) |
+| [Пользовательские соглашения о вызовах](custom-callconv/README.ru.md) | [Плагины соглашений о вызовах, управляемые данными](custom-callconv/README.ru.md#формат-спецификации) |
 | [Свидетельства покрытия фаз](coverage.json) | Сопоставление тестов для каждой стабильной фазы |
 
 ## Модель выполнения
@@ -147,9 +147,10 @@ typedef struct NevercPhaseFrame {
 ```
 
 [`Schema/PhaseSchema.json`] — нормативный источник идентификаторов фаз, политик,
-уровней стабильности и шлюзов верификации. Сгенерированный
-[`Schema/PluginPhaseSchema.inc`] открывает каждый из них как константу времени
-компиляции — для фазы `neverc.ir.pass.pipeline_start`:
+уровней стабильности и шлюзов верификации. [`PluginPhaseSchema.h`] и
+подключаемый им сгенерированный [`Schema/PluginPhaseSchema.inc`] открывают
+каждый из них как константу времени компиляции — для фазы
+`neverc.ir.pass.pipeline_start`:
 
 ```c
 NEVERC_PHASE_IR_PASS_PIPELINE_START_NAME       /* "neverc.ir.pass.pipeline_start" */
@@ -560,7 +561,8 @@ typedef struct NevercCompatibilityKey {
 
 ## Сборка
 
-Подключите сводный заголовок или только те домены, которые используете:
+Подключите сводный заголовок [`NevercPluginAPI.h`] или только те домены,
+которые используете:
 
 ```c
 #include "neverc/Plugin/NevercPluginAPI.h"   /* everything */
@@ -764,6 +766,7 @@ neverc -fplugin=build-neverc/neverc/pluginsdk/examples/host/FunctionPass.so \
 [`MachinePass.c`]: ../../pluginsdk/examples/MachinePass.c
 [`MCObserverPlugin.c`]: ../../pluginsdk/examples/MCObserverPlugin.c
 [`neverc/include/neverc/Plugin/Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`NevercPluginAPI.h`]: ../../neverc/include/neverc/Plugin/NevercPluginAPI.h
 [`ObjectRewritePlugin.c`]: ../../pluginsdk/examples/ObjectRewritePlugin.c
 [`PluginAST.h`]: ../../neverc/include/neverc/Plugin/PluginAST.h
 [`PluginCore.h`]: ../../neverc/include/neverc/Plugin/PluginCore.h
@@ -775,6 +778,7 @@ neverc -fplugin=build-neverc/neverc/pluginsdk/examples/host/FunctionPass.so \
 [`PluginMC.h`]: ../../neverc/include/neverc/Plugin/PluginMC.h
 [`PluginMIR.h`]: ../../neverc/include/neverc/Plugin/PluginMIR.h
 [`PluginObject.h`]: ../../neverc/include/neverc/Plugin/PluginObject.h
+[`PluginPhaseSchema.h`]: ../../neverc/include/neverc/Plugin/PluginPhaseSchema.h
 [`PluginPrep.h`]: ../../neverc/include/neverc/Plugin/PluginPrep.h
 [`pluginsdk/abi/plugin.json`]: ../../pluginsdk/abi/plugin.json
 [`pluginsdk/examples/DriverTracePlugin.c`]: ../../pluginsdk/examples/DriverTracePlugin.c

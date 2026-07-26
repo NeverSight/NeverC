@@ -89,9 +89,8 @@ DynCode 是由 34 個階段構成的固定圖。其中 30 個一般轉換為
 7. 封閉的映像驗證；
 8. 封閉的提交。
 
-ID、政策、穩定性層級與閘門的規範性來源是
-[`neverc/include/neverc/Plugin/Schema/PhaseSchema.json`]；可執行的覆蓋率契約則是
-[`docs/plugin-api/coverage.json`]。
+ID、政策、穩定性層級與閘門的規範性來源是 [`Schema/PhaseSchema.json`]；可執行的
+覆蓋率契約則是 [`coverage.json`]。
 
 ## 內建轉換同樣是提供者
 
@@ -166,11 +165,13 @@ resize API；不存在 `uint8_t **`。一次編輯會更新映像世代，並使
 - 回傳原本的 `NevercStatus`；已宣告 `REPLACE` 的處理若失敗，不會默默退回內建提供者。
 - 以據實而言最窄的並行與可重入模型進行宣告。
 
-唯讀的階段追蹤器請見 [`pluginsdk/examples/DynCodeTracePlugin.c`]，charset 編碼器請見
+規範宣告請見 [`PluginDynCode.h`]，唯讀的階段追蹤器請見
+[`pluginsdk/examples/DynCodeTracePlugin.c`]，charset 編碼器請見
 [`pluginsdk/examples/DynCodeEncoderPlugin.c`]。
 
 <!-- reference links -->
-[`docs/plugin-api/coverage.json`]: coverage.json
-[`neverc/include/neverc/Plugin/Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`coverage.json`]: coverage.json
+[`PluginDynCode.h`]: ../../neverc/include/neverc/Plugin/PluginDynCode.h
 [`pluginsdk/examples/DynCodeEncoderPlugin.c`]: ../../pluginsdk/examples/DynCodeEncoderPlugin.c
 [`pluginsdk/examples/DynCodeTracePlugin.c`]: ../../pluginsdk/examples/DynCodeTracePlugin.c
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json

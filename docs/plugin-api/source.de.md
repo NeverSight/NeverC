@@ -308,9 +308,11 @@ und meldet zusätzlich `MemoryBacked`.
 - `AddMemoryFile` hat Sitzungsgültigkeit; hängt der Inhalt von der Aufgabe ab,
   ist ein Anbieter das richtige Werkzeug.
 
-Die normativen Deklarationen stehen in [`PluginSource.h`], ein vollständiger
-Anbieter in [`pluginsdk/examples/VirtualHeaderPlugin.c`].
+Die normativen Deklarationen stehen in [`PluginSource.h`], die drei
+Source-Phasen und ihre Richtlinien in [`Schema/PhaseSchema.json`], ein
+vollständiger Anbieter in [`pluginsdk/examples/VirtualHeaderPlugin.c`].
 
 <!-- reference links -->
 [`pluginsdk/examples/VirtualHeaderPlugin.c`]: ../../pluginsdk/examples/VirtualHeaderPlugin.c
 [`PluginSource.h`]: ../../neverc/include/neverc/Plugin/PluginSource.h
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json

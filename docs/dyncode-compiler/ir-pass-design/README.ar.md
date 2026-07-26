@@ -30,6 +30,6 @@
 
 **تشفير ذاكرة التخزين المؤقت للعناوين** (§4.1، مشترك بين WinPEBImportPass وKernelImportPass): العناوين المحلولة تُشفَّر قبل التخزين عبر تفكيك حسابي بدون XOR `(a + b) - 2*(a & b)` + متغيرات وسيطة `volatile`. ثلاث دوال قابلة للتوصيل (`__sc_derive_key`، `__sc_ptr_encrypt`، `__sc_ptr_decrypt`). فتحات تخزين مؤقت لكل (DLL، API) في قسم `.text`. مسار سريع/بطيء مع `cmpxchg weak` آمن للخيوط. يمكن للمستخدم توفير تنفيذات خاصة (`always_inline`، معكوسات متبادلة، بدون استدعاءات خارجية). راجع [README.md §4.1–4.5](README.md#41-address-cache-encryption) للتفاصيل الكاملة.
 
-11 خطاف تشويش (`NEVERC_INTERPOSE_SC_*`). فلسفة التشخيص: خطأ واحد = تشخيص واحد قابل للتنفيذ. راجع [Plugin API — نقاط الخطاف](../../plugin-api/README.ar.md#5-نقاط-الخطاف) و[kernel-mode-dyncode.md](../kernel-mode-dyncode/README.ar.md).
+11 خطاف تشويش. فلسفة التشخيص: خطأ واحد = تشخيص واحد قابل للتنفيذ. راجع [mir-pass-design.md §3](../mir-pass-design/README.ar.md#3-خطافات-تشويش-المستخدم) و[kernel-mode-dyncode.md](../kernel-mode-dyncode/README.ar.md).
 
 </div>

@@ -1,5 +1,7 @@
 **Langues**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
+[← Exemples NeverC](../../docs/examples/README.fr.md)
+
 # Démo complète SDK noyau Android
 
 Intégration complète du SDK — initialise tous les sous-systèmes NVK et les expose via une interface de commande netlink. Implémentation de référence pour modules en production. Couvre : moteur d'interpose, wrappers d'identifiants, visibilité de module, contrôle de politique SELinux, énumération de processus, inspection VMA, I/O fichier, détection d'environnement et statistiques.

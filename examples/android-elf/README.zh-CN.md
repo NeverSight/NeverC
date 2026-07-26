@@ -1,5 +1,7 @@
 **语言**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
+[← NeverC 示例](../../docs/examples/README.zh-CN.md)
+
 # Android ELF 示例
 
 使用 NeverC 交叉编译的 ARM64 原生 ELF 可执行文件，用于 Android 平台。设计为在已 root 的 Android 设备上通过 `adb shell` 直接运行。可从 macOS、Windows 或 Linux 构建——无需 Android NDK 或 CMake。

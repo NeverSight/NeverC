@@ -1,5 +1,7 @@
 **Langues**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
+[← Exemples NeverC](../../docs/examples/README.fr.md)
+
 # Gestion de visibilité module noyau Android
 
 Démo de gestion de visibilité de module. Drapeaux : aucun=visibilité liste basique, `-DNVK_LOWVIS_FILTER`=filtre de visibilité complet (liste+sysfs+proc), `-DNVK_LOWVIS_FILTER_FULL`=étendu (dmesg+PID+mount+maps), `-DNVK_LOWVIS_CRED`=démo wrappers d'identifiants (`struct cred`), `-DNVK_LOWVIS_SELINUX`=démo état d'application SELinux (permissive).

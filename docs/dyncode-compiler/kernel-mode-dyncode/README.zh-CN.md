@@ -13,8 +13,8 @@
   - 禁用 `SyscallStubPass`（`svc`/`syscall` 在 ring-0 中无意义）。
   - 禁用 `WinPEBImportPass`（PEB 在用户态 TEB 中，ring-0 不可达）。
   - Windows 内核 `TargetDesc` 清除 TCB/PEB 读取模板和 syscall 寄存器描述。
-  - 注入平台特定驱动标志（见[第 3 节](#3-per-platform-driver-flag-differences)）。
-  - 启用 `KernelImportPass` 进行自动解析器支持的调用点改写（[第 4 节](#4-kernelimportpass-automatic-resolver-injection)）。
+  - 注入平台特定驱动标志（见[第 3 节](#3-每平台驱动标志差异)）。
+  - 启用 `KernelImportPass` 进行自动解析器支持的调用点改写（[第 4 节](#4-kernelimportpass自动解析器注入)）。
   - 注入 `-D__NEVERC_DYNCODE_KERNEL__=1`，使用户态 shim 头（`<windows.h>` / `<unistd.h>` / 等）发出 `#error`，防止意外包含。
 
 ## 2. `TargetDesc` 新字段
@@ -69,11 +69,25 @@ void dyncode_entry(void *__resolver, void *__cookie) {
 
 ### 4.2 调用点优先改写
 
-每个直接 extern 调用点就地替换：resolver → hash → cast → forward args。选择调用点改写（而非通用包装器）是为了支持 `printk("x=%d", v)` 等可变参数辅助函数。
+每个直接 extern 调用点就地替换：
+1. 从内部全局变量加载 resolver 和 cookie
+2. 调用 `resolver(FNV1a_hash(bare_name), cookie)`
+3. 将返回的 `void*` 转换为正确的函数指针类型
+4. 转发所有原始参数；返回结果
+
+选择调用点改写（而非通用包装器）是为了支持 `printk("x=%d", v)` 等可变参数辅助函数。LLVM IR 中的通用包装器无法可靠地转发匿名可变参数。
+
+取地址的 extern 不会被自动包装；诊断会引导用户直接调用辅助函数，或让 loader 传入预解析的函数指针。
 
 ### 4.3 哈希算法
 
-FNV-1a 64 位，与 `<neverc/dyncode/kernel.h>` 中的 `neverc_kern_hash()` 一致。pass 在哈希前剥离前导下划线（Mach-O `_` 前缀）以确保跨平台一致。
+FNV-1a 64 位，与 `<neverc/dyncode/kernel.h>` 中的 `neverc_kern_hash()` 一致：
+```c
+uint64_t h = 0xcbf29ce484222325ull;
+while (*s) { h ^= (unsigned char)*s++; h *= 0x100000001b3ull; }
+```
+
+pass 在哈希前剥离前导下划线（Mach-O `_` 前缀）以确保跨平台一致。
 
 ### 4.4 Loader 调用约定
 

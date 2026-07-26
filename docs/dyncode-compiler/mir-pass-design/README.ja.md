@@ -59,15 +59,17 @@ ListRegisterTargetPassConfigCallbacks.push_back(
 
 ### 2.1 サイドセクションメタデータ（`TargetOpcode::*`、クロスプラットフォーム）
 
-| オペコード | ソース | 未除去の影響 |
-|-----------|--------|------------|
-| `CFI_INSTRUCTION` | 全プラットフォームのフレーム下位変換 / `-g` | `.eh_frame` / `__compact_unwind` / `.pdata` 非空 |
-| `EH_LABEL` | EH / try-catch setjmp ポイント | LSDA サイドセクション非空 |
-| `STATEPOINT` / `STACKMAP` / `PATCHPOINT` | GC / sandbox stackmap | `.llvm_stackmaps` |
-| `PSEUDO_PROBE` | `-fprofile-sample-use` | `.pseudo_probe` |
-| `PATCHABLE_*` 族 | XRay / Kcov スタブ | `.xray_instr_map` |
-| `FENTRY_CALL` | `-mfentry` エントリプローブ | extern `__fentry__` 呼出 |
-| `LOCAL_ESCAPE` | Microsoft SEH | SEH ハンドラ参照を引込み |
+| オペコード | ソース | 除去しない場合 |
+|-----------|--------|---------------|
+| `CFI_INSTRUCTION` | 全プラットフォームの frame-lowering / `-g` | `.eh_frame` / `__compact_unwind` / `.pdata` が非空 |
+| `EH_LABEL` | EH / try-catch setjmp 地点 | LSDA サイドセクションが非空 |
+| `GC_LABEL` / `ANNOTATION_LABEL` | GC / アノテーションマーカー | セクション相対メタデータを持つ MCSymbol |
+| `STATEPOINT` / `STACKMAP` / `PATCHPOINT` | GC / サンドボックス stackmap | `.llvm_stackmaps` サイドセクション |
+| `PSEUDO_PROBE` | `-fprofile-sample-use` | `.pseudo_probe` サイドセクション |
+| `PATCHABLE_*` ファミリ | XRay / Kcov スタブ | `.xray_instr_map` / `.xray_fn_idx` |
+| `FENTRY_CALL` | `-mfentry` エントリプローブ | extern `__fentry__` 呼び出し |
+| `LOCAL_ESCAPE` | Microsoft SEH frame-escape | `_local_unwind2` / `__except_handler3` を引き込む |
+| `JUMP_TABLE_DEBUG_INFO` | ジャンプテーブルデバッグ情報 | `.debug_rnglists` エントリ |
 
 ### 2.2 Windows SEH（`TargetInstrInfo::getName()` プレフィクスマッチ）
 
@@ -90,9 +92,32 @@ if (Name.starts_with("SEH_"))
 
 `ObfuscationInterposes` は **11 フックポイント** を公開：6 IR + 3 MIR + 2 バイトレベル。
 
+3 つのシグネチャ型：
+
+```cpp
+using ObfuscationInterpose = std::function<void(
+    llvm::ModulePassManager &, const DynCodeOptions &)>;
+using MachineObfuscationInterpose = std::function<void(
+    llvm::TargetPassConfig &, const DynCodeOptions &)>;
+using BinaryObfuscationInterpose = std::function<void(
+    llvm::SmallVectorImpl<uint8_t> &, const DynCodeOptions &)>;
+```
+
 - `RunBeforePreEmit`：CFI/EH 疑似命令**あり** — プロローグ/エピローグメタデータ操作向け。
 - `RunAfterPreEmit`：**クリーン MIR** — AsmPrinter に最も近い。命令置換/レジスタ改名に最適。
 - `RunPostExtract`：**純バイトストリーム** — XOR/RC4 ラッピング、ジャンクバイト、カスタムヘッダ向け。
+
+```cpp
+__attribute__((constructor))
+static void myMirObfInit() {
+  auto H = neverc::dyncode::getDynCodeObfuscationInterposes();
+  H.RunAfterPreEmit = [](llvm::TargetPassConfig &TPC,
+                         const neverc::dyncode::DynCodeOptions &Opts) {
+    TPC.addExternalPass(new MyInstructionSubstitutionPass(Opts.MirObfuscateSpec));
+  };
+  // Register via Plugin API: NEVERC_INTERPOSE_SC_BEFORE_PREEMIT / AFTER_PREEMIT / AFTER_FINAL_MIR
+}
+```
 
 ---
 
@@ -117,12 +142,16 @@ if (Name.starts_with("SEH_"))
 ## 5. 設計根拠
 
 | 問題 | IR 層？ | MIR 層？ |
-|------|---------|---------|
-| 定数 GV 除去 | はい | 不要 |
-| extern libc 除去 | はい | 不要 |
-| CFI 疑似命令 | いいえ | はい |
-| 命令レベル難読化 | いいえ | はい |
+|------|---------|----------|
+| 定数 GV 除去 | はい（Data2Text） | 不要 |
+| extern libc 除去 | はい（SyscallStub / WinPEB） | 不要 |
+| 可変グローバルのスタック化 | はい（ZeroReloc） | 不要 |
+| Computed goto | はい（IndirectBr） | 不要 |
+| CFI 疑似命令 | いいえ（バックエンド生成） | はい（スキャンして削除） |
+| XRay スタブ | いいえ（バックエンド生成） | はい（スキャンして削除） |
+| 命令レベル難読化 | いいえ（IR に物理レジスタなし） | はい（実レジスタ/MI あり） |
 | レジスタ改名 | いいえ | はい |
+| Peephole 定数展開 | 部分的 | はい（よりクリーン） |
 
 ## 6. 拡張ガイド
 

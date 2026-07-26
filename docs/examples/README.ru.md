@@ -10,6 +10,8 @@
 
 ## Доступные примеры
 
+### Windows
+
 | Пример | Описание | Ключевые возможности |
 |--------|----------|---------------------|
 | [Драйвер ядра Windows](../../examples/windows-driver/README.ru.md) | Минимальный WDM-драйвер ядра | Кросс-компиляция `.sys` с macOS/Linux, авто-LTO, встроенный линкер |
@@ -56,16 +58,54 @@
 | [Kernel Full SDK](../../examples/android-kernel-full/README.ru.md) | Полная интеграция SDK | Netlink IPC, interpose, обёртки учётных данных, видимость модуля, управление политикой SELinux, VMA, файловый I/O |
 | [Kernel Chardev](../../examples/android-kernel-chardev/README.ru.md) | Символьное устройство + ioctl | `misc_register`, диспетчеризация ioctl, `/proc` seq_file |
 | [Kernel Netlink](../../examples/android-kernel-netlink/README.ru.md) | Двунаправленный netlink IPC | Команды PING/VERSION/ECHO, `nvk_nl_open`/`nvk_nl_reply` |
+| [Kernel Probe](../../examples/android-kernel-probe/README.ru.md) | Зонд на произвольной инструкции | `neverc_krt_probe_register`, полный контекст регистров, цепочка по приоритету, пропуск/перенаправление |
+| [Kernel Multi-File](../../examples/android-kernel-multifile/README.ru.md) | Модуль ядра из нескольких файлов | Один `NEVERC_KRT_BOOTSTRAP()`, общее состояние `weak_odr`, разделение init/interpose/утилит |
 
 ---
 
 ## Быстрый старт
 
+Каждый пример следует одному шаблону:
+
 ```bash
-cd examples/<имя-примера>
+cd examples/example-name
 neverc make
 ```
 
-Указать путь компилятора: `neverc make NEVERC=/path/to/neverc`
+При необходимости переопределите путь к компилятору:
 
-Все примеры используют **neverc** и генерируют бинарники Windows PE (`.sys`) через встроенный линкер.
+```bash
+neverc make NEVERC=/path/to/neverc
+```
+
+Примеры Linux поддерживают выбор архитектуры:
+
+```bash
+neverc make TARGET=aarch64-linux-gnu   # Build for ARM64
+neverc make TARGET=x86_64-linux-gnu    # Build for x86_64 (default)
+```
+
+Примеры macOS поддерживают выбор архитектуры:
+
+```bash
+neverc make TARGET=arm64-apple-macos     # Build for Apple Silicon (default)
+neverc make TARGET=x86_64-apple-macos    # Build for Intel
+```
+
+Примеры Android по умолчанию нацелены на ARM64:
+
+```bash
+cd examples/android-elf
+neverc make            # Build
+neverc make run        # Build + push to device + run via adb
+```
+
+---
+
+## Кроссплатформенные особенности
+
+- **Единая тулчейн**: NeverC выполняет препроцессинг, компиляцию, оптимизацию (авто-LTO) и линковку за один вызов
+- **Встроенный SDK**: Windows SDK/WDK, Linux sysroot (Ubuntu 22.04), macOS sysroot (macOS 14) и Android sysroot (NDK r26c, API 21+) встроены в `runtime/` — ноль внешних зависимостей
+- **Независимость от хоста**: Сборка из macOS (arm64/x86_64), Linux (x86_64/aarch64) или Windows идентичными командами
+- **Мультиплатформенность**: Кросс-компиляция в Windows PE (`.sys`/`.exe`/`.dll`), Linux ELF, macOS Mach-O (`.dylib`) и Android ELF с любого хоста
+- **Поддержка отладки**: Передайте `-g` для отладочной информации DWARF; исследуйте с `llvm-dwarfdump`

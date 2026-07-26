@@ -309,9 +309,11 @@ de `MemoryBacked`.
 - `AddMemoryFile` tiene alcance de sesión; cuando el contenido depende de la
   tarea, el proveedor es la herramienta correcta.
 
-Consulte [`PluginSource.h`] para las declaraciones normativas y
+Consulte [`PluginSource.h`] para las declaraciones normativas,
+[`Schema/PhaseSchema.json`] para las tres fases de source y sus políticas, y
 [`pluginsdk/examples/VirtualHeaderPlugin.c`] para un proveedor completo.
 
 <!-- reference links -->
 [`pluginsdk/examples/VirtualHeaderPlugin.c`]: ../../pluginsdk/examples/VirtualHeaderPlugin.c
 [`PluginSource.h`]: ../../neverc/include/neverc/Plugin/PluginSource.h
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json

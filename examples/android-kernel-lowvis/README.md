@@ -1,5 +1,7 @@
 **Languages**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
+[← NeverC Examples](../../docs/examples/README.md)
+
 # Android Kernel Lowvis
 
 Module visibility management demo. Compile-time flags: none=basic list visibility, `-DNVK_LOWVIS_FILTER`=full visibility filter (list+sysfs+proc), `-DNVK_LOWVIS_FILTER_FULL`=extended (dmesg+PID+mount+maps), `-DNVK_LOWVIS_CRED`=credential wrapper demo (`struct cred`), `-DNVK_LOWVIS_SELINUX`=SELinux enforcement-state demo (permissive).

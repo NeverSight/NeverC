@@ -305,8 +305,9 @@ typedef struct NevercJobResultDescriptor {
 ```
 
 `OutputSeals` は I/O API 経由で生成された `NevercOutputSealHandle` を運びます
-（[Source と I/O](source.ja.md) を参照）。ホストはこれによって、ジョブが書いた
-と主張したファイルが報告どおりのダイジェストで実在することを確認します。
+（[Source と I/O](source.ja.md#出力の書き出し) を参照）。ホストはこれによって、
+ジョブが書いたと主張したファイルが報告どおりのダイジェストで実在することを
+確認します。
 `GetJobResult` はコミット済みの結果を読み、ツールチェーン選択と同様に
 `BuiltinProviderUsed` を報告します。
 

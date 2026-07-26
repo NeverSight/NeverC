@@ -105,8 +105,8 @@ DynCode رسم ثابت من 34 مرحلة. ثلاثون منها انتقالا
 8. الإيداع المختوم.
 
 والمصدر المِعياري للمعرِّفات والسياسات ومستويات الاستقرار والبوابات هو
-[`neverc/include/neverc/Plugin/Schema/PhaseSchema.json`]؛ وعقد التغطية القابل
-للتنفيذ هو [`docs/plugin-api/coverage.json`].
+[`Schema/PhaseSchema.json`]؛ وعقد التغطية القابل للتنفيذ هو
+[`coverage.json`].
 
 ## التحويلات المدمجة مزوِّدات أيضًا
 
@@ -196,13 +196,15 @@ PIC مطابق لبايتات الصورة الحالية، وألّا تتدا�
   المزوِّد المدمج.
 - أعلِن أضيق نموذجَي تزامن وإعادة دخول صادقين.
 
-لمتتبِّع مراحل للقراءة فقط راجع [`pluginsdk/examples/DynCodeTracePlugin.c`]،
+للتصريحات المعيارية راجع [`PluginDynCode.h`]،
+ولمتتبِّع مراحل للقراءة فقط راجع [`pluginsdk/examples/DynCodeTracePlugin.c`]،
 ولمرمِّز طقم محارف راجع [`pluginsdk/examples/DynCodeEncoderPlugin.c`].
 
 <!-- reference links -->
-[`docs/plugin-api/coverage.json`]: coverage.json
-[`neverc/include/neverc/Plugin/Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`coverage.json`]: coverage.json
+[`PluginDynCode.h`]: ../../neverc/include/neverc/Plugin/PluginDynCode.h
 [`pluginsdk/examples/DynCodeEncoderPlugin.c`]: ../../pluginsdk/examples/DynCodeEncoderPlugin.c
 [`pluginsdk/examples/DynCodeTracePlugin.c`]: ../../pluginsdk/examples/DynCodeTracePlugin.c
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
 
 </div>

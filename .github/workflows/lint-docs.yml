@@ -1,7 +1,12 @@
 # Static conformance of the documentation tree.
 #
-# check-docs-links covers all of docs/ in every locale; check-docs-facts pins
-# the plugin API guides to the phase schema and the public headers.  Both are
+# check-docs-links covers docs/ and examples/ in every locale, plus the
+# English-only pages a reader still follows links out of; check-docs-facts
+# pins the plugin API guides to the phase schema and the public headers.  The
+# paths below have to list everything the checkers read, or a page can be
+# broken by a commit that never triggers this workflow -- so check-docs-links
+# holds the list to the tree, and a file that grows a link without appearing
+# here is reported rather than left to be discovered.  Both are
 # registered as CTest cases (DocsNavigation, PluginDocsFacts) under the
 # "plugin-meta" label, but no workflow reaches them: plugin-conformance runs
 # `ctest -R PluginConformance`, and plugin-sanitizers excludes the label with
@@ -13,22 +18,42 @@ on:
   push:
     paths:
       - 'docs/**'
+      - 'examples/**/README*.md'
       - 'README.md'
-      - 'neverc/include/neverc/Plugin/**'
+      - 'SECURITY.md'
+      - 'development.md'
+      - 'LICENSE'
       - 'pluginsdk/**'
-      - 'utils/plugin-api/check-docs-links.py'
-      - 'utils/plugin-api/check-docs-facts.py'
-      - 'utils/plugin-api/docs-translation-debt.json'
+      - 'neverc/include/neverc/Plugin/**'
+      - 'neverc/include/neverc/DynCode/**'
+      - 'neverc/include/neverc/Invoke/**'
+      - 'neverc/lib/Emit/**'
+      - 'llvm/LICENSE.TXT'
+      - 'llvm/include/llvm/CodeGen/NeverCCallConv.h'
+      - 'llvm/include/llvm/IR/Intrinsic*'
+      - 'llvm/lib/Target/X86/**'
+      - 'tests/**'
+      - 'utils/plugin-api/**'
       - '.github/workflows/lint-docs.yml'
   pull_request:
     paths:
       - 'docs/**'
+      - 'examples/**/README*.md'
       - 'README.md'
-      - 'neverc/include/neverc/Plugin/**'
+      - 'SECURITY.md'
+      - 'development.md'
+      - 'LICENSE'
       - 'pluginsdk/**'
-      - 'utils/plugin-api/check-docs-links.py'
-      - 'utils/plugin-api/check-docs-facts.py'
-      - 'utils/plugin-api/docs-translation-debt.json'
+      - 'neverc/include/neverc/Plugin/**'
+      - 'neverc/include/neverc/DynCode/**'
+      - 'neverc/include/neverc/Invoke/**'
+      - 'neverc/lib/Emit/**'
+      - 'llvm/LICENSE.TXT'
+      - 'llvm/include/llvm/CodeGen/NeverCCallConv.h'
+      - 'llvm/include/llvm/IR/Intrinsic*'
+      - 'llvm/lib/Target/X86/**'
+      - 'tests/**'
+      - 'utils/plugin-api/**'
       - '.github/workflows/lint-docs.yml'
 
 jobs:

@@ -297,10 +297,13 @@ Prep->CreateFeatureQueryPhaseOutput(Prep->Context, Frame, Continuation, &Out,
   manquant, et ne laissez jamais une exception franchir la frontière.
 
 Voir [`PluginPrep.h`] et [`Schema/PluginPrepSchema.inc`] pour les déclarations
-normatives, et [`Schema/PrepSchema.json`] pour le schéma des genres de jetons.
+normatives, [`Schema/PrepSchema.json`] pour le schéma des genres de jetons, et
+[`Schema/PhaseSchema.json`] pour les six phases du préprocesseur et leurs
+politiques.
 
 <!-- reference links -->
 [`PluginPrep.h`]: ../../neverc/include/neverc/Plugin/PluginPrep.h
 [`PluginPrepSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginPrepSchema.inc
+[`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
 [`Schema/PluginPrepSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginPrepSchema.inc
 [`Schema/PrepSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PrepSchema.json

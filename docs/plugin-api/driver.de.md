@@ -311,10 +311,10 @@ typedef struct NevercJobResultDescriptor {
 ```
 
 `OutputSeals` trägt die über die I/O-API erzeugten `NevercOutputSealHandle`s
-(siehe [Source und I/O](source.de.md)). So bestätigt der Host, dass die Dateien,
-die ein Job zu schreiben behauptete, tatsächlich mit den gemeldeten Digests
-existieren. `GetJobResult` liest ein committetes Ergebnis und meldet wie die
-Toolchain-Auswahl `BuiltinProviderUsed`.
+(siehe [Source und I/O](source.de.md#ausgaben-schreiben)). So bestätigt der
+Host, dass die Dateien, die ein Job zu schreiben behauptete, tatsächlich mit
+den gemeldeten Digests existieren. `GetJobResult` liest ein committetes
+Ergebnis und meldet wie die Toolchain-Auswahl `BuiltinProviderUsed`.
 
 ## Durchgerechnetes Beispiel: Argumente beobachten, Job-Ausführung abfangen
 

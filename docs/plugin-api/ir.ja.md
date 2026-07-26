@@ -442,9 +442,9 @@ CMake がお使いのプラットフォーム向けに生成したモジュー�
 - `neverc.ir.final_verify` は封印されています。プラグインが何をしてもこれを飛ばす
   ことはできません。
 
-規範的な宣言、スキーマ定数、フェーズポリシー、テストの証拠は、[`PluginIR.h`]、
-[`Schema/PluginIRSchema.inc`]、[`Schema/PhaseSchema.json`]、[`coverage.json`] を参照して
-ください。
+規範的な宣言、スキーマそのもの、生成される定数、フェーズポリシー、テストの証拠は、
+[`PluginIR.h`]、[`Schema/IRSchema.json`]、[`Schema/PluginIRSchema.inc`]、
+[`Schema/PhaseSchema.json`]、[`coverage.json`] を参照してください。
 
 <!-- reference links -->
 [`coverage.json`]: coverage.json
@@ -453,5 +453,6 @@ CMake がお使いのプラットフォーム向けに生成したモジュー�
 [`pluginsdk/examples/CustomCallConvPlugin.c`]: ../../pluginsdk/examples/CustomCallConvPlugin.c
 [`pluginsdk/examples/ExamplePlugin.c`]: ../../pluginsdk/examples/ExamplePlugin.c
 [`pluginsdk/examples/FunctionPass.c`]: ../../pluginsdk/examples/FunctionPass.c
+[`Schema/IRSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/IRSchema.json
 [`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
 [`Schema/PluginIRSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginIRSchema.inc

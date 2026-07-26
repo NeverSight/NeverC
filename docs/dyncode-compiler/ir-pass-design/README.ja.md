@@ -87,7 +87,7 @@ Phase 2：SROA 残留ベクトル store 分割。ベクトル定数インライ�
 直接呼出 → volatile スロット + `blr xN` / `call *rax` 間接呼出。
 
 ## 9. 難読化フック
-11 フックポイント（`NEVERC_INTERPOSE_SC_*`）。[Plugin API — フックポイント](../../plugin-api/README.ja.md#5-フックポイント) 参照。
+11 フックポイント。[mir-pass-design.md §3](../mir-pass-design/README.ja.md#3-ユーザー難読化フック) 参照。
 
 ## 10. 二段階設計の根拠
 Phase 1 は元の IR をクリーン。LLVM 最適化後、Phase 2 は最適化器が導入した新構造をクリーン。

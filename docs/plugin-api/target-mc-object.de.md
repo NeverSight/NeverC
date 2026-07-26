@@ -205,7 +205,7 @@ plan(void *UserData, const NevercCallingConventionQuery *Query,
 `Query->SchemaDigest` ist ein LOCKSTEP-Wert — `RegisterNumber` bedeutet nur
 etwas gegenüber dem Schema, das er benennt. Das vollständig ausgearbeitete
 Beispiel finden Sie unter
-[Eigene Aufrufkonventionen](custom-callconv/README.de.md) und in
+[Eigene Aufrufkonventionen](custom-callconv/README.de.md#materialisierte-pläne) und in
 [`pluginsdk/examples/CustomCallConvPlugin.c`].
 
 ## Routen der Codeerzeugung
@@ -517,9 +517,12 @@ transaktionale Umschreibung.
   `object.final_verify` und `object.commit` sind versiegelt. Nur beobachten.
 
 Die normativen Deklarationen finden Sie in [`PluginTarget.h`], [`PluginMC.h`],
-[`PluginObject.h`] und [`Schema/PhaseSchema.json`], und [`coverage.json`] ordnet
-jeder dieser stabilen Phasen ihre positiven, negativen, Ersetzungs-,
-Nur-Lese-Beobachter- und Sealed-Gate-Tests zu.
+[`PluginObject.h`] und [`Schema/PhaseSchema.json`]; die Entitäts-, Operanden-,
+Fixup- und Abschnittsarten, die sie verwenden, stammen aus
+[`Schema/MCSchema.json`] und [`Schema/ObjectSchema.json`], aus denen
+[`Schema/PluginMCSchema.inc`] und [`Schema/PluginObjectSchema.inc`] erzeugt
+werden. [`coverage.json`] ordnet jeder dieser stabilen Phasen ihre positiven,
+negativen, Ersetzungs-, Nur-Lese-Beobachter- und Sealed-Gate-Tests zu.
 
 <!-- reference links -->
 [`coverage.json`]: coverage.json
@@ -529,4 +532,8 @@ Nur-Lese-Beobachter- und Sealed-Gate-Tests zu.
 [`pluginsdk/examples/MCObserverPlugin.c`]: ../../pluginsdk/examples/MCObserverPlugin.c
 [`pluginsdk/examples/ObjectRewritePlugin.c`]: ../../pluginsdk/examples/ObjectRewritePlugin.c
 [`PluginTarget.h`]: ../../neverc/include/neverc/Plugin/PluginTarget.h
+[`Schema/MCSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/MCSchema.json
+[`Schema/ObjectSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/ObjectSchema.json
 [`Schema/PhaseSchema.json`]: ../../neverc/include/neverc/Plugin/Schema/PhaseSchema.json
+[`Schema/PluginMCSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginMCSchema.inc
+[`Schema/PluginObjectSchema.inc`]: ../../neverc/include/neverc/Plugin/Schema/PluginObjectSchema.inc

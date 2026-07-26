@@ -58,6 +58,8 @@ No kernel source tree required — NeverC compiles against the bundled minimal r
 | [Kernel Full SDK](../../examples/android-kernel-full/README.md) | Complete SDK integration | Netlink IPC, interposes, credential wrappers, module visibility, SELinux policy control, VMA, file I/O |
 | [Kernel Chardev](../../examples/android-kernel-chardev/README.md) | Character device + ioctl | `misc_register`, ioctl dispatch, `/proc` seq_file |
 | [Kernel Netlink](../../examples/android-kernel-netlink/README.md) | Bidirectional netlink IPC | PING/VERSION/ECHO commands, `nvk_nl_open`/`nvk_nl_reply` |
+| [Kernel Probe](../../examples/android-kernel-probe/README.md) | Probe an arbitrary instruction | `neverc_krt_probe_register`, full register context, priority chaining, skip/redirect |
+| [Kernel Multi-File](../../examples/android-kernel-multifile/README.md) | Multi-file kernel module | One `NEVERC_KRT_BOOTSTRAP()`, `weak_odr` shared state, split init/interpose/helper files |
 
 ---
 

@@ -1,5 +1,7 @@
 **언어**: [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Español](README.es.md) | [Italiano](README.it.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 
+[← NeverC 예제](../../docs/examples/README.ko.md)
+
 # macOS 동적 라이브러리 예제
 
 NeverC로 크로스 컴파일한 네이티브 macOS `.dylib` 동적 라이브러리입니다. Mach 커널 인터페이스를 래핑하여 태스크 정보 조회와 가상 메모리 작업을 제공합니다 — 보안 연구용. macOS, Windows, Linux 어디서든 빌드 가능 — Xcode 불필요.

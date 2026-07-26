@@ -10,7 +10,7 @@ Integrated linker · DynCode pipeline · Built-in runtimes (`string` · `mimallo
 
 [![AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 [![C23](https://img.shields.io/badge/Standard-C23-brightgreen.svg)](#features)
-[![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-informational.svg)](#cross-compiling-to-windows)
+![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-informational.svg)
 [![Arch](https://img.shields.io/badge/Arch-x86__64%20%7C%20AArch64-orange.svg)](#features)
 
 [Documentation](docs/README.md) · [DynCode Guide](docs/dyncode-compiler/README.md) · [Built-in Runtimes](docs/builtins/README.md) · [Plugin API](docs/plugin-api/README.md) · [Roadmap](docs/roadmap/README.md)
