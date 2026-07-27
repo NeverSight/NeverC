@@ -36,7 +36,7 @@ static void test_encrypt_decrypt(void) {
     printf("[encrypt_decrypt]\n");
     neverc_rsa_private_key_t key;
     neverc_rsa_private_key_init(&key);
-    neverc_rsa_generate_key(&key, 512);
+    ASSERT_INT_EQ(neverc_rsa_generate_key(&key, 512), 0);
 
     const char *msg = "Hello RSA!";
     size_t msg_len = strlen(msg);
@@ -59,7 +59,7 @@ static void test_sign_verify(void) {
     printf("[sign_verify]\n");
     neverc_rsa_private_key_t key;
     neverc_rsa_private_key_init(&key);
-    neverc_rsa_generate_key(&key, 1024);
+    ASSERT_INT_EQ(neverc_rsa_generate_key(&key, 1024), 0);
 
     const char *msg = "Sign this message";
     unsigned char hash[32];

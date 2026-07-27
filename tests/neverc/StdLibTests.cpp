@@ -12,7 +12,8 @@ protected:
   }
 
   CmdResult compileAndRunStdTest(const std::string &testName,
-                                  const std::vector<std::string> &srcs = {}) {
+                                  const std::vector<std::string> &srcs = {},
+                                  const std::vector<std::string> &extraFlags = {}) {
     fs::path testFile = fs::path(stdTestDir()) / ("test_" + testName + ".c");
     if (!fs::exists(testFile))
       return {1, "", "test file not found: " + testFile.string()};
@@ -28,6 +29,8 @@ protected:
     args.push_back("-Wno-unused-parameter");
     args.push_back("-Wno-unused-function");
     args.push_back("-O1");
+    for (const auto &f : extraFlags)
+      args.push_back(f);
 
     if (!srcs.empty())
       args.push_back("-fno-builtin-std");
@@ -260,6 +263,17 @@ STD_TEST(pbkdf2, "src/crypto/pbkdf2/pbkdf2.c", "src/crypto/hmac/hmac.c", "src/cr
 STD_TEST(crypto_rand, "src/crypto/rand/rand.c")
 STD_TEST(elliptic, "src/crypto/elliptic/elliptic.c", "src/math/big/big.c")
 STD_TEST(rsa, "src/crypto/rsa/rsa.c", "src/math/big/big.c", "src/crypto/rand/rand.c", "src/crypto/sha256/sha256.c")
+// A prime that leaves the public exponent non-invertible is a 1-in-65537 draw
+// at the real exponent, so the generator's retry is only reachable with a
+// small one. See test_rsa_retry.c.
+TEST_F(StdLibTest, rsa_retry) {
+  auto r = compileAndRunStdTest("rsa_retry",
+                                {"src/crypto/rsa/rsa.c", "src/math/big/big.c",
+                                 "src/crypto/rand/rand.c", "src/crypto/sha256/sha256.c"},
+                                {"-DNCI_RSA_PUBLIC_EXPONENT=3"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
 STD_TEST(ecdsa, "src/crypto/ecdsa/ecdsa.c", "src/crypto/elliptic/elliptic.c", "src/math/big/big.c", "src/crypto/rand/rand.c", "src/crypto/sha256/sha256.c")
 STD_TEST(dsa, "src/crypto/dsa/dsa.c", "src/math/big/big.c", "src/crypto/rand/rand.c", "src/crypto/sha256/sha256.c")
 STD_TEST(ed25519, "src/crypto/ed25519/ed25519.c", "src/crypto/sha512/sha512.c", "src/crypto/rand/rand.c", "src/math/big/big.c")

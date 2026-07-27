@@ -144,7 +144,11 @@ static void gen_prime(neverc_bigint_t *p, int bits) {
     }
 }
 
-static void mod_inverse(neverc_bigint_t *r, const neverc_bigint_t *a, const neverc_bigint_t *m) {
+/* r = a^-1 mod m by the extended Euclidean algorithm. Returns 0 on success and
+ * -1 when gcd(a, m) != 1, in which case no inverse exists and r is untouched:
+ * the Bezout coefficient the loop produces solves a*s = gcd (mod m), not 1, so
+ * returning it would hand the caller a silently wrong "inverse". */
+static int mod_inverse(neverc_bigint_t *r, const neverc_bigint_t *a, const neverc_bigint_t *m) {
     neverc_bigint_t old_r, rr, old_s, s, q, tmp, prod;
     neverc_bigint_init(&old_r); neverc_bigint_init(&rr);
     neverc_bigint_init(&old_s); neverc_bigint_init(&s);
@@ -168,42 +172,68 @@ static void mod_inverse(neverc_bigint_t *r, const neverc_bigint_t *a, const neve
         neverc_bigint_set(&s, &tmp);
     }
 
-    neverc_bigint_mod(r, &old_s, m);
+    neverc_bigint_set_int64(&tmp, 1);
+    int invertible = (neverc_bigint_cmp(&old_r, &tmp) == 0);   /* old_r = gcd(a,m) */
+    if (invertible)
+        neverc_bigint_mod(r, &old_s, m);
 
     neverc_bigint_free(&old_r); neverc_bigint_free(&rr);
     neverc_bigint_free(&old_s); neverc_bigint_free(&s);
     neverc_bigint_free(&q); neverc_bigint_free(&tmp);
     neverc_bigint_free(&prod);
+    return invertible ? 0 : -1;
 }
+
+/* Attempts before giving up on drawing a usable prime pair. Each draw fails
+ * independently with probability ~2/e, so 64 puts the odds of exhausting them
+ * far below any other failure mode in the program. */
+#define RSA_KEYGEN_ATTEMPTS 64
+
+/* The public exponent. With the real value the retry below fires on about one
+ * draw in 65537, far too rare for a test to reach, so test_rsa_retry.c builds
+ * this file with a small exponent to make the retry the common case. */
+#ifndef NCI_RSA_PUBLIC_EXPONENT
+#define NCI_RSA_PUBLIC_EXPONENT 65537
+#endif
 
 int neverc_rsa_generate_key(neverc_rsa_private_key_t *key, int bits) {
     if (bits < 512) return -1;
     int half = bits / 2;
 
-    gen_prime(&key->p, half);
-    gen_prime(&key->q, half);
-
-    neverc_bigint_mul(&key->pub.n, &key->p, &key->q);
-    neverc_bigint_set_int64(&key->pub.e, 65537);
+    neverc_bigint_set_int64(&key->pub.e, NCI_RSA_PUBLIC_EXPONENT);
 
     neverc_bigint_t one, pm1, qm1, phi;
     neverc_bigint_init(&one); neverc_bigint_init(&pm1);
     neverc_bigint_init(&qm1); neverc_bigint_init(&phi);
-
     neverc_bigint_set_int64(&one, 1);
-    neverc_bigint_sub(&pm1, &key->p, &one);
-    neverc_bigint_sub(&qm1, &key->q, &one);
-    neverc_bigint_mul(&phi, &pm1, &qm1);
 
-    mod_inverse(&key->d, &key->pub.e, &phi);
+    /* e is fixed, so a prime with p = 1 (mod e) leaves e non-invertible modulo
+     * phi and admits no private exponent at all. Roughly one prime in e lands
+     * there; draw a fresh pair rather than emit a key whose d is meaningless. */
+    int ok = 0;
+    for (int attempt = 0; attempt < RSA_KEYGEN_ATTEMPTS && !ok; attempt++) {
+        gen_prime(&key->p, half);
+        gen_prime(&key->q, half);
+        if (neverc_bigint_cmp(&key->p, &key->q) == 0) continue;
 
-    neverc_bigint_mod(&key->dp, &key->d, &pm1);
-    neverc_bigint_mod(&key->dq, &key->d, &qm1);
-    mod_inverse(&key->qinv, &key->q, &key->p);
+        neverc_bigint_sub(&pm1, &key->p, &one);
+        neverc_bigint_sub(&qm1, &key->q, &one);
+        neverc_bigint_mul(&phi, &pm1, &qm1);
+
+        if (mod_inverse(&key->d, &key->pub.e, &phi) != 0) continue;
+        if (mod_inverse(&key->qinv, &key->q, &key->p) != 0) continue;
+        ok = 1;
+    }
+
+    if (ok) {
+        neverc_bigint_mul(&key->pub.n, &key->p, &key->q);
+        neverc_bigint_mod(&key->dp, &key->d, &pm1);
+        neverc_bigint_mod(&key->dq, &key->d, &qm1);
+    }
 
     neverc_bigint_free(&one); neverc_bigint_free(&pm1);
     neverc_bigint_free(&qm1); neverc_bigint_free(&phi);
-    return 0;
+    return ok ? 0 : -1;
 }
 
 int neverc_rsa_key_size(const neverc_rsa_public_key_t *pub) {
