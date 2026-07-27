@@ -13,8 +13,7 @@
 |*          -o DynCodeEncoderPlugin.<ext> DynCodeEncoderPlugin.c                *|
 \*===----------------------------------------------------------------------===*/
 
-#include "neverc/Plugin/PluginCore.h"
-#include "neverc/Plugin/PluginDynCode.h"
+#include "neverc/Plugin/NevercPluginAPI.h"
 
 #define DYNCODE_ENCODER_PLUGIN_ID "org.neverc.example.dyncode-encoder"
 #define STRING_VIEW_LITERAL(Text)                                              \

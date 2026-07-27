@@ -1,5 +1,4 @@
-#include "neverc/Plugin/PluginCore.h"
-#include "neverc/Plugin/PluginDriver.h"
+#include "neverc/Plugin/NevercPluginAPI.h"
 
 #define DRIVER_TRACE_PLUGIN_ID "org.neverc.example.driver-trace"
 #define STRING_VIEW_LITERAL(Text)                                              \

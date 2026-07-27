@@ -1,6 +1,5 @@
 /* Observe target-independent MC emission without depending on LLVM C++ APIs. */
-#include "neverc/Plugin/PluginCore.h"
-#include "neverc/Plugin/PluginPhaseSchema.h"
+#include "neverc/Plugin/NevercPluginAPI.h"
 #include <stddef.h>
 #include <string.h>
 

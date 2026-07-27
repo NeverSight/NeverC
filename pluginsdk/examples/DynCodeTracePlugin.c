@@ -10,8 +10,7 @@
 |*          -o DynCodeTracePlugin.<ext> DynCodeTracePlugin.c                    *|
 \*===----------------------------------------------------------------------===*/
 
-#include "neverc/Plugin/PluginCore.h"
-#include "neverc/Plugin/PluginDynCode.h"
+#include "neverc/Plugin/NevercPluginAPI.h"
 
 #define DYNCODE_TRACE_PLUGIN_ID "org.neverc.example.dyncode-trace"
 #define STRING_VIEW_LITERAL(Text)                                              \

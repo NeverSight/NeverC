@@ -10,8 +10,7 @@
  *   -fplugin-arg=org.neverc.example.custom-callconv:ccspec=gpr:rcx;ret:rax
  */
 
-#include "neverc/Plugin/PluginDriver.h"
-#include "neverc/Plugin/PluginIR.h"
+#include "neverc/Plugin/NevercPluginAPI.h"
 #include <stddef.h>
 #include <string.h>
 

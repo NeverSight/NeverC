@@ -64,7 +64,7 @@ else
 endif
 
 # -shared: produce a loadable plugin library
-# -I: SDK header include path (modular pure-C headers, zero LLVM dependencies)
+# -I: SDK header include path (pure-C plugin ABI, zero LLVM dependencies)
 FLAGS = --target=$(HOST_TARGET) -shared -I$(INCLUDE_DIR)
 
 OUTPUTS = $(addsuffix $(SHARED_EXT),$(PLUGINS))

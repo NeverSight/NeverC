@@ -1,4 +1,4 @@
-#include "neverc/Plugin/PluginAST.h"
+#include "neverc/Plugin/NevercPluginAPI.h"
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>

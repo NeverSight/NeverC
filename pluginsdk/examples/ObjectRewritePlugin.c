@@ -1,5 +1,5 @@
 /* Add a deterministic section through the transactional ObjectGraph API. */
-#include "neverc/Plugin/PluginObject.h"
+#include "neverc/Plugin/NevercPluginAPI.h"
 #include <stddef.h>
 #include <string.h>
 
