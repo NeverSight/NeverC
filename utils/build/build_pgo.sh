@@ -3,18 +3,18 @@
 # PGO (Profile-Guided Optimisation) two-phase build for NeverC.
 #
 # Usage:
-#   ./tools/build_pgo.sh                 # full pipeline: generate → train → orderfile → use → benchmark
-#   ./tools/build_pgo.sh generate        # Phase 1 only: build instrumented neverc
-#   ./tools/build_pgo.sh train           # Phase 1b only: run workloads to collect profiles
-#   ./tools/build_pgo.sh orderfile       # Phase 1c only: generate order file from profdata (macOS)
-#   ./tools/build_pgo.sh use             # Phase 2 only: build optimised neverc from .profdata
-#   ./tools/build_pgo.sh benchmark       # A/B compare baseline vs PGO build
-#   ./tools/build_pgo.sh clean           # remove PGO build dirs and profiles
+#   ./utils/build/build_pgo.sh                 # full pipeline: generate → train → orderfile → use → benchmark
+#   ./utils/build/build_pgo.sh generate        # Phase 1 only: build instrumented neverc
+#   ./utils/build/build_pgo.sh train           # Phase 1b only: run workloads to collect profiles
+#   ./utils/build/build_pgo.sh orderfile       # Phase 1c only: generate order file from profdata (macOS)
+#   ./utils/build/build_pgo.sh use             # Phase 2 only: build optimised neverc from .profdata
+#   ./utils/build/build_pgo.sh benchmark       # A/B compare baseline vs PGO build
+#   ./utils/build/build_pgo.sh clean           # remove PGO build dirs and profiles
 #
 # Requires: cmake, ninja, xcrun (macOS) or llvm-profdata (Linux/Windows)
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 CACHE="$REPO_ROOT/neverc/cmake/caches/NeverC.cmake"
 
 BUILD_PGO_GEN="$REPO_ROOT/build-pgo-gen"
@@ -156,7 +156,7 @@ phase_train() {
   fi
 
   echo "  Merging $profraw_count profiles → $PROFDATA"
-  "$REPO_ROOT/tools/merge_pgo_profiles.sh" \
+  "$REPO_ROOT/utils/build/merge_pgo_profiles.sh" \
     --llvm-profdata "$LLVM_PROFDATA" \
     --profile-dir "$PROFILE_DIR" \
     --output "$PROFDATA"

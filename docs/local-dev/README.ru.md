@@ -54,7 +54,7 @@ cmake --build build-neverc --target check-neverc
 После сборки исполняемый файл `neverc` находится в `build-neverc/bin/neverc`. Используйте вспомогательный скрипт, чтобы добавить его в `PATH` без необходимости каждый раз вводить полный путь:
 
 ```bash
-source ./tools/neverc-env.sh
+source ./utils/build/neverc-env.sh
 ```
 
 Теперь можно запускать `neverc` напрямую:
@@ -69,7 +69,7 @@ neverc -c hello.c -o hello.o
 Чтобы убрать локальную сборку из `PATH` в текущей сессии оболочки:
 
 ```bash
-source ./tools/neverc-env.sh --remove   # или -r
+source ./utils/build/neverc-env.sh --remove   # или -r
 ```
 
 ### Постоянная настройка
@@ -77,13 +77,13 @@ source ./tools/neverc-env.sh --remove   # или -r
 Автоматически записать строку `source` в rc-файл оболочки (`~/.zshrc`, `~/.bashrc` или `~/.profile`):
 
 ```bash
-source ./tools/neverc-env.sh --install
+source ./utils/build/neverc-env.sh --install
 ```
 
 Отменить:
 
 ```bash
-source ./tools/neverc-env.sh --uninstall
+source ./utils/build/neverc-env.sh --uninstall
 ```
 
 ---
@@ -93,10 +93,10 @@ source ./tools/neverc-env.sh --uninstall
 В Windows используйте скрипт `.bat` (права администратора не требуются):
 
 ```cmd
-tools\neverc-env.bat             &REM добавить в PATH (текущая сессия)
-tools\neverc-env.bat --remove    &REM удалить из PATH (текущая сессия)
-tools\neverc-env.bat --global    &REM сохранить в PATH пользователя через setx
-tools\neverc-env.bat --global -r &REM удалить из PATH пользователя через setx
+utils\build\neverc-env.bat             &REM добавить в PATH (текущая сессия)
+utils\build\neverc-env.bat --remove    &REM удалить из PATH (текущая сессия)
+utils\build\neverc-env.bat --global    &REM сохранить в PATH пользователя через setx
+utils\build\neverc-env.bat --global -r &REM удалить из PATH пользователя через setx
 ```
 
 В отличие от Unix-скрипта, `source` не требуется — `.bat` напрямую изменяет текущую сессию `cmd`. `--global` записывает в реестр пользователя через `setx` (права администратора не требуются).

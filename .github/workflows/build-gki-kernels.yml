@@ -231,7 +231,7 @@ jobs:
             args+=("$KEY" "${dirs[@]}")
           fi
           echo "verify args: ${args[*]}"
-          bash "$GITHUB_WORKSPACE/neverc/tools/verify_gki_offsets.sh" "${args[@]}" \
+          bash "$GITHUB_WORKSPACE/neverc/utils/build/verify_gki_offsets.sh" "${args[@]}" \
             | tee "$GITHUB_WORKSPACE/verify-$KEY.txt"
 
       - name: Cross-check via gen_struct_module_offsets.c

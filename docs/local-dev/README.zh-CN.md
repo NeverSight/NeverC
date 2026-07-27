@@ -52,7 +52,7 @@ bootstrap 并重链编译器，无需手写 embed 目标。
 构建完成后，`neverc` 二进制文件位于 `build-neverc/bin/neverc`。使用辅助脚本将其加入 `PATH`，无需每次输入完整路径：
 
 ```bash
-source ./tools/neverc-env.sh
+source ./utils/build/neverc-env.sh
 ```
 
 之后就可以直接运行 `neverc`：
@@ -67,7 +67,7 @@ neverc -c hello.c -o hello.o
 当不再需要本地构建在 `PATH` 中时，在同一 shell 会话中移除：
 
 ```bash
-source ./tools/neverc-env.sh --remove   # 或 -r
+source ./utils/build/neverc-env.sh --remove   # 或 -r
 ```
 
 ### 持久化设置
@@ -75,13 +75,13 @@ source ./tools/neverc-env.sh --remove   # 或 -r
 自动将 `source` 行写入 shell 配置文件（`~/.zshrc`、`~/.bashrc` 或 `~/.profile`）：
 
 ```bash
-source ./tools/neverc-env.sh --install
+source ./utils/build/neverc-env.sh --install
 ```
 
 撤销：
 
 ```bash
-source ./tools/neverc-env.sh --uninstall
+source ./utils/build/neverc-env.sh --uninstall
 ```
 
 ---
@@ -91,10 +91,10 @@ source ./tools/neverc-env.sh --uninstall
 在 Windows 上使用 `.bat` 脚本（无需管理员权限）：
 
 ```cmd
-tools\neverc-env.bat             &REM 加入 PATH（当前会话）
-tools\neverc-env.bat --remove    &REM 从 PATH 移除（当前会话）
-tools\neverc-env.bat --global    &REM 通过 setx 持久化到用户 PATH
-tools\neverc-env.bat --global -r &REM 通过 setx 从用户 PATH 移除
+utils\build\neverc-env.bat             &REM 加入 PATH（当前会话）
+utils\build\neverc-env.bat --remove    &REM 从 PATH 移除（当前会话）
+utils\build\neverc-env.bat --global    &REM 通过 setx 持久化到用户 PATH
+utils\build\neverc-env.bat --global -r &REM 通过 setx 从用户 PATH 移除
 ```
 
 与 Unix 脚本不同，无需 `source` — `.bat` 直接修改当前 `cmd` 会话。`--global` 通过 `setx` 写入用户级注册表（无需管理员权限）。

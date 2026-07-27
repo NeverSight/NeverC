@@ -54,7 +54,7 @@ cmake --build build-neverc --target check-neverc
 بعد البناء، يكون الملف التنفيذي `neverc` في `build-neverc/bin/neverc`. استخدم النص البرمجي المساعد لإضافته إلى `PATH` بدلاً من كتابة المسار الكامل كل مرة:
 
 ```bash
-source ./tools/neverc-env.sh
+source ./utils/build/neverc-env.sh
 ```
 
 الآن يمكنك تشغيل `neverc` مباشرةً:
@@ -69,7 +69,7 @@ neverc -c hello.c -o hello.o
 لإزالة النسخة المحلية من `PATH` في جلسة الصَّدفة الحالية:
 
 ```bash
-source ./tools/neverc-env.sh --remove   # أو -r
+source ./utils/build/neverc-env.sh --remove   # أو -r
 ```
 
 ### إعداد دائم
@@ -77,13 +77,13 @@ source ./tools/neverc-env.sh --remove   # أو -r
 كتابة سطر `source` تلقائيًا في ملف rc الخاص بالصَّدفة (`~/.zshrc` أو `~/.bashrc` أو `~/.profile`):
 
 ```bash
-source ./tools/neverc-env.sh --install
+source ./utils/build/neverc-env.sh --install
 ```
 
 للتراجع:
 
 ```bash
-source ./tools/neverc-env.sh --uninstall
+source ./utils/build/neverc-env.sh --uninstall
 ```
 
 ---
@@ -93,10 +93,10 @@ source ./tools/neverc-env.sh --uninstall
 على Windows، استخدم النص البرمجي `.bat` (لا يحتاج صلاحيات مسؤول):
 
 ```cmd
-tools\neverc-env.bat             &REM إضافة إلى PATH (الجلسة الحالية)
-tools\neverc-env.bat --remove    &REM إزالة من PATH (الجلسة الحالية)
-tools\neverc-env.bat --global    &REM حفظ في PATH المستخدم عبر setx
-tools\neverc-env.bat --global -r &REM إزالة من PATH المستخدم عبر setx
+utils\build\neverc-env.bat             &REM إضافة إلى PATH (الجلسة الحالية)
+utils\build\neverc-env.bat --remove    &REM إزالة من PATH (الجلسة الحالية)
+utils\build\neverc-env.bat --global    &REM حفظ في PATH المستخدم عبر setx
+utils\build\neverc-env.bat --global -r &REM إزالة من PATH المستخدم عبر setx
 ```
 
 على عكس نص Unix البرمجي، لا حاجة لـ `source` — ملف `.bat` يعدّل جلسة `cmd` الحالية مباشرةً. يكتب `--global` في سجل المستخدم عبر `setx` (لا يحتاج صلاحيات مسؤول).

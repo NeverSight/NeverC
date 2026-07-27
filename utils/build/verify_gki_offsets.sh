@@ -25,7 +25,7 @@ set -euo pipefail
 
 PROG=${0##*/}
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
-DEFAULT_HEADER="$SCRIPT_DIR/../runtime/android/kernel/include/nvkmod_version.h"
+DEFAULT_HEADER="$SCRIPT_DIR/../../runtime/android/kernel/include/nvkmod_version.h"
 
 usage() {
 	cat <<EOF

@@ -2,7 +2,7 @@
 REM Install local git hooks for this repo on Windows.
 REM
 REM Usage:
-REM     scripts\install-git-hooks.bat
+REM     utils\git\install-git-hooks.bat
 REM
 REM Installs a pre-commit hook that checks Options.td.h ordering whenever
 REM the file is staged. Skip with `git commit --no-verify`.
@@ -29,10 +29,10 @@ REM installer.
     echo.
     echo if git diff --cached --name-only ^| grep -qx "$TARGET"; then
     echo     echo "[pre-commit] Checking $TARGET is sorted..."
-    echo     if ! python "$REPO_ROOT/scripts/sort-options-td.py" --check; then
+    echo     if ! python "$REPO_ROOT/utils/lint/sort-options-td.py" --check; then
     echo         echo ""
     echo         echo "[pre-commit] Options.td.h is not sorted. Run:"
-    echo         echo "    python scripts/sort-options-td.py --write"
+    echo         echo "    python utils/lint/sort-options-td.py --write"
     echo         echo "and 'git add' the result, or use 'git commit --no-verify' to skip."
     echo         exit 1
     echo     fi

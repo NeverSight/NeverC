@@ -7,14 +7,14 @@
 \*===----------------------------------------------------------------------===*/
 
 // x86 intrinsic entries MUST be sorted alphabetically by name (binary search).
-// After adding/renaming entries, run: scripts/sort-x86-intrinsics.py --write
+// After adding/renaming entries, run: utils/lint/sort-x86-intrinsics.py --write
 
 #ifndef LLVM_IR_INTRINSIC_X86_ENUMS_H
 #define LLVM_IR_INTRINSIC_X86_ENUMS_H
 
 // Entries MUST be sorted alphabetically by LLVM name (llvm.x86.*)
 // for binary search in lookupIntrinsicID to work correctly.
-// Sort with: python3 scripts/sort-x86-intrinsics.py --write
+// Sort with: python3 utils/lint/sort-x86-intrinsics.py --write
 
 namespace llvm {
 namespace Intrinsic {

@@ -8,9 +8,9 @@ comparison function (StrCmpOptionNameIgnoreCase).  This script automates that
 sorting so you never have to figure out the right position by hand.
 
 Usage:
-    python3 scripts/sort-options-td.py                    # dry-run (shows diff)
-    python3 scripts/sort-options-td.py --write            # overwrite in place
-    python3 scripts/sort-options-td.py --check            # exit 1 if unsorted (CI)
+    python3 utils/lint/sort-options-td.py                    # dry-run (shows diff)
+    python3 utils/lint/sort-options-td.py --write            # overwrite in place
+    python3 utils/lint/sort-options-td.py --check            # exit 1 if unsorted (CI)
 """
 
 import argparse
@@ -20,7 +20,7 @@ import sys
 from functools import cmp_to_key
 from pathlib import Path
 
-DEFAULT_PATH = Path(__file__).resolve().parent.parent / \
+DEFAULT_PATH = Path(__file__).resolve().parents[2] / \
     "neverc/include/neverc/Invoke/Options.td.h"
 
 PREFIX_VALUES = {

@@ -54,7 +54,7 @@ cmake --build build-neverc --target check-neverc
 빌드 후 `neverc` 바이너리는 `build-neverc/bin/neverc`에 위치합니다. 헬퍼 스크립트를 사용하여 `PATH`에 추가하면 매번 전체 경로를 입력할 필요가 없습니다:
 
 ```bash
-source ./tools/neverc-env.sh
+source ./utils/build/neverc-env.sh
 ```
 
 이제 `neverc`를 직접 실행할 수 있습니다:
@@ -69,7 +69,7 @@ neverc -c hello.c -o hello.o
 로컬 빌드를 `PATH`에서 제거하려면 같은 셸 세션에서 다음을 실행합니다:
 
 ```bash
-source ./tools/neverc-env.sh --remove   # 또는 -r
+source ./utils/build/neverc-env.sh --remove   # 또는 -r
 ```
 
 ### 영구 설정
@@ -77,13 +77,13 @@ source ./tools/neverc-env.sh --remove   # 또는 -r
 `source` 행을 셸 rc 파일(`~/.zshrc`, `~/.bashrc` 또는 `~/.profile`)에 자동 추가합니다:
 
 ```bash
-source ./tools/neverc-env.sh --install
+source ./utils/build/neverc-env.sh --install
 ```
 
 실행 취소:
 
 ```bash
-source ./tools/neverc-env.sh --uninstall
+source ./utils/build/neverc-env.sh --uninstall
 ```
 
 ---
@@ -93,10 +93,10 @@ source ./tools/neverc-env.sh --uninstall
 Windows에서는 `.bat` 스크립트를 사용합니다 (관리자 권한 불필요):
 
 ```cmd
-tools\neverc-env.bat             &REM PATH에 추가 (현재 세션)
-tools\neverc-env.bat --remove    &REM PATH에서 제거 (현재 세션)
-tools\neverc-env.bat --global    &REM setx로 사용자 PATH에 영구 추가
-tools\neverc-env.bat --global -r &REM setx로 사용자 PATH에서 영구 제거
+utils\build\neverc-env.bat             &REM PATH에 추가 (현재 세션)
+utils\build\neverc-env.bat --remove    &REM PATH에서 제거 (현재 세션)
+utils\build\neverc-env.bat --global    &REM setx로 사용자 PATH에 영구 추가
+utils\build\neverc-env.bat --global -r &REM setx로 사용자 PATH에서 영구 제거
 ```
 
 Unix 스크립트와 달리 `source`가 필요 없습니다 — `.bat`는 현재 `cmd` 세션을 직접 수정합니다. `--global`은 `setx`를 사용하여 사용자 수준 레지스트리에 기록합니다 (관리자 권한 불필요).

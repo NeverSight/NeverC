@@ -54,7 +54,7 @@ invocar el objetivo embed a mano.
 Tras la compilación, el binario `neverc` se encuentra en `build-neverc/bin/neverc`. Use el script auxiliar para añadirlo al `PATH` sin tener que escribir la ruta completa cada vez:
 
 ```bash
-source ./tools/neverc-env.sh
+source ./utils/build/neverc-env.sh
 ```
 
 Ahora puede ejecutar `neverc` directamente:
@@ -69,7 +69,7 @@ neverc -c hello.c -o hello.o
 Para retirar la compilación local del `PATH` en la sesión de shell actual:
 
 ```bash
-source ./tools/neverc-env.sh --remove   # o -r
+source ./utils/build/neverc-env.sh --remove   # o -r
 ```
 
 ### Configuración permanente
@@ -77,13 +77,13 @@ source ./tools/neverc-env.sh --remove   # o -r
 Escribir automáticamente la línea `source` en el archivo rc del shell (`~/.zshrc`, `~/.bashrc` o `~/.profile`):
 
 ```bash
-source ./tools/neverc-env.sh --install
+source ./utils/build/neverc-env.sh --install
 ```
 
 Deshacer:
 
 ```bash
-source ./tools/neverc-env.sh --uninstall
+source ./utils/build/neverc-env.sh --uninstall
 ```
 
 ---
@@ -93,10 +93,10 @@ source ./tools/neverc-env.sh --uninstall
 En Windows, utilice el script `.bat` (no requiere privilegios de administrador):
 
 ```cmd
-tools\neverc-env.bat             &REM añadir al PATH (sesión actual)
-tools\neverc-env.bat --remove    &REM eliminar del PATH (sesión actual)
-tools\neverc-env.bat --global    &REM persistir en el PATH de usuario vía setx
-tools\neverc-env.bat --global -r &REM eliminar del PATH de usuario vía setx
+utils\build\neverc-env.bat             &REM añadir al PATH (sesión actual)
+utils\build\neverc-env.bat --remove    &REM eliminar del PATH (sesión actual)
+utils\build\neverc-env.bat --global    &REM persistir en el PATH de usuario vía setx
+utils\build\neverc-env.bat --global -r &REM eliminar del PATH de usuario vía setx
 ```
 
 A diferencia del script Unix, no se necesita `source` — el `.bat` modifica directamente la sesión `cmd` actual. `--global` escribe en el registro de usuario mediante `setx` (no requiere privilegios de administrador).

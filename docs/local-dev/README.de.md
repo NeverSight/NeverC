@@ -54,7 +54,7 @@ manuell angestoßen werden.
 Nach dem Kompilieren befindet sich die `neverc`-Binärdatei unter `build-neverc/bin/neverc`. Verwenden Sie das Hilfsskript, um sie zum `PATH` hinzuzufügen, ohne jedes Mal den vollständigen Pfad eingeben zu müssen:
 
 ```bash
-source ./tools/neverc-env.sh
+source ./utils/build/neverc-env.sh
 ```
 
 Nun können Sie `neverc` direkt ausführen:
@@ -69,7 +69,7 @@ neverc -c hello.c -o hello.o
 Um den lokalen Build aus dem `PATH` zu entfernen, führen Sie in derselben Shell-Sitzung aus:
 
 ```bash
-source ./tools/neverc-env.sh --remove   # oder -r
+source ./utils/build/neverc-env.sh --remove   # oder -r
 ```
 
 ### Dauerhafte Einrichtung
@@ -77,13 +77,13 @@ source ./tools/neverc-env.sh --remove   # oder -r
 Die `source`-Zeile automatisch in die Shell-RC-Datei (`~/.zshrc`, `~/.bashrc` oder `~/.profile`) schreiben:
 
 ```bash
-source ./tools/neverc-env.sh --install
+source ./utils/build/neverc-env.sh --install
 ```
 
 Rückgängig machen:
 
 ```bash
-source ./tools/neverc-env.sh --uninstall
+source ./utils/build/neverc-env.sh --uninstall
 ```
 
 ---
@@ -93,10 +93,10 @@ source ./tools/neverc-env.sh --uninstall
 Unter Windows verwenden Sie das `.bat`-Skript (keine Administratorrechte erforderlich):
 
 ```cmd
-tools\neverc-env.bat             &REM zum PATH hinzufügen (aktuelle Sitzung)
-tools\neverc-env.bat --remove    &REM aus dem PATH entfernen (aktuelle Sitzung)
-tools\neverc-env.bat --global    &REM dauerhaft im Benutzer-PATH über setx speichern
-tools\neverc-env.bat --global -r &REM aus dem Benutzer-PATH über setx entfernen
+utils\build\neverc-env.bat             &REM zum PATH hinzufügen (aktuelle Sitzung)
+utils\build\neverc-env.bat --remove    &REM aus dem PATH entfernen (aktuelle Sitzung)
+utils\build\neverc-env.bat --global    &REM dauerhaft im Benutzer-PATH über setx speichern
+utils\build\neverc-env.bat --global -r &REM aus dem Benutzer-PATH über setx entfernen
 ```
 
 Anders als beim Unix-Skript ist kein `source` nötig — das `.bat` ändert die aktuelle `cmd`-Sitzung direkt. `--global` schreibt über `setx` in die Benutzer-Registry (keine Administratorrechte erforderlich).

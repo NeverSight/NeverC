@@ -13,9 +13,9 @@ the hardcoded intrinsic IDs inside X86GenDAGISel.inc must be updated
 to match the new enum values.  This script handles that too.
 
 Usage:
-    python3 scripts/sort-x86-intrinsics.py             # dry-run (shows diff)
-    python3 scripts/sort-x86-intrinsics.py --write      # overwrite in place
-    python3 scripts/sort-x86-intrinsics.py --check       # exit 1 if unsorted (CI)
+    python3 utils/lint/sort-x86-intrinsics.py             # dry-run (shows diff)
+    python3 utils/lint/sort-x86-intrinsics.py --write      # overwrite in place
+    python3 utils/lint/sort-x86-intrinsics.py --check       # exit 1 if unsorted (CI)
 """
 
 import argparse
@@ -25,7 +25,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
+REPO = Path(__file__).resolve().parents[2]
 ENUM_PATH   = REPO / "llvm" / "include" / "llvm" / "IR" / "IntrinsicsX86.h"
 INC_PATH    = REPO / "llvm" / "include" / "llvm" / "IR" / "IntrinsicImpl.inc"
 DAGISEL_PATH = REPO / "llvm" / "lib" / "Target" / "X86" / "X86GenDAGISel.inc"
@@ -424,7 +424,7 @@ def check_dagisel():
 
     return False, count, (
         f"X86GenDAGISel.inc has {count} stale intrinsic ID(s). "
-        f"Run: python3 scripts/sort-x86-intrinsics.py --write"
+        f"Run: python3 utils/lint/sort-x86-intrinsics.py --write"
     )
 
 
@@ -538,7 +538,7 @@ def main():
     if errors:
         for e in errors:
             print(f"ERROR: {e}", file=sys.stderr)
-        print(f"\nRun: python3 scripts/sort-x86-intrinsics.py --write",
+        print(f"\nRun: python3 utils/lint/sort-x86-intrinsics.py --write",
               file=sys.stderr)
         sys.exit(1)
 

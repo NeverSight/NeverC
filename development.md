@@ -75,7 +75,7 @@ table can't find the pattern because the ID it checks no longer matches.
 
 3. The name table in `IntrinsicImpl.inc` must be sorted alphabetically (binary
    search). The enum in `IntrinsicsX86.h` must match this order. Use
-   `scripts/sort-x86-intrinsics.py --write` after adding entries.
+   `utils/lint/sort-x86-intrinsics.py --write` after adding entries.
 
 4. `num_intrinsics` in `IntrinsicEnums.inc` must equal the total count across
    all targets. The x86 count is tracked in `IntrinsicImpl.inc` (currently

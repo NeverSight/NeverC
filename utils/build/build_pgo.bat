@@ -4,16 +4,16 @@ REM
 REM PGO (Profile-Guided Optimisation) two-phase build for NeverC (Windows).
 REM
 REM Usage:
-REM   tools\build_pgo.bat                 &  full pipeline: generate - train - use - benchmark
-REM   tools\build_pgo.bat generate        &  Phase 1: build instrumented neverc
-REM   tools\build_pgo.bat train           &  Phase 1b: run workloads to collect profiles
-REM   tools\build_pgo.bat use             &  Phase 2: build optimised neverc from .profdata
-REM   tools\build_pgo.bat benchmark       &  A/B compare baseline vs PGO build
-REM   tools\build_pgo.bat clean           &  remove PGO build dirs and profiles
+REM   utils\build\build_pgo.bat                 &  full pipeline: generate - train - use - benchmark
+REM   utils\build\build_pgo.bat generate        &  Phase 1: build instrumented neverc
+REM   utils\build\build_pgo.bat train           &  Phase 1b: run workloads to collect profiles
+REM   utils\build\build_pgo.bat use             &  Phase 2: build optimised neverc from .profdata
+REM   utils\build\build_pgo.bat benchmark       &  A/B compare baseline vs PGO build
+REM   utils\build\build_pgo.bat clean           &  remove PGO build dirs and profiles
 REM
 REM Requires: cmake, ninja, llvm-profdata (from LLVM/Clang install)
 
-set "REPO_ROOT=%~dp0.."
+set "REPO_ROOT=%~dp0..\.."
 set "CACHE=%REPO_ROOT%\neverc\cmake\caches\NeverC.cmake"
 
 set "BUILD_PGO_GEN=%REPO_ROOT%\build-pgo-gen"
@@ -152,7 +152,7 @@ if %PROFRAW_COUNT% equ 0 (
 
 echo   Merging %PROFRAW_COUNT% profiles...
 where bash >nul 2>&1 && (
-    bash "%REPO_ROOT%\tools\merge_pgo_profiles.sh" ^
+    bash "%REPO_ROOT%\utils\build\merge_pgo_profiles.sh" ^
         --llvm-profdata "%LLVM_PROFDATA%" ^
         --profile-dir "%PROFILE_DIR%" ^
         --output "%PROFDATA%"

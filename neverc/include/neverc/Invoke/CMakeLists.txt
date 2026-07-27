@@ -17,7 +17,7 @@ if(NOT NEVERC_SKIP_OPTIONS_TD_SORT_CHECK)
   find_package(Python3 COMPONENTS Interpreter)
   if(Python3_Interpreter_FOUND)
     set(_options_td_sort_script
-        "${CMAKE_CURRENT_SOURCE_DIR}/../../../../scripts/sort-options-td.py")
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../../../utils/lint/sort-options-td.py")
     set(_options_td_file
         "${CMAKE_CURRENT_SOURCE_DIR}/Options.td.h")
 
@@ -34,7 +34,7 @@ if(NOT NEVERC_SKIP_OPTIONS_TD_SORT_CHECK)
           "Options.td.h is not sorted in LLVM OptTable order:\n"
           "${_options_td_sort_output}\n"
           "Fix with:\n"
-          "    python3 scripts/sort-options-td.py --write\n"
+          "    python3 utils/lint/sort-options-td.py --write\n"
           "Or pass -DNEVERC_SKIP_OPTIONS_TD_SORT_CHECK=ON to skip.")
       else()
         message(STATUS "Options.td.h sort check: OK")

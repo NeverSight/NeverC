@@ -6,7 +6,7 @@
 # script merges in fixed-size batches, then merges the intermediate results.
 #
 # Usage:
-#   ./tools/merge_pgo_profiles.sh \
+#   ./utils/build/merge_pgo_profiles.sh \
 #     --llvm-profdata /path/to/llvm-profdata \
 #     --profile-dir /path/to/pgo-profiles \
 #     --output /path/to/merged.profdata \

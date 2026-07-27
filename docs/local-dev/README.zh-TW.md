@@ -52,7 +52,7 @@ bootstrap 並重新連結編譯器，無需手動執行 embed 目標。
 建置完成後，`neverc` 執行檔位於 `build-neverc/bin/neverc`。使用輔助腳本將其加入 `PATH`，無需每次輸入完整路徑：
 
 ```bash
-source ./tools/neverc-env.sh
+source ./utils/build/neverc-env.sh
 ```
 
 之後即可直接執行 `neverc`：
@@ -67,7 +67,7 @@ neverc -c hello.c -o hello.o
 當不再需要本地建置在 `PATH` 中時，在同一 shell 工作階段中移除：
 
 ```bash
-source ./tools/neverc-env.sh --remove   # 或 -r
+source ./utils/build/neverc-env.sh --remove   # 或 -r
 ```
 
 ### 持久化設定
@@ -75,13 +75,13 @@ source ./tools/neverc-env.sh --remove   # 或 -r
 自動將 `source` 行寫入 shell 設定檔（`~/.zshrc`、`~/.bashrc` 或 `~/.profile`）：
 
 ```bash
-source ./tools/neverc-env.sh --install
+source ./utils/build/neverc-env.sh --install
 ```
 
 撤銷：
 
 ```bash
-source ./tools/neverc-env.sh --uninstall
+source ./utils/build/neverc-env.sh --uninstall
 ```
 
 ---
@@ -91,10 +91,10 @@ source ./tools/neverc-env.sh --uninstall
 在 Windows 上使用 `.bat` 腳本（無需管理員權限）：
 
 ```cmd
-tools\neverc-env.bat             &REM 加入 PATH（當前工作階段）
-tools\neverc-env.bat --remove    &REM 從 PATH 移除（當前工作階段）
-tools\neverc-env.bat --global    &REM 透過 setx 持久化到使用者 PATH
-tools\neverc-env.bat --global -r &REM 透過 setx 從使用者 PATH 移除
+utils\build\neverc-env.bat             &REM 加入 PATH（當前工作階段）
+utils\build\neverc-env.bat --remove    &REM 從 PATH 移除（當前工作階段）
+utils\build\neverc-env.bat --global    &REM 透過 setx 持久化到使用者 PATH
+utils\build\neverc-env.bat --global -r &REM 透過 setx 從使用者 PATH 移除
 ```
 
 與 Unix 腳本不同，無需 `source` — `.bat` 直接修改當前 `cmd` 工作階段。`--global` 透過 `setx` 寫入使用者級登錄檔（無需管理員權限）。

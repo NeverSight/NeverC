@@ -4,12 +4,12 @@ REM in-tree neverc binary is available in the current shell. Not for production
 REM installs.
 REM
 REM Usage (cmd):
-REM   tools\neverc-env.bat                Add to PATH (current session)
-REM   tools\neverc-env.bat --remove       Remove from PATH (current session)
-REM   tools\neverc-env.bat --global       Persist to user PATH via setx
-REM   tools\neverc-env.bat --global -r    Remove from user PATH via setx
+REM   utils\build\neverc-env.bat                Add to PATH (current session)
+REM   utils\build\neverc-env.bat --remove       Remove from PATH (current session)
+REM   utils\build\neverc-env.bat --global       Persist to user PATH via setx
+REM   utils\build\neverc-env.bat --global -r    Remove from user PATH via setx
 
-set "REPO_ROOT=%~dp0.."
+set "REPO_ROOT=%~dp0..\.."
 set "NEVERC_BIN=%REPO_ROOT%\build-neverc\bin"
 
 if "%~1"=="-h"       goto :show_help

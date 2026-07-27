@@ -5,13 +5,13 @@ on:
     paths:
       - 'std/manifest.json'
       - 'tests/neverc/StdLibTests.cpp'
-      - 'scripts/check-test-deps.py'
+      - 'utils/lint/check-test-deps.py'
       - '.github/workflows/lint-test-deps.yml'
   pull_request:
     paths:
       - 'std/manifest.json'
       - 'tests/neverc/StdLibTests.cpp'
-      - 'scripts/check-test-deps.py'
+      - 'utils/lint/check-test-deps.py'
       - '.github/workflows/lint-test-deps.yml'
 
 jobs:
@@ -28,7 +28,7 @@ jobs:
 
       - name: Verify StdLibTests.cpp covers manifest.json deps
         run: |
-          python3 scripts/check-test-deps.py
+          python3 utils/lint/check-test-deps.py
           echo ""
           echo "If this step fails, add the missing source files to the"
           echo "relevant STD_TEST() call in tests/neverc/StdLibTests.cpp."

@@ -54,7 +54,7 @@ embed target by hand.
 After building, the `neverc` binary lives at `build-neverc/bin/neverc`. Instead of typing the full path every time, use the helper script to add it to your shell's `PATH`:
 
 ```bash
-source ./tools/neverc-env.sh
+source ./utils/build/neverc-env.sh
 ```
 
 Now you can run `neverc` directly:
@@ -69,7 +69,7 @@ neverc -c hello.c -o hello.o
 When you no longer need the local build on `PATH`, remove it in the same shell session:
 
 ```bash
-source ./tools/neverc-env.sh --remove   # or -r
+source ./utils/build/neverc-env.sh --remove   # or -r
 ```
 
 ### Persistent Setup
@@ -77,13 +77,13 @@ source ./tools/neverc-env.sh --remove   # or -r
 Automatically write the `source` line to your shell rc file (`~/.zshrc`, `~/.bashrc`, or `~/.profile`):
 
 ```bash
-source ./tools/neverc-env.sh --install
+source ./utils/build/neverc-env.sh --install
 ```
 
 To undo:
 
 ```bash
-source ./tools/neverc-env.sh --uninstall
+source ./utils/build/neverc-env.sh --uninstall
 ```
 
 ---
@@ -93,10 +93,10 @@ source ./tools/neverc-env.sh --uninstall
 On Windows, use the `.bat` script instead (no admin required):
 
 ```cmd
-tools\neverc-env.bat             &REM add to PATH (current session)
-tools\neverc-env.bat --remove    &REM remove from PATH (current session)
-tools\neverc-env.bat --global    &REM persist to user PATH via setx
-tools\neverc-env.bat --global -r &REM remove from user PATH via setx
+utils\build\neverc-env.bat             &REM add to PATH (current session)
+utils\build\neverc-env.bat --remove    &REM remove from PATH (current session)
+utils\build\neverc-env.bat --global    &REM persist to user PATH via setx
+utils\build\neverc-env.bat --global -r &REM remove from user PATH via setx
 ```
 
 Unlike the Unix script, no `source` is needed — the `.bat` modifies the current `cmd` session directly. The `--global` flag writes to the user-level registry via `setx` (no admin privileges needed).

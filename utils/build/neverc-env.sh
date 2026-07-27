@@ -4,14 +4,14 @@
 # installs.
 #
 # Usage (zsh):
-#   source ./tools/neverc-env.sh              # add to PATH (current session)
-#   source ./tools/neverc-env.sh --remove     # remove from PATH (current session)
-#   source ./tools/neverc-env.sh --install    # write to ~/.zshrc (persistent)
-#   source ./tools/neverc-env.sh --uninstall  # remove from ~/.zshrc
+#   source ./utils/build/neverc-env.sh              # add to PATH (current session)
+#   source ./utils/build/neverc-env.sh --remove     # remove from PATH (current session)
+#   source ./utils/build/neverc-env.sh --install    # write to ~/.zshrc (persistent)
+#   source ./utils/build/neverc-env.sh --uninstall  # remove from ~/.zshrc
 
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 NEVERC_BIN="$REPO_ROOT/build-neverc/bin"
-_SELF="$REPO_ROOT/tools/neverc-env.sh"
+_SELF="$REPO_ROOT/utils/build/neverc-env.sh"
 
 _remove_from_path() {
   _target="$1"

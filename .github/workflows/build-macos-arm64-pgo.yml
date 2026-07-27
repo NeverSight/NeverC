@@ -85,7 +85,7 @@ jobs:
       # ── Phase 1: instrumented build (skipped on cache hit) ───
       - name: Build instrumented neverc
         if: steps.check-profdata.outputs.has_profdata != 'true'
-        run: ./tools/build_pgo.sh generate
+        run: ./utils/build/build_pgo.sh generate
 
       # ── Phase 1b: training (skipped on cache hit) ────────────
       - name: Download PGO training workloads
@@ -210,14 +210,14 @@ jobs:
           fi
 
           echo "Merging $profraw_count profiles..."
-          bash "${GITHUB_WORKSPACE}/tools/merge_pgo_profiles.sh" \
+          bash "${GITHUB_WORKSPACE}/utils/build/merge_pgo_profiles.sh" \
             --llvm-profdata "$LLVM_PROFDATA" \
             --profile-dir "$PROFILE_DIR" \
             --output "${PROFILE_DIR}/merged.profdata"
 
       - name: Generate order file
         if: steps.check-profdata.outputs.has_profdata != 'true'
-        run: ./tools/build_pgo.sh orderfile
+        run: ./utils/build/build_pgo.sh orderfile
 
       # ── Save profdata + order file to cache for future runs ──
       - name: Save PGO profile cache
@@ -269,7 +269,7 @@ jobs:
           path: pgo-profiles
 
       - name: Build PGO-optimised neverc
-        run: ./tools/build_pgo.sh use
+        run: ./utils/build/build_pgo.sh use
 
       - name: Install neverc
         run: cmake --install build-pgo-use --prefix "${GITHUB_WORKSPACE}/install"

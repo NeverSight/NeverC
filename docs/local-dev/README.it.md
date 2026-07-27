@@ -54,7 +54,7 @@ invocare a mano il target embed.
 Dopo la compilazione, il binario `neverc` si trova in `build-neverc/bin/neverc`. Utilizzate lo script di supporto per aggiungerlo al `PATH` senza dover digitare ogni volta il percorso completo:
 
 ```bash
-source ./tools/neverc-env.sh
+source ./utils/build/neverc-env.sh
 ```
 
 Ora potete eseguire `neverc` direttamente:
@@ -69,7 +69,7 @@ neverc -c hello.c -o hello.o
 Per rimuovere la compilazione locale dal `PATH` nella sessione shell corrente:
 
 ```bash
-source ./tools/neverc-env.sh --remove   # oppure -r
+source ./utils/build/neverc-env.sh --remove   # oppure -r
 ```
 
 ### Configurazione permanente
@@ -77,13 +77,13 @@ source ./tools/neverc-env.sh --remove   # oppure -r
 Scrivere automaticamente la riga `source` nel file rc della shell (`~/.zshrc`, `~/.bashrc` o `~/.profile`):
 
 ```bash
-source ./tools/neverc-env.sh --install
+source ./utils/build/neverc-env.sh --install
 ```
 
 Annullare:
 
 ```bash
-source ./tools/neverc-env.sh --uninstall
+source ./utils/build/neverc-env.sh --uninstall
 ```
 
 ---
@@ -93,10 +93,10 @@ source ./tools/neverc-env.sh --uninstall
 Su Windows, utilizzate lo script `.bat` (nessun privilegio di amministratore richiesto):
 
 ```cmd
-tools\neverc-env.bat             &REM aggiungere al PATH (sessione corrente)
-tools\neverc-env.bat --remove    &REM rimuovere dal PATH (sessione corrente)
-tools\neverc-env.bat --global    &REM persistere nel PATH utente tramite setx
-tools\neverc-env.bat --global -r &REM rimuovere dal PATH utente tramite setx
+utils\build\neverc-env.bat             &REM aggiungere al PATH (sessione corrente)
+utils\build\neverc-env.bat --remove    &REM rimuovere dal PATH (sessione corrente)
+utils\build\neverc-env.bat --global    &REM persistere nel PATH utente tramite setx
+utils\build\neverc-env.bat --global -r &REM rimuovere dal PATH utente tramite setx
 ```
 
 A differenza dello script Unix, non è necessario `source` — il `.bat` modifica direttamente la sessione `cmd` corrente. `--global` scrive nel registro utente tramite `setx` (nessun privilegio di amministratore richiesto).

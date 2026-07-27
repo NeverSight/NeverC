@@ -54,7 +54,7 @@ d'appeler la cible embed à la main.
 Après la compilation, le binaire `neverc` se trouve dans `build-neverc/bin/neverc`. Utilisez le script utilitaire pour l'ajouter à votre `PATH` sans avoir à saisir le chemin complet :
 
 ```bash
-source ./tools/neverc-env.sh
+source ./utils/build/neverc-env.sh
 ```
 
 Vous pouvez maintenant exécuter `neverc` directement :
@@ -69,7 +69,7 @@ neverc -c hello.c -o hello.o
 Pour retirer la compilation locale du `PATH` dans la session shell en cours :
 
 ```bash
-source ./tools/neverc-env.sh --remove   # ou -r
+source ./utils/build/neverc-env.sh --remove   # ou -r
 ```
 
 ### Configuration permanente
@@ -77,13 +77,13 @@ source ./tools/neverc-env.sh --remove   # ou -r
 Écrire automatiquement la ligne `source` dans le fichier rc du shell (`~/.zshrc`, `~/.bashrc` ou `~/.profile`) :
 
 ```bash
-source ./tools/neverc-env.sh --install
+source ./utils/build/neverc-env.sh --install
 ```
 
 Annuler :
 
 ```bash
-source ./tools/neverc-env.sh --uninstall
+source ./utils/build/neverc-env.sh --uninstall
 ```
 
 ---
@@ -93,10 +93,10 @@ source ./tools/neverc-env.sh --uninstall
 Sous Windows, utilisez le script `.bat` (aucun privilège administrateur requis) :
 
 ```cmd
-tools\neverc-env.bat             &REM ajouter au PATH (session courante)
-tools\neverc-env.bat --remove    &REM supprimer du PATH (session courante)
-tools\neverc-env.bat --global    &REM persister dans le PATH utilisateur via setx
-tools\neverc-env.bat --global -r &REM supprimer du PATH utilisateur via setx
+utils\build\neverc-env.bat             &REM ajouter au PATH (session courante)
+utils\build\neverc-env.bat --remove    &REM supprimer du PATH (session courante)
+utils\build\neverc-env.bat --global    &REM persister dans le PATH utilisateur via setx
+utils\build\neverc-env.bat --global -r &REM supprimer du PATH utilisateur via setx
 ```
 
 Contrairement au script Unix, pas besoin de `source` — le `.bat` modifie directement la session `cmd` en cours. `--global` écrit dans le registre utilisateur via `setx` (aucun privilège administrateur requis).

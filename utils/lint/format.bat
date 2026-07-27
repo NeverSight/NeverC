@@ -4,10 +4,10 @@ REM Format all .cpp / .h under this repo using .clang-format files.
 REM Excludes: .git\, build-neverc\
 REM
 REM Usage:
-REM   tools\format.bat              Format in place
-REM   tools\format.bat --check      Fail if any file would change (CI)
+REM   utils\lint\format.bat              Format in place
+REM   utils\lint\format.bat --check      Fail if any file would change (CI)
 
-set "REPO_ROOT=%~dp0.."
+set "REPO_ROOT=%~dp0..\.."
 cd /d "%REPO_ROOT%"
 
 where clang-format >nul 2>&1

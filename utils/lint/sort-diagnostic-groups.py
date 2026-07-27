@@ -6,9 +6,9 @@ Sorts diagnostic groups alphabetically by flag name, sorts diag::
 entries within each group, rebuilds all array offsets and the name table.
 
 Usage:
-    python3 scripts/sort-diagnostic-groups.py            # dry-run (shows diff)
-    python3 scripts/sort-diagnostic-groups.py --write     # overwrite in place
-    python3 scripts/sort-diagnostic-groups.py --check     # exit 1 if unsorted (CI)
+    python3 utils/lint/sort-diagnostic-groups.py            # dry-run (shows diff)
+    python3 utils/lint/sort-diagnostic-groups.py --write     # overwrite in place
+    python3 utils/lint/sort-diagnostic-groups.py --check     # exit 1 if unsorted (CI)
 
 An optional path argument overrides the default of
 neverc/include/neverc/Foundation/DiagnosticGroups.td.h relative to the repo root.
@@ -273,7 +273,7 @@ def emit_entries(groups, name_offsets, arr_offsets, sg_offsets):
 
 # ── Main ─────────────────────────────────────────────────────────────────
 
-DEFAULT_PATH = (Path(__file__).resolve().parent.parent
+DEFAULT_PATH = (Path(__file__).resolve().parents[2]
                 / 'neverc' / 'include' / 'neverc' / 'Foundation'
                 / 'DiagnosticGroups.td.h')
 
@@ -392,7 +392,7 @@ def main():
 
     if args.check:
         print(f"ERROR: {path} is not sorted. "
-              f"Run: python3 scripts/sort-diagnostic-groups.py --write",
+              f"Run: python3 utils/lint/sort-diagnostic-groups.py --write",
               file=sys.stderr)
         sys.exit(1)
 

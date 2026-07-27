@@ -12,7 +12,7 @@ import re
 import sys
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
+REPO = Path(__file__).resolve().parents[2]
 MANIFEST = REPO / "std" / "manifest.json"
 TESTS_CPP = REPO / "tests" / "neverc" / "StdLibTests.cpp"
 

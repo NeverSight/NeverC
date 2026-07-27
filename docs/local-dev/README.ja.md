@@ -54,7 +54,7 @@ cmake --build build-neverc --target check-neverc
 ビルド後、`neverc` バイナリは `build-neverc/bin/neverc` にあります。ヘルパースクリプトを使って `PATH` に追加すれば、毎回フルパスを入力する必要がなくなります：
 
 ```bash
-source ./tools/neverc-env.sh
+source ./utils/build/neverc-env.sh
 ```
 
 これで `neverc` を直接実行できます：
@@ -69,7 +69,7 @@ neverc -c hello.c -o hello.o
 ローカルビルドを `PATH` から外す場合は、同じシェルセッションで以下を実行します：
 
 ```bash
-source ./tools/neverc-env.sh --remove   # または -r
+source ./utils/build/neverc-env.sh --remove   # または -r
 ```
 
 ### 永続化
@@ -77,13 +77,13 @@ source ./tools/neverc-env.sh --remove   # または -r
 `source` 行をシェルの rc ファイル（`~/.zshrc`、`~/.bashrc`、または `~/.profile`）に自動追記します：
 
 ```bash
-source ./tools/neverc-env.sh --install
+source ./utils/build/neverc-env.sh --install
 ```
 
 取り消し：
 
 ```bash
-source ./tools/neverc-env.sh --uninstall
+source ./utils/build/neverc-env.sh --uninstall
 ```
 
 ---
@@ -93,10 +93,10 @@ source ./tools/neverc-env.sh --uninstall
 Windows では `.bat` スクリプトを使用します（管理者権限不要）：
 
 ```cmd
-tools\neverc-env.bat             &REM PATH に追加（現在のセッション）
-tools\neverc-env.bat --remove    &REM PATH から削除（現在のセッション）
-tools\neverc-env.bat --global    &REM setx でユーザー PATH に永続化
-tools\neverc-env.bat --global -r &REM setx でユーザー PATH から削除
+utils\build\neverc-env.bat             &REM PATH に追加（現在のセッション）
+utils\build\neverc-env.bat --remove    &REM PATH から削除（現在のセッション）
+utils\build\neverc-env.bat --global    &REM setx でユーザー PATH に永続化
+utils\build\neverc-env.bat --global -r &REM setx でユーザー PATH から削除
 ```
 
 Unix スクリプトとは異なり、`source` は不要です — `.bat` は現在の `cmd` セッションを直接変更します。`--global` は `setx` を使用してユーザーレベルのレジストリに書き込みます（管理者権限不要）。

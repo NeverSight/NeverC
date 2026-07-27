@@ -74,7 +74,7 @@ struct IntrinsicTargetInfo {
 static constexpr IntrinsicTargetInfo TargetInfos[] = {
   {llvm::StringLiteral(""), 0, 370},
   {llvm::StringLiteral("aarch64"), 370, 1432},
-  // x86 entries must be sorted alphabetically: scripts/sort-x86-intrinsics.py
+  // x86 entries must be sorted alphabetically: utils/lint/sort-x86-intrinsics.py
   {llvm::StringLiteral("x86"), 1802, 1487},
 };
 #endif
