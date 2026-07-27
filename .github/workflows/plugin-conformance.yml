@@ -180,11 +180,16 @@ jobs:
       # Runs here rather than through CTest because the gate needs the linked
       # compiler, and the CTest case carrying it is labelled "plugin-meta",
       # which no workflow reaches (see lint-docs.yml for the same trap).  On
-      # Windows the binary layer self-skips and only the source scan runs.
+      # Windows the binary layer skips itself -- it cannot classify a PE image
+      # -- so only the source scan runs there.
+      # --strict is required, not optional: the binary layer leaves thread-local
+      # storage to the source scan, so without it a new undocumented
+      # thread_local would pass unnoticed on every host, and on Windows nothing
+      # would be gated at all.
       - name: Plugin global state
         run: |
           ${{ matrix.python }} neverc/utils/plugin-api/check-global-state.py \
-            --build-dir build
+            --build-dir build --strict
 
       - name: Run plugin conformance suite
         run: ctest --test-dir build -R PluginConformance --output-on-failure

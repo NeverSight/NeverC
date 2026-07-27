@@ -1891,12 +1891,15 @@ add_test(
 )
 # The self-test above only covers the checker's internals.  This runs the gate
 # itself against the linked compiler, which is where a newly introduced
-# writable plugin/dyncode symbol actually shows up.
+# writable plugin/dyncode symbol actually shows up.  --strict promotes the
+# source scan to a hard failure, which is what covers thread_local: the binary
+# layer deliberately ignores TLS (see the checker's module docstring).
 add_test(
   NAME PluginGlobalState
   COMMAND ${Python3_EXECUTABLE}
           ${CMAKE_CURRENT_SOURCE_DIR}/../../utils/plugin-api/check-global-state.py
           --build-dir ${CMAKE_BINARY_DIR}
+          --strict
 )
 add_test(
   NAME DocsNavigation
