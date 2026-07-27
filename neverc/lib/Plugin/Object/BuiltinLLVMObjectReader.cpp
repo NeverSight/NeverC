@@ -1,6 +1,7 @@
 #include "BuiltinLLVMObjectWriter.h"
 #include "neverc/Plugin/Host/BuiltinObjectExtension.h"
 #include "neverc/Plugin/Host/BuiltinTargetProvider.h"
+#include "neverc/Plugin/Host/NativeRelocationFacts.h"
 #include "neverc/Plugin/Host/ObjectReaderProvider.h"
 #include "neverc/Plugin/Host/ObjectSectionRole.h"
 #include "llvm/ADT/DenseMap.h"
@@ -377,376 +378,50 @@ bool isSyntheticAssemblerSymbol(const ObjectFile &Object, StringRef Name,
   return false;
 }
 
-// What the graph records about a relocation: how wide the patched field is, how
-// it is addressed, and which linker-level form it belongs to.
-//
-// All three come from the relocation's type number. They used to be read out of
-// the type *name* -- scanning it for digits to get a width, for "pc" to decide
-// PC-relativeness -- and that misreads a large share of real relocations. The
-// architecture token in "R_X86_64" and "R_AARCH64" scans as a width, so an
-// AArch64 CALL26 came out 64 bits wide; "R_PPC64_..." contains "pc" and would
-// be called PC-relative wholesale; R_X86_64_REX_GOTPCRELX has no digits at all.
-// A type number, unlike a name, means exactly one thing.
-//
-// A type not listed here is reported as unknown and the object is refused. That
-// is a recoverable outcome -- the caller learns the reader cannot handle this
-// input -- whereas a guessed width silently truncates a field or overruns a
-// section end.
-struct RelocationFacts {
-  uint32_t Width = 0;
-  bool IsPCRelative = false;
-  bool IsSigned = false;
-  // Set when the patched field lives inside an instruction instead of being a
-  // data word of its own. Such a field cannot be read or written as an integer
-  // -- its bits are interleaved with the opcode -- which is what stops the
-  // writer from restating it and stops the reader from lifting its addend.
-  bool IsInstructionField = false;
-  NevercObjectRelocationKind Kind = NEVERC_OBJECT_RELOCATION_ABSOLUTE;
-  // Set for R_*_NONE, which holds a slot in the relocation table without
-  // asking the linker for anything. The reader drops these instead of giving
-  // them a width, since a graph relocation is required to have one.
-  bool IsNoOp = false;
-};
+// What the graph records about a relocation -- how wide the patched field is,
+// how it is addressed, which linker-level form it belongs to, and whether it
+// sits inside an instruction -- all follow from its type number, and the
+// tables that say so live in NativeRelocationFacts.h. They are shared because
+// a type number means nothing on its own: the reader that records it, the
+// writer that restates it and the linker that patches the bytes it covers all
+// have to read it through the same table or they answer about different
+// relocations.
+using RelocationFacts = NativeRelocationFacts;
 
-constexpr RelocationFacts absoluteFacts(uint32_t Width, bool Signed = false) {
-  return {Width, false, Signed, false, NEVERC_OBJECT_RELOCATION_ABSOLUTE};
-}
-
-constexpr RelocationFacts pcRelativeFacts(uint32_t Width) {
-  return {Width, true, true, false, NEVERC_OBJECT_RELOCATION_PC_RELATIVE};
-}
-
-constexpr RelocationFacts kindFacts(NevercObjectRelocationKind Kind,
-                                    uint32_t Width, bool PCRelative) {
-  return {Width, PCRelative, PCRelative, false, Kind};
-}
-
-// A field inside an instruction, whose width is the instruction's own size.
-// AArch64 instructions are a fixed four bytes; the x86 forms this describes
-// name one specific encoding, so they state their size.
-constexpr RelocationFacts instructionFacts(NevercObjectRelocationKind Kind,
-                                           bool PCRelative,
-                                           uint32_t Width = 32) {
-  return {Width, PCRelative, PCRelative, true, Kind};
-}
-
-// R_*_NONE holds a slot in the relocation table without asking for anything:
-// the linker steps over it. They reach an object through `ld -r` and through
-// passes that neutralise a relocation in place rather than renumbering the
-// table around it. Refusing the whole object over one is the wrong answer, and
-// so is inventing a width for a relocation that patches nothing -- a graph
-// relocation must have a width, and every consumer would ignore this one
-// anyway, so the reader drops it.
-constexpr RelocationFacts noOpFacts() {
-  RelocationFacts Facts;
-  Facts.IsNoOp = true;
-  return Facts;
-}
-
-std::optional<RelocationFacts> elfX86_64Facts(uint64_t Type) {
-  switch (Type) {
-  case ELF::R_X86_64_NONE:
-    return noOpFacts();
-  // Marks the `call *(%rax)` that completes a TLS descriptor sequence so the
-  // linker knows which two bytes it may relax. Nothing in them is a field.
-  case ELF::R_X86_64_TLSDESC_CALL:
-    return instructionFacts(NEVERC_OBJECT_RELOCATION_TLS, /*PCRelative=*/false,
-                            /*Width=*/16);
-  case ELF::R_X86_64_64:
-    return absoluteFacts(64);
-  case ELF::R_X86_64_32:
-    return absoluteFacts(32);
-  case ELF::R_X86_64_32S:
-    return absoluteFacts(32, /*Signed=*/true);
-  case ELF::R_X86_64_16:
-    return absoluteFacts(16);
-  case ELF::R_X86_64_8:
-    return absoluteFacts(8);
-  case ELF::R_X86_64_SIZE32:
-    return absoluteFacts(32);
-  case ELF::R_X86_64_SIZE64:
-    return absoluteFacts(64);
-  case ELF::R_X86_64_GLOB_DAT:
-  case ELF::R_X86_64_JUMP_SLOT:
-  case ELF::R_X86_64_RELATIVE:
-  case ELF::R_X86_64_IRELATIVE:
-    return absoluteFacts(64);
-  case ELF::R_X86_64_PC64:
-    return pcRelativeFacts(64);
-  case ELF::R_X86_64_PC32:
-    return pcRelativeFacts(32);
-  case ELF::R_X86_64_PC16:
-    return pcRelativeFacts(16);
-  case ELF::R_X86_64_PC8:
-    return pcRelativeFacts(8);
-  case ELF::R_X86_64_GOT32:
-    return kindFacts(NEVERC_OBJECT_RELOCATION_GOT_RELATIVE, 32, false);
-  case ELF::R_X86_64_GOT64:
-  case ELF::R_X86_64_GOTOFF64:
-  case ELF::R_X86_64_GOTPLT64:
-    return kindFacts(NEVERC_OBJECT_RELOCATION_GOT_RELATIVE, 64, false);
-  case ELF::R_X86_64_GOTPC32:
-  case ELF::R_X86_64_GOTPCREL:
-  case ELF::R_X86_64_GOTPCRELX:
-  case ELF::R_X86_64_REX_GOTPCRELX:
-    return kindFacts(NEVERC_OBJECT_RELOCATION_GOT_RELATIVE, 32, true);
-  case ELF::R_X86_64_GOTPC64:
-  case ELF::R_X86_64_GOTPCREL64:
-    return kindFacts(NEVERC_OBJECT_RELOCATION_GOT_RELATIVE, 64, true);
-  case ELF::R_X86_64_PLT32:
-    return kindFacts(NEVERC_OBJECT_RELOCATION_PLT_RELATIVE, 32, true);
-  case ELF::R_X86_64_PLTOFF64:
-    return kindFacts(NEVERC_OBJECT_RELOCATION_PLT_RELATIVE, 64, false);
-  case ELF::R_X86_64_DTPMOD64:
-  case ELF::R_X86_64_DTPOFF64:
-  case ELF::R_X86_64_TPOFF64:
-  case ELF::R_X86_64_TLSDESC:
-    return kindFacts(NEVERC_OBJECT_RELOCATION_TLS, 64, false);
-  case ELF::R_X86_64_DTPOFF32:
-  case ELF::R_X86_64_TPOFF32:
-    return kindFacts(NEVERC_OBJECT_RELOCATION_TLS, 32, false);
-  case ELF::R_X86_64_TLSGD:
-  case ELF::R_X86_64_TLSLD:
-  case ELF::R_X86_64_GOTTPOFF:
-  case ELF::R_X86_64_GOTPC32_TLSDESC:
-    return kindFacts(NEVERC_OBJECT_RELOCATION_TLS, 32, true);
-  default:
+// The architecture and format come from the object rather than from the
+// TargetKey the caller supplied, so that a mismatch between the two cannot
+// send a type number through the wrong table.
+std::optional<Triple> relocationTableTriple(const ObjectFile &Object) {
+  Triple Result;
+  if (isa<MachOObjectFile>(Object))
+    Result.setObjectFormat(Triple::MachO);
+  else if (const auto *COFFObject = dyn_cast<COFFObjectFile>(&Object)) {
+    if (COFFObject->getMachine() != COFF::IMAGE_FILE_MACHINE_AMD64 &&
+        COFFObject->getMachine() != COFF::IMAGE_FILE_MACHINE_ARM64)
+      return std::nullopt;
+    Result.setObjectFormat(Triple::COFF);
+  } else if (const auto *ELFObject = dyn_cast<ELFObjectFileBase>(&Object)) {
+    if (ELFObject->getEMachine() != ELF::EM_X86_64 &&
+        ELFObject->getEMachine() != ELF::EM_AARCH64)
+      return std::nullopt;
+    Result.setObjectFormat(Triple::ELF);
+  } else
     return std::nullopt;
-  }
-}
-
-// The AArch64 relocations that address their target from the program counter.
-// Listed rather than derived: "PREL", "PAGE" and the branch forms are
-// PC-relative while the "ABS" and "LO12" forms are not, and the distinction
-// does not follow from any part of the encoding.
-bool aarch64IsPCRelative(uint64_t Type) {
-  switch (Type) {
-  case ELF::R_AARCH64_LD_PREL_LO19:
-  case ELF::R_AARCH64_ADR_PREL_LO21:
-  case ELF::R_AARCH64_ADR_PREL_PG_HI21:
-  case ELF::R_AARCH64_ADR_PREL_PG_HI21_NC:
-  case ELF::R_AARCH64_TSTBR14:
-  case ELF::R_AARCH64_CONDBR19:
-  case ELF::R_AARCH64_JUMP26:
-  case ELF::R_AARCH64_CALL26:
-  case ELF::R_AARCH64_MOVW_PREL_G0:
-  case ELF::R_AARCH64_MOVW_PREL_G0_NC:
-  case ELF::R_AARCH64_MOVW_PREL_G1:
-  case ELF::R_AARCH64_MOVW_PREL_G1_NC:
-  case ELF::R_AARCH64_MOVW_PREL_G2:
-  case ELF::R_AARCH64_MOVW_PREL_G2_NC:
-  case ELF::R_AARCH64_MOVW_PREL_G3:
-  case ELF::R_AARCH64_GOT_LD_PREL19:
-  case ELF::R_AARCH64_ADR_GOT_PAGE:
-  case ELF::R_AARCH64_PLT32:
-  case ELF::R_AARCH64_TLSGD_ADR_PREL21:
-  case ELF::R_AARCH64_TLSGD_ADR_PAGE21:
-  case ELF::R_AARCH64_TLSLD_ADR_PREL21:
-  case ELF::R_AARCH64_TLSLD_ADR_PAGE21:
-  case ELF::R_AARCH64_TLSLD_LD_PREL19:
-  case ELF::R_AARCH64_TLSIE_ADR_GOTTPREL_PAGE21:
-  case ELF::R_AARCH64_TLSIE_LD_GOTTPREL_PREL19:
-  case ELF::R_AARCH64_TLSDESC_LD_PREL19:
-  case ELF::R_AARCH64_TLSDESC_ADR_PREL21:
-  case ELF::R_AARCH64_TLSDESC_ADR_PAGE21:
-    return true;
-  default:
-    return false;
-  }
-}
-
-std::optional<RelocationFacts> elfAArch64Facts(uint64_t Type) {
-  switch (Type) {
-  case ELF::R_AARCH64_NONE:
-    return noOpFacts();
-  // Plain data words -- the only AArch64 relocations whose field is not an
-  // instruction.
-  case ELF::R_AARCH64_ABS64:
-    return absoluteFacts(64);
-  case ELF::R_AARCH64_ABS32:
-    return absoluteFacts(32);
-  case ELF::R_AARCH64_ABS16:
-    return absoluteFacts(16);
-  case ELF::R_AARCH64_PREL64:
-    return pcRelativeFacts(64);
-  case ELF::R_AARCH64_PREL32:
-    return pcRelativeFacts(32);
-  case ELF::R_AARCH64_PREL16:
-    return pcRelativeFacts(16);
-  // A signed pointer: the field is an ordinary 64-bit word, with the signing
-  // schema the linker applies held beside it rather than in the field.
-  case ELF::R_AARCH64_AUTH_ABS64:
-    return absoluteFacts(64);
-  case ELF::R_AARCH64_GOTREL64:
-    return kindFacts(NEVERC_OBJECT_RELOCATION_GOT_RELATIVE, 64, false);
-  case ELF::R_AARCH64_GOTREL32:
-    return kindFacts(NEVERC_OBJECT_RELOCATION_GOT_RELATIVE, 32, false);
-  case ELF::R_AARCH64_TLS_DTPMOD64:
-  case ELF::R_AARCH64_TLS_DTPREL64:
-  case ELF::R_AARCH64_TLS_TPREL64:
-  case ELF::R_AARCH64_TLSDESC:
-    return kindFacts(NEVERC_OBJECT_RELOCATION_TLS, 64, false);
-  case ELF::R_AARCH64_GLOB_DAT:
-  case ELF::R_AARCH64_JUMP_SLOT:
-  case ELF::R_AARCH64_RELATIVE:
-  case ELF::R_AARCH64_IRELATIVE:
-    return absoluteFacts(64);
-  default:
-    break;
-  }
-
-  // Everything else AArch64 defines patches a field inside a fixed 32-bit
-  // instruction. The operand size in the mnemonic -- LDST64, MOVW_G3, CALL26 --
-  // describes what the field feeds, not how wide the field is.
-  const bool StaticForm =
-      Type >= ELF::R_AARCH64_MOVW_UABS_G0 && Type <= ELF::R_AARCH64_PLT32;
-  const bool ThreadLocalForm =
-      Type >= ELF::R_AARCH64_TLSGD_ADR_PREL21 &&
-      Type <= ELF::R_AARCH64_TLSLD_LDST128_DTPREL_LO12_NC;
-  if (!StaticForm && !ThreadLocalForm)
+  if (Object.getArch() != Triple::x86_64 &&
+      Object.getArch() != Triple::aarch64)
     return std::nullopt;
-
-  const bool PCRelative = aarch64IsPCRelative(Type);
-  const bool GOTForm = Type >= ELF::R_AARCH64_MOVW_GOTOFF_G0 &&
-                       Type <= ELF::R_AARCH64_LD64_GOTPAGE_LO15;
-  NevercObjectRelocationKind Kind = NEVERC_OBJECT_RELOCATION_ABSOLUTE;
-  if (ThreadLocalForm)
-    Kind = NEVERC_OBJECT_RELOCATION_TLS;
-  else if (Type == ELF::R_AARCH64_PLT32)
-    Kind = NEVERC_OBJECT_RELOCATION_PLT_RELATIVE;
-  else if (GOTForm)
-    Kind = NEVERC_OBJECT_RELOCATION_GOT_RELATIVE;
-  else if (PCRelative)
-    Kind = NEVERC_OBJECT_RELOCATION_PC_RELATIVE;
-  return instructionFacts(Kind, PCRelative);
-}
-
-std::optional<RelocationFacts> coffX86_64Facts(uint64_t Type) {
-  switch (Type) {
-  case COFF::IMAGE_REL_AMD64_ADDR64:
-    return absoluteFacts(64);
-  case COFF::IMAGE_REL_AMD64_ADDR32:
-    return absoluteFacts(32);
-  case COFF::IMAGE_REL_AMD64_ADDR32NB:
-    return kindFacts(NEVERC_OBJECT_RELOCATION_IMAGE_RELATIVE, 32, false);
-  case COFF::IMAGE_REL_AMD64_REL32:
-  case COFF::IMAGE_REL_AMD64_REL32_1:
-  case COFF::IMAGE_REL_AMD64_REL32_2:
-  case COFF::IMAGE_REL_AMD64_REL32_3:
-  case COFF::IMAGE_REL_AMD64_REL32_4:
-  case COFF::IMAGE_REL_AMD64_REL32_5:
-    return pcRelativeFacts(32);
-  case COFF::IMAGE_REL_AMD64_SECTION:
-    return kindFacts(NEVERC_OBJECT_RELOCATION_SECTION_RELATIVE, 16, false);
-  case COFF::IMAGE_REL_AMD64_SECREL:
-    return kindFacts(NEVERC_OBJECT_RELOCATION_SECTION_RELATIVE, 32, false);
-  case COFF::IMAGE_REL_AMD64_SECREL7:
-    return kindFacts(NEVERC_OBJECT_RELOCATION_SECTION_RELATIVE, 8, false);
-  case COFF::IMAGE_REL_AMD64_TOKEN:
-  case COFF::IMAGE_REL_AMD64_SREL32:
-  case COFF::IMAGE_REL_AMD64_SSPAN32:
-    return kindFacts(NEVERC_OBJECT_RELOCATION_TARGET_EXTENSION, 32, false);
-  default:
-    return std::nullopt;
-  }
-}
-
-std::optional<RelocationFacts> coffAArch64Facts(uint64_t Type) {
-  switch (Type) {
-  case COFF::IMAGE_REL_ARM64_ADDR64:
-    return absoluteFacts(64);
-  case COFF::IMAGE_REL_ARM64_ADDR32:
-    return absoluteFacts(32);
-  case COFF::IMAGE_REL_ARM64_ADDR32NB:
-    return kindFacts(NEVERC_OBJECT_RELOCATION_IMAGE_RELATIVE, 32, false);
-  // Instruction forms: a 32-bit instruction holds the patched field.
-  case COFF::IMAGE_REL_ARM64_BRANCH26:
-  case COFF::IMAGE_REL_ARM64_PAGEBASE_REL21:
-  case COFF::IMAGE_REL_ARM64_REL21:
-  case COFF::IMAGE_REL_ARM64_BRANCH19:
-  case COFF::IMAGE_REL_ARM64_BRANCH14:
-    return instructionFacts(NEVERC_OBJECT_RELOCATION_PC_RELATIVE, true);
-  // REL32 is a data word, unlike the branch forms above.
-  case COFF::IMAGE_REL_ARM64_REL32:
-    return pcRelativeFacts(32);
-  // The page-offset forms address within a page, not from the program counter.
-  case COFF::IMAGE_REL_ARM64_PAGEOFFSET_12A:
-  case COFF::IMAGE_REL_ARM64_PAGEOFFSET_12L:
-    return instructionFacts(NEVERC_OBJECT_RELOCATION_ABSOLUTE, false);
-  case COFF::IMAGE_REL_ARM64_SECREL:
-    return kindFacts(NEVERC_OBJECT_RELOCATION_SECTION_RELATIVE, 32, false);
-  case COFF::IMAGE_REL_ARM64_SECREL_LOW12A:
-  case COFF::IMAGE_REL_ARM64_SECREL_HIGH12A:
-  case COFF::IMAGE_REL_ARM64_SECREL_LOW12L:
-    return instructionFacts(NEVERC_OBJECT_RELOCATION_SECTION_RELATIVE, false);
-  case COFF::IMAGE_REL_ARM64_SECTION:
-    return kindFacts(NEVERC_OBJECT_RELOCATION_SECTION_RELATIVE, 16, false);
-  case COFF::IMAGE_REL_ARM64_TOKEN:
-    return kindFacts(NEVERC_OBJECT_RELOCATION_TARGET_EXTENSION, 32, false);
-  default:
-    return std::nullopt;
-  }
-}
-
-NevercObjectRelocationKind machOX86_64Kind(uint64_t Type) {
-  switch (Type) {
-  case MachO::X86_64_RELOC_BRANCH:
-  case MachO::X86_64_RELOC_SIGNED:
-  case MachO::X86_64_RELOC_SIGNED_1:
-  case MachO::X86_64_RELOC_SIGNED_2:
-  case MachO::X86_64_RELOC_SIGNED_4:
-    return NEVERC_OBJECT_RELOCATION_PC_RELATIVE;
-  case MachO::X86_64_RELOC_GOT:
-  case MachO::X86_64_RELOC_GOT_LOAD:
-    return NEVERC_OBJECT_RELOCATION_GOT_RELATIVE;
-  case MachO::X86_64_RELOC_TLV:
-    return NEVERC_OBJECT_RELOCATION_TLS;
-  case MachO::X86_64_RELOC_UNSIGNED:
-    return NEVERC_OBJECT_RELOCATION_ABSOLUTE;
-  default:
-    return NEVERC_OBJECT_RELOCATION_TARGET_EXTENSION;
-  }
-}
-
-NevercObjectRelocationKind machOAArch64Kind(uint64_t Type) {
-  switch (Type) {
-  case MachO::ARM64_RELOC_BRANCH26:
-  case MachO::ARM64_RELOC_PAGE21:
-    return NEVERC_OBJECT_RELOCATION_PC_RELATIVE;
-  case MachO::ARM64_RELOC_GOT_LOAD_PAGE21:
-  case MachO::ARM64_RELOC_GOT_LOAD_PAGEOFF12:
-  case MachO::ARM64_RELOC_POINTER_TO_GOT:
-    return NEVERC_OBJECT_RELOCATION_GOT_RELATIVE;
-  case MachO::ARM64_RELOC_TLVP_LOAD_PAGE21:
-  case MachO::ARM64_RELOC_TLVP_LOAD_PAGEOFF12:
-    return NEVERC_OBJECT_RELOCATION_TLS;
-  case MachO::ARM64_RELOC_UNSIGNED:
-  case MachO::ARM64_RELOC_PAGEOFF12:
-    return NEVERC_OBJECT_RELOCATION_ABSOLUTE;
-  default:
-    return NEVERC_OBJECT_RELOCATION_TARGET_EXTENSION;
-  }
-}
-
-// On AArch64 every Mach-O relocation except the plain pointer forms patches a
-// field inside an instruction.
-bool machOAArch64IsInstructionField(uint64_t Type) {
-  switch (Type) {
-  case MachO::ARM64_RELOC_UNSIGNED:
-  case MachO::ARM64_RELOC_SUBTRACTOR:
-  case MachO::ARM64_RELOC_POINTER_TO_GOT:
-  case MachO::ARM64_RELOC_ADDEND:
-    return false;
-  default:
-    return true;
-  }
+  Result.setArch(Object.getArch());
+  return Result;
 }
 
 std::optional<RelocationFacts>
 relocationFacts(const ObjectFile &Object, RelocationRef Relocation) {
+  const std::optional<Triple> Table = relocationTableTriple(Object);
+  if (!Table)
+    return std::nullopt;
   const uint64_t Type = Relocation.getType();
   // Mach-O records the field size and the addressing mode in the relocation
-  // itself, so there is nothing to look up.
+  // itself, so only the rest is looked up.
   if (const auto *MachObject = dyn_cast<MachOObjectFile>(&Object)) {
     const unsigned Length =
         MachObject->getRelocationLength(Relocation.getRawDataRefImpl());
@@ -754,37 +429,10 @@ relocationFacts(const ObjectFile &Object, RelocationRef Relocation) {
       return std::nullopt;
     MachO::any_relocation_info Native =
         MachObject->getRelocation(Relocation.getRawDataRefImpl());
-    const bool PCRelative =
-        MachObject->getAnyRelocationPCRel(Native) != 0;
-    const bool AArch64 = Object.getArch() == Triple::aarch64;
-    // x86 relocations always cover a displacement or immediate field that
-    // occupies whole bytes of its own, even inside an instruction.
-    return RelocationFacts{
-        (UINT32_C(1) << Length) * 8, PCRelative, PCRelative,
-        AArch64 && machOAArch64IsInstructionField(Type),
-        AArch64 ? machOAArch64Kind(Type) : machOX86_64Kind(Type)};
+    return machOFacts(Table->getArch(), Type, (UINT32_C(1) << Length) * 8,
+                      MachObject->getAnyRelocationPCRel(Native) != 0);
   }
-  if (const auto *COFFObject = dyn_cast<COFFObjectFile>(&Object)) {
-    switch (COFFObject->getMachine()) {
-    case COFF::IMAGE_FILE_MACHINE_AMD64:
-      return coffX86_64Facts(Type);
-    case COFF::IMAGE_FILE_MACHINE_ARM64:
-      return coffAArch64Facts(Type);
-    default:
-      return std::nullopt;
-    }
-  }
-  if (const auto *ELFObject = dyn_cast<ELFObjectFileBase>(&Object)) {
-    switch (ELFObject->getEMachine()) {
-    case ELF::EM_X86_64:
-      return elfX86_64Facts(Type);
-    case ELF::EM_AARCH64:
-      return elfAArch64Facts(Type);
-    default:
-      return std::nullopt;
-    }
-  }
-  return std::nullopt;
+  return nativeRelocationFacts(*Table, Type);
 }
 
 struct SectionMapEntry {

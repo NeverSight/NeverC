@@ -114,6 +114,23 @@ inline std::optional<uint64_t> field(llvm::ArrayRef<uint8_t> Bytes,
   return Value;
 }
 
+// The relocation type number a blob carries, or nothing when the blob is not
+// one of ours or is too short to hold it.
+//
+// Three places ask this -- the writer that restates a relocation, the linker
+// that patches the bytes it covers, and the dyncode extractor -- and the
+// version policy is the reason it is answered here rather than at each of
+// them. The dyncode copy read the version and refused anything but the one
+// current when it was written, which is the opposite of what a fixed-width
+// layout is for: the next field appended to any blob would have turned every
+// relocation into a decode failure.
+inline std::optional<uint64_t>
+nativeRelocationType(llvm::ArrayRef<uint8_t> Bytes) {
+  if (!hasTag(Bytes, RelocationTag) || version(Bytes) < 1)
+    return std::nullopt;
+  return field(Bytes, RelocationNativeType);
+}
+
 inline llvm::StringRef relocationName(llvm::ArrayRef<uint8_t> Bytes) {
   if (Bytes.size() < RelocationNameLengthOffset + 4)
     return llvm::StringRef();

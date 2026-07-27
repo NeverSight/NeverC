@@ -14,6 +14,7 @@
 #include "neverc/Plugin/Host/ObjectGraph.h"
 #include "llvm/BinaryFormat/COFF.h"
 #include "llvm/BinaryFormat/ELF.h"
+#include "llvm/BinaryFormat/MachO.h"
 #include "llvm/Support/Errc.h"
 #include "llvm/Support/Error.h"
 #include <string>
@@ -40,35 +41,6 @@ DynCodeRelocationMapping classified(DynCodeRelocationClass Class) {
   M.Class = Class;
   return M;
 }
-
-// Mach-O relocation type numbers (llvm::MachO::RelocationInfoType), inlined so
-// this file matches the numeric switch the old Mach-O extractor used.
-enum : uint64_t {
-  MachOArm64Unsigned = 0,
-  MachOArm64Subtractor = 1,
-  MachOArm64Branch26 = 2,
-  MachOArm64Page21 = 3,
-  MachOArm64PageOff12 = 4,
-  MachOArm64GotLoadPage21 = 5,
-  MachOArm64GotLoadPageOff12 = 6,
-  MachOArm64PointerToGot = 7,
-  MachOArm64TlvpLoadPage21 = 8,
-  MachOArm64TlvpLoadPageOff12 = 9,
-  MachOArm64Addend = 10,
-};
-
-enum : uint64_t {
-  MachOX86Unsigned = 0,
-  MachOX86Signed = 1,
-  MachOX86Branch = 2,
-  MachOX86GotLoad = 3,
-  MachOX86Got = 4,
-  MachOX86Subtractor = 5,
-  MachOX86Signed1 = 6,
-  MachOX86Signed2 = 7,
-  MachOX86Signed4 = 8,
-  MachOX86Tlv = 9,
-};
 
 DynCodeRelocationMapping mapElfAArch64(uint64_t T) {
   switch (T) {
@@ -151,17 +123,17 @@ DynCodeRelocationMapping mapCoffX86(uint64_t T) {
 
 DynCodeRelocationMapping mapMachOAArch64(uint64_t T) {
   switch (T) {
-  case MachOArm64Branch26:
+  case MachO::ARM64_RELOC_BRANCH26:
     return intra(DynCodeRelocApplyKind::AArch64Branch26);
-  case MachOArm64Page21:
+  case MachO::ARM64_RELOC_PAGE21:
     return intra(DynCodeRelocApplyKind::AArch64Page21);
-  case MachOArm64PageOff12:
+  case MachO::ARM64_RELOC_PAGEOFF12:
     return intra(DynCodeRelocApplyKind::AArch64Lo12Auto);
-  case MachOArm64Unsigned:
+  case MachO::ARM64_RELOC_UNSIGNED:
     return classified(DynCodeRelocationClass::ExternalAbsolute);
-  case MachOArm64GotLoadPage21:
-  case MachOArm64GotLoadPageOff12:
-  case MachOArm64PointerToGot:
+  case MachO::ARM64_RELOC_GOT_LOAD_PAGE21:
+  case MachO::ARM64_RELOC_GOT_LOAD_PAGEOFF12:
+  case MachO::ARM64_RELOC_POINTER_TO_GOT:
     return classified(DynCodeRelocationClass::ExternalGOT);
   default:
     return classified(DynCodeRelocationClass::Unsupported);
@@ -170,19 +142,19 @@ DynCodeRelocationMapping mapMachOAArch64(uint64_t T) {
 
 DynCodeRelocationMapping mapMachOX86(uint64_t T) {
   switch (T) {
-  case MachOX86Signed:
-  case MachOX86Branch:
+  case MachO::X86_64_RELOC_SIGNED:
+  case MachO::X86_64_RELOC_BRANCH:
     return intra(DynCodeRelocApplyKind::X86Rel32, 0, /*AddendAdjust=*/-4);
-  case MachOX86Signed1:
+  case MachO::X86_64_RELOC_SIGNED_1:
     return intra(DynCodeRelocApplyKind::X86Rel32, 0, /*AddendAdjust=*/-5);
-  case MachOX86Signed2:
+  case MachO::X86_64_RELOC_SIGNED_2:
     return intra(DynCodeRelocApplyKind::X86Rel32, 0, /*AddendAdjust=*/-6);
-  case MachOX86Signed4:
+  case MachO::X86_64_RELOC_SIGNED_4:
     return intra(DynCodeRelocApplyKind::X86Rel32, 0, /*AddendAdjust=*/-8);
-  case MachOX86Unsigned:
+  case MachO::X86_64_RELOC_UNSIGNED:
     return classified(DynCodeRelocationClass::ExternalAbsolute);
-  case MachOX86GotLoad:
-  case MachOX86Got:
+  case MachO::X86_64_RELOC_GOT_LOAD:
+  case MachO::X86_64_RELOC_GOT:
     return classified(DynCodeRelocationClass::ExternalGOT);
   default:
     return classified(DynCodeRelocationClass::Unsupported);
@@ -193,32 +165,47 @@ DynCodeRelocationMapping mapMachOX86(uint64_t T) {
 
 std::optional<uint64_t>
 decodeNativeRelocationType(const plugin::PluginObjectExtension &Ext) {
-  namespace ext = plugin::builtinext;
-  ArrayRef<uint8_t> Bytes(Ext.Bytes);
-  if (!ext::hasTag(Bytes, ext::RelocationTag) || ext::version(Bytes) < 1)
-    return std::nullopt;
-  // A version added after this was written still carries the fields it knows,
-  // in the same places -- that is what a fixed-width layout buys. Refusing
-  // anything but the version current at the time would turn the next field
-  // appended to the blob into a decode failure here.
-  return ext::field(Bytes, ext::RelocationNativeType);
+  return plugin::builtinext::nativeRelocationType(Ext.Bytes);
 }
 
+// A relocation type number carries no architecture of its own -- 2 is AMD64's
+// REL32 and ARM64's BRANCH26 -- so reading one through the wrong table answers
+// about a different relocation and encodes a different fixup. Both halves of
+// the choice are therefore named: asking only whether the target is AArch64
+// and taking x86 otherwise sent a target that is neither through the x86
+// tables, and DynCodeArch has a third value for exactly the case where the
+// architecture was never established.
 DynCodeRelocationMapping mapDynCodeRelocation(const TargetDesc &Target,
                                               uint64_t NativeType) {
-  switch (Target.Format) {
-  case ObjectFormat::ELF:
-    return Target.Arch == DynCodeArch::AArch64 ? mapElfAArch64(NativeType)
-                                               : mapElfX86(NativeType);
-  case ObjectFormat::COFF:
-    return Target.Arch == DynCodeArch::AArch64 ? mapCoffAArch64(NativeType)
-                                               : mapCoffX86(NativeType);
-  case ObjectFormat::MachO:
-    return Target.Arch == DynCodeArch::AArch64 ? mapMachOAArch64(NativeType)
-                                               : mapMachOX86(NativeType);
-  default:
-    return classified(DynCodeRelocationClass::Unsupported);
+  switch (Target.Arch) {
+  case DynCodeArch::AArch64:
+    switch (Target.Format) {
+    case ObjectFormat::ELF:
+      return mapElfAArch64(NativeType);
+    case ObjectFormat::COFF:
+      return mapCoffAArch64(NativeType);
+    case ObjectFormat::MachO:
+      return mapMachOAArch64(NativeType);
+    case ObjectFormat::Unknown:
+      break;
+    }
+    break;
+  case DynCodeArch::X86_64:
+    switch (Target.Format) {
+    case ObjectFormat::ELF:
+      return mapElfX86(NativeType);
+    case ObjectFormat::COFF:
+      return mapCoffX86(NativeType);
+    case ObjectFormat::MachO:
+      return mapMachOX86(NativeType);
+    case ObjectFormat::Unknown:
+      break;
+    }
+    break;
+  case DynCodeArch::Unknown:
+    break;
   }
+  return classified(DynCodeRelocationClass::Unsupported);
 }
 
 llvm::Error resolveAndApplyDynCodeRelocations(const DynCodeExtractionPlan &Plan,
