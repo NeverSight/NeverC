@@ -318,7 +318,7 @@ Sottoscrivetevi come osservatori e leggete l'evento:
 ```c
 NevercMCEmissionEventInfo Event = {0};
 Event.Header = /* … */;
-Emission->GetEvent(Emission->Context, Frame, &Event);
+Emission->GetEvent(Emission->Context, Frame, Frame->Input, &Event);
 /* Event.Kind, Event.Flags */
 ```
 
@@ -336,9 +336,14 @@ A `pre_instruction`, e solo quando `CAN_REPLACE_INSTRUCTION` è impostato,
 potete sostituire:
 
 ```c
-Emission->BeginInstructionReplacement(Emission->Context, Frame, &Builder);
-/* build the replacement through the MC builder */
-Emission->PublishInstructionReplacement(Emission->Context, Frame, NewInstr);
+const NevercMCAPI *MC;
+NevercMCUnitHandle Unit;
+NevercMCInstHandle Instruction;
+Emission->BeginInstructionReplacement(Emission->Context, Frame, Continuation,
+                                       &MC, &Unit, &Instruction);
+/* mutate Instruction through MC->BeginMutation / … / CommitMutation */
+Emission->PublishInstructionReplacement(Emission->Context, Frame, Continuation,
+                                         &OutResult->Output);
 ```
 
 [`pluginsdk/examples/MCObserverPlugin.c`] ne è la versione in sola lettura.
@@ -379,17 +384,17 @@ Un provider di parsing consuma byte sorgente e pubblica un `MCUnit`:
 ```c
 NevercAssemblyParseInputInfo In = {0};
 In.Header = /* … */;
-Asm->GetParseInput(Asm->Context, Frame, &In);
+Asm->GetParseInput(Asm->Context, Frame, Frame->Input, &In);
 
 NevercAssemblyTokenInfo Token = {0};
-Asm->PeekSourceToken(Asm->Context, Frame, &Token);
-Asm->AdvanceSourceToken(Asm->Context, Frame);
+Asm->PeekSourceToken(Asm->Context, Frame, In.Source.Cursor, &Token);
+Asm->AdvanceSourceToken(Asm->Context, Frame, In.Source.Cursor);
 
 const NevercMCAPI *MC;
 NevercMCUnitHandle Unit;
 Asm->GetParseMCBuilder(Asm->Context, Frame, &MC, &Unit);
-/* … build … */
-Asm->PublishParsedMCUnit(Asm->Context, Frame, Unit, &Output);
+/* … build into Unit … */
+Asm->PublishParsedMCUnit(Asm->Context, Frame, &Output);
 ```
 
 Le sorgenti sono o `NEVERC_ASSEMBLY_SOURCE_BUFFER` o

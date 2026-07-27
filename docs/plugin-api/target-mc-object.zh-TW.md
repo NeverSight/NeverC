@@ -290,7 +290,7 @@ Section 旗標有 `ALLOCATED`、`EXECUTABLE`、`WRITABLE`、`MERGEABLE` 與 `DEB
 ```c
 NevercMCEmissionEventInfo Event = {0};
 Event.Header = /* … */;
-Emission->GetEvent(Emission->Context, Frame, &Event);
+Emission->GetEvent(Emission->Context, Frame, Frame->Input, &Event);
 /* Event.Kind, Event.Flags */
 ```
 
@@ -304,9 +304,14 @@ Emission->GetEvent(Emission->Context, Frame, &Event);
 在 `pre_instruction`、且僅當設定了 `CAN_REPLACE_INSTRUCTION` 時，你可以替換：
 
 ```c
-Emission->BeginInstructionReplacement(Emission->Context, Frame, &Builder);
-/* build the replacement through the MC builder */
-Emission->PublishInstructionReplacement(Emission->Context, Frame, NewInstr);
+const NevercMCAPI *MC;
+NevercMCUnitHandle Unit;
+NevercMCInstHandle Instruction;
+Emission->BeginInstructionReplacement(Emission->Context, Frame, Continuation,
+                                       &MC, &Unit, &Instruction);
+/* mutate Instruction through MC->BeginMutation / … / CommitMutation */
+Emission->PublishInstructionReplacement(Emission->Context, Frame, Continuation,
+                                         &OutResult->Output);
 ```
 
 [`pluginsdk/examples/MCObserverPlugin.c`] 是它的唯讀版本。
@@ -343,17 +348,17 @@ asm 後端負責 relaxation。版面配置會發出一份證明摘要，而**版
 ```c
 NevercAssemblyParseInputInfo In = {0};
 In.Header = /* … */;
-Asm->GetParseInput(Asm->Context, Frame, &In);
+Asm->GetParseInput(Asm->Context, Frame, Frame->Input, &In);
 
 NevercAssemblyTokenInfo Token = {0};
-Asm->PeekSourceToken(Asm->Context, Frame, &Token);
-Asm->AdvanceSourceToken(Asm->Context, Frame);
+Asm->PeekSourceToken(Asm->Context, Frame, In.Source.Cursor, &Token);
+Asm->AdvanceSourceToken(Asm->Context, Frame, In.Source.Cursor);
 
 const NevercMCAPI *MC;
 NevercMCUnitHandle Unit;
 Asm->GetParseMCBuilder(Asm->Context, Frame, &MC, &Unit);
-/* … build … */
-Asm->PublishParsedMCUnit(Asm->Context, Frame, Unit, &Output);
+/* … build into Unit … */
+Asm->PublishParsedMCUnit(Asm->Context, Frame, &Output);
 ```
 
 來源不是 `NEVERC_ASSEMBLY_SOURCE_BUFFER` 就是

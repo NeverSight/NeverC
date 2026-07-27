@@ -290,7 +290,7 @@ if (Status.Code != NEVERC_STATUS_OK)
 ```c
 NevercMCEmissionEventInfo Event = {0};
 Event.Header = /* … */;
-Emission->GetEvent(Emission->Context, Frame, &Event);
+Emission->GetEvent(Emission->Context, Frame, Frame->Input, &Event);
 /* Event.Kind, Event.Flags */
 ```
 
@@ -305,9 +305,14 @@ Emission->GetEvent(Emission->Context, Frame, &Event);
 令：
 
 ```c
-Emission->BeginInstructionReplacement(Emission->Context, Frame, &Builder);
-/* 通过 MC builder 构造替换指令 */
-Emission->PublishInstructionReplacement(Emission->Context, Frame, NewInstr);
+const NevercMCAPI *MC;
+NevercMCUnitHandle Unit;
+NevercMCInstHandle Instruction;
+Emission->BeginInstructionReplacement(Emission->Context, Frame, Continuation,
+                                       &MC, &Unit, &Instruction);
+/* mutate Instruction through MC->BeginMutation / … / CommitMutation */
+Emission->PublishInstructionReplacement(Emission->Context, Frame, Continuation,
+                                         &OutResult->Output);
 ```
 
 [`pluginsdk/examples/MCObserverPlugin.c`] 是它的只读版本。
@@ -344,17 +349,17 @@ Sink->AddFixup(Sink->Context, &Fixup);
 ```c
 NevercAssemblyParseInputInfo In = {0};
 In.Header = /* … */;
-Asm->GetParseInput(Asm->Context, Frame, &In);
+Asm->GetParseInput(Asm->Context, Frame, Frame->Input, &In);
 
 NevercAssemblyTokenInfo Token = {0};
-Asm->PeekSourceToken(Asm->Context, Frame, &Token);
-Asm->AdvanceSourceToken(Asm->Context, Frame);
+Asm->PeekSourceToken(Asm->Context, Frame, In.Source.Cursor, &Token);
+Asm->AdvanceSourceToken(Asm->Context, Frame, In.Source.Cursor);
 
 const NevercMCAPI *MC;
 NevercMCUnitHandle Unit;
 Asm->GetParseMCBuilder(Asm->Context, Frame, &MC, &Unit);
-/* … 构造 … */
-Asm->PublishParsedMCUnit(Asm->Context, Frame, Unit, &Output);
+/* … build into Unit … */
+Asm->PublishParsedMCUnit(Asm->Context, Frame, &Output);
 ```
 
 源要么是 `NEVERC_ASSEMBLY_SOURCE_BUFFER`，要么是
