@@ -203,6 +203,14 @@ using std::chrono::time_point;
 using std::chrono::time_point_cast;
 using microseconds = std::chrono::microseconds;
 
+} // anonymous namespace
+
+// Named for the same reason as TimeTraceProfilerInstance below: the registry
+// of live profilers has to be one object for the whole program.  In an
+// anonymous namespace each translation unit gets its own list, so a profiler
+// registered by one would be missing from the write-out driven by another.
+namespace time_trace_detail {
+
 struct TimeTraceProfilerInstances {
   LLVM_TP_MUTEX_T Lock = LLVM_TP_MUTEX_INITIALIZER;
   SmallVector<TimeTraceProfiler *, 8> List;
@@ -213,7 +221,7 @@ inline TimeTraceProfilerInstances &getTimeTraceProfilerInstances() {
   return Instances;
 }
 
-} // anonymous namespace
+} // namespace time_trace_detail
 
 // Per Thread instance — must NOT be `static` (internal linkage): the inline
 // functions below have external linkage, so the linker deduplicates them
@@ -324,7 +332,7 @@ struct TimeTraceProfiler {
   // ThreadTimeTraceProfilerInstances.
   void write(raw_pwrite_stream &OS) {
     // Acquire Mutex as reading ThreadTimeTraceProfilerInstances.
-    auto &Instances = getTimeTraceProfilerInstances();
+    auto &Instances = time_trace_detail::getTimeTraceProfilerInstances();
     LLVM_TP_MUTEX_LOCK(&Instances.Lock);
     assert(Stack.empty() &&
            "All profiler sections should be ended when calling write");
@@ -477,7 +485,7 @@ inline void timeTraceProfilerCleanup() {
   delete TimeTraceProfilerInstance;
   TimeTraceProfilerInstance = 0;
 
-  auto &Instances = getTimeTraceProfilerInstances();
+  auto &Instances = time_trace_detail::getTimeTraceProfilerInstances();
   LLVM_TP_MUTEX_LOCK(&Instances.Lock);
   for (auto *TTP : Instances.List)
     delete TTP;
@@ -488,7 +496,7 @@ inline void timeTraceProfilerCleanup() {
 // Finish TimeTraceProfilerInstance on a worker thread.
 // This doesn't remove the instance, just moves the pointer to global vector.
 inline void timeTraceProfilerFinishThread() {
-  auto &Instances = getTimeTraceProfilerInstances();
+  auto &Instances = time_trace_detail::getTimeTraceProfilerInstances();
   LLVM_TP_MUTEX_LOCK(&Instances.Lock);
   Instances.List.push_back(TimeTraceProfilerInstance);
   TimeTraceProfilerInstance = 0;

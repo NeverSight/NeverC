@@ -324,7 +324,14 @@ inline thread_local unsigned threadIndex = UINT_MAX;
 
 namespace detail {
 
-namespace {
+// Named rather than anonymous: upstream keeps this block in Parallel.cpp,
+// where internal linkage confines it to one translation unit.  In a header an
+// anonymous namespace would give every includer its own Executor type and its
+// own getDefaultExecutor(), and therefore its own thread pool -- so a process
+// linking several includers would start N pools of N threads each instead of
+// one.  The using-directive below reproduces the implicit one an anonymous
+// namespace carries, so name lookup elsewhere in this file is unchanged.
+namespace impl {
 
 // ── Platform-agnostic threading primitives ──────────────────────────
 #ifdef _WIN32
@@ -633,7 +640,8 @@ inline Executor *Executor::getDefaultExecutor() {
   static uptr_t<ThreadPoolExecutor> Exec(&(*ManagedExec));
   return Exec.get();
 }
-} // namespace
+} // namespace impl
+using namespace impl;
 } // namespace detail
 
 inline size_t getThreadCount() {

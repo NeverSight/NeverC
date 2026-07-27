@@ -300,7 +300,12 @@ inline void *DoSearch(const char *SymbolName) {
 } // namespace sys
 } // namespace llvm
 
-namespace {
+// Upstream keeps these in DynamicLibrary.cpp, where an anonymous namespace is
+// what confines them to that one translation unit.  This header-only port must
+// name the namespace instead: an anonymous one here would give every including
+// translation unit its own symbol table and handle set, so a library opened
+// through one caller would be invisible to a lookup made from another.
+namespace llvm::sys::detail {
 
 struct Globals {
   llvm::StringMap<void *> ExplicitSymbols;
@@ -314,7 +319,7 @@ inline Globals &getGlobals() {
   return G;
 }
 
-} // namespace
+} // namespace llvm::sys::detail
 
 namespace llvm {
 namespace sys {
@@ -332,7 +337,7 @@ inline void *SearchForAddressOfSpecialSymbol(const char *SymbolName) {
 namespace sys {
 
 inline void DynamicLibrary::AddSymbol(StringRef SymbolName, void *SymbolValue) {
-  auto &G = getGlobals();
+  auto &G = detail::getGlobals();
   SmartScopedLock<true> Lock(G.SymbolsMutex);
   G.ExplicitSymbols[SymbolName] = SymbolValue;
 }
@@ -340,7 +345,7 @@ inline void DynamicLibrary::AddSymbol(StringRef SymbolName, void *SymbolValue) {
 inline DynamicLibrary
 DynamicLibrary::getPermanentLibrary(const char *FileName,
                                     SmallVectorImpl<char> *Err) {
-  auto &G = getGlobals();
+  auto &G = detail::getGlobals();
   void *Handle = HandleSet::DLOpen(FileName, Err);
   if (Handle != &Invalid) {
     SmartScopedLock<true> Lock(G.SymbolsMutex);
@@ -352,7 +357,7 @@ DynamicLibrary::getPermanentLibrary(const char *FileName,
 
 inline DynamicLibrary
 DynamicLibrary::addPermanentLibrary(void *Handle, SmallVectorImpl<char> *Err) {
-  auto &G = getGlobals();
+  auto &G = detail::getGlobals();
   SmartScopedLock<true> Lock(G.SymbolsMutex);
   if (!G.OpenedHandles.AddLibrary(Handle, /*IsProcess*/ false,
                                   /*CanClose*/ false)) {
@@ -368,7 +373,7 @@ inline DynamicLibrary DynamicLibrary::getLibrary(const char *FileName,
   assert(FileName && "Use getPermanentLibrary() for opening process handle");
   void *Handle = HandleSet::DLOpen(FileName, Err);
   if (Handle != &Invalid) {
-    auto &G = getGlobals();
+    auto &G = detail::getGlobals();
     SmartScopedLock<true> Lock(G.SymbolsMutex);
     G.OpenedTemporaryHandles.AddLibrary(Handle, /*IsProcess*/ false,
                                         /*CanClose*/ false,
@@ -378,7 +383,7 @@ inline DynamicLibrary DynamicLibrary::getLibrary(const char *FileName,
 }
 
 inline void DynamicLibrary::closeLibrary(DynamicLibrary &Lib) {
-  auto &G = getGlobals();
+  auto &G = detail::getGlobals();
   SmartScopedLock<true> Lock(G.SymbolsMutex);
   if (Lib.isValid()) {
     G.OpenedTemporaryHandles.CloseLibrary(Lib.Data);
@@ -394,7 +399,7 @@ inline void *DynamicLibrary::getAddressOfSymbol(const char *SymbolName) {
 
 inline void *DynamicLibrary::SearchForAddressOfSymbol(const char *SymbolName) {
   {
-    auto &G = getGlobals();
+    auto &G = detail::getGlobals();
     SmartScopedLock<true> Lock(G.SymbolsMutex);
 
     StringMap<void *>::iterator i = G.ExplicitSymbols.find(SymbolName);
