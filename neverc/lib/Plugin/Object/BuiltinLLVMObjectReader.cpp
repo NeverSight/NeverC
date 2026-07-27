@@ -16,6 +16,7 @@
 #include "llvm/Object/ObjectFile.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/MemoryBufferRef.h"
+#include "llvm/TargetParser/Triple.h"
 #include <algorithm>
 #include <array>
 #include <cstdint>
@@ -71,6 +72,7 @@ enum DetailSite : uint64_t {
   DetailRelocationCreate,
   DetailObjectParse,
   DetailObjectFormatMismatch,
+  DetailObjectArchMismatch,
 };
 
 constexpr uint64_t DetailIndexScale = 1000000;
@@ -1586,6 +1588,25 @@ NevercStatus NEVERC_CALL readBuiltinObject(
   if (!CorrectFormat)
     return status(NEVERC_STATUS_VERIFICATION_FAILED,
                   detail(DetailObjectFormatMismatch));
+
+  // The graph says which architecture it is for, and the caller states that,
+  // not the object. Reading on regardless produces a graph whose TargetKey
+  // contradicts its own contents -- and the contents that matter most are the
+  // relocation type numbers, which mean nothing until an architecture is
+  // named. 4 is AMD64's REL32 and ARM64's PAGEBASE_REL21; 2 is x86's BRANCH
+  // and ARM64's BRANCH26. A consumer that reads a native type back through the
+  // TargetKey -- the object writer, the dyncode relocation provider -- then
+  // reads it out of the wrong table and gets an answer that is wrong without
+  // looking wrong. Refusing here is what keeps that pair consistent for
+  // everyone downstream, rather than each consumer having to notice it.
+  StringRef TripleText(Request->Target.RawTriple.Data
+                           ? Request->Target.RawTriple.Data
+                           : "",
+                       static_cast<size_t>(Request->Target.RawTriple.Length));
+  const Triple TargetTriple(Triple::normalize(TripleText));
+  if (Object.getArch() != TargetTriple.getArch())
+    return status(NEVERC_STATUS_VERIFICATION_FAILED,
+                  detail(DetailObjectArchMismatch));
 
   std::vector<ComdatMapEntry> Comdats;
   NevercStatus Result = createComdats(Object, *Request, Comdats);

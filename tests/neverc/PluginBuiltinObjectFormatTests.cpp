@@ -1934,4 +1934,54 @@ TEST(PluginBuiltinObjectFormatTest, WriterKeepsCommonSymbolBindingLocal) {
   }
 }
 
+TEST(PluginBuiltinObjectFormatTest, ReaderRefusesAnObjectForAnotherArchitecture) {
+  initializeBuiltinTargets();
+
+  // A relocation type number means nothing on its own: 4 is AMD64's REL32 and
+  // ARM64's PAGEBASE_REL21, 2 is x86's BRANCH and ARM64's BRANCH26. What tells
+  // them apart is the architecture, and the graph states that in its TargetKey
+  // -- which the caller supplies rather than the object. So a reader that
+  // checks only the format lets an object of one architecture be read as a
+  // graph claiming the other, and every consumer that reads a native type back
+  // through the TargetKey then reads it out of the wrong table.
+  const std::array<std::pair<BuiltinObjectFormat, const char *>, 2> Formats = {
+      {{BuiltinObjectFormat::ELF, "ELF"},
+       {BuiltinObjectFormat::COFF, "COFF"}}};
+  for (const auto &[Format, Label] : Formats) {
+    for (const auto &[Built, Claimed] :
+         std::array<std::pair<Triple::ArchType, Triple::ArchType>, 2>{
+             {{Triple::x86_64, Triple::aarch64},
+              {Triple::aarch64, Triple::x86_64}}}) {
+      const BuiltinTargetRoute *BuiltRoute = routeFor(Format, Built);
+      const BuiltinTargetRoute *ClaimedRoute = routeFor(Format, Claimed);
+      ASSERT_NE(BuiltRoute, nullptr);
+      ASSERT_NE(ClaimedRoute, nullptr);
+      SCOPED_TRACE(std::string(Label) + ": object built for " +
+                   BuiltRoute->CanonicalName.str() + ", read as " +
+                   ClaimedRoute->CanonicalName.str());
+
+      BuiltinObjectTaskScope Scope;
+      ASSERT_TRUE(Scope.initialize());
+      auto Snapshot = PluginTargetRegistry::freeze(
+          ArrayRef<PluginTargetRegistrationView>(), PluginTargetRequest{});
+      ASSERT_TRUE(static_cast<bool>(Snapshot));
+      auto Reader = ObjectReaderProvider::create(*Snapshot);
+      ASSERT_TRUE(static_cast<bool>(Reader));
+
+      auto Input = assembleRelocatable(*BuiltRoute);
+      ASSERT_TRUE(static_cast<bool>(Input)) << errorText(Input.takeError());
+      auto ClaimedTarget = makeBuiltinTargetKey(*ClaimedRoute);
+      ASSERT_TRUE(static_cast<bool>(ClaimedTarget));
+
+      auto Graph = (*Reader)->read(Scope.task(), *Input, "foreign-arch.o",
+                                   *ClaimedTarget);
+      EXPECT_FALSE(static_cast<bool>(Graph))
+          << "an object for one architecture was read into a graph that says "
+             "it is the other";
+      if (!Graph)
+        consumeError(Graph.takeError());
+    }
+  }
+}
+
 } // namespace
