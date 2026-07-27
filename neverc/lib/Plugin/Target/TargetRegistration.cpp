@@ -143,7 +143,7 @@ registerObjectFormat(void *, void *RegistrarContext,
   return registerPluginObjectFormat(RegistrarContext, Descriptor);
 }
 
-const NevercTargetAPI TargetAPI = {
+constexpr NevercTargetAPI TargetAPI = {
     {sizeof(NevercTargetAPI), NEVERC_TARGET_API_MAJOR,
      NEVERC_TARGET_API_MINOR, 0},
     nullptr,
@@ -151,14 +151,14 @@ const NevercTargetAPI TargetAPI = {
     registerCodeGenEdge,
 };
 
-const NevercTargetABIAPI TargetABIAPI = {
+constexpr NevercTargetABIAPI TargetABIAPI = {
     {sizeof(NevercTargetABIAPI), NEVERC_TARGET_ABI_API_MAJOR,
      NEVERC_TARGET_ABI_API_MINOR, 0},
     nullptr,
     registerABI,
 };
 
-const NevercCallingConventionAPI CallingConventionAPI = {
+constexpr NevercCallingConventionAPI CallingConventionAPI = {
     {sizeof(NevercCallingConventionAPI),
      NEVERC_CALLING_CONVENTION_API_MAJOR,
      NEVERC_CALLING_CONVENTION_API_MINOR, 0},
@@ -166,7 +166,10 @@ const NevercCallingConventionAPI CallingConventionAPI = {
     registerCallingConvention,
 };
 
-NevercMCAPI makeMCAPI() {
+// Constant-initialized like the sibling tables above: a runtime initializer
+// would place this table in writable storage, which the plugin
+// no-global-mutable-state gate forbids.
+constexpr NevercMCAPI makeMCAPI() {
   NevercMCAPI API{};
   API.Header = {sizeof(API), NEVERC_MC_API_MAJOR, NEVERC_MC_API_MINOR, 0};
   API.RegisterSchema = registerMCSchema;
@@ -176,15 +179,15 @@ NevercMCAPI makeMCAPI() {
   return API;
 }
 
-const NevercMCAPI MCAPI = makeMCAPI();
+constexpr NevercMCAPI MCAPI = makeMCAPI();
 
-const NevercObjectAPI ObjectAPI = {
+constexpr NevercObjectAPI ObjectAPI = {
     {sizeof(NevercObjectAPI), NEVERC_OBJECT_API_MAJOR,
      NEVERC_OBJECT_API_MINOR, 0},
     nullptr,
 };
 
-const NevercObjectFormatAPI ObjectFormatAPI = {
+constexpr NevercObjectFormatAPI ObjectFormatAPI = {
     {sizeof(NevercObjectFormatAPI), NEVERC_OBJECT_FORMAT_API_MAJOR,
      NEVERC_OBJECT_FORMAT_API_MINOR, 0},
     nullptr,

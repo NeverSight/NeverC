@@ -564,11 +564,7 @@ StringRef kernelImportLabel(KernelImportABI K) {
   case KernelImportABI::None:
     break;
   }
-  static const std::string GenericLabel =
-      (Twine("the loader-provided ") +
-       KernelResolverABI::LoaderResolverFunctionName + " shim")
-          .str();
-  return GenericLabel;
+  return KernelResolverABI::LoaderResolverShimLabel;
 }
 
 bool looksLikeCurrentTargetKernelHelper(const TargetDesc &T, StringRef Bare) {

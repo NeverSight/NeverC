@@ -30,7 +30,12 @@ def load_checker():
     return mod
 
 
+_PERFORMED = 0
+
+
 def expect(cond: bool, message: str, failures: list[str]) -> None:
+    global _PERFORMED
+    _PERFORMED += 1
     if not cond:
         failures.append(message)
 
@@ -84,11 +89,29 @@ def main() -> int:
     expect(isinstance(allowlist.get("entries"), list) and allowlist["entries"],
            "allowlist did not load any entries", failures)
 
+    # 9. Writability classification. ELF reports .data.rel.ro as `d` even though
+    # RELRO maps it read-only, so the section must win over the class letter;
+    # Mach-O carries no section and must still be classified by the letter.
+    writable = mod.symbol_is_writable
+    expect(not writable("d", ".data.rel.ro"),
+           ".data.rel.ro treated as writable", failures)
+    expect(not writable("d", ".data.rel.ro.local"),
+           ".data.rel.ro.local treated as writable", failures)
+    expect(not writable("r", ".rodata"), ".rodata treated as writable", failures)
+    expect(writable("b", ".bss"), ".bss not treated as writable", failures)
+    expect(writable("d", ".data"), ".data not treated as writable", failures)
+    expect(writable("b", ".bss.someSymbol"),
+           "per-symbol .bss section not treated as writable", failures)
+    expect(writable("b", ""), "Mach-O bss letter not treated as writable",
+           failures)
+    expect(not writable("s", ""),
+           "Mach-O read-only letter treated as writable", failures)
+
     if failures:
         for f in failures:
             print(f"FAIL: {f}", file=sys.stderr)
         return 1
-    print(f"test-check-global-state: OK ({8} checks passed)")
+    print(f"test-check-global-state: OK ({_PERFORMED} checks passed)")
     return 0
 
 

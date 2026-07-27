@@ -25,8 +25,23 @@ inline constexpr llvm::StringLiteral ResolverGlobalName =
     "__neverc_kern_resolver";
 inline constexpr llvm::StringLiteral CookieGlobalName = "__neverc_kern_cookie";
 inline constexpr llvm::StringLiteral OrigEntryRenameSuffix = "__kern_orig";
+// The resolver entry point the loader must export. Unlike the globals above,
+// the compiler never emits a reference to it -- rewritten calls reach the
+// loader through ResolverGlobalName -- so LoaderResolverFunctionName states the
+// contract rather than serving a call site.
+//
+// Spelled as a macro so LoaderResolverShimLabel can paste it at compile time
+// (llvm::StringRef has no constant-expression concatenation); undefined again
+// after the last use so it does not leak to includers.
+#define NEVERC_KERN_RESOLVE_FUNCTION_NAME "__neverc_kern_resolve"
+
 inline constexpr llvm::StringLiteral LoaderResolverFunctionName =
-    "__neverc_kern_resolve";
+    NEVERC_KERN_RESOLVE_FUNCTION_NAME;
+inline constexpr llvm::StringLiteral LoaderResolverShimLabel =
+    "the loader-provided " NEVERC_KERN_RESOLVE_FUNCTION_NAME " shim";
+
+#undef NEVERC_KERN_RESOLVE_FUNCTION_NAME
+
 inline constexpr llvm::StringLiteral DiagnosticPrefix =
     Diagnostics::KernelImportPrefix;
 

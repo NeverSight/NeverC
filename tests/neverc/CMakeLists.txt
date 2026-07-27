@@ -1889,6 +1889,15 @@ add_test(
   COMMAND ${Python3_EXECUTABLE}
           ${CMAKE_CURRENT_SOURCE_DIR}/../../utils/plugin-api/tests/test-check-global-state.py
 )
+# The self-test above only covers the checker's internals.  This runs the gate
+# itself against the linked compiler, which is where a newly introduced
+# writable plugin/dyncode symbol actually shows up.
+add_test(
+  NAME PluginGlobalState
+  COMMAND ${Python3_EXECUTABLE}
+          ${CMAKE_CURRENT_SOURCE_DIR}/../../utils/plugin-api/check-global-state.py
+          --build-dir ${CMAKE_BINARY_DIR}
+)
 add_test(
   NAME DocsNavigation
   COMMAND ${Python3_EXECUTABLE}
@@ -1920,6 +1929,13 @@ set_tests_properties(
   # such as the sanitizer CI jobs; the "plugin-meta" label lets those jobs skip
   # the whole group with -LE while the normal full build still runs them.
   PROPERTIES TIMEOUT 60 LABELS "plugin-meta"
+)
+
+# Same group, but demangling every symbol of the linked compiler takes far
+# longer than the other meta checks, so it gets its own budget.
+set_tests_properties(
+  PluginGlobalState
+  PROPERTIES TIMEOUT 300 LABELS "plugin-meta"
 )
 
 # Dependency-free contract headers (e.g. LTOCacheContract.h) shared with

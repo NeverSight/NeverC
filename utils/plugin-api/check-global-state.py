@@ -15,16 +15,20 @@ Two layers of checking:
    ``CommonLinkerContext::destroy``/``lctx`` singleton).  Any hit in runtime
    code (comments and string literals are stripped first) is a hard failure.
 
-2. Heuristic declaration scan -- reports file-scope ``static``/``extern``
-   mutable objects, ``thread_local`` storage and class ``static`` non-const
-   data members inside the plugin/dyncode/linker trees.  Entries documented in
+2. Heuristic declaration scan -- reports ``thread_local`` storage declared in
+   the plugin/dyncode/linker trees.  Entries documented in
    ``global-state-allowlist.json`` (with owner, lifetime and justification)
    are accepted; anything else is reported.  This layer only fails the build
    under ``--strict`` so the precise FORBIDDEN gate stays actionable while the
-   heuristic is tightened.
+   heuristic is tightened.  File-scope mutable statics are deliberately left
+   to the binary layer below: a source-level regex cannot tell a mutable
+   global from a constant-initialized table, whereas the section a symbol
+   lands in can.
 
-Optionally, ``--build-dir`` enables a best-effort scan of writable data symbols
-in built plugin/dyncode/linker object files via ``nm``/``llvm-nm``.
+Optionally, ``--build-dir`` scans the writable data symbols of the linked
+compiler (``<build-dir>/bin/neverc``) via ``nm``/``llvm-nm``.  This is the
+layer that catches file-scope mutable statics, and it is a hard failure; it
+self-skips when ``nm`` or the binary is unavailable.
 """
 
 from __future__ import annotations
@@ -94,10 +98,9 @@ FORBIDDEN_REGEXES = (
     (re.compile(r"\bLCDylib::instanceCount\b"), "LCDylib::instanceCount"),
 )
 
-# Heuristic declaration patterns for the advisory layer.
-_TYPE = r"[A-Za-z_][\w:<>,&*\s]*"
+# Heuristic declaration patterns for the advisory layer.  Keep these mutually
+# exclusive: a line matching two patterns would be reported twice.
 DECL_PATTERNS = (
-    (re.compile(r"^\s*thread_local\b"), "thread_local"),
     (re.compile(r"^\s*(?:static\s+)?thread_local\b"), "thread_local"),
 )
 
@@ -231,6 +234,11 @@ def scan_sources(report: Report, allowlist: dict) -> None:
 # loose object files) automatically excludes stale objects left behind by removed
 # sources, unit-test object files and fuzz-only support, which are never linked
 # into the shipped `neverc`.
+#
+# The linker tree is deliberately absent: it lives in namespace ``linker::``
+# (not ``neverc::``) and is mostly vendored LLD, whose own target/output
+# singletons are not plugin state.  Its de-globalisation is pinned by the
+# FORBIDDEN entries above instead of by a blanket writable-symbol scan.
 _BINARY_SCOPES = ("neverc::plugin", "neverc::dyncode")
 # Compiler-emitted writable data that is not plugin state (RTTI/vtables/init
 # guards / GoogleTest identity helpers etc.).
@@ -243,6 +251,76 @@ _BINARY_NOISE = (
     "::test_info_",
 )
 
+# nm's one-letter class is only a reliable writability signal on Mach-O.  On
+# ELF, ``.data.rel.ro`` is a SHF_WRITE section and therefore reported as `d`,
+# even though the dynamic loader maps it read-only once relocations are applied
+# (RELRO).  Every constant table holding a function pointer lands there, so
+# classifying by letter alone would flag all of them.  Nothing dynamically
+# initialized can live in ``.data.rel.ro`` -- the initializer would run after
+# the segment is already read-only -- so such objects go to ``.data``/``.bss``
+# and are still caught below.
+_WRITABLE_CLASSES = ("d", "D", "b", "B", "g", "G")
+_WRITABLE_ELF_PREFIXES = (".data", ".bss", ".tdata", ".tbss")
+
+
+def symbol_is_writable(sym_class: str, section: str) -> bool:
+    """Decide whether a symbol lives in storage that stays writable at runtime.
+
+    ``section`` is the name reported by ``nm --format=sysv``; it is empty for
+    Mach-O (and for any nm that cannot report sections), in which case the
+    one-letter class is used instead.
+    """
+    if section.startswith("."):
+        if section.startswith(".data.rel.ro"):
+            return False
+        return any(
+            section == prefix or section.startswith(prefix + ".")
+            for prefix in _WRITABLE_ELF_PREFIXES
+        )
+    return sym_class in _WRITABLE_CLASSES
+
+
+def _nm_symbols(nm: str, binary: pathlib.Path):
+    """Yield ``(name, class, section)`` triples for *binary*.
+
+    Prefers the sysv listing because it carries a section column; falls back to
+    the default listing (section left empty) when nm does not support it.
+    """
+    try:
+        sysv = subprocess.run(
+            [nm, "-C", "--format=sysv", str(binary)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        sysv = None
+    if sysv is not None and sysv.returncode == 0:
+        rows = []
+        for line in sysv.stdout.splitlines():
+            fields = [field.strip() for field in line.split("|")]
+            if len(fields) < 7 or not fields[0] or fields[0] == "Name":
+                continue
+            rows.append((fields[0], fields[2], fields[6]))
+        if rows:
+            return rows
+    try:
+        out = subprocess.run(
+            [nm, "-C", str(binary)],
+            capture_output=True,
+            text=True,
+            check=False,
+        ).stdout
+    except OSError:
+        return None
+    rows = []
+    for line in out.splitlines():
+        parts = line.split()
+        if len(parts) < 3:
+            continue
+        rows.append((" ".join(parts[2:]), parts[1], ""))
+    return rows
+
 
 def scan_binary(report: Report, build_dir: pathlib.Path, allowlist: dict) -> None:
     nm = shutil.which("llvm-nm") or shutil.which("nm")
@@ -253,25 +331,13 @@ def scan_binary(report: Report, build_dir: pathlib.Path, allowlist: dict) -> Non
     if not binary.exists():
         print(f"note: {binary} missing; skipping binary symbol scan")
         return
-    try:
-        out = subprocess.run(
-            [nm, "-C", str(binary)],
-            capture_output=True,
-            text=True,
-            check=False,
-        ).stdout
-    except OSError:
+    symbols = _nm_symbols(nm, binary)
+    if symbols is None:
         print(f"note: unable to run {nm} on {binary}; skipping binary scan")
         return
     seen: set[str] = set()
-    for line in out.splitlines():
-        parts = line.split()
-        if len(parts) < 3:
-            continue
-        sym_type = parts[1]
-        name = " ".join(parts[2:])
-        # writable data / bss only: d/b/D/B/g/G.
-        if sym_type not in ("d", "D", "b", "B", "g", "G"):
+    for name, sym_type, section in symbols:
+        if not symbol_is_writable(sym_type, section):
             continue
         low = name.lower()
         if not any(scope in name for scope in _BINARY_SCOPES):
@@ -283,7 +349,8 @@ def scan_binary(report: Report, build_dir: pathlib.Path, allowlist: dict) -> Non
         seen.add(name)
         if allowlisted_binary_symbol(name, allowlist):
             continue
-        report.binary.append(f"neverc: writable symbol `{name}` ({sym_type})")
+        where = section or sym_type
+        report.binary.append(f"neverc: writable symbol `{name}` ({where})")
 
 
 def main() -> int:

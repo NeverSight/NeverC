@@ -177,6 +177,15 @@ jobs:
           build/bin/neverc${{ matrix.exe }} --print-plugin-capabilities=json \
             > plugin-capabilities-${{ matrix.host }}.json
 
+      # Runs here rather than through CTest because the gate needs the linked
+      # compiler, and the CTest case carrying it is labelled "plugin-meta",
+      # which no workflow reaches (see lint-docs.yml for the same trap).  On
+      # Windows the binary layer self-skips and only the source scan runs.
+      - name: Plugin global state
+        run: |
+          ${{ matrix.python }} neverc/utils/plugin-api/check-global-state.py \
+            --build-dir build
+
       - name: Run plugin conformance suite
         run: ctest --test-dir build -R PluginConformance --output-on-failure
 

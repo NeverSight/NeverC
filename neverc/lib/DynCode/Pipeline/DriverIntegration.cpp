@@ -29,10 +29,13 @@ namespace dyncode {
 namespace {
 
 struct Incompat {
-  llvm::opt::OptSpecifier ID;
+  // Store the raw option enum rather than llvm::opt::OptSpecifier: the latter
+  // has no constexpr constructor, which would force this table into writable
+  // storage with a dynamic initializer.
+  opts::ID ID;
   const char *Reason;
 };
-const Incompat Incompats[] = {
+constexpr Incompat Incompats[] = {
 #define NEVERC_SC_INCOMPAT(optId, reason) {opts::optId, reason},
 #include "neverc/DynCode/Tables/DynCodeIncompats.def"
 #include "neverc/DynCode/Tables/UserExtra_DynCodeIncompats.def"

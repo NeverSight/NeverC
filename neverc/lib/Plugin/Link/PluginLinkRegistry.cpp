@@ -326,14 +326,17 @@ registerLTO(void *, void *RegistrarContext,
   return registerPluginLTOProvider(RegistrarContext, Descriptor);
 }
 
-NevercLinkAPI makeLinkAPI() {
+// The tables these builders produce must be constant-initialized: a runtime
+// initializer would place them in writable storage, which the plugin
+// no-global-mutable-state gate forbids.
+constexpr NevercLinkAPI makeLinkAPI() {
   NevercLinkAPI API{};
   API.Header = {sizeof(API), NEVERC_LINK_API_MAJOR,
                 NEVERC_LINK_API_MINOR, 0};
   return API;
 }
 
-NevercLinkRegistrarAPI makeLinkRegistrarAPI() {
+constexpr NevercLinkRegistrarAPI makeLinkRegistrarAPI() {
   NevercLinkRegistrarAPI API{};
   API.Header = {sizeof(API), NEVERC_LINK_REGISTRAR_API_MAJOR,
                 NEVERC_LINK_REGISTRAR_API_MINOR, 0};
@@ -343,7 +346,7 @@ NevercLinkRegistrarAPI makeLinkRegistrarAPI() {
   return API;
 }
 
-NevercLTORegistrarAPI makeLTORegistrarAPI() {
+constexpr NevercLTORegistrarAPI makeLTORegistrarAPI() {
   NevercLTORegistrarAPI API{};
   API.Header = {sizeof(API), NEVERC_LTO_REGISTRAR_API_MAJOR,
                 NEVERC_LTO_REGISTRAR_API_MINOR, 0};
@@ -351,9 +354,9 @@ NevercLTORegistrarAPI makeLTORegistrarAPI() {
   return API;
 }
 
-const NevercLinkAPI LinkAPI = makeLinkAPI();
-const NevercLinkRegistrarAPI LinkRegistrarAPI = makeLinkRegistrarAPI();
-const NevercLTORegistrarAPI LTORegistrarAPI = makeLTORegistrarAPI();
+constexpr NevercLinkAPI LinkAPI = makeLinkAPI();
+constexpr NevercLinkRegistrarAPI LinkRegistrarAPI = makeLinkRegistrarAPI();
+constexpr NevercLTORegistrarAPI LTORegistrarAPI = makeLTORegistrarAPI();
 
 Error addInterface(PluginProcessServices &Services, NevercInterfaceID ID,
                    NevercInterfaceStability Stability, const void *Table) {

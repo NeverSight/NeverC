@@ -3272,7 +3272,10 @@ void Driver::handleArguments(Compilation &C, DerivedArgList &Args,
     }
     // These dyncode driver flags are consumed by the frozen request; claim
     // them so they don't trip -Wunused-command-line-argument / -Werror.
-    static const llvm::opt::OptSpecifier DynCodeDriverOpts[] = {
+    // Spelled as the raw option enum rather than llvm::opt::OptSpecifier: the
+    // latter has no constexpr constructor, which would force this table into
+    // writable storage with a dynamic initializer.
+    static constexpr options::ID DynCodeDriverOpts[] = {
         options::OPT_fdyncode,
         options::OPT_fno_dyncode,
         options::OPT_fdyncode_mode,
@@ -3298,7 +3301,7 @@ void Driver::handleArguments(Compilation &C, DerivedArgList &Args,
         options::OPT_fdyncode_obfuscate_EQ,
         options::OPT_fdyncode_mir_obfuscate_EQ,
     };
-    for (llvm::opt::OptSpecifier Opt : DynCodeDriverOpts)
+    for (options::ID Opt : DynCodeDriverOpts)
       Args.ClaimAllArgs(Opt);
   }
 

@@ -1,5 +1,5 @@
 {
-  "_comment": "Allowlist for check-global-state.py. Each entry documents a thread-local or static object in the plugin/dyncode/linker trees that is NOT plugin-related process-global mutable *compilation* state. Only stack-scoped RAII facades, option-lease owner/depth/digest TLS (no option values), immutable-after-init lookup constants, sync primitives without compilation state, and address-only identity tokens are eligible. Session/Task/options/graph/symbol/output/cache-journal payloads must NEVER be allowlisted.",
+  "_comment": "Allowlist for check-global-state.py. Each `entries` item documents a thread-local declaration in the plugin/dyncode/linker trees that is NOT plugin-related process-global mutable *compilation* state. Only stack-scoped RAII facades, option-lease owner/depth/digest TLS (no option values) and sync primitives without compilation state are eligible. A const interface or lookup table is never eligible anywhere in this file: make it `constexpr` so it is constant-initialized into read-only storage. Writable data symbols in the linked compiler are a separate list; see `_binary_symbols_comment`. Session/Task/options/graph/symbol/output/cache-journal payloads must NEVER be allowlisted.",
   "entries": [
     {
       "files": ["neverc/lib/Plugin/Core/PluginPhaseExecutor.cpp"],
@@ -66,26 +66,8 @@
       "cleared_by_test": "MergeTests"
     }
   ],
-  "_binary_symbols_comment": "Writable data symbols in the shipped `neverc` binary (build-dir/bin/neverc) whose demangled name is under neverc::plugin/neverc::dyncode but which are NOT process-global mutable compilation state. Eligible categories: (a) const interface/lookup tables that are immutable after a run-once initializer (so the compiler must place them in a writable section), (b) address-only LLVM legacy-pass identity tokens (`char Pass::ID`), and (c) synchronization primitives with no compilation state. Session/Task/options/graph/symbol/output/cache-journal payloads must NEVER appear here.",
+  "_binary_symbols_comment": "Writable data symbols in the shipped `neverc` binary (build-dir/bin/neverc) whose demangled name is under neverc::plugin/neverc::dyncode but which are NOT process-global mutable compilation state. Eligible categories: (a) address-only LLVM legacy-pass identity tokens (`char Pass::ID`), (b) const objects whose vtable pointer forces a relocation into writable storage, and (c) synchronization primitives with no compilation state. A const interface or lookup table is NOT eligible: make it `constexpr` so it is constant-initialized into read-only storage instead of adding it here. Session/Task/options/graph/symbol/output/cache-journal payloads must NEVER appear here.",
   "binary_symbols": [
-    {
-      "symbol": "neverc::dyncode::(anonymous namespace)::Incompats",
-      "owner": "dyncode DriverIntegration",
-      "kind": "immutable-after-init lookup table",
-      "justification": "`const Incompat Incompats[]` -- the fixed list of driver options incompatible with -fdyncode. Read-only after static init; carries no per-compile state."
-    },
-    {
-      "symbol": "kernelImportLabel",
-      "owner": "dyncode ExtractorCommon",
-      "kind": "immutable-after-init constant",
-      "justification": "`static const std::string GenericLabel` inside kernelImportLabel(); a fixed label string, read-only after first use."
-    },
-    {
-      "symbol": "neverc::dyncode::(anonymous namespace)::MIRPrepPass::ID",
-      "owner": "dyncode MIRPrepPass",
-      "kind": "legacy-pass identity token",
-      "justification": "`char MIRPrepPass::ID` -- LLVM legacy pass identity; only its address is taken, never its value written."
-    },
     {
       "symbol": "neverc::dyncode::(anonymous namespace)::DynCodeMIRTransformPass::ID",
       "owner": "dyncode BuiltinMIRTransformProvider",
@@ -123,34 +105,10 @@
       "justification": "`char PluginMachineModulePass::ID` -- address-only LLVM legacy pass identity."
     },
     {
-      "symbol": "neverc::plugin::(anonymous namespace)::LinkAPI",
-      "owner": "plugin PluginLinkRegistry",
-      "kind": "immutable-after-init interface table",
-      "justification": "`const NevercLinkAPI LinkAPI = makeLinkAPI()` -- a const C ABI function table handed to plugins via QueryInterface. Written once by its initializer, then read-only; only writable-section because a runtime initializer builds it."
-    },
-    {
-      "symbol": "neverc::plugin::(anonymous namespace)::LinkRegistrarAPI",
-      "owner": "plugin PluginLinkRegistry",
-      "kind": "immutable-after-init interface table",
-      "justification": "`const NevercLinkRegistrarAPI LinkRegistrarAPI = makeLinkRegistrarAPI()` -- const C ABI table, read-only after init."
-    },
-    {
-      "symbol": "neverc::plugin::(anonymous namespace)::LTORegistrarAPI",
-      "owner": "plugin PluginLinkRegistry",
-      "kind": "immutable-after-init interface table",
-      "justification": "`const NevercLTORegistrarAPI LTORegistrarAPI = makeLTORegistrarAPI()` -- const C ABI table, read-only after init."
-    },
-    {
-      "symbol": "neverc::plugin::(anonymous namespace)::MCAPI",
-      "owner": "plugin MC bridge",
-      "kind": "immutable-after-init interface table",
-      "justification": "const NevercMCAPI function table handed to plugins via QueryInterface; read-only after its run-once initializer."
-    },
-    {
       "symbol": "neverc::plugin::builtinLinkerScriptProvider()::Provider",
       "owner": "plugin LinkerScriptProvider",
-      "kind": "immutable-after-init constant",
-      "justification": "`static const BuiltinLinkerScriptProvider Provider` -- a stateless const provider singleton; read-only after construction."
+      "kind": "vtable-relocated const object",
+      "justification": "`static const BuiltinLinkerScriptProvider Provider` -- a stateless const provider singleton holding no data members. It cannot be made `constexpr`: LinkerScriptProvider has a virtual destructor, so the type is not a literal type, and the vtable pointer needs a relocation regardless. Writable-section placement is the vtable pointer, not compilation state."
     },
     {
       "symbol": "neverc::plugin::pluginLLVMOptionGate()::Gate",

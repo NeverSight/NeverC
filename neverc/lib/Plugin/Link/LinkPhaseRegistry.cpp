@@ -20,7 +20,7 @@ constexpr NevercPhasePolicy TransitionPolicy =
         InputState, OutputState, Reruns                                      \
   }
 
-const LinkTransitionDefinition BuiltinTransitions[] = {
+constexpr LinkTransitionDefinition BuiltinTransitions[] = {
     NEVERC_LINK_TRANSITION(INPUT_PROBE, NEVERC_LINK_STATE_INITIAL,
                            NEVERC_LINK_STATE_INPUT_PROBED, 4),
     NEVERC_LINK_TRANSITION(READ_INPUTS, NEVERC_LINK_STATE_INPUT_PROBED,

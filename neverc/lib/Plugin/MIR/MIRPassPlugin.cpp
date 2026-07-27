@@ -66,7 +66,7 @@ registerPass(void *, void *RegistrarContext,
   return registerPluginMIRPass(RegistrarContext, Descriptor);
 }
 
-const NevercMIRPassAPI PassAPI = {
+constexpr NevercMIRPassAPI PassAPI = {
     {sizeof(NevercMIRPassAPI), NEVERC_MIR_PASS_API_MAJOR,
      NEVERC_MIR_PASS_API_MINOR, 0},
     nullptr,
@@ -698,7 +698,7 @@ private:
   std::unique_ptr<LiveVariableData> LiveVariablesSidecar;
 };
 
-const NevercMIRAnalysisAPI ProcessAnalysisAPI = {
+constexpr NevercMIRAnalysisAPI ProcessAnalysisAPI = {
     {sizeof(NevercMIRAnalysisAPI), NEVERC_MIR_ANALYSIS_API_MAJOR,
      NEVERC_MIR_ANALYSIS_API_MINOR, 0},
     nullptr,

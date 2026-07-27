@@ -83,7 +83,7 @@ registerAnalysis(void *, void *RegistrarContext,
   return registerPluginIRAnalysis(RegistrarContext, Descriptor);
 }
 
-const NevercIRPassAPI PassAPI = {
+constexpr NevercIRPassAPI PassAPI = {
     {sizeof(NevercIRPassAPI), NEVERC_IR_PASS_API_MAJOR,
      NEVERC_IR_PASS_API_MINOR, 0},
     nullptr,
@@ -1069,7 +1069,7 @@ private:
   std::unique_ptr<PostDominatorTree> OwnedPostDominatorTree;
 };
 
-const NevercIRAnalysisAPI AnalysisAPI = {
+constexpr NevercIRAnalysisAPI AnalysisAPI = {
     {sizeof(NevercIRAnalysisAPI), NEVERC_IR_ANALYSIS_API_MAJOR,
      NEVERC_IR_ANALYSIS_API_MINOR, 0},
     nullptr,
