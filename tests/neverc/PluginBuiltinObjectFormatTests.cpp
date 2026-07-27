@@ -1984,4 +1984,228 @@ TEST(PluginBuiltinObjectFormatTest, ReaderRefusesAnObjectForAnotherArchitecture)
   }
 }
 
+TEST(PluginBuiltinObjectFormatTest, WriterDoesNotLetTheNameRewriteSectionFlags) {
+  initializeBuiltinTargets();
+
+  // The ELF assembler reads a meaning out of a section's name before it looks
+  // at the flags beside it, and it adds what the name implies to what it was
+  // told rather than letting the flags stand on their own: anything called
+  // ".text" or ".text.<x>" comes out executable, ".data"/".bss" writable,
+  // ".rodata" allocated, and ".tdata"/".tbss" thread-local. A section whose
+  // flags say otherwise is written out as a different section, and it
+  // assembles and reads back cleanly, so nothing says the flags changed.
+  //
+  // Either outcome is acceptable -- write it with the flags it was given, or
+  // refuse it -- so long as it does not come back as something else.
+  struct Case {
+    const char *Name;
+    NevercObjectSectionFlags Flags;
+  };
+  const std::array<Case, 3> Cases = {
+      {{".text.cold", NEVERC_OBJECT_SECTION_ALLOCATED},
+       {".rodata.str", 0},
+       {".data.rel", NEVERC_OBJECT_SECTION_ALLOCATED}}};
+
+  for (const Case &Value : Cases) {
+    SCOPED_TRACE(Value.Name);
+    BuiltinObjectTaskScope Scope;
+    ASSERT_TRUE(Scope.initialize());
+    auto Snapshot = PluginTargetRegistry::freeze(
+        ArrayRef<PluginTargetRegistrationView>(), PluginTargetRequest{});
+    ASSERT_TRUE(static_cast<bool>(Snapshot));
+    auto Reader = ObjectReaderProvider::create(*Snapshot);
+    ASSERT_TRUE(static_cast<bool>(Reader));
+    auto Writer = ObjectWriterProvider::create(*Snapshot);
+    ASSERT_TRUE(static_cast<bool>(Writer));
+    const BuiltinTargetRoute *Route =
+        routeFor(BuiltinObjectFormat::ELF, Triple::x86_64);
+    ASSERT_NE(Route, nullptr);
+    auto Target = makeBuiltinTargetKey(*Route);
+    ASSERT_TRUE(static_cast<bool>(Target));
+    OwnedTargetKey ReadTarget = *Target;
+
+    PluginObjectGraph Graph(std::move(*Target));
+    PluginObjectSection Section;
+    Section.ID = Graph.allocateEntityID();
+    Section.Name = Value.Name;
+    Section.Kind = NEVERC_OBJECT_SECTION_KIND_DATA;
+    Section.Flags = Value.Flags;
+    Section.Alignment = 1;
+    Section.Data = {1, 2, 3, 4};
+    Graph.sections().push_back(std::move(Section));
+    ASSERT_FALSE(verifyPluginObjectGraph(Graph));
+    Graph.issueLayoutProof();
+
+    auto Candidate = (*Writer)->write(
+        Scope.task(), Graph,
+        ObjectOutputDestination::memory("named.o", UINT64_C(1) << 20));
+    if (!Candidate) {
+      consumeError(Candidate.takeError());
+      continue;
+    }
+    ASSERT_FALSE(static_cast<bool>((*Candidate)->verify()));
+    auto Committed = (*Candidate)->commit();
+    ASSERT_TRUE(static_cast<bool>(Committed))
+        << errorText(Committed.takeError());
+    auto Output = findPluginMemoryOutput(Scope.task(), "named.o");
+    ASSERT_TRUE(Output.has_value());
+    auto After = (*Reader)->read(Scope.task(), Output->Bytes, "named.o",
+                                 ReadTarget);
+    ASSERT_TRUE(static_cast<bool>(After)) << errorText(After.takeError());
+    const auto Found = llvm::find_if(
+        (*After)->sections(), [&](const PluginObjectSection &Candidate) {
+          return Candidate.Name == Value.Name;
+        });
+    ASSERT_NE(Found, (*After)->sections().end());
+    const NevercObjectSectionFlags Interesting =
+        NEVERC_OBJECT_SECTION_ALLOCATED | NEVERC_OBJECT_SECTION_WRITABLE |
+        NEVERC_OBJECT_SECTION_EXECUTABLE | NEVERC_OBJECT_SECTION_TLS;
+    EXPECT_EQ(Found->Flags & Interesting, Value.Flags & Interesting)
+        << "the assembler read the name and overrode the flags";
+  }
+}
+
+TEST(PluginBuiltinObjectFormatTest, WriterRefusesWhatItCannotSpellItself) {
+  initializeBuiltinTargets();
+
+  // Each of these is a graph the verifier accepts and the assembly for it is
+  // one the assembler does not: an alignment above 2^31 has no ".p2align"
+  // exponent, a Mach-O section name has sixteen bytes of room, and ".comm"
+  // reads its size as signed. Reaching the assembler turns all three into a
+  // syntax error about a line the caller never wrote, so the writer has to
+  // recognise its own limits first.
+  struct Case {
+    const char *Label;
+    BuiltinObjectFormat Format;
+    Triple::ArchType Arch;
+    uint64_t Alignment;
+    const char *SectionName;
+    uint64_t CommonSize;
+  };
+  const std::array<Case, 3> Cases = {
+      {{"alignment above 2^31", BuiltinObjectFormat::ELF, Triple::x86_64,
+        UINT64_C(1) << 32, ".data", 0},
+       {"Mach-O section name of seventeen bytes", BuiltinObjectFormat::MachO,
+        Triple::aarch64, 1, "__aaaaaaaaaaaaaaa", 0},
+       {"common symbol larger than INT64_MAX", BuiltinObjectFormat::ELF,
+        Triple::x86_64, 1, ".data",
+        static_cast<uint64_t>(std::numeric_limits<int64_t>::max()) + 1}}};
+
+  for (const Case &Value : Cases) {
+    SCOPED_TRACE(Value.Label);
+    BuiltinObjectTaskScope Scope;
+    ASSERT_TRUE(Scope.initialize());
+    auto Snapshot = PluginTargetRegistry::freeze(
+        ArrayRef<PluginTargetRegistrationView>(), PluginTargetRequest{});
+    ASSERT_TRUE(static_cast<bool>(Snapshot));
+    auto Writer = ObjectWriterProvider::create(*Snapshot);
+    ASSERT_TRUE(static_cast<bool>(Writer));
+    const BuiltinTargetRoute *Route = routeFor(Value.Format, Value.Arch);
+    ASSERT_NE(Route, nullptr);
+    auto Target = makeBuiltinTargetKey(*Route);
+    ASSERT_TRUE(static_cast<bool>(Target));
+
+    PluginObjectGraph Graph(std::move(*Target));
+    PluginObjectSection Section;
+    Section.ID = Graph.allocateEntityID();
+    Section.Name = Value.SectionName;
+    Section.Kind = NEVERC_OBJECT_SECTION_KIND_DATA;
+    Section.Flags = NEVERC_OBJECT_SECTION_ALLOCATED |
+                    NEVERC_OBJECT_SECTION_WRITABLE;
+    Section.Alignment = Value.Alignment;
+    Section.Data = {0, 0, 0, 0};
+    Graph.sections().push_back(std::move(Section));
+    if (Value.CommonSize != 0) {
+      PluginObjectSymbol Symbol;
+      Symbol.ID = Graph.allocateEntityID();
+      Symbol.Name = "tentative";
+      Symbol.Binding = NEVERC_OBJECT_SYMBOL_BINDING_GLOBAL;
+      Symbol.Type = NEVERC_OBJECT_SYMBOL_TYPE_OBJECT;
+      Symbol.Definition = NEVERC_OBJECT_SYMBOL_DEFINITION_COMMON;
+      Symbol.Size = Value.CommonSize;
+      Symbol.Alignment = 8;
+      Graph.symbols().push_back(std::move(Symbol));
+    }
+    ASSERT_FALSE(verifyPluginObjectGraph(Graph))
+        << "the graph under test has to be one the verifier accepts";
+    Graph.issueLayoutProof();
+
+    auto Candidate = (*Writer)->write(
+        Scope.task(), Graph,
+        ObjectOutputDestination::memory("limits.o", UINT64_C(1) << 20));
+    ASSERT_FALSE(static_cast<bool>(Candidate))
+        << "the writer produced assembly it cannot have meant";
+    // Not merely that the write failed: letting the assembler reject the text
+    // fails too, and reports a parse error rather than the one thing the
+    // caller can act on -- that this graph asks for something the format has
+    // no room for.
+    EXPECT_NE(errorText(Candidate.takeError())
+                  .find("status " +
+                        std::to_string(NEVERC_STATUS_CAPABILITY_UNAVAILABLE)),
+              std::string::npos)
+        << "the limit was left for the assembler to discover";
+  }
+}
+
+TEST(PluginBuiltinObjectFormatTest, WriterKeepsSameNamedSectionsApart) {
+  initializeBuiltinTargets();
+  BuiltinObjectTaskScope Scope;
+  ASSERT_TRUE(Scope.initialize());
+  auto Snapshot = PluginTargetRegistry::freeze(
+      ArrayRef<PluginTargetRegistrationView>(), PluginTargetRequest{});
+  ASSERT_TRUE(static_cast<bool>(Snapshot));
+  auto Reader = ObjectReaderProvider::create(*Snapshot);
+  ASSERT_TRUE(static_cast<bool>(Reader));
+  auto Writer = ObjectWriterProvider::create(*Snapshot);
+  ASSERT_TRUE(static_cast<bool>(Writer));
+  const BuiltinTargetRoute *Route =
+      routeFor(BuiltinObjectFormat::ELF, Triple::aarch64);
+  ASSERT_NE(Route, nullptr);
+  auto Target = makeBuiltinTargetKey(*Route);
+  ASSERT_TRUE(static_cast<bool>(Target));
+  OwnedTargetKey ReadTarget = *Target;
+
+  // An ELF object may hold several sections of one name -- that is what
+  // -fno-unique-section-names produces for every function and every global.
+  // Naming a section that already exists switches back to it instead of
+  // starting a new one, so writing such a graph out concatenates the two and
+  // the object comes back with one section holding both.
+  auto Input = assembleSource(*Route,
+                              "\t.section\t.mydata,\"a\",@progbits,unique,1\n"
+                              "\t.byte\t0x11\n"
+                              "\t.section\t.mydata,\"a\",@progbits,unique,2\n"
+                              "\t.byte\t0x22\n");
+  ASSERT_TRUE(static_cast<bool>(Input)) << errorText(Input.takeError());
+  auto Before = (*Reader)->read(Scope.task(), *Input, "before.o", *Target);
+  ASSERT_TRUE(static_cast<bool>(Before)) << errorText(Before.takeError());
+
+  auto countNamed = [](PluginObjectGraph &Graph) {
+    return llvm::count_if(Graph.sections(),
+                          [](const PluginObjectSection &Value) {
+                            return Value.Name == ".mydata";
+                          });
+  };
+  ASSERT_EQ(countNamed(**Before), 2)
+      << "the reader did not see two sections of one name";
+  (*Before)->issueLayoutProof();
+
+  auto Candidate = (*Writer)->write(
+      Scope.task(), **Before,
+      ObjectOutputDestination::memory("same-name.o", UINT64_C(1) << 20));
+  if (!Candidate) {
+    consumeError(Candidate.takeError());
+    return;
+  }
+  ASSERT_FALSE(static_cast<bool>((*Candidate)->verify()));
+  auto Committed = (*Candidate)->commit();
+  ASSERT_TRUE(static_cast<bool>(Committed)) << errorText(Committed.takeError());
+  auto Output = findPluginMemoryOutput(Scope.task(), "same-name.o");
+  ASSERT_TRUE(Output.has_value());
+  auto After = (*Reader)->read(Scope.task(), Output->Bytes, "same-name.o",
+                               ReadTarget);
+  ASSERT_TRUE(static_cast<bool>(After)) << errorText(After.takeError());
+  EXPECT_EQ(countNamed(**After), 2)
+      << "two sections of one name were written out as a single section";
+}
+
 } // namespace

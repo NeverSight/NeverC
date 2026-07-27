@@ -3,6 +3,8 @@
 #include "neverc/Plugin/Host/BuiltinObjectExtension.h"
 #include "neverc/Plugin/Host/BuiltinLLVMAsmParser.h"
 #include "neverc/Plugin/Host/BuiltinTargetProvider.h"
+#include "neverc/Plugin/Host/NativeRelocationFacts.h"
+#include "neverc/Plugin/Host/ObjectSectionRole.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallVector.h"
@@ -10,7 +12,6 @@
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/BinaryFormat/COFF.h"
-#include "llvm/BinaryFormat/MachO.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/MemoryBufferRef.h"
@@ -20,6 +21,7 @@
 #include <cstdint>
 #include <limits>
 #include <optional>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -92,6 +94,12 @@ enum DetailSite : uint64_t {
   DetailComdatClaimedTwice,
   DetailSymbolNameRepeated,
   DetailSymbolNamePrivate,
+  DetailSectionNotDistinguishable,
+  DetailSectionCountUnsupported,
+  DetailSectionAlignmentUnsupported,
+  DetailSectionNameTooLong,
+  DetailCommonSizeUnsupported,
+  DetailSectionNameImpliesFlags,
 };
 
 constexpr uint64_t DetailIndexScale = 1000000;
@@ -215,9 +223,7 @@ uint64_t nativeEntrySize(const SectionRecord &Section) {
 // graph the reader did not produce, which is why every caller has to have an
 // answer for "no native type" rather than assuming one.
 std::optional<uint64_t> nativeRelocationType(const RelocationRecord &R) {
-  if (!builtinext::hasTag(R.Extension, builtinext::RelocationTag))
-    return std::nullopt;
-  return builtinext::field(R.Extension, builtinext::RelocationNativeType);
+  return builtinext::nativeRelocationType(R.Extension);
 }
 
 NevercStatus collectComdats(const NevercObjectWriteRequest &Request,
@@ -561,17 +567,72 @@ std::string coffSectionFlags(NevercObjectSectionFlags SectionFlags,
   return Writable ? "dw" : "dr";
 }
 
+// Mach-O names a section by segment and section both, and the graph carries
+// only the second, so the segment is inferred from what the section holds.
+// Two things need the answer -- the directive and the identity below -- and
+// they have to agree, or a pair of sections the assembler will merge is
+// counted as distinct.
+StringRef machOSegment(const SectionRecord &Section) {
+  return (Section.Flags & NEVERC_OBJECT_SECTION_EXECUTABLE) != 0 ? "__TEXT"
+                                                                 : "__DATA";
+}
+
+// What tells the section a directive is about to start apart from the ones the
+// assembler already holds.
+//
+// Naming a section it has seen switches back to that one and appends to it
+// instead of starting another, so two sections sharing this leave the object
+// with a single section holding both -- silently, since the result assembles
+// and reads back as a well-formed object. An ELF object really can hold
+// several sections of one name, which is what -fno-unique-section-names
+// produces for every function and every global, so this is an ordinary input
+// and not a malformed one.
+//
+// What makes up the identity differs by format: ELF and COFF key a section on
+// its name together with the group or COMDAT symbol it belongs to, while
+// Mach-O names one by segment and section with nothing left over. A COFF
+// COMDAT that is associative names its parent rather than a symbol of its own,
+// so two of those under one parent are one section to the assembler even
+// though the graph holds them apart.
+std::string sectionIdentity(const SectionRecord &Section, const Triple &Target,
+                            const ComdatRecord *Comdat,
+                            StringRef AssociatedName) {
+  // A name cannot hold a NUL -- expressibleName refuses one -- so it separates
+  // the parts without any of them running into the next.
+  const char Separator = '\0';
+  if (Target.isOSBinFormatMachO())
+    return machOSegment(Section).str() + Separator + Section.Name;
+  if (!Comdat)
+    return Section.Name + Separator;
+  return Section.Name + Separator +
+         (AssociatedName.empty() ? StringRef(Comdat->Name) : AssociatedName)
+             .str();
+}
+
 // Every section is written as an explicit .section carrying the flags the graph
 // holds. The shorthand directives -- .text, .data, .bss -- would be shorter,
 // but they name a section *and* pick its attributes from the assembler's
 // defaults, so a section whose flags differ from those defaults comes back
 // changed. Spelling the flags out keeps the graph, not the assembler, as the
 // source of truth.
+//
+// \p IdentityRepeated says an earlier section already claimed this one's
+// identity. Only ELF can still keep them apart, by numbering the section with
+// "unique"; the number is left off otherwise so that naming ".text" goes on
+// reaching the section the assembler starts in rather than leaving that one
+// behind empty beside a second ".text". No other format has a way to say it,
+// so there the pair is refused rather than written out as one section.
 NevercStatus emitSectionDirective(raw_ostream &OS,
                                   const SectionRecord &Section,
+                                  size_t SectionIndex,
                                   const Triple &Target,
                                   const ComdatRecord *Comdat,
-                                  StringRef AssociatedName) {
+                                  StringRef AssociatedName,
+                                  bool IdentityRepeated) {
+  if (IdentityRepeated && !Target.isOSBinFormatELF())
+    return writerStatus(
+        NEVERC_STATUS_CAPABILITY_UNAVAILABLE,
+        detailAt(DetailSectionNotDistinguishable, SectionIndex));
   const std::string Name = assemblyName(Section.Name);
   const bool ZeroFill = isZeroFillKind(Section.Kind);
   const bool Executable =
@@ -583,6 +644,24 @@ NevercStatus emitSectionDirective(raw_ostream &OS,
   const bool TLS = Section.Kind == NEVERC_OBJECT_SECTION_KIND_TLS_DATA ||
                    Section.Kind == NEVERC_OBJECT_SECTION_KIND_TLS_ZERO_FILL ||
                    (Section.Flags & NEVERC_OBJECT_SECTION_TLS) != 0;
+  // The ELF assembler adds what a section's name implies to the flags the
+  // directive states, so a name whose meaning goes beyond them produces a
+  // section this did not describe -- and produces it quietly, since the object
+  // assembles and reads back as a well-formed one.
+  if (Target.isOSBinFormatELF() &&
+      !elfNameAgreesWithFlags(
+          Section.Name,
+          (Section.Flags & NEVERC_OBJECT_SECTION_ALLOCATED) != 0,
+          (Section.Flags & NEVERC_OBJECT_SECTION_WRITABLE) != 0, Executable,
+          TLS))
+    return writerStatus(
+        NEVERC_STATUS_CAPABILITY_UNAVAILABLE,
+        detailAt(DetailSectionNameImpliesFlags, SectionIndex));
+  // Written only where it is needed, so that a graph without repeats produces
+  // the same assembly it always did.
+  const std::string Unique =
+      IdentityRepeated ? ",unique," + std::to_string(SectionIndex)
+                       : std::string();
 
   if (Comdat) {
     if (Target.isOSBinFormatMachO())
@@ -608,7 +687,7 @@ NevercStatus emitSectionDirective(raw_ostream &OS,
          << (ZeroFill ? "nobits" : "progbits");
       if (Mergeable)
         OS << ',' << EntrySize;
-      OS << ',' << assemblyName(Comdat->Name) << ",comdat\n";
+      OS << ',' << assemblyName(Comdat->Name) << ",comdat" << Unique << '\n';
       return neverc_status_ok();
     }
     StringRef Selection = coffComdatSelection(Comdat->Selection);
@@ -630,8 +709,14 @@ NevercStatus emitSectionDirective(raw_ostream &OS,
   // it an ordinary section and the trailing .zero becomes real bytes in the
   // file.
   if (Target.isOSBinFormatMachO()) {
-    StringRef Segment = Executable ? "__TEXT" : "__DATA";
-    OS << "\t.section\t" << Segment << ',' << Name;
+    // A Mach-O section header holds its segment and section names in two
+    // sixteen-byte fields, so a longer one has nowhere to go. The assembler
+    // says so rather than truncating, but it says it as a syntax error about
+    // a line the caller never wrote.
+    if (Section.Name.size() > 16)
+      return writerStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE,
+                          detailAt(DetailSectionNameTooLong, SectionIndex));
+    OS << "\t.section\t" << machOSegment(Section) << ',' << Name;
     if (TLS)
       OS << (ZeroFill ? ",thread_local_zerofill" : ",thread_local_regular");
     else if (ZeroFill)
@@ -658,7 +743,7 @@ NevercStatus emitSectionDirective(raw_ostream &OS,
        << (ZeroFill ? "nobits" : "progbits");
     if (Mergeable)
       OS << ',' << EntrySize;
-    OS << '\n';
+    OS << Unique << '\n';
     return neverc_status_ok();
   }
 
@@ -1014,26 +1099,6 @@ std::optional<DataDirective> coffNativeDirective(uint64_t Type,
   return std::nullopt;
 }
 
-// The Mach-O relocations that cover a data word rather than a field inside an
-// instruction. Only the plain pointer forms do, and the graph's own
-// classification cannot narrow it down any further: ARM64_RELOC_PAGEOFF12
-// patches the immediate of an `add` or a load, yet it is neither PC-relative
-// nor GOT- or TLS-bound, so it arrives looking exactly like a pointer.
-//
-// Both architectures spell the pointer form 0, so a graph that crossed one
-// still reads correctly here -- but they are listed separately because that is
-// a coincidence of the two numbering schemes and not something to build on.
-bool machONativeIsDataField(uint64_t Type, const Triple &Target) {
-  switch (Target.getArch()) {
-  case Triple::aarch64:
-    return Type == MachO::ARM64_RELOC_UNSIGNED;
-  case Triple::x86_64:
-    return Type == MachO::X86_64_RELOC_UNSIGNED;
-  default:
-    return false;
-  }
-}
-
 // Only ELF can state a relocation without disturbing the bytes it covers. Every
 // other format has to write a data directive whose value the assembler then
 // relocates, and that is faithful only when the relocated field is a data field
@@ -1097,9 +1162,13 @@ faithfulDirective(const RelocationRecord &Relocation, const Triple &Target) {
   // from S_ATTR_PURE_INSTRUCTIONS, which a section holding code need not
   // carry, and a section without it takes this path with its instructions
   // still in the bytes a data directive would overwrite.
+  //
+  // ARM64_RELOC_PAGEOFF12 is the one this is really about: it patches the
+  // immediate of an `add` or a load, yet it is neither PC-relative nor GOT- or
+  // TLS-bound, so it arrives looking exactly like a plain pointer.
   if (Target.isOSBinFormatMachO())
     if (std::optional<uint64_t> Type = nativeRelocationType(Relocation))
-      if (!machONativeIsDataField(*Type, Target))
+      if (nativeRelocationFieldIsWholeBytes(Target, *Type) != true)
         return std::nullopt;
   if (Relocation.Kind != NEVERC_OBJECT_RELOCATION_ABSOLUTE ||
       Relocation.IsPCRelative)
@@ -1367,6 +1436,12 @@ NevercStatus buildAssembly(const NevercObjectWriteRequest &Request,
       if (!Spelling)
         return writerStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE,
                             detail(DetailCommonAlignmentUnsupported));
+      // The size operand is parsed as a signed value and refused when it comes
+      // out negative, so the top half of the unsigned range has no spelling.
+      if (Symbol.Size > static_cast<uint64_t>(
+                            std::numeric_limits<int64_t>::max()))
+        return writerStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE,
+                            detail(DetailCommonSizeUnsupported));
       if (Spelling->NeedsLocalDirective)
         OS << "\t.local\t" << assemblyName(Symbol.Name) << '\n';
       OS << '\t' << Spelling->Directive << '\t' << assemblyName(Symbol.Name)
@@ -1385,6 +1460,15 @@ NevercStatus buildAssembly(const NevercObjectWriteRequest &Request,
   // COMDAT names its parent instead of claiming a section, and MC exempts it
   // for that reason, so this does too.
   DenseSet<HandleKey> ClaimedComdats;
+
+  // Two sections the assembler cannot tell apart become one, with the second
+  // one's bytes appended to the first. The number that keeps them apart on ELF
+  // has to fit the field the assembler parses it into, and 2^32-1 is spelled
+  // for "no unique ID" there.
+  if (Sections.size() > std::numeric_limits<uint32_t>::max() - 1)
+    return writerStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE,
+                        detail(DetailSectionCountUnsupported));
+  std::set<std::string> SectionIdentities;
 
   for (size_t SectionIndex = 0; SectionIndex != Sections.size();
        ++SectionIndex) {
@@ -1408,12 +1492,25 @@ NevercStatus buildAssembly(const NevercObjectWriteRequest &Request,
                             detailAt(DetailComdatParentMissing, SectionIndex));
       AssociatedName = Parent->Name;
     }
-    Status = emitSectionDirective(OS, Section, Target, Comdat,
-                                  AssociatedName);
+    const bool IdentityRepeated =
+        !SectionIdentities
+             .insert(sectionIdentity(Section, Target, Comdat, AssociatedName))
+             .second;
+    Status = emitSectionDirective(OS, Section, SectionIndex, Target, Comdat,
+                                  AssociatedName, IdentityRepeated);
     if (!neverc_status_is_ok(Status))
       return Status;
-    if (Section.Alignment > 1 && isPowerOf2_64(Section.Alignment))
+    // ".p2align" states an exponent and the assembler holds the alignment it
+    // stands for in 32 bits, so anything above 2^31 has no spelling. Leaving
+    // the directive off instead would say the section is byte-aligned, which
+    // is a different section from the one the graph describes.
+    if (Section.Alignment > 1) {
+      if (!isPowerOf2_64(Section.Alignment) || Log2_64(Section.Alignment) > 31)
+        return writerStatus(
+            NEVERC_STATUS_CAPABILITY_UNAVAILABLE,
+            detailAt(DetailSectionAlignmentUnsupported, SectionIndex));
       OS << "\t.p2align\t" << Log2_64(Section.Alignment) << '\n';
+    }
     Status = emitSectionContents(OS, Section, SectionIndex, Sections, Index,
                                  Target);
     if (!neverc_status_is_ok(Status))

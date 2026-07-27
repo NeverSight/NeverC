@@ -65,6 +65,72 @@ inline bool isDebugSectionName(BuiltinObjectFormat Format,
   return false;
 }
 
+// What an ELF assembler reads out of a section's name before it looks at the
+// flags written beside it.
+//
+// It adds these to what the directive states rather than letting the directive
+// stand on its own, so a section named like one of these comes out carrying
+// them whatever it asked for: anything called ".text" or ".text.<x>" is
+// executable, ".data" and ".bss" are writable, ".rodata" is allocated, and
+// ".tdata"/".tbss" are thread-local. Nothing reports the difference -- the
+// object assembles, and reads back as a section with flags its author did not
+// ask for -- so whoever writes the directive has to notice first.
+//
+// This mirrors the assembler's own list, and has to keep mirroring it: a name
+// added there and not here goes back to being changed in silence.
+//
+// ELF is the only format with such a list. COFF and Mach-O reach a similar
+// place by another route -- naming a section the assembler already built for
+// itself returns that one, attributes and all -- but only for the exact names
+// it presets, and their attributes are the ones a real ".text" or ".data"
+// already has, so a section read out of an object and written back is
+// unchanged. The ELF rule applies to whole families, ".text.<x>" as much as
+// ".text", and that is what makes it worth stating.
+struct SectionNameImpliedFlags {
+  bool Allocated = false;
+  bool Writable = false;
+  bool Executable = false;
+  bool ThreadLocal = false;
+};
+
+// True for the name itself and for the per-entity spelling that appends
+// ".<something>", which is how the assembler reads the family too.
+inline bool isSectionNameFamily(llvm::StringRef Name, llvm::StringRef Stem) {
+  if (!Name.consume_front(Stem))
+    return false;
+  return Name.empty() || Name.front() == '.';
+}
+
+inline SectionNameImpliedFlags elfNameImpliedFlags(llvm::StringRef Name) {
+  SectionNameImpliedFlags Result;
+  if (isSectionNameFamily(Name, ".rodata") || Name == ".rodata1")
+    Result.Allocated = true;
+  else if (Name == ".fini" || Name == ".init" ||
+           isSectionNameFamily(Name, ".text"))
+    Result = {true, false, true, false};
+  else if (isSectionNameFamily(Name, ".data") || Name == ".data1" ||
+           isSectionNameFamily(Name, ".bss") ||
+           isSectionNameFamily(Name, ".init_array") ||
+           isSectionNameFamily(Name, ".fini_array") ||
+           isSectionNameFamily(Name, ".preinit_array"))
+    Result = {true, true, false, false};
+  else if (isSectionNameFamily(Name, ".tdata") ||
+           isSectionNameFamily(Name, ".tbss"))
+    Result = {true, true, false, true};
+  return Result;
+}
+
+// Whether a section with these flags can be written under this name without
+// the assembler adding to them.
+inline bool elfNameAgreesWithFlags(llvm::StringRef Name, bool Allocated,
+                                   bool Writable, bool Executable,
+                                   bool ThreadLocal) {
+  const SectionNameImpliedFlags Implied = elfNameImpliedFlags(Name);
+  return (!Implied.Allocated || Allocated) && (!Implied.Writable || Writable) &&
+         (!Implied.Executable || Executable) &&
+         (!Implied.ThreadLocal || ThreadLocal);
+}
+
 inline bool isThreadLocalSectionName(BuiltinObjectFormat Format,
                                      llvm::StringRef Name) {
   switch (Format) {
