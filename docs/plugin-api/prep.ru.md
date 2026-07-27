@@ -40,10 +40,13 @@ capability major обязан равняться `NEVERC_PREP_API_MAJOR` — р�
 | `neverc.prep.pragma.intercept` | так же | прагма → действие + токены |
 | `neverc.prep.feature_query.intercept` | так же | запрос `__has_*` → значение |
 
-У каждой в `NevercPrepAPI` есть пара `Get<Kind>PhaseInput` и
+У пяти из шести в `NevercPrepAPI` есть пара `Get<Kind>PhaseInput` и
 `Create<Kind>PhaseOutput`, причём половина `Create` принимает
 `NevercPhaseContinuation` перехватчика, поэтому выход можно произвести только
-изнутри владеющей им фазы.
+изнутри владеющей им фазы. `neverc.prep.build_token_stream` — исключение: у неё
+есть `GetTokenStreamPhaseInput`, а публикация идёт через
+`TokenStreamBuilderCommit` на `Frame` фазы, а не через `Create*PhaseOutput` с
+continuation.
 
 ## Чтение токенов
 
@@ -280,7 +283,8 @@ Prep->CreateFeatureQueryPhaseOutput(Prep->Context, Frame, Continuation, &Out,
 - Каждому строителю нужен парный вызов `Destroy*`, в том числе на пути ошибки.
 - Вызов `Create<Kind>PhaseOutput` требует continuation той фазы, которой он
   принадлежит; использование чужой continuation вернёт
-  `NEVERC_STATUS_WRONG_SCOPE`.
+  `NEVERC_STATUS_WRONG_SCOPE`. `TokenStreamBuilderCommit` берёт `Frame` фазы
+  `build_token_stream` вместо continuation.
 - Подписывайтесь только на события, которые обрабатываете. Маска и есть дроссель
   — плагин, который берёт `NEVERC_PREP_EVENT_MASK_ALL` и фильтрует на стороне C,
   платит за каждый обратный вызов.

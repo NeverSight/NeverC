@@ -283,7 +283,9 @@ Section 旗標有 `ALLOCATED`、`EXECUTABLE`、`WRITABLE`、`MERGEABLE` 與 `DEB
 
 ## 觀察發射過程
 
-發射串流會依序回報十一種事件。以觀察者身分訂閱並讀取事件：
+發射串流會依序回報十種事件——對應每個 `neverc.mc.emission.*` 階段各一種。ABI 還
+保留了 `NEVERC_MC_EMISSION_PRE_OBJECT_WRITE`；物件寫入本身是單獨的
+`neverc.object.pre_write` 階段。以觀察者身分訂閱並讀取事件：
 
 ```c
 NevercMCEmissionEventInfo Event = {0};

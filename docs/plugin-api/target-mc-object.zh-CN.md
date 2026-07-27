@@ -283,7 +283,9 @@ if (Status.Code != NEVERC_STATUS_OK)
 
 ## 观察发射过程
 
-发射流按顺序报告十一种事件。以观察者身份订阅并读取事件：
+发射流按顺序报告十种事件——对应每个 `neverc.mc.emission.*` 阶段各一种。ABI 还
+保留了 `NEVERC_MC_EMISSION_PRE_OBJECT_WRITE`；对象写入本身是单独的
+`neverc.object.pre_write` 阶段。以观察者身份订阅并读取事件：
 
 ```c
 NevercMCEmissionEventInfo Event = {0};

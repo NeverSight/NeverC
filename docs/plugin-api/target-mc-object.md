@@ -298,8 +298,10 @@ where you want the host to place something for you.
 
 ## Observing emission
 
-The emission stream reports eleven event kinds in order. Subscribe as an
-observer and read the event:
+The emission stream reports ten event kinds in order — one per
+`neverc.mc.emission.*` phase. The ABI also reserves
+`NEVERC_MC_EMISSION_PRE_OBJECT_WRITE`; object write itself is the separate
+`neverc.object.pre_write` phase. Subscribe as an observer and read the event:
 
 ```c
 NevercMCEmissionEventInfo Event = {0};

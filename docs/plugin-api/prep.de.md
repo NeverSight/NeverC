@@ -40,10 +40,13 @@ Jede Art trägt außerdem eine Kategorie: `NEVERC_TOKEN_CATEGORY_SPECIAL`,
 | `neverc.prep.pragma.intercept` | ebenso | Pragma → Aktion + Token |
 | `neverc.prep.feature_query.intercept` | ebenso | `__has_*`-Anfrage → Wert |
 
-Jede besitzt auf `NevercPrepAPI` ein Paar `Get<Kind>PhaseInput` und
+Fünf der sechs besitzen auf `NevercPrepAPI` ein Paar `Get<Kind>PhaseInput` und
 `Create<Kind>PhaseOutput`; die `Create`-Hälfte nimmt die
 `NevercPhaseContinuation` des Interzeptors entgegen, sodass eine Ausgabe nur von
 innerhalb der Phase erzeugt werden kann, der sie gehört.
+`neverc.prep.build_token_stream` ist die Ausnahme: sie hat
+`GetTokenStreamPhaseInput` und veröffentlicht über `TokenStreamBuilderCommit`
+am Phasen-`Frame`, nicht über ein `Create*PhaseOutput` mit Continuation.
 
 ## Token lesen
 
@@ -284,7 +287,8 @@ Prep->CreateFeatureQueryPhaseOutput(Prep->Context, Frame, Continuation, &Out,
   Fehlerpfad.
 - Ein Aufruf von `Create<Kind>PhaseOutput` verlangt die Continuation der Phase,
   zu der er gehört; die Continuation einer anderen Phase zu verwenden liefert
-  `NEVERC_STATUS_WRONG_SCOPE`.
+  `NEVERC_STATUS_WRONG_SCOPE`. `TokenStreamBuilderCommit` nimmt den `Frame` der
+  Phase `build_token_stream` statt einer Continuation.
 - Abonnieren Sie nur Ereignisse, die Sie auch behandeln. Die Maske ist die
   Drossel — ein Plugin, das `NEVERC_PREP_EVENT_MASK_ALL` nimmt und in C filtert,
   bezahlt jeden einzelnen Rückruf.

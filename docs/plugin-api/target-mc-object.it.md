@@ -309,7 +309,10 @@ per voi.
 
 ## Osservare l'emissione
 
-Il flusso di emissione riporta in ordine undici generi di evento.
+Il flusso di emissione riporta in ordine dieci generi di evento — uno per
+ciascuna fase `neverc.mc.emission.*`. L'ABI riserva anche
+`NEVERC_MC_EMISSION_PRE_OBJECT_WRITE`; la scrittura dell'oggetto in sé è la
+fase separata `neverc.object.pre_write`.
 Sottoscrivetevi come osservatori e leggete l'evento:
 
 ```c

@@ -306,7 +306,10 @@ platzieren soll.
 
 ## Emission beobachten
 
-Der Emissionsstrom meldet elf Ereignisarten der Reihe nach. Abonnieren Sie als
+Der Emissionsstrom meldet zehn Ereignisarten der Reihe nach — eine je
+`neverc.mc.emission.*`-Phase. Die ABI reserviert außerdem
+`NEVERC_MC_EMISSION_PRE_OBJECT_WRITE`; das Objekt schreiben selbst ist die
+eigene Phase `neverc.object.pre_write`. Abonnieren Sie als
 Beobachter und lesen Sie das Ereignis:
 
 ```c

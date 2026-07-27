@@ -37,9 +37,12 @@ Bootstrap->QueryInterface(
 | `neverc.prep.pragma.intercept` | 同上 | pragma → 動作 + tokens |
 | `neverc.prep.feature_query.intercept` | 同上 | `__has_*` 查詢 → 值 |
 
-每個階段在 `NevercPrepAPI` 上都有成對的 `Get<Kind>PhaseInput` 與
+六個裡有五個在 `NevercPrepAPI` 上都有成對的 `Get<Kind>PhaseInput` 與
 `Create<Kind>PhaseOutput`，而 `Create` 那一半要吃攔截器的
 `NevercPhaseContinuation`，因此輸出只能從擁有它的那個階段內部產生。
+`neverc.prep.build_token_stream` 是例外：它只有 `GetTokenStreamPhaseInput`，
+並透過階段 `Frame` 上的 `TokenStreamBuilderCommit` 發布，而不是帶
+continuation 的 `Create*PhaseOutput`。
 
 ## 讀取 token
 
@@ -263,7 +266,8 @@ Prep->CreateFeatureQueryPhaseOutput(Prep->Context, Frame, Continuation, &Out,
   存活到任務結束。
 - 每個建構器都需要對應的 `Destroy*` 呼叫，錯誤路徑上也不例外。
 - 呼叫 `Create<Kind>PhaseOutput` 需要它所屬階段的 continuation；用了別的階段的
-  continuation 會回傳 `NEVERC_STATUS_WRONG_SCOPE`。
+  continuation 會回傳 `NEVERC_STATUS_WRONG_SCOPE`。`TokenStreamBuilderCommit`
+  則使用 `build_token_stream` 階段的 `Frame`，而不是 continuation。
 - 只訂閱你真的會處理的事件。遮罩就是節流閥──一個接下
   `NEVERC_PREP_EVENT_MASK_ALL` 再用 C 程式碼過濾的外掛，每一次回呼都要付出代
   價。

@@ -294,7 +294,10 @@ if (Status.Code != NEVERC_STATUS_OK)
 
 ## 発行の観測
 
-発行ストリームは 11 種類のイベントを順に報告します。オブザーバーとして購読し、イ
+発行ストリームは、各 `neverc.mc.emission.*` フェーズに対応する 10 種類の
+イベントを順に報告します。ABI はさらに
+`NEVERC_MC_EMISSION_PRE_OBJECT_WRITE` を予約していますが、オブジェクト書き込み
+自体は別フェーズ `neverc.object.pre_write` です。オブザーバーとして購読し、イ
 ベントを読みます:
 
 ```c

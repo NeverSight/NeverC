@@ -40,10 +40,12 @@ major 는 반드시 `NEVERC_PREP_API_MAJOR` 와 같아야 합니다. 불일치�
 | `neverc.prep.pragma.intercept` | 위와 같음 | 프래그마 → 동작 + 토큰 |
 | `neverc.prep.feature_query.intercept` | 위와 같음 | `__has_*` 질의 → 값 |
 
-각 단계는 `NevercPrepAPI` 위에 `Get<Kind>PhaseInput` 과
+여섯 중 다섯 단계는 `NevercPrepAPI` 위에 `Get<Kind>PhaseInput` 과
 `Create<Kind>PhaseOutput` 쌍을 가지며, `Create` 쪽은 인터셉터의
 `NevercPhaseContinuation` 을 받습니다. 따라서 출력은 그것을 소유한 단계 안에서만
-만들 수 있습니다.
+만들 수 있습니다. `neverc.prep.build_token_stream` 은 예외로,
+`GetTokenStreamPhaseInput` 만 있고 continuation 을 받는 `Create*PhaseOutput`
+대신 단계 `Frame` 위의 `TokenStreamBuilderCommit` 으로 게시합니다.
 
 ## 토큰 읽기
 
@@ -278,7 +280,8 @@ Prep->CreateFeatureQueryPhaseOutput(Prep->Context, Frame, Continuation, &Out,
   마찬가지입니다.
 - `Create<Kind>PhaseOutput` 호출에는 그것이 속한 단계의 continuation 이
   필요합니다. 다른 단계의 continuation 을 쓰면 `NEVERC_STATUS_WRONG_SCOPE` 가
-  반환됩니다.
+  반환됩니다. `TokenStreamBuilderCommit` 은 continuation 대신
+  `build_token_stream` 단계의 `Frame` 을 받습니다.
 - 처리할 이벤트만 구독하십시오. 마스크가 곧 조절 밸브입니다 —
   `NEVERC_PREP_EVENT_MASK_ALL` 을 받아 C 쪽에서 걸러내는 플러그인은 모든 콜백에
   대한 대가를 치릅니다.

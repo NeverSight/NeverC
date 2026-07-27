@@ -40,10 +40,12 @@ Bootstrap->QueryInterface(
 | `neverc.prep.pragma.intercept` | 同上 | pragma → アクション + トークン |
 | `neverc.prep.feature_query.intercept` | 同上 | `__has_*` 問い合わせ → 値 |
 
-いずれも `NevercPrepAPI` 上に `Get<Kind>PhaseInput` と
+6 つのうち 5 つは `NevercPrepAPI` 上に `Get<Kind>PhaseInput` と
 `Create<Kind>PhaseOutput` の対を持ちます。`Create` 側はインターセプタの
 `NevercPhaseContinuation` を取るので、出力はそれを所有するフェーズの内側からしか
-作れません。
+作れません。`neverc.prep.build_token_stream` は例外で、
+`GetTokenStreamPhaseInput` があり、continuation を取る `Create*PhaseOutput`
+ではなく、フェーズの `Frame` 上の `TokenStreamBuilderCommit` で公開します。
 
 ## トークンの読み取り
 
@@ -279,7 +281,8 @@ Prep->CreateFeatureQueryPhaseOutput(Prep->Context, Frame, Continuation, &Out,
   です。
 - `Create<Kind>PhaseOutput` の呼び出しには、それが属するフェーズの continuation
   が要ります。別のフェーズの continuation を使うと
-  `NEVERC_STATUS_WRONG_SCOPE` が返ります。
+  `NEVERC_STATUS_WRONG_SCOPE` が返ります。`TokenStreamBuilderCommit` は
+  continuation ではなく `build_token_stream` フェーズの `Frame` を取ります。
 - 処理するイベントだけを購読してください。マスクこそが絞り弁です ——
   `NEVERC_PREP_EVENT_MASK_ALL` を受け取って C 側で絞り込むプラグインは、すべての
   コールバック分の代価を払うことになります。

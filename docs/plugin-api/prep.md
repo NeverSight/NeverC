@@ -40,10 +40,13 @@ compile error, not a runtime surprise. Each kind also carries a category:
 | `neverc.prep.pragma.intercept` | same | pragma → action + tokens |
 | `neverc.prep.feature_query.intercept` | same | `__has_*` query → value |
 
-Each has a paired `Get<Kind>PhaseInput` and `Create<Kind>PhaseOutput` on
-`NevercPrepAPI`, and the `Create` half takes the interceptor's
-`NevercPhaseContinuation`, so an output can only be produced from inside the
-phase that owns it.
+Five of the six expose a paired `Get<Kind>PhaseInput` and
+`Create<Kind>PhaseOutput` on `NevercPrepAPI`; the `Create` half takes the
+interceptor's `NevercPhaseContinuation`, so an output can only be produced
+from inside the phase that owns it. `neverc.prep.build_token_stream` is the
+exception: it has `GetTokenStreamPhaseInput` and publishes through
+`TokenStreamBuilderCommit` on the phase `Frame`, not a `Create*PhaseOutput`
+that takes a continuation.
 
 ## Reading tokens
 
@@ -283,7 +286,8 @@ Prep->CreateFeatureQueryPhaseOutput(Prep->Context, Frame, Continuation, &Out,
   path.
 - A `Create<Kind>PhaseOutput` call requires the continuation of the phase it
   belongs to; using another phase's continuation returns
-  `NEVERC_STATUS_WRONG_SCOPE`.
+  `NEVERC_STATUS_WRONG_SCOPE`. `TokenStreamBuilderCommit` takes the
+  `build_token_stream` phase `Frame` instead of a continuation.
 - Subscribe only to the events you handle. The mask is the throttle — a
   plugin that takes `NEVERC_PREP_EVENT_MASK_ALL` and filters in C pays for
   every callback.

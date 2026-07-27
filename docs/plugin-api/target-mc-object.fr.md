@@ -308,7 +308,10 @@ voulez que l'hôte place quelque chose à votre place.
 
 ## Observer l'émission
 
-Le flux d'émission signale onze genres d'événements dans l'ordre. Abonnez-vous
+Le flux d'émission signale dix genres d'événements dans l'ordre — un par phase
+`neverc.mc.emission.*`. L'ABI réserve aussi
+`NEVERC_MC_EMISSION_PRE_OBJECT_WRITE` ; l'écriture d'objet elle-même est la
+phase séparée `neverc.object.pre_write`. Abonnez-vous
 comme observateur et lisez l'événement :
 
 ```c

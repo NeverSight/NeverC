@@ -307,7 +307,10 @@ anfitrión coloque algo por usted.
 
 ## Observar la emisión
 
-El flujo de emisión informa de once tipos de evento en orden. Suscríbase como
+El flujo de emisión informa de diez tipos de evento en orden — uno por cada
+fase `neverc.mc.emission.*`. La ABI también reserva
+`NEVERC_MC_EMISSION_PRE_OBJECT_WRITE`; la escritura de objeto en sí es la fase
+separada `neverc.object.pre_write`. Suscríbase como
 observador y lea el evento:
 
 ```c

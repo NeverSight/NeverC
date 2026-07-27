@@ -37,9 +37,12 @@ Bootstrap->QueryInterface(
 | `neverc.prep.pragma.intercept` | 同上 | pragma → 动作 + token |
 | `neverc.prep.feature_query.intercept` | 同上 | `__has_*` 查询 → 取值 |
 
-每个阶段在 `NevercPrepAPI` 上都有配对的 `Get<Kind>PhaseInput` 和
+六个里有五个在 `NevercPrepAPI` 上有配对的 `Get<Kind>PhaseInput` 和
 `Create<Kind>PhaseOutput`，而 `Create` 那一半需要拦截器的
 `NevercPhaseContinuation`，因此输出只能在拥有它的那个阶段内部产生。
+`neverc.prep.build_token_stream` 是例外：它只有 `GetTokenStreamPhaseInput`，
+并通过阶段 `Frame` 上的 `TokenStreamBuilderCommit` 发布，而不是带
+continuation 的 `Create*PhaseOutput`。
 
 ## 读取 token
 
@@ -262,7 +265,8 @@ Prep->CreateFeatureQueryPhaseOutput(Prep->Context, Frame, Continuation, &Out,
   结束。
 - 每个 builder 都需要配对的 `Destroy*` 调用，错误路径上也一样。
 - `Create<Kind>PhaseOutput` 需要它所属阶段的 continuation；用了别的阶段的
-  continuation 会返回 `NEVERC_STATUS_WRONG_SCOPE`。
+  continuation 会返回 `NEVERC_STATUS_WRONG_SCOPE`。`TokenStreamBuilderCommit`
+  则使用 `build_token_stream` 阶段的 `Frame`，而不是 continuation。
 - 只订阅你会处理的事件。掩码就是节流阀——一个订阅
   `NEVERC_PREP_EVENT_MASK_ALL` 再在 C 里过滤的插件，要为每一次回调付出代价。
 - 预处理器回调运行在任务线程上，且此时预处理器正在半途中。不要从回调里重入预处

@@ -41,9 +41,12 @@ Bootstrap->QueryInterface(
 | `neverc.prep.pragma.intercept` | مثلها | pragma ← إجراء + رموز |
 | `neverc.prep.feature_query.intercept` | مثلها | استعلام `__has_*` ← قيمة |
 
-لكل واحدة زوج `Get<Kind>PhaseInput` و`Create<Kind>PhaseOutput` على
+لخمس من الست زوج `Get<Kind>PhaseInput` و`Create<Kind>PhaseOutput` على
 `NevercPrepAPI`، ويأخذ نصف `Create` قيمة `NevercPhaseContinuation` الخاصة
 بالمعترِض، فلا يمكن إنتاج خرج إلا من داخل المرحلة التي تملكه.
+`neverc.prep.build_token_stream` استثناء: لديها `GetTokenStreamPhaseInput`
+وتنشر عبر `TokenStreamBuilderCommit` على `Frame` المرحلة، لا عبر
+`Create*PhaseOutput` يأخذ continuation.
 
 ## قراءة الرموز
 
@@ -277,7 +280,8 @@ Prep->CreateFeatureQueryPhaseOutput(Prep->Context, Frame, Continuation, &Out,
 - كل بانٍ يحتاج نداء `Destroy*` المقابل له، حتى على مسار الخطأ.
 - يتطلب نداء `Create<Kind>PhaseOutput` قيمة continuation الخاصة بالمرحلة التي
   ينتمي إليها؛ واستعمال continuation مرحلة أخرى يعيد
-  `NEVERC_STATUS_WRONG_SCOPE`.
+  `NEVERC_STATUS_WRONG_SCOPE`. أما `TokenStreamBuilderCommit` فيأخذ `Frame`
+  مرحلة `build_token_stream` بدل continuation.
 - اشترك فقط في الأحداث التي تعالجها. القناع هو صمّام الخنق — فالإضافة التي تأخذ
   `NEVERC_PREP_EVENT_MASK_ALL` ثم تُرشّح في لغة C تدفع ثمن كل ردّ نداء.
 - تعمل ردود نداء المعالج المسبق على خيط المهمة بينما المعالج المسبق في وسط

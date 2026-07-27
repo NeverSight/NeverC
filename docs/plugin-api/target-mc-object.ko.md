@@ -292,7 +292,10 @@ if (Status.Code != NEVERC_STATUS_OK)
 
 ## 방출 관찰하기
 
-방출 스트림은 열한 가지 이벤트 종류를 순서대로 보고합니다. 옵저버로 구독하고 이벤
+방출 스트림은 각 `neverc.mc.emission.*` 단계에 대응하는 열 가지 이벤트 종류를
+순서대로 보고합니다. ABI 는 또한 `NEVERC_MC_EMISSION_PRE_OBJECT_WRITE` 를
+예약해 두었으며, 오브젝트 쓰기 자체는 별도의 `neverc.object.pre_write` 단계입니다.
+옵저버로 구독하고 이벤
 트를 읽으세요:
 
 ```c

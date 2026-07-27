@@ -41,10 +41,13 @@ porta anche una categoria: `NEVERC_TOKEN_CATEGORY_SPECIAL`, `COMMENT`,
 | `neverc.prep.pragma.intercept` | come sopra | pragma → azione + token |
 | `neverc.prep.feature_query.intercept` | come sopra | interrogazione `__has_*` → valore |
 
-Ciascuna ha su `NevercPrepAPI` una coppia `Get<Kind>PhaseInput` e
+Cinque delle sei espongono su `NevercPrepAPI` una coppia `Get<Kind>PhaseInput` e
 `Create<Kind>PhaseOutput`; la metà `Create` prende la
 `NevercPhaseContinuation` dell'intercettore, così un'uscita può essere prodotta
-solo dall'interno della fase che la possiede.
+solo dall'interno della fase che la possiede. `neverc.prep.build_token_stream` è
+l'eccezione: ha `GetTokenStreamPhaseInput` e pubblica tramite
+`TokenStreamBuilderCommit` sul `Frame` della fase, non un `Create*PhaseOutput`
+che prende una continuation.
 
 ## Leggere i token
 
@@ -285,7 +288,8 @@ Prep->CreateFeatureQueryPhaseOutput(Prep->Context, Frame, Continuation, &Out,
   di errore.
 - Una chiamata a `Create<Kind>PhaseOutput` richiede la continuation della fase a
   cui appartiene; usare quella di un'altra fase restituisce
-  `NEVERC_STATUS_WRONG_SCOPE`.
+  `NEVERC_STATUS_WRONG_SCOPE`. `TokenStreamBuilderCommit` prende il `Frame`
+  della fase `build_token_stream` invece di una continuation.
 - Sottoscrivete solo gli eventi che gestite. La maschera è la valvola: un plugin
   che prende `NEVERC_PREP_EVENT_MASK_ALL` e poi filtra in C paga ogni singola
   callback.
