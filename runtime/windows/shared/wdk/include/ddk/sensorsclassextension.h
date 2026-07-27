@@ -75,7 +75,7 @@ typedef struct SensorClassExtension SensorClassExtension;
 /* header files for imported files */
 #include "propidl.h"
 #include "wudfddi.h"
-#include "PortableDeviceTypes.h"
+#include "portabledevicetypes.h"
 
 #ifdef __cplusplus
 extern "C"{

@@ -392,7 +392,7 @@ typedef struct _L2CAP_CONFIG_VALUE_RANGE {
 //
 // Needs packing to match exact spec size
 //
-#include <PSHPACK1.H>
+#include <pshpack1.h>
 typedef struct _L2CAP_FLOWSPEC {
     //
     // Reserved.  Must be zero.
@@ -430,7 +430,7 @@ typedef struct _L2CAP_FLOWSPEC {
     ULONG DelayVariation;
 
 } L2CAP_FLOWSPEC, *PL2CAP_FLOWSPEC;
-#include <POPPACK.H>
+#include <poppack.h>
 
 
 //

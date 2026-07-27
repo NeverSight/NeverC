@@ -10,7 +10,7 @@
 #ifndef _STATUSDEVICESERVICE_H_
 #define _STATUSDEVICESERVICE_H_
 
-#include <DeviceServices.h>
+#include <deviceservices.h>
 
 /*****************************************************************************/
 /*  Status Service Info                                                      */

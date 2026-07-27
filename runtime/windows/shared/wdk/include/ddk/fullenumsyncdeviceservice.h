@@ -10,8 +10,8 @@
 #ifndef _FULLENUMSYNCSERVICE_H_
 #define _FULLENUMSYNCSERVICE_H_
 
-#include <DeviceServices.h>
-#include <SyncDeviceService.h>
+#include <deviceservices.h>
+#include <syncdeviceservice.h>
 
 /*****************************************************************************/
 /*  Full Enumeration Sync Service Info                                       */

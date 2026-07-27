@@ -10,8 +10,8 @@
 #ifndef _ANCHORSYNCSERVICE_H_
 #define _ANCHORSYNCSERVICE_H_
 
-#include <DeviceServices.h>
-#include <SyncDeviceService.h>
+#include <deviceservices.h>
+#include <syncdeviceservice.h>
 
 /*****************************************************************************/
 /*  Anchor Sync Service Info                                                 */

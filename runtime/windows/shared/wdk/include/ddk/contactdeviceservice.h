@@ -10,8 +10,8 @@
 #ifndef _CONTACTDEVICESERVICE_H_
 #define _CONTACTDEVICESERVICE_H_
 
-#include <DeviceServices.h>
-#include <SyncDeviceService.h>
+#include <deviceservices.h>
+#include <syncdeviceservice.h>
 
 /*****************************************************************************/
 /*  Contact Service Info                                                     */

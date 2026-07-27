@@ -22,11 +22,11 @@ Revision History:
 
 #include "rx.h"
 #include "backpack.h"
-#include "RxTypes.h"
-#include "RxLog.h"
-#include "RxTrace.h"
-#include "RxTimer.h"
-#include "RxStruc.h"
+#include "rxtypes.h"
+#include "rxlog.h"
+#include "rxtrace.h"
+#include "rxtimer.h"
+#include "rxstruc.h"
 
 extern PVOID RxNull;
 

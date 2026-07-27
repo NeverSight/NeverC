@@ -20,9 +20,9 @@ Author:
 #include "prefix.h"
 #include "lowio.h"
 #include "scavengr.h"      //  scavenger related definitions.
-#include "RxContx.h"
+#include "rxcontx.h"
 #include "mrx.h"
-#include "Fcb.h"
+#include "fcb.h"
 
 //
 //  define our byte offsets to be the full 64 bits

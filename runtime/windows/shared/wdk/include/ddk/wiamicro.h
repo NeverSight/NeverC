@@ -15,7 +15,7 @@
 
 #pragma once
 
-#include <SCSISCAN.H>
+#include <scsiscan.h>
 
 #define WIAMICRO_API __declspec(dllexport)
 

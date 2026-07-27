@@ -190,7 +190,7 @@ Revision History:
 //
 #define IOCTL_BTH_SDP_SUBMIT_RECORD_WITH_INFO BTH_CTL(BTH_IOCTL_BASE+0x87)
 
-#include <PSHPACK1.H>
+#include <pshpack1.h>
 
 typedef struct _BTH_DEVICE_INFO_LIST {
     //
@@ -594,7 +594,7 @@ typedef struct _BTH_EIR_SUBMIT_RECORD {
 
 #endif  // >= SP1+KB942567
 
-#include <POPPACK.H>
+#include <poppack.h>
 
 #endif // (NTDDI_VERSION >= NTDDI_VISTA)
 

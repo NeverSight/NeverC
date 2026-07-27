@@ -10,7 +10,7 @@
 #ifndef _DEVICESERVICES_H_
 #define _DEVICESERVICES_H_
 
-#include "BridgeDeviceService.h"
+#include "bridgedeviceservice.h"
 
 /*****************************************************************************/
 /*  Service Info                                                             */

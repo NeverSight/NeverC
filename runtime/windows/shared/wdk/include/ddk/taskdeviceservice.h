@@ -10,9 +10,9 @@
 #ifndef _TASKDEVICESERVICE_H_
 #define _TASKDEVICESERVICE_H_
 
-#include <DeviceServices.h>
-#include <MessageDeviceService.h>
-#include <SyncDeviceService.h>
+#include <deviceservices.h>
+#include <messagedeviceservice.h>
+#include <syncdeviceservice.h>
 
 
 /*****************************************************************************/

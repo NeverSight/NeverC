@@ -16,7 +16,7 @@ Author:
 #ifndef _USBPROTOCOLDEFS_H_
 #define _USBPROTOCOLDEFS_H_
 
-#include <PSHPACK1.h>
+#include <pshpack1.h>
 
 
 // Initial address for an unconnected wired device.
@@ -878,7 +878,7 @@ typedef struct _USBHUBPORTDATA
 
 
 
-#include <POPPACK.h>
+#include <poppack.h>
 
 
 

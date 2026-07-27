@@ -10,7 +10,7 @@
 #ifndef _HINTSDEVICESERVICE_H_
 #define _HINTSDEVICESERVICE_H_
 
-#include <DeviceServices.h>
+#include <deviceservices.h>
 
 /*****************************************************************************/
 /*  Hints Service Info                                                       */

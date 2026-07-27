@@ -70,7 +70,7 @@ typedef struct PortableDeviceClassExtension PortableDeviceClassExtension;
 #include "oaidl.h"
 #include "ocidl.h"
 #include "propidl.h"
-#include "PortableDeviceTypes.h"
+#include "portabledevicetypes.h"
 
 #ifdef __cplusplus
 extern "C"{

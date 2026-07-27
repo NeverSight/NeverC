@@ -13148,7 +13148,7 @@ WRITE_PORT_BUFFER_ULONG (
 #endif
 
 #elif defined(_AMD64_) && defined(DSF_DRIVER)
-#include <DsfHrmPorts.h>
+#include <dsfhrmports.h>
 #endif
 
 
