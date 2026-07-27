@@ -84,10 +84,11 @@ DynCode는 34개 페이즈로 이루어진 고정 그래프입니다. 30개의 �
 페이즈는 순서대로 다음과 같습니다:
 
 1. 요청 동결;
-2. IR 변환들 — prepare, 간접 분기 낮추기, 메모리 인트린식 낮추기(힙 이전과 이후),
-   문자열 런타임 낮추기, 힙 아레나, 세 개의 `compiler_rt` 위치(pre/post/final),
-   syscall/PEB/커널 임포트 낮추기, 두 개의 `data_to_text` 위치(pre/post), 인라인
-   최적화, 문자열 확정, stackify, 전면 `blr`화, 그리고 봉인된 IR 최종 검증;
+2. IR 변환들 — prepare, 간접 분기 낮추기, 메모리 인트린식 낮추기(힙 이전),
+   문자열 런타임 낮추기, 힙 아레나, 메모리 인트린식 낮추기(힙 이후),
+   `compiler_rt`(pre), syscall/PEB/커널 임포트 낮추기, `data_to_text`(pre),
+   인라인 최적화, `compiler_rt`(post), 문자열 확정, `data_to_text`(post),
+   stackify, 전면 `blr`화, `compiler_rt`(final), 그리고 봉인된 IR 최종 검증;
 3. MIR prepare 변환과 봉인된 MIR 최종 검증;
 4. 오브젝트 임포트 — 검증된 `ObjectGraph`를 태스크에 바인딩;
 5. 추출 — 계획, 레이아웃, 재배치, 그리고 후보 이미지 구축;

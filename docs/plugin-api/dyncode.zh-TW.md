@@ -77,10 +77,11 @@ DynCode 是由 34 個階段構成的固定圖。其中 30 個一般轉換為
 各階段依序如下：
 
 1. 請求凍結；
-2. IR 轉換群——prepare、間接分支降階、記憶體 intrinsic 降階（堆積前與堆積後）、
-   字串執行期降階、堆積 arena、三個 `compiler_rt` 位置（pre／post／final）、
-   syscall／PEB／核心匯入降階、兩個 `data_to_text` 位置（pre／post）、內聯最佳化、
-   字串定案、stackify、全 `blr` 化，以及封閉的 IR 最終驗證；
+2. IR 轉換群——prepare、間接分支降階、記憶體 intrinsic 降階（堆積前）、
+   字串執行期降階、堆積 arena、記憶體 intrinsic 降階（堆積後）、`compiler_rt`
+   （pre）、syscall／PEB／核心匯入降階、`data_to_text`（pre）、內聯最佳化、
+   `compiler_rt`（post）、字串定案、`data_to_text`（post）、stackify、全 `blr`
+   化、`compiler_rt`（final），以及封閉的 IR 最終驗證；
 3. MIR prepare 轉換與封閉的 MIR 最終驗證；
 4. 目的檔匯入——把已驗證的 `ObjectGraph` 繫結到工作；
 5. 抽取——規劃、佈局、重定位，並建構候選映像；

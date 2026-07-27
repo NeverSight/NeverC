@@ -97,11 +97,13 @@ Le fasi, in ordine, sono:
 
 1. congelamento della richiesta;
 2. le trasformazioni IR — prepare, abbassamento dei salti indiretti,
-   abbassamento degli intrinseci di memoria (pre e post-heap), abbassamento del
-   runtime delle stringhe, arena di heap, tre posizioni `compiler_rt`
-   (pre/post/final), abbassamento degli import di syscall/PEB/kernel, due
-   posizioni `data_to_text` (pre/post), ottimizzazione di inlining, finalize
-   delle stringhe, stackify, all-`blr`, e la verifica finale sigillata dell'IR;
+   abbassamento degli intrinseci di memoria (pre-heap), abbassamento del
+   runtime delle stringhe, arena di heap, abbassamento degli intrinseci di
+   memoria (post-heap), `compiler_rt` (pre), abbassamento degli import di
+   syscall/PEB/kernel, `data_to_text` (pre), ottimizzazione di inlining,
+   `compiler_rt` (post), finalize delle stringhe, `data_to_text` (post),
+   stackify, all-`blr`, `compiler_rt` (final), e la verifica finale sigillata
+   dell'IR;
 3. la trasformazione di prepare del MIR e la verifica finale sigillata del MIR;
 4. import dell'oggetto — legare l'`ObjectGraph` verificato al task;
 5. estrazione — piano, layout, rilocazione e costruzione dell'immagine

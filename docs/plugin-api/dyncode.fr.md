@@ -100,11 +100,12 @@ Les phases, dans l'ordre, sont :
 
 1. le gel de la requête ;
 2. les transformations IR — prepare, abaissement des branchements indirects,
-   abaissement des intrinsèques mémoire (avant et après le tas), abaissement du
-   runtime de chaînes, arène de tas, trois positions `compiler_rt`
-   (pre/post/final), abaissement des imports syscall/PEB/noyau, deux positions
-   `data_to_text` (pre/post), optimisation en ligne, finalisation des chaînes,
-   stackify, tout-`blr`, puis la vérification finale scellée de l'IR ;
+   abaissement des intrinsèques mémoire (avant le tas), abaissement du runtime
+   de chaînes, arène de tas, abaissement des intrinsèques mémoire (après le
+   tas), `compiler_rt` (pre), abaissement des imports syscall/PEB/noyau,
+   `data_to_text` (pre), optimisation en ligne, `compiler_rt` (post),
+   finalisation des chaînes, `data_to_text` (post), stackify, tout-`blr`,
+   `compiler_rt` (final), puis la vérification finale scellée de l'IR ;
 3. la transformation MIR prepare et la vérification finale scellée de la MIR ;
 4. l'import d'objet — lier l'`ObjectGraph` vérifié à la tâche ;
 5. l'extraction — planifier, disposer, reloger et construire l'image candidate ;

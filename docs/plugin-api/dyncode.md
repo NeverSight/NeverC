@@ -89,10 +89,11 @@ The phases, in order, are:
 
 1. request freeze;
 2. the IR transforms — prepare, indirect-branch lowering, memory-intrinsic
-   lowering (pre and post-heap), string-runtime lowering, heap arena, three
-   `compiler_rt` positions (pre/post/final), syscall/PEB/kernel import lowering,
-   two `data_to_text` positions (pre/post), inline optimization, string
-   finalize, stackify, all-`blr`, and the sealed IR final verify;
+   lowering (pre), string-runtime lowering, heap arena, memory-intrinsic
+   lowering (post-heap), `compiler_rt` (pre), syscall/PEB/kernel import
+   lowering, `data_to_text` (pre), inline optimization, `compiler_rt` (post),
+   string finalize, `data_to_text` (post), stackify, all-`blr`, `compiler_rt`
+   (final), and the sealed IR final verify;
 3. the MIR prepare transform and the sealed MIR final verify;
 4. object import — bind the verified `ObjectGraph` to the task;
 5. extraction — plan, layout, relocate, and build the candidate image;

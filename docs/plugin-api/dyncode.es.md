@@ -97,12 +97,12 @@ Las fases, en orden, son:
 
 1. congelación de la petición;
 2. las transformaciones de IR: preparación, rebaje de saltos indirectos, rebaje
-   de intrínsecos de memoria (antes y después del montón), rebaje del tiempo de
-   ejecución de cadenas, arena de montón, tres posiciones de `compiler_rt`
-   (pre/post/final), rebaje de importaciones de syscall/PEB/núcleo, dos
-   posiciones de `data_to_text` (pre/post), optimización de inlining,
-   finalización de cadenas, stackify, all-`blr`, y la verificación final sellada
-   de IR;
+   de intrínsecos de memoria (antes del montón), rebaje del tiempo de ejecución
+   de cadenas, arena de montón, rebaje de intrínsecos de memoria (después del
+   montón), `compiler_rt` (pre), rebaje de importaciones de syscall/PEB/núcleo,
+   `data_to_text` (pre), optimización de inlining, `compiler_rt` (post),
+   finalización de cadenas, `data_to_text` (post), stackify, all-`blr`,
+   `compiler_rt` (final), y la verificación final sellada de IR;
 3. la transformación de preparación de MIR y la verificación final sellada de
    MIR;
 4. importación de objeto: ligar el `ObjectGraph` verificado a la tarea;

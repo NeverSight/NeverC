@@ -97,11 +97,11 @@ Die Phasen in ihrer Reihenfolge:
 
 1. Einfrieren der Anfrage;
 2. die IR-Transformationen — Prepare, Absenken indirekter Sprünge, Absenken der
-   Memory-Intrinsics (vor und nach Heap), Absenken der String-Laufzeit,
-   Heap-Arena, drei `compiler_rt`-Positionen (pre/post/final), Absenken von
-   Syscall-/PEB-/Kernel-Imports, zwei `data_to_text`-Positionen (pre/post),
-   Inline-Optimierung, String-Finalize, Stackify, All-`blr` und die versiegelte
-   finale IR-Verifikation;
+   Memory-Intrinsics (vor Heap), Absenken der String-Laufzeit, Heap-Arena,
+   Absenken der Memory-Intrinsics (nach Heap), `compiler_rt` (pre), Absenken von
+   Syscall-/PEB-/Kernel-Imports, `data_to_text` (pre), Inline-Optimierung,
+   `compiler_rt` (post), String-Finalize, `data_to_text` (post), Stackify,
+   All-`blr`, `compiler_rt` (final) und die versiegelte finale IR-Verifikation;
 3. die MIR-Prepare-Transformation und die versiegelte finale MIR-Verifikation;
 4. Objektimport — den verifizierten `ObjectGraph` an den Task binden;
 5. Extraktion — Plan, Layout, Relocate und Bau des Kandidatenabbilds;

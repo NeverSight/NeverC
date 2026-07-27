@@ -79,11 +79,11 @@ provider，其等价产物仍由宿主 verifier 证明。
 各 phase 顺序为：
 
 1. request 冻结；
-2. IR transform ——prepare、间接分支降级、内存 intrinsic 降级（pre 与
-   post-heap）、字符串运行时降级、heap arena、三个 `compiler_rt`
-   位置（pre/post/final）、syscall/PEB/kernel import 降级、两个 `data_to_text`
-   位置（pre/post）、inline 优化、string finalize、stackify、all-`blr`，以及
-   sealed IR 最终验证；
+2. IR transform ——prepare、间接分支降级、内存 intrinsic 降级（pre）、字符串
+   运行时降级、heap arena、内存 intrinsic 降级（post-heap）、`compiler_rt`
+   （pre）、syscall/PEB/kernel import 降级、`data_to_text`（pre）、inline
+   优化、`compiler_rt`（post）、string finalize、`data_to_text`（post）、
+   stackify、all-`blr`、`compiler_rt`（final），以及 sealed IR 最终验证；
 3. MIR prepare transform 与 sealed MIR 最终验证；
 4. object import——把已验证的 `ObjectGraph` 绑定到当前 task；
 5. 提取——plan、layout、relocate，并构建候选镜像；

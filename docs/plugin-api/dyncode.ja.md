@@ -87,11 +87,12 @@ no-op プロバイダを実行し、その等価な出力をホストの検証�
 フェーズは順に次のとおりです:
 
 1. リクエストの凍結;
-2. IR 変換群 — prepare、間接分岐の低位化、メモリ intrinsic の低位化（ヒープ前と
-   ヒープ後）、文字列ランタイムの低位化、ヒープアリーナ、3 つの `compiler_rt` 位置
-   （pre／post／final）、syscall／PEB／カーネルインポートの低位化、2 つの
-   `data_to_text` 位置（pre／post）、インライン最適化、文字列の確定、stackify、
-   全 `blr` 化、そして封印された IR 最終検証;
+2. IR 変換群 — prepare、間接分岐の低位化、メモリ intrinsic の低位化（ヒープ前）、
+   文字列ランタイムの低位化、ヒープアリーナ、メモリ intrinsic の低位化（ヒープ後）、
+   `compiler_rt`（pre）、syscall／PEB／カーネルインポートの低位化、
+   `data_to_text`（pre）、インライン最適化、`compiler_rt`（post）、文字列の確定、
+   `data_to_text`（post）、stackify、全 `blr` 化、`compiler_rt`（final）、そして
+   封印された IR 最終検証;
 3. MIR prepare 変換と、封印された MIR 最終検証;
 4. オブジェクトインポート — 検証済み `ObjectGraph` をタスクに束縛する;
 5. 抽出 — 計画、レイアウト、再配置、そして候補イメージの構築;
