@@ -98,7 +98,7 @@ LinkPhase->GetGraph(LinkPhase->Context, Frame, Frame->Input, &GraphInfo);
 
 ## 그래프 읽기
 
-`NevercLinkGraphInfo` 는 요약입니다 — 타깃, 형식, 상태, 세대, 열일곱 개의 엔터티
+`NevercLinkGraphInfo` 는 요약입니다 — 타깃, 형식, 상태, 세대, 열다섯 개의 엔터티
 개수, 그리고 32 바이트 `SemanticDigest`. 엔터티 자체는 종류마다 하나씩 있는
 페이징 호출로 돌아오며, 모두 호출자가 소유한 페이지를 공유합니다:
 

@@ -94,7 +94,7 @@ LinkPhase->GetGraph(LinkPhase->Context, Frame, Frame->Input, &GraphInfo);
 
 ## 讀取圖
 
-`NevercLinkGraphInfo` 是總覽——目標、格式、狀態、generation、十七個實體計數，以
+`NevercLinkGraphInfo` 是總覽——目標、格式、狀態、generation、十五個實體計數，以
 及一個 32 位元組的 `SemanticDigest`。實體本身則透過每種各一個的分頁呼叫取得，全
 都共用一個由呼叫端擁有的 page：
 

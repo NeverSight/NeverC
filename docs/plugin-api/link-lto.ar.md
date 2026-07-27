@@ -98,7 +98,7 @@ LinkPhase->GetGraph(LinkPhase->Context, Frame, Frame->Input, &GraphInfo);
 
 ## قراءة المخطط
 
-`NevercLinkGraphInfo` هو الملخّص — الهدف، والصيغة، والحالة، والجيل، وسبعة عشر
+`NevercLinkGraphInfo` هو الملخّص — الهدف، والصيغة، والحالة، والجيل، وخمسة عشر
 عدّادًا للكيانات، و`SemanticDigest` بطول 32 بايت. أما الكيانات نفسها فتعود عبر
 نداء ترقيم صفحات واحد لكل نوع، وكلها تتشارك صفحة يملكها المُستدعي:
 

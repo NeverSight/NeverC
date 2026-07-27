@@ -101,7 +101,7 @@ oder `FAILED_PARTIAL`).
 ## Den Graphen lesen
 
 `NevercLinkGraphInfo` ist die Zusammenfassung — Ziel, Format, Zustand,
-Generation, siebzehn Entitätszähler und ein 32-Byte-`SemanticDigest`. Die
+Generation, fünfzehn Entitätszähler und ein 32-Byte-`SemanticDigest`. Die
 Entitäten selbst kommen über je einen Paging-Aufruf pro Art zurück, alle mit
 einer Seite im Besitz des Aufrufers:
 

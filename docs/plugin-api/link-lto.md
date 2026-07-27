@@ -100,7 +100,7 @@ yielding `NevercLinkPhaseImageInfo` with the image, the output bundle, and a
 ## Reading the graph
 
 `NevercLinkGraphInfo` is the summary — target, format, state, generation,
-seventeen entity counts, and a 32-byte `SemanticDigest`. Entities themselves
+fifteen entity counts, and a 32-byte `SemanticDigest`. Entities themselves
 come back through one paging call per kind, all sharing a caller-owned page:
 
 ```c

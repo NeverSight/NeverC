@@ -100,7 +100,7 @@ LinkPhase->GetGraph(LinkPhase->Context, Frame, Frame->Input, &GraphInfo);
 
 ## グラフを読む
 
-`NevercLinkGraphInfo` は要約です — ターゲット、フォーマット、状態、世代、17 個の
+`NevercLinkGraphInfo` は要約です — ターゲット、フォーマット、状態、世代、15 個の
 エンティティ数、そして 32 バイトの `SemanticDigest`。エンティティ自体は種類ごと
 に 1 つのページング呼び出しで返り、いずれも呼び出し側所有のページを共有します:
 

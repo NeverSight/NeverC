@@ -95,7 +95,7 @@ artifact 做同样的事，返回 `NevercLinkPhaseImageInfo`，里面有映像�
 
 ## 读取图
 
-`NevercLinkGraphInfo` 是概览——目标、格式、状态、代号（generation）、十七个实
+`NevercLinkGraphInfo` 是概览——目标、格式、状态、代号（generation）、十五个实
 体计数，以及 32 字节的 `SemanticDigest`。实体本身通过每种一个的分页调用返回，
 它们共用同一个由调用方持有的页结构：
 

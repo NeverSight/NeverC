@@ -101,7 +101,7 @@ output e un `NevercBinaryImageState` (`CANDIDATE`, `VERIFIED`, `COMMITTED`,
 ## Leggere il grafo
 
 `NevercLinkGraphInfo` è il riepilogo: target, formato, stato, generazione,
-diciassette conteggi di entità e un `SemanticDigest` di 32 byte. Le entità
+quindici conteggi di entità e un `SemanticDigest` di 32 byte. Le entità
 stesse tornano tramite una chiamata di paginazione per specie, tutte
 condividendo una pagina di proprietà del chiamante:
 
