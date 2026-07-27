@@ -403,24 +403,6 @@ DeclRefExpr *Sema::MakeDeclRefExpr(ValueDecl *D, QualType Ty, ExprValueKind VK,
   return E;
 }
 
-namespace {
-void reportEmptyLookupTypo(const TypoCorrection &TC, Sema &SemaRef,
-                           DeclarationName Typo, SourceLocation TypoLoc,
-                           unsigned DiagnosticID,
-                           unsigned DiagnosticSuggestID) {
-  if (!TC) {
-    SemaRef.Diag(TypoLoc, DiagnosticID) << Typo;
-    return;
-  }
-
-  unsigned NoteID = TC.getCorrectionDeclAs<ImplicitParamDecl>()
-                        ? diag::note_implicit_param_decl
-                        : diag::note_previous_decl;
-  SemaRef.diagnoseTypo(TC, SemaRef.PDiag(DiagnosticSuggestID) << Typo,
-                       SemaRef.PDiag(NoteID));
-}
-} // namespace
-
 bool Sema::DiagnoseEmptyLookup(Scope *S, LookupResult &R,
                                CorrectionCandidateCallback &CCC,
                                TypoExpr **Out) {
@@ -429,22 +411,19 @@ bool Sema::DiagnoseEmptyLookup(Scope *S, LookupResult &R,
   const unsigned diagnostic = diag::err_undeclared_var_use;
   const unsigned diagnostic_suggest = diag::err_undeclared_var_use_suggest;
 
-  // We didn't find anything, so try to correct for a typo.
+  // Correct here rather than through CorrectTypoDelayed.  A delayed TypoExpr
+  // is only ever resolved by CorrectDelayedTyposInExpr, which this port leaves
+  // as a no-op, so the correction would instead be flushed by
+  // OnEndOfTranslationUnit -- long after CodeGen has run on the enclosing
+  // declaration and tripped over the TypoExpr's dependent type.  That flush
+  // also passes an empty TypoCorrection, so it drops the "did you mean"
+  // suggestion.  Delaying buys nothing here in any case: it exists upstream to
+  // let overload resolution pick the correction, and C has no overloading.
+  if (Out)
+    *Out = nullptr;
   TypoCorrection Corrected;
-  if (S && Out) {
-    SourceLocation TypoLoc = R.getNameLoc();
-    *Out = CorrectTypoDelayed(
-        R.getLookupNameInfo(), R.getLookupKind(), S, CCC,
-        [=](const TypoCorrection &TC) {
-          reportEmptyLookupTypo(TC, *this, Name, TypoLoc, diagnostic,
-                                diagnostic_suggest);
-        },
-        nullptr, CTK_ErrorRecovery);
-    if (*Out)
-      return true;
-  } else if (S &&
-             (Corrected = CorrectTypo(R.getLookupNameInfo(), R.getLookupKind(),
-                                      S, CCC, CTK_ErrorRecovery))) {
+  if (S && (Corrected = CorrectTypo(R.getLookupNameInfo(), R.getLookupKind(), S,
+                                    CCC, CTK_ErrorRecovery))) {
     R.setLookupName(Corrected.getCorrection());
 
     bool AcceptableWithRecovery = false;

@@ -220,42 +220,34 @@ bool lookupMemberExprInRecord(Sema &SemaRef, LookupResult &R, Expr *BaseExpr,
     return false;
 
   DeclarationName Typo = R.getLookupName();
-  SourceLocation TypoLoc = R.getNameLoc();
 
-  struct QueryState {
-    Sema &SemaRef;
-    DeclarationNameInfo NameInfo;
-    neverc::ResolveNameKind LookupKind;
-    neverc::RedeclarationKind Redecl;
-  };
-  QueryState Q = {R.getSema(), R.getLookupNameInfo(), R.getLookupKind(),
-                  R.redeclarationKind()};
+  // Correct here rather than through CorrectTypoDelayed.  A delayed TypoExpr is
+  // only resolved by CorrectDelayedTyposInExpr, which this port leaves as a
+  // no-op, so it would survive into CodeGen carrying a dependent type and be
+  // reported as an unsupported expression rather than as a misspelled member.
+  TE = nullptr;
   RecordMemberExprValidatorCCC CCC(RTy);
-  TE = SemaRef.CorrectTypoDelayed(
-      R.getLookupNameInfo(), R.getLookupKind(), nullptr, CCC,
-      [=, &SemaRef](const TypoCorrection &TC) {
-        if (TC) {
-          assert(!TC.isKeyword() &&
-                 "Got a keyword as a correction for a member!");
-          SemaRef.diagnoseTypo(TC, SemaRef.PDiag(diag::err_no_member_suggest)
-                                       << Typo << DC << false << BaseRange);
-        } else {
-          SemaRef.Diag(TypoLoc, diag::err_no_member) << Typo << DC << BaseRange;
-        }
-      },
-      [=](Sema &SemaRef, TypoExpr *TE, TypoCorrection TC) mutable {
-        LookupResult R(Q.SemaRef, Q.NameInfo, Q.LookupKind, Q.Redecl);
-        R.clear(); // Ensure there's no decls lingering in the shared state.
-        R.suppressDiagnostics();
-        R.setLookupName(TC.getCorrection());
-        for (NamedDecl *ND : TC)
-          R.addDecl(ND);
-        R.resolveKind();
-        return SemaRef.FormMemberReferenceExpr(BaseExpr, BaseExpr->getType(),
-                                               OpLoc, IsArrow, R);
-      },
-      Sema::CTK_ErrorRecovery, DC);
+  TypoCorrection Corrected =
+      SemaRef.CorrectTypo(R.getLookupNameInfo(), R.getLookupKind(),
+                          /*S=*/nullptr, CCC, Sema::CTK_ErrorRecovery, DC);
+  if (!Corrected) {
+    // Hand the empty result back so FormMemberReferenceExpr issues the "no
+    // member named" diagnostic, keeping it to exactly one.
+    R.clear();
+    return false;
+  }
 
+  assert(!Corrected.isKeyword() &&
+         "Got a keyword as a correction for a member!");
+  SemaRef.diagnoseTypo(Corrected, SemaRef.PDiag(diag::err_no_member_suggest)
+                                      << Typo << DC << false << BaseRange);
+
+  R.clear(); // Ensure there's no decls lingering in the shared state.
+  R.suppressDiagnostics();
+  R.setLookupName(Corrected.getCorrection());
+  for (NamedDecl *ND : Corrected)
+    R.addDecl(ND);
+  R.resolveKind();
   return false;
 }
 
