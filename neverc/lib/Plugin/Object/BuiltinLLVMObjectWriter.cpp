@@ -1203,18 +1203,14 @@ NevercStatus emitSectionContents(raw_ostream &OS,
                                  const Triple &Target) {
   OS << sectionLabel(SectionIndex, Target) << ":\n";
 
-  static const std::vector<const SymbolRecord *> NoSymbols;
-  static const std::vector<const RelocationRecord *> NoRelocations;
-  const auto DefinedIt = Index.DefinedBySection.find(handleKey(Section.Handle));
-  const std::vector<const SymbolRecord *> &Defined =
-      DefinedIt == Index.DefinedBySection.end() ? NoSymbols
-                                                : DefinedIt->second;
-  const auto RelocationIt =
-      Index.RelocationsBySection.find(handleKey(Section.Handle));
-  const std::vector<const RelocationRecord *> &SectionRelocations =
-      RelocationIt == Index.RelocationsBySection.end()
-          ? NoRelocations
-          : RelocationIt->second;
+  ArrayRef<const SymbolRecord *> Defined;
+  if (auto It = Index.DefinedBySection.find(handleKey(Section.Handle));
+      It != Index.DefinedBySection.end())
+    Defined = It->second;
+  ArrayRef<const RelocationRecord *> SectionRelocations;
+  if (auto It = Index.RelocationsBySection.find(handleKey(Section.Handle));
+      It != Index.RelocationsBySection.end())
+    SectionRelocations = It->second;
 
   // A section spans its stored bytes followed by its zero fill, and a symbol
   // may sit anywhere in either part. The fill therefore has to be split around
