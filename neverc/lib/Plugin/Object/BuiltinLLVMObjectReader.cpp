@@ -1,9 +1,11 @@
 #include "BuiltinLLVMObjectWriter.h"
+#include "neverc/Plugin/Host/BuiltinObjectExtension.h"
 #include "neverc/Plugin/Host/BuiltinTargetProvider.h"
 #include "neverc/Plugin/Host/ObjectReaderProvider.h"
+#include "neverc/Plugin/Host/ObjectSectionRole.h"
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/SmallVector.h"
-#include "llvm/ADT/StringExtras.h"
 #include "llvm/BinaryFormat/COFF.h"
 #include "llvm/BinaryFormat/ELF.h"
 #include "llvm/BinaryFormat/MachO.h"
@@ -19,6 +21,7 @@
 #include <cstdint>
 #include <cstring>
 #include <limits>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -36,6 +39,48 @@ struct BuiltinFormatContext {
 constexpr BuiltinFormatContext ELFContext{BuiltinObjectFormat::ELF};
 constexpr BuiltinFormatContext COFFContext{BuiltinObjectFormat::COFF};
 constexpr BuiltinFormatContext MachOContext{BuiltinObjectFormat::MachO};
+
+// Each failure site has a stable number, with the index of the entity being
+// processed in the low decimal digits. Adding an index straight onto a base
+// would let distinct failures produce the same value once a graph held more
+// than a few entities, which is every real translation unit.
+enum DetailSite : uint64_t {
+  DetailELFGroupSections = 1,
+  DetailELFGroupContents,
+  DetailELFGroupSymbolTable,
+  DetailELFGroupSymbols,
+  DetailELFGroupName,
+  DetailCOFFComdatSymbolName,
+  DetailCOFFComdatSectionName,
+  DetailCOFFComdatAssociativeMissing,
+  DetailCOFFComdatSelfAssociative,
+  DetailCOFFComdatCycle,
+  DetailSectionName,
+  DetailSectionContents,
+  DetailSectionSizeMismatch,
+  DetailSectionCreate,
+  DetailSymbolQuery,
+  DetailSymbolOutsideSection,
+  DetailSymbolCreate,
+  DetailRelocatedSectionQuery,
+  DetailRelocationSectionUnmapped,
+  DetailRelocationUnsupportedTarget,
+  DetailRelocationWidthInvalid,
+  DetailRelocationOutsideSection,
+  DetailRelocationTargetUnmapped,
+  DetailRelocationCreate,
+  DetailObjectParse,
+  DetailObjectFormatMismatch,
+};
+
+constexpr uint64_t DetailIndexScale = 1000000;
+
+uint64_t detailAt(DetailSite Site, size_t Index) {
+  return static_cast<uint64_t>(Site) * DetailIndexScale +
+         std::min<uint64_t>(Index, DetailIndexScale - 1);
+}
+
+uint64_t detail(DetailSite Site) { return detailAt(Site, 0); }
 
 NevercStatus status(NevercStatusCode Code, uint64_t Detail = 0) {
   NevercStatus Result = neverc_status_ok();
@@ -56,40 +101,6 @@ NevercByteView byteView(ArrayRef<uint8_t> Value) {
   return {Value.data(), static_cast<uint64_t>(Value.size())};
 }
 
-void appendU32(SmallVectorImpl<uint8_t> &Bytes, uint32_t Value) {
-  for (unsigned I = 0; I != 4; ++I)
-    Bytes.push_back(static_cast<uint8_t>(Value >> (I * 8)));
-}
-
-void appendU64(SmallVectorImpl<uint8_t> &Bytes, uint64_t Value) {
-  for (unsigned I = 0; I != 8; ++I)
-    Bytes.push_back(static_cast<uint8_t>(Value >> (I * 8)));
-}
-
-void appendTag(SmallVectorImpl<uint8_t> &Bytes, const char (&Tag)[5]) {
-  Bytes.append(reinterpret_cast<const uint8_t *>(Tag),
-               reinterpret_cast<const uint8_t *>(Tag) + 4);
-}
-
-bool containsInsensitive(StringRef Value, StringRef Needle) {
-  return Value.lower().find(Needle.lower()) != std::string::npos;
-}
-
-bool isUnwindName(StringRef Name) {
-  return containsInsensitive(Name, "eh_frame") ||
-         containsInsensitive(Name, "unwind") ||
-         containsInsensitive(Name, ".pdata") ||
-         containsInsensitive(Name, ".xdata") ||
-         containsInsensitive(Name, "__compact_unwind");
-}
-
-bool isTLSName(StringRef Name) {
-  return containsInsensitive(Name, ".tdata") ||
-         containsInsensitive(Name, ".tbss") ||
-         containsInsensitive(Name, "__thread") ||
-         containsInsensitive(Name, "__tls");
-}
-
 bool isTLSSection(const ObjectFile &Object, SectionRef Section,
                   StringRef Name) {
   if (isa<ELFObjectFileBase>(Object))
@@ -102,7 +113,9 @@ bool isTLSSection(const ObjectFile &Object, SectionRef Section,
            Type == MachO::S_THREAD_LOCAL_VARIABLE_POINTERS ||
            Type == MachO::S_THREAD_LOCAL_INIT_FUNCTION_POINTERS;
   }
-  return isTLSName(Name);
+  // COFF section headers carry no thread-local bit, so the name is all there
+  // is to go on.
+  return isThreadLocalSectionName(BuiltinObjectFormat::COFF, Name);
 }
 
 // ELFSectionRef exposes sh_flags and sh_offset but not sh_entsize, and a
@@ -130,8 +143,8 @@ uint64_t elfEntrySize(const ObjectFile &Object, SectionRef Section) {
 
 void nativeSectionExtension(const ObjectFile &Object, SectionRef Section,
                             SmallVectorImpl<uint8_t> &Bytes) {
-  appendTag(Bytes, "NCSE");
-  appendU32(Bytes, NevercObjectNCSEVersion);
+  using namespace builtinext;
+  appendHeader(Bytes, SectionTag, SectionVersion);
   appendU64(Bytes, Section.getIndex());
   appendU64(Bytes, Section.getAddress());
   uint64_t Type = 0;
@@ -173,8 +186,8 @@ void nativeSectionExtension(const ObjectFile &Object, SectionRef Section,
 
 void nativeSymbolExtension(const ObjectFile &Object, SymbolRef Symbol,
                            SmallVectorImpl<uint8_t> &Bytes) {
-  appendTag(Bytes, "NCSY");
-  appendU32(Bytes, 1);
+  using namespace builtinext;
+  appendHeader(Bytes, SymbolTag, SymbolVersion);
   uint64_t Type = 0;
   uint64_t Binding = 0;
   uint64_t Other = 0;
@@ -218,21 +231,19 @@ void nativeSymbolExtension(const ObjectFile &Object, SymbolRef Symbol,
 void nativeRelocationExtension(
     RelocationRef Relocation, StringRef TypeName,
     SmallVectorImpl<uint8_t> &Bytes) {
-  appendTag(Bytes, "NCRL");
-  appendU32(Bytes, 1);
+  using namespace builtinext;
+  appendHeader(Bytes, RelocationTag, RelocationVersion);
   appendU64(Bytes, Relocation.getType());
   appendU32(Bytes, static_cast<uint32_t>(TypeName.size()));
-  Bytes.append(reinterpret_cast<const uint8_t *>(TypeName.data()),
-               reinterpret_cast<const uint8_t *>(TypeName.data()) +
-                   TypeName.size());
+  appendBytes(Bytes, TypeName);
 }
 
 NevercObjectSectionKind
-sectionKind(const ObjectFile &Object, SectionRef Section, StringRef Name,
-            bool IsTLS) {
-  if (Section.isDebugSection())
+sectionKind(BuiltinObjectFormat Format, const ObjectFile &Object,
+            SectionRef Section, StringRef Name, bool IsTLS) {
+  if (Section.isDebugSection() || isDebugSectionName(Format, Name))
     return NEVERC_OBJECT_SECTION_KIND_DEBUG;
-  if (isUnwindName(Name))
+  if (isUnwindSectionName(Format, Name))
     return NEVERC_OBJECT_SECTION_KIND_UNWIND;
   if (IsTLS)
     return Section.isBSS() || Section.isVirtual()
@@ -329,6 +340,18 @@ NevercObjectSymbolType symbolType(SymbolRef::Type Type) {
   return NEVERC_OBJECT_SYMBOL_TYPE_NO_TYPE;
 }
 
+// ELF mapping symbols mark where a section switches between code and data.
+// AArch64 spells them $x and $d, each optionally carrying a ".<suffix>". Other
+// architectures define more -- ARM adds $a and $t for its two instruction sets
+// -- but this build targets only AArch64 and x86, and x86 has none, so listing
+// the ARM pair here would be unreachable either way.
+bool isELFMappingSymbol(Triple::ArchType Arch, StringRef Name) {
+  if (Arch != Triple::aarch64 || Name.size() < 2 || Name.front() != '$')
+    return false;
+  return (Name[1] == 'x' || Name[1] == 'd') &&
+         (Name.size() == 2 || Name[2] == '.');
+}
+
 bool isSyntheticAssemblerSymbol(const ObjectFile &Object, StringRef Name,
                                 uint32_t NativeFlags) {
   // Section, file and stab symbols encode the container rather than program
@@ -339,175 +362,427 @@ bool isSyntheticAssemblerSymbol(const ObjectFile &Object, StringRef Name,
     return true;
   if ((NativeFlags & (SymbolRef::SF_Global | SymbolRef::SF_Weak)) != 0)
     return false;
+  // Mach-O's assembler mints "ltmp<n>" for section starts. Match the minted
+  // shape rather than the prefix, so a program's own "ltmpBuffer" survives.
   if (isa<MachOObjectFile>(Object) && Name.starts_with("ltmp")) {
     unsigned TemporaryIndex = 0;
     if (!Name.drop_front(4).getAsInteger(10, TemporaryIndex))
       return true;
   }
   if (isa<ELFObjectFileBase>(Object) &&
-      Object.getArch() == Triple::aarch64 && Name.size() >= 2 &&
-      Name.front() == '$' &&
-      (Name[1] == 'x' || Name[1] == 'd' || Name[1] == 'a' ||
-       Name[1] == 't') &&
-      (Name.size() == 2 || Name[2] == '.'))
+      isELFMappingSymbol(Object.getArch(), Name))
     return true;
   return false;
 }
 
-uint32_t relocationWidth(const ObjectFile &Object,
-                         RelocationRef Relocation, StringRef TypeName,
-                         uint32_t PointerWidth) {
+// What the graph records about a relocation: how wide the patched field is, how
+// it is addressed, and which linker-level form it belongs to.
+//
+// All three come from the relocation's type number. They used to be read out of
+// the type *name* -- scanning it for digits to get a width, for "pc" to decide
+// PC-relativeness -- and that misreads a large share of real relocations. The
+// architecture token in "R_X86_64" and "R_AARCH64" scans as a width, so an
+// AArch64 CALL26 came out 64 bits wide; "R_PPC64_..." contains "pc" and would
+// be called PC-relative wholesale; R_X86_64_REX_GOTPCRELX has no digits at all.
+// A type number, unlike a name, means exactly one thing.
+//
+// A type not listed here is reported as unknown and the object is refused. That
+// is a recoverable outcome -- the caller learns the reader cannot handle this
+// input -- whereas a guessed width silently truncates a field or overruns a
+// section end.
+struct RelocationFacts {
+  uint32_t Width = 0;
+  bool IsPCRelative = false;
+  bool IsSigned = false;
+  // Set when the patched field lives inside an instruction instead of being a
+  // data word of its own. Such a field cannot be read or written as an integer
+  // -- its bits are interleaved with the opcode -- which is what stops the
+  // writer from restating it and stops the reader from lifting its addend.
+  bool IsInstructionField = false;
+  NevercObjectRelocationKind Kind = NEVERC_OBJECT_RELOCATION_ABSOLUTE;
+  // Set for R_*_NONE, which holds a slot in the relocation table without
+  // asking the linker for anything. The reader drops these instead of giving
+  // them a width, since a graph relocation is required to have one.
+  bool IsNoOp = false;
+};
+
+constexpr RelocationFacts absoluteFacts(uint32_t Width, bool Signed = false) {
+  return {Width, false, Signed, false, NEVERC_OBJECT_RELOCATION_ABSOLUTE};
+}
+
+constexpr RelocationFacts pcRelativeFacts(uint32_t Width) {
+  return {Width, true, true, false, NEVERC_OBJECT_RELOCATION_PC_RELATIVE};
+}
+
+constexpr RelocationFacts kindFacts(NevercObjectRelocationKind Kind,
+                                    uint32_t Width, bool PCRelative) {
+  return {Width, PCRelative, PCRelative, false, Kind};
+}
+
+// A field inside an instruction, whose width is the instruction's own size.
+// AArch64 instructions are a fixed four bytes; the x86 forms this describes
+// name one specific encoding, so they state their size.
+constexpr RelocationFacts instructionFacts(NevercObjectRelocationKind Kind,
+                                           bool PCRelative,
+                                           uint32_t Width = 32) {
+  return {Width, PCRelative, PCRelative, true, Kind};
+}
+
+// R_*_NONE holds a slot in the relocation table without asking for anything:
+// the linker steps over it. They reach an object through `ld -r` and through
+// passes that neutralise a relocation in place rather than renumbering the
+// table around it. Refusing the whole object over one is the wrong answer, and
+// so is inventing a width for a relocation that patches nothing -- a graph
+// relocation must have a width, and every consumer would ignore this one
+// anyway, so the reader drops it.
+constexpr RelocationFacts noOpFacts() {
+  RelocationFacts Facts;
+  Facts.IsNoOp = true;
+  return Facts;
+}
+
+std::optional<RelocationFacts> elfX86_64Facts(uint64_t Type) {
+  switch (Type) {
+  case ELF::R_X86_64_NONE:
+    return noOpFacts();
+  // Marks the `call *(%rax)` that completes a TLS descriptor sequence so the
+  // linker knows which two bytes it may relax. Nothing in them is a field.
+  case ELF::R_X86_64_TLSDESC_CALL:
+    return instructionFacts(NEVERC_OBJECT_RELOCATION_TLS, /*PCRelative=*/false,
+                            /*Width=*/16);
+  case ELF::R_X86_64_64:
+    return absoluteFacts(64);
+  case ELF::R_X86_64_32:
+    return absoluteFacts(32);
+  case ELF::R_X86_64_32S:
+    return absoluteFacts(32, /*Signed=*/true);
+  case ELF::R_X86_64_16:
+    return absoluteFacts(16);
+  case ELF::R_X86_64_8:
+    return absoluteFacts(8);
+  case ELF::R_X86_64_SIZE32:
+    return absoluteFacts(32);
+  case ELF::R_X86_64_SIZE64:
+    return absoluteFacts(64);
+  case ELF::R_X86_64_GLOB_DAT:
+  case ELF::R_X86_64_JUMP_SLOT:
+  case ELF::R_X86_64_RELATIVE:
+  case ELF::R_X86_64_IRELATIVE:
+    return absoluteFacts(64);
+  case ELF::R_X86_64_PC64:
+    return pcRelativeFacts(64);
+  case ELF::R_X86_64_PC32:
+    return pcRelativeFacts(32);
+  case ELF::R_X86_64_PC16:
+    return pcRelativeFacts(16);
+  case ELF::R_X86_64_PC8:
+    return pcRelativeFacts(8);
+  case ELF::R_X86_64_GOT32:
+    return kindFacts(NEVERC_OBJECT_RELOCATION_GOT_RELATIVE, 32, false);
+  case ELF::R_X86_64_GOT64:
+  case ELF::R_X86_64_GOTOFF64:
+  case ELF::R_X86_64_GOTPLT64:
+    return kindFacts(NEVERC_OBJECT_RELOCATION_GOT_RELATIVE, 64, false);
+  case ELF::R_X86_64_GOTPC32:
+  case ELF::R_X86_64_GOTPCREL:
+  case ELF::R_X86_64_GOTPCRELX:
+  case ELF::R_X86_64_REX_GOTPCRELX:
+    return kindFacts(NEVERC_OBJECT_RELOCATION_GOT_RELATIVE, 32, true);
+  case ELF::R_X86_64_GOTPC64:
+  case ELF::R_X86_64_GOTPCREL64:
+    return kindFacts(NEVERC_OBJECT_RELOCATION_GOT_RELATIVE, 64, true);
+  case ELF::R_X86_64_PLT32:
+    return kindFacts(NEVERC_OBJECT_RELOCATION_PLT_RELATIVE, 32, true);
+  case ELF::R_X86_64_PLTOFF64:
+    return kindFacts(NEVERC_OBJECT_RELOCATION_PLT_RELATIVE, 64, false);
+  case ELF::R_X86_64_DTPMOD64:
+  case ELF::R_X86_64_DTPOFF64:
+  case ELF::R_X86_64_TPOFF64:
+  case ELF::R_X86_64_TLSDESC:
+    return kindFacts(NEVERC_OBJECT_RELOCATION_TLS, 64, false);
+  case ELF::R_X86_64_DTPOFF32:
+  case ELF::R_X86_64_TPOFF32:
+    return kindFacts(NEVERC_OBJECT_RELOCATION_TLS, 32, false);
+  case ELF::R_X86_64_TLSGD:
+  case ELF::R_X86_64_TLSLD:
+  case ELF::R_X86_64_GOTTPOFF:
+  case ELF::R_X86_64_GOTPC32_TLSDESC:
+    return kindFacts(NEVERC_OBJECT_RELOCATION_TLS, 32, true);
+  default:
+    return std::nullopt;
+  }
+}
+
+// The AArch64 relocations that address their target from the program counter.
+// Listed rather than derived: "PREL", "PAGE" and the branch forms are
+// PC-relative while the "ABS" and "LO12" forms are not, and the distinction
+// does not follow from any part of the encoding.
+bool aarch64IsPCRelative(uint64_t Type) {
+  switch (Type) {
+  case ELF::R_AARCH64_LD_PREL_LO19:
+  case ELF::R_AARCH64_ADR_PREL_LO21:
+  case ELF::R_AARCH64_ADR_PREL_PG_HI21:
+  case ELF::R_AARCH64_ADR_PREL_PG_HI21_NC:
+  case ELF::R_AARCH64_TSTBR14:
+  case ELF::R_AARCH64_CONDBR19:
+  case ELF::R_AARCH64_JUMP26:
+  case ELF::R_AARCH64_CALL26:
+  case ELF::R_AARCH64_MOVW_PREL_G0:
+  case ELF::R_AARCH64_MOVW_PREL_G0_NC:
+  case ELF::R_AARCH64_MOVW_PREL_G1:
+  case ELF::R_AARCH64_MOVW_PREL_G1_NC:
+  case ELF::R_AARCH64_MOVW_PREL_G2:
+  case ELF::R_AARCH64_MOVW_PREL_G2_NC:
+  case ELF::R_AARCH64_MOVW_PREL_G3:
+  case ELF::R_AARCH64_GOT_LD_PREL19:
+  case ELF::R_AARCH64_ADR_GOT_PAGE:
+  case ELF::R_AARCH64_PLT32:
+  case ELF::R_AARCH64_TLSGD_ADR_PREL21:
+  case ELF::R_AARCH64_TLSGD_ADR_PAGE21:
+  case ELF::R_AARCH64_TLSLD_ADR_PREL21:
+  case ELF::R_AARCH64_TLSLD_ADR_PAGE21:
+  case ELF::R_AARCH64_TLSLD_LD_PREL19:
+  case ELF::R_AARCH64_TLSIE_ADR_GOTTPREL_PAGE21:
+  case ELF::R_AARCH64_TLSIE_LD_GOTTPREL_PREL19:
+  case ELF::R_AARCH64_TLSDESC_LD_PREL19:
+  case ELF::R_AARCH64_TLSDESC_ADR_PREL21:
+  case ELF::R_AARCH64_TLSDESC_ADR_PAGE21:
+    return true;
+  default:
+    return false;
+  }
+}
+
+std::optional<RelocationFacts> elfAArch64Facts(uint64_t Type) {
+  switch (Type) {
+  case ELF::R_AARCH64_NONE:
+    return noOpFacts();
+  // Plain data words -- the only AArch64 relocations whose field is not an
+  // instruction.
+  case ELF::R_AARCH64_ABS64:
+    return absoluteFacts(64);
+  case ELF::R_AARCH64_ABS32:
+    return absoluteFacts(32);
+  case ELF::R_AARCH64_ABS16:
+    return absoluteFacts(16);
+  case ELF::R_AARCH64_PREL64:
+    return pcRelativeFacts(64);
+  case ELF::R_AARCH64_PREL32:
+    return pcRelativeFacts(32);
+  case ELF::R_AARCH64_PREL16:
+    return pcRelativeFacts(16);
+  // A signed pointer: the field is an ordinary 64-bit word, with the signing
+  // schema the linker applies held beside it rather than in the field.
+  case ELF::R_AARCH64_AUTH_ABS64:
+    return absoluteFacts(64);
+  case ELF::R_AARCH64_GOTREL64:
+    return kindFacts(NEVERC_OBJECT_RELOCATION_GOT_RELATIVE, 64, false);
+  case ELF::R_AARCH64_GOTREL32:
+    return kindFacts(NEVERC_OBJECT_RELOCATION_GOT_RELATIVE, 32, false);
+  case ELF::R_AARCH64_TLS_DTPMOD64:
+  case ELF::R_AARCH64_TLS_DTPREL64:
+  case ELF::R_AARCH64_TLS_TPREL64:
+  case ELF::R_AARCH64_TLSDESC:
+    return kindFacts(NEVERC_OBJECT_RELOCATION_TLS, 64, false);
+  case ELF::R_AARCH64_GLOB_DAT:
+  case ELF::R_AARCH64_JUMP_SLOT:
+  case ELF::R_AARCH64_RELATIVE:
+  case ELF::R_AARCH64_IRELATIVE:
+    return absoluteFacts(64);
+  default:
+    break;
+  }
+
+  // Everything else AArch64 defines patches a field inside a fixed 32-bit
+  // instruction. The operand size in the mnemonic -- LDST64, MOVW_G3, CALL26 --
+  // describes what the field feeds, not how wide the field is.
+  const bool StaticForm =
+      Type >= ELF::R_AARCH64_MOVW_UABS_G0 && Type <= ELF::R_AARCH64_PLT32;
+  const bool ThreadLocalForm =
+      Type >= ELF::R_AARCH64_TLSGD_ADR_PREL21 &&
+      Type <= ELF::R_AARCH64_TLSLD_LDST128_DTPREL_LO12_NC;
+  if (!StaticForm && !ThreadLocalForm)
+    return std::nullopt;
+
+  const bool PCRelative = aarch64IsPCRelative(Type);
+  const bool GOTForm = Type >= ELF::R_AARCH64_MOVW_GOTOFF_G0 &&
+                       Type <= ELF::R_AARCH64_LD64_GOTPAGE_LO15;
+  NevercObjectRelocationKind Kind = NEVERC_OBJECT_RELOCATION_ABSOLUTE;
+  if (ThreadLocalForm)
+    Kind = NEVERC_OBJECT_RELOCATION_TLS;
+  else if (Type == ELF::R_AARCH64_PLT32)
+    Kind = NEVERC_OBJECT_RELOCATION_PLT_RELATIVE;
+  else if (GOTForm)
+    Kind = NEVERC_OBJECT_RELOCATION_GOT_RELATIVE;
+  else if (PCRelative)
+    Kind = NEVERC_OBJECT_RELOCATION_PC_RELATIVE;
+  return instructionFacts(Kind, PCRelative);
+}
+
+std::optional<RelocationFacts> coffX86_64Facts(uint64_t Type) {
+  switch (Type) {
+  case COFF::IMAGE_REL_AMD64_ADDR64:
+    return absoluteFacts(64);
+  case COFF::IMAGE_REL_AMD64_ADDR32:
+    return absoluteFacts(32);
+  case COFF::IMAGE_REL_AMD64_ADDR32NB:
+    return kindFacts(NEVERC_OBJECT_RELOCATION_IMAGE_RELATIVE, 32, false);
+  case COFF::IMAGE_REL_AMD64_REL32:
+  case COFF::IMAGE_REL_AMD64_REL32_1:
+  case COFF::IMAGE_REL_AMD64_REL32_2:
+  case COFF::IMAGE_REL_AMD64_REL32_3:
+  case COFF::IMAGE_REL_AMD64_REL32_4:
+  case COFF::IMAGE_REL_AMD64_REL32_5:
+    return pcRelativeFacts(32);
+  case COFF::IMAGE_REL_AMD64_SECTION:
+    return kindFacts(NEVERC_OBJECT_RELOCATION_SECTION_RELATIVE, 16, false);
+  case COFF::IMAGE_REL_AMD64_SECREL:
+    return kindFacts(NEVERC_OBJECT_RELOCATION_SECTION_RELATIVE, 32, false);
+  case COFF::IMAGE_REL_AMD64_SECREL7:
+    return kindFacts(NEVERC_OBJECT_RELOCATION_SECTION_RELATIVE, 8, false);
+  case COFF::IMAGE_REL_AMD64_TOKEN:
+  case COFF::IMAGE_REL_AMD64_SREL32:
+  case COFF::IMAGE_REL_AMD64_SSPAN32:
+    return kindFacts(NEVERC_OBJECT_RELOCATION_TARGET_EXTENSION, 32, false);
+  default:
+    return std::nullopt;
+  }
+}
+
+std::optional<RelocationFacts> coffAArch64Facts(uint64_t Type) {
+  switch (Type) {
+  case COFF::IMAGE_REL_ARM64_ADDR64:
+    return absoluteFacts(64);
+  case COFF::IMAGE_REL_ARM64_ADDR32:
+    return absoluteFacts(32);
+  case COFF::IMAGE_REL_ARM64_ADDR32NB:
+    return kindFacts(NEVERC_OBJECT_RELOCATION_IMAGE_RELATIVE, 32, false);
+  // Instruction forms: a 32-bit instruction holds the patched field.
+  case COFF::IMAGE_REL_ARM64_BRANCH26:
+  case COFF::IMAGE_REL_ARM64_PAGEBASE_REL21:
+  case COFF::IMAGE_REL_ARM64_REL21:
+  case COFF::IMAGE_REL_ARM64_BRANCH19:
+  case COFF::IMAGE_REL_ARM64_BRANCH14:
+    return instructionFacts(NEVERC_OBJECT_RELOCATION_PC_RELATIVE, true);
+  // REL32 is a data word, unlike the branch forms above.
+  case COFF::IMAGE_REL_ARM64_REL32:
+    return pcRelativeFacts(32);
+  // The page-offset forms address within a page, not from the program counter.
+  case COFF::IMAGE_REL_ARM64_PAGEOFFSET_12A:
+  case COFF::IMAGE_REL_ARM64_PAGEOFFSET_12L:
+    return instructionFacts(NEVERC_OBJECT_RELOCATION_ABSOLUTE, false);
+  case COFF::IMAGE_REL_ARM64_SECREL:
+    return kindFacts(NEVERC_OBJECT_RELOCATION_SECTION_RELATIVE, 32, false);
+  case COFF::IMAGE_REL_ARM64_SECREL_LOW12A:
+  case COFF::IMAGE_REL_ARM64_SECREL_HIGH12A:
+  case COFF::IMAGE_REL_ARM64_SECREL_LOW12L:
+    return instructionFacts(NEVERC_OBJECT_RELOCATION_SECTION_RELATIVE, false);
+  case COFF::IMAGE_REL_ARM64_SECTION:
+    return kindFacts(NEVERC_OBJECT_RELOCATION_SECTION_RELATIVE, 16, false);
+  case COFF::IMAGE_REL_ARM64_TOKEN:
+    return kindFacts(NEVERC_OBJECT_RELOCATION_TARGET_EXTENSION, 32, false);
+  default:
+    return std::nullopt;
+  }
+}
+
+NevercObjectRelocationKind machOX86_64Kind(uint64_t Type) {
+  switch (Type) {
+  case MachO::X86_64_RELOC_BRANCH:
+  case MachO::X86_64_RELOC_SIGNED:
+  case MachO::X86_64_RELOC_SIGNED_1:
+  case MachO::X86_64_RELOC_SIGNED_2:
+  case MachO::X86_64_RELOC_SIGNED_4:
+    return NEVERC_OBJECT_RELOCATION_PC_RELATIVE;
+  case MachO::X86_64_RELOC_GOT:
+  case MachO::X86_64_RELOC_GOT_LOAD:
+    return NEVERC_OBJECT_RELOCATION_GOT_RELATIVE;
+  case MachO::X86_64_RELOC_TLV:
+    return NEVERC_OBJECT_RELOCATION_TLS;
+  case MachO::X86_64_RELOC_UNSIGNED:
+    return NEVERC_OBJECT_RELOCATION_ABSOLUTE;
+  default:
+    return NEVERC_OBJECT_RELOCATION_TARGET_EXTENSION;
+  }
+}
+
+NevercObjectRelocationKind machOAArch64Kind(uint64_t Type) {
+  switch (Type) {
+  case MachO::ARM64_RELOC_BRANCH26:
+  case MachO::ARM64_RELOC_PAGE21:
+    return NEVERC_OBJECT_RELOCATION_PC_RELATIVE;
+  case MachO::ARM64_RELOC_GOT_LOAD_PAGE21:
+  case MachO::ARM64_RELOC_GOT_LOAD_PAGEOFF12:
+  case MachO::ARM64_RELOC_POINTER_TO_GOT:
+    return NEVERC_OBJECT_RELOCATION_GOT_RELATIVE;
+  case MachO::ARM64_RELOC_TLVP_LOAD_PAGE21:
+  case MachO::ARM64_RELOC_TLVP_LOAD_PAGEOFF12:
+    return NEVERC_OBJECT_RELOCATION_TLS;
+  case MachO::ARM64_RELOC_UNSIGNED:
+  case MachO::ARM64_RELOC_PAGEOFF12:
+    return NEVERC_OBJECT_RELOCATION_ABSOLUTE;
+  default:
+    return NEVERC_OBJECT_RELOCATION_TARGET_EXTENSION;
+  }
+}
+
+// On AArch64 every Mach-O relocation except the plain pointer forms patches a
+// field inside an instruction.
+bool machOAArch64IsInstructionField(uint64_t Type) {
+  switch (Type) {
+  case MachO::ARM64_RELOC_UNSIGNED:
+  case MachO::ARM64_RELOC_SUBTRACTOR:
+  case MachO::ARM64_RELOC_POINTER_TO_GOT:
+  case MachO::ARM64_RELOC_ADDEND:
+    return false;
+  default:
+    return true;
+  }
+}
+
+std::optional<RelocationFacts>
+relocationFacts(const ObjectFile &Object, RelocationRef Relocation) {
+  const uint64_t Type = Relocation.getType();
+  // Mach-O records the field size and the addressing mode in the relocation
+  // itself, so there is nothing to look up.
   if (const auto *MachObject = dyn_cast<MachOObjectFile>(&Object)) {
     const unsigned Length =
         MachObject->getRelocationLength(Relocation.getRawDataRefImpl());
-    if (Length <= 4)
-      return (UINT32_C(1) << Length) * 8;
-  }
-  // COFF relocation names embed the architecture token ("AMD64", "ARM64"),
-  // whose digits the name heuristic below reads as a field width -- so every
-  // x86_64 and aarch64 COFF relocation would come out 64 bits wide, and a
-  // 32-bit one near a section's end would then be rejected as overrunning it.
-  // Derive the width from the relocation type instead.
-  if (const auto *COFFObject = dyn_cast<COFFObjectFile>(&Object)) {
-    const uint64_t Type = Relocation.getType();
-    switch (COFFObject->getMachine()) {
-    case COFF::IMAGE_FILE_MACHINE_AMD64:
-      switch (Type) {
-      case COFF::IMAGE_REL_AMD64_ADDR64:
-        return 64;
-      case COFF::IMAGE_REL_AMD64_SECTION:
-        return 16;
-      case COFF::IMAGE_REL_AMD64_SECREL7:
-        return 8;
-      default:
-        // Every other AMD64 relocation patches a 32-bit field.
-        return 32;
-      }
-    case COFF::IMAGE_FILE_MACHINE_ARM64:
-      switch (Type) {
-      case COFF::IMAGE_REL_ARM64_ADDR64:
-        return 64;
-      case COFF::IMAGE_REL_ARM64_SECTION:
-        return 16;
-      default:
-        // Instruction-form ARM64 relocations all patch a 32-bit instruction.
-        return 32;
-      }
-    default:
-      break;
-    }
-  }
-  // AArch64 ELF relocation names embed operand sizes that are not the field
-  // width: the architecture token "AARCH64" itself contains "64", and
-  // instruction-form relocations (ADR/ADD/LDST64/MOVW/CALL26/JUMP26/...) patch a
-  // fixed 32-bit instruction regardless of the size named in the mnemonic.  The
-  // name-based heuristic below would overestimate these as 64-bit and then
-  // spuriously reject a relocation that sits within 8 bytes of a section's end
-  // (e.g. a tail-call branch emitted by LTO).  Derive the width from the
-  // relocation type number instead; only ABS/PREL data relocations carry a raw
-  // field wider than the instruction.
-  if (const auto *ELFObject = dyn_cast<ELFObjectFileBase>(&Object)) {
-    if (ELFObject->getEMachine() == ELF::EM_AARCH64) {
-      switch (Relocation.getType()) {
-      case ELF::R_AARCH64_ABS64:
-      case ELF::R_AARCH64_PREL64:
-        return 64;
-      case ELF::R_AARCH64_ABS16:
-      case ELF::R_AARCH64_PREL16:
-        return 16;
-      default:
-        // ABS32/PREL32 and every instruction-form relocation are 32 bits wide.
-        return 32;
-      }
-    }
-    // The x86-64 GOT and TLS relocation names carry no width at all --
-    // R_X86_64_REX_GOTPCRELX patches 32 bits but has no digits for the name
-    // heuristic to read, so it would fall back to the pointer width and then be
-    // rejected as overrunning a section it actually fits in.
-    if (ELFObject->getEMachine() == ELF::EM_X86_64) {
-      switch (Relocation.getType()) {
-      case ELF::R_X86_64_64:
-      case ELF::R_X86_64_PC64:
-      case ELF::R_X86_64_GOT64:
-      case ELF::R_X86_64_GOTOFF64:
-      case ELF::R_X86_64_GOTPC64:
-      case ELF::R_X86_64_GOTPCREL64:
-      case ELF::R_X86_64_PLTOFF64:
-      case ELF::R_X86_64_SIZE64:
-      case ELF::R_X86_64_DTPOFF64:
-      case ELF::R_X86_64_TPOFF64:
-      case ELF::R_X86_64_GLOB_DAT:
-      case ELF::R_X86_64_JUMP_SLOT:
-      case ELF::R_X86_64_RELATIVE:
-      case ELF::R_X86_64_IRELATIVE:
-        return 64;
-      case ELF::R_X86_64_16:
-      case ELF::R_X86_64_PC16:
-        return 16;
-      case ELF::R_X86_64_8:
-      case ELF::R_X86_64_PC8:
-        return 8;
-      default:
-        // Everything else -- PC32, PLT32, the GOTPCREL forms, the 32-bit TLS
-        // forms -- patches a 32-bit field.
-        return 32;
-      }
-    }
-  }
-  const auto Lower = TypeName.lower();
-  if (Lower.find("128") != std::string::npos)
-    return 128;
-  if (Lower.find("64") != std::string::npos)
-    return 64;
-  if (Lower.find("32") != std::string::npos ||
-      Lower.find("26") != std::string::npos ||
-      Lower.find("24") != std::string::npos)
-    return 32;
-  if (Lower.find("16") != std::string::npos)
-    return 16;
-  if (Lower.find("8") != std::string::npos)
-    return 8;
-  return PointerWidth >= 8 && PointerWidth <= 128 &&
-                 (PointerWidth % 8) == 0
-             ? PointerWidth
-             : 32;
-}
-
-bool isPCRelative(const ObjectFile &Object, RelocationRef Relocation,
-                  StringRef TypeName) {
-  if (const auto *MachObject = dyn_cast<MachOObjectFile>(&Object)) {
+    if (Length > 3)
+      return std::nullopt;
     MachO::any_relocation_info Native =
         MachObject->getRelocation(Relocation.getRawDataRefImpl());
-    return MachObject->getAnyRelocationPCRel(Native) != 0;
+    const bool PCRelative =
+        MachObject->getAnyRelocationPCRel(Native) != 0;
+    const bool AArch64 = Object.getArch() == Triple::aarch64;
+    // x86 relocations always cover a displacement or immediate field that
+    // occupies whole bytes of its own, even inside an instruction.
+    return RelocationFacts{
+        (UINT32_C(1) << Length) * 8, PCRelative, PCRelative,
+        AArch64 && machOAArch64IsInstructionField(Type),
+        AArch64 ? machOAArch64Kind(Type) : machOX86_64Kind(Type)};
   }
-  const auto Lower = TypeName.lower();
-  return Lower.find("pcrel") != std::string::npos ||
-         Lower.find("pc") != std::string::npos ||
-         Lower.find("rel32") != std::string::npos ||
-         Lower.find("branch") != std::string::npos ||
-         Lower.find("call") != std::string::npos ||
-         Lower.find("page") != std::string::npos;
-}
-
-NevercObjectRelocationKind relocationKind(StringRef TypeName,
-                                          bool PCRelative) {
-  const auto Lower = TypeName.lower();
-  if (Lower.find("tls") != std::string::npos ||
-      Lower.find("tpoff") != std::string::npos ||
-      Lower.find("dtp") != std::string::npos)
-    return NEVERC_OBJECT_RELOCATION_TLS;
-  if (Lower.find("got") != std::string::npos)
-    return NEVERC_OBJECT_RELOCATION_GOT_RELATIVE;
-  if (Lower.find("plt") != std::string::npos)
-    return NEVERC_OBJECT_RELOCATION_PLT_RELATIVE;
-  if (Lower.find("secrel") != std::string::npos ||
-      Lower.find("section") != std::string::npos)
-    return NEVERC_OBJECT_RELOCATION_SECTION_RELATIVE;
-  if (Lower.find("addr32nb") != std::string::npos)
-    return NEVERC_OBJECT_RELOCATION_IMAGE_RELATIVE;
-  if (PCRelative)
-    return NEVERC_OBJECT_RELOCATION_PC_RELATIVE;
-  return NEVERC_OBJECT_RELOCATION_ABSOLUTE;
+  if (const auto *COFFObject = dyn_cast<COFFObjectFile>(&Object)) {
+    switch (COFFObject->getMachine()) {
+    case COFF::IMAGE_FILE_MACHINE_AMD64:
+      return coffX86_64Facts(Type);
+    case COFF::IMAGE_FILE_MACHINE_ARM64:
+      return coffAArch64Facts(Type);
+    default:
+      return std::nullopt;
+    }
+  }
+  if (const auto *ELFObject = dyn_cast<ELFObjectFileBase>(&Object)) {
+    switch (ELFObject->getEMachine()) {
+    case ELF::EM_X86_64:
+      return elfX86_64Facts(Type);
+    case ELF::EM_AARCH64:
+      return elfAArch64Facts(Type);
+    default:
+      return std::nullopt;
+    }
+  }
+  return std::nullopt;
 }
 
 struct SectionMapEntry {
@@ -558,7 +833,8 @@ NevercStatus createELFComdats(
   auto Sections = File.sections();
   if (!Sections) {
     consumeError(Sections.takeError());
-    return status(NEVERC_STATUS_VERIFICATION_FAILED, 50);
+    return status(NEVERC_STATUS_VERIFICATION_FAILED,
+                  detail(DetailELFGroupSections));
   }
   for (const typename ELFT::Shdr &Section : *Sections) {
     if (Section.sh_type != ELF::SHT_GROUP)
@@ -568,7 +844,8 @@ NevercStatus createELFComdats(
             Section);
     if (!Words) {
       consumeError(Words.takeError());
-      return status(NEVERC_STATUS_VERIFICATION_FAILED, 51);
+      return status(NEVERC_STATUS_VERIFICATION_FAILED,
+                    detail(DetailELFGroupContents));
     }
     if (Words->empty() ||
         (static_cast<uint32_t>(Words->front()) & ELF::GRP_COMDAT) == 0)
@@ -576,7 +853,8 @@ NevercStatus createELFComdats(
     auto SymbolTable = File.getSection(Section.sh_link);
     if (!SymbolTable) {
       consumeError(SymbolTable.takeError());
-      return status(NEVERC_STATUS_VERIFICATION_FAILED, 52);
+      return status(NEVERC_STATUS_VERIFICATION_FAILED,
+                    detail(DetailELFGroupSymbolTable));
     }
     auto Symbols = File.symbols(*SymbolTable);
     auto StringTable = File.getStringTableForSymtab(**SymbolTable);
@@ -586,13 +864,15 @@ NevercStatus createELFComdats(
         consumeError(Symbols.takeError());
       if (!StringTable)
         consumeError(StringTable.takeError());
-      return status(NEVERC_STATUS_VERIFICATION_FAILED, 53);
+      return status(NEVERC_STATUS_VERIFICATION_FAILED,
+                    detail(DetailELFGroupSymbols));
     }
     auto Name = (*Symbols)[Section.sh_info].getName(*StringTable);
     if (!Name || Name->empty()) {
       if (!Name)
         consumeError(Name.takeError());
-      return status(NEVERC_STATUS_VERIFICATION_FAILED, 54);
+      return status(NEVERC_STATUS_VERIFICATION_FAILED,
+                    detail(DetailELFGroupName));
     }
 
     NevercObjectComdatDescriptor Descriptor{};
@@ -657,7 +937,8 @@ NevercStatus createCOFFComdats(
         auto SymbolName = Symbol.getName();
         if (!SymbolName) {
           consumeError(SymbolName.takeError());
-          return status(NEVERC_STATUS_VERIFICATION_FAILED, 55);
+          return status(NEVERC_STATUS_VERIFICATION_FAILED,
+                        detail(DetailCOFFComdatSymbolName));
         }
         if (!SymbolName->empty())
           Plan.Name = SymbolName->str();
@@ -667,7 +948,8 @@ NevercStatus createCOFFComdats(
       auto SectionName = Section.getName();
       if (!SectionName) {
         consumeError(SectionName.takeError());
-        return status(NEVERC_STATUS_VERIFICATION_FAILED, 56);
+        return status(NEVERC_STATUS_VERIFICATION_FAILED,
+                      detail(DetailCOFFComdatSectionName));
       }
       Plan.Name = SectionName->str();
     }
@@ -688,11 +970,13 @@ NevercStatus createCOFFComdats(
       NevercObjectComdatHandle Associated{};
       if (Plan.Selection == NEVERC_OBJECT_COMDAT_ASSOCIATIVE) {
         if (Plan.AssociatedSectionNumber <= 0)
-          return status(NEVERC_STATUS_VERIFICATION_FAILED, 57);
+          return status(NEVERC_STATUS_VERIFICATION_FAILED,
+                        detail(DetailCOFFComdatAssociativeMissing));
         const uint64_t ParentIndex =
             static_cast<uint64_t>(Plan.AssociatedSectionNumber - 1);
         if (ParentIndex == Plan.SectionIndex)
-          return status(NEVERC_STATUS_VERIFICATION_FAILED, 58);
+          return status(NEVERC_STATUS_VERIFICATION_FAILED,
+                        detail(DetailCOFFComdatSelfAssociative));
         auto Parent = llvm::find_if(
             Comdats, [&](const ComdatMapEntry &Entry) {
               return Entry.SectionIndex == ParentIndex;
@@ -721,7 +1005,8 @@ NevercStatus createCOFFComdats(
     // Nothing moved: the remaining associations form a cycle or name a
     // section that is not a COMDAT at all.
     if (CreatedThisRound == 0)
-      return status(NEVERC_STATUS_VERIFICATION_FAILED, 59);
+      return status(NEVERC_STATUS_VERIFICATION_FAILED,
+                    detail(DetailCOFFComdatCycle));
   }
   return neverc_status_ok();
 }
@@ -761,22 +1046,31 @@ bool isLogicalObjectSection(const ObjectFile &Object,
   }
 }
 
-SectionMapEntry *findSection(std::vector<SectionMapEntry> &Sections,
+// Indexed by section index rather than scanned: createRelocations resolves a
+// section per relocation and createSymbols per symbol, so a linear scan makes
+// the reader quadratic in the size of the object.
+using SectionIndexMap = DenseMap<uint64_t, SectionMapEntry *>;
+
+SectionIndexMap indexSections(std::vector<SectionMapEntry> &Sections) {
+  SectionIndexMap Index;
+  Index.reserve(Sections.size());
+  for (SectionMapEntry &Entry : Sections)
+    Index.try_emplace(Entry.Section.getIndex(), &Entry);
+  return Index;
+}
+
+SectionMapEntry *findSection(const SectionIndexMap &Index,
                              SectionRef Section) {
-  auto It = std::find_if(
-      Sections.begin(), Sections.end(),
-      [&](const SectionMapEntry &Entry) {
-        return Entry.Section == Section;
-      });
-  return It == Sections.end() ? nullptr : &*It;
+  const auto It = Index.find(Section.getIndex());
+  return It == Index.end() ? nullptr : It->second;
 }
 
 // A relocation may name a symbol that collectSymbols() dropped as a container
 // artifact.  Those symbols label the start of a section, so the reference is
 // really section-relative and the graph can say so directly.
-SectionMapEntry *sectionForDroppedSymbol(
-    const ObjectFile &Object, SymbolRef Symbol,
-    std::vector<SectionMapEntry> &Sections) {
+SectionMapEntry *sectionForDroppedSymbol(const ObjectFile &Object,
+                                         SymbolRef Symbol,
+                                         const SectionIndexMap &Sections) {
   Expected<uint32_t> Flags = Symbol.getFlags();
   if (!Flags) {
     consumeError(Flags.takeError());
@@ -794,20 +1088,43 @@ SectionMapEntry *sectionForDroppedSymbol(
   return findSection(Sections, **Section);
 }
 
-const SymbolMapEntry *findSymbol(
-    const std::vector<SymbolMapEntry> &Symbols, SymbolRef Symbol) {
-  auto It = std::find_if(
-      Symbols.begin(), Symbols.end(),
-      [&](const SymbolMapEntry &Entry) {
-        return Entry.Symbol == Symbol;
-      });
-  return It == Symbols.end() ? nullptr : &*It;
+// A symbol has no stable index the way a section does, so its DataRefImpl --
+// the opaque cursor llvm::object hands out -- is the key.
+using SymbolIndexMap = DenseMap<std::pair<uint64_t, uint64_t>,
+                                const SymbolMapEntry *>;
+
+// Which member of DataRefImpl's union is live depends on the format, so the
+// key is its bytes -- the same thing llvm::object itself compares when asked
+// whether two symbols are the same symbol.
+std::pair<uint64_t, uint64_t> symbolKey(SymbolRef Symbol) {
+  const DataRefImpl Impl = Symbol.getRawDataRefImpl();
+  uint64_t Words[2] = {0, 0};
+  static_assert(sizeof(Impl) <= sizeof(Words),
+                "DataRefImpl does not fit the symbol key");
+  std::memcpy(Words, &Impl, sizeof(Impl));
+  return {Words[0], Words[1]};
 }
 
-NevercStatus createSections(const ObjectFile &Object,
+const SymbolMapEntry *findSymbol(const SymbolIndexMap &Index,
+                                 SymbolRef Symbol) {
+  const auto It = Index.find(symbolKey(Symbol));
+  return It == Index.end() ? nullptr : It->second;
+}
+
+NevercStatus createSections(BuiltinObjectFormat Format,
+                            const ObjectFile &Object,
                             const NevercObjectReadRequest &Request,
                             ArrayRef<ComdatMapEntry> Comdats,
                             std::vector<SectionMapEntry> &Sections) {
+  // Indexed for the same reason the section and symbol maps are: C++ puts every
+  // inline function, template instantiation and vtable in its own COMDAT, so
+  // the list grows with the section list and scanning it once per section is
+  // quadratic in the size of the object.
+  DenseMap<uint64_t, NevercObjectComdatHandle> ComdatBySection;
+  ComdatBySection.reserve(Comdats.size());
+  for (const ComdatMapEntry &Entry : Comdats)
+    ComdatBySection.try_emplace(Entry.SectionIndex, Entry.Handle);
+
   uint64_t AnonymousIndex = 0;
   for (SectionRef Section : Object.sections()) {
     if (!isLogicalObjectSection(Object, Section))
@@ -815,7 +1132,8 @@ NevercStatus createSections(const ObjectFile &Object,
     Expected<StringRef> NameOrError = Section.getName();
     if (!NameOrError) {
       consumeError(NameOrError.takeError());
-      return status(NEVERC_STATUS_VERIFICATION_FAILED, 101);
+      return status(NEVERC_STATUS_VERIFICATION_FAILED,
+                    detailAt(DetailSectionName, Sections.size()));
     }
     std::string GeneratedName;
     StringRef Name = *NameOrError;
@@ -826,7 +1144,7 @@ NevercStatus createSections(const ObjectFile &Object,
 
     const bool IsTLS = isTLSSection(Object, Section, Name);
     const NevercObjectSectionKind Kind =
-        sectionKind(Object, Section, Name, IsTLS);
+        sectionKind(Format, Object, Section, Name, IsTLS);
     SmallVector<uint8_t, 48> Extension;
     nativeSectionExtension(Object, Section, Extension);
 
@@ -846,23 +1164,22 @@ NevercStatus createSections(const ObjectFile &Object,
       Expected<StringRef> ContentsOrError = Section.getContents();
       if (!ContentsOrError) {
         consumeError(ContentsOrError.takeError());
-        return status(NEVERC_STATUS_VERIFICATION_FAILED, 102);
+        return status(NEVERC_STATUS_VERIFICATION_FAILED,
+                      detailAt(DetailSectionContents, Sections.size()));
       }
       if (ContentsOrError->size() != Size)
-        return status(NEVERC_STATUS_VERIFICATION_FAILED, 103);
+        return status(NEVERC_STATUS_VERIFICATION_FAILED,
+                      detailAt(DetailSectionSizeMismatch, Sections.size()));
       Descriptor.Data = {
           reinterpret_cast<const uint8_t *>(ContentsOrError->data()),
           static_cast<uint64_t>(ContentsOrError->size())};
     }
     Descriptor.ExtensionOwner = Request.Target.ObjectFormatID;
-    Descriptor.ExtensionVersion = NevercObjectNCSEVersion;
+    Descriptor.ExtensionVersion = builtinext::SectionVersion;
     Descriptor.Extension = byteView(Extension);
-    auto Comdat = llvm::find_if(
-        Comdats, [&](const ComdatMapEntry &Entry) {
-          return Entry.SectionIndex == Section.getIndex();
-        });
-    if (Comdat != Comdats.end())
-      Descriptor.Comdat = Comdat->Handle;
+    const auto Comdat = ComdatBySection.find(Section.getIndex());
+    if (Comdat != ComdatBySection.end())
+      Descriptor.Comdat = Comdat->second;
 
     NevercObjectSectionHandle Handle{};
     NevercStatus Result = Request.Object->CreateSection(
@@ -870,7 +1187,7 @@ NevercStatus createSections(const ObjectFile &Object,
         &Descriptor, &Handle);
     if (!neverc_status_is_ok(Result)) {
       if (Result.Detail == 0)
-        Result.Detail = 110 + Sections.size();
+        Result.Detail = detailAt(DetailSectionCreate, Sections.size());
       return Result;
     }
     Sections.push_back({Section, Handle, Kind, Size,
@@ -881,7 +1198,7 @@ NevercStatus createSections(const ObjectFile &Object,
 
 NevercStatus createSymbols(const ObjectFile &Object,
                            const NevercObjectReadRequest &Request,
-                           std::vector<SectionMapEntry> &Sections,
+                           const SectionIndexMap &Sections,
                            std::vector<SymbolMapEntry> &Symbols) {
   uint64_t AnonymousIndex = 0;
   for (SymbolRef Symbol : Object.symbols()) {
@@ -902,7 +1219,8 @@ NevercStatus createSymbols(const ObjectFile &Object,
         consumeError(ValueOrError.takeError());
       if (!SectionOrError)
         consumeError(SectionOrError.takeError());
-      return status(NEVERC_STATUS_VERIFICATION_FAILED, 201);
+      return status(NEVERC_STATUS_VERIFICATION_FAILED,
+                    detailAt(DetailSymbolQuery, Symbols.size()));
     }
 
     const uint32_t NativeFlags = *FlagsOrError;
@@ -958,7 +1276,8 @@ NevercStatus createSymbols(const ObjectFile &Object,
         Descriptor.Size = ELFSymbolRef(Symbol).getSize();
       if (Descriptor.Value > MappedSection->Size ||
           Descriptor.Size > MappedSection->Size - Descriptor.Value)
-        return status(NEVERC_STATUS_VERIFICATION_FAILED, 202);
+        return status(NEVERC_STATUS_VERIFICATION_FAILED,
+                      detailAt(DetailSymbolOutsideSection, Symbols.size()));
       if (MappedSection->Kind == NEVERC_OBJECT_SECTION_KIND_TLS_DATA ||
           MappedSection->Kind ==
               NEVERC_OBJECT_SECTION_KIND_TLS_ZERO_FILL)
@@ -971,7 +1290,7 @@ NevercStatus createSymbols(const ObjectFile &Object,
     SmallVector<uint8_t, 48> Extension;
     nativeSymbolExtension(Object, Symbol, Extension);
     Descriptor.ExtensionOwner = Request.Target.ObjectFormatID;
-    Descriptor.ExtensionVersion = 1;
+    Descriptor.ExtensionVersion = builtinext::SymbolVersion;
     Descriptor.Extension = byteView(Extension);
 
     NevercObjectSymbolHandle Handle{};
@@ -980,7 +1299,7 @@ NevercStatus createSymbols(const ObjectFile &Object,
         &Descriptor, &Handle);
     if (!neverc_status_is_ok(Result)) {
       if (Result.Detail == 0)
-        Result.Detail = 210 + Symbols.size();
+        Result.Detail = detailAt(DetailSymbolCreate, Symbols.size());
       return Result;
     }
     Symbols.push_back({Symbol, Handle});
@@ -988,10 +1307,35 @@ NevercStatus createSymbols(const ObjectFile &Object,
   return neverc_status_ok();
 }
 
-NevercStatus createRelocations(
-    const ObjectFile &Object, const NevercObjectReadRequest &Request,
-    std::vector<SectionMapEntry> &Sections,
-    const std::vector<SymbolMapEntry> &Symbols) {
+// COFF and Mach-O keep a relocation's addend in the bytes it covers rather than
+// in the relocation record. The writer restates such a relocation as a data
+// directive, which overwrites those bytes, so the addend has to be lifted into
+// the graph here or the rewrite silently drops it.
+int64_t implicitAddend(StringRef Contents, uint64_t Offset, uint32_t Width) {
+  // A field wider than the accumulator has no addend this can lift, and
+  // shifting past the accumulator's width is undefined rather than merely
+  // wrong.
+  if (Width == 0 || Width > 64)
+    return 0;
+  uint64_t Raw = 0;
+  for (uint32_t I = 0; I != Width / 8; ++I)
+    Raw |= static_cast<uint64_t>(
+               static_cast<uint8_t>(Contents[static_cast<size_t>(Offset) + I]))
+           << (I * 8);
+  if (Width < 64) {
+    // An addend is a displacement, so a field with its top bit set is negative.
+    const uint64_t SignBit = UINT64_C(1) << (Width - 1);
+    if ((Raw & SignBit) != 0)
+      Raw |= ~((UINT64_C(1) << Width) - 1);
+  }
+  return static_cast<int64_t>(Raw);
+}
+
+NevercStatus createRelocations(const ObjectFile &Object,
+                               const NevercObjectReadRequest &Request,
+                               const SectionIndexMap &Sections,
+                               const SymbolIndexMap &Symbols) {
+  const bool ELFAddends = isa<ELFObjectFileBase>(Object);
   for (SectionRef RelocationSection : Object.sections()) {
     SectionMapEntry *MappedSection =
         findSection(Sections, RelocationSection);
@@ -999,54 +1343,82 @@ NevercStatus createRelocations(
         RelocationSection.getRelocatedSection();
     if (!RelocatedSection) {
       consumeError(RelocatedSection.takeError());
-      return status(NEVERC_STATUS_VERIFICATION_FAILED, 300);
+      return status(NEVERC_STATUS_VERIFICATION_FAILED,
+                    detail(DetailRelocatedSectionQuery));
     }
-    if (*RelocatedSection != Object.section_end()) {
+    // On ELF the relocations live in their own .rela section, which the graph
+    // does not carry; elsewhere they hang off the section they patch.
+    if (*RelocatedSection != Object.section_end())
       MappedSection = findSection(Sections, **RelocatedSection);
-      if (!MappedSection)
-        return status(NEVERC_STATUS_VERIFICATION_FAILED, 302);
+    if (!MappedSection) {
+      if (RelocationSection.relocations().begin() ==
+          RelocationSection.relocations().end())
+        continue;
+      return status(NEVERC_STATUS_VERIFICATION_FAILED,
+                    detail(DetailRelocationSectionUnmapped));
     }
+
+    // Read once per section: the addend of a COFF or Mach-O relocation is in
+    // these bytes.
+    StringRef Contents;
+    if (!ELFAddends) {
+      Expected<StringRef> ContentsOrError =
+          MappedSection->Section.getContents();
+      if (ContentsOrError)
+        Contents = *ContentsOrError;
+      else
+        consumeError(ContentsOrError.takeError());
+    }
+
     for (RelocationRef Relocation : RelocationSection.relocations()) {
-      if (!MappedSection)
-        return status(NEVERC_STATUS_VERIFICATION_FAILED, 302);
       SmallString<64> TypeStorage;
       Relocation.getTypeName(TypeStorage);
       StringRef TypeName = TypeStorage;
-      const uint32_t Width = relocationWidth(
-          Object, Relocation, TypeName, Request.Target.PointerWidth);
-      const bool PCRelative =
-          isPCRelative(Object, Relocation, TypeName);
-      if (Width == 0 || Width > 128 || (Width % 8) != 0)
-        return status(NEVERC_STATUS_VERIFICATION_FAILED, 301);
-      if (Relocation.getOffset() > MappedSection->Size)
-        return status(NEVERC_STATUS_VERIFICATION_FAILED, 303);
-      if (Width / 8 > MappedSection->Size - Relocation.getOffset())
-        return status(NEVERC_STATUS_VERIFICATION_FAILED, 304);
+      const std::optional<RelocationFacts> Facts =
+          relocationFacts(Object, Relocation);
+      if (!Facts)
+        return status(NEVERC_STATUS_CAPABILITY_UNAVAILABLE,
+                      detail(DetailRelocationUnsupportedTarget));
+      if (Facts->IsNoOp)
+        continue;
+      // Capped at 64 rather than 128 because that is what implicitAddend can
+      // lift, and no format below asks for more.
+      const uint32_t Width = Facts->Width;
+      if (Width == 0 || Width > 64 || (Width % 8) != 0)
+        return status(NEVERC_STATUS_VERIFICATION_FAILED,
+                      detail(DetailRelocationWidthInvalid));
+      if (Relocation.getOffset() > MappedSection->Size ||
+          Width / 8 > MappedSection->Size - Relocation.getOffset())
+        return status(NEVERC_STATUS_VERIFICATION_FAILED,
+                      detail(DetailRelocationOutsideSection));
 
       NevercObjectRelocationDescriptor Descriptor{};
       Descriptor.Header = {sizeof(Descriptor), NEVERC_OBJECT_API_MAJOR,
                            NEVERC_OBJECT_API_MINOR, 0};
       Descriptor.Section = MappedSection->Handle;
       Descriptor.Offset = Relocation.getOffset();
-      Descriptor.Kind = relocationKind(TypeName, PCRelative);
+      Descriptor.Kind = Facts->Kind;
       Descriptor.Width = Width;
       Descriptor.IsPCRelative =
-          PCRelative ? NEVERC_TRUE : NEVERC_FALSE;
-      Descriptor.IsSigned =
-          PCRelative ? NEVERC_TRUE : NEVERC_FALSE;
-      if (isa<ELFObjectFileBase>(Object)) {
+          Facts->IsPCRelative ? NEVERC_TRUE : NEVERC_FALSE;
+      Descriptor.IsSigned = Facts->IsSigned ? NEVERC_TRUE : NEVERC_FALSE;
+      if (ELFAddends) {
         Expected<int64_t> Addend =
             ELFRelocationRef(Relocation).getAddend();
         if (Addend)
           Descriptor.Addend = *Addend;
         else
           consumeError(Addend.takeError());
+      } else if (!Facts->IsInstructionField &&
+                 Relocation.getOffset() + Width / 8 <= Contents.size()) {
+        Descriptor.Addend =
+            implicitAddend(Contents, Relocation.getOffset(), Width);
       }
 
       SmallVector<uint8_t, 80> Extension;
       nativeRelocationExtension(Relocation, TypeName, Extension);
       Descriptor.ExtensionOwner = Request.Target.ObjectFormatID;
-      Descriptor.ExtensionVersion = 1;
+      Descriptor.ExtensionVersion = builtinext::RelocationVersion;
       Descriptor.Extension = byteView(Extension);
 
       symbol_iterator Symbol = Relocation.getSymbol();
@@ -1063,7 +1435,8 @@ NevercStatus createRelocations(
               NEVERC_OBJECT_RELOCATION_TARGET_SECTION;
           Descriptor.TargetSection = DroppedTarget->Handle;
         } else {
-          return status(NEVERC_STATUS_VERIFICATION_FAILED, 302);
+          return status(NEVERC_STATUS_VERIFICATION_FAILED,
+                        detail(DetailRelocationTargetUnmapped));
         }
       } else if (const auto *MachObject =
                      dyn_cast<MachOObjectFile>(&Object)) {
@@ -1096,7 +1469,7 @@ NevercStatus createRelocations(
           &Descriptor, &Handle);
       if (!neverc_status_is_ok(Result)) {
         if (Result.Detail == 0)
-          Result.Detail = 310;
+          Result.Detail = detail(DetailRelocationCreate);
         return Result;
       }
     }
@@ -1200,7 +1573,7 @@ NevercStatus NEVERC_CALL readBuiltinObject(
   auto ObjectOrError = ObjectFile::createObjectFile(Buffer);
   if (!ObjectOrError) {
     consumeError(ObjectOrError.takeError());
-    return status(NEVERC_STATUS_VERIFICATION_FAILED, 401);
+    return status(NEVERC_STATUS_VERIFICATION_FAILED, detail(DetailObjectParse));
   }
   ObjectFile &Object = **ObjectOrError;
   const bool CorrectFormat =
@@ -1211,7 +1584,8 @@ NevercStatus NEVERC_CALL readBuiltinObject(
       (Context->Format == BuiltinObjectFormat::MachO &&
        isa<MachOObjectFile>(Object));
   if (!CorrectFormat)
-    return status(NEVERC_STATUS_VERIFICATION_FAILED, 402);
+    return status(NEVERC_STATUS_VERIFICATION_FAILED,
+                  detail(DetailObjectFormatMismatch));
 
   std::vector<ComdatMapEntry> Comdats;
   NevercStatus Result = createComdats(Object, *Request, Comdats);
@@ -1219,13 +1593,19 @@ NevercStatus NEVERC_CALL readBuiltinObject(
     return Result;
   std::vector<SectionMapEntry> Sections;
   std::vector<SymbolMapEntry> Symbols;
-  Result = createSections(Object, *Request, Comdats, Sections);
+  Result = createSections(Context->Format, Object, *Request, Comdats,
+                          Sections);
   if (!neverc_status_is_ok(Result))
     return Result;
-  Result = createSymbols(Object, *Request, Sections, Symbols);
+  const SectionIndexMap SectionIndex = indexSections(Sections);
+  Result = createSymbols(Object, *Request, SectionIndex, Symbols);
   if (!neverc_status_is_ok(Result))
     return Result;
-  return createRelocations(Object, *Request, Sections, Symbols);
+  SymbolIndexMap SymbolIndex;
+  SymbolIndex.reserve(Symbols.size());
+  for (const SymbolMapEntry &Entry : Symbols)
+    SymbolIndex.try_emplace(symbolKey(Entry.Symbol), &Entry);
+  return createRelocations(Object, *Request, SectionIndex, SymbolIndex);
 }
 
 const BuiltinFormatContext *

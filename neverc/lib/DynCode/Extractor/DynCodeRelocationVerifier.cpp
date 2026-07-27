@@ -40,13 +40,20 @@ llvm::Error verifyDynCodeRelocations(const DynCodeExtractionPlan &Plan,
           "resolved",
           (unsigned long long)E.SiteOffset);
 
-    DynCodeRelocationMapping M = mapDynCodeRelocation(Target, E.NativeType);
+    if (!E.NativeType)
+      return createStringError(
+          errc::invalid_argument,
+          "dyncode relocation verifier: relocation at site 0x%llx carries no "
+          "readable native relocation type",
+          (unsigned long long)E.SiteOffset);
+
+    DynCodeRelocationMapping M = mapDynCodeRelocation(Target, *E.NativeType);
     if (M.Class != DynCodeRelocationClass::IntraImage)
       return createStringError(
           errc::invalid_argument,
           "dyncode relocation verifier: relocation at site 0x%llx (native type "
           "%llu) is not an intra-image form",
-          (unsigned long long)E.SiteOffset, (unsigned long long)E.NativeType);
+          (unsigned long long)E.SiteOffset, (unsigned long long)*E.NativeType);
 
     int64_t FinalAddr = static_cast<int64_t>(E.TargetOffset) + E.Addend +
                         M.AddendAdjust;

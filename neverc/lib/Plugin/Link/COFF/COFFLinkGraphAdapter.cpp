@@ -6,6 +6,7 @@
 #include "neverc/Linker/COFF/InputFiles.h"
 #include "neverc/Linker/COFF/Symbols.h"
 #include "neverc/Plugin/Host/BuiltinTargetProvider.h"
+#include "neverc/Plugin/Host/ObjectSectionRole.h"
 #include "neverc/Plugin/Host/PluginTaskContext.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
@@ -92,7 +93,13 @@ uint64_t ensureID(Map &IDs, Key Native, Add AddEntity) {
   return ID;
 }
 
-NevercObjectSectionFlags sectionFlags(uint32_t Characteristics) {
+// Takes the name as well as the characteristics because COFF records none of
+// "debug", "unwind" or "thread-local" in the header: the kind below reads them
+// out of the name, and a section whose kind says debug while its flags do not
+// is a section describing itself two ways. The other three adapters -- both ELF
+// ones and the COFF binary image -- already answer from the name here.
+NevercObjectSectionFlags sectionFlags(uint32_t Characteristics,
+                                      StringRef Name) {
   NevercObjectSectionFlags Flags = 0;
   if ((Characteristics & IMAGE_SCN_MEM_READ) != 0)
     Flags |= NEVERC_OBJECT_SECTION_ALLOCATED;
@@ -102,14 +109,30 @@ NevercObjectSectionFlags sectionFlags(uint32_t Characteristics) {
     Flags |= NEVERC_OBJECT_SECTION_WRITABLE;
   if ((Characteristics & IMAGE_SCN_MEM_DISCARDABLE) != 0)
     Flags |= NEVERC_OBJECT_SECTION_DISCARDABLE;
+  if (isDebugSectionName(BuiltinObjectFormat::COFF, Name))
+    Flags |= NEVERC_OBJECT_SECTION_DEBUG;
+  if (isUnwindSectionName(BuiltinObjectFormat::COFF, Name))
+    Flags |= NEVERC_OBJECT_SECTION_UNWIND;
+  if (isThreadLocalSectionName(BuiltinObjectFormat::COFF, Name))
+    Flags |= NEVERC_OBJECT_SECTION_TLS;
   return Flags;
 }
 
 NevercObjectSectionKind sectionKind(uint32_t Characteristics, StringRef Name) {
-  if (Name.starts_with(".debug"))
+  if (isDebugSectionName(BuiltinObjectFormat::COFF, Name))
     return NEVERC_OBJECT_SECTION_KIND_DEBUG;
-  if (Name == ".pdata" || Name == ".xdata")
+  if (isUnwindSectionName(BuiltinObjectFormat::COFF, Name))
     return NEVERC_OBJECT_SECTION_KIND_UNWIND;
+  // ELF answers this from SHF_TLS and the ELF adapter reads it; COFF has no
+  // such bit, so the name is the only statement of it. Left unasked, a
+  // ".tls$..." section reached the graph as ordinary data, and the atoms built
+  // from it below carried nothing to say they were thread-local -- which is
+  // exactly what tells a consumer that folding two of them would give two
+  // thread-local variables one slot in the TLS template.
+  if (isThreadLocalSectionName(BuiltinObjectFormat::COFF, Name))
+    return (Characteristics & IMAGE_SCN_CNT_UNINITIALIZED_DATA) != 0
+               ? NEVERC_OBJECT_SECTION_KIND_TLS_ZERO_FILL
+               : NEVERC_OBJECT_SECTION_KIND_TLS_DATA;
   if ((Characteristics & IMAGE_SCN_CNT_CODE) != 0 ||
       (Characteristics & IMAGE_SCN_MEM_EXECUTE) != 0)
     return NEVERC_OBJECT_SECTION_KIND_TEXT;
@@ -143,19 +166,51 @@ bool isPCRelativeRelocation(MachineTypes Machine, uint16_t Type) {
   if (Machine == AMD64)
     return Type >= IMAGE_REL_AMD64_REL32 && Type <= IMAGE_REL_AMD64_REL32_5;
   if (Machine == ARM64)
-    return Type == IMAGE_REL_ARM64_BRANCH26 ||
-           Type == IMAGE_REL_ARM64_PAGEBASE_REL21 ||
-           Type == IMAGE_REL_ARM64_REL21;
+    switch (Type) {
+    // The conditional and test branches address from the program counter just
+    // as BRANCH26 does, and REL32 is the data-word form of the same thing.
+    case IMAGE_REL_ARM64_BRANCH26:
+    case IMAGE_REL_ARM64_PAGEBASE_REL21:
+    case IMAGE_REL_ARM64_REL21:
+    case IMAGE_REL_ARM64_BRANCH19:
+    case IMAGE_REL_ARM64_BRANCH14:
+    case IMAGE_REL_ARM64_REL32:
+      return true;
+    default:
+      return false;
+    }
   return false;
 }
 
+// The LinkGraph edge width is expressed in bits ({8,16,32,64}), not bytes, and
+// names the storage field the relocation writes -- not the narrower immediate
+// an instruction encodes inside it, so ARM64's branch and page forms report 32.
+//
+// LinkVerifier reads this width to decide whether a fixup fits inside its atom,
+// so a form left off this list is not merely mislabelled: understating ARM64's
+// ADDR64 as 32 bits let an eight-byte fixup within four bytes of an atom's end
+// pass the bounds check it should have failed.
 uint8_t relocationWidth(MachineTypes Machine, uint16_t Type) {
-  // The LinkGraph edge width is expressed in bits ({0,8,16,32,64}), not bytes.
-  if (Machine == AMD64 && Type == IMAGE_REL_AMD64_ADDR64)
-    return 64;
-  if ((Machine == AMD64 && Type == IMAGE_REL_AMD64_SECTION) ||
-      (Machine == ARM64 && Type == IMAGE_REL_ARM64_SECTION))
-    return 16;
+  if (Machine == AMD64)
+    switch (Type) {
+    case IMAGE_REL_AMD64_ADDR64:
+      return 64;
+    case IMAGE_REL_AMD64_SECTION:
+      return 16;
+    case IMAGE_REL_AMD64_SECREL7:
+      return 8;
+    default:
+      return 32;
+    }
+  if (Machine == ARM64)
+    switch (Type) {
+    case IMAGE_REL_ARM64_ADDR64:
+      return 64;
+    case IMAGE_REL_ARM64_SECTION:
+      return 16;
+    default:
+      return 32;
+    }
   return 32;
 }
 
@@ -297,7 +352,7 @@ COFFLinkGraphAdapter::capture(const PluginLinkGraph &Previous,
       return 0;
     Section->Name = Native->name.empty() ? "<coff-output>" : Native->name.str();
     Section->Kind = sectionKind(Native->header.Characteristics, Native->name);
-    Section->Flags = sectionFlags(Native->header.Characteristics);
+    Section->Flags = sectionFlags(Native->header.Characteristics, Native->name);
     Section->Address =
         HasLayout ? Context.config.imageBase + Native->getRVA() : 0;
     Section->FileOffset = HasLayout ? Native->getFileOff() : 0;
@@ -370,7 +425,7 @@ COFFLinkGraphAdapter::capture(const PluginLinkGraph &Previous,
       return 0;
     Section->Name = NativeName.empty() ? "<coff-chunk>" : NativeName.str();
     Section->Kind = sectionKind(Characteristics, NativeName);
-    Section->Flags = sectionFlags(Characteristics);
+    Section->Flags = sectionFlags(Characteristics, NativeName);
     Section->Alignment = std::max<uint32_t>(1, Native->getAlignment());
     Section->Origin = originFor(InputIDs, fileForChunk(Native));
     Section->Address = 0;
@@ -412,6 +467,9 @@ COFFLinkGraphAdapter::capture(const PluginLinkGraph &Previous,
     }
     if (Section->Kind == NEVERC_OBJECT_SECTION_KIND_UNWIND)
       Atom->Flags |= NEVERC_LINK_ATOM_UNWIND;
+    if (Section->Kind == NEVERC_OBJECT_SECTION_KIND_TLS_DATA ||
+        Section->Kind == NEVERC_OBJECT_SECTION_KIND_TLS_ZERO_FILL)
+      Atom->Flags |= NEVERC_LINK_ATOM_TLS;
     Atom->Alignment = Section->Alignment;
     Atom->Origin = Section->Origin;
     Atom->Address = 0;

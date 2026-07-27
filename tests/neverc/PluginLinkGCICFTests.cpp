@@ -82,6 +82,8 @@ struct ICFGraphIDs {
   uint64_t Candidate = 0;
   uint64_t AddressSignificant = 0;
   uint64_t Different = 0;
+  uint64_t ThreadLocal = 0;
+  uint64_t Unwind = 0;
 };
 
 std::shared_ptr<PluginLinkGraph> makeICFGraph(ICFGraphIDs &IDs) {
@@ -102,7 +104,7 @@ std::shared_ptr<PluginLinkGraph> makeICFGraph(ICFGraphIDs &IDs) {
   Section.Flags =
       NEVERC_OBJECT_SECTION_ALLOCATED | NEVERC_OBJECT_SECTION_EXECUTABLE;
   Section.Alignment = 1;
-  Section.Size = 8;
+  Section.Size = 12;
   Section.Origin.InputID = InputID;
   const uint64_t SectionID =
       Graph->addSection(std::move(Section)).ID;
@@ -124,6 +126,13 @@ std::shared_ptr<PluginLinkGraph> makeICFGraph(ICFGraphIDs &IDs) {
       AddAtom("address-significant", {0x90, 0xc3},
               NEVERC_LINK_ATOM_ADDRESS_SIGNIFICANT);
   IDs.Different = AddAtom("different", {0xcc, 0xc3}, 0);
+  // Byte-equal to the leader, and ineligible only because of the flag. Two
+  // thread-local variables with the same initializer are byte-equal by
+  // construction, and folding them would give them one slot in the TLS
+  // template -- a write through one would land on the other.
+  IDs.ThreadLocal =
+      AddAtom("thread-local", {0x90, 0xc3}, NEVERC_LINK_ATOM_TLS);
+  IDs.Unwind = AddAtom("unwind", {0x90, 0xc3}, NEVERC_LINK_ATOM_UNWIND);
   return Graph;
 }
 
@@ -172,6 +181,54 @@ TEST(PluginLinkGCICFTest,
   EXPECT_EQ(
       (*Output)->findAtom(IDs.AddressSignificant)->FoldLeaderID, 0U);
   EXPECT_EQ((*Output)->findAtom(IDs.Different)->FoldLeaderID, 0U);
+}
+
+// ICF refuses these two on the strength of a flag alone -- their bytes are the
+// leader's -- so nothing else states that the flag is what stops them. Folding
+// a thread-local atom gives two variables one slot in the TLS template, and
+// folding an unwind atom makes one function's unwind record describe another.
+//
+// The flag has to reach the atom for this to fire, and only the ELF adapter
+// and the ObjectGraph importer used to set it: COFF states thread-locality
+// nowhere but in the section name, and its adapter did not read it, so every
+// atom it produced arrived here looking foldable.
+TEST(PluginLinkGCICFTest, BuiltinICFKeepsThreadLocalAndUnwindAtomsApart) {
+  ICFGraphIDs IDs;
+  auto Graph = makeICFGraph(IDs);
+  ASSERT_TRUE(static_cast<bool>(Graph));
+  auto Folding = foldIdenticalLinkAtoms(*Graph);
+  ASSERT_TRUE(static_cast<bool>(Folding))
+      << errorText(Folding.takeError());
+
+  const auto RecordFor = [&](uint64_t AtomID) {
+    return llvm::find_if(*Folding, [&](const LinkFoldRecord &Record) {
+      return Record.AtomID == AtomID;
+    });
+  };
+  // Byte-equality alone would have folded these into the leader.
+  ASSERT_EQ(Graph->findAtom(IDs.ThreadLocal)->Content,
+            Graph->findAtom(IDs.Leader)->Content);
+  ASSERT_EQ(Graph->findAtom(IDs.Unwind)->Content,
+            Graph->findAtom(IDs.Leader)->Content);
+
+  const auto ThreadLocal = RecordFor(IDs.ThreadLocal);
+  ASSERT_NE(ThreadLocal, Folding->end());
+  EXPECT_FALSE(ThreadLocal->Eligible);
+  EXPECT_EQ(ThreadLocal->Reason, "tls");
+  EXPECT_EQ(Graph->findAtom(IDs.ThreadLocal)->FoldLeaderID, 0U);
+  EXPECT_EQ(Graph->findAtom(IDs.ThreadLocal)->Flags &
+                NEVERC_LINK_ATOM_FOLDED,
+            0U);
+
+  const auto Unwind = RecordFor(IDs.Unwind);
+  ASSERT_NE(Unwind, Folding->end());
+  EXPECT_FALSE(Unwind->Eligible);
+  EXPECT_EQ(Unwind->Reason, "unwind");
+  EXPECT_EQ(Graph->findAtom(IDs.Unwind)->FoldLeaderID, 0U);
+
+  // The eligible pair still folds, so the exclusions above are the flags at
+  // work and not ICF having stopped altogether.
+  EXPECT_EQ(Graph->findAtom(IDs.Candidate)->FoldLeaderID, IDs.Leader);
 }
 
 TEST(PluginLinkGCICFTest, PureCInterceptorCanKeepAnAdditionalAtomLive) {

@@ -1,19 +1,25 @@
 #include "BuiltinLLVMObjectWriter.h"
+#include "neverc/Plugin/Host/AssemblySymbolName.h"
+#include "neverc/Plugin/Host/BuiltinObjectExtension.h"
 #include "neverc/Plugin/Host/BuiltinLLVMAsmParser.h"
 #include "neverc/Plugin/Host/BuiltinTargetProvider.h"
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/BinaryFormat/COFF.h"
+#include "llvm/BinaryFormat/MachO.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/MemoryBufferRef.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/TargetParser/Triple.h"
 #include <algorithm>
-#include <cctype>
 #include <cstdint>
 #include <limits>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -22,6 +28,80 @@ using namespace llvm;
 
 namespace neverc::plugin {
 namespace {
+
+// Each failure site has a stable number, and the index of the entity being
+// processed -- when there is one -- occupies the low decimal digits. The two
+// have to be encoded separately: adding an index straight onto a base made
+// distinct failures indistinguishable as soon as a graph held a handful of
+// sections or a few hundred symbols, which is every real translation unit.
+enum DetailSite : uint64_t {
+  DetailRequestArguments = 100,
+  DetailRequestABI,
+  DetailComdatFirst,
+  DetailComdatNext,
+  DetailComdatInfo,
+  DetailComdatName,
+  DetailComdatNameUnsupported,
+  DetailComdatExtensionBytes,
+  DetailComdatExtensionUnsupported,
+  DetailSectionFirst,
+  DetailSectionNext,
+  DetailSectionInfo,
+  DetailSectionDataView,
+  DetailSectionName,
+  DetailSectionNameUnsupported,
+  DetailSectionBytes,
+  DetailSectionExtensionUnsupported,
+  DetailSymbolFirst,
+  DetailSymbolNext,
+  DetailSymbolInfo,
+  DetailSymbolName,
+  DetailSymbolNameUnsupported,
+  DetailSymbolExtensionBytes,
+  DetailSymbolExtensionUnsupported,
+  DetailRelocationFirst,
+  DetailRelocationNext,
+  DetailRelocationInfo,
+  DetailRelocationExtensionBytes,
+  DetailRelocationExtensionUnsupported,
+  DetailRelocationWidthUnsupported,
+  DetailRelocationTargetSymbolMissing,
+  DetailRelocationTargetSectionMissing,
+  DetailRelocationTargetKindUnsupported,
+  DetailRelocationKindUnsupported,
+  DetailRelocationImageRelativeWidth,
+  DetailRelocationSectionRelativeWidth,
+  DetailRelocationNameMissing,
+  DetailRelocationNotExpressible,
+  DetailSymbolOutsideSection,
+  DetailRelocationWidthInvalid,
+  DetailRelocationOutsideSection,
+  DetailRelocationOverlapsSymbol,
+  DetailSymbolsUnplaced,
+  DetailMachOExecutableRelocation,
+  DetailComdatMachOUnsupported,
+  DetailComdatELFSelectionUnsupported,
+  DetailComdatCOFFSelectionUnsupported,
+  DetailComdatMissing,
+  DetailComdatParentMissing,
+  DetailTargetRouteMissing,
+  DetailTargetLookupFailed,
+  DetailAssemblyParseFailed,
+  DetailBinaryWriteFailed,
+  DetailCommonAlignmentUnsupported,
+  DetailComdatClaimedTwice,
+  DetailSymbolNameRepeated,
+  DetailSymbolNamePrivate,
+};
+
+constexpr uint64_t DetailIndexScale = 1000000;
+
+uint64_t detailAt(DetailSite Site, size_t Index) {
+  return static_cast<uint64_t>(Site) * DetailIndexScale +
+         std::min<uint64_t>(Index, DetailIndexScale - 1);
+}
+
+uint64_t detail(DetailSite Site) { return detailAt(Site, 0); }
 
 struct SectionRecord {
   NevercObjectSectionHandle Handle{};
@@ -91,47 +171,16 @@ NevercStatus writerStatus(NevercStatusCode Code, uint64_t Detail) {
   return Status;
 }
 
-bool sameHandle(NevercHandle Left, NevercHandle Right) {
-  return Left.Owner == Right.Owner && Left.Value == Right.Value;
-}
-
 bool sameID(NevercInterfaceID Left, NevercInterfaceID Right) {
   return Left.High == Right.High && Left.Low == Right.Low;
-}
-
-bool validName(StringRef Name) {
-  if (Name.empty())
-    return false;
-  return llvm::all_of(Name, [](unsigned char C) {
-    return std::isalnum(C) || C == '_' || C == '.' || C == '$' ||
-           C == '@' || C == '-';
-  });
-}
-
-// A symbol name can hold characters the assembler reads as syntax rather than
-// as part of the name: '@' introduces a relocation variant and '-' subtracts.
-// LLVM spells COFF floating-point constants "__real@<bits>", so this is routine
-// rather than hypothetical. Quoting keeps such a name whole, and the assembler
-// takes a quoted name anywhere a bare one is allowed. validName() already
-// excludes quotes and backslashes, so nothing inside needs escaping.
-std::string assemblyName(StringRef Name) {
-  const bool Plain = llvm::all_of(Name, [](unsigned char C) {
-    return std::isalnum(C) || C == '_' || C == '.' || C == '$';
-  });
-  if (Plain)
-    return Name.str();
-  return ("\"" + Name + "\"").str();
 }
 
 bool copyString(NevercStringView View, std::string &Output) {
   if (View.Length > std::numeric_limits<size_t>::max() ||
       (!View.Data && View.Length != 0))
     return false;
-  StringRef Text(View.Data ? View.Data : "",
-                 static_cast<size_t>(View.Length));
-  if (!validName(Text))
-    return false;
-  Output = Text.str();
+  Output.assign(View.Data ? View.Data : "",
+                static_cast<size_t>(View.Length));
   return true;
 }
 
@@ -148,27 +197,27 @@ bool copyBytes(NevercByteView View, std::vector<uint8_t> &Output) {
 bool supportedExtension(NevercObjectFormatID FormatID,
                         NevercObjectFormatID Owner, uint32_t Version,
                         ArrayRef<uint8_t> Bytes, StringRef Tag,
-                        uint32_t MaxVersion = 1) {
+                        uint32_t MaxVersion) {
   if (Bytes.empty())
     return Owner.High == 0 && Owner.Low == 0 && Version == 0;
   return sameID(Owner, FormatID) && Version >= 1 && Version <= MaxVersion &&
-         Bytes.size() >= 8 &&
-         StringRef(reinterpret_cast<const char *>(Bytes.data()), 4) == Tag;
+         builtinext::hasTag(Bytes, Tag);
 }
 
-// Layout of the "NCSE" section extension: tag[4], version[4], then u64 index,
-// address, type, flags, offset, and -- from version 2 -- entry size.
-constexpr size_t NCSEEntrySizeOffset = 8 + 5 * 8;
-
 uint64_t nativeEntrySize(const SectionRecord &Section) {
-  if (Section.ExtensionVersion < 2 ||
-      Section.Extension.size() < NCSEEntrySizeOffset + 8)
+  if (Section.ExtensionVersion < 2)
     return 0;
-  uint64_t Value = 0;
-  for (unsigned I = 0; I != 8; ++I)
-    Value |= static_cast<uint64_t>(Section.Extension[NCSEEntrySizeOffset + I])
-             << (I * 8);
-  return Value;
+  return builtinext::field(Section.Extension, builtinext::SectionEntrySize)
+      .value_or(0);
+}
+
+// The relocation's native type number, as recorded by the reader. Absent for a
+// graph the reader did not produce, which is why every caller has to have an
+// answer for "no native type" rather than assuming one.
+std::optional<uint64_t> nativeRelocationType(const RelocationRecord &R) {
+  if (!builtinext::hasTag(R.Extension, builtinext::RelocationTag))
+    return std::nullopt;
+  return builtinext::field(R.Extension, builtinext::RelocationNativeType);
 }
 
 NevercStatus collectComdats(const NevercObjectWriteRequest &Request,
@@ -180,10 +229,11 @@ NevercStatus collectComdats(const NevercObjectWriteRequest &Request,
     return neverc_status_ok();
   if (!neverc_status_is_ok(Status)) {
     if (Status.Detail == 0)
-      Status.Detail = 151;
+      Status.Detail = detail(DetailComdatFirst);
     return Status;
   }
   for (;;) {
+    const size_t Index = Comdats.size();
     NevercObjectComdatInfo Info{};
     Info.Header = {sizeof(Info), NEVERC_OBJECT_API_MAJOR,
                    NEVERC_OBJECT_API_MINOR, 0};
@@ -191,25 +241,30 @@ NevercStatus collectComdats(const NevercObjectWriteRequest &Request,
         Request.Object->Context, Request.Task, Handle, &Info);
     if (!neverc_status_is_ok(Status)) {
       if (Status.Detail == 0)
-        Status.Detail = 160 + Comdats.size();
+        Status.Detail = detailAt(DetailComdatInfo, Index);
       return Status;
     }
     ComdatRecord Record;
     Record.Handle = Handle;
     if (!copyString(Info.Name, Record.Name))
       return writerStatus(NEVERC_STATUS_INVALID_ARGUMENT,
-                          170 + Comdats.size());
+                          detailAt(DetailComdatName, Index));
+    if (!expressibleName(Record.Name))
+      return writerStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE,
+                          detailAt(DetailComdatNameUnsupported, Index));
     Record.Selection = Info.Selection;
     Record.AssociatedComdat = Info.AssociatedComdat;
     Record.ExtensionOwner = Info.ExtensionOwner;
     Record.ExtensionVersion = Info.ExtensionVersion;
     if (!copyBytes(Info.Extension, Record.Extension))
       return writerStatus(NEVERC_STATUS_INVALID_ARGUMENT,
-                          180 + Comdats.size());
+                          detailAt(DetailComdatExtensionBytes, Index));
     if (!supportedExtension(Request.FormatID, Record.ExtensionOwner,
                             Record.ExtensionVersion, Record.Extension,
-                            "NCCO"))
-      return writerStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE, 190);
+                            builtinext::ComdatTag,
+                            builtinext::ComdatVersion))
+      return writerStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE,
+                          detailAt(DetailComdatExtensionUnsupported, Index));
     Comdats.push_back(std::move(Record));
 
     NevercObjectComdatHandle Next{};
@@ -219,7 +274,7 @@ NevercStatus collectComdats(const NevercObjectWriteRequest &Request,
       return neverc_status_ok();
     if (!neverc_status_is_ok(Status)) {
       if (Status.Detail == 0)
-        Status.Detail = 191;
+        Status.Detail = detailAt(DetailComdatNext, Index);
       return Status;
     }
     Handle = Next;
@@ -235,10 +290,11 @@ NevercStatus collectSections(const NevercObjectWriteRequest &Request,
     return neverc_status_ok();
   if (!neverc_status_is_ok(Status)) {
     if (Status.Detail == 0)
-      Status.Detail = 201;
+      Status.Detail = detail(DetailSectionFirst);
     return Status;
   }
   for (;;) {
+    const size_t Index = Sections.size();
     NevercObjectSectionInfo Info{};
     Info.Header = {sizeof(Info), NEVERC_OBJECT_API_MAJOR,
                    NEVERC_OBJECT_API_MINOR, 0};
@@ -246,33 +302,38 @@ NevercStatus collectSections(const NevercObjectWriteRequest &Request,
         Request.Object->Context, Request.Task, Handle, &Info);
     if (!neverc_status_is_ok(Status)) {
       if (Status.Detail == 0)
-        Status.Detail = 210 + Sections.size();
+        Status.Detail = detailAt(DetailSectionInfo, Index);
       return Status;
     }
     if (Info.Data.Length > std::numeric_limits<size_t>::max() ||
         (!Info.Data.Data && Info.Data.Length != 0))
       return writerStatus(NEVERC_STATUS_INVALID_ARGUMENT,
-                          220 + Sections.size());
+                          detailAt(DetailSectionDataView, Index));
     SectionRecord Record;
     Record.Handle = Handle;
     if (!copyString(Info.Name, Record.Name))
       return writerStatus(NEVERC_STATUS_INVALID_ARGUMENT,
-                          230 + Sections.size());
+                          detailAt(DetailSectionName, Index));
+    if (!expressibleName(Record.Name))
+      return writerStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE,
+                          detailAt(DetailSectionNameUnsupported, Index));
     Record.Kind = Info.Kind;
     Record.Flags = Info.Flags;
     Record.Alignment = Info.Alignment;
     if (!copyBytes(Info.Data, Record.Data) ||
         !copyBytes(Info.Extension, Record.Extension))
       return writerStatus(NEVERC_STATUS_INVALID_ARGUMENT,
-                          235 + Sections.size());
+                          detailAt(DetailSectionBytes, Index));
     Record.ZeroFillSize = Info.ZeroFillSize;
     Record.Comdat = Info.Comdat;
     Record.ExtensionOwner = Info.ExtensionOwner;
     Record.ExtensionVersion = Info.ExtensionVersion;
     if (!supportedExtension(Request.FormatID, Record.ExtensionOwner,
                             Record.ExtensionVersion, Record.Extension,
-                            "NCSE", NevercObjectNCSEVersion))
-      return writerStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE, 241);
+                            builtinext::SectionTag,
+                            builtinext::SectionVersion))
+      return writerStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE,
+                          detailAt(DetailSectionExtensionUnsupported, Index));
     Sections.push_back(std::move(Record));
 
     NevercObjectSectionHandle Next{};
@@ -282,7 +343,7 @@ NevercStatus collectSections(const NevercObjectWriteRequest &Request,
       return neverc_status_ok();
     if (!neverc_status_is_ok(Status)) {
       if (Status.Detail == 0)
-        Status.Detail = 250;
+        Status.Detail = detailAt(DetailSectionNext, Index);
       return Status;
     }
     Handle = Next;
@@ -298,10 +359,11 @@ NevercStatus collectSymbols(const NevercObjectWriteRequest &Request,
     return neverc_status_ok();
   if (!neverc_status_is_ok(Status)) {
     if (Status.Detail == 0)
-      Status.Detail = 301;
+      Status.Detail = detail(DetailSymbolFirst);
     return Status;
   }
   for (;;) {
+    const size_t Index = Symbols.size();
     NevercObjectSymbolInfo Info{};
     Info.Header = {sizeof(Info), NEVERC_OBJECT_API_MAJOR,
                    NEVERC_OBJECT_API_MINOR, 0};
@@ -309,14 +371,17 @@ NevercStatus collectSymbols(const NevercObjectWriteRequest &Request,
         Request.Object->Context, Request.Task, Handle, &Info);
     if (!neverc_status_is_ok(Status)) {
       if (Status.Detail == 0)
-        Status.Detail = 310 + Symbols.size();
+        Status.Detail = detailAt(DetailSymbolInfo, Index);
       return Status;
     }
     SymbolRecord Record;
     Record.Handle = Handle;
     if (!copyString(Info.Name, Record.Name))
       return writerStatus(NEVERC_STATUS_INVALID_ARGUMENT,
-                          320 + Symbols.size());
+                          detailAt(DetailSymbolName, Index));
+    if (!expressibleName(Record.Name))
+      return writerStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE,
+                          detailAt(DetailSymbolNameUnsupported, Index));
     Record.Binding = Info.Binding;
     Record.Visibility = Info.Visibility;
     Record.Type = Info.Type;
@@ -331,11 +396,12 @@ NevercStatus collectSymbols(const NevercObjectWriteRequest &Request,
     Record.ExtensionVersion = Info.ExtensionVersion;
     if (!copyBytes(Info.Extension, Record.Extension))
       return writerStatus(NEVERC_STATUS_INVALID_ARGUMENT,
-                          325 + Symbols.size());
+                          detailAt(DetailSymbolExtensionBytes, Index));
     if (!supportedExtension(Request.FormatID, Record.ExtensionOwner,
                             Record.ExtensionVersion, Record.Extension,
-                            "NCSY"))
-      return writerStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE, 331);
+                            builtinext::SymbolTag, builtinext::SymbolVersion))
+      return writerStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE,
+                          detailAt(DetailSymbolExtensionUnsupported, Index));
     Symbols.push_back(std::move(Record));
 
     NevercObjectSymbolHandle Next{};
@@ -345,7 +411,7 @@ NevercStatus collectSymbols(const NevercObjectWriteRequest &Request,
       return neverc_status_ok();
     if (!neverc_status_is_ok(Status)) {
       if (Status.Detail == 0)
-        Status.Detail = 340;
+        Status.Detail = detailAt(DetailSymbolNext, Index);
       return Status;
     }
     Handle = Next;
@@ -362,10 +428,11 @@ NevercStatus collectRelocations(
     return neverc_status_ok();
   if (!neverc_status_is_ok(Status)) {
     if (Status.Detail == 0)
-      Status.Detail = 401;
+      Status.Detail = detail(DetailRelocationFirst);
     return Status;
   }
   for (;;) {
+    const size_t Index = Relocations.size();
     NevercObjectRelocationInfo Info{};
     Info.Header = {sizeof(Info), NEVERC_OBJECT_API_MAJOR,
                    NEVERC_OBJECT_API_MINOR, 0};
@@ -373,7 +440,7 @@ NevercStatus collectRelocations(
         Request.Object->Context, Request.Task, Handle, &Info);
     if (!neverc_status_is_ok(Status)) {
       if (Status.Detail == 0)
-        Status.Detail = 410 + Relocations.size();
+        Status.Detail = detailAt(DetailRelocationInfo, Index);
       return Status;
     }
     RelocationRecord Record;
@@ -394,11 +461,14 @@ NevercStatus collectRelocations(
     Record.ExtensionVersion = Info.ExtensionVersion;
     if (!copyBytes(Info.Extension, Record.Extension))
       return writerStatus(NEVERC_STATUS_INVALID_ARGUMENT,
-                          420 + Relocations.size());
+                          detailAt(DetailRelocationExtensionBytes, Index));
     if (!supportedExtension(Request.FormatID, Record.ExtensionOwner,
                             Record.ExtensionVersion, Record.Extension,
-                            "NCRL"))
-      return writerStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE, 430);
+                            builtinext::RelocationTag,
+                            builtinext::RelocationVersion))
+      return writerStatus(
+          NEVERC_STATUS_CAPABILITY_UNAVAILABLE,
+          detailAt(DetailRelocationExtensionUnsupported, Index));
     Relocations.push_back(std::move(Record));
 
     NevercObjectRelocationHandle Next{};
@@ -408,7 +478,7 @@ NevercStatus collectRelocations(
       return neverc_status_ok();
     if (!neverc_status_is_ok(Status)) {
       if (Status.Detail == 0)
-        Status.Detail = 440;
+        Status.Detail = detailAt(DetailRelocationNext, Index);
       return Status;
     }
     Handle = Next;
@@ -467,33 +537,74 @@ bool elfMergeFlags(const SectionRecord &Section, std::string &Flags,
 // \p AssociatedName is the parent COMDAT's name, set only for an associative
 // COFF COMDAT. The directive has to name the section it is tied to -- naming
 // itself is what "associative with sectionless symbol" means to the assembler.
+bool isZeroFillKind(NevercObjectSectionKind Kind) {
+  return Kind == NEVERC_OBJECT_SECTION_KIND_ZERO_FILL ||
+         Kind == NEVERC_OBJECT_SECTION_KIND_TLS_ZERO_FILL;
+}
+
+// COFF states what a section contains and how it is protected in one flag
+// string, and the content letters are mutually exclusive: 'b' (uninitialised)
+// alongside 'd' (initialised) is rejected outright as conflicting. Building the
+// string in one place keeps that constraint in one place too.
+//
+// An uninitialised section is spelled 'b' alone. There is no letter for a
+// read-only one -- 'r' would bring the conflicting 'd' meaning with it -- and
+// the assembler leaves a section writable unless told otherwise, which is what
+// every real .bss wants.
+std::string coffSectionFlags(NevercObjectSectionFlags SectionFlags,
+                             bool ZeroFill) {
+  const bool Writable = (SectionFlags & NEVERC_OBJECT_SECTION_WRITABLE) != 0;
+  if ((SectionFlags & NEVERC_OBJECT_SECTION_EXECUTABLE) != 0)
+    return Writable ? "xw" : "xr";
+  if (ZeroFill)
+    return "b";
+  return Writable ? "dw" : "dr";
+}
+
+// Every section is written as an explicit .section carrying the flags the graph
+// holds. The shorthand directives -- .text, .data, .bss -- would be shorter,
+// but they name a section *and* pick its attributes from the assembler's
+// defaults, so a section whose flags differ from those defaults comes back
+// changed. Spelling the flags out keeps the graph, not the assembler, as the
+// source of truth.
 NevercStatus emitSectionDirective(raw_ostream &OS,
                                   const SectionRecord &Section,
                                   const Triple &Target,
                                   const ComdatRecord *Comdat,
                                   StringRef AssociatedName) {
+  const std::string Name = assemblyName(Section.Name);
+  const bool ZeroFill = isZeroFillKind(Section.Kind);
+  const bool Executable =
+      (Section.Flags & NEVERC_OBJECT_SECTION_EXECUTABLE) != 0;
+  // A graph the reader built states thread-locality twice, in the kind and in
+  // the flags, so either alone is enough to answer. Reading only one of them
+  // made the same section come out with SHF_TLS or without it depending on
+  // which path below wrote it.
+  const bool TLS = Section.Kind == NEVERC_OBJECT_SECTION_KIND_TLS_DATA ||
+                   Section.Kind == NEVERC_OBJECT_SECTION_KIND_TLS_ZERO_FILL ||
+                   (Section.Flags & NEVERC_OBJECT_SECTION_TLS) != 0;
+
   if (Comdat) {
     if (Target.isOSBinFormatMachO())
-      return writerStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE, 470);
-    const bool ZeroFill =
-        Section.Kind == NEVERC_OBJECT_SECTION_KIND_ZERO_FILL ||
-        Section.Kind == NEVERC_OBJECT_SECTION_KIND_TLS_ZERO_FILL;
+      return writerStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE,
+                          detail(DetailComdatMachOUnsupported));
     std::string Flags;
     if (Target.isOSBinFormatELF()) {
       if (Comdat->Selection != NEVERC_OBJECT_COMDAT_ANY)
-        return writerStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE, 471);
+        return writerStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE,
+                            detail(DetailComdatELFSelectionUnsupported));
       if ((Section.Flags & NEVERC_OBJECT_SECTION_ALLOCATED) != 0)
         Flags.push_back('a');
       if ((Section.Flags & NEVERC_OBJECT_SECTION_WRITABLE) != 0)
         Flags.push_back('w');
-      if ((Section.Flags & NEVERC_OBJECT_SECTION_EXECUTABLE) != 0)
+      if (Executable)
         Flags.push_back('x');
       uint64_t EntrySize = 0;
       const bool Mergeable = elfMergeFlags(Section, Flags, EntrySize);
-      if ((Section.Flags & NEVERC_OBJECT_SECTION_TLS) != 0)
+      if (TLS)
         Flags.push_back('T');
       Flags.push_back('G');
-      OS << "\t.section\t" << Section.Name << ",\"" << Flags << "\",@"
+      OS << "\t.section\t" << Name << ",\"" << Flags << "\",@"
          << (ZeroFill ? "nobits" : "progbits");
       if (Mergeable)
         OS << ',' << EntrySize;
@@ -502,95 +613,109 @@ NevercStatus emitSectionDirective(raw_ostream &OS,
     }
     StringRef Selection = coffComdatSelection(Comdat->Selection);
     if (Selection.empty())
-      return writerStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE, 472);
-    if ((Section.Flags & NEVERC_OBJECT_SECTION_EXECUTABLE) != 0)
-      Flags = "xr";
-    else
-      Flags = (Section.Flags & NEVERC_OBJECT_SECTION_WRITABLE) != 0
-                  ? "dw"
-                  : "dr";
-    if (ZeroFill)
-      Flags.push_back('b');
-    OS << "\t.section\t" << Section.Name << ",\"" << Flags << "\","
-       << Selection << ','
+      return writerStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE,
+                          detail(DetailComdatCOFFSelectionUnsupported));
+    Flags = coffSectionFlags(Section.Flags, ZeroFill);
+    OS << "\t.section\t" << Name << ",\"" << Flags << "\"," << Selection
+       << ','
        << assemblyName(AssociatedName.empty() ? StringRef(Comdat->Name)
-                                                : AssociatedName)
+                                              : AssociatedName)
        << '\n';
     return neverc_status_ok();
   }
-  if (Section.Kind == NEVERC_OBJECT_SECTION_KIND_TLS_DATA) {
-    if (Target.isOSBinFormatMachO())
-      OS << "\t.section\t__DATA," << Section.Name
-         << ",thread_local_regular\n";
-    else if (Target.isOSBinFormatELF())
-      OS << "\t.section\t" << Section.Name << ",\"awT\",@progbits\n";
-    else
-      OS << "\t.section\t" << Section.Name << ",\"dw\"\n";
-    return neverc_status_ok();
-  }
-  if (Section.Kind == NEVERC_OBJECT_SECTION_KIND_TLS_ZERO_FILL) {
-    if (Target.isOSBinFormatMachO())
-      OS << "\t.section\t__DATA," << Section.Name
-         << ",thread_local_zerofill\n";
-    else if (Target.isOSBinFormatELF())
-      OS << "\t.section\t" << Section.Name << ",\"awT\",@nobits\n";
-    else
-      OS << "\t.section\t" << Section.Name << ",\"bw\"\n";
-    return neverc_status_ok();
-  }
-  if (Section.Kind == NEVERC_OBJECT_SECTION_KIND_TEXT &&
-      Section.Name == ".text") {
-    OS << "\t.text\n";
-    return neverc_status_ok();
-  }
-  if (Section.Kind == NEVERC_OBJECT_SECTION_KIND_DATA &&
-      Section.Name == ".data") {
-    OS << "\t.data\n";
-    return neverc_status_ok();
-  }
-  if (Section.Kind == NEVERC_OBJECT_SECTION_KIND_ZERO_FILL &&
-      (Section.Name == ".bss" || Section.Name == "__bss")) {
-    OS << "\t.bss\n";
-    return neverc_status_ok();
-  }
+
+  // Mach-O keeps read/write/execute protection on the segment, so a section
+  // states its nature through its type and attributes instead. A zero-fill
+  // section in particular has to say so: without the type the assembler makes
+  // it an ordinary section and the trailing .zero becomes real bytes in the
+  // file.
   if (Target.isOSBinFormatMachO()) {
-    const StringRef Segment =
-        (Section.Flags & NEVERC_OBJECT_SECTION_EXECUTABLE) != 0
-            ? "__TEXT"
-            : "__DATA";
-    OS << "\t.section\t" << Segment << ',' << Section.Name << '\n';
+    StringRef Segment = Executable ? "__TEXT" : "__DATA";
+    OS << "\t.section\t" << Segment << ',' << Name;
+    if (TLS)
+      OS << (ZeroFill ? ",thread_local_zerofill" : ",thread_local_regular");
+    else if (ZeroFill)
+      OS << ",zerofill";
+    else if (Executable)
+      OS << ",regular,pure_instructions";
+    OS << '\n';
     return neverc_status_ok();
   }
+
   if (Target.isOSBinFormatELF()) {
     std::string Flags;
     if ((Section.Flags & NEVERC_OBJECT_SECTION_ALLOCATED) != 0)
       Flags.push_back('a');
     if ((Section.Flags & NEVERC_OBJECT_SECTION_WRITABLE) != 0)
       Flags.push_back('w');
-    if ((Section.Flags & NEVERC_OBJECT_SECTION_EXECUTABLE) != 0)
+    if (Executable)
       Flags.push_back('x');
     uint64_t EntrySize = 0;
     const bool Mergeable = elfMergeFlags(Section, Flags, EntrySize);
-    const bool ZeroFill =
-        Section.Kind == NEVERC_OBJECT_SECTION_KIND_ZERO_FILL;
-    OS << "\t.section\t" << Section.Name << ",\"" << Flags << "\",@"
+    if (TLS)
+      Flags.push_back('T');
+    OS << "\t.section\t" << Name << ",\"" << Flags << "\",@"
        << (ZeroFill ? "nobits" : "progbits");
     if (Mergeable)
       OS << ',' << EntrySize;
     OS << '\n';
     return neverc_status_ok();
   }
-  std::string Flags;
-  if ((Section.Flags & NEVERC_OBJECT_SECTION_EXECUTABLE) != 0)
-    Flags.push_back('x');
-  else
-    Flags.push_back((Section.Flags & NEVERC_OBJECT_SECTION_WRITABLE) != 0
-                        ? 'd'
-                        : 'r');
-  if (Section.Kind == NEVERC_OBJECT_SECTION_KIND_ZERO_FILL)
-    Flags.push_back('b');
-  OS << "\t.section\t" << Section.Name << ",\"" << Flags << "\"\n";
+
+  OS << "\t.section\t" << Name << ",\""
+     << coffSectionFlags(Section.Flags, ZeroFill) << "\"\n";
   return neverc_status_ok();
+}
+
+// How a tentative definition is spelled, or nothing when the format cannot
+// hold its alignment.
+//
+// ".comm" hands its symbol to the linker to be matched against one of the same
+// name in another translation unit, so a tentative definition belonging to
+// this file alone cannot be written that way -- written so, it becomes part of
+// the object's interface and merges with whatever else claims the name. Each
+// format says "local" differently: ELF has no ".lcomm" and marks the symbol
+// with ".local" beside an ordinary ".comm", while Mach-O and COFF take
+// ".lcomm" and place the storage in .bss.
+//
+// The alignment operand means different things in different places, and the
+// directive carries nothing to say which was meant. ELF counts bytes while
+// Mach-O and COFF read a log2 exponent, so an 8 written the ELF way reads as
+// 2^8 on the others and a common symbol came back out of a rewrite wanting 256
+// bytes instead of 8. COFF then reads the same operand on ".lcomm" as a byte
+// count again -- the opposite of what its own ".comm" means by it. Rounding up
+// to a power of two first is what leaves every spelling well-formed, since an
+// alignment that is not one has no exponent to write and the byte-counting
+// parsers refuse it too.
+//
+// COFF keeps a ".comm" alignment in a field that stops at 32 bytes, and the MC
+// layer answers a larger one by killing the process rather than by failing the
+// write, so that bound has to be checked before the assembler sees it. The
+// ".lcomm" path lands in an ordinary section and carries no such limit.
+struct CommonSpelling {
+  StringRef Directive;
+  // ELF states the binding on a line of its own; no other format has one.
+  bool NeedsLocalDirective = false;
+  uint64_t AlignmentOperand = 1;
+};
+
+std::optional<CommonSpelling> commonSpelling(uint64_t Alignment, bool Local,
+                                             const Triple &Target) {
+  // There is no power of two above the top bit to round up to, and PowerOf2Ceil
+  // shifts by 64 rather than saying so.
+  if (Alignment > (UINT64_C(1) << 63))
+    return std::nullopt;
+  const uint64_t Bytes = PowerOf2Ceil(std::max<uint64_t>(Alignment, 1));
+  if (Target.isOSBinFormatELF())
+    return CommonSpelling{".comm", Local, Bytes};
+  if (Target.isOSBinFormatCOFF()) {
+    if (Local)
+      return CommonSpelling{".lcomm", false, Bytes};
+    if (Target.isWindowsMSVCEnvironment() && Bytes > 32)
+      return std::nullopt;
+    return CommonSpelling{".comm", false, Log2_64(Bytes)};
+  }
+  return CommonSpelling{Local ? ".lcomm" : ".comm", false, Log2_64(Bytes)};
 }
 
 void emitSymbolAttributes(raw_ostream &OS, const SymbolRecord &Symbol,
@@ -622,32 +747,48 @@ void emitSymbolAttributes(raw_ostream &OS, const SymbolRecord &Symbol,
   }
 }
 
-const SymbolRecord *
-findSymbol(ArrayRef<SymbolRecord> Symbols, NevercObjectSymbolHandle Handle) {
-  auto It = llvm::find_if(Symbols, [&](const SymbolRecord &Symbol) {
-    return sameHandle(Symbol.Handle, Handle);
-  });
-  return It == Symbols.end() ? nullptr : &*It;
+// Handles are looked up once per relocation and once per section, so a linear
+// scan makes the writer quadratic in the size of the graph. A translation unit
+// with ten thousand symbols and as many relocations is ordinary under LTO.
+using HandleKey = std::pair<uint64_t, uint64_t>;
+
+HandleKey handleKey(NevercHandle Handle) {
+  return {Handle.Owner, Handle.Value};
 }
 
-const ComdatRecord *
-findComdat(ArrayRef<ComdatRecord> Comdats,
-           NevercObjectComdatHandle Handle) {
+template <typename Record>
+DenseMap<HandleKey, const Record *> indexByHandle(ArrayRef<Record> Records) {
+  DenseMap<HandleKey, const Record *> Index;
+  Index.reserve(Records.size());
+  for (const Record &Value : Records)
+    Index.try_emplace(handleKey(Value.Handle), &Value);
+  return Index;
+}
+
+template <typename Record>
+const Record *lookupHandle(const DenseMap<HandleKey, const Record *> &Index,
+                           NevercHandle Handle) {
+  const auto It = Index.find(handleKey(Handle));
+  return It == Index.end() ? nullptr : It->second;
+}
+
+// Everything the emitters need to resolve a handle back to the record it names.
+struct GraphIndex {
+  DenseMap<HandleKey, const SectionRecord *> Sections;
+  DenseMap<HandleKey, const SymbolRecord *> Symbols;
+  DenseMap<HandleKey, const ComdatRecord *> Comdats;
+  // Symbols and relocations grouped by the section that holds them, each list
+  // already in the order the writer emits them.
+  DenseMap<HandleKey, std::vector<const SymbolRecord *>> DefinedBySection;
+  DenseMap<HandleKey, std::vector<const RelocationRecord *>>
+      RelocationsBySection;
+};
+
+const ComdatRecord *findComdat(const GraphIndex &Index,
+                               NevercObjectComdatHandle Handle) {
   if (neverc_handle_is_null(Handle))
     return nullptr;
-  auto It = llvm::find_if(Comdats, [&](const ComdatRecord &Comdat) {
-    return sameHandle(Comdat.Handle, Handle);
-  });
-  return It == Comdats.end() ? nullptr : &*It;
-}
-
-const SectionRecord *
-findSection(ArrayRef<SectionRecord> Sections,
-            NevercObjectSectionHandle Handle) {
-  auto It = llvm::find_if(Sections, [&](const SectionRecord &Section) {
-    return sameHandle(Section.Handle, Handle);
-  });
-  return It == Sections.end() ? nullptr : &*It;
+  return lookupHandle(Index.Comdats, Handle);
 }
 
 std::string sectionLabel(size_t Index, const Triple &Target) {
@@ -660,28 +801,31 @@ std::string sectionLabel(size_t Index, const Triple &Target) {
 // addend folded in -- shared by the data-patching and .reloc paths.
 NevercStatus relocationTargetExpression(const RelocationRecord &Relocation,
                                         ArrayRef<SectionRecord> Sections,
-                                        ArrayRef<SymbolRecord> Symbols,
+                                        const GraphIndex &Index,
                                         const Triple &Target,
                                         std::string &TargetExpression) {
   raw_string_ostream Expression(TargetExpression);
   if (Relocation.TargetKind ==
       NEVERC_OBJECT_RELOCATION_TARGET_SYMBOL) {
     const SymbolRecord *Symbol =
-        findSymbol(Symbols, Relocation.TargetSymbol);
+        lookupHandle(Index.Symbols, Relocation.TargetSymbol);
     if (!Symbol)
-      return writerStatus(NEVERC_STATUS_VERIFICATION_FAILED, 451);
+      return writerStatus(NEVERC_STATUS_VERIFICATION_FAILED,
+                          detail(DetailRelocationTargetSymbolMissing));
     Expression << assemblyName(Symbol->Name);
   } else if (Relocation.TargetKind ==
              NEVERC_OBJECT_RELOCATION_TARGET_SECTION) {
     const SectionRecord *Section =
-        findSection(Sections, Relocation.TargetSection);
+        lookupHandle(Index.Sections, Relocation.TargetSection);
     if (!Section)
-      return writerStatus(NEVERC_STATUS_VERIFICATION_FAILED, 452);
-    const size_t Index =
+      return writerStatus(NEVERC_STATUS_VERIFICATION_FAILED,
+                          detail(DetailRelocationTargetSectionMissing));
+    const size_t SectionIndex =
         static_cast<size_t>(Section - Sections.data());
-    Expression << sectionLabel(Index, Target);
+    Expression << sectionLabel(SectionIndex, Target);
   } else {
-    return writerStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE, 453);
+    return writerStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE,
+                        detail(DetailRelocationTargetKindUnsupported));
   }
   if (Relocation.Addend > 0)
     Expression << '+' << Relocation.Addend;
@@ -691,21 +835,10 @@ NevercStatus relocationTargetExpression(const RelocationRecord &Relocation,
   return neverc_status_ok();
 }
 
-// Layout of the "NCRL" relocation extension: tag[4], version[4], u64 native
-// type, u32 name length, then the name bytes.
 StringRef nativeRelocationName(const RelocationRecord &Relocation) {
-  constexpr size_t NameLengthOffset = 8 + 8;
-  const std::vector<uint8_t> &Bytes = Relocation.Extension;
-  if (Bytes.size() < NameLengthOffset + 4)
+  if (!builtinext::hasTag(Relocation.Extension, builtinext::RelocationTag))
     return StringRef();
-  uint32_t Length = 0;
-  for (unsigned I = 0; I != 4; ++I)
-    Length |= static_cast<uint32_t>(Bytes[NameLengthOffset + I]) << (I * 8);
-  if (Length == 0 || Bytes.size() - NameLengthOffset - 4 < Length)
-    return StringRef();
-  return StringRef(
-      reinterpret_cast<const char *>(Bytes.data() + NameLengthOffset + 4),
-      Length);
+  return builtinext::relocationName(Relocation.Extension);
 }
 
 // ELF states a relocation as a .reloc directive over bytes that stay exactly as
@@ -720,14 +853,15 @@ NevercStatus emitRelocDirective(raw_ostream &OS,
                                 const RelocationRecord &Relocation,
                                 size_t SectionIndex,
                                 ArrayRef<SectionRecord> Sections,
-                                ArrayRef<SymbolRecord> Symbols,
+                                const GraphIndex &Index,
                                 const Triple &Target) {
   const StringRef Name = nativeRelocationName(Relocation);
   if (Name.empty())
-    return writerStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE, 457);
+    return writerStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE,
+                        detail(DetailRelocationNameMissing));
   std::string TargetExpression;
   NevercStatus Status = relocationTargetExpression(
-      Relocation, Sections, Symbols, Target, TargetExpression);
+      Relocation, Sections, Index, Target, TargetExpression);
   if (!neverc_status_is_ok(Status))
     return Status;
   OS << "\t.reloc\t" << sectionLabel(SectionIndex, Target) << '+'
@@ -735,113 +869,316 @@ NevercStatus emitRelocDirective(raw_ostream &OS,
   return neverc_status_ok();
 }
 
+// The data directives that can restate a relocation. Anything a relocation
+// needs beyond these -- a field inside an instruction, an addressing base that
+// is not the field itself -- has no faithful spelling here.
+enum class DataDirective { Byte, Short, Long, Quad, RVA, SecRel32, SecIdx };
+
+StringRef directiveText(DataDirective Directive) {
+  switch (Directive) {
+  case DataDirective::Byte:
+    return ".byte";
+  case DataDirective::Short:
+    return ".short";
+  case DataDirective::Long:
+    return ".long";
+  case DataDirective::Quad:
+    return ".quad";
+  case DataDirective::RVA:
+    return ".rva";
+  case DataDirective::SecRel32:
+    return ".secrel32";
+  case DataDirective::SecIdx:
+    return ".secidx";
+  }
+  llvm_unreachable("unknown data directive");
+}
+
+// How many bits the directive lays down. The caller advances its cursor by the
+// relocation's width, so a directive that writes a different number of bytes
+// would shift everything after it -- silently, since the result still
+// assembles.
+uint32_t directiveWidth(DataDirective Directive) {
+  switch (Directive) {
+  case DataDirective::Byte:
+    return 8;
+  case DataDirective::Short:
+  case DataDirective::SecIdx:
+    return 16;
+  case DataDirective::Long:
+  case DataDirective::RVA:
+  case DataDirective::SecRel32:
+    return 32;
+  case DataDirective::Quad:
+    return 64;
+  }
+  llvm_unreachable("unknown data directive");
+}
+
+// Which relocation form the directive states.
+NevercObjectRelocationKind directiveKind(DataDirective Directive) {
+  switch (Directive) {
+  case DataDirective::Byte:
+  case DataDirective::Short:
+  case DataDirective::Long:
+  case DataDirective::Quad:
+    return NEVERC_OBJECT_RELOCATION_ABSOLUTE;
+  case DataDirective::RVA:
+    return NEVERC_OBJECT_RELOCATION_IMAGE_RELATIVE;
+  case DataDirective::SecRel32:
+  case DataDirective::SecIdx:
+    return NEVERC_OBJECT_RELOCATION_SECTION_RELATIVE;
+  }
+  llvm_unreachable("unknown data directive");
+}
+
+// Whether the directive can spell \p Addend at all. Only the plain data
+// directives take an ordinary expression: ".secidx" wants a bare symbol,
+// because a section index has no room for an offset and its parser rejects
+// one; ".secrel32" reads a '+' and stops at anything else, and holds an
+// unsigned 32-bit field; ".rva" holds a signed 32-bit one. An addend outside
+// what the directive can carry reaches the assembler as a syntax error
+// instead, which says nothing about what the writer could not express.
+bool directiveCarriesAddend(DataDirective Directive, int64_t Addend) {
+  switch (Directive) {
+  case DataDirective::SecIdx:
+    return Addend == 0;
+  case DataDirective::SecRel32:
+    return Addend >= 0 &&
+           Addend <= static_cast<int64_t>(std::numeric_limits<uint32_t>::max());
+  case DataDirective::RVA:
+    return Addend >= std::numeric_limits<int32_t>::min() &&
+           Addend <= std::numeric_limits<int32_t>::max();
+  case DataDirective::Byte:
+  case DataDirective::Short:
+  case DataDirective::Long:
+  case DataDirective::Quad:
+    return true;
+  }
+  llvm_unreachable("unknown data directive");
+}
+
+std::optional<DataDirective> absoluteDirective(uint32_t Width) {
+  switch (Width) {
+  case 8:
+    return DataDirective::Byte;
+  case 16:
+    return DataDirective::Short;
+  case 32:
+    return DataDirective::Long;
+  case 64:
+    return DataDirective::Quad;
+  default:
+    return std::nullopt;
+  }
+}
+
+// COFF relocation types that name a whole data field. Every type left out
+// patches a field inside an instruction (the ARM64 BRANCH/PAGE/LOW12 forms) or
+// counts its displacement from the end of the instruction rather than from the
+// field (the AMD64 REL32 forms), so no data directive reproduces it.
+std::optional<DataDirective> coffNativeDirective(uint64_t Type,
+                                                 const Triple &Target) {
+  if (Target.getArch() == Triple::x86_64) {
+    switch (Type) {
+    case COFF::IMAGE_REL_AMD64_ADDR64:
+      return DataDirective::Quad;
+    case COFF::IMAGE_REL_AMD64_ADDR32:
+      return DataDirective::Long;
+    case COFF::IMAGE_REL_AMD64_ADDR32NB:
+      return DataDirective::RVA;
+    case COFF::IMAGE_REL_AMD64_SECREL:
+      return DataDirective::SecRel32;
+    case COFF::IMAGE_REL_AMD64_SECTION:
+      return DataDirective::SecIdx;
+    default:
+      return std::nullopt;
+    }
+  }
+  if (Target.getArch() == Triple::aarch64) {
+    switch (Type) {
+    case COFF::IMAGE_REL_ARM64_ADDR64:
+      return DataDirective::Quad;
+    case COFF::IMAGE_REL_ARM64_ADDR32:
+      return DataDirective::Long;
+    case COFF::IMAGE_REL_ARM64_ADDR32NB:
+      return DataDirective::RVA;
+    case COFF::IMAGE_REL_ARM64_SECREL:
+      return DataDirective::SecRel32;
+    case COFF::IMAGE_REL_ARM64_SECTION:
+      return DataDirective::SecIdx;
+    default:
+      return std::nullopt;
+    }
+  }
+  return std::nullopt;
+}
+
+// The Mach-O relocations that cover a data word rather than a field inside an
+// instruction. Only the plain pointer forms do, and the graph's own
+// classification cannot narrow it down any further: ARM64_RELOC_PAGEOFF12
+// patches the immediate of an `add` or a load, yet it is neither PC-relative
+// nor GOT- or TLS-bound, so it arrives looking exactly like a pointer.
+//
+// Both architectures spell the pointer form 0, so a graph that crossed one
+// still reads correctly here -- but they are listed separately because that is
+// a coincidence of the two numbering schemes and not something to build on.
+bool machONativeIsDataField(uint64_t Type, const Triple &Target) {
+  switch (Target.getArch()) {
+  case Triple::aarch64:
+    return Type == MachO::ARM64_RELOC_UNSIGNED;
+  case Triple::x86_64:
+    return Type == MachO::X86_64_RELOC_UNSIGNED;
+  default:
+    return false;
+  }
+}
+
+// Only ELF can state a relocation without disturbing the bytes it covers. Every
+// other format has to write a data directive whose value the assembler then
+// relocates, and that is faithful only when the relocated field is a data field
+// in its own right and is addressed from its own start.
+//
+// A field inside an instruction fails both tests, and not visibly: a .long over
+// an AArch64 `bl` replaces the opcode along with the offset, and an x86
+// PC-relative field counts from the end of the instruction, so `sym-.` lands
+// four bytes off. Both still assemble. Refusing is the only way the caller
+// learns the rewrite could not be done.
+std::optional<DataDirective>
+faithfulDirective(const RelocationRecord &Relocation, const Triple &Target) {
+  if (Target.isOSBinFormatCOFF()) {
+    std::optional<DataDirective> Directive;
+    if (std::optional<uint64_t> Type = nativeRelocationType(Relocation)) {
+      Directive = coffNativeDirective(*Type, Target);
+      // The native type and the graph's own description are two statements
+      // about the same field, and only a graph the reader built for this
+      // architecture is guaranteed to keep them in step. A type number does
+      // not say which architecture wrote it, and the object format ID stamped
+      // on the extension names COFF without naming an architecture, so a graph
+      // that crossed one reads as a different relocation than it is -- 2 is
+      // AMD64's ADDR32 and ARM64's ADDR32NB, both 32 bits wide. Following the
+      // type over the graph would advance the cursor by a width that misplaces
+      // every later byte, or restate an image-relative reference as an
+      // absolute one, and either way the object still assembles.
+      if (Directive &&
+          (directiveWidth(*Directive) != Relocation.Width ||
+           directiveKind(*Directive) != Relocation.Kind ||
+           Relocation.IsPCRelative))
+        return std::nullopt;
+    } else {
+      // Without a native type the graph's own classification is all there is,
+      // and it only distinguishes forms that happen to have a directive.
+      switch (Relocation.Kind) {
+      case NEVERC_OBJECT_RELOCATION_ABSOLUTE:
+        if (!Relocation.IsPCRelative)
+          Directive = absoluteDirective(Relocation.Width);
+        break;
+      case NEVERC_OBJECT_RELOCATION_IMAGE_RELATIVE:
+        if (Relocation.Width == 32)
+          Directive = DataDirective::RVA;
+        break;
+      case NEVERC_OBJECT_RELOCATION_SECTION_RELATIVE:
+        if (Relocation.Width == 32)
+          Directive = DataDirective::SecRel32;
+        else if (Relocation.Width == 16)
+          Directive = DataDirective::SecIdx;
+        break;
+      default:
+        break;
+      }
+    }
+    if (Directive && !directiveCarriesAddend(*Directive, Relocation.Addend))
+      return std::nullopt;
+    return Directive;
+  }
+  // Mach-O has no .reloc at all, so the same rule applies -- and here the
+  // native type is the only thing that states it. The guard that refuses
+  // relocations in an executable section cannot: "executable" is read back
+  // from S_ATTR_PURE_INSTRUCTIONS, which a section holding code need not
+  // carry, and a section without it takes this path with its instructions
+  // still in the bytes a data directive would overwrite.
+  if (Target.isOSBinFormatMachO())
+    if (std::optional<uint64_t> Type = nativeRelocationType(Relocation))
+      if (!machONativeIsDataField(*Type, Target))
+        return std::nullopt;
+  if (Relocation.Kind != NEVERC_OBJECT_RELOCATION_ABSOLUTE ||
+      Relocation.IsPCRelative)
+    return std::nullopt;
+  return absoluteDirective(Relocation.Width);
+}
+
 NevercStatus emitRelocationValue(
     raw_ostream &OS, const RelocationRecord &Relocation,
-    ArrayRef<SectionRecord> Sections, ArrayRef<SymbolRecord> Symbols,
+    ArrayRef<SectionRecord> Sections, const GraphIndex &Index,
     const Triple &Target) {
-  StringRef Directive;
-  switch (Relocation.Width) {
-  case 8:
-    Directive = ".byte";
-    break;
-  case 16:
-    Directive = ".short";
-    break;
-  case 32:
-    Directive = ".long";
-    break;
-  case 64:
-    Directive = ".quad";
-    break;
-  default:
-    return writerStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE, 450);
-  }
+  const std::optional<DataDirective> Directive =
+      faithfulDirective(Relocation, Target);
+  if (!Directive)
+    return writerStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE,
+                        detail(DetailRelocationNotExpressible));
 
   std::string TargetExpression;
   NevercStatus TargetStatus = relocationTargetExpression(
-      Relocation, Sections, Symbols, Target, TargetExpression);
+      Relocation, Sections, Index, Target, TargetExpression);
   if (!neverc_status_is_ok(TargetStatus))
     return TargetStatus;
-  raw_string_ostream Expression(TargetExpression);
-
-  // COFF spells image- and section-relative references as their own
-  // directives; there is no expression suffix to hang on a plain .long, and
-  // Windows unwind data (.pdata/.xdata) is built entirely from them.
-  if (Target.isOSBinFormatCOFF() &&
-      (Relocation.Kind == NEVERC_OBJECT_RELOCATION_IMAGE_RELATIVE ||
-       Relocation.Kind == NEVERC_OBJECT_RELOCATION_SECTION_RELATIVE)) {
-    Expression.flush();
-    if (Relocation.Kind == NEVERC_OBJECT_RELOCATION_IMAGE_RELATIVE) {
-      if (Relocation.Width != 32)
-        return writerStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE, 455);
-      OS << "\t.rva\t" << TargetExpression << '\n';
-      return neverc_status_ok();
-    }
-    if (Relocation.Width == 32) {
-      OS << "\t.secrel32\t" << TargetExpression << '\n';
-      return neverc_status_ok();
-    }
-    // A section index has no room for an addend to survive in.
-    if (Relocation.Width == 16 && Relocation.Addend == 0) {
-      OS << "\t.secidx\t" << TargetExpression << '\n';
-      return neverc_status_ok();
-    }
-    return writerStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE, 456);
-  }
-
-  if (Relocation.IsPCRelative ||
-      Relocation.Kind == NEVERC_OBJECT_RELOCATION_PC_RELATIVE) {
-    Expression << "-.";
-  } else if (Relocation.Kind != NEVERC_OBJECT_RELOCATION_ABSOLUTE) {
-    return writerStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE, 454);
-  }
-  Expression.flush();
-  OS << '\t' << Directive << '\t' << TargetExpression << '\n';
+  OS << '\t' << directiveText(*Directive) << '\t' << TargetExpression << '\n';
   return neverc_status_ok();
 }
 
-NevercStatus emitSectionContents(
-    raw_ostream &OS, const SectionRecord &Section, size_t SectionIndex,
-    ArrayRef<SectionRecord> Sections, ArrayRef<SymbolRecord> Symbols,
-    ArrayRef<RelocationRecord> Relocations, const Triple &Target) {
+NevercStatus emitSectionContents(raw_ostream &OS,
+                                 const SectionRecord &Section,
+                                 size_t SectionIndex,
+                                 ArrayRef<SectionRecord> Sections,
+                                 const GraphIndex &Index,
+                                 const Triple &Target) {
   OS << sectionLabel(SectionIndex, Target) << ":\n";
 
-  std::vector<const SymbolRecord *> Defined;
-  for (const SymbolRecord &Symbol : Symbols)
-    if (Symbol.Definition ==
-            NEVERC_OBJECT_SYMBOL_DEFINITION_DEFINED &&
-        sameHandle(Symbol.Section, Section.Handle))
-      Defined.push_back(&Symbol);
-  llvm::sort(Defined,
-             [](const SymbolRecord *Left, const SymbolRecord *Right) {
-               if (Left->Value != Right->Value)
-                 return Left->Value < Right->Value;
-               return Left->Name < Right->Name;
-             });
+  static const std::vector<const SymbolRecord *> NoSymbols;
+  static const std::vector<const RelocationRecord *> NoRelocations;
+  const auto DefinedIt = Index.DefinedBySection.find(handleKey(Section.Handle));
+  const std::vector<const SymbolRecord *> &Defined =
+      DefinedIt == Index.DefinedBySection.end() ? NoSymbols
+                                                : DefinedIt->second;
+  const auto RelocationIt =
+      Index.RelocationsBySection.find(handleKey(Section.Handle));
+  const std::vector<const RelocationRecord *> &SectionRelocations =
+      RelocationIt == Index.RelocationsBySection.end()
+          ? NoRelocations
+          : RelocationIt->second;
 
-  std::vector<const RelocationRecord *> SectionRelocations;
-  for (const RelocationRecord &Relocation : Relocations)
-    if (sameHandle(Relocation.Section, Section.Handle))
-      SectionRelocations.push_back(&Relocation);
-  llvm::sort(SectionRelocations,
-             [](const RelocationRecord *Left,
-                const RelocationRecord *Right) {
-               return Left->Offset < Right->Offset;
-             });
+  // A section spans its stored bytes followed by its zero fill, and a symbol
+  // may sit anywhere in either part. The fill therefore has to be split around
+  // the symbols that fall inside it rather than emitted as one run at the end,
+  // which would leave every .bss symbol past the first with nowhere to go.
+  const uint64_t DataSize = Section.Data.size();
+  const uint64_t TotalSize = DataSize + Section.ZeroFillSize;
 
   uint64_t Offset = 0;
   size_t SymbolIndex = 0;
-  auto emitSymbolsThrough = [&](uint64_t End, bool IncludeEnd) {
-    while (SymbolIndex != Defined.size() &&
-           (Defined[SymbolIndex]->Value < End ||
-            (IncludeEnd && Defined[SymbolIndex]->Value == End))) {
-      const SymbolRecord &Symbol = *Defined[SymbolIndex];
-      if (Symbol.Value < Offset || Symbol.Value > Section.Data.size())
-        return writerStatus(NEVERC_STATUS_VERIFICATION_FAILED, 460);
+  auto emitContentThrough = [&](uint64_t End) {
+    if (End <= Offset)
+      return;
+    if (Offset < DataSize) {
+      const uint64_t DataEnd = std::min(End, DataSize);
       emitBytes(OS, ArrayRef<uint8_t>(Section.Data)
                         .slice(static_cast<size_t>(Offset),
-                               static_cast<size_t>(Symbol.Value - Offset)));
-      Offset = Symbol.Value;
+                               static_cast<size_t>(DataEnd - Offset)));
+      Offset = DataEnd;
+    }
+    if (End > Offset) {
+      OS << "\t.zero\t" << (End - Offset) << '\n';
+      Offset = End;
+    }
+  };
+  auto emitSymbolsThrough = [&](uint64_t End) {
+    while (SymbolIndex != Defined.size() &&
+           Defined[SymbolIndex]->Value <= End) {
+      const SymbolRecord &Symbol = *Defined[SymbolIndex];
+      if (Symbol.Value < Offset || Symbol.Value > TotalSize)
+        return writerStatus(NEVERC_STATUS_VERIFICATION_FAILED,
+                            detail(DetailSymbolOutsideSection));
+      emitContentThrough(Symbol.Value);
       OS << assemblyName(Symbol.Name) << ":\n";
       ++SymbolIndex;
     }
@@ -857,72 +1194,65 @@ NevercStatus emitSectionContents(
   // Refuse rather than miscompile.
   if (Target.isOSBinFormatMachO() && !SectionRelocations.empty() &&
       (Section.Flags & NEVERC_OBJECT_SECTION_EXECUTABLE) != 0)
-    return writerStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE, 465);
+    return writerStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE,
+                        detail(DetailMachOExecutableRelocation));
+
+  // A relocation patches stored bytes, so it has to lie inside them; zero fill
+  // has nothing for it to apply to.
+  for (const RelocationRecord *Relocation : SectionRelocations) {
+    if (Relocation->Width == 0 || (Relocation->Width % 8) != 0)
+      return writerStatus(NEVERC_STATUS_VERIFICATION_FAILED,
+                          detail(DetailRelocationWidthInvalid));
+    const uint64_t Width = Relocation->Width / 8;
+    if (Relocation->Offset > DataSize ||
+        Width > DataSize - Relocation->Offset)
+      return writerStatus(NEVERC_STATUS_VERIFICATION_FAILED,
+                          detail(DetailRelocationOutsideSection));
+  }
 
   if (Target.isOSBinFormatELF()) {
-    for (const RelocationRecord *Relocation : SectionRelocations) {
-      if (Relocation->Width == 0 || (Relocation->Width % 8) != 0)
-        return writerStatus(NEVERC_STATUS_VERIFICATION_FAILED, 461);
-      const uint64_t Width = Relocation->Width / 8;
-      if (Relocation->Offset > Section.Data.size() ||
-          Width > Section.Data.size() - Relocation->Offset)
-        return writerStatus(NEVERC_STATUS_VERIFICATION_FAILED, 462);
-    }
-    NevercStatus Status = emitSymbolsThrough(Section.Data.size(), true);
+    NevercStatus Status = emitSymbolsThrough(TotalSize);
     if (!neverc_status_is_ok(Status))
       return Status;
-    emitBytes(OS, ArrayRef<uint8_t>(Section.Data)
-                      .drop_front(static_cast<size_t>(Offset)));
+    emitContentThrough(TotalSize);
     if (SymbolIndex != Defined.size())
-      return writerStatus(NEVERC_STATUS_VERIFICATION_FAILED, 464);
+      return writerStatus(NEVERC_STATUS_VERIFICATION_FAILED,
+                          detail(DetailSymbolsUnplaced));
     for (const RelocationRecord *Relocation : SectionRelocations) {
       Status = emitRelocDirective(OS, *Relocation, SectionIndex, Sections,
-                                  Symbols, Target);
+                                  Index, Target);
       if (!neverc_status_is_ok(Status))
         return Status;
     }
-    if (Section.ZeroFillSize != 0)
-      OS << "\t.zero\t" << Section.ZeroFillSize << '\n';
     return neverc_status_ok();
   }
 
   for (const RelocationRecord *Relocation : SectionRelocations) {
-    if (Relocation->Width == 0 || (Relocation->Width % 8) != 0)
-      return writerStatus(NEVERC_STATUS_VERIFICATION_FAILED, 461);
     const uint64_t Width = Relocation->Width / 8;
-    if (Relocation->Offset < Offset ||
-        Relocation->Offset > Section.Data.size() ||
-        Width > Section.Data.size() - Relocation->Offset)
-      return writerStatus(NEVERC_STATUS_VERIFICATION_FAILED, 462);
-    NevercStatus Status =
-        emitSymbolsThrough(Relocation->Offset, true);
+    if (Relocation->Offset < Offset)
+      return writerStatus(NEVERC_STATUS_VERIFICATION_FAILED,
+                          detail(DetailRelocationOutsideSection));
+    NevercStatus Status = emitSymbolsThrough(Relocation->Offset);
     if (!neverc_status_is_ok(Status))
       return Status;
-    emitBytes(OS, ArrayRef<uint8_t>(Section.Data)
-                      .slice(static_cast<size_t>(Offset),
-                             static_cast<size_t>(Relocation->Offset -
-                                                 Offset)));
-    Offset = Relocation->Offset;
+    emitContentThrough(Relocation->Offset);
     if (SymbolIndex != Defined.size() &&
         Defined[SymbolIndex]->Value < Offset + Width)
-      return writerStatus(NEVERC_STATUS_VERIFICATION_FAILED, 463);
-    Status = emitRelocationValue(OS, *Relocation, Sections, Symbols,
-                                 Target);
+      return writerStatus(NEVERC_STATUS_VERIFICATION_FAILED,
+                          detail(DetailRelocationOverlapsSymbol));
+    Status = emitRelocationValue(OS, *Relocation, Sections, Index, Target);
     if (!neverc_status_is_ok(Status))
       return Status;
     Offset += Width;
   }
 
-  NevercStatus Status =
-      emitSymbolsThrough(Section.Data.size(), true);
+  NevercStatus Status = emitSymbolsThrough(TotalSize);
   if (!neverc_status_is_ok(Status))
     return Status;
-  emitBytes(OS, ArrayRef<uint8_t>(Section.Data)
-                    .drop_front(static_cast<size_t>(Offset)));
+  emitContentThrough(TotalSize);
   if (SymbolIndex != Defined.size())
-    return writerStatus(NEVERC_STATUS_VERIFICATION_FAILED, 464);
-  if (Section.ZeroFillSize != 0)
-    OS << "\t.zero\t" << Section.ZeroFillSize << '\n';
+    return writerStatus(NEVERC_STATUS_VERIFICATION_FAILED,
+                        detail(DetailSymbolsUnplaced));
   return neverc_status_ok();
 }
 
@@ -946,40 +1276,136 @@ NevercStatus buildAssembly(const NevercObjectWriteRequest &Request,
   if (!neverc_status_is_ok(Status))
     return Status;
 
+  // The Mach-O assembler mints its own "ltmp<n>" labels for section starts, so
+  // a graph carrying symbols by those names would collide with them. Only the
+  // exact minted shape is renamed -- matching the prefix alone would also catch
+  // a program's own "ltmpBuffer". The replacement keeps a lowercase leading
+  // letter on purpose: an uppercase "L" marks a symbol as assembler-local on
+  // Mach-O, which would drop it from the symbol table and change what the
+  // object exports.
   if (Target.isOSBinFormatMachO()) {
     size_t TemporaryIndex = 0;
-    for (SymbolRecord &Symbol : Symbols)
-      if (Symbol.Binding == NEVERC_OBJECT_SYMBOL_BINDING_LOCAL &&
-          StringRef(Symbol.Name).starts_with("ltmp"))
-        Symbol.Name =
-            "Lneverc_local_" + std::to_string(TemporaryIndex++);
+    for (SymbolRecord &Symbol : Symbols) {
+      if (Symbol.Binding != NEVERC_OBJECT_SYMBOL_BINDING_LOCAL)
+        continue;
+      StringRef Name(Symbol.Name);
+      unsigned Minted = 0;
+      if (Name.starts_with("ltmp") &&
+          !Name.drop_front(4).getAsInteger(10, Minted))
+        Symbol.Name = "lneverc_local_" + std::to_string(TemporaryIndex++);
+    }
   }
+
+  // Built after the Mach-O renaming above, and not touched afterwards: it holds
+  // pointers into the vectors, which must not be resized from here on.
+  GraphIndex Index;
+  Index.Sections = indexByHandle<SectionRecord>(Sections);
+  Index.Symbols = indexByHandle<SymbolRecord>(Symbols);
+  Index.Comdats = indexByHandle<ComdatRecord>(Comdats);
+  for (const SymbolRecord &Symbol : Symbols)
+    if (Symbol.Definition == NEVERC_OBJECT_SYMBOL_DEFINITION_DEFINED &&
+        !neverc_handle_is_null(Symbol.Section))
+      Index.DefinedBySection[handleKey(Symbol.Section)].push_back(&Symbol);
+  for (const RelocationRecord &Relocation : Relocations)
+    Index.RelocationsBySection[handleKey(Relocation.Section)].push_back(
+        &Relocation);
+  for (auto &Entry : Index.DefinedBySection)
+    llvm::sort(Entry.second,
+               [](const SymbolRecord *Left, const SymbolRecord *Right) {
+                 if (Left->Value != Right->Value)
+                   return Left->Value < Right->Value;
+                 return Left->Name < Right->Name;
+               });
+  for (auto &Entry : Index.RelocationsBySection)
+    llvm::sort(Entry.second, [](const RelocationRecord *Left,
+                                const RelocationRecord *Right) {
+      return Left->Offset < Right->Offset;
+    });
+
+  // A symbol table holds one entry per name, so two symbols defining the same
+  // one describe an object that cannot exist -- and MC does not answer such a
+  // pair with an error. A repeated ".comm" reaches report_fatal_error, and a
+  // name that is both a ".comm" or ".set" and a label reaches an assertion in
+  // MCSymbol::setOffset, "Cannot set offset for a common/variable symbol".
+  // Both end the host process, so the pair is refused here instead.
+  //
+  // Only a symbol that actually produces a definition claims its name: an
+  // undefined one produces nothing, and neither does a defined one with no
+  // section to hold its label.
+  auto definesName = [](const SymbolRecord &Symbol) {
+    switch (Symbol.Definition) {
+    case NEVERC_OBJECT_SYMBOL_DEFINITION_COMMON:
+    case NEVERC_OBJECT_SYMBOL_DEFINITION_ABSOLUTE:
+      return true;
+    case NEVERC_OBJECT_SYMBOL_DEFINITION_DEFINED:
+      return !neverc_handle_is_null(Symbol.Section);
+    default:
+      return false;
+    }
+  };
+  DenseSet<StringRef> DefinedNames;
 
   raw_string_ostream OS(Assembly);
   for (const SymbolRecord &Symbol : Symbols) {
+    // A name the assembler reserves for its own scratch labels cannot be
+    // written back: spelled locally it is dropped from the symbol table
+    // without a word, and spelled globally the assembler refuses it. The
+    // scratch labels this writer emits use the same prefix deliberately, and
+    // a graph symbol wearing it would collide with them besides.
+    if (isPrivateLabelName(Symbol.Name, Target))
+      return writerStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE,
+                          detail(DetailSymbolNamePrivate));
+    if (definesName(Symbol) &&
+        !DefinedNames.insert(StringRef(Symbol.Name)).second)
+      return writerStatus(NEVERC_STATUS_VERIFICATION_FAILED,
+                          detail(DetailSymbolNameRepeated));
     emitSymbolAttributes(OS, Symbol, Target);
-    if (Symbol.Definition == NEVERC_OBJECT_SYMBOL_DEFINITION_COMMON)
-      OS << "\t.comm\t" << assemblyName(Symbol.Name) << ',' << Symbol.Size << ','
-         << std::max<uint64_t>(Symbol.Alignment, 1) << '\n';
-    else if (Symbol.Definition ==
-             NEVERC_OBJECT_SYMBOL_DEFINITION_ABSOLUTE)
-      OS << "\t.set\t" << assemblyName(Symbol.Name) << ',' << Symbol.Value << '\n';
+    if (Symbol.Definition == NEVERC_OBJECT_SYMBOL_DEFINITION_COMMON) {
+      const std::optional<CommonSpelling> Spelling = commonSpelling(
+          Symbol.Alignment,
+          Symbol.Binding == NEVERC_OBJECT_SYMBOL_BINDING_LOCAL, Target);
+      if (!Spelling)
+        return writerStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE,
+                            detail(DetailCommonAlignmentUnsupported));
+      if (Spelling->NeedsLocalDirective)
+        OS << "\t.local\t" << assemblyName(Symbol.Name) << '\n';
+      OS << '\t' << Spelling->Directive << '\t' << assemblyName(Symbol.Name)
+         << ',' << Symbol.Size << ',' << Spelling->AlignmentOperand << '\n';
+    } else if (Symbol.Definition ==
+               NEVERC_OBJECT_SYMBOL_DEFINITION_ABSOLUTE)
+      OS << "\t.set\t" << assemblyName(Symbol.Name) << ',' << Symbol.Value
+         << '\n';
   }
+
+  // A COFF COMDAT is keyed on a symbol that names its one section, and MC
+  // answers a second section claiming the same one by calling
+  // report_fatal_error -- which takes the host process down rather than
+  // failing the write. An ELF group really does hold several sections, so this
+  // is a COFF rule and not something the graph itself forbids. An associative
+  // COMDAT names its parent instead of claiming a section, and MC exempts it
+  // for that reason, so this does too.
+  DenseSet<HandleKey> ClaimedComdats;
 
   for (size_t SectionIndex = 0; SectionIndex != Sections.size();
        ++SectionIndex) {
     const SectionRecord &Section = Sections[SectionIndex];
-    const ComdatRecord *Comdat =
-        findComdat(Comdats, Section.Comdat);
+    const ComdatRecord *Comdat = findComdat(Index, Section.Comdat);
     if (!neverc_handle_is_null(Section.Comdat) && !Comdat)
-      return writerStatus(NEVERC_STATUS_VERIFICATION_FAILED, 473);
+      return writerStatus(NEVERC_STATUS_VERIFICATION_FAILED,
+                          detailAt(DetailComdatMissing, SectionIndex));
+    if (Comdat && Target.isOSBinFormatCOFF() &&
+        Comdat->Selection != NEVERC_OBJECT_COMDAT_ASSOCIATIVE &&
+        !ClaimedComdats.insert(handleKey(Section.Comdat)).second)
+      return writerStatus(NEVERC_STATUS_VERIFICATION_FAILED,
+                          detailAt(DetailComdatClaimedTwice, SectionIndex));
     StringRef AssociatedName;
     if (Comdat &&
         Comdat->Selection == NEVERC_OBJECT_COMDAT_ASSOCIATIVE) {
       const ComdatRecord *Parent =
-          findComdat(Comdats, Comdat->AssociatedComdat);
+          findComdat(Index, Comdat->AssociatedComdat);
       if (!Parent)
-        return writerStatus(NEVERC_STATUS_VERIFICATION_FAILED, 474);
+        return writerStatus(NEVERC_STATUS_VERIFICATION_FAILED,
+                            detailAt(DetailComdatParentMissing, SectionIndex));
       AssociatedName = Parent->Name;
     }
     Status = emitSectionDirective(OS, Section, Target, Comdat,
@@ -988,8 +1414,8 @@ NevercStatus buildAssembly(const NevercObjectWriteRequest &Request,
       return Status;
     if (Section.Alignment > 1 && isPowerOf2_64(Section.Alignment))
       OS << "\t.p2align\t" << Log2_64(Section.Alignment) << '\n';
-    Status = emitSectionContents(OS, Section, SectionIndex, Sections,
-                                 Symbols, Relocations, Target);
+    Status = emitSectionContents(OS, Section, SectionIndex, Sections, Index,
+                                 Target);
     if (!neverc_status_is_ok(Status))
       return Status;
   }
@@ -1006,17 +1432,20 @@ NevercStatus buildAssembly(const NevercObjectWriteRequest &Request,
 
 std::string joinedFeatures(NevercStringArrayView Features) {
   std::string Result;
-  const auto *Data =
-      reinterpret_cast<const uint8_t *>(Features.Data);
-  for (uint64_t Index = 0; Data && Index != Features.Count; ++Index) {
-    const auto *Feature =
-        reinterpret_cast<const NevercStringView *>(
-            Data + Index * Features.ElementStride);
+  const auto *Data = reinterpret_cast<const uint8_t *>(Features.Data);
+  // A stride shorter than an element would make consecutive reads overlap and
+  // run past the array, so treat the view as unusable rather than trusting it.
+  if (!Data || Features.ElementStride < sizeof(NevercStringView))
+    return Result;
+  for (uint64_t Index = 0; Index != Features.Count; ++Index) {
+    const auto *Feature = reinterpret_cast<const NevercStringView *>(
+        Data + Index * Features.ElementStride);
+    if (!Feature->Data ||
+        Feature->Length > std::numeric_limits<size_t>::max())
+      continue;
     if (!Result.empty())
       Result.push_back(',');
-    if (Feature->Data)
-      Result.append(Feature->Data,
-                    static_cast<size_t>(Feature->Length));
+    Result.append(Feature->Data, static_cast<size_t>(Feature->Length));
   }
   return Result;
 }
@@ -1027,11 +1456,12 @@ NevercStatus NEVERC_CALL writeBuiltinLLVMObject(
     void *, const NevercObjectWriteRequest *Request) {
   if (!Request || !Request->Object || !Request->Binary ||
       !Request->Binary->Write)
-    return writerStatus(NEVERC_STATUS_INVALID_ARGUMENT, 100);
+    return writerStatus(NEVERC_STATUS_INVALID_ARGUMENT,
+                        detail(DetailRequestArguments));
   if (Request->Header.StructSize < sizeof(*Request) ||
       Request->Header.Major != NEVERC_OBJECT_FORMAT_API_MAJOR ||
       Request->Header.Minor > NEVERC_OBJECT_FORMAT_API_MINOR)
-    return writerStatus(NEVERC_STATUS_ABI_MISMATCH, 101);
+    return writerStatus(NEVERC_STATUS_ABI_MISMATCH, detail(DetailRequestABI));
 
   StringRef TripleText(
       Request->Target.RawTriple.Data
@@ -1042,11 +1472,13 @@ NevercStatus NEVERC_CALL writeBuiltinLLVMObject(
   const BuiltinTargetRoute *Route =
       findBuiltinTargetRoute(TripleText);
   if (!Route || !Route->SupportsObject)
-    return writerStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE, 500);
+    return writerStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE,
+                        detail(DetailTargetRouteMissing));
   auto Target = lookupBuiltinLLVMTarget(*Route);
   if (!Target) {
     consumeError(Target.takeError());
-    return writerStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE, 501);
+    return writerStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE,
+                        detail(DetailTargetLookupFailed));
   }
 
   std::string Assembly;
@@ -1070,7 +1502,8 @@ NevercStatus NEVERC_CALL writeBuiltinLLVMObject(
   ParseRequest.Output = &Output;
   if (Error E = runBuiltinLLVMAsmParser(ParseRequest)) {
     consumeError(std::move(E));
-    return writerStatus(NEVERC_STATUS_VERIFICATION_FAILED, 510);
+    return writerStatus(NEVERC_STATUS_VERIFICATION_FAILED,
+                        detail(DetailAssemblyParseFailed));
   }
 
   NevercByteView Bytes{
@@ -1079,7 +1512,7 @@ NevercStatus NEVERC_CALL writeBuiltinLLVMObject(
   Status = Request->Binary->Write(
       Request->Binary->Context, Request->Task, Request->Builder, Bytes);
   if (!neverc_status_is_ok(Status) && Status.Detail == 0)
-    Status.Detail = 600;
+    Status.Detail = detail(DetailBinaryWriteFailed);
   return Status;
 }
 

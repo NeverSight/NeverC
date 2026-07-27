@@ -16,6 +16,7 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -100,7 +101,11 @@ struct DynCodeRelocationEntry {
   /// "NCRL" extension.  The generic Kind cannot distinguish e.g. CALL26 from
   /// ADRP from LO12, so the relocation provider maps this precise value onto an
   /// architecture-specific fixup form.
-  uint64_t NativeType = 0;
+  /// Absent when the extension could not be decoded. It has to be able to say
+  /// so: a plain integer left at 0 on failure is indistinguishable from a
+  /// relocation whose type really is 0, which on Mach-O is the plain pointer
+  /// form -- so a missing type read back as a relocation the input never held.
+  std::optional<uint64_t> NativeType;
   /// True when the relocation target was resolved to an offset inside the
   /// extracted image (intra-image); false leaves it as a surviving external.
   bool Resolved = false;

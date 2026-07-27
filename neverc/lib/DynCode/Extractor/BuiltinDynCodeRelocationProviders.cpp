@@ -10,6 +10,7 @@
 // AddendAdjust 0.
 
 #include "Extractor/DynCodeRelocationProvider.h"
+#include "neverc/Plugin/Host/BuiltinObjectExtension.h"
 #include "neverc/Plugin/Host/ObjectGraph.h"
 #include "llvm/BinaryFormat/COFF.h"
 #include "llvm/BinaryFormat/ELF.h"
@@ -188,35 +189,19 @@ DynCodeRelocationMapping mapMachOX86(uint64_t T) {
   }
 }
 
-uint32_t readU32LE(ArrayRef<uint8_t> Bytes, size_t Off) {
-  return static_cast<uint32_t>(Bytes[Off]) |
-         (static_cast<uint32_t>(Bytes[Off + 1]) << 8) |
-         (static_cast<uint32_t>(Bytes[Off + 2]) << 16) |
-         (static_cast<uint32_t>(Bytes[Off + 3]) << 24);
-}
-
-uint64_t readU64LE(ArrayRef<uint8_t> Bytes, size_t Off) {
-  uint64_t V = 0;
-  for (unsigned I = 0; I != 8; ++I)
-    V |= static_cast<uint64_t>(Bytes[Off + I]) << (I * 8);
-  return V;
-}
-
 } // namespace
 
-bool decodeNativeRelocationType(const plugin::PluginObjectExtension &Ext,
-                                uint64_t &OutType) {
+std::optional<uint64_t>
+decodeNativeRelocationType(const plugin::PluginObjectExtension &Ext) {
+  namespace ext = plugin::builtinext;
   ArrayRef<uint8_t> Bytes(Ext.Bytes);
-  // tag(4) + version(4) + type(8) = 16 bytes minimum.
-  if (Bytes.size() < 16)
-    return false;
-  if (Bytes[0] != 'N' || Bytes[1] != 'C' || Bytes[2] != 'R' || Bytes[3] != 'L')
-    return false;
-  uint32_t Version = readU32LE(Bytes, 4);
-  if (Version != 1)
-    return false;
-  OutType = readU64LE(Bytes, 8);
-  return true;
+  if (!ext::hasTag(Bytes, ext::RelocationTag) || ext::version(Bytes) < 1)
+    return std::nullopt;
+  // A version added after this was written still carries the fields it knows,
+  // in the same places -- that is what a fixed-width layout buys. Refusing
+  // anything but the version current at the time would turn the next field
+  // appended to the blob into a decode failure here.
+  return ext::field(Bytes, ext::RelocationNativeType);
 }
 
 DynCodeRelocationMapping mapDynCodeRelocation(const TargetDesc &Target,
@@ -251,7 +236,19 @@ llvm::Error resolveAndApplyDynCodeRelocations(const DynCodeExtractionPlan &Plan,
           "target; dyncode must be fully resolved before extraction",
           (unsigned long long)E.SiteOffset);
 
-    DynCodeRelocationMapping M = mapDynCodeRelocation(Target, E.NativeType);
+    // Applying needs the precise native type, and its absence has to be named
+    // as such rather than standing in as a value: 0 is the plain pointer form
+    // on Mach-O, so a relocation with no recoverable type used to come back
+    // diagnosed as an absolute-address one the input never held.
+    if (!E.NativeType)
+      return createStringError(
+          errc::invalid_argument,
+          "dyncode relocation: site 0x%llx carries no readable native "
+          "relocation type; the object graph did not come from the builtin "
+          "reader, or its extension is malformed",
+          (unsigned long long)E.SiteOffset);
+
+    DynCodeRelocationMapping M = mapDynCodeRelocation(Target, *E.NativeType);
     switch (M.Class) {
     case DynCodeRelocationClass::IntraImage:
       break;
@@ -261,20 +258,20 @@ llvm::Error resolveAndApplyDynCodeRelocations(const DynCodeExtractionPlan &Plan,
           "dyncode relocation: GOT-based relocation (native type %llu) at site "
           "0x%llx -- dyncode has no GOT; keep references inside the extracted "
           "code or route externs through a resolver shim",
-          (unsigned long long)E.NativeType, (unsigned long long)E.SiteOffset);
+          (unsigned long long)*E.NativeType, (unsigned long long)E.SiteOffset);
     case DynCodeRelocationClass::ExternalAbsolute:
       return createStringError(
           errc::invalid_argument,
           "dyncode relocation: absolute-address relocation (native type %llu) "
           "at site 0x%llx -- dyncode has no load address; route globals "
           "through the stack (Data2TextPass) or resolver parameters",
-          (unsigned long long)E.NativeType, (unsigned long long)E.SiteOffset);
+          (unsigned long long)*E.NativeType, (unsigned long long)E.SiteOffset);
     case DynCodeRelocationClass::Unsupported:
       return createStringError(
           errc::invalid_argument,
           "dyncode relocation: unsupported relocation (native type %llu) at "
           "site 0x%llx for this target",
-          (unsigned long long)E.NativeType, (unsigned long long)E.SiteOffset);
+          (unsigned long long)*E.NativeType, (unsigned long long)E.SiteOffset);
     }
 
     DynCodeRelocationWork W;

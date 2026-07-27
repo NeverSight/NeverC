@@ -89,7 +89,12 @@ llvm::Error ObjectGraphExtractor::planRelocations() {
     // Recover the precise native relocation type from the "NCRL" extension so
     // the relocation provider can pick the right fixup form; the coarse Kind
     // cannot distinguish e.g. CALL26 from ADRP from LO12.
-    decodeNativeRelocationType(Reloc.Extension, Entry.NativeType);
+    //
+    // Absent when the blob cannot be read, which the type has to be able to
+    // say for itself: 0 is a real relocation on Mach-O, the plain pointer
+    // form. Planning does not need the type, so a graph without one still
+    // plans; applying and verifying do, and each says so there.
+    Entry.NativeType = decodeNativeRelocationType(Reloc.Extension);
     Entry.Disposition = DynCodeRelocDisposition::Pending;
 
     bool Resolved = false;

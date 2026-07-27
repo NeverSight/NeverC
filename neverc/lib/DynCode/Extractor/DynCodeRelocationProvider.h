@@ -22,6 +22,7 @@
 #include "neverc/DynCode/Pipeline/TargetDesc.h"
 #include "llvm/Support/Error.h"
 #include <cstdint>
+#include <optional>
 
 namespace neverc {
 namespace plugin {
@@ -52,11 +53,11 @@ struct DynCodeRelocationMapping {
   int64_t AddendAdjust = 0;
 };
 
-/// Decodes the "NCRL" native-relocation extension blob (tag, u32 version, u64
-/// native type, u32 name length, name bytes; all little-endian) into the raw
-/// native relocation type.  Returns false if the blob is missing or malformed.
-bool decodeNativeRelocationType(const plugin::PluginObjectExtension &Ext,
-                                uint64_t &OutType);
+/// Reads the raw native relocation type out of the "NCRL" extension blob, or
+/// nothing when the blob is missing or malformed.  The layout itself lives in
+/// Plugin/Host/BuiltinObjectExtension.h, beside the reader that writes it.
+std::optional<uint64_t>
+decodeNativeRelocationType(const plugin::PluginObjectExtension &Ext);
 
 /// Maps a native relocation type on the given target onto an intra-image apply
 /// plan, or classifies it as an external/unsupported form.

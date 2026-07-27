@@ -241,17 +241,36 @@ TEST(PluginDynCodeRelocationTest, DecodesNCRLExtension) {
   neverc::plugin::PluginObjectExtension Ext;
   Ext.Bytes = {'N', 'C', 'R', 'L', 1, 0, 0, 0,
                8,   7,   6,   5,   4, 3, 2, 1, 0, 0, 0, 0};
-  uint64_t Type = 0;
-  ASSERT_TRUE(decodeNativeRelocationType(Ext, Type));
-  EXPECT_EQ(Type, UINT64_C(0x0102030405060708));
+  std::optional<uint64_t> Type = decodeNativeRelocationType(Ext);
+  ASSERT_TRUE(Type.has_value());
+  EXPECT_EQ(*Type, UINT64_C(0x0102030405060708));
 
   neverc::plugin::PluginObjectExtension Bad;
   Bad.Bytes = {'X', 'X', 'X', 'X', 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-  uint64_t Ignore = 0;
-  EXPECT_FALSE(decodeNativeRelocationType(Bad, Ignore));
+  EXPECT_FALSE(decodeNativeRelocationType(Bad).has_value());
 
   neverc::plugin::PluginObjectExtension Empty;
-  EXPECT_FALSE(decodeNativeRelocationType(Empty, Ignore));
+  EXPECT_FALSE(decodeNativeRelocationType(Empty).has_value());
+
+  // The blob's fields are fixed-width and never reordered, so a version added
+  // after this decoder was written still carries the native type in the same
+  // place. Refusing anything but the version current at the time turned the
+  // next field appended to the blob into a decode failure -- and a failure
+  // here leaves the type at 0, which on Mach-O is the plain pointer form and
+  // so reads back as a relocation the input never held.
+  neverc::plugin::PluginObjectExtension Newer;
+  Newer.Bytes = {'N', 'C', 'R', 'L', 7, 0, 0, 0, 8,   7,   6, 5,
+                 4,   3,   2,   1,   0, 0, 0, 0, 'x', 'y', 0, 0};
+  std::optional<uint64_t> FromNewer = decodeNativeRelocationType(Newer);
+  ASSERT_TRUE(FromNewer.has_value())
+      << "a newer blob version was refused although its fields are in place";
+  EXPECT_EQ(*FromNewer, UINT64_C(0x0102030405060708));
+
+  // A blob that stops before the field it is being asked for has nothing to
+  // read, whatever its version says.
+  neverc::plugin::PluginObjectExtension Short;
+  Short.Bytes = {'N', 'C', 'R', 'L', 1, 0, 0, 0, 8, 7, 6};
+  EXPECT_FALSE(decodeNativeRelocationType(Short).has_value());
 }
 
 TEST(PluginDynCodeRelocationTest, Lo12AutoHandlesAddAndLdst) {

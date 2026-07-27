@@ -11,7 +11,10 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Config/llvm-config.h"
 #include "llvm/MC/MCInst.h"
+#include "llvm/MC/MCInstrDesc.h"
+#include "llvm/MC/MCInstrInfo.h"
 #include "llvm/MC/TargetRegistry.h"
+#include "llvm/Object/ObjectFile.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/raw_ostream.h"
@@ -537,6 +540,445 @@ TEST(PluginAssemblerProviderTest,
     ASSERT_FALSE(static_cast<bool>(ParseError))
         << TripleName << ": " << errorText(std::move(ParseError));
     EXPECT_FALSE(ObjectBytes.empty()) << TripleName;
+  }
+}
+
+void initializeAssemblyTargets() {
+  static const bool Initialized = [] {
+    InitializeAllTargetInfos();
+    InitializeAllTargetMCs();
+    InitializeAllAsmParsers();
+    InitializeAllAsmPrinters();
+    return true;
+  }();
+  (void)Initialized;
+}
+
+// The printer's output goes straight back into the assembler, so anything it
+// writes has to parse there. The round trip above only ever exercised ELF, a
+// section reached by its shorthand directive, and a unit with no symbols in it.
+struct PrinterCase {
+  const char *Triple;
+  const char *SectionName;
+};
+
+const std::array<PrinterCase, 3> PrinterCases = {
+    {{"x86_64-unknown-linux-gnu", ".mysection"},
+     {"x86_64-pc-windows-msvc", ".mysection"},
+     {"arm64-apple-macosx", "__mysection"}}};
+
+Expected<std::string> printUnit(const char *TripleName,
+                                const PluginMCUnit &Unit) {
+  std::string LookupError;
+  const Target *TheTarget =
+      TargetRegistry::lookupTarget(TripleName, LookupError);
+  if (!TheTarget)
+    return createStringError(inconvertibleErrorCode(), LookupError);
+  std::string Text;
+  raw_string_ostream Stream(Text);
+  if (Error E = BuiltinLLVMAsmPrinter::print(*TheTarget, Triple(TripleName), "",
+                                             "", Unit, Stream))
+    return std::move(E);
+  Stream.flush();
+  return Text;
+}
+
+Error reassemble(const char *TripleName, StringRef Text) {
+  std::string LookupError;
+  const Target *TheTarget =
+      TargetRegistry::lookupTarget(TripleName, LookupError);
+  if (!TheTarget)
+    return createStringError(inconvertibleErrorCode(), LookupError);
+  SmallVector<char, 256> ObjectBytes;
+  raw_svector_ostream Object(ObjectBytes);
+  BuiltinLLVMAsmParserRequest ParseRequest{
+      TheTarget,     Triple(TripleName), "", "", VersionTuple(),
+      MemoryBufferRef(Text, "printed.s"), &Object};
+  return runBuiltinLLVMAsmParser(ParseRequest);
+}
+
+std::unique_ptr<PluginMCSection> makeDataSection(StringRef Name) {
+  auto Section = std::make_unique<PluginMCSection>();
+  Section->Name = Name.str();
+  Section->Alignment = 4;
+  Section->Flags = NEVERC_MC_SECTION_ALLOCATED | NEVERC_MC_SECTION_WRITABLE;
+  auto Fragment = std::make_unique<PluginMCFragment>();
+  Fragment->Parent = Section.get();
+  Fragment->Kind = NEVERC_MC_FRAGMENT_DATA;
+  Fragment->Contents = {1, 2, 3, 4, 5, 6, 7, 8};
+  Section->Fragments.push_back(std::move(Fragment));
+  return Section;
+}
+
+Expected<std::vector<uint8_t>> reassembleToObject(const char *TripleName,
+                                                  StringRef Text) {
+  std::string LookupError;
+  const Target *TheTarget =
+      TargetRegistry::lookupTarget(TripleName, LookupError);
+  if (!TheTarget)
+    return createStringError(inconvertibleErrorCode(), LookupError);
+  SmallVector<char, 256> ObjectBytes;
+  raw_svector_ostream Object(ObjectBytes);
+  BuiltinLLVMAsmParserRequest ParseRequest{
+      TheTarget,     Triple(TripleName), "", "", VersionTuple(),
+      MemoryBufferRef(Text, "printed.s"), &Object};
+  if (Error E = runBuiltinLLVMAsmParser(ParseRequest))
+    return std::move(E);
+  return std::vector<uint8_t>(ObjectBytes.begin(), ObjectBytes.end());
+}
+
+// What the printer writes is handed straight back to the assembler, so a
+// section has to come out of that trip with the nature it went in with. The
+// printer stated only the name -- with a segment on Mach-O -- and left every
+// flag off, and each format fills an unstated flag set in differently: ELF
+// derives it from the name, so anything not called ".text..." loses SHF_ALLOC
+// and SHF_EXECINSTR; COFF defaults to initialised read/write data, turning
+// executable code into a writable data section; and Mach-O without
+// "pure_instructions" produces a section that no longer reads back as text.
+TEST(PluginAssemblerProviderTest, BuiltinPrinterRoundTripsExecutableSections) {
+  initializeAssemblyTargets();
+  const std::array<PrinterCase, 3> Cases = {
+      {{"x86_64-unknown-linux-gnu", ".mycode"},
+       {"x86_64-pc-windows-msvc", ".mycode"},
+       {"arm64-apple-macosx", "__mycode"}}};
+  for (const auto &[TripleName, SectionName] : Cases) {
+    SCOPED_TRACE(TripleName);
+    PluginMCUnit Unit;
+    auto Section = makeDataSection(SectionName);
+    Section->Flags =
+        NEVERC_MC_SECTION_ALLOCATED | NEVERC_MC_SECTION_EXECUTABLE;
+    Unit.sections().push_back(std::move(Section));
+
+    auto Text = printUnit(TripleName, Unit);
+    ASSERT_TRUE(static_cast<bool>(Text)) << errorText(Text.takeError());
+    auto Bytes = reassembleToObject(TripleName, *Text);
+    ASSERT_TRUE(static_cast<bool>(Bytes))
+        << *Text << "\n"
+        << errorText(Bytes.takeError());
+    auto Parsed = object::ObjectFile::createObjectFile(MemoryBufferRef(
+        StringRef(reinterpret_cast<const char *>(Bytes->data()),
+                  Bytes->size()),
+        "printed.o"));
+    ASSERT_TRUE(static_cast<bool>(Parsed)) << errorText(Parsed.takeError());
+    bool Found = false;
+    for (const object::SectionRef &Value : (*Parsed)->sections()) {
+      Expected<StringRef> Name = Value.getName();
+      ASSERT_TRUE(static_cast<bool>(Name)) << errorText(Name.takeError());
+      if (*Name != SectionName)
+        continue;
+      Found = true;
+      EXPECT_TRUE(Value.isText())
+          << "an executable section came back as data\n"
+          << *Text;
+    }
+    EXPECT_TRUE(Found) << "the printed section is not in the object\n" << *Text;
+  }
+}
+
+// An opcode says how many operands it takes, and the printer generated for it
+// reads exactly that many by index. The MC verifier checks that an opcode and
+// its registers are in the target schema but says nothing about how many
+// operands accompany it, and a plugin builds an instruction in two steps --
+// create with an opcode, then append operands one at a time -- so an
+// instruction with too few of them is not a malformed graph, it is one the
+// plugin simply stopped building. Handed to the printer it reads past the end
+// of the operand list, which is the host reading memory it does not own on
+// account of its input.
+TEST(PluginAssemblerProviderTest, BuiltinPrinterRefusesUnderspecifiedInstruction) {
+  initializeAssemblyTargets();
+  for (const auto &[TripleName, SectionName] : PrinterCases) {
+    SCOPED_TRACE(TripleName);
+    std::string LookupError;
+    const Target *TheTarget =
+        TargetRegistry::lookupTarget(TripleName, LookupError);
+    ASSERT_NE(TheTarget, nullptr) << LookupError;
+    std::unique_ptr<MCInstrInfo> MCII(TheTarget->createMCInstrInfo());
+    ASSERT_NE(MCII, nullptr);
+
+    // A real opcode of this target that takes operands, rather than an
+    // invented number: the point is an instruction the printer would accept.
+    std::optional<unsigned> Opcode;
+    for (unsigned Candidate = 0; Candidate != MCII->getNumOpcodes();
+         ++Candidate) {
+      const MCInstrDesc &Desc = MCII->get(Candidate);
+      if (Desc.getNumOperands() >= 2 && !Desc.isVariadic() &&
+          !Desc.isPseudo()) {
+        Opcode = Candidate;
+        break;
+      }
+    }
+    ASSERT_TRUE(Opcode.has_value());
+
+    PluginMCUnit Unit;
+    auto Instruction = std::make_unique<MCInst>();
+    Instruction->setOpcode(*Opcode);
+    Unit.append(std::move(Instruction));
+
+    auto Text = printUnit(TripleName, Unit);
+    EXPECT_FALSE(static_cast<bool>(Text))
+        << "printed an instruction with no operands as if it had them:\n"
+        << *Text;
+    if (!Text)
+      consumeError(Text.takeError());
+  }
+}
+
+TEST(PluginAssemblerProviderTest, BuiltinPrinterRoundTripsNamedSections) {
+  initializeAssemblyTargets();
+  for (const auto &[TripleName, SectionName] : PrinterCases) {
+    SCOPED_TRACE(TripleName);
+    PluginMCUnit Unit;
+    Unit.sections().push_back(makeDataSection(SectionName));
+
+    auto Text = printUnit(TripleName, Unit);
+    ASSERT_TRUE(static_cast<bool>(Text)) << errorText(Text.takeError());
+    Error ParseError = reassemble(TripleName, *Text);
+    EXPECT_FALSE(static_cast<bool>(ParseError))
+        << "printed assembly did not parse back\n"
+        << *Text << "\n"
+        << errorText(std::move(ParseError));
+    consumeError(std::move(ParseError));
+  }
+}
+
+TEST(PluginAssemblerProviderTest, BuiltinPrinterRoundTripsSymbolBindings) {
+  initializeAssemblyTargets();
+  for (const auto &[TripleName, SectionName] : PrinterCases) {
+    SCOPED_TRACE(TripleName);
+    PluginMCUnit Unit;
+    auto Section = makeDataSection(SectionName);
+
+    // ".weak" and ".hidden" are ELF spellings. Mach-O wants
+    // ".weak_definition" and ".private_extern", and COFF has no hidden at all.
+    auto Weak = std::make_unique<PluginMCSymbol>();
+    Weak->Name = "weak_symbol";
+    Weak->Binding = NEVERC_MC_SYMBOL_BINDING_WEAK;
+    Weak->Definition = NEVERC_MC_SYMBOL_DEFINITION_SECTION;
+    Weak->Section = Section.get();
+    auto Hidden = std::make_unique<PluginMCSymbol>();
+    Hidden->Name = "hidden_symbol";
+    Hidden->Binding = NEVERC_MC_SYMBOL_BINDING_GLOBAL;
+    Hidden->Visibility = NEVERC_MC_SYMBOL_VISIBILITY_HIDDEN;
+    Hidden->Definition = NEVERC_MC_SYMBOL_DEFINITION_SECTION;
+    Hidden->Section = Section.get();
+    Unit.sections().push_back(std::move(Section));
+    Unit.symbols().push_back(std::move(Weak));
+    Unit.symbols().push_back(std::move(Hidden));
+
+    auto Text = printUnit(TripleName, Unit);
+    ASSERT_TRUE(static_cast<bool>(Text)) << errorText(Text.takeError());
+    Error ParseError = reassemble(TripleName, *Text);
+    EXPECT_FALSE(static_cast<bool>(ParseError))
+        << "printed assembly did not parse back\n"
+        << *Text << "\n"
+        << errorText(std::move(ParseError));
+    consumeError(std::move(ParseError));
+  }
+}
+
+TEST(PluginAssemblerProviderTest, BuiltinPrinterQuotesNamesThatNeedIt) {
+  initializeAssemblyTargets();
+  for (const auto &[TripleName, SectionName] : PrinterCases) {
+    SCOPED_TRACE(TripleName);
+    PluginMCUnit Unit;
+    auto Section = makeDataSection(SectionName);
+    // How MSVC spells `void f(int)`. The assembler reads '@' and '?' as syntax
+    // unless the name is quoted.
+    auto Symbol = std::make_unique<PluginMCSymbol>();
+    Symbol->Name = "?f@@YAXH@Z";
+    Symbol->Binding = NEVERC_MC_SYMBOL_BINDING_GLOBAL;
+    Symbol->Definition = NEVERC_MC_SYMBOL_DEFINITION_SECTION;
+    Symbol->Section = Section.get();
+    Unit.sections().push_back(std::move(Section));
+    Unit.symbols().push_back(std::move(Symbol));
+
+    auto Text = printUnit(TripleName, Unit);
+    ASSERT_TRUE(static_cast<bool>(Text)) << errorText(Text.takeError());
+    Error ParseError = reassemble(TripleName, *Text);
+    EXPECT_FALSE(static_cast<bool>(ParseError))
+        << "printed assembly did not parse back\n"
+        << *Text << "\n"
+        << errorText(std::move(ParseError));
+    consumeError(std::move(ParseError));
+  }
+}
+
+TEST(PluginAssemblerProviderTest, BuiltinPrinterDoesNotDropSymbolsPastTheStart) {
+  initializeAssemblyTargets();
+  for (const auto &[TripleName, SectionName] : PrinterCases) {
+    SCOPED_TRACE(TripleName);
+    PluginMCUnit Unit;
+    auto Section = makeDataSection(SectionName);
+    // A symbol at a non-zero offset had no label written for it at all, so it
+    // left the printer as an undefined symbol with nothing saying so.
+    auto Symbol = std::make_unique<PluginMCSymbol>();
+    Symbol->Name = "past_the_start";
+    Symbol->Binding = NEVERC_MC_SYMBOL_BINDING_GLOBAL;
+    Symbol->Definition = NEVERC_MC_SYMBOL_DEFINITION_SECTION;
+    Symbol->Section = Section.get();
+    Symbol->Value = 4;
+    Unit.sections().push_back(std::move(Section));
+    Unit.symbols().push_back(std::move(Symbol));
+
+    auto Text = printUnit(TripleName, Unit);
+    if (!Text) {
+      // Refusing is a fair answer; losing the definition silently is not.
+      consumeError(Text.takeError());
+      continue;
+    }
+    EXPECT_NE(Text->find("past_the_start:"), std::string::npos)
+        << "the definition was dropped\n"
+        << *Text;
+  }
+}
+
+TEST(PluginAssemblerProviderTest, BuiltinPrinterRefusesSectionNameItCannotWrite) {
+  initializeAssemblyTargets();
+  for (const auto &[TripleName, SectionName] : PrinterCases) {
+    SCOPED_TRACE(TripleName);
+    PluginMCUnit Unit;
+    // A quote is the one thing quoting cannot carry, and a section name gets
+    // quoted the same way a symbol name does. Symbol names are checked before
+    // being written; section names went out unchecked, closing the quoted name
+    // early and leaving the rest of the line to be read as directive syntax.
+    auto Section = makeDataSection(std::string(SectionName) + "\"x");
+    Unit.sections().push_back(std::move(Section));
+
+    auto Text = printUnit(TripleName, Unit);
+    if (!Text) {
+      consumeError(Text.takeError());
+      continue;
+    }
+    Error ParseError = reassemble(TripleName, *Text);
+    EXPECT_TRUE(static_cast<bool>(ParseError))
+        << "a section name holding a quote was written out as valid assembly\n"
+        << *Text;
+    consumeError(std::move(ParseError));
+  }
+}
+
+TEST(PluginAssemblerProviderTest, BuiltinPrinterRefusesDefinitionsItCannotWrite) {
+  initializeAssemblyTargets();
+  // An absolute symbol is created by ".set" and a common one by ".comm", and
+  // the printer writes neither -- it only ever places a label inside a
+  // section. Writing just the binding leaves the symbol undefined, so the
+  // value or the size it was defined with is gone and nothing says so.
+  const std::array<NevercMCSymbolDefinition, 2> Definitions = {
+      {NEVERC_MC_SYMBOL_DEFINITION_ABSOLUTE,
+       NEVERC_MC_SYMBOL_DEFINITION_COMMON}};
+  for (const auto &[TripleName, SectionName] : PrinterCases) {
+    for (NevercMCSymbolDefinition Definition : Definitions) {
+      SCOPED_TRACE(TripleName);
+      SCOPED_TRACE(Definition);
+      PluginMCUnit Unit;
+      Unit.sections().push_back(makeDataSection(SectionName));
+      auto Symbol = std::make_unique<PluginMCSymbol>();
+      Symbol->Name = "elsewhere";
+      Symbol->Binding = NEVERC_MC_SYMBOL_BINDING_GLOBAL;
+      Symbol->Definition = Definition;
+      Symbol->Value = 64;
+      Symbol->Size = 4;
+      Unit.symbols().push_back(std::move(Symbol));
+
+      auto Text = printUnit(TripleName, Unit);
+      if (!Text) {
+        consumeError(Text.takeError());
+        continue;
+      }
+      ADD_FAILURE() << "a definition the printer cannot write was accepted, "
+                       "leaving the symbol undefined\n"
+                    << *Text;
+    }
+  }
+}
+
+TEST(PluginAssemblerProviderTest, BuiltinPrinterKeepsWeakUndefinedReferences) {
+  initializeAssemblyTargets();
+  for (const auto &[TripleName, SectionName] : PrinterCases) {
+    SCOPED_TRACE(TripleName);
+    PluginMCUnit Unit;
+    Unit.sections().push_back(makeDataSection(SectionName));
+
+    // An undefined symbol belongs to no section, so the per-section loop that
+    // wrote symbol attributes never reached it and its weak binding was lost.
+    // A weak reference that comes back strong is a link error where there was
+    // none: unresolved, the weak one is zero and the strong one is a failure.
+    auto Weak = std::make_unique<PluginMCSymbol>();
+    Weak->Name = "weak_undefined";
+    Weak->Binding = NEVERC_MC_SYMBOL_BINDING_WEAK;
+    Weak->Definition = NEVERC_MC_SYMBOL_DEFINITION_UNDEFINED;
+    Unit.symbols().push_back(std::move(Weak));
+
+    auto Text = printUnit(TripleName, Unit);
+    ASSERT_TRUE(static_cast<bool>(Text)) << errorText(Text.takeError());
+    EXPECT_NE(Text->find("weak_undefined"), std::string::npos)
+        << "the weak binding of an undefined symbol was dropped\n"
+        << *Text;
+    Error ParseError = reassemble(TripleName, *Text);
+    EXPECT_FALSE(static_cast<bool>(ParseError))
+        << "printed assembly did not parse back\n"
+        << *Text << "\n"
+        << errorText(std::move(ParseError));
+    consumeError(std::move(ParseError));
+  }
+}
+
+TEST(PluginAssemblerProviderTest, BuiltinPrinterKeepsSymbolsWithAPrivatePrefix) {
+  initializeAssemblyTargets();
+  struct PrivateCase {
+    const char *TripleName;
+    const char *SectionName;
+    const char *SymbolName;
+  };
+  // Each format reserves a prefix for labels the assembler invents for itself,
+  // and a local symbol spelled that way is taken for one: it is dropped from
+  // the symbol table rather than written into it. A name is data, not a
+  // request, so a symbol the unit asked to keep has to survive being printed.
+  const std::array<PrivateCase, 3> Cases = {
+      {{"x86_64-unknown-linux-gnu", ".mycode", ".Lprivate"},
+       {"x86_64-pc-windows-msvc", ".mycode", ".Lprivate"},
+       {"arm64-apple-macosx", "__mycode", "Lprivate"}}};
+  for (const auto &[TripleName, SectionName, SymbolName] : Cases) {
+    SCOPED_TRACE(TripleName);
+    PluginMCUnit Unit;
+    auto Section = makeDataSection(SectionName);
+    auto Symbol = std::make_unique<PluginMCSymbol>();
+    Symbol->Name = SymbolName;
+    Symbol->Binding = NEVERC_MC_SYMBOL_BINDING_LOCAL;
+    Symbol->Definition = NEVERC_MC_SYMBOL_DEFINITION_SECTION;
+    Symbol->Section = Section.get();
+    Symbol->Value = 0;
+    Unit.sections().push_back(std::move(Section));
+    Unit.symbols().push_back(std::move(Symbol));
+
+    auto Text = printUnit(TripleName, Unit);
+    if (!Text) {
+      // Refusing a name it cannot carry is a fair answer; dropping the symbol
+      // without a word is not.
+      consumeError(Text.takeError());
+      continue;
+    }
+    auto Bytes = reassembleToObject(TripleName, *Text);
+    ASSERT_TRUE(static_cast<bool>(Bytes))
+        << *Text << "\n"
+        << errorText(Bytes.takeError());
+    auto Parsed = object::ObjectFile::createObjectFile(MemoryBufferRef(
+        StringRef(reinterpret_cast<const char *>(Bytes->data()),
+                  Bytes->size()),
+        "printed.o"));
+    ASSERT_TRUE(static_cast<bool>(Parsed)) << errorText(Parsed.takeError());
+    bool Found = false;
+    for (const object::SymbolRef &Value : (*Parsed)->symbols()) {
+      Expected<StringRef> Name = Value.getName();
+      if (!Name) {
+        consumeError(Name.takeError());
+        continue;
+      }
+      if (*Name == SymbolName)
+        Found = true;
+    }
+    EXPECT_TRUE(Found) << "the symbol was dropped from the symbol table\n"
+                       << *Text;
   }
 }
 

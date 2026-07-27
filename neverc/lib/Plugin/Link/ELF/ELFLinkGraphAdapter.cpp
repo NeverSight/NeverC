@@ -9,6 +9,7 @@
 #include "neverc/Linker/ELF/Symbols.h"
 #include "neverc/Linker/ELF/SyntheticSections.h"
 #include "neverc/Plugin/Host/BuiltinTargetProvider.h"
+#include "neverc/Plugin/Host/ObjectSectionRole.h"
 #include "neverc/Plugin/Host/PluginTaskContext.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/BinaryFormat/ELF.h"
@@ -157,10 +158,15 @@ NevercObjectSectionFlags sectionFlags(const InputSectionBase &Section) {
     Flags |= NEVERC_OBJECT_SECTION_DISCARDABLE;
   if ((Section.flags & SHF_GNU_RETAIN) != 0)
     Flags |= NEVERC_OBJECT_SECTION_RETAIN;
-  if (isDebugSection(Section))
+  // Not the linker's own isDebugSection(): that one also requires the section
+  // to be non-allocated and does not know the ".zdebug" spelling, while
+  // sectionKind() below asks only about the name. A graph is required to state
+  // the two consistently -- the object verifier rejects a debug kind without
+  // the matching flag -- so a ".zdebug_info" answered here by the linker's rule
+  // and there by the name would contradict itself.
+  if (isDebugSectionName(BuiltinObjectFormat::ELF, Section.name))
     Flags |= NEVERC_OBJECT_SECTION_DEBUG;
-  if (Section.name == ".eh_frame" ||
-      Section.name.starts_with(".gcc_except_table"))
+  if (isUnwindSectionName(BuiltinObjectFormat::ELF, Section.name))
     Flags |= NEVERC_OBJECT_SECTION_UNWIND;
   return Flags;
 }
@@ -179,19 +185,18 @@ NevercObjectSectionFlags sectionFlags(const OutputSection &Section) {
     Flags |= NEVERC_OBJECT_SECTION_STRINGS;
   if ((Section.flags & SHF_TLS) != 0)
     Flags |= NEVERC_OBJECT_SECTION_TLS;
-  if (Section.name.starts_with(".debug"))
+  if (isDebugSectionName(BuiltinObjectFormat::ELF, Section.name))
     Flags |= NEVERC_OBJECT_SECTION_DEBUG;
-  if (Section.name == ".eh_frame" ||
-      Section.name.starts_with(".gcc_except_table"))
+  if (isUnwindSectionName(BuiltinObjectFormat::ELF, Section.name))
     Flags |= NEVERC_OBJECT_SECTION_UNWIND;
   return Flags;
 }
 
 NevercObjectSectionKind sectionKind(uint32_t Type, uint64_t Flags,
                                     StringRef Name) {
-  if (Name.starts_with(".debug"))
+  if (isDebugSectionName(BuiltinObjectFormat::ELF, Name))
     return NEVERC_OBJECT_SECTION_KIND_DEBUG;
-  if (Name == ".eh_frame" || Name.starts_with(".gcc_except_table"))
+  if (isUnwindSectionName(BuiltinObjectFormat::ELF, Name))
     return NEVERC_OBJECT_SECTION_KIND_UNWIND;
   if ((Flags & SHF_TLS) != 0)
     return Type == SHT_NOBITS ? NEVERC_OBJECT_SECTION_KIND_TLS_ZERO_FILL
@@ -554,7 +559,7 @@ ELFLinkGraphAdapter::capture(const PluginLinkGraph &Previous,
       Atom->Flags |= NEVERC_LINK_ATOM_ADDRESS_SIGNIFICANT;
     if ((Native->flags & SHF_TLS) != 0)
       Atom->Flags |= NEVERC_LINK_ATOM_TLS;
-    if (Native->name == ".eh_frame")
+    if (isUnwindSectionName(BuiltinObjectFormat::ELF, Native->name))
       Atom->Flags |= NEVERC_LINK_ATOM_UNWIND;
     if (isa<SyntheticSection>(Native))
       Atom->Flags |= NEVERC_LINK_ATOM_SYNTHETIC;

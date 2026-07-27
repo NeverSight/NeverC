@@ -7,6 +7,7 @@
 #include "neverc/Linker/ELF/SymbolTable.h"
 #include "neverc/Linker/ELF/Symbols.h"
 #include "neverc/Linker/ELF/SyntheticSections.h"
+#include "neverc/Plugin/Host/ObjectSectionRole.h"
 #include "neverc/Plugin/Host/PluginIOBridge.h"
 #include "neverc/Plugin/Host/PluginInterfaceRegistry.h"
 #include "neverc/Plugin/Host/PluginProcessServices.h"
@@ -100,10 +101,9 @@ Expected<const NevercIOAPI *> getIOAPI(PluginTaskContext &Task) {
 }
 
 NevercObjectSectionKind binarySectionKind(const OutputSection &Section) {
-  if (Section.name.starts_with(".debug"))
+  if (isDebugSectionName(BuiltinObjectFormat::ELF, Section.name))
     return NEVERC_OBJECT_SECTION_KIND_DEBUG;
-  if (Section.name == ".eh_frame" ||
-      Section.name.starts_with(".gcc_except_table"))
+  if (isUnwindSectionName(BuiltinObjectFormat::ELF, Section.name))
     return NEVERC_OBJECT_SECTION_KIND_UNWIND;
   if ((Section.flags & SHF_TLS) != 0)
     return Section.type == SHT_NOBITS ? NEVERC_OBJECT_SECTION_KIND_TLS_ZERO_FILL
@@ -131,9 +131,9 @@ NevercObjectSectionFlags binarySectionFlags(const OutputSection &Section) {
     Flags |= NEVERC_OBJECT_SECTION_STRINGS;
   if ((Section.flags & SHF_TLS) != 0)
     Flags |= NEVERC_OBJECT_SECTION_TLS;
-  if (Section.name.starts_with(".debug"))
+  if (isDebugSectionName(BuiltinObjectFormat::ELF, Section.name))
     Flags |= NEVERC_OBJECT_SECTION_DEBUG;
-  if (Section.name == ".eh_frame")
+  if (isUnwindSectionName(BuiltinObjectFormat::ELF, Section.name))
     Flags |= NEVERC_OBJECT_SECTION_UNWIND;
   return Flags;
 }

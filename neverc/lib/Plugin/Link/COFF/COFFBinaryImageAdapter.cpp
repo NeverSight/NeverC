@@ -5,6 +5,7 @@
 #include "neverc/Linker/COFF/Config.h"
 #include "neverc/Linker/COFF/Emit.h"
 #include "neverc/Linker/COFF/Symbols.h"
+#include "neverc/Plugin/Host/ObjectSectionRole.h"
 #include "neverc/Plugin/Host/PluginIOBridge.h"
 #include "neverc/Plugin/Host/PluginInterfaceRegistry.h"
 #include "neverc/Plugin/Host/PluginProcessServices.h"
@@ -81,10 +82,17 @@ Expected<const NevercIOAPI *> getIOAPI(PluginTaskContext &Task) {
 
 NevercObjectSectionKind binarySectionKind(const OutputSection &Section) {
   const uint32_t Characteristics = Section.header.Characteristics;
-  if (Section.name.starts_with(".debug"))
+  if (isDebugSectionName(BuiltinObjectFormat::COFF, Section.name))
     return NEVERC_OBJECT_SECTION_KIND_DEBUG;
-  if (Section.name == ".pdata" || Section.name == ".xdata")
+  if (isUnwindSectionName(BuiltinObjectFormat::COFF, Section.name))
     return NEVERC_OBJECT_SECTION_KIND_UNWIND;
+  // The header has no thread-local bit the way ELF has SHF_TLS, so the name is
+  // the only statement of it -- the same answer the link graph adapter and the
+  // object reader give for a COFF section.
+  if (isThreadLocalSectionName(BuiltinObjectFormat::COFF, Section.name))
+    return (Characteristics & IMAGE_SCN_CNT_UNINITIALIZED_DATA) != 0
+               ? NEVERC_OBJECT_SECTION_KIND_TLS_ZERO_FILL
+               : NEVERC_OBJECT_SECTION_KIND_TLS_DATA;
   if ((Characteristics & IMAGE_SCN_CNT_CODE) != 0 ||
       (Characteristics & IMAGE_SCN_MEM_EXECUTE) != 0)
     return NEVERC_OBJECT_SECTION_KIND_TEXT;
@@ -104,10 +112,12 @@ NevercObjectSectionFlags binarySectionFlags(const OutputSection &Section) {
     Flags |= NEVERC_OBJECT_SECTION_WRITABLE;
   if ((Characteristics & IMAGE_SCN_MEM_DISCARDABLE) != 0)
     Flags |= NEVERC_OBJECT_SECTION_DISCARDABLE;
-  if (Section.name.starts_with(".debug"))
+  if (isDebugSectionName(BuiltinObjectFormat::COFF, Section.name))
     Flags |= NEVERC_OBJECT_SECTION_DEBUG;
-  if (Section.name == ".pdata" || Section.name == ".xdata")
+  if (isUnwindSectionName(BuiltinObjectFormat::COFF, Section.name))
     Flags |= NEVERC_OBJECT_SECTION_UNWIND;
+  if (isThreadLocalSectionName(BuiltinObjectFormat::COFF, Section.name))
+    Flags |= NEVERC_OBJECT_SECTION_TLS;
   return Flags;
 }
 
