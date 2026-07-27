@@ -340,9 +340,8 @@ typedef struct {
   unsigned count;
   unsigned cap;
 } TaskGroupStack;
-inline static LLVM_THREAD_LOCAL TaskGroupStack *CurrentThreadTaskGroups = 0;
-inline static inline int tgs_contains(TaskGroupStack *s,
-                                      ThreadPoolTaskGroup *g) {
+inline LLVM_THREAD_LOCAL TaskGroupStack *CurrentThreadTaskGroups = 0;
+inline int tgs_contains(TaskGroupStack *s, ThreadPoolTaskGroup *g) {
   if (!s)
     return 0;
   for (unsigned i = 0; i < s->count; ++i)

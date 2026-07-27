@@ -6,7 +6,7 @@ This is the first-release hard gate for the design requirement that "frontend,
 LTO, linker and dyncode carry no plugin-related process-global mutable
 compilation state".
 
-Two layers of checking:
+Three layers of checking:
 
 1. FORBIDDEN symbols -- a precise, zero-tolerance list of known process-global
    escape hatches (removed prototype loader, dyncode current-options/mode
@@ -25,6 +25,20 @@ Two layers of checking:
    statics are deliberately left to the binary layer below: a source-level
    regex cannot tell a mutable global from a constant-initialized table,
    whereas the section a symbol lands in can.
+
+3. Header internal-linkage scan -- a hard failure for mutable state defined in
+   a header with internal linkage (an anonymous namespace, or ``static`` at
+   namespace scope, including the ``inline static`` spelling where ``static``
+   silently wins).  Such an object exists once per *including translation
+   unit*, so a flag set through one includer reads unset through the next.
+   This tree is a header-only port of LLVM, so state upstream keeps in a .cpp
+   -- where an anonymous namespace is exactly right -- now sits in headers the
+   plugin path includes, where it means the opposite.  The binary layer below
+   cannot see this: such symbols demangle to a bare ``(anonymous
+   namespace)::X`` with no ``neverc::`` scope to match on, and two copies of
+   one object are indistinguishable from two same-named objects in different
+   .cpp files.  Constant-initialized data is exempt: every copy holds the same
+   bytes and nothing can write to them.
 
 Optionally, ``--build-dir`` scans the writable data symbols of the linked
 compiler (``<build-dir>/bin/neverc``) via ``nm``/``llvm-nm``.  This is the
@@ -112,18 +126,31 @@ DECL_PATTERNS = (
     (re.compile(r"^\s*(?:static\s+)?thread_local\b"), "thread_local"),
 )
 
+# Headers scanned for mutable state that has *internal linkage*, which gives
+# every including translation unit its own copy.  ``llvm/include`` is in scope
+# because this tree is a header-only port of LLVM: state that upstream keeps in
+# a .cpp now sits in headers the plugin path includes, so a split there is
+# plugin-visible process state.  See ``scan_headers``.
+HEADER_AUDIT_DIRS = (
+    "llvm/include",
+    "neverc/include/neverc/Plugin",
+    "neverc/include/neverc/DynCode",
+    "neverc/include/neverc/Linker",
+)
+
 
 @dataclass
 class Report:
     forbidden: list[str] = field(default_factory=list)
     heuristic: list[str] = field(default_factory=list)
+    headers: list[str] = field(default_factory=list)
     binary: list[str] = field(default_factory=list)
     # Reasons the binary scan was asked for but could not run.  Kept apart from
     # `binary` so "the tree is not built" never reads as "a symbol is bad".
     unscannable: list[str] = field(default_factory=list)
 
     def failed(self, strict: bool) -> bool:
-        if self.forbidden or self.binary or self.unscannable:
+        if self.forbidden or self.headers or self.binary or self.unscannable:
             return True
         if strict and self.heuristic:
             return True
@@ -299,6 +326,180 @@ def scan_sources(report: Report, allowlist: dict) -> None:
                     report.heuristic.append(
                         f"{rel}:{idx}: {name} storage `{line.strip()[:80]}`"
                     )
+
+
+_OPEN_NAMESPACE = re.compile(r"\bnamespace\b(?P<name>[\w\s:]*)$")
+_OPEN_RECORD = re.compile(r"\b(?:struct|class|union|enum)\b[^;=]*$")
+_HAS_STATIC = re.compile(r"(?:^|\s)static(?:\s|$)")
+_ENDS_IN_IDENTIFIER = re.compile(r"[A-Za-z_]\w*\s*(?:\[[^\]]*\])?\s*$")
+_LEADING_CONST = re.compile(r"^(?:\w+\s+)*?(?:const|constexpr)\s")
+_NOT_A_DEFINITION = re.compile(
+    r"^\s*(?:template|using|typedef|friend|return|constexpr|extern|"
+    r"static_assert|struct\s|class\s|union\s|enum\s|namespace\s)")
+# Types defined in an anonymous namespace, which is what makes a variable of
+# that type internally linked no matter how the variable itself is spelled.
+_ANON_TYPE = re.compile(r"\b(?:struct|class|union|enum)\s+(\w+)\b")
+
+
+def is_read_only(declarator: str) -> bool:
+    """Report whether the declared object itself cannot be written.
+
+    Constant-initialized read-only data is duplicated harmlessly: every copy
+    holds the same bytes.  A pointer is the trap -- in ``const char *Msg`` the
+    ``const`` qualifies the characters, not ``Msg``, so the pointer is still
+    assignable and a per-includer copy still diverges.  Only ``* const`` makes
+    the pointer itself immutable.
+    """
+    if re.search(r"\bconstexpr\b", declarator):
+        return True             # a constexpr variable is a const object
+    star = declarator.rfind("*")
+    if star >= 0:
+        return re.search(r"\bconst\b", declarator[star:]) is not None
+    return _LEADING_CONST.match(declarator) is not None
+
+
+def strip_preprocessor(text: str) -> str:
+    """Blank out directive lines, keeping line numbers.
+
+    Without this a declaration absorbs the ``#endif`` sitting above it and the
+    statement no longer parses as one.
+    """
+    out: list[str] = []
+    continued = False
+    for line in text.splitlines(True):
+        body = line.rstrip("\n")
+        if continued or body.lstrip().startswith("#"):
+            continued = body.rstrip().endswith("\\")
+            out.append("\n" if line.endswith("\n") else "")
+        else:
+            out.append(line)
+    return "".join(out)
+
+
+def scope_scan(text: str):
+    """Yield ``(offset, scopes, statement)`` for each ``;``-terminated statement.
+
+    ``scopes`` is the stack of enclosing blocks: ``anon`` for an anonymous
+    namespace, ``ns`` for a named one, ``record`` for a class/struct/union,
+    ``block-internal`` for a function the linker cannot merge across
+    translation units, and ``block`` for any other body.
+    """
+    scopes: list[str] = []
+    stmt_start = 0
+    i, n = 0, len(text)
+    while i < n:
+        c = text[i]
+        if c == "{":
+            head = text[stmt_start:i].strip()
+            if head:
+                # Surface the head too: a type definition is terminated by the
+                # brace, not by a ';' at this level, so a caller looking for
+                # `struct X` would otherwise never see it.
+                yield stmt_start, list(scopes), text[stmt_start:i]
+            match = _OPEN_NAMESPACE.search(head)
+            if match:
+                scopes.append("ns" if match.group("name").strip() else "anon")
+            elif _OPEN_RECORD.search(head):
+                scopes.append("record")
+            elif "anon" in scopes or (_HAS_STATIC.search(head)
+                                      and scopes[-1:] != ["record"]):
+                # Inside a class, `static` names a static member function,
+                # which keeps the linkage of its class -- not the same thing.
+                scopes.append("block-internal")
+            else:
+                scopes.append("block")
+            stmt_start = i + 1
+        elif c == "}":
+            if scopes:
+                scopes.pop()
+            stmt_start = i + 1
+        elif c == ";":
+            yield stmt_start, list(scopes), text[stmt_start:i]
+            stmt_start = i + 1
+        elif c == "(":
+            # Step over parenthesised text: it can hold ';' (a for-statement)
+            # and '{' (a braced initializer or lambda) that open no scope here.
+            depth = 1
+            i += 1
+            while i < n and depth:
+                if text[i] == "(":
+                    depth += 1
+                elif text[i] == ")":
+                    depth -= 1
+                i += 1
+            continue
+        i += 1
+
+
+def header_internal_state(text: str):
+    """Yield ``(line, kind, statement)`` for mutable objects with internal
+    linkage defined in a header.
+
+    Such an object is one per *including translation unit*, not one per
+    program: a flag set through one includer is unset for the next, and a
+    registry filled by one is empty for another.  Upstream LLVM is safe from
+    this because the definitions live in .cpp files; this port moved them into
+    headers, where `static` and anonymous namespaces mean the opposite of what
+    they meant before.
+    """
+    code = strip_preprocessor(strip_comments_and_strings(text))
+    # A variable whose type lives in an anonymous namespace is internally
+    # linked whatever the variable's own spelling says, so `inline` on it is a
+    # promise the language cannot keep.  Collecting the type names first is
+    # what lets the statement scan below recognise that case.
+    anon_types: set[str] = set()
+    for _, scopes, stmt in scope_scan(code):
+        if "anon" in scopes:
+            anon_types.update(_ANON_TYPE.findall(stmt))
+    for offset, scopes, stmt in scope_scan(code):
+        flat = " ".join(stmt.split())
+        if not flat or len(flat.split()) < 2 or _NOT_A_DEFINITION.match(flat):
+            continue
+        head = flat.replace("=", " = ").split("=")[0].strip()
+        if not _ENDS_IN_IDENTIFIER.search(head):
+            continue
+        innermost = scopes[-1] if scopes else "ns"
+        if innermost == "record":
+            continue                    # a member declaration, not a definition
+        if innermost == "block":
+            continue                    # a local of a mergeable function
+        if innermost == "block-internal":
+            if not _HAS_STATIC.search(flat):
+                continue                # an ordinary local
+            kind = "function-local static of an unmergeable function"
+        else:
+            if "(" in flat:
+                continue                # a function declaration, not an object
+            if is_read_only(head):
+                continue
+            borrowed = sorted(t for t in anon_types
+                              if re.search(rf"\b{re.escape(t)}\b", head))
+            if "anon" in scopes:
+                kind = "anonymous-namespace object"
+            elif _HAS_STATIC.search(flat):
+                kind = "file-scope static"
+            elif borrowed:
+                kind = ("object of anonymous-namespace type "
+                        f"`{borrowed[0]}`, so internally linked despite "
+                        "`inline`")
+            else:
+                continue                # external linkage: one per program
+        line = code.count("\n", 0, offset + len(stmt) - len(stmt.lstrip())) + 1
+        yield line, kind, flat
+
+
+def scan_headers(report: Report, allowlist: dict) -> None:
+    for base in (ROOT / d for d in HEADER_AUDIT_DIRS):
+        if not base.exists():
+            continue
+        for path in sorted(base.rglob("*.h")):
+            rel = str(path.relative_to(ROOT))
+            text = path.read_text(encoding="utf-8", errors="replace")
+            for line, kind, stmt in header_internal_state(text):
+                if allowlisted(rel, stmt, allowlist):
+                    continue
+                report.headers.append(
+                    f"{rel}:{line}: {kind} `{stmt[:80]}`")
 
 
 # Demangled-symbol namespaces whose writable data must be audited.  The final
@@ -528,6 +729,7 @@ def main() -> int:
     allowlist = load_allowlist()
     report = Report()
     scan_sources(report, allowlist)
+    scan_headers(report, allowlist)
     if args.build_dir is not None:
         scan_binary(report, args.build_dir, allowlist)
 
@@ -535,6 +737,7 @@ def main() -> int:
         print(json.dumps({
             "forbidden": report.forbidden,
             "heuristic": report.heuristic,
+            "headers": report.headers,
             "binary": report.binary,
             "unscannable": report.unscannable,
             "failed": report.failed(args.strict),
@@ -543,6 +746,11 @@ def main() -> int:
         if report.forbidden:
             print("== forbidden process-global state (must be zero) ==")
             for item in report.forbidden:
+                print(f"error: {item}", file=sys.stderr)
+        if report.headers:
+            print("== header state with internal linkage (one copy per "
+                  "translation unit) ==")
+            for item in report.headers:
                 print(f"error: {item}", file=sys.stderr)
         if report.unscannable:
             print("== binary scan requested but could not run ==")

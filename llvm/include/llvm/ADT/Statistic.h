@@ -234,10 +234,10 @@ namespace llvm {
 /// -stats - Command line option to cause transformations to emit stats about
 /// what they did.
 ///
-inline static bool EnableStats;
-inline static bool StatsAsJSON;
-inline static bool Enabled;
-inline static bool PrintOnExit;
+inline bool EnableStats;
+inline bool StatsAsJSON;
+inline bool Enabled;
+inline bool PrintOnExit;
 
 inline void initStatisticOptions() {
   static cl::opt<bool, true> registerEnableStats{
@@ -250,12 +250,17 @@ inline void initStatisticOptions() {
       cl::location(StatsAsJSON), cl::Hidden};
 }
 
-namespace {
 /// This class is used in a ManagedStatic so that it is created on demand (when
 /// the first statistic is bumped) and destroyed only when llvm_shutdown is
 /// called. We print statistics from the destructor.
 /// This class is also used to look up statistic values from applications that
 /// use LLVM.
+///
+/// Named rather than anonymous: StatInfo below is declared `inline` so that the
+/// whole program shares one registry, but a variable whose type has internal
+/// linkage cannot itself have external linkage -- an anonymous namespace here
+/// would silently hand every includer its own registry, and statistics bumped
+/// through one would be missing from the report printed by another.
 class StatisticInfo {
   SmallVector<TrackingStatistic *, 64> Stats;
 
@@ -275,10 +280,9 @@ public:
 
   void reset();
 };
-} // end anonymous namespace
 
-inline static ManagedStatic<StatisticInfo> StatInfo;
-inline static ManagedStatic<sys::SmartMutex<true>> StatLock;
+inline ManagedStatic<StatisticInfo> StatInfo;
+inline ManagedStatic<sys::SmartMutex<true>> StatLock;
 
 /// RegisterStatistic - The first time a statistic is bumped, this method is
 /// called.

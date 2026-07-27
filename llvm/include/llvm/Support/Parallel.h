@@ -315,7 +315,7 @@ namespace parallel {
 #if LLVM_ENABLE_THREADS
 
 #ifdef _WIN32
-inline static thread_local unsigned threadIndex = UINT_MAX;
+inline thread_local unsigned threadIndex = UINT_MAX;
 
 inline unsigned getThreadIndex() { GET_THREAD_INDEX_IMPL; }
 #else

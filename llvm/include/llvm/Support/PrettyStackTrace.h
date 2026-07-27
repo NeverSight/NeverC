@@ -132,7 +132,9 @@ void RestorePrettyStackState(const void *State);
 
 namespace llvm {
 
-inline static const char *BugReportMsg =
+// `const` here qualifies the characters, not the pointer: setBugReportMsg()
+// reassigns this, so it is mutable state and must be one object program-wide.
+inline const char *BugReportMsg =
     "PLEASE submit a bug report to " BUG_REPORT_URL
     " and include the crash backtrace.\n";
 
@@ -145,7 +147,7 @@ inline static const char *BugReportMsg =
 // objects, but we *really* cannot tolerate destructors running and do not want
 // to pay any overhead of synchronizing. As a consequence, we use a raw
 // thread-local variable.
-inline static LLVM_THREAD_LOCAL PrettyStackTraceEntry *PrettyStackTraceHead = 0;
+inline LLVM_THREAD_LOCAL PrettyStackTraceEntry *PrettyStackTraceHead = 0;
 
 // The use of 'volatile' here is to ensure that any particular thread always
 // reloads the value of the counter. The atomic type allows us to specify that
@@ -159,9 +161,8 @@ inline static LLVM_THREAD_LOCAL PrettyStackTraceEntry *PrettyStackTraceHead = 0;
 // the current thread". If the user happens to overflow an 'unsigned' with
 // SIGINFO requests, it's possible that some threads will stop responding to it,
 // but the program won't crash.
-inline static volatile unsigned GlobalSigInfoGenerationCounter = 1;
-inline static LLVM_THREAD_LOCAL unsigned ThreadLocalSigInfoGenerationCounter =
-    0;
+inline volatile unsigned GlobalSigInfoGenerationCounter = 1;
+inline LLVM_THREAD_LOCAL unsigned ThreadLocalSigInfoGenerationCounter = 0;
 
 inline PrettyStackTraceEntry *ReverseStackTrace(PrettyStackTraceEntry *Head) {
   PrettyStackTraceEntry *Prev = 0;
@@ -243,7 +244,7 @@ using CrashHandlerString = SmallString<2048>;
 typedef struct {
   alignas(alignof(CrashHandlerString)) char buf[sizeof(CrashHandlerString)];
 } CrashHandlerStringStorage;
-inline static CrashHandlerStringStorage crashHandlerStringStorage;
+inline CrashHandlerStringStorage crashHandlerStringStorage;
 #endif
 
 /// This callback is run if a fatal signal is delivered to the process, it

@@ -275,6 +275,98 @@ def main() -> int:
            "line continuation inside a literal shifted the line numbers",
            failures)
 
+    # 20. Header internal-linkage scan. This is the layer the binary scan
+    # cannot cover: such objects demangle to a bare `(anonymous namespace)::X`
+    # with no `neverc::` scope to match, and two copies of one object look
+    # exactly like two same-named objects from different .cpp files.
+    def kinds(source: str) -> list[str]:
+        return [kind for _, kind, _ in mod.header_internal_state(source)]
+
+    # `static` at namespace scope in a header: one object per includer.
+    expect(kinds("namespace llvm {\nstatic bool Flag = false;\n}\n")
+           == ["file-scope static"],
+           "namespace-scope static in a header not reported", failures)
+
+    # `inline static` reads as "one per program" but `static` wins, so it is
+    # the same bug wearing a disguise -- this is how every real instance in
+    # this tree was spelled.
+    expect(kinds("namespace llvm {\ninline static bool Flag = false;\n}\n")
+           == ["file-scope static"],
+           "`inline static` not reported", failures)
+
+    # The same declaration without `static` is correct and must stay silent.
+    expect(kinds("namespace llvm {\ninline bool Flag = false;\n}\n") == [],
+           "correct inline variable wrongly reported", failures)
+
+    # An anonymous namespace in a header has the opposite meaning it has in the
+    # .cpp this code was ported from.
+    expect(kinds("namespace {\nstruct G { int x; };\n"
+                 "inline G &globals() { static G g; return g; }\n}\n")
+           == ["function-local static of an unmergeable function"],
+           "anonymous-namespace function-local static not reported", failures)
+
+    # The same helper in a named namespace is one object program-wide.
+    expect(kinds("namespace llvm::detail {\nstruct G { int x; };\n"
+                 "inline G &globals() { static G g; return g; }\n}\n") == [],
+           "named-namespace function-local static wrongly reported", failures)
+
+    # Constant-initialized data is exempt: every copy holds the same bytes.
+    expect(kinds("namespace llvm {\nstatic constexpr int N = 4;\n"
+                 "static const char Env[] = \"X\";\n"
+                 "static constexpr char const *Name = \"X\";\n}\n") == [],
+           "read-only data wrongly reported", failures)
+
+    # In `const char *Msg` the const qualifies the characters, not the
+    # pointer, so the pointer is still assignable -- and this is exactly how
+    # the real BugReportMsg, which has a setter, was spelled.
+    expect(kinds('namespace llvm {\ninline static const char *Msg = "x";\n}\n')
+           == ["file-scope static"],
+           "mutable pointer to const wrongly treated as read-only", failures)
+    expect(kinds('namespace llvm {\ninline static char *const P = nullptr;\n}\n')
+           == [],
+           "`* const` pointer wrongly reported", failures)
+
+    # A variable whose *type* comes from an anonymous namespace is internally
+    # linked however the variable itself is spelled, so `inline` cannot make
+    # the program share one copy. Only the binary shows this; the declaration
+    # looks correct in isolation.
+    borrowed = kinds("namespace llvm {\n"
+                     "namespace { struct Impl { int x; }; }\n"
+                     "inline Impl Registry;\n}\n")
+    expect(len(borrowed) == 1 and "anonymous-namespace type" in borrowed[0],
+           f"anonymous-namespace type not reported: {borrowed}", failures)
+    expect(kinds("namespace llvm {\nstruct Impl { int x; };\n"
+                 "inline Impl Registry;\n}\n") == [],
+           "named type wrongly reported as anonymous", failures)
+
+    # `static` on a member function means "no implicit object", not internal
+    # linkage, so its locals are still one per program.
+    expect(kinds("namespace llvm {\nstruct T {\n"
+                 "  static int &get() { static int V = 0; return V; }\n};\n}\n")
+           == [],
+           "static member function's local wrongly reported", failures)
+
+    # A static data member is declared `inline static` on purpose; that is a
+    # member declaration, not a namespace-scope definition.
+    expect(kinds("namespace llvm {\nstruct T { inline static bool F = false; };\n}\n")
+           == [],
+           "static data member wrongly reported", failures)
+
+    # A directive must not be absorbed into the statement below it, and a
+    # function declaration is not an object.
+    expect(kinds("namespace llvm {\n#endif\ninline static bool Flag = false;\n}\n")
+           == ["file-scope static"],
+           "preprocessor directive broke statement recognition", failures)
+    expect(kinds("namespace llvm {\ninline static void fn(const char *m);\n}\n")
+           == [],
+           "function declaration misread as an object", failures)
+
+    # The reported line must point at the definition, not at the block start.
+    found = list(mod.header_internal_state(
+        "namespace llvm {\n\n\ninline static bool Flag = false;\n}\n"))
+    expect(found and found[0][0] == 4,
+           f"wrong line reported: {found[0][0] if found else 'none'}", failures)
+
     if failures:
         for f in failures:
             print(f"FAIL: {f}", file=sys.stderr)

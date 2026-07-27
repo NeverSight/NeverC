@@ -518,7 +518,7 @@ MemoryBuffer::getFile(const Twine &Filename, bool IsText,
 }
 
 template <typename MB>
-inline static ErrorOr<std::unique_ptr<MB>>
+inline ErrorOr<std::unique_ptr<MB>>
 getOpenFileImpl(sys::fs::file_t FD, const Twine &Filename, uint64_t FileSize,
                 uint64_t MapSize, int64_t Offset, bool RequiresNullTerminator,
                 bool IsVolatile, Align Alignment);
@@ -684,7 +684,7 @@ inline static int getMemoryBufferPageSizeEstimate() {
 }
 
 template <typename MB>
-inline static ErrorOr<std::unique_ptr<MB>>
+inline ErrorOr<std::unique_ptr<MB>>
 getOpenFileImpl(sys::fs::file_t FD, const Twine &Filename, uint64_t FileSize,
                 uint64_t MapSize, int64_t Offset, bool RequiresNullTerminator,
                 bool IsVolatile, Align Alignment) {

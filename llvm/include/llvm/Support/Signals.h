@@ -145,8 +145,8 @@ void unregisterHandlers();
 
 namespace llvm {
 
-inline static bool DisableSymbolicationFlag = false;
-inline static ManagedStatic<SmallString<256>> CrashDiagnosticsDirectory;
+inline bool DisableSymbolicationFlag = false;
+inline ManagedStatic<SmallString<256>> CrashDiagnosticsDirectory;
 
 void initSignalsOptions();
 

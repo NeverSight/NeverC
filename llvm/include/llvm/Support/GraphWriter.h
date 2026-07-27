@@ -441,7 +441,11 @@ void ViewGraph(const GraphType &G, const Twine &Name, bool ShortNames = false,
 #ifdef __APPLE__
 #include "llvm/Support/CommandLine.h"
 
-namespace {
+// Named rather than anonymous: ViewBackground is declared `inline` so that the
+// whole program shares one option, but a variable whose type has internal
+// linkage cannot itself have external linkage -- an anonymous namespace here
+// would give every includer its own copy of the flag.
+namespace llvm {
 struct CreateViewBackground {
   static void *call() {
     return new llvm::cl::opt<bool>(
@@ -450,9 +454,9 @@ struct CreateViewBackground {
                        "Creates tmp file litter."));
   }
 };
-} // namespace
-inline static llvm::ManagedStatic<llvm::cl::opt<bool>, CreateViewBackground>
+inline llvm::ManagedStatic<llvm::cl::opt<bool>, CreateViewBackground>
     ViewBackground;
+} // namespace llvm
 #endif
 
 namespace llvm {
