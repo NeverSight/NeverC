@@ -2,6 +2,7 @@
 #include "neverc/Plugin/Host/AssemblySymbolName.h"
 #include "neverc/Plugin/Host/MCPluginBridge.h"
 #include "neverc/Plugin/Host/MCUnit.h"
+#include "neverc/Plugin/Host/ObjectSectionRole.h"
 #include "neverc/Plugin/Host/PluginTargetRegistry.h"
 #include "neverc/Plugin/Host/PluginTaskContext.h"
 #include "llvm/ADT/ArrayRef.h"
@@ -98,6 +99,18 @@ void printSectionDirective(const PluginMCSection &Section, const Triple &Target,
   Output << "\t.section\t" << Name << ",\""
          << (Executable ? (Writable ? "xw" : "xr") : (Writable ? "dw" : "dr"))
          << "\"\n";
+}
+
+// Whether \p Section is the one the assembler already starts in, which is
+// where the unit's own instructions have to go for want of a section of their
+// own. The comparison is by the name that reaches the assembler, so it has to
+// match how printSectionDirective spells it: on Mach-O a section is named by
+// segment and section both, and only an executable one is placed in __TEXT.
+bool isStartingSection(const PluginMCSection &Section, const Triple &Target) {
+  if (Target.isOSBinFormatMachO())
+    return Section.Name == "__text" &&
+           (Section.Flags & NEVERC_MC_SECTION_EXECUTABLE) != 0;
+  return Section.Name == ".text";
 }
 
 // ".weak" and ".hidden" are ELF spellings. Mach-O distinguishes a weak
@@ -260,6 +273,20 @@ Error BuiltinLLVMAsmPrinter::print(
   };
 
   if (!Unit.instructions().empty()) {
+    // The unit's instructions belong to no section, so they go into the one
+    // the assembler starts in. A section of the unit named that same thing is
+    // that same section: naming it appends to what is already there, so its
+    // bytes land after the instructions and every offset within it -- each of
+    // its symbols included -- slides by however many bytes they took. The
+    // object still assembles and the section still holds everything it should,
+    // just at different places, so refusing is the only way the caller learns
+    // the two cannot both be written.
+    for (const auto &Section : Unit.sections())
+      if (isStartingSection(*Section, TargetTriple))
+        return printerError(
+            "builtin assembly printer cannot write both the unit's own "
+            "instructions and a section named '" + Section->Name +
+            "', which is where those instructions go");
     Output << "\t.text\n";
     for (const auto &Instruction : Unit.instructions())
       if (Error E = PrintInstruction(*Instruction))
@@ -297,6 +324,21 @@ Error BuiltinLLVMAsmPrinter::print(
     if (!expressibleName(Section->Name))
       return printerError(
           "builtin assembly printer cannot write the name of a section");
+    // On ELF the assembler adds what a section's name implies to the flags
+    // the directive states, so a name whose meaning goes beyond them yields a
+    // section the unit did not describe -- and yields it quietly, since the
+    // text assembles either way.
+    if (TargetTriple.isOSBinFormatELF() &&
+        !elfNameAgreesWithFlags(
+            Section->Name,
+            (Section->Flags & NEVERC_MC_SECTION_ALLOCATED) != 0,
+            (Section->Flags & NEVERC_MC_SECTION_WRITABLE) != 0,
+            (Section->Flags & NEVERC_MC_SECTION_EXECUTABLE) != 0,
+            /*ThreadLocal=*/false))
+      return printerError(
+          "builtin assembly printer cannot write section '" + Section->Name +
+          "' with the flags it carries: the assembler reads more from that "
+          "name");
     printSectionDirective(*Section, TargetTriple, Output);
     if (Section->Alignment > 1)
       Output << "\t.balign\t" << Section->Alignment << "\n";

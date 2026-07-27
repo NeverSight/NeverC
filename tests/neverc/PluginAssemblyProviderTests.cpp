@@ -982,4 +982,94 @@ TEST(PluginAssemblerProviderTest, BuiltinPrinterKeepsSymbolsWithAPrivatePrefix) 
   }
 }
 
+TEST(PluginAssemblerProviderTest, BuiltinPrinterPlacesSymbolsAtTheirOffsets) {
+  initializeAssemblyTargets();
+  struct TextCase {
+    const char *TripleName;
+    const char *SectionName;
+  };
+  // The section the assembler starts in, named the way each format names it.
+  const std::array<TextCase, 3> Cases = {
+      {{"x86_64-unknown-linux-gnu", ".text"},
+       {"x86_64-pc-windows-msvc", ".text"},
+       {"arm64-apple-macosx", "__text"}}};
+  for (const auto &[TripleName, SectionName] : Cases) {
+    SCOPED_TRACE(TripleName);
+    // A unit holds instructions of its own beside its sections, and the
+    // printer gives those their own ".text". Naming a section the same thing
+    // reaches that one again, so the two runs of bytes end up in one section
+    // with the unit's instructions first -- and every offset in the section
+    // slides by however many bytes those took. A symbol the unit places at
+    // offset zero comes out somewhere else, with nothing said.
+    std::string LookupError;
+    const Target *TheTarget =
+        TargetRegistry::lookupTarget(TripleName, LookupError);
+    ASSERT_NE(TheTarget, nullptr) << LookupError;
+    std::unique_ptr<MCInstrInfo> MCII(TheTarget->createMCInstrInfo());
+    ASSERT_NE(MCII, nullptr);
+    // Any real instruction of this target will do, so long as it is one the
+    // printer accepts and the assembler reads back.
+    std::optional<unsigned> Opcode;
+    for (unsigned Candidate = 0; Candidate != MCII->getNumOpcodes();
+         ++Candidate) {
+      const MCInstrDesc &Desc = MCII->get(Candidate);
+      if (Desc.getNumOperands() == 0 && !Desc.isVariadic() &&
+          !Desc.isPseudo()) {
+        Opcode = Candidate;
+        break;
+      }
+    }
+    ASSERT_TRUE(Opcode.has_value());
+
+    PluginMCUnit Unit;
+    auto Instruction = std::make_unique<MCInst>();
+    Instruction->setOpcode(*Opcode);
+    Unit.append(std::move(Instruction));
+
+    auto Section = makeDataSection(SectionName);
+    Section->Flags =
+        NEVERC_MC_SECTION_ALLOCATED | NEVERC_MC_SECTION_EXECUTABLE;
+    auto Symbol = std::make_unique<PluginMCSymbol>();
+    Symbol->Name = "at_the_start";
+    Symbol->Binding = NEVERC_MC_SYMBOL_BINDING_GLOBAL;
+    Symbol->Definition = NEVERC_MC_SYMBOL_DEFINITION_SECTION;
+    Symbol->Section = Section.get();
+    Symbol->Value = 0;
+    Unit.sections().push_back(std::move(Section));
+    Unit.symbols().push_back(std::move(Symbol));
+
+    auto Text = printUnit(TripleName, Unit);
+    if (!Text) {
+      // Refusing a unit it cannot lay out is a fair answer; placing the
+      // symbol somewhere other than where the unit put it is not.
+      consumeError(Text.takeError());
+      continue;
+    }
+    auto Bytes = reassembleToObject(TripleName, *Text);
+    if (!Bytes) {
+      consumeError(Bytes.takeError());
+      continue;
+    }
+    auto Parsed = object::ObjectFile::createObjectFile(MemoryBufferRef(
+        StringRef(reinterpret_cast<const char *>(Bytes->data()),
+                  Bytes->size()),
+        "printed.o"));
+    ASSERT_TRUE(static_cast<bool>(Parsed)) << errorText(Parsed.takeError());
+    for (const object::SymbolRef &Value : (*Parsed)->symbols()) {
+      Expected<StringRef> Name = Value.getName();
+      if (!Name) {
+        consumeError(Name.takeError());
+        continue;
+      }
+      if (!Name->ends_with("at_the_start"))
+        continue;
+      Expected<uint64_t> Address = Value.getAddress();
+      ASSERT_TRUE(static_cast<bool>(Address)) << errorText(Address.takeError());
+      EXPECT_EQ(*Address, 0u)
+          << "the symbol moved by the length of the unit's own instructions\n"
+          << *Text;
+    }
+  }
+}
+
 } // namespace
