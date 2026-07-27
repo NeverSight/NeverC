@@ -27,7 +27,7 @@
 #include "Linker/Core/Driver/LTOCache.h"
 #include "Linker/Core/Runtime/Diagnostic.h"
 #include "Linker/Core/Runtime/Session.h"
-#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/LTO/LTO.h"
 #include "llvm/Support/Error.h"
@@ -91,7 +91,18 @@ runPluginRelocatableLTO(const LinkerDriverConfig &Config,
 
   // Choose one prevailing definition per symbol name across all modules:
   // a non-weak definition beats a weak one; otherwise the first seen wins.
-  DenseMap<StringRef, PrevailingDefinition> Winners;
+  //
+  // The names are copied rather than referenced. Handing an input to
+  // lto::LTO::add below transfers ownership of it, and the call destroys it
+  // before returning -- so a name recorded here would outlive the object that
+  // spells it, and the lookups for every later input would read freed memory.
+  // Whether it actually does depends on where the reader put the string table:
+  // a bitcode file carrying a symbol table of the current version is read in
+  // place, leaving the names pointing into the caller's buffer, while one that
+  // has to have its symbol table rebuilt -- an older version, or a file the
+  // reader could not use as-is -- gets a table the input owns. That is a
+  // property of the input, not something this can rely on.
+  StringMap<PrevailingDefinition> Winners;
   for (size_t FileIndex = 0; FileIndex != Files.size(); ++FileIndex) {
     size_t SymbolIndex = 0;
     for (const lto::InputFile::Symbol &Symbol : Files[FileIndex]->symbols()) {
