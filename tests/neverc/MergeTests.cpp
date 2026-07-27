@@ -9,6 +9,8 @@
 //===--------------------------------------------------------------------===//
 
 #include "neverc/Merge/Merger.h"
+#include "Common/MergerCommon.h"
+#include "neverc/Plugin/Host/NativeRelocationFacts.h"
 
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringMap.h"
@@ -1667,35 +1669,34 @@ bool patchMachoDysymtab(SmallVectorImpl<char> &Buf, uint32_t ILocal,
   return false;
 }
 
-/// Overwrite the 8-byte little-endian word at (Seg,Sect)+SecRelOff in a Mach-O
-/// object's *section data* (not the relocation table).  Used to plant a real
-/// pointer at a non-extern relocation site and, post-merge, to corrupt the
-/// in-place-rewritten pointer so the verifier's value check is exercised.
-bool patchMachoSecQword(SmallVectorImpl<char> &Buf, StringRef Seg,
-                        StringRef Sect, uint32_t SecRelOff, uint64_t NewVal) {
+/// File offset of (Seg,Sect)+SecRelOff in a Mach-O object, or nothing when the
+/// section is absent or the offset is outside the buffer.
+std::optional<uint64_t> machoSecFileOffset(ArrayRef<char> Buf, StringRef Seg,
+                                           StringRef Sect, uint32_t SecRelOff,
+                                           uint64_t Width) {
   namespace MO = llvm::MachO;
   if (Buf.size() < sizeof(MO::mach_header_64))
-    return false;
-  auto *MH = reinterpret_cast<MO::mach_header_64 *>(Buf.data());
+    return std::nullopt;
+  auto *MH = reinterpret_cast<const MO::mach_header_64 *>(Buf.data());
   uint64_t Cmd = sizeof(MO::mach_header_64);
   for (unsigned c = 0; c < MH->ncmds; ++c) {
     if (Cmd + sizeof(MO::load_command) > Buf.size())
       break;
-    auto *LC = reinterpret_cast<MO::load_command *>(Buf.data() + Cmd);
+    auto *LC = reinterpret_cast<const MO::load_command *>(Buf.data() + Cmd);
     if (LC->cmd == MO::LC_SEGMENT_64) {
-      auto *Seg64 = reinterpret_cast<MO::segment_command_64 *>(Buf.data() + Cmd);
-      char *SP = Buf.data() + Cmd + sizeof(MO::segment_command_64);
+      auto *Seg64 =
+          reinterpret_cast<const MO::segment_command_64 *>(Buf.data() + Cmd);
+      const char *SP = Buf.data() + Cmd + sizeof(MO::segment_command_64);
       for (unsigned i = 0; i < Seg64->nsects; ++i) {
-        auto *S =
-            reinterpret_cast<MO::section_64 *>(SP + i * sizeof(MO::section_64));
+        auto *S = reinterpret_cast<const MO::section_64 *>(
+            SP + i * sizeof(MO::section_64));
         StringRef Sn(S->sectname, strnlen(S->sectname, 16));
         StringRef Sg(S->segname, strnlen(S->segname, 16));
         if (Sg == Seg && Sn == Sect) {
           uint64_t Fo = (uint64_t)S->offset + SecRelOff;
-          if (Fo + 8 > Buf.size())
-            return false;
-          memcpy(Buf.data() + Fo, &NewVal, 8);
-          return true;
+          if (Fo + Width > Buf.size())
+            return std::nullopt;
+          return Fo;
         }
       }
     }
@@ -1703,7 +1704,35 @@ bool patchMachoSecQword(SmallVectorImpl<char> &Buf, StringRef Seg,
     if (LC->cmdsize == 0)
       break;
   }
-  return false;
+  return std::nullopt;
+}
+
+/// Overwrite the 8-byte little-endian word at (Seg,Sect)+SecRelOff in a Mach-O
+/// object's *section data* (not the relocation table).  Used to plant a real
+/// pointer at a non-extern relocation site and, post-merge, to corrupt the
+/// in-place-rewritten pointer so the verifier's value check is exercised.
+bool patchMachoSecQword(SmallVectorImpl<char> &Buf, StringRef Seg,
+                        StringRef Sect, uint32_t SecRelOff, uint64_t NewVal) {
+  std::optional<uint64_t> Fo =
+      machoSecFileOffset(ArrayRef<char>(Buf.data(), Buf.size()), Seg, Sect,
+                         SecRelOff, 8);
+  if (!Fo)
+    return false;
+  memcpy(Buf.data() + *Fo, &NewVal, 8);
+  return true;
+}
+
+/// The 32-bit little-endian word at (Seg,Sect)+SecRelOff in a Mach-O object's
+/// section data.
+std::optional<uint32_t> readMachoSecWord(ArrayRef<char> Buf, StringRef Seg,
+                                         StringRef Sect, uint32_t SecRelOff) {
+  std::optional<uint64_t> Fo =
+      machoSecFileOffset(Buf, Seg, Sect, SecRelOff, 4);
+  if (!Fo)
+    return std::nullopt;
+  uint32_t Value = 0;
+  memcpy(&Value, Buf.data() + *Fo, 4);
+  return Value;
 }
 
 } // namespace
@@ -5114,6 +5143,87 @@ TEST(MergeMachOVerify, CatchesWrongInPlacePointerDelta) {
   EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs),
                            ArrayRef<char>(Bad), Format::MachO64, {}, &Err))
       << "value check missed a mis-targeted in-place pointer";
+}
+
+TEST(MergeMachO, DoesNotRewriteAnInstructionAsIfItWereAWord) {
+  namespace MO = llvm::MachO;
+  uint32_t TextFlags =
+      MO::S_ATTR_PURE_INSTRUCTIONS | MO::S_ATTR_SOME_INSTRUCTIONS;
+  // A section-relative relocation is adjusted by adding the layout delta to
+  // the whole field it covers, on the grounds that a relocation which is not
+  // PC-relative addresses a word of its own. ARM64_RELOC_PAGEOFF12 is not
+  // PC-relative either, and its field is the twelve-bit immediate inside an
+  // `add` -- bits 10 through 21 of the instruction word, with the destination
+  // and source registers below it and the opcode above. Adding a delta to the
+  // word writes through all of that: a small delta lands in the register
+  // fields and changes which registers the instruction reads, a larger one
+  // reaches the immediate but at the wrong bit position. The object stays
+  // well-formed and the self-check skips relocation sites, so neither notices.
+  const uint32_t AddInstruction = 0x91000000; // add x0, x0, #0
+  MachoSecSpec S0{"__TEXT", "__text", 0x40, 4, TextFlags, 0xAA};
+  MachoSecSpec C0{"__DATA", "__const", 0x20, 4, 0u, 0xCC};
+  MachoSecSpec S1{"__TEXT", "__text", 0x40, 4, TextFlags, 0xBB};
+  MachoSecSpec C1{"__DATA", "__const", 0x20, 4, 0u, 0xDD};
+  uint8_t DefExt = MO::N_SECT | MO::N_EXT;
+  MachoSymSpec F0{"_f0", DefExt, 1, 0, 0};
+  MachoSymSpec F1{"_f1", DefExt, 1, 0, 0};
+  MachoRelSpec R0{0, 0x10, "", (uint8_t)MO::ARM64_RELOC_PAGEOFF12, 2,
+                  /*Extern=*/false, /*TargetSec=*/1};
+  MachoRelSpec R1{0, 0x10, "", (uint8_t)MO::ARM64_RELOC_PAGEOFF12, 2,
+                  /*Extern=*/false, /*TargetSec=*/1};
+  auto O0 = buildMachO(MO::CPU_TYPE_ARM64, MO::CPU_SUBTYPE_ARM64_ALL, {S0, C0},
+                       {F0}, {R0});
+  auto O1 = buildMachO(MO::CPU_TYPE_ARM64, MO::CPU_SUBTYPE_ARM64_ALL, {S1, C1},
+                       {F1}, {R1});
+  // Put a real instruction at each relocation site. The high half of the
+  // qword is padding beyond the four bytes the relocation covers.
+  ASSERT_TRUE(patchMachoSecQword(O0, "__TEXT", "__text", 0x10, AddInstruction));
+  ASSERT_TRUE(patchMachoSecQword(O1, "__TEXT", "__text", 0x10, AddInstruction));
+
+  SmallVector<SmallVector<char, 0>, 2> Bufs;
+  Bufs.push_back(O0);
+  Bufs.push_back(O1);
+  SmallVector<char, 0> Out;
+  raw_svector_ostream OS(Out);
+  if (!mergeObjects(Bufs, OS, Format::MachO64))
+    return; // Refusing what it cannot adjust is the other acceptable answer.
+
+  // Everything except the immediate field: the registers below it and the
+  // opcode above have to survive whatever the relocation did.
+  const uint32_t OutsideImmediate = ~(UINT32_C(0xFFF) << 10);
+  for (uint32_t Site : {UINT32_C(0x10), UINT32_C(0x50)}) {
+    std::optional<uint32_t> Word =
+        readMachoSecWord(ArrayRef<char>(Out), "__TEXT", "__text", Site);
+    ASSERT_TRUE(Word.has_value()) << "site " << Site;
+    EXPECT_EQ(*Word & OutsideImmediate, AddInstruction & OutsideImmediate)
+        << "the merge rewrote the instruction at __text+" << Site;
+  }
+}
+
+TEST(MergeMachO, WholeWordFactAgreesWithTheObjectGraphLayer) {
+  namespace MO = llvm::MachO;
+  // "Does this relocation cover a word of its own" is stated twice: here for
+  // the merger, which is kept free of the plugin ABI, and in
+  // Plugin/Host/NativeRelocationFacts.h for the object graph. Nothing in
+  // either place would notice the two drifting apart -- each answers its own
+  // caller correctly right up until one of them is updated alone -- so the
+  // agreement is checked rather than assumed.
+  const std::array<std::pair<uint32_t, const char *>, 2> Targets = {
+      {{MO::CPU_TYPE_ARM64, "arm64-apple-macosx"},
+       {MO::CPU_TYPE_X86_64, "x86_64-apple-macosx"}}};
+  for (const auto &[CpuType, TripleName] : Targets) {
+    SCOPED_TRACE(TripleName);
+    const llvm::Triple Target(TripleName);
+    for (unsigned Type = 0; Type <= 0xF; ++Type) {
+      std::optional<bool> Graph =
+          neverc::plugin::nativeRelocationFieldIsWholeBytes(Target, Type);
+      const bool Merge =
+          neverc::merge::detail::machOFieldIsWholeWord(CpuType, Type);
+      ASSERT_TRUE(Graph.has_value()) << "type " << Type;
+      EXPECT_EQ(*Graph, Merge) << "the two answers for relocation type " << Type
+                               << " have drifted apart";
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------

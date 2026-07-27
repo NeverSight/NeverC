@@ -1,7 +1,9 @@
 #include "PluginLinkTestSupport.h"
 #include "Inputs/Plugin/LinkLayoutPlugin.h"
 #include "Link/LinkPhaseExecutor.h"
+#include "neverc/Plugin/Host/BuiltinObjectExtension.h"
 #include "neverc/Plugin/Schema/PluginPhaseSchema.inc"
+#include "llvm/BinaryFormat/ELF.h"
 #include "gtest/gtest.h"
 
 #include <algorithm>
@@ -87,8 +89,8 @@ struct RelocationGraphIDs {
 };
 
 std::shared_ptr<PluginLinkGraph>
-makeRelocationGraph(RelocationGraphIDs &IDs) {
-  auto Target = makeTargetKey();
+makeRelocationGraph(RelocationGraphIDs &IDs,
+                    llvm::Expected<OwnedTargetKey> Target = makeTargetKey()) {
   if (!Target) {
     ADD_FAILURE() << errorText(Target.takeError());
     return {};
@@ -323,6 +325,84 @@ TEST(PluginLinkLayoutTest,
         (*Output)->findAtom(IDs.SourceAtom)->Content.end(),
         [](uint8_t Byte) { return Byte == 0; }));
   }
+}
+
+// An AArch64 `bl` with the relocation that patches its offset field. The
+// field is 26 bits inside the instruction word, so the graph calls it 32 bits
+// wide -- that is the size of the word holding it, not of a value that can be
+// written over the word.
+std::shared_ptr<PluginLinkGraph>
+makeInstructionFieldGraph(RelocationGraphIDs &IDs) {
+  // A relocation type number says nothing without a target to read it
+  // through: 283 is AArch64's CALL26 and no relocation at all on x86_64.
+  auto Graph = makeRelocationGraph(
+      IDs, TargetKeyBuilder()
+               .setTargetID({UINT64_C(0x4e43504c47524150), UINT64_C(1)})
+               .setTriple("aarch64-unknown-linux-gnu", "aarch64", "unknown",
+                          "linux", "gnu")
+               .setCPU("generic", "generic")
+               .setFeatures({})
+               .setABI({UINT64_C(0x4e43504142495401), UINT64_C(1)})
+               .setCallingConvention(
+                   {UINT64_C(0x4e43504343495401), UINT64_C(1)})
+               .setObjectFormat({UINT64_C(0x4e43504f424a5446), UINT64_C(1)})
+               .setCodeGeneration(NEVERC_TARGET_RELOCATION_PIC,
+                                  NEVERC_TARGET_CODE_MODEL_SMALL)
+               .setExecution(NEVERC_TARGET_EXECUTION_USER, 64,
+                             NEVERC_TARGET_ENDIAN_LITTLE)
+               .setSchemaDigest("0123456789abcdef0123456789abcdef"
+                                "0123456789abcdef0123456789abcdef")
+               .build());
+  if (!Graph)
+    return Graph;
+  PluginLinkAtom *Source = Graph->findAtom(IDs.SourceAtom);
+  // bl #0 -- opcode 0x94 in the top byte, offset field zero below it.
+  Source->Content = {0x00, 0x00, 0x00, 0x94, 0x00, 0x00, 0x00, 0x94};
+  PluginLinkEdge *Edge = Graph->findEdge(IDs.Edge);
+  Edge->RelocationKind = NEVERC_OBJECT_RELOCATION_PC_RELATIVE;
+  Edge->Width = 32;
+  Edge->Addend = 0;
+  Edge->IsPCRelative = true;
+  Edge->IsSigned = true;
+
+  namespace ext = neverc::plugin::builtinext;
+  PluginLinkExtensionData Extension;
+  Extension.NamespaceID = Graph->targetKey().ObjectFormatID;
+  Extension.Version = ext::RelocationVersion;
+  llvm::SmallVector<uint8_t, 32> Bytes;
+  ext::appendHeader(Bytes, ext::RelocationTag, ext::RelocationVersion);
+  ext::appendU64(Bytes, llvm::ELF::R_AARCH64_CALL26);
+  ext::appendU32(Bytes, 16);
+  ext::appendBytes(Bytes, "R_AARCH64_CALL26");
+  Extension.Payload.assign(Bytes.begin(), Bytes.end());
+  Edge->Extensions.values().push_back(std::move(Extension));
+  return Graph;
+}
+
+TEST(PluginLinkLayoutTest, RelocationRefusesAFieldInsideAnInstruction) {
+  LinkTaskScope Scope;
+  ASSERT_TRUE(Scope.initialize());
+  auto Pipeline = LinkPhasePipeline::create(Scope.task());
+  ASSERT_TRUE(static_cast<bool>(Pipeline))
+      << errorText(Pipeline.takeError());
+  RelocationGraphIDs IDs;
+  auto Graph = makeInstructionFieldGraph(IDs);
+  ASSERT_TRUE(static_cast<bool>(Graph));
+
+  // Writing the displacement over the four bytes the relocation covers takes
+  // the opcode with it: what was a `bl` becomes whatever the displacement
+  // happens to encode. The value fits the field and every check downstream is
+  // satisfied, so nothing says the code was replaced.
+  auto Output = (*Pipeline)->execute(
+      Graph, NEVERC_LINK_STATE_RELOCATIONS_APPLIED);
+  if (!Output) {
+    llvm::consumeError(Output.takeError());
+    return;
+  }
+  const PluginLinkAtom *Source = (*Output)->findAtom(IDs.SourceAtom);
+  ASSERT_NE(Source, nullptr);
+  EXPECT_EQ(Source->Content[3], 0x94)
+      << "the relocation overwrote the instruction it was meant to patch";
 }
 
 TEST(PluginLinkLayoutTest, RelocationRejectsThirtyTwoBitOverflow) {

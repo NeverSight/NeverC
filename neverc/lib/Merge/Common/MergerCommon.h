@@ -14,6 +14,7 @@
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/BinaryFormat/ELF.h"
+#include "llvm/BinaryFormat/MachO.h"
 #include "llvm/Support/ErrorHandling.h"
 
 #include <csetjmp>
@@ -54,13 +55,50 @@ canonicalELFSectionName(llvm::StringRef Name, uint64_t Flags,
   return Name;
 }
 
+/// Whether the bytes a Mach-O relocation of type \p Type covers on \p CpuType
+/// are a word of their own, so that adjusting the relocation can add a delta
+/// to the whole field.
+///
+/// The Mach-O merger rewrites section-relative relocation sites in place, and
+/// "not PC-relative" used to stand in for "addresses a word of its own".  It
+/// does not: ARM64_RELOC_PAGEOFF12 is not PC-relative either, and its field is
+/// the twelve-bit immediate inside an `add` or a load -- bits 10 through 21 of
+/// the instruction word, with the destination and source registers below it
+/// and the opcode above.  Adding a delta to the word writes through all of
+/// that: a small delta lands in the register fields and changes which
+/// registers the instruction reads, a larger one reaches the immediate at the
+/// wrong bit position.  The object stays well-formed and the self-check skips
+/// relocation sites, so neither notices.  Only the pointer forms hold a word.
+///
+/// The object-graph layer states the same fact in
+/// `Plugin/Host/NativeRelocationFacts.h`, which cannot be included here: this
+/// library is deliberately free of the plugin ABI so the linker backends and
+/// the parallel-codegen pipeline can share it.  The two have to agree on every
+/// type, and MergeTests.cpp checks that they do.
+inline bool machOFieldIsWholeWord(uint32_t CpuType, uint8_t Type) {
+  namespace MO = llvm::MachO;
+  if (CpuType == MO::CPU_TYPE_ARM64)
+    switch (Type) {
+    case MO::ARM64_RELOC_UNSIGNED:
+    case MO::ARM64_RELOC_SUBTRACTOR:
+    case MO::ARM64_RELOC_POINTER_TO_GOT:
+    case MO::ARM64_RELOC_ADDEND:
+      return true;
+    default:
+      return false;
+    }
+  // Every x86_64 relocation covers a displacement or immediate that occupies
+  // whole bytes of its own, even where those bytes sit inside an instruction.
+  return CpuType == MO::CPU_TYPE_X86_64;
+}
+
 /// True if \p Key is one of the two values an \c llvm::DenseMap with an integer
 /// key reserves for its empty / tombstone sentinels (~0 and ~0 - 1).  Section
 /// indices, symbol indices and relocation targets read from a hostile or
 /// malformed object can be exactly these, and calling \c DenseMap::find() /
 /// \c lookup() with a reserved key is undefined behavior: it can alias an empty
 /// bucket and hand back an uninitialized "value", which the caller then uses as
-/// an array index — an out-of-bounds read (the merge fuzzer hit this as a BUS in
+/// an array index -- an out-of-bounds read (the merge fuzzer hit this as a BUS in
 /// the COFF verifier's symbol-by-index lookup).  Every lookup whose key
 /// originates in untrusted file bytes must treat a reserved key as "absent".
 template <typename T> inline bool isReservedDenseKey(T Key) {
@@ -108,7 +146,7 @@ struct DedupStrTab {
 /// Caution: longjmp across C++ stack frames with non-trivial destructors is
 /// technically UB.  In practice it only leaks memory (the objects are not
 /// destructed), which is acceptable because (a) report_fatal_error's default
-/// alternative — abort() — is strictly worse, and (b) malformed-input paths
+/// alternative -- abort() -- is strictly worse, and (b) malformed-input paths
 /// that trigger this are rare.
 template <typename F>
 inline bool runMergeSafely(F &&Fn) {

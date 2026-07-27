@@ -1,7 +1,11 @@
 #include "RelocationProvider.h"
 #include "RelocationVerifier.h"
+#include "neverc/Plugin/Host/BuiltinObjectExtension.h"
+#include "neverc/Plugin/Host/NativeRelocationFacts.h"
 #include "llvm/Support/Errc.h"
+#include "llvm/TargetParser/Triple.h"
 #include <algorithm>
+#include <optional>
 
 using namespace llvm;
 
@@ -11,6 +15,52 @@ namespace {
 Error relocationError(const Twine &Message) {
   return createStringError(errc::invalid_argument,
                            "link relocation provider: " + Message);
+}
+
+// Applying a relocation replaces every byte it covers with the computed value,
+// and that is only what the relocation asks for when those bytes are a field
+// of their own. An AArch64 CALL26 says it is 32 bits wide because that is the
+// size of the instruction word its 26-bit offset sits in; writing the offset
+// over the word takes the opcode with it, and what was a `bl` becomes whatever
+// the displacement happens to encode. Nothing downstream notices -- the value
+// fits, the image lays out, and the bytes are simply different code.
+//
+// Which relocations those are is not something the graph's own Kind and Width
+// can say: they describe the field, not its surroundings. The native type
+// does, and the object reader records it in the relocation's extension. A
+// graph built without one -- by a plugin, or by a producer other than the
+// builtin reader -- keeps the earlier behaviour, since there is nothing to
+// read and the graph's description is all there is.
+std::optional<uint64_t> nativeRelocationType(const PluginLinkEdge &Edge,
+                                             NevercObjectFormatID FormatID) {
+  for (const PluginLinkExtensionData &Extension : Edge.Extensions.values()) {
+    if (Extension.NamespaceID.High != FormatID.High ||
+        Extension.NamespaceID.Low != FormatID.Low)
+      continue;
+    if (std::optional<uint64_t> Type =
+            builtinext::nativeRelocationType(Extension.Payload))
+      return Type;
+  }
+  return std::nullopt;
+}
+
+bool coversWholeBytes(const PluginLinkGraph &Graph,
+                      const PluginLinkEdge &Edge) {
+  const NevercTargetKey Key = Graph.targetKey();
+  const std::optional<uint64_t> Type =
+      nativeRelocationType(Edge, Key.ObjectFormatID);
+  if (!Type)
+    return true;
+  const Triple Target(StringRef(Key.RawTriple.Data,
+                                static_cast<size_t>(Key.RawTriple.Length)));
+  // A target the tables say nothing about is not one whose objects this should
+  // refuse to link -- the absent answer is about the tables, not the
+  // relocation. Where they do cover the target, an unrecognised type is the
+  // relocation's own answer, and one whose form is unknown cannot be shown to
+  // be safe to overwrite.
+  if (!haveNativeRelocationTable(Target))
+    return true;
+  return nativeRelocationFieldIsWholeBytes(Target, *Type).value_or(false);
 }
 
 uint64_t imageBase(const PluginLinkGraph &Graph) {
@@ -76,6 +126,10 @@ evaluateLinkRelocation(const PluginLinkGraph &Graph,
     Result.Dynamic = true;
     return Result;
   }
+  if (!coversWholeBytes(Graph, Edge))
+    return relocationError(
+        "relocation patches a field inside an instruction, which cannot be "
+        "written by replacing the bytes it covers");
   if (!TargetAtom)
     return relocationError("relocation target is missing");
   Result.Target = TargetAtom->Address;

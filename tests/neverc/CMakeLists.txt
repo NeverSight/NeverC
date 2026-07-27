@@ -2130,6 +2130,9 @@ target_link_libraries(neverc-merge-tests PRIVATE
 
 target_include_directories(neverc-merge-tests PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+  # The merger's internal helpers, so the suite can check that a fact stated
+  # both there and in the object-graph layer still agrees across the two.
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/lib/Merge
 )
 
 # NEVERC_BINARY lets the differential suite spawn the bundled compiler+linker

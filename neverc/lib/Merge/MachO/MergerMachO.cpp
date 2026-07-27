@@ -443,8 +443,23 @@ bool mergeMachO64Impl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
         if (It != PM.SecMap.end()) {
           unsigned targetMIdx = It->second - 1;
           RE.Info.r_symbolnum = It->second;
-          if (!RE.Info.r_pcrel && targetMIdx < MergedSections.size())
+          // Only a relocation whose field is a word of its own can be adjusted
+          // by adding the layout delta to the bytes it covers; see
+          // machOFieldIsWholeWord.  One that patches a field inside an
+          // instruction has to be refused rather than rewritten, because the
+          // arithmetic would run through the opcode and the registers beside
+          // it and the result would still assemble and link.
+          if (!RE.Info.r_pcrel && targetMIdx < MergedSections.size()) {
+            if (!detail::machOFieldIsWholeWord(CPUType, RE.Info.r_type)) {
+              errs() << "neverc: Mach-O relocatable merge: relocation type "
+                     << (unsigned)RE.Info.r_type
+                     << " patches a field inside an instruction, which cannot "
+                        "be adjusted by rewriting the bytes it covers; "
+                        "refusing to merge\n";
+              return false;
+            }
             DeferredFixups.push_back({mi, ri, targetMIdx, OrigSec, RE.PartIdx});
+          }
         }
       }
     }
