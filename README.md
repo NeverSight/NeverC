@@ -4,7 +4,7 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/neverc-logo-dark.svg">
-  <img src="docs/assets/neverc-logo-light.svg" width="96" alt="NeverC">
+  <img src="docs/assets/neverc-logo-light.svg" width="72" alt="NeverC">
 </picture>
 
 # NeverC
