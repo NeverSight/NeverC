@@ -34,7 +34,8 @@ void namespaceModuleLocals(Module &Mod, StringRef ModuleName) {
 /// A user who only calls neverc_math_sqrt() will load ~2 modules instead
 /// of all 180+.
 std::unique_ptr<Module> mergeNeededModules(Module &UserMod) {
-  unsigned Count = BuiltinStd::getEmbeddedModuleCount();
+  const Triple TT(UserMod.getTargetTriple());
+  unsigned Count = BuiltinStd::getEmbeddedModuleCount(TT);
   if (Count == 0)
     return nullptr;
 
@@ -57,7 +58,7 @@ std::unique_ptr<Module> mergeNeededModules(Module &UserMod) {
   {
     LLVMContext LazyCtx;
     for (unsigned I = 0; I < Count; ++I) {
-      auto [N, D] = BuiltinStd::getEmbeddedModule(I);
+      auto [N, D] = BuiltinStd::getEmbeddedModule(TT, I);
       Mods[I].Name = N;
       Mods[I].Data = D;
       if (D.empty())
@@ -125,7 +126,7 @@ std::unique_ptr<Module> mergeNeededModules(Module &UserMod) {
 
 PreservedAnalyses
 StdRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
-  if (BuiltinStd::getEmbeddedModuleCount() == 0)
+  if (BuiltinStd::getEmbeddedModuleCount(Triple(M.getTargetTriple())) == 0)
     return PreservedAnalyses::all();
 
   bool AnyStdUsed = false;

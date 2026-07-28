@@ -362,30 +362,58 @@ set(BUILTIN_STD_SCRIPT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Std")
 set(BUILTIN_STD_SRC_DIR    "${NEVERC_SOURCE_DIR}/../std/src")
 set(BUILTIN_STD_INC_DIR    "${NEVERC_SOURCE_DIR}/../std/include")
 
-set(BUILTIN_STD_BITCODE_H
-    "${CMAKE_CURRENT_BINARY_DIR}/BuiltinStdBitcode.h")
 file(GLOB_RECURSE BUILTIN_STD_SOURCES CONFIGURE_DEPENDS
      "${BUILTIN_STD_SRC_DIR}/*.c")
-if(NOT EXISTS "${BUILTIN_STD_BITCODE_H}")
-  file(WRITE "${BUILTIN_STD_BITCODE_H}"
-    "/* Empty placeholder — run 'ninja neverc-bootstrap-std-bc' to populate. */\n"
-    "struct StdBitcodeEntry { const char *name; const unsigned char *data; unsigned int len; };\n"
-    "static const StdBitcodeEntry kStdBitcodeEntries[] = {{0, 0, 0}};\n"
-    "static const unsigned int kStdBitcodeEntryCount = 0;\n")
-endif()
+
+# One blob per OS/arch pair, matching the string and mimalloc runtimes: the
+# emitted IR encodes the target's aggregate layout, va_list lowering and
+# calling conventions, so a host blob cannot be retargeted at build time.
+set(_STD_VARIANTS
+  "linux_x64:x86_64-unknown-linux-gnu"
+  "linux_arm64:aarch64-unknown-linux-gnu"
+  "darwin_x64:x86_64-apple-macosx11.0"
+  "darwin_arm64:arm64-apple-macosx11.0"
+  "win_x64:x86_64-pc-windows-msvc"
+  "win_arm64:aarch64-pc-windows-msvc"
+)
+
+set(BUILTIN_STD_BITCODE_HDRS)
+set(_STD_BOOTSTRAP_TARGETS)
+foreach(_std_spec IN LISTS _STD_VARIANTS)
+  string(REPLACE ":" ";" _std_parts "${_std_spec}")
+  list(GET _std_parts 0 _std_tag)
+  list(GET _std_parts 1 _std_triple)
+  set(_std_hdr "${CMAKE_CURRENT_BINARY_DIR}/BuiltinStdBitcode_${_std_tag}.h")
+  if(NOT EXISTS "${_std_hdr}")
+    file(WRITE "${_std_hdr}"
+      "/* Empty placeholder — run 'ninja neverc-bootstrap-std-bc' to populate. */\n"
+      "static const StdBitcodeEntry kStdBitcodeEntries_${_std_tag}[] = {{0, 0, 0}};\n"
+      "static const unsigned int kStdBitcodeEntryCount_${_std_tag} = 0;\n")
+  endif()
+  list(APPEND BUILTIN_STD_BITCODE_HDRS "${_std_hdr}")
+
+  add_custom_target(neverc-bootstrap-std-bc-${_std_tag}
+    COMMAND ${Python3_EXECUTABLE}
+            "${BUILTIN_STD_SCRIPT_DIR}/build_std_bitcode.py"
+            "$<TARGET_FILE:neverc>"
+            "${BUILTIN_STD_SRC_DIR}"
+            "${BUILTIN_STD_INC_DIR}"
+            ${NEVERC_BOOTSTRAP_PREFIX_MAP_ARGS}
+            --target ${_std_triple}
+            --tag ${_std_tag}
+            -o "${_std_hdr}"
+    COMMAND ${CMAKE_COMMAND} -E touch
+            "${CMAKE_CURRENT_SOURCE_DIR}/Std/BuiltinStd.cpp"
+    DEPENDS neverc ${BUILTIN_STD_SOURCES}
+    COMMENT
+      "[NeverC] Bootstrap: compiling std library for ${_std_tag} (${_std_triple})"
+  )
+  list(APPEND _STD_BOOTSTRAP_TARGETS neverc-bootstrap-std-bc-${_std_tag})
+endforeach()
 
 add_custom_target(neverc-bootstrap-std-bc
-  COMMAND ${Python3_EXECUTABLE}
-          "${BUILTIN_STD_SCRIPT_DIR}/build_std_bitcode.py"
-          "$<TARGET_FILE:neverc>"
-          "${BUILTIN_STD_SRC_DIR}"
-          "${BUILTIN_STD_INC_DIR}"
-          ${NEVERC_BOOTSTRAP_PREFIX_MAP_ARGS}
-          -o "${BUILTIN_STD_BITCODE_H}"
-  COMMAND ${CMAKE_COMMAND} -E touch
-          "${CMAKE_CURRENT_SOURCE_DIR}/Std/BuiltinStd.cpp"
-  DEPENDS neverc ${BUILTIN_STD_SOURCES}
-  COMMENT "[NeverC] Bootstrap: compiling std library to embedded bitcode"
+  DEPENDS ${_STD_BOOTSTRAP_TARGETS}
+  COMMENT "[NeverC] Bootstrap: all std library target variants"
 )
 
 # ---------------------------------------------------------------------------
@@ -472,7 +500,7 @@ add_neverc_library(nevercFoundation
   ${BUILTIN_STRING_THIN_DECLS}
   ${BUILTIN_STRING_BITCODE_H}
   ${BUILTIN_MIMALLOC_BITCODE_HDRS}
-  ${BUILTIN_STD_BITCODE_H}
+  ${BUILTIN_STD_BITCODE_HDRS}
   ${BUILTIN_NVK_KERNEL_BITCODE_H}
 
   DEPENDS
