@@ -299,8 +299,11 @@ bool mergeMachO64Impl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
       // DWARF sections address each other with plain integers rather than
       // relocations, so note where this partition landed in each of them; the
       // offsets are rewritten once every partition has been appended.
+      // The size is what was actually appended rather than the value in the
+      // section header, so a header that overstates its contents cannot make
+      // the slice run into the next partition's bytes.
       PartDwarfs[p].record(SectName, MIdx, PartOffset,
-                           IsZerofill ? 0 : S64.size);
+                           IsZerofill ? 0 : MS.Data.size() - PartOffset);
 
       for (const auto &R : Sec.relocations()) {
         MO::relocation_info RI;

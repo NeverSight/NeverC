@@ -21,7 +21,6 @@
 //
 //===------------------------------------------------------------------===//
 
-#include "Common/DwarfRebase.h"
 #include "Common/MergerCommon.h"
 #include "neverc/Merge/Merger.h"
 
@@ -114,8 +113,6 @@ bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     DenseMap<unsigned, uint64_t> SecOff;
   };
   SmallVector<PerPartition, 8> Maps;
-  SmallVector<PartitionDwarf, 8> PartDwarfs;
-  PartDwarfs.resize(Buffers.size());
 
   SmallVector<char, 0> SymbolTable;
   unsigned TotalSymbols = 0;
@@ -283,11 +280,6 @@ bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
 
       PM.SecMap[PartSecOrdinal] = MIdx + 1;
       PM.SecOff[PartSecOrdinal] = PartOffset;
-
-      // DWARF sections address each other with plain integers rather than
-      // relocations, so note where this partition landed in each of them; the
-      // offsets are rewritten once every partition has been appended.
-      PartDwarfs[p].record(SecName, MIdx, PartOffset, CS->SizeOfRawData);
 
       for (const auto &R : Sec.relocations()) {
         coff_relocation CR;
@@ -513,20 +505,11 @@ bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     }
   }
 
-  // Every partition has now been appended, so each one's DWARF sections have
-  // a known home in the merged output.  Re-point the offsets the units carry
-  // for each other; until this runs, every partition after the first reads the
-  // first one's abbreviation and string tables.
-  if (!rebaseMergedDwarf(
-          PartDwarfs,
-          [&](unsigned Idx) {
-            return Idx < MergedSections.size()
-                       ? MutableArrayRef<char>(MergedSections[Idx].Data)
-                       : MutableArrayRef<char>();
-          },
-          /*IsLittleEndian=*/true))
-    return false;
-
+  // Note: unlike ELF and Mach-O, COFF does not need a DWARF rebase pass here.
+  // It expresses the offsets one DWARF section holds into another as
+  // IMAGE_REL_AMD64_ADDR32 relocations rather than as literal integers, so the
+  // relocation remapping below already re-points them.  Rewriting the bytes as
+  // well would apply the shift twice.
   for (auto &MS : MergedSections) {
     for (auto &RE : MS.Relocs) {
       if (RE.PartIdx >= Maps.size())

@@ -90,10 +90,9 @@ void writeOffset(MutableArrayRef<char> Buf, uint64_t Pos, uint64_t Value,
 } // namespace
 
 DwarfSection classifyDwarfSection(StringRef Name) {
-  // Normalise the three spellings to the bare section name.
+  // Normalise both spellings to the bare section name.
   if (!Name.consume_front("__debug_") && !Name.consume_front(".debug_"))
     return DwarfSection::Count;
-  Name = Name.take_while([](char C) { return C != '$'; });
 
   return StringSwitch<DwarfSection>(Name)
       .Case("info", DwarfSection::Info)

@@ -11,6 +11,10 @@
 //
 // This rewrites those offsets so they address the merged sections.
 //
+// ELF and Mach-O need it.  COFF does not: it expresses the same offsets as
+// IMAGE_REL_*_ADDR32 relocations, which the merger's relocation remapping
+// already re-points, and rewriting the bytes too would shift them twice.
+//
 //===----------------------------------------------------------------------===//
 
 #ifndef NEVERC_LIB_MERGE_COMMON_DWARFREBASE_H
@@ -44,9 +48,8 @@ enum class DwarfSection : uint8_t {
 };
 
 /// Classify a section name, or return Count when it is not a DWARF section
-/// this cares about.  Accepts every spelling the three object formats use:
-/// Mach-O writes "__debug_info" and truncates names to 16 characters, ELF and
-/// COFF write ".debug_info", and COFF may add a "$" grouping suffix.
+/// this cares about.  Accepts both spellings: Mach-O writes "__debug_info"
+/// and truncates names to 16 characters, ELF writes ".debug_info".
 DwarfSection classifyDwarfSection(llvm::StringRef SectionName);
 
 /// Where one partition's DWARF sections begin inside the merged output, plus

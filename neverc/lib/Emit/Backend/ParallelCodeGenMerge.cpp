@@ -15,6 +15,7 @@
 #include "llvm/IR/Comdat.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/GlobalAlias.h"
+#include "llvm/IR/Verifier.h"
 #include "llvm/IR/GlobalIFunc.h"
 #include "llvm/IR/GlobalObject.h"
 #include "llvm/IR/LegacyPassManager.h"
@@ -381,6 +382,10 @@ struct ParallelCGContext {
 
   SmallVector<SmallVector<std::string, 0>, 8> Assignments;
   DenseMap<StringRef, unsigned> FuncPartition;
+  // Names of the functions some alias or ifunc resolves to.  Their bodies are
+  // kept in every partition, not just the one they were binned into: see the
+  // deleteBody loop in preparePartitions.
+  StringSet<> IndirectTargets;
   SmallString<0> FullBC;
 
   std::unique_ptr<TargetLibraryInfoImpl> SharedTLII;
@@ -531,11 +536,15 @@ bool ParallelCGContext::externalizeAndSerialize(Module &Mod) {
 
   DenseSet<StringRef> PinnedToP0;
   for (GlobalAlias &GA : Mod.aliases())
-    if (auto *F = dyn_cast<Function>(GA.getAliasee()->stripPointerCasts()))
+    if (auto *F = dyn_cast<Function>(GA.getAliasee()->stripPointerCasts())) {
       PinnedToP0.insert(F->getName());
+      IndirectTargets.insert(F->getName());
+    }
   for (GlobalIFunc &IF : Mod.ifuncs())
-    if (auto *F = dyn_cast<Function>(IF.getResolver()->stripPointerCasts()))
+    if (auto *F = dyn_cast<Function>(IF.getResolver()->stripPointerCasts())) {
       PinnedToP0.insert(F->getName());
+      IndirectTargets.insert(F->getName());
+    }
 
   // A `blockaddress(@F, %BB)` is only valid in the module that holds @F's
   // body: if @F becomes a declaration, LLVM rewrites every blockaddress into
@@ -708,6 +717,11 @@ void ParallelCGContext::preparePartitions(StringRef BCRef, TargetMachine &TM) {
             continue;
           GV.setInitializer(nullptr);
           GV.setLinkage(GlobalValue::ExternalLinkage);
+          // The variable is a declaration now, and a declaration may not sit
+          // in a comdat.  Functions get the same treatment where their bodies
+          // are dropped below; COFF is where it shows, because that is where
+          // LLVM gives every weak_odr definition a comdat to begin with.
+          GV.setComdat(nullptr);
         }
       }
       // deleteBody() also clears the materializable bit, so unassigned
@@ -718,6 +732,16 @@ void ParallelCGContext::preparePartitions(StringRef BCRef, TargetMachine &TM) {
           continue;
         auto It = FuncPartition.find(F.getName());
         if (It != FuncPartition.end() && It->second == p)
+          continue;
+        // An alias is always a definition and must resolve to one.  Aliases
+        // live in partition 0 and are replaced by declarations everywhere
+        // else, but that replacement needs a complete use-list and so cannot
+        // run until materializeAll() below -- which is itself what verifies
+        // the module.  Dropping the target's body here would therefore leave
+        // a dangling alias for exactly as long as it takes the verifier to
+        // reject it.  Keeping these few bodies in every partition costs
+        // little: they are weak_odr/comdat and coalesce at link time.
+        if (IndirectTargets.contains(F.getName()))
           continue;
         F.deleteBody();
         F.setComdat(nullptr);

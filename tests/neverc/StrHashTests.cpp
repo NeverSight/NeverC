@@ -145,7 +145,11 @@ TEST_F(StrHashTest, Codegen_SemaFold) {
   auto src = strHashDir() / "nc_strhash_codegen.c";
   if (!fs::exists(src))
     GTEST_SKIP() << src << " not found";
-  auto ir = emitIR(src.string(), "codegen_default", "-O0");
+  // -fno-builtin-mimalloc: the assertion below reads the whole module for the
+  // absence of any call, and the allocator that is otherwise injected by
+  // default brings hundreds of its own.  What is under test is whether Sema
+  // folded NC_STRHASH, which has nothing to do with the allocator.
+  auto ir = emitIR(src.string(), "codegen_default", "-O0 -fno-builtin-mimalloc");
   if (ir.empty())
     return;
   EXPECT_EQ(ir.find("call"), std::string::npos)

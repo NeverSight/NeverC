@@ -547,8 +547,15 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
       // DWARF sections address each other with plain integers rather than
       // relocations, so note where this partition landed in each of them; the
       // offsets are rewritten once every partition has been appended.
+      // The size is what was actually appended rather than the value in the
+      // section header, so a header that overstates its contents cannot make
+      // the slice run into the next partition's bytes.  A zerofill section
+      // appends nothing and its PartOffset indexes VirtualSize instead, hence
+      // the guard.
       PartDwarfs[p].record(SecName, MIdx, PartOffset,
-                           S.sh_type == SHT_NOBITS ? 0 : S.sh_size);
+                           MS.Data.size() > PartOffset
+                               ? MS.Data.size() - PartOffset
+                               : 0);
     }
 
     // ----- Phase 2: Merge symbols -----

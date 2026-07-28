@@ -54,6 +54,16 @@ namespace neverc::merge {
 
 namespace {
 
+/// On ELF and Mach-O, .debug_info is the one section a merge does not simply
+/// concatenate: unit headers and DIE attributes are re-pointed at the merged
+/// DWARF sections (see Common/DwarfRebase.h), so its bytes are deliberately
+/// not those of any single input and the byte-window comparison below cannot
+/// apply.  COFF is exempt from the exemption -- it expresses the same offsets
+/// as relocations, so its bytes really are copied verbatim and stay checkable.
+bool isRebasedDwarfSection(StringRef Name) {
+  return Name == ".debug_info" || Name == "__debug_info";
+}
+
 // ---------------------------------------------------------------------------
 // Private raw ELF64LE reader — intentionally separate from both the merger's
 // ELFObjectFile-based parse and the test harness, so the verifier shares no
@@ -603,7 +613,8 @@ bool verifyMergeELFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
       if (S.Shndx >= In.Secs.size())
         continue;
       const RawSec &InSec = In.Secs[S.Shndx];
-      if (isExcludedInputSection(InSec, Opts))
+      if (isExcludedInputSection(InSec, Opts) ||
+          isRebasedDwarfSection(InSec.Name))
         continue;
 
       auto It = OutByName.find(S.Name);
@@ -1837,6 +1848,8 @@ bool verifyMergeMachOImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
       if (InIdx >= In.Secs.size())
         continue;
       const RawMachoSec &InSec = In.Secs[InIdx];
+      if (isRebasedDwarfSection(InSec.Sect))
+        continue;
       if (S.Value < InSec.Addr)
         continue; // malformed
       uint64_t InRel = S.Value - InSec.Addr;
