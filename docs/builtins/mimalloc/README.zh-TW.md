@@ -69,6 +69,7 @@ neverc -fno-builtin-mimalloc main.c -o main
 | `-mkernel` | 核心模式無使用者空間堆積 |
 | `-fms-kernel` | Windows 核心驅動；同上，且不隱含 `-fno-builtin` |
 | `-fandroid-kernel-driver-mode` | Android 核心模組；同上 |
+| `-shared` / `-dynamiclib` | 替換 `malloc` 是程式層面的決定，不該由函式庫強加；執行緒區域堆積還需要 initial-exec TLS，共享物件無法使用 |
 | `-fdyncode-mode` | 由 HeapArenaPass 替代（arena + OS 回退） |
 | `-ffreestanding` | 無 libc 可覆蓋 |
 

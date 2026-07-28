@@ -57,6 +57,7 @@ neverc -fno-builtin-mimalloc main.c -o main                    # تعطيل
 | `-mkernel` | لا كومة مساحة المستخدم في النواة |
 | `-fms-kernel` | مشغّل نواة Windows؛ المِثل، ولا يتضمّن `-fno-builtin` |
 | `-fandroid-kernel-driver-mode` | وحدة نواة Android؛ المِثل |
+| `-shared` / `-dynamiclib` | استبدال `malloc` قرار يخص البرنامج لا المكتبة؛ كما تحتاج كومة الخيط المحلية إلى نموذج initial-exec TLS الذي لا يستطيع الكائن المشترك استخدامه |
 | `-fdyncode-mode` | مستبدل بـ HeapArenaPass (ساحة + احتياطي OS) |
 | `-ffreestanding` | لا libc للتجاوز |
 

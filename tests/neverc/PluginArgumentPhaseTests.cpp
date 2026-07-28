@@ -18,14 +18,16 @@ int argument_phase_result(void) {
 )");
 
   CmdResult Baseline =
-      ncc({"-std=c11", "-O0", "-Wall", "-Werror", "-S", "-emit-llvm",
+      ncc({"-std=c11", "-O0", "-Wall", "-Werror", "-fno-builtin-mimalloc",
+           "-S", "-emit-llvm",
            Source.string(), "-o", BaselineIR.string()});
   EXPECT_NE(Baseline.exitCode, 0)
       << "the control compile must fail before the plugin rewrites arguments";
 
   CmdResult Rewritten =
       ncc({std::string("-fplugin=") + NEVERC_TEST_ARGUMENT_REWRITE_PLUGIN,
-           "-std=c11", "-O0", "-Wall", "-Werror", "-S", "-emit-llvm",
+           "-std=c11", "-O0", "-Wall", "-Werror", "-fno-builtin-mimalloc",
+           "-S", "-emit-llvm",
            Source.string(), "-o", RewrittenIR.string()});
   ASSERT_EQ(Rewritten.exitCode, 0) << Rewritten.err;
 
@@ -50,8 +52,8 @@ int invalid_argument_mutation(int value) {
 
   CmdResult Result =
       ncc({std::string("-fplugin=") + NEVERC_TEST_ARGUMENT_REWRITE_PLUGIN,
-           "-std=c11", "-O0", "-DNEVERC_TEST_INVALID_ARGUMENT_MUTATION=1", "-S",
-           "-emit-llvm", Source.string(), "-o", IRPath.string()});
+           "-std=c11", "-O0", "-DNEVERC_TEST_INVALID_ARGUMENT_MUTATION=1",
+           "-fno-builtin-mimalloc", "-S", "-emit-llvm", Source.string(), "-o", IRPath.string()});
   ASSERT_EQ(Result.exitCode, 0) << Result.err;
 
   const std::string IR = readFile(IRPath);
@@ -80,7 +82,8 @@ int argument_origin_result(int value) {
   CmdResult Result =
       ncc({std::string("-fplugin=") + NEVERC_TEST_ARGUMENT_REWRITE_PLUGIN,
            "--no-default-config", "--config=" + Config.string(),
-           "-DNEVERC_TEST_COMMAND_ORIGIN=1", "-O2", "-S", "-emit-llvm",
+           "-DNEVERC_TEST_COMMAND_ORIGIN=1", "-O2", "-fno-builtin-mimalloc",
+           "-S", "-emit-llvm",
            Source.string(), "-o", IRPath.string()});
   ASSERT_EQ(Result.exitCode, 0) << Result.err;
 
@@ -105,7 +108,8 @@ int parsed_argument_phase_result(void) {
 
   CmdResult Rewritten =
       ncc({std::string("-fplugin=") + NEVERC_TEST_PARSED_ARGUMENT_PLUGIN,
-           "-std=c11", "-O0", "-Wall", "-Werror", "-S", "-emit-llvm",
+           "-std=c11", "-O0", "-Wall", "-Werror", "-fno-builtin-mimalloc",
+           "-S", "-emit-llvm",
            Source.string(), "-o", IRPath.string()});
   ASSERT_EQ(Rewritten.exitCode, 0) << Rewritten.err;
 

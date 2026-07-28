@@ -109,6 +109,7 @@ The driver automatically suppresses `mimalloc` in these scenarios:
 | `-mkernel` | Kernel mode has no userspace heap; drivers use `ExAllocatePool2` |
 | `-fms-kernel` | Windows kernel-mode driver; same, and it does not imply `-fno-builtin` |
 | `-fandroid-kernel-driver-mode` | Android kernel module; same |
+| `-shared` / `-dynamiclib` | Replacing `malloc` is the program's decision, not a library's; the thread-local heap also needs initial-exec TLS, which a shared object cannot use |
 | `-fdyncode-mode` | Replaced by HeapArenaPass (arena + OS fallback) |
 | `-ffreestanding` | No libc to override |
 

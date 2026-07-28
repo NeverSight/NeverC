@@ -2601,13 +2601,25 @@ void addNeverCFeatureFlags(const ArgList &Args, ArgStringList &CmdArgs,
   //     mmap/VirtualAlloc and thread-locals that do not exist there
   //   - -fdyncode-mode is active (HeapArenaPass handles heap)
   //   - -ffreestanding is active (no libc to override)
+  //   - -shared / -dynamiclib build a library.  Replacing malloc is a
+  //     process-wide decision that belongs to whoever links the program, not
+  //     to a library it happens to load; mimalloc's thread-local heap also
+  //     needs the initial-exec TLS model, which a shared object cannot use
+  //     (R_X86_64_TPOFF32 is rejected by the linker).
+  //   - -nostdlib / -nodefaultlibs leave nothing to resolve mimalloc's own
+  //     libc dependencies (clock_gettime, mmap, ...) against, so injecting it
+  //     would turn a working link into undefined symbols.
   bool SuppressMimalloc =
       Args.hasArg(options::OPT_fno_builtin) ||
       Args.hasArg(options::OPT_mkernel) ||
       Args.hasArg(options::OPT_fms_kernel) ||
       Args.hasArg(options::OPT_fandroid_kernel_driver_mode) ||
       Args.hasArg(options::OPT_fdyncode_mode) ||
-      Args.hasArg(options::OPT_ffreestanding);
+      Args.hasArg(options::OPT_ffreestanding) ||
+      Args.hasArg(options::OPT_shared) ||
+      Args.hasArg(options::OPT_dynamiclib) ||
+      Args.hasArg(options::OPT_nostdlib) ||
+      Args.hasArg(options::OPT_nodefaultlibs);
   // Spelled out either way rather than left to the cc1 default: the driver is
   // the only layer that knows about the suppressions above, and cc1 defaults
   // this off, so silence here would mean off everywhere.

@@ -55,6 +55,7 @@ neverc -fno-builtin-mimalloc main.c -o main                    # 비활성화
 | `-mkernel` | 커널 모드에 유저스페이스 힙 없음 |
 | `-fms-kernel` | Windows 커널 드라이버. 동일하며 `-fno-builtin`을 함의하지 않음 |
 | `-fandroid-kernel-driver-mode` | Android 커널 모듈. 동일 |
+| `-shared` / `-dynamiclib` | `malloc` 교체는 프로그램의 결정이며 라이브러리가 강제할 일이 아님. 스레드 로컬 힙은 initial-exec TLS가 필요한데 공유 객체는 사용할 수 없음 |
 | `-fdyncode-mode` | HeapArenaPass로 대체 (arena + OS 폴백) |
 | `-ffreestanding` | 오버라이드할 libc 없음 |
 

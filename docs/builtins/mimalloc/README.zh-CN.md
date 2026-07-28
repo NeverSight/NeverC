@@ -109,6 +109,7 @@ int main(void) {
 | `-mkernel` | 内核模式无用户空间堆；驱动使用 `ExAllocatePool2` |
 | `-fms-kernel` | Windows 内核驱动；同上，且它不隐含 `-fno-builtin` |
 | `-fandroid-kernel-driver-mode` | Android 内核模块；同上 |
+| `-shared` / `-dynamiclib` | 替换 `malloc` 是程序层面的决定，不该由库强加；线程局部堆还需要 initial-exec TLS，共享对象无法使用 |
 | `-fdyncode-mode` | 由 HeapArenaPass 替代（arena + OS 回退） |
 | `-ffreestanding` | 无 libc 可覆盖 |
 

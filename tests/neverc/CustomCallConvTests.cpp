@@ -72,6 +72,10 @@ protected:
       args.push_back(extraArg);
     args.push_back("-S");
     args.push_back("-O2");
+    // cc-all=1 applies the custom convention to every function in the module,
+    // so the allocator that is otherwise injected by default would be rewritten
+    // along with the cases under test.
+    args.push_back("-fno-builtin-mimalloc");
     args.push_back("--target=" + triple);
     args.push_back(casesSrc_.string());
     args.push_back("-o");
@@ -288,10 +292,12 @@ TEST_F(CustomCallConvTest, CustomAttrEndToEnd) {
 
 TEST_F(CustomCallConvTest, LegacySpecMaterializesVersionedPlan) {
   fs::path out = tmpFile("materialized.ll");
+  // -fno-builtin-mimalloc: see asmForTriple -- cc-all=1 would otherwise
+  // rewrite the default allocator's functions too.
   CmdResult r = ncc(
       {"-fplugin=" + plugin_.string(), pluginArg("cc-all=1"),
        pluginArg("ccspec=gpr:rcx,rdx,r8;ret:rax;csr:r12"),
-       "-emit-llvm", "-S", "-O2",
+       "-emit-llvm", "-S", "-O2", "-fno-builtin-mimalloc",
        "--target=x86_64-unknown-linux-gnu", casesSrc_.string(),
        "-o", out.string()});
   ASSERT_TRUE(r.ok()) << r.err;

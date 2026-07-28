@@ -55,6 +55,7 @@ neverc -fno-builtin-mimalloc main.c -o main                    # отключи�
 | `-mkernel` | Нет кучи пользовательского пространства в ядре |
 | `-fms-kernel` | Драйвер ядра Windows; то же, и не подразумевает `-fno-builtin` |
 | `-fandroid-kernel-driver-mode` | Модуль ядра Android; то же |
+| `-shared` / `-dynamiclib` | Замена `malloc` — решение программы, а не библиотеки; локальной для потока куче также нужна модель TLS initial-exec, недоступная разделяемому объекту |
 | `-fdyncode-mode` | Заменён HeapArenaPass (арена + OS-фоллбэк) |
 | `-ffreestanding` | Нет libc для переопределения |
 

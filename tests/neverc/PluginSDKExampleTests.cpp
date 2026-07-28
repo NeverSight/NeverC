@@ -147,9 +147,13 @@ TEST_F(PluginSDKExampleTest,
   const fs::path Object = tmpFile("object_rewrite_example.o");
   writeFile(Source, "int object_rewrite_example(void) { return 42; }\n");
 
+  // -fno-builtin-mimalloc: the example plugin rewrites the object it is given
+  // and expects the one function above, not the several hundred the default
+  // allocator would add.
   CmdResult Result =
       ncc({std::string("-fplugin=") + Plugin.string(), "--no-default-config",
-           "-fno-lto", "-c", Source.string(), "-o", Object.string()});
+           "-fno-lto", "-fno-builtin-mimalloc", "-c", Source.string(), "-o",
+           Object.string()});
   ASSERT_EQ(Result.exitCode, 0) << Result.err;
   ASSERT_TRUE(fs::exists(Object));
   EXPECT_NE(readFile(Object).find("NeverC object rewrite example"),

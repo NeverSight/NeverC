@@ -12,7 +12,7 @@ TEST_F(PluginMIRPassTest, RunsEveryStableMachinePipelineHook) {
 
   CmdResult Result =
       ncc({std::string("-fplugin=") + NEVERC_TEST_MIR_PASS_PLUGIN, "-O2",
-           "-fno-lto", "-std=c11", "-c", Source.string(), "-o",
+           "-fno-lto", "-fno-builtin-mimalloc", "-std=c11", "-c", Source.string(), "-o",
            Object.string()});
   EXPECT_EQ(Result.exitCode, 0) << Result.err;
   EXPECT_TRUE(fs::exists(Object));
@@ -25,7 +25,7 @@ TEST_F(PluginMIRPassTest, RejectsPreserveAllAfterMachineMutation) {
 
   CmdResult Result =
       ncc({std::string("-fplugin=") + NEVERC_TEST_MIR_PASS_INVALID_PLUGIN,
-           "-O2", "-fno-lto", "-std=c11", "-c", Source.string(), "-o",
+           "-O2", "-fno-lto", "-fno-builtin-mimalloc", "-std=c11", "-c", Source.string(), "-o",
            Object.string()});
   EXPECT_NE(Result.exitCode, 0);
   EXPECT_NE(Result.err.find("mutated MIR while preserving all analyses"),
@@ -46,7 +46,7 @@ TEST_F(PluginMIRPassTest, RunsFunctionPassesInParallelCodegenPartitions) {
 
   CmdResult Result = ncc(
       {std::string("-fplugin=") + NEVERC_TEST_MIR_PASS_PLUGIN, "-O2",
-       "-fno-lto", "-fparallel-codegen=2", "-mllvm",
+       "-fno-lto", "-fno-builtin-mimalloc", "-fparallel-codegen=2", "-mllvm",
        "-neverc-pcg-min-funcs=2", "-mllvm",
        "-neverc-pcg-weight-floor=0", "-std=c11", "-c", Source.string(), "-o",
        Object.string()});
@@ -67,7 +67,7 @@ TEST_F(PluginMIRPassTest, SerializesModuleLevelPassesAtPipelineBarriers) {
 
   CmdResult Result = ncc(
       {std::string("-fplugin=") + NEVERC_TEST_MIR_PASS_MODULE_PLUGIN, "-O2",
-       "-fno-lto", "-fparallel-codegen=2", "-mllvm",
+       "-fno-lto", "-fno-builtin-mimalloc", "-fparallel-codegen=2", "-mllvm",
        "-neverc-pcg-min-funcs=2", "-mllvm",
        "-neverc-pcg-weight-floor=0", "-std=c11", "-c", Source.string(), "-o",
        Object.string()});
@@ -85,7 +85,7 @@ TEST_F(PluginMIRPassTest, RunsBasicBlockPassForEveryLiveBlock) {
   CmdResult Result =
       ncc({std::string("-fplugin=") +
                NEVERC_TEST_MIR_PASS_BASIC_BLOCK_PLUGIN,
-           "-O2", "-fno-lto", "-std=c11", "-c", Source.string(), "-o",
+           "-O2", "-fno-lto", "-fno-builtin-mimalloc", "-std=c11", "-c", Source.string(), "-o",
            Object.string()});
   EXPECT_EQ(Result.exitCode, 0) << Result.err;
   EXPECT_TRUE(fs::exists(Object));

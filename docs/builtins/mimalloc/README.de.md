@@ -55,6 +55,7 @@ neverc -fno-builtin-mimalloc main.c -o main                    # deaktivieren
 | `-mkernel` | Kein Userspace-Heap im Kernel |
 | `-fms-kernel` | Windows-Kerneltreiber; ebenso, impliziert kein `-fno-builtin` |
 | `-fandroid-kernel-driver-mode` | Android-Kernelmodul; ebenso |
+| `-shared` / `-dynamiclib` | Das Ersetzen von `malloc` ist Sache des Programms, nicht einer Bibliothek; der Thread-lokale Heap braucht zudem initial-exec-TLS, das ein Shared Object nicht verwenden kann |
 | `-fdyncode-mode` | Ersetzt durch HeapArenaPass (Arena + OS-Fallback) |
 | `-ffreestanding` | Keine libc zum Überschreiben |
 

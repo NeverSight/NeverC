@@ -55,6 +55,7 @@ neverc -fno-builtin-mimalloc main.c -o main                    # désactiver
 | `-mkernel` | Pas de tas en espace utilisateur dans le noyau |
 | `-fms-kernel` | Pilote noyau Windows ; idem, et n'implique pas `-fno-builtin` |
 | `-fandroid-kernel-driver-mode` | Module noyau Android ; idem |
+| `-shared` / `-dynamiclib` | Remplacer `malloc` relève du programme, pas d'une bibliothèque ; le tas thread-local exige aussi le modèle TLS initial-exec, inutilisable dans un objet partagé |
 | `-fdyncode-mode` | Remplacé par HeapArenaPass (arène + fallback OS) |
 | `-ffreestanding` | Pas de libc à remplacer |
 

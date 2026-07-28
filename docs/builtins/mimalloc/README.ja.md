@@ -55,6 +55,7 @@ neverc -fno-builtin-mimalloc main.c -o main                    # 無効化
 | `-mkernel` | カーネルモードにユーザー空間ヒープなし |
 | `-fms-kernel` | Windows カーネルドライバ。同上、かつ `-fno-builtin` を含意しない |
 | `-fandroid-kernel-driver-mode` | Android カーネルモジュール。同上 |
+| `-shared` / `-dynamiclib` | `malloc` の置換はプログラム側の判断であり、ライブラリが強制すべきではない。スレッドローカルヒープは initial-exec TLS を必要とし、共有オブジェクトでは使えない |
 | `-fdyncode-mode` | HeapArenaPass で代替（arena + OS フォールバック） |
 | `-ffreestanding` | オーバーライドする libc なし |
 
