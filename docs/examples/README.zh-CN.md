@@ -12,54 +12,64 @@
 
 ### Windows
 
-| 示例 | 说明 | 关键特性 |
-|------|------|---------|
-| [Windows 内核驱动](../../examples/windows-driver/README.zh-CN.md) | 最小 WDM 内核驱动 | 交叉编译 `.sys`，支持 **x64**（默认）和 **ARM64**，自动 LTO，内置链接器，`DbgPrint` 设备 I/O |
-| [Windows 驱动 + CET](../../examples/windows-driver-cet/README.zh-CN.md) | 带 Intel CET 影子栈的内核驱动 | CET 兼容内核代码（**仅 x64**），`/guard:ehcont`，影子栈强制 |
-| [Windows 驱动 + 浮点](../../examples/windows-driver-float/README.zh-CN.md) | 带浮点/SIMD 的内核驱动 | **x64** 与 **ARM64** 下的内核模式安全浮点，`KeSaveExtendedProcessorState` / `KeRestoreExtendedProcessorState` |
-| [Windows Ring3 EXE](../../examples/windows-exe/README.zh-CN.md) | 用户态控制台程序 | GetSystemInfo，进程枚举，VirtualAlloc |
-| [Windows Ring3 DLL](../../examples/windows-dll/README.zh-CN.md) | 用户态 DLL | ReadProcessMemory，VirtualAllocEx，模块枚举 |
+
+| 示例                                                                     | 说明                   | 关键特性                                                                                              |
+| ---------------------------------------------------------------------- | -------------------- | ------------------------------------------------------------------------------------------------- |
+| [Windows 内核驱动](../../examples/windows-driver/README.zh-CN.md)          | 最小 WDM 内核驱动          | 交叉编译 `.sys`，支持 **x64**（默认）和 **ARM64**，自动 LTO，内置链接器，`DbgPrint` 设备 I/O                              |
+| [Windows 驱动 + CET](../../examples/windows-driver-cet/README.zh-CN.md)  | 带 Intel CET 影子栈的内核驱动 | CET 兼容内核代码（**仅 x64**），`/guard:ehcont`，影子栈强制                                                       |
+| [Windows 驱动 + 浮点](../../examples/windows-driver-float/README.zh-CN.md) | 带浮点/SIMD 的内核驱动       | **x64** 与 **ARM64** 下的内核模式安全浮点，`KeSaveExtendedProcessorState` / `KeRestoreExtendedProcessorState` |
+| [Windows Ring3 EXE](../../examples/windows-exe/README.zh-CN.md)        | 用户态控制台程序             | GetSystemInfo，进程枚举，VirtualAlloc                                                                   |
+| [Windows Ring3 DLL](../../examples/windows-dll/README.zh-CN.md)        | 用户态 DLL              | ReadProcessMemory，VirtualAllocEx，模块枚举                                                             |
+
 
 ### Linux
 
-| 示例 | 说明 | 关键特性 |
-|------|------|---------|
-| [Linux Hello World](../../examples/linux-hello/README.zh-CN.md) | 最小 C 程序 | 从 macOS/Windows 交叉编译 ELF，printf，字符串操作 |
-| [Linux POSIX](../../examples/linux-posix/README.zh-CN.md) | POSIX 系统编程 | pthreads、mmap、pipe、信号处理 |
-| [Linux 全静态](../../examples/linux-static/README.zh-CN.md) | 全静态链接二进制 | `-static` 链接，零运行时依赖，数学函数 |
-| [Linux 网络](../../examples/linux-network/README.zh-CN.md) | TCP Socket 演示 | 客户端/服务器，Socket API，回环通信 |
-| [Linux 数学 + zlib](../../examples/linux-math/README.zh-CN.md) | 数学 + 压缩 | 三角函数，特殊函数，zlib 压缩/解压，CRC32 |
+
+| 示例                                                              | 说明            | 关键特性                                  |
+| --------------------------------------------------------------- | ------------- | ------------------------------------- |
+| [Linux Hello World](../../examples/linux-hello/README.zh-CN.md) | 最小 C 程序       | 从 macOS/Windows 交叉编译 ELF，printf，字符串操作 |
+| [Linux POSIX](../../examples/linux-posix/README.zh-CN.md)       | POSIX 系统编程    | pthreads、mmap、pipe、信号处理               |
+| [Linux 全静态](../../examples/linux-static/README.zh-CN.md)        | 全静态链接二进制      | `-static` 链接，零运行时依赖，数学函数              |
+| [Linux 网络](../../examples/linux-network/README.zh-CN.md)        | TCP Socket 演示 | 客户端/服务器，Socket API，回环通信               |
+| [Linux 数学 + zlib](../../examples/linux-math/README.zh-CN.md)    | 数学 + 压缩       | 三角函数，特殊函数，zlib 压缩/解压，CRC32            |
+
 
 ### macOS
 
-| 示例 | 说明 | 关键特性 |
-|------|------|---------|
-| [macOS 应用程序](../../examples/macos-app/README.zh-CN.md) | 原生 Mach-O 可执行文件 | sysctl、uname、Mach host_info/task_info、进程自省 |
+
+| 示例                                                      | 说明              | 关键特性                                                       |
+| ------------------------------------------------------- | --------------- | ---------------------------------------------------------- |
+| [macOS 应用程序](../../examples/macos-app/README.zh-CN.md)  | 原生 Mach-O 可执行文件 | sysctl、uname、Mach host_info/task_info、进程自省                 |
 | [macOS 动态库](../../examples/macos-dylib/README.zh-CN.md) | 原生 `.dylib` 动态库 | Mach vm_read/vm_write、vm_alloc/vm_dealloc、task_info、XOR 辅助 |
+
 
 ### Android
 
-| 示例 | 说明 | 关键特性 |
-|------|------|---------|
+
+| 示例                                                        | 说明                      | 关键特性                                         |
+| --------------------------------------------------------- | ----------------------- | -------------------------------------------- |
 | [Android ELF](../../examples/android-elf/README.zh-CN.md) | Root 设备上的原生 ARM64 可执行文件 | 交叉编译到 Android，dlopen/liblog，/proc 信息，root 检测 |
-| [Android 共享库](../../examples/android-so/README.zh-CN.md) | 原生 ARM64 `.so` 库 | 共享库，mmap RWX，XOR 加密，dlopen liblog |
+| [Android 共享库](../../examples/android-so/README.zh-CN.md)  | 原生 ARM64 `.so` 库        | 共享库，mmap RWX，XOR 加密，dlopen liblog            |
+
 
 ### Android 内核模块 (.ko)
 
 无需内核源码树 — NeverC 使用内置的最小化 runtime 编译。单源文件覆盖 GKI 5.10–6.12。
 
-| 示例 | 说明 | 关键特性 |
-|------|------|---------|
-| [内核 Hello](../../examples/android-kernel-hello/README.zh-CN.md) | 最小 `.ko` 模块 | kprobe 引导 kallsyms，最简 insmod 验证 |
-| [内核驱动模板](../../examples/android-kernel-driver/README.zh-CN.md) | 动态符号解析模板 | `kallsyms_lookup_name`，GKI 稳定 ABI，5.10–6.12 |
-| [内核 Inline Interpose](../../examples/android-kernel-inline-interpose/README.zh-CN.md) | `do_faccessat` 的 inline interpose | BTI/PAC 安全补丁，context interpose 模式，PC 相对重定位 |
-| [内核 Syscall Interpose](../../examples/android-kernel-syscall-interpose/README.zh-CN.md) | 系统调用表 / inline / context interpose | `sys_call_table` 替换、inline interpose、context interpose 三种模式 |
-| [内核低可见性](../../examples/android-kernel-lowvis/README.zh-CN.md) | 模块可见性管理 | list/sysfs/proc 可见性，凭证包装，SELinux 强制状态 |
-| [内核全功能 SDK](../../examples/android-kernel-full/README.zh-CN.md) | 完整 SDK 集成 | Netlink IPC、interpose、凭证包装、模块可见性、SELinux 策略控制、VMA、文件 I/O |
-| [内核字符设备](../../examples/android-kernel-chardev/README.zh-CN.md) | 字符设备 + ioctl | `misc_register`，ioctl 分发，`/proc` seq_file |
-| [内核 Netlink](../../examples/android-kernel-netlink/README.zh-CN.md) | 双向 netlink IPC | PING/VERSION/ECHO 命令，`nvk_nl_open`/`nvk_nl_reply` |
-| [内核 Probe](../../examples/android-kernel-probe/README.zh-CN.md) | 探测任意一条指令 | `neverc_krt_probe_register`、完整寄存器上下文、按优先级链式派发、跳过/重定向 |
-| [内核多文件模块](../../examples/android-kernel-multifile/README.zh-CN.md) | 多文件内核模块 | 只需一次 `NEVERC_KRT_BOOTSTRAP()`、`weak_odr` 共享状态、init/interpose/helper 分文件 |
+
+| 示例                                                                                      | 说明                                 | 关键特性                                                                    |
+| --------------------------------------------------------------------------------------- | ---------------------------------- | ----------------------------------------------------------------------- |
+| [内核 Hello](../../examples/android-kernel-hello/README.zh-CN.md)                         | 最小 `.ko` 模块                        | kprobe 引导 kallsyms，最简 insmod 验证                                         |
+| [内核驱动模板](../../examples/android-kernel-driver/README.zh-CN.md)                          | 动态符号解析模板                           | `kallsyms_lookup_name`，GKI 稳定 ABI，5.10–6.12                             |
+| [内核 Inline Interpose](../../examples/android-kernel-inline-interpose/README.zh-CN.md)   | `do_faccessat` 的 inline interpose  | BTI/PAC 安全补丁，context interpose 模式，PC 相对重定位                              |
+| [内核 Syscall Interpose](../../examples/android-kernel-syscall-interpose/README.zh-CN.md) | 系统调用表 / inline / context interpose | `sys_call_table` 替换、inline interpose、context interpose 三种模式             |
+| [内核低可见性](../../examples/android-kernel-lowvis/README.zh-CN.md)                          | 模块可见性管理                            | list/sysfs/proc 可见性，凭证包装，SELinux 强制状态                                   |
+| [内核全功能 SDK](../../examples/android-kernel-full/README.zh-CN.md)                         | 完整 SDK 集成                          | Netlink IPC、interpose、凭证包装、模块可见性、SELinux 策略控制、VMA、文件 I/O                |
+| [内核字符设备](../../examples/android-kernel-chardev/README.zh-CN.md)                         | 字符设备 + ioctl                       | `misc_register`，ioctl 分发，`/proc` seq_file                               |
+| [内核 Netlink](../../examples/android-kernel-netlink/README.zh-CN.md)                     | 双向 netlink IPC                     | PING/VERSION/ECHO 命令，`nvk_nl_open`/`nvk_nl_reply`                       |
+| [内核 Probe](../../examples/android-kernel-probe/README.zh-CN.md)                         | 探测任意一条指令                           | `neverc_krt_probe_register`、完整寄存器上下文、按优先级链式派发、跳过/重定向                    |
+| [内核多文件模块](../../examples/android-kernel-multifile/README.zh-CN.md)                      | 多文件内核模块                            | 只需一次 `NEVERC_KRT_BOOTSTRAP()`、`weak_odr` 共享状态、init/interpose/helper 分文件 |
+
 
 ---
 
@@ -118,3 +128,4 @@ neverc make run        # 构建 + 推送到设备 + 通过 adb 运行
 - **宿主无关**：从 macOS（arm64/x86_64）、Linux（x86_64/aarch64）或 Windows 使用相同命令构建
 - **多目标**：从任意宿主交叉编译到 Windows PE（`.sys`/`.exe`/`.dll`）、Linux ELF、macOS Mach-O（`.dylib`）和 Android ELF
 - **调试支持**：传入 `-g` 可嵌入 DWARF 调试信息；使用 `llvm-dwarfdump` 检查
+
