@@ -24,6 +24,14 @@ neverc make NEVERC=/path/to/neverc
 기본 빌드에는 디버깅용 `-g`가 포함되어 있습니다. **릴리스 빌드에서는 `-g`를 제거**하여
 디버그 심볼을 제거하고 바이너리 크기를 줄이세요.
 
+x64 전용: CET은 x86 기능이며 다른 대상에서는 컴파일러가
+`-fcf-protection=return`을 거부합니다. ARM64는 포인터 인증과 분기 대상 식별로
+같은 제어 흐름 경계를 보호합니다.
+
+Windows는 서명되지 않은 드라이버를 로드하지 않습니다. `neverc make TESTSIGN=1`이
+Authenticode 테스트 서명을 첨부합니다. 테스트 머신의 일회성 설정은
+[windows-driver 예제](../windows-driver/README.md#test-signing)를 참조하세요.
+
 ## CET 전용 플래그
 
 | 플래그 | 레이어 | 용도 |
@@ -38,8 +46,8 @@ neverc --target=x86_64-pc-windows-msvc \
   -g \
   -fcf-protection=return \
   -fms-kernel \
-  -D_AMD64_ -DNTDDI_VERSION=0x06010000 -D_WIN32_WINNT=0x0601 \
   -Wall -nostdlib -shared \
+  -Xlinker --driver \
   -Xlinker --entry=DriverEntry \
   -Xlinker --subsystem=native \
   -Xlinker --nodefaultlib \

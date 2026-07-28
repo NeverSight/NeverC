@@ -23,6 +23,13 @@ neverc make NEVERC=/path/to/neverc
 輸出為 `CetDriver.sys`（auto-LTO 最佳化）。
 預設建置包含 `-g` 用於除錯；**釋出版本應移除 `-g`** 以移除除錯符號並縮小二進位檔案大小。
 
+僅支援 x64：CET 是 x86 特性，編譯器在其他架構上會拒絕 `-fcf-protection=return`。
+ARM64 以指標認證和分支目標識別保護同樣的控制流邊。
+
+Windows 不會載入未簽章的驅動程式。`neverc make TESTSIGN=1` 會附加 Authenticode
+測試簽章；測試機所需的一次性設定請見
+[windows-driver 範例](../windows-driver/README.md#test-signing)。
+
 ## CET 專用旗標
 
 | 旗標 | 層級 | 用途 |
@@ -37,8 +44,8 @@ neverc --target=x86_64-pc-windows-msvc \
   -g \
   -fcf-protection=return \
   -fms-kernel \
-  -D_AMD64_ -DNTDDI_VERSION=0x06010000 -D_WIN32_WINNT=0x0601 \
   -Wall -nostdlib -shared \
+  -Xlinker --driver \
   -Xlinker --entry=DriverEntry \
   -Xlinker --subsystem=native \
   -Xlinker --nodefaultlib \

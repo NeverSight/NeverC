@@ -15,13 +15,20 @@ cd examples/windows-driver-float
 neverc make
 ```
 
+Cela produit `FloatDriver-x64.sys`. Pour ARM64, ou pour les deux :
+
+```bash
+neverc make ARCH=arm64
+neverc make all-arch
+```
+
 Depuis une version autonome de NeverC :
 
 ```bash
 neverc make NEVERC=/path/to/neverc
 ```
 
-Le résultat est `FloatDriver.sys` (optimisé auto-LTO).
+Le résultat est `FloatDriver-<architecture>.sys` (optimisé auto-LTO).
 La compilation par défaut inclut `-g` pour le débogage ; supprimez `-g`
 pour les versions de production.
 
@@ -94,6 +101,10 @@ KeRestoreExtendedProcessorState(&save);
 
 Passez le masque combiné par OU correspondant aux registres les plus larges utilisés.
 
+Ces masques sont des concepts x64. Les mêmes sources se compilent pour ARM64,
+mais le jeu de registres et les règles de sauvegarde du noyau y diffèrent —
+consultez la documentation WDK avant de vous appuyer sur ce motif sur ARM64.
+
 ---
 
 ## Ce que fait ce pilote
@@ -123,13 +134,17 @@ neverc --target=x86_64-pc-windows-msvc -fms-kernel -S /tmp/foo.c -o - | grep flt
 ## Chargement (sur une machine de test Windows)
 
 ```cmd
-sc create FloatDriver type= kernel binPath= C:\path\to\FloatDriver.sys
+sc create FloatDriver type= kernel binPath= C:\path\to\FloatDriver-x64.sys
 sc start FloatDriver
 sc stop FloatDriver
 sc delete FloatDriver
 ```
 
-Activez la signature de test ou utilisez un certificat de signature de code pour la production.
+Windows refuse de charger un pilote non signé. `neverc make TESTSIGN=1` attache
+une signature Authenticode de test ; la configuration unique de la machine de
+test est décrite dans
+l'[exemple windows-driver](../windows-driver/README.md#test-signing). Utilisez un
+vrai certificat de signature de code pour la production.
 
 ## Mises en garde
 

@@ -25,6 +25,14 @@ Die Ausgabe ist `CetDriver.sys` (auto-LTO-optimiert).
 Der Standard-Build enthält `-g` zum Debuggen; **Release-Builds sollten `-g`
 entfernen**, um Debug-Symbole zu entfernen und die Binärgröße zu reduzieren.
 
+Nur x64: CET ist ein x86-Feature, und der Compiler lehnt
+`-fcf-protection=return` auf anderen Zielen ab. ARM64 schützt dieselben Kanten
+stattdessen mit Pointer Authentication und Branch Target Identification.
+
+Windows lädt keinen unsignierten Treiber. `neverc make TESTSIGN=1` hängt eine
+Authenticode-Testsignatur an; die einmalige Einrichtung der Testmaschine
+beschreibt das [windows-driver-Beispiel](../windows-driver/README.md#test-signing).
+
 ## CET-spezifische Flags
 
 | Flag | Ebene | Zweck |
@@ -39,8 +47,8 @@ neverc --target=x86_64-pc-windows-msvc \
   -g \
   -fcf-protection=return \
   -fms-kernel \
-  -D_AMD64_ -DNTDDI_VERSION=0x06010000 -D_WIN32_WINNT=0x0601 \
   -Wall -nostdlib -shared \
+  -Xlinker --driver \
   -Xlinker --entry=DriverEntry \
   -Xlinker --subsystem=native \
   -Xlinker --nodefaultlib \

@@ -15,13 +15,20 @@ cd examples/windows-driver-float
 neverc make
 ```
 
+Das erzeugt `FloatDriver-x64.sys`. Für ARM64 oder für beide:
+
+```bash
+neverc make ARCH=arm64
+neverc make all-arch
+```
+
 Mit einer eigenständigen NeverC-Version:
 
 ```bash
 neverc make NEVERC=/path/to/neverc
 ```
 
-Die Ausgabe ist `FloatDriver.sys` (auto-LTO-optimiert).
+Die Ausgabe ist `FloatDriver-<Architektur>.sys` (auto-LTO-optimiert).
 Der Standard-Build enthält `-g` zum Debuggen; entfernen Sie `-g` für Release-Builds.
 
 ---
@@ -92,6 +99,10 @@ KeRestoreExtendedProcessorState(&save);
 
 Übergeben Sie die OR-kombinierte Maske, die zu den breitesten von Ihrem Code verwendeten Registern passt.
 
+Diese Masken sind x64-Konzepte. Derselbe Quellcode baut auch für ARM64, aber
+Registersatz und Kernel-Regeln zum Sichern unterscheiden sich dort — prüfen Sie
+die WDK-Dokumentation, bevor Sie sich auf ARM64 auf dieses Muster verlassen.
+
 ---
 
 ## Was dieser Treiber tut
@@ -122,13 +133,16 @@ neverc --target=x86_64-pc-windows-msvc -fms-kernel -S /tmp/foo.c -o - | grep flt
 ## Laden (auf einem Windows-Testrechner)
 
 ```cmd
-sc create FloatDriver type= kernel binPath= C:\path\to\FloatDriver.sys
+sc create FloatDriver type= kernel binPath= C:\path\to\FloatDriver-x64.sys
 sc start FloatDriver
 sc stop FloatDriver
 sc delete FloatDriver
 ```
 
-Aktivieren Sie die Testsignierung oder verwenden Sie ein Codesignaturzertifikat für die Produktion.
+Windows lädt keinen unsignierten Treiber. `neverc make TESTSIGN=1` hängt eine
+Authenticode-Testsignatur an; die einmalige Einrichtung der Testmaschine
+beschreibt das [windows-driver-Beispiel](../windows-driver/README.md#test-signing).
+Verwenden Sie für die Produktion ein echtes Codesignaturzertifikat.
 
 ## Vorbehalte
 

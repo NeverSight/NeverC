@@ -25,6 +25,14 @@ neverc make NEVERC=/path/to/neverc
 Сборка по умолчанию включает `-g` для отладки; **в релизных сборках следует убрать
 `-g`**, чтобы удалить отладочные символы и уменьшить размер бинарного файла.
 
+Только x64: CET — это функция x86, и компилятор отклоняет
+`-fcf-protection=return` на других целях. ARM64 защищает те же переходы
+аутентификацией указателей и идентификацией целей ветвления.
+
+Windows не загружает неподписанный драйвер. `neverc make TESTSIGN=1` добавляет
+тестовую подпись Authenticode; разовая настройка тестовой машины описана в
+[примере windows-driver](../windows-driver/README.md#test-signing).
+
 ## Флаги, специфичные для CET
 
 | Флаг | Уровень | Назначение |
@@ -39,8 +47,8 @@ neverc --target=x86_64-pc-windows-msvc \
   -g \
   -fcf-protection=return \
   -fms-kernel \
-  -D_AMD64_ -DNTDDI_VERSION=0x06010000 -D_WIN32_WINNT=0x0601 \
   -Wall -nostdlib -shared \
+  -Xlinker --driver \
   -Xlinker --entry=DriverEntry \
   -Xlinker --subsystem=native \
   -Xlinker --nodefaultlib \

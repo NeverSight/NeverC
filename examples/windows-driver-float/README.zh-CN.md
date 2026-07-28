@@ -14,13 +14,20 @@ cd examples/windows-driver-float
 neverc make
 ```
 
+这会生成 `FloatDriver-x64.sys`。如需改为构建 ARM64，或两者都构建：
+
+```bash
+neverc make ARCH=arm64
+neverc make all-arch
+```
+
 使用独立的 NeverC 发行版：
 
 ```bash
 neverc make NEVERC=/path/to/neverc
 ```
 
-输出为 `FloatDriver.sys`（auto-LTO 优化）。
+输出为 `FloatDriver-<架构>.sys`（auto-LTO 优化）。
 默认构建包含 `-g` 用于调试；发布版本应去掉 `-g`。
 
 ---
@@ -87,6 +94,9 @@ KeRestoreExtendedProcessorState(&save);
 
 按代码使用的最宽寄存器，按位或组合后传入。
 
+这些掩码是 x64 的概念。同一份源码也能构建 ARM64，但那里的寄存器组和内核的
+保存规则不同——在 ARM64 上套用这个模式前请先查阅 WDK 文档。
+
 ---
 
 ## 这个驱动做了什么
@@ -116,13 +126,16 @@ neverc --target=x86_64-pc-windows-msvc -fms-kernel -S /tmp/foo.c -o - | grep flt
 ## 加载（在 Windows 测试机上）
 
 ```cmd
-sc create FloatDriver type= kernel binPath= C:\path\to\FloatDriver.sys
+sc create FloatDriver type= kernel binPath= C:\path\to\FloatDriver-x64.sys
 sc start FloatDriver
 sc stop FloatDriver
 sc delete FloatDriver
 ```
 
-请启用测试签名或使用代码签名证书用于生产环境。
+Windows 不会加载未签名的驱动。`neverc make TESTSIGN=1` 会附加 Authenticode
+测试签名；测试机所需的一次性配置见
+[windows-driver 示例](../windows-driver/README.md#test-signing)。生产环境请使用
+真实的代码签名证书。
 
 ## 注意事项
 

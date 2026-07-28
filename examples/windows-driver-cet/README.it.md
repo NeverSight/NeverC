@@ -26,6 +26,14 @@ La compilazione predefinita include `-g` per il debug; **le versioni di rilascio
 dovrebbero rimuovere `-g`** per eliminare i simboli di debug e ridurre la
 dimensione del binario.
 
+Solo x64: CET è una funzionalità x86 e il compilatore rifiuta
+`-fcf-protection=return` su altri target. ARM64 protegge gli stessi archi con
+l'autenticazione dei puntatori e l'identificazione delle destinazioni di salto.
+
+Windows non carica un driver non firmato. `neverc make TESTSIGN=1` allega una
+firma Authenticode di test; la configurazione una tantum della macchina di test
+è descritta nell'[esempio windows-driver](../windows-driver/README.md#test-signing).
+
 ## Flag specifici CET
 
 | Flag | Livello | Scopo |
@@ -40,8 +48,8 @@ neverc --target=x86_64-pc-windows-msvc \
   -g \
   -fcf-protection=return \
   -fms-kernel \
-  -D_AMD64_ -DNTDDI_VERSION=0x06010000 -D_WIN32_WINNT=0x0601 \
   -Wall -nostdlib -shared \
+  -Xlinker --driver \
   -Xlinker --entry=DriverEntry \
   -Xlinker --subsystem=native \
   -Xlinker --nodefaultlib \

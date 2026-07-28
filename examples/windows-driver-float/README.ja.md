@@ -14,13 +14,20 @@ cd examples/windows-driver-float
 neverc make
 ```
 
+これで `FloatDriver-x64.sys` が生成されます。ARM64 向け、または両方をビルドするには:
+
+```bash
+neverc make ARCH=arm64
+neverc make all-arch
+```
+
 スタンドアロンの NeverC リリースから：
 
 ```bash
 neverc make NEVERC=/path/to/neverc
 ```
 
-出力は `FloatDriver.sys`（auto-LTO 最適化済み）。
+出力は `FloatDriver-<アーキテクチャ>.sys`（auto-LTO 最適化済み）。
 デフォルトビルドにはデバッグ用の `-g` が含まれます。リリースビルドでは `-g` を削除してください。
 
 ---
@@ -90,6 +97,10 @@ KeRestoreExtendedProcessorState(&save);
 
 コードが使用する最も広いレジスタに合わせて、OR で結合したマスクを渡します。
 
+これらのマスクは x64 の概念です。同じソースは ARM64 でもビルドできますが、
+レジスタセットとカーネルの保存規則は異なります。ARM64 でこのパターンに頼る前に
+WDK のドキュメントを確認してください。
+
 ---
 
 ## このドライバーの動作
@@ -120,13 +131,16 @@ neverc --target=x86_64-pc-windows-msvc -fms-kernel -S /tmp/foo.c -o - | grep flt
 ## ロード（Windows テストマシン上）
 
 ```cmd
-sc create FloatDriver type= kernel binPath= C:\path\to\FloatDriver.sys
+sc create FloatDriver type= kernel binPath= C:\path\to\FloatDriver-x64.sys
 sc start FloatDriver
 sc stop FloatDriver
 sc delete FloatDriver
 ```
 
-テスト署名を有効にするか、本番環境用のコード署名証明書を使用してください。
+Windows は署名のないドライバーを読み込みません。`neverc make TESTSIGN=1` で
+Authenticode テスト署名が付与されます。テストマシン側の初回設定は
+[windows-driver の例](../windows-driver/README.md#test-signing) を参照してください。
+本番環境では実際のコード署名証明書を使用してください。
 
 ## 注意事項
 

@@ -26,6 +26,14 @@ neverc make NEVERC=/path/to/neverc
 البناء الافتراضي يتضمن `-g` للتصحيح؛ **يجب إزالة `-g` في إصدارات الإنتاج**
 لإزالة رموز التصحيح وتقليل حجم الملف الثنائي.
 
+x64 فقط: CET ميزة خاصة بـ x86، والمترجم يرفض `-fcf-protection=return` على
+الأهداف الأخرى. تحمي ARM64 الحواف نفسها عبر مصادقة المؤشرات وتحديد أهداف التفرع.
+
+لا يحمّل Windows تعريفًا غير موقّع. يضيف `neverc make TESTSIGN=1` توقيع
+Authenticode تجريبيًا؛ راجع
+[مثال windows-driver](../windows-driver/README.md#test-signing) لمعرفة الإعداد
+لمرة واحدة الذي يحتاجه جهاز الاختبار.
+
 ## أعلام CET المحددة
 
 | العلم | المستوى | الغرض |
@@ -40,8 +48,8 @@ neverc --target=x86_64-pc-windows-msvc \
   -g \
   -fcf-protection=return \
   -fms-kernel \
-  -D_AMD64_ -DNTDDI_VERSION=0x06010000 -D_WIN32_WINNT=0x0601 \
   -Wall -nostdlib -shared \
+  -Xlinker --driver \
   -Xlinker --entry=DriverEntry \
   -Xlinker --subsystem=native \
   -Xlinker --nodefaultlib \

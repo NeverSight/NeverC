@@ -16,13 +16,20 @@ cd examples/windows-driver-float
 neverc make
 ```
 
+ينتج عن ذلك `FloatDriver-x64.sys`. لبناء ARM64، أو لبناء الاثنين معًا:
+
+```bash
+neverc make ARCH=arm64
+neverc make all-arch
+```
+
 من إصدار NeverC مستقل:
 
 ```bash
 neverc make NEVERC=/path/to/neverc
 ```
 
-الناتج هو `FloatDriver.sys` (محسّن بـ auto-LTO).
+الناتج هو `FloatDriver-<المعمارية>.sys` (محسّن بـ auto-LTO).
 البناء الافتراضي يتضمن `-g` للتصحيح؛ احذف `-g` في إصدارات الإنتاج.
 
 ---
@@ -89,6 +96,10 @@ KeRestoreExtendedProcessorState(&save);
 
 مرر القناع المدمج بـ OR المطابق لأوسع السجلات التي يستخدمها الكود.
 
+هذه الأقنعة مفاهيم خاصة بـ x64. يمكن بناء المصدر نفسه لـ ARM64، لكن مجموعة
+السجلات وقواعد النواة لحفظها تختلف هناك — راجع توثيق WDK قبل الاعتماد على هذا
+النمط على ARM64.
+
 ---
 
 ## ما يفعله برنامج التشغيل هذا
@@ -118,13 +129,16 @@ neverc --target=x86_64-pc-windows-msvc -fms-kernel -S /tmp/foo.c -o - | grep flt
 ## التحميل (على جهاز اختبار Windows)
 
 ```cmd
-sc create FloatDriver type= kernel binPath= C:\path\to\FloatDriver.sys
+sc create FloatDriver type= kernel binPath= C:\path\to\FloatDriver-x64.sys
 sc start FloatDriver
 sc stop FloatDriver
 sc delete FloatDriver
 ```
 
-قم بتفعيل التوقيع التجريبي أو استخدم شهادة توقيع الكود للإنتاج.
+لا يحمّل Windows تعريفًا غير موقّع. يضيف `neverc make TESTSIGN=1` توقيع
+Authenticode تجريبيًا؛ راجع
+[مثال windows-driver](../windows-driver/README.md#test-signing) لمعرفة الإعداد
+لمرة واحدة الذي يحتاجه جهاز الاختبار. استخدم شهادة توقيع كود حقيقية للإنتاج.
 
 ## تحذيرات
 

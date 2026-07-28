@@ -24,6 +24,14 @@ neverc make NEVERC=/path/to/neverc
 デフォルトビルドにはデバッグ用の `-g` が含まれます。**リリースビルドでは `-g` を削除**
 してデバッグシンボルを除去し、バイナリサイズを削減してください。
 
+x64 のみ: CET は x86 の機能で、他のターゲットでは `-fcf-protection=return` が
+コンパイラに拒否されます。ARM64 では同じ制御フローの境界をポインタ認証と
+分岐先識別で保護します。
+
+Windows は署名のないドライバーを読み込みません。`neverc make TESTSIGN=1` で
+Authenticode テスト署名が付与されます。テストマシン側の初回設定は
+[windows-driver の例](../windows-driver/README.md#test-signing) を参照してください。
+
 ## CET 専用フラグ
 
 | フラグ | レイヤー | 目的 |
@@ -38,8 +46,8 @@ neverc --target=x86_64-pc-windows-msvc \
   -g \
   -fcf-protection=return \
   -fms-kernel \
-  -D_AMD64_ -DNTDDI_VERSION=0x06010000 -D_WIN32_WINNT=0x0601 \
   -Wall -nostdlib -shared \
+  -Xlinker --driver \
   -Xlinker --entry=DriverEntry \
   -Xlinker --subsystem=native \
   -Xlinker --nodefaultlib \
