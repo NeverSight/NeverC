@@ -18,6 +18,8 @@
 #include "llvm/IR/Verifier.h"
 #include "llvm/IR/GlobalIFunc.h"
 #include "llvm/IR/GlobalObject.h"
+#include "llvm/IR/InstrTypes.h"
+#include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Module.h"
 #include "llvm/MC/TargetRegistry.h"
@@ -581,6 +583,36 @@ bool ParallelCGContext::externalizeAndSerialize(Module &Mod) {
         break;
       }
   }
+
+  // A SEH funclet reaches its parent's frame through a pair of intrinsics:
+  // llvm.localescape names the slots in the parent, llvm.localrecover reads
+  // them back from the filter or handler.  The symbol tying the two together
+  // (`<parent>$frame_escape_N`) is emitted into whichever object holds the
+  // parent, so a filter binned into another partition would reference a label
+  // that object never defines and the assembler rejects the whole partition.
+  // Pin both ends of every such pair.
+  auto PinFrameEscapeUsers = [&](Intrinsic::ID Id, bool PinFrameOwner) {
+    // Walking the intrinsic's uses keeps this off the critical path entirely
+    // for the targets (everything but Windows SEH) that never declare it.
+    Function *Intrin = Mod.getFunction(Intrinsic::getName(Id));
+    if (!Intrin)
+      return;
+    for (User *U : Intrin->users()) {
+      auto *Call = dyn_cast<CallBase>(U);
+      if (!Call)
+        continue;
+      if (const Function *Caller = Call->getFunction())
+        PinnedToP0.insert(Caller->getName());
+      if (!PinFrameOwner)
+        continue;
+      // localrecover's first operand names the frame being recovered.
+      if (const auto *Owner = dyn_cast<Function>(
+              Call->getArgOperand(0)->stripPointerCasts()))
+        PinnedToP0.insert(Owner->getName());
+    }
+  };
+  PinFrameEscapeUsers(Intrinsic::localescape, /*PinFrameOwner=*/false);
+  PinFrameEscapeUsers(Intrinsic::localrecover, /*PinFrameOwner=*/true);
 
   // Stable assignment: bin by function-name hash instead of greedy
   // weight balancing.  Greedy reshuffles every partition whenever one
