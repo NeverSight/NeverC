@@ -192,11 +192,12 @@ struct Configuration {
   uint64_t heapCommit = 4096;
   uint32_t majorImageVersion = 0;
   uint32_t minorImageVersion = 0;
-  // NeverC targets Windows 10 as the minimum supported OS; images built by
-  // neverc are not expected to load on anything older.
-  uint32_t majorOSVersion = 10;
+  // 0 means "not requested"; the driver then fills in a per-architecture
+  // default once the machine type is known -- 6.0 for x64, 10.0 for ARM64.
+  // A version that *was* requested is emitted as given (see CoffDriver.cpp).
+  uint32_t majorOSVersion = 0;
   uint32_t minorOSVersion = 0;
-  uint32_t majorSubsystemVersion = 10;
+  uint32_t majorSubsystemVersion = 0;
   uint32_t minorSubsystemVersion = 0;
   uint32_t timestamp = 0;
   uint32_t functionPadMin = 0;

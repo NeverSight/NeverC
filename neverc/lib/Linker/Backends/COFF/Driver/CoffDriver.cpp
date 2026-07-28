@@ -1534,18 +1534,29 @@ void LinkerDriver::run(ArrayRef<const char *> argsArr,
   if (!config->dynamicBase && config->machine == ARM64)
     config->dynamicBase = true;
 
-  // NeverC only supports Windows 10 and newer.  Clamp the OS / subsystem
-  // version up to 10.0 even if a lower value was requested (e.g. via
-  // --osversion / --subsystem), so emitted images refuse to load on older
-  // Windows rather than starting and then failing in unsupported CRT paths.
-  if (config->majorSubsystemVersion < 10) {
-    config->majorSubsystemVersion = 10;
+  // An explicitly requested version always wins: only the caller knows which
+  // Windows is really being targeted.  These fields are 0 when neither
+  // --subsystem nor --osversion carried one, and that is when the
+  // per-architecture default applies -- x64 reaches back to Vista, while
+  // Windows on ARM64 has never existed below 10.0.
+  //
+  // That same fact makes a sub-10.0 ARM64 request worth saying something
+  // about: no Windows can load such an image, so it is far more likely a
+  // copied-over x64 flag than an intent.  Warn rather than override, so the
+  // request is still honoured and the mistake is still visible.
+  const uint32_t defaultMajorVersion = config->machine == ARM64 ? 10 : 6;
+  if (config->majorSubsystemVersion == 0) {
+    config->majorSubsystemVersion = defaultMajorVersion;
     config->minorSubsystemVersion = 0;
   }
-  if (config->majorOSVersion < 10) {
-    config->majorOSVersion = 10;
+  if (config->majorOSVersion == 0) {
+    config->majorOSVersion = defaultMajorVersion;
     config->minorOSVersion = 0;
   }
+  if (config->machine == ARM64 &&
+      (config->majorSubsystemVersion < 10 || config->majorOSVersion < 10))
+    warn("ARM64 images require Windows 10.0 or newer; the requested version "
+         "cannot be loaded by any Windows on this architecture");
 
   // --- Exports & module definitions ---
 
