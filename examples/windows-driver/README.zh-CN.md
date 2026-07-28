@@ -57,6 +57,34 @@ neverc --target=x86_64-pc-windows-msvc \
 > `-g` 将 DWARF 调试信息嵌入 PE；可使用 `llvm-dwarfdump` 检查。
 > 发布版本应省略此选项以减小二进制体积。
 
+## 测试签名
+
+Windows 拒绝加载未签名的内核驱动。`-ftest-sign` 会附加 Authenticode 签名，
+使镜像在测试机上通过该检查：
+
+```bash
+neverc make TESTSIGN=1
+neverc make ARCH=arm64 TESTSIGN=1
+```
+
+也可在手动调用时加上 `-ftest-sign`。该选项只能与 `-fms-kernel` 一起使用，
+因为测试签名对用户态程序没有意义。
+
+签名身份内置于编译器中——一张自签名证书，其私钥按设计就是公开的。它不提供
+任何真实性保证，只是让镜像能通过你主动放开限制的机器上的代码完整性检查。
+该机器需以管理员身份一次性设置：
+
+```cmd
+bcdedit /set testsigning on
+certutil -addstore Root neverc-test-signing.cer
+certutil -addstore TrustedPublisher neverc-test-signing.cer
+```
+
+然后重启。证书位于 `utils/neverc-test-signing.cer`。
+
+**切勿将其用于任何离开测试机的产物。** 生产环境请使用真实的代码签名证书
+（Windows 10 1607 及更高版本还需要 Microsoft 硬件开发人员中心的证明签名）。
+
 ## 功能说明
 
 - 在 `\Device\ExampleDriver` 创建设备对象

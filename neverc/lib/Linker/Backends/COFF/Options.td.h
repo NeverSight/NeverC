@@ -275,6 +275,10 @@ OPTION(prefix_1, "--summary", summary, Flag, INVALID, INVALID, nullptr, 0,
        DefaultVis, 0, nullptr, nullptr, nullptr)
 OPTION(prefix_1, "--swaprun=", swaprun, Joined, INVALID, INVALID, nullptr, 0,
        DefaultVis, 0, "Comma-separated list of 'cd' or 'net'", nullptr, nullptr)
+OPTION(prefix_1, "--test-sign", test_sign, Flag, INVALID, INVALID, nullptr, 0,
+       DefaultVis, 0,
+       "Attach an Authenticode test signature to the output image", nullptr,
+       nullptr)
 OPTION(prefix_1, "--timestamp=", timestamp, Joined, INVALID, INVALID, nullptr,
        0, DefaultVis, 0, "Specify the PE header timestamp", nullptr, nullptr)
 OPTION(prefix_1, "--tsaware", tsaware, Flag, INVALID, INVALID, nullptr, 0,

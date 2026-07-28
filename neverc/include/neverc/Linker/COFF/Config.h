@@ -221,6 +221,9 @@ struct Configuration {
   bool swaprunCD = false;
   bool swaprunNet = false;
   bool writeCheckSum = false;
+  // --test-sign: attach an Authenticode test signature after the image is
+  // written.  Only reachable for kernel-mode driver links.
+  bool testSign = false;
   bool hasCustomBSSSection = false;
   FormIDHash buildIDHash = FormIDHash::None;
 };

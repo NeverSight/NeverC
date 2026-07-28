@@ -159,6 +159,16 @@ void visualstudio::Linker::ConstructJob(Compilation &C, const JobAction &JA,
     }
   }
 
+  // Test signing only means anything for a kernel image: user-mode binaries do
+  // not go through the code-integrity check that a test signature satisfies.
+  if (const Arg *A = Args.getLastArg(options::OPT_ftest_sign)) {
+    if (!Args.hasArg(options::OPT_fms_kernel))
+      TC.getDriver().Diag(neverc::diag::err_drv_argument_only_allowed_with)
+          << A->getAsString(Args) << "-fms-kernel";
+    else
+      CmdArgs.push_back("--test-sign");
+  }
+
   // Explicit DIA SDK path via -diasdkdir or -winsysroot.
   if (const Arg *A =
           Args.getLastArg(options::OPT_diasdkdir, options::OPT_winsysroot)) {

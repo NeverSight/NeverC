@@ -58,6 +58,46 @@ passed by hand.
 > `-g` emits DWARF debug info into the PE; inspect with `llvm-dwarfdump`.
 > Omit for release builds to reduce binary size.
 
+## Test signing
+
+Windows refuses to load an unsigned kernel driver. `-ftest-sign` attaches an
+Authenticode signature so the image passes that check on a test machine:
+
+```bash
+neverc make TESTSIGN=1
+neverc make ARCH=arm64 TESTSIGN=1
+```
+
+or add `-ftest-sign` to a manual invocation. It is only accepted together with
+`-fms-kernel`, since a test signature means nothing for a user-mode binary.
+
+The signing identity is built into the compiler — a self-signed certificate
+whose private key is public by construction. It grants no authenticity; it only
+satisfies code integrity on a machine you have deliberately opened up. Set that
+machine up once, as administrator:
+
+```cmd
+bcdedit /set testsigning on
+certutil -addstore Root neverc-test-signing.cer
+certutil -addstore TrustedPublisher neverc-test-signing.cer
+```
+
+then reboot. The certificate ships at `utils/neverc-test-signing.cer`.
+
+To check a signature without a Windows machine, use `osslsigncode`. Note that
+`-CAfile` wants PEM while the shipped certificate is DER, so convert it first —
+passing the DER directly fails with a confusing "signature verification failed"
+that is really "no certificate found":
+
+```bash
+openssl x509 -inform DER -in utils/neverc-test-signing.cer -out /tmp/nc.pem
+osslsigncode verify -CAfile /tmp/nc.pem ExampleDriver-x64.sys
+```
+
+**Never use this for anything that leaves a test machine.** For production,
+sign with a real code-signing certificate (and, for Windows 10 1607 and later,
+an attestation signature from the Microsoft Hardware Dev Center).
+
 ## What it does
 
 - Creates a device object at `\Device\ExampleDriver`

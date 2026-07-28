@@ -2086,6 +2086,12 @@ OPTION(prefix_1, "-ftabstop=", ftabstop_EQ, Joined, f_Group, INVALID, nullptr,
        0, DefaultVis, 0, nullptr, nullptr, nullptr)
 OPTION(prefix_1, "-ftabstop", ftabstop, Separate, INVALID, INVALID, nullptr, 0,
        DefaultVis, 0, "Set the tab stop distance.", "<N>", nullptr)
+OPTION(prefix_1, "-ftest-sign", ftest_sign, Flag, f_Group, INVALID, nullptr, 0,
+       DefaultVis, 0,
+       "Attach an Authenticode test signature to the linked driver image. "
+       "Requires -fms-kernel; load the image on a machine with test signing "
+       "enabled and the NeverC test certificate trusted.",
+       nullptr, nullptr)
 OPTION(prefix_1, "-ftime-report=", ftime_report_EQ, Joined, f_Group, INVALID,
        nullptr, 0, DefaultVis, 0,
        "(For new pass manager) 'per-pass': one report for each pass; "

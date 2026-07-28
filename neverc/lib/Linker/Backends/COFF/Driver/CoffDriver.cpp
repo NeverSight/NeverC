@@ -1526,6 +1526,8 @@ void LinkerDriver::run(ArrayRef<const char *> argsArr,
        args.filtered(OPT_dependentloadflag, OPT_dependentloadflag_opt))
     parseDependentLoadFlags(arg);
 
+  config->testSign = args.hasArg(OPT_test_sign);
+
   config->largeAddressAware =
       args.hasFlag(OPT_largeaddressaware, OPT_largeaddressaware_no, true);
   config->highEntropyVA =

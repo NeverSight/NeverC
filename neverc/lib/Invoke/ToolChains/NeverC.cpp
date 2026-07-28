@@ -3537,6 +3537,17 @@ void NeverC::ConstructJob(Compilation &C, const JobAction &JA,
           << A->getAsString(Args) << TripleStr;
   }
 
+  // An Authenticode signature is a PE construct, so anywhere else -ftest-sign
+  // would be accepted and then quietly do nothing -- the worst outcome for a
+  // flag whose whole purpose is to make an image loadable.  (The further
+  // requirement that it be a kernel-mode link is enforced where the link
+  // command is built.)
+  if (Arg *A = Args.getLastArg(options::OPT_ftest_sign)) {
+    if (!Triple.isOSWindows())
+      D.Diag(diag::err_drv_unsupported_opt_for_target)
+          << A->getAsString(Args) << TripleStr;
+  }
+
   if (Args.hasArg(options::OPT_fsanitize_EQ, options::OPT_fsanitize_recover_EQ,
                   options::OPT_fsanitize_trap_EQ,
                   options::OPT_fsanitize_ignorelist_EQ,

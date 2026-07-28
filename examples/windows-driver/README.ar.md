@@ -59,6 +59,35 @@ neverc --target=x86_64-pc-windows-msvc \
 > `-g` يضمّن معلومات تصحيح DWARF في ملف PE؛ يمكن فحصها باستخدام `llvm-dwarfdump`.
 > احذف هذا الخيار في إصدارات الإنتاج لتقليل حجم الملف الثنائي.
 
+## التوقيع التجريبي
+
+يرفض Windows تحميل برنامج تشغيل نواة غير موقّع. يقوم `-ftest-sign` بإرفاق توقيع
+Authenticode حتى يجتاز الملف هذا الفحص على جهاز اختبار:
+
+```bash
+neverc make TESTSIGN=1
+neverc make ARCH=arm64 TESTSIGN=1
+```
+
+أو أضف `-ftest-sign` عند الاستدعاء اليدوي. لا يُقبل هذا الخيار إلا مع
+`-fms-kernel`، لأن التوقيع التجريبي لا معنى له لملف ثنائي في وضع المستخدم.
+
+هوية التوقيع مضمّنة داخل المترجم — شهادة موقّعة ذاتيًا مفتاحها الخاص علني بحكم
+التصميم. وهي لا تمنح أي أصالة؛ بل تكتفي باجتياز فحص سلامة الكود على جهاز فتحته
+عمدًا. هيّئ ذلك الجهاز مرة واحدة بصلاحيات المسؤول:
+
+```cmd
+bcdedit /set testsigning on
+certutil -addstore Root neverc-test-signing.cer
+certutil -addstore TrustedPublisher neverc-test-signing.cer
+```
+
+ثم أعد التشغيل. توجد الشهادة في `utils/neverc-test-signing.cer`.
+
+**لا تستخدمها أبدًا لأي شيء يغادر جهاز الاختبار.** في الإنتاج، وقّع بشهادة توقيع
+كود حقيقية (وبالنسبة لـ Windows 10 1607 وما بعده، توقيع إثبات من Microsoft
+Hardware Dev Center أيضًا).
+
 ## الوظائف
 
 - ينشئ كائن جهاز في `\Device\ExampleDriver`

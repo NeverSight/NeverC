@@ -8,6 +8,7 @@
 #include "Linker/COFF/MapFile.h"
 #include "Linker/COFF/SymbolTable.h"
 #include "Linker/COFF/Symbols.h"
+#include "Linker/COFF/TestSign.h"
 #include "Linker/Core/Runtime/Allocator.h"
 #include "Linker/Core/Runtime/Diagnostic.h"
 #include "Linker/Core/Runtime/Stopwatch.h"
@@ -235,6 +236,7 @@ private:
   void writeSections();
   void computeContentHash();
   void writePEChecksum();
+  void attachTestSignature();
   void sortSections();
   template <typename T> void sortExceptionTable(ChunkRange &exceptionTable);
   void sortExceptionTables();
@@ -681,7 +683,33 @@ void OutputWriter::commitPreFixes() {
   writePEChecksum();
 }
 
-void OutputWriter::commitPostFixes() {}
+// Attach the Authenticode test signature, if one was asked for.
+//
+// This runs after the image is on disk rather than during writeSections():
+// the attribute certificate is appended past the end of the image, which the
+// fixed-size output buffer has no room for.
+void OutputWriter::attachTestSignature() {
+  if (!ctx.config.testSign)
+    return;
+
+  // On the plugin path the image goes to a plugin sink instead of
+  // config.outputFile, so there is nothing here to sign.  Refuse rather than
+  // signing a stale file or quietly producing an unsigned image.
+  if (ctx.pluginLinkAdapter) {
+    error("--test-sign is not supported when a link plugin publishes the "
+          "image");
+    return;
+  }
+
+  llvm::TimeTraceScope timeScope("Authenticode test signature");
+  if (Error e = testSignImage(ctx.config.outputFile))
+    error(toString(std::move(e)));
+}
+
+void OutputWriter::commitPostFixes() {
+  // Authenticode test signature
+  attachTestSignature();
+}
 
 // The main function of the writer.
 // ===----------------------------------------------------------------------===

@@ -30,6 +30,11 @@ runtime/android/x64/**   -text
 *.dll    binary
 *.exe    binary
 *.bin    binary
+*.sys    binary
+# DER-encoded certificates and keys: a single rewritten byte invalidates them.
+*.cer    binary
+*.der    binary
+*.pfx    binary
 *.png    binary
 *.jpg    binary
 *.jpeg   binary

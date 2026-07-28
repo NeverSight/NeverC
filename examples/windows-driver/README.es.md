@@ -60,6 +60,40 @@ espera, por lo que nunca hay que pasarlas a mano.
 > `llvm-dwarfdump`. Omita esta opción en versiones de producción para reducir
 > el tamaño del binario.
 
+## Firma de prueba
+
+Windows se niega a cargar un controlador de kernel sin firmar. `-ftest-sign`
+adjunta una firma Authenticode para que la imagen supere esa comprobación en una
+máquina de prueba:
+
+```bash
+neverc make TESTSIGN=1
+neverc make ARCH=arm64 TESTSIGN=1
+```
+
+o añada `-ftest-sign` a una invocación manual. Solo se acepta junto con
+`-fms-kernel`, ya que una firma de prueba no significa nada para un binario en
+modo usuario.
+
+La identidad de firma está integrada en el compilador: un certificado
+autofirmado cuya clave privada es pública por construcción. No aporta
+autenticidad alguna; solo satisface la comprobación de integridad de código en
+una máquina que usted ha abierto deliberadamente. Configure esa máquina una vez,
+como administrador:
+
+```cmd
+bcdedit /set testsigning on
+certutil -addstore Root neverc-test-signing.cer
+certutil -addstore TrustedPublisher neverc-test-signing.cer
+```
+
+y luego reinicie. El certificado está en `utils/neverc-test-signing.cer`.
+
+**Nunca lo utilice para nada que salga de una máquina de prueba.** En
+producción, firme con un certificado de firma de código real (y, para Windows 10
+1607 y posteriores, una firma de certificación del Microsoft Hardware Dev
+Center).
+
 ## Funcionalidades
 
 - Crea un objeto de dispositivo en `\Device\ExampleDriver`

@@ -61,6 +61,40 @@ le WDK, il n'y a donc jamais à les passer à la main.
 > `llvm-dwarfdump`. Omettez cette option pour les versions de production afin
 > de réduire la taille du binaire.
 
+## Signature de test
+
+Windows refuse de charger un pilote noyau non signé. `-ftest-sign` attache une
+signature Authenticode pour que l'image passe ce contrôle sur une machine de
+test :
+
+```bash
+neverc make TESTSIGN=1
+neverc make ARCH=arm64 TESTSIGN=1
+```
+
+ou ajoutez `-ftest-sign` à une invocation manuelle. L'option n'est acceptée
+qu'avec `-fms-kernel`, une signature de test n'ayant aucun sens pour un binaire
+en mode utilisateur.
+
+L'identité de signature est intégrée au compilateur — un certificat auto-signé
+dont la clé privée est publique par construction. Elle n'apporte aucune
+authenticité ; elle satisfait seulement le contrôle d'intégrité du code sur une
+machine que vous avez délibérément ouverte. Configurez cette machine une fois,
+en administrateur :
+
+```cmd
+bcdedit /set testsigning on
+certutil -addstore Root neverc-test-signing.cer
+certutil -addstore TrustedPublisher neverc-test-signing.cer
+```
+
+puis redémarrez. Le certificat se trouve dans `utils/neverc-test-signing.cer`.
+
+**Ne l'utilisez jamais pour quoi que ce soit qui quitte une machine de test.**
+En production, signez avec un vrai certificat de signature de code (et, pour
+Windows 10 1607 et ultérieur, une signature d'attestation du Microsoft Hardware
+Dev Center).
+
 ## Fonctionnalités
 
 - Crée un objet périphérique à `\Device\ExampleDriver`

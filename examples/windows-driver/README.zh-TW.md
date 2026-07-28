@@ -57,6 +57,34 @@ neverc --target=x86_64-pc-windows-msvc \
 > `-g` 將 DWARF 除錯資訊嵌入 PE；可使用 `llvm-dwarfdump` 檢查。
 > 釋出版本應省略此選項以縮小二進位檔案大小。
 
+## 測試簽章
+
+Windows 拒絕載入未簽章的核心驅動程式。`-ftest-sign` 會附加 Authenticode 簽章，
+使映像在測試機上通過該檢查：
+
+```bash
+neverc make TESTSIGN=1
+neverc make ARCH=arm64 TESTSIGN=1
+```
+
+也可在手動呼叫時加上 `-ftest-sign`。此選項只能與 `-fms-kernel` 搭配使用，
+因為測試簽章對使用者模式程式沒有意義。
+
+簽章身分內建於編譯器中——一張自簽憑證，其私鑰按設計就是公開的。它不提供
+任何真實性保證，只是讓映像能通過你主動放寬限制的機器上的程式碼完整性檢查。
+該機器需以系統管理員身分一次性設定：
+
+```cmd
+bcdedit /set testsigning on
+certutil -addstore Root neverc-test-signing.cer
+certutil -addstore TrustedPublisher neverc-test-signing.cer
+```
+
+然後重新開機。憑證位於 `utils/neverc-test-signing.cer`。
+
+**切勿將其用於任何離開測試機的產物。** 生產環境請使用真實的程式碼簽章憑證
+（Windows 10 1607 及更高版本還需要 Microsoft 硬體開發人員中心的證明簽章）。
+
 ## 功能說明
 
 - 在 `\Device\ExampleDriver` 建立裝置物件

@@ -27,6 +27,8 @@ linker_declare_backend(
     # Final image and map-file emission.
     Emit/CoffImageEmitter.cpp
     Emit/CoffLinkMapEmitter.cpp
+    Emit/CoffTestSign.cpp
+    Emit/CoffTestSignKey.cpp
 
     # Reachability and folding passes.
     Transforms/CallGraphSort.cpp

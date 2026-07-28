@@ -60,6 +60,41 @@ sodass diese nie von Hand übergeben werden müssen.
 > `llvm-dwarfdump`. Lassen Sie diese Option bei Release-Builds weg, um die
 > Binärgröße zu reduzieren.
 
+## Testsignierung
+
+Windows verweigert das Laden eines unsignierten Kerneltreibers. `-ftest-sign`
+hängt eine Authenticode-Signatur an, damit das Image diese Prüfung auf einem
+Testrechner besteht:
+
+```bash
+neverc make TESTSIGN=1
+neverc make ARCH=arm64 TESTSIGN=1
+```
+
+oder fügen Sie `-ftest-sign` einem manuellen Aufruf hinzu. Die Option wird nur
+zusammen mit `-fms-kernel` akzeptiert, da eine Testsignatur für eine
+User-Mode-Binärdatei bedeutungslos ist.
+
+Die Signaturidentität ist im Compiler eingebaut — ein selbstsigniertes
+Zertifikat, dessen privater Schlüssel konstruktionsbedingt öffentlich ist. Sie
+gewährt keine Authentizität, sondern erfüllt nur die Codeintegritätsprüfung auf
+einem Rechner, den Sie bewusst geöffnet haben. Richten Sie diesen Rechner
+einmalig als Administrator ein:
+
+```cmd
+bcdedit /set testsigning on
+certutil -addstore Root neverc-test-signing.cer
+certutil -addstore TrustedPublisher neverc-test-signing.cer
+```
+
+und starten Sie dann neu. Das Zertifikat liegt unter
+`utils/neverc-test-signing.cer`.
+
+**Verwenden Sie dies niemals für etwas, das einen Testrechner verlässt.** Für
+die Produktion signieren Sie mit einem echten Codesignaturzertifikat (und ab
+Windows 10 1607 zusätzlich mit einer Attestierungssignatur des Microsoft
+Hardware Dev Center).
+
 ## Funktionen
 
 - Erstellt ein Geräteobjekt unter `\Device\ExampleDriver`

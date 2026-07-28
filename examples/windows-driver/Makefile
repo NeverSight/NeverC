@@ -1,7 +1,8 @@
 # Windows Kernel Driver — minimal WDM driver cross-compiled from any host
-# Usage: neverc make            (x64, the default)
+# Usage: neverc make               (x64, the default)
 #        neverc make ARCH=arm64
-#        neverc make all-arch   (both)
+#        neverc make all-arch      (both)
+#        neverc make TESTSIGN=1    (attach an Authenticode test signature)
 
 NEVERC ?= ../../build-neverc/bin/neverc
 
@@ -36,6 +37,13 @@ FLAGS = \
 	-Xlinker --subsystem=native \
 	-Xlinker --nodefaultlib \
 	-lntoskrnl -lhal
+
+# TESTSIGN=1 signs the image with the compiler's built-in test identity, which
+# is what lets it load on a machine with test signing on.  See the README for
+# the one-time setup that machine needs.
+ifneq ($(TESTSIGN),)
+FLAGS += -ftest-sign
+endif
 
 all: $(DRIVER)
 

@@ -57,6 +57,36 @@ ARM64의 경우 target을 `aarch64-pc-windows-msvc`로 바꾸기만 하면 나�
 > `-g`는 DWARF 디버그 정보를 PE에 포함합니다. `llvm-dwarfdump`로 검사할 수 있습니다.
 > 릴리스 빌드에서는 바이너리 크기를 줄이기 위해 생략하세요.
 
+## 테스트 서명
+
+Windows는 서명되지 않은 커널 드라이버의 로드를 거부합니다. `-ftest-sign`은
+Authenticode 서명을 첨부하여 테스트 머신에서 이 검사를 통과하게 합니다:
+
+```bash
+neverc make TESTSIGN=1
+neverc make ARCH=arm64 TESTSIGN=1
+```
+
+수동 호출 시 `-ftest-sign`을 추가해도 됩니다. 이 옵션은 `-fms-kernel`과 함께
+쓸 때만 허용됩니다. 테스트 서명은 사용자 모드 바이너리에는 의미가 없기 때문입니다.
+
+서명 ID는 컴파일러에 내장되어 있습니다 — 자체 서명 인증서이며 그 개인 키는
+설계상 공개되어 있습니다. 진정성을 보장하지 않으며, 의도적으로 제한을 푼
+머신에서 코드 무결성 검사를 통과시킬 뿐입니다. 대상 머신에서 관리자 권한으로
+한 번만 설정하세요:
+
+```cmd
+bcdedit /set testsigning on
+certutil -addstore Root neverc-test-signing.cer
+certutil -addstore TrustedPublisher neverc-test-signing.cer
+```
+
+그런 다음 재부팅하세요. 인증서는 `utils/neverc-test-signing.cer`에 있습니다.
+
+**테스트 머신을 벗어나는 어떤 것에도 사용하지 마세요.** 프로덕션에서는 실제
+코드 서명 인증서를 사용하세요(Windows 10 1607 이상에서는 Microsoft 하드웨어
+개발자 센터의 증명 서명도 필요합니다).
+
 ## 기능
 
 - `\Device\ExampleDriver`에 디바이스 오브젝트 생성

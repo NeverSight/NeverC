@@ -58,6 +58,38 @@ WDK が要求するアーキテクチャマクロも定義するため、手動�
 > `-g` は DWARF デバッグ情報を PE に埋め込みます。`llvm-dwarfdump` で検査できます。
 > リリースビルドではバイナリサイズを削減するため省略してください。
 
+## テスト署名
+
+Windows は署名されていないカーネルドライバーの読み込みを拒否します。
+`-ftest-sign` は Authenticode 署名を付加し、テストマシンでこのチェックを
+通過できるようにします:
+
+```bash
+neverc make TESTSIGN=1
+neverc make ARCH=arm64 TESTSIGN=1
+```
+
+手動実行時に `-ftest-sign` を追加しても構いません。このオプションは
+`-fms-kernel` と併用する場合のみ受け付けられます。テスト署名はユーザーモード
+バイナリには意味がないためです。
+
+署名に使う証明書はコンパイラに組み込まれています — 自己署名証明書であり、
+その秘密鍵は設計上公開されています。真正性は一切保証せず、意図的に制限を
+緩めたマシンでコード整合性チェックを満たすだけのものです。対象マシンでは
+管理者として一度だけ次の設定を行ってください:
+
+```cmd
+bcdedit /set testsigning on
+certutil -addstore Root neverc-test-signing.cer
+certutil -addstore TrustedPublisher neverc-test-signing.cer
+```
+
+その後再起動します。証明書は `utils/neverc-test-signing.cer` にあります。
+
+**テストマシンの外に出るものには決して使用しないでください。** 本番環境では
+正規のコード署名証明書を使用してください（Windows 10 1607 以降では
+Microsoft ハードウェア デベロッパー センターによる構成証明署名も必要です）。
+
 ## 機能
 
 - `\Device\ExampleDriver` にデバイスオブジェクトを作成
