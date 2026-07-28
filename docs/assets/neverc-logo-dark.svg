@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="114 114 306 284" width="306" height="284" role="img" aria-labelledby="neverc-logo-title">
+  <title id="neverc-logo-title">NeverC</title>
+
+  <!-- Dark theme. Palette is VS Code Dark+: #4EC9B0 type, #569CD6 keyword,
+       #DCDCAA function. No backing tile: a mark sitting straight on the page
+       reads as a logo, whereas a dark tile muddies into a dark README. -->
+  <defs>
+    <linearGradient id="arc" x1="150" y1="372" x2="344" y2="140" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4EC9B0"/>
+      <stop offset="1" stop-color="#569CD6"/>
+    </linearGradient>
+
+    <linearGradient id="core" x1="354" y1="236" x2="388" y2="280" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#E8E8BE"/>
+      <stop offset="1" stop-color="#DCDCAA"/>
+    </linearGradient>
+
+    <radialGradient id="glow" cx="370" cy="256" r="44" gradientUnits="userSpaceOnUse">
+      <stop offset="0.44" stop-color="#DCDCAA" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#DCDCAA" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- The C is left open and a separate core sits in the gap: the language is
+       the arc, what NeverC adds is the piece that was never part of it. -->
+  <path d="M 326.19 166.16 A 114 114 0 1 0 326.19 345.84"
+        fill="none" stroke="url(#arc)" stroke-width="44"/>
+
+  <circle cx="370" cy="256" r="44" fill="url(#glow)"/>
+  <circle cx="370" cy="256" r="23" fill="url(#core)"/>
+</svg>

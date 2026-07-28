@@ -2,7 +2,10 @@
 
 <div align="center">
 
-<img src="docs/assets/neverc-logo.svg" width="128" height="128" alt="NeverC">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/neverc-logo-dark.svg">
+  <img src="docs/assets/neverc-logo-light.svg" width="170" alt="NeverC">
+</picture>
 
 # NeverC
 
