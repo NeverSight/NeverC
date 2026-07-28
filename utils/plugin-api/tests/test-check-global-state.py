@@ -177,6 +177,23 @@ def main() -> int:
            f"thread_local symbols duplicated into binary_symbols: {overlap}",
            failures)
 
+    # 13b. Allowlist paths are matched independently of the host's path
+    # separator. Windows produced `neverc\lib\Plugin\...`, which matched none of
+    # the forward-slash entries, so every documented thread_local was reported
+    # and the gate failed there while passing on Linux and macOS.
+    documented = allowlist["entries"][0]
+    posix_rel = documented["files"][0]
+    windows_rel = posix_rel.replace("/", "\\")
+    snippet = f"thread_local int {documented['symbol']};"
+    expect(mod.allowlisted(posix_rel, snippet, allowlist),
+           "documented entry not matched via posix path", failures)
+    expect(mod.allowlisted(windows_rel, snippet, allowlist),
+           f"documented entry not matched via windows path {windows_rel}",
+           failures)
+    expect(not mod.allowlisted("neverc/lib/Plugin/Core/Undocumented.cpp",
+                               snippet, allowlist),
+           "undocumented file wrongly allowlisted", failures)
+
     # 14. Locating the compiler must not depend on the host's executable
     # suffix: looking only for the extensionless name made Windows report a
     # missing binary, which the scan then treated as "nothing to do".

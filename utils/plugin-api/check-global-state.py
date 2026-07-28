@@ -276,7 +276,19 @@ def load_allowlist() -> dict:
     return json.loads(ALLOWLIST_PATH.read_text(encoding="utf-8"))
 
 
+def relative_key(path: pathlib.Path) -> str:
+    """Path relative to ROOT, always '/'-separated.
+
+    The allowlist spells its paths with forward slashes, so a Windows run that
+    compared against ``neverc\\lib\\...`` matched nothing and reported every
+    documented thread_local as a violation -- a gate that passed on Linux and
+    macOS and failed on Windows for identical sources.
+    """
+    return path.relative_to(ROOT).as_posix()
+
+
 def allowlisted(rel: str, snippet: str, allowlist: dict) -> bool:
+    rel = rel.replace("\\", "/")
     for entry in allowlist.get("entries", []):
         files = entry.get("files", [])
         if any(rel == f or rel.startswith(f) for f in files):
@@ -306,7 +318,7 @@ def allowlisted_binary_symbol(name: str, allowlist: dict) -> bool:
 def scan_sources(report: Report, allowlist: dict) -> None:
     bases = [ROOT / d for d in AUDIT_DIRS] + [ROOT / f for f in EXTRA_AUDIT_FILES]
     for path in iter_source_files(bases):
-        rel = str(path.relative_to(ROOT))
+        rel = relative_key(path)
         raw = path.read_text(encoding="utf-8", errors="replace")
         code = strip_comments_and_strings(raw)
         lines = code.splitlines()
@@ -493,7 +505,7 @@ def scan_headers(report: Report, allowlist: dict) -> None:
         if not base.exists():
             continue
         for path in sorted(base.rglob("*.h")):
-            rel = str(path.relative_to(ROOT))
+            rel = relative_key(path)
             text = path.read_text(encoding="utf-8", errors="replace")
             for line, kind, stmt in header_internal_state(text):
                 if allowlisted(rel, stmt, allowlist):
