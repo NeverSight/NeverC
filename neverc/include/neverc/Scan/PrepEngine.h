@@ -747,15 +747,23 @@ public:
       LexWithPlugin(Result);
       return;
     }
-    if (LLVM_LIKELY(CurLexerCallback == &DispatchFile &&
-                    CurLexer->Lex(Result))) {
-      if (LLVM_LIKELY(LexLevel == 0) &&
-          LLVM_LIKELY(!DeferTopLevelTokenFinalization)) {
-        ++TokenCount;
-        if (LLVM_UNLIKELY(OnToken))
-          OnToken(Result);
+    // The lexer can run a #pragma handler from inside this call, and those
+    // handlers hand tokens back through InjectToken(), which only tolerates
+    // brand-new tokens while a lex is in flight.  Hold the level up across
+    // the call so this path carries the same invariant as LexSlow().
+    if (LLVM_LIKELY(CurLexerCallback == &DispatchFile)) {
+      ++LexLevel;
+      const bool Produced = CurLexer->Lex(Result);
+      --LexLevel;
+      if (LLVM_LIKELY(Produced)) {
+        if (LLVM_LIKELY(LexLevel == 0) &&
+            LLVM_LIKELY(!DeferTopLevelTokenFinalization)) {
+          ++TokenCount;
+          if (LLVM_UNLIKELY(OnToken))
+            OnToken(Result);
+        }
+        return;
       }
-      return;
     }
     LexSlow(Result);
   }
