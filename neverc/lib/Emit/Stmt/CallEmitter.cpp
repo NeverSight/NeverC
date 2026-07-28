@@ -2982,14 +2982,14 @@ NEVERC_HOT RValue FunctionEmitter::genCall(
               (LV.getAlignment() < getContext().getTypeAlignInChars(I->Ty))) {
             NeedCopy = true;
           }
-          if ((isByValOrRef && (AS != LangAS::Default &&
-                                AS != ME.getASTAllocaAddressSpace()))) {
+          // A byval argument needs a copy only when it does not already live
+          // somewhere the callee can take it from.  Deciding that must not
+          // consult IRFuncTy's parameter types: in a variadic call FirstIRArg
+          // indexes past the declared parameters, as the assertion above
+          // anticipates.
+          if (isByValOrRef && AS != LangAS::Default &&
+              AS != ME.getASTAllocaAddressSpace())
             NeedCopy = true;
-          } else if ((isByValOrRef && Addr.getType()->getAddressSpace() !=
-                                          IRFuncTy->getParamType(FirstIRArg)
-                                              ->getPointerAddressSpace())) {
-            NeedCopy = true;
-          }
         }
 
         if (NeedCopy) {
