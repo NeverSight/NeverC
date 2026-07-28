@@ -43,6 +43,7 @@ neverc --target=x86_64-pc-windows-msvc \
   -g \
   -fms-kernel \
   -Wall -nostdlib -shared \
+  -Xlinker --driver \
   -Xlinker --entry=DriverEntry \
   -Xlinker --subsystem=native \
   -Xlinker --nodefaultlib \
@@ -53,6 +54,8 @@ neverc --target=x86_64-pc-windows-msvc \
 建置 ARM64 時只需將 target 換成 `aarch64-pc-windows-msvc`，其餘不變。
 `-fms-kernel` 會自動選用與目標架構相符的 WDK 標頭檔和匯入程式庫，並定義 WDK
 所需的架構巨集，因此無需手動傳入。
+`--driver` 將映像標記為核心模式：程式碼和資料區段設為非分頁，匯入表移入可丟棄的
+INIT 區段，並寫入核心載入器會驗證的 PE 總和檢查碼。
 
 > `-g` 將 DWARF 除錯資訊嵌入 PE；可使用 `llvm-dwarfdump` 檢查。
 > 釋出版本應省略此選項以縮小二進位檔案大小。
@@ -80,7 +83,22 @@ certutil -addstore Root neverc-test-signing.cer
 certutil -addstore TrustedPublisher neverc-test-signing.cer
 ```
 
-然後重新開機。憑證位於 `utils/neverc-test-signing.cer`。
+然後重新開機。憑證直接從編譯器匯出，這樣它與實際簽章所用的身分始終一致：
+
+```bash
+neverc --print-test-sign-cert > neverc-test-signing.cer
+```
+
+（原始碼樹中 `utils/neverc-test-signing.cer` 也有一份副本，但它不包含在發行套件裡。）
+
+若手邊沒有 Windows 機器，可以用 `osslsigncode` 檢查簽章。注意 `-CAfile` 需要 PEM
+格式，而憑證是 DER，必須先轉換——直接傳 DER 會報出令人困惑的
+"signature verification failed"，其真實原因是 "no certificate found"：
+
+```bash
+openssl x509 -inform DER -in neverc-test-signing.cer -out nc.pem
+osslsigncode verify -CAfile nc.pem ExampleDriver-x64.sys
+```
 
 **切勿將其用於任何離開測試機的產物。** 生產環境請使用真實的程式碼簽章憑證
 （Windows 10 1607 及更高版本還需要 Microsoft 硬體開發人員中心的證明簽章）。

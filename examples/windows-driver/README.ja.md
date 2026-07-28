@@ -44,6 +44,7 @@ neverc --target=x86_64-pc-windows-msvc \
   -g \
   -fms-kernel \
   -Wall -nostdlib -shared \
+  -Xlinker --driver \
   -Xlinker --entry=DriverEntry \
   -Xlinker --subsystem=native \
   -Xlinker --nodefaultlib \
@@ -54,6 +55,9 @@ neverc --target=x86_64-pc-windows-msvc \
 ARM64 の場合は target を `aarch64-pc-windows-msvc` に変更するだけで、他は同じです。
 `-fms-kernel` がターゲットに対応する WDK のヘッダーとインポートライブラリを選択し、
 WDK が要求するアーキテクチャマクロも定義するため、手動で渡す必要はありません。
+`--driver` はイメージをカーネルモードとして扱います。コードとデータが非ページに
+なり、インポートテーブルは破棄可能な INIT セクションへ移動し、カーネルローダーが
+検証する PE チェックサムが書き込まれます。
 
 > `-g` は DWARF デバッグ情報を PE に埋め込みます。`llvm-dwarfdump` で検査できます。
 > リリースビルドではバイナリサイズを削減するため省略してください。
@@ -84,7 +88,25 @@ certutil -addstore Root neverc-test-signing.cer
 certutil -addstore TrustedPublisher neverc-test-signing.cer
 ```
 
-その後再起動します。証明書は `utils/neverc-test-signing.cer` にあります。
+その後再起動します。証明書はコンパイラから直接書き出せます。こうすれば実際に
+署名に使われる ID と常に一致します：
+
+```bash
+neverc --print-test-sign-cert > neverc-test-signing.cer
+```
+
+（ソースツリーの `utils/neverc-test-signing.cer` にも同じものがありますが、
+リリースパッケージには含まれません。）
+
+Windows マシンがなくても `osslsigncode` で署名を確認できます。`-CAfile` は PEM を
+要求しますが証明書は DER なので、先に変換してください。DER をそのまま渡すと
+"signature verification failed" という紛らわしいエラーになりますが、実際の原因は
+"no certificate found" です：
+
+```bash
+openssl x509 -inform DER -in neverc-test-signing.cer -out nc.pem
+osslsigncode verify -CAfile nc.pem ExampleDriver-x64.sys
+```
 
 **テストマシンの外に出るものには決して使用しないでください。** 本番環境では
 正規のコード署名証明書を使用してください（Windows 10 1607 以降では

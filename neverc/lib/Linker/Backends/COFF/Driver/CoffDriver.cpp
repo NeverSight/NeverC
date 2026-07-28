@@ -1133,6 +1133,11 @@ void LinkerDriver::run(ArrayRef<const char *> argsArr,
   config->driver |=
       config->driverUponly || config->driverWdm || args.hasArg(OPT_driver);
 
+  // link.exe implies /RELEASE for /DRIVER, and the kernel loader checksums
+  // driver images: a zero here is something Windows can refuse to load.
+  if (config->driver)
+    config->writeCheckSum = true;
+
   // --- Image format & entry ---
 
   if (args.hasArg(OPT_noentry)) {

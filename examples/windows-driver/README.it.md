@@ -45,6 +45,7 @@ neverc --target=x86_64-pc-windows-msvc \
   -g \
   -fms-kernel \
   -Wall -nostdlib -shared \
+  -Xlinker --driver \
   -Xlinker --entry=DriverEntry \
   -Xlinker --subsystem=native \
   -Xlinker --nodefaultlib \
@@ -56,6 +57,9 @@ Per ARM64 basta sostituire il target con `aarch64-pc-windows-msvc`; il resto
 resta invariato. `-fms-kernel` seleziona gli header e le librerie di importazione
 del WDK corrispondenti al target e definisce le macro di architettura che il WDK
 si aspetta, quindi non vanno mai passate a mano.
+`--driver` contrassegna l'immagine come kernel-mode: codice e dati diventano non
+paginabili, le tabelle di import si spostano nella sezione INIT scartabile e il
+linker scrive il checksum PE che il caricatore del kernel verifica.
 
 > `-g` incorpora le informazioni di debug DWARF nel PE; ispezionare con
 > `llvm-dwarfdump`. Omettere questa opzione nelle versioni di rilascio per
@@ -88,7 +92,25 @@ certutil -addstore Root neverc-test-signing.cer
 certutil -addstore TrustedPublisher neverc-test-signing.cer
 ```
 
-quindi riavviate. Il certificato si trova in `utils/neverc-test-signing.cer`.
+quindi riavviate. Esportate il certificato dal compilatore stesso, così
+corrisponde sempre all'identità con cui firma:
+
+```bash
+neverc --print-test-sign-cert > neverc-test-signing.cer
+```
+
+(Una copia si trova anche in `utils/neverc-test-signing.cer` nell'albero dei
+sorgenti, ma non fa parte di un pacchetto di release.)
+
+Senza una macchina Windows, verificate la firma con `osslsigncode`. Notate che
+`-CAfile` vuole PEM mentre il certificato è DER: convertitelo prima. Passare il
+DER direttamente fallisce con un fuorviante «signature verification failed» la
+cui causa reale è «no certificate found»:
+
+```bash
+openssl x509 -inform DER -in neverc-test-signing.cer -out nc.pem
+osslsigncode verify -CAfile nc.pem ExampleDriver-x64.sys
+```
 
 **Non usatelo mai per nulla che esca da una macchina di test.** In produzione,
 firmate con un vero certificato di firma del codice (e, per Windows 10 1607 e

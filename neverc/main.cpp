@@ -17,6 +17,7 @@
 #include "neverc/Invoke/DriverDiagnostic.h"
 #include "neverc/Invoke/Options.h"
 #include "neverc/Invoke/ToolChain.h"
+#include "neverc/Linker/COFF/TestSign.h"
 #include "neverc/Plugin/Host/PluginCapabilityInventory.h"
 #include "neverc/Plugin/Host/PluginSession.h"
 #include "neverc/Plugin/Host/PluginTaskContext.h"
@@ -208,6 +209,37 @@ std::optional<int> handlePluginCapabilityQuery(ArrayRef<const char *> Args) {
   return std::nullopt;
 }
 
+// Handle the read-only `--print-test-sign-cert` query: write the DER
+// certificate that `-ftest-sign` signs with to stdout.
+//
+// The certificate is emitted from the compiler rather than shipped as a file
+// because it is already compiled in, and because that makes it impossible for
+// the two to drift: a rebuilt signing identity changes what images are signed
+// with and what this prints in the same step.  A stale .cer next to a newer
+// compiler would install a certificate that trusts nothing the compiler
+// produces, which is a miserable thing to debug.
+std::optional<int> handleTestSignCertQuery(ArrayRef<const char *> Args) {
+  for (const char *Arg : Args) {
+    if (Arg == nullptr)
+      continue;
+    if (StringRef(Arg) != "--print-test-sign-cert")
+      continue;
+    if (llvm::outs().is_displayed()) {
+      llvm::errs() << "neverc: error: --print-test-sign-cert writes binary DER; "
+                      "redirect it to a file, e.g. neverc "
+                      "--print-test-sign-cert > neverc-test-signing.cer\n";
+      llvm::errs().flush();
+      return 1;
+    }
+    llvm::outs().write(
+        reinterpret_cast<const char *>(linker::coff::testsign::CertificateDer),
+        linker::coff::testsign::CertificateDerSize);
+    llvm::outs().flush();
+    return 0;
+  }
+  return std::nullopt;
+}
+
 bool scanCanonicalPrefixes(ArrayRef<const char *> Args) {
   bool CanonicalPrefixes = true;
   for (int i = 1, size = Args.size(); i < size; ++i) {
@@ -387,6 +419,8 @@ int neverc_main(int Argc, char **Argv, const llvm::ToolContext &ToolContext) {
 
   handlePrintArguments(Args);
   if (std::optional<int> ExitCode = handlePluginCapabilityQuery(Args))
+    return *ExitCode;
+  if (std::optional<int> ExitCode = handleTestSignCertQuery(Args))
     return *ExitCode;
   bool CanonicalPrefixes = scanCanonicalPrefixes(Args);
   std::set<std::string> SavedStrings;

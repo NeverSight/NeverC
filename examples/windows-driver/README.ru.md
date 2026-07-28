@@ -44,6 +44,7 @@ neverc --target=x86_64-pc-windows-msvc \
   -g \
   -fms-kernel \
   -Wall -nostdlib -shared \
+  -Xlinker --driver \
   -Xlinker --entry=DriverEntry \
   -Xlinker --subsystem=native \
   -Xlinker --nodefaultlib \
@@ -55,6 +56,9 @@ neverc --target=x86_64-pc-windows-msvc \
 меняется. `-fms-kernel` подбирает заголовки и библиотеки импорта WDK,
 соответствующие цели, и определяет ожидаемые WDK макросы архитектуры, так что
 передавать их вручную не нужно.
+`--driver` помечает образ как режим ядра: код и данные становятся невыгружаемыми,
+таблицы импорта переносятся в отбрасываемую секцию INIT, а компоновщик
+записывает контрольную сумму PE, которую проверяет загрузчик ядра.
 
 > `-g` встраивает отладочную информацию DWARF в PE; проверяйте с помощью
 > `llvm-dwarfdump`. В релизных сборках опускайте эту опцию для уменьшения
@@ -87,7 +91,25 @@ certutil -addstore Root neverc-test-signing.cer
 certutil -addstore TrustedPublisher neverc-test-signing.cer
 ```
 
-затем перезагрузитесь. Сертификат находится в `utils/neverc-test-signing.cer`.
+затем перезагрузитесь. Экспортируйте сертификат из самого компилятора — так он
+всегда совпадает с тем, чем подписываются образы:
+
+```bash
+neverc --print-test-sign-cert > neverc-test-signing.cer
+```
+
+(Копия также лежит в `utils/neverc-test-signing.cer` в дереве исходников, но в
+пакет релиза она не входит.)
+
+Без Windows-машины подпись можно проверить через `osslsigncode`. Учтите, что
+`-CAfile` ожидает PEM, а сертификат в DER — сначала преобразуйте его. Если
+передать DER напрямую, будет сбивающая с толку ошибка «signature verification
+failed», настоящая причина которой — «no certificate found»:
+
+```bash
+openssl x509 -inform DER -in neverc-test-signing.cer -out nc.pem
+osslsigncode verify -CAfile nc.pem ExampleDriver-x64.sys
+```
 
 **Никогда не используйте это для того, что покидает тестовую машину.** Для
 продакшена подписывайте настоящим сертификатом подписи кода (а для Windows 10

@@ -44,6 +44,7 @@ neverc --target=x86_64-pc-windows-msvc \
   -g \
   -fms-kernel \
   -Wall -nostdlib -shared \
+  -Xlinker --driver \
   -Xlinker --entry=DriverEntry \
   -Xlinker --subsystem=native \
   -Xlinker --nodefaultlib \
@@ -55,6 +56,9 @@ Para ARM64, cambie el destino a `aarch64-pc-windows-msvc`; nada más cambia.
 `-fms-kernel` selecciona los encabezados y bibliotecas de importación del WDK
 correspondientes al destino y define las macros de arquitectura que el WDK
 espera, por lo que nunca hay que pasarlas a mano.
+`--driver` marca la imagen como modo kernel: el código y los datos pasan a ser
+no paginables, las tablas de importación se mueven a la sección descartable
+INIT y el enlazador escribe la suma de comprobación PE que el cargador verifica.
 
 > `-g` incrusta información de depuración DWARF en el PE; inspecciónela con
 > `llvm-dwarfdump`. Omita esta opción en versiones de producción para reducir
@@ -87,7 +91,25 @@ certutil -addstore Root neverc-test-signing.cer
 certutil -addstore TrustedPublisher neverc-test-signing.cer
 ```
 
-y luego reinicie. El certificado está en `utils/neverc-test-signing.cer`.
+y luego reinicie. Exporte el certificado desde el propio compilador, así siempre
+coincide con la identidad con la que firma:
+
+```bash
+neverc --print-test-sign-cert > neverc-test-signing.cer
+```
+
+(También hay una copia en `utils/neverc-test-signing.cer` en el árbol de
+fuentes, pero no forma parte de un paquete de release.)
+
+Sin una máquina Windows, compruebe la firma con `osslsigncode`. Tenga en cuenta
+que `-CAfile` espera PEM mientras que el certificado es DER: conviértalo primero.
+Pasar el DER directamente falla con un confuso «signature verification failed»
+cuya causa real es «no certificate found»:
+
+```bash
+openssl x509 -inform DER -in neverc-test-signing.cer -out nc.pem
+osslsigncode verify -CAfile nc.pem ExampleDriver-x64.sys
+```
 
 **Nunca lo utilice para nada que salga de una máquina de prueba.** En
 producción, firme con un certificado de firma de código real (y, para Windows 10

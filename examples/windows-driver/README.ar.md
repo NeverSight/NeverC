@@ -45,6 +45,7 @@ neverc --target=x86_64-pc-windows-msvc \
   -g \
   -fms-kernel \
   -Wall -nostdlib -shared \
+  -Xlinker --driver \
   -Xlinker --entry=DriverEntry \
   -Xlinker --subsystem=native \
   -Xlinker --nodefaultlib \
@@ -55,6 +56,9 @@ neverc --target=x86_64-pc-windows-msvc \
 بالنسبة إلى ARM64، يكفي تغيير الهدف إلى `aarch64-pc-windows-msvc`؛ ولا يتغير
 أي شيء آخر. يقوم `-fms-kernel` باختيار ترويسات WDK ومكتبات الاستيراد المطابقة
 للهدف، ويعرّف وحدات ماكرو المعمارية التي يتوقعها WDK، لذا لا حاجة لتمريرها يدويًا.
+يضع `--driver` علامة على الصورة بأنها وضع النواة: تصبح الشيفرة والبيانات غير قابلة
+للترحيل، وتنتقل جداول الاستيراد إلى قسم INIT القابل للتجاهل، ويكتب الرابط مجموع
+تحقق PE الذي يتحقق منه محمّل النواة.
 
 > `-g` يضمّن معلومات تصحيح DWARF في ملف PE؛ يمكن فحصها باستخدام `llvm-dwarfdump`.
 > احذف هذا الخيار في إصدارات الإنتاج لتقليل حجم الملف الثنائي.
@@ -82,7 +86,25 @@ certutil -addstore Root neverc-test-signing.cer
 certutil -addstore TrustedPublisher neverc-test-signing.cer
 ```
 
-ثم أعد التشغيل. توجد الشهادة في `utils/neverc-test-signing.cer`.
+ثم أعد التشغيل. صدّر الشهادة من المُصرِّف نفسه، فتبقى دائمًا مطابقة للهوية التي
+يوقّع بها:
+
+```bash
+neverc --print-test-sign-cert > neverc-test-signing.cer
+```
+
+(توجد نسخة أيضًا في `utils/neverc-test-signing.cer` داخل شجرة المصدر، لكنها
+ليست جزءًا من حزمة الإصدار.)
+
+بدون جهاز Windows يمكنك فحص التوقيع باستخدام `osslsigncode`. لاحظ أن `-CAfile`
+يتطلّب صيغة PEM بينما الشهادة بصيغة DER، لذا حوّلها أولًا — فتمرير DER مباشرةً
+يفشل برسالة مضلِّلة "signature verification failed" سببها الحقيقي
+"no certificate found":
+
+```bash
+openssl x509 -inform DER -in neverc-test-signing.cer -out nc.pem
+osslsigncode verify -CAfile nc.pem ExampleDriver-x64.sys
+```
 
 **لا تستخدمها أبدًا لأي شيء يغادر جهاز الاختبار.** في الإنتاج، وقّع بشهادة توقيع
 كود حقيقية (وبالنسبة لـ Windows 10 1607 وما بعده، توقيع إثبات من Microsoft

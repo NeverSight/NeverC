@@ -44,6 +44,7 @@ neverc --target=x86_64-pc-windows-msvc \
   -g \
   -fms-kernel \
   -Wall -nostdlib -shared \
+  -Xlinker --driver \
   -Xlinker --entry=DriverEntry \
   -Xlinker --subsystem=native \
   -Xlinker --nodefaultlib \
@@ -55,6 +56,9 @@ Für ARM64 genügt es, das Ziel auf `aarch64-pc-windows-msvc` zu ändern; sonst
 bleibt alles gleich. `-fms-kernel` wählt die zum Ziel passenden WDK-Header und
 Importbibliotheken aus und definiert die vom WDK erwarteten Architekturmakros,
 sodass diese nie von Hand übergeben werden müssen.
+`--driver` kennzeichnet das Image als Kernel-Modus: Code und Daten werden nicht
+auslagerbar, die Importtabellen wandern in den verwerfbaren INIT-Abschnitt, und
+der Linker trägt die PE-Prüfsumme ein, die der Kernel-Loader prüft.
 
 > `-g` bettet DWARF-Debug-Informationen in die PE ein; prüfen Sie mit
 > `llvm-dwarfdump`. Lassen Sie diese Option bei Release-Builds weg, um die
@@ -87,8 +91,25 @@ certutil -addstore Root neverc-test-signing.cer
 certutil -addstore TrustedPublisher neverc-test-signing.cer
 ```
 
-und starten Sie dann neu. Das Zertifikat liegt unter
-`utils/neverc-test-signing.cer`.
+und starten Sie dann neu. Exportieren Sie das Zertifikat aus dem Compiler
+selbst, dann passt es immer zu der Identität, mit der signiert wird:
+
+```bash
+neverc --print-test-sign-cert > neverc-test-signing.cer
+```
+
+(Eine Kopie liegt auch unter `utils/neverc-test-signing.cer` im Quellbaum, sie
+ist aber nicht Teil eines Release-Pakets.)
+
+Ohne Windows-Rechner lässt sich die Signatur mit `osslsigncode` prüfen. Beachten
+Sie, dass `-CAfile` PEM erwartet, das Zertifikat aber DER ist — konvertieren Sie
+es zuerst. Übergibt man das DER direkt, scheitert es mit einem irreführenden
+„signature verification failed“, dessen wahre Ursache „no certificate found“ ist:
+
+```bash
+openssl x509 -inform DER -in neverc-test-signing.cer -out nc.pem
+osslsigncode verify -CAfile nc.pem ExampleDriver-x64.sys
+```
 
 **Verwenden Sie dies niemals für etwas, das einen Testrechner verlässt.** Für
 die Produktion signieren Sie mit einem echten Codesignaturzertifikat (und ab

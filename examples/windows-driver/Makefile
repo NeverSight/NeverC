@@ -24,6 +24,10 @@ HEADERS = config.h
 # -fms-kernel selects the WDK headers and import libraries for the target
 # architecture, and defines the environment they expect (_AMD64_ / _ARM64_ and
 # _KERNEL_MODE), so none of that has to be restated here.
+# --driver marks the image as kernel-mode: it makes the code and data sections
+# non-paged (a driver touching paged memory at raised IRQL bugchecks), moves the
+# import tables into the discardable INIT section, and fills in the PE checksum
+# the kernel loader verifies.
 # -g: emit DWARF debug info; remove for release builds
 FLAGS = \
 	--target=$(TARGET) \
@@ -33,6 +37,7 @@ FLAGS = \
 	-Wall \
 	-nostdlib \
 	-shared \
+	-Xlinker --driver \
 	-Xlinker --entry=DriverEntry \
 	-Xlinker --subsystem=native \
 	-Xlinker --nodefaultlib \

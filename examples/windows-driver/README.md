@@ -43,6 +43,7 @@ neverc --target=x86_64-pc-windows-msvc \
   -g \
   -fms-kernel \
   -Wall -nostdlib -shared \
+  -Xlinker --driver \
   -Xlinker --entry=DriverEntry \
   -Xlinker --subsystem=native \
   -Xlinker --nodefaultlib \
@@ -54,6 +55,9 @@ For ARM64, swap in `--target=aarch64-pc-windows-msvc`; nothing else changes.
 `-fms-kernel` picks the WDK headers and import libraries matching the target
 and defines the architecture macros the WDK expects, so they never have to be
 passed by hand.
+`--driver` marks the image as kernel-mode: code and data become non-paged, the
+import tables move into the discardable INIT section, and the linker fills in
+the PE checksum the kernel loader verifies.
 
 > `-g` emits DWARF debug info into the PE; inspect with `llvm-dwarfdump`.
 > Omit for release builds to reduce binary size.
@@ -82,16 +86,24 @@ certutil -addstore Root neverc-test-signing.cer
 certutil -addstore TrustedPublisher neverc-test-signing.cer
 ```
 
-then reboot. The certificate ships at `utils/neverc-test-signing.cer`.
-
-To check a signature without a Windows machine, use `osslsigncode`. Note that
-`-CAfile` wants PEM while the shipped certificate is DER, so convert it first —
-passing the DER directly fails with a confusing "signature verification failed"
-that is really "no certificate found":
+then reboot. Get the certificate from the compiler itself, which always matches
+the identity it signs with:
 
 ```bash
-openssl x509 -inform DER -in utils/neverc-test-signing.cer -out /tmp/nc.pem
-osslsigncode verify -CAfile /tmp/nc.pem ExampleDriver-x64.sys
+neverc --print-test-sign-cert > neverc-test-signing.cer
+```
+
+(A copy also sits at `utils/neverc-test-signing.cer` in the source tree, but it
+is not part of a release package.)
+
+To check a signature without a Windows machine, use `osslsigncode`. Note that
+`-CAfile` wants PEM while the certificate is DER, so convert it first — passing
+the DER directly fails with a confusing "signature verification failed" that is
+really "no certificate found":
+
+```bash
+openssl x509 -inform DER -in neverc-test-signing.cer -out nc.pem
+osslsigncode verify -CAfile nc.pem ExampleDriver-x64.sys
 ```
 
 **Never use this for anything that leaves a test machine.** For production,

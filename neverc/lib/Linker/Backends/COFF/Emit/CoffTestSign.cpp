@@ -29,8 +29,8 @@
 #include "llvm/Support/raw_ostream.h"
 
 #include <algorithm>
+#include <cassert>
 #include <cstring>
-#include <ctime>
 #include <vector>
 
 using namespace llvm;
@@ -331,6 +331,12 @@ Bytes rsaSignSha256(ArrayRef<uint8_t> digest) {
   digestInfo = tlv(TagSequence, digestInfo);
 
   // EM = 0x00 || 0x01 || 0xFF... || 0x00 || DigestInfo
+  //
+  // PKCS#1 wants at least 8 padding octets.  The built-in key is 2048-bit so
+  // there is no way to get near that, but regenerating it at some tiny size
+  // would wrap the subtraction below into an enormous allocation instead of
+  // failing.
+  assert(digestInfo.size() + 11 <= k && "signing key too small for SHA-256");
   Bytes em;
   em.push_back(0x00);
   em.push_back(0x01);
@@ -400,6 +406,10 @@ Expected<PeLayout> readPeLayout(ArrayRef<uint8_t> image) {
 /// the certificate table directory entry, and any existing certificate area.
 /// Those three are what the signature itself changes, so they cannot be part
 /// of what it covers.
+///
+/// Hashing the remainder as one run is equivalent to the spec's per-section
+/// walk only because the sections we emit are already in ascending file order.
+/// A linker change that reorders them would have to hash section by section.
 Bytes authenticodeDigest(ArrayRef<uint8_t> image, const PeLayout &l) {
   SHA256 hash;
   auto update = [&](size_t begin, size_t end) {
@@ -489,19 +499,26 @@ Bytes buildSignedData(ArrayRef<uint8_t> spcContent) {
   contentHash.update(content);
   auto cd = contentHash.final();
 
-  // Authenticated attributes.  DER requires SET OF elements in ascending
-  // encoded order; these three are already sorted that way by their type OIDs
-  // (contentType < messageDigest < SPC_STATEMENT_TYPE).  signingTime is left
-  // out on purpose: it would make the output depend on the wall clock for no
-  // benefit here.
+  // Authenticated attributes.  DER orders the members of a SET OF by their
+  // encodings, which is not the same as ordering them by type OID: the length
+  // octet is compared before the OID is reached, so a longer attribute sorts
+  // after a shorter one that shares a prefix.  Encode them, then sort.
+  //
+  // signingTime is left out on purpose: it would make the output depend on the
+  // wall clock for no benefit here.
+  std::vector<Bytes> attrs;
+  attrs.push_back(attribute(oid::ContentType, derOid(oid::SpcIndirectData)));
+  attrs.push_back(
+      attribute(oid::MessageDigest,
+                tlv(TagOctetString, ArrayRef<uint8_t>(cd.data(), cd.size()))));
+  attrs.push_back(
+      attribute(oid::SpcStatementType,
+                tlv(TagSequence, derOid(oid::SpcIndividualPurpose))));
+  std::sort(attrs.begin(), attrs.end());
+
   Bytes authAttrs;
-  append(authAttrs, attribute(oid::ContentType, derOid(oid::SpcIndirectData)));
-  append(authAttrs, attribute(oid::MessageDigest,
-                              tlv(TagOctetString,
-                                  ArrayRef<uint8_t>(cd.data(), cd.size()))));
-  append(authAttrs,
-         attribute(oid::SpcStatementType,
-                   tlv(TagSequence, derOid(oid::SpcIndividualPurpose))));
+  for (const Bytes &a : attrs)
+    append(authAttrs, a);
 
   // The signature is over these attributes encoded as a SET, even though they
   // travel in the SignerInfo under an implicit [0].  Signing the [0] form
