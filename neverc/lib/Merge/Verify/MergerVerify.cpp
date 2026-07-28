@@ -54,14 +54,21 @@ namespace neverc::merge {
 
 namespace {
 
-/// On ELF and Mach-O, .debug_info is the one section a merge does not simply
-/// concatenate: unit headers and DIE attributes are re-pointed at the merged
-/// DWARF sections (see Common/DwarfRebase.h), so its bytes are deliberately
-/// not those of any single input and the byte-window comparison below cannot
-/// apply.  COFF is exempt from the exemption -- it expresses the same offsets
-/// as relocations, so its bytes really are copied verbatim and stay checkable.
-bool isRebasedDwarfSection(StringRef Name) {
-  return Name == ".debug_info" || Name == "__debug_info";
+/// Mach-O is the one format whose DWARF a merge does not copy verbatim.  It
+/// writes cross-section DWARF references as plain offsets instead of
+/// relocations, so the merger re-points them (see Common/DwarfRebase.h) and
+/// these sections' bytes are deliberately not any single input's.  The
+/// byte-window comparison below therefore cannot apply to them.
+///
+/// Names are the on-disk spelling, which Mach-O truncates to 16 characters
+/// ("__debug_str_offsets" becomes "__debug_str_offs").
+///
+/// ELF and COFF are not exempt: both express the same references as
+/// relocations, which the merger re-points instead, leaving the bytes
+/// untouched and fully checkable.
+bool isRebasedMachOSection(StringRef Name) {
+  return Name == "__debug_info" || Name == "__debug_str_offs" ||
+         Name == "__debug_line" || Name == "__debug_names";
 }
 
 // ---------------------------------------------------------------------------
@@ -613,8 +620,7 @@ bool verifyMergeELFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
       if (S.Shndx >= In.Secs.size())
         continue;
       const RawSec &InSec = In.Secs[S.Shndx];
-      if (isExcludedInputSection(InSec, Opts) ||
-          isRebasedDwarfSection(InSec.Name))
+      if (isExcludedInputSection(InSec, Opts))
         continue;
 
       auto It = OutByName.find(S.Name);
@@ -1848,7 +1854,7 @@ bool verifyMergeMachOImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
       if (InIdx >= In.Secs.size())
         continue;
       const RawMachoSec &InSec = In.Secs[InIdx];
-      if (isRebasedDwarfSection(InSec.Sect))
+      if (isRebasedMachOSection(InSec.Sect))
         continue;
       if (S.Value < InSec.Addr)
         continue; // malformed

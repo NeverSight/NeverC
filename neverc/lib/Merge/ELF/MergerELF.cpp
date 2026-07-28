@@ -21,7 +21,6 @@
 //
 //===------------------------------------------------------------------===//
 
-#include "Common/DwarfRebase.h"
 #include "Common/MergerCommon.h"
 #include "neverc/Merge/Merger.h"
 
@@ -200,8 +199,6 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     DenseMap<unsigned, uint64_t> SecOff;
   };
   SmallVector<PerPartition, 8> Maps;
-  SmallVector<PartitionDwarf, 8> PartDwarfs;
-  PartDwarfs.resize(Buffers.size());
 
   // Symbol table: locals first, then globals (ELF convention).
   // In -r mode LLD does NOT recompute bindings (ElfImageEmitter.cpp:1829).
@@ -543,19 +540,6 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
 
       PM.SecMap[i] = MIdx + 1;
       PM.SecOff[i] = PartOffset;
-
-      // DWARF sections address each other with plain integers rather than
-      // relocations, so note where this partition landed in each of them; the
-      // offsets are rewritten once every partition has been appended.
-      // The size is what was actually appended rather than the value in the
-      // section header, so a header that overstates its contents cannot make
-      // the slice run into the next partition's bytes.  A zerofill section
-      // appends nothing and its PartOffset indexes VirtualSize instead, hence
-      // the guard.
-      PartDwarfs[p].record(SecName, MIdx, PartOffset,
-                           MS.Data.size() > PartOffset
-                               ? MS.Data.size() - PartOffset
-                               : 0);
     }
 
     // ----- Phase 2: Merge symbols -----
@@ -705,19 +689,14 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     }
   }
 
-  // Every partition has now been appended, so each one's DWARF sections have
-  // a known home in the merged output.  Re-point the offsets the units carry
-  // for each other; until this runs, every partition after the first reads the
-  // first one's abbreviation and string tables.
-  if (!rebaseMergedDwarf(
-          PartDwarfs,
-          [&](unsigned Idx) {
-            return Idx < MergedSections.size()
-                       ? MutableArrayRef<char>(MergedSections[Idx].Data)
-                       : MutableArrayRef<char>();
-          },
-          ELFT::TargetEndianness == llvm::endianness::little))
-    return false;
+  // No DWARF offset rewriting here, unlike Mach-O: ELF expresses every
+  // cross-section DWARF reference as a relocation against the target
+  // section's symbol (MCAsmInfo::DwarfUsesRelocationsAcrossSections, which
+  // only MCAsmInfoDarwin clears).  Each partition keeps its own section
+  // symbol, whose st_value is where that partition landed, so the linker's
+  // S + A already yields the merged offset -- and for RELA it is the addend,
+  // not the bytes in the section, that supplies A.  Rewriting the bytes would
+  // change nothing a debugger ever reads.  See Common/DwarfRebase.h.
 
   // ----- Finalize global symbol indices -----
   // During the loop, global SymMap entries store (slot | 0x80000000).

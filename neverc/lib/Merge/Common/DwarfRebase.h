@@ -11,9 +11,10 @@
 //
 // This rewrites those offsets so they address the merged sections.
 //
-// ELF and Mach-O need it.  COFF does not: it expresses the same offsets as
-// IMAGE_REL_*_ADDR32 relocations, which the merger's relocation remapping
-// already re-points, and rewriting the bytes too would shift them twice.
+// Mach-O needs it.  ELF and COFF do not: they express the same offsets as
+// relocations, which the merger's relocation remapping already re-points, and
+// rewriting the bytes too would be redundant -- on ELF the literal bytes are
+// not even the operand the linker uses (RELA takes the value from the addend).
 //
 //===----------------------------------------------------------------------===//
 
@@ -28,8 +29,9 @@
 
 namespace neverc::merge {
 
-/// The DWARF sections whose contents are addressed by offsets held in other
-/// DWARF sections.  Anything a merge does not have to re-point is absent.
+/// The DWARF sections a merge has to reason about: either something addresses
+/// them by offset, or they hold such an offset themselves.  Anything neither
+/// pointed at nor pointing is absent.
 enum class DwarfSection : uint8_t {
   Info,
   Abbrev,
@@ -44,19 +46,25 @@ enum class DwarfSection : uint8_t {
   Addr,
   MacInfo,
   Macro,
+  Names,
   Count,
 };
+
+constexpr size_t dwarfSectionIndex(DwarfSection S) {
+  return static_cast<size_t>(S);
+}
+constexpr size_t DwarfSectionCount = dwarfSectionIndex(DwarfSection::Count);
 
 /// Classify a section name, or return Count when it is not a DWARF section
 /// this cares about.  Accepts both spellings: Mach-O writes "__debug_info"
 /// and truncates names to 16 characters, ELF writes ".debug_info".
 DwarfSection classifyDwarfSection(llvm::StringRef SectionName);
 
-/// Where one partition's DWARF sections begin inside the merged output, plus
-/// the extra bookkeeping needed to find and bound its contribution again once
-/// every partition has been appended.
+/// Where one partition's DWARF sections landed inside the merged output.
 class PartitionDwarf {
 public:
+  static constexpr unsigned NoSection = ~0u;
+
   /// Note where one input section landed.  Ignores non-DWARF sections, so
   /// callers can hand it every section they merge.
   void record(llvm::StringRef SectionName, unsigned MergedSectionIndex,
@@ -65,44 +73,41 @@ public:
   /// Start of this partition's contribution to \p S within the merged
   /// section.  Zero also means "did not contribute", which needs no
   /// adjustment either way.
-  uint64_t start(DwarfSection S) const {
-    return Starts[static_cast<size_t>(S)];
+  uint64_t start(DwarfSection S) const { return At[dwarfSectionIndex(S)].Start; }
+  uint64_t size(DwarfSection S) const { return At[dwarfSectionIndex(S)].Size; }
+  unsigned sectionIndex(DwarfSection S) const {
+    return At[dwarfSectionIndex(S)].MergedIndex;
   }
 
-  /// False when this partition has no compile units, or when it is the first
-  /// contributor to every section and so already sits at the offsets its
-  /// units were emitted with.
+  /// False when this partition is the first contributor to every section and
+  /// so already sits at the offsets it was emitted with.
   bool needsRebase() const;
 
-  unsigned infoSectionIndex() const { return InfoSectionIndex; }
-  unsigned abbrevSectionIndex() const { return AbbrevSectionIndex; }
-  uint64_t infoSize() const { return InfoSize; }
-  uint64_t abbrevSize() const { return AbbrevSize; }
-
-  static constexpr unsigned NoSection = ~0u;
-
 private:
-  std::array<uint64_t, static_cast<size_t>(DwarfSection::Count)> Starts{};
-  unsigned InfoSectionIndex = NoSection;
-  unsigned AbbrevSectionIndex = NoSection;
-  uint64_t InfoSize = 0;
-  uint64_t AbbrevSize = 0;
+  struct Contribution {
+    unsigned MergedIndex = NoSection;
+    uint64_t Start = 0;
+    uint64_t Size = 0;
+  };
+  std::array<Contribution, DwarfSectionCount> At{};
 };
 
-/// Rewrite, in place, the inter-section offsets inside one partition's
-/// .debug_info contribution so they address the merged sections.
+/// One partition's slice of each merged DWARF section, indexed by
+/// DwarfSection.  Empty where the partition contributed nothing.
+using DwarfSlices =
+    std::array<llvm::MutableArrayRef<char>, DwarfSectionCount>;
+
+/// Rewrite, in place, every offset in one partition's DWARF that addresses
+/// another DWARF section, so it addresses the merged section instead.
 ///
-/// \p Info is that partition's slice of the merged .debug_info.
-/// \p Abbrev is the same partition's slice of the merged .debug_abbrev; unit
-/// headers are read with their original, pre-merge offsets, so the slice must
-/// start exactly where the partition's abbreviations do.
+/// Offsets are read at their original, pre-merge values, so each slice must
+/// start exactly where that partition's contribution does.
 ///
-/// Returns false if the DWARF could not be parsed, in which case \p Info may
-/// have been partially rewritten and the caller must treat the merge as
+/// Returns false if the DWARF could not be parsed, in which case the slices
+/// may have been partially rewritten and the caller must treat the merge as
 /// failed rather than emit the object.
-bool rebaseDebugInfo(llvm::MutableArrayRef<char> Info,
-                     llvm::ArrayRef<char> Abbrev, const PartitionDwarf &Part,
-                     bool IsLittleEndian);
+bool rebasePartitionDwarf(const DwarfSlices &Slices, const PartitionDwarf &Part,
+                          bool IsLittleEndian);
 
 /// Rebase every partition of one merged object.
 ///
@@ -117,20 +122,24 @@ bool rebaseMergedDwarf(llvm::ArrayRef<PartitionDwarf> Partitions,
     if (!Part.needsRebase())
       continue;
 
-    llvm::MutableArrayRef<char> Info = SectionData(Part.infoSectionIndex());
-    llvm::MutableArrayRef<char> Abbrev =
-        SectionData(Part.abbrevSectionIndex());
-    // A unit cannot be read without its abbreviations, so a partition that
-    // contributed one without the other is malformed.
-    const uint64_t InfoStart = Part.start(DwarfSection::Info);
-    const uint64_t AbbrevStart = Part.start(DwarfSection::Abbrev);
-    if (InfoStart + Part.infoSize() > Info.size() ||
-        AbbrevStart + Part.abbrevSize() > Abbrev.size())
-      return false;
+    DwarfSlices Slices;
+    for (size_t I = 0; I != DwarfSectionCount; ++I) {
+      const DwarfSection S = static_cast<DwarfSection>(I);
+      const unsigned Idx = Part.sectionIndex(S);
+      if (Idx == PartitionDwarf::NoSection)
+        continue;
+      llvm::MutableArrayRef<char> All = SectionData(Idx);
+      const uint64_t Start = Part.start(S);
+      const uint64_t Size = Part.size(S);
+      // A contribution that does not fit the section it was recorded against
+      // means the bookkeeping and the merged bytes disagree; rewriting from
+      // here would corrupt a neighbouring partition.
+      if (Start + Size > All.size())
+        return false;
+      Slices[I] = All.slice(Start, Size);
+    }
 
-    if (!rebaseDebugInfo(Info.slice(InfoStart, Part.infoSize()),
-                         Abbrev.slice(AbbrevStart, Part.abbrevSize()), Part,
-                         IsLittleEndian))
+    if (!rebasePartitionDwarf(Slices, Part, IsLittleEndian))
       return false;
   }
   return true;

@@ -534,17 +534,30 @@ bool ParallelCGContext::externalizeAndSerialize(Module &Mod) {
   for (GlobalIFunc &IF : Mod.ifuncs())
     ExternalizeGV(IF);
 
+  // Aliases and ifuncs are kept only in partition 0, but the rewrite that
+  // replaces them elsewhere cannot run until materializeAll() -- which is
+  // itself what runs the verifier.  Whatever they resolve to must therefore
+  // survive the body and initializer dropping below in *every* partition, or
+  // the module is briefly malformed and the verifier rejects it outright.
+  //
+  // getAliaseeObject() is what makes this complete: it walks alias chains and
+  // constant expressions, and it reaches global variables, not just functions.
+  // A `__thread int a __attribute__((alias("b")))` names a definition just as
+  // much as a function alias does.
   DenseSet<StringRef> PinnedToP0;
+  auto NoteIndirectTarget = [&](const GlobalObject *Target) {
+    if (!Target)
+      return;
+    IndirectTargets.insert(Target->getName());
+    // Only functions are binned, so only they need pinning; a variable's
+    // definition already lives in partition 0 by construction.
+    if (isa<Function>(Target))
+      PinnedToP0.insert(Target->getName());
+  };
   for (GlobalAlias &GA : Mod.aliases())
-    if (auto *F = dyn_cast<Function>(GA.getAliasee()->stripPointerCasts())) {
-      PinnedToP0.insert(F->getName());
-      IndirectTargets.insert(F->getName());
-    }
+    NoteIndirectTarget(GA.getAliaseeObject());
   for (GlobalIFunc &IF : Mod.ifuncs())
-    if (auto *F = dyn_cast<Function>(IF.getResolver()->stripPointerCasts())) {
-      PinnedToP0.insert(F->getName());
-      IndirectTargets.insert(F->getName());
-    }
+    NoteIndirectTarget(IF.getResolverFunction());
 
   // A `blockaddress(@F, %BB)` is only valid in the module that holds @F's
   // body: if @F becomes a declaration, LLVM rewrites every blockaddress into
@@ -715,6 +728,10 @@ void ParallelCGContext::preparePartitions(StringRef BCRef, TargetMachine &TM) {
           // definitions in every partition — skip the initializer drop.
           if (GV.hasGlobalUnnamedAddr() && GV.isConstant())
             continue;
+          // An alias still names this variable when materializeAll() runs the
+          // verifier below, and an alias may not point at a declaration.
+          if (IndirectTargets.contains(GV.getName()))
+            continue;
           GV.setInitializer(nullptr);
           GV.setLinkage(GlobalValue::ExternalLinkage);
           // The variable is a declaration now, and a declaration may not sit
@@ -739,8 +756,9 @@ void ParallelCGContext::preparePartitions(StringRef BCRef, TargetMachine &TM) {
         // run until materializeAll() below -- which is itself what verifies
         // the module.  Dropping the target's body here would therefore leave
         // a dangling alias for exactly as long as it takes the verifier to
-        // reject it.  Keeping these few bodies in every partition costs
-        // little: they are weak_odr/comdat and coalesce at link time.
+        // reject it.  So keep it for now and drop it right after the aliases
+        // go, further down: an ordinary target is a strong definition, and one
+        // per partition is a duplicate the merge refuses.
         if (IndirectTargets.contains(F.getName()))
           continue;
         F.deleteBody();
@@ -788,10 +806,13 @@ void ParallelCGContext::preparePartitions(StringRef BCRef, TargetMachine &TM) {
             Repl = Function::Create(FTy, GlobalValue::ExternalLinkage, AS,
                                     /*Name=*/"", M);
           else
+            // Carry the thread-local mode over: a declaration that loses it
+            // is accessed through an ordinary symbol reference, which emits a
+            // different relocation than the TLS access the alias stood for.
             Repl = new GlobalVariable(
                 *M, Ty, /*isConstant=*/false, GlobalValue::ExternalLinkage,
                 /*Init=*/nullptr, /*Name=*/"", /*InsertBefore=*/nullptr,
-                GlobalValue::NotThreadLocal, AS);
+                Old.getThreadLocalMode(), AS);
           Repl->setVisibility(Old.getVisibility());
           Repl->setDLLStorageClass(Old.getDLLStorageClass());
           Repl->setUnnamedAddr(Old.getUnnamedAddr());
@@ -809,6 +830,34 @@ void ParallelCGContext::preparePartitions(StringRef BCRef, TargetMachine &TM) {
           ReplaceIndirectWithExternal(GA);
         for (GlobalIFunc &GI : make_early_inc_range(MPart.ifuncs()))
           ReplaceIndirectWithExternal(GI);
+
+        // No alias names them any more, so their definitions have served their
+        // purpose: they existed only to keep the module well-formed for the
+        // verifier that materializeAll() runs, which is too early to have
+        // removed the aliases.  Carrying them into codegen would put one
+        // definition per partition into the merge, and for an ordinary
+        // (non-coalescible) target that is a duplicate the merge must refuse.
+        for (StringRef Name : IndirectTargets.keys()) {
+          GlobalValue *Target = MPart.getNamedValue(Name);
+          if (!Target || Target->isDeclaration())
+            continue;
+          if (auto *F = dyn_cast<Function>(Target)) {
+            auto It = FuncPartition.find(Name);
+            if (It != FuncPartition.end() && It->second == p)
+              continue; // this partition owns the body
+            F->deleteBody();
+            F->setComdat(nullptr);
+          } else if (auto *Var = dyn_cast<GlobalVariable>(Target)) {
+            // unnamed_addr constants stay defined everywhere on purpose (see
+            // the initializer loop above); they are local, so they cannot
+            // collide.
+            if (Var->hasGlobalUnnamedAddr() && Var->isConstant())
+              continue;
+            Var->setInitializer(nullptr);
+            Var->setLinkage(GlobalValue::ExternalLinkage);
+            Var->setComdat(nullptr);
+          }
+        }
       }
 
       PP->PTM.reset(TheTarget->createTargetMachine(
