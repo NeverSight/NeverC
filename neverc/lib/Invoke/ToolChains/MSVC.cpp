@@ -588,6 +588,26 @@ void MSVCToolChain::AddNeverCSystemIncludeArgs(
     return;
   }
 
+  // WDK headers, for kernel-mode drivers only (-fms-kernel).  They go *before*
+  // the bundled SDK: `km/` is written against its own generation of `shared/`
+  // (it needs types such as PUTF8_STRING and CFORCEINLINE that the bundled
+  // user-mode SDK predates), so the WDK's own `shared/` has to win the lookup.
+  // Kernel mode still falls through to the SDK below for the C runtime.
+  if (DriverArgs.hasArg(options::OPT_fms_kernel)) {
+    llvm::SmallString<128> SharedWdk;
+    if (getBundledRuntimeSharedRoot(getDriver(), "wdk", SharedWdk)) {
+      llvm::SmallString<128> P(SharedWdk);
+      llvm::sys::path::append(P, "include", "km");
+      if (getVFS().exists(P))
+        addSystemInclude(DriverArgs, FrontendArgs, P);
+
+      P = SharedWdk;
+      llvm::sys::path::append(P, "include", "shared");
+      if (getVFS().exists(P))
+        addSystemInclude(DriverArgs, FrontendArgs, P);
+    }
+  }
+
   // Bundled SDK: <InstalledDir>/../runtime/windows/shared/msvc/
   {
     llvm::SmallString<128> SharedMsvc;
@@ -655,28 +675,6 @@ void MSVCToolChain::AddNeverCSystemIncludeArgs(
     }
   }
 
-  // WDK headers are only injected for kernel-mode drivers (-fms-kernel), and
-  // deliberately go last: the bundled WDK is Windows 7 vintage and supplies
-  // only the kernel interfaces (ddk/), while the version macros, SAL
-  // annotations and base types it builds on (sdkddkver.h, sal.h, basetsd.h,
-  // guiddef.h, the pack pragmas, ...) come from the far newer SDK searched
-  // above.  Kernel mode therefore needs the SDK paths too, not just these two;
-  // `runtime/windows/shared/wdk/include/api/README.md` records which headers
-  // the WDK still owns.
-  if (DriverArgs.hasArg(options::OPT_fms_kernel)) {
-    llvm::SmallString<128> SharedWdk;
-    if (getBundledRuntimeSharedRoot(getDriver(), "wdk", SharedWdk)) {
-      llvm::SmallString<128> P(SharedWdk);
-      llvm::sys::path::append(P, "include", "ddk");
-      if (getVFS().exists(P))
-        addSystemInclude(DriverArgs, FrontendArgs, P);
-
-      P = SharedWdk;
-      llvm::sys::path::append(P, "include", "api");
-      if (getVFS().exists(P))
-        addSystemInclude(DriverArgs, FrontendArgs, P);
-    }
-  }
 }
 
 llvm::VersionTuple

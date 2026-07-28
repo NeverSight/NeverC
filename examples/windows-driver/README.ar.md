@@ -6,7 +6,8 @@
 
 # مثال على برنامج تشغيل نواة Windows
 
-برنامج تشغيل نواة WDM بسيط مبني باستخدام NeverC. يدعم التجميع المتقاطع من macOS / Linux.
+برنامج تشغيل نواة WDM بسيط مبني باستخدام NeverC. يستهدف **x64** افتراضيًا،
+ويمكن بناؤه أيضًا لـ ARM64. يدعم التجميع المتقاطع من macOS / Linux.
 
 NeverC هو مترجم متكامل — استدعاء واحد يتولى المعالجة المسبقة والتجميع
 والتحسين (auto-LTO) والربط عبر الرابط المدمج.
@@ -20,13 +21,20 @@ cd examples/windows-driver
 neverc make
 ```
 
+ينتج عن ذلك `ExampleDriver-x64.sys`. للبناء لـ ARM64 أو لكليهما:
+
+```bash
+neverc make ARCH=arm64
+neverc make all-arch
+```
+
 من إصدار NeverC مستقل:
 
 ```bash
 neverc make NEVERC=/path/to/neverc
 ```
 
-الناتج هو `ExampleDriver.sys` (محسّن بـ auto-LTO).
+الناتج هو `ExampleDriver-<المعمارية>.sys` (محسّن بـ auto-LTO).
 البناء الافتراضي يتضمن `-g` للتصحيح؛ **يجب إزالة `-g` في إصدارات الإنتاج**
 لإزالة رموز التصحيح وتقليل حجم الملف الثنائي (~38 كيلوبايت → ~3 كيلوبايت).
 
@@ -36,14 +44,17 @@ neverc make NEVERC=/path/to/neverc
 neverc --target=x86_64-pc-windows-msvc \
   -g \
   -fms-kernel \
-  -D_AMD64_ -DNTDDI_VERSION=0x06010000 -D_WIN32_WINNT=0x0601 \
   -Wall -nostdlib -shared \
   -Xlinker --entry=DriverEntry \
   -Xlinker --subsystem=native \
   -Xlinker --nodefaultlib \
   -lntoskrnl -lhal \
-  -o ExampleDriver.sys driver.c
+  -o ExampleDriver-x64.sys driver.c
 ```
+
+بالنسبة إلى ARM64، يكفي تغيير الهدف إلى `aarch64-pc-windows-msvc`؛ ولا يتغير
+أي شيء آخر. يقوم `-fms-kernel` باختيار ترويسات WDK ومكتبات الاستيراد المطابقة
+للهدف، ويعرّف وحدات ماكرو المعمارية التي يتوقعها WDK، لذا لا حاجة لتمريرها يدويًا.
 
 > `-g` يضمّن معلومات تصحيح DWARF في ملف PE؛ يمكن فحصها باستخدام `llvm-dwarfdump`.
 > احذف هذا الخيار في إصدارات الإنتاج لتقليل حجم الملف الثنائي.
@@ -58,7 +69,7 @@ neverc --target=x86_64-pc-windows-msvc \
 ## التحميل (على جهاز اختبار Windows)
 
 ```cmd
-sc create ExampleDriver type= kernel binPath= C:\path\to\ExampleDriver.sys
+sc create ExampleDriver type= kernel binPath= C:\path\to\ExampleDriver-x64.sys
 sc start ExampleDriver
 sc stop ExampleDriver
 sc delete ExampleDriver

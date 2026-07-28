@@ -1007,6 +1007,9 @@ bool tools::getBundledWdkRoot(const Driver &D, const llvm::Triple &Triple,
   case llvm::Triple::x86_64:
     Arch = "x64";
     break;
+  case llvm::Triple::aarch64:
+    Arch = "arm64";
+    break;
   default:
     return false;
   }

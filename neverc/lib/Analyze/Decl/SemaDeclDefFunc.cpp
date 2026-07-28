@@ -464,7 +464,8 @@ void Sema::OnFinishDelayedAttribute(Scope *S, Decl *D,
 
 NamedDecl *Sema::ImplicitlyDefineFunction(SourceLocation Loc,
                                           IdentifierInfo &II, Scope *S) {
-  // It is not valid to implicitly define a function in C23.
+  // C23 removed implicit function declarations, so implicitFunctionsAllowed()
+  // is false there and callers must not reach this.
   assert(LangOpts.implicitFunctionsAllowed() &&
          "Implicit function declarations aren't allowed in this language mode");
 
@@ -512,40 +513,48 @@ NamedDecl *Sema::ImplicitlyDefineFunction(SourceLocation Loc,
     }
   }
 
-  // NeverC accepts implicit function declarations silently in every C
-  // standard — implicitFunctionsAllowed() returns true unconditionally —
-  // so we can pair `printf("hi")` (without #include <stdio.h>) and
-  // out-of-order intra-TU calls with a clean compile.  The `__builtin_*`
-  // family is still gated by a diagnostic because misspelling those is
-  // almost always a real bug.
-  unsigned diag_id =
-      II.getName().starts_with("__builtin_") ? diag::warn_builtin_unknown : 0;
+  // NeverC lets an implicit function declaration through quietly in the
+  // standards that still permit one, so `printf("hi")` without <stdio.h> and
+  // out-of-order intra-TU calls compile cleanly.  That is a *default*, not a
+  // hard-coded silence: both spellings below belong to
+  // -Wimplicit-function-declaration and default to Ignored, so raising them
+  // with -W/-Werror is what someone who wants the ISO rule enforced does.
+  // Suppressing the diagnostic outright instead would take that choice away.
+  // C23 never gets here at all -- implicitFunctionsAllowed() is false there,
+  // so the call fails in ordinary lookup as an undeclared identifier.
+  // `__builtin_*` stays a hard error: misspelling one is essentially always a
+  // real bug, never an intentional implicit declaration.
+  unsigned diag_id;
+  if (II.getName().starts_with("__builtin_"))
+    diag_id = diag::warn_builtin_unknown;
+  else if (getLangOpts().C99)
+    diag_id = diag::ext_implicit_function_decl_c99;
+  else
+    diag_id = diag::warn_implicit_function_decl;
 
   TypoCorrection Corrected;
-  if (diag_id) {
-    // Because typo correction is expensive, only do it if the implicit
-    // function declaration is going to be treated as an error.
-    //
-    // Perform the correction before issuing the main diagnostic, as some
-    // consumers use typo-correction callbacks to enhance the main diagnostic.
-    if (S && !ExternCPrev &&
-        (Diags.getDiagnosticLevel(diag_id, Loc) >= DiagnosticsEngine::Error)) {
-      DeclFilterCCC<FunctionDecl> CCC{};
-      Corrected = CorrectTypo(DeclarationNameInfo(&II, Loc), ResolveOrdinary, S,
-                              CCC, CTK_NonError);
-    }
+  // Because typo correction is expensive, only do it if the implicit
+  // function declaration is going to be treated as an error.
+  //
+  // Perform the correction before issuing the main diagnostic, as some
+  // consumers use typo-correction callbacks to enhance the main diagnostic.
+  if (S && !ExternCPrev &&
+      (Diags.getDiagnosticLevel(diag_id, Loc) >= DiagnosticsEngine::Error)) {
+    DeclFilterCCC<FunctionDecl> CCC{};
+    Corrected = CorrectTypo(DeclarationNameInfo(&II, Loc), ResolveOrdinary, S,
+                            CCC, CTK_NonError);
+  }
 
-    Diag(Loc, diag_id) << &II;
-    if (Corrected) {
-      // If the correction is going to suggest an implicitly defined function,
-      // skip the correction as not being a particularly good idea.
-      bool Diagnose = true;
-      if (const auto *D = Corrected.getCorrectionDecl())
-        Diagnose = !D->isImplicit();
-      if (Diagnose)
-        diagnoseTypo(Corrected, PDiag(diag::note_function_suggestion),
-                     /*ErrorRecovery*/ false);
-    }
+  Diag(Loc, diag_id) << &II;
+  if (Corrected) {
+    // If the correction is going to suggest an implicitly defined function,
+    // skip the correction as not being a particularly good idea.
+    bool Diagnose = true;
+    if (const auto *D = Corrected.getCorrectionDecl())
+      Diagnose = !D->isImplicit();
+    if (Diagnose)
+      diagnoseTypo(Corrected, PDiag(diag::note_function_suggestion),
+                   /*ErrorRecovery*/ false);
   }
 
   // If we found a prior declaration of this function, don't bother building

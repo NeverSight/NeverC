@@ -4,7 +4,8 @@
 
 # Windows Kernel Driver Example
 
-A minimal WDM kernel driver built with NeverC. Cross-compiles from macOS / Linux.
+A minimal WDM kernel driver built with NeverC. Targets **x64** by default, and
+can also be built for ARM64. Cross-compiles from macOS / Linux.
 
 NeverC is an all-in-one compiler — a single invocation handles preprocessing,
 compilation, optimization (auto-LTO), and linking via the built-in linker.
@@ -18,13 +19,20 @@ cd examples/windows-driver
 neverc make
 ```
 
+That builds `ExampleDriver-x64.sys`. To build for ARM64 instead, or for both:
+
+```bash
+neverc make ARCH=arm64
+neverc make all-arch
+```
+
 From a standalone NeverC release:
 
 ```bash
 neverc make NEVERC=/path/to/neverc
 ```
 
-The output is `ExampleDriver.sys` (auto-LTO optimized).
+The output is `ExampleDriver-<arch>.sys` (auto-LTO optimized).
 Default build includes `-g` for debugging; **release builds should remove `-g`** to strip
 debug symbols and reduce binary size (~38 KB → ~3 KB).
 
@@ -34,14 +42,18 @@ debug symbols and reduce binary size (~38 KB → ~3 KB).
 neverc --target=x86_64-pc-windows-msvc \
   -g \
   -fms-kernel \
-  -D_AMD64_ -DNTDDI_VERSION=0x06010000 -D_WIN32_WINNT=0x0601 \
   -Wall -nostdlib -shared \
   -Xlinker --entry=DriverEntry \
   -Xlinker --subsystem=native \
   -Xlinker --nodefaultlib \
   -lntoskrnl -lhal \
-  -o ExampleDriver.sys driver.c
+  -o ExampleDriver-x64.sys driver.c
 ```
+
+For ARM64, swap in `--target=aarch64-pc-windows-msvc`; nothing else changes.
+`-fms-kernel` picks the WDK headers and import libraries matching the target
+and defines the architecture macros the WDK expects, so they never have to be
+passed by hand.
 
 > `-g` emits DWARF debug info into the PE; inspect with `llvm-dwarfdump`.
 > Omit for release builds to reduce binary size.
@@ -56,7 +68,7 @@ neverc --target=x86_64-pc-windows-msvc \
 ## Loading (on a Windows test machine)
 
 ```cmd
-sc create ExampleDriver type= kernel binPath= C:\path\to\ExampleDriver.sys
+sc create ExampleDriver type= kernel binPath= C:\path\to\ExampleDriver-x64.sys
 sc start ExampleDriver
 sc stop ExampleDriver
 sc delete ExampleDriver

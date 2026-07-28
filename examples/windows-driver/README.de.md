@@ -4,7 +4,8 @@
 
 # Windows-Kerneltreiber-Beispiel
 
-Ein minimaler WDM-Kerneltreiber, erstellt mit NeverC. Cross-Kompilierung von macOS / Linux.
+Ein minimaler WDM-Kerneltreiber, erstellt mit NeverC. Zielt standardmäßig auf
+**x64** und kann auch für ARM64 gebaut werden. Cross-Kompilierung von macOS / Linux.
 
 NeverC ist ein All-in-One-Compiler — ein einziger Aufruf übernimmt Preprocessing,
 Kompilierung, Optimierung (auto-LTO) und Linken über den integrierten Linker.
@@ -18,13 +19,20 @@ cd examples/windows-driver
 neverc make
 ```
 
+Das erzeugt `ExampleDriver-x64.sys`. Für ARM64 oder für beide Architekturen:
+
+```bash
+neverc make ARCH=arm64
+neverc make all-arch
+```
+
 Mit einer eigenständigen NeverC-Version:
 
 ```bash
 neverc make NEVERC=/path/to/neverc
 ```
 
-Die Ausgabe ist `ExampleDriver.sys` (auto-LTO-optimiert).
+Die Ausgabe ist `ExampleDriver-<arch>.sys` (auto-LTO-optimiert).
 Der Standard-Build enthält `-g` zum Debuggen; **Release-Builds sollten `-g`
 entfernen**, um Debug-Symbole zu entfernen und die Binärgröße zu reduzieren
 (~38 KB → ~3 KB).
@@ -35,14 +43,18 @@ entfernen**, um Debug-Symbole zu entfernen und die Binärgröße zu reduzieren
 neverc --target=x86_64-pc-windows-msvc \
   -g \
   -fms-kernel \
-  -D_AMD64_ -DNTDDI_VERSION=0x06010000 -D_WIN32_WINNT=0x0601 \
   -Wall -nostdlib -shared \
   -Xlinker --entry=DriverEntry \
   -Xlinker --subsystem=native \
   -Xlinker --nodefaultlib \
   -lntoskrnl -lhal \
-  -o ExampleDriver.sys driver.c
+  -o ExampleDriver-x64.sys driver.c
 ```
+
+Für ARM64 genügt es, das Ziel auf `aarch64-pc-windows-msvc` zu ändern; sonst
+bleibt alles gleich. `-fms-kernel` wählt die zum Ziel passenden WDK-Header und
+Importbibliotheken aus und definiert die vom WDK erwarteten Architekturmakros,
+sodass diese nie von Hand übergeben werden müssen.
 
 > `-g` bettet DWARF-Debug-Informationen in die PE ein; prüfen Sie mit
 > `llvm-dwarfdump`. Lassen Sie diese Option bei Release-Builds weg, um die
@@ -58,7 +70,7 @@ neverc --target=x86_64-pc-windows-msvc \
 ## Laden (auf einem Windows-Testrechner)
 
 ```cmd
-sc create ExampleDriver type= kernel binPath= C:\path\to\ExampleDriver.sys
+sc create ExampleDriver type= kernel binPath= C:\path\to\ExampleDriver-x64.sys
 sc start ExampleDriver
 sc stop ExampleDriver
 sc delete ExampleDriver

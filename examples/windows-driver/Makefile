@@ -1,22 +1,33 @@
 # Windows Kernel Driver — minimal WDM driver cross-compiled from any host
-# Usage: neverc make
+# Usage: neverc make            (x64, the default)
+#        neverc make ARCH=arm64
+#        neverc make all-arch   (both)
 
 NEVERC ?= ../../build-neverc/bin/neverc
 
-TARGET  = x86_64-pc-windows-msvc
-DRIVER  = ExampleDriver.sys
+ARCH   ?= x64
+
+ifeq ($(ARCH),x64)
+TARGET = x86_64-pc-windows-msvc
+else ifeq ($(ARCH),arm64)
+TARGET = aarch64-pc-windows-msvc
+else
+$(error ARCH must be x64 or arm64, got '$(ARCH)')
+endif
+
+DRIVER  = ExampleDriver-$(ARCH).sys
 
 SRCS    = driver.c
 HEADERS = config.h
 
+# -fms-kernel selects the WDK headers and import libraries for the target
+# architecture, and defines the environment they expect (_AMD64_ / _ARM64_ and
+# _KERNEL_MODE), so none of that has to be restated here.
 # -g: emit DWARF debug info; remove for release builds
 FLAGS = \
 	--target=$(TARGET) \
 	-g \
 	-fms-kernel \
-	-D_AMD64_ \
-	-DNTDDI_VERSION=0x06010000 \
-	-D_WIN32_WINNT=0x0601 \
 	-D_CRT_SECURE_NO_WARNINGS \
 	-Wall \
 	-nostdlib \
@@ -31,7 +42,11 @@ all: $(DRIVER)
 $(DRIVER): $(SRCS) $(HEADERS)
 	$(NEVERC) $(FLAGS) -o $@ $(SRCS)
 
-clean:
-	rm -f $(DRIVER)
+all-arch:
+	$(MAKE) ARCH=x64
+	$(MAKE) ARCH=arm64
 
-.PHONY: all clean
+clean:
+	rm -f ExampleDriver-x64.sys ExampleDriver-arm64.sys ExampleDriver.sys
+
+.PHONY: all all-arch clean

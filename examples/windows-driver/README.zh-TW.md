@@ -4,7 +4,8 @@
 
 # Windows 核心驅動程式範例
 
-使用 NeverC 建置的最小 WDM 核心驅動程式。支援從 macOS / Linux 交叉編譯。
+使用 NeverC 建置的最小 WDM 核心驅動程式。預設面向 **x64**，也可以建置 ARM64 版本。
+支援從 macOS / Linux 交叉編譯。
 
 NeverC 是一體化編譯器——單次呼叫即可完成預處理、編譯、最佳化（auto-LTO）
 以及透過內建連結器進行連結。
@@ -18,13 +19,20 @@ cd examples/windows-driver
 neverc make
 ```
 
+這會產生 `ExampleDriver-x64.sys`。若要改為建置 ARM64，或兩者都建置：
+
+```bash
+neverc make ARCH=arm64
+neverc make all-arch
+```
+
 使用獨立的 NeverC 發行版：
 
 ```bash
 neverc make NEVERC=/path/to/neverc
 ```
 
-輸出為 `ExampleDriver.sys`（auto-LTO 最佳化）。
+輸出為 `ExampleDriver-<架構>.sys`（auto-LTO 最佳化）。
 預設建置包含 `-g` 用於除錯；**釋出版本應移除 `-g`** 以移除除錯符號並縮小二進位檔案大小
 （~38 KB → ~3 KB）。
 
@@ -34,14 +42,17 @@ neverc make NEVERC=/path/to/neverc
 neverc --target=x86_64-pc-windows-msvc \
   -g \
   -fms-kernel \
-  -D_AMD64_ -DNTDDI_VERSION=0x06010000 -D_WIN32_WINNT=0x0601 \
   -Wall -nostdlib -shared \
   -Xlinker --entry=DriverEntry \
   -Xlinker --subsystem=native \
   -Xlinker --nodefaultlib \
   -lntoskrnl -lhal \
-  -o ExampleDriver.sys driver.c
+  -o ExampleDriver-x64.sys driver.c
 ```
+
+建置 ARM64 時只需將 target 換成 `aarch64-pc-windows-msvc`，其餘不變。
+`-fms-kernel` 會自動選用與目標架構相符的 WDK 標頭檔和匯入程式庫，並定義 WDK
+所需的架構巨集，因此無需手動傳入。
 
 > `-g` 將 DWARF 除錯資訊嵌入 PE；可使用 `llvm-dwarfdump` 檢查。
 > 釋出版本應省略此選項以縮小二進位檔案大小。
@@ -56,10 +67,10 @@ neverc --target=x86_64-pc-windows-msvc \
 ## 載入（在 Windows 測試機上）
 
 ```cmd
-sc create ExampleDriver type= kernel binPath= C:\path\to\ExampleDriver.sys
+sc create ExampleDriver type= kernel binPath= C:\path\to\ExampleDriver-x64.sys
 sc start ExampleDriver
 sc stop ExampleDriver
 sc delete ExampleDriver
 ```
 
-請啟用測試簽署或使用程式碼簽署憑證用於正式環境。
+請啟用測試簽章或使用程式碼簽章憑證用於生產環境。

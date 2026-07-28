@@ -4130,8 +4130,30 @@ void NeverC::AddMSVCCompatArgs(Compilation &C, const ArgList &Args,
     CmdArgs.push_back("msvc");
   }
 
-  if (Args.hasArg(options::OPT_fms_kernel))
+  if (Args.hasArg(options::OPT_fms_kernel)) {
     CmdArgs.push_back("-fms-kernel");
+    // ntdef.h stops with "No Target Architecture" unless the SDK-style arch
+    // macro MSBuild/EWDK would have set is present; it is not compiler-defined
+    // the way _M_X64 is.  Deriving it from the triple keeps callers from
+    // restating the target, and from silently mismatching it.  (_KERNEL_MODE
+    // needs no help -- -fms-kernel already predefines it.)
+    llvm::StringRef ArchMacro;
+    switch (getToolChain().getTriple().getArch()) {
+    case llvm::Triple::x86_64:
+      ArchMacro = "-D_AMD64_";
+      break;
+    case llvm::Triple::aarch64:
+      ArchMacro = "-D_ARM64_";
+      break;
+    case llvm::Triple::x86:
+      ArchMacro = "-D_X86_";
+      break;
+    default:
+      break;
+    }
+    if (!ArchMacro.empty())
+      CmdArgs.push_back(Args.MakeArgString(ArchMacro));
+  }
 
   for (const Arg *A : Args.filtered(options::OPT_fms_guard)) {
     llvm::StringRef GuardArgs = A->getValue();

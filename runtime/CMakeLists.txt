@@ -121,6 +121,10 @@ runtime_sdk_target(neverc-runtime-arm64-msvc
   "windows/arm64/msvc/sdk/lib:windows/arm64/msvc/sdk/lib"
 )
 
+runtime_sdk_target(neverc-runtime-arm64-wdk
+  "windows/arm64/wdk/lib:windows/arm64/wdk/lib"
+)
+
 # ---------------------------------------------------------------------------
 # Linux / x64 sysroot  (Ubuntu 22.04 headers + libraries)
 # ---------------------------------------------------------------------------
