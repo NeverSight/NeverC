@@ -34,6 +34,10 @@ def main():
     parser.add_argument("neverc", help="Path to neverc compiler binary")
     parser.add_argument("std_src_dir", help="Path to std/src directory")
     parser.add_argument("std_include_dir", help="Path to std/include directory")
+    parser.add_argument("--prefix-map", action="append", default=[],
+                        metavar="FROM=TO",
+                        help="Base path remapping applied ahead of this "
+                             "runtime's own source mappings (repeatable)")
     parser.add_argument("-o", "--output", required=True,
                         help="Output .h header file")
     args = parser.parse_args()
@@ -54,6 +58,15 @@ def main():
     src_dir_abs = os.path.abspath(args.std_src_dir)
     inc_dir_abs = os.path.abspath(args.std_include_dir)
 
+    # Clang resolves prefix maps last-match-wins, so the caller's general
+    # roots go first and the install-tree names below override them.  Those
+    # names are what lets a debugger find std sources under the install
+    # prefix, so they must survive.
+    path_mapping = [f"-ffile-prefix-map={m}" for m in args.prefix_map] + [
+        f"-fdebug-prefix-map={src_dir_abs}=runtime/std/src",
+        f"-fdebug-prefix-map={inc_dir_abs}=runtime/std/include",
+    ]
+
     with tempfile.TemporaryDirectory(prefix="neverc_std_bc_") as tmpdir:
         for src in sources:
             rel = os.path.relpath(src, args.std_src_dir)
@@ -68,8 +81,7 @@ def main():
                 "-fno-lto",
                 "-ffreestanding", "-std=gnu11", "-w",
                 f"-I{inc_dir_abs}",
-                f"-fdebug-prefix-map={src_dir_abs}=runtime/std/src",
-                f"-fdebug-prefix-map={inc_dir_abs}=runtime/std/include",
+                *path_mapping,
                 os.path.abspath(src), "-o", bc_path,
             ]
             print(f"  [bc] {rel}", file=sys.stderr)

@@ -139,6 +139,10 @@ def main():
     parser.add_argument("neverc", help="Path to neverc compiler binary")
     parser.add_argument("runtime_dir",
                         help="Path to runtime/android/kernel directory")
+    parser.add_argument("--prefix-map", action="append", default=[],
+                        metavar="FROM=TO",
+                        help="Base path remapping applied ahead of this "
+                             "runtime's own source mappings (repeatable)")
     parser.add_argument("-o", "--output", required=True,
                         help="Output .h header file")
     args = parser.parse_args()
@@ -216,6 +220,9 @@ def main():
         "-D__KERNEL__", "-DMODULE",
         f"-I{inc_kern_abs}",
         f"-I{inc_nvk_abs}",
+        # Clang resolves prefix maps last-match-wins, so the caller's general
+        # roots go first and the install-tree names below override them.
+        *(f"-ffile-prefix-map={m}" for m in args.prefix_map),
         f"-fdebug-prefix-map={src_dir_abs}=runtime/android/kernel/src",
         f"-fdebug-prefix-map={inc_kern_abs}=runtime/android/kernel/arm64/include",
         f"-fdebug-prefix-map={inc_nvk_abs}=runtime/android/kernel/include",

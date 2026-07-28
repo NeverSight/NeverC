@@ -220,14 +220,48 @@ llvm::StringRef getInputKindName(InputKind IK) {
   }
   llvm_unreachable("unknown input language");
 }
+
+// The built-in runtime switches are spelled as language options, but what
+// they select is a backend pass, and those passes run for an LLVM IR input
+// exactly as they do for C.  The driver states its safety interlocks through
+// them -- kernel modes, -ffreestanding, -shared and -nostdlib all arrive here
+// as -fno-builtin-<runtime> -- so an IR input that skipped them along with
+// the rest of the language options would fall back to the declared defaults
+// and, for instance, inject a hosted allocator into a kernel module.
+//
+// The pair below is therefore the one part of the language options that
+// survives an IR input, and the two halves must stay in step.
+
+void parseBuiltinRuntimeArgs(LangOptions &Opts, const ArgList &Args) {
+  Opts.BuiltinString = Args.hasFlag(OPT_fbuiltin_string,
+                                    OPT_fno_builtin_string, Opts.BuiltinString);
+  Opts.BuiltinMimalloc = Args.hasFlag(
+      OPT_fbuiltin_mimalloc, OPT_fno_builtin_mimalloc, Opts.BuiltinMimalloc);
+  Opts.BuiltinStd =
+      Args.hasFlag(OPT_fbuiltin_std, OPT_fno_builtin_std, Opts.BuiltinStd);
+}
+
+void generateBuiltinRuntimeArgs(const LangOptions &Opts,
+                                ArgumentConsumer Consumer) {
+  // Spelled out either way rather than only when it differs from the default,
+  // matching how the driver renders them: the negative form is what carries
+  // a suppression, so it must never be dropped as "same as default".
+  emitArg(Consumer, Opts.BuiltinString ? OPT_fbuiltin_string
+                                       : OPT_fno_builtin_string);
+  emitArg(Consumer, Opts.BuiltinMimalloc ? OPT_fbuiltin_mimalloc
+                                         : OPT_fno_builtin_mimalloc);
+  emitArg(Consumer, Opts.BuiltinStd ? OPT_fbuiltin_std : OPT_fno_builtin_std);
+}
 } // namespace
 
 void CompilerInvocationBase::GenerateLangArgs(const LangOptions &Opts,
                                               ArgumentConsumer Consumer,
                                               const llvm::Triple &T,
                                               InputKind IK) {
-  if (IK.getLanguage() == Language::LLVM_IR)
+  if (IK.getLanguage() == Language::LLVM_IR) {
+    generateBuiltinRuntimeArgs(Opts, Consumer);
     return;
+  }
 
   auto LangStandard = LangStandard::getLangStandardForKind(Opts.LangStd);
   emitArg(Consumer, OPT_std_EQ, LangStandard.getName());
@@ -326,8 +360,10 @@ bool CompilerInvocation::ParseLangArgs(LangOptions &Opts, ArgList &Args,
 
   Opts.PIE = T.isOSLinux();
 
-  if (IK.getLanguage() == Language::LLVM_IR)
+  if (IK.getLanguage() == Language::LLVM_IR) {
+    parseBuiltinRuntimeArgs(Opts, Args);
     return Diags.getNumErrors() == NumErrorsBefore;
+  }
 
   LangStandard::Kind LangStd = LangStandard::lang_unspecified;
   if (const Arg *A = Args.getLastArg(OPT_std_EQ)) {

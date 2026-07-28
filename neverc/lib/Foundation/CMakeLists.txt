@@ -62,10 +62,48 @@ if(NEVERC_VENDOR)
     PROPERTIES COMPILE_DEFINITIONS "NEVERC_VENDOR=\"${NEVERC_VENDOR} \"")
 endif()
 
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+
+# ---------------------------------------------------------------------------
+# Embedded-runtime path remapping
+# ---------------------------------------------------------------------------
+# Each runtime below is compiled on the machine that builds the compiler and
+# then embedded into it, so any path recorded while bootstrapping travels on
+# into every program a user later builds.  Fold the roots those paths can come
+# from onto one virtual prefix.
+#
+# Clang resolves prefix maps last-match-wins, so the general roots belong
+# first: a bootstrap step needing a more precise mapping appends its own
+# afterwards and takes precedence.  The std and NVK runtimes do exactly that,
+# naming their sources relative to the install tree so that source-level
+# debugging keeps working.  Together with DW_AT_comp_dir mapped to the virtual
+# prefix, a debugger reaches those sources through a single rule:
+#
+#     settings set target.source-map /neverc <install-prefix>
+set(NEVERC_RUNTIME_VIRTUAL_PREFIX "/neverc")
+get_filename_component(_neverc_repo_root "${NEVERC_SOURCE_DIR}/.." ABSOLUTE)
+
+# Held as <from>=<to> pairs so that each consumer renders its own spelling:
+# the targets in this file pass -ffile-prefix-map straight to neverc, while
+# the Python bootstrap drivers take --prefix-map.
+set(NEVERC_BOOTSTRAP_PATH_MAPS
+  "${_neverc_repo_root}=${NEVERC_RUNTIME_VIRTUAL_PREFIX}"
+  "${CMAKE_BINARY_DIR}=${NEVERC_RUNTIME_VIRTUAL_PREFIX}/build"
+  # Bootstrap steps run here, making this the directory that would otherwise
+  # reach users as DW_AT_comp_dir.
+  "${CMAKE_CURRENT_BINARY_DIR}=${NEVERC_RUNTIME_VIRTUAL_PREFIX}"
+)
+
+set(NEVERC_BOOTSTRAP_PREFIX_MAP_FLAGS)
+set(NEVERC_BOOTSTRAP_PREFIX_MAP_ARGS)
+foreach(_path_map IN LISTS NEVERC_BOOTSTRAP_PATH_MAPS)
+  list(APPEND NEVERC_BOOTSTRAP_PREFIX_MAP_FLAGS "-ffile-prefix-map=${_path_map}")
+  list(APPEND NEVERC_BOOTSTRAP_PREFIX_MAP_ARGS --prefix-map "${_path_map}")
+endforeach()
+
 # ---------------------------------------------------------------------------
 # BuiltinString precompiled bitcode
 # ---------------------------------------------------------------------------
-find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
 set(BUILTIN_STRING_PRELUDE_DIR
     "${NEVERC_SOURCE_DIR}/include/neverc/Foundation/Builtin/BuiltinStringPrelude")
@@ -153,6 +191,7 @@ foreach(_string_spec IN LISTS _STRING_VARIANTS)
             -ffreestanding -std=gnu11
             -Wno-invalid-noreturn
             --target=${_string_triple}
+            ${NEVERC_BOOTSTRAP_PREFIX_MAP_FLAGS}
             "${BUILTIN_STRING_RUNTIME_C}"
             -o "${_string_runtime_bc}"
     COMMAND ${Python3_EXECUTABLE}
@@ -282,6 +321,7 @@ if(TARGET mimalloc-static)
               -I "${_MI_SRC_ROOT}/include"
               -I "${_MI_SRC_ROOT}/src"
               ${_mi_extra_flags}
+              ${NEVERC_BOOTSTRAP_PREFIX_MAP_FLAGS}
               -w
               "${_mi_runtime_c}"
               -o "${_mi_runtime_bc}"
@@ -340,6 +380,7 @@ add_custom_target(neverc-bootstrap-std-bc
           "$<TARGET_FILE:neverc>"
           "${BUILTIN_STD_SRC_DIR}"
           "${BUILTIN_STD_INC_DIR}"
+          ${NEVERC_BOOTSTRAP_PREFIX_MAP_ARGS}
           -o "${BUILTIN_STD_BITCODE_H}"
   COMMAND ${CMAKE_COMMAND} -E touch
           "${CMAKE_CURRENT_SOURCE_DIR}/Std/BuiltinStd.cpp"
@@ -395,6 +436,7 @@ add_custom_target(neverc-bootstrap-nvk-kernel-bc
           "${BUILTIN_NVK_KERNEL_SCRIPT_DIR}/build_nvk_kernel_bitcode.py"
           "$<TARGET_FILE:neverc>"
           "${BUILTIN_NVK_KERNEL_RUNTIME_DIR}"
+          ${NEVERC_BOOTSTRAP_PREFIX_MAP_ARGS}
           -o "${BUILTIN_NVK_KERNEL_BITCODE_H}"
   COMMAND ${CMAKE_COMMAND} -E touch
           "${CMAKE_CURRENT_SOURCE_DIR}/Builtin/BuiltinNvkKernel.cpp"
