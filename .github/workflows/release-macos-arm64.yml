@@ -258,8 +258,23 @@ jobs:
       - name: Package (full, with runtime)
         run: 7z a macos-arm64-neverc.zip install
 
-      - name: Package (binary + headers, for curl installer)
-        run: cd install && zip -r ../neverc-macos-arm64.zip bin lib
+      # runtime/ is deliberately absent: it is fetched on demand by
+      # `neverc runtime install <target>`.  pluginsdk/ has no such fallback,
+      # so leaving it out would make the SDK reachable only from the full
+      # archive, which install.sh never downloads.
+      - name: Package (binary + headers + plugin SDK, for curl installer)
+        run: cd install && zip -r ../neverc-macos-arm64.zip bin lib pluginsdk
+
+      # Consumes the archive a curl install actually receives, from a clean
+      # prefix and with a compiler that is not neverc, so a packaging gap fails
+      # here rather than on a user's first `find_package(NevercPluginSDK)`.
+      - name: Verify the curl-installer archive carries a usable SDK
+        run: |
+          set -e
+          rm -rf "$RUNNER_TEMP/pkg-check"
+          unzip -q neverc-macos-arm64.zip -d "$RUNNER_TEMP/pkg-check"
+          python3 neverc/utils/plugin-api/test-installed-sdk.py \
+            --prefix "$RUNNER_TEMP/pkg-check"
 
       - name: Upload CI artifact
         uses: actions/upload-artifact@v4

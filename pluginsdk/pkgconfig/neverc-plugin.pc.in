@@ -1,4 +1,8 @@
-prefix=@CMAKE_INSTALL_PREFIX@
+# Derived from the file's own location rather than baked in at configure time,
+# so the SDK keeps working wherever the archive is unpacked -- install.sh puts
+# it under ~/.neverc, not under the prefix this was built with.  Holds for the
+# build tree too: build/pluginsdk/pkgconfig/../.. is build/.
+prefix=${pcfiledir}/../..
 includedir=${prefix}/pluginsdk/include
 datadir=${prefix}/pluginsdk
 
