@@ -16,9 +16,9 @@
 
 | المثال | الوصف | الميزات الرئيسية |
 |--------|-------|-----------------|
-| [برنامج تشغيل نواة Windows](../../examples/windows-driver/README.ar.md) | برنامج WDM أدنى | تجميع متقاطع `.sys` من macOS/Linux، LTO تلقائي، مُرابط مدمج |
-| [برنامج تشغيل Windows + CET](../../examples/windows-driver-cet/README.ar.md) | برنامج مع Intel CET Shadow Stack | كود نواة متوافق مع CET، `/guard:ehcont` |
-| [برنامج تشغيل Windows + عائم](../../examples/windows-driver-float/README.ar.md) | برنامج مع فاصلة عائمة/SIMD | فاصلة عائمة آمنة في وضع النواة |
+| [برنامج تشغيل نواة Windows](../../examples/windows-driver/README.ar.md) | برنامج WDM أدنى | تجميع متقاطع `.sys` لـ **x64** (الافتراضي) و**ARM64**، LTO تلقائي، مُرابط مدمج |
+| [برنامج تشغيل Windows + CET](../../examples/windows-driver-cet/README.ar.md) | برنامج مع Intel CET Shadow Stack | كود نواة متوافق مع CET (**x64 فقط**)، `/guard:ehcont` |
+| [برنامج تشغيل Windows + عائم](../../examples/windows-driver-float/README.ar.md) | برنامج مع فاصلة عائمة/SIMD | فاصلة عائمة آمنة في وضع النواة على **x64** و**ARM64** |
 | [Windows Ring3 EXE](../../examples/windows-exe/README.ar.md) | تطبيق وحدة تحكم وضع المستخدم | GetSystemInfo، تعداد العمليات، VirtualAlloc |
 | [Windows Ring3 DLL](../../examples/windows-dll/README.ar.md) | DLL وضع المستخدم | ReadProcessMemory، VirtualAllocEx، تعداد الوحدات |
 
@@ -78,6 +78,16 @@ neverc make
 
 ```bash
 neverc make NEVERC=/path/to/neverc
+```
+
+أمثلة برامج تشغيل Windows تختار المعمارية عبر `ARCH` (الافتراضي x64). مثال CET
+مخصص لـ x64 فقط — CET ميزة خاصة بـ x86:
+
+```bash
+neverc make ARCH=x64        # Build for x64 (default)
+neverc make ARCH=arm64      # Build for ARM64
+neverc make all-arch        # Build every architecture the example supports
+neverc make TESTSIGN=1      # Attach an Authenticode test signature
 ```
 
 أمثلة Linux تدعم اختيار البنية:

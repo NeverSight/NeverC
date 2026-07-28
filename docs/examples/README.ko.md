@@ -14,9 +14,9 @@ NeverC의 크로스 플랫폼 컴파일 기능을 보여주는 빌드 가능한 
 
 | 예제 | 설명 | 주요 기능 |
 |------|------|---------|
-| [Windows 커널 드라이버](../../examples/windows-driver/README.ko.md) | 최소 WDM 커널 드라이버 | macOS/Linux에서 `.sys` 크로스 컴파일, 자동 LTO, 내장 링커 |
-| [Windows 드라이버 + CET](../../examples/windows-driver-cet/README.ko.md) | Intel CET 섀도 스택 커널 드라이버 | CET 호환 커널 코드, `/guard:ehcont` |
-| [Windows 드라이버 + 부동 소수점](../../examples/windows-driver-float/README.ko.md) | 부동 소수점/SIMD 커널 드라이버 | 커널 모드 안전 부동 소수점 |
+| [Windows 커널 드라이버](../../examples/windows-driver/README.ko.md) | 최소 WDM 커널 드라이버 | **x64**(기본)와 **ARM64**용 `.sys` 크로스 컴파일, 자동 LTO, 내장 링커 |
+| [Windows 드라이버 + CET](../../examples/windows-driver-cet/README.ko.md) | Intel CET 섀도 스택 커널 드라이버 | CET 호환 커널 코드(**x64 전용**), `/guard:ehcont` |
+| [Windows 드라이버 + 부동 소수점](../../examples/windows-driver-float/README.ko.md) | 부동 소수점/SIMD 커널 드라이버 | **x64**와 **ARM64**에서 커널 모드 안전 부동 소수점 |
 | [Windows Ring3 EXE](../../examples/windows-exe/README.ko.md) | 사용자 모드 콘솔 앱 | GetSystemInfo, 프로세스 열거, VirtualAlloc |
 | [Windows Ring3 DLL](../../examples/windows-dll/README.ko.md) | 사용자 모드 DLL | ReadProcessMemory, VirtualAllocEx, 모듈 열거 |
 
@@ -76,6 +76,16 @@ neverc make
 
 ```bash
 neverc make NEVERC=/path/to/neverc
+```
+
+Windows 드라이버 예제는 `ARCH`로 아키텍처를 선택합니다(기본값 x64). CET 예제는
+x64 전용입니다 — CET은 x86 기능입니다:
+
+```bash
+neverc make ARCH=x64        # Build for x64 (default)
+neverc make ARCH=arm64      # Build for ARM64
+neverc make all-arch        # Build every architecture the example supports
+neverc make TESTSIGN=1      # Attach an Authenticode test signature
 ```
 
 Linux 예제는 아키텍처 선택을 지원합니다:

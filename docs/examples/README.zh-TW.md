@@ -14,9 +14,9 @@
 
 | 範例 | 說明 | 關鍵特性 |
 |------|------|---------|
-| [Windows 核心驅動](../../examples/windows-driver/README.zh-TW.md) | 最小 WDM 核心驅動 | 從 macOS/Linux 交叉編譯 `.sys`，自動 LTO，內建連結器，`DbgPrint` 裝置 I/O |
-| [Windows 驅動 + CET](../../examples/windows-driver-cet/README.zh-TW.md) | 帶 Intel CET 影子堆疊的核心驅動 | CET 相容核心程式碼，`/guard:ehcont`，影子堆疊強制 |
-| [Windows 驅動 + 浮點](../../examples/windows-driver-float/README.zh-TW.md) | 帶浮點/SIMD 的核心驅動 | 核心模式安全浮點，`KeSaveExtendedProcessorState` / `KeRestoreExtendedProcessorState` |
+| [Windows 核心驅動](../../examples/windows-driver/README.zh-TW.md) | 最小 WDM 核心驅動 | 交叉編譯 `.sys`，支援 **x64**（預設）和 **ARM64**，自動 LTO，內建連結器，`DbgPrint` 裝置 I/O |
+| [Windows 驅動 + CET](../../examples/windows-driver-cet/README.zh-TW.md) | 帶 Intel CET 影子堆疊的核心驅動 | CET 相容核心程式碼（**僅 x64**），`/guard:ehcont`，影子堆疊強制 |
+| [Windows 驅動 + 浮點](../../examples/windows-driver-float/README.zh-TW.md) | 帶浮點/SIMD 的核心驅動 | **x64** 與 **ARM64** 下的核心模式安全浮點，`KeSaveExtendedProcessorState` / `KeRestoreExtendedProcessorState` |
 | [Windows Ring3 EXE](../../examples/windows-exe/README.zh-TW.md) | 使用者態控制台程式 | GetSystemInfo，程序列舉，VirtualAlloc |
 | [Windows Ring3 DLL](../../examples/windows-dll/README.zh-TW.md) | 使用者態 DLL | ReadProcessMemory，VirtualAllocEx，模組列舉 |
 
@@ -76,6 +76,15 @@ neverc make
 
 ```bash
 neverc make NEVERC=/path/to/neverc
+```
+
+Windows 驅動範例透過 `ARCH` 選擇架構（預設 x64）。CET 範例僅支援 x64——CET 是 x86 特性：
+
+```bash
+neverc make ARCH=x64        # 建置 x64 版本（預設）
+neverc make ARCH=arm64      # 建置 ARM64 版本
+neverc make all-arch        # 建置該範例支援的全部架構
+neverc make TESTSIGN=1      # 附加 Authenticode 測試簽章
 ```
 
 Linux 範例支援架構選擇：

@@ -14,9 +14,9 @@ NeverC のクロスプラットフォームコンパイル機能を示すビル�
 
 | サンプル | 説明 | 主要機能 |
 |---------|------|---------|
-| [Windows カーネルドライバ](../../examples/windows-driver/README.ja.md) | 最小 WDM カーネルドライバ | macOS/Linux から `.sys` をクロスコンパイル、自動 LTO、内蔵リンカ |
-| [Windows ドライバ + CET](../../examples/windows-driver-cet/README.ja.md) | Intel CET シャドウスタック付きカーネルドライバ | CET 対応カーネルコード、`/guard:ehcont` |
-| [Windows ドライバ + 浮動小数点](../../examples/windows-driver-float/README.ja.md) | 浮動小数点/SIMD 付きカーネルドライバ | カーネルモード安全浮動小数点 |
+| [Windows カーネルドライバ](../../examples/windows-driver/README.ja.md) | 最小 WDM カーネルドライバ | **x64**（デフォルト）と **ARM64** 向けに `.sys` をクロスコンパイル、自動 LTO、内蔵リンカ |
+| [Windows ドライバ + CET](../../examples/windows-driver-cet/README.ja.md) | Intel CET シャドウスタック付きカーネルドライバ | CET 対応カーネルコード（**x64 のみ**）、`/guard:ehcont` |
+| [Windows ドライバ + 浮動小数点](../../examples/windows-driver-float/README.ja.md) | 浮動小数点/SIMD 付きカーネルドライバ | **x64** と **ARM64** でのカーネルモード安全浮動小数点 |
 | [Windows Ring3 EXE](../../examples/windows-exe/README.ja.md) | ユーザーモードコンソールアプリ | GetSystemInfo、プロセス列挙、VirtualAlloc |
 | [Windows Ring3 DLL](../../examples/windows-dll/README.ja.md) | ユーザーモード DLL | ReadProcessMemory、VirtualAllocEx、モジュール列挙 |
 
@@ -76,6 +76,16 @@ neverc make
 
 ```bash
 neverc make NEVERC=/path/to/neverc
+```
+
+Windows ドライバの例は `ARCH` でアーキテクチャを選びます（デフォルトは x64）。CET の例は
+x64 のみです — CET は x86 の機能です：
+
+```bash
+neverc make ARCH=x64        # Build for x64 (default)
+neverc make ARCH=arm64      # Build for ARM64
+neverc make all-arch        # Build every architecture the example supports
+neverc make TESTSIGN=1      # Attach an Authenticode test signature
 ```
 
 Linux の例はアーキテクチャ選択をサポートします：

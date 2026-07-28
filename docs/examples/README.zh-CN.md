@@ -14,9 +14,9 @@
 
 | 示例 | 说明 | 关键特性 |
 |------|------|---------|
-| [Windows 内核驱动](../../examples/windows-driver/README.zh-CN.md) | 最小 WDM 内核驱动 | 从 macOS/Linux 交叉编译 `.sys`，自动 LTO，内置链接器，`DbgPrint` 设备 I/O |
-| [Windows 驱动 + CET](../../examples/windows-driver-cet/README.zh-CN.md) | 带 Intel CET 影子栈的内核驱动 | CET 兼容内核代码，`/guard:ehcont`，影子栈强制 |
-| [Windows 驱动 + 浮点](../../examples/windows-driver-float/README.zh-CN.md) | 带浮点/SIMD 的内核驱动 | 内核模式安全浮点，`KeSaveExtendedProcessorState` / `KeRestoreExtendedProcessorState` |
+| [Windows 内核驱动](../../examples/windows-driver/README.zh-CN.md) | 最小 WDM 内核驱动 | 交叉编译 `.sys`，支持 **x64**（默认）和 **ARM64**，自动 LTO，内置链接器，`DbgPrint` 设备 I/O |
+| [Windows 驱动 + CET](../../examples/windows-driver-cet/README.zh-CN.md) | 带 Intel CET 影子栈的内核驱动 | CET 兼容内核代码（**仅 x64**），`/guard:ehcont`，影子栈强制 |
+| [Windows 驱动 + 浮点](../../examples/windows-driver-float/README.zh-CN.md) | 带浮点/SIMD 的内核驱动 | **x64** 与 **ARM64** 下的内核模式安全浮点，`KeSaveExtendedProcessorState` / `KeRestoreExtendedProcessorState` |
 | [Windows Ring3 EXE](../../examples/windows-exe/README.zh-CN.md) | 用户态控制台程序 | GetSystemInfo，进程枚举，VirtualAlloc |
 | [Windows Ring3 DLL](../../examples/windows-dll/README.zh-CN.md) | 用户态 DLL | ReadProcessMemory，VirtualAllocEx，模块枚举 |
 
@@ -76,6 +76,15 @@ neverc make
 
 ```bash
 neverc make NEVERC=/path/to/neverc
+```
+
+Windows 驱动示例通过 `ARCH` 选择架构（默认 x64）。CET 示例仅支持 x64——CET 是 x86 特性：
+
+```bash
+neverc make ARCH=x64        # 构建 x64 版本（默认）
+neverc make ARCH=arm64      # 构建 ARM64 版本
+neverc make all-arch        # 构建该示例支持的全部架构
+neverc make TESTSIGN=1      # 附加 Authenticode 测试签名
 ```
 
 Linux 示例支持架构选择：

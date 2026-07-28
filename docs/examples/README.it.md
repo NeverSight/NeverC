@@ -14,9 +14,9 @@ Esempi completi compilabili che dimostrano le capacità di cross-compilazione di
 
 | Esempio | Descrizione | Funzionalità chiave |
 |---------|-------------|-------------------|
-| [Driver kernel Windows](../../examples/windows-driver/README.it.md) | Driver WDM minimale | Cross-compilazione `.sys` da macOS/Linux, auto-LTO, linker integrato |
-| [Driver Windows + CET](../../examples/windows-driver-cet/README.it.md) | Driver con Intel CET Shadow Stack | Codice kernel compatibile CET, `/guard:ehcont` |
-| [Driver Windows + virgola mobile](../../examples/windows-driver-float/README.it.md) | Driver con virgola mobile/SIMD | Virgola mobile sicura in modalità kernel |
+| [Driver kernel Windows](../../examples/windows-driver/README.it.md) | Driver WDM minimale | Cross-compilazione `.sys` per **x64** (predefinito) e **ARM64**, auto-LTO, linker integrato |
+| [Driver Windows + CET](../../examples/windows-driver-cet/README.it.md) | Driver con Intel CET Shadow Stack | Codice kernel compatibile CET (**solo x64**), `/guard:ehcont` |
+| [Driver Windows + virgola mobile](../../examples/windows-driver-float/README.it.md) | Driver con virgola mobile/SIMD | Virgola mobile sicura in modalità kernel su **x64** e **ARM64** |
 | [Windows Ring3 EXE](../../examples/windows-exe/README.it.md) | App console user-mode | GetSystemInfo, enumerazione processi, VirtualAlloc |
 | [Windows Ring3 DLL](../../examples/windows-dll/README.it.md) | DLL user-mode | ReadProcessMemory, VirtualAllocEx, enumerazione moduli |
 
@@ -76,6 +76,16 @@ Sovrascrivi il percorso del compilatore se necessario:
 
 ```bash
 neverc make NEVERC=/path/to/neverc
+```
+
+Gli esempi di driver Windows selezionano l'architettura con `ARCH` (predefinito:
+x64). L'esempio CET è solo per x64 — CET è una funzionalità x86:
+
+```bash
+neverc make ARCH=x64        # Build for x64 (default)
+neverc make ARCH=arm64      # Build for ARM64
+neverc make all-arch        # Build every architecture the example supports
+neverc make TESTSIGN=1      # Attach an Authenticode test signature
 ```
 
 Gli esempi Linux supportano la selezione dell'architettura:

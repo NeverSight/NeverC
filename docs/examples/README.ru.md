@@ -14,9 +14,9 @@
 
 | Пример | Описание | Ключевые возможности |
 |--------|----------|---------------------|
-| [Драйвер ядра Windows](../../examples/windows-driver/README.ru.md) | Минимальный WDM-драйвер ядра | Кросс-компиляция `.sys` с macOS/Linux, авто-LTO, встроенный линкер |
-| [Драйвер Windows + CET](../../examples/windows-driver-cet/README.ru.md) | Драйвер с Intel CET Shadow Stack | CET-совместимый код ядра, `/guard:ehcont` |
-| [Драйвер Windows + плавающая точка](../../examples/windows-driver-float/README.ru.md) | Драйвер с плавающей точкой/SIMD | Безопасная плавающая точка в режиме ядра |
+| [Драйвер ядра Windows](../../examples/windows-driver/README.ru.md) | Минимальный WDM-драйвер ядра | Кросс-компиляция `.sys` для **x64** (по умолчанию) и **ARM64**, авто-LTO, встроенный линкер |
+| [Драйвер Windows + CET](../../examples/windows-driver-cet/README.ru.md) | Драйвер с Intel CET Shadow Stack | CET-совместимый код ядра (**только x64**), `/guard:ehcont` |
+| [Драйвер Windows + плавающая точка](../../examples/windows-driver-float/README.ru.md) | Драйвер с плавающей точкой/SIMD | Безопасная плавающая точка в режиме ядра на **x64** и **ARM64** |
 | [Windows Ring3 EXE](../../examples/windows-exe/README.ru.md) | Консольное приложение пользовательского режима | GetSystemInfo, перечисление процессов, VirtualAlloc |
 | [Windows Ring3 DLL](../../examples/windows-dll/README.ru.md) | DLL пользовательского режима | ReadProcessMemory, VirtualAllocEx, перечисление модулей |
 
@@ -76,6 +76,16 @@ neverc make
 
 ```bash
 neverc make NEVERC=/path/to/neverc
+```
+
+Примеры драйверов Windows выбирают архитектуру через `ARCH` (по умолчанию x64).
+Пример CET — только x64: CET — это функция x86:
+
+```bash
+neverc make ARCH=x64        # Build for x64 (default)
+neverc make ARCH=arm64      # Build for ARM64
+neverc make all-arch        # Build every architecture the example supports
+neverc make TESTSIGN=1      # Attach an Authenticode test signature
 ```
 
 Примеры Linux поддерживают выбор архитектуры:

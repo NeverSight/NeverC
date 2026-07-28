@@ -14,9 +14,9 @@ Ejemplos compilables que demuestran las capacidades de compilación cruzada de N
 
 | Ejemplo | Descripción | Características clave |
 |---------|-------------|----------------------|
-| [Controlador de kernel Windows](../../examples/windows-driver/README.es.md) | Controlador WDM mínimo | Compilación cruzada `.sys` desde macOS/Linux, auto-LTO, enlazador integrado |
-| [Controlador Windows + CET](../../examples/windows-driver-cet/README.es.md) | Controlador con Intel CET Shadow Stack | Código kernel compatible CET, `/guard:ehcont` |
-| [Controlador Windows + punto flotante](../../examples/windows-driver-float/README.es.md) | Controlador con punto flotante/SIMD | Punto flotante seguro en modo kernel |
+| [Controlador de kernel Windows](../../examples/windows-driver/README.es.md) | Controlador WDM mínimo | Compilación cruzada `.sys` para **x64** (predeterminado) y **ARM64**, auto-LTO, enlazador integrado |
+| [Controlador Windows + CET](../../examples/windows-driver-cet/README.es.md) | Controlador con Intel CET Shadow Stack | Código kernel compatible CET (**solo x64**), `/guard:ehcont` |
+| [Controlador Windows + punto flotante](../../examples/windows-driver-float/README.es.md) | Controlador con punto flotante/SIMD | Punto flotante seguro en modo kernel en **x64** y **ARM64** |
 | [Windows Ring3 EXE](../../examples/windows-exe/README.es.md) | Aplicación consola modo usuario | GetSystemInfo, enumeración procesos, VirtualAlloc |
 | [Windows Ring3 DLL](../../examples/windows-dll/README.es.md) | DLL modo usuario | ReadProcessMemory, VirtualAllocEx, enumeración módulos |
 
@@ -76,6 +76,17 @@ Sobrescribe la ruta del compilador si es necesario:
 
 ```bash
 neverc make NEVERC=/path/to/neverc
+```
+
+Los ejemplos de controladores Windows seleccionan la arquitectura con `ARCH`
+(x64 por defecto). El ejemplo CET es solo para x64 — CET es una característica
+de x86:
+
+```bash
+neverc make ARCH=x64        # Build for x64 (default)
+neverc make ARCH=arm64      # Build for ARM64
+neverc make all-arch        # Build every architecture the example supports
+neverc make TESTSIGN=1      # Attach an Authenticode test signature
 ```
 
 Los ejemplos de Linux admiten selección de arquitectura:

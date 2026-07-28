@@ -14,9 +14,9 @@ Exemples compilables démontrant les capacités de compilation croisée de Never
 
 | Exemple | Description | Fonctionnalités clés |
 |---------|-------------|---------------------|
-| [Pilote noyau Windows](../../examples/windows-driver/README.fr.md) | Pilote WDM minimal | Compilation croisée `.sys` depuis macOS/Linux, auto-LTO, éditeur de liens intégré |
-| [Pilote Windows + CET](../../examples/windows-driver-cet/README.fr.md) | Pilote avec Intel CET Shadow Stack | Code noyau compatible CET, `/guard:ehcont` |
-| [Pilote Windows + virgule flottante](../../examples/windows-driver-float/README.fr.md) | Pilote avec virgule flottante/SIMD | Virgule flottante sécurisée en mode noyau |
+| [Pilote noyau Windows](../../examples/windows-driver/README.fr.md) | Pilote WDM minimal | Compilation croisée `.sys` pour **x64** (défaut) et **ARM64**, auto-LTO, éditeur de liens intégré |
+| [Pilote Windows + CET](../../examples/windows-driver-cet/README.fr.md) | Pilote avec Intel CET Shadow Stack | Code noyau compatible CET (**x64 uniquement**), `/guard:ehcont` |
+| [Pilote Windows + virgule flottante](../../examples/windows-driver-float/README.fr.md) | Pilote avec virgule flottante/SIMD | Virgule flottante sécurisée en mode noyau sur **x64** et **ARM64** |
 | [Windows Ring3 EXE](../../examples/windows-exe/README.fr.md) | Application console mode utilisateur | GetSystemInfo, énumération processus, VirtualAlloc |
 | [Windows Ring3 DLL](../../examples/windows-dll/README.fr.md) | DLL mode utilisateur | ReadProcessMemory, VirtualAllocEx, énumération modules |
 
@@ -76,6 +76,17 @@ Remplacez le chemin du compilateur si nécessaire :
 
 ```bash
 neverc make NEVERC=/path/to/neverc
+```
+
+Les exemples de pilotes Windows sélectionnent l'architecture avec `ARCH`
+(x64 par défaut). L'exemple CET est réservé à x64 — CET est une fonctionnalité
+x86 :
+
+```bash
+neverc make ARCH=x64        # Build for x64 (default)
+neverc make ARCH=arm64      # Build for ARM64
+neverc make all-arch        # Build every architecture the example supports
+neverc make TESTSIGN=1      # Attach an Authenticode test signature
 ```
 
 Les exemples Linux prennent en charge la sélection d'architecture :

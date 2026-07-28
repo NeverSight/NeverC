@@ -14,9 +14,9 @@ Vollständig kompilierbare Beispiele für die plattformübergreifende Kompilieru
 
 | Beispiel | Beschreibung | Kernfunktionen |
 |----------|--------------|---------------|
-| [Windows Kerneltreiber](../../examples/windows-driver/README.de.md) | Minimaler WDM-Kerneltreiber | Cross-Kompilierung `.sys` von macOS/Linux, Auto-LTO, integrierter Linker |
-| [Windows Treiber + CET](../../examples/windows-driver-cet/README.de.md) | Kerneltreiber mit Intel CET Shadow Stack | CET-kompatibler Kernelcode, `/guard:ehcont` |
-| [Windows Treiber + Gleitkomma](../../examples/windows-driver-float/README.de.md) | Kerneltreiber mit Gleitkomma/SIMD | Sichere Gleitkommaoperationen im Kernelmodus |
+| [Windows Kerneltreiber](../../examples/windows-driver/README.de.md) | Minimaler WDM-Kerneltreiber | Cross-Kompilierung `.sys` für **x64** (Standard) und **ARM64**, Auto-LTO, integrierter Linker |
+| [Windows Treiber + CET](../../examples/windows-driver-cet/README.de.md) | Kerneltreiber mit Intel CET Shadow Stack | CET-kompatibler Kernelcode (**nur x64**), `/guard:ehcont` |
+| [Windows Treiber + Gleitkomma](../../examples/windows-driver-float/README.de.md) | Kerneltreiber mit Gleitkomma/SIMD | Sichere Gleitkommaoperationen im Kernelmodus auf **x64** und **ARM64** |
 | [Windows Ring3 EXE](../../examples/windows-exe/README.de.md) | Benutzermodus-Konsolenanwendung | GetSystemInfo, Prozessauflistung, VirtualAlloc |
 | [Windows Ring3 DLL](../../examples/windows-dll/README.de.md) | Benutzermodus-DLL | ReadProcessMemory, VirtualAllocEx, Modulauflistung |
 
@@ -76,6 +76,16 @@ Bei Bedarf den Compilerpfad überschreiben:
 
 ```bash
 neverc make NEVERC=/path/to/neverc
+```
+
+Windows-Treiberbeispiele wählen die Architektur mit `ARCH` (Standard: x64). Das
+CET-Beispiel ist nur für x64 — CET ist ein x86-Feature:
+
+```bash
+neverc make ARCH=x64        # Build for x64 (default)
+neverc make ARCH=arm64      # Build for ARM64
+neverc make all-arch        # Build every architecture the example supports
+neverc make TESTSIGN=1      # Attach an Authenticode test signature
 ```
 
 Linux-Beispiele unterstützen die Architekturauswahl:

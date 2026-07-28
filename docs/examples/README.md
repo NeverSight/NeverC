@@ -14,9 +14,9 @@ Complete, buildable examples demonstrating NeverC's cross-platform compilation c
 
 | Example | Description | Key Features |
 |---------|-------------|-------------|
-| [Windows Kernel Driver](../../examples/windows-driver/README.md) | Minimal WDM kernel driver | Cross-compile `.sys` from macOS/Linux, auto-LTO, built-in linker, `DbgPrint` device I/O |
-| [Windows Driver + CET](../../examples/windows-driver-cet/README.md) | Kernel driver with Intel CET Shadow Stack | CET-compatible kernel code, `/guard:ehcont`, Shadow Stack enforcement |
-| [Windows Driver + Float](../../examples/windows-driver-float/README.md) | Kernel driver with floating-point/SIMD | Safe FP in kernel mode, `KeSaveExtendedProcessorState` / `KeRestoreExtendedProcessorState` |
+| [Windows Kernel Driver](../../examples/windows-driver/README.md) | Minimal WDM kernel driver | Cross-compile `.sys` for **x64** (default) and **ARM64**, auto-LTO, built-in linker, `DbgPrint` device I/O |
+| [Windows Driver + CET](../../examples/windows-driver-cet/README.md) | Kernel driver with Intel CET Shadow Stack | CET-compatible kernel code (**x64 only**), `/guard:ehcont`, Shadow Stack enforcement |
+| [Windows Driver + Float](../../examples/windows-driver-float/README.md) | Kernel driver with floating-point/SIMD | Safe FP in kernel mode on **x64** and **ARM64**, `KeSaveExtendedProcessorState` / `KeRestoreExtendedProcessorState` |
 | [Windows Ring3 EXE](../../examples/windows-exe/README.md) | User-mode console app | GetSystemInfo, process enum, VirtualAlloc/VirtualQuery |
 | [Windows Ring3 DLL](../../examples/windows-dll/README.md) | User-mode DLL | ReadProcessMemory, VirtualAllocEx, module enum, XOR helper |
 
@@ -76,6 +76,16 @@ Override the compiler path if needed:
 
 ```bash
 neverc make NEVERC=/path/to/neverc
+```
+
+Windows driver examples select architecture with `ARCH` (x64 by default). The
+CET example is x64-only — CET is an x86 feature:
+
+```bash
+neverc make ARCH=x64        # Build for x64 (default)
+neverc make ARCH=arm64      # Build for ARM64
+neverc make all-arch        # Build every architecture the example supports
+neverc make TESTSIGN=1      # Attach an Authenticode test signature
 ```
 
 Linux examples support architecture selection:
