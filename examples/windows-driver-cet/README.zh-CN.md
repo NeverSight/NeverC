@@ -28,7 +28,7 @@ ARM64 用指针认证和分支目标识别来保护同样的控制流边。
 
 Windows 不会加载未签名的驱动。`neverc make TESTSIGN=1` 会附加 Authenticode
 测试签名；测试机所需的一次性配置见
-[windows-driver 示例](../windows-driver/README.md#test-signing)。
+[windows-driver 示例](../windows-driver/README.zh-CN.md#测试签名)。
 
 ## CET 专用标志
 

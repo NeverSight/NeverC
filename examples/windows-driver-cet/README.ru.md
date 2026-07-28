@@ -31,7 +31,7 @@ neverc make NEVERC=/path/to/neverc
 
 Windows не загружает неподписанный драйвер. `neverc make TESTSIGN=1` добавляет
 тестовую подпись Authenticode; разовая настройка тестовой машины описана в
-[примере windows-driver](../windows-driver/README.md#test-signing).
+[примере windows-driver](../windows-driver/README.ru.md#тестовая-подпись).
 
 ## Флаги, специфичные для CET
 

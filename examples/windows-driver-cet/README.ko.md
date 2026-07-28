@@ -30,7 +30,7 @@ x64 전용: CET은 x86 기능이며 다른 대상에서는 컴파일러가
 
 Windows는 서명되지 않은 드라이버를 로드하지 않습니다. `neverc make TESTSIGN=1`이
 Authenticode 테스트 서명을 첨부합니다. 테스트 머신의 일회성 설정은
-[windows-driver 예제](../windows-driver/README.md#test-signing)를 참조하세요.
+[windows-driver 예제](../windows-driver/README.ko.md#테스트-서명)를 참조하세요.
 
 ## CET 전용 플래그
 

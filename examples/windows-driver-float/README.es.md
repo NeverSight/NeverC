@@ -143,7 +143,7 @@ sc delete FloatDriver
 Windows no carga un controlador sin firmar. `neverc make TESTSIGN=1` adjunta una
 firma Authenticode de prueba; la configuración única de la máquina de prueba se
 describe en el
-[ejemplo windows-driver](../windows-driver/README.md#test-signing). Para
+[ejemplo windows-driver](../windows-driver/README.es.md#firma-de-prueba). Para
 producción, utilice un certificado de firma de código real.
 
 ## Advertencias

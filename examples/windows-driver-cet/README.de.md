@@ -31,7 +31,7 @@ stattdessen mit Pointer Authentication und Branch Target Identification.
 
 Windows lädt keinen unsignierten Treiber. `neverc make TESTSIGN=1` hängt eine
 Authenticode-Testsignatur an; die einmalige Einrichtung der Testmaschine
-beschreibt das [windows-driver-Beispiel](../windows-driver/README.md#test-signing).
+beschreibt das [windows-driver-Beispiel](../windows-driver/README.de.md#testsignierung).
 
 ## CET-spezifische Flags
 

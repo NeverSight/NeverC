@@ -31,7 +31,7 @@ x64 فقط: CET ميزة خاصة بـ x86، والمترجم يرفض `-fcf-pro
 
 لا يحمّل Windows تعريفًا غير موقّع. يضيف `neverc make TESTSIGN=1` توقيع
 Authenticode تجريبيًا؛ راجع
-[مثال windows-driver](../windows-driver/README.md#test-signing) لمعرفة الإعداد
+[مثال windows-driver](../windows-driver/README.ar.md#التوقيع-التجريبي) لمعرفة الإعداد
 لمرة واحدة الذي يحتاجه جهاز الاختبار.
 
 ## أعلام CET المحددة

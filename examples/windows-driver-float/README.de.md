@@ -141,7 +141,7 @@ sc delete FloatDriver
 
 Windows lädt keinen unsignierten Treiber. `neverc make TESTSIGN=1` hängt eine
 Authenticode-Testsignatur an; die einmalige Einrichtung der Testmaschine
-beschreibt das [windows-driver-Beispiel](../windows-driver/README.md#test-signing).
+beschreibt das [windows-driver-Beispiel](../windows-driver/README.de.md#testsignierung).
 Verwenden Sie für die Produktion ein echtes Codesignaturzertifikat.
 
 ## Vorbehalte

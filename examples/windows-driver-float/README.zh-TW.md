@@ -134,7 +134,7 @@ sc delete FloatDriver
 
 Windows 不會載入未簽章的驅動程式。`neverc make TESTSIGN=1` 會附加 Authenticode
 測試簽章；測試機所需的一次性設定請見
-[windows-driver 範例](../windows-driver/README.md#test-signing)。正式環境請使用
+[windows-driver 範例](../windows-driver/README.zh-TW.md#測試簽章)。正式環境請使用
 真實的程式碼簽署憑證。
 
 ## 注意事項

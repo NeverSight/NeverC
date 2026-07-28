@@ -28,7 +28,7 @@ ARM64 以指標認證和分支目標識別保護同樣的控制流邊。
 
 Windows 不會載入未簽章的驅動程式。`neverc make TESTSIGN=1` 會附加 Authenticode
 測試簽章；測試機所需的一次性設定請見
-[windows-driver 範例](../windows-driver/README.md#test-signing)。
+[windows-driver 範例](../windows-driver/README.zh-TW.md#測試簽章)。
 
 ## CET 專用旗標
 

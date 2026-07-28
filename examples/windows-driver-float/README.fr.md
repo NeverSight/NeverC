@@ -143,7 +143,7 @@ sc delete FloatDriver
 Windows refuse de charger un pilote non signé. `neverc make TESTSIGN=1` attache
 une signature Authenticode de test ; la configuration unique de la machine de
 test est décrite dans
-l'[exemple windows-driver](../windows-driver/README.md#test-signing). Utilisez un
+l'[exemple windows-driver](../windows-driver/README.fr.md#signature-de-test). Utilisez un
 vrai certificat de signature de code pour la production.
 
 ## Mises en garde

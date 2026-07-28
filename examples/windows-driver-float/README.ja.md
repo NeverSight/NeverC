@@ -139,7 +139,7 @@ sc delete FloatDriver
 
 Windows は署名のないドライバーを読み込みません。`neverc make TESTSIGN=1` で
 Authenticode テスト署名が付与されます。テストマシン側の初回設定は
-[windows-driver の例](../windows-driver/README.md#test-signing) を参照してください。
+[windows-driver の例](../windows-driver/README.ja.md#テスト署名) を参照してください。
 本番環境では実際のコード署名証明書を使用してください。
 
 ## 注意事項

@@ -141,7 +141,7 @@ sc delete FloatDriver
 
 Windows не загружает неподписанный драйвер. `neverc make TESTSIGN=1` добавляет
 тестовую подпись Authenticode; разовая настройка тестовой машины описана в
-[примере windows-driver](../windows-driver/README.md#test-signing). Для
+[примере windows-driver](../windows-driver/README.ru.md#тестовая-подпись). Для
 продакшена используйте настоящий сертификат подписи кода.
 
 ## Предостережения

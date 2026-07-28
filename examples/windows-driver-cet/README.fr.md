@@ -32,7 +32,7 @@ avec l'authentification de pointeurs et l'identification des cibles de brancheme
 Windows refuse de charger un pilote non signé. `neverc make TESTSIGN=1` attache
 une signature Authenticode de test ; la configuration unique de la machine de
 test est décrite dans
-l'[exemple windows-driver](../windows-driver/README.md#test-signing).
+l'[exemple windows-driver](../windows-driver/README.fr.md#signature-de-test).
 
 ## Drapeaux spécifiques au CET
 

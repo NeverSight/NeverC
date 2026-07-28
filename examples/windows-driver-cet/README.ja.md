@@ -30,7 +30,7 @@ x64 のみ: CET は x86 の機能で、他のターゲットでは `-fcf-protect
 
 Windows は署名のないドライバーを読み込みません。`neverc make TESTSIGN=1` で
 Authenticode テスト署名が付与されます。テストマシン側の初回設定は
-[windows-driver の例](../windows-driver/README.md#test-signing) を参照してください。
+[windows-driver の例](../windows-driver/README.ja.md#テスト署名) を参照してください。
 
 ## CET 専用フラグ
 

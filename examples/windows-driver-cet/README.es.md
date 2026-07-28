@@ -33,7 +33,7 @@ autenticación de punteros e identificación de destinos de salto.
 Windows no carga un controlador sin firmar. `neverc make TESTSIGN=1` adjunta una
 firma Authenticode de prueba; la configuración única de la máquina de prueba se
 describe en el
-[ejemplo windows-driver](../windows-driver/README.md#test-signing).
+[ejemplo windows-driver](../windows-driver/README.es.md#firma-de-prueba).
 
 ## Flags específicos de CET
 

@@ -137,7 +137,7 @@ sc delete FloatDriver
 
 لا يحمّل Windows تعريفًا غير موقّع. يضيف `neverc make TESTSIGN=1` توقيع
 Authenticode تجريبيًا؛ راجع
-[مثال windows-driver](../windows-driver/README.md#test-signing) لمعرفة الإعداد
+[مثال windows-driver](../windows-driver/README.ar.md#التوقيع-التجريبي) لمعرفة الإعداد
 لمرة واحدة الذي يحتاجه جهاز الاختبار. استخدم شهادة توقيع كود حقيقية للإنتاج.
 
 ## تحذيرات
