@@ -8,12 +8,12 @@
 
 ## نظرة عامة
 
-يمكن لـ NeverC تضمين [mimalloc](https://github.com/microsoft/mimalloc) — مخصص الذاكرة عالي الأداء من Microsoft — مباشرة في الملفات الثنائية المترجمة عبر دمج LLVM bitcode. عند التفعيل، يتم استبدال `malloc` و `free` و `calloc` و `realloc` بشفافية بتطبيقات mimalloc أثناء الترجمة.
+يضمّن NeverC مكتبة [mimalloc](https://github.com/microsoft/mimalloc) — مخصص الذاكرة عالي الأداء من Microsoft — مباشرة في الملفات الثنائية المترجمة عبر دمج LLVM bitcode. يتم استبدال `malloc` و `free` و `calloc` و `realloc` بشفافية بتطبيقات mimalloc أثناء الترجمة.
 
-**التفعيل:**
+**مُفعَّل افتراضيًا** حيثما وُجدت كومة libc قابلة للاستبدال: الترجمة العادية تخصّص الذاكرة عبر mimalloc أصلًا. تُستثنى أهداف النواة وfreestanding تلقائيًا؛ وعلى الهدف المضيف يمكن تعطيله عبر `-fno-builtin-mimalloc`.
 
 ```bash
-neverc -fbuiltin-mimalloc main.c -o main
+neverc main.c -o main
 ```
 
 ---
@@ -55,6 +55,8 @@ neverc -fno-builtin-mimalloc main.c -o main                    # تعطيل
 |---------------|-------|
 | `-fno-builtin` | لا سيناريو تجاوز CRT |
 | `-mkernel` | لا كومة مساحة المستخدم في النواة |
+| `-fms-kernel` | مشغّل نواة Windows؛ المِثل، ولا يتضمّن `-fno-builtin` |
+| `-fandroid-kernel-driver-mode` | وحدة نواة Android؛ المِثل |
 | `-fdyncode-mode` | مستبدل بـ HeapArenaPass (ساحة + احتياطي OS) |
 | `-ffreestanding` | لا libc للتجاوز |
 

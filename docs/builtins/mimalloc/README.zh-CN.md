@@ -6,15 +6,15 @@
 
 ## 概述
 
-NeverC 可以将 [mimalloc](https://github.com/microsoft/mimalloc) — 微软的高性能通用内存分配器 — 通过 LLVM bitcode 合并直接嵌入编译产物中。启用后，`malloc`、`free`、`calloc` 和 `realloc` 在编译时被透明替换为 mimalloc 的实现，无需外部库链接。
+NeverC 将 [mimalloc](https://github.com/microsoft/mimalloc) — 微软的高性能通用内存分配器 — 通过 LLVM bitcode 合并直接嵌入编译产物中。`malloc`、`free`、`calloc` 和 `realloc` 在编译时被透明替换为 mimalloc 的实现，无需外部库链接。
 
-**启用方式：**
+**该特性默认开启**：只要目标存在可替换的 libc 堆，普通编译就已经通过 mimalloc 分配内存 — 无需任何标志，也无需修改源码：
 
 ```bash
-neverc -fbuiltin-mimalloc main.c -o main
+neverc main.c -o main
 ```
 
-编译产物直接使用 mimalloc 进行所有堆分配，无需任何源码修改。
+内核与 freestanding 目标会被自动排除，参见[自动抑制](#自动抑制)。在宿主目标上可用 `-fno-builtin-mimalloc` 退出。
 
 ---
 
@@ -101,12 +101,14 @@ int main(void) {
 
 ## 自动抑制
 
-驱动器在以下场景自动抑制 `-fbuiltin-mimalloc`：
+驱动器在以下场景自动抑制 `mimalloc`：
 
 | 标志 / 模式 | 原因 |
 |-------------|------|
 | `-fno-builtin` | 无 CRT 函数覆盖场景 |
 | `-mkernel` | 内核模式无用户空间堆；驱动使用 `ExAllocatePool2` |
+| `-fms-kernel` | Windows 内核驱动；同上，且它不隐含 `-fno-builtin` |
+| `-fandroid-kernel-driver-mode` | Android 内核模块；同上 |
 | `-fdyncode-mode` | 由 HeapArenaPass 替代（arena + OS 回退） |
 | `-ffreestanding` | 无 libc 可覆盖 |
 

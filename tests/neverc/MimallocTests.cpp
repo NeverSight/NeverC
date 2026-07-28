@@ -11,10 +11,56 @@ TEST_F(MimallocTest, MacroDefined) {
               "-fbuiltin-mimalloc");
 }
 
-// Without -fbuiltin-mimalloc, __NEVERC_MIMALLOC__ should not be defined
+// mimalloc is on by default wherever there is a libc heap to replace, so a
+// plain compile defines __NEVERC_MIMALLOC__ with no flag asking for it.
+TEST_F(MimallocTest, MacroDefinedByDefault) {
+  compileOnly("mimalloc_default",
+              (testDir() / "mimalloc/test_mimalloc_default.c").string(), "");
+}
+
+// -fno-builtin-mimalloc opts back out
 TEST_F(MimallocTest, MacroNotDefined) {
   compileOnly("mimalloc_no_macro",
-              (testDir() / "mimalloc/test_mimalloc_no_macro.c").string(), "");
+              (testDir() / "mimalloc/test_mimalloc_no_macro.c").string(),
+              "-fno-builtin-mimalloc");
+}
+
+// A kernel image has no userspace heap, so every kernel mode suppresses the
+// default injection.  -fms-kernel and -fandroid-kernel-driver-mode carry this
+// test: they are how the Windows and Android driver examples build, and unlike
+// -mkernel neither implies -fno-builtin, so neither is covered by the
+// suppression tests above.  The source #errors if the macro survives, which
+// makes compiling it the assertion.
+TEST_F(MimallocTest, KernelModesSuppressDefault) {
+  const std::string Source =
+      (testDir() / "mimalloc/test_mimalloc_kernel.c").string();
+
+  struct Mode {
+    const char *Label;
+    std::vector<std::string> Args;
+  };
+  const Mode Modes[] = {
+      {"mkernel", {"-mkernel"}},
+      {"ms_kernel", {"--target=x86_64-pc-windows-msvc", "-fms-kernel"}},
+      {"android_kernel",
+       {"--target=aarch64-linux-android", "-fandroid-kernel-driver-mode"}},
+      // A driver build that picks up -fbuiltin-mimalloc from shared flags has
+      // to come out clean too: the suppression wins over the explicit request.
+      {"ms_kernel_explicit_request",
+       {"--target=x86_64-pc-windows-msvc", "-fms-kernel",
+        "-fbuiltin-mimalloc"}},
+  };
+
+  for (const Mode &M : Modes) {
+    SCOPED_TRACE(M.Label);
+    // ncc() rather than compileOnly(): the latter appends the host -target,
+    // which would undo the cross triples these modes need.
+    auto Obj = tmpFile(std::string("mimalloc_kernel_") + M.Label + ".o");
+    std::vector<std::string> Args = M.Args;
+    Args.insert(Args.end(), {"-c", Source, "-o", Obj.string()});
+    auto R = ncc(Args);
+    EXPECT_EQ(R.exitCode, 0) << R.err;
+  }
 }
 
 // Basic malloc/free/calloc/realloc should work with -fbuiltin-mimalloc

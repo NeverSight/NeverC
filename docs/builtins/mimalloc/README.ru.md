@@ -6,12 +6,12 @@
 
 ## Обзор
 
-NeverC может встраивать [mimalloc](https://github.com/microsoft/mimalloc) — высокопроизводительный аллокатор памяти от Microsoft — непосредственно в скомпилированные двоичные файлы через слияние LLVM bitcode. При активации `malloc`, `free`, `calloc` и `realloc` прозрачно заменяются реализациями mimalloc во время компиляции.
+NeverC встраивает [mimalloc](https://github.com/microsoft/mimalloc) — высокопроизводительный аллокатор памяти от Microsoft — непосредственно в скомпилированные двоичные файлы через слияние LLVM bitcode. `malloc`, `free`, `calloc` и `realloc` прозрачно заменяются реализациями mimalloc во время компиляции.
 
-**Активация:**
+**Включено по умолчанию** везде, где есть куча libc, которую можно заменить: обычная сборка уже выделяет память через mimalloc. Ядерные и freestanding-цели исключаются автоматически; на хостовой цели отключается через `-fno-builtin-mimalloc`.
 
 ```bash
-neverc -fbuiltin-mimalloc main.c -o main
+neverc main.c -o main
 ```
 
 ---
@@ -53,6 +53,8 @@ neverc -fno-builtin-mimalloc main.c -o main                    # отключи�
 |-------------|---------|
 | `-fno-builtin` | Нет сценария переопределения CRT |
 | `-mkernel` | Нет кучи пользовательского пространства в ядре |
+| `-fms-kernel` | Драйвер ядра Windows; то же, и не подразумевает `-fno-builtin` |
+| `-fandroid-kernel-driver-mode` | Модуль ядра Android; то же |
 | `-fdyncode-mode` | Заменён HeapArenaPass (арена + OS-фоллбэк) |
 | `-ffreestanding` | Нет libc для переопределения |
 

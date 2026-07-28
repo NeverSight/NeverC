@@ -6,15 +6,15 @@
 
 ## Overview
 
-NeverC can embed [mimalloc](https://github.com/microsoft/mimalloc) — Microsoft's high-performance general-purpose allocator — directly into compiled binaries via LLVM bitcode merging. When enabled, `malloc`, `free`, `calloc`, and `realloc` are transparently replaced by mimalloc's implementations at compile time, requiring no external library linkage.
+NeverC embeds [mimalloc](https://github.com/microsoft/mimalloc) — Microsoft's high-performance general-purpose allocator — directly into compiled binaries via LLVM bitcode merging. `malloc`, `free`, `calloc`, and `realloc` are transparently replaced by mimalloc's implementations at compile time, requiring no external library linkage.
 
-**Enabling:**
+**This is on by default** wherever there is a libc heap to replace, so an ordinary build already allocates through mimalloc — no flag, no source change:
 
 ```bash
-neverc -fbuiltin-mimalloc main.c -o main
+neverc main.c -o main
 ```
 
-The resulting binary uses mimalloc for all heap allocations without any source code changes.
+Kernel and freestanding targets are excluded automatically; see [Automatic Suppression](#automatic-suppression). On a hosted target, opt out with `-fno-builtin-mimalloc`.
 
 ---
 
@@ -101,12 +101,14 @@ Unsupported platforms (FreeBSD, etc.) silently skip `mimalloc` injection — no 
 
 ## Automatic Suppression
 
-The driver automatically suppresses `-fbuiltin-mimalloc` in these scenarios:
+The driver automatically suppresses `mimalloc` in these scenarios:
 
 | Flag / Mode | Reason |
 |-------------|--------|
 | `-fno-builtin` | No CRT function override makes sense |
 | `-mkernel` | Kernel mode has no userspace heap; drivers use `ExAllocatePool2` |
+| `-fms-kernel` | Windows kernel-mode driver; same, and it does not imply `-fno-builtin` |
+| `-fandroid-kernel-driver-mode` | Android kernel module; same |
 | `-fdyncode-mode` | Replaced by HeapArenaPass (arena + OS fallback) |
 | `-ffreestanding` | No libc to override |
 

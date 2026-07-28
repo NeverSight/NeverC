@@ -6,12 +6,12 @@
 
 ## Descripción
 
-NeverC puede integrar [mimalloc](https://github.com/microsoft/mimalloc) — el asignador de memoria de alto rendimiento de Microsoft — directamente en los binarios compilados mediante fusión de bitcode LLVM. Al activarlo, `malloc`, `free`, `calloc` y `realloc` se reemplazan transparentemente por las implementaciones de mimalloc en tiempo de compilación.
+NeverC integra [mimalloc](https://github.com/microsoft/mimalloc) — el asignador de memoria de alto rendimiento de Microsoft — directamente en los binarios compilados mediante fusión de bitcode LLVM. `malloc`, `free`, `calloc` y `realloc` se reemplazan transparentemente por las implementaciones de mimalloc en tiempo de compilación.
 
-**Activación:**
+**Activado por defecto** allí donde haya un heap de libc que reemplazar: una compilación corriente ya asigna a través de mimalloc. Los objetivos de kernel y freestanding quedan excluidos automáticamente; en un objetivo host, `-fno-builtin-mimalloc` lo desactiva.
 
 ```bash
-neverc -fbuiltin-mimalloc main.c -o main
+neverc main.c -o main
 ```
 
 ---
@@ -53,6 +53,8 @@ neverc -fno-builtin-mimalloc main.c -o main                    # desactivar
 |-------------|-------|
 | `-fno-builtin` | Sin escenario de override de CRT |
 | `-mkernel` | Sin heap de espacio de usuario en el kernel |
+| `-fms-kernel` | Driver de kernel de Windows; igual, y no implica `-fno-builtin` |
+| `-fandroid-kernel-driver-mode` | Módulo de kernel de Android; igual |
 | `-fdyncode-mode` | Reemplazado por HeapArenaPass (arena + fallback OS) |
 | `-ffreestanding` | Sin libc para reemplazar |
 

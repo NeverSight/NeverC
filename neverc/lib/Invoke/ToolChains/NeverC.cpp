@@ -2593,21 +2593,30 @@ void addNeverCFeatureFlags(const ArgList &Args, ArgStringList &CmdArgs,
   Args.AddLastArg(CmdArgs, options::OPT_fstrhash_fold);
   Args.AddLastArg(CmdArgs, options::OPT_fno_strhash_fold);
 
-  // -fbuiltin-mimalloc is suppressed when:
+  // mimalloc replaces the libc heap, so it is on wherever there is a libc heap
+  // to replace and suppressed where there is not:
   //   - -fno-builtin is active (no CRT override makes sense)
-  //   - -mkernel is active (implies -fno-builtin; no userspace heap)
+  //   - -mkernel, -fms-kernel and -fandroid-kernel-driver-mode build kernel
+  //     images, which have no userspace heap; mimalloc's backend reaches for
+  //     mmap/VirtualAlloc and thread-locals that do not exist there
   //   - -fdyncode-mode is active (HeapArenaPass handles heap)
   //   - -ffreestanding is active (no libc to override)
   bool SuppressMimalloc =
       Args.hasArg(options::OPT_fno_builtin) ||
       Args.hasArg(options::OPT_mkernel) ||
+      Args.hasArg(options::OPT_fms_kernel) ||
+      Args.hasArg(options::OPT_fandroid_kernel_driver_mode) ||
       Args.hasArg(options::OPT_fdyncode_mode) ||
       Args.hasArg(options::OPT_ffreestanding);
-  if (SuppressMimalloc)
-    CmdArgs.push_back("-fno-builtin-mimalloc");
-  else
-    Args.addOptInFlag(CmdArgs, options::OPT_fbuiltin_mimalloc,
-                      options::OPT_fno_builtin_mimalloc);
+  // Spelled out either way rather than left to the cc1 default: the driver is
+  // the only layer that knows about the suppressions above, and cc1 defaults
+  // this off, so silence here would mean off everywhere.
+  bool EnableMimalloc =
+      !SuppressMimalloc &&
+      Args.hasFlag(options::OPT_fbuiltin_mimalloc,
+                   options::OPT_fno_builtin_mimalloc, /*Default=*/true);
+  CmdArgs.push_back(EnableMimalloc ? "-fbuiltin-mimalloc"
+                                   : "-fno-builtin-mimalloc");
 
   if (!Args.hasArg(options::OPT_fno_builtin) &&
       !Args.hasArg(options::OPT_ffreestanding) &&

@@ -6,12 +6,12 @@
 
 ## 概要
 
-NeverC は [mimalloc](https://github.com/microsoft/mimalloc)（Microsoft の高性能汎用メモリアロケータ）を LLVM bitcode マージにより、コンパイル済みバイナリに直接埋め込むことができます。有効にすると、`malloc`、`free`、`calloc`、`realloc` がコンパイル時に mimalloc の実装に透過的に置換されます。
+NeverC は [mimalloc](https://github.com/microsoft/mimalloc)（Microsoft の高性能汎用メモリアロケータ）を LLVM bitcode マージにより、コンパイル済みバイナリに直接埋め込みます。`malloc`、`free`、`calloc`、`realloc` がコンパイル時に mimalloc の実装に透過的に置換されます。
 
-**有効化：**
+**これはデフォルトで有効です**。置き換える libc ヒープがあるターゲットなら、通常のビルドがすでに mimalloc 経由で確保します。カーネルおよび freestanding ターゲットは自動的に除外されます。ホストターゲットで無効にするには `-fno-builtin-mimalloc` を使います。
 
 ```bash
-neverc -fbuiltin-mimalloc main.c -o main
+neverc main.c -o main
 ```
 
 ---
@@ -53,6 +53,8 @@ neverc -fno-builtin-mimalloc main.c -o main                    # 無効化
 |----------------|------|
 | `-fno-builtin` | CRT 関数のオーバーライドシナリオなし |
 | `-mkernel` | カーネルモードにユーザー空間ヒープなし |
+| `-fms-kernel` | Windows カーネルドライバ。同上、かつ `-fno-builtin` を含意しない |
+| `-fandroid-kernel-driver-mode` | Android カーネルモジュール。同上 |
 | `-fdyncode-mode` | HeapArenaPass で代替（arena + OS フォールバック） |
 | `-ffreestanding` | オーバーライドする libc なし |
 

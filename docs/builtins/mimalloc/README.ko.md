@@ -6,12 +6,12 @@
 
 ## 개요
 
-NeverC는 [mimalloc](https://github.com/microsoft/mimalloc)(Microsoft의 고성능 범용 메모리 할당자)을 LLVM bitcode 병합을 통해 컴파일된 바이너리에 직접 임베드할 수 있습니다. 활성화하면 `malloc`, `free`, `calloc`, `realloc`이 컴파일 시 mimalloc 구현으로 투명하게 대체됩니다.
+NeverC는 [mimalloc](https://github.com/microsoft/mimalloc)(Microsoft의 고성능 범용 메모리 할당자)을 LLVM bitcode 병합을 통해 컴파일된 바이너리에 직접 임베드합니다. `malloc`, `free`, `calloc`, `realloc`이 컴파일 시 mimalloc 구현으로 투명하게 대체됩니다.
 
-**활성화:**
+**이 기능은 기본적으로 켜져 있습니다.** 대체할 libc 힙이 있는 타깃이라면 평범한 빌드가 이미 mimalloc으로 할당합니다. 커널 및 freestanding 타깃은 자동으로 제외되며, 호스트 타깃에서는 `-fno-builtin-mimalloc`으로 해제할 수 있습니다.
 
 ```bash
-neverc -fbuiltin-mimalloc main.c -o main
+neverc main.c -o main
 ```
 
 ---
@@ -53,6 +53,8 @@ neverc -fno-builtin-mimalloc main.c -o main                    # 비활성화
 |--------------|------|
 | `-fno-builtin` | CRT 함수 오버라이드 시나리오 없음 |
 | `-mkernel` | 커널 모드에 유저스페이스 힙 없음 |
+| `-fms-kernel` | Windows 커널 드라이버. 동일하며 `-fno-builtin`을 함의하지 않음 |
+| `-fandroid-kernel-driver-mode` | Android 커널 모듈. 동일 |
 | `-fdyncode-mode` | HeapArenaPass로 대체 (arena + OS 폴백) |
 | `-ffreestanding` | 오버라이드할 libc 없음 |
 

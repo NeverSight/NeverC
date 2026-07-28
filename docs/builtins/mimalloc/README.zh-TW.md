@@ -6,12 +6,12 @@
 
 ## 概述
 
-NeverC 可以將 [mimalloc](https://github.com/microsoft/mimalloc) — 微軟的高效能通用記憶體配置器 — 透過 LLVM bitcode 合併直接嵌入編譯產物中。啟用後，`malloc`、`free`、`calloc` 和 `realloc` 在編譯時被透明替換為 mimalloc 的實作。
+NeverC 將 [mimalloc](https://github.com/microsoft/mimalloc) — 微軟的高效能通用記憶體配置器 — 透過 LLVM bitcode 合併直接嵌入編譯產物中。`malloc`、`free`、`calloc` 和 `realloc` 在編譯時被透明替換為 mimalloc 的實作。
 
-**啟用方式：**
+**該特性預設開啟**：只要目標存在可替換的 libc 堆積，一般編譯就已經透過 mimalloc 配置記憶體。核心與 freestanding 目標會自動排除；在宿主目標上可用 `-fno-builtin-mimalloc` 退出。
 
 ```bash
-neverc -fbuiltin-mimalloc main.c -o main
+neverc main.c -o main
 ```
 
 ---
@@ -67,6 +67,8 @@ neverc -fno-builtin-mimalloc main.c -o main
 |-------------|------|
 | `-fno-builtin` | 無 CRT 函式覆蓋場景 |
 | `-mkernel` | 核心模式無使用者空間堆積 |
+| `-fms-kernel` | Windows 核心驅動；同上，且不隱含 `-fno-builtin` |
+| `-fandroid-kernel-driver-mode` | Android 核心模組；同上 |
 | `-fdyncode-mode` | 由 HeapArenaPass 替代（arena + OS 回退） |
 | `-ffreestanding` | 無 libc 可覆蓋 |
 
