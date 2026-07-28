@@ -1,6 +1,6 @@
 # Windows Kernel Driver + CET Shadow Stack
 # Usage: neverc make               (x64, the only architecture here)
-#        neverc make all-arch      (same thing; see below)
+#        neverc make all-arch      (same thing — x64 is the only one)
 #        neverc make TESTSIGN=1    (attach an Authenticode test signature)
 #
 # -fcf-protection=return: CET Shadow Stack compatible code (KCET)
