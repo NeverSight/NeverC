@@ -1,11 +1,14 @@
 set(LLVM_LINK_COMPONENTS
   BinaryFormat
+  DebugInfoDWARF
   Object
   Support
   )
 
 add_neverc_library(nevercMerge
   Core/MergerDispatch.cpp
+
+  Common/DwarfRebase.cpp
 
   ELF/MergerELF.cpp
   MachO/MergerMachO.cpp

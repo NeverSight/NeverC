@@ -23,6 +23,7 @@
 //
 //===------------------------------------------------------------------===//
 
+#include "Common/DwarfRebase.h"
 #include "Common/MergerCommon.h"
 #include "neverc/Merge/Merger.h"
 
@@ -111,6 +112,8 @@ bool mergeMachO64Impl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     DenseMap<unsigned, uint64_t> SecOff;
   };
   SmallVector<PerPartition, 8> Maps;
+  SmallVector<PartitionDwarf, 8> PartDwarfs;
+  PartDwarfs.resize(Buffers.size());
 
   // External symbol dedup — ported from LLD MachO SymbolTable::addDefined /
   // SymbolTable::addUndefined.  In -r mode, defined GLOBAL beats WEAK beats
@@ -293,6 +296,12 @@ bool mergeMachO64Impl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
       PM.OrigSecAddr[PartSecOrdinal] = S64.addr;
       PM.SecOff[PartSecOrdinal] = PartOffset;
 
+      // DWARF sections address each other with plain integers rather than
+      // relocations, so note where this partition landed in each of them; the
+      // offsets are rewritten once every partition has been appended.
+      PartDwarfs[p].record(SectName, MIdx, PartOffset,
+                           IsZerofill ? 0 : S64.size);
+
       for (const auto &R : Sec.relocations()) {
         MO::relocation_info RI;
         auto RawRI = Obj.getRelocation(R.getRawDataRefImpl());
@@ -406,6 +415,20 @@ bool mergeMachO64Impl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
       SymIdx++;
     }
   }
+
+  // Every partition has now been appended, so each one's DWARF sections have
+  // a known home in the merged output.  Re-point the offsets the units carry
+  // for each other; until this runs, every partition after the first reads the
+  // first one's abbreviation and string tables.
+  if (!rebaseMergedDwarf(
+          PartDwarfs,
+          [&](unsigned Idx) {
+            return Idx < MergedSections.size()
+                       ? MutableArrayRef<char>(MergedSections[Idx].Data)
+                       : MutableArrayRef<char>();
+          },
+          /*IsLittleEndian=*/true))
+    return false;
 
   // Remap relocation symbol/section indices.  Non-external relocation
   // data adjustment is deferred to after section layout is computed.

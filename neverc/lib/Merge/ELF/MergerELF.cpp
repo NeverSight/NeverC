@@ -21,6 +21,7 @@
 //
 //===------------------------------------------------------------------===//
 
+#include "Common/DwarfRebase.h"
 #include "Common/MergerCommon.h"
 #include "neverc/Merge/Merger.h"
 
@@ -199,6 +200,8 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     DenseMap<unsigned, uint64_t> SecOff;
   };
   SmallVector<PerPartition, 8> Maps;
+  SmallVector<PartitionDwarf, 8> PartDwarfs;
+  PartDwarfs.resize(Buffers.size());
 
   // Symbol table: locals first, then globals (ELF convention).
   // In -r mode LLD does NOT recompute bindings (ElfImageEmitter.cpp:1829).
@@ -540,6 +543,12 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
 
       PM.SecMap[i] = MIdx + 1;
       PM.SecOff[i] = PartOffset;
+
+      // DWARF sections address each other with plain integers rather than
+      // relocations, so note where this partition landed in each of them; the
+      // offsets are rewritten once every partition has been appended.
+      PartDwarfs[p].record(SecName, MIdx, PartOffset,
+                           S.sh_type == SHT_NOBITS ? 0 : S.sh_size);
     }
 
     // ----- Phase 2: Merge symbols -----
@@ -688,6 +697,20 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
       }
     }
   }
+
+  // Every partition has now been appended, so each one's DWARF sections have
+  // a known home in the merged output.  Re-point the offsets the units carry
+  // for each other; until this runs, every partition after the first reads the
+  // first one's abbreviation and string tables.
+  if (!rebaseMergedDwarf(
+          PartDwarfs,
+          [&](unsigned Idx) {
+            return Idx < MergedSections.size()
+                       ? MutableArrayRef<char>(MergedSections[Idx].Data)
+                       : MutableArrayRef<char>();
+          },
+          ELFT::TargetEndianness == llvm::endianness::little))
+    return false;
 
   // ----- Finalize global symbol indices -----
   // During the loop, global SymMap entries store (slot | 0x80000000).
