@@ -2,6 +2,8 @@
 
 <div align="center">
 
+<img src="../assets/neverc-logo.svg" width="128" height="128" alt="NeverC">
+
 # NeverC
 
 **AI フレンドリーなセキュリティ研究向け C23 コンパイラ — LLVM 上に構築**

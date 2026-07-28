@@ -4,6 +4,8 @@
 
 <div align="center" dir="ltr">
 
+<img src="../assets/neverc-logo.svg" width="128" height="128" alt="NeverC">
+
 # NeverC
 
 **مُجمِّع C23 صديق للذكاء الاصطناعي لأبحاث الأمن — مبني على LLVM**

@@ -2,6 +2,8 @@
 
 <div align="center">
 
+<img src="../assets/neverc-logo.svg" width="128" height="128" alt="NeverC">
+
 # NeverC
 
 **Der KI-freundliche C23-Compiler für Sicherheitsforschung — auf LLVM gebaut**

@@ -2,6 +2,8 @@
 
 <div align="center">
 
+<img src="../assets/neverc-logo.svg" width="128" height="128" alt="NeverC">
+
 # NeverC
 
 **AI 友好的安全研究 C23 编译器，基于 LLVM 构建**

@@ -2,6 +2,8 @@
 
 <div align="center">
 
+<img src="../assets/neverc-logo.svg" width="128" height="128" alt="NeverC">
+
 # NeverC
 
 **ИИ-дружественный компилятор C23 для исследований безопасности — на базе LLVM**

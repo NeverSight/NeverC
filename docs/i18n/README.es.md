@@ -2,6 +2,8 @@
 
 <div align="center">
 
+<img src="../assets/neverc-logo.svg" width="128" height="128" alt="NeverC">
+
 # NeverC
 
 **El compilador C23 compatible con IA para investigación en seguridad, construido sobre LLVM**
