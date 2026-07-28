@@ -1,0 +1,164 @@
+# Preflight for the macOS release credentials, in minutes instead of an hour.
+#
+# release-macos-arm64.yml only reaches Apple's notary service after the full
+# compile, so anything wrong with the certificate, the notarization password or
+# the team's Apple Developer agreements costs a whole run to find out about --
+# and takes the built binaries down with it, since packaging sits downstream of
+# signing.  This runs the identical import, sign and notarize steps against a
+# throwaway binary, so the same failures surface in a few minutes.
+#
+# Manual only, and it publishes nothing.
+name: check-notarization
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+
+jobs:
+  preflight:
+    name: Sign + notarize a throwaway binary
+    if: github.repository == 'NeverSight/NeverC'
+    runs-on: macos-15
+    steps:
+      # Kept character-for-character in step with release-macos-arm64.yml: a
+      # preflight that imports differently from the real job can pass while the
+      # release still fails.
+      - name: Import Apple signing certificate
+        env:
+          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${APPLE_CERTIFICATE_BASE64:-}" ]; then
+            echo "::error::APPLE_CERTIFICATE_BASE64 is empty or not set."
+            exit 1
+          fi
+
+          CERT_PATH="$RUNNER_TEMP/certificate.p12"
+          if ! printf '%s' "$APPLE_CERTIFICATE_BASE64" | base64 --decode > "$CERT_PATH"; then
+            echo "::error::APPLE_CERTIFICATE_BASE64 is not valid base64. Re-create it with: base64 -i cert.p12 | pbcopy"
+            exit 1
+          fi
+
+          CERT_SIZE=$(wc -c < "$CERT_PATH" | tr -d ' ')
+          echo "Decoded certificate: ${CERT_SIZE} bytes"
+          if [ "$CERT_SIZE" -lt 512 ]; then
+            echo "::error::Decoded certificate is only ${CERT_SIZE} bytes, so the secret is truncated or holds something other than a .p12."
+            exit 1
+          fi
+
+          OPENSSL=/opt/homebrew/opt/openssl@3/bin/openssl
+          [ -x "$OPENSSL" ] || OPENSSL=$(command -v openssl)
+          echo "Using $("$OPENSSL" version)"
+
+          if ! "$OPENSSL" pkcs12 -in "$CERT_PATH" -passin "pass:${APPLE_CERTIFICATE_PASSWORD}" \
+                 -nokeys -noout 2> "$RUNNER_TEMP/p12.err"; then
+            echo "::error::APPLE_CERTIFICATE_PASSWORD does not open the .p12, or the file is not a PKCS#12 archive."
+            sed 's/^/  openssl: /' "$RUNNER_TEMP/p12.err"
+            exit 1
+          fi
+          echo "PKCS#12 opens with the configured password."
+
+          KEYCHAIN_PATH="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD="$("$OPENSSL" rand -base64 32)"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          import_cert() {
+            security import "$1" \
+              -k "$KEYCHAIN_PATH" \
+              -P "${APPLE_CERTIFICATE_PASSWORD}" \
+              -T /usr/bin/codesign \
+              -T /usr/bin/security
+          }
+
+          if ! import_cert "$CERT_PATH"; then
+            echo "Direct import failed; re-encrypting the archive with legacy PKCS#12 algorithms."
+            PLAIN_PATH="$RUNNER_TEMP/certificate-plain.pem"
+            LEGACY_PATH="$RUNNER_TEMP/certificate-legacy.p12"
+            trap 'rm -f "$PLAIN_PATH" "$LEGACY_PATH"' EXIT
+
+            "$OPENSSL" pkcs12 -in "$CERT_PATH" -passin "pass:${APPLE_CERTIFICATE_PASSWORD}" \
+              -nodes -out "$PLAIN_PATH"
+            "$OPENSSL" pkcs12 -export -legacy -in "$PLAIN_PATH" -out "$LEGACY_PATH" \
+                -passout "pass:${APPLE_CERTIFICATE_PASSWORD}" 2>/dev/null \
+              || "$OPENSSL" pkcs12 -export -in "$PLAIN_PATH" -out "$LEGACY_PATH" \
+                   -passout "pass:${APPLE_CERTIFICATE_PASSWORD}"
+            rm -f "$PLAIN_PATH"
+
+            import_cert "$LEGACY_PATH"
+            rm -f "$LEGACY_PATH"
+          fi
+          rm -f "$CERT_PATH"
+
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH" > /dev/null
+
+          security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain-db
+
+          echo "SIGNING_KEYCHAIN=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+          echo "SIGNING_KEYCHAIN_PASSWORD=$KEYCHAIN_PASSWORD" >> "$GITHUB_ENV"
+
+          echo "Available signing identities:"
+          IDENTITIES=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH")
+          echo "$IDENTITIES"
+          if ! printf '%s' "$IDENTITIES" | grep -q "Developer ID Application"; then
+            echo "::error::The certificate imported, but it is not a 'Developer ID Application' certificate, which is the only kind that can sign software for distribution outside the App Store."
+            exit 1
+          fi
+
+      # Apple notarizes Mach-O payloads, not the compiler that produced them, so
+      # a two-line program exercises the same path neverc would.
+      - name: Build a throwaway Mach-O
+        run: |
+          set -euo pipefail
+          printf 'int main(void) { return 0; }\n' > "$RUNNER_TEMP/preflight.c"
+          cc -o "$RUNNER_TEMP/preflight" "$RUNNER_TEMP/preflight.c"
+          file -b "$RUNNER_TEMP/preflight"
+
+      - name: Sign the throwaway binary
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          codesign --force --timestamp --options runtime \
+            --sign "Developer ID Application: NEVERSIGHT LLC ($APPLE_TEAM_ID)" \
+            --keychain "$SIGNING_KEYCHAIN" \
+            "$RUNNER_TEMP/preflight"
+          codesign --verify --deep --strict "$RUNNER_TEMP/preflight"
+          echo "Signed and verified."
+
+      # The step the last two release attempts died on.  A 403 here means the
+      # team's Apple Developer agreements still need signing; success means the
+      # release can get past notarization.
+      - name: Notarize the throwaway binary
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_NOTARIZATION_PASSWORD: ${{ secrets.APPLE_NOTARIZATION_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          ditto -c -k --keepParent "$RUNNER_TEMP/preflight" "$RUNNER_TEMP/preflight.zip"
+
+          echo "Submitting to Apple for notarization..."
+          xcrun notarytool submit "$RUNNER_TEMP/preflight.zip" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_NOTARIZATION_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait \
+            --timeout 15m
+
+          echo "Notarization succeeded: the macOS release can get past this step."
+
+      - name: Clean up signing keychain
+        if: always()
+        run: |
+          if [ -n "${SIGNING_KEYCHAIN:-}" ] && [ -f "$SIGNING_KEYCHAIN" ]; then
+            security delete-keychain "$SIGNING_KEYCHAIN"
+          fi
