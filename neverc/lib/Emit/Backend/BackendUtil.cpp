@@ -698,10 +698,9 @@ Error GenAssemblyHelper::runBuiltinOptimizationPipeline(
   }
 
   if (LangOpts.BuiltinMimalloc) {
-    bool IsPreLinkMi = CodeGenOpts.PrepareForLTO;
     PB.registerPipelineStartEPCallback(
-        [IsPreLinkMi](ModulePassManager &MPM, OptimizationLevel) {
-          MPM.addPass(MimallocRuntimeLinkerPass(IsPreLinkMi));
+        [](ModulePassManager &MPM, OptimizationLevel) {
+          MPM.addPass(MimallocRuntimeLinkerPass());
         });
   }
 

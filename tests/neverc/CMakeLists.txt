@@ -77,7 +77,11 @@ endmacro()
 
 add_executable(neverc-tests ${NEVERC_TEST_SOURCES})
 
-target_link_libraries(neverc-tests PRIVATE GTest::gtest GTest::gtest_main)
+target_link_libraries(neverc-tests PRIVATE
+  GTest::gtest
+  GTest::gtest_main
+  LLVMObject
+)
 
 # Apply the C23 compile feature to an ABI smoke-compile target, falling back to
 # C11 on toolchains whose CMake does not advertise `c_std_23` (for example

@@ -213,9 +213,12 @@ TEST_F(MimallocTest, RuntimeCrossCompilesWithPcgOnCOFF) {
        {"x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"}) {
     SCOPED_TRACE(triple);
     auto obj = tmpFile(std::string("mimalloc_pcg_") + triple + ".obj");
+    // O1 is intentional: after the runtime globals become linkonce_odr,
+    // GlobalDCE removes unanchored .CRT callback arrays while leaving their
+    // /INCLUDE directives behind. O0 does not exercise that failure mode.
     auto r =
         ncc({std::string("--target=") + triple, "-std=c23", "-fbuiltin-string",
-             "-fbuiltin-mimalloc", "-fno-lto", "-O0", "-c", "-mllvm",
+             "-fbuiltin-mimalloc", "-fno-lto", "-O1", "-c", "-mllvm",
              "-neverc-pcg-min-funcs=2", "-mllvm", "-neverc-pcg-weight-floor=1",
              "-mllvm", "-neverc-pcg-cg-weight-div=1", src, "-o", obj.string()});
     ASSERT_EQ(r.exitCode, 0) << r.err;

@@ -83,10 +83,9 @@ Constant *pointerCastTo(Constant *Value, Type *Ty) {
 /// (Merge/ELF/MergerELF.cpp); Mach-O ignores the key; and codegen drops any
 /// record whose key it cannot see a definition for, which under partitioning
 /// is how a constructor goes missing without a diagnostic.  So the key is
-/// cleared on every format and \p GuardRepeatCalls carries the duty instead:
-/// it does not prevent duplicate records, it makes them harmless.
-void prepareRuntimeStructors(Module &M, StringRef GlobalName, StringRef Role,
-                             bool GuardRepeatCalls) {
+/// cleared on every format and a once wrapper carries the duty instead: it
+/// does not prevent duplicate records, it makes them harmless.
+void prepareRuntimeStructors(Module &M, StringRef GlobalName, StringRef Role) {
   auto *GV = M.getGlobalVariable(GlobalName);
   if (!GV || !GV->hasInitializer())
     return;
@@ -110,8 +109,7 @@ void prepareRuntimeStructors(Module &M, StringRef GlobalName, StringRef Role,
 
     Constant *Callee = cast<Constant>(Entry->getOperand(1));
     Constant *Key = cast<Constant>(Entry->getOperand(2));
-    Constant *NewCallee =
-        GuardRepeatCalls ? getOrCreateOnceWrapper(M, *Target, Role) : Callee;
+    Constant *NewCallee = getOrCreateOnceWrapper(M, *Target, Role);
     // Cleared rather than merely left unset: the runtime's own bitcode can
     // arrive already carrying a key.
     Constant *NewKey = Constant::getNullValue(Key->getType());
@@ -145,14 +143,12 @@ MimallocRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
       parseBitcodeAndPrepare(Embedded, M, "neverc mimalloc runtime");
   namespaceRuntimeLocals(*MimallocMod, MimallocRuntimeLocalPrefix);
 
-  // Each non-LTO consumer TU embeds its own copy of these records, so one
-  // link can register the same initializer several times over.  An LTO
-  // pre-link module is merged before anything registers it, so it needs no
-  // guard.
-  prepareRuntimeStructors(*MimallocMod, "llvm.global_ctors", "ctor",
-                          /*GuardRepeatCalls=*/!IsPreLink);
-  prepareRuntimeStructors(*MimallocMod, "llvm.global_dtors", "dtor",
-                          /*GuardRepeatCalls=*/!IsPreLink);
+  // Every consumer TU embeds its own copy of these appending records.  Native
+  // links keep one record per object, while LTO concatenates every pre-link
+  // module's record before coalescing the linkonce_odr callee; either route can
+  // therefore call the same initializer more than once.
+  prepareRuntimeStructors(*MimallocMod, "llvm.global_ctors", "ctor");
+  prepareRuntimeStructors(*MimallocMod, "llvm.global_dtors", "dtor");
 
   tagRuntimeDefinitions(*MimallocMod, MimallocRuntimeMetadata);
   linkModuleOrFail(M, std::move(MimallocMod), "neverc mimalloc runtime");
@@ -226,6 +222,23 @@ MimallocRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
     }
   }
 
+  // A section assignment is part of the runtime ABI, not an optimizer
+  // placement hint.  In particular, Windows discovers mimalloc's TLS
+  // callbacks through arrays in the ordered .CRT sections, and nothing in the
+  // module refers to them: the only references are the /INCLUDE directives
+  // emitted beside them, which GlobalDCE cannot see.  Unanchored, the
+  // definitions are erased from -O1 up while their directives remain,
+  // producing an object that asks the linker for symbols it cannot possibly
+  // provide.
+  //
+  // Anchor this structurally instead of naming the callbacks: any
+  // embedded-runtime global deliberately assigned to an object section
+  // carries linker-visible registration data and must survive codegen.
+  SmallVector<GlobalValue *, 4> SectionAnchored;
+  for (GlobalVariable &GV : M.globals())
+    if (!GV.isDeclaration() && IsMimallocGlobal(GV) && GV.hasSection())
+      SectionAnchored.push_back(&GV);
+
   removeFromUsedLists(M, [&](Constant *C) {
     auto *GV = dyn_cast<GlobalValue>(C->stripPointerCasts());
     if (!GV)
@@ -233,24 +246,12 @@ MimallocRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
     if (auto *F = dyn_cast<Function>(GV))
       return IsMimallocFn(*F) &&
              !isMallocOverrideSymbol(F->getName());
-    if (auto *GVar = dyn_cast<GlobalVariable>(GV)) {
-      if (!IsMimallocGlobal(*GVar))
-        return false;
-
-      // A section assignment is part of the runtime ABI, not an optimizer
-      // placement hint.  In particular, Windows discovers mimalloc's TLS
-      // callbacks through arrays in the ordered .CRT sections.  Dropping
-      // those arrays from llvm.used lets GlobalDCE erase their definitions
-      // while their /INCLUDE directives remain, producing an object that
-      // asks the linker for symbols it cannot possibly provide.
-      //
-      // Preserve this structurally instead of naming the callbacks: any
-      // embedded-runtime global deliberately assigned to an object section
-      // carries linker-visible registration data and must survive codegen.
-      return !GVar->hasSection();
-    }
+    if (auto *GVar = dyn_cast<GlobalVariable>(GV))
+      return IsMimallocGlobal(*GVar) && !GVar->hasSection();
     return false;
   });
+
+  appendToUsed(M, SectionAnchored);
 
   clearRuntimeDefinitionTags(M, MimallocRuntimeMetadata);
   return PreservedAnalyses::none();

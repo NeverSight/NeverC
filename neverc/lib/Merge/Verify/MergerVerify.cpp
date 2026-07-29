@@ -1025,17 +1025,22 @@ struct RawCOFF {
 
   // Relocations carry a *raw* symbol-table index (aux records included), but
   // Syms drops aux entries; map back via the recorded Raw slot.
-  StringRef symNameByRaw(uint32_t RawIdx) const {
+  const RawCoffSym *symByRaw(uint32_t RawIdx) const {
     // A relocation's SymbolTableIndex is attacker-controlled and can equal
     // DenseMap's reserved empty/tombstone keys, on which find() is undefined and
     // can return an uninitialized slot index -> out-of-bounds Syms[] read (the
     // merge fuzzer hit this as a BUS).  Treat reserved keys as absent.
     if (detail::isReservedDenseKey(RawIdx))
-      return {};
+      return nullptr;
     auto It = RawToSym.find(RawIdx);
     if (It == RawToSym.end())
-      return {};
-    return Syms[It->second].Name;
+      return nullptr;
+    return &Syms[It->second];
+  }
+
+  StringRef symNameByRaw(uint32_t RawIdx) const {
+    const RawCoffSym *S = symByRaw(RawIdx);
+    return S ? S->Name : StringRef();
   }
 
   bool isBSS(unsigned N1) const {
@@ -1313,16 +1318,31 @@ bool verifyMergeCOFFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
 
     // Weak external aux TagIndex consistency.  A COFF weak external names its
     // default definition by a symbol index stored in an aux record; the merge
-    // concatenates symbol tables, so that index must be remapped.  A stale index
-    // aliases the weak symbol onto an unrelated definition — invisible to the
-    // content/offset anchors because aux records hold no section bytes.  Re-
+    // concatenates symbol tables, so that index must be remapped.  A stale
+    // index aliases the weak symbol onto an unrelated definition — invisible to
+    // the content/offset anchors because aux records hold no section bytes. Re-
     // derive it by name: the merged weak external must name the same default
     // symbol the input did.  Duplicate-named weak externals are skipped as
     // ambiguous (their absence, if any, is caught by the symbol checks above).
+    //
+    // The one name difference that is not a mis-remap is a placeholder
+    // default.  "There is no default definition" is encoded as an absolute
+    // symbol at zero, and MergerCOFF recognises that encoding to collapse the
+    // per-partition copies of a single extern_weak rule onto one record.  The
+    // object writer names each partition's placeholder after whichever
+    // external symbol that partition happened to list first
+    // (WinCOFFWriter::setWeakDefaultNames), so the surviving record's
+    // placeholder legitimately carries a different name than the collapsed
+    // one's.  Compare those structurally; a stale index pointing at a real
+    // definition still fails, since a real definition is not absolute-at-zero.
+    auto namesPlaceholderDefault = [](const RawCoffSym *S) {
+      return S && S->SecNum == IMAGE_SYM_ABSOLUTE && S->Value == 0;
+    };
     for (const RawCoffSym &S : In.Syms) {
       if (S.Storage != IMAGE_SYM_CLASS_WEAK_EXTERNAL || S.WeakTag < 0)
         continue;
-      StringRef InDef = In.symNameByRaw((uint32_t)S.WeakTag);
+      const RawCoffSym *InDefSym = In.symByRaw((uint32_t)S.WeakTag);
+      StringRef InDef = InDefSym ? InDefSym->Name : StringRef();
       if (InDef.empty() || S.Name.empty())
         continue;
       auto It = OutByName.find(S.Name);
@@ -1332,12 +1352,17 @@ bool verifyMergeCOFFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
       if (OutW.WeakTag < 0)
         return fail(Err, "verify: COFF weak external '" + S.Name +
                              "' lost its aux record in the merged output");
-      StringRef OutDef = Out.symNameByRaw((uint32_t)OutW.WeakTag);
-      if (OutDef != InDef)
-        return fail(Err, "verify: COFF weak external '" + S.Name +
-                             "' aux TagIndex names '" + OutDef +
-                             "' but the input default was '" + InDef +
-                             "' (weak alias TagIndex not remapped)");
+      const RawCoffSym *OutDefSym = Out.symByRaw((uint32_t)OutW.WeakTag);
+      StringRef OutDef = OutDefSym ? OutDefSym->Name : StringRef();
+      if (OutDef == InDef)
+        continue;
+      if (namesPlaceholderDefault(InDefSym) &&
+          namesPlaceholderDefault(OutDefSym))
+        continue;
+      return fail(Err, "verify: COFF weak external '" + S.Name +
+                           "' aux TagIndex names '" + OutDef +
+                           "' but the input default was '" + InDef +
+                           "' (weak alias TagIndex not remapped)");
     }
 
     // Same-input-section relative-distance invariant (BSS-safe; see SecShift).
