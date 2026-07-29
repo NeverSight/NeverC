@@ -331,7 +331,7 @@ TEST_F(LTOTest, LtoPartitionCache) {
   auto srcDir = tmpFile("pcache_src");
   fs::create_directories(srcDir);
 
-  auto fnBody = [&](int fi, int fj, int extra) {
+  auto fnBody = [&](int fi, int fj, int extra, bool emitCodegenError) {
     std::string b;
     b += "__attribute__((noinline)) unsigned f_" + std::to_string(fi) + "_" +
          std::to_string(fj) + "(unsigned a) {\n";
@@ -344,13 +344,17 @@ TEST_F(LTOTest, LtoPartitionCache) {
            std::to_string(mul) + "u; x ^= x << " +
            std::to_string(3 + (s % 7)) + ";\n";
     }
+    if (emitCodegenError)
+      b += "  __asm__ volatile(\".error\");\n";
     b += "  return x;\n}\n";
     return b;
   };
-  auto writeUnit = [&](int fi, int extraInLastFn) {
+  auto writeUnit = [&](int fi, int extraInLastFn,
+                       bool emitCodegenError = false) {
     std::string src = "extern volatile unsigned g_seed;\n";
     for (int fj = 0; fj < NFuncs; ++fj)
-      src += fnBody(fi, fj, fj == NFuncs - 1 ? extraInLastFn : 0);
+      src += fnBody(fi, fj, fj == NFuncs - 1 ? extraInLastFn : 0,
+                    emitCodegenError && fj == NFuncs - 1);
     writeFile(srcDir / ("u" + std::to_string(fi) + ".c"), src);
   };
   for (int fi = 0; fi < NFiles; ++fi)
@@ -443,6 +447,30 @@ TEST_F(LTOTest, LtoPartitionCache) {
   EXPECT_EQ(r2.exitCode, 0);
   EXPECT_TRUE(r2.contains("CK=")) << r2.out;
   EXPECT_NE(r1.out, r2.out) << "edit must change the checksum";
+
+  // A backend diagnostic can still leave bytes in the partition object
+  // buffer.  That object is invalid and must not be committed to the cache.
+  writeUnit(3, 3, /*emitCodegenError=*/true);
+  compileUnit("u3");
+  CmdResult firstFailure = ncc(link);
+  EXPECT_NE(firstFailure.exitCode, 0);
+  EXPECT_TRUE(firstFailure.stderrContains(".error directive invoked"))
+      << "link did not reach the intentional backend diagnostic:\n"
+      << firstFailure.err;
+
+  // Other successful partitions may legitimately populate the fallback
+  // pipeline's cache.  On retry those are hits, while the failed partition
+  // must miss and reproduce its diagnostic.  Caching the failed object would
+  // instead let the retry consume a condemned artifact.
+  size_t afterFirstFailure = countEntries();
+  CmdResult secondFailure = ncc(link);
+  EXPECT_NE(secondFailure.exitCode, 0)
+      << "a cached failed partition made an invalid link succeed";
+  EXPECT_TRUE(secondFailure.stderrContains(".error directive invoked"))
+      << "retry did not regenerate the failed partition:\n"
+      << secondFailure.err;
+  EXPECT_EQ(countEntries(), afterFirstFailure)
+      << "retry added another entry for a partition that cannot codegen";
 }
 
 TEST_F(LTOTest, ParallelCodegenPreservesAliasUsers) {

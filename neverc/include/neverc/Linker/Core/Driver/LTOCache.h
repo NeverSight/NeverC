@@ -90,7 +90,8 @@ bool ltoCacheUsable(const LinkerDriverConfig &cfg);
 /// Runs ltoObj with the link cache wrapped around it.  bufs must already
 /// be sized to getMaxTasks(); task outputs land in bufs either way.  On a
 /// key hit the LTO pipeline is skipped entirely; on a miss (or when usable
-/// is false) it runs, and its outputs are stored on completion.
+/// is false) it runs, and its outputs are stored only if the run emits no
+/// linker errors.
 /// backendTag / emitAddrsig: see LTOCacheKey::finalize().
 void runLTOWithCache(llvm::lto::LTO &ltoObj, LTOCacheKey &key, bool usable,
                      const LinkerDriverConfig &cfg,

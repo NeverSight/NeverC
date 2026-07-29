@@ -1298,7 +1298,7 @@ bool runParallelCodeGen(Module &Mod, TargetMachine &TM, raw_pwrite_stream &OS,
         // A recorded error condemns whatever the pipeline went on to produce,
         // however finished the object looks.
         Ctx.Results[p].Success = Ctx.Results[p].Errors.empty();
-        if (Ctx.Cache && !PP.CacheKey.empty())
+        if (Ctx.Results[p].Success && Ctx.Cache && !PP.CacheKey.empty())
           Ctx.Cache->Store(PP.CacheKey, *PP.ObjBuf);
       }
     };
@@ -1450,7 +1450,7 @@ bool runParallelOptAndCodeGen(Module &Mod, TargetMachine &TM,
         // A recorded error condemns whatever the pipeline went on to produce,
         // however finished the object looks.
         Ctx.Results[p].Success = Ctx.Results[p].Errors.empty();
-        if (Ctx.Cache && !PP.CacheKey.empty())
+        if (Ctx.Results[p].Success && Ctx.Cache && !PP.CacheKey.empty())
           Ctx.Cache->Store(PP.CacheKey, *PP.ObjBuf);
       }
     };
