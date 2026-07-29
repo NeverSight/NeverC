@@ -55,6 +55,35 @@ canonicalELFSectionName(llvm::StringRef Name, uint64_t Flags,
   return Name;
 }
 
+/// Whether a section holds the call graph profile, which no merge can carry
+/// with it.
+///
+/// Each of its entries names two functions and the weight of the edge between
+/// them, and on COFF and Mach-O the two functions are written as raw symbol
+/// *table indices* (WinCOFFObjectWriter.cpp, MachObjectWriter.cpp) where ELF
+/// writes relocations.  A merge builds one symbol table out of all its inputs,
+/// so every such index comes out of it naming whatever symbol now sits at that
+/// position: the section stays well-formed and describes a different call
+/// graph than it went in with, and the linker orders the image by it.  The
+/// original numbering is gone by the time the bytes are copied, so nothing
+/// downstream can repair them.  Parallel codegen compounds it -- the profile
+/// belongs to the module rather than to any symbol in it, so the merge is
+/// handed one copy per partition.
+///
+/// Dropping it is therefore the only answer that cannot be wrong, and it is
+/// the one ELF already gives: MergerELF.cpp skips SHT_LLVM_CALL_GRAPH_PROFILE
+/// outright, on the separate grounds that it is linker metadata `-r` does not
+/// carry.  ELF can say this by section type; COFF and Mach-O have only the
+/// name codegen gave the section, so they ask here.
+inline bool isCOFFCallGraphProfileSection(llvm::StringRef Name) {
+  return Name == ".llvm.call-graph-profile";
+}
+
+inline bool isMachOCallGraphProfileSection(llvm::StringRef SegmentName,
+                                           llvm::StringRef SectionName) {
+  return SegmentName == "__LLVM" && SectionName == "__cg_profile";
+}
+
 /// Whether the bytes a Mach-O relocation of type \p Type covers on \p CpuType
 /// are a word of their own, so that adjusting the relocation can add a delta
 /// to the whole field.

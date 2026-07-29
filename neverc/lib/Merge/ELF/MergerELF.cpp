@@ -330,7 +330,11 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     // Skip metadata sections that are regenerated in the output.
     // SHT_GROUP is skipped because neverc is pure C — no COMDAT.
     // SHT_LLVM_ADDRSIG / SHT_LLVM_CALL_GRAPH_PROFILE are linker
-    // metadata that don't survive -r.
+    // metadata that don't survive -r.  COFF and Mach-O drop the call graph
+    // profile too, for the further reason that their copies of it hold symbol
+    // table indices this merge invalidates; the three formats state one policy
+    // through isCOFFCallGraphProfileSection / isMachOCallGraphProfileSection
+    // in Common/MergerCommon.h, which ELF expresses by section type instead.
     for (unsigned i = 1; i < Secs.size(); ++i) {
       const Shdr &S = Secs[i];
       // A COMDAT/section group (SHT_GROUP) implies dedup semantics this pure-C

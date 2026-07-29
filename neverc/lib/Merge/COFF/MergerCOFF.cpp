@@ -214,6 +214,17 @@ bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
       }
       StringRef SecName = *SNameOrErr;
 
+      // The call graph profile addresses its functions by symbol table index,
+      // which this merge renumbers; see isCOFFCallGraphProfileSection.  The
+      // ordinal still advances so the sections after it keep the numbers this
+      // input's symbols and relocations use, and no SecMap entry is left
+      // behind: anything defined here would be re-homed to "undefined", which
+      // is the right answer for a section codegen puts no symbol in.
+      if (detail::isCOFFCallGraphProfileSection(SecName)) {
+        ++PartSecOrdinal;
+        continue;
+      }
+
       // A relocatable object's sections carry no load address; codegen always
       // emits VirtualAddress 0.  A non-zero VirtualAddress means a malformed or
       // hostile object, or a linked image mis-fed as a relocatable input.  This

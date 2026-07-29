@@ -21,6 +21,7 @@
 
 // Used only by the NEVERC_BINARY-gated differential suite at end of file, but
 // harmless to include unconditionally.
+#include "llvm/Object/ObjectFile.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
@@ -6908,4 +6909,105 @@ TEST(MergeParallelCodegenStrict,
          "failure";
 }
 #endif // _WIN32
+
+namespace {
+
+// One input's worth of call graph profile: two defined symbols and an edge
+// between them.  Written in assembly because that is the only way to hand the
+// merger a profile -- neverc's own driver has no PGO switch (`PGOOpt` in
+// BackendUtil.cpp is always empty), so nothing it compiles from C carries the
+// entry counts CGProfilePass needs to add the "CG Profile" module flag.  The
+// `.cg_profile` directive is understood by the ELF, COFF and Mach-O assembly
+// parsers alike, and `.byte` bodies keep the fixture free of any instruction
+// encoding, so one text serves every target.
+std::string callGraphProfileAsm(unsigned Index) {
+  std::string S;
+  raw_string_ostream OS(S);
+  OS << "\t.text\n";
+  // Distinct names per input: two strong definitions of one name is a merge
+  // failure in its own right, and would stop this test short of the profile.
+  OS << "\t.globl\tcgp_from" << Index << "\n";
+  OS << "cgp_from" << Index << ":\n\t.byte\t0\n";
+  OS << "\t.globl\tcgp_to" << Index << "\n";
+  OS << "cgp_to" << Index << ":\n\t.byte\t0\n";
+  OS << "\t.cg_profile cgp_from" << Index << ", cgp_to" << Index << ", 1234\n";
+  return S;
+}
+
+// Whether these object bytes carry a call graph profile.  ELF and COFF name
+// the section the same way; Mach-O calls it __cg_profile in the __LLVM
+// segment, and the section name alone identifies it.  A merge concatenates
+// same-named sections, so several inputs' worth of profile arrives as one
+// oversized section rather than several sections -- presence, not count, is
+// what separates a dropped profile from a kept one.
+bool hasCallGraphProfile(ArrayRef<char> Bytes) {
+  auto ObjOrErr = object::ObjectFile::createObjectFile(
+      MemoryBufferRef(StringRef(Bytes.data(), Bytes.size()), "merge-test"));
+  if (!ObjOrErr) {
+    consumeError(ObjOrErr.takeError());
+    return false;
+  }
+  for (const object::SectionRef &S : (*ObjOrErr)->sections()) {
+    Expected<StringRef> NameOrErr = S.getName();
+    if (!NameOrErr) {
+      consumeError(NameOrErr.takeError());
+      continue;
+    }
+    if (*NameOrErr == ".llvm.call-graph-profile" ||
+        *NameOrErr == "__cg_profile")
+      return true;
+  }
+  return false;
+}
+
+// A call graph profile names its two functions by symbol table index on COFF
+// and Mach-O, and a merge builds one symbol table out of all its inputs -- so
+// a profile carried through would describe a different call graph than the one
+// it was measured for, and the linker would order the image by it.  Every
+// format drops it instead (see Common/MergerCommon.h).
+void runCallGraphProfileDroppedByMerge(StringRef Target, Format Fmt) {
+  ScratchDir Dir;
+  if (!Dir.Ok)
+    GTEST_SKIP() << "could not create scratch directory";
+
+  SmallVector<SmallVector<char, 0>, 2> Inputs;
+  for (unsigned i = 0; i != 2; ++i) {
+    std::string AsmPath = Dir.file(("cgp" + Twine(i) + ".s").str());
+    std::string Src = callGraphProfileAsm(i);
+    if (!writeBytes(AsmPath, ArrayRef<char>(Src.data(), Src.size())))
+      GTEST_SKIP() << "could not write assembly fixture";
+    std::string ObjPath = Dir.file(("cgp" + Twine(i) + ".o").str());
+    StringRef Args[] = {"-target", Target, "-c", AsmPath, "-o", ObjPath};
+    if (runNeverc(Dir, Args) != 0)
+      GTEST_SKIP() << "neverc cannot assemble for this target here";
+
+    SmallVector<char, 0> Bytes;
+    ASSERT_TRUE(readObj(ObjPath, Bytes));
+    // Without this the merged object having no profile would prove nothing:
+    // it could just as well mean the inputs never had one.
+    ASSERT_TRUE(hasCallGraphProfile(Bytes))
+        << "input " << i << " carries no call graph profile to drop";
+    Inputs.push_back(std::move(Bytes));
+  }
+
+  SmallVector<char, 0> Merged;
+  raw_svector_ostream OS(Merged);
+  ASSERT_TRUE(mergeObjects(Inputs, OS, Fmt));
+  EXPECT_FALSE(hasCallGraphProfile(Merged))
+      << "the merged object kept a call graph profile whose symbol indices no "
+         "longer name the functions it was measured for";
+}
+
+} // namespace
+
+TEST(MergeCallGraphProfile, ElfDroppedByMerge) {
+  runCallGraphProfileDroppedByMerge("x86_64-unknown-linux-gnu",
+                                    Format::ELF64LE);
+}
+TEST(MergeCallGraphProfile, MachODroppedByMerge) {
+  runCallGraphProfileDroppedByMerge("arm64-apple-macos", Format::MachO64);
+}
+TEST(MergeCallGraphProfile, CoffDroppedByMerge) {
+  runCallGraphProfileDroppedByMerge("x86_64-pc-windows-msvc", Format::COFF);
+}
 #endif // NEVERC_BINARY

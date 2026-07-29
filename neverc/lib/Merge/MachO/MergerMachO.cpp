@@ -231,6 +231,17 @@ bool mergeMachO64Impl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
       if (SectName.contains(','))
         SectName = SectName.split(',').second;
 
+      // The call graph profile addresses its functions by symbol table index,
+      // which this merge renumbers; see isMachOCallGraphProfileSection.  The
+      // ordinal still advances so the sections after it keep the numbers this
+      // input's symbols and relocations use, and no SecMap entry is left
+      // behind: anything defined here would be re-homed to NO_SECT, which is
+      // the right answer for a section codegen puts no symbol in.
+      if (detail::isMachOCallGraphProfileSection(SegName, SectName)) {
+        ++PartSecOrdinal;
+        continue;
+      }
+
       // Rename "__common" -> "__bss" so the host linker does not treat the
       // merged zerofill data as C COMMON storage (which it would freely
       // re-pack per-symbol, discarding our precomputed per-partition
