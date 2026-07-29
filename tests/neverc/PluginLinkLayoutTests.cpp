@@ -574,4 +574,124 @@ TEST(PluginLinkLayoutTest, LayoutRejectsUnalignedFileBackedSection) {
             std::string::npos);
 }
 
+// The shape a linker hands back for a thread-local image: .tdata holds the
+// initialized part of the TLS template, .tbss the zero-fill part, and an
+// ordinary section follows them in the same segment.  .tbss takes no segment
+// space, so the linker places that section at an address .tbss also spans --
+// \p ZeroFillAddress is where the caller puts .tbss to choose which overlap
+// the graph exhibits.
+std::shared_ptr<PluginLinkGraph>
+makeThreadLocalImageGraph(uint64_t ZeroFillAddress) {
+  auto Target = makeTargetKey();
+  if (!Target) {
+    ADD_FAILURE() << errorText(Target.takeError());
+    return {};
+  }
+  auto Graph = std::make_shared<PluginLinkGraph>(
+      std::move(*Target), NEVERC_LINK_STATE_LAYOUT_COMPLETE);
+
+  PluginLinkInput Input;
+  Input.Kind = NEVERC_LINK_INPUT_OBJECT;
+  Input.LogicalURI = "vfs:///tls.o";
+  const uint64_t InputID = Graph->addInput(std::move(Input)).ID;
+
+  auto addSection = [&](std::string Name, NevercObjectSectionKind Kind,
+                        uint64_t Flags, uint64_t Alignment, uint64_t Address,
+                        uint64_t FileOffset, uint64_t Size) {
+    PluginLinkSection Section;
+    Section.Name = std::move(Name);
+    Section.Kind = Kind;
+    Section.Flags = Flags;
+    Section.Alignment = Alignment;
+    Section.Address = Address;
+    Section.FileOffset = FileOffset;
+    Section.Size = Size;
+    Section.Origin.InputID = InputID;
+    return Graph->addSection(std::move(Section)).ID;
+  };
+  const uint64_t Writable =
+      NEVERC_OBJECT_SECTION_ALLOCATED | NEVERC_OBJECT_SECTION_WRITABLE;
+  const uint64_t ThreadLocal = Writable | NEVERC_OBJECT_SECTION_TLS;
+
+  const uint64_t DataID =
+      addSection(".tdata", NEVERC_OBJECT_SECTION_KIND_TLS_DATA, ThreadLocal, 8,
+                 0x1000, 0x1000, 8);
+  const uint64_t ZeroFillID =
+      addSection(".tbss", NEVERC_OBJECT_SECTION_KIND_TLS_ZERO_FILL, ThreadLocal,
+                 4, ZeroFillAddress, 0x1008, 64);
+  const uint64_t TailID =
+      addSection(".fini_array", NEVERC_OBJECT_SECTION_KIND_DATA, Writable, 8,
+                 0x1008, 0x1008, 8);
+
+  PluginLinkAtom Initialized;
+  Initialized.SectionID = DataID;
+  Initialized.Name = "tls_value";
+  Initialized.Flags = NEVERC_LINK_ATOM_LIVE | NEVERC_LINK_ATOM_TLS;
+  Initialized.Alignment = 8;
+  Initialized.Address = 0x1000;
+  Initialized.FileOffset = 0x1000;
+  Initialized.Content.assign(8, 0x5a);
+  Initialized.Origin.InputID = InputID;
+  const uint64_t InitializedAtom = Graph->addAtom(std::move(Initialized)).ID;
+
+  PluginLinkAtom Scratch;
+  Scratch.SectionID = ZeroFillID;
+  Scratch.Name = "tls_scratch";
+  Scratch.Flags = NEVERC_LINK_ATOM_LIVE | NEVERC_LINK_ATOM_TLS;
+  Scratch.Alignment = 4;
+  Scratch.Address = ZeroFillAddress;
+  Scratch.FileOffset = 0x1008;
+  Scratch.ZeroFillSize = 64;
+  Scratch.Origin.InputID = InputID;
+  Graph->addAtom(std::move(Scratch));
+
+  PluginLinkAtom Destructors;
+  Destructors.SectionID = TailID;
+  Destructors.Name = "fini";
+  Destructors.Flags = NEVERC_LINK_ATOM_LIVE;
+  Destructors.Alignment = 8;
+  Destructors.Address = 0x1008;
+  Destructors.FileOffset = 0x1008;
+  Destructors.Content.assign(8, 0);
+  Destructors.Origin.InputID = InputID;
+  Graph->addAtom(std::move(Destructors));
+
+  PluginLinkSymbol Symbol;
+  Symbol.Name = "tls_value";
+  Symbol.Binding = NEVERC_LINK_SYMBOL_BINDING_GLOBAL;
+  Symbol.Definition = NEVERC_LINK_SYMBOL_DEFINED;
+  Symbol.Type = NEVERC_OBJECT_SYMBOL_TYPE_TLS;
+  Symbol.AtomID = InitializedAtom;
+  Symbol.IsPrevailing = true;
+  Symbol.IsRoot = true;
+  Symbol.Origin.InputID = InputID;
+  Graph->addSymbol(std::move(Symbol));
+  return Graph;
+}
+
+// .tbss lives in the TLS template rather than in the process image, so the
+// section placed after it legitimately holds the same addresses.  Proving the
+// image and the template as one address space rejected every thread-local
+// link.
+TEST(PluginLinkLayoutTest, LayoutAcceptsThreadLocalZeroFillOverAnImageSection) {
+  auto Graph = makeThreadLocalImageGraph(/*ZeroFillAddress=*/0x1008);
+  ASSERT_TRUE(static_cast<bool>(Graph));
+  llvm::Error Result = verifyLinkLayout(*Graph);
+  const bool Rejected = static_cast<bool>(Result);
+  EXPECT_FALSE(Rejected) << errorText(std::move(Result));
+}
+
+// The other half of that trade: within the template the two parts still each
+// own their range, so a .tbss reaching back into .tdata would give one
+// thread-local variable's storage to another and is still a layout error.
+TEST(PluginLinkLayoutTest, LayoutRejectsThreadLocalZeroFillOverItsOwnTemplate) {
+  auto Graph = makeThreadLocalImageGraph(/*ZeroFillAddress=*/0x1004);
+  ASSERT_TRUE(static_cast<bool>(Graph));
+  llvm::Error Result = verifyLinkLayout(*Graph);
+  ASSERT_TRUE(static_cast<bool>(Result));
+  EXPECT_NE(
+      errorText(std::move(Result)).find("thread-local address ranges overlap"),
+      std::string::npos);
+}
+
 } // namespace

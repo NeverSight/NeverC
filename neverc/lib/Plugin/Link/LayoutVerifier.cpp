@@ -38,6 +38,16 @@ bool isZeroFill(const PluginLinkSection &Section) {
          Section.Kind == NEVERC_OBJECT_SECTION_KIND_TLS_ZERO_FILL;
 }
 
+// A link graph states thread-locality twice, in the section kind and in the
+// flags, and not every producer sets both (BuiltinLLVMObjectWriter records the
+// same hazard about its own inputs).  Ask both, so a section that says it only
+// one way is not read as ordinary data here.
+bool isThreadLocal(const PluginLinkSection &Section) {
+  return Section.Kind == NEVERC_OBJECT_SECTION_KIND_TLS_DATA ||
+         Section.Kind == NEVERC_OBJECT_SECTION_KIND_TLS_ZERO_FILL ||
+         (Section.Flags & NEVERC_OBJECT_SECTION_TLS) != 0;
+}
+
 } // namespace
 
 Error verifyLinkLayout(const PluginLinkGraph &Graph) {
@@ -48,6 +58,7 @@ Error verifyLinkLayout(const PluginLinkGraph &Graph) {
 
   using Range = std::tuple<uint64_t, uint64_t, uint64_t>;
   std::vector<Range> AddressRanges;
+  std::vector<Range> ThreadLocalRanges;
   std::vector<Range> FileRanges;
   const bool AllowWX = allowWritableExecutable(Graph);
   for (const PluginLinkSection &Section : Graph.sections()) {
@@ -68,9 +79,26 @@ Error verifyLinkLayout(const PluginLinkGraph &Graph) {
     // Non-allocated sections (for example ELF .symtab/.strtab) have no
     // runtime address. Multiple such sections legitimately use address zero,
     // so only allocated sections participate in the virtual-address proof.
-    if (Allocated && Section.Size != 0)
-      AddressRanges.emplace_back(Section.Address,
-                                 Section.Address + Section.Size, Section.ID);
+    //
+    // There are two address spaces to prove, not one.  A thread-local
+    // zero-fill section (ELF .tbss) belongs to the TLS template the loader
+    // copies into each thread, and contributes nothing to the segment that
+    // carries it -- lld leaves it out of PT_LOAD entirely (needsPtLoad) and
+    // restores its address cursor across it (LinkerScript::assignOffsets), so
+    // the next section is placed at the .tbss address on purpose.  Holding it
+    // to the image proof rejects the layout every linker produces.  It is
+    // proved against the template instead, where the initialized part
+    // (.tdata) and the zero-fill part still must not overlap each other;
+    // .tdata is in both, which is what keeps a .tbss reaching back into it
+    // from going unseen.
+    if (Allocated && Section.Size != 0) {
+      const uint64_t End = Section.Address + Section.Size;
+      const bool ThreadLocal = isThreadLocal(Section);
+      if (!ThreadLocal || !isZeroFill(Section))
+        AddressRanges.emplace_back(Section.Address, End, Section.ID);
+      if (ThreadLocal)
+        ThreadLocalRanges.emplace_back(Section.Address, End, Section.ID);
+    }
 
     uint64_t FileEnd = Section.FileOffset;
     for (const PluginLinkAtom &Atom : Graph.atoms()) {
@@ -121,6 +149,9 @@ Error verifyLinkLayout(const PluginLinkGraph &Graph) {
     return Error::success();
   };
   if (Error E = CheckDisjoint(std::move(AddressRanges), "address"))
+    return E;
+  if (Error E =
+          CheckDisjoint(std::move(ThreadLocalRanges), "thread-local address"))
     return E;
   if (Error E = CheckDisjoint(std::move(FileRanges), "file"))
     return E;
