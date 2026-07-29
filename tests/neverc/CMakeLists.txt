@@ -1765,6 +1765,26 @@ gtest_discover_tests(neverc-plugin-lto-input-tests
     DISCOVERY_TIMEOUT 300
 )
 
+# The hashes LLVM's own machinery is built on -- DWARF source checksums, DIE
+# type signatures, ThinLTO global identifiers -- come from this fork's C
+# implementations rather than LLVM's.  Nothing else in the suite can tell a
+# wrong digest from a right one, so their published vectors are checked here.
+add_executable(neverc-support-tests SupportHashTests.cpp)
+target_link_libraries(neverc-support-tests PRIVATE
+  GTest::gtest
+  GTest::gtest_main
+  LLVMSupport
+)
+target_include_directories(neverc-support-tests PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(neverc-support-tests PRIVATE cxx_std_17)
+gtest_discover_tests(neverc-support-tests
+  PROPERTIES
+    TIMEOUT 60
+    DISCOVERY_TIMEOUT 300
+)
+
 add_executable(neverc-plugin-io-tests
   PluginIOIsolationTests.cpp
   PluginOutputSinkTests.cpp
