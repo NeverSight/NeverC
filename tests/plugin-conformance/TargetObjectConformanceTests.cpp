@@ -78,8 +78,14 @@ TEST_F(TargetObjectConformance, ObjectPreWriteInterceptorAddsSection) {
 
   // -fno-lto forces native object emission so the ObjectGraph pre_write seam
   // actually runs (an LTO/bitcode -c would bypass it).
+  //
+  // The allocator is off because it is not what this exercises: injecting it
+  // fills __text with relocations, and the Mach-O writer refuses to restate a
+  // relocation inside executable content rather than assemble a different
+  // instruction.  The seam under test is the pre_write hook, not that limit.
   const RunResult R = Env.runNeverc({"-fplugin=" + Plugin, "--no-default-config",
-                                     "-fno-lto", "-c", Input, "-o", Object},
+                                     "-fno-lto", "-fno-builtin-mimalloc", "-c",
+                                     Input, "-o", Object},
                                     {{"NEVERC_CONFORMANCE_LOG", logPath()}});
   ASSERT_EQ(R.exitCode, 0) << R.err;
 

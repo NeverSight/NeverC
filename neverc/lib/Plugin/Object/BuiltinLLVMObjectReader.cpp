@@ -715,18 +715,28 @@ SectionMapEntry *findSection(const SectionIndexMap &Index,
   return It == Index.end() ? nullptr : It->second;
 }
 
-// A relocation may name a symbol that collectSymbols() dropped as a container
+// A relocation may name a symbol that createSymbols() dropped as a container
 // artifact.  Those symbols label the start of a section, so the reference is
 // really section-relative and the graph can say so directly.
+//
+// The test is the same predicate createSymbols() drops by, not a subset of it:
+// anything dropped there has to be recoverable here, or a relocation naming it
+// has nowhere left to point.  Mach-O's "ltmp<n>" section labels are the case
+// that matters -- they are dropped without being SF_FormatSpecific, and any
+// object with more than a handful of sections has relocations against them.
 SectionMapEntry *sectionForDroppedSymbol(const ObjectFile &Object,
                                          SymbolRef Symbol,
                                          const SectionIndexMap &Sections) {
   Expected<uint32_t> Flags = Symbol.getFlags();
-  if (!Flags) {
-    consumeError(Flags.takeError());
+  Expected<StringRef> Name = Symbol.getName();
+  if (!Flags || !Name) {
+    if (!Flags)
+      consumeError(Flags.takeError());
+    if (!Name)
+      consumeError(Name.takeError());
     return nullptr;
   }
-  if ((*Flags & SymbolRef::SF_FormatSpecific) == 0)
+  if (!isSyntheticAssemblerSymbol(Object, *Name, *Flags))
     return nullptr;
   Expected<section_iterator> Section = Symbol.getSection();
   if (!Section) {
