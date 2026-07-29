@@ -26,6 +26,18 @@ bool addOverflows(uint64_t Left, uint64_t Right) {
   return Left > UINT64_MAX - Right;
 }
 
+// A zero-fill section (ELF SHT_NOBITS, and its Mach-O / COFF equivalents)
+// occupies no bytes in the image file.  Its recorded file offset is only the
+// conceptual placement the format asks for -- linkers set it to wherever the
+// preceding section left the cursor and never pad it, so it routinely fails
+// the alignment its memory image is held to.  Requiring otherwise rejects
+// well-formed layouts: .bss is normally the section with the largest
+// alignment in the graph and the one least likely to satisfy it.
+bool isZeroFill(const PluginLinkSection &Section) {
+  return Section.Kind == NEVERC_OBJECT_SECTION_KIND_ZERO_FILL ||
+         Section.Kind == NEVERC_OBJECT_SECTION_KIND_TLS_ZERO_FILL;
+}
+
 } // namespace
 
 Error verifyLinkLayout(const PluginLinkGraph &Graph) {
@@ -41,7 +53,7 @@ Error verifyLinkLayout(const PluginLinkGraph &Graph) {
   for (const PluginLinkSection &Section : Graph.sections()) {
     if (!isPowerOf2_64(Section.Alignment) ||
         Section.Address % Section.Alignment != 0 ||
-        Section.FileOffset % Section.Alignment != 0)
+        (!isZeroFill(Section) && Section.FileOffset % Section.Alignment != 0))
       return layoutError("section alignment is invalid: " + Section.Name);
     if (addOverflows(Section.Address, Section.Size))
       return layoutError("section address range overflows: " + Section.Name);

@@ -67,8 +67,26 @@ Function *getOrCreateOnceWrapper(Module &M, Function &Target,
   return Wrapper;
 }
 
+Constant *pointerCastTo(Constant *Value, Type *Ty) {
+  return Value->getType() == Ty ? Value
+                                : ConstantExpr::getPointerCast(Value, Ty);
+}
+
+/// Rewrites the embedded runtime's constructor/destructor records so they can
+/// meet their own duplicates at the native link.
+///
+/// A record's third field is a COMDAT key, and naming the target there is the
+/// object format's own answer to this: duplicate records are then discarded
+/// along with the duplicate function.  It is not an answer this pipeline can
+/// take.  On ELF the key puts .init_array in a section group, and the pure-C
+/// relocatable merge behind parallel codegen refuses those outright
+/// (Merge/ELF/MergerELF.cpp); Mach-O ignores the key; and codegen drops any
+/// record whose key it cannot see a definition for, which under partitioning
+/// is how a constructor goes missing without a diagnostic.  So the key is
+/// cleared on every format and \p GuardRepeatCalls carries the duty instead:
+/// it does not prevent duplicate records, it makes them harmless.
 void prepareRuntimeStructors(Module &M, StringRef GlobalName, StringRef Role,
-                             bool WrapOnce) {
+                             bool GuardRepeatCalls) {
   auto *GV = M.getGlobalVariable(GlobalName);
   if (!GV || !GV->hasInitializer())
     return;
@@ -81,35 +99,32 @@ void prepareRuntimeStructors(Module &M, StringRef GlobalName, StringRef Role,
   bool Changed = false;
   for (Value *Operand : Init->operands()) {
     auto *Entry = dyn_cast<ConstantStruct>(Operand);
-    if (!Entry || Entry->getNumOperands() != 3) {
+    Function *Target =
+        Entry && Entry->getNumOperands() == 3
+            ? dyn_cast<Function>(Entry->getOperand(1)->stripPointerCasts())
+            : nullptr;
+    if (!Target) {
       Entries.push_back(cast<Constant>(Operand));
       continue;
     }
 
-    Constant *Priority = cast<Constant>(Entry->getOperand(0));
-    Constant *OriginalFunction = cast<Constant>(Entry->getOperand(1));
-    Constant *FunctionValue = OriginalFunction;
-    Constant *Associated = cast<Constant>(Entry->getOperand(2));
-    auto *Target =
-        dyn_cast<Function>(FunctionValue->stripPointerCasts());
-    if (Target && WrapOnce) {
-      FunctionValue = getOrCreateOnceWrapper(M, *Target, Role);
-      Changed = true;
-    }
-    if (Target && (WrapOnce || Associated->isNullValue())) {
-      if (FunctionValue->getType() != Associated->getType())
-        FunctionValue = ConstantExpr::getPointerCast(
-            FunctionValue, Associated->getType());
-      Associated = FunctionValue;
-      Changed = true;
+    Constant *Callee = cast<Constant>(Entry->getOperand(1));
+    Constant *Key = cast<Constant>(Entry->getOperand(2));
+    Constant *NewCallee =
+        GuardRepeatCalls ? getOrCreateOnceWrapper(M, *Target, Role) : Callee;
+    // Cleared rather than merely left unset: the runtime's own bitcode can
+    // arrive already carrying a key.
+    Constant *NewKey = Constant::getNullValue(Key->getType());
+    if (NewCallee == Callee && NewKey == Key) {
+      Entries.push_back(Entry);
+      continue;
     }
 
-    if (FunctionValue->getType() != OriginalFunction->getType())
-      FunctionValue = ConstantExpr::getPointerCast(
-          FunctionValue, OriginalFunction->getType());
-    Constant *Fields[] = {Priority, FunctionValue, Associated};
-    Entries.push_back(ConstantStruct::get(
-        cast<StructType>(Entry->getType()), Fields));
+    Constant *Fields[] = {cast<Constant>(Entry->getOperand(0)),
+                          pointerCastTo(NewCallee, Callee->getType()), NewKey};
+    Entries.push_back(
+        ConstantStruct::get(cast<StructType>(Entry->getType()), Fields));
+    Changed = true;
   }
 
   if (Changed)
@@ -130,15 +145,14 @@ MimallocRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
       parseBitcodeAndPrepare(Embedded, M, "neverc mimalloc runtime");
   namespaceRuntimeLocals(*MimallocMod, MimallocRuntimeLocalPrefix);
 
-  // Associate each constructor/destructor record with its runtime function.
-  // Native linkers can then discard duplicate records together with duplicate
-  // linkonce_odr functions from other consumer TUs.
-  // Mach-O has no COMDAT association for separate non-LTO constructor
-  // sections, so make those duplicate calls idempotent as well.
+  // Each non-LTO consumer TU embeds its own copy of these records, so one
+  // link can register the same initializer several times over.  An LTO
+  // pre-link module is merged before anything registers it, so it needs no
+  // guard.
   prepareRuntimeStructors(*MimallocMod, "llvm.global_ctors", "ctor",
-                          !IsPreLink);
+                          /*GuardRepeatCalls=*/!IsPreLink);
   prepareRuntimeStructors(*MimallocMod, "llvm.global_dtors", "dtor",
-                          !IsPreLink);
+                          /*GuardRepeatCalls=*/!IsPreLink);
 
   tagRuntimeDefinitions(*MimallocMod, MimallocRuntimeMetadata);
   linkModuleOrFail(M, std::move(MimallocMod), "neverc mimalloc runtime");

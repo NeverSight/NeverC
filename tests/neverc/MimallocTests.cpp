@@ -202,6 +202,50 @@ TEST_F(MimallocTest, RuntimeCrossCompilesWithPcgOnCOFF) {
   }
 }
 
+// A constructor runs only if the object format's structor list still names
+// it.  Parallel codegen keeps that list in one partition while binning bodies
+// across all of them, and codegen drops any record whose associated symbol is
+// a declaration where the list lives -- so the record survives only if the
+// two stay together.  The association also has to remain expressible in a
+// plain relocatable object: an ELF section group would send the partition
+// merge into its serial fallback instead.  Losing the record leaves the
+// runtime's process-attach hook unregistered, and the first libc call into
+// malloc then hands out memory from a heap that was never brought up.
+TEST_F(MimallocTest, RuntimeConstructorSurvivesParallelCodegen) {
+  auto src = tmpFile("mimalloc_pcg_ctor.c");
+  writeFile(src,
+            "typedef __SIZE_TYPE__ size_t;\n"
+            "extern void *malloc(size_t);\n"
+            "extern void free(void *);\n"
+            "static int scale(int v) { return v * 3; }\n"
+            "static int bias(int v) { return scale(v) + 1; }\n"
+            "int main(void) {\n"
+            "  void *p = malloc(32);\n"
+            "  free(p);\n"
+            "  return bias(0) - 1;\n"
+            "}\n");
+
+  for (const char *triple :
+       {"x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"}) {
+    SCOPED_TRACE(triple);
+    auto obj = tmpFile(std::string("mimalloc_pcg_ctor_") + triple + ".o");
+    auto r =
+        ncc({std::string("--target=") + triple, "-std=c11",
+             "-fbuiltin-mimalloc", "-fno-lto", "-O0", "-c", "-mllvm",
+             "-neverc-pcg-min-funcs=2", "-mllvm", "-neverc-pcg-weight-floor=1",
+             "-mllvm", "-neverc-pcg-cg-weight-div=1", src.string(), "-o",
+             obj.string()});
+    ASSERT_EQ(r.exitCode, 0) << r.err;
+
+    const std::string bytes = readFile(obj);
+    EXPECT_NE(bytes.find(".__pcg"), std::string::npos)
+        << "the regression must exercise merged parallel codegen, not the "
+           "serial fallback";
+    EXPECT_NE(bytes.find(".init_array"), std::string::npos)
+        << "the runtime constructor must still be registered after the merge";
+  }
+}
+
 TEST_F(MimallocTest, RuntimePreservesUserLocalProvenance) {
   auto src = tmpFile("mimalloc_user_local.c");
   auto ir = tmpFile("mimalloc_user_local.ll");

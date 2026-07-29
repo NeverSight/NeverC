@@ -125,8 +125,8 @@ TEST_F(BasicTest, BuiltinStringRuntimeRemainsOptimizableAfterEmbedding) {
             "int main(void) { return measured_length(\"runtime\") != 7; }\n");
 
   std::vector<std::string> args = {
-      "-std=c23", "-fbuiltin-string", "-O2", "-fno-lto",
-      "-S", "-emit-llvm", src.string(), "-o", ir.string(),
+      "-std=c23", "-fbuiltin-string", "-fno-builtin-mimalloc", "-O2",
+      "-fno-lto", "-S", "-emit-llvm", src.string(), "-o", ir.string(),
   };
   for (auto &flag : sysrootFlags())
     args.push_back(flag);
@@ -246,6 +246,48 @@ TEST_F(BasicTest, BuiltinStringCrossCompilesWithPcgOnCOFF) {
     EXPECT_TRUE(fs::exists(obj) && fileSize(obj) > 0);
     EXPECT_NE(readFile(obj).find(".__pcg"), std::string::npos)
         << "the regression must exercise merged parallel codegen";
+  }
+}
+
+// A retained definition holds against --gc-sections only because codegen
+// flags the section its body lands in, and it only knows to do that from
+// llvm.used.  That list is an appending global, so parallel codegen keeps it
+// in one partition while binning bodies across all of them: unless each
+// partition inherits the entries for the definitions it actually emits, every
+// retained function binned elsewhere quietly loses its hold.  ELF puts each
+// flagged definition in its own section, so the section names are the
+// observable form of the marker.
+TEST_F(BasicTest, RetainedDefinitionsSurviveParallelCodegen) {
+  constexpr unsigned Retained = 12;
+  std::string source;
+  for (unsigned Index = 0; Index != Retained; ++Index) {
+    const std::string N = std::to_string(Index);
+    source += "__attribute__((used, retain)) static int keep" + N +
+              "(void) { return " + N + "; }\n";
+  }
+  source += "int main(void) { return 0; }\n";
+  auto src = tmpFile("pcg_retain.c");
+  writeFile(src, source);
+
+  for (const char *triple :
+       {"x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"}) {
+    SCOPED_TRACE(triple);
+    auto obj = tmpFile(std::string("pcg_retain_") + triple + ".o");
+    auto r =
+        ncc({std::string("--target=") + triple, "-O0", "-std=c11", "-fno-lto",
+             "-c", "-mllvm", "-neverc-pcg-min-funcs=2", "-mllvm",
+             "-neverc-pcg-weight-floor=1", "-mllvm",
+             "-neverc-pcg-cg-weight-div=1", src.string(), "-o", obj.string()});
+    ASSERT_EQ(r.exitCode, 0) << r.err;
+
+    const std::string bytes = readFile(obj);
+    EXPECT_NE(bytes.find(".__pcg"), std::string::npos)
+        << "the regression must exercise merged parallel codegen";
+    for (unsigned Index = 0; Index != Retained; ++Index)
+      EXPECT_NE(bytes.find(".text.keep" + std::to_string(Index)),
+                std::string::npos)
+          << "retained definition keep" << Index
+          << " lost its section after the partition merge";
   }
 }
 

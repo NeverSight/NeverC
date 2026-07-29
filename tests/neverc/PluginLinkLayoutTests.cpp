@@ -1,5 +1,6 @@
 #include "PluginLinkTestSupport.h"
 #include "Inputs/Plugin/LinkLayoutPlugin.h"
+#include "Link/LayoutVerifier.h"
 #include "Link/LinkPhaseExecutor.h"
 #include "neverc/Plugin/Host/BuiltinObjectExtension.h"
 #include "neverc/Plugin/Schema/PluginPhaseSchema.inc"
@@ -470,6 +471,107 @@ TEST(PluginLinkLayoutTest,
     if (!Output)
       llvm::consumeError(Output.takeError());
   }
+}
+
+// The shape a linker hands back once an image is laid out: .data occupies file
+// bytes, the section after it does or does not depending on its kind.  Nothing
+// pads the file cursor for a section that takes no file space, so the tail
+// keeps whatever offset .data left behind -- here deliberately not a multiple
+// of the alignment the tail's memory image is held to.
+std::shared_ptr<PluginLinkGraph>
+makeLaidOutImageGraph(NevercObjectSectionKind TailKind, uint64_t &TailID) {
+  auto Target = makeTargetKey();
+  if (!Target) {
+    ADD_FAILURE() << errorText(Target.takeError());
+    return {};
+  }
+  auto Graph = std::make_shared<PluginLinkGraph>(
+      std::move(*Target), NEVERC_LINK_STATE_LAYOUT_COMPLETE);
+  PluginLinkInput Input;
+  Input.Kind = NEVERC_LINK_INPUT_OBJECT;
+  Input.LogicalURI = "vfs:///image.o";
+  const uint64_t InputID = Graph->addInput(std::move(Input)).ID;
+
+  PluginLinkSection Data;
+  Data.Name = ".data";
+  Data.Kind = NEVERC_OBJECT_SECTION_KIND_DATA;
+  Data.Flags =
+      NEVERC_OBJECT_SECTION_ALLOCATED | NEVERC_OBJECT_SECTION_WRITABLE;
+  Data.Alignment = 8;
+  Data.Address = 0x1000;
+  Data.FileOffset = 0x1000;
+  Data.Size = 8;
+  Data.Origin.InputID = InputID;
+  const uint64_t DataID = Graph->addSection(std::move(Data)).ID;
+
+  PluginLinkSection Tail;
+  Tail.Name = ".bss";
+  Tail.Kind = TailKind;
+  Tail.Flags =
+      NEVERC_OBJECT_SECTION_ALLOCATED | NEVERC_OBJECT_SECTION_WRITABLE;
+  Tail.Alignment = 64;
+  Tail.Address = 0x1040;
+  Tail.FileOffset = 0x1008;
+  Tail.Size = 64;
+  Tail.Origin.InputID = InputID;
+  TailID = Graph->addSection(std::move(Tail)).ID;
+
+  PluginLinkAtom Value;
+  Value.SectionID = DataID;
+  Value.Name = "value";
+  Value.Flags = NEVERC_LINK_ATOM_LIVE;
+  Value.Alignment = 8;
+  Value.Address = 0x1000;
+  Value.FileOffset = 0x1000;
+  Value.Content.assign(8, 0x5a);
+  Value.Origin.InputID = InputID;
+  const uint64_t ValueAtom = Graph->addAtom(std::move(Value)).ID;
+
+  PluginLinkAtom Buffer;
+  Buffer.SectionID = TailID;
+  Buffer.Name = "buffer";
+  Buffer.Flags = NEVERC_LINK_ATOM_LIVE;
+  Buffer.Alignment = 64;
+  Buffer.Address = 0x1040;
+  Buffer.FileOffset = 0x1008;
+  if (TailKind == NEVERC_OBJECT_SECTION_KIND_ZERO_FILL)
+    Buffer.ZeroFillSize = 64;
+  else
+    Buffer.Content.assign(64, 0);
+  Buffer.Origin.InputID = InputID;
+  Graph->addAtom(std::move(Buffer));
+
+  PluginLinkSymbol Symbol;
+  Symbol.Name = "value";
+  Symbol.Binding = NEVERC_LINK_SYMBOL_BINDING_GLOBAL;
+  Symbol.Definition = NEVERC_LINK_SYMBOL_DEFINED;
+  Symbol.Type = NEVERC_OBJECT_SYMBOL_TYPE_OBJECT;
+  Symbol.AtomID = ValueAtom;
+  Symbol.IsPrevailing = true;
+  Symbol.IsRoot = true;
+  Symbol.Origin.InputID = InputID;
+  Graph->addSymbol(std::move(Symbol));
+  return Graph;
+}
+
+TEST(PluginLinkLayoutTest, LayoutAcceptsUnpaddedZeroFillFileOffset) {
+  uint64_t TailID = 0;
+  auto Graph =
+      makeLaidOutImageGraph(NEVERC_OBJECT_SECTION_KIND_ZERO_FILL, TailID);
+  ASSERT_TRUE(static_cast<bool>(Graph));
+  llvm::Error Result = verifyLinkLayout(*Graph);
+  const bool Rejected = static_cast<bool>(Result);
+  EXPECT_FALSE(Rejected) << errorText(std::move(Result));
+}
+
+TEST(PluginLinkLayoutTest, LayoutRejectsUnalignedFileBackedSection) {
+  uint64_t TailID = 0;
+  auto Graph = makeLaidOutImageGraph(NEVERC_OBJECT_SECTION_KIND_DATA, TailID);
+  ASSERT_TRUE(static_cast<bool>(Graph));
+  llvm::Error Result = verifyLinkLayout(*Graph);
+  ASSERT_TRUE(static_cast<bool>(Result));
+  EXPECT_NE(errorText(std::move(Result)).find("section alignment is invalid"),
+            std::string::npos);
 }
 
 } // namespace

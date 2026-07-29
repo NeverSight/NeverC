@@ -27,6 +27,7 @@
 #include "llvm/Passes/StandardInstrumentations.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/TargetParser/Triple.h"
+#include "llvm/Transforms/Utils/ModuleUtils.h"
 
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -337,6 +338,32 @@ struct PreparedPartition {
   PreparedPartition() = default;
 };
 
+/// True for the appending globals whose entries describe individual symbols
+/// rather than the module as a whole.  `llvm.used` and `llvm.compiler.used`
+/// are retain markers: codegen turns each entry into a property of the
+/// section holding that symbol's definition (SHF_GNU_RETAIN on ELF,
+/// .no_dead_strip on Mach-O, /INCLUDE: on COFF), so the marker has to travel
+/// with the body.  The structor lists are the opposite -- one module-wide
+/// registration that partition 0 owns outright.
+bool isPerSymbolAppendingGlobal(const GlobalVariable &GV) {
+  return GV.getName() == "llvm.used" || GV.getName() == "llvm.compiler.used";
+}
+
+/// Narrows this partition's retain markers to the definitions it actually
+/// emits.  A marker naming a body that was binned elsewhere would be dropped
+/// by codegen anyway (there is no section to flag), while the partition that
+/// does hold the body would emit none at all -- so without this the whole
+/// module's markers survive only for whatever landed in partition 0, and
+/// `__attribute__((used, retain))` stops holding against --gc-sections.
+/// Across partitions the surviving entries reunite into the original list,
+/// each named exactly once, so the object merge sees no duplicates.
+void retainOnlyLocalDefinitions(Module &M) {
+  removeFromUsedLists(M, [](Constant *Entry) {
+    auto *GV = dyn_cast<GlobalValue>(Entry->stripPointerCasts());
+    return !GV || GV->isDeclarationForLinker();
+  });
+}
+
 /// Erases declarations nothing in this partition refers to.  Each partition
 /// module starts as a copy of the full merged module, so without this the
 /// partition's bitcode (and thus its cache key) would change whenever any
@@ -614,6 +641,37 @@ bool ParallelCGContext::externalizeAndSerialize(Module &Mod) {
   PinFrameEscapeUsers(Intrinsic::localescape, /*PinFrameOwner=*/false);
   PinFrameEscapeUsers(Intrinsic::localrecover, /*PinFrameOwner=*/true);
 
+  // A structor record's third field is its COMDAT key: the symbol whose
+  // section the .init_array / .fini_array entry joins, so that discarding one
+  // copy of a coalesced initializer discards its registration with it.
+  // AsmPrinter refuses to emit a record whose key is a declaration in the
+  // module at hand, and the structor lists have appending linkage, so only
+  // partition 0 still carries them.  A key binned elsewhere is therefore a
+  // declaration exactly where the list lives, and the record is dropped
+  // without a diagnostic -- the initializer is emitted, nothing registers it,
+  // and it silently never runs.  (An embedded allocator runtime whose
+  // process-attach hook is skipped this way hands out heap pointers from a
+  // heap that was never brought up.)  Keep every key's body in partition 0
+  // alongside the list that names it.
+  for (StringRef ListName : {"llvm.global_ctors", "llvm.global_dtors"}) {
+    auto *List = Mod.getGlobalVariable(ListName);
+    if (!List || !List->hasInitializer())
+      continue;
+    auto *Records = dyn_cast<ConstantArray>(List->getInitializer());
+    if (!Records)
+      continue;
+    for (const Use &Record : Records->operands()) {
+      auto *Fields = dyn_cast<ConstantStruct>(Record.get());
+      if (!Fields || Fields->getNumOperands() < 3)
+        continue;
+      // Only functions are binned; an alias or variable key is a definition
+      // in partition 0 by construction, as for the indirect targets above.
+      if (auto *Key =
+              dyn_cast<Function>(Fields->getOperand(2)->stripPointerCasts()))
+        PinnedToP0.insert(Key->getName());
+    }
+  }
+
   // Stable assignment: bin by function-name hash instead of greedy
   // weight balancing.  Greedy reshuffles every partition whenever one
   // function's weight changes, which would zero the per-partition object
@@ -753,7 +811,8 @@ void ParallelCGContext::preparePartitions(StringRef BCRef, TargetMachine &TM) {
           if (GV.isDeclaration())
             continue;
           if (GV.hasAppendingLinkage()) {
-            GV.eraseFromParent();
+            if (!isPerSymbolAppendingGlobal(GV))
+              GV.eraseFromParent();
             continue;
           }
           // unnamed_addr constants (string literals) are kept as local
@@ -891,6 +950,9 @@ void ParallelCGContext::preparePartitions(StringRef BCRef, TargetMachine &TM) {
           }
         }
       }
+      // Every body this partition gives up has been given up by now, so
+      // "still a definition here" finally means what the object will say.
+      retainOnlyLocalDefinitions(MPart);
 
       PP->PTM.reset(TheTarget->createTargetMachine(
           TripleStr, TM.getTargetCPU().str(), SharedFeatures, SharedTgtOpts,
