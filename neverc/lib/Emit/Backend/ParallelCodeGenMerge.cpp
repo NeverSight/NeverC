@@ -13,8 +13,12 @@
 #include "llvm/Analysis/TargetTransformInfo.h"
 #include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
+#include "llvm/ADT/StringSet.h"
 #include "llvm/IR/Comdat.h"
 #include "llvm/IR/Constants.h"
+#include "llvm/IR/DiagnosticHandler.h"
+#include "llvm/IR/DiagnosticInfo.h"
+#include "llvm/IR/DiagnosticPrinter.h"
 #include "llvm/IR/GlobalAlias.h"
 #include "llvm/IR/Verifier.h"
 #include "llvm/IR/GlobalIFunc.h"
@@ -327,6 +331,44 @@ struct LinkageEntry {
 struct PartitionResult {
   SmallVector<char, 0> ObjBuffer;
   bool Success = false;
+  /// Errors raised against this partition's own context, carried back to the
+  /// caller's thread instead of being reported where they happen.  See
+  /// PartitionDiagnosticHandler.  Written by the one worker that owns this
+  /// partition, read after the workers join.
+  SmallVector<std::string, 0> Errors;
+};
+
+/// A partition is optimized and codegen'd on a worker thread, against an
+/// LLVMContext of its own.  A context nobody has given a handler to answers an
+/// error by writing it to stderr and calling exit() -- on that worker thread.
+/// Two partitions failing together therefore means two concurrent exit() calls,
+/// which interleave their text and then deadlock in atexit handling: one thread
+/// runs the handlers while the other waits on a lock the first will not release.
+///
+/// Recording the error keeps it on the only path that can report it properly.
+/// The partition counts as failed, and finalizeResults re-raises the text
+/// against the module the caller owns -- the one context here with a diagnostic
+/// consumer behind it.
+class PartitionDiagnosticHandler final : public DiagnosticHandler {
+public:
+  explicit PartitionDiagnosticHandler(PartitionResult &Result)
+      : Result(Result) {}
+
+  bool handleDiagnostics(const DiagnosticInfo &DI) override {
+    // Only an error takes the exit() path, so only an error has to be taken off
+    // it; anything milder keeps the route it already had.
+    if (DI.getSeverity() != DS_Error)
+      return false;
+    std::string Text;
+    raw_string_ostream Stream(Text);
+    DiagnosticPrinterRawOStream Printer(Stream);
+    DI.print(Printer);
+    Result.Errors.push_back(std::move(Text));
+    return true;
+  }
+
+private:
+  PartitionResult &Result;
 };
 
 struct PreparedPartition {
@@ -860,6 +902,8 @@ void ParallelCGContext::preparePartitions(StringRef BCRef, TargetMachine &TM) {
       PP->ObjBuf = &Results[p].ObjBuffer;
       PP->Ctx = std::make_unique<LLVMContext>();
       PP->Ctx->setDiscardValueNames(true);
+      PP->Ctx->setDiagnosticHandler(
+          std::make_unique<PartitionDiagnosticHandler>(Results[p]));
       auto MOrErr =
           getLazyBitcodeModule(MemoryBufferRef(BCRef, "lto-pcg"), *PP->Ctx);
       if (!MOrErr) {
@@ -1098,6 +1142,30 @@ bool ParallelCGContext::finalizeResults(Module &Mod, raw_pwrite_stream &OS) {
     return false;
   };
 
+  // What the partitions recorded is re-raised here and nowhere else: this is
+  // the thread the caller is waiting on, and its module carries the only
+  // context in the parallel path with a diagnostic consumer behind it (see
+  // PartitionDiagnosticHandler).  The partitions are one module split N ways,
+  // so N copies of one message describe one problem; each distinct text is
+  // reported once rather than once per partition that ran into it.
+  StringSet<> Reported;
+  for (unsigned i = 0; i < NumPartitions; ++i)
+    for (const std::string &Message : Results[i].Errors)
+      if (Reported.insert(Message).second)
+        Mod.getContext().emitError(Message);
+
+  // Standing down because the compilation failed, not because the parallel path
+  // did.  This deliberately does not go through bail(): NEVERC_PCG_STRICT is
+  // there to catch the merge quietly degrading into the serial fallback, and an
+  // error in the program being compiled is not that.
+  if (!Reported.empty()) {
+    if (Dbg)
+      errs() << "[pcg] standing down: " << Reported.size()
+             << " partition error(s) reported\n";
+    restoreLinkage(Mod);
+    return false;
+  }
+
   bool AllOK = true;
   for (unsigned i = 0; i < NumPartitions; ++i)
     if (!Results[i].Success) {
@@ -1227,7 +1295,9 @@ bool runParallelCodeGen(Module &Mod, TargetMachine &TM, raw_pwrite_stream &OS,
             continue;
         }
         PM.run(*PP.M);
-        Ctx.Results[p].Success = true;
+        // A recorded error condemns whatever the pipeline went on to produce,
+        // however finished the object looks.
+        Ctx.Results[p].Success = Ctx.Results[p].Errors.empty();
         if (Ctx.Cache && !PP.CacheKey.empty())
           Ctx.Cache->Store(PP.CacheKey, *PP.ObjBuf);
       }
@@ -1377,7 +1447,9 @@ bool runParallelOptAndCodeGen(Module &Mod, TargetMachine &TM,
             continue;
         }
         PM.run(MPart);
-        Ctx.Results[p].Success = true;
+        // A recorded error condemns whatever the pipeline went on to produce,
+        // however finished the object looks.
+        Ctx.Results[p].Success = Ctx.Results[p].Errors.empty();
         if (Ctx.Cache && !PP.CacheKey.empty())
           Ctx.Cache->Store(PP.CacheKey, *PP.ObjBuf);
       }
