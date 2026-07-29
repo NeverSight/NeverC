@@ -59,6 +59,13 @@ def main():
     os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)
 
     entries = []  # (sanitized_name, bc_bytes)
+    # A module can legitimately be unavailable on a given target -- the net
+    # resolver needs Windows' DNS headers, for instance.  Record those instead
+    # of failing the whole target: a caller that reaches for a skipped module
+    # gets an undefined symbol at link time, which is a far better outcome
+    # than the alternative this split exists to remove (linking a blob whose
+    # ABI belongs to some other target).
+    unavailable = []  # (relative_path, first_diagnostic)
 
     src_dir_abs = os.path.abspath(args.std_src_dir)
     inc_dir_abs = os.path.abspath(args.std_include_dir)
@@ -91,7 +98,12 @@ def main():
                 os.path.abspath(src), "-o", bc_path,
             ]
             print(f"  [bc] {rel}", file=sys.stderr)
-            subprocess.check_call(cmd)
+            built = subprocess.run(cmd, capture_output=True, text=True)
+            if built.returncode != 0:
+                diag = next((l for l in (built.stdout + built.stderr).splitlines()
+                             if "error" in l), "compilation failed")
+                unavailable.append((rel, diag.strip()))
+                continue
 
             with open(bc_path, "rb") as f:
                 bc_data = f.read()
@@ -125,9 +137,19 @@ def main():
     with open(args.output, "w") as f:
         f.write("\n".join(lines))
 
+    if not entries:
+        print(f"error: no std module could be built for {args.tag} "
+              f"({args.target})", file=sys.stderr)
+        sys.exit(1)
+
     print(f"build_std_bitcode: {len(entries)} modules for {args.tag} "
           f"({args.target}), {total_bytes} bytes -> {args.output}",
           file=sys.stderr)
+    if unavailable:
+        print(f"  {len(unavailable)} module(s) unavailable on {args.tag}:",
+              file=sys.stderr)
+        for rel, diag in unavailable:
+            print(f"    {rel}: {diag}", file=sys.stderr)
 
 
 if __name__ == "__main__":
