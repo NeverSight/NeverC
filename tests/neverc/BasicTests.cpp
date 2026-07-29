@@ -383,6 +383,42 @@ TEST_F(BasicTest, LocallyBoundModuleInlineAsmDeclinesParallelCodegen) {
   }
 }
 
+// -frecord-command-line puts the driver invocation in .GCC.command.line, which
+// codegen writes once for each module it is given -- the same shape of
+// module-wide output as the .ident string and the linker directives beside it.
+TEST_F(BasicTest, RecordedCommandLineIsWrittenOnceAfterParallelCodegen) {
+  // A flag that appears nowhere else in the object, so occurrences of it count
+  // the copies of the recording.
+  constexpr const char *Marker = "-neverc-pcg-weight-floor=1";
+
+  auto src = tmpFile("pcg_command_line.c");
+  writeFile(src, withParallelCodegenSpread(""));
+
+  for (const char *triple :
+       {"x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"}) {
+    SCOPED_TRACE(triple);
+    auto obj = tmpFile(std::string("pcg_command_line_") + triple + ".o");
+    auto r = ncc({std::string("--target=") + triple, "-O0", "-std=c11",
+                  "-fno-lto", "-frecord-command-line", "-c", "-mllvm",
+                  "-neverc-pcg-min-funcs=2", "-mllvm", Marker, "-mllvm",
+                  "-neverc-pcg-cg-weight-div=1", src.string(), "-o",
+                  obj.string()});
+    ASSERT_EQ(r.exitCode, 0) << r.err;
+
+    const std::string bytes = readFile(obj);
+    EXPECT_NE(bytes.find(".__pcg"), std::string::npos)
+        << "the regression must exercise merged parallel codegen";
+
+    unsigned Copies = 0;
+    for (size_t At = bytes.find(Marker); At != std::string::npos;
+         At = bytes.find(Marker, At + 1))
+      ++Copies;
+    EXPECT_EQ(Copies, 1u)
+        << "the recorded command line was written once per partition instead "
+           "of once per module";
+  }
+}
+
 TEST_F(BasicTest, BuiltinStringFormat) {
   auto src = (testDir() / "string" / "test_neverc_string_format.c").string();
   compileRunAndCheck("test_neverc_string_format", src, kStrFlags, 0,
