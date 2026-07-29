@@ -5,6 +5,7 @@
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/Hashing.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Analysis/CFG.h"
 #include "llvm/Analysis/ScalarEvolution.h"
@@ -23,6 +24,8 @@
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Module.h"
 #include "llvm/MC/TargetRegistry.h"
+#include "llvm/Object/ModuleSymbolTable.h"
+#include "llvm/Object/SymbolicFile.h"
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Passes/StandardInstrumentations.h"
 #include "llvm/Target/TargetMachine.h"
@@ -338,15 +341,97 @@ struct PreparedPartition {
   PreparedPartition() = default;
 };
 
-/// True for the appending globals whose entries describe individual symbols
-/// rather than the module as a whole.  `llvm.used` and `llvm.compiler.used`
-/// are retain markers: codegen turns each entry into a property of the
-/// section holding that symbol's definition (SHF_GNU_RETAIN on ELF,
-/// .no_dead_strip on Mach-O, /INCLUDE: on COFF), so the marker has to travel
-/// with the body.  The structor lists are the opposite -- one module-wide
-/// registration that partition 0 owns outright.
-bool isPerSymbolAppendingGlobal(const GlobalVariable &GV) {
-  return GV.getName() == "llvm.used" || GV.getName() == "llvm.compiler.used";
+// ===----------------------------------------------------------------------===
+// Module-wide constructs
+//
+// A partition module starts as a copy of the whole merged module, so whatever
+// that module carries outside of its symbols -- named metadata the linker
+// consumes, file-scope inline assembly, the appending globals -- exists in all
+// N copies, and codegen emits it out of every one of them.  The merge is then
+// handed N copies of one .drectve, N copies of one asm block, N registrations
+// of one initializer.  Partition 0 owns these constructs; every other
+// partition gives them up.
+//
+// The retain markers are the exception, and the reason this is a policy rather
+// than a single erase loop.  Their entries name individual symbols, and
+// codegen turns each entry into a property of the section holding that
+// symbol's *definition* (SHF_GNU_RETAIN on ELF, .no_dead_strip on Mach-O,
+// /INCLUDE: on COFF).  A marker is only expressible where the body is, so
+// rather than surrender them a partition narrows them to what it still
+// defines.
+// ===----------------------------------------------------------------------===
+
+/// Named metadata codegen turns into output of its own -- an .ident string, a
+/// .drectve fragment, a DT_NEEDED entry, a recorded command line -- once for
+/// each module it is handed, attached to no symbol in it.
+constexpr StringLiteral PerModuleOutputMetadata[] = {
+    "llvm.ident", "llvm.linker.options", "llvm.dependent-libraries",
+    "llvm.commandline"};
+
+/// Gives up everything partition 0 owns.  Erasing is safe for all of it:
+/// partition 0 is retained even when empty (see the binning below), so each
+/// construct dropped here still has exactly one module left to be emitted
+/// from.
+void surrenderModuleWideConstructs(Module &M) {
+  for (StringRef MDName : PerModuleOutputMetadata)
+    if (auto *NMD = M.getNamedMetadata(MDName))
+      M.eraseNamedMetadata(NMD);
+
+  // AsmPrinter copies this to the head of its output verbatim, once for every
+  // module it is handed (doInitialization), so N partitions put N copies into
+  // the merge.  A block that only references symbols would survive that; one
+  // that *defines* anything -- `.globl f; f: ...`, a `.section` with contents,
+  // a `.set` -- becomes N definitions of one name, which the merge has to
+  // refuse.
+  M.setModuleInlineAsm("");
+
+  // The retain markers are the appending globals LLVM's own accessor knows,
+  // which is why their names are not spelled out here.
+  SmallVector<GlobalValue *, 0> Entries;
+  SmallPtrSet<const GlobalVariable *, 2> RetainMarkers;
+  for (bool CompilerUsed : {false, true})
+    if (auto *List = collectUsedGlobalVariables(M, Entries, CompilerUsed))
+      RetainMarkers.insert(List);
+
+  for (GlobalVariable &GV : make_early_inc_range(M.globals()))
+    if (GV.hasAppendingLinkage() && !GV.isDeclaration() &&
+        !RetainMarkers.contains(&GV))
+      GV.eraseFromParent();
+}
+
+/// True when the module's file-scope assembly is what stands between it and a
+/// split.
+///
+/// Leaving the block to partition 0 costs nothing as long as the symbols it
+/// defines are ones the object merge can hand to the other partitions, which
+/// is to say global or weak ones -- the same currency every ordinary
+/// cross-partition reference is settled in.  A definition with local binding
+/// is not that.  It comes into being only when the assembler runs, under a
+/// name no IR value owns, so externalizeAndSerialize cannot promote it the way
+/// it promotes a `static` function that other partitions came to need; a
+/// reference to it from anywhere but partition 0 simply goes unresolved.  The
+/// module is left whole instead.
+///
+/// The block is put to LLVM's assembler rather than read: CollectAsmSymbols
+/// parses it for real and reports each symbol's binding, and a definition that
+/// is neither global nor weak is a local one.
+bool moduleAsmForbidsSplitting(const Module &M) {
+  if (M.getModuleInlineAsm().empty())
+    return false;
+
+  bool Reported = false;
+  bool LocalDefinition = false;
+  ModuleSymbolTable::CollectAsmSymbols(
+      M, [&](StringRef, object::BasicSymbolRef::Flags Flags) {
+        Reported = true;
+        LocalDefinition |= !(Flags & (object::BasicSymbolRef::SF_Global |
+                                      object::BasicSymbolRef::SF_Weak));
+      });
+  // A block that names nothing and a block the parser gave up on both come
+  // back empty, and CollectAsmSymbols does not distinguish them.  Decline on
+  // either: the first has no parallelism worth chasing, and the second is a
+  // question left unanswered.
+  return !Reported || LocalDefinition;
 }
 
 /// Narrows this partition's retain markers to the definitions it actually
@@ -438,6 +523,12 @@ bool ParallelCGContext::init(Module &Mod, TargetMachine &TM) {
   TheTarget = &TM.getTarget();
   TripleStr = Mod.getTargetTriple();
   TT = Triple(TripleStr);
+
+  // A precondition, not one of the engagement heuristics below: no amount of
+  // work in this module makes it splittable if its file-scope assembly names a
+  // definition the split would strand.
+  if (moduleAsmForbidsSplitting(Mod))
+    return false;
 
   // Back-edge count is a cheap (DFS-only, no dominator tree) proxy for the
   // loop count.  We use it, not exact LoopInfo, because this runs before the
@@ -689,13 +780,13 @@ bool ParallelCGContext::externalizeAndSerialize(Module &Mod) {
                        : unsigned(xxh3_64bits(Name) % NumPartitions);
       Bins[B].push_back(Name.str());
     }
-    // Always retain slot 0 for module-level metadata (llvm.linker.options,
-    // llvm.global_ctors, aliases pinned above).  Dropping an empty bin 0 used
-    // to renumber a former non-zero bin into partition 0 — that bin still kept
-    // named metadata, but on some COFF hosts the resulting .drectve was lost
-    // during merge when partition 0 had no "real" ownership of the metadata
-    // relative to how codegen ordered sections.  Keeping a (possibly empty)
-    // partition 0 makes "metadata lives in p0" a stable invariant.
+    // Always retain slot 0: it owns the module-wide constructs every other
+    // partition surrenders, plus the aliases pinned above.  Dropping an empty
+    // bin 0 used to renumber a former non-zero bin into partition 0 — that bin
+    // still kept named metadata, but on some COFF hosts the resulting .drectve
+    // was lost during merge when partition 0 had no "real" ownership of the
+    // metadata relative to how codegen ordered sections.  Keeping a (possibly
+    // empty) partition 0 makes "partition 0 owns them" a stable invariant.
     Assignments.clear();
     Assignments.push_back(std::move(Bins[0]));
     for (unsigned i = 1, e = Bins.size(); i != e; ++i)
@@ -709,12 +800,8 @@ bool ParallelCGContext::externalizeAndSerialize(Module &Mod) {
   }
 
   Mod.dropTriviallyDeadConstantArrays();
-  // Keep llvm.ident / linker.options / dependent-libraries on the module
-  // through bitcode serialization so partition 0 still emits them exactly
-  // once.  They are stripped from the mother module *after* WriteBitcodeToFile
-  // (so a serial fallback via restoreLinkage can put them back), and dropped
-  // from every non-zero partition in preparePartitions (so a merge never
-  // concatenates N copies of .drectve / DT_NEEDED).
+  // Every partition context reads this buffer with value names discarded, so
+  // shedding them here keeps them out of the bitcode all N of them parse.
   for (Function &F : Mod) {
     if (F.isDeclaration())
       continue;
@@ -731,8 +818,11 @@ bool ParallelCGContext::externalizeAndSerialize(Module &Mod) {
     WriteBitcodeToFile(Mod, BCOS, false);
   }
 
-  for (StringRef MDName :
-       {"llvm.ident", "llvm.linker.options", "llvm.dependent-libraries"})
+  // This metadata had to reach the buffer above so that partition 0 still
+  // emits it exactly once.  It comes off the mother module only now, and only
+  // so far as restoreLinkage can put it back if the merge bails to serial
+  // codegen.
+  for (StringRef MDName : PerModuleOutputMetadata)
     if (auto *NMD = Mod.getNamedMetadata(MDName)) {
       SavedNamedMD S;
       S.Name = MDName.str();
@@ -799,22 +889,13 @@ void ParallelCGContext::preparePartitions(StringRef BCRef, TargetMachine &TM) {
       if (Failed)
         continue;
       if (p != 0) {
-        // Module-level linker metadata lives only in partition 0 (serialized
-        // into FullBC above).  Drop it here so the object merge does not
-        // concatenate N copies of .drectve / dependent-libraries.
-        for (StringRef MDName : {"llvm.ident", "llvm.linker.options",
-                                 "llvm.dependent-libraries"})
-          if (auto *NMD = MPart.getNamedMetadata(MDName))
-            MPart.eraseNamedMetadata(NMD);
+        surrenderModuleWideConstructs(MPart);
 
         for (GlobalVariable &GV : make_early_inc_range(MPart.globals())) {
-          if (GV.isDeclaration())
+          // A declaration has no initializer to give up, and the appending
+          // globals were settled above.
+          if (GV.isDeclaration() || GV.hasAppendingLinkage())
             continue;
-          if (GV.hasAppendingLinkage()) {
-            if (!isPerSymbolAppendingGlobal(GV))
-              GV.eraseFromParent();
-            continue;
-          }
           // unnamed_addr constants (string literals) are kept as local
           // definitions in every partition — skip the initializer drop.
           if (GV.hasGlobalUnnamedAddr() && GV.isConstant())

@@ -291,6 +291,98 @@ TEST_F(BasicTest, RetainedDefinitionsSurviveParallelCodegen) {
   }
 }
 
+namespace {
+
+// Twelve static bodies called from main: static so externalization has
+// something to rename and the object can be searched for the ".__pcg" evidence
+// that partitioning really ran, called so none of them is dead before it is
+// ever binned.
+std::string withParallelCodegenSpread(std::string Prologue) {
+  std::string Sum;
+  for (unsigned Index = 0; Index != 12; ++Index) {
+    const std::string N = std::to_string(Index);
+    Prologue +=
+        "static int spread" + N + "(int v) { return v * " + N + " + 1; }\n";
+    Sum += (Index ? " + " : "") + ("spread" + N + "(" + N + ")");
+  }
+  return Prologue + "int main(void) { return " + Sum + "; }\n";
+}
+
+} // namespace
+
+// File-scope inline assembly belongs to the module, not to any symbol in it,
+// and codegen copies it to the head of every module it is handed.  A partition
+// is a copy of the whole module, so the block reaches the merge once per
+// partition, and everything it defines is defined that many times over.
+TEST_F(BasicTest, ModuleInlineAsmIsEmittedOnceAfterParallelCodegen) {
+  constexpr const char *Marker = "NEVERC_PCG_ASM_MARKER";
+
+  // A global definition: the merge can hand it to the other partitions, so
+  // leaving the block to partition 0 costs the split nothing.  The section
+  // contents are what makes the copies countable.
+  auto src = tmpFile("pcg_module_asm.c");
+  writeFile(src, withParallelCodegenSpread(
+                     R"(__asm__(".pushsection .rodata\n"
+        ".globl neverc_pcg_asm_probe\n"
+        "neverc_pcg_asm_probe:\n"
+        ".ascii \"NEVERC_PCG_ASM_MARKER\"\n"
+        ".popsection\n");
+)"));
+
+  for (const char *triple :
+       {"x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"}) {
+    SCOPED_TRACE(triple);
+    auto obj = tmpFile(std::string("pcg_module_asm_") + triple + ".o");
+    auto r =
+        ncc({std::string("--target=") + triple, "-O0", "-std=c11", "-fno-lto",
+             "-c", "-mllvm", "-neverc-pcg-min-funcs=2", "-mllvm",
+             "-neverc-pcg-weight-floor=1", "-mllvm",
+             "-neverc-pcg-cg-weight-div=1", src.string(), "-o", obj.string()});
+    ASSERT_EQ(r.exitCode, 0) << r.err;
+
+    const std::string bytes = readFile(obj);
+    EXPECT_NE(bytes.find(".__pcg"), std::string::npos)
+        << "a globally bound asm symbol must not cost the module its split";
+
+    unsigned Copies = 0;
+    for (size_t At = bytes.find(Marker); At != std::string::npos;
+         At = bytes.find(Marker, At + 1))
+      ++Copies;
+    EXPECT_EQ(Copies, 1u)
+        << "file-scope inline assembly reached the object once per partition "
+           "instead of once per module";
+  }
+}
+
+// The other half of that trade: a locally bound asm definition exists only
+// once the assembler runs, under a name no IR value owns, so nothing can
+// promote it for the partitions that do not hold the block.  Rather than
+// strand a reference to it, the module goes uncut.
+TEST_F(BasicTest, LocallyBoundModuleInlineAsmDeclinesParallelCodegen) {
+  auto src = tmpFile("pcg_module_asm_local.c");
+  writeFile(src, withParallelCodegenSpread(
+                     R"(__asm__(".pushsection .rodata\n"
+        "neverc_pcg_asm_local:\n"
+        ".ascii \"local\"\n"
+        ".popsection\n");
+)"));
+
+  for (const char *triple :
+       {"x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"}) {
+    SCOPED_TRACE(triple);
+    auto obj = tmpFile(std::string("pcg_module_asm_local_") + triple + ".o");
+    auto r =
+        ncc({std::string("--target=") + triple, "-O0", "-std=c11", "-fno-lto",
+             "-c", "-mllvm", "-neverc-pcg-min-funcs=2", "-mllvm",
+             "-neverc-pcg-weight-floor=1", "-mllvm",
+             "-neverc-pcg-cg-weight-div=1", src.string(), "-o", obj.string()});
+    ASSERT_EQ(r.exitCode, 0) << r.err;
+
+    EXPECT_EQ(readFile(obj).find(".__pcg"), std::string::npos)
+        << "the module was split around an asm symbol the split cannot carry";
+  }
+}
+
 TEST_F(BasicTest, BuiltinStringFormat) {
   auto src = (testDir() / "string" / "test_neverc_string_format.c").string();
   compileRunAndCheck("test_neverc_string_format", src, kStrFlags, 0,
