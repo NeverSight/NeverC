@@ -33,6 +33,54 @@ TEST_F(PluginIRGenProviderTest,
   EXPECT_EQ(Run.exitCode, 42) << Run.out << Run.err;
 }
 
+// Whether `int x;` at file scope is a definition is the one thing about it
+// that cannot be read off the declaration: it is one only if the unit turns
+// out to hold no other definition of the name, so Sema reports the answer once
+// parsing is over and nothing can change it.  A plugin makes the driver hold
+// builtin IRGen back until it knows whether a provider will replace it, and
+// that report has to be held with it.  Dropped instead, every tentative
+// definition in the unit came out an `external` declaration -- including the
+// `static` one, whose name was never meant to leave the file.
+TEST_F(PluginIRGenProviderTest,
+       TentativeDefinitionsSurviveDeferredBuiltinIRGen) {
+  const fs::path Source = tmpFile("irgen_tentative.c");
+  const fs::path IR = tmpFile("irgen_tentative.ll");
+  const fs::path Executable = tmpFile("irgen_tentative");
+  writeFile(Source, "int plain;\n"
+                    "static int local;\n"
+                    "_Thread_local int threaded;\n"
+                    "int main(void) { return plain + local + threaded; }\n");
+
+  // A plugin that only observes, so builtin IRGen is deferred and then is the
+  // one that runs.
+  const std::string Plugin =
+      std::string("-fplugin=") + NEVERC_TEST_TASK_LIFECYCLE_PLUGIN;
+  CmdResult EmitIR = ncc({Plugin, "-std=c11", "-S", "-emit-llvm",
+                          Source.string(), "-o", IR.string()});
+  ASSERT_EQ(EmitIR.exitCode, 0) << EmitIR.err;
+
+  const std::string Module = readFile(IR);
+  for (const char *Name : {"@plain =", "@local =", "@threaded ="}) {
+    const size_t At = Module.find(Name);
+    ASSERT_NE(At, std::string::npos) << Name << " is missing from\n" << Module;
+    const std::string Line = Module.substr(At, Module.find('\n', At) - At);
+    EXPECT_EQ(Line.find("external"), std::string::npos)
+        << "a tentative definition reached the module as a declaration, so "
+           "the variable has no storage anywhere: "
+        << Line;
+  }
+
+  // And the whole way through: a declaration where a definition belongs is an
+  // undefined symbol at link time.
+  std::vector<std::string> Arguments = {Plugin, "-std=c11", Source.string(),
+                                        "-o", Executable.string()};
+  std::vector<std::string> LinkArguments = linkFlags();
+  Arguments.insert(Arguments.end(), LinkArguments.begin(), LinkArguments.end());
+  CmdResult Compile = ncc(Arguments);
+  ASSERT_EQ(Compile.exitCode, 0) << Compile.err;
+  EXPECT_EQ(exec(Executable.string(), {}).exitCode, 0);
+}
+
 TEST_F(PluginIRGenProviderTest,
        ProviderAcceptsTheCustomSemanticProductItImplements) {
   const fs::path Source = tmpFile("irgen_custom_semantic_product.c");

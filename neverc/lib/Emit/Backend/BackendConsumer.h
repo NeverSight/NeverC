@@ -64,6 +64,20 @@ class EmitterConsumer : public TreeConsumer {
   bool BuiltinIRGenFinished = false;
   bool PluginSemanticUnitReady = false;
 
+  // What Sema reports once the unit is parsed and nothing else can change it:
+  // which tentative definitions ended up being the definition, and which
+  // external declarations were used.  A declaration cannot be recognized as
+  // either by looking at it alone -- both answers depend on the rest of the
+  // unit -- so IRGen learns them only from these reports, and holding IRGen
+  // back for the plugin means holding the reports with it rather than losing
+  // them.  Kept in arrival order and replayed where the streaming path would
+  // have delivered them; see generateBuiltinIRModule.
+  struct SemaUnitReport {
+    VarDecl *Var;
+    bool IsTentativeDefinition;
+  };
+  llvm::SmallVector<SemaUnitReport, 8> SemaUnitReports;
+
   llvm::SmallVector<LinkModule, 4> LinkModules;
 
   // A map from mangled names to their function's source location, used for

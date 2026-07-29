@@ -196,7 +196,14 @@ Expected<llvm::Module *> EmitterConsumer::generateBuiltinIRModule() {
     return createStringError(inconvertibleErrorCode(),
                              "builtin IRGen was invoked more than once");
   BuiltinIRGenFinished = true;
-  llvm::Module *Module = Gen->generateTranslationUnit(*Context);
+  llvm::Module *Module = Gen->generateTranslationUnit(*Context, [this] {
+    for (const SemaUnitReport &Report : SemaUnitReports)
+      if (Report.IsTentativeDefinition)
+        Gen->FinalizeTentativeDefinition(Report.Var);
+      else
+        Gen->FinalizeExternalDeclaration(Report.Var);
+    SemaUnitReports.clear();
+  });
   if (!Module)
     return createStringError(inconvertibleErrorCode(),
                              "builtin IRGen produced no module");
@@ -463,14 +470,18 @@ void EmitterConsumer::ProcessTagDeclRequiredDefinition(const TagDecl *D) {
 }
 
 void EmitterConsumer::FinalizeTentativeDefinition(VarDecl *D) {
-  if (PluginIRGen)
+  if (PluginIRGen) {
+    SemaUnitReports.push_back({D, /*IsTentativeDefinition=*/true});
     return;
+  }
   Gen->FinalizeTentativeDefinition(D);
 }
 
 void EmitterConsumer::FinalizeExternalDeclaration(VarDecl *D) {
-  if (PluginIRGen)
+  if (PluginIRGen) {
+    SemaUnitReports.push_back({D, /*IsTentativeDefinition=*/false});
     return;
+  }
   Gen->FinalizeExternalDeclaration(D);
 }
 

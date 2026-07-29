@@ -233,10 +233,14 @@ llvm::Module *IRGenerator::releaseModule() {
   return static_cast<CodeGeneratorImpl *>(this)->releaseModule();
 }
 
-llvm::Module *IRGenerator::generateTranslationUnit(TreeContext &Context) {
+llvm::Module *
+IRGenerator::generateTranslationUnit(TreeContext &Context,
+                                     llvm::function_ref<void()> ReportUnit) {
   for (Decl *Declaration : Context.getTranslationUnitDecl()->decls())
     if (!ProcessTopLevelDecl(DeclGroupRef(Declaration)))
       return nullptr;
+  if (ReportUnit)
+    ReportUnit();
   ProcessTranslationUnit(Context);
   return getModule();
 }

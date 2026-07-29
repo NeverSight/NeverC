@@ -3,6 +3,7 @@
 
 #include "neverc/Tree/Core/TreeConsumer.h"
 #include "llvm/ADT/IntrusiveRefCntPtr.h"
+#include "llvm/ADT/STLFunctionalExtras.h"
 
 namespace llvm {
 class Constant;
@@ -49,7 +50,18 @@ public:
 
   llvm::Module *startModule(llvm::StringRef ModuleName, llvm::LLVMContext &C);
 
-  llvm::Module *generateTranslationUnit(TreeContext &Context);
+  /// Generates the whole unit at once, for a caller that held IRGen back
+  /// instead of streaming declarations in as they were parsed.
+  ///
+  /// \p ReportUnit is called where Sema's end-of-unit reports land in the
+  /// streaming path: after every declaration has been lowered, before the
+  /// module is released.  A caller that buffered those reports -- because it
+  /// could not know yet whether this generator would be the one to run --
+  /// delivers them there, at the point their effect is the same as if they
+  /// had arrived on time.
+  llvm::Module *
+  generateTranslationUnit(TreeContext &Context,
+                          llvm::function_ref<void()> ReportUnit = {});
 };
 
 IRGenerator *
