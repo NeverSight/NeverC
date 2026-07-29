@@ -46,6 +46,7 @@
 #include "llvm/Support/FileUtilities.h"
 #include "llvm/Support/Format.h"
 #include "llvm/Support/FormatVariadic.h"
+#include "llvm/Support/GlobPattern.h"
 #include "llvm/Support/GraphWriter.h"
 #include "llvm/Support/JSON.h"
 #include "llvm/Support/MemoryBuffer.h"
