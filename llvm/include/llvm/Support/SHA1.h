@@ -15,19 +15,11 @@
 #ifndef LLVM_SUPPORT_SHA1_H
 #define LLVM_SUPPORT_SHA1_H
 
+#include "csupport/ls_lh_la1.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"
 #include <array>
 #include <stdint.h>
-
-extern "C" {
-void csupport_sha1_init(void *ctx);
-void csupport_sha1_update(void *ctx, const uint8_t *data, size_t len);
-void csupport_sha1_update_string(void *ctx, const char *str, size_t len);
-void csupport_sha1_final(void *ctx, uint8_t result[20]);
-void csupport_sha1_result(void *ctx, uint8_t result[20]);
-void csupport_sha1_hash(const uint8_t *data, size_t len, uint8_t result[20]);
-}
 
 namespace llvm {
 
@@ -65,37 +57,11 @@ public:
   }
 
 private:
-  /// Define some constants.
-  /// "static constexpr" would be cleaner but MSVC does not support it yet.
-  enum { BLOCK_LENGTH = 64 };
-  enum { HASH_LENGTH = 20 };
-
-  // Internal State
-  //
-  // Opaque storage handed to the C implementation as csupport_sha1_ctx_t
-  // (llvm/lib/CSupport/SHA1.c). Its layout, widths and alignment MUST mirror
-  // that struct exactly: the C code addresses these bytes through the C struct,
-  // so a mismatch (a 32-bit ByteCount or missing 8-byte alignment for the 64-bit
-  // byte counter) makes the C code write past the end of this object. The
-  // historical LLVM layout is 4 bytes too small and 4-byte aligned, which
-  // overruns the object.
-  struct {
-    uint32_t State[HASH_LENGTH / 4];
-    union {
-      uint8_t C[BLOCK_LENGTH];
-      uint32_t L[BLOCK_LENGTH / 4];
-    } Buffer;
-    unsigned BufferOffset;
-    uint64_t ByteCount;
-  } InternalState;
-
-  // Helper
-  void writebyte(uint8_t data);
-  void hashBlock();
-  void addUncounted(uint8_t data);
-  void pad();
-
-  void final(std::array<uint32_t, HASH_LENGTH / 4> &HashResult);
+  // The C implementation owns the whole algorithm, so this holds its context
+  // and nothing else.  Restating the layout here instead would put the size,
+  // field order and alignment of a struct the C code writes through under the
+  // care of a comment, and nothing would report the day the two drifted apart.
+  csupport_sha1_ctx_t InternalState;
 };
 
 } // namespace llvm

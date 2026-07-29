@@ -54,11 +54,64 @@ ArrayRef<uint8_t> bytes(StringRef Text) {
 }
 
 // The three lengths that exercise the block boundary the streaming buffer is
-// there to handle: shorter than a block, exactly a block, and longer.
+// there to handle: shorter than a block, exactly a block, and longer.  All
+// three hashes work in 64-byte blocks.
 constexpr StringLiteral SixtyFourBytes =
     "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
-constexpr StringLiteral SixtyFivebytes =
+constexpr StringLiteral SixtyFiveBytes =
     "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef!";
+
+// The three classes present the same streaming interface -- update, final,
+// result, and a static one-shot hash -- so the properties below are stated
+// once against that interface rather than three times against each class.
+// The digest length identifies which one is under test.
+template <typename Hasher> size_t digestSize() {
+  return Hasher::hash(ArrayRef<uint8_t>()).size();
+}
+
+// Feeding the same bytes in pieces must reach the same digest as feeding them
+// at once.  This is what the published vectors cannot see: a wrapper that
+// keeps its own buffer can carry the block boundary wrongly and still get the
+// single-call case right.
+template <typename Hasher> void checkStreamingAgreesWithOneShot() {
+  SCOPED_TRACE(digestSize<Hasher>());
+  for (StringRef Text : {StringRef("abc"), StringRef(SixtyFourBytes),
+                         StringRef(SixtyFiveBytes)}) {
+    SCOPED_TRACE(Text.size());
+    const std::string Whole = hex(Hasher::hash(bytes(Text)));
+    for (size_t Split = 0; Split <= Text.size(); ++Split) {
+      Hasher Piecewise;
+      Piecewise.update(Text.take_front(Split));
+      Piecewise.update(Text.drop_front(Split));
+      EXPECT_EQ(hex(Piecewise.final()), Whole) << "split after " << Split;
+    }
+  }
+}
+
+// A hash is a function of its input and nothing else.  A wrapper reading
+// uninitialized state passes the published vectors only by luck and fails
+// here: two calls from different places in one program disagree, which is how
+// the same source file came out with two different checksums in one module.
+template <typename Hasher> void checkTheInputIsTheOnlyInput() {
+  SCOPED_TRACE(digestSize<Hasher>());
+  const std::string Direct = hex(Hasher::hash(bytes("neverc")));
+
+  auto FromAnotherFrame = [] { return hex(Hasher::hash(bytes("neverc"))); };
+  EXPECT_EQ(FromAnotherFrame(), Direct);
+
+  Hasher Streamed;
+  Streamed.update(StringRef("neverc"));
+  EXPECT_EQ(hex(Streamed.final()), Direct);
+
+  // result() reports the digest so far without ending the stream, so it must
+  // agree with final() and leave the state able to continue.
+  Hasher Resumable;
+  Resumable.update(StringRef("nev"));
+  Resumable.update(StringRef("erc"));
+  EXPECT_EQ(hex(Resumable.result()), Direct);
+  Resumable.update(StringRef("!"));
+  EXPECT_EQ(hex(Resumable.result()), hex(Hasher::hash(bytes("neverc!"))));
+}
 
 } // namespace
 
@@ -100,48 +153,14 @@ TEST(SupportHashTest, SHA256MatchesThePublishedVectors) {
             "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1");
 }
 
-// Feeding the same bytes in pieces must reach the same digest as feeding them
-// at once.  This is what the one-shot vectors above cannot see: a wrapper that
-// keeps its own buffer can carry the block boundary wrongly and still get the
-// single-call case right.
 TEST(SupportHashTest, StreamingAgreesWithOneShotAcrossTheBlockBoundary) {
-  for (StringRef Text : {StringRef("abc"), StringRef(SixtyFourBytes),
-                         StringRef(SixtyFivebytes)}) {
-    SCOPED_TRACE(Text.size());
-    const std::string Whole = hex(MD5::hash(bytes(Text)));
-    for (size_t Split = 0; Split <= Text.size(); ++Split) {
-      MD5 Hash;
-      Hash.update(Text.take_front(Split));
-      Hash.update(Text.drop_front(Split));
-      MD5::MD5Result Piecewise;
-      Hash.final(Piecewise);
-      EXPECT_EQ(hex(Piecewise), Whole) << "split after " << Split << " bytes";
-    }
-  }
+  checkStreamingAgreesWithOneShot<MD5>();
+  checkStreamingAgreesWithOneShot<SHA1>();
+  checkStreamingAgreesWithOneShot<SHA256>();
 }
 
-// A hash is a function of its input and nothing else.  A wrapper reading
-// uninitialized state passes the vectors above only by luck and fails here:
-// two calls from different places in one program disagree, which is how the
-// same source file came out with two different checksums in one module.
 TEST(SupportHashTest, TheSameInputHashesTheSameFromEveryCallSite) {
-  const std::string Direct = hex(MD5::hash(bytes("neverc")));
-
-  auto FromAnotherFrame = [] { return hex(MD5::hash(bytes("neverc"))); };
-  EXPECT_EQ(FromAnotherFrame(), Direct);
-
-  MD5 Streamed;
-  Streamed.update(StringRef("neverc"));
-  MD5::MD5Result Result;
-  Streamed.final(Result);
-  EXPECT_EQ(hex(Result), Direct);
-
-  // result() reports the digest so far without ending the stream, so it must
-  // agree with final() and leave the state able to continue.
-  MD5 Resumable;
-  Resumable.update(StringRef("nev"));
-  Resumable.update(StringRef("erc"));
-  EXPECT_EQ(hex(Resumable.result()), Direct);
-  Resumable.update(StringRef("!"));
-  EXPECT_EQ(hex(Resumable.result()), hex(MD5::hash(bytes("neverc!"))));
+  checkTheInputIsTheOnlyInput<MD5>();
+  checkTheInputIsTheOnlyInput<SHA1>();
+  checkTheInputIsTheOnlyInput<SHA256>();
 }
