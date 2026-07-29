@@ -1,5 +1,6 @@
 /*===- SourceMgr.c - Source file management (pure C) ------------*- C -*-===*/
 #include "include/csupport/lsource_lmgr.h"
+#include "include/csupport/buffer.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -261,55 +262,51 @@ done:
 size_t csupport_expand_tabs_to_string(const char *line, size_t len,
                                        char *out, size_t cap,
                                        unsigned tab_stop) {
-  if (!line || !out || cap == 0) return 0;
   if (tab_stop == 0) tab_stop = 8;
-  size_t pos = 0, col = 0;
+  csupport_obuf_t expanded = csupport_obuf(out, cap);
+  size_t col = 0;
   for (size_t i = 0; i < len; i++) {
     if (line[i] == '\t') {
       do {
-        if (pos < cap - 1) out[pos++] = ' ';
+        csupport_obuf_put(&expanded, ' ');
         col++;
       } while ((col % tab_stop) != 0);
     } else {
-      if (pos < cap - 1) out[pos++] = line[i];
+      csupport_obuf_put(&expanded, line[i]);
       col++;
     }
   }
-  out[pos] = '\0';
-  return pos;
+  return csupport_obuf_finish(&expanded);
 }
 
 size_t csupport_json_quote_to_buf(const char *s, size_t len,
                                    char *out, size_t cap) {
-  if (!s || !out || cap == 0) return 0;
-  size_t pos = 0;
-  if (pos < cap - 1) out[pos++] = '"';
+  /* An empty string still has to come out as "", so a null pointer with
+     nothing behind it is not a reason to write nothing. */
+  csupport_obuf_t quoted = csupport_obuf(out, cap);
+  csupport_obuf_put(&quoted, '"');
   for (size_t i = 0; i < len; i++) {
     unsigned char c = (unsigned char)s[i];
-    if (c == 0x22 || c == 0x5C) {
-      if (pos < cap - 1) out[pos++] = '\\';
-    }
+    if (c == 0x22 || c == 0x5C) csupport_obuf_put(&quoted, '\\');
     if (c >= 0x20) {
-      if (pos < cap - 1) out[pos++] = (char)c;
+      csupport_obuf_put(&quoted, (char)c);
       continue;
     }
-    if (pos < cap - 1) out[pos++] = '\\';
+    csupport_obuf_put(&quoted, '\\');
     switch (c) {
-    case '\t': if (pos < cap - 1) out[pos++] = 't'; break;
-    case '\n': if (pos < cap - 1) out[pos++] = 'n'; break;
-    case '\r': if (pos < cap - 1) out[pos++] = 'r'; break;
+    case '\t': csupport_obuf_put(&quoted, 't'); break;
+    case '\n': csupport_obuf_put(&quoted, 'n'); break;
+    case '\r': csupport_obuf_put(&quoted, 'r'); break;
     default: {
       char hex[8];
       int n = snprintf(hex, sizeof(hex), "u%04x", c);
-      for (int j = 0; j < n && pos < cap - 1; j++)
-        out[pos++] = hex[j];
+      csupport_obuf_write(&quoted, hex, (size_t)n);
       break;
     }
     }
   }
-  if (pos < cap - 1) out[pos++] = '"';
-  out[pos] = '\0';
-  return pos;
+  csupport_obuf_put(&quoted, '"');
+  return csupport_obuf_finish(&quoted);
 }
 
 size_t csupport_format_line_marker(char *buf, size_t cap,

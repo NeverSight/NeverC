@@ -13,19 +13,24 @@ int csupport_format_udecimal(char *buf, size_t buflen, uint64_t value);
 int csupport_format_double(char *buf, size_t buflen, double value,
                            int precision);
 
-int csupport_format_integer_to_buf(char *buf, size_t buflen, uint64_t value,
-                                   size_t min_digits, int with_commas,
-                                   int is_negative);
+/* Buffer fillers: see the contract on csupport_obuf_t in csupport/buffer.h.
+   The caller chooses the minimum width and the precision, so none of these
+   has a length a fixed buffer can be sized against. */
+size_t csupport_format_integer_to_buf(char *buf, size_t buflen, uint64_t value,
+                                      size_t min_digits, int with_commas,
+                                      int is_negative);
 
-int csupport_format_hex_to_buf(char *buf, size_t buflen, uint64_t value,
-                               int upper, int prefix, size_t min_width);
+size_t csupport_format_hex_to_buf(char *buf, size_t buflen, uint64_t value,
+                                  int upper, int prefix, size_t min_width);
 
 size_t csupport_default_float_precision(int style);
 
 /* Format a double with style (0=exp,1=EXP,2=fixed,3=percent).
-   Handles NaN/Inf. Returns chars written. */
-int csupport_format_double_ex(char *buf, size_t buflen, double value, int style,
-                              int precision);
+   Handles NaN/Inf.  Fixed notation renders the magnitude in full, so a value
+   near DBL_MAX runs past three hundred characters before its fraction starts.
+   Buffer filler: see the contract on csupport_obuf_t in csupport/buffer.h. */
+size_t csupport_format_double_ex(char *buf, size_t buflen, double value,
+                                 int style, int precision);
 
 /* Trim leading zero in exponent: "1.23e+012" -> "1.23e+12".
    Returns new length. */

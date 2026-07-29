@@ -23,6 +23,7 @@
 
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/SmallString.h"
+#include "llvm/Support/CSupportBuffer.h"
 #include "llvm/Support/MathExtras.h"
 #include <limits>
 #include <stdint.h>
@@ -980,10 +981,10 @@ inline SmallString<64> ScaledNumberBase::toString(uint64_t D, int16_t E,
   if (!Above0 && !Below0)
     return toStringAPFloat(D, E, Precision);
 
-  char buf[256];
-  size_t n = csupport_scaled_format_digits(Above0, Below0, Extra, ExtraShift,
-                                           Precision, Width, buf, sizeof(buf));
-  return SmallString<64>(StringRef(buf, n));
+  return fillCSupportBuffer<64>([&](char *Buf, size_t Cap) {
+    return csupport_scaled_format_digits(Above0, Below0, Extra, ExtraShift,
+                                         Precision, Width, Buf, Cap);
+  });
 }
 
 inline raw_ostream &ScaledNumberBase::print(raw_ostream &OS, uint64_t D,

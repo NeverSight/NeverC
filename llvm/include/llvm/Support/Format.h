@@ -258,6 +258,7 @@ format_bytes_with_ascii(ArrayRef<uint8_t> Bytes,
 } // end namespace llvm
 
 #include "csupport/raw_ostream.h"
+#include "llvm/Support/CSupportBuffer.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -288,25 +289,22 @@ inline raw_ostream &raw_ostream::operator<<(const format_object_base &Fmt) {
 }
 
 inline raw_ostream &raw_ostream::operator<<(const FormattedString &FS) {
-  char buf[4096];
-  size_t n =
-      csupport_format_justified(buf, sizeof(buf), FS.Str.data(), FS.Str.size(),
-                                FS.Width, (int)FS.Justify);
-  write(buf, n);
-  return *this;
+  return *this << fillCSupportBuffer([&](char *Buf, size_t Cap) {
+           return csupport_format_justified(Buf, Cap, FS.Str.data(),
+                                            FS.Str.size(), FS.Width,
+                                            (int)FS.Justify);
+         });
 }
 
 inline raw_ostream &raw_ostream::operator<<(const FormattedNumber &FN) {
-  char buf[128];
-  size_t n;
-  if (FN.Hex) {
-    n = csupport_format_number_hex(buf, sizeof(buf), FN.HexValue, FN.Width,
-                                   FN.Upper, FN.HexPrefix);
-  } else {
-    n = csupport_format_number_decimal(buf, sizeof(buf), FN.DecValue, FN.Width);
-  }
-  write(buf, n);
-  return *this;
+  // The column width is the caller's, and format_decimal does not bound it.
+  return *this << fillCSupportBuffer<64>([&](char *Buf, size_t Cap) {
+           return FN.Hex ? csupport_format_number_hex(Buf, Cap, FN.HexValue,
+                                                      FN.Width, FN.Upper,
+                                                      FN.HexPrefix)
+                         : csupport_format_number_decimal(Buf, Cap, FN.DecValue,
+                                                          FN.Width);
+         });
 }
 
 inline raw_ostream &raw_ostream::operator<<(const FormattedBytes &FB) {

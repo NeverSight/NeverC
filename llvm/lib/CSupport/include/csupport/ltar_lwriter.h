@@ -14,7 +14,8 @@ unsigned csupport_tar_checksum(const char header[512]);
 void csupport_tar_write_padding(char *buf, size_t file_size,
                                 size_t *padding_size);
 
-/* Format a PAX extended attribute "LEN key=val\n". Returns bytes written. */
+/* Format a PAX extended attribute "LEN key=val\n".
+   Buffer filler: see the contract on csupport_obuf_t in csupport/buffer.h. */
 size_t csupport_tar_format_pax(char *buf, size_t buflen, const char *key,
                                size_t key_len, const char *val, size_t val_len);
 

@@ -132,11 +132,15 @@ int csupport_apfloat_parse_special_string(
     int *out_is_signaling, unsigned *out_radix, const char **payload_begin,
     size_t *payload_len);
 
-void csupport_apfloat_format_to_string(const char *buffer, unsigned n_digits,
-                                       int exp, unsigned format_precision,
-                                       unsigned format_max_padding,
-                                       int truncate_zero, int is_negative,
-                                       char *out, unsigned *out_len);
+/* Buffer filler: see the contract on csupport_obuf_t in csupport/buffer.h.
+   Both the digit count and the padding come from the caller's requested
+   precision, so no fixed buffer bounds this: a cut number is still a number,
+   and every reader of the IR takes it at face value. */
+size_t csupport_apfloat_format_to_string(const char *buffer, unsigned n_digits,
+                                         int exp, unsigned format_precision,
+                                         unsigned format_max_padding,
+                                         int truncate_zero, int is_negative,
+                                         char *out, size_t out_cap);
 
 int csupport_apfloat_round_away_from_zero_simple(int rounding_mode,
                                                  int lost_fraction,

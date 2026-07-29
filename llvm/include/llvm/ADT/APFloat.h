@@ -22,6 +22,7 @@
 #include "llvm/ADT/FloatingPointMode.h"
 #include "llvm/ADT/Hashing.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/CSupportBuffer.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -2377,12 +2378,13 @@ inline void IEEEFloat::toString(SmallVectorImpl<char> &Str,
 
   unsigned NDigits = buffer.size();
 
-  char fmtbuf[512];
-  unsigned fmtlen;
-  csupport_apfloat_format_to_string(buffer.data(), NDigits, exp,
-                                    FormatPrecision, FormatMaxPadding,
-                                    TruncateZero, 0, fmtbuf, &fmtlen);
-  Str.append(fmtbuf, fmtbuf + fmtlen);
+  const SmallString<128> Rendered =
+      fillCSupportBuffer<128>([&](char *Buf, size_t Cap) {
+        return csupport_apfloat_format_to_string(
+            buffer.data(), NDigits, exp, FormatPrecision, FormatMaxPadding,
+            TruncateZero, /*is_negative=*/0, Buf, Cap);
+      });
+  Str.append(Rendered.begin(), Rendered.end());
 }
 
 // This mode implements more precise float in terms of two APFloats.

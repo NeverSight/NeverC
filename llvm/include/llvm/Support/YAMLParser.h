@@ -1011,10 +1011,10 @@ inline bool scanTokens(StringRef Input) {
 }
 
 inline SmallString<256> escape(StringRef Input, bool EscapePrintable) {
-  char buf[8192];
-  size_t n = csupport_yaml_escape(Input.data(), Input.size(),
-                                  EscapePrintable ? 1 : 0, buf, sizeof(buf));
-  return SmallString<256>(StringRef(buf, n));
+  return fillCSupportBuffer([&](char *Buf, size_t Cap) {
+    return csupport_yaml_escape(Input.data(), Input.size(),
+                                EscapePrintable ? 1 : 0, Buf, Cap);
+  });
 }
 
 inline int parseBool(StringRef S) {

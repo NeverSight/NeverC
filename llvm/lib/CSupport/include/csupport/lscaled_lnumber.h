@@ -31,6 +31,7 @@ csupport_scaled_get_rounded64(uint64_t digits, int16_t scale, int round_up);
 csupport_scaled_pair_t csupport_scaled_get_adjusted64(uint64_t digits,
                                                       int16_t scale);
 
+/* Buffer fillers: see the contract on csupport_obuf_t in csupport/buffer.h. */
 size_t csupport_scaled_strip_trailing_zeros(const char *str, size_t len,
                                             char *out, size_t out_cap);
 size_t csupport_scaled_format_digits(uint64_t above, uint64_t below,

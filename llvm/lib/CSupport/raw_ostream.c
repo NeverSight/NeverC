@@ -1,5 +1,6 @@
 /*===- raw_ostream.c - Output stream (pure C) -------------------*- C -*-===*/
 #include "include/csupport/raw_ostream.h"
+#include "include/csupport/buffer.h"
 #include "include/csupport/lprocess.h"
 #include "include/csupport/ostream.h"
 #include "include/csupport/types.h"
@@ -156,7 +157,6 @@ size_t csupport_format_hex_dump_line(char *buf, size_t buflen,
 size_t csupport_format_justified(char *buf, size_t buflen,
                                    const char *str, size_t str_len,
                                    unsigned width, int justify) {
-  size_t pos = 0;
   unsigned left_pad = 0, right_pad = 0;
   if (width > str_len) {
     unsigned diff = width - (unsigned)str_len;
@@ -167,52 +167,41 @@ size_t csupport_format_justified(char *buf, size_t buflen,
     case 3: left_pad = diff / 2; right_pad = diff - left_pad; break;
     }
   }
-  for (unsigned i = 0; i < left_pad && pos < buflen; i++)
-    buf[pos++] = ' ';
-  for (size_t i = 0; i < str_len && pos < buflen; i++)
-    buf[pos++] = str[i];
-  for (unsigned i = 0; i < right_pad && pos < buflen; i++)
-    buf[pos++] = ' ';
-  if (pos < buflen) buf[pos] = '\0';
-  return pos;
+  csupport_obuf_t out = csupport_obuf(buf, buflen);
+  for (unsigned i = 0; i < left_pad; i++)
+    csupport_obuf_put(&out, ' ');
+  csupport_obuf_write(&out, str, str_len);
+  for (unsigned i = 0; i < right_pad; i++)
+    csupport_obuf_put(&out, ' ');
+  return csupport_obuf_finish(&out);
 }
 
 size_t csupport_format_number_decimal(char *buf, size_t buflen,
                                        int64_t val, unsigned width) {
   char tmp[32];
   size_t n = csupport_format_i64_decimal(tmp, sizeof(tmp), val, 0);
-  size_t pos = 0;
-  if (width > n) {
-    unsigned pad = width - (unsigned)n;
-    for (unsigned i = 0; i < pad && pos < buflen; i++)
-      buf[pos++] = ' ';
-  }
-  for (size_t i = 0; i < n && pos < buflen; i++)
-    buf[pos++] = tmp[i];
-  if (pos < buflen) buf[pos] = '\0';
-  return pos;
+  csupport_obuf_t out = csupport_obuf(buf, buflen);
+  for (unsigned i = (unsigned)n; i < width; i++)
+    csupport_obuf_put(&out, ' ');
+  csupport_obuf_write(&out, tmp, n);
+  return csupport_obuf_finish(&out);
 }
 
 size_t csupport_format_number_hex(char *buf, size_t buflen,
                                     uint64_t val, unsigned width,
                                     int upper, int prefix) {
   char tmp[32];
-  size_t pos = 0;
-  if (prefix && pos + 1 < buflen) {
-    buf[pos++] = '0';
-    buf[pos++] = upper ? 'X' : 'x';
-  }
   size_t hlen = csupport_format_u64_to_hex(tmp, sizeof(tmp), val, !upper);
-  unsigned total = (unsigned)hlen + (prefix ? 2 : 0);
-  if (width > total) {
-    unsigned pad = width - total;
-    for (unsigned i = 0; i < pad && pos < buflen; i++)
-      buf[pos++] = '0';
+  unsigned natural = (unsigned)hlen + (prefix ? 2u : 0u);
+  csupport_obuf_t out = csupport_obuf(buf, buflen);
+  if (prefix) {
+    csupport_obuf_put(&out, '0');
+    csupport_obuf_put(&out, upper ? 'X' : 'x');
   }
-  for (size_t i = 0; i < hlen && pos < buflen; i++)
-    buf[pos++] = tmp[i];
-  if (pos < buflen) buf[pos] = '\0';
-  return pos;
+  for (unsigned i = natural; i < width; i++)
+    csupport_obuf_put(&out, '0');
+  csupport_obuf_write(&out, tmp, hlen);
+  return csupport_obuf_finish(&out);
 }
 
 float csupport_bp_log_cost(unsigned x, unsigned y,

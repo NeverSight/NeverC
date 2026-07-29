@@ -56,6 +56,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/CSupportBuffer.h"
 #include "llvm/Support/ConvertUTF.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/FormatVariadic.h"
@@ -1635,23 +1636,24 @@ inline bool Parser::parseNumber(char First, Value &Out) {
 }
 
 inline bool Parser::parseString(SmallVectorImpl<char> &Out) {
-  const char *err = 0;
-  const char *saved_P = P;
-  char buf[4096];
-  size_t n = csupport_json_parse_string_body(&P, End, buf, sizeof(buf), &err);
-  if (n == (size_t)-1)
-    return parseError(err);
-  if (n < sizeof(buf)) {
-    Out.clear();
-    Out.append(buf, buf + n);
-  } else {
-    P = saved_P;
-    char *big = (char *)malloc(n + 1);
-    csupport_json_parse_string_body(&P, End, big, n + 1, &err);
-    Out.clear();
-    Out.append(big, big + n);
-    free(big);
-  }
+  const char *Err = nullptr;
+  const char *const Rewind = P;
+
+  // The filler advances the parse cursor, so a second pass has to start from
+  // where the first one did.  It reports failure out of band rather than as a
+  // length, because a length is what asks for a larger buffer and no buffer
+  // would help here.
+  SmallString<1024> Parsed = fillCSupportBuffer<1024>([&](char *Buf,
+                                                          size_t Cap) {
+    P = Rewind;
+    const size_t Length =
+        csupport_json_parse_string_body(&P, End, Buf, Cap, &Err);
+    return Length == static_cast<size_t>(-1) ? 0 : Length;
+  });
+
+  if (Err)
+    return parseError(Err);
+  Out.assign(Parsed.begin(), Parsed.end());
   return true;
 }
 
@@ -1708,9 +1710,9 @@ inline SmallString<256> fixUTF8(llvm::StringRef S) {
 } // namespace llvm
 
 inline static void quote(llvm::raw_ostream &OS, llvm::StringRef S) {
-  char buf[2048];
-  size_t len = csupport_json_quote_to_buf(S.data(), S.size(), buf, sizeof(buf));
-  OS.write(buf, len);
+  OS << llvm::fillCSupportBuffer([&](char *Buf, size_t Cap) {
+    return csupport_json_quote_to_buf(S.data(), S.size(), Buf, Cap);
+  });
 }
 
 namespace llvm {

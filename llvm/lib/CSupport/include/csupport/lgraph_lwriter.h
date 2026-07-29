@@ -13,7 +13,8 @@ int csupport_create_temp_file(const char *prefix, const char *suffix,
                               char *out_path, size_t out_size);
 
 /* Escape a string for use as a DOT graph label.
-   Handles \n, \t, special DOT chars ({}<>|"). Returns bytes written. */
+   Handles \n, \t, special DOT chars ({}<>|").
+   Buffer filler: see the contract on csupport_obuf_t in csupport/buffer.h. */
 size_t csupport_dot_escape_string(const char *src, size_t src_len, char *dst,
                                   size_t dst_cap);
 

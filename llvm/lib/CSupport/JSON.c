@@ -1,5 +1,6 @@
 /*===- JSON.c - JSON utilities (pure C) -------------------------*- C -*-===*/
 #include "include/csupport/lj_ls_lo_ln.h"
+#include "include/csupport/buffer.h"
 #include <ctype.h>
 #include <string.h>
 #include <stdio.h>
@@ -260,21 +261,8 @@ size_t csupport_json_quote_to_stream(const char *src, size_t src_len,
   return out;
 }
 
-static size_t write_out(char *dst, size_t dst_cap, size_t *pos, const char *data, size_t n) {
-  for (size_t i = 0; i < n; i++) {
-    if (dst && *pos < dst_cap)
-      dst[*pos] = data[i];
-    (*pos)++;
-  }
-  return n;
-}
-
-static size_t write_char(char *dst, size_t dst_cap, size_t *pos, char c) {
-  return write_out(dst, dst_cap, pos, &c, 1);
-}
-
 static int parse_unicode_escape(const char **pos, const char *end,
-                                char *dst, size_t dst_cap, size_t *out_pos,
+                                csupport_obuf_t *out,
                                 const char **error_msg) {
   static const char REPLACEMENT[] = {'\xef', '\xbf', '\xbd'};
 
@@ -293,15 +281,15 @@ static int parse_unicode_escape(const char **pos, const char *end,
     if (first < 0xD800 || first >= 0xE000) {
       char buf[4];
       int n = csupport_json_encode_utf8((uint32_t)first, buf, sizeof(buf));
-      write_out(dst, dst_cap, out_pos, buf, (size_t)n);
+      csupport_obuf_write(out, buf, (size_t)n);
       return 0;
     }
     if (first >= 0xDC00) {
-      write_out(dst, dst_cap, out_pos, REPLACEMENT, 3);
+      csupport_obuf_write(out, REPLACEMENT, 3);
       return 0;
     }
     if (*pos + 2 > end || (*pos)[0] != '\\' || (*pos)[1] != 'u') {
-      write_out(dst, dst_cap, out_pos, REPLACEMENT, 3);
+      csupport_obuf_write(out, REPLACEMENT, 3);
       return 0;
     }
     *pos += 2;
@@ -312,7 +300,7 @@ static int parse_unicode_escape(const char **pos, const char *end,
     }
     *pos += 4;
     if (second < 0xDC00 || second >= 0xE000) {
-      write_out(dst, dst_cap, out_pos, REPLACEMENT, 3);
+      csupport_obuf_write(out, REPLACEMENT, 3);
       first = second;
       continue;
     }
@@ -320,7 +308,7 @@ static int parse_unicode_escape(const char **pos, const char *end,
                   ((uint32_t)(second - 0xDC00));
     char buf[4];
     int n = csupport_json_encode_utf8(cp, buf, sizeof(buf));
-    write_out(dst, dst_cap, out_pos, buf, (size_t)n);
+    csupport_obuf_write(out, buf, (size_t)n);
     return 0;
   }
 }
@@ -328,13 +316,13 @@ static int parse_unicode_escape(const char **pos, const char *end,
 size_t csupport_json_parse_string_body(const char **pos, const char *end,
                                        char *dst, size_t dst_cap,
                                        const char **error_msg) {
-  size_t out = 0;
+  csupport_obuf_t out = csupport_obuf(dst, dst_cap);
   const char *p = *pos;
   while (p < end) {
     char c = *p++;
     if (c == '"') {
       *pos = p;
-      return out;
+      return csupport_obuf_finish(&out);
     }
     if ((c & 0x1f) == c) {
       *pos = p - 1;
@@ -342,7 +330,7 @@ size_t csupport_json_parse_string_body(const char **pos, const char *end,
       return (size_t)-1;
     }
     if (c != '\\') {
-      write_char(dst, dst_cap, &out, c);
+      csupport_obuf_put(&out, c);
       continue;
     }
     if (p >= end) {
@@ -353,15 +341,15 @@ size_t csupport_json_parse_string_body(const char **pos, const char *end,
     c = *p++;
     switch (c) {
     case '"': case '\\': case '/':
-      write_char(dst, dst_cap, &out, c); break;
-    case 'b': write_char(dst, dst_cap, &out, '\b'); break;
-    case 'f': write_char(dst, dst_cap, &out, '\f'); break;
-    case 'n': write_char(dst, dst_cap, &out, '\n'); break;
-    case 'r': write_char(dst, dst_cap, &out, '\r'); break;
-    case 't': write_char(dst, dst_cap, &out, '\t'); break;
+      csupport_obuf_put(&out, c); break;
+    case 'b': csupport_obuf_put(&out, '\b'); break;
+    case 'f': csupport_obuf_put(&out, '\f'); break;
+    case 'n': csupport_obuf_put(&out, '\n'); break;
+    case 'r': csupport_obuf_put(&out, '\r'); break;
+    case 't': csupport_obuf_put(&out, '\t'); break;
     case 'u': {
       const char *saved = p;
-      if (parse_unicode_escape(&p, end, dst, dst_cap, &out, error_msg) < 0) {
+      if (parse_unicode_escape(&p, end, &out, error_msg) < 0) {
         *pos = saved;
         return (size_t)-1;
       }

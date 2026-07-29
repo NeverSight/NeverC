@@ -1,5 +1,6 @@
 /*===- Regex.c - Regex utilities (pure C) ----------------------*- C -*-===*/
 #include "include/csupport/lregex.h"
+#include "include/csupport/buffer.h"
 #include <string.h>
 
 int csupport_is_regex_metachar(char c) {
@@ -16,22 +17,15 @@ int csupport_regex_is_literal(const char *pattern, size_t len) {
   return 1;
 }
 
-int csupport_regex_escape(const char *src, size_t src_len,
-                          char *dst, size_t dst_size, size_t *out_len) {
-  size_t pos = 0;
+size_t csupport_regex_escape(const char *src, size_t src_len,
+                             char *dst, size_t dst_size) {
+  csupport_obuf_t out = csupport_obuf(dst, dst_size);
   for (size_t i = 0; i < src_len; i++) {
-    if (csupport_is_regex_metachar(src[i])) {
-      if (pos + 2 > dst_size) return 0;
-      dst[pos++] = '\\';
-      dst[pos++] = src[i];
-    } else {
-      if (pos + 1 > dst_size) return 0;
-      dst[pos++] = src[i];
-    }
+    if (csupport_is_regex_metachar(src[i]))
+      csupport_obuf_put(&out, '\\');
+    csupport_obuf_put(&out, src[i]);
   }
-  if (pos < dst_size) dst[pos] = '\0';
-  *out_len = pos;
-  return 1;
+  return csupport_obuf_finish(&out);
 }
 
 int csupport_wildcard_to_regex(const char *glob, size_t glob_len,
@@ -93,43 +87,48 @@ int csupport_regex_count_groups(const char *pattern, size_t len) {
   return count;
 }
 
+/* Only the first complaint is kept: the ones after it describe the same
+   broken replacement string, and the caller has room for one. */
+static void regex_sub_complain(csupport_obuf_t *problem, const char *msg) {
+  if (problem->needed)
+    return;
+  csupport_obuf_write(problem, msg, strlen(msg));
+  csupport_obuf_finish(problem);
+}
+
 size_t csupport_regex_sub(const char *repl, size_t repl_len,
                           const char *orig, size_t orig_len,
                           const size_t *match_starts, const size_t *match_ends,
                           size_t num_matches,
                           char *out, size_t out_size,
                           char *err, size_t err_size) {
-  size_t pos = 0;
-  size_t epos = 0;
-
-#define SUB_EMIT(c) do { if (pos < out_size) out[pos] = (c); pos++; } while(0)
-#define SUB_APPEND(p, n) do { for (size_t _k = 0; _k < (n); _k++) SUB_EMIT((p)[_k]); } while(0)
-#define SUB_ERR(msg) do { if (err && err_size > 0 && epos == 0) { size_t _ml = strlen(msg); if (_ml >= err_size) _ml = err_size - 1; memcpy(err, msg, _ml); err[_ml] = '\0'; epos = _ml; } } while(0)
+  csupport_obuf_t buf = csupport_obuf(out, out_size);
+  csupport_obuf_t problem = csupport_obuf(err, err_size);
 
   if (num_matches == 0 || match_starts[0] > orig_len) {
-    SUB_APPEND(orig, orig_len);
-    if (pos < out_size) out[pos] = '\0';
-    return pos;
+    csupport_obuf_write(&buf, orig, orig_len);
+    return csupport_obuf_finish(&buf);
   }
 
-  SUB_APPEND(orig, match_starts[0]);
+  csupport_obuf_write(&buf, orig, match_starts[0]);
 
   size_t ri = 0;
   while (ri < repl_len) {
     size_t seg_start = ri;
     while (ri < repl_len && repl[ri] != '\\') ri++;
-    SUB_APPEND(repl + seg_start, ri - seg_start);
+    csupport_obuf_write(&buf, repl + seg_start, ri - seg_start);
 
     if (ri >= repl_len) break;
     ri++; /* skip backslash */
     if (ri >= repl_len) {
-      SUB_ERR("replacement string contained trailing backslash");
+      regex_sub_complain(&problem,
+                         "replacement string contained trailing backslash");
       break;
     }
 
     char esc = repl[ri];
-    if (esc == 't') { SUB_EMIT('\t'); ri++; }
-    else if (esc == 'n') { SUB_EMIT('\n'); ri++; }
+    if (esc == 't') { csupport_obuf_put(&buf, '\t'); ri++; }
+    else if (esc == 'n') { csupport_obuf_put(&buf, '\n'); ri++; }
     else if (esc == 'g' && ri + 2 < repl_len && repl[ri + 1] == '<') {
       ri += 2; /* skip g< */
       size_t end_bracket = ri;
@@ -142,13 +141,14 @@ size_t csupport_regex_sub(const char *repl, size_t repl_len,
           ref = ref * 10 + (unsigned)(repl[j] - '0');
         }
         if (valid && ref < num_matches) {
-          SUB_APPEND(orig + match_starts[ref], match_ends[ref] - match_starts[ref]);
+          csupport_obuf_write(&buf, orig + match_starts[ref],
+                              match_ends[ref] - match_starts[ref]);
         } else {
-          SUB_ERR("invalid backreference string");
+          regex_sub_complain(&problem, "invalid backreference string");
         }
         ri = end_bracket + 1;
       } else {
-        SUB_EMIT(esc);
+        csupport_obuf_put(&buf, esc);
       }
     }
     else if (esc >= '0' && esc <= '9') {
@@ -158,25 +158,22 @@ size_t csupport_regex_sub(const char *repl, size_t repl_len,
         ri++;
       }
       if (ref < num_matches) {
-        SUB_APPEND(orig + match_starts[ref], match_ends[ref] - match_starts[ref]);
+        csupport_obuf_write(&buf, orig + match_starts[ref],
+                            match_ends[ref] - match_starts[ref]);
       } else {
-        SUB_ERR("invalid backreference string");
+        regex_sub_complain(&problem, "invalid backreference string");
       }
     }
     else {
-      SUB_EMIT(esc);
+      csupport_obuf_put(&buf, esc);
       ri++;
     }
   }
 
   if (match_ends[0] <= orig_len)
-    SUB_APPEND(orig + match_ends[0], orig_len - match_ends[0]);
+    csupport_obuf_write(&buf, orig + match_ends[0], orig_len - match_ends[0]);
 
-  if (pos < out_size) out[pos] = '\0';
-  return pos;
-#undef SUB_EMIT
-#undef SUB_APPEND
-#undef SUB_ERR
+  return csupport_obuf_finish(&buf);
 }
 
 int csupport_simple_glob_match(const char *pattern, size_t plen,

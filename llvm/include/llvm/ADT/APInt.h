@@ -20,6 +20,7 @@
 #include "llvm/ADT/FoldingSet.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Alignment.h"
+#include "llvm/Support/CSupportBuffer.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/Endian.h"
 #include "llvm/Support/MathExtras.h"
@@ -3507,22 +3508,23 @@ inline void APInt::toString(SmallVectorImpl<char> &Str, unsigned Radix,
     Str.append(BufPtr, Buffer + 65);
     return;
   }
-  char buf[4096];
-  size_t len = 0;
-  csupport_apint_to_string(getRawData(), BitWidth, Signed ? 1 : 0, Radix, buf,
-                           sizeof(buf), &len);
-  size_t start = 0;
-  if (len > 0 && buf[0] == '-') {
+  const SmallString<128> Rendered =
+      fillCSupportBuffer<128>([&](char *Buf, size_t Cap) {
+        return csupport_apint_to_string(getRawData(), BitWidth,
+                                        Signed ? 1 : 0, Radix, Buf, Cap);
+      });
+
+  // The sign comes out ahead of the prefix: "-0x1f", not "0x-1f".
+  StringRef Body = Rendered;
+  if (Body.consume_front("-"))
     Str.push_back('-');
-    start = 1;
-  }
   while (*Prefix)
     Str.push_back(*Prefix++);
   if (!UpperCase) {
-    for (size_t i = start; i < len; i++)
-      Str.push_back(buf[i] >= 'A' && buf[i] <= 'Z' ? buf[i] + 32 : buf[i]);
+    for (char C : Body)
+      Str.push_back(C >= 'A' && C <= 'Z' ? C + 32 : C);
   } else {
-    Str.append(buf + start, buf + len);
+    Str.append(Body.begin(), Body.end());
   }
 }
 

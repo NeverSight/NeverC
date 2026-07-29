@@ -9,6 +9,9 @@
 #ifndef LLVM_SUPPORT_NATIVEFORMATTING_H
 #define LLVM_SUPPORT_NATIVEFORMATTING_H
 
+#include "csupport/lnative_lformatting.h"
+#include "llvm/Support/CSupportBuffer.h"
+
 #include <optional>
 #include <stdint.h>
 
@@ -51,11 +54,10 @@ void write_double(raw_ostream &S, double D, FloatStyle Style,
 inline static void write_integer_via_c(raw_ostream &S, uint64_t N,
                                        size_t MinDigits, IntegerStyle Style,
                                        bool IsNegative) {
-  char buf[192];
-  int len =
-      csupport_format_integer_to_buf(buf, sizeof(buf), N, MinDigits,
-                                     Style == IntegerStyle::Number, IsNegative);
-  S.write(buf, len);
+  S << fillCSupportBuffer<64>([&](char *Buf, size_t Cap) {
+    return csupport_format_integer_to_buf(
+        Buf, Cap, N, MinDigits, Style == IntegerStyle::Number, IsNegative);
+  });
 }
 
 inline void write_integer(raw_ostream &S, unsigned int N, size_t MinDigits,
@@ -106,21 +108,21 @@ inline void write_hex(raw_ostream &S, uint64_t N, HexPrintStyle Style,
                  Style == HexPrintStyle::PrefixUpper);
   bool Upper =
       (Style == HexPrintStyle::Upper || Style == HexPrintStyle::PrefixUpper);
-  char buf[192];
-  int len = csupport_format_hex_to_buf(buf, sizeof(buf), N, Upper, Prefix,
-                                       (Width == SIZE_MAX) ? 0u : Width);
-  S.write(buf, len);
+  S << fillCSupportBuffer<64>([&](char *Buf, size_t Cap) {
+    return csupport_format_hex_to_buf(Buf, Cap, N, Upper, Prefix,
+                                      (Width == SIZE_MAX) ? 0u : Width);
+  });
 }
 
 inline void write_double(raw_ostream &S, double N, FloatStyle Style,
                          size_t Precision) {
   size_t Prec =
       (Precision == SIZE_MAX) ? getDefaultPrecision(Style) : Precision;
-  char buf[64];
-  int len =
-      csupport_format_double_ex(buf, sizeof(buf), N, (int)(Style), (int)Prec);
-  if (len > 0)
-    S.write(buf, len);
+  // Fixed notation spells the magnitude out, so a value near DBL_MAX needs
+  // three hundred characters before its fraction begins.
+  S << fillCSupportBuffer<64>([&](char *Buf, size_t Cap) {
+    return csupport_format_double_ex(Buf, Cap, N, (int)Style, (int)Prec);
+  });
 }
 
 inline bool isPrefixedHexStyle(HexPrintStyle S) {

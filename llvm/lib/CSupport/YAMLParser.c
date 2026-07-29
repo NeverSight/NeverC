@@ -1,5 +1,6 @@
 /*===- YAMLParser.c - YAML parsing utilities (pure C) ---------*- C -*-===*/
 #include "include/csupport/ly_la_lm_ll_lparser.h"
+#include "include/csupport/buffer.h"
 #include "include/csupport/types.h"
 #include <string.h>
 #include <stdio.h>
@@ -225,71 +226,92 @@ static int yaml_is_printable_cp(uint32_t cp) {
   return 0;
 }
 
-#define YAML_EMIT(c) do { if (pos < out_cap - 1) out[pos++] = (c); } while(0)
-#define YAML_EMITS(s, n) do { for (size_t _k = 0; _k < (n) && pos < out_cap - 1; _k++) out[pos++] = (s)[_k]; } while(0)
+/* The letter that follows the backslash when a byte has a named escape, or 0
+   when it has none.  No escape letter is NUL, so 0 is unambiguous. */
+static char yaml_escape_letter(unsigned char c) {
+  switch (c) {
+  case '\\': return '\\';
+  case '"':  return '"';
+  case 0x00: return '0';
+  case 0x07: return 'a';
+  case 0x08: return 'b';
+  case 0x09: return 't';
+  case 0x0A: return 'n';
+  case 0x0B: return 'v';
+  case 0x0C: return 'f';
+  case 0x0D: return 'r';
+  case 0x1B: return 'e';
+  default:   return 0;
+  }
+}
+
+/* The same, for the code points above ASCII that YAML names. */
+static char yaml_escape_letter_cp(uint32_t cp) {
+  switch (cp) {
+  case 0x85:   return 'N';
+  case 0xA0:   return '_';
+  case 0x2028: return 'L';
+  case 0x2029: return 'P';
+  default:     return 0;
+  }
+}
+
+static void yaml_put_escape(csupport_obuf_t *esc, char letter) {
+  csupport_obuf_put(esc, '\\');
+  csupport_obuf_put(esc, letter);
+}
+
+static void yaml_put_hex_escape(csupport_obuf_t *esc, uint32_t cp) {
+  char hex[16];
+  int n;
+  if (cp <= 0xFF)
+    n = snprintf(hex, sizeof(hex), "\\x%02X", cp);
+  else if (cp <= 0xFFFF)
+    n = snprintf(hex, sizeof(hex), "\\u%04X", cp);
+  else
+    n = snprintf(hex, sizeof(hex), "\\U%08X", cp);
+  csupport_obuf_write(esc, hex, (size_t)n);
+}
 
 size_t csupport_yaml_escape(const char *input, size_t input_len,
                             int escape_printable,
                             char *out, size_t out_cap) {
-  if (!out || out_cap == 0) return 0;
-  size_t pos = 0;
+  csupport_obuf_t esc = csupport_obuf(out, out_cap);
   for (size_t i = 0; i < input_len; ) {
     unsigned char c = (unsigned char)input[i];
-    if (c == '\\') { YAML_EMITS("\\\\", 2); i++; }
-    else if (c == '"') { YAML_EMITS("\\\"", 2); i++; }
-    else if (c == 0) { YAML_EMITS("\\0", 2); i++; }
-    else if (c == 0x07) { YAML_EMITS("\\a", 2); i++; }
-    else if (c == 0x08) { YAML_EMITS("\\b", 2); i++; }
-    else if (c == 0x09) { YAML_EMITS("\\t", 2); i++; }
-    else if (c == 0x0A) { YAML_EMITS("\\n", 2); i++; }
-    else if (c == 0x0B) { YAML_EMITS("\\v", 2); i++; }
-    else if (c == 0x0C) { YAML_EMITS("\\f", 2); i++; }
-    else if (c == 0x0D) { YAML_EMITS("\\r", 2); i++; }
-    else if (c == 0x1B) { YAML_EMITS("\\e", 2); i++; }
-    else if (c < 0x20) {
-      char hex[8];
-      int n = snprintf(hex, sizeof(hex), "\\x%02X", (unsigned)c);
-      YAML_EMITS(hex, (size_t)n);
+    char letter = yaml_escape_letter(c);
+
+    if (letter) {
+      yaml_put_escape(&esc, letter);
       i++;
-    } else if (c & 0x80) {
+    } else if (c < 0x20) {
+      yaml_put_hex_escape(&esc, c);
+      i++;
+    } else if (!(c & 0x80)) {
+      csupport_obuf_put(&esc, (char)c);
+      i++;
+    } else {
       int len = 0;
       uint32_t cp = yaml_decode_utf8(input + i, input_len - i, &len);
       if (len <= 0 || (cp == 0xFFFD && len == 1)) {
         char repl[4];
         int rn = yaml_encode_utf8(0xFFFD, repl, sizeof(repl));
-        YAML_EMITS(repl, (size_t)rn);
+        csupport_obuf_write(&esc, repl, (size_t)rn);
         i += 1;
         continue;
       }
-      if (cp == 0x85) { YAML_EMITS("\\N", 2); }
-      else if (cp == 0xA0) { YAML_EMITS("\\_", 2); }
-      else if (cp == 0x2028) { YAML_EMITS("\\L", 2); }
-      else if (cp == 0x2029) { YAML_EMITS("\\P", 2); }
-      else if (!escape_printable && yaml_is_printable_cp(cp)) {
-        YAML_EMITS(input + i, (size_t)len);
-      } else {
-        char hex[16];
-        int n;
-        if (cp <= 0xFF)
-          n = snprintf(hex, sizeof(hex), "\\x%02X", cp);
-        else if (cp <= 0xFFFF)
-          n = snprintf(hex, sizeof(hex), "\\u%04X", cp);
-        else
-          n = snprintf(hex, sizeof(hex), "\\U%08X", cp);
-        YAML_EMITS(hex, (size_t)n);
-      }
+      char cp_letter = yaml_escape_letter_cp(cp);
+      if (cp_letter)
+        yaml_put_escape(&esc, cp_letter);
+      else if (!escape_printable && yaml_is_printable_cp(cp))
+        csupport_obuf_write(&esc, input + i, (size_t)len);
+      else
+        yaml_put_hex_escape(&esc, cp);
       i += (size_t)len;
-    } else {
-      YAML_EMIT((char)c);
-      i++;
     }
   }
-  if (pos < out_cap) out[pos] = '\0';
-  return pos;
+  return csupport_obuf_finish(&esc);
 }
-
-#undef YAML_EMIT
-#undef YAML_EMITS
 
 int csupport_yaml_encode_utf8(uint32_t cp, char *buf, size_t buflen) {
   return yaml_encode_utf8(cp, buf, buflen);
@@ -1126,40 +1148,32 @@ size_t csupport_yaml_count_lines(const char *text, size_t len) {
 size_t csupport_yaml_write_scalar(const char *str, size_t len,
                                    int force_quote,
                                    char *out, size_t out_cap) {
-  if (!out || out_cap == 0) return 0;
   int quoting = csupport_yaml_needs_quoting(str, len);
   if (force_quote && quoting < 1) quoting = 1;
-  size_t pos = 0;
+  csupport_obuf_t scalar = csupport_obuf(out, out_cap);
 
   if (quoting == 0) {
-    size_t n = len < out_cap - 1 ? len : out_cap - 1;
-    memcpy(out, str, n);
-    out[n] = '\0';
-    return n;
-  }
-
-  if (quoting >= 2) {
-    if (pos < out_cap - 1) out[pos++] = '"';
-    size_t escaped_len = csupport_yaml_escape(str, len, 0,
-                                               out + pos, out_cap - pos);
-    pos += escaped_len;
-    if (pos < out_cap - 1) out[pos++] = '"';
-    out[pos] = '\0';
-    return pos;
-  }
-
-  if (pos < out_cap - 1) out[pos++] = '\'';
-  for (size_t i = 0; i < len && pos < out_cap - 1; i++) {
-    if (str[i] == '\'') {
-      if (pos < out_cap - 1) out[pos++] = '\'';
-      if (pos < out_cap - 1) out[pos++] = '\'';
-    } else {
-      out[pos++] = str[i];
+    csupport_obuf_write(&scalar, str, len);
+  } else if (quoting >= 2) {
+    csupport_obuf_put(&scalar, '"');
+    /* The escape writes into whatever room is left, which is none once the
+       opening quote has already overrun; either way it reports the length it
+       needed, and that length counts towards this one. */
+    csupport_obuf_t rest = csupport_obuf_rest(&scalar);
+    csupport_obuf_grew(&scalar,
+                       csupport_yaml_escape(str, len, 0, rest.data, rest.cap));
+    csupport_obuf_put(&scalar, '"');
+  } else {
+    csupport_obuf_put(&scalar, '\'');
+    for (size_t i = 0; i < len; i++) {
+      if (str[i] == '\'')
+        csupport_obuf_put(&scalar, '\'');
+      csupport_obuf_put(&scalar, str[i]);
     }
+    csupport_obuf_put(&scalar, '\'');
   }
-  if (pos < out_cap - 1) out[pos++] = '\'';
-  out[pos] = '\0';
-  return pos;
+
+  return csupport_obuf_finish(&scalar);
 }
 
 size_t csupport_yaml_trim_trailing(const char *str, size_t len) {

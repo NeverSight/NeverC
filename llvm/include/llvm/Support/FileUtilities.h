@@ -17,7 +17,9 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/FileSystem.h"
+#include "llvm/Support/Format.h"
 #include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include "csupport/cpp_compat_stl.h"
 #include "csupport/lprocess.h"
@@ -116,14 +118,10 @@ inline static bool CompareNumbers(const char *&F1P, const char *&F2P,
   int rc = csupport_diff_numbers_tol_ex(&F1P, &F2P, F1End, F2End, AbsTolerance,
                                         RelTolerance, &V1, &V2);
   if (rc < 0) {
-    if (ErrorMsg) {
-      char buf[256];
-      int n = snprintf(buf, sizeof(buf),
-                       "FP Comparison failed, not a numeric difference between "
-                       "'%c' and '%c'",
-                       F1P[0], F2P[0]);
-      ErrorMsg->assign(buf, buf + n);
-    }
+    if (ErrorMsg)
+      llvm::raw_svector_ostream(*ErrorMsg)
+          << "FP Comparison failed, not a numeric difference between '"
+          << F1P[0] << "' and '" << F2P[0] << "'";
     return true;
   }
   if (rc > 0) {
@@ -142,12 +140,10 @@ inline static bool CompareNumbers(const char *&F1P, const char *&F2P,
           dr = -dr;
       } else
         dr = 0.0;
-      char buf[512];
-      int n = snprintf(buf, sizeof(buf),
-                       "Compared: %g and %g\nabs. diff = %g rel.diff = %g\n"
-                       "Out of tolerance: rel/abs: %g/%g",
-                       V1, V2, da, dr, RelTolerance, AbsTolerance);
-      ErrorMsg->assign(buf, buf + n);
+      llvm::raw_svector_ostream(*ErrorMsg)
+          << llvm::format("Compared: %g and %g\nabs. diff = %g rel.diff = %g\n"
+                          "Out of tolerance: rel/abs: %g/%g",
+                          V1, V2, da, dr, RelTolerance, AbsTolerance);
     }
     return true;
   }

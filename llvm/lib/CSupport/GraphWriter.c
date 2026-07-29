@@ -1,5 +1,6 @@
 /*===- GraphWriter.c - Graph visualization utilities (pure C) --*- C -*-===*/
 #include "include/csupport/lgraph_lwriter.h"
+#include "include/csupport/buffer.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -75,37 +76,38 @@ int csupport_create_temp_file(const char *prefix, const char *suffix,
 
 size_t csupport_dot_escape_string(const char *src, size_t src_len,
                                   char *dst, size_t dst_cap) {
-  if (!dst || dst_cap == 0) return 0;
-  size_t out = 0;
-#define EMIT(c) do { if (out + 1 < dst_cap) dst[out++] = (c); } while(0)
+  csupport_obuf_t out = csupport_obuf(dst, dst_cap);
   for (size_t i = 0; i < src_len; i++) {
     char c = src[i];
     switch (c) {
     case '\n':
-      EMIT('\\'); EMIT('n');
+      csupport_obuf_write(&out, "\\n", 2);
       break;
     case '\t':
-      EMIT(' '); EMIT(' ');
+      csupport_obuf_write(&out, "  ", 2);
       break;
     case '\\':
       if (i + 1 < src_len) {
         char next = src[i + 1];
-        if (next == 'l') { EMIT('\\'); EMIT('l'); i++; continue; }
-        if (next == '|' || next == '{' || next == '}') { i++; EMIT(next); continue; }
+        if (next == 'l') { csupport_obuf_write(&out, "\\l", 2); i++; continue; }
+        if (next == '|' || next == '{' || next == '}') {
+          i++;
+          csupport_obuf_put(&out, next);
+          continue;
+        }
       }
-      EMIT('\\'); EMIT('\\');
+      csupport_obuf_write(&out, "\\\\", 2);
       break;
     case '{': case '}': case '<': case '>': case '|': case '"':
-      EMIT('\\'); EMIT(c);
+      csupport_obuf_put(&out, '\\');
+      csupport_obuf_put(&out, c);
       break;
     default:
-      EMIT(c);
+      csupport_obuf_put(&out, c);
       break;
     }
   }
-#undef EMIT
-  if (out < dst_cap) dst[out] = '\0';
-  return out;
+  return csupport_obuf_finish(&out);
 }
 
 size_t csupport_replace_illegal_filename_chars(char *str, size_t len, char repl) {

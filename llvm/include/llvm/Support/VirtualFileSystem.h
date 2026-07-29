@@ -18,6 +18,7 @@
 #include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/CSupportBuffer.h"
 #include "llvm/Support/Chrono.h"
 #include "llvm/Support/Errc.h"
 #include "llvm/Support/ErrorOr.h"
@@ -2304,10 +2305,9 @@ inline llvm::sys::path::Style getExistingStyle(llvm::StringRef Path) {
 }
 
 inline llvm::SmallString<256> canonicalize(llvm::StringRef Path) {
-  char buf[512];
-  size_t n =
-      csupport_path_canonicalize(Path.data(), Path.size(), buf, sizeof(buf));
-  return llvm::SmallString<256>(StringRef(buf, n));
+  return llvm::fillCSupportBuffer([&](char *Buf, size_t Cap) {
+    return csupport_path_canonicalize(Path.data(), Path.size(), Buf, Cap);
+  });
 }
 
 /// Whether the error and entry specify a file/directory that was not found.

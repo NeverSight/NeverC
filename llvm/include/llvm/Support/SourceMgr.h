@@ -21,6 +21,7 @@
 #include "csupport/lsource_lmgr.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/CSupportBuffer.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/SMLoc.h"
 #include <vector>
@@ -693,11 +694,11 @@ inline static void buildFixItLine(SmallVectorImpl<char> &CaretLine,
 }
 
 inline static void printSourceLine(raw_ostream &S, StringRef LineContents) {
-  char buf[4096];
-  size_t len = csupport_expand_tabs_to_string(
-      LineContents.data(), LineContents.size(), buf, sizeof(buf), TabStop);
-  S.write(buf, len);
-  S << '\n';
+  S << fillCSupportBuffer([&](char *Buf, size_t Cap) {
+         return csupport_expand_tabs_to_string(
+             LineContents.data(), LineContents.size(), Buf, Cap, TabStop);
+       })
+    << '\n';
 }
 
 static bool isNonASCII(char c) { return csupport_is_non_ascii(c) != 0; }

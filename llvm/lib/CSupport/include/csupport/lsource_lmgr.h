@@ -52,6 +52,7 @@ size_t csupport_compute_caret_line(const char *source_line, size_t source_len,
                                    unsigned col, unsigned tab_stop,
                                    char *caret_buf, size_t caret_cap);
 
+/* Buffer fillers: see the contract on csupport_obuf_t in csupport/buffer.h. */
 size_t csupport_expand_tabs_to_string(const char *line, size_t len, char *out,
                                       size_t cap, unsigned tab_stop);
 
@@ -95,9 +96,6 @@ csupport_offset_cache_t *csupport_offset_cache_build(const char *buf,
                                                      unsigned elem_size);
 
 unsigned csupport_offset_cache_elem_size(size_t buf_size);
-
-size_t csupport_expand_tabs_to_string(const char *line, size_t len, char *out,
-                                      size_t cap, unsigned tab_stop);
 
 size_t csupport_format_diag_kind(char *buf, size_t cap, int kind);
 int csupport_count_line_leading_spaces(const char *line, size_t len,

@@ -60,7 +60,9 @@ size_t csupport_json_quote_to_stream(const char *src, size_t src_len, char *dst,
    Writes decoded bytes to dst, up to dst_cap.
    Returns output length on success (may exceed dst_cap if truncated).
    Returns (size_t)-1 on error, sets *error_msg.
-   *pos is always advanced (to after '"' on success, or error location). */
+   *pos is always advanced (to after '"' on success, or error location).
+   Buffer filler: see the contract on csupport_obuf_t in csupport/buffer.h.
+   A retry has to rewind *pos, since filling and parsing are the same pass. */
 size_t csupport_json_parse_string_body(const char **pos, const char *end,
                                        char *dst, size_t dst_cap,
                                        const char **error_msg);

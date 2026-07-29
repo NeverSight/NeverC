@@ -85,6 +85,7 @@ size_t csupport_path_replace_extension_buf(char *buf, size_t len,
                                            const char *ext, size_t ext_len,
                                            int style);
 int csupport_path_is_absolute_styled(const char *path, size_t len, int style);
+/* Buffer filler: see the contract on csupport_obuf_t in csupport/buffer.h. */
 size_t csupport_path_remove_dots_buf(const char *path, size_t len,
                                      int remove_dot_dot, int style, char *out,
                                      size_t out_cap);
@@ -94,6 +95,7 @@ size_t csupport_path_native_buf(const char *path, size_t len, char *out,
 int csupport_path_get_existing_style(const char *path, size_t len);
 int csupport_path_is_traversal_component(const char *comp, size_t len);
 int csupport_path_has_traversal(const char *path, size_t len, int style);
+/* Buffer filler: see the contract on csupport_obuf_t in csupport/buffer.h. */
 size_t csupport_path_canonicalize(const char *path, size_t len, char *out,
                                   size_t out_cap);
 

@@ -18,6 +18,7 @@
 
 #include "llvm/ADT/BitmaskEnum.h"
 #include "llvm/ADT/SmallString.h"
+#include "llvm/Support/CSupportBuffer.h"
 
 #include <cstdlib>
 
@@ -233,30 +234,31 @@ inline SmallString<256> Regex::sub(StringRef Repl, StringRef String,
   if (!match(String, &Matches, Error))
     return SmallString<256>(String);
 
-  size_t starts[16], ends[16];
-  size_t nmatches = Matches.size();
-  if (nmatches > 16)
-    nmatches = 16;
-  for (size_t i = 0; i < nmatches; i++) {
-    starts[i] = (size_t)(Matches[i].data() - String.data());
-    ends[i] = starts[i] + Matches[i].size();
+  // A group that did not participate in the match is a null StringRef, which
+  // cannot be subtracted from String's data to make an offset.  It stands for
+  // an empty substitution, so give it an empty range and let \N resolve to
+  // nothing, the way appending the empty match itself would.
+  SmallVector<size_t, 16> Starts, Ends;
+  Starts.reserve(Matches.size());
+  Ends.reserve(Matches.size());
+  for (StringRef Match : Matches) {
+    const size_t Start = Match.data() ? Match.data() - String.data() : 0;
+    Starts.push_back(Start);
+    Ends.push_back(Start + Match.size());
   }
 
-  char err_buf[256] = {0};
-  char buf[8192];
-  size_t n = csupport_regex_sub(Repl.data(), Repl.size(), String.data(),
-                                String.size(), starts, ends, nmatches, buf,
-                                sizeof(buf), err_buf, sizeof(err_buf));
-  if (err_buf[0] && Error && Error->empty()) {
-    StringRef ErrRef(err_buf);
+  char ErrBuf[256] = {0};
+  SmallString<256> Result = fillCSupportBuffer([&](char *Buf, size_t Cap) {
+    return csupport_regex_sub(Repl.data(), Repl.size(), String.data(),
+                              String.size(), Starts.data(), Ends.data(),
+                              Starts.size(), Buf, Cap, ErrBuf, sizeof(ErrBuf));
+  });
+
+  if (ErrBuf[0] && Error && Error->empty()) {
+    StringRef ErrRef(ErrBuf);
     Error->assign(ErrRef.begin(), ErrRef.end());
   }
-  if (n < sizeof(buf))
-    return SmallString<256>(StringRef(buf, n));
-  SmallVector<char, 16384> big(n + 1);
-  csupport_regex_sub(Repl.data(), Repl.size(), String.data(), String.size(),
-                     starts, ends, nmatches, big.data(), big.size(), 0, 0);
-  return SmallString<256>(StringRef(big.data(), n));
+  return Result;
 }
 
 // These are the special characters matched in functions like "p_ere_exp".
@@ -270,10 +272,9 @@ inline bool Regex::isLiteralERE(StringRef Str) {
 }
 
 inline SmallString<256> Regex::escape(StringRef String) {
-  char buf[4096];
-  size_t n = 0;
-  csupport_regex_escape(String.data(), String.size(), buf, sizeof(buf), &n);
-  return SmallString<256>(StringRef(buf, n));
+  return fillCSupportBuffer([&](char *Buf, size_t Cap) {
+    return csupport_regex_escape(String.data(), String.size(), Buf, Cap);
+  });
 }
 
 } // namespace llvm

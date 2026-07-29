@@ -1,5 +1,7 @@
 /*===- Path.c - File path manipulation (pure C) -----------------*- C -*-===*/
 #include "include/csupport/lpath.h"
+#include "include/csupport/buffer.h"
+#include "include/csupport/types.h"
 #include "llvm/Config/config.h"
 #include <assert.h>
 #include <errno.h>
@@ -542,69 +544,136 @@ int csupport_path_is_absolute_styled(const char *path, size_t len, int style) {
   return 0;
 }
 
+/* The components kept so far.  ".." pops the one before it, so these have to
+   be held rather than written out as they are read.  The store grows onto the
+   heap once it fills: a path that lost its components past a fixed limit
+   would not be a shorter answer, it would name a different directory. */
+typedef struct {
+  csupport_string_ref_t *items; /* `inlined` until it outgrows it */
+  size_t count;
+  size_t cap;
+  csupport_string_ref_t inlined[128];
+} path_components_t;
+
+static void path_components_init(path_components_t *c) {
+  c->items = c->inlined;
+  c->count = 0;
+  c->cap = sizeof(c->inlined) / sizeof(c->inlined[0]);
+}
+
+/* Zero if the store could not grow, which leaves the caller no honest answer
+   but the path it was given. */
+static int path_components_push(path_components_t *c, const char *data,
+                                size_t length) {
+  if (c->count == c->cap) {
+    size_t cap = c->cap * 2;
+    csupport_string_ref_t *grown =
+        (csupport_string_ref_t *)malloc(cap * sizeof(*grown));
+    if (!grown)
+      return 0;
+    memcpy(grown, c->items, c->count * sizeof(*grown));
+    if (c->items != c->inlined)
+      free(c->items);
+    c->items = grown;
+    c->cap = cap;
+  }
+  c->items[c->count] = csupport_string_ref(data, length);
+  c->count++;
+  return 1;
+}
+
+static void path_components_release(path_components_t *c) {
+  if (c->items != c->inlined)
+    free(c->items);
+}
+
+static int path_component_is_dotdot(csupport_string_ref_t c) {
+  return c.length == 2 && c.data[0] == '.' && c.data[1] == '.';
+}
+
+/* The part of a path that says where it starts from: a "C:" or "//net" prefix
+   if it has one, plus the separator that makes it absolute.  It is copied out
+   unchanged and components are counted after it -- so getting its length
+   wrong does not shorten the answer, it renames the directory the answer
+   points at.  This is what upstream calls root_path. */
+static size_t path_root_len(const char *path, size_t len, int style) {
+  size_t first = csupport_path_find_first_component(path, len, style);
+  int is_net = first > 2 && csupport_path_is_separator(path[0], style) &&
+               path[0] == path[1];
+  int is_drive = is_win_style(style) && first == 2 && path[1] == ':';
+  size_t root = (is_net || is_drive) ? first : 0;
+
+  if (root < len && csupport_path_is_separator(path[root], style))
+    return root + 1;
+  return root;
+}
+
 size_t csupport_path_remove_dots_buf(
     const char *path, size_t len, int remove_dot_dot, int style,
     char *out, size_t out_cap) {
-  if (len == 0) { if (out_cap > 0) out[0] = '\0'; return 0; }
+  csupport_obuf_t buf = csupport_obuf(out, out_cap);
+  if (len == 0)
+    return csupport_obuf_finish(&buf);
 
   char sep = (style == CSUPPORT_PATH_STYLE_WINDOWS_BACKSLASH ||
               style == CSUPPORT_PATH_STYLE_WINDOWS) ? '\\' : '/';
 
-  size_t root_len = 0;
-  size_t rds = csupport_path_root_dir_start(path, len, style);
-  if (rds != (size_t)-1) {
-    root_len = rds + 1;
-  } else {
-    size_t fc = csupport_path_find_first_component(path, len, style);
-    if (fc > 0 && len >= 2 && path[1] == ':') root_len = fc;
-  }
-  int absolute = (root_len > 0);
+  size_t root_len = path_root_len(path, len, style);
+  int absolute = csupport_path_is_absolute_styled(path, len, style);
 
-  const char *comp_ptrs[256];
-  size_t comp_lens[256];
-  size_t ncomp = 0;
+  path_components_t comps;
+  path_components_init(&comps);
+  int complete = 1;
   size_t i = root_len;
-  while (i < len) {
+  while (i < len && complete) {
     while (i < len && csupport_path_is_separator(path[i], style)) i++;
     if (i >= len) break;
     size_t start = i;
     while (i < len && !csupport_path_is_separator(path[i], style)) i++;
-    size_t clen = i - start;
+    csupport_string_ref_t comp = csupport_string_ref(path + start, i - start);
 
-    if (clen == 1 && path[start] == '.') {
+    if (comp.length == 1 && comp.data[0] == '.') {
       continue;
-    } else if (remove_dot_dot && clen == 2 && path[start] == '.' && path[start + 1] == '.') {
-      if (ncomp > 0 && !(comp_lens[ncomp - 1] == 2 &&
-                          comp_ptrs[ncomp - 1][0] == '.' &&
-                          comp_ptrs[ncomp - 1][1] == '.')) {
-        ncomp--;
-      } else if (!absolute && ncomp < 256) {
-        comp_ptrs[ncomp] = path + start;
-        comp_lens[ncomp] = clen;
-        ncomp++;
-      }
-    } else if (ncomp < 256) {
-      comp_ptrs[ncomp] = path + start;
-      comp_lens[ncomp] = clen;
-      ncomp++;
+    } else if (remove_dot_dot && path_component_is_dotdot(comp)) {
+      /* An absolute path has nothing above its root, so a ".." that reaches
+         past it is dropped rather than kept. */
+      if (comps.count > 0 &&
+          !path_component_is_dotdot(comps.items[comps.count - 1]))
+        comps.count--;
+      else if (!absolute)
+        complete = path_components_push(&comps, comp.data, comp.length);
+    } else {
+      complete = path_components_push(&comps, comp.data, comp.length);
     }
   }
 
-  size_t pos = 0;
-  for (size_t r = 0; r < root_len && pos < out_cap; r++) {
+  if (!complete) {
+    path_components_release(&comps);
+    csupport_obuf_write(&buf, path, len);
+    return csupport_obuf_finish(&buf);
+  }
+
+  for (size_t r = 0; r < root_len; r++) {
     char c = path[r];
     if (csupport_path_is_separator(c, style)) c = sep;
-    out[pos++] = c;
+    csupport_obuf_put(&buf, c);
   }
-  for (size_t c = 0; c < ncomp; c++) {
-    if (c > 0 || root_len > 0) {
-      if (pos < out_cap) out[pos++] = sep;
-    }
-    for (size_t j = 0; j < comp_lens[c] && pos < out_cap; j++)
-      out[pos++] = comp_ptrs[c][j];
+
+  /* A root ending in a separator already separates itself from the first
+     component; emitting another would turn "/a" into "//a", which is a
+     different path.  A drive-relative root ("C:") ends in no separator, so
+     that one still needs it. */
+  int want_sep =
+      root_len > 0 && !csupport_path_is_separator(path[root_len - 1], style);
+  for (size_t c = 0; c < comps.count; c++) {
+    if (want_sep)
+      csupport_obuf_put(&buf, sep);
+    csupport_obuf_write(&buf, comps.items[c].data, comps.items[c].length);
+    want_sep = 1;
   }
-  if (pos < out_cap) out[pos] = '\0';
-  return pos;
+
+  path_components_release(&comps);
+  return csupport_obuf_finish(&buf);
 }
 
 size_t csupport_path_native_buf(const char *path, size_t len,

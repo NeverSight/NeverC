@@ -1,5 +1,6 @@
 /*===- APFloat.c - Arbitrary precision float (pure C) -----------*- C -*-===*/
 #include "include/csupport/la_lp_lfloat.h"
+#include "include/csupport/buffer.h"
 #include "include/csupport/lapint.h"
 #include "include/csupport/types.h"
 #include <assert.h>
@@ -1068,15 +1069,15 @@ int csupport_apfloat_parse_special_string(const char *str, size_t len,
 }
 
 /*--- toString output formatting (buffer→string) ---*/
-void csupport_apfloat_format_to_string(
+size_t csupport_apfloat_format_to_string(
     const char *buffer, unsigned n_digits, int exp,
     unsigned format_precision, unsigned format_max_padding,
     int truncate_zero, int is_negative,
-    char *out, unsigned *out_len) {
-  unsigned pos = 0;
+    char *out, size_t out_cap) {
+  csupport_obuf_t text = csupport_obuf(out, out_cap);
 
   if (is_negative)
-    out[pos++] = '-';
+    csupport_obuf_put(&text, '-');
 
   int format_scientific;
   if (!format_max_padding) {
@@ -1098,22 +1099,22 @@ void csupport_apfloat_format_to_string(
   if (format_scientific) {
     int e = exp + (int)(n_digits - 1);
 
-    out[pos++] = buffer[n_digits - 1];
-    out[pos++] = '.';
+    csupport_obuf_put(&text, buffer[n_digits - 1]);
+    csupport_obuf_put(&text, '.');
     if (n_digits == 1 && truncate_zero) {
-      out[pos++] = '0';
+      csupport_obuf_put(&text, '0');
     } else {
       for (unsigned i = 1; i < n_digits; ++i)
-        out[pos++] = buffer[n_digits - 1 - i];
+        csupport_obuf_put(&text, buffer[n_digits - 1 - i]);
     }
     if (!truncate_zero && format_precision > n_digits - 1) {
       unsigned pad = format_precision - n_digits + 1;
       for (unsigned i = 0; i < pad; i++)
-        out[pos++] = '0';
+        csupport_obuf_put(&text, '0');
     }
-    out[pos++] = truncate_zero ? 'E' : 'e';
+    csupport_obuf_put(&text, truncate_zero ? 'E' : 'e');
 
-    out[pos++] = e >= 0 ? '+' : '-';
+    csupport_obuf_put(&text, e >= 0 ? '+' : '-');
     if (e < 0) e = -e;
     char expbuf[12];
     unsigned explen = 0;
@@ -1124,32 +1125,31 @@ void csupport_apfloat_format_to_string(
     if (!truncate_zero && explen < 2)
       expbuf[explen++] = '0';
     for (unsigned i = 0; i < explen; ++i)
-      out[pos++] = expbuf[explen - 1 - i];
+      csupport_obuf_put(&text, expbuf[explen - 1 - i]);
   } else if (exp >= 0) {
     for (unsigned i = 0; i < n_digits; ++i)
-      out[pos++] = buffer[n_digits - 1 - i];
+      csupport_obuf_put(&text, buffer[n_digits - 1 - i]);
     for (int i = 0; i < exp; ++i)
-      out[pos++] = '0';
+      csupport_obuf_put(&text, '0');
   } else {
     int n_whole = exp + (int)n_digits;
     unsigned i = 0;
     if (n_whole > 0) {
       for (; i < (unsigned)n_whole; ++i)
-        out[pos++] = buffer[n_digits - i - 1];
-      out[pos++] = '.';
+        csupport_obuf_put(&text, buffer[n_digits - i - 1]);
+      csupport_obuf_put(&text, '.');
     } else {
       unsigned n_zeros = 1 + (unsigned)(-n_whole);
-      out[pos++] = '0';
-      out[pos++] = '.';
+      csupport_obuf_put(&text, '0');
+      csupport_obuf_put(&text, '.');
       for (unsigned z = 1; z < n_zeros; ++z)
-        out[pos++] = '0';
+        csupport_obuf_put(&text, '0');
     }
     for (; i < n_digits; ++i)
-      out[pos++] = buffer[n_digits - i - 1];
+      csupport_obuf_put(&text, buffer[n_digits - i - 1]);
   }
 
-  out[pos] = '\0';
-  *out_len = pos;
+  return csupport_obuf_finish(&text);
 }
 
 /*--- roundAwayFromZero: determine rounding direction ---*/

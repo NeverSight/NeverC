@@ -1,10 +1,12 @@
 /*===- NativeFormatting.c - Number formatting (pure C) ----------*- C -*-===*/
 #include "include/csupport/lnative_lformatting.h"
+#include "include/csupport/buffer.h"
 #include "include/csupport/types.h"
 #include <assert.h>
 #include <math.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 static const char upper_hex_digits[] = "0123456789ABCDEF";
 static const char lower_hex_digits[] = "0123456789abcdef";
@@ -58,38 +60,33 @@ static int format_to_end(char *buf, size_t buflen, uint64_t value) {
   return len;
 }
 
-int csupport_format_integer_to_buf(char *buf, size_t buflen, uint64_t value,
-                                   size_t min_digits, int with_commas,
-                                   int is_negative) {
+size_t csupport_format_integer_to_buf(char *buf, size_t buflen, uint64_t value,
+                                      size_t min_digits, int with_commas,
+                                      int is_negative) {
   char numbuf[128];
   int len = format_to_end(numbuf, sizeof(numbuf), value);
-  char *out = buf;
-  char *end = buf + buflen;
+  csupport_obuf_t out = csupport_obuf(buf, buflen);
 
-  if (is_negative && out < end) *out++ = '-';
+  if (is_negative)
+    csupport_obuf_put(&out, '-');
 
   if (!with_commas) {
-    for (size_t i = (size_t)len; i < min_digits && out < end; i++)
-      *out++ = '0';
-    size_t copy = ((size_t)len < (size_t)(end - out))
-                      ? (size_t)len
-                      : (size_t)(end - out);
-    memcpy(out, numbuf, copy);
-    out += copy;
+    for (size_t i = (size_t)len; i < min_digits; i++)
+      csupport_obuf_put(&out, '0');
+    csupport_obuf_write(&out, numbuf, (size_t)len);
   } else {
     int initial = ((len - 1) % 3) + 1;
     size_t copied = 0;
-    for (int i = 0; i < initial && out < end; i++)
-      *out++ = numbuf[copied++];
+    for (int i = 0; i < initial; i++)
+      csupport_obuf_put(&out, numbuf[copied++]);
     while (copied < (size_t)len) {
-      if (out < end) *out++ = ',';
-      for (int i = 0; i < 3 && copied < (size_t)len && out < end; i++)
-        *out++ = numbuf[copied++];
+      csupport_obuf_put(&out, ',');
+      for (int i = 0; i < 3 && copied < (size_t)len; i++)
+        csupport_obuf_put(&out, numbuf[copied++]);
     }
   }
 
-  if (out < end) *out = '\0';
-  return (int)(out - buf);
+  return csupport_obuf_finish(&out);
 }
 
 static int bit_width_64(uint64_t v) {
@@ -97,32 +94,26 @@ static int bit_width_64(uint64_t v) {
   return 64 - __builtin_clzll(v);
 }
 
-int csupport_format_hex_to_buf(char *buf, size_t buflen, uint64_t value,
-                               int upper, int prefix,
-                               size_t min_width) {
-  if (!buf || buflen == 0) return 0;
+size_t csupport_format_hex_to_buf(char *buf, size_t buflen, uint64_t value,
+                                  int upper, int prefix, size_t min_width) {
   const char *digits = upper ? upper_hex_digits : lower_hex_digits;
   int nibbles = (bit_width_64(value) + 3) / 4;
   if (nibbles < 1) nibbles = 1;
 
-  size_t prefix_chars = prefix ? 2 : 0;
-  size_t num_chars = (size_t)nibbles + prefix_chars;
-  if (min_width > num_chars) num_chars = min_width;
-  if (num_chars >= buflen) num_chars = buflen - 1;
-
-  memset(buf, '0', num_chars);
-  if (prefix) buf[1] = 'x';
-
-  char *endp = buf + num_chars;
-  char *cur = endp;
-  uint64_t n = value;
-  while (n && cur > buf + prefix_chars) {
-    *--cur = digits[n % 16];
-    n /= 16;
+  /* The prefix is spelled "0x" whichever case the digits are in, matching
+     what a C hexadecimal literal looks like. */
+  csupport_obuf_t out = csupport_obuf(buf, buflen);
+  size_t natural = (size_t)nibbles + (prefix ? 2u : 0u);
+  if (prefix) {
+    csupport_obuf_put(&out, '0');
+    csupport_obuf_put(&out, 'x');
   }
+  for (size_t i = natural; i < min_width; i++)
+    csupport_obuf_put(&out, '0');
+  for (int i = nibbles - 1; i >= 0; i--)
+    csupport_obuf_put(&out, digits[(value >> (i * 4)) & 0xf]);
 
-  buf[num_chars] = '\0';
-  return (int)num_chars;
+  return csupport_obuf_finish(&out);
 }
 
 size_t csupport_default_float_precision(int style) {
@@ -145,25 +136,60 @@ static int is_negative_zero(double v) {
   return (u.u >> 63) != 0;
 }
 
-int csupport_format_double_ex(char *buf, size_t buflen, double value,
-                              int style, int precision) {
-  if (buflen == 0) return 0;
+/* Appends a number in exponent notation, with the C library's three-digit
+   exponent normalised to two ("1.5e+012" -> "1.5e+12").  The trim reads the
+   last five characters of the number, so the number is rendered whole first,
+   into scratch when the caller's buffer would not have held it: trimming only
+   when it happened to fit would make the reported length depend on the buffer
+   that was given, and that is exactly what a caller retrying with a larger
+   one relies on it not doing. */
+static void format_double_exponent(csupport_obuf_t *out, const char *fmt,
+                                   double val) {
+  char inline_text[64];
+  char *heap = NULL;
+  char *text = inline_text;
+  int needed = snprintf(NULL, 0, fmt, val);
+  if (needed < 0)
+    return;
+
+  if ((size_t)needed >= sizeof(inline_text)) {
+    heap = (char *)malloc((size_t)needed + 1);
+    text = heap;
+  }
+  if (!text) {
+    /* Out of memory leaves the exponent's redundant zero in place: the same
+       number, and still the same length whatever buffer was asked for. */
+    csupport_obuf_printf(out, fmt, val);
+    return;
+  }
+
+  snprintf(text, (size_t)needed + 1, fmt, val);
+  csupport_obuf_write(
+      out, text, (size_t)csupport_trim_exponent_zeros(text, (size_t)needed));
+  free(heap);
+}
+
+size_t csupport_format_double_ex(char *buf, size_t buflen, double value,
+                                 int style, int precision) {
+  csupport_obuf_t out = csupport_obuf(buf, buflen);
 
   if (value != value) { /* NaN */
-    int n = snprintf(buf, buflen, "nan");
-    return n > 0 ? n : 0;
+    csupport_obuf_write(&out, "nan", 3);
+    return csupport_obuf_finish(&out);
   }
   if (value == HUGE_VAL || value == -HUGE_VAL) { /* Inf */
-    int n = snprintf(buf, buflen, "%sINF", value < 0 ? "-" : "");
-    return n > 0 ? n : 0;
+    if (value < 0)
+      csupport_obuf_put(&out, '-');
+    csupport_obuf_write(&out, "INF", 3);
+    return csupport_obuf_finish(&out);
   }
 
   int is_exp = (style == 0 || style == 1);
 
   if (is_exp && is_negative_zero(value)) {
     char letter = (style == 1) ? 'E' : 'e';
-    int n = snprintf(buf, buflen, "-0.%0*d%c+00", precision, 0, letter);
-    return (n > 0 && (size_t)n < buflen) ? n : 0;
+    csupport_obuf_printf(&out, "-0.%0*d%c+00", precision, 0, letter);
+    return csupport_obuf_finish(&out);
   }
 
   double val = (style == 3) ? value * 100.0 : value;
@@ -173,17 +199,15 @@ int csupport_format_double_ex(char *buf, size_t buflen, double value,
   case 1: snprintf(fmt, sizeof(fmt), "%%.%dE", precision); break;
   default: snprintf(fmt, sizeof(fmt), "%%.%df", precision); break;
   }
-  int n = snprintf(buf, buflen, fmt, val);
-  if (n < 0) n = 0;
 
-  if (is_exp && n > 0)
-    n = csupport_trim_exponent_zeros(buf, (size_t)n);
+  if (is_exp)
+    format_double_exponent(&out, fmt, val);
+  else
+    csupport_obuf_printf(&out, fmt, val);
 
-  if (style == 3 && (size_t)n < buflen - 1) {
-    buf[n++] = '%';
-    buf[n] = '\0';
-  }
-  return n;
+  if (style == 3)
+    csupport_obuf_put(&out, '%');
+  return csupport_obuf_finish(&out);
 }
 
 int csupport_trim_exponent_zeros(char *buf, size_t len) {

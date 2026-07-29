@@ -14,11 +14,13 @@
 #ifndef LLVM_ADT_STRINGEXTRAS_H
 #define LLVM_ADT_STRINGEXTRAS_H
 
+#include "csupport/lstring_lextras.h"
 #include "llvm/ADT/APSInt.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Twine.h"
+#include "llvm/Support/CSupportBuffer.h"
 #include <assert.h>
 #include <iterator>
 #include <stddef.h>
@@ -614,14 +616,6 @@ inline iterator_range<SplittingIterator> split(StringRef Str, char Separator) {
           SplittingIterator(StringRef(), Separator)};
 }
 
-extern "C" {
-size_t csupport_convert_to_snake_case(const char *input, size_t input_len,
-                                      char *buf, size_t buflen);
-size_t csupport_convert_to_camel_case(const char *input, size_t input_len,
-                                      int capitalize_first, char *buf,
-                                      size_t buflen);
-}
-
 inline StringRef::size_type StrInStrNoCase(StringRef s1, StringRef s2) {
   size_t N = s2.size(), M = s1.size();
   if (N > M)
@@ -676,21 +670,16 @@ inline void printLowerCase(StringRef String, raw_ostream &Out) {
     Out << toLower(C);
 }
 inline SmallString<256> convertToSnakeFromCamelCase(StringRef input) {
-  if (input.empty())
-    return SmallString<256>();
-  char buf[512];
-  size_t n = csupport_convert_to_snake_case(input.data(), input.size(), buf,
-                                            sizeof(buf));
-  return SmallString<256>(StringRef(buf, n));
+  return fillCSupportBuffer([&](char *Buf, size_t Cap) {
+    return csupport_convert_to_snake_case(input.data(), input.size(), Buf, Cap);
+  });
 }
 inline SmallString<256> convertToCamelFromSnakeCase(StringRef input,
                                                     bool capitalizeFirst) {
-  if (input.empty())
-    return SmallString<256>();
-  char buf[512];
-  size_t n = csupport_convert_to_camel_case(
-      input.data(), input.size(), capitalizeFirst ? 1 : 0, buf, sizeof(buf));
-  return SmallString<256>(StringRef(buf, n));
+  return fillCSupportBuffer([&](char *Buf, size_t Cap) {
+    return csupport_convert_to_camel_case(input.data(), input.size(),
+                                          capitalizeFirst ? 1 : 0, Buf, Cap);
+  });
 }
 
 } // end namespace llvm

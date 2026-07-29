@@ -1,5 +1,6 @@
 /*===- TarWriter.c - tar archive creation (pure C) -------------*- C -*-===*/
 #include "include/csupport/ltar_lwriter.h"
+#include "include/csupport/buffer.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -77,10 +78,13 @@ size_t csupport_tar_format_pax(char *buf, size_t buflen,
   int total2_len = snprintf(lenbuf, sizeof(lenbuf), "%d", total);
   total = content_len + total2_len;
 
-  size_t written = (size_t)snprintf(buf, buflen, "%d %.*s=%.*s\n",
-                                    total, (int)key_len, key,
-                                    (int)val_len, val);
-  return written < buflen ? written : 0;
+  /* A path too long for the buffer is reported rather than dropped, which is
+     what lets the caller come back with a buffer that holds it -- and a path
+     too long for a ustar header is the case this attribute exists to carry. */
+  csupport_obuf_t attribute = csupport_obuf(buf, buflen);
+  csupport_obuf_printf(&attribute, "%d %.*s=%.*s\n", total, (int)key_len, key,
+                       (int)val_len, val);
+  return csupport_obuf_finish(&attribute);
 }
 
 int csupport_tar_split_path(const char *path, size_t path_len,

@@ -1,5 +1,6 @@
 /*===- APInt.c - Arbitrary precision integer (pure C) -----------*- C -*-===*/
 #include "include/csupport/lapint.h"
+#include "include/csupport/buffer.h"
 #include "include/csupport/types.h"
 #include <assert.h>
 #include <limits.h>
@@ -675,18 +676,17 @@ unsigned csupport_apint_get_digit(char c, unsigned radix) {
   return UINT_MAX;
 }
 
-void csupport_apint_to_string(const uint64_t *data, unsigned bit_width,
-                               int is_signed, unsigned radix,
-                               char *buf, size_t buflen, size_t *out_len) {
+size_t csupport_apint_to_string(const uint64_t *data, unsigned bit_width,
+                                int is_signed, unsigned radix,
+                                char *buf, size_t buflen) {
   assert(radix >= 2 && radix <= 36);
-  assert(buflen > 0);
 
+  csupport_obuf_t out = csupport_obuf(buf, buflen);
   unsigned num_words = (bit_width + APINT_BITS_PER_WORD - 1) / APINT_BITS_PER_WORD;
 
   if (bit_width == 0 || (num_words == 1 && data[0] == 0)) {
-    buf[0] = '0';
-    *out_len = 1;
-    return;
+    csupport_obuf_put(&out, '0');
+    return csupport_obuf_finish(&out);
   }
 
   int negative = 0;
@@ -751,17 +751,14 @@ void csupport_apint_to_string(const uint64_t *data, unsigned bit_width,
     }
   }
 
-  size_t total = (size_t)pos + (negative ? 1 : 0);
-  if (total > buflen) total = buflen;
-
-  size_t idx = 0;
-  if (negative && idx < buflen) buf[idx++] = '-';
-  for (int i = pos - 1; i >= 0 && idx < buflen; i--)
-    buf[idx++] = digits[i];
-  *out_len = idx;
+  if (negative)
+    csupport_obuf_put(&out, '-');
+  for (int i = pos - 1; i >= 0; i--)
+    csupport_obuf_put(&out, digits[i]);
 
   if (digits != digits_storage) free(digits);
   if (tmp != tmp_storage) free(tmp);
+  return csupport_obuf_finish(&out);
 }
 
 void csupport_apint_ashr(uint64_t *dst, unsigned num_words,

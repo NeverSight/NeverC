@@ -12,6 +12,7 @@
 #include "csupport/ltar_lwriter.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSet.h"
+#include "llvm/Support/CSupportBuffer.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -84,14 +85,15 @@ inline static void computeChecksum(UstarHeader &Hdr) {
 inline static void writePaxHeader(raw_fd_ostream &OS, StringRef Path) {
   // A PAX header consists of a 512-byte header followed
   // by key-value strings. First, create key-value strings.
-  char pax_buf[1024];
-  size_t pax_len = csupport_tar_format_pax(pax_buf, sizeof(pax_buf), "path", 4,
-                                           Path.data(), Path.size());
-  StringRef PaxAttr(pax_buf, pax_len);
+  const SmallString<1024> PaxAttr =
+      fillCSupportBuffer<1024>([&](char *Buf, size_t Cap) {
+        return csupport_tar_format_pax(Buf, Cap, "path", 4, Path.data(),
+                                       Path.size());
+      });
 
   // Create a 512-byte header.
   UstarHeader Hdr = makeUstarHeader();
-  snprintf(Hdr.Size, sizeof(Hdr.Size), "%011zo", pax_len);
+  snprintf(Hdr.Size, sizeof(Hdr.Size), "%011zo", PaxAttr.size());
   Hdr.TypeFlag = 'x'; // PAX magic
   computeChecksum(Hdr);
 

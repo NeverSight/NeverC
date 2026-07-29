@@ -8,8 +8,9 @@ extern "C" {
 
 int csupport_regex_is_literal(const char *pattern, size_t len);
 
-int csupport_regex_escape(const char *src, size_t src_len, char *dst,
-                          size_t dst_size, size_t *out_len);
+/* Buffer filler: see the contract on csupport_obuf_t in csupport/buffer.h. */
+size_t csupport_regex_escape(const char *src, size_t src_len, char *dst,
+                             size_t dst_size);
 
 int csupport_is_regex_metachar(char c);
 
@@ -21,8 +22,8 @@ int csupport_regex_count_groups(const char *pattern, size_t len);
 
 /* Regex substitution: apply replacement template to matched string.
    match_starts/match_ends are parallel arrays of num_matches match positions.
-   Returns the number of bytes written (may exceed out_size if buffer too
-   small). err receives error messages (if non-NULL). */
+   err receives error messages (if non-NULL).
+   Buffer filler: see the contract on csupport_obuf_t in csupport/buffer.h. */
 size_t csupport_regex_sub(const char *repl, size_t repl_len, const char *orig,
                           size_t orig_len, const size_t *match_starts,
                           const size_t *match_ends, size_t num_matches,

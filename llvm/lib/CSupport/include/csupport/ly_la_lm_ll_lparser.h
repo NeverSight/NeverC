@@ -16,6 +16,7 @@ size_t csupport_yaml_scan_to_next_token(const char *input, size_t len,
 int csupport_yaml_decode_hex_escape(const char *start, size_t num_digits,
                                     uint32_t *out_codepoint);
 
+/* Buffer filler: see the contract on csupport_obuf_t in csupport/buffer.h. */
 size_t csupport_yaml_escape(const char *input, size_t input_len,
                             int escape_printable, char *out, size_t out_cap);
 
@@ -112,7 +113,8 @@ size_t csupport_yaml_count_lines(const char *text, size_t len);
 /* Check if a YAML scalar value needs quoting: 0=None, 1=Single, 2=Double */
 int csupport_yaml_needs_quoting(const char *str, size_t len);
 
-/* Write a YAML scalar with appropriate quoting to buffer. */
+/* Write a YAML scalar with appropriate quoting to buffer.
+   Buffer filler: see the contract on csupport_obuf_t in csupport/buffer.h. */
 size_t csupport_yaml_write_scalar(const char *str, size_t len, int force_quote,
                                   char *out, size_t out_cap);
 

@@ -26,6 +26,7 @@
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Twine.h"
+#include "llvm/Support/CSupportBuffer.h"
 #include "llvm/Support/DOTGraphTraits.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/raw_ostream.h"
@@ -470,10 +471,9 @@ inline void initGraphWriterOptions() {}
 namespace DOT {
 
 inline SmallString<256> EscapeString(StringRef Label) {
-  char buf[4096];
-  size_t n =
-      csupport_dot_escape_string(Label.data(), Label.size(), buf, sizeof(buf));
-  return SmallString<256>(StringRef(buf, n));
+  return fillCSupportBuffer([&](char *Buf, size_t Cap) {
+    return csupport_dot_escape_string(Label.data(), Label.size(), Buf, Cap);
+  });
 }
 
 inline StringRef getColorString(unsigned ColorNumber) {

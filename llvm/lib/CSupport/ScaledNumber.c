@@ -1,5 +1,6 @@
 /*===- ScaledNumber.c - Scaled number arithmetic (pure C) -------*- C -*-===*/
 #include "include/csupport/lscaled_lnumber.h"
+#include "include/csupport/buffer.h"
 #include "include/csupport/types.h"
 #include <stdint.h>
 #include <string.h>
@@ -199,29 +200,41 @@ int csupport_scaled_compare(uint64_t l, uint64_t r, int scale_diff) {
   return l > (l_adjusted << scale_diff) ? 1 : 0;
 }
 
-size_t csupport_scaled_strip_trailing_zeros(const char *str, size_t len,
-                                             char *out, size_t out_cap) {
-  if (!out || out_cap == 0) return 0;
+/* Where the number ends once the digits that say nothing are dropped.  A lone
+   '.' is not left behind: "1." keeps the zero that makes it "1.0". */
+static size_t scaled_significant_length(const char *str, size_t len) {
   size_t non_zero = len;
   while (non_zero > 0 && str[non_zero - 1] == '0')
     --non_zero;
   if (non_zero > 0 && str[non_zero - 1] == '.')
     ++non_zero;
-  size_t n = non_zero < out_cap ? non_zero : out_cap - 1;
-  memcpy(out, str, n);
-  out[n] = '\0';
-  return n;
+  return non_zero;
 }
+
+size_t csupport_scaled_strip_trailing_zeros(const char *str, size_t len,
+                                             char *out, size_t out_cap) {
+  csupport_obuf_t kept = csupport_obuf(out, out_cap);
+  csupport_obuf_write(&kept, str, scaled_significant_length(str, len));
+  return csupport_obuf_finish(&kept);
+}
+
+/* Rounding and carrying need the whole number in hand, so the digits are laid
+   out here rather than in the caller's buffer, which may be too small to hold
+   them and is not this routine's to reason about.  The size is a bound, not a
+   guess: the error term is multiplied by ten every round -- by five while the
+   extra bits last, and there are fewer than 56 of those -- so it reaches zero
+   within `width` rounds of the first kind, and `width` is the digit type's bit
+   count.  That caps the fraction at 120 digits however much precision is
+   asked for, and above the point a uint64 spends at most 20. */
+#define SCALED_DIGITS_MAX 192
 
 size_t csupport_scaled_format_digits(uint64_t above, uint64_t below,
                                      uint64_t extra, int extra_shift,
                                      unsigned precision, int width,
                                      char *out, size_t out_cap) {
-  if (!out || out_cap == 0) return 0;
-  size_t pos = 0;
+  char digits[SCALED_DIGITS_MAX];
+  csupport_obuf_t laid_out = csupport_obuf(digits, sizeof(digits));
   size_t digits_out = 0;
-
-#define EMIT_CHAR(c) do { if (pos + 1 < out_cap) out[pos++] = (c); } while(0)
 
   if (above) {
     char tmp[24];
@@ -229,18 +242,19 @@ size_t csupport_scaled_format_digits(uint64_t above, uint64_t below,
     uint64_t a = above;
     while (a) { tmp[tpos++] = '0' + (char)(a % 10); a /= 10; }
     digits_out = (size_t)tpos;
-    for (int i = tpos - 1; i >= 0; --i) EMIT_CHAR(tmp[i]);
+    for (int i = tpos - 1; i >= 0; --i) csupport_obuf_put(&laid_out, tmp[i]);
   } else {
-    EMIT_CHAR('0');
+    csupport_obuf_put(&laid_out, '0');
   }
 
   if (!below) {
-    EMIT_CHAR('.'); EMIT_CHAR('0');
-    out[pos] = '\0';
-    return pos;
+    csupport_obuf_write(&laid_out, ".0", 2);
+    csupport_obuf_t whole = csupport_obuf(out, out_cap);
+    csupport_obuf_write(&whole, digits, csupport_obuf_finish(&laid_out));
+    return csupport_obuf_finish(&whole);
   }
 
-  EMIT_CHAR('.');
+  csupport_obuf_put(&laid_out, '.');
   uint64_t error = UINT64_C(1) << (64 - width);
   extra = (below & 0xf) << 56 | (extra >> 8);
   below >>= 4;
@@ -253,60 +267,47 @@ size_t csupport_scaled_format_digits(uint64_t above, uint64_t below,
     below += (extra >> 60);
     extra = extra & (UINT64_MAX >> 4);
     char digit = '0' + (char)(below >> 60);
-    EMIT_CHAR(digit);
+    csupport_obuf_put(&laid_out, digit);
     below = below & (UINT64_MAX >> 4);
     if (digits_out || digit != '0') ++digits_out;
     ++since_dot;
   } while (error && (below << 4 | extra >> 60) >= error / 2 &&
            (!precision || digits_out <= precision || since_dot < 2));
 
-  out[pos] = '\0';
+  size_t pos = csupport_obuf_finish(&laid_out);
+  /* Unreachable given the bound above; kept so that a bound proved wrong one
+     day gives a short number rather than a smashed frame. */
+  if (pos >= sizeof(digits))
+    pos = sizeof(digits) - 1;
 
-  if (!precision || digits_out <= precision) {
-    char tmp2[128];
-    size_t n2 = csupport_scaled_strip_trailing_zeros(out, pos, tmp2, sizeof(tmp2));
-    memcpy(out, tmp2, n2 + 1);
-    return n2;
+  size_t kept = pos;
+  if (precision && digits_out > precision) {
+    size_t after_dot = 0;
+    for (size_t i = 0; i < pos; i++) { if (digits[i] == '.') { after_dot = i + 1; break; } }
+    size_t truncate = pos - (digits_out - precision);
+    if (truncate < after_dot + 1) truncate = after_dot + 1;
+
+    if (truncate < pos) {
+      kept = truncate;
+      if (digits[truncate] >= '5') {
+        int carry = 1;
+        for (size_t i = truncate; i > 0; --i) {
+          if (digits[i - 1] == '.') continue;
+          if (digits[i - 1] == '9') { digits[i - 1] = '0'; continue; }
+          ++digits[i - 1];
+          carry = 0;
+          break;
+        }
+        if (carry) {
+          memmove(digits + 1, digits, truncate);
+          digits[0] = '1';
+          kept = truncate + 1;
+        }
+      }
+    }
   }
 
-  size_t after_dot = 0;
-  for (size_t i = 0; i < pos; i++) { if (out[i] == '.') { after_dot = i + 1; break; } }
-  size_t truncate = pos - (digits_out - precision);
-  if (truncate < after_dot + 1) truncate = after_dot + 1;
-  if (truncate >= pos) {
-    char tmp2[128];
-    size_t n2 = csupport_scaled_strip_trailing_zeros(out, pos, tmp2, sizeof(tmp2));
-    memcpy(out, tmp2, n2 + 1);
-    return n2;
-  }
-
-  int carry = (out[truncate] >= '5');
-  if (!carry) {
-    out[truncate] = '\0';
-    char tmp2[128];
-    size_t n2 = csupport_scaled_strip_trailing_zeros(out, truncate, tmp2, sizeof(tmp2));
-    memcpy(out, tmp2, n2 + 1);
-    return n2;
-  }
-
-  for (size_t i = truncate; i > 0; --i) {
-    if (out[i - 1] == '.') continue;
-    if (out[i - 1] == '9') { out[i - 1] = '0'; continue; }
-    ++out[i - 1];
-    carry = 0;
-    break;
-  }
-
-  if (carry) {
-    memmove(out + 1, out, truncate);
-    out[0] = '1';
-    truncate++;
-  }
-  out[truncate] = '\0';
-  char tmp2[128];
-  size_t n2 = csupport_scaled_strip_trailing_zeros(out, truncate, tmp2, sizeof(tmp2));
-  memcpy(out, tmp2, n2 + 1);
-  return n2;
-
-#undef EMIT_CHAR
+  csupport_obuf_t whole = csupport_obuf(out, out_cap);
+  csupport_obuf_write(&whole, digits, scaled_significant_length(digits, kept));
+  return csupport_obuf_finish(&whole);
 }

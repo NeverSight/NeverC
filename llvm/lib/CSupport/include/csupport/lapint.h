@@ -64,9 +64,13 @@ void csupport_apint_reverse_bits(uint64_t *dst, const uint64_t *src,
 
 unsigned csupport_apint_get_digit(char c, unsigned radix);
 
-void csupport_apint_to_string(const uint64_t *data, unsigned bit_width,
-                              int is_signed, unsigned radix, char *buf,
-                              size_t buflen, size_t *out_len);
+/* Buffer filler: see the contract on csupport_obuf_t in csupport/buffer.h.
+   The digits of a wide APInt run past any fixed buffer -- a 65536-bit value
+   is nearly 20000 decimal digits -- and a cut number is still a number, so
+   the length reported here is the one the whole value needs. */
+size_t csupport_apint_to_string(const uint64_t *data, unsigned bit_width,
+                                int is_signed, unsigned radix, char *buf,
+                                size_t buflen);
 int csupport_apint_from_string(uint64_t *dst, unsigned bit_width,
                                const char *str, size_t str_len, unsigned radix);
 

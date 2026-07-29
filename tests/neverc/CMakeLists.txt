@@ -1765,11 +1765,17 @@ gtest_discover_tests(neverc-plugin-lto-input-tests
     DISCOVERY_TIMEOUT 300
 )
 
-# The hashes LLVM's own machinery is built on -- DWARF source checksums, DIE
-# type signatures, ThinLTO global identifiers -- come from this fork's C
-# implementations rather than LLVM's.  Nothing else in the suite can tell a
-# wrong digest from a right one, so their published vectors are checked here.
-add_executable(neverc-support-tests SupportHashTests.cpp)
+# llvm::Support is a C implementation behind LLVM's C++ names in this fork, so
+# the two agreeing is a property of the fork that upstream's own tests do not
+# cover.  The hashes are checked against their published vectors, because
+# nothing in the compiler's output can tell a wrong digest from a right one;
+# the buffer fillers are checked against outputs longer than the stack buffers
+# their callers reserve, because nothing shorter can tell a complete answer
+# from a truncated one.
+add_executable(neverc-support-tests
+  SupportBufferTests.cpp
+  SupportHashTests.cpp
+)
 target_link_libraries(neverc-support-tests PRIVATE
   GTest::gtest
   GTest::gtest_main

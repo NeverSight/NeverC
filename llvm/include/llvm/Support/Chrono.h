@@ -9,6 +9,9 @@
 #ifndef LLVM_SUPPORT_CHRONO_H
 #define LLVM_SUPPORT_CHRONO_H
 
+#include "csupport/lchrono.h"
+#include "llvm/ADT/SmallString.h"
+#include "llvm/Support/CSupportBuffer.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/Format.h"
 #include "llvm/Support/FormatProviders.h"
@@ -205,15 +208,6 @@ public:
   }
 };
 
-extern "C" {
-void csupport_get_local_tm(int64_t epoch_sec, struct tm *out);
-void csupport_get_utc_tm(int64_t epoch_sec, struct tm *out);
-int csupport_expand_chrono_format(const char *style, size_t style_len,
-                                  int64_t frac_ms, int64_t frac_us,
-                                  int64_t frac_ns, char *out_buf,
-                                  size_t out_buf_len);
-}
-
 namespace detail {
 inline const char unit<std::ratio<3600>>::value[] = "h";
 inline const char unit<std::ratio<60>>::value[] = "m";
@@ -243,11 +237,14 @@ inline void chrono_format_impl(const T &Fractional, struct tm &LT,
   int64_t frac_ms = (long)duration_cast<milliseconds>(Fractional).count();
   int64_t frac_us = (long)duration_cast<microseconds>(Fractional).count();
   int64_t frac_ns = (long)duration_cast<nanoseconds>(Fractional).count();
-  char ExpandedFmt[256];
-  csupport_expand_chrono_format(Style.data(), Style.size(), frac_ms, frac_us,
-                                frac_ns, ExpandedFmt, sizeof(ExpandedFmt));
+  SmallString<256> ExpandedFmt =
+      fillCSupportBuffer([&](char *Buf, size_t Cap) {
+        return csupport_expand_chrono_format(Style.data(), Style.size(),
+                                             frac_ms, frac_us, frac_ns, Buf,
+                                             Cap);
+      });
   char Buffer[256];
-  size_t Len = strftime(Buffer, sizeof(Buffer), ExpandedFmt, &LT);
+  size_t Len = strftime(Buffer, sizeof(Buffer), ExpandedFmt.c_str(), &LT);
   OS << (Len ? Buffer : "BAD-DATE-FORMAT");
 }
 } // namespace detail

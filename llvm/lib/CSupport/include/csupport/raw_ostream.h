@@ -30,9 +30,12 @@ size_t csupport_format_hex_dump_line(char *buf, size_t buflen,
 
 unsigned csupport_hex_dump_offset_width(uint64_t max_offset);
 
+/* Buffer filler: see the contract on csupport_obuf_t in csupport/buffer.h. */
 size_t csupport_format_justified(char *buf, size_t buflen, const char *str,
                                  size_t str_len, unsigned width, int justify);
 
+/* Buffer fillers: see the contract on csupport_obuf_t in csupport/buffer.h.
+   The column width is the caller's, so neither has a bounded length. */
 size_t csupport_format_number_decimal(char *buf, size_t buflen, int64_t val,
                                       unsigned width);
 size_t csupport_format_number_hex(char *buf, size_t buflen, uint64_t val,
