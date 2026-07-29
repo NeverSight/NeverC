@@ -5584,6 +5584,10 @@ bool compileRealObj(const ScratchDir &Dir, StringRef Stem, StringRef Src,
     Args.push_back(Target);
   }
   Args.push_back("-fno-lto");
+  // The allocator has no bearing on where the merger puts a symbol, but
+  // injecting it hands every one of these small modules several hundred more
+  // functions to codegen -- and -fno-lto pays that per translation unit.
+  Args.push_back("-fno-builtin-mimalloc");
   Args.push_back("-O2");
   Args.push_back("-c");
   Args.push_back(CPath);
@@ -6220,6 +6224,10 @@ std::string genHeavyMain(unsigned NumMods, unsigned NumFns) {
 bool compileLinkMulti(const ScratchDir &Dir, ArrayRef<std::string> Srcs,
                       ArrayRef<StringRef> ExtraArgs, StringRef OutExe) {
   SmallVector<StringRef, 40> Args;
+  // Same reasoning as compileRealObj: these builds are sized to engage the
+  // partitioner on their own generated functions, and the -fno-lto reference
+  // leg would otherwise codegen the allocator once per source file.
+  Args.push_back("-fno-builtin-mimalloc");
   Args.append(ExtraArgs.begin(), ExtraArgs.end());
   for (const std::string &S : Srcs)
     Args.push_back(S);
