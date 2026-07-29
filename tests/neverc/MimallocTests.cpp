@@ -1,8 +1,40 @@
 #include "NeverCTestFixture.h"
+#include "llvm/Object/ObjectFile.h"
 #include <sstream>
 #include <string_view>
 
 class MimallocTest : public NeverCTest {};
+
+namespace {
+
+bool hasDefinedSymbol(llvm::StringRef Bytes, llvm::StringRef ExpectedName) {
+  auto Object = llvm::object::ObjectFile::createObjectFile(
+      llvm::MemoryBufferRef(Bytes, "mimalloc-test"));
+  if (!Object) {
+    llvm::consumeError(Object.takeError());
+    return false;
+  }
+
+  for (const llvm::object::SymbolRef &Symbol : (*Object)->symbols()) {
+    llvm::Expected<llvm::StringRef> Name = Symbol.getName();
+    if (!Name) {
+      llvm::consumeError(Name.takeError());
+      continue;
+    }
+    if (*Name != ExpectedName)
+      continue;
+
+    llvm::Expected<uint32_t> Flags = Symbol.getFlags();
+    if (!Flags) {
+      llvm::consumeError(Flags.takeError());
+      return false;
+    }
+    return (*Flags & llvm::object::SymbolRef::SF_Undefined) == 0;
+  }
+  return false;
+}
+
+} // namespace
 
 // -fbuiltin-mimalloc should define __NEVERC_MIMALLOC__
 TEST_F(MimallocTest, MacroDefined) {
@@ -199,6 +231,12 @@ TEST_F(MimallocTest, RuntimeCrossCompilesWithPcgOnCOFF) {
       ++count;
     EXPECT_EQ(count, 1u)
         << "the embedded runtime dependency must survive PCG exactly once";
+    EXPECT_TRUE(hasDefinedSymbol(bytes, "_mi_tls_callback_pre"))
+        << "the pre-attach callback requested by /INCLUDE must be defined";
+    EXPECT_TRUE(hasDefinedSymbol(bytes, "_mi_tls_callback_post"))
+        << "the post-detach callback requested by /INCLUDE must be defined";
+    EXPECT_TRUE(hasDefinedSymbol(bytes, "_mi_crt_callback_init"))
+        << "the CRT initialization callback must remain in its ordered section";
   }
 }
 

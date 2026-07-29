@@ -1,4 +1,5 @@
 #include "NeverCTestFixture.h"
+#include "llvm/Object/COFF.h"
 
 #include <optional>
 
@@ -308,6 +309,33 @@ std::string withParallelCodegenSpread(std::string Prologue) {
   return Prologue + "int main(void) { return " + Sum + "; }\n";
 }
 
+// Counts the symbol records that state a weak-external rule for `Name`.  The
+// placeholder defaults those records point at are separate symbols and are not
+// what matters here: it is the rule itself that must appear once.
+unsigned countWeakExternalRecords(llvm::StringRef Bytes, llvm::StringRef Name) {
+  auto Obj = llvm::object::COFFObjectFile::create(
+      llvm::MemoryBufferRef(Bytes, "pcg-weak-extern"));
+  if (!Obj) {
+    llvm::consumeError(Obj.takeError());
+    return 0;
+  }
+
+  unsigned Count = 0;
+  for (const llvm::object::SymbolRef &Ref : (*Obj)->symbols()) {
+    llvm::object::COFFSymbolRef Sym = (*Obj)->getCOFFSymbol(Ref);
+    if (Sym.getStorageClass() != llvm::COFF::IMAGE_SYM_CLASS_WEAK_EXTERNAL)
+      continue;
+    llvm::Expected<llvm::StringRef> SymName = (*Obj)->getSymbolName(Sym);
+    if (!SymName) {
+      llvm::consumeError(SymName.takeError());
+      continue;
+    }
+    if (*SymName == Name)
+      ++Count;
+  }
+  return Count;
+}
+
 } // namespace
 
 // File-scope inline assembly belongs to the module, not to any symbol in it,
@@ -416,6 +444,43 @@ TEST_F(BasicTest, RecordedCommandLineIsWrittenOnceAfterParallelCodegen) {
     EXPECT_EQ(Copies, 1u)
         << "the recorded command line was written once per partition instead "
            "of once per module";
+  }
+}
+
+// An extern_weak declaration is not a definition but a rule about a name, and
+// codegen restates that rule for every module it is handed -- so a split module
+// states it once per partition, each time against a placeholder default the
+// object writer synthesises on the spot.  COFF is the format where that is not
+// survivable: it encodes the rule as a weak-external record naming its own
+// default, so several records for one name read as contradictory aliases and
+// the linker refuses a link the unsplit build accepts.  Nothing about this is
+// specific to compiler-internal symbols -- an ordinary weak declaration in user
+// code is enough.
+TEST_F(BasicTest, WeakExternalIsStatedOnceAfterParallelCodegenOnCOFF) {
+  auto src = tmpFile("pcg_weak_extern.c");
+  writeFile(src, withParallelCodegenSpread(
+                     "__attribute__((weak)) extern int maybe_missing(void);\n"
+                     "int probe(void) {\n"
+                     "  return maybe_missing ? maybe_missing() : 0;\n"
+                     "}\n"));
+
+  for (const char *triple :
+       {"x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"}) {
+    SCOPED_TRACE(triple);
+    auto obj = tmpFile(std::string("pcg_weak_extern_") + triple + ".obj");
+    auto r =
+        ncc({std::string("--target=") + triple, "-O0", "-std=c11", "-fno-lto",
+             "-c", "-mllvm", "-neverc-pcg-min-funcs=2", "-mllvm",
+             "-neverc-pcg-weight-floor=1", "-mllvm",
+             "-neverc-pcg-cg-weight-div=1", src.string(), "-o", obj.string()});
+    ASSERT_EQ(r.exitCode, 0) << r.err;
+
+    const std::string bytes = readFile(obj);
+    EXPECT_NE(bytes.find(".__pcg"), std::string::npos)
+        << "the regression must exercise merged parallel codegen";
+    EXPECT_EQ(countWeakExternalRecords(bytes, "maybe_missing"), 1u)
+        << "the weak-external rule reached the object once per partition "
+           "instead of once per module";
   }
 }
 

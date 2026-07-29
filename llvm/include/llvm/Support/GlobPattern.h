@@ -18,6 +18,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
+#include <algorithm>
 #include <optional>
 #include <system_error>
 
@@ -116,17 +117,24 @@ parseBraceExpansions(llvm::StringRef S, size_t MaxSubPatterns) {
   if (MaxSubPatterns == SIZE_MAX || !S.contains('{'))
     return SubPatterns;
 
-  csupport_brace_expansion_t exps[16];
+  // A term needs at least one byte in the pattern, and expansion is already
+  // bounded by MaxSubPatterns.  Size the parser's records from those semantic
+  // limits instead of imposing a second, unrelated fixed-capacity limit.
+  const size_t RecordCapacity = std::min(S.size(), MaxSubPatterns);
+  llvm::SmallVector<csupport_brace_expansion_t, 4> Expansions(RecordCapacity);
+  llvm::SmallVector<csupport_brace_term_t, 8> Terms(RecordCapacity);
   const char *errmsg = 0;
-  int nexp = csupport_glob_parse_brace_expansions(S.data(), S.size(), exps, 16,
-                                                  &errmsg);
+  int nexp = csupport_glob_parse_brace_expansions(
+      S.data(), S.size(), Expansions.data(), Expansions.size(), Terms.data(),
+      Terms.size(), &errmsg);
   if (nexp < 0)
     return llvm::make_error<llvm::StringError>(
         errmsg, std::make_error_code(std::errc::invalid_argument));
   if (nexp == 0)
     return SubPatterns;
 
-  size_t NumSubPatterns = csupport_glob_count_sub_patterns(exps, nexp);
+  size_t NumSubPatterns =
+      csupport_glob_count_sub_patterns(Expansions.data(), nexp);
   if (NumSubPatterns > MaxSubPatterns)
     return llvm::make_error<llvm::StringError>(
         "too many brace expansions",
@@ -135,14 +143,16 @@ parseBraceExpansions(llvm::StringRef S, size_t MaxSubPatterns) {
   for (int i = nexp - 1; i >= 0; --i) {
     llvm::SmallVector<llvm::SmallString<256>, 4> OrigSubPatterns;
     SubPatterns.swap(OrigSubPatterns);
-    for (size_t t = 0; t < exps[i].num_terms; ++t) {
-      llvm::StringRef Term(S.data() + exps[i].term_offsets[t],
-                           exps[i].term_lengths[t]);
+    const csupport_brace_expansion_t &Expansion = Expansions[i];
+    for (size_t t = 0; t < Expansion.num_terms; ++t) {
+      const csupport_brace_term_t &ParsedTerm =
+          Terms[Expansion.first_term + t];
+      llvm::StringRef Term(S.data() + ParsedTerm.offset, ParsedTerm.length);
       for (llvm::StringRef Orig : OrigSubPatterns) {
         llvm::SmallString<256> NewPat;
-        NewPat.append(Orig.data(), Orig.data() + exps[i].start);
+        NewPat.append(Orig.data(), Orig.data() + Expansion.start);
         NewPat.append(Term.begin(), Term.end());
-        NewPat.append(Orig.data() + exps[i].start + exps[i].length,
+        NewPat.append(Orig.data() + Expansion.start + Expansion.length,
                       Orig.data() + Orig.size());
         SubPatterns.push_back(NewPat);
       }

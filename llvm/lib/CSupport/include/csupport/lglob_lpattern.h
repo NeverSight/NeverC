@@ -21,10 +21,14 @@ int csupport_glob_match_advanced(const char *pat, size_t pat_len,
                                  size_t str_len);
 
 typedef struct {
+  size_t offset;
+  size_t length;
+} csupport_brace_term_t;
+
+typedef struct {
   size_t start;
   size_t length;
-  size_t term_offsets[64];
-  size_t term_lengths[64];
+  size_t first_term;
   size_t num_terms;
 } csupport_brace_expansion_t;
 
@@ -36,6 +40,8 @@ typedef struct {
 int csupport_glob_parse_brace_expansions(const char *pat, size_t pat_len,
                                          csupport_brace_expansion_t *out,
                                          size_t max_expansions,
+                                         csupport_brace_term_t *terms,
+                                         size_t max_terms,
                                          const char **error_msg);
 
 /*

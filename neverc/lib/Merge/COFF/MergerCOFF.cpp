@@ -153,6 +153,27 @@ bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
   };
   SmallVector<WeakAuxFixup, 0> WeakAuxFixups;
 
+  // A weak external is not a definition but a *rule* about one name: "unless
+  // something defines N, alias it to the tag symbol in my aux record".  Every
+  // partition of a split module inherits the same extern_weak declaration, and
+  // AsmPrinter re-emits the rule from each one (it walks the whole module's
+  // global objects, referenced or not), with the object writer synthesising a
+  // fresh placeholder default per partition.  Appending all of them states the
+  // rule N times with N different targets, which the COFF linker reads as
+  // conflicting aliases and rejects -- a link the unsplit build accepts.  Any
+  // extern_weak symbol hits this, not just compiler-internal ones.
+  //
+  // So collapse the repeats onto the first record, the way the ELF and MachO
+  // mergers collapse same-named globals.  A synthesised placeholder is
+  // recognised structurally, by being an absolute symbol at zero (the encoding
+  // for "there is no default definition"), so two weak externals that name
+  // genuinely different fallbacks are still both emitted and still diagnosed.
+  struct WeakExternRecord {
+    unsigned MergedIdx;
+    unsigned MergedAuxIdx;
+  };
+  StringMap<WeakExternRecord> PlaceholderWeakExterns;
+
   for (unsigned p = 0; p < (unsigned)Buffers.size(); ++p) {
     if (Buffers[p].empty())
       continue;
@@ -334,6 +355,24 @@ bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     // table.  For a well-formed object this visits exactly the same primary
     // symbols in the same order, so the merged output is byte-identical; only
     // hostile input now refuses gracefully instead of faulting.
+
+    // "There is no default definition" is encoded as an absolute symbol at
+    // zero, which is what the object writer synthesises for an extern_weak
+    // declaration with no aliasee.  Tells a partition-local placeholder apart
+    // from a fallback the source actually named.
+    auto namesPlaceholderDefault = [&](uint32_t Tag) {
+      Expected<COFFSymbolRef> TagSym = Obj.getSymbol(Tag);
+      if (!TagSym) {
+        consumeError(TagSym.takeError());
+        return false;
+      }
+      const char *TagRec = reinterpret_cast<const char *>(TagSym->getRawPtr());
+      if (TagRec < BufBegin || TagRec + sizeof(coff_symbol16) > BufEnd)
+        return false;
+      return TagSym->getSectionNumber() == COFF::IMAGE_SYM_ABSOLUTE &&
+             TagSym->getValue() == 0;
+    };
+
     uint32_t NumSyms = Obj.getNumberOfSymbols();
     for (uint32_t SymIndex = 0; SymIndex < NumSyms;) {
       Expected<COFFSymbolRef> CSymOrErr = Obj.getSymbol(SymIndex);
@@ -379,6 +418,29 @@ bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
           CSym.getValue() == 0 && Name.contains(PcgSymbolMarker)) {
         DeferredPcgUndef.push_back({p, OrigIdx, Name.str()});
         continue;
+      }
+
+      // Collapse a repeated placeholder weak-external rule onto the partition
+      // that stated it first (see PlaceholderWeakExterns above).  The aux
+      // record carrying the tag index follows the primary one immediately, and
+      // is bounds-checked here for the same reason the aux copy loop below
+      // checks its own reads.
+      if (CSym.getStorageClass() == COFF::IMAGE_SYM_CLASS_WEAK_EXTERNAL &&
+          CSym.getNumberOfAuxSymbols() == 1) {
+        const char *AuxRec = SymRec + sizeof(coff_symbol16);
+        if (AuxRec + sizeof(coff_symbol16) <= BufEnd) {
+          coff_aux_weak_external AuxWE;
+          memcpy(&AuxWE, AuxRec, sizeof(AuxWE));
+          if (namesPlaceholderDefault(AuxWE.TagIndex)) {
+            auto [It, Inserted] = PlaceholderWeakExterns.try_emplace(
+                Name, WeakExternRecord{TotalSymbols, TotalSymbols + 1});
+            if (!Inserted) {
+              PM.SymMap[OrigIdx] = It->second.MergedIdx;
+              PM.SymMap[OrigIdx + 1] = It->second.MergedAuxIdx;
+              continue;
+            }
+          }
+        }
       }
 
       if (Name.size() <= COFF::NameSize) {

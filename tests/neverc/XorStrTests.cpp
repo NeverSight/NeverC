@@ -77,7 +77,11 @@ TEST_F(XorStrTest, Codegen_EncryptedAndDecryptCall) {
   auto src = xorStrDir() / "nc_xorstr_codegen.c";
   if (!fs::exists(src))
     GTEST_SKIP() << src << " not found";
-  auto ir = emitIR(src.string(), "xorstr_codegen", "-O1");
+  // This assertion covers the xorstr transformation's input module.  The
+  // hosted allocator is a separate embedded module and legitimately contains
+  // Windows API names, including the plaintext used by this fixture.
+  auto ir = emitIR(src.string(), "xorstr_codegen",
+                   "-O1 -fno-builtin-mimalloc");
   if (ir.empty())
     return;
 

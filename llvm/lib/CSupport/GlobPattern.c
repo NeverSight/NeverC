@@ -163,8 +163,11 @@ int csupport_glob_match_advanced(const char *pat, size_t pat_len,
 int csupport_glob_parse_brace_expansions(const char *pat, size_t pat_len,
                                           csupport_brace_expansion_t *out,
                                           size_t max_expansions,
+                                          csupport_brace_term_t *terms,
+                                          size_t max_terms,
                                           const char **error_msg) {
   size_t num = 0;
+  size_t num_terms = 0;
   csupport_brace_expansion_t *cur = 0;
   size_t term_begin = 0;
 
@@ -188,15 +191,19 @@ int csupport_glob_parse_brace_expansions(const char *pat, size_t pat_len,
       }
       cur = &out[num];
       cur->start = i;
+      cur->first_term = num_terms;
       cur->num_terms = 0;
       term_begin = i + 1;
     } else if (pat[i] == ',') {
       if (!cur) continue;
-      if (cur->num_terms < 64) {
-        cur->term_offsets[cur->num_terms] = term_begin;
-        cur->term_lengths[cur->num_terms] = i - term_begin;
-        cur->num_terms++;
+      if (num_terms >= max_terms) {
+        if (error_msg) *error_msg = "too many brace expansion terms";
+        return -1;
       }
+      terms[num_terms].offset = term_begin;
+      terms[num_terms].length = i - term_begin;
+      ++num_terms;
+      ++cur->num_terms;
       term_begin = i + 1;
     } else if (pat[i] == '}') {
       if (!cur) continue;
@@ -205,11 +212,14 @@ int csupport_glob_parse_brace_expansions(const char *pat, size_t pat_len,
           *error_msg = "empty or singleton brace expansions are not supported";
         return -1;
       }
-      if (cur->num_terms < 64) {
-        cur->term_offsets[cur->num_terms] = term_begin;
-        cur->term_lengths[cur->num_terms] = i - term_begin;
-        cur->num_terms++;
+      if (num_terms >= max_terms) {
+        if (error_msg) *error_msg = "too many brace expansion terms";
+        return -1;
       }
+      terms[num_terms].offset = term_begin;
+      terms[num_terms].length = i - term_begin;
+      ++num_terms;
+      ++cur->num_terms;
       cur->length = i - cur->start + 1;
       cur = 0;
       num++;

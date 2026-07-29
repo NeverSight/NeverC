@@ -494,6 +494,23 @@ TEST(SupportBufferTest, IdentifierCaseConversionRoundTrips) {
             StringRef(Camel));
 }
 
+TEST(SupportBufferTest, GlobBraceExpansionUsesTheRequestedLimit) {
+  std::string Pattern = "{";
+  for (unsigned I = 0; I != 65; ++I) {
+    if (I)
+      Pattern += ',';
+    Pattern += "term" + std::to_string(I);
+  }
+  Pattern += '}';
+
+  Expected<GlobPattern> Glob =
+      GlobPattern::create(Pattern, /*MaxSubPatterns=*/65);
+  ASSERT_TRUE(static_cast<bool>(Glob));
+  for (unsigned I = 0; I != 65; ++I)
+    EXPECT_TRUE(Glob->match("term" + std::to_string(I))) << I;
+  EXPECT_FALSE(Glob->match("term65"));
+}
+
 // The chrono format extensions had no implementation either, and neither did
 // the UTC conversion the same header calls.
 TEST(SupportBufferTest, ChronoFormatExpandsSubSecondExtensions) {

@@ -233,8 +233,22 @@ MimallocRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
     if (auto *F = dyn_cast<Function>(GV))
       return IsMimallocFn(*F) &&
              !isMallocOverrideSymbol(F->getName());
-    if (auto *GVar = dyn_cast<GlobalVariable>(GV))
-      return IsMimallocGlobal(*GVar);
+    if (auto *GVar = dyn_cast<GlobalVariable>(GV)) {
+      if (!IsMimallocGlobal(*GVar))
+        return false;
+
+      // A section assignment is part of the runtime ABI, not an optimizer
+      // placement hint.  In particular, Windows discovers mimalloc's TLS
+      // callbacks through arrays in the ordered .CRT sections.  Dropping
+      // those arrays from llvm.used lets GlobalDCE erase their definitions
+      // while their /INCLUDE directives remain, producing an object that
+      // asks the linker for symbols it cannot possibly provide.
+      //
+      // Preserve this structurally instead of naming the callbacks: any
+      // embedded-runtime global deliberately assigned to an object section
+      // carries linker-visible registration data and must survive codegen.
+      return !GVar->hasSection();
+    }
     return false;
   });
 
