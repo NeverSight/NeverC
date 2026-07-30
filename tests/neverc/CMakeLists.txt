@@ -80,6 +80,7 @@ add_executable(neverc-tests ${NEVERC_TEST_SOURCES})
 target_link_libraries(neverc-tests PRIVATE
   GTest::gtest
   GTest::gtest_main
+  LLVMBitWriter
   LLVMObject
 )
 

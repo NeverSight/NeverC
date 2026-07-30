@@ -2,13 +2,16 @@
 
 #include "DwarfRebase.h"
 
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/BinaryFormat/Dwarf.h"
 #include "llvm/DebugInfo/DWARF/DWARFAbbreviationDeclaration.h"
 #include "llvm/DebugInfo/DWARF/DWARFDebugAbbrev.h"
 #include "llvm/DebugInfo/DWARF/DWARFFormValue.h"
+#include "llvm/DebugInfo/DWARF/DWARFUnitIndex.h"
 #include "llvm/Support/DataExtractor.h"
 #include "llvm/Support/Error.h"
+#include "llvm/Support/MathExtras.h"
 
 #include <limits>
 
@@ -705,6 +708,155 @@ bool rebaseLineHeaders(MutableArrayRef<char> Data, const PartitionDwarf &Part,
 }
 
 // ===----------------------------------------------------------------------===
+// .debug_macro
+// ===----------------------------------------------------------------------===
+
+bool skipCString(ArrayRef<char> Data, uint64_t *Cursor, uint64_t Limit) {
+  if (*Cursor >= Limit || Limit > Data.size())
+    return false;
+  while (*Cursor < Limit)
+    if (Data[(*Cursor)++] == '\0')
+      return true;
+  return false;
+}
+
+bool shiftOneOffset(MutableArrayRef<char> Data, const DataExtractor &Extract,
+                    uint64_t *Cursor, uint8_t OffsetSize, uint64_t Limit,
+                    uint64_t Delta, bool LE) {
+  if ((OffsetSize != 4 && OffsetSize != 8) || *Cursor > Limit ||
+      OffsetSize > Limit - *Cursor)
+    return false;
+  const uint64_t Pos = *Cursor;
+  const uint64_t Value = readOffset(Extract, Cursor, OffsetSize);
+  if (Delta == 0)
+    return true;
+  std::optional<uint64_t> Shifted = shiftedOffset(Value, Delta, OffsetSize);
+  return Shifted && writeOffset(Data, Pos, *Shifted, OffsetSize, LE);
+}
+
+/// Rebase DWARF 5 macro-unit references.  Unlike most DWARF tables, a macro
+/// unit has no initial-length field: its zero opcode is the only terminator.
+/// A unit can point into `.debug_line`, `.debug_str`, and another contribution
+/// in `.debug_macro`.  The latter is especially easy to miss:
+/// DW_MACRO_import stores a plain section offset, so a later partition
+/// otherwise imports an unrelated macro unit from partition zero.
+bool rebaseDebugMacro(MutableArrayRef<char> Data, const PartitionDwarf &Part,
+                      bool LE) {
+  if (Data.empty())
+    return true;
+
+  constexpr uint8_t OffsetSizeFlag = 0x01;
+  constexpr uint8_t DebugLineOffsetFlag = 0x02;
+  constexpr uint8_t OpcodeOperandsTableFlag = 0x04;
+  constexpr uint8_t KnownFlags =
+      OffsetSizeFlag | DebugLineOffsetFlag | OpcodeOperandsTableFlag;
+
+  const DataExtractor Extract(StringRef(Data.data(), Data.size()), LE,
+                              /*AddressSize=*/8);
+  uint64_t Cursor = 0;
+  while (Cursor < Data.size()) {
+    const uint64_t End = Data.size();
+    if (End - Cursor < sizeof(uint16_t) + sizeof(uint8_t))
+      return false;
+
+    if (Extract.getU16(&Cursor) != 5)
+      return false;
+    const uint8_t Flags = Extract.getU8(&Cursor);
+    if (Flags & ~KnownFlags)
+      return false;
+    const uint8_t OffsetSize = Flags & OffsetSizeFlag ? 8 : 4;
+
+    if (Flags & DebugLineOffsetFlag)
+      if (!shiftOneOffset(Data, Extract, &Cursor, OffsetSize, End,
+                          Part.start(DwarfSection::Line), LE))
+        return false;
+
+    // The table describes vendor opcodes, but their forms do not identify what
+    // a DW_FORM_sec_offset refers to.  Parse the table so the standard opcode
+    // stream starts at the right byte; if a vendor opcode is encountered below
+    // we reject it rather than guess and silently point it at the wrong
+    // section.
+    if (Flags & OpcodeOperandsTableFlag) {
+      if (Cursor >= End)
+        return false;
+      const uint8_t OpcodeCount = Extract.getU8(&Cursor);
+      for (uint8_t I = 0; I != OpcodeCount; ++I) {
+        if (Cursor >= End)
+          return false;
+        Extract.getU8(&Cursor); // opcode
+        std::optional<uint64_t> OperandCount =
+            readULEB128(Extract, &Cursor, End);
+        if (!OperandCount || *OperandCount > End - Cursor)
+          return false;
+        for (uint64_t O = 0; O != *OperandCount; ++O)
+          if (!readULEB128(Extract, &Cursor, End))
+            return false;
+      }
+    }
+
+    bool Terminated = false;
+    while (Cursor < End) {
+      const uint8_t Opcode = Extract.getU8(&Cursor);
+      if (Opcode == 0) {
+        Terminated = true;
+        break;
+      }
+
+      auto ReadLine = [&]() {
+        return readULEB128(Extract, &Cursor, End).has_value();
+      };
+      switch (Opcode) {
+      case dwarf::DW_MACRO_define:
+      case dwarf::DW_MACRO_undef:
+        if (!ReadLine() || !skipCString(Data, &Cursor, End))
+          return false;
+        break;
+      case dwarf::DW_MACRO_start_file:
+        if (!ReadLine() || !ReadLine())
+          return false;
+        break;
+      case dwarf::DW_MACRO_end_file:
+        break;
+      case dwarf::DW_MACRO_define_strp:
+      case dwarf::DW_MACRO_undef_strp:
+        if (!ReadLine() ||
+            !shiftOneOffset(Data, Extract, &Cursor, OffsetSize, End,
+                            Part.start(DwarfSection::Str), LE))
+          return false;
+        break;
+      case dwarf::DW_MACRO_import:
+        if (!shiftOneOffset(Data, Extract, &Cursor, OffsetSize, End,
+                            Part.start(DwarfSection::Macro), LE))
+          return false;
+        break;
+      case dwarf::DW_MACRO_define_sup:
+      case dwarf::DW_MACRO_undef_sup:
+        if (!ReadLine() ||
+            !shiftOneOffset(Data, Extract, &Cursor, OffsetSize, End,
+                            /*Delta=*/0, LE))
+          return false;
+        break;
+      case dwarf::DW_MACRO_import_sup:
+        if (!shiftOneOffset(Data, Extract, &Cursor, OffsetSize, End,
+                            /*Delta=*/0, LE))
+          return false;
+        break;
+      case dwarf::DW_MACRO_define_strx:
+      case dwarf::DW_MACRO_undef_strx:
+        if (!ReadLine() || !ReadLine())
+          return false;
+        break;
+      default:
+        return false;
+      }
+    }
+    if (!Terminated)
+      return false;
+  }
+  return true;
+}
+
+// ===----------------------------------------------------------------------===
 // .debug_names
 // ===----------------------------------------------------------------------===
 
@@ -777,22 +929,228 @@ bool rebaseDebugNames(MutableArrayRef<char> Data, const PartitionDwarf &Part,
   return true;
 }
 
+// ===----------------------------------------------------------------------===
+// DWARF package indexes
+// ===----------------------------------------------------------------------===
+
+struct PackageColumn {
+  DWARFSectionKind Kind;
+  DwarfSection Section;
+};
+
+constexpr PackageColumn PackageColumns[] = {
+    {DW_SECT_INFO, DwarfSection::Info},
+    {DW_SECT_ABBREV, DwarfSection::Abbrev},
+    {DW_SECT_LINE, DwarfSection::Line},
+    {DW_SECT_LOCLISTS, DwarfSection::LocLists},
+    {DW_SECT_STR_OFFSETS, DwarfSection::StrOffsets},
+    {DW_SECT_MACRO, DwarfSection::Macro},
+    {DW_SECT_RNGLISTS, DwarfSection::RngLists},
+};
+
+struct PackageContribution {
+  uint32_t Offset = 0;
+  uint32_t Length = 0;
+};
+
+struct PackageRow {
+  uint64_t Signature = 0;
+  std::array<PackageContribution, DW_SECT_RNGLISTS> Contributions{};
+};
+
+size_t contributionIndex(DWARFSectionKind Kind) {
+  const uint32_t Serialized = serializeSectionKind(Kind, /*IndexVersion=*/5);
+  assert(Serialized >= DW_SECT_INFO && Serialized <= DW_SECT_RNGLISTS);
+  return Serialized - DW_SECT_INFO;
+}
+
+bool getPackageContribution(const PartitionDwarf &Part, DwarfSection Section,
+                            PackageContribution &Contribution) {
+  const uint64_t Offset = Part.start(Section);
+  const uint64_t Length = Part.size(Section);
+  if (Length == 0) {
+    Contribution = {};
+    return true;
+  }
+
+  constexpr uint64_t Max = std::numeric_limits<uint32_t>::max();
+  if (Offset > Max || Length > Max || Length > Max - Offset)
+    return false;
+  Contribution = {static_cast<uint32_t>(Offset), static_cast<uint32_t>(Length)};
+  return true;
+}
+
+bool fillPackageContributions(const PartitionDwarf &Part, PackageRow &Row) {
+  for (const PackageColumn &Column : PackageColumns)
+    if (!getPackageContribution(
+            Part, Column.Section,
+            Row.Contributions[contributionIndex(Column.Kind)]))
+      return false;
+  return true;
+}
+
+bool collectPackageRows(ArrayRef<char> Info, const PartitionDwarf &Part,
+                        bool LE, SmallVectorImpl<PackageRow> &CompileRows,
+                        SmallVectorImpl<PackageRow> &TypeRows) {
+  if (Info.empty() || Part.size(DwarfSection::Abbrev) == 0)
+    return false;
+
+  const DataExtractor Extract(StringRef(Info.data(), Info.size()), LE,
+                              /*AddressSize=*/8);
+  uint64_t Cursor = 0;
+  while (Cursor < Info.size()) {
+    const uint64_t UnitStart = Cursor;
+    uint8_t OffsetSize = 4;
+    std::optional<uint64_t> UnitLength =
+        readInitialLength(Extract, Info.size(), &Cursor, OffsetSize);
+    if (!UnitLength)
+      return false;
+    std::optional<uint64_t> UnitEnd =
+        checkedEnd(Cursor, *UnitLength, Info.size());
+    const uint64_t FixedHeaderSize =
+        sizeof(uint16_t) + 2 * sizeof(uint8_t) + OffsetSize + sizeof(uint64_t);
+    if (!UnitEnd || *UnitEnd - Cursor < FixedHeaderSize)
+      return false;
+
+    if (Extract.getU16(&Cursor) != 5)
+      return false;
+    const uint8_t UnitType = Extract.getU8(&Cursor);
+    const uint8_t AddressSize = Extract.getU8(&Cursor);
+    if (AddressSize == 0 || AddressSize > sizeof(uint64_t))
+      return false;
+
+    // DWP consumers require this field to be zero and obtain the merged
+    // abbreviation contribution from the package index.
+    if (readOffset(Extract, &Cursor, OffsetSize) != 0)
+      return false;
+    const uint64_t Signature = Extract.getU64(&Cursor);
+
+    SmallVectorImpl<PackageRow> *Rows = nullptr;
+    if (UnitType == dwarf::DW_UT_split_compile) {
+      Rows = &CompileRows;
+    } else if (UnitType == dwarf::DW_UT_split_type) {
+      if (OffsetSize > *UnitEnd - Cursor)
+        return false;
+      readOffset(Extract, &Cursor, OffsetSize); // type DIE offset
+      Rows = &TypeRows;
+    } else {
+      return false;
+    }
+    if (Cursor >= *UnitEnd)
+      return false;
+
+    PackageRow Row;
+    Row.Signature = Signature;
+    if (!fillPackageContributions(Part, Row))
+      return false;
+
+    const uint64_t MergedOffset = Part.start(DwarfSection::Info) + UnitStart;
+    const uint64_t TotalLength = *UnitEnd - UnitStart;
+    constexpr uint64_t Max = std::numeric_limits<uint32_t>::max();
+    if (MergedOffset > Max || TotalLength > Max ||
+        TotalLength > Max - MergedOffset)
+      return false;
+    Row.Contributions[contributionIndex(DW_SECT_INFO)] = {
+        static_cast<uint32_t>(MergedOffset),
+        static_cast<uint32_t>(TotalLength)};
+    Rows->push_back(std::move(Row));
+    Cursor = *UnitEnd;
+  }
+  return true;
+}
+
+void appendUnsigned(SmallVectorImpl<char> &Out, uint64_t Value,
+                    unsigned ByteSize, bool LE) {
+  for (unsigned I = 0; I != ByteSize; ++I) {
+    const unsigned Shift = LE ? I * 8 : (ByteSize - 1 - I) * 8;
+    Out.push_back(static_cast<char>((Value >> Shift) & 0xff));
+  }
+}
+
+bool buildPackageIndex(ArrayRef<PackageRow> Rows, bool LE,
+                       SmallVectorImpl<char> &Out) {
+  Out.clear();
+  if (Rows.empty())
+    return true;
+
+  SmallVector<const PackageColumn *, 8> ActiveColumns;
+  for (const PackageColumn &Column : PackageColumns) {
+    const size_t Index = contributionIndex(Column.Kind);
+    if (llvm::any_of(Rows, [Index](const PackageRow &Row) {
+          return Row.Contributions[Index].Length != 0;
+        }))
+      ActiveColumns.push_back(&Column);
+  }
+  if (ActiveColumns.empty() || ActiveColumns.front()->Kind != DW_SECT_INFO ||
+      llvm::none_of(ActiveColumns, [](const PackageColumn *Column) {
+        return Column->Kind == DW_SECT_ABBREV;
+      }))
+    return false;
+
+  if (Rows.size() > std::numeric_limits<uint32_t>::max() / 3)
+    return false;
+  const uint64_t BucketCount = NextPowerOf2(3 * Rows.size() / 2);
+  if (BucketCount == 0 || BucketCount > std::numeric_limits<uint32_t>::max())
+    return false;
+
+  SmallVector<uint32_t, 16> Buckets(BucketCount, 0);
+  const uint64_t Mask = BucketCount - 1;
+  for (size_t I = 0; I != Rows.size(); ++I) {
+    const uint64_t Signature = Rows[I].Signature;
+    uint64_t Hash = Signature & Mask;
+    const uint64_t Probe = ((Signature >> 32) & Mask) | 1;
+    while (Buckets[Hash] != 0) {
+      if (Rows[Buckets[Hash] - 1].Signature == Signature)
+        return false;
+      Hash = (Hash + Probe) & Mask;
+    }
+    Buckets[Hash] = static_cast<uint32_t>(I + 1);
+  }
+
+  appendUnsigned(Out, 5, 2, LE); // Version.
+  appendUnsigned(Out, 0, 2, LE); // DWARF 5 header padding.
+  appendUnsigned(Out, ActiveColumns.size(), 4, LE);
+  appendUnsigned(Out, Rows.size(), 4, LE);
+  appendUnsigned(Out, BucketCount, 4, LE);
+
+  for (uint32_t Bucket : Buckets)
+    appendUnsigned(Out, Bucket == 0 ? 0 : Rows[Bucket - 1].Signature, 8, LE);
+  for (uint32_t Bucket : Buckets)
+    appendUnsigned(Out, Bucket, 4, LE);
+  for (const PackageColumn *Column : ActiveColumns)
+    appendUnsigned(Out, serializeSectionKind(Column->Kind, 5), 4, LE);
+
+  for (const PackageRow &Row : Rows)
+    for (const PackageColumn *Column : ActiveColumns)
+      appendUnsigned(Out,
+                     Row.Contributions[contributionIndex(Column->Kind)].Offset,
+                     4, LE);
+  for (const PackageRow &Row : Rows)
+    for (const PackageColumn *Column : ActiveColumns)
+      appendUnsigned(Out,
+                     Row.Contributions[contributionIndex(Column->Kind)].Length,
+                     4, LE);
+  return true;
+}
+
 } // namespace
 
 DwarfSection classifyDwarfSection(StringRef Name) {
   // Normalise both spellings to the bare section name.
   if (!Name.consume_front("__debug_") && !Name.consume_front(".debug_"))
     return DwarfSection::Count;
+  // Standalone split-debug objects use `.debug_info.dwo`,
+  // `.debug_abbrev.dwo`, and so on. They carry the same DWARF payloads but no
+  // relocations, which is exactly why they need this rebaser.
+  Name.consume_back(".dwo");
 
   return StringSwitch<DwarfSection>(Name)
       .Case("info", DwarfSection::Info)
       .Case("types", DwarfSection::Types)
       .Case("abbrev", DwarfSection::Abbrev)
       .Case("aranges", DwarfSection::Aranges)
-      .Cases("pubnames", "gnu_pubnames", "gnu_pubn",
-             DwarfSection::PubNames)
-      .Cases("pubtypes", "gnu_pubtypes", "gnu_pubt",
-             DwarfSection::PubTypes)
+      .Cases("pubnames", "gnu_pubnames", "gnu_pubn", DwarfSection::PubNames)
+      .Cases("pubtypes", "gnu_pubtypes", "gnu_pubt", DwarfSection::PubTypes)
       .Case("str", DwarfSection::Str)
       .Case("line_str", DwarfSection::LineStr)
       .Case("line", DwarfSection::Line)
@@ -841,6 +1199,53 @@ bool PartitionDwarf::needsRebase() const {
   return false;
 }
 
+bool finalizeDwarfPackage(
+    ArrayRef<PartitionDwarf> Partitions,
+    function_ref<MutableArrayRef<char>(unsigned)> SectionData, bool LE,
+    DwarfPackageIndexes &Indexes) {
+  Indexes = {};
+  SmallVector<PackageRow, 8> CompileRows;
+  SmallVector<PackageRow, 8> TypeRows;
+
+  for (const PartitionDwarf &Part : Partitions) {
+    if (Part.size(DwarfSection::Info) == 0) {
+      for (size_t I = 0; I != DwarfSectionCount; ++I)
+        if (Part.size(static_cast<DwarfSection>(I)) != 0)
+          return false;
+      continue;
+    }
+
+    DwarfSlices Slices;
+    for (size_t I = 0; I != DwarfSectionCount; ++I) {
+      const DwarfSection Section = static_cast<DwarfSection>(I);
+      const unsigned MergedIndex = Part.sectionIndex(Section);
+      if (MergedIndex == PartitionDwarf::NoSection)
+        continue;
+      MutableArrayRef<char> All = SectionData(MergedIndex);
+      const uint64_t Start = Part.start(Section);
+      const uint64_t Size = Part.size(Section);
+      if (Start > All.size() || Size > All.size() - Start)
+        return false;
+      Slices[I] = All.slice(Start, Size);
+    }
+
+    // `.debug_str.dwo` is one global section in a package. Its offset table is
+    // the only generated DWO contribution whose entries themselves must move;
+    // abbreviation/range/location bases remain contribution-relative and are
+    // supplied by the package indexes below.
+    if (!rebaseStrOffsets(Slices[dwarfSectionIndex(DwarfSection::StrOffsets)],
+                          Part.start(DwarfSection::Str), LE) ||
+        !collectPackageRows(Slices[dwarfSectionIndex(DwarfSection::Info)], Part,
+                            LE, CompileRows, TypeRows))
+      return false;
+  }
+
+  if (CompileRows.empty() && TypeRows.empty())
+    return false;
+  return buildPackageIndex(CompileRows, LE, Indexes.CompileUnits) &&
+         buildPackageIndex(TypeRows, LE, Indexes.TypeUnits);
+}
+
 bool rebasePartitionDwarf(const DwarfSlices &Slices, const PartitionDwarf &Part,
                           bool LE) {
   auto At = [&](DwarfSection S) -> MutableArrayRef<char> {
@@ -865,6 +1270,7 @@ bool rebasePartitionDwarf(const DwarfSlices &Slices, const PartitionDwarf &Part,
          rebaseStrOffsets(At(DwarfSection::StrOffsets),
                           Part.start(DwarfSection::Str), LE) &&
          rebaseLineHeaders(At(DwarfSection::Line), Part, LE) &&
+         rebaseDebugMacro(At(DwarfSection::Macro), Part, LE) &&
          rebaseDebugNames(At(DwarfSection::Names), Part, LE);
 }
 

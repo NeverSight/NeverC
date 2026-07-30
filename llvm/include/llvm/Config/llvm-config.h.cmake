@@ -84,8 +84,8 @@
  */
 #cmakedefine01 LLVM_FORCE_ENABLE_STATS
 
-#define LLVM_ENABLE_ZLIB 0
-#define LLVM_ENABLE_ZSTD 0
+#cmakedefine01 LLVM_ENABLE_ZLIB
+#cmakedefine01 LLVM_ENABLE_ZSTD
 
 /* Define to 1 if you have the <sysexits.h> header file. */
 #cmakedefine HAVE_SYSEXITS_H ${HAVE_SYSEXITS_H}

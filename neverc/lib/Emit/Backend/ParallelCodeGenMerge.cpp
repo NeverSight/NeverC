@@ -46,7 +46,8 @@
 #include <mutex>
 
 #ifdef __APPLE__
-// For the performance-core query in pcgWorkerThreads (hw.perflevel0); see there.
+// For the performance-core query in pcgWorkerThreads (hw.perflevel0); see
+// there.
 #include <sys/sysctl.h>
 #endif
 
@@ -231,8 +232,8 @@ unsigned pcgPerformanceCoreCount() {
 
 // Worker-thread count for the partition pools.  This is *execution* parallelism
 // only: it bounds how many partitions are optimized/codegen'd concurrently and
-// never feeds the partition count or the function-to-partition assignment, so it
-// cannot change a single emitted byte (the MergeParallelCodegen determinism
+// never feeds the partition count or the function-to-partition assignment, so
+// it cannot change a single emitted byte (the MergeParallelCodegen determinism
 // oracle pins this, so every choice below is a pure compile-wall-time knob).
 //
 // The per-partition phase is *barrier-synchronized*: the merge waits for every
@@ -244,11 +245,11 @@ unsigned pcgPerformanceCoreCount() {
 // (measured on a 12P+4E machine, real 33-TU Lua link: all 16 threads vs the 12
 // P-cores was ~3% worse median and far more high-tail runs -- 4/9 vs 1/9 slow
 // -- because the four E-core partitions are the recurring stragglers).  Prefer
-// the performance-core count where it is cheaply known and fall back to the full
-// hardware concurrency otherwise; on a homogeneous machine the two are equal, so
-// this never reduces parallelism there.  NEVERC_PCG_THREADS overrides everything
-// (clamped to >= 1) for users who want to cap peak memory / parallelism and for
-// the cross-thread-count determinism regression test.
+// the performance-core count where it is cheaply known and fall back to the
+// full hardware concurrency otherwise; on a homogeneous machine the two are
+// equal, so this never reduces parallelism there.  NEVERC_PCG_THREADS overrides
+// everything (clamped to >= 1) for users who want to cap peak memory /
+// parallelism and for the cross-thread-count determinism regression test.
 // Worker count a module's parallel work justifies, or 0 ("no proportioning")
 // when the loop signal is disabled.  Pure function of the module (loop +
 // instruction totals), so it cannot make the worker count -- and therefore the
@@ -293,7 +294,8 @@ unsigned pcgWorkerThreads(unsigned NumPartitions, unsigned WorkCap) {
 
 bool mergePartitionObjects(const Triple &TT,
                            ArrayRef<SmallVector<char, 0>> Bufs,
-                           raw_pwrite_stream &OS) {
+                           SmallVectorImpl<char> &Output,
+                           const merge::Options &Opts = {}) {
   using namespace neverc::merge;
   // Test-only fault injection: pretend the merge failed so the serial-codegen
   // safety net (finalizeResults' bail -> restoreLinkage -> the LTO backend's
@@ -303,13 +305,24 @@ bool mergePartitionObjects(const Triple &TT,
   // failure would, so the variable cannot mask a regression when strict is on.
   if (::getenv("NEVERC_PCG_FORCE_MERGE_FAIL") != nullptr)
     return false;
+  raw_svector_ostream OS(Output);
   if (TT.isOSBinFormatCOFF())
-    return mergeObjects(Bufs, OS, Format::COFF);
+    return mergeObjects(Bufs, OS, Format::COFF, Opts);
   if (TT.isOSBinFormatELF())
-    return mergeObjects(Bufs, OS, Format::ELF64LE);
+    return mergeObjects(Bufs, OS, Format::ELF64LE, Opts);
   if (TT.isOSBinFormatMachO())
-    return mergeObjects(Bufs, OS, Format::MachO64);
+    return mergeObjects(Bufs, OS, Format::MachO64, Opts);
   return false;
+}
+
+std::optional<merge::Format> mergeFormatForTriple(const Triple &TT) {
+  if (TT.isOSBinFormatCOFF())
+    return merge::Format::COFF;
+  if (TT.isOSBinFormatELF())
+    return merge::Format::ELF64LE;
+  if (TT.isOSBinFormatMachO())
+    return merge::Format::MachO64;
+  return std::nullopt;
 }
 
 // ===----------------------------------------------------------------------===
@@ -330,6 +343,7 @@ struct LinkageEntry {
 
 struct PartitionResult {
   SmallVector<char, 0> ObjBuffer;
+  SmallVector<char, 0> DwoBuffer;
   bool Success = false;
   /// Errors raised against this partition's own context, carried back to the
   /// caller's thread instead of being reported where they happen.  See
@@ -343,7 +357,8 @@ struct PartitionResult {
 /// error by writing it to stderr and calling exit() -- on that worker thread.
 /// Two partitions failing together therefore means two concurrent exit() calls,
 /// which interleave their text and then deadlock in atexit handling: one thread
-/// runs the handlers while the other waits on a lock the first will not release.
+/// runs the handlers while the other waits on a lock the first will not
+/// release.
 ///
 /// Recording the error keeps it on the only path that can report it properly.
 /// The partition counts as failed, and finalizeResults re-raises the text
@@ -376,6 +391,7 @@ struct PreparedPartition {
   std::unique_ptr<Module> M;
   std::unique_ptr<TargetMachine> PTM;
   SmallVector<char, 0> *ObjBuf = nullptr;
+  SmallVector<char, 0> *DwoBuf = nullptr;
   /// Partition cache entry key; empty when caching is off or the key
   /// could not be computed.  Set by preparePartitions on a miss, consumed
   /// by the codegen worker to store the produced object.
@@ -517,8 +533,8 @@ struct ParallelCGContext {
   unsigned FuncCount = 0;
   unsigned NumPartitions = 0;
   // Worker-pool ceiling this module's parallel work justifies; 0 = no
-  // proportioning (the codegen-only path, which does not estimate work).  Set by
-  // the opt+codegen path after the work signals are known; consumed by every
+  // proportioning (the codegen-only path, which does not estimate work).  Set
+  // by the opt+codegen path after the work signals are known; consumed by every
   // pcgWorkerThreads() call so prepare and opt/codegen size their pools alike.
   unsigned WorkerThreadCap = 0;
 
@@ -527,6 +543,10 @@ struct ParallelCGContext {
   CodeGenOptLevel SharedOptLevel;
   std::string SharedFeatures;
   TargetOptions SharedTgtOpts;
+  DebugCompressionType FinalDebugCompression = DebugCompressionType::None;
+  bool FinalizeDebugCompression = false;
+  bool EmitSplitDwarf = false;
+  bool EmbedSplitDwarf = false;
 
   SmallVector<LinkageEntry, 64> SavedLinkage;
 
@@ -553,18 +573,36 @@ struct ParallelCGContext {
   const PartitionCacheHooks *Cache = nullptr;
   StringRef PipeTag;
 
-  bool init(Module &Mod, TargetMachine &TM);
-  bool resolvePartitions(unsigned WeightDiv, unsigned LoopDiv, unsigned MaxParts);
+  bool init(Module &Mod, TargetMachine &TM, bool WithSplitDwarf);
+  bool resolvePartitions(unsigned WeightDiv, unsigned LoopDiv,
+                         unsigned MaxParts);
   bool externalizeAndSerialize(Module &Mod);
   void preparePartitions(StringRef BCRef, TargetMachine &TM);
-  bool finalizeResults(Module &Mod, raw_pwrite_stream &OS);
+  bool finalizeResults(Module &Mod, ParallelCodeGenOutputs Outputs);
   void restoreLinkage(Module &Mod);
 };
 
-bool ParallelCGContext::init(Module &Mod, TargetMachine &TM) {
+bool ParallelCGContext::init(Module &Mod, TargetMachine &TM,
+                             bool WithSplitDwarf) {
   TheTarget = &TM.getTarget();
   TripleStr = Mod.getTargetTriple();
   TT = Triple(TripleStr);
+  // `-gsplit-dwarf=single` names the object itself as SplitDwarfFile but does
+  // not provide an auxiliary stream. Emit its partition DWO payloads into
+  // private buffers anyway, package them, then embed that package back into
+  // the final object. Concatenating the `.dwo` sections directly would leave
+  // every unit after the first using contribution zero's abbreviation/string
+  // tables because standalone DWO offsets are contribution-relative.
+  EmbedSplitDwarf =
+      !WithSplitDwarf && !TM.Options.MCOptions.SplitDwarfFile.empty();
+  EmitSplitDwarf = WithSplitDwarf || EmbedSplitDwarf;
+
+  // This package builder intentionally supports only standard DWARF 5
+  // CU/TU indexes. Mach-O split-DWARF packaging is left on the serial path;
+  // the parallel merger supports the ELF/COFF containers requested here.
+  if (EmitSplitDwarf && (Mod.getDwarfVersion() != 5 ||
+                         (!TT.isOSBinFormatELF() && !TT.isOSBinFormatCOFF())))
+    return false;
 
   // A precondition, not one of the engagement heuristics below: no amount of
   // work in this module makes it splittable if its file-scope assembly names a
@@ -605,6 +643,12 @@ bool ParallelCGContext::init(Module &Mod, TargetMachine &TM) {
   SharedOptLevel = TM.getOptLevel();
   SharedFeatures = TM.getTargetFeatureString().str();
   SharedTgtOpts = TM.Options;
+  FinalDebugCompression = SharedTgtOpts.CompressDebugSections;
+  FinalizeDebugCompression =
+      FinalDebugCompression != DebugCompressionType::None &&
+      (EmitSplitDwarf || TT.isOSBinFormatELF());
+  if (FinalizeDebugCompression)
+    SharedTgtOpts.CompressDebugSections = DebugCompressionType::None;
   SharedTgtOpts.EmitAddrsig = false;
   SharedTLII = std::make_unique<TargetLibraryInfoImpl>(TT);
   return true;
@@ -889,7 +933,8 @@ void ParallelCGContext::preparePartitions(StringRef BCRef, TargetMachine &TM) {
   // sizes its worker stacks for exactly this reason (DefaultStackSize: 8 MiB on
   // Linux/macOS, 64 MiB on Windows, whose fatter x64 frames overflowed 8 MiB on
   // adversarial caps-off IR) and is what LLVM's own parallel codegen
-  // (splitCodeGen) uses; this brings the workers to parity with the main thread.
+  // (splitCodeGen) uses; this brings the workers to parity with the main
+  // thread.
   std::vector<llvm::thread> PrepWorkers;
   PrepWorkers.reserve(PrepThreadCount);
 
@@ -900,6 +945,8 @@ void ParallelCGContext::preparePartitions(StringRef BCRef, TargetMachine &TM) {
         break;
       auto PP = std::make_unique<PreparedPartition>();
       PP->ObjBuf = &Results[p].ObjBuffer;
+      if (EmitSplitDwarf)
+        PP->DwoBuf = &Results[p].DwoBuffer;
       PP->Ctx = std::make_unique<LLVMContext>();
       PP->Ctx->setDiscardValueNames(true);
       PP->Ctx->setDiagnosticHandler(
@@ -1115,7 +1162,8 @@ void ParallelCGContext::preparePartitions(StringRef BCRef, TargetMachine &TM) {
     T.join();
 }
 
-bool ParallelCGContext::finalizeResults(Module &Mod, raw_pwrite_stream &OS) {
+bool ParallelCGContext::finalizeResults(Module &Mod,
+                                        ParallelCodeGenOutputs Outputs) {
   bool Dbg = ::getenv("NEVERC_PCG_DEBUG") != nullptr;
 
   // Bail out of the parallel path *after* we have committed to it (the module
@@ -1183,25 +1231,17 @@ bool ParallelCGContext::finalizeResults(Module &Mod, raw_pwrite_stream &OS) {
       SingleIdx = i;
     }
   if (Dbg)
-    errs() << "[pcg] all " << NumPartitions << " partitions ok, NonEmpty="
-           << NonEmpty << "\n";
-  if (NonEmpty == 1) {
-    // Exactly one partition produced an object — it is already a complete,
-    // self-contained .o (no cross-partition references to stitch), so emit it
-    // verbatim without invoking the merger.
-    OS.write(Results[SingleIdx].ObjBuffer.data(),
-             Results[SingleIdx].ObjBuffer.size());
-    return true;
-  }
+    errs() << "[pcg] all " << NumPartitions
+           << " partitions ok, NonEmpty=" << NonEmpty << "\n";
   if (NonEmpty == 0)
     // Every partition reported success yet produced no bytes.  Codegen always
     // emits at least a header, so this is never expected; rather than write an
     // empty object, fall back (or, under strict mode, surface the anomaly).
     return bail("every partition succeeded but produced no object bytes");
 
-  SmallVector<SmallVector<char, 0>, 8> Bufs;
+  SmallVector<SmallVector<char, 0>, 8> ObjectBufs;
   for (unsigned i = 0; i < NumPartitions; ++i)
-    Bufs.push_back(std::move(Results[i].ObjBuffer));
+    ObjectBufs.push_back(std::move(Results[i].ObjBuffer));
 
   // A merge/verify failure must leave the module exactly as lto::backend's
   // serial fallback expects: every symbol externalized for cross-partition
@@ -1211,10 +1251,78 @@ bool ParallelCGContext::finalizeResults(Module &Mod, raw_pwrite_stream &OS) {
   // would run on a polluted module and emit what should be local symbols as
   // externalized ".__pcg" globals — the exact silent symbol-table corruption
   // the merge verifier exists to refuse.
-  if (!mergePartitionObjects(TT, Bufs, OS))
+  SmallVector<char, 0> MergedObject;
+  merge::Options ObjectOpts;
+  // Embedded fission needs one final merge after the DWO package is built.
+  // Compress only that combined artifact, never an intermediate input.
+  if (FinalizeDebugCompression && !EmbedSplitDwarf)
+    ObjectOpts.debugCompression = FinalDebugCompression;
+  if (NonEmpty == 1 && !EmitSplitDwarf && !FinalizeDebugCompression) {
+    // No cross-partition references exist, and this partition was already
+    // compressed (if requested) by its object writer.
+    MergedObject = std::move(ObjectBufs[SingleIdx]);
+  } else if (!mergePartitionObjects(TT, ObjectBufs, MergedObject, ObjectOpts)) {
     return bail("partition object merge/self-verify failed");
+  }
+
+  SmallVector<char, 0> MergedDwo;
+  if (EmitSplitDwarf) {
+    if (!EmbedSplitDwarf && !Outputs.SplitDwarf)
+      return bail("split-DWARF mode has no destination stream");
+
+    SmallVector<SmallVector<char, 0>, 8> DwoBufs;
+    unsigned NonEmptyDwo = 0;
+    for (unsigned I = 0; I < NumPartitions; ++I) {
+      NonEmptyDwo += !Results[I].DwoBuffer.empty();
+      DwoBufs.push_back(std::move(Results[I].DwoBuffer));
+    }
+    if (NonEmptyDwo == 0)
+      return bail("every partition omitted its split-DWARF object");
+
+    merge::Options DwoOpts;
+    DwoOpts.artifact = merge::ArtifactKind::SplitDwarf;
+    if (!EmbedSplitDwarf)
+      DwoOpts.debugCompression = FinalDebugCompression;
+    if (!mergePartitionObjects(TT, DwoBufs, MergedDwo, DwoOpts))
+      return bail("partition split-DWARF merge/self-verify failed");
+
+    std::optional<merge::Format> Fmt = mergeFormatForTriple(TT);
+    if (!Fmt)
+      return bail("unsupported split-DWARF object format");
+    std::string VerifyError;
+    if (EmbedSplitDwarf) {
+      SmallVector<SmallVector<char, 0>, 2> Artifacts;
+      Artifacts.push_back(std::move(MergedObject));
+      Artifacts.push_back(std::move(MergedDwo));
+      merge::Options CombinedOpts;
+      if (FinalizeDebugCompression)
+        CombinedOpts.debugCompression = FinalDebugCompression;
+      SmallVector<char, 0> CombinedObject;
+      if (!mergePartitionObjects(TT, Artifacts, CombinedObject, CombinedOpts))
+        return bail("embedded split-DWARF object merge/self-verify failed");
+      MergedObject = std::move(CombinedObject);
+      if (!merge::verifySplitDwarfPair(MergedObject, MergedObject, *Fmt,
+                                       &VerifyError))
+        return bail("embedded main/DWO verification failed: " + VerifyError);
+    } else if (!merge::verifySplitDwarfPair(MergedObject, MergedDwo, *Fmt,
+                                            &VerifyError)) {
+      return bail("main/DWO cross-artifact verification failed: " +
+                  VerifyError);
+    }
+  }
+
+  // Commit only after both in-memory merges and the pair verification succeed.
+  // Any earlier failure therefore leaves both real streams untouched for the
+  // serial fallback.
+  Outputs.Object.write(MergedObject.data(), MergedObject.size());
+  if (Outputs.SplitDwarf && !EmbedSplitDwarf)
+    Outputs.SplitDwarf->write(MergedDwo.data(), MergedDwo.size());
   if (Dbg)
-    errs() << "[pcg] SUCCESS: merged " << NonEmpty << " partition objects\n";
+    errs() << "[pcg] SUCCESS: merged " << NonEmpty << " partition objects"
+           << (EmbedSplitDwarf  ? " and embedded split-DWARF contributions"
+               : EmitSplitDwarf ? " and split-DWARF contributions"
+                                : "")
+           << "\n";
   return true;
 }
 
@@ -1242,13 +1350,16 @@ void ParallelCGContext::restoreLinkage(Module &Mod) {
 // only the actual PM.run() is concurrent.
 static std::mutex PassConfigMutex;
 
-bool runParallelCodeGen(Module &Mod, TargetMachine &TM, raw_pwrite_stream &OS,
+bool runParallelCodeGen(Module &Mod, TargetMachine &TM,
+                        ParallelCodeGenOutputs Outputs,
                         unsigned /*NumPartitions*/,
                         const PartitionCacheHooks *Cache) {
   ParallelCGContext Ctx;
-  if (!Ctx.init(Mod, TM))
+  if (!Ctx.init(Mod, TM, Outputs.SplitDwarf != nullptr))
     return false;
-  Ctx.Cache = Cache;
+  // The partition cache stores only one object image. A cache hit in either
+  // external or embedded fission mode would omit its matching DWO payload.
+  Ctx.Cache = Ctx.EmitSplitDwarf ? nullptr : Cache;
   Ctx.PipeTag = "p-cg";
 
   if (!Ctx.resolvePartitions(/*WeightDiv=*/PcgCgWeightDiv,
@@ -1284,13 +1395,16 @@ bool runParallelCodeGen(Module &Mod, TargetMachine &TM, raw_pwrite_stream &OS,
           continue;
         auto &PP = *Ctx.Parts[p];
         raw_svector_ostream ObjOS(*PP.ObjBuf);
+        SmallVector<char, 0> UnusedDwo;
+        raw_svector_ostream DwoOS(PP.DwoBuf ? *PP.DwoBuf : UnusedDwo);
         legacy::PassManager PM;
         {
           std::lock_guard<std::mutex> Lock(PassConfigMutex);
           PM.add(createTargetTransformInfoWrapperPass(
               PP.PTM->getTargetIRAnalysis()));
           PM.add(new TargetLibraryInfoWrapperPass(*Ctx.SharedTLII));
-          if (PP.PTM->addPassesToEmitFile(PM, ObjOS, nullptr,
+          if (PP.PTM->addPassesToEmitFile(PM, ObjOS,
+                                          PP.DwoBuf ? &DwoOS : nullptr,
                                           CodeGenFileType::ObjectFile, true))
             continue;
         }
@@ -1308,7 +1422,7 @@ bool runParallelCodeGen(Module &Mod, TargetMachine &TM, raw_pwrite_stream &OS,
       T.join();
   }
 
-  return Ctx.finalizeResults(Mod, OS);
+  return Ctx.finalizeResults(Mod, Outputs);
 }
 
 // ===----------------------------------------------------------------------===
@@ -1316,22 +1430,22 @@ bool runParallelCodeGen(Module &Mod, TargetMachine &TM, raw_pwrite_stream &OS,
 // ===----------------------------------------------------------------------===
 
 bool runParallelOptAndCodeGen(Module &Mod, TargetMachine &TM,
-                              raw_pwrite_stream &OS, unsigned /*NumPartitions*/,
-                              unsigned OptLevel,
+                              ParallelCodeGenOutputs Outputs,
+                              unsigned /*NumPartitions*/, unsigned OptLevel,
                               const PartitionCacheHooks *Cache,
                               const ParallelOptimizationHooks *Hooks) {
   if (OptLevel == 0)
     return false;
 
   ParallelCGContext Ctx;
-  if (!Ctx.init(Mod, TM)) {
+  if (!Ctx.init(Mod, TM, Outputs.SplitDwarf != nullptr)) {
     if (::getenv("NEVERC_PCG_DEBUG"))
       errs() << "[pcg] p-opt declined (FuncCount=" << Ctx.FuncCount
              << " TotalWeight=" << Ctx.TotalWeight
              << " LoopCount=" << Ctx.LoopCount << ")\n";
     return false;
   }
-  Ctx.Cache = Cache;
+  Ctx.Cache = Ctx.EmitSplitDwarf ? nullptr : Cache;
   Ctx.PipeTag = "p-opt";
 
   if (!Ctx.resolvePartitions(/*WeightDiv=*/PcgOptWeightDiv,
@@ -1436,13 +1550,16 @@ bool runParallelOptAndCodeGen(Module &Mod, TargetMachine &TM,
         }
 
         raw_svector_ostream ObjOS(*PP.ObjBuf);
+        SmallVector<char, 0> UnusedDwo;
+        raw_svector_ostream DwoOS(PP.DwoBuf ? *PP.DwoBuf : UnusedDwo);
         legacy::PassManager PM;
         {
           std::lock_guard<std::mutex> Lock(PassConfigMutex);
           PM.add(createTargetTransformInfoWrapperPass(
               PP.PTM->getTargetIRAnalysis()));
           PM.add(new TargetLibraryInfoWrapperPass(*Ctx.SharedTLII));
-          if (PP.PTM->addPassesToEmitFile(PM, ObjOS, nullptr,
+          if (PP.PTM->addPassesToEmitFile(PM, ObjOS,
+                                          PP.DwoBuf ? &DwoOS : nullptr,
                                           CodeGenFileType::ObjectFile, true))
             continue;
         }
@@ -1460,7 +1577,7 @@ bool runParallelOptAndCodeGen(Module &Mod, TargetMachine &TM,
       T.join();
   }
 
-  return Ctx.finalizeResults(Mod, OS);
+  return Ctx.finalizeResults(Mod, Outputs);
 }
 
 } // namespace neverc

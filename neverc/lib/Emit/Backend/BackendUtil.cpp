@@ -978,7 +978,7 @@ void GenAssemblyHelper::runCodegenPipeline(
   case Backend_EmitObj:
     CodeGenPasses.add(
         createTargetTransformInfoWrapperPass(getTargetIRAnalysis()));
-    if (!CodeGenOpts.SplitDwarfOutput.empty()) {
+    if (!CodeGenOpts.SplitDwarfOutput.empty() && !DwoOS) {
       DwoOS = openOutputFile(CodeGenOpts.SplitDwarfOutput);
       if (!DwoOS)
         return;
@@ -1334,19 +1334,11 @@ void GenAssemblyHelper::genAssembly(BackendAction Action,
   // The threshold/partition logic lives inside runParallelCodeGen() —
   // no need to scan the module here.
   unsigned ParallelN = CodeGenOpts.ParallelCodeGen;
-  // ParallelCodeGenMerge owns one object artifact.  Split DWARF has a second,
-  // package-aware output stream; entering the partition pipeline would
-  // silently discard it while still reporting success.
-  const bool HasAuxiliaryCodeGenOutput =
-      !CodeGenOpts.SplitDwarfOutput.empty();
-  bool UseParallel = RequiresCodeGen && !UseCoarseObjectProvider &&
-                     Action == Backend_EmitObj &&
-                     !CodeGenOpts.PrepareForLTO && ParallelN != 1 &&
-                     !HasAuxiliaryCodeGenOutput &&
-                     !MCComponentProvider &&
-                     !MCEmissionHooks &&
-                     (!MachinePasses ||
-                      !MachinePasses->requiresSerialCodeGen());
+  bool UseParallel =
+      RequiresCodeGen && !UseCoarseObjectProvider &&
+      Action == Backend_EmitObj && !CodeGenOpts.PrepareForLTO &&
+      ParallelN != 1 && !MCComponentProvider && !MCEmissionHooks &&
+      (!MachinePasses || !MachinePasses->requiresSerialCodeGen());
 
   std::unique_ptr<llvm::ToolOutputFile> DwoOS;
 
@@ -1370,8 +1362,18 @@ void GenAssemblyHelper::genAssembly(BackendAction Action,
     OS = std::make_unique<raw_svector_ostream>(NativeObject);
   }
 
+  // Open the auxiliary file exactly once. The parallel path writes only after
+  // both in-memory merges verify; on failure serial codegen reuses this
+  // untouched stream, preserving ToolOutputFile cleanup/keep semantics.
+  if (UseParallel && !CodeGenOpts.SplitDwarfOutput.empty()) {
+    DwoOS = openOutputFile(CodeGenOpts.SplitDwarfOutput);
+    if (!DwoOS)
+      return;
+  }
+
   if (UseParallel) {
-    if (!neverc::runParallelCodeGen(*TheModule, *TM, *OS, ParallelN))
+    neverc::ParallelCodeGenOutputs Outputs{*OS, DwoOS ? &DwoOS->os() : nullptr};
+    if (!neverc::runParallelCodeGen(*TheModule, *TM, Outputs, ParallelN))
       runCodegenPipeline(Action, OS, DwoOS);
   } else {
     runCodegenPipeline(Action, OS, DwoOS);

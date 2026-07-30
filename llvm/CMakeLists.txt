@@ -499,9 +499,21 @@ else()
   option(LLVM_ENABLE_THREADS "Use threads if available." ON)
 endif()
 
-set(LLVM_ENABLE_ZLIB OFF)
-set(LLVM_ENABLE_ZSTD OFF)
-set(LLVM_USE_STATIC_ZSTD FALSE)
+set(LLVM_ENABLE_ZLIB "ON" CACHE STRING
+    "Use zlib for compression/decompression if available. Can be ON, OFF, or FORCE_ON")
+set(LLVM_ENABLE_ZSTD "ON" CACHE STRING
+    "Use zstd for compression/decompression if available. Can be ON, OFF, or FORCE_ON")
+set(LLVM_USE_STATIC_ZSTD FALSE CACHE BOOL
+    "Use the static version of zstd when available")
+option(LLVM_USE_BUNDLED_ZLIB
+  "Fetch and statically link the pinned zlib release" OFF)
+option(LLVM_USE_BUNDLED_ZSTD
+  "Fetch and statically link the pinned zstd release" OFF)
+
+if(LLVM_USE_BUNDLED_ZLIB OR LLVM_USE_BUNDLED_ZSTD)
+  include(FetchCompressionDependencies)
+  llvm_fetch_compression_dependencies()
+endif()
 
 if( LLVM_TARGETS_TO_BUILD STREQUAL "all" )
   set( LLVM_TARGETS_TO_BUILD ${LLVM_ALL_TARGETS} )

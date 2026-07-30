@@ -36,14 +36,24 @@
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/BinaryFormat/COFF.h"
+#include "llvm/BinaryFormat/Dwarf.h"
 #include "llvm/BinaryFormat/ELF.h"
 #include "llvm/BinaryFormat/MachO.h"
+#include "llvm/DebugInfo/DWARF/DWARFContext.h"
+#include "llvm/DebugInfo/DWARF/DWARFDie.h"
+#include "llvm/DebugInfo/DWARF/DWARFFormValue.h"
+#include "llvm/DebugInfo/DWARF/DWARFTypeUnit.h"
+#include "llvm/DebugInfo/DWARF/DWARFUnit.h"
+#include "llvm/DebugInfo/DWARF/DWARFUnitIndex.h"
+#include "llvm/Object/ObjectFile.h"
+#include "llvm/Support/Compression.h"
 
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <map>
 #include <set>
 #include <string>
@@ -61,11 +71,22 @@ namespace {
 /// these sections' bytes are deliberately not any single input's.  The
 /// byte-window comparison below therefore cannot apply to them.
 ///
-/// ELF and COFF are not exempt: both express the same references as
-/// relocations, which the merger re-points instead, leaving the bytes
-/// untouched and fully checkable.
+/// Ordinary ELF and COFF objects are not exempt: both express the same
+/// references as relocations, which the merger re-points instead, leaving the
+/// bytes untouched and fully checkable.  Standalone Split-DWARF packages are
+/// the exception — see isSplitDwarfRewrittenSection.
 bool isRebasedMachOSection(StringRef Name) {
   return dwarfSectionContentsAreRebased(classifyDwarfSection(Name));
+}
+
+/// `.debug_str_offsets(.dwo)` is the only Split-DWARF contribution whose
+/// payload is rewritten during package finalization: entries become absolute
+/// within the merged string section. Contribution-relative bases elsewhere
+/// stay intact and are resolved through `.debug_{cu,tu}_index`, so they remain
+/// content-anchorable.
+bool isSplitDwarfRewrittenSection(StringRef Name, const Options &Opts) {
+  return Opts.artifact == ArtifactKind::SplitDwarf &&
+         classifyDwarfSection(Name) == DwarfSection::StrOffsets;
 }
 
 // ---------------------------------------------------------------------------
@@ -78,7 +99,11 @@ struct RawSec {
   StringRef Name;
   uint32_t Type = 0;
   uint64_t Flags = 0;
+  // Symbol values and relocation offsets in an SHF_COMPRESSED section are
+  // expressed against its logical, uncompressed contents. Keep that size
+  // separate from the encoded byte count stored in sh_size.
   uint64_t Size = 0;
+  uint64_t FileSize = 0;
   uint64_t Offset = 0;
   uint32_t Link = 0;
   uint32_t Info = 0;
@@ -111,6 +136,7 @@ struct RawELF {
   SmallVector<RawSec, 0> Secs;
   SmallVector<RawSym, 0> Syms;
   SmallVector<RawRela, 0> Relas;
+  SmallVector<SmallVector<uint8_t, 0>, 0> DecompressedSecs;
   // sh_info of the first SYMTAB (= index of the first non-local symbol).  An
   // independent record so the verifier can audit the locals-before-globals
   // invariant without trusting the merger's own bookkeeping.
@@ -123,10 +149,12 @@ struct RawELF {
     const RawSec &S = Secs[I];
     if (S.Type == ELF::SHT_NOBITS)
       return {};
-    if (S.Offset > Buf.size() || S.Size > Buf.size() - S.Offset)
+    if (S.Flags & ELF::SHF_COMPRESSED)
+      return DecompressedSecs[I];
+    if (S.Offset > Buf.size() || S.FileSize > Buf.size() - S.Offset)
       return {};
     return ArrayRef<uint8_t>(
-        reinterpret_cast<const uint8_t *>(Buf.data()) + S.Offset, S.Size);
+        reinterpret_cast<const uint8_t *>(Buf.data()) + S.Offset, S.FileSize);
   }
 };
 
@@ -143,14 +171,15 @@ StringRef cstrAt(ArrayRef<char> Buf, uint64_t Base, uint64_t Size,
 }
 
 // Read a trivially-copyable POD of type T from Buf at byte offset Off into a
-// properly aligned local.  Callers must bounds-check [Off, Off+sizeof(T)) first.
+// properly aligned local.  Callers must bounds-check [Off, Off+sizeof(T))
+// first.
 //
 // The verifier also audits hostile / externally-produced objects whose headers
 // can sit at file offsets that are not aligned to the struct's required
 // alignment (e.g. an nlist_64 at an odd LC_SYMTAB symoff).  Reading those with
 // `reinterpret_cast<const T*>(Buf.data() + Off)` followed by member access is a
-// misaligned load — undefined behavior the merge fuzzer trips under UBSan, and a
-// real fault on stricter ISAs.  Going through memcpy is the same byte-wise
+// misaligned load — undefined behavior the merge fuzzer trips under UBSan, and
+// a real fault on stricter ISAs.  Going through memcpy is the same byte-wise
 // discipline parseRawCOFF and the relocation readers already use; for the
 // merger's own (always aligned) output it is identical to a direct read.
 template <typename T> T readPOD(ArrayRef<char> Buf, uint64_t Off) {
@@ -197,15 +226,49 @@ bool parseRawELF(ArrayRef<char> Buf, RawELF &Out) {
   uint64_t ShStrSize = SH[H.e_shstrndx].sh_size;
 
   Out.Secs.reserve(ShNum);
+  Out.DecompressedSecs.resize(ShNum);
   for (unsigned I = 0; I < ShNum; ++I) {
     RawSec RS;
     RS.Name = cstrAt(Buf, ShStrBase, ShStrSize, SH[I].sh_name);
     RS.Type = SH[I].sh_type;
     RS.Flags = SH[I].sh_flags;
     RS.Size = SH[I].sh_size;
+    RS.FileSize = SH[I].sh_size;
     RS.Offset = SH[I].sh_offset;
     RS.Link = SH[I].sh_link;
     RS.Info = SH[I].sh_info;
+
+    if (RS.Flags & SHF_COMPRESSED) {
+      using Chdr = Elf64_Chdr;
+      if (RS.Type == SHT_NOBITS || RS.FileSize < sizeof(Chdr) ||
+          RS.Offset > Buf.size() || RS.FileSize > Buf.size() - RS.Offset)
+        return false;
+
+      Chdr Header = readPOD<Chdr>(Buf, RS.Offset);
+      compression::Format CompressionFormat;
+      if (Header.ch_type == ELFCOMPRESS_ZLIB)
+        CompressionFormat = compression::Format::Zlib;
+      else if (Header.ch_type == ELFCOMPRESS_ZSTD)
+        CompressionFormat = compression::Format::Zstd;
+      else
+        return false;
+      if (Header.ch_reserved != 0 ||
+          Header.ch_size > std::numeric_limits<size_t>::max())
+        return false;
+
+      ArrayRef<uint8_t> Payload(reinterpret_cast<const uint8_t *>(Buf.data()) +
+                                    RS.Offset + sizeof(Chdr),
+                                RS.FileSize - sizeof(Chdr));
+      SmallVector<uint8_t, 0> &Decoded = Out.DecompressedSecs[I];
+      if (Error E = compression::decompress(CompressionFormat, Payload, Decoded,
+                                            Header.ch_size)) {
+        consumeError(std::move(E));
+        return false;
+      }
+      if (Decoded.size() != Header.ch_size)
+        return false;
+      RS.Size = Header.ch_size;
+    }
     Out.Secs.push_back(RS);
   }
 
@@ -263,12 +326,12 @@ bool parseRawELF(ArrayRef<char> Buf, RawELF &Out) {
 }
 
 // The merger's section-name canonicalization, via the single shared helper in
-// Common/MergerCommon.h that ELF/MergerELF.cpp's Phase-1 renaming also calls — so the
-// verifier predicts exactly the output section name the merger produced, with
-// no second copy to drift out of sync.
+// Common/MergerCommon.h that ELF/MergerELF.cpp's Phase-1 renaming also calls —
+// so the verifier predicts exactly the output section name the merger produced,
+// with no second copy to drift out of sync.
 StringRef mergedSectionName(const RawSec &Sec, const Options &Opts) {
-  return detail::canonicalELFSectionName(Sec.Name, Sec.Flags, Opts.mergeSections,
-                                         Opts.preservedSections);
+  return detail::canonicalELFSectionName(
+      Sec.Name, Sec.Flags, Opts.mergeSections, Opts.preservedSections);
 }
 
 // Sections the merger does not fold into the output as addressable content
@@ -358,13 +421,13 @@ const Anchor *findAnchor(const AnchorVec &Sorted, uint64_t Off) {
 // to anchor against here; that narrow case is left to the content anchor (for
 // sections with bytes) and the differential/execution tests (for .bss).
 struct SecShift {
-  int64_t Delta;      // merged offset - input offset for the first witness
-  unsigned OutSec;    // merged section the first witness landed in
-  StringRef Witness;  // its name, for diagnostics
+  int64_t Delta;     // merged offset - input offset for the first witness
+  unsigned OutSec;   // merged section the first witness landed in
+  StringRef Witness; // its name, for diagnostics
 };
 
-// One input section's reconstructed placement inside a merged output section: it
-// occupies the half-open byte range [Base, Base + Size).  Distinct input
+// One input section's reconstructed placement inside a merged output section:
+// it occupies the half-open byte range [Base, Base + Size).  Distinct input
 // sections folded into one output section must keep these ranges pairwise
 // disjoint and wholly inside the merged section — an invariant that holds for
 // any conformant -r merge (neverc's and a real linker's), so it never
@@ -398,14 +461,15 @@ bool checkDisjointRanges(DenseMap<unsigned, SmallVector<OutSecRange, 0>> &Ranges
                        return A.Base < B.Base;
                      });
     for (unsigned i = 0; i < R.size(); ++i) {
-      if (R[i].Base + R[i].Size > Size)
+      if (R[i].Base > Size || R[i].Size > Size - R[i].Base)
         return fail(Err, "verify: input section of symbol '" + R[i].Witness +
-                             "' spans [0x" + Twine::utohexstr(R[i].Base) +
-                             ",0x" + Twine::utohexstr(R[i].Base + R[i].Size) +
-                             ") past the end (0x" + Twine::utohexstr(Size) +
+                             "' starts at 0x" + Twine::utohexstr(R[i].Base) +
+                             " with size 0x" + Twine::utohexstr(R[i].Size) +
+                             ", past the end (0x" + Twine::utohexstr(Size) +
                              ") of merged section '" + Name +
                              "' (offset collapsed or mis-shifted)");
-      if (i + 1 < R.size() && R[i].Base + R[i].Size > R[i + 1].Base)
+      const uint64_t End = R[i].Base + R[i].Size;
+      if (i + 1 < R.size() && End > R[i + 1].Base)
         return fail(Err, "verify: input sections of symbols '" + R[i].Witness +
                              "' and '" + R[i + 1].Witness +
                              "' overlap in merged section '" + Name +
@@ -546,12 +610,13 @@ bool verifyMergeELFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
   // symbol-anchored reloc check below skips its relocations entirely — yet they
   // ride the same per-section PartOffset whose collapse was the historical bug.
   // Two content-free invariants close that gap: (a) every merged reloc in such
-  // a section sits at a *distinct* offset (a collapse aliases several onto one),
-  // checked here; and (b) the merged reloc count equals the sum of the inputs'
-  // (none dropped or duplicated), accumulated across inputs and checked after
-  // the input loop.  Both hold for any conformant -r merge, so neither
+  // a section sits at a *distinct* offset (a collapse aliases several onto
+  // one), checked here; and (b) the merged reloc count equals the sum of the
+  // inputs' (none dropped or duplicated), accumulated across inputs and checked
+  // after the input loop.  Both hold for any conformant -r merge, so neither
   // false-rejects (a real linker's -r output included).
-  std::map<std::string, std::pair<uint64_t, std::set<uint64_t>>> OutLinkOrderRel;
+  std::map<std::string, std::pair<uint64_t, std::set<uint64_t>>>
+      OutLinkOrderRel;
   for (const RawRela &R : Out.Relas) {
     if (R.TargetSec >= Out.Secs.size())
       continue;
@@ -618,6 +683,8 @@ bool verifyMergeELFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
         continue;
       const RawSec &InSec = In.Secs[S.Shndx];
       if (isExcludedInputSection(InSec, Opts))
+        continue;
+      if (isSplitDwarfRewrittenSection(InSec.Name, Opts))
         continue;
 
       auto It = OutByName.find(S.Name);
@@ -1024,9 +1091,9 @@ struct RawCOFF {
   // Syms drops aux entries; map back via the recorded Raw slot.
   const RawCoffSym *symByRaw(uint32_t RawIdx) const {
     // A relocation's SymbolTableIndex is attacker-controlled and can equal
-    // DenseMap's reserved empty/tombstone keys, on which find() is undefined and
-    // can return an uninitialized slot index -> out-of-bounds Syms[] read (the
-    // merge fuzzer hit this as a BUS).  Treat reserved keys as absent.
+    // DenseMap's reserved empty/tombstone keys, on which find() is undefined
+    // and can return an uninitialized slot index -> out-of-bounds Syms[] read
+    // (the merge fuzzer hit this as a BUS).  Treat reserved keys as absent.
     if (detail::isReservedDenseKey(RawIdx))
       return nullptr;
     auto It = RawToSym.find(RawIdx);
@@ -1162,7 +1229,7 @@ bool parseRawCOFF(ArrayRef<char> Buf, RawCOFF &Out) {
 }
 
 bool verifyMergeCOFFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
-                         const Options &, std::string *Err) {
+                         const Options &Opts, std::string *Err) {
   using namespace llvm::COFF;
 
   RawCOFF Out;
@@ -1234,6 +1301,11 @@ bool verifyMergeCOFFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
       if ((unsigned)S.SecNum > In.Secs.size())
         continue;
       const RawCoffSec &InSec = In.Secs[S.SecNum - 1];
+      // Package finalization rewrites `.debug_str_offsets.dwo` in place; COFF
+      // also names each section with a STATIC symbol of the same spelling, so
+      // the content anchor would otherwise false-reject a correct merge.
+      if (isSplitDwarfRewrittenSection(InSec.Name, Opts))
+        continue;
 
       auto It = OutByName.find(S.Name);
       if (It == OutByName.end())
@@ -1664,8 +1736,8 @@ bool parseRawMachO(ArrayRef<char> Buf, RawMacho &Out) {
       }
     } else if (LC.cmd == MO::LC_SYMTAB) {
       // Bounds-check the command before reading its fields: a malformed cmdsize
-      // smaller than symtab_command could otherwise let the field reads run past
-      // the buffer when this is the last load command.
+      // smaller than symtab_command could otherwise let the field reads run
+      // past the buffer when this is the last load command.
       if (Cmd + sizeof(MO::symtab_command) > Buf.size())
         return false;
       MO::symtab_command SC = readPOD<MO::symtab_command>(Buf, Cmd);
@@ -1979,10 +2051,11 @@ bool verifyMergeMachOImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
           if (Overlaps) {
             // This positionally-plausible home was rewritten in place, so its
             // bytes legitimately differ from the input — undecidable from this
-            // candidate.  Record it: when *no* candidate matched but a plausible
-            // one was reloc-skipped, the real home may be exactly that skipped
-            // copy, so the whole symbol is undecidable rather than a collapse.
-            // Without this, a duplicate local label (Mach-O 'ltmp0' at every
+            // candidate.  Record it: when *no* candidate matched but a
+            // plausible one was reloc-skipped, the real home may be exactly
+            // that skipped copy, so the whole symbol is undecidable rather than
+            // a collapse. Without this, a duplicate local label (Mach-O 'ltmp0'
+            // at every
             // __text start) whose true copy begins with a relocated instruction
             // would false-reject a *correct* merge — the merger would then
             // refuse it and spuriously fall back to serial codegen.
@@ -2350,6 +2423,116 @@ bool verifyMergeMachOImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
   return true;
 }
 
+bool validatePackageIndexEntry(const DWARFUnitIndex &Index,
+                               const DWARFUnit &Unit, uint64_t Signature,
+                               std::string &Reason) {
+  if (!Index || Index.getVersion() != 5) {
+    Reason = "missing or non-DWARF-5 package index";
+    return false;
+  }
+  const DWARFUnitIndex::Entry *Entry = Index.getFromHash(Signature);
+  if (!Entry) {
+    Reason = (Twine("package index has no row for signature 0x") +
+              Twine::utohexstr(Signature))
+                 .str();
+    return false;
+  }
+
+  const auto *Info = Entry->getContribution(DW_SECT_INFO);
+  const uint64_t UnitSize = Unit.getNextUnitOffset() - Unit.getOffset();
+  if (!Info || Info->getOffset() != Unit.getOffset() ||
+      Info->getLength() != UnitSize) {
+    Reason =
+        (Twine("package index has the wrong .debug_info.dwo contribution for "
+               "signature 0x") +
+         Twine::utohexstr(Signature))
+            .str();
+    return false;
+  }
+
+  const auto *Abbrev = Entry->getContribution(DW_SECT_ABBREV);
+  if (!Abbrev || Abbrev->getLength() == 0 ||
+      Abbrev->getOffset() != Unit.getAbbrOffset()) {
+    Reason =
+        (Twine("package index has the wrong .debug_abbrev.dwo contribution for "
+               "signature 0x") +
+         Twine::utohexstr(Signature))
+            .str();
+    return false;
+  }
+  return true;
+}
+
+bool validateDIEValues(DWARFDie Root, std::string &Reason) {
+  SmallVector<DWARFDie, 32> Pending;
+  std::set<uint64_t> Visited;
+  Pending.push_back(Root);
+  while (!Pending.empty()) {
+    const DWARFDie Die = Pending.pop_back_val();
+    if (!Die || !Visited.insert(Die.getOffset()).second) {
+      Reason = "malformed or cyclic DIE tree";
+      return false;
+    }
+
+    for (const DWARFAttribute &Attribute : Die.attributes()) {
+      const DWARFFormValue &Value = Attribute.Value;
+      if (Value.isFormClass(DWARFFormValue::FC_String)) {
+        Expected<const char *> String = Value.getAsCString();
+        if (!String) {
+          auto Message = llvm::toString(String.takeError());
+          Reason.assign(Message.begin(), Message.end());
+          Reason.insert(0, "cannot resolve a DIE string: ");
+          return false;
+        }
+      }
+
+      if (Value.getAsRelativeReference() &&
+          !Die.getAttributeValueAsReferencedDie(Value)) {
+        Reason = "DIE reference points outside its indexed contribution";
+        return false;
+      }
+
+      DWARFUnit *Unit = Die.getDwarfUnit();
+      if (Value.getForm() == dwarf::DW_FORM_rnglistx &&
+          !Unit->getRnglistOffset(Value.getRawUValue())) {
+        Reason = "DW_FORM_rnglistx index is outside its package contribution";
+        return false;
+      }
+      if (Value.getForm() == dwarf::DW_FORM_loclistx &&
+          !Unit->getLoclistOffset(Value.getRawUValue())) {
+        Reason = "DW_FORM_loclistx index is outside its package contribution";
+        return false;
+      }
+    }
+
+    for (DWARFDie Child : Die.children())
+      Pending.push_back(Child);
+  }
+  return true;
+}
+
+bool getDWOName(DWARFDie UnitDIE, std::string &Name, std::string &Reason) {
+  std::optional<DWARFFormValue> Value =
+      UnitDIE.find({dwarf::DW_AT_dwo_name, dwarf::DW_AT_GNU_dwo_name});
+  if (!Value) {
+    Reason = "split compile unit has no DWO name";
+    return false;
+  }
+  Expected<const char *> String = Value->getAsCString();
+  if (!String) {
+    auto Message = llvm::toString(String.takeError());
+    Reason.assign(Message.begin(), Message.end());
+    Reason.insert(0, "cannot resolve split compile unit DWO name: ");
+    return false;
+  }
+  if (!*String || **String == '\0') {
+    Reason = "split compile unit has an empty DWO name";
+    return false;
+  }
+  Name = *String;
+  return true;
+}
+
 } // anonymous namespace
 
 bool verifyMerge(ArrayRef<StringRef> Inputs, ArrayRef<char> Output, Format Fmt,
@@ -2372,6 +2555,200 @@ bool verifyMerge(ArrayRef<SmallVector<char, 0>> Inputs, ArrayRef<char> Output,
   for (const auto &B : Inputs)
     Views.push_back(StringRef(B.data(), B.size()));
   return verifyMerge(ArrayRef<StringRef>(Views), Output, Fmt, Opts, Err);
+}
+
+bool verifySplitDwarfPair(ArrayRef<char> Object, ArrayRef<char> SplitDwarf,
+                          Format Fmt, std::string *Err) {
+  if (Object.empty() || SplitDwarf.empty())
+    return fail(Err, "split-DWARF pair contains an empty artifact");
+
+  auto ParseObject =
+      [&](ArrayRef<char> Bytes,
+          StringRef Name) -> Expected<std::unique_ptr<object::ObjectFile>> {
+    return object::ObjectFile::createObjectFile(
+        MemoryBufferRef(StringRef(Bytes.data(), Bytes.size()), Name));
+  };
+  auto MainOrErr = ParseObject(Object, "parallel-main-object");
+  if (!MainOrErr)
+    return fail(Err, "cannot parse merged main object: " +
+                         toString(MainOrErr.takeError()));
+  auto DwoOrErr = ParseObject(SplitDwarf, "parallel-split-dwarf");
+  if (!DwoOrErr)
+    return fail(Err, "cannot parse merged split-DWARF object: " +
+                         toString(DwoOrErr.takeError()));
+
+  auto MatchesFormat = [&](const object::ObjectFile &Obj) {
+    switch (Fmt) {
+    case Format::ELF64LE:
+      return Obj.isELF();
+    case Format::COFF:
+      return Obj.isCOFF();
+    case Format::MachO64:
+      return Obj.isMachO();
+    }
+    return false;
+  };
+  if (!MatchesFormat(**MainOrErr) || !MatchesFormat(**DwoOrErr))
+    return fail(Err, "main and split-DWARF artifacts do not match the "
+                     "requested object format");
+
+  std::string MainDiagMsg;
+  std::string DwoDiagMsg;
+  auto MainHandler = [&](Error E) {
+    if (MainDiagMsg.empty())
+      MainDiagMsg = toString(std::move(E)).str();
+    else
+      consumeError(std::move(E));
+  };
+  auto DwoHandler = [&](Error E) {
+    if (DwoDiagMsg.empty())
+      DwoDiagMsg = toString(std::move(E)).str();
+    else
+      consumeError(std::move(E));
+  };
+  auto MainContext = DWARFContext::create(
+      **MainOrErr, DWARFContext::ProcessDebugRelocations::Process, nullptr, "",
+      MainHandler, MainHandler);
+  auto DwoContext = DWARFContext::create(
+      **DwoOrErr, DWARFContext::ProcessDebugRelocations::Process, nullptr, "",
+      DwoHandler, DwoHandler);
+
+  std::set<uint64_t> SkeletonIds;
+  std::map<uint64_t, std::string> SkeletonNames;
+  for (const std::unique_ptr<DWARFUnit> &Unit :
+       MainContext->info_section_units()) {
+    if (Unit->getVersion() != 5)
+      return fail(Err, "merged main object contains a non-DWARF-5 unit");
+    const DWARFDie UnitDIE = Unit->getUnitDIE(false);
+    if (!UnitDIE)
+      return fail(Err, "merged main object contains a malformed unit DIE");
+    if (Unit->getUnitType() != dwarf::DW_UT_skeleton)
+      continue;
+    std::optional<uint64_t> Id = Unit->getDWOId();
+    if (!Id)
+      return fail(Err, "skeleton compile unit has no DWO ID");
+    if (!SkeletonIds.insert(*Id).second)
+      return fail(Err, "duplicate skeleton DWO ID 0x" + Twine::utohexstr(*Id));
+    std::string Reason;
+    if (!validateDIEValues(UnitDIE, Reason))
+      return fail(Err, "malformed skeleton DIE values: " + Reason);
+    std::string DWOName;
+    if (!getDWOName(UnitDIE, DWOName, Reason))
+      return fail(Err, Reason);
+    SkeletonNames.emplace(*Id, std::move(DWOName));
+    auto Line = MainContext->getLineTableForUnit(Unit.get(), MainHandler);
+    if (!Line) {
+      consumeError(Line.takeError());
+      return fail(Err, "skeleton compile unit has a malformed line table");
+    }
+    if (!*Line)
+      return fail(Err, "skeleton compile unit has no line table");
+  }
+
+  const DWARFUnitIndex &CUIndex = DwoContext->getCUIndex();
+  const DWARFUnitIndex &TUIndex = DwoContext->getTUIndex();
+  std::set<uint64_t> SplitIds;
+  std::set<uint64_t> TypeHashes;
+  std::map<uint64_t, std::string> SplitNames;
+  for (const std::unique_ptr<DWARFUnit> &Unit :
+       DwoContext->dwo_info_section_units()) {
+    if (Unit->getVersion() != 5)
+      return fail(Err, "merged .dwo contains a non-DWARF-5 unit");
+    const DWARFDie UnitDIE = Unit->getUnitDIE(false);
+    if (!UnitDIE)
+      return fail(Err, "merged .dwo contains a malformed unit DIE");
+    std::string Reason;
+    if (Unit->getUnitType() == dwarf::DW_UT_split_compile) {
+      std::optional<uint64_t> Id = Unit->getDWOId();
+      if (!Id)
+        return fail(Err, "split compile unit has no DWO ID");
+      if (!SplitIds.insert(*Id).second)
+        return fail(Err,
+                    "duplicate split-unit DWO ID 0x" + Twine::utohexstr(*Id));
+      if (!validatePackageIndexEntry(CUIndex, *Unit, *Id, Reason))
+        return fail(Err, Reason);
+      if (!validateDIEValues(UnitDIE, Reason))
+        return fail(Err, "malformed split-unit DIE values: " + Reason);
+      std::string DWOName;
+      if (!getDWOName(UnitDIE, DWOName, Reason))
+        return fail(Err, Reason);
+      SplitNames.emplace(*Id, std::move(DWOName));
+      auto Line = DwoContext->getLineTableForUnit(Unit.get(), DwoHandler);
+      if (!Line) {
+        consumeError(Line.takeError());
+        return fail(Err, "split compile unit has a malformed line table");
+      }
+      continue;
+    }
+
+    // DWARF 5 moved type units from .debug_types.dwo into .debug_info.dwo.
+    // Treating every info-section unit as a split CU rejects the exact output
+    // produced by -fdebug-types-section.
+    if (Unit->getUnitType() != dwarf::DW_UT_split_type)
+      return fail(Err, "merged .dwo contains an unexpected unit type");
+    const uint64_t TypeHash = cast<DWARFTypeUnit>(Unit.get())->getTypeHash();
+    if (!TypeHashes.insert(TypeHash).second)
+      return fail(Err, "duplicate split type signature 0x" +
+                           Twine::utohexstr(TypeHash));
+    if (!validatePackageIndexEntry(TUIndex, *Unit, TypeHash, Reason))
+      return fail(Err, Reason);
+    if (!validateDIEValues(UnitDIE, Reason))
+      return fail(Err, "malformed type-unit DIE values: " + Reason);
+  }
+
+  // Keep accepting a producer that uses the legacy .debug_types.dwo section,
+  // but index and validate it through the same TU signature set.
+  for (const std::unique_ptr<DWARFUnit> &Unit :
+       DwoContext->dwo_types_section_units()) {
+    if (Unit->getVersion() != 5 ||
+        Unit->getUnitType() != dwarf::DW_UT_split_type)
+      return fail(Err, "merged .dwo contains an unexpected type unit");
+    const DWARFDie UnitDIE = Unit->getUnitDIE(false);
+    if (!UnitDIE)
+      return fail(Err, "merged .dwo contains a malformed type-unit DIE");
+    std::string Reason;
+    const uint64_t TypeHash = cast<DWARFTypeUnit>(Unit.get())->getTypeHash();
+    if (!TypeHashes.insert(TypeHash).second)
+      return fail(Err, "duplicate split type signature 0x" +
+                           Twine::utohexstr(TypeHash));
+    if (!validatePackageIndexEntry(TUIndex, *Unit, TypeHash, Reason))
+      return fail(Err, Reason);
+    if (!validateDIEValues(UnitDIE, Reason))
+      return fail(Err, "malformed type-unit DIE values: " + Reason);
+  }
+
+  auto IndexMatchesUnits = [&](const DWARFUnitIndex &Index,
+                               const std::set<uint64_t> &Expected,
+                               StringRef IndexName) {
+    std::set<uint64_t> Indexed;
+    for (const DWARFUnitIndex::Entry &Entry : Index.getRows())
+      if (Entry.getContributions())
+        Indexed.insert(Entry.getSignature());
+    if (Indexed == Expected)
+      return true;
+    return fail(Err, IndexName + " contains missing or extraneous unit rows");
+  };
+  if (!IndexMatchesUnits(CUIndex, SplitIds, ".debug_cu_index") ||
+      !IndexMatchesUnits(TUIndex, TypeHashes, ".debug_tu_index"))
+    return false;
+
+  // LLVM's COFF DWARF reloc applicator still warns on some well-formed
+  // IMAGE_REL_AMD64_ADDR32 debug_line → debug_line_str fixups (serial
+  // objects do too). Treat parser diagnostics as soft: they enrich later
+  // failure messages, but the skeleton/split semantic checks below are the
+  // authority on whether the pair is usable.
+  if (SkeletonIds.empty() || SplitIds.empty()) {
+    Twine Detail =
+        (MainDiagMsg.empty() ? Twine() : Twine("; main: ") + MainDiagMsg) +
+        (DwoDiagMsg.empty() ? Twine() : Twine("; dwo: ") + DwoDiagMsg);
+    return fail(Err,
+                "split-DWARF pair contains no matched compile units" + Detail);
+  }
+  if (SkeletonIds != SplitIds)
+    return fail(Err, "skeleton and split-unit DWO ID sets differ");
+  if (SkeletonNames != SplitNames)
+    return fail(Err, "skeleton and split-unit DWO names differ");
+  return true;
 }
 
 } // namespace neverc::merge

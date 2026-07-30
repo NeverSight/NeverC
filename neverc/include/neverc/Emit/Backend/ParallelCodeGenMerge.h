@@ -42,19 +42,28 @@ struct ParallelOptimizationHooks {
   std::function<void(llvm::ModulePassManager &)> PostOpt;
 };
 
+/// The complete artifact set owned by one codegen request. Split DWARF is
+/// optional, but when present parallel codegen commits it atomically with the
+/// main object after both merges and their cross-artifact verification pass.
+struct ParallelCodeGenOutputs {
+  llvm::raw_pwrite_stream &Object;
+  llvm::raw_pwrite_stream *SplitDwarf = nullptr;
+};
+
 /// Run parallel codegen on an already-optimized module.
 /// Splits the module into \p NumPartitions, runs codegen in parallel,
-/// then merges the resulting object files using `neverc::merge`.
+/// then merges the resulting object and optional Split-DWARF files using
+/// `neverc::merge`.
 /// Returns true on success.
 bool runParallelCodeGen(llvm::Module &Mod, llvm::TargetMachine &TM,
-                        llvm::raw_pwrite_stream &OS, unsigned NumPartitions,
+                        ParallelCodeGenOutputs Outputs, unsigned NumPartitions,
                         const PartitionCacheHooks *Cache = nullptr);
 
 /// Same as runParallelCodeGen but also runs function-level optimization
 /// passes on each partition before codegen. Use when the input module has
 /// only been through IPO simplification (not full optimization).
 bool runParallelOptAndCodeGen(llvm::Module &Mod, llvm::TargetMachine &TM,
-                              llvm::raw_pwrite_stream &OS,
+                              ParallelCodeGenOutputs Outputs,
                               unsigned NumPartitions, unsigned OptLevel,
                               const PartitionCacheHooks *Cache = nullptr,
                               const ParallelOptimizationHooks *Hooks = nullptr);

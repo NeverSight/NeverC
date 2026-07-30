@@ -1,5 +1,17 @@
 #include "NeverCTestFixture.h"
 
+#include "llvm/BinaryFormat/COFF.h"
+#include "llvm/BinaryFormat/ELF.h"
+#include "llvm/Bitcode/BitcodeWriter.h"
+#include "llvm/IR/DIBuilder.h"
+#include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/Module.h"
+#include "llvm/Object/COFF.h"
+#include "llvm/Object/ELFObjectFile.h"
+#include "llvm/Support/Compression.h"
+#include "llvm/Support/xxhash.h"
+
+#include <cstring>
 #include <regex>
 
 class DebugTest : public NeverCTest {
@@ -40,23 +52,175 @@ protected:
   }
 };
 
+static bool
+inspectELFDebugCompression(llvm::StringRef Bytes,
+                           llvm::DebugCompressionType CompressionType,
+                           unsigned &CompressedSections, std::string &Reason) {
+  using namespace llvm;
+  using namespace llvm::object;
+
+  CompressedSections = 0;
+  auto ObjectOrErr = ObjectFile::createObjectFile(
+      MemoryBufferRef(Bytes, "split-dwarf-compression-test"));
+  if (!ObjectOrErr) {
+    consumeError(ObjectOrErr.takeError());
+    Reason = "cannot parse ELF object";
+    return false;
+  }
+  if (!(*ObjectOrErr)->isELF() || (*ObjectOrErr)->getBytesInAddress() != 8 ||
+      !(*ObjectOrErr)->isLittleEndian()) {
+    Reason = "expected an ELF64LE object";
+    return false;
+  }
+
+  const uint32_t ExpectedType = CompressionType == DebugCompressionType::Zlib
+                                    ? ELF::ELFCOMPRESS_ZLIB
+                                    : ELF::ELFCOMPRESS_ZSTD;
+  for (const SectionRef &Section : (*ObjectOrErr)->sections()) {
+    Expected<StringRef> NameOrErr = Section.getName();
+    if (!NameOrErr) {
+      consumeError(NameOrErr.takeError());
+      Reason = "cannot read an ELF section name";
+      return false;
+    }
+    const ELFSectionRef ELFSection(Section);
+    if (!NameOrErr->starts_with(".debug_") ||
+        !(ELFSection.getFlags() & ELF::SHF_COMPRESSED))
+      continue;
+
+    const uint64_t Offset = ELFSection.getOffset();
+    const uint64_t Size = Section.getSize();
+    if (Offset > Bytes.size() || Size > Bytes.size() - Offset ||
+        Size < sizeof(ELF::Elf64_Chdr)) {
+      Reason = "compressed debug section is truncated";
+      return false;
+    }
+    ELF::Elf64_Chdr Header{};
+    memcpy(&Header, Bytes.data() + Offset, sizeof(Header));
+    if (Header.ch_type != ExpectedType || Header.ch_reserved != 0 ||
+        Header.ch_size == 0 || Header.ch_addralign == 0 ||
+        (Header.ch_addralign & (Header.ch_addralign - 1)) != 0) {
+      Reason = "compressed debug section has an invalid ELF compression header";
+      return false;
+    }
+    ++CompressedSections;
+  }
+  if (CompressedSections == 0) {
+    Reason = "object contains no compressed debug sections";
+    return false;
+  }
+  return true;
+}
+
+static bool inspectELFSplitDwarfSectionFlags(llvm::StringRef Bytes,
+                                             std::string &Reason) {
+  using namespace llvm;
+  using namespace llvm::object;
+
+  auto ObjectOrErr = ObjectFile::createObjectFile(
+      MemoryBufferRef(Bytes, "split-dwarf-elf-flags-test"));
+  if (!ObjectOrErr) {
+    consumeError(ObjectOrErr.takeError());
+    Reason = "cannot parse ELF object";
+    return false;
+  }
+  if (!(*ObjectOrErr)->isELF()) {
+    Reason = "expected an ELF object";
+    return false;
+  }
+
+  unsigned SplitDwarfSections = 0;
+  for (const SectionRef &Section : (*ObjectOrErr)->sections()) {
+    Expected<StringRef> NameOrErr = Section.getName();
+    if (!NameOrErr) {
+      consumeError(NameOrErr.takeError());
+      Reason = "cannot read an ELF section name";
+      return false;
+    }
+    const bool IsDwoPayload = NameOrErr->ends_with(".dwo");
+    const bool IsPackageIndex =
+        *NameOrErr == ".debug_cu_index" || *NameOrErr == ".debug_tu_index";
+    if (!IsDwoPayload && !IsPackageIndex)
+      continue;
+    ++SplitDwarfSections;
+    if (!(ELFSectionRef(Section).getFlags() & ELF::SHF_EXCLUDE)) {
+      Reason =
+          ("Split-DWARF section '" + *NameOrErr + "' lacks SHF_EXCLUDE").str();
+      return false;
+    }
+  }
+  if (SplitDwarfSections == 0) {
+    Reason = "ELF split-DWARF object contains no split-debug sections";
+    return false;
+  }
+  return true;
+}
+
+static bool inspectCOFFSplitDwarfSectionFlags(llvm::StringRef Bytes,
+                                              std::string &Reason) {
+  using namespace llvm;
+  using namespace llvm::object;
+
+  auto ObjectOrErr = ObjectFile::createObjectFile(
+      MemoryBufferRef(Bytes, "split-dwarf-coff-flags-test"));
+  if (!ObjectOrErr) {
+    consumeError(ObjectOrErr.takeError());
+    Reason = "cannot parse COFF object";
+    return false;
+  }
+  const auto *COFFObject = dyn_cast<COFFObjectFile>(ObjectOrErr->get());
+  if (!COFFObject) {
+    Reason = "expected a COFF object";
+    return false;
+  }
+
+  unsigned SplitDwarfSections = 0;
+  for (const SectionRef &Section : COFFObject->sections()) {
+    Expected<StringRef> NameOrErr = Section.getName();
+    if (!NameOrErr) {
+      consumeError(NameOrErr.takeError());
+      Reason = "cannot read a COFF section name";
+      return false;
+    }
+    const bool IsDwoPayload = NameOrErr->ends_with(".dwo");
+    const bool IsPackageIndex =
+        *NameOrErr == ".debug_cu_index" || *NameOrErr == ".debug_tu_index";
+    if (!IsDwoPayload && !IsPackageIndex)
+      continue;
+    ++SplitDwarfSections;
+    if (!(COFFObject->getCOFFSection(Section)->Characteristics &
+          COFF::IMAGE_SCN_LNK_REMOVE)) {
+      Reason = ("Split-DWARF section '" + *NameOrErr +
+                "' is not marked IMAGE_SCN_LNK_REMOVE")
+                   .str();
+      return false;
+    }
+  }
+  if (SplitDwarfSections == 0) {
+    Reason = "COFF split-DWARF object contains no split-debug sections";
+    return false;
+  }
+  return true;
+}
+
 TEST_F(DebugTest, HostDWARF) {
   auto src = (testDir() / "debug/test_dwarf_debug.c").string();
   auto obj = tmpFile("host_dwarf.o");
   auto exe = tmpFile("host_dwarf");
 
   std::vector<std::string> base;
-  for (auto &f : sysrootFlags()) base.push_back(f);
-  for (auto &f : archFlags()) base.push_back(f);
+  for (auto &f : sysrootFlags())
+    base.push_back(f);
+  for (auto &f : archFlags())
+    base.push_back(f);
 
   auto c = base;
-  c.insert(c.end(), {"-std=c11", "-g", "-fno-lto", "-c", src, "-o",
-                     obj.string()});
+  c.insert(c.end(),
+           {"-std=c11", "-g", "-fno-lto", "-c", src, "-o", obj.string()});
   ASSERT_EQ(ncc(c).exitCode, 0) << "host-dwarf compile";
 
   auto l = base;
-  l.insert(l.end(),
-           {"-std=c11", "-g", "-fno-lto", src, "-o", exe.string()});
+  l.insert(l.end(), {"-std=c11", "-g", "-fno-lto", src, "-o", exe.string()});
   ASSERT_EQ(ncc(l).exitCode, 0) << "host-dwarf link";
 
   // dwarfdump verification
@@ -184,12 +348,139 @@ static std::string makePartitionedDebugSource(const std::string &NamePrefix,
   return Code;
 }
 
-// Split DWARF has a second output stream.  The partition codegen API currently
-// owns only the main object stream, so entering it used to report success while
-// silently discarding the entire .dwo file.  Until partition DWO contributions
-// have a package-aware merger, this mode must stay on the serial pipeline that
-// owns both outputs.
-TEST_F(DebugTest, SplitDwarfIsNotDiscardedByParallelCodegen) {
+static std::string multiCUFunctionName(unsigned CU, unsigned Partition) {
+  for (unsigned Suffix = 0;; ++Suffix) {
+    std::string Name = "parallel_cu" + std::to_string(CU) + "_partition" +
+                       std::to_string(Partition) + "_" + std::to_string(Suffix);
+    if (llvm::xxh3_64bits(Name) % 4 == Partition)
+      return Name;
+  }
+}
+
+static std::string makeMultiCompileUnitBitcode() {
+  using namespace llvm;
+
+  LLVMContext Context;
+  Module M("parallel-split-dwarf-multi-cu", Context);
+  M.setTargetTriple("x86_64-unknown-linux-gnu");
+  M.addModuleFlag(Module::Warning, "Dwarf Version", 5);
+  M.addModuleFlag(Module::Warning, "Debug Info Version",
+                  DEBUG_METADATA_VERSION);
+
+  DIBuilder DIB0(M);
+  DIBuilder DIB1(M);
+  DIBuilder *DIBs[] = {&DIB0, &DIB1};
+  DIFile *Files[] = {DIB0.createFile("parallel-cu0.c", "/"),
+                     DIB1.createFile("parallel-cu1.c", "/")};
+  DIB0.createCompileUnit(
+      dwarf::DW_LANG_C11, Files[0], "neverc multi-CU test",
+      /*isOptimized=*/false, /*Flags=*/"", /*RV=*/0,
+      /*SplitName=*/"parallel-multi-cu.dwo",
+      DICompileUnit::DebugEmissionKind::FullDebug, /*DWOId=*/0,
+      /*SplitDebugInlining=*/false, /*DebugInfoForProfiling=*/false,
+      DICompileUnit::DebugNameTableKind::GNU);
+  DIB1.createCompileUnit(
+      dwarf::DW_LANG_C11, Files[1], "neverc multi-CU test",
+      /*isOptimized=*/false, /*Flags=*/"", /*RV=*/0,
+      /*SplitName=*/"parallel-multi-cu.dwo",
+      DICompileUnit::DebugEmissionKind::FullDebug, /*DWOId=*/0,
+      /*SplitDebugInlining=*/false, /*DebugInfoForProfiling=*/false,
+      DICompileUnit::DebugNameTableKind::GNU);
+  DISubroutineType *DebugFnTypes[2];
+  for (unsigned CU = 0; CU != 2; ++CU) {
+    DIType *IntDebugTy =
+        DIBs[CU]->createBasicType("int", 32, dwarf::DW_ATE_signed);
+    DITypeRefArray DebugParamTypes =
+        DIBs[CU]->getOrCreateTypeArray({IntDebugTy, IntDebugTy});
+    DebugFnTypes[CU] = DIBs[CU]->createSubroutineType(DebugParamTypes);
+  }
+
+  Type *IntTy = Type::getInt32Ty(Context);
+  FunctionType *FnTy = FunctionType::get(IntTy, {IntTy}, false);
+  for (unsigned I = 0; I != 8; ++I) {
+    const unsigned CU = I / 4;
+    const unsigned Partition = I % 4;
+    const std::string Name = multiCUFunctionName(CU, Partition);
+    Function *F = Function::Create(FnTy, GlobalValue::ExternalLinkage, Name, M);
+    F->getArg(0)->setName("value");
+    DISubprogram *SP = DIBs[CU]->createFunction(
+        Files[CU], Name, Name, Files[CU], I + 1, DebugFnTypes[CU], I + 1,
+        DINode::FlagPrototyped, DISubprogram::SPFlagDefinition);
+    F->setSubprogram(SP);
+
+    BasicBlock *Entry = BasicBlock::Create(Context, "entry", F);
+    IRBuilder<> Builder(Entry);
+    Builder.SetCurrentDebugLocation(DILocation::get(Context, I + 1, 1, SP));
+    Value *Result =
+        Builder.CreateAdd(F->getArg(0), ConstantInt::get(IntTy, I + 1));
+    Builder.CreateRet(Result);
+  }
+  DIB0.finalize();
+  DIB1.finalize();
+
+  SmallVector<char, 0> Bitcode;
+  raw_svector_ostream OS(Bitcode);
+  WriteBitcodeToFile(M, OS);
+  return std::string(Bitcode.begin(), Bitcode.end());
+}
+
+class ScopedEnvironmentVariable {
+public:
+  ScopedEnvironmentVariable(const char *Name, const char *Value) : Name(Name) {
+    if (const char *Current = std::getenv(Name)) {
+      HadPrevious = true;
+      Previous = Current;
+    }
+#ifdef _WIN32
+    _putenv_s(Name, Value ? Value : "");
+#else
+    if (Value)
+      setenv(Name, Value, 1);
+    else
+      unsetenv(Name);
+#endif
+  }
+
+  ~ScopedEnvironmentVariable() {
+#ifdef _WIN32
+    _putenv_s(Name.c_str(), HadPrevious ? Previous.c_str() : "");
+#else
+    if (HadPrevious)
+      setenv(Name.c_str(), Previous.c_str(), 1);
+    else
+      unsetenv(Name.c_str());
+#endif
+  }
+
+  ScopedEnvironmentVariable(const ScopedEnvironmentVariable &) = delete;
+  ScopedEnvironmentVariable &
+  operator=(const ScopedEnvironmentVariable &) = delete;
+
+private:
+  std::string Name;
+  std::string Previous;
+  bool HadPrevious = false;
+};
+
+// Turns the merger's silent serial-codegen fallback into a hard error, so a
+// partitioning regression fails the test instead of quietly compiling slower.
+class StrictParallelCodegen {
+public:
+  StrictParallelCodegen() : Strict("NEVERC_PCG_STRICT", "1") {}
+  StrictParallelCodegen(const StrictParallelCodegen &) = delete;
+  StrictParallelCodegen &operator=(const StrictParallelCodegen &) = delete;
+
+private:
+  ScopedEnvironmentVariable Strict;
+};
+
+// Split DWARF is a true dual-output parallel operation: every partition emits a
+// skeleton object and a relocation-free `.dwo`; both are merged in memory,
+// cross-checked by DWO ID, then committed together. Strict/debug mode proves
+// this test entered that path instead of passing through the serial fallback.
+TEST_F(DebugTest, SplitDwarfIsMergedByParallelCodegen) {
+  StrictParallelCodegen Strict;
+  ScopedEnvironmentVariable Debug("NEVERC_PCG_DEBUG", "1");
   auto src = tmpFile("pcg_split_dwarf.c");
   auto obj = tmpFile("pcg_split_dwarf.o");
   auto dwo = obj;
@@ -206,31 +497,372 @@ TEST_F(DebugTest, SplitDwarfIsNotDiscardedByParallelCodegen) {
 
   auto result = ncc(args);
   ASSERT_EQ(result.exitCode, 0) << result.err;
+  EXPECT_TRUE(result.stderrContains("[pcg] SUCCESS: merged")) << result.err;
+  EXPECT_TRUE(result.stderrContains("split-DWARF contributions")) << result.err;
   EXPECT_FALSE(readFile(dwo).empty())
       << "successful split-DWARF compilation discarded its .dwo output";
+
+  auto tool = findDwarfDump();
+  if (tool.path.empty())
+    GTEST_SKIP() << "dwarfdump not available";
+  auto dump = dwarfDumpInfo(tool, dwo.string());
+  ASSERT_EQ(dump.exitCode, 0) << dump.err;
+  EXPECT_TRUE(dump.contains("DW_UT_split_compile"));
+  for (int I = 0; I < 24; ++I)
+    EXPECT_TRUE(dump.contains("split_dwarf_" + std::to_string(I)))
+        << "partition " << I << " debug name is missing";
 }
 
-// Turns the merger's silent serial-codegen fallback into a hard error, so a
-// partitioning regression fails the test instead of quietly compiling slower.
-class StrictParallelCodegen {
-public:
-  StrictParallelCodegen() {
-#ifdef _WIN32
-    _putenv_s("NEVERC_PCG_STRICT", "1");
-#else
-    setenv("NEVERC_PCG_STRICT", "1", 1);
-#endif
+TEST_F(DebugTest, MultiCompileUnitSplitDwarfStaysParallel) {
+  StrictParallelCodegen Strict;
+  ScopedEnvironmentVariable Debug("NEVERC_PCG_DEBUG", "1");
+  auto bitcode = tmpFile("pcg_split_dwarf_multi_cu.bc");
+  auto obj = tmpFile("pcg_split_dwarf_multi_cu.o");
+  auto dwo = obj;
+  dwo.replace_extension(".dwo");
+  writeFile(bitcode, makeMultiCompileUnitBitcode());
+
+  std::vector<std::string> args = {
+      "--target=x86_64-unknown-linux-gnu",
+      "-gdwarf-5",
+      "-gsplit-dwarf",
+      "-fno-lto",
+      "-fno-builtin-mimalloc",
+  };
+  for (auto &Flag : forcePartitions(4))
+    args.push_back(Flag);
+  args.insert(args.end(), {"-mllvm", "-neverc-pcg-cg-weight-div=1"});
+  args.insert(args.end(), {"-c", bitcode.string(), "-o", obj.string()});
+
+  const auto Result = ncc(args);
+  ASSERT_EQ(Result.exitCode, 0) << Result.err;
+  ASSERT_TRUE(Result.stderrContains("[pcg] SUCCESS: merged")) << Result.err;
+  ASSERT_FALSE(readFile(dwo).empty());
+
+  const auto Tool = findDwarfDump();
+  if (Tool.path.empty())
+    GTEST_SKIP() << "dwarfdump not available";
+  const auto Dump = dwarfDumpInfo(Tool, dwo.string());
+  ASSERT_EQ(Dump.exitCode, 0) << Dump.err;
+  for (unsigned CU = 0; CU != 2; ++CU)
+    for (unsigned Partition = 0; Partition != 4; ++Partition)
+      EXPECT_TRUE(Dump.contains(multiCUFunctionName(CU, Partition)));
+}
+
+TEST_F(DebugTest, SplitDwarfMergeFailureFallsBackTransactionally) {
+  // CI may enable strict mode globally; this test deliberately exercises the
+  // production fallback instead.
+  ScopedEnvironmentVariable NoStrict("NEVERC_PCG_STRICT", nullptr);
+  ScopedEnvironmentVariable Debug("NEVERC_PCG_DEBUG", "1");
+  auto src = tmpFile("pcg_split_fallback.c");
+  auto obj = tmpFile("pcg_split_fallback.o");
+  auto dwo = obj;
+  dwo.replace_extension(".dwo");
+  writeFile(src, makePartitionedDebugSource("split_fallback_", 16));
+
+  const std::vector<std::string> Common = {
+      "--target=x86_64-unknown-linux-gnu",
+      "-gdwarf-5",
+      "-gsplit-dwarf",
+      "-fno-lto",
+      "-fno-builtin-mimalloc",
+  };
+  auto FinishArgs = [&](std::vector<std::string> Args) {
+    Args.insert(Args.end(), {"-c", src.string(), "-o", obj.string()});
+    return Args;
+  };
+
+  auto SerialArgs = Common;
+  SerialArgs.push_back("-fno-parallel-codegen");
+  const auto SerialResult = ncc(FinishArgs(std::move(SerialArgs)));
+  ASSERT_EQ(SerialResult.exitCode, 0) << SerialResult.err;
+  const std::string SerialObject = readFile(obj);
+  const std::string SerialDwo = readFile(dwo);
+  ASSERT_FALSE(SerialObject.empty());
+  ASSERT_FALSE(SerialDwo.empty());
+
+  auto ParallelArgs = Common;
+  for (auto &Flag : forcePartitions(4))
+    ParallelArgs.push_back(Flag);
+  CmdResult FallbackResult;
+  {
+    ScopedEnvironmentVariable ForceFailure("NEVERC_PCG_FORCE_MERGE_FAIL", "1");
+    FallbackResult = ncc(FinishArgs(std::move(ParallelArgs)));
   }
-  ~StrictParallelCodegen() {
-#ifdef _WIN32
-    _putenv_s("NEVERC_PCG_STRICT", "");
-#else
-    unsetenv("NEVERC_PCG_STRICT");
-#endif
+  ASSERT_EQ(FallbackResult.exitCode, 0) << FallbackResult.err;
+  EXPECT_TRUE(FallbackResult.stderrContains("[pcg] FALLBACK:"))
+      << FallbackResult.err;
+  EXPECT_EQ(readFile(obj), SerialObject)
+      << "parallel failure left bytes ahead of the serial object";
+  EXPECT_EQ(readFile(dwo), SerialDwo)
+      << "parallel failure left bytes ahead of the serial DWO";
+}
+
+TEST_F(DebugTest, SplitDwarfParallelCodegenCoversELFAndCOFFTargets) {
+  StrictParallelCodegen Strict;
+  ScopedEnvironmentVariable Debug("NEVERC_PCG_DEBUG", "1");
+  auto src = tmpFile("pcg_split_dwarf_targets.c");
+  writeFile(src, makePartitionedDebugSource("split_target_", 16));
+
+  struct TargetCase {
+    const char *Name;
+    const char *Triple;
+    const char *ObjectSuffix;
+  };
+  constexpr TargetCase Targets[] = {
+      {"x64_linux", "x86_64-unknown-linux-gnu", ".o"},
+      {"arm64_linux", "aarch64-unknown-linux-gnu", ".o"},
+      {"x64_windows", "x86_64-pc-windows-msvc", ".obj"},
+      {"arm64_windows", "aarch64-pc-windows-msvc", ".obj"},
+  };
+
+  for (const TargetCase &Target : Targets) {
+    SCOPED_TRACE(Target.Triple);
+    auto obj = tmpFile(std::string("pcg_split_target_") + Target.Name +
+                       Target.ObjectSuffix);
+    auto dwo = obj;
+    dwo.replace_extension(".dwo");
+    std::vector<std::string> args = {
+        std::string("--target=") + Target.Triple,
+        "-gdwarf-5",
+        "-gsplit-dwarf",
+        "-fno-lto",
+        "-fno-builtin-mimalloc",
+    };
+    for (auto &Flag : forcePartitions(4))
+      args.push_back(Flag);
+    args.insert(args.end(), {"-c", src.string(), "-o", obj.string()});
+
+    const auto Result = ncc(args);
+    ASSERT_EQ(Result.exitCode, 0) << Result.err;
+    EXPECT_TRUE(Result.stderrContains("[pcg] SUCCESS: merged")) << Result.err;
+    EXPECT_TRUE(Result.stderrContains("split-DWARF contributions"))
+        << Result.err;
+    EXPECT_FALSE(readFile(obj).empty());
+    const std::string DwoBytes = readFile(dwo);
+    EXPECT_FALSE(DwoBytes.empty());
+    if (llvm::StringRef(Target.Triple).contains("windows")) {
+      std::string Reason;
+      EXPECT_TRUE(inspectCOFFSplitDwarfSectionFlags(DwoBytes, Reason))
+          << Reason;
+    } else {
+      std::string Reason;
+      EXPECT_TRUE(inspectELFSplitDwarfSectionFlags(DwoBytes, Reason)) << Reason;
+    }
   }
-  StrictParallelCodegen(const StrictParallelCodegen &) = delete;
-  StrictParallelCodegen &operator=(const StrictParallelCodegen &) = delete;
-};
+}
+
+TEST_F(DebugTest, CompressedSplitDwarfIsDeterministicAcrossWorkerCounts) {
+  StrictParallelCodegen Strict;
+  ScopedEnvironmentVariable Debug("NEVERC_PCG_DEBUG", "1");
+  auto src = tmpFile("pcg_compressed_split_dwarf.c");
+  writeFile(src, makePartitionedDebugSource("compressed_split_", 24));
+
+  struct Target {
+    const char *Name;
+    const char *Triple;
+  };
+  constexpr Target Targets[] = {
+      {"x64", "x86_64-unknown-linux-gnu"},
+      {"arm64", "aarch64-unknown-linux-gnu"},
+  };
+  struct Codec {
+    llvm::DebugCompressionType Type;
+    const char *Name;
+  };
+  constexpr Codec Codecs[] = {
+      {llvm::DebugCompressionType::Zlib, "zlib"},
+      {llvm::DebugCompressionType::Zstd, "zstd"},
+  };
+
+  unsigned TestedConfigurations = 0;
+  for (const Target &Target : Targets) {
+    for (const Codec &Codec : Codecs) {
+      SCOPED_TRACE(std::string(Target.Triple) + " / " + Codec.Name);
+      const llvm::compression::Format Format =
+          llvm::compression::formatFor(Codec.Type);
+      if (llvm::compression::getReasonIfUnsupported(Format))
+        continue;
+      ++TestedConfigurations;
+
+      auto obj = tmpFile(std::string("pcg_compressed_") + Target.Name + "_" +
+                         Codec.Name + ".o");
+      auto dwo = obj;
+      dwo.replace_extension(".dwo");
+      std::vector<std::string> args = {
+          std::string("--target=") + Target.Triple,
+          "-gdwarf-5",
+          "-gsplit-dwarf",
+          std::string("-gz=") + Codec.Name,
+          "-fno-lto",
+          "-fno-builtin-mimalloc",
+      };
+      for (auto &Flag : forcePartitions(4))
+        args.push_back(Flag);
+      args.insert(args.end(), {"-c", src.string(), "-o", obj.string()});
+
+      CmdResult OneThreadResult;
+      {
+        ScopedEnvironmentVariable Workers("NEVERC_PCG_THREADS", "1");
+        OneThreadResult = ncc(args);
+      }
+      ASSERT_EQ(OneThreadResult.exitCode, 0) << OneThreadResult.err;
+      ASSERT_TRUE(OneThreadResult.stderrContains("[pcg] SUCCESS: merged"))
+          << OneThreadResult.err;
+
+      const std::string OneThreadObject = readFile(obj);
+      const std::string OneThreadDwo = readFile(dwo);
+      ASSERT_FALSE(OneThreadObject.empty());
+      ASSERT_FALSE(OneThreadDwo.empty());
+      unsigned ObjectCompressedSections = 0;
+      unsigned DwoCompressedSections = 0;
+      std::string Reason;
+      ASSERT_TRUE(inspectELFDebugCompression(OneThreadObject, Codec.Type,
+                                             ObjectCompressedSections, Reason))
+          << "main object: " << Reason;
+      ASSERT_TRUE(inspectELFDebugCompression(OneThreadDwo, Codec.Type,
+                                             DwoCompressedSections, Reason))
+          << "DWO: " << Reason;
+
+      {
+        ScopedEnvironmentVariable Workers("NEVERC_PCG_THREADS", "4");
+        const auto FourThreadResult = ncc(args);
+        ASSERT_EQ(FourThreadResult.exitCode, 0) << FourThreadResult.err;
+        ASSERT_TRUE(FourThreadResult.stderrContains("[pcg] SUCCESS: merged"))
+            << FourThreadResult.err;
+      }
+      EXPECT_EQ(readFile(obj), OneThreadObject)
+          << "main object depends on worker scheduling";
+      EXPECT_EQ(readFile(dwo), OneThreadDwo)
+          << "DWO depends on worker scheduling";
+
+      const auto Tool = findDwarfDump();
+      if (!Tool.path.empty()) {
+        const auto Dump = dwarfDumpInfo(Tool, dwo.string());
+        ASSERT_EQ(Dump.exitCode, 0) << Dump.err;
+        // Some platform dwarfdump builds exit successfully but do not
+        // implement SHF_COMPRESSED DWP sections. When the tool does expose
+        // the units, cross-check their names; the compiler's in-process pair
+        // verifier has already parsed every compressed unit before commit.
+        if (Dump.contains("DW_UT_split_compile"))
+          for (int I = 0; I < 24; ++I)
+            EXPECT_TRUE(Dump.contains("compressed_split_" + std::to_string(I)))
+                << "partition " << I
+                << " debug name is missing after decompression";
+      }
+    }
+  }
+
+  if (TestedConfigurations == 0)
+    GTEST_SKIP() << "this build has neither zlib nor zstd support";
+}
+
+// Ordinary `-g` must keep using parallel codegen. The Split-DWARF dual-output
+// path is gated on an auxiliary `.dwo` stream, not on the presence of DWARF.
+TEST_F(DebugTest, OrdinaryDebugStillUsesParallelCodegen) {
+  StrictParallelCodegen Strict;
+  ScopedEnvironmentVariable Debug("NEVERC_PCG_DEBUG", "1");
+  auto src = tmpFile("pcg_ordinary_debug.c");
+  auto obj = tmpFile("pcg_ordinary_debug.o");
+  writeFile(src, makePartitionedDebugSource("ordinary_debug_", 24));
+
+  std::vector<std::string> args = {
+      "--target=x86_64-unknown-linux-gnu",
+      "-g",
+      "-fno-lto",
+      "-fno-builtin-mimalloc",
+  };
+  for (auto &Flag : forcePartitions(4))
+    args.push_back(Flag);
+  args.insert(args.end(), {"-c", src.string(), "-o", obj.string()});
+
+  const auto Result = ncc(args);
+  ASSERT_EQ(Result.exitCode, 0) << Result.err;
+  EXPECT_TRUE(Result.stderrContains("[pcg] SUCCESS: merged")) << Result.err;
+  EXPECT_FALSE(Result.stderrContains("split-DWARF contributions"))
+      << Result.err;
+  EXPECT_FALSE(fs::exists(obj.parent_path() / (obj.stem().string() + ".dwo")));
+}
+
+// `=single` keeps fission layout inside one object and must stay on the
+// parallel path. Its partition DWO payloads are packaged on private streams
+// and embedded only after the same cross-artifact verification as external
+// split DWARF.
+TEST_F(DebugTest, SplitDwarfSingleModeStaysOnParallelCodegen) {
+  StrictParallelCodegen Strict;
+  ScopedEnvironmentVariable Debug("NEVERC_PCG_DEBUG", "1");
+  auto src = tmpFile("pcg_split_single.c");
+  auto obj = tmpFile("pcg_split_single.o");
+  writeFile(src, makePartitionedDebugSource("split_single_", 24));
+
+  std::vector<std::string> args = {
+      "--target=x86_64-unknown-linux-gnu",
+      "-gdwarf-5",
+      "-gsplit-dwarf=single",
+      "-fno-lto",
+      "-fno-builtin-mimalloc",
+  };
+  for (auto &Flag : forcePartitions(4))
+    args.push_back(Flag);
+  args.insert(args.end(), {"-c", src.string(), "-o", obj.string()});
+
+  const auto Result = ncc(args);
+  ASSERT_EQ(Result.exitCode, 0) << Result.err;
+  EXPECT_TRUE(Result.stderrContains("[pcg] SUCCESS: merged")) << Result.err;
+  EXPECT_TRUE(Result.stderrContains("embedded split-DWARF contributions"))
+      << Result.err;
+  EXPECT_FALSE(fs::exists(obj.parent_path() / (obj.stem().string() + ".dwo")));
+  std::string Reason;
+  EXPECT_TRUE(inspectELFSplitDwarfSectionFlags(readFile(obj), Reason))
+      << Reason;
+}
+
+// NeverC's C-only frontend has no C++ ODR identifiers, so
+// -fdebug-types-section cannot itself manufacture a DW_UT_split_type here.
+// DwarfPackageTest covers real DWARF 5 type-unit rows; this integration test
+// ensures both the DWARF64 encoding and the type-unit option keep the dual
+// output path enabled.
+TEST_F(DebugTest, SplitDwarf64AndTypeUnitOptionRemainParallel) {
+  StrictParallelCodegen Strict;
+  ScopedEnvironmentVariable Debug("NEVERC_PCG_DEBUG", "1");
+  auto src = tmpFile("pcg_split_dwarf64_types.c");
+  writeFile(src, makePartitionedDebugSource("split_dwarf64_", 16));
+
+  struct Case {
+    const char *Name;
+    std::vector<std::string> Extra;
+  };
+  const Case Cases[] = {
+      {"dwarf64", {"-gdwarf64"}},
+      {"debug_types", {"-fdebug-types-section"}},
+  };
+
+  for (const Case &C : Cases) {
+    SCOPED_TRACE(C.Name);
+    auto obj = tmpFile(std::string("pcg_split_") + C.Name + ".o");
+    auto dwo = obj;
+    dwo.replace_extension(".dwo");
+    std::vector<std::string> args = {
+        "--target=x86_64-unknown-linux-gnu",
+        "-gdwarf-5",
+        "-gsplit-dwarf",
+        "-fno-lto",
+        "-fno-builtin-mimalloc",
+    };
+    args.insert(args.end(), C.Extra.begin(), C.Extra.end());
+    for (auto &Flag : forcePartitions(4))
+      args.push_back(Flag);
+    args.insert(args.end(), {"-c", src.string(), "-o", obj.string()});
+
+    const auto Result = ncc(args);
+    ASSERT_EQ(Result.exitCode, 0) << Result.err;
+    EXPECT_TRUE(Result.stderrContains("[pcg] SUCCESS: merged")) << Result.err;
+    EXPECT_TRUE(Result.stderrContains("split-DWARF contributions"))
+        << Result.err;
+    EXPECT_FALSE(readFile(obj).empty());
+    EXPECT_FALSE(readFile(dwo).empty());
+  }
+}
 
 // Whatever an alias resolves to has to keep its definition in every partition.
 // The rewrite that drops aliases from partitions other than 0 cannot run until

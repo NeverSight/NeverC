@@ -25,6 +25,7 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/Compression.h"
 #include "llvm/Support/MemoryBufferRef.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -47,9 +48,22 @@ enum class Format {
   COFF,
 };
 
+/// Semantic role of the object image being merged.
+///
+/// A normal relocatable object carries DWARF cross-section references as
+/// relocations on ELF/COFF. A standalone Split-DWARF object deliberately has
+/// no relocations: its `.debug_*.dwo` references are literal offsets and must
+/// be rebased when section contributions are concatenated.
+enum class ArtifactKind {
+  RelocatableObject,
+  SplitDwarf,
+};
+
 /// Tuning knobs for the merge.  Defaults match the LTO+parallel-codegen
 /// pipeline (pure C, no C++ COMDAT/SHT_GROUP).
 struct Options {
+  ArtifactKind artifact = ArtifactKind::RelocatableObject;
+
   /// Pure-C mode: skip C++ section types (SHT_GROUP, COMDAT,
   /// .gnu.linkonce.*).  Always safe for neverc's pipeline.
   bool pureC = true;
@@ -84,10 +98,19 @@ struct Options {
   /// Cost is one extra O(output) pass; merge is a tiny fraction of link
   /// time, so this is on by default.  Enforced for all three formats
   /// (ELF/COFF/MachO) by the format-specific content anchors in
-  /// Verify/MergerVerify.cpp; the Mach-O check additionally skips byte windows that
-  /// overlap a relocation site, because the Mach-O merger rewrites those bytes
-  /// in place (so they legitimately differ from the input).
+  /// Verify/MergerVerify.cpp; the Mach-O check additionally skips byte windows
+  /// that overlap a relocation site, because the Mach-O merger rewrites those
+  /// bytes in place (so they legitimately differ from the input).
   bool verify = true;
+
+  /// Compress final ELF `.debug_*` sections after every contribution has been
+  /// merged and (for SplitDwarf) rebased. Partition codegen must emit
+  /// uncompressed sections; concatenating independent compressed frames would
+  /// make every contribution after the first invisible.
+  ///
+  /// COFF intentionally ignores this setting, matching LLVM's object writer.
+  llvm::DebugCompressionType debugCompression =
+      llvm::DebugCompressionType::None;
 };
 
 /// Merge \p Buffers (each is a complete .o image) into a single .o of
@@ -119,6 +142,13 @@ bool verifyMerge(llvm::ArrayRef<llvm::StringRef> Inputs,
 bool verifyMerge(llvm::ArrayRef<llvm::SmallVector<char, 0>> Inputs,
                  llvm::ArrayRef<char> Output, Format Fmt,
                  const Options &Opts = {}, std::string *Err = nullptr);
+
+/// Validate a completed DWARF 5 split-debug pair. Every skeleton CU in the
+/// main object must have exactly one split CU with the same DWO ID, and neither
+/// side may contain duplicate IDs or malformed unit DIEs.
+bool verifySplitDwarfPair(llvm::ArrayRef<char> Object,
+                          llvm::ArrayRef<char> SplitDwarf, Format Fmt,
+                          std::string *Err = nullptr);
 
 // Per-format helpers — exported so the existing call sites in
 // ParallelCodeGenMerge.cpp / BackendUtil.cpp can keep their direct

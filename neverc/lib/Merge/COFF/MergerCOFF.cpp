@@ -21,6 +21,7 @@
 //
 //===------------------------------------------------------------------===//
 
+#include "Common/DwarfRebase.h"
 #include "Common/MergerCommon.h"
 #include "neverc/Merge/Merger.h"
 
@@ -113,6 +114,7 @@ bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     DenseMap<unsigned, uint64_t> SecOff;
   };
   SmallVector<PerPartition, 8> Maps;
+  SmallVector<PartitionDwarf, 8> PartDwarfs(Buffers.size());
 
   SmallVector<char, 0> SymbolTable;
   unsigned TotalSymbols = 0;
@@ -140,12 +142,13 @@ bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
   // coff_aux_weak_external::TagIndex is a *symbol-table index* into the input
   // partition that names the weak symbol's default definition.  Merging appends
   // every partition's symbols, shifting all indices, so each TagIndex must be
-  // remapped through its partition's SymMap once every SymMap is final — exactly
-  // like a relocation's SymbolTableIndex.  Copying it verbatim (the historical
-  // behavior) aliased the weak symbol onto an unrelated merged definition: a
-  // miscompile no content/offset anchor can catch, because aux records carry no
-  // section bytes.  Record each aux's TagIndex byte offset in SymbolTable plus
-  // its source partition and original index; fix them up after the symbol loop.
+  // remapped through its partition's SymMap once every SymMap is final —
+  // exactly like a relocation's SymbolTableIndex.  Copying it verbatim (the
+  // historical behavior) aliased the weak symbol onto an unrelated merged
+  // definition: a miscompile no content/offset anchor can catch, because aux
+  // records carry no section bytes.  Record each aux's TagIndex byte offset in
+  // SymbolTable plus its source partition and original index; fix them up after
+  // the symbol loop.
   struct WeakAuxFixup {
     size_t TagByteOff;
     unsigned Part;
@@ -219,15 +222,15 @@ bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
 
       // A section whose name is a malformed long-name escape (a "/<offset>"
       // pointing outside the COFF string table) makes getSectionName return an
-      // Expected error.  The prior `SNameOrErr ? *SNameOrErr : ""` consulted the
-      // value but never *consumed* the error, so in an assertions /
+      // Expected error.  The prior `SNameOrErr ? *SNameOrErr : ""` consulted
+      // the value but never *consumed* the error, so in an assertions /
       // ABI-breaking-checks build the Expected's destructor aborted the whole
       // process ("Expected<T> must be checked before access or destruction ...
       // invalid section name") at the next scope exit — a crash on hostile -r
       // input the merge fuzzer found in seconds.  Consume the error and refuse:
-      // a section that cannot even be named cannot be routed to the right merged
-      // section, mirroring the getSymbolName failure handling below.  A valid
-      // object never errors here, so this never false-rejects.
+      // a section that cannot even be named cannot be routed to the right
+      // merged section, mirroring the getSymbolName failure handling below.  A
+      // valid object never errors here, so this never false-rejects.
       auto SNameOrErr = Obj.getSectionName(CS);
       if (!SNameOrErr) {
         consumeError(SNameOrErr.takeError());
@@ -250,13 +253,14 @@ bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
       // emits VirtualAddress 0.  A non-zero VirtualAddress means a malformed or
       // hostile object, or a linked image mis-fed as a relocatable input.  This
       // merger treats every symbol/relocation offset as section-relative from
-      // 0, so a non-zero base would mis-place the section's symbols — and, worse,
-      // the instant we iterate such a section's relocations below, LLVM's
-      // COFFObjectFile::section_rel_begin hard-aborts the whole process via
-      // report_fatal_error("Sections with relocations should have an address of
-      // 0") rather than returning an error we can catch.  Refuse gracefully so
-      // the caller falls back to serial codegen / a real linker instead of the
-      // process dying (found by the merge fuzzer on a crafted .obj).
+      // 0, so a non-zero base would mis-place the section's symbols — and,
+      // worse, the instant we iterate such a section's relocations below,
+      // LLVM's COFFObjectFile::section_rel_begin hard-aborts the whole process
+      // via report_fatal_error("Sections with relocations should have an
+      // address of 0") rather than returning an error we can catch.  Refuse
+      // gracefully so the caller falls back to serial codegen / a real linker
+      // instead of the process dying (found by the merge fuzzer on a crafted
+      // .obj).
       if (CS->VirtualAddress != 0) {
         errs() << "neverc: COFF relocatable merge: section '" << SecName
                << "' has non-zero VirtualAddress " << CS->VirtualAddress
@@ -312,6 +316,8 @@ bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
 
       PM.SecMap[PartSecOrdinal] = MIdx + 1;
       PM.SecOff[PartSecOrdinal] = PartOffset;
+      if (Opts.artifact == ArtifactKind::SplitDwarf)
+        PartDwarfs[p].record(SecName, MIdx, PartOffset, CS->SizeOfRawData);
 
       for (const auto &R : Sec.relocations()) {
         coff_relocation CR;
@@ -320,10 +326,11 @@ bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
         if (SymOrErr != Obj.symbol_end()) {
           // getRelocationSymbol only checks the relocation's symbol index
           // against getNumberOfSymbols(), which keeps returning the untrusted
-          // header count even after a failed/recovered symbol-table load, so the
-          // returned SymbolRef can still point off the symbol table.  Validate
-          // the record lies inside this input before getCOFFSymbol's toSymb
-          // dereferences it (a fuzzer-reproduced OOB read / assert otherwise).
+          // header count even after a failed/recovered symbol-table load, so
+          // the returned SymbolRef can still point off the symbol table.
+          // Validate the record lies inside this input before getCOFFSymbol's
+          // toSymb dereferences it (a fuzzer-reproduced OOB read / assert
+          // otherwise).
           const char *SymPtr =
               reinterpret_cast<const char *>(SymOrErr->getRawDataRefImpl().p);
           if (SymPtr < BufBegin || SymPtr + sizeof(coff_symbol16) > BufEnd) {
@@ -385,9 +392,9 @@ bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
       // (the untrusted header count); when the symbol table failed to load it
       // can still hand back a COFFSymbolRef whose 18-byte record straddles the
       // end of the object, so reading any field of it (starting with
-      // NumberOfAuxSymbols just below) is an out-of-bounds read the merge fuzzer
-      // reproduces.  Validate the whole primary record lies inside this input
-      // before touching it.
+      // NumberOfAuxSymbols just below) is an out-of-bounds read the merge
+      // fuzzer reproduces.  Validate the whole primary record lies inside this
+      // input before touching it.
       const char *SymRec = reinterpret_cast<const char *>(CSym.getRawPtr());
       if (SymRec < BufBegin || SymRec + sizeof(coff_symbol16) > BufEnd) {
         errs() << "neverc: COFF relocatable merge: symbol record runs past the "
@@ -491,10 +498,11 @@ bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
         // A symbol whose NumberOfAuxSymbols runs past the end of the symbol
         // table makes this 18-byte read (and the memcpy of aux structs below)
         // walk off the input buffer into unrelated heap memory, copying
-        // uninitialized bytes into the output (a non-deterministic, info-leaking
-        // merge) and potentially faulting.  LLVM's symbol iterator validates
-        // the primary record but not these manually-indexed aux slots, so guard
-        // them here.  Found by the merge fuzzer on a crafted symbol table.
+        // uninitialized bytes into the output (a non-deterministic,
+        // info-leaking merge) and potentially faulting.  LLVM's symbol iterator
+        // validates the primary record but not these manually-indexed aux
+        // slots, so guard them here.  Found by the merge fuzzer on a crafted
+        // symbol table.
         if (reinterpret_cast<const char *>(AuxData) < BufBegin ||
             reinterpret_cast<const char *>(AuxData) + 18 > BufEnd) {
           errs() << "neverc: COFF relocatable merge: symbol '" << Name
@@ -578,11 +586,45 @@ bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     }
   }
 
-  // Note: unlike ELF and Mach-O, COFF does not need a DWARF rebase pass here.
-  // It expresses the offsets one DWARF section holds into another as
-  // IMAGE_REL_AMD64_ADDR32 relocations rather than as literal integers, so the
-  // relocation remapping below already re-points them.  Rewriting the bytes as
-  // well would apply the shift twice.
+  // A multi-unit DWO is a DWARF package. Its units intentionally leave
+  // contribution bases at zero; the CU/TU indexes map each signature to the
+  // corresponding abbreviation/string/range/location slices.
+  if (Opts.artifact == ArtifactKind::SplitDwarf) {
+    DwarfPackageIndexes Indexes;
+    if (!finalizeDwarfPackage(
+            PartDwarfs,
+            [&](unsigned Idx) {
+              return Idx < MergedSections.size()
+                         ? MutableArrayRef<char>(MergedSections[Idx].Data)
+                         : MutableArrayRef<char>();
+            },
+            /*IsLittleEndian=*/true, Indexes))
+      return false;
+
+    // Package indexes are part of the split-debug payload too. In embedded
+    // (`-gsplit-dwarf=single`) objects the linker must discard them together
+    // with the `.debug_*.dwo` sections rather than leave an orphan index in the
+    // linked image.
+    constexpr uint32_t IndexCharacteristics =
+        IMAGE_SCN_MEM_DISCARDABLE | IMAGE_SCN_LNK_REMOVE |
+        IMAGE_SCN_CNT_INITIALIZED_DATA | IMAGE_SCN_MEM_READ;
+    auto AddIndex = [&](StringRef Name, SmallVector<char, 0> Data) {
+      if (Data.empty())
+        return true;
+      if (SectionIndex.find(Name) != SectionIndex.end())
+        return false;
+      const unsigned Idx = findOrCreateSection(Name, IndexCharacteristics);
+      MergedSection &Section = MergedSections[Idx];
+      Section.Alignment = 4;
+      Section.Data = std::move(Data);
+      Section.VirtualSize = Section.Data.size();
+      return true;
+    };
+    if (!AddIndex(".debug_cu_index", std::move(Indexes.CompileUnits)) ||
+        !AddIndex(".debug_tu_index", std::move(Indexes.TypeUnits)))
+      return false;
+  }
+
   for (auto &MS : MergedSections) {
     for (auto &RE : MS.Relocs) {
       if (RE.PartIdx >= Maps.size())
@@ -598,11 +640,12 @@ bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
   }
 
   // Remap weak external aux TagIndex fields now that every SymMap is final.  A
-  // TagIndex with no merged counterpart means the default definition dropped out
-  // of the merge; refuse rather than leave the weak symbol aliased to whatever
-  // sits at the stale index (mirrors the relocation remap above and the merger's
-  // "refuse rather than miscompile" stance).  TagIndex is written little-endian
-  // and the aux record is 18 bytes, so [TagByteOff, TagByteOff+4) is in range.
+  // TagIndex with no merged counterpart means the default definition dropped
+  // out of the merge; refuse rather than leave the weak symbol aliased to
+  // whatever sits at the stale index (mirrors the relocation remap above and
+  // the merger's "refuse rather than miscompile" stance).  TagIndex is written
+  // little-endian and the aux record is 18 bytes, so [TagByteOff, TagByteOff+4)
+  // is in range.
   for (auto &WF : WeakAuxFixups) {
     if (WF.Part >= Maps.size())
       return false;

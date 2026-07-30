@@ -11,10 +11,11 @@
 //
 // This rewrites those offsets so they address the merged sections.
 //
-// Mach-O needs it.  ELF and COFF do not: they express the same offsets as
-// relocations, which the merger's relocation remapping already re-points, and
-// rewriting the bytes too would be redundant -- on ELF the literal bytes are
-// not even the operand the linker uses (RELA takes the value from the addend).
+// Mach-O needs it.  Ordinary ELF and COFF objects do not: they express the
+// same offsets as relocations, which the merger's relocation remapping
+// already re-points.  Standalone Split-DWARF objects are the exception: their
+// `.dwo` sections deliberately contain no relocations, so ELF and COFF DWO
+// contributions must be rewritten after concatenation too.
 //
 // Apple accelerator tables (__apple_names and friends, emitted for DWARF 4
 // and earlier) put one unchainable hash-table header at the start of their
@@ -28,6 +29,8 @@
 #define NEVERC_LIB_MERGE_COMMON_DWARFREBASE_H
 
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/STLFunctionalExtras.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 
 #include <array>
@@ -84,6 +87,7 @@ constexpr bool dwarfSectionContentsAreRebased(DwarfSection S) {
   case DwarfSection::Line:
   case DwarfSection::Frame:
   case DwarfSection::StrOffsets:
+  case DwarfSection::Macro:
   case DwarfSection::Names:
     return true;
   default:
@@ -141,6 +145,28 @@ using DwarfSlices =
 /// failed rather than emit the object.
 bool rebasePartitionDwarf(const DwarfSlices &Slices, const PartitionDwarf &Part,
                           bool IsLittleEndian);
+
+/// The package indexes needed when several standalone DWO contributions are
+/// placed in one file. Split units intentionally omit section-base attributes;
+/// without these indexes every unit would read partition zero's string,
+/// range, location, and abbreviation contributions.
+struct DwarfPackageIndexes {
+  llvm::SmallVector<char, 0> CompileUnits;
+  llvm::SmallVector<char, 0> TypeUnits;
+};
+
+/// Finalize a merged DWARF 5 package.
+///
+/// String-offset entries are made absolute within the merged `.debug_str.dwo`
+/// section. All other contribution-relative offsets remain untouched and are
+/// resolved through the returned `.debug_cu_index` / `.debug_tu_index`.
+///
+/// Returns false for malformed units, duplicate signatures, out-of-range
+/// contributions, or package-index values that exceed DWARF 5's 32-bit fields.
+bool finalizeDwarfPackage(
+    llvm::ArrayRef<PartitionDwarf> Partitions,
+    llvm::function_ref<llvm::MutableArrayRef<char>(unsigned)> SectionData,
+    bool IsLittleEndian, DwarfPackageIndexes &Indexes);
 
 /// Rebase every partition of one merged object.
 ///

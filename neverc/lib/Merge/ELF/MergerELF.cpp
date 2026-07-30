@@ -21,6 +21,7 @@
 //
 //===------------------------------------------------------------------===//
 
+#include "Common/DwarfRebase.h"
 #include "Common/MergerCommon.h"
 #include "neverc/Merge/Merger.h"
 
@@ -30,6 +31,7 @@
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Object/ELFObjectFile.h"
+#include "llvm/Support/Compression.h"
 #include "llvm/Support/Error.h"
 
 #include <cstdint>
@@ -199,6 +201,7 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     DenseMap<unsigned, uint64_t> SecOff;
   };
   SmallVector<PerPartition, 8> Maps;
+  SmallVector<PartitionDwarf, 8> PartDwarfs(Buffers.size());
 
   // Symbol table: locals first, then globals (ELF convention).
   // In -r mode LLD does NOT recompute bindings (ElfImageEmitter.cpp:1829).
@@ -314,15 +317,15 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     DenseSet<unsigned> SectionHasRelocTarget;
     for (const Shdr &RS : Secs)
       if (RS.sh_type == SHT_RELA || RS.sh_type == SHT_REL)
-        // sh_info (the relocated target section index) is read straight from the
-        // input, so a hostile/fuzzed object can set it to DenseMap's reserved
-        // empty (~0u) or tombstone (~0u-1) key — inserting which asserts under
-        // LLVM_ENABLE_ASSERTIONS (the merge fuzzer's recurring "Empty/Tombstone
-        // value shouldn't be inserted" abort) and is UB otherwise.  A real reloc
-        // target is always a valid section index, and the sole consumer
-        // (count(i) with i in [1, Secs.size())) can never match an out-of-range
-        // value, so bounding it here is behavior-preserving and also excludes
-        // both reserved keys.
+        // sh_info (the relocated target section index) is read straight from
+        // the input, so a hostile/fuzzed object can set it to DenseMap's
+        // reserved empty (~0u) or tombstone (~0u-1) key — inserting which
+        // asserts under LLVM_ENABLE_ASSERTIONS (the merge fuzzer's recurring
+        // "Empty/Tombstone value shouldn't be inserted" abort) and is UB
+        // otherwise.  A real reloc target is always a valid section index, and
+        // the sole consumer (count(i) with i in [1, Secs.size())) can never
+        // match an out-of-range value, so bounding it here is
+        // behavior-preserving and also excludes both reserved keys.
         if (RS.sh_info < Secs.size())
           SectionHasRelocTarget.insert(RS.sh_info);
 
@@ -369,6 +372,14 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
         return false;
       }
       StringRef SecName = *NameOrErr;
+
+      if (Opts.artifact == ArtifactKind::SplitDwarf &&
+          (S.sh_flags & SHF_COMPRESSED)) {
+        errs() << "neverc: split-DWARF merge requires uncompressed partition "
+                  "sections; refusing pre-compressed section '"
+               << SecName << "'\n";
+        return false;
+      }
 
       // SHF_LINK_ORDER sections (e.g. __patchable_function_entries emitted by
       // -fpatchable-function-entry for ftrace) carry an sh_link to an
@@ -544,6 +555,8 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
 
       PM.SecMap[i] = MIdx + 1;
       PM.SecOff[i] = PartOffset;
+      if (Opts.artifact == ArtifactKind::SplitDwarf)
+        PartDwarfs[p].record(SecName, MIdx, PartOffset, S.sh_size);
     }
 
     // ----- Phase 2: Merge symbols -----
@@ -582,10 +595,10 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
 
         // strnlen-bound the name to the string table extent.  llvm's
         // getStringTableForSymtab guarantees a trailing NUL (it errors
-        // otherwise), so for well-formed input this is identical to the implicit
-        // strlen; the explicit bound keeps every merger's symbol-name read
-        // uniformly safe (matching the MachO merger and the verifier) and immune
-        // to any future reader that stops validating the terminator.
+        // otherwise), so for well-formed input this is identical to the
+        // implicit strlen; the explicit bound keeps every merger's symbol-name
+        // read uniformly safe (matching the MachO merger and the verifier) and
+        // immune to any future reader that stops validating the terminator.
         StringRef Name;
         if (OutS.st_name < SymStr.size())
           Name = StringRef(SymStr.data() + OutS.st_name,
@@ -693,14 +706,48 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     }
   }
 
-  // No DWARF offset rewriting here, unlike Mach-O: ELF expresses every
-  // cross-section DWARF reference as a relocation against the target
-  // section's symbol (MCAsmInfo::DwarfUsesRelocationsAcrossSections, which
-  // only MCAsmInfoDarwin clears).  Each partition keeps its own section
-  // symbol, whose st_value is where that partition landed, so the linker's
-  // S + A already yields the merged offset -- and for RELA it is the addend,
-  // not the bytes in the section, that supplies A.  Rewriting the bytes would
-  // change nothing a debugger ever reads.  See Common/DwarfRebase.h.
+  // Multiple standalone DWO files form a DWARF package, not a plain
+  // concatenate-and-rebase image. Split units deliberately omit their
+  // abbreviation/string/range bases; package indexes select the matching
+  // contribution by DWO ID. Rewriting those fields as absolute offsets would
+  // make an indexed consumer apply the partition shift twice.
+  if (Opts.artifact == ArtifactKind::SplitDwarf) {
+    DwarfPackageIndexes Indexes;
+    if (!finalizeDwarfPackage(
+            PartDwarfs,
+            [&](unsigned Idx) {
+              return Idx < MergedSections.size()
+                         ? MutableArrayRef<char>(MergedSections[Idx].Data)
+                         : MutableArrayRef<char>();
+            },
+            /*IsLittleEndian=*/true, Indexes))
+      return false;
+
+    auto AddIndex = [&](StringRef Name, SmallVector<char, 0> Data) {
+      if (Data.empty())
+        return true;
+      if (SectionIndex.find(Name) != SectionIndex.end())
+        return false;
+      MergedSection Section;
+      Section.Name = Name.str();
+      memset(&Section.Template, 0, sizeof(Shdr));
+      Section.Template.sh_type = SHT_PROGBITS;
+      // The index is part of the split-debug payload. In an embedded
+      // (`-gsplit-dwarf=single`) object the linker must discard it together
+      // with the `.debug_*.dwo` contributions rather than leave an orphan
+      // package index in the linked image.
+      Section.Template.sh_flags = SHF_EXCLUDE;
+      Section.Template.sh_addralign = 4;
+      Section.Data = std::move(Data);
+      Section.VirtualSize = Section.Data.size();
+      SectionIndex[Name].push_back(MergedSections.size());
+      MergedSections.push_back(std::move(Section));
+      return true;
+    };
+    if (!AddIndex(".debug_cu_index", std::move(Indexes.CompileUnits)) ||
+        !AddIndex(".debug_tu_index", std::move(Indexes.TypeUnits)))
+      return false;
+  }
 
   // ----- Finalize global symbol indices -----
   // During the loop, global SymMap entries store (slot | 0x80000000).
@@ -807,6 +854,72 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     OutSections.push_back(std::move(Out));
   }
 
+  // Partition object writers are forced to emit uncompressed debug sections.
+  // Compress only after concatenation and Split-DWARF rebasing, producing one
+  // canonical frame per final section.  A round trip is required before the
+  // bytes become observable so an unavailable/broken codec can only trigger
+  // the serial fallback, never commit a corrupt debug artifact.
+  if (Opts.debugCompression != DebugCompressionType::None) {
+    const compression::Format CompressionFormat =
+        compression::formatFor(Opts.debugCompression);
+    if (const char *Reason =
+            compression::getReasonIfUnsupported(CompressionFormat)) {
+      errs() << "neverc: cannot compress merged DWARF: " << Reason << "\n";
+      return false;
+    }
+
+    using Chdr = typename ELFT::Chdr;
+    const uint32_t ChType = Opts.debugCompression == DebugCompressionType::Zlib
+                                ? ELFCOMPRESS_ZLIB
+                                : ELFCOMPRESS_ZSTD;
+    for (unsigned I = 1; I < OutSections.size(); ++I) {
+      OutSection &S = OutSections[I];
+      const StringRef Name = MergedSections[I - 1].Name;
+      if (!Name.starts_with(".debug_") || (S.Hdr.sh_flags & SHF_ALLOC) ||
+          S.Hdr.sh_type == SHT_NOBITS || S.Data.empty())
+        continue;
+      if (S.Hdr.sh_flags & SHF_COMPRESSED)
+        return false;
+
+      ArrayRef<uint8_t> Uncompressed(
+          reinterpret_cast<const uint8_t *>(S.Data.data()), S.Data.size());
+      SmallVector<uint8_t, 0> Compressed;
+      compression::compress(compression::Params(CompressionFormat),
+                            Uncompressed, Compressed);
+      if (Uncompressed.size() <= sizeof(Chdr) + Compressed.size())
+        continue;
+
+      SmallVector<uint8_t, 0> RoundTrip;
+      if (Error E = compression::decompress(CompressionFormat, Compressed,
+                                            RoundTrip, Uncompressed.size())) {
+        consumeError(std::move(E));
+        return false;
+      }
+      if (RoundTrip.size() != Uncompressed.size() ||
+          !std::equal(RoundTrip.begin(), RoundTrip.end(), Uncompressed.begin()))
+        return false;
+
+      Chdr Header{};
+      Header.ch_type = ChType;
+      Header.ch_reserved = 0;
+      Header.ch_size = Uncompressed.size();
+      Header.ch_addralign = clampAlign(S.Hdr.sh_addralign);
+      SmallVector<char, 0> Encoded;
+      Encoded.append(reinterpret_cast<const char *>(&Header),
+                     reinterpret_cast<const char *>(&Header) + sizeof(Header));
+      Encoded.append(reinterpret_cast<const char *>(Compressed.data()),
+                     reinterpret_cast<const char *>(Compressed.data()) +
+                         Compressed.size());
+      S.Data = std::move(Encoded);
+      S.VirtualSize = S.Data.size();
+      S.Hdr.sh_flags |= SHF_COMPRESSED;
+      // ELFT::Chdr uses packed endian-aware integer wrappers and therefore has
+      // C++ alignment 1. The ELF64 ABI still requires the on-disk compression
+      // header to be 8-byte aligned.
+      S.Hdr.sh_addralign = alignof(Elf64_Chdr);
+    }
+  }
+
   // Remap SHF_LINK_ORDER sh_link to the merged target section now that every
   // content section exists.  Output section index == merged section index + 1
   // (slot 0 is the null section).  A consistent, present target yields a valid
@@ -902,7 +1015,8 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
   // layer the verifier (which trusts the parsed header) cannot see.  Refuse
   // instead so the caller falls back to serial codegen / a real linker.  Only
   // reachable on a single link of tens of thousands of per-function sections
-  // (FunctionSections); the kernel-module mergeSections path folds to a handful.
+  // (FunctionSections); the kernel-module mergeSections path folds to a
+  // handful.
   if (OutSections.size() >= ELF::SHN_LORESERVE) {
     errs() << "neverc: relocatable merge produced " << OutSections.size()
            << " sections, exceeding the ELF e_shnum limit ("

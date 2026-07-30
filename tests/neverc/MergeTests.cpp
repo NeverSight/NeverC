@@ -18,11 +18,14 @@
 #include "llvm/BinaryFormat/COFF.h"
 #include "llvm/BinaryFormat/ELF.h"
 #include "llvm/BinaryFormat/MachO.h"
+#include "llvm/DebugInfo/DWARF/DWARFUnitIndex.h"
+#include "llvm/Support/DataExtractor.h"
 #include "llvm/Support/raw_ostream.h"
 
 // Used only by the NEVERC_BINARY-gated differential suite at end of file, but
 // harmless to include unconditionally.
 #include "llvm/Object/ObjectFile.h"
+#include "llvm/Support/Compression.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
@@ -51,20 +54,21 @@ TEST(DwarfRebaseTest, RecognizesSupportedMachOAndELFSectionNames) {
   EXPECT_EQ(classifyDwarfSection("__debug_aranges"), DwarfSection::Aranges);
   EXPECT_EQ(classifyDwarfSection("__debug_pubnames"), DwarfSection::PubNames);
   EXPECT_EQ(classifyDwarfSection("__debug_gnu_pubt"), DwarfSection::PubTypes);
-  EXPECT_EQ(classifyDwarfSection("__debug_str_offs"),
-            DwarfSection::StrOffsets);
+  EXPECT_EQ(classifyDwarfSection("__debug_str_offs"), DwarfSection::StrOffsets);
   EXPECT_EQ(classifyDwarfSection(".debug_types"), DwarfSection::Types);
   EXPECT_EQ(classifyDwarfSection(".debug_frame"), DwarfSection::Frame);
   EXPECT_EQ(classifyDwarfSection(".debug_rnglists"), DwarfSection::RngLists);
+  EXPECT_EQ(classifyDwarfSection(".debug_info.dwo"), DwarfSection::Info);
+  EXPECT_EQ(classifyDwarfSection(".debug_str_offsets.dwo"),
+            DwarfSection::StrOffsets);
   EXPECT_EQ(classifyDwarfSection("__apple_names"), DwarfSection::Count);
 }
 
 TEST(DwarfRebaseTest, IdentifiesEverySectionWhoseBytesAreRewritten) {
   constexpr DwarfSection Rewritten[] = {
-      DwarfSection::Info,       DwarfSection::Types,
-      DwarfSection::Aranges,    DwarfSection::PubNames,
-      DwarfSection::PubTypes,   DwarfSection::Line,
-      DwarfSection::Frame,      DwarfSection::StrOffsets,
+      DwarfSection::Info,     DwarfSection::Types,      DwarfSection::Aranges,
+      DwarfSection::PubNames, DwarfSection::PubTypes,   DwarfSection::Line,
+      DwarfSection::Frame,    DwarfSection::StrOffsets, DwarfSection::Macro,
       DwarfSection::Names,
   };
   for (DwarfSection Section : Rewritten)
@@ -74,7 +78,7 @@ TEST(DwarfRebaseTest, IdentifiesEverySectionWhoseBytesAreRewritten) {
       DwarfSection::Abbrev,   DwarfSection::Str,      DwarfSection::LineStr,
       DwarfSection::Ranges,   DwarfSection::RngLists, DwarfSection::Loc,
       DwarfSection::LocLists, DwarfSection::Addr,     DwarfSection::MacInfo,
-      DwarfSection::Macro,    DwarfSection::Count,
+      DwarfSection::Count,
   };
   for (DwarfSection Section : CopiedVerbatim)
     EXPECT_FALSE(dwarfSectionContentsAreRebased(Section));
@@ -242,8 +246,85 @@ TEST(DwarfRebaseTest, RejectsTruncatedLebWithoutLosingParserProgress) {
   Slices[dwarfSectionIndex(DwarfSection::Info)] = Info;
   Slices[dwarfSectionIndex(DwarfSection::Abbrev)] = Abbrev;
 
-  EXPECT_FALSE(
-      rebasePartitionDwarf(Slices, Part, /*IsLittleEndian=*/true));
+  EXPECT_FALSE(rebasePartitionDwarf(Slices, Part, /*IsLittleEndian=*/true));
+}
+
+TEST(DwarfRebaseTest, RewritesLengthlessDwarf5MacroUnits) {
+  std::array<char, 50> Macro = {
+      // DWARF32 unit: version, flags, line offset, define_strp, import, end.
+      5,
+      0,
+      0x02,
+      0x10,
+      0,
+      0,
+      0,
+      0x05,
+      1,
+      0x20,
+      0,
+      0,
+      0,
+      0x07,
+      0x30,
+      0,
+      0,
+      0,
+      0,
+      // DWARF64 unit. Macro units are delimited by opcode 0, not unit_length.
+      5,
+      0,
+      0x03,
+      0x40,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0x06,
+      2,
+      0x50,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0x07,
+      0x60,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+  };
+
+  PartitionDwarf Part;
+  Part.record(DwarfSection::Macro, 0, 0x300, Macro.size());
+  Part.record(DwarfSection::Line, 1, 0x100, 1);
+  Part.record(DwarfSection::Str, 2, 0x200, 1);
+  DwarfSlices Slices;
+  Slices[dwarfSectionIndex(DwarfSection::Macro)] = Macro;
+
+  ASSERT_TRUE(rebasePartitionDwarf(Slices, Part, /*IsLittleEndian=*/true));
+  EXPECT_EQ(static_cast<unsigned char>(Macro[3]), 0x10u);
+  EXPECT_EQ(static_cast<unsigned char>(Macro[4]), 0x01u);
+  EXPECT_EQ(static_cast<unsigned char>(Macro[9]), 0x20u);
+  EXPECT_EQ(static_cast<unsigned char>(Macro[10]), 0x02u);
+  EXPECT_EQ(static_cast<unsigned char>(Macro[14]), 0x30u);
+  EXPECT_EQ(static_cast<unsigned char>(Macro[15]), 0x03u);
+  EXPECT_EQ(static_cast<unsigned char>(Macro[22]), 0x40u);
+  EXPECT_EQ(static_cast<unsigned char>(Macro[23]), 0x01u);
+  EXPECT_EQ(static_cast<unsigned char>(Macro[32]), 0x50u);
+  EXPECT_EQ(static_cast<unsigned char>(Macro[33]), 0x02u);
+  EXPECT_EQ(static_cast<unsigned char>(Macro[41]), 0x60u);
+  EXPECT_EQ(static_cast<unsigned char>(Macro[42]), 0x03u);
 }
 
 // ---------------------------------------------------------------------------
@@ -598,7 +679,8 @@ SmallVector<char, 0> buildSectionedELF(ArrayRef<SecSpec> Secs,
     RelTab[R.SecIdx].push_back(RE);
   }
 
-  // File layout: Ehdr, section contents, symtab, strtab, shstrtab, relas, shdrs.
+  // File layout: Ehdr, section contents, symtab, strtab, shstrtab, relas,
+  // shdrs.
   uint64_t Off = sizeof(Ehdr);
   SmallVector<uint64_t, 8> SecOff(K, 0);
   for (unsigned i = 0; i < K; ++i) {
@@ -858,6 +940,36 @@ ElfView parseELF(ArrayRef<char> Buf) {
   return V;
 }
 
+std::optional<SmallVector<uint8_t, 0>>
+decompressELFSection(const ParsedSec &Section,
+                     DebugCompressionType CompressionType) {
+  using Chdr = ELF::Elf64_Chdr;
+  if (!(Section.Flags & ELF::SHF_COMPRESSED) ||
+      Section.Data.size() < sizeof(Chdr))
+    return std::nullopt;
+
+  Chdr Header{};
+  memcpy(&Header, Section.Data.data(), sizeof(Header));
+  const uint32_t ExpectedType = CompressionType == DebugCompressionType::Zlib
+                                    ? ELF::ELFCOMPRESS_ZLIB
+                                    : ELF::ELFCOMPRESS_ZSTD;
+  if (Header.ch_type != ExpectedType)
+    return std::nullopt;
+
+  const compression::Format Format = compression::formatFor(CompressionType);
+  ArrayRef<uint8_t> Payload(Section.Data.data() + sizeof(Header),
+                            Section.Data.size() - sizeof(Header));
+  SmallVector<uint8_t, 0> Decompressed;
+  if (Error E = compression::decompress(Format, Payload, Decompressed,
+                                        Header.ch_size)) {
+    consumeError(std::move(E));
+    return std::nullopt;
+  }
+  if (Decompressed.size() != Header.ch_size)
+    return std::nullopt;
+  return Decompressed;
+}
+
 /// Overwrite a named symbol's st_value in a merged ELF, in place.  Used to
 /// *simulate* the historical "offset collapse" corruption so a test can prove
 /// the verifier rejects it (the merger no longer produces such output, so the
@@ -931,7 +1043,8 @@ bool corruptSymbolContentByte(SmallVectorImpl<char> &Buf, StringRef Name) {
 /// Overwrite *every* symbol named Name (not just the first) — the faithful
 /// shape of the historical bug, which collapsed all symbol values at once.
 /// patchSymValue stops at the first match, so it cannot reproduce a collapse of
-/// duplicate-named symbols (two file-local statics that share a name); this can.
+/// duplicate-named symbols (two file-local statics that share a name); this
+/// can.
 bool patchAllSymValues(SmallVectorImpl<char> &Buf, StringRef Name,
                        uint64_t NewVal) {
   using namespace ELF;
@@ -1944,6 +2057,215 @@ std::optional<uint32_t> readMachoSecWord(ArrayRef<char> Buf, StringRef Seg,
 // Edge-case tests: ELF merger
 // ---------------------------------------------------------------------------
 
+static void
+expectDeterministicDebugCompression(DebugCompressionType CompressionType) {
+  using namespace ELF;
+
+  SecSpec Debug0{".debug_str", 4096, 16, SHT_PROGBITS, 0, 0x41};
+  SecSpec AllocatedDebug0{".debug_alloc", 4096,      16,
+                          SHT_PROGBITS,   SHF_ALLOC, 0x51};
+  SecSpec Text0{".text", 64, 16, SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR, 0x91};
+  SecSpec Debug1{".debug_str", 4096, 16, SHT_PROGBITS, 0, 0x42};
+  SecSpec AllocatedDebug1{".debug_alloc", 4096,      16,
+                          SHT_PROGBITS,   SHF_ALLOC, 0x52};
+  SecSpec Text1{".text", 64, 16, SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR, 0x92};
+  // AArch64 object writers emit local mapping symbols into data-like debug
+  // sections. Keep explicit anchors here so the independent verifier must
+  // compare logical (decompressed) bytes instead of the on-disk compression
+  // header/payload.
+  auto Object0 = buildSectionedELF(
+      {Debug0, AllocatedDebug0, Text0},
+      {SymSpec{"debug_anchor0", 0, 0}, SymSpec{"f0", 2, 0}}, {});
+  auto Object1 = buildSectionedELF(
+      {Debug1, AllocatedDebug1, Text1},
+      {SymSpec{"debug_anchor1", 0, 0}, SymSpec{"f1", 2, 0}}, {});
+
+  SmallVector<SmallVector<char, 0>, 2> Buffers;
+  Buffers.push_back(std::move(Object0));
+  Buffers.push_back(std::move(Object1));
+  Options Opts;
+  Opts.debugCompression = CompressionType;
+
+  auto [FirstOK, First] = mergeELF(Buffers, Opts);
+  auto [SecondOK, Second] = mergeELF(Buffers, Opts);
+  ASSERT_TRUE(FirstOK);
+  ASSERT_TRUE(SecondOK);
+  std::string VerifyError;
+  ASSERT_TRUE(verifyMerge(Buffers, First, Format::ELF64LE, Opts, &VerifyError))
+      << VerifyError;
+  EXPECT_EQ(ArrayRef<char>(First), ArrayRef<char>(Second));
+
+  ElfView View = parseELF(First);
+  ASSERT_TRUE(View.Ok);
+  const int DebugIndex = View.findSec(".debug_str");
+  const int AllocatedDebugIndex = View.findSec(".debug_alloc");
+  const int TextIndex = View.findSec(".text");
+  ASSERT_GE(DebugIndex, 0);
+  ASSERT_GE(AllocatedDebugIndex, 0);
+  ASSERT_GE(TextIndex, 0);
+  const ParsedSec &Debug = View.Secs[DebugIndex];
+  const ParsedSec &AllocatedDebug = View.Secs[AllocatedDebugIndex];
+  const ParsedSec &Text = View.Secs[TextIndex];
+  EXPECT_NE(Debug.Flags & SHF_COMPRESSED, 0u);
+  EXPECT_EQ(Debug.Align, alignof(Elf64_Chdr));
+  EXPECT_EQ(AllocatedDebug.Flags & SHF_COMPRESSED, 0u);
+  EXPECT_EQ(Text.Flags & SHF_COMPRESSED, 0u);
+
+  ASSERT_GE(Debug.Data.size(), sizeof(Elf64_Chdr));
+  Elf64_Chdr Header{};
+  memcpy(&Header, Debug.Data.data(), sizeof(Header));
+  EXPECT_EQ(Header.ch_addralign, 16u);
+  EXPECT_EQ(Header.ch_size, 8192u);
+
+  std::optional<SmallVector<uint8_t, 0>> Decompressed =
+      decompressELFSection(Debug, CompressionType);
+  ASSERT_TRUE(Decompressed);
+  ASSERT_EQ(Decompressed->size(), 8192u);
+  EXPECT_TRUE(std::all_of(Decompressed->begin(), Decompressed->begin() + 4096,
+                          [](uint8_t Byte) { return Byte == 0x41; }));
+  EXPECT_TRUE(std::all_of(Decompressed->begin() + 4096, Decompressed->end(),
+                          [](uint8_t Byte) { return Byte == 0x42; }));
+}
+
+TEST(MergeELFCompression, ZlibRoundTripsAndIsDeterministic) {
+  const compression::Format Format =
+      compression::formatFor(DebugCompressionType::Zlib);
+  if (const char *Reason = compression::getReasonIfUnsupported(Format))
+    GTEST_SKIP() << Reason;
+  expectDeterministicDebugCompression(DebugCompressionType::Zlib);
+}
+
+TEST(MergeELFCompression, ZstdRoundTripsAndIsDeterministic) {
+  const compression::Format Format =
+      compression::formatFor(DebugCompressionType::Zstd);
+  if (const char *Reason = compression::getReasonIfUnsupported(Format))
+    GTEST_SKIP() << Reason;
+  expectDeterministicDebugCompression(DebugCompressionType::Zstd);
+}
+
+// Standalone Split-DWARF contributions must arrive uncompressed. Concatenating
+// independent compressed frames would hide every contribution after the first.
+TEST(MergeELFSplitDwarf, RefusesPreCompressedDebugSections) {
+  using namespace ELF;
+  SecSpec Compressed{".debug_info.dwo", 64,  1, SHT_PROGBITS,
+                     SHF_COMPRESSED,    0x11};
+  auto Object = buildSectionedELF({Compressed}, {}, {});
+  SmallVector<SmallVector<char, 0>, 1> Buffers;
+  Buffers.push_back(std::move(Object));
+  Options Opts;
+  Opts.artifact = ArtifactKind::SplitDwarf;
+  auto [OK, Out] = mergeELF(Buffers, Opts);
+  EXPECT_FALSE(OK);
+  (void)Out;
+}
+
+// Package-index construction refuses duplicate DWO signatures: two split
+// compile units with the same ID cannot share one `.debug_cu_index`.
+TEST(DwarfPackageTest, RejectsDuplicateSplitCompileSignatures) {
+  // DWARF32 split_compile header: length, version=5, unit_type=5,
+  // address_size=8, abbrev_offset=0, dwo_id.
+  auto MakeUnit = [](uint64_t Signature) {
+    SmallVector<char, 24> Unit(21, 0);
+    const uint32_t Length = 17; // header plus the null DIE abbreviation code
+    memcpy(Unit.data(), &Length, 4);
+    Unit[4] = 5;
+    Unit[5] = 0;
+    Unit[6] = 5; // DW_UT_split_compile
+    Unit[7] = 8;
+    memcpy(Unit.data() + 12, &Signature, 8);
+    return Unit;
+  };
+
+  auto Unit0 = MakeUnit(0x1111222233334444ull);
+  auto Unit1 = MakeUnit(0x1111222233334444ull);
+  SmallVector<char, 0> Info;
+  Info.append(Unit0.begin(), Unit0.end());
+  Info.append(Unit1.begin(), Unit1.end());
+  SmallVector<char, 0> Abbrev(1, 0);
+
+  PartitionDwarf Part0;
+  Part0.record(DwarfSection::Info, 0, 0, Unit0.size());
+  Part0.record(DwarfSection::Abbrev, 1, 0, Abbrev.size());
+  PartitionDwarf Part1;
+  Part1.record(DwarfSection::Info, 0, Unit0.size(), Unit1.size());
+  Part1.record(DwarfSection::Abbrev, 1, 0, Abbrev.size());
+
+  MutableArrayRef<char> Sections[] = {Info, Abbrev};
+  DwarfPackageIndexes Indexes;
+  EXPECT_FALSE(finalizeDwarfPackage(
+      ArrayRef<PartitionDwarf>({Part0, Part1}),
+      [&](unsigned Idx) {
+        return Idx < 2 ? Sections[Idx] : MutableArrayRef<char>();
+      },
+      /*IsLittleEndian=*/true, Indexes));
+}
+
+TEST(DwarfPackageTest, BuildsTypeIndexForDwarf5InfoSectionTypeUnits) {
+  // DWARF 5 stores split type units in .debug_info.dwo, not
+  // .debug_types.dwo. Each row must therefore be keyed by the type signature
+  // while its DW_SECT_INFO contribution names that unit's exact byte range.
+  auto MakeTypeUnit = [](uint64_t Signature) {
+    SmallVector<char, 32> Unit(25, 0);
+    const uint32_t Length = 21;
+    const uint32_t TypeOffset = 24;
+    memcpy(Unit.data(), &Length, 4);
+    Unit[4] = 5;
+    Unit[5] = 0;
+    Unit[6] = 6; // DW_UT_split_type
+    Unit[7] = 8;
+    memcpy(Unit.data() + 12, &Signature, 8);
+    memcpy(Unit.data() + 20, &TypeOffset, 4);
+    return Unit;
+  };
+
+  constexpr uint64_t Signature0 = 0x1020304050607080ull;
+  constexpr uint64_t Signature1 = 0x8877665544332211ull;
+  auto Unit0 = MakeTypeUnit(Signature0);
+  auto Unit1 = MakeTypeUnit(Signature1);
+  SmallVector<char, 0> Info;
+  Info.append(Unit0.begin(), Unit0.end());
+  Info.append(Unit1.begin(), Unit1.end());
+  SmallVector<char, 0> Abbrev(2, 0);
+
+  PartitionDwarf Part0;
+  Part0.record(DwarfSection::Info, 0, 0, Unit0.size());
+  Part0.record(DwarfSection::Abbrev, 1, 0, 1);
+  PartitionDwarf Part1;
+  Part1.record(DwarfSection::Info, 0, Unit0.size(), Unit1.size());
+  Part1.record(DwarfSection::Abbrev, 1, 1, 1);
+
+  MutableArrayRef<char> Sections[] = {Info, Abbrev};
+  DwarfPackageIndexes Indexes;
+  ASSERT_TRUE(finalizeDwarfPackage(
+      ArrayRef<PartitionDwarf>({Part0, Part1}),
+      [&](unsigned Idx) {
+        return Idx < 2 ? Sections[Idx] : MutableArrayRef<char>();
+      },
+      /*IsLittleEndian=*/true, Indexes));
+  EXPECT_TRUE(Indexes.CompileUnits.empty());
+  ASSERT_FALSE(Indexes.TypeUnits.empty());
+
+  DWARFUnitIndex Index(DW_SECT_INFO);
+  DataExtractor Data(
+      StringRef(Indexes.TypeUnits.data(), Indexes.TypeUnits.size()),
+      /*IsLittleEndian=*/true, /*AddressSize=*/0);
+  ASSERT_TRUE(Index.parse(Data));
+  EXPECT_EQ(Index.getVersion(), 5u);
+
+  const DWARFUnitIndex::Entry *Entry0 = Index.getFromHash(Signature0);
+  const DWARFUnitIndex::Entry *Entry1 = Index.getFromHash(Signature1);
+  ASSERT_NE(Entry0, nullptr);
+  ASSERT_NE(Entry1, nullptr);
+  const auto *Info0 = Entry0->getContribution(DW_SECT_INFO);
+  const auto *Info1 = Entry1->getContribution(DW_SECT_INFO);
+  ASSERT_NE(Info0, nullptr);
+  ASSERT_NE(Info1, nullptr);
+  EXPECT_EQ(Info0->getOffset(), 0u);
+  EXPECT_EQ(Info0->getLength(), Unit0.size());
+  EXPECT_EQ(Info1->getOffset(), Unit0.size());
+  EXPECT_EQ(Info1->getLength(), Unit1.size());
+}
+
 TEST(MergeELF, EmptyBufferArray) {
   SmallVector<SmallVector<char, 0>, 2> Bufs;
   auto [OK, Out] = mergeELF(Bufs);
@@ -2202,9 +2524,9 @@ TEST(MergeELFSemantic, KernelModuleAllFamiliesFoldOffsets) {
   // The full Android-kernel-module -r shape in one test: two partitions, each
   // with per-symbol sections in *all four* foldable families
   // (.text.* / .rodata.* / .data.* / .bss.*), plus a preserved .text.* section
-  // (.text.ftrace_trampoline, the real ftrace .ko keeps it un-folded even though
-  // it shares the .text. prefix) and a cross-partition relocation.  This locks
-  // three things at once that the per-family tests above check only in
+  // (.text.ftrace_trampoline, the real ftrace .ko keeps it un-folded even
+  // though it shares the .text. prefix) and a cross-partition relocation.  This
+  // locks three things at once that the per-family tests above check only in
   // isolation:
   //   1) every family folds with the *same* PartOffset math — in particular
   //      .data.* folding, which had no direct offset assertion before;
@@ -2481,8 +2803,8 @@ TEST(MergeELFSemantic, RandomizedNobitsProgbitsMixNoCollapse) {
   // NOBITS/PROGBITS partitions must fold into one section whose per-partition
   // symbols occupy distinct, non-overlapping offsets — never the offset-0
   // collapse the merger produced when a NOBITS run and a PROGBITS run each kept
-  // their own offset counter.  An all-NOBITS draw must stay NOBITS; any PROGBITS
-  // contributor promotes the whole section to PROGBITS.
+  // their own offset counter.  An all-NOBITS draw must stay NOBITS; any
+  // PROGBITS contributor promotes the whole section to PROGBITS.
   std::mt19937 Rng(0xB1775EEDu);
   for (int Trial = 0; Trial < 200; ++Trial) {
     unsigned NP = 2 + (Rng() % 4); // 2..5 partitions
@@ -2519,32 +2841,34 @@ TEST(MergeELFSemantic, RandomizedNobitsProgbitsMixNoCollapse) {
     std::sort(Vals.begin(), Vals.end());
     for (unsigned i = 1; i < Vals.size(); ++i)
       EXPECT_NE(Vals[i - 1], Vals[i])
-          << "trial " << Trial << ": two partition symbols collapsed onto offset "
-          << Vals[i];
+          << "trial " << Trial
+          << ": two partition symbols collapsed onto offset " << Vals[i];
   }
 }
 
 TEST(MergeELFSemantic, HugeNobitsSizeRefusedNotMaterialized) {
   // Regression for the merge fuzzer's allocation-size-too-big abort at
-  // ELF/MergerELF.cpp's NOBITS materialization: a SHT_NOBITS section declares an
-  // sh_size backed by *no* file bytes, so a 64-byte section header can claim a
-  // ~7.6 EB size.  When that section folds into a same-named PROGBITS output the
-  // NOBITS contribution must be materialized as real zero bytes, and an
-  // unbounded resize then aborts under ASan (or OOMs in production).  The merger
-  // must refuse such an input instead of attempting the allocation.  Both
+  // ELF/MergerELF.cpp's NOBITS materialization: a SHT_NOBITS section declares
+  // an sh_size backed by *no* file bytes, so a 64-byte section header can claim
+  // a ~7.6 EB size.  When that section folds into a same-named PROGBITS output
+  // the NOBITS contribution must be materialized as real zero bytes, and an
+  // unbounded resize then aborts under ASan (or OOMs in production).  The
+  // merger must refuse such an input instead of attempting the allocation. Both
   // partition orderings are exercised because the materialization happens at a
   // different site for each (the accumulated-fill resize when the NOBITS input
-  // comes first, the this-input resize when the PROGBITS input comes first), and
-  // both verify on/off so the guard is proven to live in the raw merge path, not
-  // the verifier.  The size is the exact value the fuzzer found (bytes spelling
+  // comes first, the this-input resize when the PROGBITS input comes first),
+  // and both verify on/off so the guard is proven to live in the raw merge
+  // path, not the verifier.  The size is the exact value the fuzzer found
+  // (bytes spelling
   // "\1__mod_i").
   const uint64_t Huge = 0x695f646f6d5f5f01ull;
   for (bool NobitsFirst : {true, false}) {
     for (bool Verify : {true, false}) {
       SecSpec Nb{"X", Huge, 16, ELF::SHT_NOBITS,
                  ELF::SHF_ALLOC | ELF::SHF_WRITE};
-      SecSpec Pb{"X", 0x40, 16, ELF::SHT_PROGBITS,
-                 ELF::SHF_ALLOC | ELF::SHF_WRITE, 0xBB};
+      SecSpec Pb{
+          "X", 0x40, 16, ELF::SHT_PROGBITS, ELF::SHF_ALLOC | ELF::SHF_WRITE,
+          0xBB};
       auto ObjNb = buildSectionedELF({Nb}, {SymSpec{"a", 0, 0}}, {});
       auto ObjPb = buildSectionedELF({Pb}, {SymSpec{"b", 0, 0}}, {});
       SmallVector<SmallVector<char, 0>, 2> Bufs;
@@ -3043,8 +3367,8 @@ TEST(MergeELFVerify, CatchesCollapsedDuplicateNamedSymbolMergeSections) {
 TEST(MergeELFVerify, CatchesCollapsedBssSymbolOffset) {
   using namespace ELF;
   // The .bss twin of the historical .text collapse.  Two uninitialized globals
-  // share one input .bss at distinct offsets.  A NOBITS section has no bytes, so
-  // the verifier's byte-content anchor *must* skip it — the same-section
+  // share one input .bss at distinct offsets.  A NOBITS section has no bytes,
+  // so the verifier's byte-content anchor *must* skip it — the same-section
   // relative-distance invariant is the only check that can see a collapse here.
   // Before that invariant existed, collapsing bss_b onto bss_a silently passed
   // verification (st_value is what the final linker resolves the symbol to, so
@@ -3090,11 +3414,12 @@ TEST(MergeELFVerify, CatchesCollapsedSingletonBssDistinctSections) {
   // The ordinary multi-file .bss blind spot: two translation units each define
   // exactly *one* uninitialized global, each in its own input .bss.  A lone
   // symbol per input section gives the same-input-section relative-distance
-  // invariant no sibling to compare, and NOBITS denies the byte-content anchor —
-  // so before the disjoint-range invariant existed, collapsing g1 onto g0's slot
-  // (the historical bug's shape) passed verification on perfectly ordinary code,
-  // not just kernel modules.  The disjoint-range invariant reconstructs each
-  // input .bss's merged base from its single symbol and forbids the overlap.
+  // invariant no sibling to compare, and NOBITS denies the byte-content anchor
+  // — so before the disjoint-range invariant existed, collapsing g1 onto g0's
+  // slot (the historical bug's shape) passed verification on perfectly ordinary
+  // code, not just kernel modules.  The disjoint-range invariant reconstructs
+  // each input .bss's merged base from its single symbol and forbids the
+  // overlap.
   SecSpec B0{".bss", 0x40, 16, SHT_NOBITS, SHF_ALLOC | SHF_WRITE};
   SecSpec B1{".bss", 0x40, 16, SHT_NOBITS, SHF_ALLOC | SHF_WRITE};
   SymSpec V0{"g0", 0, 0x0, /*Global=*/true};
@@ -3130,8 +3455,10 @@ TEST(MergeELFVerify, CatchesCollapsedSingletonBssDistinctSections) {
   ASSERT_TRUE(patchSymValue(Collapsed, "g1", 0x0));
   Err.clear();
   EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs),
-                           ArrayRef<char>(Collapsed), Format::ELF64LE, {}, &Err))
-      << "verifier accepted a collapsed singleton .bss symbol across partitions "
+                           ArrayRef<char>(Collapsed), Format::ELF64LE, {},
+                           &Err))
+      << "verifier accepted a collapsed singleton .bss symbol across "
+         "partitions "
          "(the ordinary multi-file NOBITS blind spot)";
 }
 
@@ -3140,10 +3467,11 @@ TEST(MergeELFVerify, CatchesCollapsedSingletonBssMergeSections) {
   // The kernel-module (.ko) shape that scared us: -fdata-sections puts each
   // global in its own .bss.<name>, and mergeSections folds them all into one
   // .bss.  Each input .bss.<name> holds exactly one symbol, so this is the
-  // singleton case the relative-distance invariant cannot see; NOBITS denies the
-  // content anchor.  The disjoint-range invariant is the only line of defense —
-  // exactly the gap the historical offset-collapse bug would have hidden in on a
-  // real .ko, where there is no execution fallback to catch it later.
+  // singleton case the relative-distance invariant cannot see; NOBITS denies
+  // the content anchor.  The disjoint-range invariant is the only line of
+  // defense — exactly the gap the historical offset-collapse bug would have
+  // hidden in on a real .ko, where there is no execution fallback to catch it
+  // later.
   SecSpec BA{".bss.a", 0x40, 16, SHT_NOBITS, SHF_ALLOC | SHF_WRITE};
   SecSpec BB{".bss.b", 0x40, 16, SHT_NOBITS, SHF_ALLOC | SHF_WRITE};
   SymSpec VA{"var_a", 0, 0x0, /*Global=*/true};
@@ -3176,8 +3504,9 @@ TEST(MergeELFVerify, CatchesCollapsedSingletonBssMergeSections) {
                           ArrayRef<char>(Out), Format::ELF64LE, Opts, &Err))
       << Err;
 
-  // Collapse var_b onto var_a's slot.  .bss.b's reconstructed range now overlaps
-  // .bss.a's → rejected, closing the NOBITS singleton blind spot on the .ko path.
+  // Collapse var_b onto var_a's slot.  .bss.b's reconstructed range now
+  // overlaps .bss.a's → rejected, closing the NOBITS singleton blind spot on
+  // the .ko path.
   auto Collapsed = Out;
   ASSERT_TRUE(patchSymValue(Collapsed, "var_b", 0x0));
   Err.clear();
@@ -3271,7 +3600,8 @@ TEST(MergeELFVerify, CatchesCollapsedSectionRelativeReloc) {
   SecSpec D1{".rodata", 0x20, 16, SHT_PROGBITS, SHF_ALLOC, 0xDD};
   SymSpec F0{"f0", 0, 0, true};
   SymSpec F1{"f1", 0, 0, true};
-  // Applies in .text (sec 0), targets the STT_SECTION symbol of .rodata (sec 1).
+  // Applies in .text (sec 0), targets the STT_SECTION symbol of .rodata (sec
+  // 1).
   RelSpec R0{0, 0x10, "", R_X86_64_PC32, 0, /*TargetSecSym=*/1};
   RelSpec R1{0, 0x10, "", R_X86_64_PC32, 0, /*TargetSecSym=*/1};
   auto O0 = buildSectionedELF({T0, D0}, {F0}, {R0});
@@ -3339,15 +3669,15 @@ TEST(MergeELFVerify, SectionRelativeRelocWithMergeSections) {
 TEST(MergeELFVerify, RandomizedCollapseAlwaysRejected) {
   using namespace ELF;
   // No-false-*negatives* property test, the mirror of RandomizedLayoutOracle's
-  // no-false-*positives* sweep.  Each partition contributes a .text whose single
-  // function symbol is pinned at offset 0 (so every relocation is anchorable —
-  // exactly the shape real codegen emits, where each reloc site lives inside a
-  // function that has a symbol at its entry) and one relocation at a non-zero
-  // offset against a shared undefined extern.  Merging >=2 such partitions
-  // shifts later relocs past earlier .text, so collapsing every reloc offset to
-  // 0 — the precise shape of the shipped bug — must ALWAYS be rejected by the
-  // independent verifier, for arbitrary random sizes/offsets, not just the
-  // hand-built cases above.
+  // no-false-*positives* sweep.  Each partition contributes a .text whose
+  // single function symbol is pinned at offset 0 (so every relocation is
+  // anchorable — exactly the shape real codegen emits, where each reloc site
+  // lives inside a function that has a symbol at its entry) and one relocation
+  // at a non-zero offset against a shared undefined extern.  Merging >=2 such
+  // partitions shifts later relocs past earlier .text, so collapsing every
+  // reloc offset to 0 — the precise shape of the shipped bug — must ALWAYS be
+  // rejected by the independent verifier, for arbitrary random sizes/offsets,
+  // not just the hand-built cases above.
   std::mt19937 Rng(0x5EED1234u);
   for (int Trial = 0; Trial < 200; ++Trial) {
     unsigned NP = 2 + (Rng() % 3); // >=2 so merged offsets actually shift
@@ -3379,10 +3709,10 @@ TEST(MergeELFVerify, RandomizedCollapseAlwaysRejected) {
 
 TEST(MergeELFVerify, RandomizedAddendCorruptionAlwaysRejected) {
   using namespace ELF;
-  // Property mirror of RandomizedCollapseAlwaysRejected for the *addend* half of
-  // a relocation.  Each partition pins one function at offset 0 (so its reloc
-  // is anchorable) and emits a relocation against a shared named symbol with a
-  // distinct, non-zero addend.  A faithful -r merge copies every addend
+  // Property mirror of RandomizedCollapseAlwaysRejected for the *addend* half
+  // of a relocation.  Each partition pins one function at offset 0 (so its
+  // reloc is anchorable) and emits a relocation against a shared named symbol
+  // with a distinct, non-zero addend.  A faithful -r merge copies every addend
   // verbatim, so the good merge must verify; collapsing all addends to 0 must
   // then ALWAYS be rejected (every partition's non-zero addend now mismatches),
   // for arbitrary random addends/offsets — not just the hand-built case above.
@@ -3429,19 +3759,19 @@ TEST(MergeELFLinkOrder, MergedWithRemappedShLink) {
   // __patchable_function_entries (emitted by -fpatchable-function-entry for
   // ftrace) is SHF_LINK_ORDER with sh_link → its code section.  Two partitions
   // each contribute a .text plus a PFE pointing at their own .text; after -r
-  // merge both .text fold into one and both PFE fold into one whose sh_link must
-  // be remapped to the merged .text.  (This is the ftrace .ko path the merger
-  // used to refuse outright, forcing a serial-codegen fallback.)
+  // merge both .text fold into one and both PFE fold into one whose sh_link
+  // must be remapped to the merged .text.  (This is the ftrace .ko path the
+  // merger used to refuse outright, forcing a serial-codegen fallback.)
   SecSpec Text0{".text", 0x40, 16, SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR,
                 0xAA};
-  SecSpec Pfe0{"__patchable_function_entries", 0x10, 8, SHT_PROGBITS,
-               SHF_ALLOC | SHF_LINK_ORDER, 0xBB, /*Link=*/0};
+  SecSpec Pfe0{"__patchable_function_entries", 0x10, 8,         SHT_PROGBITS,
+               SHF_ALLOC | SHF_LINK_ORDER,     0xBB, /*Link=*/0};
   SymSpec F{"f", 0, 0, true};
   auto O0 = buildSectionedELF({Text0, Pfe0}, {F}, {});
   SecSpec Text1{".text", 0x40, 16, SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR,
                 0xCC};
-  SecSpec Pfe1{"__patchable_function_entries", 0x10, 8, SHT_PROGBITS,
-               SHF_ALLOC | SHF_LINK_ORDER, 0xDD, /*Link=*/0};
+  SecSpec Pfe1{"__patchable_function_entries", 0x10, 8,         SHT_PROGBITS,
+               SHF_ALLOC | SHF_LINK_ORDER,     0xDD, /*Link=*/0};
   SymSpec G{"g", 0, 0, true};
   auto O1 = buildSectionedELF({Text1, Pfe1}, {G}, {});
 
@@ -4253,18 +4583,19 @@ TEST(MergeCOFFVerify, CatchesCollapsedSectionRelativeReloc) {
   using namespace COFF;
   uint32_t TextChars = IMAGE_SCN_CNT_CODE | IMAGE_SCN_MEM_EXECUTE |
                        IMAGE_SCN_MEM_READ | IMAGE_SCN_ALIGN_16BYTES;
-  uint32_t DataChars =
-      IMAGE_SCN_CNT_INITIALIZED_DATA | IMAGE_SCN_MEM_READ | IMAGE_SCN_ALIGN_16BYTES;
+  uint32_t DataChars = IMAGE_SCN_CNT_INITIALIZED_DATA | IMAGE_SCN_MEM_READ |
+                       IMAGE_SCN_ALIGN_16BYTES;
   // Section-relative relocation: each partition's .text references the .rdata
-  // *section symbol* — a STATIC symbol named after the section (".rdata"), not a
-  // function — at offset 0x10.  This is the COFF analogue of an ELF STT_SECTION
-  // target: the name is *not unique* in the merged output (every partition
-  // contributes its own ".rdata" section symbol), so the reloc is keyed only by
-  // the section-name string.  f0/f1 anchor each .text; after merge the sites sit
-  // at 0x10 (p0) and 0x50 (p1, shifted past p0's 0x40 .text).  Collapsing the
-  // reloc offsets to 0 must be caught even though the target symbol is ambiguous
-  // by name — the gap the ELF/MachO verifiers just closed, asserted here too so
-  // all three object paths reject this class symmetrically.
+  // *section symbol* — a STATIC symbol named after the section (".rdata"), not
+  // a function — at offset 0x10.  This is the COFF analogue of an ELF
+  // STT_SECTION target: the name is *not unique* in the merged output (every
+  // partition contributes its own ".rdata" section symbol), so the reloc is
+  // keyed only by the section-name string.  f0/f1 anchor each .text; after
+  // merge the sites sit at 0x10 (p0) and 0x50 (p1, shifted past p0's 0x40
+  // .text).  Collapsing the reloc offsets to 0 must be caught even though the
+  // target symbol is ambiguous by name — the gap the ELF/MachO verifiers just
+  // closed, asserted here too so all three object paths reject this class
+  // symmetrically.
   CoffSecSpec T0{".text", 0x40, TextChars, 0xAA};
   CoffSecSpec D0{".rdata", 0x20, DataChars, 0xCC};
   CoffSecSpec T1{".text", 0x40, TextChars, 0xBB};
@@ -4388,7 +4719,8 @@ TEST(MergeCOFF, RefusesInvalidSectionNameWithoutAbort) {
   uint32_t TextChars =
       IMAGE_SCN_CNT_CODE | IMAGE_SCN_MEM_EXECUTE | IMAGE_SCN_MEM_READ;
   // "/9999999": leading '/' marks a long-name escape; 9999999 is a string-table
-  // offset far beyond the 4-byte table buildCOFF emits, so getSectionName errors.
+  // offset far beyond the 4-byte table buildCOFF emits, so getSectionName
+  // errors.
   CoffSecSpec S0{"/9999999", 0x10, TextChars};
   auto Obj = buildCOFF(IMAGE_FILE_MACHINE_AMD64, {S0}, {}, {});
 
@@ -4494,19 +4826,19 @@ TEST(MergeMachOSemantic, ZerofillSectionsMergeByVirtualSize) {
   ASSERT_NE(Bss, nullptr);
   const MachoParsedSym *PV1 = V.findSym("_v1");
   ASSERT_NE(PV1, nullptr);
-  EXPECT_EQ(PV1->Value - Bss->Addr, 0x30u); // shifted past partition 0's zerofill
+  EXPECT_EQ(PV1->Value - Bss->Addr,
+            0x30u); // shifted past partition 0's zerofill
 }
 
 // nlist_64::n_sect is a uint8_t, so a Mach-O object can address at most 255
 // sections (0 == NO_SECT).  The merger must refuse to emit more rather than
 // silently truncate every section number past 255 — the Mach-O twin of the ELF
 // e_shnum guard and the COFF NumberOfSections guard.  255 distinct
-// (segment, section) sections is the boundary that must still merge; 256 must be
-// refused (and that refusal lets the parallel-codegen caller fall back to serial
-// codegen instead of emitting a wrong object).
-// P0 arch-consistency guard (Mach-O): mixing cputype must be refused — besides
-// the cross-ISA body, it would corrupt the IsARM64-gated ARM64_RELOC_ADDEND /
-// in-place fixup logic.
+// (segment, section) sections is the boundary that must still merge; 256 must
+// be refused (and that refusal lets the parallel-codegen caller fall back to
+// serial codegen instead of emitting a wrong object). P0 arch-consistency guard
+// (Mach-O): mixing cputype must be refused — besides the cross-ISA body, it
+// would corrupt the IsARM64-gated ARM64_RELOC_ADDEND / in-place fixup logic.
 TEST(MergeMachO, RefusesMixedCpuType) {
   namespace MO = llvm::MachO;
   uint32_t TextFlags =
@@ -4600,12 +4932,13 @@ TEST(MergeMachO, Accepts255SectionsRefuses256) {
 // — a load command with cmdsize 0 never advances the parse cursor, so the loop
 // runs ncmds times — ballooning that vector to ~ncmds*16 bytes (a ~640 MB
 // allocation from a ~1 KB input) before a single byte was validated against the
-// buffer.  The merge fuzzer hit this as an out-of-memory.  The merger now bounds
-// ncmds against the object size before handing the bytes to the eager parser: a
-// conformant object's load commands each occupy >= sizeof(load_command) bytes
-// after the header, so it can hold at most (size - header)/8 of them.  A real
-// merge is unaffected (the bound holds for every valid Mach-O); a header
-// claiming far more is refused promptly instead of exhausting memory.
+// buffer.  The merge fuzzer hit this as an out-of-memory.  The merger now
+// bounds ncmds against the object size before handing the bytes to the eager
+// parser: a conformant object's load commands each occupy >=
+// sizeof(load_command) bytes after the header, so it can hold at most (size -
+// header)/8 of them.  A real merge is unaffected (the bound holds for every
+// valid Mach-O); a header claiming far more is refused promptly instead of
+// exhausting memory.
 TEST(MergeMachO, RefusesHugeNcmdsWithoutOOM) {
   namespace MO = llvm::MachO;
   uint32_t TextFlags =
@@ -4628,18 +4961,19 @@ TEST(MergeMachO, RefusesHugeNcmdsWithoutOOM) {
   SmallVector<char, 0> Out;
   raw_svector_ostream OS(Out);
   EXPECT_FALSE(mergeObjects(Bufs, OS, Format::MachO64))
-      << "a header claiming more load commands than the object can hold must be "
+      << "a header claiming more load commands than the object can hold must "
+         "be "
          "refused before the Mach-O parser allocates one entry per command";
 }
 
-// An S_ZEROFILL section declares a size backed by *no* file bytes, so an 80-byte
-// section header can claim a ~7 EB size.  The merger laid zerofill out on the
-// same cursor as on-disk sections, so the symbol/string tables and the output
-// buffer itself (SmallVector Out(CurOff)) were pushed out by that size — a
-// crafted __bss drove the allocation to an allocation-size-too-big abort / OOM
-// (the merge fuzzer found this; sibling of the ELF NOBITS crash).  Zerofill now
-// advances a separate vm cursor and occupies no file space, so a huge __bss is
-// emitted as a huge-sized, file-less section (legal, like ELF .bss) and the
+// An S_ZEROFILL section declares a size backed by *no* file bytes, so an
+// 80-byte section header can claim a ~7 EB size.  The merger laid zerofill out
+// on the same cursor as on-disk sections, so the symbol/string tables and the
+// output buffer itself (SmallVector Out(CurOff)) were pushed out by that size —
+// a crafted __bss drove the allocation to an allocation-size-too-big abort /
+// OOM (the merge fuzzer found this; sibling of the ELF NOBITS crash).  Zerofill
+// now advances a separate vm cursor and occupies no file space, so a huge __bss
+// is emitted as a huge-sized, file-less section (legal, like ELF .bss) and the
 // merge succeeds with a tiny output instead of crashing.  Built by hand because
 // buildMachO would itself allocate `size` file bytes for the section.
 TEST(MergeMachO, HandlesHugeZerofillSectionWithoutOOM) {
@@ -4705,8 +5039,8 @@ TEST(MergeMachO, HandlesHugeZerofillSectionWithoutOOM) {
 // buffer (an out-of-bounds heap read; MachOObjectFile::getStringTableData does
 // not validate a trailing NUL the way the ELF reader does).  The merger now
 // strnlen-bounds the read to strsize, like the independent verifier.  The
-// over-read is only a fault under a sanitizer, so this is most meaningful in the
-// ASan build; everywhere it must simply not crash.
+// over-read is only a fault under a sanitizer, so this is most meaningful in
+// the ASan build; everywhere it must simply not crash.
 TEST(MergeMachO, HandlesNonNulTerminatedStringTableGracefully) {
   namespace MO = llvm::MachO;
   uint32_t TextFlags =
@@ -4732,10 +5066,10 @@ TEST(MergeMachO, HandlesNonNulTerminatedStringTableGracefully) {
 }
 
 // A non-external relocation whose r_address is within `len` bytes of UINT32_MAX
-// overflowed the merger's 32-bit `addr + len > Data.size()` bounds check, wrapped
-// to a small value that passed the guard, and then indexed the section data ~4
-// GiB out of bounds in the in-place fixup.  The merger now computes the bound in
-// 64-bit.  Meaningful under ASan; everywhere it must not crash.
+// overflowed the merger's 32-bit `addr + len > Data.size()` bounds check,
+// wrapped to a small value that passed the guard, and then indexed the section
+// data ~4 GiB out of bounds in the in-place fixup.  The merger now computes the
+// bound in 64-bit.  Meaningful under ASan; everywhere it must not crash.
 TEST(MergeMachO, HandlesHugeRelocAddressGracefully) {
   namespace MO = llvm::MachO;
   uint32_t TextFlags =
@@ -5153,8 +5487,10 @@ TEST(MergeMachOVerify, CatchesCollapsedSingletonZerofillDistinctSections) {
   ASSERT_TRUE(patchMachoSymValue(Collapsed, "_g1", BaseVal));
   Err.clear();
   EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs),
-                           ArrayRef<char>(Collapsed), Format::MachO64, {}, &Err))
-      << "verifier accepted a collapsed singleton Mach-O zerofill symbol across "
+                           ArrayRef<char>(Collapsed), Format::MachO64, {},
+                           &Err))
+      << "verifier accepted a collapsed singleton Mach-O zerofill symbol "
+         "across "
          "partitions";
 }
 
@@ -5165,13 +5501,13 @@ TEST(MergeMachOVerify, AcceptsDuplicateLocalLabelWithRelocInFirstWindow) {
   // label 'ltmp0' at the start of every object's __text, so merging N partition
   // objects yields N same-named locals — the ambiguous (duplicate-name) verify
   // path.  When a later module's true 'ltmp0' begins with a relocated
-  // instruction (a call here), its content window overlaps a relocation site and
-  // is correctly skipped as undecidable, while the *earlier* module's 'ltmp0' is
-  // decidable but holds different bytes.  The verifier used to read that as "no
-  // copy matches → collapse" and reject a perfectly correct merge, forcing a
-  // spurious fallback to serial codegen on macOS.  It must now ACCEPT this shape.
-  // (Proven correct independently: with verify off, every such merge executes
-  // byte-identically to a plain link.)
+  // instruction (a call here), its content window overlaps a relocation site
+  // and is correctly skipped as undecidable, while the *earlier* module's
+  // 'ltmp0' is decidable but holds different bytes.  The verifier used to read
+  // that as "no copy matches → collapse" and reject a perfectly correct merge,
+  // forcing a spurious fallback to serial codegen on macOS.  It must now ACCEPT
+  // this shape. (Proven correct independently: with verify off, every such
+  // merge executes byte-identically to a plain link.)
   uint32_t TextFlags =
       MO::S_ATTR_PURE_INSTRUCTIONS | MO::S_ATTR_SOME_INSTRUCTIONS;
   MachoSecSpec S0{"__TEXT", "__text", 0x40, 4, TextFlags, 0xAA};
@@ -5198,7 +5534,8 @@ TEST(MergeMachOVerify, AcceptsDuplicateLocalLabelWithRelocInFirstWindow) {
   // Internal verify (default on) must ACCEPT — pre-fix it rejected here, which
   // would make the real merger return false and fall back to serial codegen.
   ASSERT_TRUE(mergeObjects(Bufs, OS, Format::MachO64))
-      << "merger false-rejected a correct merge of duplicate local labels whose "
+      << "merger false-rejected a correct merge of duplicate local labels "
+         "whose "
          "true home overlaps a relocation site";
   std::string Err;
   EXPECT_TRUE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs),
@@ -5495,14 +5832,15 @@ TEST(MergeELF, FuzzTwoCorruptedPartitions) {
 // Regression for the recurring nightly merge-fuzz crash: a relocation section
 // (SHT_RELA/SHT_REL) whose sh_info — the target section index, read straight
 // from the input — is one of llvm::DenseMap's reserved sentinels (~0u empty key
-// or ~0u-1 tombstone).  The merger fed sh_info directly into a DenseSet<unsigned>
-// (SectionHasRelocTarget), and inserting a reserved key trips DenseMap's
-// "Empty/Tombstone value shouldn't be inserted" assertion (abort under
-// LLVM_ENABLE_ASSERTIONS, undefined behavior otherwise).  buildMinimalELF emits
-// a .rela.text section for its undefined symbol; we repoint that section's
-// sh_info at each reserved key and require the merge to refuse-or-succeed
-// without crashing.  ELFObjectFile::create does not re-validate the magic, so
-// this is reached on exactly the kind of object the fuzzer synthesized.
+// or ~0u-1 tombstone).  The merger fed sh_info directly into a
+// DenseSet<unsigned> (SectionHasRelocTarget), and inserting a reserved key
+// trips DenseMap's "Empty/Tombstone value shouldn't be inserted" assertion
+// (abort under LLVM_ENABLE_ASSERTIONS, undefined behavior otherwise).
+// buildMinimalELF emits a .rela.text section for its undefined symbol; we
+// repoint that section's sh_info at each reserved key and require the merge to
+// refuse-or-succeed without crashing.  ELFObjectFile::create does not
+// re-validate the magic, so this is reached on exactly the kind of object the
+// fuzzer synthesized.
 TEST(MergeELF, FuzzRelocSectionReservedShInfo) {
   using namespace ELF;
   auto patchFirstRelocShInfo = [](SmallVectorImpl<char> &Buf,
@@ -5647,15 +5985,17 @@ static std::vector<SmallVector<char, 0>> carveCorpus(ArrayRef<uint8_t> Data) {
 //                                    temporary local copy
 //   * coff-reloc-reserved-densekey — DenseMap reserved-key lookup (BUS) in the
 //                                    COFF verifier's symbol-by-index helper
-//   * elf-reloc-shinfo-reserved-densekey — a non-ELF buffer that ELFObjectFile::
+//   * elf-reloc-shinfo-reserved-densekey — a non-ELF buffer that
+//   ELFObjectFile::
 //                                    create still parses as ELF64LE, with a
-//                                    SHT_REL section whose sh_info is the DenseMap
-//                                    reserved empty key (~0u): inserting it into
-//                                    the merger's SectionHasRelocTarget DenseSet
+//                                    SHT_REL section whose sh_info is the
+//                                    DenseMap reserved empty key (~0u):
+//                                    inserting it into the merger's
+//                                    SectionHasRelocTarget DenseSet
 //                                    asserted/aborted (the recurring nightly
 //                                    merge-fuzz failure)
-// Each is carved exactly as the fuzzer does and pushed through every format with
-// verify on and off, plus the ELF kernel-module section-folding path.  The
+// Each is carved exactly as the fuzzer does and pushed through every format
+// with verify on and off, plus the ELF kernel-module section-folding path.  The
 // invariant is simply "the merger never crashes on these inputs" — most
 // meaningful in the sanitizer (ASan/UBSan) build, a fast smoke test otherwise.
 // Keeping the artifacts in-tree turns one-off fuzzer finds into permanent CI
@@ -5829,8 +6169,10 @@ bool lldRelocatable(const ScratchDir &Dir, ArrayRef<std::string> ObjPaths,
 // shapes most prone to offset bugs, each landing in its own merge-compatible
 // output section so the merger's per-section offset tracking is tested broadly:
 //   * double constants  -> a .rodata constant pool referenced PC/section-rel
-//   * string literals    -> .rodata.str (SHF_MERGE|SHF_STRINGS) of differing len
-//   * a static const table indexed at runtime -> .rodata + section-relative reloc
+//   * string literals    -> .rodata.str (SHF_MERGE|SHF_STRINGS) of differing
+//   len
+//   * a static const table indexed at runtime -> .rodata + section-relative
+//   reloc
 //   * a const function-pointer table          -> .data.rel.ro with absolute
 //                                                relocations onto both a global
 //                                                and a static (local) function
@@ -6160,11 +6502,13 @@ void runDupStaticRMergeEquivalence(Format Fmt) {
   int RCm = runExeCapture(Dir, ExeMerged, OutMerged);
   int RCp = runExeCapture(Dir, ExePlain, OutPlain);
   ASSERT_EQ(RCp, 0) << "plain-link executable did not exit cleanly";
-  ASSERT_EQ(RCm, 0) << "merged-object executable did not exit cleanly (the merge "
-                       "produced a loadable but wrong object)";
+  ASSERT_EQ(RCm, 0)
+      << "merged-object executable did not exit cleanly (the merge "
+         "produced a loadable but wrong object)";
   EXPECT_FALSE(OutMerged.empty());
   EXPECT_EQ(OutMerged, OutPlain)
-      << "merged-object program output diverged from the plain link — the merge "
+      << "merged-object program output diverged from the plain link — the "
+         "merge "
          "mis-remapped a duplicate-named local static's symbol index or "
          "mis-shifted its offset (the case the unique-name content anchor in "
          "verifyMerge cannot see)";
@@ -6506,17 +6850,18 @@ std::string genGlobalsMain(unsigned NumMods, unsigned NumFns) {
   return S;
 }
 
-// A module mixing plain heavy functions (weight + multi-partition spread, so the
-// merger actually runs) with computed-goto "interpreters".  Each interpreter
-// holds a function-local `static const void *tab[]` of label addresses — the
-// exact blockaddress-in-a-global-initializer shape Lua's luaV_execute / CPython's
-// ceval use.  Global initializers all live in partition 0, so if parallel codegen
-// bins such a function into a partition != 0 its blockaddress constants in p0
-// collapse to inttoptr(1) and the program jumps to address 1 (the real lua_lto
-// SIGTRAP).  The fix pins every address-taken-block function to partition 0; this
-// generator exists so a regression of that pinning turns this test red, because
-// the object self-verifier *cannot* catch it (the partition object is already
-// wrong before the merge).
+// A module mixing plain heavy functions (weight + multi-partition spread, so
+// the merger actually runs) with computed-goto "interpreters".  Each
+// interpreter holds a function-local `static const void *tab[]` of label
+// addresses — the exact blockaddress-in-a-global-initializer shape Lua's
+// luaV_execute / CPython's ceval use.  Global initializers all live in
+// partition 0, so if parallel codegen bins such a function into a partition !=
+// 0 its blockaddress constants in p0 collapse to inttoptr(1) and the program
+// jumps to address 1 (the real lua_lto SIGTRAP).  The fix pins every
+// address-taken-block function to partition 0; this generator exists so a
+// regression of that pinning turns this test red, because the object
+// self-verifier *cannot* catch it (the partition object is already wrong before
+// the merge).
 std::string genComputedGotoModule(unsigned Idx, unsigned NumHeavy,
                                   unsigned NumCG) {
   std::string S;
@@ -6525,8 +6870,8 @@ std::string genComputedGotoModule(unsigned Idx, unsigned NumHeavy,
   // Heavy body matches genHeavyModule's static instruction count (weight is the
   // sum of BB sizes, independent of the loop trip count), so a handful of these
   // per module clears the parallel threshold (TotalWeight>=10000) and the
-  // partitioner actually engages — without that the whole thing compiles serially
-  // and never exercises the merger or the pin.
+  // partitioner actually engages — without that the whole thing compiles
+  // serially and never exercises the merger or the pin.
   for (unsigned f = 0; f < NumHeavy; ++f)
     OS << "__attribute__((noinline)) uint64_t cgheavy_" << Idx << "_" << f
        << "(uint64_t x){\n"
@@ -6555,9 +6900,11 @@ std::string genComputedGotoModule(unsigned Idx, unsigned NumHeavy,
        << "  goto *tab[st & 3];\n"
        << "A: acc+=st; st=st*6364136223846793005ULL+1442695040888963407ULL;"
           " if(++steps<96) goto *tab[st & 3]; goto E;\n"
-       << "B: acc^=(acc>>13); st=st*6364136223846793005ULL+1442695040888963407ULL;"
+       << "B: acc^=(acc>>13); "
+          "st=st*6364136223846793005ULL+1442695040888963407ULL;"
           " if(++steps<96) goto *tab[st & 3]; goto E;\n"
-       << "C: acc+=(acc<<7); st=st*6364136223846793005ULL+1442695040888963407ULL;"
+       << "C: acc+=(acc<<7); "
+          "st=st*6364136223846793005ULL+1442695040888963407ULL;"
           " if(++steps<96) goto *tab[st & 3]; goto E;\n"
        << "D: acc=(acc<<5)|(acc>>59);"
           " st=st*6364136223846793005ULL+1442695040888963407ULL;"
@@ -6594,21 +6941,22 @@ std::string genComputedGotoMain(unsigned NumMods, unsigned NumHeavy,
 // `static` symbols whose names are IDENTICAL across every module (the way every
 // real C file has its own `static int cmp`, `static char buf[]`, `static const
 // char *names[]`, ...), but whose values are module-specific.  After the
-// auto-LTO IR merge these collide and get uniquified (s_tab, s_tab.1, ...), then
-// the partition split externalizes them with the `.__pcg` suffix and the merger
-// demotes them back to many same-base-named *local* symbols in the final object.
-// That is the merger's least-anchored path: the self-verifier content-anchors
-// only *uniquely* named defined symbols, so these duplicate-named statics fall
-// back to the weaker disjoint-interval / relative-displacement invariants — the
-// exact blind spot where a reintroduced offset-collapse could hide longest.  To
-// turn any such collapse into a visible divergence, every static's value is
-// derived from the module index and the functions both read and write them, so
-// aliasing two modules' copies (a mis-shifted offset) changes the printed sum.
-// Each module also folds in the other adversarial shapes a real interpreter has
-// — a function-local computed-goto dispatch table (blockaddress in a global
-// initializer) and a cross-module .data global — and every exported entry owns a
-// loop so the post-IPO weight clears the parallel threshold and the partitioner
-// actually engages.  noinline keeps the statics distinct post-IPO.
+// auto-LTO IR merge these collide and get uniquified (s_tab, s_tab.1, ...),
+// then the partition split externalizes them with the `.__pcg` suffix and the
+// merger demotes them back to many same-base-named *local* symbols in the final
+// object. That is the merger's least-anchored path: the self-verifier
+// content-anchors only *uniquely* named defined symbols, so these
+// duplicate-named statics fall back to the weaker disjoint-interval /
+// relative-displacement invariants — the exact blind spot where a reintroduced
+// offset-collapse could hide longest.  To turn any such collapse into a visible
+// divergence, every static's value is derived from the module index and the
+// functions both read and write them, so aliasing two modules' copies (a
+// mis-shifted offset) changes the printed sum. Each module also folds in the
+// other adversarial shapes a real interpreter has — a function-local
+// computed-goto dispatch table (blockaddress in a global initializer) and a
+// cross-module .data global — and every exported entry owns a loop so the
+// post-IPO weight clears the parallel threshold and the partitioner actually
+// engages.  noinline keeps the statics distinct post-IPO.
 std::string genRealisticModule(unsigned Idx, unsigned NumFns) {
   std::string S;
   raw_string_ostream OS(S);
@@ -6635,17 +6983,21 @@ std::string genRealisticModule(unsigned Idx, unsigned NumFns) {
      << "  s_bss[x % 6] += a;\n"
      << "  return a ^ s_bss[(x + 1) % 6];\n}\n";
   // Duplicate-named static computed-goto VM (blockaddress dispatch table).  The
-  // dispatch index is runtime-evolving so -O2 cannot devirtualize the table away.
+  // dispatch index is runtime-evolving so -O2 cannot devirtualize the table
+  // away.
   OS << "__attribute__((noinline)) static uint64_t s_vm(uint64_t x){\n"
      << "  static const void *const tab[] = {&&A,&&B,&&C,&&D,&&E};\n"
      << "  uint64_t acc=x, st=x ^ " << (Idx * 2654435761u + 3u)
      << "ULL; int steps=0;\n"
      << "  goto *tab[st & 3];\n"
-     << "A: acc += s_mix(st); st=st*6364136223846793005ULL+1442695040888963407ULL;"
+     << "A: acc += s_mix(st); "
+        "st=st*6364136223846793005ULL+1442695040888963407ULL;"
         " if(++steps<48) goto *tab[st & 3]; goto E;\n"
-     << "B: acc ^= (acc>>13); st=st*6364136223846793005ULL+1442695040888963407ULL;"
+     << "B: acc ^= (acc>>13); "
+        "st=st*6364136223846793005ULL+1442695040888963407ULL;"
         " if(++steps<48) goto *tab[st & 3]; goto E;\n"
-     << "C: acc += (acc<<7); st=st*6364136223846793005ULL+1442695040888963407ULL;"
+     << "C: acc += (acc<<7); "
+        "st=st*6364136223846793005ULL+1442695040888963407ULL;"
         " if(++steps<48) goto *tab[st & 3]; goto E;\n"
      << "D: acc = (acc<<5)|(acc>>59);"
         " st=st*6364136223846793005ULL+1442695040888963407ULL;"
@@ -6819,7 +7171,8 @@ TEST(MergeParallelCodegenStrict, MultiFileAutoLtoLinkUnderStrictMode) {
     ScopedEnv NoPCache("NEVERC_LTO_PCACHE", "0");
     StringRef LtoArgs[] = {"-O2"};
     ASSERT_TRUE(compileLinkMulti(Dir, Srcs, LtoArgs, ExeLto))
-        << "auto-LTO link failed under NEVERC_PCG_STRICT — the parallel-codegen "
+        << "auto-LTO link failed under NEVERC_PCG_STRICT — the "
+           "parallel-codegen "
            "merger failed self-verify or could not emit a merged object (a "
            "merger regression); see the scratch spawn.log";
   }
@@ -6904,9 +7257,10 @@ TEST(MergeParallelCodegenStrict, MultiFileAutoLtoGlobalsUnderStrictMode) {
 // blockaddress constants to inttoptr(1) and the interpreter jumps to address 1.
 // The merger's self-verifier *cannot* see this (the partition object is wrong
 // before it is merged), so the only guard is pinning address-taken-block
-// functions to partition 0 — and the only regression alarm is an end-to-end run.
-// Without the pin, the cgvm_* interpreters binned outside partition 0 jump to 1
-// and this program crashes (non-zero exit) or diverges from the -fno-lto build.
+// functions to partition 0 — and the only regression alarm is an end-to-end
+// run. Without the pin, the cgvm_* interpreters binned outside partition 0 jump
+// to 1 and this program crashes (non-zero exit) or diverges from the -fno-lto
+// build.
 TEST(MergeParallelCodegenStrict, MultiFileAutoLtoComputedGotoUnderStrictMode) {
   Triple Host(sys::getProcessTriple());
   if (!Host.isOSBinFormatMachO() && !Host.isOSBinFormatELF())
@@ -6917,10 +7271,10 @@ TEST(MergeParallelCodegenStrict, MultiFileAutoLtoComputedGotoUnderStrictMode) {
 
   // 24 modules x (16 heavy + 4 computed-goto): 384 plain heavy functions (the
   // proven scale that clears TotalWeight>=10000 so the partitioner engages and
-  // the merger runs) plus 96 computed-goto interpreters.  With 96 address-taken-
-  // block functions across several partitions, a dropped pin lands at least one
-  // outside partition 0 with overwhelming probability, so the regression is
-  // caught essentially deterministically.
+  // the merger runs) plus 96 computed-goto interpreters.  With 96
+  // address-taken- block functions across several partitions, a dropped pin
+  // lands at least one outside partition 0 with overwhelming probability, so
+  // the regression is caught essentially deterministically.
   const unsigned NumMods = 24, NumHeavy = 16, NumCG = 4;
   SmallVector<std::string, 32> Srcs;
   for (unsigned m = 0; m < NumMods; ++m) {
@@ -6971,17 +7325,18 @@ TEST(MergeParallelCodegenStrict, MultiFileAutoLtoComputedGotoUnderStrictMode) {
 // Strict-mode tripwire over a *real-world-shaped* program: every module carries
 // file-local `static` symbols whose names are identical across all modules
 // (.text helper, .data table, .bss scratch, .rodata constants) plus a
-// computed-goto VM and a cross-module .data global.  Duplicate-named statics are
-// the merger's least-anchored case — the self-verifier content-anchors only
+// computed-goto VM and a cross-module .data global.  Duplicate-named statics
+// are the merger's least-anchored case — the self-verifier content-anchors only
 // uniquely-named defined symbols, so these many same-base-named locals exercise
 // the weaker disjoint-interval / relative-displacement invariants that are the
-// last line of defense against the historical offset-collapse.  The prior strict
-// tests each isolate one shape with globally-unique names; this one combines
-// them with the duplicate-static naming real repositories (Lua, sqlite, ...)
-// actually have, so a regression that mishandles a duplicate-named local's
-// offset — invisible to the unique-name content anchor — still diverges from the
-// -fno-lto reference here.
-TEST(MergeParallelCodegenStrict, MultiFileAutoLtoRealisticMixedUnderStrictMode) {
+// last line of defense against the historical offset-collapse.  The prior
+// strict tests each isolate one shape with globally-unique names; this one
+// combines them with the duplicate-static naming real repositories (Lua,
+// sqlite, ...) actually have, so a regression that mishandles a duplicate-named
+// local's offset — invisible to the unique-name content anchor — still diverges
+// from the -fno-lto reference here.
+TEST(MergeParallelCodegenStrict,
+     MultiFileAutoLtoRealisticMixedUnderStrictMode) {
   Triple Host(sys::getProcessTriple());
   if (!Host.isOSBinFormatMachO() && !Host.isOSBinFormatELF())
     GTEST_SKIP() << "host object format not exercised by this test";
@@ -7037,7 +7392,8 @@ TEST(MergeParallelCodegenStrict, MultiFileAutoLtoRealisticMixedUnderStrictMode) 
   EXPECT_EQ(OutLto, OutRef)
       << "auto-LTO program output diverged from the -fno-lto build — the merge "
          "mis-placed a duplicate-named local static's symbol value or a "
-         "cross-partition relocation (the offset-collapse shape the unique-name "
+         "cross-partition relocation (the offset-collapse shape the "
+         "unique-name "
          "content anchor cannot see)";
 }
 

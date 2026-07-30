@@ -259,20 +259,20 @@ void fill(uint8_t *buf, size_t size, const std::array<uint8_t, 4> &filler) {
 
 #if LLVM_ENABLE_ZLIB
 namespace {
-SmallVector<uint8_t, 0> deflateShard(ArrayRef<uint8_t> in, int level,
+SmallVector<uint8_t, 0> deflateShard(ArrayRef<uint8_t> input, int level,
                                      int flush) {
   // 15 and 8 are default. windowBits=-15 is negative to generate raw deflate
   // data with no zlib header or trailer.
   z_stream s = {};
   deflateInit2(&s, level, Z_DEFLATED, -15, 8, Z_DEFAULT_STRATEGY);
-  s.next_in = const_cast<uint8_t *>(in.data());
-  s.avail_in = in.size();
+  s.next_in = const_cast<uint8_t *>(input.data());
+  s.avail_in = input.size();
 
   // Allocate a buffer of half of the input size, and grow it by 1.5x if
   // insufficient.
   SmallVector<uint8_t, 0> out;
   size_t pos = 0;
-  out.resize_for_overwrite(std::max<size_t>(in.size() / 2, 64));
+  out.resize_for_overwrite(std::max<size_t>(input.size() / 2, 64));
   do {
     if (pos == out.size())
       out.resize_for_overwrite(out.size() * 3 / 2);

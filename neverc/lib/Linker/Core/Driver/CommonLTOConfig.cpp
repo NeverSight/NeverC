@@ -270,7 +270,8 @@ lto::Config linker::createLTOConfig(const LinkerDriverConfig &Cfg,
     if (PluginContext && PluginContext->MIRPasses &&
         PluginContext->MIRPasses->requiresSerialCodeGen())
       return false;
-    return neverc::runParallelCodeGen(M, TM, OS, NP, pcgCache.get());
+    return neverc::runParallelCodeGen(M, TM, neverc::ParallelCodeGenOutputs{OS},
+                                      NP, pcgCache.get());
   };
   c.ParallelOptCodeGenHook = [pcgCache, PluginContext](
                                  Module &M, TargetMachine &TM,
@@ -283,8 +284,9 @@ lto::Config linker::createLTOConfig(const LinkerDriverConfig &Cfg,
         PluginContext && PluginContext->ParallelHooks
             ? PluginContext->ParallelHooks.get()
             : nullptr;
-    return neverc::runParallelOptAndCodeGen(M, TM, OS, NP, OL,
-                                            pcgCache.get(), Hooks);
+    return neverc::runParallelOptAndCodeGen(M, TM,
+                                            neverc::ParallelCodeGenOutputs{OS},
+                                            NP, OL, pcgCache.get(), Hooks);
   };
   c.LTOParallelOpt = true;
 
