@@ -565,6 +565,11 @@ inline unsigned StringMapImpl::LookupBucketFor(StringRef Name) {
     BucketNo = (BucketNo + ProbeAmt) & (NumBuckets - 1);
     ++ProbeAmt;
   }
+  if (FirstTombstone != -1) {
+    HashTable[FirstTombstone] = FullHashValue;
+    return FirstTombstone;
+  }
+
   // We probed every bucket and found neither the key nor an empty slot.
   // Force a table growth so the retry is guaranteed to find space.
   RehashTable(BucketNo, /*ForceGrowth=*/true);

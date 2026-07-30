@@ -23,6 +23,7 @@
 
 #include "csupport/la_lp_lfloat.h"
 #include "csupport/lapint.h"
+#include "csupport/buffer.h"
 #include "csupport/lchrono.h"
 #include "csupport/lgraph_lwriter.h"
 #include "csupport/lj_ls_lo_ln.h"
@@ -33,6 +34,7 @@
 #include "csupport/lsource_lmgr.h"
 #include "csupport/lstring_lextras.h"
 #include "csupport/ltar_lwriter.h"
+#include "csupport/lunicode_lname_lto_lcodepoint.h"
 #include "csupport/ly_la_lm_ll_lparser.h"
 #include "csupport/raw_ostream.h"
 
@@ -45,6 +47,7 @@
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/FileUtilities.h"
 #include "llvm/Support/Format.h"
+#include "llvm/Support/FormattedStream.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/GlobPattern.h"
 #include "llvm/Support/GraphWriter.h"
@@ -61,7 +64,9 @@
 
 #include <gtest/gtest.h>
 
+#include <cstring>
 #include <functional>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -136,6 +141,12 @@ TEST(SupportBufferTest, FillerAnswersTheSameLengthAtEveryCapacity) {
   checkFillerContract("dot_escape_string", [&](char *B, size_t C) {
     return csupport_dot_escape_string(Text.data(), Text.size(), B, C);
   });
+  checkFillerContract("dot_format_node", [&](char *B, size_t C) {
+    return csupport_dot_format_node(B, C, Text.c_str(), "record", "abcdef", 7);
+  });
+  checkFillerContract("dot_format_edge", [&](char *B, size_t C) {
+    return csupport_dot_format_edge(B, C, 7, 8, Text.c_str());
+  });
   checkFillerContract("yaml_escape", [&](char *B, size_t C) {
     return csupport_yaml_escape(Text.data(), Text.size(), /*printable=*/1, B,
                                 C);
@@ -157,6 +168,41 @@ TEST(SupportBufferTest, FillerAnswersTheSameLengthAtEveryCapacity) {
   });
   checkFillerContract("path_canonicalize", [&](char *B, size_t C) {
     return csupport_path_canonicalize(Path.data(), Path.size(), B, C);
+  });
+  checkFillerContract("path_expand_tilde", [&](char *B, size_t C) {
+    return csupport_path_expand_tilde(Text.data(), Text.size(), B, C);
+  });
+  checkFillerContract("expand_tilde_full", [&](char *B, size_t C) {
+    return csupport_expand_tilde_full(Text.data(), Text.size(), B, C);
+  });
+  checkFillerContract("smdiag_format_msg", [&](char *B, size_t C) {
+    return csupport_smdiag_format_msg(B, C, Text.c_str(), 42, 7, "error",
+                                      Text.c_str());
+  });
+  checkFillerContract("format_diag_header", [&](char *B, size_t C) {
+    return csupport_format_diag_header(B, C, Text.data(), Text.size(), 42, 7,
+                                       "error", 5);
+  });
+  checkFillerContract("format_diag_loc_ex", [&](char *B, size_t C) {
+    return csupport_format_diag_loc_ex(B, C, Text.data(), Text.size(), 42, 7);
+  });
+  checkFillerContract("format_diag_kind", [](char *B, size_t C) {
+    return csupport_format_diag_kind(B, C, 0);
+  });
+  checkFillerContract("unicode_name_to_hangul", [](char *B, size_t C) {
+    size_t Length = 0;
+    EXPECT_EQ(csupport_unicode_name_to_hangul(
+                  "hangul syllable ga", 18, /*strict=*/0, B, C, &Length),
+              0xAC00u);
+    return Length;
+  });
+  checkFillerContract("unicode_name_to_generated", [](char *B, size_t C) {
+    size_t Length = 0;
+    EXPECT_EQ(csupport_unicode_name_to_generated(
+                  "cjk unified ideograph-4e00", 26, /*strict=*/0, B, C,
+                  &Length),
+              0x4E00u);
+    return Length;
   });
   checkFillerContract("tar_format_pax", [&](char *B, size_t C) {
     return csupport_tar_format_pax(B, C, "path", 4, Path.data(), Path.size());
@@ -229,6 +275,60 @@ TEST(SupportBufferTest, FillerAnswersTheSameLengthAtEveryCapacity) {
     return csupport_expand_chrono_format(Style.data(), Style.size(), 1, 2, 3, B,
                                          C);
   });
+}
+
+TEST(SupportBufferTest, HexDumpReportsTruncationWithoutCrossingTheBuffer) {
+  const unsigned char Byte = 0x41;
+  char Whole[64];
+  const int Needed = csupport_format_hex_dump(
+      Whole, sizeof(Whole), &Byte, 1, std::numeric_limits<size_t>::max(),
+      /*bytes_per_line=*/1);
+  ASSERT_GT(Needed, 0);
+
+  constexpr size_t Capacity = 12;
+  std::vector<char> Fenced(Capacity + 2 * FenceWidth, Fence);
+  char *Buffer = Fenced.data() + FenceWidth;
+  EXPECT_EQ(csupport_format_hex_dump(
+                Buffer, Capacity, &Byte, 1,
+                std::numeric_limits<size_t>::max(), /*bytes_per_line=*/1),
+            Needed);
+  EXPECT_EQ(StringRef(Buffer, Capacity - 1),
+            StringRef(Whole, static_cast<size_t>(Needed))
+                .take_front(Capacity - 1));
+  EXPECT_EQ(Buffer[Capacity - 1], '\0');
+  EXPECT_EQ(StringRef(Fenced.data(), FenceWidth),
+            StringRef(std::string(FenceWidth, Fence)));
+  EXPECT_EQ(StringRef(Buffer + Capacity, FenceWidth),
+            StringRef(std::string(FenceWidth, Fence)));
+}
+
+TEST(SupportBufferTest, OutputLengthSaturatesInsteadOfWrapping) {
+  char Buffer[] = {'a', 'b', Fence, Fence};
+  csupport_obuf_t Out = csupport_obuf(Buffer, 3);
+  Out.needed = std::numeric_limits<size_t>::max();
+
+  csupport_obuf_put(&Out, 'x');
+  csupport_obuf_grew(&Out, 7);
+
+  EXPECT_EQ(csupport_obuf_finish(&Out),
+            std::numeric_limits<size_t>::max());
+  EXPECT_EQ(Buffer[0], 'a');
+  EXPECT_EQ(Buffer[1], 'b');
+  EXPECT_EQ(Buffer[2], '\0');
+  EXPECT_EQ(Buffer[3], Fence);
+}
+
+TEST(SupportBufferTest, FormattedStreamAdvancesTabsAtTabStops) {
+  std::string Text;
+  raw_string_ostream Raw(Text);
+  formatted_raw_ostream Formatted(Raw);
+
+  Formatted << '\t';
+  EXPECT_EQ(Formatted.getColumn(), 8u);
+  Formatted << '\t';
+  EXPECT_EQ(Formatted.getColumn(), 16u);
+  Formatted << "x\t";
+  EXPECT_EQ(Formatted.getColumn(), 24u);
 }
 
 // Regex::escape is a safety function: it turns text into a pattern that
@@ -396,6 +496,46 @@ TEST(SupportBufferTest, CanonicalizeKeepsAPathOfManyComponents) {
 
   EXPECT_EQ(StringRef(vfs::canonicalize(Path)), StringRef(Path));
   EXPECT_EQ(StringRef(vfs::canonicalize(Path + "/e/..")), StringRef(Path));
+
+  std::vector<char> InPlace(Path.begin(), Path.end());
+  InPlace.push_back('\0');
+  const size_t Length =
+      csupport_path_remove_dots(InPlace.data(), Path.size(), /*remove_dot_dot=*/1);
+  EXPECT_EQ(StringRef(InPlace.data(), Length), StringRef(Path));
+}
+
+TEST(SupportBufferTest, PathHelpersRespectSmallBufferBoundaries) {
+  char FilenameBuffer[16];
+  memset(FilenameBuffer, Fence, sizeof(FilenameBuffer));
+  EXPECT_EQ(csupport_path_replace_filename(
+                "/parent/name", 12, "x", 1, FilenameBuffer, /*cap=*/2),
+            1u);
+  EXPECT_STREQ(FilenameBuffer, "/");
+  EXPECT_EQ(StringRef(FilenameBuffer + 2, sizeof(FilenameBuffer) - 2),
+            StringRef(std::string(sizeof(FilenameBuffer) - 2, Fence)));
+
+  char AppendBuffer[16];
+  memset(AppendBuffer, Fence, sizeof(AppendBuffer));
+  AppendBuffer[0] = 'a';
+  EXPECT_EQ(csupport_path_append_styled(
+                AppendBuffer, /*base_len=*/8, /*base_cap=*/2, "b", 1,
+                CSUPPORT_PATH_STYLE_POSIX),
+            1u);
+  EXPECT_STREQ(AppendBuffer, "a");
+  EXPECT_EQ(StringRef(AppendBuffer + 2, sizeof(AppendBuffer) - 2),
+            StringRef(std::string(sizeof(AppendBuffer) - 2, Fence)));
+}
+
+TEST(SupportBufferTest, PathHelpersRejectOverflowingLengths) {
+  char Buffer[8] = {};
+  EXPECT_EQ(csupport_path_make_absolute_buf(
+                "x", std::numeric_limits<size_t>::max(), "y", 1, Buffer,
+                sizeof(Buffer), CSUPPORT_PATH_STYLE_POSIX),
+            0u);
+  EXPECT_EQ(csupport_path_replace_path_prefix(
+                "x", 1, "", 0, "y", std::numeric_limits<size_t>::max(),
+                Buffer, sizeof(Buffer), CSUPPORT_PATH_STYLE_POSIX),
+            0u);
 }
 
 // Fixed notation spells the magnitude out, so a value near the top of the
@@ -446,6 +586,14 @@ TEST(SupportBufferTest, FormattedNumbersFillAWideColumn) {
   EXPECT_EQ(Hex.size(), Width);
   EXPECT_TRUE(StringRef(Hex).starts_with("0x0"));
   EXPECT_TRUE(StringRef(Hex).ends_with("feed"));
+}
+
+TEST(SupportBufferTest, SignedMinimumFormatsWithoutOverflow) {
+  std::string Text;
+  raw_string_ostream OS(Text);
+  write_integer(OS, std::numeric_limits<long long>::min(), /*MinDigits=*/0,
+                IntegerStyle::Integer);
+  EXPECT_EQ(Text, std::to_string(std::numeric_limits<long long>::min()));
 }
 
 // A float's digits and its padding both come from the precision the caller
@@ -548,4 +696,19 @@ TEST(SupportBufferTest, DiagnosticShowsAWholeLongSourceLine) {
                   SourceMgr::DK_Error, "at the end of a long line");
 
   EXPECT_NE(StringRef(Text).find(Line), StringRef::npos);
+}
+
+TEST(SupportBufferTest, SourceLineCacheGrowsWithoutLosingOffsets) {
+  std::string Source;
+  for (unsigned Line = 1; Line <= 1000; ++Line)
+    Source += "line\n";
+
+  SourceMgr SM;
+  const unsigned BufferID = SM.AddNewSourceBuffer(
+      MemoryBuffer::getMemBufferCopy(Source, "many-lines.c"), SMLoc());
+  const char *Start = SM.getMemoryBuffer(BufferID)->getBufferStart();
+
+  EXPECT_EQ(SM.FindLineNumber(
+                SMLoc::getFromPointer(Start + Source.size() - 2), BufferID),
+            1000u);
 }
