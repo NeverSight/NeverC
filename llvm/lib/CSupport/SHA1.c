@@ -200,6 +200,9 @@ static void sha1_add_uncounted(csupport_sha1_ctx_t *ctx, uint8_t data) {
 
 void csupport_sha1_update(csupport_sha1_ctx_t *ctx, const uint8_t *data,
                            size_t len) {
+  if (len == 0)
+    return;
+
   ctx->byte_count += len;
 
   if (ctx->buffer_offset > 0) {
@@ -235,14 +238,9 @@ static void sha1_pad(csupport_sha1_ctx_t *ctx) {
   while (ctx->buffer_offset != 56)
     sha1_add_uncounted(ctx, 0x00);
 
-  sha1_add_uncounted(ctx, 0);
-  sha1_add_uncounted(ctx, 0);
-  sha1_add_uncounted(ctx, 0);
-  sha1_add_uncounted(ctx, (uint8_t)(ctx->byte_count >> 29));
-  sha1_add_uncounted(ctx, (uint8_t)(ctx->byte_count >> 21));
-  sha1_add_uncounted(ctx, (uint8_t)(ctx->byte_count >> 13));
-  sha1_add_uncounted(ctx, (uint8_t)(ctx->byte_count >> 5));
-  sha1_add_uncounted(ctx, (uint8_t)(ctx->byte_count << 3));
+  const uint64_t bit_len = ctx->byte_count << 3;
+  for (int shift = 56; shift >= 0; shift -= 8)
+    sha1_add_uncounted(ctx, (uint8_t)(bit_len >> shift));
 }
 
 void csupport_sha1_final(csupport_sha1_ctx_t *ctx, uint8_t result[20]) {

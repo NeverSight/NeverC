@@ -128,6 +128,9 @@ void csupport_md5_update(csupport_md5_ctx_t *ctx, const uint8_t *data,
   csupport_md5_u32 saved_lo;
   unsigned long used, free_space;
 
+  if (size == 0)
+    return;
+
   saved_lo = ctx->lo;
   if ((ctx->lo = (saved_lo + (csupport_md5_u32)size) & 0x1fffffff) < saved_lo)
     ctx->hi++;

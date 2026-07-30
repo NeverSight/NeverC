@@ -165,6 +165,9 @@ static void sha256_add_uncounted(csupport_sha256_ctx_t *ctx, uint8_t data) {
 
 void csupport_sha256_update(csupport_sha256_ctx_t *ctx, const uint8_t *data,
                              size_t len) {
+  if (len == 0)
+    return;
+
   ctx->byte_count += len;
 
   if (ctx->buffer_offset > 0) {

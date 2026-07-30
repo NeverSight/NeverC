@@ -63,6 +63,7 @@ add_subdirectory(BLAKE3)
 set(LLVM_C_SUPPORT_SOURCES
   APFloat.c
   APInt.c
+  Atomic.c
   BranchProbability.c
   BuryPointer.c
   CRC.c
