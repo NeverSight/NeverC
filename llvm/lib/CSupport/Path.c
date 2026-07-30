@@ -2683,8 +2683,11 @@ int csupport_stat_fd(int f, csupport_file_stat_t *o) { (void)f;(void)o; return E
 size_t csupport_getcwd(char *b, size_t c) { (void)b;(void)c; return 0; }
 size_t csupport_realpath(const char *p, char *b, size_t c) { (void)p;(void)b;(void)c; return 0; }
 size_t csupport_lookup_user_homedir(const char *u, char *b, size_t c) { (void)u;(void)b;(void)c; return 0; }
-size_t csupport_expand_tilde_full(const char *p, size_t l, char *b, size_t c)
-{ (void)p;(void)l;(void)b;(void)c; return 0; }
+size_t csupport_expand_tilde_full(const char *p, size_t l, char *b, size_t c) {
+  /* Windows has no getpwnam-style user lookup, but ordinary paths and the
+     current user's tilde expansion still follow the generic buffer contract. */
+  return csupport_path_expand_tilde(p, l, b, c);
+}
 int csupport_read_native(int f, char *b, size_t s, ssize_t *o) { (void)f;(void)b;(void)s;(void)o; return ENOSYS; }
 int csupport_pread_native(int f, char *b, size_t s, uint64_t o2, ssize_t *o) { (void)f;(void)b;(void)s;(void)o2;(void)o; return ENOSYS; }
 void *csupport_opendir(const char *p) { (void)p; return 0; }

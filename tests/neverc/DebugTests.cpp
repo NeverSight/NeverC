@@ -599,8 +599,10 @@ TEST_F(DebugTest, ParallelSplitDwarfUsesDebuggerCompatiblePackage) {
         << Skeleton.out << Skeleton.err;
   }
 
-  if (exec("which", {"lldb"}).exitCode != 0)
-    GTEST_SKIP() << "lldb not available";
+  const auto LldbVersion = exec("lldb", {"--version"});
+  if (LldbVersion.exitCode != 0)
+    GTEST_SKIP() << "lldb is not usable\n"
+                 << LldbVersion.out << LldbVersion.err;
   const auto Debugger =
       exec("lldb", {"-b", "-o", "target create " + obj.string(), "-o",
                     "breakpoint set -n split_package_0", "-o",
@@ -942,6 +944,9 @@ TEST_F(DebugTest, CompressedSplitDwarfIsDeterministicAcrossWorkerCounts) {
       const auto Tool = findDwarfDump();
       if (!Tool.path.empty()) {
         const auto Dump = dwarfDumpInfo(Tool, dwp.string());
+        if (Dump.exitCode != 0 &&
+            Dump.contains("LLVM was not built with LLVM_ENABLE_"))
+          continue;
         ASSERT_EQ(Dump.exitCode, 0) << Dump.err;
         // Some platform dwarfdump builds exit successfully but do not
         // implement SHF_COMPRESSED DWP sections. When the tool does expose

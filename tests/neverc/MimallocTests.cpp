@@ -146,14 +146,19 @@ TEST_F(MimallocTest, DefaultRuntimeIsOwnedByProgramEntryTranslationUnit) {
 
   auto EmitIR = [&](const std::filesystem::path &Source,
                     const std::filesystem::path &Output) {
+    // Pin the semantic target: WinMain is a real entry point on Windows, but
+    // this test needs it to remain an ordinary function beside a true main.
     std::vector<std::string> Args = {
-        "-std=c11",   "-fno-lto",      "-O0", "-S",
-        "-emit-llvm", Source.string(), "-o",  Output.string(),
+        "--target=x86_64-unknown-linux-gnu",
+        "-std=c11",
+        "-fno-lto",
+        "-O0",
+        "-S",
+        "-emit-llvm",
+        Source.string(),
+        "-o",
+        Output.string(),
     };
-    for (const std::string &Flag : sysrootFlags())
-      Args.push_back(Flag);
-    for (const std::string &Flag : archFlags())
-      Args.push_back(Flag);
     return ncc(Args);
   };
 
