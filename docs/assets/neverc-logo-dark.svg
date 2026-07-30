@@ -1,31 +1,62 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="114 114 306 284" width="306" height="284" role="img" aria-labelledby="neverc-logo-title">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="128 128 248 260" width="248" height="260" role="img" aria-labelledby="neverc-logo-title">
   <title id="neverc-logo-title">NeverC</title>
 
-  <!-- Dark theme. Palette is VS Code Dark+: #4EC9B0 type, #569CD6 keyword,
-       #DCDCAA function. No backing tile: a mark sitting straight on the page
-       reads as a logo, whereas a dark tile muddies into a dark README. -->
+  <!-- The C is a crescent moon, tilted off-axis, and a crescent blade is struck
+       through its lower left. The blade bows against the limb it cuts, so the
+       two arcs meet at about eighty degrees and the intersection reads as an X
+       rather than as two shapes nesting: that crossing is the whole point,
+       since NeverC is a C with a line through it. Dark theme. -->
   <defs>
-    <linearGradient id="arc" x1="150" y1="372" x2="344" y2="140" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#4EC9B0"/>
-      <stop offset="1" stop-color="#569CD6"/>
+    <!-- Moonlight, lit from the lower left. -->
+    <linearGradient id="moon" x1="142" y1="370" x2="313" y2="142" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#22C7D6"/>
+      <stop offset="1" stop-color="#3D7BF5"/>
     </linearGradient>
 
-    <linearGradient id="core" x1="354" y1="236" x2="388" y2="280" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#E8E8BE"/>
-      <stop offset="1" stop-color="#DCDCAA"/>
+    <!-- Hot along the length, and lit from the same side as the moon: the tip
+         lying in the moon's hollow is amber, the belly where the blade bites
+         through is near white, and the tip that exits at the lower left stays
+         a bright gold. Declared in the blade's own coordinate system, which its
+         transform sets up; offset 0 is the upper tip. -->
+    <linearGradient id="edge" x1="0" y1="0" x2="0" y2="300" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#EF8A0A"/>
+      <stop offset="0.7" stop-color="#FFE97A"/>
+      <stop offset="1" stop-color="#FFC93C"/>
     </linearGradient>
 
-    <radialGradient id="glow" cx="370" cy="256" r="44" gradientUnits="userSpaceOnUse">
-      <stop offset="0.44" stop-color="#DCDCAA" stop-opacity="0.22"/>
-      <stop offset="1" stop-color="#DCDCAA" stop-opacity="0"/>
-    </radialGradient>
+    <!-- The moon is cut back by the blade plus an 8 unit kerf. The kerf is what
+         sells the cut: without it the warm and cool shapes merely touch, and at
+         README size they smear into one another. -->
+    <mask id="kerf" maskUnits="userSpaceOnUse" x="128" y="128" width="248" height="260">
+      <rect x="128" y="128" width="248" height="260" fill="#fff"/>
+      <g transform="translate(264.44 275.74) rotate(52) scale(0.51667)">
+        <path d="M 0 0 C 75.31 70 111.31 180 3 300 C 27.81 180 66.81 70 0 0 Z"
+              fill="#000" stroke="#000" stroke-width="30.97" stroke-linejoin="round"/>
+      </g>
+    </mask>
   </defs>
 
-  <!-- The C is left open and a separate core sits in the gap: the language is
-       the arc, what NeverC adds is the piece that was never part of it. -->
-  <path d="M 326.19 166.16 A 114 114 0 1 0 326.19 345.84"
-        fill="none" stroke="url(#arc)" stroke-width="44"/>
+  <!-- Crescent: disc of radius 114 with a disc of radius 92 cut out 30 to the
+       right, leaving a 52 wide belly tapering to two points, then rolled 15
+       degrees so the mark leans rather than sits. -->
+  <g mask="url(#kerf)">
+    <path d="M 346.53 186.72 A 114 114 0 1 0 346.53 325.28 A 92 92 0 1 1 346.53 186.72 Z"
+          transform="rotate(-15 256 256)" fill="url(#moon)"/>
+  </g>
 
-  <circle cx="370" cy="256" r="44" fill="url(#glow)"/>
-  <circle cx="370" cy="256" r="23" fill="url(#core)"/>
+  <!-- The blade, drawn from two cubics: 155 long, tapering to a hair at both
+       ends, 17 across the belly. Curvature and width are set independently —
+       the sideways throw of the two spines is scaled to 75 percent of a full
+       crescent's while the gap between them is opened past it — because a blade
+       that borrows its bow from a crescent inherits that crescent's taper too,
+       and comes out as a hair that vanishes below README size.
+
+       Length is a compromise between two readings that pull opposite ways.
+       Along this line the blue only occupies a 47 unit stretch, so a blade
+       barely longer than that would be a true nick — but a nick at the rim is
+       gone by favicon size, taking the whole idea with it. 155 is short enough
+       that the moon still dominates and long enough to survive at 32. -->
+  <g transform="translate(264.44 275.74) rotate(52) scale(0.51667)">
+    <path d="M 0 0 C 75.31 70 111.31 180 3 300 C 27.81 180 66.81 70 0 0 Z" fill="url(#edge)"/>
+  </g>
 </svg>

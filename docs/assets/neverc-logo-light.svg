@@ -1,27 +1,44 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="114 114 306 284" width="306" height="284" role="img" aria-labelledby="neverc-logo-title">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="128 128 248 260" width="248" height="260" role="img" aria-labelledby="neverc-logo-title">
   <title id="neverc-logo-title">NeverC</title>
 
-  <!-- Light theme. Same three syntax roles as the dark mark, in VS Code
-       Light+: #267F99 type, #0070C1 keyword, #795E26 function. The dark
-       mark's colours drop to ~1.4:1 on white, so the logo follows the theme
-       the way syntax highlighting does. The core carries no glow here:
-       on a white page a halo reads as a smudge, not as light. -->
+  <!-- Same mark as the dark theme: a tilted crescent moon for the C, struck
+       through its lower left by a crescent blade bowing the other way. Only the
+       palette changes. The dark mark's cyan and pale gold fall to roughly 1.4:1
+       on white, so the logo re-tones with the page the way syntax highlighting
+       does. The blade still carries the ramp with its brightest point in the
+       belly, but the whole gold is dropped a couple of stops: on white the
+       highlight has to be the most saturated part of the blade, not the palest,
+       or the cut washes out. -->
   <defs>
-    <linearGradient id="arc" x1="150" y1="372" x2="344" y2="140" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#267F99"/>
-      <stop offset="1" stop-color="#0070C1"/>
+    <linearGradient id="moon" x1="142" y1="370" x2="313" y2="142" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0E8FA5"/>
+      <stop offset="1" stop-color="#1B55C9"/>
     </linearGradient>
 
-    <linearGradient id="core" x1="354" y1="236" x2="388" y2="280" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#8C6E2A"/>
-      <stop offset="1" stop-color="#795E26"/>
+    <!-- Declared in the blade's own coordinate system, which its transform sets
+         up; offset 0 is the upper tip. Same shape of ramp as the dark mark —
+         shadowed where it lies in the hollow, hottest through the belly. -->
+    <linearGradient id="edge" x1="0" y1="0" x2="0" y2="300" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#C2690A"/>
+      <stop offset="0.7" stop-color="#F2B824"/>
+      <stop offset="1" stop-color="#E09A10"/>
     </linearGradient>
+
+    <mask id="kerf" maskUnits="userSpaceOnUse" x="128" y="128" width="248" height="260">
+      <rect x="128" y="128" width="248" height="260" fill="#fff"/>
+      <g transform="translate(264.44 275.74) rotate(52) scale(0.51667)">
+        <path d="M 0 0 C 75.31 70 111.31 180 3 300 C 27.81 180 66.81 70 0 0 Z"
+              fill="#000" stroke="#000" stroke-width="30.97" stroke-linejoin="round"/>
+      </g>
+    </mask>
   </defs>
 
-  <!-- The C is left open and a separate core sits in the gap: the language is
-       the arc, what NeverC adds is the piece that was never part of it. -->
-  <path d="M 326.19 166.16 A 114 114 0 1 0 326.19 345.84"
-        fill="none" stroke="url(#arc)" stroke-width="44"/>
+  <g mask="url(#kerf)">
+    <path d="M 346.53 186.72 A 114 114 0 1 0 346.53 325.28 A 92 92 0 1 1 346.53 186.72 Z"
+          transform="rotate(-15 256 256)" fill="url(#moon)"/>
+  </g>
 
-  <circle cx="370" cy="256" r="23" fill="url(#core)"/>
+  <g transform="translate(264.44 275.74) rotate(52) scale(0.51667)">
+    <path d="M 0 0 C 75.31 70 111.31 180 3 300 C 27.81 180 66.81 70 0 0 Z" fill="url(#edge)"/>
+  </g>
 </svg>
