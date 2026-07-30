@@ -12,6 +12,7 @@
 #include "csupport/lnative_lformatting.h"
 #include "llvm/Support/CSupportBuffer.h"
 
+#include <limits>
 #include <optional>
 #include <stdint.h>
 
@@ -60,6 +61,10 @@ inline static void write_integer_via_c(raw_ostream &S, uint64_t N,
   });
 }
 
+inline static uint64_t negativeIntegerMagnitude(int64_t N) {
+  return static_cast<uint64_t>(-(N + 1)) + 1;
+}
+
 inline void write_integer(raw_ostream &S, unsigned int N, size_t MinDigits,
                           IntegerStyle Style) {
   write_integer_via_c(S, N, MinDigits, Style, false);
@@ -71,7 +76,7 @@ inline void write_integer(raw_ostream &S, int N, size_t MinDigits,
     write_integer_via_c(S, (unsigned)N, MinDigits, Style, false);
     return;
   }
-  write_integer_via_c(S, (uint64_t)(-(int64_t)N), MinDigits, Style, true);
+  write_integer_via_c(S, negativeIntegerMagnitude(N), MinDigits, Style, true);
 }
 
 inline void write_integer(raw_ostream &S, unsigned long N, size_t MinDigits,
@@ -85,7 +90,7 @@ inline void write_integer(raw_ostream &S, long N, size_t MinDigits,
     write_integer_via_c(S, (unsigned long)N, MinDigits, Style, false);
     return;
   }
-  write_integer_via_c(S, (uint64_t)(-(int64_t)N), MinDigits, Style, true);
+  write_integer_via_c(S, negativeIntegerMagnitude(N), MinDigits, Style, true);
 }
 
 inline void write_integer(raw_ostream &S, unsigned long long N,
@@ -99,7 +104,7 @@ inline void write_integer(raw_ostream &S, long long N, size_t MinDigits,
     write_integer_via_c(S, (unsigned long long)N, MinDigits, Style, false);
     return;
   }
-  write_integer_via_c(S, (uint64_t)(-N), MinDigits, Style, true);
+  write_integer_via_c(S, negativeIntegerMagnitude(N), MinDigits, Style, true);
 }
 
 inline void write_hex(raw_ostream &S, uint64_t N, HexPrintStyle Style,
@@ -118,6 +123,8 @@ inline void write_double(raw_ostream &S, double N, FloatStyle Style,
                          size_t Precision) {
   size_t Prec =
       (Precision == SIZE_MAX) ? getDefaultPrecision(Style) : Precision;
+  if (Prec > static_cast<size_t>(std::numeric_limits<int>::max()))
+    report_fatal_error("floating-point precision exceeds the C formatter limit");
   // Fixed notation spells the magnitude out, so a value near DBL_MAX needs
   // three hundred characters before its fraction begins.
   S << fillCSupportBuffer<64>([&](char *Buf, size_t Cap) {

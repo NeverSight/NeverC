@@ -5,6 +5,7 @@
 #include "llvm/Config/llvm-config.h"
 #include "llvm/Config/config.h"
 #include <errno.h>
+#include <stdint.h>
 #include <string.h>
 
 #ifdef LLVM_ON_UNIX
@@ -41,9 +42,18 @@ static int get_posix_prot(unsigned flags) {
   }
 }
 
+static int round_up_size(size_t value, size_t alignment, size_t *result) {
+  if (alignment == 0 || value > SIZE_MAX - (alignment - 1))
+    return 0;
+  *result = ((value + alignment - 1) / alignment) * alignment;
+  return 1;
+}
+
 void *csupport_mmap_alloc_mapped(size_t num_bytes, void *near_addr,
                                  size_t near_size, unsigned prot_flags,
                                  size_t *out_size, int *err_out) {
+  if (!out_size || !err_out)
+    return 0;
   *err_out = 0;
   if (num_bytes == 0) {
     *out_size = 0;
@@ -68,15 +78,37 @@ void *csupport_mmap_alloc_mapped(size_t num_bytes, void *near_addr,
   prot |= PROT_MPROTECT(PROT_READ | PROT_WRITE | PROT_EXEC);
 #endif
 
-  size_t page_size = (size_t)csupport_get_page_size();
-  size_t num_pages = (num_bytes + page_size - 1) / page_size;
-  size_t alloc_size = page_size * num_pages;
+  const int page_size_result = csupport_get_page_size();
+  if (page_size_result <= 0) {
+    *err_out = EINVAL;
+    *out_size = 0;
+#if !defined(MAP_ANON)
+    close(fd);
+#endif
+    return 0;
+  }
+  const size_t page_size = (size_t)page_size_result;
+  size_t alloc_size;
+  if (!round_up_size(num_bytes, page_size, &alloc_size)) {
+    *err_out = ENOMEM;
+    *out_size = 0;
+#if !defined(MAP_ANON)
+    close(fd);
+#endif
+    return 0;
+  }
 
   uintptr_t start = 0;
-  if (near_addr)
+  if (near_addr && near_size <= UINTPTR_MAX - (uintptr_t)near_addr) {
     start = (uintptr_t)near_addr + near_size;
-  if (start && start % page_size)
-    start += page_size - start % page_size;
+    if (start && start % page_size) {
+      const size_t adjustment = page_size - start % page_size;
+      if (adjustment <= UINTPTR_MAX - start)
+        start += adjustment;
+      else
+        start = 0;
+    }
+  }
 
   void *addr = mmap((void *)start, alloc_size, prot, mm_flags, fd, 0);
   if (addr == MAP_FAILED) {
@@ -104,6 +136,7 @@ void *csupport_mmap_alloc_mapped(size_t num_bytes, void *near_addr,
   if (prot_flags & CSUPPORT_MF_EXEC) {
     int ec = csupport_mmap_protect(addr, alloc_size, prot_flags);
     if (ec != 0) {
+      munmap(addr, alloc_size);
       *err_out = ec;
       *out_size = 0;
       return 0;
@@ -122,15 +155,27 @@ int csupport_mmap_release(void *addr, size_t size) {
 }
 
 int csupport_mmap_protect(void *addr, size_t size, unsigned flags) {
-  size_t page_size = (size_t)csupport_get_page_size();
   if (!addr || size == 0)
     return 0;
   if (!flags)
     return EINVAL;
+  const int page_size_result = csupport_get_page_size();
+  if (page_size_result <= 0)
+    return EINVAL;
+  const uintptr_t page_size = (uintptr_t)page_size_result;
+  const uintptr_t address = (uintptr_t)addr;
+  if (size > UINTPTR_MAX - address)
+    return EINVAL;
 
   int prot = get_posix_prot(flags);
-  uintptr_t start = ((uintptr_t)addr) & ~(page_size - 1);
-  uintptr_t end = ((uintptr_t)addr + size + page_size - 1) & ~(page_size - 1);
+  const uintptr_t start = address - address % page_size;
+  uintptr_t end = address + size;
+  if (end % page_size) {
+    const uintptr_t adjustment = page_size - end % page_size;
+    if (adjustment > UINTPTR_MAX - end)
+      return EINVAL;
+    end += adjustment;
+  }
 
   int invalidate = (flags & CSUPPORT_MF_EXEC) != 0;
 
@@ -188,23 +233,174 @@ int csupport_mmap_protect_raw(void *addr, size_t size, int readable,
   return mprotect(addr, size, prot);
 }
 
-#else /* Windows */
+#elif defined(_WIN32)
+
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+
+static DWORD get_windows_protection(unsigned flags) {
+  switch (flags & CSUPPORT_MF_RWE_MASK) {
+  case 0:
+    return PAGE_NOACCESS;
+  case CSUPPORT_MF_READ:
+    return PAGE_READONLY;
+  case CSUPPORT_MF_WRITE:
+  case CSUPPORT_MF_READ | CSUPPORT_MF_WRITE:
+    return PAGE_READWRITE;
+  case CSUPPORT_MF_EXEC:
+    return PAGE_EXECUTE;
+  case CSUPPORT_MF_READ | CSUPPORT_MF_EXEC:
+    return PAGE_EXECUTE_READ;
+  case CSUPPORT_MF_WRITE | CSUPPORT_MF_EXEC:
+  case CSUPPORT_MF_READ | CSUPPORT_MF_WRITE | CSUPPORT_MF_EXEC:
+    return PAGE_EXECUTE_READWRITE;
+  default:
+    return PAGE_NOACCESS;
+  }
+}
+
+static int windows_round_up(size_t value, size_t alignment, size_t *result) {
+  if (alignment == 0 || value > SIZE_MAX - (alignment - 1))
+    return 0;
+  *result = ((value + alignment - 1) / alignment) * alignment;
+  return 1;
+}
+
+static int windows_last_error(void) {
+  const DWORD error = GetLastError();
+  return error != ERROR_SUCCESS ? (int)error : (int)ERROR_INVALID_PARAMETER;
+}
+
+void *csupport_mmap_alloc_mapped(size_t num_bytes, void *near_addr,
+                                 size_t near_size, unsigned prot_flags,
+                                 size_t *out_size, int *err_out) {
+  if (!out_size || !err_out)
+    return NULL;
+  *out_size = 0;
+  *err_out = 0;
+  if (num_bytes == 0)
+    return NULL;
+
+  SYSTEM_INFO info;
+  GetSystemInfo(&info);
+  size_t alloc_size;
+  if (!windows_round_up(num_bytes, info.dwPageSize, &alloc_size)) {
+    *err_out = (int)ERROR_NOT_ENOUGH_MEMORY;
+    return NULL;
+  }
+
+  void *preferred = NULL;
+  if (near_addr && near_size <= UINTPTR_MAX - (uintptr_t)near_addr) {
+    uintptr_t start = (uintptr_t)near_addr + near_size;
+    const uintptr_t granularity = info.dwAllocationGranularity;
+    if (start <= UINTPTR_MAX - (granularity - 1))
+      start = ((start + granularity - 1) / granularity) * granularity;
+    else
+      start = 0;
+    preferred = (void *)start;
+  }
+
+  const DWORD protection = get_windows_protection(prot_flags);
+  void *address = VirtualAlloc(preferred, alloc_size,
+                               MEM_RESERVE | MEM_COMMIT, protection);
+  if (!address && preferred)
+    address = VirtualAlloc(NULL, alloc_size, MEM_RESERVE | MEM_COMMIT,
+                           protection);
+  if (!address) {
+    *err_out = windows_last_error();
+    return NULL;
+  }
+  *out_size = alloc_size;
+  return address;
+}
+
+int csupport_mmap_release(void *addr, size_t size) {
+  (void)size;
+  if (!addr)
+    return 0;
+  return VirtualFree(addr, 0, MEM_RELEASE) ? 0 : windows_last_error();
+}
+
+int csupport_mmap_protect(void *addr, size_t size, unsigned flags) {
+  if (!addr || size == 0)
+    return 0;
+  if (!flags)
+    return EINVAL;
+  DWORD old_protection;
+  if (!VirtualProtect(addr, size, get_windows_protection(flags),
+                      &old_protection))
+    return windows_last_error();
+  if (flags & CSUPPORT_MF_EXEC)
+    csupport_invalidate_icache(addr, size);
+  return 0;
+}
+
+void csupport_invalidate_icache(const void *addr, size_t len) {
+  if (addr && len != 0)
+    FlushInstructionCache(GetCurrentProcess(), addr, len);
+}
+
+void *csupport_mmap_alloc(size_t size, int readable, int writable,
+                          int executable) {
+  unsigned flags = 0;
+  if (readable)
+    flags |= CSUPPORT_MF_READ;
+  if (writable)
+    flags |= CSUPPORT_MF_WRITE;
+  if (executable)
+    flags |= CSUPPORT_MF_EXEC;
+  return VirtualAlloc(NULL, size, MEM_RESERVE | MEM_COMMIT,
+                      get_windows_protection(flags));
+}
+
+int csupport_mmap_free(void *addr, size_t size) {
+  (void)size;
+  if (!addr)
+    return 0;
+  return VirtualFree(addr, 0, MEM_RELEASE) ? 0 : -1;
+}
+
+int csupport_mmap_protect_raw(void *addr, size_t size, int readable,
+                              int writable, int executable) {
+  unsigned flags = 0;
+  if (readable)
+    flags |= CSUPPORT_MF_READ;
+  if (writable)
+    flags |= CSUPPORT_MF_WRITE;
+  if (executable)
+    flags |= CSUPPORT_MF_EXEC;
+  DWORD old_protection;
+  return VirtualProtect(addr, size, get_windows_protection(flags),
+                        &old_protection)
+             ? 0
+             : -1;
+}
+
+#else
 
 void *csupport_mmap_alloc_mapped(size_t nb, void *na, size_t ns,
                                  unsigned pf, size_t *os, int *eo) {
-  (void)nb; (void)na; (void)ns; (void)pf;
-  *os = 0; *eo = ENOSYS; return 0;
+  (void)nb;
+  (void)na;
+  (void)ns;
+  (void)pf;
+  if (os)
+    *os = 0;
+  if (eo)
+    *eo = ENOSYS;
+  return NULL;
 }
 int csupport_mmap_release(void *a, size_t s) { (void)a; (void)s; return 0; }
 int csupport_mmap_protect(void *a, size_t s, unsigned f) {
-  (void)a; (void)s; (void)f; return 0;
+  (void)a; (void)s; (void)f; return ENOSYS;
 }
 void csupport_invalidate_icache(const void *a, size_t l) {
   (void)a; (void)l;
 }
-
 void *csupport_mmap_alloc(size_t s, int r, int w, int e) {
-  (void)s; (void)r; (void)w; (void)e; return 0;
+  (void)s; (void)r; (void)w; (void)e; return NULL;
 }
 int csupport_mmap_free(void *a, size_t s) { (void)a; (void)s; return -1; }
 int csupport_mmap_protect_raw(void *a, size_t s, int r, int w, int e) {

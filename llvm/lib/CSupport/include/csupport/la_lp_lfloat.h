@@ -20,6 +20,31 @@ enum {
   CSUPPORT_LF_MORE_THAN_HALF = 3
 };
 
+/* Integer values that cross the C++/C APFloat boundary. */
+enum {
+  CSUPPORT_APFLOAT_FC_INFINITY = 0,
+  CSUPPORT_APFLOAT_FC_NAN = 1,
+  CSUPPORT_APFLOAT_FC_NORMAL = 2,
+  CSUPPORT_APFLOAT_FC_ZERO = 3
+};
+
+enum {
+  CSUPPORT_APFLOAT_RM_TOWARD_ZERO = 0,
+  CSUPPORT_APFLOAT_RM_NEAREST_TIES_TO_EVEN = 1,
+  CSUPPORT_APFLOAT_RM_TOWARD_POSITIVE = 2,
+  CSUPPORT_APFLOAT_RM_TOWARD_NEGATIVE = 3,
+  CSUPPORT_APFLOAT_RM_NEAREST_TIES_TO_AWAY = 4
+};
+
+enum {
+  CSUPPORT_APFLOAT_OP_OK = 0x00,
+  CSUPPORT_APFLOAT_OP_INVALID = 0x01,
+  CSUPPORT_APFLOAT_OP_DIV_BY_ZERO = 0x02,
+  CSUPPORT_APFLOAT_OP_OVERFLOW = 0x04,
+  CSUPPORT_APFLOAT_OP_UNDERFLOW = 0x08,
+  CSUPPORT_APFLOAT_OP_INEXACT = 0x10
+};
+
 typedef struct {
   const char *first_sig_digit;
   const char *last_sig_digit;
@@ -52,7 +77,18 @@ int csupport_apfloat_lost_fraction_truncation(const uint64_t *parts,
                                               unsigned bits);
 uint64_t csupport_apfloat_ulps_from_boundary(const uint64_t *parts,
                                              unsigned bits, int is_nearest);
-unsigned csupport_apfloat_power_of5(uint64_t *dst, unsigned power);
+
+/* The largest built-in semantics is IEEE quad.  Decimal conversion may need
+ * 5^(maxExponent + precision - 1), and full multiplication needs one spare
+ * result part beyond the mathematical answer. */
+enum {
+  CSUPPORT_APFLOAT_MAX_POWER_OF_FIVE_EXPONENT = 16383 + 113 - 1,
+  CSUPPORT_APFLOAT_MAX_POWER_OF_FIVE_PARTS =
+      2 + (CSUPPORT_APFLOAT_MAX_POWER_OF_FIVE_EXPONENT * 815) / (351 * 64)
+};
+
+unsigned csupport_apfloat_power_of5(uint64_t *dst, size_t dst_parts,
+                                    unsigned power);
 unsigned csupport_apfloat_part_as_hex(char *dst, uint64_t part, unsigned count,
                                       const char *hex_digits);
 char *csupport_apfloat_write_unsigned_decimal(char *dst, unsigned n);
@@ -243,32 +279,6 @@ typedef struct {
   int nonFiniteBehavior;
   int nanEncoding;
 } csupport_flt_semantics_t;
-
-extern const csupport_flt_semantics_t csupport_sem_ieee_half;
-extern const csupport_flt_semantics_t csupport_sem_bfloat;
-extern const csupport_flt_semantics_t csupport_sem_ieee_single;
-extern const csupport_flt_semantics_t csupport_sem_ieee_double;
-extern const csupport_flt_semantics_t csupport_sem_ieee_quad;
-extern const csupport_flt_semantics_t csupport_sem_float8_e5m2;
-extern const csupport_flt_semantics_t csupport_sem_float8_e5m2fnuz;
-extern const csupport_flt_semantics_t csupport_sem_float8_e4m3fn;
-extern const csupport_flt_semantics_t csupport_sem_float8_e4m3fnuz;
-extern const csupport_flt_semantics_t csupport_sem_float8_e4m3b11fnuz;
-extern const csupport_flt_semantics_t csupport_sem_float_tf32;
-extern const csupport_flt_semantics_t csupport_sem_x87_double_extended;
-extern const csupport_flt_semantics_t csupport_sem_bogus;
-extern const csupport_flt_semantics_t csupport_sem_ppc_double_double;
-extern const csupport_flt_semantics_t csupport_sem_ppc_double_double_legacy;
-
-unsigned csupport_flt_semantics_precision(const csupport_flt_semantics_t *s);
-int32_t csupport_flt_semantics_max_exponent(const csupport_flt_semantics_t *s);
-int32_t csupport_flt_semantics_min_exponent(const csupport_flt_semantics_t *s);
-unsigned csupport_flt_semantics_size_in_bits(const csupport_flt_semantics_t *s);
-unsigned
-csupport_flt_semantics_int_size_in_bits(const csupport_flt_semantics_t *s,
-                                        int is_signed);
-int csupport_flt_semantics_is_representable_as_normal_in(
-    const csupport_flt_semantics_t *src, const csupport_flt_semantics_t *dst);
 
 int32_t csupport_flt_exponent_zero(const csupport_flt_semantics_t *s);
 int32_t csupport_flt_exponent_inf(const csupport_flt_semantics_t *s);

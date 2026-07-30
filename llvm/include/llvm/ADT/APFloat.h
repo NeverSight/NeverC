@@ -52,11 +52,11 @@ template <typename T> class SmallVectorImpl;
 /// represent.
 ///
 /// This essentially combines the roles of guard and sticky bits.
-enum lostFraction { // Example of truncated bits:
-  lfExactlyZero,    // 000000
-  lfLessThanHalf,   // 0xxxxx  x's not all zero
-  lfExactlyHalf,    // 100000
-  lfMoreThanHalf    // 1xxxxx  x's not all zero
+enum lostFraction {                            // Example of truncated bits:
+  lfExactlyZero = CSUPPORT_LF_EXACTLY_ZERO,    // 000000
+  lfLessThanHalf = CSUPPORT_LF_LESS_THAN_HALF, // 0xxxxx, not all zero
+  lfExactlyHalf = CSUPPORT_LF_EXACTLY_HALF,    // 100000
+  lfMoreThanHalf = CSUPPORT_LF_MORE_THAN_HALF  // 1xxxxx, not all zero
 };
 
 /// A self-contained host- and target-independent arbitrary-precision
@@ -261,51 +261,20 @@ struct APFloatBase {
     llvm_unreachable("Unknown floating semantics");
   }
 
-  static const fltSemantics &IEEEhalf() {
-    return reinterpret_cast<const fltSemantics &>(csupport_sem_ieee_half);
-  }
-  static const fltSemantics &BFloat() {
-    return reinterpret_cast<const fltSemantics &>(csupport_sem_bfloat);
-  }
-  static const fltSemantics &IEEEsingle() {
-    return reinterpret_cast<const fltSemantics &>(csupport_sem_ieee_single);
-  }
-  static const fltSemantics &IEEEdouble() {
-    return reinterpret_cast<const fltSemantics &>(csupport_sem_ieee_double);
-  }
-  static const fltSemantics &IEEEquad() {
-    return reinterpret_cast<const fltSemantics &>(csupport_sem_ieee_quad);
-  }
-  static const fltSemantics &PPCDoubleDouble() {
-    return reinterpret_cast<const fltSemantics &>(
-        csupport_sem_ppc_double_double);
-  }
-  static const fltSemantics &Float8E5M2() {
-    return reinterpret_cast<const fltSemantics &>(csupport_sem_float8_e5m2);
-  }
-  static const fltSemantics &Float8E5M2FNUZ() {
-    return reinterpret_cast<const fltSemantics &>(csupport_sem_float8_e5m2fnuz);
-  }
-  static const fltSemantics &Float8E4M3FN() {
-    return reinterpret_cast<const fltSemantics &>(csupport_sem_float8_e4m3fn);
-  }
-  static const fltSemantics &Float8E4M3FNUZ() {
-    return reinterpret_cast<const fltSemantics &>(csupport_sem_float8_e4m3fnuz);
-  }
-  static const fltSemantics &Float8E4M3B11FNUZ() {
-    return reinterpret_cast<const fltSemantics &>(
-        csupport_sem_float8_e4m3b11fnuz);
-  }
-  static const fltSemantics &FloatTF32() {
-    return reinterpret_cast<const fltSemantics &>(csupport_sem_float_tf32);
-  }
-  static const fltSemantics &x87DoubleExtended() {
-    return reinterpret_cast<const fltSemantics &>(
-        csupport_sem_x87_double_extended);
-  }
-  static const fltSemantics &Bogus() {
-    return reinterpret_cast<const fltSemantics &>(csupport_sem_bogus);
-  }
+  static const fltSemantics &IEEEhalf();
+  static const fltSemantics &BFloat();
+  static const fltSemantics &IEEEsingle();
+  static const fltSemantics &IEEEdouble();
+  static const fltSemantics &IEEEquad();
+  static const fltSemantics &PPCDoubleDouble();
+  static const fltSemantics &Float8E5M2();
+  static const fltSemantics &Float8E5M2FNUZ();
+  static const fltSemantics &Float8E4M3FN();
+  static const fltSemantics &Float8E4M3FNUZ();
+  static const fltSemantics &Float8E4M3B11FNUZ();
+  static const fltSemantics &FloatTF32();
+  static const fltSemantics &x87DoubleExtended();
+  static const fltSemantics &Bogus();
 
   /// @}
 
@@ -332,16 +301,21 @@ struct APFloatBase {
   ///    result of an operation that signals the invalid operation exception
   ///    shall be a quiet NaN."
   enum opStatus {
-    opOK = 0x00,
-    opInvalidOp = 0x01,
-    opDivByZero = 0x02,
-    opOverflow = 0x04,
-    opUnderflow = 0x08,
-    opInexact = 0x10
+    opOK = CSUPPORT_APFLOAT_OP_OK,
+    opInvalidOp = CSUPPORT_APFLOAT_OP_INVALID,
+    opDivByZero = CSUPPORT_APFLOAT_OP_DIV_BY_ZERO,
+    opOverflow = CSUPPORT_APFLOAT_OP_OVERFLOW,
+    opUnderflow = CSUPPORT_APFLOAT_OP_UNDERFLOW,
+    opInexact = CSUPPORT_APFLOAT_OP_INEXACT
   };
 
   /// Category of internally-represented number.
-  enum fltCategory { fcInfinity, fcNaN, fcNormal, fcZero };
+  enum fltCategory {
+    fcInfinity = CSUPPORT_APFLOAT_FC_INFINITY,
+    fcNaN = CSUPPORT_APFLOAT_FC_NAN,
+    fcNormal = CSUPPORT_APFLOAT_FC_NORMAL,
+    fcZero = CSUPPORT_APFLOAT_FC_ZERO
+  };
 
   /// Convenience enum used to construct an uninitialized APFloat.
   enum uninitializedTag { uninitialized };
@@ -364,14 +338,14 @@ struct APFloatBase {
 };
 
 enum class fltNonfiniteBehavior {
-  IEEE754,
-  NanOnly,
+  IEEE754 = CSUPPORT_FLT_NFB_IEEE754,
+  NanOnly = CSUPPORT_FLT_NFB_NAN_ONLY,
 };
 
 enum class fltNanEncoding {
-  IEEE,
-  AllOnes,
-  NegativeZero,
+  IEEE = CSUPPORT_FLT_NAN_IEEE,
+  AllOnes = CSUPPORT_FLT_NAN_ALL_ONES,
+  NegativeZero = CSUPPORT_FLT_NAN_NEG_ZERO,
 };
 
 struct fltSemantics {
@@ -386,6 +360,17 @@ struct fltSemantics {
            precision <= S.precision;
   }
 };
+
+static_assert(static_cast<int>(RoundingMode::TowardZero) ==
+              CSUPPORT_APFLOAT_RM_TOWARD_ZERO);
+static_assert(static_cast<int>(RoundingMode::NearestTiesToEven) ==
+              CSUPPORT_APFLOAT_RM_NEAREST_TIES_TO_EVEN);
+static_assert(static_cast<int>(RoundingMode::TowardPositive) ==
+              CSUPPORT_APFLOAT_RM_TOWARD_POSITIVE);
+static_assert(static_cast<int>(RoundingMode::TowardNegative) ==
+              CSUPPORT_APFLOAT_RM_TOWARD_NEGATIVE);
+static_assert(static_cast<int>(RoundingMode::NearestTiesToAway) ==
+              CSUPPORT_APFLOAT_RM_NEAREST_TIES_TO_AWAY);
 
 inline unsigned int APFloatBase::semanticsPrecision(const fltSemantics &s) {
   return s.precision;
@@ -419,6 +404,18 @@ inline unsigned APFloatBase::getSizeInBits(const fltSemantics &Sem) {
 }
 
 namespace detail {
+
+const fltSemantics &ppcDoubleDoubleLegacySemantics();
+
+inline csupport_flt_semantics_t
+toCSupportSemantics(const fltSemantics &Semantics) {
+  return {Semantics.maxExponent,
+          Semantics.minExponent,
+          Semantics.precision,
+          Semantics.sizeInBits,
+          static_cast<int>(Semantics.nonFiniteBehavior),
+          static_cast<int>(Semantics.nanEncoding)};
+}
 
 class IEEEFloat final : public APFloatBase {
 public:
@@ -855,7 +852,7 @@ inline IEEEFloat frexp(const IEEEFloat &Val, int &Exp,
 }
 
 inline unsigned int IEEEFloat::partCount() const {
-  return ((semantics->precision + 1) + integerPartWidth - 1) / integerPartWidth;
+  return semantics->precision / integerPartWidth + 1;
 }
 
 inline IEEEFloat::integerPart *IEEEFloat::significandParts() {
@@ -1061,18 +1058,20 @@ inline IEEEFloat::IEEEFloat(IEEEFloat &&rhs) : semantics(&Bogus()) {
 inline IEEEFloat::~IEEEFloat() { freeSignificand(); }
 
 inline IEEEFloat::ExponentType IEEEFloat::exponentNaN() const {
-  return csupport_flt_exponent_nan(
-      reinterpret_cast<const csupport_flt_semantics_t *>(semantics));
+  if (semantics->nonFiniteBehavior == fltNonfiniteBehavior::NanOnly) {
+    if (semantics->nanEncoding == fltNanEncoding::NegativeZero)
+      return exponentZero();
+    return semantics->maxExponent;
+  }
+  return semantics->maxExponent + 1;
 }
 
 inline IEEEFloat::ExponentType IEEEFloat::exponentInf() const {
-  return csupport_flt_exponent_inf(
-      reinterpret_cast<const csupport_flt_semantics_t *>(semantics));
+  return semantics->maxExponent + 1;
 }
 
 inline IEEEFloat::ExponentType IEEEFloat::exponentZero() const {
-  return csupport_flt_exponent_zero(
-      reinterpret_cast<const csupport_flt_semantics_t *>(semantics));
+  return semantics->minExponent - 1;
 }
 
 inline void IEEEFloat::makeLargest(bool Negative) {
@@ -1367,8 +1366,7 @@ inline APInt IEEEFloat::convertFloatTF32APFloatToAPInt() const {
 }
 
 inline APInt IEEEFloat::convertPPCDoubleDoubleAPFloatToAPInt() const {
-  assert(semantics ==
-         (const fltSemantics *)&csupport_sem_ppc_double_double_legacy);
+  assert(semantics == &ppcDoubleDoubleLegacySemantics());
   assert(partCount() == 2);
 
   uint64_t words[2];
@@ -1412,8 +1410,7 @@ inline void IEEEFloat::initFromPPCDoubleDoubleAPInt(const APInt &api) {
   opStatus fs;
   bool losesInfo;
 
-  const fltSemantics &LegacySem = *reinterpret_cast<const fltSemantics *>(
-      &csupport_sem_ppc_double_double_legacy);
+  const fltSemantics &LegacySem = ppcDoubleDoubleLegacySemantics();
 
   initFromDoubleAPInt(APInt(64, i1));
   fs = convert(LegacySem, rmNearestTiesToEven, &losesInfo);
@@ -1432,8 +1429,7 @@ inline void IEEEFloat::initFromPPCDoubleDoubleAPInt(const APInt &api) {
 
 namespace {
 constexpr unsigned MaxPowerOfFiveParts =
-    2U +
-    ((((16383U + 113U - 1U) * 815U) / (351U * APFloatBase::integerPartWidth)));
+    CSUPPORT_APFLOAT_MAX_POWER_OF_FIVE_PARTS;
 
 struct DecimalInfo {
   const char *firstSigDigit;
@@ -1471,7 +1467,10 @@ IEEEFloat::roundSignificandWithExponent(const integerPart *decSigParts,
 
   parts = csupport_flt_part_count_for_bits(semantics->precision + 11);
 
-  pow5PartCount = csupport_apfloat_power_of5(pow5Parts, exp >= 0 ? exp : -exp);
+  pow5PartCount = csupport_apfloat_power_of5(pow5Parts, MaxPowerOfFiveParts,
+                                             exp >= 0 ? exp : -exp);
+  if (LLVM_UNLIKELY(pow5PartCount == 0))
+    llvm_unreachable("decimal exponent exceeds APFloat semantics");
 
   for (;; parts *= 2) {
     opStatus sigStatus, powStatus;
@@ -1671,7 +1670,7 @@ inline APInt IEEEFloat::convertF80LongDoubleAPFloatToAPInt() const {
 inline APInt IEEEFloat::bitcastToAPInt() const {
   if (semantics == &APFloatBase::x87DoubleExtended())
     return convertF80LongDoubleAPFloatToAPInt();
-  if (semantics == (const fltSemantics *)&csupport_sem_ppc_double_double_legacy)
+  if (semantics == &ppcDoubleDoubleLegacySemantics())
     return convertPPCDoubleDoubleAPFloatToAPInt();
   unsigned numWords = csupport_flt_part_count_for_bits(semantics->sizeInBits);
   uint64_t words[2] = {};
@@ -1729,7 +1728,7 @@ inline void IEEEFloat::initFromAPInt(const fltSemantics *Sem,
   assert(api.getBitWidth() == Sem->sizeInBits);
   if (Sem == &APFloatBase::x87DoubleExtended())
     return initFromF80LongDoubleAPInt(api);
-  if (Sem == (const fltSemantics *)&csupport_sem_ppc_double_double_legacy)
+  if (Sem == &ppcDoubleDoubleLegacySemantics())
     return initFromPPCDoubleDoubleAPInt(api);
   uint64_t sig_buf[8];
   int s = 0, exp = 0;
@@ -3100,8 +3099,7 @@ inline bool IEEEFloat::getExactInverse(APFloat *inv) const {
 inline bool DoubleAPFloat::getExactInverse(APFloat *inv) const {
   assert(Semantics == &APFloatBase::PPCDoubleDouble() &&
          "Unexpected Semantics");
-  const fltSemantics &LegacySem = *reinterpret_cast<const fltSemantics *>(
-      &csupport_sem_ppc_double_double_legacy);
+  const fltSemantics &LegacySem = ppcDoubleDoubleLegacySemantics();
   APFloat Tmp(LegacySem, bitcastToAPInt());
   if (!inv)
     return Tmp.getExactInverse(nullptr);
@@ -3115,8 +3113,7 @@ inline Expected<IEEEFloat::opStatus>
 DoubleAPFloat::convertFromString(StringRef S, roundingMode RM) {
   assert(Semantics == &APFloatBase::PPCDoubleDouble() &&
          "Unexpected Semantics");
-  const fltSemantics &LegacySem = *reinterpret_cast<const fltSemantics *>(
-      &csupport_sem_ppc_double_double_legacy);
+  const fltSemantics &LegacySem = ppcDoubleDoubleLegacySemantics();
   APFloat Tmp(LegacySem);
   auto Ret = Tmp.convertFromString(S, RM);
   *this = DoubleAPFloat(APFloatBase::PPCDoubleDouble(), Tmp.bitcastToAPInt());
@@ -3126,8 +3123,7 @@ DoubleAPFloat::convertFromString(StringRef S, roundingMode RM) {
 inline APFloat::opStatus DoubleAPFloat::next(bool nextDown) {
   assert(Semantics == &APFloatBase::PPCDoubleDouble() &&
          "Unexpected Semantics");
-  const fltSemantics &LegacySem = *reinterpret_cast<const fltSemantics *>(
-      &csupport_sem_ppc_double_double_legacy);
+  const fltSemantics &LegacySem = ppcDoubleDoubleLegacySemantics();
   APFloat Tmp(LegacySem, bitcastToAPInt());
   auto Ret = Tmp.next(nextDown);
   *this = DoubleAPFloat(APFloatBase::PPCDoubleDouble(), Tmp.bitcastToAPInt());
@@ -3140,8 +3136,7 @@ DoubleAPFloat::convertToInteger(MutableArrayRef<integerPart> Input,
                                 roundingMode RM, bool *IsExact) const {
   assert(Semantics == &APFloatBase::PPCDoubleDouble() &&
          "Unexpected Semantics");
-  const fltSemantics &LegacySem = *reinterpret_cast<const fltSemantics *>(
-      &csupport_sem_ppc_double_double_legacy);
+  const fltSemantics &LegacySem = ppcDoubleDoubleLegacySemantics();
   return APFloat(LegacySem, bitcastToAPInt())
       .convertToInteger(Input, Width, IsSigned, RM, IsExact);
 }
@@ -3151,8 +3146,7 @@ inline APFloat::opStatus DoubleAPFloat::convertFromAPInt(const APInt &Input,
                                                          roundingMode RM) {
   assert(Semantics == &APFloatBase::PPCDoubleDouble() &&
          "Unexpected Semantics");
-  const fltSemantics &LegacySem = *reinterpret_cast<const fltSemantics *>(
-      &csupport_sem_ppc_double_double_legacy);
+  const fltSemantics &LegacySem = ppcDoubleDoubleLegacySemantics();
   APFloat Tmp(LegacySem);
   auto Ret = Tmp.convertFromAPInt(Input, IsSigned, RM);
   *this = DoubleAPFloat(APFloatBase::PPCDoubleDouble(), Tmp.bitcastToAPInt());
@@ -3165,8 +3159,7 @@ DoubleAPFloat::convertFromSignExtendedInteger(const integerPart *Input,
                                               bool IsSigned, roundingMode RM) {
   assert(Semantics == &APFloatBase::PPCDoubleDouble() &&
          "Unexpected Semantics");
-  const fltSemantics &LegacySem = *reinterpret_cast<const fltSemantics *>(
-      &csupport_sem_ppc_double_double_legacy);
+  const fltSemantics &LegacySem = ppcDoubleDoubleLegacySemantics();
   APFloat Tmp(LegacySem);
   auto Ret = Tmp.convertFromSignExtendedInteger(Input, InputSize, IsSigned, RM);
   *this = DoubleAPFloat(APFloatBase::PPCDoubleDouble(), Tmp.bitcastToAPInt());
@@ -3179,8 +3172,7 @@ DoubleAPFloat::convertFromZeroExtendedInteger(const integerPart *Input,
                                               bool IsSigned, roundingMode RM) {
   assert(Semantics == &APFloatBase::PPCDoubleDouble() &&
          "Unexpected Semantics");
-  const fltSemantics &LegacySem = *reinterpret_cast<const fltSemantics *>(
-      &csupport_sem_ppc_double_double_legacy);
+  const fltSemantics &LegacySem = ppcDoubleDoubleLegacySemantics();
   APFloat Tmp(LegacySem);
   auto Ret = Tmp.convertFromZeroExtendedInteger(Input, InputSize, IsSigned, RM);
   *this = DoubleAPFloat(APFloatBase::PPCDoubleDouble(), Tmp.bitcastToAPInt());
@@ -3193,8 +3185,7 @@ inline unsigned int DoubleAPFloat::convertToHexString(char *DST,
                                                       roundingMode RM) const {
   assert(Semantics == &APFloatBase::PPCDoubleDouble() &&
          "Unexpected Semantics");
-  const fltSemantics &LegacySem = *reinterpret_cast<const fltSemantics *>(
-      &csupport_sem_ppc_double_double_legacy);
+  const fltSemantics &LegacySem = ppcDoubleDoubleLegacySemantics();
   return APFloat(LegacySem, bitcastToAPInt())
       .convertToHexString(DST, HexDigits, UpperCase, RM);
 }
@@ -3241,8 +3232,7 @@ inline void DoubleAPFloat::toString(SmallVectorImpl<char> &Str,
                                     bool TruncateZero) const {
   assert(Semantics == &APFloatBase::PPCDoubleDouble() &&
          "Unexpected Semantics");
-  const fltSemantics &LegacySem = *reinterpret_cast<const fltSemantics *>(
-      &csupport_sem_ppc_double_double_legacy);
+  const fltSemantics &LegacySem = ppcDoubleDoubleLegacySemantics();
   APFloat(LegacySem, bitcastToAPInt())
       .toString(Str, FormatPrecision, FormatMaxPadding, TruncateZero);
 }
@@ -3390,8 +3380,7 @@ DoubleAPFloat::fusedMultiplyAdd(const DoubleAPFloat &Multiplicand,
                                 APFloat::roundingMode RM) {
   assert(Semantics == &APFloatBase::PPCDoubleDouble() &&
          "Unexpected Semantics");
-  const fltSemantics &LegacySem = *reinterpret_cast<const fltSemantics *>(
-      &csupport_sem_ppc_double_double_legacy);
+  const fltSemantics &LegacySem = ppcDoubleDoubleLegacySemantics();
   APFloat Tmp(LegacySem, bitcastToAPInt());
   auto Ret =
       Tmp.fusedMultiplyAdd(APFloat(LegacySem, Multiplicand.bitcastToAPInt()),
@@ -3404,8 +3393,7 @@ inline APFloat::opStatus
 DoubleAPFloat::roundToIntegral(APFloat::roundingMode RM) {
   assert(Semantics == &APFloatBase::PPCDoubleDouble() &&
          "Unexpected Semantics");
-  const fltSemantics &LegacySem = *reinterpret_cast<const fltSemantics *>(
-      &csupport_sem_ppc_double_double_legacy);
+  const fltSemantics &LegacySem = ppcDoubleDoubleLegacySemantics();
   APFloat Tmp(LegacySem, bitcastToAPInt());
   auto Ret = Tmp.roundToIntegral(RM);
   *this = DoubleAPFloat(APFloatBase::PPCDoubleDouble(), Tmp.bitcastToAPInt());
@@ -3543,12 +3531,12 @@ inline lostFraction IEEEFloat::multiplySignificand(const IEEEFloat &rhs) {
 inline lostFraction IEEEFloat::multiplySignificand(const IEEEFloat &rhs,
                                                    IEEEFloat addend) {
   int s = sign ? 1 : 0;
+  const csupport_flt_semantics_t CSemantics = toCSupportSemantics(*semantics);
   int lf = csupport_apfloat_multiply_significand_fma(
-      reinterpret_cast<const csupport_flt_semantics_t *>(semantics),
-      significandParts(), partCount(), &exponent, &s, rhs.significandParts(),
-      rhs.exponent, addend.significandParts(), addend.partCount(),
-      addend.exponent, (int)addend.category, addend.sign ? 1 : 0,
-      addend.isNonZero() ? 1 : 0);
+      &CSemantics, significandParts(), partCount(), &exponent, &s,
+      rhs.significandParts(), rhs.exponent, addend.significandParts(),
+      addend.partCount(), addend.exponent, (int)addend.category,
+      addend.sign ? 1 : 0, addend.isNonZero() ? 1 : 0);
   sign = (unsigned)s;
   return (lostFraction)lf;
 }
@@ -3570,9 +3558,12 @@ inline IEEEFloat::opStatus IEEEFloat::convert(const fltSemantics &toSemantics_,
   int cat = (int)category;
   int sgn = sign ? 1 : 0;
   int loses = 0;
+  const csupport_flt_semantics_t FromSemantics =
+      toCSupportSemantics(*semantics);
+  const csupport_flt_semantics_t ToSemantics =
+      toCSupportSemantics(toSemantics_);
   int fs = csupport_apfloat_convert_semantics(
-      reinterpret_cast<const csupport_flt_semantics_t *>(semantics),
-      reinterpret_cast<const csupport_flt_semantics_t *>(&toSemantics_),
+      &FromSemantics, &ToSemantics,
       semantics == &APFloatBase::x87DoubleExtended(),
       &toSemantics_ == &APFloatBase::x87DoubleExtended(), &significand.part,
       &significand.parts, partCount(), &exponent, &cat, &sgn,
@@ -3983,8 +3974,7 @@ inline APFloat::opStatus DoubleAPFloat::divide(const DoubleAPFloat &RHS,
                                                APFloat::roundingMode RM) {
   assert(Semantics == &APFloatBase::PPCDoubleDouble() &&
          "Unexpected Semantics");
-  const fltSemantics &LegacySem = *reinterpret_cast<const fltSemantics *>(
-      &csupport_sem_ppc_double_double_legacy);
+  const fltSemantics &LegacySem = ppcDoubleDoubleLegacySemantics();
   APFloat Tmp(LegacySem, bitcastToAPInt());
   auto Ret = Tmp.divide(APFloat(LegacySem, RHS.bitcastToAPInt()), RM);
   *this = DoubleAPFloat(APFloatBase::PPCDoubleDouble(), Tmp.bitcastToAPInt());
@@ -3994,8 +3984,7 @@ inline APFloat::opStatus DoubleAPFloat::divide(const DoubleAPFloat &RHS,
 inline APFloat::opStatus DoubleAPFloat::remainder(const DoubleAPFloat &RHS) {
   assert(Semantics == &APFloatBase::PPCDoubleDouble() &&
          "Unexpected Semantics");
-  const fltSemantics &LegacySem = *reinterpret_cast<const fltSemantics *>(
-      &csupport_sem_ppc_double_double_legacy);
+  const fltSemantics &LegacySem = ppcDoubleDoubleLegacySemantics();
   APFloat Tmp(LegacySem, bitcastToAPInt());
   auto Ret = Tmp.remainder(APFloat(LegacySem, RHS.bitcastToAPInt()));
   *this = DoubleAPFloat(APFloatBase::PPCDoubleDouble(), Tmp.bitcastToAPInt());
@@ -4005,8 +3994,7 @@ inline APFloat::opStatus DoubleAPFloat::remainder(const DoubleAPFloat &RHS) {
 inline APFloat::opStatus DoubleAPFloat::mod(const DoubleAPFloat &RHS) {
   assert(Semantics == &APFloatBase::PPCDoubleDouble() &&
          "Unexpected Semantics");
-  const fltSemantics &LegacySem = *reinterpret_cast<const fltSemantics *>(
-      &csupport_sem_ppc_double_double_legacy);
+  const fltSemantics &LegacySem = ppcDoubleDoubleLegacySemantics();
   APFloat Tmp(LegacySem, bitcastToAPInt());
   auto Ret = Tmp.mod(APFloat(LegacySem, RHS.bitcastToAPInt()));
   *this = DoubleAPFloat(APFloatBase::PPCDoubleDouble(), Tmp.bitcastToAPInt());
@@ -4069,8 +4057,7 @@ inline APFloat::opStatus APFloat::convert(const fltSemantics &ToSemantics,
   if (usesLayout<IEEEFloat>(getSemantics()) &&
       usesLayout<DoubleAPFloat>(ToSemantics)) {
     assert(&ToSemantics == &PPCDoubleDouble());
-    const fltSemantics &LegacySem = *reinterpret_cast<const fltSemantics *>(
-        &csupport_sem_ppc_double_double_legacy);
+    const fltSemantics &LegacySem = detail::ppcDoubleDoubleLegacySemantics();
     auto Ret = U.IEEE.convert(LegacySem, RM, losesInfo);
     *this = APFloat(ToSemantics, U.IEEE.bitcastToAPInt());
     return Ret;

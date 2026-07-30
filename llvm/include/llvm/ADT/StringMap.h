@@ -14,6 +14,7 @@
 #ifndef LLVM_ADT_STRINGMAP_H
 #define LLVM_ADT_STRINGMAP_H
 
+#include "csupport/lstring_lmap.h"
 #include "llvm/ADT/StringMapEntry.h"
 #include "llvm/ADT/iterator.h"
 #include "llvm/Support/AllocatorBase.h"
@@ -497,16 +498,6 @@ public:
   StringRef operator*() const { return this->wrapped()->getKey(); }
 };
 
-extern "C" {
-unsigned csupport_stringmap_min_buckets(unsigned num_entries);
-void **csupport_stringmap_create_table(unsigned num_buckets);
-unsigned *csupport_stringmap_hash_table(void **table, unsigned num_buckets);
-unsigned csupport_stringmap_rehash(void ***the_table, unsigned *num_buckets,
-                                   unsigned *num_items,
-                                   unsigned *num_tombstones,
-                                   unsigned bucket_no);
-}
-
 namespace detail {
 inline StringMapEntryBase **createSMTable(unsigned N) {
   return (StringMapEntryBase **)(csupport_stringmap_create_table(N));
@@ -656,7 +647,8 @@ inline StringMapEntryBase *StringMapImpl::RemoveKey(StringRef Key) {
 }
 inline unsigned StringMapImpl::RehashTable(unsigned BucketNo) {
   return csupport_stringmap_rehash((void ***)(&TheTable), &NumBuckets,
-                                   &NumItems, &NumTombstones, BucketNo);
+                                   &NumItems, &NumTombstones, BucketNo,
+                                   getTombstoneVal());
 }
 
 } // end namespace llvm

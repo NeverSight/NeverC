@@ -84,7 +84,7 @@ typedef struct csupport_offset_cache csupport_offset_cache_t;
 
 csupport_offset_cache_t *csupport_offset_cache_create(unsigned elem_size);
 void csupport_offset_cache_destroy(csupport_offset_cache_t *cache);
-void csupport_offset_cache_push(csupport_offset_cache_t *cache, uint64_t val);
+int csupport_offset_cache_push(csupport_offset_cache_t *cache, uint64_t val);
 uint64_t csupport_offset_cache_get(const csupport_offset_cache_t *cache,
                                    size_t idx);
 size_t csupport_offset_cache_count(const csupport_offset_cache_t *cache);

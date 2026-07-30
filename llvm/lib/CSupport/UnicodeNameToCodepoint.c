@@ -1,5 +1,6 @@
 /*===- UnicodeNameToCodepoint.c - Unicode name lookup (pure C) -*- C -*-===*/
 #include "include/csupport/lunicode_lname_lto_lcodepoint.h"
+#include "include/csupport/buffer.h"
 #include <ctype.h>
 #include <string.h>
 #include <stdlib.h>
@@ -159,6 +160,12 @@ static size_t find_syllable(const char *name, size_t name_len, int strict,
     size_t syl_len = strlen(syl);
     if ((int)syl_len <= best_len) continue;
     char pv = *prev;
+    if (syl_len == 0) {
+      best_len = 0;
+      best_pos = (int)i;
+      best_prev = pv;
+      continue;
+    }
     size_t consumed = csupport_unicode_starts_with(name, name_len,
                                                     syl, syl_len,
                                                     strict, &pv, 0);
@@ -176,6 +183,8 @@ static size_t find_syllable(const char *name, size_t name_len, int strict,
 uint32_t csupport_unicode_name_to_hangul(
     const char *name, size_t name_len, int strict,
     char *buf, size_t buf_size, size_t *buf_len) {
+  if (!buf_len)
+    return UINT32_MAX;
   *buf_len = 0;
   char prev = 0;
   size_t consumed = csupport_unicode_starts_with(
@@ -190,27 +199,24 @@ uint32_t csupport_unicode_name_to_hangul(
   c = find_syllable(rest, rest_len, strict, &prev, &V, 1);
   rest += c; rest_len -= c;
   c = find_syllable(rest, rest_len, strict, &prev, &T, 2);
-  rest += c; rest_len -= c;
+  rest_len -= c;
   if (L != -1 && V != -1 && T != -1 && rest_len == 0) {
-    if (!strict && buf_size > 0) {
-      size_t pos = 0;
-      const char *pfx = "HANGUL SYLLABLE ";
-      size_t plen = 16;
-      if (pos + plen < buf_size) { memcpy(buf+pos, pfx, plen); pos += plen; }
+    if (!strict) {
+      csupport_obuf_t out = csupport_obuf(buf, buf_size);
+      csupport_obuf_write(&out, "HANGUL SYLLABLE ", 16);
       if (hangul_syllables[L][0]) {
         size_t sl = strlen(hangul_syllables[L][0]);
-        if (pos+sl < buf_size) { memcpy(buf+pos, hangul_syllables[L][0], sl); pos += sl; }
+        csupport_obuf_write(&out, hangul_syllables[L][0], sl);
       }
       if (hangul_syllables[V][1]) {
         size_t sl = strlen(hangul_syllables[V][1]);
-        if (pos+sl < buf_size) { memcpy(buf+pos, hangul_syllables[V][1], sl); pos += sl; }
+        csupport_obuf_write(&out, hangul_syllables[V][1], sl);
       }
       if (hangul_syllables[T][2]) {
         size_t sl = strlen(hangul_syllables[T][2]);
-        if (pos+sl < buf_size) { memcpy(buf+pos, hangul_syllables[T][2], sl); pos += sl; }
+        csupport_obuf_write(&out, hangul_syllables[T][2], sl);
       }
-      if (pos < buf_size) buf[pos] = '\0';
-      *buf_len = pos;
+      *buf_len = csupport_obuf_finish(&out);
     }
     return SBASE + ((uint32_t)L * VCOUNT + (uint32_t)V) * TCOUNT + (uint32_t)T;
   }
@@ -239,9 +245,33 @@ generated_names[] = {
 };
 #define NUM_GENERATED (sizeof(generated_names)/sizeof(generated_names[0]))
 
+static int parse_generated_codepoint(const char *hex, size_t length,
+                                     uint32_t *value) {
+  uint32_t parsed = 0;
+  for (size_t i = 0; i < length; ++i) {
+    unsigned digit;
+    unsigned char c = (unsigned char)hex[i];
+    if (c >= '0' && c <= '9')
+      digit = c - '0';
+    else if (c >= 'a' && c <= 'f')
+      digit = c - 'a' + 10;
+    else if (c >= 'A' && c <= 'F')
+      digit = c - 'A' + 10;
+    else
+      return 0;
+    if (parsed > (UINT32_MAX - digit) / 16)
+      return 0;
+    parsed = parsed * 16 + digit;
+  }
+  *value = parsed;
+  return 1;
+}
+
 uint32_t csupport_unicode_name_to_generated(
     const char *name, size_t name_len, int strict,
     char *buf, size_t buf_size, size_t *buf_len) {
+  if (!buf_len)
+    return UINT32_MAX;
   *buf_len = 0;
   for (size_t i = 0; i < NUM_GENERATED; i++) {
     char prev = 0;
@@ -259,18 +289,18 @@ uint32_t csupport_unicode_name_to_generated(
         if (hex_part[j] >= 'a' && hex_part[j] <= 'f') { has_lower = 1; break; }
       if (has_lower) return UINT32_MAX;
     }
-    char *endp;
-    unsigned long long V = strtoull(hex_part, &endp, 16);
-    if (endp != hex_part + hex_len) continue;
+    uint32_t V;
+    if (!parse_generated_codepoint(hex_part, hex_len, &V)) continue;
     if (V < generated_names[i].start || V > generated_names[i].end) continue;
-    if (!strict && buf_size > 0) {
-      size_t pos = 0;
-      if (pos + plen < buf_size) { memcpy(buf+pos, generated_names[i].prefix, plen); pos += plen; }
+    if (!strict) {
+      csupport_obuf_t out = csupport_obuf(buf, buf_size);
+      csupport_obuf_write(&out, generated_names[i].prefix, plen);
       char hbuf[16];
-      int hlen = snprintf(hbuf, sizeof(hbuf), "%llX", V);
-      if (hlen > 0 && pos + (size_t)hlen < buf_size) { memcpy(buf+pos, hbuf, (size_t)hlen); pos += (size_t)hlen; }
-      if (pos < buf_size) buf[pos] = '\0';
-      *buf_len = pos;
+      int hlen =
+          snprintf(hbuf, sizeof(hbuf), "%llX", (unsigned long long)V);
+      if (hlen > 0)
+        csupport_obuf_write(&out, hbuf, (size_t)hlen);
+      *buf_len = csupport_obuf_finish(&out);
     }
     return (uint32_t)V;
   }
@@ -306,20 +336,15 @@ uint32_t csupport_unicode_compare_node(
   if (has_children) {
     uint32_t child_off = N.children_offset;
     for (;;) {
-      char child_rev[256];
       size_t child_rev_len = 0;
       uint32_t result = csupport_unicode_compare_node(
           index, index_size, dict, child_off,
           name + consumed, name_len - consumed, strict,
           prev_char_in_name,
-          child_rev, sizeof(child_rev), &child_rev_len);
+          rev_buf, rev_buf_size, &child_rev_len);
       if (result != UINT32_MAX) {
         csupport_unicode_node_t child = csupport_unicode_read_node(index, index_size, dict, child_off);
-        size_t pos = 0;
-        if (child_rev_len > 0 && pos + child_rev_len <= rev_buf_size) {
-          memcpy(rev_buf + pos, child_rev, child_rev_len);
-          pos += child_rev_len;
-        }
+        size_t pos = child_rev_len;
         for (size_t i = child.name_len; i > 0; i--) {
           if (pos < rev_buf_size) rev_buf[pos++] = child.name_data[i-1];
         }

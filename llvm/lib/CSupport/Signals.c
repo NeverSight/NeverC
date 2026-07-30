@@ -1,7 +1,9 @@
 /*===- Signals.c - Signal handling (pure C) ----------------------*- C -*-===*/
 #include "include/csupport/lsignals.h"
+#include "include/csupport/allocation.h"
 #include "llvm/Config/llvm-config.h"
 #include <errno.h>
+#include <limits.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -55,7 +57,8 @@ void csupport_print_stack_trace_fd(int fd) {
     for (int i = 0; i < n; i++) {
       char buf[32];
       int len = snprintf(buf, sizeof(buf), "  [%d] %p\n", i, trace[i]);
-      if (len > 0) write(fd, buf, (size_t)len);
+      if (len > 0 && (size_t)len < sizeof(buf))
+        write(fd, buf, (size_t)len);
     }
 #endif
   }
@@ -291,10 +294,15 @@ static ATOMIC_PTR(csupport_file_node_t *) g_files_to_remove = NULL;
 
 void csupport_file_remove_list_insert(const char *filename) {
   if (!filename) return;
-  csupport_file_node_t *node =
-      (csupport_file_node_t *)calloc(1, sizeof(csupport_file_node_t));
-  if (!node) return;
-  ATOMIC_STORE(&node->filename, strdup(filename));
+  size_t filename_len = strlen(filename);
+  if (filename_len == SIZE_MAX)
+    csupport_allocation_failure();
+  char *filename_copy =
+      (char *)csupport_checked_malloc(filename_len + 1, sizeof(char));
+  memcpy(filename_copy, filename, filename_len + 1);
+  csupport_file_node_t *node = (csupport_file_node_t *)
+      csupport_checked_calloc(1, sizeof(csupport_file_node_t));
+  ATOMIC_STORE(&node->filename, filename_copy);
   ATOMIC_STORE(&node->next, (csupport_file_node_t *)NULL);
 
   ATOMIC_PTR(csupport_file_node_t *) *insert_point = &g_files_to_remove;
@@ -504,10 +512,12 @@ int csupport_unwind_backtrace(void **stack_trace, int max_entries) {
 int csupport_dladdr_max_width(void **stack_trace, int depth) {
   int width = 0;
   for (int i = 0; i < depth; ++i) {
-    Dl_info dli;
-    dladdr(stack_trace[i], &dli);
+    Dl_info dli = {0};
+    if (dladdr(stack_trace[i], &dli) == 0 || !dli.dli_fname)
+      continue;
     const char *slash = strrchr(dli.dli_fname, '/');
-    int nw = slash ? (int)strlen(slash) - 1 : (int)strlen(dli.dli_fname);
+    size_t name_len = strlen(slash ? slash + 1 : dli.dli_fname);
+    int nw = name_len > INT_MAX ? INT_MAX : (int)name_len;
     if (nw > width) width = nw;
   }
   return width;
@@ -865,24 +875,38 @@ void csupport_print_stack_trace_dladdr(void *ctx, csupport_write_fn_t write_fn,
   int width = csupport_dladdr_max_width(stack_trace, depth);
 
   for (int i = 0; i < depth; ++i) {
-    Dl_info dlinfo;
-    dladdr(stack_trace[i], &dlinfo);
+    Dl_info dlinfo = {0};
+    (void)dladdr(stack_trace[i], &dlinfo);
 
     char buf[512];
     int n;
 
     n = snprintf(buf, sizeof(buf), "%-2d", i);
-    if (n > 0) write_fn(ctx, buf, (size_t)n);
+    if (n > 0 && (size_t)n < sizeof(buf))
+      write_fn(ctx, buf, (size_t)n);
 
-    const char *name = strrchr(dlinfo.dli_fname, '/');
-    n = snprintf(buf, sizeof(buf), " %-*s", width,
-                 name ? name + 1 : dlinfo.dli_fname);
-    if (n > 0) write_fn(ctx, buf, (size_t)n);
+    const char *filename = dlinfo.dli_fname ? dlinfo.dli_fname : "??";
+    const char *slash = strrchr(filename, '/');
+    const char *name = slash ? slash + 1 : filename;
+    size_t name_len = strlen(name);
+    write_fn(ctx, " ", 1);
+    write_fn(ctx, name, name_len);
+    for (size_t padding = name_len < (size_t)width
+                              ? (size_t)width - name_len
+                              : 0;
+         padding != 0;) {
+      static const char Spaces[] = "                                ";
+      size_t chunk =
+          padding < sizeof(Spaces) - 1 ? padding : sizeof(Spaces) - 1;
+      write_fn(ctx, Spaces, chunk);
+      padding -= chunk;
+    }
 
     n = snprintf(buf, sizeof(buf), " %#0*lx",
                  (int)(sizeof(void *) * 2) + 2,
                  (unsigned long)(uintptr_t)stack_trace[i]);
-    if (n > 0) write_fn(ctx, buf, (size_t)n);
+    if (n > 0 && (size_t)n < sizeof(buf))
+      write_fn(ctx, buf, (size_t)n);
 
     if (dlinfo.dli_sname != NULL) {
       write_fn(ctx, " ", 1);
@@ -898,10 +922,13 @@ void csupport_print_stack_trace_dladdr(void *ctx, csupport_write_fn_t write_fn,
         write_fn(ctx, dlinfo.dli_sname, strlen(dlinfo.dli_sname));
       }
 
-      ptrdiff_t offset = (const char *)stack_trace[i] -
-                          (const char *)dlinfo.dli_saddr;
-      n = snprintf(buf, sizeof(buf), " + %td", offset);
-      if (n > 0) write_fn(ctx, buf, (size_t)n);
+      uintptr_t address = (uintptr_t)stack_trace[i];
+      uintptr_t symbol = (uintptr_t)dlinfo.dli_saddr;
+      n = address >= symbol
+              ? snprintf(buf, sizeof(buf), " + %" PRIuPTR, address - symbol)
+              : snprintf(buf, sizeof(buf), " - %" PRIuPTR, symbol - address);
+      if (n > 0 && (size_t)n < sizeof(buf))
+        write_fn(ctx, buf, (size_t)n);
     }
     write_fn(ctx, "\n", 1);
   }
@@ -944,13 +971,19 @@ static int csupport_dso_markup_cb(struct dl_phdr_info *info, size_t size,
   char buf[1024];
   const char *name = data->is_first ? data->main_executable_name
                                     : info->dlpi_name;
-  int n = snprintf(buf, sizeof(buf), "{{{module:%zu:%s:elf:",
-                   data->module_count, name);
-  if (n > 0) data->write_fn(data->ctx, buf, (size_t)n);
+  if (!name)
+    name = "";
+  int n =
+      snprintf(buf, sizeof(buf), "{{{module:%zu:", data->module_count);
+  if (n > 0 && (size_t)n < sizeof(buf))
+    data->write_fn(data->ctx, buf, (size_t)n);
+  data->write_fn(data->ctx, name, strlen(name));
+  data->write_fn(data->ctx, ":elf:", 5);
 
   for (size_t i = 0; i < bid_len; i++) {
     n = snprintf(buf, sizeof(buf), "%02x", bid[i]);
-    if (n > 0) data->write_fn(data->ctx, buf, (size_t)n);
+    if (n > 0 && (size_t)n < sizeof(buf))
+      data->write_fn(data->ctx, buf, (size_t)n);
   }
   data->write_fn(data->ctx, "}}}\n", 4);
 
@@ -966,7 +999,8 @@ static int csupport_dso_markup_cb(struct dl_phdr_info *info, size_t size,
                  "{{{mmap:%#016lx:%#lx:load:%zu:%s:%#016lx}}}\n",
                  (unsigned long)start_addr, (unsigned long)phdr->p_memsz,
                  data->module_count, mode_str, (unsigned long)mod_rel_addr);
-    if (n > 0) data->write_fn(data->ctx, buf, (size_t)n);
+    if (n > 0 && (size_t)n < sizeof(buf))
+      data->write_fn(data->ctx, buf, (size_t)n);
   }
   data->is_first = 0;
   data->module_count++;

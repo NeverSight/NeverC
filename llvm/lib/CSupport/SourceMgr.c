@@ -1,6 +1,8 @@
 /*===- SourceMgr.c - Source file management (pure C) ------------*- C -*-===*/
 #include "include/csupport/lsource_lmgr.h"
 #include "include/csupport/buffer.h"
+#include <limits.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -9,7 +11,8 @@ unsigned csupport_find_line_number(const char *buf, size_t buf_len,
                                   size_t offset) {
   unsigned line = 1;
   for (size_t i = 0; i < offset && i < buf_len; i++)
-    if (buf[i] == '\n') line++;
+    if (buf[i] == '\n' && line != UINT_MAX)
+      line++;
   return line;
 }
 
@@ -30,10 +33,14 @@ unsigned csupport_find_column(const char *buf, size_t offset,
   unsigned col = 1;
   if (tab_stop == 0) tab_stop = 8;
   for (size_t i = line_start; i < offset; i++) {
-    if (buf[i] == '\t')
-      col = ((col - 1 + tab_stop) / tab_stop) * tab_stop + 1;
-    else
+    if (buf[i] == '\t') {
+      unsigned advance = tab_stop - ((col - 1) % tab_stop);
+      if (col > UINT_MAX - advance)
+        return UINT_MAX;
+      col += advance;
+    } else if (col != UINT_MAX) {
       col++;
+    }
   }
   return col;
 }
@@ -65,21 +72,23 @@ unsigned csupport_binary_search_line(const size_t *line_offsets,
     else
       hi = mid;
   }
-  return (unsigned)lo;
+  return lo > UINT_MAX ? UINT_MAX : (unsigned)lo;
 }
 
 size_t csupport_smdiag_format_msg(char *buf, size_t buflen,
                                   const char *filename, unsigned line,
                                   unsigned col, const char *kind,
                                   const char *msg) {
-  int n;
+  csupport_obuf_t out = csupport_obuf(buf, buflen);
+  csupport_obuf_write(&out, filename, strlen(filename));
+  csupport_obuf_printf(&out, ":%u", line);
   if (col > 0)
-    n = snprintf(buf, buflen, "%s:%u:%u: %s: %s",
-                 filename, line, col, kind, msg);
-  else
-    n = snprintf(buf, buflen, "%s:%u: %s: %s",
-                 filename, line, kind, msg);
-  return n > 0 ? (size_t)n : 0;
+    csupport_obuf_printf(&out, ":%u", col);
+  csupport_obuf_write(&out, ": ", 2);
+  csupport_obuf_write(&out, kind, strlen(kind));
+  csupport_obuf_write(&out, ": ", 2);
+  csupport_obuf_write(&out, msg, strlen(msg));
+  return csupport_obuf_finish(&out);
 }
 
 size_t csupport_expand_tabs_to_buf(const char *src, size_t src_len,
@@ -213,7 +222,6 @@ int csupport_format_diag_location(char *buf, size_t buflen,
                                    const char *filename, int line_no,
                                    int col_no) {
   if (!buf || buflen == 0) return 0;
-  int n;
   if (!filename || filename[0] == '\0') {
     buf[0] = '\0';
     return 0;
@@ -221,13 +229,16 @@ int csupport_format_diag_location(char *buf, size_t buflen,
   const char *display_name = filename;
   if (filename[0] == '-' && filename[1] == '\0')
     display_name = "<stdin>";
+  csupport_obuf_t out = csupport_obuf(buf, buflen);
+  csupport_obuf_write(&out, display_name, strlen(display_name));
   if (line_no > 0 && col_no > 0)
-    n = snprintf(buf, buflen, "%s:%d:%d: ", display_name, line_no, col_no);
+    csupport_obuf_printf(&out, ":%d:%d: ", line_no, col_no);
   else if (line_no > 0)
-    n = snprintf(buf, buflen, "%s:%d: ", display_name, line_no);
+    csupport_obuf_printf(&out, ":%d: ", line_no);
   else
-    n = snprintf(buf, buflen, "%s: ", display_name);
-  return (n > 0 && (size_t)n < buflen) ? n : (int)(buflen - 1);
+    csupport_obuf_write(&out, ": ", 2);
+  size_t needed = csupport_obuf_finish(&out);
+  return needed > INT_MAX ? -1 : (int)needed;
 }
 
 size_t csupport_compute_caret_line(const char *source_line, size_t source_len,
@@ -326,23 +337,23 @@ size_t csupport_format_diag_header(char *buf, size_t cap,
                                     const char *filename, size_t fn_len,
                                     unsigned line, unsigned col,
                                     const char *kind, size_t kind_len) {
-  if (!buf || cap == 0) return 0;
-  int n = 0;
-  if (filename && fn_len > 0)
-    n = snprintf(buf, cap, "%.*s:%u:%u: %.*s: ",
-                 (int)fn_len, filename, line, col,
-                 (int)kind_len, kind);
-  else
-    n = snprintf(buf, cap, "%u:%u: %.*s: ", line, col,
-                 (int)kind_len, kind);
-  return n > 0 ? (size_t)n : 0;
+  csupport_obuf_t out = csupport_obuf(buf, cap);
+  if (filename && fn_len > 0) {
+    csupport_obuf_write(&out, filename, fn_len);
+    csupport_obuf_put(&out, ':');
+  }
+  csupport_obuf_printf(&out, "%u:%u: ", line, col);
+  csupport_obuf_write(&out, kind, kind_len);
+  csupport_obuf_write(&out, ": ", 2);
+  return csupport_obuf_finish(&out);
 }
 
 unsigned csupport_count_lines(const char *data, size_t len) {
   if (!data || len == 0) return 0;
   unsigned count = 1;
   for (size_t i = 0; i < len; i++) {
-    if (data[i] == '\n') count++;
+    if (data[i] == '\n' && count != UINT_MAX)
+      count++;
   }
   return count;
 }
@@ -378,7 +389,8 @@ int csupport_find_line_for_offset(const char *data, size_t data_len,
   if (!data || offset > data_len) return -1;
   int line = 1;
   for (size_t i = 0; i < offset; i++) {
-    if (data[i] == '\n') line++;
+    if (data[i] == '\n' && line != INT_MAX)
+      line++;
   }
   return line;
 }
@@ -397,13 +409,20 @@ size_t csupport_get_line_start_offset(const char *data, size_t data_len,
 size_t csupport_get_line_contents(const char *data, size_t data_len,
                                    size_t start_offset,
                                    const char **line_start) {
-  if (!data || start_offset >= data_len) {
+  if (!line_start)
+    return 0;
+  if (!data) {
+    *line_start = NULL;
+    return 0;
+  }
+  if (start_offset >= data_len) {
     *line_start = data + data_len;
     return 0;
   }
   *line_start = data + start_offset;
   size_t len = 0;
-  while (start_offset + len < data_len && data[start_offset + len] != '\n'
+  size_t remaining = data_len - start_offset;
+  while (len < remaining && data[start_offset + len] != '\n'
          && data[start_offset + len] != '\r') {
     len++;
   }
@@ -420,12 +439,18 @@ struct csupport_offset_cache {
 };
 
 csupport_offset_cache_t *csupport_offset_cache_create(unsigned elem_size) {
+  if (elem_size != 1 && elem_size != 2 && elem_size != 4 && elem_size != 8)
+    return NULL;
   csupport_offset_cache_t *a =
       (csupport_offset_cache_t *)calloc(1, sizeof(csupport_offset_cache_t));
   if (!a) return NULL;
   a->elem_size = elem_size;
   a->cap = 256;
   a->data = malloc(a->cap * elem_size);
+  if (!a->data) {
+    free(a);
+    return NULL;
+  }
   return a;
 }
 
@@ -436,10 +461,18 @@ void csupport_offset_cache_destroy(csupport_offset_cache_t *a) {
   }
 }
 
-void csupport_offset_cache_push(csupport_offset_cache_t *a, uint64_t val) {
+int csupport_offset_cache_push(csupport_offset_cache_t *a, uint64_t val) {
   if (a->count >= a->cap) {
-    a->cap *= 2;
-    a->data = realloc(a->data, a->cap * a->elem_size);
+    if (a->cap > SIZE_MAX / 2)
+      return 0;
+    size_t new_cap = a->cap * 2;
+    if (new_cap > SIZE_MAX / a->elem_size)
+      return 0;
+    void *new_data = realloc(a->data, new_cap * a->elem_size);
+    if (!new_data)
+      return 0;
+    a->data = new_data;
+    a->cap = new_cap;
   }
   switch (a->elem_size) {
   case 1: ((uint8_t *)a->data)[a->count] = (uint8_t)val; break;
@@ -448,6 +481,7 @@ void csupport_offset_cache_push(csupport_offset_cache_t *a, uint64_t val) {
   case 8: ((uint64_t *)a->data)[a->count] = val; break;
   }
   a->count++;
+  return 1;
 }
 
 uint64_t csupport_offset_cache_get(const csupport_offset_cache_t *a,
@@ -484,8 +518,10 @@ csupport_offset_cache_t *csupport_offset_cache_build(const char *buf,
   csupport_offset_cache_t *cache = csupport_offset_cache_create(elem_size);
   if (!cache) return NULL;
   for (size_t i = 0; i < buf_len; i++) {
-    if (buf[i] == '\n')
-      csupport_offset_cache_push(cache, i);
+    if (buf[i] == '\n' && !csupport_offset_cache_push(cache, i)) {
+      csupport_offset_cache_destroy(cache);
+      return NULL;
+    }
   }
   return cache;
 }
@@ -500,34 +536,30 @@ unsigned csupport_offset_cache_elem_size(size_t buf_size) {
 size_t csupport_format_diag_loc_ex(char *buf, size_t cap,
                                      const char *filename, size_t fn_len,
                                      int line, int col) {
-  size_t pos = 0;
+  csupport_obuf_t out = csupport_obuf(buf, cap);
   if (fn_len > 0) {
     if (fn_len == 1 && filename[0] == '-') {
-      const char *stdin_str = "<stdin>";
-      size_t slen = 7;
-      if (pos + slen <= cap) { memcpy(buf + pos, stdin_str, slen); pos += slen; }
+      csupport_obuf_write(&out, "<stdin>", 7);
     } else {
-      if (pos + fn_len <= cap) { memcpy(buf + pos, filename, fn_len); pos += fn_len; }
+      csupport_obuf_write(&out, filename, fn_len);
     }
     if (line >= 0) {
-      if (pos < cap) buf[pos++] = ':';
-      pos += (size_t)snprintf(buf + pos, cap > pos ? cap - pos : 0, "%d", line);
+      csupport_obuf_printf(&out, ":%d", line);
       if (col >= 0) {
-        if (pos < cap) buf[pos++] = ':';
-        pos += (size_t)snprintf(buf + pos, cap > pos ? cap - pos : 0, "%d", col + 1);
+        csupport_obuf_printf(&out, ":%lld", (long long)col + 1);
       }
     }
   }
-  if (pos < cap) buf[pos] = '\0';
-  return pos;
+  return csupport_obuf_finish(&out);
 }
 
 size_t csupport_format_diag_kind(char *buf, size_t cap, int kind) {
   const char *labels[] = {"error", "warning", "note", "remark"};
   if (kind < 0 || kind > 3) return 0;
   size_t len = strlen(labels[kind]);
-  if (len < cap) { memcpy(buf, labels[kind], len); buf[len] = '\0'; }
-  return len;
+  csupport_obuf_t out = csupport_obuf(buf, cap);
+  csupport_obuf_write(&out, labels[kind], len);
+  return csupport_obuf_finish(&out);
 }
 
 int csupport_count_line_leading_spaces(const char *line, size_t len,

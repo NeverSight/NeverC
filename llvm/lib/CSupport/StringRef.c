@@ -3,6 +3,7 @@
 #include "include/csupport/stringref.h"
 #include <assert.h>
 #include <ctype.h>
+#include <limits.h>
 #include <string.h>
 #include <stdint.h>
 
@@ -88,6 +89,7 @@ size_t csupport_str_find_substr(const char *haystack, size_t hay_len,
 size_t csupport_str_rfind(const char *data, size_t len,
                           const char *needle, size_t nee_len) {
   if (nee_len > len) return (size_t)-1;
+  if (nee_len == 0) return len;
   for (size_t i = len - nee_len + 1; i > 0; --i) {
     if (memcmp(data + i - 1, needle, nee_len) == 0)
       return i - 1;
@@ -154,13 +156,15 @@ static unsigned get_auto_sense_radix(const char **str, size_t *len) {
 
 int csupport_consume_unsigned(const char **str, size_t *len, unsigned radix,
                               unsigned long long *result) {
+  if (!str || !len || !result || (!*str && *len != 0))
+    return 1;
   const char *s = *str;
   size_t slen = *len;
   if (radix == 0) radix = get_auto_sense_radix(&s, &slen);
-  if (slen == 0) return 1;
+  if (slen == 0 || radix < 2 || radix > 36) return 1;
 
   const char *start = s;
-  *result = 0;
+  unsigned long long value = 0;
   while (slen > 0) {
     unsigned char_val;
     if (*s >= '0' && *s <= '9') char_val = (unsigned)(*s - '0');
@@ -168,13 +172,14 @@ int csupport_consume_unsigned(const char **str, size_t *len, unsigned radix,
     else if (*s >= 'A' && *s <= 'Z') char_val = (unsigned)(*s - 'A' + 10);
     else break;
     if (char_val >= radix) break;
-    unsigned long long prev = *result;
-    *result = *result * radix + char_val;
-    if (*result / radix < prev) return 1;
+    if (value > (ULLONG_MAX - char_val) / radix)
+      return 1;
+    value = value * radix + char_val;
     s++; slen--;
   }
   if (s == start) return 1;
   *str = s; *len = slen;
+  *result = value;
   return 0;
 }
 
@@ -191,10 +196,14 @@ size_t csupport_str_find_insensitive(const char *data, size_t len,
                                      const char *needle, size_t nee_len,
                                      size_t from) {
   if (nee_len == 0) return from <= len ? from : (size_t)-1;
-  if (from + nee_len > len) return (size_t)-1;
-  for (size_t i = from; i + nee_len <= len; ++i)
+  if (from > len || nee_len > len - from) return (size_t)-1;
+  const size_t last = len - nee_len;
+  for (size_t i = from;; ++i) {
     if (ascii_strncasecmp_c(data + i, needle, nee_len) == 0)
       return i;
+    if (i == last)
+      break;
+  }
   return (size_t)-1;
 }
 
@@ -211,6 +220,7 @@ size_t csupport_str_rfind_char_insensitive(const char *data, size_t len,
 size_t csupport_str_rfind_insensitive(const char *data, size_t len,
                                       const char *needle, size_t nee_len) {
   if (nee_len > len) return (size_t)-1;
+  if (nee_len == 0) return len;
   for (size_t i = len - nee_len + 1; i > 0; --i)
     if (ascii_strncasecmp_c(data + i - 1, needle, nee_len) == 0)
       return i - 1;
@@ -274,21 +284,30 @@ size_t csupport_str_find_last_not_of(const char *data, size_t len,
 
 int csupport_consume_signed(const char **str, size_t *len, unsigned radix,
                             long long *result) {
+  if (!str || !len || !result || (!*str && *len != 0))
+    return 1;
+  const char *s = *str;
+  size_t slen = *len;
   unsigned long long ull;
-  if (*len == 0 || **str != '-') {
-    if (csupport_consume_unsigned(str, len, radix, &ull) ||
-        (long long)ull < 0)
+  if (slen == 0 || *s != '-') {
+    if (csupport_consume_unsigned(&s, &slen, radix, &ull) ||
+        ull > (unsigned long long)LLONG_MAX)
       return 1;
+    *str = s;
+    *len = slen;
     *result = (long long)ull;
     return 0;
   }
-  const char *s2 = *str + 1;
-  size_t l2 = *len - 1;
-  if (csupport_consume_unsigned(&s2, &l2, radix, &ull) ||
-      (long long)(-ull) > 0)
+  ++s;
+  --slen;
+  if (csupport_consume_unsigned(&s, &slen, radix, &ull) ||
+      ull > (unsigned long long)LLONG_MAX + 1)
     return 1;
-  *str = s2; *len = l2;
-  *result = (long long)(-ull);
+  *str = s;
+  *len = slen;
+  *result = ull == (unsigned long long)LLONG_MAX + 1
+                ? LLONG_MIN
+                : -(long long)ull;
   return 0;
 }
 

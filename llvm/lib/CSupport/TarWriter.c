@@ -71,19 +71,30 @@ void csupport_tar_write_padding(char *buf, size_t file_size,
 size_t csupport_tar_format_pax(char *buf, size_t buflen,
                                const char *key, size_t key_len,
                                const char *val, size_t val_len) {
-  int content_len = (int)key_len + (int)val_len + 3;
-  char lenbuf[16];
-  int llen = snprintf(lenbuf, sizeof(lenbuf), "%d", content_len);
-  int total = content_len + llen;
-  int total2_len = snprintf(lenbuf, sizeof(lenbuf), "%d", total);
-  total = content_len + total2_len;
+  if (val_len > SIZE_MAX - 3 || key_len > SIZE_MAX - val_len - 3)
+    return 0;
+  size_t content_len = key_len + val_len + 3;
+  size_t total = content_len;
+  size_t previous;
+  do {
+    previous = total;
+    size_t digits = 1;
+    for (size_t n = total; n >= 10; n /= 10)
+      ++digits;
+    if (content_len > SIZE_MAX - digits)
+      return 0;
+    total = content_len + digits;
+  } while (total != previous);
 
   /* A path too long for the buffer is reported rather than dropped, which is
      what lets the caller come back with a buffer that holds it -- and a path
      too long for a ustar header is the case this attribute exists to carry. */
   csupport_obuf_t attribute = csupport_obuf(buf, buflen);
-  csupport_obuf_printf(&attribute, "%d %.*s=%.*s\n", total, (int)key_len, key,
-                       (int)val_len, val);
+  csupport_obuf_printf(&attribute, "%zu ", total);
+  csupport_obuf_write(&attribute, key, key_len);
+  csupport_obuf_put(&attribute, '=');
+  csupport_obuf_write(&attribute, val, val_len);
+  csupport_obuf_put(&attribute, '\n');
   return csupport_obuf_finish(&attribute);
 }
 

@@ -9,6 +9,7 @@
 #ifndef CSUPPORT_OSTREAM_H
 #define CSUPPORT_OSTREAM_H
 
+#include "csupport/allocation.h"
 #include "csupport/types.h"
 #include <stdarg.h>
 #include <stdbool.h>
@@ -66,7 +67,8 @@ static inline csupport_ostream_t csupport_os_buffer(size_t initial_cap) {
   csupport_ostream_t os;
   os.kind = CSUPPORT_OS_BUFFER;
   os.u.buf.cap = initial_cap > 0 ? initial_cap : 256;
-  os.u.buf.data = (char *)malloc(os.u.buf.cap);
+  os.u.buf.data =
+      (char *)csupport_checked_malloc(os.u.buf.cap, sizeof(char));
   os.u.buf.pos = 0;
   os.u.buf.owns = true;
   return os;
@@ -97,14 +99,19 @@ static inline void csupport_os_write(csupport_ostream_t *os, const char *data,
     fwrite(data, 1, len, os->u.file);
     break;
   case CSUPPORT_OS_BUFFER: {
+    if (len > SIZE_MAX - os->u.buf.pos)
+      csupport_allocation_failure();
     size_t need = os->u.buf.pos + len;
     if (need > os->u.buf.cap) {
       if (!os->u.buf.owns)
         return;
-      size_t grow = os->u.buf.cap * 2;
+      size_t grow =
+          os->u.buf.cap <= SIZE_MAX / 2 ? os->u.buf.cap * 2 : SIZE_MAX;
       if (grow < need)
         grow = need;
-      os->u.buf.data = (char *)realloc(os->u.buf.data, grow);
+      char *data =
+          (char *)csupport_checked_realloc(os->u.buf.data, grow, sizeof(char));
+      os->u.buf.data = data;
       os->u.buf.cap = grow;
     }
     memcpy(os->u.buf.data + os->u.buf.pos, data, len);
@@ -140,7 +147,8 @@ static inline void csupport_os_printf(csupport_ostream_t *os, const char *fmt,
   if (n > 0 && (size_t)n < sizeof(stack_buf)) {
     csupport_os_write(os, stack_buf, (size_t)n);
   } else if (n > 0) {
-    char *heap_buf = (char *)malloc((size_t)n + 1);
+    char *heap_buf =
+        (char *)csupport_checked_malloc((size_t)n + 1, sizeof(char));
     va_start(ap, fmt);
     vsnprintf(heap_buf, (size_t)n + 1, fmt, ap);
     va_end(ap);

@@ -15,10 +15,12 @@
 #define LLVM_SUPPORT_CSUPPORTBUFFER_H
 
 #include "llvm/ADT/SmallString.h"
+#include "llvm/Support/ErrorHandling.h"
 
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
+#include <limits>
 
 namespace llvm {
 
@@ -45,9 +47,13 @@ SmallString<InlineCapacity> fillCSupportBuffer(Filler Fill) {
   // long as the buffer is one that did not fit.
   size_t Length = Fill(Out.data(), Out.size());
   if (Length >= Out.size()) {
+    if (Length == std::numeric_limits<size_t>::max())
+      report_bad_alloc_error("CSupport output exceeds addressable size");
     Out.resize_for_overwrite(Length + 1);
     Length = Fill(Out.data(), Out.size());
     assert(Length < Out.size() && "csupport filler reported unstable length");
+    if (Length >= Out.size())
+      report_fatal_error("csupport filler reported unstable length");
   }
 
   // Clamped rather than trusted: a filler whose second answer disagrees with

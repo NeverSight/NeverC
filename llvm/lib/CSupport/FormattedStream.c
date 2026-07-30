@@ -1,5 +1,6 @@
 /*===- FormattedStream.c - Column-tracking stream (pure C) ------*- C -*-===*/
 #include "include/csupport/lformatted_lstream.h"
+#include <limits.h>
 #include <string.h>
 
 unsigned csupport_utf8_byte_length(unsigned char first_byte) {
@@ -20,42 +21,62 @@ static void process_codepoint(unsigned *column, unsigned *line,
     unsigned char c = (unsigned char)cp[0];
     switch (c) {
     case '\n':
-      (*line)++;
+      if (*line != UINT_MAX)
+        (*line)++;
       *column = 0;
       return;
     case '\r':
       *column = 0;
       return;
     case '\t':
-      *column += (8 - (*column & 0x7)) & 0x7;
+      if (*column > UINT_MAX - (8 - (*column & 0x7)))
+        *column = UINT_MAX;
+      else
+        *column += 8 - (*column & 0x7);
       return;
     default:
       if (is_printable_ascii(c))
-        (*column)++;
+        if (*column != UINT_MAX)
+          (*column)++;
       return;
     }
   }
-  (*column)++;
+  if (*column != UINT_MAX)
+    (*column)++;
 }
 
 void csupport_update_column_position(unsigned *column, unsigned *line,
                                      const char *ptr, size_t size,
                                      char *partial_utf8, size_t *partial_len) {
+  if (!column || !line || !partial_utf8 || !partial_len || (!ptr && size != 0))
+    return;
+  if (*partial_len > 4) {
+    *partial_len = 0;
+    return;
+  }
   if (*partial_len > 0) {
     unsigned needed = csupport_utf8_byte_length((unsigned char)partial_utf8[0]);
-    unsigned remaining = needed - (unsigned)*partial_len;
-    if (size < remaining) {
-      memcpy(partial_utf8 + *partial_len, ptr, size);
-      *partial_len += size;
-      return;
+    if (*partial_len >= needed) {
+      process_codepoint(column, line, partial_utf8, needed);
+      *partial_len = 0;
+    } else {
+      unsigned remaining = needed - (unsigned)*partial_len;
+      if (size < remaining) {
+        if (size != 0)
+          memcpy(partial_utf8 + *partial_len, ptr, size);
+        *partial_len += size;
+        return;
+      }
+      memcpy(partial_utf8 + *partial_len, ptr, remaining);
+      process_codepoint(column, line, partial_utf8, needed);
+      *partial_len = 0;
+      ptr += remaining;
+      size -= remaining;
     }
-    memcpy(partial_utf8 + *partial_len, ptr, remaining);
-    process_codepoint(column, line, partial_utf8, needed);
-    *partial_len = 0;
-    ptr += remaining;
-    size -= remaining;
   }
 
+  if (size == 0)
+    return;
   const char *end = ptr + size;
   while (ptr < end) {
     unsigned num_bytes = csupport_utf8_byte_length((unsigned char)*ptr);

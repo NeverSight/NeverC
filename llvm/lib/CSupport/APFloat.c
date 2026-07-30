@@ -1,20 +1,39 @@
 /*===- APFloat.c - Arbitrary precision float (pure C) -----------*- C -*-===*/
-#include "include/csupport/la_lp_lfloat.h"
+#include "include/csupport/allocation.h"
 #include "include/csupport/buffer.h"
+#include "include/csupport/la_lp_lfloat.h"
 #include "include/csupport/lapint.h"
 #include "include/csupport/types.h"
 #include <assert.h>
 #include <limits.h>
+#include <math.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include <math.h>
 
-/* llvm::APFloat::fltCategory — must match llvm/include/llvm/ADT/APFloat.h */
-#define LLVM_FC_INFINITY 0
-#define LLVM_FC_NAN 1
-#define LLVM_FC_NORMAL 2
-#define LLVM_FC_ZERO 3
+#define LLVM_FC_INFINITY CSUPPORT_APFLOAT_FC_INFINITY
+#define LLVM_FC_NAN CSUPPORT_APFLOAT_FC_NAN
+#define LLVM_FC_NORMAL CSUPPORT_APFLOAT_FC_NORMAL
+#define LLVM_FC_ZERO CSUPPORT_APFLOAT_FC_ZERO
+
+enum {
+  APFLOAT_DECIMAL_EXPONENT_LIMIT = 24000,
+  APFLOAT_PART_BITS = sizeof(uint64_t) * CHAR_BIT
+};
+
+static int apfloat_add_decimal_exponent(int exponent, ptrdiff_t adjustment) {
+  if (adjustment > APFLOAT_DECIMAL_EXPONENT_LIMIT)
+    return APFLOAT_DECIMAL_EXPONENT_LIMIT;
+  if (adjustment < -APFLOAT_DECIMAL_EXPONENT_LIMIT)
+    return -APFLOAT_DECIMAL_EXPONENT_LIMIT;
+
+  int delta = (int)adjustment;
+  if (delta > 0 && exponent > APFLOAT_DECIMAL_EXPONENT_LIMIT - delta)
+    return APFLOAT_DECIMAL_EXPONENT_LIMIT;
+  if (delta < 0 && exponent < -APFLOAT_DECIMAL_EXPONENT_LIMIT - delta)
+    return -APFLOAT_DECIMAL_EXPONENT_LIMIT;
+  return exponent + delta;
+}
 
 int csupport_float_classify(double v) {
   if (v != v) return 0;
@@ -32,11 +51,16 @@ int csupport_float_is_negative(double v) { return v < 0.0 || (v == 0.0 && 1.0/v 
 
 double csupport_float_round_to_integral(double v, int round_mode) {
   switch (round_mode) {
-  case 0: return trunc(v);         /* rmTowardZero */
-  case 1: return nearbyint(v);     /* rmNearestTiesToEven */
-  case 2: return ceil(v);          /* rmTowardPositive */
-  case 3: return floor(v);         /* rmTowardNegative */
-  case 4: return round(v);         /* rmNearestTiesToAway */
+  case CSUPPORT_APFLOAT_RM_TOWARD_ZERO:
+    return trunc(v);
+  case CSUPPORT_APFLOAT_RM_NEAREST_TIES_TO_EVEN:
+    return nearbyint(v);
+  case CSUPPORT_APFLOAT_RM_TOWARD_POSITIVE:
+    return ceil(v);
+  case CSUPPORT_APFLOAT_RM_TOWARD_NEGATIVE:
+    return floor(v);
+  case CSUPPORT_APFLOAT_RM_NEAREST_TIES_TO_AWAY:
+    return round(v);
   default: return nearbyint(v);
   }
 }
@@ -58,13 +82,11 @@ int csupport_apfloat_read_exponent(const char *begin, const char *end,
                                     int *result) {
   int is_negative;
   unsigned abs_exponent;
-  const unsigned overlarge = 24000;
+  const unsigned overlarge = APFLOAT_DECIMAL_EXPONENT_LIMIT;
   const char *p = begin;
 
-  if (p == end || ((*p == '-' || *p == '+') && (p + 1) == end)) {
-    *result = 0;
-    return CSUPPORT_APFLOAT_ERR_NONE;
-  }
+  if (p == end)
+    return CSUPPORT_APFLOAT_ERR_EXPONENT_NO_DIGITS;
   is_negative = (*p == '-');
   if (*p == '-' || *p == '+') {
     p++;
@@ -76,8 +98,12 @@ int csupport_apfloat_read_exponent(const char *begin, const char *end,
   for (; p != end; ++p) {
     unsigned value = dec_digit_value((unsigned char)*p);
     if (value >= 10U) return CSUPPORT_APFLOAT_ERR_INVALID_EXPONENT;
-    abs_exponent = abs_exponent * 10U + value;
-    if (abs_exponent >= overlarge) { abs_exponent = overlarge; break; }
+    if (abs_exponent < overlarge) {
+      if (abs_exponent > (overlarge - value) / 10U)
+        abs_exponent = overlarge;
+      else
+        abs_exponent = abs_exponent * 10U + value;
+    }
   }
   *result = is_negative ? -(int)abs_exponent : (int)abs_exponent;
   return CSUPPORT_APFLOAT_ERR_NONE;
@@ -100,8 +126,11 @@ int csupport_apfloat_total_exponent(const char *begin, const char *end,
   for (; p != end; ++p) {
     unsigned value = dec_digit_value((unsigned char)*p);
     if (value >= 10U) return CSUPPORT_APFLOAT_ERR_INVALID_EXPONENT;
-    unsigned_exp = unsigned_exp * 10 + (int)value;
-    if (unsigned_exp > 32767) { overflow = 1; break; }
+    if (!overflow) {
+      unsigned_exp = unsigned_exp * 10 + (int)value;
+      if (unsigned_exp > 32767)
+        overflow = 1;
+    }
   }
   if (exponent_adjustment > 32767 || exponent_adjustment < -32768) overflow = 1;
   exponent = 0;
@@ -171,11 +200,11 @@ int csupport_apfloat_interpret_decimal(const char *begin, const char *end,
         while (p != begin && *p == '0');
       while (p != begin && *p == '.');
     }
-    D->exponent += (int)((dot - p) - (dot > p ? 1 : 0));
-    D->normalized_exponent =
-        D->exponent +
-        (int)((p - D->first_sig_digit) -
-              (dot > D->first_sig_digit && dot < p ? 1 : 0));
+    D->exponent = apfloat_add_decimal_exponent(D->exponent,
+                                               (dot - p) - (dot > p ? 1 : 0));
+    D->normalized_exponent = apfloat_add_decimal_exponent(
+        D->exponent, (p - D->first_sig_digit) -
+                         (dot > D->first_sig_digit && dot < p ? 1 : 0));
   }
   D->last_sig_digit = p;
   return CSUPPORT_APFLOAT_ERR_NONE;
@@ -290,44 +319,62 @@ int csupport_apfloat_trailing_hex_fraction(const char *p, const char *end,
   return 0;
 }
 
+static unsigned apfloat_high_padding_bits(unsigned precision) {
+  const unsigned used_high_bits = precision % APFLOAT_PART_BITS;
+  return used_high_bits == 0 ? 1
+                             : APFLOAT_PART_BITS - used_high_bits + 1;
+}
+
 int csupport_apfloat_is_significand_all_ones(const uint64_t *parts,
                                               unsigned precision) {
-  unsigned part_count = (precision + 63) / 64;
+  if (precision == 0)
+    return 0;
+  unsigned part_count = csupport_flt_part_count_for_bits(precision);
   for (unsigned i = 0; i < part_count - 1; i++)
     if (~parts[i]) return 0;
-  unsigned num_high_bits = part_count * 64 - precision + 1;
+  unsigned num_high_bits = apfloat_high_padding_bits(precision);
   uint64_t high_fill = ~(uint64_t)0 << (64 - num_high_bits);
   return (~(parts[part_count - 1] | high_fill)) == 0;
 }
 
 int csupport_apfloat_is_significand_all_ones_except_lsb(const uint64_t *parts,
                                                          unsigned precision) {
+  if (precision == 0)
+    return 0;
   if (parts[0] & 1) return 0;
-  unsigned part_count = (precision + 63) / 64;
+  unsigned part_count = csupport_flt_part_count_for_bits(precision);
   for (unsigned i = 0; i < part_count - 1; i++) {
     if (~parts[i] & ~(uint64_t)(!i)) return 0;
   }
-  unsigned num_high_bits = part_count * 64 - precision + 1;
+  unsigned num_high_bits = apfloat_high_padding_bits(precision);
   uint64_t high_fill = ~(uint64_t)0 << (64 - num_high_bits);
-  return (~(parts[part_count - 1] | high_fill | 0x1)) == 0;
+  // The LSB exception belongs to parts[0].  It is in the last part only for
+  // single-part formats; exempting bit zero of every last part skips a real
+  // fraction bit for formats wider than one machine word.
+  uint64_t low_fill = part_count == 1 ? UINT64_C(1) : UINT64_C(0);
+  return (~(parts[part_count - 1] | high_fill | low_fill)) == 0;
 }
 
 int csupport_apfloat_is_significand_all_zeros(const uint64_t *parts,
                                                unsigned precision) {
-  unsigned part_count = (precision + 63) / 64;
+  if (precision == 0)
+    return 0;
+  unsigned part_count = csupport_flt_part_count_for_bits(precision);
   for (unsigned i = 0; i < part_count - 1; i++)
     if (parts[i]) return 0;
-  unsigned num_high_bits = part_count * 64 - precision + 1;
+  unsigned num_high_bits = apfloat_high_padding_bits(precision);
   uint64_t high_mask = ~(uint64_t)0 >> num_high_bits;
   return (parts[part_count - 1] & high_mask) == 0;
 }
 
 int csupport_apfloat_is_significand_all_zeros_except_msb(const uint64_t *parts,
                                                           unsigned precision) {
-  unsigned part_count = (precision + 63) / 64;
+  if (precision == 0)
+    return 0;
+  unsigned part_count = csupport_flt_part_count_for_bits(precision);
   for (unsigned i = 0; i < part_count - 1; i++)
     if (parts[i]) return 0;
-  unsigned num_high_bits = part_count * 64 - precision + 1;
+  unsigned num_high_bits = apfloat_high_padding_bits(precision);
   return parts[part_count - 1] == (uint64_t)1 << (64 - num_high_bits);
 }
 
@@ -351,19 +398,19 @@ int csupport_apfloat_round_away_from_zero(int rounding_mode, int lost_fraction,
   assert(lost_fraction != CSUPPORT_LF_EXACTLY_ZERO);
 
   switch (rounding_mode) {
-  case 0: /* rmTowardZero */
+  case CSUPPORT_APFLOAT_RM_TOWARD_ZERO:
     return 0;
-  case 1: /* rmNearestTiesToEven */
+  case CSUPPORT_APFLOAT_RM_NEAREST_TIES_TO_EVEN:
     if (lost_fraction == CSUPPORT_LF_MORE_THAN_HALF) return 1;
     if (lost_fraction == CSUPPORT_LF_EXACTLY_HALF &&
         category != LLVM_FC_ZERO)
       return csupport_apint_tc_extract_bit(parts, bit);
     return 0;
-  case 2: /* rmTowardPositive */
+  case CSUPPORT_APFLOAT_RM_TOWARD_POSITIVE:
     return !sign_bit;
-  case 3: /* rmTowardNegative */
+  case CSUPPORT_APFLOAT_RM_TOWARD_NEGATIVE:
     return sign_bit;
-  case 4: /* rmNearestTiesToAway */
+  case CSUPPORT_APFLOAT_RM_NEAREST_TIES_TO_AWAY:
     return lost_fraction == CSUPPORT_LF_EXACTLY_HALF ||
            lost_fraction == CSUPPORT_LF_MORE_THAN_HALF;
   default:
@@ -386,9 +433,14 @@ int csupport_apfloat_convert_normal_to_hex(char *dst,
   *dst++ = '0';
   *dst++ = upper_case ? 'X' : 'x';
 
+  if (precision > UINT_MAX - 3 || sig_lsb > precision + 3)
+    return -1;
   value_bits = precision + 3;
-  shift = 64 - value_bits % 64;
-  output_digits = (value_bits - sig_lsb + 3) / 4;
+  shift = (APFLOAT_PART_BITS - value_bits % APFLOAT_PART_BITS) %
+          APFLOAT_PART_BITS;
+  const unsigned significant_bits = value_bits - sig_lsb;
+  output_digits =
+      significant_bits / 4 + (significant_bits % 4 != 0);
 
   if (hex_digits) {
     if (hex_digits < output_digits) {
@@ -403,7 +455,7 @@ int csupport_apfloat_convert_normal_to_hex(char *dst,
 
   p = ++dst;
   {
-    unsigned count = (value_bits + 63) / 64;
+    unsigned count = csupport_flt_part_count_for_bits(value_bits);
     while (output_digits && count) {
       uint64_t part;
       if (--count == parts_count)
@@ -462,7 +514,8 @@ int csupport_apfloat_divide_significand(
   int exp_val = *exponent_out;
 
   if (parts_count > 2)
-    dividend = (uint64_t *)malloc(parts_count * 2 * sizeof(uint64_t));
+    dividend =
+        (uint64_t *)csupport_checked_malloc(parts_count, 2 * sizeof(uint64_t));
   else
     dividend = scratch;
 
@@ -520,17 +573,34 @@ int csupport_apfloat_divide_significand(
 int csupport_apfloat_multiply_significand_simple(
     uint64_t *lhs_sig, const uint64_t *rhs_sig,
     unsigned parts_count, unsigned precision, int *exponent_out) {
-  unsigned new_parts_count = ((precision * 2 + 1) + 63) / 64;
+  const uint64_t extended_bits = (uint64_t)precision * 2 + 1;
+  const unsigned expected_parts_count =
+      precision / APFLOAT_PART_BITS + 1;
+  if (precision == 0 || extended_bits > UINT_MAX ||
+      parts_count > UINT_MAX / 2 ||
+      parts_count != expected_parts_count ||
+      precision >= INT_MAX)
+    csupport_allocation_failure();
+  unsigned new_parts_count =
+      csupport_flt_part_count_for_bits((unsigned)extended_bits);
+  unsigned product_parts_count = parts_count * 2;
+  unsigned storage_parts_count = new_parts_count > product_parts_count
+                                     ? new_parts_count
+                                     : product_parts_count;
   uint64_t scratch[4];
   uint64_t *full_sig;
   int lost_fraction;
   unsigned omsb;
 
-  if (new_parts_count > 4)
-    full_sig = (uint64_t *)malloc(new_parts_count * sizeof(uint64_t));
+  if (storage_parts_count > 4)
+    full_sig =
+        (uint64_t *)csupport_checked_malloc(storage_parts_count,
+                                            sizeof(uint64_t));
   else
     full_sig = scratch;
 
+  memset(full_sig, 0, csupport_checked_allocation_size(
+                          storage_parts_count, sizeof(uint64_t)));
   csupport_apint_tc_full_multiply(full_sig, lhs_sig, rhs_sig,
                                   parts_count, parts_count);
 
@@ -541,7 +611,7 @@ int csupport_apfloat_multiply_significand_simple(
 
   if (omsb > precision) {
     unsigned bits = omsb - precision;
-    unsigned sig_parts = (omsb + 63) / 64;
+    unsigned sig_parts = csupport_flt_part_count_for_bits(omsb);
     int lf = shift_right_internal(full_sig, sig_parts, bits);
     lost_fraction = csupport_apfloat_combine_lost_fractions(lf, lost_fraction);
     *exponent_out += (int)bits;
@@ -549,7 +619,7 @@ int csupport_apfloat_multiply_significand_simple(
 
   csupport_apint_tc_assign(lhs_sig, full_sig, parts_count);
 
-  if (new_parts_count > 4)
+  if (storage_parts_count > 4)
     free(full_sig);
 
   return lost_fraction;
@@ -599,7 +669,8 @@ int csupport_apfloat_add_or_subtract_significand(
   uint64_t borrow_u;
 
   if (parts_count > 8) {
-    alloc_temp = (uint64_t *)malloc(parts_count * sizeof(uint64_t));
+    alloc_temp =
+        (uint64_t *)csupport_checked_malloc(parts_count, sizeof(uint64_t));
     temp = alloc_temp;
   }
 
@@ -673,14 +744,13 @@ int csupport_apfloat_handle_overflow(
     int *category_out, int *exponent_out,
     int max_exponent, int min_exponent,
     int non_finite_behavior, int nan_encoding) {
-  int opOverflow = 0x04, opInexact = 0x10;
-
-  if (rounding_mode == 1 || rounding_mode == 4 ||
-      (rounding_mode == 2 && !*sign) ||
-      (rounding_mode == 3 && *sign)) {
-    if (non_finite_behavior == 1) {
+  if (rounding_mode == CSUPPORT_APFLOAT_RM_NEAREST_TIES_TO_EVEN ||
+      rounding_mode == CSUPPORT_APFLOAT_RM_NEAREST_TIES_TO_AWAY ||
+      (rounding_mode == CSUPPORT_APFLOAT_RM_TOWARD_POSITIVE && !*sign) ||
+      (rounding_mode == CSUPPORT_APFLOAT_RM_TOWARD_NEGATIVE && *sign)) {
+    if (non_finite_behavior == CSUPPORT_FLT_NFB_NAN_ONLY) {
       *category_out = LLVM_FC_NAN;
-      if (nan_encoding == 2)
+      if (nan_encoding == CSUPPORT_FLT_NAN_NEG_ZERO)
         *exponent_out = min_exponent - 1;
       else
         *exponent_out = max_exponent;
@@ -690,17 +760,18 @@ int csupport_apfloat_handle_overflow(
     } else {
       *category_out = LLVM_FC_INFINITY;
     }
-    return opOverflow | opInexact;
+    return CSUPPORT_APFLOAT_OP_OVERFLOW | CSUPPORT_APFLOAT_OP_INEXACT;
   }
 
   *category_out = LLVM_FC_NORMAL;
   *exponent_out = max_exponent;
   csupport_apfloat_tc_set_least_significant_bits(significand, parts_count,
                                                   precision);
-  if (non_finite_behavior == 1 && nan_encoding == 1)
+  if (non_finite_behavior == CSUPPORT_FLT_NFB_NAN_ONLY &&
+      nan_encoding == CSUPPORT_FLT_NAN_ALL_ONES)
     csupport_apint_tc_clear_bit(significand, 0);
 
-  return opInexact;
+  return CSUPPORT_APFLOAT_OP_INEXACT;
 }
 
 int csupport_apfloat_normalize(
@@ -749,8 +820,8 @@ int csupport_apfloat_normalize(
     }
   }
 
-  if (non_finite_behavior == 1 && nan_encoding == 1 &&
-      *exponent == max_exponent &&
+  if (non_finite_behavior == CSUPPORT_FLT_NFB_NAN_ONLY &&
+      nan_encoding == CSUPPORT_FLT_NAN_ALL_ONES && *exponent == max_exponent &&
       csupport_apfloat_is_significand_all_ones(significand, precision))
     return csupport_apfloat_handle_overflow(
         significand, parts_count, precision, rounding_mode, sign,
@@ -760,9 +831,10 @@ int csupport_apfloat_normalize(
   if (lost_fraction == CSUPPORT_LF_EXACTLY_ZERO) {
     if (omsb == 0) {
       *category = LLVM_FC_ZERO;
-      if (nan_encoding == 2) *sign = 0;
+      if (nan_encoding == CSUPPORT_FLT_NAN_NEG_ZERO)
+        *sign = 0;
     }
-    return 0;
+    return CSUPPORT_APFLOAT_OP_OK;
   }
 
   if (csupport_apfloat_round_away_from_zero(rounding_mode, lost_fraction,
@@ -784,10 +856,11 @@ int csupport_apfloat_normalize(
       }
       shift_right_internal(significand, parts_count, 1);
       (*exponent)++;
-      return 0x10;
+      return CSUPPORT_APFLOAT_OP_INEXACT;
     }
 
-    if (non_finite_behavior == 1 && nan_encoding == 1 &&
+    if (non_finite_behavior == CSUPPORT_FLT_NFB_NAN_ONLY &&
+        nan_encoding == CSUPPORT_FLT_NAN_ALL_ONES &&
         *exponent == max_exponent &&
         csupport_apfloat_is_significand_all_ones(significand, precision))
       return csupport_apfloat_handle_overflow(
@@ -797,14 +870,15 @@ int csupport_apfloat_normalize(
   }
 
   if ((unsigned)omsb == precision)
-    return 0x10;
+    return CSUPPORT_APFLOAT_OP_INEXACT;
 
   if (omsb == 0) {
     *category = LLVM_FC_ZERO;
-    if (nan_encoding == 2) *sign = 0;
+    if (nan_encoding == CSUPPORT_FLT_NAN_NEG_ZERO)
+      *sign = 0;
   }
 
-  return 0x08 | 0x10;
+  return CSUPPORT_APFLOAT_OP_UNDERFLOW | CSUPPORT_APFLOAT_OP_INEXACT;
 }
 
 int csupport_apfloat_specials_category(int lhs_cat, int rhs_cat,
@@ -855,7 +929,8 @@ void csupport_apfloat_make_largest(uint64_t *significand, unsigned part_count,
   significand[part_count - 1] = (unused_high_bits < 64)
                                 ? (~(uint64_t)0 >> unused_high_bits)
                                 : 0;
-  if (non_finite_behavior == 1 && nan_encoding == 1)
+  if (non_finite_behavior == CSUPPORT_FLT_NFB_NAN_ONLY &&
+      nan_encoding == CSUPPORT_FLT_NAN_ALL_ONES)
     significand[0] &= ~(uint64_t)1;
 }
 
@@ -926,15 +1001,24 @@ void csupport_apfloat_adjust_precision_buffer(char *buffer, unsigned *size,
   *size = new_size;
 }
 
-unsigned csupport_apfloat_power_of5(uint64_t *dst, unsigned power) {
+unsigned csupport_apfloat_power_of5(uint64_t *dst, size_t dst_parts,
+                                    unsigned power) {
   static const uint64_t first_eight_powers[] = {1, 5, 25, 125, 625, 3125, 15625, 78125};
-  uint64_t pow5s[1024];
-  pow5s[0] = 78125 * 5;
+  uint64_t pow5s[CSUPPORT_APFLOAT_MAX_POWER_OF_FIVE_PARTS * 2 + 5] = {78125 *
+                                                                      5};
 
-  unsigned parts_count[16] = {1, 0};
-  uint64_t scratch[512], *p1, *p2, *pow5;
+  unsigned parts_count = 1;
+  uint64_t scratch[CSUPPORT_APFLOAT_MAX_POWER_OF_FIVE_PARTS];
+  uint64_t *p1, *p2, *pow5;
   unsigned result;
 
+  if (!dst || power > CSUPPORT_APFLOAT_MAX_POWER_OF_FIVE_EXPONENT)
+    return 0;
+  size_t bit_bound = 1 + ((size_t)power * 815) / 351;
+  size_t required_parts = (bit_bound + sizeof(uint64_t) * CHAR_BIT - 1) /
+                          (sizeof(uint64_t) * CHAR_BIT);
+  if (dst_parts < required_parts)
+    return 0;
   p1 = dst;
   p2 = scratch;
 
@@ -945,25 +1029,24 @@ unsigned csupport_apfloat_power_of5(uint64_t *dst, unsigned power) {
   pow5 = pow5s;
 
   for (unsigned n = 0; power; power >>= 1, n++) {
-    unsigned pc = parts_count[n];
-
-    if (pc == 0) {
-      pc = parts_count[n - 1];
-      csupport_apint_tc_full_multiply(pow5, pow5 - pc, pow5 - pc, pc, pc);
-      pc *= 2;
-      if (pow5[pc - 1] == 0) pc--;
-      parts_count[n] = pc;
+    if (n != 0) {
+      csupport_apint_tc_full_multiply(pow5, pow5 - parts_count,
+                                      pow5 - parts_count, parts_count,
+                                      parts_count);
+      parts_count *= 2;
+      if (pow5[parts_count - 1] == 0)
+        parts_count--;
     }
 
     if (power & 1) {
       uint64_t *tmp;
-      csupport_apint_tc_full_multiply(p2, p1, pow5, result, pc);
-      result += pc;
+      csupport_apint_tc_full_multiply(p2, p1, pow5, result, parts_count);
+      result += parts_count;
       if (p2[result - 1] == 0) result--;
       tmp = p1; p1 = p2; p2 = tmp;
     }
 
-    pow5 += pc;
+    pow5 += parts_count;
   }
 
   if (p1 != dst)
@@ -1075,30 +1158,33 @@ size_t csupport_apfloat_format_to_string(
     int truncate_zero, int is_negative,
     char *out, size_t out_cap) {
   csupport_obuf_t text = csupport_obuf(out, out_cap);
+  if (!buffer || n_digits == 0)
+    return csupport_obuf_finish(&text);
 
   if (is_negative)
     csupport_obuf_put(&text, '-');
 
+  const int64_t most_significant_digit =
+      (int64_t)exp + (int64_t)n_digits - 1;
   int format_scientific;
   if (!format_max_padding) {
     format_scientific = 1;
   } else {
     if (exp >= 0) {
       format_scientific = ((unsigned)exp > format_max_padding ||
-                           n_digits + (unsigned)exp > format_precision);
+                           (uint64_t)n_digits + (unsigned)exp >
+                               format_precision);
     } else {
-      int msd = exp + (int)(n_digits - 1);
-      if (msd >= 0) {
+      if (most_significant_digit >= 0) {
         format_scientific = 0;
       } else {
-        format_scientific = ((unsigned)-msd) > format_max_padding;
+        format_scientific =
+            (uint64_t)(-most_significant_digit) > format_max_padding;
       }
     }
   }
 
   if (format_scientific) {
-    int e = exp + (int)(n_digits - 1);
-
     csupport_obuf_put(&text, buffer[n_digits - 1]);
     csupport_obuf_put(&text, '.');
     if (n_digits == 1 && truncate_zero) {
@@ -1114,14 +1200,17 @@ size_t csupport_apfloat_format_to_string(
     }
     csupport_obuf_put(&text, truncate_zero ? 'E' : 'e');
 
-    csupport_obuf_put(&text, e >= 0 ? '+' : '-');
-    if (e < 0) e = -e;
-    char expbuf[12];
+    csupport_obuf_put(&text, most_significant_digit >= 0 ? '+' : '-');
+    uint64_t exponent_magnitude =
+        most_significant_digit >= 0
+            ? (uint64_t)most_significant_digit
+            : (uint64_t)(-(most_significant_digit + 1)) + 1;
+    char expbuf[24];
     unsigned explen = 0;
     do {
-      expbuf[explen++] = (char)('0' + (e % 10));
-      e /= 10;
-    } while (e);
+      expbuf[explen++] = (char)('0' + (exponent_magnitude % 10));
+      exponent_magnitude /= 10;
+    } while (exponent_magnitude);
     if (!truncate_zero && explen < 2)
       expbuf[explen++] = '0';
     for (unsigned i = 0; i < explen; ++i)
@@ -1132,17 +1221,17 @@ size_t csupport_apfloat_format_to_string(
     for (int i = 0; i < exp; ++i)
       csupport_obuf_put(&text, '0');
   } else {
-    int n_whole = exp + (int)n_digits;
+    const int64_t whole_digits = (int64_t)exp + (int64_t)n_digits;
     unsigned i = 0;
-    if (n_whole > 0) {
-      for (; i < (unsigned)n_whole; ++i)
+    if (whole_digits > 0) {
+      for (; i < (unsigned)whole_digits; ++i)
         csupport_obuf_put(&text, buffer[n_digits - i - 1]);
       csupport_obuf_put(&text, '.');
     } else {
-      unsigned n_zeros = 1 + (unsigned)(-n_whole);
+      const uint64_t zero_count = 1 + (uint64_t)(-whole_digits);
       csupport_obuf_put(&text, '0');
       csupport_obuf_put(&text, '.');
-      for (unsigned z = 1; z < n_zeros; ++z)
+      for (uint64_t z = 1; z < zero_count; ++z)
         csupport_obuf_put(&text, '0');
     }
     for (; i < n_digits; ++i)
@@ -1157,18 +1246,21 @@ int csupport_apfloat_round_away_from_zero_simple(int rounding_mode,
                                                    int lost_fraction,
                                                    int bit_at_boundary) {
   switch (rounding_mode) {
-  case 0: /* rmTowardZero */
+  case CSUPPORT_APFLOAT_RM_TOWARD_ZERO:
     return 0;
-  case 1: /* rmNearestTiesToEven */
-    if (lost_fraction == 3) return 1; /* MoreThanHalf */
-    if (lost_fraction == 2) return bit_at_boundary; /* ExactlyHalf: tie-to-even */
+  case CSUPPORT_APFLOAT_RM_NEAREST_TIES_TO_EVEN:
+    if (lost_fraction == CSUPPORT_LF_MORE_THAN_HALF)
+      return 1;
+    if (lost_fraction == CSUPPORT_LF_EXACTLY_HALF)
+      return bit_at_boundary;
     return 0;
-  case 2: /* rmTowardPositive */
+  case CSUPPORT_APFLOAT_RM_TOWARD_POSITIVE:
     return 0;
-  case 3: /* rmTowardNegative */
+  case CSUPPORT_APFLOAT_RM_TOWARD_NEGATIVE:
     return 0;
-  case 4: /* rmNearestTiesToAway */
-    if (lost_fraction >= 2) return 1;
+  case CSUPPORT_APFLOAT_RM_NEAREST_TIES_TO_AWAY:
+    if (lost_fraction >= CSUPPORT_LF_EXACTLY_HALF)
+      return 1;
     return 0;
   default:
     return 0;
@@ -1279,8 +1371,16 @@ int csupport_apfloat_convert_from_decimal_core(
     const char *first_sig, const char *last_sig,
     int normalized_exp, int exponent,
     uint64_t **dec_significand_out, unsigned *part_count_out) {
-  unsigned char_count = (unsigned)(last_sig - first_sig) + 1;
-  unsigned pc = ((1 + 196 * char_count / 59) + 63) / 64;
+  size_t char_count = (size_t)(last_sig - first_sig) + 1;
+  if (char_count > (SIZE_MAX - 1) / 196)
+    return -1;
+  size_t estimated_bits = 1 + 196 * char_count / 59;
+  if (estimated_bits > SIZE_MAX - 63)
+    return -1;
+  size_t pc_size = (estimated_bits + 63) / 64;
+  if (pc_size >= UINT_MAX)
+    return -1;
+  unsigned pc = (unsigned)pc_size;
   uint64_t *dec_sig = (uint64_t *)calloc(pc + 1, sizeof(uint64_t));
   if (!dec_sig) return -1;
 
@@ -1323,8 +1423,11 @@ int csupport_apfloat_convert_to_sign_ext_int(
   if (category == LLVM_FC_INFINITY || category == LLVM_FC_NAN)
     return -1; /* opInvalidOp */
 
-  unsigned needed = (width + 63) / 64;
-  assert(needed <= dst_part_count);
+  if (precision == 0 || width == 0)
+    return -1;
+  unsigned needed = csupport_flt_part_count_for_bits(width);
+  if (needed > dst_part_count)
+    return -1;
 
   if (category == LLVM_FC_ZERO) {
     csupport_apint_tc_set(dst, 0, needed);
@@ -1335,7 +1438,11 @@ int csupport_apfloat_convert_to_sign_ext_int(
   /* fcNormal */
   if (exponent_val < 0) {
     csupport_apint_tc_set(dst, 0, needed);
-    truncated_bits = precision - 1U - (unsigned)exponent_val;
+    const uint64_t truncated_bits_wide =
+        (uint64_t)precision - 1 + (uint64_t)(-(int64_t)exponent_val);
+    truncated_bits = truncated_bits_wide > UINT_MAX
+                         ? UINT_MAX
+                         : (unsigned)truncated_bits_wide;
   } else {
     unsigned bits = (unsigned)exponent_val + 1U;
     if (bits > width) return -1;
@@ -1377,7 +1484,8 @@ int csupport_apfloat_convert_to_sign_ext_int(
     }
     csupport_apint_tc_negate(dst, needed);
   } else {
-    if (omsb >= width + (unsigned)!is_signed) return -1;
+    if ((is_signed && omsb >= width) || (!is_signed && omsb > width))
+      return -1;
   }
 
   if (lost_fraction == 0) { *is_exact = 1; return 0; }
@@ -1419,9 +1527,9 @@ void csupport_apfloat_make_nan(uint64_t *significand, unsigned num_parts,
   unsigned qnan_bit = precision - 2;
   unsigned part, bits_to_preserve;
 
-  if (non_finite_behavior == 1 /* NanOnly */) {
+  if (non_finite_behavior == CSUPPORT_FLT_NFB_NAN_ONLY) {
     snan = 0;
-    if (nan_encoding == 2 /* NegativeZero */)
+    if (nan_encoding == CSUPPORT_FLT_NAN_NEG_ZERO)
       *sign = 1;
     fill = NULL;
   }
@@ -1437,7 +1545,8 @@ void csupport_apfloat_make_nan(uint64_t *significand, unsigned num_parts,
     significand[part] &= ((1ULL << bits_to_preserve) - 1);
     for (part++; part < num_parts; ++part)
       significand[part] = 0;
-  } else if (non_finite_behavior == 1 && nan_encoding != 2) {
+  } else if (non_finite_behavior == CSUPPORT_FLT_NFB_NAN_ONLY &&
+             nan_encoding != CSUPPORT_FLT_NAN_NEG_ZERO) {
     unsigned i;
     for (i = 0; i < num_parts; i++)
       significand[i] = UINT64_MAX;
@@ -1453,7 +1562,7 @@ void csupport_apfloat_make_nan(uint64_t *significand, unsigned num_parts,
     csupport_apint_tc_clear_bit(significand, qnan_bit);
     if (csupport_apint_tc_is_zero(significand, num_parts))
       csupport_apint_tc_set_bit(significand, qnan_bit - 1);
-  } else if (nan_encoding == 2 /* NegativeZero */) {
+  } else if (nan_encoding == CSUPPORT_FLT_NAN_NEG_ZERO) {
     /* quiet NaN with all zero significand bits - do nothing */
   } else {
     csupport_apint_tc_set_bit(significand, qnan_bit);
@@ -1475,7 +1584,8 @@ void csupport_apfloat_convert_ieee_to_words(
   unsigned exponent_bits = size_in_bits - 1 - trailing_sig_bits;
   uint64_t exponent_mask = (exponent_bits < 64) ? ((UINT64_C(1) << exponent_bits) - 1) : UINT64_MAX;
   uint64_t significand_mask_val;
-  unsigned num_sig_parts = (trailing_sig_bits + 63) / 64;
+  unsigned num_sig_parts =
+      csupport_flt_part_count_for_bits(trailing_sig_bits);
   unsigned integer_bit_part = trailing_sig_bits / 64;
   uint64_t integer_bit = UINT64_C(1) << (trailing_sig_bits % 64);
   uint64_t myexponent;
@@ -1500,7 +1610,8 @@ void csupport_apfloat_convert_ieee_to_words(
     myexponent = exponent_mask;
     memset(words, 0, num_words * sizeof(uint64_t));
   } else if (category == LLVM_FC_NAN) {
-    if (non_finite_behavior == 1 && nan_encoding == 2)
+    if (non_finite_behavior == CSUPPORT_FLT_NFB_NAN_ONLY &&
+        nan_encoding == CSUPPORT_FLT_NAN_NEG_ZERO)
       myexponent = 0;
     else
       myexponent = exponent_mask;
@@ -1693,7 +1804,8 @@ int csupport_apfloat_unpack_ieee(
     int *out_sign, int *out_exponent,
     uint64_t *out_significand, unsigned max_sig_parts) {
   unsigned trailing_sig_bits = precision - 1;
-  unsigned stored_sig_parts = (trailing_sig_bits + 63) / 64;
+  unsigned stored_sig_parts =
+      csupport_flt_part_count_for_bits(trailing_sig_bits);
   unsigned exponent_bits = size_in_bits - 1 - trailing_sig_bits;
   uint64_t exponent_mask = (exponent_bits < 64) ? ((UINT64_C(1) << exponent_bits) - 1) : UINT64_MAX;
   int bias = -(min_exponent - 1);
@@ -1719,7 +1831,7 @@ int csupport_apfloat_unpack_ieee(
   }
 
   if (myexponent == 0 && all_zero) {
-    if (nan_encoding == 2 /* NegativeZero */ && *out_sign) {
+    if (nan_encoding == CSUPPORT_FLT_NAN_NEG_ZERO && *out_sign) {
       *out_exponent = min_exponent - 1;
       return CSUPPORT_APFLOAT_CAT_NAN;
     }
@@ -1729,7 +1841,7 @@ int csupport_apfloat_unpack_ieee(
 
   /* Check infinity (IEEE754 behavior only).
      For IEEE754, Inf has biased exponent = exponent_mask and zero significand. */
-  if (non_finite_behavior == 0 /* IEEE754 */) {
+  if (non_finite_behavior == CSUPPORT_FLT_NFB_IEEE754) {
     if (myexponent == exponent_mask && all_zero) {
       *out_exponent = (int)exponent_mask - bias;
       return CSUPPORT_APFLOAT_CAT_INF;
@@ -1741,12 +1853,13 @@ int csupport_apfloat_unpack_ieee(
      For NegativeZero encoding, NaN is sign=1 + all zeros (handled above). */
   {
     int is_nan = 0;
-    int exponent_nan = (nan_encoding == 2) ? (min_exponent - 1)
-                                           : (int)exponent_mask - bias;
+    int exponent_nan = (nan_encoding == CSUPPORT_FLT_NAN_NEG_ZERO)
+                           ? (min_exponent - 1)
+                           : (int)exponent_mask - bias;
 
-    if (nan_encoding == 0 /* IEEE */) {
+    if (nan_encoding == CSUPPORT_FLT_NAN_IEEE) {
       is_nan = (myexponent == exponent_mask) && !all_zero;
-    } else if (nan_encoding == 1 /* AllOnes */) {
+    } else if (nan_encoding == CSUPPORT_FLT_NAN_ALL_ONES) {
       all_ones = 1;
       for (i = 0; i + 1 < stored_sig_parts; i++) {
         if (out_significand[i] != UINT64_MAX) { all_ones = 0; break; }
@@ -1755,7 +1868,7 @@ int csupport_apfloat_unpack_ieee(
         all_ones = (out_significand[stored_sig_parts - 1] == significand_mask_val);
       }
       is_nan = (myexponent == exponent_mask) && all_ones;
-    } else if (nan_encoding == 2 /* NegativeZero */) {
+    } else if (nan_encoding == CSUPPORT_FLT_NAN_NEG_ZERO) {
       is_nan = (myexponent == 0 && all_zero && *out_sign);
     }
 
@@ -1887,9 +2000,9 @@ int csupport_apfloat_multiply_specials(int lhs_cat, int rhs_cat,
 int csupport_apfloat_is_integer_significand(const uint64_t *parts,
                                              unsigned part_count,
                                              int exponent, unsigned precision) {
-  int min_trailing = precision - 1 - exponent;
+  int64_t min_trailing = (int64_t)precision - 1 - (int64_t)exponent;
   if (min_trailing <= 0) return 1;
-  if ((unsigned)min_trailing >= precision) return 0;
+  if ((uint64_t)min_trailing >= precision) return 0;
   unsigned trailing_bits = (unsigned)min_trailing;
   unsigned full_words = trailing_bits / 64;
   unsigned rem_bits = trailing_bits % 64;
@@ -1928,7 +2041,7 @@ size_t csupport_apfloat_format_hex(const uint64_t *significand,
   size_t pos = 0;
   if (pos < buflen && sign) buf[pos++] = '-';
   if (pos + 2 < buflen) { buf[pos++] = '0'; buf[pos++] = uppercase ? 'X' : 'x'; }
-  unsigned hex_digits = (precision + 3) / 4;
+  unsigned hex_digits = precision / 4 + (precision % 4 != 0);
   if (hex_digits == 0) hex_digits = 1;
   unsigned bit_pos = precision - 1;
   int first = 1;
@@ -1954,21 +2067,23 @@ size_t csupport_apfloat_format_hex(const uint64_t *significand,
   }
   if (pos + 3 < buflen) {
     buf[pos++] = uppercase ? 'P' : 'p';
-    int exp_val = exponent;
-    if (exp_val < 0) {
+    uint64_t exponent_magnitude;
+    if (exponent < 0) {
       buf[pos++] = '-';
-      exp_val = -exp_val;
+      exponent_magnitude = (uint64_t)(-(int64_t)exponent);
     } else {
       buf[pos++] = '+';
+      exponent_magnitude = (uint64_t)exponent;
     }
     char exp_buf[16];
     int exp_len = 0;
-    if (exp_val == 0) {
+    if (exponent_magnitude == 0) {
       exp_buf[exp_len++] = '0';
     } else {
-      while (exp_val > 0) {
-        exp_buf[exp_len++] = '0' + (exp_val % 10);
-        exp_val /= 10;
+      while (exponent_magnitude > 0) {
+        exp_buf[exp_len++] =
+            '0' + (char)(exponent_magnitude % 10);
+        exponent_magnitude /= 10;
       }
     }
     for (int i = exp_len - 1; i >= 0 && pos < buflen; i--)
@@ -2012,13 +2127,19 @@ int csupport_apfloat_convert_semantics(
     int finite_nonzero,
     int *loses_info) {
   int lost_fraction = CSUPPORT_LF_EXACTLY_ZERO;
-  unsigned new_pc = csupport_flt_part_count_for_bits(to_sem->precision + 1);
+  if (from_sem->precision == 0 || to_sem->precision == 0 ||
+      from_sem->precision > INT_MAX || to_sem->precision > INT_MAX ||
+      old_part_count != from_sem->precision / APFLOAT_PART_BITS + 1) {
+    *loses_info = 1;
+    return CSUPPORT_APFLOAT_OP_INVALID;
+  }
+  unsigned new_pc = to_sem->precision / APFLOAT_PART_BITS + 1;
   unsigned old_pc = old_part_count;
   int shift = (int)to_sem->precision - (int)from_sem->precision;
   int fs = 0;
   uint64_t *sig;
   int x86_special_nan = 0;
-  unsigned sig_parts = old_pc;
+  unsigned sig_parts;
 
   sig = apf_sig_ptr(inline_part, heap_parts, old_pc);
 
@@ -2028,7 +2149,11 @@ int csupport_apfloat_convert_semantics(
     x86_special_nan = 1;
 
   if (shift < 0 && finite_nonzero) {
-    int omsb = (int)csupport_apint_tc_msb(sig, old_pc) + 1;
+    const unsigned most_significant_bit =
+        csupport_apint_tc_msb(sig, old_pc);
+    int omsb = most_significant_bit == UINT_MAX
+                   ? 0
+                   : (int)most_significant_bit + 1;
     int exponent_change = omsb - (int)from_sem->precision;
     if (*exponent + exponent_change < to_sem->minExponent)
       exponent_change = to_sem->minExponent - *exponent;
@@ -2052,9 +2177,8 @@ int csupport_apfloat_convert_semantics(
         apf_conv_shift_right(sig, old_pc, (unsigned)(-shift));
 
   if (new_pc > old_pc) {
-    uint64_t *new_parts = (uint64_t *)malloc(new_pc * sizeof(uint64_t));
-    if (!new_parts)
-      return 0x01;
+    uint64_t *new_parts =
+        (uint64_t *)csupport_checked_malloc(new_pc, sizeof(uint64_t));
     csupport_apint_tc_set(new_parts, 0, new_pc);
     if (finite_nonzero || *category == LLVM_FC_NAN)
       csupport_apint_tc_assign(new_parts, sig, old_pc);
@@ -2160,8 +2284,15 @@ int csupport_apfloat_multiply_significand_fma(
     int add_sign,
     int addend_nonzero) {
   unsigned precision = sem->precision;
-  unsigned new_pc = csupport_flt_part_count_for_bits(precision * 2 + 1);
-  unsigned ext_prec_field = 2 * precision + 1;
+  const uint64_t ext_prec_wide = (uint64_t)precision * 2 + 1;
+  const unsigned expected_lhs_parts =
+      precision / APFLOAT_PART_BITS + 1;
+  if (precision == 0 || ext_prec_wide >= UINT_MAX ||
+      lhs_pc > UINT_MAX / 2 ||
+      lhs_pc != expected_lhs_parts)
+    csupport_allocation_failure();
+  unsigned ext_prec_field = (unsigned)ext_prec_wide;
+  unsigned new_pc = csupport_flt_part_count_for_bits(ext_prec_field);
   unsigned ext_wp = csupport_flt_part_count_for_bits(ext_prec_field + 1);
   unsigned full_words = new_pc;
   unsigned prod_words = 2 * lhs_pc;
@@ -2172,16 +2303,16 @@ int csupport_apfloat_multiply_significand_fma(
 
   uint64_t scratch[16];
   uint64_t *full =
-      (full_words <= 16) ? scratch : (uint64_t *)malloc(full_words * sizeof(uint64_t));
+      (full_words <= 16)
+          ? scratch
+          : (uint64_t *)csupport_checked_malloc(full_words, sizeof(uint64_t));
   unsigned omsb;
   int lost_fraction = CSUPPORT_LF_EXACTLY_ZERO;
 
   (void)rhs_exp;
 
-  if (!full)
-    return CSUPPORT_LF_EXACTLY_ZERO;
-
-  memset(full, 0, full_words * sizeof(uint64_t));
+  memset(full, 0,
+         csupport_checked_allocation_size(full_words, sizeof(uint64_t)));
   csupport_apint_tc_full_multiply(full, lhs_sig, rhs_sig, lhs_pc, lhs_pc);
 
   omsb = (unsigned)csupport_apint_tc_msb(full, new_pc) + 1;
@@ -2206,13 +2337,9 @@ int csupport_apfloat_multiply_significand_fma(
     }
 
     if (add_pc > 1) {
-      add_hp = (uint64_t *)malloc(add_pc * sizeof(uint64_t));
-      if (!add_hp) {
-        if (full != scratch)
-          free(full);
-        return CSUPPORT_LF_EXACTLY_ZERO;
-      }
-      memcpy(add_hp, add_sig, add_pc * sizeof(uint64_t));
+      add_hp = (uint64_t *)csupport_checked_malloc(add_pc, sizeof(uint64_t));
+      memcpy(add_hp, add_sig,
+             csupport_checked_allocation_size(add_pc, sizeof(uint64_t)));
     } else
       add_il = add_sig[0];
 
@@ -2263,54 +2390,7 @@ int csupport_apfloat_multiply_significand_fma(
   return lost_fraction;
 }
 
-/*===-- fltSemantics constants and accessors ---===*/
-
-const csupport_flt_semantics_t csupport_sem_ieee_half = {15, -14, 11, 16, 0, 0};
-const csupport_flt_semantics_t csupport_sem_bfloat = {127, -126, 8, 16, 0, 0};
-const csupport_flt_semantics_t csupport_sem_ieee_single = {127, -126, 24, 32, 0, 0};
-const csupport_flt_semantics_t csupport_sem_ieee_double = {1023, -1022, 53, 64, 0, 0};
-const csupport_flt_semantics_t csupport_sem_ieee_quad = {16383, -16382, 113, 128, 0, 0};
-const csupport_flt_semantics_t csupport_sem_float8_e5m2 = {15, -14, 3, 8, 0, 0};
-const csupport_flt_semantics_t csupport_sem_float8_e5m2fnuz = {
-    15, -15, 3, 8, CSUPPORT_FLT_NFB_NAN_ONLY, CSUPPORT_FLT_NAN_NEG_ZERO};
-const csupport_flt_semantics_t csupport_sem_float8_e4m3fn = {
-    8, -6, 4, 8, CSUPPORT_FLT_NFB_NAN_ONLY, CSUPPORT_FLT_NAN_ALL_ONES};
-const csupport_flt_semantics_t csupport_sem_float8_e4m3fnuz = {
-    7, -7, 4, 8, CSUPPORT_FLT_NFB_NAN_ONLY, CSUPPORT_FLT_NAN_NEG_ZERO};
-const csupport_flt_semantics_t csupport_sem_float8_e4m3b11fnuz = {
-    4, -10, 4, 8, CSUPPORT_FLT_NFB_NAN_ONLY, CSUPPORT_FLT_NAN_NEG_ZERO};
-const csupport_flt_semantics_t csupport_sem_float_tf32 = {127, -126, 11, 19, 0, 0};
-const csupport_flt_semantics_t csupport_sem_x87_double_extended = {16383, -16382, 64, 80, 0, 0};
-const csupport_flt_semantics_t csupport_sem_bogus = {0, 0, 0, 0, 0, 0};
-const csupport_flt_semantics_t csupport_sem_ppc_double_double = {-1, 0, 0, 128, 0, 0};
-const csupport_flt_semantics_t csupport_sem_ppc_double_double_legacy = {
-    1023, -1022 + 53, 53 + 53, 128, 0, 0};
-
-unsigned csupport_flt_semantics_precision(const csupport_flt_semantics_t *s) {
-  return s->precision;
-}
-int32_t csupport_flt_semantics_max_exponent(const csupport_flt_semantics_t *s) {
-  return s->maxExponent;
-}
-int32_t csupport_flt_semantics_min_exponent(const csupport_flt_semantics_t *s) {
-  return s->minExponent;
-}
-unsigned csupport_flt_semantics_size_in_bits(const csupport_flt_semantics_t *s) {
-  return s->sizeInBits;
-}
-unsigned csupport_flt_semantics_int_size_in_bits(
-    const csupport_flt_semantics_t *s, int is_signed) {
-  unsigned min = (unsigned)(s->maxExponent + 1);
-  if (is_signed) ++min;
-  return min;
-}
-int csupport_flt_semantics_is_representable_as_normal_in(
-    const csupport_flt_semantics_t *src, const csupport_flt_semantics_t *dst) {
-  if (src->maxExponent >= dst->maxExponent ||
-      src->minExponent <= dst->minExponent)
-    return 0;
-  return dst->precision >= src->precision;
-}
+/*===-- fltSemantics helpers ---===*/
 
 int32_t csupport_flt_exponent_zero(const csupport_flt_semantics_t *s) {
   return s->minExponent - 1;
@@ -2327,5 +2407,5 @@ int32_t csupport_flt_exponent_nan(const csupport_flt_semantics_t *s) {
   return s->maxExponent + 1;
 }
 unsigned csupport_flt_part_count_for_bits(unsigned bits) {
-  return (bits + 63) / 64;
+  return bits / APFLOAT_PART_BITS + (bits % APFLOAT_PART_BITS != 0);
 }

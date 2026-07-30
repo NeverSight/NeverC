@@ -16,6 +16,11 @@
 
 #include "csupport/lunicode_lname_lto_lcodepoint.h"
 #include "llvm/ADT/SmallString.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringExtras.h"
+#include "llvm/Support/CSupportBuffer.h"
+
+#include <algorithm>
 #include <optional>
 #include <string>
 
@@ -195,18 +200,19 @@ struct CompareResult {
 
 inline static CompareResult compareNode(uint32_t Offset, StringRef Name,
                                         bool Strict, BufferType &Buffer) {
-  char rev_buf[512];
+  SmallVector<char, 256> ReverseName(
+      UnicodeNameToCodepointLargestNameSize + 1);
   size_t rev_buf_len = 0;
   uint32_t val = csupport_unicode_compare_node(
       UnicodeNameToCodepointIndex, UnicodeNameToCodepointIndexSize,
       UnicodeNameToCodepointDict, Offset, Name.data(), Name.size(), Strict, 0,
-      rev_buf, sizeof(rev_buf), &rev_buf_len);
+      ReverseName.data(), ReverseName.size(), &rev_buf_len);
   CompareResult CR;
   CR.N = readNode(Offset);
   CR.Matches = (val != UINT32_MAX);
   CR.Value = val;
   if (CR.Matches && rev_buf_len > 0)
-    Buffer.append(rev_buf, rev_buf + rev_buf_len);
+    Buffer.append(ReverseName.begin(), ReverseName.begin() + rev_buf_len);
   return CR;
 }
 
@@ -215,12 +221,16 @@ inline static CompareResult compareNode(uint32_t Offset, StringRef Name,
 inline static char32_t nameToHangulCodePoint(StringRef Name, bool Strict,
                                              BufferType &Buffer) {
   Buffer.clear();
-  char buf[256];
-  size_t buf_len = 0;
-  uint32_t cp = csupport_unicode_name_to_hangul(
-      Name.data(), Name.size(), Strict, buf, sizeof(buf), &buf_len);
-  if (cp != UINT32_MAX && !Strict && buf_len > 0)
-    Buffer.append(buf, buf + buf_len);
+  uint32_t cp = UINT32_MAX;
+  SmallString<64> CanonicalName = fillCSupportBuffer<64>(
+      [&](char *Buf, size_t Cap) {
+        size_t Length = 0;
+        cp = csupport_unicode_name_to_hangul(
+            Name.data(), Name.size(), Strict, Buf, Cap, &Length);
+        return Length;
+      });
+  if (cp != UINT32_MAX && !Strict)
+    Buffer.append(CanonicalName);
   return cp;
 }
 
@@ -229,12 +239,16 @@ inline static char32_t nameToHangulCodePoint(StringRef Name, bool Strict,
 inline static char32_t nameToGeneratedCodePoint(StringRef Name, bool Strict,
                                                 BufferType &Buffer) {
   Buffer.clear();
-  char buf[256];
-  size_t buf_len = 0;
-  uint32_t cp = csupport_unicode_name_to_generated(
-      Name.data(), Name.size(), Strict, buf, sizeof(buf), &buf_len);
-  if (cp != UINT32_MAX && !Strict && buf_len > 0)
-    Buffer.append(buf, buf + buf_len);
+  uint32_t cp = UINT32_MAX;
+  SmallString<64> CanonicalName = fillCSupportBuffer<64>(
+      [&](char *Buf, size_t Cap) {
+        size_t Length = 0;
+        cp = csupport_unicode_name_to_generated(
+            Name.data(), Name.size(), Strict, Buf, Cap, &Length);
+        return Length;
+      });
+  if (cp != UINT32_MAX && !Strict)
+    Buffer.append(CanonicalName);
   return cp;
 }
 
@@ -306,13 +320,13 @@ nearestMatchesForCodepointName(StringRef Pattern, size_t MaxMatchesCount) {
       return Name;
     };
 
-    auto It =
-        llvm::lower_bound(Matches, Distance,
-                          [&](const MatchForCodepointName &a, size_t Distance) {
-                            if (Distance == a.Distance)
-                              return a.Name < GetName();
-                            return a.Distance < Distance;
-                          });
+    auto It = std::lower_bound(
+        Matches.begin(), Matches.end(), Distance,
+        [&](const MatchForCodepointName &a, size_t Distance) {
+          if (Distance == a.Distance)
+            return a.Name < GetName();
+          return a.Distance < Distance;
+        });
     if (It == Matches.end() && Matches.size() == MaxMatchesCount)
       return false;
 
@@ -338,7 +352,8 @@ nearestMatchesForCodepointName(StringRef Pattern, size_t MaxMatchesCount) {
 
   // Allocate a matrix big enough for longest names.
   const size_t Columns =
-      BRIDGE_MIN(NormalizedName.size(), UnicodeNameToCodepointLargestNameSize) +
+      std::min(NormalizedName.size(),
+               (size_t)UnicodeNameToCodepointLargestNameSize) +
       1;
 
   LLVM_ATTRIBUTE_UNUSED static size_t Rows =
@@ -375,7 +390,7 @@ nearestMatchesForCodepointName(StringRef Pattern, size_t MaxMatchesCount) {
         const int Replace =
             Get(I - 1, Row - 1) + (NormalizedName[I - 1] != N.Name[J] ? 1 : 0);
 
-        Get(I, Row) = BRIDGE_MIN(Insert, BRIDGE_MIN(Delete, Replace));
+        Get(I, Row) = std::min(Insert, std::min(Delete, Replace));
       }
 
       Row++;

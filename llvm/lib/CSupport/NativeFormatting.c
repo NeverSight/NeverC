@@ -1,12 +1,14 @@
 /*===- NativeFormatting.c - Number formatting (pure C) ----------*- C -*-===*/
-#include "include/csupport/lnative_lformatting.h"
+#include "include/csupport/allocation.h"
 #include "include/csupport/buffer.h"
+#include "include/csupport/lnative_lformatting.h"
 #include "include/csupport/types.h"
 #include <assert.h>
+#include <limits.h>
 #include <math.h>
-#include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 static const char upper_hex_digits[] = "0123456789ABCDEF";
 static const char lower_hex_digits[] = "0123456789abcdef";
@@ -149,29 +151,32 @@ static void format_double_exponent(csupport_obuf_t *out, const char *fmt,
   char *heap = NULL;
   char *text = inline_text;
   int needed = snprintf(NULL, 0, fmt, val);
-  if (needed < 0)
+  if (needed < 0) {
+    out->needed = SIZE_MAX;
     return;
+  }
 
   if ((size_t)needed >= sizeof(inline_text)) {
-    heap = (char *)malloc((size_t)needed + 1);
+    heap = (char *)csupport_checked_malloc((size_t)needed + 1, sizeof(char));
     text = heap;
   }
-  if (!text) {
-    /* Out of memory leaves the exponent's redundant zero in place: the same
-       number, and still the same length whatever buffer was asked for. */
-    csupport_obuf_printf(out, fmt, val);
+
+  int written = snprintf(text, (size_t)needed + 1, fmt, val);
+  if (written < 0 || written > needed) {
+    free(heap);
+    out->needed = SIZE_MAX;
     return;
   }
-
-  snprintf(text, (size_t)needed + 1, fmt, val);
   csupport_obuf_write(
-      out, text, (size_t)csupport_trim_exponent_zeros(text, (size_t)needed));
+      out, text, (size_t)csupport_trim_exponent_zeros(text, (size_t)written));
   free(heap);
 }
 
 size_t csupport_format_double_ex(char *buf, size_t buflen, double value,
                                  int style, int precision) {
   csupport_obuf_t out = csupport_obuf(buf, buflen);
+  if (precision < 0)
+    precision = (int)csupport_default_float_precision(style);
 
   if (value != value) { /* NaN */
     csupport_obuf_write(&out, "nan", 3);
@@ -596,30 +601,29 @@ int csupport_format_hex_dump(char *buf, size_t buflen,
                               size_t offset, unsigned bytes_per_line) {
   if (!buf || buflen == 0) return 0;
   if (bytes_per_line == 0) bytes_per_line = 16;
-  int pos = 0;
+  csupport_obuf_t out = csupport_obuf(buf, buflen);
   size_t i = 0;
-  while (i < data_len && (size_t)pos + 10 < buflen) {
-    int n = snprintf(buf + pos, buflen - (size_t)pos, "%08zx: ", offset + i);
-    if (n > 0) pos += n;
-    for (unsigned j = 0; j < bytes_per_line && (size_t)pos + 3 < buflen; j++) {
-      if (i + j < data_len)
-        n = snprintf(buf + pos, buflen - (size_t)pos, "%02x ", data[i + j]);
+  while (i < data_len) {
+    size_t remaining = data_len - i;
+    size_t line_bytes =
+        remaining < (size_t)bytes_per_line ? remaining : bytes_per_line;
+    csupport_obuf_printf(&out, "%08zx: ", offset + i);
+    for (unsigned j = 0; j < bytes_per_line; j++) {
+      if ((size_t)j < line_bytes)
+        csupport_obuf_printf(&out, "%02x ", data[i + j]);
       else
-        n = snprintf(buf + pos, buflen - (size_t)pos, "   ");
-      if (n > 0) pos += n;
+        csupport_obuf_write(&out, "   ", 3);
     }
-    if ((size_t)pos + 1 < buflen) buf[pos++] = '|';
-    for (unsigned j = 0; j < bytes_per_line && (size_t)pos + 1 < buflen; j++) {
-      if (i + j < data_len) {
-        unsigned char c = data[i + j];
-        buf[pos++] = (c >= 0x20 && c < 0x7f) ? (char)c : '.';
-      }
+    csupport_obuf_put(&out, '|');
+    for (size_t j = 0; j < line_bytes; j++) {
+      unsigned char c = data[i + j];
+      csupport_obuf_put(&out, (c >= 0x20 && c < 0x7f) ? (char)c : '.');
     }
-    if ((size_t)pos + 2 < buflen) { buf[pos++] = '|'; buf[pos++] = '\n'; }
-    i += bytes_per_line;
+    csupport_obuf_write(&out, "|\n", 2);
+    i += line_bytes;
   }
-  buf[pos] = '\0';
-  return pos;
+  size_t needed = csupport_obuf_finish(&out);
+  return needed > INT_MAX ? -1 : (int)needed;
 }
 
 int csupport_format_with_commas(char *buf, size_t buflen, int64_t value) {

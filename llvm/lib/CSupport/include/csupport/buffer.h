@@ -11,6 +11,7 @@
 
 #include <stdarg.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 
 #ifdef __cplusplus
@@ -49,7 +50,9 @@ static inline csupport_obuf_t csupport_obuf(char *data, size_t cap) {
 /* Append one byte.  The last byte of capacity is held back for the
    terminator, so content never reaches index cap - 1. */
 static inline void csupport_obuf_put(csupport_obuf_t *buf, char c) {
-  if (buf->needed + 1 < buf->cap)
+  if (buf->needed == SIZE_MAX)
+    return;
+  if (buf->cap != 0 && buf->needed < buf->cap - 1)
     buf->data[buf->needed] = c;
   buf->needed++;
 }
@@ -65,13 +68,16 @@ static inline void csupport_obuf_write(csupport_obuf_t *buf, const char *str,
    nested routine counting rather than writing past the end.  Add what it
    reports back with csupport_obuf_grew. */
 static inline csupport_obuf_t csupport_obuf_rest(const csupport_obuf_t *buf) {
-  if (buf->needed + 1 < buf->cap)
+  if (buf->cap != 0 && buf->needed < buf->cap - 1)
     return csupport_obuf(buf->data + buf->needed, buf->cap - buf->needed);
   return csupport_obuf(NULL, 0);
 }
 
 static inline void csupport_obuf_grew(csupport_obuf_t *buf, size_t needed) {
-  buf->needed += needed;
+  if (needed > SIZE_MAX - buf->needed)
+    buf->needed = SIZE_MAX;
+  else
+    buf->needed += needed;
 }
 
 /* Append a formatted run.  vsnprintf already answers in the terms this type
@@ -85,10 +91,12 @@ static inline void csupport_obuf_printf(csupport_obuf_t *buf, const char *fmt,
   va_start(args, fmt);
   needed = vsnprintf(rest.data, rest.cap, fmt, args);
   va_end(args);
-  /* A negative result is an encoding error in the C library, which leaves
-     nothing to append and no length to report. */
+  /* A negative result is either an encoding error or an output too large for
+     vsnprintf's int result.  Neither has a complete string to publish. */
   if (needed > 0)
     csupport_obuf_grew(buf, (size_t)needed);
+  else if (needed < 0)
+    buf->needed = SIZE_MAX;
 }
 
 /* Terminate what fits and report the length the whole output needs. */

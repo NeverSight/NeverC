@@ -33,8 +33,10 @@ void *csupport_rwmutex_create(void) {
   memset(rwlock, 0, sizeof(pthread_rwlock_t));
 #endif
   int rc = pthread_rwlock_init(rwlock, NULL);
-  assert(rc == 0);
-  (void)rc;
+  if (rc != 0) {
+    free(rwlock);
+    return NULL;
+  }
   return rwlock;
 }
 

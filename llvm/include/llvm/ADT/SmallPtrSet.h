@@ -15,6 +15,7 @@
 #ifndef LLVM_ADT_SMALLPTRSET_H
 #define LLVM_ADT_SMALLPTRSET_H
 
+#include "csupport/lsmall_lptr_lset.h"
 #include "llvm/ADT/EpochTracker.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/MemAlloc.h"
@@ -27,10 +28,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <utility>
-
-extern "C" void csupport_sps_erase_from_bucket(const void **cur_array,
-                                               unsigned cur_array_size,
-                                               const void **bucket);
 
 namespace llvm {
 
@@ -512,20 +509,6 @@ inline void swap(llvm::SmallPtrSet<T, N> &LHS, llvm::SmallPtrSet<T, N> &RHS) {
 
 } // end namespace std
 
-extern "C" {
-void csupport_sps_shrink_and_clear(const void ***cur_array,
-                                   unsigned *cur_array_size,
-                                   unsigned *num_non_empty,
-                                   unsigned *num_tombstones, unsigned size);
-void csupport_sps_grow(const void ***cur_array, unsigned *cur_array_size,
-                       unsigned *num_non_empty, unsigned *num_tombstones,
-                       const void **small_array, unsigned new_size);
-int csupport_sps_insert_big(const void ***cur_array, unsigned *cur_array_size,
-                            unsigned *num_non_empty, unsigned *num_tombstones,
-                            const void **small_array, const void *ptr,
-                            const void ***out_bucket);
-}
-
 namespace llvm {
 
 inline void SmallPtrSetImplBase::shrink_and_clear() {
@@ -546,7 +529,7 @@ SmallPtrSetImplBase::insert_imp_big(const void *Ptr) {
 inline const void *const *
 SmallPtrSetImplBase::FindBucketFor(const void *Ptr) const {
   unsigned Mask = CurArraySize - 1;
-  unsigned Bucket = DenseMapInfo<void *>::getHashValue(Ptr) & Mask;
+  unsigned Bucket = csupport_sps_hash_pointer(Ptr) & Mask;
   const void *const *Array = CurArray;
   while (true) {
     if (LLVM_LIKELY(Array[Bucket] == getEmptyMarker()))

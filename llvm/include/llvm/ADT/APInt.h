@@ -18,11 +18,13 @@
 #include "csupport/lapint.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/FoldingSet.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Alignment.h"
 #include "llvm/Support/CSupportBuffer.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/Endian.h"
+#include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/raw_ostream.h"
 #include <assert.h>
@@ -2669,15 +2671,14 @@ inline int APInt::compareSigned(const APInt &RHS) const {
 // ---------------------------------------------------------------------------
 
 inline APInt APInt::concatSlowCase(const APInt &NewLSB) const {
+  if (getBitWidth() > UINT_MAX - NewLSB.getBitWidth())
+    report_fatal_error("APInt concatenation exceeds maximum bit width");
   unsigned NewWidth = getBitWidth() + NewLSB.getBitWidth();
   APInt Result(NewWidth, 0);
   unsigned nw = Result.getNumWords();
-  uint64_t buf[64];
-  assert(nw <= 64);
-  csupport_apint_concat(buf, nw, getRawData(), getBitWidth(),
-                        NewLSB.getRawData(), NewLSB.getBitWidth());
   uint64_t *dst = Result.isSingleWord() ? &Result.U.VAL : Result.U.pVal;
-  memcpy(dst, buf, nw * sizeof(uint64_t));
+  csupport_apint_concat(dst, nw, getRawData(), getBitWidth(),
+                        NewLSB.getRawData(), NewLSB.getBitWidth());
   return Result;
 }
 
@@ -2688,7 +2689,9 @@ inline void APInt::flipBit(unsigned bitPosition) {
 
 inline void APInt::insertBits(const APInt &subBits, unsigned bitPosition) {
   unsigned subBitWidth = subBits.getBitWidth();
-  assert((subBitWidth + bitPosition) <= BitWidth && "Illegal bit insertion");
+  assert(bitPosition <= BitWidth &&
+         subBitWidth <= BitWidth - bitPosition &&
+         "Illegal bit insertion");
   if (subBitWidth == 0)
     return;
   if (subBitWidth == BitWidth) {
@@ -2707,6 +2710,11 @@ inline void APInt::insertBits(const APInt &subBits, unsigned bitPosition) {
 
 inline void APInt::insertBits(uint64_t subBits, unsigned bitPosition,
                               unsigned numBits) {
+  assert(numBits <= APINT_BITS_PER_WORD && bitPosition <= BitWidth &&
+         numBits <= BitWidth - bitPosition && "Illegal bit insertion");
+  if (numBits == 0)
+    return;
+
   uint64_t maskBits = maskTrailingOnes<uint64_t>(numBits);
   subBits &= maskBits;
   if (isSingleWord()) {
@@ -2719,7 +2727,8 @@ inline void APInt::insertBits(uint64_t subBits, unsigned bitPosition,
 }
 
 inline APInt APInt::extractBits(unsigned numBits, unsigned bitPosition) const {
-  assert(bitPosition < BitWidth && (numBits + bitPosition) <= BitWidth &&
+  assert(numBits != 0 && bitPosition < BitWidth &&
+         numBits <= BitWidth - bitPosition &&
          "Illegal bit extraction");
   if (isSingleWord())
     return APInt(numBits, U.VAL >> bitPosition);
@@ -2739,7 +2748,8 @@ inline APInt APInt::extractBits(unsigned numBits, unsigned bitPosition) const {
 
 inline uint64_t APInt::extractBitsAsZExtValue(unsigned numBits,
                                               unsigned bitPosition) const {
-  assert(bitPosition < BitWidth && (numBits + bitPosition) <= BitWidth &&
+  assert(numBits != 0 && bitPosition < BitWidth &&
+         numBits <= BitWidth - bitPosition &&
          "Illegal bit extraction");
   assert(numBits <= 64 && "Illegal bit extraction");
   if (isSingleWord()) {
@@ -2827,8 +2837,18 @@ inline double APInt::roundToDouble(bool isSigned) const {
     } else
       return double(getWord(0));
   }
-  return csupport_apint_round_to_double(U.pVal, getNumWords(), BitWidth,
-                                        isSigned);
+
+  const bool IsNegative = isSigned && isNegative();
+  if (!IsNegative)
+    return csupport_apint_round_to_double(U.pVal, getNumWords(), BitWidth,
+                                          /*is_negative=*/false);
+
+  APInt Magnitude = -*this;
+  if (Magnitude.getActiveBits() <= APINT_BITS_PER_WORD)
+    return -double(Magnitude.getWord(0));
+  return csupport_apint_round_to_double(
+      Magnitude.U.pVal, Magnitude.getNumWords(), Magnitude.BitWidth,
+      /*is_negative=*/true);
 }
 
 inline APInt APInt::trunc(unsigned width) const {
@@ -3669,10 +3689,12 @@ inline APInt GreatestCommonDivisor(APInt A, APInt B) {
     return APInt(A.getBitWidth(), a);
   }
   unsigned nw = A.getNumWords();
-  uint64_t buf[64];
-  assert(nw <= 64);
-  csupport_apint_gcd(buf, A.getRawData(), B.getRawData(), nw, A.getBitWidth());
-  return APInt(A.getBitWidth(), ArrayRef(buf, nw));
+  SmallVector<uint64_t, 8> Storage(nw * 2);
+  MutableArrayRef<uint64_t> Result(Storage.data(), nw);
+  MutableArrayRef<uint64_t> Scratch(Storage.data() + nw, nw);
+  csupport_apint_gcd(Result.data(), Scratch.data(), A.getRawData(),
+                     B.getRawData(), nw, A.getBitWidth());
+  return APInt(A.getBitWidth(), Result);
 }
 
 inline APInt RoundDoubleToAPInt(double Double, unsigned width) {

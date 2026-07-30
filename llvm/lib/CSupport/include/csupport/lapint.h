@@ -129,7 +129,8 @@ void csupport_apint_shl_slow(uint64_t *dst, const uint64_t *src,
 void csupport_apint_lshr_slow(uint64_t *dst, const uint64_t *src,
                               unsigned num_words, unsigned shift_amt,
                               unsigned bit_width);
-void csupport_apint_gcd(uint64_t *result, const uint64_t *a, const uint64_t *b,
+void csupport_apint_gcd(uint64_t *result, uint64_t *scratch,
+                        const uint64_t *a, const uint64_t *b,
                         unsigned num_words, unsigned bit_width);
 void csupport_apint_rotl(uint64_t *result, const uint64_t *src,
                          unsigned num_words, unsigned bit_width,
@@ -151,7 +152,7 @@ void csupport_apint_equal_slow(const uint64_t *lhs, const uint64_t *rhs,
                                unsigned words, int *result);
 
 double csupport_apint_round_to_double(const uint64_t *words, unsigned num_words,
-                                      unsigned bit_width, int is_signed);
+                                      unsigned bit_width, int is_negative);
 
 #ifdef __cplusplus
 }

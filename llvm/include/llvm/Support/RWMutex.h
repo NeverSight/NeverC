@@ -14,6 +14,7 @@
 #define LLVM_SUPPORT_RWMUTEX_H
 
 #include "llvm/Config/llvm-config.h"
+#include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/Threading.h"
 #include <assert.h>
 #include <mutex>
@@ -48,7 +49,11 @@ public:
   bool lock() { return true; }
   bool unlock() { return true; }
 #else
-  explicit RWMutexImpl() { data_ = csupport_rwmutex_create(); }
+  explicit RWMutexImpl() {
+    data_ = csupport_rwmutex_create();
+    if (!data_)
+      report_fatal_error("unable to initialize reader/writer mutex");
+  }
   ~RWMutexImpl() { csupport_rwmutex_destroy(data_); }
   bool lock_shared() { return csupport_rwmutex_lock_shared(data_); }
   bool unlock_shared() { return csupport_rwmutex_unlock_shared(data_); }

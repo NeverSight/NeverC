@@ -19,10 +19,27 @@ int csupport_lock_file_create(const char *path) {
   char buf[256];
   int n = snprintf(buf, sizeof(buf), "%d", (int)getpid());
   if (n > 0) {
-    ssize_t w = write(fd, buf, (size_t)n);
-    (void)w;
+    size_t written = 0;
+    while (written < (size_t)n) {
+      ssize_t count = write(fd, buf + written, (size_t)n - written);
+      if (count < 0 && errno == EINTR)
+        continue;
+      if (count <= 0) {
+        int error = count < 0 ? errno : EIO;
+        close(fd);
+        remove(path);
+        errno = error;
+        return -1;
+      }
+      written += (size_t)count;
+    }
   }
-  close(fd);
+  if (close(fd) != 0) {
+    int error = errno;
+    remove(path);
+    errno = error;
+    return -1;
+  }
   return 1;
 #else
   FILE *f = fopen(path, "wx");
@@ -58,23 +75,22 @@ int csupport_get_host_id(char *buf, size_t buflen, size_t *out_len) {
   uuid_string_t ustr;
   uuid_unparse(uuid, ustr);
   size_t len = strlen(ustr);
-  if (len >= buflen) len = buflen - 1;
+  if (out_len) *out_len = len;
+  if (len >= buflen) return ERANGE;
   memcpy(buf, ustr, len);
   buf[len] = 0;
-  if (out_len) *out_len = len;
 #elif defined(_WIN32)
-  memcpy(buf, "localhost", 9 < buflen ? 9 : buflen - 1);
-  buf[9 < buflen ? 9 : buflen - 1] = 0;
-  if (out_len) *out_len = 9 < buflen ? 9 : buflen - 1;
-#else
-  char hostname[256];
-  hostname[0] = 0;
-  gethostname(hostname, 255);
-  hostname[255] = 0;
-  size_t len = strlen(hostname);
-  if (len >= buflen) len = buflen - 1;
-  memcpy(buf, hostname, len);
+  const size_t len = 9;
+  if (out_len) *out_len = len;
+  if (len >= buflen) return ERANGE;
+  memcpy(buf, "localhost", len);
   buf[len] = 0;
+#else
+  if (gethostname(buf, buflen) != 0)
+    return errno;
+  size_t len = strnlen(buf, buflen);
+  if (len == buflen)
+    return ENAMETOOLONG;
   if (out_len) *out_len = len;
 #endif
   return 0;

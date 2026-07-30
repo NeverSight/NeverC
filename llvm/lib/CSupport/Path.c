@@ -1,5 +1,6 @@
 /*===- Path.c - File path manipulation (pure C) -----------------*- C -*-===*/
 #include "include/csupport/lpath.h"
+#include "include/csupport/allocation.h"
 #include "include/csupport/buffer.h"
 #include "include/csupport/types.h"
 #include "llvm/Config/config.h"
@@ -158,6 +159,8 @@ size_t csupport_path_stem_end(const char *path, size_t len) {
 size_t csupport_path_append(char *buf, size_t buflen, size_t cur_len,
                             const char *component, size_t comp_len) {
   if (comp_len == 0) return cur_len;
+  if (!buf || !component || buflen == 0 || cur_len >= buflen)
+    return cur_len;
   if (csupport_path_is_absolute(component, comp_len)) {
     if (comp_len >= buflen) return cur_len;
     memcpy(buf, component, comp_len);
@@ -166,10 +169,10 @@ size_t csupport_path_append(char *buf, size_t buflen, size_t cur_len,
   }
   size_t need = cur_len;
   if (need > 0 && !IS_SEP(buf[need - 1])) {
-    if (need + 1 >= buflen) return cur_len;
+    if (need >= buflen - 1) return cur_len;
     buf[need++] = '/';
   }
-  if (need + comp_len >= buflen) return cur_len;
+  if (comp_len >= buflen - need) return cur_len;
   memcpy(buf + need, component, comp_len);
   need += comp_len;
   buf[need] = '\0';
@@ -181,7 +184,10 @@ void csupport_path_replace_extension(char *buf, size_t *len, size_t buflen,
   size_t dot = csupport_path_extension_pos(buf, *len);
   size_t pos = dot;
   int need_dot = (ext_len > 0 && ext[0] != '.');
-  if (pos + (need_dot ? 1 : 0) + ext_len >= buflen) return;
+  const size_t dot_size = need_dot ? 1 : 0;
+  if (pos >= buflen || dot_size >= buflen - pos ||
+      ext_len >= buflen - pos - dot_size)
+    return;
   if (need_dot) buf[pos++] = '.';
   memcpy(buf + pos, ext, ext_len);
   pos += ext_len;
@@ -341,6 +347,34 @@ int csupport_path_has_extension(const char *path, size_t len,
   return 1;
 }
 
+typedef struct {
+  size_t offset;
+  size_t length;
+} csupport_path_component_span_t;
+
+static void csupport_path_component_span_push(
+    csupport_path_component_span_t **components, size_t *count,
+    size_t *capacity, csupport_path_component_span_t *inline_components,
+    size_t offset, size_t length) {
+  if (*count == *capacity) {
+    if (*capacity > SIZE_MAX / 2)
+      csupport_allocation_failure();
+    const size_t new_capacity = *capacity * 2;
+    csupport_path_component_span_t *grown =
+        (csupport_path_component_span_t *)csupport_checked_malloc(
+            new_capacity, sizeof(**components));
+    memcpy(grown, *components,
+           csupport_checked_allocation_size(*count, sizeof(**components)));
+    if (*components != inline_components)
+      free(*components);
+    *components = grown;
+    *capacity = new_capacity;
+  }
+  (*components)[*count].offset = offset;
+  (*components)[*count].length = length;
+  ++*count;
+}
+
 size_t csupport_path_remove_dots(char *buf, size_t len, int remove_dot_dot) {
   size_t write = 0;
   size_t i = 0;
@@ -352,8 +386,9 @@ size_t csupport_path_remove_dots(char *buf, size_t len, int remove_dot_dot) {
   root_len = write;
   int absolute = (root_len > 0);
 
-  typedef struct { size_t off; size_t len; } comp_t;
-  comp_t comps[256];
+  csupport_path_component_span_t inline_components[128];
+  csupport_path_component_span_t *components = inline_components;
+  size_t capacity = sizeof(inline_components) / sizeof(inline_components[0]);
   size_t ncomps = 0;
 
   while (i < len) {
@@ -367,30 +402,34 @@ size_t csupport_path_remove_dots(char *buf, size_t len, int remove_dot_dot) {
     }
     if (remove_dot_dot && comp_len == 2 &&
         buf[comp_start] == '.' && buf[comp_start + 1] == '.') {
-      if (ncomps > 0 && !(comps[ncomps-1].len == 2 &&
-            buf[comps[ncomps-1].off] == '.' && buf[comps[ncomps-1].off+1] == '.')) {
+      if (ncomps > 0 &&
+          !(components[ncomps - 1].length == 2 &&
+            buf[components[ncomps - 1].offset] == '.' &&
+            buf[components[ncomps - 1].offset + 1] == '.')) {
         ncomps--;
-      } else if (!absolute && ncomps < 256) {
-        comps[ncomps].off = comp_start;
-        comps[ncomps].len = comp_len;
-        ncomps++;
+      } else if (!absolute) {
+        csupport_path_component_span_push(
+            &components, &ncomps, &capacity, inline_components, comp_start,
+            comp_len);
       }
       continue;
     }
-    if (ncomps < 256) {
-      comps[ncomps].off = comp_start;
-      comps[ncomps].len = comp_len;
-      ncomps++;
-    }
+    csupport_path_component_span_push(&components, &ncomps, &capacity,
+                                      inline_components, comp_start, comp_len);
   }
 
   write = root_len;
   for (size_t c = 0; c < ncomps; c++) {
     if (c > 0) buf[write++] = '/';
-    memmove(buf + write, buf + comps[c].off, comps[c].len);
-    write += comps[c].len;
+    memmove(buf + write, buf + components[c].offset, components[c].length);
+    write += components[c].length;
   }
-  if (write == 0) { buf[0] = '.'; write = 1; }
+  if (components != inline_components)
+    free(components);
+  if (write == 0) {
+    buf[0] = '.';
+    write = 1;
+  }
   buf[write] = '\0';
   return write;
 }
@@ -515,6 +554,9 @@ void csupport_path_make_preferred(char *buf, size_t len, int style) {
 size_t csupport_path_replace_extension_buf(char *buf, size_t len,
                                            const char *ext, size_t ext_len,
                                            int style) {
+  if (!buf || (!ext && ext_len != 0) || len > SIZE_MAX - 2 ||
+      ext_len > SIZE_MAX - len - 2)
+    return len;
   size_t fpos = csupport_path_filename_pos_styled(buf, len, style);
   size_t dot_pos = len;
   for (size_t i = len; i > fpos; i--) {
@@ -523,9 +565,9 @@ size_t csupport_path_replace_extension_buf(char *buf, size_t len,
   size_t base = dot_pos;
   size_t pos = base;
   if (ext_len > 0 && ext[0] != '.') {
-    if (pos < len + ext_len + 2) buf[pos++] = '.';
+    buf[pos++] = '.';
   }
-  for (size_t i = 0; i < ext_len && pos < len + ext_len + 2; i++)
+  for (size_t i = 0; i < ext_len; i++)
     buf[pos++] = ext[i];
   buf[pos] = '\0';
   return pos;
@@ -566,6 +608,9 @@ static void path_components_init(path_components_t *c) {
 static int path_components_push(path_components_t *c, const char *data,
                                 size_t length) {
   if (c->count == c->cap) {
+    if (c->cap > SIZE_MAX / 2 ||
+        c->cap * 2 > SIZE_MAX / sizeof(*c->items))
+      return 0;
     size_t cap = c->cap * 2;
     csupport_string_ref_t *grown =
         (csupport_string_ref_t *)malloc(cap * sizeof(*grown));
@@ -728,31 +773,22 @@ size_t csupport_path_canonicalize(const char *path, size_t len,
 
 size_t csupport_path_expand_tilde(const char *path, size_t len,
                                   char *buf, size_t buflen) {
-  if (!buf || buflen == 0) return 0;
+  csupport_obuf_t out = csupport_obuf(buf, buflen);
   if (len == 0 || path[0] != '~') {
-    size_t n = len < buflen - 1 ? len : buflen - 1;
-    memcpy(buf, path, n);
-    buf[n] = '\0';
-    return n;
+    csupport_obuf_write(&out, path, len);
+    return csupport_obuf_finish(&out);
   }
   if (len == 1 || csupport_path_is_separator(path[1], CSUPPORT_PATH_STYLE_NATIVE)) {
     const char *home = getenv("HOME");
     if (!home) home = "";
     size_t hlen = strlen(home);
-    size_t rest = len > 1 ? len - 1 : 0;
-    size_t total = hlen + rest;
-    if (total >= buflen) total = (buflen > 0) ? buflen - 1 : 0;
-    size_t h = hlen < total ? hlen : total;
-    memcpy(buf, home, h);
-    size_t r = total - h;
-    if (r > 0) memcpy(buf + h, path + 1, r);
-    buf[total] = '\0';
-    return total;
+    csupport_obuf_write(&out, home, hlen);
+    if (len > 1)
+      csupport_obuf_write(&out, path + 1, len - 1);
+    return csupport_obuf_finish(&out);
   }
-  size_t n = (buflen > 0) ? (len < buflen - 1 ? len : buflen - 1) : 0;
-  memcpy(buf, path, n);
-  buf[n] = '\0';
-  return n;
+  csupport_obuf_write(&out, path, len);
+  return csupport_obuf_finish(&out);
 }
 
 size_t csupport_path_append_styled(char *base, size_t base_len, size_t base_cap,
@@ -760,6 +796,10 @@ size_t csupport_path_append_styled(char *base, size_t base_len, size_t base_cap,
                                     int style) {
   if (!base || base_cap == 0) return base_len;
   if (comp_len == 0) return base_len;
+  if (!component || base_len >= base_cap) {
+    base[base_cap - 1] = '\0';
+    return base_cap - 1;
+  }
   if (base_len == 0) {
     size_t n = comp_len < base_cap - 1 ? comp_len : base_cap - 1;
     memcpy(base, component, n);
@@ -1002,7 +1042,9 @@ size_t csupport_path_system_temp_dir(char *buf, size_t cap) {
 size_t csupport_path_replace_filename(const char *path, size_t path_len,
                                        const char *new_name, size_t name_len,
                                        char *buf, size_t cap) {
-  if (!buf || cap == 0) return 0;
+  if (!buf || cap == 0 || (!path && path_len != 0) ||
+      (!new_name && name_len != 0))
+    return 0;
   size_t parent_len = 0;
   for (size_t i = path_len; i > 0; i--) {
     if (path[i-1] == '/' || path[i-1] == '\\') {
@@ -1010,14 +1052,24 @@ size_t csupport_path_replace_filename(const char *path, size_t path_len,
       break;
     }
   }
-  size_t total = parent_len + name_len;
-  size_t n = total < cap - 1 ? total : cap - 1;
-  if (parent_len > 0 && parent_len <= n) memcpy(buf, path, parent_len);
-  size_t name_copy = n > parent_len ? n - parent_len : 0;
-  if (name_copy > name_len) name_copy = name_len;
-  if (name_copy > 0) memcpy(buf + parent_len, new_name, name_copy);
-  buf[parent_len + name_copy] = '\0';
-  return parent_len + name_copy;
+  const size_t available = cap - 1;
+  const size_t parent_copy =
+      parent_len < available ? parent_len : available;
+  if (parent_copy != 0)
+    memcpy(buf, path, parent_copy);
+  if (parent_copy != parent_len) {
+    buf[parent_copy] = '\0';
+    return parent_copy;
+  }
+
+  const size_t name_capacity = available - parent_copy;
+  const size_t name_copy =
+      name_len < name_capacity ? name_len : name_capacity;
+  if (name_copy != 0)
+    memcpy(buf + parent_copy, new_name, name_copy);
+  const size_t result = parent_copy + name_copy;
+  buf[result] = '\0';
+  return result;
 }
 
 size_t csupport_path_remove_filename(const char *path, size_t len,
@@ -1098,16 +1150,26 @@ int csupport_path_is_valid_component(const char *comp, size_t len) {
 size_t csupport_path_make_absolute_buf(const char *cwd, size_t cwd_len,
                                         const char *path, size_t path_len,
                                         char *buf, size_t cap, int style) {
+  if (!buf || cap == 0 || (!cwd && cwd_len != 0) ||
+      (!path && path_len != 0))
+    return 0;
   if (path_len > 0 && csupport_path_is_separator(path[0], style)) return 0;
 #ifdef _WIN32
   if (path_len >= 2 && ((path[0] >= 'A' && path[0] <= 'Z') ||
       (path[0] >= 'a' && path[0] <= 'z')) && path[1] == ':') return 0;
 #endif
-  size_t total = cwd_len + 1 + path_len;
+  if (path_len > SIZE_MAX - cwd_len)
+    return 0;
+  const int needs_separator =
+      cwd_len > 0 && !csupport_path_is_separator(cwd[cwd_len - 1], style);
+  if ((size_t)needs_separator > SIZE_MAX - cwd_len ||
+      path_len > SIZE_MAX - cwd_len - (size_t)needs_separator)
+    return 0;
+  size_t total = cwd_len + (size_t)needs_separator + path_len;
   if (total >= cap) return 0;
   memcpy(buf, cwd, cwd_len);
   char sep = (style == 1) ? '\\' : '/';
-  if (cwd_len > 0 && !csupport_path_is_separator(cwd[cwd_len-1], style))
+  if (needs_separator)
     buf[cwd_len++] = sep;
   memcpy(buf + cwd_len, path, path_len);
   buf[cwd_len + path_len] = '\0';
@@ -1244,7 +1306,10 @@ size_t csupport_path_replace_path_prefix(const char *path, size_t path_len,
                                           const char *old_prefix, size_t old_len,
                                           const char *new_prefix, size_t new_len,
                                           char *buf, size_t cap, int style) {
-  if (path_len < old_len) return 0;
+  if (!buf || cap == 0 || (!path && path_len != 0) ||
+      (!old_prefix && old_len != 0) || (!new_prefix && new_len != 0) ||
+      path_len < old_len)
+    return 0;
   int match = 1;
   for (size_t i = 0; i < old_len; i++) {
     char a = path[i], b = old_prefix[i];
@@ -1258,6 +1323,8 @@ size_t csupport_path_replace_path_prefix(const char *path, size_t path_len,
   }
   if (!match) return 0;
   size_t suffix_len = path_len - old_len;
+  if (suffix_len > SIZE_MAX - new_len)
+    return 0;
   size_t total = new_len + suffix_len;
   if (total >= cap) return 0;
   memcpy(buf, new_prefix, new_len);
@@ -1328,19 +1395,26 @@ int csupport_try_lock_file(int fd, unsigned timeout_ms) {
 #ifndef _WIN32
 int csupport_test_dir(char ret[], int pathmax, const char *dir, const char *bin) {
   struct stat sb;
-  char fullpath[PATH_MAX];
-  int chars = snprintf(fullpath, (size_t)pathmax, "%s/%s", dir, bin);
-  if (chars >= pathmax)
+  if (!ret || pathmax <= 0 || !dir || !bin)
     return 1;
-  if (!realpath(fullpath, ret))
+  char fullpath[PATH_MAX];
+  int chars = snprintf(fullpath, sizeof(fullpath), "%s/%s", dir, bin);
+  if (chars < 0 || (size_t)chars >= sizeof(fullpath))
+    return 1;
+  char resolved[PATH_MAX];
+  if (!realpath(fullpath, resolved))
+    return 1;
+  size_t resolved_len = strlen(resolved);
+  if (resolved_len >= (size_t)pathmax)
     return 1;
   if (stat(fullpath, &sb) != 0)
     return 1;
+  memcpy(ret, resolved, resolved_len + 1);
   return 0;
 }
 
 char *csupport_getprogpath(char ret[], int pathmax, const char *bin) {
-  if (bin == NULL)
+  if (!ret || pathmax <= 0 || !bin)
     return NULL;
   if (bin[0] == '/') {
     if (csupport_test_dir(ret, pathmax, "/", bin) == 0)
@@ -1349,7 +1423,7 @@ char *csupport_getprogpath(char ret[], int pathmax, const char *bin) {
   }
   if (strchr(bin, '/')) {
     char cwd[PATH_MAX];
-    if (!getcwd(cwd, (size_t)pathmax))
+    if (!getcwd(cwd, sizeof(cwd)))
       return NULL;
     if (csupport_test_dir(ret, pathmax, cwd, bin) == 0)
       return ret;
@@ -1361,13 +1435,18 @@ char *csupport_getprogpath(char ret[], int pathmax, const char *bin) {
   char *s = strdup(pv);
   if (!s)
     return NULL;
-  char *state;
-  for (char *t = strtok_r(s, ":", &state); t != NULL;
-       t = strtok_r(NULL, ":", &state)) {
-    if (csupport_test_dir(ret, pathmax, t, bin) == 0) {
+  for (char *segment = s;;) {
+    char *separator = strchr(segment, ':');
+    if (separator)
+      *separator = '\0';
+    const char *directory = segment[0] ? segment : ".";
+    if (csupport_test_dir(ret, pathmax, directory, bin) == 0) {
       free(s);
       return ret;
     }
+    if (!separator)
+      break;
+    segment = separator + 1;
   }
   free(s);
   return NULL;
@@ -2204,6 +2283,8 @@ int csupport_stat_fd(int fd, csupport_file_stat_t *out) {
 }
 
 size_t csupport_getcwd(char *buf, size_t cap) {
+  if (!buf || cap == 0)
+    return 0;
   const char *pwd = getenv("PWD");
   if (pwd && pwd[0] == '/') {
     struct stat pwd_st, dot_st;
@@ -2267,7 +2348,6 @@ size_t csupport_lookup_user_homedir(const char *username, char *buf, size_t cap)
 
 size_t csupport_expand_tilde_full(const char *path, size_t len,
                                   char *buf, size_t cap) {
-  if (!buf || cap == 0) return 0;
   if (len == 0 || path[0] != '~')
     return csupport_path_expand_tilde(path, len, buf, cap);
 
@@ -2278,27 +2358,30 @@ size_t csupport_expand_tilde_full(const char *path, size_t len,
   if (i == 1)
     return csupport_path_expand_tilde(path, len, buf, cap);
 
-  char user[256];
   size_t uname_len = i - 1;
-  if (uname_len >= sizeof(user))
+  if (uname_len == SIZE_MAX)
+    return 0;
+  char local_user[256];
+  char *user = uname_len < sizeof(local_user)
+                   ? local_user
+                   : (char *)malloc(uname_len + 1);
+  if (!user)
     return 0;
   memcpy(user, path + 1, uname_len);
   user[uname_len] = '\0';
 
   char home[PATH_MAX];
   size_t home_len = csupport_lookup_user_homedir(user, home, sizeof(home));
-  if (home_len == 0 || home_len >= cap)
+  if (user != local_user)
+    free(user);
+  if (home_len == 0)
     return 0;
 
   size_t rem_len = (i < len) ? (len - i) : 0;
-  if (home_len + rem_len >= cap)
-    return 0;
-
-  memcpy(buf, home, home_len);
-  if (rem_len > 0)
-    memcpy(buf + home_len, path + i, rem_len);
-  buf[home_len + rem_len] = '\0';
-  return home_len + rem_len;
+  csupport_obuf_t out = csupport_obuf(buf, cap);
+  csupport_obuf_write(&out, home, home_len);
+  csupport_obuf_write(&out, path + i, rem_len);
+  return csupport_obuf_finish(&out);
 }
 
 int csupport_read_native(int fd, char *buf, size_t size, ssize_t *out_bytes) {
@@ -2526,7 +2609,7 @@ size_t csupport_find_program(const char *name, size_t name_len,
   }
 
   const char *const *search_paths = extra_paths;
-  size_t n_search = num_paths;
+  size_t n_search = search_paths ? num_paths : 0;
 
   char *env_path = NULL;
   char **env_dirs = NULL;
@@ -2540,14 +2623,14 @@ size_t csupport_find_program(const char *name, size_t name_len,
         size_t max_dirs = 1;
         for (const char *p = env_path; *p; p++)
           if (*p == ':') max_dirs++;
-        env_dirs = (char **)calloc(max_dirs, sizeof(char *));
+        if (max_dirs <= SIZE_MAX / sizeof(char *))
+          env_dirs = (char **)calloc(max_dirs, sizeof(char *));
         if (env_dirs) {
           char *tok = env_path;
           while (tok) {
             char *sep = strchr(tok, ':');
             if (sep) *sep = '\0';
-            if (tok[0])
-              env_dirs[n_env++] = tok;
+            env_dirs[n_env++] = tok[0] ? tok : ".";
             tok = sep ? sep + 1 : NULL;
           }
           search_paths = (const char *const *)env_dirs;
@@ -2561,7 +2644,7 @@ size_t csupport_find_program(const char *name, size_t name_len,
   for (size_t i = 0; i < n_search; i++) {
     if (!search_paths[i] || !search_paths[i][0]) continue;
     size_t dlen = strlen(search_paths[i]);
-    if (dlen + 1 + name_len >= cap) continue;
+    if (dlen >= cap || name_len >= cap - dlen - 1) continue;
     memcpy(buf, search_paths[i], dlen);
     buf[dlen] = '/';
     memcpy(buf + dlen + 1, name, name_len);

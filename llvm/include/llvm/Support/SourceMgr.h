@@ -22,6 +22,7 @@
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/CSupportBuffer.h"
+#include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/SMLoc.h"
 #include <vector>
@@ -400,6 +401,8 @@ inline static COffsetArray *GetOrCreateOffsetCacheC(void *&OffsetCache,
 
   COffsetArray *Offsets = csupport_offset_cache_build(
       Buffer->getBufferStart(), Buffer->getBufferSize(), elem_size);
+  if (!Offsets)
+    report_bad_alloc_error("unable to build source line-offset cache");
   OffsetCache = Offsets;
   return Offsets;
 }

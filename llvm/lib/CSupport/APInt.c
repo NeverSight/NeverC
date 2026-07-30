@@ -1,5 +1,6 @@
 /*===- APInt.c - Arbitrary precision integer (pure C) -----------*- C -*-===*/
 #include "include/csupport/lapint.h"
+#include "include/csupport/allocation.h"
 #include "include/csupport/buffer.h"
 #include "include/csupport/types.h"
 #include <assert.h>
@@ -24,6 +25,11 @@
 #define APINT_WORD_SIZE 64
 #define APINT_BITS_PER_WORD ((unsigned)APINT_WORD_SIZE)
 
+static unsigned csupport_apint_words_for_bits(unsigned bit_width) {
+  return bit_width / APINT_BITS_PER_WORD +
+         (bit_width % APINT_BITS_PER_WORD != 0);
+}
+
 static void csupport_apint_negate(uint64_t *dst, const uint64_t *src,
                                   unsigned words) {
   uint64_t carry = 1;
@@ -37,63 +43,84 @@ static void csupport_apint_negate(uint64_t *dst, const uint64_t *src,
 unsigned csupport_apint_count_leading_zeros(const uint64_t *data,
                                             unsigned words,
                                             unsigned bit_width) {
-  unsigned count = 0;
-  for (int i = (int)words - 1; i >= 0; i--) {
-    if (data[i] == 0) { count += 64; continue; }
+  uint64_t count = 0;
+  for (unsigned i = words; i != 0;) {
+    --i;
+    if (data[i] == 0) {
+      count += APINT_BITS_PER_WORD;
+      continue;
+    }
     count += (unsigned)__builtin_clzll(data[i]);
     break;
   }
-  unsigned excess = words * 64 - bit_width;
-  return count > excess ? count - excess : 0;
+  const uint64_t physical_bits = (uint64_t)words * APINT_BITS_PER_WORD;
+  const uint64_t excess =
+      physical_bits > bit_width ? physical_bits - bit_width : 0;
+  const uint64_t result = count > excess ? count - excess : 0;
+  return result > bit_width ? bit_width : (unsigned)result;
 }
 
 unsigned csupport_apint_count_leading_ones(const uint64_t *data,
                                            unsigned words,
                                            unsigned bit_width) {
+  if (words == 0 || bit_width == 0)
+    return 0;
   unsigned high_bits = bit_width % 64;
   unsigned shift;
   if (!high_bits) { high_bits = 64; shift = 0; }
   else { shift = 64 - high_bits; }
-  int i = (int)words - 1;
+  unsigned i = words - 1;
   uint64_t v = data[i] << shift;
-  unsigned count = v == UINT64_MAX ? 64 : (unsigned)__builtin_clzll(~v);
+  uint64_t count =
+      v == UINT64_MAX ? 64 : (unsigned)__builtin_clzll(~v);
   if (count == high_bits) {
-    for (i--; i >= 0; --i) {
-      if (data[i] == UINT64_MAX) count += 64;
-      else { count += (unsigned)__builtin_clzll(~data[i]); break; }
+    while (i != 0) {
+      --i;
+      if (data[i] == UINT64_MAX) {
+        count += APINT_BITS_PER_WORD;
+      } else {
+        count += (unsigned)__builtin_clzll(~data[i]);
+        break;
+      }
     }
   }
-  return count;
+  return count > bit_width ? bit_width : (unsigned)count;
 }
 
 unsigned csupport_apint_count_trailing_zeros(const uint64_t *data,
                                              unsigned words,
                                              unsigned bit_width) {
-  unsigned count = 0;
+  uint64_t count = 0;
   for (unsigned i = 0; i < words; i++) {
-    if (data[i] == 0) { count += 64; continue; }
+    if (data[i] == 0) {
+      count += APINT_BITS_PER_WORD;
+      continue;
+    }
     count += (unsigned)__builtin_ctzll(data[i]);
     break;
   }
-  return count < bit_width ? count : bit_width;
+  return count < bit_width ? (unsigned)count : bit_width;
 }
 
 unsigned csupport_apint_count_trailing_ones(const uint64_t *data,
                                             unsigned words) {
-  unsigned count = 0;
+  uint64_t count = 0;
   for (unsigned i = 0; i < words; i++) {
-    if (data[i] == UINT64_MAX) { count += 64; continue; }
+    if (data[i] == UINT64_MAX) {
+      count += APINT_BITS_PER_WORD;
+      continue;
+    }
     count += (unsigned)__builtin_ctzll(~data[i]);
     break;
   }
-  return count;
+  return count > UINT_MAX ? UINT_MAX : (unsigned)count;
 }
 
 unsigned csupport_apint_popcount(const uint64_t *data, unsigned words) {
-  unsigned count = 0;
+  uint64_t count = 0;
   for (unsigned i = 0; i < words; i++)
     count += (unsigned)__builtin_popcountll(data[i]);
-  return count;
+  return count > UINT_MAX ? UINT_MAX : (unsigned)count;
 }
 
 void csupport_apint_and_assign(uint64_t *dst, const uint64_t *rhs,
@@ -547,24 +574,29 @@ void csupport_apint_divide(const uint64_t *lhs, unsigned lhs_words,
                             const uint64_t *rhs, unsigned rhs_words,
                             uint64_t *quotient, uint64_t *remainder) {
   assert(lhs_words >= rhs_words);
+  if (rhs_words == 0 || lhs_words < rhs_words ||
+      lhs_words > (unsigned)INT_MAX / 2)
+    csupport_allocation_failure();
 
   unsigned nn = rhs_words * 2;
   unsigned mm = (lhs_words * 2) - nn;
 
   uint32_t SPACE[128];
   uint32_t *U = NULL, *V = NULL, *Q = NULL, *R = NULL;
-  if ((remainder ? 4 : 3) * nn + 2 * mm + 1 <= 128) {
+  uint64_t space_needed =
+      (uint64_t)(remainder ? 4 : 3) * nn + (uint64_t)2 * mm + 1;
+  if (space_needed <= sizeof(SPACE) / sizeof(SPACE[0])) {
     U = &SPACE[0];
     V = &SPACE[mm + nn + 1];
     Q = &SPACE[(mm + nn + 1) + nn];
     if (remainder)
       R = &SPACE[(mm + nn + 1) + nn + (mm + nn)];
   } else {
-    U = (uint32_t *)malloc((mm + nn + 1) * sizeof(uint32_t));
-    V = (uint32_t *)malloc(nn * sizeof(uint32_t));
-    Q = (uint32_t *)malloc((mm + nn) * sizeof(uint32_t));
+    U = (uint32_t *)csupport_checked_malloc(mm + nn + 1, sizeof(uint32_t));
+    V = (uint32_t *)csupport_checked_malloc(nn, sizeof(uint32_t));
+    Q = (uint32_t *)csupport_checked_malloc(mm + nn, sizeof(uint32_t));
     if (remainder)
-      R = (uint32_t *)malloc(nn * sizeof(uint32_t));
+      R = (uint32_t *)csupport_checked_malloc(nn, sizeof(uint32_t));
   }
 
   memset(U, 0, (mm + nn + 1) * sizeof(uint32_t));
@@ -623,16 +655,23 @@ void csupport_apint_divide(const uint64_t *lhs, unsigned lhs_words,
 
 void csupport_apint_byte_swap(uint64_t *dst, const uint64_t *src,
                                unsigned bit_width) {
-  unsigned num_words = (bit_width + 63) / 64;
-  unsigned byte_count = (bit_width + 7) / 8;
+  unsigned num_words = csupport_apint_words_for_bits(bit_width);
+  unsigned byte_count = bit_width / 8 + (bit_width % 8 != 0);
   const uint8_t *in = (const uint8_t *)src;
   uint8_t *out = (uint8_t *)dst;
-  uint8_t tmp[256];
-  assert(byte_count <= 256);
-  for (unsigned i = 0; i < byte_count; i++)
-    tmp[i] = in[byte_count - 1 - i];
-  memset(dst, 0, num_words * sizeof(uint64_t));
-  memcpy(out, tmp, byte_count);
+
+  if (dst == src) {
+    for (unsigned i = 0; i < byte_count / 2; ++i) {
+      uint8_t tmp = out[i];
+      out[i] = out[byte_count - 1 - i];
+      out[byte_count - 1 - i] = tmp;
+    }
+  } else {
+    for (unsigned i = 0; i < byte_count; ++i)
+      out[i] = in[byte_count - 1 - i];
+  }
+
+  memset(out + byte_count, 0, num_words * sizeof(uint64_t) - byte_count);
 }
 
 static uint64_t reverse_bits_64(uint64_t v) {
@@ -647,9 +686,11 @@ static uint64_t reverse_bits_64(uint64_t v) {
 
 void csupport_apint_reverse_bits(uint64_t *dst, const uint64_t *src,
                                   unsigned bit_width) {
-  unsigned num_words = (bit_width + 63) / 64;
-  unsigned total_bits = num_words * 64;
-  unsigned excess = total_bits - bit_width;
+  unsigned num_words = csupport_apint_words_for_bits(bit_width);
+  unsigned excess =
+      bit_width % APINT_BITS_PER_WORD
+          ? APINT_BITS_PER_WORD - bit_width % APINT_BITS_PER_WORD
+          : 0;
 
   for (unsigned i = 0; i < num_words; i++)
     dst[i] = reverse_bits_64(src[num_words - 1 - i]);
@@ -682,7 +723,7 @@ size_t csupport_apint_to_string(const uint64_t *data, unsigned bit_width,
   assert(radix >= 2 && radix <= 36);
 
   csupport_obuf_t out = csupport_obuf(buf, buflen);
-  unsigned num_words = (bit_width + APINT_BITS_PER_WORD - 1) / APINT_BITS_PER_WORD;
+  unsigned num_words = csupport_apint_words_for_bits(bit_width);
 
   if (bit_width == 0 || (num_words == 1 && data[0] == 0)) {
     csupport_obuf_put(&out, '0');
@@ -690,10 +731,11 @@ size_t csupport_apint_to_string(const uint64_t *data, unsigned bit_width,
   }
 
   int negative = 0;
-  uint64_t tmp_storage[128];
+  uint64_t tmp_storage[128] = {0};
   uint64_t *tmp = tmp_storage;
   if (num_words > 128)
-    tmp = (uint64_t *)malloc(num_words * sizeof(uint64_t));
+    tmp =
+        (uint64_t *)csupport_checked_malloc(num_words, sizeof(uint64_t));
 
   if (is_signed && (data[num_words - 1] >> ((bit_width - 1) % 64)) & 1) {
     negative = 1;
@@ -705,12 +747,12 @@ size_t csupport_apint_to_string(const uint64_t *data, unsigned bit_width,
     memcpy(tmp, data, num_words * sizeof(uint64_t));
   }
 
-  size_t max_digits = bit_width + 1;
+  size_t max_digits = (size_t)bit_width + 1;
   char digits_storage[256];
   char *digits = digits_storage;
   if (max_digits > sizeof(digits_storage))
-    digits = (char *)malloc(max_digits);
-  int pos = 0;
+    digits = (char *)csupport_checked_malloc(max_digits, sizeof(char));
+  size_t pos = 0;
   const char *digit_chars = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
   if (num_words == 1) {
@@ -753,8 +795,8 @@ size_t csupport_apint_to_string(const uint64_t *data, unsigned bit_width,
 
   if (negative)
     csupport_obuf_put(&out, '-');
-  for (int i = pos - 1; i >= 0; i--)
-    csupport_obuf_put(&out, digits[i]);
+  for (size_t i = pos; i != 0; --i)
+    csupport_obuf_put(&out, digits[i - 1]);
 
   if (digits != digits_storage) free(digits);
   if (tmp != tmp_storage) free(tmp);
@@ -815,11 +857,21 @@ void csupport_apint_ashr(uint64_t *dst, unsigned num_words,
 void csupport_apint_insert_bits(uint64_t *dst, unsigned dst_words,
                                 const uint64_t *src, unsigned src_words,
                                 unsigned src_bit_width, unsigned bit_position) {
-  if (src_bit_width == 0) return;
+  if (src_bit_width == 0)
+    return;
+  const uint64_t dst_bits = (uint64_t)dst_words * APINT_BITS_PER_WORD;
+  const unsigned required_src_words =
+      csupport_apint_words_for_bits(src_bit_width);
+  if (src_words < required_src_words || bit_position > dst_bits ||
+      src_bit_width > dst_bits - bit_position) {
+    assert(0 && "invalid APInt bit insertion");
+    return;
+  }
 
   unsigned lo_bit = bit_position % 64;
   unsigned lo_word = bit_position / 64;
-  unsigned hi1_word = (bit_position + src_bit_width - 1) / 64;
+  unsigned hi1_word =
+      (unsigned)(((uint64_t)bit_position + src_bit_width - 1) / 64);
 
   if (lo_word == hi1_word) {
     uint64_t mask = UINT64_MAX >> (64 - src_bit_width);
@@ -848,7 +900,7 @@ void csupport_apint_insert_bits(uint64_t *dst, unsigned dst_words,
     unsigned src_bit_off = i % 64;
     int bit_val = (src_word < src_words) ?
                   ((src[src_word] >> src_bit_off) & 1) : 0;
-    unsigned dst_idx = bit_position + i;
+    unsigned dst_idx = (unsigned)((uint64_t)bit_position + i);
     unsigned dw = dst_idx / 64;
     unsigned db = dst_idx % 64;
     if (bit_val)
@@ -861,12 +913,21 @@ void csupport_apint_insert_bits(uint64_t *dst, unsigned dst_words,
 void csupport_apint_insert_bits64(uint64_t *dst, unsigned dst_words,
                                   uint64_t val, unsigned bit_position,
                                   unsigned num_bits) {
+  if (num_bits == 0)
+    return;
+  const uint64_t dst_bits = (uint64_t)dst_words * APINT_BITS_PER_WORD;
+  if (num_bits > APINT_BITS_PER_WORD || bit_position > dst_bits ||
+      num_bits > dst_bits - bit_position) {
+    assert(0 && "invalid APInt bit insertion");
+    return;
+  }
   uint64_t mask = (num_bits >= 64) ? UINT64_MAX : ((uint64_t)1 << num_bits) - 1;
   val &= mask;
 
   unsigned lo_bit = bit_position % 64;
   unsigned lo_word = bit_position / 64;
-  unsigned hi_word = (bit_position + num_bits - 1) / 64;
+  unsigned hi_word =
+      (unsigned)(((uint64_t)bit_position + num_bits - 1) / 64);
 
   if (lo_word == hi_word) {
     dst[lo_word] &= ~(mask << lo_bit);
@@ -883,18 +944,30 @@ void csupport_apint_insert_bits64(uint64_t *dst, unsigned dst_words,
 void csupport_apint_extract_bits(const uint64_t *src, unsigned src_words,
                                  uint64_t *dst, unsigned dst_words,
                                  unsigned num_bits, unsigned bit_position) {
+  const uint64_t src_bits = (uint64_t)src_words * APINT_BITS_PER_WORD;
+  const uint64_t dst_bits = (uint64_t)dst_words * APINT_BITS_PER_WORD;
+  const unsigned required_dst_words =
+      csupport_apint_words_for_bits(num_bits);
+  if (num_bits == 0 || bit_position > src_bits ||
+      num_bits > src_bits - bit_position || num_bits > dst_bits ||
+      dst_words < required_dst_words) {
+    assert(0 && "invalid APInt bit extraction");
+    return;
+  }
   unsigned lo_bit = bit_position % 64;
   unsigned lo_word = bit_position / 64;
 
-  if (lo_bit == 0 && dst_words == 1) {
+  if (lo_bit == 0 && required_dst_words == 1) {
     dst[0] = src[lo_word];
     unsigned used = num_bits % 64;
     if (used > 0)
       dst[0] &= ((uint64_t)1 << used) - 1;
+    if (dst_words > 1)
+      memset(dst + 1, 0, (size_t)(dst_words - 1) * sizeof(uint64_t));
     return;
   }
 
-  for (unsigned word = 0; word < dst_words; word++) {
+  for (unsigned word = 0; word < required_dst_words; word++) {
     uint64_t w0 = src[lo_word + word];
     uint64_t w1 = (lo_word + word + 1 < src_words)
                   ? src[lo_word + word + 1] : 0;
@@ -906,18 +979,28 @@ void csupport_apint_extract_bits(const uint64_t *src, unsigned src_words,
 
   /* Clear unused bits in top word */
   unsigned used = num_bits % 64;
-  if (used > 0 && dst_words > 0)
-    dst[dst_words - 1] &= ((uint64_t)1 << used) - 1;
+  if (used > 0)
+    dst[required_dst_words - 1] &= ((uint64_t)1 << used) - 1;
+  if (dst_words > required_dst_words)
+    memset(dst + required_dst_words, 0,
+           (size_t)(dst_words - required_dst_words) * sizeof(uint64_t));
 }
 
 uint64_t csupport_apint_extract_bits_zext(const uint64_t *src,
                                           unsigned src_words,
                                           unsigned num_bits,
                                           unsigned bit_position) {
+  const uint64_t src_bits = (uint64_t)src_words * APINT_BITS_PER_WORD;
+  if (num_bits == 0 || num_bits > APINT_BITS_PER_WORD ||
+      bit_position > src_bits || num_bits > src_bits - bit_position) {
+    assert(0 && "invalid APInt bit extraction");
+    return 0;
+  }
   uint64_t mask = (num_bits >= 64) ? UINT64_MAX : ((uint64_t)1 << num_bits) - 1;
   unsigned lo_bit = bit_position % 64;
   unsigned lo_word = bit_position / 64;
-  unsigned hi_word = (bit_position + num_bits - 1) / 64;
+  unsigned hi_word =
+      (unsigned)(((uint64_t)bit_position + num_bits - 1) / 64);
 
   if (lo_word == hi_word)
     return (src[lo_word] >> lo_bit) & mask;
@@ -958,7 +1041,7 @@ int csupport_apint_from_string(uint64_t *dst, unsigned bit_width,
                                 const char *str, size_t str_len,
                                 unsigned radix) {
   assert(radix >= 2 && radix <= 36);
-  unsigned num_words = (bit_width + APINT_BITS_PER_WORD - 1) / APINT_BITS_PER_WORD;
+  unsigned num_words = csupport_apint_words_for_bits(bit_width);
   csupport_apint_tc_set(dst, 0, num_words);
 
   size_t i = 0;
@@ -1086,11 +1169,11 @@ void csupport_apint_lshr_slow(uint64_t *dst, const uint64_t *src,
 }
 
 /*--- Greatest common divisor (binary GCD / Stein's algorithm) ---*/
-void csupport_apint_gcd(uint64_t *result, const uint64_t *a_in,
-                         const uint64_t *b_in, unsigned num_words,
-                         unsigned bit_width) {
-  uint64_t a[64], b[64];
-  assert(num_words <= 64);
+void csupport_apint_gcd(uint64_t *result, uint64_t *scratch,
+                         const uint64_t *a_in, const uint64_t *b_in,
+                         unsigned num_words, unsigned bit_width) {
+  uint64_t *a = result;
+  uint64_t *b = scratch;
   memcpy(a, a_in, num_words * sizeof(uint64_t));
   memcpy(b, b_in, num_words * sizeof(uint64_t));
 
@@ -1111,10 +1194,11 @@ void csupport_apint_gcd(uint64_t *result, const uint64_t *a_in,
     csupport_apint_shift_right_logical(b, b, num_words, b_tz);
 
     if (csupport_apint_tc_compare(a, b, num_words) < 0) {
-      uint64_t tmp[64];
-      memcpy(tmp, a, num_words * sizeof(uint64_t));
-      memcpy(a, b, num_words * sizeof(uint64_t));
-      memcpy(b, tmp, num_words * sizeof(uint64_t));
+      for (unsigned i = 0; i < num_words; ++i) {
+        uint64_t tmp = a[i];
+        a[i] = b[i];
+        b[i] = tmp;
+      }
     }
     csupport_apint_tc_subtract(a, b, 0, num_words);
     if (csupport_apint_tc_is_zero(a, num_words)) break;
@@ -1128,6 +1212,21 @@ void csupport_apint_gcd(uint64_t *result, const uint64_t *a_in,
 }
 
 /*--- Bit rotation (left/right) ---*/
+static void csupport_apint_or_lshr(uint64_t *dst, const uint64_t *src,
+                                   unsigned num_words, unsigned shift_amt) {
+  unsigned word_shift = shift_amt / APINT_BITS_PER_WORD;
+  unsigned bit_shift = shift_amt % APINT_BITS_PER_WORD;
+  unsigned limit = num_words - word_shift;
+
+  for (unsigned i = 0; i < limit; ++i) {
+    uint64_t shifted = src[i + word_shift] >> bit_shift;
+    if (bit_shift != 0 && i + word_shift + 1 < num_words)
+      shifted |= src[i + word_shift + 1]
+                 << (APINT_BITS_PER_WORD - bit_shift);
+    dst[i] |= shifted;
+  }
+}
+
 void csupport_apint_rotl(uint64_t *result, const uint64_t *src,
                           unsigned num_words, unsigned bit_width,
                           unsigned rotate_amt) {
@@ -1140,12 +1239,17 @@ void csupport_apint_rotl(uint64_t *result, const uint64_t *src,
     if (result != src) memcpy(result, src, num_words * sizeof(uint64_t));
     return;
   }
-  uint64_t hi[64], lo[64];
-  assert(num_words <= 64);
-  csupport_apint_shl_slow(hi, src, num_words, rotate_amt, bit_width);
-  csupport_apint_lshr_slow(lo, src, num_words, bit_width - rotate_amt, bit_width);
-  for (unsigned i = 0; i < num_words; i++)
-    result[i] = hi[i] | lo[i];
+
+  uint64_t *source_copy = NULL;
+  if (result == src) {
+    source_copy =
+        (uint64_t *)csupport_checked_malloc(num_words, sizeof(uint64_t));
+    memcpy(source_copy, src, num_words * sizeof(uint64_t));
+    src = source_copy;
+  }
+  csupport_apint_shl_slow(result, src, num_words, rotate_amt, bit_width);
+  csupport_apint_or_lshr(result, src, num_words, bit_width - rotate_amt);
+  free(source_copy);
 }
 
 void csupport_apint_rotr(uint64_t *result, const uint64_t *src,
@@ -1169,7 +1273,7 @@ static uint64_t low_bit_mask(unsigned bits) {
 void csupport_apint_tc_extract(uint64_t *dst, unsigned dst_count,
                                 const uint64_t *src, unsigned src_bits,
                                 unsigned src_lsb) {
-  unsigned dst_parts = (src_bits + APINT_BITS_PER_WORD - 1) / APINT_BITS_PER_WORD;
+  unsigned dst_parts = csupport_apint_words_for_bits(src_bits);
   assert(dst_parts <= dst_count);
 
   unsigned first_src_part = src_lsb / APINT_BITS_PER_WORD;
@@ -1209,61 +1313,81 @@ void csupport_apint_equal_slow(const uint64_t *lhs, const uint64_t *rhs,
 }
 
 /*--- Convert multi-word APInt to double (IEEE 754) ---*/
+static uint64_t csupport_apint_extract_u64(const uint64_t *words,
+                                           unsigned num_words,
+                                           unsigned lsb) {
+  unsigned word = lsb / APINT_BITS_PER_WORD;
+  unsigned offset = lsb % APINT_BITS_PER_WORD;
+  uint64_t result = words[word] >> offset;
+  if (offset != 0 && word + 1 < num_words)
+    result |= words[word + 1] << (APINT_BITS_PER_WORD - offset);
+  return result;
+}
+
+static int csupport_apint_any_low_bits(const uint64_t *words,
+                                       unsigned bit_count) {
+  unsigned full_words = bit_count / APINT_BITS_PER_WORD;
+  for (unsigned i = 0; i < full_words; ++i)
+    if (words[i] != 0)
+      return 1;
+
+  unsigned remaining = bit_count % APINT_BITS_PER_WORD;
+  if (remaining == 0)
+    return 0;
+  return (words[full_words] &
+          (((uint64_t)1 << remaining) - 1)) != 0;
+}
+
 double csupport_apint_round_to_double(const uint64_t *words,
                                        unsigned num_words,
-                                       unsigned bit_width, int is_signed) {
+                                       unsigned bit_width, int is_negative) {
   unsigned clz = csupport_apint_count_leading_zeros(words, num_words, bit_width);
   unsigned active_bits = bit_width - clz;
 
-  if (active_bits <= 64) {
-    if (is_signed && bit_width <= 64) {
-      int64_t sext = (int64_t)(words[0] << (64 - bit_width)) >> (64 - bit_width);
-      return (double)sext;
-    }
-    return (double)words[0];
-  }
+  if (active_bits <= APINT_BITS_PER_WORD)
+    return is_negative ? -(double)words[0] : (double)words[0];
 
-  int is_neg = is_signed && ((words[(bit_width - 1) / 64] >> ((bit_width - 1) % 64)) & 1);
+  if (active_bits == 0) return is_negative ? -0.0 : 0.0;
 
-  uint64_t tmp[32];
-  assert(num_words <= 32);
-  memcpy(tmp, words, num_words * sizeof(uint64_t));
-  if (is_neg)
-    csupport_apint_negate_slow(tmp, num_words, bit_width);
-
-  clz = csupport_apint_count_leading_zeros(tmp, num_words, bit_width);
-  unsigned n = bit_width - clz;
-
-  if (n == 0) return is_neg ? -0.0 : 0.0;
-
-  uint64_t ieee_exp = n - 1;
+  uint64_t ieee_exp = active_bits - 1;
   if (ieee_exp > 1023) {
     union { uint64_t i; double d; } u;
-    u.i = is_neg ? UINT64_C(0xFFF0000000000000) : UINT64_C(0x7FF0000000000000);
+    u.i = is_negative ? UINT64_C(0xFFF0000000000000)
+                      : UINT64_C(0x7FF0000000000000);
     return u.d;
   }
-  uint64_t biased_exp = ieee_exp + 1023;
 
-  unsigned hi_word = (n - 1) / 64;
-  unsigned bit_in_word = (n - 1) % 64;
-  uint64_t mantissa;
-  if (hi_word == 0) {
-    mantissa = tmp[0];
-    if (n > 53)
-      mantissa >>= n - 53;
-    else if (n < 53)
-      mantissa <<= 53 - n;
-  } else if (bit_in_word >= 52) {
-    mantissa = tmp[hi_word] >> (bit_in_word - 52);
-  } else {
-    uint64_t hibits = tmp[hi_word] << (52 - bit_in_word);
-    uint64_t lobits = tmp[hi_word - 1] >> (12 + bit_in_word);
-    mantissa = hibits | lobits;
+  const unsigned significand_bits = 53;
+  unsigned discarded_bits = active_bits - significand_bits;
+  uint64_t significand =
+      csupport_apint_extract_u64(words, num_words, discarded_bits) &
+      ((UINT64_C(1) << significand_bits) - 1);
+
+  unsigned round_bit_index = discarded_bits - 1;
+  int round_bit =
+      (words[round_bit_index / APINT_BITS_PER_WORD] >>
+       (round_bit_index % APINT_BITS_PER_WORD)) &
+      1;
+  int sticky = csupport_apint_any_low_bits(words, round_bit_index);
+  if (round_bit && (sticky || (significand & 1))) {
+    ++significand;
+    if (significand == (UINT64_C(1) << significand_bits)) {
+      significand >>= 1;
+      ++ieee_exp;
+      if (ieee_exp > 1023) {
+        union { uint64_t i; double d; } u;
+        u.i = is_negative ? UINT64_C(0xFFF0000000000000)
+                          : UINT64_C(0x7FF0000000000000);
+        return u.d;
+      }
+    }
   }
 
-  uint64_t sign_bit = is_neg ? (UINT64_C(1) << 63) : 0;
+  uint64_t biased_exp = ieee_exp + 1023;
+  uint64_t sign_bit = is_negative ? (UINT64_C(1) << 63) : 0;
   union { uint64_t i; double d; } u;
-  u.i = sign_bit | (biased_exp << 52) | (mantissa & ((UINT64_C(1) << 52) - 1));
+  u.i = sign_bit | (biased_exp << 52) |
+        (significand & ((UINT64_C(1) << 52) - 1));
   return u.d;
 }
 
@@ -1271,9 +1395,25 @@ double csupport_apint_round_to_double(const uint64_t *words,
 void csupport_apint_concat(uint64_t *result, unsigned result_words,
                              const uint64_t *hi, unsigned hi_bits,
                              const uint64_t *lo, unsigned lo_bits) {
-  unsigned total_bits = hi_bits + lo_bits;
-  unsigned lo_words = (lo_bits + 63) / 64;
-  (void)total_bits;
+  unsigned lo_words = csupport_apint_words_for_bits(lo_bits);
+  unsigned hi_words = csupport_apint_words_for_bits(hi_bits);
+  uint64_t total_bits_wide = (uint64_t)hi_bits + lo_bits;
+  if (total_bits_wide > UINT_MAX ||
+      result_words < csupport_apint_words_for_bits((unsigned)total_bits_wide))
+    csupport_allocation_failure();
+
+  uint64_t *hi_copy = NULL;
+  uint64_t *lo_copy = NULL;
+  if (result == hi && hi_words != 0) {
+    hi_copy = (uint64_t *)csupport_checked_malloc(hi_words, sizeof(uint64_t));
+    memcpy(hi_copy, hi, hi_words * sizeof(uint64_t));
+    hi = hi_copy;
+  }
+  if (result == lo && lo_words != 0) {
+    lo_copy = (uint64_t *)csupport_checked_malloc(lo_words, sizeof(uint64_t));
+    memcpy(lo_copy, lo, lo_words * sizeof(uint64_t));
+    lo = lo_copy;
+  }
 
   memset(result, 0, result_words * sizeof(uint64_t));
   memcpy(result, lo, lo_words * sizeof(uint64_t));
@@ -1283,12 +1423,20 @@ void csupport_apint_concat(uint64_t *result, unsigned result_words,
   if (lo_words > 0)
     result[lo_words - 1] &= lo_mask;
 
-  unsigned hi_words = (hi_bits + 63) / 64;
-  uint64_t shifted_hi[64];
-  assert(result_words <= 64);
-  memset(shifted_hi, 0, result_words * sizeof(uint64_t));
-  memcpy(shifted_hi, hi, hi_words * sizeof(uint64_t));
-  csupport_apint_shift_left(shifted_hi, shifted_hi, result_words, lo_bits);
-  for (unsigned i = 0; i < result_words; i++)
-    result[i] |= shifted_hi[i];
+  unsigned word_shift = lo_bits / APINT_BITS_PER_WORD;
+  unsigned bit_shift = lo_bits % APINT_BITS_PER_WORD;
+  for (unsigned i = 0; i < hi_words; ++i) {
+    unsigned dst_word = i + word_shift;
+    if (dst_word < result_words)
+      result[dst_word] |= hi[i] << bit_shift;
+    if (bit_shift != 0 && dst_word + 1 < result_words)
+      result[dst_word + 1] |= hi[i] >> (APINT_BITS_PER_WORD - bit_shift);
+  }
+
+  unsigned total_bits = (unsigned)total_bits_wide;
+  if (total_bits % APINT_BITS_PER_WORD != 0)
+    result[result_words - 1] &=
+        ((uint64_t)1 << (total_bits % APINT_BITS_PER_WORD)) - 1;
+  free(hi_copy);
+  free(lo_copy);
 }

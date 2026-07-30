@@ -2,6 +2,8 @@
 #include "include/csupport/lthreading.h"
 #include "llvm/Config/config.h"
 #include "llvm/Config/llvm-config.h"
+#include <errno.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -287,6 +289,17 @@ void csupport_apply_thread_strategy_noop(unsigned thread_pool_num) {
 unsigned csupport_get_cpus(void) { return 1; }
 
 #if defined(__linux__) && defined(__x86_64__)
+static int parse_proc_nonnegative_int(const char *text, int *value) {
+  char *end = NULL;
+  errno = 0;
+  long parsed = strtol(text, &end, 10);
+  if (errno == ERANGE || end == text || (*end != '\0' && *end != '\n') ||
+      parsed < 0 || parsed > INT_MAX)
+    return 0;
+  *value = (int)parsed;
+  return 1;
+}
+
 static int compute_physical_cores_linux_x86(void) {
   cpu_set_t affinity, enabled;
   if (sched_getaffinity(0, sizeof(affinity), &affinity) != 0)
@@ -316,14 +329,19 @@ static int compute_physical_cores_linux_x86(void) {
                         val[vlen-1] == ' '))
       val[--vlen] = '\0';
 
-    if (strcmp(key, "processor") == 0)
-      cur_processor = atoi(val);
-    else if (strcmp(key, "physical id") == 0)
-      cur_physical_id = atoi(val);
-    else if (strcmp(key, "siblings") == 0)
-      cur_siblings = atoi(val);
+    if (strcmp(key, "processor") == 0) {
+      if (!parse_proc_nonnegative_int(val, &cur_processor))
+        cur_processor = -1;
+    } else if (strcmp(key, "physical id") == 0) {
+      if (!parse_proc_nonnegative_int(val, &cur_physical_id))
+        cur_physical_id = -1;
+    } else if (strcmp(key, "siblings") == 0) {
+      if (!parse_proc_nonnegative_int(val, &cur_siblings))
+        cur_siblings = -1;
+    }
     else if (strcmp(key, "core id") == 0) {
-      cur_core_id = atoi(val);
+      if (!parse_proc_nonnegative_int(val, &cur_core_id))
+        cur_core_id = -1;
       if (cur_processor >= 0 && cur_processor < CPU_SETSIZE &&
           CPU_ISSET(cur_processor, &affinity) &&
           cur_physical_id >= 0 && cur_siblings > 0 && cur_core_id >= 0) {
@@ -491,23 +509,165 @@ uint64_t csupport_thread_get_current_id(void) {
 uint64_t csupport_get_thread_id(void) { return (uint64_t)GetCurrentThreadId(); }
 
 uint32_t csupport_get_max_thread_name_length(void) { return 0; }
-int csupport_set_thread_name_cstr(const char *n) {
-  (void)n;
-  return -1;
+
+typedef HRESULT(WINAPI *csupport_set_thread_description_fn)(HANDLE, PCWSTR);
+typedef HRESULT(WINAPI *csupport_get_thread_description_fn)(HANDLE, PWSTR *);
+
+static FARPROC get_thread_description_proc(const char *name) {
+  HMODULE module = GetModuleHandleW(L"KernelBase.dll");
+  if (!module)
+    module = GetModuleHandleW(L"Kernel32.dll");
+  return module ? GetProcAddress(module, name) : NULL;
 }
-int csupport_get_thread_name_buf(char *b, size_t l) {
-  if (b && l > 0)
-    b[0] = '\0';
-  return 0;
+
+int csupport_set_thread_name_cstr(const char *name) {
+  if (!name)
+    return -1;
+  csupport_set_thread_description_fn set_description =
+      (csupport_set_thread_description_fn)get_thread_description_proc(
+          "SetThreadDescription");
+  if (!set_description)
+    return -1;
+  int wide_length = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, name, -1,
+                                        NULL, 0);
+  if (wide_length <= 0 ||
+      (size_t)wide_length > SIZE_MAX / sizeof(wchar_t))
+    return -1;
+  wchar_t *wide_name = (wchar_t *)malloc((size_t)wide_length * sizeof(wchar_t));
+  if (!wide_name)
+    return -1;
+  if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, name, -1, wide_name,
+                          wide_length) != wide_length) {
+    free(wide_name);
+    return -1;
+  }
+  const HRESULT result = set_description(GetCurrentThread(), wide_name);
+  free(wide_name);
+  return SUCCEEDED(result) ? 0 : -1;
 }
-int csupport_set_thread_priority_val(int p) {
-  (void)p;
-  return -1;
+
+int csupport_get_thread_name_buf(char *buf, size_t buflen) {
+  if (!buf || buflen == 0)
+    return -1;
+  buf[0] = '\0';
+  csupport_get_thread_description_fn get_description =
+      (csupport_get_thread_description_fn)get_thread_description_proc(
+          "GetThreadDescription");
+  if (!get_description)
+    return 0;
+
+  PWSTR wide_name = NULL;
+  if (FAILED(get_description(GetCurrentThread(), &wide_name)) || !wide_name)
+    return 0;
+  int utf8_length =
+      WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, wide_name, -1, NULL, 0,
+                          NULL, NULL);
+  if (utf8_length <= 0) {
+    LocalFree(wide_name);
+    return 0;
+  }
+  char *utf8_name = (char *)malloc((size_t)utf8_length);
+  if (!utf8_name) {
+    LocalFree(wide_name);
+    return -1;
+  }
+  if (WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, wide_name, -1,
+                          utf8_name, utf8_length, NULL, NULL) != utf8_length) {
+    free(utf8_name);
+    LocalFree(wide_name);
+    return 0;
+  }
+  LocalFree(wide_name);
+
+  size_t length = (size_t)utf8_length - 1;
+  if (length >= buflen) {
+    length = buflen - 1;
+    while (length != 0 &&
+           ((unsigned char)utf8_name[length] & 0xc0) == 0x80)
+      --length;
+  }
+  memcpy(buf, utf8_name, length);
+  buf[length] = '\0';
+  free(utf8_name);
+  return (int)length;
 }
-int csupport_compute_host_num_hardware_threads(void) { return 1; }
+
+int csupport_set_thread_priority_val(int priority) {
+  int windows_priority;
+  switch (priority) {
+  case 0:
+    windows_priority = THREAD_PRIORITY_LOWEST;
+    break;
+  case 1:
+    windows_priority = THREAD_PRIORITY_BELOW_NORMAL;
+    break;
+  default:
+    windows_priority = THREAD_PRIORITY_NORMAL;
+    break;
+  }
+  return SetThreadPriority(GetCurrentThread(), windows_priority) ? 0 : -1;
+}
+
+static unsigned count_bits_uintptr(uintptr_t value) {
+  unsigned count = 0;
+  while (value != 0) {
+    value &= value - 1;
+    ++count;
+  }
+  return count;
+}
+
+int csupport_compute_host_num_hardware_threads(void) {
+  DWORD_PTR process_mask;
+  DWORD_PTR system_mask;
+  if (GetProcessAffinityMask(GetCurrentProcess(), &process_mask, &system_mask)) {
+    const unsigned affinity_count = count_bits_uintptr((uintptr_t)process_mask);
+    if (affinity_count != 0)
+      return (int)affinity_count;
+  }
+  const DWORD active = GetActiveProcessorCount(ALL_PROCESSOR_GROUPS);
+  return active != 0 && active <= INT_MAX ? (int)active : 1;
+}
 void csupport_apply_thread_strategy_noop(unsigned n) { (void)n; }
-unsigned csupport_get_cpus(void) { return 1; }
-int csupport_get_physical_cores(void) { return -1; }
+unsigned csupport_get_cpus(void) {
+  return (unsigned)csupport_compute_host_num_hardware_threads();
+}
+
+int csupport_get_physical_cores(void) {
+  DWORD length = 0;
+  GetLogicalProcessorInformationEx(RelationProcessorCore, NULL, &length);
+  if (GetLastError() != ERROR_INSUFFICIENT_BUFFER || length == 0)
+    return -1;
+  SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX *info =
+      (SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX *)malloc(length);
+  if (!info)
+    return -1;
+  if (!GetLogicalProcessorInformationEx(RelationProcessorCore, info, &length)) {
+    free(info);
+    return -1;
+  }
+
+  DWORD offset = 0;
+  int cores = 0;
+  while (offset < length) {
+    SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX *entry =
+        (SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX *)((char *)info + offset);
+    if (entry->Size == 0 || entry->Size > length - offset) {
+      cores = -1;
+      break;
+    }
+    if (entry->Relationship == RelationProcessorCore) {
+      if (cores == INT_MAX) {
+        cores = -1;
+        break;
+      }
+      ++cores;
+    }
+    offset += entry->Size;
+  }
+  free(info);
+  return cores > 0 ? cores : -1;
+}
 
 #else /* no pthread, non-Windows: degrade to synchronous execution */
 

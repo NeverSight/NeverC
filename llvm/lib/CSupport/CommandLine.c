@@ -1,8 +1,42 @@
 /*===- CommandLine.c - Command line parsing (pure C) -------------*- C -*-===*/
+#include "include/csupport/buffer.h"
 #include "include/csupport/lcommand_lline.h"
+#include "include/csupport/number_parse.h"
+#include <ctype.h>
+#include <errno.h>
+#include <limits.h>
+#include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdio.h>
+
+static void csupport_cl_buffer_put(char *buffer, size_t capacity,
+                                   size_t *position, char value) {
+  if (*position == SIZE_MAX)
+    return;
+  if (buffer && *position < capacity)
+    buffer[*position] = value;
+  ++*position;
+}
+
+static void csupport_cl_buffer_write(char *buffer, size_t capacity,
+                                     size_t *position, const char *source,
+                                     size_t length) {
+  size_t available = *position < capacity ? capacity - *position : 0;
+  size_t copied = length < available ? length : available;
+  if (buffer && copied != 0)
+    memcpy(buffer + *position, source, copied);
+  if (length > SIZE_MAX - *position)
+    *position = SIZE_MAX;
+  else
+    *position += length;
+}
+
+static int csupport_cl_number_is_negative(const char *text) {
+  while (isspace((unsigned char)*text))
+    ++text;
+  return *text == '-';
+}
 
 int csupport_cl_is_whitespace(char c) {
   return c == ' ' || c == '\t' || c == '\r' || c == '\n';
@@ -34,7 +68,7 @@ int csupport_cl_is_windows_special_char_in_cmd_name(char c) {
 size_t csupport_cl_parse_backslash(const char *src, size_t src_len, size_t pos,
                                    char *out, size_t out_cap, size_t *out_pos) {
   size_t I = pos;
-  int backslash_count = 0;
+  size_t backslash_count = 0;
   do {
     ++I;
     ++backslash_count;
@@ -42,17 +76,16 @@ size_t csupport_cl_parse_backslash(const char *src, size_t src_len, size_t pos,
 
   int followed_by_dquote = (I < src_len && src[I] == '"');
   if (followed_by_dquote) {
-    int half = backslash_count / 2;
-    for (int i = 0; i < half && *out_pos < out_cap; i++)
-      out[(*out_pos)++] = '\\';
+    size_t half = backslash_count / 2;
+    for (size_t i = 0; i < half; i++)
+      csupport_cl_buffer_put(out, out_cap, out_pos, '\\');
     if (backslash_count % 2 == 0)
       return I - 1;
-    if (*out_pos < out_cap)
-      out[(*out_pos)++] = '"';
+    csupport_cl_buffer_put(out, out_cap, out_pos, '"');
     return I;
   }
-  for (int i = 0; i < backslash_count && *out_pos < out_cap; i++)
-    out[(*out_pos)++] = '\\';
+  for (size_t i = 0; i < backslash_count; i++)
+    csupport_cl_buffer_put(out, out_cap, out_pos, '\\');
   return I - 1;
 }
 
@@ -81,78 +114,51 @@ int csupport_cl_tokenize_command_line(const char *source, size_t source_len,
   return argc;
 }
 
+typedef struct {
+  char *buffer;
+  size_t capacity;
+  size_t position;
+  const char **tokens;
+  size_t max_tokens;
+  size_t token_count;
+  int mark_eols;
+} csupport_cl_token_buffer_t;
+
+static void csupport_cl_store_token(const char *token, size_t length,
+                                    int transient, void *opaque) {
+  (void)transient;
+  csupport_cl_token_buffer_t *out = (csupport_cl_token_buffer_t *)opaque;
+  if (out->token_count >= out->max_tokens)
+    return;
+
+  size_t start = out->position;
+  int fits =
+      out->buffer && start < out->capacity && length < out->capacity - start;
+  csupport_cl_buffer_write(out->buffer, out->capacity, &out->position, token,
+                           length);
+  csupport_cl_buffer_put(out->buffer, out->capacity, &out->position, '\0');
+  out->tokens[out->token_count++] = fits ? out->buffer + start : NULL;
+}
+
+static void csupport_cl_store_eol(void *opaque) {
+  csupport_cl_token_buffer_t *out = (csupport_cl_token_buffer_t *)opaque;
+  if (out->mark_eols && out->token_count < out->max_tokens)
+    out->tokens[out->token_count++] = NULL;
+}
+
 size_t csupport_cl_tokenize_gnu(const char *src, size_t src_len,
                                 char *token_buf, size_t token_buf_cap,
                                 const char **tokens, size_t max_tokens,
                                 size_t *token_count, int mark_eols) {
-  size_t ntokens = 0;
-  size_t tpos = 0;
-  size_t I = 0;
-
-  while (I < src_len && ntokens < max_tokens) {
-    size_t tok_start = tpos;
-
-    while (I < src_len && csupport_cl_is_whitespace(src[I])) {
-      if (mark_eols && src[I] == '\n' && ntokens < max_tokens)
-        tokens[ntokens++] = NULL;
-      ++I;
-    }
-    if (I >= src_len) break;
-
-    tok_start = tpos;
-
-    while (I < src_len) {
-      char C = src[I];
-
-      if (I + 1 < src_len && C == '\\') {
-        ++I;
-        if (tpos < token_buf_cap)
-          token_buf[tpos++] = src[I];
-        ++I;
-        continue;
-      }
-
-      if (csupport_cl_is_quote(C)) {
-        ++I;
-        while (I < src_len && src[I] != C) {
-          if (src[I] == '\\' && I + 1 < src_len)
-            ++I;
-          if (tpos < token_buf_cap)
-            token_buf[tpos++] = src[I];
-          ++I;
-        }
-        if (I < src_len) ++I;
-        continue;
-      }
-
-      if (csupport_cl_is_whitespace(C)) {
-        if (tpos > tok_start) {
-          if (tpos < token_buf_cap)
-            token_buf[tpos++] = '\0';
-          if (ntokens < max_tokens)
-            tokens[ntokens++] = token_buf + tok_start;
-        }
-        if (mark_eols && C == '\n' && ntokens < max_tokens)
-          tokens[ntokens++] = NULL;
-        ++I;
-        break;
-      }
-
-      if (tpos < token_buf_cap)
-        token_buf[tpos++] = C;
-      ++I;
-    }
-
-    if (I >= src_len && tpos > tok_start) {
-      if (tpos < token_buf_cap)
-        token_buf[tpos++] = '\0';
-      if (ntokens < max_tokens)
-        tokens[ntokens++] = token_buf + tok_start;
-    }
-  }
-
-  if (token_count) *token_count = ntokens;
-  return tpos;
+  csupport_cl_token_buffer_t out = {token_buf, token_buf ? token_buf_cap : 0, 0,
+                                    tokens,    tokens ? max_tokens : 0,       0,
+                                    mark_eols};
+  if (!csupport_cl_tokenize_gnu_impl(src, src_len, csupport_cl_store_token,
+                                     csupport_cl_store_eol, &out))
+    out.position = 0;
+  if (token_count)
+    *token_count = out.token_count;
+  return out.position;
 }
 
 size_t csupport_cl_tokenize_windows(const char *src, size_t src_len,
@@ -160,116 +166,15 @@ size_t csupport_cl_tokenize_windows(const char *src, size_t src_len,
                                     const char **tokens, size_t max_tokens,
                                     size_t *token_count,
                                     int initial_cmd_name) {
-  size_t ntokens = 0;
-  size_t tpos = 0;
-  size_t I = 0;
-  int cmd_name = initial_cmd_name;
-  enum { INIT, UNQUOTED, QUOTED } state = INIT;
-
-  while (I < src_len && ntokens < max_tokens) {
-    switch (state) {
-    case INIT: {
-      size_t tok_start = tpos;
-      while (I < src_len && csupport_cl_is_whitespace_or_null(src[I]))
-        ++I;
-      if (I >= src_len) goto done;
-
-      tok_start = tpos;
-      size_t normal_start = I;
-      if (cmd_name) {
-        while (I < src_len && !csupport_cl_is_windows_special_char_in_cmd_name(src[I]))
-          ++I;
-      } else {
-        while (I < src_len && !csupport_cl_is_windows_special_char(src[I]))
-          ++I;
-      }
-      size_t nlen = I - normal_start;
-      if (nlen > 0 && tpos + nlen <= token_buf_cap) {
-        memcpy(token_buf + tpos, src + normal_start, nlen);
-        tpos += nlen;
-      }
-
-      if (I >= src_len || csupport_cl_is_whitespace_or_null(src[I])) {
-        if (tpos < token_buf_cap) token_buf[tpos++] = '\0';
-        if (ntokens < max_tokens) tokens[ntokens++] = token_buf + tok_start;
-        cmd_name = (I < src_len && src[I] == '\n') ? initial_cmd_name : 0;
-        if (I < src_len) ++I;
-      } else if (src[I] == '"') {
-        state = QUOTED;
-        ++I;
-      } else if (src[I] == '\\') {
-        size_t out_pos = tpos;
-        I = csupport_cl_parse_backslash(src, src_len, I,
-                                        token_buf, token_buf_cap, &out_pos);
-        tpos = out_pos;
-        ++I;
-        state = UNQUOTED;
-      }
-      break;
-    }
-    case UNQUOTED:
-      if (csupport_cl_is_whitespace_or_null(src[I])) {
-        if (tpos < token_buf_cap) token_buf[tpos++] = '\0';
-        if (ntokens < max_tokens) {
-          size_t tok_start_u = 0;
-          for (size_t k = tpos - 1; k > 0; k--) {
-            if (token_buf[k - 1] == '\0') { tok_start_u = k; break; }
-          }
-          tokens[ntokens++] = token_buf + tok_start_u;
-        }
-        cmd_name = (src[I] == '\n') ? initial_cmd_name : 0;
-        state = INIT;
-        ++I;
-      } else if (src[I] == '"') {
-        state = QUOTED;
-        ++I;
-      } else if (src[I] == '\\' && !cmd_name) {
-        size_t out_pos = tpos;
-        I = csupport_cl_parse_backslash(src, src_len, I,
-                                        token_buf, token_buf_cap, &out_pos);
-        tpos = out_pos;
-        ++I;
-      } else {
-        if (tpos < token_buf_cap) token_buf[tpos++] = src[I];
-        ++I;
-      }
-      break;
-    case QUOTED:
-      if (src[I] == '"') {
-        if (I + 1 < src_len && src[I + 1] == '"') {
-          if (tpos < token_buf_cap) token_buf[tpos++] = '"';
-          I += 2;
-        } else {
-          state = UNQUOTED;
-          ++I;
-        }
-      } else if (src[I] == '\\' && !cmd_name) {
-        size_t out_pos = tpos;
-        I = csupport_cl_parse_backslash(src, src_len, I,
-                                        token_buf, token_buf_cap, &out_pos);
-        tpos = out_pos;
-        ++I;
-      } else {
-        if (tpos < token_buf_cap) token_buf[tpos++] = src[I];
-        ++I;
-      }
-      break;
-    }
-  }
-
-done:
-  if (state != INIT && tpos > 0) {
-    if (tpos < token_buf_cap) token_buf[tpos++] = '\0';
-    if (ntokens < max_tokens) {
-      size_t tok_start_f = 0;
-      for (size_t k = tpos - 1; k > 0; k--) {
-        if (token_buf[k - 1] == '\0') { tok_start_f = k; break; }
-      }
-      tokens[ntokens++] = token_buf + tok_start_f;
-    }
-  }
-  if (token_count) *token_count = ntokens;
-  return tpos;
+  csupport_cl_token_buffer_t out = {token_buf, token_buf ? token_buf_cap : 0, 0,
+                                    tokens,    tokens ? max_tokens : 0,       0,
+                                    0};
+  if (!csupport_cl_tokenize_windows_impl(src, src_len, csupport_cl_store_token,
+                                         NULL, &out, initial_cmd_name))
+    out.position = 0;
+  if (token_count)
+    *token_count = out.token_count;
+  return out.position;
 }
 
 int csupport_cl_tokenize_config_line(const char *src, size_t src_len,
@@ -301,9 +206,7 @@ int csupport_cl_tokenize_config_line(const char *src, size_t src_len,
         p++;
         if (*p == '\n' || (*p == '\r' && p + 1 < end && p[1] == '\n')) {
           size_t seg = (size_t)((p - 1) - start);
-          if (lpos + seg <= line_buf_cap)
-            memcpy(line_buf + lpos, start, seg);
-          lpos += seg;
+          csupport_cl_buffer_write(line_buf, line_buf_cap, &lpos, start, seg);
           if (*p == '\r') p++;
           start = p + 1;
         }
@@ -314,11 +217,10 @@ int csupport_cl_tokenize_config_line(const char *src, size_t src_len,
   }
 
   size_t seg = (size_t)(p - start);
-  if (lpos + seg <= line_buf_cap)
-    memcpy(line_buf + lpos, start, seg);
-  lpos += seg;
+  csupport_cl_buffer_write(line_buf, line_buf_cap, &lpos, start, seg);
 
-  if (lpos < line_buf_cap) line_buf[lpos] = '\0';
+  if (lpos < line_buf_cap)
+    line_buf[lpos] = '\0';
   *line_len = lpos;
   *consumed = (size_t)(p - src);
   return 1;
@@ -390,11 +292,19 @@ int csupport_cl_split_option_value(const char *arg, size_t arg_len,
   return 0;
 }
 
+static int csupport_cl_edit_distance_lengths_valid(size_t a_len, size_t b_len) {
+  return a_len <= INT_MAX && b_len <= INT_MAX && a_len < SIZE_MAX &&
+         b_len < SIZE_MAX && a_len + 1 <= SIZE_MAX / sizeof(unsigned) &&
+         b_len + 1 <= SIZE_MAX / sizeof(unsigned);
+}
+
 int csupport_cl_edit_distance(const char *a, size_t a_len,
                               const char *b, size_t b_len,
                               int allow_replacements,
                               unsigned max_dist) {
   size_t m = a_len, n = b_len;
+  if (!csupport_cl_edit_distance_lengths_valid(m, n))
+    return -1;
   if (m == 0) return (int)n;
   if (n == 0) return (int)m;
 
@@ -438,6 +348,8 @@ int csupport_cl_edit_distance_insensitive(const char *a, size_t a_len,
                                           int allow_replacements,
                                           unsigned max_dist) {
   size_t m = a_len, n = b_len;
+  if (!csupport_cl_edit_distance_lengths_valid(m, n))
+    return -1;
   if (m == 0) return (int)n;
   if (n == 0) return (int)m;
 
@@ -555,50 +467,29 @@ size_t csupport_cl_arg_plus_prefixes_size(const char *arg_name, size_t arg_len,
   return arg_len + pad + prefix_len + help_sep_len;
 }
 
+static void csupport_cl_write_arg_prefix(csupport_obuf_t *out, size_t arg_len,
+                                         size_t pad) {
+  for (size_t i = 0; i < pad; ++i)
+    csupport_obuf_put(out, ' ');
+  csupport_obuf_put(out, '-');
+  if (arg_len > 1)
+    csupport_obuf_put(out, '-');
+}
+
 size_t csupport_cl_format_arg_prefix(char *buf, size_t buflen,
                                       const char *arg_name, size_t arg_len,
                                       size_t pad) {
-  if (!buf || buflen == 0) return 0;
-  size_t out = 0;
-  for (size_t i = 0; i < pad && out + 1 < buflen; i++)
-    buf[out++] = ' ';
-  if (arg_len > 1) {
-    if (out + 2 < buflen) { buf[out++] = '-'; buf[out++] = '-'; }
-  } else {
-    if (out + 1 < buflen) buf[out++] = '-';
-  }
-  buf[out] = '\0';
-  return out;
+  (void)arg_name;
+  csupport_obuf_t out = csupport_obuf(buf, buflen);
+  csupport_cl_write_arg_prefix(&out, arg_len, pad);
+  return csupport_obuf_finish(&out);
 }
 
 int csupport_cl_string_distance(const char *a, size_t a_len,
                                  const char *b, size_t b_len,
                                  int allow_replacements, unsigned max_dist) {
-  size_t m = a_len, n = b_len;
-  if (m > n) {
-    const char *tmp_s = a; a = b; b = tmp_s;
-    size_t tmp_l = m; m = n; n = tmp_l;
-  }
-  if (max_dist > 0 && n - m > max_dist) return (int)(n - m);
-  unsigned row[256];
-  if (n + 1 > 256) return -1;
-  for (unsigned i = 0; i <= (unsigned)n; i++) row[i] = i;
-  for (size_t i = 1; i <= m; i++) {
-    row[0] = (unsigned)i;
-    unsigned prev = (unsigned)(i - 1);
-    for (size_t j = 1; j <= n; j++) {
-      unsigned old = row[j];
-      unsigned sub_cost = (a[i-1] == b[j-1]) ? 0 : 1;
-      unsigned ins = row[j] + 1;
-      unsigned del = row[j-1] + 1;
-      unsigned sub = allow_replacements ? (prev + sub_cost) : (ins < del ? ins : del);
-      unsigned best = ins < del ? ins : del;
-      if (sub < best) best = sub;
-      row[j] = best;
-      prev = old;
-    }
-  }
-  return (int)row[n];
+  return csupport_cl_edit_distance(a, a_len, b, b_len, allow_replacements,
+                                   max_dist);
 }
 
 int csupport_cl_looks_like_option(const char *arg, size_t len) {
@@ -625,16 +516,20 @@ size_t csupport_cl_trim_trailing_whitespace(const char *str, size_t len) {
 
 int csupport_cl_parse_numeric_option(const char *str, size_t len,
                                       long long *out_val) {
-  if (!str || len == 0 || !out_val) return 0;
-  char buf[64];
-  size_t n = len < sizeof(buf)-1 ? len : sizeof(buf)-1;
-  memcpy(buf, str, n);
-  buf[n] = '\0';
+  if (!str || len == 0 || !out_val)
+    return 0;
+  char local[64];
+  char *text = csupport_copy_number_text(str, len, local, sizeof(local));
+  if (!text)
+    return 0;
   char *end = 0;
-  long long val = strtoll(buf, &end, 10);
-  if (end == buf) return 0;
-  *out_val = val;
-  return 1;
+  errno = 0;
+  long long val = strtoll(text, &end, 10);
+  int valid = errno != ERANGE && end == text + len;
+  if (valid)
+    *out_val = val;
+  csupport_free_number_text(text, local);
+  return valid;
 }
 
 int csupport_cl_match_prefix(const char *arg, size_t arg_len,
@@ -805,42 +700,57 @@ int csupport_cl_comma_separate(const char *val, size_t val_len,
 }
 
 int csupport_cl_parse_int(const char *str, size_t len, int *out) {
-  if (!str || len == 0 || !out) return 0;
-  char buf[32];
-  size_t n = len < sizeof(buf) - 1 ? len : sizeof(buf) - 1;
-  memcpy(buf, str, n);
-  buf[n] = '\0';
+  if (!str || len == 0 || !out)
+    return 0;
+  char local[32];
+  char *text = csupport_copy_number_text(str, len, local, sizeof(local));
+  if (!text)
+    return 0;
   char *end = 0;
-  long val = strtol(buf, &end, 0);
-  if (end == buf || *end != '\0') return 0;
-  *out = (int)val;
-  return 1;
+  errno = 0;
+  long val = strtol(text, &end, 0);
+  int valid =
+      errno != ERANGE && end == text + len && val >= INT_MIN && val <= INT_MAX;
+  if (valid)
+    *out = (int)val;
+  csupport_free_number_text(text, local);
+  return valid;
 }
 
 int csupport_cl_parse_unsigned(const char *str, size_t len, unsigned *out) {
-  if (!str || len == 0 || !out) return 0;
-  char buf[32];
-  size_t n = len < sizeof(buf) - 1 ? len : sizeof(buf) - 1;
-  memcpy(buf, str, n);
-  buf[n] = '\0';
+  if (!str || len == 0 || !out)
+    return 0;
+  char local[32];
+  char *text = csupport_copy_number_text(str, len, local, sizeof(local));
+  if (!text)
+    return 0;
   char *end = 0;
-  unsigned long val = strtoul(buf, &end, 0);
-  if (end == buf || *end != '\0') return 0;
-  *out = (unsigned)val;
-  return 1;
+  errno = 0;
+  unsigned long val = strtoul(text, &end, 0);
+  int valid = !csupport_cl_number_is_negative(text) && errno != ERANGE &&
+              end == text + len && val <= (unsigned long)UINT_MAX;
+  if (valid)
+    *out = (unsigned)val;
+  csupport_free_number_text(text, local);
+  return valid;
 }
 
 int csupport_cl_parse_uint64(const char *str, size_t len, uint64_t *out) {
-  if (!str || len == 0 || !out) return 0;
-  char buf[32];
-  size_t n = len < sizeof(buf) - 1 ? len : sizeof(buf) - 1;
-  memcpy(buf, str, n);
-  buf[n] = '\0';
+  if (!str || len == 0 || !out)
+    return 0;
+  char local[32];
+  char *text = csupport_copy_number_text(str, len, local, sizeof(local));
+  if (!text)
+    return 0;
   char *end = 0;
-  unsigned long long val = strtoull(buf, &end, 0);
-  if (end == buf || *end != '\0') return 0;
-  *out = (uint64_t)val;
-  return 1;
+  errno = 0;
+  unsigned long long val = strtoull(text, &end, 0);
+  int valid = !csupport_cl_number_is_negative(text) && errno != ERANGE &&
+              end == text + len && val <= (unsigned long long)UINT64_MAX;
+  if (valid)
+    *out = (uint64_t)val;
+  csupport_free_number_text(text, local);
+  return valid;
 }
 
 size_t csupport_cl_format_usage_line(char *buf, size_t buflen,
@@ -1090,24 +1000,15 @@ size_t csupport_cl_format_value_list(const char *const *values,
                                       size_t num_values,
                                       const char *separator,
                                       char *out, size_t out_cap) {
-  if (!out || out_cap == 0) return 0;
-  size_t pos = 0;
+  csupport_obuf_t result = csupport_obuf(out, out_cap);
   size_t sep_len = separator ? strlen(separator) : 0;
   for (size_t i = 0; i < num_values; i++) {
-    if (i > 0 && sep_len > 0) {
-      size_t n = (pos + sep_len < out_cap) ? sep_len : (out_cap > pos ? out_cap - pos : 0);
-      if (n > 0) memcpy(out + pos, separator, n);
-      pos += sep_len;
-    }
-    if (values[i]) {
-      size_t vlen = strlen(values[i]);
-      size_t n = (pos + vlen < out_cap) ? vlen : (out_cap > pos ? out_cap - pos : 0);
-      if (n > 0) memcpy(out + pos, values[i], n);
-      pos += vlen;
-    }
+    if (i > 0 && sep_len > 0)
+      csupport_obuf_write(&result, separator, sep_len);
+    if (values[i])
+      csupport_obuf_write(&result, values[i], strlen(values[i]));
   }
-  if (pos < out_cap) out[pos] = '\0';
-  return pos;
+  return csupport_obuf_finish(&result);
 }
 
 int csupport_cl_expand_tilde(const char *path, size_t path_len,
@@ -1163,27 +1064,38 @@ int csupport_cl_compare_options_by_name(const char *a, size_t a_len,
   return 0;
 }
 
-typedef void (*csupport_cl_token_cb)(const char *tok, size_t tok_len, void *ctx);
-typedef void (*csupport_cl_eol_cb)(void *ctx);
+int csupport_cl_tokenize_windows_impl(const char *src, size_t src_len,
+                                      csupport_cl_token_cb add_token,
+                                      csupport_cl_eol_cb mark_eol, void *ctx,
+                                      int initial_command_name) {
+  if ((!src && src_len != 0) || !add_token)
+    return 0;
+  char local[256];
+  char *token = src_len <= sizeof(local) ? local : (char *)malloc(src_len);
+  if (!token)
+    return 0;
 
-void csupport_cl_tokenize_windows_impl(
-    const char *src, size_t src_len,
-    csupport_cl_token_cb add_token, csupport_cl_eol_cb mark_eol,
-    void *ctx, int initial_command_name) {
-  char token[4096];
   size_t tok_len = 0;
+  size_t i = 0;
   int command_name = initial_command_name;
+  int token_active = 0;
   enum { INIT, UNQUOTED, QUOTED } state = INIT;
 
-  for (size_t i = 0; i < src_len; ++i) {
+  while (i < src_len) {
     switch (state) {
     case INIT: {
       tok_len = 0;
       while (i < src_len && csupport_cl_is_whitespace_or_null(src[i])) {
-        if (src[i] == '\n' && mark_eol) mark_eol(ctx);
+        if (src[i] == '\n') {
+          command_name = initial_command_name;
+          if (mark_eol)
+            mark_eol(ctx);
+        }
         ++i;
       }
-      if (i >= src_len) break;
+      if (i >= src_len)
+        break;
+
       size_t start = i;
       if (command_name) {
         while (i < src_len && !csupport_cl_is_windows_special_char_in_cmd_name(src[i]))
@@ -1194,100 +1106,94 @@ void csupport_cl_tokenize_windows_impl(
       }
       size_t normal_len = i - start;
       if (i >= src_len || csupport_cl_is_whitespace_or_null(src[i])) {
-        add_token(src + start, normal_len, ctx);
+        add_token(src + start, normal_len, 0, ctx);
         if (i < src_len && src[i] == '\n') {
-          if (mark_eol) mark_eol(ctx);
           command_name = initial_command_name;
+          if (mark_eol)
+            mark_eol(ctx);
         } else {
           command_name = 0;
         }
+        if (i < src_len)
+          ++i;
       } else if (src[i] == '"') {
-        if (normal_len > 0 && tok_len + normal_len < sizeof(token)) {
-          memcpy(token + tok_len, src + start, normal_len);
-          tok_len += normal_len;
-        }
+        memcpy(token, src + start, normal_len);
+        tok_len = normal_len;
+        token_active = 1;
         state = QUOTED;
+        ++i;
       } else if (src[i] == '\\') {
-        if (normal_len > 0 && tok_len + normal_len < sizeof(token)) {
-          memcpy(token + tok_len, src + start, normal_len);
-          tok_len += normal_len;
-        }
-        size_t out_len = 0;
-        char bs_buf[256];
-        size_t new_i = csupport_cl_parse_backslash(src, src_len, i,
-                                                    bs_buf, sizeof(bs_buf), &out_len);
-        if (out_len > 0 && tok_len + out_len < sizeof(token)) {
-          memcpy(token + tok_len, bs_buf, out_len);
-          tok_len += out_len;
-        }
-        i = new_i;
+        memcpy(token, src + start, normal_len);
+        tok_len = normal_len;
+        token_active = 1;
+        i = csupport_cl_parse_backslash(src, src_len, i, token, src_len,
+                                        &tok_len) +
+            1;
         state = UNQUOTED;
       }
       break;
     }
     case UNQUOTED:
       if (csupport_cl_is_whitespace_or_null(src[i])) {
-        add_token(token, tok_len, ctx);
+        add_token(token, tok_len, 1, ctx);
         tok_len = 0;
+        token_active = 0;
         if (src[i] == '\n') {
           command_name = initial_command_name;
-          if (mark_eol) mark_eol(ctx);
+          if (mark_eol)
+            mark_eol(ctx);
         } else {
           command_name = 0;
         }
         state = INIT;
+        ++i;
       } else if (src[i] == '"') {
         state = QUOTED;
+        ++i;
       } else if (src[i] == '\\' && !command_name) {
-        size_t out_len = 0;
-        char bs_buf[256];
-        size_t new_i = csupport_cl_parse_backslash(src, src_len, i,
-                                                    bs_buf, sizeof(bs_buf), &out_len);
-        if (out_len > 0 && tok_len + out_len < sizeof(token)) {
-          memcpy(token + tok_len, bs_buf, out_len);
-          tok_len += out_len;
-        }
-        i = new_i;
+        i = csupport_cl_parse_backslash(src, src_len, i, token, src_len,
+                                        &tok_len) +
+            1;
       } else {
-        if (tok_len < sizeof(token) - 1)
-          token[tok_len++] = src[i];
+        token[tok_len++] = src[i++];
       }
       break;
     case QUOTED:
       if (src[i] == '"') {
-        if (i < (src_len - 1) && src[i + 1] == '"') {
-          if (tok_len < sizeof(token) - 1)
-            token[tok_len++] = '"';
-          ++i;
+        if (i + 1 < src_len && src[i + 1] == '"') {
+          token[tok_len++] = '"';
+          i += 2;
         } else {
           state = UNQUOTED;
+          ++i;
         }
       } else if (src[i] == '\\' && !command_name) {
-        size_t out_len = 0;
-        char bs_buf[256];
-        size_t new_i = csupport_cl_parse_backslash(src, src_len, i,
-                                                    bs_buf, sizeof(bs_buf), &out_len);
-        if (out_len > 0 && tok_len + out_len < sizeof(token)) {
-          memcpy(token + tok_len, bs_buf, out_len);
-          tok_len += out_len;
-        }
-        i = new_i;
+        i = csupport_cl_parse_backslash(src, src_len, i, token, src_len,
+                                        &tok_len) +
+            1;
       } else {
-        if (tok_len < sizeof(token) - 1)
-          token[tok_len++] = src[i];
+        token[tok_len++] = src[i++];
       }
       break;
     }
   }
-  if (state != INIT && tok_len > 0)
-    add_token(token, tok_len, ctx);
+  if (token_active)
+    add_token(token, tok_len, 1, ctx);
+  if (token != local)
+    free(token);
+  return 1;
 }
 
-void csupport_cl_tokenize_gnu_impl(
-    const char *src, size_t src_len,
-    csupport_cl_token_cb add_token, csupport_cl_eol_cb mark_eol,
-    void *ctx) {
-  char token[4096];
+int csupport_cl_tokenize_gnu_impl(const char *src, size_t src_len,
+                                  csupport_cl_token_cb add_token,
+                                  csupport_cl_eol_cb mark_eol, void *ctx) {
+  if ((!src && src_len != 0) || !add_token)
+    return 0;
+  char local[256];
+  char *token = src_len <= sizeof(local) ? local : (char *)malloc(src_len);
+  if (!token)
+    return 0;
+
   size_t tok_len = 0;
   int in_token = 0;
   char quote_char = 0;
@@ -1302,13 +1208,13 @@ void csupport_cl_tokenize_gnu_impl(
         ++i;
         char next = src[i];
         if (next == '"' || next == '\\' || next == '$' || next == '`' || next == '\n') {
-          if (tok_len < sizeof(token) - 1) token[tok_len++] = next;
+          token[tok_len++] = next;
         } else {
-          if (tok_len < sizeof(token) - 1) token[tok_len++] = '\\';
-          if (tok_len < sizeof(token) - 1) token[tok_len++] = next;
+          token[tok_len++] = '\\';
+          token[tok_len++] = next;
         }
       } else {
-        if (tok_len < sizeof(token) - 1) token[tok_len++] = c;
+        token[tok_len++] = c;
       }
       in_token = 1;
       continue;
@@ -1319,7 +1225,7 @@ void csupport_cl_tokenize_gnu_impl(
       if (src[i] == '\n') {
         continue;
       }
-      if (tok_len < sizeof(token) - 1) token[tok_len++] = src[i];
+      token[tok_len++] = src[i];
       in_token = 1;
       continue;
     }
@@ -1340,7 +1246,7 @@ void csupport_cl_tokenize_gnu_impl(
 
     if (csupport_cl_is_whitespace(c) || c == '\0') {
       if (in_token) {
-        add_token(token, tok_len, ctx);
+        add_token(token, tok_len, 1, ctx);
         tok_len = 0;
         in_token = 0;
       }
@@ -1348,12 +1254,15 @@ void csupport_cl_tokenize_gnu_impl(
       continue;
     }
 
-    if (tok_len < sizeof(token) - 1) token[tok_len++] = c;
+    token[tok_len++] = c;
     in_token = 1;
   }
 
-  if (in_token && tok_len > 0)
-    add_token(token, tok_len, ctx);
+  if (in_token)
+    add_token(token, tok_len, 1, ctx);
+  if (token != local)
+    free(token);
+  return 1;
 }
 
 size_t csupport_cl_format_wrapped_text(const char *text, size_t text_len,
@@ -1396,16 +1305,20 @@ size_t csupport_cl_format_wrapped_text(const char *text, size_t text_len,
 }
 
 int csupport_cl_parse_double(const char *str, size_t len, double *out_val) {
-  if (!str || len == 0) return 0;
-  char buf[128];
-  size_t copy_len = len < sizeof(buf) - 1 ? len : sizeof(buf) - 1;
-  memcpy(buf, str, copy_len);
-  buf[copy_len] = '\0';
+  if (!str || len == 0)
+    return 0;
+  char local[128];
+  char *text = csupport_copy_number_text(str, len, local, sizeof(local));
+  if (!text)
+    return 0;
   char *end = 0;
-  double val = strtod(buf, &end);
-  if (end == buf || end != buf + copy_len) return 0;
-  if (out_val) *out_val = val;
-  return 1;
+  errno = 0;
+  double val = strtod(text, &end);
+  int valid = errno != ERANGE && end == text + len;
+  if (valid && out_val)
+    *out_val = val;
+  csupport_free_number_text(text, local);
+  return valid;
 }
 
 int csupport_cl_should_print_option(const char *name, size_t name_len,
@@ -1463,9 +1376,7 @@ size_t csupport_cl_extract_config_line(const char *src, size_t src_len,
       const char *next = cur + 1;
       if (*next == '\n' || (*next == '\r' && next + 1 < end && next[1] == '\n')) {
         size_t seg = (size_t)(cur - start);
-        if (line_len + seg <= out_cap)
-          memcpy(out + line_len, start, seg);
-        line_len += seg;
+        csupport_cl_buffer_write(out, out_cap, &line_len, start, seg);
         cur = next;
         if (*cur == '\r') cur++;
         start = cur + 1;
@@ -1478,10 +1389,9 @@ size_t csupport_cl_extract_config_line(const char *src, size_t src_len,
   }
 
   size_t seg = (size_t)(cur - start);
-  if (line_len + seg <= out_cap)
-    memcpy(out + line_len, start, seg);
-  line_len += seg;
-  if (line_len < out_cap) out[line_len] = '\0';
+  csupport_cl_buffer_write(out, out_cap, &line_len, start, seg);
+  if (line_len < out_cap)
+    out[line_len] = '\0';
 
   *offset = (size_t)(cur - src);
   return line_len;
@@ -1631,12 +1541,14 @@ size_t csupport_cl_expand_cfg_dir(const char *arg, size_t arg_len,
   return pos;
 }
 
-int csupport_cl_edit_distance_impl(const char *a, size_t a_len,
-                                   const char *b, size_t b_len,
-                                   int allow_replacements,
+int csupport_cl_edit_distance_impl(const char *a, size_t a_len, const char *b,
+                                   size_t b_len, int allow_replacements,
                                    unsigned max_distance) {
-  if (!a || !b) return (int)(a_len > b_len ? a_len : b_len);
   size_t m = a_len, n = b_len;
+  if (!csupport_cl_edit_distance_lengths_valid(m, n))
+    return -1;
+  if (!a || !b)
+    return (int)(m > n ? m : n);
   if (n > m) {
     const char *tmp_s = a; a = b; b = tmp_s;
     size_t tmp_n = m; m = n; n = tmp_n;
@@ -1818,29 +1730,38 @@ size_t csupport_cl_format_value_desc(const char *desc, size_t desc_len,
 }
 
 int csupport_cl_parse_int64(const char *str, size_t len, int64_t *out) {
-  if (len == 0) return 0;
-  char buf[32];
-  if (len >= sizeof(buf)) return 0;
-  memcpy(buf, str, len);
-  buf[len] = '\0';
-  char *end;
-  long long val = strtoll(buf, &end, 0);
-  if (end == buf || *end != '\0') return 0;
-  *out = (int64_t)val;
-  return 1;
+  if (!str || len == 0 || !out)
+    return 0;
+  char local[32];
+  char *text = csupport_copy_number_text(str, len, local, sizeof(local));
+  if (!text)
+    return 0;
+  char *end = 0;
+  errno = 0;
+  long long val = strtoll(text, &end, 0);
+  int valid = errno != ERANGE && end == text + len &&
+              val >= (long long)INT64_MIN && val <= (long long)INT64_MAX;
+  if (valid)
+    *out = (int64_t)val;
+  csupport_free_number_text(text, local);
+  return valid;
 }
 
 int csupport_cl_parse_double_ex(const char *str, size_t len, double *out) {
-  if (len == 0) return 0;
-  char buf[64];
-  if (len >= sizeof(buf)) return 0;
-  memcpy(buf, str, len);
-  buf[len] = '\0';
-  char *end;
-  double val = strtod(buf, &end);
-  if (end == buf || *end != '\0') return 0;
-  *out = val;
-  return 1;
+  if (!str || len == 0 || !out)
+    return 0;
+  char local[64];
+  char *text = csupport_copy_number_text(str, len, local, sizeof(local));
+  if (!text)
+    return 0;
+  char *end = 0;
+  errno = 0;
+  double val = strtod(text, &end);
+  int valid = errno != ERANGE && end == text + len;
+  if (valid)
+    *out = val;
+  csupport_free_number_text(text, local);
+  return valid;
 }
 
 /*--- Help text formatting (pure C) ---*/
@@ -1938,13 +1859,11 @@ size_t csupport_cl_format_option_info(const char *prefix, const char *name,
 
 int csupport_cl_format_opt_with_prefix2(const char *name, size_t name_len,
                                          size_t pad, char *buf, size_t cap) {
-  size_t pos = csupport_cl_format_arg_prefix(buf, cap, name, name_len, pad);
-  if (pos + name_len <= cap) {
-    memcpy(buf + pos, name, name_len);
-    pos += name_len;
-  }
-  if (pos < cap) buf[pos] = '\0';
-  return (int)pos;
+  csupport_obuf_t out = csupport_obuf(buf, cap);
+  csupport_cl_write_arg_prefix(&out, name_len, pad);
+  csupport_obuf_write(&out, name, name_len);
+  size_t needed = csupport_obuf_finish(&out);
+  return needed > INT_MAX ? INT_MAX : (int)needed;
 }
 
 int csupport_cl_sort_cmp(const void *a, const void *b) {

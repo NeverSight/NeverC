@@ -161,17 +161,17 @@ size_t csupport_cl_format_wrapped_text(const char *text, size_t text_len,
                                        char *out, size_t out_cap);
 
 typedef void (*csupport_cl_token_cb)(const char *tok, size_t tok_len,
-                                     void *ctx);
+                                     int transient, void *ctx);
 typedef void (*csupport_cl_eol_cb)(void *ctx);
 
-void csupport_cl_tokenize_windows_impl(const char *src, size_t src_len,
-                                       csupport_cl_token_cb add_token,
-                                       csupport_cl_eol_cb mark_eol, void *ctx,
-                                       int initial_command_name);
+int csupport_cl_tokenize_windows_impl(const char *src, size_t src_len,
+                                      csupport_cl_token_cb add_token,
+                                      csupport_cl_eol_cb mark_eol, void *ctx,
+                                      int initial_command_name);
 
-void csupport_cl_tokenize_gnu_impl(const char *src, size_t src_len,
-                                   csupport_cl_token_cb add_token,
-                                   csupport_cl_eol_cb mark_eol, void *ctx);
+int csupport_cl_tokenize_gnu_impl(const char *src, size_t src_len,
+                                  csupport_cl_token_cb add_token,
+                                  csupport_cl_eol_cb mark_eol, void *ctx);
 
 int csupport_cl_parse_double(const char *str, size_t len, double *out_val);
 
@@ -294,6 +294,7 @@ size_t csupport_cl_format_version_printer(const char *program_name,
 #include "llvm/ADT/Twine.h"
 #include "llvm/ADT/iterator_range.h"
 #include "llvm/Support/CommandLine.h"
+#include "llvm/Support/CSupportBuffer.h"
 #include "llvm/Support/ConvertUTF.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -375,10 +376,10 @@ inline size_t argPlusPrefixesSize(StringRef ArgName, size_t Pad = DefaultPad) {
 }
 
 inline SmallString<8> argPrefix(StringRef ArgName, size_t Pad = DefaultPad) {
-  char buf[32];
-  size_t n = csupport_cl_format_arg_prefix(buf, sizeof(buf), ArgName.data(),
-                                           ArgName.size(), Pad);
-  return SmallString<8>(StringRef(buf, n));
+  return fillCSupportBuffer<8>([&](char *Buffer, size_t Capacity) {
+    return csupport_cl_format_arg_prefix(Buffer, Capacity, ArgName.data(),
+                                         ArgName.size(), Pad);
+  });
 }
 
 // Option predicates...
@@ -1069,7 +1070,9 @@ struct GnuTokenCtx {
   bool MarkEOLs;
 };
 
-inline void gnuTokenCb(const char *tok, size_t tok_len, void *ctx) {
+inline void gnuTokenCb(const char *tok, size_t tok_len, int transient,
+                       void *ctx) {
+  (void)transient;
   GnuTokenCtx *c = (GnuTokenCtx *)ctx;
   StringRef S(tok, tok_len);
   c->NewArgv->push_back(c->Saver->save(S).data());
@@ -1084,8 +1087,9 @@ inline void TokenizeGNUCommandLine(StringRef Src, StringSaver &Saver,
                                    SmallVectorImpl<const char *> &NewArgv,
                                    bool MarkEOLs) {
   GnuTokenCtx ctx = {&Saver, &NewArgv, MarkEOLs};
-  csupport_cl_tokenize_gnu_impl(Src.data(), Src.size(), gnuTokenCb, gnuEolCb,
-                                &ctx);
+  if (!csupport_cl_tokenize_gnu_impl(Src.data(), Src.size(), gnuTokenCb,
+                                     gnuEolCb, &ctx))
+    report_fatal_error("unable to allocate GNU command-line token buffer");
 }
 
 /// Backslashes are interpreted in a rather complicated way in the Windows-style
@@ -1121,10 +1125,11 @@ struct WinTokenCtx {
   bool AlwaysCopy;
 };
 
-inline void winTokenCb(const char *tok, size_t tok_len, void *ctx) {
+inline void winTokenCb(const char *tok, size_t tok_len, int transient,
+                       void *ctx) {
   WinTokenCtx *c = (WinTokenCtx *)ctx;
   StringRef S(tok, tok_len);
-  if (c->AlwaysCopy)
+  if (c->AlwaysCopy || transient)
     S = c->Saver->save(S);
   (*c->AddToken)(S);
 }
@@ -1137,8 +1142,10 @@ static inline void tokenizeWindowsCommandLineImpl(
     StringRef Src, StringSaver &Saver, function_ref<void(StringRef)> AddToken,
     bool AlwaysCopy, function_ref<void()> MarkEOL, bool InitialCommandName) {
   WinTokenCtx ctx = {&Saver, &AddToken, &MarkEOL, AlwaysCopy};
-  csupport_cl_tokenize_windows_impl(Src.data(), Src.size(), winTokenCb,
-                                    winEolCb, &ctx, InitialCommandName ? 1 : 0);
+  if (!csupport_cl_tokenize_windows_impl(
+          Src.data(), Src.size(), winTokenCb, winEolCb, &ctx,
+          InitialCommandName ? 1 : 0))
+    report_fatal_error("unable to allocate Windows command-line token buffer");
 }
 
 inline void TokenizeWindowsCommandLine(StringRef Src, StringSaver &Saver,
@@ -1179,16 +1186,18 @@ inline void tokenizeConfigFile(StringRef Source, StringSaver &Saver,
                                SmallVectorImpl<const char *> &NewArgv,
                                bool MarkEOLs) {
   size_t offset = 0;
-  char buf[4096];
+  SmallVector<char, 256> Line;
+  Line.resize_for_overwrite(Source.size() + 1);
   while (offset < Source.size()) {
     size_t len = csupport_cl_extract_config_line(Source.data(), Source.size(),
-                                                 &offset, buf, sizeof(buf) - 1);
+                                                 &offset, Line.data(),
+                                                 Line.size());
     if (len == 0)
       continue;
-    if (len >= sizeof(buf))
-      len = sizeof(buf) - 1;
-    buf[len] = '\0';
-    cl::TokenizeGNUCommandLine(StringRef(buf, len), Saver, NewArgv, MarkEOLs);
+    if (len >= Line.size())
+      report_fatal_error("invalid configuration-line buffer size");
+    cl::TokenizeGNUCommandLine(StringRef(Line.data(), len), Saver, NewArgv,
+                               MarkEOLs);
   }
 }
 

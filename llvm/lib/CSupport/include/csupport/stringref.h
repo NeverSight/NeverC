@@ -9,8 +9,10 @@
 #ifndef CSUPPORT_STRINGREF_H
 #define CSUPPORT_STRINGREF_H
 
+#include "csupport/number_parse.h"
 #include "csupport/types.h"
 #include <ctype.h>
+#include <errno.h>
 #include <limits.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -65,7 +67,7 @@ static inline csupport_string_ref_t
 csupport_str_substr(csupport_string_ref_t s, size_t start, size_t count) {
   if (start >= s.length)
     return csupport_string_ref(NULL, 0);
-  if (count == CSUPPORT_STR_NPOS || start + count > s.length)
+  if (count == CSUPPORT_STR_NPOS || count > s.length - start)
     count = s.length - start;
   return csupport_string_ref(s.data + start, count);
 }
@@ -121,11 +123,14 @@ static inline size_t csupport_str_find(csupport_string_ref_t s,
                                        size_t from) {
   if (needle.length == 0)
     return from <= s.length ? from : CSUPPORT_STR_NPOS;
-  if (needle.length > s.length)
+  if (from > s.length || needle.length > s.length - from)
     return CSUPPORT_STR_NPOS;
-  for (size_t i = from; i + needle.length <= s.length; i++) {
+  const size_t last = s.length - needle.length;
+  for (size_t i = from;; ++i) {
     if (memcmp(s.data + i, needle.data, needle.length) == 0)
       return i;
+    if (i == last)
+      break;
   }
   return CSUPPORT_STR_NPOS;
 }
@@ -245,18 +250,21 @@ csupport_str_split(csupport_string_ref_t s, char sep,
    On success, *out_val is set to the parsed value. */
 static inline bool csupport_str_to_int(csupport_string_ref_t s,
                                        long long *out_val) {
-  if (s.length == 0)
+  if (!s.data || s.length == 0 || !out_val)
     return false;
-  char buf[32];
-  size_t len = s.length < sizeof(buf) - 1 ? s.length : sizeof(buf) - 1;
-  memcpy(buf, s.data, len);
-  buf[len] = '\0';
-  char *endptr;
-  long long val = strtoll(buf, &endptr, 10);
-  if (endptr != buf + len)
+  char local[32];
+  char *text =
+      csupport_copy_number_text(s.data, s.length, local, sizeof(local));
+  if (!text)
     return false;
-  *out_val = val;
-  return true;
+  char *end = NULL;
+  errno = 0;
+  long long value = strtoll(text, &end, 10);
+  bool valid = errno != ERANGE && end == text + s.length;
+  if (valid)
+    *out_val = value;
+  csupport_free_number_text(text, local);
+  return valid;
 }
 
 #ifdef __cplusplus

@@ -1,20 +1,18 @@
 /*===- FoldingSet.c - Hash set for profiling (pure C) -----------*- C -*-===*/
 #include "include/csupport/lfolding_lset.h"
+#include "include/csupport/allocation.h"
 #include "include/csupport/types.h"
 #include <assert.h>
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdio.h>
 #include <stdint.h>
 
-static void *safe_calloc_c(size_t count, size_t size) {
-  void *p = calloc(count, size);
-  if (!p && count && size) { fprintf(stderr, "calloc failed\n"); abort(); }
-  return p;
-}
-
 void **csupport_folding_set_allocate_buckets(unsigned num_buckets) {
-  void **buckets = (void **)safe_calloc_c(num_buckets + 1, sizeof(void *));
+  if (num_buckets == UINT_MAX)
+    csupport_allocation_failure();
+  void **buckets = (void **)csupport_checked_calloc(
+      (size_t)num_buckets + 1, sizeof(void *));
   buckets[num_buckets] = (void *)(intptr_t)-1;
   return buckets;
 }
@@ -39,7 +37,8 @@ void **csupport_folding_set_get_bucket_for(unsigned hash, void **buckets,
 
 void csupport_folding_set_clear(void **buckets, unsigned num_buckets,
                                 unsigned *num_nodes) {
-  memset(buckets, 0, num_buckets * sizeof(void *));
+  memset(buckets, 0,
+         csupport_checked_allocation_size(num_buckets, sizeof(void *)));
   buckets[num_buckets] = (void *)(intptr_t)-1;
   *num_nodes = 0;
 }
@@ -51,6 +50,8 @@ void csupport_folding_set_insert_node(void **bucket, void *node,
   void *next = *bucket;
   if (!next)
     next = (void *)((intptr_t)bucket | 1);
+  if (*num_nodes == UINT_MAX)
+    csupport_allocation_failure();
   set_next(node, next);
   *bucket = node;
   (*num_nodes)++;

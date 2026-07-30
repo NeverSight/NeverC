@@ -1,30 +1,35 @@
 /*===- StringMap.c - String hash table (pure C) -----------------*- C -*-===*/
 #include "include/csupport/lstring_lmap.h"
+#include "include/csupport/allocation.h"
 #include <assert.h>
+#include <limits.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdio.h>
-
-static void *safe_calloc_c(size_t count, size_t size) {
-  void *p = calloc(count, size);
-  if (!p && count && size) { fprintf(stderr, "calloc failed\n"); abort(); }
-  return p;
-}
 
 static unsigned next_power_of_2_c(unsigned v) {
-  v--;
-  v |= v >> 1; v |= v >> 2; v |= v >> 4; v |= v >> 8; v |= v >> 16;
-  return v + 1;
+  unsigned power = 1;
+  while (power < v) {
+    if (power > UINT_MAX / 2)
+      csupport_allocation_failure();
+    power *= 2;
+  }
+  return power;
 }
 
 unsigned csupport_stringmap_min_buckets(unsigned num_entries) {
   if (num_entries == 0) return 0;
-  return next_power_of_2_c(num_entries * 4 / 3 + 1);
+  uint64_t required = (uint64_t)num_entries * 4 / 3 + 1;
+  if (required > UINT_MAX)
+    csupport_allocation_failure();
+  return next_power_of_2_c((unsigned)required);
 }
 
 void **csupport_stringmap_create_table(unsigned num_buckets) {
-  void **table = (void **)safe_calloc_c(
-      num_buckets + 1, sizeof(void *) + sizeof(unsigned));
+  if (num_buckets == UINT_MAX)
+    csupport_allocation_failure();
+  void **table = (void **)csupport_checked_calloc(
+      (size_t)num_buckets + 1, sizeof(void *) + sizeof(unsigned));
   table[num_buckets] = (void *)(intptr_t)2;
   return table;
 }
@@ -35,14 +40,20 @@ unsigned *csupport_stringmap_hash_table(void **table, unsigned num_buckets) {
 
 unsigned csupport_stringmap_rehash(void ***the_table, unsigned *num_buckets,
                                   unsigned *num_items, unsigned *num_tombstones,
-                                  unsigned bucket_no) {
+                                  unsigned bucket_no, void *tombstone) {
   unsigned new_size;
-  if (*num_items * 4 > *num_buckets * 3)
+  uint64_t occupied = (uint64_t)*num_items + *num_tombstones;
+  if (occupied > *num_buckets)
+    csupport_allocation_failure();
+  if ((uint64_t)*num_items * 4 > (uint64_t)*num_buckets * 3) {
+    if (*num_buckets > UINT_MAX / 2)
+      csupport_allocation_failure();
     new_size = *num_buckets * 2;
-  else if (*num_buckets - (*num_items + *num_tombstones) <= *num_buckets / 8)
+  } else if (*num_buckets - (unsigned)occupied <= *num_buckets / 8) {
     new_size = *num_buckets;
-  else
+  } else {
     return bucket_no;
+  }
 
   unsigned new_bucket_no = bucket_no;
   void **new_table = csupport_stringmap_create_table(new_size);
@@ -51,7 +62,7 @@ unsigned csupport_stringmap_rehash(void ***the_table, unsigned *num_buckets,
 
   for (unsigned i = 0; i < *num_buckets; ++i) {
     void *bucket = (*the_table)[i];
-    if (bucket && bucket != (void *)(intptr_t)-1) {
+    if (bucket && bucket != tombstone) {
       unsigned full_hash = old_hash[i];
       unsigned nb = full_hash & (new_size - 1);
       if (new_table[nb]) {

@@ -2,6 +2,8 @@
 #include "include/csupport/lprocess.h"
 #include "llvm/Config/llvm-config.h"
 #include "llvm/Config/config.h"
+#include <errno.h>
+#include <limits.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -339,9 +341,12 @@ unsigned csupport_fd_columns(int fd) {
     return 0;
   const char *cols = getenv("COLUMNS");
   if (cols) {
-    int c = atoi(cols);
-    if (c > 0)
-      return (unsigned)c;
+    char *end = NULL;
+    errno = 0;
+    unsigned long columns = strtoul(cols, &end, 10);
+    if (errno != ERANGE && end != cols && *end == '\0' && columns > 0 &&
+        columns <= UINT_MAX)
+      return (unsigned)columns;
   }
   return 0;
 }
@@ -429,8 +434,17 @@ int csupport_fd_try_lock_for(int fd, int64_t timeout_ms) {
 #include <io.h>
 #include <sys/stat.h>
 
-unsigned csupport_get_page_size(void) { return 4096; }
-int csupport_get_process_id(void) { return 0; }
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+
+unsigned csupport_get_page_size(void) {
+  SYSTEM_INFO info;
+  GetSystemInfo(&info);
+  return info.dwPageSize;
+}
+int csupport_get_process_id(void) { return (int)GetCurrentProcessId(); }
 const char *csupport_get_env(const char *name) { return getenv(name); }
 int csupport_safely_close_fd(int fd) {
   if (_close(fd) < 0)
@@ -458,6 +472,7 @@ int csupport_fd_write(int fd, const char *ptr, size_t size) {
     size_t chunk = size < 0x7FFFFFFF ? size : 0x7FFFFFFF;
     int ret = _write(fd, ptr, (unsigned)chunk);
     if (ret < 0) return -errno;
+    if (ret == 0) return -EIO;
     ptr += ret;
     size -= (size_t)ret;
   }
@@ -469,13 +484,15 @@ uint64_t csupport_fd_seek(int fd, uint64_t off) {
 }
 
 size_t csupport_fd_preferred_buffer_size(int fd, int is_displayed) {
-  (void)fd; (void)is_displayed;
-  return 0;
+  if (is_displayed)
+    return 0;
+  struct _stat64 status;
+  return _fstat64(fd, &status) == 0 ? 4096u : 0u;
 }
 
 int csupport_fd_is_regular_file(int fd) {
-  (void)fd;
-  return 1;
+  struct _stat64 status;
+  return _fstat64(fd, &status) == 0 && (status.st_mode & _S_IFMT) == _S_IFREG;
 }
 
 int64_t csupport_fd_tell(int fd) {
@@ -519,6 +536,9 @@ int csupport_fd_open(const char *filename, size_t filename_len,
   case 1: oflags |= _O_CREAT | _O_EXCL;  break;
   case 2: break;
   case 3: oflags |= _O_CREAT;            break;
+  default:
+    if (err_out) *err_out = EINVAL;
+    return -1;
   }
   /* Only OF_CRLF(2) asks for newline translation. Keying this off OF_Text(1)
      turned every text-mode writer into a CRLF writer, which is why the target
@@ -528,6 +548,10 @@ int csupport_fd_open(const char *filename, size_t filename_len,
     oflags |= _O_BINARY;
   if (append)
     oflags |= _O_APPEND;
+  if (flags & 8)
+    oflags |= _O_TEMPORARY;
+  if (!(flags & 16))
+    oflags |= _O_NOINHERIT;
 
   int fd = _open(filename, oflags, _S_IREAD | _S_IWRITE);
   if (fd < 0) {
@@ -538,7 +562,6 @@ int csupport_fd_open(const char *filename, size_t filename_len,
   return fd;
 }
 
-#include <windows.h>
 // <windows.h> doesn't pull in <wincrypt.h> under WIN32_LEAN_AND_MEAN (which
 // the build defines globally), but csupport_get_random_number() below uses
 // CryptAcquireContextW/CryptGenRandom/CryptReleaseContext, so request it
@@ -546,7 +569,7 @@ int csupport_fd_open(const char *filename, size_t filename_len,
 #include <wincrypt.h>
 int csupport_fd_write_console(int fd, const char *ptr, size_t size) {
   HANDLE h = (HANDLE)_get_osfhandle(fd);
-  if (GetFileType(h) != FILE_TYPE_CHAR)
+  if (GetFileType(h) != FILE_TYPE_CHAR || size > INT_MAX)
     return 0;
   int wlen = MultiByteToWideChar(CP_UTF8, 0, ptr, (int)size, NULL, 0);
   if (wlen <= 0)
@@ -554,11 +577,22 @@ int csupport_fd_write_console(int fd, const char *ptr, size_t size) {
   wchar_t *wbuf = (wchar_t *)malloc((size_t)wlen * sizeof(wchar_t));
   if (!wbuf)
     return 0;
-  MultiByteToWideChar(CP_UTF8, 0, ptr, (int)size, wbuf, wlen);
-  DWORD written = 0;
-  BOOL ok = WriteConsoleW(h, wbuf, (DWORD)wlen, &written, NULL);
+  if (MultiByteToWideChar(CP_UTF8, 0, ptr, (int)size, wbuf, wlen) != wlen) {
+    free(wbuf);
+    return 0;
+  }
+  DWORD total = 0;
+  while (total < (DWORD)wlen) {
+    DWORD written = 0;
+    if (!WriteConsoleW(h, wbuf + total, (DWORD)wlen - total, &written, NULL) ||
+        written == 0) {
+      free(wbuf);
+      return 0;
+    }
+    total += written;
+  }
   free(wbuf);
-  return ok ? 1 : 0;
+  return 1;
 }
 
 size_t csupport_get_malloc_usage(void) { return 0; }
@@ -596,17 +630,32 @@ unsigned csupport_fd_columns(int fd) {
 
 int csupport_fd_has_terminal_colors(int fd) { return _isatty(fd); }
 unsigned csupport_get_random_number(void) {
-  unsigned val;
+  unsigned val = 0;
   HCRYPTPROV hProv;
   if (CryptAcquireContextW(&hProv, NULL, NULL, PROV_RSA_FULL,
                             CRYPT_VERIFYCONTEXT)) {
-    CryptGenRandom(hProv, sizeof(val), (BYTE *)&val);
+    const BOOL generated = CryptGenRandom(hProv, sizeof(val), (BYTE *)&val);
     CryptReleaseContext(hProv, 0);
-    return val;
+    if (generated)
+      return val;
   }
-  return (unsigned)GetTickCount();
+  return (unsigned)GetTickCount() ^ (unsigned)GetCurrentProcessId();
 }
-void csupport_use_ansi_escape_codes(int enable) { (void)enable; }
+void csupport_use_ansi_escape_codes(int enable) {
+  const DWORD handles[] = {STD_OUTPUT_HANDLE, STD_ERROR_HANDLE};
+  for (size_t i = 0; i < sizeof(handles) / sizeof(handles[0]); ++i) {
+    HANDLE handle = GetStdHandle(handles[i]);
+    DWORD mode;
+    if (!handle || handle == INVALID_HANDLE_VALUE ||
+        !GetConsoleMode(handle, &mode))
+      continue;
+    if (enable)
+      mode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+    else
+      mode &= ~ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+    SetConsoleMode(handle, mode);
+  }
+}
 void csupport_exit_no_cleanup(int retcode) { _exit(retcode); }
 
 int csupport_fd_lock(int fd) {
