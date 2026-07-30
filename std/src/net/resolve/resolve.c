@@ -9,15 +9,7 @@
   #endif
   #include <winsock2.h>
   #include <ws2tcpip.h>
-  #if defined(__has_include)
-    #if __has_include(<windns.h>)
-      #include <windns.h>
-    #else
-      #include "windns_compat.h"
-    #endif
-  #else
-    #include <windns.h>
-  #endif
+  #include <windns.h>
   #include <windows.h>
   #pragma comment(lib, "ws2_32.lib")
   #pragma comment(lib, "dnsapi.lib")

@@ -17,6 +17,12 @@ Trimmed for **NeverC pure C** user-mode Windows targets.
 
 ## Seeds used for pruning
 
-`stdio.h`, `stdlib.h`, `string.h`, `windows.h`, `winsock2.h`, `ws2tcpip.h`, **`shellapi.h`**, **`setupapi.h`**, and their `#include` closure.
+`stdio.h`, `stdlib.h`, `string.h`, `windows.h`, `winsock2.h`, `ws2tcpip.h`,
+`windns.h`, `sddl.h`, **`shellapi.h`**, **`setupapi.h`**, and their `#include`
+closure.
+
+The WinDNS/SDDL headers and per-architecture `DnsAPI.Lib` files come from
+Microsoft's official `Microsoft.Windows.SDK.CPP` 10.0.26100.1 NuGet packages,
+matching this user-mode SDK's Windows 11 GE baseline.
 
 Link with `-lsetupapi` / use shell APIs as needed (`SetupAPI.Lib` is in `sdk/lib/um/`).

@@ -547,31 +547,30 @@ if(TARGET neverc-bootstrap-mimalloc-bc-win_arm64)
   add_dependencies(neverc-bootstrap-mimalloc-bc-win_arm64 neverc-runtime-shared-msvc)
 endif()
 
-# The std bootstrap does not pass --target: it compiles for the build host and
-# includes that host's libc headers.  Order it after only the matching staged
-# sysroot so parallel check-neverc builds cannot remove/copy the tree
-# mid-compile.
-if(TARGET neverc-bootstrap-std-bc)
-  set(_neverc_std_runtime_dep)
-  if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Windows")
-    set(_neverc_std_runtime_dep neverc-runtime-shared-msvc)
-  elseif(CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin" AND
-         CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "ARM64|aarch64|arm64")
-    set(_neverc_std_runtime_dep neverc-runtime-macos-arm64)
-  elseif(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
-    if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "ARM64|aarch64|arm64")
-      set(_neverc_std_runtime_dep neverc-runtime-linux-arm64)
-    else()
-      set(_neverc_std_runtime_dep neverc-runtime-linux-x64)
-    endif()
+# Each std bootstrap target cross-compiles for its own --target and therefore
+# reads that target's staged SDK.  Put the dependency on each child target (not
+# only on the aggregate target), otherwise Ninja may compile a child while an
+# ALL runtime target is removing and recopying the same SDK tree.
+foreach(_std_runtime_spec IN ITEMS
+    "linux_x64:neverc-runtime-linux-x64"
+    "linux_arm64:neverc-runtime-linux-arm64"
+    "darwin_x64:neverc-runtime-macos-arm64"
+    "darwin_arm64:neverc-runtime-macos-arm64"
+    "win_x64:neverc-runtime-shared-msvc"
+    "win_arm64:neverc-runtime-shared-msvc")
+  string(REPLACE ":" ";" _std_runtime_parts "${_std_runtime_spec}")
+  list(GET _std_runtime_parts 0 _std_runtime_tag)
+  list(GET _std_runtime_parts 1 _std_runtime_dep)
+  if(TARGET neverc-bootstrap-std-bc-${_std_runtime_tag} AND
+     TARGET ${_std_runtime_dep})
+    add_dependencies(neverc-bootstrap-std-bc-${_std_runtime_tag}
+                     ${_std_runtime_dep})
   endif()
-  if(_neverc_std_runtime_dep)
-    if(TARGET ${_neverc_std_runtime_dep})
-      add_dependencies(neverc-bootstrap-std-bc ${_neverc_std_runtime_dep})
-    endif()
-  endif()
-  unset(_neverc_std_runtime_dep)
-endif()
+endforeach()
+unset(_std_runtime_spec)
+unset(_std_runtime_parts)
+unset(_std_runtime_tag)
+unset(_std_runtime_dep)
 
 # Stage-2 neverc: embed bootstrapped runtime bitcode into the compiler.
 #

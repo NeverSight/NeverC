@@ -5,15 +5,7 @@
 
 #if defined(NEVERC_PLATFORM_WINDOWS)
 #include <windows.h>
-#if defined(__has_include)
-#if __has_include(<sddl.h>)
 #include <sddl.h>
-#else
-BOOL WINAPI ConvertSidToStringSidA(PSID Sid, LPSTR *StringSid);
-#endif
-#else
-#include <sddl.h>
-#endif
 #include <lmcons.h>
 #include <shlobj.h>
 #pragma comment(lib, "advapi32.lib")
