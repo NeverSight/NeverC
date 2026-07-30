@@ -13,6 +13,7 @@
 #ifndef LLVM_SUPPORT_RWMUTEX_H
 #define LLVM_SUPPORT_RWMUTEX_H
 
+#include "csupport/lr_lw_lmutex.h"
 #include "llvm/Config/llvm-config.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/Threading.h"
@@ -28,15 +29,6 @@ namespace llvm {
 namespace sys {
 
 #if defined(LLVM_USE_RW_MUTEX_IMPL)
-
-#if defined(LLVM_ENABLE_THREADS) && LLVM_ENABLE_THREADS != 0
-extern "C" void *csupport_rwmutex_create(void);
-extern "C" void csupport_rwmutex_destroy(void *handle);
-extern "C" int csupport_rwmutex_lock_shared(void *handle);
-extern "C" int csupport_rwmutex_unlock_shared(void *handle);
-extern "C" int csupport_rwmutex_lock(void *handle);
-extern "C" int csupport_rwmutex_unlock(void *handle);
-#endif
 
 /// Platform agnostic RWMutex class.
 class RWMutexImpl {

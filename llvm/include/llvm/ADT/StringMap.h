@@ -56,7 +56,7 @@ protected:
   }
 
   StringMapImpl(unsigned InitSize, unsigned ItemSize);
-  unsigned RehashTable(unsigned BucketNo = 0);
+  unsigned RehashTable(unsigned BucketNo = 0, bool ForceGrowth = false);
 
   /// LookupBucketFor - Look up the bucket that the specified string should end
   /// up in.  If it already exists as a key in the map, the Item pointer for the
@@ -500,10 +500,12 @@ public:
 
 namespace detail {
 inline StringMapEntryBase **createSMTable(unsigned N) {
-  return (StringMapEntryBase **)(csupport_stringmap_create_table(N));
+  return static_cast<StringMapEntryBase **>(
+      static_cast<void *>(csupport_stringmap_create_table(N)));
 }
 inline unsigned *getHashTableSM(StringMapEntryBase **T, unsigned N) {
-  return csupport_stringmap_hash_table((void **)(T), N);
+  return csupport_stringmap_hash_table(
+      static_cast<void **>(static_cast<void *>(T)), N);
 }
 } // namespace detail
 
@@ -565,35 +567,7 @@ inline unsigned StringMapImpl::LookupBucketFor(StringRef Name) {
   }
   // We probed every bucket and found neither the key nor an empty slot.
   // Force a table growth so the retry is guaranteed to find space.
-  unsigned OldBuckets = NumBuckets;
-  BucketNo = RehashTable(BucketNo);
-  if (NumBuckets == OldBuckets) {
-    // RehashTable chose not to grow (load factor within bounds but
-    // tombstones + items saturated the probe sequence).  Force a 2x
-    // growth so the recursive call makes progress.
-    // Manually double the table: reinsert live entries, drop tombstones.
-    unsigned NewSize = NumBuckets ? NumBuckets * 2 : 16;
-    auto **NewTable =
-        static_cast<StringMapEntryBase **>(detail::createSMTable(NewSize));
-    unsigned *NewHash = detail::getHashTableSM(NewTable, NewSize);
-    unsigned *OldHash = detail::getHashTableSM(TheTable, NumBuckets);
-    for (unsigned i = 0; i < NumBuckets; ++i) {
-      StringMapEntryBase *Bucket = TheTable[i];
-      if (Bucket && Bucket != getTombstoneVal()) {
-        unsigned FH = OldHash[i];
-        unsigned NB = FH & (NewSize - 1);
-        unsigned P = 1;
-        while (NewTable[NB])
-          NB = (NB + P++) & (NewSize - 1);
-        NewTable[NB] = Bucket;
-        NewHash[NB] = FH;
-      }
-    }
-    free(TheTable);
-    TheTable = NewTable;
-    NumBuckets = NewSize;
-    NumTombstones = 0;
-  }
+  RehashTable(BucketNo, /*ForceGrowth=*/true);
   return LookupBucketFor(Name);
 }
 inline int StringMapImpl::FindKey(StringRef Key) const {
@@ -645,10 +619,16 @@ inline StringMapEntryBase *StringMapImpl::RemoveKey(StringRef Key) {
   assert(NumItems + NumTombstones <= NumBuckets);
   return Result;
 }
-inline unsigned StringMapImpl::RehashTable(unsigned BucketNo) {
-  return csupport_stringmap_rehash((void ***)(&TheTable), &NumBuckets,
-                                   &NumItems, &NumTombstones, BucketNo,
-                                   getTombstoneVal());
+inline unsigned StringMapImpl::RehashTable(unsigned BucketNo,
+                                           bool ForceGrowth) {
+  void **RawTable =
+      static_cast<void **>(static_cast<void *>(TheTable));
+  unsigned NewBucket = csupport_stringmap_rehash(
+      &RawTable, &NumBuckets, &NumItems, &NumTombstones, BucketNo,
+      getTombstoneVal(), ForceGrowth);
+  TheTable =
+      static_cast<StringMapEntryBase **>(static_cast<void *>(RawTable));
+  return NewBucket;
 }
 
 } // end namespace llvm

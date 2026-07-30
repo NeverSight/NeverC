@@ -12,7 +12,8 @@ unsigned *csupport_stringmap_hash_table(void **table, unsigned num_buckets);
 unsigned csupport_stringmap_rehash(void ***the_table, unsigned *num_buckets,
                                    unsigned *num_items,
                                    unsigned *num_tombstones,
-                                   unsigned bucket_no, void *tombstone);
+                                   unsigned bucket_no, void *tombstone,
+                                   int force_growth);
 
 #ifdef __cplusplus
 }

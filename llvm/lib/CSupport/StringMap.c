@@ -40,12 +40,14 @@ unsigned *csupport_stringmap_hash_table(void **table, unsigned num_buckets) {
 
 unsigned csupport_stringmap_rehash(void ***the_table, unsigned *num_buckets,
                                   unsigned *num_items, unsigned *num_tombstones,
-                                  unsigned bucket_no, void *tombstone) {
+                                  unsigned bucket_no, void *tombstone,
+                                  int force_growth) {
   unsigned new_size;
   uint64_t occupied = (uint64_t)*num_items + *num_tombstones;
   if (occupied > *num_buckets)
     csupport_allocation_failure();
-  if ((uint64_t)*num_items * 4 > (uint64_t)*num_buckets * 3) {
+  if (force_growth ||
+      (uint64_t)*num_items * 4 > (uint64_t)*num_buckets * 3) {
     if (*num_buckets > UINT_MAX / 2)
       csupport_allocation_failure();
     new_size = *num_buckets * 2;

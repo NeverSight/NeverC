@@ -14,7 +14,10 @@
 #ifndef LLVM_SUPPORT_UNICODE_H
 #define LLVM_SUPPORT_UNICODE_H
 
+#include "csupport/lunicode.h"
+#include "csupport/lunicode_lcase_lfold.h"
 #include "csupport/lunicode_lname_lto_lcodepoint.h"
+#include "csupport/lunicode_lname_lto_lcodepoint_lgenerated.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringExtras.h"
@@ -40,12 +43,6 @@ enum ColumnWidthErrors {
 /// terminal, so we define the semantic that should be suitable for generic case
 /// of a terminal capable to output Unicode characters.
 ///
-extern "C" {
-bool csupport_unicode_is_printable(int ucs);
-bool csupport_unicode_is_formatting(int ucs);
-int csupport_unicode_column_width_utf8_raw(const char *data, size_t len);
-}
-
 /// Printable codepoints are those in the categories L, M, N, P, S and Zs
 /// \return true if the character is considered printable.
 inline bool isPrintable(int UCS) { return csupport_unicode_is_printable(UCS); }
@@ -75,7 +72,6 @@ inline int columnWidthUTF8(StringRef Text) {
 
 /// Fold input unicode character according the Simple unicode case folding
 /// rules.
-extern "C" int csupport_fold_char_simple(int C);
 inline int foldCharSimple(int C) { return csupport_fold_char_simple(C); }
 
 /// Maps the name or the alias of a Unicode character to its associated
@@ -104,13 +100,6 @@ struct MatchForCodepointName {
 SmallVector<MatchForCodepointName>
 nearestMatchesForCodepointName(StringRef Pattern, std::size_t MaxMatchesCount);
 
-extern "C" {
-extern const char *csupport_unicode_name_to_cp_dict;
-extern const uint8_t *csupport_unicode_name_to_cp_index;
-extern const size_t csupport_unicode_name_to_cp_index_size;
-extern const size_t csupport_unicode_name_to_cp_largest_name_size;
-}
-
 inline const char *UnicodeNameToCodepointDict =
     csupport_unicode_name_to_cp_dict;
 inline const uint8_t *UnicodeNameToCodepointIndex =
@@ -129,11 +118,6 @@ inline const size_t UnicodeNameToCodepointLargestNameSize =
 namespace llvm {
 namespace sys {
 namespace unicode {
-
-extern const char *UnicodeNameToCodepointDict;
-extern const uint8_t *UnicodeNameToCodepointIndex;
-extern const size_t UnicodeNameToCodepointIndexSize;
-extern const size_t UnicodeNameToCodepointLargestNameSize;
 
 using BufferType = SmallString<64>;
 
@@ -159,11 +143,7 @@ struct Node {
       }
       N = N->Parent;
     }
-    for (size_t lo = 0, hi = S.size() - 1; lo < hi; ++lo, --hi) {
-      char t = S[lo];
-      S[lo] = S[hi];
-      S[hi] = t;
-    }
+    std::reverse(S.begin(), S.end());
     return S;
   }
 };
@@ -266,11 +246,7 @@ inline static char32_t nameToCodepoint(StringRef Name, bool Strict,
   Buffer.clear();
   CompareResult CR = compareNode(0, Name, Strict, Buffer);
   if (CR.Matches) {
-    for (size_t lo = 0, hi = Buffer.size() - 1; lo < hi; ++lo, --hi) {
-      char t = Buffer[lo];
-      Buffer[lo] = Buffer[hi];
-      Buffer[hi] = t;
-    }
+    std::reverse(Buffer.begin(), Buffer.end());
     uint32_t FoundValue = CR.Value;
     if (!Strict && FoundValue == 0x116c && Name.contains_insensitive("O-E")) {
       Buffer = "HANGUL JUNGSEONG O-E";

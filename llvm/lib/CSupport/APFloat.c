@@ -1003,12 +1003,15 @@ void csupport_apfloat_adjust_precision_buffer(char *buffer, unsigned *size,
 
 unsigned csupport_apfloat_power_of5(uint64_t *dst, size_t dst_parts,
                                     unsigned power) {
-  static const uint64_t first_eight_powers[] = {1, 5, 25, 125, 625, 3125, 15625, 78125};
-  uint64_t pow5s[CSUPPORT_APFLOAT_MAX_POWER_OF_FIVE_PARTS * 2 + 5] = {78125 *
-                                                                      5};
-
+  static const uint64_t first_eight_powers[] = {
+      1, 5, 25, 125, 625, 3125, 15625, 78125};
+  enum { inline_parts = 16, inline_pow5_parts = inline_parts * 2 + 5 };
+  uint64_t inline_pow5[inline_pow5_parts] = {0};
+  uint64_t inline_scratch[inline_parts];
+  uint64_t *heap_storage = NULL;
+  uint64_t *pow5_storage = inline_pow5;
+  uint64_t *scratch = inline_scratch;
   unsigned parts_count = 1;
-  uint64_t scratch[CSUPPORT_APFLOAT_MAX_POWER_OF_FIVE_PARTS];
   uint64_t *p1, *p2, *pow5;
   unsigned result;
 
@@ -1019,6 +1022,16 @@ unsigned csupport_apfloat_power_of5(uint64_t *dst, size_t dst_parts,
                           (sizeof(uint64_t) * CHAR_BIT);
   if (dst_parts < required_parts)
     return 0;
+  if (required_parts > inline_parts) {
+    if (required_parts > (SIZE_MAX - 5) / 3)
+      csupport_allocation_failure();
+    const size_t pow5_capacity = required_parts * 2 + 5;
+    heap_storage = (uint64_t *)csupport_checked_calloc(
+        pow5_capacity + required_parts, sizeof(uint64_t));
+    pow5_storage = heap_storage;
+    scratch = heap_storage + pow5_capacity;
+  }
+
   p1 = dst;
   p2 = scratch;
 
@@ -1026,7 +1039,8 @@ unsigned csupport_apfloat_power_of5(uint64_t *dst, size_t dst_parts,
   power >>= 3;
 
   result = 1;
-  pow5 = pow5s;
+  pow5_storage[0] = UINT64_C(78125) * 5;
+  pow5 = pow5_storage;
 
   for (unsigned n = 0; power; power >>= 1, n++) {
     if (n != 0) {
@@ -1052,6 +1066,7 @@ unsigned csupport_apfloat_power_of5(uint64_t *dst, size_t dst_parts,
   if (p1 != dst)
     csupport_apint_tc_assign(dst, p1, result);
 
+  free(heap_storage);
   return result;
 }
 
