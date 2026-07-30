@@ -9,6 +9,10 @@
 #ifndef NEVERC_STD_NET_RESOLVE_WINDNS_COMPAT_H
 #define NEVERC_STD_NET_RESOLVE_WINDNS_COMPAT_H
 
+#ifdef _WIN32
+
+#include <windows.h>
+
 #define DNS_TYPE_NS     0x0002
 #define DNS_TYPE_CNAME  0x0005
 #define DNS_TYPE_MX     0x000f
@@ -84,5 +88,7 @@ DNS_STATUS WINAPI DnsQuery_A(PCSTR pszName, WORD wType, DWORD Options,
 VOID WINAPI DnsFree(PVOID pData, DNS_FREE_TYPE FreeType);
 
 #define DnsRecordListFree(p, t) DnsFree((p), (t))
+
+#endif /* _WIN32 */
 
 #endif /* NEVERC_STD_NET_RESOLVE_WINDNS_COMPAT_H */
