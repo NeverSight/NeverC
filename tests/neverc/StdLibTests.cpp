@@ -64,6 +64,34 @@ TEST_F(StdLibTest, EmbeddedFunctionOnlyConsumer) {
                      "-std=c11 -fbuiltin-std", 0);
 }
 
+TEST_F(StdLibTest, WindowsModulesCompileWithBundledSdk) {
+  const std::string sd = stdSrcDir();
+  for (const char *target : {"x86_64-pc-windows-msvc",
+                             "aarch64-pc-windows-msvc"}) {
+    for (const char *source : {"src/net/resolve/resolve.c",
+                               "src/os/user/user.c"}) {
+      SCOPED_TRACE(std::string(target) + ": " + source);
+      fs::path bitcode = tmp() / (fs::path(source).stem().string() + ".bc");
+      auto result = ncc({
+          "-c",
+          "-emit-llvm",
+          "-O2",
+          "-gline-tables-only",
+          "-fno-builtin-std",
+          "-fno-lto",
+          "-ffreestanding",
+          "-std=gnu11",
+          std::string("--target=") + target,
+          "-I" + sd + "/include",
+          sd + "/" + source,
+          "-o",
+          bitcode.string(),
+      });
+      EXPECT_EQ(result.exitCode, 0) << result.out << result.err;
+    }
+  }
+}
+
 TEST_F(StdLibTest, EmbeddedRuntimePreservesUserLocalProvenance) {
   auto src = tmpFile("std_user_local.c");
   auto ir = tmpFile("std_user_local.ll");
