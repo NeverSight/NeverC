@@ -1334,9 +1334,15 @@ void GenAssemblyHelper::genAssembly(BackendAction Action,
   // The threshold/partition logic lives inside runParallelCodeGen() —
   // no need to scan the module here.
   unsigned ParallelN = CodeGenOpts.ParallelCodeGen;
+  // ParallelCodeGenMerge owns one object artifact.  Split DWARF has a second,
+  // package-aware output stream; entering the partition pipeline would
+  // silently discard it while still reporting success.
+  const bool HasAuxiliaryCodeGenOutput =
+      !CodeGenOpts.SplitDwarfOutput.empty();
   bool UseParallel = RequiresCodeGen && !UseCoarseObjectProvider &&
                      Action == Backend_EmitObj &&
                      !CodeGenOpts.PrepareForLTO && ParallelN != 1 &&
+                     !HasAuxiliaryCodeGenOutput &&
                      !MCComponentProvider &&
                      !MCEmissionHooks &&
                      (!MachinePasses ||

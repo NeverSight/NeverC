@@ -111,6 +111,13 @@ template <typename Hasher> void checkTheInputIsTheOnlyInput() {
   EXPECT_EQ(hex(Resumable.result()), Direct);
   Resumable.update(StringRef("!"));
   EXPECT_EQ(hex(Resumable.result()), hex(Hasher::hash(bytes("neverc!"))));
+
+  // ArrayRef's canonical empty value carries a null data pointer.  A no-op
+  // update must not pass that pointer to memcpy or perform arithmetic on it.
+  Hasher EmptyUpdate;
+  EmptyUpdate.update(StringRef("neverc"));
+  EmptyUpdate.update(ArrayRef<uint8_t>());
+  EXPECT_EQ(hex(EmptyUpdate.final()), Direct);
 }
 
 } // namespace
@@ -141,6 +148,21 @@ TEST(SupportHashTest, SHA1MatchesThePublishedVectors) {
   EXPECT_EQ(hex(SHA1::hash(bytes("abcdbcdecdefdefgefghfghighijhijkijkljklmklm"
                                  "nlmnomnopnopq"))),
             "84983e441c3bd26ebaae4aa1f95129e5e54670f1");
+}
+
+TEST(SupportHashTest, SHA1EncodesTheWhole64BitMessageLength) {
+  // Isolate final-block length encoding without allocating a 128 GiB input.
+  // This is the state an implementation has immediately before padding such a
+  // stream, apart from the compression state (which is intentionally left at
+  // its initial value here).  The old code hard-coded the high 24 bits of the
+  // bit length to zero, so bit 40 was lost and this produced SHA1("").
+  csupport_sha1_ctx_t Context;
+  csupport_sha1_init(&Context);
+  Context.byte_count = uint64_t{1} << 37;
+
+  std::array<uint8_t, 20> Digest;
+  csupport_sha1_final(&Context, Digest.data());
+  EXPECT_EQ(hex(Digest), "a56da37c9f8eac952ef9af7ae1e7a0899de49736");
 }
 
 TEST(SupportHashTest, SHA256MatchesThePublishedVectors) {

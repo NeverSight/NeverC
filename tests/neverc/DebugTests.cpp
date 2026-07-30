@@ -184,6 +184,32 @@ static std::string makePartitionedDebugSource(const std::string &NamePrefix,
   return Code;
 }
 
+// Split DWARF has a second output stream.  The partition codegen API currently
+// owns only the main object stream, so entering it used to report success while
+// silently discarding the entire .dwo file.  Until partition DWO contributions
+// have a package-aware merger, this mode must stay on the serial pipeline that
+// owns both outputs.
+TEST_F(DebugTest, SplitDwarfIsNotDiscardedByParallelCodegen) {
+  auto src = tmpFile("pcg_split_dwarf.c");
+  auto obj = tmpFile("pcg_split_dwarf.o");
+  auto dwo = obj;
+  dwo.replace_extension(".dwo");
+  writeFile(src, makePartitionedDebugSource("split_dwarf_", 24));
+
+  std::vector<std::string> args = {
+      "--target=x86_64-unknown-linux-gnu", "-gdwarf-5", "-gsplit-dwarf",
+      "-fno-lto", "-fno-builtin-mimalloc",
+  };
+  for (auto &flag : forcePartitions(4))
+    args.push_back(flag);
+  args.insert(args.end(), {"-c", src.string(), "-o", obj.string()});
+
+  auto result = ncc(args);
+  ASSERT_EQ(result.exitCode, 0) << result.err;
+  EXPECT_FALSE(readFile(dwo).empty())
+      << "successful split-DWARF compilation discarded its .dwo output";
+}
+
 // Turns the merger's silent serial-codegen fallback into a hard error, so a
 // partitioning regression fails the test instead of quietly compiling slower.
 class StrictParallelCodegen {

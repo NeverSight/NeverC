@@ -1779,6 +1779,7 @@ gtest_discover_tests(neverc-plugin-lto-input-tests
 add_executable(neverc-support-tests
   SupportAPFloatTests.cpp
   SupportAPIntTests.cpp
+  SupportAtomicTests.cpp
   SupportBufferTests.cpp
   SupportCommandLineTests.cpp
   SupportHashTests.cpp
