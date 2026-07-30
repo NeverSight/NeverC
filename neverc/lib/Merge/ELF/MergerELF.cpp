@@ -732,10 +732,8 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
       Section.Name = Name.str();
       memset(&Section.Template, 0, sizeof(Shdr));
       Section.Template.sh_type = SHT_PROGBITS;
-      // The index is part of the split-debug payload. In an embedded
-      // (`-gsplit-dwarf=single`) object the linker must discard it together
-      // with the `.debug_*.dwo` contributions rather than leave an orphan
-      // package index in the linked image.
+      // Package indexes are split-debug payload and must never enter the
+      // linked image if a DWP is accidentally passed to the linker.
       Section.Template.sh_flags = SHF_EXCLUDE;
       Section.Template.sh_addralign = 4;
       Section.Data = std::move(Data);

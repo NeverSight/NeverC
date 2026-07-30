@@ -546,7 +546,6 @@ struct ParallelCGContext {
   DebugCompressionType FinalDebugCompression = DebugCompressionType::None;
   bool FinalizeDebugCompression = false;
   bool EmitSplitDwarf = false;
-  bool EmbedSplitDwarf = false;
 
   SmallVector<LinkageEntry, 64> SavedLinkage;
 
@@ -587,20 +586,21 @@ bool ParallelCGContext::init(Module &Mod, TargetMachine &TM,
   TheTarget = &TM.getTarget();
   TripleStr = Mod.getTargetTriple();
   TT = Triple(TripleStr);
-  // `-gsplit-dwarf=single` names the object itself as SplitDwarfFile but does
-  // not provide an auxiliary stream. Emit its partition DWO payloads into
-  // private buffers anyway, package them, then embed that package back into
-  // the final object. Concatenating the `.dwo` sections directly would leave
-  // every unit after the first using contribution zero's abbreviation/string
-  // tables because standalone DWO offsets are contribution-relative.
-  EmbedSplitDwarf =
-      !WithSplitDwarf && !TM.Options.MCOptions.SplitDwarfFile.empty();
-  EmitSplitDwarf = WithSplitDwarf || EmbedSplitDwarf;
+  // Embedded (`-gsplit-dwarf=single`) output has no independent package
+  // destination. Keep it serial even when a caller bypasses BackendUtil's
+  // engagement gate; concatenating partition DWO sections is not a valid
+  // embedded multi-unit representation.
+  if (!WithSplitDwarf && !TM.Options.MCOptions.SplitDwarfFile.empty())
+    return false;
+  EmitSplitDwarf = WithSplitDwarf;
 
   // This package builder intentionally supports only standard DWARF 5
   // CU/TU indexes. Mach-O split-DWARF packaging is left on the serial path;
   // the parallel merger supports the ELF/COFF containers requested here.
-  if (EmitSplitDwarf && (Mod.getDwarfVersion() != 5 ||
+  const unsigned EmittedDwarfVersion = TM.Options.MCOptions.DwarfVersion
+                                           ? TM.Options.MCOptions.DwarfVersion
+                                           : Mod.getDwarfVersion();
+  if (EmitSplitDwarf && (EmittedDwarfVersion != 5 ||
                          (!TT.isOSBinFormatELF() && !TT.isOSBinFormatCOFF())))
     return false;
 
@@ -1253,9 +1253,7 @@ bool ParallelCGContext::finalizeResults(Module &Mod,
   // the merge verifier exists to refuse.
   SmallVector<char, 0> MergedObject;
   merge::Options ObjectOpts;
-  // Embedded fission needs one final merge after the DWO package is built.
-  // Compress only that combined artifact, never an intermediate input.
-  if (FinalizeDebugCompression && !EmbedSplitDwarf)
+  if (FinalizeDebugCompression)
     ObjectOpts.debugCompression = FinalDebugCompression;
   if (NonEmpty == 1 && !EmitSplitDwarf && !FinalizeDebugCompression) {
     // No cross-partition references exist, and this partition was already
@@ -1265,9 +1263,9 @@ bool ParallelCGContext::finalizeResults(Module &Mod,
     return bail("partition object merge/self-verify failed");
   }
 
-  SmallVector<char, 0> MergedDwo;
+  SmallVector<char, 0> DwarfPackage;
   if (EmitSplitDwarf) {
-    if (!EmbedSplitDwarf && !Outputs.SplitDwarf)
+    if (!Outputs.DwarfPackage)
       return bail("split-DWARF mode has no destination stream");
 
     SmallVector<SmallVector<char, 0>, 8> DwoBufs;
@@ -1281,32 +1279,17 @@ bool ParallelCGContext::finalizeResults(Module &Mod,
 
     merge::Options DwoOpts;
     DwoOpts.artifact = merge::ArtifactKind::SplitDwarf;
-    if (!EmbedSplitDwarf)
-      DwoOpts.debugCompression = FinalDebugCompression;
-    if (!mergePartitionObjects(TT, DwoBufs, MergedDwo, DwoOpts))
+    DwoOpts.debugCompression = FinalDebugCompression;
+    if (!mergePartitionObjects(TT, DwoBufs, DwarfPackage, DwoOpts))
       return bail("partition split-DWARF merge/self-verify failed");
 
     std::optional<merge::Format> Fmt = mergeFormatForTriple(TT);
     if (!Fmt)
       return bail("unsupported split-DWARF object format");
     std::string VerifyError;
-    if (EmbedSplitDwarf) {
-      SmallVector<SmallVector<char, 0>, 2> Artifacts;
-      Artifacts.push_back(std::move(MergedObject));
-      Artifacts.push_back(std::move(MergedDwo));
-      merge::Options CombinedOpts;
-      if (FinalizeDebugCompression)
-        CombinedOpts.debugCompression = FinalDebugCompression;
-      SmallVector<char, 0> CombinedObject;
-      if (!mergePartitionObjects(TT, Artifacts, CombinedObject, CombinedOpts))
-        return bail("embedded split-DWARF object merge/self-verify failed");
-      MergedObject = std::move(CombinedObject);
-      if (!merge::verifySplitDwarfPair(MergedObject, MergedObject, *Fmt,
-                                       &VerifyError))
-        return bail("embedded main/DWO verification failed: " + VerifyError);
-    } else if (!merge::verifySplitDwarfPair(MergedObject, MergedDwo, *Fmt,
-                                            &VerifyError)) {
-      return bail("main/DWO cross-artifact verification failed: " +
+    if (!merge::verifySplitDwarfPair(MergedObject, DwarfPackage, *Fmt,
+                                     &VerifyError)) {
+      return bail("main/DWP cross-artifact verification failed: " +
                   VerifyError);
     }
   }
@@ -1315,14 +1298,11 @@ bool ParallelCGContext::finalizeResults(Module &Mod,
   // Any earlier failure therefore leaves both real streams untouched for the
   // serial fallback.
   Outputs.Object.write(MergedObject.data(), MergedObject.size());
-  if (Outputs.SplitDwarf && !EmbedSplitDwarf)
-    Outputs.SplitDwarf->write(MergedDwo.data(), MergedDwo.size());
+  if (Outputs.DwarfPackage)
+    Outputs.DwarfPackage->write(DwarfPackage.data(), DwarfPackage.size());
   if (Dbg)
     errs() << "[pcg] SUCCESS: merged " << NonEmpty << " partition objects"
-           << (EmbedSplitDwarf  ? " and embedded split-DWARF contributions"
-               : EmitSplitDwarf ? " and split-DWARF contributions"
-                                : "")
-           << "\n";
+           << (EmitSplitDwarf ? " and split-DWARF contributions" : "") << "\n";
   return true;
 }
 
@@ -1341,6 +1321,57 @@ void ParallelCGContext::restoreLinkage(Module &Mod) {
 
 } // namespace
 
+bool finalizeSplitDwarfArtifacts(const Triple &Target, ArrayRef<char> Object,
+                                 ArrayRef<char> Dwo,
+                                 DebugCompressionType DebugCompression,
+                                 ParallelCodeGenOutputs Outputs,
+                                 std::string *Error) {
+  auto fail = [&](const Twine &Reason) {
+    if (Error)
+      *Error = Reason.str();
+    return false;
+  };
+  if (!Outputs.DwarfPackage)
+    return fail("split-DWARF package has no destination stream");
+  if (Object.empty() || Dwo.empty())
+    return fail("serial codegen produced an empty split-DWARF artifact");
+
+  const std::optional<merge::Format> Fmt = mergeFormatForTriple(Target);
+  if (!Fmt || (*Fmt != merge::Format::ELF64LE && *Fmt != merge::Format::COFF))
+    return fail("unsupported split-DWARF package object format");
+
+  SmallVector<char, 0> FinalObject;
+  if (DebugCompression == DebugCompressionType::None) {
+    FinalObject.append(Object.begin(), Object.end());
+  } else {
+    SmallVector<StringRef, 1> ObjectInputs;
+    ObjectInputs.emplace_back(Object.data(), Object.size());
+    merge::Options ObjectOpts;
+    ObjectOpts.debugCompression = DebugCompression;
+    raw_svector_ostream ObjectOS(FinalObject);
+    if (!merge::mergeObjects(ObjectInputs, ObjectOS, *Fmt, ObjectOpts))
+      return fail("serial main-object compression/self-verification failed");
+  }
+
+  SmallVector<StringRef, 1> DwoInputs;
+  DwoInputs.emplace_back(Dwo.data(), Dwo.size());
+  SmallVector<char, 0> Package;
+  raw_svector_ostream PackageOS(Package);
+  merge::Options PackageOpts;
+  PackageOpts.artifact = merge::ArtifactKind::SplitDwarf;
+  PackageOpts.debugCompression = DebugCompression;
+  if (!merge::mergeObjects(DwoInputs, PackageOS, *Fmt, PackageOpts))
+    return fail("serial split-DWARF packaging/self-verification failed");
+
+  std::string VerifyError;
+  if (!merge::verifySplitDwarfPair(FinalObject, Package, *Fmt, &VerifyError))
+    return fail("serial main/DWP verification failed: " + VerifyError);
+
+  Outputs.Object.write(FinalObject.data(), FinalObject.size());
+  Outputs.DwarfPackage->write(Package.data(), Package.size());
+  return true;
+}
+
 // ===----------------------------------------------------------------------===
 // Public API: parallel codegen (no per-partition optimization)
 // ===----------------------------------------------------------------------===
@@ -1355,10 +1386,10 @@ bool runParallelCodeGen(Module &Mod, TargetMachine &TM,
                         unsigned /*NumPartitions*/,
                         const PartitionCacheHooks *Cache) {
   ParallelCGContext Ctx;
-  if (!Ctx.init(Mod, TM, Outputs.SplitDwarf != nullptr))
+  if (!Ctx.init(Mod, TM, Outputs.DwarfPackage != nullptr))
     return false;
-  // The partition cache stores only one object image. A cache hit in either
-  // external or embedded fission mode would omit its matching DWO payload.
+  // The partition cache stores only one object image. A cache hit in fission
+  // mode would omit its matching DWO payload.
   Ctx.Cache = Ctx.EmitSplitDwarf ? nullptr : Cache;
   Ctx.PipeTag = "p-cg";
 
@@ -1438,7 +1469,7 @@ bool runParallelOptAndCodeGen(Module &Mod, TargetMachine &TM,
     return false;
 
   ParallelCGContext Ctx;
-  if (!Ctx.init(Mod, TM, Outputs.SplitDwarf != nullptr)) {
+  if (!Ctx.init(Mod, TM, Outputs.DwarfPackage != nullptr)) {
     if (::getenv("NEVERC_PCG_DEBUG"))
       errs() << "[pcg] p-opt declined (FuncCount=" << Ctx.FuncCount
              << " TotalWeight=" << Ctx.TotalWeight

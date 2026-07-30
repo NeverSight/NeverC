@@ -5,6 +5,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/IR/PassManager.h"
+#include "llvm/Support/Compression.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <functional>
@@ -14,6 +15,7 @@ namespace llvm {
 class Module;
 class PassBuilder;
 class TargetMachine;
+class Triple;
 } // namespace llvm
 
 namespace neverc {
@@ -42,18 +44,28 @@ struct ParallelOptimizationHooks {
   std::function<void(llvm::ModulePassManager &)> PostOpt;
 };
 
-/// The complete artifact set owned by one codegen request. Split DWARF is
-/// optional, but when present parallel codegen commits it atomically with the
-/// main object after both merges and their cross-artifact verification pass.
+/// The complete artifact set owned by one codegen request. A DWP is optional,
+/// but when present parallel codegen commits it with the main object only after
+/// both merges and their cross-artifact verification pass.
 struct ParallelCodeGenOutputs {
   llvm::raw_pwrite_stream &Object;
-  llvm::raw_pwrite_stream *SplitDwarf = nullptr;
+  llvm::raw_pwrite_stream *DwarfPackage = nullptr;
 };
+
+/// Turn one serially generated object/DWO pair into the same verified artifact
+/// model as parallel codegen: a main object plus an indexed DWP package.
+/// Neither destination is written unless packaging and pair verification pass.
+bool finalizeSplitDwarfArtifacts(const llvm::Triple &Target,
+                                 llvm::ArrayRef<char> Object,
+                                 llvm::ArrayRef<char> Dwo,
+                                 llvm::DebugCompressionType DebugCompression,
+                                 ParallelCodeGenOutputs Outputs,
+                                 std::string *Error = nullptr);
 
 /// Run parallel codegen on an already-optimized module.
 /// Splits the module into \p NumPartitions, runs codegen in parallel,
-/// then merges the resulting object and optional Split-DWARF files using
-/// `neverc::merge`.
+/// then merges the resulting objects and optional DWO contributions into one
+/// main object and indexed DWP package using `neverc::merge`.
 /// Returns true on success.
 bool runParallelCodeGen(llvm::Module &Mod, llvm::TargetMachine &TM,
                         ParallelCodeGenOutputs Outputs, unsigned NumPartitions,

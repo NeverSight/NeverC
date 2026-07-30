@@ -4072,6 +4072,10 @@ OPTION(prefix_1, "-split-dwarf-file", split_dwarf_file, Separate, INVALID,
        INVALID, nullptr, HelpHidden, DefaultVis, 0,
        "Name of the split dwarf debug info file to encode in the object file",
        nullptr, nullptr)
+OPTION(prefix_1, "-split-dwarf-output-is-package",
+       split_dwarf_output_is_package, Flag, INVALID, INVALID, nullptr,
+       HelpHidden, DefaultVis, 0,
+       "Treat split-DWARF output as an indexed package", nullptr, nullptr)
 OPTION(prefix_1, "-split-dwarf-output", split_dwarf_output, Separate, INVALID,
        INVALID, nullptr, HelpHidden, DefaultVis, 0,
        "File name to use for split dwarf debug info output", nullptr, nullptr)
@@ -7923,10 +7927,19 @@ CODEGEN_OPTION_WITH_MARSHALLING(
 #endif // CODEGEN_OPTION_WITH_MARSHALLING
 #ifdef CODEGEN_OPTION_WITH_MARSHALLING
 CODEGEN_OPTION_WITH_MARSHALLING(
+    prefix_1, "-split-dwarf-output-is-package",
+    split_dwarf_output_is_package, Flag, INVALID, INVALID, nullptr, HelpHidden,
+    DefaultVis, 0, "Treat split-DWARF output as an indexed package", nullptr,
+    nullptr, true, 0, CodeGenOpts.SplitDwarfOutputIsPackage, false, false, false,
+    normalizeSimpleFlag, denormalizeSimpleFlag, mergeForwardValue,
+    extractForwardValue, -1)
+#endif // CODEGEN_OPTION_WITH_MARSHALLING
+#ifdef CODEGEN_OPTION_WITH_MARSHALLING
+CODEGEN_OPTION_WITH_MARSHALLING(
     prefix_1, "-split-dwarf-output", split_dwarf_output, Separate, INVALID,
     INVALID, nullptr, HelpHidden, DefaultVis, 0,
-    "File name to use for split dwarf debug info output", nullptr, nullptr,
-    true, 0, CodeGenOpts.SplitDwarfOutput, std::string(), false, std::string(),
+    "File name to use for split dwarf debug info output", nullptr, nullptr, true,
+    0, CodeGenOpts.SplitDwarfOutput, std::string(), false, std::string(),
     normalizeString, denormalizeString, mergeForwardValue, extractForwardValue,
     -1)
 #endif // CODEGEN_OPTION_WITH_MARSHALLING

@@ -16,14 +16,14 @@
 #include "neverc/Foundation/Target/TargetOptions.h"
 #include "neverc/Invoke/LLVMCommandLine.h"
 #include "neverc/Plugin/Host/BuiltinTargetProvider.h"
+#include "neverc/Plugin/Host/CallingConventionMaterialize.h"
 #include "neverc/Plugin/Host/CodeGenRoutePlanner.h"
-#include "neverc/Plugin/Host/IRPluginBridge.h"
-#include "neverc/Plugin/Host/IRPassPlugin.h"
 #include "neverc/Plugin/Host/IROptimizationProvider.h"
+#include "neverc/Plugin/Host/IRPassPlugin.h"
+#include "neverc/Plugin/Host/IRPluginBridge.h"
 #include "neverc/Plugin/Host/LLVMComponentProviderBridge.h"
 #include "neverc/Plugin/Host/MCEmissionPlan.h"
 #include "neverc/Plugin/Host/MIRPassPlugin.h"
-#include "neverc/Plugin/Host/CallingConventionMaterialize.h"
 #include "neverc/Plugin/Host/ObjectPhaseHooks.h"
 #include "neverc/Plugin/Host/ObjectReaderProvider.h"
 #include "neverc/Plugin/Host/PluginCodeGenPipeline.h"
@@ -37,13 +37,13 @@
 #include "neverc/Transforms/StrHash/StrHashFoldPass.h"
 #include "neverc/Transforms/XorStr/EncryptCallStringsPass.h"
 #include "neverc/Transforms/XorStr/XorStrCleanupPass.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringSwitch.h"
-#include "llvm/ADT/ScopeExit.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/Analysis/TargetTransformInfo.h"
-#include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/Bitcode/BitcodeAutoGeneratorPass.h"
+#include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/Bitcode/BitcodeWriterPass.h"
 #include "llvm/CodeGen/MachineModuleInfo.h"
 #include "llvm/CodeGen/TargetPassConfig.h"
@@ -58,6 +58,7 @@
 #include "llvm/IRPrinter/IRAutoGeneratorPass.h"
 #include "llvm/IRPrinter/IRPrintingPasses.h"
 #include "llvm/LTO/LTOBackend.h"
+#include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Passes/PassBuilder.h"
@@ -176,7 +177,7 @@ class GenAssemblyHelper {
                        std::unique_ptr<raw_pwrite_stream> &OS);
   void runCodegenPipeline(BackendAction Action,
                           std::unique_ptr<raw_pwrite_stream> &OS,
-                          std::unique_ptr<llvm::ToolOutputFile> &DwoOS);
+                          raw_pwrite_stream *DwoOutput);
   const plugin::PluginTargetSnapshot::CodeGenEdgeRecord *
   findCoarseObjectEdge() const;
   bool runCoarseObjectCodeGen(raw_pwrite_stream &Output);
@@ -967,7 +968,7 @@ void GenAssemblyHelper::emitOptimizedIR(
 
 void GenAssemblyHelper::runCodegenPipeline(
     BackendAction Action, std::unique_ptr<raw_pwrite_stream> &OS,
-    std::unique_ptr<llvm::ToolOutputFile> &DwoOS) {
+    raw_pwrite_stream *DwoOutput) {
   // We still use the legacy PM to run the codegen pipeline since the new PM
   // does not work with the codegen pipeline.
   legacy::PassManager CodeGenPasses;
@@ -978,13 +979,7 @@ void GenAssemblyHelper::runCodegenPipeline(
   case Backend_EmitObj:
     CodeGenPasses.add(
         createTargetTransformInfoWrapperPass(getTargetIRAnalysis()));
-    if (!CodeGenOpts.SplitDwarfOutput.empty() && !DwoOS) {
-      DwoOS = openOutputFile(CodeGenOpts.SplitDwarfOutput);
-      if (!DwoOS)
-        return;
-    }
-    if (!addEmitPasses(CodeGenPasses, Action, *OS,
-                       DwoOS ? &DwoOS->os() : nullptr))
+    if (!addEmitPasses(CodeGenPasses, Action, *OS, DwoOutput))
       return;
     break;
   default:
@@ -1334,13 +1329,26 @@ void GenAssemblyHelper::genAssembly(BackendAction Action,
   // The threshold/partition logic lives inside runParallelCodeGen() —
   // no need to scan the module here.
   unsigned ParallelN = CodeGenOpts.ParallelCodeGen;
+  const bool EmbedsSplitDwarf = CodeGenOpts.SplitDwarfOutput.empty() &&
+                                !CodeGenOpts.SplitDwarfFile.empty();
+  const unsigned EmittedDwarfVersion = CodeGenOpts.DwarfVersion
+                                           ? CodeGenOpts.DwarfVersion
+                                           : TheModule->getDwarfVersion();
+  if (CodeGenOpts.SplitDwarfOutputIsPackage &&
+      (EmittedDwarfVersion != 5 || CodeGenOpts.SplitDwarfOutput.empty())) {
+    Diags.Report(diag::err_fe_error_backend)
+        << "split-DWARF package output requires DWARF 5 and a destination";
+    return;
+  }
+  const bool WritesDwarfPackage = CodeGenOpts.SplitDwarfOutputIsPackage;
   bool UseParallel =
       RequiresCodeGen && !UseCoarseObjectProvider &&
       Action == Backend_EmitObj && !CodeGenOpts.PrepareForLTO &&
-      ParallelN != 1 && !MCComponentProvider && !MCEmissionHooks &&
+      ParallelN != 1 && !EmbedsSplitDwarf && !MCComponentProvider &&
+      !MCEmissionHooks &&
       (!MachinePasses || !MachinePasses->requiresSerialCodeGen());
 
-  std::unique_ptr<llvm::ToolOutputFile> DwoOS;
+  std::unique_ptr<llvm::ToolOutputFile> SplitDwarfOS;
 
   // Run the full optimization pipeline before splitting into partitions.
   // Running function-level optimization in parallel threads risks LLVM
@@ -1362,22 +1370,70 @@ void GenAssemblyHelper::genAssembly(BackendAction Action,
     OS = std::make_unique<raw_svector_ostream>(NativeObject);
   }
 
-  // Open the auxiliary file exactly once. The parallel path writes only after
-  // both in-memory merges verify; on failure serial codegen reuses this
-  // untouched stream, preserving ToolOutputFile cleanup/keep semantics.
-  if (UseParallel && !CodeGenOpts.SplitDwarfOutput.empty()) {
-    DwoOS = openOutputFile(CodeGenOpts.SplitDwarfOutput);
-    if (!DwoOS)
+  // Open the split-debug destination exactly once. In DWARF 5 package mode,
+  // parallel codegen writes a DWP directly; serial codegen and parallel
+  // fallback first capture LLVM's DWO in memory, then package and verify it.
+  if (!CodeGenOpts.SplitDwarfOutput.empty()) {
+    SplitDwarfOS = openOutputFile(CodeGenOpts.SplitDwarfOutput);
+    if (!SplitDwarfOS)
       return;
   }
 
+  auto RunSerialCodegen = [&]() -> bool {
+    if (!WritesDwarfPackage || !SplitDwarfOS || Action != Backend_EmitObj) {
+      runCodegenPipeline(Action, OS,
+                         SplitDwarfOS ? &SplitDwarfOS->os() : nullptr);
+      return true;
+    }
+
+    SmallVector<char, 0> SerialObject;
+    SmallVector<char, 0> SerialDwo;
+    auto ObjectDestination = std::move(OS);
+    auto RestoreOutput =
+        make_scope_exit([&] { OS = std::move(ObjectDestination); });
+    OS = std::make_unique<raw_svector_ostream>(SerialObject);
+    raw_svector_ostream SerialDwoOS(SerialDwo);
+
+    // A DWP is assembled from ordinary, independently parseable DWO
+    // contributions. Compression is therefore a final-artifact operation.
+    const DebugCompressionType DebugCompression =
+        TM->Options.CompressDebugSections;
+    // TargetMachine owns this MCAsmInfo, but exposes it read-only. The object
+    // writer reads compression from MCAsmInfo while worker cloning reads
+    // TargetOptions, so keep both copies synchronized for this scoped override.
+    auto *AsmInfo = const_cast<MCAsmInfo *>(TM->getMCAsmInfo());
+    TM->Options.CompressDebugSections = DebugCompressionType::None;
+    AsmInfo->setCompressDebugSections(DebugCompressionType::None);
+    auto RestoreCompression = make_scope_exit([&] {
+      TM->Options.CompressDebugSections = DebugCompression;
+      AsmInfo->setCompressDebugSections(DebugCompression);
+    });
+
+    runCodegenPipeline(Action, OS, &SerialDwoOS);
+    OS->flush();
+
+    std::string Error;
+    neverc::ParallelCodeGenOutputs Outputs{*ObjectDestination,
+                                           &SplitDwarfOS->os()};
+    if (!neverc::finalizeSplitDwarfArtifacts(
+            TM->getTargetTriple(), SerialObject, SerialDwo, DebugCompression,
+            Outputs, &Error)) {
+      Diags.Report(diag::err_fe_error_backend)
+          << "failed to finalize split-DWARF package: " + Error;
+      return false;
+    }
+    return true;
+  };
+
   if (UseParallel) {
-    neverc::ParallelCodeGenOutputs Outputs{*OS, DwoOS ? &DwoOS->os() : nullptr};
-    if (!neverc::runParallelCodeGen(*TheModule, *TM, Outputs, ParallelN))
-      runCodegenPipeline(Action, OS, DwoOS);
-  } else {
-    runCodegenPipeline(Action, OS, DwoOS);
-  }
+    neverc::ParallelCodeGenOutputs Outputs{
+        *OS, WritesDwarfPackage ? &SplitDwarfOS->os() : nullptr};
+    if (!neverc::runParallelCodeGen(*TheModule, *TM, Outputs, ParallelN)) {
+      if (!RunSerialCodegen())
+        return;
+    }
+  } else if (!RunSerialCodegen())
+    return;
 
   if (FinalOutput) {
     OS->flush();
@@ -1385,8 +1441,8 @@ void GenAssemblyHelper::genAssembly(BackendAction Action,
       return;
   }
 
-  if (DwoOS)
-    DwoOS->keep();
+  if (SplitDwarfOS)
+    SplitDwarfOS->keep();
 }
 
 // ===----------------------------------------------------------------------===

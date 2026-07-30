@@ -583,8 +583,22 @@ bool tools::areOptimizationsEnabled(const ArgList &Args) {
 
 const char *tools::SplitDebugName(const JobAction &JA, const ArgList &Args,
                                   const InputInfo &Input,
-                                  const InputInfo &Output) {
-  auto AddPostfix = [](auto &F) { F += ".dwo"; };
+                                  const InputInfo &Output,
+                                  bool UseDwarfPackage) {
+  // DWARF 5 split codegen combines its units into an indexed package. Its
+  // standard suffix selects debuggers' DWP reader; older DWARF versions stay
+  // serial and retain the conventional standalone-DWO artifact.
+  const llvm::StringRef Postfix =
+      UseDwarfPackage && Output.getType() == types::TY_Object ? ".dwp" : ".dwo";
+  auto FinishName = [&](llvm::SmallString<128> &F) {
+    F += Postfix;
+    // `-o foo.dwp` must not make the main object and its package share one
+    // path. Preserve the requested object name and disambiguate the package.
+    if (Output.isFilename() &&
+        llvm::StringRef(F).equals_insensitive(Output.getFilename()))
+      F += Postfix;
+    return Args.MakeArgString(F);
+  };
   if (Arg *A = Args.getLastArg(options::OPT_gsplit_dwarf_EQ))
     if (llvm::StringRef(A->getValue()) == "single" && Output.isFilename())
       return Args.MakeArgString(Output.getFilename());
@@ -599,14 +613,12 @@ const char *tools::SplitDebugName(const JobAction &JA, const ArgList &Args,
       llvm::sys::path::remove_filename(T);
       llvm::sys::path::append(T,
                               llvm::sys::path::stem(FinalOutput->getValue()));
-      AddPostfix(T);
-      return Args.MakeArgString(T);
+      return FinishName(T);
     }
   }
 
   T += llvm::sys::path::stem(Input.getBaseInput());
-  AddPostfix(T);
-  return Args.MakeArgString(T);
+  return FinishName(T);
 }
 
 void tools::SplitDebugInfo(const ToolChain &TC, Compilation &C, const Tool &T,

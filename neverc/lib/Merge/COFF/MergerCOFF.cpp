@@ -601,10 +601,8 @@ bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
             /*IsLittleEndian=*/true, Indexes))
       return false;
 
-    // Package indexes are part of the split-debug payload too. In embedded
-    // (`-gsplit-dwarf=single`) objects the linker must discard them together
-    // with the `.debug_*.dwo` sections rather than leave an orphan index in the
-    // linked image.
+    // Package indexes are split-debug payload and must never enter the linked
+    // image if a DWP is accidentally passed to the linker.
     constexpr uint32_t IndexCharacteristics =
         IMAGE_SCN_MEM_DISCARDABLE | IMAGE_SCN_LNK_REMOVE |
         IMAGE_SCN_CNT_INITIALIZED_DATA | IMAGE_SCN_MEM_READ;

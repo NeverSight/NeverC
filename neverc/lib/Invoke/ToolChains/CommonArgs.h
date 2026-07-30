@@ -30,7 +30,8 @@ void AddRunTimeLibs(const ToolChain &TC, const Driver &D,
                     const llvm::opt::ArgList &Args);
 
 const char *SplitDebugName(const JobAction &JA, const llvm::opt::ArgList &Args,
-                           const InputInfo &Input, const InputInfo &Output);
+                           const InputInfo &Input, const InputInfo &Output,
+                           bool UseDwarfPackage);
 
 void SplitDebugInfo(const ToolChain &TC, Compilation &C, const Tool &T,
                     const JobAction &JA, const llvm::opt::ArgList &Args,

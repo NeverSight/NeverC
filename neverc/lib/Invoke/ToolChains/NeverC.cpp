@@ -2260,7 +2260,8 @@ void renderDebugOptions(const ToolChain &TC, const Driver &D,
                         bool IRInput, ArgStringList &CmdArgs,
                         const InputInfo &Output,
                         llvm::codegenoptions::DebugInfoKind &DebugInfoKind,
-                        DwarfFissionKind &DwarfFission) {
+                        DwarfFissionKind &DwarfFission,
+                        unsigned &EffectiveDWARFVersion) {
   // The 'g' groups options involve a somewhat intricate sequence of decisions
   // about what to pass from the driver to the frontend, but by the time they
   // reach the frontend they've been factored into three well-defined orthogonal
@@ -2324,8 +2325,8 @@ void renderDebugOptions(const ToolChain &TC, const Driver &D,
     GenDwarf = true;
 
   unsigned RequestedDWARFVersion = 0; // DWARF version requested by the user
-  unsigned EffectiveDWARFVersion = 0; // DWARF version TC can generate. It may
-                                      // be lower than what the user wanted.
+  EffectiveDWARFVersion = 0; // DWARF version TC can generate. It may be lower
+                             // than what the user wanted.
   if (GenDwarf) {
     RequestedDWARFVersion = getDwarfVersion(TC, Args);
     // Clamp effective DWARF version to the max supported by the toolchain.
@@ -3243,8 +3244,10 @@ void NeverC::ConstructJob(Compilation &C, const JobAction &JA,
   llvm::codegenoptions::DebugInfoKind DebugInfoKind =
       llvm::codegenoptions::NoDebugInfo;
   DwarfFissionKind DwarfFission = DwarfFissionKind::None;
+  unsigned EffectiveDwarfVersion = 0;
   renderDebugOptions(TC, D, RawTriple, Args, types::isLLVMIR(InputType),
-                     CmdArgs, Output, DebugInfoKind, DwarfFission);
+                     CmdArgs, Output, DebugInfoKind, DwarfFission,
+                     EffectiveDwarfVersion);
 
   // Add the split debug info name to the command lines here so we
   // can propagate it to the backend.
@@ -3254,12 +3257,18 @@ void NeverC::ConstructJob(Compilation &C, const JobAction &JA,
                     (isa<AssembleJobAction>(JA) || isa<CompileJobAction>(JA) ||
                      isa<BackendJobAction>(JA));
   if (SplitDWARF) {
-    const char *SplitDWARFOut = SplitDebugName(JA, Args, Input, Output);
+    const bool UseDwarfPackage = DwarfFission == DwarfFissionKind::Split &&
+                                 EffectiveDwarfVersion == 5 &&
+                                 Output.getType() == types::TY_Object;
+    const char *SplitDWARFOut =
+        SplitDebugName(JA, Args, Input, Output, UseDwarfPackage);
     CmdArgs.push_back("-split-dwarf-file");
     CmdArgs.push_back(SplitDWARFOut);
     if (DwarfFission == DwarfFissionKind::Split) {
       CmdArgs.push_back("-split-dwarf-output");
       CmdArgs.push_back(SplitDWARFOut);
+      if (UseDwarfPackage)
+        CmdArgs.push_back("-split-dwarf-output-is-package");
     }
   }
 
@@ -4447,7 +4456,8 @@ void NeverCAs::ConstructJob(Compilation &C, const JobAction &JA,
   if (getDebugFissionKind(D, Args, A) == DwarfFissionKind::Split &&
       T.isOSBinFormatELF()) {
     CmdArgs.push_back("-split-dwarf-output");
-    CmdArgs.push_back(SplitDebugName(JA, Args, Input, Output));
+    CmdArgs.push_back(
+        SplitDebugName(JA, Args, Input, Output, /*UseDwarfPackage=*/false));
   }
 
   assert(Input.isFilename() && "Invalid input.");

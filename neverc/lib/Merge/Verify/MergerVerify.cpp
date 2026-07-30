@@ -2486,6 +2486,12 @@ bool validateDIEValues(DWARFDie Root, std::string &Reason) {
         }
       }
 
+      if (Value.isFormClass(DWARFFormValue::FC_Address) &&
+          !Value.getAsAddress()) {
+        Reason = "cannot resolve an indexed DIE address";
+        return false;
+      }
+
       if (Value.getAsRelativeReference() &&
           !Die.getAttributeValueAsReferencedDie(Value)) {
         Reason = "DIE reference points outside its indexed contribution";
@@ -2498,9 +2504,28 @@ bool validateDIEValues(DWARFDie Root, std::string &Reason) {
         Reason = "DW_FORM_rnglistx index is outside its package contribution";
         return false;
       }
-      if (Value.getForm() == dwarf::DW_FORM_loclistx &&
-          !Unit->getLoclistOffset(Value.getRawUValue())) {
-        Reason = "DW_FORM_loclistx index is outside its package contribution";
+      if (Value.getForm() == dwarf::DW_FORM_loclistx) {
+        if (!Unit->getLoclistOffset(Value.getRawUValue())) {
+          Reason = "DW_FORM_loclistx index is outside its package contribution";
+          return false;
+        }
+        Expected<DWARFLocationExpressionsVector> Locations =
+            Die.getLocations(Attribute.Attr);
+        if (!Locations) {
+          auto Message = llvm::toString(Locations.takeError());
+          Reason.assign(Message.begin(), Message.end());
+          Reason.insert(0, "cannot resolve DIE location list: ");
+          return false;
+        }
+      }
+    }
+
+    if (Die.find({dwarf::DW_AT_ranges, dwarf::DW_AT_low_pc})) {
+      Expected<DWARFAddressRangesVector> Ranges = Die.getAddressRanges();
+      if (!Ranges) {
+        auto Message = llvm::toString(Ranges.takeError());
+        Reason.assign(Message.begin(), Message.end());
+        Reason.insert(0, "cannot resolve DIE address ranges: ");
         return false;
       }
     }
@@ -2574,7 +2599,7 @@ bool verifySplitDwarfPair(ArrayRef<char> Object, ArrayRef<char> SplitDwarf,
                          toString(MainOrErr.takeError()));
   auto DwoOrErr = ParseObject(SplitDwarf, "parallel-split-dwarf");
   if (!DwoOrErr)
-    return fail(Err, "cannot parse merged split-DWARF object: " +
+    return fail(Err, "cannot parse merged split-DWARF package: " +
                          toString(DwoOrErr.takeError()));
 
   auto MatchesFormat = [&](const object::ObjectFile &Obj) {
@@ -2615,6 +2640,7 @@ bool verifySplitDwarfPair(ArrayRef<char> Object, ArrayRef<char> SplitDwarf,
 
   std::set<uint64_t> SkeletonIds;
   std::map<uint64_t, std::string> SkeletonNames;
+  std::map<uint64_t, DWARFUnit *> SkeletonUnits;
   for (const std::unique_ptr<DWARFUnit> &Unit :
        MainContext->info_section_units()) {
     if (Unit->getVersion() != 5)
@@ -2629,6 +2655,7 @@ bool verifySplitDwarfPair(ArrayRef<char> Object, ArrayRef<char> SplitDwarf,
       return fail(Err, "skeleton compile unit has no DWO ID");
     if (!SkeletonIds.insert(*Id).second)
       return fail(Err, "duplicate skeleton DWO ID 0x" + Twine::utohexstr(*Id));
+    SkeletonUnits.emplace(*Id, Unit.get());
     std::string Reason;
     if (!validateDIEValues(UnitDIE, Reason))
       return fail(Err, "malformed skeleton DIE values: " + Reason);
@@ -2653,10 +2680,10 @@ bool verifySplitDwarfPair(ArrayRef<char> Object, ArrayRef<char> SplitDwarf,
   for (const std::unique_ptr<DWARFUnit> &Unit :
        DwoContext->dwo_info_section_units()) {
     if (Unit->getVersion() != 5)
-      return fail(Err, "merged .dwo contains a non-DWARF-5 unit");
+      return fail(Err, "merged DWP contains a non-DWARF-5 unit");
     const DWARFDie UnitDIE = Unit->getUnitDIE(false);
     if (!UnitDIE)
-      return fail(Err, "merged .dwo contains a malformed unit DIE");
+      return fail(Err, "merged DWP contains a malformed unit DIE");
     std::string Reason;
     if (Unit->getUnitType() == dwarf::DW_UT_split_compile) {
       std::optional<uint64_t> Id = Unit->getDWOId();
@@ -2665,6 +2692,16 @@ bool verifySplitDwarfPair(ArrayRef<char> Object, ArrayRef<char> SplitDwarf,
       if (!SplitIds.insert(*Id).second)
         return fail(Err,
                     "duplicate split-unit DWO ID 0x" + Twine::utohexstr(*Id));
+      auto Skeleton = SkeletonUnits.find(*Id);
+      if (Skeleton == SkeletonUnits.end())
+        return fail(Err, "split unit has no matching skeleton DWO ID 0x" +
+                             Twine::utohexstr(*Id));
+      Unit->setSkeletonUnit(Skeleton->second);
+      if (std::optional<uint64_t> AddrBase =
+              Skeleton->second->getAddrOffsetSectionBase()) {
+        Unit->setAddrOffsetSection(&MainContext->getDWARFObj().getAddrSection(),
+                                   *AddrBase);
+      }
       if (!validatePackageIndexEntry(CUIndex, *Unit, *Id, Reason))
         return fail(Err, Reason);
       if (!validateDIEValues(UnitDIE, Reason))
@@ -2685,7 +2722,7 @@ bool verifySplitDwarfPair(ArrayRef<char> Object, ArrayRef<char> SplitDwarf,
     // Treating every info-section unit as a split CU rejects the exact output
     // produced by -fdebug-types-section.
     if (Unit->getUnitType() != dwarf::DW_UT_split_type)
-      return fail(Err, "merged .dwo contains an unexpected unit type");
+      return fail(Err, "merged DWP contains an unexpected unit type");
     const uint64_t TypeHash = cast<DWARFTypeUnit>(Unit.get())->getTypeHash();
     if (!TypeHashes.insert(TypeHash).second)
       return fail(Err, "duplicate split type signature 0x" +
@@ -2702,10 +2739,10 @@ bool verifySplitDwarfPair(ArrayRef<char> Object, ArrayRef<char> SplitDwarf,
        DwoContext->dwo_types_section_units()) {
     if (Unit->getVersion() != 5 ||
         Unit->getUnitType() != dwarf::DW_UT_split_type)
-      return fail(Err, "merged .dwo contains an unexpected type unit");
+      return fail(Err, "merged DWP contains an unexpected type unit");
     const DWARFDie UnitDIE = Unit->getUnitDIE(false);
     if (!UnitDIE)
-      return fail(Err, "merged .dwo contains a malformed type-unit DIE");
+      return fail(Err, "merged DWP contains a malformed type-unit DIE");
     std::string Reason;
     const uint64_t TypeHash = cast<DWARFTypeUnit>(Unit.get())->getTypeHash();
     if (!TypeHashes.insert(TypeHash).second)

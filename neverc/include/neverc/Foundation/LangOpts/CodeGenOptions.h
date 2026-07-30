@@ -162,6 +162,8 @@ public:
 
   std::string SplitDwarfOutput;
 
+  bool SplitDwarfOutputIsPackage = false;
+
   std::string ObjectFilenameForDebug;
 
   std::string TrapFuncName;
