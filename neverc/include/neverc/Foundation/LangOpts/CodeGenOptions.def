@@ -80,6 +80,8 @@ CODEGENOPT(PrepareForLTO     , 1, 0) ///< Set when -flto is enabled on the
 CODEGENOPT(InMemoryLTOOutput , 1, 0) ///< Bitcode output stays in memory for
                                      ///< the integrated linker (not written
                                      ///< to disk).
+ENUM_CODEGENOPT(BuiltinMimallocInjection, BuiltinMimallocInjectionKind, 1,
+                BuiltinMimallocInjectionKind::EveryModule)
 CODEGENOPT(IncrementalLinkerCompatible, 1, 0) ///< Emit an object file which can
                                               ///< be used with an incremental
                                               ///< linker.

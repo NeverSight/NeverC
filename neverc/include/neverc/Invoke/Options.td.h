@@ -479,6 +479,11 @@ OPTION(prefix_1, "-fbracket-depth", fbracket_depth, Separate, INVALID, INVALID,
 OPTION(prefix_1, "-fbuild-id=", fbuild_id_EQ, Joined, f_Group, INVALID, nullptr,
        LinkOption, DefaultVis, 0, "Set build ID style in the linked output",
        nullptr, "none,fast,md5,sha1,uuid")
+OPTION(prefix_1, "-fbuiltin-mimalloc-requires-program-entry",
+       fbuiltin_mimalloc_requires_program_entry, Flag, f_Group, INVALID,
+       nullptr, HelpHidden, DefaultVis, 0,
+       "Limit default mimalloc injection to a program entry translation unit",
+       nullptr, nullptr)
 OPTION(prefix_1, "-fbuiltin-mimalloc", fbuiltin_mimalloc, Flag, f_Group,
        INVALID, nullptr, 0, DefaultVis | DefaultVis, 0,
        "Enable mimalloc allocator override injection via IR bitcode embedding",

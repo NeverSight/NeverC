@@ -16,15 +16,11 @@
 // rewriting the bytes too would be redundant -- on ELF the literal bytes are
 // not even the operand the linker uses (RELA takes the value from the addend).
 //
-// One Mach-O section is deliberately left alone: the Apple accelerator tables
-// (__apple_names and friends, emitted for DWARF 4 and earlier).  That format
-// puts a single header at the start of the section with no way to chain a
-// second table, so concatenated partitions cannot be repaired by re-pointing
-// offsets -- a consumer reads the first table and stops.  Rebuilding them as
-// one table would mean recomputing the hash and bucket layout.  Leaving them
-// costs nothing measurable: LLDB resolves names through the debug map and its
-// own DWARF index, and dsymutil regenerates the tables for a .dSYM.  DWARF 5's
-// .debug_names does chain, and is rebased.
+// Apple accelerator tables (__apple_names and friends, emitted for DWARF 4
+// and earlier) put one unchainable hash-table header at the start of their
+// section.  They cannot be repaired by offset rebasing, so the Mach-O merger
+// omits those derived indexes and lets LLDB/dsymutil rebuild them from the
+// complete .debug_info.  DWARF 5's .debug_names does chain, and is rebased.
 //
 //===----------------------------------------------------------------------===//
 
@@ -44,10 +40,15 @@ namespace neverc::merge {
 /// pointed at nor pointing is absent.
 enum class DwarfSection : uint8_t {
   Info,
+  Types,
   Abbrev,
+  Aranges,
+  PubNames,
+  PubTypes,
   Str,
   LineStr,
   Line,
+  Frame,
   Ranges,
   RngLists,
   Loc,
@@ -70,6 +71,26 @@ constexpr size_t DwarfSectionCount = dwarfSectionIndex(DwarfSection::Count);
 /// and truncates names to 16 characters, ELF writes ".debug_info".
 DwarfSection classifyDwarfSection(llvm::StringRef SectionName);
 
+/// True when rebasing rewrites bytes stored in \p S itself.  Keep this policy
+/// next to the rebaser so merger verification cannot drift from the set of
+/// sections rebasePartitionDwarf() intentionally changes.
+constexpr bool dwarfSectionContentsAreRebased(DwarfSection S) {
+  switch (S) {
+  case DwarfSection::Info:
+  case DwarfSection::Types:
+  case DwarfSection::Aranges:
+  case DwarfSection::PubNames:
+  case DwarfSection::PubTypes:
+  case DwarfSection::Line:
+  case DwarfSection::Frame:
+  case DwarfSection::StrOffsets:
+  case DwarfSection::Names:
+    return true;
+  default:
+    return false;
+  }
+}
+
 /// Where one partition's DWARF sections landed inside the merged output.
 class PartitionDwarf {
 public:
@@ -78,6 +99,8 @@ public:
   /// Note where one input section landed.  Ignores non-DWARF sections, so
   /// callers can hand it every section they merge.
   void record(llvm::StringRef SectionName, unsigned MergedSectionIndex,
+              uint64_t Offset, uint64_t Size);
+  void record(DwarfSection Section, unsigned MergedSectionIndex,
               uint64_t Offset, uint64_t Size);
 
   /// Start of this partition's contribution to \p S within the merged
@@ -144,7 +167,7 @@ bool rebaseMergedDwarf(llvm::ArrayRef<PartitionDwarf> Partitions,
       // A contribution that does not fit the section it was recorded against
       // means the bookkeeping and the merged bytes disagree; rewriting from
       // here would corrupt a neighbouring partition.
-      if (Start + Size > All.size())
+      if (Start > All.size() || Size > All.size() - Start)
         return false;
       Slices[I] = All.slice(Start, Size);
     }

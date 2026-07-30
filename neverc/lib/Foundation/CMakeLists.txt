@@ -259,6 +259,8 @@ if(TARGET mimalloc-static)
     message(FATAL_ERROR
       "NeverC: unable to locate mimalloc source directory for bitcode bootstrap")
   endif()
+  set(_MI_SOURCE_PREFIX_MAP
+      "-ffile-prefix-map=${_MI_SRC_ROOT}=${NEVERC_RUNTIME_VIRTUAL_PREFIX}/third-party/mimalloc")
 
   set(_MI_BOOTSTRAP_TARGETS)
   foreach(_mi_spec IN LISTS _MI_VARIANTS)
@@ -322,6 +324,7 @@ if(TARGET mimalloc-static)
               -I "${_MI_SRC_ROOT}/src"
               ${_mi_extra_flags}
               ${NEVERC_BOOTSTRAP_PREFIX_MAP_FLAGS}
+              "${_MI_SOURCE_PREFIX_MAP}"
               -w
               "${_mi_runtime_c}"
               -o "${_mi_runtime_bc}"

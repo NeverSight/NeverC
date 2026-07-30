@@ -1,5 +1,7 @@
 #include "NeverCTestFixture.h"
 
+#include <regex>
+
 class DebugTest : public NeverCTest {
 protected:
   struct DwarfDumpTool {
@@ -168,6 +170,20 @@ static std::vector<std::string> forcePartitions(unsigned N) {
           "-neverc-pcg-min-funcs=2", "-mllvm", "-neverc-pcg-weight-floor=0"};
 }
 
+static std::string makePartitionedDebugSource(const std::string &NamePrefix,
+                                              int NumFns) {
+  std::string Code;
+  for (int I = 0; I < NumFns; ++I)
+    Code += "int " + NamePrefix + std::to_string(I) +
+            "(int a){int s=0;for(int k=0;k<a;k++)s+=k*" + std::to_string(I) +
+            ";return s;}\n";
+  Code += "int main(void){int t=0;\n";
+  for (int I = 0; I < NumFns; ++I)
+    Code += "  t += " + NamePrefix + std::to_string(I) + "(3);\n";
+  Code += "  return t;}\n";
+  return Code;
+}
+
 // Turns the merger's silent serial-codegen fallback into a hard error, so a
 // partitioning regression fails the test instead of quietly compiling slower.
 class StrictParallelCodegen {
@@ -260,16 +276,7 @@ TEST_F(DebugTest, MachOParallelCodegenResolvesDwarf5Names) {
   StrictParallelCodegen Strict;
   constexpr int NumFns = 24;
   auto src = tmpFile("pcg_names.c");
-  std::string code;
-  for (int I = 0; I < NumFns; ++I)
-    code += "int uniquely_named_" + std::to_string(I) +
-            "(int a){int s=0;for(int k=0;k<a;k++)s+=k*" + std::to_string(I) +
-            ";return s;}\n";
-  code += "int main(void){int t=0;\n";
-  for (int I = 0; I < NumFns; ++I)
-    code += "  t += uniquely_named_" + std::to_string(I) + "(3);\n";
-  code += "  return t;}\n";
-  writeFile(src, code);
+  writeFile(src, makePartitionedDebugSource("uniquely_named_", NumFns));
 
   auto obj = tmpFile("pcg_names.o");
   std::vector<std::string> args = {"-gdwarf-5", "-fno-lto"};
@@ -294,6 +301,104 @@ TEST_F(DebugTest, MachOParallelCodegenResolvesDwarf5Names) {
         << Name << " missing: a partition's names resolved against another "
                    "partition's string table";
   }
+}
+
+TEST_F(DebugTest, MachOParallelCodegenRebasesLegacyLineOffsets) {
+  if (!isDarwin())
+    GTEST_SKIP() << "Mach-O is the only format that offsets DWARF by value";
+
+  auto tool = findDwarfDump();
+  if (tool.path.empty() || tool.isLibdwarf)
+    GTEST_SKIP() << "an LLVM-compatible dwarfdump is required";
+
+  StrictParallelCodegen Strict;
+  auto src = tmpFile("pcg_legacy_dwarf.c");
+  writeFile(src, makePartitionedDebugSource("legacy_partition_", 24));
+
+  for (int Version : {2, 3}) {
+    auto obj =
+        tmpFile("pcg_dwarf" + std::to_string(Version) + "_line_offsets.o");
+    std::vector<std::string> args = {
+        "-gdwarf-" + std::to_string(Version), "-fno-lto"};
+    for (auto &f : forcePartitions(4))
+      args.push_back(f);
+    args.insert(args.end(), {"-c", src.string(), "-o", obj.string()});
+    auto compile = ncc(args);
+    ASSERT_EQ(compile.exitCode, 0) << compile.err;
+
+    auto verify = exec(tool.path, {"--verify", obj.string()});
+    EXPECT_EQ(verify.exitCode, 0)
+        << "DWARF " << Version
+        << " encoded DW_AT_stmt_list as an unrebased DW_FORM_data4\n"
+        << verify.out << verify.err;
+  }
+}
+
+// .debug_aranges stores a plain .debug_info unit offset in each contribution.
+// Without rebasing, every partition's address ranges claim to describe CU 0:
+// the section remains structurally valid, but address-to-source lookup selects
+// the wrong compile unit for every partition after the first.
+TEST_F(DebugTest, MachOParallelCodegenRebasesArangesUnitOffsets) {
+  if (!isDarwin())
+    GTEST_SKIP() << "Mach-O is the only format that offsets DWARF by value";
+
+  auto tool = findDwarfDump();
+  if (tool.path.empty())
+    GTEST_SKIP() << "dwarfdump not available";
+
+  StrictParallelCodegen Strict;
+  auto src = tmpFile("pcg_aranges.c");
+  writeFile(src, makePartitionedDebugSource("arange_partition_", 24));
+
+  auto obj = tmpFile("pcg_aranges.o");
+  std::vector<std::string> args = {"-gdwarf-5", "-gdwarf-aranges", "-fno-lto"};
+  for (auto &f : forcePartitions(4))
+    args.push_back(f);
+  args.insert(args.end(), {"-c", src.string(), "-o", obj.string()});
+  auto r = ncc(args);
+  ASSERT_EQ(r.exitCode, 0) << r.err;
+
+  auto dump = tool.isLibdwarf
+                  ? exec(tool.path, {"-r", "-v", obj.string()})
+                  : exec(tool.path, {"--debug-aranges", obj.string()});
+  ASSERT_EQ(dump.exitCode, 0) << dump.err;
+  const std::regex NonZeroCUOffset(
+      R"((cu_offset\s*=\s*|overall offset\s*=\s*)0x0*[1-9a-fA-F][0-9a-fA-F]*)");
+  EXPECT_TRUE(std::regex_search(dump.out, NonZeroCUOffset))
+      << "all merged address ranges still point at the first compile unit\n"
+      << dump.out;
+}
+
+TEST_F(DebugTest, MachOParallelCodegenDropsIncompleteAppleAccelerators) {
+  if (!isDarwin())
+    GTEST_SKIP() << "Apple accelerator tables are Mach-O-specific";
+
+  StrictParallelCodegen Strict;
+  constexpr int NumFns = 24;
+  auto src = tmpFile("pcg_apple_names.c");
+  writeFile(src, makePartitionedDebugSource("apple_partition_", NumFns));
+
+  auto obj = tmpFile("pcg_apple_names.o");
+  std::vector<std::string> args = {"-gdwarf-4", "-gpubnames", "-fno-lto"};
+  for (auto &f : forcePartitions(4))
+    args.push_back(f);
+  args.insert(args.end(), {"-c", src.string(), "-o", obj.string()});
+  auto compile = ncc(args);
+  ASSERT_EQ(compile.exitCode, 0) << compile.err;
+
+  auto sections = exec("otool", {"-l", obj.string()});
+  ASSERT_EQ(sections.exitCode, 0) << sections.err;
+  EXPECT_FALSE(sections.contains("__apple_"))
+      << "a concatenated Apple hash table indexes only partition zero";
+
+  auto tool = findDwarfDump();
+  if (tool.path.empty())
+    GTEST_SKIP() << "dwarfdump not available";
+  auto dump = dwarfDumpInfo(tool, obj.string());
+  ASSERT_EQ(dump.exitCode, 0) << dump.err;
+  for (int I = 0; I < NumFns; ++I)
+    EXPECT_TRUE(dump.contains("apple_partition_" + std::to_string(I)))
+        << "dropping the derived index must not drop its underlying DIE";
 }
 
 TEST_F(DebugTest, WindowsDefaultDebug) {

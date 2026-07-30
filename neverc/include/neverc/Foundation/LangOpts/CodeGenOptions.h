@@ -36,6 +36,11 @@ protected:
 
 class CodeGenOptions : public CodeGenOptionsBase {
 public:
+  enum class BuiltinMimallocInjectionKind {
+    EveryModule,
+    ProgramEntryOnly,
+  };
+
   enum InliningMethod {
     NormalInlining,    // Use the standard function inlining pass.
     OnlyHintInlining,  // Inline only (implicitly) hinted functions.

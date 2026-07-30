@@ -1777,8 +1777,16 @@ gtest_discover_tests(neverc-plugin-lto-input-tests
 # their callers reserve, because nothing shorter can tell a complete answer
 # from a truncated one.
 add_executable(neverc-support-tests
+  SupportAPFloatTests.cpp
+  SupportAPIntTests.cpp
   SupportBufferTests.cpp
+  SupportCommandLineTests.cpp
   SupportHashTests.cpp
+  SupportJSONTests.cpp
+  SupportMemoryTests.cpp
+  SupportSmallPtrSetTests.cpp
+  SupportStringMapTests.cpp
+  SupportUnicodeTests.cpp
 )
 target_link_libraries(neverc-support-tests PRIVATE
   GTest::gtest

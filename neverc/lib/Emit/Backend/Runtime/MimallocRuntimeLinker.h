@@ -17,11 +17,16 @@ namespace neverc {
 /// allocation API entry points retain external linkage.
 struct MimallocRuntimeLinkerPass
     : public llvm::PassInfoMixin<MimallocRuntimeLinkerPass> {
+  explicit MimallocRuntimeLinkerPass(bool RequiresProgramEntry = false)
+      : RequiresProgramEntry(RequiresProgramEntry) {}
 
   llvm::PreservedAnalyses run(llvm::Module &M,
                               llvm::ModuleAnalysisManager &MAM);
 
   static bool isRequired() { return true; }
+
+private:
+  bool RequiresProgramEntry;
 };
 
 } // namespace neverc

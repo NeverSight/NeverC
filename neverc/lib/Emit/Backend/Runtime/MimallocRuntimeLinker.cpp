@@ -1,6 +1,7 @@
 #include "Backend/Runtime/MimallocRuntimeLinker.h"
 #include "Backend/Runtime/RuntimeLinkerUtils.h"
 #include "neverc/Foundation/Builtin/BuiltinMimalloc.h"
+#include "neverc/Foundation/IRNames.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/GlobalAlias.h"
@@ -14,18 +15,28 @@ using namespace neverc;
 namespace {
 
 constexpr StringLiteral MimallocRuntimeMetadata = "neverc.mimalloc.runtime";
-constexpr StringLiteral MimallocRuntimeLocalPrefix =
-    "__neverc_mimalloc_local.";
+constexpr StringLiteral MimallocRuntimeLocalPrefix = "__neverc_mimalloc_local.";
+
+bool definesProgramEntry(const Module &M) {
+  for (const Function &F : M)
+    if (!F.isDeclarationForLinker() &&
+        F.hasFnAttribute(IRNames::ProgramEntryAttribute))
+      return true;
+  return false;
+}
 
 bool isMallocOverrideSymbol(StringRef Name) {
-#define NEVERC_MALLOC_OVERRIDE_EXACT(sym) if (Name == #sym) return true;
-#define NEVERC_MALLOC_OVERRIDE_PREFIX(pfx) if (Name.starts_with(#pfx)) return true;
+#define NEVERC_MALLOC_OVERRIDE_EXACT(sym)                                      \
+  if (Name == #sym)                                                            \
+    return true;
+#define NEVERC_MALLOC_OVERRIDE_PREFIX(pfx)                                     \
+  if (Name.starts_with(#pfx))                                                  \
+    return true;
 #include "neverc/Foundation/Builtin/MallocOverrideSymbols.def"
   return false;
 }
 
-Function *getOrCreateOnceWrapper(Module &M, Function &Target,
-                                 StringRef Role) {
+Function *getOrCreateOnceWrapper(Module &M, Function &Target, StringRef Role) {
   if (!Target.getReturnType()->isVoidTy() || Target.arg_size() != 0)
     return &Target;
 
@@ -49,14 +60,13 @@ Function *getOrCreateOnceWrapper(Module &M, Function &Target,
   BasicBlock *Call = BasicBlock::Create(Context, "call", Wrapper);
   BasicBlock *Return = BasicBlock::Create(Context, "return", Wrapper);
   IRBuilder<> Builder(Entry);
-  LoadInst *AlreadyCalled =
-      Builder.CreateLoad(Type::getInt1Ty(Context), Guard);
+  LoadInst *AlreadyCalled = Builder.CreateLoad(Type::getInt1Ty(Context), Guard);
   AlreadyCalled->setVolatile(true);
   Builder.CreateCondBr(AlreadyCalled, Return, Call);
 
   Builder.SetInsertPoint(Call);
-  StoreInst *MarkCalled = Builder.CreateStore(ConstantInt::getTrue(Context),
-                                               Guard);
+  StoreInst *MarkCalled =
+      Builder.CreateStore(ConstantInt::getTrue(Context), Guard);
   MarkCalled->setVolatile(true);
   CallInst *Invoke = Builder.CreateCall(&Target);
   Invoke->setCallingConv(Target.getCallingConv());
@@ -132,8 +142,11 @@ void prepareRuntimeStructors(Module &M, StringRef GlobalName, StringRef Role) {
 
 } // namespace
 
-PreservedAnalyses
-MimallocRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
+PreservedAnalyses MimallocRuntimeLinkerPass::run(Module &M,
+                                                 ModuleAnalysisManager &) {
+  if (RequiresProgramEntry && !definesProgramEntry(M))
+    return PreservedAnalyses::all();
+
   Triple TT(M.getTargetTriple());
   StringRef Embedded = BuiltinMimalloc::getEmbeddedBitcode(TT);
   if (Embedded.empty())
@@ -208,8 +221,7 @@ MimallocRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
     if (GA.hasLocalLinkage())
       continue;
     GlobalObject *Aliasee = GA.getAliaseeObject();
-    if (!Aliasee ||
-        !hasRuntimeDefinitionTag(*Aliasee, MimallocRuntimeMetadata))
+    if (!Aliasee || !hasRuntimeDefinitionTag(*Aliasee, MimallocRuntimeMetadata))
       continue;
     GA.setLinkage(GlobalValue::WeakODRLinkage);
     GA.setVisibility(GlobalValue::DefaultVisibility);
@@ -244,8 +256,7 @@ MimallocRuntimeLinkerPass::run(Module &M, ModuleAnalysisManager &) {
     if (!GV)
       return isa<PoisonValue>(C) || isa<UndefValue>(C);
     if (auto *F = dyn_cast<Function>(GV))
-      return IsMimallocFn(*F) &&
-             !isMallocOverrideSymbol(F->getName());
+      return IsMimallocFn(*F) && !isMallocOverrideSymbol(F->getName());
     if (auto *GVar = dyn_cast<GlobalVariable>(GV))
       return IsMimallocGlobal(*GVar) && !GVar->hasSection();
     return false;

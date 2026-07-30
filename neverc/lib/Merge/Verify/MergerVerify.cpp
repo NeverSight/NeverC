@@ -26,6 +26,7 @@
 //
 //===------------------------------------------------------------------===//
 
+#include "Common/DwarfRebase.h"
 #include "Common/MergerCommon.h"
 #include "neverc/Merge/Merger.h"
 
@@ -60,15 +61,11 @@ namespace {
 /// these sections' bytes are deliberately not any single input's.  The
 /// byte-window comparison below therefore cannot apply to them.
 ///
-/// Names are the on-disk spelling, which Mach-O truncates to 16 characters
-/// ("__debug_str_offsets" becomes "__debug_str_offs").
-///
 /// ELF and COFF are not exempt: both express the same references as
 /// relocations, which the merger re-points instead, leaving the bytes
 /// untouched and fully checkable.
 bool isRebasedMachOSection(StringRef Name) {
-  return Name == "__debug_info" || Name == "__debug_str_offs" ||
-         Name == "__debug_line" || Name == "__debug_names";
+  return dwarfSectionContentsAreRebased(classifyDwarfSection(Name));
 }
 
 // ---------------------------------------------------------------------------

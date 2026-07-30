@@ -84,6 +84,10 @@ void CompilerInvocationBase::GenerateCodeGenArgs(const CodeGenOptions &Opts,
 #include "neverc/Invoke/Options.td.h"
 #undef CODEGEN_OPTION_WITH_MARSHALLING
 
+  if (Opts.getBuiltinMimallocInjection() ==
+      CodeGenOptions::BuiltinMimallocInjectionKind::ProgramEntryOnly)
+    emitArg(Consumer, OPT_fbuiltin_mimalloc_requires_program_entry);
+
   if (Opts.OptimizationLevel > 0) {
     if (Opts.Inlining == CodeGenOptions::NormalInlining)
       emitArg(Consumer, OPT_finline_functions);
@@ -260,6 +264,13 @@ bool CompilerInvocation::ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args,
   PARSE_OPTION_WITH_MARSHALLING(Args, Diags, __VA_ARGS__)
 #include "neverc/Invoke/Options.td.h"
 #undef CODEGEN_OPTION_WITH_MARSHALLING
+
+  using MimallocInjection =
+      CodeGenOptions::BuiltinMimallocInjectionKind;
+  Opts.setBuiltinMimallocInjection(
+      Args.hasArg(OPT_fbuiltin_mimalloc_requires_program_entry)
+          ? MimallocInjection::ProgramEntryOnly
+          : MimallocInjection::EveryModule);
 
   if (const Arg *A = Args.getLastArg(options::OPT_finline_functions,
                                     options::OPT_finline_hint_functions,

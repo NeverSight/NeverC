@@ -2572,6 +2572,51 @@ bool hasNcExtension(const InputInfoList &Inputs) {
   });
 }
 
+/// Mimalloc replaces the process heap, so it belongs only in hosted executable
+/// builds.  Explicit -fbuiltin-mimalloc does not override these constraints:
+/// doing so would produce an invalid kernel/freestanding link or let a library
+/// impose allocator and initial-exec TLS policy on its eventual host process.
+bool mustSuppressMimalloc(const ArgList &Args) {
+  const bool IsKernelOrStandalone =
+      Args.hasArg(options::OPT_mkernel,
+                  options::OPT_fms_kernel,
+                  options::OPT_fandroid_kernel_driver_mode) ||
+      Args.hasArg(options::OPT_fdyncode_mode,
+                  options::OPT_ffreestanding);
+  const bool IsLibrary =
+      Args.hasArg(options::OPT_shared,
+                  options::OPT_dynamiclib,
+                  options::OPT_bundle) ||
+      Args.hasArg(options::OPT_create_dll,
+                  options::OPT_create_dll_debug,
+                  options::OPT_emit_static_lib);
+  const bool HasNoLibc =
+      Args.hasArg(options::OPT_nostdlib,
+                  options::OPT_nodefaultlibs,
+                  options::OPT_nolibc);
+  return Args.hasArg(options::OPT_fno_builtin) ||
+         IsKernelOrStandalone || IsLibrary || HasNoLibc;
+}
+
+enum class MimallocInjectionMode {
+  Disabled,
+  Default,
+  Explicit,
+};
+
+MimallocInjectionMode getMimallocInjectionMode(const ArgList &Args) {
+  if (mustSuppressMimalloc(Args))
+    return MimallocInjectionMode::Disabled;
+
+  const Arg *Last = Args.getLastArg(options::OPT_fbuiltin_mimalloc,
+                                    options::OPT_fno_builtin_mimalloc);
+  if (!Last)
+    return MimallocInjectionMode::Default;
+  return Last->getOption().matches(options::OPT_fbuiltin_mimalloc)
+             ? MimallocInjectionMode::Explicit
+             : MimallocInjectionMode::Disabled;
+}
+
 void addNeverCFeatureFlags(const ArgList &Args, ArgStringList &CmdArgs,
                            const InputInfoList &Inputs) {
   bool IsNcInput = hasNcExtension(Inputs);
@@ -2593,42 +2638,23 @@ void addNeverCFeatureFlags(const ArgList &Args, ArgStringList &CmdArgs,
   Args.AddLastArg(CmdArgs, options::OPT_fstrhash_fold);
   Args.AddLastArg(CmdArgs, options::OPT_fno_strhash_fold);
 
-  // mimalloc replaces the libc heap, so it is on wherever there is a libc heap
-  // to replace and suppressed where there is not:
-  //   - -fno-builtin is active (no CRT override makes sense)
-  //   - -mkernel, -fms-kernel and -fandroid-kernel-driver-mode build kernel
-  //     images, which have no userspace heap; mimalloc's backend reaches for
-  //     mmap/VirtualAlloc and thread-locals that do not exist there
-  //   - -fdyncode-mode is active (HeapArenaPass handles heap)
-  //   - -ffreestanding is active (no libc to override)
-  //   - -shared / -dynamiclib build a library.  Replacing malloc is a
-  //     process-wide decision that belongs to whoever links the program, not
-  //     to a library it happens to load; mimalloc's thread-local heap also
-  //     needs the initial-exec TLS model, which a shared object cannot use
-  //     (R_X86_64_TPOFF32 is rejected by the linker).
-  //   - -nostdlib / -nodefaultlibs leave nothing to resolve mimalloc's own
-  //     libc dependencies (clock_gettime, mmap, ...) against, so injecting it
-  //     would turn a working link into undefined symbols.
-  bool SuppressMimalloc =
-      Args.hasArg(options::OPT_fno_builtin) ||
-      Args.hasArg(options::OPT_mkernel) ||
-      Args.hasArg(options::OPT_fms_kernel) ||
-      Args.hasArg(options::OPT_fandroid_kernel_driver_mode) ||
-      Args.hasArg(options::OPT_fdyncode_mode) ||
-      Args.hasArg(options::OPT_ffreestanding) ||
-      Args.hasArg(options::OPT_shared) ||
-      Args.hasArg(options::OPT_dynamiclib) ||
-      Args.hasArg(options::OPT_nostdlib) ||
-      Args.hasArg(options::OPT_nodefaultlibs);
-  // Spelled out either way rather than left to the cc1 default: the driver is
-  // the only layer that knows about the suppressions above, and cc1 defaults
-  // this off, so silence here would mean off everywhere.
-  bool EnableMimalloc =
-      !SuppressMimalloc &&
-      Args.hasFlag(options::OPT_fbuiltin_mimalloc,
-                   options::OPT_fno_builtin_mimalloc, /*Default=*/true);
-  CmdArgs.push_back(EnableMimalloc ? "-fbuiltin-mimalloc"
-                                   : "-fno-builtin-mimalloc");
+  // The driver owns both the default and the non-hosted/library suppressions.
+  // Default injection is further restricted in the backend to a translation
+  // unit defining a program entry point.  Besides avoiding duplicate runtimes,
+  // that keeps a separately compiled object safe to place in a shared library;
+  // an explicit request retains the historical per-TU embedding behavior.
+  switch (getMimallocInjectionMode(Args)) {
+  case MimallocInjectionMode::Disabled:
+    CmdArgs.push_back("-fno-builtin-mimalloc");
+    break;
+  case MimallocInjectionMode::Default:
+    CmdArgs.push_back("-fbuiltin-mimalloc");
+    CmdArgs.push_back("-fbuiltin-mimalloc-requires-program-entry");
+    break;
+  case MimallocInjectionMode::Explicit:
+    CmdArgs.push_back("-fbuiltin-mimalloc");
+    break;
+  }
 
   if (!Args.hasArg(options::OPT_fno_builtin) &&
       !Args.hasArg(options::OPT_ffreestanding) &&

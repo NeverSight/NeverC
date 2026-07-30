@@ -9,6 +9,7 @@
 //===--------------------------------------------------------------------===//
 
 #include "neverc/Merge/Merger.h"
+#include "Common/DwarfRebase.h"
 #include "Common/MergerCommon.h"
 #include "neverc/Plugin/Host/NativeRelocationFacts.h"
 
@@ -34,15 +35,216 @@
 #include <optional>
 
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <random>
 #include <string>
 #include <vector>
 
 using namespace llvm;
 using namespace neverc::merge;
+
+TEST(DwarfRebaseTest, RecognizesSupportedMachOAndELFSectionNames) {
+  EXPECT_EQ(classifyDwarfSection("__debug_aranges"), DwarfSection::Aranges);
+  EXPECT_EQ(classifyDwarfSection("__debug_pubnames"), DwarfSection::PubNames);
+  EXPECT_EQ(classifyDwarfSection("__debug_gnu_pubt"), DwarfSection::PubTypes);
+  EXPECT_EQ(classifyDwarfSection("__debug_str_offs"),
+            DwarfSection::StrOffsets);
+  EXPECT_EQ(classifyDwarfSection(".debug_types"), DwarfSection::Types);
+  EXPECT_EQ(classifyDwarfSection(".debug_frame"), DwarfSection::Frame);
+  EXPECT_EQ(classifyDwarfSection(".debug_rnglists"), DwarfSection::RngLists);
+  EXPECT_EQ(classifyDwarfSection("__apple_names"), DwarfSection::Count);
+}
+
+TEST(DwarfRebaseTest, IdentifiesEverySectionWhoseBytesAreRewritten) {
+  constexpr DwarfSection Rewritten[] = {
+      DwarfSection::Info,       DwarfSection::Types,
+      DwarfSection::Aranges,    DwarfSection::PubNames,
+      DwarfSection::PubTypes,   DwarfSection::Line,
+      DwarfSection::Frame,      DwarfSection::StrOffsets,
+      DwarfSection::Names,
+  };
+  for (DwarfSection Section : Rewritten)
+    EXPECT_TRUE(dwarfSectionContentsAreRebased(Section));
+
+  constexpr DwarfSection CopiedVerbatim[] = {
+      DwarfSection::Abbrev,   DwarfSection::Str,      DwarfSection::LineStr,
+      DwarfSection::Ranges,   DwarfSection::RngLists, DwarfSection::Loc,
+      DwarfSection::LocLists, DwarfSection::Addr,     DwarfSection::MacInfo,
+      DwarfSection::Macro,    DwarfSection::Count,
+  };
+  for (DwarfSection Section : CopiedVerbatim)
+    EXPECT_FALSE(dwarfSectionContentsAreRebased(Section));
+}
+
+TEST(DwarfRebaseTest, MissingAbbreviationsStillEnterValidation) {
+  PartitionDwarf Part;
+  Part.record("__debug_info", 0, 0, 1);
+  EXPECT_TRUE(Part.needsRebase());
+  const PartitionDwarf Parts[] = {Part};
+  char InvalidInfo = 0;
+  EXPECT_FALSE(rebaseMergedDwarf(
+      ArrayRef<PartitionDwarf>(Parts), [&](unsigned) {
+        return MutableArrayRef<char>(&InvalidInfo, 1);
+      }, /*IsLittleEndian=*/true));
+}
+
+TEST(DwarfRebaseTest, TypeUnitsWithoutAbbreviationsEnterValidation) {
+  PartitionDwarf Part;
+  Part.record(DwarfSection::Types, 0, 0, 1);
+
+  EXPECT_TRUE(Part.needsRebase());
+}
+
+TEST(DwarfRebaseTest, RejectsOverflowingContributionBounds) {
+  PartitionDwarf Part;
+  Part.record("__debug_info", 0, std::numeric_limits<uint64_t>::max(), 2);
+  Part.record("__debug_abbrev", 1, 0, 1);
+  const PartitionDwarf Parts[] = {Part};
+  char Data = 0;
+
+  EXPECT_FALSE(rebaseMergedDwarf(
+      ArrayRef<PartitionDwarf>(Parts), [&](unsigned) {
+        return MutableArrayRef<char>(&Data, 1);
+      }, /*IsLittleEndian=*/true));
+}
+
+TEST(DwarfRebaseTest, RewritesOffsetsEncodedThroughIndirectForms) {
+  std::array<char, 17> Info = {
+      0x0d, 0, 0, 0, // unit_length
+      4,    0,       // version
+      0,    0, 0, 0, // abbreviation offset
+      8,             // address size
+      1,             // abbreviation code
+      0x0e,          // indirect form resolves to DW_FORM_strp
+      0,    0, 0, 0, // string offset
+  };
+  std::array<char, 8> Abbrev = {
+      1,    0x11, 0, // code, DW_TAG_compile_unit, no children
+      3,    0x16,    // DW_AT_name, DW_FORM_indirect
+      0,    0,       // end of attributes
+      0,             // end of declarations
+  };
+
+  PartitionDwarf Part;
+  Part.record("__debug_info", 0, 100, Info.size());
+  Part.record("__debug_abbrev", 1, 8, Abbrev.size());
+  Part.record("__debug_str", 2, 32, 1);
+  DwarfSlices Slices;
+  Slices[dwarfSectionIndex(DwarfSection::Info)] = Info;
+  Slices[dwarfSectionIndex(DwarfSection::Abbrev)] = Abbrev;
+
+  ASSERT_TRUE(rebasePartitionDwarf(Slices, Part, /*IsLittleEndian=*/true));
+  EXPECT_EQ(static_cast<unsigned char>(Info[6]), 8u);
+  EXPECT_EQ(static_cast<unsigned char>(Info[13]), 32u);
+}
+
+TEST(DwarfRebaseTest, RewritesPreDwarf4DataFormSectionOffsets) {
+  std::array<char, 16> Info = {
+      0x0c, 0, 0, 0, // unit_length
+      3,    0,       // version
+      0,    0, 0, 0, // abbreviation offset
+      8,             // address size
+      1,             // abbreviation code
+      0,    0, 0, 0, // DW_AT_stmt_list, encoded as DW_FORM_data4
+  };
+  std::array<char, 8> Abbrev = {
+      1,    0x11, 0, // code, DW_TAG_compile_unit, no children
+      0x10, 0x06,    // DW_AT_stmt_list, DW_FORM_data4
+      0,    0,       // end of attributes
+      0,             // end of declarations
+  };
+
+  PartitionDwarf Part;
+  Part.record("__debug_info", 0, 100, Info.size());
+  Part.record("__debug_abbrev", 1, 8, Abbrev.size());
+  Part.record("__debug_line", 2, 64, 1);
+  DwarfSlices Slices;
+  Slices[dwarfSectionIndex(DwarfSection::Info)] = Info;
+  Slices[dwarfSectionIndex(DwarfSection::Abbrev)] = Abbrev;
+
+  ASSERT_TRUE(rebasePartitionDwarf(Slices, Part, /*IsLittleEndian=*/true));
+  EXPECT_EQ(static_cast<unsigned char>(Info[12]), 64u);
+}
+
+TEST(DwarfRebaseTest, RewritesDwarf4TypeUnitAbbreviationOffsets) {
+  std::array<char, 24> Types = {
+      0x14, 0, 0, 0, // unit_length
+      4,    0,       // version
+      0,    0, 0, 0, // abbreviation offset
+      8,             // address size
+      1,    2, 3, 4, 5, 6, 7, 8, // type signature
+      0x17, 0, 0, 0, // type DIE offset
+      1,             // abbreviation code
+  };
+  std::array<char, 6> Abbrev = {
+      1, 0x41, 0, // code, DW_TAG_type_unit, no children
+      0, 0,       // end of attributes
+      0,          // end of declarations
+  };
+
+  PartitionDwarf Part;
+  Part.record("__debug_types", 0, 96, Types.size());
+  Part.record("__debug_abbrev", 1, 32, Abbrev.size());
+  DwarfSlices Slices;
+  Slices[dwarfSectionIndex(DwarfSection::Types)] = Types;
+  Slices[dwarfSectionIndex(DwarfSection::Abbrev)] = Abbrev;
+
+  ASSERT_TRUE(rebasePartitionDwarf(Slices, Part, /*IsLittleEndian=*/true));
+  EXPECT_EQ(static_cast<unsigned char>(Types[6]), 32u);
+}
+
+TEST(DwarfRebaseTest, RewritesPublicNameAndFrameReferences) {
+  std::array<char, 18> PubNames = {
+      0x0e, 0, 0, 0, // unit_length
+      2,    0,       // version
+      0,    0, 0, 0, // compile-unit offset
+      4,    0, 0, 0, // compile-unit length
+      0,    0, 0, 0, // end of entries
+  };
+  std::array<char, 16> Frame = {
+      4, 0, 0, 0,             // CIE length
+      char(0xff), char(0xff), char(0xff), char(0xff), // CIE marker
+      4, 0, 0, 0,             // FDE length
+      0, 0, 0, 0,             // FDE's CIE section offset
+  };
+
+  PartitionDwarf Part;
+  Part.record("__debug_pubnames", 0, 20, PubNames.size());
+  Part.record("__debug_info", 1, 48, 4);
+  Part.record("__debug_frame", 2, 80, Frame.size());
+  DwarfSlices Slices;
+  Slices[dwarfSectionIndex(DwarfSection::PubNames)] = PubNames;
+  Slices[dwarfSectionIndex(DwarfSection::Frame)] = Frame;
+
+  ASSERT_TRUE(rebasePartitionDwarf(Slices, Part, /*IsLittleEndian=*/true));
+  EXPECT_EQ(static_cast<unsigned char>(PubNames[6]), 48u);
+  EXPECT_EQ(static_cast<unsigned char>(Frame[12]), 80u);
+}
+
+TEST(DwarfRebaseTest, RejectsTruncatedLebWithoutLosingParserProgress) {
+  std::array<char, 12> Info = {
+      8,    0, 0, 0, // unit_length
+      4,    0,       // version
+      0,    0, 0, 0, // abbreviation offset
+      8,             // address size
+      char(0x80),    // unterminated abbreviation-code ULEB128
+  };
+  std::array<char, 1> Abbrev = {0};
+
+  PartitionDwarf Part;
+  Part.record("__debug_info", 0, 100, Info.size());
+  Part.record("__debug_abbrev", 1, 8, Abbrev.size());
+  DwarfSlices Slices;
+  Slices[dwarfSectionIndex(DwarfSection::Info)] = Info;
+  Slices[dwarfSectionIndex(DwarfSection::Abbrev)] = Abbrev;
+
+  EXPECT_FALSE(
+      rebasePartitionDwarf(Slices, Part, /*IsLittleEndian=*/true));
+}
 
 // ---------------------------------------------------------------------------
 // Helpers: minimal valid object file builders

@@ -7,6 +7,7 @@
 #include "neverc/Foundation/Diagnostic/DiagnosticFrontend.h"
 #include "neverc/Emit/ABI/ABIFunctionInfo.h"
 #include "neverc/Foundation/Builtin/Builtins.h"
+#include "neverc/Foundation/IRNames.h"
 #include "neverc/Tree/Core/Attr.h"
 #include "neverc/Tree/Core/TreeContext.h"
 #include "llvm/ADT/ArrayRef.h"
@@ -535,10 +536,14 @@ NEVERC_HOT void FunctionEmitter::startFunction(
     Fn->addFnAttr(llvm::Attribute::StrictFP);
   }
 
+  const bool IsProgramEntry =
+      FD && (FD->isMain() || FD->isMSVCRTEntryPoint());
+  if (IsProgramEntry)
+    Fn->addFnAttr(IRNames::ProgramEntryAttribute);
+
   // If a custom alignment is used, force realigning to this alignment on
   // any main function which certainly will need it.
-  if (FD && ((FD->isMain() || FD->isMSVCRTEntryPoint()) &&
-             ME.getCodeGenOpts().StackAlignment))
+  if (IsProgramEntry && ME.getCodeGenOpts().StackAlignment)
     Fn->addFnAttr("stackrealign");
 
   // "main" doesn't need to zero out call-used registers.

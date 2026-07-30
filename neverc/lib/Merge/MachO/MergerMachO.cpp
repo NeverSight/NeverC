@@ -45,6 +45,15 @@ namespace neverc::merge {
 
 namespace {
 
+constexpr StringLiteral MachODwarfSegment = "__DWARF";
+constexpr StringLiteral MachOAppleAcceleratorPrefix = "__apple_";
+
+bool isPartitionLocalAppleAccelerator(StringRef SegmentName,
+                                      StringRef SectionName) {
+  return SegmentName == MachODwarfSegment &&
+         SectionName.starts_with(MachOAppleAcceleratorPrefix);
+}
+
 template <typename BufT>
 bool mergeMachO64Impl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
                       const Options &Opts) {
@@ -242,6 +251,17 @@ bool mergeMachO64Impl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
         continue;
       }
 
+      // Apple accelerator sections contain one unchainable hash-table header.
+      // Appending one table per codegen partition leaves only partition zero
+      // searchable, which is worse than having no accelerator: LLDB trusts the
+      // incomplete index and misses valid DIEs.  Omit these derived indexes so
+      // consumers build a complete index from .debug_info; dsymutil will emit
+      // a fresh accelerator table when it creates the final dSYM.
+      if (isPartitionLocalAppleAccelerator(SegName, SectName)) {
+        ++PartSecOrdinal;
+        continue;
+      }
+
       // Rename "__common" -> "__bss" so the host linker does not treat the
       // merged zerofill data as C COMMON storage (which it would freely
       // re-pack per-symbol, discarding our precomputed per-partition
@@ -370,7 +390,15 @@ bool mergeMachO64Impl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
               OutSym.n_value += OffIt->second;
           }
         } else {
-          OutSym.n_sect = 0;
+          // We deliberately omit derived sections such as __apple_* and the
+          // call-graph profile, but valid objects do not define symbols in
+          // them.  Keeping N_SECT while changing n_sect to NO_SECT would emit
+          // a malformed symbol; changing it to undefined would silently alter
+          // linkage.  Refuse an input that violates that invariant.
+          errs() << "neverc: Mach-O relocatable merge: symbol '" << Name
+                 << "' is defined in omitted section ordinal "
+                 << unsigned(NL.n_sect) << "; refusing to merge\n";
+          return false;
         }
       } else {
         OutSym.n_sect = 0;
@@ -497,6 +525,14 @@ bool mergeMachO64Impl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
             }
             DeferredFixups.push_back({mi, ri, targetMIdx, OrigSec, RE.PartIdx});
           }
+        } else if (OrigSec != MO::R_ABS) {
+          // A local relocation into an omitted section cannot be remapped.
+          // Leaving its old ordinal in place would make it target whichever
+          // unrelated merged section happens to receive that number.
+          errs() << "neverc: Mach-O relocatable merge: relocation references "
+                    "omitted section ordinal "
+                 << OrigSec << "; refusing to merge\n";
+          return false;
         }
       }
     }

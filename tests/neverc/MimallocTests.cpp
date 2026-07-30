@@ -95,12 +95,159 @@ TEST_F(MimallocTest, KernelModesSuppressDefault) {
   }
 }
 
-// Basic malloc/free/calloc/realloc should work with -fbuiltin-mimalloc
-TEST_F(MimallocTest, BasicAllocations) {
-  compileRunAndCheck(
-      "mimalloc_basic",
-      (testDir() / "mimalloc/test_mimalloc_basic.c").string(),
-      "-fbuiltin-mimalloc", 0, "test_mimalloc_basic: ALL PASSED");
+// A library must not choose its host process's allocator, and an invocation
+// without libc cannot satisfy mimalloc's own OS dependencies.  Exercise every
+// driver spelling here because these options do not all canonicalize to
+// -shared before frontend feature flags are selected.
+TEST_F(MimallocTest, LibraryAndNoLibcModesSuppressDefault) {
+  auto Source = tmpFile("mimalloc_incompatible_mode.c");
+  writeFile(Source, "int exported_function(void) { return 0; }\n");
+
+  struct Mode {
+    const char *Label;
+    std::vector<std::string> Args;
+  };
+  const Mode Modes[] = {
+      {"elf_shared", {"--target=x86_64-unknown-linux-gnu", "-shared"}},
+      {"macho_dynamiclib", {"-dynamiclib"}},
+      {"macho_bundle", {"-bundle"}},
+      {"coff_dll", {"--target=x86_64-pc-windows-msvc", "-create-dll"}},
+      {"coff_debug_dll",
+       {"--target=x86_64-pc-windows-msvc", "-create-dll-debug"}},
+      {"static_library", {"--emit-static-lib"}},
+      {"nolibc", {"--target=x86_64-unknown-linux-gnu", "-nolibc"}},
+      {"nodefaultlibs",
+       {"--target=x86_64-unknown-linux-gnu", "-nodefaultlibs"}},
+      {"nostdlib", {"--target=x86_64-unknown-linux-gnu", "-nostdlib"}},
+  };
+
+  for (const Mode &M : Modes) {
+    SCOPED_TRACE(M.Label);
+    std::vector<std::string> Args = M.Args;
+    Args.insert(Args.end(),
+                {"-fbuiltin-mimalloc", "-###", "-c", Source.string()});
+    auto R = ncc(Args);
+    ASSERT_EQ(R.exitCode, 0) << R.err;
+    const std::string Jobs = R.err + R.out;
+    EXPECT_NE(Jobs.find("\"-fno-builtin-mimalloc\""), std::string::npos)
+        << Jobs;
+    EXPECT_EQ(Jobs.find("\"-fbuiltin-mimalloc\""), std::string::npos) << Jobs;
+  }
+}
+
+TEST_F(MimallocTest, DefaultRuntimeIsOwnedByProgramEntryTranslationUnit) {
+  auto HelperSource = tmpFile("mimalloc_default_helper.c");
+  auto MainSource = tmpFile("mimalloc_default_main.c");
+  auto HelperIR = tmpFile("mimalloc_default_helper.ll");
+  auto MainIR = tmpFile("mimalloc_default_main.ll");
+  writeFile(HelperSource, "int WinMain(void) { return 42; }\n"
+                          "int helper(void) { return WinMain(); }\n");
+  writeFile(MainSource, "int main(void) { return 0; }\n");
+
+  auto EmitIR = [&](const std::filesystem::path &Source,
+                    const std::filesystem::path &Output) {
+    std::vector<std::string> Args = {
+        "-std=c11",   "-fno-lto",      "-O0", "-S",
+        "-emit-llvm", Source.string(), "-o",  Output.string(),
+    };
+    for (const std::string &Flag : sysrootFlags())
+      Args.push_back(Flag);
+    for (const std::string &Flag : archFlags())
+      Args.push_back(Flag);
+    return ncc(Args);
+  };
+
+  auto HelperResult = EmitIR(HelperSource, HelperIR);
+  ASSERT_EQ(HelperResult.exitCode, 0) << HelperResult.err;
+  auto MainResult = EmitIR(MainSource, MainIR);
+  ASSERT_EQ(MainResult.exitCode, 0) << MainResult.err;
+
+  constexpr std::string_view RuntimeFunction = "@mi_version(";
+  EXPECT_EQ(readFile(HelperIR).find(RuntimeFunction), std::string::npos)
+      << "an entry spelling with no entry semantics on this target must not "
+         "claim the process runtime";
+  EXPECT_NE(readFile(MainIR).find(RuntimeFunction), std::string::npos)
+      << "the program entry translation unit must own the default runtime";
+}
+
+TEST_F(MimallocTest, LLVMBitcodeWithoutEntryRequiresExplicitRuntimeInjection) {
+  auto Source = tmpFile("mimalloc_bitcode_input.c");
+  auto Input = tmpFile("mimalloc_bitcode_input.bc");
+  auto DefaultOutput = tmpFile("mimalloc_bitcode_default.ll");
+  auto ExplicitOutput = tmpFile("mimalloc_bitcode_explicit.ll");
+  writeFile(Source, "int helper(void) { return 42; }\n");
+
+  std::vector<std::string> CompileArgs = {
+      "-fno-builtin-mimalloc", "-c", "-emit-llvm", Source.string(),
+      "-o",                    Input.string(),
+  };
+  for (const std::string &Flag : sysrootFlags())
+    CompileArgs.push_back(Flag);
+  for (const std::string &Flag : archFlags())
+    CompileArgs.push_back(Flag);
+  auto CompileResult = ncc(CompileArgs);
+  ASSERT_EQ(CompileResult.exitCode, 0) << CompileResult.err;
+
+  auto EmitIR = [&](const std::filesystem::path &Output,
+                    std::initializer_list<const char *> FeatureFlags) {
+    std::vector<std::string> Args = {"-fno-lto", "-O0", "-S", "-emit-llvm"};
+    Args.insert(Args.end(), FeatureFlags.begin(), FeatureFlags.end());
+    Args.insert(Args.end(), {Input.string(), "-o", Output.string()});
+    return ncc(Args);
+  };
+
+  auto DefaultResult = EmitIR(DefaultOutput, {});
+  ASSERT_EQ(DefaultResult.exitCode, 0) << DefaultResult.err;
+  auto ExplicitResult =
+      EmitIR(ExplicitOutput, {"-fbuiltin-mimalloc"});
+  ASSERT_EQ(ExplicitResult.exitCode, 0) << ExplicitResult.err;
+
+  constexpr std::string_view RuntimeFunction = "@mi_version(";
+  EXPECT_EQ(readFile(DefaultOutput).find(RuntimeFunction), std::string::npos)
+      << "bitcode with no frontend entry point must not acquire the process "
+         "allocator implicitly";
+  EXPECT_NE(readFile(ExplicitOutput).find(RuntimeFunction), std::string::npos)
+      << "an explicit request must remain available for LLVM bitcode";
+}
+
+TEST_F(MimallocTest, SeparatelyCompiledHelperLinksIntoELFSharedLibrary) {
+  if (!isLinux())
+    GTEST_SKIP() << "the regression is specific to ELF initial-exec TLS";
+
+  auto Source = tmpFile("mimalloc_default_shared_helper.c");
+  auto Object = tmpFile("mimalloc_default_shared_helper.o");
+  auto Library = tmpFile("libmimalloc_default_shared_helper.so");
+  writeFile(Source, "int exported_function(void) { return 42; }\n");
+
+  std::vector<std::string> CompileArgs = {
+      "-std=c11", "-fPIC", "-c", Source.string(), "-o", Object.string(),
+  };
+  for (const std::string &Flag : sysrootFlags())
+    CompileArgs.push_back(Flag);
+  for (const std::string &Flag : archFlags())
+    CompileArgs.push_back(Flag);
+  auto Compile = ncc(CompileArgs);
+  ASSERT_EQ(Compile.exitCode, 0) << Compile.err;
+
+  std::vector<std::string> LinkArgs = {
+      "-shared",
+      Object.string(),
+      "-o",
+      Library.string(),
+  };
+  for (const std::string &Flag : sysrootFlags())
+    LinkArgs.push_back(Flag);
+  for (const std::string &Flag : archFlags())
+    LinkArgs.push_back(Flag);
+  auto Link = ncc(LinkArgs);
+  EXPECT_EQ(Link.exitCode, 0) << Link.err;
+}
+
+// A hosted executable gets the allocator without an opt-in flag.
+TEST_F(MimallocTest, BasicAllocationsEnabledByDefault) {
+  compileRunAndCheck("mimalloc_basic",
+                     (testDir() / "mimalloc/test_mimalloc_basic.c").string(),
+                     "", 0, "test_mimalloc_basic: ALL PASSED");
 }
 
 TEST_F(MimallocTest, FunctionOnlyConsumer) {

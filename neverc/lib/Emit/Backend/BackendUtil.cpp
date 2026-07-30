@@ -698,9 +698,12 @@ Error GenAssemblyHelper::runBuiltinOptimizationPipeline(
   }
 
   if (LangOpts.BuiltinMimalloc) {
+    const bool RequiresProgramEntry =
+        CodeGenOpts.getBuiltinMimallocInjection() ==
+        CodeGenOptions::BuiltinMimallocInjectionKind::ProgramEntryOnly;
     PB.registerPipelineStartEPCallback(
-        [](ModulePassManager &MPM, OptimizationLevel) {
-          MPM.addPass(MimallocRuntimeLinkerPass());
+        [RequiresProgramEntry](ModulePassManager &MPM, OptimizationLevel) {
+          MPM.addPass(MimallocRuntimeLinkerPass(RequiresProgramEntry));
         });
   }
 
