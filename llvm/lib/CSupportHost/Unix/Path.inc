@@ -219,7 +219,8 @@ std::error_code rename(const Twine &from, const Twine &to) {
 std::error_code access(const Twine &Path, AccessMode Mode) {
   SmallString<128> PathStorage;
   StringRef P = Path.toNullTerminatedStringRef(PathStorage);
-  int err = csupport_access_path(P.begin(), static_cast<int>(Mode));
+  int err = csupport_access_path(
+      P.begin(), static_cast<csupport_access_mode_t>(Mode));
   if (err == EACCES) return make_error_code(errc::permission_denied);
   if (err) return std::error_code(err, std::generic_category());
   return std::error_code();
@@ -332,8 +333,8 @@ std::error_code setLastAccessAndModificationTime(int FD, TimePoint<> AccessTime,
 std::error_code mapped_file_region::init(int FD, uint64_t Offset,
                                          mapmode Mode) {
   assert(Size != 0);
-  int cmode = (Mode == readonly) ? 0 : 1;
-  Mapping = csupport_mmap_file(Size, cmode, FD, Offset);
+  Mapping = csupport_mmap_file(
+      Size, static_cast<csupport_mapped_file_mode_t>(Mode), FD, Offset);
   if (!Mapping)
     return std::error_code(errno, std::generic_category());
   return std::error_code();
@@ -416,9 +417,10 @@ ErrorOr<basic_file_status> directory_entry::status() const {
 /* nativeOpenFlags moved to CSupport/Path.c → csupport_native_open_flags() */
 static int nativeOpenFlags(CreationDisposition Disp, OpenFlags Flags,
                            FileAccess Access) {
-  return csupport_native_open_flags(static_cast<int>(Disp),
-                                    static_cast<int>(Flags),
-                                    static_cast<int>(Access));
+  return csupport_native_open_flags(
+      static_cast<csupport_creation_disposition_t>(Disp),
+      static_cast<csupport_open_flags_t>(Flags),
+      static_cast<csupport_file_access_t>(Access));
 }
 
 std::error_code openFile(const Twine &Name, int &ResultFD,
@@ -578,7 +580,8 @@ Expected<size_t> readNativeFileSlice(file_t FD, MutableArrayRef<char> Buf,
 
 /* File locking moved to CSupport/Path.c → csupport_lock_file/unlock/try */
 std::error_code tryLockFile(int FD, std::chrono::milliseconds Timeout) {
-  int err = csupport_try_lock_file(FD, (unsigned)Timeout.count());
+  int err =
+      csupport_try_lock_file(FD, static_cast<int64_t>(Timeout.count()));
   if (err == 0) return std::error_code();
   if (err == EAGAIN) return make_error_code(errc::no_lock_available);
   return std::error_code(err, std::generic_category());

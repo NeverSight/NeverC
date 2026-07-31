@@ -1128,18 +1128,7 @@ public:
 #include "llvm/Support/YAMLParser.h"
 #include "llvm/Support/YAMLTraits.h"
 
-extern "C" {
-int csupport_path_get_existing_style(const char *path, size_t len);
-int csupport_path_is_traversal_component(const char *comp, size_t len);
-size_t csupport_path_canonicalize(const char *path, size_t len, char *out,
-                                  size_t out_cap);
-}
-#ifndef CSUPPORT_PATH_STYLE_POSIX
-#define CSUPPORT_PATH_STYLE_POSIX 1
-#endif
-#ifndef CSUPPORT_PATH_STYLE_WINDOWS
-#define CSUPPORT_PATH_STYLE_WINDOWS 2
-#endif
+#include "csupport/lpath.h"
 
 #ifndef CMOVE
 #define CMOVE(x) std::move(x)

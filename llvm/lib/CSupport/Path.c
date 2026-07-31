@@ -2,8 +2,10 @@
 #include "include/csupport/lpath.h"
 #include "include/csupport/allocation.h"
 #include "include/csupport/buffer.h"
+#include "include/csupport/lsignals.h"
 #include "include/csupport/types.h"
 #include "llvm/Config/config.h"
+#include "llvm/Config/llvm-config.h"
 #include <assert.h>
 #include <errno.h>
 #include <stdlib.h>
@@ -16,6 +18,9 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <signal.h>
+#if LLVM_ENABLE_THREADS == 1 && defined(HAVE_PTHREAD_H) && HAVE_PTHREAD_H
+#include <pthread.h>
+#endif
 #ifdef __linux__
 #include <sys/sendfile.h>
 #endif
@@ -204,7 +209,7 @@ void csupport_path_native(char *buf, size_t len) {
 #endif
 }
 
-static int is_win_style(int style) {
+static int is_win_style(csupport_path_style_t style) {
   if (style == CSUPPORT_PATH_NATIVE) {
 #ifdef _WIN32
     return 1;
@@ -217,7 +222,24 @@ static int is_win_style(int style) {
          style == CSUPPORT_PATH_WINDOWS_BACKSLASH;
 }
 
-int csupport_path_is_separator(char c, int style) {
+static int prefers_backslash(csupport_path_style_t style) {
+  if (style == CSUPPORT_PATH_WINDOWS ||
+      style == CSUPPORT_PATH_WINDOWS_BACKSLASH)
+    return 1;
+  if (style != CSUPPORT_PATH_NATIVE)
+    return 0;
+#ifdef _WIN32
+  return !LLVM_WINDOWS_PREFER_FORWARD_SLASH;
+#else
+  return 0;
+#endif
+}
+
+static char preferred_separator(csupport_path_style_t style) {
+  return prefers_backslash(style) ? '\\' : '/';
+}
+
+int csupport_path_is_separator(char c, csupport_path_style_t style) {
   if (c == '/') return 1;
   if (is_win_style(style) && c == '\\') return 1;
   return 0;
@@ -228,7 +250,7 @@ static int is_alpha(char c) {
 }
 
 size_t csupport_path_find_first_component(const char *path, size_t len,
-                                          int style) {
+                                          csupport_path_style_t style) {
   if (len == 0) return 0;
 
   if (is_win_style(style)) {
@@ -254,7 +276,7 @@ size_t csupport_path_find_first_component(const char *path, size_t len,
 }
 
 size_t csupport_path_filename_pos_styled(const char *path, size_t len,
-                                         int style) {
+                                         csupport_path_style_t style) {
   if (len > 0 && csupport_path_is_separator(path[len - 1], style))
     return len - 1;
 
@@ -287,7 +309,8 @@ size_t csupport_path_filename_pos_styled(const char *path, size_t len,
   return pos + 1;
 }
 
-size_t csupport_path_root_dir_start(const char *path, size_t len, int style) {
+size_t csupport_path_root_dir_start(const char *path, size_t len,
+                                    csupport_path_style_t style) {
   if (is_win_style(style)) {
     if (len > 2 && path[1] == ':' && csupport_path_is_separator(path[2], style))
       return 2;
@@ -307,7 +330,8 @@ size_t csupport_path_root_dir_start(const char *path, size_t len, int style) {
   return (size_t)-1;
 }
 
-size_t csupport_path_parent_path_end(const char *path, size_t len, int style) {
+size_t csupport_path_parent_path_end(const char *path, size_t len,
+                                    csupport_path_style_t style) {
   size_t end_pos = csupport_path_filename_pos_styled(path, len, style);
   int filename_was_sep = (len > 0 &&
       csupport_path_is_separator(path[end_pos], style));
@@ -333,6 +357,7 @@ void csupport_path_convert_backslash(char *buf, size_t len) {
 int csupport_path_has_extension(const char *path, size_t len,
                                 const char *ext, size_t ext_len) {
   if (len < ext_len) return 0;
+  if (ext_len == 0) return 1;
   size_t fpos = csupport_path_filename_pos(path, len);
   const char *fname = path + fpos;
   size_t flen = len - fpos;
@@ -459,7 +484,13 @@ size_t csupport_path_join(char *buf, size_t buflen,
 }
 
 size_t csupport_path_stem(const char *path, size_t len,
-                          const char **out_stem, int style) {
+                          const char **out_stem,
+                          csupport_path_style_t style) {
+  if (len == 0) {
+    *out_stem = path;
+    return 0;
+  }
+
   size_t fname_pos = csupport_path_filename_pos_styled(path, len, style);
   const char *fname = path + fname_pos;
   size_t fname_len = len - fname_pos;
@@ -479,7 +510,13 @@ size_t csupport_path_stem(const char *path, size_t len,
 }
 
 size_t csupport_path_extension(const char *path, size_t len,
-                               const char **out_ext, int style) {
+                               const char **out_ext,
+                               csupport_path_style_t style) {
+  if (len == 0) {
+    *out_ext = path;
+    return 0;
+  }
+
   size_t fname_pos = csupport_path_filename_pos_styled(path, len, style);
   const char *fname = path + fname_pos;
   size_t fname_len = len - fname_pos;
@@ -501,7 +538,8 @@ size_t csupport_path_extension(const char *path, size_t len,
 }
 
 size_t csupport_path_remove_leading_dotslash(const char *path, size_t len,
-                                             const char **out, int style) {
+                                             const char **out,
+                                             csupport_path_style_t style) {
   const char *p = path;
   size_t remaining = len;
   while (remaining > 2 && p[0] == '.' &&
@@ -519,13 +557,15 @@ static char to_lower_char(char c) {
   return (c >= 'A' && c <= 'Z') ? (char)(c + ('a' - 'A')) : c;
 }
 
-int csupport_path_starts_with_insensitive(const char *path, size_t path_len,
-                                          const char *prefix, size_t prefix_len,
-                                          int style) {
-  if (style == CSUPPORT_PATH_STYLE_WINDOWS ||
-      style == CSUPPORT_PATH_STYLE_WINDOWS_BACKSLASH ||
-      style == CSUPPORT_PATH_STYLE_WINDOWS_SLASH) {
-    if (path_len < prefix_len) return 0;
+static int path_starts_with_relaxed(const char *path, size_t path_len,
+                                    const char *prefix, size_t prefix_len,
+                                    csupport_path_style_t style) {
+  if ((!path && path_len != 0) || (!prefix && prefix_len != 0) ||
+      path_len < prefix_len)
+    return 0;
+  if (prefix_len == 0)
+    return 1;
+  if (is_win_style(style)) {
     for (size_t i = 0; i < prefix_len; i++) {
       int sep_p = csupport_path_is_separator(path[i], style);
       int sep_x = csupport_path_is_separator(prefix[i], style);
@@ -535,17 +575,33 @@ int csupport_path_starts_with_insensitive(const char *path, size_t path_len,
     }
     return 1;
   }
-  if (path_len < prefix_len) return 0;
   return memcmp(path, prefix, prefix_len) == 0;
 }
 
-void csupport_path_make_preferred(char *buf, size_t len, int style) {
-  if (style == CSUPPORT_PATH_STYLE_WINDOWS_BACKSLASH ||
-      style == CSUPPORT_PATH_STYLE_WINDOWS) {
+int csupport_path_starts_with_insensitive(const char *path, size_t path_len,
+                                          const char *prefix, size_t prefix_len,
+                                          csupport_path_style_t style) {
+  return path_starts_with_relaxed(path, path_len, prefix, prefix_len, style);
+}
+
+int csupport_path_starts_with(const char *path, size_t path_len,
+                              const char *prefix, size_t prefix_len,
+                              csupport_path_style_t style) {
+  if (!csupport_path_starts_with_insensitive(
+          path, path_len, prefix, prefix_len, style))
+    return 0;
+  return path_len == prefix_len ||
+         csupport_path_is_separator(path[prefix_len], style);
+}
+
+void csupport_path_make_preferred(char *buf, size_t len,
+                                  csupport_path_style_t style) {
+  if (prefers_backslash(style)) {
     for (size_t i = 0; i < len; i++)
       if (buf[i] == '/') buf[i] = '\\';
   } else if (style == CSUPPORT_PATH_STYLE_POSIX ||
-             style == CSUPPORT_PATH_STYLE_WINDOWS_SLASH) {
+             style == CSUPPORT_PATH_STYLE_WINDOWS_SLASH ||
+             (style == CSUPPORT_PATH_STYLE_NATIVE && is_win_style(style))) {
     for (size_t i = 0; i < len; i++)
       if (buf[i] == '\\') buf[i] = '/';
   }
@@ -553,7 +609,7 @@ void csupport_path_make_preferred(char *buf, size_t len, int style) {
 
 size_t csupport_path_replace_extension_buf(char *buf, size_t len,
                                            const char *ext, size_t ext_len,
-                                           int style) {
+                                           csupport_path_style_t style) {
   if (!buf || (!ext && ext_len != 0) || len > SIZE_MAX - 2 ||
       ext_len > SIZE_MAX - len - 2)
     return len;
@@ -573,9 +629,10 @@ size_t csupport_path_replace_extension_buf(char *buf, size_t len,
   return pos;
 }
 
-int csupport_path_is_absolute_styled(const char *path, size_t len, int style) {
+int csupport_path_is_absolute_styled(const char *path, size_t len,
+                                     csupport_path_style_t style) {
   if (len == 0) return 0;
-  if (style == CSUPPORT_PATH_STYLE_POSIX) {
+  if (!is_win_style(style)) {
     return path[0] == '/';
   }
   if (path[0] == '/' || path[0] == '\\') return 1;
@@ -641,7 +698,8 @@ static int path_component_is_dotdot(csupport_string_ref_t c) {
    unchanged and components are counted after it -- so getting its length
    wrong does not shorten the answer, it renames the directory the answer
    points at.  This is what upstream calls root_path. */
-static size_t path_root_len(const char *path, size_t len, int style) {
+static size_t path_root_len(const char *path, size_t len,
+                            csupport_path_style_t style) {
   size_t first = csupport_path_find_first_component(path, len, style);
   int is_net = first > 2 && csupport_path_is_separator(path[0], style) &&
                path[0] == path[1];
@@ -654,14 +712,14 @@ static size_t path_root_len(const char *path, size_t len, int style) {
 }
 
 size_t csupport_path_remove_dots_buf(
-    const char *path, size_t len, int remove_dot_dot, int style,
+    const char *path, size_t len, int remove_dot_dot,
+    csupport_path_style_t style,
     char *out, size_t out_cap) {
   csupport_obuf_t buf = csupport_obuf(out, out_cap);
   if (len == 0)
     return csupport_obuf_finish(&buf);
 
-  char sep = (style == CSUPPORT_PATH_STYLE_WINDOWS_BACKSLASH ||
-              style == CSUPPORT_PATH_STYLE_WINDOWS) ? '\\' : '/';
+  char sep = preferred_separator(style);
 
   size_t root_len = path_root_len(path, len, style);
   int absolute = csupport_path_is_absolute_styled(path, len, style);
@@ -722,7 +780,8 @@ size_t csupport_path_remove_dots_buf(
 }
 
 size_t csupport_path_native_buf(const char *path, size_t len,
-                                char *out, size_t out_cap, int style) {
+                                char *out, size_t out_cap,
+                                csupport_path_style_t style) {
   if (!out || out_cap == 0) return 0;
   size_t n = len < out_cap - 1 ? len : out_cap - 1;
   memcpy(out, path, n);
@@ -731,7 +790,8 @@ size_t csupport_path_native_buf(const char *path, size_t len,
   return n;
 }
 
-int csupport_path_get_existing_style(const char *path, size_t len) {
+csupport_path_style_t csupport_path_get_existing_style(const char *path,
+                                                       size_t len) {
   for (size_t i = 0; i < len; i++) {
     if (path[i] == '/')
       return CSUPPORT_PATH_STYLE_POSIX;
@@ -746,7 +806,8 @@ int csupport_path_is_traversal_component(const char *comp, size_t len) {
          (len == 1 && comp[0] == '.');
 }
 
-int csupport_path_has_traversal(const char *path, size_t len, int style) {
+int csupport_path_has_traversal(const char *path, size_t len,
+                                csupport_path_style_t style) {
   size_t start = 0;
   for (size_t i = 0; i <= len; i++) {
     int is_sep = (i == len) || csupport_path_is_separator(path[i], style);
@@ -763,7 +824,7 @@ int csupport_path_has_traversal(const char *path, size_t len, int style) {
 
 size_t csupport_path_canonicalize(const char *path, size_t len,
                                   char *out, size_t out_cap) {
-  int style = csupport_path_get_existing_style(path, len);
+  csupport_path_style_t style = csupport_path_get_existing_style(path, len);
   const char *dotslash_out = NULL;
   size_t after_dotslash_len = csupport_path_remove_leading_dotslash(
       path, len, &dotslash_out, style);
@@ -793,7 +854,7 @@ size_t csupport_path_expand_tilde(const char *path, size_t len,
 
 size_t csupport_path_append_styled(char *base, size_t base_len, size_t base_cap,
                                     const char *component, size_t comp_len,
-                                    int style) {
+                                    csupport_path_style_t style) {
   if (!base || base_cap == 0) return base_len;
   if (comp_len == 0) return base_len;
   if (!component || base_len >= base_cap) {
@@ -806,7 +867,7 @@ size_t csupport_path_append_styled(char *base, size_t base_len, size_t base_cap,
     base[n] = '\0';
     return n;
   }
-  char sep = (style == CSUPPORT_PATH_STYLE_WINDOWS) ? '\\' : '/';
+  char sep = preferred_separator(style);
   int base_has_sep = csupport_path_is_separator(base[base_len - 1], style);
   int comp_has_sep = csupport_path_is_separator(component[0], style);
   if (!base_has_sep && !comp_has_sep) {
@@ -824,18 +885,21 @@ size_t csupport_path_append_styled(char *base, size_t base_len, size_t base_cap,
   return base_len;
 }
 
-int csupport_path_is_relative_styled(const char *path, size_t len, int style) {
+int csupport_path_is_relative_styled(const char *path, size_t len,
+                                     csupport_path_style_t style) {
   return !csupport_path_is_absolute_styled(path, len, style);
 }
 
 size_t csupport_path_lexically_normal(const char *path, size_t len,
-                                       char *buf, size_t buflen, int style) {
+                                       char *buf, size_t buflen,
+                                       csupport_path_style_t style) {
   return csupport_path_remove_dots_buf(path, len, 1, style, buf, buflen);
 }
 
 size_t csupport_path_split_components(const char *path, size_t path_len,
                                        const char **comps, size_t *comp_lens,
-                                       size_t max_comps, int style) {
+                                       size_t max_comps,
+                                       csupport_path_style_t style) {
   size_t count = 0;
   size_t i = 0;
   while (i < path_len && count < max_comps) {
@@ -852,7 +916,8 @@ size_t csupport_path_split_components(const char *path, size_t path_len,
 
 size_t csupport_path_join2(const char *a, size_t a_len,
                             const char *b, size_t b_len,
-                            char *buf, size_t buflen, int style) {
+                            char *buf, size_t buflen,
+                            csupport_path_style_t style) {
   if (!buf || buflen == 0) return 0;
   if (a_len == 0) {
     size_t n = b_len < buflen - 1 ? b_len : buflen - 1;
@@ -876,7 +941,7 @@ size_t csupport_path_join2(const char *a, size_t a_len,
   memcpy(buf, a, pos);
   int has_sep = csupport_path_is_separator(a[a_len - 1], style);
   if (!has_sep && pos + 1 < buflen) {
-    buf[pos++] = (style == CSUPPORT_PATH_STYLE_WINDOWS) ? '\\' : '/';
+    buf[pos++] = preferred_separator(style);
   }
   size_t n = b_len < (buflen - pos - 1) ? b_len : (buflen - pos - 1);
   memcpy(buf + pos, b, n);
@@ -887,9 +952,9 @@ size_t csupport_path_join2(const char *a, size_t a_len,
 
 size_t csupport_path_normalize_separators(const char *path, size_t len,
                                            char *buf, size_t buflen,
-                                           int style) {
+                                           csupport_path_style_t style) {
   if (!buf || buflen == 0) return 0;
-  char target_sep = (style == CSUPPORT_PATH_STYLE_WINDOWS) ? '\\' : '/';
+  char target_sep = preferred_separator(style);
   size_t n = len < buflen - 1 ? len : buflen - 1;
   for (size_t i = 0; i < n; i++) {
     if (csupport_path_is_separator(path[i], style))
@@ -901,8 +966,9 @@ size_t csupport_path_normalize_separators(const char *path, size_t len,
   return n;
 }
 
-int csupport_path_has_root_name(const char *path, size_t len, int style) {
-  if (style != CSUPPORT_PATH_STYLE_WINDOWS) return 0;
+int csupport_path_has_root_name(const char *path, size_t len,
+                                csupport_path_style_t style) {
+  if (!is_win_style(style)) return 0;
   if (len >= 2 && ((path[0] >= 'A' && path[0] <= 'Z') ||
                     (path[0] >= 'a' && path[0] <= 'z')) && path[1] == ':')
     return 1;
@@ -912,10 +978,11 @@ int csupport_path_has_root_name(const char *path, size_t len, int style) {
   return 0;
 }
 
-int csupport_path_is_root_path(const char *path, size_t len, int style) {
+int csupport_path_is_root_path(const char *path, size_t len,
+                               csupport_path_style_t style) {
   if (len == 0) return 0;
   if (len == 1 && csupport_path_is_separator(path[0], style)) return 1;
-  if (style == CSUPPORT_PATH_STYLE_WINDOWS && len == 3 &&
+  if (is_win_style(style) && len == 3 &&
       ((path[0] >= 'A' && path[0] <= 'Z') ||
        (path[0] >= 'a' && path[0] <= 'z')) &&
       path[1] == ':' && csupport_path_is_separator(path[2], style))
@@ -924,12 +991,13 @@ int csupport_path_is_root_path(const char *path, size_t len, int style) {
 }
 
 size_t csupport_path_common_prefix(const char *a, size_t a_len,
-                                    const char *b, size_t b_len, int style) {
+                                    const char *b, size_t b_len,
+                                    csupport_path_style_t style) {
   size_t n = a_len < b_len ? a_len : b_len;
   size_t last_sep = 0;
   for (size_t i = 0; i < n; i++) {
     char ca = a[i], cb = b[i];
-    if (style == CSUPPORT_PATH_STYLE_WINDOWS) {
+    if (is_win_style(style)) {
       if (ca >= 'a' && ca <= 'z') ca -= 32;
       if (cb >= 'a' && cb <= 'z') cb -= 32;
       if (ca == '\\') ca = '/';
@@ -944,7 +1012,8 @@ size_t csupport_path_common_prefix(const char *a, size_t a_len,
 
 size_t csupport_path_relative(const char *path, size_t path_len,
                                const char *base, size_t base_len,
-                               char *buf, size_t buflen, int style) {
+                               char *buf, size_t buflen,
+                               csupport_path_style_t style) {
   size_t prefix = csupport_path_common_prefix(path, path_len, base, base_len, style);
   if (prefix == 0) {
     size_t n = path_len < buflen ? path_len : buflen;
@@ -959,7 +1028,7 @@ size_t csupport_path_relative(const char *path, size_t path_len,
     if (csupport_path_is_separator(base[bi], style)) {
       if (pos + 3 <= buflen) {
         buf[pos++] = '.'; buf[pos++] = '.';
-        buf[pos++] = (style == CSUPPORT_PATH_STYLE_WINDOWS) ? '\\' : '/';
+        buf[pos++] = preferred_separator(style);
       } else pos += 3;
     }
     bi++;
@@ -967,7 +1036,7 @@ size_t csupport_path_relative(const char *path, size_t path_len,
   if (bi > prefix && !csupport_path_is_separator(base[base_len - 1], style)) {
     if (pos + 3 <= buflen) {
       buf[pos++] = '.'; buf[pos++] = '.';
-      buf[pos++] = (style == CSUPPORT_PATH_STYLE_WINDOWS) ? '\\' : '/';
+      buf[pos++] = preferred_separator(style);
     } else pos += 3;
   }
 
@@ -981,7 +1050,8 @@ size_t csupport_path_relative(const char *path, size_t path_len,
   return pos;
 }
 
-int csupport_path_is_dotfile(const char *path, size_t len, int style) {
+int csupport_path_is_dotfile(const char *path, size_t len,
+                             csupport_path_style_t style) {
   size_t fname_pos = 0;
   for (size_t i = len; i > 0; ) {
     --i;
@@ -993,7 +1063,7 @@ int csupport_path_is_dotfile(const char *path, size_t len, int style) {
 
 int csupport_path_matches_extension(const char *path, size_t path_len,
                                      const char *ext, size_t ext_len,
-                                     int style) {
+                                     csupport_path_style_t style) {
   (void)style;
   if (ext_len > path_len) return 0;
   size_t offset = path_len - ext_len;
@@ -1091,7 +1161,8 @@ size_t csupport_path_remove_filename(const char *path, size_t len,
   return n;
 }
 
-size_t csupport_path_count_components(const char *path, size_t len, int style) {
+size_t csupport_path_count_components(const char *path, size_t len,
+                                      csupport_path_style_t style) {
   if (len == 0) return 0;
   size_t count = 0;
   int in_sep = 1;
@@ -1107,7 +1178,8 @@ size_t csupport_path_count_components(const char *path, size_t len, int style) {
 }
 
 size_t csupport_path_get_component(const char *path, size_t len,
-                                    unsigned index, int style,
+                                    unsigned index,
+                                    csupport_path_style_t style,
                                     const char **comp_start) {
   if (len == 0) { *comp_start = path; return 0; }
   unsigned current = 0;
@@ -1149,15 +1221,17 @@ int csupport_path_is_valid_component(const char *comp, size_t len) {
 
 size_t csupport_path_make_absolute_buf(const char *cwd, size_t cwd_len,
                                         const char *path, size_t path_len,
-                                        char *buf, size_t cap, int style) {
+                                        char *buf, size_t cap,
+                                        csupport_path_style_t style) {
   if (!buf || cap == 0 || (!cwd && cwd_len != 0) ||
       (!path && path_len != 0))
     return 0;
   if (path_len > 0 && csupport_path_is_separator(path[0], style)) return 0;
-#ifdef _WIN32
-  if (path_len >= 2 && ((path[0] >= 'A' && path[0] <= 'Z') ||
-      (path[0] >= 'a' && path[0] <= 'z')) && path[1] == ':') return 0;
-#endif
+  if (is_win_style(style) && path_len >= 2 &&
+      ((path[0] >= 'A' && path[0] <= 'Z') ||
+       (path[0] >= 'a' && path[0] <= 'z')) &&
+      path[1] == ':')
+    return 0;
   if (path_len > SIZE_MAX - cwd_len)
     return 0;
   const int needs_separator =
@@ -1168,7 +1242,7 @@ size_t csupport_path_make_absolute_buf(const char *cwd, size_t cwd_len,
   size_t total = cwd_len + (size_t)needs_separator + path_len;
   if (total >= cap) return 0;
   memcpy(buf, cwd, cwd_len);
-  char sep = (style == 1) ? '\\' : '/';
+  char sep = preferred_separator(style);
   if (needs_separator)
     buf[cwd_len++] = sep;
   memcpy(buf + cwd_len, path, path_len);
@@ -1270,34 +1344,32 @@ int csupport_path_is_special_name(const char *name, size_t len) {
   return 0;
 }
 
-int csupport_path_has_parent(const char *path, size_t len, int style) {
+int csupport_path_has_parent(const char *path, size_t len,
+                             csupport_path_style_t style) {
   size_t pe = csupport_path_parent_path_end(path, len, style);
   return pe != (size_t)-1 && pe > 0;
 }
 
 size_t csupport_path_strip_trailing_separators(const char *path, size_t len,
-                                                int style) {
+                                                csupport_path_style_t style) {
   if (len == 0) return 0;
-  while (len > 1) {
-    char c = path[len - 1];
-    if (c != '/' && (style != 1 || c != '\\')) break;
+  while (len > 1 && csupport_path_is_separator(path[len - 1], style))
     len--;
-  }
   return len;
 }
 
-int csupport_path_is_separator_char(char c, int style) {
-  if (c == '/') return 1;
-  if (style == 1 && c == '\\') return 1;
-  return 0;
+int csupport_path_is_separator_char(char c, csupport_path_style_t style) {
+  return csupport_path_is_separator(c, style);
 }
 
-size_t csupport_path_filename_only(const char *path, size_t len, int style) {
+size_t csupport_path_filename_only(const char *path, size_t len,
+                                   csupport_path_style_t style) {
   size_t pos = csupport_path_filename_pos_styled(path, len, style);
   return pos;
 }
 
-int csupport_path_ends_with_separator(const char *path, size_t len, int style) {
+int csupport_path_ends_with_separator(const char *path, size_t len,
+                                      csupport_path_style_t style) {
   if (len == 0) return 0;
   return csupport_path_is_separator_char(path[len - 1], style);
 }
@@ -1305,23 +1377,14 @@ int csupport_path_ends_with_separator(const char *path, size_t len, int style) {
 size_t csupport_path_replace_path_prefix(const char *path, size_t path_len,
                                           const char *old_prefix, size_t old_len,
                                           const char *new_prefix, size_t new_len,
-                                          char *buf, size_t cap, int style) {
+                                          char *buf, size_t cap,
+                                          csupport_path_style_t style) {
   if (!buf || cap == 0 || (!path && path_len != 0) ||
       (!old_prefix && old_len != 0) || (!new_prefix && new_len != 0) ||
       path_len < old_len)
     return 0;
-  int match = 1;
-  for (size_t i = 0; i < old_len; i++) {
-    char a = path[i], b = old_prefix[i];
-    if (style == 1) {
-      if (a >= 'A' && a <= 'Z') a += 32;
-      if (b >= 'A' && b <= 'Z') b += 32;
-      if (a == '\\') a = '/';
-      if (b == '\\') b = '/';
-    }
-    if (a != b) { match = 0; break; }
-  }
-  if (!match) return 0;
+  if (!path_starts_with_relaxed(path, path_len, old_prefix, old_len, style))
+    return 0;
   size_t suffix_len = path_len - old_len;
   if (suffix_len > SIZE_MAX - new_len)
     return 0;
@@ -1338,7 +1401,7 @@ size_t csupport_path_replace_path_prefix(const char *path, size_t path_len,
 #ifdef _WIN32
 int csupport_lock_file(int fd) { (void)fd; return -1; }
 int csupport_unlock_file(int fd) { (void)fd; return -1; }
-int csupport_try_lock_file(int fd, unsigned timeout_ms) {
+int csupport_try_lock_file(int fd, int64_t timeout_ms) {
   (void)fd; (void)timeout_ms; return -1;
 }
 #else
@@ -1365,7 +1428,7 @@ int csupport_unlock_file(int fd) {
   return errno;
 }
 
-int csupport_try_lock_file(int fd, unsigned timeout_ms) {
+int csupport_try_lock_file(int fd, int64_t timeout_ms) {
   struct timespec start, now;
   clock_gettime(CLOCK_MONOTONIC, &start);
   for (;;) {
@@ -1380,10 +1443,12 @@ int csupport_try_lock_file(int fd, unsigned timeout_ms) {
     int e = errno;
     if (e != EACCES && e != EAGAIN)
       return e;
+    if (timeout_ms <= 0)
+      return EAGAIN;
     usleep(1000);
     clock_gettime(CLOCK_MONOTONIC, &now);
-    unsigned elapsed = (unsigned)((now.tv_sec - start.tv_sec) * 1000 +
-                                  (now.tv_nsec - start.tv_nsec) / 1000000);
+    int64_t elapsed = (int64_t)(now.tv_sec - start.tv_sec) * 1000 +
+                      (now.tv_nsec - start.tv_nsec) / 1000000;
     if (elapsed >= timeout_ms)
       return EAGAIN;
   }
@@ -1481,12 +1546,12 @@ int csupport_type_for_mode(unsigned mode) {
 
 /* -- convertAccessMode -- */
 
-int csupport_convert_access_mode(int mode) {
+int csupport_convert_access_mode(csupport_access_mode_t mode) {
 #ifndef _WIN32
   switch (mode) {
-  case 0: return F_OK;
-  case 1: return W_OK;
-  case 2: return R_OK | X_OK;
+  case CSUPPORT_AM_EXIST: return F_OK;
+  case CSUPPORT_AM_WRITE: return W_OK;
+  case CSUPPORT_AM_EXECUTE: return R_OK | X_OK;
   }
 #else
   (void)mode;
@@ -1496,37 +1561,38 @@ int csupport_convert_access_mode(int mode) {
 
 /* -- nativeOpenFlags -- */
 
-/*
- * disp: CD_CreateAlways=0, CD_CreateNew=1, CD_OpenExisting=2, CD_OpenAlways=3
- * flags: OF_Text=1, OF_CRLF=2, OF_Append=4, OF_ChildInherit=16
- * access_mode: FA_Read=1, FA_Write=2
- */
-int csupport_native_open_flags(int disp, int flags, int access_mode) {
+int csupport_native_open_flags(csupport_creation_disposition_t disposition,
+                               csupport_open_flags_t flags,
+                               csupport_file_access_t access) {
 #ifndef _WIN32
   int result = 0;
-  if (access_mode == 1)      result |= O_RDONLY;  /* FA_Read */
-  else if (access_mode == 2) result |= O_WRONLY;  /* FA_Write */
-  else if (access_mode == 3) result |= O_RDWR;    /* FA_Read | FA_Write */
+  if (access == CSUPPORT_FA_READ)
+    result |= O_RDONLY;
+  else if (access == CSUPPORT_FA_WRITE)
+    result |= O_WRONLY;
+  else if (access == CSUPPORT_FA_READ_WRITE)
+    result |= O_RDWR;
 
   /* OF_Append => CD_OpenAlways */
-  if (flags & 4) disp = 3;
+  if (flags & CSUPPORT_OF_APPEND)
+    disposition = CSUPPORT_CD_OPEN_ALWAYS;
 
-  switch (disp) {
-  case 0: result |= O_CREAT | O_TRUNC; break;  /* CD_CreateAlways */
-  case 1: result |= O_CREAT | O_EXCL; break;    /* CD_CreateNew */
-  case 2: break;                                  /* CD_OpenExisting */
-  case 3: result |= O_CREAT; break;              /* CD_OpenAlways */
+  switch (disposition) {
+  case CSUPPORT_CD_CREATE_ALWAYS: result |= O_CREAT | O_TRUNC; break;
+  case CSUPPORT_CD_CREATE_NEW: result |= O_CREAT | O_EXCL; break;
+  case CSUPPORT_CD_OPEN_EXISTING: break;
+  case CSUPPORT_CD_OPEN_ALWAYS: result |= O_CREAT; break;
   }
 
 #ifndef __MVS__
-  if (flags & 4) result |= O_APPEND;
+  if (flags & CSUPPORT_OF_APPEND) result |= O_APPEND;
 #endif
 #ifdef O_CLOEXEC
-  if (!(flags & 16)) result |= O_CLOEXEC;
+  if (!(flags & CSUPPORT_OF_CHILD_INHERIT)) result |= O_CLOEXEC;
 #endif
   return result;
 #else
-  (void)disp; (void)flags; (void)access_mode;
+  (void)disposition; (void)flags; (void)access;
   return 0;
 #endif
 }
@@ -1552,12 +1618,24 @@ const char *csupport_get_default_temp_dir(int erased_on_reboot) {
 
 /* -- /proc/self/fd availability -- */
 
+#if !defined(__FreeBSD__) && !defined(__OpenBSD__) && !defined(_WIN32) &&      \
+    LLVM_ENABLE_THREADS == 1 && defined(HAVE_PTHREAD_H) && HAVE_PTHREAD_H
+static pthread_once_t proc_self_fd_once = PTHREAD_ONCE_INIT;
+static int proc_self_fd_available;
+
+static void initialize_proc_self_fd(void) {
+  proc_self_fd_available = access("/proc/self/fd", R_OK) == 0;
+}
+#endif
+
 int csupport_has_proc_self_fd(void) {
 #if !defined(__FreeBSD__) && !defined(__OpenBSD__) && !defined(_WIN32)
-  static int result = -1;
-  if (result < 0)
-    result = (access("/proc/self/fd", R_OK) == 0) ? 1 : 0;
-  return result;
+#if LLVM_ENABLE_THREADS == 1 && defined(HAVE_PTHREAD_H) && HAVE_PTHREAD_H
+  pthread_once(&proc_self_fd_once, initialize_proc_self_fd);
+  return proc_self_fd_available;
+#else
+  return access("/proc/self/fd", R_OK) == 0;
+#endif
 #else
   return 0;
 #endif
@@ -2034,14 +2112,16 @@ size_t csupport_get_darwin_conf_dir(int temp_dir, char *buf, size_t cap) {
 /* -- mmap file region -- */
 
 #ifndef _WIN32
-void *csupport_mmap_file(size_t size, int mode, int fd, uint64_t offset) {
-  int flags = (mode == 1) ? MAP_SHARED : MAP_PRIVATE;
-  int prot = (mode == 0) ? PROT_READ : (PROT_READ | PROT_WRITE);
+void *csupport_mmap_file(size_t size, csupport_mapped_file_mode_t mode, int fd,
+                         uint64_t offset) {
+  int flags = mode == CSUPPORT_MFM_PRIVATE ? MAP_PRIVATE : MAP_SHARED;
+  int prot = mode == CSUPPORT_MFM_READONLY ? PROT_READ
+                                           : (PROT_READ | PROT_WRITE);
 #if defined(MAP_NORESERVE)
   flags |= MAP_NORESERVE;
 #endif
 #if defined(__APPLE__)
-  if (mode == 0) {
+  if (mode == CSUPPORT_MFM_READONLY) {
 #if defined(MAP_RESILIENT_CODESIGN)
     flags |= MAP_RESILIENT_CODESIGN;
 #endif
@@ -2056,7 +2136,8 @@ void *csupport_mmap_file(size_t size, int mode, int fd, uint64_t offset) {
   return mapping;
 }
 #else
-void *csupport_mmap_file(size_t size, int mode, int fd, uint64_t offset) {
+void *csupport_mmap_file(size_t size, csupport_mapped_file_mode_t mode, int fd,
+                         uint64_t offset) {
   (void)size; (void)mode; (void)fd; (void)offset;
   return NULL;
 }
@@ -2131,10 +2212,10 @@ int csupport_remove_path(const char *path, int ignore_nonexisting) {
   return 0;
 }
 
-int csupport_access_path(const char *path, int mode) {
+int csupport_access_path(const char *path, csupport_access_mode_t mode) {
   int cmode = csupport_convert_access_mode(mode);
   if (access(path, cmode) == -1) return errno;
-  if (mode == 2) {
+  if (mode == CSUPPORT_AM_EXECUTE) {
     struct stat buf;
     if (stat(path, &buf) != 0)
       return EACCES;
@@ -2612,7 +2693,7 @@ size_t csupport_find_program(const char *name, size_t name_len,
   size_t n_search = search_paths ? num_paths : 0;
 
   char *env_path = NULL;
-  char **env_dirs = NULL;
+  const char **env_dirs = NULL;
   size_t n_env = 0;
 
   if (!search_paths || n_search == 0) {
@@ -2623,8 +2704,8 @@ size_t csupport_find_program(const char *name, size_t name_len,
         size_t max_dirs = 1;
         for (const char *p = env_path; *p; p++)
           if (*p == ':') max_dirs++;
-        if (max_dirs <= SIZE_MAX / sizeof(char *))
-          env_dirs = (char **)calloc(max_dirs, sizeof(char *));
+        if (max_dirs <= SIZE_MAX / sizeof(*env_dirs))
+          env_dirs = (const char **)calloc(max_dirs, sizeof(*env_dirs));
         if (env_dirs) {
           char *tok = env_path;
           while (tok) {
@@ -2671,7 +2752,11 @@ int csupport_chmod_path(const char *p, unsigned m) { (void)p;(void)m; return ENO
 int csupport_chmod_fd(int f, unsigned m) { (void)f;(void)m; return ENOSYS; }
 int csupport_fchown_fd(int f, uint32_t o, uint32_t g) { (void)f;(void)o;(void)g; return ENOSYS; }
 int csupport_remove_path(const char *p, int i) { (void)p;(void)i; return ENOSYS; }
-int csupport_access_path(const char *p, int m) { (void)p;(void)m; return ENOSYS; }
+int csupport_access_path(const char *p, csupport_access_mode_t m) {
+  (void)p;
+  (void)m;
+  return ENOSYS;
+}
 int csupport_set_file_times(int f, int64_t a, int32_t an, int64_t m, int32_t mn)
 { (void)f;(void)a;(void)an;(void)m;(void)mn; return ENOSYS; }
 int csupport_disk_space(const char *p, uint64_t *c, uint64_t *f, uint64_t *a)

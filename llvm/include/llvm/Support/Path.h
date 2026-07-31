@@ -548,4 +548,8 @@ bool is_relative(const Twine &path, Style style = Style::native);
 } // end namespace sys
 } // end namespace llvm
 
+// CSupport owns the inline path implementations; include them only after the
+// public types and declarations above are complete.
+#include "csupport/lpath.h"
+
 #endif

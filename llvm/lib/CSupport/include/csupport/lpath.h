@@ -1,5 +1,6 @@
 #ifndef CSUPPORT_LPATH_H
 #define CSUPPORT_LPATH_H
+#include "csupport/filesystem.h"
 #include <stddef.h>
 #include <stdint.h>
 #ifndef _WIN32
@@ -12,13 +13,13 @@ typedef SSIZE_T ssize_t;
 extern "C" {
 #endif
 
-enum csupport_path_style {
+typedef enum csupport_path_style {
   CSUPPORT_PATH_NATIVE = 0,
   CSUPPORT_PATH_POSIX = 1,
   CSUPPORT_PATH_WINDOWS = 2,
   CSUPPORT_PATH_WINDOWS_SLASH = 3,
   CSUPPORT_PATH_WINDOWS_BACKSLASH = 4
-};
+} csupport_path_style_t;
 
 size_t csupport_path_root_name_len(const char *path, size_t len);
 size_t csupport_path_root_dir_pos(const char *path, size_t len);
@@ -34,13 +35,15 @@ void csupport_path_replace_extension(char *buf, size_t *len, size_t buflen,
                                      const char *ext, size_t ext_len);
 void csupport_path_native(char *buf, size_t len);
 
-int csupport_path_is_separator(char c, int style);
+int csupport_path_is_separator(char c, csupport_path_style_t style);
 size_t csupport_path_find_first_component(const char *path, size_t len,
-                                          int style);
+                                          csupport_path_style_t style);
 size_t csupport_path_filename_pos_styled(const char *path, size_t len,
-                                         int style);
-size_t csupport_path_root_dir_start(const char *path, size_t len, int style);
-size_t csupport_path_parent_path_end(const char *path, size_t len, int style);
+                                         csupport_path_style_t style);
+size_t csupport_path_root_dir_start(const char *path, size_t len,
+                                    csupport_path_style_t style);
+size_t csupport_path_parent_path_end(const char *path, size_t len,
+                                    csupport_path_style_t style);
 
 void csupport_path_convert_backslash(char *buf, size_t len);
 
@@ -55,74 +58,86 @@ size_t csupport_path_remove_dots(char *buf, size_t len, int remove_dot_dot);
 size_t csupport_path_join(char *buf, size_t buflen, const char *base,
                           size_t base_len, const char *name, size_t name_len);
 
-#define CSUPPORT_PATH_STYLE_NATIVE 0
-#define CSUPPORT_PATH_STYLE_POSIX 1
-#define CSUPPORT_PATH_STYLE_WINDOWS 2
-#define CSUPPORT_PATH_STYLE_WINDOWS_SLASH 3
-#define CSUPPORT_PATH_STYLE_WINDOWS_BACKSLASH 4
-
-size_t csupport_path_find_first_component(const char *path, size_t len,
-                                          int style);
-size_t csupport_path_filename_pos_styled(const char *path, size_t len,
-                                         int style);
-size_t csupport_path_root_dir_start(const char *path, size_t len, int style);
-size_t csupport_path_parent_path_end(const char *path, size_t len, int style);
+#define CSUPPORT_PATH_STYLE_NATIVE CSUPPORT_PATH_NATIVE
+#define CSUPPORT_PATH_STYLE_POSIX CSUPPORT_PATH_POSIX
+#define CSUPPORT_PATH_STYLE_WINDOWS CSUPPORT_PATH_WINDOWS
+#define CSUPPORT_PATH_STYLE_WINDOWS_SLASH CSUPPORT_PATH_WINDOWS_SLASH
+#define CSUPPORT_PATH_STYLE_WINDOWS_BACKSLASH CSUPPORT_PATH_WINDOWS_BACKSLASH
 
 size_t csupport_path_stem(const char *path, size_t len, const char **out_stem,
-                          int style);
+                          csupport_path_style_t style);
 size_t csupport_path_extension(const char *path, size_t len,
-                               const char **out_ext, int style);
+                               const char **out_ext,
+                               csupport_path_style_t style);
 size_t csupport_path_remove_leading_dotslash(const char *path, size_t len,
-                                             const char **out, int style);
+                                             const char **out,
+                                             csupport_path_style_t style);
 int csupport_path_starts_with_insensitive(const char *path, size_t path_len,
                                           const char *prefix, size_t prefix_len,
-                                          int style);
+                                          csupport_path_style_t style);
+int csupport_path_starts_with(const char *path, size_t path_len,
+                              const char *prefix, size_t prefix_len,
+                              csupport_path_style_t style);
 size_t csupport_path_expand_tilde(const char *path, size_t len, char *buf,
                                   size_t buflen);
 
-void csupport_path_make_preferred(char *buf, size_t len, int style);
+void csupport_path_make_preferred(char *buf, size_t len,
+                                  csupport_path_style_t style);
 size_t csupport_path_replace_extension_buf(char *buf, size_t len,
                                            const char *ext, size_t ext_len,
-                                           int style);
-int csupport_path_is_absolute_styled(const char *path, size_t len, int style);
+                                           csupport_path_style_t style);
+int csupport_path_is_absolute_styled(const char *path, size_t len,
+                                     csupport_path_style_t style);
 /* Buffer filler: see the contract on csupport_obuf_t in csupport/buffer.h. */
 size_t csupport_path_remove_dots_buf(const char *path, size_t len,
-                                     int remove_dot_dot, int style, char *out,
+                                     int remove_dot_dot,
+                                     csupport_path_style_t style, char *out,
                                      size_t out_cap);
 size_t csupport_path_native_buf(const char *path, size_t len, char *out,
-                                size_t out_cap, int style);
+                                size_t out_cap, csupport_path_style_t style);
 
-int csupport_path_get_existing_style(const char *path, size_t len);
+csupport_path_style_t csupport_path_get_existing_style(const char *path,
+                                                       size_t len);
 int csupport_path_is_traversal_component(const char *comp, size_t len);
-int csupport_path_has_traversal(const char *path, size_t len, int style);
+int csupport_path_has_traversal(const char *path, size_t len,
+                                csupport_path_style_t style);
 /* Buffer filler: see the contract on csupport_obuf_t in csupport/buffer.h. */
 size_t csupport_path_canonicalize(const char *path, size_t len, char *out,
                                   size_t out_cap);
 
 size_t csupport_path_append_styled(char *base, size_t base_len, size_t base_cap,
                                    const char *component, size_t comp_len,
-                                   int style);
-int csupport_path_is_relative_styled(const char *path, size_t len, int style);
+                                   csupport_path_style_t style);
+int csupport_path_is_relative_styled(const char *path, size_t len,
+                                     csupport_path_style_t style);
 size_t csupport_path_lexically_normal(const char *path, size_t len, char *buf,
-                                      size_t buflen, int style);
+                                      size_t buflen,
+                                      csupport_path_style_t style);
 
 size_t csupport_path_split_components(const char *path, size_t path_len,
                                       const char **comps, size_t *comp_lens,
-                                      size_t max_comps, int style);
+                                      size_t max_comps,
+                                      csupport_path_style_t style);
 size_t csupport_path_join2(const char *a, size_t a_len, const char *b,
-                           size_t b_len, char *buf, size_t buflen, int style);
+                           size_t b_len, char *buf, size_t buflen,
+                           csupport_path_style_t style);
 size_t csupport_path_normalize_separators(const char *path, size_t len,
-                                          char *buf, size_t buflen, int style);
-int csupport_path_has_root_name(const char *path, size_t len, int style);
-int csupport_path_is_root_path(const char *path, size_t len, int style);
+                                          char *buf, size_t buflen,
+                                          csupport_path_style_t style);
+int csupport_path_has_root_name(const char *path, size_t len,
+                                csupport_path_style_t style);
+int csupport_path_is_root_path(const char *path, size_t len,
+                               csupport_path_style_t style);
 size_t csupport_path_common_prefix(const char *a, size_t a_len, const char *b,
-                                   size_t b_len, int style);
+                                   size_t b_len, csupport_path_style_t style);
 size_t csupport_path_relative(const char *path, size_t path_len,
                               const char *base, size_t base_len, char *buf,
-                              size_t buflen, int style);
-int csupport_path_is_dotfile(const char *path, size_t len, int style);
+                              size_t buflen, csupport_path_style_t style);
+int csupport_path_is_dotfile(const char *path, size_t len,
+                             csupport_path_style_t style);
 int csupport_path_matches_extension(const char *path, size_t path_len,
-                                    const char *ext, size_t ext_len, int style);
+                                    const char *ext, size_t ext_len,
+                                    csupport_path_style_t style);
 
 size_t csupport_path_get_parent(const char *path, size_t len);
 size_t csupport_path_remove_trailing_sep(const char *path, size_t len);
@@ -134,15 +149,17 @@ size_t csupport_path_replace_filename(const char *path, size_t path_len,
 size_t csupport_path_remove_filename(const char *path, size_t len, char *buf,
                                      size_t cap);
 
-int csupport_path_is_separator(char c, int style);
-size_t csupport_path_count_components(const char *path, size_t len, int style);
+size_t csupport_path_count_components(const char *path, size_t len,
+                                      csupport_path_style_t style);
 size_t csupport_path_get_component(const char *path, size_t len, unsigned index,
-                                   int style, const char **comp_start);
+                                   csupport_path_style_t style,
+                                   const char **comp_start);
 
 int csupport_path_is_valid_component(const char *comp, size_t len);
 size_t csupport_path_make_absolute_buf(const char *cwd, size_t cwd_len,
                                        const char *path, size_t path_len,
-                                       char *buf, size_t cap, int style);
+                                       char *buf, size_t cap,
+                                       csupport_path_style_t style);
 int csupport_path_is_hidden(const char *path, size_t len);
 
 size_t csupport_path_lexically_relative(const char *path, size_t path_len,
@@ -157,35 +174,36 @@ size_t csupport_path_append_component(const char *path, size_t path_len,
 int csupport_path_is_special_name(const char *name, size_t len);
 
 /* Check if path has a parent directory. */
-int csupport_path_has_parent(const char *path, size_t len, int style);
+int csupport_path_has_parent(const char *path, size_t len,
+                             csupport_path_style_t style);
 
 /* Strip trailing path separators, preserving root. */
 size_t csupport_path_strip_trailing_separators(const char *path, size_t len,
-                                               int style);
+                                               csupport_path_style_t style);
 
 /* Check if char is a path separator for given style. */
-int csupport_path_is_separator_char(char c, int style);
+int csupport_path_is_separator_char(char c, csupport_path_style_t style);
 
 /* Get position of filename component start. */
-size_t csupport_path_filename_only(const char *path, size_t len, int style);
+size_t csupport_path_filename_only(const char *path, size_t len,
+                                   csupport_path_style_t style);
 
 /* Check if path ends with a separator. */
-int csupport_path_ends_with_separator(const char *path, size_t len, int style);
+int csupport_path_ends_with_separator(const char *path, size_t len,
+                                      csupport_path_style_t style);
 
 /* Replace path prefix: if path starts with old_prefix, replace with new_prefix.
  */
 size_t csupport_path_replace_path_prefix(const char *path, size_t path_len,
                                          const char *old_prefix, size_t old_len,
                                          const char *new_prefix, size_t new_len,
-                                         char *buf, size_t cap, int style);
-
-unsigned csupport_get_umask(void);
-int csupport_resize_file(int fd, uint64_t size);
+                                         char *buf, size_t cap,
+                                         csupport_path_style_t style);
 
 /* File locking (returns 0 on success, errno-value on failure) */
 int csupport_lock_file(int fd);
 int csupport_unlock_file(int fd);
-int csupport_try_lock_file(int fd, unsigned timeout_ms);
+int csupport_try_lock_file(int fd, int64_t timeout_ms);
 
 /* Executable path helpers (returns path in buf, NULL on failure) */
 int csupport_test_dir(char ret[], int pathmax, const char *dir,
@@ -207,11 +225,12 @@ enum {
 };
 int csupport_type_for_mode(unsigned mode);
 
-/* Access mode conversion: 0=Exist->F_OK, 1=Write->W_OK, 2=Execute->R_OK|X_OK */
-int csupport_convert_access_mode(int mode);
+int csupport_convert_access_mode(csupport_access_mode_t mode);
 
 /* Open flag construction */
-int csupport_native_open_flags(int disp, int flags, int access);
+int csupport_native_open_flags(csupport_creation_disposition_t disposition,
+                               csupport_open_flags_t flags,
+                               csupport_file_access_t access);
 
 /* Temp directory helpers */
 const char *csupport_get_env_temp_dir(void);
@@ -219,9 +238,6 @@ const char *csupport_get_default_temp_dir(int erased_on_reboot);
 
 /* /proc/self/fd availability */
 int csupport_has_proc_self_fd(void);
-
-/* Signal alt stack setup */
-void csupport_create_sig_alt_stack(void);
 
 /* mmap helpers */
 void csupport_munmap(void *addr, size_t len);
@@ -244,9 +260,9 @@ size_t csupport_get_home_dir(char *buf, size_t cap);
 /* Darwin conf dir (returns length, 0 on failure) */
 size_t csupport_get_darwin_conf_dir(int temp_dir, char *buf, size_t cap);
 
-/* mmap file region (returns mapped ptr; NULL+errno on failure; mode:
- * 0=readonly, 1=readwrite) */
-void *csupport_mmap_file(size_t size, int mode, int fd, uint64_t offset);
+/* mmap file region (returns mapped ptr; NULL+errno on failure) */
+void *csupport_mmap_file(size_t size, csupport_mapped_file_mode_t mode, int fd,
+                         uint64_t offset);
 
 /* --- Session 10: batch POSIX extractions from Path.inc --- */
 
@@ -264,7 +280,7 @@ int csupport_fchown_fd(int fd, uint32_t owner, uint32_t group);
 int csupport_remove_path(const char *path, int ignore_nonexisting);
 
 /* access: 0=accessible, positive=errno */
-int csupport_access_path(const char *path, int mode);
+int csupport_access_path(const char *path, csupport_access_mode_t mode);
 
 /* file times: 0 or errno */
 int csupport_set_file_times(int fd, int64_t atime_sec, int32_t atime_nsec,
@@ -356,7 +372,7 @@ size_t csupport_find_program(const char *name, size_t name_len,
                              const char *const *extra_paths, size_t num_paths,
                              char *buf, size_t cap);
 
-/* csupport_copy_fd declared in lpath.h extern "C" block below */
+int csupport_copy_fd(int read_fd, int write_fd);
 /* csupport_safely_close_fd already implemented inline or in Path.c */
 /* csupport_get_page_size declared in lprocess.h */
 
@@ -395,8 +411,6 @@ size_t csupport_find_program(const char *name, size_t name_len,
 #include <io.h>
 #endif
 
-extern "C" int csupport_copy_fd(int read_fd, int write_fd);
-
 namespace path_detail {
 using llvm::StringRef;
 using llvm::sys::path::is_separator;
@@ -409,6 +423,20 @@ inline Style real_style(Style style) {
     return Style::posix;
   return LLVM_WINDOWS_PREFER_FORWARD_SLASH ? Style::windows_slash
                                            : Style::windows_backslash;
+}
+
+inline csupport_path_style_t to_c_style(Style style) {
+  switch (real_style(style)) {
+  case Style::posix:
+    return CSUPPORT_PATH_STYLE_POSIX;
+  case Style::windows_slash:
+    return CSUPPORT_PATH_STYLE_WINDOWS_SLASH;
+  case Style::windows_backslash:
+    return CSUPPORT_PATH_STYLE_WINDOWS_BACKSLASH;
+  case Style::native:
+    llvm_unreachable("real_style must resolve the native path style");
+  }
+  llvm_unreachable("unknown path style");
 }
 
 inline const char *separators(Style style) {
@@ -426,8 +454,9 @@ inline char preferred_separator(Style style) {
 inline StringRef find_first_component(StringRef path, Style style) {
   if (path.empty())
     return path;
-  int cstyle = is_style_posix(style) ? CSUPPORT_PATH_STYLE_POSIX
-                                     : CSUPPORT_PATH_STYLE_WINDOWS;
+  csupport_path_style_t cstyle =
+      is_style_posix(style) ? CSUPPORT_PATH_STYLE_POSIX
+                            : CSUPPORT_PATH_STYLE_WINDOWS;
   size_t len =
       csupport_path_find_first_component(path.data(), path.size(), cstyle);
   return path.substr(0, len);
@@ -436,21 +465,24 @@ inline StringRef find_first_component(StringRef path, Style style) {
 inline size_t filename_pos(StringRef str, Style style) {
   if (str.empty())
     return 0;
-  int cstyle = is_style_posix(style) ? CSUPPORT_PATH_STYLE_POSIX
-                                     : CSUPPORT_PATH_STYLE_WINDOWS;
+  csupport_path_style_t cstyle =
+      is_style_posix(style) ? CSUPPORT_PATH_STYLE_POSIX
+                            : CSUPPORT_PATH_STYLE_WINDOWS;
   return csupport_path_filename_pos_styled(str.data(), str.size(), cstyle);
 }
 
 inline size_t root_dir_start(StringRef str, Style style) {
-  int cstyle = is_style_posix(style) ? CSUPPORT_PATH_STYLE_POSIX
-                                     : CSUPPORT_PATH_STYLE_WINDOWS;
+  csupport_path_style_t cstyle =
+      is_style_posix(style) ? CSUPPORT_PATH_STYLE_POSIX
+                            : CSUPPORT_PATH_STYLE_WINDOWS;
   size_t r = csupport_path_root_dir_start(str.data(), str.size(), cstyle);
   return r == (size_t)-1 ? StringRef::npos : r;
 }
 
 inline size_t parent_path_end(StringRef path, Style style) {
-  int cstyle = is_style_posix(style) ? CSUPPORT_PATH_STYLE_POSIX
-                                     : CSUPPORT_PATH_STYLE_WINDOWS;
+  csupport_path_style_t cstyle =
+      is_style_posix(style) ? CSUPPORT_PATH_STYLE_POSIX
+                            : CSUPPORT_PATH_STYLE_WINDOWS;
   return csupport_path_parent_path_end(path.data(), path.size(), cstyle);
 }
 } // namespace path_detail
@@ -747,9 +779,9 @@ inline void replace_extension(SmallVectorImpl<char> &path,
 
 inline bool starts_with(StringRef Path, StringRef Prefix,
                         Style style = Style::native) {
-  return csupport_path_starts_with_insensitive(Path.data(), Path.size(),
-                                               Prefix.data(), Prefix.size(),
-                                               (int)(real_style(style)));
+  return csupport_path_starts_with(Path.data(), Path.size(), Prefix.data(),
+                                   Prefix.size(),
+                                   path_detail::to_c_style(style));
 }
 
 inline bool replace_path_prefix(SmallVectorImpl<char> &Path,
@@ -759,7 +791,9 @@ inline bool replace_path_prefix(SmallVectorImpl<char> &Path,
     return false;
 
   StringRef OrigPath(Path.begin(), Path.size());
-  if (!starts_with(OrigPath, OldPrefix, style))
+  if (!csupport_path_starts_with_insensitive(
+          OrigPath.data(), OrigPath.size(), OldPrefix.data(), OldPrefix.size(),
+          path_detail::to_c_style(style)))
     return false;
 
   // If prefixes have the same size we can simply copy the new one over.
@@ -822,14 +856,14 @@ inline StringRef filename(StringRef path, Style style) {
 inline StringRef stem(StringRef path, Style style) {
   const char *out;
   size_t len = csupport_path_stem(path.data(), path.size(), &out,
-                                  (int)(real_style(style)));
+                                  path_detail::to_c_style(style));
   return StringRef(out, len);
 }
 
 inline StringRef extension(StringRef path, Style style) {
   const char *out;
   size_t len = csupport_path_extension(path.data(), path.size(), &out,
-                                       (int)(real_style(style)));
+                                       path_detail::to_c_style(style));
   return StringRef(out, len);
 }
 
@@ -938,7 +972,7 @@ inline bool is_relative(const Twine &path, Style style) {
 inline StringRef remove_leading_dotslash(StringRef Path, Style style) {
   const char *out;
   size_t len = csupport_path_remove_leading_dotslash(
-      Path.data(), Path.size(), &out, (int)(real_style(style)));
+      Path.data(), Path.size(), &out, path_detail::to_c_style(style));
   return StringRef(out, len);
 }
 

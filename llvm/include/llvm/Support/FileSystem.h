@@ -26,6 +26,7 @@
 #ifndef LLVM_SUPPORT_FILESYSTEM_H
 #define LLVM_SUPPORT_FILESYSTEM_H
 
+#include "csupport/filesystem.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Twine.h"
@@ -419,7 +420,6 @@ std::error_code copy_file(const Twine &From, int ToFD);
 /// @param Size Size to resize to.
 /// @returns errc::success if \a path has been resized to \a size, otherwise a
 ///          platform-specific error_code.
-extern "C" int csupport_resize_file(int fd, uint64_t size);
 inline std::error_code resize_file(int FD, uint64_t Size) {
   int err = csupport_resize_file(FD, Size);
   if (err)
@@ -463,7 +463,15 @@ ErrorOr<MD5::MD5Result> md5_contents(const Twine &Path);
 ///          not.
 bool exists(const basic_file_status &status);
 
-enum class AccessMode { Exist, Write, Execute };
+enum class AccessMode {
+  Exist = CSUPPORT_AM_EXIST,
+  Write = CSUPPORT_AM_WRITE,
+  Execute = CSUPPORT_AM_EXECUTE
+};
+
+static_assert(static_cast<int>(AccessMode::Exist) == CSUPPORT_AM_EXIST);
+static_assert(static_cast<int>(AccessMode::Write) == CSUPPORT_AM_WRITE);
+static_assert(static_cast<int>(AccessMode::Execute) == CSUPPORT_AM_EXECUTE);
 
 /// Can the file be accessed?
 ///
@@ -670,7 +678,6 @@ std::error_code status(file_t FD, file_status &Result);
 /// @note There is no umask on Windows. This function returns 0 always
 ///       on Windows. This function does not return an error_code because
 ///       umask(2) never fails. It is not thread safe.
-extern "C" unsigned csupport_get_umask(void);
 inline unsigned getUmask() { return csupport_get_umask(); }
 
 /// Set file permissions.
@@ -747,59 +754,59 @@ enum CreationDisposition : unsigned {
   /// CD_CreateAlways - When opening a file:
   ///   * If it already exists, truncate it.
   ///   * If it does not already exist, create a new file.
-  CD_CreateAlways = 0,
+  CD_CreateAlways = CSUPPORT_CD_CREATE_ALWAYS,
 
   /// CD_CreateNew - When opening a file:
   ///   * If it already exists, fail.
   ///   * If it does not already exist, create a new file.
-  CD_CreateNew = 1,
+  CD_CreateNew = CSUPPORT_CD_CREATE_NEW,
 
   /// CD_OpenExisting - When opening a file:
   ///   * If it already exists, open the file with the offset set to 0.
   ///   * If it does not already exist, fail.
-  CD_OpenExisting = 2,
+  CD_OpenExisting = CSUPPORT_CD_OPEN_EXISTING,
 
   /// CD_OpenAlways - When opening a file:
   ///   * If it already exists, open the file with the offset set to 0.
   ///   * If it does not already exist, create a new file.
-  CD_OpenAlways = 3,
+  CD_OpenAlways = CSUPPORT_CD_OPEN_ALWAYS,
 };
 
 enum FileAccess : unsigned {
-  FA_Read = 1,
-  FA_Write = 2,
+  FA_Read = CSUPPORT_FA_READ,
+  FA_Write = CSUPPORT_FA_WRITE,
 };
 
 enum OpenFlags : unsigned {
-  OF_None = 0,
+  OF_None = CSUPPORT_OF_NONE,
 
   /// The file should be opened in text mode on platforms like z/OS that make
   /// this distinction.
-  OF_Text = 1,
+  OF_Text = CSUPPORT_OF_TEXT,
 
   /// The file should use a carriage linefeed '\r\n'. This flag should only be
   /// used with OF_Text. Only makes a difference on Windows.
-  OF_CRLF = 2,
+  OF_CRLF = CSUPPORT_OF_CRLF,
 
   /// The file should be opened in text mode and use a carriage linefeed '\r\n'.
   /// This flag has the same functionality as OF_Text on z/OS but adds a
   /// carriage linefeed on Windows.
-  OF_TextWithCRLF = OF_Text | OF_CRLF,
+  OF_TextWithCRLF = CSUPPORT_OF_TEXT_WITH_CRLF,
 
   /// The file should be opened in append mode.
-  OF_Append = 4,
+  OF_Append = CSUPPORT_OF_APPEND,
 
   /// The returned handle can be used for deleting the file. Only makes a
   /// difference on windows.
-  OF_Delete = 8,
+  OF_Delete = CSUPPORT_OF_DELETE,
 
   /// When a child process is launched, this file should remain open in the
   /// child process.
-  OF_ChildInherit = 16,
+  OF_ChildInherit = CSUPPORT_OF_CHILD_INHERIT,
 
   /// Force files Atime to be updated on access. Only makes a difference on
   /// Windows.
-  OF_UpdateAtime = 32,
+  OF_UpdateAtime = CSUPPORT_OF_UPDATE_ATIME,
 };
 
 /// Create a potentially unique file name but does not create it.
@@ -1286,10 +1293,14 @@ ErrorOr<space_info> disk_space(const Twine &Path);
 class mapped_file_region {
 public:
   enum mapmode {
-    readonly,  ///< May only access map via const_data as read only.
-    readwrite, ///< May access map via data and modify it. Written to path.
-    priv       ///< May modify via data, but changes are lost on destruction.
+    readonly = CSUPPORT_MFM_READONLY,   ///< Read-only shared mapping.
+    readwrite = CSUPPORT_MFM_READWRITE, ///< Writable shared mapping.
+    priv = CSUPPORT_MFM_PRIVATE         ///< Writable private mapping.
   };
+
+  static_assert(static_cast<int>(readonly) == CSUPPORT_MFM_READONLY);
+  static_assert(static_cast<int>(readwrite) == CSUPPORT_MFM_READWRITE);
+  static_assert(static_cast<int>(priv) == CSUPPORT_MFM_PRIVATE);
 
 private:
   /// Platform-specific mapping state.
