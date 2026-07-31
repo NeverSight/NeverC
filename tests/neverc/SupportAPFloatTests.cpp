@@ -13,9 +13,42 @@
 #include <gtest/gtest.h>
 
 #include <limits>
+#include <utility>
 #include <vector>
 
 using namespace llvm;
+
+TEST(SupportAPFloatTest, SpecialStringsUseSharedCategories) {
+  struct TestCase {
+    StringRef Input;
+    csupport_apfloat_category_t Expected;
+  };
+
+  for (const TestCase &Test : {TestCase{"inf", CSUPPORT_APFLOAT_FC_INFINITY},
+                               TestCase{"nan", CSUPPORT_APFLOAT_FC_NAN}}) {
+    csupport_apfloat_category_t Category = CSUPPORT_APFLOAT_FC_NORMAL;
+    int IsNegative = 0;
+    int IsSignaling = 0;
+    unsigned Radix = 0;
+    const char *Payload = nullptr;
+    size_t PayloadLength = 0;
+
+    ASSERT_TRUE(csupport_apfloat_parse_special_string(
+        Test.Input.data(), Test.Input.size(), &Category, &IsNegative,
+        &IsSignaling, &Radix, &Payload, &PayloadLength))
+        << Test.Input.str();
+    EXPECT_EQ(Category, Test.Expected) << Test.Input.str();
+
+    APFloat Value(APFloat::IEEEdouble());
+    Expected<APFloat::opStatus> Status =
+        Value.convertFromString(Test.Input, APFloat::rmNearestTiesToEven);
+    ASSERT_TRUE(static_cast<bool>(Status)) << Test.Input.str();
+    if (Test.Expected == CSUPPORT_APFLOAT_FC_INFINITY)
+      EXPECT_TRUE(Value.isInfinity()) << Test.Input.str();
+    else
+      EXPECT_TRUE(Value.isNaN()) << Test.Input.str();
+  }
+}
 
 TEST(SupportAPFloatTest, DecimalExponentMustBeComplete) {
   APFloat Value(APFloat::IEEEquad());
@@ -122,6 +155,38 @@ TEST(SupportAPFloatTest, SignificandMultiplicationSizesTheFullProduct) {
   EXPECT_EQ(Exponent, 0);
 }
 
+TEST(SupportAPFloatTest, FusedMultiplyAddWidensAddendStorageSafely) {
+  const fltSemantics *Semantics[] = {
+      &APFloat::IEEEdouble(),
+      &APFloat::x87DoubleExtended(),
+      &APFloat::IEEEquad(),
+  };
+
+  for (const fltSemantics *Sem : Semantics) {
+    SCOPED_TRACE(Sem == &APFloat::IEEEdouble()          ? "IEEEdouble"
+                 : Sem == &APFloat::x87DoubleExtended() ? "x87"
+                                                        : "quad");
+    APFloat Value(*Sem);
+    APFloat Multiplicand(*Sem);
+    APFloat Addend(*Sem);
+    APFloat ExpectedValue(*Sem);
+
+    for (auto [Number, Text] :
+         {std::pair{&Value, "1.5"}, std::pair{&Multiplicand, "2.0"},
+          std::pair{&Addend, "0.25"}, std::pair{&ExpectedValue, "3.25"}}) {
+      Expected<APFloat::opStatus> Status =
+          Number->convertFromString(Text, APFloat::rmNearestTiesToEven);
+      ASSERT_TRUE(static_cast<bool>(Status)) << Text;
+      EXPECT_EQ(*Status, APFloat::opOK);
+    }
+
+    EXPECT_EQ(Value.fusedMultiplyAdd(Multiplicand, Addend,
+                                     APFloat::rmNearestTiesToEven),
+              APFloat::opOK);
+    EXPECT_EQ(Value.compare(ExpectedValue), APFloat::cmpEqual);
+  }
+}
+
 TEST(SupportAPFloatTest, AllOnesExceptLsbChecksEveryMultiwordFractionBit) {
   // IEEE quad has 112 fraction bits.  Bit 0 is the one exception; bit 64 is
   // the first bit in the second word and must not be mistaken for another LSB.
@@ -135,4 +200,14 @@ TEST(SupportAPFloatTest, AllOnesExceptLsbChecksEveryMultiwordFractionBit) {
   Significand[1] &= ~UINT64_C(1);
   EXPECT_FALSE(csupport_apfloat_is_significand_all_ones_except_lsb(
       Significand, /*precision=*/113));
+}
+
+TEST(SupportAPFloatTest, AllZeroFractionHandlesWordAlignedIntegralBit) {
+  const uint64_t OneBitPrecision[] = {1};
+  EXPECT_TRUE(csupport_apfloat_is_significand_all_zeros(OneBitPrecision,
+                                                        /*precision=*/1));
+
+  const uint64_t SixtyFiveBitPrecision[] = {0, 1};
+  EXPECT_TRUE(csupport_apfloat_is_significand_all_zeros(SixtyFiveBitPrecision,
+                                                        /*precision=*/65));
 }

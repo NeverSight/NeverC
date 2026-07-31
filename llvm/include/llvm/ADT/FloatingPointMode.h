@@ -15,6 +15,7 @@
 #ifndef LLVM_ADT_FLOATINGPOINTMODE_H
 #define LLVM_ADT_FLOATINGPOINTMODE_H
 
+#include "csupport/lfloating_lpoint_lmode.h"
 #include "llvm/ADT/BitmaskEnum.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/Support/raw_ostream.h"
@@ -36,11 +37,13 @@ namespace llvm {
 ///
 enum class RoundingMode : int8_t {
   // Rounding mode defined in IEEE-754.
-  TowardZero = 0,        ///< roundTowardZero.
-  NearestTiesToEven = 1, ///< roundTiesToEven.
-  TowardPositive = 2,    ///< roundTowardPositive.
-  TowardNegative = 3,    ///< roundTowardNegative.
-  NearestTiesToAway = 4, ///< roundTiesToAway.
+  TowardZero = CSUPPORT_RM_TOWARD_ZERO, ///< roundTowardZero.
+  NearestTiesToEven =
+      CSUPPORT_RM_NEAREST_TIES_TO_EVEN, ///< roundTiesToEven.
+  TowardPositive = CSUPPORT_RM_TOWARD_POSITIVE, ///< roundTowardPositive.
+  TowardNegative = CSUPPORT_RM_TOWARD_NEGATIVE, ///< roundTowardNegative.
+  NearestTiesToAway =
+      CSUPPORT_RM_NEAREST_TIES_TO_AWAY, ///< roundTiesToAway.
 
   // Special values.
   Dynamic = 7, ///< Denotes mode unknown at compile time.
@@ -266,12 +269,6 @@ enum FPClassTest : unsigned {
 };
 
 LLVM_DECLARE_ENUM_AS_BITMASK(FPClassTest, /* LargestValue */ fcPosInf);
-
-extern "C" {
-uint32_t csupport_fneg_fpclass(uint32_t mask);
-uint32_t csupport_inverse_fabs_fpclass(uint32_t mask);
-uint32_t csupport_unknown_sign_fpclass(uint32_t mask);
-}
 
 /// Return the test mask which returns true if the value's sign bit is flipped.
 inline FPClassTest fneg(FPClassTest Mask) {

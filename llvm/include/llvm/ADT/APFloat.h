@@ -362,15 +362,35 @@ struct fltSemantics {
 };
 
 static_assert(static_cast<int>(RoundingMode::TowardZero) ==
-              CSUPPORT_APFLOAT_RM_TOWARD_ZERO);
+              CSUPPORT_RM_TOWARD_ZERO);
 static_assert(static_cast<int>(RoundingMode::NearestTiesToEven) ==
-              CSUPPORT_APFLOAT_RM_NEAREST_TIES_TO_EVEN);
+              CSUPPORT_RM_NEAREST_TIES_TO_EVEN);
 static_assert(static_cast<int>(RoundingMode::TowardPositive) ==
-              CSUPPORT_APFLOAT_RM_TOWARD_POSITIVE);
+              CSUPPORT_RM_TOWARD_POSITIVE);
 static_assert(static_cast<int>(RoundingMode::TowardNegative) ==
-              CSUPPORT_APFLOAT_RM_TOWARD_NEGATIVE);
+              CSUPPORT_RM_TOWARD_NEGATIVE);
 static_assert(static_cast<int>(RoundingMode::NearestTiesToAway) ==
-              CSUPPORT_APFLOAT_RM_NEAREST_TIES_TO_AWAY);
+              CSUPPORT_RM_NEAREST_TIES_TO_AWAY);
+static_assert(static_cast<int>(APFloatBase::fcInfinity) ==
+              CSUPPORT_APFLOAT_FC_INFINITY);
+static_assert(static_cast<int>(APFloatBase::fcNaN) == CSUPPORT_APFLOAT_FC_NAN);
+static_assert(static_cast<int>(APFloatBase::fcNormal) ==
+              CSUPPORT_APFLOAT_FC_NORMAL);
+static_assert(static_cast<int>(APFloatBase::fcZero) ==
+              CSUPPORT_APFLOAT_FC_ZERO);
+static_assert(static_cast<int>(fltNonfiniteBehavior::IEEE754) ==
+              CSUPPORT_FLT_NFB_IEEE754);
+static_assert(static_cast<int>(fltNonfiniteBehavior::NanOnly) ==
+              CSUPPORT_FLT_NFB_NAN_ONLY);
+static_assert(static_cast<int>(fltNanEncoding::IEEE) == CSUPPORT_FLT_NAN_IEEE);
+static_assert(static_cast<int>(fltNanEncoding::AllOnes) ==
+              CSUPPORT_FLT_NAN_ALL_ONES);
+static_assert(static_cast<int>(fltNanEncoding::NegativeZero) ==
+              CSUPPORT_FLT_NAN_NEG_ZERO);
+static_assert(static_cast<int>(lfExactlyZero) == CSUPPORT_LF_EXACTLY_ZERO);
+static_assert(static_cast<int>(lfLessThanHalf) == CSUPPORT_LF_LESS_THAN_HALF);
+static_assert(static_cast<int>(lfExactlyHalf) == CSUPPORT_LF_EXACTLY_HALF);
+static_assert(static_cast<int>(lfMoreThanHalf) == CSUPPORT_LF_MORE_THAN_HALF);
 
 inline unsigned int APFloatBase::semanticsPrecision(const fltSemantics &s) {
   return s.precision;
@@ -413,8 +433,43 @@ toCSupportSemantics(const fltSemantics &Semantics) {
           Semantics.minExponent,
           Semantics.precision,
           Semantics.sizeInBits,
-          static_cast<int>(Semantics.nonFiniteBehavior),
-          static_cast<int>(Semantics.nanEncoding)};
+          static_cast<csupport_flt_nonfinite_behavior_t>(
+              Semantics.nonFiniteBehavior),
+          static_cast<csupport_flt_nan_encoding_t>(Semantics.nanEncoding)};
+}
+
+inline csupport_apfloat_category_t
+toCSupportCategory(APFloatBase::fltCategory Category) {
+  return static_cast<csupport_apfloat_category_t>(Category);
+}
+
+inline APFloatBase::fltCategory
+fromCSupportCategory(csupport_apfloat_category_t Category) {
+  return static_cast<APFloatBase::fltCategory>(Category);
+}
+
+inline csupport_rounding_mode_t
+toCSupportRoundingMode(APFloatBase::roundingMode Mode) {
+  return static_cast<csupport_rounding_mode_t>(Mode);
+}
+
+inline csupport_flt_nonfinite_behavior_t
+toCSupportNonfiniteBehavior(fltNonfiniteBehavior Behavior) {
+  return static_cast<csupport_flt_nonfinite_behavior_t>(Behavior);
+}
+
+inline csupport_flt_nan_encoding_t
+toCSupportNanEncoding(fltNanEncoding Encoding) {
+  return static_cast<csupport_flt_nan_encoding_t>(Encoding);
+}
+
+inline csupport_lost_fraction_t toCSupportLostFraction(lostFraction Fraction) {
+  return static_cast<csupport_lost_fraction_t>(Fraction);
+}
+
+inline lostFraction
+fromCSupportLostFraction(csupport_lost_fraction_t Fraction) {
+  return static_cast<lostFraction>(Fraction);
 }
 
 class IEEEFloat final : public APFloatBase {
@@ -933,7 +988,8 @@ inline void IEEEFloat::makeNaN(bool SNaN, bool Negative, const APInt *fill) {
   csupport_apfloat_make_nan(
       significandParts(), partCount(), semantics->precision, SNaN, &s,
       fill ? fill->getRawData() : nullptr, fill ? fill->getNumWords() : 0,
-      (int)semantics->nonFiniteBehavior, (int)semantics->nanEncoding,
+      toCSupportNonfiniteBehavior(semantics->nonFiniteBehavior),
+      toCSupportNanEncoding(semantics->nanEncoding),
       semantics == &APFloatBase::x87DoubleExtended());
   sign = s;
 }
@@ -1080,7 +1136,8 @@ inline void IEEEFloat::makeLargest(bool Negative) {
   exponent = semantics->maxExponent;
   csupport_apfloat_make_largest(
       significandParts(), partCount(), semantics->precision,
-      (int)semantics->nonFiniteBehavior, (int)semantics->nanEncoding);
+      toCSupportNonfiniteBehavior(semantics->nonFiniteBehavior),
+      toCSupportNanEncoding(semantics->nanEncoding));
 }
 
 inline void IEEEFloat::makeSmallest(bool Negative) {
@@ -1156,7 +1213,8 @@ IEEEFloat::compareAbsoluteValue(const IEEEFloat &rhs) const {
 
 inline IEEEFloat::cmpResult IEEEFloat::compare(const IEEEFloat &rhs) const {
   assert(semantics == rhs.semantics);
-  int r = csupport_apfloat_compare_categories((int)category, (int)rhs.category,
+  int r = csupport_apfloat_compare_categories(toCSupportCategory(category),
+                                              toCSupportCategory(rhs.category),
                                               sign, rhs.sign);
   if (r == -2)
     return cmpUnordered;
@@ -1184,8 +1242,9 @@ inline IEEEFloat::cmpResult IEEEFloat::compare(const IEEEFloat &rhs) const {
 inline lostFraction IEEEFloat::shiftSignificandRight(unsigned int bits) {
   assert((ExponentType)(exponent + bits) >= exponent);
   exponent += bits;
-  lostFraction lf = (lostFraction)csupport_apfloat_lost_fraction_truncation(
-      significandParts(), partCount(), bits);
+  lostFraction lf =
+      fromCSupportLostFraction(csupport_apfloat_lost_fraction_truncation(
+          significandParts(), partCount(), bits));
   APInt::tcShiftRight(significandParts(), partCount(), bits);
   return lf;
 }
@@ -1213,7 +1272,8 @@ inline bool IEEEFloat::roundAwayFromZero(roundingMode rounding_mode,
                                          lostFraction lost_fraction,
                                          unsigned int bit) const {
   return csupport_apfloat_round_away_from_zero(
-      (int)rounding_mode, (int)lost_fraction, (int)category, sign,
+      toCSupportRoundingMode(rounding_mode),
+      toCSupportLostFraction(lost_fraction), toCSupportCategory(category), sign,
       significandParts(), bit);
 }
 
@@ -1249,17 +1309,21 @@ inline IEEEFloat::opStatus IEEEFloat::normalize(roundingMode rounding_mode,
                                                 lostFraction lost_fraction) {
   if (!isFiniteNonZero())
     return opOK;
-  int cat = (int)category, s = sign, exp = exponent;
-  int nfb = (int)semantics->nonFiniteBehavior;
-  int ne = (int)semantics->nanEncoding;
+  csupport_apfloat_category_t cat = toCSupportCategory(category);
+  int s = sign, exp = exponent;
+  csupport_flt_nonfinite_behavior_t nfb =
+      toCSupportNonfiniteBehavior(semantics->nonFiniteBehavior);
+  csupport_flt_nan_encoding_t ne =
+      toCSupportNanEncoding(semantics->nanEncoding);
   int result = csupport_apfloat_normalize(
-      significandParts(), partCount(), &exp, &cat, &s, (int)rounding_mode,
-      (int)lost_fraction, semantics->precision, semantics->maxExponent,
-      semantics->minExponent, nfb, ne);
+      significandParts(), partCount(), &exp, &cat, &s,
+      toCSupportRoundingMode(rounding_mode),
+      toCSupportLostFraction(lost_fraction), semantics->precision,
+      semantics->maxExponent, semantics->minExponent, nfb, ne);
   exponent = exp;
-  category = (fltCategory)cat;
+  category = fromCSupportCategory(cat);
   sign = s;
-  if (cat == fcNaN && nfb == (int)fltNonfiniteBehavior::NanOnly)
+  if (cat == CSUPPORT_APFLOAT_FC_NAN && nfb == CSUPPORT_FLT_NFB_NAN_ONLY)
     makeNaN(false, sign);
   return (opStatus)result;
 }
@@ -1271,8 +1335,9 @@ IEEEFloat::convertNormalToHexString(char *dst, unsigned int hexDigits,
   unsigned out_len;
   csupport_apfloat_convert_normal_to_hex(
       dst, significandParts(), partCount(), semantics->precision, exponent,
-      sign, significandLSB(), hexDigits, upperCase, (int)rounding_mode,
-      (int)category, &out_len);
+      sign, significandLSB(), hexDigits, upperCase,
+      toCSupportRoundingMode(rounding_mode), toCSupportCategory(category),
+      &out_len);
   return dst + out_len;
 }
 
@@ -1524,8 +1589,8 @@ IEEEFloat::roundSignificandWithExponent(const integerPart *decSigParts,
       exponent = (decSig.exponent + semantics->precision -
                   (calcSemantics.precision - excessPrecision));
       calcLostFraction =
-          (lostFraction)csupport_apfloat_lost_fraction_truncation(
-              decSig.significandParts(), decSig.partCount(), truncatedBits);
+          fromCSupportLostFraction(csupport_apfloat_lost_fraction_truncation(
+              decSig.significandParts(), decSig.partCount(), truncatedBits));
       return normalize(rounding_mode, calcLostFraction);
     }
   }
@@ -1537,7 +1602,9 @@ IEEEFloat::convertFromHexadecimalString(StringRef s,
   category = fcNormal;
   zeroSignificand();
   exponent = 0;
-  int exp_out = 0, cat_out = 0, lf_out = 0;
+  int exp_out = 0;
+  csupport_apfloat_category_t cat_out = CSUPPORT_APFLOAT_FC_NORMAL;
+  csupport_lost_fraction_t lf_out = CSUPPORT_LF_EXACTLY_ZERO;
   int err = csupport_apfloat_convert_from_hex_core(
       s.begin(), s.end(), significandParts(), partCount(), integerPartWidth,
       semantics->precision, &exp_out, &cat_out, &lf_out);
@@ -1546,7 +1613,7 @@ IEEEFloat::convertFromHexadecimalString(StringRef s,
     return createStringError(inconvertibleErrorCode(),
                              csupport_apfloat_error_msg(err));
   exponent = exp_out;
-  return normalize(rounding_mode, (lostFraction)lf_out);
+  return normalize(rounding_mode, fromCSupportLostFraction(lf_out));
 }
 
 inline Expected<IEEEFloat::opStatus>
@@ -1601,7 +1668,8 @@ IEEEFloat::convertFromDecimalString(StringRef str, roundingMode rounding_mode) {
 }
 
 inline bool IEEEFloat::convertFromStringSpecials(StringRef str) {
-  int cat = 0, neg = 0, sig = 0;
+  csupport_apfloat_category_t cat = CSUPPORT_APFLOAT_FC_ZERO;
+  int neg = 0, sig = 0;
   unsigned radix = 0;
   const char *payload_begin = 0;
   size_t payload_len = 0;
@@ -1610,7 +1678,7 @@ inline bool IEEEFloat::convertFromStringSpecials(StringRef str) {
                                              &payload_len))
     return false;
 
-  if (cat == 1) {
+  if (cat == CSUPPORT_APFLOAT_FC_INFINITY) {
     makeInf(neg);
     return true;
   }
@@ -1661,9 +1729,9 @@ inline APInt IEEEFloat::convertF80LongDoubleAPFloatToAPInt() const {
   assert(semantics == &APFloatBase::x87DoubleExtended());
   assert(partCount() == 2);
   uint64_t words[2];
-  csupport_apfloat_convert_f80_to_words((int)category, isFiniteNonZero(),
-                                        exponent, sign, significandParts(),
-                                        words);
+  csupport_apfloat_convert_f80_to_words(toCSupportCategory(category),
+                                        isFiniteNonZero(), exponent, sign,
+                                        significandParts(), words);
   return APInt(80, words);
 }
 
@@ -1675,10 +1743,11 @@ inline APInt IEEEFloat::bitcastToAPInt() const {
   unsigned numWords = csupport_flt_part_count_for_bits(semantics->sizeInBits);
   uint64_t words[2] = {};
   csupport_apfloat_convert_ieee_to_words(
-      (int)category, isFiniteNonZero(), exponent, sign, significandParts(),
-      semantics->precision, semantics->sizeInBits, semantics->minExponent,
-      (int)semantics->nonFiniteBehavior, (int)semantics->nanEncoding, words,
-      numWords);
+      toCSupportCategory(category), isFiniteNonZero(), exponent, sign,
+      significandParts(), semantics->precision, semantics->sizeInBits,
+      semantics->minExponent,
+      toCSupportNonfiniteBehavior(semantics->nonFiniteBehavior),
+      toCSupportNanEncoding(semantics->nanEncoding), words, numWords);
   return APInt(semantics->sizeInBits, ArrayRef(words, numWords));
 }
 
@@ -1699,7 +1768,8 @@ inline void IEEEFloat::initFromF80LongDoubleAPInt(const APInt &api) {
   assert(partCount() == 2);
   int s = 0, exp = 0;
   uint64_t mysig = 0;
-  int cat = csupport_apfloat_unpack_f80(api.getRawData(), &s, &exp, &mysig);
+  csupport_apfloat_unpacked_category_t cat =
+      csupport_apfloat_unpack_f80(api.getRawData(), &s, &exp, &mysig);
   sign = s;
   switch (cat) {
   case CSUPPORT_APFLOAT_CAT_ZERO:
@@ -1734,10 +1804,10 @@ inline void IEEEFloat::initFromAPInt(const fltSemantics *Sem,
   int s = 0, exp = 0;
   unsigned stored_sig_parts =
       csupport_flt_part_count_for_bits(Sem->precision - 1);
-  int cat = csupport_apfloat_unpack_ieee(
+  csupport_apfloat_unpacked_category_t cat = csupport_apfloat_unpack_ieee(
       api.getRawData(), api.getNumWords(), Sem->precision, Sem->sizeInBits,
-      Sem->minExponent, (int)Sem->nonFiniteBehavior, (int)Sem->nanEncoding, &s,
-      &exp, sig_buf, 8);
+      Sem->minExponent, toCSupportNonfiniteBehavior(Sem->nonFiniteBehavior),
+      toCSupportNanEncoding(Sem->nanEncoding), &s, &exp, sig_buf, 8);
   initialize(Sem);
   assert(partCount() == stored_sig_parts);
   sign = s;
@@ -1810,13 +1880,14 @@ inline IEEEFloat::IEEEFloat(double d) {
 
 inline IEEEFloat::opStatus
 IEEEFloat::addOrSubtractSpecials(const IEEEFloat &rhs, bool subtract) {
-  int out_cat = (int)category, out_sign = sign;
+  csupport_apfloat_category_t out_cat = toCSupportCategory(category);
+  int out_sign = sign;
   int r = csupport_apfloat_add_or_subtract_specials(
-      (int)category, (int)rhs.category, subtract, sign, rhs.sign, &out_cat,
-      &out_sign);
+      toCSupportCategory(category), toCSupportCategory(rhs.category), subtract,
+      sign, rhs.sign, &out_cat, &out_sign);
   if (r == 0) {
-    if (out_cat != (int)category)
-      category = (fltCategory)out_cat;
+    if (out_cat != toCSupportCategory(category))
+      category = fromCSupportCategory(out_cat);
     sign = out_sign;
     if (category == fcNaN) {
       if (isSignaling()) {
@@ -1843,12 +1914,12 @@ IEEEFloat::addOrSubtractSpecials(const IEEEFloat &rhs, bool subtract) {
 }
 
 inline IEEEFloat::opStatus IEEEFloat::multiplySpecials(const IEEEFloat &rhs) {
-  int out_cat = (int)category;
-  int r = csupport_apfloat_multiply_specials((int)category, (int)rhs.category,
-                                             &out_cat);
+  csupport_apfloat_category_t out_cat = toCSupportCategory(category);
+  int r = csupport_apfloat_multiply_specials(
+      toCSupportCategory(category), toCSupportCategory(rhs.category), &out_cat);
   if (r == 0) {
-    if (out_cat != (int)category)
-      category = (fltCategory)out_cat;
+    if (out_cat != toCSupportCategory(category))
+      category = fromCSupportCategory(out_cat);
     return opOK;
   }
   if (r == -2) {
@@ -1868,12 +1939,12 @@ inline IEEEFloat::opStatus IEEEFloat::multiplySpecials(const IEEEFloat &rhs) {
 }
 
 inline IEEEFloat::opStatus IEEEFloat::divideSpecials(const IEEEFloat &rhs) {
-  int out_cat = (int)category;
-  int r = csupport_apfloat_divide_specials((int)category, (int)rhs.category,
-                                           &out_cat);
+  csupport_apfloat_category_t out_cat = toCSupportCategory(category);
+  int r = csupport_apfloat_divide_specials(
+      toCSupportCategory(category), toCSupportCategory(rhs.category), &out_cat);
   if (r == 0) {
-    if (out_cat != (int)category)
-      category = (fltCategory)out_cat;
+    if (out_cat != toCSupportCategory(category))
+      category = fromCSupportCategory(out_cat);
     return opOK;
   }
   if (r == -2) {
@@ -1900,9 +1971,9 @@ inline IEEEFloat::opStatus IEEEFloat::divideSpecials(const IEEEFloat &rhs) {
 }
 
 inline IEEEFloat::opStatus IEEEFloat::modSpecials(const IEEEFloat &rhs) {
-  int out_cat = 0;
-  int r =
-      csupport_apfloat_mod_specials((int)category, (int)rhs.category, &out_cat);
+  csupport_apfloat_category_t out_cat = toCSupportCategory(category);
+  int r = csupport_apfloat_mod_specials(
+      toCSupportCategory(category), toCSupportCategory(rhs.category), &out_cat);
   if (r == 0)
     return opOK;
   if (r == -2) {
@@ -1921,9 +1992,9 @@ inline IEEEFloat::opStatus IEEEFloat::modSpecials(const IEEEFloat &rhs) {
 }
 
 inline IEEEFloat::opStatus IEEEFloat::remainderSpecials(const IEEEFloat &rhs) {
-  int out_cat = 0;
-  int r = csupport_apfloat_remainder_specials((int)category, (int)rhs.category,
-                                              &out_cat);
+  csupport_apfloat_category_t out_cat = toCSupportCategory(category);
+  int r = csupport_apfloat_remainder_specials(
+      toCSupportCategory(category), toCSupportCategory(rhs.category), &out_cat);
   if (r == 0)
     return opOK;
   if (r == -2) {
@@ -3511,43 +3582,44 @@ inline lostFraction IEEEFloat::addOrSubtractSignificand(const IEEEFloat &rhs,
   assert(semantics == rhs.semantics);
   int s = sign ? 1 : 0;
   int rhs_s = rhs.sign ? 1 : 0;
-  int lf = csupport_apfloat_add_or_subtract_significand(
+  csupport_lost_fraction_t lf = csupport_apfloat_add_or_subtract_significand(
       significandParts(), partCount(), &exponent, &s, rhs.significandParts(),
       rhs.exponent, rhs_s, subtract ? 1 : 0);
   sign = (unsigned)s;
-  return (lostFraction)lf;
+  return fromCSupportLostFraction(lf);
 }
 
 inline lostFraction IEEEFloat::multiplySignificand(const IEEEFloat &rhs) {
   exponent += rhs.exponent;
   int exp = exponent;
-  int lf = csupport_apfloat_multiply_significand_simple(
+  csupport_lost_fraction_t lf = csupport_apfloat_multiply_significand_simple(
       significandParts(), rhs.significandParts(), partCount(),
       semantics->precision, &exp);
   exponent = exp;
-  return (lostFraction)lf;
+  return fromCSupportLostFraction(lf);
 }
 
 inline lostFraction IEEEFloat::multiplySignificand(const IEEEFloat &rhs,
                                                    IEEEFloat addend) {
   int s = sign ? 1 : 0;
   const csupport_flt_semantics_t CSemantics = toCSupportSemantics(*semantics);
-  int lf = csupport_apfloat_multiply_significand_fma(
+  csupport_lost_fraction_t lf = csupport_apfloat_multiply_significand_fma(
       &CSemantics, significandParts(), partCount(), &exponent, &s,
       rhs.significandParts(), rhs.exponent, addend.significandParts(),
-      addend.partCount(), addend.exponent, (int)addend.category,
+      addend.partCount(), addend.exponent, toCSupportCategory(addend.category),
       addend.sign ? 1 : 0, addend.isNonZero() ? 1 : 0);
   sign = (unsigned)s;
-  return (lostFraction)lf;
+  return fromCSupportLostFraction(lf);
 }
 
 inline lostFraction IEEEFloat::divideSignificand(const IEEEFloat &rhs) {
   assert(semantics == rhs.semantics);
   exponent -= rhs.exponent;
   int exp_val = exponent;
-  lostFraction lf = (lostFraction)csupport_apfloat_divide_significand(
-      significandParts(), rhs.significandParts(), partCount(),
-      semantics->precision, &exp_val);
+  lostFraction lf =
+      fromCSupportLostFraction(csupport_apfloat_divide_significand(
+          significandParts(), rhs.significandParts(), partCount(),
+          semantics->precision, &exp_val));
   exponent = exp_val;
   return lf;
 }
@@ -3555,7 +3627,7 @@ inline lostFraction IEEEFloat::divideSignificand(const IEEEFloat &rhs) {
 inline IEEEFloat::opStatus IEEEFloat::convert(const fltSemantics &toSemantics_,
                                               roundingMode rounding_mode,
                                               bool *losesInfo) {
-  int cat = (int)category;
+  csupport_apfloat_category_t cat = toCSupportCategory(category);
   int sgn = sign ? 1 : 0;
   int loses = 0;
   const csupport_flt_semantics_t FromSemantics =
@@ -3567,10 +3639,10 @@ inline IEEEFloat::opStatus IEEEFloat::convert(const fltSemantics &toSemantics_,
       semantics == &APFloatBase::x87DoubleExtended(),
       &toSemantics_ == &APFloatBase::x87DoubleExtended(), &significand.part,
       &significand.parts, partCount(), &exponent, &cat, &sgn,
-      (int)rounding_mode, isSignaling() ? 1 : 0, isFiniteNonZero() ? 1 : 0,
-      &loses);
+      toCSupportRoundingMode(rounding_mode), isSignaling() ? 1 : 0,
+      isFiniteNonZero() ? 1 : 0, &loses);
   semantics = &toSemantics_;
-  category = (fltCategory)cat;
+  category = fromCSupportCategory(cat);
   sign = (unsigned)sgn;
   *losesInfo = loses != 0;
   return (opStatus)fs;
@@ -3591,8 +3663,9 @@ inline IEEEFloat::opStatus IEEEFloat::convertToSignExtendedInteger(
   int exact = 0;
   int r = csupport_apfloat_convert_to_sign_ext_int(
       significandParts(), partCount(), semantics->precision, exponent,
-      (int)category, sign, isSigned, (int)rounding_mode,
-      (uint64_t *)(parts.data()), dstPartsCount, width, &exact);
+      toCSupportCategory(category), sign, isSigned,
+      toCSupportRoundingMode(rounding_mode), (uint64_t *)(parts.data()),
+      dstPartsCount, width, &exact);
   *isExact = exact;
   if (r < 0)
     return opInvalidOp;
@@ -3638,8 +3711,9 @@ inline IEEEFloat::opStatus IEEEFloat::convertFromUnsignedParts(
   precision = semantics->precision;
   if (precision <= omsb) {
     exponent = omsb - 1;
-    lost_fraction = (lostFraction)csupport_apfloat_lost_fraction_truncation(
-        src, srcCount, omsb - precision);
+    lost_fraction =
+        fromCSupportLostFraction(csupport_apfloat_lost_fraction_truncation(
+            src, srcCount, omsb - precision));
     APInt::tcExtract(dst, dstCount, src, precision, omsb - precision);
   } else {
     exponent = precision - 1;

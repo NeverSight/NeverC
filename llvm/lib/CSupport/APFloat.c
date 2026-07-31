@@ -3,7 +3,6 @@
 #include "include/csupport/buffer.h"
 #include "include/csupport/la_lp_lfloat.h"
 #include "include/csupport/lapint.h"
-#include "include/csupport/types.h"
 #include <assert.h>
 #include <limits.h>
 #include <math.h>
@@ -49,20 +48,21 @@ int csupport_float_is_inf(double v) { return !csupport_float_is_nan(v) && csuppo
 int csupport_float_is_zero(double v) { return v == 0.0; }
 int csupport_float_is_negative(double v) { return v < 0.0 || (v == 0.0 && 1.0/v < 0.0); }
 
-double csupport_float_round_to_integral(double v, int round_mode) {
+double csupport_float_round_to_integral(double v,
+                                        csupport_rounding_mode_t round_mode) {
   switch (round_mode) {
-  case CSUPPORT_APFLOAT_RM_TOWARD_ZERO:
+  case CSUPPORT_RM_TOWARD_ZERO:
     return trunc(v);
-  case CSUPPORT_APFLOAT_RM_NEAREST_TIES_TO_EVEN:
+  case CSUPPORT_RM_NEAREST_TIES_TO_EVEN:
     return nearbyint(v);
-  case CSUPPORT_APFLOAT_RM_TOWARD_POSITIVE:
+  case CSUPPORT_RM_TOWARD_POSITIVE:
     return ceil(v);
-  case CSUPPORT_APFLOAT_RM_TOWARD_NEGATIVE:
+  case CSUPPORT_RM_TOWARD_NEGATIVE:
     return floor(v);
-  case CSUPPORT_APFLOAT_RM_NEAREST_TIES_TO_AWAY:
+  case CSUPPORT_RM_NEAREST_TIES_TO_AWAY:
     return round(v);
-  default: return nearbyint(v);
   }
+  return nearbyint(v);
 }
 
 const char *csupport_apfloat_error_msg(int err) {
@@ -210,7 +210,9 @@ int csupport_apfloat_interpret_decimal(const char *begin, const char *end,
   return CSUPPORT_APFLOAT_ERR_NONE;
 }
 
-int csupport_apfloat_combine_lost_fractions(int more, int less) {
+csupport_lost_fraction_t
+csupport_apfloat_combine_lost_fractions(csupport_lost_fraction_t more,
+                                        csupport_lost_fraction_t less) {
   if (less != CSUPPORT_LF_EXACTLY_ZERO) {
     if (more == CSUPPORT_LF_EXACTLY_ZERO)
       more = CSUPPORT_LF_LESS_THAN_HALF;
@@ -227,9 +229,9 @@ unsigned csupport_apfloat_huerr_bound(int inexact_multiply,
   return (unsigned)inexact_multiply + 2 * (huerr1 + huerr2);
 }
 
-int csupport_apfloat_lost_fraction_truncation(const uint64_t *parts,
-                                               unsigned part_count,
-                                               unsigned bits) {
+csupport_lost_fraction_t
+csupport_apfloat_lost_fraction_truncation(const uint64_t *parts,
+                                          unsigned part_count, unsigned bits) {
   unsigned lsb = csupport_apint_tc_lsb(parts, part_count);
   if (bits <= lsb) return CSUPPORT_LF_EXACTLY_ZERO;
   if (bits == lsb + 1) return CSUPPORT_LF_EXACTLY_HALF;
@@ -298,7 +300,8 @@ char *csupport_apfloat_write_signed_decimal(char *dst, int value) {
 }
 
 int csupport_apfloat_trailing_hex_fraction(const char *p, const char *end,
-                                            unsigned digit_value, int *result) {
+                                           unsigned digit_value,
+                                           csupport_lost_fraction_t *result) {
   if (digit_value > 8) { *result = CSUPPORT_LF_MORE_THAN_HALF; return 0; }
   if (digit_value < 8 && digit_value > 0) { *result = CSUPPORT_LF_LESS_THAN_HALF; return 0; }
 
@@ -363,7 +366,8 @@ int csupport_apfloat_is_significand_all_zeros(const uint64_t *parts,
   for (unsigned i = 0; i < part_count - 1; i++)
     if (parts[i]) return 0;
   unsigned num_high_bits = apfloat_high_padding_bits(precision);
-  uint64_t high_mask = ~(uint64_t)0 >> num_high_bits;
+  uint64_t high_mask =
+      num_high_bits == APFLOAT_PART_BITS ? 0 : ~(uint64_t)0 >> num_high_bits;
   return (parts[part_count - 1] & high_mask) == 0;
 }
 
@@ -392,39 +396,38 @@ void csupport_apfloat_tc_set_least_significant_bits(uint64_t *dst,
     dst[i++] = 0;
 }
 
-int csupport_apfloat_round_away_from_zero(int rounding_mode, int lost_fraction,
-                                          int category, int sign_bit,
-                                          const uint64_t *parts, unsigned bit) {
+int csupport_apfloat_round_away_from_zero(
+    csupport_rounding_mode_t rounding_mode,
+    csupport_lost_fraction_t lost_fraction,
+    csupport_apfloat_category_t category, int sign_bit, const uint64_t *parts,
+    unsigned bit) {
   assert(lost_fraction != CSUPPORT_LF_EXACTLY_ZERO);
 
   switch (rounding_mode) {
-  case CSUPPORT_APFLOAT_RM_TOWARD_ZERO:
+  case CSUPPORT_RM_TOWARD_ZERO:
     return 0;
-  case CSUPPORT_APFLOAT_RM_NEAREST_TIES_TO_EVEN:
+  case CSUPPORT_RM_NEAREST_TIES_TO_EVEN:
     if (lost_fraction == CSUPPORT_LF_MORE_THAN_HALF) return 1;
     if (lost_fraction == CSUPPORT_LF_EXACTLY_HALF &&
         category != LLVM_FC_ZERO)
       return csupport_apint_tc_extract_bit(parts, bit);
     return 0;
-  case CSUPPORT_APFLOAT_RM_TOWARD_POSITIVE:
+  case CSUPPORT_RM_TOWARD_POSITIVE:
     return !sign_bit;
-  case CSUPPORT_APFLOAT_RM_TOWARD_NEGATIVE:
+  case CSUPPORT_RM_TOWARD_NEGATIVE:
     return sign_bit;
-  case CSUPPORT_APFLOAT_RM_NEAREST_TIES_TO_AWAY:
+  case CSUPPORT_RM_NEAREST_TIES_TO_AWAY:
     return lost_fraction == CSUPPORT_LF_EXACTLY_HALF ||
            lost_fraction == CSUPPORT_LF_MORE_THAN_HALF;
-  default:
-    return 0;
   }
+  return 0;
 }
 
-int csupport_apfloat_convert_normal_to_hex(char *dst,
-    const uint64_t *significand, unsigned parts_count,
-    unsigned precision, int exponent_val, int sign_bit,
-    unsigned sig_lsb,
-    unsigned hex_digits, int upper_case, int rounding_mode,
-    int category,
-    unsigned *out_len) {
+int csupport_apfloat_convert_normal_to_hex(
+    char *dst, const uint64_t *significand, unsigned parts_count,
+    unsigned precision, int exponent_val, int sign_bit, unsigned sig_lsb,
+    unsigned hex_digits, int upper_case, csupport_rounding_mode_t rounding_mode,
+    csupport_apfloat_category_t category, unsigned *out_len) {
   unsigned value_bits, shift, output_digits;
   const char *hex_chars = upper_case ? "0123456789ABCDEF0" : "0123456789abcdef0";
   char *p;
@@ -445,7 +448,9 @@ int csupport_apfloat_convert_normal_to_hex(char *dst,
   if (hex_digits) {
     if (hex_digits < output_digits) {
       unsigned bits = value_bits - hex_digits * 4;
-      int fraction = csupport_apfloat_lost_fraction_truncation(significand, parts_count, bits);
+      csupport_lost_fraction_t fraction =
+          csupport_apfloat_lost_fraction_truncation(significand, parts_count,
+                                                    bits);
       round_up = csupport_apfloat_round_away_from_zero(rounding_mode, fraction,
                                                         category, sign_bit,
                                                         significand, bits);
@@ -462,8 +467,8 @@ int csupport_apfloat_convert_normal_to_hex(char *dst,
         part = 0;
       else
         part = significand[count] << shift;
-      if (count && shift)
-        part |= significand[count - 1] >> (64 - shift);
+      if (count && shift > 0 && shift < APFLOAT_PART_BITS)
+        part |= significand[count - 1] >> (APFLOAT_PART_BITS - shift);
       unsigned cur = 64 / 4;
       if (cur > output_digits) cur = output_digits;
       dst += csupport_apfloat_part_as_hex(dst, part, cur, hex_chars);
@@ -499,15 +504,18 @@ int csupport_apfloat_convert_normal_to_hex(char *dst,
   return 0;
 }
 
-static int shift_right_internal(uint64_t *dst, unsigned parts, unsigned bits) {
-  int lf = csupport_apfloat_lost_fraction_truncation(dst, parts, bits);
+static csupport_lost_fraction_t
+shift_right_internal(uint64_t *dst, unsigned parts, unsigned bits) {
+  csupport_lost_fraction_t lf =
+      csupport_apfloat_lost_fraction_truncation(dst, parts, bits);
   csupport_apint_shift_right_logical(dst, dst, parts, bits);
   return lf;
 }
 
-int csupport_apfloat_divide_significand(
-    uint64_t *lhs_sig, const uint64_t *rhs_sig,
-    unsigned parts_count, unsigned precision, int *exponent_out) {
+csupport_lost_fraction_t
+csupport_apfloat_divide_significand(uint64_t *lhs_sig, const uint64_t *rhs_sig,
+                                    unsigned parts_count, unsigned precision,
+                                    int *exponent_out) {
   uint64_t scratch[4];
   uint64_t *dividend;
   unsigned i, bit;
@@ -553,7 +561,7 @@ int csupport_apfloat_divide_significand(
   }
 
   int cmp = csupport_apint_tc_compare(dividend, divisor, parts_count);
-  int lost_fraction;
+  csupport_lost_fraction_t lost_fraction;
   if (cmp > 0)
     lost_fraction = CSUPPORT_LF_MORE_THAN_HALF;
   else if (cmp == 0)
@@ -570,9 +578,9 @@ int csupport_apfloat_divide_significand(
   return lost_fraction;
 }
 
-int csupport_apfloat_multiply_significand_simple(
-    uint64_t *lhs_sig, const uint64_t *rhs_sig,
-    unsigned parts_count, unsigned precision, int *exponent_out) {
+csupport_lost_fraction_t csupport_apfloat_multiply_significand_simple(
+    uint64_t *lhs_sig, const uint64_t *rhs_sig, unsigned parts_count,
+    unsigned precision, int *exponent_out) {
   const uint64_t extended_bits = (uint64_t)precision * 2 + 1;
   const unsigned expected_parts_count =
       precision / APFLOAT_PART_BITS + 1;
@@ -589,7 +597,7 @@ int csupport_apfloat_multiply_significand_simple(
                                      : product_parts_count;
   uint64_t scratch[4];
   uint64_t *full_sig;
-  int lost_fraction;
+  csupport_lost_fraction_t lost_fraction;
   unsigned omsb;
 
   if (storage_parts_count > 4)
@@ -612,7 +620,8 @@ int csupport_apfloat_multiply_significand_simple(
   if (omsb > precision) {
     unsigned bits = omsb - precision;
     unsigned sig_parts = csupport_flt_part_count_for_bits(omsb);
-    int lf = shift_right_internal(full_sig, sig_parts, bits);
+    csupport_lost_fraction_t lf =
+        shift_right_internal(full_sig, sig_parts, bits);
     lost_fraction = csupport_apfloat_combine_lost_fractions(lf, lost_fraction);
     *exponent_out += (int)bits;
   }
@@ -625,9 +634,12 @@ int csupport_apfloat_multiply_significand_simple(
   return lost_fraction;
 }
 
-static int apfloat_shift_sig_right(uint64_t *sig, unsigned parts, int *exp,
-                                   unsigned bits) {
-  int lf = csupport_apfloat_lost_fraction_truncation(sig, parts, bits);
+static csupport_lost_fraction_t apfloat_shift_sig_right(uint64_t *sig,
+                                                        unsigned parts,
+                                                        int *exp,
+                                                        unsigned bits) {
+  csupport_lost_fraction_t lf =
+      csupport_apfloat_lost_fraction_truncation(sig, parts, bits);
   csupport_apint_shift_right_logical(sig, sig, parts, bits);
   *exp += (int)bits;
   return lf;
@@ -658,13 +670,13 @@ static int apfloat_cmp_abs_magnitude(int lhs_exp, const uint64_t *lhs_sig,
   return 0;
 }
 
-int csupport_apfloat_add_or_subtract_significand(
+csupport_lost_fraction_t csupport_apfloat_add_or_subtract_significand(
     uint64_t *lhs_sig, unsigned parts_count, int *lhs_exp, int *lhs_sign,
     const uint64_t *rhs_sig, int rhs_exp, int rhs_sign, int subtract) {
   uint64_t stack_temp[8];
   uint64_t *temp = stack_temp;
   uint64_t *alloc_temp = NULL;
-  int lost_fraction;
+  csupport_lost_fraction_t lost_fraction;
   int bits;
   uint64_t borrow_u;
 
@@ -739,15 +751,16 @@ int csupport_apfloat_add_or_subtract_significand(
 }
 
 int csupport_apfloat_handle_overflow(
-    uint64_t *significand, unsigned parts_count,
-    unsigned precision, int rounding_mode, int *sign,
-    int *category_out, int *exponent_out,
+    uint64_t *significand, unsigned parts_count, unsigned precision,
+    csupport_rounding_mode_t rounding_mode, int *sign,
+    csupport_apfloat_category_t *category_out, int *exponent_out,
     int max_exponent, int min_exponent,
-    int non_finite_behavior, int nan_encoding) {
-  if (rounding_mode == CSUPPORT_APFLOAT_RM_NEAREST_TIES_TO_EVEN ||
-      rounding_mode == CSUPPORT_APFLOAT_RM_NEAREST_TIES_TO_AWAY ||
-      (rounding_mode == CSUPPORT_APFLOAT_RM_TOWARD_POSITIVE && !*sign) ||
-      (rounding_mode == CSUPPORT_APFLOAT_RM_TOWARD_NEGATIVE && *sign)) {
+    csupport_flt_nonfinite_behavior_t non_finite_behavior,
+    csupport_flt_nan_encoding_t nan_encoding) {
+  if (rounding_mode == CSUPPORT_RM_NEAREST_TIES_TO_EVEN ||
+      rounding_mode == CSUPPORT_RM_NEAREST_TIES_TO_AWAY ||
+      (rounding_mode == CSUPPORT_RM_TOWARD_POSITIVE && !*sign) ||
+      (rounding_mode == CSUPPORT_RM_TOWARD_NEGATIVE && *sign)) {
     if (non_finite_behavior == CSUPPORT_FLT_NFB_NAN_ONLY) {
       *category_out = LLVM_FC_NAN;
       if (nan_encoding == CSUPPORT_FLT_NAN_NEG_ZERO)
@@ -775,11 +788,13 @@ int csupport_apfloat_handle_overflow(
 }
 
 int csupport_apfloat_normalize(
-    uint64_t *significand, unsigned parts_count,
-    int *exponent, int *category, int *sign,
-    int rounding_mode, int lost_fraction,
-    unsigned precision, int max_exponent, int min_exponent,
-    int non_finite_behavior, int nan_encoding) {
+    uint64_t *significand, unsigned parts_count, int *exponent,
+    csupport_apfloat_category_t *category, int *sign,
+    csupport_rounding_mode_t rounding_mode,
+    csupport_lost_fraction_t lost_fraction, unsigned precision,
+    int max_exponent, int min_exponent,
+    csupport_flt_nonfinite_behavior_t non_finite_behavior,
+    csupport_flt_nan_encoding_t nan_encoding) {
   unsigned omsb;
   int exponent_change;
 
@@ -808,8 +823,8 @@ int csupport_apfloat_normalize(
     }
 
     if (exponent_change > 0) {
-      int lf = shift_right_internal(significand, parts_count,
-                                    (unsigned)exponent_change);
+      csupport_lost_fraction_t lf = shift_right_internal(
+          significand, parts_count, (unsigned)exponent_change);
       *exponent += exponent_change;
       lost_fraction = csupport_apfloat_combine_lost_fractions(lf, lost_fraction);
 
@@ -848,7 +863,8 @@ int csupport_apfloat_normalize(
 
     if (omsb == precision + 1) {
       if (*exponent == max_exponent) {
-        int rm = *sign ? 3 : 2;
+        csupport_rounding_mode_t rm =
+            *sign ? CSUPPORT_RM_TOWARD_NEGATIVE : CSUPPORT_RM_TOWARD_POSITIVE;
         return csupport_apfloat_handle_overflow(
             significand, parts_count, precision, rm, sign,
             category, exponent, max_exponent, min_exponent,
@@ -881,13 +897,12 @@ int csupport_apfloat_normalize(
   return CSUPPORT_APFLOAT_OP_UNDERFLOW | CSUPPORT_APFLOAT_OP_INEXACT;
 }
 
-int csupport_apfloat_specials_category(int lhs_cat, int rhs_cat,
-                                        int lhs_sign, int rhs_sign,
-                                        int subtract, int op_type,
-                                        int non_finite_behavior,
-                                        int *out_cat, int *out_sign,
-                                        int *is_signaling_lhs,
-                                        int *is_signaling_rhs) {
+int csupport_apfloat_specials_category(
+    csupport_apfloat_category_t lhs_cat, csupport_apfloat_category_t rhs_cat,
+    int lhs_sign, int rhs_sign, int subtract, int op_type,
+    csupport_flt_nonfinite_behavior_t non_finite_behavior,
+    csupport_apfloat_category_t *out_cat, int *out_sign, int *is_signaling_lhs,
+    int *is_signaling_rhs) {
   int key = lhs_cat * 4 + rhs_cat;
   (void)is_signaling_lhs;
   (void)is_signaling_rhs;
@@ -896,34 +911,50 @@ int csupport_apfloat_specials_category(int lhs_cat, int rhs_cat,
     *out_cat = lhs_cat;
     *out_sign = lhs_sign;
     switch (key) {
-    case 0*4+3: case 1*4+3: case 2*4+3:
-      *out_cat = rhs_cat; *out_sign = rhs_sign; return 1;
-    case 3*4+0: case 3*4+1: case 3*4+2: case 3*4+3:
+    case LLVM_FC_INFINITY * 4 + LLVM_FC_ZERO:
+    case LLVM_FC_NAN * 4 + LLVM_FC_ZERO:
+    case LLVM_FC_NORMAL * 4 + LLVM_FC_ZERO:
+      *out_cat = rhs_cat;
+      *out_sign = rhs_sign;
       return 1;
-    case 1*4+0: case 2*4+1: case 2*4+0:
+    case LLVM_FC_ZERO * 4 + LLVM_FC_INFINITY:
+    case LLVM_FC_ZERO * 4 + LLVM_FC_NAN:
+    case LLVM_FC_ZERO * 4 + LLVM_FC_NORMAL:
+    case LLVM_FC_ZERO * 4 + LLVM_FC_ZERO:
+      return 1;
+    case LLVM_FC_NAN * 4 + LLVM_FC_INFINITY:
+    case LLVM_FC_NORMAL * 4 + LLVM_FC_NAN:
+    case LLVM_FC_NORMAL * 4 + LLVM_FC_INFINITY:
       return 0;
-    case 1*4+2: case 0*4+2:
-      *out_cat = 2; *out_sign = rhs_sign ^ subtract; return 0;
-    case 0*4+1:
-      *out_sign = rhs_sign ^ subtract; return 0;
-    case 0*4+0:
+    case LLVM_FC_NAN * 4 + LLVM_FC_NORMAL:
+    case LLVM_FC_INFINITY * 4 + LLVM_FC_NORMAL:
+      *out_cat = LLVM_FC_NORMAL;
+      *out_sign = rhs_sign ^ subtract;
       return 0;
-    case 2*4+2:
+    case LLVM_FC_INFINITY * 4 + LLVM_FC_NAN:
+      *out_sign = rhs_sign ^ subtract;
+      return 0;
+    case LLVM_FC_INFINITY * 4 + LLVM_FC_INFINITY:
+      return 0;
+    case LLVM_FC_NORMAL * 4 + LLVM_FC_NORMAL:
       if (((lhs_sign ^ rhs_sign) != 0) != subtract) {
-        *out_cat = 3; return -1;
+        *out_cat = LLVM_FC_ZERO;
+        return -1;
       }
       return 0;
-    case 1*4+1:
+    case LLVM_FC_NAN * 4 + LLVM_FC_NAN:
       return 2;
-    default: return -2;
+    default:
+      return -2;
     }
   }
   return -2;
 }
 
-void csupport_apfloat_make_largest(uint64_t *significand, unsigned part_count,
-                                   unsigned precision, int non_finite_behavior,
-                                   int nan_encoding) {
+void csupport_apfloat_make_largest(
+    uint64_t *significand, unsigned part_count, unsigned precision,
+    csupport_flt_nonfinite_behavior_t non_finite_behavior,
+    csupport_flt_nan_encoding_t nan_encoding) {
   memset(significand, 0xFF, sizeof(uint64_t) * (part_count - 1));
   unsigned unused_high_bits = part_count * 64 - precision;
   significand[part_count - 1] = (unused_high_bits < 64)
@@ -1071,13 +1102,10 @@ unsigned csupport_apfloat_power_of5(uint64_t *dst, size_t dst_parts,
 }
 
 /*--- convertFromStringSpecials: parse inf/nan string representations ---*/
-int csupport_apfloat_parse_special_string(const char *str, size_t len,
-                                           int *out_category,
-                                           int *out_is_negative,
-                                           int *out_is_signaling,
-                                           unsigned *out_radix,
-                                           const char **payload_begin,
-                                           size_t *payload_len) {
+int csupport_apfloat_parse_special_string(
+    const char *str, size_t len, csupport_apfloat_category_t *out_category,
+    int *out_is_negative, int *out_is_signaling, unsigned *out_radix,
+    const char **payload_begin, size_t *payload_len) {
   if (len < 3) return 0;
 
   const char *s = str;
@@ -1085,17 +1113,17 @@ int csupport_apfloat_parse_special_string(const char *str, size_t len,
   int is_negative = 0;
 
   if (slen == 3 && (s[0] == 'i' && s[1] == 'n' && s[2] == 'f')) {
-    *out_category = 1; /* infinity */
+    *out_category = LLVM_FC_INFINITY;
     *out_is_negative = 0;
     return 1;
   }
   if (slen == 8 && memcmp(s, "INFINITY", 8) == 0) {
-    *out_category = 1;
+    *out_category = LLVM_FC_INFINITY;
     *out_is_negative = 0;
     return 1;
   }
   if (slen == 4 && s[0] == '+' && s[1] == 'I' && s[2] == 'n' && s[3] == 'f') {
-    *out_category = 1;
+    *out_category = LLVM_FC_INFINITY;
     *out_is_negative = 0;
     return 1;
   }
@@ -1109,7 +1137,7 @@ int csupport_apfloat_parse_special_string(const char *str, size_t len,
     if ((slen == 3 && s[0] == 'i' && s[1] == 'n' && s[2] == 'f') ||
         (slen == 8 && memcmp(s, "INFINITY", 8) == 0) ||
         (slen == 3 && s[0] == 'I' && s[1] == 'n' && s[2] == 'f')) {
-      *out_category = 1;
+      *out_category = LLVM_FC_INFINITY;
       *out_is_negative = 1;
       return 1;
     }
@@ -1129,7 +1157,7 @@ int csupport_apfloat_parse_special_string(const char *str, size_t len,
   s += 3;
   slen -= 3;
 
-  *out_category = 2; /* NaN */
+  *out_category = LLVM_FC_NAN;
   *out_is_negative = is_negative;
   *out_is_signaling = is_signaling;
 
@@ -1257,36 +1285,36 @@ size_t csupport_apfloat_format_to_string(
 }
 
 /*--- roundAwayFromZero: determine rounding direction ---*/
-int csupport_apfloat_round_away_from_zero_simple(int rounding_mode,
-                                                   int lost_fraction,
-                                                   int bit_at_boundary) {
+int csupport_apfloat_round_away_from_zero_simple(
+    csupport_rounding_mode_t rounding_mode,
+    csupport_lost_fraction_t lost_fraction, int bit_at_boundary) {
   switch (rounding_mode) {
-  case CSUPPORT_APFLOAT_RM_TOWARD_ZERO:
+  case CSUPPORT_RM_TOWARD_ZERO:
     return 0;
-  case CSUPPORT_APFLOAT_RM_NEAREST_TIES_TO_EVEN:
+  case CSUPPORT_RM_NEAREST_TIES_TO_EVEN:
     if (lost_fraction == CSUPPORT_LF_MORE_THAN_HALF)
       return 1;
     if (lost_fraction == CSUPPORT_LF_EXACTLY_HALF)
       return bit_at_boundary;
     return 0;
-  case CSUPPORT_APFLOAT_RM_TOWARD_POSITIVE:
+  case CSUPPORT_RM_TOWARD_POSITIVE:
     return 0;
-  case CSUPPORT_APFLOAT_RM_TOWARD_NEGATIVE:
+  case CSUPPORT_RM_TOWARD_NEGATIVE:
     return 0;
-  case CSUPPORT_APFLOAT_RM_NEAREST_TIES_TO_AWAY:
+  case CSUPPORT_RM_NEAREST_TIES_TO_AWAY:
     if (lost_fraction >= CSUPPORT_LF_EXACTLY_HALF)
       return 1;
     return 0;
-  default:
-    return 0;
   }
+  return 0;
 }
 
 /*--- F80 LongDouble → two-word bit packing ---*/
-void csupport_apfloat_convert_f80_to_words(
-    int category, int is_finite_nonzero, int exponent_val,
-    int sign_bit, const uint64_t *significand_parts,
-    uint64_t *words) {
+void csupport_apfloat_convert_f80_to_words(csupport_apfloat_category_t category,
+                                           int is_finite_nonzero,
+                                           int exponent_val, int sign_bit,
+                                           const uint64_t *significand_parts,
+                                           uint64_t *words) {
   uint64_t myexponent, mysignificand;
   if (is_finite_nonzero) {
     myexponent = (uint64_t)(exponent_val + 16383);
@@ -1314,11 +1342,10 @@ void csupport_apfloat_convert_f80_to_words(
 
 /*--- Hex string → significand parsing core ---*/
 int csupport_apfloat_convert_from_hex_core(
-    const char *begin, const char *end,
-    uint64_t *significand, unsigned parts_count, unsigned integer_part_width,
-    unsigned precision,
-    int *exponent_out, int *category_out,
-    int *lost_fraction_out) {
+    const char *begin, const char *end, uint64_t *significand,
+    unsigned parts_count, unsigned integer_part_width, unsigned precision,
+    int *exponent_out, csupport_apfloat_category_t *category_out,
+    csupport_lost_fraction_t *lost_fraction_out) {
   unsigned bit_pos = parts_count * integer_part_width;
   int computed_trailing = 0;
   *lost_fraction_out = 0; /* lfExactlyZero */
@@ -1350,7 +1377,7 @@ int csupport_apfloat_convert_from_hex_core(
       significand[bit_pos / integer_part_width] |=
           ((uint64_t)hex_value << (bit_pos % integer_part_width));
     } else if (!computed_trailing) {
-      int lf;
+      csupport_lost_fraction_t lf;
       err = csupport_apfloat_trailing_hex_fraction(p, end, hex_value, &lf);
       if (err) return err;
       *lost_fraction_out = lf;
@@ -1426,12 +1453,11 @@ int csupport_apfloat_convert_from_decimal_core(
 /*--- convertToSignExtendedInteger core ---*/
 int csupport_apfloat_convert_to_sign_ext_int(
     const uint64_t *src_sig, unsigned src_part_count, unsigned precision,
-    int exponent_val, int category, int sign_bit, int is_signed,
-    int rounding_mode,
-    uint64_t *dst, unsigned dst_part_count, unsigned width,
-    int *is_exact) {
+    int exponent_val, csupport_apfloat_category_t category, int sign_bit,
+    int is_signed, csupport_rounding_mode_t rounding_mode, uint64_t *dst,
+    unsigned dst_part_count, unsigned width, int *is_exact) {
   unsigned truncated_bits;
-  int lost_fraction;
+  csupport_lost_fraction_t lost_fraction;
 
   *is_exact = 0;
 
@@ -1534,11 +1560,11 @@ int csupport_apfloat_get_exact_log2_abs(
 }
 
 /*--- makeNaN: construct NaN significand in pure C ---*/
-void csupport_apfloat_make_nan(uint64_t *significand, unsigned num_parts,
-                                unsigned precision, int snan, int *sign,
-                                const uint64_t *fill, unsigned fill_words,
-                                int non_finite_behavior, int nan_encoding,
-                                int is_x87) {
+void csupport_apfloat_make_nan(
+    uint64_t *significand, unsigned num_parts, unsigned precision, int snan,
+    int *sign, const uint64_t *fill, unsigned fill_words,
+    csupport_flt_nonfinite_behavior_t non_finite_behavior,
+    csupport_flt_nan_encoding_t nan_encoding, int is_x87) {
   unsigned qnan_bit = precision - 2;
   unsigned part, bits_to_preserve;
 
@@ -1589,11 +1615,12 @@ void csupport_apfloat_make_nan(uint64_t *significand, unsigned num_parts,
 
 /*--- convertIEEEFloatToAPInt pure C: pack float into uint64_t words ---*/
 void csupport_apfloat_convert_ieee_to_words(
-    int category, int is_finite_nonzero, int exponent_val,
-    int sign_bit, const uint64_t *significand_parts,
-    unsigned precision, unsigned size_in_bits,
-    int min_exponent, int non_finite_behavior, int nan_encoding,
-    uint64_t *words, unsigned num_words) {
+    csupport_apfloat_category_t category, int is_finite_nonzero,
+    int exponent_val, int sign_bit, const uint64_t *significand_parts,
+    unsigned precision, unsigned size_in_bits, int min_exponent,
+    csupport_flt_nonfinite_behavior_t non_finite_behavior,
+    csupport_flt_nan_encoding_t nan_encoding, uint64_t *words,
+    unsigned num_words) {
   int bias = -(min_exponent - 1);
   unsigned trailing_sig_bits = precision - 1;
   unsigned exponent_bits = size_in_bits - 1 - trailing_sig_bits;
@@ -1649,8 +1676,9 @@ void csupport_apfloat_convert_ieee_to_words(
 
 /*--- divideSpecials dispatch table ---*/
 /* Caller convention: r=0 → opOK (out_cat: LLVM_FC_ZERO); r=-1 → NaN prop; r=-2 → makeNaN+InvalidOp; r=-4 → DivByZero */
-int csupport_apfloat_divide_specials(int lhs_cat, int rhs_cat,
-                                      int *out_category) {
+int csupport_apfloat_divide_specials(
+    csupport_apfloat_category_t lhs_cat, csupport_apfloat_category_t rhs_cat,
+    csupport_apfloat_category_t *out_category) {
   int key = lhs_cat * 4 + rhs_cat;
   switch (key) {
   /* {Zero,Normal,Inf} / NaN → NaN propagation (assign rhs) */
@@ -1689,8 +1717,9 @@ int csupport_apfloat_divide_specials(int lhs_cat, int rhs_cat,
 
 /*--- remainderSpecials dispatch table ---*/
 /* Caller convention: r=0 → opOK; r=-1 → NaN prop; r=-2 → makeNaN+InvalidOp */
-int csupport_apfloat_remainder_specials(int lhs_cat, int rhs_cat,
-                                          int *out_category) {
+int csupport_apfloat_remainder_specials(
+    csupport_apfloat_category_t lhs_cat, csupport_apfloat_category_t rhs_cat,
+    csupport_apfloat_category_t *out_category) {
   int key = lhs_cat * 4 + rhs_cat;
   switch (key) {
   /* {Zero,Normal,Inf} % NaN → NaN propagation (assign rhs) */
@@ -1725,8 +1754,9 @@ int csupport_apfloat_remainder_specials(int lhs_cat, int rhs_cat,
 
 /*--- modSpecials dispatch table ---*/
 /* Caller convention: r=0 → opOK; r=-1 → NaN prop; r=-2 → makeNaN+InvalidOp */
-int csupport_apfloat_mod_specials(int lhs_cat, int rhs_cat,
-                                    int *out_category) {
+int csupport_apfloat_mod_specials(csupport_apfloat_category_t lhs_cat,
+                                  csupport_apfloat_category_t rhs_cat,
+                                  csupport_apfloat_category_t *out_category) {
   int key = lhs_cat * 4 + rhs_cat;
   switch (key) {
   /* {Zero,Normal,Inf} mod NaN → NaN propagation (assign rhs) */
@@ -1761,11 +1791,10 @@ int csupport_apfloat_mod_specials(int lhs_cat, int rhs_cat,
 
 /*--- addOrSubtractSpecials dispatch table ---*/
 /* Caller convention: r=0 → opOK; r=-1 → assign RHS + NaN handling; r=-2 → makeNaN+InvalidOp; r=-5 → full add */
-int csupport_apfloat_add_or_subtract_specials(int lhs_cat, int rhs_cat,
-                                               int subtract,
-                                               int lhs_sign, int rhs_sign,
-                                               int *out_category,
-                                               int *out_sign) {
+int csupport_apfloat_add_or_subtract_specials(
+    csupport_apfloat_category_t lhs_cat, csupport_apfloat_category_t rhs_cat,
+    int subtract, int lhs_sign, int rhs_sign,
+    csupport_apfloat_category_t *out_category, int *out_sign) {
   int key = lhs_cat * 4 + rhs_cat;
   switch (key) {
   /* {Zero,Normal,Inf} + NaN → assign RHS (NaN), then NaN handling */
@@ -1812,11 +1841,11 @@ int csupport_apfloat_add_or_subtract_specials(int lhs_cat, int rhs_cat,
 }
 
 /*--- unpackIEEEWords: extract sign/exponent/significand/category from IEEE words ---*/
-int csupport_apfloat_unpack_ieee(
-    const uint64_t *words, unsigned num_words,
-    unsigned precision, unsigned size_in_bits,
-    int min_exponent, int non_finite_behavior, int nan_encoding,
-    int *out_sign, int *out_exponent,
+csupport_apfloat_unpacked_category_t csupport_apfloat_unpack_ieee(
+    const uint64_t *words, unsigned num_words, unsigned precision,
+    unsigned size_in_bits, int min_exponent,
+    csupport_flt_nonfinite_behavior_t non_finite_behavior,
+    csupport_flt_nan_encoding_t nan_encoding, int *out_sign, int *out_exponent,
     uint64_t *out_significand, unsigned max_sig_parts) {
   unsigned trailing_sig_bits = precision - 1;
   unsigned stored_sig_parts =
@@ -1904,10 +1933,9 @@ int csupport_apfloat_unpack_ieee(
 }
 
 /*--- F80 (x87 extended) unpack ---*/
-int csupport_apfloat_unpack_f80(
-    const uint64_t *raw_words,
-    int *out_sign, int *out_exponent,
-    uint64_t *out_significand) {
+csupport_apfloat_unpacked_category_t
+csupport_apfloat_unpack_f80(const uint64_t *raw_words, int *out_sign,
+                            int *out_exponent, uint64_t *out_significand) {
   uint64_t i1 = raw_words[0];
   uint64_t i2 = raw_words[1];
   uint64_t myexponent = (i2 & 0x7fff);
@@ -1936,8 +1964,9 @@ int csupport_apfloat_unpack_f80(
 /*--- Compare categories dispatch ---*/
 /* Returns: 0=equal, 1=greater, -1=less, -2=unordered, 2=needs_abs_compare */
 /* Mirrors llvm::IEEEFloat::compare PackCategoriesIntoKey (llvm/ADT/APFloat.cpp). */
-int csupport_apfloat_compare_categories(int lhs_cat, int rhs_cat,
-                                         int lhs_sign, int rhs_sign) {
+int csupport_apfloat_compare_categories(csupport_apfloat_category_t lhs_cat,
+                                        csupport_apfloat_category_t rhs_cat,
+                                        int lhs_sign, int rhs_sign) {
   /* LLVM fltCategory: fcInfinity=0, fcNaN=1, fcNormal=2, fcZero=3 */
   if (lhs_cat == LLVM_FC_NAN || rhs_cat == LLVM_FC_NAN)
     return -2;
@@ -1976,8 +2005,9 @@ int csupport_apfloat_compare_categories(int lhs_cat, int rhs_cat,
 
 /*--- Specials dispatch: multiplySpecials ---*/
 /* Caller convention: r=0 → opOK; r=-1 → NaN prop; r=-2 → makeNaN+InvalidOp */
-int csupport_apfloat_multiply_specials(int lhs_cat, int rhs_cat,
-                                        int *out_category) {
+int csupport_apfloat_multiply_specials(
+    csupport_apfloat_category_t lhs_cat, csupport_apfloat_category_t rhs_cat,
+    csupport_apfloat_category_t *out_category) {
   int key = lhs_cat * 4 + rhs_cat;
   switch (key) {
   /* {Zero,Normal,Inf} × NaN → NaN propagation (assign rhs) */
@@ -2031,7 +2061,8 @@ int csupport_apfloat_is_integer_significand(const uint64_t *parts,
   return 1;
 }
 
-int csupport_apfloat_classify(int category, int sign, int is_denormal) {
+int csupport_apfloat_classify(csupport_apfloat_category_t category, int sign,
+                              int is_denormal) {
   switch (category) {
   case LLVM_FC_INFINITY:
     return sign ? -1 : 1;
@@ -2041,9 +2072,8 @@ int csupport_apfloat_classify(int category, int sign, int is_denormal) {
     return sign ? -2 : 2;
   case LLVM_FC_NORMAL:
     return is_denormal ? (sign ? -3 : 3) : (sign ? -4 : 4);
-  default:
-    return -99;
   }
+  return -99;
 }
 
 size_t csupport_apfloat_format_hex(const uint64_t *significand,
@@ -2120,28 +2150,23 @@ static void apf_free_sig(uint64_t **heap_parts, unsigned part_count) {
   }
 }
 
-static int apf_conv_shift_right(uint64_t *dst, unsigned parts, unsigned bits) {
-  int lf = csupport_apfloat_lost_fraction_truncation(dst, parts, bits);
+static csupport_lost_fraction_t
+apf_conv_shift_right(uint64_t *dst, unsigned parts, unsigned bits) {
+  csupport_lost_fraction_t lf =
+      csupport_apfloat_lost_fraction_truncation(dst, parts, bits);
   csupport_apint_shift_right_logical(dst, dst, parts, bits);
   return lf;
 }
 
 int csupport_apfloat_convert_semantics(
     const csupport_flt_semantics_t *from_sem,
-    const csupport_flt_semantics_t *to_sem,
-    int from_is_x87_ext,
-    int to_is_x87_ext,
-    uint64_t *inline_part,
-    uint64_t **heap_parts,
-    unsigned old_part_count,
-    int *exponent,
-    int *category,
-    int *sign,
-    int rounding_mode,
-    int is_signaling,
-    int finite_nonzero,
-    int *loses_info) {
-  int lost_fraction = CSUPPORT_LF_EXACTLY_ZERO;
+    const csupport_flt_semantics_t *to_sem, int from_is_x87_ext,
+    int to_is_x87_ext, uint64_t *inline_part, uint64_t **heap_parts,
+    unsigned old_part_count, int *exponent,
+    csupport_apfloat_category_t *category, int *sign,
+    csupport_rounding_mode_t rounding_mode, int is_signaling,
+    int finite_nonzero, int *loses_info) {
+  csupport_lost_fraction_t lost_fraction = CSUPPORT_LF_EXACTLY_ZERO;
   if (from_sem->precision == 0 || to_sem->precision == 0 ||
       from_sem->precision > INT_MAX || to_sem->precision > INT_MAX ||
       old_part_count != from_sem->precision / APFLOAT_PART_BITS + 1) {
@@ -2216,11 +2241,12 @@ int csupport_apfloat_convert_semantics(
     csupport_apint_shift_left(sig, sig, new_pc, (unsigned)shift);
 
   if (finite_nonzero) {
-    int cat = *category, s = *sign ? 1 : 0, exp = *exponent;
+    csupport_apfloat_category_t cat = *category;
+    int s = *sign ? 1 : 0, exp = *exponent;
     fs = csupport_apfloat_normalize(
         sig, sig_parts, &exp, &cat, &s, rounding_mode, lost_fraction,
         to_sem->precision, to_sem->maxExponent, to_sem->minExponent,
-        (int)to_sem->nonFiniteBehavior, (int)to_sem->nanEncoding);
+        to_sem->nonFiniteBehavior, to_sem->nanEncoding);
     *exponent = exp;
     *category = cat;
     *sign = s;
@@ -2231,10 +2257,9 @@ int csupport_apfloat_convert_semantics(
           (from_sem->nonFiniteBehavior != CSUPPORT_FLT_NFB_NAN_ONLY);
       *category = LLVM_FC_NAN;
       *exponent = csupport_flt_exponent_nan(to_sem);
-      csupport_apfloat_make_nan(
-          sig, sig_parts, to_sem->precision, 0, sign, NULL, 0,
-          (int)to_sem->nonFiniteBehavior, (int)to_sem->nanEncoding,
-          to_is_x87_ext);
+      csupport_apfloat_make_nan(sig, sig_parts, to_sem->precision, 0, sign,
+                                NULL, 0, to_sem->nonFiniteBehavior,
+                                to_sem->nanEncoding, to_is_x87_ext);
       return is_signaling ? 0x01 : 0;
     }
 
@@ -2243,10 +2268,9 @@ int csupport_apfloat_convert_semantics(
       *category = LLVM_FC_NAN;
       *exponent = csupport_flt_exponent_nan(to_sem);
       *sign = 0;
-      csupport_apfloat_make_nan(
-          sig, sig_parts, to_sem->precision, 0, sign, NULL, 0,
-          (int)to_sem->nonFiniteBehavior, (int)to_sem->nanEncoding,
-          to_is_x87_ext);
+      csupport_apfloat_make_nan(sig, sig_parts, to_sem->precision, 0, sign,
+                                NULL, 0, to_sem->nonFiniteBehavior,
+                                to_sem->nanEncoding, to_is_x87_ext);
     }
 
     *loses_info = (lost_fraction != CSUPPORT_LF_EXACTLY_ZERO) || x86_special_nan;
@@ -2264,10 +2288,9 @@ int csupport_apfloat_convert_semantics(
              to_sem->nonFiniteBehavior == CSUPPORT_FLT_NFB_NAN_ONLY) {
     *category = LLVM_FC_NAN;
     *exponent = csupport_flt_exponent_nan(to_sem);
-    csupport_apfloat_make_nan(
-        sig, sig_parts, to_sem->precision, 0, sign, NULL, 0,
-        (int)to_sem->nonFiniteBehavior, (int)to_sem->nanEncoding,
-        to_is_x87_ext);
+    csupport_apfloat_make_nan(sig, sig_parts, to_sem->precision, 0, sign, NULL,
+                              0, to_sem->nonFiniteBehavior, to_sem->nanEncoding,
+                              to_is_x87_ext);
     *loses_info = 1;
     fs = 0x10;
   } else if (*category == LLVM_FC_ZERO &&
@@ -2284,27 +2307,21 @@ int csupport_apfloat_convert_semantics(
   return fs;
 }
 
-int csupport_apfloat_multiply_significand_fma(
-    const csupport_flt_semantics_t *sem,
-    uint64_t *lhs_sig,
-    unsigned lhs_pc,
-    int *lhs_exp,
-    int *lhs_sign,
-    const uint64_t *rhs_sig,
-    int rhs_exp,
-    const uint64_t *add_sig,
-    unsigned add_pc,
-    int add_exp,
-    int add_cat,
-    int add_sign,
-    int addend_nonzero) {
+csupport_lost_fraction_t csupport_apfloat_multiply_significand_fma(
+    const csupport_flt_semantics_t *sem, uint64_t *lhs_sig, unsigned lhs_pc,
+    int *lhs_exp, int *lhs_sign, const uint64_t *rhs_sig, int rhs_exp,
+    const uint64_t *add_sig, unsigned add_pc, int add_exp,
+    csupport_apfloat_category_t add_cat, int add_sign, int addend_nonzero) {
+  if (!sem || !lhs_sig || !lhs_exp || !lhs_sign || !rhs_sig)
+    csupport_allocation_failure();
   unsigned precision = sem->precision;
   const uint64_t ext_prec_wide = (uint64_t)precision * 2 + 1;
   const unsigned expected_lhs_parts =
       precision / APFLOAT_PART_BITS + 1;
-  if (precision == 0 || ext_prec_wide >= UINT_MAX ||
-      lhs_pc > UINT_MAX / 2 ||
-      lhs_pc != expected_lhs_parts)
+  if (precision == 0 || ext_prec_wide > INT_MAX || lhs_pc > UINT_MAX / 2 ||
+      lhs_pc != expected_lhs_parts ||
+      (addend_nonzero &&
+       (!add_sig || add_pc != expected_lhs_parts || add_cat != LLVM_FC_NORMAL)))
     csupport_allocation_failure();
   unsigned ext_prec_field = (unsigned)ext_prec_wide;
   unsigned new_pc = csupport_flt_part_count_for_bits(ext_prec_field);
@@ -2322,7 +2339,7 @@ int csupport_apfloat_multiply_significand_fma(
           ? scratch
           : (uint64_t *)csupport_checked_malloc(full_words, sizeof(uint64_t));
   unsigned omsb;
-  int lost_fraction = CSUPPORT_LF_EXACTLY_ZERO;
+  csupport_lost_fraction_t lost_fraction = CSUPPORT_LF_EXACTLY_ZERO;
 
   (void)rhs_exp;
 
@@ -2334,16 +2351,10 @@ int csupport_apfloat_multiply_significand_fma(
   *lhs_exp += rhs_exp + 2;
 
   if (addend_nonzero) {
-    csupport_flt_semantics_t ext_sem = *sem;
-    int add_loses = 0;
-    uint64_t add_il = 0;
-    uint64_t *add_hp = NULL;
+    uint64_t *extended_addend =
+        (uint64_t *)csupport_checked_calloc(ext_wp, sizeof(uint64_t));
     int aexp = add_exp;
-    int acat = add_cat;
     int asgn = add_sign;
-    unsigned add_in_pc = add_pc;
-
-    ext_sem.precision = ext_prec_field;
 
     if (omsb != ext_prec_field - 1) {
       assert(ext_prec_field > omsb);
@@ -2351,37 +2362,16 @@ int csupport_apfloat_multiply_significand_fma(
       *lhs_exp -= (int)((ext_prec_field - 1) - omsb);
     }
 
-    if (add_pc > 1) {
-      add_hp = (uint64_t *)csupport_checked_malloc(add_pc, sizeof(uint64_t));
-      memcpy(add_hp, add_sig,
-             csupport_checked_allocation_size(add_pc, sizeof(uint64_t)));
-    } else
-      add_il = add_sig[0];
-
-    (void)csupport_apfloat_convert_semantics(
-        sem, &ext_sem, 0, 0, &add_il, &add_hp, add_in_pc, &aexp, &acat, &asgn,
-        0, 0,
-        (add_cat == LLVM_FC_NORMAL) &&
-            !csupport_apint_tc_is_zero(
-                apf_sig_ptr(&add_il, &add_hp, add_in_pc), add_in_pc),
-        &add_loses);
-    (void)add_loses;
-
-    {
-      uint64_t *ap = apf_sig_ptr(&add_il, &add_hp, ext_wp);
-      int sh_lf =
-          csupport_apfloat_lost_fraction_truncation(ap, ext_wp, 1);
-      csupport_apint_shift_right_logical(ap, ap, ext_wp, 1);
-      (void)sh_lf;
-      aexp += 1;
-    }
+    csupport_apint_tc_assign(extended_addend, add_sig, add_pc);
+    csupport_apint_shift_left(extended_addend, extended_addend, ext_wp,
+                              precision + 1);
+    csupport_apint_shift_right_logical(extended_addend, extended_addend, ext_wp,
+                                       1);
+    aexp += 1;
 
     lost_fraction = csupport_apfloat_add_or_subtract_significand(
-        full, ext_wp, lhs_exp, lhs_sign,
-        apf_sig_ptr(&add_il, &add_hp, ext_wp), aexp, asgn, 0);
-
-    if (add_hp)
-      free(add_hp);
+        full, ext_wp, lhs_exp, lhs_sign, extended_addend, aexp, asgn, 0);
+    free(extended_addend);
 
     omsb = (unsigned)csupport_apint_tc_msb(full, new_pc) + 1;
   }
@@ -2391,7 +2381,7 @@ int csupport_apfloat_multiply_significand_fma(
   if (omsb > precision) {
     unsigned bits = omsb - precision;
     unsigned sig_parts = csupport_flt_part_count_for_bits(omsb);
-    int lf = apf_conv_shift_right(full, sig_parts, bits);
+    csupport_lost_fraction_t lf = apf_conv_shift_right(full, sig_parts, bits);
     lost_fraction =
         csupport_apfloat_combine_lost_fractions(lf, lost_fraction);
     *lhs_exp += (int)bits;
