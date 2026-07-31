@@ -11,6 +11,7 @@
 #include "neverc/std/crypto/rand.h"
 #include "neverc/std/crypto/subtle.h"
 #include "neverc/std/crypto/x509.h"
+#include "neverc/std/encoding/pem.h"
 #include "tls_key.h"
 #include <string.h>
 #include <stdlib.h>
@@ -198,129 +199,44 @@ static uint8_t *read_file_contents(const char *path, size_t *out_len) {
     return data;
 }
 
-static int pem_base64_value(char c) {
-    if (c >= 'A' && c <= 'Z') return c - 'A';
-    if (c >= 'a' && c <= 'z') return c - 'a' + 26;
-    if (c >= '0' && c <= '9') return c - '0' + 52;
-    if (c == '+') return 62;
-    if (c == '/') return 63;
-    return -1;
-}
-
-static int pem_space(char c) {
-    return c == ' ' || c == '\t' || c == '\r' || c == '\n';
-}
-
 static int pem_decode_first(const char *pem, const char *label,
                             uint8_t **out_der, size_t *out_len) {
-    static const char begin_prefix[] = "-----BEGIN ";
-    static const char end_prefix[] = "-----END ";
-    static const char suffix[] = "-----";
     if (!pem || !label || !out_der || !out_len)
         return -1;
 
-    size_t label_len = strlen(label);
-    if (label_len == 0 || label_len > 48)
+    size_t pem_len = strlen(pem);
+    if (pem_len == 0)
         return -1;
-
-    char begin_marker[sizeof(begin_prefix) + 48 + sizeof(suffix)];
-    char end_marker[sizeof(end_prefix) + 48 + sizeof(suffix)];
-    size_t begin_len = sizeof(begin_prefix) - 1 + label_len +
-                       sizeof(suffix) - 1;
-    size_t end_len = sizeof(end_prefix) - 1 + label_len +
-                     sizeof(suffix) - 1;
-    memcpy(begin_marker, begin_prefix, sizeof(begin_prefix) - 1);
-    memcpy(begin_marker + sizeof(begin_prefix) - 1, label, label_len);
-    memcpy(begin_marker + sizeof(begin_prefix) - 1 + label_len,
-           suffix, sizeof(suffix));
-    memcpy(end_marker, end_prefix, sizeof(end_prefix) - 1);
-    memcpy(end_marker + sizeof(end_prefix) - 1, label, label_len);
-    memcpy(end_marker + sizeof(end_prefix) - 1 + label_len,
-           suffix, sizeof(suffix));
-
-    const char *begin = strstr(pem, begin_marker);
-    if (!begin || (begin != pem && begin[-1] != '\n'))
-        return -1;
-    const char *body = begin + begin_len;
-    if (*body == '\r') ++body;
-    if (*body != '\n') return -1;
-    ++body;
-
-    const char *end = strstr(body, end_marker);
-    if (!end || (end != body && end[-1] != '\n'))
-        return -1;
-    const char *after_end = end + end_len;
-    if (*after_end != '\0' && *after_end != '\r' && *after_end != '\n')
-        return -1;
-
-    size_t body_len = (size_t)(end - body);
-    if (body_len == 0)
-        return -1;
-    uint8_t *der = (uint8_t *)malloc(body_len);
+    uint8_t *der = (uint8_t *)malloc(pem_len);
     if (!der)
         return -1;
 
-    int quartet[4];
-    size_t quartet_len = 0;
-    size_t decoded_len = 0;
-    int saw_padding = 0;
-    for (const char *p = body; p < end; ++p) {
-        if (pem_space(*p))
-            continue;
-        if (saw_padding) {
+    size_t offset = 0;
+    while (offset < pem_len) {
+        char decoded_label[64];
+        size_t decoded_len = 0;
+        size_t rest_offset = 0;
+        if (neverc_pem_decode(
+                pem + offset, pem_len - offset,
+                decoded_label, sizeof(decoded_label),
+                der, pem_len, &decoded_len, &rest_offset) != 0 ||
+            rest_offset == 0) {
             free(der);
             return -1;
         }
-
-        if (*p == '=') {
-            quartet[quartet_len++] = -1;
-        } else {
-            int value = pem_base64_value(*p);
-            if (value < 0) {
+        if (strcmp(decoded_label, label) == 0) {
+            if (decoded_len == 0) {
                 free(der);
                 return -1;
             }
-            quartet[quartet_len++] = value;
+            *out_der = der;
+            *out_len = decoded_len;
+            return 0;
         }
-        if (quartet_len != 4)
-            continue;
-
-        if (quartet[0] < 0 || quartet[1] < 0 ||
-            (quartet[2] < 0 && quartet[3] >= 0)) {
-            free(der);
-            return -1;
-        }
-        size_t emit = quartet[2] < 0 ? 1 :
-                      quartet[3] < 0 ? 2 : 3;
-        if ((emit == 1 && (quartet[1] & 0x0f) != 0) ||
-            (emit == 2 && (quartet[2] & 0x03) != 0) ||
-            emit > body_len - decoded_len) {
-            free(der);
-            return -1;
-        }
-
-        der[decoded_len++] =
-            (uint8_t)((quartet[0] << 2) | (quartet[1] >> 4));
-        if (emit >= 2) {
-            der[decoded_len++] =
-                (uint8_t)((quartet[1] << 4) | (quartet[2] >> 2));
-        }
-        if (emit == 3) {
-            der[decoded_len++] =
-                (uint8_t)((quartet[2] << 6) | quartet[3]);
-        } else {
-            saw_padding = 1;
-        }
-        quartet_len = 0;
+        offset += rest_offset;
     }
-    if (quartet_len != 0 || decoded_len == 0) {
-        free(der);
-        return -1;
-    }
-
-    *out_der = der;
-    *out_len = decoded_len;
-    return 0;
+    free(der);
+    return -1;
 }
 
 int neverc_tls_config_load_cert(neverc_tls_config_t *cfg,

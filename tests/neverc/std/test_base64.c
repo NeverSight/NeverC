@@ -94,6 +94,25 @@ static void test_decode(void) {
 
     n = neverc_base64_decode(dst, "!!!", 3);
     check_int("decode(invalid)", n, -1);
+
+    check_int("standard rejects URL alphabet",
+              neverc_base64_decode(dst, "-__-", 4), -1);
+    check_int("standard rejects comma",
+              neverc_base64_decode(dst, "AAAA,AAA", 8), -1);
+    check_int("reject excess padding",
+              neverc_base64_decode(dst, "Zg===", 5), -1);
+    check_int("reject incomplete padding",
+              neverc_base64_decode(dst, "Zg=", 3), -1);
+    check_int("reject interior padding",
+              neverc_base64_decode(dst, "Z=g=", 4), -1);
+    check_int("reject noncanonical padded tail",
+              neverc_base64_decode(dst, "Zh==", 4), -1);
+    check_int("reject noncanonical raw tail",
+              neverc_base64_decode(dst, "Zh", 2), -1);
+    n = neverc_base64_decode(dst, "Zg", 2);
+    check_int("decode canonical raw input", n, 1);
+    check_mem("decode canonical raw value",
+              dst, (const uint8_t *)"f", 1);
 }
 
 static void test_url_encode(void) {
@@ -106,6 +125,13 @@ static void test_url_encode(void) {
 
     neverc_base64_encode(dst, data, 3);
     check_str("std_encode(fbfffe)", dst, "+//+");
+
+    uint8_t decoded[8];
+    int n = neverc_base64_url_decode(decoded, "-__-", 4);
+    check_int("url_decode.len", n, 3);
+    check_mem("url_decode.val", decoded, data, sizeof(data));
+    check_int("URL decoder rejects standard alphabet",
+              neverc_base64_url_decode(decoded, "+//+", 4), -1);
 }
 
 static void test_roundtrip(void) {

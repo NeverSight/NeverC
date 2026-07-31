@@ -1,5 +1,6 @@
 #include "neverc/std/encoding/pem.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static int tests_run = 0, tests_passed = 0, tests_failed = 0;
@@ -148,6 +149,56 @@ static void test_invalid_pem(void) {
                             out_buf, sizeof(out_buf),
                             &bytes_written, NULL);
     check_int("mismatched type", rc, -1);
+
+    const char *invalid_char =
+        "-----BEGIN FOO-----\nYW!j\n-----END FOO-----\n";
+    rc = neverc_pem_decode(invalid_char, strlen(invalid_char),
+                            type_buf, sizeof(type_buf),
+                            out_buf, sizeof(out_buf),
+                            &bytes_written, NULL);
+    check_int("invalid base64 character", rc, -1);
+
+    const char *bad_padding =
+        "-----BEGIN FOO-----\nY=Jj\n-----END FOO-----\n";
+    rc = neverc_pem_decode(bad_padding, strlen(bad_padding),
+                            type_buf, sizeof(type_buf),
+                            out_buf, sizeof(out_buf),
+                            &bytes_written, NULL);
+    check_int("invalid base64 padding", rc, -1);
+
+    const char *data_after_padding =
+        "-----BEGIN FOO-----\nYQ==YQ==\n-----END FOO-----\n";
+    rc = neverc_pem_decode(data_after_padding,
+                            strlen(data_after_padding),
+                            type_buf, sizeof(type_buf),
+                            out_buf, sizeof(out_buf),
+                            &bytes_written, NULL);
+    check_int("base64 data after padding", rc, -1);
+
+    const char *noncanonical =
+        "-----BEGIN FOO-----\nYR==\n-----END FOO-----\n";
+    rc = neverc_pem_decode(noncanonical, strlen(noncanonical),
+                            type_buf, sizeof(type_buf),
+                            out_buf, sizeof(out_buf),
+                            &bytes_written, NULL);
+    check_int("noncanonical base64 tail bits", rc, -1);
+
+    const char *incomplete_quad =
+        "-----BEGIN FOO-----\nYWI\n-----END FOO-----\n";
+    rc = neverc_pem_decode(incomplete_quad, strlen(incomplete_quad),
+                            type_buf, sizeof(type_buf),
+                            out_buf, sizeof(out_buf),
+                            &bytes_written, NULL);
+    check_int("incomplete base64 quartet", rc, -1);
+
+    const char *header_without_newline =
+        "-----BEGIN FOO-----YWJj\n-----END FOO-----\n";
+    rc = neverc_pem_decode(header_without_newline,
+                            strlen(header_without_newline),
+                            type_buf, sizeof(type_buf),
+                            out_buf, sizeof(out_buf),
+                            &bytes_written, NULL);
+    check_int("header requires newline", rc, -1);
 }
 
 static void test_large_data(void) {
@@ -159,6 +210,15 @@ static void test_large_data(void) {
     char pem_buf[4096];
     int enc_len = neverc_pem_encode(pem_buf, sizeof(pem_buf), "CERTIFICATE", large, 256);
     check_int("encode large >0", enc_len > 0, 1);
+
+    char *exact = (char *)malloc((size_t)enc_len + 1);
+    int exact_len = exact ? neverc_pem_encode(
+        exact, (size_t)enc_len + 1, "CERTIFICATE", large, 256) : -1;
+    check_int("encode with exact capacity", exact_len, enc_len);
+    if (exact_len == enc_len)
+        check_int("exact-capacity encoding matches",
+                  memcmp(exact, pem_buf, (size_t)enc_len + 1) == 0, 1);
+    free(exact);
 
     /* Verify line length: no base64 line should exceed 64 chars */
     const char *line_start = pem_buf;

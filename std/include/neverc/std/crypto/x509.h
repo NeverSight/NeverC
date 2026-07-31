@@ -145,6 +145,8 @@ typedef struct {
     size_t         raw_len;
 } neverc_x509_cert_t;
 
+typedef struct neverc_x509_cert_pool neverc_x509_cert_pool_t;
+
 /* ===== Functions ===== */
 
 /* Parse a DER-encoded X.509 certificate. Returns 0 on success. */
@@ -182,6 +184,28 @@ int neverc_x509_verify_chain(const neverc_x509_cert_t *const *chain,
                               const neverc_x509_time_t *moment,
                               const char *hostname,
                               uint32_t required_ext_key_usage);
+
+/* Create/free a certificate pool. Certificates added as DER are copied and
+ * owned by the pool. Adding the same DER certificate more than once is
+ * idempotent. */
+neverc_x509_cert_pool_t *neverc_x509_cert_pool_new(void);
+void neverc_x509_cert_pool_free(neverc_x509_cert_pool_t *pool);
+int neverc_x509_cert_pool_add_der(neverc_x509_cert_pool_t *pool,
+                                  const uint8_t *der, size_t der_len);
+size_t neverc_x509_cert_pool_count(
+    const neverc_x509_cert_pool_t *pool);
+
+/* Build and verify a path from leaf through intermediates to an exact
+ * certificate in roots. Candidate paths are capped at 16 certificates and
+ * 100 signature checks. A root is trusted by membership and need not be
+ * self-signed. Returns 0 on success and -1 on failure. */
+int neverc_x509_verify_with_pools(
+    const neverc_x509_cert_t *leaf,
+    const neverc_x509_cert_pool_t *intermediates,
+    const neverc_x509_cert_pool_t *roots,
+    const neverc_x509_time_t *moment,
+    const char *hostname,
+    uint32_t required_ext_key_usage);
 
 /* Verify a DNS name or IP literal against Subject Alternative Name.
  * Common Name is deliberately not used as a fallback.

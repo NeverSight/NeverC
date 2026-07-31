@@ -464,7 +464,8 @@ TEST_F(StdLibTest, NetBufferFailurePaths) {
     "src/crypto/x509/x509.c", "src/crypto/x509/x509_verify.c", \
     "src/crypto/rsa/rsa.c", "src/crypto/ecdsa/ecdsa.c", \
     "src/crypto/ed25519/ed25519.c", "src/crypto/elliptic/elliptic.c", \
-    "src/math/big/big.c", "src/encoding/base64/base64.c"
+    "src/math/big/big.c", "src/encoding/base64/base64.c", \
+    "src/encoding/pem/pem.c"
 
 STD_TEST(http, "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", TCP_DEPS, HTTP_TLS_DEPS)
 STD_TEST(websocket, "src/net/websocket/websocket.c", TCP_DEPS,
@@ -600,6 +601,7 @@ STD_TEST(plan9obj, "src/debug/plan9obj/plan9obj.c")
 // ===== Crypto (x509) =====
 #define X509_VERIFY_DEPS \
     "src/crypto/x509/x509.c", "src/crypto/x509/x509_verify.c", \
+    "src/crypto/x509/x509_pool.c", \
     "src/crypto/rsa/rsa.c", "src/crypto/ecdsa/ecdsa.c", \
     "src/crypto/ed25519/ed25519.c", "src/crypto/rand/rand.c", \
     "src/crypto/elliptic/elliptic.c", \

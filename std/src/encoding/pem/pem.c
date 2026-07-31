@@ -1,5 +1,7 @@
 #include "neverc/std/encoding/pem.h"
 #include "neverc/std/encoding/base64.h"
+#include <limits.h>
+#include <stdlib.h>
 #include <string.h>
 
 /*
@@ -17,17 +19,42 @@ int neverc_pem_encode(char *out, size_t out_cap,
                       const char *type_str,
                       const uint8_t *data, size_t data_len)
 {
+    if (!out || !type_str || (!data && data_len != 0) ||
+        data_len > SIZE_MAX - 2)
+        return -1;
     size_t type_len = strlen(type_str);
+    if (type_len == 0 || type_len > 200)
+        return -1;
+    for (size_t i = 0; i < type_len; ++i) {
+        unsigned char c = (unsigned char)type_str[i];
+        if (c < 0x20 || c > 0x7e)
+            return -1;
+    }
+
+    if ((data_len + 2) / 3 > SIZE_MAX / 4)
+        return -1;
     size_t b64_len = neverc_base64_encoded_len(data_len);
 
     size_t line_breaks = (b64_len > 0) ? ((b64_len - 1) / PEM_LINE_LEN) : 0;
+    size_t body_newlines = b64_len > 0 ? line_breaks + 1 : 0;
+    size_t fixed = 11 + 6 + 9 + 6 + 1;
+    if (type_len > (SIZE_MAX - fixed) / 2)
+        return -1;
+    size_t needed = fixed + type_len * 2;
+    if (b64_len > SIZE_MAX - needed ||
+        body_newlines > SIZE_MAX - needed - b64_len)
+        return -1;
+    needed += b64_len + body_newlines;
+    if (out_cap < needed || needed - 1 > INT_MAX)
+        return -1;
 
-    size_t needed = 11 + type_len + 6    /* -----BEGIN <type>-----\n */
-                  + b64_len + line_breaks + 1 /* base64 + newlines */
-                  + 9 + type_len + 6     /* -----END <type>-----\n */
-                  + 1;                   /* NUL */
-
-    if (out_cap < needed) return -1;
+    char *base64 = (char *)malloc(b64_len + 1);
+    if (!base64)
+        return -1;
+    if (neverc_base64_encode(base64, data, data_len) != b64_len) {
+        free(base64);
+        return -1;
+    }
 
     char *p = out;
     memcpy(p, BEGIN_PREFIX, 11); p += 11;
@@ -35,14 +62,10 @@ int neverc_pem_encode(char *out, size_t out_cap,
     memcpy(p, DASHES, 5); p += 5;
     *p++ = '\n';
 
-    size_t raw_b64_len = b64_len;
-    char *temp = (char *)(out + out_cap - raw_b64_len - 1);
-    neverc_base64_encode(temp, (const uint8_t *)data, data_len);
-
-    for (size_t i = 0; i < raw_b64_len; i += PEM_LINE_LEN) {
-        size_t chunk = raw_b64_len - i;
+    for (size_t i = 0; i < b64_len; i += PEM_LINE_LEN) {
+        size_t chunk = b64_len - i;
         if (chunk > PEM_LINE_LEN) chunk = PEM_LINE_LEN;
-        memcpy(p, temp + i, chunk);
+        memcpy(p, base64 + i, chunk);
         p += chunk;
         *p++ = '\n';
     }
@@ -53,7 +76,34 @@ int neverc_pem_encode(char *out, size_t out_cap,
     *p++ = '\n';
     *p = '\0';
 
+    free(base64);
     return (int)(p - out);
+}
+
+static const char *pem_find_bounded(
+    const char *begin, const char *end,
+    const char *needle, size_t needle_len) {
+    if (!begin || !end || !needle || needle_len == 0 ||
+        begin > end || (size_t)(end - begin) < needle_len)
+        return NULL;
+    for (const char *p = begin; p + needle_len <= end; ++p) {
+        if (*p == *needle && memcmp(p, needle, needle_len) == 0)
+            return p;
+    }
+    return NULL;
+}
+
+static int pem_base64_value(unsigned char c) {
+    if (c >= 'A' && c <= 'Z') return c - 'A';
+    if (c >= 'a' && c <= 'z') return c - 'a' + 26;
+    if (c >= '0' && c <= '9') return c - '0' + 52;
+    if (c == '+') return 62;
+    if (c == '/') return 63;
+    return -1;
+}
+
+static int pem_is_space(unsigned char c) {
+    return c == ' ' || c == '\t' || c == '\r' || c == '\n';
 }
 
 int neverc_pem_decode(const char *pem_data, size_t pem_len,
@@ -64,171 +114,129 @@ int neverc_pem_decode(const char *pem_data, size_t pem_len,
 {
     if (bytes_written) *bytes_written = 0;
     if (rest_offset) *rest_offset = pem_len;
+    if (!pem_data || !type_buf || type_cap == 0 ||
+        (!out_buf && out_cap != 0))
+        return -1;
 
-    /*
-     * Locate "-----BEGIN " at start-of-input or immediately after a line
-     * break. The marker starts with '-', so memchr() jumps straight to each
-     * candidate dash instead of memcmp-probing every offset, while preserving
-     * the previous first-match scan order.
-     */
     const char *pem_end = pem_data + pem_len;
-    const char *begin = NULL;
-    for (const char *s = pem_data; s + 11 <= pem_end; ) {
-        const char *cand = (const char *)memchr(s, '-', (size_t)((pem_end - 11) - s) + 1);
-        if (!cand) break;
-        if (memcmp(cand, BEGIN_PREFIX, 11) == 0 &&
-            (cand == pem_data || cand[-1] == '\n' || cand[-1] == '\r')) {
-            begin = cand;
+    const char *begin = pem_data;
+    while ((begin = pem_find_bounded(
+                begin, pem_end, BEGIN_PREFIX, 11)) != NULL) {
+        if (begin == pem_data || begin[-1] == '\n')
             break;
-        }
-        s = cand + 1;
+        ++begin;
     }
-    if (!begin) return -1;
+    if (!begin)
+        return -1;
+
+    const char *line_end =
+        (const char *)memchr(begin, '\n', (size_t)(pem_end - begin));
+    if (!line_end)
+        return -1;
+    const char *header_end = line_end;
+    if (header_end > begin && header_end[-1] == '\r')
+        --header_end;
+    while (header_end > begin &&
+           (header_end[-1] == ' ' || header_end[-1] == '\t'))
+        --header_end;
 
     const char *type_start = begin + 11;
-    /* Find the closing "-----" within the buffer. strstr scans until a NUL, so
-     * on length-delimited input that is not NUL-terminated (mmap'd files,
-     * network buffers — the reason this API takes pem_len) it reads past
-     * pem_end. Bound the search to pem_end, mirroring the BEGIN/END scans. */
     size_t dash_len = strlen(DASHES);
-    const char *dash_end = NULL;
-    for (const char *s = type_start; s + dash_len <= pem_end; ) {
-        const char *cand = (const char *)memchr(s, DASHES[0],
-                                                (size_t)((pem_end - dash_len) - s) + 1);
-        if (!cand) break;
-        if (memcmp(cand, DASHES, dash_len) == 0) { dash_end = cand; break; }
-        s = cand + 1;
-    }
-    if (!dash_end) return -1;
-
-    size_t type_len = (size_t)(dash_end - type_start);
-    if (type_len >= type_cap) return -1;
+    if ((size_t)(header_end - type_start) <= dash_len ||
+        memcmp(header_end - dash_len, DASHES, dash_len) != 0)
+        return -1;
+    const char *type_end = header_end - dash_len;
+    size_t type_len = (size_t)(type_end - type_start);
+    if (type_len == 0 || type_len >= type_cap)
+        return -1;
     memcpy(type_buf, type_start, type_len);
     type_buf[type_len] = '\0';
 
-    const char *body_start = dash_end + 5;
-    while (body_start < pem_data + pem_len && (*body_start == '\n' || *body_start == '\r'))
-        body_start++;
-
     char end_marker[256];
-    size_t em_len = 0;
-    size_t ep_len = strlen(END_PREFIX);
-    size_t ds_len = strlen(DASHES);
-    if (ep_len + type_len + ds_len >= sizeof(end_marker)) return -1;
-    memcpy(end_marker + em_len, END_PREFIX, ep_len); em_len += ep_len;
-    memcpy(end_marker + em_len, type_buf, type_len); em_len += type_len;
-    memcpy(end_marker + em_len, DASHES, ds_len); em_len += ds_len;
-    end_marker[em_len] = '\0';
+    size_t end_prefix_len = strlen(END_PREFIX);
+    size_t end_marker_len = end_prefix_len + type_len + dash_len;
+    if (end_marker_len >= sizeof(end_marker))
+        return -1;
+    memcpy(end_marker, END_PREFIX, end_prefix_len);
+    memcpy(end_marker + end_prefix_len, type_start, type_len);
+    memcpy(end_marker + end_prefix_len + type_len, DASHES, dash_len);
 
-    /*
-     * Find "-----END <type>-----". A standard base64 body contains no '-', so
-     * memchr() on the leading dash leaps past the payload to the marker
-     * instead of memcmp-probing every body offset; the loop still returns the
-     * first full match like the previous scan.
-     */
-    const char *end = NULL;
-    for (const char *s = body_start; s + em_len <= pem_end; ) {
-        const char *cand = (const char *)memchr(s, end_marker[0],
-                                                (size_t)((pem_end - em_len) - s) + 1);
-        if (!cand) break;
-        if (memcmp(cand, end_marker, (size_t)em_len) == 0) {
-            end = cand;
+    const char *body_start = line_end + 1;
+    const char *end = body_start;
+    for (;;) {
+        end = pem_find_bounded(
+            end, pem_end, end_marker, end_marker_len);
+        if (!end)
+            return -1;
+        if (end == body_start || end[-1] == '\n')
             break;
-        }
-        s = cand + 1;
-    }
-    if (!end) return -1;
-
-    size_t b64_raw_len = (size_t)(end - body_start);
-
-    /* Count non-whitespace base64 characters */
-    size_t clean_len = 0;
-    for (size_t i = 0; i < b64_raw_len; i++) {
-        char c = body_start[i];
-        if (c != '\n' && c != '\r' && c != ' ' && c != '\t')
-            clean_len++;
+        ++end;
     }
 
-    size_t decoded_max = neverc_base64_decoded_len(clean_len);
-    if (decoded_max > out_cap) return -1;
+    const char *after_end = end + end_marker_len;
+    while (after_end < pem_end &&
+           (*after_end == ' ' || *after_end == '\t'))
+        ++after_end;
+    if (after_end < pem_end && *after_end == '\r')
+        ++after_end;
+    if (after_end < pem_end) {
+        if (*after_end != '\n')
+            return -1;
+        ++after_end;
+    }
 
-    /*
-     * Decode base64 inline, skipping whitespace. Decoded output is always
-     * shorter than the encoded input, so we can write straight into out_buf.
-     *
-     * FT[] folds three roles into one lookup: standard base64 chars map to
-     * their 0-63 value; ASCII whitespace and '=' map to the PEM_SKIP sentinel
-     * (high bit set); any other byte maps to 0, matching the previous table's
-     * lenient treatment of stray characters. The sentinel's high bit lets the
-     * hot loop validate four characters with a single OR-and-test and only
-     * drop to the careful per-character path when a quad straddles a newline,
-     * whitespace, or padding.
-     */
-    #define PEM_SKIP 0x80u
-    static const uint8_t FT[256] = {
-        ['A']=0, ['B']=1, ['C']=2, ['D']=3, ['E']=4, ['F']=5, ['G']=6, ['H']=7,
-        ['I']=8, ['J']=9, ['K']=10,['L']=11,['M']=12,['N']=13,['O']=14,['P']=15,
-        ['Q']=16,['R']=17,['S']=18,['T']=19,['U']=20,['V']=21,['W']=22,['X']=23,
-        ['Y']=24,['Z']=25,
-        ['a']=26,['b']=27,['c']=28,['d']=29,['e']=30,['f']=31,['g']=32,['h']=33,
-        ['i']=34,['j']=35,['k']=36,['l']=37,['m']=38,['n']=39,['o']=40,['p']=41,
-        ['q']=42,['r']=43,['s']=44,['t']=45,['u']=46,['v']=47,['w']=48,['x']=49,
-        ['y']=50,['z']=51,
-        ['0']=52,['1']=53,['2']=54,['3']=55,['4']=56,['5']=57,['6']=58,['7']=59,
-        ['8']=60,['9']=61,['+']=62,['/']=63,
-        ['\t']=PEM_SKIP, ['\n']=PEM_SKIP, ['\r']=PEM_SKIP, [' ']=PEM_SKIP,
-        ['=']=PEM_SKIP,
-    };
+    int quartet[4];
+    size_t quartet_len = 0;
+    size_t decoded_len = 0;
+    int saw_padding = 0;
+    for (const char *p = body_start; p < end; ++p) {
+        unsigned char c = (unsigned char)*p;
+        if (pem_is_space(c))
+            continue;
+        if (saw_padding)
+            return -1;
 
-    uint8_t quad[4];
-    int qi = 0;
-    size_t out_i = 0;
-    int pad = 0;
-    size_t i = 0;
-    while (i < b64_raw_len) {
-        /*
-         * Fast path: with an empty accumulator, consume four consecutive
-         * base64 characters at once. Standard PEM emits 64-char lines
-         * (16 aligned quads) before each newline, so virtually the whole
-         * body is decoded here without per-character branching.
-         */
-        if (qi == 0 && i + 4 <= b64_raw_len && out_i + 3 <= out_cap) {
-            uint8_t a = FT[(unsigned char)body_start[i]];
-            uint8_t b = FT[(unsigned char)body_start[i + 1]];
-            uint8_t c = FT[(unsigned char)body_start[i + 2]];
-            uint8_t d = FT[(unsigned char)body_start[i + 3]];
-            if (((a | b | c | d) & PEM_SKIP) == 0) {
-                out_buf[out_i++] = (uint8_t)((a << 2) | (b >> 4));
-                out_buf[out_i++] = (uint8_t)((b << 4) | (c >> 2));
-                out_buf[out_i++] = (uint8_t)((c << 6) | d);
-                i += 4;
-                continue;
-            }
-        }
-
-        unsigned char ch = (unsigned char)body_start[i++];
-        uint8_t f = FT[ch];
-        if (f & PEM_SKIP) {
-            if (ch != '=') continue;   /* whitespace: skip */
-            quad[qi++] = 0; pad++;      /* '=': padding */
+        if (c == '=') {
+            quartet[quartet_len++] = -1;
         } else {
-            quad[qi++] = f;             /* base64 value (stray bytes -> 0) */
+            int value = pem_base64_value(c);
+            if (value < 0)
+                return -1;
+            quartet[quartet_len++] = value;
         }
-        if (qi == 4) {
-            if (out_i < out_cap) out_buf[out_i++] = (uint8_t)((quad[0]<<2) | (quad[1]>>4));
-            if (pad < 2 && out_i < out_cap) out_buf[out_i++] = (uint8_t)((quad[1]<<4) | (quad[2]>>2));
-            if (pad < 1 && out_i < out_cap) out_buf[out_i++] = (uint8_t)((quad[2]<<6) | quad[3]);
-            qi = 0; pad = 0;
+        if (quartet_len != 4)
+            continue;
+
+        if (quartet[0] < 0 || quartet[1] < 0 ||
+            (quartet[2] < 0 && quartet[3] >= 0))
+            return -1;
+        size_t emit = quartet[2] < 0 ? 1 :
+                      quartet[3] < 0 ? 2 : 3;
+        if ((emit == 1 && (quartet[1] & 0x0f) != 0) ||
+            (emit == 2 && (quartet[2] & 0x03) != 0) ||
+            emit > out_cap - decoded_len)
+            return -1;
+
+        out_buf[decoded_len++] =
+            (uint8_t)((quartet[0] << 2) | (quartet[1] >> 4));
+        if (emit >= 2) {
+            out_buf[decoded_len++] =
+                (uint8_t)((quartet[1] << 4) | (quartet[2] >> 2));
         }
+        if (emit == 3) {
+            out_buf[decoded_len++] =
+                (uint8_t)((quartet[2] << 6) | quartet[3]);
+        } else {
+            saw_padding = 1;
+        }
+        quartet_len = 0;
     }
-    #undef PEM_SKIP
+    if (quartet_len != 0)
+        return -1;
 
-    if (bytes_written) *bytes_written = out_i;
-
-    const char *after_end = end + em_len;
-    while (after_end < pem_data + pem_len && (*after_end == '-' || *after_end == '\n' || *after_end == '\r'))
-        after_end++;
-    if (rest_offset) *rest_offset = (size_t)(after_end - pem_data);
-
+    if (bytes_written)
+        *bytes_written = decoded_len;
+    if (rest_offset)
+        *rest_offset = (size_t)(after_end - pem_data);
     return 0;
 }
