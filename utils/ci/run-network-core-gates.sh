@@ -24,7 +24,10 @@ trap 'rm -rf "$work_dir"' EXIT
 case "$(uname -s)" in
   MINGW*|MSYS*|CYGWIN*)
     exe_suffix=.exe
-    platform_flags=(-Wno-deprecated-declarations)
+    platform_flags=(
+      -Wno-deprecated-declarations
+      -Wno-ignored-attributes
+    )
     ;;
   *)
     exe_suffix=
