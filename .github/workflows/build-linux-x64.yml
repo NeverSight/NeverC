@@ -119,6 +119,15 @@ jobs:
       continue-on-error: true
       run: cmake --build build --config ${{ env.BUILD_TYPE }} --target check-neverc
 
+    - name: Run network concurrency gates
+      if: steps.tests.outcome == 'success'
+      run: neverc/utils/ci/run-network-core-gates.sh "$PWD/build/bin/neverc" "$PWD/neverc" 25
+
+    - name: Run network sanitizer gates
+      if: steps.tests.outcome == 'success'
+      run: |
+        CC="$CC" neverc/utils/ci/run-network-core-sanitizers.sh "$PWD/neverc"
+
     - name: Diagnose crashes
       if: steps.tests.outcome == 'failure'
       run: |

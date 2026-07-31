@@ -127,3 +127,6 @@ jobs:
 
       - name: Run neverc tests
         run: cmake --build build --config ${{ env.BUILD_TYPE }} --target check-neverc
+
+      - name: Run network concurrency gates
+        run: neverc/utils/ci/run-network-core-gates.sh "$PWD/build/bin/neverc" "$PWD/neverc" 25

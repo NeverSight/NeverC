@@ -140,6 +140,11 @@ jobs:
       continue-on-error: true
       run: cmake --build build --config ${{ env.BUILD_TYPE }} --target check-neverc
 
+    - name: Run network concurrency gates
+      if: steps.tests.outcome == 'success'
+      shell: bash
+      run: neverc/utils/ci/run-network-core-gates.sh "$PWD/build/bin/neverc.exe" "$PWD/neverc" 25
+
     - name: Diagnose crashes
       if: steps.tests.outcome == 'failure'
       shell: bash
