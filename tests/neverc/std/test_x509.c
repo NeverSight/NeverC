@@ -320,6 +320,14 @@ static void test_x509_strings(void) {
           strcmp(neverc_x509_sig_algorithm_string(
                      NEVERC_X509_SIG_RSA_PSS_SHA256),
                  "RSA-PSS-SHA256") == 0);
+    CHECK("sig_rsa_pss_sha384",
+          strcmp(neverc_x509_sig_algorithm_string(
+                     NEVERC_X509_SIG_RSA_PSS_SHA384),
+                 "RSA-PSS-SHA384") == 0);
+    CHECK("sig_rsa_pss_sha512",
+          strcmp(neverc_x509_sig_algorithm_string(
+                     NEVERC_X509_SIG_RSA_PSS_SHA512),
+                 "RSA-PSS-SHA512") == 0);
     CHECK("key_rsa", strcmp(neverc_x509_key_algorithm_string(NEVERC_X509_KEY_RSA),
                              "RSA") == 0);
     CHECK("key_ecdsa", strcmp(neverc_x509_key_algorithm_string(NEVERC_X509_KEY_ECDSA),

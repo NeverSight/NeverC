@@ -3,6 +3,7 @@
 #include <string.h>
 
 #define TLS13_TRANSCRIPT_SHA256_SIZE 32U
+#define TLS13_TRANSCRIPT_SHA384_SIZE 48U
 
 int neverc_tls_verify_certificate_verify(
     const neverc_x509_cert_t *certificate,
@@ -17,7 +18,8 @@ int neverc_tls_verify_certificate_verify(
     static const char client_context[] =
         "TLS 1.3, client CertificateVerify";
     if (!certificate || !transcript_hash ||
-        transcript_hash_len != TLS13_TRANSCRIPT_SHA256_SIZE ||
+        (transcript_hash_len != TLS13_TRANSCRIPT_SHA256_SIZE &&
+         transcript_hash_len != TLS13_TRANSCRIPT_SHA384_SIZE) ||
         !signature || signature_len == 0 ||
         (from_server != 0 && from_server != 1))
         return -1;
@@ -27,6 +29,14 @@ int neverc_tls_verify_certificate_verify(
             NEVERC_TLS_SIGNATURE_RSA_PSS_RSAE_SHA256 &&
         certificate->key_algorithm == NEVERC_X509_KEY_RSA) {
         signature_algorithm = NEVERC_X509_SIG_RSA_PSS_SHA256;
+    } else if (signature_scheme ==
+                   NEVERC_TLS_SIGNATURE_RSA_PSS_RSAE_SHA384 &&
+               certificate->key_algorithm == NEVERC_X509_KEY_RSA) {
+        signature_algorithm = NEVERC_X509_SIG_RSA_PSS_SHA384;
+    } else if (signature_scheme ==
+                   NEVERC_TLS_SIGNATURE_RSA_PSS_RSAE_SHA512 &&
+               certificate->key_algorithm == NEVERC_X509_KEY_RSA) {
+        signature_algorithm = NEVERC_X509_SIG_RSA_PSS_SHA512;
     } else if (signature_scheme ==
                    NEVERC_TLS_SIGNATURE_ECDSA_SECP256R1_SHA256 &&
                certificate->key_algorithm == NEVERC_X509_KEY_ECDSA &&
@@ -45,15 +55,17 @@ int neverc_tls_verify_certificate_verify(
     size_t context_len = strlen(context);
     uint8_t signed_content[
         64 + sizeof(server_context) - 1 + 1 +
-        TLS13_TRANSCRIPT_SHA256_SIZE];
+        TLS13_TRANSCRIPT_SHA384_SIZE];
     memset(signed_content, 0x20, 64);
     memcpy(signed_content + 64, context, context_len);
     signed_content[64 + context_len] = 0;
     memcpy(signed_content + 64 + context_len + 1,
            transcript_hash, transcript_hash_len);
+    size_t signed_content_len =
+        64 + context_len + 1 + transcript_hash_len;
 
     return neverc_x509_verify_signature(
         certificate, signature_algorithm,
-        signed_content, sizeof(signed_content),
+        signed_content, signed_content_len,
         signature, signature_len);
 }

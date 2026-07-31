@@ -1,5 +1,6 @@
 #include "neverc/std/crypto/tls.h"
 #include "neverc/std/crypto/ed25519.h"
+#include "neverc/std/encoding/base64.h"
 #include "neverc/std/net/tcp.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -13,6 +14,9 @@
 #endif
 
 static int tests_run = 0, tests_passed = 0, tests_failed = 0;
+static const char *TEST_CERT_PEM;
+static const char *TEST_KEY_PEM;
+static const char *MISMATCHED_KEY_PEM;
 
 static void check_int(const char *name, int got, int expected) {
     tests_run++;
@@ -46,31 +50,157 @@ static void test_config(void) {
     const char *protos[] = {"h2", "http/1.1"};
     neverc_tls_config_set_alpn(cfg, protos, 2);
 
+    check_int("load_valid_certificate_key_pair",
+              neverc_tls_config_load_cert_mem(
+                  cfg, TEST_CERT_PEM, TEST_KEY_PEM),
+              0);
+    check_int("reject_mismatched_private_key",
+              neverc_tls_config_load_cert_mem(
+                  cfg, TEST_CERT_PEM, MISMATCHED_KEY_PEM) != 0,
+              1);
+    check_int("reject_malformed_certificate_pem",
+              neverc_tls_config_load_cert_mem(
+                  cfg,
+                  "-----BEGIN CERTIFICATE-----\n!!!!\n"
+                  "-----END CERTIFICATE-----\n",
+                  TEST_KEY_PEM) != 0,
+              1);
+    check_int("reject_malformed_private_key_pem",
+              neverc_tls_config_load_cert_mem(
+                  cfg, TEST_CERT_PEM,
+                  "-----BEGIN EC PRIVATE KEY-----\nAAAA\n"
+                  "-----END EC PRIVATE KEY-----\n") != 0,
+              1);
+
     neverc_tls_config_free(cfg);
     tests_run++; tests_passed++; /* free didn't crash */
 }
 
 /* ===== Self-signed cert for testing ===== */
 
-/* Minimal self-signed EC certificate (P-256) in PEM format.
- * This is a hardcoded test cert generated for localhost testing only. */
+/* Self-signed P-256 certificate/key pair generated with OpenSSL through
+ * cryptography 44.0.0 for localhost tests only. */
 static const char *TEST_CERT_PEM =
     "-----BEGIN CERTIFICATE-----\n"
-    "MIIBkTCB+wIJAMQKzE3k1T3nMA0GCSqGSIb3DQEBCwUAMBExDzANBgNVBAMMBnRl\n"
-    "c3RjYTAeFw0yNTAxMDEwMDAwMDBaFw0zNTAxMDEwMDAwMDBaMBExDzANBgNVBAMM\n"
-    "BnRlc3RjYTBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABEIlSFOE6E4afJH1Vl0i\n"
-    "hLoU7SOyWxk3SoJGHb5sMZjWVbXKHMSmLRJ9Ty6MXJVOsfPzDG/MpfRkx2dTnHGp\n"
-    "K/+jIzAhMB8GA1UdEQQYMBaCCWxvY2FsaG9zdIcEfwAAAYcEAAAAADANBgkqhkiG\n"
-    "9w0BAQsFAANBABYldGE1H+RFmJVN/4XhNGLSe8s0TIOC1rbQl7bvm0Z5eDpv0pRQ\n"
-    "P+WFaJxU+TP1FLgk3PJt+tY1GM9LXBxWkQc=\n"
+    "MIIBgjCCASigAwIBAgIJTmV2ZXJDVExTMAoGCCqGSM49BAMCMBQxEjAQBgNVBAMM\n"
+    "CWxvY2FsaG9zdDAeFw0yNTAxMDEwMDAwMDBaFw0zNTAxMDEwMDAwMDBaMBQxEjAQ\n"
+    "BgNVBAMMCWxvY2FsaG9zdDBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABBX4gK+v\n"
+    "5DI//0U8VG4jHfQ+RmkltlYdGsoiK2yypNi1Pg9FlprxoLEnMBd3iJPXyWXZXeEc\n"
+    "urkgOPvislmTWeWjYzBhMAwGA1UdEwEB/wQCMAAwDgYDVR0PAQH/BAQDAgeAMBMG\n"
+    "A1UdJQQMMAoGCCsGAQUFBwMBMCwGA1UdEQQlMCOCCWxvY2FsaG9zdIcEfwAAAYcQ\n"
+    "AAAAAAAAAAAAAAAAAAAAATAKBggqhkjOPQQDAgNIADBFAiBLuVqTeDOD9x0suosv\n"
+    "BUX1bJ3YwUqavMG1lP0/I7BM2wIhAJp6w5O/mUdQSHXz+xvQcjhM/awHU5cEkn9F\n"
+    "OSd9jEup\n"
     "-----END CERTIFICATE-----\n";
 
 static const char *TEST_KEY_PEM =
     "-----BEGIN EC PRIVATE KEY-----\n"
-    "MHQCAQEEIPWBYq3P/sQ//qdqN1n14bJc7LI87fHU9/l0516LiSeloAcGBSuBBAAi\n"
-    "oWQDYgAEQiVIU4ToThp8kfVWXSKEuhTtI7JbGTdKgkYdvmwxmNZVtcocxKYtEn1P\n"
-    "LoxclU6x8/MMb8yl9GTHZ1Occakr/w==\n"
+    "MHcCAQEEIDkqk6tPKsMt9xd0yT+C31OoGv1mP2iXEeOfHufkrVo8oAoGCCqGSM49\n"
+    "AwEHoUQDQgAEFfiAr6/kMj//RTxUbiMd9D5GaSW2Vh0ayiIrbLKk2LU+D0WWmvGg\n"
+    "sScwF3eIk9fJZdld4Ry6uSA4++KyWZNZ5Q==\n"
     "-----END EC PRIVATE KEY-----\n";
+
+static const char *MISMATCHED_KEY_PEM =
+    "-----BEGIN EC PRIVATE KEY-----\n"
+    "MHcCAQEEIP59MqisH3/JHQEN8KXlBcE/TF4MJB4bk/O/IbVlpR+xoAoGCCqGSM49\n"
+    "AwEHoUQDQgAEtskf1ldYDvesKmTSp+y9OCL0IKA+1CayNdqBbkBH3QKW/qF/7JlP\n"
+    "BSDBdI5uQAjO9rogYFtLM+kP+uE2XUjUpw==\n"
+    "-----END EC PRIVATE KEY-----\n";
+
+static int decode_certificate_pem(uint8_t *der, size_t der_capacity) {
+    const char *body = strchr(TEST_CERT_PEM, '\n');
+    const char *end = strstr(TEST_CERT_PEM, "-----END CERTIFICATE-----");
+    if (!body || !end)
+        return -1;
+    ++body;
+
+    char base64[1024];
+    size_t base64_len = 0;
+    for (const char *p = body; p < end; ++p) {
+        if (*p == '\r' || *p == '\n')
+            continue;
+        if (base64_len >= sizeof(base64))
+            return -1;
+        base64[base64_len++] = *p;
+    }
+    if (neverc_base64_decoded_len(base64_len) > der_capacity)
+        return -1;
+    return neverc_base64_decode(der, base64, base64_len);
+}
+
+static void test_certificate_verify_signing(void) {
+    printf("[certificate_verify_signing]\n");
+
+    neverc_tls_config_t *cfg = neverc_tls_config_new();
+    check_not_null("signing_config_new", cfg);
+    check_int("signing_load_certificate",
+              neverc_tls_config_load_cert_mem(
+                  cfg, TEST_CERT_PEM, TEST_KEY_PEM),
+              0);
+
+    uint8_t transcript_hash[32];
+    for (size_t i = 0; i < sizeof(transcript_hash); ++i)
+        transcript_hash[i] = (uint8_t)(0xa0 + i);
+    uint8_t signature[80];
+    size_t signature_len = 0;
+    uint16_t signature_scheme = 0;
+    check_int("sign_server_certificate_verify",
+              neverc_tls_sign_certificate_verify(
+                  cfg, 1, transcript_hash, sizeof(transcript_hash),
+                  &signature_scheme, signature, sizeof(signature),
+                  &signature_len),
+              0);
+    check_int("signing_scheme",
+              signature_scheme,
+              NEVERC_TLS_SIGNATURE_ECDSA_SECP256R1_SHA256);
+    check_int("signing_der_size",
+              signature_len >= 68 && signature_len <= 72,
+              1);
+
+    uint8_t certificate_der[512];
+    int certificate_der_len =
+        decode_certificate_pem(certificate_der, sizeof(certificate_der));
+    check_int("decode_signing_certificate",
+              certificate_der_len > 0, 1);
+    neverc_x509_cert_t certificate;
+    memset(&certificate, 0, sizeof(certificate));
+    check_int("parse_signing_certificate",
+              neverc_x509_parse_certificate(
+                  &certificate, certificate_der,
+                  certificate_der_len > 0 ?
+                      (size_t)certificate_der_len : 0),
+              0);
+    check_int("verify_generated_certificate_verify",
+              neverc_tls_verify_certificate_verify(
+                  &certificate, signature_scheme, 1,
+                  transcript_hash, sizeof(transcript_hash),
+                  signature, signature_len),
+              0);
+    transcript_hash[0] ^= 1;
+    check_int("reject_generated_signature_for_other_transcript",
+              neverc_tls_verify_certificate_verify(
+                  &certificate, signature_scheme, 1,
+                  transcript_hash, sizeof(transcript_hash),
+                  signature, signature_len) != 0,
+              1);
+    transcript_hash[0] ^= 1;
+
+    check_int("reject_signing_bad_transcript_size",
+              neverc_tls_sign_certificate_verify(
+                  cfg, 1, transcript_hash, sizeof(transcript_hash) - 1,
+                  &signature_scheme, signature, sizeof(signature),
+                  &signature_len) != 0,
+              1);
+    check_int("reject_signing_small_output",
+              neverc_tls_sign_certificate_verify(
+                  cfg, 1, transcript_hash, sizeof(transcript_hash),
+                  &signature_scheme, signature, 8,
+                  &signature_len) != 0,
+              1);
+
+    neverc_x509_cert_free(&certificate);
+    neverc_tls_config_free(cfg);
+}
 
 static uint8_t test_rsa_public_key_der[] = {
     0x30, 0x81, 0x89, 0x02, 0x81, 0x81, 0x00, 0xc9,
@@ -110,6 +240,119 @@ static const uint8_t test_rsa_pss_certificate_verify[] = {
     0xb8, 0x66, 0x13, 0x31, 0x94, 0x15, 0x11, 0x65,
     0x15, 0xdc, 0x3a, 0xa1, 0x5e, 0x7b, 0x31, 0xfc,
     0x12, 0x1b, 0x49, 0xfe, 0x41, 0xb4, 0xac, 0x66,
+};
+
+/*
+ * Generated with cryptography 44.0.0 backed by OpenSSL. The SHA-384 vector
+ * signs a 48-byte TLS transcript hash; the SHA-512 vector signs a 32-byte
+ * transcript hash. Both use MGF1 with the signature hash and salt length equal
+ * to the signature hash length.
+ */
+static const uint8_t test_rsa_sha2_public_key_der[] = {
+    0x30, 0x82, 0x01, 0x0a, 0x02, 0x82, 0x01, 0x01,
+    0x00, 0xac, 0x2d, 0xbe, 0x10, 0x72, 0x4c, 0xb0,
+    0xb0, 0xb9, 0xa1, 0x58, 0xcd, 0x51, 0xfd, 0x46,
+    0xde, 0xa9, 0x62, 0x12, 0xee, 0x50, 0x8a, 0xa0,
+    0x6a, 0x65, 0x93, 0xf0, 0x1c, 0xc3, 0x89, 0x94,
+    0x78, 0x76, 0x4a, 0x89, 0x5e, 0x26, 0xe7, 0x32,
+    0xdf, 0xb8, 0x99, 0xa0, 0x3a, 0xbf, 0xb8, 0x5e,
+    0x12, 0x05, 0x9e, 0xdf, 0xc2, 0xda, 0x06, 0xcb,
+    0xdc, 0x72, 0x07, 0x0c, 0x9e, 0x0f, 0xe9, 0xeb,
+    0xd5, 0x3c, 0x36, 0x51, 0xf0, 0x67, 0x41, 0x9f,
+    0x00, 0xea, 0xfc, 0x1e, 0x08, 0x93, 0xac, 0x7b,
+    0x18, 0xdb, 0x81, 0xca, 0xf2, 0xf0, 0x3a, 0x62,
+    0xb4, 0x1a, 0x6d, 0x50, 0x8d, 0x2f, 0x40, 0xc9,
+    0x72, 0xfe, 0x95, 0xa5, 0x7d, 0x56, 0x33, 0x8e,
+    0x2d, 0x3e, 0x44, 0x9d, 0xa5, 0x3a, 0x8d, 0x84,
+    0xb5, 0x81, 0xc4, 0x6b, 0xc4, 0x4b, 0xac, 0xfb,
+    0xf4, 0xf7, 0xf1, 0x5e, 0xd5, 0xad, 0xa4, 0x6f,
+    0x62, 0x75, 0xa2, 0x8b, 0x37, 0xdf, 0x02, 0x65,
+    0x53, 0xa4, 0xb9, 0x67, 0xbb, 0xfa, 0xee, 0x12,
+    0x62, 0xad, 0xf1, 0x89, 0x33, 0xf3, 0x4e, 0x7a,
+    0x3f, 0xd8, 0x78, 0x50, 0xa4, 0xa1, 0xe4, 0xca,
+    0x22, 0x8e, 0xc6, 0x60, 0x54, 0x48, 0x8a, 0xd9,
+    0xee, 0xd7, 0x23, 0x5f, 0x1f, 0x4d, 0x93, 0x9b,
+    0x9e, 0x6b, 0xe0, 0x33, 0x5d, 0x02, 0x7a, 0xbc,
+    0xba, 0x56, 0x66, 0x71, 0xcc, 0x78, 0xce, 0x76,
+    0x63, 0x2c, 0x59, 0x97, 0x46, 0xd2, 0xc0, 0xc8,
+    0x3b, 0x53, 0xc7, 0xf7, 0x67, 0xf9, 0x6d, 0xd3,
+    0xe2, 0x0c, 0x9b, 0xbd, 0xc6, 0xa5, 0x49, 0xc6,
+    0x47, 0x87, 0x4a, 0xda, 0xc2, 0xd2, 0x28, 0xa1,
+    0x99, 0x2d, 0xb2, 0x62, 0x58, 0x2c, 0xf1, 0x73,
+    0x14, 0x4d, 0x85, 0x31, 0xb5, 0x4a, 0x5f, 0x7e,
+    0xae, 0x8e, 0x58, 0x0b, 0x9d, 0x32, 0xfa, 0x90,
+    0x80, 0x6c, 0x32, 0x71, 0xc7, 0x28, 0x1e, 0xed,
+    0x49, 0x02, 0x03, 0x01, 0x00, 0x01,
+};
+
+static const uint8_t test_rsa_pss_sha384_certificate_verify[] = {
+    0xa3, 0x6c, 0x6f, 0x3c, 0x39, 0xb4, 0x4c, 0xf4,
+    0xc5, 0x3a, 0xd4, 0x40, 0xff, 0x13, 0x17, 0xf0,
+    0xa7, 0x77, 0x42, 0x85, 0xf4, 0x06, 0x03, 0xe7,
+    0xe4, 0xa3, 0xbc, 0x95, 0x9a, 0x28, 0x1b, 0xb7,
+    0x22, 0x25, 0x78, 0x51, 0x14, 0x1f, 0x71, 0x9c,
+    0x86, 0xeb, 0xc7, 0x02, 0x1c, 0xbc, 0x29, 0x98,
+    0xf2, 0xb3, 0x85, 0x70, 0x83, 0xc3, 0x27, 0x26,
+    0x38, 0x8b, 0x28, 0x75, 0x18, 0x3e, 0xdd, 0xd5,
+    0xab, 0x7c, 0x99, 0x69, 0xd3, 0xae, 0x38, 0xc5,
+    0x3c, 0x86, 0xbc, 0xa2, 0x67, 0x77, 0x83, 0xfd,
+    0x01, 0x71, 0x4a, 0x83, 0x8d, 0x29, 0x30, 0x9e,
+    0xbf, 0xf0, 0xbe, 0x2f, 0x77, 0x45, 0xff, 0x76,
+    0xd0, 0x8b, 0x18, 0x24, 0x28, 0x5d, 0x18, 0x81,
+    0xa2, 0xbd, 0x16, 0xfd, 0xab, 0x24, 0x3f, 0xc7,
+    0x62, 0xfe, 0x51, 0xae, 0xac, 0x28, 0x42, 0xfe,
+    0xcb, 0x2c, 0xd0, 0x6c, 0xd0, 0x23, 0x94, 0x65,
+    0xff, 0x44, 0x5f, 0x9c, 0x57, 0xcc, 0x8b, 0x25,
+    0x95, 0xea, 0x49, 0x19, 0x5b, 0x48, 0xbb, 0x76,
+    0x9b, 0x79, 0xc6, 0xb8, 0xda, 0xc6, 0x78, 0x9c,
+    0x3c, 0xbf, 0xf5, 0x6b, 0xa7, 0x52, 0xed, 0x04,
+    0x60, 0xb5, 0x95, 0x6f, 0xaf, 0x05, 0x57, 0xa8,
+    0x3e, 0xa4, 0xda, 0x33, 0x1c, 0xa1, 0xc5, 0x6f,
+    0x95, 0x17, 0xc1, 0x43, 0x35, 0xe4, 0xe9, 0xce,
+    0xc7, 0xd0, 0x92, 0x63, 0x9b, 0xd5, 0x1c, 0xf5,
+    0x1d, 0xe4, 0x61, 0x22, 0x8f, 0x27, 0x9f, 0x5d,
+    0x0e, 0x7e, 0xc3, 0x91, 0x2e, 0x33, 0x14, 0xec,
+    0x3a, 0x9f, 0xf5, 0x53, 0xfd, 0x9d, 0x48, 0xe0,
+    0xb6, 0xae, 0x91, 0x5b, 0xcf, 0x33, 0xfa, 0x3d,
+    0x0e, 0xc1, 0xe3, 0x81, 0xf4, 0x8e, 0xab, 0x9c,
+    0x36, 0x29, 0x77, 0x88, 0x3c, 0x40, 0x47, 0xe0,
+    0x8c, 0xc2, 0x2c, 0x4d, 0xf7, 0x40, 0x9d, 0x26,
+    0xac, 0x8f, 0xd5, 0xb3, 0x3d, 0xf2, 0x6f, 0xac,
+};
+
+static const uint8_t test_rsa_pss_sha512_certificate_verify[] = {
+    0x84, 0xf0, 0xc3, 0xfa, 0xa0, 0x14, 0xfe, 0x19,
+    0x3a, 0x7d, 0xea, 0xbf, 0xd3, 0xf1, 0x81, 0xa9,
+    0xd2, 0x30, 0x57, 0xfe, 0xb0, 0x03, 0x0d, 0x41,
+    0xc5, 0x18, 0x17, 0xf2, 0xab, 0x12, 0xf1, 0xbf,
+    0xc4, 0x05, 0xc9, 0x70, 0xe4, 0xf1, 0xad, 0xc0,
+    0xf6, 0xde, 0x35, 0x25, 0x38, 0xcf, 0x45, 0xcd,
+    0xdf, 0xaf, 0xaf, 0x13, 0xf7, 0x2a, 0x0a, 0x25,
+    0xce, 0x27, 0x74, 0x7a, 0x57, 0xbb, 0x18, 0x6c,
+    0xb9, 0x87, 0x48, 0xce, 0x89, 0xba, 0x5e, 0xc6,
+    0x22, 0x7b, 0x69, 0xc3, 0x20, 0x21, 0x5d, 0xe2,
+    0xbc, 0x26, 0x91, 0x29, 0xae, 0x7c, 0xa0, 0x3b,
+    0x1f, 0x6e, 0x92, 0x4b, 0xf5, 0xbf, 0xa7, 0x77,
+    0x97, 0x82, 0x40, 0x85, 0x31, 0x08, 0x3b, 0xa5,
+    0xcf, 0x60, 0x32, 0x16, 0x55, 0x28, 0xd7, 0x2a,
+    0xe2, 0xef, 0x43, 0xa7, 0x27, 0x4c, 0xb4, 0x13,
+    0x32, 0xd3, 0x39, 0x5d, 0x9a, 0xd0, 0x63, 0x1c,
+    0xa8, 0x7f, 0xbe, 0x5d, 0xcc, 0x59, 0x04, 0x9f,
+    0x8f, 0x53, 0x0a, 0x2a, 0xb5, 0x01, 0x6f, 0xa8,
+    0x58, 0xb6, 0x60, 0xf8, 0xe7, 0x05, 0xba, 0xdc,
+    0x6c, 0x2f, 0xf7, 0x7e, 0xb8, 0x40, 0x4c, 0xde,
+    0x8a, 0x6b, 0x53, 0x46, 0x4e, 0xb5, 0x79, 0x49,
+    0x15, 0x2f, 0x5b, 0xe1, 0xad, 0xda, 0x58, 0xa9,
+    0x6e, 0x0a, 0xcc, 0x9e, 0x31, 0xd7, 0x54, 0xd7,
+    0x89, 0x0d, 0x88, 0xa2, 0x31, 0x14, 0x4e, 0xc2,
+    0x2b, 0x35, 0x86, 0x65, 0x41, 0x16, 0x89, 0x55,
+    0x9e, 0x61, 0x39, 0x4e, 0x1d, 0x19, 0xee, 0x7d,
+    0xea, 0x35, 0xcc, 0x5e, 0x31, 0xdd, 0xeb, 0xe3,
+    0xce, 0xd9, 0x81, 0x3c, 0xf1, 0xc1, 0xa3, 0xb5,
+    0x6a, 0xf5, 0x29, 0x9c, 0x0f, 0x45, 0x3b, 0xc1,
+    0xe5, 0xe2, 0xbe, 0xc1, 0x2f, 0x43, 0x4a, 0x56,
+    0xf0, 0x1a, 0xf8, 0xec, 0xd0, 0x7c, 0x74, 0x9a,
+    0x8b, 0x96, 0xef, 0xeb, 0x18, 0xef, 0x79, 0x70,
 };
 
 static void test_certificate_verify(void) {
@@ -176,6 +419,60 @@ static void test_certificate_verify(void) {
             1, transcript_hash, sizeof(transcript_hash),
             test_rsa_pss_certificate_verify,
             sizeof(test_rsa_pss_certificate_verify)) != 0,
+        1);
+
+    certificate.public_key = (uint8_t *)test_rsa_sha2_public_key_der;
+    certificate.public_key_len = sizeof(test_rsa_sha2_public_key_der);
+    uint8_t transcript_hash_sha384[48];
+    for (size_t i = 0; i < sizeof(transcript_hash_sha384); ++i)
+        transcript_hash_sha384[i] = (uint8_t)i;
+    check_int(
+        "rsa_pss_sha384_server_certificate_verify",
+        neverc_tls_verify_certificate_verify(
+            &certificate,
+            NEVERC_TLS_SIGNATURE_RSA_PSS_RSAE_SHA384,
+            1, transcript_hash_sha384, sizeof(transcript_hash_sha384),
+            test_rsa_pss_sha384_certificate_verify,
+            sizeof(test_rsa_pss_sha384_certificate_verify)),
+        0);
+    transcript_hash_sha384[0] ^= 1;
+    check_int(
+        "rsa_pss_sha384_transcript_mismatch",
+        neverc_tls_verify_certificate_verify(
+            &certificate,
+            NEVERC_TLS_SIGNATURE_RSA_PSS_RSAE_SHA384,
+            1, transcript_hash_sha384, sizeof(transcript_hash_sha384),
+            test_rsa_pss_sha384_certificate_verify,
+            sizeof(test_rsa_pss_sha384_certificate_verify)) != 0,
+        1);
+    transcript_hash_sha384[0] ^= 1;
+    check_int(
+        "certificate_verify_invalid_transcript_size",
+        neverc_tls_verify_certificate_verify(
+            &certificate,
+            NEVERC_TLS_SIGNATURE_RSA_PSS_RSAE_SHA384,
+            1, transcript_hash_sha384,
+            sizeof(transcript_hash_sha384) - 1,
+            test_rsa_pss_sha384_certificate_verify,
+            sizeof(test_rsa_pss_sha384_certificate_verify)) != 0,
+        1);
+    check_int(
+        "rsa_pss_sha512_server_certificate_verify",
+        neverc_tls_verify_certificate_verify(
+            &certificate,
+            NEVERC_TLS_SIGNATURE_RSA_PSS_RSAE_SHA512,
+            1, transcript_hash, sizeof(transcript_hash),
+            test_rsa_pss_sha512_certificate_verify,
+            sizeof(test_rsa_pss_sha512_certificate_verify)),
+        0);
+    check_int(
+        "rsa_pss_sha2_scheme_mismatch",
+        neverc_tls_verify_certificate_verify(
+            &certificate,
+            NEVERC_TLS_SIGNATURE_RSA_PSS_RSAE_SHA512,
+            1, transcript_hash_sha384, sizeof(transcript_hash_sha384),
+            test_rsa_pss_sha384_certificate_verify,
+            sizeof(test_rsa_pss_sha384_certificate_verify)) != 0,
         1);
 
     static const char server_context[] =
@@ -284,22 +581,11 @@ static void *tls_server_thread(void *arg) {
 static void test_client_server(void) {
     printf("[client_server]\n");
 
-    /* This test requires a working TLS implementation with self-signed certs.
-     * Since our test certificates are placeholder/minimal, this test validates
-     * that the TLS config and listener creation APIs work without crashing. */
-
     neverc_tls_config_t *cfg = neverc_tls_config_new();
     check_not_null("config for server", cfg);
 
     int rc = neverc_tls_config_load_cert_mem(cfg, TEST_CERT_PEM, TEST_KEY_PEM);
-    /* PEM decode may or may not work depending on cert format validity */
-    if (rc == 0) {
-        tests_run++; tests_passed++;
-        printf("  cert loaded ok\n");
-    } else {
-        tests_run++; tests_passed++;
-        printf("  cert load returned %d (test cert may be placeholder)\n", rc);
-    }
+    check_int("load server certificate", rc, 0);
 
     neverc_tls_config_free(cfg);
 }
@@ -367,6 +653,7 @@ int main(void) {
 
     test_config();
     test_cipher_suites();
+    test_certificate_verify_signing();
     test_certificate_verify();
     test_dial_errors();
     test_client_server();

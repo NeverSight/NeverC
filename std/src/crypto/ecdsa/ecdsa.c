@@ -5,25 +5,49 @@
 
 #define ecdsa_random neverc_platform_random
 
-static void random_mod_n(neverc_bigint_t *r, const neverc_bigint_t *n) {
+static void bigint_secure_free(neverc_bigint_t *value) {
+    if (!value)
+        return;
+    if (value->digits) {
+        neverc_platform_secure_zero(
+            value->digits, value->cap * sizeof(*value->digits));
+    }
+    neverc_bigint_free(value);
+}
+
+static int random_mod_n(neverc_bigint_t *r, const neverc_bigint_t *n) {
+    if (!r || !n || neverc_bigint_sign(n) <= 0)
+        return -1;
     int bits = neverc_bigint_bit_len(n);
     int bytes = (bits + 7) / 8;
-    unsigned char *buf = (unsigned char *)malloc((size_t)bytes);
     char hex[1024];
+    if (bytes <= 0 || (size_t)bytes > (sizeof(hex) - 1) / 2)
+        return -1;
+    unsigned char *buf = (unsigned char *)malloc((size_t)bytes);
+    if (!buf)
+        return -1;
 
-    for (;;) {
-        ecdsa_random(buf, (size_t)bytes);
+    int result = -1;
+    for (int attempt = 0; attempt < 128; ++attempt) {
+        if (ecdsa_random(buf, (size_t)bytes) != 0)
+            break;
         int pos = 0;
         for (int i = 0; i < bytes && pos < (int)sizeof(hex) - 2; i++) {
             hex[pos++] = "0123456789abcdef"[buf[i] >> 4];
             hex[pos++] = "0123456789abcdef"[buf[i] & 0x0F];
         }
         hex[pos] = '\0';
-        neverc_bigint_set_string(r, hex, 16);
-        if (!neverc_bigint_is_zero(r) && neverc_bigint_cmp(r, n) < 0)
+        if (neverc_bigint_set_string(r, hex, 16) != 0)
             break;
+        if (!neverc_bigint_is_zero(r) && neverc_bigint_cmp(r, n) < 0) {
+            result = 0;
+            break;
+        }
     }
+    neverc_platform_secure_zero(buf, (size_t)bytes);
+    neverc_platform_secure_zero(hex, sizeof(hex));
     free(buf);
+    return result;
 }
 
 static void mod_inv_ec(neverc_bigint_t *r, const neverc_bigint_t *a, const neverc_bigint_t *p) {
@@ -47,8 +71,9 @@ void neverc_ecdsa_private_key_init(neverc_ecdsa_private_key_t *k) {
     neverc_bigint_init(&k->d);
 }
 void neverc_ecdsa_private_key_free(neverc_ecdsa_private_key_t *k) {
+    if (!k) return;
     neverc_ecdsa_public_key_free(&k->pub);
-    neverc_bigint_free(&k->d);
+    bigint_secure_free(&k->d);
 }
 void neverc_ecdsa_signature_init(neverc_ecdsa_signature_t *sig) {
     neverc_bigint_init(&sig->r);
@@ -61,14 +86,22 @@ void neverc_ecdsa_signature_free(neverc_ecdsa_signature_t *sig) {
 
 int neverc_ecdsa_generate_key(neverc_ecdsa_private_key_t *key,
                                const neverc_elliptic_curve_t *curve) {
+    if (!key || !curve || neverc_bigint_sign(&curve->n) <= 0)
+        return -1;
     key->pub.curve = curve;
-    random_mod_n(&key->d, &curve->n);
+    neverc_bigint_set_uint64(&key->d, 0);
+    if (random_mod_n(&key->d, &curve->n) != 0) {
+        neverc_bigint_set_uint64(&key->d, 0);
+        return -1;
+    }
     neverc_elliptic_scalar_base_mult(curve, &key->pub.pub, &key->d);
     return 0;
 }
 
-static void hash_to_int(neverc_bigint_t *r, const unsigned char *hash, size_t hash_len,
-                          const neverc_bigint_t *n) {
+static int hash_to_int(neverc_bigint_t *r, const unsigned char *hash,
+                       size_t hash_len, const neverc_bigint_t *n) {
+    if (!r || !hash || hash_len == 0 || !n)
+        return -1;
     char hex[256];
     int pos = 0;
     int order_bytes = (neverc_bigint_bit_len(n) + 7) / 8;
@@ -79,24 +112,35 @@ static void hash_to_int(neverc_bigint_t *r, const unsigned char *hash, size_t ha
         hex[pos++] = "0123456789abcdef"[hash[i] & 0x0F];
     }
     hex[pos] = '\0';
-    neverc_bigint_set_string(r, hex, 16);
+    if (neverc_bigint_set_string(r, hex, 16) != 0)
+        return -1;
 
     if (neverc_bigint_cmp(r, n) >= 0)
         neverc_bigint_mod(r, r, n);
+    return 0;
 }
 
 int neverc_ecdsa_sign(const neverc_ecdsa_private_key_t *key,
                        const unsigned char *hash, size_t hash_len,
                        neverc_ecdsa_signature_t *sig) {
+    if (!key || !key->pub.curve || !hash || hash_len == 0 || !sig ||
+        neverc_bigint_sign(&key->d) <= 0 ||
+        neverc_bigint_cmp(&key->d, &key->pub.curve->n) >= 0)
+        return -1;
     const neverc_elliptic_curve_t *curve = key->pub.curve;
+    neverc_bigint_set_uint64(&sig->r, 0);
+    neverc_bigint_set_uint64(&sig->s, 0);
     neverc_bigint_t k, e, kinv, tmp;
     neverc_bigint_init(&k); neverc_bigint_init(&e);
     neverc_bigint_init(&kinv); neverc_bigint_init(&tmp);
 
-    hash_to_int(&e, hash, hash_len, &curve->n);
+    int result = -1;
+    if (hash_to_int(&e, hash, hash_len, &curve->n) != 0)
+        goto cleanup;
 
-    for (;;) {
-        random_mod_n(&k, &curve->n);
+    for (int attempt = 0; attempt < 128; ++attempt) {
+        if (random_mod_n(&k, &curve->n) != 0)
+            goto cleanup;
 
         neverc_elliptic_point_t R;
         neverc_elliptic_point_init(&R);
@@ -114,20 +158,28 @@ int neverc_ecdsa_sign(const neverc_ecdsa_private_key_t *key,
         neverc_bigint_mul(&sig->s, &kinv, &tmp);
         neverc_bigint_mod(&sig->s, &sig->s, &curve->n);
 
-        if (!neverc_bigint_is_zero(&sig->s)) break;
+        if (!neverc_bigint_is_zero(&sig->s)) {
+            result = 0;
+            break;
+        }
     }
 
-    neverc_bigint_free(&k); neverc_bigint_free(&e);
-    neverc_bigint_free(&kinv); neverc_bigint_free(&tmp);
-    return 0;
+cleanup:
+    bigint_secure_free(&k); neverc_bigint_free(&e);
+    bigint_secure_free(&kinv); bigint_secure_free(&tmp);
+    return result;
 }
 
 int neverc_ecdsa_verify(const neverc_ecdsa_public_key_t *key,
                          const unsigned char *hash, size_t hash_len,
                          const neverc_ecdsa_signature_t *sig) {
+    if (!key || !key->curve || !hash || hash_len == 0 || !sig ||
+        !neverc_elliptic_is_on_curve(key->curve, &key->pub))
+        return -1;
     const neverc_elliptic_curve_t *curve = key->curve;
 
-    if (neverc_bigint_is_zero(&sig->r) || neverc_bigint_is_zero(&sig->s))
+    if (neverc_bigint_sign(&sig->r) <= 0 ||
+        neverc_bigint_sign(&sig->s) <= 0)
         return -1;
     if (neverc_bigint_cmp(&sig->r, &curve->n) >= 0 ||
         neverc_bigint_cmp(&sig->s, &curve->n) >= 0)
@@ -137,7 +189,11 @@ int neverc_ecdsa_verify(const neverc_ecdsa_public_key_t *key,
     neverc_bigint_init(&e); neverc_bigint_init(&sinv);
     neverc_bigint_init(&u1); neverc_bigint_init(&u2);
 
-    hash_to_int(&e, hash, hash_len, &curve->n);
+    if (hash_to_int(&e, hash, hash_len, &curve->n) != 0) {
+        neverc_bigint_free(&e); neverc_bigint_free(&sinv);
+        neverc_bigint_free(&u1); neverc_bigint_free(&u2);
+        return -1;
+    }
     mod_inv_ec(&sinv, &sig->s, &curve->n);
 
     neverc_bigint_mul(&u1, &e, &sinv);

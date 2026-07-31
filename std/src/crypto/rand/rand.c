@@ -3,12 +3,11 @@
 #include <string.h>
 
 int neverc_crypto_rand_read(uint8_t *buf, size_t len) {
-    neverc_platform_random(buf, len);
-    return 0;
+    return neverc_platform_random(buf, len);
 }
 
 int neverc_crypto_rand_int(uint64_t *out, uint64_t max) {
-    if (max == 0) return -1;
+    if (!out || max == 0) return -1;
     uint64_t threshold = -max % max;
     for (;;) {
         uint64_t val;
@@ -76,7 +75,7 @@ static int is_probably_prime(uint64_t n) {
 }
 
 int neverc_crypto_rand_prime(uint8_t *out, size_t bits) {
-    if (bits < 2 || bits > 64) return -1;
+    if (!out || bits < 2 || bits > 64) return -1;
     size_t bytes = (bits + 7) / 8;
 
     for (int attempts = 0; attempts < 10000; attempts++) {

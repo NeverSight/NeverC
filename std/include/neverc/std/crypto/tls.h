@@ -50,6 +50,8 @@ extern "C" {
 /* --- Signature Schemes --- */
 #define NEVERC_TLS_SIGNATURE_ECDSA_SECP256R1_SHA256 0x0403
 #define NEVERC_TLS_SIGNATURE_RSA_PSS_RSAE_SHA256    0x0804
+#define NEVERC_TLS_SIGNATURE_RSA_PSS_RSAE_SHA384    0x0805
+#define NEVERC_TLS_SIGNATURE_RSA_PSS_RSAE_SHA512    0x0806
 #define NEVERC_TLS_SIGNATURE_ED25519                0x0807
 
 /* --- TLS Configuration --- */
@@ -119,7 +121,9 @@ uint16_t neverc_tls_cipher_suite(neverc_tls_conn_t *conn);
 const uint8_t *neverc_tls_peer_certificate(neverc_tls_conn_t *conn,
                                             size_t *out_len);
 
-/* Verify a TLS 1.3 CertificateVerify signature over a SHA-256 transcript.
+/* Verify a TLS 1.3 CertificateVerify signature over a SHA-256 or SHA-384
+ * transcript. The signature scheme's hash is independent of the transcript
+ * hash selected by the cipher suite.
  * from_server is nonzero for the server context and zero for the client.
  * Returns 0 on success and -1 on malformed input, mismatch, or an unsupported
  * certificate/signature-scheme combination. */
@@ -131,6 +135,19 @@ int neverc_tls_verify_certificate_verify(
     size_t transcript_hash_len,
     const uint8_t *signature,
     size_t signature_len);
+
+/* Sign a TLS 1.3 CertificateVerify message with the private key loaded in
+ * config. The current implementation supports ECDSA P-256/SHA-256 and writes
+ * a DER-encoded ECDSA signature. Returns 0 on success. */
+int neverc_tls_sign_certificate_verify(
+    const neverc_tls_config_t *config,
+    int from_server,
+    const uint8_t *transcript_hash,
+    size_t transcript_hash_len,
+    uint16_t *signature_scheme,
+    uint8_t *signature,
+    size_t signature_capacity,
+    size_t *signature_len);
 
 /* --- TLS Listener (for HTTPS server) --- */
 typedef struct neverc_tls_listener neverc_tls_listener_t;

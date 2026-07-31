@@ -17,6 +17,11 @@ static void check_bool(const char *name, int got, int expected) {
 
 static void test_read(void) {
     printf("[read]\n");
+    check_int("zero-length NULL read",
+              neverc_crypto_rand_read(NULL, 0), 0);
+    check_int("reject NULL read buffer",
+              neverc_crypto_rand_read(NULL, 1), -1);
+
     uint8_t buf[32];
     memset(buf, 0, sizeof(buf));
     int err = neverc_crypto_rand_read(buf, sizeof(buf));
@@ -40,6 +45,8 @@ static void test_read_large(void) {
 
 static void test_rand_int(void) {
     printf("[rand_int]\n");
+    check_int("reject NULL rand_int output",
+              neverc_crypto_rand_int(NULL, 100), -1);
     uint64_t val;
     int err = neverc_crypto_rand_int(&val, 100);
     check_int("rand_int ok", err, 0);
@@ -59,6 +66,8 @@ static void test_prime(void) {
     printf("[prime]\n");
     uint8_t buf[8];
 
+    check_int("reject NULL prime output",
+              neverc_crypto_rand_prime(NULL, 16), -1);
     int err = neverc_crypto_rand_prime(buf, 16);
     check_int("prime 16-bit ok", err, 0);
     uint16_t p16 = buf[0] | (buf[1] << 8);

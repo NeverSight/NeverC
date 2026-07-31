@@ -1,4 +1,5 @@
 #include "neverc/std/crypto/tls.h"
+#include "neverc/std/_platform.h"
 #include "neverc/std/crypto/ecdh.h"
 #include "neverc/std/crypto/aes.h"
 #include "neverc/std/crypto/gcm.h"
@@ -10,6 +11,7 @@
 #include "neverc/std/crypto/rand.h"
 #include "neverc/std/crypto/subtle.h"
 #include "neverc/std/crypto/x509.h"
+#include "tls_key.h"
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -52,6 +54,10 @@
     NEVERC_TLS_SIGNATURE_ECDSA_SECP256R1_SHA256
 #define TLS_SIG_RSA_PSS_SHA256 \
     NEVERC_TLS_SIGNATURE_RSA_PSS_RSAE_SHA256
+#define TLS_SIG_RSA_PSS_SHA384 \
+    NEVERC_TLS_SIGNATURE_RSA_PSS_RSAE_SHA384
+#define TLS_SIG_RSA_PSS_SHA512 \
+    NEVERC_TLS_SIGNATURE_RSA_PSS_RSAE_SHA512
 #define TLS_SIG_ED25519 NEVERC_TLS_SIGNATURE_ED25519
 
 /* Alert descriptions */
@@ -161,92 +167,159 @@ void neverc_tls_config_free(neverc_tls_config_t *cfg) {
 }
 
 static uint8_t *read_file_contents(const char *path, size_t *out_len) {
+    if (!path || !out_len) return NULL;
     FILE *f = fopen(path, "rb");
     if (!f) return NULL;
-    fseek(f, 0, SEEK_END);
+    if (fseek(f, 0, SEEK_END) != 0) {
+        fclose(f);
+        return NULL;
+    }
     long fsize = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    if (fsize <= 0) { fclose(f); return NULL; }
-    uint8_t *data = (uint8_t *)malloc((size_t)fsize);
+    if (fsize <= 0 || fseek(f, 0, SEEK_SET) != 0) {
+        fclose(f);
+        return NULL;
+    }
+    size_t size = (size_t)fsize;
+    if (size == SIZE_MAX) {
+        fclose(f);
+        return NULL;
+    }
+    uint8_t *data = (uint8_t *)malloc(size + 1);
     if (!data) { fclose(f); return NULL; }
-    *out_len = fread(data, 1, (size_t)fsize, f);
+    size_t read_len = fread(data, 1, size, f);
+    if (read_len != size || ferror(f)) {
+        free(data);
+        fclose(f);
+        return NULL;
+    }
     fclose(f);
+    data[size] = '\0';
+    *out_len = size;
     return data;
 }
 
-static int pem_decode_first(const uint8_t *pem, size_t pem_len,
-                             uint8_t **out_der, size_t *out_len) {
-    /* Minimal PEM parser: find base64 between -----BEGIN...-----  and -----END...-----  */
-    const char *begin = "-----BEGIN ";
-    const char *end_marker = "-----END ";
-    const char *p = (const char *)pem;
-    const char *pem_end = p + pem_len;
+static int pem_base64_value(char c) {
+    if (c >= 'A' && c <= 'Z') return c - 'A';
+    if (c >= 'a' && c <= 'z') return c - 'a' + 26;
+    if (c >= '0' && c <= '9') return c - '0' + 52;
+    if (c == '+') return 62;
+    if (c == '/') return 63;
+    return -1;
+}
 
-    const char *b64_start = NULL;
-    const char *b64_end = NULL;
+static int pem_space(char c) {
+    return c == ' ' || c == '\t' || c == '\r' || c == '\n';
+}
 
-    while (p < pem_end) {
-        if (strncmp(p, begin, 11) == 0) {
-            while (p < pem_end && *p != '\n') p++;
-            if (p < pem_end) p++;
-            b64_start = p;
-        } else if (b64_start && strncmp(p, end_marker, 9) == 0) {
-            b64_end = p;
-            break;
+static int pem_decode_first(const char *pem, const char *label,
+                            uint8_t **out_der, size_t *out_len) {
+    static const char begin_prefix[] = "-----BEGIN ";
+    static const char end_prefix[] = "-----END ";
+    static const char suffix[] = "-----";
+    if (!pem || !label || !out_der || !out_len)
+        return -1;
+
+    size_t label_len = strlen(label);
+    if (label_len == 0 || label_len > 48)
+        return -1;
+
+    char begin_marker[sizeof(begin_prefix) + 48 + sizeof(suffix)];
+    char end_marker[sizeof(end_prefix) + 48 + sizeof(suffix)];
+    size_t begin_len = sizeof(begin_prefix) - 1 + label_len +
+                       sizeof(suffix) - 1;
+    size_t end_len = sizeof(end_prefix) - 1 + label_len +
+                     sizeof(suffix) - 1;
+    memcpy(begin_marker, begin_prefix, sizeof(begin_prefix) - 1);
+    memcpy(begin_marker + sizeof(begin_prefix) - 1, label, label_len);
+    memcpy(begin_marker + sizeof(begin_prefix) - 1 + label_len,
+           suffix, sizeof(suffix));
+    memcpy(end_marker, end_prefix, sizeof(end_prefix) - 1);
+    memcpy(end_marker + sizeof(end_prefix) - 1, label, label_len);
+    memcpy(end_marker + sizeof(end_prefix) - 1 + label_len,
+           suffix, sizeof(suffix));
+
+    const char *begin = strstr(pem, begin_marker);
+    if (!begin || (begin != pem && begin[-1] != '\n'))
+        return -1;
+    const char *body = begin + begin_len;
+    if (*body == '\r') ++body;
+    if (*body != '\n') return -1;
+    ++body;
+
+    const char *end = strstr(body, end_marker);
+    if (!end || (end != body && end[-1] != '\n'))
+        return -1;
+    const char *after_end = end + end_len;
+    if (*after_end != '\0' && *after_end != '\r' && *after_end != '\n')
+        return -1;
+
+    size_t body_len = (size_t)(end - body);
+    if (body_len == 0)
+        return -1;
+    uint8_t *der = (uint8_t *)malloc(body_len);
+    if (!der)
+        return -1;
+
+    int quartet[4];
+    size_t quartet_len = 0;
+    size_t decoded_len = 0;
+    int saw_padding = 0;
+    for (const char *p = body; p < end; ++p) {
+        if (pem_space(*p))
+            continue;
+        if (saw_padding) {
+            free(der);
+            return -1;
+        }
+
+        if (*p == '=') {
+            quartet[quartet_len++] = -1;
         } else {
-            while (p < pem_end && *p != '\n') p++;
-            if (p < pem_end) p++;
+            int value = pem_base64_value(*p);
+            if (value < 0) {
+                free(der);
+                return -1;
+            }
+            quartet[quartet_len++] = value;
         }
+        if (quartet_len != 4)
+            continue;
+
+        if (quartet[0] < 0 || quartet[1] < 0 ||
+            (quartet[2] < 0 && quartet[3] >= 0)) {
+            free(der);
+            return -1;
+        }
+        size_t emit = quartet[2] < 0 ? 1 :
+                      quartet[3] < 0 ? 2 : 3;
+        if ((emit == 1 && (quartet[1] & 0x0f) != 0) ||
+            (emit == 2 && (quartet[2] & 0x03) != 0) ||
+            emit > body_len - decoded_len) {
+            free(der);
+            return -1;
+        }
+
+        der[decoded_len++] =
+            (uint8_t)((quartet[0] << 2) | (quartet[1] >> 4));
+        if (emit >= 2) {
+            der[decoded_len++] =
+                (uint8_t)((quartet[1] << 4) | (quartet[2] >> 2));
+        }
+        if (emit == 3) {
+            der[decoded_len++] =
+                (uint8_t)((quartet[2] << 6) | quartet[3]);
+        } else {
+            saw_padding = 1;
+        }
+        quartet_len = 0;
     }
-    if (!b64_start || !b64_end) return -1;
-
-    /* Base64 decode */
-    static const int b64_table[256] = {
-        [0 ... 255] = -1,
-        ['A'] = 0,  ['B'] = 1,  ['C'] = 2,  ['D'] = 3,
-        ['E'] = 4,  ['F'] = 5,  ['G'] = 6,  ['H'] = 7,
-        ['I'] = 8,  ['J'] = 9,  ['K'] = 10, ['L'] = 11,
-        ['M'] = 12, ['N'] = 13, ['O'] = 14, ['P'] = 15,
-        ['Q'] = 16, ['R'] = 17, ['S'] = 18, ['T'] = 19,
-        ['U'] = 20, ['V'] = 21, ['W'] = 22, ['X'] = 23,
-        ['Y'] = 24, ['Z'] = 25,
-        ['a'] = 26, ['b'] = 27, ['c'] = 28, ['d'] = 29,
-        ['e'] = 30, ['f'] = 31, ['g'] = 32, ['h'] = 33,
-        ['i'] = 34, ['j'] = 35, ['k'] = 36, ['l'] = 37,
-        ['m'] = 38, ['n'] = 39, ['o'] = 40, ['p'] = 41,
-        ['q'] = 42, ['r'] = 43, ['s'] = 44, ['t'] = 45,
-        ['u'] = 46, ['v'] = 47, ['w'] = 48, ['x'] = 49,
-        ['y'] = 50, ['z'] = 51,
-        ['0'] = 52, ['1'] = 53, ['2'] = 54, ['3'] = 55,
-        ['4'] = 56, ['5'] = 57, ['6'] = 58, ['7'] = 59,
-        ['8'] = 60, ['9'] = 61, ['+'] = 62, ['/'] = 63,
-    };
-
-    size_t src_len = (size_t)(b64_end - b64_start);
-    size_t max_out = (src_len / 4) * 3 + 4;
-    uint8_t *der = (uint8_t *)malloc(max_out);
-    if (!der) return -1;
-
-    size_t di = 0;
-    uint32_t acc = 0;
-    int bits = 0;
-    for (const char *s = b64_start; s < b64_end; s++) {
-        int c = (unsigned char)*s;
-        if (c == '\n' || c == '\r' || c == ' ') continue;
-        if (c == '=') break;
-        int v = b64_table[c];
-        if (v < 0) continue;
-        acc = (acc << 6) | (uint32_t)v;
-        bits += 6;
-        if (bits >= 8) {
-            bits -= 8;
-            der[di++] = (uint8_t)(acc >> bits);
-            acc &= (1u << bits) - 1;
-        }
+    if (quartet_len != 0 || decoded_len == 0) {
+        free(der);
+        return -1;
     }
 
     *out_der = der;
-    *out_len = di;
+    *out_len = decoded_len;
     return 0;
 }
 
@@ -276,30 +349,31 @@ int neverc_tls_config_load_cert_mem(neverc_tls_config_t *cfg,
                                      const char *key_pem) {
     if (!cfg || !cert_pem || !key_pem) return -1;
 
-    free(cfg->cert_der);
-    free(cfg->key_der);
-    cfg->cert_der = NULL;
-    cfg->key_der = NULL;
+    uint8_t *cert_der = NULL;
+    size_t cert_der_len = 0;
+    uint8_t *key_der = NULL;
+    size_t key_der_len = 0;
+    int key_type = NCI_TLS_KEY_ECDSA_P256;
 
-    if (pem_decode_first((const uint8_t *)cert_pem, strlen(cert_pem),
-                          &cfg->cert_der, &cfg->cert_der_len) != 0)
-        return -1;
-
-    if (pem_decode_first((const uint8_t *)key_pem, strlen(key_pem),
-                          &cfg->key_der, &cfg->key_der_len) != 0) {
-        free(cfg->cert_der);
-        cfg->cert_der = NULL;
+    if (pem_decode_first(cert_pem, "CERTIFICATE",
+                         &cert_der, &cert_der_len) != 0 ||
+        pem_decode_first(key_pem, "EC PRIVATE KEY",
+                         &key_der, &key_der_len) != 0 ||
+        nci_tls_validate_certificate_key_pair(
+            cert_der, cert_der_len, key_der, key_der_len,
+            key_type) != 0) {
+        free(cert_der);
+        free(key_der);
         return -1;
     }
 
-    /* Detect key type from PEM label */
-    if (strstr(key_pem, "EC PRIVATE KEY") || strstr(key_pem, "EC PARAMETERS"))
-        cfg->key_type = 2;
-    else if (strstr(key_pem, "RSA PRIVATE KEY"))
-        cfg->key_type = 1;
-    else if (strstr(key_pem, "PRIVATE KEY"))
-        cfg->key_type = 2; /* generic PKCS#8, assume ECDSA for now */
-
+    free(cfg->cert_der);
+    free(cfg->key_der);
+    cfg->cert_der = cert_der;
+    cfg->cert_der_len = cert_der_len;
+    cfg->key_der = key_der;
+    cfg->key_der_len = key_der_len;
+    cfg->key_type = key_type;
     return 0;
 }
 
@@ -327,6 +401,53 @@ void neverc_tls_config_set_server_name(neverc_tls_config_t *cfg,
     cfg->server_name = name ? strdup(name) : NULL;
 }
 
+int neverc_tls_sign_certificate_verify(
+    const neverc_tls_config_t *config,
+    int from_server,
+    const uint8_t *transcript_hash,
+    size_t transcript_hash_len,
+    uint16_t *signature_scheme,
+    uint8_t *signature,
+    size_t signature_capacity,
+    size_t *signature_len) {
+    static const char server_context[] =
+        "TLS 1.3, server CertificateVerify";
+    static const char client_context[] =
+        "TLS 1.3, client CertificateVerify";
+    if (!config || config->key_type != NCI_TLS_KEY_ECDSA_P256 ||
+        !config->key_der || config->key_der_len == 0 ||
+        (from_server != 0 && from_server != 1) ||
+        !transcript_hash || transcript_hash_len != 32 ||
+        !signature_scheme || !signature || !signature_len)
+        return -1;
+
+    const char *context = from_server ?
+                          server_context : client_context;
+    size_t context_len = strlen(context);
+    uint8_t signed_content[
+        64 + sizeof(server_context) - 1 + 1 + 32];
+    memset(signed_content, 0x20, 64);
+    memcpy(signed_content + 64, context, context_len);
+    signed_content[64 + context_len] = 0;
+    memcpy(signed_content + 64 + context_len + 1,
+           transcript_hash, transcript_hash_len);
+
+    uint8_t digest[NEVERC_SHA256_DIGEST_SIZE];
+    neverc_sha256_sum(
+        signed_content, 64 + context_len + 1 + transcript_hash_len,
+        digest);
+    int result = nci_tls_sign_ecdsa_p256_sha256(
+        config->key_der, config->key_der_len,
+        digest, sizeof(digest), signature, signature_capacity,
+        signature_len);
+    neverc_platform_secure_zero(digest, sizeof(digest));
+    if (result == 0) {
+        *signature_scheme =
+            NEVERC_TLS_SIGNATURE_ECDSA_SECP256R1_SHA256;
+    }
+    return result;
+}
+
 /* ======================================================================
  * TLS 1.3 Key Schedule (RFC 8446 §7.1)
  *
@@ -341,6 +462,12 @@ static int hkdf_expand_label(const uint8_t *secret, size_t secret_len,
                               uint8_t *out, size_t out_len) {
     /* Build HkdfLabel: u16(length) + u8("tls13 "+label len) + "tls13 "+label + u8(context len) + context */
     uint8_t info[512];
+    if (!secret || secret_len != TLS_HASH_SIZE_SHA256 ||
+        (!label && label_len != 0) || label_len > 249 ||
+        (!context && context_len != 0) || context_len > 255 ||
+        !out || out_len > 65535 ||
+        2 + 1 + 6 + label_len + 1 + context_len > sizeof(info))
+        return -1;
     size_t pos = 0;
     size_t full_label_len = 6 + label_len; /* "tls13 " prefix */
 
@@ -706,11 +833,13 @@ static int tls_client_handshake(neverc_tls_conn_t *conn,
 
     /* Extension: signature_algorithms */
     put_u16(ch + ch_len, TLS_EXT_SIGNATURE_ALGORITHMS); ch_len += 2;
-    put_u16(ch + ch_len, 8); ch_len += 2;
-    put_u16(ch + ch_len, 6); ch_len += 2;
-    put_u16(ch + ch_len, TLS_SIG_ECDSA_SHA256); ch_len += 2;
+    put_u16(ch + ch_len, 12); ch_len += 2;
+    put_u16(ch + ch_len, 10); ch_len += 2;
     put_u16(ch + ch_len, TLS_SIG_RSA_PSS_SHA256); ch_len += 2;
+    put_u16(ch + ch_len, TLS_SIG_ECDSA_SHA256); ch_len += 2;
     put_u16(ch + ch_len, TLS_SIG_ED25519); ch_len += 2;
+    put_u16(ch + ch_len, TLS_SIG_RSA_PSS_SHA384); ch_len += 2;
+    put_u16(ch + ch_len, TLS_SIG_RSA_PSS_SHA512); ch_len += 2;
 
     /* Extension: key_share (X25519) */
     put_u16(ch + ch_len, TLS_EXT_KEY_SHARE); ch_len += 2;
@@ -1229,28 +1358,19 @@ static int tls_server_handshake(neverc_tls_conn_t *conn,
             neverc_sha256_final(&copy, transcript_hash);
         }
 
-        /* Build content to sign: 64 spaces + "TLS 1.3, server CertificateVerify" + 0x00 + hash */
-        uint8_t sign_content[130];
-        memset(sign_content, 0x20, 64);
-        memcpy(sign_content + 64,
-               "TLS 1.3, server CertificateVerify", 33);
-        sign_content[97] = 0;
-        memcpy(sign_content + 98, transcript_hash, 32);
-
-        /* For now, create a simple CertificateVerify with zero signature
-         * (real implementation would sign with the private key) */
         uint8_t cv[256];
         cv[0] = TLS_HS_CERT_VERIFY;
-        /* Placeholder: minimal signature (this is simplified;
-         * a production implementation needs proper ECDSA/RSA signing) */
-        uint8_t sig[64];
-        memset(sig, 0, 64);
-        size_t sig_len = 64;
+        uint16_t signature_scheme = 0;
+        size_t sig_len = 0;
+        if (neverc_tls_sign_certificate_verify(
+                cfg, 1, transcript_hash, sizeof(transcript_hash),
+                &signature_scheme, cv + 8, sizeof(cv) - 8,
+                &sig_len) != 0)
+            return -1;
 
         put_u24(cv + 1, (uint32_t)(2 + 2 + sig_len));
-        put_u16(cv + 4, TLS_SIG_ECDSA_SHA256);
+        put_u16(cv + 4, signature_scheme);
         put_u16(cv + 6, (uint16_t)sig_len);
-        memcpy(cv + 8, sig, sig_len);
         size_t cv_len = 8 + sig_len;
 
         neverc_sha256_update(&transcript, cv, cv_len);

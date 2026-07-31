@@ -1,5 +1,7 @@
 #include "neverc/std/crypto/rsa.h"
 #include "neverc/std/crypto/sha256.h"
+#include "neverc/std/crypto/sha384.h"
+#include "neverc/std/crypto/sha512.h"
 #include "neverc/std/_platform.h"
 #include <string.h>
 #include <stdlib.h>
@@ -440,28 +442,58 @@ int neverc_rsa_verify_pkcs1v15_sha256(const neverc_rsa_public_key_t *pub,
     return ok ? 0 : -1;
 }
 
-static void mgf1_sha256(const unsigned char *seed, size_t seed_len,
-                        unsigned char *mask, size_t mask_len) {
+typedef enum {
+    RSA_HASH_SHA256,
+    RSA_HASH_SHA384,
+    RSA_HASH_SHA512
+} rsa_hash_kind_t;
+
+static size_t rsa_hash_size(rsa_hash_kind_t hash_kind) {
+    switch (hash_kind) {
+    case RSA_HASH_SHA256:
+        return NEVERC_SHA256_DIGEST_SIZE;
+    case RSA_HASH_SHA384:
+        return NEVERC_SHA384_DIGEST_SIZE;
+    case RSA_HASH_SHA512:
+        return NEVERC_SHA512_DIGEST_SIZE;
+    }
+    return 0;
+}
+
+static void rsa_hash_sum(rsa_hash_kind_t hash_kind,
+                         const unsigned char *data, size_t data_len,
+                         unsigned char *digest) {
+    switch (hash_kind) {
+    case RSA_HASH_SHA256:
+        neverc_sha256_sum(data, data_len, digest);
+        break;
+    case RSA_HASH_SHA384:
+        neverc_sha384_sum(data, data_len, digest);
+        break;
+    case RSA_HASH_SHA512:
+        neverc_sha512_sum(data, data_len, digest);
+        break;
+    }
+}
+
+static void mgf1(rsa_hash_kind_t hash_kind,
+                 const unsigned char *seed, size_t seed_len,
+                 unsigned char *mask, size_t mask_len) {
+    size_t digest_len = rsa_hash_size(hash_kind);
     uint32_t counter = 0;
     size_t offset = 0;
     while (offset < mask_len) {
-        unsigned char encoded_counter[4] = {
-            (unsigned char)(counter >> 24),
-            (unsigned char)(counter >> 16),
-            (unsigned char)(counter >> 8),
-            (unsigned char)counter,
-        };
-        unsigned char digest[NEVERC_SHA256_DIGEST_SIZE];
-        neverc_sha256_ctx context;
-        neverc_sha256_init(&context);
-        neverc_sha256_update(&context, seed, seed_len);
-        neverc_sha256_update(
-            &context, encoded_counter, sizeof(encoded_counter));
-        neverc_sha256_final(&context, digest);
+        unsigned char input[NEVERC_SHA512_DIGEST_SIZE + 4];
+        unsigned char digest[NEVERC_SHA512_DIGEST_SIZE];
+        memcpy(input, seed, seed_len);
+        input[seed_len] = (unsigned char)(counter >> 24);
+        input[seed_len + 1] = (unsigned char)(counter >> 16);
+        input[seed_len + 2] = (unsigned char)(counter >> 8);
+        input[seed_len + 3] = (unsigned char)counter;
+        rsa_hash_sum(hash_kind, input, seed_len + 4, digest);
 
         size_t remaining = mask_len - offset;
-        size_t count = remaining < sizeof(digest) ?
-                       remaining : sizeof(digest);
+        size_t count = remaining < digest_len ? remaining : digest_len;
         memcpy(mask + offset, digest, count);
         offset += count;
         ++counter;
@@ -476,12 +508,14 @@ static int constant_time_equal(const unsigned char *left,
     return difference == 0;
 }
 
-int neverc_rsa_verify_pss_sha256(const neverc_rsa_public_key_t *pub,
-                                  const unsigned char *hash, size_t hash_len,
-                                  const unsigned char *sig, size_t sig_len) {
-    const size_t digest_len = NEVERC_SHA256_DIGEST_SIZE;
-    const size_t salt_len = NEVERC_SHA256_DIGEST_SIZE;
+static int rsa_verify_pss(const neverc_rsa_public_key_t *pub,
+                          const unsigned char *hash, size_t hash_len,
+                          const unsigned char *sig, size_t sig_len,
+                          rsa_hash_kind_t hash_kind) {
+    const size_t digest_len = rsa_hash_size(hash_kind);
+    const size_t salt_len = digest_len;
     if (!pub || !hash || !sig || hash_len != digest_len ||
+        digest_len == 0 ||
         neverc_bigint_sign(&pub->n) <= 0 ||
         neverc_bigint_sign(&pub->e) <= 0)
         return -1;
@@ -537,8 +571,8 @@ int neverc_rsa_verify_pss_sha256(const neverc_rsa_public_key_t *pub,
             goto cleanup_encoded;
     }
 
-    mgf1_sha256(encoded_hash, digest_len,
-                database_mask, database_len);
+    mgf1(hash_kind, encoded_hash, digest_len,
+         database_mask, database_len);
     for (size_t i = 0; i < database_len; ++i)
         encoded_message[i] ^= database_mask[i];
     if (unused_bits > 0)
@@ -552,13 +586,13 @@ int neverc_rsa_verify_pss_sha256(const neverc_rsa_public_key_t *pub,
     if (invalid_padding != 0)
         goto cleanup_encoded;
 
-    unsigned char message_prime[8 + NEVERC_SHA256_DIGEST_SIZE * 2] = {0};
+    unsigned char message_prime[8 + NEVERC_SHA512_DIGEST_SIZE * 2] = {0};
     memcpy(message_prime + 8, hash, digest_len);
     memcpy(message_prime + 8 + digest_len,
            encoded_message + padding_len + 1, salt_len);
-    unsigned char expected_hash[NEVERC_SHA256_DIGEST_SIZE];
-    neverc_sha256_sum(message_prime, sizeof(message_prime),
-                      expected_hash);
+    unsigned char expected_hash[NEVERC_SHA512_DIGEST_SIZE];
+    rsa_hash_sum(hash_kind, message_prime,
+                 8 + digest_len + salt_len, expected_hash);
     if (constant_time_equal(
             encoded_hash, expected_hash, digest_len))
         result = 0;
@@ -570,4 +604,25 @@ cleanup_bigints:
     neverc_bigint_free(&signature);
     neverc_bigint_free(&message);
     return result;
+}
+
+int neverc_rsa_verify_pss_sha256(const neverc_rsa_public_key_t *pub,
+                                  const unsigned char *hash, size_t hash_len,
+                                  const unsigned char *sig, size_t sig_len) {
+    return rsa_verify_pss(pub, hash, hash_len, sig, sig_len,
+                          RSA_HASH_SHA256);
+}
+
+int neverc_rsa_verify_pss_sha384(const neverc_rsa_public_key_t *pub,
+                                  const unsigned char *hash, size_t hash_len,
+                                  const unsigned char *sig, size_t sig_len) {
+    return rsa_verify_pss(pub, hash, hash_len, sig, sig_len,
+                          RSA_HASH_SHA384);
+}
+
+int neverc_rsa_verify_pss_sha512(const neverc_rsa_public_key_t *pub,
+                                  const unsigned char *hash, size_t hash_len,
+                                  const unsigned char *sig, size_t sig_len) {
+    return rsa_verify_pss(pub, hash, hash_len, sig, sig_len,
+                          RSA_HASH_SHA512);
 }

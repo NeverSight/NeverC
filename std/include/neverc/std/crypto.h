@@ -30,6 +30,7 @@
 #include "crypto/ed25519.h"
 #include "crypto/ecdh.h"
 #include "crypto/x509.h"
+#include "crypto/tls.h"
 
 #ifdef __neverc__
 
@@ -62,6 +63,7 @@ struct __neverc_std_ecdsa_t { char __tag; };
 struct __neverc_std_dsa_t { char __tag; };
 struct __neverc_std_ed25519_t { char __tag; };
 struct __neverc_std_ecdh_t { char __tag; };
+struct __neverc_std_tls_t { char __tag; };
 
 struct __neverc_std_crypto_t {
     struct __neverc_std_sha256_t sha256;
@@ -93,6 +95,7 @@ struct __neverc_std_crypto_t {
     struct __neverc_std_dsa_t dsa;
     struct __neverc_std_ed25519_t ed25519;
     struct __neverc_std_ecdh_t ecdh;
+    struct __neverc_std_tls_t tls;
 };
 
 extern struct __neverc_std_crypto_t __neverc_mod_crypto;

@@ -53,6 +53,15 @@ int  neverc_rsa_verify_pss_sha256(const neverc_rsa_public_key_t *pub,
                                    const unsigned char *hash, size_t hash_len,
                                    const unsigned char *sig, size_t sig_len);
 
+/* Verify the corresponding TLS 1.3 RSASSA-PSS profiles. MGF1 uses the
+ * message hash and the salt length equals the hash length. */
+int  neverc_rsa_verify_pss_sha384(const neverc_rsa_public_key_t *pub,
+                                   const unsigned char *hash, size_t hash_len,
+                                   const unsigned char *sig, size_t sig_len);
+int  neverc_rsa_verify_pss_sha512(const neverc_rsa_public_key_t *pub,
+                                   const unsigned char *hash, size_t hash_len,
+                                   const unsigned char *sig, size_t sig_len);
+
 int  neverc_rsa_key_size(const neverc_rsa_public_key_t *pub);
 
 #ifdef __cplusplus

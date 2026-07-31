@@ -1170,6 +1170,8 @@ const char *neverc_x509_sig_algorithm_string(int algo) {
     case NEVERC_X509_SIG_ECDSA_SHA384: return "ECDSA-SHA384";
     case NEVERC_X509_SIG_ED25519:      return "Ed25519";
     case NEVERC_X509_SIG_RSA_PSS_SHA256: return "RSA-PSS-SHA256";
+    case NEVERC_X509_SIG_RSA_PSS_SHA384: return "RSA-PSS-SHA384";
+    case NEVERC_X509_SIG_RSA_PSS_SHA512: return "RSA-PSS-SHA512";
     default: return "Unknown";
     }
 }

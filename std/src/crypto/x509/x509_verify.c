@@ -11,6 +11,7 @@
 #include "neverc/std/crypto/rsa.h"
 #include "neverc/std/crypto/sha256.h"
 #include "neverc/std/crypto/sha384.h"
+#include "neverc/std/crypto/sha512.h"
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -170,18 +171,40 @@ static int x509_check_rsa_sha256(const neverc_x509_cert_t *cert,
     return result;
 }
 
-static int x509_check_rsa_pss_sha256(const neverc_x509_cert_t *cert,
-                                     const neverc_x509_cert_t *parent) {
-    uint8_t digest[NEVERC_SHA256_DIGEST_SIZE];
-    neverc_sha256_sum(cert->raw_tbs, cert->raw_tbs_len, digest);
+static int x509_check_rsa_pss(const neverc_x509_cert_t *cert,
+                              const neverc_x509_cert_t *parent) {
+    uint8_t digest[NEVERC_SHA512_DIGEST_SIZE];
+    size_t digest_len;
+    if (cert->sig_algorithm == NEVERC_X509_SIG_RSA_PSS_SHA256) {
+        neverc_sha256_sum(cert->raw_tbs, cert->raw_tbs_len, digest);
+        digest_len = NEVERC_SHA256_DIGEST_SIZE;
+    } else if (cert->sig_algorithm == NEVERC_X509_SIG_RSA_PSS_SHA384) {
+        neverc_sha384_sum(cert->raw_tbs, cert->raw_tbs_len, digest);
+        digest_len = NEVERC_SHA384_DIGEST_SIZE;
+    } else if (cert->sig_algorithm == NEVERC_X509_SIG_RSA_PSS_SHA512) {
+        neverc_sha512_sum(cert->raw_tbs, cert->raw_tbs_len, digest);
+        digest_len = NEVERC_SHA512_DIGEST_SIZE;
+    } else {
+        return -1;
+    }
 
     neverc_rsa_public_key_t public_key;
     neverc_rsa_public_key_init(&public_key);
     int result = x509_parse_rsa_public_key(parent, &public_key);
-    if (result == 0)
-        result = neverc_rsa_verify_pss_sha256(
-            &public_key, digest, sizeof(digest),
-            cert->signature, cert->signature_len);
+    if (result == 0) {
+        if (cert->sig_algorithm == NEVERC_X509_SIG_RSA_PSS_SHA256)
+            result = neverc_rsa_verify_pss_sha256(
+                &public_key, digest, digest_len,
+                cert->signature, cert->signature_len);
+        else if (cert->sig_algorithm == NEVERC_X509_SIG_RSA_PSS_SHA384)
+            result = neverc_rsa_verify_pss_sha384(
+                &public_key, digest, digest_len,
+                cert->signature, cert->signature_len);
+        else
+            result = neverc_rsa_verify_pss_sha512(
+                &public_key, digest, digest_len,
+                cert->signature, cert->signature_len);
+    }
     neverc_rsa_public_key_free(&public_key);
     return result;
 }
@@ -268,9 +291,11 @@ static int x509_check_signature(const neverc_x509_cert_t *cert,
     if (cert->sig_algorithm == NEVERC_X509_SIG_SHA256_RSA &&
         parent->key_algorithm == NEVERC_X509_KEY_RSA)
         return x509_check_rsa_sha256(cert, parent);
-    if (cert->sig_algorithm == NEVERC_X509_SIG_RSA_PSS_SHA256 &&
+    if ((cert->sig_algorithm == NEVERC_X509_SIG_RSA_PSS_SHA256 ||
+         cert->sig_algorithm == NEVERC_X509_SIG_RSA_PSS_SHA384 ||
+         cert->sig_algorithm == NEVERC_X509_SIG_RSA_PSS_SHA512) &&
         parent->key_algorithm == NEVERC_X509_KEY_RSA)
-        return x509_check_rsa_pss_sha256(cert, parent);
+        return x509_check_rsa_pss(cert, parent);
     if ((cert->sig_algorithm == NEVERC_X509_SIG_ECDSA_SHA256 ||
          cert->sig_algorithm == NEVERC_X509_SIG_ECDSA_SHA384) &&
         parent->key_algorithm == NEVERC_X509_KEY_ECDSA)

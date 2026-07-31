@@ -2033,6 +2033,8 @@
         "neverc_rsa_sign_pkcs1v15_sha256": "src/crypto/rsa/rsa.c",
         "neverc_rsa_verify_pkcs1v15_sha256": "src/crypto/rsa/rsa.c",
         "neverc_rsa_verify_pss_sha256": "src/crypto/rsa/rsa.c",
+        "neverc_rsa_verify_pss_sha384": "src/crypto/rsa/rsa.c",
+        "neverc_rsa_verify_pss_sha512": "src/crypto/rsa/rsa.c",
         "neverc_rsa_key_size": "src/crypto/rsa/rsa.c"
       },
       "dot_methods": {
@@ -2048,7 +2050,9 @@
         "decrypt_pkcs1v15": "neverc_rsa_decrypt_pkcs1v15",
         "sign_pkcs1v15_sha256": "neverc_rsa_sign_pkcs1v15_sha256",
         "verify_pkcs1v15_sha256": "neverc_rsa_verify_pkcs1v15_sha256",
-        "verify_pss_sha256": "neverc_rsa_verify_pss_sha256"
+        "verify_pss_sha256": "neverc_rsa_verify_pss_sha256",
+        "verify_pss_sha384": "neverc_rsa_verify_pss_sha384",
+        "verify_pss_sha512": "neverc_rsa_verify_pss_sha512"
       }
     },
     "crypto/ecdsa": {
@@ -4380,6 +4384,7 @@
         "neverc_tls_peer_certificate": "src/crypto/tls/tls.c",
         "neverc_tls_read": "src/crypto/tls/tls.c",
         "neverc_tls_server": "src/crypto/tls/tls.c",
+        "neverc_tls_sign_certificate_verify": "src/crypto/tls/tls.c",
         "neverc_tls_verify_certificate_verify": "src/crypto/tls/tls_verify.c",
         "neverc_tls_write": "src/crypto/tls/tls.c"
       },
@@ -4402,6 +4407,7 @@
         "peer_certificate": "neverc_tls_peer_certificate",
         "read": "neverc_tls_read",
         "server": "neverc_tls_server",
+        "sign_certificate_verify": "neverc_tls_sign_certificate_verify",
         "verify_certificate_verify": "neverc_tls_verify_certificate_verify",
         "write": "neverc_tls_write"
       }

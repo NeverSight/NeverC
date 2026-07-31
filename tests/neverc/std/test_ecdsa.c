@@ -95,12 +95,40 @@ static void test_init_free(void) {
     tests_run++; tests_passed++;
 }
 
+static void test_invalid_inputs(void) {
+    printf("[invalid_inputs]\n");
+    const neverc_elliptic_curve_t *curve = neverc_elliptic_p256();
+    neverc_ecdsa_private_key_t key;
+    neverc_ecdsa_private_key_init(&key);
+    neverc_ecdsa_signature_t sig;
+    neverc_ecdsa_signature_init(&sig);
+    unsigned char hash[32] = {0};
+
+    ASSERT_INT_EQ(neverc_ecdsa_generate_key(NULL, curve), -1);
+    ASSERT_INT_EQ(neverc_ecdsa_generate_key(&key, NULL), -1);
+    ASSERT_INT_EQ(neverc_ecdsa_sign(NULL, hash, sizeof(hash), &sig), -1);
+    ASSERT_INT_EQ(neverc_ecdsa_sign(&key, hash, sizeof(hash), &sig), -1);
+    ASSERT_INT_EQ(neverc_ecdsa_verify(NULL, hash, sizeof(hash), &sig), -1);
+
+    ASSERT_INT_EQ(neverc_ecdsa_generate_key(&key, curve), 0);
+    ASSERT_INT_EQ(neverc_ecdsa_sign(&key, NULL, 0, &sig), -1);
+    ASSERT_INT_EQ(neverc_ecdsa_sign(
+                      &key, hash, sizeof(hash), NULL), -1);
+    ASSERT_INT_EQ(neverc_ecdsa_verify(&key.pub, NULL, 0, &sig), -1);
+    ASSERT_INT_EQ(neverc_ecdsa_verify(
+                      &key.pub, hash, sizeof(hash), NULL), -1);
+
+    neverc_ecdsa_signature_free(&sig);
+    neverc_ecdsa_private_key_free(&key);
+}
+
 int main(void) {
     printf("=== NeverC crypto/ecdsa Tests ===\n");
     test_init_free();
     test_keygen();
     test_sign_verify();
     test_different_messages();
+    test_invalid_inputs();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

@@ -42,38 +42,65 @@
   #include <windows.h>
   #include <bcrypt.h>
   #pragma comment(lib, "bcrypt.lib")
-  static inline void neverc_platform_random(unsigned char *buf, size_t len) {
-      BCryptGenRandom(NULL, buf, (ULONG)len, BCRYPT_USE_SYSTEM_PREFERRED_RNG);
+  static inline int neverc_platform_random(unsigned char *buf, size_t len) {
+      if (!buf && len != 0) return -1;
+      if (len == 0) return 0;
+      while (len > 0) {
+          ULONG chunk = len > 0xffffffffUL ? 0xffffffffUL : (ULONG)len;
+          if (BCryptGenRandom(NULL, buf, chunk,
+                              BCRYPT_USE_SYSTEM_PREFERRED_RNG) != 0)
+              return -1;
+          buf += chunk;
+          len -= chunk;
+      }
+      return 0;
   }
 #elif defined(NEVERC_PLATFORM_APPLE)
   #include <CommonCrypto/CommonRandom.h>
-  static inline void neverc_platform_random(unsigned char *buf, size_t len) {
-      CCRandomGenerateBytes(buf, len);
+  static inline int neverc_platform_random(unsigned char *buf, size_t len) {
+      if (!buf && len != 0) return -1;
+      if (len == 0) return 0;
+      return CCRandomGenerateBytes(buf, len) == kCCSuccess ? 0 : -1;
   }
 #elif defined(NEVERC_PLATFORM_LINUX) || defined(NEVERC_PLATFORM_ANDROID)
+  #include <errno.h>
   #include <sys/random.h>
-  static inline void neverc_platform_random(unsigned char *buf, size_t len) {
+  static inline int neverc_platform_random(unsigned char *buf, size_t len) {
+      if (!buf && len != 0) return -1;
+      if (len == 0) return 0;
       size_t off = 0;
       while (off < len) {
           ssize_t n = getrandom(buf + off, len - off, 0);
-          if (n <= 0) break;
+          if (n < 0 && errno == EINTR) continue;
+          if (n <= 0) return -1;
           off += (size_t)n;
       }
+      return 0;
   }
 #else
+  #include <errno.h>
   #include <fcntl.h>
   #include <unistd.h>
-  static inline void neverc_platform_random(unsigned char *buf, size_t len) {
-      int fd = open("/dev/urandom", O_RDONLY);
-      if (fd >= 0) {
-          size_t off = 0;
-          while (off < len) {
-              ssize_t n = read(fd, buf + off, len - off);
-              if (n <= 0) break;
-              off += (size_t)n;
+  static inline int neverc_platform_random(unsigned char *buf, size_t len) {
+      if (!buf && len != 0) return -1;
+      if (len == 0) return 0;
+      int flags = O_RDONLY;
+  #ifdef O_CLOEXEC
+      flags |= O_CLOEXEC;
+  #endif
+      int fd = open("/dev/urandom", flags);
+      if (fd < 0) return -1;
+      size_t off = 0;
+      while (off < len) {
+          ssize_t n = read(fd, buf + off, len - off);
+          if (n < 0 && errno == EINTR) continue;
+          if (n <= 0) {
+              close(fd);
+              return -1;
           }
-          close(fd);
+          off += (size_t)n;
       }
+      return close(fd) == 0 ? 0 : -1;
   }
 #endif
 
