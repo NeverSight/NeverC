@@ -316,6 +316,10 @@ static void test_x509_strings(void) {
                                      "ECDSA-SHA256") == 0);
     CHECK("sig_ed25519", strcmp(neverc_x509_sig_algorithm_string(NEVERC_X509_SIG_ED25519),
                                  "Ed25519") == 0);
+    CHECK("sig_rsa_pss_sha256",
+          strcmp(neverc_x509_sig_algorithm_string(
+                     NEVERC_X509_SIG_RSA_PSS_SHA256),
+                 "RSA-PSS-SHA256") == 0);
     CHECK("key_rsa", strcmp(neverc_x509_key_algorithm_string(NEVERC_X509_KEY_RSA),
                              "RSA") == 0);
     CHECK("key_ecdsa", strcmp(neverc_x509_key_algorithm_string(NEVERC_X509_KEY_ECDSA),

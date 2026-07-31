@@ -4,10 +4,10 @@
 /*
  * NeverC crypto/tls — experimental TLS 1.3 (RFC 8446) components.
  *
- * The key schedule and record-layer components are not yet backed by complete
- * CertificateVerify and X.509 chain/hostname validation. Connection and
- * listener entry points therefore fail closed until those checks are
- * implemented and interoperably tested.
+ * The key schedule and record layer now verify supported peer
+ * CertificateVerify signatures, but certificate-chain/system-trust validation
+ * and server-side signing are incomplete. Connection and listener entry points
+ * therefore remain fail closed.
  *
  * Go-style API:
  *   // Client
@@ -27,6 +27,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include "neverc/std/crypto/x509.h"
 #include "neverc/std/net/tcp.h"
 
 #ifdef __cplusplus
@@ -45,6 +46,11 @@ extern "C" {
 #define NEVERC_TLS_GROUP_X25519    0x001D
 #define NEVERC_TLS_GROUP_SECP256R1 0x0017
 #define NEVERC_TLS_GROUP_SECP384R1 0x0018
+
+/* --- Signature Schemes --- */
+#define NEVERC_TLS_SIGNATURE_ECDSA_SECP256R1_SHA256 0x0403
+#define NEVERC_TLS_SIGNATURE_RSA_PSS_RSAE_SHA256    0x0804
+#define NEVERC_TLS_SIGNATURE_ED25519                0x0807
 
 /* --- TLS Configuration --- */
 typedef struct neverc_tls_config neverc_tls_config_t;
@@ -112,6 +118,19 @@ uint16_t neverc_tls_cipher_suite(neverc_tls_conn_t *conn);
 /* Get the peer's certificate (DER-encoded, caller must NOT free). */
 const uint8_t *neverc_tls_peer_certificate(neverc_tls_conn_t *conn,
                                             size_t *out_len);
+
+/* Verify a TLS 1.3 CertificateVerify signature over a SHA-256 transcript.
+ * from_server is nonzero for the server context and zero for the client.
+ * Returns 0 on success and -1 on malformed input, mismatch, or an unsupported
+ * certificate/signature-scheme combination. */
+int neverc_tls_verify_certificate_verify(
+    const neverc_x509_cert_t *certificate,
+    uint16_t signature_scheme,
+    int from_server,
+    const uint8_t *transcript_hash,
+    size_t transcript_hash_len,
+    const uint8_t *signature,
+    size_t signature_len);
 
 /* --- TLS Listener (for HTTPS server) --- */
 typedef struct neverc_tls_listener neverc_tls_listener_t;

@@ -170,6 +170,22 @@ static int x509_check_rsa_sha256(const neverc_x509_cert_t *cert,
     return result;
 }
 
+static int x509_check_rsa_pss_sha256(const neverc_x509_cert_t *cert,
+                                     const neverc_x509_cert_t *parent) {
+    uint8_t digest[NEVERC_SHA256_DIGEST_SIZE];
+    neverc_sha256_sum(cert->raw_tbs, cert->raw_tbs_len, digest);
+
+    neverc_rsa_public_key_t public_key;
+    neverc_rsa_public_key_init(&public_key);
+    int result = x509_parse_rsa_public_key(parent, &public_key);
+    if (result == 0)
+        result = neverc_rsa_verify_pss_sha256(
+            &public_key, digest, sizeof(digest),
+            cert->signature, cert->signature_len);
+    neverc_rsa_public_key_free(&public_key);
+    return result;
+}
+
 static int x509_parse_ecdsa_signature(
     const neverc_x509_cert_t *cert, neverc_ecdsa_signature_t *signature,
     size_t scalar_bytes) {
@@ -252,6 +268,9 @@ static int x509_check_signature(const neverc_x509_cert_t *cert,
     if (cert->sig_algorithm == NEVERC_X509_SIG_SHA256_RSA &&
         parent->key_algorithm == NEVERC_X509_KEY_RSA)
         return x509_check_rsa_sha256(cert, parent);
+    if (cert->sig_algorithm == NEVERC_X509_SIG_RSA_PSS_SHA256 &&
+        parent->key_algorithm == NEVERC_X509_KEY_RSA)
+        return x509_check_rsa_pss_sha256(cert, parent);
     if ((cert->sig_algorithm == NEVERC_X509_SIG_ECDSA_SHA256 ||
          cert->sig_algorithm == NEVERC_X509_SIG_ECDSA_SHA384) &&
         parent->key_algorithm == NEVERC_X509_KEY_ECDSA)
@@ -278,6 +297,26 @@ int neverc_x509_check_signature_from(const neverc_x509_cert_t *cert,
         return -1;
 
     return x509_check_signature(cert, parent);
+}
+
+int neverc_x509_verify_signature(const neverc_x509_cert_t *certificate,
+                                 int signature_algorithm,
+                                 const uint8_t *signed_data,
+                                 size_t signed_data_len,
+                                 const uint8_t *signature,
+                                 size_t signature_len) {
+    if (!certificate || !signed_data || signed_data_len == 0 ||
+        !signature || signature_len == 0)
+        return -1;
+
+    neverc_x509_cert_t signed_object;
+    memset(&signed_object, 0, sizeof(signed_object));
+    signed_object.sig_algorithm = signature_algorithm;
+    signed_object.raw_tbs = signed_data;
+    signed_object.raw_tbs_len = signed_data_len;
+    signed_object.signature = signature;
+    signed_object.signature_len = signature_len;
+    return x509_check_signature(&signed_object, certificate);
 }
 
 static int x509_names_equal(const uint8_t *left, size_t left_len,

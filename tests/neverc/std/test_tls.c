@@ -1,4 +1,5 @@
 #include "neverc/std/crypto/tls.h"
+#include "neverc/std/crypto/ed25519.h"
 #include "neverc/std/net/tcp.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -70,6 +71,151 @@ static const char *TEST_KEY_PEM =
     "oWQDYgAEQiVIU4ToThp8kfVWXSKEuhTtI7JbGTdKgkYdvmwxmNZVtcocxKYtEn1P\n"
     "LoxclU6x8/MMb8yl9GTHZ1Occakr/w==\n"
     "-----END EC PRIVATE KEY-----\n";
+
+static uint8_t test_rsa_public_key_der[] = {
+    0x30, 0x81, 0x89, 0x02, 0x81, 0x81, 0x00, 0xc9,
+    0x47, 0xe5, 0x4c, 0xcb, 0x82, 0x55, 0xd4, 0x9c,
+    0x8a, 0xe6, 0x4c, 0xdc, 0x78, 0xa0, 0x45, 0x5f,
+    0x2a, 0xce, 0x16, 0x91, 0x47, 0x7f, 0xc7, 0x9a,
+    0xe7, 0x9b, 0x11, 0xbd, 0xd0, 0x7a, 0xf6, 0x5d,
+    0x9e, 0x6d, 0x4b, 0x77, 0x0a, 0x46, 0xc9, 0x35,
+    0x98, 0x95, 0x89, 0xe0, 0xba, 0xad, 0x27, 0x8e,
+    0xe0, 0x16, 0x40, 0xfa, 0xfe, 0x2a, 0x63, 0xf2,
+    0xa5, 0x7d, 0xd0, 0x8e, 0x01, 0xb9, 0xf2, 0x44,
+    0x47, 0xd7, 0xc2, 0xaf, 0x39, 0x5d, 0x34, 0x18,
+    0x80, 0x68, 0x0b, 0x9e, 0x79, 0x40, 0x41, 0xf7,
+    0x57, 0xd2, 0xb0, 0xe7, 0xbd, 0x88, 0xea, 0xb8,
+    0x60, 0xcf, 0xe2, 0x44, 0x16, 0x28, 0x71, 0x58,
+    0x1f, 0xeb, 0xbc, 0xc9, 0x33, 0x80, 0x04, 0x3e,
+    0xe0, 0xb9, 0x8e, 0xe2, 0x35, 0x57, 0x9c, 0x2e,
+    0x2f, 0xde, 0x3e, 0x61, 0xa6, 0xe1, 0xf0, 0x54,
+    0x57, 0x78, 0x74, 0x13, 0xf8, 0x88, 0x19, 0x02,
+    0x03, 0x01, 0x00, 0x01,
+};
+
+static const uint8_t test_rsa_pss_certificate_verify[] = {
+    0x73, 0xc4, 0x37, 0x5f, 0x67, 0xcb, 0x43, 0xb5,
+    0xcf, 0x36, 0xc8, 0x6e, 0x9a, 0xea, 0x58, 0x76,
+    0x43, 0x7b, 0xf1, 0x5f, 0xeb, 0x31, 0xa7, 0xfb,
+    0xfc, 0x61, 0x26, 0x80, 0x90, 0xd4, 0x94, 0xf1,
+    0xbe, 0x87, 0x17, 0x26, 0x26, 0x6d, 0xdb, 0x24,
+    0x60, 0x13, 0x4e, 0xf5, 0x5a, 0x98, 0xfe, 0xe2,
+    0x0e, 0x4b, 0x80, 0x40, 0x4f, 0xc3, 0xc9, 0x95,
+    0x38, 0xd9, 0x8b, 0xa1, 0x21, 0x40, 0x29, 0xce,
+    0x83, 0x20, 0x0b, 0x82, 0x6f, 0x87, 0xb4, 0x81,
+    0xf5, 0x02, 0x80, 0x1f, 0xa6, 0xa6, 0xd5, 0x76,
+    0xe5, 0xcd, 0x6f, 0x8e, 0x68, 0x6a, 0x76, 0x61,
+    0x54, 0x7e, 0x94, 0x5b, 0x07, 0x45, 0x7a, 0x8a,
+    0x54, 0x7f, 0xc0, 0xa0, 0x61, 0x14, 0x36, 0xb9,
+    0xb8, 0x66, 0x13, 0x31, 0x94, 0x15, 0x11, 0x65,
+    0x15, 0xdc, 0x3a, 0xa1, 0x5e, 0x7b, 0x31, 0xfc,
+    0x12, 0x1b, 0x49, 0xfe, 0x41, 0xb4, 0xac, 0x66,
+};
+
+static void test_certificate_verify(void) {
+    printf("[certificate_verify]\n");
+    neverc_x509_cert_t certificate;
+    memset(&certificate, 0, sizeof(certificate));
+    certificate.key_algorithm = NEVERC_X509_KEY_RSA;
+    certificate.public_key = test_rsa_public_key_der;
+    certificate.public_key_len = sizeof(test_rsa_public_key_der);
+
+    uint8_t transcript_hash[32];
+    for (size_t i = 0; i < sizeof(transcript_hash); ++i)
+        transcript_hash[i] = (uint8_t)i;
+    check_int(
+        "rsa_pss_server_certificate_verify",
+        neverc_tls_verify_certificate_verify(
+            &certificate,
+            NEVERC_TLS_SIGNATURE_RSA_PSS_RSAE_SHA256,
+            1, transcript_hash, sizeof(transcript_hash),
+            test_rsa_pss_certificate_verify,
+            sizeof(test_rsa_pss_certificate_verify)),
+        0);
+
+    transcript_hash[0] ^= 1;
+    check_int(
+        "certificate_verify_transcript_mismatch",
+        neverc_tls_verify_certificate_verify(
+            &certificate,
+            NEVERC_TLS_SIGNATURE_RSA_PSS_RSAE_SHA256,
+            1, transcript_hash, sizeof(transcript_hash),
+            test_rsa_pss_certificate_verify,
+            sizeof(test_rsa_pss_certificate_verify)) != 0,
+        1);
+    transcript_hash[0] ^= 1;
+
+    check_int(
+        "certificate_verify_context_mismatch",
+        neverc_tls_verify_certificate_verify(
+            &certificate,
+            NEVERC_TLS_SIGNATURE_RSA_PSS_RSAE_SHA256,
+            0, transcript_hash, sizeof(transcript_hash),
+            test_rsa_pss_certificate_verify,
+            sizeof(test_rsa_pss_certificate_verify)) != 0,
+        1);
+
+    uint8_t tampered_signature[
+        sizeof(test_rsa_pss_certificate_verify)];
+    memcpy(tampered_signature, test_rsa_pss_certificate_verify,
+           sizeof(tampered_signature));
+    tampered_signature[0] ^= 1;
+    check_int(
+        "certificate_verify_tampered_signature",
+        neverc_tls_verify_certificate_verify(
+            &certificate,
+            NEVERC_TLS_SIGNATURE_RSA_PSS_RSAE_SHA256,
+            1, transcript_hash, sizeof(transcript_hash),
+            tampered_signature, sizeof(tampered_signature)) != 0,
+        1);
+    check_int(
+        "certificate_verify_key_scheme_mismatch",
+        neverc_tls_verify_certificate_verify(
+            &certificate,
+            NEVERC_TLS_SIGNATURE_ECDSA_SECP256R1_SHA256,
+            1, transcript_hash, sizeof(transcript_hash),
+            test_rsa_pss_certificate_verify,
+            sizeof(test_rsa_pss_certificate_verify)) != 0,
+        1);
+
+    static const char server_context[] =
+        "TLS 1.3, server CertificateVerify";
+    uint8_t signed_content[
+        64 + sizeof(server_context) - 1 + 1 + sizeof(transcript_hash)];
+    memset(signed_content, 0x20, 64);
+    memcpy(signed_content + 64, server_context,
+           sizeof(server_context) - 1);
+    signed_content[64 + sizeof(server_context) - 1] = 0;
+    memcpy(signed_content + 64 + sizeof(server_context),
+           transcript_hash, sizeof(transcript_hash));
+
+    uint8_t seed[NEVERC_ED25519_SEED_SIZE] = {9};
+    uint8_t public_key[NEVERC_ED25519_PUBLIC_KEY_SIZE];
+    uint8_t private_key[NEVERC_ED25519_PRIVATE_KEY_SIZE];
+    uint8_t ed25519_signature[NEVERC_ED25519_SIGNATURE_SIZE];
+    check_int(
+        "certificate_verify_ed25519_key",
+        neverc_ed25519_new_key_from_seed(
+            seed, public_key, private_key),
+        0);
+    check_int(
+        "certificate_verify_ed25519_sign",
+        neverc_ed25519_sign(
+            private_key, signed_content, sizeof(signed_content),
+            ed25519_signature),
+        0);
+    memset(&certificate, 0, sizeof(certificate));
+    certificate.key_algorithm = NEVERC_X509_KEY_ED25519;
+    certificate.public_key = public_key;
+    certificate.public_key_len = sizeof(public_key);
+    check_int(
+        "ed25519_server_certificate_verify",
+        neverc_tls_verify_certificate_verify(
+            &certificate, NEVERC_TLS_SIGNATURE_ED25519,
+            1, transcript_hash, sizeof(transcript_hash),
+            ed25519_signature, sizeof(ed25519_signature)),
+        0);
+}
 
 /* ===== TLS client-server test ===== */
 
@@ -221,6 +367,7 @@ int main(void) {
 
     test_config();
     test_cipher_suites();
+    test_certificate_verify();
     test_dial_errors();
     test_client_server();
 

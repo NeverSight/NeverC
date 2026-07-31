@@ -439,3 +439,135 @@ int neverc_rsa_verify_pkcs1v15_sha256(const neverc_rsa_public_key_t *pub,
     free(em);
     return ok ? 0 : -1;
 }
+
+static void mgf1_sha256(const unsigned char *seed, size_t seed_len,
+                        unsigned char *mask, size_t mask_len) {
+    uint32_t counter = 0;
+    size_t offset = 0;
+    while (offset < mask_len) {
+        unsigned char encoded_counter[4] = {
+            (unsigned char)(counter >> 24),
+            (unsigned char)(counter >> 16),
+            (unsigned char)(counter >> 8),
+            (unsigned char)counter,
+        };
+        unsigned char digest[NEVERC_SHA256_DIGEST_SIZE];
+        neverc_sha256_ctx context;
+        neverc_sha256_init(&context);
+        neverc_sha256_update(&context, seed, seed_len);
+        neverc_sha256_update(
+            &context, encoded_counter, sizeof(encoded_counter));
+        neverc_sha256_final(&context, digest);
+
+        size_t remaining = mask_len - offset;
+        size_t count = remaining < sizeof(digest) ?
+                       remaining : sizeof(digest);
+        memcpy(mask + offset, digest, count);
+        offset += count;
+        ++counter;
+    }
+}
+
+static int constant_time_equal(const unsigned char *left,
+                               const unsigned char *right, size_t len) {
+    unsigned char difference = 0;
+    for (size_t i = 0; i < len; ++i)
+        difference |= left[i] ^ right[i];
+    return difference == 0;
+}
+
+int neverc_rsa_verify_pss_sha256(const neverc_rsa_public_key_t *pub,
+                                  const unsigned char *hash, size_t hash_len,
+                                  const unsigned char *sig, size_t sig_len) {
+    const size_t digest_len = NEVERC_SHA256_DIGEST_SIZE;
+    const size_t salt_len = NEVERC_SHA256_DIGEST_SIZE;
+    if (!pub || !hash || !sig || hash_len != digest_len ||
+        neverc_bigint_sign(&pub->n) <= 0 ||
+        neverc_bigint_sign(&pub->e) <= 0)
+        return -1;
+
+    int modulus_bits = neverc_bigint_bit_len(&pub->n);
+    int key_bytes = neverc_rsa_key_size(pub);
+    if (modulus_bits <= 1 || key_bytes <= 0 ||
+        key_bytes > 512 || sig_len != (size_t)key_bytes)
+        return -1;
+
+    size_t encoded_bits = (size_t)modulus_bits - 1;
+    size_t encoded_len = (encoded_bits + 7) / 8;
+    if (encoded_len < digest_len + salt_len + 2 ||
+        encoded_len > (size_t)key_bytes)
+        return -1;
+
+    neverc_bigint_t signature, message;
+    neverc_bigint_init(&signature);
+    neverc_bigint_init(&message);
+    bytes_to_bigint(&signature, sig, sig_len);
+    int result = -1;
+    if (neverc_bigint_cmp(&signature, &pub->n) >= 0)
+        goto cleanup_bigints;
+    neverc_bigint_exp(&message, &signature, &pub->e, &pub->n);
+
+    unsigned char *encoded =
+        (unsigned char *)malloc((size_t)key_bytes);
+    unsigned char *database_mask =
+        (unsigned char *)malloc(encoded_len - digest_len - 1);
+    if (!encoded || !database_mask) {
+        free(encoded);
+        free(database_mask);
+        goto cleanup_bigints;
+    }
+    bigint_to_bytes(&message, encoded, key_bytes);
+
+    size_t leading_len = (size_t)key_bytes - encoded_len;
+    for (size_t i = 0; i < leading_len; ++i) {
+        if (encoded[i] != 0)
+            goto cleanup_encoded;
+    }
+    unsigned char *encoded_message = encoded + leading_len;
+    size_t database_len = encoded_len - digest_len - 1;
+    unsigned char *encoded_hash = encoded_message + database_len;
+    if (encoded_message[encoded_len - 1] != 0xbc)
+        goto cleanup_encoded;
+
+    unsigned unused_bits = (unsigned)(encoded_len * 8 - encoded_bits);
+    if (unused_bits > 0) {
+        unsigned char forbidden =
+            (unsigned char)(0xffu << (8 - unused_bits));
+        if ((encoded_message[0] & forbidden) != 0)
+            goto cleanup_encoded;
+    }
+
+    mgf1_sha256(encoded_hash, digest_len,
+                database_mask, database_len);
+    for (size_t i = 0; i < database_len; ++i)
+        encoded_message[i] ^= database_mask[i];
+    if (unused_bits > 0)
+        encoded_message[0] &=
+            (unsigned char)(0xffu >> unused_bits);
+
+    size_t padding_len = encoded_len - digest_len - salt_len - 2;
+    unsigned invalid_padding = encoded_message[padding_len] ^ 0x01u;
+    for (size_t i = 0; i < padding_len; ++i)
+        invalid_padding |= encoded_message[i];
+    if (invalid_padding != 0)
+        goto cleanup_encoded;
+
+    unsigned char message_prime[8 + NEVERC_SHA256_DIGEST_SIZE * 2] = {0};
+    memcpy(message_prime + 8, hash, digest_len);
+    memcpy(message_prime + 8 + digest_len,
+           encoded_message + padding_len + 1, salt_len);
+    unsigned char expected_hash[NEVERC_SHA256_DIGEST_SIZE];
+    neverc_sha256_sum(message_prime, sizeof(message_prime),
+                      expected_hash);
+    if (constant_time_equal(
+            encoded_hash, expected_hash, digest_len))
+        result = 0;
+
+cleanup_encoded:
+    free(database_mask);
+    free(encoded);
+cleanup_bigints:
+    neverc_bigint_free(&signature);
+    neverc_bigint_free(&message);
+    return result;
+}

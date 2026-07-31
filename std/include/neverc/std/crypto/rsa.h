@@ -47,6 +47,12 @@ int  neverc_rsa_verify_pkcs1v15_sha256(const neverc_rsa_public_key_t *pub,
                                         const unsigned char *hash, size_t hash_len,
                                         const unsigned char *sig, size_t sig_len);
 
+/* Verify RSASSA-PSS with SHA-256, MGF1-SHA256, and a 32-byte salt.
+ * This is the profile required by TLS 1.3 rsa_pss_*_sha256 schemes. */
+int  neverc_rsa_verify_pss_sha256(const neverc_rsa_public_key_t *pub,
+                                   const unsigned char *hash, size_t hash_len,
+                                   const unsigned char *sig, size_t sig_len);
+
 int  neverc_rsa_key_size(const neverc_rsa_public_key_t *pub);
 
 #ifdef __cplusplus

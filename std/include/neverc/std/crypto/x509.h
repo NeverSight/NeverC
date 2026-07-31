@@ -34,6 +34,7 @@ extern "C" {
 #define NEVERC_X509_SIG_ECDSA_SHA256 5
 #define NEVERC_X509_SIG_ECDSA_SHA384 6
 #define NEVERC_X509_SIG_ED25519      7
+#define NEVERC_X509_SIG_RSA_PSS_SHA256 8
 
 /* KeyUsage bits (RFC 5280 section 4.2.1.3). */
 #define NEVERC_X509_KEY_USAGE_DIGITAL_SIGNATURE  (1u << 0)
@@ -159,6 +160,16 @@ int neverc_x509_is_self_signed(const neverc_x509_cert_t *cert);
  * Returns 0 on success and -1 on failure or unsupported algorithms. */
 int neverc_x509_check_signature_from(const neverc_x509_cert_t *cert,
                                       const neverc_x509_cert_t *parent);
+
+/* Verify a signature over arbitrary data with certificate's public key.
+ * The signature_algorithm is one of NEVERC_X509_SIG_*.
+ * Returns 0 on success and -1 on failure or unsupported algorithms. */
+int neverc_x509_verify_signature(const neverc_x509_cert_t *certificate,
+                                  int signature_algorithm,
+                                  const uint8_t *signed_data,
+                                  size_t signed_data_len,
+                                  const uint8_t *signature,
+                                  size_t signature_len);
 
 /* Verify an ordered chain from leaf (chain[0]) to a caller-trusted anchor.
  * All certificates must be valid at moment; hostname and required EKU are

@@ -446,7 +446,8 @@ TEST_F(StdLibTest, NetBufferFailurePaths) {
 // only exercises plain HTTP.  Include the full TLS dependency chain for
 // every target that compiles http.c.
 #define HTTP_TLS_DEPS \
-    "src/crypto/tls/tls.c", "src/crypto/ecdh/ecdh.c", \
+    "src/crypto/tls/tls.c", "src/crypto/tls/tls_verify.c", \
+    "src/crypto/ecdh/ecdh.c", \
     "src/crypto/aes/aes.c", "src/crypto/gcm/gcm.c", \
     "src/crypto/chacha20/chacha20.c", "src/crypto/poly1305/poly1305.c", \
     "src/crypto/chacha20poly1305/chacha20poly1305.c", \
@@ -454,7 +455,9 @@ TEST_F(StdLibTest, NetBufferFailurePaths) {
     "src/crypto/sha384/sha384.c", "src/crypto/sha1/sha1.c", "src/crypto/md5/md5.c", \
     "src/crypto/hmac/hmac.c", "src/crypto/hkdf/hkdf.c", \
     "src/crypto/rand/rand.c", "src/crypto/subtle/subtle.c", \
-    "src/crypto/x509/x509.c", "src/crypto/elliptic/elliptic.c", \
+    "src/crypto/x509/x509.c", "src/crypto/x509/x509_verify.c", \
+    "src/crypto/rsa/rsa.c", "src/crypto/ecdsa/ecdsa.c", \
+    "src/crypto/ed25519/ed25519.c", "src/crypto/elliptic/elliptic.c", \
     "src/math/big/big.c", "src/encoding/base64/base64.c"
 
 STD_TEST(http, "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", TCP_DEPS, HTTP_TLS_DEPS)
@@ -606,6 +609,11 @@ TEST_F(StdLibTest, EmbeddedX509SignatureDotSyntax) {
 }
 #undef X509_VERIFY_DEPS
 STD_TEST(tls, HTTP_TLS_DEPS, "src/net/tcp/tcp.c")
+TEST_F(StdLibTest, EmbeddedTlsCertificateVerifyDotSyntax) {
+  auto r = compileAndRunStdTest("tls_builtin", {}, {"-fbuiltin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
 
 // ===== Regexp =====
 STD_TEST(regexp_syntax, "src/regexp/syntax/syntax.c")

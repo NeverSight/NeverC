@@ -8,6 +8,7 @@
 #include "neverc/std/crypto/hmac.h"
 #include "neverc/std/crypto/hkdf.h"
 #include "neverc/std/crypto/rand.h"
+#include "neverc/std/crypto/subtle.h"
 #include "neverc/std/crypto/x509.h"
 #include <string.h>
 #include <stdlib.h>
@@ -47,9 +48,11 @@
 #define TLS_EXT_KEY_SHARE         51
 
 /* Signature algorithms */
-#define TLS_SIG_ECDSA_SHA256     0x0403
-#define TLS_SIG_RSA_PSS_SHA256   0x0804
-#define TLS_SIG_ED25519          0x0807
+#define TLS_SIG_ECDSA_SHA256 \
+    NEVERC_TLS_SIGNATURE_ECDSA_SECP256R1_SHA256
+#define TLS_SIG_RSA_PSS_SHA256 \
+    NEVERC_TLS_SIGNATURE_RSA_PSS_RSAE_SHA256
+#define TLS_SIG_ED25519 NEVERC_TLS_SIGNATURE_ED25519
 
 /* Alert descriptions */
 #define TLS_ALERT_CLOSE_NOTIFY         0
@@ -573,6 +576,65 @@ static neverc_tls_conn_t *tls_conn_new(neverc_tcp_conn_t *tcp, int owns) {
     return conn;
 }
 
+static int tls_store_server_certificate(neverc_tls_conn_t *conn,
+                                        const uint8_t *message,
+                                        size_t message_len) {
+    if (!conn || !message || conn->peer_cert || message_len < 4)
+        return -1;
+
+    size_t pos = 0;
+    size_t request_context_len = message[pos++];
+    if (request_context_len != 0 ||
+        request_context_len > message_len - pos)
+        return -1;
+    pos += request_context_len;
+    if (message_len - pos < 3)
+        return -1;
+
+    size_t certificate_list_len = get_u24(message + pos);
+    pos += 3;
+    if (certificate_list_len == 0 ||
+        certificate_list_len != message_len - pos)
+        return -1;
+
+    size_t list_end = pos + certificate_list_len;
+    uint8_t *first_certificate = NULL;
+    size_t first_certificate_len = 0;
+    while (pos < list_end) {
+        if (list_end - pos < 3)
+            goto fail;
+        size_t certificate_len = get_u24(message + pos);
+        pos += 3;
+        if (certificate_len == 0 ||
+            certificate_len > list_end - pos)
+            goto fail;
+        if (!first_certificate) {
+            first_certificate = (uint8_t *)malloc(certificate_len);
+            if (!first_certificate)
+                goto fail;
+            memcpy(first_certificate, message + pos, certificate_len);
+            first_certificate_len = certificate_len;
+        }
+        pos += certificate_len;
+
+        if (list_end - pos < 2)
+            goto fail;
+        size_t extensions_len = get_u16(message + pos);
+        pos += 2;
+        if (extensions_len > list_end - pos)
+            goto fail;
+        pos += extensions_len;
+    }
+
+    conn->peer_cert = first_certificate;
+    conn->peer_cert_len = first_certificate_len;
+    return 0;
+
+fail:
+    free(first_certificate);
+    return -1;
+}
+
 static int tls_client_handshake(neverc_tls_conn_t *conn,
                                   neverc_tls_config_t *cfg) {
     neverc_sha256_ctx transcript;
@@ -781,6 +843,7 @@ static int tls_client_handshake(neverc_tls_conn_t *conn,
     /* Read encrypted handshake messages (EncryptedExtensions, Certificate,
      * CertificateVerify, Finished) */
     int got_finished = 0;
+    int got_certificate_verify = 0;
     while (!got_finished) {
         uint8_t inner_type;
         uint8_t hs_data[TLS_MAX_PLAINTEXT];
@@ -798,25 +861,42 @@ static int tls_client_handshake(neverc_tls_conn_t *conn,
         while (hpos + 4 <= hs_len) {
             uint8_t hs_type = hs_data[hpos];
             uint32_t msg_len = get_u24(hs_data + hpos + 1);
-            if (hpos + 4 + msg_len > hs_len) break;
+            if ((size_t)msg_len > hs_len - hpos - 4)
+                return -1;
 
-            if (hs_type == TLS_HS_CERTIFICATE && !conn->peer_cert) {
-                /* Extract first certificate (DER) */
-                size_t cpos = hpos + 4;
-                cpos++; /* request_context length (should be 0) */
-                if (cpos + 3 <= hpos + 4 + msg_len) {
-                    /* uint32_t certs_len = get_u24(hs_data + cpos); */ cpos += 3;
-                    if (cpos + 3 <= hpos + 4 + msg_len) {
-                        uint32_t cert_len = get_u24(hs_data + cpos); cpos += 3;
-                        if (cert_len > 0 && cpos + cert_len <= hpos + 4 + msg_len) {
-                            conn->peer_cert = (uint8_t *)malloc(cert_len);
-                            if (conn->peer_cert) {
-                                memcpy(conn->peer_cert, hs_data + cpos, cert_len);
-                                conn->peer_cert_len = cert_len;
-                            }
-                        }
-                    }
-                }
+            const uint8_t *message = hs_data + hpos + 4;
+            if (hs_type == TLS_HS_CERTIFICATE) {
+                if (tls_store_server_certificate(
+                        conn, message, msg_len) != 0)
+                    return -1;
+            } else if (hs_type == TLS_HS_CERT_VERIFY) {
+                if (!conn->peer_cert || got_certificate_verify ||
+                    msg_len < 4)
+                    return -1;
+                uint16_t signature_scheme = get_u16(message);
+                size_t signature_len = get_u16(message + 2);
+                if (signature_len == 0 ||
+                    signature_len != (size_t)msg_len - 4)
+                    return -1;
+
+                uint8_t transcript_hash[32];
+                neverc_sha256_ctx transcript_copy = transcript;
+                neverc_sha256_final(
+                    &transcript_copy, transcript_hash);
+                neverc_x509_cert_t certificate;
+                if (neverc_x509_parse_certificate(
+                        &certificate, conn->peer_cert,
+                        conn->peer_cert_len) != 0)
+                    return -1;
+                int verify_result =
+                    neverc_tls_verify_certificate_verify(
+                        &certificate, signature_scheme, 1,
+                        transcript_hash, sizeof(transcript_hash),
+                        message + 4, signature_len);
+                neverc_x509_cert_free(&certificate);
+                if (verify_result != 0)
+                    return -1;
+                got_certificate_verify = 1;
             }
 
             /* Hash all handshake messages into transcript
@@ -827,6 +907,8 @@ static int tls_client_handshake(neverc_tls_conn_t *conn,
 
             if (hs_type == TLS_HS_FINISHED) {
                 /* Verify server Finished */
+                if (!got_certificate_verify)
+                    return -1;
                 uint8_t transcript_hash[32];
                 {
                     neverc_sha256_ctx copy = transcript;
@@ -844,7 +926,8 @@ static int tls_client_handshake(neverc_tls_conn_t *conn,
                                     expected_verify);
 
                 if (msg_len != 32 ||
-                    memcmp(hs_data + hpos + 4, expected_verify, 32) != 0)
+                    !neverc_subtle_constant_time_compare(
+                        hs_data + hpos + 4, expected_verify, 32))
                     return -1;
 
                 /* Hash Finished into transcript */
@@ -855,6 +938,8 @@ static int tls_client_handshake(neverc_tls_conn_t *conn,
 
             hpos += 4 + msg_len;
         }
+        if (hpos != hs_len)
+            return -1;
     }
 
     /* Send client Finished */
@@ -1226,7 +1311,8 @@ static int tls_server_handshake(neverc_tls_conn_t *conn,
                             transcript_hash, 32,
                             expected);
 
-        if (memcmp(hs_data + 4, expected, 32) != 0)
+        if (!neverc_subtle_constant_time_compare(
+                hs_data + 4, expected, 32))
             return -1;
 
         neverc_sha256_update(&transcript, hs_data, hs_len);
@@ -1265,8 +1351,8 @@ static int tls_server_handshake(neverc_tls_conn_t *conn,
  * ====================================================================== */
 
 static const char k_tls_unavailable[] =
-    "TLS transport is unavailable: certificate chain and "
-    "CertificateVerify validation are not implemented";
+    "TLS transport is unavailable: certificate chain validation and "
+    "server CertificateVerify signing are not implemented";
 
 static void tls_set_unavailable(const char **errp) {
     if (errp)
