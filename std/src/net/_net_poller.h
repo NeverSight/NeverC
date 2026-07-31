@@ -2,6 +2,7 @@
 #define NEVERC_NET_POLLER_H
 
 #include "_net_io_uring.h"
+#include "_net_iocp.h"
 
 #define NC_EV_READ  1
 #define NC_EV_WRITE 2
@@ -16,6 +17,10 @@ typedef struct {
     nc_sock_t fd;
     int events;
     void *data;
+    /* Completion backends populate these; readiness backends leave them zero. */
+    void *operation;
+    size_t transferred;
+    int error;
 } nc_event_t;
 
 typedef struct {
@@ -49,6 +54,10 @@ static inline int nc_poller_supports_readiness(void) {
 #else
     return 1;
 #endif
+}
+
+static inline int nc_poller_supports_completions(void) {
+    return NC_HAS_IOCP_COMPLETIONS;
 }
 
 static inline nc_poller_t *nc_poller_create(void) {
@@ -124,6 +133,11 @@ static inline nc_poller_t *nc_poller_create(void) {
     return poller;
 }
 
+/*
+ * IOCP callers must cancel and dequeue every outstanding operation before
+ * destroying the poller; closing the port does not make operation storage
+ * safe to release.
+ */
 static inline void nc_poller_destroy(nc_poller_t *poller) {
     if (!poller) return;
 #if defined(NC_USE_IO_URING) && NC_USE_IO_URING && defined(__linux__)
@@ -471,6 +485,9 @@ static inline int nc_poller_wait(nc_poller_t *poller, nc_event_t *out,
 
         out[count].fd = fd;
         out[count].data = poller->fd_data[fd];
+        out[count].operation = NULL;
+        out[count].transferred = 0;
+        out[count].error = 0;
         out[count].events = 0;
         if (result < 0) {
             out[count].events = NC_EV_ERROR;
@@ -517,6 +534,9 @@ static inline int nc_poller_wait(nc_poller_t *poller, nc_event_t *out,
         out[i].fd = fd;
         out[i].data =
             fd >= 0 && fd < poller->fd_cap ? poller->fd_data[fd] : NULL;
+        out[i].operation = NULL;
+        out[i].transferred = 0;
+        out[i].error = 0;
         out[i].events = 0;
         if (events[i].events & EPOLLIN) out[i].events |= NC_EV_READ;
         if (events[i].events & EPOLLOUT) out[i].events |= NC_EV_WRITE;
@@ -539,6 +559,9 @@ static inline int nc_poller_wait(nc_poller_t *poller, nc_event_t *out,
     for (int i = 0; i < count; i++) {
         out[i].data = events[i].udata;
         out[i].fd = (nc_sock_t)events[i].ident;
+        out[i].operation = NULL;
+        out[i].transferred = 0;
+        out[i].error = 0;
         out[i].events = 0;
         if (events[i].filter == EVFILT_READ)
             out[i].events |= NC_EV_READ;
@@ -560,10 +583,31 @@ static inline int nc_poller_wait(nc_poller_t *poller, nc_event_t *out,
         return error == WAIT_TIMEOUT ? 0 : -1;
     }
     for (ULONG i = 0; i < removed; i++) {
-        out[i].data = (void *)entries[i].lpCompletionKey;
+        nc_iocp_op_t *operation =
+            (nc_iocp_op_t *)entries[i].lpOverlapped;
+        out[i].operation = operation;
+        out[i].transferred = 0;
+        out[i].error = 0;
         out[i].fd = NC_INVALID_SOCK;
-        out[i].events =
-            entries[i].lpOverlapped ? (NC_EV_READ | NC_EV_WRITE) : 0;
+        out[i].events = 0;
+        if (!operation) {
+            out[i].data = (void *)entries[i].lpCompletionKey;
+            continue;
+        }
+
+        nc_iocp_op_complete(
+            operation, entries[i].dwNumberOfBytesTransferred);
+        out[i].data = operation->data;
+        out[i].fd = operation->fd;
+        out[i].transferred = (size_t)operation->transferred;
+        out[i].error = operation->error;
+        if (operation->kind == NC_IOCP_OP_ACCEPT ||
+            operation->kind == NC_IOCP_OP_RECV)
+            out[i].events |= NC_EV_READ;
+        else if (operation->kind == NC_IOCP_OP_SEND)
+            out[i].events |= NC_EV_WRITE;
+        if (operation->error != 0)
+            out[i].events |= NC_EV_ERROR;
     }
     return (int)removed;
 #else
@@ -577,6 +621,9 @@ static inline int nc_poller_wait(nc_poller_t *poller, nc_event_t *out,
         if (!poller->pfds[i].revents) continue;
         out[count].fd = poller->pfds[i].fd;
         out[count].data = poller->pdata[i];
+        out[count].operation = NULL;
+        out[count].transferred = 0;
+        out[count].error = 0;
         out[count].events = 0;
         if (poller->pfds[i].revents & POLLIN)
             out[count].events |= NC_EV_READ;

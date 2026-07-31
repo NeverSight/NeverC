@@ -92,6 +92,34 @@ TEST_F(StdLibTest, WindowsModulesCompileWithBundledSdk) {
   }
 }
 
+TEST_F(StdLibTest, NetIocpCompilesWithBundledSdk) {
+  const std::string sd = stdSrcDir();
+  const fs::path source = fs::path(stdTestDir()) / "test_net_iocp.c";
+  for (const char *target : {"x86_64-pc-windows-msvc",
+                             "aarch64-pc-windows-msvc"}) {
+    SCOPED_TRACE(target);
+    const fs::path object =
+        tmp() / (std::string("test_net_iocp_") +
+                 (target[0] == 'x' ? "x64.obj" : "arm64.obj"));
+    auto result = ncc({
+        "-c",
+        "-fno-builtin-std",
+        "-ffreestanding",
+        "-std=gnu11",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        std::string("--target=") + target,
+        "-I" + sd + "/include",
+        "-I" + sd + "/src/net",
+        source.string(),
+        "-o",
+        object.string(),
+    });
+    EXPECT_EQ(result.exitCode, 0) << result.out << result.err;
+  }
+}
+
 TEST_F(StdLibTest, EmbeddedRuntimePreservesUserLocalProvenance) {
   auto src = tmpFile("std_user_local.c");
   auto ir = tmpFile("std_user_local.ll");
@@ -376,8 +404,20 @@ STD_TEST(suffixarray, "src/index/suffixarray/suffixarray.c")
 
 // ===== Sync =====
 STD_TEST(sync, "src/sync/sync.c")
+STD_TEST(thread, "src/thread/thread.c", "src/context/context.c")
 TEST_F(StdLibTest, SyncMapAllocationFailure) {
   auto r = compileAndRunStdTest("sync_oom", {}, {"-fno-builtin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
+TEST_F(StdLibTest, EmbeddedThreadDotSyntax) {
+  auto r = compileAndRunStdTest("thread_builtin", {}, {"-fbuiltin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
+TEST_F(StdLibTest, ThreadAllocationAndCreationFailure) {
+  auto r = compileAndRunStdTest("thread_failures",
+                                {"src/context/context.c"});
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
   EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
 }
@@ -477,6 +517,11 @@ TEST_F(StdLibTest, NetPollFallback) {
 TEST_F(StdLibTest, NetInternalHeadersAreStandalone) {
   auto r = compileAndRunStdTest("net_internal_headers", {},
                                 {"-fno-builtin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
+TEST_F(StdLibTest, NetIocpCompletionLifecycle) {
+  auto r = compileAndRunStdTest("net_iocp", {}, {"-fno-builtin-std"});
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
   EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
 }

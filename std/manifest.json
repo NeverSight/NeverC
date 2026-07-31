@@ -2882,6 +2882,59 @@
         "free": "neverc_context_free"
       }
     },
+    "thread": {
+      "header": "include/neverc/thread.h",
+      "description": "Bounded task executor and cross-thread channels",
+      "deps": [
+        "context"
+      ],
+      "symbols": {
+        "neverc_thread_executor_create": "src/thread/thread.c",
+        "neverc_thread_executor_submit": "src/thread/thread.c",
+        "neverc_thread_executor_submit_context": "src/thread/thread.c",
+        "neverc_thread_executor_try_submit": "src/thread/thread.c",
+        "neverc_thread_executor_wait": "src/thread/thread.c",
+        "neverc_thread_executor_wait_context": "src/thread/thread.c",
+        "neverc_thread_executor_pending": "src/thread/thread.c",
+        "neverc_thread_executor_active": "src/thread/thread.c",
+        "neverc_thread_executor_shutdown": "src/thread/thread.c",
+        "neverc_thread_executor_free": "src/thread/thread.c",
+        "neverc_thread_channel_create": "src/thread/thread.c",
+        "neverc_thread_channel_send": "src/thread/thread.c",
+        "neverc_thread_channel_send_context": "src/thread/thread.c",
+        "neverc_thread_channel_try_send": "src/thread/thread.c",
+        "neverc_thread_channel_receive": "src/thread/thread.c",
+        "neverc_thread_channel_receive_context": "src/thread/thread.c",
+        "neverc_thread_channel_try_receive": "src/thread/thread.c",
+        "neverc_thread_channel_close": "src/thread/thread.c",
+        "neverc_thread_channel_length": "src/thread/thread.c",
+        "neverc_thread_channel_capacity": "src/thread/thread.c",
+        "neverc_thread_channel_free": "src/thread/thread.c"
+      },
+      "dot_methods": {
+        "executor_create": "neverc_thread_executor_create",
+        "executor_submit": "neverc_thread_executor_submit",
+        "executor_submit_context": "neverc_thread_executor_submit_context",
+        "executor_try_submit": "neverc_thread_executor_try_submit",
+        "executor_wait": "neverc_thread_executor_wait",
+        "executor_wait_context": "neverc_thread_executor_wait_context",
+        "executor_pending": "neverc_thread_executor_pending",
+        "executor_active": "neverc_thread_executor_active",
+        "executor_shutdown": "neverc_thread_executor_shutdown",
+        "executor_free": "neverc_thread_executor_free",
+        "channel_create": "neverc_thread_channel_create",
+        "channel_send": "neverc_thread_channel_send",
+        "channel_send_context": "neverc_thread_channel_send_context",
+        "channel_try_send": "neverc_thread_channel_try_send",
+        "channel_receive": "neverc_thread_channel_receive",
+        "channel_receive_context": "neverc_thread_channel_receive_context",
+        "channel_try_receive": "neverc_thread_channel_try_receive",
+        "channel_close": "neverc_thread_channel_close",
+        "channel_length": "neverc_thread_channel_length",
+        "channel_capacity": "neverc_thread_channel_capacity",
+        "channel_free": "neverc_thread_channel_free"
+      }
+    },
     "slices": {
       "header": "include/neverc/slices.h",
       "description": "Generic array/slice manipulation \u2014 equal, sort, search, reverse, compact (mirrors Go slices package)",
