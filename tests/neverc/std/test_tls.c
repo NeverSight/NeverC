@@ -16,6 +16,7 @@
 static int tests_run = 0, tests_passed = 0, tests_failed = 0;
 static const char *TEST_CERT_PEM;
 static const char *TEST_KEY_PEM;
+static const char *TEST_PKCS8_KEY_PEM;
 static const char *MISMATCHED_KEY_PEM;
 
 static void check_int(const char *name, int got, int expected) {
@@ -66,6 +67,10 @@ static void test_config(void) {
               neverc_tls_config_load_cert_mem(
                   cfg, TEST_CERT_PEM, TEST_KEY_PEM),
               0);
+    check_int("load_valid_pkcs8_certificate_key_pair",
+              neverc_tls_config_load_cert_mem(
+                  cfg, TEST_CERT_PEM, TEST_PKCS8_KEY_PEM),
+              0);
     check_int("reject_mismatched_private_key",
               neverc_tls_config_load_cert_mem(
                   cfg, TEST_CERT_PEM, MISMATCHED_KEY_PEM) != 0,
@@ -111,6 +116,13 @@ static const char *TEST_KEY_PEM =
     "AwEHoUQDQgAEFfiAr6/kMj//RTxUbiMd9D5GaSW2Vh0ayiIrbLKk2LU+D0WWmvGg\n"
     "sScwF3eIk9fJZdld4Ry6uSA4++KyWZNZ5Q==\n"
     "-----END EC PRIVATE KEY-----\n";
+
+static const char *TEST_PKCS8_KEY_PEM =
+    "-----BEGIN PRIVATE KEY-----\n"
+    "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgOSqTq08qwy33F3TJ\n"
+    "P4LfU6ga/WY/aJcR458e5+StWjyhRANCAAQV+ICvr+QyP/9FPFRuIx30PkZpJbZW\n"
+    "HRrKIitssqTYtT4PRZaa8aCxJzAXd4iT18ll2V3hHLq5IDj74rJZk1nl\n"
+    "-----END PRIVATE KEY-----\n";
 
 static const char *MISMATCHED_KEY_PEM =
     "-----BEGIN EC PRIVATE KEY-----\n"
@@ -642,15 +654,21 @@ static void *fake_server_thread(void *arg) {
             static const uint8_t unexpected_record[] = {
                 23, 0x03, 0x03, 0x00, 0x01, 0
             };
-            static const uint8_t malformed_server_hello[] = {
-                22, 0x03, 0x03, 0x00, 0x04,
-                2, 0, 0, 0
-            };
             if (ctx->response_mode == 0) {
                 (void)neverc_tcp_write(
                     ctx->tcp, unexpected_record,
                     sizeof(unexpected_record));
             } else {
+                uint8_t malformed_server_hello[49] = {0};
+                malformed_server_hello[0] = 22;
+                malformed_server_hello[1] = 0x03;
+                malformed_server_hello[2] = 0x03;
+                malformed_server_hello[4] = 44;
+                malformed_server_hello[5] = 2;
+                malformed_server_hello[8] = 40;
+                malformed_server_hello[9] = 0x03;
+                malformed_server_hello[10] = 0x03;
+                malformed_server_hello[43] = 0xff;
                 (void)neverc_tcp_write(
                     ctx->tcp, malformed_server_hello,
                     sizeof(malformed_server_hello));
@@ -781,6 +799,81 @@ static void test_malformed_server_hello_alert(void) {
               ctx.saw_client_hello, 1);
     check_int("send_decode_error_alert",
               ctx.alert_description, 50);
+    neverc_tls_config_free(config);
+}
+
+static void test_malformed_client_hello_alert(void) {
+    printf("[malformed_client_hello_alert]\n");
+    neverc_tls_config_t *config = neverc_tls_config_new();
+    check_not_null("malformed_client_config", config);
+    if (!config)
+        return;
+    check_int("malformed_client_load_certificate",
+              neverc_tls_config_load_cert_mem(
+                  config, TEST_CERT_PEM, TEST_KEY_PEM),
+              0);
+
+    neverc_tcp_conn_t *client_tcp = NULL;
+    neverc_tcp_conn_t *server_tcp = NULL;
+    check_int("create_malformed_client_pipe",
+              neverc_tcp_pipe(&client_tcp, &server_tcp), 0);
+    if (!client_tcp || !server_tcp) {
+        neverc_tcp_close(client_tcp);
+        neverc_tcp_close(server_tcp);
+        neverc_tls_config_free(config);
+        return;
+    }
+
+    server_ctx_t ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.tcp = server_tcp;
+    ctx.config = config;
+#ifdef _WIN32
+    HANDLE thread = CreateThread(
+        NULL, 0, tls_server_thread, &ctx, 0, NULL);
+    int thread_started = thread != NULL;
+#else
+    pthread_t thread;
+    int thread_started =
+        pthread_create(&thread, NULL, tls_server_thread, &ctx) == 0;
+#endif
+    check_int("start_malformed_client_thread", thread_started, 1);
+    if (!thread_started) {
+        neverc_tcp_close(client_tcp);
+        neverc_tcp_close(server_tcp);
+        neverc_tls_config_free(config);
+        return;
+    }
+
+    static const uint8_t malformed_client_hello[] = {
+        22, 0x03, 0x03, 0x00, 0x04,
+        1, 0, 0, 0
+    };
+    check_int("send_malformed_client_hello",
+              neverc_tcp_write(
+                  client_tcp, malformed_client_hello,
+                  sizeof(malformed_client_hello)) ==
+                  (int)sizeof(malformed_client_hello),
+              1);
+
+    uint8_t header[5];
+    uint8_t alert[2];
+    int received_decode_error =
+        tcp_read_exact(client_tcp, header, sizeof(header)) == 0 &&
+        header[0] == 21 && header[3] == 0 && header[4] == 2 &&
+        tcp_read_exact(client_tcp, alert, sizeof(alert)) == 0 &&
+        alert[0] == 2 && alert[1] == 50;
+    check_int("server_send_decode_error_alert",
+              received_decode_error, 1);
+    neverc_tcp_close(client_tcp);
+#ifdef _WIN32
+    WaitForSingleObject(thread, INFINITE);
+    CloseHandle(thread);
+#else
+    pthread_join(thread, NULL);
+#endif
+    check_int("server_reject_malformed_client_hello",
+              ctx.handshake_ok, 0);
     neverc_tls_config_free(config);
 }
 #endif
@@ -955,6 +1048,7 @@ int main(void) {
 #if defined(NEVERC_TLS_ENABLE_EXPERIMENTAL_TRANSPORT)
     test_unexpected_server_record_alert();
     test_malformed_server_hello_alert();
+    test_malformed_client_hello_alert();
 #endif
 
     printf("\n%d/%d tests passed", tests_passed, tests_run);

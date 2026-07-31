@@ -4,10 +4,11 @@
 /*
  * NeverC crypto/tls — experimental TLS 1.3 (RFC 8446) components.
  *
- * The key schedule and record layer now verify supported peer
- * CertificateVerify signatures, but certificate-chain/system-trust validation
- * and server-side signing are incomplete. Connection and listener entry points
- * therefore remain fail closed.
+ * The key schedule and record layer verify supported peer CertificateVerify
+ * signatures, build certificate chains from custom or system roots, and sign
+ * with P-256 server keys. The complete post-handshake state machine, mTLS, and
+ * independent security validation are still incomplete, so connection and
+ * listener entry points remain fail closed by default.
  *
  * Go-style API:
  *   // Client
@@ -63,12 +64,15 @@ neverc_tls_config_t *neverc_tls_config_new(void);
 /* Free a TLS config. */
 void neverc_tls_config_free(neverc_tls_config_t *cfg);
 
-/* Load certificate and private key from PEM files (for server). Returns 0 on success. */
+/* Load a certificate and P-256 private key from PEM files (for server).
+ * SEC1 "EC PRIVATE KEY" and unencrypted PKCS#8 "PRIVATE KEY" are accepted.
+ * Returns 0 on success. */
 int neverc_tls_config_load_cert(neverc_tls_config_t *cfg,
                                  const char *cert_pem_path,
                                  const char *key_pem_path);
 
-/* Load certificate and key from PEM strings (for server). Returns 0 on success. */
+/* Load a certificate and SEC1 or unencrypted PKCS#8 P-256 key from PEM
+ * strings (for server). Returns 0 on success. */
 int neverc_tls_config_load_cert_mem(neverc_tls_config_t *cfg,
                                      const char *cert_pem,
                                      const char *key_pem);

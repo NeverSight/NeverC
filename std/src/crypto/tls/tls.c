@@ -13,6 +13,7 @@
 #include "neverc/std/crypto/x509.h"
 #include "neverc/std/encoding/pem.h"
 #include "tls_key.h"
+#include <limits.h>
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -68,8 +69,14 @@
 #define TLS_ALERT_UNEXPECTED_MESSAGE  10
 #define TLS_ALERT_BAD_RECORD_MAC      20
 #define TLS_ALERT_HANDSHAKE_FAILURE   40
+#define TLS_ALERT_BAD_CERTIFICATE     42
+#define TLS_ALERT_ILLEGAL_PARAMETER   47
 #define TLS_ALERT_DECODE_ERROR        50
+#define TLS_ALERT_DECRYPT_ERROR       51
+#define TLS_ALERT_PROTOCOL_VERSION    70
 #define TLS_ALERT_INTERNAL_ERROR      80
+#define TLS_ALERT_MISSING_EXTENSION  109
+#define TLS_ALERT_UNSUPPORTED_EXTENSION 110
 
 /* Legacy version for record layer */
 #define TLS_LEGACY_VERSION  0x0303 /* TLS 1.2 in record header */
@@ -164,6 +171,13 @@ struct neverc_tls_listener {
     neverc_tls_config_t   *cfg;
 };
 
+static void tls_free_private_key(uint8_t *key_der, size_t key_der_len) {
+    if (!key_der)
+        return;
+    neverc_platform_secure_zero(key_der, key_der_len);
+    free(key_der);
+}
+
 /* ======================================================================
  * TLS Config
  * ====================================================================== */
@@ -176,7 +190,7 @@ neverc_tls_config_t *neverc_tls_config_new(void) {
 void neverc_tls_config_free(neverc_tls_config_t *cfg) {
     if (!cfg) return;
     free(cfg->cert_der);
-    free(cfg->key_der);
+    tls_free_private_key(cfg->key_der, cfg->key_der_len);
     free(cfg->server_name);
     neverc_x509_cert_pool_free(cfg->root_certificates);
     for (int i = 0; i < cfg->alpn_count; i++)
@@ -289,20 +303,28 @@ int neverc_tls_config_load_cert_mem(neverc_tls_config_t *cfg,
     size_t key_der_len = 0;
     int key_type = NCI_TLS_KEY_ECDSA_P256;
 
-    if (pem_decode_first(cert_pem, "CERTIFICATE",
-                         &cert_der, &cert_der_len) != 0 ||
+    int cert_result =
+        pem_decode_first(cert_pem, "CERTIFICATE",
+                         &cert_der, &cert_der_len);
+    int key_result =
         pem_decode_first(key_pem, "EC PRIVATE KEY",
-                         &key_der, &key_der_len) != 0 ||
+                         &key_der, &key_der_len);
+    if (key_result != 0)
+        key_result =
+            pem_decode_first(key_pem, "PRIVATE KEY",
+                             &key_der, &key_der_len);
+
+    if (cert_result != 0 || key_result != 0 ||
         nci_tls_validate_certificate_key_pair(
             cert_der, cert_der_len, key_der, key_der_len,
             key_type) != 0) {
         free(cert_der);
-        free(key_der);
+        tls_free_private_key(key_der, key_der_len);
         return -1;
     }
 
     free(cfg->cert_der);
-    free(cfg->key_der);
+    tls_free_private_key(cfg->key_der, cfg->key_der_len);
     cfg->cert_der = cert_der;
     cfg->cert_der_len = cert_der_len;
     cfg->key_der = key_der;
@@ -578,23 +600,29 @@ static void derive_traffic_keys(const uint8_t *traffic_secret,
  * ====================================================================== */
 
 static int tls_raw_write(neverc_tcp_conn_t *tcp, const void *data, size_t len) {
-    return neverc_tcp_write(tcp, data, len);
+    int written = neverc_tcp_write(tcp, data, len);
+    return written >= 0 && (size_t)written == len ? 0 : -1;
 }
 
 static int tls_send_record(neverc_tcp_conn_t *tcp, uint8_t content_type,
                             const uint8_t *data, size_t len) {
+    if (!tcp || (!data && len != 0) || len > TLS_MAX_PLAINTEXT)
+        return -1;
     uint8_t hdr[5];
     hdr[0] = content_type;
     put_u16(hdr + 1, TLS_LEGACY_VERSION);
     put_u16(hdr + 3, (uint16_t)len);
-    if (tls_raw_write(tcp, hdr, 5) < 0) return -1;
-    if (len > 0 && tls_raw_write(tcp, data, len) < 0) return -1;
+    if (tls_raw_write(tcp, hdr, 5) != 0) return -1;
+    if (len > 0 && tls_raw_write(tcp, data, len) != 0) return -1;
     return 0;
 }
 
 static int tls_send_encrypted(neverc_tls_conn_t *conn,
                                 uint8_t inner_type,
                                 const uint8_t *data, size_t len) {
+    if (!conn || !conn->tcp || (!data && len != 0) ||
+        len > TLS_MAX_PLAINTEXT)
+        return -1;
     tls_traffic_keys_t *keys = &conn->write_keys;
 
     /* Build nonce: IV XOR sequence number (big-endian in last 8 bytes) */
@@ -634,8 +662,10 @@ static int tls_send_encrypted(neverc_tls_conn_t *conn,
     keys->seq++;
 
     int rc = 0;
-    if (tls_raw_write(conn->tcp, hdr, 5) < 0) rc = -1;
-    if (rc == 0 && tls_raw_write(conn->tcp, ciphertext, ct_len) < 0) rc = -1;
+    if (tls_raw_write(conn->tcp, hdr, 5) != 0) rc = -1;
+    if (rc == 0 &&
+        tls_raw_write(conn->tcp, ciphertext, ct_len) != 0)
+        rc = -1;
     free(ciphertext);
     return rc;
 }
@@ -664,6 +694,13 @@ static int tls_error(
     if (conn)
         conn->failure_reason = reason;
     return -1;
+}
+
+static int tls_protocol_error(
+    neverc_tls_conn_t *conn, uint8_t description,
+    const char *reason) {
+    (void)tls_send_alert(conn, description);
+    return tls_error(conn, reason);
 }
 
 static int tls_recv_record(neverc_tls_conn_t *conn, uint8_t *out_type,
@@ -709,12 +746,14 @@ static int tls_recv_decrypt(neverc_tls_conn_t *conn,
     uint8_t rec_data[TLS_MAX_CIPHERTEXT];
     size_t rec_len;
 
-    if (tls_recv_record(conn, &rec_type, rec_data, &rec_len) != 0)
-        return -1;
-
-    /* Skip Change Cipher Spec (compatibility) */
-    if (rec_type == TLS_CT_CHANGE_CIPHER_SPEC) {
-        return tls_recv_decrypt(conn, out_inner_type, out_data, out_len);
+    for (;;) {
+        if (tls_recv_record(
+                conn, &rec_type, rec_data, &rec_len) != 0)
+            return -1;
+        if (rec_type != TLS_CT_CHANGE_CIPHER_SPEC)
+            break;
+        if (rec_len != 1 || rec_data[0] != 1)
+            return -1;
     }
 
     if (rec_type != TLS_CT_APPLICATION_DATA) {
@@ -789,6 +828,18 @@ static neverc_tls_conn_t *tls_conn_new(neverc_tcp_conn_t *tcp, int owns) {
     conn->owns_tcp = owns;
     return conn;
 }
+
+typedef struct {
+    uint8_t server_public_key[32];
+    uint16_t selected_cipher;
+    tls_cipher_id_t cipher_id;
+} tls_server_hello_info_t;
+
+static int tls_parse_server_hello(
+    const uint8_t *message, size_t message_len,
+    const uint8_t *expected_session_id,
+    size_t expected_session_id_len,
+    tls_server_hello_info_t *result, uint8_t *alert);
 
 static int tls_store_server_certificate(neverc_tls_conn_t *conn,
                                         const uint8_t *message,
@@ -878,7 +929,9 @@ static int tls_client_handshake(neverc_tls_conn_t *conn,
 
     /* Client random */
     uint8_t client_random[32];
-    neverc_crypto_rand_read(client_random, 32);
+    if (neverc_crypto_rand_read(
+            client_random, sizeof(client_random)) != 0)
+        return tls_fail(conn, TLS_ALERT_INTERNAL_ERROR);
 
     /* Build ClientHello */
     uint8_t ch[512];
@@ -898,7 +951,9 @@ static int tls_client_handshake(neverc_tls_conn_t *conn,
 
     /* session_id (legacy, empty for TLS 1.3) */
     uint8_t session_id[32];
-    neverc_crypto_rand_read(session_id, 32);
+    if (neverc_crypto_rand_read(
+            session_id, sizeof(session_id)) != 0)
+        return tls_fail(conn, TLS_ALERT_INTERNAL_ERROR);
     ch[ch_len++] = 32;
     memcpy(ch + ch_len, session_id, 32);
     ch_len += 32;
@@ -983,57 +1038,28 @@ static int tls_client_handshake(neverc_tls_conn_t *conn,
         return -1;
     if (rec_type != TLS_CT_HANDSHAKE)
         return tls_fail(conn, TLS_ALERT_UNEXPECTED_MESSAGE);
-    if (rec_len < 4)
-        return tls_fail(conn, TLS_ALERT_DECODE_ERROR);
-    if (rec_data[0] != TLS_HS_SERVER_HELLO)
+    if (rec_len > 0 && rec_data[0] != TLS_HS_SERVER_HELLO)
         return tls_fail(conn, TLS_ALERT_UNEXPECTED_MESSAGE);
-    if ((size_t)get_u24(rec_data + 1) != rec_len - 4)
-        return tls_fail(conn, TLS_ALERT_DECODE_ERROR);
-    if (rec_len < 44)
-        return tls_fail(conn, TLS_ALERT_DECODE_ERROR);
+
+    tls_server_hello_info_t server_hello;
+    uint8_t server_hello_alert = TLS_ALERT_DECODE_ERROR;
+    if (tls_parse_server_hello(
+            rec_data, rec_len, session_id, sizeof(session_id),
+            &server_hello, &server_hello_alert) != 0)
+        return tls_fail(conn, server_hello_alert);
 
     /* Hash ServerHello into transcript */
     neverc_sha256_update(&transcript, rec_data, rec_len);
 
-    /* Parse ServerHello */
-    size_t sh_pos = 4; /* skip hs header */
-    /* uint16_t sh_version = get_u16(rec_data + sh_pos); */ sh_pos += 2;
-    /* uint8_t server_random[32]; */ sh_pos += 32;
-    uint8_t sh_session_id_len = rec_data[sh_pos++];
-    sh_pos += sh_session_id_len;
-    uint16_t selected_cipher = get_u16(rec_data + sh_pos); sh_pos += 2;
-    sh_pos++; /* compression */
-
-    tls_cipher_id_t cipher_id;
-    if (selected_cipher == NEVERC_TLS_AES_128_GCM_SHA256)
-        cipher_id = TLS_CIPHER_AES_128_GCM_SHA256;
-    else if (selected_cipher == NEVERC_TLS_CHACHA20_POLY1305_SHA256)
-        cipher_id = TLS_CIPHER_CHACHA20_POLY1305_SHA256;
-    else
-        return -1;
+    uint16_t selected_cipher =
+        server_hello.selected_cipher;
+    tls_cipher_id_t cipher_id =
+        server_hello.cipher_id;
     conn->cipher_suite = selected_cipher;
 
-    /* Parse ServerHello extensions to get key_share */
     uint8_t server_pubkey[32];
-    int found_keyshare = 0;
-    if (sh_pos + 2 <= rec_len) {
-        uint16_t sh_ext_len = get_u16(rec_data + sh_pos); sh_pos += 2;
-        size_t sh_ext_end = sh_pos + sh_ext_len;
-        while (sh_pos + 4 <= sh_ext_end) {
-            uint16_t ext_type = get_u16(rec_data + sh_pos); sh_pos += 2;
-            uint16_t ext_data_len = get_u16(rec_data + sh_pos); sh_pos += 2;
-            if (ext_type == TLS_EXT_KEY_SHARE && ext_data_len >= 36) {
-                /* uint16_t group = get_u16(rec_data + sh_pos); */
-                uint16_t ke_len = get_u16(rec_data + sh_pos + 2);
-                if (ke_len == 32) {
-                    memcpy(server_pubkey, rec_data + sh_pos + 4, 32);
-                    found_keyshare = 1;
-                }
-            }
-            sh_pos += ext_data_len;
-        }
-    }
-    if (!found_keyshare) return -1;
+    memcpy(server_pubkey, server_hello.server_public_key,
+           sizeof(server_pubkey));
 
     /* Compute shared secret via X25519 ECDH */
     uint8_t shared_secret[32];
@@ -1105,7 +1131,7 @@ static int tls_client_handshake(neverc_tls_conn_t *conn,
     /* Read encrypted handshake messages (EncryptedExtensions, Certificate,
      * CertificateVerify, Finished) */
     int got_finished = 0;
-    int got_certificate_verify = 0;
+    uint8_t expected_handshake_type = TLS_HS_ENCRYPTED_EXT;
     while (!got_finished) {
         uint8_t inner_type;
         uint8_t hs_data[TLS_MAX_PLAINTEXT];
@@ -1118,8 +1144,14 @@ static int tls_client_handshake(neverc_tls_conn_t *conn,
             if (inner_type == TLS_CT_ALERT)
                 return tls_error(
                     conn, "server sent an alert during handshake");
-            continue;
+            return tls_protocol_error(
+                conn, TLS_ALERT_UNEXPECTED_MESSAGE,
+                "server sent non-handshake data during handshake");
         }
+        if (hs_len == 0)
+            return tls_protocol_error(
+                conn, TLS_ALERT_DECODE_ERROR,
+                "server sent an empty handshake record");
 
         /* Process handshake messages in the decrypted data */
         size_t hpos = 0;
@@ -1127,24 +1159,41 @@ static int tls_client_handshake(neverc_tls_conn_t *conn,
             uint8_t hs_type = hs_data[hpos];
             uint32_t msg_len = get_u24(hs_data + hpos + 1);
             if ((size_t)msg_len > hs_len - hpos - 4)
-                return tls_error(
-                    conn, "fragmented or malformed server handshake message");
+                return tls_protocol_error(
+                    conn, TLS_ALERT_DECODE_ERROR,
+                    "fragmented or malformed server handshake message");
+            if (hs_type != expected_handshake_type)
+                return tls_protocol_error(
+                    conn, TLS_ALERT_UNEXPECTED_MESSAGE,
+                    "server handshake message arrived out of order");
 
             const uint8_t *message = hs_data + hpos + 4;
-            if (hs_type == TLS_HS_CERTIFICATE) {
+            if (hs_type == TLS_HS_ENCRYPTED_EXT) {
+                if (msg_len < 2 ||
+                    get_u16(message) != msg_len - 2)
+                    return tls_protocol_error(
+                        conn, TLS_ALERT_DECODE_ERROR,
+                        "malformed server EncryptedExtensions message");
+                expected_handshake_type = TLS_HS_CERTIFICATE;
+            } else if (hs_type == TLS_HS_CERTIFICATE) {
                 if (tls_store_server_certificate(
                         conn, message, msg_len) != 0)
-                    return tls_error(
-                        conn, "malformed server Certificate message");
+                    return tls_protocol_error(
+                        conn, TLS_ALERT_DECODE_ERROR,
+                        "malformed server Certificate message");
+                expected_handshake_type = TLS_HS_CERT_VERIFY;
             } else if (hs_type == TLS_HS_CERT_VERIFY) {
-                if (!conn->peer_cert || got_certificate_verify ||
-                    msg_len < 4)
-                    return -1;
+                if (!conn->peer_cert || msg_len < 4)
+                    return tls_protocol_error(
+                        conn, TLS_ALERT_DECODE_ERROR,
+                        "malformed server CertificateVerify message");
                 uint16_t signature_scheme = get_u16(message);
                 size_t signature_len = get_u16(message + 2);
                 if (signature_len == 0 ||
                     signature_len != (size_t)msg_len - 4)
-                    return -1;
+                    return tls_protocol_error(
+                        conn, TLS_ALERT_DECODE_ERROR,
+                        "malformed server CertificateVerify signature");
 
                 uint8_t transcript_hash[32];
                 neverc_sha256_ctx transcript_copy = transcript;
@@ -1154,25 +1203,31 @@ static int tls_client_handshake(neverc_tls_conn_t *conn,
                 if (neverc_x509_parse_certificate(
                         &certificate, conn->peer_cert,
                         conn->peer_cert_len) != 0)
-                    return -1;
-                int verify_result =
+                    return tls_protocol_error(
+                        conn, TLS_ALERT_BAD_CERTIFICATE,
+                        "failed to parse server certificate");
+                int signature_result =
                     neverc_tls_verify_certificate_verify(
                         &certificate, signature_scheme, 1,
                         transcript_hash, sizeof(transcript_hash),
                         message + 4, signature_len);
                 neverc_x509_cert_free(&certificate);
-                if (verify_result == 0 &&
-                    (!cfg || !cfg->skip_verify)) {
-                    verify_result =
+                if (signature_result != 0)
+                    return tls_protocol_error(
+                        conn, TLS_ALERT_DECRYPT_ERROR,
+                        "server CertificateVerify validation failed");
+                if (!cfg || !cfg->skip_verify) {
+                    int chain_result =
                         neverc_tls_verify_server_certificate_chain(
                             cfg, conn->peer_cert,
                             conn->peer_cert_len,
                             conn->peer_intermediates, NULL);
+                    if (chain_result != 0)
+                        return tls_protocol_error(
+                            conn, TLS_ALERT_BAD_CERTIFICATE,
+                            "server certificate chain validation failed");
                 }
-                if (verify_result != 0)
-                    return tls_error(
-                        conn, "server CertificateVerify validation failed");
-                got_certificate_verify = 1;
+                expected_handshake_type = TLS_HS_FINISHED;
             }
 
             /* Hash all handshake messages into transcript
@@ -1183,9 +1238,6 @@ static int tls_client_handshake(neverc_tls_conn_t *conn,
 
             if (hs_type == TLS_HS_FINISHED) {
                 /* Verify server Finished */
-                if (!got_certificate_verify)
-                    return tls_error(
-                        conn, "server Finished arrived before CertificateVerify");
                 uint8_t transcript_hash[32];
                 {
                     neverc_sha256_ctx copy = transcript;
@@ -1205,8 +1257,9 @@ static int tls_client_handshake(neverc_tls_conn_t *conn,
                 if (msg_len != 32 ||
                     !neverc_subtle_constant_time_compare(
                         hs_data + hpos + 4, expected_verify, 32))
-                    return tls_error(
-                        conn, "server Finished validation failed");
+                    return tls_protocol_error(
+                        conn, TLS_ALERT_DECRYPT_ERROR,
+                        "server Finished validation failed");
 
                 /* Hash Finished into transcript */
                 neverc_sha256_update(&transcript, hs_data + hpos,
@@ -1217,8 +1270,9 @@ static int tls_client_handshake(neverc_tls_conn_t *conn,
             hpos += 4 + msg_len;
         }
         if (hpos != hs_len)
-            return tls_error(
-                conn, "trailing fragmented server handshake bytes");
+            return tls_protocol_error(
+                conn, TLS_ALERT_DECODE_ERROR,
+                "trailing fragmented server handshake bytes");
     }
 
     /* Application traffic secrets use the transcript through server Finished
@@ -1281,6 +1335,406 @@ static int tls_client_handshake(neverc_tls_conn_t *conn,
  * TLS 1.3 Handshake — Server
  * ====================================================================== */
 
+typedef struct {
+    const uint8_t *data;
+    size_t len;
+    size_t pos;
+} tls_cursor_t;
+
+typedef struct {
+    uint8_t session_id[32];
+    size_t session_id_len;
+    uint8_t client_public_key[32];
+    uint16_t selected_cipher;
+    tls_cipher_id_t cipher_id;
+} tls_client_hello_info_t;
+
+static int tls_cursor_read_u8(tls_cursor_t *cursor, uint8_t *value) {
+    if (!cursor || !value || cursor->pos >= cursor->len)
+        return -1;
+    *value = cursor->data[cursor->pos++];
+    return 0;
+}
+
+static int tls_cursor_read_u16(tls_cursor_t *cursor, uint16_t *value) {
+    if (!cursor || !value || cursor->pos > cursor->len ||
+        cursor->len - cursor->pos < 2)
+        return -1;
+    *value = get_u16(cursor->data + cursor->pos);
+    cursor->pos += 2;
+    return 0;
+}
+
+static int tls_cursor_read_bytes(
+    tls_cursor_t *cursor, size_t length, const uint8_t **value) {
+    if (!cursor || !value || cursor->pos > cursor->len ||
+        length > cursor->len - cursor->pos)
+        return -1;
+    *value = cursor->data + cursor->pos;
+    cursor->pos += length;
+    return 0;
+}
+
+static int tls_cursor_read_u8_vector(
+    tls_cursor_t *cursor, tls_cursor_t *vector) {
+    uint8_t length;
+    const uint8_t *data;
+    if (tls_cursor_read_u8(cursor, &length) != 0 ||
+        tls_cursor_read_bytes(cursor, length, &data) != 0)
+        return -1;
+    vector->data = data;
+    vector->len = length;
+    vector->pos = 0;
+    return 0;
+}
+
+static int tls_cursor_read_u16_vector(
+    tls_cursor_t *cursor, tls_cursor_t *vector) {
+    uint16_t length;
+    const uint8_t *data;
+    if (tls_cursor_read_u16(cursor, &length) != 0 ||
+        tls_cursor_read_bytes(cursor, length, &data) != 0)
+        return -1;
+    vector->data = data;
+    vector->len = length;
+    vector->pos = 0;
+    return 0;
+}
+
+static int tls_parse_server_hello(
+    const uint8_t *message, size_t message_len,
+    const uint8_t *expected_session_id,
+    size_t expected_session_id_len,
+    tls_server_hello_info_t *result, uint8_t *alert) {
+    if (!message || !expected_session_id || !result || !alert ||
+        expected_session_id_len > 32)
+        return -1;
+    *alert = TLS_ALERT_DECODE_ERROR;
+    memset(result, 0, sizeof(*result));
+    if (message_len < 4 || message[0] != TLS_HS_SERVER_HELLO ||
+        (size_t)get_u24(message + 1) != message_len - 4)
+        return -1;
+
+    tls_cursor_t body = {message + 4, message_len - 4, 0};
+    uint16_t legacy_version;
+    const uint8_t *random;
+    if (tls_cursor_read_u16(&body, &legacy_version) != 0 ||
+        tls_cursor_read_bytes(&body, 32, &random) != 0)
+        return -1;
+    (void)random;
+    if (legacy_version != TLS_LEGACY_VERSION) {
+        *alert = TLS_ALERT_ILLEGAL_PARAMETER;
+        return -1;
+    }
+
+    tls_cursor_t session_id;
+    if (tls_cursor_read_u8_vector(&body, &session_id) != 0 ||
+        session_id.len > 32)
+        return -1;
+    if (session_id.len != expected_session_id_len ||
+        memcmp(session_id.data, expected_session_id,
+               expected_session_id_len) != 0) {
+        *alert = TLS_ALERT_ILLEGAL_PARAMETER;
+        return -1;
+    }
+
+    uint16_t selected_cipher;
+    uint8_t compression_method;
+    if (tls_cursor_read_u16(&body, &selected_cipher) != 0 ||
+        tls_cursor_read_u8(&body, &compression_method) != 0)
+        return -1;
+    if (selected_cipher == NEVERC_TLS_AES_128_GCM_SHA256) {
+        result->cipher_id = TLS_CIPHER_AES_128_GCM_SHA256;
+    } else if (selected_cipher ==
+               NEVERC_TLS_CHACHA20_POLY1305_SHA256) {
+        result->cipher_id =
+            TLS_CIPHER_CHACHA20_POLY1305_SHA256;
+    } else {
+        *alert = TLS_ALERT_HANDSHAKE_FAILURE;
+        return -1;
+    }
+    result->selected_cipher = selected_cipher;
+    if (compression_method != 0) {
+        *alert = TLS_ALERT_ILLEGAL_PARAMETER;
+        return -1;
+    }
+
+    tls_cursor_t extensions;
+    if (tls_cursor_read_u16_vector(&body, &extensions) != 0 ||
+        body.pos != body.len)
+        return -1;
+
+    uint8_t seen_extensions[8192] = {0};
+    int saw_supported_version = 0;
+    int saw_key_share = 0;
+    while (extensions.pos < extensions.len) {
+        uint16_t extension_type;
+        tls_cursor_t extension_data;
+        if (tls_cursor_read_u16(
+                &extensions, &extension_type) != 0 ||
+            tls_cursor_read_u16_vector(
+                &extensions, &extension_data) != 0)
+            return -1;
+
+        size_t seen_byte = (size_t)extension_type >> 3;
+        uint8_t seen_bit =
+            (uint8_t)(1u << (extension_type & 7));
+        if ((seen_extensions[seen_byte] & seen_bit) != 0) {
+            *alert = TLS_ALERT_ILLEGAL_PARAMETER;
+            return -1;
+        }
+        seen_extensions[seen_byte] |= seen_bit;
+
+        if (extension_type == TLS_EXT_SUPPORTED_VERSIONS) {
+            uint16_t selected_version;
+            if (tls_cursor_read_u16(
+                    &extension_data, &selected_version) != 0 ||
+                extension_data.pos != extension_data.len)
+                return -1;
+            if (selected_version != NEVERC_TLS_VERSION_13) {
+                *alert = TLS_ALERT_ILLEGAL_PARAMETER;
+                return -1;
+            }
+            saw_supported_version = 1;
+        } else if (extension_type == TLS_EXT_KEY_SHARE) {
+            uint16_t selected_group;
+            tls_cursor_t key_exchange;
+            if (tls_cursor_read_u16(
+                    &extension_data, &selected_group) != 0 ||
+                tls_cursor_read_u16_vector(
+                    &extension_data, &key_exchange) != 0 ||
+                extension_data.pos != extension_data.len)
+                return -1;
+            if (selected_group != NEVERC_TLS_GROUP_X25519 ||
+                key_exchange.len !=
+                    sizeof(result->server_public_key)) {
+                *alert = TLS_ALERT_ILLEGAL_PARAMETER;
+                return -1;
+            }
+            memcpy(result->server_public_key,
+                   key_exchange.data, key_exchange.len);
+            saw_key_share = 1;
+        } else {
+            *alert = TLS_ALERT_UNSUPPORTED_EXTENSION;
+            return -1;
+        }
+    }
+
+    if (!saw_supported_version || !saw_key_share) {
+        *alert = TLS_ALERT_MISSING_EXTENSION;
+        return -1;
+    }
+    return 0;
+}
+
+static int tls_parse_client_hello(
+    const uint8_t *message, size_t message_len,
+    tls_client_hello_info_t *result, uint8_t *alert) {
+    if (!message || !result || !alert)
+        return -1;
+    *alert = TLS_ALERT_DECODE_ERROR;
+    memset(result, 0, sizeof(*result));
+    if (message_len < 4 || message[0] != TLS_HS_CLIENT_HELLO ||
+        (size_t)get_u24(message + 1) != message_len - 4)
+        return -1;
+
+    tls_cursor_t body = {message + 4, message_len - 4, 0};
+    uint16_t legacy_version;
+    const uint8_t *random;
+    if (tls_cursor_read_u16(&body, &legacy_version) != 0 ||
+        tls_cursor_read_bytes(&body, 32, &random) != 0)
+        return -1;
+    (void)random;
+    if (legacy_version != TLS_LEGACY_VERSION) {
+        *alert = TLS_ALERT_ILLEGAL_PARAMETER;
+        return -1;
+    }
+
+    tls_cursor_t session_id;
+    if (tls_cursor_read_u8_vector(&body, &session_id) != 0 ||
+        session_id.len > sizeof(result->session_id))
+        return -1;
+    memcpy(result->session_id, session_id.data, session_id.len);
+    result->session_id_len = session_id.len;
+
+    tls_cursor_t cipher_suites;
+    if (tls_cursor_read_u16_vector(&body, &cipher_suites) != 0 ||
+        cipher_suites.len < 2 || (cipher_suites.len & 1) != 0)
+        return -1;
+    int offered_aes_128_gcm = 0;
+    int offered_chacha20_poly1305 = 0;
+    while (cipher_suites.pos < cipher_suites.len) {
+        uint16_t cipher_suite;
+        if (tls_cursor_read_u16(
+                &cipher_suites, &cipher_suite) != 0)
+            return -1;
+        if (cipher_suite == NEVERC_TLS_AES_128_GCM_SHA256)
+            offered_aes_128_gcm = 1;
+        else if (cipher_suite ==
+                 NEVERC_TLS_CHACHA20_POLY1305_SHA256)
+            offered_chacha20_poly1305 = 1;
+    }
+
+    tls_cursor_t compression_methods;
+    if (tls_cursor_read_u8_vector(
+            &body, &compression_methods) != 0)
+        return -1;
+    if (compression_methods.len != 1 ||
+        compression_methods.data[0] != 0) {
+        *alert = TLS_ALERT_ILLEGAL_PARAMETER;
+        return -1;
+    }
+
+    tls_cursor_t extensions;
+    if (tls_cursor_read_u16_vector(&body, &extensions) != 0 ||
+        body.pos != body.len)
+        return -1;
+
+    uint8_t seen_extensions[8192] = {0};
+    int supports_tls13 = 0;
+    int saw_supported_versions = 0;
+    int saw_supported_groups = 0;
+    int supports_x25519 = 0;
+    int saw_signature_algorithms = 0;
+    int supports_ecdsa_p256_sha256 = 0;
+    int saw_key_share = 0;
+    int has_x25519_key_share = 0;
+    while (extensions.pos < extensions.len) {
+        uint16_t extension_type;
+        tls_cursor_t extension_data;
+        if (tls_cursor_read_u16(
+                &extensions, &extension_type) != 0 ||
+            tls_cursor_read_u16_vector(
+                &extensions, &extension_data) != 0)
+            return -1;
+
+        size_t seen_byte = (size_t)extension_type >> 3;
+        uint8_t seen_bit =
+            (uint8_t)(1u << (extension_type & 7));
+        if ((seen_extensions[seen_byte] & seen_bit) != 0) {
+            *alert = TLS_ALERT_ILLEGAL_PARAMETER;
+            return -1;
+        }
+        seen_extensions[seen_byte] |= seen_bit;
+
+        if (extension_type == TLS_EXT_SUPPORTED_VERSIONS) {
+            saw_supported_versions = 1;
+            tls_cursor_t versions;
+            if (tls_cursor_read_u8_vector(
+                    &extension_data, &versions) != 0 ||
+                extension_data.pos != extension_data.len ||
+                versions.len < 2 || (versions.len & 1) != 0)
+                return -1;
+            while (versions.pos < versions.len) {
+                uint16_t version;
+                if (tls_cursor_read_u16(&versions, &version) != 0)
+                    return -1;
+                if (version == NEVERC_TLS_VERSION_13)
+                    supports_tls13 = 1;
+            }
+        } else if (extension_type == TLS_EXT_SUPPORTED_GROUPS) {
+            saw_supported_groups = 1;
+            tls_cursor_t groups;
+            if (tls_cursor_read_u16_vector(
+                    &extension_data, &groups) != 0 ||
+                extension_data.pos != extension_data.len ||
+                groups.len < 2 || (groups.len & 1) != 0)
+                return -1;
+            while (groups.pos < groups.len) {
+                uint16_t group;
+                if (tls_cursor_read_u16(&groups, &group) != 0)
+                    return -1;
+                if (group == NEVERC_TLS_GROUP_X25519)
+                    supports_x25519 = 1;
+            }
+        } else if (extension_type ==
+                   TLS_EXT_SIGNATURE_ALGORITHMS) {
+            saw_signature_algorithms = 1;
+            tls_cursor_t signature_algorithms;
+            if (tls_cursor_read_u16_vector(
+                    &extension_data,
+                    &signature_algorithms) != 0 ||
+                extension_data.pos != extension_data.len ||
+                signature_algorithms.len < 2 ||
+                (signature_algorithms.len & 1) != 0)
+                return -1;
+            while (signature_algorithms.pos <
+                   signature_algorithms.len) {
+                uint16_t signature_algorithm;
+                if (tls_cursor_read_u16(
+                        &signature_algorithms,
+                        &signature_algorithm) != 0)
+                    return -1;
+                if (signature_algorithm == TLS_SIG_ECDSA_SHA256)
+                    supports_ecdsa_p256_sha256 = 1;
+            }
+        } else if (extension_type == TLS_EXT_KEY_SHARE) {
+            saw_key_share = 1;
+            tls_cursor_t key_shares;
+            if (tls_cursor_read_u16_vector(
+                    &extension_data, &key_shares) != 0 ||
+                extension_data.pos != extension_data.len ||
+                key_shares.len == 0)
+                return -1;
+            while (key_shares.pos < key_shares.len) {
+                uint16_t group;
+                tls_cursor_t key_exchange;
+                if (tls_cursor_read_u16(&key_shares, &group) != 0 ||
+                    tls_cursor_read_u16_vector(
+                        &key_shares, &key_exchange) != 0 ||
+                    key_exchange.len == 0)
+                    return -1;
+                if (group == NEVERC_TLS_GROUP_X25519) {
+                    if (has_x25519_key_share ||
+                        key_exchange.len !=
+                            sizeof(result->client_public_key)) {
+                        *alert = TLS_ALERT_ILLEGAL_PARAMETER;
+                        return -1;
+                    }
+                    memcpy(result->client_public_key,
+                           key_exchange.data, key_exchange.len);
+                    has_x25519_key_share = 1;
+                }
+            }
+        }
+    }
+
+    if (!saw_supported_versions ||
+        !saw_supported_groups ||
+        !saw_signature_algorithms) {
+        *alert = TLS_ALERT_MISSING_EXTENSION;
+        return -1;
+    }
+    if (!supports_tls13) {
+        *alert = TLS_ALERT_PROTOCOL_VERSION;
+        return -1;
+    }
+    if (!saw_key_share) {
+        *alert = TLS_ALERT_MISSING_EXTENSION;
+        return -1;
+    }
+    if (!supports_x25519 || !has_x25519_key_share ||
+        !supports_ecdsa_p256_sha256) {
+        *alert = TLS_ALERT_HANDSHAKE_FAILURE;
+        return -1;
+    }
+    if (offered_aes_128_gcm) {
+        result->selected_cipher =
+            NEVERC_TLS_AES_128_GCM_SHA256;
+        result->cipher_id =
+            TLS_CIPHER_AES_128_GCM_SHA256;
+    } else if (offered_chacha20_poly1305) {
+        result->selected_cipher =
+            NEVERC_TLS_CHACHA20_POLY1305_SHA256;
+        result->cipher_id =
+            TLS_CIPHER_CHACHA20_POLY1305_SHA256;
+    } else {
+        *alert = TLS_ALERT_HANDSHAKE_FAILURE;
+        return -1;
+    }
+    return 0;
+}
+
 static int tls_server_handshake(neverc_tls_conn_t *conn,
                                   neverc_tls_config_t *cfg) {
     if (!cfg || !cfg->cert_der || !cfg->key_der) return -1;
@@ -1294,73 +1748,34 @@ static int tls_server_handshake(neverc_tls_conn_t *conn,
     size_t rec_len;
     if (tls_recv_record(conn, &rec_type, rec_data, &rec_len) != 0)
         return -1;
-    if (rec_type != TLS_CT_HANDSHAKE || rec_len < 4 ||
-        rec_data[0] != TLS_HS_CLIENT_HELLO)
-        return -1;
+    if (rec_type != TLS_CT_HANDSHAKE)
+        return tls_fail(conn, TLS_ALERT_UNEXPECTED_MESSAGE);
+
+    tls_client_hello_info_t client_hello;
+    uint8_t client_hello_alert = TLS_ALERT_DECODE_ERROR;
+    if (tls_parse_client_hello(
+            rec_data, rec_len, &client_hello,
+            &client_hello_alert) != 0)
+        return tls_fail(conn, client_hello_alert);
 
     neverc_sha256_update(&transcript, rec_data, rec_len);
 
-    /* Parse ClientHello to extract key_share */
-    uint32_t ch_body_len = get_u24(rec_data + 1);
-    size_t ch_pos = 4;
-    ch_pos += 2; /* legacy version */
-    /* uint8_t client_random[32]; */
-    ch_pos += 32;
-    uint8_t ch_sid_len = rec_data[ch_pos++];
+    uint8_t ch_sid_len =
+        (uint8_t)client_hello.session_id_len;
     uint8_t ch_session_id[32];
-    if (ch_sid_len > 0 && ch_sid_len <= 32)
-        memcpy(ch_session_id, rec_data + ch_pos, ch_sid_len);
-    ch_pos += ch_sid_len;
+    if (ch_sid_len > 0)
+        memcpy(ch_session_id, client_hello.session_id,
+               ch_sid_len);
 
-    /* cipher suites */
-    uint16_t cs_len = get_u16(rec_data + ch_pos); ch_pos += 2;
-    uint16_t selected_cipher = NEVERC_TLS_AES_128_GCM_SHA256;
-    tls_cipher_id_t cipher_id = TLS_CIPHER_AES_128_GCM_SHA256;
-    for (size_t i = 0; i + 1 < cs_len; i += 2) {
-        uint16_t cs = get_u16(rec_data + ch_pos + i);
-        if (cs == NEVERC_TLS_AES_128_GCM_SHA256 ||
-            cs == NEVERC_TLS_CHACHA20_POLY1305_SHA256) {
-            selected_cipher = cs;
-            cipher_id = (cs == NEVERC_TLS_AES_128_GCM_SHA256)
-                ? TLS_CIPHER_AES_128_GCM_SHA256
-                : TLS_CIPHER_CHACHA20_POLY1305_SHA256;
-            break;
-        }
-    }
-    ch_pos += cs_len;
-    ch_pos++; /* compression methods length */
-    ch_pos++; /* null compression */
-
+    uint16_t selected_cipher =
+        client_hello.selected_cipher;
+    tls_cipher_id_t cipher_id =
+        client_hello.cipher_id;
     conn->cipher_suite = selected_cipher;
 
-    /* Parse extensions */
     uint8_t client_pubkey[32];
-    int found_keyshare = 0;
-    if (ch_pos + 2 <= 4 + ch_body_len) {
-        uint16_t ext_total = get_u16(rec_data + ch_pos); ch_pos += 2;
-        size_t ext_end = ch_pos + ext_total;
-        while (ch_pos + 4 <= ext_end && ch_pos + 4 <= rec_len) {
-            uint16_t ext_type = get_u16(rec_data + ch_pos); ch_pos += 2;
-            uint16_t ext_len = get_u16(rec_data + ch_pos); ch_pos += 2;
-            if (ext_type == TLS_EXT_KEY_SHARE) {
-                /* client key shares list */
-                size_t ks_pos = ch_pos;
-                uint16_t shares_len = get_u16(rec_data + ks_pos); ks_pos += 2;
-                size_t shares_end = ks_pos + shares_len;
-                while (ks_pos + 4 <= shares_end) {
-                    uint16_t group = get_u16(rec_data + ks_pos); ks_pos += 2;
-                    uint16_t ke_len = get_u16(rec_data + ks_pos); ks_pos += 2;
-                    if (group == NEVERC_TLS_GROUP_X25519 && ke_len == 32) {
-                        memcpy(client_pubkey, rec_data + ks_pos, 32);
-                        found_keyshare = 1;
-                    }
-                    ks_pos += ke_len;
-                }
-            }
-            ch_pos += ext_len;
-        }
-    }
-    if (!found_keyshare) return -1;
+    memcpy(client_pubkey, client_hello.client_public_key,
+           sizeof(client_pubkey));
 
     /* Generate server X25519 key pair */
     neverc_ecdh_key_t ecdh_key;
@@ -1381,7 +1796,9 @@ static int tls_server_handshake(neverc_tls_conn_t *conn,
     put_u16(sh + sh_len, TLS_LEGACY_VERSION); sh_len += 2;
 
     uint8_t server_random[32];
-    neverc_crypto_rand_read(server_random, 32);
+    if (neverc_crypto_rand_read(
+            server_random, sizeof(server_random)) != 0)
+        return tls_fail(conn, TLS_ALERT_INTERNAL_ERROR);
     memcpy(sh + sh_len, server_random, 32); sh_len += 32;
 
     /* Echo session_id */
@@ -1570,9 +1987,14 @@ static int tls_server_handshake(neverc_tls_conn_t *conn,
         size_t hs_len;
         if (tls_recv_decrypt(conn, &inner_type, hs_data, &hs_len) != 0)
             return -1;
-        if (inner_type != TLS_CT_HANDSHAKE || hs_len < 36 ||
-            hs_data[0] != TLS_HS_FINISHED)
-            return -1;
+        if (inner_type != TLS_CT_HANDSHAKE)
+            return tls_fail(conn, TLS_ALERT_UNEXPECTED_MESSAGE);
+        if (hs_len == 0)
+            return tls_fail(conn, TLS_ALERT_DECODE_ERROR);
+        if (hs_data[0] != TLS_HS_FINISHED)
+            return tls_fail(conn, TLS_ALERT_UNEXPECTED_MESSAGE);
+        if (hs_len != 36 || get_u24(hs_data + 1) != 32)
+            return tls_fail(conn, TLS_ALERT_DECODE_ERROR);
 
         uint8_t transcript_hash[32];
         memcpy(transcript_hash, transcript_hash_server_finished, 32);
@@ -1588,7 +2010,7 @@ static int tls_server_handshake(neverc_tls_conn_t *conn,
 
         if (!neverc_subtle_constant_time_compare(
                 hs_data + 4, expected, 32))
-            return -1;
+            return tls_fail(conn, TLS_ALERT_DECRYPT_ERROR);
 
         neverc_sha256_update(&transcript, hs_data, hs_len);
     }
@@ -1784,7 +2206,9 @@ int neverc_tls_read(neverc_tls_conn_t *conn, void *buf, size_t buflen) {
 }
 
 int neverc_tls_write(neverc_tls_conn_t *conn, const void *data, size_t len) {
-    if (!conn || conn->closed || !data || len == 0) return -1;
+    if (!conn || conn->closed || !data || len == 0 ||
+        len > (size_t)INT_MAX)
+        return -1;
 
     const uint8_t *p = (const uint8_t *)data;
     size_t remaining = len;

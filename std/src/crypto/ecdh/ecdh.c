@@ -9,9 +9,18 @@
 
 typedef int64_t gf[16];
 
+#define GF_RADIX ((int64_t)65536)
+
 static void gf_copy(gf o, const gf a) { for (int i=0;i<16;i++) o[i]=a[i]; }
 static void gf_zero(gf o) { for (int i=0;i<16;i++) o[i]=0; }
 static void gf_one(gf o)  { gf_zero(o); o[0]=1; }
+
+static int64_t gf_carry_quotient(int64_t value) {
+    int64_t quotient = value / GF_RADIX;
+    if (value % GF_RADIX < 0)
+        --quotient;
+    return quotient;
+}
 
 static void gf_add(gf o, const gf a, const gf b) {
     for (int i=0;i<16;i++) o[i]=a[i]+b[i];
@@ -32,8 +41,14 @@ static void gf_mul(gf o, const gf a, const gf b) {
     /* carry */
     int64_t c;
     for (int j=0;j<2;j++) {
-        for (int i=0;i<15;i++) { c=o[i]>>16; o[i+1]+=c; o[i]-=c<<16; }
-        c=o[15]>>16; o[0]+=38*c; o[15]-=c<<16;
+        for (int i=0;i<15;i++) {
+            c=gf_carry_quotient(o[i]);
+            o[i+1]+=c;
+            o[i]-=c*GF_RADIX;
+        }
+        c=gf_carry_quotient(o[15]);
+        o[0]+=38*c;
+        o[15]-=c*GF_RADIX;
     }
 }
 
@@ -43,8 +58,14 @@ static void gf_mul_a24(gf o, const gf a) {
     /* a24 = (486662 - 2) / 4 = 121665 for Curve25519 */
     int64_t t[16], c;
     for (int i=0;i<16;i++) t[i] = a[i]*121665;
-    for (int i=0;i<15;i++) { c=t[i]>>16; t[i+1]+=c; t[i]-=c<<16; }
-    c=t[15]>>16; t[0]+=38*c; t[15]-=c<<16;
+    for (int i=0;i<15;i++) {
+        c=gf_carry_quotient(t[i]);
+        t[i+1]+=c;
+        t[i]-=c*GF_RADIX;
+    }
+    c=gf_carry_quotient(t[15]);
+    t[0]+=38*c;
+    t[15]-=c*GF_RADIX;
     for (int i=0;i<16;i++) o[i]=t[i];
 }
 
@@ -55,8 +76,14 @@ static void gf_cswap(gf p, gf q, int b) {
 
 static void gf_carry(gf o) {
     int64_t c;
-    for (int i=0;i<15;i++) { c=o[i]>>16; o[i+1]+=c; o[i]-=c<<16; }
-    c=o[15]>>16; o[0]+=38*c; o[15]-=c<<16;
+    for (int i=0;i<15;i++) {
+        c=gf_carry_quotient(o[i]);
+        o[i+1]+=c;
+        o[i]-=c*GF_RADIX;
+    }
+    c=gf_carry_quotient(o[15]);
+    o[0]+=38*c;
+    o[15]-=c*GF_RADIX;
 }
 
 static void gf_sel(gf p, gf q, int b) {

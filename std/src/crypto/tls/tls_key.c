@@ -25,6 +25,9 @@ typedef struct {
 static const uint8_t k_oid_prime256v1[] = {
     0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07
 };
+static const uint8_t k_oid_ec_public_key[] = {
+    0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01
+};
 
 static int tls_der_read_length(tls_der_reader_t *reader, size_t *length) {
     if (!reader || !length || reader->pos >= reader->len)
@@ -98,8 +101,9 @@ static int tls_bigint_from_bytes(neverc_bigint_t *value,
     return neverc_bigint_set_string(value, hex, 16);
 }
 
-static int tls_parse_p256_private_key(
+static int tls_parse_sec1_p256_private_key(
     const uint8_t *der, size_t der_len,
+    int outer_curve_is_p256,
     neverc_ecdsa_private_key_t *private_key) {
     if (!der || der_len == 0 || !private_key)
         return -1;
@@ -157,7 +161,7 @@ static int tls_parse_p256_private_key(
             return -1;
         }
     }
-    if (!saw_curve)
+    if (!outer_curve_is_p256 && !saw_curve)
         return -1;
 
     const neverc_elliptic_curve_t *curve = neverc_elliptic_p256();
@@ -184,6 +188,82 @@ static int tls_parse_p256_private_key(
             return -1;
     }
     return 0;
+}
+
+static int tls_unwrap_pkcs8_p256_private_key(
+    const uint8_t *der, size_t der_len,
+    const uint8_t **sec1_der, size_t *sec1_der_len) {
+    if (!der || der_len == 0 || !sec1_der || !sec1_der_len)
+        return -1;
+
+    tls_der_reader_t root = {der, der_len, 0};
+    tls_der_reader_t private_key_info;
+    if (tls_der_enter_sequence(&root, &private_key_info) != 0 ||
+        root.pos != root.len)
+        return -1;
+
+    uint8_t tag;
+    const uint8_t *value;
+    size_t value_len;
+    if (tls_der_read_tlv(
+            &private_key_info, &tag, &value, &value_len) != 0 ||
+        tag != DER_INTEGER || value_len != 1 || value[0] != 0)
+        return -1;
+
+    tls_der_reader_t algorithm;
+    if (tls_der_enter_sequence(&private_key_info, &algorithm) != 0)
+        return -1;
+    if (tls_der_read_tlv(&algorithm, &tag, &value, &value_len) != 0 ||
+        tag != DER_OBJECT_ID ||
+        value_len != sizeof(k_oid_ec_public_key) ||
+        memcmp(value, k_oid_ec_public_key, value_len) != 0)
+        return -1;
+    if (tls_der_read_tlv(&algorithm, &tag, &value, &value_len) != 0 ||
+        tag != DER_OBJECT_ID ||
+        value_len != sizeof(k_oid_prime256v1) ||
+        memcmp(value, k_oid_prime256v1, value_len) != 0 ||
+        algorithm.pos != algorithm.len)
+        return -1;
+
+    if (tls_der_read_tlv(
+            &private_key_info, &tag, sec1_der, sec1_der_len) != 0 ||
+        tag != DER_OCTET_STRING || *sec1_der_len == 0 ||
+        private_key_info.pos != private_key_info.len)
+        return -1;
+    return 0;
+}
+
+static int tls_parse_p256_private_key(
+    const uint8_t *der, size_t der_len,
+    neverc_ecdsa_private_key_t *private_key) {
+    if (!der || der_len == 0 || !private_key)
+        return -1;
+
+    tls_der_reader_t root = {der, der_len, 0};
+    tls_der_reader_t sequence;
+    uint8_t tag;
+    const uint8_t *version;
+    size_t version_len;
+    if (tls_der_enter_sequence(&root, &sequence) != 0 ||
+        root.pos != root.len ||
+        tls_der_read_tlv(
+            &sequence, &tag, &version, &version_len) != 0 ||
+        tag != DER_INTEGER || version_len != 1)
+        return -1;
+
+    if (version[0] == 1)
+        return tls_parse_sec1_p256_private_key(
+            der, der_len, 0, private_key);
+    if (version[0] != 0)
+        return -1;
+
+    const uint8_t *sec1_der = NULL;
+    size_t sec1_der_len = 0;
+    if (tls_unwrap_pkcs8_p256_private_key(
+            der, der_len, &sec1_der, &sec1_der_len) != 0)
+        return -1;
+    return tls_parse_sec1_p256_private_key(
+        sec1_der, sec1_der_len, 1, private_key);
 }
 
 static int tls_der_encode_positive_bigint(
