@@ -160,13 +160,13 @@ const char *csupport_dot_color_string(unsigned color_number) {
   return colors[color_number % 20];
 }
 
-const char *csupport_graph_program_name(int program) {
+const char *csupport_graph_program_name(csupport_graph_program_t program) {
   switch (program) {
-  case 0: return "dot";
-  case 1: return "fdp";
-  case 2: return "neato";
-  case 3: return "twopi";
-  case 4: return "circo";
+  case CSUPPORT_GRAPH_PROGRAM_DOT: return "dot";
+  case CSUPPORT_GRAPH_PROGRAM_FDP: return "fdp";
+  case CSUPPORT_GRAPH_PROGRAM_NEATO: return "neato";
+  case CSUPPORT_GRAPH_PROGRAM_TWOPI: return "twopi";
+  case CSUPPORT_GRAPH_PROGRAM_CIRCO: return "circo";
   default: return "dot";
   }
 }

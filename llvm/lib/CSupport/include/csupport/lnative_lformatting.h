@@ -23,14 +23,20 @@ size_t csupport_format_integer_to_buf(char *buf, size_t buflen, uint64_t value,
 size_t csupport_format_hex_to_buf(char *buf, size_t buflen, uint64_t value,
                                   int upper, int prefix, size_t min_width);
 
-size_t csupport_default_float_precision(int style);
+typedef enum csupport_float_style {
+  CSUPPORT_FLOAT_STYLE_EXPONENT = 0,
+  CSUPPORT_FLOAT_STYLE_EXPONENT_UPPER = 1,
+  CSUPPORT_FLOAT_STYLE_FIXED = 2,
+  CSUPPORT_FLOAT_STYLE_PERCENT = 3
+} csupport_float_style_t;
 
-/* Format a double with style (0=exp,1=EXP,2=fixed,3=percent).
-   Handles NaN/Inf.  Fixed notation renders the magnitude in full, so a value
+size_t csupport_default_float_precision(csupport_float_style_t style);
+
+/* Handles NaN/Inf.  Fixed notation renders the magnitude in full, so a value
    near DBL_MAX runs past three hundred characters before its fraction starts.
    Buffer filler: see the contract on csupport_obuf_t in csupport/buffer.h. */
 size_t csupport_format_double_ex(char *buf, size_t buflen, double value,
-                                 int style, int precision);
+                                 csupport_float_style_t style, int precision);
 
 /* Trim leading zero in exponent: "1.23e+012" -> "1.23e+12".
    Returns new length. */

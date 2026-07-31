@@ -242,11 +242,13 @@ TEST(SupportBufferTest, FillerAnswersTheSameLengthAtEveryCapacity) {
                                       /*prefix=*/1, /*min_width=*/400);
   });
   checkFillerContract("format_double_ex/fixed", [](char *B, size_t C) {
-    return csupport_format_double_ex(B, C, 1.7e308, /*style=*/2,
+    return csupport_format_double_ex(B, C, 1.7e308,
+                                     CSUPPORT_FLOAT_STYLE_FIXED,
                                      /*precision=*/2);
   });
   checkFillerContract("format_double_ex/exponent", [](char *B, size_t C) {
-    return csupport_format_double_ex(B, C, -1.5e-300, /*style=*/0,
+    return csupport_format_double_ex(B, C, -1.5e-300,
+                                     CSUPPORT_FLOAT_STYLE_EXPONENT,
                                      /*precision=*/300);
   });
   checkFillerContract("scaled_format_digits", [](char *B, size_t C) {

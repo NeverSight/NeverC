@@ -118,13 +118,13 @@ size_t csupport_format_hex_to_buf(char *buf, size_t buflen, uint64_t value,
   return csupport_obuf_finish(&out);
 }
 
-size_t csupport_default_float_precision(int style) {
+size_t csupport_default_float_precision(csupport_float_style_t style) {
   switch (style) {
-  case 0: /* Exponent */
-  case 1: /* ExponentUpper */
+  case CSUPPORT_FLOAT_STYLE_EXPONENT:
+  case CSUPPORT_FLOAT_STYLE_EXPONENT_UPPER:
     return 6;
-  case 2: /* Fixed */
-  case 3: /* Percent */
+  case CSUPPORT_FLOAT_STYLE_FIXED:
+  case CSUPPORT_FLOAT_STYLE_PERCENT:
     return 2;
   default:
     return 6;
@@ -173,7 +173,7 @@ static void format_double_exponent(csupport_obuf_t *out, const char *fmt,
 }
 
 size_t csupport_format_double_ex(char *buf, size_t buflen, double value,
-                                 int style, int precision) {
+                                 csupport_float_style_t style, int precision) {
   csupport_obuf_t out = csupport_obuf(buf, buflen);
   if (precision < 0)
     precision = (int)csupport_default_float_precision(style);
@@ -189,20 +189,29 @@ size_t csupport_format_double_ex(char *buf, size_t buflen, double value,
     return csupport_obuf_finish(&out);
   }
 
-  int is_exp = (style == 0 || style == 1);
+  int is_exp = style == CSUPPORT_FLOAT_STYLE_EXPONENT ||
+               style == CSUPPORT_FLOAT_STYLE_EXPONENT_UPPER;
 
   if (is_exp && is_negative_zero(value)) {
-    char letter = (style == 1) ? 'E' : 'e';
+    char letter =
+        style == CSUPPORT_FLOAT_STYLE_EXPONENT_UPPER ? 'E' : 'e';
     csupport_obuf_printf(&out, "-0.%0*d%c+00", precision, 0, letter);
     return csupport_obuf_finish(&out);
   }
 
-  double val = (style == 3) ? value * 100.0 : value;
+  double val =
+      style == CSUPPORT_FLOAT_STYLE_PERCENT ? value * 100.0 : value;
   char fmt[16];
   switch (style) {
-  case 0: snprintf(fmt, sizeof(fmt), "%%.%de", precision); break;
-  case 1: snprintf(fmt, sizeof(fmt), "%%.%dE", precision); break;
-  default: snprintf(fmt, sizeof(fmt), "%%.%df", precision); break;
+  case CSUPPORT_FLOAT_STYLE_EXPONENT:
+    snprintf(fmt, sizeof(fmt), "%%.%de", precision);
+    break;
+  case CSUPPORT_FLOAT_STYLE_EXPONENT_UPPER:
+    snprintf(fmt, sizeof(fmt), "%%.%dE", precision);
+    break;
+  default:
+    snprintf(fmt, sizeof(fmt), "%%.%df", precision);
+    break;
   }
 
   if (is_exp)
@@ -210,7 +219,7 @@ size_t csupport_format_double_ex(char *buf, size_t buflen, double value,
   else
     csupport_obuf_printf(&out, fmt, val);
 
-  if (style == 3)
+  if (style == CSUPPORT_FLOAT_STYLE_PERCENT)
     csupport_obuf_put(&out, '%');
   return csupport_obuf_finish(&out);
 }

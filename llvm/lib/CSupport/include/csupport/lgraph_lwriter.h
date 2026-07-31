@@ -26,9 +26,15 @@ size_t csupport_replace_illegal_filename_chars(char *str, size_t len,
  */
 const char *csupport_dot_color_string(unsigned color_number);
 
-/* Get graph program name by enum value (0=dot, 1=fdp, 2=neato, 3=twopi,
- * 4=circo). */
-const char *csupport_graph_program_name(int program);
+typedef enum csupport_graph_program {
+  CSUPPORT_GRAPH_PROGRAM_DOT = 0,
+  CSUPPORT_GRAPH_PROGRAM_FDP = 1,
+  CSUPPORT_GRAPH_PROGRAM_NEATO = 2,
+  CSUPPORT_GRAPH_PROGRAM_TWOPI = 3,
+  CSUPPORT_GRAPH_PROGRAM_CIRCO = 4
+} csupport_graph_program_t;
+
+const char *csupport_graph_program_name(csupport_graph_program_t program);
 
 size_t csupport_dot_format_node(char *buf, size_t buflen, const char *label,
                                 const char *shape, const char *color,

@@ -18,7 +18,12 @@
 
 namespace llvm {
 class raw_ostream;
-enum class FloatStyle { Exponent, ExponentUpper, Fixed, Percent };
+enum class FloatStyle {
+  Exponent = CSUPPORT_FLOAT_STYLE_EXPONENT,
+  ExponentUpper = CSUPPORT_FLOAT_STYLE_EXPONENT_UPPER,
+  Fixed = CSUPPORT_FLOAT_STYLE_FIXED,
+  Percent = CSUPPORT_FLOAT_STYLE_PERCENT
+};
 enum class IntegerStyle {
   Integer,
   Number,
@@ -128,7 +133,8 @@ inline void write_double(raw_ostream &S, double N, FloatStyle Style,
   // Fixed notation spells the magnitude out, so a value near DBL_MAX needs
   // three hundred characters before its fraction begins.
   S << fillCSupportBuffer<64>([&](char *Buf, size_t Cap) {
-    return csupport_format_double_ex(Buf, Cap, N, (int)Style, (int)Prec);
+    return csupport_format_double_ex(
+        Buf, Cap, N, static_cast<csupport_float_style_t>(Style), (int)Prec);
   });
 }
 
@@ -137,7 +143,8 @@ inline bool isPrefixedHexStyle(HexPrintStyle S) {
 }
 
 inline size_t getDefaultPrecision(FloatStyle Style) {
-  return csupport_default_float_precision((int)(Style));
+  return csupport_default_float_precision(
+      static_cast<csupport_float_style_t>(Style));
 }
 
 } // namespace llvm

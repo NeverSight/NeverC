@@ -51,7 +51,13 @@ StringRef getColorString(unsigned NodeNumber);
 
 namespace GraphProgram {
 
-enum Name { DOT, FDP, NEATO, TWOPI, CIRCO };
+enum Name {
+  DOT = CSUPPORT_GRAPH_PROGRAM_DOT,
+  FDP = CSUPPORT_GRAPH_PROGRAM_FDP,
+  NEATO = CSUPPORT_GRAPH_PROGRAM_NEATO,
+  TWOPI = CSUPPORT_GRAPH_PROGRAM_TWOPI,
+  CIRCO = CSUPPORT_GRAPH_PROGRAM_CIRCO
+};
 
 } // end namespace GraphProgram
 
@@ -549,9 +555,12 @@ struct GraphSession {
 
 } // end anonymous namespace
 
-#define getProgramName(program) csupport_graph_program_name((int)(program))
-
 namespace llvm {
+
+inline const char *getProgramName(GraphProgram::Name Program) {
+  return csupport_graph_program_name(
+      static_cast<csupport_graph_program_t>(Program));
+}
 
 inline bool DisplayGraph(StringRef FilenameRef, bool wait,
                          GraphProgram::Name program) {
