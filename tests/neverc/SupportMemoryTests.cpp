@@ -62,6 +62,7 @@ TEST(SupportMemoryTest, MappedAllocationCanBeProtectedAndReleased) {
 
 #ifdef _WIN32
 TEST(SupportMemoryTest, WindowsLockErrorsUseErrnoDomain) {
+  EXPECT_EQ(csupport_fd_lock(-1), EBADF);
   EXPECT_EQ(csupport_fd_try_lock_for(-1, 10), EBADF);
 }
 #endif
