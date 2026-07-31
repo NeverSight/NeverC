@@ -243,7 +243,8 @@ static void sha1_pad(csupport_sha1_ctx_t *ctx) {
     sha1_add_uncounted(ctx, (uint8_t)(bit_len >> shift));
 }
 
-void csupport_sha1_final(csupport_sha1_ctx_t *ctx, uint8_t result[20]) {
+void csupport_sha1_final(
+    csupport_sha1_ctx_t *ctx, uint8_t result[CSUPPORT_SHA1_HASH_LENGTH]) {
   sha1_pad(ctx);
   for (int i = 0; i < 5; i++) {
     uint32_t v;
@@ -256,13 +257,16 @@ void csupport_sha1_final(csupport_sha1_ctx_t *ctx, uint8_t result[20]) {
   }
 }
 
-void csupport_sha1_result(csupport_sha1_ctx_t *ctx, uint8_t result[20]) {
+void csupport_sha1_result(
+    csupport_sha1_ctx_t *ctx, uint8_t result[CSUPPORT_SHA1_HASH_LENGTH]) {
   csupport_sha1_ctx_t saved = *ctx;
   csupport_sha1_final(ctx, result);
   *ctx = saved;
 }
 
-void csupport_sha1_hash(const uint8_t *data, size_t len, uint8_t result[20]) {
+void csupport_sha1_hash(
+    const uint8_t *data, size_t len,
+    uint8_t result[CSUPPORT_SHA1_HASH_LENGTH]) {
   csupport_sha1_ctx_t ctx;
   csupport_sha1_init(&ctx);
   csupport_sha1_update(&ctx, data, len);

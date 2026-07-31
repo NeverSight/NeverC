@@ -38,13 +38,9 @@
 #ifndef LLVM_SUPPORT_XXHASH_H
 #define LLVM_SUPPORT_XXHASH_H
 
+#include "csupport/xxhash.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"
-
-extern "C" {
-uint64_t csupport_xxHash64(const uint8_t *data, size_t len);
-uint64_t csupport_xxh3_64bits(const uint8_t *data, size_t len);
-}
 
 namespace llvm {
 inline uint64_t xxHash64(llvm::StringRef Data) {

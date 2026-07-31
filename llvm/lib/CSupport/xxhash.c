@@ -75,6 +75,14 @@ static uint64_t XXH64_avalanche(uint64_t hash) {
 
 uint64_t csupport_xxHash64(const uint8_t *data, size_t len) {
   uint64_t Seed = 0;
+
+  /* ArrayRef's canonical empty value has a null data pointer.  Forming BEnd
+   * from that pointer, and later evaluating P + 8, is undefined even though no
+   * bytes are read. */
+  if (len == 0)
+    return XXH64_avalanche(Seed + PRIME64_5);
+  assert(data != NULL);
+
   const unsigned char *P = data;
   const unsigned char *const BEnd = data + len;
   uint64_t H64;
@@ -108,23 +116,27 @@ uint64_t csupport_xxHash64(const uint8_t *data, size_t len) {
 
   H64 += (uint64_t)len;
 
-  while (P + 8 <= BEnd) {
+  size_t Remaining = (size_t)(BEnd - P);
+  while (Remaining >= 8) {
     uint64_t const K1 = xxh_round(0, csupport_read64le(P));
     H64 ^= K1;
     H64 = rotl64(H64, 27) * PRIME64_1 + PRIME64_4;
     P += 8;
+    Remaining -= 8;
   }
 
-  if (P + 4 <= BEnd) {
+  if (Remaining >= 4) {
     H64 ^= (uint64_t)(csupport_read32le(P)) * PRIME64_1;
     H64 = rotl64(H64, 23) * PRIME64_2 + PRIME64_3;
     P += 4;
+    Remaining -= 4;
   }
 
-  while (P < BEnd) {
+  while (Remaining != 0) {
     H64 ^= (*P) * PRIME64_5;
     H64 = rotl64(H64, 11) * PRIME64_1;
     P++;
+    --Remaining;
   }
 
   return XXH64_avalanche(H64);

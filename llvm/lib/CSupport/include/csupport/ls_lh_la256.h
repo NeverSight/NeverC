@@ -25,9 +25,13 @@ void csupport_sha256_update(csupport_sha256_ctx_t *ctx, const uint8_t *data,
                             size_t len);
 void csupport_sha256_update_string(csupport_sha256_ctx_t *ctx, const char *str,
                                    size_t len);
-void csupport_sha256_final(csupport_sha256_ctx_t *ctx, uint8_t result[32]);
-void csupport_sha256_result(csupport_sha256_ctx_t *ctx, uint8_t result[32]);
-void csupport_sha256_hash(const uint8_t *data, size_t len, uint8_t result[32]);
+void csupport_sha256_final(
+    csupport_sha256_ctx_t *ctx, uint8_t result[CSUPPORT_SHA256_HASH_LENGTH]);
+void csupport_sha256_result(
+    csupport_sha256_ctx_t *ctx, uint8_t result[CSUPPORT_SHA256_HASH_LENGTH]);
+void csupport_sha256_hash(
+    const uint8_t *data, size_t len,
+    uint8_t result[CSUPPORT_SHA256_HASH_LENGTH]);
 
 #ifdef __cplusplus
 }

@@ -22,9 +22,13 @@
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/BLAKE3.h"
+#include "llvm/Support/CRC.h"
+#include "llvm/Support/DJB.h"
 #include "llvm/Support/MD5.h"
 #include "llvm/Support/SHA1.h"
 #include "llvm/Support/SHA256.h"
+#include "llvm/Support/xxhash.h"
 
 #include <gtest/gtest.h>
 
@@ -55,15 +59,15 @@ ArrayRef<uint8_t> bytes(StringRef Text) {
 
 // The three lengths that exercise the block boundary the streaming buffer is
 // there to handle: shorter than a block, exactly a block, and longer.  All
-// three hashes work in 64-byte blocks.
+// four streaming hashes work in 64-byte blocks.
 constexpr StringLiteral SixtyFourBytes =
     "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 constexpr StringLiteral SixtyFiveBytes =
     "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef!";
 
-// The three classes present the same streaming interface -- update, final,
+// The four classes present the same streaming interface -- update, final,
 // result, and a static one-shot hash -- so the properties below are stated
-// once against that interface rather than three times against each class.
+// once against that interface rather than four times against each class.
 // The digest length identifies which one is under test.
 template <typename Hasher> size_t digestSize() {
   return Hasher::hash(ArrayRef<uint8_t>()).size();
@@ -175,14 +179,91 @@ TEST(SupportHashTest, SHA256MatchesThePublishedVectors) {
             "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1");
 }
 
+TEST(SupportHashTest, SHA256EncodesTheWhole64BitMessageLength) {
+  // Same trap as SHA-1: a pad that zeroes the high bytes of the bit length
+  // would answer SHA256("") for this counter.  The C implementation must write
+  // all eight bytes, not just the low 40 bits.
+  csupport_sha256_ctx_t Context;
+  csupport_sha256_init(&Context);
+  Context.byte_count = uint64_t{1} << 37;
+
+  std::array<uint8_t, 32> Digest;
+  csupport_sha256_final(&Context, Digest.data());
+  EXPECT_EQ(hex(Digest),
+            "62a42199e958b6498ae3ee89e5d02aa5ea99206e37cb66ea30ee9c9dd950c681");
+}
+
+// BLAKE3 specification test vectors.
+TEST(SupportHashTest, BLAKE3MatchesThePublishedVectors) {
+  EXPECT_EQ(hex(BLAKE3::hash(bytes(""))),
+            "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262");
+  EXPECT_EQ(hex(BLAKE3::hash(bytes("abc"))),
+            "6437b3ac38465133ffb63b75273a8db548c558465d79db03fd359c6cd5bd9d85");
+}
+
+TEST(SupportHashTest, CRCMatchesThePublishedCheckValue) {
+  constexpr StringLiteral CheckInput = "123456789";
+  EXPECT_EQ(crc32(bytes(CheckInput)), UINT32_C(0xcbf43926));
+  EXPECT_EQ(crc32(crc32(bytes("1234")), bytes("56789")), UINT32_C(0xcbf43926));
+  EXPECT_EQ(crc32(ArrayRef<uint8_t>()), 0u);
+
+  JamCRC Jam;
+  Jam.update(bytes("1234"));
+  Jam.update(ArrayRef<uint8_t>());
+  Jam.update(bytes("56789"));
+  EXPECT_EQ(Jam.getCRC(), UINT32_C(0x340bc6d9));
+}
+
+TEST(SupportHashTest, DJBMatchesReferenceVectorsAndFoldsCase) {
+  EXPECT_EQ(djbHash(""), 5381u);
+  EXPECT_EQ(djbHash("foobar"), 4259602622u);
+  EXPECT_EQ(caseFoldingDjbHash("FOOBAR"), 4259602622u);
+
+  // U+0130 LATIN CAPITAL LETTER I WITH DOT ABOVE is a DWARF v5 special case.
+  EXPECT_EQ(djbHash("\xc4\xb0"), 5866553u);
+  EXPECT_EQ(caseFoldingDjbHash("\xc4\xb0"), 177678u);
+}
+
+TEST(SupportHashTest, XXHashMatchesReferenceVectors) {
+  auto Check = [](StringRef Input, uint64_t XXH64, uint64_t XXH3) {
+    SCOPED_TRACE(Input.size());
+    EXPECT_EQ(xxHash64(Input), XXH64);
+    EXPECT_EQ(xxHash64(bytes(Input)), XXH64);
+    EXPECT_EQ(xxh3_64bits(Input), XXH3);
+    EXPECT_EQ(xxh3_64bits(bytes(Input)), XXH3);
+  };
+
+  Check("", UINT64_C(0xef46db3751d8e999), UINT64_C(0x2d06800538d394c2));
+  Check("a", UINT64_C(0xd24ec4f1a98c6e5b), UINT64_C(0xe6c632b61e964e1f));
+  Check("abc", UINT64_C(0x44bc2cf5ad770999), UINT64_C(0x78af5f94892f3950));
+  Check(SixtyFourBytes, UINT64_C(0x1af3ac4760fe2f85),
+        UINT64_C(0x1e841dae933ea302));
+  Check(SixtyFiveBytes, UINT64_C(0x2020b26dbc09cee8),
+        UINT64_C(0x9f15aa2422bcea4a));
+
+  std::array<uint8_t, 256> Sequence;
+  for (size_t I = 0; I != Sequence.size(); ++I)
+    Sequence[I] = static_cast<uint8_t>(I);
+  EXPECT_EQ(xxHash64(Sequence), UINT64_C(0x1facbe8406cd904b));
+  EXPECT_EQ(xxh3_64bits(Sequence), UINT64_C(0x9408a4433b952d71));
+
+  // This is ArrayRef's canonical empty representation: unlike "", its data
+  // pointer is null.  xxHash64 used to form data + 8 while testing its tail,
+  // which UBSan correctly diagnosed even though the final digest looked right.
+  EXPECT_EQ(xxHash64(ArrayRef<uint8_t>()), UINT64_C(0xef46db3751d8e999));
+  EXPECT_EQ(xxh3_64bits(ArrayRef<uint8_t>()), UINT64_C(0x2d06800538d394c2));
+}
+
 TEST(SupportHashTest, StreamingAgreesWithOneShotAcrossTheBlockBoundary) {
   checkStreamingAgreesWithOneShot<MD5>();
   checkStreamingAgreesWithOneShot<SHA1>();
   checkStreamingAgreesWithOneShot<SHA256>();
+  checkStreamingAgreesWithOneShot<BLAKE3>();
 }
 
 TEST(SupportHashTest, TheSameInputHashesTheSameFromEveryCallSite) {
   checkTheInputIsTheOnlyInput<MD5>();
   checkTheInputIsTheOnlyInput<SHA1>();
   checkTheInputIsTheOnlyInput<SHA256>();
+  checkTheInputIsTheOnlyInput<BLAKE3>();
 }

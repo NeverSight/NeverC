@@ -155,7 +155,8 @@ void csupport_md5_update(csupport_md5_ctx_t *ctx, const uint8_t *data,
   memcpy(ctx->buffer, data, size);
 }
 
-void csupport_md5_final(csupport_md5_ctx_t *ctx, uint8_t result[16]) {
+void csupport_md5_final(
+    csupport_md5_ctx_t *ctx, uint8_t result[CSUPPORT_MD5_HASH_LENGTH]) {
   unsigned long used, free_space;
 
   used = ctx->lo & 0x3f;
@@ -181,7 +182,9 @@ void csupport_md5_final(csupport_md5_ctx_t *ctx, uint8_t result[16]) {
   csupport_write32le(&result[12], ctx->d);
 }
 
-void csupport_md5_hash(const uint8_t *data, size_t size, uint8_t result[16]) {
+void csupport_md5_hash(
+    const uint8_t *data, size_t size,
+    uint8_t result[CSUPPORT_MD5_HASH_LENGTH]) {
   csupport_md5_ctx_t ctx;
   csupport_md5_init(&ctx);
   csupport_md5_update(&ctx, data, size);

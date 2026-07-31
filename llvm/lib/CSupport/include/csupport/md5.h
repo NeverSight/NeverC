@@ -16,20 +16,25 @@
 extern "C" {
 #endif
 
+#define CSUPPORT_MD5_HASH_LENGTH 16
+#define CSUPPORT_MD5_BLOCK_LENGTH 64
+
 typedef uint32_t csupport_md5_u32;
 
 typedef struct {
   csupport_md5_u32 a, b, c, d;
   csupport_md5_u32 lo, hi;
-  uint8_t buffer[64];
-  csupport_md5_u32 block[16];
+  uint8_t buffer[CSUPPORT_MD5_BLOCK_LENGTH];
+  csupport_md5_u32 block[CSUPPORT_MD5_BLOCK_LENGTH / sizeof(csupport_md5_u32)];
 } csupport_md5_ctx_t;
 
 void csupport_md5_init(csupport_md5_ctx_t *ctx);
 void csupport_md5_update(csupport_md5_ctx_t *ctx, const uint8_t *data,
                          size_t size);
-void csupport_md5_final(csupport_md5_ctx_t *ctx, uint8_t result[16]);
-void csupport_md5_hash(const uint8_t *data, size_t size, uint8_t result[16]);
+void csupport_md5_final(csupport_md5_ctx_t *ctx,
+                        uint8_t result[CSUPPORT_MD5_HASH_LENGTH]);
+void csupport_md5_hash(const uint8_t *data, size_t size,
+                       uint8_t result[CSUPPORT_MD5_HASH_LENGTH]);
 
 #ifdef __cplusplus
 }

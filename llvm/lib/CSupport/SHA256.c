@@ -214,7 +214,8 @@ static void sha256_pad(csupport_sha256_ctx_t *ctx) {
   sha256_add_uncounted(ctx, (uint8_t)(bit_len));
 }
 
-void csupport_sha256_final(csupport_sha256_ctx_t *ctx, uint8_t result[32]) {
+void csupport_sha256_final(
+    csupport_sha256_ctx_t *ctx, uint8_t result[CSUPPORT_SHA256_HASH_LENGTH]) {
   sha256_pad(ctx);
   for (int i = 0; i < 8; i++) {
     uint32_t v;
@@ -227,14 +228,17 @@ void csupport_sha256_final(csupport_sha256_ctx_t *ctx, uint8_t result[32]) {
   }
 }
 
-void csupport_sha256_result(csupport_sha256_ctx_t *ctx, uint8_t result[32]) {
+void csupport_sha256_result(
+    csupport_sha256_ctx_t *ctx,
+    uint8_t result[CSUPPORT_SHA256_HASH_LENGTH]) {
   csupport_sha256_ctx_t saved = *ctx;
   csupport_sha256_final(ctx, result);
   *ctx = saved;
 }
 
-void csupport_sha256_hash(const uint8_t *data, size_t len,
-                           uint8_t result[32]) {
+void csupport_sha256_hash(
+    const uint8_t *data, size_t len,
+    uint8_t result[CSUPPORT_SHA256_HASH_LENGTH]) {
   csupport_sha256_ctx_t ctx;
   csupport_sha256_init(&ctx);
   csupport_sha256_update(&ctx, data, len);

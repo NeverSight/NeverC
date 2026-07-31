@@ -25,9 +25,13 @@ void csupport_sha1_update(csupport_sha1_ctx_t *ctx, const uint8_t *data,
                           size_t len);
 void csupport_sha1_update_string(csupport_sha1_ctx_t *ctx, const char *str,
                                  size_t len);
-void csupport_sha1_final(csupport_sha1_ctx_t *ctx, uint8_t result[20]);
-void csupport_sha1_result(csupport_sha1_ctx_t *ctx, uint8_t result[20]);
-void csupport_sha1_hash(const uint8_t *data, size_t len, uint8_t result[20]);
+void csupport_sha1_final(
+    csupport_sha1_ctx_t *ctx, uint8_t result[CSUPPORT_SHA1_HASH_LENGTH]);
+void csupport_sha1_result(
+    csupport_sha1_ctx_t *ctx, uint8_t result[CSUPPORT_SHA1_HASH_LENGTH]);
+void csupport_sha1_hash(
+    const uint8_t *data, size_t len,
+    uint8_t result[CSUPPORT_SHA1_HASH_LENGTH]);
 
 #ifdef __cplusplus
 }

@@ -61,8 +61,9 @@ inline void toHex(ArrayRef<uint8_t> Input, bool LowerCase,
 
 class MD5 {
 public:
-  struct MD5Result : public std::array<uint8_t, 16> {
-    SmallString<32> digest() const;
+  struct MD5Result
+      : public std::array<uint8_t, CSUPPORT_MD5_HASH_LENGTH> {
+    SmallString<CSUPPORT_MD5_HASH_LENGTH * 2> digest() const;
 
     uint64_t low() const {
       // Our MD5 implementation returns the result in little endian, so the low
@@ -153,8 +154,9 @@ inline MD5::MD5Result MD5::result() {
   InternalState = S;
   return H;
 }
-inline SmallString<32> MD5::MD5Result::digest() const {
-  SmallString<32> S;
+inline SmallString<CSUPPORT_MD5_HASH_LENGTH * 2>
+MD5::MD5Result::digest() const {
+  SmallString<CSUPPORT_MD5_HASH_LENGTH * 2> S;
   md5_inline::toHex(ArrayRef<uint8_t>(data(), size()), true, S);
   return S;
 }

@@ -38,20 +38,21 @@ public:
     csupport_sha1_update_string(&InternalState, Str.data(), Str.size());
   }
 
-  std::array<uint8_t, 20> final() {
-    std::array<uint8_t, 20> r;
+  std::array<uint8_t, CSUPPORT_SHA1_HASH_LENGTH> final() {
+    std::array<uint8_t, CSUPPORT_SHA1_HASH_LENGTH> r;
     csupport_sha1_final(&InternalState, r.data());
     return r;
   }
 
-  std::array<uint8_t, 20> result() {
-    std::array<uint8_t, 20> r;
+  std::array<uint8_t, CSUPPORT_SHA1_HASH_LENGTH> result() {
+    std::array<uint8_t, CSUPPORT_SHA1_HASH_LENGTH> r;
     csupport_sha1_result(&InternalState, r.data());
     return r;
   }
 
-  static std::array<uint8_t, 20> hash(ArrayRef<uint8_t> Data) {
-    std::array<uint8_t, 20> r;
+  static std::array<uint8_t, CSUPPORT_SHA1_HASH_LENGTH>
+  hash(ArrayRef<uint8_t> Data) {
+    std::array<uint8_t, CSUPPORT_SHA1_HASH_LENGTH> r;
     csupport_sha1_hash(Data.data(), Data.size(), r.data());
     return r;
   }
