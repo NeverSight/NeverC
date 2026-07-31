@@ -198,6 +198,8 @@ int csupport_mmap_protect(void *addr, size_t size, unsigned flags) {
 }
 
 void csupport_invalidate_icache(const void *addr, size_t len) {
+  if (!addr || len == 0)
+    return;
 #if defined(__APPLE__)
 #if defined(__arm64__)
   sys_icache_invalidate(addr, len);

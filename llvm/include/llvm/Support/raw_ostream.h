@@ -1073,10 +1073,13 @@ inline raw_fd_ostream::raw_fd_ostream(int fd, bool shouldClose, bool unbuffered,
 
 namespace detail {
 inline int getFDForRawOstream(StringRef Filename, std::error_code &EC,
-                              unsigned Disp, unsigned Access, unsigned Flags) {
+                              sys::fs::CreationDisposition Disp,
+                              sys::fs::FileAccess Access,
+                              sys::fs::OpenFlags Flags) {
   if (Filename == "-") {
     EC = std::error_code();
-    csupport_change_stdout_mode(Flags);
+    csupport_change_stdout_mode(
+        static_cast<csupport_open_flags_t>(Flags));
     return csupport_stdout_fileno();
   }
   char namebuf[4096];
@@ -1088,8 +1091,10 @@ inline int getFDForRawOstream(StringRef Filename, std::error_code &EC,
   memcpy(namebuf, Filename.data(), len);
   namebuf[len] = '\0';
   int err = 0;
-  int fd =
-      csupport_fd_open(namebuf, len, (int)Disp, (int)Access, (int)Flags, &err);
+  int fd = csupport_fd_open(
+      namebuf, len, static_cast<csupport_creation_disposition_t>(Disp),
+      static_cast<csupport_file_access_t>(Access),
+      static_cast<csupport_open_flags_t>(Flags), &err);
   if (fd < 0) {
     EC = std::error_code(err, std::generic_category());
     return -1;
@@ -1100,30 +1105,42 @@ inline int getFDForRawOstream(StringRef Filename, std::error_code &EC,
 } // namespace detail
 
 inline raw_fd_ostream::raw_fd_ostream(StringRef Filename, std::error_code &EC)
-    : raw_fd_ostream(Filename, EC, static_cast<sys::fs::CreationDisposition>(0),
-                     static_cast<sys::fs::FileAccess>(2),
-                     static_cast<sys::fs::OpenFlags>(0)) {}
+    : raw_fd_ostream(
+          Filename, EC,
+          static_cast<sys::fs::CreationDisposition>(
+              CSUPPORT_CD_CREATE_ALWAYS),
+          static_cast<sys::fs::FileAccess>(CSUPPORT_FA_WRITE),
+          static_cast<sys::fs::OpenFlags>(CSUPPORT_OF_NONE)) {}
 
 inline raw_fd_ostream::raw_fd_ostream(StringRef Filename, std::error_code &EC,
                                       sys::fs::CreationDisposition Disp)
-    : raw_fd_ostream(Filename, EC, Disp, static_cast<sys::fs::FileAccess>(2),
-                     static_cast<sys::fs::OpenFlags>(0)) {}
+    : raw_fd_ostream(
+          Filename, EC, Disp,
+          static_cast<sys::fs::FileAccess>(CSUPPORT_FA_WRITE),
+          static_cast<sys::fs::OpenFlags>(CSUPPORT_OF_NONE)) {}
 
 inline raw_fd_ostream::raw_fd_ostream(StringRef Filename, std::error_code &EC,
                                       sys::fs::FileAccess Access)
-    : raw_fd_ostream(Filename, EC, static_cast<sys::fs::CreationDisposition>(0),
-                     Access, static_cast<sys::fs::OpenFlags>(0)) {}
+    : raw_fd_ostream(
+          Filename, EC,
+          static_cast<sys::fs::CreationDisposition>(
+              CSUPPORT_CD_CREATE_ALWAYS),
+          Access, static_cast<sys::fs::OpenFlags>(CSUPPORT_OF_NONE)) {}
 
 inline raw_fd_ostream::raw_fd_ostream(StringRef Filename, std::error_code &EC,
                                       sys::fs::OpenFlags Flags)
-    // OF_Append(4) must keep what the file already holds, so it asks for
-    // CD_OpenAlways(3) rather than the CD_CreateAlways(0) the other overloads
-    // use, which truncates. The enumerators are only forward-declared in this
-    // header, hence the literals.
+    // OF_Append must keep what the file already holds, so it asks for
+    // CD_OpenAlways rather than the CD_CreateAlways the other overloads use,
+    // which truncates. The C ABI constants are available even though the C++
+    // enumerators are only forward-declared in this header.
     : raw_fd_ostream(Filename, EC,
                      static_cast<sys::fs::CreationDisposition>(
-                         (static_cast<unsigned>(Flags) & 4u) ? 3 : 0),
-                     static_cast<sys::fs::FileAccess>(2), Flags) {}
+                         (static_cast<unsigned>(Flags) &
+                          CSUPPORT_OF_APPEND)
+                             ? CSUPPORT_CD_OPEN_ALWAYS
+                             : CSUPPORT_CD_CREATE_ALWAYS),
+                     static_cast<sys::fs::FileAccess>(CSUPPORT_FA_WRITE),
+                     Flags) {}
 
 inline raw_fd_ostream::raw_fd_ostream(StringRef Filename, std::error_code &EC,
                                       sys::fs::CreationDisposition Disp,
@@ -1218,9 +1235,11 @@ inline raw_fd_stream::raw_fd_stream(int fd, bool shouldClose)
 inline raw_fd_stream::raw_fd_stream(StringRef Filename, std::error_code &EC)
     : raw_fd_ostream(detail::getFDForRawOstream(
                          Filename, EC,
-                         static_cast<sys::fs::CreationDisposition>(0),
-                         static_cast<sys::fs::FileAccess>(3),
-                         static_cast<sys::fs::OpenFlags>(0)),
+                         static_cast<sys::fs::CreationDisposition>(
+                             CSUPPORT_CD_CREATE_ALWAYS),
+                         static_cast<sys::fs::FileAccess>(
+                             CSUPPORT_FA_READ | CSUPPORT_FA_WRITE),
+                         static_cast<sys::fs::OpenFlags>(CSUPPORT_OF_NONE)),
                      true, false, OStreamKind::OK_FDStream) {
   if (EC)
     return;

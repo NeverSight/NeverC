@@ -40,11 +40,11 @@ private:
 class Memory {
 public:
   enum ProtectionFlags {
-    MF_READ = 0x1000000,
-    MF_WRITE = 0x2000000,
-    MF_EXEC = 0x4000000,
-    MF_RWE_MASK = 0x7000000,
-    MF_HUGE_HINT = 0x0000001
+    MF_READ = CSUPPORT_MF_READ,
+    MF_WRITE = CSUPPORT_MF_WRITE,
+    MF_EXEC = CSUPPORT_MF_EXEC,
+    MF_RWE_MASK = CSUPPORT_MF_RWE_MASK,
+    MF_HUGE_HINT = CSUPPORT_MF_HUGE_HINT
   };
 
   static MemoryBlock allocateMappedMemory(size_t NumBytes,

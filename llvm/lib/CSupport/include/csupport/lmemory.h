@@ -10,6 +10,7 @@ extern "C" {
 #define CSUPPORT_MF_WRITE 0x2000000
 #define CSUPPORT_MF_EXEC 0x4000000
 #define CSUPPORT_MF_RWE_MASK 0x7000000
+#define CSUPPORT_MF_HUGE_HINT 0x0000001
 
 void *csupport_mmap_alloc_mapped(size_t num_bytes, void *near_addr,
                                  size_t near_size, unsigned prot_flags,

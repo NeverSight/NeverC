@@ -32,7 +32,7 @@ static const char s_colorcodes[2][2][8][10] = {
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <time.h>
-#if LLVM_ENABLE_THREADS == 1
+#if LLVM_ENABLE_THREADS == 1 && defined(HAVE_PTHREAD_H) && HAVE_PTHREAD_H
 #include <pthread.h>
 #endif
 #ifdef HAVE_SYS_RESOURCE_H
@@ -75,7 +75,7 @@ int csupport_safely_close_fd(int fd) {
   if (sigfillset(&FullSet) < 0 || sigfillset(&SavedSet) < 0)
     return errno;
 
-#if LLVM_ENABLE_THREADS == 1
+#if LLVM_ENABLE_THREADS == 1 && defined(HAVE_PTHREAD_H) && HAVE_PTHREAD_H
   {
     int mask_ec = pthread_sigmask(SIG_SETMASK, &FullSet, &SavedSet);
     if (mask_ec)
@@ -89,7 +89,7 @@ int csupport_safely_close_fd(int fd) {
   if (close(fd) < 0)
     ErrnoFromClose = errno;
   int EC = 0;
-#if LLVM_ENABLE_THREADS == 1
+#if LLVM_ENABLE_THREADS == 1 && defined(HAVE_PTHREAD_H) && HAVE_PTHREAD_H
   EC = pthread_sigmask(SIG_SETMASK, &SavedSet, NULL);
 #else
   if (sigprocmask(SIG_SETMASK, &SavedSet, NULL) < 0)
@@ -178,39 +178,47 @@ int64_t csupport_fd_tell(int fd) {
 int csupport_stdout_fileno(void) { return STDOUT_FILENO; }
 int csupport_stderr_fileno(void) { return STDERR_FILENO; }
 
-void csupport_change_stdout_mode(int flags) { (void)flags; }
+void csupport_change_stdout_mode(csupport_open_flags_t flags) { (void)flags; }
 
 int csupport_fd_open(const char *filename, size_t filename_len,
-                     int create_disp, int access, int flags, int *err_out) {
+                     csupport_creation_disposition_t create_disp,
+                     csupport_file_access_t access,
+                     csupport_open_flags_t flags, int *err_out) {
   (void)filename_len;
   int oflags = 0;
-  if ((access & 1) && (access & 2))
+  if ((access & CSUPPORT_FA_READ) && (access & CSUPPORT_FA_WRITE))
     oflags = O_RDWR;
-  else if (access & 1)
+  else if (access & CSUPPORT_FA_READ)
     oflags = O_RDONLY;
-  else
+  else if (access & CSUPPORT_FA_WRITE)
     oflags = O_WRONLY;
+  else {
+    if (err_out) *err_out = EINVAL;
+    return -1;
+  }
 
-  /* flags mirrors llvm::sys::fs::OpenFlags: OF_Text=1, OF_CRLF=2, OF_Append=4,
-     OF_Delete=8, OF_ChildInherit=16, OF_UpdateAtime=32. */
-  int append = (flags & 4) != 0;
+  int append = (flags & CSUPPORT_OF_APPEND) != 0;
 
   /* Callers have always assumed append implies opening an existing file, so
      honour that over the requested disposition instead of truncating the very
      content the append was meant to extend. */
   if (append)
-    create_disp = 3;
+    create_disp = CSUPPORT_CD_OPEN_ALWAYS;
 
+  if (create_disp > CSUPPORT_CD_OPEN_ALWAYS) {
+    if (err_out) *err_out = EINVAL;
+    return -1;
+  }
   switch (create_disp) {
-  case 0: oflags |= O_CREAT | O_TRUNC; break;
-  case 1: oflags |= O_CREAT | O_EXCL;  break;
-  case 2: break;
-  case 3: oflags |= O_CREAT;           break;
+  case CSUPPORT_CD_CREATE_ALWAYS: oflags |= O_CREAT | O_TRUNC; break;
+  case CSUPPORT_CD_CREATE_NEW: oflags |= O_CREAT | O_EXCL; break;
+  case CSUPPORT_CD_OPEN_EXISTING: break;
+  case CSUPPORT_CD_OPEN_ALWAYS: oflags |= O_CREAT; break;
   }
   if (append)
     oflags |= O_APPEND;
 #ifdef O_CLOEXEC
-  if (!(flags & 16))
+  if (!(flags & CSUPPORT_OF_CHILD_INHERIT))
     oflags |= O_CLOEXEC;
 #endif
 
@@ -355,25 +363,48 @@ int csupport_fd_has_terminal_colors(int fd) {
   return csupport_fd_is_displayed(fd) && terminal_has_colors(fd);
 }
 
+#if !HAVE_DECL_ARC4RANDOM
+static unsigned get_random_number_seed(void) {
+  unsigned seed = 0;
+  int urfd = open("/dev/urandom", O_RDONLY);
+  if (urfd >= 0) {
+    ssize_t bytes_read = read(urfd, &seed, sizeof(seed));
+    close(urfd);
+    if (bytes_read == (ssize_t)sizeof(seed))
+      return seed;
+  }
+  return (unsigned)time(NULL) ^ (unsigned)getpid();
+}
+
+#if LLVM_ENABLE_THREADS == 1 && defined(HAVE_PTHREAD_H) && HAVE_PTHREAD_H
+static pthread_once_t random_seed_once = PTHREAD_ONCE_INIT;
+static pthread_mutex_t random_number_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+static void initialize_random_number_generator(void) {
+  srand(get_random_number_seed());
+}
+#else
+static int random_number_seeded;
+#endif
+#endif
+
 unsigned csupport_get_random_number(void) {
 #if HAVE_DECL_ARC4RANDOM
   return arc4random();
 #else
-  static int seeded = 0;
-  if (!seeded) {
-    unsigned seed = 0;
-    int urfd = open("/dev/urandom", O_RDONLY);
-    if (urfd >= 0) {
-      if (read(urfd, &seed, sizeof(seed)) != sizeof(seed))
-        seed = (unsigned)time(NULL) ^ (unsigned)getpid();
-      close(urfd);
-    } else {
-      seed = (unsigned)time(NULL) ^ (unsigned)getpid();
-    }
-    srand(seed);
-    seeded = 1;
+#if LLVM_ENABLE_THREADS == 1 && defined(HAVE_PTHREAD_H) && HAVE_PTHREAD_H
+  pthread_once(&random_seed_once, initialize_random_number_generator);
+  pthread_mutex_lock(&random_number_mutex);
+  unsigned value = (unsigned)rand();
+  pthread_mutex_unlock(&random_number_mutex);
+  return value;
+#else
+  if (!random_number_seeded) {
+    srand(get_random_number_seed());
+    random_number_seeded = 1;
   }
   return (unsigned)rand();
+#endif
 #endif
 }
 
@@ -502,55 +533,60 @@ int64_t csupport_fd_tell(int fd) {
 int csupport_stdout_fileno(void) { return 1; }
 int csupport_stderr_fileno(void) { return 2; }
 
-void csupport_change_stdout_mode(int flags) {
-  /* OF_CRLF(2), not OF_Text(1), is what asks for newline translation on
+void csupport_change_stdout_mode(csupport_open_flags_t flags) {
+  /* OF_CRLF, not OF_Text, is what asks for newline translation on
      Windows; OF_Text alone only means something on z/OS. ChangeStdoutMode()
      already tests OF_CRLF. */
-  if (!(flags & 2))
+  if (!(flags & CSUPPORT_OF_CRLF))
     _setmode(1, _O_BINARY);
 }
 
 int csupport_fd_open(const char *filename, size_t filename_len,
-                     int create_disp, int access, int flags, int *err_out) {
+                     csupport_creation_disposition_t create_disp,
+                     csupport_file_access_t access,
+                     csupport_open_flags_t flags, int *err_out) {
   (void)filename_len;
   int oflags = 0;
-  if ((access & 1) && (access & 2))
+  if ((access & CSUPPORT_FA_READ) && (access & CSUPPORT_FA_WRITE))
     oflags = _O_RDWR;
-  else if (access & 1)
+  else if (access & CSUPPORT_FA_READ)
     oflags = _O_RDONLY;
-  else
+  else if (access & CSUPPORT_FA_WRITE)
     oflags = _O_WRONLY;
+  else {
+    if (err_out) *err_out = EINVAL;
+    return -1;
+  }
 
-  /* flags mirrors llvm::sys::fs::OpenFlags: OF_Text=1, OF_CRLF=2, OF_Append=4,
-     OF_Delete=8, OF_ChildInherit=16, OF_UpdateAtime=32. */
-  int append = (flags & 4) != 0;
+  int append = (flags & CSUPPORT_OF_APPEND) != 0;
 
   /* Callers have always assumed append implies opening an existing file, so
      honour that over the requested disposition instead of truncating the very
      content the append was meant to extend. */
   if (append)
-    create_disp = 3;
+    create_disp = CSUPPORT_CD_OPEN_ALWAYS;
 
-  switch (create_disp) {
-  case 0: oflags |= _O_CREAT | _O_TRUNC; break;
-  case 1: oflags |= _O_CREAT | _O_EXCL;  break;
-  case 2: break;
-  case 3: oflags |= _O_CREAT;            break;
-  default:
+  if (create_disp > CSUPPORT_CD_OPEN_ALWAYS) {
     if (err_out) *err_out = EINVAL;
     return -1;
   }
-  /* Only OF_CRLF(2) asks for newline translation. Keying this off OF_Text(1)
+  switch (create_disp) {
+  case CSUPPORT_CD_CREATE_ALWAYS: oflags |= _O_CREAT | _O_TRUNC; break;
+  case CSUPPORT_CD_CREATE_NEW: oflags |= _O_CREAT | _O_EXCL; break;
+  case CSUPPORT_CD_OPEN_EXISTING: break;
+  case CSUPPORT_CD_OPEN_ALWAYS: oflags |= _O_CREAT; break;
+  }
+  /* Only OF_CRLF asks for newline translation. Keying this off OF_Text
      turned every text-mode writer into a CRLF writer, which is why the target
      schema generator produced a golden file that differed from the checked-in
      one by its trailing newline. */
-  if (!(flags & 2))
+  if (!(flags & CSUPPORT_OF_CRLF))
     oflags |= _O_BINARY;
   if (append)
     oflags |= _O_APPEND;
-  if (flags & 8)
+  if (flags & CSUPPORT_OF_DELETE)
     oflags |= _O_TEMPORARY;
-  if (!(flags & 16))
+  if (!(flags & CSUPPORT_OF_CHILD_INHERIT))
     oflags |= _O_NOINHERIT;
 
   int fd = _open(filename, oflags, _S_IREAD | _S_IWRITE);
@@ -658,29 +694,60 @@ void csupport_use_ansi_escape_codes(int enable) {
 }
 void csupport_exit_no_cleanup(int retcode) { _exit(retcode); }
 
+static int csupport_win32_error_to_errno(DWORD error) {
+  switch (error) {
+  case ERROR_INVALID_HANDLE:
+    return EBADF;
+  case ERROR_INVALID_PARAMETER:
+    return EINVAL;
+  case ERROR_ACCESS_DENIED:
+  case ERROR_LOCK_VIOLATION:
+  case ERROR_SHARING_VIOLATION:
+    return EACCES;
+  case ERROR_NOT_ENOUGH_MEMORY:
+  case ERROR_OUTOFMEMORY:
+    return ENOMEM;
+  case ERROR_TOO_MANY_OPEN_FILES:
+    return EMFILE;
+  case ERROR_TIMEOUT:
+    return ETIMEDOUT;
+  default:
+    return EIO;
+  }
+}
+
 int csupport_fd_lock(int fd) {
-  HANDLE h = (HANDLE)_get_osfhandle(fd);
+  intptr_t os_handle = _get_osfhandle(fd);
+  if (os_handle == -1)
+    return errno ? errno : EBADF;
+  HANDLE h = (HANDLE)os_handle;
   OVERLAPPED ov = {0};
   if (LockFileEx(h, LOCKFILE_EXCLUSIVE_LOCK, 0, MAXDWORD, MAXDWORD, &ov))
     return 0;
-  return (int)GetLastError();
+  return csupport_win32_error_to_errno(GetLastError());
 }
 
 int csupport_fd_try_lock_for(int fd, int64_t timeout_ms) {
-  HANDLE h = (HANDLE)_get_osfhandle(fd);
+  intptr_t os_handle = _get_osfhandle(fd);
+  if (os_handle == -1)
+    return errno ? errno : EBADF;
+  HANDLE h = (HANDLE)os_handle;
   OVERLAPPED ov = {0};
   DWORD flags = LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY;
-  if (timeout_ms == 0) {
+  if (timeout_ms <= 0) {
     if (LockFileEx(h, flags, 0, MAXDWORD, MAXDWORD, &ov))
       return 0;
-    return (int)GetLastError();
+    return csupport_win32_error_to_errno(GetLastError());
   }
-  DWORD start = GetTickCount();
+  ULONGLONG start = GetTickCount64();
   for (;;) {
     if (LockFileEx(h, flags, 0, MAXDWORD, MAXDWORD, &ov))
       return 0;
-    if ((int64_t)(GetTickCount() - start) >= timeout_ms)
-      return ERROR_TIMEOUT;
+    DWORD error = GetLastError();
+    if (error != ERROR_LOCK_VIOLATION)
+      return csupport_win32_error_to_errno(error);
+    if (GetTickCount64() - start >= (uint64_t)timeout_ms)
+      return ETIMEDOUT;
     Sleep(1);
   }
 }

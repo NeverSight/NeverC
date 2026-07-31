@@ -16,6 +16,7 @@
 #ifndef LLVM_SUPPORT_MEMALLOC_H
 #define LLVM_SUPPORT_MEMALLOC_H
 
+#include "csupport/lmem_lalloc.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/ErrorHandling.h"
 #include <stdlib.h>
@@ -71,13 +72,15 @@ LLVM_ATTRIBUTE_RETURNS_NONNULL inline void *safe_realloc(void *Ptr, size_t Sz) {
 /// like posix_memalign due to portability. It is mostly intended to allow
 /// compatibility with platforms that, after aligned allocation was added, use
 /// reduced default alignment.
-extern "C" void *csupport_allocate_buffer(size_t Size, size_t Alignment);
-extern "C" void csupport_deallocate_buffer(void *Ptr, size_t Size,
-                                           size_t Alignment);
-
 LLVM_ATTRIBUTE_RETURNS_NONNULL LLVM_ATTRIBUTE_RETURNS_NOALIAS inline void *
 allocate_buffer(size_t Size, size_t Alignment) {
-  return csupport_allocate_buffer(Size, Alignment);
+  void *Result = csupport_allocate_buffer(Size, Alignment);
+  if (Result == nullptr) {
+    if (Size == 0)
+      return allocate_buffer(1, Alignment);
+    report_bad_alloc_error("Allocation failed");
+  }
+  return Result;
 }
 
 /// Deallocate a buffer of memory with the given size and alignment.

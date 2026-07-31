@@ -1,5 +1,6 @@
 #ifndef CSUPPORT_LPROCESS_H
 #define CSUPPORT_LPROCESS_H
+#include "csupport/filesystem.h"
 #include <stddef.h>
 #include <stdint.h>
 #ifdef __cplusplus
@@ -25,9 +26,11 @@ int csupport_fd_is_regular_file(int fd);
 int64_t csupport_fd_tell(int fd);
 int csupport_stdout_fileno(void);
 int csupport_stderr_fileno(void);
-int csupport_fd_open(const char *filename, size_t filename_len, int create_disp,
-                     int access, int flags, int *err_out);
-void csupport_change_stdout_mode(int flags);
+int csupport_fd_open(const char *filename, size_t filename_len,
+                     csupport_creation_disposition_t create_disp,
+                     csupport_file_access_t access,
+                     csupport_open_flags_t flags, int *err_out);
+void csupport_change_stdout_mode(csupport_open_flags_t flags);
 int csupport_fd_write_console(int fd, const char *ptr, size_t size);
 
 size_t csupport_get_malloc_usage(void);
@@ -41,6 +44,7 @@ int csupport_fd_has_terminal_colors(int fd);
 unsigned csupport_get_random_number(void);
 void csupport_use_ansi_escape_codes(int enable);
 void csupport_exit_no_cleanup(int retcode);
+/* File-lock helpers return zero or an errno value on every host. */
 int csupport_fd_lock(int fd);
 int csupport_fd_try_lock_for(int fd, int64_t timeout_ms);
 
