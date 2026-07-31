@@ -1403,11 +1403,6 @@ target_include_directories(neverc-plugin-frontend-tests PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
 )
 target_compile_features(neverc-plugin-frontend-tests PRIVATE cxx_std_17)
-if(LLVM_ENABLE_RTTI)
-  target_compile_options(neverc-plugin-frontend-tests PRIVATE -frtti)
-else()
-  target_compile_options(neverc-plugin-frontend-tests PRIVATE -fno-rtti)
-endif()
 target_compile_definitions(neverc-plugin-frontend-tests PRIVATE
   NEVERC_TEST_MINIMAL_PLUGIN="$<TARGET_FILE:neverc-test-plugin-minimal>"
 )
@@ -1532,21 +1527,6 @@ target_include_directories(neverc-plugin-target-mc-tests PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
 )
 target_compile_features(neverc-plugin-target-mc-tests PRIVATE cxx_std_17)
-if(MSVC)
-  set_source_files_properties(
-    PluginMCComponentProviderTests.cpp
-    PluginMCEmissionHookTests.cpp
-    PluginMCEncodeDecodeTests.cpp
-    PROPERTIES COMPILE_OPTIONS "/GR-"
-    )
-else()
-  set_source_files_properties(
-    PluginMCComponentProviderTests.cpp
-    PluginMCEmissionHookTests.cpp
-    PluginMCEncodeDecodeTests.cpp
-    PROPERTIES COMPILE_OPTIONS "-fno-rtti"
-    )
-endif()
 target_compile_definitions(neverc-plugin-target-mc-tests PRIVATE
   NEVERC_SOURCE_DIR="${CMAKE_SOURCE_DIR}/.."
   NEVERC_PLUGIN_TARGET_SCHEMA_ROOT="${CMAKE_SOURCE_DIR}/../pluginsdk/schemas/targets"
@@ -1614,16 +1594,6 @@ target_include_directories(neverc-plugin-dyncode-tests PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/lib/DynCode/Plugin
 )
 target_compile_features(neverc-plugin-dyncode-tests PRIVATE cxx_std_17)
-# PluginDynCodeIRStageTests subclasses llvm::DiagnosticHandler; LLVM is built
-# without RTTI, so the file that derives from an LLVM polymorphic type must also
-# be compiled without RTTI to avoid an undefined base-class typeinfo at link.
-if(MSVC)
-  set_source_files_properties(PluginDynCodeIRStageTests.cpp
-    PROPERTIES COMPILE_OPTIONS "/GR-")
-else()
-  set_source_files_properties(PluginDynCodeIRStageTests.cpp
-    PROPERTIES COMPILE_OPTIONS "-fno-rtti")
-endif()
 target_compile_definitions(neverc-plugin-dyncode-tests PRIVATE
   NEVERC_TEST_DYNCODE_PHASE_PLUGIN="$<TARGET_FILE:neverc-test-plugin-dyncode-phase>"
 )
@@ -1782,13 +1752,20 @@ add_executable(neverc-support-tests
   SupportAPIntTests.cpp
   SupportAtomicTests.cpp
   SupportBufferTests.cpp
+  SupportCachePruningTests.cpp
   SupportCommandLineTests.cpp
+  SupportCOMTests.cpp
   SupportHashTests.cpp
   SupportJSONTests.cpp
   SupportMemoryTests.cpp
+  SupportProgramTests.cpp
+  SupportSignalTests.cpp
   SupportSmallPtrSetTests.cpp
   SupportStringMapTests.cpp
+  SupportStringRefTests.cpp
+  SupportThreadTests.cpp
   SupportUnicodeTests.cpp
+  SupportVersionTupleTests.cpp
 )
 target_link_libraries(neverc-support-tests PRIVATE
   GTest::gtest
@@ -1816,12 +1793,8 @@ target_link_libraries(neverc-plugin-io-tests PRIVATE
   GTest::gtest_main
   nevercPluginCore
   nevercPluginIO
-  # Assertions/ABI-breaking-checks builds pull llvm::dbgs(),
-  # Error::fatalUncheckedError() and the vfs dump helper into the test objects;
-  # link LLVMSupport explicitly for the general Support symbols they need.
-  # llvm::dbgs() itself is header-inline with no out-of-line home, so
-  # PluginIOIsolationTests.cpp forces one weak copy rather than dragging in the
-  # codegen/target libraries this isolation target intentionally excludes.
+  # Assertions/ABI-breaking-checks builds pull general Support diagnostics
+  # into the test objects, so keep the minimal target linked to LLVMSupport.
   LLVMSupport
 )
 target_include_directories(neverc-plugin-io-tests PRIVATE
@@ -2275,3 +2248,31 @@ gtest_discover_tests(neverc-std-tests
     TIMEOUT 600
   DISCOVERY_TIMEOUT 300
 )
+
+# These harnesses include and subclass LLVM types, so they must use the same
+# exception and RTTI model as the LLVM libraries they link.  Keeping this in
+# one list avoids scattered target-level fixes that depend on weak, per-TU
+# vtables to hide a mismatched LLVM_ENABLE_RTTI setting.
+set(_neverc_llvm_test_targets
+  neverc-tests
+  neverc-plugin-core-tests
+  neverc-plugin-frontend-tests
+  neverc-plugin-ir-tests
+  neverc-plugin-target-mc-tests
+  neverc-plugin-dyncode-tests
+  neverc-plugin-link-tests
+  neverc-plugin-object-merge-tests
+  neverc-plugin-lto-input-tests
+  neverc-support-tests
+  neverc-plugin-io-tests
+  neverc-build-tests
+  neverc-merge-tests
+  neverc-merge-fuzzer
+  neverc-std-tests
+)
+foreach(_target IN LISTS _neverc_llvm_test_targets)
+  if(TARGET ${_target})
+    llvm_update_compile_flags(${_target})
+  endif()
+endforeach()
+unset(_neverc_llvm_test_targets)
