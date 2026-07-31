@@ -66,6 +66,64 @@ static const uint8_t test_cert_der[] = {
     0x42
 };
 
+/*
+ * OpenSSL-generated X.509 v3 leaf with:
+ *   DNS:server.example.com, DNS:*.game.example.com
+ *   IP:127.0.0.1, IP:::1
+ * Its Common Name is intentionally "ignored.example".
+ */
+static const uint8_t test_san_cert_der[] = {
+    0x30, 0x82, 0x02, 0x3e, 0x30, 0x82, 0x01, 0xe4, 0xa0, 0x03, 0x02, 0x01,
+    0x02, 0x02, 0x14, 0x3a, 0x3b, 0x38, 0x38, 0x65, 0x01, 0x10, 0x1f, 0xa3,
+    0x3b, 0x44, 0x9f, 0x3e, 0x27, 0xf6, 0x31, 0x21, 0x31, 0x93, 0x39, 0x30,
+    0x0a, 0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x04, 0x03, 0x02, 0x30,
+    0x3d, 0x31, 0x0b, 0x30, 0x09, 0x06, 0x03, 0x55, 0x04, 0x06, 0x13, 0x02,
+    0x55, 0x53, 0x31, 0x14, 0x30, 0x12, 0x06, 0x03, 0x55, 0x04, 0x0a, 0x0c,
+    0x0b, 0x4e, 0x65, 0x76, 0x65, 0x72, 0x43, 0x20, 0x54, 0x65, 0x73, 0x74,
+    0x31, 0x18, 0x30, 0x16, 0x06, 0x03, 0x55, 0x04, 0x03, 0x0c, 0x0f, 0x69,
+    0x67, 0x6e, 0x6f, 0x72, 0x65, 0x64, 0x2e, 0x65, 0x78, 0x61, 0x6d, 0x70,
+    0x6c, 0x65, 0x30, 0x1e, 0x17, 0x0d, 0x32, 0x36, 0x30, 0x37, 0x33, 0x31,
+    0x31, 0x32, 0x31, 0x31, 0x33, 0x31, 0x5a, 0x17, 0x0d, 0x33, 0x36, 0x30,
+    0x37, 0x32, 0x38, 0x31, 0x32, 0x31, 0x31, 0x33, 0x31, 0x5a, 0x30, 0x3d,
+    0x31, 0x0b, 0x30, 0x09, 0x06, 0x03, 0x55, 0x04, 0x06, 0x13, 0x02, 0x55,
+    0x53, 0x31, 0x14, 0x30, 0x12, 0x06, 0x03, 0x55, 0x04, 0x0a, 0x0c, 0x0b,
+    0x4e, 0x65, 0x76, 0x65, 0x72, 0x43, 0x20, 0x54, 0x65, 0x73, 0x74, 0x31,
+    0x18, 0x30, 0x16, 0x06, 0x03, 0x55, 0x04, 0x03, 0x0c, 0x0f, 0x69, 0x67,
+    0x6e, 0x6f, 0x72, 0x65, 0x64, 0x2e, 0x65, 0x78, 0x61, 0x6d, 0x70, 0x6c,
+    0x65, 0x30, 0x59, 0x30, 0x13, 0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d,
+    0x02, 0x01, 0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07,
+    0x03, 0x42, 0x00, 0x04, 0xd3, 0xe1, 0xef, 0x10, 0x68, 0xc7, 0x38, 0xae,
+    0x04, 0xa6, 0x67, 0xca, 0xc2, 0xe6, 0x25, 0xc9, 0xba, 0x69, 0x93, 0xcc,
+    0xad, 0x03, 0xa2, 0xf6, 0x0c, 0xc0, 0x62, 0x3e, 0x15, 0xfa, 0x7c, 0xed,
+    0xca, 0xad, 0xd4, 0x71, 0x4a, 0xfa, 0x38, 0x1a, 0x6a, 0xcd, 0x33, 0xee,
+    0x68, 0xa5, 0xb8, 0xdb, 0x70, 0x92, 0x54, 0xa6, 0x59, 0xa2, 0x63, 0xab,
+    0x4a, 0x58, 0xeb, 0x10, 0xe9, 0x10, 0xf3, 0x63, 0xa3, 0x81, 0xc1, 0x30,
+    0x81, 0xbe, 0x30, 0x1d, 0x06, 0x03, 0x55, 0x1d, 0x0e, 0x04, 0x16, 0x04,
+    0x14, 0x44, 0x34, 0xd5, 0x68, 0x3e, 0x2d, 0xef, 0x59, 0xa4, 0x94, 0x29,
+    0x7c, 0x3a, 0x8a, 0x6c, 0x03, 0x9c, 0xd9, 0x3c, 0x4a, 0x30, 0x1f, 0x06,
+    0x03, 0x55, 0x1d, 0x23, 0x04, 0x18, 0x30, 0x16, 0x80, 0x14, 0x44, 0x34,
+    0xd5, 0x68, 0x3e, 0x2d, 0xef, 0x59, 0xa4, 0x94, 0x29, 0x7c, 0x3a, 0x8a,
+    0x6c, 0x03, 0x9c, 0xd9, 0x3c, 0x4a, 0x30, 0x49, 0x06, 0x03, 0x55, 0x1d,
+    0x11, 0x04, 0x42, 0x30, 0x40, 0x82, 0x12, 0x73, 0x65, 0x72, 0x76, 0x65,
+    0x72, 0x2e, 0x65, 0x78, 0x61, 0x6d, 0x70, 0x6c, 0x65, 0x2e, 0x63, 0x6f,
+    0x6d, 0x82, 0x12, 0x2a, 0x2e, 0x67, 0x61, 0x6d, 0x65, 0x2e, 0x65, 0x78,
+    0x61, 0x6d, 0x70, 0x6c, 0x65, 0x2e, 0x63, 0x6f, 0x6d, 0x87, 0x04, 0x7f,
+    0x00, 0x00, 0x01, 0x87, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x30, 0x0c, 0x06,
+    0x03, 0x55, 0x1d, 0x13, 0x01, 0x01, 0xff, 0x04, 0x02, 0x30, 0x00, 0x30,
+    0x0e, 0x06, 0x03, 0x55, 0x1d, 0x0f, 0x01, 0x01, 0xff, 0x04, 0x04, 0x03,
+    0x02, 0x07, 0x80, 0x30, 0x13, 0x06, 0x03, 0x55, 0x1d, 0x25, 0x04, 0x0c,
+    0x30, 0x0a, 0x06, 0x08, 0x2b, 0x06, 0x01, 0x05, 0x05, 0x07, 0x03, 0x01,
+    0x30, 0x0a, 0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x04, 0x03, 0x02,
+    0x03, 0x48, 0x00, 0x30, 0x45, 0x02, 0x20, 0x48, 0x1c, 0xf8, 0x71, 0xd2,
+    0xd3, 0x90, 0xb7, 0x93, 0x73, 0x7f, 0x9c, 0x98, 0xf6, 0x1f, 0x4f, 0xca,
+    0xa0, 0xdc, 0xae, 0x0f, 0xa6, 0x40, 0x9f, 0xd8, 0xc7, 0x57, 0xce, 0x15,
+    0x09, 0x32, 0xe0, 0x02, 0x21, 0x00, 0xbf, 0xa3, 0x6c, 0x93, 0xb0, 0x88,
+    0x7d, 0x7d, 0x11, 0x18, 0x61, 0xd5, 0x92, 0xde, 0x45, 0x30, 0xd6, 0x20,
+    0xfb, 0xaf, 0xe0, 0xcf, 0x96, 0xcd, 0x5d, 0x33, 0x89, 0x80, 0x73, 0x36,
+    0x38, 0x26,
+};
+
 static void test_x509_parse(void) {
     neverc_x509_cert_t cert;
     int rc = neverc_x509_parse_certificate(&cert, test_cert_der, sizeof(test_cert_der));
@@ -94,9 +152,81 @@ static void test_x509_parse(void) {
 
     CHECK("has_public_key", cert.public_key != NULL && cert.public_key_len > 0);
     CHECK("is_ca", cert.is_ca == 1);
+    CHECK("basic_constraints_valid", cert.basic_constraints_valid == 1);
+    CHECK("basic_constraints_no_path_len", cert.max_path_len == -1);
     CHECK("is_self_signed", neverc_x509_is_self_signed(&cert) == 1);
 
     neverc_x509_cert_free(&cert);
+}
+
+static void test_x509_subject_alt_name(void) {
+    neverc_x509_cert_t cert;
+    int rc = neverc_x509_parse_certificate(
+        &cert, test_san_cert_der, sizeof(test_san_cert_der));
+    CHECK("san_parse_success", rc == 0);
+    if (rc != 0)
+        return;
+
+    CHECK("san_dns_count", cert.dns_name_count == 2);
+    CHECK("san_ip_count", cert.ip_address_count == 2);
+    CHECK("leaf_basic_constraints_valid",
+          cert.basic_constraints_valid == 1);
+    CHECK("leaf_not_ca", cert.is_ca == 0);
+    CHECK("leaf_key_usage_present", cert.key_usage_present == 1);
+    CHECK("leaf_digital_signature_usage",
+          (cert.key_usage &
+           NEVERC_X509_KEY_USAGE_DIGITAL_SIGNATURE) != 0);
+    CHECK("leaf_cert_sign_usage_absent",
+          (cert.key_usage & NEVERC_X509_KEY_USAGE_CERT_SIGN) == 0);
+    CHECK("leaf_eku_present", cert.ext_key_usage_present == 1);
+    CHECK("leaf_server_auth_eku",
+          (cert.ext_key_usage &
+           NEVERC_X509_EXT_KEY_USAGE_SERVER_AUTH) != 0);
+    CHECK("leaf_client_auth_eku_absent",
+          (cert.ext_key_usage &
+           NEVERC_X509_EXT_KEY_USAGE_CLIENT_AUTH) == 0);
+    CHECK("leaf_no_unknown_critical_extension",
+          cert.has_unhandled_critical_extension == 0);
+    if (cert.dns_name_count == 2) {
+        CHECK("san_dns_exact",
+              strcmp(cert.dns_names[0], "server.example.com") == 0);
+        CHECK("san_dns_wildcard",
+              strcmp(cert.dns_names[1], "*.game.example.com") == 0);
+    }
+    if (cert.ip_address_count == 2) {
+        CHECK("san_ipv4_len", cert.ip_addresses[0].len == 4);
+        CHECK("san_ipv6_len", cert.ip_addresses[1].len == 16);
+    }
+
+    CHECK("hostname_exact",
+          neverc_x509_verify_hostname(&cert, "server.example.com") == 0);
+    CHECK("hostname_case_and_trailing_dot",
+          neverc_x509_verify_hostname(&cert, "SERVER.EXAMPLE.COM.") == 0);
+    CHECK("hostname_wildcard",
+          neverc_x509_verify_hostname(
+              &cert, "player.game.example.com") == 0);
+    CHECK("hostname_wildcard_one_label_only",
+          neverc_x509_verify_hostname(
+              &cert, "a.b.game.example.com") != 0);
+    CHECK("hostname_common_name_ignored",
+          neverc_x509_verify_hostname(&cert, "ignored.example") != 0);
+    CHECK("hostname_ipv4",
+          neverc_x509_verify_hostname(&cert, "127.0.0.1") == 0);
+    CHECK("hostname_ipv4_mismatch",
+          neverc_x509_verify_hostname(&cert, "127.0.0.2") != 0);
+    CHECK("hostname_ipv6",
+          neverc_x509_verify_hostname(&cert, "::1") == 0);
+    neverc_x509_cert_free(&cert);
+
+    rc = neverc_x509_parse_certificate(
+        &cert, test_cert_der, sizeof(test_cert_der));
+    CHECK("legacy_cn_parse_success", rc == 0);
+    if (rc == 0) {
+        CHECK("legacy_common_name_not_identity",
+              neverc_x509_verify_hostname(
+                  &cert, "test.neverc.dev") != 0);
+        neverc_x509_cert_free(&cert);
+    }
 }
 
 static void test_x509_strings(void) {
@@ -120,6 +250,27 @@ static void test_x509_time_compare(void) {
     CHECK("time_before", neverc_x509_time_compare(&t1, &t2) < 0);
     CHECK("time_after", neverc_x509_time_compare(&t2, &t1) > 0);
     CHECK("time_equal", neverc_x509_time_compare(&t1, &t3) == 0);
+
+    neverc_x509_cert_t cert;
+    int rc = neverc_x509_parse_certificate(
+        &cert, test_cert_der, sizeof(test_cert_der));
+    CHECK("validity_cert_parse", rc == 0);
+    if (rc == 0) {
+        neverc_x509_time_t inside = {2030, 1, 1, 0, 0, 0};
+        neverc_x509_time_t before = {2020, 1, 1, 0, 0, 0};
+        neverc_x509_time_t after = {2040, 1, 1, 0, 0, 0};
+        CHECK("validity_inside",
+              neverc_x509_is_valid_at(&cert, &inside) == 1);
+        CHECK("validity_before",
+              neverc_x509_is_valid_at(&cert, &before) == 0);
+        CHECK("validity_after",
+              neverc_x509_is_valid_at(&cert, &after) == 0);
+        CHECK("validity_null_cert",
+              neverc_x509_is_valid_at(NULL, &inside) == 0);
+        CHECK("validity_null_time",
+              neverc_x509_is_valid_at(&cert, NULL) == 0);
+        neverc_x509_cert_free(&cert);
+    }
 }
 
 static void test_x509_format_name(void) {
@@ -135,6 +286,16 @@ static void test_x509_format_name(void) {
     CHECK("format_has_country", strstr(buf, "C=US") != NULL);
     CHECK("format_has_org", strstr(buf, "O=NeverC Test") != NULL);
     CHECK("format_has_cn", strstr(buf, "CN=test.neverc.dev") != NULL);
+
+    char tiny[4];
+    CHECK("format_rejects_truncation",
+          neverc_x509_format_name(&name, tiny, sizeof(tiny)) < 0);
+    CHECK("format_null_name",
+          neverc_x509_format_name(NULL, buf, sizeof(buf)) < 0);
+    CHECK("format_null_buffer",
+          neverc_x509_format_name(&name, NULL, sizeof(buf)) < 0);
+    CHECK("format_zero_buffer",
+          neverc_x509_format_name(&name, buf, 0) < 0);
 }
 
 static void test_x509_invalid(void) {
@@ -142,12 +303,78 @@ static void test_x509_invalid(void) {
     uint8_t garbage[] = {0x00, 0x01, 0x02, 0x03};
     int rc = neverc_x509_parse_certificate(&cert, garbage, sizeof(garbage));
     CHECK("invalid_fails", rc < 0);
+    CHECK("null_cert_fails",
+          neverc_x509_parse_certificate(
+              NULL, test_cert_der, sizeof(test_cert_der)) < 0);
+    CHECK("null_der_fails",
+          neverc_x509_parse_certificate(&cert, NULL, 1) < 0);
+    uint8_t noncanonical_length[] = {0x30, 0x81, 0x00};
+    CHECK("noncanonical_der_length_fails",
+          neverc_x509_parse_certificate(
+              &cert, noncanonical_length,
+              sizeof(noncanonical_length)) < 0);
+
+    uint8_t invalid_time[sizeof(test_cert_der)];
+    memcpy(invalid_time, test_cert_der, sizeof(invalid_time));
+    static const uint8_t not_before[] = "260607095806Z";
+    int changed = 0;
+    for (size_t i = 0;
+         i + sizeof(not_before) - 1 <= sizeof(invalid_time); ++i) {
+        if (memcmp(invalid_time + i, not_before,
+                   sizeof(not_before) - 1) == 0) {
+            invalid_time[i + 2] = '1';
+            invalid_time[i + 3] = '3';
+            changed = 1;
+            break;
+        }
+    }
+    CHECK("invalid_time_fixture_changed", changed == 1);
+    rc = neverc_x509_parse_certificate(
+        &cert, invalid_time, sizeof(invalid_time));
+    CHECK("invalid_certificate_time_fails", rc < 0);
+    if (rc == 0)
+        neverc_x509_cert_free(&cert);
+
+    uint8_t trailing[sizeof(test_cert_der) + 1];
+    memcpy(trailing, test_cert_der, sizeof(test_cert_der));
+    trailing[sizeof(trailing) - 1] = 0;
+    rc = neverc_x509_parse_certificate(&cert, trailing, sizeof(trailing));
+    CHECK("trailing_der_data_fails", rc < 0);
+    if (rc == 0)
+        neverc_x509_cert_free(&cert);
+
+    uint8_t mismatched_signature[sizeof(test_cert_der)];
+    memcpy(mismatched_signature, test_cert_der,
+           sizeof(mismatched_signature));
+    static const uint8_t sha256_rsa_oid[] = {
+        0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7,
+        0x0d, 0x01, 0x01, 0x0b
+    };
+    size_t last_oid = 0;
+    int oid_count = 0;
+    for (size_t i = 0;
+         i + sizeof(sha256_rsa_oid) <= sizeof(mismatched_signature); ++i) {
+        if (memcmp(mismatched_signature + i, sha256_rsa_oid,
+                   sizeof(sha256_rsa_oid)) == 0) {
+            last_oid = i;
+            ++oid_count;
+        }
+    }
+    CHECK("signature_oid_fixture_found_twice", oid_count == 2);
+    if (oid_count == 2)
+        mismatched_signature[last_oid + sizeof(sha256_rsa_oid) - 1] = 0x05;
+    rc = neverc_x509_parse_certificate(
+        &cert, mismatched_signature, sizeof(mismatched_signature));
+    CHECK("mismatched_signature_algorithms_fail", rc < 0);
+    if (rc == 0)
+        neverc_x509_cert_free(&cert);
 }
 
 int main(void) {
     printf("=== NeverC crypto/x509 Tests ===\n\n");
 
     test_x509_parse();
+    test_x509_subject_alt_name();
     test_x509_strings();
     test_x509_time_compare();
     test_x509_format_name();

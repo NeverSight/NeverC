@@ -40,20 +40,39 @@ build_cases() {
     "$test_root/test_net_internals.c" \
     "$std_root/src/net/tcp/tcp.c" \
     -pthread -lm -o "$work_dir/net-internals-$label"
+  "$compiler" "${common_flags[@]}" "$@" \
+    "$test_root/test_net_transport.c" \
+    "$std_root/src/net/tcp/tcp.c" \
+    "$std_root/src/net/tcp/tcp_context.c" \
+    "$std_root/src/net/udp/udp.c" \
+    "$std_root/src/net/udp/udp_context.c" \
+    "$std_root/src/thread/thread.c" \
+    "$std_root/src/context/context.c" \
+    -pthread -lm -o "$work_dir/net-transport-$label"
 }
 
 build_cases asan-ubsan -fsanitize=address,undefined
-ASAN_OPTIONS=${ASAN_OPTIONS:-detect_leaks=1} \
+default_asan_options=detect_leaks=1
+if [[ $(uname -s) == Darwin ]]; then
+  default_asan_options=detect_leaks=0
+fi
+asan_options=${ASAN_OPTIONS:-$default_asan_options}
+ASAN_OPTIONS=$asan_options \
 UBSAN_OPTIONS=${UBSAN_OPTIONS:-halt_on_error=1:print_stacktrace=1} \
   "$work_dir/thread-asan-ubsan"
-ASAN_OPTIONS=${ASAN_OPTIONS:-detect_leaks=1} \
+ASAN_OPTIONS=$asan_options \
 UBSAN_OPTIONS=${UBSAN_OPTIONS:-halt_on_error=1:print_stacktrace=1} \
   "$work_dir/net-internals-asan-ubsan"
+ASAN_OPTIONS=$asan_options \
+UBSAN_OPTIONS=${UBSAN_OPTIONS:-halt_on_error=1:print_stacktrace=1} \
+  "$work_dir/net-transport-asan-ubsan"
 
 build_cases tsan -fsanitize=thread
 TSAN_OPTIONS=${TSAN_OPTIONS:-halt_on_error=1:history_size=7} \
   "$work_dir/thread-tsan"
 TSAN_OPTIONS=${TSAN_OPTIONS:-halt_on_error=1:history_size=7} \
   "$work_dir/net-internals-tsan"
+TSAN_OPTIONS=${TSAN_OPTIONS:-halt_on_error=1:history_size=7} \
+  "$work_dir/net-transport-tsan"
 
 echo "network-core sanitizer gates passed"

@@ -123,6 +123,10 @@ jobs:
       if: steps.tests.outcome == 'success'
       run: neverc/utils/ci/run-network-core-gates.sh "$PWD/build/bin/neverc" "$PWD/neverc" 25
 
+    - name: Run network transport soak
+      if: steps.tests.outcome == 'success'
+      run: neverc/utils/ci/run-network-transport-soak.sh "$PWD/build/bin/neverc" "$PWD/neverc" 5000
+
     - name: Run network sanitizer gates
       if: steps.tests.outcome == 'success'
       run: |

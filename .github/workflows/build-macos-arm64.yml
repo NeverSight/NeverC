@@ -130,3 +130,6 @@ jobs:
 
       - name: Run network concurrency gates
         run: neverc/utils/ci/run-network-core-gates.sh "$PWD/build/bin/neverc" "$PWD/neverc" 25
+
+      - name: Run network transport soak
+        run: neverc/utils/ci/run-network-transport-soak.sh "$PWD/build/bin/neverc" "$PWD/neverc" 5000

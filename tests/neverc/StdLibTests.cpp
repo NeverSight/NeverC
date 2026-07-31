@@ -424,8 +424,17 @@ TEST_F(StdLibTest, ThreadAllocationAndCreationFailure) {
 STD_TEST(atomic, "src/sync/atomic/atomic.c")
 
 // ===== Net =====
-STD_TEST(tcp, "src/net/tcp/tcp.c")
-STD_TEST(udp, "src/net/udp/udp.c")
+#define TCP_DEPS \
+    "src/net/tcp/tcp.c", "src/net/tcp/tcp_context.c", \
+    "src/context/context.c"
+
+STD_TEST(tcp, TCP_DEPS)
+STD_TEST(udp, "src/net/udp/udp.c", "src/net/udp/udp_context.c",
+         "src/context/context.c")
+STD_TEST(net_transport,
+         TCP_DEPS,
+         "src/net/udp/udp.c", "src/net/udp/udp_context.c",
+         "src/thread/thread.c")
 TEST_F(StdLibTest, NetBufferFailurePaths) {
   auto r = compileAndRunStdTest("net_buffer", {}, {"-fno-builtin-std"});
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
@@ -448,24 +457,24 @@ TEST_F(StdLibTest, NetBufferFailurePaths) {
     "src/crypto/x509/x509.c", "src/crypto/elliptic/elliptic.c", \
     "src/math/big/big.c", "src/encoding/base64/base64.c"
 
-STD_TEST(http, "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", "src/net/tcp/tcp.c", HTTP_TLS_DEPS)
-STD_TEST(websocket, "src/net/websocket/websocket.c", "src/net/tcp/tcp.c",
+STD_TEST(http, "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", TCP_DEPS, HTTP_TLS_DEPS)
+STD_TEST(websocket, "src/net/websocket/websocket.c", TCP_DEPS,
     "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", HTTP_TLS_DEPS)
 STD_TEST(url, "src/net/url/url.c")
 STD_TEST(netip, "src/net/netip/netip.c")
 STD_TEST(mail, "src/net/mail/mail.c")
 STD_TEST(textproto, "src/net/textproto/textproto.c")
 STD_TEST(httptest, "src/net/http/httptest/httptest.c",
-    "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", "src/net/tcp/tcp.c", HTTP_TLS_DEPS)
+    "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", TCP_DEPS, HTTP_TLS_DEPS)
 
 // ===== io_uring =====
-STD_TEST(io_uring, "src/net/tcp/tcp.c", "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", HTTP_TLS_DEPS)
+STD_TEST(io_uring, TCP_DEPS, "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", HTTP_TLS_DEPS)
 
 // ===== HTTP/2 =====
-STD_TEST(http2, "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", "src/net/http/http.c", "src/net/http/http_client.c", "src/net/tcp/tcp.c",
+STD_TEST(http2, "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", "src/net/http/http.c", "src/net/http/http_client.c", TCP_DEPS,
     HTTP_TLS_DEPS)
 STD_TEST(http2_oom, "src/net/http/http2/http2.c", "src/net/http/http.c",
-    "src/net/http/http_client.c", "src/net/tcp/tcp.c", HTTP_TLS_DEPS)
+    "src/net/http/http_client.c", TCP_DEPS, HTTP_TLS_DEPS)
 
 // ===== QUIC / HTTP/3 experimental components =====
 STD_TEST(quic_frame)
@@ -487,28 +496,28 @@ TEST_F(StdLibTest, EmbeddedContextCancelHandleDotSyntax) {
 }
 
 // ===== HTTP Benchmark =====
-STD_TEST(http_bench, "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", "src/net/tcp/tcp.c", HTTP_TLS_DEPS)
+STD_TEST(http_bench, "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", TCP_DEPS, HTTP_TLS_DEPS)
 
 // ===== HTTP Util =====
 STD_TEST(httputil, "src/net/http/httputil/httputil.c",
-    "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", "src/net/tcp/tcp.c", HTTP_TLS_DEPS)
+    "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", TCP_DEPS, HTTP_TLS_DEPS)
 
 // ===== Cookie Jar =====
 STD_TEST(cookiejar, "src/net/http/cookiejar/cookiejar.c")
 
 // ===== SMTP =====
-STD_TEST(smtp, "src/net/smtp/smtp.c", "src/net/tcp/tcp.c")
+STD_TEST(smtp, "src/net/smtp/smtp.c", TCP_DEPS)
 
 // ===== Net Core (DNS, Pipe, SplitHostPort) =====
 STD_TEST(resolve, "src/net/resolve/resolve.c")
 STD_TEST(net_interface, "src/net/interface/interface.c")
 
 // ===== Net Internals (Timer Wheel, Buffer Pool, Poller, Event Loop) =====
-STD_TEST(net_internals, "src/net/tcp/tcp.c")
+STD_TEST(net_internals, TCP_DEPS)
 #ifndef _WIN32
 TEST_F(StdLibTest, NetPollFallback) {
   auto r = compileAndRunStdTest("net_internals",
-                                {"src/net/tcp/tcp.c"},
+                                {TCP_DEPS},
                                 {"-DNC_FORCE_POLL=1"});
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
   EXPECT_TRUE(r.contains("ALL PASSED")) << "stdout: " << r.out;

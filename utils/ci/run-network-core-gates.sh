@@ -59,8 +59,16 @@ build_case thread \
 build_case net_internals \
   "$test_root/test_net_internals.c" \
   "$std_root/src/net/tcp/tcp.c"
+build_case net_transport \
+  "$test_root/test_net_transport.c" \
+  "$std_root/src/net/tcp/tcp.c" \
+  "$std_root/src/net/tcp/tcp_context.c" \
+  "$std_root/src/net/udp/udp.c" \
+  "$std_root/src/net/udp/udp_context.c" \
+  "$std_root/src/thread/thread.c" \
+  "$std_root/src/context/context.c"
 
-cases=(thread net_internals)
+cases=(thread net_internals net_transport)
 if [[ -n $exe_suffix ]]; then
   build_case net_iocp "$test_root/test_net_iocp.c"
   cases+=(net_iocp)

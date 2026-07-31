@@ -1,4 +1,5 @@
 #include "neverc/std/net/tcp.h"
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -6,6 +7,7 @@
 #ifndef _WIN32
 #include <unistd.h>
 #include <sys/wait.h>
+#include <sys/time.h>
 #include <signal.h>
 #include <pthread.h>
 #endif
@@ -57,6 +59,10 @@ static void test_listen_close(void) {
         neverc_tcp_addr_t addr;
         neverc_tcp_listener_addr(ln, &addr);
         check_int("port > 0", addr.port > 0, 1);
+        check_int("listener handle valid",
+                  neverc_tcp_listener_handle(ln) !=
+                      NEVERC_NET_INVALID_HANDLE,
+                  1);
         printf("    bound to %s (port %d)\n", addr.addr, addr.port);
         neverc_tcp_listener_close(ln);
     }
@@ -76,6 +82,25 @@ static void test_listen_explicit(void) {
         neverc_tcp_addr_t addr;
         neverc_tcp_listener_addr(ln, &addr);
         check_int("port > 0", addr.port > 0, 1);
+        neverc_tcp_listener_close(ln);
+    }
+}
+
+/* ===== IPv6 listen ===== */
+
+static void test_listen_ipv6(void) {
+    printf("[listen_ipv6]\n");
+    const char *err = NULL;
+
+    neverc_tcp_listener_t *ln = neverc_tcp_listen("[::1]:0", &err);
+    check_not_null("listen [::1]:0", ln);
+    check_null("IPv6 listen no error", err);
+
+    if (ln) {
+        neverc_tcp_addr_t addr;
+        check_int("IPv6 listener addr", neverc_tcp_listener_addr(ln, &addr), 0);
+        check_int("IPv6 port > 0", addr.port > 0, 1);
+        check_int("IPv6 addr bracketed", addr.addr[0] == '[', 1);
         neverc_tcp_listener_close(ln);
     }
 }
@@ -119,6 +144,12 @@ static void test_null_safety(void) {
     check_int("set_reuseaddr null", neverc_tcp_set_reuseaddr(NULL, 1), -1);
     check_int("accept null", neverc_tcp_accept(NULL, NULL) == NULL, 1);
     check_int("listener_addr null", neverc_tcp_listener_addr(NULL, NULL), -1);
+    check_int("listener handle null",
+              neverc_tcp_listener_handle(NULL) ==
+                  NEVERC_NET_INVALID_HANDLE,
+              1);
+    check_int("connection handle null",
+              neverc_tcp_conn_handle(NULL) == NEVERC_NET_INVALID_HANDLE, 1);
     neverc_tcp_listener_close(NULL);
     tests_passed++; tests_run++;  /* survived without crash */
 }
@@ -138,6 +169,12 @@ static void test_options(void) {
 }
 
 #ifndef _WIN32
+
+static long long test_now_ms(void) {
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return (long long)tv.tv_sec * 1000 + tv.tv_usec / 1000;
+}
 
 /* ===== echo test ===== */
 
@@ -197,6 +234,90 @@ static void test_echo(void) {
     int status;
     waitpid(pid, &status, 0);
     check_int("client exit 0", WIFEXITED(status) && WEXITSTATUS(status) == 0, 1);
+
+    neverc_tcp_listener_close(ln);
+}
+
+/* ===== IPv6 echo test ===== */
+
+static void test_ipv6_echo(void) {
+    printf("[ipv6_echo]\n");
+    const char *err = NULL;
+
+    neverc_tcp_listener_t *ln = neverc_tcp_listen("[::1]:0", &err);
+    check_not_null("IPv6 echo listen", ln);
+    if (!ln) return;
+
+    neverc_tcp_addr_t laddr;
+    neverc_tcp_listener_addr(ln, &laddr);
+
+    pid_t pid = fork();
+    if (pid == 0) {
+        char addr[64];
+        snprintf(addr, sizeof(addr), "[::1]:%d", laddr.port);
+        neverc_tcp_conn_t *conn = neverc_tcp_dial(addr, &err);
+        if (!conn) _exit(1);
+        int n = neverc_tcp_write(conn, "v6", 2);
+        neverc_tcp_close(conn);
+        _exit(n == 2 ? 0 : 2);
+    }
+
+    int status;
+    waitpid(pid, &status, 0);
+    int client_ok = WIFEXITED(status) && WEXITSTATUS(status) == 0;
+    check_int("IPv6 client connected", client_ok, 1);
+    if (client_ok) {
+        neverc_tcp_conn_t *conn = neverc_tcp_accept(ln, &err);
+        check_not_null("IPv6 echo accept", conn);
+        if (conn) {
+            char buf[8];
+            int n = neverc_tcp_read(conn, buf, sizeof(buf));
+            check_int("IPv6 echo read", n, 2);
+            neverc_tcp_close(conn);
+        }
+    }
+
+    neverc_tcp_listener_close(ln);
+}
+
+/* ===== AF_UNSPEC address fallback ===== */
+
+static void test_dial_address_fallback(void) {
+    printf("[dial_address_fallback]\n");
+    const char *err = NULL;
+
+    neverc_tcp_listener_t *ln = neverc_tcp_listen("127.0.0.1:0", &err);
+    check_not_null("fallback listen", ln);
+    if (!ln) return;
+
+    neverc_tcp_addr_t laddr;
+    neverc_tcp_listener_addr(ln, &laddr);
+
+    pid_t pid = fork();
+    if (pid == 0) {
+        char addr[64];
+        snprintf(addr, sizeof(addr), "localhost:%d", laddr.port);
+        neverc_tcp_conn_t *conn = neverc_tcp_dial(addr, &err);
+        if (!conn) _exit(1);
+        int n = neverc_tcp_write(conn, "fallback", 8);
+        neverc_tcp_close(conn);
+        _exit(n == 8 ? 0 : 2);
+    }
+
+    int status;
+    waitpid(pid, &status, 0);
+    int client_ok = WIFEXITED(status) && WEXITSTATUS(status) == 0;
+    check_int("fallback client connected", client_ok, 1);
+    if (client_ok) {
+        neverc_tcp_conn_t *conn = neverc_tcp_accept(ln, &err);
+        check_not_null("fallback accept", conn);
+        if (conn) {
+            char buf[16];
+            int n = neverc_tcp_read(conn, buf, sizeof(buf));
+            check_int("fallback read", n, 8);
+            neverc_tcp_close(conn);
+        }
+    }
 
     neverc_tcp_listener_close(ln);
 }
@@ -368,14 +489,25 @@ static void test_pipe(void) {
     check_not_null("pipe b", b);
 
     if (a && b) {
+        char byte = 0;
+        check_int("pipe rejects oversized write",
+                  neverc_tcp_write(
+                      a, &byte, (size_t)INT_MAX + 1), -1);
+        check_int("pipe rejects oversized read",
+                  neverc_tcp_read(
+                      a, &byte, (size_t)INT_MAX + 1), -1);
+
         const char *msg = "hello pipe!";
         neverc_tcp_write(a, msg, strlen(msg));
+        check_int("pipe shutdown write", neverc_tcp_shutdown_write(a), 0);
 
         char buf[64];
         int n = neverc_tcp_read(b, buf, sizeof(buf));
         check_int("pipe read len", n, (int)strlen(msg));
         buf[n] = '\0';
         check_str("pipe read data", buf, "hello pipe!");
+        check_int("pipe read EOF after half-close",
+                  neverc_tcp_read(b, buf, sizeof(buf)), 0);
 
         const char *reply = "pong";
         neverc_tcp_write(b, reply, strlen(reply));
@@ -383,6 +515,7 @@ static void test_pipe(void) {
         check_int("pipe reply len", n, 4);
         buf[n] = '\0';
         check_str("pipe reply data", buf, "pong");
+        check_int("pipe shutdown read", neverc_tcp_shutdown_read(a), 0);
 
         neverc_tcp_close(a);
         neverc_tcp_close(b);
@@ -391,6 +524,183 @@ static void test_pipe(void) {
     /* Null safety */
     check_int("pipe null a", neverc_tcp_pipe(NULL, &b), -1);
     check_int("pipe null b", neverc_tcp_pipe(&a, NULL), -1);
+    check_int("shutdown read null", neverc_tcp_shutdown_read(NULL), -1);
+    check_int("shutdown write null", neverc_tcp_shutdown_write(NULL), -1);
+}
+
+/* ===== independent read/write timeouts ===== */
+
+static void test_independent_timeouts(void) {
+    printf("[independent_timeouts]\n");
+
+    neverc_tcp_conn_t *a = NULL, *b = NULL;
+    check_int("timeout pipe create", neverc_tcp_pipe(&a, &b), 0);
+    if (!a || !b) return;
+
+    check_int("set read timeout", neverc_tcp_set_read_timeout(a, 50), 0);
+    check_int("set write timeout", neverc_tcp_set_write_timeout(a, 500), 0);
+    check_int("reject negative read timeout",
+              neverc_tcp_set_read_timeout(a, -1), -1);
+    check_int("reject negative write timeout",
+              neverc_tcp_set_write_timeout(a, -1), -1);
+
+    char buf[8];
+    long long started = test_now_ms();
+    int n = neverc_tcp_read(a, buf, sizeof(buf));
+    long long elapsed = test_now_ms() - started;
+    check_int("read timed out", n, -1);
+    check_int("read timeout bounded", elapsed >= 10 && elapsed < 1000, 1);
+
+    started = test_now_ms();
+    check_int("set absolute read deadline",
+              neverc_tcp_set_read_deadline(a, started + 50), 0);
+    n = neverc_tcp_read(a, buf, sizeof(buf));
+    elapsed = test_now_ms() - started;
+    check_int("absolute read deadline fired", n, -1);
+    check_int("absolute deadline bounded",
+              elapsed >= 10 && elapsed < 1000, 1);
+    check_int("set absolute write deadline",
+              neverc_tcp_set_write_deadline(a, test_now_ms() + 500), 0);
+
+    check_int("write remains usable", neverc_tcp_write(a, "ok", 2), 2);
+    check_int("peer receives after read timeout",
+              neverc_tcp_read(b, buf, sizeof(buf)), 2);
+
+    neverc_tcp_close(a);
+    neverc_tcp_close(b);
+
+    check_int("read timeout null",
+              neverc_tcp_set_read_timeout(NULL, 1), -1);
+    check_int("write timeout null",
+              neverc_tcp_set_write_timeout(NULL, 1), -1);
+    check_int("read deadline null",
+              neverc_tcp_set_read_deadline(NULL, 1), -1);
+    check_int("write deadline null",
+              neverc_tcp_set_write_deadline(NULL, 1), -1);
+}
+
+/* ===== structured non-blocking and context-aware I/O ===== */
+
+static void test_controlled_io(void) {
+    printf("[controlled_io]\n");
+
+    neverc_tcp_conn_t *a = NULL, *b = NULL;
+    check_int("controlled pipe", neverc_tcp_pipe(&a, &b), 0);
+    if (!a || !b) return;
+
+    char buf[8];
+    neverc_net_result_t result =
+        neverc_tcp_try_read(a, buf, sizeof(buf));
+    check_int("try read would block",
+              result.status, NEVERC_NET_WOULD_BLOCK);
+    check_int("try read operation",
+              strcmp(result.operation, "read") == 0, 1);
+
+    check_int("controlled write", neverc_tcp_write(b, "ok", 2), 2);
+    result = neverc_tcp_try_read(a, buf, sizeof(buf));
+    check_int("try read success", result.status, NEVERC_NET_OK);
+    check_int("try read bytes", (int)result.transferred, 2);
+
+    result = neverc_tcp_write_context(b, NULL, "ctx", 3);
+    check_int("context write success", result.status, NEVERC_NET_OK);
+    check_int("context write bytes", (int)result.transferred, 3);
+    check_int("context write delivered",
+              neverc_tcp_read(a, buf, sizeof(buf)), 3);
+
+    neverc_context_cancel_handle_t *cancel = NULL;
+    neverc_context_t *ctx =
+        neverc_context_with_timeout_handle(NULL, 50, &cancel);
+    check_not_null("controlled context", ctx);
+    check_not_null("controlled cancel handle", cancel);
+    if (ctx && cancel) {
+        long long started = test_now_ms();
+        result = neverc_tcp_read_context(a, ctx, buf, sizeof(buf));
+        long long elapsed = test_now_ms() - started;
+        check_int("context deadline status",
+                  result.status, NEVERC_NET_TIMEOUT);
+        check_int("context deadline bounded",
+                  elapsed >= 10 && elapsed < 1000, 1);
+    }
+    neverc_context_cancel_handle_free(cancel);
+    neverc_context_free(ctx);
+
+    cancel = NULL;
+    ctx = neverc_context_with_cancel_handle(NULL, &cancel);
+    check_not_null("cancel context", ctx);
+    check_not_null("cancel handle", cancel);
+    if (ctx && cancel) {
+        neverc_context_cancel_handle_cancel(cancel);
+        result = neverc_tcp_read_context(a, ctx, buf, sizeof(buf));
+        check_int("explicit cancel status",
+                  result.status, NEVERC_NET_CANCELLED);
+    }
+    neverc_context_cancel_handle_free(cancel);
+    neverc_context_free(ctx);
+
+    neverc_tcp_close(a);
+    neverc_tcp_close(b);
+
+    const char *err = NULL;
+    neverc_tcp_listener_t *listener =
+        neverc_tcp_listen("127.0.0.1:0", &err);
+    check_not_null("controlled listener", listener);
+    if (listener) {
+        neverc_tcp_conn_t *accepted = NULL;
+        result = neverc_tcp_try_accept(listener, &accepted);
+        check_int("try accept would block",
+                  result.status, NEVERC_NET_WOULD_BLOCK);
+        check_null("try accept has no connection", accepted);
+
+        cancel = NULL;
+        ctx = neverc_context_with_timeout_handle(NULL, 50, &cancel);
+        if (ctx && cancel) {
+            result = neverc_tcp_accept_context(listener, ctx, &accepted);
+            check_int("accept context deadline",
+                      result.status, NEVERC_NET_TIMEOUT);
+            check_null("timed out accept has no connection", accepted);
+        }
+        neverc_context_cancel_handle_free(cancel);
+        neverc_context_free(ctx);
+
+        neverc_tcp_addr_t listener_addr;
+        neverc_tcp_listener_addr(listener, &listener_addr);
+        char dial_addr[64];
+        snprintf(dial_addr, sizeof(dial_addr), "127.0.0.1:%u",
+                 listener_addr.port);
+
+        cancel = NULL;
+        ctx = neverc_context_with_timeout_handle(NULL, 500, &cancel);
+        neverc_tcp_conn_t *dialed = NULL;
+        if (ctx && cancel) {
+            result = neverc_tcp_dial_context(dial_addr, ctx, &dialed);
+            check_int("context dial success",
+                      result.status, NEVERC_NET_OK);
+            check_not_null("context dial connection", dialed);
+        }
+        neverc_context_cancel_handle_free(cancel);
+        neverc_context_free(ctx);
+        if (dialed) {
+            neverc_tcp_conn_t *server_conn =
+                neverc_tcp_accept(listener, &err);
+            check_not_null("accept context dial", server_conn);
+            neverc_tcp_close(server_conn);
+            neverc_tcp_close(dialed);
+        }
+
+        cancel = NULL;
+        ctx = neverc_context_with_cancel_handle(NULL, &cancel);
+        dialed = NULL;
+        if (ctx && cancel) {
+            neverc_context_cancel_handle_cancel(cancel);
+            result = neverc_tcp_dial_context(dial_addr, ctx, &dialed);
+            check_int("cancelled dial",
+                      result.status, NEVERC_NET_CANCELLED);
+            check_null("cancelled dial connection", dialed);
+        }
+        neverc_context_cancel_handle_free(cancel);
+        neverc_context_free(ctx);
+        neverc_tcp_listener_close(listener);
+    }
 }
 
 /* Split/join and DNS are tested in test_resolve.c */
@@ -444,16 +754,21 @@ static void test_socket_options(void) {
 int main(void) {
     test_listen_close();
     test_listen_explicit();
+    test_listen_ipv6();
     test_invalid_addr();
     test_dial_fail();
     test_null_safety();
     test_options();
 #ifndef _WIN32
     test_echo();
+    test_ipv6_echo();
+    test_dial_address_fallback();
     test_multiple_clients();
     test_large_data();
     test_nodelay();
     test_pipe();
+    test_independent_timeouts();
+    test_controlled_io();
     test_socket_options();
 #endif
 

@@ -3,6 +3,10 @@
 #include <stdarg.h>
 #include <stdint.h>
 
+#ifndef _WIN32
+#include <poll.h>
+#endif
+
 /* ======================================================================
  * Internal structures
  * ====================================================================== */
@@ -22,6 +26,11 @@ struct neverc_tcp_conn {
     uint8_t *preload;
     size_t preload_len;
     size_t preload_pos;
+    int64_t read_deadline_ms;
+    int64_t write_deadline_ms;
+    int read_timeout_ms;
+    int write_timeout_ms;
+    volatile int nonblocking;
 };
 
 /* ======================================================================
@@ -50,6 +59,75 @@ static void addr_to_string(const struct sockaddr *sa, socklen_t salen,
     }
 }
 
+static neverc_net_result_t tcp_result(neverc_net_status_t status,
+                                      int system_code,
+                                      const char *operation,
+                                      size_t transferred);
+static int64_t tcp_realtime_ms(void);
+static int tcp_deadline_expired(int64_t deadline_ms);
+static int tcp_deadline_timeout(int64_t deadline_ms);
+static int tcp_refresh_read_deadline(neverc_tcp_conn_t *conn);
+static int tcp_refresh_write_deadline(neverc_tcp_conn_t *conn);
+
+static int tcp_timeout_error(void) {
+#ifdef _WIN32
+    return WSAETIMEDOUT;
+#else
+    return ETIMEDOUT;
+#endif
+}
+
+static int tcp_accept_would_block(int error) {
+#ifdef _WIN32
+    return error == WSAEWOULDBLOCK;
+#else
+    return error == EAGAIN || error == EWOULDBLOCK;
+#endif
+}
+
+static int tcp_listener_wait(nc_sock_t fd) {
+#ifdef _WIN32
+    fd_set readfds;
+    FD_ZERO(&readfds);
+    FD_SET(fd, &readfds);
+    int rc;
+    do {
+        rc = select(0, &readfds, NULL, NULL, NULL);
+    } while (rc == SOCKET_ERROR && WSAGetLastError() == WSAEINTR);
+    return rc == SOCKET_ERROR ? -1 : rc;
+#else
+    struct pollfd pfd;
+    pfd.fd = fd;
+    pfd.events = POLLIN;
+    pfd.revents = 0;
+    int rc;
+    do {
+        rc = poll(&pfd, 1, -1);
+    } while (rc < 0 && errno == EINTR);
+    if (rc < 0 || (rc > 0 && (pfd.revents & POLLNVAL) != 0))
+        return -1;
+    return rc;
+#endif
+}
+
+static neverc_tcp_conn_t *tcp_conn_from_accepted(
+    nc_sock_t fd, const struct sockaddr_storage *remote,
+    socklen_t remote_len, int nonblocking) {
+    neverc_tcp_conn_t *conn = (neverc_tcp_conn_t *)calloc(1, sizeof(*conn));
+    if (!conn) return NULL;
+    conn->fd = fd;
+    conn->nonblocking = nonblocking;
+    conn->remote_len = remote_len;
+    memcpy(&conn->remote, remote, remote_len);
+    conn->local_len = sizeof(conn->local);
+    if (getsockname(fd, (struct sockaddr *)&conn->local,
+                    &conn->local_len) != 0) {
+        memset(&conn->local, 0, sizeof(conn->local));
+        conn->local_len = 0;
+    }
+    return conn;
+}
+
 /* ======================================================================
  * Listen / Accept
  * ====================================================================== */
@@ -67,9 +145,9 @@ neverc_tcp_listener_t *neverc_tcp_listen(const char *addr, const char **errp) {
         return NULL;
     }
 
-    struct addrinfo hints, *result;
+    struct addrinfo hints, *result, *rp;
     memset(&hints, 0, sizeof(hints));
-    hints.ai_family = AF_INET;
+    hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_flags = AI_PASSIVE;
 
@@ -82,27 +160,41 @@ neverc_tcp_listener_t *neverc_tcp_listen(const char *addr, const char **errp) {
         return NULL;
     }
 
-    nc_sock_t fd = socket(result->ai_family, result->ai_socktype,
-                          result->ai_protocol);
+    nc_sock_t fd = NC_INVALID_SOCK;
+    struct sockaddr_storage bound_addr;
+    socklen_t bound_len = 0;
+    for (rp = result; rp; rp = rp->ai_next) {
+        if (rp->ai_addrlen > sizeof(bound_addr))
+            continue;
+        fd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+        if (fd == NC_INVALID_SOCK)
+            continue;
+
+        (void)nc_set_reuseaddr(fd);
+        if (rp->ai_family == AF_INET6 && host[0] == '\0') {
+            int v6only = 0;
+#ifdef _WIN32
+            (void)setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY,
+                             (const char *)&v6only, sizeof(v6only));
+#else
+            (void)setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY,
+                             &v6only, sizeof(v6only));
+#endif
+        }
+
+        if (bind(fd, rp->ai_addr, (int)rp->ai_addrlen) != NC_SOCK_ERR &&
+            listen(fd, 512) != NC_SOCK_ERR &&
+            nc_set_nonblocking(fd) == 0) {
+            bound_len = (socklen_t)rp->ai_addrlen;
+            memcpy(&bound_addr, rp->ai_addr, rp->ai_addrlen);
+            break;
+        }
+        nc_sock_close(fd);
+        fd = NC_INVALID_SOCK;
+    }
     if (fd == NC_INVALID_SOCK) {
         freeaddrinfo(result);
-        if (errp) *errp = "socket creation failed";
-        return NULL;
-    }
-
-    nc_set_reuseaddr(fd);
-
-    if (bind(fd, result->ai_addr, (int)result->ai_addrlen) == NC_SOCK_ERR) {
-        nc_sock_close(fd);
-        freeaddrinfo(result);
-        if (errp) *errp = "bind failed";
-        return NULL;
-    }
-
-    if (listen(fd, 512) == NC_SOCK_ERR) {
-        nc_sock_close(fd);
-        freeaddrinfo(result);
-        if (errp) *errp = "listen failed";
+        if (errp) *errp = "no address could be bound";
         return NULL;
     }
 
@@ -115,8 +207,8 @@ neverc_tcp_listener_t *neverc_tcp_listen(const char *addr, const char **errp) {
         return NULL;
     }
     ln->fd = fd;
-    ln->addrlen = (socklen_t)result->ai_addrlen;
-    memcpy(&ln->addr, result->ai_addr, result->ai_addrlen);
+    ln->addrlen = bound_len;
+    memcpy(&ln->addr, &bound_addr, bound_len);
 
     getsockname(fd, (struct sockaddr *)&ln->addr, &ln->addrlen);
 
@@ -133,28 +225,71 @@ neverc_tcp_conn_t *neverc_tcp_accept(neverc_tcp_listener_t *ln,
     }
 
     struct sockaddr_storage client_addr;
-    socklen_t client_len = sizeof(client_addr);
-    nc_sock_t cfd = accept(ln->fd, (struct sockaddr *)&client_addr,
-                           &client_len);
-    if (cfd == NC_INVALID_SOCK) {
-        if (errp) *errp = "accept failed";
+    socklen_t client_len;
+    nc_sock_t cfd;
+    for (;;) {
+        client_len = sizeof(client_addr);
+        cfd = accept(ln->fd, (struct sockaddr *)&client_addr, &client_len);
+        if (cfd != NC_INVALID_SOCK)
+            break;
+
+        int error = nc_sock_errno;
+#ifdef _WIN32
+        if (error == WSAEINTR)
+            continue;
+#else
+        if (error == EINTR)
+            continue;
+#endif
+        if (!tcp_accept_would_block(error) ||
+            tcp_listener_wait(ln->fd) < 0) {
+            if (errp) *errp = "accept failed";
+            return NULL;
+        }
+    }
+    if (nc_set_blocking(cfd) != 0) {
+        nc_sock_close(cfd);
+        if (errp) *errp = "failed to configure accepted socket";
         return NULL;
     }
 
-    neverc_tcp_conn_t *conn = (neverc_tcp_conn_t *)calloc(1, sizeof(*conn));
+    neverc_tcp_conn_t *conn =
+        tcp_conn_from_accepted(cfd, &client_addr, client_len, 0);
     if (!conn) {
         nc_sock_close(cfd);
         if (errp) *errp = "out of memory";
         return NULL;
     }
-    conn->fd = cfd;
-    conn->remote_len = client_len;
-    memcpy(&conn->remote, &client_addr, client_len);
-    conn->local_len = sizeof(conn->local);
-    getsockname(cfd, (struct sockaddr *)&conn->local, &conn->local_len);
 
     if (errp) *errp = NULL;
     return conn;
+}
+
+neverc_net_result_t neverc_tcp_try_accept(neverc_tcp_listener_t *ln,
+                                           neverc_tcp_conn_t **conn_out) {
+    if (conn_out) *conn_out = NULL;
+    if (!ln || !conn_out)
+        return tcp_result(NEVERC_NET_INVALID, 0, "accept", 0);
+
+    struct sockaddr_storage client_addr;
+    socklen_t client_len = sizeof(client_addr);
+    nc_sock_t cfd = nc_accept_nonblock(
+        ln->fd, (struct sockaddr *)&client_addr, &client_len);
+    if (cfd == NC_INVALID_SOCK) {
+        int error = nc_sock_errno;
+        if (tcp_accept_would_block(error))
+            return tcp_result(NEVERC_NET_WOULD_BLOCK, error,
+                              "accept", 0);
+        return tcp_result(NEVERC_NET_SYSTEM, error, "accept", 0);
+    }
+    neverc_tcp_conn_t *conn =
+        tcp_conn_from_accepted(cfd, &client_addr, client_len, 1);
+    if (!conn) {
+        nc_sock_close(cfd);
+        return tcp_result(NEVERC_NET_NOMEM, 0, "accept", 0);
+    }
+    *conn_out = conn;
+    return tcp_result(NEVERC_NET_OK, 0, "accept", 0);
 }
 
 void neverc_tcp_listener_close(neverc_tcp_listener_t *ln) {
@@ -168,6 +303,10 @@ int neverc_tcp_listener_addr(neverc_tcp_listener_t *ln,
     if (!ln || !addr) return -1;
     addr_to_string((struct sockaddr *)&ln->addr, ln->addrlen, addr);
     return 0;
+}
+
+uintptr_t neverc_tcp_listener_handle(neverc_tcp_listener_t *ln) {
+    return ln ? (uintptr_t)ln->fd : NEVERC_NET_INVALID_HANDLE;
 }
 
 /* ======================================================================
@@ -187,9 +326,9 @@ neverc_tcp_conn_t *neverc_tcp_dial(const char *addr, const char **errp) {
         return NULL;
     }
 
-    struct addrinfo hints, *result;
+    struct addrinfo hints, *result, *rp;
     memset(&hints, 0, sizeof(hints));
-    hints.ai_family = AF_INET;
+    hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
 
     char portstr[8];
@@ -201,18 +340,26 @@ neverc_tcp_conn_t *neverc_tcp_dial(const char *addr, const char **errp) {
         return NULL;
     }
 
-    nc_sock_t fd = socket(result->ai_family, result->ai_socktype,
-                          result->ai_protocol);
+    nc_sock_t fd = NC_INVALID_SOCK;
+    struct sockaddr_storage remote;
+    socklen_t remote_len = 0;
+    for (rp = result; rp; rp = rp->ai_next) {
+        if (rp->ai_addrlen > sizeof(remote))
+            continue;
+        fd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+        if (fd == NC_INVALID_SOCK)
+            continue;
+        if (connect(fd, rp->ai_addr, (int)rp->ai_addrlen) != NC_SOCK_ERR) {
+            remote_len = (socklen_t)rp->ai_addrlen;
+            memcpy(&remote, rp->ai_addr, rp->ai_addrlen);
+            break;
+        }
+        nc_sock_close(fd);
+        fd = NC_INVALID_SOCK;
+    }
     if (fd == NC_INVALID_SOCK) {
         freeaddrinfo(result);
-        if (errp) *errp = "socket creation failed";
-        return NULL;
-    }
-
-    if (connect(fd, result->ai_addr, (int)result->ai_addrlen) == NC_SOCK_ERR) {
-        nc_sock_close(fd);
-        freeaddrinfo(result);
-        if (errp) *errp = "connect failed";
+        if (errp) *errp = "all connection attempts failed";
         return NULL;
     }
 
@@ -224,8 +371,8 @@ neverc_tcp_conn_t *neverc_tcp_dial(const char *addr, const char **errp) {
         return NULL;
     }
     conn->fd = fd;
-    conn->remote_len = (socklen_t)result->ai_addrlen;
-    memcpy(&conn->remote, result->ai_addr, result->ai_addrlen);
+    conn->remote_len = remote_len;
+    memcpy(&conn->remote, &remote, remote_len);
     conn->local_len = sizeof(conn->local);
     getsockname(fd, (struct sockaddr *)&conn->local, &conn->local_len);
 
@@ -236,8 +383,29 @@ neverc_tcp_conn_t *neverc_tcp_dial(const char *addr, const char **errp) {
 
 neverc_tcp_conn_t *neverc_tcp_adopt(int fd, const void *preload,
                                      size_t preload_len, const char **errp) {
-    if (fd < 0 || fd == (int)NC_INVALID_SOCK) {
+    if (fd < 0) {
         if (errp) *errp = "invalid fd";
+        return NULL;
+    }
+    return neverc_tcp_adopt_handle((uintptr_t)(unsigned int)fd, preload,
+                                    preload_len, errp);
+}
+
+neverc_tcp_conn_t *neverc_tcp_adopt_handle(uintptr_t socket_handle,
+                                            const void *preload,
+                                            size_t preload_len,
+                                            const char **errp) {
+    nc_sock_t fd = (nc_sock_t)socket_handle;
+#ifdef _WIN32
+    if (fd == NC_INVALID_SOCK) {
+#else
+    if (socket_handle > (uintptr_t)INT_MAX || fd < 0) {
+#endif
+        if (errp) *errp = "invalid socket handle";
+        return NULL;
+    }
+    if (!preload && preload_len > 0) {
+        if (errp) *errp = "missing preload data";
         return NULL;
     }
 
@@ -246,7 +414,7 @@ neverc_tcp_conn_t *neverc_tcp_adopt(int fd, const void *preload,
         if (errp) *errp = "out of memory";
         return NULL;
     }
-    conn->fd = (nc_sock_t)fd;
+    conn->fd = fd;
     conn->remote_len = sizeof(conn->remote);
     if (getpeername(conn->fd, (struct sockaddr *)&conn->remote,
                     &conn->remote_len) != 0) {
@@ -271,7 +439,12 @@ neverc_tcp_conn_t *neverc_tcp_adopt(int fd, const void *preload,
         conn->preload_len = preload_len;
     }
 
-    nc_set_blocking(conn->fd);
+    if (nc_set_blocking(conn->fd) != 0) {
+        free(conn->preload);
+        free(conn);
+        if (errp) *errp = "failed to configure socket";
+        return NULL;
+    }
 
     if (errp) *errp = NULL;
     return conn;
@@ -281,12 +454,225 @@ neverc_tcp_conn_t *neverc_tcp_adopt(int fd, const void *preload,
  * Connection I/O
  * ====================================================================== */
 
+static neverc_net_result_t tcp_result(neverc_net_status_t status,
+                                      int system_code,
+                                      const char *operation,
+                                      size_t transferred) {
+    neverc_net_result_t result;
+    result.status = status;
+    result.system_code = system_code;
+    result.operation = operation;
+    result.transferred = transferred;
+    return result;
+}
+
+static int tcp_error_would_block(int error) {
+#ifdef _WIN32
+    return error == WSAEWOULDBLOCK || error == WSAEINPROGRESS;
+#else
+    return error == EAGAIN || error == EWOULDBLOCK;
+#endif
+}
+
+static int tcp_error_closed(int error) {
+#ifdef _WIN32
+    return error == WSAECONNABORTED || error == WSAECONNRESET ||
+           error == WSAENETRESET || error == WSAESHUTDOWN ||
+           error == WSAENOTCONN;
+#else
+    return error == ECONNABORTED || error == ECONNRESET ||
+           error == EPIPE || error == ENOTCONN;
+#endif
+}
+
+static void tcp_set_last_error(int error) {
+#ifdef _WIN32
+    WSASetLastError(error);
+#else
+    errno = error;
+#endif
+}
+
+static int tcp_ensure_nonblocking(neverc_tcp_conn_t *conn) {
+    if (nc_atomic_load(&conn->nonblocking)) return 0;
+    if (nc_set_nonblocking(conn->fd) != 0) return -1;
+    nc_atomic_store(&conn->nonblocking, 1);
+    return 0;
+}
+
+static int tcp_wait_io(nc_sock_t fd, int write_ready, int timeout_ms) {
+#ifdef _WIN32
+    for (;;) {
+        fd_set readfds;
+        fd_set writefds;
+        FD_ZERO(&readfds);
+        FD_ZERO(&writefds);
+        if (write_ready)
+            FD_SET(fd, &writefds);
+        else
+            FD_SET(fd, &readfds);
+        struct timeval timeout;
+        struct timeval *timeout_ptr = NULL;
+        if (timeout_ms >= 0) {
+            timeout.tv_sec = timeout_ms / 1000;
+            timeout.tv_usec = (timeout_ms % 1000) * 1000;
+            timeout_ptr = &timeout;
+        }
+        int rc = select(0, write_ready ? NULL : &readfds,
+                        write_ready ? &writefds : NULL, NULL, timeout_ptr);
+        if (rc != SOCKET_ERROR || WSAGetLastError() != WSAEINTR)
+            return rc == SOCKET_ERROR ? -1 : rc;
+    }
+#else
+    struct pollfd pfd;
+    pfd.fd = fd;
+    pfd.events = write_ready ? POLLOUT : POLLIN;
+    pfd.revents = 0;
+    int rc;
+    do {
+        rc = poll(&pfd, 1, timeout_ms);
+    } while (rc < 0 && errno == EINTR);
+    if (rc > 0 && (pfd.revents & POLLNVAL) != 0) {
+        errno = EBADF;
+        return -1;
+    }
+    return rc;
+#endif
+}
+
+static int tcp_wait_conn(neverc_tcp_conn_t *conn, int write_ready) {
+    int64_t deadline_ms =
+        write_ready ? conn->write_deadline_ms : conn->read_deadline_ms;
+    int timeout_ms =
+        write_ready ? conn->write_timeout_ms : conn->read_timeout_ms;
+    if (deadline_ms > 0) {
+        timeout_ms = tcp_deadline_timeout(deadline_ms);
+        if (timeout_ms < 0) return -1;
+    } else if (timeout_ms == 0) {
+        timeout_ms = -1;
+    }
+
+    int ready = tcp_wait_io(conn->fd, write_ready, timeout_ms);
+    if (ready == 0) {
+        tcp_set_last_error(tcp_timeout_error());
+        return -1;
+    }
+    return ready < 0 ? -1 : 0;
+}
+
+neverc_net_result_t neverc_tcp_try_read(neverc_tcp_conn_t *conn,
+                                        void *buf, size_t buflen) {
+    if (!conn || (!buf && buflen > 0))
+        return tcp_result(NEVERC_NET_INVALID, 0, "read", 0);
+    if (buflen == 0)
+        return tcp_result(NEVERC_NET_OK, 0, "read", 0);
+
+    if (conn->preload && conn->preload_pos < conn->preload_len) {
+        size_t avail = conn->preload_len - conn->preload_pos;
+        size_t n = buflen < avail ? buflen : avail;
+        memcpy(buf, conn->preload + conn->preload_pos, n);
+        conn->preload_pos += n;
+        if (conn->preload_pos >= conn->preload_len) {
+            free(conn->preload);
+            conn->preload = NULL;
+            conn->preload_len = 0;
+            conn->preload_pos = 0;
+        }
+        return tcp_result(NEVERC_NET_OK, 0, "read", n);
+    }
+    if (tcp_deadline_expired(conn->read_deadline_ms))
+        return tcp_result(NEVERC_NET_TIMEOUT, tcp_timeout_error(),
+                          "read", 0);
+    if (tcp_ensure_nonblocking(conn) != 0)
+        return tcp_result(NEVERC_NET_SYSTEM, nc_sock_errno, "read", 0);
+
+#ifdef _WIN32
+    if (buflen > (size_t)INT_MAX)
+        buflen = INT_MAX;
+    int n = recv(conn->fd, (char *)buf, (int)buflen, 0);
+#else
+    ssize_t n;
+    do {
+        n = recv(conn->fd, buf, buflen, MSG_DONTWAIT);
+    } while (n < 0 && errno == EINTR);
+#endif
+    if (n > 0)
+        return tcp_result(NEVERC_NET_OK, 0, "read", (size_t)n);
+    if (n == 0)
+        return tcp_result(NEVERC_NET_EOF, 0, "read", 0);
+    int error = nc_sock_errno;
+    if (tcp_deadline_expired(conn->read_deadline_ms))
+        return tcp_result(NEVERC_NET_TIMEOUT, tcp_timeout_error(),
+                          "read", 0);
+    if (tcp_error_would_block(error))
+        return tcp_result(NEVERC_NET_WOULD_BLOCK, error, "read", 0);
+    if (tcp_error_closed(error))
+        return tcp_result(NEVERC_NET_CLOSED, error, "read", 0);
+    return tcp_result(NEVERC_NET_SYSTEM, error, "read", 0);
+}
+
+neverc_net_result_t neverc_tcp_try_write(neverc_tcp_conn_t *conn,
+                                         const void *data, size_t len) {
+    if (!conn || (!data && len > 0))
+        return tcp_result(NEVERC_NET_INVALID, 0, "write", 0);
+    if (len == 0)
+        return tcp_result(NEVERC_NET_OK, 0, "write", 0);
+    if (tcp_deadline_expired(conn->write_deadline_ms))
+        return tcp_result(NEVERC_NET_TIMEOUT, tcp_timeout_error(),
+                          "write", 0);
+    if (tcp_ensure_nonblocking(conn) != 0)
+        return tcp_result(NEVERC_NET_SYSTEM, nc_sock_errno, "write", 0);
+
+#ifdef _WIN32
+    if (len > (size_t)INT_MAX)
+        len = INT_MAX;
+    int n = send(conn->fd, (const char *)data, (int)len, 0);
+#else
+    ssize_t n;
+    do {
+        n = send(conn->fd, data, len, MSG_DONTWAIT | MSG_NOSIGNAL);
+    } while (n < 0 && errno == EINTR);
+#endif
+    if (n >= 0)
+        return tcp_result(NEVERC_NET_OK, 0, "write", (size_t)n);
+    int error = nc_sock_errno;
+    if (tcp_deadline_expired(conn->write_deadline_ms))
+        return tcp_result(NEVERC_NET_TIMEOUT, tcp_timeout_error(),
+                          "write", 0);
+    if (tcp_error_would_block(error))
+        return tcp_result(NEVERC_NET_WOULD_BLOCK, error, "write", 0);
+    if (tcp_error_closed(error))
+        return tcp_result(NEVERC_NET_CLOSED, error, "write", 0);
+    return tcp_result(NEVERC_NET_SYSTEM, error, "write", 0);
+}
+
 int neverc_tcp_write(neverc_tcp_conn_t *conn, const void *data, size_t len) {
-    if (!conn) return -1;
-    if (!data || len == 0) return 0;
+    if (!conn || (!data && len > 0) || len > (size_t)INT_MAX) return -1;
+    if (len == 0) return 0;
     const char *p = (const char *)data;
     size_t total = 0;
+    if (nc_atomic_load(&conn->nonblocking)) {
+        while (total < len) {
+            neverc_net_result_t result =
+                neverc_tcp_try_write(conn, p + total, len - total);
+            if (result.status == NEVERC_NET_OK &&
+                result.transferred > 0) {
+                total += result.transferred;
+                continue;
+            }
+            if (result.status == NEVERC_NET_WOULD_BLOCK) {
+                if (tcp_wait_conn(conn, 1) == 0)
+                    continue;
+            } else if (result.system_code != 0) {
+                tcp_set_last_error(result.system_code);
+            }
+            return total > 0 ? (int)total : -1;
+        }
+        return (int)total;
+    }
     while (total < len) {
+        if (tcp_refresh_write_deadline(conn) != 0)
+            return total > 0 ? (int)total : -1;
 #ifdef _WIN32
         int n = send(conn->fd, p + total, (int)(len - total), 0);
 #else
@@ -310,7 +696,27 @@ int neverc_tcp_write(neverc_tcp_conn_t *conn, const void *data, size_t len) {
 }
 
 int neverc_tcp_read(neverc_tcp_conn_t *conn, void *buf, size_t buflen) {
-    if (!conn) return -1;
+    if (!conn || (!buf && buflen > 0) ||
+        buflen > (size_t)INT_MAX)
+        return -1;
+    if (buflen == 0) return 0;
+    if (nc_atomic_load(&conn->nonblocking)) {
+        for (;;) {
+            neverc_net_result_t result =
+                neverc_tcp_try_read(conn, buf, buflen);
+            if (result.status == NEVERC_NET_OK)
+                return (int)result.transferred;
+            if (result.status == NEVERC_NET_EOF)
+                return 0;
+            if (result.status == NEVERC_NET_WOULD_BLOCK) {
+                if (tcp_wait_conn(conn, 0) == 0)
+                    continue;
+            } else if (result.system_code != 0) {
+                tcp_set_last_error(result.system_code);
+            }
+            return -1;
+        }
+    }
     if (conn->preload && conn->preload_pos < conn->preload_len) {
         size_t avail = conn->preload_len - conn->preload_pos;
         size_t n = buflen < avail ? buflen : avail;
@@ -325,6 +731,7 @@ int neverc_tcp_read(neverc_tcp_conn_t *conn, void *buf, size_t buflen) {
         return (int)n;
     }
     for (;;) {
+        if (tcp_refresh_read_deadline(conn) != 0) return -1;
 #ifdef _WIN32
         int n = recv(conn->fd, (char *)buf, (int)buflen, 0);
         if (n >= 0) return n;
@@ -339,16 +746,33 @@ int neverc_tcp_read(neverc_tcp_conn_t *conn, void *buf, size_t buflen) {
     }
 }
 
-int neverc_tcp_conn_fd(neverc_tcp_conn_t *conn) {
-    if (!conn)
-        return -1;
+int neverc_tcp_shutdown_read(neverc_tcp_conn_t *conn) {
+    if (!conn) return -1;
 #ifdef _WIN32
-    if (conn->fd == INVALID_SOCKET)
-        return -1;
-    return (int)(uintptr_t)conn->fd;
+    return shutdown(conn->fd, SD_RECEIVE) == 0 ? 0 : -1;
 #else
-    return (int)conn->fd;
+    return shutdown(conn->fd, SHUT_RD) == 0 ? 0 : -1;
 #endif
+}
+
+int neverc_tcp_shutdown_write(neverc_tcp_conn_t *conn) {
+    if (!conn) return -1;
+#ifdef _WIN32
+    return shutdown(conn->fd, SD_SEND) == 0 ? 0 : -1;
+#else
+    return shutdown(conn->fd, SHUT_WR) == 0 ? 0 : -1;
+#endif
+}
+
+int neverc_tcp_conn_fd(neverc_tcp_conn_t *conn) {
+    uintptr_t handle = neverc_tcp_conn_handle(conn);
+    return handle == NEVERC_NET_INVALID_HANDLE || handle > (uintptr_t)INT_MAX
+               ? -1
+               : (int)handle;
+}
+
+uintptr_t neverc_tcp_conn_handle(neverc_tcp_conn_t *conn) {
+    return conn ? (uintptr_t)conn->fd : NEVERC_NET_INVALID_HANDLE;
 }
 
 void neverc_tcp_close(neverc_tcp_conn_t *conn) {
@@ -370,22 +794,127 @@ int neverc_tcp_local_addr(neverc_tcp_conn_t *conn, neverc_tcp_addr_t *addr) {
     return 0;
 }
 
-int neverc_tcp_set_timeout(neverc_tcp_conn_t *conn, int ms) {
-    if (!conn) return -1;
+static int tcp_set_socket_timeout(nc_sock_t fd, int option, int ms) {
+    if (ms < 0) return -1;
 #ifdef _WIN32
     DWORD tv = (DWORD)ms;
-    setsockopt(conn->fd, SOL_SOCKET, SO_RCVTIMEO, (const char *)&tv,
-               sizeof(tv));
-    setsockopt(conn->fd, SOL_SOCKET, SO_SNDTIMEO, (const char *)&tv,
-               sizeof(tv));
+    return setsockopt(fd, SOL_SOCKET, option, (const char *)&tv,
+                      sizeof(tv)) == 0 ? 0 : -1;
 #else
     struct timeval tv;
     tv.tv_sec = ms / 1000;
     tv.tv_usec = (ms % 1000) * 1000;
-    setsockopt(conn->fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-    setsockopt(conn->fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+    return setsockopt(fd, SOL_SOCKET, option, &tv, sizeof(tv)) == 0 ? 0 : -1;
 #endif
+}
+
+int neverc_tcp_set_read_timeout(neverc_tcp_conn_t *conn, int ms) {
+    if (!conn) return -1;
+    int rc = tcp_set_socket_timeout(conn->fd, SO_RCVTIMEO, ms);
+    if (rc == 0) {
+        conn->read_timeout_ms = ms;
+        conn->read_deadline_ms = 0;
+    }
+    return rc;
+}
+
+int neverc_tcp_set_write_timeout(neverc_tcp_conn_t *conn, int ms) {
+    if (!conn) return -1;
+    int rc = tcp_set_socket_timeout(conn->fd, SO_SNDTIMEO, ms);
+    if (rc == 0) {
+        conn->write_timeout_ms = ms;
+        conn->write_deadline_ms = 0;
+    }
+    return rc;
+}
+
+static int64_t tcp_realtime_ms(void) {
+#ifdef _WIN32
+    FILETIME filetime;
+    GetSystemTimeAsFileTime(&filetime);
+    uint64_t ticks = ((uint64_t)filetime.dwHighDateTime << 32) |
+                     filetime.dwLowDateTime;
+    return (int64_t)(ticks / 10000U - 11644473600000ULL);
+#else
+    struct timespec now;
+    if (clock_gettime(CLOCK_REALTIME, &now) != 0)
+        return -1;
+    return (int64_t)now.tv_sec * 1000 + now.tv_nsec / 1000000;
+#endif
+}
+
+static int tcp_deadline_timeout(int64_t deadline_ms) {
+    if (deadline_ms < 0) return -1;
+    if (deadline_ms == 0) return 0;
+    int64_t now = tcp_realtime_ms();
+    if (now < 0) return -1;
+    int64_t remaining = deadline_ms - now;
+    if (remaining <= 0) return 1;
+    return remaining > INT_MAX ? INT_MAX : (int)remaining;
+}
+
+static int tcp_deadline_expired(int64_t deadline_ms) {
+    if (deadline_ms <= 0) return 0;
+    int64_t now = tcp_realtime_ms();
+    return now >= 0 && now >= deadline_ms;
+}
+
+static int tcp_refresh_deadline(neverc_tcp_conn_t *conn,
+                                int64_t deadline_ms, int option) {
+    if (deadline_ms == 0) return 0;
+    if (tcp_deadline_expired(deadline_ms)) {
+#ifdef _WIN32
+        WSASetLastError(WSAETIMEDOUT);
+#else
+        errno = ETIMEDOUT;
+#endif
+        return -1;
+    }
+    int timeout = tcp_deadline_timeout(deadline_ms);
+    return timeout <= 0
+               ? -1
+               : tcp_set_socket_timeout(conn->fd, option, timeout);
+}
+
+static int tcp_refresh_read_deadline(neverc_tcp_conn_t *conn) {
+    return tcp_refresh_deadline(conn, conn->read_deadline_ms,
+                                SO_RCVTIMEO);
+}
+
+static int tcp_refresh_write_deadline(neverc_tcp_conn_t *conn) {
+    return tcp_refresh_deadline(conn, conn->write_deadline_ms,
+                                SO_SNDTIMEO);
+}
+
+int neverc_tcp_set_read_deadline(neverc_tcp_conn_t *conn,
+                                  int64_t deadline_ms) {
+    if (!conn) return -1;
+    int timeout = tcp_deadline_timeout(deadline_ms);
+    if (timeout < 0 ||
+        tcp_set_socket_timeout(conn->fd, SO_RCVTIMEO, timeout) != 0)
+        return -1;
+    conn->read_timeout_ms = 0;
+    conn->read_deadline_ms = deadline_ms;
     return 0;
+}
+
+int neverc_tcp_set_write_deadline(neverc_tcp_conn_t *conn,
+                                   int64_t deadline_ms) {
+    if (!conn) return -1;
+    int timeout = tcp_deadline_timeout(deadline_ms);
+    if (timeout < 0 ||
+        tcp_set_socket_timeout(conn->fd, SO_SNDTIMEO, timeout) != 0)
+        return -1;
+    conn->write_timeout_ms = 0;
+    conn->write_deadline_ms = deadline_ms;
+    return 0;
+}
+
+int neverc_tcp_set_timeout(neverc_tcp_conn_t *conn, int ms) {
+    if (!conn || ms < 0) return -1;
+    int read_rc = neverc_tcp_set_read_timeout(conn, ms);
+    int write_rc = neverc_tcp_set_write_timeout(conn, ms);
+    return read_rc == 0 && write_rc == 0 ? 0 : -1;
 }
 
 int neverc_tcp_set_nodelay(neverc_tcp_conn_t *conn, int enable) {
@@ -480,8 +1009,8 @@ int neverc_tcp_pipe(neverc_tcp_conn_t **a, neverc_tcp_conn_t **b) {
 #endif
 
     const char *err = NULL;
-    *a = neverc_tcp_adopt(sv[0], NULL, 0, &err);
-    *b = neverc_tcp_adopt(sv[1], NULL, 0, &err);
+    *a = neverc_tcp_adopt_handle((uintptr_t)sv[0], NULL, 0, &err);
+    *b = neverc_tcp_adopt_handle((uintptr_t)sv[1], NULL, 0, &err);
     if (!*a || !*b) {
         if (*a) neverc_tcp_close(*a);
         else nc_sock_close(sv[0]);

@@ -26,12 +26,37 @@ int main(void) {
         net.tcp.listen("127.0.0.1:0", &err);
     CHECK(tcp != NULL);
     CHECK(err == NULL);
+    neverc_tcp_conn_t *pending = NULL;
+    neverc_net_result_t tcp_result =
+        net.tcp.try_accept(tcp, &pending);
+    CHECK(tcp_result.status == NEVERC_NET_WOULD_BLOCK);
+    CHECK(pending == NULL);
+    CHECK(net.tcp.listener_handle(tcp) != NEVERC_NET_INVALID_HANDLE);
     net.tcp.listener_close(tcp);
 
     err = NULL;
     neverc_udp_conn_t *udp = net.udp.listen("127.0.0.1:0", &err);
     CHECK(udp != NULL);
     CHECK(err == NULL);
+    CHECK(net.udp.conn_handle(udp) != NEVERC_NET_INVALID_HANDLE);
+    CHECK(net.udp.set_read_timeout(udp, 100) == 0);
+    CHECK(net.udp.set_write_timeout(udp, 100) == 0);
+    CHECK(net.udp.set_read_deadline(udp, 0) == 0);
+    CHECK(net.udp.set_write_deadline(udp, 0) == 0);
+    neverc_udp_mtu_info_t mtu;
+    CHECK(net.udp.get_mtu_info(udp, &mtu) == 0);
+    CHECK(mtu.protocol_max_payload > 0);
+    char packet_buf[8];
+    neverc_udp_packet_info_t packet_info;
+    neverc_net_result_t udp_result =
+        net.udp.try_read_packet(udp, packet_buf,
+                                sizeof(packet_buf), &packet_info);
+    CHECK(udp_result.status == NEVERC_NET_WOULD_BLOCK);
+    neverc_udp_queue_t *queue = net.udp.queue_create(2, 16);
+    CHECK(queue != NULL);
+    CHECK(net.udp.queue_capacity(queue) == 2);
+    CHECK(net.udp.queue_length(queue) == 0);
+    net.udp.queue_free(queue);
     net.udp.close(udp);
 
     neverc_quic_config_t quic_cfg = net.quic.config_default();

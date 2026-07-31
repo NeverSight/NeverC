@@ -225,19 +225,26 @@ def dependency_source_files(module_key, modules, errors):
 def parse_tests(text):
     """Extract (test_name, set_of_source_paths) from STD_TEST() calls.
 
-    Handles the HTTP_TLS_DEPS macro by pre-expanding it inline.
+    Pre-expands simple multiline *_DEPS macros used by the test registry.
     """
-    macro_match = re.search(
-        r"#define\s+HTTP_TLS_DEPS\s*\\\n((?:.*\\\n)*.*?\n)", text
+    macro_pattern = re.compile(
+        r"#define\s+([A-Z][A-Z0-9_]*_DEPS)\s*\\\n"
+        r"((?:.*\\\n)*.*?\n)"
     )
-    tls_deps_files = set()
-    if macro_match:
-        macro_body = macro_match.group(1).replace("\\\n", " ")
-        tls_deps_files = set(re.findall(r'"([^"]+)"', macro_body))
+    dependency_macros = {}
+    for macro_match in macro_pattern.finditer(text):
+        macro_name = macro_match.group(1)
+        macro_body = macro_match.group(2).replace("\\\n", " ")
+        dependency_macros[macro_name] = set(
+            re.findall(r'"([^"]+)"', macro_body)
+        )
 
-    expanded = text.replace("HTTP_TLS_DEPS", ", ".join(
-        f'"{f}"' for f in sorted(tls_deps_files)
-    ))
+    expanded = text
+    for macro_name, files in dependency_macros.items():
+        replacement = ", ".join(f'"{f}"' for f in sorted(files))
+        expanded = re.sub(
+            rf"\b{re.escape(macro_name)}\b", replacement, expanded
+        )
 
     tests = {}
     for m in re.finditer(

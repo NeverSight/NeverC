@@ -75,6 +75,32 @@ class CheckTestDepsTest(unittest.TestCase):
         )
         self.assertEqual(errors, [])
 
+    def test_test_parser_expands_multiple_dependency_macros(self):
+        source = r'''
+#define TCP_DEPS \
+    "src/net/tcp/tcp.c", "src/context/context.c"
+#define HTTP_TLS_DEPS \
+    "src/crypto/tls/tls.c"
+STD_TEST(http, "src/net/http/http.c", TCP_DEPS, HTTP_TLS_DEPS)
+STD_TEST(tcp, TCP_DEPS)
+        '''
+
+        self.assertEqual(
+            CHECK_TEST_DEPS.parse_tests(source),
+            {
+                "http": {
+                    "src/net/http/http.c",
+                    "src/net/tcp/tcp.c",
+                    "src/context/context.c",
+                    "src/crypto/tls/tls.c",
+                },
+                "tcp": {
+                    "src/net/tcp/tcp.c",
+                    "src/context/context.c",
+                },
+            },
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

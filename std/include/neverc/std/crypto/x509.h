@@ -30,6 +30,26 @@ extern "C" {
 #define NEVERC_X509_SIG_ECDSA_SHA384 6
 #define NEVERC_X509_SIG_ED25519      7
 
+/* KeyUsage bits (RFC 5280 section 4.2.1.3). */
+#define NEVERC_X509_KEY_USAGE_DIGITAL_SIGNATURE  (1u << 0)
+#define NEVERC_X509_KEY_USAGE_CONTENT_COMMITMENT (1u << 1)
+#define NEVERC_X509_KEY_USAGE_KEY_ENCIPHERMENT   (1u << 2)
+#define NEVERC_X509_KEY_USAGE_DATA_ENCIPHERMENT  (1u << 3)
+#define NEVERC_X509_KEY_USAGE_KEY_AGREEMENT      (1u << 4)
+#define NEVERC_X509_KEY_USAGE_CERT_SIGN          (1u << 5)
+#define NEVERC_X509_KEY_USAGE_CRL_SIGN           (1u << 6)
+#define NEVERC_X509_KEY_USAGE_ENCIPHER_ONLY      (1u << 7)
+#define NEVERC_X509_KEY_USAGE_DECIPHER_ONLY      (1u << 8)
+
+/* Common ExtendedKeyUsage purposes. */
+#define NEVERC_X509_EXT_KEY_USAGE_SERVER_AUTH (1u << 0)
+#define NEVERC_X509_EXT_KEY_USAGE_CLIENT_AUTH (1u << 1)
+#define NEVERC_X509_EXT_KEY_USAGE_CODE_SIGNING (1u << 2)
+#define NEVERC_X509_EXT_KEY_USAGE_EMAIL_PROTECTION (1u << 3)
+#define NEVERC_X509_EXT_KEY_USAGE_TIME_STAMPING (1u << 4)
+#define NEVERC_X509_EXT_KEY_USAGE_OCSP_SIGNING (1u << 5)
+#define NEVERC_X509_EXT_KEY_USAGE_ANY (1u << 31)
+
 /* ===== Types ===== */
 
 typedef struct {
@@ -50,6 +70,11 @@ typedef struct {
     uint8_t  minute;
     uint8_t  second;
 } neverc_x509_time_t;
+
+typedef struct {
+    uint8_t bytes[16];
+    uint8_t len; /* 4 for IPv4, 16 for IPv6 */
+} neverc_x509_ip_address_t;
 
 typedef struct {
     /* Version (0 = v1, 1 = v2, 2 = v3) */
@@ -79,6 +104,20 @@ typedef struct {
 
     /* Is this a CA certificate? */
     int is_ca;
+    int basic_constraints_valid;
+    int max_path_len; /* -1 when omitted */
+
+    uint16_t key_usage;
+    int      key_usage_present;
+    uint32_t ext_key_usage;
+    int      ext_key_usage_present;
+    int      has_unhandled_critical_extension;
+
+    /* Subject Alternative Name identities. */
+    char                      **dns_names;
+    size_t                      dns_name_count;
+    neverc_x509_ip_address_t   *ip_addresses;
+    size_t                      ip_address_count;
 
     /* Raw DER bytes (not owned by this struct) */
     const uint8_t *raw;
@@ -96,6 +135,16 @@ void neverc_x509_cert_free(neverc_x509_cert_t *cert);
 
 /* Check if the certificate is self-signed (issuer == subject). */
 int neverc_x509_is_self_signed(const neverc_x509_cert_t *cert);
+
+/* Verify a DNS name or IP literal against Subject Alternative Name.
+ * Common Name is deliberately not used as a fallback.
+ * Returns 0 for a match and -1 for mismatch or invalid input. */
+int neverc_x509_verify_hostname(const neverc_x509_cert_t *cert,
+                                  const char *hostname);
+
+/* Return 1 when moment is within the inclusive certificate validity range. */
+int neverc_x509_is_valid_at(const neverc_x509_cert_t *cert,
+                              const neverc_x509_time_t *moment);
 
 /* Get signature algorithm name string. */
 const char *neverc_x509_sig_algorithm_string(int algo);
