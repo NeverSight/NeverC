@@ -3,6 +3,7 @@
  * Split from http.c to avoid large-TU compiler issue.
  */
 #include "_http_internal.h"
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -143,6 +144,8 @@ typedef struct {
 } parsed_url_t;
 
 static int parse_http_url(const char *url, parsed_url_t *out) {
+    if (!url || !out)
+        return -1;
     memset(out, 0, sizeof(*out));
     out->port = 80;
 
@@ -261,12 +264,71 @@ static int response_is_chunked(const char *headers, size_t hdr_len) {
     return 0;
 }
 
+static int contains_crlf(const char *s) {
+    return s && (strchr(s, '\r') != NULL || strchr(s, '\n') != NULL);
+}
+
+static int append_cstr(nc_buf_t *buf, const char *s) {
+    return nc_buf_append(buf, s, strlen(s));
+}
+
+static int build_http_request(nc_buf_t *req, const char *method,
+                              const parsed_url_t *url,
+                              const char *content_type,
+                              const void *body, size_t body_len,
+                              int keep_alive) {
+    if (!req)
+        return -1;
+    nc_buf_init(req);
+    if (!method || !url || (body_len > 0 && !body) ||
+        contains_crlf(method) || contains_crlf(url->host) ||
+        contains_crlf(url->path) || contains_crlf(content_type))
+        return -1;
+
+    if (append_cstr(req, method) != 0 ||
+        append_cstr(req, " ") != 0 ||
+        append_cstr(req, url->path) != 0 ||
+        append_cstr(req, " HTTP/1.1\r\nHost: ") != 0 ||
+        append_cstr(req, url->host) != 0 ||
+        append_cstr(req, "\r\n") != 0)
+        goto fail;
+
+    if (content_type &&
+        (append_cstr(req, "Content-Type: ") != 0 ||
+         append_cstr(req, content_type) != 0 ||
+         append_cstr(req, "\r\n") != 0))
+        goto fail;
+
+    if (body_len > 0) {
+        char line[64];
+        int n = snprintf(line, sizeof(line), "Content-Length: %zu\r\n",
+                         body_len);
+        if (n < 0 || (size_t)n >= sizeof(line) ||
+            nc_buf_append(req, line, (size_t)n) != 0)
+            goto fail;
+    }
+
+    if (append_cstr(req, keep_alive
+                            ? "Connection: keep-alive\r\n\r\n"
+                            : "Connection: close\r\n\r\n") != 0 ||
+        (body_len > 0 && nc_buf_append(req, body, body_len) != 0))
+        goto fail;
+
+    return 0;
+
+fail:
+    nc_buf_free(req);
+    return -1;
+}
+
 static int decode_chunked_body(const char *src, size_t srclen,
                                 char **out, size_t *out_len) {
     nc_buf_t decoded;
     nc_buf_init(&decoded);
     size_t pos = 0;
 
+    *out = NULL;
+    *out_len = 0;
     while (pos < srclen) {
         const char *line_end = NULL;
         for (size_t i = pos; i + 1 < srclen; i++) {
@@ -275,31 +337,49 @@ static int decode_chunked_body(const char *src, size_t srclen,
                 break;
             }
         }
-        if (!line_end) break;
+        if (!line_end)
+            goto fail;
 
-        unsigned long chunk_size = 0;
+        size_t chunk_size = 0;
         const char *p = src + pos;
+        int saw_digit = 0;
         while (p < line_end) {
             char c = *p;
-            if (c >= '0' && c <= '9') chunk_size = chunk_size * 16 + (unsigned long)(c - '0');
-            else if (c >= 'a' && c <= 'f') chunk_size = chunk_size * 16 + (unsigned long)(c - 'a' + 10);
-            else if (c >= 'A' && c <= 'F') chunk_size = chunk_size * 16 + (unsigned long)(c - 'A' + 10);
-            else break;
+            unsigned digit;
+            if (c >= '0' && c <= '9') digit = (unsigned)(c - '0');
+            else if (c >= 'a' && c <= 'f') digit = (unsigned)(c - 'a' + 10);
+            else if (c >= 'A' && c <= 'F') digit = (unsigned)(c - 'A' + 10);
+            else if (c == ';') break;
+            else goto fail;
+            if (chunk_size > (SIZE_MAX - digit) / 16)
+                goto fail;
+            chunk_size = chunk_size * 16 + digit;
+            saw_digit = 1;
             p++;
         }
+        if (!saw_digit)
+            goto fail;
 
         pos = (size_t)(line_end - src) + 2;
 
-        if (chunk_size == 0) break;
+        if (chunk_size == 0) {
+            *out = decoded.data;
+            *out_len = decoded.len;
+            return 0;
+        }
 
-        if (pos + chunk_size > srclen) break;
-        nc_buf_append(&decoded, src + pos, chunk_size);
-        pos += chunk_size + 2; /* skip chunk data + \r\n */
+        if (chunk_size > srclen - pos ||
+            srclen - pos - chunk_size < 2 ||
+            src[pos + chunk_size] != '\r' ||
+            src[pos + chunk_size + 1] != '\n' ||
+            nc_buf_append(&decoded, src + pos, chunk_size) != 0)
+            goto fail;
+        pos += chunk_size + 2;
     }
 
-    *out = decoded.data;
-    *out_len = decoded.len;
-    return 0;
+fail:
+    nc_buf_free(&decoded);
+    return -1;
 }
 
 static neverc_http_response_t *do_request(const char *method,
@@ -307,6 +387,14 @@ static neverc_http_response_t *do_request(const char *method,
                                             const char *content_type,
                                             const void *body,
                                             size_t body_len) {
+    if (body_len > INT_MAX)
+        return make_error_response("request body is too large");
+    if (url->is_https) {
+        return make_error_response(
+            "HTTPS is unavailable until TLS certificate verification is "
+            "implemented");
+    }
+
     nc_net_init();
 
     char connect_addr[280];
@@ -327,31 +415,16 @@ static neverc_http_response_t *do_request(const char *method,
 
     int use_keepalive = (g_conn_pool.max_idle_per_host > 0);
     nc_buf_t req;
-    nc_buf_init(&req);
-
-    char line[4096];
-    int n = snprintf(line, sizeof(line), "%s %s HTTP/1.1\r\nHost: %s\r\n",
-                     method, url->path, url->host);
-    nc_buf_append(&req, line, (size_t)n);
-
-    if (content_type) {
-        n = snprintf(line, sizeof(line), "Content-Type: %s\r\n", content_type);
-        nc_buf_append(&req, line, (size_t)n);
+    if (build_http_request(&req, method, url, content_type, body, body_len,
+                           use_keepalive) != 0 ||
+        req.len > INT_MAX) {
+        neverc_tcp_close(conn);
+        nc_buf_free(&req);
+        return make_error_response("invalid request or out of memory");
     }
-    if (body && body_len > 0) {
-        n = snprintf(line, sizeof(line), "Content-Length: %zu\r\n", body_len);
-        nc_buf_append(&req, line, (size_t)n);
-    }
-
-    if (use_keepalive)
-        nc_buf_append(&req, "Connection: keep-alive\r\n\r\n", 26);
-    else
-        nc_buf_append(&req, "Connection: close\r\n\r\n", 21);
-
-    if (body && body_len > 0)
-        nc_buf_append(&req, body, body_len);
 
     int wr = neverc_tcp_write(conn, req.data, req.len);
+    size_t request_len = req.len;
     nc_buf_free(&req);
 
     /* If write failed on a pooled connection (stale), retry with new conn */
@@ -362,29 +435,27 @@ static neverc_http_response_t *do_request(const char *method,
         if (!conn) return make_error_response("connection failed");
         neverc_tcp_set_timeout(conn, g_client_timeout_ms);
 
-        nc_buf_init(&req);
-        n = snprintf(line, sizeof(line), "%s %s HTTP/1.1\r\nHost: %s\r\n",
-                     method, url->path, url->host);
-        nc_buf_append(&req, line, (size_t)n);
-        if (content_type) {
-            n = snprintf(line, sizeof(line), "Content-Type: %s\r\n", content_type);
-            nc_buf_append(&req, line, (size_t)n);
+        if (build_http_request(&req, method, url, content_type, body,
+                               body_len, 0) != 0 ||
+            req.len > INT_MAX) {
+            neverc_tcp_close(conn);
+            nc_buf_free(&req);
+            return make_error_response("invalid request or out of memory");
         }
-        if (body && body_len > 0) {
-            n = snprintf(line, sizeof(line), "Content-Length: %zu\r\n", body_len);
-            nc_buf_append(&req, line, (size_t)n);
-        }
-        nc_buf_append(&req, "Connection: close\r\n\r\n", 21);
-        if (body && body_len > 0) nc_buf_append(&req, body, body_len);
-        neverc_tcp_write(conn, req.data, req.len);
+        request_len = req.len;
+        wr = neverc_tcp_write(conn, req.data, req.len);
         nc_buf_free(&req);
         use_keepalive = 0;
+    }
+    if (wr < 0 || (size_t)wr != request_len) {
+        neverc_tcp_close(conn);
+        return make_error_response("request write failed");
     }
 
     nc_buf_t resp_buf;
     nc_buf_init(&resp_buf);
 
-    char *hdr_end_ptr = NULL;
+    size_t hdr_end_offset = SIZE_MAX;
     int resp_content_length = -1;
     int is_chunked = 0;
     int is_head = (strcmp(method, "HEAD") == 0);
@@ -393,26 +464,35 @@ static neverc_http_response_t *do_request(const char *method,
     while (1) {
         int rn = neverc_tcp_read(conn, chunk, sizeof(chunk));
         if (rn <= 0) break;
-        nc_buf_append(&resp_buf, chunk, (size_t)rn);
+        if (nc_buf_append(&resp_buf, chunk, (size_t)rn) != 0) {
+            neverc_tcp_close(conn);
+            nc_buf_free(&resp_buf);
+            return make_error_response("out of memory");
+        }
 
-        if (!hdr_end_ptr) {
-            hdr_end_ptr = strstr(resp_buf.data, "\r\n\r\n");
+        if (hdr_end_offset == SIZE_MAX) {
+            char *hdr_end_ptr = strstr(resp_buf.data, "\r\n\r\n");
             if (hdr_end_ptr) {
+                hdr_end_offset = (size_t)(hdr_end_ptr - resp_buf.data);
+
                 /* HEAD responses have no body regardless of Content-Length */
                 if (is_head) break;
 
-                size_t hdr_size = (size_t)(hdr_end_ptr - resp_buf.data);
                 resp_content_length = parse_response_header_int(
-                    resp_buf.data, hdr_size, "Content-Length");
-                is_chunked = response_is_chunked(resp_buf.data, hdr_size);
+                    resp_buf.data, hdr_end_offset, "Content-Length");
+                is_chunked = response_is_chunked(resp_buf.data,
+                                                  hdr_end_offset);
 
                 if (!is_chunked && resp_content_length >= 0) {
-                    size_t total_expected = hdr_size + 4 + (size_t)resp_content_length;
+                    size_t total_expected = hdr_end_offset + 4 +
+                                            (size_t)resp_content_length;
                     if (resp_buf.len >= total_expected) break;
                 }
                 if (is_chunked) {
-                    char *body_start = hdr_end_ptr + 4;
-                    size_t body_so_far = resp_buf.len - (size_t)(body_start - resp_buf.data);
+                    const char *body_start =
+                        resp_buf.data + hdr_end_offset + 4;
+                    size_t body_so_far =
+                        resp_buf.len - hdr_end_offset - 4;
                     if (body_so_far >= 5) {
                         const char *end_marker = body_start + body_so_far - 5;
                         if (memcmp(end_marker, "0\r\n\r\n", 5) == 0) break;
@@ -420,15 +500,15 @@ static neverc_http_response_t *do_request(const char *method,
                 }
             }
         } else if (is_chunked) {
-            char *body_start = hdr_end_ptr + 4;
-            size_t body_so_far = resp_buf.len - (size_t)(body_start - resp_buf.data);
+            const char *body_start = resp_buf.data + hdr_end_offset + 4;
+            size_t body_so_far = resp_buf.len - hdr_end_offset - 4;
             if (body_so_far >= 5) {
                 const char *end_marker = body_start + body_so_far - 5;
                 if (memcmp(end_marker, "0\r\n\r\n", 5) == 0) break;
             }
         } else if (resp_content_length >= 0) {
-            size_t hdr_size = (size_t)(hdr_end_ptr - resp_buf.data);
-            size_t total_expected = hdr_size + 4 + (size_t)resp_content_length;
+            size_t total_expected = hdr_end_offset + 4 +
+                                    (size_t)resp_content_length;
             if (resp_buf.len >= total_expected) break;
         }
     }
@@ -485,12 +565,13 @@ static neverc_http_response_t *do_request(const char *method,
         if (is_chunked && raw_blen > 0) {
             char *decoded = NULL;
             size_t decoded_len = 0;
-            decode_chunked_body(body_start, raw_blen, &decoded, &decoded_len);
-            if (decoded && decoded_len > 0) {
+            if (decode_chunked_body(body_start, raw_blen, &decoded,
+                                    &decoded_len) != 0) {
+                r->error = "invalid or incomplete chunked response";
+                server_keepalive = 0;
+            } else if (decoded) {
                 r->body = decoded;
                 r->body_len = decoded_len;
-            } else {
-                free(decoded);
             }
         } else {
             if (resp_content_length >= 0 && (size_t)resp_content_length < raw_blen)

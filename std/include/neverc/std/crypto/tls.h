@@ -2,10 +2,12 @@
 #define NEVERC_CRYPTO_TLS_H
 
 /*
- * NeverC crypto/tls — TLS 1.3 (RFC 8446), self-implemented.
+ * NeverC crypto/tls — experimental TLS 1.3 (RFC 8446) components.
  *
- * Uses NeverC crypto primitives: ECDH X25519/P256, AES-128-GCM, ChaCha20-Poly1305,
- * SHA-256, HKDF, HMAC, ECDSA/RSA/Ed25519 signatures, X.509 certificates.
+ * The key schedule and record-layer components are not yet backed by complete
+ * CertificateVerify and X.509 chain/hostname validation. Connection and
+ * listener entry points therefore fail closed until those checks are
+ * implemented and interoperably tested.
  *
  * Go-style API:
  *   // Client
@@ -77,17 +79,17 @@ void neverc_tls_config_set_server_name(neverc_tls_config_t *cfg,
 /* --- TLS Connection --- */
 typedef struct neverc_tls_conn neverc_tls_conn_t;
 
-/* Client: connect and perform TLS 1.3 handshake. */
+/* Returns NULL with an unavailable error until verification is complete. */
 neverc_tls_conn_t *neverc_tls_dial(const char *addr,
                                     neverc_tls_config_t *cfg,
                                     const char **errp);
 
-/* Server: perform TLS 1.3 handshake on an existing TCP connection. */
+/* Returns NULL with an unavailable error until verification is complete. */
 neverc_tls_conn_t *neverc_tls_server(neverc_tcp_conn_t *tcp,
                                       neverc_tls_config_t *cfg,
                                       const char **errp);
 
-/* Client: perform TLS 1.3 handshake on an existing TCP connection. */
+/* Returns NULL with an unavailable error until verification is complete. */
 neverc_tls_conn_t *neverc_tls_client(neverc_tcp_conn_t *tcp,
                                       neverc_tls_config_t *cfg,
                                       const char **errp);
@@ -114,12 +116,12 @@ const uint8_t *neverc_tls_peer_certificate(neverc_tls_conn_t *conn,
 /* --- TLS Listener (for HTTPS server) --- */
 typedef struct neverc_tls_listener neverc_tls_listener_t;
 
-/* Listen on addr with TLS. cfg must have cert/key loaded. */
+/* Returns NULL with an unavailable error until verification is complete. */
 neverc_tls_listener_t *neverc_tls_listen(const char *addr,
                                           neverc_tls_config_t *cfg,
                                           const char **errp);
 
-/* Accept a TLS connection. Performs handshake. */
+/* Returns NULL with an unavailable error until verification is complete. */
 neverc_tls_conn_t *neverc_tls_accept(neverc_tls_listener_t *ln,
                                       const char **errp);
 

@@ -169,6 +169,36 @@ static void test_dial_errors(void) {
     neverc_tls_conn_t *conn = neverc_tls_dial("127.0.0.1:1", NULL, &err);
     check_null("dial bad port", conn);
     check_not_null("dial error msg", err);
+    check_int("dial fails closed while verification is incomplete",
+              err && strstr(err, "unavailable") != NULL, 1);
+
+    neverc_tls_config_t *cfg = neverc_tls_config_new();
+    check_not_null("listen fail-closed config", cfg);
+    err = NULL;
+    neverc_tls_listener_t *listener =
+        neverc_tls_listen("127.0.0.1:0", cfg, &err);
+    check_null("listen unavailable", listener);
+    check_int("listen fail-closed error",
+              err && strstr(err, "unavailable") != NULL, 1);
+
+    err = NULL;
+    check_null("server unavailable",
+               neverc_tls_server(NULL, cfg, &err));
+    check_int("server fail-closed error",
+              err && strstr(err, "unavailable") != NULL, 1);
+
+    err = NULL;
+    check_null("client unavailable",
+               neverc_tls_client(NULL, cfg, &err));
+    check_int("client fail-closed error",
+              err && strstr(err, "unavailable") != NULL, 1);
+
+    err = NULL;
+    check_null("accept unavailable",
+               neverc_tls_accept(NULL, &err));
+    check_int("accept fail-closed error",
+              err && strstr(err, "unavailable") != NULL, 1);
+    neverc_tls_config_free(cfg);
 }
 
 /* ===== Cipher suite test ===== */

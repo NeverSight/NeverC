@@ -22,6 +22,10 @@ typedef void (*neverc_cancel_func_t)(void);
 neverc_context_t *neverc_context_background(void);
 neverc_context_t *neverc_context_todo(void);
 
+/* The legacy no-argument cancel callback is owned by the returned context:
+ * it may be called repeatedly while ctx is alive, but is invalid after
+ * neverc_context_free(ctx). At most 32 such callbacks may be live at once.
+ * On callback-slot exhaustion, returns NULL and clears *cancel_out. */
 neverc_context_t *neverc_context_with_cancel(neverc_context_t *parent,
                                               neverc_cancel_func_t *cancel_out);
 
@@ -61,6 +65,8 @@ int64_t     neverc_context_deadline(const neverc_context_t *ctx);
 void neverc_context_free(neverc_context_t *ctx);
 
 typedef int (*neverc_context_stop_func_t)(void);
+/* Experimental compatibility API. The current callback trampoline pool
+ * supports at most four registrations per process. */
 neverc_context_stop_func_t neverc_context_after_func(neverc_context_t *ctx,
                                                       void (*f)(void));
 

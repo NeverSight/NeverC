@@ -1,5 +1,6 @@
 #include "neverc/std/net/http.h"
 #include "neverc/std/net/tcp.h"
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -460,6 +461,72 @@ static void test_http_client(void) {
         check_not_null("client null url resp", resp);
         if (resp) {
             check_not_null("client null url error", resp->error);
+            neverc_http_response_free(resp);
+        }
+    }
+
+    /* HTTPS must never be sent as cleartext to a TCP endpoint. */
+    {
+        char url[64];
+        snprintf(url, sizeof(url), "https://127.0.0.1:%d/hello", port);
+        neverc_http_response_t *resp = neverc_http_get(url);
+        check_not_null("client https fail-closed resp", resp);
+        if (resp) {
+            check_not_null("client https fail-closed error", resp->error);
+            check_int("client https no cleartext status", resp->status_code, 0);
+            neverc_http_response_free(resp);
+        }
+    }
+
+    /* Request construction must not read past its formatting scratch space,
+     * and caller-controlled fields must not inject extra header lines. */
+    {
+        char url[64];
+        snprintf(url, sizeof(url), "http://127.0.0.1:%d/post", port);
+
+        char *long_type = (char *)malloc(5001);
+        check_not_null("client long content type allocation", long_type);
+        if (long_type) {
+            memset(long_type, 'a', 5000);
+            long_type[5000] = '\0';
+            neverc_http_response_t *resp =
+                neverc_http_post(url, long_type, "x", 1);
+            check_not_null("client long content type resp", resp);
+            if (resp) {
+                check_int("client long content type status",
+                          resp->status_code, 201);
+                neverc_http_response_free(resp);
+            }
+            free(long_type);
+        }
+
+        neverc_http_response_t *resp =
+            neverc_http_do("GET\r\nX-Injected: yes", url, NULL, NULL, 0);
+        check_not_null("client injected method resp", resp);
+        if (resp) {
+            check_not_null("client injected method error", resp->error);
+            check_int("client injected method no status",
+                      resp->status_code, 0);
+            neverc_http_response_free(resp);
+        }
+
+        resp = neverc_http_post(url, "text/plain\r\nX-Injected: yes",
+                                 "x", 1);
+        check_not_null("client injected content type resp", resp);
+        if (resp) {
+            check_not_null("client injected content type error", resp->error);
+            check_int("client injected content type no status",
+                      resp->status_code, 0);
+            neverc_http_response_free(resp);
+        }
+
+        resp = neverc_http_post(url, "application/octet-stream",
+                                 "x", SIZE_MAX);
+        check_not_null("client oversized body resp", resp);
+        if (resp) {
+            check_not_null("client oversized body error", resp->error);
+            check_int("client oversized body no status",
+                      resp->status_code, 0);
             neverc_http_response_free(resp);
         }
     }
@@ -1179,11 +1246,30 @@ static void chunked_body_handler(neverc_http_request_t *req,
     neverc_http_end_chunked(w);
 }
 
+static void large_chunked_body_handler(neverc_http_request_t *req,
+                                        neverc_http_response_writer_t *w) {
+    (void)req;
+    neverc_http_enable_chunked(w);
+    neverc_http_set_header(w, "Content-Type", "application/octet-stream");
+
+    char chunk[4096];
+    for (int block = 0; block < 32; block++) {
+        for (size_t i = 0; i < sizeof(chunk); i++)
+            chunk[i] = (char)('a' + ((block * (int)sizeof(chunk) +
+                                      (int)i) % 26));
+        neverc_http_write(w, chunk, sizeof(chunk));
+        neverc_http_flush_chunk(w);
+    }
+    neverc_http_end_chunked(w);
+}
+
 static pid_t start_chunked_body_server(int port) {
     pid_t pid = fork();
     if (pid == 0) {
         neverc_http_mux_t *mux = neverc_http_new_mux();
         neverc_http_mux_handle(mux, "/chunked_body", chunked_body_handler);
+        neverc_http_mux_handle(mux, "/chunked_large",
+                                large_chunked_body_handler);
         char addr[32];
         snprintf(addr, sizeof(addr), "127.0.0.1:%d", port);
         neverc_http_listen_and_serve(addr, mux);
@@ -1213,6 +1299,24 @@ static void test_client_chunked_response(void) {
                        strstr(resp->body, "Hello") != NULL &&
                        strstr(resp->body, "Chunked") != NULL &&
                        strstr(resp->body, "World") != NULL, 1);
+        }
+        neverc_http_response_free(resp);
+    }
+
+    snprintf(url, sizeof(url), "http://127.0.0.1:%d/chunked_large", port);
+    neverc_http_client_set_timeout(1000);
+    resp = neverc_http_get(url);
+    neverc_http_client_set_timeout(30000);
+    check_not_null("large chunked client resp", resp);
+    if (resp) {
+        check_int("large chunked client status", resp->status_code, 200);
+        check_int("large chunked client body length",
+                  (int)resp->body_len, 32 * 4096);
+        if (resp->body && resp->body_len == 32 * 4096) {
+            check_int("large chunked first byte", resp->body[0], 'a');
+            check_int("large chunked last byte",
+                      resp->body[resp->body_len - 1],
+                      'a' + (((32 * 4096) - 1) % 26));
         }
         neverc_http_response_free(resp);
     }

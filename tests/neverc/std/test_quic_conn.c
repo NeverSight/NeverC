@@ -6,6 +6,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#ifndef _WIN32
+#include <errno.h>
+#endif
+#include "neverc/std/net/quic.h"
 
 /* Pull in source directly for unit testing */
 #include "../../../std/src/net/quic/quic_varint.c"
@@ -346,6 +350,36 @@ static void test_stream_get_id(void) {
     neverc_quic_conn_destroy(conn);
 }
 
+static void test_public_transport_fails_closed(void) {
+    neverc_quic_config_t cfg = neverc_quic_config_default();
+    ASSERT_EQ(cfg.max_idle_timeout_ms, 30000);
+    ASSERT_EQ(cfg.max_udp_payload_size, 1200);
+
+    const char *err = NULL;
+#ifdef _WIN32
+    WSASetLastError(0);
+#else
+    errno = 0;
+#endif
+    neverc_quic_endpoint_t *ep =
+        neverc_quic_listen("127.0.0.1:0", &cfg, &err);
+    ASSERT_NULL(ep);
+    ASSERT_NOT_NULL(err);
+    ASSERT_TRUE(strstr(err, "unavailable") != NULL);
+#ifdef _WIN32
+    ASSERT_EQ(WSAGetLastError(), WSAEOPNOTSUPP);
+#else
+    ASSERT_EQ(errno, ENOSYS);
+#endif
+
+    err = NULL;
+    neverc_quic_conn_t *conn =
+        neverc_quic_dial("127.0.0.1:4433", &cfg, &err);
+    ASSERT_NULL(conn);
+    ASSERT_NOT_NULL(err);
+    ASSERT_TRUE(strstr(err, "unavailable") != NULL);
+}
+
 /* ======================================================================
  * main
  * ====================================================================== */
@@ -372,6 +406,7 @@ int main(void) {
     test_conn_is_alive();
     test_conn_alpn();
     test_stream_get_id();
+    test_public_transport_fails_closed();
 
     printf("\n%d passed, %d failed (of %d)\n", tests_passed, tests_failed, tests_run);
     return tests_failed > 0 ? 1 : 0;

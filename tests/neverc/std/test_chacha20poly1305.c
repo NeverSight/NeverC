@@ -3,6 +3,7 @@
  */
 #include "neverc/std/crypto/chacha20poly1305.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static int tests_run = 0, tests_passed = 0, tests_failed = 0;
@@ -169,11 +170,55 @@ static void test_auth_failure(void) {
     check_bytes("correct plaintext", dec, pt, 11);
 }
 
+static void test_large_message_roundtrip(void) {
+    printf("[large message]\n");
+
+    const size_t plaintext_len = 4096;
+    const size_t aad_len = 777;
+    uint8_t key[32] = {0};
+    uint8_t nonce[12] = {0};
+    uint8_t *plaintext = (uint8_t *)malloc(plaintext_len);
+    uint8_t *aad = (uint8_t *)malloc(aad_len);
+    uint8_t *ciphertext = (uint8_t *)malloc(plaintext_len + 16);
+    uint8_t *decrypted = (uint8_t *)malloc(plaintext_len);
+
+    if (!plaintext || !aad || !ciphertext || !decrypted) {
+        check_int("large message allocation", 0, 1);
+        free(plaintext);
+        free(aad);
+        free(ciphertext);
+        free(decrypted);
+        return;
+    }
+
+    for (size_t i = 0; i < plaintext_len; i++)
+        plaintext[i] = (uint8_t)(i * 13 + 7);
+    for (size_t i = 0; i < aad_len; i++)
+        aad[i] = (uint8_t)(i * 5 + 11);
+
+    size_t sealed_len = neverc_chacha20poly1305_seal(
+        ciphertext, key, nonce, plaintext, plaintext_len, aad, aad_len);
+    check_int("large seal length", (int)sealed_len,
+              (int)(plaintext_len + 16));
+
+    int opened_len = neverc_chacha20poly1305_open(
+        decrypted, key, nonce, ciphertext, sealed_len, aad, aad_len);
+    check_int("large open length", opened_len, (int)plaintext_len);
+    check_bytes("large roundtrip data", decrypted, plaintext,
+                (int)plaintext_len);
+
+    free(plaintext);
+    free(aad);
+    free(ciphertext);
+    free(decrypted);
+}
+
 int main(void) {
     printf("=== NeverC ChaCha20-Poly1305 AEAD Tests ===\n");
     test_rfc8439();
     test_roundtrip();
     test_auth_failure();
+    test_large_message_roundtrip();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");

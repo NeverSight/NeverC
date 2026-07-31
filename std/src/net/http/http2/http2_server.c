@@ -10,6 +10,10 @@
 #include <string.h>
 #include <stdio.h>
 
+#ifndef NC_H2_REALLOC
+#define NC_H2_REALLOC realloc
+#endif
+
 #ifdef _WIN32
   #include <winsock2.h>
   #include <ws2tcpip.h>
@@ -343,21 +347,43 @@ static void h2_clear_pending_hdr(h2_conn_t *conn) {
     conn->pending_end_stream = 0;
 }
 
-static int h2_append_hdr_block(h2_conn_t *conn, const uint8_t *data, size_t len) {
-    size_t new_len = conn->pending_hdr_len + len;
-    if (new_len > conn->pending_hdr_cap) {
-        size_t cap = conn->pending_hdr_cap ? conn->pending_hdr_cap : 4096;
-        while (cap < new_len)
-            cap *= 2;
-        uint8_t *p = (uint8_t *)realloc(conn->pending_hdr_block, cap);
-        if (!p)
+static int h2_buffer_append(uint8_t **buffer, size_t *length,
+                            size_t *capacity, const uint8_t *data,
+                            size_t data_len) {
+    if (!buffer || !length || !capacity || (data_len > 0 && !data))
+        return -1;
+    if (data_len > SIZE_MAX - *length)
+        return -1;
+
+    size_t new_len = *length + data_len;
+    if (new_len > *capacity) {
+        size_t new_cap = *capacity < 4096 ? 4096 : *capacity;
+        while (new_cap < new_len) {
+            if (new_cap > SIZE_MAX / 2) {
+                new_cap = new_len;
+                break;
+            }
+            new_cap *= 2;
+        }
+
+        uint8_t *new_buffer =
+            (uint8_t *)NC_H2_REALLOC(*buffer, new_cap);
+        if (!new_buffer)
             return -1;
-        conn->pending_hdr_block = p;
-        conn->pending_hdr_cap = cap;
+        *buffer = new_buffer;
+        *capacity = new_cap;
     }
-    memcpy(conn->pending_hdr_block + conn->pending_hdr_len, data, len);
-    conn->pending_hdr_len = new_len;
+
+    if (data_len > 0)
+        memcpy(*buffer + *length, data, data_len);
+    *length = new_len;
     return 0;
+}
+
+static int h2_append_hdr_block(h2_conn_t *conn, const uint8_t *data, size_t len) {
+    return h2_buffer_append(&conn->pending_hdr_block,
+                            &conn->pending_hdr_len,
+                            &conn->pending_hdr_cap, data, len);
 }
 
 static h2_stream_t *h2_find_stream(h2_conn_t *conn, uint32_t id);
@@ -668,16 +694,14 @@ static int h2_serve_io(neverc_h2_server_t *srv, h2_io_t *io) {
                 break;
             }
             if (fhdr.length > 0) {
-                size_t new_len = stream->body_len + fhdr.length;
-                if (new_len > stream->body_cap) {
-                    size_t new_cap = stream->body_cap < 4096 ? 4096 : stream->body_cap * 2;
-                    while (new_cap < new_len)
-                        new_cap *= 2;
-                    stream->body = (uint8_t *)realloc(stream->body, new_cap);
-                    stream->body_cap = new_cap;
+                if (h2_buffer_append(&stream->body, &stream->body_len,
+                                     &stream->body_cap, payload,
+                                     fhdr.length) != 0) {
+                    h2_write_goaway(&conn.io, conn.last_stream_id,
+                                    NC_H2_INTERNAL_ERROR);
+                    free(payload);
+                    goto cleanup;
                 }
-                memcpy(stream->body + stream->body_len, payload, fhdr.length);
-                stream->body_len = new_len;
 
                 conn.conn_recv_window -= (int32_t)fhdr.length;
                 stream->recv_window -= (int32_t)fhdr.length;

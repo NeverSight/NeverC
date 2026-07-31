@@ -4,14 +4,20 @@ on:
   push:
     paths:
       - 'std/manifest.json'
+      - 'std/include/**/*.h'
+      - 'std/src/**/*.c'
       - 'tests/neverc/StdLibTests.cpp'
       - 'utils/lint/check-test-deps.py'
+      - 'utils/lint/test_check_test_deps.py'
       - '.github/workflows/lint-test-deps.yml'
   pull_request:
     paths:
       - 'std/manifest.json'
+      - 'std/include/**/*.h'
+      - 'std/src/**/*.c'
       - 'tests/neverc/StdLibTests.cpp'
       - 'utils/lint/check-test-deps.py'
+      - 'utils/lint/test_check_test_deps.py'
       - '.github/workflows/lint-test-deps.yml'
 
 jobs:
@@ -26,9 +32,11 @@ jobs:
         with:
           python-version: '3.x'
 
-      - name: Verify StdLibTests.cpp covers manifest.json deps
+      - name: Test standard-library registration validator
+        run: python3 -m unittest utils/lint/test_check_test_deps.py
+
+      - name: Validate standard-library registration and test deps
         run: |
           python3 utils/lint/check-test-deps.py
           echo ""
-          echo "If this step fails, add the missing source files to the"
-          echo "relevant STD_TEST() call in tests/neverc/StdLibTests.cpp."
+          echo "Fix the reported manifest, API, or STD_TEST dependency gap."

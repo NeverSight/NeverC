@@ -3,6 +3,7 @@
 #include "include/csupport/buffer.h"
 #include "include/csupport/la_lp_lfloat.h"
 #include "include/csupport/lapint.h"
+#include "include/csupport/types.h" // IWYU pragma: keep
 #include <assert.h>
 #include <limits.h>
 #include <math.h>

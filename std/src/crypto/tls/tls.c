@@ -1264,104 +1264,40 @@ static int tls_server_handshake(neverc_tls_conn_t *conn,
  * Public API
  * ====================================================================== */
 
+static const char k_tls_unavailable[] =
+    "TLS transport is unavailable: certificate chain and "
+    "CertificateVerify validation are not implemented";
+
+static void tls_set_unavailable(const char **errp) {
+    if (errp)
+        *errp = k_tls_unavailable;
+}
+
 neverc_tls_conn_t *neverc_tls_dial(const char *addr,
                                     neverc_tls_config_t *cfg,
                                     const char **errp) {
-    const char *err = NULL;
-    neverc_tcp_conn_t *tcp = neverc_tcp_dial(addr, &err);
-    if (!tcp) {
-        if (errp) *errp = err ? err : "tcp connect failed";
-        return NULL;
-    }
-
-    neverc_tls_conn_t *conn = tls_conn_new(tcp, 1);
-    if (!conn) {
-        neverc_tcp_close(tcp);
-        if (errp) *errp = "out of memory";
-        return NULL;
-    }
-
-    /* Auto-set SNI from addr if not configured */
-    neverc_tls_config_t *local_cfg = cfg;
-    neverc_tls_config_t *auto_cfg = NULL;
-    if (!local_cfg) {
-        auto_cfg = neverc_tls_config_new();
-        auto_cfg->skip_verify = 1;
-        local_cfg = auto_cfg;
-    }
-    if (!local_cfg->server_name && addr) {
-        char host[256] = {0};
-        const char *colon = strchr(addr, ':');
-        if (colon) {
-            size_t hlen = (size_t)(colon - addr);
-            if (hlen < sizeof(host)) {
-                memcpy(host, addr, hlen);
-                host[hlen] = '\0';
-                local_cfg->server_name = strdup(host);
-            }
-        }
-    }
-
-    if (tls_client_handshake(conn, local_cfg) != 0) {
-        neverc_tls_close(conn);
-        neverc_tls_config_free(auto_cfg);
-        if (errp) *errp = "tls handshake failed";
-        return NULL;
-    }
-
-    neverc_tls_config_free(auto_cfg);
-    if (errp) *errp = NULL;
-    return conn;
+    (void)addr;
+    (void)cfg;
+    tls_set_unavailable(errp);
+    return NULL;
 }
 
 neverc_tls_conn_t *neverc_tls_server(neverc_tcp_conn_t *tcp,
                                       neverc_tls_config_t *cfg,
                                       const char **errp) {
-    if (!tcp || !cfg) {
-        if (errp) *errp = "null argument";
-        return NULL;
-    }
-
-    neverc_tls_conn_t *conn = tls_conn_new(tcp, 0);
-    if (!conn) {
-        if (errp) *errp = "out of memory";
-        return NULL;
-    }
-
-    if (tls_server_handshake(conn, cfg) != 0) {
-        conn->tcp = NULL; /* don't close caller's TCP */
-        neverc_tls_close(conn);
-        if (errp) *errp = "tls handshake failed";
-        return NULL;
-    }
-
-    if (errp) *errp = NULL;
-    return conn;
+    (void)tcp;
+    (void)cfg;
+    tls_set_unavailable(errp);
+    return NULL;
 }
 
 neverc_tls_conn_t *neverc_tls_client(neverc_tcp_conn_t *tcp,
                                       neverc_tls_config_t *cfg,
                                       const char **errp) {
-    if (!tcp) {
-        if (errp) *errp = "null tcp";
-        return NULL;
-    }
-
-    neverc_tls_conn_t *conn = tls_conn_new(tcp, 0);
-    if (!conn) {
-        if (errp) *errp = "out of memory";
-        return NULL;
-    }
-
-    if (tls_client_handshake(conn, cfg) != 0) {
-        conn->tcp = NULL;
-        neverc_tls_close(conn);
-        if (errp) *errp = "tls handshake failed";
-        return NULL;
-    }
-
-    if (errp) *errp = NULL;
-    return conn;
+    (void)tcp;
+    (void)cfg;
+    tls_set_unavailable(errp);
+    return NULL;
 }
 
 int neverc_tls_read(neverc_tls_conn_t *conn, void *buf, size_t buflen) {
@@ -1468,53 +1404,17 @@ const uint8_t *neverc_tls_peer_certificate(neverc_tls_conn_t *conn,
 neverc_tls_listener_t *neverc_tls_listen(const char *addr,
                                           neverc_tls_config_t *cfg,
                                           const char **errp) {
-    if (!cfg || !cfg->cert_der) {
-        if (errp) *errp = "no certificate loaded";
-        return NULL;
-    }
-
-    neverc_tcp_listener_t *tcp_ln = neverc_tcp_listen(addr, errp);
-    if (!tcp_ln) return NULL;
-
-    neverc_tls_listener_t *ln =
-        (neverc_tls_listener_t *)calloc(1, sizeof(*ln));
-    if (!ln) {
-        neverc_tcp_listener_close(tcp_ln);
-        if (errp) *errp = "out of memory";
-        return NULL;
-    }
-    ln->tcp_ln = tcp_ln;
-    ln->cfg = cfg;
-
-    if (errp) *errp = NULL;
-    return ln;
+    (void)addr;
+    (void)cfg;
+    tls_set_unavailable(errp);
+    return NULL;
 }
 
 neverc_tls_conn_t *neverc_tls_accept(neverc_tls_listener_t *ln,
                                       const char **errp) {
-    if (!ln) {
-        if (errp) *errp = "null listener";
-        return NULL;
-    }
-
-    neverc_tcp_conn_t *tcp = neverc_tcp_accept(ln->tcp_ln, errp);
-    if (!tcp) return NULL;
-
-    neverc_tls_conn_t *conn = tls_conn_new(tcp, 1);
-    if (!conn) {
-        neverc_tcp_close(tcp);
-        if (errp) *errp = "out of memory";
-        return NULL;
-    }
-
-    if (tls_server_handshake(conn, ln->cfg) != 0) {
-        neverc_tls_close(conn);
-        if (errp) *errp = "tls handshake failed";
-        return NULL;
-    }
-
-    if (errp) *errp = NULL;
-    return conn;
+    (void)ln;
+    tls_set_unavailable(errp);
+    return NULL;
 }
 
 void neverc_tls_listener_close(neverc_tls_listener_t *ln) {

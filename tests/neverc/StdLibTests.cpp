@@ -376,11 +376,21 @@ STD_TEST(suffixarray, "src/index/suffixarray/suffixarray.c")
 
 // ===== Sync =====
 STD_TEST(sync, "src/sync/sync.c")
+TEST_F(StdLibTest, SyncMapAllocationFailure) {
+  auto r = compileAndRunStdTest("sync_oom", {}, {"-fno-builtin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
 STD_TEST(atomic, "src/sync/atomic/atomic.c")
 
 // ===== Net =====
 STD_TEST(tcp, "src/net/tcp/tcp.c")
 STD_TEST(udp, "src/net/udp/udp.c")
+TEST_F(StdLibTest, NetBufferFailurePaths) {
+  auto r = compileAndRunStdTest("net_buffer", {}, {"-fno-builtin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
 
 // http.c embeds HTTPS support; the COFF linker (Windows) requires all
 // referenced TLS symbols to be present at link time even when the test
@@ -414,6 +424,21 @@ STD_TEST(io_uring, "src/net/tcp/tcp.c", "src/net/http/http.c", "src/net/http/htt
 // ===== HTTP/2 =====
 STD_TEST(http2, "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", "src/net/http/http.c", "src/net/http/http_client.c", "src/net/tcp/tcp.c",
     HTTP_TLS_DEPS)
+STD_TEST(http2_oom, "src/net/http/http2/http2.c", "src/net/http/http.c",
+    "src/net/http/http_client.c", "src/net/tcp/tcp.c", HTTP_TLS_DEPS)
+
+// ===== QUIC / HTTP/3 experimental components =====
+STD_TEST(quic_frame)
+STD_TEST(quic_loss)
+STD_TEST(quic_conn, "src/net/quic/quic_api.c")
+STD_TEST(http3_frame)
+STD_TEST(http3_server)
+
+TEST_F(StdLibTest, EmbeddedNetworkDotSyntax) {
+  auto r = compileAndRunStdTest("network_builtin", {}, {"-fbuiltin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
 
 // ===== HTTP Benchmark =====
 STD_TEST(http_bench, "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", "src/net/tcp/tcp.c", HTTP_TLS_DEPS)

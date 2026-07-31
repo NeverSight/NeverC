@@ -317,7 +317,9 @@ void AssembleAction::ExecuteAction() {
     }
     if ((*Pipeline)->replacesParser()) {
       plugin::AssemblySourceArtifact Source;
-      Source.Identifier = Input->getBufferIdentifier().str();
+      // MemoryBuffer identifiers are optional; the action input owns the
+      // stable logical name required by the plugin artifact contract.
+      Source.Identifier = getCurrentFileOrBufferName().str();
       Source.Buffer = Input->getBuffer().str();
       if (Error E = Source.verify()) {
         reportAssemblerError(CI, toString(std::move(E)));

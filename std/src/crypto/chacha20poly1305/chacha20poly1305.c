@@ -5,6 +5,8 @@
 #include "neverc/std/crypto/chacha20poly1305.h"
 #include "neverc/std/crypto/chacha20.h"
 #include "neverc/std/crypto/poly1305.h"
+#include <limits.h>
+#include <stdlib.h>
 #include <string.h>
 
 static void put_le64(uint8_t *p, uint64_t v) {
@@ -52,6 +54,23 @@ static size_t build_mac_data(uint8_t *mac_input,
     return pos;
 }
 
+static int mac_data_size(size_t aad_len, size_t ct_len, size_t *out) {
+    if (aad_len > SIZE_MAX - 15 || ct_len > SIZE_MAX - 15)
+        return -1;
+
+    size_t padded_aad_len = (aad_len + 15) & ~(size_t)15;
+    size_t padded_ct_len = (ct_len + 15) & ~(size_t)15;
+    if (padded_aad_len > SIZE_MAX - padded_ct_len)
+        return -1;
+
+    size_t data_len = padded_aad_len + padded_ct_len;
+    if (data_len > SIZE_MAX - 16)
+        return -1;
+
+    *out = data_len + 16;
+    return 0;
+}
+
 size_t neverc_chacha20poly1305_seal(
     uint8_t *dst,
     const uint8_t key[32],
@@ -59,6 +78,17 @@ size_t neverc_chacha20poly1305_seal(
     const uint8_t *plaintext, size_t plaintext_len,
     const uint8_t *aad, size_t aad_len)
 {
+    uint8_t mac_buf_stack[512];
+    uint8_t *mac_buf = mac_buf_stack;
+    size_t mac_buf_size;
+    if (mac_data_size(aad_len, plaintext_len, &mac_buf_size) != 0)
+        return 0;
+    if (mac_buf_size > sizeof(mac_buf_stack)) {
+        mac_buf = (uint8_t *)malloc(mac_buf_size);
+        if (!mac_buf)
+            return 0;
+    }
+
     /* Generate Poly1305 one-time key from block 0 */
     uint8_t poly_key[32];
     {
@@ -77,26 +107,12 @@ size_t neverc_chacha20poly1305_seal(
         neverc_chacha20_xor(&ctx, dst, plaintext, plaintext_len);
     }
 
-    /* Build MAC input and compute tag */
-    {
-        size_t mac_buf_size = aad_len + plaintext_len + 32 + 16;
-        uint8_t mac_buf_stack[512];
-        uint8_t *mac_buf = mac_buf_size <= sizeof(mac_buf_stack)
-                           ? mac_buf_stack : (uint8_t *)0;
-        /* For very large inputs, we need dynamic allocation.
-         * Since we don't use malloc (zero libc dependency for alloc),
-         * we use stack buffer for reasonable sizes. */
-        if (!mac_buf) {
-            /* Fallback: compute Poly1305 incrementally is complex,
-             * so for oversized inputs we just truncate to stack limit.
-             * In practice, AEAD messages are rarely > 256 bytes. */
-            mac_buf = mac_buf_stack;
-            mac_buf_size = sizeof(mac_buf_stack);
-        }
-        size_t mac_len = build_mac_data(mac_buf, aad, aad_len,
-                                        dst, plaintext_len);
-        neverc_poly1305_auth(dst + plaintext_len, mac_buf, mac_len, poly_key);
-    }
+    /* Build MAC input and compute tag. */
+    size_t mac_len = build_mac_data(mac_buf, aad, aad_len,
+                                    dst, plaintext_len);
+    neverc_poly1305_auth(dst + plaintext_len, mac_buf, mac_len, poly_key);
+    if (mac_buf != mac_buf_stack)
+        free(mac_buf);
 
     return plaintext_len + 16;
 }
@@ -110,7 +126,19 @@ int neverc_chacha20poly1305_open(
 {
     if (ciphertext_len < 16) return -1;
     size_t ct_len = ciphertext_len - 16;
+    if (ct_len > INT_MAX) return -1;
     const uint8_t *tag = ciphertext + ct_len;
+
+    uint8_t mac_buf_stack[512];
+    uint8_t *mac_buf = mac_buf_stack;
+    size_t mac_buf_size;
+    if (mac_data_size(aad_len, ct_len, &mac_buf_size) != 0)
+        return -1;
+    if (mac_buf_size > sizeof(mac_buf_stack)) {
+        mac_buf = (uint8_t *)malloc(mac_buf_size);
+        if (!mac_buf)
+            return -1;
+    }
 
     /* Generate Poly1305 one-time key */
     uint8_t poly_key[32];
@@ -123,27 +151,20 @@ int neverc_chacha20poly1305_open(
         memcpy(poly_key, block0, 32);
     }
 
-    /* Verify tag before decrypting */
-    {
-        size_t mac_buf_size = aad_len + ct_len + 32 + 16;
-        uint8_t mac_buf_stack[512];
-        uint8_t *mac_buf = mac_buf_size <= sizeof(mac_buf_stack)
-                           ? mac_buf_stack : (uint8_t *)0;
-        if (!mac_buf) {
-            mac_buf = mac_buf_stack;
-            mac_buf_size = sizeof(mac_buf_stack);
-        }
-        size_t mac_len = build_mac_data(mac_buf, aad, aad_len,
-                                        ciphertext, ct_len);
+    /* Verify tag before decrypting. */
+    size_t mac_len = build_mac_data(mac_buf, aad, aad_len,
+                                    ciphertext, ct_len);
+    uint8_t computed_tag[16];
+    neverc_poly1305_auth(computed_tag, mac_buf, mac_len, poly_key);
+    if (mac_buf != mac_buf_stack)
+        free(mac_buf);
 
-        uint8_t computed_tag[16];
-        neverc_poly1305_auth(computed_tag, mac_buf, mac_len, poly_key);
-
-        /* Constant-time comparison */
-        uint8_t diff = 0;
-        for (int i = 0; i < 16; i++)
-            diff |= computed_tag[i] ^ tag[i];
-        if (diff != 0) return -1;
+    /* Constant-time comparison */
+    uint8_t diff = 0;
+    for (int i = 0; i < 16; i++)
+        diff |= computed_tag[i] ^ tag[i];
+    if (diff != 0) {
+        return -1;
     }
 
     /* Decrypt */

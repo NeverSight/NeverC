@@ -152,6 +152,75 @@ static void test_cancel_idempotent(void) {
     neverc_context_free(bg);
 }
 
+static void test_cancel_handle_not_rebound_while_context_alive(void) {
+    printf("[cancel_handle_not_rebound]\n");
+    neverc_context_t *bg = neverc_context_background();
+    neverc_cancel_func_t first_cancel = NULL;
+    neverc_context_t *first =
+        neverc_context_with_cancel(bg, &first_cancel);
+    ASSERT_TRUE(first != NULL);
+    ASSERT_TRUE(first_cancel != NULL);
+
+    first_cancel();
+    ASSERT_INT_EQ(neverc_context_done(first), 1);
+
+    neverc_cancel_func_t second_cancel = NULL;
+    neverc_context_t *second =
+        neverc_context_with_cancel(bg, &second_cancel);
+    ASSERT_TRUE(second != NULL);
+    ASSERT_TRUE(second_cancel != NULL);
+    ASSERT_TRUE(first_cancel != second_cancel);
+
+    first_cancel();
+    ASSERT_INT_EQ(neverc_context_done(second), 0);
+
+    second_cancel();
+    ASSERT_INT_EQ(neverc_context_done(second), 1);
+
+    neverc_context_free(second);
+    neverc_context_free(first);
+    neverc_context_free(bg);
+}
+
+static void test_cancel_slots_released_on_free(void) {
+    printf("[cancel_slots_released_on_free]\n");
+    neverc_context_t *bg = neverc_context_background();
+
+    for (int i = 0; i < 96; i++) {
+        neverc_cancel_func_t cancel = NULL;
+        neverc_context_t *ctx =
+            neverc_context_with_cancel(bg, &cancel);
+        ASSERT_TRUE(ctx != NULL);
+        ASSERT_TRUE(cancel != NULL);
+        neverc_context_free(ctx);
+    }
+
+    neverc_context_free(bg);
+}
+
+static void test_cancel_slot_exhaustion_fails_atomically(void) {
+    printf("[cancel_slot_exhaustion]\n");
+    neverc_context_t *bg = neverc_context_background();
+    neverc_context_t *contexts[32] = {0};
+    neverc_cancel_func_t cancels[32] = {0};
+
+    for (int i = 0; i < 32; i++) {
+        contexts[i] = neverc_context_with_cancel(bg, &cancels[i]);
+        ASSERT_TRUE(contexts[i] != NULL);
+        ASSERT_TRUE(cancels[i] != NULL);
+    }
+
+    neverc_cancel_func_t exhausted_cancel = cancels[0];
+    neverc_context_t *exhausted =
+        neverc_context_with_cancel(bg, &exhausted_cancel);
+    ASSERT_TRUE(exhausted == NULL);
+    ASSERT_TRUE(exhausted_cancel == NULL);
+
+    for (int i = 0; i < 32; i++)
+        neverc_context_free(contexts[i]);
+    neverc_context_free(bg);
+}
+
 static void test_without_cancel(void) {
     printf("[without_cancel]\n");
     neverc_context_t *bg = neverc_context_background();
@@ -241,6 +310,14 @@ static void test_with_deadline_cause(void) {
 
 static volatile int g_after_called = 0;
 static void after_cb(void) { g_after_called = 1; }
+static neverc_context_t *g_after_self_free_ctx = NULL;
+static volatile int g_after_self_free_done = 0;
+
+static void after_self_free_cb(void) {
+    neverc_context_free(g_after_self_free_ctx);
+    g_after_self_free_ctx = NULL;
+    g_after_self_free_done = 1;
+}
 
 static void test_after_func(void) {
     printf("[after_func]\n");
@@ -290,6 +367,58 @@ static void test_after_func_stop(void) {
     neverc_context_free(bg);
 }
 
+static void test_after_func_stopped_before_context_free(void) {
+    printf("[after_func_context_free]\n");
+    neverc_context_t *bg = neverc_context_background();
+    neverc_context_t *ctx =
+        neverc_context_with_timeout(bg, 10000, NULL);
+
+    g_after_called = 0;
+    neverc_context_stop_func_t stop =
+        neverc_context_after_func(ctx, after_cb);
+    ASSERT_TRUE(stop != NULL);
+
+    neverc_context_free(ctx);
+    ASSERT_INT_EQ(stop(), 0);
+#if defined(_WIN32)
+    Sleep(10);
+#else
+    usleep(10000);
+#endif
+    ASSERT_INT_EQ(g_after_called, 0);
+
+    neverc_context_free(bg);
+}
+
+static void test_after_func_can_free_own_context(void) {
+    printf("[after_func_self_free]\n");
+    neverc_context_t *bg = neverc_context_background();
+    neverc_cancel_func_t cancel = NULL;
+    neverc_context_t *ctx = neverc_context_with_cancel(bg, &cancel);
+    ASSERT_TRUE(ctx != NULL);
+    ASSERT_TRUE(cancel != NULL);
+
+    g_after_self_free_ctx = ctx;
+    g_after_self_free_done = 0;
+    neverc_context_stop_func_t stop =
+        neverc_context_after_func(ctx, after_self_free_cb);
+    ASSERT_TRUE(stop != NULL);
+
+    cancel();
+    for (int i = 0; i < 1000 && !g_after_self_free_done; i++) {
+#if defined(_WIN32)
+        Sleep(1);
+#else
+        usleep(1000);
+#endif
+    }
+    ASSERT_INT_EQ(g_after_self_free_done, 1);
+    ASSERT_TRUE(g_after_self_free_ctx == NULL);
+    ASSERT_INT_EQ(stop(), 0);
+
+    neverc_context_free(bg);
+}
+
 int main(void) {
     printf("=== NeverC context Tests ===\n");
     test_background();
@@ -300,6 +429,9 @@ int main(void) {
     test_cancel_propagates_to_child();
     test_multiple_cancels();
     test_cancel_idempotent();
+    test_cancel_handle_not_rebound_while_context_alive();
+    test_cancel_slots_released_on_free();
+    test_cancel_slot_exhaustion_fails_atomically();
     test_without_cancel();
     test_without_cancel_value();
     test_with_cancel_cause();
@@ -307,6 +439,8 @@ int main(void) {
     test_with_deadline_cause();
     test_after_func();
     test_after_func_stop();
+    test_after_func_stopped_before_context_free();
+    test_after_func_can_free_own_context();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");

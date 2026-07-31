@@ -1,7 +1,11 @@
 /*
- * NeverC HTTP/2 (RFC 9113)
+ * NeverC HTTP/2 (RFC 9113) — experimental components.
  *
- * Full HTTP/2 implementation with:
+ * Framing, HPACK, and part of the server state machine are implemented, but
+ * request dispatch, protocol validation, flow control, and concurrent stream
+ * handling are not yet complete enough for production use.
+ *
+ * Target capabilities:
  *   - Binary framing layer (9 frame types)
  *   - HPACK header compression (RFC 7541)
  *   - Multiplexed streams over single TCP connection
@@ -11,9 +15,9 @@
  *   - Graceful shutdown (GOAWAY)
  *
  * Usage:
- *   neverc_http2_server_t *h2 = neverc_http2_server_create(mux);
- *   neverc_http2_server_set_max_streams(h2, 100);
- *   neverc_http2_listen_and_serve(":8443", h2, cert, key);
+ *   neverc_h2_server_t *h2 = neverc_h2_server_create(mux);
+ *   neverc_h2_server_set_max_streams(h2, 100);
+ *   neverc_h2_listen_and_serve(":8443", h2, cert, key);
  *
  * Integration with existing HTTP/1.1 server via ALPN auto-upgrade.
  */

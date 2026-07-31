@@ -166,6 +166,14 @@ void neverc_cond_broadcast(neverc_cond_t *c) {
 #include <stdlib.h>
 #include <string.h>
 
+#ifndef NC_SYNC_MALLOC
+#define NC_SYNC_MALLOC malloc
+#endif
+
+#ifndef NC_SYNC_CALLOC
+#define NC_SYNC_CALLOC calloc
+#endif
+
 #define POOL_CAP 256
 
 struct neverc_sync_pool {
@@ -342,8 +350,13 @@ static smap_entry_t *smap_find_slot(smap_entry_t *buckets, size_t cap, const cha
 }
 
 static int smap_grow(neverc_sync_map_t *m) {
+    if (m->cap > SIZE_MAX / 2)
+        return -1;
     size_t new_cap = m->cap * 2;
-    smap_entry_t *new_buckets = (smap_entry_t *)calloc(new_cap, sizeof(smap_entry_t));
+    if (new_cap > SIZE_MAX / sizeof(smap_entry_t))
+        return -1;
+    smap_entry_t *new_buckets =
+        (smap_entry_t *)NC_SYNC_CALLOC(new_cap, sizeof(smap_entry_t));
     if (!new_buckets) return -1;
     for (size_t i = 0; i < m->cap; i++) {
         if (m->buckets[i].occupied == SMAP_OCCUPIED) {
@@ -357,27 +370,42 @@ static int smap_grow(neverc_sync_map_t *m) {
     return 0;
 }
 
+static int smap_insert(smap_entry_t *slot, const char *key, void *value) {
+    size_t klen = strlen(key);
+    if (klen == SIZE_MAX)
+        return -1;
+
+    char *key_copy = (char *)NC_SYNC_MALLOC(klen + 1);
+    if (!key_copy)
+        return -1;
+    memcpy(key_copy, key, klen + 1);
+
+    slot->key = key_copy;
+    slot->value = value;
+    slot->occupied = SMAP_OCCUPIED;
+    return 0;
+}
+
 void neverc_sync_map_store(neverc_sync_map_t *m, const char *key, void *value) {
+    if (!m || !key)
+        return;
     neverc_rwmutex_lock(&m->rw);
+    smap_entry_t *slot = smap_find_slot(m->buckets, m->cap, key);
+    if (slot && slot->occupied == SMAP_OCCUPIED) {
+        slot->value = value;
+        neverc_rwmutex_unlock(&m->rw);
+        return;
+    }
+
     if ((double)(m->count + 1) / (double)m->cap > SMAP_LOAD_FACTOR) {
         if (smap_grow(m) < 0) {
             neverc_rwmutex_unlock(&m->rw);
             return;
         }
+        slot = smap_find_slot(m->buckets, m->cap, key);
     }
-    smap_entry_t *slot = smap_find_slot(m->buckets, m->cap, key);
-    if (slot) {
-        if (slot->occupied == SMAP_OCCUPIED) {
-            slot->value = value;
-        } else {
-            size_t klen = strlen(key);
-            slot->key = (char *)malloc(klen + 1);
-            memcpy(slot->key, key, klen + 1);
-            slot->value = value;
-            slot->occupied = SMAP_OCCUPIED;
-            m->count++;
-        }
-    }
+    if (slot && smap_insert(slot, key, value) == 0)
+        m->count++;
     neverc_rwmutex_unlock(&m->rw);
 }
 
@@ -393,22 +421,29 @@ void *neverc_sync_map_load(neverc_sync_map_t *m, const char *key, int *ok) {
 }
 
 void *neverc_sync_map_load_or_store(neverc_sync_map_t *m, const char *key, void *value, int *loaded) {
+    if (!m || !key) {
+        if (loaded) *loaded = 0;
+        return NULL;
+    }
     neverc_rwmutex_lock(&m->rw);
-    if ((double)(m->count + 1) / (double)m->cap > SMAP_LOAD_FACTOR)
-        smap_grow(m);
     smap_entry_t *slot = smap_find_slot(m->buckets, m->cap, key);
-    void *actual = value;
+    void *actual = NULL;
     int was_loaded = 0;
-    if (slot) {
-        if (slot->occupied == SMAP_OCCUPIED) {
-            actual = slot->value;
-            was_loaded = 1;
-        } else {
-            size_t klen = strlen(key);
-            slot->key = (char *)malloc(klen + 1);
-            memcpy(slot->key, key, klen + 1);
-            slot->value = value;
-            slot->occupied = SMAP_OCCUPIED;
+    if (slot && slot->occupied == SMAP_OCCUPIED) {
+        actual = slot->value;
+        was_loaded = 1;
+    } else {
+        if ((double)(m->count + 1) / (double)m->cap >
+            SMAP_LOAD_FACTOR) {
+            if (smap_grow(m) != 0) {
+                neverc_rwmutex_unlock(&m->rw);
+                if (loaded) *loaded = 0;
+                return NULL;
+            }
+            slot = smap_find_slot(m->buckets, m->cap, key);
+        }
+        if (slot && smap_insert(slot, key, value) == 0) {
+            actual = value;
             m->count++;
         }
     }
@@ -465,25 +500,30 @@ void neverc_sync_map_range(neverc_sync_map_t *m, int (*f)(const char *key, void 
 }
 
 void *neverc_sync_map_swap(neverc_sync_map_t *m, const char *key, void *value, int *loaded) {
+    if (!m || !key) {
+        if (loaded) *loaded = 0;
+        return NULL;
+    }
     neverc_rwmutex_lock(&m->rw);
-    if ((double)(m->count + 1) / (double)m->cap > SMAP_LOAD_FACTOR)
-        smap_grow(m);
     smap_entry_t *slot = smap_find_slot(m->buckets, m->cap, key);
     void *previous = NULL;
     int was_loaded = 0;
-    if (slot) {
-        if (slot->occupied == SMAP_OCCUPIED) {
-            previous = slot->value;
-            slot->value = value;
-            was_loaded = 1;
-        } else {
-            size_t klen = strlen(key);
-            slot->key = (char *)malloc(klen + 1);
-            memcpy(slot->key, key, klen + 1);
-            slot->value = value;
-            slot->occupied = SMAP_OCCUPIED;
-            m->count++;
+    if (slot && slot->occupied == SMAP_OCCUPIED) {
+        previous = slot->value;
+        slot->value = value;
+        was_loaded = 1;
+    } else {
+        if ((double)(m->count + 1) / (double)m->cap >
+            SMAP_LOAD_FACTOR) {
+            if (smap_grow(m) != 0) {
+                neverc_rwmutex_unlock(&m->rw);
+                if (loaded) *loaded = 0;
+                return NULL;
+            }
+            slot = smap_find_slot(m->buckets, m->cap, key);
         }
+        if (slot && smap_insert(slot, key, value) == 0)
+            m->count++;
     }
     neverc_rwmutex_unlock(&m->rw);
     if (loaded) *loaded = was_loaded;

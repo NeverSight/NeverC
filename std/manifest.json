@@ -1799,9 +1799,7 @@
         "neverc_time_after": "src/time/time.c",
         "neverc_time_equal": "src/time/time.c",
         "neverc_time_is_zero": "src/time/time.c",
-        "neverc_time_format_rfc": "src/time/time.c",
         "neverc_time_format_unix_date": "src/time/time.c",
-        "neverc_time_parse_rfc": "src/time/time.c",
         "neverc_time_duration_seconds": "src/time/time.c",
         "neverc_time_duration_milliseconds": "src/time/time.c",
         "neverc_time_duration_microseconds": "src/time/time.c",
@@ -1830,9 +1828,7 @@
         "after": "neverc_time_after",
         "equal": "neverc_time_equal",
         "is_zero": "neverc_time_is_zero",
-        "format_rfc": "neverc_time_format_rfc",
         "format_unix_date": "neverc_time_format_unix_date",
-        "parse_rfc": "neverc_time_parse_rfc",
         "sleep": "neverc_time_sleep",
         "duration_seconds": "neverc_time_duration_seconds",
         "duration_milliseconds": "neverc_time_duration_milliseconds",
@@ -2088,7 +2084,7 @@
       }
     },
     "net/url": {
-      "header": "include/neverc/net/url.h",
+      "header": "include/neverc/std/net/url.h",
       "description": "URL parsing, query encoding/decoding, percent escaping (mirrors Go net/url package)",
       "symbols": {
         "neverc_url_parse": "src/net/url/url.c",
@@ -2526,7 +2522,7 @@
       }
     },
     "net/netip": {
-      "header": "include/neverc/net/netip.h",
+      "header": "include/neverc/std/net/netip.h",
       "description": "IP address type, parsing, classification, CIDR prefixes (mirrors Go net/netip package)",
       "symbols": {
         "neverc_netip_parse_addr": "src/net/netip/netip.c",
@@ -2554,7 +2550,10 @@
         "neverc_netip_prefix_masked": "src/net/netip/netip.c",
         "neverc_netip_prefix_bits": "src/net/netip/netip.c",
         "neverc_netip_addr_as4": "src/net/netip/netip.c",
-        "neverc_netip_addr_as16": "src/net/netip/netip.c"
+        "neverc_netip_addr_as16": "src/net/netip/netip.c",
+        "neverc_netip_addr_ipv4_unspecified": "src/net/netip/netip.c",
+        "neverc_netip_addr_ipv6_loopback": "src/net/netip/netip.c",
+        "neverc_netip_addr_ipv6_unspecified": "src/net/netip/netip.c"
       },
       "dot_methods": {
         "parse_addr": "neverc_netip_parse_addr",
@@ -2586,7 +2585,10 @@
         "prefix_masked": "neverc_netip_prefix_masked",
         "prefix_bits": "neverc_netip_prefix_bits",
         "addr_as4": "neverc_netip_addr_as4",
-        "addr_as16": "neverc_netip_addr_as16"
+        "addr_as16": "neverc_netip_addr_as16",
+        "addr_ipv4_unspecified": "neverc_netip_addr_ipv4_unspecified",
+        "addr_ipv6_loopback": "neverc_netip_addr_ipv6_loopback",
+        "addr_ipv6_unspecified": "neverc_netip_addr_ipv6_unspecified"
       }
     },
     "mime/quotedprintable": {
@@ -2620,7 +2622,7 @@
       }
     },
     "net/mail": {
-      "header": "include/neverc/net/mail.h",
+      "header": "include/neverc/std/net/mail.h",
       "description": "Email address parsing and message header parsing (RFC 5322, mirrors Go net/mail package)",
       "symbols": {
         "neverc_mail_parse_address": "src/net/mail/mail.c",
@@ -3068,7 +3070,7 @@
       }
     },
     "net/textproto": {
-      "header": "include/neverc/net/textproto.h",
+      "header": "include/neverc/std/net/textproto.h",
       "description": "Text-based protocol helpers \u2014 MIME headers, line reading (mirrors Go net/textproto package)",
       "symbols": {
         "neverc_mime_header_init": "src/net/textproto/textproto.c",
@@ -3081,7 +3083,9 @@
         "neverc_textproto_read_mime_header": "src/net/textproto/textproto.c",
         "neverc_textproto_read_line": "src/net/textproto/textproto.c",
         "neverc_textproto_read_dot_lines": "src/net/textproto/textproto.c",
-        "neverc_textproto_read_code_line": "src/net/textproto/textproto.c"
+        "neverc_textproto_read_code_line": "src/net/textproto/textproto.c",
+        "neverc_mime_header_len": "src/net/textproto/textproto.c",
+        "neverc_textproto_trim_string": "src/net/textproto/textproto.c"
       },
       "dot_methods": {
         "canonical_key": "neverc_textproto_canonical_mime_header_key",
@@ -3096,7 +3100,9 @@
         "mime_header_add": "neverc_mime_header_add",
         "mime_header_set": "neverc_mime_header_set",
         "mime_header_get": "neverc_mime_header_get",
-        "mime_header_del": "neverc_mime_header_del"
+        "mime_header_del": "neverc_mime_header_del",
+        "mime_header_len": "neverc_mime_header_len",
+        "trim_string": "neverc_textproto_trim_string"
       }
     },
     "os/user": {
@@ -3439,7 +3445,7 @@
     },
     "http": {
       "header": "include/neverc/std/net/http.h",
-      "description": "HTTP server and client \u2014 production-grade with thread pool, event loop, keep-alive, chunked transfer, SSE, multipart (mirrors Go net/http)",
+      "description": "Experimental HTTP/1.1 server and client; HTTPS remains unavailable until TLS verification is complete",
       "deps": ["net/http2", "net/tcp", "crypto/tls"],
       "symbols": {
         "neverc_http_set_status": "src/net/http/http.c",
@@ -3478,39 +3484,56 @@
         "neverc_http_error": "src/net/http/http.c",
         "neverc_http_form_value": "src/net/http/http.c",
         "neverc_http_write_json": "src/net/http/http.c",
-        "neverc_http_get": "src/net/http/http.c",
-        "neverc_http_post": "src/net/http/http.c",
-        "neverc_http_head": "src/net/http/http.c",
-        "neverc_http_put": "src/net/http/http.c",
-        "neverc_http_delete": "src/net/http/http.c",
-        "neverc_http_patch": "src/net/http/http.c",
-        "neverc_http_do": "src/net/http/http.c",
-        "neverc_http_response_free": "src/net/http/http.c",
-        "neverc_http_set_cookie": "src/net/http/http.c",
-        "neverc_http_get_cookie": "src/net/http/http.c",
-        "neverc_sse_start": "src/net/http/http.c",
-        "neverc_sse_send": "src/net/http/http.c",
-        "neverc_sse_send_id": "src/net/http/http.c",
-        "neverc_sse_retry": "src/net/http/http.c",
-        "neverc_sse_comment": "src/net/http/http.c",
-        "neverc_sse_close": "src/net/http/http.c",
-        "neverc_http_multipart_parse": "src/net/http/http.c",
-        "neverc_http_multipart_count": "src/net/http/http.c",
-        "neverc_http_multipart_get": "src/net/http/http.c",
-        "neverc_http_multipart_field": "src/net/http/http.c",
-        "neverc_http_multipart_free": "src/net/http/http.c",
-        "neverc_http_detect_content_type": "src/net/http/http.c",
-        "neverc_http_strip_prefix": "src/net/http/http.c",
-        "neverc_http_not_found": "src/net/http/http.c",
-        "neverc_http_serve_file": "src/net/http/http.c",
-        "neverc_http_canonical_header_key": "src/net/http/http.c",
-        "neverc_http_response_header": "src/net/http/http.c",
-        "neverc_http_client_set_pool": "src/net/http/http.c",
-        "neverc_http_client_set_timeout": "src/net/http/http.c",
-        "neverc_http_client_set_max_redirects": "src/net/http/http.c",
-        "neverc_http_enable_gzip": "src/net/http/http.c",
-        "neverc_http_disable_gzip": "src/net/http/http.c",
-        "neverc_http_enable_access_log": "src/net/http/http.c"
+        "neverc_http_get": "src/net/http/http_client.c",
+        "neverc_http_post": "src/net/http/http_client.c",
+        "neverc_http_head": "src/net/http/http_client.c",
+        "neverc_http_put": "src/net/http/http_client.c",
+        "neverc_http_delete": "src/net/http/http_client.c",
+        "neverc_http_patch": "src/net/http/http_client.c",
+        "neverc_http_do": "src/net/http/http_client.c",
+        "neverc_http_response_free": "src/net/http/http_client.c",
+        "neverc_http_set_cookie": "src/net/http/http_client.c",
+        "neverc_http_get_cookie": "src/net/http/http_client.c",
+        "neverc_sse_start": "src/net/http/http_client.c",
+        "neverc_sse_send": "src/net/http/http_client.c",
+        "neverc_sse_send_id": "src/net/http/http_client.c",
+        "neverc_sse_retry": "src/net/http/http_client.c",
+        "neverc_sse_comment": "src/net/http/http_client.c",
+        "neverc_sse_close": "src/net/http/http_client.c",
+        "neverc_http_multipart_parse": "src/net/http/http_client.c",
+        "neverc_http_multipart_count": "src/net/http/http_client.c",
+        "neverc_http_multipart_get": "src/net/http/http_client.c",
+        "neverc_http_multipart_field": "src/net/http/http_client.c",
+        "neverc_http_multipart_free": "src/net/http/http_client.c",
+        "neverc_http_detect_content_type": "src/net/http/http_client.c",
+        "neverc_http_strip_prefix": "src/net/http/http_client.c",
+        "neverc_http_not_found": "src/net/http/http_client.c",
+        "neverc_http_serve_file": "src/net/http/http_client.c",
+        "neverc_http_canonical_header_key": "src/net/http/http_client.c",
+        "neverc_http_response_header": "src/net/http/http_client.c",
+        "neverc_http_client_set_pool": "src/net/http/http_client.c",
+        "neverc_http_client_set_timeout": "src/net/http/http_client.c",
+        "neverc_http_client_set_max_redirects": "src/net/http/http_client.c",
+        "neverc_http_enable_gzip": "src/net/http/http_client.c",
+        "neverc_http_disable_gzip": "src/net/http/http_client.c",
+        "neverc_http_enable_access_log": "src/net/http/http_client.c",
+        "neverc_http_cors_headers": "src/net/http/http_client.c",
+        "neverc_http_enable_cors": "src/net/http/http_client.c",
+        "neverc_http_json_error": "src/net/http/http_client.c",
+        "neverc_http_json_get": "src/net/http/http_client.c",
+        "neverc_http_path_value": "src/net/http/http.c",
+        "neverc_http_rate_limiter_allow": "src/net/http/http.c",
+        "neverc_http_rate_limiter_free": "src/net/http/http.c",
+        "neverc_http_rate_limiter_new": "src/net/http/http.c",
+        "neverc_http_server_port": "src/net/http/http.c",
+        "neverc_http_set_handler_timeout": "src/net/http/http.c",
+        "neverc_http_set_idle_timeout": "src/net/http/http.c",
+        "neverc_http_set_max_bytes": "src/net/http/http.c",
+        "neverc_http_set_rate_limit": "src/net/http/http.c",
+        "neverc_http_sse_begin": "src/net/http/http_client.c",
+        "neverc_http_sse_end": "src/net/http/http_client.c",
+        "neverc_http_sse_event": "src/net/http/http_client.c",
+        "neverc_http_sse_retry": "src/net/http/http_client.c"
       },
       "dot_methods": {
         "set_status": "neverc_http_set_status",
@@ -3581,7 +3604,24 @@
         "use": "neverc_http_use",
         "client_set_pool": "neverc_http_client_set_pool",
         "client_set_timeout": "neverc_http_client_set_timeout",
-        "client_set_max_redirects": "neverc_http_client_set_max_redirects"
+        "client_set_max_redirects": "neverc_http_client_set_max_redirects",
+        "cors_headers": "neverc_http_cors_headers",
+        "enable_cors": "neverc_http_enable_cors",
+        "json_error": "neverc_http_json_error",
+        "json_get": "neverc_http_json_get",
+        "path_value": "neverc_http_path_value",
+        "rate_limiter_allow": "neverc_http_rate_limiter_allow",
+        "rate_limiter_free": "neverc_http_rate_limiter_free",
+        "rate_limiter_new": "neverc_http_rate_limiter_new",
+        "server_port": "neverc_http_server_port",
+        "set_handler_timeout": "neverc_http_set_handler_timeout",
+        "set_idle_timeout": "neverc_http_set_idle_timeout",
+        "set_max_bytes": "neverc_http_set_max_bytes",
+        "set_rate_limit": "neverc_http_set_rate_limit",
+        "sse_begin": "neverc_http_sse_begin",
+        "sse_end": "neverc_http_sse_end",
+        "sse_event": "neverc_http_sse_event",
+        "sse_writer_retry": "neverc_http_sse_retry"
       }
     },
     "httputil": {
@@ -3973,7 +4013,7 @@
     },
     "net/http2": {
       "header": "include/neverc/std/net/http2.h",
-      "description": "net/http2 module",
+      "description": "Experimental HTTP/2 framing, HPACK, and partial server implementation",
       "deps": ["http", "net/tcp", "crypto/tls"],
       "symbols": {
         "neverc_h2_frame_header_read": "src/net/http/http2/http2_server.c",
@@ -3997,10 +4037,7 @@
         "neverc_hpack_encoder_create": "src/net/http/http2/http2.c",
         "neverc_hpack_encoder_destroy": "src/net/http/http2/http2.c",
         "neverc_hpack_huffman_decode": "src/net/http/http2/http2.c",
-        "neverc_hpack_huffman_encode": "src/net/http/http2/http2.c",
-        "neverc_http2_listen_and_serve": "src/net/http/http2/http2_server.c",
-        "neverc_http2_server_create": "src/net/http/http2/http2_server.c",
-        "neverc_http2_server_set_max_streams": "src/net/http/http2/http2_server.c"
+        "neverc_hpack_huffman_encode": "src/net/http/http2/http2.c"
       },
       "dot_methods": {
         "frame_header_read": "neverc_h2_frame_header_read",
@@ -4027,8 +4064,104 @@
         "hpack_huffman_encode": "neverc_hpack_huffman_encode"
       }
     },
+    "net/quic": {
+      "header": "include/neverc/std/net/quic.h",
+      "description": "QUIC transport API; endpoint operations fail closed until handshake integration is complete",
+      "symbols": {
+        "neverc_quic_accept": "src/net/quic/quic_api.c",
+        "neverc_quic_accept_stream": "src/net/quic/quic_api.c",
+        "neverc_quic_config_default": "src/net/quic/quic_api.c",
+        "neverc_quic_conn_alpn": "src/net/quic/quic_api.c",
+        "neverc_quic_conn_close": "src/net/quic/quic_api.c",
+        "neverc_quic_conn_close_info": "src/net/quic/quic_api.c",
+        "neverc_quic_conn_is_alive": "src/net/quic/quic_api.c",
+        "neverc_quic_conn_remote_addr": "src/net/quic/quic_api.c",
+        "neverc_quic_dial": "src/net/quic/quic_api.c",
+        "neverc_quic_endpoint_close": "src/net/quic/quic_api.c",
+        "neverc_quic_listen": "src/net/quic/quic_api.c",
+        "neverc_quic_open_stream": "src/net/quic/quic_api.c",
+        "neverc_quic_open_uni_stream": "src/net/quic/quic_api.c",
+        "neverc_quic_recv_datagram": "src/net/quic/quic_api.c",
+        "neverc_quic_send_datagram": "src/net/quic/quic_api.c",
+        "neverc_quic_stream_close_write": "src/net/quic/quic_api.c",
+        "neverc_quic_stream_free": "src/net/quic/quic_api.c",
+        "neverc_quic_stream_id": "src/net/quic/quic_api.c",
+        "neverc_quic_stream_read": "src/net/quic/quic_api.c",
+        "neverc_quic_stream_reset": "src/net/quic/quic_api.c",
+        "neverc_quic_stream_stop_sending": "src/net/quic/quic_api.c",
+        "neverc_quic_stream_write": "src/net/quic/quic_api.c",
+        "neverc_quic_varint_decode": "src/net/quic/quic_varint.c",
+        "neverc_quic_varint_encode": "src/net/quic/quic_varint.c",
+        "neverc_quic_varint_len": "src/net/quic/quic_varint.c"
+      },
+      "dot_methods": {
+        "accept": "neverc_quic_accept",
+        "accept_stream": "neverc_quic_accept_stream",
+        "config_default": "neverc_quic_config_default",
+        "conn_alpn": "neverc_quic_conn_alpn",
+        "conn_close": "neverc_quic_conn_close",
+        "conn_close_info": "neverc_quic_conn_close_info",
+        "conn_is_alive": "neverc_quic_conn_is_alive",
+        "conn_remote_addr": "neverc_quic_conn_remote_addr",
+        "dial": "neverc_quic_dial",
+        "endpoint_close": "neverc_quic_endpoint_close",
+        "listen": "neverc_quic_listen",
+        "open_stream": "neverc_quic_open_stream",
+        "open_uni_stream": "neverc_quic_open_uni_stream",
+        "recv_datagram": "neverc_quic_recv_datagram",
+        "send_datagram": "neverc_quic_send_datagram",
+        "stream_close_write": "neverc_quic_stream_close_write",
+        "stream_free": "neverc_quic_stream_free",
+        "stream_id": "neverc_quic_stream_id",
+        "stream_read": "neverc_quic_stream_read",
+        "stream_reset": "neverc_quic_stream_reset",
+        "stream_stop_sending": "neverc_quic_stream_stop_sending",
+        "stream_write": "neverc_quic_stream_write"
+      }
+    },
+    "net/http3": {
+      "header": "include/neverc/std/net/http3.h",
+      "description": "HTTP/3 framing and QPACK; transport entry points fail closed until QUIC integration is complete",
+      "deps": ["http", "net/quic"],
+      "symbols": {
+        "neverc_http3_get": "src/net/http3/http3_server.c",
+        "neverc_http3_listen_and_serve": "src/net/http3/http3_server.c",
+        "neverc_http3_post": "src/net/http3/http3_server.c",
+        "neverc_http3_server_create": "src/net/http3/http3_server.c",
+        "neverc_http3_server_destroy": "src/net/http3/http3_server.c",
+        "neverc_http3_server_is_running": "src/net/http3/http3_server.c",
+        "neverc_http3_server_max_streams": "src/net/http3/http3_server.c",
+        "neverc_http3_server_set_max_streams": "src/net/http3/http3_server.c",
+        "neverc_http3_server_stop": "src/net/http3/http3_server.c",
+        "neverc_http_serve_all": "src/net/http3/http3_server.c",
+        "neverc_qpack_decode": "src/net/http3/http3_frame.c",
+        "neverc_qpack_decoder_create": "src/net/http3/http3_frame.c",
+        "neverc_qpack_decoder_destroy": "src/net/http3/http3_frame.c",
+        "neverc_qpack_encode": "src/net/http3/http3_frame.c",
+        "neverc_qpack_encoder_create": "src/net/http3/http3_frame.c",
+        "neverc_qpack_encoder_destroy": "src/net/http3/http3_frame.c"
+      },
+      "dot_methods": {
+        "get": "neverc_http3_get",
+        "listen_and_serve": "neverc_http3_listen_and_serve",
+        "post": "neverc_http3_post",
+        "server_create": "neverc_http3_server_create",
+        "server_destroy": "neverc_http3_server_destroy",
+        "server_is_running": "neverc_http3_server_is_running",
+        "server_max_streams": "neverc_http3_server_max_streams",
+        "server_set_max_streams": "neverc_http3_server_set_max_streams",
+        "server_stop": "neverc_http3_server_stop",
+        "serve_all": "neverc_http_serve_all",
+        "qpack_decode": "neverc_qpack_decode",
+        "qpack_decoder_create": "neverc_qpack_decoder_create",
+        "qpack_decoder_destroy": "neverc_qpack_decoder_destroy",
+        "qpack_encode": "neverc_qpack_encode",
+        "qpack_encoder_create": "neverc_qpack_encoder_create",
+        "qpack_encoder_destroy": "neverc_qpack_encoder_destroy"
+      }
+    },
     "net/httptest": {
-      "header": "include/neverc/std/net/httptest.h",
+      "header": "include/neverc/std/net/http/httptest.h",
       "description": "net/httptest module",
       "deps": ["http", "net/tcp"],
       "symbols": {
@@ -4053,7 +4186,7 @@
       }
     },
     "net/cookiejar": {
-      "header": "include/neverc/std/net/cookiejar.h",
+      "header": "include/neverc/std/net/http/cookiejar.h",
       "description": "net/cookiejar module",
       "symbols": {
         "neverc_cookiejar_clear_all": "src/net/http/cookiejar/cookiejar.c",
@@ -4128,8 +4261,8 @@
       "header": "include/neverc/image/color/palette.h",
       "description": "image/palette module",
       "symbols": {
-        "neverc_palette_plan9_index": "src/src/image/color/palette/palette.c",
-        "neverc_palette_websafe_index": "src/src/image/color/palette/palette.c"
+        "neverc_palette_plan9_index": "src/image/color/palette/palette.c",
+        "neverc_palette_websafe_index": "src/image/color/palette/palette.c"
       },
       "dot_methods": {
         "plan9_index": "neverc_palette_plan9_index",
@@ -4140,13 +4273,13 @@
       "header": "include/neverc/debug/plan9obj.h",
       "description": "debug/plan9obj module",
       "symbols": {
-        "neverc_plan9_close": "src/src/debug/plan9obj/plan9obj.c",
-        "neverc_plan9_open": "src/src/debug/plan9obj/plan9obj.c",
-        "neverc_plan9_parse": "src/src/debug/plan9obj/plan9obj.c",
-        "neverc_plan9_section": "src/src/debug/plan9obj/plan9obj.c",
-        "neverc_plan9_section_data": "src/src/debug/plan9obj/plan9obj.c",
-        "neverc_plan9_symbols": "src/src/debug/plan9obj/plan9obj.c",
-        "neverc_plan9_valid_magic": "src/src/debug/plan9obj/plan9obj.c"
+        "neverc_plan9_close": "src/debug/plan9obj/plan9obj.c",
+        "neverc_plan9_open": "src/debug/plan9obj/plan9obj.c",
+        "neverc_plan9_parse": "src/debug/plan9obj/plan9obj.c",
+        "neverc_plan9_section": "src/debug/plan9obj/plan9obj.c",
+        "neverc_plan9_section_data": "src/debug/plan9obj/plan9obj.c",
+        "neverc_plan9_symbols": "src/debug/plan9obj/plan9obj.c",
+        "neverc_plan9_valid_magic": "src/debug/plan9obj/plan9obj.c"
       },
       "dot_methods": {
         "close": "neverc_plan9_close",

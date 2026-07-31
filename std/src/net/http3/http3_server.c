@@ -18,14 +18,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <errno.h>
 
 #include <stdatomic.h>
-#ifdef _WIN32
-#include <windows.h>
-#else
-#include <pthread.h>
-#include <unistd.h>
-#endif
 
 /* Shared types — defined in http3_frame.c when linked separately,
  * or already visible when included together in tests. */
@@ -376,67 +371,14 @@ uint32_t neverc_http3_server_max_streams(const neverc_http3_server_t *srv) {
  * Go's ListenAndServeTLS + http3.Server on the same address).
  * ====================================================================== */
 
-extern int neverc_http_listen_and_serve_tls(const char *addr,
-                                             neverc_http_mux_t *mux,
-                                             const char *cert_file,
-                                             const char *key_file);
-
-#ifndef _WIN32
-typedef struct {
-    const char *addr;
-    neverc_http_mux_t *mux;
-    const char *cert_file;
-    const char *key_file;
-    int result;
-} serve_tcp_args_t;
-
-static void *serve_tcp_thread(void *arg) {
-    serve_tcp_args_t *a = (serve_tcp_args_t *)arg;
-    a->result = neverc_http_listen_and_serve_tls(a->addr, a->mux,
-                                                  a->cert_file, a->key_file);
-    return NULL;
-}
-#endif
-
 int neverc_http_serve_all(const char *addr, neverc_http_mux_t *mux,
                             const char *cert_file, const char *key_file) {
-    if (!addr || !cert_file || !key_file) return -1;
-
-#ifndef _WIN32
-    /* Launch TCP server (HTTP/1.1 + HTTP/2 via ALPN) in a separate thread */
-    serve_tcp_args_t tcp_args = {
-        .addr = addr,
-        .mux = mux,
-        .cert_file = cert_file,
-        .key_file = key_file,
-        .result = 0,
-    };
-
-    pthread_t tcp_thread;
-    if (pthread_create(&tcp_thread, NULL, serve_tcp_thread, &tcp_args) != 0)
-        return -1;
-
-    /* HTTP/3 server on the same port (UDP).
-     * If allocation fails (OOM), degrade gracefully to TCP-only. */
-    neverc_http3_server_t *h3srv = neverc_http3_server_create(mux);
-    if (h3srv) {
-        /* TODO: wire up real QUIC UDP accept loop here when QUIC listener is ready */
-        h3srv->running = 1;
-    }
-
-    /* Block until TCP server exits (it runs the accept loop) */
-    pthread_join(tcp_thread, NULL);
-
-    if (h3srv) {
-        h3srv->running = 0;
-        neverc_http3_server_destroy(h3srv);
-    }
-
-    return tcp_args.result;
-#else
-    /* Windows: just serve TLS for now */
-    return neverc_http_listen_and_serve_tls(addr, mux, cert_file, key_file);
-#endif
+    (void)addr;
+    (void)mux;
+    (void)cert_file;
+    (void)key_file;
+    errno = ENOSYS;
+    return -1;
 }
 
 /* ======================================================================
@@ -447,24 +389,12 @@ int neverc_http3_listen_and_serve(const char *addr,
                                    neverc_http3_server_t *srv,
                                    const char *cert_file,
                                    const char *key_file) {
-    if (!addr || !srv || !cert_file || !key_file) return -1;
-
-    /* TODO: implement QUIC UDP listener + TLS + H3 accept loop.
-     * Requires: quic_conn bind/listen, quic_tls handshake,
-     * then dispatch bidirectional streams to h3_parse_request_headers. */
+    (void)addr;
+    (void)srv;
     (void)cert_file;
     (void)key_file;
-    srv->running = 1;
-
-    /* Placeholder: block until stopped (real impl will run QUIC accept loop) */
-    while (srv->running) {
-#ifdef _WIN32
-        Sleep(100);
-#else
-        usleep(100000);
-#endif
-    }
-    return 0;
+    errno = ENOSYS;
+    return -1;
 }
 
 /* ======================================================================
@@ -483,12 +413,14 @@ neverc_http_response_t *neverc_http3_get(const char *url) {
     /* TODO: implement QUIC client connect + H3 GET.
      * Flow: QUIC handshake → open bidi stream → send HEADERS(:method=GET)
      *       → receive HEADERS + DATA → build response. */
-    return h3_make_error("HTTP/3 client not yet implemented");
+    return h3_make_error(
+        "HTTP/3 transport is unavailable: QUIC endpoint is not implemented");
 }
 
 neverc_http_response_t *neverc_http3_post(const char *url,
                                             const char *content_type,
                                             const void *body, size_t body_len) {
     (void)url; (void)content_type; (void)body; (void)body_len;
-    return h3_make_error("HTTP/3 client not yet implemented");
+    return h3_make_error(
+        "HTTP/3 transport is unavailable: QUIC endpoint is not implemented");
 }

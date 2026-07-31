@@ -120,9 +120,8 @@ const char *neverc_http_path_value(const neverc_http_request_t *req,
  * Blocks until server is stopped. Returns 0 on normal shutdown, -1 on error. */
 int neverc_http_listen_and_serve(const char *addr, neverc_http_mux_t *mux);
 
-/* Start serving HTTPS on addr with TLS (like Go http.ListenAndServeTLS).
- * cert_file and key_file are PEM-encoded certificate and private key.
- * Blocks until server is stopped. Returns 0 on normal shutdown, -1 on error. */
+/* HTTPS entry point. It currently returns -1 while TLS CertificateVerify and
+ * X.509 chain/hostname verification remain incomplete. */
 int neverc_http_listen_and_serve_tls(const char *addr, neverc_http_mux_t *mux,
                                       const char *cert_file,
                                       const char *key_file);

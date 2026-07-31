@@ -77,6 +77,45 @@ static void test_server_stop(void) {
     neverc_http3_server_destroy(srv);
 }
 
+static void test_unified_server_fails_closed_without_quic(void) {
+    errno = 0;
+    int rc = neverc_http_serve_all("127.0.0.1:0", NULL,
+                                    "cert.pem", "key.pem");
+    ASSERT_EQ(rc, -1);
+    ASSERT_EQ(errno, ENOSYS);
+}
+
+static void test_http3_listener_fails_closed_without_quic(void) {
+    neverc_http3_server_t *srv = neverc_http3_server_create(NULL);
+    ASSERT_NOT_NULL(srv);
+    if (!srv)
+        return;
+
+    errno = 0;
+    int rc = neverc_http3_listen_and_serve("127.0.0.1:0", srv,
+                                            "cert.pem", "key.pem");
+    ASSERT_EQ(rc, -1);
+    ASSERT_EQ(errno, ENOSYS);
+    ASSERT_EQ(neverc_http3_server_is_running(srv), 0);
+    neverc_http3_server_destroy(srv);
+}
+
+static void test_http3_client_fails_closed_without_quic(void) {
+    neverc_http_response_t *get =
+        neverc_http3_get("https://127.0.0.1:443/");
+    ASSERT_NOT_NULL(get);
+    ASSERT_NOT_NULL(get ? get->error : NULL);
+    ASSERT_TRUE(get && strstr(get->error, "unavailable") != NULL);
+    free(get);
+
+    neverc_http_response_t *post =
+        neverc_http3_post("https://127.0.0.1:443/", "text/plain", "x", 1);
+    ASSERT_NOT_NULL(post);
+    ASSERT_NOT_NULL(post ? post->error : NULL);
+    ASSERT_TRUE(post && strstr(post->error, "unavailable") != NULL);
+    free(post);
+}
+
 /* ======================================================================
  * Connection state tests
  * ====================================================================== */
@@ -415,6 +454,9 @@ int main(void) {
     test_server_create_destroy();
     test_server_set_max_streams();
     test_server_stop();
+    test_unified_server_fails_closed_without_quic();
+    test_http3_listener_fails_closed_without_quic();
+    test_http3_client_fails_closed_without_quic();
     test_conn_init();
     test_control_stream_data();
     test_control_stream_settings_decode();

@@ -17,6 +17,7 @@
       return (int64_t)(t / 10000 - 11644473600000LL);
   }
 #else
+  #include <pthread.h>
   #include <sys/time.h>
   static int64_t now_ms(void) {
       struct timeval tv;
@@ -41,6 +42,7 @@ struct neverc_context {
     const char *key;
     const void *value;
     const char *cause;
+    uint32_t cancel_slot; /* slot index + 1; zero means no cancel handle */
 };
 
 static void ctx_cancel_impl(neverc_context_t *ctx) {
@@ -51,16 +53,30 @@ static void ctx_cancel_impl(neverc_context_t *ctx) {
  * Cancel trampoline table: C has no closures, so we use a fixed pool of
  * trampoline functions, each bound to a slot in g_cancel_slots[].
  * When with_cancel is called, we assign a free slot and return the
- * corresponding trampoline.  32 concurrent cancelable contexts is enough
- * for virtually all real-world C programs; slots are recycled on cancel.
+ * corresponding trampoline. Slots remain bound until the context is freed,
+ * so repeated calls stay idempotent and cannot target another live context.
+ * The callback is invalid after neverc_context_free, like any other handle
+ * owned by the context.
  */
 #define NEVERC_CANCEL_SLOTS 32
 static neverc_context_t *g_cancel_slots[NEVERC_CANCEL_SLOTS];
+static volatile int32_t g_cancel_slots_lock;
+
+static void cancel_slots_lock(void) {
+    while (!NEVERC_ATOMIC_CAS32(&g_cancel_slots_lock, 0, 1)) {
+        /* Slot operations are constant-time; contention should be brief. */
+    }
+}
+
+static void cancel_slots_unlock(void) {
+    NEVERC_ATOMIC_STORE32(&g_cancel_slots_lock, 0);
+}
 
 #define CANCEL_TRAMPOLINE(N) \
     static void _cancel_trampoline_##N(void) { \
+        cancel_slots_lock(); \
         ctx_cancel_impl(g_cancel_slots[N]); \
-        g_cancel_slots[N] = NULL; \
+        cancel_slots_unlock(); \
     }
 
 CANCEL_TRAMPOLINE(0)  CANCEL_TRAMPOLINE(1)  CANCEL_TRAMPOLINE(2)
@@ -90,19 +106,42 @@ static const neverc_cancel_func_t g_cancel_trampolines[NEVERC_CANCEL_SLOTS] = {
 };
 
 static int alloc_cancel_slot(neverc_context_t *ctx) {
+    cancel_slots_lock();
     for (int i = 0; i < NEVERC_CANCEL_SLOTS; i++) {
-#if defined(_MSC_VER)
-        if (_InterlockedCompareExchangePointer(
-                (void *volatile *)&g_cancel_slots[i], ctx, NULL) == NULL)
+        if (!g_cancel_slots[i]) {
+            g_cancel_slots[i] = ctx;
+            ctx->cancel_slot = (uint32_t)i + 1;
+            cancel_slots_unlock();
             return i;
-#else
-        neverc_context_t *expected = NULL;
-        if (__atomic_compare_exchange_n(&g_cancel_slots[i], &expected, ctx,
-                                        0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST))
-            return i;
-#endif
+        }
     }
+    cancel_slots_unlock();
     return -1;
+}
+
+static void release_cancel_slot(neverc_context_t *ctx) {
+    if (!ctx || ctx->cancel_slot == 0)
+        return;
+
+    cancel_slots_lock();
+    size_t slot = (size_t)ctx->cancel_slot - 1;
+    if (slot < NEVERC_CANCEL_SLOTS && g_cancel_slots[slot] == ctx)
+        g_cancel_slots[slot] = NULL;
+    ctx->cancel_slot = 0;
+    cancel_slots_unlock();
+}
+
+static int bind_cancel_func(neverc_context_t *ctx,
+                            neverc_cancel_func_t *cancel_out) {
+    if (!cancel_out)
+        return 0;
+
+    *cancel_out = NULL;
+    int slot = alloc_cancel_slot(ctx);
+    if (slot < 0)
+        return -1;
+    *cancel_out = g_cancel_trampolines[slot];
+    return 0;
 }
 
 neverc_context_t *neverc_context_background(void) {
@@ -115,12 +154,15 @@ neverc_context_t *neverc_context_background(void) {
 neverc_context_t *neverc_context_with_cancel(neverc_context_t *parent,
                                               neverc_cancel_func_t *cancel_out) {
     neverc_context_t *ctx = (neverc_context_t *)calloc(1, sizeof(*ctx));
-    if (!ctx) return NULL;
+    if (!ctx) {
+        if (cancel_out) *cancel_out = NULL;
+        return NULL;
+    }
     ctx->kind = CTX_CANCEL;
     ctx->parent = parent;
-    if (cancel_out) {
-        int slot = alloc_cancel_slot(ctx);
-        *cancel_out = (slot >= 0) ? g_cancel_trampolines[slot] : NULL;
+    if (bind_cancel_func(ctx, cancel_out) != 0) {
+        free(ctx);
+        return NULL;
     }
     return ctx;
 }
@@ -141,13 +183,16 @@ neverc_context_t *neverc_context_with_timeout(neverc_context_t *parent,
                                                int64_t timeout_ms,
                                                neverc_cancel_func_t *cancel_out) {
     neverc_context_t *ctx = (neverc_context_t *)calloc(1, sizeof(*ctx));
-    if (!ctx) return NULL;
+    if (!ctx) {
+        if (cancel_out) *cancel_out = NULL;
+        return NULL;
+    }
     ctx->kind = CTX_TIMEOUT;
     ctx->parent = parent;
     ctx->deadline_ms = now_ms() + timeout_ms;
-    if (cancel_out) {
-        int slot = alloc_cancel_slot(ctx);
-        *cancel_out = (slot >= 0) ? g_cancel_trampolines[slot] : NULL;
+    if (bind_cancel_func(ctx, cancel_out) != 0) {
+        free(ctx);
+        return NULL;
     }
     return ctx;
 }
@@ -156,13 +201,16 @@ neverc_context_t *neverc_context_with_deadline(neverc_context_t *parent,
                                                 int64_t deadline_ms,
                                                 neverc_cancel_func_t *cancel_out) {
     neverc_context_t *ctx = (neverc_context_t *)calloc(1, sizeof(*ctx));
-    if (!ctx) return NULL;
+    if (!ctx) {
+        if (cancel_out) *cancel_out = NULL;
+        return NULL;
+    }
     ctx->kind = CTX_TIMEOUT;
     ctx->parent = parent;
     ctx->deadline_ms = deadline_ms;
-    if (cancel_out) {
-        int slot = alloc_cancel_slot(ctx);
-        *cancel_out = (slot >= 0) ? g_cancel_trampolines[slot] : NULL;
+    if (bind_cancel_func(ctx, cancel_out) != 0) {
+        free(ctx);
+        return NULL;
     }
     return ctx;
 }
@@ -250,7 +298,13 @@ int64_t neverc_context_deadline(const neverc_context_t *ctx) {
     return 0;
 }
 
+static void ctx_stop_after_funcs(neverc_context_t *ctx);
+
 void neverc_context_free(neverc_context_t *ctx) {
+    if (!ctx)
+        return;
+    ctx_stop_after_funcs(ctx);
+    release_cancel_slot(ctx);
     free(ctx);
 }
 
@@ -263,43 +317,84 @@ void neverc_context_free(neverc_context_t *ctx) {
 typedef struct {
     neverc_context_t *ctx;
     void (*f)(void);
-    volatile int32_t stopped;
-    volatile int32_t ran;
+    volatile int32_t state;
+    volatile int32_t thread_finished;
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    DWORD thread_id;
+#else
+    pthread_t thread_id;
+#endif
 } after_func_state_t;
+
+enum {
+    AFTER_FUNC_WAITING,
+    AFTER_FUNC_STOPPED,
+    AFTER_FUNC_RUNNING,
+    AFTER_FUNC_FINISHED
+};
 
 #if defined(NEVERC_PLATFORM_WINDOWS)
 static DWORD WINAPI after_func_thread(LPVOID arg) {
     after_func_state_t *s = (after_func_state_t *)arg;
-    while (!neverc_context_done(s->ctx) && !NEVERC_ATOMIC_LOAD32(&s->stopped))
+    while (!neverc_context_done(s->ctx) &&
+           NEVERC_ATOMIC_LOAD32(&s->state) == AFTER_FUNC_WAITING)
         Sleep(1);
-    if (!NEVERC_ATOMIC_LOAD32(&s->stopped)) {
-        NEVERC_ATOMIC_STORE32((int32_t *)&s->ran, 1);
+    s->thread_id = GetCurrentThreadId();
+    if (NEVERC_ATOMIC_CAS32(&s->state, AFTER_FUNC_WAITING,
+                            AFTER_FUNC_RUNNING)) {
         s->f();
+        NEVERC_ATOMIC_STORE32(&s->state, AFTER_FUNC_FINISHED);
     }
+    NEVERC_ATOMIC_STORE32(&s->thread_finished, 1);
     return 0;
 }
 #else
 #include <unistd.h>
-#include <pthread.h>
 static void *after_func_thread(void *arg) {
     after_func_state_t *s = (after_func_state_t *)arg;
-    while (!neverc_context_done(s->ctx) && !NEVERC_ATOMIC_LOAD32(&s->stopped))
+    while (!neverc_context_done(s->ctx) &&
+           NEVERC_ATOMIC_LOAD32(&s->state) == AFTER_FUNC_WAITING)
         usleep(1000);
-    if (!NEVERC_ATOMIC_LOAD32(&s->stopped)) {
-        NEVERC_ATOMIC_STORE32((int32_t *)&s->ran, 1);
+    s->thread_id = pthread_self();
+    if (NEVERC_ATOMIC_CAS32(&s->state, AFTER_FUNC_WAITING,
+                            AFTER_FUNC_RUNNING)) {
         s->f();
+        NEVERC_ATOMIC_STORE32(&s->state, AFTER_FUNC_FINISHED);
     }
+    NEVERC_ATOMIC_STORE32(&s->thread_finished, 1);
     return NULL;
 }
 #endif
 
-static after_func_state_t *g_after_func_states[64];
+static after_func_state_t *g_after_func_states[4];
 static int g_after_func_count = 0;
+static volatile int32_t g_after_func_lock;
+
+static void after_func_states_lock(void) {
+    while (!NEVERC_ATOMIC_CAS32(&g_after_func_lock, 0, 1)) {
+        /* Registration and teardown only hold this lock briefly. */
+    }
+}
+
+static void after_func_states_unlock(void) {
+    NEVERC_ATOMIC_STORE32(&g_after_func_lock, 0);
+}
 
 static int after_func_stop_impl(after_func_state_t *s) {
-    if (NEVERC_ATOMIC_LOAD32(&s->ran)) return 0;
-    int32_t was = NEVERC_ATOMIC_SWAP32(&s->stopped, 1);
-    return was == 0 ? 1 : 0;
+    if (!s)
+        return 0;
+    return NEVERC_ATOMIC_CAS32(&s->state, AFTER_FUNC_WAITING,
+                               AFTER_FUNC_STOPPED) ? 1 : 0;
+}
+
+static int after_func_runs_on_current_thread(after_func_state_t *s) {
+    if (NEVERC_ATOMIC_LOAD32(&s->state) != AFTER_FUNC_RUNNING)
+        return 0;
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    return s->thread_id == GetCurrentThreadId();
+#else
+    return pthread_equal(s->thread_id, pthread_self()) != 0;
+#endif
 }
 
 static int stop_fn_0(void)  { return after_func_stop_impl(g_after_func_states[0]); }
@@ -311,23 +406,85 @@ static neverc_context_stop_func_t g_stop_fns[] = {
     stop_fn_0, stop_fn_1, stop_fn_2, stop_fn_3
 };
 
+static void ctx_stop_after_funcs(neverc_context_t *ctx) {
+    after_func_state_t *states[4];
+    int count = 0;
+
+    after_func_states_lock();
+    for (int i = 0; i < g_after_func_count; i++) {
+        after_func_state_t *s = g_after_func_states[i];
+        if (s && s->ctx == ctx) {
+            (void)NEVERC_ATOMIC_CAS32(&s->state, AFTER_FUNC_WAITING,
+                                      AFTER_FUNC_STOPPED);
+            states[count++] = s;
+        }
+    }
+    after_func_states_unlock();
+
+    for (int i = 0; i < count; i++) {
+        /* A callback may release its own context. The worker no longer reads
+         * ctx after entering RUNNING, so waiting for that same worker would
+         * only deadlock. */
+        if (after_func_runs_on_current_thread(states[i]))
+            continue;
+        while (!NEVERC_ATOMIC_LOAD32(&states[i]->thread_finished)) {
+#if defined(NEVERC_PLATFORM_WINDOWS)
+            Sleep(1);
+#else
+            usleep(1000);
+#endif
+        }
+    }
+
+    after_func_states_lock();
+    for (int i = 0; i < count; i++) {
+        if (states[i]->ctx == ctx)
+            states[i]->ctx = NULL;
+    }
+    after_func_states_unlock();
+}
+
 neverc_context_stop_func_t neverc_context_after_func(neverc_context_t *ctx,
                                                       void (*f)(void)) {
-    if (!ctx || !f || g_after_func_count >= 4) return NULL;
+    if (!ctx || !f) return NULL;
     if (neverc_context_done(ctx)) { f(); return NULL; }
 
-    int idx = g_after_func_count++;
     after_func_state_t *s = (after_func_state_t *)calloc(1, sizeof(*s));
+    if (!s)
+        return NULL;
     s->ctx = ctx;
     s->f = f;
+
+    after_func_states_lock();
+    if (g_after_func_count >= 4) {
+        after_func_states_unlock();
+        free(s);
+        return NULL;
+    }
+
+    int idx = g_after_func_count;
     g_after_func_states[idx] = s;
 
 #if defined(NEVERC_PLATFORM_WINDOWS)
-    CreateThread(NULL, 0, after_func_thread, s, 0, NULL);
+    HANDLE thread = CreateThread(NULL, 0, after_func_thread, s, 0, NULL);
+    if (!thread) {
+        g_after_func_states[idx] = NULL;
+        after_func_states_unlock();
+        free(s);
+        return NULL;
+    }
+    CloseHandle(thread);
 #else
     pthread_t th;
-    pthread_create(&th, NULL, after_func_thread, s);
+    if (pthread_create(&th, NULL, after_func_thread, s) != 0) {
+        g_after_func_states[idx] = NULL;
+        after_func_states_unlock();
+        free(s);
+        return NULL;
+    }
     pthread_detach(th);
 #endif
+    g_after_func_count++;
+    after_func_states_unlock();
     return g_stop_fns[idx];
 }

@@ -626,6 +626,10 @@ typedef struct {
     size_t cap;
 } nc_buf_t;
 
+#ifndef NC_NET_REALLOC
+#define NC_NET_REALLOC realloc
+#endif
+
 static inline void nc_buf_init(nc_buf_t *b) {
     b->data = NULL;
     b->len = 0;
@@ -646,7 +650,7 @@ static inline int nc_buf_grow(nc_buf_t *b, size_t need) {
         if (next <= nc) { nc = need; break; }
         nc = next;
     }
-    char *nd = (char *)realloc(b->data, nc);
+    char *nd = (char *)NC_NET_REALLOC(b->data, nc);
     if (!nd) return -1;
     b->data = nd;
     b->cap = nc;
@@ -654,8 +658,13 @@ static inline int nc_buf_grow(nc_buf_t *b, size_t need) {
 }
 
 static inline int nc_buf_append(nc_buf_t *b, const void *data, size_t len) {
-    if (nc_buf_grow(b, b->len + len + 1) != 0) return -1;
-    memcpy(b->data + b->len, data, len);
+    if (!b || (len > 0 && !data) || b->len == SIZE_MAX ||
+        len > SIZE_MAX - b->len - 1)
+        return -1;
+    if (nc_buf_grow(b, b->len + len + 1) != 0)
+        return -1;
+    if (len > 0)
+        memcpy(b->data + b->len, data, len);
     b->len += len;
     b->data[b->len] = '\0';
     return 0;

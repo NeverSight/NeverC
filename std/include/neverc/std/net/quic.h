@@ -4,7 +4,11 @@
 /*
  * NeverC QUIC Transport (RFC 9000, RFC 9001, RFC 9002)
  *
- * Full QUIC v1 implementation with:
+ * The packet, frame, loss-recovery, and connection-state building blocks are
+ * experimental. Endpoint handshake and UDP I/O are not integrated yet, so
+ * listen/dial/accept and stream/datagram operations currently fail closed.
+ *
+ * Target capabilities:
  *   - UDP-based multiplexed transport
  *   - TLS 1.3 integrated handshake
  *   - Bidirectional and unidirectional streams
@@ -16,18 +20,20 @@
  *
  * Cross-platform: POSIX (Linux/macOS/iOS/Android) + Windows.
  *
- * Usage (server):
+ * Target usage after endpoint integration (server):
  *   neverc_quic_config_t cfg = neverc_quic_config_default();
  *   cfg.cert_file = "cert.pem";
  *   cfg.key_file = "key.pem";
- *   neverc_quic_endpoint_t *ep = neverc_quic_listen(":4433", &cfg);
- *   neverc_quic_conn_t *conn = neverc_quic_accept(ep);
- *   neverc_quic_stream_t *s = neverc_quic_accept_stream(conn);
+ *   const char *err = NULL;
+ *   neverc_quic_endpoint_t *ep = neverc_quic_listen(":4433", &cfg, &err);
+ *   neverc_quic_conn_t *conn = neverc_quic_accept(ep, &err);
+ *   neverc_quic_stream_t *s = neverc_quic_accept_stream(conn, &err);
  *   neverc_quic_stream_read(s, buf, len);
  *
- * Usage (client):
- *   neverc_quic_conn_t *conn = neverc_quic_dial("example.com:4433", &cfg);
- *   neverc_quic_stream_t *s = neverc_quic_open_stream(conn);
+ * Target usage after endpoint integration (client):
+ *   neverc_quic_conn_t *conn =
+ *       neverc_quic_dial("example.com:4433", &cfg, &err);
+ *   neverc_quic_stream_t *s = neverc_quic_open_stream(conn, &err);
  *   neverc_quic_stream_write(s, data, len);
  */
 
@@ -104,14 +110,12 @@ neverc_quic_config_t neverc_quic_config_default(void);
  * Endpoint (listener)
  * ====================================================================== */
 
-/* Create a QUIC endpoint listening on addr (e.g. ":4433", "0.0.0.0:443").
- * Returns NULL on error; *errp set. */
+/* Currently returns NULL with an unsupported error. */
 neverc_quic_endpoint_t *neverc_quic_listen(const char *addr,
                                             const neverc_quic_config_t *cfg,
                                             const char **errp);
 
-/* Accept a new QUIC connection. Blocks until handshake completes.
- * Returns NULL on error. */
+/* Currently returns NULL with an unsupported error. */
 neverc_quic_conn_t *neverc_quic_accept(neverc_quic_endpoint_t *ep,
                                         const char **errp);
 
@@ -122,8 +126,7 @@ void neverc_quic_endpoint_close(neverc_quic_endpoint_t *ep);
  * Client Connection
  * ====================================================================== */
 
-/* Dial a QUIC server. Performs handshake.
- * Returns NULL on error. */
+/* Currently returns NULL with an unsupported error. */
 neverc_quic_conn_t *neverc_quic_dial(const char *addr,
                                       const neverc_quic_config_t *cfg,
                                       const char **errp);

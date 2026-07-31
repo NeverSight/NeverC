@@ -717,6 +717,8 @@ static int csupport_win32_error_to_errno(DWORD error) {
 }
 
 int csupport_fd_lock(int fd) {
+  if (fd < 0)
+    return EBADF;
   intptr_t os_handle = _get_osfhandle(fd);
   if (os_handle == -1)
     return errno ? errno : EBADF;
@@ -728,6 +730,8 @@ int csupport_fd_lock(int fd) {
 }
 
 int csupport_fd_try_lock_for(int fd, int64_t timeout_ms) {
+  if (fd < 0)
+    return EBADF;
   intptr_t os_handle = _get_osfhandle(fd);
   if (os_handle == -1)
     return errno ? errno : EBADF;
