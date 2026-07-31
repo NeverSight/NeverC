@@ -48,7 +48,7 @@ static inline const char *csupport_str_begin(csupport_string_ref_t s) {
 }
 
 static inline const char *csupport_str_end(csupport_string_ref_t s) {
-  return s.data + s.length;
+  return s.length == 0 ? s.data : s.data + s.length;
 }
 
 static inline char csupport_str_at(csupport_string_ref_t s, size_t idx) {
@@ -161,6 +161,8 @@ static inline bool csupport_str_starts_with(csupport_string_ref_t s,
                                             csupport_string_ref_t prefix) {
   if (prefix.length > s.length)
     return false;
+  if (prefix.length == 0)
+    return true;
   return memcmp(s.data, prefix.data, prefix.length) == 0;
 }
 
@@ -168,6 +170,8 @@ static inline bool csupport_str_ends_with(csupport_string_ref_t s,
                                           csupport_string_ref_t suffix) {
   if (suffix.length > s.length)
     return false;
+  if (suffix.length == 0)
+    return true;
   return memcmp(s.data + s.length - suffix.length, suffix.data,
                 suffix.length) == 0;
 }
@@ -199,7 +203,7 @@ csupport_str_ltrim(csupport_string_ref_t s) {
   size_t i = 0;
   while (i < s.length && isspace((unsigned char)s.data[i]))
     i++;
-  return csupport_string_ref(s.data + i, s.length - i);
+  return csupport_string_ref(i == 0 ? s.data : s.data + i, s.length - i);
 }
 
 static inline csupport_string_ref_t
@@ -218,7 +222,8 @@ static inline bool csupport_str_consume_front(csupport_string_ref_t *s,
                                               csupport_string_ref_t prefix) {
   if (!csupport_str_starts_with(*s, prefix))
     return false;
-  s->data += prefix.length;
+  if (prefix.length != 0)
+    s->data += prefix.length;
   s->length -= prefix.length;
   return true;
 }
@@ -239,7 +244,7 @@ csupport_str_split(csupport_string_ref_t s, char sep,
                    csupport_string_ref_t *rest) {
   size_t pos = csupport_str_find_char(s, sep, 0);
   if (pos == CSUPPORT_STR_NPOS) {
-    *rest = csupport_string_ref(s.data + s.length, 0);
+    *rest = csupport_string_ref(csupport_str_end(s), 0);
     return s;
   }
   *rest = csupport_string_ref(s.data + pos + 1, s.length - pos - 1);

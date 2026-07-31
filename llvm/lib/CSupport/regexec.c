@@ -141,19 +141,32 @@ int				/* 0 success, REG_NOMATCH failure */
 llvm_regexec(const llvm_regex_t *preg, const char *string, size_t nmatch,
              llvm_regmatch_t pmatch[], int eflags)
 {
-	struct re_guts *g = preg->re_g;
+	struct re_guts *g;
 #ifdef REDEBUG
 #	define	GOODFLAGS(f)	(f)
 #else
 #	define	GOODFLAGS(f)	((f)&(REG_NOTBOL|REG_NOTEOL|REG_STARTEND))
 #endif
 
-	if (preg->re_magic != MAGIC1 || g->magic != MAGIC2)
+	if (preg == NULL)
+		return(REG_INVARG);
+	g = preg->re_g;
+	if (g == NULL || preg->re_magic != MAGIC1 || g->magic != MAGIC2)
 		return(REG_BADPAT);
 	assert(!(g->iflags&REGEX_BAD));
 	if (g->iflags&REGEX_BAD)		/* backstop for no-debug case */
 		return(REG_BADPAT);
 	eflags = GOODFLAGS(eflags);
+	if (eflags&REG_STARTEND) {
+		if (pmatch == NULL || pmatch[0].rm_so < 0 ||
+		    pmatch[0].rm_eo < pmatch[0].rm_so)
+			return(REG_INVARG);
+	}
+	if (string == NULL) {
+		if (!(eflags&REG_STARTEND) || pmatch[0].rm_eo != 0)
+			return(REG_INVARG);
+		string = "";
+	}
 
 	if (g->nstates <= (long)(CHAR_BIT*sizeof(states1)) && !(eflags&REG_LARGE))
 		return(smatcher(g, string, nmatch, pmatch, eflags));

@@ -220,7 +220,7 @@ GlobPattern::SubGlobPattern::create(StringRef S) {
 }
 
 inline bool GlobPattern::match(StringRef S) const {
-  if (!S.consume_front(Prefix))
+  if (!Prefix.empty() && !S.consume_front(Prefix))
     return false;
   if (SubGlobs.empty() && S.empty())
     return true;
@@ -231,6 +231,9 @@ inline bool GlobPattern::match(StringRef S) const {
 }
 
 inline bool GlobPattern::SubGlobPattern::match(StringRef Str) const {
+  if (Str.empty())
+    return getPat().find_first_not_of('*') == StringRef::npos;
+
   const char *P = Pat.data(), *SegmentBegin = 0, *S = Str.data(), *SavedS = S;
   const char *const PEnd = P + Pat.size(), *const End = S + Str.size();
   size_t B = 0, SavedB = 0;

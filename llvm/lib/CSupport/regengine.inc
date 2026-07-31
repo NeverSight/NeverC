@@ -192,6 +192,12 @@ matcher(struct re_guts *g, const char *string, size_t nmatch,
 			STATETEARDOWN(m);
 			return(REG_NOMATCH);
 		}
+		if (m->coldp == NULL) {		/* fast() violated its contract */
+			free(m->pmatch);
+			free((void*)m->lastpos);
+			STATETEARDOWN(m);
+			return(REG_ASSERT);
+		}
 		if (nmatch == 0 && !g->backrefs)
 			break;		/* no further info needed */
 
@@ -265,6 +271,13 @@ matcher(struct re_guts *g, const char *string, size_t nmatch,
 		if (m->coldp == stop)
 			break;
 		start = m->coldp + 1;	/* recycle starting later */
+	}
+
+	if (endp == NULL) {		/* every successful exit has an end */
+		free(m->pmatch);
+		free((void*)m->lastpos);
+		STATETEARDOWN(m);
+		return(REG_ASSERT);
 	}
 
 	/* fill in the details if requested */

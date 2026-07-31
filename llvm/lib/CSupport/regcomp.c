@@ -303,16 +303,29 @@ llvm_regcomp(llvm_regex_t *preg, const char *pattern, int cflags)
 #	define	GOODFLAGS(f)	((f)&~REG_DUMP)
 #endif
 
+	if (preg == NULL)
+		return(REG_INVARG);
+
 	cflags = GOODFLAGS(cflags);
 	if ((cflags&REG_EXTENDED) && (cflags&REG_NOSPEC))
 		return(REG_INVARG);
 
 	if (cflags&REG_PEND) {
-		if (preg->re_endp < pattern)
+		if (pattern == NULL || preg->re_endp == NULL) {
+			if (pattern != preg->re_endp)
+				return(REG_INVARG);
+			pattern = "";
+			len = 0;
+		} else {
+			if (preg->re_endp < pattern)
+				return(REG_INVARG);
+			len = preg->re_endp - pattern;
+		}
+	} else {
+		if (pattern == NULL)
 			return(REG_INVARG);
-		len = preg->re_endp - pattern;
-	} else
 		len = strlen((const char *)pattern);
+	}
 
 	/* do the mallocs early so failure handling is easy */
 	g = (struct re_guts *)malloc(sizeof(struct re_guts) +
@@ -1647,6 +1660,11 @@ findmust(struct parse *p, struct re_guts *g)
 
 	if (g->mlen == 0)		/* there isn't one */
 		return;
+	assert(start != NULL);
+	if (start == NULL) {		/* malformed strip in a no-assert build */
+		g->mlen = 0;
+		return;
+	}
 
 	/* turn it into a character string */
 	g->must = malloc((size_t)g->mlen + 1);

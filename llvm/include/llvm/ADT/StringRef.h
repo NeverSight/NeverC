@@ -79,6 +79,10 @@ private:
     return ::memcmp(Lhs, Rhs, Length);
   }
 
+  constexpr const char *dataAt(size_t Offset) const {
+    return Offset == 0 ? Data : Data + Offset;
+  }
+
 public:
   /// @name Constructors
   /// @{
@@ -120,7 +124,7 @@ public:
 
   iterator begin() const { return Data; }
 
-  iterator end() const { return Data + Length; }
+  iterator end() const { return dataAt(Length); }
 
   const unsigned char *bytes_begin() const {
     return reinterpret_cast<const unsigned char *>(begin());
@@ -256,7 +260,9 @@ public:
   /// @name Type Conversions
   /// @{
 
-  operator std::string_view() const { return std::string_view(data(), size()); }
+  operator std::string_view() const {
+    return data() ? std::string_view(data(), size()) : std::string_view();
+  }
 
   /// @}
   /// @name String Predicates
@@ -279,8 +285,8 @@ public:
   /// Check if this string ends with the given \p Suffix.
   [[nodiscard]] bool ends_with(StringRef Suffix) const {
     return Length >= Suffix.Length &&
-           compareMemory(end() - Suffix.Length, Suffix.Data, Suffix.Length) ==
-               0;
+           compareMemory(dataAt(Length - Suffix.Length), Suffix.Data,
+                         Suffix.Length) == 0;
   }
   [[nodiscard]] LLVM_DEPRECATED(
       "Use ends_with instead",
@@ -573,7 +579,7 @@ public:
   [[nodiscard]] constexpr StringRef substr(size_t Start,
                                            size_t N = npos) const {
     Start = std::min(Start, Length);
-    return StringRef(Data + Start, std::min(N, Length - Start));
+    return StringRef(dataAt(Start), std::min(N, Length - Start));
   }
 
   /// Return a StringRef equal to 'this' but with only the first \p N
@@ -686,7 +692,7 @@ public:
   [[nodiscard]] StringRef slice(size_t Start, size_t End) const {
     Start = std::min(Start, Length);
     End = std::clamp(End, Start, Length);
-    return StringRef(Data + Start, End - Start);
+    return StringRef(dataAt(Start), End - Start);
   }
 
   /// Split into two substrings around the first occurrence of a separator

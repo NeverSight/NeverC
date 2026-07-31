@@ -119,11 +119,22 @@ private:
 
 namespace llvm {
 
+namespace regex_detail {
+inline StringRef withNonNullData(StringRef String) {
+  return String.data() ? String : StringRef("");
+}
+} // namespace regex_detail
+
 inline Regex::Regex() : preg(0), error(REG_BADPAT) {}
 
 inline Regex::Regex(StringRef regex, RegexFlags Flags) {
+  regex = regex_detail::withNonNullData(regex);
   unsigned flags = 0;
   preg = (llvm_regex *)calloc(1, sizeof(llvm_regex));
+  if (!preg) {
+    error = REG_ESPACE;
+    return;
+  }
   preg->re_endp = regex.end();
   if (Flags & IgnoreCase)
     flags |= REG_ICASE;
@@ -186,9 +197,7 @@ inline bool Regex::match(StringRef String, SmallVectorImpl<StringRef> *Matches,
 
   unsigned nmatch = Matches ? preg->re_nsub + 1 : 0;
 
-  // Update null string to empty string.
-  if (String.data() == 0)
-    String = "";
+  String = regex_detail::withNonNullData(String);
 
   // pmatch needs to have at least one element.
   SmallVector<llvm_regmatch_t, 8> pm;
@@ -204,7 +213,7 @@ inline bool Regex::match(StringRef String, SmallVectorImpl<StringRef> *Matches,
     return false;
   if (rc != 0) {
     if (Error)
-      RegexErrorToString(error, preg, *Error);
+      RegexErrorToString(rc, preg, *Error);
     return false;
   }
 
@@ -230,6 +239,7 @@ inline bool Regex::match(StringRef String, SmallVectorImpl<StringRef> *Matches,
 
 inline SmallString<256> Regex::sub(StringRef Repl, StringRef String,
                                    SmallVectorImpl<char> *Error) const {
+  String = regex_detail::withNonNullData(String);
   SmallVector<StringRef, 8> Matches;
   if (!match(String, &Matches, Error))
     return SmallString<256>(String);

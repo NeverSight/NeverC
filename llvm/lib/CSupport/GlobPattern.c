@@ -117,6 +117,15 @@ int csupport_glob_match_advanced(const char *pat, size_t pat_len,
                                  const size_t *bracket_offsets,
                                  size_t bracket_count,
                                  const char *str, size_t str_len) {
+  if (pat_len == 0)
+    return str_len == 0;
+  if (str_len == 0) {
+    for (size_t i = 0; i < pat_len; ++i)
+      if (pat[i] != '*')
+        return 0;
+    return 1;
+  }
+
   const char *P = pat, *SegmentBegin = NULL, *S = str, *SavedS = S;
   const char *const PEnd = P + pat_len, *const End = S + str_len;
   size_t B = 0, SavedB = 0;

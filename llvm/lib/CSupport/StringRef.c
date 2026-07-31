@@ -53,10 +53,10 @@ size_t csupport_str_find_substr(const char *haystack, size_t hay_len,
                                 const char *needle, size_t nee_len,
                                 size_t from) {
   if (from > hay_len) return (size_t)-1;
-  const char *start = haystack + from;
-  size_t remaining = hay_len - from;
   if (nee_len == 0) return from;
+  size_t remaining = hay_len - from;
   if (remaining < nee_len) return (size_t)-1;
+  const char *start = haystack + from;
 
   if (nee_len == 1) {
     const char *p = (const char *)memchr(start, needle[0], remaining);
@@ -234,7 +234,9 @@ int csupport_str_starts_with_insensitive(const char *data, size_t len,
 
 int csupport_str_ends_with_insensitive(const char *data, size_t len,
                                        const char *suffix, size_t slen) {
-  return len >= slen && ascii_strncasecmp_c(data + len - slen, suffix, slen) == 0;
+  if (slen == 0) return 1;
+  return len >= slen &&
+         ascii_strncasecmp_c(data + len - slen, suffix, slen) == 0;
 }
 
 size_t csupport_str_find_last_of(const char *data, size_t len,
