@@ -124,6 +124,40 @@ static const uint8_t test_san_cert_der[] = {
     0x38, 0x26,
 };
 
+/* Go crypto/x509's Ed25519 self-signed CA interoperability fixture. */
+static const uint8_t test_ed25519_cert_der[] = {
+    0x30, 0x82, 0x01, 0x5b, 0x30, 0x82, 0x01, 0x0d, 0xa0, 0x03, 0x02, 0x01,
+    0x02, 0x02, 0x14, 0x0c, 0x83, 0xd8, 0x21, 0x2b, 0x82, 0xcb, 0x23, 0x98,
+    0x23, 0x63, 0xe2, 0xf7, 0x97, 0x8a, 0x43, 0x5b, 0xf3, 0xbd, 0x92, 0x30,
+    0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x30, 0x23, 0x31, 0x21, 0x30, 0x1f,
+    0x06, 0x03, 0x55, 0x04, 0x03, 0x0c, 0x18, 0x45, 0x64, 0x32, 0x35, 0x35,
+    0x31, 0x39, 0x20, 0x74, 0x65, 0x73, 0x74, 0x20, 0x63, 0x65, 0x72, 0x74,
+    0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x65, 0x30, 0x1e, 0x17, 0x0d, 0x31,
+    0x39, 0x30, 0x35, 0x30, 0x36, 0x31, 0x37, 0x32, 0x37, 0x31, 0x36, 0x5a,
+    0x17, 0x0d, 0x31, 0x39, 0x30, 0x36, 0x30, 0x35, 0x31, 0x37, 0x32, 0x37,
+    0x31, 0x36, 0x5a, 0x30, 0x23, 0x31, 0x21, 0x30, 0x1f, 0x06, 0x03, 0x55,
+    0x04, 0x03, 0x0c, 0x18, 0x45, 0x64, 0x32, 0x35, 0x35, 0x31, 0x39, 0x20,
+    0x74, 0x65, 0x73, 0x74, 0x20, 0x63, 0x65, 0x72, 0x74, 0x69, 0x66, 0x69,
+    0x63, 0x61, 0x74, 0x65, 0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65,
+    0x70, 0x03, 0x21, 0x00, 0x36, 0x29, 0xc5, 0x6c, 0x0d, 0x4f, 0x14, 0x6c,
+    0x81, 0xd0, 0xff, 0x75, 0xd3, 0x6a, 0x70, 0x5f, 0x69, 0xcd, 0x0f, 0x4d,
+    0x66, 0xd5, 0xda, 0x98, 0x7e, 0x82, 0x49, 0x89, 0xa3, 0x8a, 0x3c, 0xfa,
+    0xa3, 0x53, 0x30, 0x51, 0x30, 0x1d, 0x06, 0x03, 0x55, 0x1d, 0x0e, 0x04,
+    0x16, 0x04, 0x14, 0x09, 0x3b, 0x3a, 0x9d, 0x4a, 0x29, 0xd8, 0x95, 0xff,
+    0x68, 0xbe, 0x7b, 0x43, 0x54, 0x72, 0xe0, 0xad, 0xa2, 0xe3, 0xae, 0x30,
+    0x1f, 0x06, 0x03, 0x55, 0x1d, 0x23, 0x04, 0x18, 0x30, 0x16, 0x80, 0x14,
+    0x09, 0x3b, 0x3a, 0x9d, 0x4a, 0x29, 0xd8, 0x95, 0xff, 0x68, 0xbe, 0x7b,
+    0x43, 0x54, 0x72, 0xe0, 0xad, 0xa2, 0xe3, 0xae, 0x30, 0x0f, 0x06, 0x03,
+    0x55, 0x1d, 0x13, 0x01, 0x01, 0xff, 0x04, 0x05, 0x30, 0x03, 0x01, 0x01,
+    0xff, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x03, 0x41, 0x00, 0x53,
+    0xa5, 0x58, 0x1c, 0x2c, 0x3b, 0x2a, 0x9e, 0xac, 0x9d, 0x4e, 0xa5, 0x1d,
+    0x5f, 0x5d, 0x6d, 0xa6, 0xb5, 0x08, 0xde, 0x12, 0x82, 0xf3, 0x97, 0x20,
+    0xae, 0xfa, 0xd8, 0x98, 0xf4, 0x1a, 0x83, 0x32, 0x6b, 0x91, 0xf5, 0x24,
+    0x1d, 0xc4, 0x20, 0x7f, 0x2c, 0xe2, 0x4d, 0xda, 0x13, 0x3b, 0x6d, 0x54,
+    0x1a, 0xd2, 0xa8, 0x28, 0xdc, 0x60, 0xb9, 0xd4, 0xf4, 0x78, 0x4b, 0x3c,
+    0x1c, 0x91, 0x00,
+};
+
 static void test_x509_parse(void) {
     neverc_x509_cert_t cert;
     int rc = neverc_x509_parse_certificate(&cert, test_cert_der, sizeof(test_cert_der));
@@ -159,6 +193,48 @@ static void test_x509_parse(void) {
     neverc_x509_cert_free(&cert);
 }
 
+static void test_x509_signature_verification(void) {
+    neverc_x509_cert_t cert;
+    int rc = neverc_x509_parse_certificate(
+        &cert, test_cert_der, sizeof(test_cert_der));
+    CHECK("signature_cert_parse", rc == 0);
+    if (rc != 0)
+        return;
+
+    CHECK("self_signature_valid",
+          neverc_x509_check_signature_from(&cert, &cert) == 0);
+    int signature_algorithm = cert.sig_algorithm;
+    cert.sig_algorithm = NEVERC_X509_SIG_SHA1_RSA;
+    CHECK("sha1_signature_policy_rejected",
+          neverc_x509_check_signature_from(&cert, &cert) != 0);
+    cert.sig_algorithm = signature_algorithm;
+    neverc_x509_cert_free(&cert);
+
+    uint8_t tampered[sizeof(test_cert_der)];
+    memcpy(tampered, test_cert_der, sizeof(tampered));
+    tampered[sizeof(tampered) - 1] ^= 1;
+    rc = neverc_x509_parse_certificate(&cert, tampered, sizeof(tampered));
+    CHECK("tampered_signature_cert_parse", rc == 0);
+    if (rc == 0) {
+        CHECK("tampered_signature_rejected",
+              neverc_x509_check_signature_from(&cert, &cert) != 0);
+        CHECK("tampered_cert_not_self_signed",
+              neverc_x509_is_self_signed(&cert) == 0);
+        neverc_x509_cert_free(&cert);
+    }
+
+    rc = neverc_x509_parse_certificate(
+        &cert, test_ed25519_cert_der, sizeof(test_ed25519_cert_der));
+    CHECK("ed25519_signature_cert_parse", rc == 0);
+    if (rc == 0) {
+        CHECK("ed25519_key_algorithm",
+              cert.key_algorithm == NEVERC_X509_KEY_ED25519);
+        CHECK("ed25519_self_signature_valid",
+              neverc_x509_check_signature_from(&cert, &cert) == 0);
+        neverc_x509_cert_free(&cert);
+    }
+}
+
 static void test_x509_subject_alt_name(void) {
     neverc_x509_cert_t cert;
     int rc = neverc_x509_parse_certificate(
@@ -187,6 +263,10 @@ static void test_x509_subject_alt_name(void) {
            NEVERC_X509_EXT_KEY_USAGE_CLIENT_AUTH) == 0);
     CHECK("leaf_no_unknown_critical_extension",
           cert.has_unhandled_critical_extension == 0);
+    CHECK("ecdsa_self_signature_valid",
+          neverc_x509_is_self_signed(&cert) == 1);
+    CHECK("non_ca_cannot_sign_certificates",
+          neverc_x509_check_signature_from(&cert, &cert) != 0);
     if (cert.dns_name_count == 2) {
         CHECK("san_dns_exact",
               strcmp(cert.dns_names[0], "server.example.com") == 0);
@@ -314,10 +394,76 @@ static void test_x509_invalid(void) {
               &cert, noncanonical_length,
               sizeof(noncanonical_length)) < 0);
 
+    uint8_t invalid_version[sizeof(test_cert_der)];
+    memcpy(invalid_version, test_cert_der, sizeof(invalid_version));
+    invalid_version[12] = 3;
+    rc = neverc_x509_parse_certificate(
+        &cert, invalid_version, sizeof(invalid_version));
+    CHECK("invalid_certificate_version_fails", rc < 0);
+    if (rc == 0)
+        neverc_x509_cert_free(&cert);
+
+    uint8_t invalid_serial_tag[sizeof(test_cert_der)];
+    memcpy(invalid_serial_tag, test_cert_der, sizeof(invalid_serial_tag));
+    invalid_serial_tag[13] = 0x04;
+    rc = neverc_x509_parse_certificate(
+        &cert, invalid_serial_tag, sizeof(invalid_serial_tag));
+    CHECK("invalid_serial_tag_fails", rc < 0);
+    if (rc == 0)
+        neverc_x509_cert_free(&cert);
+
+    uint8_t negative_serial[sizeof(test_cert_der)];
+    memcpy(negative_serial, test_cert_der, sizeof(negative_serial));
+    negative_serial[15] |= 0x80;
+    rc = neverc_x509_parse_certificate(
+        &cert, negative_serial, sizeof(negative_serial));
+    CHECK("negative_serial_fails", rc < 0);
+    if (rc == 0)
+        neverc_x509_cert_free(&cert);
+
+    uint8_t malformed_issuer_name[sizeof(test_cert_der)];
+    memcpy(malformed_issuer_name, test_cert_der,
+           sizeof(malformed_issuer_name));
+    malformed_issuer_name[52] = 0x32;
+    rc = neverc_x509_parse_certificate(
+        &cert, malformed_issuer_name, sizeof(malformed_issuer_name));
+    CHECK("malformed_issuer_name_fails", rc < 0);
+    if (rc == 0)
+        neverc_x509_cert_free(&cert);
+
+    uint8_t extensions_on_v1[sizeof(test_cert_der)];
+    memcpy(extensions_on_v1, test_cert_der, sizeof(extensions_on_v1));
+    extensions_on_v1[12] = 0;
+    rc = neverc_x509_parse_certificate(
+        &cert, extensions_on_v1, sizeof(extensions_on_v1));
+    CHECK("extensions_require_v3", rc < 0);
+    if (rc == 0)
+        neverc_x509_cert_free(&cert);
+
+    uint8_t unknown_tbs_field[sizeof(test_cert_der)];
+    memcpy(unknown_tbs_field, test_cert_der, sizeof(unknown_tbs_field));
+    static const uint8_t extensions_header[] = {0xa3, 0x53, 0x30, 0x51};
+    int changed = 0;
+    for (size_t i = 0;
+         i + sizeof(extensions_header) <= sizeof(unknown_tbs_field); ++i) {
+        if (memcmp(unknown_tbs_field + i, extensions_header,
+                   sizeof(extensions_header)) == 0) {
+            unknown_tbs_field[i] = 0xa4;
+            changed = 1;
+            break;
+        }
+    }
+    CHECK("extensions_header_fixture_found", changed == 1);
+    rc = neverc_x509_parse_certificate(
+        &cert, unknown_tbs_field, sizeof(unknown_tbs_field));
+    CHECK("unknown_tbs_field_fails", rc < 0);
+    if (rc == 0)
+        neverc_x509_cert_free(&cert);
+
     uint8_t invalid_time[sizeof(test_cert_der)];
     memcpy(invalid_time, test_cert_der, sizeof(invalid_time));
     static const uint8_t not_before[] = "260607095806Z";
-    int changed = 0;
+    changed = 0;
     for (size_t i = 0;
          i + sizeof(not_before) - 1 <= sizeof(invalid_time); ++i) {
         if (memcmp(invalid_time + i, not_before,
@@ -368,12 +514,27 @@ static void test_x509_invalid(void) {
     CHECK("mismatched_signature_algorithms_fail", rc < 0);
     if (rc == 0)
         neverc_x509_cert_free(&cert);
+
+    uint8_t mismatched_signature_parameters[sizeof(test_cert_der) - 2];
+    memcpy(mismatched_signature_parameters, test_cert_der, 48);
+    memcpy(mismatched_signature_parameters + 48, test_cert_der + 50,
+           sizeof(test_cert_der) - 50);
+    mismatched_signature_parameters[3] -= 2;
+    mismatched_signature_parameters[7] -= 2;
+    mismatched_signature_parameters[36] = 0x0b;
+    rc = neverc_x509_parse_certificate(
+        &cert, mismatched_signature_parameters,
+        sizeof(mismatched_signature_parameters));
+    CHECK("mismatched_signature_parameters_fail", rc < 0);
+    if (rc == 0)
+        neverc_x509_cert_free(&cert);
 }
 
 int main(void) {
     printf("=== NeverC crypto/x509 Tests ===\n\n");
 
     test_x509_parse();
+    test_x509_signature_verification();
     test_x509_subject_alt_name();
     test_x509_strings();
     test_x509_time_compare();

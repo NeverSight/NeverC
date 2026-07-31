@@ -31,6 +31,8 @@ typedef struct {
 #define ASN1_TAG_SEQUENCE      0x30
 #define ASN1_TAG_SET           0x31
 #define ASN1_TAG_CONTEXT_0     0xA0
+#define ASN1_TAG_CONTEXT_1_IMPLICIT 0x81
+#define ASN1_TAG_CONTEXT_2_IMPLICIT 0x82
 #define ASN1_TAG_CONTEXT_3     0xA3
 
 static int asn1_read_tag(asn1_reader_t *r, uint8_t *tag) {
@@ -82,6 +84,15 @@ static int asn1_enter_sequence(asn1_reader_t *r, asn1_reader_t *inner) {
     return 0;
 }
 
+static int valid_implicit_bit_string(const uint8_t *value, size_t len) {
+    if (!value || len == 0 || value[0] > 7)
+        return 0;
+    if (len == 1)
+        return value[0] == 0;
+    return value[0] == 0 ||
+           (value[len - 1] & ((1u << value[0]) - 1u)) == 0;
+}
+
 static void copy_string_value(char *dst, size_t dstsz,
                                 const uint8_t *src, size_t srclen) {
     if (srclen >= dstsz) srclen = dstsz - 1;
@@ -130,6 +141,11 @@ static const uint8_t OID_ED25519[] = {0x2B, 0x65, 0x70};
 static const uint8_t OID_RSA[] = {0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x01, 0x01};
 /* ecPublicKey: 1.2.840.10045.2.1 */
 static const uint8_t OID_EC[] = {0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x02, 0x01};
+/* prime256v1: 1.2.840.10045.3.1.7 */
+static const uint8_t OID_P256[] =
+    {0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x03, 0x01, 0x07};
+/* secp384r1: 1.3.132.0.34 */
+static const uint8_t OID_P384[] = {0x2B, 0x81, 0x04, 0x00, 0x22};
 
 /* basicConstraints: 2.5.29.19 */
 static const uint8_t OID_BASIC_CONSTRAINTS[] = {0x55, 0x1D, 0x13};
@@ -182,7 +198,52 @@ static int identify_key_algorithm(const uint8_t *oid, size_t len) {
     return 0;
 }
 
-static int parse_signature_algorithm(asn1_reader_t *reader, int *algorithm) {
+static int parse_public_key_algorithm(asn1_reader_t *reader,
+                                      neverc_x509_cert_t *cert) {
+    asn1_reader_t sequence;
+    if (asn1_enter_sequence(reader, &sequence) != 0)
+        return -1;
+
+    uint8_t tag;
+    const uint8_t *oid;
+    size_t oid_len;
+    if (asn1_read_tlv(&sequence, &tag, &oid, &oid_len) != 0 ||
+        tag != ASN1_TAG_OID)
+        return -1;
+    cert->key_algorithm = identify_key_algorithm(oid, oid_len);
+    cert->public_key_curve = NEVERC_X509_CURVE_NONE;
+
+    if (cert->key_algorithm == NEVERC_X509_KEY_RSA) {
+        const uint8_t *parameters;
+        size_t parameters_len;
+        if (asn1_read_tlv(&sequence, &tag, &parameters,
+                          &parameters_len) != 0 ||
+            tag != ASN1_TAG_NULL || parameters_len != 0)
+            return -1;
+        (void)parameters;
+    } else if (cert->key_algorithm == NEVERC_X509_KEY_ECDSA) {
+        const uint8_t *curve;
+        size_t curve_len;
+        if (asn1_read_tlv(&sequence, &tag, &curve, &curve_len) != 0 ||
+            tag != ASN1_TAG_OID)
+            return -1;
+        if (oid_equals(curve, curve_len, OID_P256, sizeof(OID_P256)))
+            cert->public_key_curve = NEVERC_X509_CURVE_P256;
+        else if (oid_equals(curve, curve_len, OID_P384,
+                            sizeof(OID_P384)))
+            cert->public_key_curve = NEVERC_X509_CURVE_P384;
+        else
+            return -1;
+    } else if (cert->key_algorithm != NEVERC_X509_KEY_ED25519) {
+        return -1;
+    }
+
+    return sequence.pos == sequence.len ? 0 : -1;
+}
+
+static int parse_signature_algorithm(asn1_reader_t *reader, int *algorithm,
+                                     const uint8_t **raw, size_t *raw_len) {
+    size_t start = reader->pos;
     asn1_reader_t sequence;
     if (asn1_enter_sequence(reader, &sequence) < 0)
         return -1;
@@ -196,9 +257,15 @@ static int parse_signature_algorithm(asn1_reader_t *reader, int *algorithm) {
     if (identified == 0) return -1;
 
     if (sequence.pos < sequence.len) {
+        int rsa_algorithm =
+            identified == NEVERC_X509_SIG_SHA1_RSA ||
+            identified == NEVERC_X509_SIG_SHA256_RSA ||
+            identified == NEVERC_X509_SIG_SHA384_RSA ||
+            identified == NEVERC_X509_SIG_SHA512_RSA;
         const uint8_t *parameters;
         size_t parameters_len;
-        if (asn1_read_tlv(&sequence, &tag, &parameters,
+        if (!rsa_algorithm ||
+            asn1_read_tlv(&sequence, &tag, &parameters,
                           &parameters_len) < 0 ||
             tag != ASN1_TAG_NULL || parameters_len != 0)
             return -1;
@@ -206,6 +273,10 @@ static int parse_signature_algorithm(asn1_reader_t *reader, int *algorithm) {
     }
     if (sequence.pos != sequence.len) return -1;
     *algorithm = identified;
+    if (raw)
+        *raw = reader->data + start;
+    if (raw_len)
+        *raw_len = reader->pos - start;
     return 0;
 }
 
@@ -502,38 +573,61 @@ static int parse_name(asn1_reader_t *r, neverc_x509_name_t *name) {
         const uint8_t *val;
         size_t vlen;
 
-        if (asn1_read_tlv(r, &tag, &val, &vlen) < 0) return -1;
-        if (tag != ASN1_TAG_SET) continue;
-        set_r.data = val; set_r.len = vlen; set_r.pos = 0;
+        if (asn1_read_tlv(r, &tag, &val, &vlen) < 0 ||
+            tag != ASN1_TAG_SET || vlen == 0)
+            return -1;
+        set_r.data = val;
+        set_r.len = vlen;
+        set_r.pos = 0;
 
-        asn1_reader_t seq_r;
-        if (asn1_enter_sequence(&set_r, &seq_r) < 0) continue;
+        while (set_r.pos < set_r.len) {
+            asn1_reader_t seq_r;
+            if (asn1_enter_sequence(&set_r, &seq_r) < 0)
+                return -1;
 
-        uint8_t oid_tag;
-        const uint8_t *oid_val;
-        size_t oid_len;
-        if (asn1_read_tlv(&seq_r, &oid_tag, &oid_val, &oid_len) < 0) continue;
-        if (oid_tag != ASN1_TAG_OID) continue;
+            uint8_t oid_tag;
+            const uint8_t *oid_val;
+            size_t oid_len;
+            if (asn1_read_tlv(&seq_r, &oid_tag, &oid_val,
+                              &oid_len) < 0 ||
+                oid_tag != ASN1_TAG_OID || oid_len == 0)
+                return -1;
 
-        uint8_t str_tag;
-        const uint8_t *str_val;
-        size_t str_len;
-        if (asn1_read_tlv(&seq_r, &str_tag, &str_val, &str_len) < 0) continue;
+            uint8_t str_tag;
+            const uint8_t *str_val;
+            size_t str_len;
+            if (asn1_read_tlv(&seq_r, &str_tag, &str_val,
+                              &str_len) < 0 ||
+                seq_r.pos != seq_r.len)
+                return -1;
+            (void)str_tag;
 
-        if (oid_equals(oid_val, oid_len, OID_CN, sizeof(OID_CN)))
-            copy_string_value(name->common_name, sizeof(name->common_name), str_val, str_len);
-        else if (oid_equals(oid_val, oid_len, OID_C, sizeof(OID_C)))
-            copy_string_value(name->country, sizeof(name->country), str_val, str_len);
-        else if (oid_equals(oid_val, oid_len, OID_O, sizeof(OID_O)))
-            copy_string_value(name->organization, sizeof(name->organization), str_val, str_len);
-        else if (oid_equals(oid_val, oid_len, OID_OU, sizeof(OID_OU)))
-            copy_string_value(name->organizational_unit, sizeof(name->organizational_unit), str_val, str_len);
-        else if (oid_equals(oid_val, oid_len, OID_L, sizeof(OID_L)))
-            copy_string_value(name->locality, sizeof(name->locality), str_val, str_len);
-        else if (oid_equals(oid_val, oid_len, OID_ST, sizeof(OID_ST)))
-            copy_string_value(name->province, sizeof(name->province), str_val, str_len);
-        else if (oid_equals(oid_val, oid_len, OID_SN, sizeof(OID_SN)))
-            copy_string_value(name->serial_number_str, sizeof(name->serial_number_str), str_val, str_len);
+            if (oid_equals(oid_val, oid_len, OID_CN, sizeof(OID_CN)))
+                copy_string_value(name->common_name,
+                                  sizeof(name->common_name),
+                                  str_val, str_len);
+            else if (oid_equals(oid_val, oid_len, OID_C, sizeof(OID_C)))
+                copy_string_value(name->country, sizeof(name->country),
+                                  str_val, str_len);
+            else if (oid_equals(oid_val, oid_len, OID_O, sizeof(OID_O)))
+                copy_string_value(name->organization,
+                                  sizeof(name->organization),
+                                  str_val, str_len);
+            else if (oid_equals(oid_val, oid_len, OID_OU, sizeof(OID_OU)))
+                copy_string_value(name->organizational_unit,
+                                  sizeof(name->organizational_unit),
+                                  str_val, str_len);
+            else if (oid_equals(oid_val, oid_len, OID_L, sizeof(OID_L)))
+                copy_string_value(name->locality, sizeof(name->locality),
+                                  str_val, str_len);
+            else if (oid_equals(oid_val, oid_len, OID_ST, sizeof(OID_ST)))
+                copy_string_value(name->province, sizeof(name->province),
+                                  str_val, str_len);
+            else if (oid_equals(oid_val, oid_len, OID_SN, sizeof(OID_SN)))
+                copy_string_value(name->serial_number_str,
+                                  sizeof(name->serial_number_str),
+                                  str_val, str_len);
+        }
     }
     return 0;
 }
@@ -612,7 +706,10 @@ int neverc_x509_parse_certificate(neverc_x509_cert_t *cert,
 
     /* TBSCertificate */
     asn1_reader_t tbs;
+    size_t tbs_start = cert_seq.pos;
     if (asn1_enter_sequence(&cert_seq, &tbs) < 0) return -1;
+    cert->raw_tbs = cert_seq.data + tbs_start;
+    cert->raw_tbs_len = cert_seq.pos - tbs_start;
 
     /* Version (optional, context [0]) */
     cert->version = 0;
@@ -620,14 +717,19 @@ int neverc_x509_parse_certificate(neverc_x509_cert_t *cert,
         uint8_t tag;
         const uint8_t *val;
         size_t vlen;
-        if (asn1_read_tlv(&tbs, &tag, &val, &vlen) == 0 && vlen > 0) {
-            asn1_reader_t vr = {val, vlen, 0};
-            uint8_t itag;
-            const uint8_t *ival;
-            size_t ilen;
-            if (asn1_read_tlv(&vr, &itag, &ival, &ilen) == 0 && ilen > 0)
-                cert->version = (int)ival[ilen - 1];
-        }
+        if (asn1_read_tlv(&tbs, &tag, &val, &vlen) != 0 ||
+            tag != ASN1_TAG_CONTEXT_0)
+            return -1;
+        asn1_reader_t version = {val, vlen, 0};
+        uint8_t integer_tag;
+        const uint8_t *integer;
+        size_t integer_len;
+        if (asn1_read_tlv(&version, &integer_tag, &integer,
+                          &integer_len) != 0 ||
+            integer_tag != ASN1_TAG_INTEGER || integer_len != 1 ||
+            integer[0] > 2 || version.pos != version.len)
+            return -1;
+        cert->version = integer[0];
     }
 
     /* SerialNumber */
@@ -635,15 +737,21 @@ int neverc_x509_parse_certificate(neverc_x509_cert_t *cert,
         uint8_t tag;
         const uint8_t *val;
         size_t vlen;
-        if (asn1_read_tlv(&tbs, &tag, &val, &vlen) < 0) return -1;
-        if (tag == ASN1_TAG_INTEGER) {
-            cert->serial_len = (int)(vlen > 20 ? 20 : vlen);
-            memcpy(cert->serial, val, (size_t)cert->serial_len);
-        }
+        if (asn1_read_tlv(&tbs, &tag, &val, &vlen) < 0 ||
+            tag != ASN1_TAG_INTEGER || vlen == 0 ||
+            vlen > sizeof(cert->serial) || (val[0] & 0x80) != 0 ||
+            (vlen > 1 && val[0] == 0 && (val[1] & 0x80) == 0))
+            return -1;
+        cert->serial_len = (int)vlen;
+        memcpy(cert->serial, val, vlen);
     }
 
     /* Signature algorithm in TBS */
-    if (parse_signature_algorithm(&tbs, &cert->sig_algorithm) != 0)
+    const uint8_t *tbs_signature_algorithm;
+    size_t tbs_signature_algorithm_len;
+    if (parse_signature_algorithm(
+            &tbs, &cert->sig_algorithm, &tbs_signature_algorithm,
+            &tbs_signature_algorithm_len) != 0)
         return -1;
 
     /* Issuer */
@@ -651,11 +759,15 @@ int neverc_x509_parse_certificate(neverc_x509_cert_t *cert,
         uint8_t tag;
         const uint8_t *val;
         size_t vlen;
-        if (asn1_read_tlv(&tbs, &tag, &val, &vlen) < 0) return -1;
-        if (tag == ASN1_TAG_SEQUENCE) {
-            asn1_reader_t name_r = {val, vlen, 0};
-            parse_name(&name_r, &cert->issuer);
-        }
+        size_t name_start = tbs.pos;
+        if (asn1_read_tlv(&tbs, &tag, &val, &vlen) < 0 ||
+            tag != ASN1_TAG_SEQUENCE)
+            return -1;
+        cert->raw_issuer = tbs.data + name_start;
+        cert->raw_issuer_len = tbs.pos - name_start;
+        asn1_reader_t name_r = {val, vlen, 0};
+        if (parse_name(&name_r, &cert->issuer) != 0)
+            return -1;
     }
 
     /* Validity */
@@ -685,11 +797,15 @@ int neverc_x509_parse_certificate(neverc_x509_cert_t *cert,
         uint8_t tag;
         const uint8_t *val;
         size_t vlen;
-        if (asn1_read_tlv(&tbs, &tag, &val, &vlen) < 0) return -1;
-        if (tag == ASN1_TAG_SEQUENCE) {
-            asn1_reader_t name_r = {val, vlen, 0};
-            parse_name(&name_r, &cert->subject);
-        }
+        size_t name_start = tbs.pos;
+        if (asn1_read_tlv(&tbs, &tag, &val, &vlen) < 0 ||
+            tag != ASN1_TAG_SEQUENCE)
+            return -1;
+        cert->raw_subject = tbs.data + name_start;
+        cert->raw_subject_len = tbs.pos - name_start;
+        asn1_reader_t name_r = {val, vlen, 0};
+        if (parse_name(&name_r, &cert->subject) != 0)
+            return -1;
     }
 
     /* SubjectPublicKeyInfo */
@@ -698,35 +814,37 @@ int neverc_x509_parse_certificate(neverc_x509_cert_t *cert,
         if (asn1_enter_sequence(&tbs, &spki) < 0) return -1;
 
         /* Algorithm */
-        asn1_reader_t alg_seq;
-        if (asn1_enter_sequence(&spki, &alg_seq) == 0) {
-            uint8_t tag;
-            const uint8_t *val;
-            size_t vlen;
-            if (asn1_read_tlv(&alg_seq, &tag, &val, &vlen) == 0 && tag == ASN1_TAG_OID)
-                cert->key_algorithm = identify_key_algorithm(val, vlen);
-        }
+        if (parse_public_key_algorithm(&spki, cert) != 0)
+            return -1;
 
         /* Public key (BIT STRING) */
         uint8_t tag;
         const uint8_t *val;
         size_t vlen;
-        if (asn1_read_tlv(&spki, &tag, &val, &vlen) == 0 && tag == ASN1_TAG_BIT_STRING) {
-            if (vlen > 1) {
-                cert->public_key_len = vlen - 1;
-                cert->public_key = (uint8_t *)malloc(cert->public_key_len);
-                if (!cert->public_key)
-                    return -1;
-                memcpy(cert->public_key, val + 1, cert->public_key_len);
-            }
-        }
+        if (asn1_read_tlv(&spki, &tag, &val, &vlen) != 0 ||
+            tag != ASN1_TAG_BIT_STRING || vlen <= 1 || val[0] != 0 ||
+            spki.pos != spki.len)
+            return -1;
+        cert->public_key_len = vlen - 1;
+        cert->public_key = (uint8_t *)malloc(cert->public_key_len);
+        if (!cert->public_key)
+            return -1;
+        memcpy(cert->public_key, val + 1, cert->public_key_len);
     }
 
     /* Extensions (optional, context [3]) */
+    int saw_issuer_unique_id = 0;
+    int saw_subject_unique_id = 0;
     int saw_extensions = 0;
     while (tbs.pos < tbs.len) {
-        if (tbs.data[tbs.pos] == ASN1_TAG_CONTEXT_3) {
-            if (saw_extensions) {
+        uint8_t next_tag = tbs.data[tbs.pos];
+        if (next_tag == ASN1_TAG_CONTEXT_1_IMPLICIT ||
+            next_tag == ASN1_TAG_CONTEXT_2_IMPLICIT) {
+            int is_issuer = next_tag == ASN1_TAG_CONTEXT_1_IMPLICIT;
+            if (cert->version == 0 || saw_extensions ||
+                (is_issuer &&
+                 (saw_issuer_unique_id || saw_subject_unique_id)) ||
+                (!is_issuer && saw_subject_unique_id)) {
                 neverc_x509_cert_free(cert);
                 return -1;
             }
@@ -734,23 +852,47 @@ int neverc_x509_parse_certificate(neverc_x509_cert_t *cert,
             const uint8_t *val;
             size_t vlen;
             if (asn1_read_tlv(&tbs, &tag, &val, &vlen) < 0 ||
+                tag != next_tag || !valid_implicit_bit_string(val, vlen)) {
+                neverc_x509_cert_free(cert);
+                return -1;
+            }
+            if (is_issuer)
+                saw_issuer_unique_id = 1;
+            else
+                saw_subject_unique_id = 1;
+        } else if (next_tag == ASN1_TAG_CONTEXT_3) {
+            if (cert->version != 2 || saw_extensions) {
+                neverc_x509_cert_free(cert);
+                return -1;
+            }
+            uint8_t tag;
+            const uint8_t *val;
+            size_t vlen;
+            if (asn1_read_tlv(&tbs, &tag, &val, &vlen) < 0 ||
+                tag != ASN1_TAG_CONTEXT_3 ||
                 parse_extensions(cert, val, vlen) != 0) {
                 neverc_x509_cert_free(cert);
                 return -1;
             }
             saw_extensions = 1;
         } else {
-            uint8_t tag;
-            const uint8_t *val;
-            size_t vlen;
-            if (asn1_read_tlv(&tbs, &tag, &val, &vlen) < 0) break;
+            neverc_x509_cert_free(cert);
+            return -1;
         }
     }
 
     int outer_signature_algorithm = 0;
+    const uint8_t *outer_signature_algorithm_der;
+    size_t outer_signature_algorithm_der_len;
     if (parse_signature_algorithm(
-            &cert_seq, &outer_signature_algorithm) != 0 ||
-        outer_signature_algorithm != cert->sig_algorithm) {
+            &cert_seq, &outer_signature_algorithm,
+            &outer_signature_algorithm_der,
+            &outer_signature_algorithm_der_len) != 0 ||
+        outer_signature_algorithm != cert->sig_algorithm ||
+        outer_signature_algorithm_der_len !=
+            tbs_signature_algorithm_len ||
+        memcmp(outer_signature_algorithm_der, tbs_signature_algorithm,
+               tbs_signature_algorithm_len) != 0) {
         neverc_x509_cert_free(cert);
         return -1;
     }
@@ -765,6 +907,8 @@ int neverc_x509_parse_certificate(neverc_x509_cert_t *cert,
         neverc_x509_cert_free(cert);
         return -1;
     }
+    cert->signature = signature + 1;
+    cert->signature_len = signature_len - 1;
 
     return 0;
 }
@@ -782,13 +926,14 @@ void neverc_x509_cert_free(neverc_x509_cert_t *cert) {
     free(cert->ip_addresses);
     cert->ip_addresses = NULL;
     cert->ip_address_count = 0;
-}
-
-int neverc_x509_is_self_signed(const neverc_x509_cert_t *cert) {
-    if (!cert) return 0;
-    return strcmp(cert->issuer.common_name, cert->subject.common_name) == 0 &&
-           strcmp(cert->issuer.organization, cert->subject.organization) == 0 &&
-           strcmp(cert->issuer.country, cert->subject.country) == 0;
+    cert->raw_tbs = NULL;
+    cert->raw_tbs_len = 0;
+    cert->signature = NULL;
+    cert->signature_len = 0;
+    cert->raw_issuer = NULL;
+    cert->raw_issuer_len = 0;
+    cert->raw_subject = NULL;
+    cert->raw_subject_len = 0;
 }
 
 static int ascii_lower(int ch) {

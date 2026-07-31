@@ -2,8 +2,8 @@
 #define NEVERC_CRYPTO_X509_H
 
 /*
- * X.509 certificate parser (DER/PEM).
- * Parses certificate fields, validates basic structure.
+ * X.509 DER certificate parser and explicit-chain verifier.
+ * PEM decoding and system trust-store discovery are not part of this API.
  * API modeled after Go's crypto/x509 package.
  */
 
@@ -20,6 +20,11 @@ extern "C" {
 #define NEVERC_X509_KEY_RSA   1
 #define NEVERC_X509_KEY_ECDSA 2
 #define NEVERC_X509_KEY_ED25519 3
+
+/* Named elliptic curves used by SubjectPublicKeyInfo. */
+#define NEVERC_X509_CURVE_NONE 0
+#define NEVERC_X509_CURVE_P256 1
+#define NEVERC_X509_CURVE_P384 2
 
 /* Signature algorithms */
 #define NEVERC_X509_SIG_SHA1_RSA     1
@@ -97,10 +102,23 @@ typedef struct {
 
     /* Public key algorithm */
     int key_algorithm;
+    int public_key_curve;
 
     /* Raw public key bytes */
     uint8_t *public_key;
     size_t   public_key_len;
+
+    /* Signed certificate data and signature (views into raw DER). */
+    const uint8_t *raw_tbs;
+    size_t         raw_tbs_len;
+    const uint8_t *signature;
+    size_t         signature_len;
+
+    /* Canonical DER names (views into raw DER). */
+    const uint8_t *raw_issuer;
+    size_t         raw_issuer_len;
+    const uint8_t *raw_subject;
+    size_t         raw_subject_len;
 
     /* Is this a CA certificate? */
     int is_ca;
@@ -130,11 +148,27 @@ typedef struct {
 int neverc_x509_parse_certificate(neverc_x509_cert_t *cert,
                                     const uint8_t *der, size_t len);
 
-/* Free allocated fields (public_key). */
+/* Free all fields allocated by neverc_x509_parse_certificate. */
 void neverc_x509_cert_free(neverc_x509_cert_t *cert);
 
-/* Check if the certificate is self-signed (issuer == subject). */
+/* Check that issuer == subject and the certificate signature verifies. */
 int neverc_x509_is_self_signed(const neverc_x509_cert_t *cert);
+
+/* Verify cert's signature with parent and enforce parent CA/key-usage
+ * constraints. SHA-1 certificate signatures are rejected.
+ * Returns 0 on success and -1 on failure or unsupported algorithms. */
+int neverc_x509_check_signature_from(const neverc_x509_cert_t *cert,
+                                      const neverc_x509_cert_t *parent);
+
+/* Verify an ordered chain from leaf (chain[0]) to a caller-trusted anchor.
+ * All certificates must be valid at moment; hostname and required EKU are
+ * optional when NULL/zero. The chain is limited to 16 certificates.
+ * Returns 0 on success and -1 on validation failure. */
+int neverc_x509_verify_chain(const neverc_x509_cert_t *const *chain,
+                              size_t chain_len,
+                              const neverc_x509_time_t *moment,
+                              const char *hostname,
+                              uint32_t required_ext_key_usage);
 
 /* Verify a DNS name or IP literal against Subject Alternative Name.
  * Common Name is deliberately not used as a fallback.

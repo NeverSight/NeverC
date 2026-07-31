@@ -11,20 +11,38 @@
  */
 
 static neverc_bigint_t g_p, g_d, g_L;
-static int g_init = 0;
+static int g_init = 0; /* 0 = uninitialized, 1 = initializing, 2 = ready */
 
 typedef struct { neverc_bigint_t x, y, z, t; } edpt;
 
 static void ensure_init(void) {
-    if (g_init) return;
-    neverc_bigint_init(&g_p); neverc_bigint_init(&g_d); neverc_bigint_init(&g_L);
-    neverc_bigint_set_string(&g_p,
-        "7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffed", 16);
-    neverc_bigint_set_string(&g_d,
-        "52036cee2b6ffe738cc740797779e89800700a4d4141d8ab75eb4dca135978a3", 16);
-    neverc_bigint_set_string(&g_L,
-        "1000000000000000000000000000000014def9dea2f79cd65812631a5cf5d3ed", 16);
-    g_init = 1;
+    if (__atomic_load_n(&g_init, __ATOMIC_ACQUIRE) == 2)
+        return;
+
+    int expected = 0;
+    if (__atomic_compare_exchange_n(&g_init, &expected, 1, 0,
+                                    __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+        neverc_bigint_init(&g_p);
+        neverc_bigint_init(&g_d);
+        neverc_bigint_init(&g_L);
+        neverc_bigint_set_string(
+            &g_p,
+            "7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffed",
+            16);
+        neverc_bigint_set_string(
+            &g_d,
+            "52036cee2b6ffe738cc740797779e89800700a4d4141d8ab75eb4dca135978a3",
+            16);
+        neverc_bigint_set_string(
+            &g_L,
+            "1000000000000000000000000000000014def9dea2f79cd65812631a5cf5d3ed",
+            16);
+        __atomic_store_n(&g_init, 2, __ATOMIC_RELEASE);
+        return;
+    }
+
+    while (__atomic_load_n(&g_init, __ATOMIC_ACQUIRE) != 2) {
+    }
 }
 
 static void edpt_init(edpt *p) {
@@ -213,7 +231,28 @@ static void edpt_encode(unsigned char s[32], const edpt *p) {
     neverc_bigint_free(&zinv); neverc_bigint_free(&x); neverc_bigint_free(&y);
 }
 
+static int edpt_encoding_is_canonical(const unsigned char encoded[32]) {
+    static const unsigned char field_prime[32] = {
+        0xed, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7f,
+    };
+    for (int i = 31; i >= 0; --i) {
+        unsigned char value = encoded[i];
+        if (i == 31)
+            value &= 0x7f;
+        if (value < field_prime[i])
+            return 1;
+        if (value > field_prime[i])
+            return 0;
+    }
+    return 0;
+}
+
 static int edpt_decode(edpt *r, const unsigned char s[32]) {
+    if (!edpt_encoding_is_canonical(s))
+        return -1;
     ensure_init();
     unsigned char scopy[32];
     memcpy(scopy, s, 32);
@@ -297,6 +336,15 @@ static int edpt_decode(edpt *r, const unsigned char s[32]) {
         neverc_bigint_sub(&x, &g_p, &x);
         fmod(&x, &x);
     }
+    if (neverc_bigint_is_zero(&x) && x_sign) {
+        neverc_bigint_free(&y2); neverc_bigint_free(&u);
+        neverc_bigint_free(&v); neverc_bigint_free(&vinv);
+        neverc_bigint_free(&x2); neverc_bigint_free(&x);
+        neverc_bigint_free(&two); neverc_bigint_free(&rem);
+        neverc_bigint_free(&one); neverc_bigint_free(&exp);
+        neverc_bigint_free(&check);
+        return -1;
+    }
 
     neverc_bigint_set(&r->x, &x);
     neverc_bigint_set_int64(&r->z, 1);
@@ -309,6 +357,23 @@ static int edpt_decode(edpt *r, const unsigned char s[32]) {
     neverc_bigint_free(&one); neverc_bigint_free(&exp);
     neverc_bigint_free(&check);
     return 0;
+}
+
+static int edpt_has_small_order(const edpt *point) {
+    edpt twice, four_times, eight_times;
+    edpt_init(&twice);
+    edpt_init(&four_times);
+    edpt_init(&eight_times);
+    edpt_dbl(&twice, point);
+    edpt_dbl(&four_times, &twice);
+    edpt_dbl(&eight_times, &four_times);
+    int small_order =
+        neverc_bigint_is_zero(&eight_times.x) &&
+        neverc_bigint_cmp(&eight_times.y, &eight_times.z) == 0;
+    edpt_free(&twice);
+    edpt_free(&four_times);
+    edpt_free(&eight_times);
+    return small_order;
 }
 
 static void get_basepoint(edpt *B) {
@@ -453,13 +518,39 @@ int neverc_ed25519_sign(const unsigned char priv[64],
     return 0;
 }
 
+static int scalar_is_canonical(const unsigned char scalar[32]) {
+    static const unsigned char order[32] = {
+        0xed, 0xd3, 0xf5, 0x5c, 0x1a, 0x63, 0x12, 0x58,
+        0xd6, 0x9c, 0xf7, 0xa2, 0xde, 0xf9, 0xde, 0x14,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10,
+    };
+    for (int i = 31; i >= 0; --i) {
+        if (scalar[i] < order[i])
+            return 1;
+        if (scalar[i] > order[i])
+            return 0;
+    }
+    return 0;
+}
+
 int neverc_ed25519_verify(const unsigned char pub[32],
                            const unsigned char *msg, size_t msg_len,
                            const unsigned char sig[64]) {
+    if (!pub || !sig || (!msg && msg_len != 0) ||
+        !scalar_is_canonical(sig + 32))
+        return -1;
     ensure_init();
-    edpt A;
+    edpt A, R;
     edpt_init(&A);
-    if (edpt_decode(&A, pub) != 0) { edpt_free(&A); return -1; }
+    edpt_init(&R);
+    if (edpt_decode(&A, pub) != 0 || edpt_has_small_order(&A) ||
+        edpt_decode(&R, sig) != 0 || edpt_has_small_order(&R)) {
+        edpt_free(&A);
+        edpt_free(&R);
+        return -1;
+    }
+    edpt_free(&R);
 
     neverc_sha512_ctx ctx;
     neverc_sha512_init(&ctx);

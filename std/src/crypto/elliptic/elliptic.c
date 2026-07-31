@@ -2,9 +2,9 @@
 #include <string.h>
 
 static neverc_elliptic_curve_t g_p256;
-static int g_p256_init = 0;
+static int g_p256_init = 0; /* 0 = uninitialized, 1 = initializing, 2 = ready */
 static neverc_elliptic_curve_t g_p384;
-static int g_p384_init = 0;
+static int g_p384_init = 0; /* 0 = uninitialized, 1 = initializing, 2 = ready */
 
 static void mod_inv(neverc_bigint_t *r, const neverc_bigint_t *a, const neverc_bigint_t *p) {
     neverc_bigint_t exp;
@@ -19,59 +19,99 @@ static void mod_inv(neverc_bigint_t *r, const neverc_bigint_t *a, const neverc_b
 }
 
 const neverc_elliptic_curve_t *neverc_elliptic_p256(void) {
-    if (g_p256_init) return &g_p256;
-    memset(&g_p256, 0, sizeof(g_p256));
-    neverc_bigint_init(&g_p256.p);
-    neverc_bigint_init(&g_p256.n);
-    neverc_bigint_init(&g_p256.b);
-    neverc_bigint_init(&g_p256.gx);
-    neverc_bigint_init(&g_p256.gy);
+    if (__atomic_load_n(&g_p256_init, __ATOMIC_ACQUIRE) == 2)
+        return &g_p256;
 
-    neverc_bigint_set_string(&g_p256.p,
-        "FFFFFFFF00000001000000000000000000000000FFFFFFFFFFFFFFFFFFFFFFFF", 16);
-    neverc_bigint_set_string(&g_p256.n,
-        "FFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551", 16);
-    neverc_bigint_set_string(&g_p256.b,
-        "5AC635D8AA3A93E7B3EBBD55769886BC651D06B0CC53B0F63BCE3C3E27D2604B", 16);
-    neverc_bigint_set_string(&g_p256.gx,
-        "6B17D1F2E12C4247F8BCE6E563A440F277037D812DEB33A0F4A13945D898C296", 16);
-    neverc_bigint_set_string(&g_p256.gy,
-        "4FE342E2FE1A7F9B8EE7EB4A7C0F9E162BCE33576B315ECECBB6406837BF51F5", 16);
+    int expected = 0;
+    if (__atomic_compare_exchange_n(&g_p256_init, &expected, 1, 0,
+                                    __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+        memset(&g_p256, 0, sizeof(g_p256));
+        neverc_bigint_init(&g_p256.p);
+        neverc_bigint_init(&g_p256.n);
+        neverc_bigint_init(&g_p256.b);
+        neverc_bigint_init(&g_p256.gx);
+        neverc_bigint_init(&g_p256.gy);
 
-    g_p256.bit_size = 256;
-    g_p256.name = "P-256";
-    g_p256_init = 1;
+        neverc_bigint_set_string(
+            &g_p256.p,
+            "FFFFFFFF00000001000000000000000000000000FFFFFFFFFFFFFFFFFFFFFFFF",
+            16);
+        neverc_bigint_set_string(
+            &g_p256.n,
+            "FFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551",
+            16);
+        neverc_bigint_set_string(
+            &g_p256.b,
+            "5AC635D8AA3A93E7B3EBBD55769886BC651D06B0CC53B0F63BCE3C3E27D2604B",
+            16);
+        neverc_bigint_set_string(
+            &g_p256.gx,
+            "6B17D1F2E12C4247F8BCE6E563A440F277037D812DEB33A0F4A13945D898C296",
+            16);
+        neverc_bigint_set_string(
+            &g_p256.gy,
+            "4FE342E2FE1A7F9B8EE7EB4A7C0F9E162BCE33576B315ECECBB6406837BF51F5",
+            16);
+
+        g_p256.bit_size = 256;
+        g_p256.name = "P-256";
+        __atomic_store_n(&g_p256_init, 2, __ATOMIC_RELEASE);
+        return &g_p256;
+    }
+
+    while (__atomic_load_n(&g_p256_init, __ATOMIC_ACQUIRE) != 2) {
+    }
     return &g_p256;
 }
 
 const neverc_elliptic_curve_t *neverc_elliptic_p384(void) {
-    if (g_p384_init) return &g_p384;
-    memset(&g_p384, 0, sizeof(g_p384));
-    neverc_bigint_init(&g_p384.p);
-    neverc_bigint_init(&g_p384.n);
-    neverc_bigint_init(&g_p384.b);
-    neverc_bigint_init(&g_p384.gx);
-    neverc_bigint_init(&g_p384.gy);
+    if (__atomic_load_n(&g_p384_init, __ATOMIC_ACQUIRE) == 2)
+        return &g_p384;
 
-    neverc_bigint_set_string(&g_p384.p,
-        "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFE"
-        "FFFFFFFF0000000000000000FFFFFFFF", 16);
-    neverc_bigint_set_string(&g_p384.n,
-        "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFC7634D81F4372DDF"
-        "581A0DB248B0A77AECEC196ACCC52973", 16);
-    neverc_bigint_set_string(&g_p384.b,
-        "B3312FA7E23EE7E4988E056BE3F82D19181D9C6EFE8141120314088F5013875A"
-        "C656398D8A2ED19D2A85C8EDD3EC2AEF", 16);
-    neverc_bigint_set_string(&g_p384.gx,
-        "AA87CA22BE8B05378EB1C71EF320AD746E1D3B628BA79B9859F741E082542A38"
-        "5502F25DBF55296C3A545E3872760AB7", 16);
-    neverc_bigint_set_string(&g_p384.gy,
-        "3617DE4A96262C6F5D9E98BF9292DC29F8F41DBD289A147CE9DA3113B5F0B8C0"
-        "0A60B1CE1D7E819D7A431D7C90EA0E5F", 16);
+    int expected = 0;
+    if (__atomic_compare_exchange_n(&g_p384_init, &expected, 1, 0,
+                                    __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+        memset(&g_p384, 0, sizeof(g_p384));
+        neverc_bigint_init(&g_p384.p);
+        neverc_bigint_init(&g_p384.n);
+        neverc_bigint_init(&g_p384.b);
+        neverc_bigint_init(&g_p384.gx);
+        neverc_bigint_init(&g_p384.gy);
 
-    g_p384.bit_size = 384;
-    g_p384.name = "P-384";
-    g_p384_init = 1;
+        neverc_bigint_set_string(
+            &g_p384.p,
+            "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFE"
+            "FFFFFFFF0000000000000000FFFFFFFF",
+            16);
+        neverc_bigint_set_string(
+            &g_p384.n,
+            "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFC7634D81F4372DDF"
+            "581A0DB248B0A77AECEC196ACCC52973",
+            16);
+        neverc_bigint_set_string(
+            &g_p384.b,
+            "B3312FA7E23EE7E4988E056BE3F82D19181D9C6EFE8141120314088F5013875A"
+            "C656398D8A2ED19D2A85C8EDD3EC2AEF",
+            16);
+        neverc_bigint_set_string(
+            &g_p384.gx,
+            "AA87CA22BE8B05378EB1C71EF320AD746E1D3B628BA79B9859F741E082542A38"
+            "5502F25DBF55296C3A545E3872760AB7",
+            16);
+        neverc_bigint_set_string(
+            &g_p384.gy,
+            "3617DE4A96262C6F5D9E98BF9292DC29F8F41DBD289A147CE9DA3113B5F0B8C0"
+            "0A60B1CE1D7E819D7A431D7C90EA0E5F",
+            16);
+
+        g_p384.bit_size = 384;
+        g_p384.name = "P-384";
+        __atomic_store_n(&g_p384_init, 2, __ATOMIC_RELEASE);
+        return &g_p384;
+    }
+
+    while (__atomic_load_n(&g_p384_init, __ATOMIC_ACQUIRE) != 2) {
+    }
     return &g_p384;
 }
 

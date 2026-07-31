@@ -2,6 +2,12 @@
 #include <stdio.h>
 #include <string.h>
 
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <pthread.h>
+#endif
+
 static int tests_run = 0, tests_passed = 0, tests_failed = 0;
 
 #define ASSERT_TRUE(expr) do { tests_run++; \
@@ -15,6 +21,77 @@ static int tests_run = 0, tests_passed = 0, tests_failed = 0;
     else { tests_failed++; \
            printf("  FAIL: %s = %d, expected %d (line %d)\n", #expr, _v, _e, __LINE__); } \
 } while(0)
+
+#define INIT_THREAD_COUNT 8
+
+typedef struct {
+    int ok;
+} init_thread_context_t;
+
+static int init_threads_start;
+
+#ifdef _WIN32
+static DWORD WINAPI init_thread_main(LPVOID argument) {
+#else
+static void *init_thread_main(void *argument) {
+#endif
+    init_thread_context_t *context = (init_thread_context_t *)argument;
+    while (__atomic_load_n(&init_threads_start, __ATOMIC_ACQUIRE) == 0) {
+    }
+    const neverc_elliptic_curve_t *p256 = neverc_elliptic_p256();
+    const neverc_elliptic_curve_t *p384 = neverc_elliptic_p384();
+    context->ok = p256 && p384 && p256->bit_size == 256 &&
+                  p384->bit_size == 384 &&
+                  !neverc_bigint_is_zero(&p256->p) &&
+                  !neverc_bigint_is_zero(&p384->p);
+#ifdef _WIN32
+    return 0;
+#else
+    return NULL;
+#endif
+}
+
+static void test_concurrent_first_use(void) {
+    printf("[concurrent_first_use]\n");
+    init_thread_context_t contexts[INIT_THREAD_COUNT] = {{0}};
+    int ok = 1;
+#ifdef _WIN32
+    HANDLE threads[INIT_THREAD_COUNT] = {0};
+    for (int i = 0; i < INIT_THREAD_COUNT; ++i) {
+        threads[i] = CreateThread(
+            NULL, 0, init_thread_main, &contexts[i], 0, NULL);
+        if (!threads[i])
+            ok = 0;
+    }
+    __atomic_store_n(&init_threads_start, 1, __ATOMIC_RELEASE);
+    for (int i = 0; i < INIT_THREAD_COUNT; ++i) {
+        if (threads[i]) {
+            if (WaitForSingleObject(threads[i], INFINITE) != WAIT_OBJECT_0)
+                ok = 0;
+            CloseHandle(threads[i]);
+        }
+        if (!contexts[i].ok)
+            ok = 0;
+    }
+#else
+    pthread_t threads[INIT_THREAD_COUNT];
+    int created = 0;
+    for (int i = 0; i < INIT_THREAD_COUNT; ++i) {
+        if (pthread_create(
+                &threads[i], NULL, init_thread_main, &contexts[i]) != 0)
+            break;
+        ++created;
+    }
+    if (created != INIT_THREAD_COUNT)
+        ok = 0;
+    __atomic_store_n(&init_threads_start, 1, __ATOMIC_RELEASE);
+    for (int i = 0; i < created; ++i) {
+        if (pthread_join(threads[i], NULL) != 0 || !contexts[i].ok)
+            ok = 0;
+    }
+#endif
+    ASSERT_TRUE(ok);
+}
 
 static void test_p256_params(void) {
     printf("[p256_params]\n");
@@ -158,6 +235,7 @@ static void test_p384(void) {
 
 int main(void) {
     printf("=== NeverC crypto/elliptic Tests ===\n");
+    test_concurrent_first_use();
     test_p256_params();
     test_generator_on_curve();
     test_double();

@@ -589,7 +589,22 @@ STD_TEST(dwarf, "src/debug/dwarf/dwarf.c")
 STD_TEST(plan9obj, "src/debug/plan9obj/plan9obj.c")
 
 // ===== Crypto (x509) =====
-STD_TEST(x509, "src/crypto/x509/x509.c")
+#define X509_VERIFY_DEPS \
+    "src/crypto/x509/x509.c", "src/crypto/x509/x509_verify.c", \
+    "src/crypto/rsa/rsa.c", "src/crypto/ecdsa/ecdsa.c", \
+    "src/crypto/ed25519/ed25519.c", "src/crypto/rand/rand.c", \
+    "src/crypto/elliptic/elliptic.c", \
+    "src/crypto/sha256/sha256.c", "src/crypto/sha384/sha384.c", \
+    "src/crypto/sha512/sha512.c", "src/math/big/big.c"
+
+STD_TEST(x509, X509_VERIFY_DEPS)
+STD_TEST(x509_chain, X509_VERIFY_DEPS)
+TEST_F(StdLibTest, EmbeddedX509SignatureDotSyntax) {
+  auto r = compileAndRunStdTest("x509_builtin", {}, {"-fbuiltin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
+#undef X509_VERIFY_DEPS
 STD_TEST(tls, HTTP_TLS_DEPS, "src/net/tcp/tcp.c")
 
 // ===== Regexp =====
