@@ -16,6 +16,8 @@ static inline uint32_t csupport_djb_hash(const char *data, size_t len,
 
 uint32_t csupport_case_folding_djb_hash(csupport_string_ref_t buffer,
                                         uint32_t h);
+uint32_t csupport_case_folding_djb_hash_raw(const char *data, size_t length,
+                                            uint32_t h);
 
 #ifdef __cplusplus
 }

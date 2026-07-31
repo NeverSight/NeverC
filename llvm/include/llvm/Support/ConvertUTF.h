@@ -105,10 +105,12 @@
 #ifndef LLVM_SUPPORT_CONVERTUTF_H
 #define LLVM_SUPPORT_CONVERTUTF_H
 
+#include "csupport/convert_utf.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/SwapByteOrder.h"
+#include <limits>
 #include <stddef.h>
 #include <string>
 
@@ -122,17 +124,22 @@
 namespace llvm {
 
 /* ---------------------------------------------------------------------
-    The following 4 definitions are compiler-specific.
-    The C standard does not guarantee that wchar_t has at least
-    16 bits, so wchar_t is no less portable than unsigned short!
-    All should be unsigned values to avoid sign extension during
-    bit mask & shift operations.
+    Code-unit widths at this ABI boundary are owned by
+    csupport/convert_utf.h.  Restating them as independent typedefs of the
+    same underlying integers would put two names under the care of a comment
+    for a fact the type system already knows.  The conversion result/flag
+    enums stay as llvm-scoped enumerations so the llvm:: wrappers below are
+    not the same signature as the global C entry points; their values are
+    locked to the C enumerators by static_assert further down.
+    The C standard does not guarantee that wchar_t has at least 16 bits, so
+    wchar_t is no less portable than unsigned short; all values remain
+    unsigned to avoid sign extension during bit mask & shift operations.
 ------------------------------------------------------------------------ */
 
-typedef unsigned int UTF32;    /* at least 32 bits */
-typedef unsigned short UTF16;  /* at least 16 bits */
-typedef unsigned char UTF8;    /* typically 8 bits */
-typedef unsigned char Boolean; /* 0 or 1 */
+using UTF32 = csupport_utf32_t;     /* at least 32 bits */
+using UTF16 = csupport_utf16_t;     /* at least 16 bits */
+using UTF8 = csupport_utf8_t;       /* typically 8 bits */
+using Boolean = csupport_boolean_t; /* 0 or 1 */
 
 /* Some fundamental constants */
 #define UNI_REPLACEMENT_CHAR (UTF32)0x0000FFFD
@@ -157,6 +164,19 @@ typedef enum {
 } ConversionResult;
 
 typedef enum { strictConversion = 0, lenientConversion } ConversionFlags;
+
+static_assert(static_cast<int>(conversionOK) ==
+              static_cast<int>(CSUPPORT_CONVERSION_OK));
+static_assert(static_cast<int>(sourceExhausted) ==
+              static_cast<int>(CSUPPORT_SOURCE_EXHAUSTED));
+static_assert(static_cast<int>(targetExhausted) ==
+              static_cast<int>(CSUPPORT_TARGET_EXHAUSTED));
+static_assert(static_cast<int>(sourceIllegal) ==
+              static_cast<int>(CSUPPORT_SOURCE_ILLEGAL));
+static_assert(static_cast<int>(strictConversion) ==
+              static_cast<int>(CSUPPORT_STRICT_CONVERSION));
+static_assert(static_cast<int>(lenientConversion) ==
+              static_cast<int>(CSUPPORT_LENIENT_CONVERSION));
 
 ConversionResult ConvertUTF8toUTF16(const UTF8 **sourceStart,
                                     const UTF8 *sourceEnd, UTF16 **targetStart,
@@ -565,37 +585,31 @@ inline bool convertUTF8ToUTF16String(StringRef SrcUTF8,
 }
 
 } // namespace llvm
-extern "C" {
-int csupport_has_gbk(const char *data, size_t len);
-int csupport_convert_gbk_to_utf8(const char *src, size_t src_len, char *dst,
-                                 size_t dst_cap, size_t *out_len);
-}
+
+#include "csupport/lconvert_lu_lt_lf_lwrapper.h"
+
 namespace llvm {
 
 inline bool convertGBKToUTF8String(StringRef SrcGBK,
                                    SmallVectorImpl<char> &Out) {
-  if (!csupport_has_gbk(SrcGBK.data(), SrcGBK.size())) {
+  if (SrcGBK.empty()) {
+    Out.clear();
+    return true;
+  }
+  if (SrcGBK.size() > std::numeric_limits<size_t>::max() / 3 ||
+      !csupport_has_gbk(SrcGBK.data(), SrcGBK.size())) {
     return false;
   }
 
-  char buf[4096];
+  SmallVector<char, 256> Buffer;
+  Buffer.resize(SrcGBK.size() * 3);
   size_t written = 0;
-  size_t cap = sizeof(buf);
-  char *heap = 0;
-  if (SrcGBK.size() * 3 > cap) {
-    cap = SrcGBK.size() * 3 + 1;
-    heap = (char *)malloc(cap);
-    if (!heap)
-      return false;
-  }
-  char *dst = heap ? heap : buf;
-  if (!csupport_convert_gbk_to_utf8(SrcGBK.data(), SrcGBK.size(), dst, cap,
-                                    &written)) {
-    free(heap);
+  if (!csupport_convert_gbk_to_utf8(SrcGBK.data(), SrcGBK.size(),
+                                    Buffer.data(), Buffer.size(), &written) ||
+      written > Buffer.size())
     return false;
-  }
-  Out.assign(dst, dst + written);
-  free(heap);
+
+  Out.assign(Buffer.begin(), Buffer.begin() + written);
   return true;
 }
 
@@ -627,6 +641,13 @@ inline bool ConvertUTF8toWide(const char *Source,
 
 inline bool convertWideToUTF8(const wchar_t *Source, size_t SourceLen,
                               SmallVectorImpl<char> &Result) {
+  if (SourceLen == 0) {
+    Result.clear();
+    return true;
+  }
+  if (!Source)
+    return false;
+
   if (sizeof(wchar_t) == 1) {
     const UTF8 *Start = (const UTF8 *)(Source);
     const UTF8 *End = (const UTF8 *)(Source + SourceLen);
@@ -660,74 +681,51 @@ inline bool convertWideToUTF8(const wchar_t *Source, size_t SourceLen,
 
 } // end namespace llvm
 
-extern "C" {
-typedef unsigned int CU32;
-typedef unsigned short CU16;
-typedef unsigned char CU8;
-typedef enum { cOK = 0, cSrcExh, cTgtExh, cSrcIll } CConvRes;
-typedef enum { cStrict = 0, cLenient } CConvFlag;
-CConvRes ConvertUTF32toUTF16(const CU32 **, const CU32 *, CU16 **, CU16 *,
-                             CConvFlag);
-CConvRes ConvertUTF16toUTF32(const CU16 **, const CU16 *, CU32 **, CU32 *,
-                             CConvFlag);
-CConvRes ConvertUTF16toUTF8(const CU16 **, const CU16 *, CU8 **, CU8 *,
-                            CConvFlag);
-CConvRes ConvertUTF32toUTF8(const CU32 **, const CU32 *, CU8 **, CU8 *,
-                            CConvFlag);
-CConvRes ConvertUTF8toUTF16(const CU8 **, const CU8 *, CU16 **, CU16 *,
-                            CConvFlag);
-CConvRes ConvertUTF8toUTF32Partial(const CU8 **, const CU8 *, CU32 **, CU32 *,
-                                   CConvFlag);
-CConvRes ConvertUTF8toUTF32(const CU8 **, const CU8 *, CU32 **, CU32 *,
-                            CConvFlag);
-int isLegalUTF8Sequence(const CU8 *, const CU8 *);
-int isLegalUTF8String(const CU8 **, const CU8 *);
-unsigned getNumBytesForUTF8(CU8);
-unsigned getUTF8SequenceSize(const CU8 *, const CU8 *);
-}
-
 namespace llvm {
+// Flags/results are distinct enum types from the C ABI (see above), so the
+// llvm:: entry points cast at this boundary rather than redeclaring the C
+// functions with a parallel type system.
 inline ConversionResult ConvertUTF32toUTF16(const UTF32 **a, const UTF32 *b,
                                             UTF16 **c, UTF16 *d,
                                             ConversionFlags f) {
-  return (ConversionResult)::ConvertUTF32toUTF16(
-      (const CU32 **)a, (const CU32 *)b, (CU16 **)c, (CU16 *)d, (CConvFlag)f);
+  return static_cast<ConversionResult>(::ConvertUTF32toUTF16(
+      a, b, c, d, static_cast<csupport_conversion_flags_t>(f)));
 }
 inline ConversionResult ConvertUTF16toUTF32(const UTF16 **a, const UTF16 *b,
                                             UTF32 **c, UTF32 *d,
                                             ConversionFlags f) {
-  return (ConversionResult)::ConvertUTF16toUTF32(
-      (const CU16 **)a, (const CU16 *)b, (CU32 **)c, (CU32 *)d, (CConvFlag)f);
+  return static_cast<ConversionResult>(::ConvertUTF16toUTF32(
+      a, b, c, d, static_cast<csupport_conversion_flags_t>(f)));
 }
 inline ConversionResult ConvertUTF16toUTF8(const UTF16 **a, const UTF16 *b,
                                            UTF8 **c, UTF8 *d,
                                            ConversionFlags f) {
-  return (ConversionResult)::ConvertUTF16toUTF8(
-      (const CU16 **)a, (const CU16 *)b, c, d, (CConvFlag)f);
+  return static_cast<ConversionResult>(::ConvertUTF16toUTF8(
+      a, b, c, d, static_cast<csupport_conversion_flags_t>(f)));
 }
 inline ConversionResult ConvertUTF32toUTF8(const UTF32 **a, const UTF32 *b,
                                            UTF8 **c, UTF8 *d,
                                            ConversionFlags f) {
-  return (ConversionResult)::ConvertUTF32toUTF8(
-      (const CU32 **)a, (const CU32 *)b, c, d, (CConvFlag)f);
+  return static_cast<ConversionResult>(::ConvertUTF32toUTF8(
+      a, b, c, d, static_cast<csupport_conversion_flags_t>(f)));
 }
 inline ConversionResult ConvertUTF8toUTF16(const UTF8 **a, const UTF8 *b,
                                            UTF16 **c, UTF16 *d,
                                            ConversionFlags f) {
-  return (ConversionResult)::ConvertUTF8toUTF16(a, b, (CU16 **)c, (CU16 *)d,
-                                                (CConvFlag)f);
+  return static_cast<ConversionResult>(::ConvertUTF8toUTF16(
+      a, b, c, d, static_cast<csupport_conversion_flags_t>(f)));
 }
 inline ConversionResult ConvertUTF8toUTF32Partial(const UTF8 **a, const UTF8 *b,
                                                   UTF32 **c, UTF32 *d,
                                                   ConversionFlags f) {
-  return (ConversionResult)::ConvertUTF8toUTF32Partial(a, b, (CU32 **)c,
-                                                       (CU32 *)d, (CConvFlag)f);
+  return static_cast<ConversionResult>(::ConvertUTF8toUTF32Partial(
+      a, b, c, d, static_cast<csupport_conversion_flags_t>(f)));
 }
 inline ConversionResult ConvertUTF8toUTF32(const UTF8 **a, const UTF8 *b,
                                            UTF32 **c, UTF32 *d,
                                            ConversionFlags f) {
-  return (ConversionResult)::ConvertUTF8toUTF32(a, b, (CU32 **)c, (CU32 *)d,
-                                                (CConvFlag)f);
+  return static_cast<ConversionResult>(::ConvertUTF8toUTF32(
+      a, b, c, d, static_cast<csupport_conversion_flags_t>(f)));
 }
 inline Boolean isLegalUTF8Sequence(const UTF8 *a, const UTF8 *b) {
   return ::isLegalUTF8Sequence(a, b);

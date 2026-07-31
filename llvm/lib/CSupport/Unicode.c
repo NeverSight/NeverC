@@ -5,26 +5,12 @@
 |* SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception                   *|
 |*                                                                            *|
 \*===----------------------------------------------------------------------===*/
+#include "include/csupport/convert_utf.h"
 #include "include/csupport/lunicode.h"
 #include <stddef.h>
 
-/* ConvertUTF declarations - avoid including the C++ header directly */
-typedef unsigned int UTF32;
-typedef unsigned char UTF8;
-
-typedef enum {
-  conversionOK,
-  sourceExhausted,
-  targetExhausted,
-  sourceIllegal
-} ConversionResult;
-
-typedef enum { strictConversion = 0, lenientConversion } ConversionFlags;
-
-ConversionResult ConvertUTF8toUTF32(const UTF8 **sourceStart,
-                                    const UTF8 *sourceEnd, UTF32 **targetStart,
-                                    UTF32 *targetEnd, ConversionFlags flags);
-unsigned getNumBytesForUTF8(UTF8 firstByte);
+typedef csupport_utf32_t UTF32;
+typedef csupport_utf8_t UTF8;
 
 typedef struct {
   uint32_t lo;
@@ -499,8 +485,9 @@ int csupport_unicode_column_width_utf8(csupport_string_ref_t text) {
     UTF32 buf[1];
     const UTF8 *src = (const UTF8 *)(text.data + i);
     UTF32 *dst = &buf[0];
-    if (conversionOK != ConvertUTF8toUTF32(&src, src + nbytes, &dst,
-                                           dst + 1, strictConversion))
+    if (CSUPPORT_CONVERSION_OK !=
+        ConvertUTF8toUTF32(&src, src + nbytes, &dst, dst + 1,
+                           CSUPPORT_STRICT_CONVERSION))
       return CSUPPORT_UNICODE_ERROR_INVALID_UTF8;
 
     int w = csupport_unicode_char_width((int)buf[0]);

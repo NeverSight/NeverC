@@ -6,33 +6,13 @@
 |*                                                                            *|
 \*===----------------------------------------------------------------------===*/
 #include "include/csupport/ld_lj_lb.h"
+#include "include/csupport/convert_utf.h"
 #include "include/csupport/lunicode_lcase_lfold.h"
 #include <assert.h>
 #include <stdbool.h>
 
-typedef unsigned int UTF32;
-typedef unsigned char UTF8;
-
-typedef enum {
-  cvt_conversionOK,
-  cvt_sourceExhausted,
-  cvt_targetExhausted,
-  cvt_sourceIllegal
-} CvtConversionResult;
-
-typedef enum {
-  cvt_strictConversion = 0,
-  cvt_lenientConversion
-} CvtConversionFlags;
-
-CvtConversionResult ConvertUTF8toUTF32(const UTF8 **sourceStart,
-                                       const UTF8 *sourceEnd,
-                                       UTF32 **targetStart, UTF32 *targetEnd,
-                                       CvtConversionFlags flags);
-CvtConversionResult ConvertUTF32toUTF8(const UTF32 **sourceStart,
-                                       const UTF32 *sourceEnd,
-                                       UTF8 **targetStart, UTF8 *targetEnd,
-                                       CvtConversionFlags flags);
+typedef csupport_utf32_t UTF32;
+typedef csupport_utf8_t UTF8;
 
 #define UNI_MAX_UTF8_BYTES_PER_CODE_POINT 4
 
@@ -44,7 +24,7 @@ static UTF32 chop_one_utf32(const char **buf, size_t *len) {
 
   assert(*len > 0);
   ConvertUTF8toUTF32(&begin8, (const UTF8 *)(*buf + *len), &begin32, &c + 1,
-                     cvt_lenientConversion);
+                     CSUPPORT_LENIENT_CONVERSION);
   size_t consumed = (size_t)(begin8 - begin8_start);
   *buf += consumed;
   *len -= consumed;
@@ -58,7 +38,7 @@ static void to_utf8(UTF32 c, UTF8 *storage, const char **out_data,
 
   ConvertUTF32toUTF8(&begin32, &c + 1, &begin8,
                      storage + UNI_MAX_UTF8_BYTES_PER_CODE_POINT,
-                     cvt_strictConversion);
+                     CSUPPORT_STRICT_CONVERSION);
   *out_data = (const char *)storage;
   *out_len = (size_t)(begin8 - storage);
 }

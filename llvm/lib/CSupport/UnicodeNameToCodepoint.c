@@ -52,6 +52,7 @@ size_t csupport_unicode_starts_with(const char *name, size_t name_len,
                                      int is_prefix) {
   if (strict) {
     if (name_len < needle_len) return 0;
+    if (needle_len == 0) return 0;
     if (memcmp(name, needle, needle_len) != 0) return 0;
     return needle_len;
   }

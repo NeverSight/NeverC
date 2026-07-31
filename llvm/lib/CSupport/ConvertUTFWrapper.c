@@ -1,13 +1,20 @@
 /*===- ConvertUTFWrapper.c - UTF conversion helpers (pure C) ----*- C -*-===*/
 #include "include/csupport/lconvert_lu_lt_lf_lwrapper.h"
-#include <string.h>
+#include <limits.h>
 #include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
 
-#if !defined(_WIN32) && !defined(__APPLE__)
+#if defined(_WIN32)
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#else
 #include <iconv.h>
 #endif
 
 int csupport_is_valid_utf8(const char *data, size_t len) {
+  if (len == 0) return 1;
+  if (!data) return 0;
   const uint8_t *p = (const uint8_t *)data;
   const uint8_t *end = p + len;
   while (p < end) {
@@ -41,6 +48,7 @@ int csupport_utf8_char_length(uint8_t first_byte) {
 
 uint32_t csupport_decode_utf8(const unsigned char **pos,
                               const unsigned char *end) {
+  if (!pos || !*pos || !end || *pos >= end) return 0xFFFD;
   unsigned char c = **pos;
   (*pos)++;
   if (c < 0x80) return c;
@@ -85,6 +93,8 @@ static int encode_utf8(uint32_t cp, char *buf) {
 
 size_t csupport_fix_utf8(const char *input, size_t input_len,
                          char *output, size_t output_cap) {
+  if (input_len == 0) return 0;
+  if (!input) return 0;
   const unsigned char *p = (const unsigned char *)input;
   const unsigned char *end = p + input_len;
   size_t out = 0;
@@ -102,6 +112,8 @@ size_t csupport_fix_utf8(const char *input, size_t input_len,
 }
 
 int csupport_has_gbk(const char *data, size_t len) {
+  if (len == 0) return 1;
+  if (!data) return 0;
   const unsigned char *p = (const unsigned char *)data;
   size_t i = 0;
   while (i < len) {
@@ -110,7 +122,7 @@ int csupport_has_gbk(const char *data, size_t len) {
     } else {
       if (i == len - 1) return 0;
       if (p[i] >= 0x81 && p[i] <= 0xfe &&
-          p[i + 1] >= 0x40 && p[i + 1] <= 0xfe && p[i + 1] != 0xf7) {
+          p[i + 1] >= 0x40 && p[i + 1] <= 0xfe && p[i + 1] != 0x7f) {
         i += 2;
       } else {
         return 0;
@@ -143,21 +155,49 @@ void csupport_utf16_byteswap(uint16_t *data, size_t count) {
 int csupport_convert_gbk_to_utf8(const char *gbk, size_t gbk_len,
                                   char *utf8, size_t utf8_cap,
                                   size_t *utf8_written) {
-#if defined(__APPLE__)
-  size_t n = gbk_len < utf8_cap ? gbk_len : utf8_cap;
-  if (utf8 && n > 0) memcpy(utf8, gbk, n);
-  if (utf8_written) *utf8_written = gbk_len;
+  if (utf8_written) *utf8_written = 0;
+  if (gbk_len == 0) return 1;
+  if (!gbk || !utf8 || utf8_cap == 0) return 0;
+
+#if defined(_WIN32)
+  if (gbk_len > INT_MAX || utf8_cap > INT_MAX) return 0;
+
+  int wide_len =
+      MultiByteToWideChar(936, MB_ERR_INVALID_CHARS, gbk, (int)gbk_len, NULL, 0);
+  if (wide_len <= 0) return 0;
+
+  wchar_t local[256];
+  wchar_t *wide = wide_len <= (int)(sizeof(local) / sizeof(local[0]))
+                      ? local
+                      : (wchar_t *)malloc((size_t)wide_len * sizeof(wchar_t));
+  if (!wide) return 0;
+
+  int converted =
+      MultiByteToWideChar(936, MB_ERR_INVALID_CHARS, gbk, (int)gbk_len, wide,
+                          wide_len);
+  if (converted != wide_len) {
+    if (wide != local) free(wide);
+    return 0;
+  }
+
+  int written = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, wide,
+                                    wide_len, utf8, (int)utf8_cap, NULL, NULL);
+  if (wide != local) free(wide);
+  if (written <= 0) return 0;
+
+  if (utf8_written) *utf8_written = (size_t)written;
   return 1;
-#elif defined(_WIN32)
-  (void)gbk; (void)gbk_len; (void)utf8; (void)utf8_cap; (void)utf8_written;
-  return 0;
 #else
   iconv_t cd = iconv_open("UTF-8", "GBK");
   if (cd == (iconv_t)-1) {
     cd = iconv_open("UTF-8", "GB18030");
     if (cd == (iconv_t)-1) return 0;
   }
-  char *in_ptr = (char *)gbk;
+  /* iconv's legacy API advances a char ** even though it does not modify the
+   * input bytes.  Copy the pointer representation into its cursor type without
+   * casting away the public API's const qualification. */
+  char *in_ptr;
+  memcpy(&in_ptr, &gbk, sizeof(in_ptr));
   size_t in_left = gbk_len;
   char *out_ptr = utf8;
   size_t out_left = utf8_cap;

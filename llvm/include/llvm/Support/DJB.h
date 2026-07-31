@@ -13,6 +13,7 @@
 #ifndef LLVM_SUPPORT_DJB_H
 #define LLVM_SUPPORT_DJB_H
 
+#include "csupport/ld_lj_lb.h"
 #include "llvm/ADT/StringRef.h"
 
 namespace llvm {
@@ -26,8 +27,6 @@ inline uint32_t djbHash(StringRef Buffer, uint32_t H = 5381) {
 
 /// Computes the Bernstein hash after folding the input according to the Dwarf 5
 /// standard case folding rules.
-extern "C" uint32_t
-csupport_case_folding_djb_hash_raw(const char *data, size_t length, uint32_t h);
 inline uint32_t caseFoldingDjbHash(StringRef Buffer, uint32_t H = 5381) {
   return csupport_case_folding_djb_hash_raw(Buffer.data(), Buffer.size(), H);
 }

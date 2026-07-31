@@ -137,10 +137,8 @@ struct Node {
     SmallString<64> S;
     const Node *N = this;
     while (N) {
-      for (auto it = N->Name.end(); it != N->Name.begin();) {
-        --it;
-        S.push_back(*it);
-      }
+      for (size_t I = N->Name.size(); I != 0; --I)
+        S.push_back(N->Name[I - 1]);
       N = N->Parent;
     }
     std::reverse(S.begin(), S.end());

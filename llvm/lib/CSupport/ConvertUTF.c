@@ -61,14 +61,23 @@
 
 ------------------------------------------------------------------------ */
 
-/* C-compatible declarations instead of the C++ header */
-#include <stddef.h>
+#include "include/csupport/convert_utf.h"
 #include <stdbool.h>
+#include <stddef.h>
 
-typedef unsigned int UTF32;
-typedef unsigned short UTF16;
-typedef unsigned char UTF8;
-typedef unsigned char Boolean;
+typedef csupport_utf32_t UTF32;
+typedef csupport_utf16_t UTF16;
+typedef csupport_utf8_t UTF8;
+typedef csupport_boolean_t Boolean;
+typedef csupport_conversion_result_t ConversionResult;
+typedef csupport_conversion_flags_t ConversionFlags;
+
+#define conversionOK CSUPPORT_CONVERSION_OK
+#define sourceExhausted CSUPPORT_SOURCE_EXHAUSTED
+#define targetExhausted CSUPPORT_TARGET_EXHAUSTED
+#define sourceIllegal CSUPPORT_SOURCE_ILLEGAL
+#define strictConversion CSUPPORT_STRICT_CONVERSION
+#define lenientConversion CSUPPORT_LENIENT_CONVERSION
 
 #define UNI_REPLACEMENT_CHAR ((UTF32)0x0000FFFD)
 #define UNI_MAX_BMP          ((UTF32)0x0000FFFF)
@@ -78,18 +87,6 @@ typedef unsigned char Boolean;
 #define UNI_MAX_UTF8_BYTES_PER_CODE_POINT 4
 #define UNI_UTF16_BYTE_ORDER_MARK_NATIVE  0xFEFF
 #define UNI_UTF16_BYTE_ORDER_MARK_SWAPPED 0xFFFE
-
-typedef enum {
-  conversionOK,
-  sourceExhausted,
-  targetExhausted,
-  sourceIllegal
-} ConversionResult;
-
-typedef enum {
-  strictConversion = 0,
-  lenientConversion
-} ConversionFlags;
 #ifdef CVTUTF_DEBUG
 #include <stdio.h>
 #endif
