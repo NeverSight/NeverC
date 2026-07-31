@@ -1,5 +1,6 @@
 /*===- VersionTuple.c - Version parsing (pure C) ----------------*- C -*-===*/
 #include "include/csupport/lversion_ltuple.h"
+#include <limits.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -13,8 +14,11 @@ static int parse_uint(const char **input, size_t *remaining, unsigned *value) {
   while (*remaining > 0) {
     c = **input;
     if (c < '0' || c > '9') return 0;
+    unsigned digit = (unsigned)(c - '0');
+    if (*value > (UINT_MAX - digit) / 10)
+      return 1;
     (*input)++; (*remaining)--;
-    *value = *value * 10 + (unsigned)(c - '0');
+    *value = *value * 10 + digit;
   }
   return 0;
 }

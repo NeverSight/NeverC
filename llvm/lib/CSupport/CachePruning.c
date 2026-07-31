@@ -1,5 +1,6 @@
 /*===- CachePruning.c - Cache pruning utilities (pure C) -------*- C -*-===*/
 #include "include/csupport/lcache_lpruning.h"
+#include <limits.h>
 #include <string.h>
 
 void csupport_cache_pruning_policy_default(csupport_cache_pruning_policy_t *p) {
@@ -11,16 +12,17 @@ void csupport_cache_pruning_policy_default(csupport_cache_pruning_policy_t *p) {
 
 int csupport_cache_pruning_parse_percentage(const char *str, size_t len,
                                             unsigned *out) {
-  if (len == 0) return 0;
+  if (!str || !out || len == 0) return 0;
   unsigned val = 0;
   for (size_t i = 0; i < len; i++) {
     if (str[i] == '%') {
-      if (i + 1 != len) return 0;
+      if (i == 0 || i + 1 != len) return 0;
       break;
     }
     if (str[i] < '0' || str[i] > '9') return 0;
-    val = val * 10 + (unsigned)(str[i] - '0');
-    if (val > 100) return 0;
+    unsigned digit = (unsigned)(str[i] - '0');
+    if (val > (100u - digit) / 10u) return 0;
+    val = val * 10 + digit;
   }
   *out = val;
   return 1;
@@ -32,14 +34,19 @@ int64_t csupport_parse_duration_seconds(const char *str, size_t len) {
   uint64_t num = 0;
   for (size_t i = 0; i < len - 1; i++) {
     if (str[i] < '0' || str[i] > '9') return -1;
-    num = num * 10 + (uint64_t)(str[i] - '0');
+    uint64_t digit = (uint64_t)(str[i] - '0');
+    if (num > (UINT64_MAX - digit) / 10) return -1;
+    num = num * 10 + digit;
   }
+  uint64_t mult;
   switch (unit) {
-  case 's': return (int64_t)num;
-  case 'm': return (int64_t)(num * 60);
-  case 'h': return (int64_t)(num * 3600);
+  case 's': mult = 1; break;
+  case 'm': mult = 60; break;
+  case 'h': mult = 3600; break;
   default: return -1;
   }
+  if (num > (uint64_t)INT64_MAX / mult) return -1;
+  return (int64_t)(num * mult);
 }
 
 int csupport_parse_cache_size_bytes(const char *str, size_t len,
@@ -52,10 +59,14 @@ int csupport_parse_cache_size_bytes(const char *str, size_t len,
   else if (last == 'm' || last == 'M') { mult = 1024ULL * 1024; num_end = len - 1; }
   else if (last == 'g' || last == 'G') { mult = 1024ULL * 1024 * 1024; num_end = len - 1; }
   uint64_t val = 0;
+  if (num_end == 0) return 0;
   for (size_t i = 0; i < num_end; i++) {
     if (str[i] < '0' || str[i] > '9') return 0;
-    val = val * 10 + (uint64_t)(str[i] - '0');
+    uint64_t digit = (uint64_t)(str[i] - '0');
+    if (val > (UINT64_MAX - digit) / 10) return 0;
+    val = val * 10 + digit;
   }
+  if (val > UINT64_MAX / mult) return 0;
   *out = val * mult;
   return 1;
 }
@@ -65,13 +76,13 @@ int csupport_parse_cache_policy_kv(const char *key, size_t key_len,
                                     csupport_cache_pruning_policy_t *policy) {
   if (key_len == 14 && memcmp(key, "prune_interval", 14) == 0) {
     int64_t s = csupport_parse_duration_seconds(val, val_len);
-    if (s < 0) return -1;
+    if (s < 0 || s > INT_MAX) return -1;
     policy->prune_after = (int)s;
     return 0;
   }
   if (key_len == 11 && memcmp(key, "prune_after", 11) == 0) {
     int64_t s = csupport_parse_duration_seconds(val, val_len);
-    if (s < 0) return -1;
+    if (s < 0 || (uint64_t)s > UINT_MAX) return -1;
     policy->max_age_seconds = (unsigned)s;
     return 0;
   }

@@ -14,10 +14,12 @@
 #ifndef LLVM_SUPPORT_CACHEPRUNING_H
 #define LLVM_SUPPORT_CACHEPRUNING_H
 
+#include "llvm/Support/Debug.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/WithColor.h"
 #include <algorithm>
 #include <chrono>
+#include <limits>
 #include <optional>
 #include <system_error>
 
@@ -153,7 +155,7 @@ parseCachePruningPolicy(StringRef PolicyStr) {
         return DurationOrErr.takeError();
       Policy.Expiration = *DurationOrErr;
     } else if (Key == "cache_size") {
-      if (Value.back() != '%')
+      if (Value.empty() || Value.back() != '%')
         return make_error<StringError>("'" + Value + "' must be a percentage",
                                        inconvertibleErrorCode());
       StringRef SizeStr = Value.drop_back();
@@ -167,17 +169,20 @@ parseCachePruningPolicy(StringRef PolicyStr) {
                                        inconvertibleErrorCode());
       Policy.MaxSizePercentageOfAvailableSpace = Size;
     } else if (Key == "cache_size_bytes") {
+      if (Value.empty())
+        return make_error<StringError>("'' not an integer",
+                                       inconvertibleErrorCode());
       uint64_t Mult = 1;
-      switch (tolower(Value.back())) {
-      case 'k':
+      switch (Value.back()) {
+      case 'k': case 'K':
         Mult = 1024;
         Value = Value.drop_back();
         break;
-      case 'm':
+      case 'm': case 'M':
         Mult = 1024 * 1024;
         Value = Value.drop_back();
         break;
-      case 'g':
+      case 'g': case 'G':
         Mult = 1024 * 1024 * 1024;
         Value = Value.drop_back();
         break;
@@ -185,6 +190,9 @@ parseCachePruningPolicy(StringRef PolicyStr) {
       uint64_t Size;
       if (Value.getAsInteger(0, Size))
         return make_error<StringError>("'" + Value + "' not an integer",
+                                       inconvertibleErrorCode());
+      if (Size > std::numeric_limits<uint64_t>::max() / Mult)
+        return make_error<StringError>("'" + Value + "' is too large",
                                        inconvertibleErrorCode());
       Policy.MaxSizeBytes = Size * Mult;
     } else if (Key == "cache_size_files") {

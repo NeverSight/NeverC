@@ -14,19 +14,10 @@
 #ifndef LLVM_SUPPORT_VERSIONTUPLE_H
 #define LLVM_SUPPORT_VERSIONTUPLE_H
 
+#include "csupport/lversion_ltuple.h"
 #include "llvm/ADT/DenseMapInfo.h"
 #include "llvm/ADT/Hashing.h"
 #include "llvm/ADT/SmallString.h"
-
-extern "C" {
-int csupport_version_format(char *buf, size_t buflen, unsigned major,
-                            int has_minor, unsigned minor, int has_subminor,
-                            unsigned subminor, int has_build, unsigned build);
-int csupport_version_try_parse(const char *str, size_t len, unsigned *major,
-                               unsigned *minor, unsigned *micro,
-                               unsigned *build, int *has_minor,
-                               int *has_subminor, int *has_build);
-}
 
 namespace llvm {
 template <typename HasherT, llvm::endianness Endianness> class HashBuilder;
