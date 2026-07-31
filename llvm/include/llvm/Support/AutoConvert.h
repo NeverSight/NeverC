@@ -24,16 +24,6 @@
 #define CCSID_ISO8859_1 819
 
 #ifdef __cplusplus
-extern "C" {
-#endif // __cplusplus
-int enableAutoConversion(int FD);
-int disableAutoConversion(int FD);
-int restoreStdHandleAutoConversion(int FD);
-#ifdef __cplusplus
-}
-#endif // __cplusplus
-
-#ifdef __cplusplus
 #include <assert.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -41,11 +31,6 @@ int restoreStdHandleAutoConversion(int FD);
 #include <unistd.h>
 
 namespace llvm {
-
-int disableAutoConversion(int FD);
-int enableAutoConversion(int FD);
-int restoreStdHandleAutoConversion(int FD);
-int setFileTag(int FD, int CCSID, bool Text);
 
 namespace detail {
 inline int *getSavedStdHandleAutoConversionMode() {

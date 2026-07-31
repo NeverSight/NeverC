@@ -13,6 +13,7 @@
 #ifndef LLVM_SUPPORT_BRANCHPROBABILITY_H
 #define LLVM_SUPPORT_BRANCHPROBABILITY_H
 
+#include "csupport/lbranch_lprobability.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/DataTypes.h"
 #include "llvm/Support/Debug.h"
@@ -21,16 +22,6 @@
 #include <assert.h>
 #include <cinttypes>
 #include <math.h>
-
-extern "C" {
-uint32_t csupport_branch_prob_normalize(uint32_t num, uint32_t denom,
-                                        uint32_t target_denom);
-uint32_t csupport_branch_prob_get64(uint64_t num, uint64_t denom,
-                                    uint32_t target_denom);
-uint64_t csupport_branch_prob_scale(uint64_t num, uint32_t n, uint32_t d);
-uint64_t csupport_branch_prob_scale_inverse(uint64_t num, uint32_t n,
-                                            uint32_t d);
-}
 
 namespace llvm {
 

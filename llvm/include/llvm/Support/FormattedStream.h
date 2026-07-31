@@ -14,6 +14,7 @@
 #ifndef LLVM_SUPPORT_FORMATTEDSTREAM_H
 #define LLVM_SUPPORT_FORMATTEDSTREAM_H
 
+#include "csupport/lformatted_lstream.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/Support/raw_ostream.h"
 #include <utility>
@@ -178,11 +179,6 @@ formatted_raw_ostream &ferrs();
 /// fdbgs() - This returns a reference to a formatted_raw_ostream for
 /// debug output.  Use it like: fdbgs() << "foo" << "bar";
 formatted_raw_ostream &fdbgs();
-
-extern "C" void csupport_update_column_position(unsigned *column,
-                                                unsigned *line, const char *ptr,
-                                                size_t size, char *partial_utf8,
-                                                size_t *partial_len);
 
 inline void formatted_raw_ostream::UpdatePosition(const char *Ptr,
                                                   size_t Size) {

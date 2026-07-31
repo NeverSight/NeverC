@@ -14,11 +14,10 @@
 #ifndef LLVM_SUPPORT_ERRNO_H
 #define LLVM_SUPPORT_ERRNO_H
 
+#include "csupport/lerrno.h"
 #include <errno.h>
 #include <string.h>
 #include <string>
-
-extern "C" int csupport_strerror(int errnum, char *buf, size_t buflen);
 
 namespace llvm {
 namespace sys {

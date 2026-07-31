@@ -21,14 +21,9 @@
 #ifndef LLVM_ADT_INTEQCLASSES_H
 #define LLVM_ADT_INTEQCLASSES_H
 
+#include "csupport/lint_leq_lclasses.h"
 #include "llvm/ADT/SmallVector.h"
 #include <assert.h>
-
-extern "C" {
-unsigned csupport_uf_join(unsigned *ec, unsigned a, unsigned b);
-unsigned csupport_uf_find_leader(const unsigned *ec, unsigned a);
-unsigned csupport_uf_compress(unsigned *ec, unsigned size);
-}
 
 namespace llvm {
 

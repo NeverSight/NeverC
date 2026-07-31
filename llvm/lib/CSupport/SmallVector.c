@@ -70,6 +70,7 @@ void *csupport_smallvec_malloc_for_grow_u32(void *begin, void *first_el,
                                             size_t min_size, size_t tsize,
                                             uint32_t old_capacity,
                                             size_t *out_new_capacity) {
+  (void)begin;
   size_t new_cap =
       csupport_smallvec_new_capacity_u32(min_size, (size_t)old_capacity);
   void *new_elts = csupport_checked_malloc(new_cap, tsize);
@@ -106,6 +107,7 @@ void *csupport_smallvec_malloc_for_grow_u64(void *begin, void *first_el,
                                             size_t min_size, size_t tsize,
                                             uint64_t old_capacity,
                                             size_t *out_new_capacity) {
+  (void)begin;
   size_t new_cap =
       csupport_smallvec_new_capacity_u64(min_size, (size_t)old_capacity);
   void *new_elts = csupport_checked_malloc(new_cap, tsize);

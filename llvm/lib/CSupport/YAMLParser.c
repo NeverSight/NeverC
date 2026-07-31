@@ -1067,8 +1067,8 @@ size_t csupport_yaml_write_key_value(const char *key, size_t key_len,
 }
 
 size_t csupport_yaml_render_block_scalar(const char *text, size_t text_len,
-                                         int indent, int style,
-                                         char *out, size_t out_cap) {
+                                         int indent, int style, char *out,
+                                         size_t out_cap) {
   if (!text || !out || out_cap == 0) return 0;
   size_t pos = 0;
   if (pos < out_cap - 1) out[pos++] = (style == 1) ? '|' : '>';
@@ -1088,8 +1088,7 @@ size_t csupport_yaml_render_block_scalar(const char *text, size_t text_len,
   return pos;
 }
 
-int csupport_yaml_scan_plain_scalar(const char *buf, size_t len,
-                                    int flow_level,
+int csupport_yaml_scan_plain_scalar(const char *buf, size_t len, int flow_level,
                                     size_t *out_end) {
   if (!buf || len == 0) { if (out_end) *out_end = 0; return 0; }
   size_t i = 0;
@@ -1112,9 +1111,9 @@ int csupport_yaml_scan_plain_scalar(const char *buf, size_t len,
   return i > 0 ? 1 : 0;
 }
 
-size_t csupport_yaml_emit_mapping(const char * const *keys, const char * const *values,
-                                  size_t count, int indent,
-                                  char *out, size_t out_cap) {
+size_t csupport_yaml_emit_mapping(const char *const *keys,
+                                  const char *const *values, size_t count,
+                                  int indent, char *out, size_t out_cap) {
   if (!keys || !values || !out || out_cap == 0) return 0;
   size_t pos = 0;
   for (size_t idx = 0; idx < count; idx++) {

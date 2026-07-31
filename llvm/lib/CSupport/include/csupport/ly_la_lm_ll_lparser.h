@@ -129,6 +129,14 @@ size_t csupport_yaml_format_block_literal(const char *str, size_t len,
 /* Format items as YAML flow sequence [a, b, c]. Returns bytes written. */
 size_t csupport_yaml_format_flow_sequence(const char **items, size_t count,
                                           char *buf, size_t cap);
+size_t csupport_yaml_render_block_scalar(const char *text, size_t text_len,
+                                         int indent, int style, char *out,
+                                         size_t out_cap);
+int csupport_yaml_scan_plain_scalar(const char *buf, size_t len, int flow_level,
+                                    size_t *out_end);
+size_t csupport_yaml_emit_mapping(const char *const *keys,
+                                  const char *const *values, size_t count,
+                                  int indent, char *out, size_t out_cap);
 
 #ifdef __cplusplus
 }

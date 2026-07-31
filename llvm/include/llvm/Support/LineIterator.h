@@ -9,18 +9,12 @@
 #ifndef LLVM_SUPPORT_LINEITERATOR_H
 #define LLVM_SUPPORT_LINEITERATOR_H
 
+#include "csupport/lline_literator.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/DataTypes.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/MemoryBufferRef.h"
 #include <iterator>
-
-extern "C" {
-size_t csupport_next_line(const char **pos, const char *end,
-                          char comment_marker, int skip_blanks,
-                          int *line_number);
-int csupport_is_at_line_end(const char *pos);
-}
 
 namespace llvm {
 

@@ -14,6 +14,7 @@
 #ifndef LLVM_SUPPORT_LEB128_H
 #define LLVM_SUPPORT_LEB128_H
 
+#include "csupport/leb128.h"
 #include "llvm/Support/raw_ostream.h"
 
 namespace llvm {
@@ -197,11 +198,6 @@ inline int64_t decodeSLEB128(const uint8_t *p, unsigned *n = nullptr,
   if (n)
     *n = (unsigned)(p - orig_p);
   return Value;
-}
-
-extern "C" {
-unsigned csupport_getULEB128Size(uint64_t Value);
-unsigned csupport_getSLEB128Size(int64_t Value);
 }
 
 inline unsigned getULEB128Size(uint64_t Value) {

@@ -115,8 +115,6 @@ inline ScaledResult<uint64_t> getAdjusted64(uint64_t Digits,
   return getAdjusted<uint64_t>(Digits, Scale);
 }
 
-extern "C" int csupport_scaled_compare(uint64_t l, uint64_t r, int scale_diff);
-
 /// Multiply two 64-bit integers to create a 64-bit scaled number.
 ///
 /// Implemented with four 64-bit integer multiplies.
