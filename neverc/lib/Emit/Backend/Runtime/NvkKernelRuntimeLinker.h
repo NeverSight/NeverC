@@ -8,11 +8,10 @@ namespace neverc {
 /// Module pass that links the precompiled NVK kernel runtime bitcode
 /// into the user module.
 ///
-/// NVK runtime headers (nvk_interpose.h, kallsyms.h, etc.) expose non-inline
-/// functions and shared global variables as extern declarations via the
-/// NVK_RT_FN / NVK_RT_VAR macros.  This pass resolves those declarations
-/// by linking in the bitcode compiled from nvk_runtime_bc.c (which defines
-/// everything with _NVK_IMPL).
+/// NVK runtime headers expose non-inline functions and shared global variables
+/// as extern declarations. This pass resolves used declarations from the
+/// bootstrapped unity bitcode built from runtime/android/kernel/src, then
+/// prunes unreachable runtime definitions.
 ///
 /// Registered at PipelineStartEP when -fandroid-kernel-driver-mode is
 /// active, so downstream optimisation can inline across the boundary.

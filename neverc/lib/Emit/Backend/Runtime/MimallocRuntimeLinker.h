@@ -13,8 +13,9 @@ namespace neverc {
 /// allocation entry points to be present so that the system linker
 /// resolves malloc/free/calloc/realloc to mimalloc's implementations.
 ///
-/// Internal helper functions are internalized; only the public
-/// allocation API entry points retain external linkage.
+/// Runtime-private definitions use hidden linkonce_odr linkage so copies from
+/// explicit per-module injection coalesce. Allocator override entry points
+/// remain default-visible weak_odr definitions.
 struct MimallocRuntimeLinkerPass
     : public llvm::PassInfoMixin<MimallocRuntimeLinkerPass> {
   explicit MimallocRuntimeLinkerPass(bool RequiresProgramEntry = false)

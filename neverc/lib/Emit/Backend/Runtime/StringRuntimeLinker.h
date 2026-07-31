@@ -5,8 +5,9 @@
 
 namespace neverc {
 
-/// Module pass that links the precompiled BuiltinString runtime
-/// bitcode into the user module and internalises the symbols.
+/// Module pass that links the precompiled BuiltinString runtime bitcode into
+/// the user module, prunes unreferenced definitions, and gives retained
+/// definitions hidden linkonce_odr linkage so multi-TU copies coalesce.
 ///
 /// Registered at PipelineStartEP (before StringRuntimePass and the
 /// dyncode pipeline) so that all downstream passes see the full
