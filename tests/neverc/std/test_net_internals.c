@@ -140,6 +140,54 @@ static void test_timer_wheel_reschedule(void) {
     check_int("reschedule: not fired at old time", tw_fire_count, 0);
 }
 
+static nc_timer_wheel_t *tw_cancel_wheel;
+static nc_timer_t *tw_cancel_target;
+static int tw_cancel_target_fired;
+
+static void tw_cancel_target_cb(nc_timer_t *timer, void *data) {
+    (void)timer;
+    (void)data;
+    tw_cancel_target_fired++;
+}
+
+static void tw_cancel_sibling_cb(nc_timer_t *timer, void *data) {
+    (void)timer;
+    (void)data;
+    nc_tw_cancel(tw_cancel_wheel, tw_cancel_target);
+}
+
+static void test_timer_wheel_callback_cancel(void) {
+    printf("[timer_wheel_callback_cancel]\n");
+
+    nc_timer_wheel_t wheel;
+    nc_timer_t target;
+    nc_timer_t canceler;
+    nc_tw_init(&wheel);
+    nc_timer_init(&target, tw_cancel_target_cb, NULL);
+    nc_timer_init(&canceler, tw_cancel_sibling_cb, NULL);
+    tw_cancel_wheel = &wheel;
+    tw_cancel_target = &target;
+    tw_cancel_target_fired = 0;
+
+    uint64_t expiry = nc_monotonic_ms();
+    int slot = (int)(expiry % NC_TW_SLOTS);
+    target.expire_ms = expiry;
+    target.active = 1;
+    target.tw_prev = &canceler;
+    target.tw_next = NULL;
+    canceler.expire_ms = expiry;
+    canceler.active = 1;
+    canceler.tw_prev = NULL;
+    canceler.tw_next = &target;
+    wheel.slots[slot] = &canceler;
+    wheel.last_ms = expiry - 1;
+    nc_tw_tick(&wheel);
+
+    check_int("callback-canceled timer inactive", target.active, 0);
+    check_int("callback-canceled timer did not fire",
+              tw_cancel_target_fired, 0);
+}
+
 /* ===== Buffer Pool Tests ===== */
 
 static void test_bufpool(void) {
@@ -217,6 +265,12 @@ static void test_conn_limiter_unlimited(void) {
     for (int i = 0; i < 10000; i++) {
         check_true("unlimited acquire", nc_conn_limiter_try_acquire(&lim) == 1);
     }
+    check_int("unlimited mode still tracks count",
+              nc_conn_limiter_count(&lim), 10000);
+    for (int i = 0; i < 10000; i++)
+        nc_conn_limiter_release(&lim);
+    check_int("unlimited releases balance count",
+              nc_conn_limiter_count(&lim), 0);
 }
 
 /* ===== Dynamic Buffer Tests ===== */
@@ -276,6 +330,9 @@ static void test_conn_ctx(void) {
 
     ctx.requests_served = 100;
     check_int("max reached", nc_conn_ctx_max_reached(&ctx), 1);
+    ctx.max_requests = 0;
+    check_int("zero max means unlimited",
+              nc_conn_ctx_max_reached(&ctx), 0);
 
     nc_conn_ctx_touch(&ctx);
     check_true("last_active updated", ctx.last_active_ms >= ctx.created_ms);
@@ -360,6 +417,16 @@ static void test_parse_addr(void) {
     check_int("parse null", nc_parse_addr(NULL, host, sizeof(host), &port), -1);
     check_int("parse empty", nc_parse_addr("", host, sizeof(host), &port), -1);
     check_int("parse no colon", nc_parse_addr("localhost", host, sizeof(host), &port), -1);
+    check_int("reject missing port",
+              nc_parse_addr("localhost:", host, sizeof(host), &port), -1);
+    check_int("reject nonnumeric port",
+              nc_parse_addr("localhost:http", host, sizeof(host), &port), -1);
+    check_int("reject overflowing port",
+              nc_parse_addr("localhost:65536", host, sizeof(host), &port), -1);
+    check_int("reject unbracketed IPv6",
+              nc_parse_addr("::1:443", host, sizeof(host), &port), -1);
+    check_int("reject truncated host",
+              nc_parse_addr("localhost:80", host, 4, &port), -1);
 }
 
 /* ===== Non-blocking / Socket Options Tests ===== */
@@ -409,9 +476,11 @@ static void test_poller(void) {
     check_true("poller got event", n >= 1);
     if (n >= 1) {
         check_true("event has read", (events[0].events & NC_EV_READ) != 0);
+        check_int("event preserves fd", (int)events[0].fd, fds[0]);
+        check_true("event preserves data", events[0].data == (void *)0x1234);
     }
 
-    nc_poller_del(p, fds[0]);
+    check_int("poller del", nc_poller_del(p, fds[0]), 0);
     close(fds[0]);
     close(fds[1]);
     nc_poller_destroy(p);
@@ -421,6 +490,9 @@ static void test_poller(void) {
 /* ===== Event Loop Tests ===== */
 
 static volatile int evloop_test_done = 0;
+static volatile int evloop_task_count = 0;
+static volatile int evloop_post_failed = 0;
+static int evloop_run_result = NC_EVLOOP_ERROR;
 
 static void evloop_stop_task(void *arg) {
     nc_evloop_t *loop = (nc_evloop_t *)arg;
@@ -428,10 +500,28 @@ static void evloop_stop_task(void *arg) {
     nc_evloop_stop(loop);
 }
 
-#ifndef _WIN32
 static void *evloop_thread(void *arg) {
     nc_evloop_t *loop = (nc_evloop_t *)arg;
-    nc_evloop_run(loop, NULL);
+    evloop_run_result = nc_evloop_run(loop, NULL);
+    return NULL;
+}
+
+static void evloop_count_task(void *arg) {
+    (void)arg;
+    evloop_task_count++;
+}
+
+typedef struct {
+    nc_evloop_t *loop;
+    int count;
+} evloop_producer_arg_t;
+
+static void *evloop_producer(void *arg) {
+    evloop_producer_arg_t *producer = (evloop_producer_arg_t *)arg;
+    for (int i = 0; i < producer->count; i++) {
+        if (nc_evloop_post(producer->loop, evloop_count_task, NULL) != 0)
+            nc_atomic_store(&evloop_post_failed, 1);
+    }
     return NULL;
 }
 
@@ -440,21 +530,63 @@ static void test_evloop(void) {
 
     nc_evloop_t *loop = nc_evloop_create();
     check_true("evloop created", loop != NULL);
+    if (!loop) return;
 
     evloop_test_done = 0;
+    evloop_task_count = 0;
+    evloop_post_failed = 0;
+    evloop_run_result = NC_EVLOOP_ERROR;
 
-    pthread_t th;
-    pthread_create(&th, NULL, evloop_thread, loop);
+    nc_thread_t loop_thread;
+    check_int("evloop thread started",
+              nc_thread_create(&loop_thread, evloop_thread, loop), 0);
 
-    usleep(50000);
-    nc_evloop_post(loop, evloop_stop_task, loop);
+    #define EVLOOP_PRODUCERS 4
+    #define EVLOOP_TASKS_PER_PRODUCER 500
+    nc_thread_t producers[EVLOOP_PRODUCERS];
+    evloop_producer_arg_t producer_args[EVLOOP_PRODUCERS];
+    for (int i = 0; i < EVLOOP_PRODUCERS; i++) {
+        producer_args[i].loop = loop;
+        producer_args[i].count = EVLOOP_TASKS_PER_PRODUCER;
+        check_int("producer started",
+                  nc_thread_create(&producers[i], evloop_producer,
+                                   &producer_args[i]), 0);
+    }
+    for (int i = 0; i < EVLOOP_PRODUCERS; i++)
+        nc_thread_join(producers[i]);
 
-    pthread_join(th, NULL);
+    check_int("stop task posted",
+              nc_evloop_post(loop, evloop_stop_task, loop), 0);
+    nc_thread_join(loop_thread);
     check_int("evloop task executed", evloop_test_done, 1);
+    check_int("all concurrent posts accepted", evloop_post_failed, 0);
+    check_int("all concurrent tasks executed", evloop_task_count,
+              EVLOOP_PRODUCERS * EVLOOP_TASKS_PER_PRODUCER);
+    check_int("evloop cancellation result", evloop_run_result,
+              NC_EVLOOP_CANCELLED);
 
-    nc_evloop_destroy(loop);
-}
+#ifndef _WIN32
+    char byte;
+    errno = 0;
+    ssize_t read_count = read(loop->wakeup_fds[0], &byte, 1);
+    check_true("wakeup pipe fully drained",
+               read_count < 0 &&
+               (errno == EAGAIN || errno == EWOULDBLOCK));
 #endif
+    nc_evloop_destroy(loop);
+
+    loop = nc_evloop_create();
+    check_true("deadline evloop created", loop != NULL);
+    if (loop) {
+        check_int("evloop deadline result",
+                  nc_evloop_run_for(loop, NULL, 20),
+                  NC_EVLOOP_DEADLINE);
+        nc_evloop_destroy(loop);
+    }
+
+    #undef EVLOOP_PRODUCERS
+    #undef EVLOOP_TASKS_PER_PRODUCER
+}
 
 /* ===== Thread Pool Tests ===== */
 
@@ -489,6 +621,7 @@ int main(void) {
     test_timer_wheel_cancel();
     test_timer_wheel_multiple();
     test_timer_wheel_reschedule();
+    test_timer_wheel_callback_cancel();
     test_bufpool();
     test_bufpool_stress();
     test_conn_limiter();
@@ -499,12 +632,12 @@ int main(void) {
     test_shutdown_ctl();
     test_parse_addr();
     test_threadpool();
+    test_evloop();
 
 #ifndef _WIN32
     test_reuseport();
     test_socket_helpers();
     test_poller();
-    test_evloop();
 #endif
 
     printf("\n--- net/internals: %d/%d passed ---\n", tests_passed, tests_run);

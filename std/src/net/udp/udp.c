@@ -42,7 +42,10 @@ static void sa_to_udp_addr(const struct sockaddr *sa, socklen_t salen,
  * ====================================================================== */
 
 neverc_udp_conn_t *neverc_udp_listen(const char *addr, const char **errp) {
-    nc_net_init();
+    if (nc_net_init() != 0) {
+        if (errp) *errp = "network initialization failed";
+        return NULL;
+    }
 
     char host[256] = {0};
     uint16_t port = 0;
@@ -100,7 +103,10 @@ neverc_udp_conn_t *neverc_udp_listen(const char *addr, const char **errp) {
 }
 
 neverc_udp_conn_t *neverc_udp_dial(const char *addr, const char **errp) {
-    nc_net_init();
+    if (nc_net_init() != 0) {
+        if (errp) *errp = "network initialization failed";
+        return NULL;
+    }
 
     char host[256] = {0};
     uint16_t port = 0;

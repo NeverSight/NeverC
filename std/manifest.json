@@ -2850,7 +2850,12 @@
         "neverc_context_without_cancel": "src/context/context.c",
         "neverc_context_with_timeout_cause": "src/context/context.c",
         "neverc_context_with_deadline_cause": "src/context/context.c",
-        "neverc_context_after_func": "src/context/context.c"
+        "neverc_context_after_func": "src/context/context.c",
+        "neverc_context_with_cancel_handle": "src/context/context.c",
+        "neverc_context_with_timeout_handle": "src/context/context.c",
+        "neverc_context_with_deadline_handle": "src/context/context.c",
+        "neverc_context_cancel_handle_cancel": "src/context/context.c",
+        "neverc_context_cancel_handle_free": "src/context/context.c"
       },
       "dot_methods": {
         "background": "neverc_context_background",
@@ -2869,6 +2874,11 @@
         "cause": "neverc_context_cause",
         "without_cancel": "neverc_context_without_cancel",
         "after_func": "neverc_context_after_func",
+        "with_cancel_handle": "neverc_context_with_cancel_handle",
+        "with_timeout_handle": "neverc_context_with_timeout_handle",
+        "with_deadline_handle": "neverc_context_with_deadline_handle",
+        "cancel_handle_cancel": "neverc_context_cancel_handle_cancel",
+        "cancel_handle_free": "neverc_context_cancel_handle_free",
         "free": "neverc_context_free"
       }
     },

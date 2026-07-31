@@ -440,6 +440,12 @@ TEST_F(StdLibTest, EmbeddedNetworkDotSyntax) {
   EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
 }
 
+TEST_F(StdLibTest, EmbeddedContextCancelHandleDotSyntax) {
+  auto r = compileAndRunStdTest("context_builtin", {}, {"-fbuiltin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
+
 // ===== HTTP Benchmark =====
 STD_TEST(http_bench, "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", "src/net/tcp/tcp.c", HTTP_TLS_DEPS)
 
@@ -459,6 +465,33 @@ STD_TEST(net_interface, "src/net/interface/interface.c")
 
 // ===== Net Internals (Timer Wheel, Buffer Pool, Poller, Event Loop) =====
 STD_TEST(net_internals, "src/net/tcp/tcp.c")
+#ifndef _WIN32
+TEST_F(StdLibTest, NetPollFallback) {
+  auto r = compileAndRunStdTest("net_internals",
+                                {"src/net/tcp/tcp.c"},
+                                {"-DNC_FORCE_POLL=1"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("ALL PASSED")) << "stdout: " << r.out;
+}
+#endif
+TEST_F(StdLibTest, NetInternalHeadersAreStandalone) {
+  auto r = compileAndRunStdTest("net_internal_headers", {},
+                                {"-fno-builtin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
+TEST_F(StdLibTest, NetThreadPoolAllocationFailure) {
+  auto r = compileAndRunStdTest("net_threadpool_oom", {},
+                                {"-fno-builtin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
+TEST_F(StdLibTest, NetEventLoopAllocationFailure) {
+  auto r = compileAndRunStdTest("net_eventloop_oom", {},
+                                {"-fno-builtin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
 
 // ===== Path =====
 STD_TEST(filepath, "src/path/filepath/filepath.c")

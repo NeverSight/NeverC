@@ -252,6 +252,7 @@ TEST(poller_io_uring_backend) {
     int n = nc_poller_wait(poller, events, 16, 1000);
     ASSERT_GE(n, 1);
     ASSERT_TRUE(events[0].events & NC_EV_READ);
+    ASSERT_EQ(events[0].fd, pipefd[0]);
     ASSERT_EQ(events[0].data, &dummy_data);
 
     nc_poller_del(poller, pipefd[0]);

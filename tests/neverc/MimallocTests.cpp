@@ -273,6 +273,23 @@ TEST_F(MimallocTest, FunctionOnlyConsumer) {
                      "-std=c11 -fbuiltin-mimalloc", 0);
 }
 
+TEST_F(MimallocTest, OptimizerIntroducedOverrideSurvivesAutoLTO) {
+  auto src = tmpFile("mimalloc_optimizer_introduced_override.c");
+  writeFile(src,
+            "typedef __SIZE_TYPE__ size_t;\n"
+            "extern void *realloc(void *, size_t);\n"
+            "extern void free(void *);\n"
+            "int main(void) {\n"
+            "  void *p = realloc((void *)0, 256);\n"
+            "  if (!p) return 1;\n"
+            "  free(p);\n"
+            "  return 0;\n"
+            "}\n");
+
+  compileRunAndCheck("mimalloc_optimizer_introduced_override", src.string(),
+                     "-std=c11 -O1", 0);
+}
+
 TEST_F(MimallocTest, RuntimeOverrideAliasesRemainCoalescibleOnELF) {
   auto src = tmpFile("mimalloc_weak_aliases.c");
   auto ir = tmpFile("mimalloc_weak_aliases.ll");

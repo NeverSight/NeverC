@@ -37,6 +37,7 @@ typedef enum {
 struct neverc_context {
     ctx_kind_t kind;
     neverc_context_t *parent;
+    volatile int32_t refs;
     volatile int32_t cancelled;
     int64_t deadline_ms;
     const char *key;
@@ -44,6 +45,27 @@ struct neverc_context {
     const char *cause;
     uint32_t cancel_slot; /* slot index + 1; zero means no cancel handle */
 };
+
+struct neverc_context_cancel_handle {
+    neverc_context_t *ctx;
+};
+
+static neverc_context_t *ctx_retain(neverc_context_t *ctx) {
+    if (ctx)
+        (void)NEVERC_ATOMIC_ADD32(&ctx->refs, 1);
+    return ctx;
+}
+
+static neverc_context_t *ctx_create(ctx_kind_t kind,
+                                    neverc_context_t *parent) {
+    neverc_context_t *ctx = (neverc_context_t *)calloc(1, sizeof(*ctx));
+    if (!ctx)
+        return NULL;
+    ctx->kind = kind;
+    ctx->refs = 1;
+    ctx->parent = ctx_retain(parent);
+    return ctx;
+}
 
 static void ctx_cancel_impl(neverc_context_t *ctx) {
     if (ctx) NEVERC_ATOMIC_STORE32((int32_t *)&ctx->cancelled, 1);
@@ -145,23 +167,18 @@ static int bind_cancel_func(neverc_context_t *ctx,
 }
 
 neverc_context_t *neverc_context_background(void) {
-    neverc_context_t *ctx = (neverc_context_t *)calloc(1, sizeof(*ctx));
-    if (!ctx) return NULL;
-    ctx->kind = CTX_BACKGROUND;
-    return ctx;
+    return ctx_create(CTX_BACKGROUND, NULL);
 }
 
 neverc_context_t *neverc_context_with_cancel(neverc_context_t *parent,
                                               neverc_cancel_func_t *cancel_out) {
-    neverc_context_t *ctx = (neverc_context_t *)calloc(1, sizeof(*ctx));
+    neverc_context_t *ctx = ctx_create(CTX_CANCEL, parent);
     if (!ctx) {
         if (cancel_out) *cancel_out = NULL;
         return NULL;
     }
-    ctx->kind = CTX_CANCEL;
-    ctx->parent = parent;
     if (bind_cancel_func(ctx, cancel_out) != 0) {
-        free(ctx);
+        neverc_context_free(ctx);
         return NULL;
     }
     return ctx;
@@ -179,19 +196,75 @@ neverc_context_t *neverc_context_with_cancel_cause(neverc_context_t *parent,
     return ctx;
 }
 
+static neverc_context_t *ctx_with_cancel_handle(
+    ctx_kind_t kind, neverc_context_t *parent, int64_t deadline_ms,
+    neverc_context_cancel_handle_t **cancel_out) {
+    if (!cancel_out)
+        return NULL;
+    *cancel_out = NULL;
+
+    neverc_context_t *ctx = ctx_create(kind, parent);
+    if (!ctx)
+        return NULL;
+    ctx->deadline_ms = deadline_ms;
+
+    neverc_context_cancel_handle_t *handle =
+        (neverc_context_cancel_handle_t *)calloc(1, sizeof(*handle));
+    if (!handle) {
+        neverc_context_free(ctx);
+        return NULL;
+    }
+    handle->ctx = ctx_retain(ctx);
+    *cancel_out = handle;
+    return ctx;
+}
+
+neverc_context_t *neverc_context_with_cancel_handle(
+    neverc_context_t *parent, neverc_context_cancel_handle_t **cancel_out) {
+    return ctx_with_cancel_handle(CTX_CANCEL, parent, 0, cancel_out);
+}
+
+neverc_context_t *neverc_context_with_timeout_handle(
+    neverc_context_t *parent, int64_t timeout_ms,
+    neverc_context_cancel_handle_t **cancel_out) {
+    return ctx_with_cancel_handle(CTX_TIMEOUT, parent, now_ms() + timeout_ms,
+                                  cancel_out);
+}
+
+neverc_context_t *neverc_context_with_deadline_handle(
+    neverc_context_t *parent, int64_t deadline_ms,
+    neverc_context_cancel_handle_t **cancel_out) {
+    return ctx_with_cancel_handle(CTX_TIMEOUT, parent, deadline_ms,
+                                  cancel_out);
+}
+
+void neverc_context_cancel_handle_cancel(
+    neverc_context_cancel_handle_t *handle) {
+    if (handle)
+        ctx_cancel_impl(handle->ctx);
+}
+
+void neverc_context_cancel_handle_free(
+    neverc_context_cancel_handle_t *handle) {
+    if (!handle)
+        return;
+    neverc_context_t *ctx = handle->ctx;
+    handle->ctx = NULL;
+    free(handle);
+    neverc_context_free(ctx);
+}
+
 neverc_context_t *neverc_context_with_timeout(neverc_context_t *parent,
                                                int64_t timeout_ms,
                                                neverc_cancel_func_t *cancel_out) {
-    neverc_context_t *ctx = (neverc_context_t *)calloc(1, sizeof(*ctx));
+    neverc_context_t *ctx = ctx_create(CTX_TIMEOUT, parent);
     if (!ctx) {
         if (cancel_out) *cancel_out = NULL;
         return NULL;
     }
-    ctx->kind = CTX_TIMEOUT;
-    ctx->parent = parent;
     ctx->deadline_ms = now_ms() + timeout_ms;
     if (bind_cancel_func(ctx, cancel_out) != 0) {
-        free(ctx);
+        neverc_context_free(ctx);
         return NULL;
     }
     return ctx;
@@ -200,16 +273,14 @@ neverc_context_t *neverc_context_with_timeout(neverc_context_t *parent,
 neverc_context_t *neverc_context_with_deadline(neverc_context_t *parent,
                                                 int64_t deadline_ms,
                                                 neverc_cancel_func_t *cancel_out) {
-    neverc_context_t *ctx = (neverc_context_t *)calloc(1, sizeof(*ctx));
+    neverc_context_t *ctx = ctx_create(CTX_TIMEOUT, parent);
     if (!ctx) {
         if (cancel_out) *cancel_out = NULL;
         return NULL;
     }
-    ctx->kind = CTX_TIMEOUT;
-    ctx->parent = parent;
     ctx->deadline_ms = deadline_ms;
     if (bind_cancel_func(ctx, cancel_out) != 0) {
-        free(ctx);
+        neverc_context_free(ctx);
         return NULL;
     }
     return ctx;
@@ -235,20 +306,16 @@ neverc_context_t *neverc_context_with_deadline_cause(neverc_context_t *parent,
 
 neverc_context_t *neverc_context_with_value(neverc_context_t *parent,
                                              const char *key, const void *value) {
-    neverc_context_t *ctx = (neverc_context_t *)calloc(1, sizeof(*ctx));
+    neverc_context_t *ctx = ctx_create(CTX_VALUE, parent);
     if (!ctx) return NULL;
-    ctx->kind = CTX_VALUE;
-    ctx->parent = parent;
     ctx->key = key;
     ctx->value = value;
     return ctx;
 }
 
 neverc_context_t *neverc_context_without_cancel(neverc_context_t *parent) {
-    neverc_context_t *ctx = (neverc_context_t *)calloc(1, sizeof(*ctx));
+    neverc_context_t *ctx = ctx_create(CTX_WITHOUT_CANCEL, parent);
     if (!ctx) return NULL;
-    ctx->kind = CTX_WITHOUT_CANCEL;
-    ctx->parent = parent;
     return ctx;
 }
 
@@ -303,9 +370,15 @@ static void ctx_stop_after_funcs(neverc_context_t *ctx);
 void neverc_context_free(neverc_context_t *ctx) {
     if (!ctx)
         return;
+    if (NEVERC_ATOMIC_ADD32(&ctx->refs, -1) != 0)
+        return;
+
+    neverc_context_t *parent = ctx->parent;
+    ctx->parent = NULL;
     ctx_stop_after_funcs(ctx);
     release_cancel_slot(ctx);
     free(ctx);
+    neverc_context_free(parent);
 }
 
 /*

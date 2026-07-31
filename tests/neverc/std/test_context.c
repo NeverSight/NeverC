@@ -221,6 +221,97 @@ static void test_cancel_slot_exhaustion_fails_atomically(void) {
     neverc_context_free(bg);
 }
 
+static void test_explicit_cancel_handles_have_no_global_slot_limit(void) {
+    printf("[explicit_cancel_handles_scale]\n");
+    neverc_context_t *bg = neverc_context_background();
+    neverc_context_t *contexts[96] = {0};
+    neverc_context_cancel_handle_t *handles[96] = {0};
+
+    for (int i = 0; i < 96; i++) {
+        contexts[i] =
+            neverc_context_with_cancel_handle(bg, &handles[i]);
+        ASSERT_TRUE(contexts[i] != NULL);
+        ASSERT_TRUE(handles[i] != NULL);
+    }
+
+    for (int i = 0; i < 96; i++) {
+        neverc_context_cancel_handle_cancel(handles[i]);
+        ASSERT_INT_EQ(neverc_context_done(contexts[i]), 1);
+        neverc_context_cancel_handle_free(handles[i]);
+        neverc_context_free(contexts[i]);
+    }
+
+    neverc_context_free(bg);
+}
+
+static void test_explicit_timeout_and_deadline_handles(void) {
+    printf("[explicit_timeout_deadline_handles]\n");
+    neverc_context_t *bg = neverc_context_background();
+    neverc_context_cancel_handle_t *timeout_cancel = NULL;
+    neverc_context_cancel_handle_t *deadline_cancel = NULL;
+
+    neverc_context_t *timeout = neverc_context_with_timeout_handle(
+        bg, 60000, &timeout_cancel);
+    ASSERT_TRUE(timeout != NULL);
+    ASSERT_TRUE(timeout_cancel != NULL);
+    ASSERT_INT_EQ(neverc_context_done(timeout), 0);
+    neverc_context_cancel_handle_cancel(timeout_cancel);
+    ASSERT_INT_EQ(neverc_context_done(timeout), 1);
+
+    neverc_context_t *deadline = neverc_context_with_deadline_handle(
+        bg, INT64_MAX, &deadline_cancel);
+    ASSERT_TRUE(deadline != NULL);
+    ASSERT_TRUE(deadline_cancel != NULL);
+    ASSERT_INT_EQ(neverc_context_done(deadline), 0);
+    neverc_context_cancel_handle_cancel(deadline_cancel);
+    ASSERT_INT_EQ(neverc_context_done(deadline), 1);
+
+    ASSERT_TRUE(neverc_context_with_timeout_handle(bg, 1, NULL) == NULL);
+    ASSERT_TRUE(neverc_context_with_deadline_handle(bg, 1, NULL) == NULL);
+
+    neverc_context_cancel_handle_free(deadline_cancel);
+    neverc_context_free(deadline);
+    neverc_context_cancel_handle_free(timeout_cancel);
+    neverc_context_free(timeout);
+    neverc_context_free(bg);
+}
+
+static void test_children_and_cancel_handles_retain_context_lifetime(void) {
+    printf("[context_parent_lifetime]\n");
+    neverc_context_t *bg = neverc_context_background();
+    neverc_context_cancel_handle_t *handle = NULL;
+    neverc_context_t *parent =
+        neverc_context_with_cancel_handle(bg, &handle);
+    neverc_context_t *child =
+        neverc_context_with_value(parent, "retained", "yes");
+    uintptr_t parent_addr = (uintptr_t)parent;
+
+    neverc_context_free(parent);
+    neverc_context_free(bg);
+
+    neverc_context_t *churn[128] = {0};
+    int parent_storage_reused = 0;
+    for (int i = 0; i < 128; i++) {
+        churn[i] = neverc_context_background();
+        if ((uintptr_t)churn[i] == parent_addr)
+            parent_storage_reused = 1;
+    }
+
+    ASSERT_INT_EQ(parent_storage_reused, 0);
+    neverc_context_cancel_handle_cancel(handle);
+    ASSERT_INT_EQ(neverc_context_done(child), 1);
+    const char *retained =
+        (const char *)neverc_context_value(child, "retained");
+    ASSERT_TRUE(retained != NULL);
+    if (retained)
+        ASSERT_TRUE(strcmp(retained, "yes") == 0);
+
+    neverc_context_free(child);
+    neverc_context_cancel_handle_free(handle);
+    for (int i = 0; i < 128; i++)
+        neverc_context_free(churn[i]);
+}
+
 static void test_without_cancel(void) {
     printf("[without_cancel]\n");
     neverc_context_t *bg = neverc_context_background();
@@ -432,6 +523,9 @@ int main(void) {
     test_cancel_handle_not_rebound_while_context_alive();
     test_cancel_slots_released_on_free();
     test_cancel_slot_exhaustion_fails_atomically();
+    test_explicit_cancel_handles_have_no_global_slot_limit();
+    test_explicit_timeout_and_deadline_handles();
+    test_children_and_cancel_handles_retain_context_lifetime();
     test_without_cancel();
     test_without_cancel_value();
     test_with_cancel_cause();

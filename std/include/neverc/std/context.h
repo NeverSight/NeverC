@@ -17,6 +17,7 @@ extern "C" {
 #endif
 
 typedef struct neverc_context neverc_context_t;
+typedef struct neverc_context_cancel_handle neverc_context_cancel_handle_t;
 typedef void (*neverc_cancel_func_t)(void);
 
 neverc_context_t *neverc_context_background(void);
@@ -32,6 +33,23 @@ neverc_context_t *neverc_context_with_cancel(neverc_context_t *parent,
 neverc_context_t *neverc_context_with_cancel_cause(neverc_context_t *parent,
                                                     neverc_cancel_func_t *cancel_out,
                                                     const char *cause);
+
+/* Preferred cancellation API for new code. Unlike the legacy no-argument
+ * callback, explicit handles do not use a process-global trampoline slot.
+ * The returned context and handle each own a reference; release both with
+ * neverc_context_free() and neverc_context_cancel_handle_free(). */
+neverc_context_t *neverc_context_with_cancel_handle(
+    neverc_context_t *parent, neverc_context_cancel_handle_t **cancel_out);
+neverc_context_t *neverc_context_with_timeout_handle(
+    neverc_context_t *parent, int64_t timeout_ms,
+    neverc_context_cancel_handle_t **cancel_out);
+neverc_context_t *neverc_context_with_deadline_handle(
+    neverc_context_t *parent, int64_t deadline_ms,
+    neverc_context_cancel_handle_t **cancel_out);
+void neverc_context_cancel_handle_cancel(
+    neverc_context_cancel_handle_t *handle);
+void neverc_context_cancel_handle_free(
+    neverc_context_cancel_handle_t *handle);
 
 neverc_context_t *neverc_context_with_timeout(neverc_context_t *parent,
                                                int64_t timeout_ms,

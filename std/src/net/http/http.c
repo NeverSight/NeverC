@@ -7,7 +7,7 @@
 #include <time.h>
 
 typedef struct neverc_http_server neverc_http_server_t;
-static neverc_http_server_t *g_server_ptr;
+static neverc_http_server_t *volatile g_server_ptr;
 static nc_conn_limiter_t g_conn_limiter = {0, 0};
 
 #ifndef _WIN32
@@ -1405,42 +1405,44 @@ static void worker_sweep_idle(http_worker_t *w) {
 static void *worker_thread_func(void *arg) {
     http_worker_t *w = (http_worker_t *)arg;
     nc_evloop_t *loop = w->loop;
-    loop->running = 1;
+    if (!nc_atomic_cas(&loop->running, 0, 1))
+        return NULL;
     nc_event_t events[NC_EVLOOP_MAX_EVENTS];
     uint64_t last_sweep = nc_monotonic_ms();
 
-    while (loop->running) {
+    for (;;) {
+        if (nc_atomic_load(&loop->stop_requested)) {
+            nc_evloop_dispatch_pending(loop);
+            break;
+        }
+
         int n = nc_poller_wait(loop->poller, events, NC_EVLOOP_MAX_EVENTS, 100);
-
-        /* Process pending tasks */
-        nc_mutex_lock(&loop->pending_lock);
-        int pc = loop->pending_count;
-        nc_task_t *ptasks = NULL;
-        if (pc > 0) {
-            ptasks = (nc_task_t *)malloc((size_t)pc * sizeof(nc_task_t));
-            memcpy(ptasks, loop->pending, (size_t)pc * sizeof(nc_task_t));
-            loop->pending_count = 0;
+        if (n < 0) {
+#ifndef _WIN32
+            if (errno == EINTR) continue;
+#endif
+            nc_atomic_store(&loop->stop_requested, 1);
+            break;
         }
-        nc_mutex_unlock(&loop->pending_lock);
 
-        if (ptasks) {
-            for (int i = 0; i < pc; i++)
-                ptasks[i].func(ptasks[i].arg);
-            free(ptasks);
+        /* Drain the cross-thread signal before taking the task snapshot. */
+        for (int i = 0; i < n; i++) {
+            if (events[i].data == &loop->wakeup_marker) {
+                nc_evloop_drain_wakeup(loop);
+                events[i].data = NULL;
+            }
         }
+
+        nc_evloop_dispatch_pending(loop);
+        if (nc_atomic_load(&loop->stop_requested))
+            break;
 
         /* Process I/O events */
         for (int i = 0; i < n; i++) {
-#ifndef _WIN32
-            if (events[i].fd == loop->wakeup_fds[0]) {
-                char drain[64];
-                while (read(loop->wakeup_fds[0], drain, sizeof(drain)) > 0)
-                    ;
-                continue;
-            }
-#endif
             if (events[i].data == NULL) continue;
             worker_event_handler(loop, &events[i]);
+            if (nc_atomic_load(&loop->stop_requested))
+                break;
         }
 
         /* Sweep idle connections every 5 seconds */
@@ -1450,6 +1452,13 @@ static void *worker_thread_func(void *arg) {
             last_sweep = now;
         }
     }
+#ifndef _WIN32
+    if (nc_atomic_load(&loop->wakeup_pending))
+        nc_evloop_drain_wakeup(loop);
+#else
+    nc_atomic_store(&loop->wakeup_pending, 0);
+#endif
+    nc_atomic_store(&loop->running, 0);
     return NULL;
 }
 
@@ -1457,15 +1466,19 @@ static void distribute_conn_task(void *arg) {
     http_conn_t *hc = (http_conn_t *)arg;
     http_worker_t *worker = hc->worker;
 
-#if !(defined(__linux__) && defined(SOCK_NONBLOCK))
-    nc_set_nonblocking(hc->fd);
-#endif
     nc_set_nodelay(hc->fd);
     nc_set_keepalive(hc->fd);
     nc_set_quickack(hc->fd);
 
+    if (nc_poller_add(hc->loop->poller, hc->fd, NC_EV_READ, hc) != 0) {
+        nc_sock_close(hc->fd);
+        hc->fd = NC_INVALID_SOCK;
+        nc_conn_limiter_release(&g_conn_limiter);
+        http_conn_free(hc);
+        nc_atomic_dec(&worker->conn_count);
+        return;
+    }
     conn_list_add(&worker->conns, hc);
-    nc_poller_add(hc->loop->poller, hc->fd, NC_EV_READ, hc);
 
     /*
      * Edge-triggered pollers (kqueue EV_CLEAR / epoll EPOLLET) may not fire
@@ -1484,9 +1497,10 @@ static void distribute_conn_task(void *arg) {
 /* Accept loop event handler */
 static void accept_event_handler(nc_evloop_t *loop, nc_event_t *ev) {
     neverc_http_server_t *srv = (neverc_http_server_t *)ev->data;
-    if (!srv) return;
+    if (!srv || !nc_atomic_load(&srv->running)) return;
 
-    for (;;) {
+    while (nc_atomic_load(&srv->running) &&
+           !nc_atomic_load(&loop->stop_requested)) {
         struct sockaddr_storage client_addr;
         socklen_t client_len = sizeof(client_addr);
         nc_sock_t cfd = nc_accept_nonblock(srv->listen_fd,
@@ -1536,8 +1550,14 @@ static void accept_event_handler(nc_evloop_t *loop, nc_event_t *ev) {
             continue;
         }
 
-        nc_evloop_post(worker->loop, distribute_conn_task, hc);
         nc_atomic_inc(&worker->conn_count);
+        if (nc_evloop_post(worker->loop, distribute_conn_task, hc) != 0) {
+            nc_atomic_dec(&worker->conn_count);
+            nc_sock_close(hc->fd);
+            hc->fd = NC_INVALID_SOCK;
+            http_conn_free(hc);
+            nc_conn_limiter_release(&g_conn_limiter);
+        }
     }
     (void)loop;
 }
@@ -1610,7 +1630,10 @@ int neverc_http_active_connections(void) {
 }
 
 int neverc_http_listen_and_serve(const char *addr, neverc_http_mux_t *mux) {
-    nc_net_init();
+    if (nc_net_init() != 0)
+        return -1;
+    if (!nc_poller_supports_readiness())
+        return -1;
 
     if (!mux) {
         ensure_default_mux();
@@ -1661,7 +1684,11 @@ int neverc_http_listen_and_serve(const char *addr, neverc_http_mux_t *mux) {
         return -1;
     }
 
-    nc_set_nonblocking(lfd);
+    if (nc_set_nonblocking(lfd) != 0) {
+        nc_sock_close(lfd);
+        freeaddrinfo(result);
+        return -1;
+    }
     freeaddrinfo(result);
 
     /* Record the actual bound port (useful for :0 auto-assignment) */
@@ -1702,13 +1729,21 @@ int neverc_http_listen_and_serve(const char *addr, neverc_http_mux_t *mux) {
 
     /* Create worker threads */
     srv->workers = (http_worker_t *)calloc((size_t)nw, sizeof(http_worker_t));
+    if (!srv->workers) {
+        free(srv);
+        nc_sock_close(lfd);
+        return -1;
+    }
     for (int i = 0; i < nw; i++) {
         conn_list_init(&srv->workers[i].conns);
         srv->workers[i].worker_idx = i;
         srv->workers[i].loop = nc_evloop_create();
         if (!srv->workers[i].loop) {
-            for (int j = 0; j < i; j++)
+            for (int j = 0; j < i; j++) {
                 nc_evloop_destroy(srv->workers[j].loop);
+                nc_mutex_destroy(&srv->workers[j].conns.lock);
+            }
+            nc_mutex_destroy(&srv->workers[i].conns.lock);
             free(srv->workers);
             free(srv);
             nc_sock_close(lfd);
@@ -1719,24 +1754,54 @@ int neverc_http_listen_and_serve(const char *addr, neverc_http_mux_t *mux) {
     /* Create accept loop */
     srv->accept_loop = nc_evloop_create();
     if (!srv->accept_loop) {
-        for (int i = 0; i < nw; i++)
+        for (int i = 0; i < nw; i++) {
             nc_evloop_destroy(srv->workers[i].loop);
+            nc_mutex_destroy(&srv->workers[i].conns.lock);
+        }
         free(srv->workers);
         free(srv);
         nc_sock_close(lfd);
         return -1;
     }
 
-    nc_poller_add(srv->accept_loop->poller, lfd, NC_EV_READ, srv);
-
-    srv->running = 1;
-    g_server_ptr = srv;
+    if (nc_poller_add(srv->accept_loop->poller, lfd, NC_EV_READ, srv) != 0) {
+        nc_evloop_destroy(srv->accept_loop);
+        for (int i = 0; i < nw; i++) {
+            nc_evloop_destroy(srv->workers[i].loop);
+            nc_mutex_destroy(&srv->workers[i].conns.lock);
+        }
+        free(srv->workers);
+        free(srv);
+        nc_sock_close(lfd);
+        return -1;
+    }
 
     /* Start worker threads */
+    int started_workers = 0;
     for (int i = 0; i < nw; i++) {
-        nc_thread_create(&srv->workers[i].thread, worker_thread_func,
-                          &srv->workers[i]);
+        if (nc_thread_create(&srv->workers[i].thread, worker_thread_func,
+                             &srv->workers[i]) != 0)
+            break;
+        started_workers++;
     }
+    if (started_workers != nw) {
+        for (int i = 0; i < started_workers; i++)
+            nc_evloop_stop(srv->workers[i].loop);
+        for (int i = 0; i < started_workers; i++)
+            nc_thread_join(srv->workers[i].thread);
+        nc_evloop_destroy(srv->accept_loop);
+        for (int i = 0; i < nw; i++) {
+            nc_evloop_destroy(srv->workers[i].loop);
+            nc_mutex_destroy(&srv->workers[i].conns.lock);
+        }
+        free(srv->workers);
+        free(srv);
+        nc_sock_close(lfd);
+        return -1;
+    }
+
+    nc_atomic_store(&srv->running, 1);
+    nc_atomic_ptr_store(&g_server_ptr, srv);
 
     /* Run accept loop on this thread (blocks until neverc_http_shutdown) */
     nc_evloop_run(srv->accept_loop, accept_event_handler);
@@ -1762,21 +1827,21 @@ int neverc_http_listen_and_serve(const char *addr, neverc_http_mux_t *mux) {
     nc_evloop_destroy(srv->accept_loop);
     if (srv->listen_fd != NC_INVALID_SOCK)
         nc_sock_close(srv->listen_fd);
+    nc_atomic_ptr_cas(&g_server_ptr, srv, NULL);
     free(srv->workers);
     free(srv);
-    g_server_ptr = NULL;
 
     return 0;
 }
 
 void neverc_http_shutdown(void) {
-    neverc_http_server_t *srv = g_server_ptr;
+    neverc_http_server_t *srv =
+        (neverc_http_server_t *)nc_atomic_ptr_exchange(
+            &g_server_ptr, NULL);
     if (!srv) return;
-    srv->running = 0;
+    nc_atomic_store(&srv->running, 0);
 
-    /* Stop accepting new connections */
-    nc_sock_close(srv->listen_fd);
-    srv->listen_fd = NC_INVALID_SOCK;
+    /* Wake the accept poll without racing a cross-thread close/reuse. */
     nc_evloop_stop(srv->accept_loop);
 
     /* Let workers drain in-flight requests before stopping them.
@@ -1999,14 +2064,14 @@ static void https_handle_connection(void *arg) {
 done:
     nc_buf_free(&req_buf);
     neverc_tls_close(tls);
-    if (g_https_server)
-        nc_conn_limiter_release(&g_conn_limiter);
+    nc_conn_limiter_release(&g_conn_limiter);
 }
 
 int neverc_http_listen_and_serve_tls(const char *addr, neverc_http_mux_t *mux,
                                       const char *cert_file,
                                       const char *key_file) {
-    nc_net_init();
+    if (nc_net_init() != 0)
+        return -1;
 
     if (!mux) {
         ensure_default_mux();

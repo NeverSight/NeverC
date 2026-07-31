@@ -395,7 +395,8 @@ static neverc_http_response_t *do_request(const char *method,
             "implemented");
     }
 
-    nc_net_init();
+    if (nc_net_init() != 0)
+        return make_error_response("network initialization failed");
 
     char connect_addr[280];
     snprintf(connect_addr, sizeof(connect_addr), "%s:%d", url->host, url->port);

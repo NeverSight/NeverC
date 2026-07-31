@@ -36,6 +36,15 @@ bool isMallocOverrideSymbol(StringRef Name) {
   return false;
 }
 
+bool isProcessAllocatorOverrideSymbol(StringRef Name) {
+#define NEVERC_MALLOC_OVERRIDE_EXACT(sym)                                      \
+  if (Name == #sym)                                                            \
+    return true;
+#define NEVERC_MALLOC_OVERRIDE_PREFIX(pfx)
+#include "neverc/Foundation/Builtin/MallocOverrideSymbols.def"
+  return false;
+}
+
 Function *getOrCreateOnceWrapper(Module &M, Function &Target, StringRef Role) {
   if (!Target.getReturnType()->isVoidTy() || Target.arg_size() != 0)
     return &Target;
@@ -199,6 +208,7 @@ PreservedAnalyses MimallocRuntimeLinkerPass::run(Module &M,
     return hasRuntimeDefinitionTag(GV, MimallocRuntimeMetadata);
   };
 
+  SmallVector<GlobalValue *, 64> AllocatorOverrides;
   for (Function &F : M) {
     if (!IsMimallocFn(F))
       continue;
@@ -206,6 +216,8 @@ PreservedAnalyses MimallocRuntimeLinkerPass::run(Module &M,
       // Keep allocator entry points externally visible, but make independently
       // embedded copies coalescible across auto/full/no-LTO translation units.
       makeWeakODR(F, GlobalValue::DefaultVisibility);
+      if (isProcessAllocatorOverrideSymbol(F.getName()))
+        AllocatorOverrides.push_back(&F);
     } else {
       makeLinkOnceODR(F);
     }
@@ -225,6 +237,7 @@ PreservedAnalyses MimallocRuntimeLinkerPass::run(Module &M,
       continue;
     GA.setLinkage(GlobalValue::WeakODRLinkage);
     GA.setVisibility(GlobalValue::DefaultVisibility);
+    AllocatorOverrides.push_back(&GA);
   }
 
   for (GlobalVariable &GV : M.globals()) {
@@ -262,6 +275,12 @@ PreservedAnalyses MimallocRuntimeLinkerPass::run(Module &M,
     return false;
   });
 
+  // Auto-LTO deliberately leaves pre-link input at O0. The post-link optimizer
+  // can therefore introduce an allocator call only after LTO symbol
+  // resolution, for example by folding realloc(NULL, n) to malloc(n). Preserve
+  // every process override through that boundary so such calls cannot become
+  // unresolved and so native libraries still bind to the embedded allocator.
+  appendToUsed(M, AllocatorOverrides);
   appendToUsed(M, SectionAnchored);
 
   clearRuntimeDefinitionTags(M, MimallocRuntimeMetadata);

@@ -55,7 +55,10 @@ static void addr_to_string(const struct sockaddr *sa, socklen_t salen,
  * ====================================================================== */
 
 neverc_tcp_listener_t *neverc_tcp_listen(const char *addr, const char **errp) {
-    nc_net_init();
+    if (nc_net_init() != 0) {
+        if (errp) *errp = "network initialization failed";
+        return NULL;
+    }
 
     char host[256] = {0};
     uint16_t port = 0;
@@ -172,7 +175,10 @@ int neverc_tcp_listener_addr(neverc_tcp_listener_t *ln,
  * ====================================================================== */
 
 neverc_tcp_conn_t *neverc_tcp_dial(const char *addr, const char **errp) {
-    nc_net_init();
+    if (nc_net_init() != 0) {
+        if (errp) *errp = "network initialization failed";
+        return NULL;
+    }
 
     char host[256] = {0};
     uint16_t port = 0;
@@ -439,7 +445,7 @@ int neverc_tcp_set_write_buffer(neverc_tcp_conn_t *conn, int bytes) {
 
 int neverc_tcp_pipe(neverc_tcp_conn_t **a, neverc_tcp_conn_t **b) {
     if (!a || !b) return -1;
-    nc_net_init();
+    if (nc_net_init() != 0) return -1;
 
 #ifdef _WIN32
     SOCKET sv[2];
