@@ -391,6 +391,7 @@ endif()
 add_executable(neverc-plugin-target-schema-gen
   ${CMAKE_CURRENT_SOURCE_DIR}/../../../utils/plugin-api/TargetSchemaGen.cpp
 )
+llvm_update_compile_flags(neverc-plugin-target-schema-gen)
 target_link_libraries(neverc-plugin-target-schema-gen PRIVATE
   ${_neverc_target_schema_gen_libs}
 )

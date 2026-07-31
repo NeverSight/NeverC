@@ -213,6 +213,15 @@ size_t csupport_cl_format_size_suffix(uint64_t bytes, char *out,
 size_t csupport_cl_expand_cfgdir(const char *arg, size_t arg_len,
                                  const char *base_path, size_t base_len,
                                  char *out, size_t out_cap);
+size_t csupport_cl_expand_cfg_dir(const char *arg, size_t arg_len,
+                                  const char *base_path, size_t base_len,
+                                  char *out, size_t out_cap);
+int csupport_cl_edit_distance_impl(const char *a, size_t a_len, const char *b,
+                                   size_t b_len, int allow_replacements,
+                                   unsigned max_distance);
+size_t csupport_cl_format_option_pair(
+    const char *name, size_t name_len, const char *desc, size_t desc_len,
+    unsigned indent, unsigned max_width, char *out, size_t out_cap);
 
 /* Compare two option names lexicographically (for sorting). */
 int csupport_cl_opt_name_compare(const char *a, const char *b);
@@ -306,52 +315,6 @@ size_t csupport_cl_format_version_printer(const char *program_name,
 #include "llvm/Support/StringSaver.h"
 #include "llvm/Support/VirtualFileSystem.h"
 #include "llvm/Support/raw_ostream.h"
-
-//===----------------------------------------------------------------------===//
-// Template instantiations and anchors.
-//
-namespace llvm {
-namespace cl {
-template class basic_parser<bool>;
-template class basic_parser<boolOrDefault>;
-template class basic_parser<int>;
-template class basic_parser<long>;
-template class basic_parser<long long>;
-template class basic_parser<unsigned>;
-template class basic_parser<unsigned long>;
-template class basic_parser<unsigned long long>;
-template class basic_parser<double>;
-template class basic_parser<float>;
-template class basic_parser<string_t>;
-template class basic_parser<char>;
-
-template class opt<unsigned>;
-template class opt<int>;
-template class opt<string_t>;
-template class opt<char>;
-template class opt<bool>;
-
-// Pin the vtables to this file.
-inline void GenericOptionValue::anchor() {}
-inline void OptionValue<boolOrDefault>::anchor() {}
-inline void OptionValue<string_t>::anchor() {}
-inline void Option::anchor() {}
-inline void basic_parser_impl::anchor() {}
-inline void parser<bool>::anchor() {}
-inline void parser<boolOrDefault>::anchor() {}
-inline void parser<int>::anchor() {}
-inline void parser<long>::anchor() {}
-inline void parser<long long>::anchor() {}
-inline void parser<unsigned>::anchor() {}
-inline void parser<unsigned long>::anchor() {}
-inline void parser<unsigned long long>::anchor() {}
-inline void parser<double>::anchor() {}
-inline void parser<float>::anchor() {}
-inline void parser<string_t>::anchor() {}
-inline void parser<char>::anchor() {}
-
-} // namespace cl
-} // namespace llvm
 
 //===----------------------------------------------------------------------===//
 

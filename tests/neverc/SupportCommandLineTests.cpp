@@ -13,6 +13,7 @@
 #include "llvm/Support/Allocator.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/StringSaver.h"
+#include "llvm/Support/WithColor.h"
 
 #include <gtest/gtest.h>
 
@@ -32,6 +33,16 @@ struct TokenStorage {
 };
 
 } // namespace
+
+TEST(SupportCommandLineTest, LazyColorOptionHasAValidPolymorphicLifetime) {
+  initWithColorOptions();
+
+  auto &Options = cl::getRegisteredOptions();
+  auto Color = Options.find("color");
+  ASSERT_NE(Color, Options.end());
+  EXPECT_EQ(Color->second->ArgStr, "color");
+  EXPECT_EQ(Color->second->getValueExpectedFlag(), cl::ValueOptional);
+}
 
 TEST(SupportCommandLineTest, GNUTokenizerPreservesLongAndEmptyArguments) {
   TokenStorage Storage;
@@ -270,6 +281,20 @@ TEST(SupportCommandLineTest, CStringRangesRejectOverflowingOffsets) {
   EXPECT_EQ(StringRef(Tail.data, Tail.length), "bc");
 }
 
+TEST(SupportCommandLineTest, CanonicalEmptyCInputsNeedNoBackingByte) {
+  char Value[2] = {'x', '\0'};
+
+  EXPECT_EQ(csupport_cl_tokenize_command_line(nullptr, 0, nullptr, 0), 0);
+  EXPECT_TRUE(csupport_cl_match_prefix(nullptr, 0, nullptr, 0));
+  EXPECT_TRUE(csupport_cl_is_arg_equal(nullptr, 0, nullptr, 0));
+  EXPECT_EQ(csupport_cl_extract_option_value(nullptr, 0, Value,
+                                             sizeof(Value)),
+            0u);
+  EXPECT_STREQ(Value, "");
+  EXPECT_FALSE(csupport_cl_option_has_value(nullptr, 0));
+  EXPECT_EQ(csupport_cl_compare_options(nullptr, 0, nullptr, 0), 0);
+}
+
 TEST(SupportCommandLineTest, CStringDistanceHasNoPrivateLengthLimit) {
   std::string Left(512, 'a');
   std::string Right = Left;
@@ -279,4 +304,26 @@ TEST(SupportCommandLineTest, CStringDistanceHasNoPrivateLengthLimit) {
                 Left.data(), Left.size(), Right.data(), Right.size(),
                 /*allow_replacements=*/1, /*max_dist=*/0),
             1);
+  EXPECT_EQ(csupport_cl_edit_distance_impl(
+                Left.data(), Left.size(), Right.data(), Right.size(),
+                /*allow_replacements=*/1, /*max_distance=*/0),
+            1);
+}
+
+TEST(SupportCommandLineTest, ConfigDirectoryAliasesShareTruncationSemantics) {
+  constexpr StringLiteral Argument = "123<CFGDIR>XYZ";
+  constexpr StringLiteral Base = "abcdef";
+  char Expanded[8] = {};
+  char AliasExpanded[8] = {};
+
+  const size_t ExpandedSize = csupport_cl_expand_cfg_dir(
+      Argument.data(), Argument.size(), Base.data(), Base.size(), Expanded,
+      sizeof(Expanded));
+  const size_t AliasExpandedSize = csupport_cl_expand_cfgdir(
+      Argument.data(), Argument.size(), Base.data(), Base.size(), AliasExpanded,
+      sizeof(AliasExpanded));
+
+  EXPECT_EQ(StringRef(Expanded), "123abcd");
+  EXPECT_EQ(StringRef(AliasExpanded), StringRef(Expanded));
+  EXPECT_EQ(AliasExpandedSize, ExpandedSize);
 }

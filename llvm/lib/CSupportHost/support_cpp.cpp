@@ -37,7 +37,58 @@
 using namespace llvm;
 
 namespace llvm {
+namespace cl {
+
+template class basic_parser<bool>;
+template class basic_parser<boolOrDefault>;
+template class basic_parser<int>;
+template class basic_parser<long>;
+template class basic_parser<long long>;
+template class basic_parser<unsigned>;
+template class basic_parser<unsigned long>;
+template class basic_parser<unsigned long long>;
+template class basic_parser<double>;
+template class basic_parser<float>;
+template class basic_parser<string_t>;
+template class basic_parser<char>;
+
+template class opt<unsigned>;
+template class opt<int>;
+template class opt<string_t>;
+template class opt<char>;
+template class opt<bool>;
+
+// These are key virtual functions: keep their definitions in one translation
+// unit so every client uses the same vtable and RTTI identity.  Defining them
+// inline in the public header leaves one vtable in every translation unit and
+// breaks UBSan's polymorphic lifetime checks.
+void GenericOptionValue::anchor() {}
+void OptionValue<boolOrDefault>::anchor() {}
+void OptionValue<string_t>::anchor() {}
+void Option::anchor() {}
+void basic_parser_impl::anchor() {}
+void parser<bool>::anchor() {}
+void parser<boolOrDefault>::anchor() {}
+void parser<int>::anchor() {}
+void parser<long>::anchor() {}
+void parser<long long>::anchor() {}
+void parser<unsigned>::anchor() {}
+void parser<unsigned long>::anchor() {}
+void parser<unsigned long long>::anchor() {}
+void parser<double>::anchor() {}
+void parser<float>::anchor() {}
+void parser<string_t>::anchor() {}
+void parser<char>::anchor() {}
+
+} // namespace cl
+
 namespace {
+// Error.h must only forward-declare dbgs() to avoid a Support include cycle,
+// while Debug.h provides its implementation inline.  Make LLVMSupport itself
+// emit one weak copy so clients that instantiate Error/Expected diagnostics do
+// not depend on some unrelated higher-level LLVM library doing so by accident.
+LLVM_ATTRIBUTE_USED raw_ostream &(*const ForceDbgsEmission)() = &dbgs;
+
 cl::OptionCategory &colorCategorySingleton() {
   static cl::OptionCategory ColorCategory("Color Options");
   return ColorCategory;

@@ -91,6 +91,8 @@ size_t csupport_cl_parse_backslash(const char *src, size_t src_len, size_t pos,
 
 int csupport_cl_tokenize_command_line(const char *source, size_t source_len,
                                       const char **argv, int max_args) {
+  if (!source)
+    return 0;
   int argc = 0;
   const char *p = source;
   const char *end = source + source_len;
@@ -535,6 +537,7 @@ int csupport_cl_parse_numeric_option(const char *str, size_t len,
 int csupport_cl_match_prefix(const char *arg, size_t arg_len,
                               const char *prefix, size_t prefix_len) {
   if (arg_len < prefix_len) return 0;
+  if (prefix_len == 0) return 1;
   return memcmp(arg, prefix, prefix_len) == 0;
 }
 
@@ -780,6 +783,7 @@ size_t csupport_cl_format_usage_line(char *buf, size_t buflen,
 int csupport_cl_is_arg_equal(const char *arg, size_t arg_len,
                               const char *name, size_t name_len) {
   if (arg_len != name_len) return 0;
+  if (arg_len == 0) return 1;
   return memcmp(arg, name, arg_len) == 0;
 }
 
@@ -813,24 +817,30 @@ size_t csupport_cl_extract_option_name(const char *arg, size_t arg_len,
 size_t csupport_cl_extract_option_value(const char *arg, size_t arg_len,
                                          char *val_buf, size_t val_buflen) {
   if (!val_buf || val_buflen == 0) return 0;
+  if (arg_len == 0) {
+    val_buf[0] = '\0';
+    return 0;
+  }
   const char *eq = (const char *)memchr(arg, '=', arg_len);
   if (!eq) { val_buf[0] = '\0'; return 0; }
   size_t val_start = (size_t)(eq - arg) + 1;
   size_t val_len = arg_len - val_start;
   if (val_len >= val_buflen) val_len = val_buflen - 1;
-  memcpy(val_buf, arg + val_start, val_len);
+  if (val_len != 0)
+    memcpy(val_buf, arg + val_start, val_len);
   val_buf[val_len] = '\0';
   return val_len;
 }
 
 int csupport_cl_option_has_value(const char *arg, size_t arg_len) {
+  if (arg_len == 0) return 0;
   return memchr(arg, '=', arg_len) != NULL;
 }
 
 int csupport_cl_compare_options(const char *a, size_t a_len,
                                  const char *b, size_t b_len) {
   size_t min_len = a_len < b_len ? a_len : b_len;
-  int r = memcmp(a, b, min_len);
+  int r = min_len == 0 ? 0 : memcmp(a, b, min_len);
   if (r != 0) return r;
   if (a_len < b_len) return -1;
   if (a_len > b_len) return 1;
@@ -1510,7 +1520,10 @@ size_t csupport_cl_format_size_suffix(uint64_t bytes, char *out, size_t out_cap)
 size_t csupport_cl_expand_cfg_dir(const char *arg, size_t arg_len,
                                   const char *base_path, size_t base_len,
                                   char *out, size_t out_cap) {
-  if (!arg || !out || out_cap == 0) return 0;
+  if (!out || out_cap == 0) return 0;
+  out[0] = '\0';
+  if ((!arg && arg_len != 0) || (!base_path && base_len != 0)) return 0;
+
   const char token[] = "<CFGDIR>";
   const size_t token_len = 8;
   size_t pos = 0;
@@ -1544,52 +1557,13 @@ size_t csupport_cl_expand_cfg_dir(const char *arg, size_t arg_len,
 int csupport_cl_edit_distance_impl(const char *a, size_t a_len, const char *b,
                                    size_t b_len, int allow_replacements,
                                    unsigned max_distance) {
-  size_t m = a_len, n = b_len;
-  if (!csupport_cl_edit_distance_lengths_valid(m, n))
-    return -1;
-  if (!a || !b)
-    return (int)(m > n ? m : n);
-  if (n > m) {
-    const char *tmp_s = a; a = b; b = tmp_s;
-    size_t tmp_n = m; m = n; n = tmp_n;
-  }
-  if (n == 0) return (int)m;
-  unsigned *row = (unsigned *)malloc((n + 1) * sizeof(unsigned));
-  if (!row) return -1;
-  for (size_t i = 0; i <= n; i++) row[i] = (unsigned)i;
-  for (size_t i = 1; i <= m; i++) {
-    unsigned prev = (unsigned)(i - 1);
-    row[0] = (unsigned)i;
-    unsigned best = row[0];
-    for (size_t j = 1; j <= n; j++) {
-      unsigned old_row_j = row[j];
-      if (a[i - 1] == b[j - 1]) {
-        row[j] = prev;
-      } else if (allow_replacements) {
-        unsigned del = row[j] + 1;
-        unsigned ins = row[j - 1] + 1;
-        unsigned rep = prev + 1;
-        row[j] = del < ins ? del : ins;
-        if (rep < row[j]) row[j] = rep;
-      } else {
-        unsigned del = row[j] + 1;
-        unsigned ins = row[j - 1] + 1;
-        row[j] = del < ins ? del : ins;
-      }
-      if (row[j] < best) best = row[j];
-      prev = old_row_j;
-    }
-    if (max_distance && best > max_distance) { free(row); return (int)max_distance + 1; }
-  }
-  unsigned result = row[n];
-  free(row);
-  return (int)result;
+  return csupport_cl_edit_distance(a, a_len, b, b_len, allow_replacements,
+                                   max_distance);
 }
 
-size_t csupport_cl_format_option_pair(const char *name, size_t name_len,
-                                      const char *desc, size_t desc_len,
-                                      unsigned indent, unsigned max_width,
-                                      char *out, size_t out_cap) {
+size_t csupport_cl_format_option_pair(
+    const char *name, size_t name_len, const char *desc, size_t desc_len,
+    unsigned indent, unsigned max_width, char *out, size_t out_cap) {
   if (!out || out_cap == 0) return 0;
   size_t pos = 0;
   for (unsigned i = 0; i < indent && pos < out_cap - 1; i++)
@@ -1624,49 +1598,8 @@ size_t csupport_cl_format_option_pair(const char *name, size_t name_len,
 size_t csupport_cl_expand_cfgdir(const char *arg, size_t arg_len,
                                   const char *base_path, size_t base_len,
                                   char *out, size_t out_cap) {
-  if (!out || out_cap == 0) return 0;
-  static const char token[] = "<CFGDIR>";
-  static const size_t token_len = 8;
-  size_t pos = 0;
-  size_t start = 0;
-
-  for (;;) {
-    const char *found = 0;
-    for (size_t i = start; i + token_len <= arg_len; i++) {
-      if (memcmp(arg + i, token, token_len) == 0) {
-        found = arg + i;
-        break;
-      }
-    }
-    if (!found) break;
-
-    size_t prefix_len = (size_t)(found - (arg + start));
-    if (prefix_len > 0 && pos + prefix_len < out_cap) {
-      memcpy(out + pos, arg + start, prefix_len);
-      pos += prefix_len;
-    }
-    if (pos + base_len < out_cap) {
-      memcpy(out + pos, base_path, base_len);
-      pos += base_len;
-    }
-    start = (size_t)(found - arg) + token_len;
-  }
-
-  if (start == 0) {
-    size_t n = arg_len < out_cap - 1 ? arg_len : out_cap - 1;
-    memcpy(out, arg, n);
-    out[n] = '\0';
-    return n;
-  }
-
-  size_t remaining = arg_len - start;
-  if (remaining > 0 && pos + remaining < out_cap) {
-    memcpy(out + pos, arg + start, remaining);
-    pos += remaining;
-  }
-  if (pos < out_cap) out[pos] = '\0';
-  else if (out_cap > 0) out[out_cap - 1] = '\0';
-  return pos;
+  return csupport_cl_expand_cfg_dir(arg, arg_len, base_path, base_len, out,
+                                    out_cap);
 }
 
 int csupport_cl_opt_name_compare(const char *a, const char *b) {
