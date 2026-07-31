@@ -9,6 +9,7 @@
 #ifndef LLVM_SUPPORT_BURYPOINTER_H
 #define LLVM_SUPPORT_BURYPOINTER_H
 
+#include "csupport/bury_pointer.h"
 #include <memory>
 
 namespace llvm {
@@ -19,7 +20,6 @@ namespace llvm {
 // the memory is not misdiagnosed as an unintentional leak by leak detection
 // tools (this is achieved by preserving pointers to the object in a globally
 // visible array).
-extern "C" void csupport_bury_pointer(const void *Ptr);
 inline void BuryPointer(const void *Ptr) { csupport_bury_pointer(Ptr); }
 template <typename T> void BuryPointer(std::unique_ptr<T> Ptr) {
   BuryPointer(Ptr.release());

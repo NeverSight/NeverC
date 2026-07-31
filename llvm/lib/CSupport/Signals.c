@@ -1,6 +1,7 @@
 /*===- Signals.c - Signal handling (pure C) ----------------------*- C -*-===*/
 #include "include/csupport/lsignals.h"
 #include "include/csupport/allocation.h"
+#include "llvm/Config/config.h"
 #include "llvm/Config/llvm-config.h"
 #include <errno.h>
 #include <limits.h>
@@ -236,14 +237,14 @@ int csupport_write_crash_log_msg(char *buf, size_t buflen, const char *prefix,
 }
 
 int csupport_format_frame_address(char *buf, size_t cap, int frame_no,
-                                    const void *addr) {
+                                  const void *addr) {
   if (!buf || cap == 0) return 0;
   return snprintf(buf, cap, "#%-2d %p", frame_no, addr);
 }
 
 int csupport_format_frame_full(char *buf, size_t cap, int frame_no,
-                                 const void *addr, const char *fname,
-                                 const char *symbol, unsigned offset) {
+                               const void *addr, const char *fname,
+                               const char *symbol, unsigned offset) {
   if (!buf || cap == 0) return 0;
   if (symbol && fname)
     return snprintf(buf, cap, "#%-2d %p %s (%s+0x%x)", frame_no, addr,
@@ -372,6 +373,26 @@ int csupport_register_signal_handlers(const int *kill_sigs, int num_kill,
                                       csupport_sig_handler_fn kill_handler,
                                       csupport_sig_handler_fn info_handler) {
   if (g_num_registered != 0) return (int)g_num_registered;
+  if (num_kill < 0 || num_int < 0 || num_info < 0 ||
+      (num_kill != 0 && kill_sigs == NULL) ||
+      (num_int != 0 && int_sigs == NULL) ||
+      (num_info != 0 && info_sigs == NULL))
+    return -1;
+
+  unsigned remaining = CSUPPORT_MAX_REGISTERED_SIGNALS;
+  if ((unsigned)num_int > remaining)
+    return -1;
+  remaining -= (unsigned)num_int;
+  if ((unsigned)num_kill > remaining)
+    return -1;
+  remaining -= (unsigned)num_kill;
+  if (pipe_sig > 0) {
+    if (remaining == 0)
+      return -1;
+    --remaining;
+  }
+  if ((unsigned)num_info > remaining)
+    return -1;
 
   csupport_setup_sig_alt_stack();
 
@@ -383,7 +404,8 @@ int csupport_register_signal_handlers(const int *kill_sigs, int num_kill,
     new_act.sa_handler = kill_handler;
     new_act.sa_flags = SA_NODEFER | SA_RESETHAND | SA_ONSTACK;
     sigemptyset(&new_act.sa_mask);
-    sigaction(int_sigs[i], &new_act, &g_registered_signals[idx].sa);
+    if (sigaction(int_sigs[i], &new_act, &g_registered_signals[idx].sa) != 0)
+      goto fail;
     g_registered_signals[idx].signo = int_sigs[i];
     idx++;
   }
@@ -393,7 +415,8 @@ int csupport_register_signal_handlers(const int *kill_sigs, int num_kill,
     new_act.sa_handler = kill_handler;
     new_act.sa_flags = SA_NODEFER | SA_RESETHAND | SA_ONSTACK;
     sigemptyset(&new_act.sa_mask);
-    sigaction(kill_sigs[i], &new_act, &g_registered_signals[idx].sa);
+    if (sigaction(kill_sigs[i], &new_act, &g_registered_signals[idx].sa) != 0)
+      goto fail;
     g_registered_signals[idx].signo = kill_sigs[i];
     idx++;
   }
@@ -403,7 +426,8 @@ int csupport_register_signal_handlers(const int *kill_sigs, int num_kill,
     new_act.sa_handler = kill_handler;
     new_act.sa_flags = SA_NODEFER | SA_RESETHAND | SA_ONSTACK;
     sigemptyset(&new_act.sa_mask);
-    sigaction(pipe_sig, &new_act, &g_registered_signals[idx].sa);
+    if (sigaction(pipe_sig, &new_act, &g_registered_signals[idx].sa) != 0)
+      goto fail;
     g_registered_signals[idx].signo = pipe_sig;
     idx++;
   }
@@ -413,13 +437,22 @@ int csupport_register_signal_handlers(const int *kill_sigs, int num_kill,
     new_act.sa_handler = info_handler;
     new_act.sa_flags = SA_ONSTACK;
     sigemptyset(&new_act.sa_mask);
-    sigaction(info_sigs[i], &new_act, &g_registered_signals[idx].sa);
+    if (sigaction(info_sigs[i], &new_act, &g_registered_signals[idx].sa) != 0)
+      goto fail;
     g_registered_signals[idx].signo = info_sigs[i];
     idx++;
   }
 
   g_num_registered = idx;
   return (int)idx;
+
+fail:
+  while (idx != 0) {
+    --idx;
+    sigaction(g_registered_signals[idx].signo,
+              &g_registered_signals[idx].sa, NULL);
+  }
+  return -1;
 }
 
 void csupport_unregister_signal_handlers(void) {
@@ -430,7 +463,6 @@ void csupport_unregister_signal_handlers(void) {
   g_num_registered = 0;
 }
 
-extern void csupport_create_sig_alt_stack(void);
 void csupport_setup_sig_alt_stack(void) {
   csupport_create_sig_alt_stack();
 }
@@ -835,32 +867,37 @@ void csupport_unix_cleanup_on_signal(int sig) {
   csupport_run_signal_callbacks();
 }
 
+#if LLVM_ENABLE_THREADS == 1 && defined(HAVE_PTHREAD_H) && HAVE_PTHREAD_H
 #include <pthread.h>
-
 static pthread_mutex_t g_register_mutex = PTHREAD_MUTEX_INITIALIZER;
-static int g_all_handlers_registered = 0;
+static void lock_register_mutex(void) {
+  pthread_mutex_lock(&g_register_mutex);
+}
+static void unlock_register_mutex(void) {
+  pthread_mutex_unlock(&g_register_mutex);
+}
+#else
+static void lock_register_mutex(void) {}
+static void unlock_register_mutex(void) {}
+#endif
 
 void csupport_unix_register_all_handlers(void) {
-  pthread_mutex_lock(&g_register_mutex);
-  if (g_all_handlers_registered) {
-    pthread_mutex_unlock(&g_register_mutex);
-    return;
-  }
+  lock_register_mutex();
   int pipe_sig = csupport_get_atomic_pipe_fn() ? SIGPIPE : 0;
   int nk, ni, nf;
   const int *ks = csupport_get_kill_sigs(&nk);
   const int *is2 = csupport_get_int_sigs(&ni);
   const int *fs = csupport_get_info_sigs(&nf);
-  csupport_register_signal_handlers(ks, nk, is2, ni, fs, nf, pipe_sig,
-                                    csupport_unix_signal_handler,
-                                    csupport_unix_info_signal_handler);
-  g_all_handlers_registered = 1;
-  pthread_mutex_unlock(&g_register_mutex);
+  (void)csupport_register_signal_handlers(
+      ks, nk, is2, ni, fs, nf, pipe_sig, csupport_unix_signal_handler,
+      csupport_unix_info_signal_handler);
+  unlock_register_mutex();
 }
 
 void csupport_unix_unregister_all_handlers(void) {
+  lock_register_mutex();
   csupport_unregister_signal_handlers();
-  g_all_handlers_registered = 0;
+  unlock_register_mutex();
 }
 
 /* ===================================================================== */

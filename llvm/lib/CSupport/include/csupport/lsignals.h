@@ -22,6 +22,12 @@ int csupport_backtrace(void **buffer, int size);
 void csupport_disable_system_dialogs_on_crash(void);
 
 int csupport_format_ptr_hex(char *buf, size_t buflen, const void *ptr);
+int csupport_format_frame_address(char *buf, size_t cap, int frame_no,
+                                  const void *addr);
+int csupport_format_frame_full(char *buf, size_t cap, int frame_no,
+                               const void *addr, const char *fname,
+                               const char *symbol, unsigned offset);
+size_t csupport_format_ptr_hex_full(char *buf, size_t cap, const void *ptr);
 void csupport_set_thread_background_priority(void);
 int csupport_has_thread_background_priority(void);
 
@@ -77,6 +83,7 @@ int csupport_register_signal_handlers(const int *kill_sigs, int num_kill,
 void csupport_unregister_signal_handlers(void);
 
 /* Setup a signal alternate stack (for handling stack overflow). */
+void csupport_create_sig_alt_stack(void);
 void csupport_setup_sig_alt_stack(void);
 
 /* Atomically set/get function pointers for interrupt, info, pipe handlers. */
@@ -150,10 +157,10 @@ void csupport_unix_info_signal_handler(int sig);
 /* CleanupOnSignal: called from crash recovery context. */
 void csupport_unix_cleanup_on_signal(int sig);
 
-/* Thread-safe one-time registration of all signal handlers. */
+/* Thread-safe registration of all signal handlers. */
 void csupport_unix_register_all_handlers(void);
 
-/* Unregister handlers + reset flag. */
+/* Thread-safe restoration of the previously installed handlers. */
 void csupport_unix_unregister_all_handlers(void);
 
 /* --- Session 15: PrintStackTrace dladdr loop + DSOMarkupPrinter (write

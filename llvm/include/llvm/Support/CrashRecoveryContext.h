@@ -9,6 +9,7 @@
 #ifndef LLVM_SUPPORT_CRASHRECOVERYCONTEXT_H
 #define LLVM_SUPPORT_CRASHRECOVERYCONTEXT_H
 
+#include "csupport/lsignals.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/Support/thread.h"
 
@@ -299,15 +300,6 @@ public:
 
 #ifndef STRIP_CONST
 #define STRIP_CONST(T, x) const_cast<T>(x)
-#endif
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-void csupport_set_thread_background_priority(void);
-int csupport_has_thread_background_priority(void);
-#ifdef __cplusplus
-}
 #endif
 
 // Upstream keeps this block in CrashRecoveryContext.cpp, where an anonymous
