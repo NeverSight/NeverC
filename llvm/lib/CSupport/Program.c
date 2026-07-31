@@ -33,6 +33,7 @@ int csupport_change_stdout_to_binary(void) { return 0; }
 #include <unistd.h>
 #include <fcntl.h>
 #include <signal.h>
+#include <time.h>
 
 #if defined(HAVE_SYS_RESOURCE_H) || defined(__APPLE__) || defined(__linux__)
 #include <sys/resource.h>
@@ -119,6 +120,9 @@ int csupport_redirect_io(const char *path, int fd,
 /* --- commandLineFitsWithinSystemLimits core --- */
 int csupport_cmd_args_fit(size_t prog_len,
                           const char *const *args, size_t num_args) {
+  if (prog_len == SIZE_MAX || (num_args != 0 && args == NULL))
+    return 0;
+
   long arg_max = sysconf(_SC_ARG_MAX);
   long arg_min = _POSIX_ARG_MAX;
   long effective = 128 * 1024;
@@ -126,22 +130,47 @@ int csupport_cmd_args_fit(size_t prog_len,
   if (effective > arg_max) effective = arg_max;
   else if (effective < arg_min) effective = arg_min;
 
-  if (arg_max == -1) return 1;
+  if (arg_max == -1) {
+    for (size_t i = 0; i < num_args; ++i)
+      if (args[i] == NULL || strlen(args[i]) >= (32 * 4096))
+        return 0;
+    return 1;
+  }
 
   long half = effective / 2;
+  if (half <= 0 || prog_len >= (size_t)half)
+    return 0;
   size_t total = prog_len + 1;
   for (size_t i = 0; i < num_args; i++) {
+    if (args[i] == NULL)
+      return 0;
     size_t len = strlen(args[i]);
     if (len >= (32 * 4096)) return 0;
+    if (len >= (size_t)half - total)
+      return 0;
     total += len + 1;
-    if (total > (size_t)half) return 0;
   }
   return 1;
 }
 
-/* --- Wait for child process (core POSIX wait4/alarm logic) --- */
+/* --- Wait for child process (core POSIX wait4 logic) --- */
 
-static void csupport_timeout_handler_nop(int sig) { (void)sig; }
+static int csupport_wait_timeout_expired(const struct timespec *start,
+                                         unsigned seconds) {
+  struct timespec now;
+  if (clock_gettime(CLOCK_MONOTONIC, &now) != 0)
+    return -1;
+  if (now.tv_sec < start->tv_sec)
+    return 0;
+  const uint64_t elapsed_seconds = (uint64_t)(now.tv_sec - start->tv_sec);
+  return elapsed_seconds > seconds ||
+         (elapsed_seconds == seconds && now.tv_nsec >= start->tv_nsec);
+}
+
+static void csupport_wait_poll_delay(void) {
+  struct timespec delay = {0, 1000000}; /* 1 ms */
+  (void)nanosleep(&delay, NULL);
+}
 
 #ifdef _AIX
 #ifndef _ALL_SOURCE
@@ -169,64 +198,99 @@ int csupport_wait_process(int child_pid, unsigned seconds_to_wait, int polling,
                           int64_t *out_user_time_us, int64_t *out_kernel_time_us,
                           uint64_t *out_peak_memory,
                           char *errmsg, size_t errmsg_cap) {
-  struct sigaction act, old;
-  int wait_options = 0;
-  int wait_until_term = 0;
-
-  if (seconds_to_wait == (unsigned)-1) {
-    wait_until_term = 1;
-  } else {
-    if (seconds_to_wait == 0)
-      wait_options = WNOHANG;
-    memset(&act, 0, sizeof(act));
-    act.sa_handler = csupport_timeout_handler_nop;
-    sigemptyset(&act.sa_mask);
-    sigaction(SIGALRM, &act, &old);
-    alarm(seconds_to_wait);
+  if (!out_pid || !out_return_code) {
+    errno = EINVAL;
+    return -1;
   }
+  *out_pid = 0;
+  *out_return_code = 0;
+  if (out_user_time_us) *out_user_time_us = 0;
+  if (out_kernel_time_us) *out_kernel_time_us = 0;
+  if (out_peak_memory) *out_peak_memory = 0;
+  if (errmsg && errmsg_cap > 0) errmsg[0] = '\0';
 
   int status = 0;
   pid_t wait_pid = 0;
 #ifndef __Fuchsia__
   struct rusage info;
   memset(&info, 0, sizeof(info));
-  do {
-    wait_pid = CSUPPORT_WAIT4(child_pid, &status, wait_options, &info);
-  } while (wait_until_term && wait_pid == -1 && errno == EINTR);
-#endif
 
-  *out_pid = (int)wait_pid;
-
-  if (wait_pid != child_pid) {
-    if (wait_pid == 0) {
-      *out_return_code = 0;
-      return 0;
+  if (seconds_to_wait == (unsigned)-1) {
+    do {
+      wait_pid = CSUPPORT_WAIT4(child_pid, &status, 0, &info);
+    } while (wait_pid == -1 && errno == EINTR);
+  } else {
+    struct timespec start;
+    if (seconds_to_wait != 0 &&
+        clock_gettime(CLOCK_MONOTONIC, &start) != 0) {
+      if (errmsg && errmsg_cap > 0)
+        snprintf(errmsg, errmsg_cap, "Cannot start child timeout clock");
+      *out_return_code = -1;
+      return -1;
     }
-    if (seconds_to_wait != (unsigned)-1 && errno == EINTR && !polling) {
-      kill(child_pid, SIGKILL);
-      alarm(0);
-      sigaction(SIGALRM, &old, NULL);
-      if (wait(&status) != child_pid) {
+
+    for (;;) {
+      wait_pid = CSUPPORT_WAIT4(child_pid, &status, WNOHANG, &info);
+      if (wait_pid == child_pid)
+        break;
+      if (wait_pid == -1) {
+        if (errno == EINTR)
+          continue;
+        break;
+      }
+      if (seconds_to_wait == 0)
+        return 0;
+
+      const int expired =
+          csupport_wait_timeout_expired(&start, seconds_to_wait);
+      if (expired < 0) {
+        if (errmsg && errmsg_cap > 0)
+          snprintf(errmsg, errmsg_cap, "Cannot read child timeout clock");
+        *out_return_code = -1;
+        return -1;
+      }
+      if (!expired) {
+        csupport_wait_poll_delay();
+        continue;
+      }
+      if (polling)
+        return 0;
+
+      if (kill(child_pid, SIGKILL) != 0 && errno != ESRCH) {
+        if (errmsg && errmsg_cap > 0)
+          snprintf(errmsg, errmsg_cap, "Cannot kill timed out child process");
+        *out_return_code = -1;
+        return -1;
+      }
+      do {
+        wait_pid = CSUPPORT_WAIT4(child_pid, &status, 0, &info);
+      } while (wait_pid == -1 && errno == EINTR);
+      if (wait_pid != child_pid) {
         if (errmsg && errmsg_cap > 0)
           snprintf(errmsg, errmsg_cap, "Child timed out but wouldn't die");
       } else {
+        *out_pid = child_pid;
         if (errmsg && errmsg_cap > 0)
           snprintf(errmsg, errmsg_cap, "%s", "Child timed out");
       }
       *out_return_code = -2;
       return 1;
     }
-    if (errno != EINTR) {
-      if (errmsg && errmsg_cap > 0)
-        snprintf(errmsg, errmsg_cap, "Error waiting for child process");
-      *out_return_code = -1;
-      return -1;
-    }
   }
+#else
+  (void)child_pid;
+  (void)seconds_to_wait;
+  (void)polling;
+  errno = ENOSYS;
+  wait_pid = -1;
+#endif
 
-  if (seconds_to_wait != (unsigned)-1 && !wait_until_term) {
-    alarm(0);
-    sigaction(SIGALRM, &old, NULL);
+  *out_pid = (int)wait_pid;
+  if (wait_pid != child_pid) {
+    if (errmsg && errmsg_cap > 0)
+      snprintf(errmsg, errmsg_cap, "Error waiting for child process");
+    *out_return_code = -1;
+    return -1;
   }
 
 #ifndef __Fuchsia__

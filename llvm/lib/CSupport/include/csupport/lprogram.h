@@ -11,6 +11,8 @@ int csupport_change_stdout_to_binary(void);
 void csupport_set_memory_limits(unsigned size_mb);
 int csupport_write_file_contents(const char *filename, size_t filename_len,
                                  const char *contents, size_t contents_len);
+int csupport_execute_and_wait(const char *program, const char *const *args,
+                              int *exit_code);
 
 /* --- Session 11: extracted from Unix/Program.inc --- */
 
