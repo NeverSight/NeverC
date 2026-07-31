@@ -633,14 +633,14 @@ TEST_F(StdLibTest, TlsExperimentalTransport) {
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
   EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
 }
-TEST_F(StdLibTest, TlsOpenSslClientInterop) {
+TEST_F(StdLibTest, TlsOpenSslBidirectionalInterop) {
 #if defined(_WIN32)
-  GTEST_SKIP() << "OpenSSL s_server interop harness is POSIX-only for now";
+  GTEST_SKIP() << "OpenSSL interop harness is POSIX-only for now";
 #else
   if (std::system("command -v openssl >/dev/null 2>&1") != 0)
     GTEST_SKIP() << "openssl not available";
 
-  fs::path client = tmp() / "tls_openssl_interop_client";
+  fs::path peer = tmp() / "tls_openssl_interop_peer";
   fs::path cert = tmp() / "tls_openssl_interop_cert.pem";
   fs::path key = tmp() / "tls_openssl_interop_key.pem";
   std::string sd = stdSrcDir();
@@ -656,7 +656,7 @@ TEST_F(StdLibTest, TlsOpenSslClientInterop) {
       "-fno-builtin-std",
       "-DNEVERC_TLS_ENABLE_EXPERIMENTAL_TRANSPORT=1",
       "-o",
-      client.string(),
+      peer.string(),
       (fs::path(stdTestDir()) / "test_tls_interop.c").string(),
   };
   for (const char *src : {HTTP_TLS_DEPS, "src/net/tcp/tcp.c"})
@@ -671,10 +671,12 @@ TEST_F(StdLibTest, TlsOpenSslClientInterop) {
   fs::path script =
       fs::path(stdTestDir()) / "run_tls_openssl_interop.sh";
   auto run = exec("/bin/bash",
-                  {script.string(), client.string(), cert.string(),
+                  {script.string(), peer.string(), cert.string(),
                    key.string()});
   ASSERT_TRUE(run.ok()) << "stdout: " << run.out << "\nstderr: " << run.err;
   EXPECT_TRUE(run.contains("openssl interop client: ok"))
+      << "stdout: " << run.out;
+  EXPECT_TRUE(run.contains("openssl interop server: ok"))
       << "stdout: " << run.out;
 #endif
 }

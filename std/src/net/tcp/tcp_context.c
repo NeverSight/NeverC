@@ -211,6 +211,20 @@ neverc_net_result_t neverc_tcp_accept_context(neverc_tcp_listener_t *ln,
 
         neverc_net_result_t result =
             neverc_tcp_try_accept(ln, conn_out);
+        if (result.status == NEVERC_NET_OK) {
+            /*
+             * A worker may be descheduled after the pre-accept context
+             * check. Do not return a connection accepted after cancellation
+             * or the deadline merely because it became ready in that gap.
+             */
+            context_status = tcp_context_status(ctx);
+            if (context_status != NEVERC_NET_OK) {
+                neverc_tcp_close(*conn_out);
+                *conn_out = NULL;
+                return tcp_context_result(
+                    context_status, 0, "accept", 0);
+            }
+        }
         if (result.status != NEVERC_NET_WOULD_BLOCK)
             return result;
         tcp_context_pause();
