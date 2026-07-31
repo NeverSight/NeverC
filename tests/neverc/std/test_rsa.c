@@ -103,6 +103,88 @@ static void test_sign_verify(void) {
     neverc_rsa_private_key_free(&key);
 }
 
+static void test_verify_pkcs1v15_sha384_sha512(void) {
+    printf("[verify_pkcs1v15_sha384_sha512]\n");
+    /* Generated with cryptography/OpenSSL PKCS1v15 signing. */
+    static const char modulus[] =
+        "A18AB912DF6FDEF885B60C60AF97C246A7447422BF6B12CE2DCA02351413D797"
+        "D17D64976A773EFFF2525AE0E723422D616C1DFB940979B1DFCFA106CB6B0560"
+        "6DC5763ADA5905387E2346F77EE8AE856A23BAE8FB29429D058EC607125CA4AB"
+        "D4CDA43CD4CD927C924B0743A7A038B61E47E84446C83E3745CD257B6FA7359"
+        "C5005FA99178229AB4203C87CFF98C27420E7F428404EB8223FCFBFAE8386747"
+        "66D727023E08A1321B63577DD6C857ADAF09C68DFCDB3972847A96641CEBF60C"
+        "21467593F4FEE2E5F0FC8B04F3432371D70B34568243108EE1BCABF176B3BF8"
+        "A863B3B869292EE988C826D6D205B95FC0A66528FFE91533372F138F0482C47"
+        "C2F";
+    static const char signature_sha384_hex[] =
+        "3C1AE42629F2DB2AC53A95ABCC62E75F5D2C93E9D4ACFE86784D1F2D2C32A5"
+        "AFF7C83A682629D84FF975E2E6C4A4F4CA586FEC1C71863F80CF894B049FF884"
+        "FE344B283B99D284F9447EEDBC76AFAC0DAC15E9E1B1C9BAE4B454998200FBB"
+        "2A1EFC78E8121F9751AAF450B81C4FA5A8538E81108DBFFF92EE5C37C3D3AF"
+        "6FF51749B6C62A4EDC40543FC4ECD884E3604B3277F1FA56474EFE8D8EFBAF9"
+        "FA9DE2C08B8105B7E835D948C5B7107AFA2A8F68FF97D736472B1CB1CF4BB3"
+        "9E2FCDEAC1737283AC0FDD4CAE66D3C7EB52C6CFC7C640A9AFA9983B76E6FD"
+        "43646C6B0ABF7D04D8D5CB97906EF24CD1299CEBD3D402073BC2418038BD123"
+        "EF4C8DE00C9";
+    static const char signature_sha512_hex[] =
+        "672B21134C768FFF7549BB6F22A78B3B7BFBBA593FB62A75C886E4DFC08C288"
+        "F256ACCD820D1BCC2377A67E86ECEA4E9DA3A36CBE9F4612133609FA6E77B19"
+        "22592D37C12F1660F47527EACA2D6397884F2B9E6EB93B7A062289BB8AA0E9"
+        "B76E41FF6A6F7C8192FBC6903E66D55E0931FA73039E17B1B58883FF9051E6B"
+        "46906F2D928E91AE82371DD87F23386871430C247B50B28FA51198027D8855D"
+        "E6C9647DA6905F62C734F76F8354D978E39637FBDCDD3CA70C92AAE5D052ED7"
+        "8589D620C6EAC1BAF008722528ECF02B10F7D6BF9F554B30E02F1B75E100EF"
+        "11813B9A1C0078546367954B23F14C43366A44B10B007D7C1C80A704AF5D826"
+        "6836CBFDAE";
+    static const unsigned char message[] =
+        "NeverC RSA PKCS1 SHA-2 test vector";
+
+    neverc_rsa_public_key_t public_key;
+    neverc_rsa_public_key_init(&public_key);
+    ASSERT_INT_EQ(
+        neverc_bigint_set_string(&public_key.n, modulus, 16), 0);
+    neverc_bigint_set_uint64(&public_key.e, 65537);
+
+    unsigned char signature_sha384[256];
+    unsigned char signature_sha512[256];
+    ASSERT_INT_EQ(
+        decode_hex(signature_sha384_hex, signature_sha384,
+                   sizeof(signature_sha384)),
+        0);
+    ASSERT_INT_EQ(
+        decode_hex(signature_sha512_hex, signature_sha512,
+                   sizeof(signature_sha512)),
+        0);
+
+    unsigned char hash_sha384[NEVERC_SHA384_DIGEST_SIZE];
+    neverc_sha384_sum(message, sizeof(message) - 1, hash_sha384);
+    ASSERT_INT_EQ(
+        neverc_rsa_verify_pkcs1v15_sha384(
+            &public_key, hash_sha384, sizeof(hash_sha384),
+            signature_sha384, sizeof(signature_sha384)),
+        0);
+    hash_sha384[0] ^= 1;
+    ASSERT_TRUE(
+        neverc_rsa_verify_pkcs1v15_sha384(
+            &public_key, hash_sha384, sizeof(hash_sha384),
+            signature_sha384, sizeof(signature_sha384)) != 0);
+
+    unsigned char hash_sha512[NEVERC_SHA512_DIGEST_SIZE];
+    neverc_sha512_sum(message, sizeof(message) - 1, hash_sha512);
+    ASSERT_INT_EQ(
+        neverc_rsa_verify_pkcs1v15_sha512(
+            &public_key, hash_sha512, sizeof(hash_sha512),
+            signature_sha512, sizeof(signature_sha512)),
+        0);
+    hash_sha512[0] ^= 1;
+    ASSERT_TRUE(
+        neverc_rsa_verify_pkcs1v15_sha512(
+            &public_key, hash_sha512, sizeof(hash_sha512),
+            signature_sha512, sizeof(signature_sha512)) != 0);
+
+    neverc_rsa_public_key_free(&public_key);
+}
+
 static void test_verify_pss_sha256(void) {
     printf("[verify_pss_sha256]\n");
     static const unsigned char signature[128] = {
@@ -261,6 +343,7 @@ int main(void) {
     test_keygen();
     test_encrypt_decrypt();
     test_sign_verify();
+    test_verify_pkcs1v15_sha384_sha512();
     test_verify_pss_sha256();
     test_verify_pss_sha384_sha512();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);

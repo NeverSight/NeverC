@@ -13,9 +13,14 @@ int main(void) {
         return 1;
     if (crypto.x509.cert_pool_count(NULL) != 0)
         return 2;
+    if (crypto.x509.cert_pool_add_pem(NULL, NULL, 0) != -1)
+        return 3;
     if (crypto.x509.verify_with_pools(
             NULL, NULL, NULL, NULL, NULL, 0) != -1)
-        return 3;
+        return 4;
+    neverc_x509_cert_pool_t *system_roots =
+        crypto.x509.system_cert_pool();
+    crypto.x509.cert_pool_free(system_roots);
 #else
     if (neverc_x509_check_signature_from(NULL, NULL) != -1)
         return 1;
@@ -26,9 +31,14 @@ int main(void) {
         return 1;
     if (neverc_x509_cert_pool_count(NULL) != 0)
         return 2;
+    if (neverc_x509_cert_pool_add_pem(NULL, NULL, 0) != -1)
+        return 3;
     if (neverc_x509_verify_with_pools(
             NULL, NULL, NULL, NULL, NULL, 0) != -1)
-        return 3;
+        return 4;
+    neverc_x509_cert_pool_t *system_roots =
+        neverc_x509_system_cert_pool();
+    neverc_x509_cert_pool_free(system_roots);
 #endif
     puts("passed");
     return 0;

@@ -1,5 +1,7 @@
 #include "neverc/std/crypto/x509.h"
+#include "neverc/std/encoding/pem.h"
 
+#include <limits.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -41,6 +43,27 @@ static int x509_pool_name_equal(const uint8_t *left, size_t left_len,
                                 const uint8_t *right, size_t right_len) {
     return left && right && left_len == right_len &&
            memcmp(left, right, left_len) == 0;
+}
+
+static const char *x509_pool_find_line_marker(
+    const char *begin, const char *end,
+    const char *marker, size_t marker_len,
+    int find_last) {
+    if (!begin || !end || !marker || begin > end ||
+        marker_len == 0 || (size_t)(end - begin) < marker_len)
+        return NULL;
+
+    const char *match = NULL;
+    for (const char *cursor = begin;
+         (size_t)(end - cursor) >= marker_len; ++cursor) {
+        if ((cursor == begin || cursor[-1] == '\n') &&
+            memcmp(cursor, marker, marker_len) == 0) {
+            match = cursor;
+            if (!find_last)
+                break;
+        }
+    }
+    return match;
 }
 
 static int x509_pool_contains(
@@ -201,6 +224,70 @@ int neverc_x509_cert_pool_add_der(neverc_x509_cert_pool_t *pool,
     entry->der_len = der_len;
     entry->certificate = certificate;
     return 0;
+}
+
+int neverc_x509_cert_pool_add_pem(neverc_x509_cert_pool_t *pool,
+                                  const char *pem, size_t pem_len) {
+    if (!pool || (!pem && pem_len != 0))
+        return -1;
+    if (pem_len == 0)
+        return 0;
+
+    uint8_t *der = (uint8_t *)malloc(pem_len);
+    if (!der)
+        return -1;
+
+    int added = 0;
+    size_t offset = 0;
+    while (offset < pem_len) {
+        const char *input = pem + offset;
+        const char *input_end = pem + pem_len;
+        const char *end_line = x509_pool_find_line_marker(
+            input, input_end, "-----END ", 9, 0);
+        if (!end_line)
+            break;
+        const char *begin_line = x509_pool_find_line_marker(
+            input, end_line, "-----BEGIN ", 11, 1);
+        const char *after_end = (const char *)memchr(
+            end_line, '\n', (size_t)(input_end - end_line));
+        after_end = after_end ? after_end + 1 : input_end;
+        if (!begin_line) {
+            offset = (size_t)(after_end - pem);
+            continue;
+        }
+
+        char block_type[64];
+        size_t der_len = 0;
+        size_t rest_offset = 0;
+        size_t block_len = (size_t)(after_end - begin_line);
+        if (neverc_pem_decode(
+                begin_line, block_len,
+                block_type, sizeof(block_type),
+                der, pem_len, &der_len, &rest_offset) != 0)
+            goto next_block;
+        if (rest_offset == 0 || rest_offset > block_len) {
+            free(der);
+            return -1;
+        }
+
+        if (strcmp(block_type, "CERTIFICATE") != 0 || der_len == 0)
+            goto next_block;
+        size_t old_count = pool->count;
+        if (neverc_x509_cert_pool_add_der(pool, der, der_len) == 0 &&
+            pool->count != old_count) {
+            if (added == INT_MAX) {
+                free(der);
+                return -1;
+            }
+            ++added;
+        }
+
+next_block:
+        offset = (size_t)(after_end - pem);
+    }
+
+    free(der);
+    return added;
 }
 
 size_t neverc_x509_cert_pool_count(

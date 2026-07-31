@@ -379,25 +379,40 @@ static const unsigned char sha256_digest_info[] = {
     0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01, 0x05,
     0x00, 0x04, 0x20
 };
-#define SHA256_DI_LEN 19
+static const unsigned char sha384_digest_info[] = {
+    0x30, 0x41, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86,
+    0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x02, 0x05,
+    0x00, 0x04, 0x30
+};
+static const unsigned char sha512_digest_info[] = {
+    0x30, 0x51, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86,
+    0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x03, 0x05,
+    0x00, 0x04, 0x40
+};
 
 int neverc_rsa_sign_pkcs1v15_sha256(const neverc_rsa_private_key_t *priv,
                                      const unsigned char *hash, size_t hash_len,
                                      unsigned char *sig, size_t sig_cap, size_t *sig_len) {
-    if (hash_len != 32) return -1;
+    if (!priv || !hash || !sig || hash_len != NEVERC_SHA256_DIGEST_SIZE)
+        return -1;
     int k = neverc_rsa_key_size(&priv->pub);
-    int t_len = SHA256_DI_LEN + 32;
+    int t_len = (int)sizeof(sha256_digest_info) +
+                NEVERC_SHA256_DIGEST_SIZE;
     if (k < t_len + 11) return -1;
-    if ((int)sig_cap < k) return -1;
+    if (sig_cap < (size_t)k) return -1;
 
     unsigned char *em = (unsigned char *)malloc((size_t)k);
+    if (!em)
+        return -1;
     em[0] = 0x00;
     em[1] = 0x01;
     int ps_len = k - t_len - 3;
     memset(em + 2, 0xFF, (size_t)ps_len);
     em[2 + ps_len] = 0x00;
-    memcpy(em + 3 + ps_len, sha256_digest_info, SHA256_DI_LEN);
-    memcpy(em + 3 + ps_len + SHA256_DI_LEN, hash, 32);
+    memcpy(em + 3 + ps_len, sha256_digest_info,
+           sizeof(sha256_digest_info));
+    memcpy(em + 3 + ps_len + sizeof(sha256_digest_info), hash,
+           NEVERC_SHA256_DIGEST_SIZE);
 
     neverc_bigint_t m, s;
     neverc_bigint_init(&m); neverc_bigint_init(&s);
@@ -411,35 +426,87 @@ int neverc_rsa_sign_pkcs1v15_sha256(const neverc_rsa_private_key_t *priv,
     return 0;
 }
 
-int neverc_rsa_verify_pkcs1v15_sha256(const neverc_rsa_public_key_t *pub,
-                                       const unsigned char *hash, size_t hash_len,
-                                       const unsigned char *sig, size_t sig_len) {
-    if (hash_len != 32) return -1;
+static int rsa_verify_pkcs1v15(
+    const neverc_rsa_public_key_t *pub,
+    const unsigned char *hash, size_t hash_len,
+    const unsigned char *sig, size_t sig_len,
+    const unsigned char *digest_info, size_t digest_info_len) {
+    if (!pub || !hash || !sig || !digest_info || hash_len == 0)
+        return -1;
     int k = neverc_rsa_key_size(pub);
-    if ((int)sig_len != k) return -1;
+    if (k <= 0 || sig_len != (size_t)k ||
+        digest_info_len > (size_t)k ||
+        hash_len > (size_t)k - digest_info_len ||
+        digest_info_len + hash_len + 11 > (size_t)k)
+        return -1;
 
     neverc_bigint_t s, m;
     neverc_bigint_init(&s); neverc_bigint_init(&m);
     bytes_to_bigint(&s, sig, sig_len);
+    if (neverc_bigint_cmp(&s, &pub->n) >= 0) {
+        neverc_bigint_free(&s);
+        neverc_bigint_free(&m);
+        return -1;
+    }
     neverc_bigint_exp(&m, &s, &pub->e, &pub->n);
 
     unsigned char *em = (unsigned char *)malloc((size_t)k);
+    if (!em) {
+        neverc_bigint_free(&s);
+        neverc_bigint_free(&m);
+        return -1;
+    }
     bigint_to_bytes(&m, em, k);
 
-    int ok = 1;
-    if (em[0] != 0x00 || em[1] != 0x01) ok = 0;
-
-    int t_len = SHA256_DI_LEN + 32;
-    int ps_len = k - t_len - 3;
-    for (int i = 0; i < ps_len && ok; i++)
-        if (em[2 + i] != 0xFF) ok = 0;
-    if (ok && em[2 + ps_len] != 0x00) ok = 0;
-    if (ok && memcmp(em + 3 + ps_len, sha256_digest_info, SHA256_DI_LEN) != 0) ok = 0;
-    if (ok && memcmp(em + 3 + ps_len + SHA256_DI_LEN, hash, 32) != 0) ok = 0;
+    size_t encoded_tail_len = digest_info_len + hash_len;
+    size_t ps_len = (size_t)k - encoded_tail_len - 3;
+    unsigned int mismatch = em[0] | (unsigned int)(em[1] ^ 0x01);
+    for (size_t i = 0; i < ps_len; ++i)
+        mismatch |= (unsigned int)(em[2 + i] ^ 0xff);
+    mismatch |= em[2 + ps_len];
+    for (size_t i = 0; i < digest_info_len; ++i)
+        mismatch |= (unsigned int)(
+            em[3 + ps_len + i] ^ digest_info[i]);
+    for (size_t i = 0; i < hash_len; ++i)
+        mismatch |= (unsigned int)(
+            em[3 + ps_len + digest_info_len + i] ^ hash[i]);
 
     neverc_bigint_free(&s); neverc_bigint_free(&m);
     free(em);
-    return ok ? 0 : -1;
+    return mismatch == 0 ? 0 : -1;
+}
+
+int neverc_rsa_verify_pkcs1v15_sha256(
+    const neverc_rsa_public_key_t *pub,
+    const unsigned char *hash, size_t hash_len,
+    const unsigned char *sig, size_t sig_len) {
+    if (hash_len != NEVERC_SHA256_DIGEST_SIZE)
+        return -1;
+    return rsa_verify_pkcs1v15(
+        pub, hash, hash_len, sig, sig_len,
+        sha256_digest_info, sizeof(sha256_digest_info));
+}
+
+int neverc_rsa_verify_pkcs1v15_sha384(
+    const neverc_rsa_public_key_t *pub,
+    const unsigned char *hash, size_t hash_len,
+    const unsigned char *sig, size_t sig_len) {
+    if (hash_len != NEVERC_SHA384_DIGEST_SIZE)
+        return -1;
+    return rsa_verify_pkcs1v15(
+        pub, hash, hash_len, sig, sig_len,
+        sha384_digest_info, sizeof(sha384_digest_info));
+}
+
+int neverc_rsa_verify_pkcs1v15_sha512(
+    const neverc_rsa_public_key_t *pub,
+    const unsigned char *hash, size_t hash_len,
+    const unsigned char *sig, size_t sig_len) {
+    if (hash_len != NEVERC_SHA512_DIGEST_SIZE)
+        return -1;
+    return rsa_verify_pkcs1v15(
+        pub, hash, hash_len, sig, sig_len,
+        sha512_digest_info, sizeof(sha512_digest_info));
 }
 
 typedef enum {

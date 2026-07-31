@@ -1,4 +1,5 @@
 #include "NeverCTestFixture.h"
+#include <cstdlib>
 #include <filesystem>
 
 class StdLibTest : public NeverCTest {
@@ -69,7 +70,8 @@ TEST_F(StdLibTest, WindowsModulesCompileWithBundledSdk) {
   for (const char *target : {"x86_64-pc-windows-msvc",
                              "aarch64-pc-windows-msvc"}) {
     for (const char *source : {"src/net/resolve/resolve.c",
-                               "src/os/user/user.c"}) {
+                               "src/os/user/user.c",
+                               "src/crypto/x509/x509_system.c"}) {
       SCOPED_TRACE(std::string(target) + ": " + source);
       fs::path bitcode = tmp() / (fs::path(source).stem().string() + ".bc");
       auto result = ncc({
@@ -81,6 +83,10 @@ TEST_F(StdLibTest, WindowsModulesCompileWithBundledSdk) {
           "-fno-lto",
           "-ffreestanding",
           "-std=gnu11",
+          "-Wall",
+          "-Wextra",
+          "-Werror",
+          "-Wno-deprecated-declarations",
           std::string("--target=") + target,
           "-I" + sd + "/include",
           sd + "/" + source,
@@ -462,6 +468,7 @@ TEST_F(StdLibTest, NetBufferFailurePaths) {
     "src/crypto/hmac/hmac.c", "src/crypto/hkdf/hkdf.c", \
     "src/crypto/rand/rand.c", "src/crypto/subtle/subtle.c", \
     "src/crypto/x509/x509.c", "src/crypto/x509/x509_verify.c", \
+    "src/crypto/x509/x509_pool.c", "src/crypto/x509/x509_system.c", \
     "src/crypto/rsa/rsa.c", "src/crypto/ecdsa/ecdsa.c", \
     "src/crypto/ed25519/ed25519.c", "src/crypto/elliptic/elliptic.c", \
     "src/math/big/big.c", "src/encoding/base64/base64.c", \
@@ -601,12 +608,13 @@ STD_TEST(plan9obj, "src/debug/plan9obj/plan9obj.c")
 // ===== Crypto (x509) =====
 #define X509_VERIFY_DEPS \
     "src/crypto/x509/x509.c", "src/crypto/x509/x509_verify.c", \
-    "src/crypto/x509/x509_pool.c", \
+    "src/crypto/x509/x509_pool.c", "src/crypto/x509/x509_system.c", \
     "src/crypto/rsa/rsa.c", "src/crypto/ecdsa/ecdsa.c", \
     "src/crypto/ed25519/ed25519.c", "src/crypto/rand/rand.c", \
     "src/crypto/elliptic/elliptic.c", \
     "src/crypto/sha256/sha256.c", "src/crypto/sha384/sha384.c", \
-    "src/crypto/sha512/sha512.c", "src/math/big/big.c"
+    "src/crypto/sha512/sha512.c", "src/math/big/big.c", \
+    "src/encoding/pem/pem.c", "src/encoding/base64/base64.c"
 
 STD_TEST(x509, X509_VERIFY_DEPS)
 STD_TEST(x509_chain, X509_VERIFY_DEPS)
@@ -617,6 +625,59 @@ TEST_F(StdLibTest, EmbeddedX509SignatureDotSyntax) {
 }
 #undef X509_VERIFY_DEPS
 STD_TEST(tls, HTTP_TLS_DEPS, "src/net/tcp/tcp.c")
+TEST_F(StdLibTest, TlsExperimentalTransport) {
+  auto r = compileAndRunStdTest(
+      "tls",
+      {HTTP_TLS_DEPS, "src/net/tcp/tcp.c"},
+      {"-DNEVERC_TLS_ENABLE_EXPERIMENTAL_TRANSPORT=1"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
+TEST_F(StdLibTest, TlsOpenSslClientInterop) {
+#if defined(_WIN32)
+  GTEST_SKIP() << "OpenSSL s_server interop harness is POSIX-only for now";
+#else
+  if (std::system("command -v openssl >/dev/null 2>&1") != 0)
+    GTEST_SKIP() << "openssl not available";
+
+  fs::path client = tmp() / "tls_openssl_interop_client";
+  fs::path cert = tmp() / "tls_openssl_interop_cert.pem";
+  fs::path key = tmp() / "tls_openssl_interop_key.pem";
+  std::string sd = stdSrcDir();
+
+  std::vector<std::string> args = {
+      "-I" + sd + "/include",
+      "-I" + sd + "/src/net",
+      "-Wall",
+      "-Wextra",
+      "-Wno-unused-parameter",
+      "-Wno-unused-function",
+      "-O1",
+      "-fno-builtin-std",
+      "-DNEVERC_TLS_ENABLE_EXPERIMENTAL_TRANSPORT=1",
+      "-o",
+      client.string(),
+      (fs::path(stdTestDir()) / "test_tls_interop.c").string(),
+  };
+  for (const char *src : {HTTP_TLS_DEPS, "src/net/tcp/tcp.c"})
+    args.push_back(sd + "/" + src);
+  args.push_back("-lm");
+  args.push_back("-lpthread");
+
+  CmdResult compile = ncc(args);
+  ASSERT_TRUE(compile.ok()) << "stdout: " << compile.out
+                            << "\nstderr: " << compile.err;
+
+  fs::path script =
+      fs::path(stdTestDir()) / "run_tls_openssl_interop.sh";
+  auto run = exec("/bin/bash",
+                  {script.string(), client.string(), cert.string(),
+                   key.string()});
+  ASSERT_TRUE(run.ok()) << "stdout: " << run.out << "\nstderr: " << run.err;
+  EXPECT_TRUE(run.contains("openssl interop client: ok"))
+      << "stdout: " << run.out;
+#endif
+}
 TEST_F(StdLibTest, EmbeddedTlsCertificateVerifyDotSyntax) {
   auto r = compileAndRunStdTest("tls_builtin", {}, {"-fbuiltin-std"});
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;

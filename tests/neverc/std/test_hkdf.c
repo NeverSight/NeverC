@@ -120,12 +120,35 @@ static void test_deterministic(void) {
     check_true("diff info → diff output", memcmp(okm1, okm2, 32) != 0);
 }
 
+static void test_rfc8448_tls13_early_secret(void) {
+    printf("[TLS 1.3 RFC 8448 Early Secret]\n");
+
+    /* HKDF-Extract(0s, 0s) with SHA-256 — absent PSK uses Hash.length zeros. */
+    uint8_t zeros[32];
+    memset(zeros, 0, sizeof(zeros));
+
+    uint8_t expected[32];
+    hex_to_bytes("33ad0a1c607ec03b09e6cd9893680ce210adf300aa1f2660e1b22e10f170f92a",
+                 expected, 32);
+
+    uint8_t early[32];
+    neverc_hkdf_extract_sha256(early, NULL, 0, zeros, sizeof(zeros));
+    check_true("early secret with zero IKM",
+               memcmp(early, expected, 32) == 0);
+
+    uint8_t wrong[32];
+    neverc_hkdf_extract_sha256(wrong, NULL, 0, NULL, 0);
+    check_true("empty IKM is not the TLS early secret",
+               memcmp(wrong, expected, 32) != 0);
+}
+
 int main(void) {
     printf("=== NeverC HKDF Tests ===\n\n");
     test_rfc5869_case1();
     test_rfc5869_case2();
     test_rfc5869_case3();
     test_deterministic();
+    test_rfc8448_tls13_early_secret();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");

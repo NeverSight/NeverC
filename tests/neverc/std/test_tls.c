@@ -46,6 +46,18 @@ static void test_config(void) {
 
     neverc_tls_config_insecure_skip_verify(cfg);
     neverc_tls_config_set_server_name(cfg, "example.com");
+    check_int("add_custom_root_certificate",
+              neverc_tls_config_add_root_certificates_mem(
+                  cfg, TEST_CERT_PEM, strlen(TEST_CERT_PEM)),
+              0);
+    static const char invalid_root_certificate[] =
+        "-----BEGIN CERTIFICATE-----\nYQ==\n"
+        "-----END CERTIFICATE-----\n";
+    check_int("reject_invalid_custom_root_certificate",
+              neverc_tls_config_add_root_certificates_mem(
+                  cfg, invalid_root_certificate,
+                  sizeof(invalid_root_certificate) - 1) != 0,
+              1);
 
     const char *protos[] = {"h2", "http/1.1"};
     neverc_tls_config_set_alpn(cfg, protos, 2);
@@ -126,6 +138,42 @@ static int decode_certificate_pem(uint8_t *der, size_t der_capacity) {
     if (neverc_base64_decoded_len(base64_len) > der_capacity)
         return -1;
     return neverc_base64_decode(der, base64, base64_len);
+}
+
+static void test_certificate_chain_verification(void) {
+    printf("[certificate_chain_verification]\n");
+    neverc_tls_config_t *cfg = neverc_tls_config_new();
+    check_not_null("chain_config_new", cfg);
+    neverc_tls_config_set_server_name(cfg, "localhost");
+    check_int("chain_add_custom_root",
+              neverc_tls_config_add_root_certificates_mem(
+                  cfg, TEST_CERT_PEM, strlen(TEST_CERT_PEM)),
+              0);
+
+    uint8_t certificate_der[512];
+    int certificate_der_len =
+        decode_certificate_pem(certificate_der, sizeof(certificate_der));
+    check_int("chain_decode_certificate",
+              certificate_der_len > 0, 1);
+    neverc_x509_time_t verification_time =
+        {2026, 1, 1, 0, 0, 0};
+    check_int("verify_custom_root_chain",
+              neverc_tls_verify_server_certificate_chain(
+                  cfg, certificate_der,
+                  certificate_der_len > 0 ?
+                      (size_t)certificate_der_len : 0,
+                  NULL, &verification_time),
+              0);
+
+    neverc_tls_config_set_server_name(cfg, "other.example");
+    check_int("reject_custom_root_wrong_hostname",
+              neverc_tls_verify_server_certificate_chain(
+                  cfg, certificate_der,
+                  certificate_der_len > 0 ?
+                      (size_t)certificate_der_len : 0,
+                  NULL, &verification_time) != 0,
+              1);
+    neverc_tls_config_free(cfg);
 }
 
 static void test_certificate_verify_signing(void) {
@@ -516,11 +564,33 @@ static void test_certificate_verify(void) {
 
 /* ===== TLS client-server test ===== */
 
+#if defined(NEVERC_TLS_ENABLE_EXPERIMENTAL_TRANSPORT)
 typedef struct {
-    int port;
-    int server_ok;
+    neverc_tcp_conn_t *tcp;
+    neverc_tls_config_t *config;
+    int handshake_ok;
     char received[256];
 } server_ctx_t;
+
+typedef struct {
+    neverc_tcp_conn_t *tcp;
+    int response_mode;
+    int saw_client_hello;
+    int alert_description;
+} fake_server_ctx_t;
+
+static int tcp_read_exact(
+    neverc_tcp_conn_t *tcp, uint8_t *buffer, size_t length) {
+    size_t offset = 0;
+    while (offset < length) {
+        int result = neverc_tcp_read(
+            tcp, buffer + offset, length - offset);
+        if (result <= 0)
+            return -1;
+        offset += (size_t)result;
+    }
+    return 0;
+}
 
 #ifdef _WIN32
 static DWORD WINAPI tls_server_thread(LPVOID arg) {
@@ -529,34 +599,11 @@ static void *tls_server_thread(void *arg) {
 #endif
     server_ctx_t *ctx = (server_ctx_t *)arg;
 
-    neverc_tls_config_t *cfg = neverc_tls_config_new();
-    if (neverc_tls_config_load_cert_mem(cfg, TEST_CERT_PEM, TEST_KEY_PEM) != 0) {
-        neverc_tls_config_free(cfg);
-#ifdef _WIN32
-        return 0;
-#else
-        return NULL;
-#endif
-    }
-
-    char addr[32];
-    snprintf(addr, sizeof(addr), "127.0.0.1:%d", ctx->port);
     const char *err = NULL;
-    neverc_tls_listener_t *ln = neverc_tls_listen(addr, cfg, &err);
-    if (!ln) {
-        neverc_tls_config_free(cfg);
-#ifdef _WIN32
-        return 0;
-#else
-        return NULL;
-#endif
-    }
-
-    /* Signal ready by setting port (in case it was 0) */
-    ctx->server_ok = 1;
-
-    neverc_tls_conn_t *conn = neverc_tls_accept(ln, &err);
+    neverc_tls_conn_t *conn =
+        neverc_tls_server(ctx->tcp, ctx->config, &err);
     if (conn) {
+        ctx->handshake_ok = 1;
         char buf[256];
         int n = neverc_tls_read(conn, buf, sizeof(buf) - 1);
         if (n > 0) {
@@ -564,12 +611,11 @@ static void *tls_server_thread(void *arg) {
             memcpy(ctx->received, buf, (size_t)(n + 1));
         }
 
-        neverc_tls_write(conn, "pong", 4);
+        if (neverc_tls_write(conn, "pong", 4) != 4)
+            ctx->handshake_ok = 0;
         neverc_tls_close(conn);
     }
-
-    neverc_tls_listener_close(ln);
-    neverc_tls_config_free(cfg);
+    neverc_tcp_close(ctx->tcp);
 
 #ifdef _WIN32
     return 0;
@@ -578,16 +624,262 @@ static void *tls_server_thread(void *arg) {
 #endif
 }
 
+#ifdef _WIN32
+static DWORD WINAPI fake_server_thread(LPVOID arg) {
+#else
+static void *fake_server_thread(void *arg) {
+#endif
+    fake_server_ctx_t *ctx = (fake_server_ctx_t *)arg;
+    uint8_t header[5];
+    uint8_t payload[1024];
+    if (tcp_read_exact(ctx->tcp, header, sizeof(header)) == 0) {
+        size_t record_len =
+            ((size_t)header[3] << 8) | header[4];
+        if (header[0] == 22 && record_len <= sizeof(payload) &&
+            tcp_read_exact(ctx->tcp, payload, record_len) == 0 &&
+            record_len >= 4 && payload[0] == 1) {
+            ctx->saw_client_hello = 1;
+            static const uint8_t unexpected_record[] = {
+                23, 0x03, 0x03, 0x00, 0x01, 0
+            };
+            static const uint8_t malformed_server_hello[] = {
+                22, 0x03, 0x03, 0x00, 0x04,
+                2, 0, 0, 0
+            };
+            if (ctx->response_mode == 0) {
+                (void)neverc_tcp_write(
+                    ctx->tcp, unexpected_record,
+                    sizeof(unexpected_record));
+            } else {
+                (void)neverc_tcp_write(
+                    ctx->tcp, malformed_server_hello,
+                    sizeof(malformed_server_hello));
+            }
+
+            if (tcp_read_exact(
+                    ctx->tcp, header, sizeof(header)) == 0) {
+                record_len =
+                    ((size_t)header[3] << 8) | header[4];
+                if (header[0] == 21 && record_len == 2 &&
+                    tcp_read_exact(
+                        ctx->tcp, payload, record_len) == 0 &&
+                    payload[0] == 2) {
+                    ctx->alert_description = payload[1];
+                }
+            }
+        }
+    }
+    neverc_tcp_close(ctx->tcp);
+#ifdef _WIN32
+    return 0;
+#else
+    return NULL;
+#endif
+}
+
+static void test_unexpected_server_record_alert(void) {
+    printf("[unexpected_server_record_alert]\n");
+    neverc_tcp_conn_t *client_tcp = NULL;
+    neverc_tcp_conn_t *server_tcp = NULL;
+    check_int("create_alert_pipe",
+              neverc_tcp_pipe(&client_tcp, &server_tcp), 0);
+    if (!client_tcp || !server_tcp) {
+        neverc_tcp_close(client_tcp);
+        neverc_tcp_close(server_tcp);
+        return;
+    }
+
+    fake_server_ctx_t ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.tcp = server_tcp;
+    ctx.alert_description = -1;
+#ifdef _WIN32
+    HANDLE thread = CreateThread(
+        NULL, 0, fake_server_thread, &ctx, 0, NULL);
+    int thread_started = thread != NULL;
+#else
+    pthread_t thread;
+    int thread_started =
+        pthread_create(&thread, NULL, fake_server_thread, &ctx) == 0;
+#endif
+    check_int("start_fake_server_thread", thread_started, 1);
+    if (!thread_started) {
+        neverc_tcp_close(client_tcp);
+        neverc_tcp_close(server_tcp);
+        return;
+    }
+
+    neverc_tls_config_t *config = neverc_tls_config_new();
+    neverc_tls_config_insecure_skip_verify(config);
+    const char *err = NULL;
+    neverc_tls_conn_t *client =
+        neverc_tls_client(client_tcp, config, &err);
+    check_null("reject_unexpected_server_record", client);
+    neverc_tls_close(client);
+    neverc_tcp_close(client_tcp);
+#ifdef _WIN32
+    WaitForSingleObject(thread, INFINITE);
+    CloseHandle(thread);
+#else
+    pthread_join(thread, NULL);
+#endif
+    check_int("fake_server_saw_client_hello",
+              ctx.saw_client_hello, 1);
+    check_int("send_unexpected_message_alert",
+              ctx.alert_description, 10);
+    neverc_tls_config_free(config);
+}
+
+static void test_malformed_server_hello_alert(void) {
+    printf("[malformed_server_hello_alert]\n");
+    neverc_tcp_conn_t *client_tcp = NULL;
+    neverc_tcp_conn_t *server_tcp = NULL;
+    check_int("create_malformed_hello_pipe",
+              neverc_tcp_pipe(&client_tcp, &server_tcp), 0);
+    if (!client_tcp || !server_tcp) {
+        neverc_tcp_close(client_tcp);
+        neverc_tcp_close(server_tcp);
+        return;
+    }
+
+    fake_server_ctx_t ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.tcp = server_tcp;
+    ctx.response_mode = 1;
+    ctx.alert_description = -1;
+#ifdef _WIN32
+    HANDLE thread = CreateThread(
+        NULL, 0, fake_server_thread, &ctx, 0, NULL);
+    int thread_started = thread != NULL;
+#else
+    pthread_t thread;
+    int thread_started =
+        pthread_create(&thread, NULL, fake_server_thread, &ctx) == 0;
+#endif
+    check_int("start_malformed_hello_thread", thread_started, 1);
+    if (!thread_started) {
+        neverc_tcp_close(client_tcp);
+        neverc_tcp_close(server_tcp);
+        return;
+    }
+
+    neverc_tls_config_t *config = neverc_tls_config_new();
+    neverc_tls_config_insecure_skip_verify(config);
+    const char *err = NULL;
+    neverc_tls_conn_t *client =
+        neverc_tls_client(client_tcp, config, &err);
+    check_null("reject_malformed_server_hello", client);
+    neverc_tls_close(client);
+    neverc_tcp_close(client_tcp);
+#ifdef _WIN32
+    WaitForSingleObject(thread, INFINITE);
+    CloseHandle(thread);
+#else
+    pthread_join(thread, NULL);
+#endif
+    check_int("malformed_server_saw_client_hello",
+              ctx.saw_client_hello, 1);
+    check_int("send_decode_error_alert",
+              ctx.alert_description, 50);
+    neverc_tls_config_free(config);
+}
+#endif
+
 static void test_client_server(void) {
     printf("[client_server]\n");
 
+#if defined(NEVERC_TLS_ENABLE_EXPERIMENTAL_TRANSPORT)
+    neverc_tls_config_t *server_config = neverc_tls_config_new();
+    neverc_tls_config_t *client_config = neverc_tls_config_new();
+    check_not_null("server_config_new", server_config);
+    check_not_null("client_config_new", client_config);
+    if (!server_config || !client_config) {
+        neverc_tls_config_free(server_config);
+        neverc_tls_config_free(client_config);
+        return;
+    }
+
+    check_int("load_server_certificate",
+              neverc_tls_config_load_cert_mem(
+                  server_config, TEST_CERT_PEM, TEST_KEY_PEM),
+              0);
+    neverc_tls_config_set_server_name(client_config, "localhost");
+    check_int("load_client_root",
+              neverc_tls_config_add_root_certificates_mem(
+                  client_config, TEST_CERT_PEM, strlen(TEST_CERT_PEM)),
+              0);
+
+    neverc_tcp_conn_t *client_tcp = NULL;
+    neverc_tcp_conn_t *server_tcp = NULL;
+    check_int("create_tls_pipe",
+              neverc_tcp_pipe(&client_tcp, &server_tcp), 0);
+    if (!client_tcp || !server_tcp) {
+        neverc_tcp_close(client_tcp);
+        neverc_tcp_close(server_tcp);
+        neverc_tls_config_free(server_config);
+        neverc_tls_config_free(client_config);
+        return;
+    }
+
+    server_ctx_t ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.tcp = server_tcp;
+    ctx.config = server_config;
+#ifdef _WIN32
+    HANDLE thread = CreateThread(
+        NULL, 0, tls_server_thread, &ctx, 0, NULL);
+    int thread_started = thread != NULL;
+#else
+    pthread_t thread;
+    int thread_started =
+        pthread_create(&thread, NULL, tls_server_thread, &ctx) == 0;
+#endif
+    check_int("start_tls_server_thread", thread_started, 1);
+
+    if (thread_started) {
+        const char *err = NULL;
+        neverc_tls_conn_t *client =
+            neverc_tls_client(client_tcp, client_config, &err);
+        check_not_null("client_handshake", client);
+        if (client) {
+            check_int("client_write",
+                      neverc_tls_write(client, "ping", 4), 4);
+            char response[8] = {0};
+            int response_len =
+                neverc_tls_read(client, response, sizeof(response));
+            check_int("client_read_length", response_len, 4);
+            check_int("client_read_payload",
+                      response_len == 4 &&
+                      memcmp(response, "pong", 4) == 0,
+                      1);
+            neverc_tls_close(client);
+        }
+        neverc_tcp_close(client_tcp);
+#ifdef _WIN32
+        WaitForSingleObject(thread, INFINITE);
+        CloseHandle(thread);
+#else
+        pthread_join(thread, NULL);
+#endif
+        check_int("server_handshake", ctx.handshake_ok, 1);
+        check_int("server_read_payload",
+                  strcmp(ctx.received, "ping") == 0, 1);
+    } else {
+        neverc_tcp_close(client_tcp);
+        neverc_tcp_close(server_tcp);
+    }
+
+    neverc_tls_config_free(server_config);
+    neverc_tls_config_free(client_config);
+#else
     neverc_tls_config_t *cfg = neverc_tls_config_new();
     check_not_null("config for server", cfg);
-
-    int rc = neverc_tls_config_load_cert_mem(cfg, TEST_CERT_PEM, TEST_KEY_PEM);
-    check_int("load server certificate", rc, 0);
-
+    check_int("load server certificate",
+              neverc_tls_config_load_cert_mem(
+                  cfg, TEST_CERT_PEM, TEST_KEY_PEM),
+              0);
     neverc_tls_config_free(cfg);
+#endif
 }
 
 /* ===== Dial error test ===== */
@@ -653,10 +945,17 @@ int main(void) {
 
     test_config();
     test_cipher_suites();
+    test_certificate_chain_verification();
     test_certificate_verify_signing();
     test_certificate_verify();
+#if !defined(NEVERC_TLS_ENABLE_EXPERIMENTAL_TRANSPORT)
     test_dial_errors();
+#endif
     test_client_server();
+#if defined(NEVERC_TLS_ENABLE_EXPERIMENTAL_TRANSPORT)
+    test_unexpected_server_record_alert();
+    test_malformed_server_hello_alert();
+#endif
 
     printf("\n%d/%d tests passed", tests_passed, tests_run);
     if (tests_failed > 0)

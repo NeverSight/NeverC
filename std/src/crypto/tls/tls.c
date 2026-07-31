@@ -16,6 +16,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <time.h>
 
 /* ======================================================================
  * TLS 1.3 Constants (RFC 8446)
@@ -39,7 +40,8 @@
 #define TLS_HS_NEW_SESSION_TICKET  4
 #define TLS_HS_ENCRYPTED_EXT       8
 #define TLS_HS_CERTIFICATE        11
-#define TLS_HS_CERT_VERIFY        13
+#define TLS_HS_CERTIFICATE_REQUEST 13
+#define TLS_HS_CERT_VERIFY        15
 #define TLS_HS_FINISHED           20
 
 /* Extension types */
@@ -95,6 +97,16 @@ static inline uint32_t get_u24(const uint8_t *p) {
     return ((uint32_t)p[0] << 16) | ((uint32_t)p[1] << 8) | p[2];
 }
 
+#if defined(NEVERC_TLS_DEBUG_KEYS)
+static void tls_debug_hex(
+    const char *label, const uint8_t *data, size_t length) {
+    fprintf(stderr, "%s ", label);
+    for (size_t i = 0; i < length; ++i)
+        fprintf(stderr, "%02x", data[i]);
+    fputc('\n', stderr);
+}
+#endif
+
 /* ======================================================================
  * Internal structures
  * ====================================================================== */
@@ -122,6 +134,7 @@ struct neverc_tls_config {
     char   **alpn_protos;
     int      alpn_count;
     int      skip_verify;
+    neverc_x509_cert_pool_t *root_certificates;
 };
 
 struct neverc_tls_conn {
@@ -134,11 +147,15 @@ struct neverc_tls_conn {
     char               *alpn;
     uint8_t            *peer_cert;
     size_t              peer_cert_len;
+    neverc_x509_cert_pool_t *peer_intermediates;
     uint8_t             read_buf[TLS_MAX_CIPHERTEXT + TLS_RECORD_HEADER_SIZE];
     size_t              read_buf_len;
     uint8_t             decrypt_buf[TLS_MAX_PLAINTEXT + 1];
     size_t              decrypt_buf_len;
     size_t              decrypt_buf_pos;
+    int                 write_keys_active;
+    int                 alert_sent;
+    const char         *failure_reason;
     int                 closed;
 };
 
@@ -161,6 +178,7 @@ void neverc_tls_config_free(neverc_tls_config_t *cfg) {
     free(cfg->cert_der);
     free(cfg->key_der);
     free(cfg->server_name);
+    neverc_x509_cert_pool_free(cfg->root_certificates);
     for (int i = 0; i < cfg->alpn_count; i++)
         free(cfg->alpn_protos[i]);
     free(cfg->alpn_protos);
@@ -293,6 +311,45 @@ int neverc_tls_config_load_cert_mem(neverc_tls_config_t *cfg,
     return 0;
 }
 
+int neverc_tls_config_add_root_certificates_mem(
+    neverc_tls_config_t *cfg, const char *pem, size_t pem_len) {
+    if (!cfg || !pem || pem_len == 0)
+        return -1;
+
+    int created_pool = 0;
+    if (!cfg->root_certificates) {
+        cfg->root_certificates = neverc_x509_cert_pool_new();
+        if (!cfg->root_certificates)
+            return -1;
+        created_pool = 1;
+    }
+
+    int added = neverc_x509_cert_pool_add_pem(
+        cfg->root_certificates, pem, pem_len);
+    if (added <= 0) {
+        if (created_pool) {
+            neverc_x509_cert_pool_free(cfg->root_certificates);
+            cfg->root_certificates = NULL;
+        }
+        return -1;
+    }
+    return 0;
+}
+
+int neverc_tls_config_add_root_certificates(
+    neverc_tls_config_t *cfg, const char *pem_path) {
+    if (!cfg || !pem_path)
+        return -1;
+    size_t pem_len = 0;
+    uint8_t *pem = read_file_contents(pem_path, &pem_len);
+    if (!pem)
+        return -1;
+    int result = neverc_tls_config_add_root_certificates_mem(
+        cfg, (const char *)pem, pem_len);
+    free(pem);
+    return result;
+}
+
 void neverc_tls_config_set_alpn(neverc_tls_config_t *cfg,
                                  const char **protocols, int count) {
     if (!cfg) return;
@@ -315,6 +372,82 @@ void neverc_tls_config_set_server_name(neverc_tls_config_t *cfg,
     if (!cfg) return;
     free(cfg->server_name);
     cfg->server_name = name ? strdup(name) : NULL;
+}
+
+static int tls_current_x509_time(neverc_x509_time_t *result) {
+    if (!result)
+        return -1;
+    time_t now = time(NULL);
+    if (now == (time_t)-1)
+        return -1;
+
+    struct tm utc;
+#if defined(_WIN32)
+    if (gmtime_s(&utc, &now) != 0)
+        return -1;
+#else
+    if (!gmtime_r(&now, &utc))
+        return -1;
+#endif
+    int year = utc.tm_year + 1900;
+    if (year < 0 || year > UINT16_MAX ||
+        utc.tm_mon < 0 || utc.tm_mon > 11 ||
+        utc.tm_mday < 1 || utc.tm_mday > 31 ||
+        utc.tm_hour < 0 || utc.tm_hour > 23 ||
+        utc.tm_min < 0 || utc.tm_min > 59 ||
+        utc.tm_sec < 0)
+        return -1;
+
+    result->year = (uint16_t)year;
+    result->month = (uint8_t)(utc.tm_mon + 1);
+    result->day = (uint8_t)utc.tm_mday;
+    result->hour = (uint8_t)utc.tm_hour;
+    result->minute = (uint8_t)utc.tm_min;
+    result->second =
+        (uint8_t)(utc.tm_sec > 59 ? 59 : utc.tm_sec);
+    return 0;
+}
+
+int neverc_tls_verify_server_certificate_chain(
+    const neverc_tls_config_t *config,
+    const uint8_t *leaf_der,
+    size_t leaf_der_len,
+    const neverc_x509_cert_pool_t *intermediates,
+    const neverc_x509_time_t *moment) {
+    if (!config || !config->server_name ||
+        config->server_name[0] == '\0' ||
+        !leaf_der || leaf_der_len == 0)
+        return -1;
+
+    neverc_x509_cert_t leaf;
+    if (neverc_x509_parse_certificate(
+            &leaf, leaf_der, leaf_der_len) != 0)
+        return -1;
+
+    neverc_x509_time_t current_time;
+    if (!moment) {
+        if (tls_current_x509_time(&current_time) != 0) {
+            neverc_x509_cert_free(&leaf);
+            return -1;
+        }
+        moment = &current_time;
+    }
+
+    neverc_x509_cert_pool_t *owned_roots = NULL;
+    const neverc_x509_cert_pool_t *roots =
+        config->root_certificates;
+    if (!roots) {
+        owned_roots = neverc_x509_system_cert_pool();
+        roots = owned_roots;
+    }
+
+    int result = roots ? neverc_x509_verify_with_pools(
+        &leaf, intermediates, roots, moment,
+        config->server_name,
+        NEVERC_X509_EXT_KEY_USAGE_SERVER_AUTH) : -1;
+    neverc_x509_cert_pool_free(owned_roots);
+    neverc_x509_cert_free(&leaf);
+    return result;
 }
 
 int neverc_tls_sign_certificate_verify(
@@ -412,6 +545,18 @@ static void derive_secret(const uint8_t *secret,
                        out, TLS_HASH_SIZE_SHA256);
 }
 
+/* RFC 8446 §7.1: unavailable secrets are Hash.length zero bytes, not an
+ * empty IKM. Early Secret = HKDF-Extract(0s, 0s) and Master Secret =
+ * HKDF-Extract(Derive-Secret(..., "derived", ""), 0s). */
+static int tls_hkdf_extract_zero_ikm(
+    uint8_t out[TLS_HASH_SIZE_SHA256],
+    const uint8_t *salt, size_t salt_len) {
+    uint8_t zeros[TLS_HASH_SIZE_SHA256];
+    memset(zeros, 0, sizeof(zeros));
+    return neverc_hkdf_extract_sha256(
+        out, salt, salt_len, zeros, sizeof(zeros));
+}
+
 static void derive_traffic_keys(const uint8_t *traffic_secret,
                                   tls_traffic_keys_t *keys,
                                   tls_cipher_id_t cipher) {
@@ -493,6 +638,32 @@ static int tls_send_encrypted(neverc_tls_conn_t *conn,
     if (rc == 0 && tls_raw_write(conn->tcp, ciphertext, ct_len) < 0) rc = -1;
     free(ciphertext);
     return rc;
+}
+
+static int tls_send_alert(
+    neverc_tls_conn_t *conn, uint8_t description) {
+    if (!conn || !conn->tcp || conn->alert_sent)
+        return -1;
+    uint8_t alert[2] = {2, description};
+    int result = conn->write_keys_active ?
+        tls_send_encrypted(conn, TLS_CT_ALERT, alert, sizeof(alert)) :
+        tls_send_record(conn->tcp, TLS_CT_ALERT, alert, sizeof(alert));
+    if (result == 0)
+        conn->alert_sent = 1;
+    return result;
+}
+
+static int tls_fail(
+    neverc_tls_conn_t *conn, uint8_t description) {
+    (void)tls_send_alert(conn, description);
+    return -1;
+}
+
+static int tls_error(
+    neverc_tls_conn_t *conn, const char *reason) {
+    if (conn)
+        conn->failure_reason = reason;
+    return -1;
 }
 
 static int tls_recv_record(neverc_tls_conn_t *conn, uint8_t *out_type,
@@ -622,7 +793,8 @@ static neverc_tls_conn_t *tls_conn_new(neverc_tcp_conn_t *tcp, int owns) {
 static int tls_store_server_certificate(neverc_tls_conn_t *conn,
                                         const uint8_t *message,
                                         size_t message_len) {
-    if (!conn || !message || conn->peer_cert || message_len < 4)
+    if (!conn || !message || conn->peer_cert ||
+        conn->peer_intermediates || message_len < 4)
         return -1;
 
     size_t pos = 0;
@@ -643,7 +815,14 @@ static int tls_store_server_certificate(neverc_tls_conn_t *conn,
     size_t list_end = pos + certificate_list_len;
     uint8_t *first_certificate = NULL;
     size_t first_certificate_len = 0;
+    neverc_x509_cert_pool_t *intermediates =
+        neverc_x509_cert_pool_new();
+    if (!intermediates)
+        return -1;
+    size_t certificate_count = 0;
     while (pos < list_end) {
+        if (++certificate_count > 16)
+            goto fail;
         if (list_end - pos < 3)
             goto fail;
         size_t certificate_len = get_u24(message + pos);
@@ -657,6 +836,10 @@ static int tls_store_server_certificate(neverc_tls_conn_t *conn,
                 goto fail;
             memcpy(first_certificate, message + pos, certificate_len);
             first_certificate_len = certificate_len;
+        } else if (neverc_x509_cert_pool_add_der(
+                       intermediates, message + pos,
+                       certificate_len) != 0) {
+            goto fail;
         }
         pos += certificate_len;
 
@@ -671,10 +854,12 @@ static int tls_store_server_certificate(neverc_tls_conn_t *conn,
 
     conn->peer_cert = first_certificate;
     conn->peer_cert_len = first_certificate_len;
+    conn->peer_intermediates = intermediates;
     return 0;
 
 fail:
     free(first_certificate);
+    neverc_x509_cert_pool_free(intermediates);
     return -1;
 }
 
@@ -796,9 +981,16 @@ static int tls_client_handshake(neverc_tls_conn_t *conn,
     size_t rec_len;
     if (tls_recv_record(conn, &rec_type, rec_data, &rec_len) != 0)
         return -1;
-    if (rec_type != TLS_CT_HANDSHAKE || rec_len < 4 ||
-        rec_data[0] != TLS_HS_SERVER_HELLO)
-        return -1;
+    if (rec_type != TLS_CT_HANDSHAKE)
+        return tls_fail(conn, TLS_ALERT_UNEXPECTED_MESSAGE);
+    if (rec_len < 4)
+        return tls_fail(conn, TLS_ALERT_DECODE_ERROR);
+    if (rec_data[0] != TLS_HS_SERVER_HELLO)
+        return tls_fail(conn, TLS_ALERT_UNEXPECTED_MESSAGE);
+    if ((size_t)get_u24(rec_data + 1) != rec_len - 4)
+        return tls_fail(conn, TLS_ALERT_DECODE_ERROR);
+    if (rec_len < 44)
+        return tls_fail(conn, TLS_ALERT_DECODE_ERROR);
 
     /* Hash ServerHello into transcript */
     neverc_sha256_update(&transcript, rec_data, rec_len);
@@ -851,8 +1043,8 @@ static int tls_client_handshake(neverc_tls_conn_t *conn,
 
     /* Derive handshake secrets */
     uint8_t early_secret[32];
-    uint8_t zero_ikm[32] = {0};
-    neverc_hkdf_extract_sha256(early_secret, NULL, 0, zero_ikm, 32);
+    if (tls_hkdf_extract_zero_ikm(early_secret, NULL, 0) != 0)
+        return -1;
 
     uint8_t derived_secret[32];
     uint8_t empty_hash[32];
@@ -881,9 +1073,34 @@ static int tls_client_handshake(neverc_tls_conn_t *conn,
     derive_secret(handshake_secret, "s hs traffic", 12,
                    transcript_hash_sh, server_hs_traffic_secret);
 
+#if defined(NEVERC_TLS_DEBUG_KEYS)
+    tls_debug_hex("CLIENT_RANDOM", client_random, sizeof(client_random));
+    tls_debug_hex("CLIENT_PRIVATE_KEY",
+                  ecdh_key.private_key, 32);
+    tls_debug_hex("SERVER_PUBLIC_KEY",
+                  server_pubkey, sizeof(server_pubkey));
+    tls_debug_hex("SHARED_SECRET",
+                  shared_secret, sizeof(shared_secret));
+    tls_debug_hex("TRANSCRIPT_HASH_SERVER_HELLO",
+                  transcript_hash_sh, sizeof(transcript_hash_sh));
+    tls_debug_hex("EARLY_SECRET",
+                  early_secret, sizeof(early_secret));
+    tls_debug_hex("DERIVED_SECRET",
+                  derived_secret, sizeof(derived_secret));
+    tls_debug_hex("HANDSHAKE_SECRET",
+                  handshake_secret, sizeof(handshake_secret));
+    tls_debug_hex("CLIENT_HANDSHAKE_TRAFFIC_SECRET",
+                  client_hs_traffic_secret,
+                  sizeof(client_hs_traffic_secret));
+    tls_debug_hex("SERVER_HANDSHAKE_TRAFFIC_SECRET",
+                  server_hs_traffic_secret,
+                  sizeof(server_hs_traffic_secret));
+#endif
+
     /* Set handshake traffic keys */
     derive_traffic_keys(server_hs_traffic_secret, &conn->read_keys, cipher_id);
     derive_traffic_keys(client_hs_traffic_secret, &conn->write_keys, cipher_id);
+    conn->write_keys_active = 1;
 
     /* Read encrypted handshake messages (EncryptedExtensions, Certificate,
      * CertificateVerify, Finished) */
@@ -894,10 +1111,13 @@ static int tls_client_handshake(neverc_tls_conn_t *conn,
         uint8_t hs_data[TLS_MAX_PLAINTEXT];
         size_t hs_len;
         if (tls_recv_decrypt(conn, &inner_type, hs_data, &hs_len) != 0)
-            return -1;
+            return tls_error(
+                conn, "failed to decrypt server handshake record");
 
         if (inner_type != TLS_CT_HANDSHAKE) {
-            if (inner_type == TLS_CT_ALERT) return -1;
+            if (inner_type == TLS_CT_ALERT)
+                return tls_error(
+                    conn, "server sent an alert during handshake");
             continue;
         }
 
@@ -907,13 +1127,15 @@ static int tls_client_handshake(neverc_tls_conn_t *conn,
             uint8_t hs_type = hs_data[hpos];
             uint32_t msg_len = get_u24(hs_data + hpos + 1);
             if ((size_t)msg_len > hs_len - hpos - 4)
-                return -1;
+                return tls_error(
+                    conn, "fragmented or malformed server handshake message");
 
             const uint8_t *message = hs_data + hpos + 4;
             if (hs_type == TLS_HS_CERTIFICATE) {
                 if (tls_store_server_certificate(
                         conn, message, msg_len) != 0)
-                    return -1;
+                    return tls_error(
+                        conn, "malformed server Certificate message");
             } else if (hs_type == TLS_HS_CERT_VERIFY) {
                 if (!conn->peer_cert || got_certificate_verify ||
                     msg_len < 4)
@@ -939,8 +1161,17 @@ static int tls_client_handshake(neverc_tls_conn_t *conn,
                         transcript_hash, sizeof(transcript_hash),
                         message + 4, signature_len);
                 neverc_x509_cert_free(&certificate);
+                if (verify_result == 0 &&
+                    (!cfg || !cfg->skip_verify)) {
+                    verify_result =
+                        neverc_tls_verify_server_certificate_chain(
+                            cfg, conn->peer_cert,
+                            conn->peer_cert_len,
+                            conn->peer_intermediates, NULL);
+                }
                 if (verify_result != 0)
-                    return -1;
+                    return tls_error(
+                        conn, "server CertificateVerify validation failed");
                 got_certificate_verify = 1;
             }
 
@@ -953,7 +1184,8 @@ static int tls_client_handshake(neverc_tls_conn_t *conn,
             if (hs_type == TLS_HS_FINISHED) {
                 /* Verify server Finished */
                 if (!got_certificate_verify)
-                    return -1;
+                    return tls_error(
+                        conn, "server Finished arrived before CertificateVerify");
                 uint8_t transcript_hash[32];
                 {
                     neverc_sha256_ctx copy = transcript;
@@ -973,7 +1205,8 @@ static int tls_client_handshake(neverc_tls_conn_t *conn,
                 if (msg_len != 32 ||
                     !neverc_subtle_constant_time_compare(
                         hs_data + hpos + 4, expected_verify, 32))
-                    return -1;
+                    return tls_error(
+                        conn, "server Finished validation failed");
 
                 /* Hash Finished into transcript */
                 neverc_sha256_update(&transcript, hs_data + hpos,
@@ -984,16 +1217,22 @@ static int tls_client_handshake(neverc_tls_conn_t *conn,
             hpos += 4 + msg_len;
         }
         if (hpos != hs_len)
-            return -1;
+            return tls_error(
+                conn, "trailing fragmented server handshake bytes");
+    }
+
+    /* Application traffic secrets use the transcript through server Finished
+     * only (RFC 8446 §7.1). Keep a snapshot before Client Finished. */
+    uint8_t transcript_hash_server_finished[32];
+    {
+        neverc_sha256_ctx copy = transcript;
+        neverc_sha256_final(&copy, transcript_hash_server_finished);
     }
 
     /* Send client Finished */
     {
         uint8_t transcript_hash[32];
-        {
-            neverc_sha256_ctx copy = transcript;
-            neverc_sha256_final(&copy, transcript_hash);
-        }
+        memcpy(transcript_hash, transcript_hash_server_finished, 32);
 
         uint8_t finished_key[32];
         hkdf_expand_label(client_hs_traffic_secret, 32,
@@ -1020,21 +1259,16 @@ static int tls_client_handshake(neverc_tls_conn_t *conn,
     derive_secret(handshake_secret, "derived", 7, empty_hash, master_derived);
 
     uint8_t master_secret[32];
-    neverc_hkdf_extract_sha256(master_secret, master_derived, 32,
-                                zero_ikm, 32);
-
-    uint8_t transcript_hash_final[32];
-    {
-        neverc_sha256_ctx copy = transcript;
-        neverc_sha256_final(&copy, transcript_hash_final);
-    }
+    if (tls_hkdf_extract_zero_ikm(
+            master_secret, master_derived, 32) != 0)
+        return -1;
 
     uint8_t client_app_secret[32];
     uint8_t server_app_secret[32];
     derive_secret(master_secret, "c ap traffic", 12,
-                   transcript_hash_final, client_app_secret);
+                   transcript_hash_server_finished, client_app_secret);
     derive_secret(master_secret, "s ap traffic", 12,
-                   transcript_hash_final, server_app_secret);
+                   transcript_hash_server_finished, server_app_secret);
 
     derive_traffic_keys(server_app_secret, &conn->read_keys, cipher_id);
     derive_traffic_keys(client_app_secret, &conn->write_keys, cipher_id);
@@ -1199,8 +1433,8 @@ static int tls_server_handshake(neverc_tls_conn_t *conn,
 
     /* Key schedule */
     uint8_t early_secret[32];
-    uint8_t zero_ikm[32] = {0};
-    neverc_hkdf_extract_sha256(early_secret, NULL, 0, zero_ikm, 32);
+    if (tls_hkdf_extract_zero_ikm(early_secret, NULL, 0) != 0)
+        return -1;
 
     uint8_t empty_hash[32];
     {
@@ -1231,6 +1465,7 @@ static int tls_server_handshake(neverc_tls_conn_t *conn,
 
     derive_traffic_keys(server_hs_traffic_secret, &conn->write_keys, cipher_id);
     derive_traffic_keys(client_hs_traffic_secret, &conn->read_keys, cipher_id);
+    conn->write_keys_active = 1;
 
     /* Send encrypted handshake messages */
     /* 1. EncryptedExtensions (empty) */
@@ -1321,6 +1556,13 @@ static int tls_server_handshake(neverc_tls_conn_t *conn,
             return -1;
     }
 
+    /* Snapshot transcript through server Finished for application secrets. */
+    uint8_t transcript_hash_server_finished[32];
+    {
+        neverc_sha256_ctx copy = transcript;
+        neverc_sha256_final(&copy, transcript_hash_server_finished);
+    }
+
     /* Receive client Finished */
     {
         uint8_t inner_type;
@@ -1333,10 +1575,7 @@ static int tls_server_handshake(neverc_tls_conn_t *conn,
             return -1;
 
         uint8_t transcript_hash[32];
-        {
-            neverc_sha256_ctx copy = transcript;
-            neverc_sha256_final(&copy, transcript_hash);
-        }
+        memcpy(transcript_hash, transcript_hash_server_finished, 32);
 
         uint8_t finished_key[32];
         hkdf_expand_label(client_hs_traffic_secret, 32,
@@ -1359,21 +1598,16 @@ static int tls_server_handshake(neverc_tls_conn_t *conn,
     derive_secret(handshake_secret, "derived", 7, empty_hash, master_derived);
 
     uint8_t master_secret[32];
-    neverc_hkdf_extract_sha256(master_secret, master_derived, 32,
-                                zero_ikm, 32);
-
-    uint8_t transcript_hash_final[32];
-    {
-        neverc_sha256_ctx copy = transcript;
-        neverc_sha256_final(&copy, transcript_hash_final);
-    }
+    if (tls_hkdf_extract_zero_ikm(
+            master_secret, master_derived, 32) != 0)
+        return -1;
 
     uint8_t client_app_secret[32];
     uint8_t server_app_secret[32];
     derive_secret(master_secret, "c ap traffic", 12,
-                   transcript_hash_final, client_app_secret);
+                   transcript_hash_server_finished, client_app_secret);
     derive_secret(master_secret, "s ap traffic", 12,
-                   transcript_hash_final, server_app_secret);
+                   transcript_hash_server_finished, server_app_secret);
 
     derive_traffic_keys(client_app_secret, &conn->read_keys, cipher_id);
     derive_traffic_keys(server_app_secret, &conn->write_keys, cipher_id);
@@ -1387,43 +1621,116 @@ static int tls_server_handshake(neverc_tls_conn_t *conn,
  * ====================================================================== */
 
 static const char k_tls_unavailable[] =
-    "TLS transport is unavailable: certificate chain validation and "
-    "server CertificateVerify signing are not implemented";
+    "TLS transport is unavailable pending end-to-end interoperability "
+    "and security validation";
 
 static void tls_set_unavailable(const char **errp) {
     if (errp)
         *errp = k_tls_unavailable;
 }
 
+#if defined(NEVERC_TLS_ENABLE_EXPERIMENTAL_TRANSPORT)
+static const char k_tls_invalid_argument[] =
+    "TLS transport received an invalid argument";
+static const char k_tls_handshake_failed[] =
+    "TLS 1.3 handshake failed";
+static const char k_tls_allocation_failed[] =
+    "TLS transport allocation failed";
+
+static neverc_tls_conn_t *tls_start_handshake(
+    neverc_tcp_conn_t *tcp, neverc_tls_config_t *cfg,
+    int from_server, int owns_tcp, const char **errp) {
+    if (errp)
+        *errp = NULL;
+    if (!tcp || !cfg ||
+        (from_server &&
+         (!cfg->cert_der || !cfg->key_der)) ||
+        (!from_server && !cfg->skip_verify &&
+         (!cfg->server_name || cfg->server_name[0] == '\0'))) {
+        if (errp)
+            *errp = k_tls_invalid_argument;
+        return NULL;
+    }
+
+    neverc_tls_conn_t *conn = tls_conn_new(tcp, owns_tcp);
+    if (!conn) {
+        if (errp)
+            *errp = k_tls_allocation_failed;
+        return NULL;
+    }
+    int result = from_server ?
+        tls_server_handshake(conn, cfg) :
+        tls_client_handshake(conn, cfg);
+    if (result != 0) {
+        const char *failure_reason = conn->failure_reason;
+        conn->owns_tcp = 0;
+        neverc_tls_close(conn);
+        if (errp)
+            *errp = failure_reason ?
+                failure_reason : k_tls_handshake_failed;
+        return NULL;
+    }
+    return conn;
+}
+#endif
+
 neverc_tls_conn_t *neverc_tls_dial(const char *addr,
                                     neverc_tls_config_t *cfg,
                                     const char **errp) {
+#if defined(NEVERC_TLS_ENABLE_EXPERIMENTAL_TRANSPORT)
+    if (!addr || !cfg) {
+        if (errp)
+            *errp = k_tls_invalid_argument;
+        return NULL;
+    }
+    const char *tcp_error = NULL;
+    neverc_tcp_conn_t *tcp = neverc_tcp_dial(addr, &tcp_error);
+    if (!tcp) {
+        if (errp)
+            *errp = tcp_error ? tcp_error : k_tls_handshake_failed;
+        return NULL;
+    }
+    neverc_tls_conn_t *conn =
+        tls_start_handshake(tcp, cfg, 0, 1, errp);
+    if (!conn)
+        neverc_tcp_close(tcp);
+    return conn;
+#else
     (void)addr;
     (void)cfg;
     tls_set_unavailable(errp);
     return NULL;
+#endif
 }
 
 neverc_tls_conn_t *neverc_tls_server(neverc_tcp_conn_t *tcp,
                                       neverc_tls_config_t *cfg,
                                       const char **errp) {
+#if defined(NEVERC_TLS_ENABLE_EXPERIMENTAL_TRANSPORT)
+    return tls_start_handshake(tcp, cfg, 1, 0, errp);
+#else
     (void)tcp;
     (void)cfg;
     tls_set_unavailable(errp);
     return NULL;
+#endif
 }
 
 neverc_tls_conn_t *neverc_tls_client(neverc_tcp_conn_t *tcp,
                                       neverc_tls_config_t *cfg,
                                       const char **errp) {
+#if defined(NEVERC_TLS_ENABLE_EXPERIMENTAL_TRANSPORT)
+    return tls_start_handshake(tcp, cfg, 0, 0, errp);
+#else
     (void)tcp;
     (void)cfg;
     tls_set_unavailable(errp);
     return NULL;
+#endif
 }
 
 int neverc_tls_read(neverc_tls_conn_t *conn, void *buf, size_t buflen) {
-    if (!conn || conn->closed) return -1;
+    if (!conn || conn->closed || !buf || buflen == 0) return -1;
 
     /* Return buffered data first */
     if (conn->decrypt_buf_len > conn->decrypt_buf_pos) {
@@ -1438,36 +1745,42 @@ int neverc_tls_read(neverc_tls_conn_t *conn, void *buf, size_t buflen) {
         return (int)n;
     }
 
-    /* Decrypt next record */
-    uint8_t inner_type;
-    uint8_t data[TLS_MAX_PLAINTEXT];
-    size_t data_len;
+    for (;;) {
+        uint8_t inner_type;
+        uint8_t data[TLS_MAX_PLAINTEXT];
+        size_t data_len;
 
-    if (tls_recv_decrypt(conn, &inner_type, data, &data_len) != 0)
-        return -1;
+        if (tls_recv_decrypt(conn, &inner_type, data, &data_len) != 0)
+            return -1;
 
-    if (inner_type == TLS_CT_ALERT) {
-        if (data_len >= 2 && data[1] == TLS_ALERT_CLOSE_NOTIFY) {
-            conn->closed = 1;
-            return 0;
+        if (inner_type == TLS_CT_ALERT) {
+            if (data_len >= 2 && data[1] == TLS_ALERT_CLOSE_NOTIFY) {
+                conn->closed = 1;
+                return 0;
+            }
+            return -1;
         }
-        return -1;
+
+        /* Ignore post-handshake messages such as NewSessionTicket until
+         * KeyUpdate/ticket handling is implemented. */
+        if (inner_type == TLS_CT_HANDSHAKE)
+            continue;
+
+        if (inner_type != TLS_CT_APPLICATION_DATA)
+            return -1;
+
+        size_t n = buflen < data_len ? buflen : data_len;
+        memcpy(buf, data, n);
+
+        if (data_len > n) {
+            size_t rem = data_len - n;
+            memcpy(conn->decrypt_buf, data + n, rem);
+            conn->decrypt_buf_len = rem;
+            conn->decrypt_buf_pos = 0;
+        }
+
+        return (int)n;
     }
-
-    if (inner_type != TLS_CT_APPLICATION_DATA) return -1;
-
-    size_t n = buflen < data_len ? buflen : data_len;
-    memcpy(buf, data, n);
-
-    /* Buffer remaining data */
-    if (data_len > n) {
-        size_t rem = data_len - n;
-        memcpy(conn->decrypt_buf, data + n, rem);
-        conn->decrypt_buf_len = rem;
-        conn->decrypt_buf_pos = 0;
-    }
-
-    return (int)n;
 }
 
 int neverc_tls_write(neverc_tls_conn_t *conn, const void *data, size_t len) {
@@ -1500,6 +1813,7 @@ void neverc_tls_close(neverc_tls_conn_t *conn) {
         neverc_tcp_close(conn->tcp);
     free(conn->alpn);
     free(conn->peer_cert);
+    neverc_x509_cert_pool_free(conn->peer_intermediates);
     free(conn);
 }
 
@@ -1526,17 +1840,59 @@ const uint8_t *neverc_tls_peer_certificate(neverc_tls_conn_t *conn,
 neverc_tls_listener_t *neverc_tls_listen(const char *addr,
                                           neverc_tls_config_t *cfg,
                                           const char **errp) {
+#if defined(NEVERC_TLS_ENABLE_EXPERIMENTAL_TRANSPORT)
+    if (!addr || !cfg || !cfg->cert_der || !cfg->key_der) {
+        if (errp)
+            *errp = k_tls_invalid_argument;
+        return NULL;
+    }
+    neverc_tcp_listener_t *tcp_listener =
+        neverc_tcp_listen(addr, errp);
+    if (!tcp_listener)
+        return NULL;
+    neverc_tls_listener_t *listener =
+        (neverc_tls_listener_t *)calloc(1, sizeof(*listener));
+    if (!listener) {
+        neverc_tcp_listener_close(tcp_listener);
+        if (errp)
+            *errp = k_tls_allocation_failed;
+        return NULL;
+    }
+    listener->tcp_ln = tcp_listener;
+    listener->cfg = cfg;
+    if (errp)
+        *errp = NULL;
+    return listener;
+#else
     (void)addr;
     (void)cfg;
     tls_set_unavailable(errp);
     return NULL;
+#endif
 }
 
 neverc_tls_conn_t *neverc_tls_accept(neverc_tls_listener_t *ln,
                                       const char **errp) {
+#if defined(NEVERC_TLS_ENABLE_EXPERIMENTAL_TRANSPORT)
+    if (!ln || !ln->tcp_ln || !ln->cfg) {
+        if (errp)
+            *errp = k_tls_invalid_argument;
+        return NULL;
+    }
+    neverc_tcp_conn_t *tcp =
+        neverc_tcp_accept(ln->tcp_ln, errp);
+    if (!tcp)
+        return NULL;
+    neverc_tls_conn_t *conn =
+        tls_start_handshake(tcp, ln->cfg, 1, 1, errp);
+    if (!conn)
+        neverc_tcp_close(tcp);
+    return conn;
+#else
     (void)ln;
     tls_set_unavailable(errp);
     return NULL;
+#endif
 }
 
 void neverc_tls_listener_close(neverc_tls_listener_t *ln) {

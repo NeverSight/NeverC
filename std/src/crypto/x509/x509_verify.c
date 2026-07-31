@@ -145,10 +145,22 @@ static int x509_parse_rsa_public_key(const neverc_x509_cert_t *parent,
     return 0;
 }
 
-static int x509_check_rsa_sha256(const neverc_x509_cert_t *cert,
-                                 const neverc_x509_cert_t *parent) {
-    uint8_t digest[NEVERC_SHA256_DIGEST_SIZE];
-    neverc_sha256_sum(cert->raw_tbs, cert->raw_tbs_len, digest);
+static int x509_check_rsa_pkcs1v15(const neverc_x509_cert_t *cert,
+                                   const neverc_x509_cert_t *parent) {
+    uint8_t digest[NEVERC_SHA512_DIGEST_SIZE];
+    size_t digest_len;
+    if (cert->sig_algorithm == NEVERC_X509_SIG_SHA256_RSA) {
+        neverc_sha256_sum(cert->raw_tbs, cert->raw_tbs_len, digest);
+        digest_len = NEVERC_SHA256_DIGEST_SIZE;
+    } else if (cert->sig_algorithm == NEVERC_X509_SIG_SHA384_RSA) {
+        neverc_sha384_sum(cert->raw_tbs, cert->raw_tbs_len, digest);
+        digest_len = NEVERC_SHA384_DIGEST_SIZE;
+    } else if (cert->sig_algorithm == NEVERC_X509_SIG_SHA512_RSA) {
+        neverc_sha512_sum(cert->raw_tbs, cert->raw_tbs_len, digest);
+        digest_len = NEVERC_SHA512_DIGEST_SIZE;
+    } else {
+        return -1;
+    }
 
     neverc_rsa_public_key_t public_key;
     neverc_rsa_public_key_init(&public_key);
@@ -163,10 +175,21 @@ static int x509_check_rsa_sha256(const neverc_x509_cert_t *cert,
             result = -1;
         neverc_bigint_free(&signature_value);
     }
-    if (result == 0)
-        result = neverc_rsa_verify_pkcs1v15_sha256(
-            &public_key, digest, sizeof(digest),
-            cert->signature, cert->signature_len);
+    if (result == 0) {
+        if (cert->sig_algorithm == NEVERC_X509_SIG_SHA256_RSA) {
+            result = neverc_rsa_verify_pkcs1v15_sha256(
+                &public_key, digest, digest_len,
+                cert->signature, cert->signature_len);
+        } else if (cert->sig_algorithm == NEVERC_X509_SIG_SHA384_RSA) {
+            result = neverc_rsa_verify_pkcs1v15_sha384(
+                &public_key, digest, digest_len,
+                cert->signature, cert->signature_len);
+        } else {
+            result = neverc_rsa_verify_pkcs1v15_sha512(
+                &public_key, digest, digest_len,
+                cert->signature, cert->signature_len);
+        }
+    }
     neverc_rsa_public_key_free(&public_key);
     return result;
 }
@@ -288,9 +311,11 @@ static int x509_check_signature(const neverc_x509_cert_t *cert,
         !cert->signature || cert->signature_len == 0)
         return -1;
 
-    if (cert->sig_algorithm == NEVERC_X509_SIG_SHA256_RSA &&
+    if ((cert->sig_algorithm == NEVERC_X509_SIG_SHA256_RSA ||
+         cert->sig_algorithm == NEVERC_X509_SIG_SHA384_RSA ||
+         cert->sig_algorithm == NEVERC_X509_SIG_SHA512_RSA) &&
         parent->key_algorithm == NEVERC_X509_KEY_RSA)
-        return x509_check_rsa_sha256(cert, parent);
+        return x509_check_rsa_pkcs1v15(cert, parent);
     if ((cert->sig_algorithm == NEVERC_X509_SIG_RSA_PSS_SHA256 ||
          cert->sig_algorithm == NEVERC_X509_SIG_RSA_PSS_SHA384 ||
          cert->sig_algorithm == NEVERC_X509_SIG_RSA_PSS_SHA512) &&

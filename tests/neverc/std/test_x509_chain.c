@@ -1,8 +1,20 @@
+#if !defined(_WIN32)
+#define _POSIX_C_SOURCE 200809L
+#endif
+
 #include "neverc/std/crypto/x509.h"
+#include "neverc/std/encoding/pem.h"
 
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+
+#if defined(_WIN32)
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
 
 static int tests_run;
 static int tests_failed;
@@ -15,6 +27,55 @@ static int tests_failed;
             printf("  FAIL: %s\n", name);                                   \
         }                                                                    \
     } while (0)
+
+static char *copy_environment_value(const char *name) {
+    const char *value = getenv(name);
+    if (!value)
+        return NULL;
+    size_t len = strlen(value);
+    char *copy = (char *)malloc(len + 1);
+    if (copy)
+        memcpy(copy, value, len + 1);
+    return copy;
+}
+
+static int set_environment_value(const char *name, const char *value) {
+#if defined(_WIN32)
+    return _putenv_s(name, value ? value : "");
+#else
+    return value ? setenv(name, value, 1) : unsetenv(name);
+#endif
+}
+
+static int write_temporary_root_bundle(
+    const char *pem, size_t pem_len, char *path, size_t path_cap) {
+#if defined(_WIN32)
+    char directory[MAX_PATH];
+    DWORD directory_len = GetTempPathA(sizeof(directory), directory);
+    if (directory_len == 0 || directory_len >= sizeof(directory))
+        return -1;
+    int path_len = snprintf(
+        path, path_cap, "%sneverc-x509-roots-%lu.pem",
+        directory, (unsigned long)GetCurrentProcessId());
+#else
+    int path_len = snprintf(
+        path, path_cap, "/tmp/neverc-x509-roots-%ld.pem",
+        (long)getpid());
+#endif
+    if (path_len < 0 || (size_t)path_len >= path_cap)
+        return -1;
+
+    FILE *file = fopen(path, "wb");
+    if (!file)
+        return -1;
+    size_t written = fwrite(pem, 1, pem_len, file);
+    int close_result = fclose(file);
+    int result =
+        written == pem_len && close_result == 0 ? 0 : -1;
+    if (result != 0)
+        remove(path);
+    return result;
+}
 
 /* Go crypto/x509 rootWithoutSKID interoperability fixture. */
 static const uint8_t root_der[] = {
@@ -247,6 +308,120 @@ int main(void) {
               &leaf, intermediates, roots, &valid_time,
               "other.example",
               NEVERC_X509_EXT_KEY_USAGE_SERVER_AUTH) != 0);
+
+    char root_pem[1024];
+    int root_pem_len = neverc_pem_encode(
+        root_pem, sizeof(root_pem), "CERTIFICATE",
+        root_der, sizeof(root_der));
+    CHECK("encode_root_pem", root_pem_len > 0);
+    neverc_x509_cert_pool_t *pem_roots =
+        neverc_x509_cert_pool_new();
+    CHECK("append_root_pem",
+          root_pem_len > 0 &&
+          neverc_x509_cert_pool_add_pem(
+              pem_roots, root_pem, (size_t)root_pem_len) == 1 &&
+          neverc_x509_cert_pool_count(pem_roots) == 1);
+    CHECK("append_duplicate_root_pem",
+          root_pem_len > 0 &&
+          neverc_x509_cert_pool_add_pem(
+              pem_roots, root_pem, (size_t)root_pem_len) == 0 &&
+          neverc_x509_cert_pool_count(pem_roots) == 1);
+    CHECK("pem_pool_verifies_leaf",
+          neverc_x509_verify_with_pools(
+              &leaf, NULL, pem_roots, &valid_time, "example",
+              NEVERC_X509_EXT_KEY_USAGE_SERVER_AUTH) == 0);
+    static const char mixed_pem[] =
+        "-----BEGIN PRIVATE KEY-----\n"
+        "YQ==\n"
+        "-----END PRIVATE KEY-----\n"
+        "-----BEGIN CERTIFICATE-----\n"
+        "YQ==\n"
+        "-----END CERTIFICATE-----\n";
+    CHECK("skip_non_certificate_and_invalid_certificate",
+          neverc_x509_cert_pool_add_pem(
+              pem_roots, mixed_pem, sizeof(mixed_pem) - 1) == 0 &&
+          neverc_x509_cert_pool_count(pem_roots) == 1);
+    neverc_x509_cert_pool_free(pem_roots);
+
+    static const char malformed_certificate_pem[] =
+        "-----BEGIN CERTIFICATE-----\n"
+        "Y=Jj\n"
+        "-----END CERTIFICATE-----\n";
+    char recovering_pem[
+        sizeof(malformed_certificate_pem) - 1 + sizeof(root_pem)];
+    size_t malformed_len = sizeof(malformed_certificate_pem) - 1;
+    memcpy(recovering_pem, malformed_certificate_pem, malformed_len);
+    if (root_pem_len > 0) {
+        memcpy(recovering_pem + malformed_len,
+               root_pem, (size_t)root_pem_len);
+    }
+    neverc_x509_cert_pool_t *recovering_roots =
+        neverc_x509_cert_pool_new();
+    CHECK("skip_malformed_pem_before_valid_certificate",
+          root_pem_len > 0 &&
+          neverc_x509_cert_pool_add_pem(
+              recovering_roots, recovering_pem,
+              malformed_len + (size_t)root_pem_len) == 1 &&
+          neverc_x509_cert_pool_count(recovering_roots) == 1);
+    neverc_x509_cert_pool_free(recovering_roots);
+
+    char root_bundle_path[512];
+    int wrote_root_bundle =
+        root_pem_len > 0 &&
+        write_temporary_root_bundle(
+            root_pem, (size_t)root_pem_len,
+            root_bundle_path, sizeof(root_bundle_path)) == 0;
+    CHECK("write_temporary_root_bundle", wrote_root_bundle);
+    if (wrote_root_bundle) {
+        char missing_directory[sizeof(root_bundle_path) + 16];
+        int missing_len = snprintf(
+            missing_directory, sizeof(missing_directory),
+            "%s.missing", root_bundle_path);
+        char *old_cert_file =
+            copy_environment_value("SSL_CERT_FILE");
+        char *old_cert_dir =
+            copy_environment_value("SSL_CERT_DIR");
+        int environment_set =
+            missing_len > 0 &&
+            (size_t)missing_len < sizeof(missing_directory) &&
+            set_environment_value(
+                "SSL_CERT_FILE", root_bundle_path) == 0 &&
+            set_environment_value(
+                "SSL_CERT_DIR", missing_directory) == 0;
+        CHECK("set_system_root_overrides", environment_set);
+        if (environment_set) {
+            neverc_x509_cert_pool_t *system_roots =
+                neverc_x509_system_cert_pool();
+            CHECK("load_overridden_system_root",
+                  system_roots != NULL &&
+                  neverc_x509_cert_pool_count(system_roots) == 1);
+            if (system_roots) {
+                CHECK("overridden_system_root_verifies_leaf",
+                      neverc_x509_verify_with_pools(
+                          &leaf, NULL, system_roots, &valid_time,
+                          "example",
+                          NEVERC_X509_EXT_KEY_USAGE_SERVER_AUTH) == 0);
+            }
+            neverc_x509_cert_pool_free(system_roots);
+        }
+        CHECK("restore_ssl_cert_file",
+              set_environment_value(
+                  "SSL_CERT_FILE", old_cert_file) == 0);
+        CHECK("restore_ssl_cert_dir",
+              set_environment_value(
+                  "SSL_CERT_DIR", old_cert_dir) == 0);
+        if (!old_cert_file && !old_cert_dir) {
+            neverc_x509_cert_pool_t *platform_roots =
+                neverc_x509_system_cert_pool();
+            CHECK("load_platform_system_roots",
+                  platform_roots != NULL &&
+                  neverc_x509_cert_pool_count(platform_roots) > 0);
+            neverc_x509_cert_pool_free(platform_roots);
+        }
+        free(old_cert_file);
+        free(old_cert_dir);
+        remove(root_bundle_path);
+    }
 
     neverc_x509_cert_pool_t *empty_roots =
         neverc_x509_cert_pool_new();

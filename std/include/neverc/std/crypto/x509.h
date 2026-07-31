@@ -2,8 +2,7 @@
 #define NEVERC_CRYPTO_X509_H
 
 /*
- * X.509 DER certificate parser and explicit-chain verifier.
- * PEM decoding and system trust-store discovery are not part of this API.
+ * X.509 certificate parser, trust-store loader, and chain verifier.
  * API modeled after Go's crypto/x509 package.
  */
 
@@ -192,8 +191,20 @@ neverc_x509_cert_pool_t *neverc_x509_cert_pool_new(void);
 void neverc_x509_cert_pool_free(neverc_x509_cert_pool_t *pool);
 int neverc_x509_cert_pool_add_der(neverc_x509_cert_pool_t *pool,
                                   const uint8_t *der, size_t der_len);
+/* Append valid CERTIFICATE blocks from a PEM bundle. Non-certificate and
+ * malformed certificate blocks are skipped. Returns the number of new
+ * certificates added, or -1 for invalid arguments/allocation failure. */
+int neverc_x509_cert_pool_add_pem(neverc_x509_cert_pool_t *pool,
+                                  const char *pem, size_t pem_len);
 size_t neverc_x509_cert_pool_count(
     const neverc_x509_cert_pool_t *pool);
+
+/* Return a newly allocated pool populated from the platform trust store.
+ * Non-empty SSL_CERT_FILE and SSL_CERT_DIR select explicit trust sources.
+ * On Unix, each variable replaces its corresponding default source list.
+ * The caller owns the returned pool. Returns NULL if no usable roots can be
+ * loaded. */
+neverc_x509_cert_pool_t *neverc_x509_system_cert_pool(void);
 
 /* Build and verify a path from leaf through intermediates to an exact
  * certificate in roots. Candidate paths are capped at 16 certificates and

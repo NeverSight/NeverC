@@ -73,6 +73,13 @@ int neverc_tls_config_load_cert_mem(neverc_tls_config_t *cfg,
                                      const char *cert_pem,
                                      const char *key_pem);
 
+/* Add one or more trusted root certificates from a PEM file/buffer.
+ * Each call must add at least one new valid CERTIFICATE block. */
+int neverc_tls_config_add_root_certificates(
+    neverc_tls_config_t *cfg, const char *pem_path);
+int neverc_tls_config_add_root_certificates_mem(
+    neverc_tls_config_t *cfg, const char *pem, size_t pem_len);
+
 /* Set ALPN protocols (e.g., "h2", "http/1.1"). */
 void neverc_tls_config_set_alpn(neverc_tls_config_t *cfg,
                                  const char **protocols, int count);
@@ -120,6 +127,17 @@ uint16_t neverc_tls_cipher_suite(neverc_tls_conn_t *conn);
 /* Get the peer's certificate (DER-encoded, caller must NOT free). */
 const uint8_t *neverc_tls_peer_certificate(neverc_tls_conn_t *conn,
                                             size_t *out_len);
+
+/* Verify a DER server certificate through intermediates to the roots configured
+ * on config, or to the platform roots when no custom roots were added.
+ * config must contain a non-empty server name. If moment is NULL, current UTC
+ * is used. This function always verifies and ignores insecure_skip_verify. */
+int neverc_tls_verify_server_certificate_chain(
+    const neverc_tls_config_t *config,
+    const uint8_t *leaf_der,
+    size_t leaf_der_len,
+    const neverc_x509_cert_pool_t *intermediates,
+    const neverc_x509_time_t *moment);
 
 /* Verify a TLS 1.3 CertificateVerify signature over a SHA-256 or SHA-384
  * transcript. The signature scheme's hash is independent of the transcript
