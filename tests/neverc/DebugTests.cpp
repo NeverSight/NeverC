@@ -945,7 +945,8 @@ TEST_F(DebugTest, CompressedSplitDwarfIsDeterministicAcrossWorkerCounts) {
       if (!Tool.path.empty()) {
         const auto Dump = dwarfDumpInfo(Tool, dwp.string());
         if (Dump.exitCode != 0 &&
-            Dump.contains("LLVM was not built with LLVM_ENABLE_"))
+            (Dump.contains("LLVM was not built with LLVM_ENABLE_") ||
+             Dump.stderrContains("LLVM was not built with LLVM_ENABLE_")))
           continue;
         ASSERT_EQ(Dump.exitCode, 0) << Dump.err;
         // Some platform dwarfdump builds exit successfully but do not
