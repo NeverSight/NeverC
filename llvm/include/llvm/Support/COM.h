@@ -14,27 +14,33 @@
 #ifndef LLVM_SUPPORT_COM_H
 #define LLVM_SUPPORT_COM_H
 
+#include "csupport/lcom.h"
+
 namespace llvm {
 namespace sys {
 
-enum class COMThreadingMode { SingleThreaded, MultiThreaded };
-
-extern "C" void csupport_com_initialize(int threading_mode,
-                                        int speed_over_memory);
-extern "C" void csupport_com_uninitialize(void);
+enum class COMThreadingMode {
+  SingleThreaded = CSUPPORT_COM_SINGLE_THREADED,
+  MultiThreaded = CSUPPORT_COM_MULTI_THREADED
+};
 
 class InitializeCOMRAII {
 public:
   explicit InitializeCOMRAII(COMThreadingMode Threading,
-                             bool SpeedOverMemory = false) {
-    csupport_com_initialize(static_cast<int>(Threading),
-                            SpeedOverMemory ? 1 : 0);
+                             bool SpeedOverMemory = false)
+      : Initialized(csupport_com_initialize(
+                        static_cast<csupport_com_threading_mode_t>(Threading),
+                        SpeedOverMemory ? 1 : 0) != 0) {}
+  ~InitializeCOMRAII() {
+    if (Initialized)
+      csupport_com_uninitialize();
   }
-  ~InitializeCOMRAII() { csupport_com_uninitialize(); }
 
 private:
   InitializeCOMRAII(const InitializeCOMRAII &) = delete;
   void operator=(const InitializeCOMRAII &) = delete;
+
+  bool Initialized;
 };
 } // namespace sys
 } // namespace llvm
