@@ -2,6 +2,7 @@
 
 #ifdef _WIN32
 #include <winsock2.h>
+#pragma comment(lib, "ws2_32.lib")
 #else
 #include <errno.h>
 #endif
