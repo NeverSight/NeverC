@@ -86,6 +86,12 @@ TEST(SupportAPIntTest, CSupportConcatenationPermitsAliasedInputs) {
   EXPECT_EQ(Result[1], 0x56u);
 }
 
+TEST(SupportAPIntTest, EmptySlowEqualityNeedsNoStorage) {
+  int Equal = 0;
+  csupport_apint_equal_slow(nullptr, nullptr, 0, &Equal);
+  EXPECT_TRUE(Equal);
+}
+
 TEST(SupportAPIntTest, EmptyInsertionAtEndDoesNotTouchStorage) {
   APInt Value(128, {UINT64_C(0x0123456789abcdef),
                     UINT64_C(0xfedcba9876543210)});

@@ -1309,7 +1309,8 @@ uint64_t csupport_apint_tc_increment(uint64_t *dst, unsigned parts) {
 /*--- equalSlowCase: multi-word equality ---*/
 void csupport_apint_equal_slow(const uint64_t *lhs, const uint64_t *rhs,
                                 unsigned words, int *result) {
-  *result = (memcmp(lhs, rhs, words * sizeof(uint64_t)) == 0) ? 1 : 0;
+  *result =
+      (words == 0 || memcmp(lhs, rhs, words * sizeof(uint64_t)) == 0) ? 1 : 0;
 }
 
 /*--- Convert multi-word APInt to double (IEEE 754) ---*/

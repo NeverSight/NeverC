@@ -1000,7 +1000,7 @@ size_t csupport_json_pointer_get(const char *json, size_t json_len,
     return 0;
   *value_start = NULL;
   if ((!pointer && ptr_len != 0) ||
-      (!json && json_len != 0) ||
+      !json || json_len == 0 ||
       !json_validate_utf8(pointer, ptr_len))
     return 0;
 
