@@ -14,6 +14,7 @@
 #ifndef LLVM_SUPPORT_THREADING_H
 #define LLVM_SUPPORT_THREADING_H
 
+#include "csupport/lthreading.h"
 #include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Config/llvm-config.h" // for LLVM_ON_UNIX
@@ -200,9 +201,9 @@ inline ThreadPoolStrategy optimal_concurrency(unsigned TaskCount = 0) {
 }
 
 enum class ThreadPriority {
-  Background = 0,
-  Low = 1,
-  Default = 2,
+  Background = CSUPPORT_THREAD_PRIORITY_BACKGROUND,
+  Low = CSUPPORT_THREAD_PRIORITY_LOW,
+  Default = CSUPPORT_THREAD_PRIORITY_DEFAULT,
 };
 enum class SetThreadPriorityResult { FAILURE, SUCCESS };
 inline ThreadPoolStrategy get_threadpool_strategy(StringRef Num,
@@ -242,16 +243,6 @@ ThreadPoolStrategy::compute_cpu_socket(unsigned) const {
   return std::nullopt;
 }
 #else
-extern "C" int csupport_get_physical_cores(void);
-extern "C" uint64_t csupport_get_thread_id(void);
-extern "C" uint32_t csupport_get_max_thread_name_length(void);
-extern "C" int csupport_set_thread_name_cstr(const char *name);
-extern "C" int csupport_get_thread_name_buf(char *buf, size_t buflen);
-extern "C" int csupport_set_thread_priority_val(int priority);
-extern "C" int csupport_compute_host_num_hardware_threads(void);
-extern "C" unsigned csupport_get_cpus(void);
-extern "C" void csupport_apply_thread_strategy_noop(unsigned thread_pool_num);
-
 inline uint64_t get_threadid() { return csupport_get_thread_id(); }
 
 inline uint32_t get_max_thread_name_length() {
@@ -283,9 +274,10 @@ inline unsigned get_cpus() { return csupport_get_cpus(); }
 inline int get_physical_cores() { return csupport_get_physical_cores(); }
 
 inline SetThreadPriorityResult set_thread_priority(ThreadPriority Priority) {
-  return csupport_set_thread_priority_val(static_cast<int>(Priority)) == 0
-             ? SetThreadPriorityResult::SUCCESS
-             : SetThreadPriorityResult::FAILURE;
+  return csupport_set_thread_priority_val(
+             static_cast<csupport_thread_priority_t>(Priority)) == 0
+         ? SetThreadPriorityResult::SUCCESS
+         : SetThreadPriorityResult::FAILURE;
 }
 
 inline void

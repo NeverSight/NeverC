@@ -11,7 +11,14 @@ uint64_t csupport_get_thread_id(void);
 uint32_t csupport_get_max_thread_name_length(void);
 int csupport_set_thread_name_cstr(const char *name);
 int csupport_get_thread_name_buf(char *buf, size_t buflen);
-int csupport_set_thread_priority_val(int priority);
+
+typedef enum csupport_thread_priority {
+  CSUPPORT_THREAD_PRIORITY_BACKGROUND = 0,
+  CSUPPORT_THREAD_PRIORITY_LOW = 1,
+  CSUPPORT_THREAD_PRIORITY_DEFAULT = 2
+} csupport_thread_priority_t;
+
+int csupport_set_thread_priority_val(csupport_thread_priority_t priority);
 int csupport_compute_host_num_hardware_threads(void);
 unsigned csupport_get_cpus(void);
 void csupport_apply_thread_strategy_noop(unsigned thread_pool_num);

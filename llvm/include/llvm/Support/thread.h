@@ -16,6 +16,7 @@
 #ifndef LLVM_SUPPORT_THREAD_H
 #define LLVM_SUPPORT_THREAD_H
 
+#include "csupport/lthreading.h"
 #include "llvm/Config/llvm-config.h"
 #include <optional>
 
@@ -32,7 +33,12 @@
 
 #if LLVM_ENABLE_THREADS
 
+#include <functional>
+#include <memory>
 #include <thread>
+#include <tuple>
+#include <type_traits>
+#include <utility>
 
 #if defined(__APPLE__)
 #include <sys/sysctl.h>
@@ -56,31 +62,30 @@ class thread {
     std::unique_ptr<CalleeTuple> Callee(static_cast<CalleeTuple *>(Ptr));
     std::apply(
         [](auto &&F, auto &&...Args) {
-          std::forward<decltype(F)>(F)(std::forward<decltype(Args)>(Args)...);
+          std::invoke(std::forward<decltype(F)>(F),
+                      std::forward<decltype(Args)>(Args)...);
         },
-        *Callee);
+        std::move(*Callee));
   }
 
-public:
-#if LLVM_ON_UNIX
-  using native_handle_type = pthread_t;
-  using id = pthread_t;
-  using start_routine_type = void *(*)(void *);
-
+  // CSupport owns the platform entry-point trampoline.  Keep the callback at
+  // this boundary on the C ABI on every platform; in particular, do not pass a
+  // Windows __stdcall function through an incompatible C function-pointer
+  // type.
   template <typename CalleeTuple> static void *ThreadProxy(void *Ptr) {
     GenericThreadProxy<CalleeTuple>(Ptr);
     return nullptr;
   }
+
+public:
+  using start_routine_type = csupport_thread_func_t;
+
+#if LLVM_ON_UNIX
+  using native_handle_type = pthread_t;
+  using id = pthread_t;
 #elif _WIN32
   using native_handle_type = HANDLE;
   using id = DWORD;
-  using start_routine_type = unsigned(__stdcall *)(void *);
-
-  template <typename CalleeTuple>
-  static unsigned __stdcall ThreadProxy(void *Ptr) {
-    GenericThreadProxy<CalleeTuple>(Ptr);
-    return 0;
-  }
 #endif
 
   static const unsigned DefaultStackSize;
@@ -91,7 +96,8 @@ public:
 
   template <class Function, class... Args>
   explicit thread(Function &&f, Args &&...args)
-      : thread(DefaultStackSize, f, args...) {}
+      : thread(DefaultStackSize, std::forward<Function>(f),
+               std::forward<Args>(args)...) {}
 
   template <class Function, class... Args>
   explicit thread(unsigned StackSizeInBytes, Function &&f, Args &&...args);
@@ -189,18 +195,11 @@ inline const unsigned thread::DefaultStackSize = 64 * 1024 * 1024;
 inline const unsigned thread::DefaultStackSize = 0;
 #endif
 
-extern "C" uint64_t csupport_thread_execute(void *(*)(void *), void *,
-                                            unsigned);
-extern "C" void csupport_thread_detach(uint64_t);
-extern "C" void csupport_thread_join(uint64_t);
-extern "C" uint64_t csupport_thread_get_id(uint64_t);
-extern "C" uint64_t csupport_thread_get_current_id(void);
-
 inline thread::native_handle_type
 llvm_execute_on_thread_impl(thread::start_routine_type ThreadFunc, void *Arg,
                             unsigned StackSizeInBytes) {
   return (thread::native_handle_type)(uintptr_t)csupport_thread_execute(
-      (void *(*)(void *))ThreadFunc, Arg, StackSizeInBytes);
+      ThreadFunc, Arg, StackSizeInBytes);
 }
 inline void llvm_thread_join_impl(thread::native_handle_type Thread) {
   csupport_thread_join((uint64_t)(uintptr_t)Thread);
@@ -264,7 +263,8 @@ public:
       : Thread(std::forward<Function>(f), std::forward<Args>(args)...) {}
 
   template <class Function, class... Args>
-  explicit thread(Function &&f, Args &&...args) : Thread(f, args...) {}
+  explicit thread(Function &&f, Args &&...args)
+      : Thread(std::forward<Function>(f), std::forward<Args>(args)...) {}
 
   thread(const thread &) = delete;
 
@@ -305,6 +305,7 @@ inline thread::id get_id() { return std::this_thread::get_id(); }
 
 #else // !LLVM_ENABLE_THREADS
 
+#include <functional>
 #include <utility>
 
 namespace llvm {
@@ -314,11 +315,11 @@ struct thread {
   thread(thread &&other) {}
   template <class Function, class... Args>
   explicit thread(unsigned StackSizeInBytes, Function &&f, Args &&...args) {
-    f(std::forward<Args>(args)...);
+    std::invoke(std::forward<Function>(f), std::forward<Args>(args)...);
   }
   template <class Function, class... Args>
   explicit thread(Function &&f, Args &&...args) {
-    f(std::forward<Args>(args)...);
+    std::invoke(std::forward<Function>(f), std::forward<Args>(args)...);
   }
   thread(const thread &) = delete;
 

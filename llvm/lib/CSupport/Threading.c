@@ -8,7 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#if defined(HAVE_PTHREAD_H)
+#if LLVM_ENABLE_THREADS == 1 && defined(HAVE_PTHREAD_H) && HAVE_PTHREAD_H
 #include <pthread.h>
 #include <unistd.h>
 
@@ -234,17 +234,22 @@ int csupport_get_thread_name_buf(char *buf, size_t buflen) {
 #endif
 }
 
-int csupport_set_thread_priority_val(int priority) {
+int csupport_set_thread_priority_val(csupport_thread_priority_t priority) {
 #if defined(__linux__) && defined(SCHED_IDLE)
   struct sched_param param;
   param.sched_priority = 0;
-  int policy = (priority == 2) ? SCHED_OTHER : SCHED_IDLE;
+  int policy = priority == CSUPPORT_THREAD_PRIORITY_DEFAULT ? SCHED_OTHER
+                                                            : SCHED_IDLE;
   return pthread_setschedparam(pthread_self(), policy, &param) == 0 ? 0 : -1;
 #elif defined(__APPLE__)
   int qos;
   switch (priority) {
-  case 0: qos = QOS_CLASS_BACKGROUND; break;
-  case 1: qos = QOS_CLASS_UTILITY; break;
+  case CSUPPORT_THREAD_PRIORITY_BACKGROUND:
+    qos = QOS_CLASS_BACKGROUND;
+    break;
+  case CSUPPORT_THREAD_PRIORITY_LOW:
+    qos = QOS_CLASS_UTILITY;
+    break;
   default: qos = QOS_CLASS_DEFAULT; break;
   }
   return pthread_set_qos_class_self_np(qos, 0) == 0 ? 0 : -1;
@@ -266,17 +271,21 @@ int csupport_compute_host_num_hardware_threads(void) {
   if (sched_getaffinity(0, sizeof(set), &set) == 0)
     return CPU_COUNT(&set);
 #elif defined(__APPLE__)
-  uint32_t count;
+  uint32_t count = 0;
   size_t len = sizeof(count);
-  if (sysctlbyname("hw.logicalcpu", &count, &len, NULL, 0) == 0 && count > 0)
+  if (sysctlbyname("hw.logicalcpu", &count, &len, NULL, 0) == 0 && count > 0 &&
+      count <= INT_MAX)
     return (int)count;
-  if (sysctlbyname("hw.ncpu", &count, &len, NULL, 0) == 0 && count > 0)
+  count = 0;
+  len = sizeof(count);
+  if (sysctlbyname("hw.ncpu", &count, &len, NULL, 0) == 0 && count > 0 &&
+      count <= INT_MAX)
     return (int)count;
 #endif
 #ifdef _SC_NPROCESSORS_ONLN
   {
     long val = sysconf(_SC_NPROCESSORS_ONLN);
-    if (val > 0) return (int)val;
+    if (val > 0 && val <= INT_MAX) return (int)val;
   }
 #endif
   return 1;
@@ -330,6 +339,9 @@ static int compute_physical_cores_linux_x86(void) {
       val[--vlen] = '\0';
 
     if (strcmp(key, "processor") == 0) {
+      cur_physical_id = -1;
+      cur_siblings = -1;
+      cur_core_id = -1;
       if (!parse_proc_nonnegative_int(val, &cur_processor))
         cur_processor = -1;
     } else if (strcmp(key, "physical id") == 0) {
@@ -345,9 +357,11 @@ static int compute_physical_cores_linux_x86(void) {
       if (cur_processor >= 0 && cur_processor < CPU_SETSIZE &&
           CPU_ISSET(cur_processor, &affinity) &&
           cur_physical_id >= 0 && cur_siblings > 0 && cur_core_id >= 0) {
-        int idx = cur_physical_id * cur_siblings + cur_core_id;
-        if (idx >= 0 && idx < CPU_SETSIZE)
-          CPU_SET(idx, &enabled);
+        const uint64_t idx = (uint64_t)(unsigned)cur_physical_id *
+                                 (unsigned)cur_siblings +
+                             (unsigned)cur_core_id;
+        if (idx < CPU_SETSIZE)
+          CPU_SET((int)idx, &enabled);
       }
     }
   }
@@ -360,7 +374,10 @@ static int compute_host_num_physical_cores(void) {
 #if defined(__linux__) && defined(__x86_64__)
   return compute_physical_cores_linux_x86();
 #elif (defined(__linux__) && defined(__s390x__)) || defined(_AIX)
-  return sysconf(_SC_NPROCESSORS_ONLN);
+  {
+    const long count = sysconf(_SC_NPROCESSORS_ONLN);
+    return count > 0 && count <= INT_MAX ? (int)count : -1;
+  }
 #elif defined(__linux__) && !defined(__ANDROID__)
   cpu_set_t affinity;
   if (sched_getaffinity(0, sizeof(affinity), &affinity) == 0)
@@ -374,28 +391,32 @@ static int compute_host_num_physical_cores(void) {
   if (dyn) CPU_FREE(dyn);
   return -1;
 #elif defined(__APPLE__)
-  uint32_t count;
+  uint32_t count = 0;
   size_t len = sizeof(count);
-  sysctlbyname("hw.physicalcpu", &count, &len, NULL, 0);
-  if (count < 1) {
+  if (sysctlbyname("hw.physicalcpu", &count, &len, NULL, 0) != 0 ||
+      count < 1) {
     int nm[2] = { CTL_HW, HW_AVAILCPU };
-    sysctl(nm, 2, &count, &len, NULL, 0);
-    if (count < 1) return -1;
+    count = 0;
+    len = sizeof(count);
+    if (sysctl(nm, 2, &count, &len, NULL, 0) != 0 || count < 1)
+      return -1;
   }
-  return (int)count;
+  return count <= INT_MAX ? (int)count : -1;
 #else
   return -1;
 #endif
 }
 
+static pthread_once_t physical_cores_once = PTHREAD_ONCE_INIT;
+static int physical_cores;
+
+static void initialize_physical_cores(void) {
+  physical_cores = compute_host_num_physical_cores();
+}
+
 int csupport_get_physical_cores(void) {
-  static int num_cores = 0;
-  static int initialized = 0;
-  if (!initialized) {
-    num_cores = compute_host_num_physical_cores();
-    initialized = 1;
-  }
-  return num_cores;
+  pthread_once(&physical_cores_once, initialize_physical_cores);
+  return physical_cores;
 }
 
 #elif defined(_WIN32)
@@ -438,9 +459,9 @@ static void report_win_fatal(const char *msg) {
   abort();
 }
 
-/* Heap-allocated trampoline payload: llvm::thread hands us an __stdcall
- * ThreadProxy reinterpret-cast to void*(*)(void*); _beginthreadex needs an
- * unsigned __stdcall(void*) entry point, so bounce through one. */
+/* Heap-allocated trampoline payload.  The callback uses CSupport's portable C
+ * ABI while _beginthreadex requires an unsigned __stdcall(void *) entry point,
+ * so this function is the one intentional calling-convention boundary. */
 struct csupport_win_thread_start {
   csupport_thread_func_t func;
   void *arg;
@@ -450,9 +471,6 @@ static unsigned __stdcall csupport_win_thread_trampoline(void *raw) {
   struct csupport_win_thread_start start =
       *(struct csupport_win_thread_start *)raw;
   free(raw);
-  /* On 64-bit Windows there is a single calling convention, so invoking the
-   * __stdcall routine through the void*(*)(void*) type is well-defined; its
-   * (unused) return value is discarded. */
   start.func(start.arg);
   return 0;
 }
@@ -592,13 +610,13 @@ int csupport_get_thread_name_buf(char *buf, size_t buflen) {
   return (int)length;
 }
 
-int csupport_set_thread_priority_val(int priority) {
+int csupport_set_thread_priority_val(csupport_thread_priority_t priority) {
   int windows_priority;
   switch (priority) {
-  case 0:
+  case CSUPPORT_THREAD_PRIORITY_BACKGROUND:
     windows_priority = THREAD_PRIORITY_LOWEST;
     break;
-  case 1:
+  case CSUPPORT_THREAD_PRIORITY_LOW:
     windows_priority = THREAD_PRIORITY_BELOW_NORMAL;
     break;
   default:
@@ -691,7 +709,10 @@ int csupport_set_thread_name_cstr(const char *n) { (void)n; return -1; }
 int csupport_get_thread_name_buf(char *b, size_t l) {
   if (b && l > 0) b[0] = '\0'; return 0;
 }
-int csupport_set_thread_priority_val(int p) { (void)p; return -1; }
+int csupport_set_thread_priority_val(csupport_thread_priority_t p) {
+  (void)p;
+  return -1;
+}
 int csupport_compute_host_num_hardware_threads(void) { return 1; }
 void csupport_apply_thread_strategy_noop(unsigned n) { (void)n; }
 unsigned csupport_get_cpus(void) { return 1; }

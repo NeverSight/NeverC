@@ -13,6 +13,7 @@
 #ifndef LLVM_SUPPORT_WATCHDOG_H
 #define LLVM_SUPPORT_WATCHDOG_H
 
+#include "csupport/lwatchdog.h"
 #include "llvm/Support/Compiler.h"
 
 namespace llvm {
@@ -22,9 +23,6 @@ namespace sys {
 /// that must complete in a given amount of time. Failure to complete before
 /// the timeout is an unrecoverable situation and no mechanisms to attempt
 /// to handle it are provided.
-extern "C" void csupport_watchdog_start(unsigned int seconds);
-extern "C" void csupport_watchdog_stop(void);
-
 class Watchdog {
 public:
   Watchdog(unsigned int seconds) { csupport_watchdog_start(seconds); }
