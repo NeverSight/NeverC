@@ -1,10 +1,12 @@
 #include "neverc/std/net/websocket.h"
 #include "neverc/std/net/http.h"
+#include "neverc/std/crypto/tls.h"
 #include "neverc/std/crypto/rand.h"
 #include "neverc/std/crypto/sha1.h"
 #include "neverc/std/encoding/base64.h"
 #include "../_net_buffer.h"
 #include "../_net_thread.h"
+#include "../http/_http_internal.h"
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -28,6 +30,7 @@ static int strcasecmp(const char *a, const char *b) {
 
 struct neverc_ws_conn {
     neverc_tcp_conn_t *tcp;
+    neverc_tls_conn_t *tls;
     size_t read_limit;
     int write_timeout_ms;
     int is_client;
@@ -51,10 +54,13 @@ struct neverc_ws_conn {
 typedef struct {
     char dial_addr[320];
     char host_header[320];
+    char server_name[256];
     char target[WS_MAX_TARGET_SIZE];
+    int secure;
 } ws_url_t;
 
 static neverc_ws_conn_t *ws_conn_new_role(neverc_tcp_conn_t *tcp,
+                                           neverc_tls_conn_t *tls,
                                            int is_client,
                                            size_t read_limit);
 static int write_frame_timeout(neverc_ws_conn_t *conn, int opcode,
@@ -129,12 +135,14 @@ static int ws_parse_url(const char *url, ws_url_t *parsed,
         ws_set_error(errp, "invalid WebSocket URL");
         return -1;
     }
+    size_t scheme_length = 0;
     if (strncmp(url, "wss://", 6) == 0) {
-        ws_set_error(errp, "wss transport is unavailable");
-        return -1;
-    }
-    if (strncmp(url, "ws://", 5) != 0) {
-        ws_set_error(errp, "WebSocket URL must use ws://");
+        parsed->secure = 1;
+        scheme_length = 6;
+    } else if (strncmp(url, "ws://", 5) == 0) {
+        scheme_length = 5;
+    } else {
+        ws_set_error(errp, "WebSocket URL must use ws:// or wss://");
         return -1;
     }
     if (ws_contains_ctl(url)) {
@@ -142,7 +150,7 @@ static int ws_parse_url(const char *url, ws_url_t *parsed,
         return -1;
     }
 
-    const char *authority = url + 5;
+    const char *authority = url + scheme_length;
     const char *authority_end = authority;
     while (*authority_end && *authority_end != '/' &&
            *authority_end != '?' && *authority_end != '#')
@@ -165,8 +173,7 @@ static int ws_parse_url(const char *url, ws_url_t *parsed,
         return -1;
     }
 
-    unsigned port = 80;
-    int explicit_port = 0;
+    unsigned port = parsed->secure ? 443u : 80u;
     const char *host = authority;
     size_t host_len = authority_len;
     if (authority[0] == '[') {
@@ -183,7 +190,6 @@ static int ws_parse_url(const char *url, ws_url_t *parsed,
                 ws_set_error(errp, "invalid WebSocket URL port");
                 return -1;
             }
-            explicit_port = 1;
         }
     } else {
         const char *colon = memchr(authority, ':', authority_len);
@@ -200,7 +206,6 @@ static int ws_parse_url(const char *url, ws_url_t *parsed,
                 ws_set_error(errp, "invalid WebSocket URL port");
                 return -1;
             }
-            explicit_port = 1;
         }
     }
     if (host_len == 0 || host_len >= sizeof(parsed->dial_addr) - 8) {
@@ -208,16 +213,25 @@ static int ws_parse_url(const char *url, ws_url_t *parsed,
         return -1;
     }
 
+    const char *server_name = host;
+    size_t server_name_length = host_len;
+    if (host[0] == '[') {
+        server_name++;
+        server_name_length -= 2;
+    }
+    if (server_name_length == 0 ||
+        server_name_length >= sizeof(parsed->server_name)) {
+        ws_set_error(errp, "invalid WebSocket server name");
+        return -1;
+    }
+    memcpy(parsed->server_name, server_name, server_name_length);
+    parsed->server_name[server_name_length] = '\0';
+
     memcpy(parsed->host_header, authority, authority_len);
     parsed->host_header[authority_len] = '\0';
     int n;
-    if (explicit_port) {
-        n = snprintf(parsed->dial_addr, sizeof(parsed->dial_addr), "%.*s:%u",
-                     (int)host_len, host, port);
-    } else {
-        n = snprintf(parsed->dial_addr, sizeof(parsed->dial_addr), "%.*s:80",
-                     (int)host_len, host);
-    }
+    n = snprintf(parsed->dial_addr, sizeof(parsed->dial_addr), "%.*s:%u",
+                 (int)host_len, host, port);
     if (n <= 0 || (size_t)n >= sizeof(parsed->dial_addr)) {
         ws_set_error(errp, "WebSocket dial address is too long");
         return -1;
@@ -372,11 +386,35 @@ static int tcp_write_all_context(neverc_tcp_conn_t *conn,
     return 0;
 }
 
+static int ws_transport_write_all_context(neverc_tcp_conn_t *tcp,
+                                          neverc_tls_conn_t *tls,
+                                          neverc_context_t *ctx,
+                                          const void *data, size_t len) {
+    if (!tls)
+        return ctx ? tcp_write_all_context(tcp, ctx, data, len)
+                   : tcp_write_all(tcp, data, len);
+    int written = ctx ? neverc_tls_write_context(tls, ctx, data, len)
+                      : neverc_tls_write(tls, data, len);
+    return written >= 0 && (size_t)written == len ? 0 : -1;
+}
+
+static int ws_transport_read_context(neverc_tcp_conn_t *tcp,
+                                     neverc_tls_conn_t *tls,
+                                     neverc_context_t *ctx,
+                                     void *data, size_t len) {
+    if (tls) return neverc_tls_read_context(tls, ctx, data, len);
+    neverc_net_result_t result = neverc_tcp_read_context(
+        tcp, ctx, data, len);
+    return result.status == NEVERC_NET_OK ? (int)result.transferred :
+           result.status == NEVERC_NET_EOF ? 0 : -1;
+}
+
 /* ======================================================================
  * Handshake
  * ====================================================================== */
 
 static int ws_read_client_handshake(neverc_tcp_conn_t *tcp,
+                                    neverc_tls_conn_t *tls,
                                     neverc_context_t *ctx,
                                     const char *expected_accept,
                                     const char *subprotocol,
@@ -390,9 +428,8 @@ static int ws_read_client_handshake(neverc_tcp_conn_t *tcp,
     size_t len = 0;
     while (len < WS_MAX_HANDSHAKE_HEADER) {
         char byte;
-        neverc_net_result_t result =
-            neverc_tcp_read_context(tcp, ctx, &byte, 1);
-        if (result.status != NEVERC_NET_OK || result.transferred != 1) {
+        int count = ws_transport_read_context(tcp, tls, ctx, &byte, 1);
+        if (count != 1) {
             free(response);
             ws_set_error(errp, "failed to read WebSocket handshake");
             return -1;
@@ -564,6 +601,7 @@ neverc_ws_conn_t *neverc_ws_dial(const char *url,
     }
 
     neverc_tcp_conn_t *tcp = NULL;
+    neverc_tls_conn_t *tls = NULL;
     neverc_net_result_t dial_result =
         neverc_tcp_dial_context(parsed.dial_addr, ctx, &tcp);
     if (dial_result.status != NEVERC_NET_OK || !tcp) {
@@ -573,15 +611,42 @@ neverc_ws_conn_t *neverc_ws_dial(const char *url,
         ws_set_error(errp, "WebSocket TCP dial failed");
         return NULL;
     }
-    if (tcp_write_all_context(tcp, ctx, request, (size_t)request_len) != 0 ||
-        ws_read_client_handshake(tcp, ctx, expected_accept, subprotocol,
+    if (parsed.secure) {
+        int64_t deadline = neverc_context_deadline(ctx);
+        if (deadline > 0 &&
+            (neverc_tcp_set_read_deadline(tcp, deadline) != 0 ||
+             neverc_tcp_set_write_deadline(tcp, deadline) != 0)) {
+            ws_set_error(errp, "failed to configure WSS deadline");
+            goto dial_failed;
+        }
+        neverc_tls_config_t *tls_config = neverc_tls_config_new();
+        if (!tls_config) {
+            ws_set_error(errp, "out of memory creating WSS configuration");
+            goto dial_failed;
+        }
+        neverc_tls_config_set_server_name(tls_config, parsed.server_name);
+        const char *alpn[] = { "http/1.1" };
+        neverc_tls_config_set_alpn(tls_config, alpn, 1);
+        const char *tls_error = NULL;
+        tls = neverc_tls_client(tcp, tls_config, &tls_error);
+        neverc_tls_config_free(tls_config);
+        if (!tls) {
+            ws_set_error(errp, tls_error ? tls_error :
+                         "WSS TLS handshake failed");
+            goto dial_failed;
+        }
+        const char *negotiated = neverc_tls_alpn(tls);
+        if (negotiated && strcmp(negotiated, "http/1.1") != 0) {
+            ws_set_error(errp, "WSS server selected unsupported ALPN");
+            goto dial_failed;
+        }
+    }
+    if (ws_transport_write_all_context(tcp, tls, ctx, request,
+                                       (size_t)request_len) != 0 ||
+        ws_read_client_handshake(tcp, tls, ctx, expected_accept, subprotocol,
                                  errp) != 0) {
         if (errp && !*errp) *errp = "WebSocket client handshake failed";
-        neverc_tcp_close(tcp);
-        neverc_context_cancel_handle_cancel(cancel);
-        neverc_context_free(ctx);
-        neverc_context_cancel_handle_free(cancel);
-        return NULL;
+        goto dial_failed;
     }
     neverc_context_cancel_handle_cancel(cancel);
     neverc_context_free(ctx);
@@ -590,8 +655,9 @@ neverc_ws_conn_t *neverc_ws_dial(const char *url,
     size_t read_limit = config && config->max_message_size
                             ? config->max_message_size
                             : WS_DEFAULT_MAX_MESSAGE_SIZE;
-    neverc_ws_conn_t *ws = ws_conn_new_role(tcp, 1, read_limit);
+    neverc_ws_conn_t *ws = ws_conn_new_role(tcp, tls, 1, read_limit);
     if (!ws) {
+        if (tls) neverc_tls_close(tls);
         neverc_tcp_close(tcp);
         ws_set_error(errp, "out of memory creating WebSocket connection");
         return NULL;
@@ -609,6 +675,14 @@ neverc_ws_conn_t *neverc_ws_dial(const char *url,
         return NULL;
     }
     return ws;
+
+dial_failed:
+    if (tls) neverc_tls_close(tls);
+    neverc_tcp_close(tcp);
+    neverc_context_cancel_handle_cancel(cancel);
+    neverc_context_free(ctx);
+    neverc_context_cancel_handle_free(cancel);
+    return NULL;
 }
 
 int neverc_ws_compute_accept(const char *key, char *accept, size_t accept_cap) {
@@ -773,13 +847,20 @@ neverc_ws_conn_t *neverc_ws_upgrade_http(neverc_http_request_t *req,
     if (n <= 0 || (size_t)n >= sizeof(response)) return NULL;
 
     neverc_tcp_conn_t *tcp = neverc_http_hijack(w);
-    if (!tcp) return NULL;
-    if (tcp_write_all(tcp, response, (size_t)n) != 0) {
-        neverc_tcp_close(tcp);
+    neverc_tls_conn_t *tls = NULL;
+    if (!tcp && nc_http_hijack_tls(w, &tls, &tcp) != 0) return NULL;
+    neverc_ws_conn_t *websocket = ws_conn_new_role(
+        tcp, tls, 0, WS_DEFAULT_MAX_MESSAGE_SIZE);
+    if (!websocket || ws_transport_write_all_context(
+            tcp, tls, NULL, response, (size_t)n) != 0) {
+        if (websocket) neverc_ws_conn_free(websocket);
+        else {
+            if (tls) neverc_tls_close(tls);
+            neverc_tcp_close(tcp);
+        }
         return NULL;
     }
-
-    return neverc_ws_conn_new(tcp);
+    return websocket;
 }
 
 /* ======================================================================
@@ -787,12 +868,14 @@ neverc_ws_conn_t *neverc_ws_upgrade_http(neverc_http_request_t *req,
  * ====================================================================== */
 
 static neverc_ws_conn_t *ws_conn_new_role(neverc_tcp_conn_t *tcp,
+                                           neverc_tls_conn_t *tls,
                                            int is_client,
                                            size_t read_limit) {
     if (!tcp) return NULL;
     neverc_ws_conn_t *ws = (neverc_ws_conn_t *)calloc(1, sizeof(*ws));
     if (!ws) return NULL;
     ws->tcp = tcp;
+    ws->tls = tls;
     ws->is_client = is_client != 0;
     ws->read_limit = read_limit;
     nc_mutex_init(&ws->write_lock);
@@ -801,7 +884,7 @@ static neverc_ws_conn_t *ws_conn_new_role(neverc_tcp_conn_t *tcp,
 }
 
 neverc_ws_conn_t *neverc_ws_conn_new(neverc_tcp_conn_t *conn) {
-    return ws_conn_new_role(conn, 0, WS_DEFAULT_MAX_MESSAGE_SIZE);
+    return ws_conn_new_role(conn, NULL, 0, WS_DEFAULT_MAX_MESSAGE_SIZE);
 }
 
 void neverc_ws_conn_free(neverc_ws_conn_t *conn) {
@@ -810,11 +893,15 @@ void neverc_ws_conn_free(neverc_ws_conn_t *conn) {
     int join_keepalive = conn->keepalive_running;
     conn->keepalive_stop = 1;
     nc_mutex_unlock(&conn->keepalive_lock);
-    if (conn->tcp) {
+    if (conn->tls) {
+        (void)neverc_tls_shutdown_read(conn->tls);
+        (void)neverc_tls_shutdown_write(conn->tls);
+    } else if (conn->tcp) {
         neverc_tcp_shutdown_read(conn->tcp);
         neverc_tcp_shutdown_write(conn->tcp);
     }
     if (join_keepalive) nc_thread_join(conn->keepalive_thread);
+    if (conn->tls) neverc_tls_close(conn->tls);
     if (conn->tcp) neverc_tcp_close(conn->tcp);
     nc_mutex_destroy(&conn->keepalive_lock);
     nc_mutex_destroy(&conn->write_lock);
@@ -855,7 +942,10 @@ static void ws_sleep_ms(unsigned ms) {
 
 static void ws_keepalive_shutdown(neverc_ws_conn_t *conn) {
     nc_atomic_store(&conn->failed, 1);
-    if (conn->tcp) {
+    if (conn->tls) {
+        (void)neverc_tls_shutdown_read(conn->tls);
+        (void)neverc_tls_shutdown_write(conn->tls);
+    } else if (conn->tcp) {
         neverc_tcp_shutdown_read(conn->tcp);
         neverc_tcp_shutdown_write(conn->tcp);
     }
@@ -970,11 +1060,13 @@ int neverc_ws_set_read_limit(neverc_ws_conn_t *conn, size_t max_bytes) {
  * Frame I/O (RFC 6455)
  * ====================================================================== */
 
-static int read_exact(neverc_tcp_conn_t *conn, void *buf, size_t len) {
+static int read_exact(neverc_ws_conn_t *conn, void *buf, size_t len) {
     char *p = (char *)buf;
     size_t got = 0;
     while (got < len) {
-        int n = neverc_tcp_read(conn, p + got, len - got);
+        int n = conn->tls
+            ? neverc_tls_read(conn->tls, p + got, len - got)
+            : neverc_tcp_read(conn->tcp, p + got, len - got);
         if (n <= 0) return -1;
         got += (size_t)n;
     }
@@ -1039,10 +1131,10 @@ static int ws_fail(neverc_ws_conn_t *conn) {
     return -1;
 }
 
-static int ws_frame_write_all(neverc_tcp_conn_t *tcp, neverc_context_t *ctx,
+static int ws_frame_write_all(neverc_ws_conn_t *conn, neverc_context_t *ctx,
                               const void *data, size_t len) {
-    return ctx ? tcp_write_all_context(tcp, ctx, data, len)
-               : tcp_write_all(tcp, data, len);
+    return ws_transport_write_all_context(
+        conn->tcp, conn->tls, ctx, data, len);
 }
 
 static int write_frame_timeout(neverc_ws_conn_t *conn, int opcode,
@@ -1109,13 +1201,13 @@ static int write_frame_timeout(neverc_ws_conn_t *conn, int opcode,
     }
     if (opcode == NC_WS_OPCODE_CLOSE)
         nc_atomic_store(&conn->close_sent, 1);
-    if (ws_frame_write_all(conn->tcp, ctx, hdr, hlen) != 0) {
+    if (ws_frame_write_all(conn, ctx, hdr, hlen) != 0) {
         ws_fail(conn);
         goto done;
     }
     if (!mask) {
         if (len > 0 &&
-            ws_frame_write_all(conn->tcp, ctx, payload, len) != 0) {
+            ws_frame_write_all(conn, ctx, payload, len) != 0) {
             ws_fail(conn);
             goto done;
         }
@@ -1134,7 +1226,7 @@ static int write_frame_timeout(neverc_ws_conn_t *conn, int opcode,
         if (chunk > sizeof(masked)) chunk = sizeof(masked);
         for (size_t i = 0; i < chunk; i++)
             masked[i] = input[offset + i] ^ mask_key[(offset + i) % 4];
-        if (ws_frame_write_all(conn->tcp, ctx, masked, chunk) != 0) {
+        if (ws_frame_write_all(conn, ctx, masked, chunk) != 0) {
             ws_fail(conn);
             goto done;
         }
@@ -1168,7 +1260,7 @@ int neverc_ws_read_frame(neverc_ws_conn_t *conn, int *opcode, int *fin,
     *out_len = 0;
 
     uint8_t h2[2];
-    if (read_exact(conn->tcp, h2, 2) != 0) return ws_fail(conn);
+    if (read_exact(conn, h2, 2) != 0) return ws_fail(conn);
 
     int frame_opcode = h2[0] & 0x0F;
     int frame_fin = (h2[0] & 0x80) != 0;
@@ -1181,12 +1273,12 @@ int neverc_ws_read_frame(neverc_ws_conn_t *conn, int *opcode, int *fin,
 
     if (plen == 126) {
         uint8_t ext[2];
-        if (read_exact(conn->tcp, ext, 2) != 0) return ws_fail(conn);
+        if (read_exact(conn, ext, 2) != 0) return ws_fail(conn);
         plen = ((uint64_t)ext[0] << 8) | ext[1];
         if (plen < 126) return ws_fail(conn);
     } else if (plen == 127) {
         uint8_t ext[8];
-        if (read_exact(conn->tcp, ext, 8) != 0) return ws_fail(conn);
+        if (read_exact(conn, ext, 8) != 0) return ws_fail(conn);
         if ((ext[0] & 0x80) != 0) return ws_fail(conn);
         plen = 0;
         for (int i = 0; i < 8; i++)
@@ -1200,11 +1292,11 @@ int neverc_ws_read_frame(neverc_ws_conn_t *conn, int *opcode, int *fin,
 
     uint8_t mask_key[4] = {0};
     if (masked) {
-        if (read_exact(conn->tcp, mask_key, 4) != 0) return ws_fail(conn);
+        if (read_exact(conn, mask_key, 4) != 0) return ws_fail(conn);
     }
 
     if (plen > 0) {
-        if (read_exact(conn->tcp, buf, (size_t)plen) != 0)
+        if (read_exact(conn, buf, (size_t)plen) != 0)
             return ws_fail(conn);
         if (masked) {
             uint8_t *p = (uint8_t *)buf;

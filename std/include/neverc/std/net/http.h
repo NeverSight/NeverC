@@ -44,6 +44,10 @@ typedef struct {
     /* Valid only for the duration of the handler call. It carries the server
      * handler deadline when one is configured. */
     neverc_context_t *context;
+
+    /* Non-NULL only for protocol-native streaming handlers. The pointed-to
+     * transport object is opaque outside its protocol adapter. */
+    void *protocol_stream;
 } neverc_http_request_t;
 
 /* --- Response Writer --- */
@@ -55,6 +59,11 @@ void neverc_http_set_status(neverc_http_response_writer_t *w, int code);
 /* Set a response header. */
 void neverc_http_set_header(neverc_http_response_writer_t *w,
                              const char *name, const char *value);
+
+/* Set a response trailer. HTTP/1 sends trailers for chunked responses;
+ * HTTP/2 transports send a trailing HEADERS block. */
+void neverc_http_set_trailer(neverc_http_response_writer_t *w,
+                              const char *name, const char *value);
 
 /* Write response body. Can be called multiple times. */
 int neverc_http_write(neverc_http_response_writer_t *w,
@@ -84,6 +93,9 @@ int neverc_http_end_chunked(neverc_http_response_writer_t *w);
 /* --- Handler --- */
 typedef void (*neverc_http_handler_func_t)(neverc_http_request_t *req,
                                             neverc_http_response_writer_t *w);
+typedef void (*neverc_http_handler_context_func_t)(
+    neverc_http_request_t *req, neverc_http_response_writer_t *w,
+    void *context);
 
 typedef void (*neverc_http_access_log_func_t)(
     const char *method, const char *path,
@@ -104,6 +116,18 @@ neverc_http_mux_t *neverc_http_new_mux(void);
  *   "/exact"              — exact match (no trailing /) */
 void neverc_http_mux_handle(neverc_http_mux_t *mux, const char *pattern,
                              neverc_http_handler_func_t handler);
+
+/* Register an instance-bound handler. context is borrowed and must outlive
+ * the mux route. Returns 0 on success and -1 on invalid input/capacity. */
+int neverc_http_mux_handle_context(
+    neverc_http_mux_t *mux, const char *pattern,
+    neverc_http_handler_context_func_t handler, void *context);
+
+/* As above, but permits an HTTP/2 transport to dispatch after HEADERS and
+ * feed request DATA incrementally through request.protocol_stream. */
+int neverc_http_mux_handle_stream_context(
+    neverc_http_mux_t *mux, const char *pattern,
+    neverc_http_handler_context_func_t handler, void *context);
 
 /* Free a mux. */
 void neverc_http_mux_free(neverc_http_mux_t *mux);

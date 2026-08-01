@@ -1,0 +1,392 @@
+#include "neverc/std/encoding/protobuf.h"
+
+#include <string.h>
+
+static size_t protobuf_scalar_size(neverc_protobuf_scalar_type_t type) {
+    switch (type) {
+    case NEVERC_PROTOBUF_TYPE_UINT32:
+    case NEVERC_PROTOBUF_TYPE_INT32:
+    case NEVERC_PROTOBUF_TYPE_SINT32:
+    case NEVERC_PROTOBUF_TYPE_SFIXED32:
+    case NEVERC_PROTOBUF_TYPE_ENUM:
+        return 4;
+    case NEVERC_PROTOBUF_TYPE_UINT64:
+    case NEVERC_PROTOBUF_TYPE_INT64:
+    case NEVERC_PROTOBUF_TYPE_SINT64:
+    case NEVERC_PROTOBUF_TYPE_FIXED64:
+    case NEVERC_PROTOBUF_TYPE_DOUBLE:
+    case NEVERC_PROTOBUF_TYPE_SFIXED64:
+        return 8;
+    case NEVERC_PROTOBUF_TYPE_BOOL:
+        return sizeof(int);
+    case NEVERC_PROTOBUF_TYPE_FIXED32:
+    case NEVERC_PROTOBUF_TYPE_FLOAT:
+        return 4;
+    case NEVERC_PROTOBUF_TYPE_BYTES:
+    case NEVERC_PROTOBUF_TYPE_STRING:
+        return sizeof(neverc_protobuf_bytes_t);
+    default:
+        return 0;
+    }
+}
+
+static neverc_protobuf_wire_type_t protobuf_scalar_wire(
+    neverc_protobuf_scalar_type_t type) {
+    switch (type) {
+    case NEVERC_PROTOBUF_TYPE_UINT32:
+    case NEVERC_PROTOBUF_TYPE_UINT64:
+    case NEVERC_PROTOBUF_TYPE_INT32:
+    case NEVERC_PROTOBUF_TYPE_INT64:
+    case NEVERC_PROTOBUF_TYPE_SINT32:
+    case NEVERC_PROTOBUF_TYPE_SINT64:
+    case NEVERC_PROTOBUF_TYPE_BOOL:
+    case NEVERC_PROTOBUF_TYPE_ENUM:
+        return NEVERC_PROTOBUF_WIRE_VARINT;
+    case NEVERC_PROTOBUF_TYPE_FIXED64:
+    case NEVERC_PROTOBUF_TYPE_SFIXED64:
+    case NEVERC_PROTOBUF_TYPE_DOUBLE:
+        return NEVERC_PROTOBUF_WIRE_FIXED64;
+    case NEVERC_PROTOBUF_TYPE_BYTES:
+    case NEVERC_PROTOBUF_TYPE_STRING:
+        return NEVERC_PROTOBUF_WIRE_LENGTH_DELIMITED;
+    case NEVERC_PROTOBUF_TYPE_FIXED32:
+    case NEVERC_PROTOBUF_TYPE_SFIXED32:
+    case NEVERC_PROTOBUF_TYPE_FLOAT:
+        return NEVERC_PROTOBUF_WIRE_FIXED32;
+    default:
+        return (neverc_protobuf_wire_type_t)-1;
+    }
+}
+
+static int protobuf_descriptor_valid(
+    const neverc_protobuf_message_descriptor_t *descriptor) {
+    if (!descriptor || descriptor->struct_size == 0 ||
+        (descriptor->field_count > 0 && !descriptor->fields))
+        return 0;
+    for (size_t i = 0; i < descriptor->field_count; i++) {
+        const neverc_protobuf_field_descriptor_t *field =
+            &descriptor->fields[i];
+        size_t value_size = protobuf_scalar_size(field->type);
+        if (field->number == 0 ||
+            field->number > NEVERC_PROTOBUF_MAX_FIELD_NUMBER ||
+            value_size == 0 || field->value_offset > descriptor->struct_size ||
+            value_size > descriptor->struct_size - field->value_offset ||
+            (field->presence_offset != SIZE_MAX &&
+             (field->presence_offset > descriptor->struct_size ||
+              sizeof(int) > descriptor->struct_size -
+                                field->presence_offset)))
+            return 0;
+        for (size_t j = 0; j < i; j++)
+            if (descriptor->fields[j].number == field->number) return 0;
+    }
+    return 1;
+}
+
+static int protobuf_value_present(
+    const neverc_protobuf_field_descriptor_t *field, const uint8_t *message) {
+    if (field->presence_offset != SIZE_MAX) {
+        int present;
+        memcpy(&present, message + field->presence_offset, sizeof(present));
+        return present != 0;
+    }
+    const void *value = message + field->value_offset;
+    switch (field->type) {
+    case NEVERC_PROTOBUF_TYPE_UINT32:
+    case NEVERC_PROTOBUF_TYPE_FIXED32:
+    case NEVERC_PROTOBUF_TYPE_SFIXED32: {
+        uint32_t scalar;
+        memcpy(&scalar, value, sizeof(scalar));
+        return scalar != 0;
+    }
+    case NEVERC_PROTOBUF_TYPE_UINT64:
+    case NEVERC_PROTOBUF_TYPE_FIXED64: {
+        uint64_t scalar;
+        memcpy(&scalar, value, sizeof(scalar));
+        return scalar != 0;
+    }
+    case NEVERC_PROTOBUF_TYPE_INT64:
+    case NEVERC_PROTOBUF_TYPE_SINT64: {
+        int64_t scalar;
+        memcpy(&scalar, value, sizeof(scalar));
+        return scalar != 0;
+    }
+    case NEVERC_PROTOBUF_TYPE_INT32:
+    case NEVERC_PROTOBUF_TYPE_SINT32:
+    case NEVERC_PROTOBUF_TYPE_ENUM: {
+        int32_t scalar;
+        memcpy(&scalar, value, sizeof(scalar));
+        return scalar != 0;
+    }
+    case NEVERC_PROTOBUF_TYPE_BOOL: {
+        int scalar;
+        memcpy(&scalar, value, sizeof(scalar));
+        return scalar != 0;
+    }
+    case NEVERC_PROTOBUF_TYPE_FLOAT: {
+        float scalar;
+        memcpy(&scalar, value, sizeof(scalar));
+        return scalar != 0.0f;
+    }
+    case NEVERC_PROTOBUF_TYPE_DOUBLE: {
+        double scalar;
+        memcpy(&scalar, value, sizeof(scalar));
+        return scalar != 0.0;
+    }
+    case NEVERC_PROTOBUF_TYPE_SFIXED64: {
+        int64_t scalar;
+        memcpy(&scalar, value, sizeof(scalar));
+        return scalar != 0;
+    }
+    case NEVERC_PROTOBUF_TYPE_BYTES:
+    case NEVERC_PROTOBUF_TYPE_STRING: {
+        neverc_protobuf_bytes_t bytes;
+        memcpy(&bytes, value, sizeof(bytes));
+        return bytes.length != 0;
+    }
+    default:
+        return 0;
+    }
+}
+
+static int protobuf_encode_field(
+    neverc_protobuf_writer_t *writer,
+    const neverc_protobuf_field_descriptor_t *field,
+    const uint8_t *message) {
+    const void *value = message + field->value_offset;
+    switch (field->type) {
+    case NEVERC_PROTOBUF_TYPE_UINT32: {
+        uint32_t scalar;
+        memcpy(&scalar, value, sizeof(scalar));
+        return neverc_protobuf_write_uint32(writer, field->number, scalar);
+    }
+    case NEVERC_PROTOBUF_TYPE_UINT64: {
+        uint64_t scalar;
+        memcpy(&scalar, value, sizeof(scalar));
+        return neverc_protobuf_write_uint64(writer, field->number,
+                                             scalar);
+    }
+    case NEVERC_PROTOBUF_TYPE_INT64: {
+        int64_t scalar;
+        memcpy(&scalar, value, sizeof(scalar));
+        return neverc_protobuf_write_int64(writer, field->number,
+                                            scalar);
+    }
+    case NEVERC_PROTOBUF_TYPE_INT32: {
+        int32_t scalar;
+        memcpy(&scalar, value, sizeof(scalar));
+        return neverc_protobuf_write_int32(writer, field->number, scalar);
+    }
+    case NEVERC_PROTOBUF_TYPE_SINT32: {
+        int32_t scalar;
+        memcpy(&scalar, value, sizeof(scalar));
+        return neverc_protobuf_write_sint32(writer, field->number, scalar);
+    }
+    case NEVERC_PROTOBUF_TYPE_SINT64: {
+        int64_t scalar;
+        memcpy(&scalar, value, sizeof(scalar));
+        return neverc_protobuf_write_sint64(writer, field->number,
+                                             scalar);
+    }
+    case NEVERC_PROTOBUF_TYPE_BOOL: {
+        int scalar;
+        memcpy(&scalar, value, sizeof(scalar));
+        return neverc_protobuf_write_bool(writer, field->number,
+                                           scalar);
+    }
+    case NEVERC_PROTOBUF_TYPE_FIXED32: {
+        uint32_t scalar;
+        memcpy(&scalar, value, sizeof(scalar));
+        return neverc_protobuf_write_fixed32(writer, field->number,
+                                              scalar);
+    }
+    case NEVERC_PROTOBUF_TYPE_FIXED64: {
+        uint64_t scalar;
+        memcpy(&scalar, value, sizeof(scalar));
+        return neverc_protobuf_write_fixed64(writer, field->number,
+                                              scalar);
+    }
+    case NEVERC_PROTOBUF_TYPE_SFIXED32: {
+        int32_t scalar;
+        memcpy(&scalar, value, sizeof(scalar));
+        return neverc_protobuf_write_sfixed32(writer, field->number, scalar);
+    }
+    case NEVERC_PROTOBUF_TYPE_SFIXED64: {
+        int64_t scalar;
+        memcpy(&scalar, value, sizeof(scalar));
+        return neverc_protobuf_write_sfixed64(writer, field->number, scalar);
+    }
+    case NEVERC_PROTOBUF_TYPE_FLOAT: {
+        float scalar;
+        memcpy(&scalar, value, sizeof(scalar));
+        return neverc_protobuf_write_float(writer, field->number,
+                                            scalar);
+    }
+    case NEVERC_PROTOBUF_TYPE_DOUBLE: {
+        double scalar;
+        memcpy(&scalar, value, sizeof(scalar));
+        return neverc_protobuf_write_double(writer, field->number,
+                                             scalar);
+    }
+    case NEVERC_PROTOBUF_TYPE_BYTES: {
+        neverc_protobuf_bytes_t bytes;
+        memcpy(&bytes, value, sizeof(bytes));
+        return neverc_protobuf_write_bytes(writer, field->number,
+                                            bytes.data, bytes.length);
+    }
+    case NEVERC_PROTOBUF_TYPE_STRING: {
+        neverc_protobuf_bytes_t string;
+        memcpy(&string, value, sizeof(string));
+        return neverc_protobuf_write_string(
+            writer, field->number, (const char *)string.data,
+            string.length);
+    }
+    case NEVERC_PROTOBUF_TYPE_ENUM: {
+        int32_t scalar;
+        memcpy(&scalar, value, sizeof(scalar));
+        return neverc_protobuf_write_enum(writer, field->number, scalar);
+    }
+    default:
+        return -1;
+    }
+}
+
+int neverc_protobuf_message_encode(
+    const neverc_protobuf_message_descriptor_t *descriptor,
+    const void *message, void *output, size_t output_capacity,
+    size_t *output_length) {
+    if (output_length) *output_length = 0;
+    if (!protobuf_descriptor_valid(descriptor) || !message || !output ||
+        !output_length)
+        return -1;
+    neverc_protobuf_writer_t writer;
+    neverc_protobuf_writer_init(&writer, output, output_capacity);
+    for (size_t i = 0; i < descriptor->field_count; i++) {
+        const neverc_protobuf_field_descriptor_t *field =
+            &descriptor->fields[i];
+        if (protobuf_value_present(field, (const uint8_t *)message) &&
+            protobuf_encode_field(&writer, field,
+                                  (const uint8_t *)message) != 0)
+            return -1;
+    }
+    *output_length = writer.length;
+    return 0;
+}
+
+static const neverc_protobuf_field_descriptor_t *protobuf_find_field(
+    const neverc_protobuf_message_descriptor_t *descriptor,
+    uint32_t number) {
+    for (size_t i = 0; i < descriptor->field_count; i++)
+        if (descriptor->fields[i].number == number)
+            return &descriptor->fields[i];
+    return NULL;
+}
+
+static int protobuf_decode_field(
+    const neverc_protobuf_field_descriptor_t *descriptor,
+    const neverc_protobuf_field_t *field, uint8_t *message) {
+    if (field->wire_type != protobuf_scalar_wire(descriptor->type)) return -1;
+    void *value = message + descriptor->value_offset;
+    switch (descriptor->type) {
+    case NEVERC_PROTOBUF_TYPE_UINT32: {
+        if (field->value.varint > UINT32_MAX) return -1;
+        uint32_t uint32_value = (uint32_t)field->value.varint;
+        memcpy(value, &uint32_value, sizeof(uint32_value));
+        break;
+    }
+    case NEVERC_PROTOBUF_TYPE_UINT64:
+        memcpy(value, &field->value.varint, sizeof(uint64_t));
+        break;
+    case NEVERC_PROTOBUF_TYPE_INT64: {
+        int64_t scalar = (int64_t)field->value.varint;
+        memcpy(value, &scalar, sizeof(scalar));
+        break;
+    }
+    case NEVERC_PROTOBUF_TYPE_INT32:
+    case NEVERC_PROTOBUF_TYPE_ENUM: {
+        int32_t scalar = (int32_t)(uint32_t)field->value.varint;
+        memcpy(value, &scalar, sizeof(scalar));
+        break;
+    }
+    case NEVERC_PROTOBUF_TYPE_SINT32: {
+        if (field->value.varint > UINT32_MAX) return -1;
+        int32_t scalar = neverc_protobuf_zigzag_decode32(
+            (uint32_t)field->value.varint);
+        memcpy(value, &scalar, sizeof(scalar));
+        break;
+    }
+    case NEVERC_PROTOBUF_TYPE_SINT64: {
+        int64_t scalar = neverc_protobuf_zigzag_decode64(field->value.varint);
+        memcpy(value, &scalar, sizeof(scalar));
+        break;
+    }
+    case NEVERC_PROTOBUF_TYPE_BOOL: {
+        if (field->value.varint > 1) return -1;
+        int boolean = (int)field->value.varint;
+        memcpy(value, &boolean, sizeof(boolean));
+        break;
+    }
+    case NEVERC_PROTOBUF_TYPE_FIXED32:
+        memcpy(value, &field->value.fixed32, sizeof(uint32_t));
+        break;
+    case NEVERC_PROTOBUF_TYPE_FIXED64:
+        memcpy(value, &field->value.fixed64, sizeof(uint64_t));
+        break;
+    case NEVERC_PROTOBUF_TYPE_SFIXED32: {
+        int32_t scalar = (int32_t)field->value.fixed32;
+        memcpy(value, &scalar, sizeof(scalar));
+        break;
+    }
+    case NEVERC_PROTOBUF_TYPE_SFIXED64: {
+        int64_t scalar = (int64_t)field->value.fixed64;
+        memcpy(value, &scalar, sizeof(scalar));
+        break;
+    }
+    case NEVERC_PROTOBUF_TYPE_FLOAT:
+        memcpy(value, &field->value.fixed32, sizeof(float));
+        break;
+    case NEVERC_PROTOBUF_TYPE_DOUBLE:
+        memcpy(value, &field->value.fixed64, sizeof(double));
+        break;
+    case NEVERC_PROTOBUF_TYPE_BYTES:
+        memcpy(value, &field->value.bytes, sizeof(field->value.bytes));
+        break;
+    case NEVERC_PROTOBUF_TYPE_STRING:
+        if (!neverc_protobuf_utf8_valid(field->value.bytes.data,
+                                        field->value.bytes.length))
+            return -1;
+        memcpy(value, &field->value.bytes, sizeof(field->value.bytes));
+        break;
+    default:
+        return -1;
+    }
+    if (descriptor->presence_offset != SIZE_MAX) {
+        int present = 1;
+        memcpy(message + descriptor->presence_offset, &present,
+               sizeof(present));
+    }
+    return 0;
+}
+
+int neverc_protobuf_message_decode(
+    const neverc_protobuf_message_descriptor_t *descriptor,
+    const void *input, size_t input_length, size_t max_field_size,
+    void *message, size_t message_size) {
+    if (!protobuf_descriptor_valid(descriptor) ||
+        (!input && input_length > 0) || !message ||
+        message_size < descriptor->struct_size)
+        return -1;
+    memset(message, 0, descriptor->struct_size);
+    neverc_protobuf_reader_t reader;
+    neverc_protobuf_reader_init(&reader, input, input_length, max_field_size);
+    for (;;) {
+        neverc_protobuf_field_t field;
+        int result = neverc_protobuf_reader_next(&reader, &field);
+        if (result == 0) return 0;
+        if (result < 0) return -1;
+        const neverc_protobuf_field_descriptor_t *known =
+            protobuf_find_field(descriptor, field.number);
+        if (known && protobuf_decode_field(known, &field,
+                                           (uint8_t *)message) != 0)
+            return -1;
+    }
+}

@@ -39,9 +39,8 @@ typedef struct {
 
 /* --- Handshake (client) --- */
 
-/* Connect to a ws:// URL and complete the RFC 6455 client handshake.
- * wss:// is rejected until the WebSocket transport is integrated with TLS;
- * it is never sent over a plaintext connection. */
+/* Connect to a ws:// or verified TLS wss:// URL and complete the RFC 6455
+ * client handshake. wss:// uses platform roots and SNI for the URL host. */
 neverc_ws_conn_t *neverc_ws_dial(const char *url,
                                   const neverc_ws_client_config_t *config,
                                   const char **errp);

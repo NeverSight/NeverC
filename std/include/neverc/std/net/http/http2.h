@@ -1,9 +1,8 @@
 /*
- * NeverC HTTP/2 (RFC 9113) — experimental components.
+ * NeverC HTTP/2 (RFC 9113).
  *
- * Framing, HPACK, and part of the server state machine are implemented, but
- * request dispatch, protocol validation, flow control, and concurrent stream
- * handling are not yet complete enough for production use.
+ * Framing, bounded HPACK, multiplexed request dispatch, flow control, and
+ * graceful server lifecycle are shared by h2c and TLS/ALPN transports.
  *
  * Target capabilities:
  *   - Binary framing layer (9 frame types)
@@ -114,6 +113,8 @@ int neverc_hpack_decode(neverc_hpack_decoder_t *dec,
 
 neverc_hpack_encoder_t *neverc_hpack_encoder_create(uint32_t max_table_size);
 void neverc_hpack_encoder_destroy(neverc_hpack_encoder_t *enc);
+int neverc_hpack_encoder_set_max_table_size(neverc_hpack_encoder_t *enc,
+                                             uint32_t max_table_size);
 int neverc_hpack_encode(neverc_hpack_encoder_t *enc,
                          const neverc_hpack_header_t *headers, int nheaders,
                          uint8_t *out, size_t out_cap, size_t *out_len);
@@ -171,6 +172,11 @@ void neverc_h2_server_set_max_frame_size(neverc_h2_server_t *srv, uint32_t max);
 void neverc_h2_server_set_initial_window_size(neverc_h2_server_t *srv, uint32_t win);
 void neverc_h2_server_set_max_header_list_size(neverc_h2_server_t *srv, uint32_t max);
 void neverc_h2_server_set_max_body_size(neverc_h2_server_t *srv, size_t max);
+void neverc_h2_server_set_handler_timeout(neverc_h2_server_t *srv, int ms);
+size_t neverc_h2_server_active_connections(neverc_h2_server_t *srv);
+
+/* Stop this server instance, cancel accept, and drain active connections. */
+void neverc_h2_server_shutdown(neverc_h2_server_t *srv);
 
 /* Serve a single HTTP/2 connection on a raw socket (after ALPN or upgrade) */
 int neverc_h2_serve_conn(neverc_h2_server_t *srv, int fd);
@@ -190,8 +196,112 @@ int neverc_h2_listen_and_serve(const char *addr,
 int neverc_h2_listen_and_serve_h2c(const char *addr,
                                      neverc_h2_server_t *srv);
 
-/* Stop a running h2 listen loop (listen_and_serve / listen_and_serve_h2c). */
+/* Compatibility stop for the currently running legacy listen call. New code
+ * should call neverc_h2_server_shutdown with the target instance. */
 void neverc_h2_server_stop(void);
+
+/* Read request DATA from request.protocol_stream. Returns bytes read, 0 after
+ * END_STREAM, and -1 on reset/cancellation. One reader is permitted. */
+int neverc_h2_request_stream_read(void *protocol_stream,
+                                   neverc_context_t *context,
+                                   void *output, size_t output_capacity);
+void neverc_h2_request_stream_cancel(void *protocol_stream,
+                                      uint32_t error_code);
+
+/* ======================================================================
+ * HTTP/2 Client
+ * ====================================================================== */
+
+typedef struct neverc_h2_client neverc_h2_client_t;
+typedef struct neverc_h2_client_stream neverc_h2_client_stream_t;
+
+typedef struct {
+    int timeout_ms;
+    uint32_t max_concurrent_streams;
+    uint32_t initial_window_size;
+    size_t max_response_header_list_size;
+    size_t max_response_body_size;
+} neverc_h2_client_config_t;
+
+typedef struct {
+    int status_code;
+    neverc_hpack_header_t *headers;
+    size_t header_count;
+    neverc_hpack_header_t *trailers;
+    size_t trailer_count;
+    uint8_t *body;
+    size_t body_length;
+    uint32_t stream_error;
+    const char *error;
+} neverc_h2_response_t;
+
+typedef enum {
+    NEVERC_H2_CLIENT_EVENT_HEADERS,
+    NEVERC_H2_CLIENT_EVENT_DATA,
+    NEVERC_H2_CLIENT_EVENT_TRAILERS,
+    NEVERC_H2_CLIENT_EVENT_END,
+    NEVERC_H2_CLIENT_EVENT_ERROR
+} neverc_h2_client_event_type_t;
+
+typedef struct {
+    neverc_h2_client_event_type_t type;
+    int status_code;
+    neverc_hpack_header_t *headers;
+    size_t header_count;
+    uint8_t *data;
+    size_t data_length;
+    size_t flow_controlled_length; /* transport accounting; do not modify */
+    uint32_t error_code;
+    const char *error;
+} neverc_h2_client_event_t;
+
+neverc_h2_client_config_t neverc_h2_client_config_default(void);
+
+/* Dial one multiplexed h2 connection. server_name is used for SNI,
+ * certificate verification, :authority, and is required for TLS. */
+neverc_h2_client_t *neverc_h2_client_dial(
+    const char *addr, const char *server_name, int use_tls,
+    const neverc_h2_client_config_t *config, const char **error);
+neverc_h2_client_t *neverc_h2_client_dial_context(
+    const char *addr, const char *server_name, int use_tls,
+    const neverc_h2_client_config_t *config, neverc_context_t *context,
+    const char **error);
+
+/* Concurrent calls share the connection and receive independent streams. */
+neverc_h2_response_t *neverc_h2_client_do_context(
+    neverc_h2_client_t *client, neverc_context_t *context,
+    const char *method, const char *path,
+    const neverc_hpack_header_t *headers, size_t header_count,
+    const void *body, size_t body_length);
+neverc_h2_response_t *neverc_h2_client_do(
+    neverc_h2_client_t *client, const char *method, const char *path,
+    const neverc_hpack_header_t *headers, size_t header_count,
+    const void *body, size_t body_length);
+
+/* Open a live request stream. DATA may be sent and response events received
+ * concurrently from separate threads. */
+neverc_h2_client_stream_t *neverc_h2_client_stream_open(
+    neverc_h2_client_t *client, neverc_context_t *context,
+    const char *method, const char *path,
+    const neverc_hpack_header_t *headers, size_t header_count,
+    int end_stream, const char **error);
+int neverc_h2_client_stream_send(
+    neverc_h2_client_stream_t *stream, neverc_context_t *context,
+    const void *data, size_t length, int end_stream);
+/* Return 1 with an owned event, 0 after closure, and -1 on cancellation. */
+int neverc_h2_client_stream_receive(
+    neverc_h2_client_stream_t *stream, neverc_context_t *context,
+    neverc_h2_client_event_t **event);
+void neverc_h2_client_event_free(neverc_h2_client_event_t *event);
+void neverc_h2_client_stream_cancel(neverc_h2_client_stream_t *stream,
+                                     uint32_t error_code);
+/* Cancel if necessary, unlink, drain events, and release the stream. */
+void neverc_h2_client_stream_free(neverc_h2_client_stream_t *stream);
+
+void neverc_h2_response_free(neverc_h2_response_t *response);
+void neverc_h2_client_close(neverc_h2_client_t *client);
+/* The caller must ensure no client_do call is active. */
+void neverc_h2_client_free(neverc_h2_client_t *client);
 
 #ifdef __neverc__
 #include <neverc/std/net.h>

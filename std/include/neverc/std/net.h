@@ -18,6 +18,7 @@
 #include "net/resolve.h"
 #include "net/interface.h"
 #include "net/http/http2.h"
+#include "net/grpc.h"
 #include "net/http3.h"
 #include "net/quic.h"
 #include "net/rpc.h"
@@ -41,6 +42,7 @@ struct __neverc_std_textproto_t { char __tag; };
 struct __neverc_std_resolve_t { char __tag; };
 struct __neverc_std_interface_t { char __tag; };
 struct __neverc_std_http2_t { char __tag; };
+struct __neverc_std_grpc_t { char __tag; };
 struct __neverc_std_http3_t { char __tag; };
 struct __neverc_std_quic_t { char __tag; };
 struct __neverc_std_rpc_t { char __tag; };
@@ -50,6 +52,7 @@ struct __neverc_std_net_t {
     struct __neverc_std_udp_t udp;
     struct __neverc_std_http_t http;
     struct __neverc_std_http2_t http2;
+    struct __neverc_std_grpc_t grpc;
     struct __neverc_std_http3_t http3;
     struct __neverc_std_quic_t quic;
     struct __neverc_std_rpc_t rpc;

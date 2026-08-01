@@ -299,6 +299,20 @@ int neverc_tls_write_context(neverc_tls_conn_t *conn, neverc_context_t *ctx,
     return result;
 }
 
+int neverc_tls_shutdown_read(neverc_tls_conn_t *conn) {
+    if (!conn || !conn->tcp) return -1;
+    return neverc_tcp_shutdown_read(conn->tcp);
+}
+
+int neverc_tls_shutdown_write(neverc_tls_conn_t *conn) {
+    if (!conn || !conn->tcp || !conn->mutexes_initialized) return -1;
+    tls_mutex_lock(&conn->write_mutex);
+    conn->write_closed = 1;
+    int result = neverc_tcp_shutdown_write(conn->tcp);
+    tls_mutex_unlock(&conn->write_mutex);
+    return result;
+}
+
 int neverc_tls_key_update(
     neverc_tls_conn_t *conn, int request_peer_update) {
     return nci_tls_send_key_update_message(

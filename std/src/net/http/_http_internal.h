@@ -3,6 +3,7 @@
 
 #include "neverc/std/net/http.h"
 #include "neverc/std/net/tcp.h"
+#include "neverc/std/crypto/tls.h"
 #include "../_net_internal.h"
 #include <stdarg.h>
 #include <time.h>
@@ -24,6 +25,8 @@ static inline int strncasecmp(const char *a, const char *b, size_t n) {
 typedef struct http_conn http_conn_t;
 typedef int (*nc_http_writer_func_t)(void *context, const void *data,
                                      size_t len, int timeout_ms);
+typedef int (*nc_http_protocol_flush_func_t)(
+    void *context, neverc_http_response_writer_t *writer, int end_stream);
 
 struct neverc_http_response_writer {
     nc_sock_t   fd;
@@ -33,6 +36,9 @@ struct neverc_http_response_writer {
     char       *header_names[HTTP_MAX_HEADERS];
     char       *header_values[HTTP_MAX_HEADERS];
     int         nheaders;
+    char       *trailer_names[HTTP_MAX_HEADERS];
+    char       *trailer_values[HTTP_MAX_HEADERS];
+    int         ntrailers;
     nc_buf_t    body;
     int         keep_alive;
     int         hijacked;
@@ -50,6 +56,9 @@ struct neverc_http_response_writer {
     int         head_request;
     nc_http_writer_func_t transport_write;
     void       *transport_context;
+    neverc_tcp_conn_t *transport_tcp;
+    nc_http_protocol_flush_func_t protocol_flush;
+    void       *protocol_context;
 };
 
 int nc_http_sock_write_all(nc_sock_t fd, const void *data, size_t len);
@@ -61,6 +70,19 @@ int nc_http_sock_write_all_timeout(nc_sock_t fd, const void *data, size_t len,
 void nc_http_mux_dispatch(neverc_http_mux_t *mux,
                           neverc_http_request_t *request,
                           neverc_http_response_writer_t *writer);
+
+void nc_http_writer_set_protocol(neverc_http_response_writer_t *writer,
+                                 void *context,
+                                 nc_http_protocol_flush_func_t flush);
+int nc_http_writer_finish(neverc_http_response_writer_t *writer);
+int nc_http_mux_is_streaming(neverc_http_mux_t *mux, const char *method,
+                             const char *path);
+
+/* Transfer an HTTPS writer's TLS and TCP transports to an upgraded protocol.
+ * Both output pointers are owned by the caller after success. */
+int nc_http_hijack_tls(neverc_http_response_writer_t *writer,
+                       neverc_tls_conn_t **tls,
+                       neverc_tcp_conn_t **tcp);
 
 extern neverc_http_cors_config_t g_cors_config;
 extern int g_cors_enabled;

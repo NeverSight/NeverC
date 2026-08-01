@@ -618,6 +618,14 @@ void neverc_hpack_encoder_destroy(neverc_hpack_encoder_t *enc) {
     free(enc);
 }
 
+int neverc_hpack_encoder_set_max_table_size(neverc_hpack_encoder_t *enc,
+                                             uint32_t max_table_size) {
+    if (!enc) return -1;
+    enc->dyn.max_size = max_table_size;
+    dyn_table_evict(&enc->dyn);
+    return 0;
+}
+
 static int hpack_find_static(const char *name, const char *value) {
     for (int i = 1; i <= 61; i++) {
         if (strcmp(hpack_static_table[i].name, name) == 0) {

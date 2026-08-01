@@ -6,6 +6,7 @@
 #include "encoding/base32.h"
 #include "encoding/ascii85.h"
 #include "encoding/binary.h"
+#include "encoding/protobuf.h"
 #include "encoding/pem.h"
 #include "encoding/csv.h"
 #include "encoding/json.h"
@@ -19,6 +20,7 @@ struct __neverc_std_base64_t { char __tag; };
 struct __neverc_std_base32_t { char __tag; };
 struct __neverc_std_ascii85_t { char __tag; };
 struct __neverc_std_binary_t { char __tag; };
+struct __neverc_std_protobuf_t { char __tag; };
 struct __neverc_std_pem_t { char __tag; };
 struct __neverc_std_csv_t { char __tag; };
 struct __neverc_std_json_t { char __tag; };
@@ -31,6 +33,7 @@ struct __neverc_std_encoding_t {
     struct __neverc_std_base32_t base32;
     struct __neverc_std_ascii85_t ascii85;
     struct __neverc_std_binary_t binary;
+    struct __neverc_std_protobuf_t protobuf;
     struct __neverc_std_pem_t pem;
     struct __neverc_std_csv_t csv;
     struct __neverc_std_json_t json;

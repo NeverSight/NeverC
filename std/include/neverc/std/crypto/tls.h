@@ -140,6 +140,11 @@ int neverc_tls_write(neverc_tls_conn_t *conn, const void *data, size_t len);
 int neverc_tls_write_context(neverc_tls_conn_t *conn, neverc_context_t *ctx,
                              const void *data, size_t len);
 
+/* Interrupt one transport direction. shutdown_read may be used to wake a
+ * concurrent blocked reader; shutdown_write waits for an active writer. */
+int neverc_tls_shutdown_read(neverc_tls_conn_t *conn);
+int neverc_tls_shutdown_write(neverc_tls_conn_t *conn);
+
 /* Rotate the TLS 1.3 application write keys. If request_peer_update is 1,
  * request that the peer rotate its write keys too; 0 only rotates this side.
  * Returns 0 on success or -1 for invalid state/input or an I/O failure. */
