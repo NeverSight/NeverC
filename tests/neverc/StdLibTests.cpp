@@ -460,7 +460,8 @@ TEST_F(StdLibTest, NetBufferFailurePaths) {
 // only exercises plain HTTP.  Include the full TLS dependency chain for
 // every target that compiles http.c.
 #define HTTP_TLS_DEPS \
-    "src/compress/gzip/gzip.c", "src/thread/thread.c", \
+    "src/compress/gzip/gzip.c", "src/compress/flate/flate.c", \
+    "src/hash/crc32/crc32.c", "src/thread/thread.c", \
     "src/crypto/tls/tls.c", "src/crypto/tls/tls_config.c", \
     "src/crypto/tls/tls_record.c", "src/crypto/tls/tls_handshake.c", \
     "src/crypto/tls/tls_verify.c", \
@@ -803,7 +804,6 @@ STD_TEST(dot_syntax,
     "src/strconv/format_int.c", "src/strconv/parse_int.c", "src/strconv/format_bool.c",
     "src/strconv/format_float.c", "src/strconv/parse_float.c",
     "src/encoding/hex/encode.c", "src/encoding/hex/decode.c",
-    "src/hash/crc32/crc32.c",
     "src/hash/fnv/fnv.c",
     "src/hash/adler32/adler32.c",
     "src/container/vector/vector.c",
@@ -823,7 +823,6 @@ STD_TEST(dot_syntax,
     "src/context/context.c",
     "src/io/io.c",
     "src/time/time.c",
-    "src/compress/gzip/gzip.c", "src/compress/flate/flate.c",
     "src/compress/zlib/zlib.c",
     "src/sync/sync.c",
     "src/sync/atomic/atomic.c",

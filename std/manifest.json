@@ -1322,6 +1322,7 @@
     "compress/gzip": {
       "header": "include/neverc/compress/gzip.h",
       "description": "Gzip format (RFC 1952, DEFLATE + CRC32, mirrors Go compress/gzip package)",
+      "deps": ["compress/flate", "hash/crc32"],
       "symbols": {
         "neverc_gzip_compress": "src/compress/gzip/gzip.c",
         "neverc_gzip_decompress": "src/compress/gzip/gzip.c"
