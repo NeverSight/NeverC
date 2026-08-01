@@ -2,13 +2,13 @@
 #include "neverc/std/net/http/http2.h"
 #include "neverc/std/net/tcp.h"
 #include "neverc/std/crypto/tls.h"
+#include "neverc/std/compress/gzip.h"
 #include "../_net_internal.h"
 #include <stdarg.h>
 #include <time.h>
 
-typedef struct neverc_http_server neverc_http_server_t;
 static neverc_http_server_t *volatile g_server_ptr;
-static nc_conn_limiter_t g_conn_limiter = {0, 0};
+static nc_conn_limiter_t g_https_conn_limiter = {0, 0};
 
 #ifndef _WIN32
 #include <strings.h>
@@ -22,6 +22,11 @@ static int strncasecmp(const char *a, const char *b, size_t n) {
 #endif
 
 typedef struct http_conn http_conn_t;
+
+static int http_valid_token(const char *s, size_t length);
+static int http_valid_field_value(const char *s, size_t length);
+static int http_value_has_token(const char *value, size_t length,
+                                const char *expected);
 
 /* ======================================================================
  * Response Writer — heap-allocated, one per request
@@ -43,6 +48,12 @@ struct neverc_http_response_writer {
     int         hijacked;
     http_conn_t *owner;
     size_t      request_consumed;
+    size_t      request_body_len;
+    int         body_limit_exceeded;
+    int         gzip_enabled;
+    int         gzip_level;
+    size_t      gzip_min_size;
+    int         accepts_gzip;
 };
 
 static nc_bufpool_t g_rw_pool;
@@ -134,10 +145,37 @@ static const char *fast_status_line(int code, size_t *len) {
     }
 }
 
+static void rw_apply_gzip(neverc_http_response_writer_t *w) {
+    if (!w->gzip_enabled || !w->accepts_gzip ||
+        w->body.len < w->gzip_min_size || w->body.len == 0 ||
+        w->status < 200 || w->status == 204 || w->status == 304)
+        return;
+    for (int i = 0; i < w->nheaders; i++)
+        if (strcasecmp(w->header_names[i], "Content-Encoding") == 0)
+            return;
+    if (w->body.len > SIZE_MAX - w->body.len / 32 - 128) return;
+    size_t capacity = w->body.len + w->body.len / 32 + 128;
+    uint8_t *compressed = (uint8_t *)malloc(capacity);
+    if (!compressed) return;
+    size_t compressed_length = capacity;
+    if (neverc_gzip_compress((const uint8_t *)w->body.data, w->body.len,
+                             compressed, &compressed_length,
+                             w->gzip_level) == 0 &&
+        compressed_length < w->body.len) {
+        nc_buf_reset(&w->body);
+        if (nc_buf_append(&w->body, compressed, compressed_length) == 0) {
+            neverc_http_set_header(w, "Content-Encoding", "gzip");
+            neverc_http_set_header(w, "Vary", "Accept-Encoding");
+        }
+    }
+    free(compressed);
+}
+
 static void rw_flush(neverc_http_response_writer_t *w) {
     if (!w || w->hijacked) return;
     if (w->headers_sent) return;
     w->headers_sent = 1;
+    rw_apply_gzip(w);
 
     nc_buf_t hdr;
     nc_buf_init(&hdr);
@@ -154,39 +192,33 @@ static void rw_flush(neverc_http_response_writer_t *w) {
     }
 
     int has_content_type = 0;
-    int has_content_length = 0;
-    int has_connection = 0;
     char line[256];
     int n;
 
     for (int i = 0; i < w->nheaders; i++) {
-        n = snprintf(line, sizeof(line), "%s: %s\r\n",
-                     w->header_names[i], w->header_values[i]);
-        nc_buf_append(&hdr, line, (size_t)n);
+        if (strcasecmp(w->header_names[i], "Content-Length") == 0 ||
+            strcasecmp(w->header_names[i], "Transfer-Encoding") == 0 ||
+            strcasecmp(w->header_names[i], "Connection") == 0)
+            continue;
+        nc_buf_append(&hdr, w->header_names[i], strlen(w->header_names[i]));
+        nc_buf_append(&hdr, ": ", 2);
+        nc_buf_append(&hdr, w->header_values[i], strlen(w->header_values[i]));
+        nc_buf_append(&hdr, "\r\n", 2);
 
         if (strcasecmp(w->header_names[i], "Content-Type") == 0)
             has_content_type = 1;
-        if (strcasecmp(w->header_names[i], "Content-Length") == 0)
-            has_content_length = 1;
-        if (strcasecmp(w->header_names[i], "Connection") == 0)
-            has_connection = 1;
     }
 
     if (!has_content_type) {
         const char *ct = "Content-Type: text/plain; charset=utf-8\r\n";
         nc_buf_append(&hdr, ct, strlen(ct));
     }
-    if (!has_content_length) {
-        n = snprintf(line, sizeof(line), "Content-Length: %zu\r\n",
-                     w->body.len);
-        nc_buf_append(&hdr, line, (size_t)n);
-    }
-    if (!has_connection) {
-        const char *conn_val = w->keep_alive
-            ? "Connection: keep-alive\r\n"
-            : "Connection: close\r\n";
-        nc_buf_append(&hdr, conn_val, strlen(conn_val));
-    }
+    n = snprintf(line, sizeof(line), "Content-Length: %zu\r\n", w->body.len);
+    nc_buf_append(&hdr, line, (size_t)n);
+    const char *conn_val = w->keep_alive
+        ? "Connection: keep-alive\r\n"
+        : "Connection: close\r\n";
+    nc_buf_append(&hdr, conn_val, strlen(conn_val));
 
     {
         /* Cache the Date header — update once per second.
@@ -243,21 +275,49 @@ static void rw_flush(neverc_http_response_writer_t *w) {
 }
 
 void neverc_http_set_status(neverc_http_response_writer_t *w, int code) {
-    if (w) w->status = code;
+    if (w && code >= 100 && code <= 999) w->status = code;
 }
 
 void neverc_http_set_header(neverc_http_response_writer_t *w,
                              const char *name, const char *value) {
-    if (!w || w->nheaders >= HTTP_MAX_HEADERS) return;
-    w->header_names[w->nheaders] = strdup(name);
-    w->header_values[w->nheaders] = strdup(value);
+    if (!w || !name || !value || !http_valid_token(name, strlen(name)) ||
+        !http_valid_field_value(value, strlen(value)))
+        return;
+    if (strcasecmp(name, "Connection") == 0) {
+        w->keep_alive = !http_value_has_token(value, strlen(value), "close");
+        return;
+    }
+    if (strcasecmp(name, "Content-Length") == 0 ||
+        strcasecmp(name, "Transfer-Encoding") == 0)
+        return;
+    for (int i = 0; i < w->nheaders; i++) {
+        if (strcasecmp(w->header_names[i], name) == 0) {
+            char *replacement = strdup(value);
+            if (!replacement) return;
+            free(w->header_values[i]);
+            w->header_values[i] = replacement;
+            return;
+        }
+    }
+    if (w->nheaders >= HTTP_MAX_HEADERS) return;
+    char *name_copy = strdup(name);
+    char *value_copy = strdup(value);
+    if (!name_copy || !value_copy) {
+        free(name_copy);
+        free(value_copy);
+        return;
+    }
+    w->header_names[w->nheaders] = name_copy;
+    w->header_values[w->nheaders] = value_copy;
     w->nheaders++;
 }
 
 int neverc_http_write(neverc_http_response_writer_t *w,
                        const void *data, size_t len) {
-    if (!w || !data || len == 0) return 0;
-    nc_buf_append(&w->body, data, len);
+    if (!w || (!data && len > 0) || len > INT_MAX) return -1;
+    if (w->body_limit_exceeded) return -1;
+    if (len == 0) return 0;
+    if (nc_buf_append(&w->body, data, len) != 0) return -1;
     return (int)len;
 }
 
@@ -309,36 +369,30 @@ static void rw_send_chunked_headers(neverc_http_response_writer_t *w) {
     nc_buf_append(&hdr, line, (size_t)n);
 
     int has_content_type = 0;
-    int has_transfer_encoding = 0;
-    int has_connection = 0;
-
     for (int i = 0; i < w->nheaders; i++) {
-        n = snprintf(line, sizeof(line), "%s: %s\r\n",
-                     w->header_names[i], w->header_values[i]);
-        nc_buf_append(&hdr, line, (size_t)n);
+        if (strcasecmp(w->header_names[i], "Content-Length") == 0 ||
+            strcasecmp(w->header_names[i], "Transfer-Encoding") == 0 ||
+            strcasecmp(w->header_names[i], "Connection") == 0)
+            continue;
+        nc_buf_append(&hdr, w->header_names[i], strlen(w->header_names[i]));
+        nc_buf_append(&hdr, ": ", 2);
+        nc_buf_append(&hdr, w->header_values[i], strlen(w->header_values[i]));
+        nc_buf_append(&hdr, "\r\n", 2);
 
         if (strcasecmp(w->header_names[i], "Content-Type") == 0)
             has_content_type = 1;
-        if (strcasecmp(w->header_names[i], "Transfer-Encoding") == 0)
-            has_transfer_encoding = 1;
-        if (strcasecmp(w->header_names[i], "Connection") == 0)
-            has_connection = 1;
     }
 
     if (!has_content_type) {
         const char *ct = "Content-Type: text/plain; charset=utf-8\r\n";
         nc_buf_append(&hdr, ct, strlen(ct));
     }
-    if (!has_transfer_encoding) {
-        const char *te = "Transfer-Encoding: chunked\r\n";
-        nc_buf_append(&hdr, te, strlen(te));
-    }
-    if (!has_connection) {
-        const char *conn_val = w->keep_alive
-            ? "Connection: keep-alive\r\n"
-            : "Connection: close\r\n";
-        nc_buf_append(&hdr, conn_val, strlen(conn_val));
-    }
+    const char *te = "Transfer-Encoding: chunked\r\n";
+    nc_buf_append(&hdr, te, strlen(te));
+    const char *conn_val = w->keep_alive
+        ? "Connection: keep-alive\r\n"
+        : "Connection: close\r\n";
+    nc_buf_append(&hdr, conn_val, strlen(conn_val));
 
     nc_buf_append(&hdr, "\r\n", 2);
     sock_write_all(w->fd, hdr.data, hdr.len);
@@ -679,6 +733,11 @@ struct neverc_http_rate_limiter {
 static neverc_http_rate_limiter_t *g_global_rate_limiter = NULL;
 static int g_handler_timeout_ms = 0;
 static int g_server_port = 0;
+static int g_gzip_enabled = 0;
+static int g_gzip_level = 6;
+static size_t g_gzip_min_size = 256;
+static int g_access_log_enabled = 0;
+static neverc_http_access_log_func_t g_access_log_func = NULL;
 
 neverc_http_rate_limiter_t *neverc_http_rate_limiter_new(double rate, int burst) {
     neverc_http_rate_limiter_t *rl =
@@ -727,7 +786,22 @@ void neverc_http_set_rate_limit(double rate, int burst) {
 }
 
 void neverc_http_set_handler_timeout(int ms) {
-    g_handler_timeout_ms = ms;
+    if (ms >= 0) g_handler_timeout_ms = ms;
+}
+
+void neverc_http_enable_gzip(int level, size_t min_size) {
+    g_gzip_enabled = 1;
+    g_gzip_level = (level >= 1 && level <= 9) ? level : 6;
+    g_gzip_min_size = min_size > 0 ? min_size : 256;
+}
+
+void neverc_http_disable_gzip(void) {
+    g_gzip_enabled = 0;
+}
+
+void neverc_http_enable_access_log(neverc_http_access_log_func_t func) {
+    g_access_log_enabled = 1;
+    g_access_log_func = func;
 }
 
 int neverc_http_server_port(void) {
@@ -736,8 +810,13 @@ int neverc_http_server_port(void) {
 
 void neverc_http_set_max_bytes(neverc_http_response_writer_t *w,
                                 int64_t max_bytes) {
-    (void)w; (void)max_bytes;
-    /* Enforced in http_conn_on_read via max_read_size — set globally for now */
+    if (!w || max_bytes < 0) return;
+    if (w->request_body_len > (uint64_t)max_bytes) {
+        w->body_limit_exceeded = 1;
+        w->status = 413;
+        w->keep_alive = 0;
+        nc_buf_reset(&w->body);
+    }
 }
 
 /* ======================================================================
@@ -800,246 +879,387 @@ static int strcasecmp_n(const char *a, const char *b, size_t n) {
     return 0;
 }
 
-/* Returns 0 on success, -1 if incomplete, -2 on parse error */
-static int parse_request(const char *raw, size_t rawlen,
-                          parsed_request_t *pr, size_t *consumed) {
-    memset(pr, 0, sizeof(*pr));
-    pr->content_length = -1;
-    pr->keep_alive = 1;
+#define HTTP_MAX_REQUEST_HEADERS 128
+#define HTTP_MAX_REQUEST_BODY    1073741824U
 
-    /* Find end of headers: the blank line "\r\n\r\n". memchr hops between the
-       (rare) '\n' bytes instead of testing the 4-byte terminator at every
-       offset; hdr_end still points at the first '\r' of the blank line. */
-    const char *raw_end = raw + rawlen;
-    const char *hdr_end = NULL;
-    for (const char *q = raw; q < raw_end; ) {
-        const char *nl = (const char *)memchr(q, '\n', (size_t)(raw_end - q));
-        if (!nl) break;
-        size_t pidx = (size_t)(nl - raw);
-        if (pidx >= 3 && raw[pidx-1] == '\r' && raw[pidx-2] == '\n' && raw[pidx-3] == '\r') {
-            hdr_end = raw + (pidx - 3);
+static int http_is_tchar(unsigned char c) {
+    return (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') ||
+           (c >= 'a' && c <= 'z') || c == '!' || c == '#' || c == '$' ||
+           c == '%' || c == '&' || c == '\'' || c == '*' || c == '+' ||
+           c == '-' || c == '.' || c == '^' || c == '_' || c == '`' ||
+           c == '|' || c == '~';
+}
+
+static int http_valid_token(const char *s, size_t length) {
+    if (!s || length == 0) return 0;
+    for (size_t i = 0; i < length; i++)
+        if (!http_is_tchar((unsigned char)s[i])) return 0;
+    return 1;
+}
+
+static int http_valid_field_value(const char *s, size_t length) {
+    for (size_t i = 0; i < length; i++) {
+        unsigned char c = (unsigned char)s[i];
+        if ((c < 0x20 && c != '\t') || c == 0x7f) return 0;
+    }
+    return 1;
+}
+
+static void http_trim_ows(const char **value, size_t *length) {
+    while (*length > 0 && (**value == ' ' || **value == '\t')) {
+        (*value)++;
+        (*length)--;
+    }
+    while (*length > 0 && ((*value)[*length - 1] == ' ' ||
+                            (*value)[*length - 1] == '\t'))
+        (*length)--;
+}
+
+static int http_field_name_is(const char *name, size_t length,
+                              const char *expected) {
+    size_t expected_length = strlen(expected);
+    return length == expected_length &&
+           strcasecmp_n(name, expected, length) == 0;
+}
+
+static int http_value_has_token(const char *value, size_t length,
+                                const char *expected) {
+    size_t expected_length = strlen(expected);
+    size_t offset = 0;
+    while (offset < length) {
+        while (offset < length &&
+               (value[offset] == ' ' || value[offset] == '\t' ||
+                value[offset] == ','))
+            offset++;
+        size_t start = offset;
+        while (offset < length && value[offset] != ',') offset++;
+        size_t token_length = offset - start;
+        while (token_length > 0 &&
+               (value[start + token_length - 1] == ' ' ||
+                value[start + token_length - 1] == '\t'))
+            token_length--;
+        if (token_length == expected_length &&
+            strcasecmp_n(value + start, expected, token_length) == 0)
+            return 1;
+    }
+    return 0;
+}
+
+static int http_parse_content_length(const char *value, size_t length,
+                                     int *result) {
+    if (!value || length == 0) return -1;
+    size_t parsed = 0;
+    for (size_t i = 0; i < length; i++) {
+        unsigned char c = (unsigned char)value[i];
+        if (c < '0' || c > '9' ||
+            parsed > (HTTP_MAX_REQUEST_BODY - (size_t)(c - '0')) / 10)
+            return -1;
+        parsed = parsed * 10 + (size_t)(c - '0');
+    }
+    *result = (int)parsed;
+    return 0;
+}
+
+static int parsed_request_add_header(parsed_request_t *request,
+                                     const char *name, size_t name_length,
+                                     const char *value, size_t value_length) {
+    if (request->nheaders >= HTTP_MAX_REQUEST_HEADERS) return -1;
+    if (request->nheaders >= request->header_cap) {
+        int new_capacity = request->header_cap > 0
+            ? request->header_cap * 2 : 32;
+        if (new_capacity > HTTP_MAX_REQUEST_HEADERS)
+            new_capacity = HTTP_MAX_REQUEST_HEADERS;
+        char **new_names = (char **)malloc(
+            (size_t)new_capacity * sizeof(*new_names));
+        char **new_values = (char **)malloc(
+            (size_t)new_capacity * sizeof(*new_values));
+        if (!new_names || !new_values) {
+            free(new_names);
+            free(new_values);
+            return -1;
+        }
+        if (request->nheaders > 0) {
+            memcpy(new_names, request->header_names,
+                   (size_t)request->nheaders * sizeof(*new_names));
+            memcpy(new_values, request->header_values,
+                   (size_t)request->nheaders * sizeof(*new_values));
+        }
+        free(request->header_names);
+        free(request->header_values);
+        request->header_names = new_names;
+        request->header_values = new_values;
+        request->header_cap = new_capacity;
+    }
+    char *name_copy = strndup_safe(name, name_length);
+    char *value_copy = strndup_safe(value, value_length);
+    if (!name_copy || !value_copy) {
+        free(name_copy);
+        free(value_copy);
+        return -1;
+    }
+    request->header_names[request->nheaders] = name_copy;
+    request->header_values[request->nheaders] = value_copy;
+    request->nheaders++;
+    return 0;
+}
+
+static const char *http_find_crlf(const char *start, const char *end) {
+    for (const char *p = start; p + 1 < end; p++)
+        if (p[0] == '\r' && p[1] == '\n') return p;
+    return NULL;
+}
+
+static int http_parse_chunk_size(const char *line, size_t length,
+                                 size_t *chunk_size) {
+    size_t value = 0;
+    size_t digits = 0;
+    while (digits < length) {
+        unsigned char c = (unsigned char)line[digits];
+        unsigned digit;
+        if (c >= '0' && c <= '9') digit = (unsigned)(c - '0');
+        else if (c >= 'a' && c <= 'f') digit = (unsigned)(c - 'a' + 10);
+        else if (c >= 'A' && c <= 'F') digit = (unsigned)(c - 'A' + 10);
+        else break;
+        if (value > (HTTP_MAX_REQUEST_BODY - digit) / 16) return -1;
+        value = value * 16 + digit;
+        digits++;
+    }
+    if (digits == 0 || (digits < length && line[digits] != ';')) return -1;
+    if (!http_valid_field_value(line + digits, length - digits)) return -1;
+    *chunk_size = value;
+    return 0;
+}
+
+static int parse_chunked_request_body(const char *raw, size_t raw_length,
+                                      size_t header_size,
+                                      parsed_request_t *request,
+                                      size_t *consumed) {
+    const char *body = raw + header_size;
+    const char *end = raw + raw_length;
+    const char *cursor = body;
+    nc_buf_t decoded;
+    nc_buf_init(&decoded);
+
+    for (;;) {
+        const char *line_end = http_find_crlf(cursor, end);
+        if (!line_end) goto incomplete;
+        size_t chunk_size = 0;
+        if (http_parse_chunk_size(cursor, (size_t)(line_end - cursor),
+                                  &chunk_size) != 0)
+            goto invalid;
+        cursor = line_end + 2;
+
+        if (chunk_size == 0) {
+            for (;;) {
+                line_end = http_find_crlf(cursor, end);
+                if (!line_end) goto incomplete;
+                if (line_end == cursor) {
+                    cursor += 2;
+                    request->body = decoded.data;
+                    request->body_len = decoded.len;
+                    *consumed = (size_t)(cursor - raw);
+                    return 0;
+                }
+                if (*cursor == ' ' || *cursor == '\t') goto invalid;
+                const char *colon = (const char *)memchr(
+                    cursor, ':', (size_t)(line_end - cursor));
+                if (!colon || !http_valid_token(
+                        cursor, (size_t)(colon - cursor)))
+                    goto invalid;
+                const char *value = colon + 1;
+                size_t value_length = (size_t)(line_end - value);
+                http_trim_ows(&value, &value_length);
+                if (!http_valid_field_value(value, value_length) ||
+                    http_field_name_is(cursor, (size_t)(colon - cursor),
+                                       "Content-Length") ||
+                    http_field_name_is(cursor, (size_t)(colon - cursor),
+                                       "Transfer-Encoding") ||
+                    http_field_name_is(cursor, (size_t)(colon - cursor),
+                                       "Host") ||
+                    parsed_request_add_header(
+                        request, cursor, (size_t)(colon - cursor),
+                        value, value_length) != 0)
+                    goto invalid;
+                cursor = line_end + 2;
+            }
+        }
+
+        size_t available = (size_t)(end - cursor);
+        if (chunk_size > available || available - chunk_size < 2)
+            goto incomplete;
+        if (cursor[chunk_size] != '\r' || cursor[chunk_size + 1] != '\n')
+            goto invalid;
+        if (decoded.len > HTTP_MAX_REQUEST_BODY - chunk_size ||
+            nc_buf_append(&decoded, cursor, chunk_size) != 0)
+            goto invalid;
+        cursor += chunk_size + 2;
+    }
+
+incomplete:
+    nc_buf_free(&decoded);
+    return -1;
+invalid:
+    nc_buf_free(&decoded);
+    return -2;
+}
+
+/* Returns 0 on success, -1 if incomplete, -2 on invalid or ambiguous input. */
+static int parse_request(const char *raw, size_t raw_length,
+                         parsed_request_t *request, size_t *consumed) {
+    memset(request, 0, sizeof(*request));
+    request->content_length = -1;
+    request->keep_alive = 1;
+    if (!raw || !consumed) return -2;
+
+    const char *end = raw + raw_length;
+    const char *header_end = NULL;
+    for (const char *p = raw; p + 3 < end; p++) {
+        if (p[0] == '\r' && p[1] == '\n' &&
+            p[2] == '\r' && p[3] == '\n') {
+            header_end = p;
             break;
         }
-        q = nl + 1;
     }
-    if (!hdr_end) return -1; /* incomplete */
+    if (!header_end) return -1;
 
-    /* Find end of request line: the first "\r\n". */
-    const char *eol = NULL;
-    for (const char *q = raw; q < raw_end; ) {
-        const char *nl = (const char *)memchr(q, '\n', (size_t)(raw_end - q));
-        if (!nl) break;
-        if (nl > raw && nl[-1] == '\r') { eol = nl - 1; break; }
-        q = nl + 1;
+    const char *request_line_end = http_find_crlf(raw, header_end + 2);
+    if (!request_line_end || request_line_end == raw) goto invalid;
+    const char *method_end = (const char *)memchr(
+        raw, ' ', (size_t)(request_line_end - raw));
+    if (!method_end || !http_valid_token(raw, (size_t)(method_end - raw)))
+        goto invalid;
+    const char *target = method_end + 1;
+    const char *target_end = (const char *)memchr(
+        target, ' ', (size_t)(request_line_end - target));
+    if (!target_end || target_end == target ||
+        memchr(target_end + 1, ' ',
+               (size_t)(request_line_end - target_end - 1)))
+        goto invalid;
+    size_t target_length = (size_t)(target_end - target);
+    if (target[0] != '/' && !(target_length == 1 && target[0] == '*'))
+        goto invalid;
+    for (size_t i = 0; i < target_length; i++) {
+        unsigned char c = (unsigned char)target[i];
+        if (c <= 0x20 || c == 0x7f || c == '#') goto invalid;
     }
-    if (!eol) return -2;
 
-    /* Parse "METHOD /path?query HTTP/1.1" */
-    const char *p = raw;
+    const char *version = target_end + 1;
+    size_t version_length = (size_t)(request_line_end - version);
+    int is_http_10 = version_length == 8 &&
+                     memcmp(version, "HTTP/1.0", 8) == 0;
+    int is_http_11 = version_length == 8 &&
+                     memcmp(version, "HTTP/1.1", 8) == 0;
+    if (!is_http_10 && !is_http_11) goto invalid;
+    request->keep_alive = is_http_11;
 
-    const char *sp1 = (const char *)memchr(p, ' ', (size_t)(eol - p));
-    if (!sp1) return -2;
-    pr->method = strndup_safe(p, (size_t)(sp1 - p));
-    p = sp1 + 1;
-
-    const char *sp2 = (const char *)memchr(p, ' ', (size_t)(eol - p));
-    if (!sp2) return -2;
-
-    const char *qmark = (const char *)memchr(p, '?', (size_t)(sp2 - p));
-
-    if (qmark) {
-        pr->path = strndup_safe(p, (size_t)(qmark - p));
-        pr->query = strndup_safe(qmark + 1, (size_t)(sp2 - qmark - 1));
+    request->method = strndup_safe(raw, (size_t)(method_end - raw));
+    const char *query = (const char *)memchr(target, '?', target_length);
+    if (query) {
+        request->path = strndup_safe(target, (size_t)(query - target));
+        request->query = strndup_safe(
+            query + 1, (size_t)(target_end - query - 1));
     } else {
-        pr->path = strndup_safe(p, (size_t)(sp2 - p));
+        request->path = strndup_safe(target, target_length);
     }
-    p = sp2 + 1;
-    pr->http_version = strndup_safe(p, (size_t)(eol - p));
+    request->http_version = strndup_safe(version, version_length);
+    if (!request->method || !request->path || !request->http_version ||
+        (query && !request->query))
+        goto invalid;
 
-    if (pr->http_version && strstr(pr->http_version, "1.0"))
-        pr->keep_alive = 0;
+    int host_seen = 0;
+    int content_length_seen = 0;
+    int transfer_encoding_seen = 0;
+    const char *cursor = request_line_end + 2;
+    while (cursor < header_end) {
+        const char *line_end = http_find_crlf(cursor, header_end + 2);
+        if (!line_end || line_end == cursor ||
+            *cursor == ' ' || *cursor == '\t')
+            goto invalid;
+        const char *colon = (const char *)memchr(
+            cursor, ':', (size_t)(line_end - cursor));
+        if (!colon || !http_valid_token(cursor, (size_t)(colon - cursor)))
+            goto invalid;
+        const char *value = colon + 1;
+        size_t value_length = (size_t)(line_end - value);
+        http_trim_ows(&value, &value_length);
+        size_t name_length = (size_t)(colon - cursor);
+        if (!http_valid_field_value(value, value_length)) goto invalid;
 
-    /* Parse headers — start with stack-friendly capacity */
-    pr->header_cap = 32;
-    pr->header_names = (char **)malloc((size_t)pr->header_cap * sizeof(char *));
-    pr->header_values = (char **)malloc((size_t)pr->header_cap * sizeof(char *));
-
-    p = eol + 2;
-
-    /* hdr_end is the first \r of the terminating \r\n\r\n (also the last
-     * header line's trailing \r). Include its \n when scanning lines. */
-    const char *hdr_scan_end = hdr_end + 2;
-
-    while (p < hdr_scan_end) {
-        /* Locate the line's "\r\n" with memchr, then its first colon, instead
-           of a byte-at-a-time scan testing two conditions per character. The
-           result (first CRLF, first colon before it) is unchanged. */
-        const char *hline_end = NULL;
-        for (const char *q = p; q < hdr_scan_end; ) {
-            const char *nl = (const char *)memchr(q, '\n', (size_t)(hdr_scan_end - q));
-            if (!nl) break;
-            if (nl > p && nl[-1] == '\r') { hline_end = nl - 1; break; }
-            q = nl + 1;
+        if (http_field_name_is(cursor, name_length, "Host")) {
+            if (host_seen || value_length == 0) goto invalid;
+            host_seen = 1;
+            request->host = strndup_safe(value, value_length);
+            if (!request->host) goto invalid;
+        } else if (http_field_name_is(cursor, name_length,
+                                      "Content-Length")) {
+            if (content_length_seen ||
+                http_parse_content_length(value, value_length,
+                                          &request->content_length) != 0)
+                goto invalid;
+            content_length_seen = 1;
+        } else if (http_field_name_is(cursor, name_length,
+                                      "Transfer-Encoding")) {
+            if (transfer_encoding_seen || value_length != 7 ||
+                strcasecmp_n(value, "chunked", 7) != 0)
+                goto invalid;
+            transfer_encoding_seen = 1;
+            request->is_chunked = 1;
+        } else if (http_field_name_is(cursor, name_length,
+                                      "Content-Type") &&
+                   !request->content_type) {
+            request->content_type = strndup_safe(value, value_length);
+            if (!request->content_type) goto invalid;
+        } else if (http_field_name_is(cursor, name_length, "Connection")) {
+            if (http_value_has_token(value, value_length, "close"))
+                request->keep_alive = 0;
+            else if (is_http_10 &&
+                     http_value_has_token(value, value_length, "keep-alive"))
+                request->keep_alive = 1;
+        } else if (http_field_name_is(cursor, name_length, "Expect")) {
+            if (value_length != 12 ||
+                strcasecmp_n(value, "100-continue", 12) != 0)
+                goto invalid;
+            request->expect_continue = 1;
         }
-        if (!hline_end) break;
-        const char *colon = (const char *)memchr(p, ':', (size_t)(hline_end - p));
 
-        if (colon) {
-            size_t namelen = (size_t)(colon - p);
-            const char *val = colon + 1;
-            while (val < hline_end && *val == ' ') val++;
-            size_t vallen = (size_t)(hline_end - val);
-
-            if (namelen == 4 && strcasecmp_n(p, "Host", 4) == 0)
-                pr->host = strndup_safe(val, vallen);
-            if (namelen == 12 && strcasecmp_n(p, "Content-Type", 12) == 0)
-                pr->content_type = strndup_safe(val, vallen);
-            if (namelen == 14 && strcasecmp_n(p, "Content-Length", 14) == 0) {
-                char tmp[32];
-                size_t cl = vallen < 31 ? vallen : 31;
-                memcpy(tmp, val, cl);
-                tmp[cl] = '\0';
-                long long clval = 0;
-                for (size_t ci = 0; ci < cl && tmp[ci] >= '0' && tmp[ci] <= '9'; ci++)
-                    clval = clval * 10 + (tmp[ci] - '0');
-                if (clval < 0 || clval > 1073741824LL) /* 1GB max */
-                    pr->content_length = -2; /* signal overflow */
-                else
-                    pr->content_length = (int)clval;
-            }
-            if (namelen == 17 && strcasecmp_n(p, "Transfer-Encoding", 17) == 0) {
-                if (vallen >= 7 && strcasecmp_n(val, "chunked", 7) == 0)
-                    pr->is_chunked = 1;
-            }
-            if (namelen == 10 && strcasecmp_n(p, "Connection", 10) == 0) {
-                if (vallen == 5 && strcasecmp_n(val, "close", 5) == 0)
-                    pr->keep_alive = 0;
-                else if (vallen == 10 && strcasecmp_n(val, "keep-alive", 10) == 0)
-                    pr->keep_alive = 1;
-            }
-            if (namelen == 6 && strcasecmp_n(p, "Expect", 6) == 0) {
-                if (vallen >= 12 && strcasecmp_n(val, "100-continue", 12) == 0)
-                    pr->expect_continue = 1;
-            }
-
-            if (pr->nheaders >= pr->header_cap) {
-                pr->header_cap *= 2;
-                pr->header_names = (char **)realloc(pr->header_names,
-                    (size_t)pr->header_cap * sizeof(char *));
-                pr->header_values = (char **)realloc(pr->header_values,
-                    (size_t)pr->header_cap * sizeof(char *));
-            }
-            pr->header_names[pr->nheaders] = strndup_safe(p, namelen);
-            pr->header_values[pr->nheaders] = strndup_safe(val, vallen);
-            pr->nheaders++;
-        }
-        p = hline_end + 2;
+        if (parsed_request_add_header(request, cursor, name_length,
+                                      value, value_length) != 0)
+            goto invalid;
+        cursor = line_end + 2;
     }
 
-    if (pr->content_length == -2) {
-        parsed_request_free(pr);
-        memset(pr, 0, sizeof(*pr));
-        return -2; /* content-length overflow */
+    if ((is_http_11 && !host_seen) ||
+        (content_length_seen && transfer_encoding_seen) ||
+        (is_http_10 && transfer_encoding_seen))
+        goto invalid;
+
+    size_t header_size = (size_t)(header_end + 4 - raw);
+    if (request->is_chunked) {
+        int result = parse_chunked_request_body(
+            raw, raw_length, header_size, request, consumed);
+        if (result == 0) return 0;
+        if (result == -1) goto incomplete;
+        goto invalid;
     }
 
-    /* RFC 7230 §3.3.3: Transfer-Encoding takes precedence over Content-Length */
-    if (pr->is_chunked && pr->content_length >= 0)
-        pr->content_length = -1; /* ignore Content-Length when chunked */
-
-    size_t header_size = (size_t)(hdr_end + 4 - raw);
-
-    if (pr->is_chunked) {
-        const char *chunk_start = raw + header_size;
-        size_t chunk_avail = rawlen - header_size;
-        /* Look for the terminating 0\r\n\r\n. memchr skips to each '0'
-         * candidate (vectorized) instead of testing all five bytes at every
-         * offset; the matched position is identical to the byte-loop scan. */
-        const char *term = NULL;
-        if (chunk_avail >= 5) {
-            const char *cur = chunk_start;
-            const char *limit = chunk_start + (chunk_avail - 4); /* need ci+4 < chunk_avail */
-            while (cur < limit) {
-                const char *z = (const char *)memchr(cur, '0', (size_t)(limit - cur));
-                if (!z) break;
-                if (z[1] == '\r' && z[2] == '\n' && z[3] == '\r' && z[4] == '\n') {
-                    term = z;
-                    break;
-                }
-                cur = z + 1;
-            }
-        }
-        if (!term) {
-            parsed_request_free(pr);
-            memset(pr, 0, sizeof(*pr));
-            return -1; /* need more chunked data */
-        }
-        /* Decode chunked body in-place */
-        nc_buf_t decoded;
-        nc_buf_init(&decoded);
-        size_t cpos = 0;
-        while (cpos < chunk_avail) {
-            /* Find the chunk-size line's CRLF: memchr to each '\r' candidate
-             * (vectorized) then confirm the following '\n'. Same match as the
-             * byte-loop scan. */
-            const char *cline_end = NULL;
-            {
-                const char *cur = chunk_start + cpos;
-                size_t avail = chunk_avail - cpos;
-                while (avail >= 2) {
-                    const char *cr = (const char *)memchr(cur, '\r', avail - 1);
-                    if (!cr) break;
-                    if (cr[1] == '\n') { cline_end = cr; break; }
-                    size_t adv = (size_t)(cr - cur) + 1;
-                    cur += adv;
-                    avail -= adv;
-                }
-            }
-            if (!cline_end) break;
-            unsigned long csz = 0;
-            const char *cp = chunk_start + cpos;
-            while (cp < cline_end) {
-                char cc = *cp;
-                if (cc >= '0' && cc <= '9') csz = csz * 16 + (unsigned long)(cc - '0');
-                else if (cc >= 'a' && cc <= 'f') csz = csz * 16 + (unsigned long)(cc - 'a' + 10);
-                else if (cc >= 'A' && cc <= 'F') csz = csz * 16 + (unsigned long)(cc - 'A' + 10);
-                else break;
-                cp++;
-            }
-            cpos = (size_t)(cline_end - chunk_start) + 2;
-            if (csz == 0) break;
-            if (cpos + csz > chunk_avail) break;
-            nc_buf_append(&decoded, chunk_start + cpos, csz);
-            cpos += csz + 2;
-        }
-        /* Store decoded body in the raw buffer area (overwrite) */
-        if (decoded.len > 0) {
-            pr->body = decoded.data;
-            pr->body_len = decoded.len;
-        }
-        *consumed = (size_t)(term + 5 - raw);
-        /* Note: decoded.data ownership transfers to caller via pr->body;
-         * parsed_request_free doesn't free pr->body (it's normally a pointer
-         * into the read buffer), so caller must handle this for chunked.
-         * For simplicity, we copy into the read buffer area. */
-        return 0;
+    size_t body_length = request->content_length > 0
+        ? (size_t)request->content_length : 0;
+    if (body_length > raw_length - header_size) goto incomplete;
+    if (body_length > 0) {
+        request->body = raw + header_size;
+        request->body_len = body_length;
     }
-
-    int body_expected = pr->content_length > 0 ? pr->content_length : 0;
-    size_t total_expected = header_size + (size_t)body_expected;
-
-    if (rawlen < total_expected) {
-        parsed_request_free(pr);
-        memset(pr, 0, sizeof(*pr));
-        return -1; /* need more body data */
-    }
-
-    if (body_expected > 0) {
-        pr->body = raw + header_size;
-        pr->body_len = (size_t)body_expected;
-    }
-
-    *consumed = total_expected;
+    *consumed = header_size + body_length;
     return 0;
+
+incomplete:
+    parsed_request_free(request);
+    memset(request, 0, sizeof(*request));
+    return -1;
+invalid:
+    parsed_request_free(request);
+    memset(request, 0, sizeof(*request));
+    return -2;
 }
 
 static void fill_request(const parsed_request_t *pr,
@@ -1093,6 +1313,12 @@ struct http_conn {
     uint64_t           last_active;
     int                idle_timeout_ms;
     size_t             max_read_size;
+    int                gzip_enabled;
+    int                gzip_level;
+    size_t             gzip_min_size;
+    int                access_log_enabled;
+    neverc_http_access_log_func_t access_log;
+    int                handler_timeout_ms;
     struct http_conn  *next;
     struct http_conn  *prev;
 };
@@ -1151,9 +1377,7 @@ static void ensure_conn_pool(void) {
 static http_conn_t *http_conn_new(nc_sock_t fd, nc_evloop_t *loop,
                                     neverc_http_mux_t *mux,
                                     http_worker_t *worker,
-                                    int max_req,
-                                    int idle_timeout_ms,
-                                    size_t max_read_size) {
+                                    const neverc_http_server_config_t *config) {
     ensure_conn_pool();
     http_conn_t *hc = (http_conn_t *)nc_bufpool_pop(&g_conn_pool_cache);
     if (!hc) return NULL;
@@ -1164,9 +1388,17 @@ static http_conn_t *http_conn_new(nc_sock_t fd, nc_evloop_t *loop,
     hc->loop = loop;
     hc->mux = mux;
     hc->worker = worker;
-    hc->max_requests = max_req;
-    hc->idle_timeout_ms = idle_timeout_ms > 0 ? idle_timeout_ms : 60000;
-    hc->max_read_size = max_read_size > 0 ? max_read_size : 11534336;
+    hc->max_requests = config->max_requests_per_connection;
+    hc->requests_served = 0;
+    hc->idle_timeout_ms = config->idle_timeout_ms;
+    hc->max_read_size = (size_t)config->max_header_size +
+                        (size_t)config->max_body_size;
+    hc->gzip_enabled = config->gzip_enabled;
+    hc->gzip_level = config->gzip_level;
+    hc->gzip_min_size = config->gzip_min_size;
+    hc->access_log_enabled = config->access_log_enabled;
+    hc->access_log = config->access_log;
+    hc->handler_timeout_ms = config->handler_timeout_ms;
     hc->last_active = nc_monotonic_ms();
     hc->next = hc->prev = NULL;
     return hc;
@@ -1181,6 +1413,15 @@ static void http_conn_free(http_conn_t *hc) {
     nc_buf_free(&hc->read_buf);
     nc_buf_free(&hc->raw_hdr_buf);
     nc_bufpool_push(&g_conn_pool_cache, hc);
+}
+
+static void http_request_context_release(
+    neverc_context_t *context,
+    neverc_context_cancel_handle_t *cancel_handle) {
+    if (!cancel_handle) return;
+    neverc_context_cancel_handle_cancel(cancel_handle);
+    neverc_context_cancel_handle_free(cancel_handle);
+    neverc_context_free(context);
 }
 
 static void http_conn_process(http_conn_t *hc) {
@@ -1223,6 +1464,19 @@ static void http_conn_process(http_conn_t *hc) {
 
         neverc_http_request_t req;
         fill_request(&pr, &req, &hc->raw_hdr_buf);
+        neverc_context_cancel_handle_t *request_cancel = NULL;
+        neverc_context_t *request_context = neverc_context_background();
+        if (hc->handler_timeout_ms > 0) {
+            request_context = neverc_context_with_timeout_handle(
+                neverc_context_background(), hc->handler_timeout_ms,
+                &request_cancel);
+            if (!request_context) {
+                parsed_request_free(&pr);
+                hc->state = HC_STATE_CLOSING;
+                return;
+            }
+        }
+        req.context = request_context;
 
         /* Route with path parameter extraction */
         path_params_t params;
@@ -1237,6 +1491,21 @@ static void http_conn_process(http_conn_t *hc) {
 
         neverc_http_response_writer_t *w =
             rw_new(hc->fd, pr.keep_alive, hc, consumed);
+        if (!w) {
+            http_request_context_release(request_context, request_cancel);
+            parsed_request_free(&pr);
+            hc->state = HC_STATE_CLOSING;
+            return;
+        }
+        w->request_body_len = req.body_len;
+        w->gzip_enabled = hc->gzip_enabled;
+        w->gzip_level = hc->gzip_level;
+        w->gzip_min_size = hc->gzip_min_size;
+        const char *accept_encoding =
+            neverc_http_request_header(&req, "Accept-Encoding");
+        w->accepts_gzip = accept_encoding && http_value_has_token(
+            accept_encoding, strlen(accept_encoding), "gzip");
+        uint64_t handler_start = nc_monotonic_ms();
 
         /* Auto-inject CORS headers when enabled */
         if (g_cors_enabled && w) {
@@ -1251,6 +1520,19 @@ static void http_conn_process(http_conn_t *hc) {
             neverc_http_write_string(w, "404 page not found\n");
         }
 
+        if (hc->handler_timeout_ms > 0 &&
+            neverc_context_done(request_context)) {
+            w->keep_alive = 0;
+            if (!w->headers_sent) {
+                w->status = 503;
+                w->body_limit_exceeded = 0;
+                nc_buf_reset(&w->body);
+                neverc_http_set_header(w, "Content-Type",
+                                       "text/plain; charset=utf-8");
+                (void)neverc_http_write_string(w, "handler timeout\n");
+            }
+        }
+
         /* Free chunked body if it was allocated separately */
         if (pr.is_chunked && pr.body) {
             free((void *)pr.body);
@@ -1258,6 +1540,7 @@ static void http_conn_process(http_conn_t *hc) {
         }
 
         if (w->hijacked) {
+            http_request_context_release(request_context, request_cancel);
             rw_free(w);
             parsed_request_free(&pr);
             hc->requests_served++;
@@ -1268,7 +1551,21 @@ static void http_conn_process(http_conn_t *hc) {
 
         rw_flush(w);
 
-        int should_close = !pr.keep_alive;
+        if (hc->access_log_enabled) {
+            double duration =
+                (double)(nc_monotonic_ms() - handler_start);
+            if (hc->access_log) {
+                hc->access_log(req.method, req.path, w->status,
+                               duration, w->body.len);
+            } else {
+                fprintf(stdout, "%s %s %d %.3fms %zu\n",
+                        req.method, req.path, w->status,
+                        duration, w->body.len);
+            }
+        }
+        http_request_context_release(request_context, request_cancel);
+
+        int should_close = !w->keep_alive;
         rw_free(w);
 
         nc_buf_consume(&hc->read_buf, consumed);
@@ -1343,24 +1640,25 @@ struct http_worker {
     volatile int       conn_count;
     http_conn_list_t   conns;
     int                worker_idx;
+    neverc_http_server_t *server;
 };
 
 struct neverc_http_server {
+    volatile int           serving;
     volatile int           running;
+    volatile int           stop_requested;
     nc_sock_t              listen_fd;
     neverc_http_mux_t     *mux;
+    neverc_http_server_config_t config;
+    nc_conn_limiter_t      conn_limiter;
+    nc_mutex_t             lifecycle_lock;
+    volatile int           bound_port;
 
     http_worker_t         *workers;
     int                    nworkers;
     volatile int           next_worker; /* atomic round-robin index */
 
-    int                    max_requests_per_conn;
-    int                    read_timeout_ms;
-    int                    max_header_size;
-    int                    max_body_size;
-
     nc_evloop_t           *accept_loop;
-    nc_thread_t            accept_thread;
 };
 
 /* Worker event handler — O(1) via hc->worker back-pointer */
@@ -1381,7 +1679,8 @@ static void worker_event_handler(nc_evloop_t *loop, nc_event_t *ev) {
             conn_list_remove(&w->conns, hc);
             nc_atomic_dec(&w->conn_count);
         }
-        nc_conn_limiter_release(&g_conn_limiter);
+        if (w && w->server)
+            nc_conn_limiter_release(&w->server->conn_limiter);
         http_conn_free(hc);
     }
 }
@@ -1395,7 +1694,7 @@ static void worker_sweep_idle(http_worker_t *w) {
             now - hc->last_active > (uint64_t)hc->idle_timeout_ms) {
             conn_list_remove(&w->conns, hc);
             nc_atomic_dec(&w->conn_count);
-            nc_conn_limiter_release(&g_conn_limiter);
+            nc_conn_limiter_release(&w->server->conn_limiter);
             http_conn_free(hc);
         }
         hc = next;
@@ -1473,7 +1772,7 @@ static void distribute_conn_task(void *arg) {
     if (nc_poller_add(hc->loop->poller, hc->fd, NC_EV_READ, hc) != 0) {
         nc_sock_close(hc->fd);
         hc->fd = NC_INVALID_SOCK;
-        nc_conn_limiter_release(&g_conn_limiter);
+        nc_conn_limiter_release(&worker->server->conn_limiter);
         http_conn_free(hc);
         nc_atomic_dec(&worker->conn_count);
         return;
@@ -1488,7 +1787,7 @@ static void distribute_conn_task(void *arg) {
     http_conn_on_read(hc);
     if (hc->state == HC_STATE_CLOSING) {
         conn_list_remove(&worker->conns, hc);
-        nc_conn_limiter_release(&g_conn_limiter);
+        nc_conn_limiter_release(&worker->server->conn_limiter);
         http_conn_free(hc);
         nc_atomic_dec(&worker->conn_count);
     }
@@ -1524,7 +1823,7 @@ static void accept_event_handler(nc_evloop_t *loop, nc_event_t *ev) {
         }
 
         /* Check connection limit */
-        if (!nc_conn_limiter_try_acquire(&g_conn_limiter)) {
+        if (!nc_conn_limiter_try_acquire(&srv->conn_limiter)) {
             nc_sock_close(cfd);
             continue;
         }
@@ -1538,15 +1837,11 @@ static void accept_event_handler(nc_evloop_t *loop, nc_event_t *ev) {
         }
         http_worker_t *worker = &srv->workers[idx];
 
-        size_t conn_max_read = (size_t)(srv->max_header_size + srv->max_body_size);
         http_conn_t *hc = http_conn_new(cfd, worker->loop, srv->mux,
-                                          worker,
-                                          srv->max_requests_per_conn,
-                                          srv->read_timeout_ms,
-                                          conn_max_read);
+                                          worker, &srv->config);
         if (!hc) {
             nc_sock_close(cfd);
-            nc_conn_limiter_release(&g_conn_limiter);
+            nc_conn_limiter_release(&srv->conn_limiter);
             continue;
         }
 
@@ -1556,16 +1851,10 @@ static void accept_event_handler(nc_evloop_t *loop, nc_event_t *ev) {
             nc_sock_close(hc->fd);
             hc->fd = NC_INVALID_SOCK;
             http_conn_free(hc);
-            nc_conn_limiter_release(&g_conn_limiter);
+            nc_conn_limiter_release(&srv->conn_limiter);
         }
     }
     (void)loop;
-}
-
-static void *accept_thread_func(void *arg) {
-    neverc_http_server_t *srv = (neverc_http_server_t *)arg;
-    nc_evloop_run(srv->accept_loop, accept_event_handler);
-    return NULL;
 }
 
 /* ======================================================================
@@ -1582,8 +1871,6 @@ static int g_config_max_conns = 0;        /* 0 = unlimited */
 static int g_config_max_header_size = 0;  /* 0 = default 1MB */
 static int g_config_max_body_size = 0;    /* 0 = default 10MB */
 static int g_config_shutdown_timeout = 5000;
-int g_client_max_redirects = 10;
-int g_client_timeout_ms = 30000;
 
 void neverc_http_set_workers(int n) {
     if (n > 0 && n <= 256) g_config_workers = n;
@@ -1625,248 +1912,328 @@ void neverc_http_set_shutdown_timeout(int ms) {
     if (ms >= 0) g_config_shutdown_timeout = ms;
 }
 
-int neverc_http_active_connections(void) {
-    return nc_conn_limiter_count(&g_conn_limiter);
+neverc_http_server_config_t neverc_http_server_config_default(void) {
+    neverc_http_server_config_t config;
+    config.workers = 0;
+    config.max_requests_per_connection = 1000;
+    config.read_timeout_ms = 60000;
+    config.read_header_timeout_ms = 10000;
+    config.write_timeout_ms = 60000;
+    config.idle_timeout_ms = 60000;
+    config.max_connections = 0;
+    config.max_header_size = 1024 * 1024;
+    config.max_body_size = 10 * 1024 * 1024;
+    config.shutdown_timeout_ms = 5000;
+    config.handler_timeout_ms = 0;
+    config.gzip_enabled = 0;
+    config.gzip_level = 6;
+    config.gzip_min_size = 256;
+    config.access_log_enabled = 0;
+    config.access_log = NULL;
+    return config;
 }
 
-int neverc_http_listen_and_serve(const char *addr, neverc_http_mux_t *mux) {
-    if (nc_net_init() != 0)
-        return -1;
-    if (!nc_poller_supports_readiness())
-        return -1;
+static int server_config_valid(const neverc_http_server_config_t *config) {
+    return config && config->workers >= 0 && config->workers <= 256 &&
+           config->max_requests_per_connection > 0 &&
+           config->read_timeout_ms >= 0 &&
+           config->read_header_timeout_ms >= 0 &&
+           config->write_timeout_ms >= 0 && config->idle_timeout_ms >= 0 &&
+           config->max_connections >= 0 && config->max_header_size >= 0 &&
+           config->max_body_size >= 0 && config->shutdown_timeout_ms >= 0 &&
+           config->handler_timeout_ms >= 0 &&
+           (config->gzip_enabled == 0 || config->gzip_enabled == 1) &&
+           config->gzip_level >= 1 && config->gzip_level <= 9 &&
+           config->gzip_min_size > 0 &&
+           (config->access_log_enabled == 0 ||
+            config->access_log_enabled == 1);
+}
+
+neverc_http_server_t *neverc_http_server_new(
+    neverc_http_mux_t *mux, const neverc_http_server_config_t *config) {
+    neverc_http_server_config_t effective = config
+        ? *config : neverc_http_server_config_default();
+    if (!server_config_valid(&effective)) return NULL;
+    if (effective.max_header_size == 0)
+        effective.max_header_size = 1024 * 1024;
+    if (effective.max_body_size == 0)
+        effective.max_body_size = 10 * 1024 * 1024;
 
     if (!mux) {
         ensure_default_mux();
         mux = &default_mux;
     }
 
-    /* Resolve and bind listen socket */
+    neverc_http_server_t *server =
+        (neverc_http_server_t *)calloc(1, sizeof(*server));
+    if (!server) return NULL;
+    server->listen_fd = NC_INVALID_SOCK;
+    server->mux = mux;
+    server->config = effective;
+    nc_conn_limiter_init(&server->conn_limiter, effective.max_connections);
+    nc_mutex_init(&server->lifecycle_lock);
+    return server;
+}
+
+void neverc_http_server_free(neverc_http_server_t *server) {
+    if (!server) return;
+    nc_mutex_lock(&server->lifecycle_lock);
+    if (nc_atomic_load(&server->serving)) {
+        nc_mutex_unlock(&server->lifecycle_lock);
+        return;
+    }
+    nc_mutex_unlock(&server->lifecycle_lock);
+    nc_mutex_destroy(&server->lifecycle_lock);
+    free(server);
+}
+
+static nc_sock_t http_server_bind(const char *addr, int *bound_port) {
     char host[256] = {0};
     uint16_t port = 0;
-    if (nc_parse_addr(addr, host, sizeof(host), &port) != 0)
-        return -1;
+    if (!addr || nc_parse_addr(addr, host, sizeof(host), &port) != 0)
+        return NC_INVALID_SOCK;
 
-    struct addrinfo hints, *result;
+    struct addrinfo hints, *result = NULL;
     memset(&hints, 0, sizeof(hints));
-    hints.ai_family = AF_INET;
+    hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_flags = AI_PASSIVE;
 
     char portstr[8];
-    snprintf(portstr, sizeof(portstr), "%d", port);
-
+    snprintf(portstr, sizeof(portstr), "%u", (unsigned)port);
     if (getaddrinfo(host[0] ? host : NULL, portstr, &hints, &result) != 0)
-        return -1;
+        return NC_INVALID_SOCK;
 
-    nc_sock_t lfd = socket(result->ai_family, result->ai_socktype,
-                            result->ai_protocol);
-    if (lfd == NC_INVALID_SOCK) {
-        freeaddrinfo(result);
-        return -1;
-    }
+    nc_sock_t listen_fd = NC_INVALID_SOCK;
+    for (struct addrinfo *candidate = result; candidate;
+         candidate = candidate->ai_next) {
+        listen_fd = socket(candidate->ai_family, candidate->ai_socktype,
+                           candidate->ai_protocol);
+        if (listen_fd == NC_INVALID_SOCK) continue;
 
-    nc_set_reuseaddr(lfd);
+        (void)nc_set_reuseaddr(listen_fd);
 #if !defined(_WIN32) && defined(SO_REUSEPORT)
-    nc_set_reuseport(lfd);
+        (void)nc_set_reuseport(listen_fd);
 #endif
+        if (candidate->ai_family == AF_INET6 && host[0] == '\0') {
+            int v6only = 0;
+#ifdef _WIN32
+            (void)setsockopt(listen_fd, IPPROTO_IPV6, IPV6_V6ONLY,
+                             (const char *)&v6only, sizeof(v6only));
+#else
+            (void)setsockopt(listen_fd, IPPROTO_IPV6, IPV6_V6ONLY,
+                             &v6only, sizeof(v6only));
+#endif
+        }
+        (void)nc_set_defer_accept(listen_fd);
 
-    nc_set_defer_accept(lfd);
+        if (bind(listen_fd, candidate->ai_addr,
+                 (int)candidate->ai_addrlen) != NC_SOCK_ERR &&
+            listen(listen_fd, 65535) != NC_SOCK_ERR &&
+            nc_set_nonblocking(listen_fd) == 0)
+            break;
 
-    if (bind(lfd, result->ai_addr, (int)result->ai_addrlen) == NC_SOCK_ERR) {
-        nc_sock_close(lfd);
-        freeaddrinfo(result);
-        return -1;
-    }
-
-    if (listen(lfd, 65535) == NC_SOCK_ERR) {
-        nc_sock_close(lfd);
-        freeaddrinfo(result);
-        return -1;
-    }
-
-    if (nc_set_nonblocking(lfd) != 0) {
-        nc_sock_close(lfd);
-        freeaddrinfo(result);
-        return -1;
+        nc_sock_close(listen_fd);
+        listen_fd = NC_INVALID_SOCK;
     }
     freeaddrinfo(result);
+    if (listen_fd == NC_INVALID_SOCK) return listen_fd;
 
-    /* Record the actual bound port (useful for :0 auto-assignment) */
-    {
-        struct sockaddr_storage bound_addr;
-        socklen_t bound_len = sizeof(bound_addr);
-        if (getsockname(lfd, (struct sockaddr *)&bound_addr, &bound_len) == 0) {
-            if (bound_addr.ss_family == AF_INET)
-                g_server_port = ntohs(((struct sockaddr_in *)&bound_addr)->sin_port);
-            else if (bound_addr.ss_family == AF_INET6)
-                g_server_port = ntohs(((struct sockaddr_in6 *)&bound_addr)->sin6_port);
-        }
+    struct sockaddr_storage actual;
+    socklen_t actual_len = sizeof(actual);
+    if (getsockname(listen_fd, (struct sockaddr *)&actual, &actual_len) == 0) {
+        if (actual.ss_family == AF_INET)
+            *bound_port = ntohs(((struct sockaddr_in *)&actual)->sin_port);
+        else if (actual.ss_family == AF_INET6)
+            *bound_port = ntohs(((struct sockaddr_in6 *)&actual)->sin6_port);
     }
-
-    /* Create server */
-    neverc_http_server_t *srv = (neverc_http_server_t *)calloc(1, sizeof(*srv));
-    if (!srv) { nc_sock_close(lfd); return -1; }
-
-    srv->listen_fd = lfd;
-    srv->mux = mux;
-    srv->max_requests_per_conn = g_config_max_requests;
-    srv->read_timeout_ms = g_config_read_timeout;
-
-    /* Global connection limiter */
-    nc_conn_limiter_init(&g_conn_limiter,
-                          g_config_max_conns > 0 ? g_config_max_conns : 0);
-
-    /* Request size limits */
-    srv->max_header_size = g_config_max_header_size > 0
-                         ? g_config_max_header_size : (1024 * 1024);     /* 1MB */
-    srv->max_body_size = g_config_max_body_size > 0
-                       ? g_config_max_body_size : (10 * 1024 * 1024);     /* 10MB */
-
-    int nw = g_config_workers > 0 ? g_config_workers : nc_cpu_count();
-    if (nw < 1) nw = 1;
-    if (nw > 64) nw = 64;
-    srv->nworkers = nw;
-
-    /* Create worker threads */
-    srv->workers = (http_worker_t *)calloc((size_t)nw, sizeof(http_worker_t));
-    if (!srv->workers) {
-        free(srv);
-        nc_sock_close(lfd);
-        return -1;
-    }
-    for (int i = 0; i < nw; i++) {
-        conn_list_init(&srv->workers[i].conns);
-        srv->workers[i].worker_idx = i;
-        srv->workers[i].loop = nc_evloop_create();
-        if (!srv->workers[i].loop) {
-            for (int j = 0; j < i; j++) {
-                nc_evloop_destroy(srv->workers[j].loop);
-                nc_mutex_destroy(&srv->workers[j].conns.lock);
-            }
-            nc_mutex_destroy(&srv->workers[i].conns.lock);
-            free(srv->workers);
-            free(srv);
-            nc_sock_close(lfd);
-            return -1;
-        }
-    }
-
-    /* Create accept loop */
-    srv->accept_loop = nc_evloop_create();
-    if (!srv->accept_loop) {
-        for (int i = 0; i < nw; i++) {
-            nc_evloop_destroy(srv->workers[i].loop);
-            nc_mutex_destroy(&srv->workers[i].conns.lock);
-        }
-        free(srv->workers);
-        free(srv);
-        nc_sock_close(lfd);
-        return -1;
-    }
-
-    if (nc_poller_add(srv->accept_loop->poller, lfd, NC_EV_READ, srv) != 0) {
-        nc_evloop_destroy(srv->accept_loop);
-        for (int i = 0; i < nw; i++) {
-            nc_evloop_destroy(srv->workers[i].loop);
-            nc_mutex_destroy(&srv->workers[i].conns.lock);
-        }
-        free(srv->workers);
-        free(srv);
-        nc_sock_close(lfd);
-        return -1;
-    }
-
-    /* Start worker threads */
-    int started_workers = 0;
-    for (int i = 0; i < nw; i++) {
-        if (nc_thread_create(&srv->workers[i].thread, worker_thread_func,
-                             &srv->workers[i]) != 0)
-            break;
-        started_workers++;
-    }
-    if (started_workers != nw) {
-        for (int i = 0; i < started_workers; i++)
-            nc_evloop_stop(srv->workers[i].loop);
-        for (int i = 0; i < started_workers; i++)
-            nc_thread_join(srv->workers[i].thread);
-        nc_evloop_destroy(srv->accept_loop);
-        for (int i = 0; i < nw; i++) {
-            nc_evloop_destroy(srv->workers[i].loop);
-            nc_mutex_destroy(&srv->workers[i].conns.lock);
-        }
-        free(srv->workers);
-        free(srv);
-        nc_sock_close(lfd);
-        return -1;
-    }
-
-    nc_atomic_store(&srv->running, 1);
-    nc_atomic_ptr_store(&g_server_ptr, srv);
-
-    /* Run accept loop on this thread (blocks until neverc_http_shutdown) */
-    nc_evloop_run(srv->accept_loop, accept_event_handler);
-
-    /* neverc_http_shutdown() has already drained in-flight requests
-     * and signaled workers to stop. Now join them. */
-    for (int i = 0; i < nw; i++) {
-        nc_thread_join(srv->workers[i].thread);
-
-        /* Clean up any remaining connections in this worker */
-        http_conn_t *hc = srv->workers[i].conns.head;
-        while (hc) {
-            http_conn_t *next = hc->next;
-            nc_conn_limiter_release(&g_conn_limiter);
-            http_conn_free(hc);
-            hc = next;
-        }
-        nc_mutex_destroy(&srv->workers[i].conns.lock);
-
-        nc_evloop_destroy(srv->workers[i].loop);
-    }
-
-    nc_evloop_destroy(srv->accept_loop);
-    if (srv->listen_fd != NC_INVALID_SOCK)
-        nc_sock_close(srv->listen_fd);
-    nc_atomic_ptr_cas(&g_server_ptr, srv, NULL);
-    free(srv->workers);
-    free(srv);
-
-    return 0;
+    return listen_fd;
 }
 
-void neverc_http_shutdown(void) {
-    neverc_http_server_t *srv =
-        (neverc_http_server_t *)nc_atomic_ptr_exchange(
-            &g_server_ptr, NULL);
-    if (!srv) return;
-    nc_atomic_store(&srv->running, 0);
+int neverc_http_server_listen_and_serve(neverc_http_server_t *server,
+                                        const char *addr) {
+    if (!server || !addr || nc_net_init() != 0 ||
+        !nc_poller_supports_readiness() ||
+        !nc_atomic_cas(&server->serving, 0, 1))
+        return -1;
 
-    /* Wake the accept poll without racing a cross-thread close/reuse. */
-    nc_evloop_stop(srv->accept_loop);
+    int rc = -1;
+    int initialized_workers = 0;
+    int started_workers = 0;
+    nc_atomic_store(&server->bound_port, 0);
+    nc_conn_limiter_init(&server->conn_limiter,
+                         server->config.max_connections);
 
-    /* Let workers drain in-flight requests before stopping them.
-     * Workers keep running their event loops so current requests
-     * can complete. Only after the timeout do we force-stop. */
+    int actual_port = 0;
+    nc_sock_t listen_fd = http_server_bind(addr, &actual_port);
+    if (listen_fd == NC_INVALID_SOCK) goto done;
+    server->listen_fd = listen_fd;
+    nc_atomic_store(&server->bound_port, actual_port);
+    if (nc_atomic_ptr_load(&g_server_ptr) == server)
+        g_server_port = actual_port;
+    if (nc_atomic_load(&server->stop_requested)) {
+        rc = 0;
+        goto done;
+    }
+
+    int worker_count = server->config.workers > 0
+        ? server->config.workers : nc_cpu_count();
+    if (worker_count < 1) worker_count = 1;
+    if (worker_count > 64) worker_count = 64;
+    server->nworkers = worker_count;
+    server->workers = (http_worker_t *)calloc(
+        (size_t)worker_count, sizeof(*server->workers));
+    if (!server->workers) goto done;
+
+    for (int i = 0; i < worker_count; i++) {
+        http_worker_t *worker = &server->workers[i];
+        conn_list_init(&worker->conns);
+        initialized_workers++;
+        worker->worker_idx = i;
+        worker->server = server;
+        worker->loop = nc_evloop_create();
+        if (!worker->loop) goto stop_workers;
+    }
+
+    server->accept_loop = nc_evloop_create();
+    if (!server->accept_loop ||
+        nc_poller_add(server->accept_loop->poller, listen_fd,
+                      NC_EV_READ, server) != 0)
+        goto stop_workers;
+
+    for (int i = 0; i < worker_count; i++) {
+        if (nc_thread_create(&server->workers[i].thread, worker_thread_func,
+                             &server->workers[i]) != 0)
+            goto stop_workers;
+        started_workers++;
+    }
+
+    nc_atomic_store(&server->running, 1);
+    if (nc_atomic_load(&server->stop_requested))
+        neverc_http_server_shutdown(server);
+    if (nc_atomic_load(&server->running))
+        nc_evloop_run(server->accept_loop, accept_event_handler);
+    rc = 0;
+
+stop_workers:
+    nc_mutex_lock(&server->lifecycle_lock);
+    nc_atomic_store(&server->running, 0);
+    for (int i = 0; i < started_workers; i++)
+        nc_evloop_stop(server->workers[i].loop);
+    nc_mutex_unlock(&server->lifecycle_lock);
+
+    for (int i = 0; i < started_workers; i++)
+        nc_thread_join(server->workers[i].thread);
+    for (int i = 0; i < initialized_workers; i++) {
+        http_conn_t *connection = server->workers[i].conns.head;
+        while (connection) {
+            http_conn_t *next = connection->next;
+            nc_conn_limiter_release(&server->conn_limiter);
+            http_conn_free(connection);
+            connection = next;
+        }
+        if (server->workers[i].loop)
+            nc_evloop_destroy(server->workers[i].loop);
+        nc_mutex_destroy(&server->workers[i].conns.lock);
+    }
+    if (server->accept_loop)
+        nc_evloop_destroy(server->accept_loop);
+    server->accept_loop = NULL;
+    free(server->workers);
+    server->workers = NULL;
+    server->nworkers = 0;
+
+done:
+    if (server->listen_fd != NC_INVALID_SOCK)
+        nc_sock_close(server->listen_fd);
+    server->listen_fd = NC_INVALID_SOCK;
+    nc_atomic_store(&server->running, 0);
+    nc_atomic_store(&server->serving, 0);
+    return rc;
+}
+
+void neverc_http_server_shutdown(neverc_http_server_t *server) {
+    if (!server) return;
+    nc_atomic_store(&server->stop_requested, 1);
+    nc_mutex_lock(&server->lifecycle_lock);
+    if (!nc_atomic_load(&server->running)) {
+        nc_mutex_unlock(&server->lifecycle_lock);
+        return;
+    }
+    nc_atomic_store(&server->running, 0);
+    if (server->accept_loop)
+        nc_evloop_stop(server->accept_loop);
+
     uint64_t drain_start = nc_monotonic_ms();
-    int drain_ms = g_config_shutdown_timeout;
+    int drain_ms = server->config.shutdown_timeout_ms;
     while (drain_ms > 0) {
-        int active = 0;
-        for (int i = 0; i < srv->nworkers; i++)
-            active += nc_atomic_load(&srv->workers[i].conn_count);
-        if (active <= 0) break;
-        uint64_t elapsed = nc_monotonic_ms() - drain_start;
-        if (elapsed >= (uint64_t)drain_ms) break;
+        if (nc_conn_limiter_count(&server->conn_limiter) <= 0) break;
+        if (nc_monotonic_ms() - drain_start >= (uint64_t)drain_ms) break;
 #ifdef _WIN32
         Sleep(10);
 #else
         usleep(10000);
 #endif
     }
+    for (int i = 0; i < server->nworkers; i++)
+        nc_evloop_stop(server->workers[i].loop);
+    nc_mutex_unlock(&server->lifecycle_lock);
+}
 
-    /* Now stop all workers */
-    for (int i = 0; i < srv->nworkers; i++) {
-        nc_evloop_stop(srv->workers[i].loop);
+int neverc_http_server_active_connections(neverc_http_server_t *server) {
+    return server ? nc_conn_limiter_count(&server->conn_limiter) : 0;
+}
+
+int neverc_http_server_bound_port(neverc_http_server_t *server) {
+    return server ? nc_atomic_load(&server->bound_port) : 0;
+}
+
+static neverc_http_server_config_t legacy_server_config(void) {
+    neverc_http_server_config_t config = neverc_http_server_config_default();
+    config.workers = g_config_workers;
+    config.max_requests_per_connection = g_config_max_requests;
+    config.read_timeout_ms = g_config_read_timeout;
+    config.read_header_timeout_ms = g_config_read_header_timeout;
+    config.write_timeout_ms = g_config_write_timeout;
+    config.idle_timeout_ms = g_config_idle_timeout;
+    config.max_connections = g_config_max_conns;
+    config.max_header_size = g_config_max_header_size;
+    config.max_body_size = g_config_max_body_size;
+    config.shutdown_timeout_ms = g_config_shutdown_timeout;
+    config.handler_timeout_ms = g_handler_timeout_ms;
+    config.gzip_enabled = g_gzip_enabled;
+    config.gzip_level = g_gzip_level;
+    config.gzip_min_size = g_gzip_min_size;
+    config.access_log_enabled = g_access_log_enabled;
+    config.access_log = g_access_log_func;
+    return config;
+}
+
+int neverc_http_active_connections(void) {
+    neverc_http_server_t *server =
+        (neverc_http_server_t *)nc_atomic_ptr_load(&g_server_ptr);
+    return neverc_http_server_active_connections(server);
+}
+
+int neverc_http_listen_and_serve(const char *addr, neverc_http_mux_t *mux) {
+    neverc_http_server_config_t config = legacy_server_config();
+    neverc_http_server_t *server = neverc_http_server_new(mux, &config);
+    if (!server) return -1;
+    if (!nc_atomic_ptr_cas(&g_server_ptr, NULL, server)) {
+        neverc_http_server_free(server);
+        return -1;
     }
+    int rc = neverc_http_server_listen_and_serve(server, addr);
+    g_server_port = neverc_http_server_bound_port(server);
+    (void)nc_atomic_ptr_cas(&g_server_ptr, server, NULL);
+    neverc_http_server_free(server);
+    return rc;
+}
+
+void neverc_http_shutdown(void) {
+    neverc_http_server_t *server =
+        (neverc_http_server_t *)nc_atomic_ptr_exchange(&g_server_ptr, NULL);
+    neverc_http_server_shutdown(server);
 }
 
 /* ======================================================================
@@ -1907,7 +2274,7 @@ static void https_handle_connection(void *arg) {
             neverc_h2_server_destroy(h2srv);
         }
         neverc_tls_close(tls);
-        nc_conn_limiter_release(&g_conn_limiter);
+        nc_conn_limiter_release(&g_https_conn_limiter);
         return;
     }
 
@@ -2064,7 +2431,7 @@ static void https_handle_connection(void *arg) {
 done:
     nc_buf_free(&req_buf);
     neverc_tls_close(tls);
-    nc_conn_limiter_release(&g_conn_limiter);
+    nc_conn_limiter_release(&g_https_conn_limiter);
 }
 
 int neverc_http_listen_and_serve_tls(const char *addr, neverc_http_mux_t *mux,
@@ -2109,7 +2476,7 @@ int neverc_http_listen_and_serve_tls(const char *addr, neverc_http_mux_t *mux,
         return -1;
     }
 
-    nc_conn_limiter_init(&g_conn_limiter,
+    nc_conn_limiter_init(&g_https_conn_limiter,
                           g_config_max_conns > 0 ? g_config_max_conns : 0);
 
     https_server_t srv = {
@@ -2128,7 +2495,7 @@ int neverc_http_listen_and_serve_tls(const char *addr, neverc_http_mux_t *mux,
             continue;
         }
 
-        if (!nc_conn_limiter_try_acquire(&g_conn_limiter)) {
+        if (!nc_conn_limiter_try_acquire(&g_https_conn_limiter)) {
             neverc_tls_close(tls);
             continue;
         }
@@ -2137,7 +2504,7 @@ int neverc_http_listen_and_serve_tls(const char *addr, neverc_http_mux_t *mux,
             (https_conn_ctx_t *)malloc(sizeof(*ctx));
         if (!ctx) {
             neverc_tls_close(tls);
-            nc_conn_limiter_release(&g_conn_limiter);
+            nc_conn_limiter_release(&g_https_conn_limiter);
             continue;
         }
         ctx->tls = tls;
@@ -2553,4 +2920,3 @@ void neverc_http_serve_dir(neverc_http_mux_t *mux, const char *pattern,
     else
         neverc_http_handle_func(pattern, static_file_handler);
 }
-

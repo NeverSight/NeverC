@@ -1,8 +1,10 @@
 #include "neverc/std/net/websocket.h"
 #include "neverc/std/net/http.h"
+#include "neverc/std/crypto/rand.h"
 #include "neverc/std/crypto/sha1.h"
 #include "neverc/std/encoding/base64.h"
-#include "../_net_internal.h"
+#include "../_net_buffer.h"
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -16,10 +18,29 @@ static int strcasecmp(const char *a, const char *b) {
 #endif
 
 #define WS_MAGIC "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+#define WS_DEFAULT_HANDSHAKE_TIMEOUT_MS 30000
+#define WS_DEFAULT_MAX_MESSAGE_SIZE (16u * 1024u * 1024u)
+#define WS_MAX_HANDSHAKE_HEADER (64u * 1024u)
+#define WS_MAX_TARGET_SIZE 2048
 
 struct neverc_ws_conn {
     neverc_tcp_conn_t *tcp;
+    size_t read_limit;
+    int is_client;
+    int failed;
+    int close_sent;
+    int close_received;
 };
+
+typedef struct {
+    char dial_addr[320];
+    char host_header[320];
+    char target[WS_MAX_TARGET_SIZE];
+} ws_url_t;
+
+static neverc_ws_conn_t *ws_conn_new_role(neverc_tcp_conn_t *tcp,
+                                           int is_client,
+                                           size_t read_limit);
 
 /* ======================================================================
  * Helpers
@@ -33,6 +54,180 @@ static int strcasecmp_n(const char *a, const char *b, size_t n) {
         if (cb >= 'A' && cb <= 'Z') cb += 32;
         if (ca != cb) return ca - cb;
         if (ca == '\0') return 0;
+    }
+    return 0;
+}
+
+static void ws_set_error(const char **errp, const char *message) {
+    if (errp) *errp = message;
+}
+
+static int ws_contains_ctl(const char *s) {
+    if (!s) return 0;
+    for (; *s; s++) {
+        unsigned char c = (unsigned char)*s;
+        if (c == '\r' || c == '\n' || c == 0x7f) return 1;
+    }
+    return 0;
+}
+
+static int ws_is_token(const char *s) {
+    if (!s || !s[0]) return 0;
+    for (; *s; s++) {
+        unsigned char c = (unsigned char)*s;
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+            (c >= '0' && c <= '9'))
+            continue;
+        switch (c) {
+        case '!': case '#': case '$': case '%': case '&': case '\'':
+        case '*': case '+': case '-': case '.': case '^': case '_':
+        case '`': case '|': case '~':
+            continue;
+        default:
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int ws_parse_port(const char *s, size_t len, unsigned *port) {
+    if (!s || len == 0 || !port) return -1;
+    unsigned value = 0;
+    for (size_t i = 0; i < len; i++) {
+        if (s[i] < '0' || s[i] > '9') return -1;
+        unsigned digit = (unsigned)(s[i] - '0');
+        if (value > (65535u - digit) / 10u) return -1;
+        value = value * 10u + digit;
+    }
+    if (value == 0) return -1;
+    *port = value;
+    return 0;
+}
+
+static int ws_parse_url(const char *url, ws_url_t *parsed,
+                        const char **errp) {
+    if (!url || !parsed) {
+        ws_set_error(errp, "invalid WebSocket URL");
+        return -1;
+    }
+    if (strncmp(url, "wss://", 6) == 0) {
+        ws_set_error(errp, "wss transport is unavailable");
+        return -1;
+    }
+    if (strncmp(url, "ws://", 5) != 0) {
+        ws_set_error(errp, "WebSocket URL must use ws://");
+        return -1;
+    }
+    if (ws_contains_ctl(url)) {
+        ws_set_error(errp, "WebSocket URL contains invalid characters");
+        return -1;
+    }
+
+    const char *authority = url + 5;
+    const char *authority_end = authority;
+    while (*authority_end && *authority_end != '/' &&
+           *authority_end != '?' && *authority_end != '#')
+        authority_end++;
+    size_t authority_len = (size_t)(authority_end - authority);
+    if (authority_len == 0 || authority_len >= sizeof(parsed->host_header) ||
+        memchr(authority, '@', authority_len) != NULL) {
+        ws_set_error(errp, "invalid WebSocket URL authority");
+        return -1;
+    }
+    for (size_t i = 0; i < authority_len; i++) {
+        unsigned char c = (unsigned char)authority[i];
+        if (c <= 0x20 || c == 0x7f || c == '\\') {
+            ws_set_error(errp, "invalid WebSocket URL authority");
+            return -1;
+        }
+    }
+    if (*authority_end == '#') {
+        ws_set_error(errp, "WebSocket URL fragments are not allowed");
+        return -1;
+    }
+
+    unsigned port = 80;
+    int explicit_port = 0;
+    const char *host = authority;
+    size_t host_len = authority_len;
+    if (authority[0] == '[') {
+        const char *close = memchr(authority, ']', authority_len);
+        if (!close || close == authority + 1) {
+            ws_set_error(errp, "invalid IPv6 WebSocket authority");
+            return -1;
+        }
+        host_len = (size_t)(close - authority + 1);
+        if (host_len < authority_len) {
+            if (authority[host_len] != ':' ||
+                ws_parse_port(authority + host_len + 1,
+                              authority_len - host_len - 1, &port) != 0) {
+                ws_set_error(errp, "invalid WebSocket URL port");
+                return -1;
+            }
+            explicit_port = 1;
+        }
+    } else {
+        const char *colon = memchr(authority, ':', authority_len);
+        if (colon) {
+            if (memchr(colon + 1, ':',
+                       authority_len - (size_t)(colon + 1 - authority))) {
+                ws_set_error(errp, "IPv6 WebSocket hosts must use brackets");
+                return -1;
+            }
+            host_len = (size_t)(colon - authority);
+            if (host_len == 0 ||
+                ws_parse_port(colon + 1,
+                              authority_len - host_len - 1, &port) != 0) {
+                ws_set_error(errp, "invalid WebSocket URL port");
+                return -1;
+            }
+            explicit_port = 1;
+        }
+    }
+    if (host_len == 0 || host_len >= sizeof(parsed->dial_addr) - 8) {
+        ws_set_error(errp, "invalid WebSocket URL host");
+        return -1;
+    }
+
+    memcpy(parsed->host_header, authority, authority_len);
+    parsed->host_header[authority_len] = '\0';
+    int n;
+    if (explicit_port) {
+        n = snprintf(parsed->dial_addr, sizeof(parsed->dial_addr), "%.*s:%u",
+                     (int)host_len, host, port);
+    } else {
+        n = snprintf(parsed->dial_addr, sizeof(parsed->dial_addr), "%.*s:80",
+                     (int)host_len, host);
+    }
+    if (n <= 0 || (size_t)n >= sizeof(parsed->dial_addr)) {
+        ws_set_error(errp, "WebSocket dial address is too long");
+        return -1;
+    }
+
+    const char *target = authority_end;
+    if (*target == '\0') {
+        memcpy(parsed->target, "/", 2);
+    } else {
+        const char *fragment = strchr(target, '#');
+        if (fragment) {
+            ws_set_error(errp, "WebSocket URL fragments are not allowed");
+            return -1;
+        }
+        size_t target_len = strlen(target);
+        size_t prefix = target[0] == '?' ? 1u : 0u;
+        if (target_len + prefix >= sizeof(parsed->target)) {
+            ws_set_error(errp, "WebSocket request target is too long");
+            return -1;
+        }
+        for (size_t i = 0; i < target_len; i++) {
+            unsigned char c = (unsigned char)target[i];
+            if (c <= 0x20 || c == 0x7f) {
+                ws_set_error(errp, "invalid WebSocket request target");
+                return -1;
+            }
+        }
+        if (prefix) parsed->target[0] = '/';
+        memcpy(parsed->target + prefix, target, target_len + 1);
     }
     return 0;
 }
@@ -72,6 +267,66 @@ static const char *find_header_value(const char *raw, const char *hdr_end,
     return NULL;
 }
 
+static int copy_unique_header_value(const char *raw, const char *hdr_end,
+                                    const char *name, char *out,
+                                    size_t out_cap) {
+    if (!raw || !hdr_end || !name || !out || out_cap == 0) return -1;
+    size_t name_len = strlen(name);
+    const char *p = raw;
+    while (p + 1 < hdr_end && !(p[0] == '\r' && p[1] == '\n')) p++;
+    if (p + 1 >= hdr_end) return -1;
+    p += 2;
+
+    int found = 0;
+    while (p < hdr_end) {
+        const char *line_end = p;
+        while (line_end + 1 < hdr_end &&
+               !(line_end[0] == '\r' && line_end[1] == '\n'))
+            line_end++;
+        if (line_end + 1 >= hdr_end) break;
+        if (line_end == p) break;
+
+        const char *colon = memchr(p, ':', (size_t)(line_end - p));
+        if (colon && (size_t)(colon - p) == name_len &&
+            strcasecmp_n(p, name, name_len) == 0) {
+            if (found) return -1;
+            const char *value = colon + 1;
+            while (value < line_end && (*value == ' ' || *value == '\t'))
+                value++;
+            const char *value_end = line_end;
+            while (value_end > value &&
+                   (value_end[-1] == ' ' || value_end[-1] == '\t'))
+                value_end--;
+            size_t value_len = (size_t)(value_end - value);
+            if (value_len >= out_cap) return -1;
+            memcpy(out, value, value_len);
+            out[value_len] = '\0';
+            found = 1;
+        }
+        p = line_end + 2;
+    }
+    return found;
+}
+
+static int ws_value_has_token(const char *value, const char *token) {
+    if (!value || !token) return 0;
+    size_t token_len = strlen(token);
+    for (size_t i = 0; value[i]; ) {
+        while (value[i] == ' ' || value[i] == '\t' || value[i] == ',') i++;
+        size_t start = i;
+        while (value[i] && value[i] != ',') i++;
+        size_t end = i;
+        while (end > start &&
+               (value[end - 1] == ' ' || value[end - 1] == '\t'))
+            end--;
+        if (end - start == token_len &&
+            strcasecmp_n(value + start, token, token_len) == 0)
+            return 1;
+        if (value[i] == ',') i++;
+    }
+    return 0;
+}
+
 static int tcp_write_all(neverc_tcp_conn_t *conn, const void *data, size_t len) {
     const char *p = (const char *)data;
     size_t sent = 0;
@@ -83,9 +338,242 @@ static int tcp_write_all(neverc_tcp_conn_t *conn, const void *data, size_t len) 
     return 0;
 }
 
+static int tcp_write_all_context(neverc_tcp_conn_t *conn,
+                                 neverc_context_t *ctx,
+                                 const void *data, size_t len) {
+    const char *p = (const char *)data;
+    size_t sent = 0;
+    while (sent < len) {
+        neverc_net_result_t result =
+            neverc_tcp_write_context(conn, ctx, p + sent, len - sent);
+        if (result.status != NEVERC_NET_OK || result.transferred == 0)
+            return -1;
+        sent += result.transferred;
+    }
+    return 0;
+}
+
 /* ======================================================================
  * Handshake
  * ====================================================================== */
+
+static int ws_read_client_handshake(neverc_tcp_conn_t *tcp,
+                                    neverc_context_t *ctx,
+                                    const char *expected_accept,
+                                    const char *subprotocol,
+                                    const char **errp) {
+    char *response = (char *)malloc(WS_MAX_HANDSHAKE_HEADER + 1);
+    if (!response) {
+        ws_set_error(errp, "out of memory reading WebSocket handshake");
+        return -1;
+    }
+
+    size_t len = 0;
+    while (len < WS_MAX_HANDSHAKE_HEADER) {
+        char byte;
+        neverc_net_result_t result =
+            neverc_tcp_read_context(tcp, ctx, &byte, 1);
+        if (result.status != NEVERC_NET_OK || result.transferred != 1) {
+            free(response);
+            ws_set_error(errp, "failed to read WebSocket handshake");
+            return -1;
+        }
+        if (byte == '\0') {
+            free(response);
+            ws_set_error(errp, "invalid WebSocket handshake header");
+            return -1;
+        }
+        response[len++] = byte;
+        if (len >= 4 && memcmp(response + len - 4, "\r\n\r\n", 4) == 0)
+            break;
+    }
+    if (len < 4 || memcmp(response + len - 4, "\r\n\r\n", 4) != 0) {
+        free(response);
+        ws_set_error(errp, "WebSocket handshake header is too large");
+        return -1;
+    }
+    for (size_t i = 0; i < len; i++) {
+        unsigned char c = (unsigned char)response[i];
+        if (c == '\r') {
+            if (i + 1 >= len || response[i + 1] != '\n') {
+                free(response);
+                ws_set_error(errp, "invalid WebSocket handshake header");
+                return -1;
+            }
+            i++;
+        } else if (c == '\n' || (c < 0x20 && c != '\t') || c == 0x7f) {
+            free(response);
+            ws_set_error(errp, "invalid WebSocket handshake header");
+            return -1;
+        }
+    }
+    response[len] = '\0';
+
+    const char *status_end = strstr(response, "\r\n");
+    size_t status_len = status_end ? (size_t)(status_end - response) : 0;
+    if (!status_end || status_len < 12 ||
+        memcmp(response, "HTTP/1.1 ", 9) != 0 ||
+        response[9] != '1' || response[10] != '0' || response[11] != '1' ||
+        (status_len > 12 && response[12] != ' ')) {
+        free(response);
+        ws_set_error(errp, "WebSocket server rejected the upgrade");
+        return -1;
+    }
+
+    const char *header_end = response + len - 4;
+    const char *header_scan_end = header_end + 2;
+    char value[256];
+    if (copy_unique_header_value(response, header_scan_end, "Upgrade",
+                                 value, sizeof(value)) != 1 ||
+        strcasecmp(value, "websocket") != 0) {
+        free(response);
+        ws_set_error(errp, "invalid WebSocket Upgrade response header");
+        return -1;
+    }
+    if (copy_unique_header_value(response, header_scan_end, "Connection",
+                                 value, sizeof(value)) != 1 ||
+        !ws_value_has_token(value, "upgrade")) {
+        free(response);
+        ws_set_error(errp, "invalid WebSocket Connection response header");
+        return -1;
+    }
+    if (copy_unique_header_value(response, header_scan_end,
+                                 "Sec-WebSocket-Accept", value,
+                                 sizeof(value)) != 1 ||
+        strcmp(value, expected_accept) != 0) {
+        free(response);
+        ws_set_error(errp, "invalid Sec-WebSocket-Accept response header");
+        return -1;
+    }
+
+    int protocol_result = copy_unique_header_value(
+        response, header_scan_end, "Sec-WebSocket-Protocol", value,
+        sizeof(value));
+    if ((subprotocol &&
+         (protocol_result != 1 || strcmp(value, subprotocol) != 0)) ||
+        (!subprotocol && protocol_result != 0)) {
+        free(response);
+        ws_set_error(errp, "invalid WebSocket subprotocol response");
+        return -1;
+    }
+    if (copy_unique_header_value(response, header_scan_end,
+                                 "Sec-WebSocket-Extensions", value,
+                                 sizeof(value)) != 0) {
+        free(response);
+        ws_set_error(errp, "server selected an unsupported WebSocket extension");
+        return -1;
+    }
+
+    free(response);
+    return 0;
+}
+
+neverc_ws_conn_t *neverc_ws_dial(const char *url,
+                                  const neverc_ws_client_config_t *config,
+                                  const char **errp) {
+    ws_set_error(errp, NULL);
+    ws_url_t parsed;
+    memset(&parsed, 0, sizeof(parsed));
+    if (ws_parse_url(url, &parsed, errp) != 0) return NULL;
+
+    const char *origin = config ? config->origin : NULL;
+    const char *subprotocol = config ? config->subprotocol : NULL;
+    if ((origin && ws_contains_ctl(origin)) ||
+        (subprotocol && !ws_is_token(subprotocol)) ||
+        (config && config->handshake_timeout_ms < 0)) {
+        ws_set_error(errp, "invalid WebSocket client configuration");
+        return NULL;
+    }
+
+    uint8_t nonce[16];
+    if (neverc_crypto_rand_read(nonce, sizeof(nonce)) != 0) {
+        ws_set_error(errp, "failed to generate WebSocket handshake nonce");
+        return NULL;
+    }
+    char key[25];
+    size_t key_len = neverc_base64_encode(key, nonce, sizeof(nonce));
+    if (key_len != 24) {
+        ws_set_error(errp, "failed to encode WebSocket handshake nonce");
+        return NULL;
+    }
+    key[key_len] = '\0';
+
+    char expected_accept[64];
+    if (neverc_ws_compute_accept(key, expected_accept,
+                                 sizeof(expected_accept)) != 0) {
+        ws_set_error(errp, "failed to compute WebSocket accept value");
+        return NULL;
+    }
+
+    char request[4096];
+    int request_len = snprintf(
+        request, sizeof(request),
+        "GET %s HTTP/1.1\r\n"
+        "Host: %s\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        "Sec-WebSocket-Key: %s\r\n"
+        "Sec-WebSocket-Version: 13\r\n"
+        "%s%s%s%s%s%s"
+        "\r\n",
+        parsed.target, parsed.host_header, key,
+        origin ? "Origin: " : "", origin ? origin : "",
+        origin ? "\r\n" : "",
+        subprotocol ? "Sec-WebSocket-Protocol: " : "",
+        subprotocol ? subprotocol : "", subprotocol ? "\r\n" : "");
+    if (request_len <= 0 || (size_t)request_len >= sizeof(request)) {
+        ws_set_error(errp, "WebSocket handshake request is too large");
+        return NULL;
+    }
+
+    int timeout = config && config->handshake_timeout_ms
+                      ? config->handshake_timeout_ms
+                      : WS_DEFAULT_HANDSHAKE_TIMEOUT_MS;
+    neverc_context_cancel_handle_t *cancel = NULL;
+    neverc_context_t *ctx = neverc_context_with_timeout_handle(
+        neverc_context_background(), timeout, &cancel);
+    if (!ctx || !cancel) {
+        if (ctx) neverc_context_free(ctx);
+        if (cancel) neverc_context_cancel_handle_free(cancel);
+        ws_set_error(errp, "failed to create WebSocket handshake context");
+        return NULL;
+    }
+
+    neverc_tcp_conn_t *tcp = NULL;
+    neverc_net_result_t dial_result =
+        neverc_tcp_dial_context(parsed.dial_addr, ctx, &tcp);
+    if (dial_result.status != NEVERC_NET_OK || !tcp) {
+        neverc_context_cancel_handle_cancel(cancel);
+        neverc_context_free(ctx);
+        neverc_context_cancel_handle_free(cancel);
+        ws_set_error(errp, "WebSocket TCP dial failed");
+        return NULL;
+    }
+    if (tcp_write_all_context(tcp, ctx, request, (size_t)request_len) != 0 ||
+        ws_read_client_handshake(tcp, ctx, expected_accept, subprotocol,
+                                 errp) != 0) {
+        if (errp && !*errp) *errp = "WebSocket client handshake failed";
+        neverc_tcp_close(tcp);
+        neverc_context_cancel_handle_cancel(cancel);
+        neverc_context_free(ctx);
+        neverc_context_cancel_handle_free(cancel);
+        return NULL;
+    }
+    neverc_context_cancel_handle_cancel(cancel);
+    neverc_context_free(ctx);
+    neverc_context_cancel_handle_free(cancel);
+
+    size_t read_limit = config && config->max_message_size
+                            ? config->max_message_size
+                            : WS_DEFAULT_MAX_MESSAGE_SIZE;
+    neverc_ws_conn_t *ws = ws_conn_new_role(tcp, 1, read_limit);
+    if (!ws) {
+        neverc_tcp_close(tcp);
+        ws_set_error(errp, "out of memory creating WebSocket connection");
+        return NULL;
+    }
+    return ws;
+}
 
 int neverc_ws_compute_accept(const char *key, char *accept, size_t accept_cap) {
     if (!key || !accept || accept_cap < 29) return -1;
@@ -262,12 +750,20 @@ neverc_ws_conn_t *neverc_ws_upgrade_http(neverc_http_request_t *req,
  * Connection
  * ====================================================================== */
 
-neverc_ws_conn_t *neverc_ws_conn_new(neverc_tcp_conn_t *conn) {
-    if (!conn) return NULL;
+static neverc_ws_conn_t *ws_conn_new_role(neverc_tcp_conn_t *tcp,
+                                           int is_client,
+                                           size_t read_limit) {
+    if (!tcp) return NULL;
     neverc_ws_conn_t *ws = (neverc_ws_conn_t *)calloc(1, sizeof(*ws));
     if (!ws) return NULL;
-    ws->tcp = conn;
+    ws->tcp = tcp;
+    ws->is_client = is_client != 0;
+    ws->read_limit = read_limit;
     return ws;
+}
+
+neverc_ws_conn_t *neverc_ws_conn_new(neverc_tcp_conn_t *conn) {
+    return ws_conn_new_role(conn, 0, WS_DEFAULT_MAX_MESSAGE_SIZE);
 }
 
 void neverc_ws_conn_free(neverc_ws_conn_t *conn) {
@@ -279,6 +775,12 @@ void neverc_ws_conn_free(neverc_ws_conn_t *conn) {
 int neverc_ws_set_timeout(neverc_ws_conn_t *conn, int ms) {
     if (!conn || !conn->tcp) return -1;
     return neverc_tcp_set_timeout(conn->tcp, ms);
+}
+
+int neverc_ws_set_read_limit(neverc_ws_conn_t *conn, size_t max_bytes) {
+    if (!conn) return -1;
+    conn->read_limit = max_bytes;
+    return 0;
 }
 
 /* ======================================================================
@@ -296,12 +798,76 @@ static int read_exact(neverc_tcp_conn_t *conn, void *buf, size_t len) {
     return 0;
 }
 
+static int ws_valid_opcode(int opcode) {
+    return opcode == NC_WS_OPCODE_CONTINUATION ||
+           opcode == NC_WS_OPCODE_TEXT || opcode == NC_WS_OPCODE_BINARY ||
+           opcode == NC_WS_OPCODE_CLOSE || opcode == NC_WS_OPCODE_PING ||
+           opcode == NC_WS_OPCODE_PONG;
+}
+
+static int ws_control_opcode(int opcode) {
+    return (opcode & 0x08) != 0;
+}
+
+static int ws_valid_close_code(uint16_t code) {
+    if (code >= 3000 && code <= 4999) return 1;
+    if (code < 1000 || code > 1014) return 0;
+    return code != 1004 && code != 1005 && code != 1006;
+}
+
+static int ws_valid_utf8(const uint8_t *data, size_t len) {
+    size_t i = 0;
+    while (i < len) {
+        uint8_t c = data[i++];
+        if (c <= 0x7f) continue;
+        if (c >= 0xc2 && c <= 0xdf) {
+            if (i >= len || (data[i++] & 0xc0) != 0x80) return 0;
+            continue;
+        }
+        if (c >= 0xe0 && c <= 0xef) {
+            if (i + 1 >= len) return 0;
+            uint8_t c1 = data[i++];
+            uint8_t c2 = data[i++];
+            if ((c1 & 0xc0) != 0x80 || (c2 & 0xc0) != 0x80 ||
+                (c == 0xe0 && c1 < 0xa0) ||
+                (c == 0xed && c1 >= 0xa0))
+                return 0;
+            continue;
+        }
+        if (c >= 0xf0 && c <= 0xf4) {
+            if (i + 2 >= len) return 0;
+            uint8_t c1 = data[i++];
+            uint8_t c2 = data[i++];
+            uint8_t c3 = data[i++];
+            if ((c1 & 0xc0) != 0x80 || (c2 & 0xc0) != 0x80 ||
+                (c3 & 0xc0) != 0x80 ||
+                (c == 0xf0 && c1 < 0x90) ||
+                (c == 0xf4 && c1 >= 0x90))
+                return 0;
+            continue;
+        }
+        return 0;
+    }
+    return 1;
+}
+
+static int ws_fail(neverc_ws_conn_t *conn) {
+    if (conn) conn->failed = 1;
+    return -1;
+}
+
 static int write_frame(neverc_ws_conn_t *conn, int opcode,
-                        const void *payload, size_t len, int mask) {
-    if (!conn || !conn->tcp) return -1;
+                       const void *payload, size_t len) {
+    if (!conn || !conn->tcp || conn->failed || conn->close_sent ||
+        !ws_valid_opcode(opcode) || opcode == NC_WS_OPCODE_CONTINUATION ||
+        (len > 0 && !payload) ||
+        (ws_control_opcode(opcode) && len > 125))
+        return -1;
 
     uint8_t hdr[14];
     size_t hlen = 2;
+    int mask = conn->is_client;
+    uint64_t wire_len = (uint64_t)len;
 
     hdr[0] = (uint8_t)(0x80 | (opcode & 0x0F));
     if (len < 126) {
@@ -317,48 +883,85 @@ static int write_frame(neverc_ws_conn_t *conn, int opcode,
         hdr[1] = 127;
         if (mask) hdr[1] |= 0x80;
         for (int i = 0; i < 8; i++)
-            hdr[2 + i] = (uint8_t)((len >> (56 - i * 8)) & 0xFF);
+            hdr[2 + i] = (uint8_t)((wire_len >> (56 - i * 8)) & 0xFF);
         hlen = 10;
     }
 
-    if (tcp_write_all(conn->tcp, hdr, hlen) != 0) return -1;
-    if (len > 0 && tcp_write_all(conn->tcp, payload, len) != 0) return -1;
+    uint8_t mask_key[4];
+    if (mask) {
+        if (neverc_crypto_rand_read(mask_key, sizeof(mask_key)) != 0)
+            return ws_fail(conn);
+        memcpy(hdr + hlen, mask_key, sizeof(mask_key));
+        hlen += sizeof(mask_key);
+    }
+    if (tcp_write_all(conn->tcp, hdr, hlen) != 0) return ws_fail(conn);
+    if (!mask) {
+        if (len > 0 && tcp_write_all(conn->tcp, payload, len) != 0)
+            return ws_fail(conn);
+        return 0;
+    }
+
+    const uint8_t *input = (const uint8_t *)payload;
+    uint8_t masked[4096];
+    size_t offset = 0;
+    while (offset < len) {
+        size_t chunk = len - offset;
+        if (chunk > sizeof(masked)) chunk = sizeof(masked);
+        for (size_t i = 0; i < chunk; i++)
+            masked[i] = input[offset + i] ^ mask_key[(offset + i) % 4];
+        if (tcp_write_all(conn->tcp, masked, chunk) != 0)
+            return ws_fail(conn);
+        offset += chunk;
+    }
     return 0;
 }
 
 int neverc_ws_read_frame(neverc_ws_conn_t *conn, int *opcode, int *fin,
                           void *buf, size_t buflen, size_t *out_len) {
-    if (!conn || !conn->tcp || !opcode || !buf || !out_len) return -1;
+    if (!conn || !conn->tcp || conn->failed || conn->close_received ||
+        !opcode || !buf || !out_len)
+        return -1;
     *out_len = 0;
 
     uint8_t h2[2];
-    if (read_exact(conn->tcp, h2, 2) != 0) return -1;
+    if (read_exact(conn->tcp, h2, 2) != 0) return ws_fail(conn);
 
-    *opcode = h2[0] & 0x0F;
-    if (fin) *fin = (h2[0] & 0x80) != 0;
+    int frame_opcode = h2[0] & 0x0F;
+    int frame_fin = (h2[0] & 0x80) != 0;
     int masked = (h2[1] & 0x80) != 0;
     uint64_t plen = h2[1] & 0x7F;
+    if ((h2[0] & 0x70) != 0 || !ws_valid_opcode(frame_opcode) ||
+        masked == conn->is_client ||
+        (ws_control_opcode(frame_opcode) && !frame_fin))
+        return ws_fail(conn);
 
     if (plen == 126) {
         uint8_t ext[2];
-        if (read_exact(conn->tcp, ext, 2) != 0) return -1;
+        if (read_exact(conn->tcp, ext, 2) != 0) return ws_fail(conn);
         plen = ((uint64_t)ext[0] << 8) | ext[1];
+        if (plen < 126) return ws_fail(conn);
     } else if (plen == 127) {
         uint8_t ext[8];
-        if (read_exact(conn->tcp, ext, 8) != 0) return -1;
+        if (read_exact(conn->tcp, ext, 8) != 0) return ws_fail(conn);
+        if ((ext[0] & 0x80) != 0) return ws_fail(conn);
         plen = 0;
         for (int i = 0; i < 8; i++)
             plen = (plen << 8) | ext[i];
+        if (plen < 65536) return ws_fail(conn);
     }
+    if ((ws_control_opcode(frame_opcode) && plen > 125) ||
+        plen > (uint64_t)SIZE_MAX ||
+        (conn->read_limit && plen > conn->read_limit) || plen > buflen)
+        return ws_fail(conn);
 
     uint8_t mask_key[4] = {0};
     if (masked) {
-        if (read_exact(conn->tcp, mask_key, 4) != 0) return -1;
+        if (read_exact(conn->tcp, mask_key, 4) != 0) return ws_fail(conn);
     }
 
-    if (plen > buflen) return -1;
     if (plen > 0) {
-        if (read_exact(conn->tcp, buf, (size_t)plen) != 0) return -1;
+        if (read_exact(conn->tcp, buf, (size_t)plen) != 0)
+            return ws_fail(conn);
         if (masked) {
             uint8_t *p = (uint8_t *)buf;
             size_t n = (size_t)plen;
@@ -381,92 +984,140 @@ int neverc_ws_read_frame(neverc_ws_conn_t *conn, int *opcode, int *fin,
         }
     }
 
+    if (frame_opcode == NC_WS_OPCODE_CLOSE) {
+        const uint8_t *close_payload = (const uint8_t *)buf;
+        if (plen == 1 ||
+            (plen >= 2 &&
+             (!ws_valid_close_code((uint16_t)((close_payload[0] << 8) |
+                                               close_payload[1])) ||
+              !ws_valid_utf8(close_payload + 2, (size_t)plen - 2))))
+            return ws_fail(conn);
+        conn->close_received = 1;
+    }
+
+    *opcode = frame_opcode;
+    if (fin) *fin = frame_fin;
     *out_len = (size_t)plen;
     return 0;
 }
 
 int neverc_ws_write_text(neverc_ws_conn_t *conn, const void *data, size_t len) {
-    return write_frame(conn, NC_WS_OPCODE_TEXT, data, len, 0);
+    if (data && !ws_valid_utf8((const uint8_t *)data, len)) return -1;
+    return write_frame(conn, NC_WS_OPCODE_TEXT, data, len);
 }
 
 int neverc_ws_write_binary(neverc_ws_conn_t *conn, const void *data, size_t len) {
-    return write_frame(conn, NC_WS_OPCODE_BINARY, data, len, 0);
+    return write_frame(conn, NC_WS_OPCODE_BINARY, data, len);
 }
 
 int neverc_ws_send_ping(neverc_ws_conn_t *conn, const void *data, size_t len) {
-    return write_frame(conn, NC_WS_OPCODE_PING, data, len, 0);
+    return write_frame(conn, NC_WS_OPCODE_PING, data, len);
 }
 
 int neverc_ws_send_pong(neverc_ws_conn_t *conn, const void *data, size_t len) {
-    return write_frame(conn, NC_WS_OPCODE_PONG, data, len, 0);
+    return write_frame(conn, NC_WS_OPCODE_PONG, data, len);
 }
 
 int neverc_ws_send_close(neverc_ws_conn_t *conn, uint16_t code,
                           const char *reason) {
-    uint8_t payload[128];
+    if (!conn || conn->close_sent || !ws_valid_close_code(code)) return -1;
+    uint8_t payload[125];
     size_t plen = 2;
     payload[0] = (uint8_t)((code >> 8) & 0xFF);
     payload[1] = (uint8_t)(code & 0xFF);
     if (reason) {
         size_t rlen = strlen(reason);
-        if (rlen + 2 > sizeof(payload)) rlen = sizeof(payload) - 2;
+        if (rlen + 2 > sizeof(payload) ||
+            !ws_valid_utf8((const uint8_t *)reason, rlen))
+            return -1;
         memcpy(payload + 2, reason, rlen);
         plen += rlen;
     }
-    return write_frame(conn, NC_WS_OPCODE_CLOSE, payload, plen, 0);
+    int rc = write_frame(conn, NC_WS_OPCODE_CLOSE, payload, plen);
+    if (rc == 0) conn->close_sent = 1;
+    return rc;
 }
 
 int neverc_ws_read_message(neverc_ws_conn_t *conn, char *buf, size_t buflen,
                             size_t *out_len) {
-    if (!conn || !buf || !out_len) return -1;
+    if (!conn || !buf || buflen == 0 || !out_len) return -1;
     *out_len = 0;
 
     nc_buf_t acc;
     nc_buf_init(&acc);
+    size_t frame_cap = buflen - 1;
+    if (conn->read_limit && frame_cap > conn->read_limit)
+        frame_cap = conn->read_limit;
+    char *chunk = (char *)malloc(frame_cap ? frame_cap : 1);
+    if (!chunk) return -1;
+    int fragmented = 0;
+    int message_opcode = 0;
 
     for (;;) {
         int opcode = 0;
         int frame_fin = 0;
         size_t chunk_len = 0;
-        char chunk[65536];
         int rc = neverc_ws_read_frame(conn, &opcode, &frame_fin, chunk,
-                                       sizeof(chunk), &chunk_len);
+                                       frame_cap, &chunk_len);
         if (rc != 0) {
+            free(chunk);
             nc_buf_free(&acc);
             return -1;
         }
 
         if (opcode == NC_WS_OPCODE_CLOSE) {
+            if (!conn->close_sent &&
+                write_frame(conn, NC_WS_OPCODE_CLOSE, chunk, chunk_len) == 0)
+                conn->close_sent = 1;
+            free(chunk);
             nc_buf_free(&acc);
             return -1;
         }
         if (opcode == NC_WS_OPCODE_PING) {
-            neverc_ws_send_pong(conn, chunk, chunk_len);
+            if (neverc_ws_send_pong(conn, chunk, chunk_len) != 0) {
+                free(chunk);
+                nc_buf_free(&acc);
+                return -1;
+            }
             continue;
         }
         if (opcode == NC_WS_OPCODE_PONG)
             continue;
 
-        if (opcode != NC_WS_OPCODE_TEXT &&
-            opcode != NC_WS_OPCODE_BINARY &&
-            opcode != NC_WS_OPCODE_CONTINUATION) {
+        if ((!fragmented && opcode == NC_WS_OPCODE_CONTINUATION) ||
+            (fragmented && opcode != NC_WS_OPCODE_CONTINUATION) ||
+            (!fragmented && opcode != NC_WS_OPCODE_TEXT &&
+             opcode != NC_WS_OPCODE_BINARY)) {
+            free(chunk);
             nc_buf_free(&acc);
-            return -1;
+            return ws_fail(conn);
         }
+        if (!fragmented) message_opcode = opcode;
 
-        if (acc.len + chunk_len >= buflen) {
+        if (chunk_len > buflen - 1 - acc.len ||
+            (conn->read_limit &&
+             chunk_len > conn->read_limit - acc.len) ||
+            nc_buf_append(&acc, chunk, chunk_len) != 0) {
+            free(chunk);
             nc_buf_free(&acc);
             return -1;
         }
-        nc_buf_append(&acc, chunk, chunk_len);
 
         if (frame_fin) {
+            if (message_opcode == NC_WS_OPCODE_TEXT &&
+                !ws_valid_utf8((const uint8_t *)acc.data, acc.len)) {
+                free(chunk);
+                nc_buf_free(&acc);
+                return ws_fail(conn);
+            }
             memcpy(buf, acc.data, acc.len);
             buf[acc.len] = '\0';
             *out_len = acc.len;
+            free(chunk);
             nc_buf_free(&acc);
             return 0;
         }
+        fragmented = 1;
     }
 }
 

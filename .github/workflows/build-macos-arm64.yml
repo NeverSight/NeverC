@@ -53,7 +53,9 @@ jobs:
           which clang
 
       - name: Setup build deps
-        run: brew install ninja cmake p7zip
+        # openssl@3 is required for StdLibTest.TlsOpenSslBidirectionalInterop;
+        # macOS system LibreSSL rejects host:port -accept and lacks -ciphersuites.
+        run: brew install ninja cmake p7zip openssl@3
 
       - name: Build neverc
         run: |

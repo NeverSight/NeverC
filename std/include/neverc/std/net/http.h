@@ -13,6 +13,7 @@
  */
 
 #include "neverc/std/net/tcp.h"
+#include "neverc/std/context.h"
 #include <stddef.h>
 #include <stdint.h>
 
@@ -39,6 +40,10 @@ typedef struct {
      * E.g. pattern "GET /users/{id}" matches "/users/42" → id="42" */
     const char *path_params;  /* name\0value\0name\0value\0\0 */
     int         nparams;
+
+    /* Valid only for the duration of the handler call. It carries the server
+     * handler deadline when one is configured. */
+    neverc_context_t *context;
 } neverc_http_request_t;
 
 /* --- Response Writer --- */
@@ -80,6 +85,10 @@ int neverc_http_end_chunked(neverc_http_response_writer_t *w);
 typedef void (*neverc_http_handler_func_t)(neverc_http_request_t *req,
                                             neverc_http_response_writer_t *w);
 
+typedef void (*neverc_http_access_log_func_t)(
+    const char *method, const char *path,
+    int status, double duration_ms, size_t body_size);
+
 /* --- Mux (Router) --- */
 typedef struct neverc_http_mux neverc_http_mux_t;
 
@@ -115,6 +124,53 @@ const char *neverc_http_path_value(const neverc_http_request_t *req,
 
 /* --- Server --- */
 
+typedef struct neverc_http_server neverc_http_server_t;
+
+/* Per-server configuration. A zero workers value selects the CPU count; a
+ * zero max_connections value means unlimited. Use the default constructor
+ * rather than zero-initializing this structure. */
+typedef struct {
+    int workers;
+    int max_requests_per_connection;
+    int read_timeout_ms;
+    int read_header_timeout_ms;
+    int write_timeout_ms;
+    int idle_timeout_ms;
+    int max_connections;
+    int max_header_size;
+    int max_body_size;
+    int shutdown_timeout_ms;
+    int handler_timeout_ms;
+    int gzip_enabled;
+    int gzip_level;
+    size_t gzip_min_size;
+    int access_log_enabled;
+    neverc_http_access_log_func_t access_log;
+} neverc_http_server_config_t;
+
+/* Return a complete server configuration populated with safe defaults. */
+neverc_http_server_config_t neverc_http_server_config_default(void);
+
+/* Create a server with an independent configuration and connection limiter.
+ * The mux remains owned by the caller and must outlive the server. */
+neverc_http_server_t *neverc_http_server_new(
+    neverc_http_mux_t *mux, const neverc_http_server_config_t *config);
+
+/* Release an idle server. Calling this while server_listen_and_serve is active
+ * is ignored; shut down the server and wait for serve to return first. */
+void neverc_http_server_free(neverc_http_server_t *server);
+
+/* Serve on addr using this server instance. Blocks until shutdown. */
+int neverc_http_server_listen_and_serve(neverc_http_server_t *server,
+                                        const char *addr);
+
+/* Gracefully stop one server instance. Safe to call from another thread. */
+void neverc_http_server_shutdown(neverc_http_server_t *server);
+
+/* Query state belonging to one server instance. */
+int neverc_http_server_active_connections(neverc_http_server_t *server);
+int neverc_http_server_bound_port(neverc_http_server_t *server);
+
 /* Start serving HTTP on addr with the given mux (NULL = default mux).
  * Uses a thread pool for concurrent connection handling with keep-alive.
  * Blocks until server is stopped. Returns 0 on normal shutdown, -1 on error. */
@@ -139,6 +195,12 @@ void neverc_http_set_max_requests(int n);
 
 /* Set read timeout in milliseconds (default 60000). */
 void neverc_http_set_read_timeout(int ms);
+
+/* Set timeout for receiving request headers (default 10000). */
+void neverc_http_set_read_header_timeout(int ms);
+
+/* Set response write timeout (default 60000). */
+void neverc_http_set_write_timeout(int ms);
 
 /* Set keep-alive idle timeout in milliseconds (default 60000). */
 void neverc_http_set_idle_timeout(int ms);
@@ -238,8 +300,33 @@ typedef struct {
     char       *body;           /* response body (caller must free) */
     size_t      body_len;
     char       *headers;        /* raw response headers (caller must free) */
+    char       *trailers;       /* raw chunk trailers or NULL (caller frees) */
     const char *error;          /* error message or NULL on success */
 } neverc_http_response_t;
+
+typedef struct neverc_http_client neverc_http_client_t;
+
+typedef struct {
+    int max_redirects;
+    int timeout_ms;
+    int max_idle_per_host;
+    size_t max_response_header_size;
+    size_t max_response_body_size;
+} neverc_http_client_config_t;
+
+/* Create an independent HTTP client and connection pool. */
+neverc_http_client_config_t neverc_http_client_config_default(void);
+neverc_http_client_t *neverc_http_client_new(
+    const neverc_http_client_config_t *config);
+
+/* Close all idle connections and release the client. The caller must ensure
+ * no requests are active. */
+void neverc_http_client_free(neverc_http_client_t *client);
+
+/* Perform a request through one client instance. */
+neverc_http_response_t *neverc_http_client_do(
+    neverc_http_client_t *client, const char *method, const char *url,
+    const char *content_type, const void *body, size_t body_len);
 
 /* HTTP GET request. Caller must call neverc_http_response_free(). */
 neverc_http_response_t *neverc_http_get(const char *url);
@@ -327,11 +414,6 @@ void neverc_http_disable_gzip(void);
 /* ======================================================================
  * Access Logging Middleware
  * ====================================================================== */
-
-/* Log callback: receives method, path, status, duration_ms, body_size. */
-typedef void (*neverc_http_access_log_func_t)(
-    const char *method, const char *path,
-    int status, double duration_ms, size_t body_size);
 
 /* Enable access logging with a custom callback.
  * If func is NULL, logs to stdout in Apache Combined format. */

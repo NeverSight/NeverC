@@ -30,7 +30,9 @@
 struct __neverc_std_tcp_t { char __tag; };
 struct __neverc_std_udp_t { char __tag; };
 struct __neverc_std_http_t { char __tag; };
-struct __neverc_std_websocket_t { char __tag; };
+/* The field is named websocket, while its marker follows the neverc_ws_ ABI
+ * prefix used by the public functions. */
+struct __neverc_std_ws_t { char __tag; };
 struct __neverc_std_url_t { char __tag; };
 struct __neverc_std_netip_t { char __tag; };
 struct __neverc_std_mail_t { char __tag; };
@@ -48,7 +50,7 @@ struct __neverc_std_net_t {
     struct __neverc_std_http2_t http2;
     struct __neverc_std_http3_t http3;
     struct __neverc_std_quic_t quic;
-    struct __neverc_std_websocket_t websocket;
+    struct __neverc_std_ws_t websocket;
     struct __neverc_std_url_t url;
     struct __neverc_std_netip_t netip;
     struct __neverc_std_mail_t mail;

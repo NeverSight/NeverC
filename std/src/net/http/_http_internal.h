@@ -36,12 +36,15 @@ struct neverc_http_response_writer {
     int         hijacked;
     http_conn_t *owner;
     size_t      request_consumed;
+    size_t      request_body_len;
+    int         body_limit_exceeded;
+    int         gzip_enabled;
+    int         gzip_level;
+    size_t      gzip_min_size;
+    int         accepts_gzip;
 };
 
 int nc_http_sock_write_all(nc_sock_t fd, const void *data, size_t len);
-
-extern int g_client_max_redirects;
-extern int g_client_timeout_ms;
 
 extern neverc_http_cors_config_t g_cors_config;
 extern int g_cors_enabled;

@@ -4,7 +4,7 @@
 /*
  * NeverC net/websocket — WebSocket protocol (RFC 6455).
  *
- * Server-side upgrade + framed I/O on top of TCP.
+ * Client/server handshake + framed I/O on top of TCP.
  * Cross-platform: POSIX + WinSock.
  */
 
@@ -26,6 +26,22 @@ extern "C" {
 
 typedef struct neverc_ws_conn neverc_ws_conn_t;
 
+typedef struct {
+    const char *origin;          /* optional Origin request header */
+    const char *subprotocol;     /* optional single subprotocol token */
+    int handshake_timeout_ms;    /* 0 = default (30000ms) */
+    size_t max_message_size;     /* 0 = default (16MiB) */
+} neverc_ws_client_config_t;
+
+/* --- Handshake (client) --- */
+
+/* Connect to a ws:// URL and complete the RFC 6455 client handshake.
+ * wss:// is rejected until the WebSocket transport is integrated with TLS;
+ * it is never sent over a plaintext connection. */
+neverc_ws_conn_t *neverc_ws_dial(const char *url,
+                                  const neverc_ws_client_config_t *config,
+                                  const char **errp);
+
 /* --- Handshake (server) --- */
 
 /* Compute Sec-WebSocket-Accept from Sec-WebSocket-Key. */
@@ -43,13 +59,17 @@ neverc_ws_conn_t *neverc_ws_upgrade_http(neverc_http_request_t *req,
 
 /* --- Connection --- */
 
-/* Create WebSocket connection from TCP conn (takes ownership of socket). */
+/* Create a server-side WebSocket connection from a TCP conn after a custom
+ * server handshake (takes ownership of socket). */
 neverc_ws_conn_t *neverc_ws_conn_new(neverc_tcp_conn_t *conn);
 
 void neverc_ws_conn_free(neverc_ws_conn_t *conn);
 
 /* Set read timeout in milliseconds (0 = no timeout). */
 int neverc_ws_set_timeout(neverc_ws_conn_t *conn, int ms);
+
+/* Set the maximum accepted frame/message size. 0 disables the limit. */
+int neverc_ws_set_read_limit(neverc_ws_conn_t *conn, size_t max_bytes);
 
 /* --- Frame I/O --- */
 
@@ -58,7 +78,8 @@ int neverc_ws_set_timeout(neverc_ws_conn_t *conn, int ms);
 int neverc_ws_read_frame(neverc_ws_conn_t *conn, int *opcode, int *fin,
                           void *buf, size_t buflen, size_t *out_len);
 
-/* Write text/binary frame. Server frames are unmasked. */
+/* Write text/binary frame. Client connections mask every frame; server
+ * connections leave frames unmasked as required by RFC 6455. */
 int neverc_ws_write_text(neverc_ws_conn_t *conn, const void *data, size_t len);
 int neverc_ws_write_binary(neverc_ws_conn_t *conn, const void *data, size_t len);
 

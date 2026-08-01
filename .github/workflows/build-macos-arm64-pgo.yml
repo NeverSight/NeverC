@@ -257,7 +257,9 @@ jobs:
           clang --version
 
       - name: Install deps
-        run: brew install ninja cmake p7zip
+        # The PGO-use job runs check-neverc; system LibreSSL is insufficient
+        # for the TLS 1.3 bidirectional interop gate.
+        run: brew install ninja cmake p7zip openssl@3
 
       - name: Setup sccache
         uses: mozilla/sccache-action@v0.0.7

@@ -59,6 +59,10 @@ int main(void) {
     net.udp.queue_free(queue);
     net.udp.close(udp);
 
+    err = NULL;
+    CHECK(net.websocket.dial("wss://localhost/ws", NULL, &err) == NULL);
+    CHECK(err != NULL);
+
     neverc_quic_config_t quic_cfg = net.quic.config_default();
     CHECK(quic_cfg.max_udp_payload_size == 1200);
     err = NULL;

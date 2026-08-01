@@ -643,8 +643,18 @@ TEST_F(StdLibTest, TlsOpenSslBidirectionalInterop) {
 #if defined(_WIN32)
   GTEST_SKIP() << "OpenSSL interop harness is POSIX-only for now";
 #else
-  if (std::system("command -v openssl >/dev/null 2>&1") != 0)
-    GTEST_SKIP() << "openssl not available";
+  // LibreSSL's s_server rejects host:port -accept and lacks -ciphersuites.
+  if (std::system(
+          "bash -c 'for c in \"${OPENSSL_BIN:-}\" "
+          "/opt/homebrew/opt/openssl@3/bin/openssl "
+          "/usr/local/opt/openssl@3/bin/openssl "
+          "/opt/homebrew/bin/openssl /usr/local/bin/openssl "
+          "$(command -v openssl 2>/dev/null); do "
+          "[ -n \"$c\" ] && [ -x \"$c\" ] || continue; "
+          "case \"$($c version 2>/dev/null)\" in "
+          "OpenSSL\\ 3*|OpenSSL\\ 1.1*) exit 0;; esac; "
+          "done; exit 1'") != 0)
+    GTEST_SKIP() << "OpenSSL 1.1+/3.x not available";
 
   fs::path peer = tmp() / "tls_openssl_interop_peer";
   fs::path cert = tmp() / "tls_openssl_interop_cert.pem";
@@ -730,7 +740,8 @@ TEST_F(StdLibTest, TlsBoringSslBidirectionalInterop) {
                   {script.string(), peer.string(), cert.string(),
                    key.string()});
   if (run.contains("skip: bssl not available") ||
-      run.contains("skip: openssl not available"))
+      run.contains("skip: OpenSSL") ||
+      run.contains("skip: openssl"))
     GTEST_SKIP() << "boringssl interop prerequisites unavailable";
   ASSERT_TRUE(run.ok()) << "stdout: " << run.out << "\nstderr: " << run.err;
   EXPECT_TRUE(run.contains("boringssl interop client: ok"))

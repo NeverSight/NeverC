@@ -33,6 +33,9 @@
 # Nested build directory
 /build*
 
+# Local BoringSSL checkout used only for TLS interop gates.
+/third_party/boringssl
+
 # build directory
 compiler-rt-build/
 runtimes-build/

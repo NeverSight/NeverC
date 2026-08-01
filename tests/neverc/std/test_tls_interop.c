@@ -50,17 +50,21 @@ static int run_client(
         "GET / HTTP/1.0\r\nHost: localhost\r\n\r\n";
     int result = 0;
     if (neverc_tls_key_update(connection, 1) != 0) {
+        fprintf(stderr, "TLS client KeyUpdate failed\n");
         result = 14;
     } else if (neverc_tls_write(
             connection, request, sizeof(request) - 1) !=
         (int)(sizeof(request) - 1)) {
+        fprintf(stderr, "TLS client write failed\n");
         result = 15;
     } else {
         char response[4096];
         int response_len =
             neverc_tls_read(connection, response, sizeof(response));
-        if (response_len <= 0)
+        if (response_len <= 0) {
+            fprintf(stderr, "TLS client read failed\n");
             result = 16;
+        }
     }
 
     neverc_tls_close(connection);
