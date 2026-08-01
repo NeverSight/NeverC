@@ -166,6 +166,10 @@ int neverc_tls_test_expire_client_session(
     neverc_tls_config_t *cfg);
 int neverc_tls_test_expire_server_sessions(
     neverc_tls_config_t *cfg);
+int neverc_tls_test_set_client_session_alpn(
+    neverc_tls_config_t *cfg, const char *alpn);
+int neverc_tls_test_resize_client_session_ticket(
+    neverc_tls_config_t *cfg, size_t ticket_len);
 #endif
 
 /* Verify a DER server certificate through intermediates to the roots configured

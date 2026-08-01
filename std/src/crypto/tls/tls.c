@@ -12,7 +12,9 @@
 #include "neverc/std/crypto/subtle.h"
 #include "neverc/std/crypto/x509.h"
 #include "neverc/std/encoding/pem.h"
+#include "tls_internal.h"
 #include "tls_key.h"
+#include "tls_key_schedule.h"
 #include <limits.h>
 #include <string.h>
 #include <stdlib.h>
@@ -35,90 +37,6 @@ typedef pthread_mutex_t tls_mutex_t;
 #define tls_mutex_lock(m)    pthread_mutex_lock(m)
 #define tls_mutex_unlock(m)  pthread_mutex_unlock(m)
 #endif
-
-/* ======================================================================
- * TLS 1.3 Constants (RFC 8446)
- * ====================================================================== */
-
-#define TLS_RECORD_HEADER_SIZE   5
-#define TLS_MAX_PLAINTEXT        16384
-#define TLS_MAX_CIPHERTEXT       (TLS_MAX_PLAINTEXT + 256)
-#define TLS_MAX_HANDSHAKE        65536
-#define TLS_MAX_NON_ADVANCING_RECORDS 16
-#define TLS_HASH_SIZE_SHA256     32
-#define TLS_AEAD_TAG_SIZE        16
-
-/* Content types */
-#define TLS_CT_CHANGE_CIPHER_SPEC  20
-#define TLS_CT_ALERT               21
-#define TLS_CT_HANDSHAKE           22
-#define TLS_CT_APPLICATION_DATA    23
-
-/* Handshake types */
-#define TLS_HS_CLIENT_HELLO        1
-#define TLS_HS_SERVER_HELLO        2
-#define TLS_HS_NEW_SESSION_TICKET  4
-#define TLS_HS_ENCRYPTED_EXT       8
-#define TLS_HS_CERTIFICATE        11
-#define TLS_HS_CERTIFICATE_REQUEST 13
-#define TLS_HS_CERT_VERIFY        15
-#define TLS_HS_FINISHED           20
-#define TLS_HS_KEY_UPDATE         24
-
-/* Extension types */
-#define TLS_EXT_SERVER_NAME        0
-#define TLS_EXT_SUPPORTED_GROUPS  10
-#define TLS_EXT_SIGNATURE_ALGORITHMS 13
-#define TLS_EXT_ALPN              16
-#define TLS_EXT_PRE_SHARED_KEY    41
-#define TLS_EXT_EARLY_DATA        42
-#define TLS_EXT_SUPPORTED_VERSIONS 43
-#define TLS_EXT_PSK_KEY_EXCHANGE_MODES 45
-#define TLS_EXT_KEY_SHARE         51
-
-#define TLS_PSK_MODE_DHE           1
-#define TLS_MAX_PSK_IDENTITIES     4
-#define TLS_MAX_SESSION_TICKET  2048
-#define TLS_SERVER_TICKET_COUNT    8
-#define TLS_SERVER_TICKET_SIZE    32
-#define TLS_TICKET_NONCE_SIZE      8
-#define TLS_TICKET_LIFETIME     3600
-#define TLS_TICKET_AGE_SKEW_MS 10000
-#define TLS_MAX_ALPN_PROTOCOLS     32
-#define TLS_MAX_ALPN_LIST        2048
-#define TLS_MAX_SERVER_NAME       255
-
-/* Signature algorithms */
-#define TLS_SIG_ECDSA_SHA256 \
-    NEVERC_TLS_SIGNATURE_ECDSA_SECP256R1_SHA256
-#define TLS_SIG_RSA_PSS_SHA256 \
-    NEVERC_TLS_SIGNATURE_RSA_PSS_RSAE_SHA256
-#define TLS_SIG_RSA_PSS_SHA384 \
-    NEVERC_TLS_SIGNATURE_RSA_PSS_RSAE_SHA384
-#define TLS_SIG_RSA_PSS_SHA512 \
-    NEVERC_TLS_SIGNATURE_RSA_PSS_RSAE_SHA512
-#define TLS_SIG_ED25519 NEVERC_TLS_SIGNATURE_ED25519
-
-/* Alert descriptions */
-#define TLS_ALERT_CLOSE_NOTIFY         0
-#define TLS_ALERT_UNEXPECTED_MESSAGE  10
-#define TLS_ALERT_BAD_RECORD_MAC      20
-#define TLS_ALERT_RECORD_OVERFLOW     22
-#define TLS_ALERT_HANDSHAKE_FAILURE   40
-#define TLS_ALERT_BAD_CERTIFICATE     42
-#define TLS_ALERT_ILLEGAL_PARAMETER   47
-#define TLS_ALERT_DECODE_ERROR        50
-#define TLS_ALERT_DECRYPT_ERROR       51
-#define TLS_ALERT_PROTOCOL_VERSION    70
-#define TLS_ALERT_INTERNAL_ERROR      80
-#define TLS_ALERT_USER_CANCELED       90
-#define TLS_ALERT_MISSING_EXTENSION  109
-#define TLS_ALERT_UNSUPPORTED_EXTENSION 110
-#define TLS_ALERT_CERTIFICATE_REQUIRED 116
-#define TLS_ALERT_NO_APPLICATION_PROTOCOL 120
-
-/* Legacy version for record layer */
-#define TLS_LEGACY_VERSION  0x0303 /* TLS 1.2 in record header */
 
 /* ======================================================================
  * Byte helpers
@@ -170,19 +88,6 @@ static void tls_debug_hex(
 /* ======================================================================
  * Internal structures
  * ====================================================================== */
-
-typedef enum {
-    TLS_CIPHER_AES_128_GCM_SHA256,
-    TLS_CIPHER_CHACHA20_POLY1305_SHA256,
-} tls_cipher_id_t;
-
-typedef struct {
-    tls_cipher_id_t id;
-    uint8_t key[32];
-    uint8_t iv[12];
-    uint64_t seq;
-    neverc_gcm_ctx gcm;
-} tls_traffic_keys_t;
 
 typedef struct {
     uint8_t *ticket;
@@ -744,6 +649,7 @@ int neverc_tls_config_load_cert_mem(neverc_tls_config_t *cfg,
         return -1;
     }
 
+    tls_config_invalidate_all_sessions(cfg);
     free(cfg->cert_der);
     tls_free_private_key(cfg->key_der, cfg->key_der_len);
     cfg->cert_der = cert_der;
@@ -776,6 +682,7 @@ int neverc_tls_config_add_root_certificates_mem(
         }
         return -1;
     }
+    tls_config_invalidate_client_session(cfg);
     return 0;
 }
 
@@ -801,6 +708,7 @@ void neverc_tls_config_set_alpn(neverc_tls_config_t *cfg,
         return;
 
     char **copies = NULL;
+    size_t protocol_list_len = 0;
     if (count > 0) {
         copies = (char **)calloc((size_t)count, sizeof(char *));
         if (!copies)
@@ -812,13 +720,17 @@ void neverc_tls_config_set_alpn(neverc_tls_config_t *cfg,
             proto_len = strlen(protocols[i]);
             if (proto_len > 255)
                 goto fail;
+            if (protocol_list_len >
+                TLS_MAX_ALPN_LIST - (1 + proto_len))
+                goto fail;
+            protocol_list_len += 1 + proto_len;
             copies[i] = strdup(protocols[i]);
             if (!copies[i])
                 goto fail;
         }
     }
 
-    tls_config_invalidate_client_session(cfg);
+    tls_config_invalidate_all_sessions(cfg);
     for (int i = 0; i < cfg->alpn_count; i++)
         free(cfg->alpn_protos[i]);
     free(cfg->alpn_protos);
@@ -835,15 +747,27 @@ fail:
 }
 
 void neverc_tls_config_insecure_skip_verify(neverc_tls_config_t *cfg) {
-    if (cfg) cfg->skip_verify = 1;
+    if (!cfg || cfg->skip_verify)
+        return;
+    tls_config_invalidate_client_session(cfg);
+    cfg->skip_verify = 1;
 }
 
 void neverc_tls_config_set_server_name(neverc_tls_config_t *cfg,
                                         const char *name) {
-    if (!cfg) return;
+    if (!cfg)
+        return;
+    char *copy = NULL;
+    if (name) {
+        if (strlen(name) > TLS_MAX_SERVER_NAME)
+            return;
+        copy = strdup(name);
+        if (!copy)
+            return;
+    }
     tls_config_invalidate_client_session(cfg);
     free(cfg->server_name);
-    cfg->server_name = name ? strdup(name) : NULL;
+    cfg->server_name = copy;
 }
 
 int neverc_tls_config_set_client_auth(
@@ -852,6 +776,9 @@ int neverc_tls_config_set_client_auth(
         (mode != NEVERC_TLS_CLIENT_AUTH_NONE &&
          mode != NEVERC_TLS_CLIENT_AUTH_REQUIRE_AND_VERIFY))
         return -1;
+    if (cfg->client_auth == mode)
+        return 0;
+    tls_config_invalidate_all_sessions(cfg);
     cfg->client_auth = mode;
     return 0;
 }
@@ -910,6 +837,60 @@ int neverc_tls_test_expire_server_sessions(
         }
     }
     tls_mutex_unlock(&cfg->session_mutex);
+    return result;
+}
+
+int neverc_tls_test_set_client_session_alpn(
+    neverc_tls_config_t *cfg, const char *alpn) {
+    if (!cfg || !cfg->session_mutex_initialized)
+        return -1;
+    char *copy = alpn ? strdup(alpn) : NULL;
+    if (alpn && !copy)
+        return -1;
+
+    int result = -1;
+    tls_mutex_lock(&cfg->session_mutex);
+    if (cfg->client_session.valid) {
+        free(cfg->client_session.alpn);
+        cfg->client_session.alpn = copy;
+        copy = NULL;
+        result = 0;
+    }
+    tls_mutex_unlock(&cfg->session_mutex);
+    free(copy);
+    return result;
+}
+
+int neverc_tls_test_resize_client_session_ticket(
+    neverc_tls_config_t *cfg, size_t ticket_len) {
+    if (!cfg || !cfg->session_mutex_initialized ||
+        ticket_len == 0 ||
+        ticket_len > TLS_MAX_SESSION_TICKET)
+        return -1;
+    uint8_t *ticket = (uint8_t *)malloc(ticket_len);
+    if (!ticket)
+        return -1;
+    memset(ticket, 0xa5, ticket_len);
+
+    int result = -1;
+    tls_mutex_lock(&cfg->session_mutex);
+    if (cfg->client_session.valid) {
+        if (cfg->client_session.ticket) {
+            neverc_platform_secure_zero(
+                cfg->client_session.ticket,
+                cfg->client_session.ticket_len);
+            free(cfg->client_session.ticket);
+        }
+        cfg->client_session.ticket = ticket;
+        cfg->client_session.ticket_len = ticket_len;
+        ticket = NULL;
+        result = 0;
+    }
+    tls_mutex_unlock(&cfg->session_mutex);
+    if (ticket) {
+        neverc_platform_secure_zero(ticket, ticket_len);
+        free(ticket);
+    }
     return result;
 }
 #endif
@@ -1065,50 +1046,26 @@ static int hkdf_expand_label(const uint8_t *secret, size_t secret_len,
                               const char *label, size_t label_len,
                               const uint8_t *context, size_t context_len,
                               uint8_t *out, size_t out_len) {
-    /* Build HkdfLabel: u16(length) + u8("tls13 "+label len) + "tls13 "+label + u8(context len) + context */
-    uint8_t info[512];
-    if (!secret || secret_len != TLS_HASH_SIZE_SHA256 ||
-        (!label && label_len != 0) || label_len > 249 ||
-        (!context && context_len != 0) || context_len > 255 ||
-        !out || out_len > 65535 ||
-        2 + 1 + 6 + label_len + 1 + context_len > sizeof(info))
-        return -1;
-    size_t pos = 0;
-    size_t full_label_len = 6 + label_len; /* "tls13 " prefix */
-
-    info[pos++] = (uint8_t)(out_len >> 8);
-    info[pos++] = (uint8_t)(out_len);
-    info[pos++] = (uint8_t)(full_label_len);
-    memcpy(info + pos, "tls13 ", 6);
-    pos += 6;
-    memcpy(info + pos, label, label_len);
-    pos += label_len;
-    info[pos++] = (uint8_t)(context_len);
-    if (context_len > 0)
-        memcpy(info + pos, context, context_len);
-    pos += context_len;
-
-    return neverc_hkdf_expand_sha256(out, out_len, secret, info, pos);
+    return nci_tls_hkdf_expand_label(
+        secret, secret_len, label, label_len,
+        context, context_len, out, out_len);
 }
 
 static void derive_secret(const uint8_t *secret,
                             const char *label, size_t label_len,
                             const uint8_t *transcript_hash,
                             uint8_t *out) {
-    hkdf_expand_label(secret, TLS_HASH_SIZE_SHA256,
-                       label, label_len,
-                       transcript_hash, TLS_HASH_SIZE_SHA256,
-                       out, TLS_HASH_SIZE_SHA256);
+    nci_tls_derive_secret(
+        secret, label, label_len, transcript_hash, out);
 }
 
 static int tls_derive_resumption_psk(
     const uint8_t resumption_master_secret[32],
     const uint8_t *ticket_nonce, size_t ticket_nonce_len,
     uint8_t psk[32]) {
-    return hkdf_expand_label(
-        resumption_master_secret, TLS_HASH_SIZE_SHA256,
-        "resumption", 10, ticket_nonce, ticket_nonce_len,
-        psk, TLS_HASH_SIZE_SHA256);
+    return nci_tls_derive_resumption_psk(
+        resumption_master_secret, ticket_nonce,
+        ticket_nonce_len, psk);
 }
 
 static int tls_compute_resumption_binder(
@@ -1116,40 +1073,9 @@ static int tls_compute_resumption_binder(
     const uint8_t *truncated_client_hello,
     size_t truncated_client_hello_len,
     uint8_t binder[32]) {
-    uint8_t early_secret[32];
-    uint8_t empty_hash[32];
-    uint8_t binder_key[32];
-    uint8_t finished_key[32];
-    uint8_t transcript_hash[32];
-    neverc_sha256_sum(NULL, 0, empty_hash);
-    neverc_sha256_sum(truncated_client_hello,
-                      truncated_client_hello_len,
-                      transcript_hash);
-    if (neverc_hkdf_extract_sha256(
-            early_secret, NULL, 0, psk, 32) != 0 ||
-        hkdf_expand_label(
-            early_secret, 32, "res binder", 10,
-            empty_hash, 32, binder_key, 32) != 0 ||
-        hkdf_expand_label(
-            binder_key, 32, "finished", 8,
-            NULL, 0, finished_key, 32) != 0) {
-        neverc_platform_secure_zero(
-            early_secret, sizeof(early_secret));
-        neverc_platform_secure_zero(
-            binder_key, sizeof(binder_key));
-        neverc_platform_secure_zero(
-            finished_key, sizeof(finished_key));
-        return -1;
-    }
-    neverc_hmac_sha256(finished_key, 32,
-                       transcript_hash, 32, binder);
-    neverc_platform_secure_zero(
-        early_secret, sizeof(early_secret));
-    neverc_platform_secure_zero(
-        binder_key, sizeof(binder_key));
-    neverc_platform_secure_zero(
-        finished_key, sizeof(finished_key));
-    return 0;
+    return nci_tls_compute_resumption_binder(
+        psk, truncated_client_hello,
+        truncated_client_hello_len, binder);
 }
 
 /* RFC 8446 §7.1: unavailable secrets are Hash.length zero bytes, not an
@@ -1158,75 +1084,30 @@ static int tls_compute_resumption_binder(
 static int tls_hkdf_extract_zero_ikm(
     uint8_t out[TLS_HASH_SIZE_SHA256],
     const uint8_t *salt, size_t salt_len) {
-    uint8_t zeros[TLS_HASH_SIZE_SHA256];
-    memset(zeros, 0, sizeof(zeros));
-    return neverc_hkdf_extract_sha256(
-        out, salt, salt_len, zeros, sizeof(zeros));
+    return nci_tls_hkdf_extract_zero_ikm(
+        out, salt, salt_len);
 }
 
 static int tls_derive_handshake_secret(
     const uint8_t shared_secret[32],
     const uint8_t *psk,
     uint8_t handshake_secret[32]) {
-    uint8_t early_secret[32];
-    uint8_t empty_hash[32];
-    uint8_t derived_secret[32];
-    neverc_sha256_sum(NULL, 0, empty_hash);
-    int result;
-    if (psk) {
-        result = neverc_hkdf_extract_sha256(
-            early_secret, NULL, 0, psk, 32);
-    } else {
-        result = tls_hkdf_extract_zero_ikm(
-            early_secret, NULL, 0);
-    }
-    if (result == 0) {
-        derive_secret(early_secret, "derived", 7,
-                      empty_hash, derived_secret);
-        result = neverc_hkdf_extract_sha256(
-            handshake_secret, derived_secret, 32,
-            shared_secret, 32);
-    }
-    neverc_platform_secure_zero(
-        early_secret, sizeof(early_secret));
-    neverc_platform_secure_zero(
-        derived_secret, sizeof(derived_secret));
-    return result;
+    return nci_tls_derive_handshake_secret(
+        shared_secret, psk, handshake_secret);
 }
 
 static void derive_traffic_keys(const uint8_t *traffic_secret,
                                   tls_traffic_keys_t *keys,
                                   tls_cipher_id_t cipher) {
-    keys->id = cipher;
-    keys->seq = 0;
-
-    size_t key_len = (cipher == TLS_CIPHER_AES_128_GCM_SHA256) ? 16 : 32;
-    hkdf_expand_label(traffic_secret, TLS_HASH_SIZE_SHA256,
-                       "key", 3, NULL, 0, keys->key, key_len);
-    hkdf_expand_label(traffic_secret, TLS_HASH_SIZE_SHA256,
-                       "iv", 2, NULL, 0, keys->iv, 12);
-
-    if (cipher == TLS_CIPHER_AES_128_GCM_SHA256)
-        neverc_gcm_init(&keys->gcm, keys->key, 16);
+    nci_tls_derive_traffic_keys(
+        traffic_secret, keys, cipher);
 }
 
 static int tls_update_traffic_secret(
     uint8_t traffic_secret[TLS_HASH_SIZE_SHA256],
     tls_traffic_keys_t *keys) {
-    uint8_t next_secret[TLS_HASH_SIZE_SHA256] = {0};
-    if (hkdf_expand_label(
-            traffic_secret, TLS_HASH_SIZE_SHA256,
-            "traffic upd", 11, NULL, 0,
-            next_secret, sizeof(next_secret)) != 0) {
-        neverc_platform_secure_zero(
-            next_secret, sizeof(next_secret));
-        return -1;
-    }
-
-    memcpy(traffic_secret, next_secret, sizeof(next_secret));
-    derive_traffic_keys(traffic_secret, keys, keys->id);
-    neverc_platform_secure_zero(next_secret, sizeof(next_secret));
-    return 0;
+    return nci_tls_update_traffic_secret(
+        traffic_secret, keys);
 }
 
 static void tls_set_application_keys(
@@ -1586,17 +1467,22 @@ static int tls_recv_record(neverc_tls_conn_t *conn, uint8_t *out_type,
 
     *out_type = conn->read_buf[0];
     uint16_t record_version = get_u16(conn->read_buf + 1);
-    if (conn->write_keys_active &&
+    int is_ciphertext =
+        conn->write_keys_active &&
+        *out_type == TLS_CT_APPLICATION_DATA;
+    if (is_ciphertext &&
         record_version != TLS_LEGACY_VERSION)
         return tls_protocol_error(
             conn, TLS_ALERT_PROTOCOL_VERSION,
-            "invalid TLS record version after ServerHello");
+            "invalid TLS record version");
     uint16_t rec_len = get_u16(conn->read_buf + 3);
-    if (rec_len > TLS_MAX_CIPHERTEXT)
+    size_t record_limit = is_ciphertext ?
+                          TLS_MAX_CIPHERTEXT :
+                          TLS_MAX_PLAINTEXT;
+    if (rec_len > record_limit)
         return tls_protocol_error(
             conn, TLS_ALERT_RECORD_OVERFLOW,
-            "TLS record exceeds the ciphertext limit");
-
+            "TLS record exceeds the configured limit");
     size_t total = TLS_RECORD_HEADER_SIZE + rec_len;
     while (conn->read_buf_len < total) {
         int n = neverc_tcp_read(conn->tcp,
@@ -2130,7 +2016,7 @@ static int tls_client_handshake(neverc_tls_conn_t *conn,
         tls_load_client_psk_offer(cfg, &psk_offer);
 
     /* Build ClientHello */
-    uint8_t ch[4096];
+    uint8_t ch[TLS_CLIENT_HELLO_CAPACITY];
     size_t ch_len = 0;
 
     /* Handshake header placeholder (filled in later) */
@@ -2261,6 +2147,18 @@ static int tls_client_handshake(neverc_tls_conn_t *conn,
 
     size_t binder_transcript_len = 0;
     size_t binder_pos = 0;
+    if (psk_offered) {
+        const size_t psk_encoding_len =
+            53 + psk_offer.ticket_len;
+        /* Oversize or non-fitting tickets must fall back to a full handshake
+         * rather than aborting the connection with an internal_error alert. */
+        if (psk_offer.ticket_len == 0 ||
+            psk_offer.ticket_len > TLS_MAX_SESSION_TICKET ||
+            ch_len > sizeof(ch) - psk_encoding_len) {
+            tls_clear_client_psk_offer(&psk_offer);
+            psk_offered = 0;
+        }
+    }
     if (psk_offered) {
         /* Offer only PSK-with-(EC)DHE; PSK must be the final extension. */
         put_u16(ch + ch_len, TLS_EXT_PSK_KEY_EXCHANGE_MODES);
@@ -2397,6 +2295,8 @@ static int tls_client_handshake(neverc_tls_conn_t *conn,
         conn->peer_cert_len = psk_offer.peer_cert_len;
         psk_offer.peer_cert = NULL;
         psk_offer.peer_cert_len = 0;
+        conn->resumption_alpn = psk_offer.alpn;
+        psk_offer.alpn = NULL;
     }
     tls_clear_client_psk_offer(&psk_offer);
 
@@ -3065,6 +2965,21 @@ static int tls_parse_encrypted_extensions(
         }
     }
 
+    if (conn->did_resume) {
+        const char *resumption_alpn = conn->resumption_alpn;
+        size_t resumption_alpn_len =
+            resumption_alpn ? strlen(resumption_alpn) : 0;
+        if ((resumption_alpn_len == 0 &&
+             selected_alpn_len != 0) ||
+            (resumption_alpn_len != 0 &&
+             (!selected_alpn ||
+              selected_alpn_len != resumption_alpn_len ||
+              memcmp(selected_alpn, resumption_alpn,
+                     selected_alpn_len) != 0))) {
+            *alert = TLS_ALERT_ILLEGAL_PARAMETER;
+            return -1;
+        }
+    }
     if (tls_check_selected_alpn(
             cfg, selected_alpn, selected_alpn_len, alert) != 0)
         return -1;

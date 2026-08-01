@@ -32,6 +32,10 @@ int neverc_tls_test_expire_client_session(
     neverc_tls_config_t *cfg);
 int neverc_tls_test_expire_server_sessions(
     neverc_tls_config_t *cfg);
+int neverc_tls_test_set_client_session_alpn(
+    neverc_tls_config_t *cfg, const char *alpn);
+int neverc_tls_test_resize_client_session_ticket(
+    neverc_tls_config_t *cfg, size_t ticket_len);
 #endif
 
 static void check_int(const char *name, int got, int expected) {
@@ -955,7 +959,7 @@ static void *fake_server_thread(void *arg) {
                 (void)neverc_tcp_write(
                     ctx->tcp, malformed_server_hello,
                     sizeof(malformed_server_hello));
-            } else {
+            } else if (ctx->response_mode == 2) {
                 static const uint8_t oversized_server_hello[] = {
                     22, 0x03, 0x03, 0x00, 0x04,
                     2, 0x01, 0x00, 0x00
@@ -963,6 +967,14 @@ static void *fake_server_thread(void *arg) {
                 (void)neverc_tcp_write(
                     ctx->tcp, oversized_server_hello,
                     sizeof(oversized_server_hello));
+            } else {
+                static const uint8_t wrong_version_record[] = {
+                    22, 0x03, 0x02, 0x00, 0x04,
+                    2, 0x00, 0x00, 0x00
+                };
+                (void)neverc_tcp_write(
+                    ctx->tcp, wrong_version_record,
+                    sizeof(wrong_version_record));
             }
 
             if (tcp_read_exact(
@@ -1089,6 +1101,61 @@ static void test_malformed_server_hello_alert(void) {
     check_int("malformed_server_saw_client_hello",
               ctx.saw_client_hello, 1);
     check_int("send_decode_error_alert",
+              ctx.alert_description, 50);
+    neverc_tls_config_free(config);
+}
+
+static void test_plaintext_record_version_ignored(void) {
+    printf("[plaintext_record_version_ignored]\n");
+    neverc_tcp_conn_t *client_tcp = NULL;
+    neverc_tcp_conn_t *server_tcp = NULL;
+    check_int("create_wrong_record_version_pipe",
+              neverc_tcp_pipe(&client_tcp, &server_tcp), 0);
+    if (!client_tcp || !server_tcp) {
+        neverc_tcp_close(client_tcp);
+        neverc_tcp_close(server_tcp);
+        return;
+    }
+
+    fake_server_ctx_t ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.tcp = server_tcp;
+    ctx.response_mode = 3;
+    ctx.alert_description = -1;
+#ifdef _WIN32
+    HANDLE thread = CreateThread(
+        NULL, 0, fake_server_thread, &ctx, 0, NULL);
+    int thread_started = thread != NULL;
+#else
+    pthread_t thread;
+    int thread_started =
+        pthread_create(&thread, NULL, fake_server_thread, &ctx) == 0;
+#endif
+    check_int("start_wrong_record_version_thread",
+              thread_started, 1);
+    if (!thread_started) {
+        neverc_tcp_close(client_tcp);
+        neverc_tcp_close(server_tcp);
+        return;
+    }
+
+    neverc_tls_config_t *config = neverc_tls_config_new();
+    neverc_tls_config_insecure_skip_verify(config);
+    const char *err = NULL;
+    neverc_tls_conn_t *client =
+        neverc_tls_client(client_tcp, config, &err);
+    check_null("reject_malformed_server_hello", client);
+    neverc_tls_close(client);
+    neverc_tcp_close(client_tcp);
+#ifdef _WIN32
+    WaitForSingleObject(thread, INFINITE);
+    CloseHandle(thread);
+#else
+    pthread_join(thread, NULL);
+#endif
+    check_int("wrong_version_server_saw_client_hello",
+              ctx.saw_client_hello, 1);
+    check_int("ignore_plaintext_version_and_send_decode_error",
               ctx.alert_description, 50);
     neverc_tls_config_free(config);
 }
@@ -1574,6 +1641,37 @@ static void test_session_resumption(void) {
     check_int("resumption_rotated_ticket_server",
               server_resumed, 1);
 
+    check_int("resumption_additional_root_invalidates_client_ticket",
+              neverc_tls_config_add_root_certificates_mem(
+                  client_config, TEST_CLIENT_CERT_PEM,
+                  strlen(TEST_CLIENT_CERT_PEM)),
+              0);
+    client_resumed = server_resumed = -1;
+    check_int("resumption_root_change_falls_back",
+              run_resumption_exchange(
+                  server_config, client_config,
+                  &client_resumed, &server_resumed),
+              1);
+    check_int("resumption_root_change_client_full",
+              client_resumed, 0);
+    check_int("resumption_root_change_server_full",
+              server_resumed, 0);
+
+    check_int("resumption_reload_server_identity",
+              neverc_tls_config_load_cert_mem(
+                  server_config, TEST_CERT_PEM, TEST_KEY_PEM),
+              0);
+    client_resumed = server_resumed = -1;
+    check_int("resumption_identity_change_falls_back",
+              run_resumption_exchange(
+                  server_config, client_config,
+                  &client_resumed, &server_resumed),
+              1);
+    check_int("resumption_identity_change_client_full",
+              client_resumed, 0);
+    check_int("resumption_identity_change_server_full",
+              server_resumed, 0);
+
     check_int("resumption_expire_server_ticket",
               neverc_tls_test_expire_server_sessions(
                   server_config),
@@ -1637,6 +1735,96 @@ static void test_session_resumption(void) {
               run_resumption_exchange(
                   server_config, client_config, NULL, NULL),
               0);
+    neverc_tls_config_free(server_config);
+    neverc_tls_config_free(client_config);
+
+    server_config = neverc_tls_config_new();
+    client_config = neverc_tls_config_new();
+    check_not_null("resumption_alpn_server_config", server_config);
+    check_not_null("resumption_alpn_client_config", client_config);
+    if (!server_config || !client_config) {
+        neverc_tls_config_free(server_config);
+        neverc_tls_config_free(client_config);
+        return;
+    }
+    check_int("resumption_alpn_load_server_certificate",
+              neverc_tls_config_load_cert_mem(
+                  server_config, TEST_CERT_PEM, TEST_KEY_PEM),
+              0);
+    neverc_tls_config_set_server_name(client_config, "localhost");
+    check_int("resumption_alpn_load_client_root",
+              neverc_tls_config_add_root_certificates_mem(
+                  client_config, TEST_CERT_PEM,
+                  strlen(TEST_CERT_PEM)),
+              0);
+    const char *resumption_alpn[] = {"h2", "http/1.1"};
+    neverc_tls_config_set_alpn(
+        server_config, resumption_alpn, 2);
+    neverc_tls_config_set_alpn(
+        client_config, resumption_alpn, 2);
+    check_int("resumption_alpn_prime_ticket",
+              run_resumption_exchange(
+                  server_config, client_config, NULL, NULL),
+              1);
+    check_int("resumption_alpn_corrupt_cached_binding",
+              neverc_tls_test_set_client_session_alpn(
+                  client_config, "http/1.1"),
+              0);
+    check_int("resumption_alpn_reject_changed_binding",
+              run_resumption_exchange(
+                  server_config, client_config, NULL, NULL),
+              0);
+    neverc_tls_config_free(server_config);
+    neverc_tls_config_free(client_config);
+
+    server_config = neverc_tls_config_new();
+    client_config = neverc_tls_config_new();
+    check_not_null("large_client_hello_server_config", server_config);
+    check_not_null("large_client_hello_client_config", client_config);
+    if (!server_config || !client_config) {
+        neverc_tls_config_free(server_config);
+        neverc_tls_config_free(client_config);
+        return;
+    }
+    check_int("large_client_hello_load_server_certificate",
+              neverc_tls_config_load_cert_mem(
+                  server_config, TEST_CERT_PEM, TEST_KEY_PEM),
+              0);
+    neverc_tls_config_set_server_name(client_config, "localhost");
+    check_int("large_client_hello_load_client_root",
+              neverc_tls_config_add_root_certificates_mem(
+                  client_config, TEST_CERT_PEM,
+                  strlen(TEST_CERT_PEM)),
+              0);
+    /* Fill the ALPN list to TLS_MAX_ALPN_LIST (8 * 256) so a max-sized
+     * ticket cannot fit in TLS_CLIENT_HELLO_CAPACITY and must fall back. */
+    char long_protocol_storage[8][256];
+    const char *long_protocols[8];
+    for (size_t i = 0; i < 8; ++i) {
+        memset(long_protocol_storage[i], (int)('a' + i), 255);
+        long_protocol_storage[i][255] = '\0';
+        long_protocols[i] = long_protocol_storage[i];
+    }
+    neverc_tls_config_set_alpn(server_config, long_protocols, 1);
+    neverc_tls_config_set_alpn(client_config, long_protocols, 8);
+    check_int("large_client_hello_prime_ticket",
+              run_resumption_exchange(
+                  server_config, client_config, NULL, NULL),
+              1);
+    check_int("large_client_hello_expand_cached_ticket",
+              neverc_tls_test_resize_client_session_ticket(
+                  client_config, 2048),
+              0);
+    client_resumed = server_resumed = -1;
+    check_int("large_client_hello_falls_back_safely",
+              run_resumption_exchange(
+                  server_config, client_config,
+                  &client_resumed, &server_resumed),
+              1);
+    check_int("large_client_hello_client_full",
+              client_resumed, 0);
+    check_int("large_client_hello_server_full",
+              server_resumed, 0);
     neverc_tls_config_free(server_config);
     neverc_tls_config_free(client_config);
 #endif
@@ -2206,6 +2394,7 @@ int main(void) {
     test_mutual_tls();
     test_unexpected_server_record_alert();
     test_malformed_server_hello_alert();
+    test_plaintext_record_version_ignored();
     test_oversized_server_handshake_alert();
     test_malformed_client_hello_alert();
     test_oversized_client_handshake_alert();

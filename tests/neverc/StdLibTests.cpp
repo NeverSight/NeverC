@@ -461,7 +461,7 @@ TEST_F(StdLibTest, NetBufferFailurePaths) {
 // every target that compiles http.c.
 #define HTTP_TLS_DEPS \
     "src/crypto/tls/tls.c", "src/crypto/tls/tls_verify.c", \
-    "src/crypto/tls/tls_key.c", \
+    "src/crypto/tls/tls_key.c", "src/crypto/tls/tls_key_schedule.c", \
     "src/crypto/ecdh/ecdh.c", \
     "src/crypto/aes/aes.c", "src/crypto/gcm/gcm.c", \
     "src/crypto/chacha20/chacha20.c", "src/crypto/poly1305/poly1305.c", \

@@ -27,7 +27,8 @@ int nci_tls_hkdf_expand_label(
     info[pos++] = (uint8_t)(full_label_len);
     memcpy(info + pos, "tls13 ", 6);
     pos += 6;
-    memcpy(info + pos, label, label_len);
+    if (label_len > 0)
+        memcpy(info + pos, label, label_len);
     pos += label_len;
     info[pos++] = (uint8_t)(context_len);
     if (context_len > 0)

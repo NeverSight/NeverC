@@ -2,6 +2,15 @@
 
 #include "neverc/Linker/Core/Driver/LTOCacheContract.h"
 
+#include "llvm/Bitcode/BitcodeWriter.h"
+#include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/CallingConv.h"
+#include "llvm/IR/Function.h"
+#include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/Module.h"
+#include "llvm/Support/raw_ostream.h"
+
 #include <algorithm>
 #include <cassert>
 #include <chrono>
@@ -134,6 +143,42 @@ TEST_F(LTOTest, HelloLTO) {
 
   auto r = exec(exe.string(), {});
   EXPECT_EQ(r.exitCode, 3) << "hello_lto should exit 3";
+}
+
+TEST_F(LTOTest, AArch64UnalignedCrossCcTailCallFallsBack) {
+  auto src = tmpFile("aarch64_unaligned_cross_cc_tail.bc");
+  auto obj = tmpFile("aarch64_unaligned_cross_cc_tail.o");
+  llvm::LLVMContext context;
+  llvm::Module module("aarch64_unaligned_cross_cc_tail", context);
+  module.setTargetTriple("aarch64-unknown-linux-gnu");
+  llvm::Type *ptrTy = llvm::PointerType::getUnqual(context);
+  llvm::Function *unlock = llvm::Function::Create(
+      llvm::FunctionType::get(llvm::Type::getInt32Ty(context), {ptrTy}, false),
+      llvm::Function::ExternalLinkage, "unlock", module);
+
+  std::vector<llvm::Type *> storeArgs = {ptrTy};
+  storeArgs.insert(storeArgs.end(), 8, llvm::Type::getInt64Ty(context));
+  llvm::Function *store = llvm::Function::Create(
+      llvm::FunctionType::get(llvm::Type::getVoidTy(context), storeArgs, false),
+      llvm::Function::ExternalLinkage, "store", module);
+  store->setCallingConv(llvm::CallingConv::Fast);
+  llvm::IRBuilder<> builder(
+      llvm::BasicBlock::Create(context, "entry", store));
+  llvm::CallInst *call = builder.CreateCall(unlock, {store->getArg(0)});
+  call->setTailCallKind(llvm::CallInst::TCK_Tail);
+  builder.CreateRetVoid();
+
+  llvm::SmallVector<char, 0> bitcode;
+  llvm::raw_svector_ostream bitcodeStream(bitcode);
+  llvm::WriteBitcodeToFile(module, bitcodeStream);
+  writeFile(src, std::string(bitcode.begin(), bitcode.end()));
+
+  auto result = ncc({"--target=aarch64-unknown-linux-gnu", "-fno-lto", "-c",
+                     src.string(), "-o", obj.string()});
+  EXPECT_TRUE(result.ok()) << "AArch64 codegen rejected a valid tail-call "
+                             "candidate instead of lowering it as a normal "
+                             "call:\n"
+                          << result.err;
 }
 
 TEST_F(LTOTest, MultiTU_AB) {

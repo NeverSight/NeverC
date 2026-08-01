@@ -7331,6 +7331,14 @@ bool AArch64TargetLowering::isEligibleForTailCallOptimization(
       return false;
   }
 
+  const AArch64FunctionInfo *FuncInfo = MF.getInfo<AArch64FunctionInfo>();
+  bool CanUseSiblingCall =
+      !getTargetMachine().Options.GuaranteedTailCallOpt &&
+      CalleeCC != CallingConv::Tail && CCMatch;
+  if (!CanUseSiblingCall &&
+      FuncInfo->getBytesInStackArgArea() % Align(16).value() != 0)
+    return false;
+
   // Nothing more to check if the callee is taking no arguments
   if (Outs.empty())
     return true;
@@ -7353,8 +7361,6 @@ bool AArch64TargetLowering::isEligibleForTailCallOptimization(
       if (!ArgLoc.isRegLoc())
         return false;
   }
-
-  const AArch64FunctionInfo *FuncInfo = MF.getInfo<AArch64FunctionInfo>();
 
   // If any of the arguments is passed indirectly, it must be SVE, so the
   // 'getBytesInStackArgArea' is not sufficient to determine whether we need to

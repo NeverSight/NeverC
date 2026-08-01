@@ -17,6 +17,9 @@
 #define TLS_MAX_PLAINTEXT        16384
 #define TLS_MAX_CIPHERTEXT       (TLS_MAX_PLAINTEXT + 256)
 #define TLS_MAX_HANDSHAKE        65536
+/* Large enough for max ALPN + core extensions, small enough that a max-sized
+ * session ticket forces a PSK drop rather than a stack overflow. */
+#define TLS_CLIENT_HELLO_CAPACITY 4096
 #define TLS_MAX_NON_ADVANCING_RECORDS 16
 #define TLS_HASH_SIZE_SHA256     32
 #define TLS_AEAD_TAG_SIZE        16

@@ -134,6 +134,7 @@ static void tcp_slow_reader_task(void *opaque) {
         neverc_tcp_accept(task->listener, &error);
     if (!conn) {
         task->result = 1;
+        (void)neverc_thread_channel_send(task->ready, NULL);
         return;
     }
     if (neverc_tcp_set_read_buffer(conn, 4096) != 0)
