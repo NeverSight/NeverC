@@ -2220,6 +2220,74 @@ if(NEVERC_ENABLE_MERGE_FUZZER)
   # build just the code under test with ASan/UBSan/coverage.
 endif()
 
+option(NEVERC_ENABLE_TLS_PROTOCOL_FUZZER
+  "Build the TLS/X.509 protocol libFuzzer target" OFF)
+if(NEVERC_ENABLE_TLS_PROTOCOL_FUZZER)
+  if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    message(FATAL_ERROR
+      "NEVERC_ENABLE_TLS_PROTOCOL_FUZZER requires Clang and libFuzzer")
+  endif()
+  set(_neverc_tls_fuzzer_std_root
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../std/src)
+  add_executable(neverc-tls-protocol-fuzzer
+    TlsProtocolFuzzer.cpp
+    ${_neverc_tls_fuzzer_std_root}/crypto/tls/tls_record.c
+    ${_neverc_tls_fuzzer_std_root}/crypto/tls/tls_verify.c
+    ${_neverc_tls_fuzzer_std_root}/crypto/tls/tls_key_schedule.c
+    ${_neverc_tls_fuzzer_std_root}/crypto/aes/aes.c
+    ${_neverc_tls_fuzzer_std_root}/crypto/gcm/gcm.c
+    ${_neverc_tls_fuzzer_std_root}/crypto/chacha20/chacha20.c
+    ${_neverc_tls_fuzzer_std_root}/crypto/poly1305/poly1305.c
+    ${_neverc_tls_fuzzer_std_root}/crypto/chacha20poly1305/chacha20poly1305.c
+    ${_neverc_tls_fuzzer_std_root}/crypto/hmac/hmac.c
+    ${_neverc_tls_fuzzer_std_root}/crypto/hkdf/hkdf.c
+    ${_neverc_tls_fuzzer_std_root}/crypto/x509/x509.c
+    ${_neverc_tls_fuzzer_std_root}/crypto/x509/x509_verify.c
+    ${_neverc_tls_fuzzer_std_root}/crypto/rsa/rsa.c
+    ${_neverc_tls_fuzzer_std_root}/crypto/ecdsa/ecdsa.c
+    ${_neverc_tls_fuzzer_std_root}/crypto/ed25519/ed25519.c
+    ${_neverc_tls_fuzzer_std_root}/crypto/elliptic/elliptic.c
+    ${_neverc_tls_fuzzer_std_root}/crypto/rand/rand.c
+    ${_neverc_tls_fuzzer_std_root}/crypto/sha256/sha256.c
+    ${_neverc_tls_fuzzer_std_root}/crypto/sha384/sha384.c
+    ${_neverc_tls_fuzzer_std_root}/crypto/sha512/sha512.c
+    ${_neverc_tls_fuzzer_std_root}/crypto/sha1/sha1.c
+    ${_neverc_tls_fuzzer_std_root}/crypto/md5/md5.c
+    ${_neverc_tls_fuzzer_std_root}/crypto/subtle/subtle.c
+    ${_neverc_tls_fuzzer_std_root}/math/big/big.c
+    ${_neverc_tls_fuzzer_std_root}/net/tcp/tcp.c
+  )
+  target_include_directories(neverc-tls-protocol-fuzzer PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../std/include
+  )
+  target_compile_features(neverc-tls-protocol-fuzzer PRIVATE cxx_std_17)
+  target_compile_definitions(neverc-tls-protocol-fuzzer PRIVATE
+    NEVERC_TLS_TESTING=1
+  )
+  target_compile_options(neverc-tls-protocol-fuzzer PRIVATE
+    -O1
+    -g
+    -fno-omit-frame-pointer
+    -Wall
+    -Wextra
+    -Werror
+    -ffunction-sections
+    -fdata-sections
+    -fsanitize=fuzzer-no-link,address,undefined
+  )
+  target_link_options(neverc-tls-protocol-fuzzer PRIVATE
+    -fsanitize=fuzzer,address,undefined
+  )
+  if(APPLE)
+    target_link_options(neverc-tls-protocol-fuzzer PRIVATE
+      -Wl,-dead_strip)
+  else()
+    target_link_options(neverc-tls-protocol-fuzzer PRIVATE
+      -Wl,--gc-sections)
+  endif()
+  unset(_neverc_tls_fuzzer_std_root)
+endif()
+
 # Standard library runtime tests — compile std/tests/*.c with neverc, run, verify
 add_executable(neverc-std-tests
   NeverCTestFixture.cpp
@@ -2268,6 +2336,7 @@ set(_neverc_llvm_test_targets
   neverc-build-tests
   neverc-merge-tests
   neverc-merge-fuzzer
+  neverc-tls-protocol-fuzzer
   neverc-std-tests
 )
 foreach(_target IN LISTS _neverc_llvm_test_targets)

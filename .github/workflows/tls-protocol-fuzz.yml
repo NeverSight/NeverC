@@ -1,0 +1,156 @@
+name: tls-protocol-fuzz
+
+permissions:
+  contents: read
+
+on:
+  push:
+    paths:
+      - 'std/include/neverc/std/crypto/tls.h'
+      - 'std/include/neverc/std/crypto/x509.h'
+      - 'std/src/crypto/**'
+      - 'std/src/math/big/**'
+      - 'tests/neverc/TlsProtocolFuzzer.cpp'
+      - 'tests/neverc/CMakeLists.txt'
+      - '.github/workflows/tls-protocol-fuzz.yml'
+  pull_request:
+    paths:
+      - 'std/include/neverc/std/crypto/tls.h'
+      - 'std/include/neverc/std/crypto/x509.h'
+      - 'std/src/crypto/**'
+      - 'std/src/math/big/**'
+      - 'tests/neverc/TlsProtocolFuzzer.cpp'
+      - 'tests/neverc/CMakeLists.txt'
+      - '.github/workflows/tls-protocol-fuzz.yml'
+  schedule:
+    - cron: '30 7 * * *'
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: 'Fuzz seconds (max_total_time)'
+        required: false
+        default: '600'
+
+concurrency:
+  group: tls-protocol-fuzz-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fuzz:
+    if: >-
+      !startsWith(github.ref, 'refs/tags/') &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-22.04
+    env:
+      LLVM_APT_VER: '22'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          path: neverc
+
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y ninja-build cmake ccache openssl
+
+      - name: Install Clang and compiler-rt
+        run: |
+          wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
+          chmod +x /tmp/llvm.sh
+          sudo /tmp/llvm.sh "$LLVM_APT_VER"
+          sudo apt-get install -y "libclang-rt-${LLVM_APT_VER}-dev" "lld-${LLVM_APT_VER}"
+          echo "CC=clang-${LLVM_APT_VER}" >> "$GITHUB_ENV"
+          echo "CXX=clang++-${LLVM_APT_VER}" >> "$GITHUB_ENV"
+
+      - name: Compute fuzz duration
+        run: |
+          case "${{ github.event_name }}" in
+            schedule) echo "FUZZ_SECONDS=1800" >> "$GITHUB_ENV" ;;
+            workflow_dispatch) echo "FUZZ_SECONDS=${{ github.event.inputs.duration }}" >> "$GITHUB_ENV" ;;
+            *) echo "FUZZ_SECONDS=120" >> "$GITHUB_ENV" ;;
+          esac
+
+      - name: Restore compiler cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: tls-protocol-fuzz-ccache-${{ github.sha }}
+          restore-keys: |
+            tls-protocol-fuzz-ccache-
+
+      - name: Configure protocol fuzzer
+        run: |
+          cmake -GNinja -Bbuild \
+            -DCMAKE_C_COMPILER="$CC" \
+            -DCMAKE_CXX_COMPILER="$CXX" \
+            -DLLVM_ENABLE_ASSERTIONS=ON \
+            -DNEVERC_ENABLE_LTO=OFF \
+            -DNEVERC_ENABLE_MIMALLOC=OFF \
+            -DNEVERC_NATIVE_ARCH=OFF \
+            -DNEVERC_STRIP_BINARY=OFF \
+            -DNEVERC_INCLUDE_TESTS=ON \
+            -DNEVERC_ENABLE_TLS_PROTOCOL_FUZZER=ON \
+            -C neverc/neverc/cmake/caches/NeverC.cmake \
+            neverc/llvm
+
+      - name: Build protocol fuzzer
+        run: cmake --build build --target neverc-tls-protocol-fuzzer
+
+      - name: Restore fuzz corpus
+        uses: actions/cache/restore@v4
+        with:
+          path: fuzz-corpus
+          key: tls-protocol-fuzz-corpus-${{ github.run_id }}
+          restore-keys: |
+            tls-protocol-fuzz-corpus-
+
+      - name: Generate certificate seeds
+        run: |
+          mkdir -p fuzz-corpus fuzz-seed-keys
+          openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 \
+            -nodes -days 2 -subj '/CN=localhost' \
+            -addext 'subjectAltName=DNS:localhost' \
+            -keyout fuzz-seed-keys/p256.pem -outform DER \
+            -out fuzz-corpus/p256.der >/dev/null 2>&1
+          openssl req -x509 -newkey rsa:2048 \
+            -nodes -days 2 -subj '/CN=localhost' \
+            -addext 'subjectAltName=DNS:localhost' \
+            -keyout fuzz-seed-keys/rsa.pem -outform DER \
+            -out fuzz-corpus/rsa.der >/dev/null 2>&1
+          openssl req -x509 -newkey ed25519 \
+            -nodes -days 2 -subj '/CN=localhost' \
+            -addext 'subjectAltName=DNS:localhost' \
+            -keyout fuzz-seed-keys/ed25519.pem -outform DER \
+            -out fuzz-corpus/ed25519.der >/dev/null 2>&1
+
+      - name: Fuzz TLS and X.509 protocol inputs
+        env:
+          ASAN_OPTIONS: detect_leaks=1:abort_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1:abort_on_error=1
+        run: |
+          mkdir -p fuzz-artifacts
+          FUZZER=$(find build -type f -name neverc-tls-protocol-fuzzer | head -1)
+          test -x "$FUZZER"
+          "$FUZZER" \
+            -max_total_time="$FUZZ_SECONDS" \
+            -max_len=65536 \
+            -timeout=30 \
+            -rss_limit_mb=0 \
+            -print_final_stats=1 \
+            -artifact_prefix=fuzz-artifacts/ \
+            fuzz-corpus
+
+      - name: Save fuzz corpus
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: fuzz-corpus
+          key: tls-protocol-fuzz-corpus-${{ github.run_id }}
+
+      - name: Upload findings
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tls-protocol-fuzz-findings
+          path: fuzz-artifacts
+          if-no-files-found: ignore

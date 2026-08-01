@@ -201,6 +201,43 @@ void nci_tls_clear_handshake_buffer(neverc_tls_conn_t *conn) {
 }
 
 #if defined(NEVERC_TLS_TESTING)
+int neverc_tls_test_fuzz_handshake_reassembly(
+    const uint8_t *data, size_t data_len) {
+    neverc_tls_conn_t conn;
+    memset(&conn, 0, sizeof(conn));
+    if (!data || data_len == 0)
+        return 0;
+
+    size_t fragment_size = (size_t)(data[0] & 31u) + 1;
+    size_t pos = 1;
+    while (pos < data_len) {
+        size_t remaining = data_len - pos;
+        size_t chunk = remaining < fragment_size ?
+                       remaining : fragment_size;
+        if (nci_tls_append_handshake_bytes(
+                &conn, data + pos, chunk) != 0)
+            break;
+        pos += chunk;
+
+        for (;;) {
+            const uint8_t *message = NULL;
+            size_t message_len = 0;
+            int available = nci_tls_next_handshake_message(
+                &conn, &message, &message_len);
+            if (available <= 0)
+                break;
+            if (!message || message_len < 4 ||
+                nci_tls_consume_handshake_message(
+                    &conn, message_len) != 0) {
+                nci_tls_clear_handshake_buffer(&conn);
+                return 0;
+            }
+        }
+    }
+    nci_tls_clear_handshake_buffer(&conn);
+    return 0;
+}
+
 int neverc_tls_test_handshake_reassembly(void) {
     static const uint8_t messages[] = {
         TLS_HS_ENCRYPTED_EXT, 0, 0, 2, 0, 0,
@@ -582,4 +619,3 @@ int nci_tls_recv_plain_handshake_message(
                 "TLS handshake reassembly allocation failed");
     }
 }
-

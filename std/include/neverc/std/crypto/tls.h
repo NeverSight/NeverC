@@ -198,6 +198,13 @@ int neverc_tls_verify_certificate_verify(
     const uint8_t *signature,
     size_t signature_len);
 
+#if defined(NEVERC_TLS_TESTING)
+/* Fuzz arbitrary record fragmentation through the production handshake
+ * reassembler. Returns 0 after fully consuming or rejecting the input. */
+int neverc_tls_test_fuzz_handshake_reassembly(
+    const uint8_t *data, size_t data_len);
+#endif
+
 /* Sign a TLS 1.3 CertificateVerify message with the private key loaded in
  * config. The current implementation supports ECDSA P-256/SHA-256 and writes
  * a DER-encoded ECDSA signature. Returns 0 on success. */
