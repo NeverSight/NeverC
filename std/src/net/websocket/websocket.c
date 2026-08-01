@@ -12,14 +12,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#ifndef _WIN32
-#include <strings.h>
-#else
-static int strcasecmp(const char *a, const char *b) {
-    return _stricmp(a, b);
-}
-#endif
-
 #define WS_MAGIC "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 #define WS_DEFAULT_HANDSHAKE_TIMEOUT_MS 30000
 #define WS_DEFAULT_MAX_MESSAGE_SIZE (16u * 1024u * 1024u)

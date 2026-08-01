@@ -229,6 +229,13 @@ static int conn_add_local_cid(struct neverc_quic_conn *conn) {
  * Stream Management
  * ====================================================================== */
 
+static int stream_is_local(const struct neverc_quic_conn *conn,
+                           uint64_t stream_id) {
+    if (!conn) return 0;
+    int initiator_is_server = (stream_id & 1U) != 0;
+    return initiator_is_server == (conn->side == QUIC_SIDE_SERVER);
+}
+
 static quic_stream_t *stream_create(uint64_t id, size_t buf_size) {
     quic_stream_t *s = (quic_stream_t *)calloc(1, sizeof(*s));
     if (!s) return NULL;
