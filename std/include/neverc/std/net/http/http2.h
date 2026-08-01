@@ -86,7 +86,7 @@ extern "C" {
 #define NC_H2_DEFAULT_INITIAL_WINDOW_SIZE  65535
 #define NC_H2_DEFAULT_MAX_FRAME_SIZE       16384
 #define NC_H2_MAX_FRAME_SIZE_LIMIT         16777215
-#define NC_H2_DEFAULT_MAX_HEADER_LIST_SIZE (16 * 1024 * 1024)
+#define NC_H2_DEFAULT_MAX_HEADER_LIST_SIZE (64 * 1024)
 
 /* Connection preface (RFC 9113 §3.4) */
 #define NC_H2_CLIENT_PREFACE "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"
@@ -170,6 +170,7 @@ void neverc_h2_server_set_max_streams(neverc_h2_server_t *srv, uint32_t max);
 void neverc_h2_server_set_max_frame_size(neverc_h2_server_t *srv, uint32_t max);
 void neverc_h2_server_set_initial_window_size(neverc_h2_server_t *srv, uint32_t win);
 void neverc_h2_server_set_max_header_list_size(neverc_h2_server_t *srv, uint32_t max);
+void neverc_h2_server_set_max_body_size(neverc_h2_server_t *srv, size_t max);
 
 /* Serve a single HTTP/2 connection on a raw socket (after ALPN or upgrade) */
 int neverc_h2_serve_conn(neverc_h2_server_t *srv, int fd);

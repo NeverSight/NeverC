@@ -415,12 +415,14 @@ static void dyn_table_free(hpack_dyn_table_t *t) {
 
 struct neverc_hpack_decoder {
     hpack_dyn_table_t dyn;
+    uint32_t max_table_size;
 };
 
 neverc_hpack_decoder_t *neverc_hpack_decoder_create(uint32_t max_table_size) {
     neverc_hpack_decoder_t *dec = (neverc_hpack_decoder_t *)calloc(1, sizeof(*dec));
     if (!dec) return NULL;
     dyn_table_init(&dec->dyn, max_table_size);
+    dec->max_table_size = max_table_size;
     return dec;
 }
 
@@ -452,11 +454,16 @@ static int hpack_decode_string(const uint8_t *data, size_t len,
     if (hdr_consumed + slen > len) return -1;
 
     if (huffman) {
+        if (slen > (SIZE_MAX - 1) / 2) return -1;
         uint8_t *decoded = (uint8_t *)malloc(slen * 2 + 1);
         if (!decoded) return -1;
         size_t decoded_len;
         if (neverc_hpack_huffman_decode(data + hdr_consumed, (size_t)slen,
                                          decoded, slen * 2, &decoded_len) != 0) {
+            free(decoded);
+            return -1;
+        }
+        if (memchr(decoded, '\0', decoded_len) != NULL) {
             free(decoded);
             return -1;
         }
@@ -466,6 +473,11 @@ static int hpack_decode_string(const uint8_t *data, size_t len,
         *out_str = (char *)malloc((size_t)slen + 1);
         if (!*out_str) return -1;
         memcpy(*out_str, data + hdr_consumed, (size_t)slen);
+        if (memchr(*out_str, '\0', (size_t)slen) != NULL) {
+            free(*out_str);
+            *out_str = NULL;
+            return -1;
+        }
         (*out_str)[slen] = '\0';
     }
     *consumed = hdr_consumed + (size_t)slen;
@@ -478,6 +490,7 @@ int neverc_hpack_decode(neverc_hpack_decoder_t *dec,
                          int *nheaders) {
     *nheaders = 0;
     size_t pos = 0;
+    int saw_header = 0;
 
     while (pos < len && *nheaders < max_headers) {
         uint8_t byte = data[pos];
@@ -498,8 +511,14 @@ int neverc_hpack_decode(neverc_hpack_decoder_t *dec,
                 return -1;
             headers[*nheaders].name = strdup(name);
             headers[*nheaders].value = strdup(value);
+            if (!headers[*nheaders].name || !headers[*nheaders].value) {
+                free(headers[*nheaders].name);
+                free(headers[*nheaders].value);
+                return -1;
+            }
             headers[*nheaders].sensitive = 0;
             (*nheaders)++;
+            saw_header = 1;
         } else if ((byte & 0xc0) == 0x40) {
             /* Literal with Incremental Indexing (§6.2.1) */
             uint64_t index;
@@ -527,6 +546,7 @@ int neverc_hpack_decode(neverc_hpack_decoder_t *dec,
             headers[*nheaders].sensitive = 0;
             (*nheaders)++;
             add_to_dyn = 1;
+            saw_header = 1;
         } else if ((byte & 0xf0) == 0x00 || (byte & 0xf0) == 0x10) {
             /* Literal without Indexing (§6.2.2) or Never Indexed (§6.2.3) */
             int sensitive = !!(byte & 0x10);
@@ -554,6 +574,7 @@ int neverc_hpack_decode(neverc_hpack_decoder_t *dec,
             headers[*nheaders].value = alloc_value;
             headers[*nheaders].sensitive = sensitive;
             (*nheaders)++;
+            saw_header = 1;
         } else if ((byte & 0xe0) == 0x20) {
             /* Dynamic Table Size Update (§6.3) */
             uint64_t new_size;
@@ -561,6 +582,7 @@ int neverc_hpack_decode(neverc_hpack_decoder_t *dec,
             if (hpack_decode_int(data + pos, len - pos, 5, &new_size, &consumed) != 0)
                 return -1;
             pos += consumed;
+            if (saw_header || new_size > dec->max_table_size) return -1;
             dec->dyn.max_size = (uint32_t)new_size;
             dyn_table_evict(&dec->dyn);
             continue;
@@ -572,7 +594,7 @@ int neverc_hpack_decode(neverc_hpack_decoder_t *dec,
             dyn_table_add(&dec->dyn, alloc_name, alloc_value);
         }
     }
-    return 0;
+    return pos == len ? 0 : -1;
 }
 
 /* ======================================================================

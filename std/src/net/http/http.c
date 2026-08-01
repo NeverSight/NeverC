@@ -916,6 +916,41 @@ void neverc_http_set_max_bytes(neverc_http_response_writer_t *w,
     }
 }
 
+void nc_http_mux_dispatch(neverc_http_mux_t *mux,
+                          neverc_http_request_t *request,
+                          neverc_http_response_writer_t *writer) {
+    if (!request || !writer) return;
+    if (!mux) {
+        ensure_default_mux();
+        mux = &default_mux;
+    }
+    path_params_t params;
+    memset(&params, 0, sizeof(params));
+    neverc_http_handler_func_t handler = mux_match_ex(
+        mux, request->method, request->path, &params);
+    if (params.count > 0) {
+        request->path_params = params.buf;
+        request->nparams = params.count;
+    }
+    if (g_global_rate_limiter &&
+        !neverc_http_rate_limiter_allow(g_global_rate_limiter)) {
+        neverc_http_set_status(writer, 429);
+        neverc_http_set_header(writer, "Retry-After", "1");
+        (void)neverc_http_write_string(writer, "Too Many Requests\n");
+        return;
+    }
+    if (g_cors_enabled) {
+        const char *origin = neverc_http_request_header(request, "Origin");
+        neverc_http_cors_headers(writer, &g_cors_config, origin);
+    }
+    if (handler) {
+        handler(request, writer);
+    } else {
+        neverc_http_set_status(writer, 404);
+        (void)neverc_http_write_string(writer, "404 page not found\n");
+    }
+}
+
 /* ======================================================================
  * HTTP Request Parser — stateful, supports incremental parsing
  * ====================================================================== */

@@ -56,6 +56,12 @@ int nc_http_sock_write_all(nc_sock_t fd, const void *data, size_t len);
 int nc_http_sock_write_all_timeout(nc_sock_t fd, const void *data, size_t len,
                                    int timeout_ms);
 
+/* Protocol-neutral handler dispatch used by HTTP/1 and multiplexed HTTP
+ * transports. The request and writer remain owned by the caller. */
+void nc_http_mux_dispatch(neverc_http_mux_t *mux,
+                          neverc_http_request_t *request,
+                          neverc_http_response_writer_t *writer);
+
 extern neverc_http_cors_config_t g_cors_config;
 extern int g_cors_enabled;
 
