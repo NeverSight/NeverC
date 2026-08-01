@@ -98,7 +98,14 @@ void neverc_bigint_set_uint64(neverc_bigint_t *z, uint64_t x) {
 
 void neverc_bigint_set(neverc_bigint_t *z, const neverc_bigint_t *x) {
     if (z == x) return;
+    if (x->len == 0) {
+        z->len = 0;
+        z->neg = 0;
+        return;
+    }
     ensure_cap(z, x->len);
+    if (!z->digits)
+        return;
     memcpy(z->digits, x->digits, x->len * sizeof(uint32_t));
     z->len = x->len;
     z->neg = x->neg;
