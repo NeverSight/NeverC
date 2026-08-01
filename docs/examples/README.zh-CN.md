@@ -10,6 +10,13 @@
 
 ## 可用示例
 
+### 服务端后端
+
+| 示例 | 说明 | 关键特性 |
+|------|------|---------|
+| [权威游戏服务器](../../examples/network-authoritative-server/README.zh-CN.md) | 跨平台游戏后端 | 固定 60 Hz tick、TCP 会话、UDP/QUIC 输入、重放保护 |
+| [反作弊收集器](../../examples/network-anticheat-collector/README.zh-CN.md) | 加固遥测摄取 | mTLS、流式 NRPC、HMAC 遥测、有界审计管道 |
+
 ### Windows
 
 

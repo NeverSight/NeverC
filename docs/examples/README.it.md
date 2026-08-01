@@ -10,6 +10,13 @@ Esempi completi compilabili che dimostrano le capacità di cross-compilazione di
 
 ## Esempi disponibili
 
+### Backend server
+
+| Esempio | Descrizione | Funzionalità chiave |
+|---------|-------------|-------------------|
+| [Server di gioco autoritativo](../../examples/network-authoritative-server/README.it.md) | Backend di gioco cross-platform | Tick fisso 60 Hz, sessioni TCP, input UDP/QUIC, protezione replay |
+| [Collettore anti-cheat](../../examples/network-anticheat-collector/README.it.md) | Ingestione telemetria rafforzata | mTLS, NRPC streaming, telemetria HMAC, pipeline di audit limitata |
+
 ### Windows
 
 | Esempio | Descrizione | Funzionalità chiave |

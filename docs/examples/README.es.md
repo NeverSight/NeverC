@@ -10,6 +10,13 @@ Ejemplos compilables que demuestran las capacidades de compilación cruzada de N
 
 ## Ejemplos disponibles
 
+### Backends de servidor
+
+| Ejemplo | Descripción | Características clave |
+|---------|-------------|----------------------|
+| [Servidor de juego autoritativo](../../examples/network-authoritative-server/README.es.md) | Backend de juego multiplataforma | Tick fijo 60 Hz, sesiones TCP, entrada UDP/QUIC, protección anti-replay |
+| [Recolector anti-trampas](../../examples/network-anticheat-collector/README.es.md) | Ingesta de telemetría reforzada | mTLS, NRPC streaming, telemetría HMAC, pipeline de auditoría acotado |
+
 ### Windows
 
 | Ejemplo | Descripción | Características clave |

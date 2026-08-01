@@ -10,6 +10,13 @@ NeverC의 크로스 플랫폼 컴파일 기능을 보여주는 빌드 가능한 
 
 ## 예제 목록
 
+### 서버 백엔드
+
+| 예제 | 설명 | 주요 기능 |
+|------|------|---------|
+| [권위형 게임 서버](../../examples/network-authoritative-server/README.ko.md) | 크로스 플랫폼 게임 백엔드 | 고정 60 Hz tick, TCP 세션, UDP/QUIC 입력, 재생 방지 |
+| [안티치트 수집기](../../examples/network-anticheat-collector/README.ko.md) | 강화된 텔레메트리 수집 | mTLS, 스트리밍 NRPC, HMAC 텔레메트리, 경계가 있는 감사 파이프라인 |
+
 ### Windows
 
 | 예제 | 설명 | 주요 기능 |

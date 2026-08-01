@@ -10,6 +10,13 @@ Vollständig kompilierbare Beispiele für die plattformübergreifende Kompilieru
 
 ## Verfügbare Beispiele
 
+### Server-Backends
+
+| Beispiel | Beschreibung | Kernfunktionen |
+|----------|--------------|---------------|
+| [Autoritativer Game-Server](../../examples/network-authoritative-server/README.de.md) | Plattformübergreifendes Game-Backend | Fester 60-Hz-Tick, TCP-Sitzungen, UDP/QUIC-Eingabe, Replay-Schutz |
+| [Anti-Cheat-Sammler](../../examples/network-anticheat-collector/README.de.md) | Gehärtete Telemetrie-Aufnahme | mTLS, Streaming-NRPC, HMAC-Telemetrie, begrenzte Audit-Pipeline |
+
 ### Windows
 
 | Beispiel | Beschreibung | Kernfunktionen |

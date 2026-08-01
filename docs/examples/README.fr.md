@@ -10,6 +10,13 @@ Exemples compilables démontrant les capacités de compilation croisée de Never
 
 ## Exemples disponibles
 
+### Backends serveur
+
+| Exemple | Description | Fonctionnalités clés |
+|---------|-------------|---------------------|
+| [Serveur de jeu autoritaire](../../examples/network-authoritative-server/README.fr.md) | Backend de jeu multiplateforme | Tick fixe 60 Hz, sessions TCP, entrée UDP/QUIC, protection rejeu |
+| [Collecteur anti-triche](../../examples/network-anticheat-collector/README.fr.md) | Ingestion de télémétrie renforcée | mTLS, NRPC streaming, télémétrie HMAC, pipeline d'audit borné |
+
 ### Windows
 
 | Exemple | Description | Fonctionnalités clés |

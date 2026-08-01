@@ -10,6 +10,13 @@ NeverC のクロスプラットフォームコンパイル機能を示すビル�
 
 ## サンプル一覧
 
+### サーバーバックエンド
+
+| サンプル | 説明 | 主要機能 |
+|---------|------|---------|
+| [権威型ゲームサーバー](../../examples/network-authoritative-server/README.ja.md) | クロスプラットフォームゲームバックエンド | 固定 60 Hz tick、TCP セッション、UDP/QUIC 入力、リプレイ保護 |
+| [アンチチートコレクター](../../examples/network-anticheat-collector/README.ja.md) | 強化テレメトリ取り込み | mTLS、ストリーミング NRPC、HMAC テレメトリ、上限付き監査パイプライン |
+
 ### Windows
 
 | サンプル | 説明 | 主要機能 |

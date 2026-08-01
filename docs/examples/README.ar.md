@@ -12,6 +12,13 @@
 
 ## الأمثلة المتاحة
 
+### backends الخادم
+
+| المثال | الوصف | الميزات الرئيسية |
+|--------|-------|-----------------|
+| [خادم لعبة موثوق](../../examples/network-authoritative-server/README.ar.md) | backend لعبة متعدد المنصات | tick ثابت 60 Hz، جلسات TCP، إدخال UDP/QUIC، حماية إعادة التشغيل |
+| [جامع مكافحة الغش](../../examples/network-anticheat-collector/README.ar.md) | استيعاب تيليمتري محصّن | mTLS، NRPC متدفق، تيليمتري HMAC، خط تدقيق محدود |
+
 ### Windows
 
 | المثال | الوصف | الميزات الرئيسية |

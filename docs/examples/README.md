@@ -10,6 +10,13 @@ Complete, buildable examples demonstrating NeverC's cross-platform compilation c
 
 ## Available Examples
 
+### Server Backends
+
+| Example | Description | Key Features |
+|---------|-------------|-------------|
+| [Authoritative Game Server](../../examples/network-authoritative-server/README.md) | Cross-platform game backend | Fixed 60 Hz tick, TCP sessions, UDP/QUIC input, replay protection |
+| [Anti-Cheat Collector](../../examples/network-anticheat-collector/README.md) | Hardened telemetry ingestion | mTLS, streaming NRPC, HMAC telemetry, bounded audit pipeline |
+
 ### Windows
 
 | Example | Description | Key Features |

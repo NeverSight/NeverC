@@ -10,6 +10,13 @@
 
 ## 可用範例
 
+### 伺服器後端
+
+| 範例 | 說明 | 關鍵特性 |
+|------|------|---------|
+| [權威遊戲伺服器](../../examples/network-authoritative-server/README.zh-TW.md) | 跨平台遊戲後端 | 固定 60 Hz tick、TCP 工作階段、UDP/QUIC 輸入、重放保護 |
+| [反作弊收集器](../../examples/network-anticheat-collector/README.zh-TW.md) | 加固遙測擷取 | mTLS、串流 NRPC、HMAC 遙測、有界稽核管線 |
+
 ### Windows
 
 | 範例 | 說明 | 關鍵特性 |
