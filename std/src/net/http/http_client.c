@@ -556,6 +556,51 @@ fail:
     return -1;
 }
 
+static int build_http_stream_request_headers(
+    nc_buf_t *req, const char *method, const parsed_url_t *url,
+    const char *content_type, int64_t content_length, int keep_alive) {
+    if (!req) return -1;
+    nc_buf_init(req);
+    if (!method || !url || content_length < -1 ||
+        !client_valid_token(method, strlen(method)) ||
+        contains_crlf(url->authority) || contains_crlf(url->path) ||
+        contains_crlf(content_type))
+        return -1;
+
+    if (append_cstr(req, method) != 0 || append_cstr(req, " ") != 0 ||
+        append_cstr(req, url->path) != 0 ||
+        append_cstr(req, " HTTP/1.1\r\nHost: ") != 0 ||
+        append_cstr(req, url->authority) != 0 ||
+        append_cstr(req, "\r\n") != 0)
+        goto fail;
+    if (content_type &&
+        (append_cstr(req, "Content-Type: ") != 0 ||
+         append_cstr(req, content_type) != 0 ||
+         append_cstr(req, "\r\n") != 0))
+        goto fail;
+
+    if (content_length >= 0) {
+        char line[64];
+        int n = snprintf(line, sizeof(line), "Content-Length: %llu\r\n",
+                         (unsigned long long)content_length);
+        if (n < 0 || (size_t)n >= sizeof(line) ||
+            nc_buf_append(req, line, (size_t)n) != 0)
+            goto fail;
+    } else if (append_cstr(req, "Transfer-Encoding: chunked\r\n") != 0) {
+        goto fail;
+    }
+
+    if (append_cstr(req, keep_alive
+                            ? "Connection: keep-alive\r\n\r\n"
+                            : "Connection: close\r\n\r\n") != 0)
+        goto fail;
+    return 0;
+
+fail:
+    nc_buf_free(req);
+    return -1;
+}
+
 /* 1 = complete, 0 = incomplete, -1 = malformed or decoded body too large. */
 static int scan_chunked_body(const char *source, size_t source_length,
                              size_t body_limit, size_t *wire_consumed,
@@ -1059,6 +1104,427 @@ analyze_response:
     return r;
 }
 
+static int stream_write_request_body(
+    client_connection_t *connection, neverc_context_t *context,
+    int64_t content_length, neverc_http_body_source_func_t source,
+    void *source_context) {
+    if (content_length == 0) return 0;
+    if (!source) return -1;
+
+    char data[8192];
+    if (content_length > 0) {
+        uint64_t remaining = (uint64_t)content_length;
+        while (remaining > 0) {
+            size_t capacity = sizeof(data);
+            if ((uint64_t)capacity > remaining) capacity = (size_t)remaining;
+            int produced = source(source_context, data, capacity);
+            if (produced <= 0 || (size_t)produced > capacity ||
+                client_connection_write_all(connection, context, data,
+                                            (size_t)produced) != 0)
+                return -1;
+            remaining -= (uint64_t)produced;
+        }
+        return 0;
+    }
+
+    for (;;) {
+        int produced = source(source_context, data, sizeof(data));
+        if (produced < 0 || (size_t)produced > sizeof(data)) return -1;
+        if (produced == 0)
+            return client_connection_write_all(
+                connection, context, "0\r\n\r\n", 5);
+
+        char prefix[32];
+        int prefix_length = snprintf(prefix, sizeof(prefix), "%x\r\n",
+                                     (unsigned)produced);
+        if (prefix_length <= 0 || (size_t)prefix_length >= sizeof(prefix) ||
+            client_connection_write_all(connection, context, prefix,
+                                        (size_t)prefix_length) != 0 ||
+            client_connection_write_all(connection, context, data,
+                                        (size_t)produced) != 0 ||
+            client_connection_write_all(connection, context, "\r\n", 2) != 0)
+            return -1;
+    }
+}
+
+static int stream_deliver_body(
+    neverc_http_response_t *response, size_t body_limit,
+    neverc_http_body_sink_func_t sink, void *sink_context,
+    const void *data, size_t length) {
+    if (length == 0) return 0;
+    if (response->body_len > body_limit ||
+        length > body_limit - response->body_len)
+        return -2;
+    if (sink && sink(sink_context, data, length) != 0) return -1;
+    response->body_len += length;
+    return 0;
+}
+
+static int stream_chunk_size(const char *line, size_t length,
+                             size_t *chunk_size) {
+    size_t value = 0;
+    size_t digits = 0;
+    while (digits < length) {
+        unsigned char c = (unsigned char)line[digits];
+        unsigned digit;
+        if (c >= '0' && c <= '9') digit = (unsigned)(c - '0');
+        else if (c >= 'a' && c <= 'f') digit = (unsigned)(c - 'a' + 10);
+        else if (c >= 'A' && c <= 'F') digit = (unsigned)(c - 'A' + 10);
+        else break;
+        if (value > (SIZE_MAX - digit) / 16) return -1;
+        value = value * 16 + digit;
+        digits++;
+    }
+    if (digits == 0 ||
+        (digits < length && line[digits] != ';') ||
+        !client_valid_field_value(line + digits, length - digits))
+        return -1;
+    *chunk_size = value;
+    return 0;
+}
+
+/* 1 = complete, 0 = incomplete, -1 = malformed. */
+static int stream_parse_trailers(nc_buf_t *wire, size_t trailer_limit,
+                                 char **trailers) {
+    size_t cursor = 0;
+    while (cursor < wire->len) {
+        const char *line = wire->data + cursor;
+        const char *line_end = client_find_crlf(
+            line, wire->data + wire->len);
+        if (!line_end) {
+            if (wire->len > trailer_limit + 2) return -1;
+            return 0;
+        }
+        size_t line_length = (size_t)(line_end - line);
+        if (line_length == 0) {
+            if (cursor > trailer_limit) return -1;
+            if (cursor > 0) {
+                size_t copy_length = cursor >= 2 ? cursor - 2 : 0;
+                char *copy = (char *)malloc(copy_length + 1);
+                if (!copy) return -1;
+                if (copy_length > 0)
+                    memcpy(copy, wire->data, copy_length);
+                copy[copy_length] = '\0';
+                *trailers = copy;
+            }
+            nc_buf_consume(wire, cursor + 2);
+            return 1;
+        }
+        if (*line == ' ' || *line == '\t') return -1;
+        const char *colon = (const char *)memchr(line, ':', line_length);
+        if (!colon || !client_valid_token(line, (size_t)(colon - line)))
+            return -1;
+        const char *value = colon + 1;
+        size_t value_length = (size_t)(line_end - value);
+        client_trim_ows(&value, &value_length);
+        size_t name_length = (size_t)(colon - line);
+        if (!client_valid_field_value(value, value_length) ||
+            client_name_is(line, name_length, "Content-Length") ||
+            client_name_is(line, name_length, "Transfer-Encoding") ||
+            client_name_is(line, name_length, "Host"))
+            return -1;
+        cursor = (size_t)(line_end + 2 - wire->data);
+        if (cursor > trailer_limit + 2) return -1;
+    }
+    return 0;
+}
+
+static int stream_read_chunked_response(
+    client_connection_t *connection, neverc_context_t *context,
+    nc_buf_t *wire, neverc_http_response_t *response,
+    size_t header_limit, size_t body_limit,
+    neverc_http_body_sink_func_t sink, void *sink_context) {
+    enum { STREAM_CHUNK_SIZE, STREAM_CHUNK_DATA,
+           STREAM_CHUNK_DATA_CRLF, STREAM_CHUNK_TRAILERS } state =
+        STREAM_CHUNK_SIZE;
+    size_t remaining = 0;
+    char input[8192];
+
+    for (;;) {
+        int made_progress = 0;
+        if (state == STREAM_CHUNK_SIZE) {
+            const char *line_end = wire->len >= 2
+                ? client_find_crlf(wire->data, wire->data + wire->len)
+                : NULL;
+            if (line_end) {
+                size_t line_length = (size_t)(line_end - wire->data);
+                if (line_length > 8192 ||
+                    stream_chunk_size(wire->data, line_length,
+                                      &remaining) != 0)
+                    return -1;
+                nc_buf_consume(wire, line_length + 2);
+                state = remaining == 0 ? STREAM_CHUNK_TRAILERS
+                                       : STREAM_CHUNK_DATA;
+                made_progress = 1;
+            } else if (wire->len > 8194) {
+                return -1;
+            }
+        } else if (state == STREAM_CHUNK_DATA) {
+            size_t available = wire->len;
+            if (available > remaining) available = remaining;
+            if (available > 0) {
+                int delivered = stream_deliver_body(
+                    response, body_limit, sink, sink_context,
+                    wire->data, available);
+                if (delivered != 0) return delivered == -2 ? -2 : -3;
+                nc_buf_consume(wire, available);
+                remaining -= available;
+                made_progress = 1;
+            }
+            if (remaining == 0) state = STREAM_CHUNK_DATA_CRLF;
+        } else if (state == STREAM_CHUNK_DATA_CRLF) {
+            if (wire->len >= 2) {
+                if (wire->data[0] != '\r' || wire->data[1] != '\n')
+                    return -1;
+                nc_buf_consume(wire, 2);
+                state = STREAM_CHUNK_SIZE;
+                made_progress = 1;
+            }
+        } else {
+            int trailer_result = stream_parse_trailers(
+                wire, header_limit, &response->trailers);
+            if (trailer_result < 0) return -1;
+            if (trailer_result > 0) return 0;
+        }
+
+        if (made_progress) continue;
+        int received = client_connection_read(
+            connection, context, input, sizeof(input));
+        if (received <= 0) return -1;
+        if (nc_buf_append(wire, input, (size_t)received) != 0) return -4;
+    }
+}
+
+static neverc_http_response_t *stream_response_error(
+    client_connection_t *connection, nc_buf_t *wire,
+    neverc_http_response_t *response, const char *error) {
+    client_connection_close(connection);
+    nc_buf_free(wire);
+    if (!response) return make_error_response(error);
+    response->error = error;
+    return response;
+}
+
+static neverc_http_response_t *do_stream_request(
+    neverc_http_client_t *client, neverc_context_t *context,
+    const char *method, const parsed_url_t *url, const char *content_type,
+    int64_t content_length, neverc_http_body_source_func_t source,
+    void *source_context, neverc_http_body_sink_func_t sink,
+    void *sink_context) {
+    if (content_length < -1 || (content_length != 0 && !source))
+        return make_error_response("invalid streaming request body");
+    if (nc_net_init() != 0)
+        return make_error_response("network initialization failed");
+
+    char connect_addr[280];
+    if (strchr(url->host, ':'))
+        snprintf(connect_addr, sizeof(connect_addr), "[%s]:%u", url->host,
+                 (unsigned)url->port);
+    else
+        snprintf(connect_addr, sizeof(connect_addr), "%s:%u", url->host,
+                 (unsigned)url->port);
+    char pool_key[290];
+    snprintf(pool_key, sizeof(pool_key), "%s://%s",
+             url->is_https ? "https" : "http", connect_addr);
+
+    int use_keepalive =
+        nc_atomic_load(&client->pool.max_idle_per_host) > 0;
+    client_connection_t *connection = pool_get(client, pool_key);
+    if (!connection) {
+        const char *dial_error = NULL;
+        connection = client_connection_dial(
+            url, connect_addr, context, &dial_error);
+        if (!connection) return make_error_response(dial_error);
+    }
+
+    nc_buf_t request_headers;
+    if (build_http_stream_request_headers(
+            &request_headers, method, url, content_type, content_length,
+            use_keepalive) != 0) {
+        client_connection_close(connection);
+        return make_error_response("invalid request or out of memory");
+    }
+    int write_result = client_connection_write_all(
+        connection, context, request_headers.data, request_headers.len);
+    nc_buf_free(&request_headers);
+    if (write_result != 0 || stream_write_request_body(
+            connection, context, content_length, source,
+            source_context) != 0) {
+        client_connection_close(connection);
+        return make_error_response(client_context_error(
+            context, "streaming request write failed"));
+    }
+
+    nc_buf_t wire;
+    nc_buf_init(&wire);
+    response_framing_t framing;
+    memset(&framing, 0, sizeof(framing));
+    int interim_count = 0;
+    size_t final_header_length = 0;
+    char input[8192];
+    for (;;) {
+        char *header_end = wire.data ? strstr(wire.data, "\r\n\r\n") : NULL;
+        if (!header_end) {
+            if (wire.len > client->config.max_response_header_size + 4)
+                return stream_response_error(
+                    connection, &wire, NULL,
+                    "response headers exceed configured limit");
+            int received = client_connection_read(
+                connection, context, input, sizeof(input));
+            if (received <= 0 ||
+                nc_buf_append(&wire, input, (size_t)received) != 0)
+                return stream_response_error(
+                    connection, &wire, NULL,
+                    received < 0 ? client_context_error(
+                        context, "response header read failed")
+                                 : "incomplete HTTP response headers");
+            continue;
+        }
+        final_header_length = (size_t)(header_end - wire.data);
+        if (final_header_length > client->config.max_response_header_size ||
+            parse_response_framing(wire.data, final_header_length,
+                                   &framing) != 0)
+            return stream_response_error(
+                connection, &wire, NULL, "invalid HTTP response framing");
+        if (((framing.status_code >= 100 && framing.status_code < 200) ||
+             framing.status_code == 204) &&
+            (framing.has_content_length || framing.is_chunked))
+            return stream_response_error(
+                connection, &wire, NULL,
+                "body framing is forbidden for this status");
+        if (framing.status_code >= 100 && framing.status_code < 200 &&
+            framing.status_code != 101) {
+            if (++interim_count > 16)
+                return stream_response_error(
+                    connection, &wire, NULL, "too many interim responses");
+            nc_buf_consume(&wire, final_header_length + 4);
+            memset(&framing, 0, sizeof(framing));
+            continue;
+        }
+        break;
+    }
+
+    neverc_http_response_t *response =
+        (neverc_http_response_t *)calloc(1, sizeof(*response));
+    if (!response)
+        return stream_response_error(
+            connection, &wire, NULL, "out of memory");
+    response->status_code = framing.status_code;
+    response->headers = (char *)malloc(final_header_length + 1);
+    if (!response->headers)
+        return stream_response_error(
+            connection, &wire, response, "out of memory");
+    memcpy(response->headers, wire.data, final_header_length);
+    response->headers[final_header_length] = '\0';
+    nc_buf_consume(&wire, final_header_length + 4);
+
+    int is_head = strcmp(method, "HEAD") == 0;
+    int status_has_no_body = is_head ||
+        (framing.status_code >= 100 && framing.status_code < 200) ||
+        framing.status_code == 204 || framing.status_code == 304;
+    int keepalive = framing.keep_alive;
+    if (status_has_no_body) {
+        if (framing.status_code == 101) keepalive = 0;
+        if (wire.len > 0) keepalive = 0;
+    } else if (framing.is_chunked) {
+        int chunk_result = stream_read_chunked_response(
+            connection, context, &wire, response,
+            client->config.max_response_header_size,
+            client->config.max_response_body_size,
+            sink, sink_context);
+        if (chunk_result != 0)
+            return stream_response_error(
+                connection, &wire, response,
+                chunk_result == -2 ? "response body exceeds configured limit"
+                : chunk_result == -3 ? "response body sink failed"
+                : chunk_result == -4 ? "out of memory"
+                                     : "invalid or incomplete chunked response");
+        if (wire.len > 0) keepalive = 0;
+    } else if (framing.has_content_length) {
+        if (framing.content_length > client->config.max_response_body_size)
+            return stream_response_error(
+                connection, &wire, response,
+                "response body exceeds configured limit");
+        size_t remaining = framing.content_length;
+        if (wire.len > remaining)
+            return stream_response_error(
+                connection, &wire, response,
+                "response contains bytes beyond Content-Length");
+        if (wire.len > 0) {
+            int delivered = stream_deliver_body(
+                response, client->config.max_response_body_size,
+                sink, sink_context, wire.data, wire.len);
+            if (delivered != 0)
+                return stream_response_error(
+                    connection, &wire, response,
+                    delivered == -2
+                        ? "response body exceeds configured limit"
+                        : "response body sink failed");
+            remaining -= wire.len;
+            nc_buf_reset(&wire);
+        }
+        while (remaining > 0) {
+            size_t capacity = sizeof(input);
+            if (capacity > remaining) capacity = remaining;
+            int received = client_connection_read(
+                connection, context, input, capacity);
+            if (received <= 0)
+                return stream_response_error(
+                    connection, &wire, response,
+                    "incomplete Content-Length response");
+            int delivered = stream_deliver_body(
+                response, client->config.max_response_body_size,
+                sink, sink_context, input, (size_t)received);
+            if (delivered != 0)
+                return stream_response_error(
+                    connection, &wire, response,
+                    delivered == -2
+                        ? "response body exceeds configured limit"
+                        : "response body sink failed");
+            remaining -= (size_t)received;
+        }
+    } else {
+        keepalive = 0;
+        if (wire.len > 0) {
+            int delivered = stream_deliver_body(
+                response, client->config.max_response_body_size,
+                sink, sink_context, wire.data, wire.len);
+            if (delivered != 0)
+                return stream_response_error(
+                    connection, &wire, response,
+                    delivered == -2
+                        ? "response body exceeds configured limit"
+                        : "response body sink failed");
+            nc_buf_reset(&wire);
+        }
+        for (;;) {
+            int received = client_connection_read(
+                connection, context, input, sizeof(input));
+            if (received == 0) break;
+            if (received < 0)
+                return stream_response_error(
+                    connection, &wire, response,
+                    client_context_error(context, "response body read failed"));
+            int delivered = stream_deliver_body(
+                response, client->config.max_response_body_size,
+                sink, sink_context, input, (size_t)received);
+            if (delivered != 0)
+                return stream_response_error(
+                    connection, &wire, response,
+                    delivered == -2
+                        ? "response body exceeds configured limit"
+                        : "response body sink failed");
+        }
+    }
+
+    nc_buf_free(&wire);
+    if (use_keepalive && keepalive)
+        pool_put(client, pool_key, connection);
+    else
+        client_connection_close(connection);
+    return response;
+}
+
 void neverc_http_client_set_max_redirects(int n) {
     if (n >= 0) nc_atomic_store(&g_default_client.config.max_redirects, n);
 }
@@ -1269,6 +1735,38 @@ neverc_http_response_t *neverc_http_client_do_context(
     if (!method) return make_error_response("null method");
     return execute_client_request(client, context, method, url,
                                   content_type, body, body_len);
+}
+
+neverc_http_response_t *neverc_http_client_do_stream_context(
+    neverc_http_client_t *client, neverc_context_t *parent,
+    const char *method, const char *url, const char *content_type,
+    int64_t content_length, neverc_http_body_source_func_t source,
+    void *source_context, neverc_http_body_sink_func_t sink,
+    void *sink_context) {
+    if (!client) return make_error_response("null client");
+    if (!parent) return make_error_response("null context");
+    if (!method) return make_error_response("null method");
+    if (!url) return make_error_response("null url");
+
+    parsed_url_t parsed;
+    if (parse_http_url(url, &parsed) != 0)
+        return make_error_response("invalid url");
+    neverc_context_cancel_handle_t *cancel_handle = NULL;
+    neverc_context_t *context = neverc_context_with_timeout_handle(
+        parent, nc_atomic_load(&client->config.timeout_ms), &cancel_handle);
+    if (!context || !cancel_handle) {
+        if (context) neverc_context_free(context);
+        if (cancel_handle)
+            neverc_context_cancel_handle_free(cancel_handle);
+        return make_error_response("out of memory");
+    }
+    neverc_http_response_t *response = do_stream_request(
+        client, context, method, &parsed, content_type, content_length,
+        source, source_context, sink, sink_context);
+    neverc_context_cancel_handle_cancel(cancel_handle);
+    neverc_context_cancel_handle_free(cancel_handle);
+    neverc_context_free(context);
+    return response;
 }
 
 void neverc_http_response_free(neverc_http_response_t *resp) {

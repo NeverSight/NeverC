@@ -18,6 +18,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <time.h>
+#include "neverc/std/crypto/rand.h"
 
 #ifdef _WIN32
   #include <winsock2.h>
@@ -201,11 +202,8 @@ static uint64_t quic_monotonic_ms(void) {
  * Connection ID Management
  * ====================================================================== */
 
-static void generate_conn_id(uint8_t *id, uint8_t len) {
-    /* Use random bytes for connection IDs */
-    for (int i = 0; i < len; i++) {
-        id[i] = (uint8_t)(rand() & 0xFF);
-    }
+static int generate_conn_id(uint8_t *id, uint8_t len) {
+    return neverc_crypto_rand_read(id, len);
 }
 
 static int conn_add_local_cid(struct neverc_quic_conn *conn) {
@@ -213,12 +211,15 @@ static int conn_add_local_cid(struct neverc_quic_conn *conn) {
 
     quic_conn_id_entry_t *entry = &conn->local_cids[conn->n_local_cids];
     entry->len = 8;
-    generate_conn_id(entry->id, entry->len);
+    if (generate_conn_id(entry->id, entry->len) != 0) return -1;
     entry->sequence = conn->next_local_cid_seq++;
     entry->retired = 0;
 
     /* Generate stateless reset token */
-    generate_conn_id(entry->stateless_reset_token, 16);
+    if (generate_conn_id(entry->stateless_reset_token, 16) != 0) {
+        memset(entry, 0, sizeof(*entry));
+        return -1;
+    }
 
     conn->n_local_cids++;
     return 0;
@@ -271,12 +272,7 @@ static void stream_destroy(quic_stream_t *s) {
     free(s);
 }
 
-/* Stream ID encoding (RFC 9000 §2.1):
- * Bits 0: 0=client-initiated, 1=server-initiated
- * Bits 1: 0=bidirectional, 1=unidirectional */
-static int stream_is_local(struct neverc_quic_conn *conn, uint64_t id) {
-    return (int)((id & 1) == (uint64_t)conn->side);
-}
+void neverc_quic_conn_destroy(struct neverc_quic_conn *conn);
 
 /* ======================================================================
  * Connection Lifecycle
@@ -310,13 +306,16 @@ struct neverc_quic_conn *neverc_quic_conn_create(quic_conn_side_t side,
     conn->flow.max_data_local = 10 * 1024 * 1024;
     conn->flow.max_data_peer = 10 * 1024 * 1024;
 
-    /* Generate initial connection ID */
-    conn_add_local_cid(conn);
-
 #ifndef _WIN32
     pthread_mutex_init(&conn->lock, NULL);
     pthread_cond_init(&conn->stream_avail_cond, NULL);
 #endif
+
+    /* Generate initial connection ID and reset token from the OS CSPRNG. */
+    if (conn_add_local_cid(conn) != 0) {
+        neverc_quic_conn_destroy(conn);
+        return NULL;
+    }
 
     return conn;
 }

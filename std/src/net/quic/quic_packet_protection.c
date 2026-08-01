@@ -18,10 +18,9 @@
  *   hp  = HKDF-Expand-Label(secret, "quic hp", "", 16)
  */
 
-#include <stdint.h>
-#include <stddef.h>
+#include "_quic_internal.h"
+
 #include <string.h>
-#include <stdlib.h>
 
 /* External crypto functions from NeverC crypto module */
 extern void neverc_sha256_init(void *ctx);
@@ -61,21 +60,6 @@ static const uint8_t QUIC_V2_INITIAL_SALT[20] = {
     0x0d, 0xed, 0xe3, 0xde, 0xf7, 0x00, 0xa6, 0xdb, 0x81, 0x93,
     0x81, 0xbe, 0x6e, 0x26, 0x9d, 0xcb, 0xf9, 0xbd, 0x2e, 0xd9
 };
-
-/* ======================================================================
- * Key Material Structure
- * ====================================================================== */
-
-typedef struct {
-    uint8_t key[16];   /* AEAD key (AES-128-GCM) */
-    uint8_t iv[12];    /* AEAD nonce/IV */
-    uint8_t hp[16];    /* Header protection key */
-} quic_keys_t;
-
-typedef struct {
-    quic_keys_t client;
-    quic_keys_t server;
-} quic_initial_keys_t;
 
 /* ======================================================================
  * HKDF-Expand-Label (TLS 1.3 style, RFC 8446 §7.1)
@@ -246,7 +230,12 @@ extern void neverc_aes128_encrypt_block(const uint8_t *key,
 int neverc_quic_apply_header_protection(const uint8_t *hp_key,
                                           uint8_t *packet, size_t packet_len,
                                           size_t pn_offset) {
-    if (pn_offset + 4 + 16 > packet_len) return -1;
+    if (!hp_key || !packet || pn_offset > packet_len ||
+        packet_len - pn_offset < 20)
+        return -1;
+
+    uint8_t pn_len = (packet[0] & 0x03) + 1;
+    if (pn_len > packet_len - pn_offset) return -1;
 
     /* Sample 16 bytes starting at pn_offset + 4 */
     const uint8_t *sample = packet + pn_offset + 4;
@@ -263,7 +252,6 @@ int neverc_quic_apply_header_protection(const uint8_t *hp_key,
         packet[0] ^= (mask[0] & 0x1F);
 
     /* Apply mask to packet number bytes (1-4 bytes) */
-    uint8_t pn_len = (packet[0] & 0x03) + 1;
     for (int i = 0; i < pn_len; i++) {
         packet[pn_offset + i] ^= mask[1 + i];
     }
@@ -274,7 +262,19 @@ int neverc_quic_apply_header_protection(const uint8_t *hp_key,
 int neverc_quic_remove_header_protection(const uint8_t *hp_key,
                                            uint8_t *packet, size_t packet_len,
                                            size_t pn_offset) {
-    /* Same operation — XOR is self-inverse */
-    return neverc_quic_apply_header_protection(hp_key, packet, packet_len,
-                                                pn_offset);
+    if (!hp_key || !packet || pn_offset > packet_len ||
+        packet_len - pn_offset < 20)
+        return -1;
+
+    const uint8_t *sample = packet + pn_offset + 4;
+    uint8_t mask[16];
+    neverc_aes128_encrypt_block(hp_key, sample, mask);
+
+    int is_long = (packet[0] & 0x80) != 0;
+    packet[0] ^= is_long ? (mask[0] & 0x0f) : (mask[0] & 0x1f);
+    uint8_t pn_len = (packet[0] & 0x03) + 1;
+    if (pn_len > packet_len - pn_offset) return -1;
+    for (int i = 0; i < pn_len; i++)
+        packet[pn_offset + i] ^= mask[1 + i];
+    return 0;
 }

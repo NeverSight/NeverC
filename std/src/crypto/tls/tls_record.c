@@ -16,6 +16,8 @@
 #include "neverc/std/crypto/gcm.h"
 #include "neverc/std/net/tcp.h"
 
+#define TLS_RECORD_WOULD_BLOCK (-2)
+
 void nci_tls_set_application_keys(
     neverc_tls_conn_t *conn, tls_cipher_id_t cipher,
     const uint8_t read_secret[TLS_HASH_SIZE_SHA256],
@@ -41,6 +43,34 @@ int nci_tls_raw_write(neverc_tcp_conn_t *tcp, const void *data, size_t len) {
 
 static int nci_tls_conn_raw_write(neverc_tls_conn_t *conn,
                                   const void *data, size_t len) {
+    if (conn->nonblocking_io) {
+        if ((!data && len > 0) ||
+            conn->pending_write_len > TLS_MAX_PENDING_WRITE ||
+            len > TLS_MAX_PENDING_WRITE - conn->pending_write_len)
+            return -1;
+        size_t required = conn->pending_write_len + len;
+        if (required > conn->pending_write_cap) {
+            size_t capacity = conn->pending_write_cap
+                ? conn->pending_write_cap : 4096;
+            while (capacity < required) {
+                if (capacity > SIZE_MAX / 2) {
+                    capacity = required;
+                    break;
+                }
+                capacity *= 2;
+            }
+            uint8_t *resized = (uint8_t *)realloc(
+                conn->pending_write_buf, capacity);
+            if (!resized) return -1;
+            conn->pending_write_buf = resized;
+            conn->pending_write_cap = capacity;
+        }
+        if (len > 0)
+            memcpy(conn->pending_write_buf + conn->pending_write_len,
+                   data, len);
+        conn->pending_write_len = required;
+        return 0;
+    }
     if (!conn->write_context)
         return nci_tls_raw_write(conn->tcp, data, len);
     size_t written = 0;
@@ -53,6 +83,42 @@ static int nci_tls_conn_raw_write(neverc_tls_conn_t *conn,
             return -1;
     }
     return 0;
+}
+
+int nci_tls_flush_pending_write(neverc_tls_conn_t *conn) {
+    if (!conn || !conn->tcp) return -1;
+    while (conn->pending_write_pos < conn->pending_write_len) {
+        neverc_net_result_t result = neverc_tcp_try_write(
+            conn->tcp,
+            conn->pending_write_buf + conn->pending_write_pos,
+            conn->pending_write_len - conn->pending_write_pos);
+        conn->pending_write_pos += result.transferred;
+        if (result.status == NEVERC_NET_WOULD_BLOCK)
+            return NCI_TLS_WANT_WRITE;
+        if (result.status != NEVERC_NET_OK || result.transferred == 0)
+            return -1;
+    }
+    if (conn->pending_write_buf && conn->pending_write_len > 0)
+        neverc_platform_secure_zero(
+            conn->pending_write_buf, conn->pending_write_len);
+    conn->pending_write_len = 0;
+    conn->pending_write_pos = 0;
+    return 0;
+}
+
+int nci_tls_send_plain_record(
+    neverc_tls_conn_t *conn, uint8_t content_type,
+    const uint8_t *data, size_t len) {
+    if (!conn || !conn->tcp || (!data && len != 0) ||
+        len > TLS_MAX_PLAINTEXT)
+        return -1;
+    uint8_t header[TLS_RECORD_HEADER_SIZE];
+    header[0] = content_type;
+    tls_put_u16(header + 1, TLS_LEGACY_VERSION);
+    tls_put_u16(header + 3, (uint16_t)len);
+    if (nci_tls_conn_raw_write(conn, header, sizeof(header)) != 0)
+        return -1;
+    return len == 0 ? 0 : nci_tls_conn_raw_write(conn, data, len);
 }
 
 int nci_tls_send_record(neverc_tcp_conn_t *tcp, uint8_t content_type,
@@ -325,8 +391,8 @@ int nci_tls_send_plain_handshake(
         size_t remaining = data_len - offset;
         size_t chunk = remaining < fragment_size ?
                        remaining : fragment_size;
-        if (nci_tls_send_record(
-                conn->tcp, TLS_CT_HANDSHAKE,
+        if (nci_tls_send_plain_record(
+                conn, TLS_CT_HANDSHAKE,
                 data + offset, chunk) != 0)
             return -1;
         offset += chunk;
@@ -366,7 +432,7 @@ int nci_tls_send_alert_level(
     int result = conn->write_keys_active ?
         nci_tls_send_encrypted_unlocked(
             conn, TLS_CT_ALERT, alert, sizeof(alert)) :
-        nci_tls_send_record(conn->tcp, TLS_CT_ALERT, alert, sizeof(alert));
+        nci_tls_send_plain_record(conn, TLS_CT_ALERT, alert, sizeof(alert));
     conn->alert_sent = 1;
     if (description == TLS_ALERT_CLOSE_NOTIFY)
         conn->write_closed = 1;
@@ -406,6 +472,27 @@ int nci_tls_protocol_error(
     return nci_tls_error(conn, reason);
 }
 
+static int nci_tls_read_record_bytes(neverc_tls_conn_t *conn,
+                                     uint8_t *output, size_t capacity) {
+    if (conn->nonblocking_io) {
+        neverc_net_result_t result = neverc_tcp_try_read(
+            conn->tcp, output, capacity);
+        if (result.status == NEVERC_NET_OK && result.transferred > 0)
+            return (int)result.transferred;
+        if (result.status == NEVERC_NET_WOULD_BLOCK)
+            return TLS_RECORD_WOULD_BLOCK;
+        return -1;
+    }
+    if (conn->read_context) {
+        neverc_net_result_t result = neverc_tcp_read_context(
+            conn->tcp, conn->read_context, output, capacity);
+        return result.status == NEVERC_NET_OK
+            ? (int)result.transferred
+            : -1;
+    }
+    return neverc_tcp_read(conn->tcp, output, capacity);
+}
+
 int nci_tls_recv_record(neverc_tls_conn_t *conn, uint8_t *out_type,
                              uint8_t *out_data, size_t *out_len) {
     if (!conn || !conn->tcp || !out_type || !out_data || !out_len)
@@ -413,20 +500,11 @@ int nci_tls_recv_record(neverc_tls_conn_t *conn, uint8_t *out_type,
 
     /* Read from TCP until we have a complete record */
     while (conn->read_buf_len < TLS_RECORD_HEADER_SIZE) {
-        int n;
-        if (conn->read_context) {
-            neverc_net_result_t result = neverc_tcp_read_context(
-                conn->tcp, conn->read_context,
-                conn->read_buf + conn->read_buf_len,
-                sizeof(conn->read_buf) - conn->read_buf_len);
-            n = result.status == NEVERC_NET_OK
-                ? (int)result.transferred
-                : result.status == NEVERC_NET_EOF ? 0 : -1;
-        } else {
-            n = neverc_tcp_read(
-                conn->tcp, conn->read_buf + conn->read_buf_len,
-                sizeof(conn->read_buf) - conn->read_buf_len);
-        }
+        int n = nci_tls_read_record_bytes(
+            conn, conn->read_buf + conn->read_buf_len,
+            sizeof(conn->read_buf) - conn->read_buf_len);
+        if (n == TLS_RECORD_WOULD_BLOCK && conn->nonblocking_io)
+            return NCI_TLS_WANT_READ;
         if (n <= 0) {
             conn->closed = 1;
             return nci_tls_error(
@@ -455,20 +533,11 @@ int nci_tls_recv_record(neverc_tls_conn_t *conn, uint8_t *out_type,
             "TLS record exceeds the configured limit");
     size_t total = TLS_RECORD_HEADER_SIZE + rec_len;
     while (conn->read_buf_len < total) {
-        int n;
-        if (conn->read_context) {
-            neverc_net_result_t result = neverc_tcp_read_context(
-                conn->tcp, conn->read_context,
-                conn->read_buf + conn->read_buf_len,
-                sizeof(conn->read_buf) - conn->read_buf_len);
-            n = result.status == NEVERC_NET_OK
-                ? (int)result.transferred
-                : result.status == NEVERC_NET_EOF ? 0 : -1;
-        } else {
-            n = neverc_tcp_read(
-                conn->tcp, conn->read_buf + conn->read_buf_len,
-                sizeof(conn->read_buf) - conn->read_buf_len);
-        }
+        int n = nci_tls_read_record_bytes(
+            conn, conn->read_buf + conn->read_buf_len,
+            sizeof(conn->read_buf) - conn->read_buf_len);
+        if (n == TLS_RECORD_WOULD_BLOCK && conn->nonblocking_io)
+            return NCI_TLS_WANT_READ;
         if (n <= 0) {
             conn->closed = 1;
             return nci_tls_error(
@@ -500,9 +569,9 @@ int nci_tls_recv_decrypt(neverc_tls_conn_t *conn,
     size_t rec_len;
 
     for (;;) {
-        if (nci_tls_recv_record(
-                conn, &rec_type, rec_data, &rec_len) != 0)
-            return -1;
+        int record_result = nci_tls_recv_record(
+            conn, &rec_type, rec_data, &rec_len);
+        if (record_result != 0) return record_result;
         if (rec_type != TLS_CT_CHANGE_CIPHER_SPEC)
             break;
         if (rec_len != 1 || rec_data[0] != 1)
@@ -630,10 +699,9 @@ int nci_tls_recv_plain_handshake_message(
         uint8_t record_type;
         uint8_t record_data[TLS_MAX_CIPHERTEXT];
         size_t record_len;
-        if (nci_tls_recv_record(
-                conn, &record_type,
-                record_data, &record_len) != 0)
-            return -1;
+        int record_result = nci_tls_recv_record(
+            conn, &record_type, record_data, &record_len);
+        if (record_result != 0) return record_result;
         if (record_type == TLS_CT_ALERT)
             return nci_tls_error(
                 conn, "peer sent an alert during TLS handshake");

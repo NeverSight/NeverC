@@ -6,16 +6,9 @@
  *   Parameter ID (varint) | Length (varint) | Value (Length bytes)
  */
 
-#include <stdint.h>
-#include <stddef.h>
-#include <string.h>
-#include <stdlib.h>
+#include "_quic_internal.h"
 
-extern int neverc_quic_varint_decode(const uint8_t *buf, size_t len,
-                                      uint64_t *value, size_t *consumed);
-extern int neverc_quic_varint_encode(uint64_t value, uint8_t *buf, size_t cap,
-                                      size_t *written);
-extern size_t neverc_quic_varint_len(uint64_t value);
+#include <string.h>
 
 /* Transport parameter IDs (RFC 9000 §18.2) */
 #define QUIC_TP_ORIGINAL_DCID                  0x00
@@ -36,38 +29,8 @@ extern size_t neverc_quic_varint_len(uint64_t value);
 #define QUIC_TP_INITIAL_SCID                   0x0f
 #define QUIC_TP_RETRY_SCID                     0x10
 #define QUIC_TP_MAX_DATAGRAM_FRAME_SIZE        0x20  /* RFC 9221 */
-
-typedef struct {
-    /* Connection IDs */
-    uint8_t  original_dcid[20];
-    uint8_t  original_dcid_len;
-    uint8_t  initial_scid[20];
-    uint8_t  initial_scid_len;
-    uint8_t  retry_scid[20];
-    uint8_t  retry_scid_len;
-    int      has_retry_scid;
-
-    /* Timeouts and limits */
-    uint64_t max_idle_timeout;           /* ms, 0 = disabled */
-    uint64_t max_udp_payload_size;       /* default 65527 */
-    uint64_t initial_max_data;           /* connection-level flow control */
-    uint64_t initial_max_stream_data_bidi_local;
-    uint64_t initial_max_stream_data_bidi_remote;
-    uint64_t initial_max_stream_data_uni;
-    uint64_t initial_max_streams_bidi;
-    uint64_t initial_max_streams_uni;
-    uint64_t ack_delay_exponent;         /* default 3 */
-    uint64_t max_ack_delay;              /* ms, default 25 */
-    uint64_t active_connection_id_limit; /* default 2 */
-    uint64_t max_datagram_frame_size;    /* 0 = datagrams not supported */
-
-    /* Flags */
-    int      disable_active_migration;
-
-    /* Stateless reset token (server only) */
-    uint8_t  stateless_reset_token[16];
-    int      has_stateless_reset_token;
-} quic_transport_params_t;
+#define QUIC_TP_MAX_PARAMETERS                 64
+#define QUIC_VARINT_MAX ((UINT64_C(1) << 62) - 1)
 
 void neverc_quic_transport_params_default(quic_transport_params_t *tp) {
     memset(tp, 0, sizeof(*tp));
@@ -84,12 +47,23 @@ void neverc_quic_transport_params_default(quic_transport_params_t *tp) {
     tp->max_idle_timeout = 30000;
 }
 
+static int decode_tp_varint(const uint8_t *value, size_t length,
+                            uint64_t *output) {
+    size_t consumed = 0;
+    return neverc_quic_varint_decode(
+               value, length, output, &consumed) == 0 &&
+           consumed == length ? 0 : -1;
+}
+
 int neverc_quic_transport_params_decode(const uint8_t *buf, size_t len,
                                          quic_transport_params_t *tp) {
+    if (!tp || (len > 0 && !buf)) return -1;
     neverc_quic_transport_params_default(tp);
 
     const uint8_t *p = buf;
     size_t rem = len;
+    uint64_t seen[QUIC_TP_MAX_PARAMETERS];
+    size_t seen_count = 0;
 
     while (rem > 0) {
         uint64_t param_id, param_len;
@@ -98,6 +72,11 @@ int neverc_quic_transport_params_decode(const uint8_t *buf, size_t len,
         if (neverc_quic_varint_decode(p, rem, &param_id, &consumed) != 0)
             return -1;
         p += consumed; rem -= consumed;
+
+        for (size_t i = 0; i < seen_count; i++)
+            if (seen[i] == param_id) return -1;
+        if (seen_count == QUIC_TP_MAX_PARAMETERS) return -1;
+        seen[seen_count++] = param_id;
 
         if (neverc_quic_varint_decode(p, rem, &param_len, &consumed) != 0)
             return -1;
@@ -125,76 +104,79 @@ int neverc_quic_transport_params_decode(const uint8_t *buf, size_t len,
             tp->has_retry_scid = 1;
             break;
         case QUIC_TP_MAX_IDLE_TIMEOUT: {
-            uint64_t v; size_t c;
-            if (neverc_quic_varint_decode(val, vlen, &v, &c) != 0) return -1;
+            uint64_t v;
+            if (decode_tp_varint(val, vlen, &v) != 0) return -1;
             tp->max_idle_timeout = v;
             break;
         }
         case QUIC_TP_MAX_UDP_PAYLOAD_SIZE: {
-            uint64_t v; size_t c;
-            if (neverc_quic_varint_decode(val, vlen, &v, &c) != 0) return -1;
-            if (v < 1200) return -1;
+            uint64_t v;
+            if (decode_tp_varint(val, vlen, &v) != 0) return -1;
+            if (v < 1200 || v > 65527) return -1;
             tp->max_udp_payload_size = v;
             break;
         }
         case QUIC_TP_INITIAL_MAX_DATA: {
-            uint64_t v; size_t c;
-            if (neverc_quic_varint_decode(val, vlen, &v, &c) != 0) return -1;
+            uint64_t v;
+            if (decode_tp_varint(val, vlen, &v) != 0) return -1;
             tp->initial_max_data = v;
             break;
         }
         case QUIC_TP_INITIAL_MAX_STREAM_DATA_BIDI_LOCAL: {
-            uint64_t v; size_t c;
-            if (neverc_quic_varint_decode(val, vlen, &v, &c) != 0) return -1;
+            uint64_t v;
+            if (decode_tp_varint(val, vlen, &v) != 0) return -1;
             tp->initial_max_stream_data_bidi_local = v;
             break;
         }
         case QUIC_TP_INITIAL_MAX_STREAM_DATA_BIDI_REMOTE: {
-            uint64_t v; size_t c;
-            if (neverc_quic_varint_decode(val, vlen, &v, &c) != 0) return -1;
+            uint64_t v;
+            if (decode_tp_varint(val, vlen, &v) != 0) return -1;
             tp->initial_max_stream_data_bidi_remote = v;
             break;
         }
         case QUIC_TP_INITIAL_MAX_STREAM_DATA_UNI: {
-            uint64_t v; size_t c;
-            if (neverc_quic_varint_decode(val, vlen, &v, &c) != 0) return -1;
+            uint64_t v;
+            if (decode_tp_varint(val, vlen, &v) != 0) return -1;
             tp->initial_max_stream_data_uni = v;
             break;
         }
         case QUIC_TP_INITIAL_MAX_STREAMS_BIDI: {
-            uint64_t v; size_t c;
-            if (neverc_quic_varint_decode(val, vlen, &v, &c) != 0) return -1;
+            uint64_t v;
+            if (decode_tp_varint(val, vlen, &v) != 0 ||
+                v > (UINT64_C(1) << 60)) return -1;
             tp->initial_max_streams_bidi = v;
             break;
         }
         case QUIC_TP_INITIAL_MAX_STREAMS_UNI: {
-            uint64_t v; size_t c;
-            if (neverc_quic_varint_decode(val, vlen, &v, &c) != 0) return -1;
+            uint64_t v;
+            if (decode_tp_varint(val, vlen, &v) != 0 ||
+                v > (UINT64_C(1) << 60)) return -1;
             tp->initial_max_streams_uni = v;
             break;
         }
         case QUIC_TP_ACK_DELAY_EXPONENT: {
-            uint64_t v; size_t c;
-            if (neverc_quic_varint_decode(val, vlen, &v, &c) != 0) return -1;
+            uint64_t v;
+            if (decode_tp_varint(val, vlen, &v) != 0) return -1;
             if (v > 20) return -1;
             tp->ack_delay_exponent = v;
             break;
         }
         case QUIC_TP_MAX_ACK_DELAY: {
-            uint64_t v; size_t c;
-            if (neverc_quic_varint_decode(val, vlen, &v, &c) != 0) return -1;
+            uint64_t v;
+            if (decode_tp_varint(val, vlen, &v) != 0) return -1;
             if (v >= 16384) return -1;
             tp->max_ack_delay = v;
             break;
         }
         case QUIC_TP_ACTIVE_CONNECTION_ID_LIMIT: {
-            uint64_t v; size_t c;
-            if (neverc_quic_varint_decode(val, vlen, &v, &c) != 0) return -1;
-            if (v < 2) return -1;
+            uint64_t v;
+            if (decode_tp_varint(val, vlen, &v) != 0) return -1;
+            if (v < 2 || v > 8) return -1;
             tp->active_connection_id_limit = v;
             break;
         }
         case QUIC_TP_DISABLE_ACTIVE_MIGRATION:
+            if (vlen != 0) return -1;
             tp->disable_active_migration = 1;
             break;
         case QUIC_TP_STATELESS_RESET_TOKEN:
@@ -203,8 +185,8 @@ int neverc_quic_transport_params_decode(const uint8_t *buf, size_t len,
             tp->has_stateless_reset_token = 1;
             break;
         case QUIC_TP_MAX_DATAGRAM_FRAME_SIZE: {
-            uint64_t v; size_t c;
-            if (neverc_quic_varint_decode(val, vlen, &v, &c) != 0) return -1;
+            uint64_t v;
+            if (decode_tp_varint(val, vlen, &v) != 0) return -1;
             tp->max_datagram_frame_size = v;
             break;
         }
@@ -222,10 +204,13 @@ int neverc_quic_transport_params_decode(const uint8_t *buf, size_t len,
 
 static int write_tp_varint(uint8_t *buf, size_t cap, size_t *pos,
                             uint64_t param_id, uint64_t value) {
+    if (!buf || !pos || param_id > QUIC_VARINT_MAX ||
+        value > QUIC_VARINT_MAX)
+        return -1;
     size_t vlen = neverc_quic_varint_len(value);
     size_t need = neverc_quic_varint_len(param_id) +
                   neverc_quic_varint_len(vlen) + vlen;
-    if (*pos + need > cap) return -1;
+    if (*pos > cap || need > cap - *pos) return -1;
 
     size_t w;
     neverc_quic_varint_encode(param_id, buf + *pos, cap - *pos, &w); *pos += w;
@@ -236,9 +221,13 @@ static int write_tp_varint(uint8_t *buf, size_t cap, size_t *pos,
 
 static int write_tp_bytes(uint8_t *buf, size_t cap, size_t *pos,
                            uint64_t param_id, const uint8_t *data, size_t dlen) {
+    if (!buf || !pos || (dlen && !data) ||
+        param_id > QUIC_VARINT_MAX || dlen > QUIC_VARINT_MAX ||
+        dlen > SIZE_MAX - 16)
+        return -1;
     size_t need = neverc_quic_varint_len(param_id) +
                   neverc_quic_varint_len(dlen) + dlen;
-    if (*pos + need > cap) return -1;
+    if (*pos > cap || need > cap - *pos) return -1;
 
     size_t w;
     neverc_quic_varint_encode(param_id, buf + *pos, cap - *pos, &w); *pos += w;
@@ -251,6 +240,17 @@ static int write_tp_bytes(uint8_t *buf, size_t cap, size_t *pos,
 int neverc_quic_transport_params_encode(const quic_transport_params_t *tp,
                                          uint8_t *buf, size_t cap,
                                          size_t *written) {
+    if (written) *written = 0;
+    if (!tp || !buf || !written || tp->original_dcid_len > 20 ||
+        tp->initial_scid_len > 20 || tp->retry_scid_len > 20 ||
+        tp->max_udp_payload_size < 1200 ||
+        tp->max_udp_payload_size > 65527 ||
+        tp->initial_max_streams_bidi > (UINT64_C(1) << 60) ||
+        tp->initial_max_streams_uni > (UINT64_C(1) << 60) ||
+        tp->ack_delay_exponent > 20 || tp->max_ack_delay >= 16384 ||
+        tp->active_connection_id_limit < 2 ||
+        tp->active_connection_id_limit > 8)
+        return -1;
     size_t pos = 0;
 
     if (tp->original_dcid_len > 0)
@@ -304,9 +304,9 @@ int neverc_quic_transport_params_encode(const quic_transport_params_t *tp,
                              tp->active_connection_id_limit) != 0) return -1;
 
     if (tp->disable_active_migration) {
-        size_t w;
-        neverc_quic_varint_encode(QUIC_TP_DISABLE_ACTIVE_MIGRATION, buf + pos, cap - pos, &w); pos += w;
-        neverc_quic_varint_encode(0, buf + pos, cap - pos, &w); pos += w;
+        if (write_tp_bytes(buf, cap, &pos,
+                           QUIC_TP_DISABLE_ACTIVE_MIGRATION,
+                           NULL, 0) != 0) return -1;
     }
 
     if (tp->has_stateless_reset_token)

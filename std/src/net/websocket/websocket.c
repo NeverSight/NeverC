@@ -651,6 +651,14 @@ neverc_ws_conn_t *neverc_ws_dial(const char *url,
     neverc_context_cancel_handle_cancel(cancel);
     neverc_context_free(ctx);
     neverc_context_cancel_handle_free(cancel);
+    if (parsed.secure &&
+        (neverc_tcp_set_read_deadline(tcp, 0) != 0 ||
+         neverc_tcp_set_write_deadline(tcp, 0) != 0)) {
+        if (tls) neverc_tls_close(tls);
+        neverc_tcp_close(tcp);
+        ws_set_error(errp, "failed to clear WSS handshake deadline");
+        return NULL;
+    }
 
     size_t read_limit = config && config->max_message_size
                             ? config->max_message_size
@@ -755,7 +763,7 @@ int neverc_ws_handshake_server(neverc_tcp_conn_t *conn, const char *raw_request,
 
     const char *version = find_header_value(raw_request, hdr_scan_end,
                                             "Sec-WebSocket-Version");
-    if (!version || strncmp(version, "13", 2) != 0) return -1;
+    if (!version || strcmp(version, "13") != 0) return -1;
 
     const char *ws_key = find_header_value(raw_request, hdr_scan_end,
                                             "Sec-WebSocket-Key");
@@ -814,7 +822,9 @@ static int ws_validate_http_upgrade(const neverc_http_request_t *req,
     if (!version || strncmp(version, "13", 2) != 0) return -1;
 
     const char *ws_key = neverc_http_request_header(req, "Sec-WebSocket-Key");
-    if (!ws_key || !ws_key[0]) return -1;
+    if (!ws_key || strlen(ws_key) != 24) return -1;
+    uint8_t decoded_key[16];
+    if (neverc_base64_decode(decoded_key, ws_key, 24) != 16) return -1;
 
     size_t ki = 0;
     while (ws_key[ki] && ki < key_cap - 1) {
@@ -1329,6 +1339,13 @@ int neverc_ws_read_frame(neverc_ws_conn_t *conn, int *opcode, int *fin,
               !ws_valid_utf8(close_payload + 2, (size_t)plen - 2))))
             return ws_fail(conn);
         nc_atomic_store(&conn->close_received, 1);
+        if (!nc_atomic_load(&conn->close_sent) &&
+            write_frame(conn, NC_WS_OPCODE_CLOSE, buf, (size_t)plen) != 0)
+            return ws_fail(conn);
+    } else if (frame_opcode == NC_WS_OPCODE_PING) {
+        if (!nc_atomic_load(&conn->close_sent) &&
+            write_frame(conn, NC_WS_OPCODE_PONG, buf, (size_t)plen) != 0)
+            return ws_fail(conn);
     } else if (frame_opcode == NC_WS_OPCODE_PONG) {
         nc_mutex_lock(&conn->keepalive_lock);
         if (conn->awaiting_pong && plen == sizeof(conn->ping_token) &&
@@ -1412,18 +1429,11 @@ int neverc_ws_read_message(neverc_ws_conn_t *conn, char *buf, size_t buflen,
         }
 
         if (opcode == NC_WS_OPCODE_CLOSE) {
-            if (!nc_atomic_load(&conn->close_sent))
-                write_frame(conn, NC_WS_OPCODE_CLOSE, chunk, chunk_len);
             free(chunk);
             nc_buf_free(&acc);
             return -1;
         }
         if (opcode == NC_WS_OPCODE_PING) {
-            if (neverc_ws_send_pong(conn, chunk, chunk_len) != 0) {
-                free(chunk);
-                nc_buf_free(&acc);
-                return -1;
-            }
             continue;
         }
         if (opcode == NC_WS_OPCODE_PONG)

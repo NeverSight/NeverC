@@ -11,8 +11,8 @@
  * of the three packet number spaces (Initial, Handshake, Application Data).
  */
 
-#include <stdint.h>
-#include <stddef.h>
+#include "_quic_internal.h"
+
 #include <string.h>
 #include <stdlib.h>
 
@@ -34,18 +34,14 @@
 #define QUIC_LOSS_REDUCTION_FACTOR_DEN 2     /* 1/2 = halving */
 #define QUIC_PERSISTENT_CONGESTION_THRESHOLD 3
 
-/* ======================================================================
- * RTT Estimator (RFC 9002 §5)
- * ====================================================================== */
+static uint64_t quic_saturating_add(uint64_t left, uint64_t right) {
+    return left > UINT64_MAX - right ? UINT64_MAX : left + right;
+}
 
-typedef struct {
-    uint64_t min_rtt;       /* Minimum observed RTT (ms) */
-    uint64_t smoothed_rtt;  /* Smoothed RTT (ms) */
-    uint64_t rttvar;        /* RTT variance (ms) */
-    uint64_t latest_rtt;    /* Most recent RTT sample (ms) */
-    int      has_sample;    /* Have we received at least one sample? */
-    uint64_t max_ack_delay; /* Peer's max_ack_delay (ms) */
-} quic_rtt_t;
+static uint64_t quic_saturating_mul(uint64_t left, uint64_t right) {
+    return left != 0 && right > UINT64_MAX / left
+        ? UINT64_MAX : left * right;
+}
 
 void neverc_quic_rtt_init(quic_rtt_t *rtt) {
     memset(rtt, 0, sizeof(*rtt));
@@ -73,7 +69,8 @@ void neverc_quic_rtt_update(quic_rtt_t *rtt, uint64_t latest_rtt,
     uint64_t adjusted_rtt = latest_rtt;
     if (handshake_confirmed) {
         uint64_t ad = ack_delay < rtt->max_ack_delay ? ack_delay : rtt->max_ack_delay;
-        if (adjusted_rtt > rtt->min_rtt + ad)
+        if (rtt->min_rtt <= UINT64_MAX - ad &&
+            adjusted_rtt > rtt->min_rtt + ad)
             adjusted_rtt -= ad;
     }
 
@@ -81,59 +78,22 @@ void neverc_quic_rtt_update(quic_rtt_t *rtt, uint64_t latest_rtt,
     uint64_t abs_diff = adjusted_rtt > rtt->smoothed_rtt
                       ? adjusted_rtt - rtt->smoothed_rtt
                       : rtt->smoothed_rtt - adjusted_rtt;
-    rtt->rttvar = (3 * rtt->rttvar + abs_diff) / 4;
-    rtt->smoothed_rtt = (7 * rtt->smoothed_rtt + adjusted_rtt) / 8;
+    rtt->rttvar = quic_saturating_add(
+        quic_saturating_mul(3, rtt->rttvar), abs_diff) / 4;
+    rtt->smoothed_rtt = quic_saturating_add(
+        quic_saturating_mul(7, rtt->smoothed_rtt), adjusted_rtt) / 8;
 }
 
 /* PTO computation (RFC 9002 §6.2.1) */
 uint64_t neverc_quic_pto(const quic_rtt_t *rtt, int include_max_ack_delay) {
-    uint64_t pto = rtt->smoothed_rtt + 4 * rtt->rttvar;
+    uint64_t pto = quic_saturating_add(
+        rtt->smoothed_rtt, quic_saturating_mul(4, rtt->rttvar));
     if (pto < QUIC_GRANULARITY_MS)
         pto = QUIC_GRANULARITY_MS;
     if (include_max_ack_delay)
-        pto += rtt->max_ack_delay;
+        pto = quic_saturating_add(pto, rtt->max_ack_delay);
     return pto;
 }
-
-/* ======================================================================
- * Sent Packet Tracking
- * ====================================================================== */
-
-typedef struct quic_sent_packet {
-    uint64_t pkt_number;
-    uint64_t sent_time_ms;
-    size_t   sent_bytes;      /* bytes in flight (0 if not ack-eliciting) */
-    int      ack_eliciting;
-    int      in_flight;
-    int      lost;
-    int      acked;
-    struct quic_sent_packet *next;
-} quic_sent_packet_t;
-
-/* ======================================================================
- * Loss Detector State (per number space)
- * ====================================================================== */
-
-typedef struct {
-    quic_sent_packet_t *sent_packets;  /* linked list, ordered by pkt_number */
-    uint64_t largest_acked_packet;
-    uint64_t loss_time;                /* time at which next packet is considered lost */
-    uint64_t time_of_last_ack_eliciting;
-    int      has_largest_acked;
-} quic_loss_space_t;
-
-/* ======================================================================
- * Congestion Controller (New Reno)
- * ====================================================================== */
-
-typedef struct {
-    uint64_t congestion_window;     /* current cwnd (bytes) */
-    uint64_t bytes_in_flight;       /* current bytes in flight */
-    uint64_t ssthresh;              /* slow start threshold */
-    uint64_t recovery_start_time;   /* start of recovery period */
-    int      in_recovery;
-    uint64_t max_datagram_size;
-} quic_congestion_t;
 
 void neverc_quic_congestion_init(quic_congestion_t *cc) {
     memset(cc, 0, sizeof(*cc));
@@ -147,9 +107,11 @@ void neverc_quic_congestion_on_ack(quic_congestion_t *cc,
                                     uint64_t sent_time,
                                     size_t acked_bytes,
                                     uint64_t now_ms) {
-    if (acked_bytes == 0) return;
+    (void)now_ms;
+    if (!cc || acked_bytes == 0) return;
 
-    cc->bytes_in_flight -= acked_bytes;
+    cc->bytes_in_flight = acked_bytes >= cc->bytes_in_flight
+        ? 0 : cc->bytes_in_flight - acked_bytes;
 
     /* Don't increase cwnd during recovery */
     if (cc->in_recovery && sent_time <= cc->recovery_start_time)
@@ -161,11 +123,15 @@ void neverc_quic_congestion_on_ack(quic_congestion_t *cc,
 
     if (cc->congestion_window < cc->ssthresh) {
         /* Slow start: increase by acked_bytes */
-        cc->congestion_window += acked_bytes;
+        cc->congestion_window = quic_saturating_add(
+            cc->congestion_window, acked_bytes);
     } else {
         /* Congestion avoidance: increase by MSS per cwnd */
-        cc->congestion_window +=
-            cc->max_datagram_size * acked_bytes / cc->congestion_window;
+        uint64_t increase = cc->congestion_window == 0 ? 0 :
+            quic_saturating_mul(cc->max_datagram_size, acked_bytes) /
+                cc->congestion_window;
+        cc->congestion_window = quic_saturating_add(
+            cc->congestion_window, increase);
     }
 }
 
@@ -174,7 +140,9 @@ void neverc_quic_congestion_on_loss(quic_congestion_t *cc,
                                      uint64_t sent_time,
                                      size_t lost_bytes,
                                      uint64_t now_ms) {
-    cc->bytes_in_flight -= lost_bytes;
+    if (!cc) return;
+    cc->bytes_in_flight = lost_bytes >= cc->bytes_in_flight
+        ? 0 : cc->bytes_in_flight - lost_bytes;
 
     /* Enter recovery if not already in recovery for this period */
     if (!cc->in_recovery || sent_time > cc->recovery_start_time) {
@@ -189,7 +157,9 @@ void neverc_quic_congestion_on_loss(quic_congestion_t *cc,
 
 /* Called when a packet is sent */
 void neverc_quic_congestion_on_sent(quic_congestion_t *cc, size_t sent_bytes) {
-    cc->bytes_in_flight += sent_bytes;
+    if (cc)
+        cc->bytes_in_flight = quic_saturating_add(
+            cc->bytes_in_flight, sent_bytes);
 }
 
 /* Can we send? */
@@ -206,13 +176,6 @@ uint64_t neverc_quic_congestion_available(const quic_congestion_t *cc) {
 /* ======================================================================
  * Loss Detection Algorithm (RFC 9002 §6)
  * ====================================================================== */
-
-typedef struct {
-    quic_rtt_t         rtt;
-    quic_loss_space_t  spaces[3]; /* Initial, Handshake, Application */
-    quic_congestion_t  cc;
-    uint64_t           pto_count;
-} quic_loss_detector_t;
 
 void neverc_quic_loss_init(quic_loss_detector_t *ld) {
     memset(ld, 0, sizeof(*ld));
@@ -254,8 +217,9 @@ static void detect_lost_packets(quic_loss_detector_t *ld, int space,
     uint64_t largest_acked = ls->largest_acked_packet;
 
     /* Time threshold */
-    uint64_t time_threshold = (ld->rtt.smoothed_rtt * QUIC_TIME_THRESHOLD_FACTOR_NUM)
-                             / QUIC_TIME_THRESHOLD_FACTOR_DEN;
+    uint64_t time_threshold = quic_saturating_mul(
+        ld->rtt.smoothed_rtt, QUIC_TIME_THRESHOLD_FACTOR_NUM) /
+            QUIC_TIME_THRESHOLD_FACTOR_DEN;
     if (time_threshold < QUIC_GRANULARITY_MS)
         time_threshold = QUIC_GRANULARITY_MS;
 
@@ -271,12 +235,14 @@ static void detect_lost_packets(quic_loss_detector_t *ld, int space,
         int lost = 0;
 
         /* Packet threshold: lost if largest_acked - pkt_number >= threshold */
-        if (largest_acked >= pkt->pkt_number + QUIC_PACKET_THRESHOLD) {
+        if (largest_acked >= pkt->pkt_number &&
+            largest_acked - pkt->pkt_number >= QUIC_PACKET_THRESHOLD) {
             lost = 1;
         }
 
         /* Time threshold: lost if sent long enough ago */
-        if (now_ms - pkt->sent_time_ms > time_threshold) {
+        if (now_ms >= pkt->sent_time_ms &&
+            now_ms - pkt->sent_time_ms > time_threshold) {
             lost = 1;
         }
 
@@ -288,7 +254,8 @@ static void detect_lost_packets(quic_loss_detector_t *ld, int space,
             }
         } else {
             /* Calculate when this packet would be considered lost by time */
-            uint64_t loss_deadline = pkt->sent_time_ms + time_threshold;
+            uint64_t loss_deadline = quic_saturating_add(
+                pkt->sent_time_ms, time_threshold);
             if (ls->loss_time == 0 || loss_deadline < ls->loss_time)
                 ls->loss_time = loss_deadline;
         }
@@ -331,7 +298,8 @@ void neverc_quic_loss_on_ack(quic_loss_detector_t *ld, int space,
     quic_sent_packet_t *pkt = ls->sent_packets;
     while (pkt) {
         if (pkt->pkt_number == largest_acked && pkt->acked) {
-            uint64_t rtt_sample = now_ms - pkt->sent_time_ms;
+            uint64_t rtt_sample = now_ms >= pkt->sent_time_ms
+                ? now_ms - pkt->sent_time_ms : 0;
             int handshake_confirmed = (space == 2);
             neverc_quic_rtt_update(&ld->rtt, rtt_sample, ack_delay_ms,
                                     handshake_confirmed);
@@ -370,9 +338,12 @@ uint64_t neverc_quic_loss_get_timeout(const quic_loss_detector_t *ld) {
 
     int include_ack_delay = 1; /* simplified: always include in app space */
     uint64_t pto = neverc_quic_pto(&ld->rtt, include_ack_delay);
-    pto <<= ld->pto_count;  /* Exponential backoff */
+    if (ld->pto_count >= 63 || pto > (UINT64_MAX >> ld->pto_count))
+        pto = UINT64_MAX;
+    else
+        pto <<= ld->pto_count;
 
-    return last_ack_eliciting + pto;
+    return quic_saturating_add(last_ack_eliciting, pto);
 }
 
 /* Clean up acknowledged/lost packets from the tracking list */

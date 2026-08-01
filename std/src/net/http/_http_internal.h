@@ -23,6 +23,7 @@ static inline int strncasecmp(const char *a, const char *b, size_t n) {
 #define HTTP_INITIAL_BUFSZ  4096
 
 typedef struct http_conn http_conn_t;
+typedef struct neverc_h2_server neverc_h2_server_t;
 typedef int (*nc_http_writer_func_t)(void *context, const void *data,
                                      size_t len, int timeout_ms);
 typedef int (*nc_http_protocol_flush_func_t)(
@@ -33,6 +34,7 @@ struct neverc_http_response_writer {
     int         status;
     int         headers_sent;
     int         chunked;
+    int         chunked_ended;
     char       *header_names[HTTP_MAX_HEADERS];
     char       *header_values[HTTP_MAX_HEADERS];
     int         nheaders;
@@ -83,6 +85,13 @@ int nc_http_mux_is_streaming(neverc_http_mux_t *mux, const char *method,
 int nc_http_hijack_tls(neverc_http_response_writer_t *writer,
                        neverc_tls_conn_t **tls,
                        neverc_tcp_conn_t **tcp);
+
+typedef void (*nc_http_h2_connection_done_func_t)(void *context);
+int nc_h2_server_start_embedded(neverc_h2_server_t *server);
+int nc_h2_server_submit_tls(
+    neverc_h2_server_t *server, neverc_tls_conn_t *tls,
+    neverc_tcp_conn_t *tcp, nc_http_h2_connection_done_func_t done,
+    void *done_context);
 
 extern neverc_http_cors_config_t g_cors_config;
 extern int g_cors_enabled;

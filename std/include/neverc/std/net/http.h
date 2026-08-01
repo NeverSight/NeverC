@@ -21,6 +21,12 @@
 extern "C" {
 #endif
 
+typedef int (*neverc_http_request_body_read_func_t)(
+    void *stream, neverc_context_t *context,
+    void *output, size_t output_capacity);
+typedef void (*neverc_http_request_body_cancel_func_t)(
+    void *stream, uint32_t error_code);
+
 /* --- Request --- */
 typedef struct {
     const char *method;       /* "GET", "POST", etc. */
@@ -48,7 +54,24 @@ typedef struct {
     /* Non-NULL only for protocol-native streaming handlers. The pointed-to
      * transport object is opaque outside its protocol adapter. */
     void *protocol_stream;
+
+    /* Protocol-neutral streaming request body. These fields are populated for
+     * routes registered with mux_handle_stream_context. Use
+     * neverc_http_request_body_read rather than invoking the callback. */
+    void *body_stream;
+    neverc_http_request_body_read_func_t body_stream_read;
+    neverc_http_request_body_cancel_func_t body_stream_cancel;
 } neverc_http_request_t;
+
+/* Read a streaming request body. Returns bytes read, 0 at end of body, and -1
+ * on malformed framing, transport failure, cancellation, or deadline. */
+int neverc_http_request_body_read(neverc_http_request_t *request,
+                                  void *output, size_t output_capacity);
+
+/* Abort a streaming request body. error_code is protocol-specific; zero asks
+ * the transport to use its ordinary cancellation code. */
+void neverc_http_request_body_cancel(neverc_http_request_t *request,
+                                     uint32_t error_code);
 
 /* --- Response Writer --- */
 typedef struct neverc_http_response_writer neverc_http_response_writer_t;
@@ -363,6 +386,29 @@ neverc_http_response_t *neverc_http_client_do_context(
     neverc_http_client_t *client, neverc_context_t *context,
     const char *method, const char *url, const char *content_type,
     const void *body, size_t body_len);
+
+/* Streaming request/response callbacks. A source returns bytes produced, 0 at
+ * EOF, or -1 on failure. A sink returns 0 after consuming the complete chunk
+ * or -1 to abort the request. Callbacks run synchronously and therefore apply
+ * natural backpressure to the network connection. */
+typedef int (*neverc_http_body_source_func_t)(
+    void *context, void *buffer, size_t capacity);
+typedef int (*neverc_http_body_sink_func_t)(
+    void *context, const void *data, size_t length);
+
+/* Stream an HTTP/1.1 request and response without buffering either body.
+ * content_length >= 0 sends an exact Content-Length and requires the source to
+ * produce exactly that many bytes. content_length == -1 uses chunked transfer
+ * encoding. The returned response owns headers/trailers as usual, has body ==
+ * NULL, and records the delivered byte count in body_len. Streaming requests
+ * are not automatically redirected or retried because their source may not be
+ * replayable. */
+neverc_http_response_t *neverc_http_client_do_stream_context(
+    neverc_http_client_t *client, neverc_context_t *context,
+    const char *method, const char *url, const char *content_type,
+    int64_t content_length, neverc_http_body_source_func_t source,
+    void *source_context, neverc_http_body_sink_func_t sink,
+    void *sink_context);
 
 /* HTTP GET request. Caller must call neverc_http_response_free(). */
 neverc_http_response_t *neverc_http_get(const char *url);

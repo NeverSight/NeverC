@@ -1288,6 +1288,11 @@ static void h2_dispatch_request(h2_conn_t *conn, h2_stream_t *stream) {
     request.nheaders = regular_headers;
     request.context = stream->context;
     request.protocol_stream = stream->streaming_request ? stream : NULL;
+    request.body_stream = stream->streaming_request ? stream : NULL;
+    request.body_stream_read = stream->streaming_request
+        ? neverc_h2_request_stream_read : NULL;
+    request.body_stream_cancel = stream->streaming_request
+        ? neverc_h2_request_stream_cancel : NULL;
     writer->head_request = strcmp(method, "HEAD") == 0;
     writer->request_body_len = stream->body_len;
     h2_response_adapter_t response_adapter = {
@@ -1960,7 +1965,10 @@ void neverc_h2_server_stop(void) {
 typedef struct {
     neverc_h2_server_t *server;
     neverc_tcp_conn_t *tcp;
+    neverc_tls_conn_t *tls;
     int use_tls;
+    nc_http_h2_connection_done_func_t done;
+    void *done_context;
 } h2_connection_task_t;
 
 static void h2_connection_task_done(neverc_h2_server_t *server) {
@@ -1975,14 +1983,19 @@ static void h2_connection_task_run(void *argument) {
     h2_connection_task_t *task = (h2_connection_task_t *)argument;
     neverc_h2_server_t *server = task->server;
     neverc_tcp_conn_t *tcp = task->tcp;
+    neverc_tls_conn_t *tls = task->tls;
     int use_tls = task->use_tls;
+    nc_http_h2_connection_done_func_t done = task->done;
+    void *done_context = task->done_context;
     free(task);
 
     if (nc_atomic_load(&server->running) &&
         !nc_atomic_load(&server->destroying)) {
-        if (use_tls) {
+        if (tls) {
+            (void)neverc_h2_serve_tls_conn(server, tls);
+        } else if (use_tls) {
             const char *tls_error = NULL;
-            neverc_tls_conn_t *tls = neverc_tls_server(
+            tls = neverc_tls_server(
                 tcp, server->tls_config, &tls_error);
             (void)tls_error;
             if (tls) {
@@ -1990,6 +2003,7 @@ static void h2_connection_task_run(void *argument) {
                 if (protocol && strcmp(protocol, "h2") == 0)
                     (void)neverc_h2_serve_tls_conn(server, tls);
                 neverc_tls_close(tls);
+                tls = NULL;
             }
         } else {
             h2_io_t io;
@@ -1997,7 +2011,9 @@ static void h2_connection_task_run(void *argument) {
             (void)h2_serve_io(server, &io);
         }
     }
+    if (tls) neverc_tls_close(tls);
     neverc_tcp_close(tcp);
+    if (done) done(done_context);
     h2_connection_task_done(server);
 }
 
@@ -2011,6 +2027,61 @@ static int h2_submit_connection(neverc_h2_server_t *server,
     task->use_tls = use_tls;
     nc_mutex_lock(&server->lifecycle_lock);
     if (!nc_atomic_load(&server->running) ||
+        server->active_connections + server->pending_connection_tasks >=
+            1024) {
+        nc_mutex_unlock(&server->lifecycle_lock);
+        free(task);
+        return -1;
+    }
+    server->pending_connection_tasks++;
+    nc_mutex_unlock(&server->lifecycle_lock);
+    int submitted = neverc_thread_executor_try_submit(
+        server->connection_executor, h2_connection_task_run, task);
+    if (submitted == NEVERC_THREAD_OK) return 0;
+    free(task);
+    h2_connection_task_done(server);
+    return -1;
+}
+
+int nc_h2_server_start_embedded(neverc_h2_server_t *server) {
+    if (!server) return -1;
+    nc_mutex_lock(&server->lifecycle_lock);
+    if (nc_atomic_load(&server->destroying) ||
+        nc_atomic_load(&server->serving)) {
+        nc_mutex_unlock(&server->lifecycle_lock);
+        return -1;
+    }
+    if (!server->connection_executor) {
+        server->connection_executor =
+            neverc_thread_executor_create(32, 1024);
+        if (!server->connection_executor) {
+            nc_mutex_unlock(&server->lifecycle_lock);
+            return -1;
+        }
+    }
+    nc_atomic_store(&server->running, 1);
+    nc_mutex_unlock(&server->lifecycle_lock);
+    return 0;
+}
+
+int nc_h2_server_submit_tls(
+    neverc_h2_server_t *server, neverc_tls_conn_t *tls,
+    neverc_tcp_conn_t *tcp, nc_http_h2_connection_done_func_t done,
+    void *done_context) {
+    if (!server || !tls || !tcp) return -1;
+    h2_connection_task_t *task =
+        (h2_connection_task_t *)calloc(1, sizeof(*task));
+    if (!task) return -1;
+    task->server = server;
+    task->tcp = tcp;
+    task->tls = tls;
+    task->done = done;
+    task->done_context = done_context;
+
+    nc_mutex_lock(&server->lifecycle_lock);
+    if (!nc_atomic_load(&server->running) ||
+        nc_atomic_load(&server->destroying) ||
+        !server->connection_executor ||
         server->active_connections + server->pending_connection_tasks >=
             1024) {
         nc_mutex_unlock(&server->lifecycle_lock);

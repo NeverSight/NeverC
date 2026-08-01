@@ -42,6 +42,11 @@ typedef pthread_mutex_t tls_mutex_t;
 #define TLS_MAX_NON_ADVANCING_RECORDS 16
 #define TLS_HASH_SIZE_SHA256     32
 #define TLS_AEAD_TAG_SIZE        16
+#define TLS_MAX_PENDING_WRITE    (TLS_MAX_HANDSHAKE * 2U + 65536U)
+#define NCI_TLS_WANT_READ         1
+#define NCI_TLS_WANT_WRITE        2
+#define NCI_TLS_IO_WANT_READ     (-2)
+#define NCI_TLS_IO_WANT_WRITE    (-3)
 
 #define TLS_CT_CHANGE_CIPHER_SPEC  20
 #define TLS_CT_ALERT               21
@@ -206,9 +211,18 @@ struct neverc_tls_conn {
     neverc_x509_cert_pool_t *peer_intermediates;
     uint8_t             read_buf[TLS_MAX_CIPHERTEXT + TLS_RECORD_HEADER_SIZE];
     size_t              read_buf_len;
+    uint8_t            *pending_write_buf;
+    size_t              pending_write_len;
+    size_t              pending_write_pos;
+    size_t              pending_write_cap;
+    int                 nonblocking_io;
+    void               *async_handshake;
     uint8_t             decrypt_buf[TLS_MAX_PLAINTEXT + 1];
     size_t              decrypt_buf_len;
     size_t              decrypt_buf_pos;
+    uint8_t            *preload_app_buf;
+    size_t              preload_app_len;
+    size_t              preload_app_pos;
     uint8_t            *post_handshake_buf;
     size_t              post_handshake_len;
     size_t              post_handshake_cap;
@@ -315,6 +329,10 @@ int nci_tls_raw_write(neverc_tcp_conn_t *tcp, const void *data, size_t len);
 int nci_tls_send_record(
     neverc_tcp_conn_t *tcp, uint8_t content_type,
     const uint8_t *data, size_t len);
+int nci_tls_send_plain_record(
+    neverc_tls_conn_t *conn, uint8_t content_type,
+    const uint8_t *data, size_t len);
+int nci_tls_flush_pending_write(neverc_tls_conn_t *conn);
 void nci_tls_set_application_keys(
     neverc_tls_conn_t *conn, tls_cipher_id_t cipher,
     const uint8_t read_secret[TLS_HASH_SIZE_SHA256],
@@ -366,6 +384,10 @@ int nci_tls_client_handshake(
     neverc_tls_conn_t *conn, neverc_tls_config_t *cfg);
 int nci_tls_server_handshake(
     neverc_tls_conn_t *conn, neverc_tls_config_t *cfg);
+int nci_tls_server_handshake_begin(
+    neverc_tls_conn_t *conn, neverc_tls_config_t *cfg);
+int nci_tls_server_handshake_step(neverc_tls_conn_t *conn);
+void nci_tls_async_handshake_free(neverc_tls_conn_t *conn);
 int nci_tls_send_key_update_message(
     neverc_tls_conn_t *conn, int request_peer_update);
 int nci_tls_handle_post_handshake(

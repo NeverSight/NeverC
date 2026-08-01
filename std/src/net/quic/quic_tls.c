@@ -16,26 +16,10 @@
  *   - Both sides maintain current + next keys for read/write
  */
 
-#include <stdint.h>
-#include <stddef.h>
+#include "_quic_internal.h"
+
 #include <string.h>
 #include <stdlib.h>
-
-/* From quic_packet_protection.c */
-typedef struct {
-    uint8_t key[16];
-    uint8_t iv[12];
-    uint8_t hp[16];
-} quic_keys_t;
-
-typedef struct {
-    quic_keys_t client;
-    quic_keys_t server;
-} quic_initial_keys_t;
-
-extern int neverc_quic_derive_initial_keys(const uint8_t *dcid, size_t dcid_len,
-                                            uint32_t version,
-                                            quic_initial_keys_t *keys);
 
 extern int neverc_hkdf_extract_sha256(const uint8_t *salt, size_t salt_len,
                                        const uint8_t *ikm, size_t ikm_len,
@@ -47,14 +31,6 @@ extern int neverc_hkdf_expand_sha256(const uint8_t *prk, size_t prk_len,
 /* ======================================================================
  * Encryption Levels (RFC 9001 §4.1)
  * ====================================================================== */
-
-typedef enum {
-    QUIC_ENC_INITIAL = 0,
-    QUIC_ENC_HANDSHAKE = 1,
-    QUIC_ENC_APPLICATION = 2,  /* 1-RTT */
-    QUIC_ENC_EARLY_DATA = 3,   /* 0-RTT */
-    QUIC_ENC_LEVEL_COUNT = 4,
-} quic_enc_level_t;
 
 /* ======================================================================
  * CRYPTO Data Buffers

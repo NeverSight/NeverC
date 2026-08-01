@@ -124,6 +124,53 @@ neverc_tls_conn_t *neverc_tls_client(neverc_tcp_conn_t *tcp,
                                       neverc_tls_config_t *cfg,
                                       const char **errp);
 
+/* Reactor-driven server handshake. server_begin validates configuration and
+ * creates a TLS connection without waiting for network I/O. Repeatedly call
+ * handshake_step when the socket is readable/writable, updating poller
+ * interest from its result. COMPLETE is returned only after peer Finished has
+ * been authenticated and all queued handshake records have been written. */
+#define NEVERC_TLS_HANDSHAKE_COMPLETE   0
+#define NEVERC_TLS_HANDSHAKE_WANT_READ  1
+#define NEVERC_TLS_HANDSHAKE_WANT_WRITE 2
+#define NEVERC_TLS_HANDSHAKE_ERROR     (-1)
+
+neverc_tls_conn_t *neverc_tls_server_begin(
+    neverc_tcp_conn_t *tcp, neverc_tls_config_t *cfg, const char **errp);
+int neverc_tls_handshake_step(neverc_tls_conn_t *conn, const char **errp);
+
+typedef enum {
+    NEVERC_TLS_IO_OK = 0,
+    NEVERC_TLS_IO_WANT_READ,
+    NEVERC_TLS_IO_WANT_WRITE,
+    NEVERC_TLS_IO_EOF,
+    NEVERC_TLS_IO_ERROR,
+} neverc_tls_io_status_t;
+
+typedef struct {
+    neverc_tls_io_status_t status;
+    size_t transferred;
+} neverc_tls_io_result_t;
+
+/* Non-blocking application record I/O for reactor-owned connections. A write
+ * result may report WANT_WRITE with transferred > 0: those plaintext bytes
+ * were accepted and must not be submitted again, while the generated record
+ * remains queued for the next writable event. */
+neverc_tls_io_result_t neverc_tls_try_read(
+    neverc_tls_conn_t *conn, void *buffer, size_t capacity);
+neverc_tls_io_result_t neverc_tls_try_write(
+    neverc_tls_conn_t *conn, const void *data, size_t length);
+neverc_tls_io_result_t neverc_tls_flush(neverc_tls_conn_t *conn);
+neverc_tls_io_result_t neverc_tls_try_close_notify(
+    neverc_tls_conn_t *conn);
+
+/* Change ownership between a poller and a blocking protocol loop after the
+ * handshake. Disabling reactor mode requires an empty encrypted write queue.
+ * Preloaded application bytes are returned before any bytes already buffered
+ * by the record layer; this preserves data read ahead by the old owner. */
+int neverc_tls_set_reactor_mode(neverc_tls_conn_t *conn, int enabled);
+int neverc_tls_preload_application_data(
+    neverc_tls_conn_t *conn, const void *data, size_t length);
+
 /* Read decrypted data. Returns bytes read, 0 on close, -1 on error.
  * Concurrent reads are serialized; one reader may run alongside writers. */
 int neverc_tls_read(neverc_tls_conn_t *conn, void *buf, size_t buflen);

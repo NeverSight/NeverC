@@ -142,6 +142,71 @@ neverc_tls_conn_t *neverc_tls_client(neverc_tcp_conn_t *tcp,
 #endif
 }
 
+neverc_tls_conn_t *neverc_tls_server_begin(
+    neverc_tcp_conn_t *tcp, neverc_tls_config_t *cfg, const char **errp) {
+#if defined(NEVERC_TLS_ENABLE_EXPERIMENTAL_TRANSPORT)
+    if (errp) *errp = NULL;
+    if (!tcp || !cfg || !cfg->cert_der || !cfg->key_der ||
+        (cfg->client_auth ==
+             NEVERC_TLS_CLIENT_AUTH_REQUIRE_AND_VERIFY &&
+         !cfg->root_certificates)) {
+        if (errp) *errp = k_tls_invalid_argument;
+        return NULL;
+    }
+    neverc_tls_conn_t *conn = nci_tls_conn_new(tcp, 0);
+    if (!conn) {
+        if (errp) *errp = k_tls_allocation_failed;
+        return NULL;
+    }
+    conn->is_server = 1;
+    nci_tls_config_retain(cfg);
+    conn->config = cfg;
+#if defined(NEVERC_TLS_TESTING)
+    conn->test_handshake_fragment_size =
+        cfg->test_handshake_fragment_size;
+#endif
+    if (nci_tls_server_handshake_begin(conn, cfg) != 0) {
+        conn->owns_tcp = 0;
+        neverc_tls_close(conn);
+        if (errp) *errp = k_tls_allocation_failed;
+        return NULL;
+    }
+    return conn;
+#else
+    (void)tcp;
+    (void)cfg;
+    tls_set_unavailable(errp);
+    return NULL;
+#endif
+}
+
+int neverc_tls_handshake_step(neverc_tls_conn_t *conn, const char **errp) {
+#if defined(NEVERC_TLS_ENABLE_EXPERIMENTAL_TRANSPORT)
+    if (errp) *errp = NULL;
+    if (!conn || !conn->is_server || !conn->async_handshake) {
+        if (errp) *errp = k_tls_invalid_argument;
+        return NEVERC_TLS_HANDSHAKE_ERROR;
+    }
+    int result = nci_tls_server_handshake_step(conn);
+    if (result == NCI_TLS_WANT_READ)
+        return NEVERC_TLS_HANDSHAKE_WANT_READ;
+    if (result == NCI_TLS_WANT_WRITE)
+        return NEVERC_TLS_HANDSHAKE_WANT_WRITE;
+    if (result != 0) {
+        if (errp)
+            *errp = conn->failure_reason
+                ? conn->failure_reason : k_tls_handshake_failed;
+        return NEVERC_TLS_HANDSHAKE_ERROR;
+    }
+    nci_tls_async_handshake_free(conn);
+    return NEVERC_TLS_HANDSHAKE_COMPLETE;
+#else
+    (void)conn;
+    tls_set_unavailable(errp);
+    return NEVERC_TLS_HANDSHAKE_ERROR;
+#endif
+}
+
 static int nci_tls_read_unlocked(
     neverc_tls_conn_t *conn, void *buf, size_t buflen) {
     if (!conn || !buf || buflen == 0)
@@ -149,7 +214,24 @@ static int nci_tls_read_unlocked(
     if (conn->closed)
         return -1;
 
-    /* Return buffered data first */
+    /* Return bytes transferred by a previous reactor owner first. */
+    if (conn->preload_app_len > conn->preload_app_pos) {
+        size_t available = conn->preload_app_len - conn->preload_app_pos;
+        size_t count = buflen < available ? buflen : available;
+        memcpy(buf, conn->preload_app_buf + conn->preload_app_pos, count);
+        conn->preload_app_pos += count;
+        if (conn->preload_app_pos == conn->preload_app_len) {
+            neverc_platform_secure_zero(
+                conn->preload_app_buf, conn->preload_app_len);
+            free(conn->preload_app_buf);
+            conn->preload_app_buf = NULL;
+            conn->preload_app_len = 0;
+            conn->preload_app_pos = 0;
+        }
+        return (int)count;
+    }
+
+    /* Return record-layer buffered data next. */
     if (conn->decrypt_buf_len > conn->decrypt_buf_pos) {
         size_t avail = conn->decrypt_buf_len - conn->decrypt_buf_pos;
         size_t n = buflen < avail ? buflen : avail;
@@ -169,8 +251,11 @@ static int nci_tls_read_unlocked(
         uint8_t data[TLS_MAX_PLAINTEXT];
         size_t data_len;
 
-        if (nci_tls_recv_decrypt(conn, &inner_type, data, &data_len) != 0)
-            return -1;
+        int receive_result = nci_tls_recv_decrypt(
+            conn, &inner_type, data, &data_len);
+        if (receive_result == NCI_TLS_WANT_READ)
+            return NCI_TLS_IO_WANT_READ;
+        if (receive_result != 0) return -1;
 
         if (conn->post_handshake_len > 0 &&
             inner_type != TLS_CT_HANDSHAKE)
@@ -197,6 +282,9 @@ static int nci_tls_read_unlocked(
             if (nci_tls_handle_post_handshake(
                     conn, data, data_len) != 0)
                 return -1;
+            if (conn->nonblocking_io &&
+                conn->pending_write_len > conn->pending_write_pos)
+                return NCI_TLS_IO_WANT_WRITE;
             continue;
         }
 
@@ -249,6 +337,150 @@ int neverc_tls_read_context(neverc_tls_conn_t *conn, neverc_context_t *ctx,
     conn->read_context = NULL;
     tls_mutex_unlock(&conn->read_mutex);
     return result;
+}
+
+static neverc_tls_io_result_t tls_io_result(
+    neverc_tls_io_status_t status, size_t transferred) {
+    neverc_tls_io_result_t result;
+    result.status = status;
+    result.transferred = transferred;
+    return result;
+}
+
+neverc_tls_io_result_t neverc_tls_flush(neverc_tls_conn_t *conn) {
+    if (!conn || !conn->nonblocking_io || !conn->mutexes_initialized)
+        return tls_io_result(NEVERC_TLS_IO_ERROR, 0);
+    tls_mutex_lock(&conn->write_mutex);
+    int result = nci_tls_flush_pending_write(conn);
+    tls_mutex_unlock(&conn->write_mutex);
+    if (result == 0) return tls_io_result(NEVERC_TLS_IO_OK, 0);
+    if (result == NCI_TLS_WANT_WRITE)
+        return tls_io_result(NEVERC_TLS_IO_WANT_WRITE, 0);
+    return tls_io_result(NEVERC_TLS_IO_ERROR, 0);
+}
+
+neverc_tls_io_result_t neverc_tls_try_read(
+    neverc_tls_conn_t *conn, void *buffer, size_t capacity) {
+    if (!conn || !conn->nonblocking_io || !conn->mutexes_initialized ||
+        !buffer || capacity == 0 || capacity > (size_t)INT_MAX)
+        return tls_io_result(NEVERC_TLS_IO_ERROR, 0);
+    neverc_tls_io_result_t flush_result = neverc_tls_flush(conn);
+    if (flush_result.status != NEVERC_TLS_IO_OK) return flush_result;
+
+    tls_mutex_lock(&conn->read_mutex);
+    int result = nci_tls_read_unlocked(conn, buffer, capacity);
+    tls_mutex_unlock(&conn->read_mutex);
+    if (result > 0)
+        return tls_io_result(NEVERC_TLS_IO_OK, (size_t)result);
+    if (result == 0) return tls_io_result(NEVERC_TLS_IO_EOF, 0);
+    if (result == NCI_TLS_IO_WANT_READ)
+        return tls_io_result(NEVERC_TLS_IO_WANT_READ, 0);
+    if (result == NCI_TLS_IO_WANT_WRITE)
+        return tls_io_result(NEVERC_TLS_IO_WANT_WRITE, 0);
+    return tls_io_result(NEVERC_TLS_IO_ERROR, 0);
+}
+
+neverc_tls_io_result_t neverc_tls_try_write(
+    neverc_tls_conn_t *conn, const void *data, size_t length) {
+    if (!conn || !conn->nonblocking_io || !conn->mutexes_initialized ||
+        !data || length == 0)
+        return tls_io_result(NEVERC_TLS_IO_ERROR, 0);
+    tls_mutex_lock(&conn->write_mutex);
+    int flush_result = nci_tls_flush_pending_write(conn);
+    if (flush_result == NCI_TLS_WANT_WRITE) {
+        tls_mutex_unlock(&conn->write_mutex);
+        return tls_io_result(NEVERC_TLS_IO_WANT_WRITE, 0);
+    }
+    if (flush_result != 0 || conn->closed || conn->write_closed ||
+        !conn->handshake_done || !conn->application_keys_active) {
+        tls_mutex_unlock(&conn->write_mutex);
+        return tls_io_result(NEVERC_TLS_IO_ERROR, 0);
+    }
+    size_t accepted = length;
+    if (accepted > TLS_MAX_PLAINTEXT) accepted = TLS_MAX_PLAINTEXT;
+    if (nci_tls_send_encrypted_unlocked(
+            conn, TLS_CT_APPLICATION_DATA,
+            (const uint8_t *)data, accepted) != 0) {
+        tls_mutex_unlock(&conn->write_mutex);
+        return tls_io_result(NEVERC_TLS_IO_ERROR, 0);
+    }
+    flush_result = nci_tls_flush_pending_write(conn);
+    tls_mutex_unlock(&conn->write_mutex);
+    if (flush_result == NCI_TLS_WANT_WRITE)
+        return tls_io_result(
+            NEVERC_TLS_IO_WANT_WRITE, accepted);
+    if (flush_result != 0)
+        return tls_io_result(NEVERC_TLS_IO_ERROR, accepted);
+    return tls_io_result(NEVERC_TLS_IO_OK, accepted);
+}
+
+neverc_tls_io_result_t neverc_tls_try_close_notify(
+    neverc_tls_conn_t *conn) {
+    if (!conn || !conn->nonblocking_io || !conn->mutexes_initialized)
+        return tls_io_result(NEVERC_TLS_IO_ERROR, 0);
+    if (!conn->handshake_done)
+        return tls_io_result(NEVERC_TLS_IO_ERROR, 0);
+    if (!conn->alert_sent && !conn->closed &&
+        nci_tls_send_close_notify(conn) != 0)
+        return tls_io_result(NEVERC_TLS_IO_ERROR, 0);
+    tls_mutex_lock(&conn->write_mutex);
+    int flush_result = nci_tls_flush_pending_write(conn);
+    tls_mutex_unlock(&conn->write_mutex);
+    if (flush_result == 0)
+        return tls_io_result(NEVERC_TLS_IO_OK, 0);
+    if (flush_result == NCI_TLS_WANT_WRITE)
+        return tls_io_result(NEVERC_TLS_IO_WANT_WRITE, 0);
+    return tls_io_result(NEVERC_TLS_IO_ERROR, 0);
+}
+
+int neverc_tls_set_reactor_mode(neverc_tls_conn_t *conn, int enabled) {
+    if (!conn || !conn->mutexes_initialized || !conn->handshake_done ||
+        (enabled != 0 && enabled != 1))
+        return -1;
+    tls_mutex_lock(&conn->write_mutex);
+    if (!enabled &&
+        conn->pending_write_pos < conn->pending_write_len) {
+        tls_mutex_unlock(&conn->write_mutex);
+        return -1;
+    }
+    conn->nonblocking_io = enabled;
+    tls_mutex_unlock(&conn->write_mutex);
+    return 0;
+}
+
+int neverc_tls_preload_application_data(
+    neverc_tls_conn_t *conn, const void *data, size_t length) {
+    if (!conn || (!data && length > 0) || length > TLS_MAX_PENDING_WRITE ||
+        !conn->mutexes_initialized || !conn->handshake_done)
+        return -1;
+    if (length == 0) return 0;
+
+    tls_mutex_lock(&conn->read_mutex);
+    size_t remaining = conn->preload_app_len - conn->preload_app_pos;
+    if (remaining > TLS_MAX_PENDING_WRITE ||
+        length > TLS_MAX_PENDING_WRITE - remaining) {
+        tls_mutex_unlock(&conn->read_mutex);
+        return -1;
+    }
+    uint8_t *combined = (uint8_t *)malloc(remaining + length);
+    if (!combined) {
+        tls_mutex_unlock(&conn->read_mutex);
+        return -1;
+    }
+    memcpy(combined, data, length);
+    if (remaining > 0)
+        memcpy(combined + length,
+               conn->preload_app_buf + conn->preload_app_pos, remaining);
+    if (conn->preload_app_buf) {
+        neverc_platform_secure_zero(
+            conn->preload_app_buf, conn->preload_app_len);
+        free(conn->preload_app_buf);
+    }
+    conn->preload_app_buf = combined;
+    conn->preload_app_len = remaining + length;
+    conn->preload_app_pos = 0;
+    tls_mutex_unlock(&conn->read_mutex);
+    return 0;
 }
 
 static int nci_tls_write_unlocked(neverc_tls_conn_t *conn,
@@ -334,12 +566,24 @@ void neverc_tls_close(neverc_tls_conn_t *conn) {
     free(conn->resumption_alpn);
     free(conn->peer_cert);
     neverc_x509_cert_pool_free(conn->peer_intermediates);
+    nci_tls_async_handshake_free(conn);
     nci_tls_clear_handshake_buffer(conn);
     if (conn->post_handshake_buf) {
         neverc_platform_secure_zero(
             conn->post_handshake_buf,
             conn->post_handshake_cap);
         free(conn->post_handshake_buf);
+    }
+    if (conn->preload_app_buf) {
+        neverc_platform_secure_zero(
+            conn->preload_app_buf, conn->preload_app_len);
+        free(conn->preload_app_buf);
+    }
+    if (conn->pending_write_buf) {
+        neverc_platform_secure_zero(
+            conn->pending_write_buf,
+            conn->pending_write_cap);
+        free(conn->pending_write_buf);
     }
     if (conn->mutexes_initialized) {
         tls_mutex_destroy(&conn->read_mutex);

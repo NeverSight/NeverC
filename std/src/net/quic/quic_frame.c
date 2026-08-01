@@ -5,17 +5,10 @@
  * frames. This module provides parsing and serialization for all frame types.
  */
 
-#include <stdint.h>
-#include <stddef.h>
+#include "_quic_internal.h"
+
 #include <string.h>
 #include <stdlib.h>
-
-/* External varint functions from quic_varint.c */
-extern int neverc_quic_varint_decode(const uint8_t *buf, size_t len,
-                                      uint64_t *value, size_t *consumed);
-extern int neverc_quic_varint_encode(uint64_t value, uint8_t *buf, size_t cap,
-                                      size_t *written);
-extern size_t neverc_quic_varint_len(uint64_t value);
 
 /* ======================================================================
  * Frame Type Constants (RFC 9000 §19.1)
@@ -52,90 +45,8 @@ extern size_t neverc_quic_varint_len(uint64_t value);
 #define QUIC_STREAM_FLAG_OFF 0x04
 #define QUIC_STREAM_FLAG_LEN 0x02
 #define QUIC_STREAM_FLAG_FIN 0x01
-
-/* ======================================================================
- * Frame Structures
- * ====================================================================== */
-
-typedef struct {
-    uint64_t stream_id;
-    uint64_t error_code;
-    uint64_t final_size;
-} quic_frame_reset_stream_t;
-
-typedef struct {
-    uint64_t stream_id;
-    uint64_t error_code;
-} quic_frame_stop_sending_t;
-
-typedef struct {
-    uint64_t offset;
-    const uint8_t *data;
-    size_t   data_len;
-} quic_frame_crypto_t;
-
-typedef struct {
-    uint64_t stream_id;
-    uint64_t offset;
-    const uint8_t *data;
-    size_t   data_len;
-    int      fin;
-} quic_frame_stream_t;
-
-typedef struct {
-    uint64_t max_data;
-} quic_frame_max_data_t;
-
-typedef struct {
-    uint64_t stream_id;
-    uint64_t max_data;
-} quic_frame_max_stream_data_t;
-
-typedef struct {
-    uint64_t max_streams;
-    int      is_bidi;
-} quic_frame_max_streams_t;
-
-typedef struct {
-    uint64_t sequence;
-    uint64_t retire_prior_to;
-    uint8_t  conn_id_len;
-    uint8_t  conn_id[20];
-    uint8_t  stateless_reset_token[16];
-} quic_frame_new_conn_id_t;
-
-typedef struct {
-    uint64_t sequence;
-} quic_frame_retire_conn_id_t;
-
-typedef struct {
-    uint8_t data[8];
-} quic_frame_path_challenge_t;
-
-typedef struct {
-    uint64_t error_code;
-    uint64_t frame_type;  /* only for transport close */
-    const char *reason;
-    size_t   reason_len;
-    int      is_app;      /* 1 = APPLICATION_CLOSE, 0 = CONNECTION_CLOSE */
-} quic_frame_connection_close_t;
-
-/* ACK range: [start, end) — packets start through end-1 are acknowledged */
-typedef struct {
-    uint64_t start;
-    uint64_t end;
-} quic_ack_range_t;
-
-typedef struct {
-    uint64_t largest_acked;
-    uint64_t ack_delay;
-    quic_ack_range_t *ranges;
-    int      nranges;
-    /* ECN counts (only for ACK_ECN frames) */
-    uint64_t ect0;
-    uint64_t ect1;
-    uint64_t ecn_ce;
-} quic_frame_ack_t;
+#define QUIC_VARINT_MAX ((UINT64_C(1) << 62) - 1)
+#define QUIC_MAX_ACK_RANGES 256
 
 /* ======================================================================
  * Frame Parsing
@@ -246,6 +157,7 @@ int neverc_quic_parse_ack_frame(const uint8_t *buf, size_t len,
 
     if (first_range > out->largest_acked) return -1;
 
+    if (range_count >= QUIC_MAX_ACK_RANGES) return -1;
     int nranges = (int)(range_count + 1);
     out->ranges = (quic_ack_range_t *)calloc((size_t)nranges, sizeof(quic_ack_range_t));
     if (!out->ranges) return -1;
@@ -402,6 +314,11 @@ int neverc_quic_write_crypto_frame(uint8_t *buf, size_t cap,
                                     uint64_t offset,
                                     const uint8_t *data, size_t data_len,
                                     size_t *written) {
+    if (written) *written = 0;
+    if (!buf || !written || (data_len && !data) ||
+        offset > QUIC_VARINT_MAX || data_len > QUIC_VARINT_MAX ||
+        data_len > SIZE_MAX - 17)
+        return -1;
     size_t need = neverc_quic_varint_len(QUIC_FRAME_CRYPTO) +
                   neverc_quic_varint_len(offset) +
                   neverc_quic_varint_len(data_len) + data_len;
@@ -421,6 +338,14 @@ int neverc_quic_write_crypto_frame(uint8_t *buf, size_t cap,
 int neverc_quic_write_stream_frame(uint8_t *buf, size_t cap,
                                     const quic_frame_stream_t *frame,
                                     size_t *written) {
+    if (written) *written = 0;
+    if (!buf || !frame || !written ||
+        (frame->data_len && !frame->data) ||
+        frame->stream_id > QUIC_VARINT_MAX ||
+        frame->offset > QUIC_VARINT_MAX ||
+        frame->data_len > QUIC_VARINT_MAX ||
+        frame->data_len > SIZE_MAX - 25)
+        return -1;
     uint8_t type_byte = QUIC_FRAME_STREAM_BASE;
     if (frame->offset > 0) type_byte |= QUIC_STREAM_FLAG_OFF;
     type_byte |= QUIC_STREAM_FLAG_LEN;  /* always include length for safety */
@@ -450,7 +375,38 @@ int neverc_quic_write_stream_frame(uint8_t *buf, size_t cap,
 int neverc_quic_write_ack_frame(uint8_t *buf, size_t cap,
                                  const quic_frame_ack_t *ack,
                                  size_t *written) {
-    if (ack->nranges < 1) return -1;
+    if (written) *written = 0;
+    if (!buf || !ack || !written || !ack->ranges ||
+        ack->nranges < 1 || ack->nranges > QUIC_MAX_ACK_RANGES ||
+        ack->largest_acked > QUIC_VARINT_MAX ||
+        ack->ack_delay > QUIC_VARINT_MAX ||
+        ack->ranges[0].start >= ack->ranges[0].end ||
+        ack->ranges[0].end - 1 != ack->largest_acked)
+        return -1;
+
+    size_t need = neverc_quic_varint_len(QUIC_FRAME_ACK) +
+        neverc_quic_varint_len(ack->largest_acked) +
+        neverc_quic_varint_len(ack->ack_delay) +
+        neverc_quic_varint_len((uint64_t)(ack->nranges - 1)) +
+        neverc_quic_varint_len(
+            ack->ranges[0].end - 1 - ack->ranges[0].start);
+    for (int i = 1; i < ack->nranges; i++) {
+        if (ack->ranges[i].start >= ack->ranges[i].end ||
+            ack->ranges[i - 1].start <= ack->ranges[i].end)
+            return -1;
+        uint64_t gap =
+            ack->ranges[i - 1].start - ack->ranges[i].end - 1;
+        uint64_t range_len =
+            ack->ranges[i].end - 1 - ack->ranges[i].start;
+        if (gap > QUIC_VARINT_MAX || range_len > QUIC_VARINT_MAX ||
+            need > SIZE_MAX - neverc_quic_varint_len(gap) ||
+            need + neverc_quic_varint_len(gap) >
+                SIZE_MAX - neverc_quic_varint_len(range_len))
+            return -1;
+        need += neverc_quic_varint_len(gap) +
+                neverc_quic_varint_len(range_len);
+    }
+    if (cap < need) return -1;
 
     size_t pos = 0, w;
 
@@ -483,8 +439,22 @@ int neverc_quic_write_ack_frame(uint8_t *buf, size_t cap,
 int neverc_quic_write_connection_close(uint8_t *buf, size_t cap,
                                         const quic_frame_connection_close_t *cc,
                                         size_t *written) {
+    if (written) *written = 0;
+    if (!buf || !cc || !written ||
+        (cc->reason_len && !cc->reason) ||
+        cc->error_code > QUIC_VARINT_MAX ||
+        cc->frame_type > QUIC_VARINT_MAX ||
+        cc->reason_len > QUIC_VARINT_MAX ||
+        cc->reason_len > SIZE_MAX - 33)
+        return -1;
     uint64_t ftype = cc->is_app ? QUIC_FRAME_CONNECTION_CLOSE_APP
                                 : QUIC_FRAME_CONNECTION_CLOSE;
+
+    size_t need = neverc_quic_varint_len(ftype) +
+        neverc_quic_varint_len(cc->error_code) +
+        neverc_quic_varint_len(cc->reason_len) + cc->reason_len;
+    if (!cc->is_app) need += neverc_quic_varint_len(cc->frame_type);
+    if (cap < need) return -1;
 
     size_t pos = 0, w;
     neverc_quic_varint_encode(ftype, buf + pos, cap - pos, &w); pos += w;
@@ -505,6 +475,10 @@ int neverc_quic_write_connection_close(uint8_t *buf, size_t cap,
 
 int neverc_quic_write_max_data(uint8_t *buf, size_t cap,
                                 uint64_t max_data, size_t *written) {
+    if (written) *written = 0;
+    if (!buf || !written || max_data > QUIC_VARINT_MAX ||
+        cap < 1 + neverc_quic_varint_len(max_data))
+        return -1;
     size_t pos = 0, w;
     neverc_quic_varint_encode(QUIC_FRAME_MAX_DATA, buf + pos, cap - pos, &w); pos += w;
     neverc_quic_varint_encode(max_data, buf + pos, cap - pos, &w); pos += w;
@@ -515,6 +489,12 @@ int neverc_quic_write_max_data(uint8_t *buf, size_t cap,
 int neverc_quic_write_max_stream_data(uint8_t *buf, size_t cap,
                                        uint64_t stream_id, uint64_t max_data,
                                        size_t *written) {
+    if (written) *written = 0;
+    if (!buf || !written || stream_id > QUIC_VARINT_MAX ||
+        max_data > QUIC_VARINT_MAX ||
+        cap < 1 + neverc_quic_varint_len(stream_id) +
+                    neverc_quic_varint_len(max_data))
+        return -1;
     size_t pos = 0, w;
     neverc_quic_varint_encode(QUIC_FRAME_MAX_STREAM_DATA, buf + pos, cap - pos, &w); pos += w;
     neverc_quic_varint_encode(stream_id, buf + pos, cap - pos, &w); pos += w;
@@ -526,6 +506,13 @@ int neverc_quic_write_max_stream_data(uint8_t *buf, size_t cap,
 int neverc_quic_write_reset_stream(uint8_t *buf, size_t cap,
                                     uint64_t stream_id, uint64_t error_code,
                                     uint64_t final_size, size_t *written) {
+    if (written) *written = 0;
+    if (!buf || !written || stream_id > QUIC_VARINT_MAX ||
+        error_code > QUIC_VARINT_MAX || final_size > QUIC_VARINT_MAX ||
+        cap < 1 + neverc_quic_varint_len(stream_id) +
+                    neverc_quic_varint_len(error_code) +
+                    neverc_quic_varint_len(final_size))
+        return -1;
     size_t pos = 0, w;
     neverc_quic_varint_encode(QUIC_FRAME_RESET_STREAM, buf + pos, cap - pos, &w); pos += w;
     neverc_quic_varint_encode(stream_id, buf + pos, cap - pos, &w); pos += w;
@@ -536,14 +523,16 @@ int neverc_quic_write_reset_stream(uint8_t *buf, size_t cap,
 }
 
 int neverc_quic_write_ping(uint8_t *buf, size_t cap, size_t *written) {
-    if (cap < 1) return -1;
+    if (written) *written = 0;
+    if (!buf || !written || cap < 1) return -1;
     buf[0] = QUIC_FRAME_PING;
     *written = 1;
     return 0;
 }
 
 int neverc_quic_write_handshake_done(uint8_t *buf, size_t cap, size_t *written) {
-    if (cap < 1) return -1;
+    if (written) *written = 0;
+    if (!buf || !written || cap < 1) return -1;
     buf[0] = QUIC_FRAME_HANDSHAKE_DONE;
     *written = 1;
     return 0;

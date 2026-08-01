@@ -17,59 +17,37 @@
  *   0x03 = Retry
  */
 
-#include <stdint.h>
-#include <stddef.h>
+#include "_quic_internal.h"
+
 #include <string.h>
-#include <stdlib.h>
 
-#define QUIC_MAX_CID_LEN 20
+static quic_packet_type_t quic_long_packet_type(uint8_t encoded,
+                                                 uint32_t version) {
+    if (version != 0x6b3343cfU)
+        return (quic_packet_type_t)encoded;
+    static const quic_packet_type_t v2_types[4] = {
+        QUIC_PKT_RETRY, QUIC_PKT_INITIAL, QUIC_PKT_0RTT,
+        QUIC_PKT_HANDSHAKE};
+    return v2_types[encoded & 3U];
+}
 
-typedef enum {
-    QUIC_PKT_INITIAL   = 0,
-    QUIC_PKT_0RTT      = 1,
-    QUIC_PKT_HANDSHAKE = 2,
-    QUIC_PKT_RETRY     = 3,
-    QUIC_PKT_1RTT      = 4,  /* short header */
-} quic_packet_type_t;
-
-typedef struct {
-    uint8_t data[QUIC_MAX_CID_LEN];
-    uint8_t len;
-} quic_conn_id_t;
-
-typedef struct {
-    quic_packet_type_t type;
-    uint32_t           version;
-    quic_conn_id_t     dcid;
-    quic_conn_id_t     scid;
-    uint32_t           pkt_number;
-    uint8_t            pkt_number_len;
-    uint8_t            key_phase;    /* 1-RTT only */
-    uint8_t            spin_bit;    /* 1-RTT only */
-
-    /* For Initial packets: token */
-    const uint8_t     *token;
-    size_t             token_len;
-
-    /* Payload offset and length */
-    size_t             header_len;
-    size_t             payload_len;
-} quic_packet_header_t;
-
-/* External varint functions */
-extern int neverc_quic_varint_decode(const uint8_t *buf, size_t len,
-                                      uint64_t *value, size_t *consumed);
+static uint8_t quic_long_packet_type_bits(quic_packet_type_t type,
+                                           uint32_t version) {
+    if (version != 0x6b3343cfU) return (uint8_t)type & 3U;
+    static const uint8_t v2_bits[4] = {1, 2, 3, 0};
+    return v2_bits[(unsigned)type & 3U];
+}
 
 static int parse_long_header(const uint8_t *buf, size_t len,
                               quic_packet_header_t *hdr) {
     if (len < 7) return -1;
 
     uint8_t first = buf[0];
-    hdr->type = (quic_packet_type_t)((first >> 4) & 0x03);
-    hdr->pkt_number_len = (first & 0x03) + 1;
-
     hdr->version = ((uint32_t)buf[1] << 24) | ((uint32_t)buf[2] << 16) |
                    ((uint32_t)buf[3] << 8) | (uint32_t)buf[4];
+    hdr->type = quic_long_packet_type((first >> 4) & 0x03,
+                                      hdr->version);
+    hdr->pkt_number_len = (first & 0x03) + 1;
 
     size_t pos = 5;
 
@@ -96,6 +74,7 @@ static int parse_long_header(const uint8_t *buf, size_t len,
         if (neverc_quic_varint_decode(buf + pos, len - pos, &tlen, &consumed) != 0)
             return -1;
         pos += consumed;
+        if (tlen > SIZE_MAX || (size_t)tlen > len - pos) return -1;
         hdr->token = buf + pos;
         hdr->token_len = (size_t)tlen;
         pos += (size_t)tlen;
@@ -111,7 +90,9 @@ static int parse_long_header(const uint8_t *buf, size_t len,
         if (neverc_quic_varint_decode(buf + pos, len - pos, &plen, &consumed) != 0)
             return -1;
         pos += consumed;
-        hdr->payload_len = (size_t)plen;
+        if (plen > SIZE_MAX || (size_t)plen > len - pos ||
+            plen < hdr->pkt_number_len)
+            return -1;
 
         /* Packet number (1-4 bytes, after header protection removal) */
         if (pos + hdr->pkt_number_len > len) return -1;
@@ -120,6 +101,9 @@ static int parse_long_header(const uint8_t *buf, size_t len,
             hdr->pkt_number = (hdr->pkt_number << 8) | buf[pos + i];
         }
         pos += hdr->pkt_number_len;
+        hdr->payload_len = (size_t)plen - hdr->pkt_number_len;
+    } else {
+        hdr->payload_len = len - pos;
     }
 
     hdr->header_len = pos;
@@ -129,7 +113,7 @@ static int parse_long_header(const uint8_t *buf, size_t len,
 static int parse_short_header(const uint8_t *buf, size_t len,
                                quic_packet_header_t *hdr,
                                uint8_t dcid_len) {
-    if (len < 1 + dcid_len) return -1;
+    if (dcid_len > QUIC_MAX_CID_LEN || len < 1 + dcid_len) return -1;
 
     uint8_t first = buf[0];
     hdr->type = QUIC_PKT_1RTT;
@@ -161,7 +145,7 @@ static int parse_short_header(const uint8_t *buf, size_t len,
 int neverc_quic_parse_packet_header(const uint8_t *buf, size_t len,
                                      quic_packet_header_t *hdr,
                                      uint8_t expected_dcid_len) {
-    if (len < 1) return -1;
+    if (!buf || !hdr || len < 1 || (buf[0] & 0x40) == 0) return -1;
     memset(hdr, 0, sizeof(*hdr));
 
     uint8_t first = buf[0];
@@ -176,11 +160,35 @@ int neverc_quic_parse_packet_header(const uint8_t *buf, size_t len,
 int neverc_quic_write_long_header(uint8_t *buf, size_t cap,
                                     const quic_packet_header_t *hdr,
                                     size_t *written) {
+    if (written) *written = 0;
+    if (!buf || !hdr || !written || hdr->type > QUIC_PKT_RETRY ||
+        hdr->dcid.len > QUIC_MAX_CID_LEN ||
+        hdr->scid.len > QUIC_MAX_CID_LEN ||
+        hdr->pkt_number_len < 1 || hdr->pkt_number_len > 4 ||
+        hdr->payload_len > UINT64_MAX - hdr->pkt_number_len)
+        return -1;
+    if (hdr->type == QUIC_PKT_INITIAL &&
+        hdr->token_len > SIZE_MAX - 8)
+        return -1;
+    size_t token_prefix = hdr->type == QUIC_PKT_INITIAL
+        ? neverc_quic_varint_len(hdr->token_len) + hdr->token_len : 0;
+    size_t length_prefix = hdr->type == QUIC_PKT_RETRY ? 0 :
+        neverc_quic_varint_len(
+            (uint64_t)hdr->pkt_number_len + hdr->payload_len);
     size_t need = 7 + hdr->dcid.len + hdr->scid.len;
+    if (need > SIZE_MAX - token_prefix ||
+        need + token_prefix > SIZE_MAX - length_prefix ||
+        need + token_prefix + length_prefix >
+            SIZE_MAX - (hdr->type == QUIC_PKT_RETRY
+                            ? 0 : hdr->pkt_number_len))
+        return -1;
+    need += token_prefix + length_prefix;
+    if (hdr->type != QUIC_PKT_RETRY) need += hdr->pkt_number_len;
     if (cap < need) return -1;
 
     size_t pos = 0;
-    buf[pos++] = 0xC0 | ((uint8_t)hdr->type << 4) |
+    buf[pos++] = 0xC0 |
+                 (quic_long_packet_type_bits(hdr->type, hdr->version) << 4) |
                  (hdr->pkt_number_len - 1);
     buf[pos++] = (uint8_t)(hdr->version >> 24);
     buf[pos++] = (uint8_t)(hdr->version >> 16);
@@ -193,6 +201,49 @@ int neverc_quic_write_long_header(uint8_t *buf, size_t cap,
     memcpy(buf + pos, hdr->scid.data, hdr->scid.len);
     pos += hdr->scid.len;
 
+    size_t encoded = 0;
+    if (hdr->type == QUIC_PKT_INITIAL) {
+        if (neverc_quic_varint_encode(hdr->token_len, buf + pos,
+                                      cap - pos, &encoded) != 0)
+            return -1;
+        pos += encoded;
+        if (hdr->token_len > 0) {
+            if (!hdr->token) return -1;
+            memcpy(buf + pos, hdr->token, hdr->token_len);
+            pos += hdr->token_len;
+        }
+    }
+    if (hdr->type != QUIC_PKT_RETRY) {
+        if (neverc_quic_varint_encode(
+                (uint64_t)hdr->pkt_number_len + hdr->payload_len,
+                buf + pos, cap - pos, &encoded) != 0)
+            return -1;
+        pos += encoded;
+        for (uint8_t i = 0; i < hdr->pkt_number_len; i++)
+            buf[pos + i] = (uint8_t)(
+                hdr->pkt_number >>
+                (8U * (hdr->pkt_number_len - i - 1U)));
+        pos += hdr->pkt_number_len;
+    }
+
     *written = pos;
     return 0;
+}
+
+uint64_t neverc_quic_decode_packet_number(uint64_t largest_received,
+                                           uint64_t truncated,
+                                           unsigned packet_number_bits) {
+    if (packet_number_bits == 0 || packet_number_bits > 32)
+        return truncated;
+    uint64_t expected = largest_received + 1;
+    uint64_t window = UINT64_C(1) << packet_number_bits;
+    uint64_t half_window = window / 2;
+    uint64_t mask = window - 1;
+    uint64_t candidate = (expected & ~mask) | truncated;
+    if (candidate + half_window <= expected &&
+        candidate <= ((UINT64_C(1) << 62) - 1) - window)
+        candidate += window;
+    else if (candidate > expected + half_window && candidate >= window)
+        candidate -= window;
+    return candidate;
 }

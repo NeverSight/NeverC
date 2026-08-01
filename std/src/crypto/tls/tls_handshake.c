@@ -2288,6 +2288,578 @@ int nci_tls_server_handshake(neverc_tls_conn_t *conn,
     return 0;
 }
 
+typedef enum {
+    TLS_ASYNC_SERVER_WAIT_CLIENT_HELLO,
+    TLS_ASYNC_SERVER_WAIT_CLIENT_FLIGHT,
+    TLS_ASYNC_SERVER_FLUSH_FINAL,
+    TLS_ASYNC_SERVER_COMPLETE,
+} tls_async_server_phase_t;
+
+typedef struct {
+    tls_async_server_phase_t phase;
+    neverc_sha256_ctx transcript;
+    tls_cipher_id_t cipher_id;
+    uint8_t handshake_secret[32];
+    uint8_t client_hs_traffic_secret[32];
+    uint8_t server_hs_traffic_secret[32];
+    uint8_t transcript_hash_server_finished[32];
+    uint8_t expected_client_handshake;
+} tls_async_server_state_t;
+
+static int tls_async_prepare_server_flight(
+    neverc_tls_conn_t *conn, neverc_tls_config_t *cfg,
+    tls_async_server_state_t *async,
+    const uint8_t *client_hello_message,
+    size_t client_hello_message_len) {
+    tls_client_hello_info_t client_hello;
+    uint8_t client_hello_alert = TLS_ALERT_DECODE_ERROR;
+    uint8_t selected_psk[32] = {0};
+    uint8_t shared_secret[32] = {0};
+    neverc_ecdh_key_t ecdh_key;
+    memset(&ecdh_key, 0, sizeof(ecdh_key));
+    int result = -1;
+
+    if (tls_parse_client_hello(
+            client_hello_message, client_hello_message_len,
+            &client_hello, &client_hello_alert) != 0) {
+        (void)nci_tls_fail(conn, client_hello_alert);
+        goto cleanup;
+    }
+    if (client_hello.server_name_len > 0 &&
+        tls_set_owned_string(
+            &conn->server_name, client_hello.server_name,
+            client_hello.server_name_len) != 0) {
+        (void)nci_tls_fail(conn, TLS_ALERT_INTERNAL_ERROR);
+        goto cleanup;
+    }
+
+    const char *selected_alpn = NULL;
+    size_t selected_alpn_len = 0;
+    uint8_t alpn_alert = TLS_ALERT_INTERNAL_ERROR;
+    if (tls_negotiate_alpn(
+            cfg, client_hello.alpn_protocols,
+            client_hello.alpn_count, &selected_alpn,
+            &selected_alpn_len, &alpn_alert) != 0) {
+        (void)nci_tls_fail(conn, alpn_alert);
+        goto cleanup;
+    }
+    if (selected_alpn_len > 0 &&
+        tls_set_owned_string(
+            &conn->alpn, selected_alpn,
+            selected_alpn_len) != 0) {
+        (void)nci_tls_fail(conn, TLS_ALERT_INTERNAL_ERROR);
+        goto cleanup;
+    }
+
+    int selected_psk_index = -1;
+    if (cfg->client_auth == NEVERC_TLS_CLIENT_AUTH_NONE) {
+        for (size_t i = 0; i < client_hello.offered_psk_count; i++) {
+            tls_offered_psk_t *offered = &client_hello.offered_psks[i];
+            if (!nci_tls_lookup_server_session(
+                    cfg, offered->identity, offered->identity_len,
+                    offered->obfuscated_age,
+                    (const uint8_t *)client_hello.server_name,
+                    client_hello.server_name_len,
+                    selected_alpn, selected_alpn_len, selected_psk))
+                continue;
+            uint8_t expected_binder[32];
+            if (nci_tls_compute_resumption_binder(
+                    selected_psk, client_hello_message,
+                    client_hello.binder_transcript_len,
+                    expected_binder) != 0) {
+                (void)nci_tls_fail(conn, TLS_ALERT_INTERNAL_ERROR);
+                goto cleanup;
+            }
+            int binder_valid = offered->binder_len == sizeof(expected_binder) &&
+                neverc_subtle_constant_time_compare(
+                    offered->binder, expected_binder,
+                    sizeof(expected_binder));
+            neverc_platform_secure_zero(
+                expected_binder, sizeof(expected_binder));
+            if (!binder_valid) {
+                (void)nci_tls_fail(conn, TLS_ALERT_DECRYPT_ERROR);
+                goto cleanup;
+            }
+            selected_psk_index = (int)i;
+            break;
+        }
+    }
+    conn->did_resume = selected_psk_index >= 0;
+
+    neverc_sha256_update(
+        &async->transcript,
+        client_hello_message, client_hello_message_len);
+    if (nci_tls_consume_handshake_message(
+            conn, client_hello_message_len) != 0 ||
+        conn->handshake_len != 0) {
+        (void)nci_tls_protocol_error(
+            conn, TLS_ALERT_UNEXPECTED_MESSAGE,
+            "trailing plaintext data after ClientHello");
+        goto cleanup;
+    }
+
+    async->cipher_id = client_hello.cipher_id;
+    conn->cipher_suite = client_hello.selected_cipher;
+    if (neverc_ecdh_generate_key(
+            NEVERC_ECDH_CURVE_X25519, &ecdh_key) != 0)
+        goto cleanup;
+    uint8_t server_public_key[32];
+    if (neverc_ecdh_public_key_bytes(
+            &ecdh_key, server_public_key,
+            sizeof(server_public_key)) != 32)
+        goto cleanup;
+
+    uint8_t server_hello[256];
+    size_t server_hello_len = 0;
+    server_hello[server_hello_len++] = TLS_HS_SERVER_HELLO;
+    size_t body_length_position = server_hello_len;
+    server_hello_len += 3;
+    tls_put_u16(server_hello + server_hello_len, TLS_LEGACY_VERSION);
+    server_hello_len += 2;
+    if (neverc_crypto_rand_read(
+            server_hello + server_hello_len, 32) != 0) {
+        (void)nci_tls_fail(conn, TLS_ALERT_INTERNAL_ERROR);
+        goto cleanup;
+    }
+    server_hello_len += 32;
+    server_hello[server_hello_len++] =
+        (uint8_t)client_hello.session_id_len;
+    if (client_hello.session_id_len > 0) {
+        memcpy(server_hello + server_hello_len,
+               client_hello.session_id,
+               client_hello.session_id_len);
+        server_hello_len += client_hello.session_id_len;
+    }
+    tls_put_u16(server_hello + server_hello_len,
+                client_hello.selected_cipher);
+    server_hello_len += 2;
+    server_hello[server_hello_len++] = 0;
+    size_t extensions_length_position = server_hello_len;
+    server_hello_len += 2;
+    size_t extensions_start = server_hello_len;
+    tls_put_u16(server_hello + server_hello_len,
+                TLS_EXT_SUPPORTED_VERSIONS);
+    server_hello_len += 2;
+    tls_put_u16(server_hello + server_hello_len, 2);
+    server_hello_len += 2;
+    tls_put_u16(server_hello + server_hello_len,
+                NEVERC_TLS_VERSION_13);
+    server_hello_len += 2;
+    tls_put_u16(server_hello + server_hello_len, TLS_EXT_KEY_SHARE);
+    server_hello_len += 2;
+    tls_put_u16(server_hello + server_hello_len, 36);
+    server_hello_len += 2;
+    tls_put_u16(server_hello + server_hello_len,
+                NEVERC_TLS_GROUP_X25519);
+    server_hello_len += 2;
+    tls_put_u16(server_hello + server_hello_len, 32);
+    server_hello_len += 2;
+    memcpy(server_hello + server_hello_len,
+           server_public_key, sizeof(server_public_key));
+    server_hello_len += sizeof(server_public_key);
+    if (selected_psk_index >= 0) {
+        tls_put_u16(server_hello + server_hello_len,
+                    TLS_EXT_PRE_SHARED_KEY);
+        server_hello_len += 2;
+        tls_put_u16(server_hello + server_hello_len, 2);
+        server_hello_len += 2;
+        tls_put_u16(server_hello + server_hello_len,
+                    (uint16_t)selected_psk_index);
+        server_hello_len += 2;
+    }
+    tls_put_u16(server_hello + extensions_length_position,
+                (uint16_t)(server_hello_len - extensions_start));
+    tls_put_u24(server_hello + body_length_position,
+                (uint32_t)(server_hello_len -
+                           body_length_position - 3));
+    neverc_sha256_update(
+        &async->transcript, server_hello, server_hello_len);
+    if (nci_tls_send_plain_handshake(
+            conn, server_hello, server_hello_len) != 0)
+        goto cleanup;
+    uint8_t change_cipher_spec = 1;
+    if (nci_tls_send_plain_record(
+            conn, TLS_CT_CHANGE_CIPHER_SPEC,
+            &change_cipher_spec, 1) != 0)
+        goto cleanup;
+
+    if (neverc_ecdh_compute(
+            &ecdh_key, client_hello.client_public_key, 32,
+            shared_secret, sizeof(shared_secret)) != 32)
+        goto cleanup;
+    if (nci_tls_derive_handshake_secret(
+            shared_secret,
+            selected_psk_index >= 0 ? selected_psk : NULL,
+            async->handshake_secret) != 0) {
+        (void)nci_tls_fail(conn, TLS_ALERT_INTERNAL_ERROR);
+        goto cleanup;
+    }
+    uint8_t transcript_hash_server_hello[32];
+    neverc_sha256_ctx transcript_copy = async->transcript;
+    neverc_sha256_final(
+        &transcript_copy, transcript_hash_server_hello);
+    nci_tls_derive_secret(
+        async->handshake_secret, "c hs traffic", 12,
+        transcript_hash_server_hello,
+        async->client_hs_traffic_secret);
+    nci_tls_derive_secret(
+        async->handshake_secret, "s hs traffic", 12,
+        transcript_hash_server_hello,
+        async->server_hs_traffic_secret);
+    nci_tls_derive_traffic_keys(
+        async->server_hs_traffic_secret,
+        &conn->write_keys, async->cipher_id);
+    nci_tls_derive_traffic_keys(
+        async->client_hs_traffic_secret,
+        &conn->read_keys, async->cipher_id);
+    conn->write_keys_active = 1;
+
+    uint8_t encrypted_extensions[4 + 2 + 2 + 2 + 2 + 1 + 255];
+    size_t encrypted_extensions_len = 0;
+    encrypted_extensions[encrypted_extensions_len++] =
+        TLS_HS_ENCRYPTED_EXT;
+    size_t ee_body_length_position = encrypted_extensions_len;
+    encrypted_extensions_len += 3;
+    size_t ee_extensions_length_position = encrypted_extensions_len;
+    encrypted_extensions_len += 2;
+    size_t ee_extensions_start = encrypted_extensions_len;
+    if (selected_alpn_len > 0) {
+        if (!selected_alpn || selected_alpn_len > 255) goto cleanup;
+        tls_put_u16(encrypted_extensions + encrypted_extensions_len,
+                    TLS_EXT_ALPN);
+        encrypted_extensions_len += 2;
+        tls_put_u16(encrypted_extensions + encrypted_extensions_len,
+                    (uint16_t)(3 + selected_alpn_len));
+        encrypted_extensions_len += 2;
+        tls_put_u16(encrypted_extensions + encrypted_extensions_len,
+                    (uint16_t)(1 + selected_alpn_len));
+        encrypted_extensions_len += 2;
+        encrypted_extensions[encrypted_extensions_len++] =
+            (uint8_t)selected_alpn_len;
+        memcpy(encrypted_extensions + encrypted_extensions_len,
+               selected_alpn, selected_alpn_len);
+        encrypted_extensions_len += selected_alpn_len;
+    }
+    tls_put_u16(encrypted_extensions + ee_extensions_length_position,
+                (uint16_t)(encrypted_extensions_len -
+                           ee_extensions_start));
+    tls_put_u24(encrypted_extensions + ee_body_length_position,
+                (uint32_t)(encrypted_extensions_len -
+                           ee_body_length_position - 3));
+    neverc_sha256_update(
+        &async->transcript,
+        encrypted_extensions, encrypted_extensions_len);
+    if (nci_tls_send_encrypted_handshake(
+            conn, encrypted_extensions,
+            encrypted_extensions_len) != 0)
+        goto cleanup;
+
+    if (!conn->did_resume &&
+        cfg->client_auth ==
+            NEVERC_TLS_CLIENT_AUTH_REQUIRE_AND_VERIFY &&
+        tls_send_certificate_request(
+            conn, &async->transcript) != 0)
+        goto cleanup;
+    if (!conn->did_resume) {
+        int sent_certificate = 0;
+        if (tls_send_local_certificate(
+                conn, cfg, &async->transcript, 0,
+                &sent_certificate) != 0 || !sent_certificate ||
+            tls_send_local_certificate_verify(
+                conn, cfg, 1, &async->transcript) != 0)
+            goto cleanup;
+    }
+
+    uint8_t transcript_hash[32];
+    transcript_copy = async->transcript;
+    neverc_sha256_final(&transcript_copy, transcript_hash);
+    uint8_t finished_key[32];
+    if (nci_tls_hkdf_expand_label(
+            async->server_hs_traffic_secret, 32,
+            "finished", 8, NULL, 0,
+            finished_key, sizeof(finished_key)) != 0)
+        goto cleanup;
+    uint8_t finished_message[36];
+    finished_message[0] = TLS_HS_FINISHED;
+    tls_put_u24(finished_message + 1, 32);
+    neverc_hmac_sha256(
+        finished_key, sizeof(finished_key),
+        transcript_hash, sizeof(transcript_hash),
+        finished_message + 4);
+    neverc_sha256_update(
+        &async->transcript,
+        finished_message, sizeof(finished_message));
+    if (nci_tls_send_encrypted_handshake(
+            conn, finished_message,
+            sizeof(finished_message)) != 0)
+        goto cleanup;
+    transcript_copy = async->transcript;
+    neverc_sha256_final(
+        &transcript_copy,
+        async->transcript_hash_server_finished);
+    async->expected_client_handshake =
+        cfg->client_auth ==
+            NEVERC_TLS_CLIENT_AUTH_REQUIRE_AND_VERIFY
+        ? TLS_HS_CERTIFICATE : TLS_HS_FINISHED;
+    async->phase = TLS_ASYNC_SERVER_WAIT_CLIENT_FLIGHT;
+    result = 0;
+
+cleanup:
+    neverc_platform_secure_zero(selected_psk, sizeof(selected_psk));
+    neverc_platform_secure_zero(shared_secret, sizeof(shared_secret));
+    neverc_platform_secure_zero(&ecdh_key, sizeof(ecdh_key));
+    return result;
+}
+
+static int tls_async_finish_server_handshake(
+    neverc_tls_conn_t *conn, neverc_tls_config_t *cfg,
+    tls_async_server_state_t *async) {
+    uint8_t empty_hash[32];
+    neverc_sha256_sum(NULL, 0, empty_hash);
+    uint8_t master_derived[32];
+    nci_tls_derive_secret(
+        async->handshake_secret, "derived", 7,
+        empty_hash, master_derived);
+    uint8_t master_secret[32];
+    if (nci_tls_hkdf_extract_zero_ikm(
+            master_secret, master_derived, 32) != 0)
+        return -1;
+    uint8_t client_app_secret[32];
+    uint8_t server_app_secret[32];
+    nci_tls_derive_secret(
+        master_secret, "c ap traffic", 12,
+        async->transcript_hash_server_finished,
+        client_app_secret);
+    nci_tls_derive_secret(
+        master_secret, "s ap traffic", 12,
+        async->transcript_hash_server_finished,
+        server_app_secret);
+    uint8_t transcript_hash_client_finished[32];
+    neverc_sha256_ctx transcript_copy = async->transcript;
+    neverc_sha256_final(
+        &transcript_copy, transcript_hash_client_finished);
+    nci_tls_derive_secret(
+        master_secret, "res master", 10,
+        transcript_hash_client_finished,
+        conn->resumption_master_secret);
+    nci_tls_set_application_keys(
+        conn, async->cipher_id,
+        client_app_secret, server_app_secret);
+    nci_tls_clear_handshake_buffer(conn);
+    conn->handshake_done = 1;
+    int ticket_result = 0;
+    if (cfg->client_auth == NEVERC_TLS_CLIENT_AUTH_NONE)
+        ticket_result = nci_tls_send_new_session_ticket(conn);
+    neverc_platform_secure_zero(
+        client_app_secret, sizeof(client_app_secret));
+    neverc_platform_secure_zero(
+        server_app_secret, sizeof(server_app_secret));
+    neverc_platform_secure_zero(master_secret, sizeof(master_secret));
+    neverc_platform_secure_zero(master_derived, sizeof(master_derived));
+    if (ticket_result != 0)
+        return nci_tls_error(
+            conn, "failed to queue TLS NewSessionTicket");
+    async->phase = TLS_ASYNC_SERVER_FLUSH_FINAL;
+    return 0;
+}
+
+static int tls_async_process_client_flight(
+    neverc_tls_conn_t *conn, neverc_tls_config_t *cfg,
+    tls_async_server_state_t *async) {
+    for (;;) {
+        const uint8_t *handshake_message = NULL;
+        size_t handshake_message_len = 0;
+        int available = nci_tls_next_handshake_message(
+            conn, &handshake_message, &handshake_message_len);
+        if (available < 0)
+            return nci_tls_protocol_error(
+                conn, TLS_ALERT_DECODE_ERROR,
+                "client handshake message exceeds the configured limit");
+        if (available == 0) {
+            uint8_t inner_type;
+            uint8_t record_data[TLS_MAX_PLAINTEXT];
+            size_t record_len;
+            int receive_result = nci_tls_recv_decrypt(
+                conn, &inner_type, record_data, &record_len);
+            if (receive_result != 0) return receive_result;
+            if (inner_type == TLS_CT_ALERT)
+                return nci_tls_error(
+                    conn, "client sent an alert during handshake");
+            if (inner_type != TLS_CT_HANDSHAKE || record_len == 0)
+                return nci_tls_protocol_error(
+                    conn, TLS_ALERT_UNEXPECTED_MESSAGE,
+                    "client sent non-handshake data during handshake");
+            if (record_len > TLS_MAX_HANDSHAKE - conn->handshake_len ||
+                nci_tls_append_handshake_bytes(
+                    conn, record_data, record_len) != 0)
+                return nci_tls_protocol_error(
+                    conn, TLS_ALERT_INTERNAL_ERROR,
+                    "client handshake reassembly failed");
+            continue;
+        }
+
+        uint8_t message_type = handshake_message[0];
+        size_t message_body_len = handshake_message_len - 4;
+        const uint8_t *message = handshake_message + 4;
+        if (message_type != async->expected_client_handshake)
+            return nci_tls_protocol_error(
+                conn, TLS_ALERT_UNEXPECTED_MESSAGE,
+                "client handshake message arrived out of order");
+
+        if (message_type == TLS_HS_CERTIFICATE) {
+            int certificate_result = tls_store_peer_certificate(
+                conn, message, message_body_len, 1);
+            if (certificate_result == 1)
+                return nci_tls_fail(
+                    conn, TLS_ALERT_CERTIFICATE_REQUIRED);
+            if (certificate_result != 0)
+                return nci_tls_fail(conn, TLS_ALERT_DECODE_ERROR);
+            neverc_sha256_update(
+                &async->transcript,
+                handshake_message, handshake_message_len);
+            async->expected_client_handshake = TLS_HS_CERT_VERIFY;
+        } else if (message_type == TLS_HS_CERT_VERIFY) {
+            if (!conn->peer_cert || message_body_len < 4)
+                return nci_tls_fail(conn, TLS_ALERT_DECODE_ERROR);
+            uint16_t signature_scheme = tls_get_u16(message);
+            size_t signature_len = tls_get_u16(message + 2);
+            if (signature_len == 0 ||
+                signature_len != message_body_len - 4)
+                return nci_tls_fail(conn, TLS_ALERT_DECODE_ERROR);
+            uint8_t transcript_hash[32];
+            neverc_sha256_ctx transcript_copy = async->transcript;
+            neverc_sha256_final(&transcript_copy, transcript_hash);
+            neverc_x509_cert_t certificate;
+            if (neverc_x509_parse_certificate(
+                    &certificate, conn->peer_cert,
+                    conn->peer_cert_len) != 0)
+                return nci_tls_fail(
+                    conn, TLS_ALERT_BAD_CERTIFICATE);
+            int signature_result =
+                neverc_tls_verify_certificate_verify(
+                    &certificate, signature_scheme, 0,
+                    transcript_hash, sizeof(transcript_hash),
+                    message + 4, signature_len);
+            neverc_x509_cert_free(&certificate);
+            if (signature_result != 0)
+                return nci_tls_fail(
+                    conn, TLS_ALERT_DECRYPT_ERROR);
+            if (nci_tls_verify_certificate_chain(
+                    cfg, conn->peer_cert, conn->peer_cert_len,
+                    conn->peer_intermediates, NULL, NULL,
+                    NEVERC_X509_EXT_KEY_USAGE_CLIENT_AUTH,
+                    0) != 0)
+                return nci_tls_fail(
+                    conn, TLS_ALERT_BAD_CERTIFICATE);
+            neverc_sha256_update(
+                &async->transcript,
+                handshake_message, handshake_message_len);
+            async->expected_client_handshake = TLS_HS_FINISHED;
+        } else {
+            if (message_body_len != 32)
+                return nci_tls_fail(conn, TLS_ALERT_DECODE_ERROR);
+            uint8_t transcript_hash[32];
+            neverc_sha256_ctx transcript_copy = async->transcript;
+            neverc_sha256_final(&transcript_copy, transcript_hash);
+            uint8_t finished_key[32];
+            if (nci_tls_hkdf_expand_label(
+                    async->client_hs_traffic_secret, 32,
+                    "finished", 8, NULL, 0,
+                    finished_key, sizeof(finished_key)) != 0)
+                return nci_tls_fail(
+                    conn, TLS_ALERT_INTERNAL_ERROR);
+            uint8_t expected[32];
+            neverc_hmac_sha256(
+                finished_key, sizeof(finished_key),
+                transcript_hash, sizeof(transcript_hash), expected);
+            if (!neverc_subtle_constant_time_compare(
+                    message, expected, sizeof(expected)))
+                return nci_tls_fail(
+                    conn, TLS_ALERT_DECRYPT_ERROR);
+            neverc_sha256_update(
+                &async->transcript,
+                handshake_message, handshake_message_len);
+        }
+        if (nci_tls_consume_handshake_message(
+                conn, handshake_message_len) != 0)
+            return nci_tls_protocol_error(
+                conn, TLS_ALERT_INTERNAL_ERROR,
+                "failed to advance client handshake buffer");
+        if (message_type == TLS_HS_FINISHED) {
+            if (conn->handshake_len != 0)
+                return nci_tls_protocol_error(
+                    conn, TLS_ALERT_UNEXPECTED_MESSAGE,
+                    "trailing data after client Finished");
+            return tls_async_finish_server_handshake(
+                conn, cfg, async);
+        }
+    }
+}
+
+int nci_tls_server_handshake_begin(
+    neverc_tls_conn_t *conn, neverc_tls_config_t *cfg) {
+    if (!conn || !cfg || !cfg->cert_der || !cfg->key_der ||
+        conn->async_handshake)
+        return -1;
+    tls_async_server_state_t *async =
+        (tls_async_server_state_t *)calloc(1, sizeof(*async));
+    if (!async) return -1;
+    async->phase = TLS_ASYNC_SERVER_WAIT_CLIENT_HELLO;
+    neverc_sha256_init(&async->transcript);
+    conn->nonblocking_io = 1;
+    conn->async_handshake = async;
+    return 0;
+}
+
+int nci_tls_server_handshake_step(neverc_tls_conn_t *conn) {
+    if (!conn || !conn->async_handshake || !conn->config)
+        return -1;
+    tls_async_server_state_t *async =
+        (tls_async_server_state_t *)conn->async_handshake;
+
+    int flush_result = nci_tls_flush_pending_write(conn);
+    if (flush_result != 0) return flush_result;
+    for (;;) {
+        if (async->phase == TLS_ASYNC_SERVER_WAIT_CLIENT_HELLO) {
+            const uint8_t *client_hello = NULL;
+            size_t client_hello_len = 0;
+            int receive_result = nci_tls_recv_plain_handshake_message(
+                conn, TLS_HS_CLIENT_HELLO,
+                &client_hello, &client_hello_len);
+            if (receive_result != 0) return receive_result;
+            if (tls_async_prepare_server_flight(
+                    conn, conn->config, async,
+                    client_hello, client_hello_len) != 0)
+                return -1;
+            flush_result = nci_tls_flush_pending_write(conn);
+            if (flush_result != 0) return flush_result;
+            continue;
+        }
+        if (async->phase == TLS_ASYNC_SERVER_WAIT_CLIENT_FLIGHT) {
+            int process_result = tls_async_process_client_flight(
+                conn, conn->config, async);
+            if (process_result != 0) return process_result;
+            continue;
+        }
+        if (async->phase == TLS_ASYNC_SERVER_FLUSH_FINAL) {
+            flush_result = nci_tls_flush_pending_write(conn);
+            if (flush_result != 0) return flush_result;
+            async->phase = TLS_ASYNC_SERVER_COMPLETE;
+            continue;
+        }
+        return 0;
+    }
+}
+
+void nci_tls_async_handshake_free(neverc_tls_conn_t *conn) {
+    if (!conn || !conn->async_handshake) return;
+    tls_async_server_state_t *async =
+        (tls_async_server_state_t *)conn->async_handshake;
+    neverc_platform_secure_zero(async, sizeof(*async));
+    free(async);
+    conn->async_handshake = NULL;
+}
+
 /* ======================================================================
  * TLS 1.3 Post-Handshake Messages
  * ====================================================================== */
@@ -2599,4 +3171,3 @@ int nci_tls_handle_peer_alert(
     conn->failure_reason = "TLS peer sent a fatal alert";
     return -1;
 }
-

@@ -146,6 +146,23 @@ static inline int nc_threadpool_submit(nc_threadpool_t *pool,
     return 0;
 }
 
+static inline int nc_threadpool_try_submit(nc_threadpool_t *pool,
+                                            nc_task_func_t func, void *arg) {
+    if (!pool || !func) return -1;
+    nc_mutex_lock(&pool->mutex);
+    if (pool->shutdown || pool->queue_count == pool->queue_cap) {
+        nc_mutex_unlock(&pool->mutex);
+        return -1;
+    }
+    pool->queue[pool->queue_tail].func = func;
+    pool->queue[pool->queue_tail].arg = arg;
+    pool->queue_tail = (pool->queue_tail + 1) % pool->queue_cap;
+    pool->queue_count++;
+    nc_cond_signal(&pool->not_empty);
+    nc_mutex_unlock(&pool->mutex);
+    return 0;
+}
+
 static inline void nc_threadpool_destroy(nc_threadpool_t *pool) {
     if (!pool) return;
     nc_mutex_lock(&pool->mutex);
