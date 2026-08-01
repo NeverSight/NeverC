@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "neverc/std/net/http/http2.h"
+#include "neverc/std/net/http.h"
 #include "neverc/std/net/tcp.h"
 
 #ifndef _WIN32
@@ -463,6 +464,15 @@ typedef struct {
     int fd;
 } h2_serve_ctx_t;
 
+static void h2_test_handler(neverc_http_request_t *req,
+                            neverc_http_response_writer_t *w) {
+    neverc_http_set_status(w, 200);
+    neverc_http_set_header(w, "Content-Type", "text/plain; charset=utf-8");
+    neverc_http_writef(w, "Hello from NeverC HTTP/2!\nMethod: %s\nPath: %s\n",
+                       req->method ? req->method : "",
+                       req->path ? req->path : "");
+}
+
 static void h2_run_server_child(h2_serve_ctx_t *ctx) {
     int rc = neverc_h2_serve_conn(ctx->srv, ctx->fd);
     _exit(rc == 0 ? 0 : 1);
@@ -616,6 +626,7 @@ int main(void) {
     run_test_hpack_dynamic_table_eviction();
     run_test_frame_types_and_flags();
 #ifndef _WIN32
+    neverc_http_handle_func("/", h2_test_handler);
     run_test_h2c_serve_conn_roundtrip();
     run_test_h2c_continuation_headers();
 #endif

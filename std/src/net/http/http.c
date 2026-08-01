@@ -474,7 +474,8 @@ void neverc_http_set_trailer(neverc_http_response_writer_t *w,
 
 int neverc_http_write(neverc_http_response_writer_t *w,
                        const void *data, size_t len) {
-    if (!w || (!data && len > 0) || len > INT_MAX) return -1;
+    if (!w) return 0;
+    if ((!data && len > 0) || len > INT_MAX) return -1;
     if (w->body_limit_exceeded || w->chunked_ended) return -1;
     if (len == 0) return 0;
     if (nc_buf_append(&w->body, data, len) != 0) return -1;
@@ -1603,6 +1604,22 @@ static int parse_request_headers(const char *raw, size_t raw_length,
                                  size_t *header_size) {
     return parse_request_mode(raw, raw_length, request, header_size, 1);
 }
+
+#ifdef NEVERC_NETWORK_PROTOCOL_FUZZING
+int neverc_http_test_fuzz_request_parser(const void *input,
+                                         size_t input_length) {
+    static const char empty_input = '\0';
+    const char *raw = input ? (const char *)input : &empty_input;
+    if (!input && input_length != 0) return -2;
+    parsed_request_t request;
+    size_t consumed = 0;
+    int result = parse_request(raw, input_length, &request, &consumed);
+    if (result == 0 && request.is_chunked && request.body)
+        free((void *)request.body);
+    parsed_request_free(&request);
+    return result;
+}
+#endif
 
 static void fill_request(const parsed_request_t *pr,
                            neverc_http_request_t *req,

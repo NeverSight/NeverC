@@ -500,12 +500,19 @@ STD_TEST(http2, "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c
 STD_TEST(http2_oom, "src/net/http/http2/http2.c", "src/net/http/http.c",
     "src/net/http/http_client.c", TCP_DEPS, HTTP_TLS_DEPS)
 
-// ===== QUIC / HTTP/3 experimental components =====
+// ===== Native RPC / Protobuf / gRPC =====
+STD_TEST(rpc)
+STD_TEST(protobuf)
+STD_TEST(grpc)
+
+// ===== QUIC / HTTP/3 =====
 STD_TEST(quic_frame)
 STD_TEST(quic_loss)
 STD_TEST(quic_conn, "src/net/quic/quic_api.c", "src/crypto/rand/rand.c")
+STD_TEST(quic_e2e)
 STD_TEST(http3_frame)
 STD_TEST(http3_server)
+STD_TEST(http3_e2e)
 
 TEST_F(StdLibTest, EmbeddedNetworkDotSyntax) {
   auto r = compileAndRunStdTest("network_builtin", {}, {"-fbuiltin-std"});
@@ -631,11 +638,11 @@ TEST_F(StdLibTest, EmbeddedX509SignatureDotSyntax) {
   EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
 }
 #undef X509_VERIFY_DEPS
-STD_TEST(tls, HTTP_TLS_DEPS, "src/net/tcp/tcp.c")
+STD_TEST(tls, HTTP_TLS_DEPS, TCP_DEPS)
 TEST_F(StdLibTest, TlsExperimentalTransport) {
   auto r = compileAndRunStdTest(
       "tls",
-      {HTTP_TLS_DEPS, "src/net/tcp/tcp.c"},
+      {HTTP_TLS_DEPS, TCP_DEPS},
       {"-DNEVERC_TLS_ENABLE_EXPERIMENTAL_TRANSPORT=1",
        "-DNEVERC_TLS_TESTING=1"});
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
@@ -678,7 +685,7 @@ TEST_F(StdLibTest, TlsOpenSslBidirectionalInterop) {
       peer.string(),
       (fs::path(stdTestDir()) / "test_tls_interop.c").string(),
   };
-  for (const char *src : {HTTP_TLS_DEPS, "src/net/tcp/tcp.c"})
+  for (const char *src : {HTTP_TLS_DEPS, TCP_DEPS})
     args.push_back(sd + "/" + src);
   args.push_back("-lm");
   args.push_back("-lpthread");
@@ -727,7 +734,7 @@ TEST_F(StdLibTest, TlsBoringSslBidirectionalInterop) {
       peer.string(),
       (fs::path(stdTestDir()) / "test_tls_interop.c").string(),
   };
-  for (const char *src : {HTTP_TLS_DEPS, "src/net/tcp/tcp.c"})
+  for (const char *src : {HTTP_TLS_DEPS, TCP_DEPS})
     args.push_back(sd + "/" + src);
   args.push_back("-lm");
   args.push_back("-lpthread");
