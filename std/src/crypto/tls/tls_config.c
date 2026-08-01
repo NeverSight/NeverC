@@ -12,6 +12,7 @@
 #include <time.h>
 
 #include "neverc/std/crypto/sha256.h"
+#include "neverc/std/crypto/subtle.h"
 #include "neverc/std/crypto/x509.h"
 #include "neverc/std/encoding/pem.h"
 

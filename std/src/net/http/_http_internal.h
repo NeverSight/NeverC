@@ -22,6 +22,8 @@ static inline int strncasecmp(const char *a, const char *b, size_t n) {
 #define HTTP_INITIAL_BUFSZ  4096
 
 typedef struct http_conn http_conn_t;
+typedef int (*nc_http_writer_func_t)(void *context, const void *data,
+                                     size_t len, int timeout_ms);
 
 struct neverc_http_response_writer {
     nc_sock_t   fd;
@@ -42,9 +44,17 @@ struct neverc_http_response_writer {
     int         gzip_level;
     size_t      gzip_min_size;
     int         accepts_gzip;
+    int         write_timeout_ms;
+    int         has_content_length_override;
+    size_t      content_length_override;
+    int         head_request;
+    nc_http_writer_func_t transport_write;
+    void       *transport_context;
 };
 
 int nc_http_sock_write_all(nc_sock_t fd, const void *data, size_t len);
+int nc_http_sock_write_all_timeout(nc_sock_t fd, const void *data, size_t len,
+                                   int timeout_ms);
 
 extern neverc_http_cors_config_t g_cors_config;
 extern int g_cors_enabled;

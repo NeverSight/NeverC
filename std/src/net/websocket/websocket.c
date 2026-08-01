@@ -4,6 +4,7 @@
 #include "neverc/std/crypto/sha1.h"
 #include "neverc/std/encoding/base64.h"
 #include "../_net_buffer.h"
+#include "../_net_thread.h"
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -22,14 +23,29 @@ static int strcasecmp(const char *a, const char *b) {
 #define WS_DEFAULT_MAX_MESSAGE_SIZE (16u * 1024u * 1024u)
 #define WS_MAX_HANDSHAKE_HEADER (64u * 1024u)
 #define WS_MAX_TARGET_SIZE 2048
+#define WS_KEEPALIVE_TICK_MS 25
+#define WS_KEEPALIVE_WRITE_TIMEOUT_MS 1000
 
 struct neverc_ws_conn {
     neverc_tcp_conn_t *tcp;
     size_t read_limit;
+    int write_timeout_ms;
     int is_client;
-    int failed;
-    int close_sent;
-    int close_received;
+    volatile int failed;
+    volatile int close_sent;
+    volatile int close_received;
+    nc_mutex_t write_lock;
+    nc_mutex_t keepalive_lock;
+    nc_thread_t keepalive_thread;
+    int keepalive_running;
+    int keepalive_stop;
+    int keepalive_expired;
+    int ping_interval_ms;
+    int pong_timeout_ms;
+    int awaiting_pong;
+    uint64_t next_ping_ms;
+    uint64_t pong_deadline_ms;
+    uint8_t ping_token[8];
 };
 
 typedef struct {
@@ -41,6 +57,9 @@ typedef struct {
 static neverc_ws_conn_t *ws_conn_new_role(neverc_tcp_conn_t *tcp,
                                            int is_client,
                                            size_t read_limit);
+static int write_frame_timeout(neverc_ws_conn_t *conn, int opcode,
+                               const void *payload, size_t len,
+                               int timeout_override_ms);
 
 /* ======================================================================
  * Helpers
@@ -480,7 +499,12 @@ neverc_ws_conn_t *neverc_ws_dial(const char *url,
     const char *subprotocol = config ? config->subprotocol : NULL;
     if ((origin && ws_contains_ctl(origin)) ||
         (subprotocol && !ws_is_token(subprotocol)) ||
-        (config && config->handshake_timeout_ms < 0)) {
+        (config &&
+         (config->handshake_timeout_ms < 0 || config->read_timeout_ms < 0 ||
+          config->write_timeout_ms < 0 || config->ping_interval_ms < 0 ||
+          config->pong_timeout_ms < 0 ||
+          ((config->ping_interval_ms == 0) !=
+           (config->pong_timeout_ms == 0))))) {
         ws_set_error(errp, "invalid WebSocket client configuration");
         return NULL;
     }
@@ -570,6 +594,18 @@ neverc_ws_conn_t *neverc_ws_dial(const char *url,
     if (!ws) {
         neverc_tcp_close(tcp);
         ws_set_error(errp, "out of memory creating WebSocket connection");
+        return NULL;
+    }
+    if (config &&
+        ((config->read_timeout_ms > 0 &&
+          neverc_ws_set_read_timeout(ws, config->read_timeout_ms) != 0) ||
+         (config->write_timeout_ms > 0 &&
+          neverc_ws_set_write_timeout(ws, config->write_timeout_ms) != 0) ||
+         (config->ping_interval_ms > 0 &&
+          neverc_ws_set_keepalive(ws, config->ping_interval_ms,
+                                  config->pong_timeout_ms) != 0))) {
+        neverc_ws_conn_free(ws);
+        ws_set_error(errp, "invalid WebSocket runtime configuration");
         return NULL;
     }
     return ws;
@@ -759,6 +795,8 @@ static neverc_ws_conn_t *ws_conn_new_role(neverc_tcp_conn_t *tcp,
     ws->tcp = tcp;
     ws->is_client = is_client != 0;
     ws->read_limit = read_limit;
+    nc_mutex_init(&ws->write_lock);
+    nc_mutex_init(&ws->keepalive_lock);
     return ws;
 }
 
@@ -768,13 +806,158 @@ neverc_ws_conn_t *neverc_ws_conn_new(neverc_tcp_conn_t *conn) {
 
 void neverc_ws_conn_free(neverc_ws_conn_t *conn) {
     if (!conn) return;
+    nc_mutex_lock(&conn->keepalive_lock);
+    int join_keepalive = conn->keepalive_running;
+    conn->keepalive_stop = 1;
+    nc_mutex_unlock(&conn->keepalive_lock);
+    if (conn->tcp) {
+        neverc_tcp_shutdown_read(conn->tcp);
+        neverc_tcp_shutdown_write(conn->tcp);
+    }
+    if (join_keepalive) nc_thread_join(conn->keepalive_thread);
     if (conn->tcp) neverc_tcp_close(conn->tcp);
+    nc_mutex_destroy(&conn->keepalive_lock);
+    nc_mutex_destroy(&conn->write_lock);
     free(conn);
 }
 
 int neverc_ws_set_timeout(neverc_ws_conn_t *conn, int ms) {
-    if (!conn || !conn->tcp) return -1;
-    return neverc_tcp_set_timeout(conn->tcp, ms);
+    if (!conn || !conn->tcp || ms < 0) return -1;
+    int read_rc = neverc_ws_set_read_timeout(conn, ms);
+    int write_rc = neverc_ws_set_write_timeout(conn, ms);
+    return read_rc == 0 && write_rc == 0 ? 0 : -1;
+}
+
+int neverc_ws_set_read_timeout(neverc_ws_conn_t *conn, int ms) {
+    if (!conn || !conn->tcp || ms < 0) return -1;
+    return neverc_tcp_set_read_timeout(conn->tcp, ms);
+}
+
+int neverc_ws_set_write_timeout(neverc_ws_conn_t *conn, int ms) {
+    if (!conn || !conn->tcp || ms < 0) return -1;
+    nc_mutex_lock(&conn->write_lock);
+    conn->write_timeout_ms = ms;
+    nc_mutex_unlock(&conn->write_lock);
+    return 0;
+}
+
+static void ws_sleep_ms(unsigned ms) {
+#ifdef _WIN32
+    Sleep(ms);
+#else
+    struct timespec delay;
+    delay.tv_sec = (time_t)(ms / 1000U);
+    delay.tv_nsec = (long)(ms % 1000U) * 1000000L;
+    while (nanosleep(&delay, &delay) != 0 && errno == EINTR) {
+    }
+#endif
+}
+
+static void ws_keepalive_shutdown(neverc_ws_conn_t *conn) {
+    nc_atomic_store(&conn->failed, 1);
+    if (conn->tcp) {
+        neverc_tcp_shutdown_read(conn->tcp);
+        neverc_tcp_shutdown_write(conn->tcp);
+    }
+}
+
+static void *ws_keepalive_main(void *arg) {
+    neverc_ws_conn_t *conn = (neverc_ws_conn_t *)arg;
+    for (;;) {
+        uint8_t token[sizeof(conn->ping_token)];
+        int send_ping = 0;
+        int expired = 0;
+        uint64_t now = nc_monotonic_ms();
+
+        nc_mutex_lock(&conn->keepalive_lock);
+        if (conn->keepalive_stop) {
+            nc_mutex_unlock(&conn->keepalive_lock);
+            break;
+        }
+        if (conn->awaiting_pong && now >= conn->pong_deadline_ms) {
+            conn->keepalive_expired = 1;
+            conn->awaiting_pong = 0;
+            expired = 1;
+        } else if (!conn->awaiting_pong && now >= conn->next_ping_ms) {
+            if (neverc_crypto_rand_read(token, sizeof(token)) != 0) {
+                expired = 1;
+            } else {
+                memcpy(conn->ping_token, token, sizeof(token));
+                conn->awaiting_pong = 1;
+                conn->pong_deadline_ms = now +
+                                         (uint64_t)conn->pong_timeout_ms;
+                send_ping = 1;
+            }
+        }
+        nc_mutex_unlock(&conn->keepalive_lock);
+
+        if (expired) {
+            ws_keepalive_shutdown(conn);
+            break;
+        }
+        if (send_ping) {
+            int write_budget = conn->pong_timeout_ms;
+            if (write_budget > WS_KEEPALIVE_WRITE_TIMEOUT_MS)
+                write_budget = WS_KEEPALIVE_WRITE_TIMEOUT_MS;
+            if (write_frame_timeout(conn, NC_WS_OPCODE_PING, token,
+                                    sizeof(token), write_budget) != 0) {
+                ws_keepalive_shutdown(conn);
+                break;
+            }
+        }
+        ws_sleep_ms(WS_KEEPALIVE_TICK_MS);
+    }
+    return NULL;
+}
+
+static void ws_keepalive_stop(neverc_ws_conn_t *conn) {
+    nc_mutex_lock(&conn->keepalive_lock);
+    int running = conn->keepalive_running;
+    conn->keepalive_stop = 1;
+    nc_mutex_unlock(&conn->keepalive_lock);
+    if (running) nc_thread_join(conn->keepalive_thread);
+    nc_mutex_lock(&conn->keepalive_lock);
+    conn->keepalive_running = 0;
+    conn->keepalive_stop = 0;
+    conn->awaiting_pong = 0;
+    nc_mutex_unlock(&conn->keepalive_lock);
+}
+
+int neverc_ws_set_keepalive(neverc_ws_conn_t *conn, int ping_interval_ms,
+                            int pong_timeout_ms) {
+    if (!conn || !conn->tcp || ping_interval_ms < 0 || pong_timeout_ms < 0 ||
+        ((ping_interval_ms == 0) != (pong_timeout_ms == 0)))
+        return -1;
+
+    ws_keepalive_stop(conn);
+    if (ping_interval_ms == 0) return 0;
+    if (nc_atomic_load(&conn->failed) ||
+        nc_atomic_load(&conn->close_sent) ||
+        nc_atomic_load(&conn->close_received))
+        return -1;
+
+    nc_mutex_lock(&conn->keepalive_lock);
+    conn->keepalive_expired = 0;
+    conn->ping_interval_ms = ping_interval_ms;
+    conn->pong_timeout_ms = pong_timeout_ms;
+    conn->next_ping_ms = nc_monotonic_ms() + (uint64_t)ping_interval_ms;
+    nc_mutex_unlock(&conn->keepalive_lock);
+
+    if (nc_thread_create(&conn->keepalive_thread, ws_keepalive_main, conn) !=
+        0)
+        return -1;
+    nc_mutex_lock(&conn->keepalive_lock);
+    conn->keepalive_running = 1;
+    nc_mutex_unlock(&conn->keepalive_lock);
+    return 0;
+}
+
+int neverc_ws_keepalive_expired(neverc_ws_conn_t *conn) {
+    if (!conn) return 0;
+    nc_mutex_lock(&conn->keepalive_lock);
+    int expired = conn->keepalive_expired;
+    nc_mutex_unlock(&conn->keepalive_lock);
+    return expired;
 }
 
 int neverc_ws_set_read_limit(neverc_ws_conn_t *conn, size_t max_bytes) {
@@ -852,17 +1035,45 @@ static int ws_valid_utf8(const uint8_t *data, size_t len) {
 }
 
 static int ws_fail(neverc_ws_conn_t *conn) {
-    if (conn) conn->failed = 1;
+    if (conn) nc_atomic_store(&conn->failed, 1);
     return -1;
 }
 
-static int write_frame(neverc_ws_conn_t *conn, int opcode,
-                       const void *payload, size_t len) {
-    if (!conn || !conn->tcp || conn->failed || conn->close_sent ||
+static int ws_frame_write_all(neverc_tcp_conn_t *tcp, neverc_context_t *ctx,
+                              const void *data, size_t len) {
+    return ctx ? tcp_write_all_context(tcp, ctx, data, len)
+               : tcp_write_all(tcp, data, len);
+}
+
+static int write_frame_timeout(neverc_ws_conn_t *conn, int opcode,
+                               const void *payload, size_t len,
+                               int timeout_override_ms) {
+    if (!conn) return -1;
+    nc_mutex_lock(&conn->write_lock);
+    if (!conn->tcp || nc_atomic_load(&conn->failed) ||
+        nc_atomic_load(&conn->close_sent) ||
         !ws_valid_opcode(opcode) || opcode == NC_WS_OPCODE_CONTINUATION ||
         (len > 0 && !payload) ||
-        (ws_control_opcode(opcode) && len > 125))
+        (ws_control_opcode(opcode) && len > 125)) {
+        nc_mutex_unlock(&conn->write_lock);
         return -1;
+    }
+
+    int timeout_ms = timeout_override_ms > 0
+                         ? timeout_override_ms
+                         : conn->write_timeout_ms;
+    neverc_context_t *ctx = NULL;
+    neverc_context_cancel_handle_t *cancel = NULL;
+    if (timeout_ms > 0) {
+        ctx = neverc_context_with_timeout_handle(
+            neverc_context_background(), timeout_ms, &cancel);
+        if (!ctx || !cancel) {
+            if (ctx) neverc_context_free(ctx);
+            if (cancel) neverc_context_cancel_handle_free(cancel);
+            nc_mutex_unlock(&conn->write_lock);
+            return -1;
+        }
+    }
 
     uint8_t hdr[14];
     size_t hlen = 2;
@@ -889,15 +1100,29 @@ static int write_frame(neverc_ws_conn_t *conn, int opcode,
 
     uint8_t mask_key[4];
     if (mask) {
-        if (neverc_crypto_rand_read(mask_key, sizeof(mask_key)) != 0)
-            return ws_fail(conn);
+        if (neverc_crypto_rand_read(mask_key, sizeof(mask_key)) != 0) {
+            ws_fail(conn);
+            goto done;
+        }
         memcpy(hdr + hlen, mask_key, sizeof(mask_key));
         hlen += sizeof(mask_key);
     }
-    if (tcp_write_all(conn->tcp, hdr, hlen) != 0) return ws_fail(conn);
+    if (opcode == NC_WS_OPCODE_CLOSE)
+        nc_atomic_store(&conn->close_sent, 1);
+    if (ws_frame_write_all(conn->tcp, ctx, hdr, hlen) != 0) {
+        ws_fail(conn);
+        goto done;
+    }
     if (!mask) {
-        if (len > 0 && tcp_write_all(conn->tcp, payload, len) != 0)
-            return ws_fail(conn);
+        if (len > 0 &&
+            ws_frame_write_all(conn->tcp, ctx, payload, len) != 0) {
+            ws_fail(conn);
+            goto done;
+        }
+        if (ctx) neverc_context_cancel_handle_cancel(cancel);
+        if (ctx) neverc_context_free(ctx);
+        if (cancel) neverc_context_cancel_handle_free(cancel);
+        nc_mutex_unlock(&conn->write_lock);
         return 0;
     }
 
@@ -909,16 +1134,35 @@ static int write_frame(neverc_ws_conn_t *conn, int opcode,
         if (chunk > sizeof(masked)) chunk = sizeof(masked);
         for (size_t i = 0; i < chunk; i++)
             masked[i] = input[offset + i] ^ mask_key[(offset + i) % 4];
-        if (tcp_write_all(conn->tcp, masked, chunk) != 0)
-            return ws_fail(conn);
+        if (ws_frame_write_all(conn->tcp, ctx, masked, chunk) != 0) {
+            ws_fail(conn);
+            goto done;
+        }
         offset += chunk;
     }
+    if (ctx) neverc_context_cancel_handle_cancel(cancel);
+    if (ctx) neverc_context_free(ctx);
+    if (cancel) neverc_context_cancel_handle_free(cancel);
+    nc_mutex_unlock(&conn->write_lock);
     return 0;
+
+done:
+    if (ctx) neverc_context_cancel_handle_cancel(cancel);
+    if (ctx) neverc_context_free(ctx);
+    if (cancel) neverc_context_cancel_handle_free(cancel);
+    nc_mutex_unlock(&conn->write_lock);
+    return -1;
+}
+
+static int write_frame(neverc_ws_conn_t *conn, int opcode,
+                       const void *payload, size_t len) {
+    return write_frame_timeout(conn, opcode, payload, len, 0);
 }
 
 int neverc_ws_read_frame(neverc_ws_conn_t *conn, int *opcode, int *fin,
                           void *buf, size_t buflen, size_t *out_len) {
-    if (!conn || !conn->tcp || conn->failed || conn->close_received ||
+    if (!conn || !conn->tcp || nc_atomic_load(&conn->failed) ||
+        nc_atomic_load(&conn->close_received) ||
         !opcode || !buf || !out_len)
         return -1;
     *out_len = 0;
@@ -992,7 +1236,16 @@ int neverc_ws_read_frame(neverc_ws_conn_t *conn, int *opcode, int *fin,
                                                close_payload[1])) ||
               !ws_valid_utf8(close_payload + 2, (size_t)plen - 2))))
             return ws_fail(conn);
-        conn->close_received = 1;
+        nc_atomic_store(&conn->close_received, 1);
+    } else if (frame_opcode == NC_WS_OPCODE_PONG) {
+        nc_mutex_lock(&conn->keepalive_lock);
+        if (conn->awaiting_pong && plen == sizeof(conn->ping_token) &&
+            memcmp(buf, conn->ping_token, sizeof(conn->ping_token)) == 0) {
+            conn->awaiting_pong = 0;
+            conn->next_ping_ms = nc_monotonic_ms() +
+                                 (uint64_t)conn->ping_interval_ms;
+        }
+        nc_mutex_unlock(&conn->keepalive_lock);
     }
 
     *opcode = frame_opcode;
@@ -1020,7 +1273,9 @@ int neverc_ws_send_pong(neverc_ws_conn_t *conn, const void *data, size_t len) {
 
 int neverc_ws_send_close(neverc_ws_conn_t *conn, uint16_t code,
                           const char *reason) {
-    if (!conn || conn->close_sent || !ws_valid_close_code(code)) return -1;
+    if (!conn || nc_atomic_load(&conn->close_sent) ||
+        !ws_valid_close_code(code))
+        return -1;
     uint8_t payload[125];
     size_t plen = 2;
     payload[0] = (uint8_t)((code >> 8) & 0xFF);
@@ -1033,9 +1288,7 @@ int neverc_ws_send_close(neverc_ws_conn_t *conn, uint16_t code,
         memcpy(payload + 2, reason, rlen);
         plen += rlen;
     }
-    int rc = write_frame(conn, NC_WS_OPCODE_CLOSE, payload, plen);
-    if (rc == 0) conn->close_sent = 1;
-    return rc;
+    return write_frame(conn, NC_WS_OPCODE_CLOSE, payload, plen);
 }
 
 int neverc_ws_read_message(neverc_ws_conn_t *conn, char *buf, size_t buflen,
@@ -1048,7 +1301,8 @@ int neverc_ws_read_message(neverc_ws_conn_t *conn, char *buf, size_t buflen,
     size_t frame_cap = buflen - 1;
     if (conn->read_limit && frame_cap > conn->read_limit)
         frame_cap = conn->read_limit;
-    char *chunk = (char *)malloc(frame_cap ? frame_cap : 1);
+    size_t chunk_cap = frame_cap < 125 ? 125 : frame_cap;
+    char *chunk = (char *)malloc(chunk_cap);
     if (!chunk) return -1;
     int fragmented = 0;
     int message_opcode = 0;
@@ -1058,7 +1312,7 @@ int neverc_ws_read_message(neverc_ws_conn_t *conn, char *buf, size_t buflen,
         int frame_fin = 0;
         size_t chunk_len = 0;
         int rc = neverc_ws_read_frame(conn, &opcode, &frame_fin, chunk,
-                                       frame_cap, &chunk_len);
+                                       chunk_cap, &chunk_len);
         if (rc != 0) {
             free(chunk);
             nc_buf_free(&acc);
@@ -1066,9 +1320,8 @@ int neverc_ws_read_message(neverc_ws_conn_t *conn, char *buf, size_t buflen,
         }
 
         if (opcode == NC_WS_OPCODE_CLOSE) {
-            if (!conn->close_sent &&
-                write_frame(conn, NC_WS_OPCODE_CLOSE, chunk, chunk_len) == 0)
-                conn->close_sent = 1;
+            if (!nc_atomic_load(&conn->close_sent))
+                write_frame(conn, NC_WS_OPCODE_CLOSE, chunk, chunk_len);
             free(chunk);
             nc_buf_free(&acc);
             return -1;

@@ -192,6 +192,8 @@ struct neverc_tls_conn {
     tls_mutex_t         read_mutex;
     tls_mutex_t         write_mutex;
     int                 mutexes_initialized;
+    neverc_context_t    *read_context;
+    neverc_context_t    *write_context;
     tls_traffic_keys_t  read_keys;
     tls_traffic_keys_t  write_keys;
     int                 handshake_done;

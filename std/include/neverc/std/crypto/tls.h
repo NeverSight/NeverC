@@ -8,8 +8,9 @@
  * signatures, build certificate chains from custom or system roots, and sign
  * with P-256 keys. Initial-handshake mTLS, KeyUpdate, and stateful TLS 1.3
  * PSK-DHE session resumption are implemented. Post-handshake authentication
- * and independent security validation are still incomplete, so connection
- * and listener entry points remain fail closed by default.
+ * and independent security validation remain future hardening work. The
+ * interoperable transport is enabled by default; define
+ * NEVERC_TLS_DISABLE_TRANSPORT to compile entry points fail closed.
  *
  * Go-style API:
  *   // Client
@@ -108,17 +109,17 @@ int neverc_tls_config_set_client_auth(neverc_tls_config_t *cfg, int mode);
 /* --- TLS Connection --- */
 typedef struct neverc_tls_conn neverc_tls_conn_t;
 
-/* Returns NULL with an unavailable error until verification is complete. */
+/* Dial and complete a verified TLS 1.3 client handshake. */
 neverc_tls_conn_t *neverc_tls_dial(const char *addr,
                                     neverc_tls_config_t *cfg,
                                     const char **errp);
 
-/* Returns NULL with an unavailable error until verification is complete. */
+/* Wrap TCP and complete a TLS 1.3 server handshake. */
 neverc_tls_conn_t *neverc_tls_server(neverc_tcp_conn_t *tcp,
                                       neverc_tls_config_t *cfg,
                                       const char **errp);
 
-/* Returns NULL with an unavailable error until verification is complete. */
+/* Wrap TCP and complete a verified TLS 1.3 client handshake. */
 neverc_tls_conn_t *neverc_tls_client(neverc_tcp_conn_t *tcp,
                                       neverc_tls_config_t *cfg,
                                       const char **errp);
@@ -127,9 +128,17 @@ neverc_tls_conn_t *neverc_tls_client(neverc_tcp_conn_t *tcp,
  * Concurrent reads are serialized; one reader may run alongside writers. */
 int neverc_tls_read(neverc_tls_conn_t *conn, void *buf, size_t buflen);
 
+/* As above, interrupted by context cancellation or deadline expiry. */
+int neverc_tls_read_context(neverc_tls_conn_t *conn, neverc_context_t *ctx,
+                            void *buf, size_t buflen);
+
 /* Write data (encrypted before sending). Returns bytes written or -1.
  * Concurrent writes and key updates are serialized per connection. */
 int neverc_tls_write(neverc_tls_conn_t *conn, const void *data, size_t len);
+
+/* As above, with one context budget across all generated TLS records. */
+int neverc_tls_write_context(neverc_tls_conn_t *conn, neverc_context_t *ctx,
+                             const void *data, size_t len);
 
 /* Rotate the TLS 1.3 application write keys. If request_peer_update is 1,
  * request that the peer rotate its write keys too; 0 only rotates this side.
@@ -221,12 +230,12 @@ int neverc_tls_sign_certificate_verify(
 /* --- TLS Listener (for HTTPS server) --- */
 typedef struct neverc_tls_listener neverc_tls_listener_t;
 
-/* Returns NULL with an unavailable error until verification is complete. */
+/* Listen for TLS 1.3 connections. */
 neverc_tls_listener_t *neverc_tls_listen(const char *addr,
                                           neverc_tls_config_t *cfg,
                                           const char **errp);
 
-/* Returns NULL with an unavailable error until verification is complete. */
+/* Accept and complete a TLS 1.3 server handshake. */
 neverc_tls_conn_t *neverc_tls_accept(neverc_tls_listener_t *ln,
                                       const char **errp);
 

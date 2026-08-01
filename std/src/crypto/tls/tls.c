@@ -1,3 +1,8 @@
+#if !defined(NEVERC_TLS_DISABLE_TRANSPORT) && \
+    !defined(NEVERC_TLS_ENABLE_EXPERIMENTAL_TRANSPORT)
+#define NEVERC_TLS_ENABLE_EXPERIMENTAL_TRANSPORT 1
+#endif
+
 #include "neverc/std/crypto/tls.h"
 #include "neverc/std/_platform.h"
 #include "tls_internal.h"
@@ -17,14 +22,14 @@
  * Public API
  * ====================================================================== */
 
+#if !defined(NEVERC_TLS_ENABLE_EXPERIMENTAL_TRANSPORT)
 static const char k_tls_unavailable[] =
-    "TLS transport is unavailable pending end-to-end interoperability "
-    "and security validation";
+    "TLS transport was disabled at compile time";
 
 static void tls_set_unavailable(const char **errp) {
-    if (errp)
-        *errp = k_tls_unavailable;
+    if (errp) *errp = k_tls_unavailable;
 }
+#endif
 
 #if defined(NEVERC_TLS_ENABLE_EXPERIMENTAL_TRANSPORT)
 static const char k_tls_invalid_argument[] =
@@ -233,15 +238,23 @@ int neverc_tls_read(
     return result;
 }
 
-int neverc_tls_write(neverc_tls_conn_t *conn, const void *data, size_t len) {
-    if (!conn || !conn->mutexes_initialized ||
-        !data || len == 0 ||
-        len > (size_t)INT_MAX)
+int neverc_tls_read_context(neverc_tls_conn_t *conn, neverc_context_t *ctx,
+                            void *buf, size_t buflen) {
+    if (!conn || !conn->mutexes_initialized || !ctx ||
+        neverc_context_done(ctx))
         return -1;
-    tls_mutex_lock(&conn->write_mutex);
+    tls_mutex_lock(&conn->read_mutex);
+    conn->read_context = ctx;
+    int result = nci_tls_read_unlocked(conn, buf, buflen);
+    conn->read_context = NULL;
+    tls_mutex_unlock(&conn->read_mutex);
+    return result;
+}
+
+static int nci_tls_write_unlocked(neverc_tls_conn_t *conn,
+                                  const void *data, size_t len) {
     if (conn->closed || conn->write_closed ||
         !conn->handshake_done || !conn->application_keys_active) {
-        tls_mutex_unlock(&conn->write_mutex);
         return -1;
     }
 
@@ -254,15 +267,36 @@ int neverc_tls_write(neverc_tls_conn_t *conn, const void *data, size_t len) {
         if (nci_tls_send_encrypted_unlocked(
                 conn, TLS_CT_APPLICATION_DATA, p, chunk) != 0) {
             conn->closed = 1;
-            tls_mutex_unlock(&conn->write_mutex);
             return -1;
         }
         p += chunk;
         remaining -= chunk;
     }
 
-    tls_mutex_unlock(&conn->write_mutex);
     return (int)len;
+}
+
+int neverc_tls_write(neverc_tls_conn_t *conn, const void *data, size_t len) {
+    if (!conn || !conn->mutexes_initialized || !data || len == 0 ||
+        len > (size_t)INT_MAX)
+        return -1;
+    tls_mutex_lock(&conn->write_mutex);
+    int result = nci_tls_write_unlocked(conn, data, len);
+    tls_mutex_unlock(&conn->write_mutex);
+    return result;
+}
+
+int neverc_tls_write_context(neverc_tls_conn_t *conn, neverc_context_t *ctx,
+                             const void *data, size_t len) {
+    if (!conn || !conn->mutexes_initialized || !ctx || !data || len == 0 ||
+        len > (size_t)INT_MAX || neverc_context_done(ctx))
+        return -1;
+    tls_mutex_lock(&conn->write_mutex);
+    conn->write_context = ctx;
+    int result = nci_tls_write_unlocked(conn, data, len);
+    conn->write_context = NULL;
+    tls_mutex_unlock(&conn->write_mutex);
+    return result;
 }
 
 int neverc_tls_key_update(

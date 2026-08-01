@@ -8,9 +8,9 @@
 #include <time.h>
 
 static neverc_http_server_t *volatile g_server_ptr;
-static nc_conn_limiter_t g_https_conn_limiter = {0, 0};
 
 #ifndef _WIN32
+#include <poll.h>
 #include <strings.h>
 #else
 static int strcasecmp(const char *a, const char *b) {
@@ -22,11 +22,15 @@ static int strncasecmp(const char *a, const char *b, size_t n) {
 #endif
 
 typedef struct http_conn http_conn_t;
+typedef int (*http_writer_func_t)(void *context, const void *data,
+                                  size_t len, int timeout_ms);
 
 static int http_valid_token(const char *s, size_t length);
 static int http_valid_field_value(const char *s, size_t length);
 static int http_value_has_token(const char *value, size_t length,
                                 const char *expected);
+int nc_http_sock_write_all_timeout(nc_sock_t fd, const void *data, size_t len,
+                                   int timeout_ms);
 
 /* ======================================================================
  * Response Writer — heap-allocated, one per request
@@ -54,6 +58,12 @@ struct neverc_http_response_writer {
     int         gzip_level;
     size_t      gzip_min_size;
     int         accepts_gzip;
+    int         write_timeout_ms;
+    int         has_content_length_override;
+    size_t      content_length_override;
+    int         head_request;
+    http_writer_func_t transport_write;
+    void       *transport_context;
 };
 
 static nc_bufpool_t g_rw_pool;
@@ -106,24 +116,90 @@ static void rw_free(neverc_http_response_writer_t *w) {
     nc_bufpool_push(&g_rw_pool, w);
 }
 
-int nc_http_sock_write_all(nc_sock_t fd, const void *data, size_t len) {
+static int rw_write_all(neverc_http_response_writer_t *w,
+                        const void *data, size_t len) {
+    if (w->transport_write)
+        return w->transport_write(w->transport_context, data, len,
+                                  w->write_timeout_ms);
+    if (w->fd == NC_INVALID_SOCK) return -1;
+    return nc_http_sock_write_all_timeout(w->fd, data, len,
+                                          w->write_timeout_ms);
+}
+
+static int http_wait_writable(nc_sock_t fd, int timeout_ms) {
+#ifdef _WIN32
+    for (;;) {
+        fd_set writefds;
+        FD_ZERO(&writefds);
+        FD_SET(fd, &writefds);
+        struct timeval timeout;
+        struct timeval *timeout_ptr = NULL;
+        if (timeout_ms >= 0) {
+            timeout.tv_sec = timeout_ms / 1000;
+            timeout.tv_usec = (timeout_ms % 1000) * 1000;
+            timeout_ptr = &timeout;
+        }
+        int rc = select(0, NULL, &writefds, NULL, timeout_ptr);
+        if (rc != SOCKET_ERROR || WSAGetLastError() != WSAEINTR)
+            return rc == SOCKET_ERROR ? -1 : rc;
+    }
+#else
+    struct pollfd pfd;
+    pfd.fd = fd;
+    pfd.events = POLLOUT;
+    pfd.revents = 0;
+    int rc;
+    do {
+        rc = poll(&pfd, 1, timeout_ms);
+    } while (rc < 0 && errno == EINTR);
+    if (rc > 0 && (pfd.revents & (POLLERR | POLLHUP | POLLNVAL)))
+        return -1;
+    return rc;
+#endif
+}
+
+int nc_http_sock_write_all_timeout(nc_sock_t fd, const void *data, size_t len,
+                                   int timeout_ms) {
+    if ((!data && len > 0) || timeout_ms < 0) return -1;
     const char *p = (const char *)data;
     size_t sent = 0;
+    uint64_t deadline = 0;
+    if (timeout_ms > 0) {
+        uint64_t now = nc_monotonic_ms();
+        deadline = now > UINT64_MAX - (uint64_t)timeout_ms
+            ? UINT64_MAX : now + (uint64_t)timeout_ms;
+    }
     while (sent < len) {
+        size_t remaining = len - sent;
+        if (remaining > (size_t)INT_MAX) remaining = (size_t)INT_MAX;
 #ifdef _WIN32
-        int n = send(fd, p + sent, (int)(len - sent), 0);
+        int n = send(fd, p + sent, (int)remaining, 0);
         if (n > 0) { sent += (size_t)n; continue; }
-        if (WSAGetLastError() == WSAEINTR) continue;
-        return -1;
+        int error = WSAGetLastError();
+        if (error == WSAEINTR) continue;
+        if (error != WSAEWOULDBLOCK) return -1;
 #else
-        ssize_t n = send(fd, p + sent, len - sent, MSG_NOSIGNAL);
+        ssize_t n = send(fd, p + sent, remaining, MSG_NOSIGNAL);
         if (n > 0) { sent += (size_t)n; continue; }
-        if (n == 0) break;
+        if (n == 0) return -1;
         if (errno == EINTR) continue;
-        return -1;
+        if (errno != EAGAIN && errno != EWOULDBLOCK) return -1;
 #endif
+        int wait_ms = -1;
+        if (deadline > 0) {
+            uint64_t now = nc_monotonic_ms();
+            if (now >= deadline) return -1;
+            uint64_t remaining_ms = deadline - now;
+            wait_ms = remaining_ms > (uint64_t)INT_MAX
+                ? INT_MAX : (int)remaining_ms;
+        }
+        if (http_wait_writable(fd, wait_ms) <= 0) return -1;
     }
     return 0;
+}
+
+int nc_http_sock_write_all(nc_sock_t fd, const void *data, size_t len) {
+    return nc_http_sock_write_all_timeout(fd, data, len, 60000);
 }
 #define sock_write_all nc_http_sock_write_all
 
@@ -176,6 +252,9 @@ static void rw_flush(neverc_http_response_writer_t *w) {
     if (w->headers_sent) return;
     w->headers_sent = 1;
     rw_apply_gzip(w);
+    int status_forbids_body = w->status < 200 || w->status == 204 ||
+                              w->status == 304;
+    int forbids_content_length = w->status < 200 || w->status == 204;
 
     nc_buf_t hdr;
     nc_buf_init(&hdr);
@@ -213,8 +292,13 @@ static void rw_flush(neverc_http_response_writer_t *w) {
         const char *ct = "Content-Type: text/plain; charset=utf-8\r\n";
         nc_buf_append(&hdr, ct, strlen(ct));
     }
-    n = snprintf(line, sizeof(line), "Content-Length: %zu\r\n", w->body.len);
-    nc_buf_append(&hdr, line, (size_t)n);
+    if (!forbids_content_length) {
+        size_t content_length = w->has_content_length_override
+            ? w->content_length_override : w->body.len;
+        n = snprintf(line, sizeof(line), "Content-Length: %zu\r\n",
+                     content_length);
+        nc_buf_append(&hdr, line, (size_t)n);
+    }
     const char *conn_val = w->keep_alive
         ? "Connection: keep-alive\r\n"
         : "Connection: close\r\n";
@@ -262,13 +346,13 @@ static void rw_flush(neverc_http_response_writer_t *w) {
 
     nc_buf_append(&hdr, "\r\n", 2);
 
-    if (w->fd != NC_INVALID_SOCK) {
-        if (w->body.len > 0) {
-            nc_writev(w->fd, hdr.data, hdr.len,
-                      w->body.data, w->body.len);
-        } else {
-            sock_write_all(w->fd, hdr.data, hdr.len);
-        }
+    if (w->fd != NC_INVALID_SOCK || w->transport_write) {
+        if (rw_write_all(w, hdr.data, hdr.len) != 0)
+            w->keep_alive = 0;
+        else if (!w->head_request && !status_forbids_body &&
+                 w->body.len > 0 &&
+                 rw_write_all(w, w->body.data, w->body.len) != 0)
+            w->keep_alive = 0;
     }
 
     nc_buf_free(&hdr);
@@ -395,12 +479,19 @@ static void rw_send_chunked_headers(neverc_http_response_writer_t *w) {
     nc_buf_append(&hdr, conn_val, strlen(conn_val));
 
     nc_buf_append(&hdr, "\r\n", 2);
-    sock_write_all(w->fd, hdr.data, hdr.len);
+    if (rw_write_all(w, hdr.data, hdr.len) != 0)
+        w->keep_alive = 0;
     nc_buf_free(&hdr);
 }
 
 int neverc_http_flush_chunk(neverc_http_response_writer_t *w) {
     if (!w || !w->chunked) return -1;
+    if (w->head_request || w->status < 200 ||
+        w->status == 204 || w->status == 304) {
+        rw_flush(w);
+        nc_buf_reset(&w->body);
+        return 0;
+    }
 
     if (!w->headers_sent)
         rw_send_chunked_headers(w);
@@ -409,9 +500,9 @@ int neverc_http_flush_chunk(neverc_http_response_writer_t *w) {
 
     char chunk_hdr[32];
     int n = snprintf(chunk_hdr, sizeof(chunk_hdr), "%zx\r\n", w->body.len);
-    if (sock_write_all(w->fd, chunk_hdr, (size_t)n) != 0) return -1;
-    if (sock_write_all(w->fd, w->body.data, w->body.len) != 0) return -1;
-    if (sock_write_all(w->fd, "\r\n", 2) != 0) return -1;
+    if (rw_write_all(w, chunk_hdr, (size_t)n) != 0) return -1;
+    if (rw_write_all(w, w->body.data, w->body.len) != 0) return -1;
+    if (rw_write_all(w, "\r\n", 2) != 0) return -1;
 
     nc_buf_reset(&w->body);
     return 0;
@@ -419,6 +510,12 @@ int neverc_http_flush_chunk(neverc_http_response_writer_t *w) {
 
 int neverc_http_end_chunked(neverc_http_response_writer_t *w) {
     if (!w || !w->chunked) return -1;
+    if (w->head_request || w->status < 200 ||
+        w->status == 204 || w->status == 304) {
+        rw_flush(w);
+        nc_buf_reset(&w->body);
+        return 0;
+    }
 
     if (w->body.len > 0)
         neverc_http_flush_chunk(w);
@@ -426,7 +523,7 @@ int neverc_http_end_chunked(neverc_http_response_writer_t *w) {
     if (!w->headers_sent)
         rw_send_chunked_headers(w);
 
-    return sock_write_all(w->fd, "0\r\n\r\n", 5);
+    return rw_write_all(w, "0\r\n\r\n", 5);
 }
 
 /* Shared with http_client.c */
@@ -1311,7 +1408,11 @@ struct http_conn {
     int                max_requests;
     int                requests_served;
     uint64_t           last_active;
+    uint64_t           request_started;
     int                idle_timeout_ms;
+    int                read_header_timeout_ms;
+    int                read_timeout_ms;
+    int                write_timeout_ms;
     size_t             max_read_size;
     int                gzip_enabled;
     int                gzip_level;
@@ -1391,6 +1492,9 @@ static http_conn_t *http_conn_new(nc_sock_t fd, nc_evloop_t *loop,
     hc->max_requests = config->max_requests_per_connection;
     hc->requests_served = 0;
     hc->idle_timeout_ms = config->idle_timeout_ms;
+    hc->read_header_timeout_ms = config->read_header_timeout_ms;
+    hc->read_timeout_ms = config->read_timeout_ms;
+    hc->write_timeout_ms = config->write_timeout_ms;
     hc->max_read_size = (size_t)config->max_header_size +
                         (size_t)config->max_body_size;
     hc->gzip_enabled = config->gzip_enabled;
@@ -1400,6 +1504,7 @@ static http_conn_t *http_conn_new(nc_sock_t fd, nc_evloop_t *loop,
     hc->access_log = config->access_log;
     hc->handler_timeout_ms = config->handler_timeout_ms;
     hc->last_active = nc_monotonic_ms();
+    hc->request_started = hc->last_active;
     hc->next = hc->prev = NULL;
     return hc;
 }
@@ -1498,9 +1603,11 @@ static void http_conn_process(http_conn_t *hc) {
             return;
         }
         w->request_body_len = req.body_len;
+        w->head_request = strcmp(req.method, "HEAD") == 0;
         w->gzip_enabled = hc->gzip_enabled;
         w->gzip_level = hc->gzip_level;
         w->gzip_min_size = hc->gzip_min_size;
+        w->write_timeout_ms = hc->write_timeout_ms;
         const char *accept_encoding =
             neverc_http_request_header(&req, "Accept-Encoding");
         w->accepts_gzip = accept_encoding && http_value_has_token(
@@ -1572,6 +1679,7 @@ static void http_conn_process(http_conn_t *hc) {
         parsed_request_free(&pr);
         hc->requests_served++;
         hc->last_active = nc_monotonic_ms();
+        hc->request_started = hc->read_buf.len > 0 ? hc->last_active : 0;
 
         if (should_close) {
             hc->state = HC_STATE_CLOSING;
@@ -1594,7 +1702,13 @@ static void http_conn_on_read(http_conn_t *hc) {
         ssize_t n = recv(hc->fd, chunk, sizeof(chunk), 0);
 #endif
         if (n > 0) {
-            nc_buf_append(&hc->read_buf, chunk, (size_t)n);
+            if (hc->read_buf.len == 0 && hc->request_started == 0)
+                hc->request_started = nc_monotonic_ms();
+            if (nc_buf_append(&hc->read_buf, chunk, (size_t)n) != 0) {
+                hc->state = HC_STATE_CLOSING;
+                return;
+            }
+            hc->last_active = nc_monotonic_ms();
             if (hc->read_buf.len > max_read) {
                 /* Send 413 Payload Too Large before closing */
                 const char *err_resp =
@@ -1690,8 +1804,26 @@ static void worker_sweep_idle(http_worker_t *w) {
     http_conn_t *hc = w->conns.head;
     while (hc) {
         http_conn_t *next = hc->next;
-        if (hc->idle_timeout_ms > 0 &&
-            now - hc->last_active > (uint64_t)hc->idle_timeout_ms) {
+        int request_timed_out = 0;
+        if (hc->request_started > 0) {
+            int headers_complete = hc->read_buf.data &&
+                strstr(hc->read_buf.data, "\r\n\r\n") != NULL;
+            int timeout = headers_complete
+                ? hc->read_timeout_ms : hc->read_header_timeout_ms;
+            request_timed_out = timeout > 0 &&
+                now - hc->request_started > (uint64_t)timeout;
+        }
+        int idle_timed_out = hc->request_started == 0 &&
+            hc->idle_timeout_ms > 0 &&
+            now - hc->last_active > (uint64_t)hc->idle_timeout_ms;
+        if (request_timed_out || idle_timed_out) {
+            if (request_timed_out) {
+                const char *timeout_response =
+                    "HTTP/1.1 408 Request Timeout\r\n"
+                    "Content-Length: 0\r\nConnection: close\r\n\r\n";
+                (void)sock_write_all(hc->fd, timeout_response,
+                                     strlen(timeout_response));
+            }
             conn_list_remove(&w->conns, hc);
             nc_atomic_dec(&w->conn_count);
             nc_conn_limiter_release(&w->server->conn_limiter);
@@ -1744,9 +1876,9 @@ static void *worker_thread_func(void *arg) {
                 break;
         }
 
-        /* Sweep idle connections every 5 seconds */
+        /* Deadlines are checked at the poller's 100ms granularity. */
         uint64_t now = nc_monotonic_ms();
-        if (now - last_sweep >= 5000) {
+        if (now - last_sweep >= 100) {
             worker_sweep_idle(w);
             last_sweep = now;
         }
@@ -2237,287 +2369,420 @@ void neverc_http_shutdown(void) {
 }
 
 /* ======================================================================
- * HTTPS — TLS-wrapped HTTP server (like Go http.ListenAndServeTLS)
- *
- * Accepts TLS connections via a TLS listener, performs handshake,
- * then wraps the decrypted stream through the existing HTTP pipeline
- * using a thread-per-connection model (TLS handshake is blocking).
+ * HTTPS — shared accept reactor and HTTP/1.1 request pipeline
  * ====================================================================== */
 
 typedef struct {
-    neverc_tls_listener_t *tls_ln;
-    neverc_tls_config_t   *tls_cfg;
-    neverc_http_mux_t     *mux;
-    volatile int           running;
-    nc_threadpool_t       *pool;
-} https_server_t;
-
-static https_server_t *g_https_server = NULL;
+    neverc_http_server_t *server;
+    neverc_tls_config_t  *tls_config;
+    nc_threadpool_t      *pool;
+} https_accept_ctx_t;
 
 typedef struct {
-    neverc_tls_conn_t     *tls;
-    neverc_http_mux_t     *mux;
+    neverc_http_server_t *server;
+    neverc_tls_config_t  *tls_config;
+    neverc_tcp_conn_t    *tcp;
 } https_conn_ctx_t;
 
-static void https_handle_connection(void *arg) {
-    https_conn_ctx_t *ctx = (https_conn_ctx_t *)arg;
-    neverc_tls_conn_t *tls = ctx->tls;
-    neverc_http_mux_t *mux = ctx->mux;
-    free(ctx);
-
-    /* ALPN negotiation: if client negotiated h2, use HTTP/2 handler */
-    const char *alpn_proto = neverc_tls_alpn(tls);
-    if (alpn_proto && strcmp(alpn_proto, "h2") == 0) {
-        neverc_h2_server_t *h2srv = neverc_h2_server_create(mux);
-        if (h2srv) {
-            neverc_h2_serve_tls_conn(h2srv, tls);
-            neverc_h2_server_destroy(h2srv);
+static int https_transport_write(void *context, const void *data,
+                                 size_t len, int timeout_ms) {
+    neverc_tls_conn_t *tls = (neverc_tls_conn_t *)context;
+    if (len == 0) return 0;
+    neverc_context_t *write_context = NULL;
+    neverc_context_cancel_handle_t *cancel = NULL;
+    if (timeout_ms > 0) {
+        write_context = neverc_context_with_timeout_handle(
+            neverc_context_background(), timeout_ms, &cancel);
+        if (!write_context || !cancel) {
+            if (write_context) neverc_context_free(write_context);
+            if (cancel) neverc_context_cancel_handle_free(cancel);
+            return -1;
         }
-        neverc_tls_close(tls);
-        nc_conn_limiter_release(&g_https_conn_limiter);
-        return;
     }
+    size_t written = 0;
+    while (written < len) {
+        size_t chunk = len - written;
+        if (chunk > (size_t)INT_MAX) chunk = (size_t)INT_MAX;
+        int n = write_context
+            ? neverc_tls_write_context(tls, write_context,
+                                       (const char *)data + written, chunk)
+            : neverc_tls_write(tls, (const char *)data + written, chunk);
+        if (n <= 0) break;
+        written += (size_t)n;
+    }
+    if (cancel) neverc_context_cancel_handle_cancel(cancel);
+    if (write_context) neverc_context_free(write_context);
+    if (cancel) neverc_context_cancel_handle_free(cancel);
+    return written == len ? 0 : -1;
+}
 
-    char buf[65536];
-    nc_buf_t req_buf;
-    nc_buf_init(&req_buf);
+static int https_read_with_budget(neverc_tls_conn_t *tls, void *data,
+                                  size_t len, int timeout_ms,
+                                  uint64_t started_ms) {
+    if (timeout_ms == 0) return neverc_tls_read(tls, data, len);
+    uint64_t elapsed = nc_monotonic_ms() - started_ms;
+    if (elapsed >= (uint64_t)timeout_ms) return -1;
+    int remaining = timeout_ms - (int)elapsed;
+    neverc_context_cancel_handle_t *cancel = NULL;
+    neverc_context_t *context = neverc_context_with_timeout_handle(
+        neverc_context_background(), remaining, &cancel);
+    if (!context || !cancel) {
+        if (context) neverc_context_free(context);
+        if (cancel) neverc_context_cancel_handle_free(cancel);
+        return -1;
+    }
+    int result = neverc_tls_read_context(tls, context, data, len);
+    neverc_context_cancel_handle_cancel(cancel);
+    neverc_context_free(context);
+    neverc_context_cancel_handle_free(cancel);
+    return result;
+}
 
-    /* Read and serve HTTP requests over the TLS connection */
-    for (int req_count = 0; req_count < g_config_max_requests; req_count++) {
-        /* Read request data */
-        int got_headers = 0;
-        while (!got_headers) {
-            int n = neverc_tls_read(tls, buf, sizeof(buf));
-            if (n <= 0) goto done;
-            nc_buf_append(&req_buf, buf, (size_t)n);
+static void https_handle_connection(void *arg) {
+    https_conn_ctx_t *connection_ctx = (https_conn_ctx_t *)arg;
+    neverc_http_server_t *server = connection_ctx->server;
+    neverc_tcp_conn_t *tcp = connection_ctx->tcp;
+    const char *tls_error = NULL;
+    neverc_tls_conn_t *tls = neverc_tls_server(
+        tcp, connection_ctx->tls_config, &tls_error);
+    free(connection_ctx);
+    (void)tls_error;
+    if (!tls) goto close_tcp;
 
-            if (strstr(req_buf.data, "\r\n\r\n"))
-                got_headers = 1;
-
-            if (req_buf.len > 1048576) goto done; /* 1MB header limit */
+    const char *alpn = neverc_tls_alpn(tls);
+    if (alpn && strcmp(alpn, "h2") == 0) {
+        neverc_h2_server_t *h2 = neverc_h2_server_create(server->mux);
+        if (h2) {
+            (void)neverc_h2_serve_tls_conn(h2, tls);
+            neverc_h2_server_destroy(h2);
         }
+        goto close_tls;
+    }
+    if (alpn && strcmp(alpn, "http/1.1") != 0) goto close_tls;
 
-        /* Parse the request */
-        parsed_request_t pr;
+    nc_buf_t request_buffer;
+    nc_buf_t raw_headers;
+    nc_buf_init(&request_buffer);
+    nc_buf_init(&raw_headers);
+    char read_chunk[16384];
+
+    for (int request_count = 0;
+         request_count < server->config.max_requests_per_connection;
+         request_count++) {
+        parsed_request_t parsed;
         size_t consumed = 0;
-        int rc = parse_request(req_buf.data, req_buf.len, &pr, &consumed);
-        if (rc != 0) goto done;
-
-        /* Read remaining body if needed */
-        while (pr.content_length > 0 &&
-               req_buf.len < consumed + (size_t)pr.content_length) {
-            int n = neverc_tls_read(tls, buf, sizeof(buf));
-            if (n <= 0) { parsed_request_free(&pr); goto done; }
-            nc_buf_append(&req_buf, buf, (size_t)n);
+        int parse_result;
+        uint64_t request_started = nc_monotonic_ms();
+        for (;;) {
+            parse_result = parse_request(request_buffer.data,
+                                         request_buffer.len,
+                                         &parsed, &consumed);
+            if (parse_result != -1) break;
+            const char *header_end = request_buffer.data
+                ? strstr(request_buffer.data, "\r\n\r\n") : NULL;
+            size_t header_size = header_end
+                ? (size_t)(header_end - request_buffer.data) + 4 : 0;
+            if ((!header_end && request_buffer.len >
+                                (size_t)server->config.max_header_size) ||
+                (header_end && header_size >
+                               (size_t)server->config.max_header_size) ||
+                request_buffer.len >
+                    (size_t)server->config.max_header_size +
+                    (size_t)server->config.max_body_size) {
+                const char *response =
+                    "HTTP/1.1 413 Payload Too Large\r\n"
+                    "Content-Length: 0\r\nConnection: close\r\n\r\n";
+                (void)https_transport_write(tls, response,
+                                             strlen(response),
+                                             server->config.write_timeout_ms);
+                goto done;
+            }
+            int read_timeout = header_end
+                ? server->config.read_timeout_ms
+                : server->config.read_header_timeout_ms;
+            int n = https_read_with_budget(tls, read_chunk,
+                                           sizeof(read_chunk), read_timeout,
+                                           request_started);
+            if (n <= 0 || nc_buf_append(&request_buffer, read_chunk,
+                                         (size_t)n) != 0)
+                goto done;
         }
-
-        neverc_http_request_t req;
-        nc_buf_t raw_hdr_buf;
-        nc_buf_init(&raw_hdr_buf);
-        fill_request(&pr, &req, &raw_hdr_buf);
-
-        /* Rate limiting */
-        if (g_global_rate_limiter &&
-            !neverc_http_rate_limiter_allow(g_global_rate_limiter)) {
-            const char *rate_resp =
-                "HTTP/1.1 429 Too Many Requests\r\n"
-                "Content-Type: text/plain\r\n"
-                "Content-Length: 20\r\n"
-                "Retry-After: 1\r\n"
-                "Connection: close\r\n\r\n"
-                "Too Many Requests\r\n";
-            neverc_tls_write(tls, rate_resp, strlen(rate_resp));
-            nc_buf_free(&raw_hdr_buf);
-            parsed_request_free(&pr);
+        if (parse_result == -2) {
+            const char *response =
+                "HTTP/1.1 400 Bad Request\r\n"
+                "Content-Length: 0\r\nConnection: close\r\n\r\n";
+            (void)https_transport_write(tls, response, strlen(response),
+                                         server->config.write_timeout_ms);
+            goto done;
+        }
+        if (parsed.body_len > (size_t)server->config.max_body_size) {
+            parsed_request_free(&parsed);
+            const char *response =
+                "HTTP/1.1 413 Payload Too Large\r\n"
+                "Content-Length: 0\r\nConnection: close\r\n\r\n";
+            (void)https_transport_write(tls, response, strlen(response),
+                                         server->config.write_timeout_ms);
             goto done;
         }
 
-        /* 100-Continue */
-        if (pr.expect_continue) {
-            const char *cont = "HTTP/1.1 100 Continue\r\n\r\n";
-            neverc_tls_write(tls, cont, strlen(cont));
+        neverc_http_request_t request;
+        fill_request(&parsed, &request, &raw_headers);
+        neverc_context_cancel_handle_t *request_cancel = NULL;
+        neverc_context_t *request_context = neverc_context_background();
+        if (server->config.handler_timeout_ms > 0) {
+            request_context = neverc_context_with_timeout_handle(
+                neverc_context_background(),
+                server->config.handler_timeout_ms, &request_cancel);
+            if (!request_context) {
+                parsed_request_free(&parsed);
+                goto done;
+            }
         }
+        request.context = request_context;
 
-        /* Route with path parameter extraction (like HTTP handler) */
         path_params_t params;
         memset(&params, 0, sizeof(params));
-        neverc_http_handler_func_t handler =
-            mux_match_ex(mux, req.method, req.path, &params);
-
+        neverc_http_handler_func_t handler = mux_match_ex(
+            server->mux, request.method, request.path, &params);
         if (params.count > 0) {
-            req.path_params = params.buf;
-            req.nparams = params.count;
+            request.path_params = params.buf;
+            request.nparams = params.count;
         }
 
-        nc_buf_t resp_buf;
-        nc_buf_init(&resp_buf);
-
-        neverc_http_response_writer_t *w =
-            (neverc_http_response_writer_t *)calloc(1, sizeof(*w));
-        if (!w) {
-            nc_buf_free(&raw_hdr_buf);
-            parsed_request_free(&pr);
+        neverc_http_response_writer_t *writer = rw_new(
+            NC_INVALID_SOCK, parsed.keep_alive, NULL, consumed);
+        if (!writer) {
+            http_request_context_release(request_context, request_cancel);
+            parsed_request_free(&parsed);
             goto done;
         }
-        w->fd = NC_INVALID_SOCK;
-        w->status = 200;
-        w->keep_alive = pr.keep_alive;
-        nc_buf_init(&w->body);
+        writer->transport_write = https_transport_write;
+        writer->transport_context = tls;
+        writer->request_body_len = request.body_len;
+        writer->head_request = strcmp(request.method, "HEAD") == 0;
+        writer->gzip_enabled = server->config.gzip_enabled;
+        writer->gzip_level = server->config.gzip_level;
+        writer->gzip_min_size = server->config.gzip_min_size;
+        writer->write_timeout_ms = server->config.write_timeout_ms;
+        const char *accept_encoding = neverc_http_request_header(
+            &request, "Accept-Encoding");
+        writer->accepts_gzip = accept_encoding && http_value_has_token(
+            accept_encoding, strlen(accept_encoding), "gzip");
+        uint64_t handler_started = nc_monotonic_ms();
 
-        /* CORS headers for HTTPS */
-        if (g_cors_enabled) {
-            const char *origin = neverc_http_request_header(&req, "Origin");
-            neverc_http_cors_headers(w, &g_cors_config, origin);
-        }
-
-        if (handler) {
-            handler(&req, w);
+        if (g_global_rate_limiter &&
+            !neverc_http_rate_limiter_allow(g_global_rate_limiter)) {
+            neverc_http_set_status(writer, 429);
+            neverc_http_set_header(writer, "Retry-After", "1");
+            (void)neverc_http_write_string(writer,
+                                            "Too Many Requests\r\n");
+            writer->keep_alive = 0;
         } else {
-            neverc_http_set_status(w, 404);
-            neverc_http_write_string(w, "404 page not found\n");
+            if (g_cors_enabled) {
+                const char *origin = neverc_http_request_header(
+                    &request, "Origin");
+                neverc_http_cors_headers(writer, &g_cors_config, origin);
+            }
+            if (handler)
+                handler(&request, writer);
+            else {
+                neverc_http_set_status(writer, 404);
+                (void)neverc_http_write_string(writer,
+                                                "404 page not found\n");
+            }
         }
 
-        /* Build HTTP response */
-        char line[256];
-        int n = snprintf(line, sizeof(line), "HTTP/1.1 %d %s\r\n",
-                         w->status, neverc_http_status_text(w->status));
-        nc_buf_append(&resp_buf, line, (size_t)n);
-
-        int has_ct = 0, has_cl = 0, has_conn = 0;
-        for (int i = 0; i < w->nheaders; i++) {
-            n = snprintf(line, sizeof(line), "%s: %s\r\n",
-                         w->header_names[i], w->header_values[i]);
-            nc_buf_append(&resp_buf, line, (size_t)n);
-            if (strcasecmp(w->header_names[i], "Content-Type") == 0) has_ct = 1;
-            if (strcasecmp(w->header_names[i], "Content-Length") == 0) has_cl = 1;
-            if (strcasecmp(w->header_names[i], "Connection") == 0) has_conn = 1;
+        if (server->config.handler_timeout_ms > 0 &&
+            neverc_context_done(request_context)) {
+            writer->keep_alive = 0;
+            if (!writer->headers_sent) {
+                writer->status = 503;
+                writer->body_limit_exceeded = 0;
+                nc_buf_reset(&writer->body);
+                neverc_http_set_header(writer, "Content-Type",
+                                       "text/plain; charset=utf-8");
+                (void)neverc_http_write_string(writer,
+                                                "handler timeout\n");
+            }
         }
-        if (!has_ct) nc_buf_append(&resp_buf,
-            "Content-Type: text/plain; charset=utf-8\r\n", 41);
-        if (!has_cl) {
-            n = snprintf(line, sizeof(line), "Content-Length: %zu\r\n",
-                         w->body.len);
-            nc_buf_append(&resp_buf, line, (size_t)n);
+
+        if (parsed.is_chunked && parsed.body) {
+            free((void *)parsed.body);
+            parsed.body = NULL;
         }
-        if (!has_conn) {
-            const char *cv = w->keep_alive
-                ? "Connection: keep-alive\r\n" : "Connection: close\r\n";
-            nc_buf_append(&resp_buf, cv, strlen(cv));
+        rw_flush(writer);
+        if (server->config.access_log_enabled) {
+            double duration =
+                (double)(nc_monotonic_ms() - handler_started);
+            if (server->config.access_log) {
+                server->config.access_log(request.method, request.path,
+                                          writer->status, duration,
+                                          writer->body.len);
+            } else {
+                fprintf(stdout, "%s %s %d %.3fms %zu\n",
+                        request.method, request.path, writer->status,
+                        duration, writer->body.len);
+            }
         }
-        nc_buf_append(&resp_buf, "\r\n", 2);
-        if (w->body.len > 0)
-            nc_buf_append(&resp_buf, w->body.data, w->body.len);
-
-        /* Send response over TLS */
-        neverc_tls_write(tls, resp_buf.data, resp_buf.len);
-        nc_buf_free(&resp_buf);
-
-        int should_close = !pr.keep_alive;
-        for (int hi = 0; hi < w->nheaders; hi++) {
-            free(w->header_names[hi]);
-            free(w->header_values[hi]);
-        }
-        nc_buf_free(&w->body);
-        free(w);
-        nc_buf_free(&raw_hdr_buf);
-
-        if (pr.is_chunked && pr.body) free((void *)pr.body);
-        nc_buf_consume(&req_buf, consumed);
-        parsed_request_free(&pr);
-
+        int should_close = !writer->keep_alive;
+        http_request_context_release(request_context, request_cancel);
+        rw_free(writer);
+        nc_buf_consume(&request_buffer, consumed);
+        parsed_request_free(&parsed);
         if (should_close) break;
     }
 
 done:
-    nc_buf_free(&req_buf);
+    nc_buf_free(&raw_headers);
+    nc_buf_free(&request_buffer);
+close_tls:
     neverc_tls_close(tls);
-    nc_conn_limiter_release(&g_https_conn_limiter);
+close_tcp:
+    neverc_tcp_close(tcp);
+    nc_conn_limiter_release(&server->conn_limiter);
+}
+
+static void https_accept_event_handler(nc_evloop_t *loop, nc_event_t *event) {
+    https_accept_ctx_t *accept_ctx = (https_accept_ctx_t *)event->data;
+    neverc_http_server_t *server = accept_ctx ? accept_ctx->server : NULL;
+    if (!server || !nc_atomic_load(&server->running)) return;
+    while (nc_atomic_load(&server->running) &&
+           !nc_atomic_load(&loop->stop_requested)) {
+        struct sockaddr_storage peer;
+        socklen_t peer_len = sizeof(peer);
+        nc_sock_t socket_handle = nc_accept_nonblock(
+            server->listen_fd, (struct sockaddr *)&peer, &peer_len);
+        if (socket_handle == NC_INVALID_SOCK) {
+#ifdef _WIN32
+            int error = WSAGetLastError();
+            if (error == WSAEWOULDBLOCK) break;
+            if (error == WSAEINTR) continue;
+#else
+            if (errno == EAGAIN || errno == EWOULDBLOCK) break;
+            if (errno == EINTR) continue;
+#endif
+            break;
+        }
+        if (!nc_conn_limiter_try_acquire(&server->conn_limiter)) {
+            nc_sock_close(socket_handle);
+            continue;
+        }
+        const char *adopt_error = NULL;
+        neverc_tcp_conn_t *tcp = neverc_tcp_adopt_handle(
+            (uintptr_t)socket_handle, NULL, 0, &adopt_error);
+        (void)adopt_error;
+        if (!tcp) {
+            nc_sock_close(socket_handle);
+            nc_conn_limiter_release(&server->conn_limiter);
+            continue;
+        }
+        int handshake_timeout = server->config.read_header_timeout_ms > 0
+            ? server->config.read_header_timeout_ms
+            : server->config.read_timeout_ms;
+        (void)neverc_tcp_set_timeout(tcp, handshake_timeout);
+        https_conn_ctx_t *connection_ctx =
+            (https_conn_ctx_t *)calloc(1, sizeof(*connection_ctx));
+        if (!connection_ctx) {
+            neverc_tcp_close(tcp);
+            nc_conn_limiter_release(&server->conn_limiter);
+            continue;
+        }
+        connection_ctx->server = server;
+        connection_ctx->tls_config = accept_ctx->tls_config;
+        connection_ctx->tcp = tcp;
+        if (nc_threadpool_submit(accept_ctx->pool,
+                                 https_handle_connection,
+                                 connection_ctx) != 0) {
+            neverc_tcp_close(tcp);
+            free(connection_ctx);
+            nc_conn_limiter_release(&server->conn_limiter);
+        }
+    }
+}
+
+int neverc_http_server_listen_and_serve_tls(
+    neverc_http_server_t *server, const char *addr,
+    const char *cert_file, const char *key_file) {
+    if (!server || !addr || !cert_file || !key_file ||
+        nc_net_init() != 0 || !nc_poller_supports_readiness() ||
+        !nc_atomic_cas(&server->serving, 0, 1))
+        return -1;
+
+    int result = -1;
+    nc_threadpool_t *pool = NULL;
+    neverc_tls_config_t *tls_config = neverc_tls_config_new();
+    if (!tls_config || neverc_tls_config_load_cert(
+                           tls_config, cert_file, key_file) != 0)
+        goto done;
+    const char *alpn[] = { "h2", "http/1.1" };
+    neverc_tls_config_set_alpn(tls_config, alpn, 2);
+
+    nc_atomic_store(&server->bound_port, 0);
+    nc_conn_limiter_init(&server->conn_limiter,
+                         server->config.max_connections);
+    int actual_port = 0;
+    server->listen_fd = http_server_bind(addr, &actual_port);
+    if (server->listen_fd == NC_INVALID_SOCK) goto done;
+    nc_atomic_store(&server->bound_port, actual_port);
+    if (nc_atomic_ptr_load(&g_server_ptr) == server)
+        g_server_port = actual_port;
+    if (nc_atomic_load(&server->stop_requested)) {
+        result = 0;
+        goto done;
+    }
+
+    int worker_count = server->config.workers > 0
+        ? server->config.workers : nc_cpu_count();
+    if (worker_count < 1) worker_count = 1;
+    if (worker_count > 64) worker_count = 64;
+    pool = nc_threadpool_create(worker_count);
+    server->accept_loop = nc_evloop_create();
+    if (!pool || !server->accept_loop) goto done;
+    https_accept_ctx_t accept_ctx = {
+        .server = server,
+        .tls_config = tls_config,
+        .pool = pool,
+    };
+    if (nc_poller_add(server->accept_loop->poller, server->listen_fd,
+                      NC_EV_READ, &accept_ctx) != 0)
+        goto done;
+    nc_atomic_store(&server->running, 1);
+    if (nc_atomic_load(&server->stop_requested))
+        neverc_http_server_shutdown(server);
+    if (nc_atomic_load(&server->running))
+        (void)nc_evloop_run(server->accept_loop,
+                            https_accept_event_handler);
+    result = 0;
+
+done:
+    nc_atomic_store(&server->running, 0);
+    if (server->accept_loop) nc_evloop_destroy(server->accept_loop);
+    server->accept_loop = NULL;
+    if (server->listen_fd != NC_INVALID_SOCK)
+        nc_sock_close(server->listen_fd);
+    server->listen_fd = NC_INVALID_SOCK;
+    if (pool) nc_threadpool_destroy(pool);
+    neverc_tls_config_free(tls_config);
+    nc_atomic_store(&server->serving, 0);
+    return result;
 }
 
 int neverc_http_listen_and_serve_tls(const char *addr, neverc_http_mux_t *mux,
                                       const char *cert_file,
                                       const char *key_file) {
-    if (nc_net_init() != 0)
-        return -1;
-
-    if (!mux) {
-        ensure_default_mux();
-        mux = &default_mux;
-    }
-
-    neverc_tls_config_t *cfg = neverc_tls_config_new();
-    if (!cfg) return -1;
-
-    if (neverc_tls_config_load_cert(cfg, cert_file, key_file) != 0) {
-        neverc_tls_config_free(cfg);
+    neverc_http_server_config_t config = legacy_server_config();
+    neverc_http_server_t *server = neverc_http_server_new(mux, &config);
+    if (!server) return -1;
+    if (!nc_atomic_ptr_cas(&g_server_ptr, NULL, server)) {
+        neverc_http_server_free(server);
         return -1;
     }
-
-    /* Advertise both h2 and http/1.1 via ALPN for automatic protocol negotiation.
-     * Clients that support HTTP/2 will negotiate h2; others fall back to HTTP/1.1. */
-    const char *alpn_protos[] = { "h2", "http/1.1" };
-    neverc_tls_config_set_alpn(cfg, alpn_protos, 2);
-
-    const char *err = NULL;
-    neverc_tls_listener_t *tls_ln = neverc_tls_listen(addr, cfg, &err);
-    if (!tls_ln) {
-        neverc_tls_config_free(cfg);
-        return -1;
-    }
-
-    int nw = g_config_workers > 0 ? g_config_workers : nc_cpu_count();
-    if (nw < 1) nw = 1;
-    if (nw > 64) nw = 64;
-
-    nc_threadpool_t *pool = nc_threadpool_create(nw);
-    if (!pool) {
-        neverc_tls_listener_close(tls_ln);
-        neverc_tls_config_free(cfg);
-        return -1;
-    }
-
-    nc_conn_limiter_init(&g_https_conn_limiter,
-                          g_config_max_conns > 0 ? g_config_max_conns : 0);
-
-    https_server_t srv = {
-        .tls_ln = tls_ln,
-        .tls_cfg = cfg,
-        .mux = mux,
-        .running = 1,
-        .pool = pool,
-    };
-    g_https_server = &srv;
-
-    while (srv.running) {
-        neverc_tls_conn_t *tls = neverc_tls_accept(tls_ln, &err);
-        if (!tls) {
-            if (!srv.running) break;
-            continue;
-        }
-
-        if (!nc_conn_limiter_try_acquire(&g_https_conn_limiter)) {
-            neverc_tls_close(tls);
-            continue;
-        }
-
-        https_conn_ctx_t *ctx =
-            (https_conn_ctx_t *)malloc(sizeof(*ctx));
-        if (!ctx) {
-            neverc_tls_close(tls);
-            nc_conn_limiter_release(&g_https_conn_limiter);
-            continue;
-        }
-        ctx->tls = tls;
-        ctx->mux = mux;
-        nc_threadpool_submit(pool, https_handle_connection, ctx);
-    }
-
-    g_https_server = NULL;
-    nc_threadpool_destroy(pool);
-    neverc_tls_listener_close(tls_ln);
-    neverc_tls_config_free(cfg);
-
-    return 0;
+    int result = neverc_http_server_listen_and_serve_tls(
+        server, addr, cert_file, key_file);
+    g_server_port = neverc_http_server_bound_port(server);
+    (void)nc_atomic_ptr_cas(&g_server_ptr, server, NULL);
+    neverc_http_server_free(server);
+    return result;
 }
 
 /* ======================================================================
@@ -2869,9 +3134,8 @@ static void static_file_handler(neverc_http_request_t *req,
         } else {
 #if NC_HAS_SENDFILE
             /* Zero-copy sendfile path: send headers manually, then sendfile. */
-            char clbuf[32];
-            snprintf(clbuf, sizeof(clbuf), "%ld", fsize);
-            neverc_http_set_header(w, "Content-Length", clbuf);
+            w->has_content_length_override = 1;
+            w->content_length_override = (size_t)fsize;
 
             /* Manually flush headers before sendfile */
             rw_flush(w);

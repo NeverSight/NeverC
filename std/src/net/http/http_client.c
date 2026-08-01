@@ -3,6 +3,7 @@
  * Split from http.c to avoid large-TU compiler issue.
  */
 #include "_http_internal.h"
+#include "neverc/std/crypto/tls.h"
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -23,8 +24,13 @@ int g_cors_enabled = 0;
 #define CLIENT_HEADER_LIMIT_DEFAULT (1024U * 1024U)
 #define CLIENT_BODY_LIMIT_DEFAULT   (16U * 1024U * 1024U)
 
+typedef struct client_connection {
+    neverc_tcp_conn_t *tcp;
+    neverc_tls_conn_t *tls;
+} client_connection_t;
+
 typedef struct pool_conn {
-    neverc_tcp_conn_t    *tcp;
+    client_connection_t  *connection;
     uint64_t              last_used;
     struct pool_conn     *next;
 } pool_conn_t;
@@ -87,15 +93,22 @@ static pool_host_t *pool_find_host(http_conn_pool_t *pool, const char *key) {
     return NULL;
 }
 
-static neverc_tcp_conn_t *pool_get(neverc_http_client_t *client,
-                                   const char *host_key) {
+static void client_connection_close(client_connection_t *connection) {
+    if (!connection) return;
+    if (connection->tls) neverc_tls_close(connection->tls);
+    if (connection->tcp) neverc_tcp_close(connection->tcp);
+    free(connection);
+}
+
+static client_connection_t *pool_get(neverc_http_client_t *client,
+                                     const char *host_key) {
     http_conn_pool_t *pool = &client->pool;
     if (nc_atomic_load(&pool->max_idle_per_host) <= 0) return NULL;
     pool_init(pool);
 
     nc_mutex_lock(&pool->lock);
     pool_host_t *h = pool_find_host(pool, host_key);
-    neverc_tcp_conn_t *result = NULL;
+    client_connection_t *result = NULL;
 
     if (h && h->idle) {
         uint64_t now = nc_monotonic_ms();
@@ -106,12 +119,12 @@ static neverc_tcp_conn_t *pool_get(neverc_http_client_t *client,
             h->idle_count--;
 
             if (now - pc->last_used < POOL_IDLE_TIMEOUT_MS) {
-                result = pc->tcp;
+                result = pc->connection;
                 free(pc);
                 break;
             }
             /* Expired connection */
-            neverc_tcp_close(pc->tcp);
+            client_connection_close(pc->connection);
             free(pc);
         }
     }
@@ -120,10 +133,10 @@ static neverc_tcp_conn_t *pool_get(neverc_http_client_t *client,
 }
 
 static void pool_put(neverc_http_client_t *client, const char *host_key,
-                     neverc_tcp_conn_t *conn) {
+                     client_connection_t *connection) {
     http_conn_pool_t *pool = &client->pool;
-    if (nc_atomic_load(&pool->max_idle_per_host) <= 0 || !conn) {
-        neverc_tcp_close(conn);
+    if (nc_atomic_load(&pool->max_idle_per_host) <= 0 || !connection) {
+        client_connection_close(connection);
         return;
     }
     pool_init(pool);
@@ -141,7 +154,7 @@ static void pool_put(neverc_http_client_t *client, const char *host_key,
     if (h && h->idle_count < nc_atomic_load(&pool->max_idle_per_host)) {
         pool_conn_t *pc = (pool_conn_t *)calloc(1, sizeof(*pc));
         if (pc) {
-            pc->tcp = conn;
+            pc->connection = connection;
             pc->last_used = nc_monotonic_ms();
             pc->next = h->idle;
             h->idle = pc;
@@ -151,7 +164,7 @@ static void pool_put(neverc_http_client_t *client, const char *host_key,
         }
     }
     nc_mutex_unlock(&pool->lock);
-    neverc_tcp_close(conn);
+    client_connection_close(connection);
 }
 
 static void pool_close_idle(http_conn_pool_t *pool) {
@@ -161,7 +174,7 @@ static void pool_close_idle(http_conn_pool_t *pool) {
         pool_conn_t *connection = pool->hosts[i].idle;
         while (connection) {
             pool_conn_t *next = connection->next;
-            neverc_tcp_close(connection->tcp);
+            client_connection_close(connection->connection);
             free(connection);
             connection = next;
         }
@@ -331,6 +344,12 @@ static neverc_http_response_t *make_error_response(const char *msg) {
         (neverc_http_response_t *)calloc(1, sizeof(*r));
     if (r) r->error = msg;
     return r;
+}
+
+static const char *client_context_error(neverc_context_t *context,
+                                        const char *fallback) {
+    const char *error = neverc_context_err(context);
+    return error ? error : fallback;
 }
 
 typedef struct {
@@ -644,18 +663,98 @@ invalid:
 }
 
 /* Return -1 if no bytes were written and -2 after a partial write. */
-static int client_tcp_write_all(neverc_tcp_conn_t *connection,
-                                const char *data, size_t length) {
+static int client_connection_write_all(client_connection_t *connection,
+                                       neverc_context_t *context,
+                                       const char *data, size_t length) {
+    if (connection->tls) {
+        if (neverc_context_done(context)) return -1;
+        int written = neverc_tls_write_context(connection->tls, context,
+                                               data, length);
+        return written >= 0 && (size_t)written == length ? 0 : -1;
+    }
     size_t written = 0;
     while (written < length) {
-        int n = neverc_tcp_write(connection, data + written, length - written);
-        if (n <= 0) return written == 0 ? -1 : -2;
-        written += (size_t)n;
+        neverc_net_result_t result = neverc_tcp_write_context(
+            connection->tcp, context, data + written, length - written);
+        written += result.transferred;
+        if (result.status != NEVERC_NET_OK || result.transferred == 0)
+            return written == 0 ? -1 : -2;
     }
     return 0;
 }
 
+static int client_connection_read(client_connection_t *connection,
+                                  neverc_context_t *context,
+                                  void *data, size_t length) {
+    if (!connection->tls) {
+        neverc_net_result_t result = neverc_tcp_read_context(
+            connection->tcp, context, data, length);
+        return result.status == NEVERC_NET_OK
+            ? (int)result.transferred
+            : result.status == NEVERC_NET_EOF ? 0 : -1;
+    }
+    if (neverc_context_done(context)) return -1;
+    return neverc_tls_read_context(connection->tls, context, data, length);
+}
+
+static client_connection_t *client_connection_dial(
+    const parsed_url_t *url, const char *connect_addr,
+    neverc_context_t *context, const char **error) {
+    neverc_tcp_conn_t *tcp = NULL;
+    neverc_net_result_t dial_result = neverc_tcp_dial_context(
+        connect_addr, context, &tcp);
+    if (dial_result.status != NEVERC_NET_OK || !tcp) {
+        if (error) *error = client_context_error(context, "connection failed");
+        return NULL;
+    }
+
+    client_connection_t *connection =
+        (client_connection_t *)calloc(1, sizeof(*connection));
+    if (!connection) {
+        neverc_tcp_close(tcp);
+        if (error) *error = "out of memory";
+        return NULL;
+    }
+    connection->tcp = tcp;
+    if (!url->is_https) return connection;
+
+    int64_t deadline = neverc_context_deadline(context);
+    if (deadline > 0 &&
+        (neverc_tcp_set_read_deadline(tcp, deadline) != 0 ||
+         neverc_tcp_set_write_deadline(tcp, deadline) != 0)) {
+        client_connection_close(connection);
+        if (error) *error = "failed to configure TLS deadline";
+        return NULL;
+    }
+
+    neverc_tls_config_t *tls_config = neverc_tls_config_new();
+    if (!tls_config) {
+        client_connection_close(connection);
+        if (error) *error = "out of memory";
+        return NULL;
+    }
+    neverc_tls_config_set_server_name(tls_config, url->host);
+    const char *alpn[] = { "http/1.1" };
+    neverc_tls_config_set_alpn(tls_config, alpn, 1);
+    const char *tls_error = NULL;
+    connection->tls = neverc_tls_client(tcp, tls_config, &tls_error);
+    neverc_tls_config_free(tls_config);
+    if (!connection->tls) {
+        client_connection_close(connection);
+        if (error) *error = tls_error ? tls_error : "TLS handshake failed";
+        return NULL;
+    }
+    const char *negotiated = neverc_tls_alpn(connection->tls);
+    if (negotiated && strcmp(negotiated, "http/1.1") != 0) {
+        client_connection_close(connection);
+        if (error) *error = "server selected an unsupported ALPN protocol";
+        return NULL;
+    }
+    return connection;
+}
+
 static neverc_http_response_t *do_request(neverc_http_client_t *client,
+                                            neverc_context_t *context,
                                             const char *method,
                                             const parsed_url_t *url,
                                             const char *content_type,
@@ -663,11 +762,6 @@ static neverc_http_response_t *do_request(neverc_http_client_t *client,
                                             size_t body_len) {
     if (body_len > INT_MAX)
         return make_error_response("request body is too large");
-    if (url->is_https) {
-        return make_error_response(
-            "HTTPS is unavailable until TLS certificate verification is "
-            "implemented");
-    }
 
     if (nc_net_init() != 0)
         return make_error_response("network initialization failed");
@@ -680,20 +774,19 @@ static neverc_http_response_t *do_request(neverc_http_client_t *client,
         snprintf(connect_addr, sizeof(connect_addr), "%s:%u", url->host,
                  (unsigned)url->port);
     char pool_key[290];
-    snprintf(pool_key, sizeof(pool_key), "http://%s", connect_addr);
+    snprintf(pool_key, sizeof(pool_key), "%s://%s",
+             url->is_https ? "https" : "http", connect_addr);
 
     /* Try to reuse a pooled connection first */
     int from_pool = 0;
-    neverc_tcp_conn_t *conn = pool_get(client, pool_key);
+    client_connection_t *conn = pool_get(client, pool_key);
     if (conn) {
         from_pool = 1;
     } else {
-        const char *err = NULL;
-        conn = neverc_tcp_dial(connect_addr, &err);
-        if (!conn) return make_error_response("connection failed");
+        const char *dial_error = NULL;
+        conn = client_connection_dial(url, connect_addr, context, &dial_error);
+        if (!conn) return make_error_response(dial_error);
     }
-
-    neverc_tcp_set_timeout(conn, nc_atomic_load(&client->config.timeout_ms));
 
     int use_keepalive =
         nc_atomic_load(&client->pool.max_idle_per_host) > 0;
@@ -701,36 +794,35 @@ static neverc_http_response_t *do_request(neverc_http_client_t *client,
     if (build_http_request(&req, method, url, content_type, body, body_len,
                            use_keepalive) != 0 ||
         req.len > INT_MAX) {
-        neverc_tcp_close(conn);
+        client_connection_close(conn);
         nc_buf_free(&req);
         return make_error_response("invalid request or out of memory");
     }
 
-    int wr = client_tcp_write_all(conn, req.data, req.len);
+    int wr = client_connection_write_all(conn, context, req.data, req.len);
     nc_buf_free(&req);
 
     /* If write failed on a pooled connection (stale), retry with new conn */
-    if (wr == -1 && from_pool) {
-        neverc_tcp_close(conn);
-        const char *err = NULL;
-        conn = neverc_tcp_dial(connect_addr, &err);
-        if (!conn) return make_error_response("connection failed");
-        neverc_tcp_set_timeout(conn,
-                              nc_atomic_load(&client->config.timeout_ms));
+    if (wr == -1 && from_pool && !url->is_https) {
+        client_connection_close(conn);
+        const char *dial_error = NULL;
+        conn = client_connection_dial(url, connect_addr, context, &dial_error);
+        if (!conn) return make_error_response(dial_error);
 
         if (build_http_request(&req, method, url, content_type, body,
                                body_len, use_keepalive) != 0 ||
             req.len > INT_MAX) {
-            neverc_tcp_close(conn);
+            client_connection_close(conn);
             nc_buf_free(&req);
             return make_error_response("invalid request or out of memory");
         }
-        wr = client_tcp_write_all(conn, req.data, req.len);
+        wr = client_connection_write_all(conn, context, req.data, req.len);
         nc_buf_free(&req);
     }
     if (wr != 0) {
-        neverc_tcp_close(conn);
-        return make_error_response("request write failed");
+        client_connection_close(conn);
+        return make_error_response(client_context_error(
+            context, "request write failed"));
     }
 
     nc_buf_t resp_buf;
@@ -759,13 +851,13 @@ static neverc_http_response_t *do_request(neverc_http_client_t *client,
     while (!response_complete) {
         size_t read_size = sizeof(chunk);
         if (resp_buf.len >= response_limit) {
-            int extra = neverc_tcp_read(conn, chunk, 1);
+            int extra = client_connection_read(conn, context, chunk, 1);
             if (extra == 0 && hdr_end_offset != SIZE_MAX &&
                 !framing.is_chunked && !framing.has_content_length) {
                 response_complete = 1;
                 break;
             }
-            neverc_tcp_close(conn);
+            client_connection_close(conn);
             nc_buf_free(&resp_buf);
             return make_error_response(hdr_end_offset == SIZE_MAX
                 ? "response headers exceed configured limit"
@@ -773,7 +865,7 @@ static neverc_http_response_t *do_request(neverc_http_client_t *client,
         }
         if (read_size > response_limit - resp_buf.len)
             read_size = response_limit - resp_buf.len;
-        int rn = neverc_tcp_read(conn, chunk, read_size);
+        int rn = client_connection_read(conn, context, chunk, read_size);
         if (rn <= 0) {
             if (rn == 0 && hdr_end_offset != SIZE_MAX && !framing.is_chunked &&
                 (!framing.has_content_length ||
@@ -782,12 +874,13 @@ static neverc_http_response_t *do_request(neverc_http_client_t *client,
                 response_complete = 1;
                 break;
             }
-            neverc_tcp_close(conn);
+            client_connection_close(conn);
             nc_buf_free(&resp_buf);
-            return make_error_response("incomplete HTTP response");
+            return make_error_response(client_context_error(
+                context, "incomplete HTTP response"));
         }
         if (nc_buf_append(&resp_buf, chunk, (size_t)rn) != 0) {
-            neverc_tcp_close(conn);
+            client_connection_close(conn);
             nc_buf_free(&resp_buf);
             return make_error_response("out of memory");
         }
@@ -798,14 +891,14 @@ analyze_response:
             if (hdr_end_ptr) {
                 hdr_end_offset = (size_t)(hdr_end_ptr - resp_buf.data);
                 if (hdr_end_offset > header_limit) {
-                    neverc_tcp_close(conn);
+                    client_connection_close(conn);
                     nc_buf_free(&resp_buf);
                     return make_error_response(
                         "response headers exceed configured limit");
                 }
                 if (parse_response_framing(resp_buf.data, hdr_end_offset,
                                            &framing) != 0) {
-                    neverc_tcp_close(conn);
+                    client_connection_close(conn);
                     nc_buf_free(&resp_buf);
                     return make_error_response("invalid HTTP response framing");
                 }
@@ -813,7 +906,7 @@ analyze_response:
                       framing.status_code < 200) ||
                      framing.status_code == 204) &&
                     (framing.has_content_length || framing.is_chunked)) {
-                    neverc_tcp_close(conn);
+                    client_connection_close(conn);
                     nc_buf_free(&resp_buf);
                     return make_error_response(
                         "body framing is forbidden for this status");
@@ -821,7 +914,7 @@ analyze_response:
                 if (framing.status_code >= 100 &&
                     framing.status_code < 200 && framing.status_code != 101) {
                     if (++interim_count > 16) {
-                        neverc_tcp_close(conn);
+                        client_connection_close(conn);
                         nc_buf_free(&resp_buf);
                         return make_error_response("too many interim responses");
                     }
@@ -833,13 +926,13 @@ analyze_response:
                 }
                 if (framing.has_content_length &&
                     framing.content_length > body_limit) {
-                    neverc_tcp_close(conn);
+                    client_connection_close(conn);
                     nc_buf_free(&resp_buf);
                     return make_error_response(
                         "response body exceeds configured limit");
                 }
             } else if (resp_buf.len > header_limit + 4) {
-                neverc_tcp_close(conn);
+                client_connection_close(conn);
                 nc_buf_free(&resp_buf);
                 return make_error_response(
                     "response headers exceed configured limit");
@@ -861,7 +954,7 @@ analyze_response:
                 body_limit, &chunk_wire_consumed, &chunk_decoded_length,
                 &trailer_offset, &trailer_length);
             if (scan_result < 0) {
-                neverc_tcp_close(conn);
+                client_connection_close(conn);
                 nc_buf_free(&resp_buf);
                 return make_error_response("invalid chunked HTTP response");
             }
@@ -877,7 +970,7 @@ analyze_response:
         } else {
             framing.keep_alive = 0;
             if (body_received > body_limit) {
-                neverc_tcp_close(conn);
+                client_connection_close(conn);
                 nc_buf_free(&resp_buf);
                 return make_error_response(
                     "response body exceeds configured limit");
@@ -885,7 +978,7 @@ analyze_response:
         }
     }
     if (resp_buf.len == 0) {
-        neverc_tcp_close(conn);
+        client_connection_close(conn);
         nc_buf_free(&resp_buf);
         return make_error_response("empty response");
     }
@@ -893,7 +986,7 @@ analyze_response:
     neverc_http_response_t *r =
         (neverc_http_response_t *)calloc(1, sizeof(*r));
     if (!r) {
-        neverc_tcp_close(conn);
+        client_connection_close(conn);
         nc_buf_free(&resp_buf);
         return make_error_response("out of memory");
     }
@@ -960,7 +1053,7 @@ analyze_response:
     if (use_keepalive && server_keepalive && r->status_code > 0)
         pool_put(client, pool_key, conn);
     else
-        neverc_tcp_close(conn);
+        client_connection_close(conn);
 
     nc_buf_free(&resp_buf);
     return r;
@@ -988,7 +1081,7 @@ void neverc_http_client_set_pool(int max_idle_per_host) {
             if (!connection) break;
             pool->hosts[i].idle = connection->next;
             pool->hosts[i].idle_count--;
-            neverc_tcp_close(connection->tcp);
+            client_connection_close(connection->connection);
             free(connection);
         }
     }
@@ -1025,12 +1118,15 @@ static const char *parse_response_header_value(const char *headers,
 }
 
 static neverc_http_response_t *do_request_with_redirects(
-    neverc_http_client_t *client, const char *method, const char *url,
+    neverc_http_client_t *client, neverc_context_t *context,
+    const char *method, const char *url,
     const char *content_type, const void *body, size_t body_len) {
     if (!url) return make_error_response("null url");
 
     char current_url[4096];
-    snprintf(current_url, sizeof(current_url), "%s", url);
+    if (strlen(url) >= sizeof(current_url))
+        return make_error_response("url is too long");
+    memcpy(current_url, url, strlen(url) + 1);
     const char *current_method = method;
 
     int last_status = 0;
@@ -1047,11 +1143,11 @@ static neverc_http_response_t *do_request_with_redirects(
             (strcmp(current_method, "POST") == 0 ||
              strcmp(current_method, "PUT") == 0 ||
              strcmp(current_method, "PATCH") == 0)) {
-            resp = do_request(client, "GET", &pu, NULL, NULL, 0);
+            resp = do_request(client, context, "GET", &pu, NULL, NULL, 0);
             current_method = "GET";
         } else {
-            resp = do_request(client, current_method, &pu, content_type,
-                              body, body_len);
+            resp = do_request(client, context, current_method, &pu,
+                              content_type, body, body_len);
         }
 
         if (!resp || resp->error) return resp;
@@ -1064,12 +1160,22 @@ static neverc_http_response_t *do_request_with_redirects(
             if (loc) {
                 last_status = resp->status_code;
                 if (loc[0] == '/') {
-                    snprintf(current_url, sizeof(current_url),
-                             "%s://%s:%d%s",
-                             pu.is_https ? "https" : "http",
-                             pu.host, pu.port, loc);
+                    int n = snprintf(current_url, sizeof(current_url),
+                                     "%s://%s%s",
+                                     pu.is_https ? "https" : "http",
+                                     pu.authority, loc);
+                    if (n < 0 || (size_t)n >= sizeof(current_url)) {
+                        free((void *)loc);
+                        neverc_http_response_free(resp);
+                        return make_error_response("redirect url is too long");
+                    }
                 } else {
-                    snprintf(current_url, sizeof(current_url), "%s", loc);
+                    if (strlen(loc) >= sizeof(current_url)) {
+                        free((void *)loc);
+                        neverc_http_response_free(resp);
+                        return make_error_response("redirect url is too long");
+                    }
+                    memcpy(current_url, loc, strlen(loc) + 1);
                 }
                 free((void *)loc);
                 neverc_http_response_free(resp);
@@ -1081,51 +1187,68 @@ static neverc_http_response_t *do_request_with_redirects(
     return make_error_response("too many redirects");
 }
 
+static neverc_http_response_t *execute_client_request(
+    neverc_http_client_t *client, neverc_context_t *parent,
+    const char *method, const char *url, const char *content_type,
+    const void *body, size_t body_len) {
+    neverc_context_cancel_handle_t *cancel_handle = NULL;
+    neverc_context_t *context = neverc_context_with_timeout_handle(
+        parent ? parent : neverc_context_background(),
+        nc_atomic_load(&client->config.timeout_ms), &cancel_handle);
+    if (!context) return make_error_response("out of memory");
+    neverc_http_response_t *response = do_request_with_redirects(
+        client, context, method, url, content_type, body, body_len);
+    neverc_context_cancel_handle_cancel(cancel_handle);
+    neverc_context_cancel_handle_free(cancel_handle);
+    neverc_context_free(context);
+    return response;
+}
+
 neverc_http_response_t *neverc_http_get(const char *url) {
-    return do_request_with_redirects(&g_default_client, "GET", url,
-                                     NULL, NULL, 0);
+    return execute_client_request(&g_default_client, NULL, "GET", url,
+                                  NULL, NULL, 0);
 }
 
 neverc_http_response_t *neverc_http_post(const char *url,
                                           const char *content_type,
                                           const void *body,
                                           size_t body_len) {
-    return do_request_with_redirects(&g_default_client, "POST", url,
-                                     content_type, body, body_len);
+    return execute_client_request(&g_default_client, NULL, "POST", url,
+                                  content_type, body, body_len);
 }
 
 neverc_http_response_t *neverc_http_head(const char *url) {
-    return do_request_with_redirects(&g_default_client, "HEAD", url,
-                                     NULL, NULL, 0);
+    return execute_client_request(&g_default_client, NULL, "HEAD", url,
+                                  NULL, NULL, 0);
 }
 
 neverc_http_response_t *neverc_http_put(const char *url,
                                          const char *content_type,
                                          const void *body,
                                          size_t body_len) {
-    return do_request_with_redirects(&g_default_client, "PUT", url,
-                                     content_type, body, body_len);
+    return execute_client_request(&g_default_client, NULL, "PUT", url,
+                                  content_type, body, body_len);
 }
 
 neverc_http_response_t *neverc_http_delete(const char *url) {
-    return do_request_with_redirects(&g_default_client, "DELETE", url,
-                                     NULL, NULL, 0);
+    return execute_client_request(&g_default_client, NULL, "DELETE", url,
+                                  NULL, NULL, 0);
 }
 
 neverc_http_response_t *neverc_http_patch(const char *url,
                                            const char *content_type,
                                            const void *body,
                                            size_t body_len) {
-    return do_request_with_redirects(&g_default_client, "PATCH", url,
-                                     content_type, body, body_len);
+    return execute_client_request(&g_default_client, NULL, "PATCH", url,
+                                  content_type, body, body_len);
 }
 
 neverc_http_response_t *neverc_http_do(const char *method, const char *url,
                                         const char *content_type,
                                         const void *body, size_t body_len) {
     if (!method) return make_error_response("null method");
-    return do_request_with_redirects(&g_default_client, method, url,
-                                     content_type, body, body_len);
+    return execute_client_request(&g_default_client, NULL, method, url,
+                                  content_type, body, body_len);
 }
 
 neverc_http_response_t *neverc_http_client_do(
@@ -1133,8 +1256,19 @@ neverc_http_response_t *neverc_http_client_do(
     const char *content_type, const void *body, size_t body_len) {
     if (!client) return make_error_response("null client");
     if (!method) return make_error_response("null method");
-    return do_request_with_redirects(client, method, url, content_type,
-                                     body, body_len);
+    return execute_client_request(client, NULL, method, url, content_type,
+                                  body, body_len);
+}
+
+neverc_http_response_t *neverc_http_client_do_context(
+    neverc_http_client_t *client, neverc_context_t *context,
+    const char *method, const char *url, const char *content_type,
+    const void *body, size_t body_len) {
+    if (!client) return make_error_response("null client");
+    if (!context) return make_error_response("null context");
+    if (!method) return make_error_response("null method");
+    return execute_client_request(client, context, method, url,
+                                  content_type, body, body_len);
 }
 
 void neverc_http_response_free(neverc_http_response_t *resp) {
@@ -1214,15 +1348,17 @@ const char *neverc_http_get_cookie(const neverc_http_request_t *req,
 int neverc_http_sse_begin(neverc_http_response_writer_t *w) {
     if (!w || w->fd == NC_INVALID_SOCK) return -1;
     w->headers_sent = 1;
+    w->keep_alive = 0;
 
     const char *hdr =
         "HTTP/1.1 200 OK\r\n"
         "Content-Type: text/event-stream\r\n"
         "Cache-Control: no-cache\r\n"
-        "Connection: keep-alive\r\n"
+        "Connection: close\r\n"
         "X-Accel-Buffering: no\r\n"
         "\r\n";
-    return sock_write_all(w->fd, hdr, strlen(hdr));
+    return nc_http_sock_write_all_timeout(w->fd, hdr, strlen(hdr),
+                                           w->write_timeout_ms);
 }
 
 int neverc_http_sse_event(neverc_http_response_writer_t *w,
@@ -1261,7 +1397,8 @@ int neverc_http_sse_event(neverc_http_response_writer_t *w,
     }
     nc_buf_append(&buf, "\n", 1);
 
-    int rc = sock_write_all(w->fd, buf.data, buf.len);
+    int rc = nc_http_sock_write_all_timeout(
+        w->fd, buf.data, buf.len, w->write_timeout_ms);
     nc_buf_free(&buf);
     return rc;
 }
@@ -1270,7 +1407,8 @@ int neverc_http_sse_retry(neverc_http_response_writer_t *w, int ms) {
     if (!w || w->fd == NC_INVALID_SOCK) return -1;
     char buf[64];
     int n = snprintf(buf, sizeof(buf), "retry: %d\n\n", ms);
-    return sock_write_all(w->fd, buf, (size_t)n);
+    return nc_http_sock_write_all_timeout(
+        w->fd, buf, (size_t)n, w->write_timeout_ms);
 }
 
 void neverc_http_sse_end(neverc_http_response_writer_t *w) {
@@ -2040,9 +2178,20 @@ int neverc_http_json_error(neverc_http_response_writer_t *w,
  * ====================================================================== */
 
 struct neverc_sse {
-    nc_sock_t fd;
-    int       closed;
+    neverc_tcp_conn_t *connection;
+    int                closed;
 };
+
+static int sse_tcp_write_all(neverc_tcp_conn_t *connection,
+                             const char *data, size_t length) {
+    size_t offset = 0;
+    while (offset < length) {
+        int n = neverc_tcp_write(connection, data + offset, length - offset);
+        if (n <= 0) return -1;
+        offset += (size_t)n;
+    }
+    return 0;
+}
 
 neverc_sse_t *neverc_sse_start(neverc_http_response_writer_t *w) {
     if (!w) return NULL;
@@ -2053,47 +2202,48 @@ neverc_sse_t *neverc_sse_start(neverc_http_response_writer_t *w) {
     neverc_http_set_header(w, "Connection", "keep-alive");
     neverc_http_set_header(w, "X-Accel-Buffering", "no");
 
-    w->headers_sent = 0;
-    w->chunked = 0;
-    w->keep_alive = 1;
+    neverc_tcp_conn_t *connection = neverc_http_hijack(w);
+    if (!connection) return NULL;
+    (void)neverc_tcp_set_write_timeout(connection, w->write_timeout_ms);
 
-    nc_buf_t hdr;
-    nc_buf_init(&hdr);
-    nc_buf_append(&hdr, "HTTP/1.1 200 OK\r\n", 17);
-    nc_buf_append(&hdr, "Content-Type: text/event-stream\r\n", 33);
-    nc_buf_append(&hdr, "Cache-Control: no-cache\r\n", 25);
-    nc_buf_append(&hdr, "Connection: keep-alive\r\n", 24);
-    nc_buf_append(&hdr, "X-Accel-Buffering: no\r\n", 23);
-    nc_buf_append(&hdr, "Transfer-Encoding: chunked\r\n", 28);
-    nc_buf_append(&hdr, "\r\n", 2);
-
-    if (w->fd != NC_INVALID_SOCK)
-        sock_write_all(w->fd, hdr.data, hdr.len);
-    nc_buf_free(&hdr);
+    const char *headers =
+        "HTTP/1.1 200 OK\r\n"
+        "Content-Type: text/event-stream\r\n"
+        "Cache-Control: no-cache\r\n"
+        "Connection: keep-alive\r\n"
+        "X-Accel-Buffering: no\r\n"
+        "Transfer-Encoding: chunked\r\n\r\n";
+    int write_result = sse_tcp_write_all(
+        connection, headers, strlen(headers));
+    if (write_result != 0) {
+        neverc_tcp_close(connection);
+        return NULL;
+    }
 
     neverc_sse_t *sse = (neverc_sse_t *)malloc(sizeof(*sse));
-    if (!sse) return NULL;
-    sse->fd = w->fd;
+    if (!sse) {
+        neverc_tcp_close(connection);
+        return NULL;
+    }
+    sse->connection = connection;
     sse->closed = 0;
-
-    w->hijacked = 1;
     return sse;
 }
 
 static int sse_write_chunk(neverc_sse_t *sse, const char *data, size_t len) {
-    if (!sse || sse->closed || sse->fd == NC_INVALID_SOCK) return -1;
+    if (!sse || sse->closed || !sse->connection) return -1;
 
     char size_buf[32];
     int slen = snprintf(size_buf, sizeof(size_buf), "%zx\r\n", len);
-    if (sock_write_all(sse->fd, size_buf, (size_t)slen) != 0) {
+    if (sse_tcp_write_all(sse->connection, size_buf, (size_t)slen) != 0) {
         sse->closed = 1;
         return -1;
     }
-    if (sock_write_all(sse->fd, data, len) != 0) {
+    if (sse_tcp_write_all(sse->connection, data, len) != 0) {
         sse->closed = 1;
         return -1;
     }
-    if (sock_write_all(sse->fd, "\r\n", 2) != 0) {
+    if (sse_tcp_write_all(sse->connection, "\r\n", 2) != 0) {
         sse->closed = 1;
         return -1;
     }
@@ -2103,6 +2253,8 @@ static int sse_write_chunk(neverc_sse_t *sse, const char *data, size_t len) {
 int neverc_sse_send(neverc_sse_t *sse, const char *event_type,
                      const char *data, const char *id) {
     if (!sse || sse->closed) return -1;
+    if ((event_type && contains_crlf(event_type)) ||
+        (id && contains_crlf(id))) return -1;
 
     nc_buf_t ev;
     nc_buf_init(&ev);
@@ -2170,8 +2322,11 @@ int neverc_sse_comment(neverc_sse_t *sse, const char *text) {
 
 void neverc_sse_close(neverc_sse_t *sse) {
     if (!sse) return;
-    if (!sse->closed && sse->fd != NC_INVALID_SOCK) {
-        sock_write_all(sse->fd, "0\r\n\r\n", 5);
+    if (!sse->closed && sse->connection) {
+        (void)sse_tcp_write_all(sse->connection, "0\r\n\r\n", 5);
     }
+    if (sse->connection) neverc_tcp_close(sse->connection);
+    sse->connection = NULL;
+    sse->closed = 1;
     free(sse);
 }

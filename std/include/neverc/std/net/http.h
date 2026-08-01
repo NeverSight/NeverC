@@ -164,6 +164,12 @@ void neverc_http_server_free(neverc_http_server_t *server);
 int neverc_http_server_listen_and_serve(neverc_http_server_t *server,
                                         const char *addr);
 
+/* Serve verified TLS 1.3 using the same server configuration, parser and
+ * response writer semantics. Blocks until shutdown. */
+int neverc_http_server_listen_and_serve_tls(
+    neverc_http_server_t *server, const char *addr,
+    const char *cert_file, const char *key_file);
+
 /* Gracefully stop one server instance. Safe to call from another thread. */
 void neverc_http_server_shutdown(neverc_http_server_t *server);
 
@@ -176,8 +182,7 @@ int neverc_http_server_bound_port(neverc_http_server_t *server);
  * Blocks until server is stopped. Returns 0 on normal shutdown, -1 on error. */
 int neverc_http_listen_and_serve(const char *addr, neverc_http_mux_t *mux);
 
-/* HTTPS entry point. It currently returns -1 while TLS CertificateVerify and
- * X.509 chain/hostname verification remain incomplete. */
+/* HTTPS entry point using the verified TLS 1.3 transport. */
 int neverc_http_listen_and_serve_tls(const char *addr, neverc_http_mux_t *mux,
                                       const char *cert_file,
                                       const char *key_file);
@@ -327,6 +332,13 @@ void neverc_http_client_free(neverc_http_client_t *client);
 neverc_http_response_t *neverc_http_client_do(
     neverc_http_client_t *client, const char *method, const char *url,
     const char *content_type, const void *body, size_t body_len);
+
+/* As above, with caller cancellation/deadline propagation. The client's own
+ * timeout remains an absolute upper bound for the complete redirect chain. */
+neverc_http_response_t *neverc_http_client_do_context(
+    neverc_http_client_t *client, neverc_context_t *context,
+    const char *method, const char *url, const char *content_type,
+    const void *body, size_t body_len);
 
 /* HTTP GET request. Caller must call neverc_http_response_free(). */
 neverc_http_response_t *neverc_http_get(const char *url);

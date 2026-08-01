@@ -20,6 +20,7 @@
 #include "net/http/http2.h"
 #include "net/http3.h"
 #include "net/quic.h"
+#include "net/rpc.h"
 
 #ifdef __neverc__
 /* Windows SDK (combaseapi.h) defines `#define interface struct` for COM.
@@ -42,6 +43,7 @@ struct __neverc_std_interface_t { char __tag; };
 struct __neverc_std_http2_t { char __tag; };
 struct __neverc_std_http3_t { char __tag; };
 struct __neverc_std_quic_t { char __tag; };
+struct __neverc_std_rpc_t { char __tag; };
 
 struct __neverc_std_net_t {
     struct __neverc_std_tcp_t tcp;
@@ -50,6 +52,7 @@ struct __neverc_std_net_t {
     struct __neverc_std_http2_t http2;
     struct __neverc_std_http3_t http3;
     struct __neverc_std_quic_t quic;
+    struct __neverc_std_rpc_t rpc;
     struct __neverc_std_ws_t websocket;
     struct __neverc_std_url_t url;
     struct __neverc_std_netip_t netip;

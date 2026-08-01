@@ -31,6 +31,10 @@ typedef struct {
     const char *subprotocol;     /* optional single subprotocol token */
     int handshake_timeout_ms;    /* 0 = default (30000ms) */
     size_t max_message_size;     /* 0 = default (16MiB) */
+    int read_timeout_ms;         /* 0 = no read timeout */
+    int write_timeout_ms;        /* 0 = no write timeout */
+    int ping_interval_ms;        /* 0 = keepalive disabled */
+    int pong_timeout_ms;         /* required when keepalive is enabled */
 } neverc_ws_client_config_t;
 
 /* --- Handshake (client) --- */
@@ -65,15 +69,31 @@ neverc_ws_conn_t *neverc_ws_conn_new(neverc_tcp_conn_t *conn);
 
 void neverc_ws_conn_free(neverc_ws_conn_t *conn);
 
-/* Set read timeout in milliseconds (0 = no timeout). */
+/* Compatibility helper that sets both read and write timeouts. */
 int neverc_ws_set_timeout(neverc_ws_conn_t *conn, int ms);
+
+/* Set read and total-frame write timeouts independently (0 = no timeout).
+ * The write timeout is an absolute budget for the complete WebSocket frame,
+ * which bounds synchronous backpressure from a slow consumer. */
+int neverc_ws_set_read_timeout(neverc_ws_conn_t *conn, int ms);
+int neverc_ws_set_write_timeout(neverc_ws_conn_t *conn, int ms);
+
+/* Send periodic ping frames and fail the connection unless the peer returns
+ * the matching pong before pong_timeout_ms. Passing two zeroes disables it.
+ * A read loop must be active so incoming pong frames can be processed. */
+int neverc_ws_set_keepalive(neverc_ws_conn_t *conn, int ping_interval_ms,
+                            int pong_timeout_ms);
+
+/* Return 1 after a keepalive pong deadline expired, otherwise 0. */
+int neverc_ws_keepalive_expired(neverc_ws_conn_t *conn);
 
 /* Set the maximum accepted frame/message size. 0 disables the limit. */
 int neverc_ws_set_read_limit(neverc_ws_conn_t *conn, size_t max_bytes);
 
 /* --- Frame I/O --- */
 
-/* Read next frame. Returns 0 on success, -1 on error.
+/* Read next frame. Returns 0 on success, -1 on error. Only one concurrent
+ * reader is supported; writes may safely run concurrently with that reader.
  * If fin is non-NULL, set to 1 when this is the final fragment. */
 int neverc_ws_read_frame(neverc_ws_conn_t *conn, int *opcode, int *fin,
                           void *buf, size_t buflen, size_t *out_len);

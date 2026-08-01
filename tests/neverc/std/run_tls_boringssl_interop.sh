@@ -24,9 +24,22 @@ resolve_bssl() {
     printf '%s\n' "$NEVERC_BSSL_BIN"
     return 0
   fi
+  if [[ -n "${NEVERC_BSSL:-}" && -x "${NEVERC_BSSL}" ]]; then
+    printf '%s\n' "$NEVERC_BSSL"
+    return 0
+  fi
+  if [[ -x "$ROOT/utils/ci/ensure_bssl.sh" ]]; then
+    if candidate="$("$ROOT/utils/ci/ensure_bssl.sh" "$ROOT" 2>/dev/null)"; then
+      if [[ -n "$candidate" && -x "$candidate" ]]; then
+        printf '%s\n' "$candidate"
+        return 0
+      fi
+    fi
+  fi
   for candidate in \
       "$ROOT/build/boringssl/bssl" \
       "$ROOT/build-neverc/boringssl/bssl" \
+      "$ROOT/build-neverc/boringssl/build/bssl" \
       "$(command -v bssl 2>/dev/null || true)"; do
     [[ -n "$candidate" && -x "$candidate" ]] || continue
     printf '%s\n' "$candidate"

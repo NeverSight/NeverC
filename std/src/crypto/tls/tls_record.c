@@ -39,6 +39,22 @@ int nci_tls_raw_write(neverc_tcp_conn_t *tcp, const void *data, size_t len) {
     return written >= 0 && (size_t)written == len ? 0 : -1;
 }
 
+static int nci_tls_conn_raw_write(neverc_tls_conn_t *conn,
+                                  const void *data, size_t len) {
+    if (!conn->write_context)
+        return nci_tls_raw_write(conn->tcp, data, len);
+    size_t written = 0;
+    while (written < len) {
+        neverc_net_result_t result = neverc_tcp_write_context(
+            conn->tcp, conn->write_context,
+            (const uint8_t *)data + written, len - written);
+        written += result.transferred;
+        if (result.status != NEVERC_NET_OK || result.transferred == 0)
+            return -1;
+    }
+    return 0;
+}
+
 int nci_tls_send_record(neverc_tcp_conn_t *tcp, uint8_t content_type,
                             const uint8_t *data, size_t len) {
     if (!tcp || (!data && len != 0) || len > TLS_MAX_PLAINTEXT)
@@ -99,9 +115,9 @@ int nci_tls_send_encrypted_unlocked(
     keys->seq++;
 
     int rc = 0;
-    if (nci_tls_raw_write(conn->tcp, hdr, 5) != 0) rc = -1;
+    if (nci_tls_conn_raw_write(conn, hdr, 5) != 0) rc = -1;
     if (rc == 0 &&
-        nci_tls_raw_write(conn->tcp, ciphertext, ct_len) != 0)
+        nci_tls_conn_raw_write(conn, ciphertext, ct_len) != 0)
         rc = -1;
     free(ciphertext);
     return rc;
@@ -397,9 +413,20 @@ int nci_tls_recv_record(neverc_tls_conn_t *conn, uint8_t *out_type,
 
     /* Read from TCP until we have a complete record */
     while (conn->read_buf_len < TLS_RECORD_HEADER_SIZE) {
-        int n = neverc_tcp_read(conn->tcp,
-                                 conn->read_buf + conn->read_buf_len,
-                                 sizeof(conn->read_buf) - conn->read_buf_len);
+        int n;
+        if (conn->read_context) {
+            neverc_net_result_t result = neverc_tcp_read_context(
+                conn->tcp, conn->read_context,
+                conn->read_buf + conn->read_buf_len,
+                sizeof(conn->read_buf) - conn->read_buf_len);
+            n = result.status == NEVERC_NET_OK
+                ? (int)result.transferred
+                : result.status == NEVERC_NET_EOF ? 0 : -1;
+        } else {
+            n = neverc_tcp_read(
+                conn->tcp, conn->read_buf + conn->read_buf_len,
+                sizeof(conn->read_buf) - conn->read_buf_len);
+        }
         if (n <= 0) {
             conn->closed = 1;
             return nci_tls_error(
@@ -428,9 +455,20 @@ int nci_tls_recv_record(neverc_tls_conn_t *conn, uint8_t *out_type,
             "TLS record exceeds the configured limit");
     size_t total = TLS_RECORD_HEADER_SIZE + rec_len;
     while (conn->read_buf_len < total) {
-        int n = neverc_tcp_read(conn->tcp,
-                                 conn->read_buf + conn->read_buf_len,
-                                 sizeof(conn->read_buf) - conn->read_buf_len);
+        int n;
+        if (conn->read_context) {
+            neverc_net_result_t result = neverc_tcp_read_context(
+                conn->tcp, conn->read_context,
+                conn->read_buf + conn->read_buf_len,
+                sizeof(conn->read_buf) - conn->read_buf_len);
+            n = result.status == NEVERC_NET_OK
+                ? (int)result.transferred
+                : result.status == NEVERC_NET_EOF ? 0 : -1;
+        } else {
+            n = neverc_tcp_read(
+                conn->tcp, conn->read_buf + conn->read_buf_len,
+                sizeof(conn->read_buf) - conn->read_buf_len);
+        }
         if (n <= 0) {
             conn->closed = 1;
             return nci_tls_error(
