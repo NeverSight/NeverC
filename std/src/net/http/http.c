@@ -484,7 +484,7 @@ int neverc_http_write(neverc_http_response_writer_t *w,
 
 int neverc_http_write_string(neverc_http_response_writer_t *w,
                               const char *s) {
-    if (!s) return 0;
+    if (!w || !s) return 0;
     return neverc_http_write(w, s, strlen(s));
 }
 
@@ -1556,8 +1556,7 @@ static int parse_request_mode(const char *raw, size_t raw_length,
         cursor = line_end + 2;
     }
 
-    if ((is_http_11 && !host_seen) ||
-        (content_length_seen && transfer_encoding_seen) ||
+    if ((content_length_seen && transfer_encoding_seen) ||
         (is_http_10 && transfer_encoding_seen))
         goto invalid;
 
