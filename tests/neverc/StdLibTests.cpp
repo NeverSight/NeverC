@@ -460,7 +460,9 @@ TEST_F(StdLibTest, NetBufferFailurePaths) {
 // only exercises plain HTTP.  Include the full TLS dependency chain for
 // every target that compiles http.c.
 #define HTTP_TLS_DEPS \
-    "src/crypto/tls/tls.c", "src/crypto/tls/tls_verify.c", \
+    "src/crypto/tls/tls.c", "src/crypto/tls/tls_config.c", \
+    "src/crypto/tls/tls_record.c", "src/crypto/tls/tls_handshake.c", \
+    "src/crypto/tls/tls_verify.c", \
     "src/crypto/tls/tls_key.c", "src/crypto/tls/tls_key_schedule.c", \
     "src/crypto/ecdh/ecdh.c", \
     "src/crypto/aes/aes.c", "src/crypto/gcm/gcm.c", \

@@ -3,15 +3,34 @@
 
 /*
  * Shared TLS 1.3 internals used across the split crypto/tls translation
- * units. Mirrors the role of Go's crypto/tls/common.go for constants and
- * byte helpers that multiple handshake/record modules need.
+ * units. Mirrors the role of Go's crypto/tls/common.go for constants,
+ * connection state, and cross-module helpers.
  */
 
 #include "neverc/std/crypto/gcm.h"
 #include "neverc/std/crypto/tls.h"
+#include "neverc/std/crypto/x509.h"
+#include "neverc/std/net/tcp.h"
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdatomic.h>
+
+#ifdef _WIN32
+#include <windows.h>
+typedef CRITICAL_SECTION tls_mutex_t;
+#define tls_mutex_init(m)    InitializeCriticalSection(m)
+#define tls_mutex_destroy(m) DeleteCriticalSection(m)
+#define tls_mutex_lock(m)    EnterCriticalSection(m)
+#define tls_mutex_unlock(m)  LeaveCriticalSection(m)
+#else
+#include <pthread.h>
+typedef pthread_mutex_t tls_mutex_t;
+#define tls_mutex_init(m)    pthread_mutex_init((m), NULL)
+#define tls_mutex_destroy(m) pthread_mutex_destroy(m)
+#define tls_mutex_lock(m)    pthread_mutex_lock(m)
+#define tls_mutex_unlock(m)  pthread_mutex_unlock(m)
+#endif
 
 #define TLS_RECORD_HEADER_SIZE   5
 #define TLS_MAX_PLAINTEXT        16384
@@ -103,6 +122,120 @@ typedef struct {
     neverc_gcm_ctx gcm;
 } tls_traffic_keys_t;
 
+typedef struct {
+    uint8_t *ticket;
+    size_t ticket_len;
+    uint8_t psk[TLS_HASH_SIZE_SHA256];
+    uint32_t lifetime;
+    uint32_t age_add;
+    uint64_t received_at_ms;
+    char *server_name;
+    char *alpn;
+    uint8_t *peer_cert;
+    size_t peer_cert_len;
+    int valid;
+} tls_client_session_t;
+
+typedef struct {
+    uint8_t ticket[TLS_SERVER_TICKET_SIZE];
+    uint8_t psk[TLS_HASH_SIZE_SHA256];
+    uint32_t lifetime;
+    uint32_t age_add;
+    uint64_t issued_at_ms;
+    char server_name[TLS_MAX_SERVER_NAME + 1];
+    size_t server_name_len;
+    char alpn[256];
+    size_t alpn_len;
+    int valid;
+} tls_server_session_t;
+
+typedef struct {
+    uint8_t ticket[TLS_MAX_SESSION_TICKET];
+    size_t ticket_len;
+    uint8_t psk[TLS_HASH_SIZE_SHA256];
+    uint32_t obfuscated_age;
+    char *alpn;
+    uint8_t *peer_cert;
+    size_t peer_cert_len;
+    int valid;
+} tls_client_psk_offer_t;
+
+struct neverc_tls_config {
+    _Atomic unsigned int ref_count;
+    tls_mutex_t session_mutex;
+    int session_mutex_initialized;
+    uint8_t *cert_der;
+    size_t   cert_der_len;
+    uint8_t *key_der;
+    size_t   key_der_len;
+    int      key_type; /* 0=unknown, 1=RSA, 2=ECDSA, 3=Ed25519 */
+    char    *server_name;
+    char   **alpn_protos;
+    int      alpn_count;
+    int      skip_verify;
+    int      client_auth;
+    neverc_x509_cert_pool_t *root_certificates;
+    tls_client_session_t client_session;
+    tls_server_session_t
+        server_sessions[TLS_SERVER_TICKET_COUNT];
+    size_t server_session_next;
+#if defined(NEVERC_TLS_TESTING)
+    size_t   test_handshake_fragment_size;
+#endif
+};
+
+struct neverc_tls_conn {
+    neverc_tcp_conn_t  *tcp;
+    neverc_tls_config_t *config;
+    int                 owns_tcp;
+    int                 is_server;
+    tls_mutex_t         read_mutex;
+    tls_mutex_t         write_mutex;
+    int                 mutexes_initialized;
+    tls_traffic_keys_t  read_keys;
+    tls_traffic_keys_t  write_keys;
+    int                 handshake_done;
+    uint16_t            cipher_suite;
+    char               *alpn;
+    char               *server_name;
+    char               *resumption_alpn;
+    uint8_t            *peer_cert;
+    size_t              peer_cert_len;
+    neverc_x509_cert_pool_t *peer_intermediates;
+    uint8_t             read_buf[TLS_MAX_CIPHERTEXT + TLS_RECORD_HEADER_SIZE];
+    size_t              read_buf_len;
+    uint8_t             decrypt_buf[TLS_MAX_PLAINTEXT + 1];
+    size_t              decrypt_buf_len;
+    size_t              decrypt_buf_pos;
+    uint8_t            *post_handshake_buf;
+    size_t              post_handshake_len;
+    size_t              post_handshake_cap;
+    uint8_t            *handshake_buf;
+    size_t              handshake_len;
+    size_t              handshake_cap;
+    unsigned int        non_advancing_records;
+    uint8_t             read_traffic_secret[TLS_HASH_SIZE_SHA256];
+    uint8_t             write_traffic_secret[TLS_HASH_SIZE_SHA256];
+    uint8_t             resumption_master_secret[TLS_HASH_SIZE_SHA256];
+    int                 resumption_secret_active;
+    int                 did_resume;
+    int                 application_keys_active;
+    int                 write_keys_active;
+    int                 alert_sent;
+    int                 peer_closed;
+    int                 write_closed;
+    _Atomic(const char *) failure_reason;
+    _Atomic int         closed;
+#if defined(NEVERC_TLS_TESTING)
+    size_t              test_handshake_fragment_size;
+#endif
+};
+
+struct neverc_tls_listener {
+    neverc_tcp_listener_t *tcp_ln;
+    neverc_tls_config_t   *cfg;
+};
+
 static inline void tls_put_u16(uint8_t *p, uint16_t v) {
     p[0] = (uint8_t)(v >> 8);
     p[1] = (uint8_t)(v);
@@ -135,5 +268,115 @@ static inline uint32_t tls_get_u32(const uint8_t *p) {
            ((uint32_t)p[2] << 8) |
            (uint32_t)p[3];
 }
+
+/* --- config/session (tls_config.c) --- */
+void nci_tls_config_retain(neverc_tls_config_t *cfg);
+void nci_tls_config_invalidate_client_session(neverc_tls_config_t *cfg);
+void nci_tls_config_invalidate_all_sessions(neverc_tls_config_t *cfg);
+int nci_tls_load_client_psk_offer(
+    neverc_tls_config_t *cfg, tls_client_psk_offer_t *offer);
+void nci_tls_clear_client_psk_offer(tls_client_psk_offer_t *offer);
+int nci_tls_store_client_session(
+    neverc_tls_config_t *cfg,
+    const uint8_t *ticket, size_t ticket_len,
+    const uint8_t psk[TLS_HASH_SIZE_SHA256],
+    uint32_t lifetime, uint32_t age_add,
+    const char *alpn,
+    const uint8_t *peer_cert, size_t peer_cert_len);
+void nci_tls_store_server_session(
+    neverc_tls_config_t *cfg,
+    const uint8_t ticket[TLS_SERVER_TICKET_SIZE],
+    const uint8_t psk[TLS_HASH_SIZE_SHA256],
+    uint32_t lifetime, uint32_t age_add,
+    uint64_t issued_at_ms,
+    const char *server_name, size_t server_name_len,
+    const char *alpn, size_t alpn_len);
+int nci_tls_lookup_server_session(
+    neverc_tls_config_t *cfg,
+    const uint8_t *ticket, size_t ticket_len,
+    uint32_t obfuscated_age,
+    const uint8_t *server_name, size_t server_name_len,
+    const char *alpn, size_t alpn_len,
+    uint8_t psk[TLS_HASH_SIZE_SHA256]);
+uint64_t nci_tls_wall_time_ms(void);
+int nci_tls_verify_certificate_chain(
+    const neverc_tls_config_t *config,
+    const uint8_t *leaf_der, size_t leaf_der_len,
+    const neverc_x509_cert_pool_t *intermediates,
+    const neverc_x509_time_t *moment,
+    const char *hostname,
+    uint32_t required_ext_key_usage,
+    int allow_system_roots);
+
+/* --- record layer (tls_record.c) --- */
+int nci_tls_raw_write(neverc_tcp_conn_t *tcp, const void *data, size_t len);
+int nci_tls_send_record(
+    neverc_tcp_conn_t *tcp, uint8_t content_type,
+    const uint8_t *data, size_t len);
+void nci_tls_set_application_keys(
+    neverc_tls_conn_t *conn, tls_cipher_id_t cipher,
+    const uint8_t read_secret[TLS_HASH_SIZE_SHA256],
+    const uint8_t write_secret[TLS_HASH_SIZE_SHA256]);
+int nci_tls_send_encrypted_unlocked(
+    neverc_tls_conn_t *conn, uint8_t inner_type,
+    const uint8_t *data, size_t len);
+int nci_tls_send_encrypted(
+    neverc_tls_conn_t *conn, uint8_t inner_type,
+    const uint8_t *data, size_t len);
+int nci_tls_append_handshake_bytes(
+    neverc_tls_conn_t *conn, const uint8_t *data, size_t data_len);
+int nci_tls_next_handshake_message(
+    neverc_tls_conn_t *conn, const uint8_t **message,
+    size_t *message_len);
+int nci_tls_consume_handshake_message(
+    neverc_tls_conn_t *conn, size_t message_len);
+void nci_tls_clear_handshake_buffer(neverc_tls_conn_t *conn);
+int nci_tls_send_plain_handshake(
+    neverc_tls_conn_t *conn, const uint8_t *data, size_t data_len);
+int nci_tls_send_encrypted_handshake(
+    neverc_tls_conn_t *conn, const uint8_t *data, size_t data_len);
+int nci_tls_send_alert_level(
+    neverc_tls_conn_t *conn, uint8_t level, uint8_t description);
+int nci_tls_send_alert(neverc_tls_conn_t *conn, uint8_t description);
+int nci_tls_send_close_notify(neverc_tls_conn_t *conn);
+int nci_tls_fail(neverc_tls_conn_t *conn, uint8_t description);
+int nci_tls_error(neverc_tls_conn_t *conn, const char *reason);
+int nci_tls_protocol_error(
+    neverc_tls_conn_t *conn, uint8_t description,
+    const char *reason);
+int nci_tls_recv_record(
+    neverc_tls_conn_t *conn, uint8_t *out_type,
+    uint8_t *out_data, size_t *out_len);
+int nci_tls_recv_decrypt(
+    neverc_tls_conn_t *conn, uint8_t *out_inner_type,
+    uint8_t *out_data, size_t *out_len);
+int nci_tls_recv_plain_handshake_message(
+    neverc_tls_conn_t *conn, uint8_t expected_type,
+    const uint8_t **message, size_t *message_len);
+
+#if defined(NEVERC_TLS_TESTING)
+int neverc_tls_test_handshake_reassembly(void);
+#endif
+
+/* --- handshake (tls_handshake.c) --- */
+neverc_tls_conn_t *nci_tls_conn_new(neverc_tcp_conn_t *tcp, int owns);
+int nci_tls_client_handshake(
+    neverc_tls_conn_t *conn, neverc_tls_config_t *cfg);
+int nci_tls_server_handshake(
+    neverc_tls_conn_t *conn, neverc_tls_config_t *cfg);
+int nci_tls_send_key_update_message(
+    neverc_tls_conn_t *conn, int request_peer_update);
+int nci_tls_handle_post_handshake(
+    neverc_tls_conn_t *conn,
+    const uint8_t *data, size_t data_len);
+int nci_tls_handle_peer_alert(
+    neverc_tls_conn_t *conn,
+    const uint8_t *data, size_t data_len);
+
+#if defined(NEVERC_TLS_ENABLE_EXPERIMENTAL_TRANSPORT)
+neverc_tls_conn_t *nci_tls_start_handshake(
+    neverc_tcp_conn_t *tcp, neverc_tls_config_t *cfg,
+    int from_server, int owns_tcp, const char **errp);
+#endif
 
 #endif /* NEVERC_STD_CRYPTO_TLS_INTERNAL_H */
