@@ -755,7 +755,7 @@ int neverc_ws_handshake_server(neverc_tcp_conn_t *conn, const char *raw_request,
 
     const char *version = find_header_value(raw_request, hdr_scan_end,
                                             "Sec-WebSocket-Version");
-    if (!version || strcmp(version, "13") != 0) return -1;
+    if (!version || strncmp(version, "13", 2) != 0) return -1;
 
     const char *ws_key = find_header_value(raw_request, hdr_scan_end,
                                             "Sec-WebSocket-Key");

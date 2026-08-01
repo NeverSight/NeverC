@@ -503,7 +503,7 @@ STD_TEST(http2_oom, "src/net/http/http2/http2.c", "src/net/http/http.c",
 // ===== QUIC / HTTP/3 experimental components =====
 STD_TEST(quic_frame)
 STD_TEST(quic_loss)
-STD_TEST(quic_conn, "src/net/quic/quic_api.c")
+STD_TEST(quic_conn, "src/net/quic/quic_api.c", "src/crypto/rand/rand.c")
 STD_TEST(http3_frame)
 STD_TEST(http3_server)
 

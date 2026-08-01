@@ -6,6 +6,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifndef NEVERC_TLS_ENABLE_EXPERIMENTAL_TRANSPORT
+#define NEVERC_TLS_ENABLE_EXPERIMENTAL_TRANSPORT 1
+#endif
+
 #ifndef _WIN32
 #include <pthread.h>
 #include <unistd.h>
