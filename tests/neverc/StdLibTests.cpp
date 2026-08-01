@@ -482,6 +482,7 @@ TEST_F(StdLibTest, NetBufferFailurePaths) {
     "src/encoding/pem/pem.c"
 
 STD_TEST(http, "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", "src/net/http/http2/http2_client.c", TCP_DEPS, HTTP_TLS_DEPS)
+STD_TEST(http_stage5)
 STD_TEST(websocket, "src/net/websocket/websocket.c", TCP_DEPS,
     "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", "src/net/http/http2/http2_client.c", HTTP_TLS_DEPS)
 STD_TEST(url, "src/net/url/url.c")
@@ -500,12 +501,20 @@ STD_TEST(http2, "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c
 STD_TEST(http2_oom, "src/net/http/http2/http2.c", "src/net/http/http.c",
     "src/net/http/http_client.c", TCP_DEPS, HTTP_TLS_DEPS)
 
-// ===== QUIC / HTTP/3 experimental components =====
+// ===== Native RPC / Protobuf / gRPC =====
+STD_TEST(rpc)
+STD_TEST(protobuf)
+STD_TEST(grpc)
+
+// ===== QUIC / HTTP/3 =====
 STD_TEST(quic_frame)
 STD_TEST(quic_loss)
-STD_TEST(quic_conn, "src/net/quic/quic_api.c", "src/crypto/rand/rand.c")
+STD_TEST(quic_conn, "src/crypto/rand/rand.c")
+STD_TEST(quic_e2e)
+STD_TEST(quic_network_sim)
 STD_TEST(http3_frame)
 STD_TEST(http3_server)
+STD_TEST(http3_e2e)
 
 TEST_F(StdLibTest, EmbeddedNetworkDotSyntax) {
   auto r = compileAndRunStdTest("network_builtin", {}, {"-fbuiltin-std"});
@@ -520,7 +529,16 @@ TEST_F(StdLibTest, EmbeddedContextCancelHandleDotSyntax) {
 }
 
 // ===== HTTP Benchmark =====
-STD_TEST(http_bench, "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", "src/net/http/http2/http2_client.c", TCP_DEPS, HTTP_TLS_DEPS)
+TEST_F(StdLibTest, http_bench) {
+  auto r = compileAndRunStdTest(
+      "http_bench",
+      {"src/net/http/http.c", "src/net/http/http_client.c",
+       "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c",
+       "src/net/http/http2/http2_client.c", TCP_DEPS, HTTP_TLS_DEPS});
+  std::cout << r.out;
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
 
 // ===== HTTP Util =====
 STD_TEST(httputil, "src/net/http/httputil/httputil.c",
@@ -820,7 +838,6 @@ STD_TEST(dot_syntax,
     "src/uuid/uuid.c",
     "src/fmt/fmt.c",
     "src/cstring/cstring.c",
-    "src/context/context.c",
     "src/io/io.c",
     "src/time/time.c",
     "src/compress/zlib/zlib.c",
