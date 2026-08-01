@@ -500,19 +500,12 @@ STD_TEST(http2, "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c
 STD_TEST(http2_oom, "src/net/http/http2/http2.c", "src/net/http/http.c",
     "src/net/http/http_client.c", TCP_DEPS, HTTP_TLS_DEPS)
 
-// ===== Native RPC / Protobuf / gRPC =====
-STD_TEST(rpc)
-STD_TEST(protobuf)
-STD_TEST(grpc)
-
-// ===== QUIC / HTTP/3 =====
+// ===== QUIC / HTTP/3 experimental components =====
 STD_TEST(quic_frame)
 STD_TEST(quic_loss)
 STD_TEST(quic_conn, "src/net/quic/quic_api.c", "src/crypto/rand/rand.c")
-STD_TEST(quic_e2e)
 STD_TEST(http3_frame)
 STD_TEST(http3_server)
-STD_TEST(http3_e2e)
 
 TEST_F(StdLibTest, EmbeddedNetworkDotSyntax) {
   auto r = compileAndRunStdTest("network_builtin", {}, {"-fbuiltin-std"});

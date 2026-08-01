@@ -460,7 +460,6 @@ static int h2_client_handshake(int fd) {
 }
 
 typedef struct {
-    neverc_h2_server_t *srv;
     int fd;
 } h2_serve_ctx_t;
 
@@ -474,7 +473,17 @@ static void h2_test_handler(neverc_http_request_t *req,
 }
 
 static void h2_run_server_child(h2_serve_ctx_t *ctx) {
-    int rc = neverc_h2_serve_conn(ctx->srv, ctx->fd);
+    neverc_http_mux_t *mux = neverc_http_new_mux();
+    if (!mux) _exit(1);
+    neverc_http_mux_handle(mux, "/", h2_test_handler);
+    neverc_h2_server_t *server = neverc_h2_server_create(mux);
+    if (!server) {
+        neverc_http_mux_free(mux);
+        _exit(1);
+    }
+    int rc = neverc_h2_serve_conn(server, ctx->fd);
+    neverc_h2_server_destroy(server);
+    neverc_http_mux_free(mux);
     _exit(rc == 0 ? 0 : 1);
 }
 
@@ -484,13 +493,10 @@ TEST(h2c_serve_conn_roundtrip) {
     neverc_tcp_conn_t *server = NULL;
     ASSERT_EQ(neverc_tcp_pipe(&client, &server), 0);
 
-    neverc_h2_server_t *srv = neverc_h2_server_create(NULL);
-    ASSERT_TRUE(srv != NULL);
-
     int server_fd = neverc_tcp_conn_fd(server);
     ASSERT_TRUE(server_fd >= 0);
 
-    h2_serve_ctx_t ctx = { .srv = srv, .fd = server_fd };
+    h2_serve_ctx_t ctx = { .fd = server_fd };
     pid_t child = fork();
     ASSERT_TRUE(child >= 0);
     if (child == 0) {
@@ -510,14 +516,13 @@ TEST(h2c_serve_conn_roundtrip) {
     ASSERT_EQ(h2_client_handshake(client_fd), 0);
 
     uint8_t req_hdr_frame[9] = {
-        0, 0, 2, NC_H2_FRAME_HEADERS,
+        0, 0, 3, NC_H2_FRAME_HEADERS,
         (uint8_t)(NC_H2_FLAG_END_HEADERS | NC_H2_FLAG_END_STREAM),
         0, 0, 0, 1
     };
-    uint8_t req_hpack[] = { 0x82, 0x84 };
+    uint8_t req_hpack[] = { 0x82, 0x84, 0x86 };
     ASSERT_EQ(sock_write_all(client_fd, req_hdr_frame, sizeof(req_hdr_frame)), 0);
     ASSERT_EQ(sock_write_all(client_fd, req_hpack, sizeof(req_hpack)), 0);
-    shutdown(client_fd, SHUT_WR);
 
     char resp[2048];
     size_t resp_len = 0;
@@ -540,7 +545,6 @@ TEST(h2c_serve_conn_roundtrip) {
     ASSERT_EQ(waitpid(child, &status, 0), child);
     ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
 
-    neverc_h2_server_destroy(srv);
 }
 
 /* CONTINUATION: HEADERS without END_HEADERS + CONTINUATION with END_HEADERS */
@@ -549,11 +553,7 @@ TEST(h2c_continuation_headers) {
     neverc_tcp_conn_t *server = NULL;
     ASSERT_EQ(neverc_tcp_pipe(&client, &server), 0);
 
-    neverc_h2_server_t *srv = neverc_h2_server_create(NULL);
-    ASSERT_TRUE(srv != NULL);
-
     h2_serve_ctx_t ctx = {
-        .srv = srv,
         .fd = neverc_tcp_conn_fd(server)
     };
     pid_t child = fork();
@@ -575,15 +575,14 @@ TEST(h2c_continuation_headers) {
     uint8_t hdr1[9] = { 0, 0, 1, NC_H2_FRAME_HEADERS, NC_H2_FLAG_END_STREAM,
                         0, 0, 0, 1 };
     uint8_t hpack1[] = { 0x82 };
-    uint8_t cont[9] = { 0, 0, 1, NC_H2_FRAME_CONTINUATION,
+    uint8_t cont[9] = { 0, 0, 2, NC_H2_FRAME_CONTINUATION,
                         (uint8_t)NC_H2_FLAG_END_HEADERS, 0, 0, 0, 1 };
-    uint8_t hpack2[] = { 0x84 };
+    uint8_t hpack2[] = { 0x84, 0x86 };
 
     ASSERT_EQ(sock_write_all(client_fd, hdr1, sizeof(hdr1)), 0);
     ASSERT_EQ(sock_write_all(client_fd, hpack1, sizeof(hpack1)), 0);
     ASSERT_EQ(sock_write_all(client_fd, cont, sizeof(cont)), 0);
     ASSERT_EQ(sock_write_all(client_fd, hpack2, sizeof(hpack2)), 0);
-    shutdown(client_fd, SHUT_WR);
 
     char resp[2048];
     size_t resp_len = 0;
@@ -604,7 +603,6 @@ TEST(h2c_continuation_headers) {
     ASSERT_EQ(waitpid(child, &status, 0), child);
     ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
 
-    neverc_h2_server_destroy(srv);
 }
 #endif /* !_WIN32 */
 
@@ -626,7 +624,6 @@ int main(void) {
     run_test_hpack_dynamic_table_eviction();
     run_test_frame_types_and_flags();
 #ifndef _WIN32
-    neverc_http_handle_func("/", h2_test_handler);
     run_test_h2c_serve_conn_roundtrip();
     run_test_h2c_continuation_headers();
 #endif
