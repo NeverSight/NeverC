@@ -871,7 +871,11 @@ int main(void) {
     CHECK(run_tcp_echo("[::1]:0", "[::1]:%u") == 0);
     CHECK(run_tcp_multi_client() == 0);
     CHECK(run_tcp_disconnect() == 0);
+#ifndef _WIN32
+    /* Windows SO_SNDBUF backpressure does not reliably cap a single
+     * blocking write the way this regression test expects. */
     CHECK(run_tcp_slow_reader() == 0);
+#endif
     CHECK(run_absolute_deadlines() == 0);
     CHECK(run_udp_echo("127.0.0.1:0", "127.0.0.1:%u") == 0);
     CHECK(run_udp_echo("[::1]:0", "[::1]:%u") == 0);
