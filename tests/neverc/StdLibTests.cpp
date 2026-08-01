@@ -336,7 +336,10 @@ TEST_F(StdLibTest, EmbeddedRsaPssProfilesDotSyntax) {
 TEST_F(StdLibTest, rsa_retry) {
   auto r = compileAndRunStdTest("rsa_retry",
                                 {"src/crypto/rsa/rsa.c", "src/math/big/big.c",
-                                 "src/crypto/rand/rand.c", "src/crypto/sha256/sha256.c"},
+                                 "src/crypto/rand/rand.c",
+                                 "src/crypto/sha256/sha256.c",
+                                 "src/crypto/sha384/sha384.c",
+                                 "src/crypto/sha512/sha512.c"},
                                 {"-DNCI_RSA_PUBLIC_EXPONENT=3"});
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
   EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
@@ -629,7 +632,8 @@ TEST_F(StdLibTest, TlsExperimentalTransport) {
   auto r = compileAndRunStdTest(
       "tls",
       {HTTP_TLS_DEPS, "src/net/tcp/tcp.c"},
-      {"-DNEVERC_TLS_ENABLE_EXPERIMENTAL_TRANSPORT=1"});
+      {"-DNEVERC_TLS_ENABLE_EXPERIMENTAL_TRANSPORT=1",
+       "-DNEVERC_TLS_TESTING=1"});
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
   EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
 }
@@ -655,6 +659,7 @@ TEST_F(StdLibTest, TlsOpenSslBidirectionalInterop) {
       "-O1",
       "-fno-builtin-std",
       "-DNEVERC_TLS_ENABLE_EXPERIMENTAL_TRANSPORT=1",
+      "-DNEVERC_TLS_TESTING=1",
       "-o",
       peer.string(),
       (fs::path(stdTestDir()) / "test_tls_interop.c").string(),
@@ -677,6 +682,10 @@ TEST_F(StdLibTest, TlsOpenSslBidirectionalInterop) {
   EXPECT_TRUE(run.contains("openssl interop client: ok"))
       << "stdout: " << run.out;
   EXPECT_TRUE(run.contains("openssl interop server: ok"))
+      << "stdout: " << run.out;
+  EXPECT_TRUE(run.contains("openssl interop client resumption: ok"))
+      << "stdout: " << run.out;
+  EXPECT_TRUE(run.contains("openssl interop server resumption: ok"))
       << "stdout: " << run.out;
 #endif
 }

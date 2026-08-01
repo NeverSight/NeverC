@@ -35,6 +35,7 @@ typedef struct {
 
 typedef struct {
     neverc_tcp_listener_t *listener;
+    neverc_thread_channel_t *ready;
     neverc_thread_channel_t *release;
     int result;
 } tcp_slow_reader_task_t;
@@ -47,6 +48,7 @@ typedef struct {
 typedef struct {
     neverc_tcp_listener_t *listener;
     neverc_context_t *context;
+    neverc_thread_channel_t *ready;
     neverc_thread_channel_t *start;
     neverc_net_status_t status;
 } tcp_context_accept_task_t;
@@ -134,10 +136,18 @@ static void tcp_slow_reader_task(void *opaque) {
         task->result = 1;
         return;
     }
+    if (neverc_tcp_set_read_buffer(conn, 4096) != 0)
+        task->result = 2;
+    if (neverc_thread_channel_send(task->ready, NULL) !=
+        NEVERC_THREAD_OK) {
+        task->result = 3;
+        neverc_tcp_close(conn);
+        return;
+    }
     void *release = NULL;
     if (neverc_thread_channel_receive(task->release, &release) !=
         NEVERC_THREAD_OK) {
-        task->result = 2;
+        task->result = 4;
     }
     neverc_tcp_close(conn);
 }
@@ -158,6 +168,11 @@ static void udp_truncated_read_task(void *opaque) {
 static void tcp_context_accept_task(void *opaque) {
     tcp_context_accept_task_t *task =
         (tcp_context_accept_task_t *)opaque;
+    if (neverc_thread_channel_send(task->ready, NULL) !=
+        NEVERC_THREAD_OK) {
+        task->status = NEVERC_NET_SYSTEM;
+        return;
+    }
     void *start = NULL;
     if (neverc_thread_channel_receive(task->start, &start) !=
         NEVERC_THREAD_OK) {
@@ -323,11 +338,14 @@ static int run_tcp_slow_reader(void) {
 
     neverc_thread_executor_t *executor =
         neverc_thread_executor_create(1, 1);
+    neverc_thread_channel_t *ready =
+        neverc_thread_channel_create(1);
     neverc_thread_channel_t *release =
         neverc_thread_channel_create(1);
     CHECK(executor != NULL);
+    CHECK(ready != NULL);
     CHECK(release != NULL);
-    tcp_slow_reader_task_t task = {listener, release, 0};
+    tcp_slow_reader_task_t task = {listener, ready, release, 0};
     CHECK(neverc_thread_executor_submit(
               executor, tcp_slow_reader_task, &task) == NEVERC_THREAD_OK);
 
@@ -335,6 +353,9 @@ static int run_tcp_slow_reader(void) {
     snprintf(dial_addr, sizeof(dial_addr), "127.0.0.1:%u", local.port);
     neverc_tcp_conn_t *client = neverc_tcp_dial(dial_addr, &error);
     CHECK(client != NULL);
+    void *ready_signal = NULL;
+    CHECK(neverc_thread_channel_receive(ready, &ready_signal) ==
+          NEVERC_THREAD_OK);
     CHECK(neverc_tcp_set_write_buffer(client, 4096) == 0);
     CHECK(neverc_tcp_set_write_timeout(client, 50) == 0);
 
@@ -351,6 +372,7 @@ static int run_tcp_slow_reader(void) {
     CHECK(neverc_thread_executor_wait(executor) == NEVERC_THREAD_OK);
     CHECK(task.result == 0);
 
+    neverc_thread_channel_free(ready);
     neverc_thread_channel_free(release);
     neverc_thread_executor_free(executor);
     neverc_tcp_listener_close(listener);
@@ -695,22 +717,19 @@ static int run_tcp_context_accept_contention(void) {
 
     neverc_thread_executor_t *executor =
         neverc_thread_executor_create(WORKERS, WORKERS);
+    neverc_thread_channel_t *ready =
+        neverc_thread_channel_create(WORKERS);
     neverc_thread_channel_t *start =
         neverc_thread_channel_create(WORKERS);
     CHECK(executor != NULL);
+    CHECK(ready != NULL);
     CHECK(start != NULL);
-
-    neverc_context_cancel_handle_t *cancel = NULL;
-    neverc_context_t *context =
-        neverc_context_with_timeout_handle(NULL, 80, &cancel);
-    CHECK(context != NULL);
-    CHECK(cancel != NULL);
 
     tcp_context_accept_task_t tasks[WORKERS];
     memset(tasks, 0, sizeof(tasks));
     for (int i = 0; i < WORKERS; ++i) {
         tasks[i].listener = listener;
-        tasks[i].context = context;
+        tasks[i].ready = ready;
         tasks[i].start = start;
         tasks[i].status = NEVERC_NET_INVALID;
         CHECK(neverc_thread_executor_submit(
@@ -718,10 +737,21 @@ static int run_tcp_context_accept_contention(void) {
               NEVERC_THREAD_OK);
     }
 
-    transport_sleep_ms(20);
+    void *ready_signal = NULL;
+    for (int i = 0; i < WORKERS; ++i)
+        CHECK(neverc_thread_channel_receive(ready, &ready_signal) ==
+              NEVERC_THREAD_OK);
+
+    neverc_context_cancel_handle_t *cancel = NULL;
+    neverc_context_t *context =
+        neverc_context_with_timeout_handle(NULL, 500, &cancel);
+    CHECK(context != NULL);
+    CHECK(cancel != NULL);
+    for (int i = 0; i < WORKERS; ++i)
+        tasks[i].context = context;
+
     for (int i = 0; i < WORKERS; ++i)
         CHECK(neverc_thread_channel_send(start, NULL) == NEVERC_THREAD_OK);
-    transport_sleep_ms(2);
 
     neverc_tcp_conn_t *initial =
         neverc_tcp_dial(dial_addr, &error);
@@ -733,7 +763,7 @@ static int run_tcp_context_accept_contention(void) {
      * performs a blocking accept after a readiness probe, losing workers
      * remain stuck past the deadline and consume these rescue connections.
      */
-    transport_sleep_ms(120);
+    transport_sleep_ms(600);
     neverc_tcp_conn_t *rescue[WORKERS];
     memset(rescue, 0, sizeof(rescue));
     for (int i = 0; i < WORKERS; ++i) {
@@ -756,6 +786,7 @@ static int run_tcp_context_accept_contention(void) {
         neverc_tcp_close(rescue[i]);
     neverc_context_cancel_handle_free(cancel);
     neverc_context_free(context);
+    neverc_thread_channel_free(ready);
     neverc_thread_channel_free(start);
     neverc_thread_executor_free(executor);
     neverc_tcp_listener_close(listener);

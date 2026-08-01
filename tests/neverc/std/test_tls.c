@@ -18,6 +18,21 @@ static const char *TEST_CERT_PEM;
 static const char *TEST_KEY_PEM;
 static const char *TEST_PKCS8_KEY_PEM;
 static const char *MISMATCHED_KEY_PEM;
+static const char *TEST_CLIENT_CERT_PEM;
+static const char *TEST_CLIENT_KEY_PEM;
+
+#if defined(NEVERC_TLS_TESTING)
+int neverc_tls_test_config_set_handshake_fragment_size(
+    neverc_tls_config_t *cfg, size_t fragment_size);
+int neverc_tls_test_handshake_reassembly(void);
+int neverc_tls_test_did_resume(neverc_tls_conn_t *conn);
+int neverc_tls_test_corrupt_client_session(
+    neverc_tls_config_t *cfg);
+int neverc_tls_test_expire_client_session(
+    neverc_tls_config_t *cfg);
+int neverc_tls_test_expire_server_sessions(
+    neverc_tls_config_t *cfg);
+#endif
 
 static void check_int(const char *name, int got, int expected) {
     tests_run++;
@@ -62,6 +77,24 @@ static void test_config(void) {
 
     const char *protos[] = {"h2", "http/1.1"};
     neverc_tls_config_set_alpn(cfg, protos, 2);
+    check_int("set_require_and_verify_client_auth",
+              neverc_tls_config_set_client_auth(
+                  cfg, NEVERC_TLS_CLIENT_AUTH_REQUIRE_AND_VERIFY),
+              0);
+    check_int("reject_invalid_client_auth_mode",
+              neverc_tls_config_set_client_auth(cfg, 2) != 0, 1);
+    check_int("reset_client_auth",
+              neverc_tls_config_set_client_auth(
+                  cfg, NEVERC_TLS_CLIENT_AUTH_NONE),
+              0);
+#if defined(NEVERC_TLS_TESTING)
+    check_int("handshake_fragment_and_coalescing_reassembly",
+              neverc_tls_test_handshake_reassembly(), 0);
+    check_int("reject_oversized_test_fragment",
+              neverc_tls_test_config_set_handshake_fragment_size(
+                  cfg, 16385) != 0,
+              1);
+#endif
 
     check_int("load_valid_certificate_key_pair",
               neverc_tls_config_load_cert_mem(
@@ -130,6 +163,27 @@ static const char *MISMATCHED_KEY_PEM =
     "AwEHoUQDQgAEtskf1ldYDvesKmTSp+y9OCL0IKA+1CayNdqBbkBH3QKW/qF/7JlP\n"
     "BSDBdI5uQAjO9rogYFtLM+kP+uE2XUjUpw==\n"
     "-----END EC PRIVATE KEY-----\n";
+
+static const char *TEST_CLIENT_CERT_PEM =
+    "-----BEGIN CERTIFICATE-----\n"
+    "MIIBsjCCAVmgAwIBAgIUWMy6G/0mL0UjwPKpVjwx72YlAaUwCgYIKoZIzj0EAwIw\n"
+    "HTEbMBkGA1UEAwwSbmV2ZXJjLXRlc3QtY2xpZW50MCAXDTI2MDczMTE4NDgyMFoY\n"
+    "DzIxMjYwNzA3MTg0ODIwWjAdMRswGQYDVQQDDBJuZXZlcmMtdGVzdC1jbGllbnQw\n"
+    "WTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAARhOGzAwgaFBOjytGGxL6J2xIWVn2Ly\n"
+    "OJ94htioQif4ZfC93fZsxfS1jlhia9EoNScBIaizLAFahJ49wD5BcSMAo3UwczAd\n"
+    "BgNVHQ4EFgQUL/kZhkaUW9aD6Jn8laRmJhdRm0IwHwYDVR0jBBgwFoAUL/kZhkaU\n"
+    "W9aD6Jn8laRmJhdRm0IwDAYDVR0TAQH/BAIwADAOBgNVHQ8BAf8EBAMCB4AwEwYD\n"
+    "VR0lBAwwCgYIKwYBBQUHAwIwCgYIKoZIzj0EAwIDRwAwRAIgEN2tqj6w7eHK5eYZ\n"
+    "pp2cskNlFzZmT7zBrUurafyYwdkCIHjN+f1IxVufo3N+RDa77YspktwG/GQdwxDf\n"
+    "irl8lUso\n"
+    "-----END CERTIFICATE-----\n";
+
+static const char *TEST_CLIENT_KEY_PEM =
+    "-----BEGIN PRIVATE KEY-----\n"
+    "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgAqPkGQQJ8uVpXwse\n"
+    "p0UeUzYnzjCQshlzpB62nuxAM8yhRANCAARhOGzAwgaFBOjytGGxL6J2xIWVn2Ly\n"
+    "OJ94htioQif4ZfC93fZsxfS1jlhia9EoNScBIaizLAFahJ49wD5BcSMA\n"
+    "-----END PRIVATE KEY-----\n";
 
 static int decode_certificate_pem(uint8_t *der, size_t der_capacity) {
     const char *body = strchr(TEST_CERT_PEM, '\n');
@@ -581,8 +635,21 @@ typedef struct {
     neverc_tcp_conn_t *tcp;
     neverc_tls_config_t *config;
     int handshake_ok;
+    int key_update_ok;
+    int peer_certificate_present;
     char received[256];
+    char second_received[256];
+    char negotiated_alpn[256];
+    char requested_server_name[256];
 } server_ctx_t;
+
+typedef struct {
+    neverc_tcp_conn_t *tcp;
+    neverc_tls_config_t *config;
+    int handshake_ok;
+    int did_resume;
+    int exchange_ok;
+} resumption_server_ctx_t;
 
 typedef struct {
     neverc_tcp_conn_t *tcp;
@@ -590,6 +657,29 @@ typedef struct {
     int saw_client_hello;
     int alert_description;
 } fake_server_ctx_t;
+
+#define TLS_CONCURRENT_WRITER_COUNT 4
+#define TLS_CONCURRENT_WRITE_COUNT  12
+#define TLS_CONCURRENT_PAYLOAD_SIZE 32
+
+typedef struct {
+    neverc_tls_conn_t *conn;
+    int writer_id;
+    int ok;
+} concurrent_writer_ctx_t;
+
+typedef struct {
+    neverc_tls_conn_t *conn;
+    int result;
+    char data[8];
+} concurrent_reader_ctx_t;
+
+typedef struct {
+    neverc_tcp_conn_t *tcp;
+    neverc_tls_config_t *config;
+    int ok;
+    size_t counts[TLS_CONCURRENT_WRITER_COUNT];
+} concurrent_server_ctx_t;
 
 static int tcp_read_exact(
     neverc_tcp_conn_t *tcp, uint8_t *buffer, size_t length) {
@@ -616,6 +706,24 @@ static void *tls_server_thread(void *arg) {
         neverc_tls_server(ctx->tcp, ctx->config, &err);
     if (conn) {
         ctx->handshake_ok = 1;
+        const char *negotiated_alpn = neverc_tls_alpn(conn);
+        const char *requested_server_name =
+            neverc_tls_server_name(conn);
+        if (negotiated_alpn)
+            snprintf(ctx->negotiated_alpn,
+                     sizeof(ctx->negotiated_alpn),
+                     "%s", negotiated_alpn);
+        if (requested_server_name)
+            snprintf(ctx->requested_server_name,
+                     sizeof(ctx->requested_server_name),
+                     "%s", requested_server_name);
+        size_t peer_certificate_len = 0;
+        ctx->peer_certificate_present =
+            neverc_tls_peer_certificate(
+                conn, &peer_certificate_len) != NULL &&
+            peer_certificate_len > 0;
+        ctx->key_update_ok =
+            neverc_tls_key_update(conn, 1) == 0;
         char buf[256];
         int n = neverc_tls_read(conn, buf, sizeof(buf) - 1);
         if (n > 0) {
@@ -625,10 +733,185 @@ static void *tls_server_thread(void *arg) {
 
         if (neverc_tls_write(conn, "pong", 4) != 4)
             ctx->handshake_ok = 0;
+        n = neverc_tls_read(conn, buf, sizeof(buf) - 1);
+        if (n > 0) {
+            buf[n] = '\0';
+            memcpy(ctx->second_received, buf, (size_t)(n + 1));
+        }
+        if (neverc_tls_write(conn, "pong2", 5) != 5)
+            ctx->handshake_ok = 0;
         neverc_tls_close(conn);
     }
     neverc_tcp_close(ctx->tcp);
 
+#ifdef _WIN32
+    return 0;
+#else
+    return NULL;
+#endif
+}
+
+#ifdef _WIN32
+static DWORD WINAPI tls_handshake_only_server_thread(LPVOID arg) {
+#else
+static void *tls_handshake_only_server_thread(void *arg) {
+#endif
+    server_ctx_t *ctx = (server_ctx_t *)arg;
+    const char *err = NULL;
+    neverc_tls_conn_t *conn =
+        neverc_tls_server(ctx->tcp, ctx->config, &err);
+    if (conn) {
+        ctx->handshake_ok = 1;
+        size_t peer_certificate_len = 0;
+        ctx->peer_certificate_present =
+            neverc_tls_peer_certificate(
+                conn, &peer_certificate_len) != NULL &&
+            peer_certificate_len > 0;
+        neverc_tls_close(conn);
+    }
+    neverc_tcp_close(ctx->tcp);
+
+#ifdef _WIN32
+    return 0;
+#else
+    return NULL;
+#endif
+}
+
+#ifdef _WIN32
+static DWORD WINAPI resumption_server_thread(LPVOID arg) {
+#else
+static void *resumption_server_thread(void *arg) {
+#endif
+    resumption_server_ctx_t *ctx =
+        (resumption_server_ctx_t *)arg;
+    const char *err = NULL;
+    neverc_tls_conn_t *conn =
+        neverc_tls_server(ctx->tcp, ctx->config, &err);
+    if (conn) {
+        ctx->handshake_ok = 1;
+#if defined(NEVERC_TLS_TESTING)
+        ctx->did_resume = neverc_tls_test_did_resume(conn);
+#endif
+        char request[8] = {0};
+        int request_len =
+            neverc_tls_read(conn, request, sizeof(request));
+        if (request_len == 4 &&
+            memcmp(request, "ping", 4) == 0 &&
+            neverc_tls_write(conn, "pong", 4) == 4)
+            ctx->exchange_ok = 1;
+        neverc_tls_close(conn);
+    }
+    neverc_tcp_close(ctx->tcp);
+#ifdef _WIN32
+    return 0;
+#else
+    return NULL;
+#endif
+}
+
+#ifdef _WIN32
+static DWORD WINAPI concurrent_writer_thread(LPVOID arg) {
+#else
+static void *concurrent_writer_thread(void *arg) {
+#endif
+    concurrent_writer_ctx_t *ctx =
+        (concurrent_writer_ctx_t *)arg;
+    uint8_t payload[TLS_CONCURRENT_PAYLOAD_SIZE];
+    memset(payload, 'A' + ctx->writer_id, sizeof(payload));
+    ctx->ok = 1;
+    for (int i = 0; i < TLS_CONCURRENT_WRITE_COUNT; ++i) {
+        if (ctx->writer_id == 0 &&
+            i == TLS_CONCURRENT_WRITE_COUNT / 2 &&
+            neverc_tls_key_update(ctx->conn, 0) != 0) {
+            ctx->ok = 0;
+            break;
+        }
+        if (neverc_tls_write(
+                ctx->conn, payload, sizeof(payload)) !=
+            (int)sizeof(payload)) {
+            ctx->ok = 0;
+            break;
+        }
+    }
+#ifdef _WIN32
+    return 0;
+#else
+    return NULL;
+#endif
+}
+
+#ifdef _WIN32
+static DWORD WINAPI concurrent_reader_thread(LPVOID arg) {
+#else
+static void *concurrent_reader_thread(void *arg) {
+#endif
+    concurrent_reader_ctx_t *ctx =
+        (concurrent_reader_ctx_t *)arg;
+    ctx->result = neverc_tls_read(
+        ctx->conn, ctx->data, sizeof(ctx->data));
+#ifdef _WIN32
+    return 0;
+#else
+    return NULL;
+#endif
+}
+
+#ifdef _WIN32
+static DWORD WINAPI concurrent_tls_server_thread(LPVOID arg) {
+#else
+static void *concurrent_tls_server_thread(void *arg) {
+#endif
+    concurrent_server_ctx_t *ctx =
+        (concurrent_server_ctx_t *)arg;
+    const char *err = NULL;
+    neverc_tls_conn_t *conn =
+        neverc_tls_server(ctx->tcp, ctx->config, &err);
+    if (conn) {
+        const size_t expected_per_writer =
+            TLS_CONCURRENT_WRITE_COUNT *
+            TLS_CONCURRENT_PAYLOAD_SIZE;
+        const size_t expected_total =
+            TLS_CONCURRENT_WRITER_COUNT *
+            expected_per_writer;
+        size_t received = 0;
+        int valid = 1;
+        uint8_t buffer[257];
+        while (received < expected_total) {
+            int n = neverc_tls_read(
+                conn, buffer, sizeof(buffer));
+            if (n <= 0) {
+                valid = 0;
+                break;
+            }
+            received += (size_t)n;
+            if (received > expected_total) {
+                valid = 0;
+                break;
+            }
+            for (int i = 0; i < n; ++i) {
+                int writer_id = buffer[i] - 'A';
+                if (writer_id < 0 ||
+                    writer_id >= TLS_CONCURRENT_WRITER_COUNT) {
+                    valid = 0;
+                    break;
+                }
+                ctx->counts[writer_id]++;
+            }
+            if (!valid)
+                break;
+        }
+        for (int i = 0;
+             i < TLS_CONCURRENT_WRITER_COUNT && valid; ++i) {
+            if (ctx->counts[i] != expected_per_writer)
+                valid = 0;
+        }
+        if (valid &&
+            neverc_tls_write(conn, "done", 4) == 4)
+            ctx->ok = 1;
+        neverc_tls_close(conn);
+    }
+    neverc_tcp_close(ctx->tcp);
 #ifdef _WIN32
     return 0;
 #else
@@ -658,7 +941,7 @@ static void *fake_server_thread(void *arg) {
                 (void)neverc_tcp_write(
                     ctx->tcp, unexpected_record,
                     sizeof(unexpected_record));
-            } else {
+            } else if (ctx->response_mode == 1) {
                 uint8_t malformed_server_hello[49] = {0};
                 malformed_server_hello[0] = 22;
                 malformed_server_hello[1] = 0x03;
@@ -672,6 +955,14 @@ static void *fake_server_thread(void *arg) {
                 (void)neverc_tcp_write(
                     ctx->tcp, malformed_server_hello,
                     sizeof(malformed_server_hello));
+            } else {
+                static const uint8_t oversized_server_hello[] = {
+                    22, 0x03, 0x03, 0x00, 0x04,
+                    2, 0x01, 0x00, 0x00
+                };
+                (void)neverc_tcp_write(
+                    ctx->tcp, oversized_server_hello,
+                    sizeof(oversized_server_hello));
             }
 
             if (tcp_read_exact(
@@ -802,6 +1093,61 @@ static void test_malformed_server_hello_alert(void) {
     neverc_tls_config_free(config);
 }
 
+static void test_oversized_server_handshake_alert(void) {
+    printf("[oversized_server_handshake_alert]\n");
+    neverc_tcp_conn_t *client_tcp = NULL;
+    neverc_tcp_conn_t *server_tcp = NULL;
+    check_int("create_oversized_server_handshake_pipe",
+              neverc_tcp_pipe(&client_tcp, &server_tcp), 0);
+    if (!client_tcp || !server_tcp) {
+        neverc_tcp_close(client_tcp);
+        neverc_tcp_close(server_tcp);
+        return;
+    }
+
+    fake_server_ctx_t ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.tcp = server_tcp;
+    ctx.response_mode = 2;
+    ctx.alert_description = -1;
+#ifdef _WIN32
+    HANDLE thread = CreateThread(
+        NULL, 0, fake_server_thread, &ctx, 0, NULL);
+    int thread_started = thread != NULL;
+#else
+    pthread_t thread;
+    int thread_started =
+        pthread_create(&thread, NULL, fake_server_thread, &ctx) == 0;
+#endif
+    check_int("start_oversized_server_handshake_thread",
+              thread_started, 1);
+    if (!thread_started) {
+        neverc_tcp_close(client_tcp);
+        neverc_tcp_close(server_tcp);
+        return;
+    }
+
+    neverc_tls_config_t *config = neverc_tls_config_new();
+    neverc_tls_config_insecure_skip_verify(config);
+    const char *err = NULL;
+    neverc_tls_conn_t *client =
+        neverc_tls_client(client_tcp, config, &err);
+    check_null("reject_oversized_server_handshake", client);
+    neverc_tls_close(client);
+    neverc_tcp_close(client_tcp);
+#ifdef _WIN32
+    WaitForSingleObject(thread, INFINITE);
+    CloseHandle(thread);
+#else
+    pthread_join(thread, NULL);
+#endif
+    check_int("oversized_server_saw_client_hello",
+              ctx.saw_client_hello, 1);
+    check_int("oversized_server_send_decode_error_alert",
+              ctx.alert_description, 50);
+    neverc_tls_config_free(config);
+}
+
 static void test_malformed_client_hello_alert(void) {
     printf("[malformed_client_hello_alert]\n");
     neverc_tls_config_t *config = neverc_tls_config_new();
@@ -876,6 +1222,147 @@ static void test_malformed_client_hello_alert(void) {
               ctx.handshake_ok, 0);
     neverc_tls_config_free(config);
 }
+
+static void test_oversized_client_handshake_alert(void) {
+    printf("[oversized_client_handshake_alert]\n");
+    neverc_tls_config_t *config = neverc_tls_config_new();
+    check_not_null("oversized_client_config", config);
+    if (!config)
+        return;
+    check_int("oversized_client_load_certificate",
+              neverc_tls_config_load_cert_mem(
+                  config, TEST_CERT_PEM, TEST_KEY_PEM),
+              0);
+
+    neverc_tcp_conn_t *client_tcp = NULL;
+    neverc_tcp_conn_t *server_tcp = NULL;
+    check_int("create_oversized_client_pipe",
+              neverc_tcp_pipe(&client_tcp, &server_tcp), 0);
+    if (!client_tcp || !server_tcp) {
+        neverc_tcp_close(client_tcp);
+        neverc_tcp_close(server_tcp);
+        neverc_tls_config_free(config);
+        return;
+    }
+
+    server_ctx_t ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.tcp = server_tcp;
+    ctx.config = config;
+#ifdef _WIN32
+    HANDLE thread = CreateThread(
+        NULL, 0, tls_server_thread, &ctx, 0, NULL);
+    int thread_started = thread != NULL;
+#else
+    pthread_t thread;
+    int thread_started =
+        pthread_create(&thread, NULL, tls_server_thread, &ctx) == 0;
+#endif
+    check_int("start_oversized_client_thread", thread_started, 1);
+    if (!thread_started) {
+        neverc_tcp_close(client_tcp);
+        neverc_tcp_close(server_tcp);
+        neverc_tls_config_free(config);
+        return;
+    }
+
+    static const uint8_t oversized_client_hello[] = {
+        22, 0x03, 0x03, 0x00, 0x04,
+        1, 0x01, 0x00, 0x00
+    };
+    check_int("send_oversized_client_hello",
+              neverc_tcp_write(
+                  client_tcp, oversized_client_hello,
+                  sizeof(oversized_client_hello)) ==
+                  (int)sizeof(oversized_client_hello),
+              1);
+    (void)neverc_tcp_shutdown_write(client_tcp);
+
+    uint8_t header[5];
+    uint8_t alert[2];
+    int received_decode_error =
+        tcp_read_exact(client_tcp, header, sizeof(header)) == 0 &&
+        header[0] == 21 && header[3] == 0 && header[4] == 2 &&
+        tcp_read_exact(client_tcp, alert, sizeof(alert)) == 0 &&
+        alert[0] == 2 && alert[1] == 50;
+    check_int("oversized_client_send_decode_error_alert",
+              received_decode_error, 1);
+    neverc_tcp_close(client_tcp);
+#ifdef _WIN32
+    WaitForSingleObject(thread, INFINITE);
+    CloseHandle(thread);
+#else
+    pthread_join(thread, NULL);
+#endif
+    check_int("server_reject_oversized_client_handshake",
+              ctx.handshake_ok, 0);
+    neverc_tls_config_free(config);
+}
+
+static int run_resumption_exchange(
+    neverc_tls_config_t *server_config,
+    neverc_tls_config_t *client_config,
+    int *client_did_resume,
+    int *server_did_resume) {
+    neverc_tcp_conn_t *client_tcp = NULL;
+    neverc_tcp_conn_t *server_tcp = NULL;
+    if (neverc_tcp_pipe(&client_tcp, &server_tcp) != 0 ||
+        !client_tcp || !server_tcp) {
+        neverc_tcp_close(client_tcp);
+        neverc_tcp_close(server_tcp);
+        return 0;
+    }
+
+    resumption_server_ctx_t ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.tcp = server_tcp;
+    ctx.config = server_config;
+#ifdef _WIN32
+    HANDLE thread = CreateThread(
+        NULL, 0, resumption_server_thread, &ctx, 0, NULL);
+    int thread_started = thread != NULL;
+#else
+    pthread_t thread;
+    int thread_started = pthread_create(
+        &thread, NULL, resumption_server_thread, &ctx) == 0;
+#endif
+    if (!thread_started) {
+        neverc_tcp_close(client_tcp);
+        neverc_tcp_close(server_tcp);
+        return 0;
+    }
+
+    int client_ok = 0;
+    const char *err = NULL;
+    neverc_tls_conn_t *client =
+        neverc_tls_client(client_tcp, client_config, &err);
+    if (client) {
+#if defined(NEVERC_TLS_TESTING)
+        if (client_did_resume)
+            *client_did_resume =
+                neverc_tls_test_did_resume(client);
+#else
+        (void)client_did_resume;
+#endif
+        char response[8] = {0};
+        client_ok =
+            neverc_tls_write(client, "ping", 4) == 4 &&
+            neverc_tls_read(
+                client, response, sizeof(response)) == 4 &&
+            memcmp(response, "pong", 4) == 0;
+        neverc_tls_close(client);
+    }
+    neverc_tcp_close(client_tcp);
+#ifdef _WIN32
+    WaitForSingleObject(thread, INFINITE);
+    CloseHandle(thread);
+#else
+    pthread_join(thread, NULL);
+#endif
+    if (server_did_resume)
+        *server_did_resume = ctx.did_resume;
+    return client_ok && ctx.handshake_ok && ctx.exchange_ok;
+}
 #endif
 
 static void test_client_server(void) {
@@ -901,6 +1388,22 @@ static void test_client_server(void) {
               neverc_tls_config_add_root_certificates_mem(
                   client_config, TEST_CERT_PEM, strlen(TEST_CERT_PEM)),
               0);
+    const char *client_alpn[] = {"http/1.1", "h2"};
+    const char *server_alpn[] = {"h2", "http/1.1"};
+    neverc_tls_config_set_alpn(
+        client_config, client_alpn, 2);
+    neverc_tls_config_set_alpn(
+        server_config, server_alpn, 2);
+#if defined(NEVERC_TLS_TESTING)
+    check_int("fragment_server_handshake_records",
+              neverc_tls_test_config_set_handshake_fragment_size(
+                  server_config, 7),
+              0);
+    check_int("fragment_client_handshake_records",
+              neverc_tls_test_config_set_handshake_fragment_size(
+                  client_config, 5),
+              0);
+#endif
 
     neverc_tcp_conn_t *client_tcp = NULL;
     neverc_tcp_conn_t *server_tcp = NULL;
@@ -935,6 +1438,17 @@ static void test_client_server(void) {
             neverc_tls_client(client_tcp, client_config, &err);
         check_not_null("client_handshake", client);
         if (client) {
+            check_int("client_negotiated_server_preferred_alpn",
+                      neverc_tls_alpn(client) &&
+                      strcmp(neverc_tls_alpn(client), "h2") == 0,
+                      1);
+            check_int("client_outbound_sni_state",
+                      neverc_tls_server_name(client) &&
+                      strcmp(neverc_tls_server_name(client),
+                             "localhost") == 0,
+                      1);
+            check_int("reject_invalid_key_update_request",
+                      neverc_tls_key_update(client, 2) != 0, 1);
             check_int("client_write",
                       neverc_tls_write(client, "ping", 4), 4);
             char response[8] = {0};
@@ -945,6 +1459,22 @@ static void test_client_server(void) {
                       response_len == 4 &&
                       memcmp(response, "pong", 4) == 0,
                       1);
+            check_int("client_second_key_update",
+                      neverc_tls_key_update(client, 0), 0);
+            check_int("client_write_after_key_update",
+                      neverc_tls_write(client, "ping2", 5), 5);
+            memset(response, 0, sizeof(response));
+            response_len =
+                neverc_tls_read(client, response, sizeof(response));
+            check_int("client_read_after_key_update_length",
+                      response_len, 5);
+            check_int("client_read_after_key_update_payload",
+                      response_len == 5 &&
+                      memcmp(response, "pong2", 5) == 0,
+                      1);
+            check_int("client_receive_close_notify",
+                      neverc_tls_read(client, response, sizeof(response)),
+                      0);
             neverc_tls_close(client);
         }
         neverc_tcp_close(client_tcp);
@@ -955,8 +1485,17 @@ static void test_client_server(void) {
         pthread_join(thread, NULL);
 #endif
         check_int("server_handshake", ctx.handshake_ok, 1);
+        check_int("server_key_update", ctx.key_update_ok, 1);
         check_int("server_read_payload",
                   strcmp(ctx.received, "ping") == 0, 1);
+        check_int("server_read_after_key_update",
+                  strcmp(ctx.second_received, "ping2") == 0, 1);
+        check_int("server_negotiated_alpn",
+                  strcmp(ctx.negotiated_alpn, "h2") == 0, 1);
+        check_int("server_received_sni",
+                  strcmp(ctx.requested_server_name,
+                         "localhost") == 0,
+                  1);
     } else {
         neverc_tcp_close(client_tcp);
         neverc_tcp_close(server_tcp);
@@ -972,6 +1511,621 @@ static void test_client_server(void) {
                   cfg, TEST_CERT_PEM, TEST_KEY_PEM),
               0);
     neverc_tls_config_free(cfg);
+#endif
+}
+
+static void test_session_resumption(void) {
+    printf("[session_resumption]\n");
+
+#if defined(NEVERC_TLS_ENABLE_EXPERIMENTAL_TRANSPORT) && \
+    defined(NEVERC_TLS_TESTING)
+    neverc_tls_config_t *server_config = neverc_tls_config_new();
+    neverc_tls_config_t *client_config = neverc_tls_config_new();
+    check_not_null("resumption_server_config", server_config);
+    check_not_null("resumption_client_config", client_config);
+    if (!server_config || !client_config) {
+        neverc_tls_config_free(server_config);
+        neverc_tls_config_free(client_config);
+        return;
+    }
+    check_int("resumption_load_server_certificate",
+              neverc_tls_config_load_cert_mem(
+                  server_config, TEST_CERT_PEM, TEST_KEY_PEM),
+              0);
+    neverc_tls_config_set_server_name(client_config, "localhost");
+    check_int("resumption_load_client_root",
+              neverc_tls_config_add_root_certificates_mem(
+                  client_config, TEST_CERT_PEM,
+                  strlen(TEST_CERT_PEM)),
+              0);
+
+    int client_resumed = -1;
+    int server_resumed = -1;
+    check_int("resumption_initial_exchange",
+              run_resumption_exchange(
+                  server_config, client_config,
+                  &client_resumed, &server_resumed),
+              1);
+    check_int("resumption_initial_client_full",
+              client_resumed, 0);
+    check_int("resumption_initial_server_full",
+              server_resumed, 0);
+
+    client_resumed = server_resumed = 0;
+    check_int("resumption_second_exchange",
+              run_resumption_exchange(
+                  server_config, client_config,
+                  &client_resumed, &server_resumed),
+              1);
+    check_int("resumption_client_selected_psk",
+              client_resumed, 1);
+    check_int("resumption_server_selected_psk",
+              server_resumed, 1);
+
+    /* A resumed handshake issues and caches a replacement ticket. */
+    client_resumed = server_resumed = 0;
+    check_int("resumption_rotated_ticket_exchange",
+              run_resumption_exchange(
+                  server_config, client_config,
+                  &client_resumed, &server_resumed),
+              1);
+    check_int("resumption_rotated_ticket_client",
+              client_resumed, 1);
+    check_int("resumption_rotated_ticket_server",
+              server_resumed, 1);
+
+    check_int("resumption_expire_server_ticket",
+              neverc_tls_test_expire_server_sessions(
+                  server_config),
+              0);
+    client_resumed = server_resumed = -1;
+    check_int("resumption_expired_server_ticket_falls_back",
+              run_resumption_exchange(
+                  server_config, client_config,
+                  &client_resumed, &server_resumed),
+              1);
+    check_int("resumption_server_expiry_client_full",
+              client_resumed, 0);
+    check_int("resumption_server_expiry_server_full",
+              server_resumed, 0);
+
+    check_int("resumption_expire_cached_ticket",
+              neverc_tls_test_expire_client_session(
+                  client_config),
+              0);
+    client_resumed = server_resumed = -1;
+    check_int("resumption_expired_ticket_falls_back",
+              run_resumption_exchange(
+                  server_config, client_config,
+                  &client_resumed, &server_resumed),
+              1);
+    check_int("resumption_expired_client_full",
+              client_resumed, 0);
+    check_int("resumption_expired_server_full",
+              server_resumed, 0);
+    neverc_tls_config_free(server_config);
+    neverc_tls_config_free(client_config);
+
+    server_config = neverc_tls_config_new();
+    client_config = neverc_tls_config_new();
+    check_not_null("binder_server_config", server_config);
+    check_not_null("binder_client_config", client_config);
+    if (!server_config || !client_config) {
+        neverc_tls_config_free(server_config);
+        neverc_tls_config_free(client_config);
+        return;
+    }
+    check_int("binder_load_server_certificate",
+              neverc_tls_config_load_cert_mem(
+                  server_config, TEST_CERT_PEM, TEST_KEY_PEM),
+              0);
+    neverc_tls_config_set_server_name(client_config, "localhost");
+    check_int("binder_load_client_root",
+              neverc_tls_config_add_root_certificates_mem(
+                  client_config, TEST_CERT_PEM,
+                  strlen(TEST_CERT_PEM)),
+              0);
+    check_int("binder_prime_ticket",
+              run_resumption_exchange(
+                  server_config, client_config, NULL, NULL),
+              1);
+    check_int("binder_corrupt_cached_psk",
+              neverc_tls_test_corrupt_client_session(
+                  client_config),
+              0);
+    check_int("binder_reject_corrupted_value",
+              run_resumption_exchange(
+                  server_config, client_config, NULL, NULL),
+              0);
+    neverc_tls_config_free(server_config);
+    neverc_tls_config_free(client_config);
+#endif
+}
+
+static void test_alpn_no_overlap(void) {
+    printf("[alpn_no_overlap]\n");
+
+#if defined(NEVERC_TLS_ENABLE_EXPERIMENTAL_TRANSPORT)
+    neverc_tls_config_t *server_config = neverc_tls_config_new();
+    neverc_tls_config_t *client_config = neverc_tls_config_new();
+    check_not_null("alpn_mismatch_server_config", server_config);
+    check_not_null("alpn_mismatch_client_config", client_config);
+    if (!server_config || !client_config) {
+        neverc_tls_config_free(server_config);
+        neverc_tls_config_free(client_config);
+        return;
+    }
+    check_int("alpn_mismatch_load_server_certificate",
+              neverc_tls_config_load_cert_mem(
+                  server_config, TEST_CERT_PEM, TEST_KEY_PEM),
+              0);
+    neverc_tls_config_set_server_name(client_config, "localhost");
+    check_int("alpn_mismatch_load_client_root",
+              neverc_tls_config_add_root_certificates_mem(
+                  client_config, TEST_CERT_PEM,
+                  strlen(TEST_CERT_PEM)),
+              0);
+    const char *server_alpn[] = {"h2"};
+    const char *client_alpn[] = {"http/1.1"};
+    neverc_tls_config_set_alpn(server_config, server_alpn, 1);
+    neverc_tls_config_set_alpn(client_config, client_alpn, 1);
+
+    neverc_tcp_conn_t *client_tcp = NULL;
+    neverc_tcp_conn_t *server_tcp = NULL;
+    check_int("create_alpn_mismatch_pipe",
+              neverc_tcp_pipe(&client_tcp, &server_tcp), 0);
+    if (!client_tcp || !server_tcp) {
+        neverc_tcp_close(client_tcp);
+        neverc_tcp_close(server_tcp);
+        neverc_tls_config_free(server_config);
+        neverc_tls_config_free(client_config);
+        return;
+    }
+
+    server_ctx_t ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.tcp = server_tcp;
+    ctx.config = server_config;
+#ifdef _WIN32
+    HANDLE thread = CreateThread(
+        NULL, 0, tls_handshake_only_server_thread,
+        &ctx, 0, NULL);
+    int thread_started = thread != NULL;
+#else
+    pthread_t thread;
+    int thread_started = pthread_create(
+        &thread, NULL, tls_handshake_only_server_thread,
+        &ctx) == 0;
+#endif
+    check_int("start_alpn_mismatch_server", thread_started, 1);
+    if (thread_started) {
+        const char *err = NULL;
+        neverc_tls_conn_t *client =
+            neverc_tls_client(client_tcp, client_config, &err);
+        check_null("reject_alpn_without_overlap", client);
+        neverc_tls_close(client);
+        neverc_tcp_close(client_tcp);
+#ifdef _WIN32
+        WaitForSingleObject(thread, INFINITE);
+        CloseHandle(thread);
+#else
+        pthread_join(thread, NULL);
+#endif
+        check_int("server_reject_alpn_without_overlap",
+                  ctx.handshake_ok, 0);
+    } else {
+        neverc_tcp_close(client_tcp);
+        neverc_tcp_close(server_tcp);
+    }
+    neverc_tls_config_free(server_config);
+    neverc_tls_config_free(client_config);
+#endif
+}
+
+static void test_concurrent_record_io(void) {
+    printf("[concurrent_record_io]\n");
+
+#if defined(NEVERC_TLS_ENABLE_EXPERIMENTAL_TRANSPORT)
+    neverc_tls_config_t *server_config = neverc_tls_config_new();
+    neverc_tls_config_t *client_config = neverc_tls_config_new();
+    check_not_null("concurrent_server_config_new", server_config);
+    check_not_null("concurrent_client_config_new", client_config);
+    if (!server_config || !client_config) {
+        neverc_tls_config_free(server_config);
+        neverc_tls_config_free(client_config);
+        return;
+    }
+
+    check_int("concurrent_load_server_certificate",
+              neverc_tls_config_load_cert_mem(
+                  server_config, TEST_CERT_PEM, TEST_KEY_PEM),
+              0);
+    neverc_tls_config_set_server_name(client_config, "localhost");
+    check_int("concurrent_load_client_root",
+              neverc_tls_config_add_root_certificates_mem(
+                  client_config, TEST_CERT_PEM,
+                  strlen(TEST_CERT_PEM)),
+              0);
+#if defined(NEVERC_TLS_TESTING)
+    check_int("concurrent_fragment_server_handshake",
+              neverc_tls_test_config_set_handshake_fragment_size(
+                  server_config, 13),
+              0);
+    check_int("concurrent_fragment_client_handshake",
+              neverc_tls_test_config_set_handshake_fragment_size(
+                  client_config, 17),
+              0);
+#endif
+
+    neverc_tcp_conn_t *client_tcp = NULL;
+    neverc_tcp_conn_t *server_tcp = NULL;
+    check_int("create_concurrent_tls_pipe",
+              neverc_tcp_pipe(&client_tcp, &server_tcp), 0);
+    if (!client_tcp || !server_tcp) {
+        neverc_tcp_close(client_tcp);
+        neverc_tcp_close(server_tcp);
+        neverc_tls_config_free(server_config);
+        neverc_tls_config_free(client_config);
+        return;
+    }
+
+    concurrent_server_ctx_t server_ctx;
+    memset(&server_ctx, 0, sizeof(server_ctx));
+    server_ctx.tcp = server_tcp;
+    server_ctx.config = server_config;
+#ifdef _WIN32
+    HANDLE server_thread = CreateThread(
+        NULL, 0, concurrent_tls_server_thread,
+        &server_ctx, 0, NULL);
+    int server_started = server_thread != NULL;
+#else
+    pthread_t server_thread;
+    int server_started = pthread_create(
+        &server_thread, NULL,
+        concurrent_tls_server_thread, &server_ctx) == 0;
+#endif
+    check_int("start_concurrent_tls_server", server_started, 1);
+    if (server_started) {
+        const char *err = NULL;
+        neverc_tls_conn_t *client =
+            neverc_tls_client(client_tcp, client_config, &err);
+        check_not_null("concurrent_client_handshake", client);
+        if (client) {
+            concurrent_writer_ctx_t writer_ctx[
+                TLS_CONCURRENT_WRITER_COUNT];
+            memset(writer_ctx, 0, sizeof(writer_ctx));
+#ifdef _WIN32
+            HANDLE writer_threads[
+                TLS_CONCURRENT_WRITER_COUNT] = {0};
+#else
+            pthread_t writer_threads[
+                TLS_CONCURRENT_WRITER_COUNT];
+#endif
+            int writers_started = 0;
+            for (int i = 0;
+                 i < TLS_CONCURRENT_WRITER_COUNT; ++i) {
+                writer_ctx[i].conn = client;
+                writer_ctx[i].writer_id = i;
+#ifdef _WIN32
+                writer_threads[i] = CreateThread(
+                    NULL, 0, concurrent_writer_thread,
+                    &writer_ctx[i], 0, NULL);
+                if (!writer_threads[i])
+                    break;
+#else
+                if (pthread_create(
+                        &writer_threads[i], NULL,
+                        concurrent_writer_thread,
+                        &writer_ctx[i]) != 0)
+                    break;
+#endif
+                writers_started++;
+            }
+            check_int("start_concurrent_tls_writers",
+                      writers_started,
+                      TLS_CONCURRENT_WRITER_COUNT);
+            for (int i = 0; i < writers_started; ++i) {
+#ifdef _WIN32
+                WaitForSingleObject(writer_threads[i], INFINITE);
+                CloseHandle(writer_threads[i]);
+#else
+                pthread_join(writer_threads[i], NULL);
+#endif
+                check_int("concurrent_tls_writer_ok",
+                          writer_ctx[i].ok, 1);
+            }
+
+            if (writers_started ==
+                TLS_CONCURRENT_WRITER_COUNT) {
+                concurrent_reader_ctx_t reader_ctx[2];
+                memset(reader_ctx, 0, sizeof(reader_ctx));
+#ifdef _WIN32
+                HANDLE reader_threads[2] = {0};
+#else
+                pthread_t reader_threads[2];
+#endif
+                int readers_started = 0;
+                for (int i = 0; i < 2; ++i) {
+                    reader_ctx[i].conn = client;
+#ifdef _WIN32
+                    reader_threads[i] = CreateThread(
+                        NULL, 0, concurrent_reader_thread,
+                        &reader_ctx[i], 0, NULL);
+                    if (!reader_threads[i])
+                        break;
+#else
+                    if (pthread_create(
+                            &reader_threads[i], NULL,
+                            concurrent_reader_thread,
+                            &reader_ctx[i]) != 0)
+                        break;
+#endif
+                    readers_started++;
+                }
+                check_int("start_concurrent_tls_readers",
+                          readers_started, 2);
+                int response_bytes = 0;
+                int saw_done = 0;
+                int reader_results_valid = 1;
+                for (int i = 0; i < readers_started; ++i) {
+#ifdef _WIN32
+                    WaitForSingleObject(
+                        reader_threads[i], INFINITE);
+                    CloseHandle(reader_threads[i]);
+#else
+                    pthread_join(reader_threads[i], NULL);
+#endif
+                    if (reader_ctx[i].result < 0) {
+                        reader_results_valid = 0;
+                    } else {
+                        response_bytes += reader_ctx[i].result;
+                    }
+                    if (reader_ctx[i].result == 4 &&
+                        memcmp(reader_ctx[i].data,
+                               "done", 4) == 0)
+                        saw_done = 1;
+                }
+                check_int("concurrent_tls_reader_results",
+                          reader_results_valid, 1);
+                check_int("concurrent_tls_response_length",
+                          response_bytes, 4);
+                check_int("concurrent_tls_response_payload",
+                          saw_done, 1);
+            }
+            neverc_tls_close(client);
+        }
+        neverc_tcp_close(client_tcp);
+#ifdef _WIN32
+        WaitForSingleObject(server_thread, INFINITE);
+        CloseHandle(server_thread);
+#else
+        pthread_join(server_thread, NULL);
+#endif
+        check_int("concurrent_tls_server_ok",
+                  server_ctx.ok, 1);
+        int counts_ok = 1;
+        const size_t expected_per_writer =
+            TLS_CONCURRENT_WRITE_COUNT *
+            TLS_CONCURRENT_PAYLOAD_SIZE;
+        for (int i = 0; i < TLS_CONCURRENT_WRITER_COUNT; ++i) {
+            if (server_ctx.counts[i] != expected_per_writer)
+                counts_ok = 0;
+        }
+        check_int("concurrent_tls_payload_counts",
+                  counts_ok, 1);
+    } else {
+        neverc_tcp_close(client_tcp);
+        neverc_tcp_close(server_tcp);
+    }
+
+    neverc_tls_config_free(server_config);
+    neverc_tls_config_free(client_config);
+#endif
+}
+
+static void test_mutual_tls(void) {
+    printf("[mutual_tls]\n");
+
+#if defined(NEVERC_TLS_ENABLE_EXPERIMENTAL_TRANSPORT)
+    neverc_tls_config_t *server_config = neverc_tls_config_new();
+    neverc_tls_config_t *client_config = neverc_tls_config_new();
+    check_not_null("mtls_server_config_new", server_config);
+    check_not_null("mtls_client_config_new", client_config);
+    if (!server_config || !client_config) {
+        neverc_tls_config_free(server_config);
+        neverc_tls_config_free(client_config);
+        return;
+    }
+
+    check_int("mtls_load_server_certificate",
+              neverc_tls_config_load_cert_mem(
+                  server_config, TEST_CERT_PEM, TEST_KEY_PEM),
+              0);
+    check_int("mtls_add_client_root",
+              neverc_tls_config_add_root_certificates_mem(
+                  server_config, TEST_CLIENT_CERT_PEM,
+                  strlen(TEST_CLIENT_CERT_PEM)),
+              0);
+    check_int("mtls_require_client_certificate",
+              neverc_tls_config_set_client_auth(
+                  server_config,
+                  NEVERC_TLS_CLIENT_AUTH_REQUIRE_AND_VERIFY),
+              0);
+
+    neverc_tls_config_set_server_name(client_config, "localhost");
+    check_int("mtls_add_server_root",
+              neverc_tls_config_add_root_certificates_mem(
+                  client_config, TEST_CERT_PEM,
+                  strlen(TEST_CERT_PEM)),
+              0);
+    check_int("mtls_load_client_certificate",
+              neverc_tls_config_load_cert_mem(
+                  client_config, TEST_CLIENT_CERT_PEM,
+                  TEST_CLIENT_KEY_PEM),
+              0);
+#if defined(NEVERC_TLS_TESTING)
+    check_int("fragment_mtls_server_handshake_records",
+              neverc_tls_test_config_set_handshake_fragment_size(
+                  server_config, 11),
+              0);
+    check_int("fragment_mtls_client_handshake_records",
+              neverc_tls_test_config_set_handshake_fragment_size(
+                  client_config, 3),
+              0);
+#endif
+
+    neverc_tls_config_t *no_certificate_config =
+        neverc_tls_config_new();
+    check_not_null(
+        "mtls_no_certificate_config_new",
+        no_certificate_config);
+    if (no_certificate_config) {
+        neverc_tls_config_set_server_name(
+            no_certificate_config, "localhost");
+        check_int("mtls_no_certificate_add_server_root",
+                  neverc_tls_config_add_root_certificates_mem(
+                      no_certificate_config, TEST_CERT_PEM,
+                      strlen(TEST_CERT_PEM)),
+                  0);
+#if defined(NEVERC_TLS_TESTING)
+        check_int(
+            "fragment_mtls_missing_certificate_handshake_records",
+            neverc_tls_test_config_set_handshake_fragment_size(
+                no_certificate_config, 2),
+            0);
+#endif
+
+        neverc_tcp_conn_t *missing_client_tcp = NULL;
+        neverc_tcp_conn_t *missing_server_tcp = NULL;
+        check_int("create_mtls_missing_certificate_pipe",
+                  neverc_tcp_pipe(
+                      &missing_client_tcp, &missing_server_tcp),
+                  0);
+        if (missing_client_tcp && missing_server_tcp) {
+            server_ctx_t missing_ctx;
+            memset(&missing_ctx, 0, sizeof(missing_ctx));
+            missing_ctx.tcp = missing_server_tcp;
+            missing_ctx.config = server_config;
+#ifdef _WIN32
+            HANDLE missing_thread = CreateThread(
+                NULL, 0, tls_handshake_only_server_thread,
+                &missing_ctx, 0, NULL);
+            int missing_thread_started = missing_thread != NULL;
+#else
+            pthread_t missing_thread;
+            int missing_thread_started = pthread_create(
+                &missing_thread, NULL,
+                tls_handshake_only_server_thread,
+                &missing_ctx) == 0;
+#endif
+            check_int(
+                "start_mtls_missing_certificate_server",
+                missing_thread_started, 1);
+            if (missing_thread_started) {
+                const char *missing_error = NULL;
+                neverc_tls_conn_t *missing_client =
+                    neverc_tls_client(
+                        missing_client_tcp,
+                        no_certificate_config,
+                        &missing_error);
+#ifdef _WIN32
+                WaitForSingleObject(missing_thread, INFINITE);
+                CloseHandle(missing_thread);
+#else
+                pthread_join(missing_thread, NULL);
+#endif
+                check_int(
+                    "mtls_reject_missing_client_certificate",
+                    missing_ctx.handshake_ok, 0);
+                neverc_tls_close(missing_client);
+                neverc_tcp_close(missing_client_tcp);
+            } else {
+                neverc_tcp_close(missing_client_tcp);
+                neverc_tcp_close(missing_server_tcp);
+            }
+        } else {
+            neverc_tcp_close(missing_client_tcp);
+            neverc_tcp_close(missing_server_tcp);
+        }
+        neverc_tls_config_free(no_certificate_config);
+    }
+
+    neverc_tcp_conn_t *client_tcp = NULL;
+    neverc_tcp_conn_t *server_tcp = NULL;
+    check_int("create_mtls_pipe",
+              neverc_tcp_pipe(&client_tcp, &server_tcp), 0);
+    if (!client_tcp || !server_tcp) {
+        neverc_tcp_close(client_tcp);
+        neverc_tcp_close(server_tcp);
+        neverc_tls_config_free(server_config);
+        neverc_tls_config_free(client_config);
+        return;
+    }
+
+    server_ctx_t ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.tcp = server_tcp;
+    ctx.config = server_config;
+#ifdef _WIN32
+    HANDLE thread = CreateThread(
+        NULL, 0, tls_server_thread, &ctx, 0, NULL);
+    int thread_started = thread != NULL;
+#else
+    pthread_t thread;
+    int thread_started =
+        pthread_create(&thread, NULL, tls_server_thread, &ctx) == 0;
+#endif
+    check_int("start_mtls_server_thread", thread_started, 1);
+    if (thread_started) {
+        const char *err = NULL;
+        neverc_tls_conn_t *client =
+            neverc_tls_client(client_tcp, client_config, &err);
+        check_not_null("mtls_client_handshake", client);
+        if (client) {
+            check_int("mtls_client_write",
+                      neverc_tls_write(client, "ping", 4), 4);
+            char response[8] = {0};
+            int response_len =
+                neverc_tls_read(client, response, sizeof(response));
+            check_int("mtls_client_read",
+                      response_len == 4 &&
+                      memcmp(response, "pong", 4) == 0,
+                      1);
+            check_int("mtls_client_write_after_key_update",
+                      neverc_tls_write(client, "ping2", 5), 5);
+            memset(response, 0, sizeof(response));
+            response_len =
+                neverc_tls_read(client, response, sizeof(response));
+            check_int("mtls_client_read_after_key_update",
+                      response_len == 5 &&
+                      memcmp(response, "pong2", 5) == 0,
+                      1);
+            check_int("mtls_client_receive_close_notify",
+                      neverc_tls_read(client, response, sizeof(response)),
+                      0);
+            neverc_tls_close(client);
+        }
+        neverc_tcp_close(client_tcp);
+#ifdef _WIN32
+        WaitForSingleObject(thread, INFINITE);
+        CloseHandle(thread);
+#else
+        pthread_join(thread, NULL);
+#endif
+        check_int("mtls_server_handshake", ctx.handshake_ok, 1);
+        check_int("mtls_server_peer_certificate",
+                  ctx.peer_certificate_present, 1);
+        check_int("mtls_server_read_payload",
+                  strcmp(ctx.received, "ping") == 0, 1);
+        check_int("mtls_server_read_after_key_update",
+                  strcmp(ctx.second_received, "ping2") == 0, 1);
+    } else {
+        neverc_tcp_close(client_tcp);
+        neverc_tcp_close(server_tcp);
+    }
+
+    neverc_tls_config_free(server_config);
+    neverc_tls_config_free(client_config);
 #endif
 }
 
@@ -1045,10 +2199,16 @@ int main(void) {
     test_dial_errors();
 #endif
     test_client_server();
+    test_session_resumption();
+    test_alpn_no_overlap();
 #if defined(NEVERC_TLS_ENABLE_EXPERIMENTAL_TRANSPORT)
+    test_concurrent_record_io();
+    test_mutual_tls();
     test_unexpected_server_record_alert();
     test_malformed_server_hello_alert();
+    test_oversized_server_handshake_alert();
     test_malformed_client_hello_alert();
+    test_oversized_client_handshake_alert();
 #endif
 
     printf("\n%d/%d tests passed", tests_passed, tests_run);
