@@ -691,6 +691,58 @@ TEST_F(StdLibTest, TlsOpenSslBidirectionalInterop) {
       << "stdout: " << run.out;
 #endif
 }
+TEST_F(StdLibTest, TlsBoringSslBidirectionalInterop) {
+#if defined(_WIN32)
+  GTEST_SKIP() << "BoringSSL interop harness is POSIX-only for now";
+#else
+  fs::path peer = tmp() / "tls_boringssl_interop_peer";
+  fs::path cert = tmp() / "tls_boringssl_interop_cert.pem";
+  fs::path key = tmp() / "tls_boringssl_interop_key.pem";
+  std::string sd = stdSrcDir();
+
+  std::vector<std::string> args = {
+      "-I" + sd + "/include",
+      "-I" + sd + "/src/net",
+      "-Wall",
+      "-Wextra",
+      "-Wno-unused-parameter",
+      "-Wno-unused-function",
+      "-O1",
+      "-fno-builtin-std",
+      "-DNEVERC_TLS_ENABLE_EXPERIMENTAL_TRANSPORT=1",
+      "-DNEVERC_TLS_TESTING=1",
+      "-o",
+      peer.string(),
+      (fs::path(stdTestDir()) / "test_tls_interop.c").string(),
+  };
+  for (const char *src : {HTTP_TLS_DEPS, "src/net/tcp/tcp.c"})
+    args.push_back(sd + "/" + src);
+  args.push_back("-lm");
+  args.push_back("-lpthread");
+
+  CmdResult compile = ncc(args);
+  ASSERT_TRUE(compile.ok()) << "stdout: " << compile.out
+                            << "\nstderr: " << compile.err;
+
+  fs::path script =
+      fs::path(stdTestDir()) / "run_tls_boringssl_interop.sh";
+  auto run = exec("/bin/bash",
+                  {script.string(), peer.string(), cert.string(),
+                   key.string()});
+  if (run.contains("skip: bssl not available") ||
+      run.contains("skip: openssl not available"))
+    GTEST_SKIP() << "boringssl interop prerequisites unavailable";
+  ASSERT_TRUE(run.ok()) << "stdout: " << run.out << "\nstderr: " << run.err;
+  EXPECT_TRUE(run.contains("boringssl interop client: ok"))
+      << "stdout: " << run.out;
+  EXPECT_TRUE(run.contains("boringssl interop server: ok"))
+      << "stdout: " << run.out;
+  EXPECT_TRUE(run.contains("boringssl interop client resumption: ok"))
+      << "stdout: " << run.out;
+  EXPECT_TRUE(run.contains("boringssl interop server resumption: ok"))
+      << "stdout: " << run.out;
+#endif
+}
 TEST_F(StdLibTest, EmbeddedTlsCertificateVerifyDotSyntax) {
   auto r = compileAndRunStdTest("tls_builtin", {}, {"-fbuiltin-std"});
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;

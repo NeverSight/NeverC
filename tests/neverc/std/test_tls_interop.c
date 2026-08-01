@@ -129,8 +129,8 @@ static int run_server(
     return result;
 }
 
-static int run_resuming_client(
-    const char *address, const char *root_path) {
+static int run_resuming_client_internal(
+    const char *address, const char *root_path, int require_resume) {
     neverc_tls_config_t *config = neverc_tls_config_new();
     if (!config)
         return 30;
@@ -159,8 +159,9 @@ static int run_resuming_client(
             return 33;
         }
 #if defined(NEVERC_TLS_TESTING)
-        if (neverc_tls_test_did_resume(connection) !=
-            (round == 1)) {
+        if (require_resume &&
+            neverc_tls_test_did_resume(connection) !=
+                (round == 1)) {
             neverc_tls_close(connection);
             neverc_tcp_close(tcp);
             neverc_tls_config_free(config);
@@ -183,6 +184,16 @@ static int run_resuming_client(
     }
     neverc_tls_config_free(config);
     return 0;
+}
+
+static int run_resuming_client(
+    const char *address, const char *root_path) {
+    return run_resuming_client_internal(address, root_path, 1);
+}
+
+static int run_resuming_client_lenient(
+    const char *address, const char *root_path) {
+    return run_resuming_client_internal(address, root_path, 0);
 }
 
 static int run_resuming_server(
@@ -247,6 +258,8 @@ int main(int argc, char **argv) {
             argv[2], argv[3], argv[4], argv[5]);
     if (argc == 4 && strcmp(argv[1], "client-resume") == 0)
         return run_resuming_client(argv[2], argv[3]);
+    if (argc == 4 && strcmp(argv[1], "client-resume-lenient") == 0)
+        return run_resuming_client_lenient(argv[2], argv[3]);
     if (argc == 5 && strcmp(argv[1], "server-resume") == 0)
         return run_resuming_server(
             argv[2], argv[3], argv[4]);
@@ -254,7 +267,8 @@ int main(int argc, char **argv) {
             "usage: %s client ADDRESS ROOT.pem CERT.pem KEY.pem\n"
             "       %s server ADDRESS CERT.pem KEY.pem CLIENT_ROOT.pem\n"
             "       %s client-resume ADDRESS ROOT.pem\n"
+            "       %s client-resume-lenient ADDRESS ROOT.pem\n"
             "       %s server-resume ADDRESS CERT.pem KEY.pem\n",
-            argv[0], argv[0], argv[0], argv[0]);
+            argv[0], argv[0], argv[0], argv[0], argv[0]);
     return 2;
 }
