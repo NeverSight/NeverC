@@ -602,9 +602,16 @@ neverc_rpc_client_t *neverc_rpc_client_dial(
     }
 
     rpc_client_transport_t transport;
-    if (rpc_dial_transport(addr, &effective, neverc_context_background(),
-                           &transport, errp) != 0)
+    neverc_context_t *background = neverc_context_background();
+    if (!background) {
+        rpc_set_error(errp, "out of memory");
         return NULL;
+    }
+    if (rpc_dial_transport(addr, &effective, background, &transport, errp) !=
+        0) {
+        neverc_context_free(background);
+        return NULL;
+    }
 
     neverc_rpc_client_t *client =
         (neverc_rpc_client_t *)calloc(1, sizeof(*client));
@@ -669,6 +676,7 @@ neverc_rpc_client_t *neverc_rpc_client_dial(
                          client) != 0)
         goto start_failed;
     client->keepalive_started = effective.ping_interval_ms > 0;
+    neverc_context_free(background);
     return client;
 
 start_failed:
@@ -696,6 +704,7 @@ start_failed:
     free(client->addr);
     free(client);
 allocation_failed:
+    neverc_context_free(background);
     rpc_close_dialed_transport(&transport);
     rpc_set_error(errp, "failed to allocate RPC client");
     return NULL;

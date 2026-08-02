@@ -198,9 +198,15 @@ static int rpc_test_wait_for_port(neverc_rpc_server_t *server) {
 
 static int rpc_test_stream_roundtrip(neverc_rpc_client_t *client) {
     neverc_context_cancel_handle_t *cancel = NULL;
-    neverc_context_t *context = neverc_context_with_timeout_handle(
-        neverc_context_background(), 5000, &cancel);
-    if (!context || !cancel) return -1;
+    neverc_context_t *background = neverc_context_background();
+    neverc_context_t *context = background
+        ? neverc_context_with_timeout_handle(background, 5000, &cancel)
+        : NULL;
+    if (!context || !cancel) {
+        neverc_context_free(context);
+        neverc_context_free(background);
+        return -1;
+    }
     const uint8_t agent[] = "agent-1";
     neverc_rpc_metadata_t metadata = {
         "agent-id", 8U, agent, sizeof(agent) - 1U};
@@ -241,6 +247,7 @@ done:
     neverc_context_cancel_handle_cancel(cancel);
     neverc_context_cancel_handle_free(cancel);
     neverc_context_free(context);
+    neverc_context_free(background);
     return result;
 }
 
@@ -250,9 +257,15 @@ static int rpc_test_unary_call(
     const neverc_rpc_call_options_t *options,
     neverc_rpc_status_code_t expected_status) {
     neverc_context_cancel_handle_t *cancel = NULL;
-    neverc_context_t *context = neverc_context_with_timeout_handle(
-        neverc_context_background(), 5000, &cancel);
-    if (!context || !cancel) return -1;
+    neverc_context_t *background = neverc_context_background();
+    neverc_context_t *context = background
+        ? neverc_context_with_timeout_handle(background, 5000, &cancel)
+        : NULL;
+    if (!context || !cancel) {
+        neverc_context_free(context);
+        neverc_context_free(background);
+        return -1;
+    }
     static const char request[] = "unary";
     char response[64];
     size_t response_length = 0;
@@ -274,6 +287,7 @@ static int rpc_test_unary_call(
     neverc_context_cancel_handle_cancel(cancel);
     neverc_context_cancel_handle_free(cancel);
     neverc_context_free(context);
+    neverc_context_free(background);
     return valid ? 0 : -1;
 }
 
@@ -509,8 +523,10 @@ static void rpc_test_receive_backpressure(void) {
     CHECK(client != NULL);
     if (client) {
         neverc_context_cancel_handle_t *cancel = NULL;
-        neverc_context_t *context = neverc_context_with_timeout_handle(
-            neverc_context_background(), 5000, &cancel);
+        neverc_context_t *background = neverc_context_background();
+        neverc_context_t *context = background
+            ? neverc_context_with_timeout_handle(background, 5000, &cancel)
+            : NULL;
         CHECK(context != NULL && cancel != NULL);
         neverc_rpc_stream_t *stream = context
             ? neverc_rpc_stream_open(client, context,
@@ -545,6 +561,7 @@ static void rpc_test_receive_backpressure(void) {
             neverc_context_cancel_handle_free(cancel);
         }
         neverc_context_free(context);
+        neverc_context_free(background);
         neverc_rpc_client_close(client);
     }
     neverc_rpc_server_shutdown(test.server);
@@ -702,8 +719,10 @@ static void rpc_test_reconnect_roundtrip(void) {
     neverc_time_sleep(100 * NEVERC_TIME_MILLISECOND);
 
     neverc_context_cancel_handle_t *cancel = NULL;
-    neverc_context_t *context = neverc_context_with_timeout_handle(
-        neverc_context_background(), 5000, &cancel);
+    neverc_context_t *background = neverc_context_background();
+    neverc_context_t *context = background
+        ? neverc_context_with_timeout_handle(background, 5000, &cancel)
+        : NULL;
     CHECK(context != NULL && cancel != NULL);
     if (client && context) {
         CHECK(neverc_rpc_client_reconnect(client, context, &error) ==
@@ -715,6 +734,7 @@ static void rpc_test_reconnect_roundtrip(void) {
         neverc_context_cancel_handle_free(cancel);
     }
     neverc_context_free(context);
+    neverc_context_free(background);
     neverc_rpc_client_close(client);
     neverc_rpc_server_shutdown(test.server);
     CHECK(neverc_thread_executor_shutdown(second_executor) ==

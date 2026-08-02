@@ -196,8 +196,10 @@ static void grpc_test_frame_and_timeout(void) {
 
 static void grpc_test_unary(neverc_h2_client_t *client) {
     neverc_context_cancel_handle_t *cancel = NULL;
-    neverc_context_t *context = neverc_context_with_timeout_handle(
-        neverc_context_background(), 5000, &cancel);
+    neverc_context_t *background = neverc_context_background();
+    neverc_context_t *context = background
+        ? neverc_context_with_timeout_handle(background, 5000, &cancel)
+        : NULL;
     static const uint8_t metadata_value[] = "value";
     neverc_grpc_metadata_t metadata = {
         "x-client", metadata_value, sizeof(metadata_value) - 1U};
@@ -230,12 +232,15 @@ static void grpc_test_unary(neverc_h2_client_t *client) {
     neverc_context_cancel_handle_cancel(cancel);
     neverc_context_cancel_handle_free(cancel);
     neverc_context_free(context);
+    neverc_context_free(background);
 }
 
 static void grpc_test_bidi(neverc_h2_client_t *client) {
     neverc_context_cancel_handle_t *cancel = NULL;
-    neverc_context_t *context = neverc_context_with_timeout_handle(
-        neverc_context_background(), 5000, &cancel);
+    neverc_context_t *background = neverc_context_background();
+    neverc_context_t *context = background
+        ? neverc_context_with_timeout_handle(background, 5000, &cancel)
+        : NULL;
     const char *error = NULL;
     neverc_grpc_client_stream_t *stream = neverc_grpc_client_stream_open(
         client, context, "/test.Echo/Bidi", NEVERC_GRPC_BIDI_STREAMING,
@@ -260,12 +265,15 @@ static void grpc_test_bidi(neverc_h2_client_t *client) {
     neverc_context_cancel_handle_cancel(cancel);
     neverc_context_cancel_handle_free(cancel);
     neverc_context_free(context);
+    neverc_context_free(background);
 }
 
 static void grpc_test_directional_streaming(neverc_h2_client_t *client) {
     neverc_context_cancel_handle_t *cancel = NULL;
-    neverc_context_t *context = neverc_context_with_timeout_handle(
-        neverc_context_background(), 5000, &cancel);
+    neverc_context_t *background = neverc_context_background();
+    neverc_context_t *context = background
+        ? neverc_context_with_timeout_handle(background, 5000, &cancel)
+        : NULL;
     neverc_grpc_message_t seed = {(const uint8_t *)"seed", 4U};
     neverc_grpc_result_t *result = neverc_grpc_client_call(
         client, context, "/test.Echo/ServerStreaming",
@@ -298,6 +306,7 @@ static void grpc_test_directional_streaming(neverc_h2_client_t *client) {
     neverc_context_cancel_handle_cancel(cancel);
     neverc_context_cancel_handle_free(cancel);
     neverc_context_free(context);
+    neverc_context_free(background);
 }
 
 static int grpc_test_register_methods(neverc_http_mux_t *mux) {
