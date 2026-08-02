@@ -132,8 +132,12 @@ UBSAN_OPTIONS=${UBSAN_OPTIONS:-halt_on_error=1:print_stacktrace=1} \
 
 full_std_sources=()
 while IFS= read -r source; do
-  full_std_sources+=("$repo_root/$source")
-done < <(cd "$repo_root" && rg --files std/src | rg '\.c$')
+  full_std_sources+=("$source")
+done < <(find "$repo_root/std/src" -name '*.c' | sort)
+if ((${#full_std_sources[@]} == 0)); then
+  echo "failed to enumerate std/src/*.c sources" >&2
+  exit 1
+fi
 full_platform_libraries=(-pthread -lm -lresolv)
 if [[ $(uname -s) == Linux ]]; then
   full_platform_libraries+=(-ldl)
