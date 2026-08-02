@@ -190,7 +190,7 @@ static void http_stage5_plain_e2e(void) {
     neverc_context_t *background = NULL;
     neverc_context_t *context = NULL;
     background = neverc_context_background();
-    neverc_context_t *context = background
+    context = background
         ? neverc_context_with_timeout_handle(background, 5000, &cancel)
         : NULL;
     response = client && context
