@@ -4213,7 +4213,10 @@
         "neverc_ws_set_keepalive": "src/net/websocket/websocket.c",
         "neverc_ws_set_timeout": "src/net/websocket/websocket.c",
         "neverc_ws_upgrade_http": "src/net/websocket/websocket.c",
+        "neverc_ws_valid_utf8": "src/net/websocket/websocket.c",
+        "neverc_ws_valid_utf8_prefix": "src/net/websocket/websocket.c",
         "neverc_ws_write_binary": "src/net/websocket/websocket.c",
+        "neverc_ws_write_frame": "src/net/websocket/websocket.c",
         "neverc_ws_write_message": "src/net/websocket/websocket.c",
         "neverc_ws_write_text": "src/net/websocket/websocket.c"
       },
@@ -4236,7 +4239,10 @@
         "set_keepalive": "neverc_ws_set_keepalive",
         "set_timeout": "neverc_ws_set_timeout",
         "upgrade_http": "neverc_ws_upgrade_http",
+        "valid_utf8": "neverc_ws_valid_utf8",
+        "valid_utf8_prefix": "neverc_ws_valid_utf8_prefix",
         "write_binary": "neverc_ws_write_binary",
+        "write_frame": "neverc_ws_write_frame",
         "write_message": "neverc_ws_write_message",
         "write_text": "neverc_ws_write_text"
       }

@@ -41,6 +41,9 @@ struct neverc_ws_conn {
     uint64_t next_ping_ms;
     uint64_t pong_deadline_ms;
     uint8_t ping_token[8];
+    int data_fragment_active;
+    int data_message_opcode;
+    nc_buf_t text_utf8_acc;
 };
 
 typedef struct {
@@ -882,6 +885,7 @@ static neverc_ws_conn_t *ws_conn_new_role(neverc_tcp_conn_t *tcp,
     ws->tls = tls;
     ws->is_client = is_client != 0;
     ws->read_limit = read_limit;
+    nc_buf_init(&ws->text_utf8_acc);
     nc_mutex_init(&ws->write_lock);
     nc_mutex_init(&ws->keepalive_lock);
     return ws;
@@ -907,6 +911,7 @@ void neverc_ws_conn_free(neverc_ws_conn_t *conn) {
     if (join_keepalive) nc_thread_join(conn->keepalive_thread);
     if (conn->tls) neverc_tls_close(conn->tls);
     if (conn->tcp) neverc_tcp_close(conn->tcp);
+    nc_buf_free(&conn->text_utf8_acc);
     nc_mutex_destroy(&conn->keepalive_lock);
     nc_mutex_destroy(&conn->write_lock);
     free(conn);
@@ -1203,6 +1208,71 @@ static int ws_fail_invalid_payload(neverc_ws_conn_t *conn) {
     return ws_fail(conn);
 }
 
+static int ws_data_frame_begin(neverc_ws_conn_t *conn, int opcode, int fin) {
+    if (opcode == NC_WS_OPCODE_TEXT || opcode == NC_WS_OPCODE_BINARY) {
+        if (conn->data_fragment_active)
+            return ws_fail_protocol(conn);
+        conn->data_message_opcode = opcode;
+        if (!fin) conn->data_fragment_active = 1;
+        nc_buf_reset(&conn->text_utf8_acc);
+    } else if (opcode == NC_WS_OPCODE_CONTINUATION) {
+        if (!conn->data_fragment_active)
+            return ws_fail_protocol(conn);
+    } else {
+        return ws_fail_protocol(conn);
+    }
+    return 0;
+}
+
+static int ws_data_frame_chunk(neverc_ws_conn_t *conn, const void *payload,
+                               size_t plen) {
+    if (conn->data_message_opcode != NC_WS_OPCODE_TEXT)
+        return 0;
+    if (conn->read_limit &&
+        (conn->text_utf8_acc.len > conn->read_limit ||
+         plen > conn->read_limit - conn->text_utf8_acc.len))
+        return ws_fail(conn);
+    if (nc_buf_append(&conn->text_utf8_acc, payload, plen) != 0)
+        return ws_fail(conn);
+    if (!ws_valid_utf8_prefix((const uint8_t *)conn->text_utf8_acc.data,
+                              conn->text_utf8_acc.len))
+        return ws_fail_invalid_payload(conn);
+    return 0;
+}
+
+static int ws_data_frame_end(neverc_ws_conn_t *conn, int fin) {
+    if (fin) {
+        if (conn->data_message_opcode == NC_WS_OPCODE_TEXT &&
+            !ws_valid_utf8((const uint8_t *)conn->text_utf8_acc.data,
+                           conn->text_utf8_acc.len))
+            return ws_fail_invalid_payload(conn);
+        conn->data_fragment_active = 0;
+        nc_buf_reset(&conn->text_utf8_acc);
+    }
+    return 0;
+}
+
+static int ws_read_payload(neverc_ws_conn_t *conn, void *buf, size_t plen,
+                           int masked, const uint8_t *mask_key, int track_text) {
+    uint8_t *p = (uint8_t *)buf;
+    size_t total = 0;
+    while (total < plen) {
+        int n = conn->tls
+            ? neverc_tls_read(conn->tls, p + total, plen - total)
+            : neverc_tcp_read(conn->tcp, p + total, plen - total);
+        if (n <= 0) return ws_fail(conn);
+        if (masked) {
+            for (int i = 0; i < n; i++)
+                p[total + (size_t)i] ^= mask_key[(total + (size_t)i) % 4];
+        }
+        if (track_text &&
+            ws_data_frame_chunk(conn, p + total, (size_t)n) != 0)
+            return -1;
+        total += (size_t)n;
+    }
+    return 0;
+}
+
 typedef struct {
     int opcode;
     int fin;
@@ -1448,29 +1518,50 @@ int neverc_ws_read_frame(neverc_ws_conn_t *conn, int *opcode, int *fin,
     int masked = header.masked;
     uint64_t plen = header.payload_length;
 
+    int track_data = frame_opcode == NC_WS_OPCODE_TEXT ||
+                     frame_opcode == NC_WS_OPCODE_BINARY ||
+                     frame_opcode == NC_WS_OPCODE_CONTINUATION;
+    int track_text = 0;
+    if (track_data) {
+        if (ws_data_frame_begin(conn, frame_opcode, frame_fin) != 0)
+            return -1;
+        track_text = conn->data_message_opcode == NC_WS_OPCODE_TEXT;
+    }
+
     if (plen > 0) {
-        if (read_exact(conn, buf, (size_t)plen) != 0)
-            return ws_fail(conn);
-        if (masked) {
-            uint8_t *p = (uint8_t *)buf;
-            size_t n = (size_t)plen;
-            /* Replicate the 4-byte key into a 64-bit word and unmask 8 bytes per
-             * step. The chunk size (8) is a multiple of the key period (4) and
-             * unmasking starts at offset 0, so the repeated key stays phase-
-             * aligned with every chunk; the tail (< 8 bytes) finishes per byte. */
-            uint32_t k32;
-            memcpy(&k32, header.mask_key, 4);
-            uint64_t k64 = (uint64_t)k32 | ((uint64_t)k32 << 32);
-            size_t i = 0;
-            for (; i + 8 <= n; i += 8) {
-                uint64_t w;
-                memcpy(&w, p + i, 8);
-                w ^= k64;
-                memcpy(p + i, &w, 8);
+        if (track_data) {
+            if (ws_read_payload(conn, buf, (size_t)plen, masked,
+                                header.mask_key, track_text) != 0)
+                return -1;
+        } else {
+            if (read_exact(conn, buf, (size_t)plen) != 0)
+                return ws_fail(conn);
+            if (masked) {
+                uint8_t *p = (uint8_t *)buf;
+                size_t n = (size_t)plen;
+                /* Replicate the 4-byte key into a 64-bit word and unmask 8 bytes per
+                 * step. The chunk size (8) is a multiple of the key period (4) and
+                 * unmasking starts at offset 0, so the repeated key stays phase-
+                 * aligned with every chunk; the tail (< 8 bytes) finishes per byte. */
+                uint32_t k32;
+                memcpy(&k32, header.mask_key, 4);
+                uint64_t k64 = (uint64_t)k32 | ((uint64_t)k32 << 32);
+                size_t i = 0;
+                for (; i + 8 <= n; i += 8) {
+                    uint64_t w;
+                    memcpy(&w, p + i, 8);
+                    w ^= k64;
+                    memcpy(p + i, &w, 8);
+                }
+                for (; i < n; i++)
+                    p[i] ^= header.mask_key[i % 4];
             }
-            for (; i < n; i++)
-                p[i] ^= header.mask_key[i % 4];
         }
+    }
+
+    if (track_data) {
+        if (ws_data_frame_end(conn, frame_fin) != 0)
+            return -1;
     }
 
     if (frame_opcode == NC_WS_OPCODE_CLOSE) {
@@ -1545,11 +1636,15 @@ int neverc_ws_send_close(neverc_ws_conn_t *conn, uint16_t code,
 
 int neverc_ws_write_frame(neverc_ws_conn_t *conn, int opcode, int fin,
                           const void *data, size_t len) {
-    if (!conn || !ws_valid_opcode(opcode) ||
-        ws_control_opcode(opcode) ||
-        (data && opcode == NC_WS_OPCODE_TEXT &&
-         !ws_valid_utf8((const uint8_t *)data, len)))
+    if (!conn || !ws_valid_opcode(opcode) || ws_control_opcode(opcode))
         return -1;
+    if (data && opcode == NC_WS_OPCODE_TEXT) {
+        if (fin) {
+            if (!ws_valid_utf8((const uint8_t *)data, len)) return -1;
+        } else if (!ws_valid_utf8_prefix((const uint8_t *)data, len)) {
+            return -1;
+        }
+    }
     return write_frame(conn, opcode, fin ? 1 : 0, data, len);
 }
 
