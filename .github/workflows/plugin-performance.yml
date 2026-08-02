@@ -23,6 +23,12 @@ on:
       - "utils/plugin-api/measure-plugin-overhead.py"
       - ".github/workflows/plugin-performance.yml"
 
+# Cancel stale runs on the same ref when a newer commit is pushed. Set repo
+# variable CI_CANCEL_IN_PROGRESS=false to keep overlapping runs (legacy mode).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ vars.CI_CANCEL_IN_PROGRESS != 'false' }}
+
 jobs:
   performance:
     if: >-

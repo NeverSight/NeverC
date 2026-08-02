@@ -1,0 +1,14 @@
+# CI concurrency toggle
+#
+# Workflows copy the block documented here (or run
+# `python3 utils/ci/sync-workflow-concurrency.py --write` to re-sync).
+#
+# Repository variable (Settings → Secrets and variables → Actions → Variables):
+#   CI_CANCEL_IN_PROGRESS=false   legacy mode: overlapping runs on the same ref
+#   CI_CANCEL_IN_PROGRESS=true    cancel stale runs when a newer commit lands
+#   (unset)                       same as true
+#
+# build-gki-kernels.yml is excluded: manual multi-hour jobs keep cancel disabled.
+
+group: ${{ github.workflow }}-${{ github.ref }}
+cancel-in-progress: ${{ vars.CI_CANCEL_IN_PROGRESS != 'false' }}

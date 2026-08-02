@@ -52,9 +52,11 @@ on:
         required: false
         default: '600'
 
+# Cancel stale runs on the same ref when a newer commit is pushed. Set repo
+# variable CI_CANCEL_IN_PROGRESS=false to keep overlapping runs (legacy mode).
 concurrency:
   group: merge-fuzz-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ vars.CI_CANCEL_IN_PROGRESS != 'false' }}
 
 jobs:
   fuzz:

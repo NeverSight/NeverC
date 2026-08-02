@@ -28,9 +28,11 @@ on:
     - cron: '30 8 * * *'
   workflow_dispatch:
 
+# Cancel stale runs on the same ref when a newer commit is pushed. Set repo
+# variable CI_CANCEL_IN_PROGRESS=false to keep overlapping runs (legacy mode).
 concurrency:
   group: http-websocket-interop-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ vars.CI_CANCEL_IN_PROGRESS != 'false' }}
 
 jobs:
   interop:
