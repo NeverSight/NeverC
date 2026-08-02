@@ -58,7 +58,10 @@ jobs:
 
       - name: Build official quiche client
         run: |
-          git clone --depth 1 --branch 0.24.5 --recursive https://github.com/cloudflare/quiche.git quiche
+          if [[ ! -f quiche/Cargo.toml ]]; then
+            rm -rf quiche
+            git clone --depth 1 --branch 0.24.5 --recursive https://github.com/cloudflare/quiche.git quiche
+          fi
           cargo build --release --manifest-path quiche/apps/Cargo.toml --bin quiche-client
 
       - name: Run external QUIC and HTTP/3 interoperability
