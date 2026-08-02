@@ -68,7 +68,9 @@ if [[ ${NEVERC_RUN_AUTOBAHN:-0} == 1 ]]; then
     wstest --mode fuzzingclient --spec /config/fuzzingclient.json
   if rg -q '"behavior"[[:space:]]*:[[:space:]]*"(FAILED|NON-STRICT|UNIMPLEMENTED)"' \
       "$reports"; then
-    echo "Autobahn reported non-conforming WebSocket cases" >&2
+    echo "Autobahn reported non-conforming WebSocket cases:" >&2
+    rg '"behavior"[[:space:]]*:[[:space:]]*"(FAILED|NON-STRICT|UNIMPLEMENTED)"' \
+      "$reports" -n --no-heading | head -40 >&2 || true
     exit 1
   fi
   test -n "$(find "$reports" -type f -print -quit)"

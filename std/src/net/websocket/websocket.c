@@ -1315,7 +1315,7 @@ static int write_frame_timeout(neverc_ws_conn_t *conn, int opcode,
     nc_mutex_lock(&conn->write_lock);
     if (!conn->tcp || nc_atomic_load(&conn->failed) ||
         nc_atomic_load(&conn->close_sent) ||
-        !ws_valid_opcode(opcode) || opcode == NC_WS_OPCODE_CONTINUATION ||
+        !ws_valid_opcode(opcode) ||
         (len > 0 && !payload) ||
         (ws_control_opcode(opcode) && len > 125)) {
         nc_mutex_unlock(&conn->write_lock);
@@ -1546,7 +1546,7 @@ int neverc_ws_send_close(neverc_ws_conn_t *conn, uint16_t code,
 int neverc_ws_write_frame(neverc_ws_conn_t *conn, int opcode, int fin,
                           const void *data, size_t len) {
     if (!conn || !ws_valid_opcode(opcode) ||
-        opcode == NC_WS_OPCODE_CONTINUATION ||
+        ws_control_opcode(opcode) ||
         (data && opcode == NC_WS_OPCODE_TEXT &&
          !ws_valid_utf8((const uint8_t *)data, len)))
         return -1;
