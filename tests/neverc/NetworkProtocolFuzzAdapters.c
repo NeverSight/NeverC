@@ -39,12 +39,11 @@ static void fuzz_h2(const uint8_t *input, size_t input_length,
     if (!decoder) return;
     neverc_hpack_header_t headers[64];
     int header_count = 0;
-    if (neverc_hpack_decode(decoder, input, input_length, headers, 64,
-                            &header_count) == 0) {
-        for (int i = 0; i < header_count; i++) {
-            free(headers[i].name);
-            free(headers[i].value);
-        }
+    (void)neverc_hpack_decode(decoder, input, input_length, headers, 64,
+                              &header_count);
+    for (int i = 0; i < header_count; i++) {
+        free(headers[i].name);
+        free(headers[i].value);
     }
     neverc_hpack_decoder_destroy(decoder);
 }
@@ -122,12 +121,11 @@ static void fuzz_h3(const uint8_t *input, size_t input_length) {
     if (!decoder) return;
     neverc_qpack_header_t headers[64];
     int header_count = 0;
-    if (neverc_qpack_decode(decoder, input, input_length, headers, 64,
-                            &header_count) == 0) {
-        for (int i = 0; i < header_count; i++) {
-            free(headers[i].name);
-            free(headers[i].value);
-        }
+    (void)neverc_qpack_decode(decoder, input, input_length, headers, 64,
+                              &header_count);
+    for (int i = 0; i < header_count; i++) {
+        free(headers[i].name);
+        free(headers[i].value);
     }
     neverc_qpack_decoder_destroy(decoder);
 }
