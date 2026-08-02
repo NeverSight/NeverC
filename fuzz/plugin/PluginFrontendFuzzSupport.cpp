@@ -14,23 +14,11 @@
 #include "neverc/Tree/Core/TreeConsumer.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Config/llvm-config.h"
-#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/TargetParser/Host.h"
 #include <algorithm>
 #include <utility>
-
-namespace {
-void ensureCommandLineRttiLinked() {
-    /*
-     * Plugin fuzzers link with --gc-sections. Without a root reference,
-     * support_cpp.cpp's GenericOptionValue::anchor is discarded and
-     * OptionValueCopy<unsigned int> fails to link its base typeinfo.
-     */
-    (void)&llvm::cl::GenericOptionValue::anchor;
-}
-} // namespace
 
 namespace neverc::fuzz {
 using namespace llvm;
@@ -67,7 +55,6 @@ ArrayRef<uint8_t> ByteCursor::takeBytes(size_t Maximum) {
 PluginFuzzRuntime::PluginFuzzRuntime() = default;
 
 Expected<std::unique_ptr<PluginFuzzRuntime>> PluginFuzzRuntime::create() {
-  ensureCommandLineRttiLinked();
   auto Runtime =
       std::unique_ptr<PluginFuzzRuntime>(new PluginFuzzRuntime());
   Runtime->Services = std::make_unique<PluginProcessServices>(

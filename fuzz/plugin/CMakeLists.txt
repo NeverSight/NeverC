@@ -17,6 +17,9 @@ function(add_neverc_plugin_fuzzer target source smoke_name)
   )
   target_compile_features(${target} PRIVATE cxx_std_17)
   target_compile_options(${target} PRIVATE -fsanitize=fuzzer-no-link)
+  if(NOT (LLVM_REQUIRES_RTTI OR LLVM_ENABLE_RTTI))
+    target_compile_options(${target} PRIVATE -fno-rtti)
+  endif()
   target_link_options(${target} PRIVATE -fsanitize=fuzzer)
   target_link_libraries(${target} PRIVATE
     nevercCompiler
