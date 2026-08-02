@@ -2,6 +2,16 @@
 #include "neverc/std/_platform.h"
 #include <string.h>
 
+#if defined(__has_attribute)
+#  if __has_attribute(nonstring)
+#    define NEVERC_HEX_PAIR_ATTR __attribute__((nonstring))
+#  else
+#    define NEVERC_HEX_PAIR_ATTR
+#  endif
+#else
+#  define NEVERC_HEX_PAIR_ATTR
+#endif
+
 static void fill_random(uint8_t *buf, size_t len) {
     neverc_platform_random(buf, len);
 }
@@ -20,7 +30,7 @@ neverc_uuid_t neverc_uuid_new(void) {
  * stores, and the four dash slots are written directly instead of being
  * branched on once per byte.
  */
-static const char hex_pair[256][2] = {
+static const char hex_pair[256][2] NEVERC_HEX_PAIR_ATTR = {
     "00","01","02","03","04","05","06","07","08","09","0a","0b","0c","0d","0e","0f",
     "10","11","12","13","14","15","16","17","18","19","1a","1b","1c","1d","1e","1f",
     "20","21","22","23","24","25","26","27","28","29","2a","2b","2c","2d","2e","2f",

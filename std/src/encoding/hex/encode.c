@@ -1,11 +1,21 @@
 #include "neverc/std/encoding/hex.h"
 #include <string.h>
 
+#if defined(__has_attribute)
+#  if __has_attribute(nonstring)
+#    define NEVERC_HEX_PAIR_ATTR __attribute__((nonstring))
+#  else
+#    define NEVERC_HEX_PAIR_ATTR
+#  endif
+#else
+#  define NEVERC_HEX_PAIR_ATTR
+#endif
+
 /*
  * 512-byte pair table: hex_pair[byte] = two-char hex string.
  * One 16-bit lookup per input byte instead of two 8-bit lookups.
  */
-static const char hex_pair[256][2] = {
+static const char hex_pair[256][2] NEVERC_HEX_PAIR_ATTR = {
     "00","01","02","03","04","05","06","07","08","09","0a","0b","0c","0d","0e","0f",
     "10","11","12","13","14","15","16","17","18","19","1a","1b","1c","1d","1e","1f",
     "20","21","22","23","24","25","26","27","28","29","2a","2b","2c","2d","2e","2f",
