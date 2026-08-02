@@ -6212,7 +6212,6 @@ struct ParsedAttrInfoPatchableFunctionEntry final : public ParsedAttrInfo {
     const llvm::Triple &T = Target.getTriple();
     (void)T;
     return true && (T.getArch() == llvm::Triple::aarch64 ||
-                    T.getArch() == llvm::Triple::x86 ||
                     T.getArch() == llvm::Triple::x86_64);
   }
 

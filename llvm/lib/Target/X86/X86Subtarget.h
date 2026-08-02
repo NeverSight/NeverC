@@ -327,9 +327,6 @@ public:
   /// how we should reference it in a non-pcrel context.
   unsigned char classifyBlockAddressReference() const;
 
-  /// Return true if the subtarget allows calls to immediate address.
-  bool isLegalToCallImmediateAddr() const;
-
   /// If we are using indirect thunks, we need to expand indirectbr to avoid it
   /// lowering to an actual indirect jump.
   bool enableIndirectBrExpand() const override {

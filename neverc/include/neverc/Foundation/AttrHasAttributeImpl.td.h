@@ -121,7 +121,6 @@ case AttributeCommonInfo::Syntax::AS_GNU:
       .Case("pass_dynamic_object_size", 1)
       .Case("patchable_function_entry",
             true && (T.getArch() == llvm::Triple::aarch64 ||
-                     T.getArch() == llvm::Triple::x86 ||
                      T.getArch() == llvm::Triple::x86_64)
                 ? 1
                 : 0)
@@ -349,7 +348,6 @@ case AttributeCommonInfo::Syntax::AS_Bracket: {
         .Case("packed", 1)
         .Case("patchable_function_entry",
               true && (T.getArch() == llvm::Triple::aarch64 ||
-                       T.getArch() == llvm::Triple::x86 ||
                        T.getArch() == llvm::Triple::x86_64)
                   ? 1
                   : 0)
@@ -602,7 +600,6 @@ case AttributeCommonInfo::Syntax::AS_C23: {
         .Case("packed", 1)
         .Case("patchable_function_entry",
               true && (T.getArch() == llvm::Triple::aarch64 ||
-                       T.getArch() == llvm::Triple::x86 ||
                        T.getArch() == llvm::Triple::x86_64)
                   ? 1
                   : 0)

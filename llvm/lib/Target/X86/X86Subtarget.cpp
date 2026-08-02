@@ -179,9 +179,6 @@ X86Subtarget::classifyGlobalFunctionReference(const GlobalValue *GV,
   return X86II::MO_NO_FLAG;
 }
 
-/// Return true if the subtarget allows calls to immediate address.
-bool X86Subtarget::isLegalToCallImmediateAddr() const { return false; }
-
 void X86Subtarget::initSubtargetFeatures(StringRef CPU, StringRef TuneCPU,
                                          StringRef FS) {
   if (CPU.empty())

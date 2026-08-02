@@ -4212,9 +4212,6 @@ void NeverC::AddMSVCCompatArgs(Compilation &C, const ArgList &Args,
     case llvm::Triple::aarch64:
       ArchMacro = "-D_ARM64_";
       break;
-    case llvm::Triple::x86:
-      ArchMacro = "-D_X86_";
-      break;
     default:
       break;
     }
