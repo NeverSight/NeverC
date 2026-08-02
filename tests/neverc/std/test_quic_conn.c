@@ -21,11 +21,11 @@
  * those boundaries inert while exercising the real connection, flow-control,
  * transport-parameter, and loss-detection state.
  */
-static quic_tls_t g_stub_tls;
+static char g_stub_tls_storage[1];
 
 quic_tls_t *neverc_quic_tls_create(int is_server) {
     (void)is_server;
-    return &g_stub_tls;
+    return (quic_tls_t *)&g_stub_tls_storage;
 }
 
 void neverc_quic_tls_destroy(quic_tls_t *tls) { (void)tls; }
