@@ -34,21 +34,29 @@ bool isConstantLength(Value *LenArg, uint64_t &OutLen) {
   return false;
 }
 
-bool isAnyHashFunction(Function *F) {
-  if (!F)
-    return false;
-  StringRef Name = F->getName();
-  return Name == "neverc_fnv_sum32a" ||
-         Name == "neverc_fnv_sum64a" ||
-         Name == "neverc_xxhash64";
-}
+#define STRHASH_FN_FNV32A "neverc_fnv_sum32a"
+#define STRHASH_FN_FNV64A "neverc_fnv_sum64a"
+#define STRHASH_FN_XXHASH64 "neverc_xxhash64"
+
+#define STRHASH_ALGO_FNV32A 1u
+#define STRHASH_ALGO_FNV64A 2u
+#define STRHASH_ALGO_XXHASH64 3u
 
 unsigned getAlgoForFunction(Function *F) {
+  if (!F)
+    return 0;
   StringRef Name = F->getName();
-  if (Name == "neverc_fnv_sum32a") return 1;
-  if (Name == "neverc_fnv_sum64a") return 2;
-  if (Name == "neverc_xxhash64") return 3;
+  if (Name == STRHASH_FN_FNV32A)
+    return STRHASH_ALGO_FNV32A;
+  if (Name == STRHASH_FN_FNV64A)
+    return STRHASH_ALGO_FNV64A;
+  if (Name == STRHASH_FN_XXHASH64)
+    return STRHASH_ALGO_XXHASH64;
   return 0;
+}
+
+bool isAnyHashFunction(Function *F) {
+  return getAlgoForFunction(F) != 0;
 }
 
 } // anonymous namespace
@@ -72,11 +80,11 @@ PreservedAnalyses StrHashFoldPass::run(Module &M,
         unsigned CalleeAlgo = getAlgoForFunction(Callee);
         unsigned NumArgs = CI->arg_size();
 
-        if ((CalleeAlgo <= 2 && NumArgs != 2) ||
-            (CalleeAlgo == 3 && NumArgs != 3))
+        if ((CalleeAlgo <= STRHASH_ALGO_FNV64A && NumArgs != 2) ||
+            (CalleeAlgo == STRHASH_ALGO_XXHASH64 && NumArgs != 3))
           continue;
 
-        if (CalleeAlgo == 3) {
+        if (CalleeAlgo == STRHASH_ALGO_XXHASH64) {
           auto *SeedCI = dyn_cast<ConstantInt>(CI->getArgOperand(2));
           if (!SeedCI || !SeedCI->isZero())
             continue;
