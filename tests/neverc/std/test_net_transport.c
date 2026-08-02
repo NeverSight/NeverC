@@ -471,7 +471,7 @@ static int run_udp_batch_queue(void) {
 
     neverc_udp_queue_t *queue = neverc_udp_queue_create(2, 8);
     CHECK(queue != NULL);
-    CHECK(neverc_udp_queue_receive(receiver, queue, 3) == 2);
+    CHECK(udp_queue_fill(receiver, queue, 2, 2000) == 2);
     char buffer[8];
     neverc_udp_packet_info_t info;
     neverc_net_result_t result =
@@ -482,7 +482,7 @@ static int run_udp_batch_queue(void) {
     result = neverc_udp_queue_pop(queue, buffer, sizeof(buffer), &info);
     CHECK(result.status == NEVERC_NET_OK);
     CHECK(memcmp(buffer, "two", 3) == 0);
-    CHECK(neverc_udp_queue_receive(receiver, queue, 3) == 1);
+    CHECK(udp_queue_fill(receiver, queue, 1, 2000) == 1);
     result = neverc_udp_queue_pop(queue, buffer, sizeof(buffer), &info);
     CHECK(result.status == NEVERC_NET_OK);
     CHECK(memcmp(buffer, "tri", 3) == 0);
