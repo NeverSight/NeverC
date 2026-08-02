@@ -1087,9 +1087,12 @@ static int rpc_server_serve(neverc_rpc_server_t *server, const char *addr,
     nc_atomic_store(&server->stop_requested, 0);
     if (!nc_atomic_cas(&server->serving, 0, 1)) return -1;
     int result = -1;
+    neverc_context_t *serve_background = NULL;
 
+    serve_background = neverc_context_background();
+    if (!serve_background) goto cleanup;
     server->serve_context = neverc_context_with_cancel_handle(
-        neverc_context_background(), &server->serve_cancel);
+        serve_background, &server->serve_cancel);
     if (!server->serve_context || !server->serve_cancel) goto cleanup;
     server->connection_executor = neverc_thread_executor_create(
         server->config.connection_workers,
@@ -1239,6 +1242,7 @@ cleanup:
         neverc_context_free(server->serve_context);
         server->serve_context = NULL;
     }
+    neverc_context_free(serve_background);
     nc_atomic_store(&server->running, 0);
     nc_atomic_store(&server->serving, 0);
     return result;

@@ -1364,10 +1364,19 @@ neverc_h2_client_t *neverc_h2_client_dial_context(
         if (error) *error = "invalid HTTP/2 client configuration";
         return NULL;
     }
+    neverc_context_t *owned_background = NULL;
+    neverc_context_t *parent = parent_context;
+    if (!parent) {
+        parent = owned_background = neverc_context_background();
+        if (!parent) {
+            if (error) *error = "out of memory";
+            return NULL;
+        }
+    }
     neverc_context_t *context = neverc_context_with_timeout(
-        parent_context ? parent_context : neverc_context_background(),
-        config.timeout_ms, NULL);
+        parent, config.timeout_ms, NULL);
     if (!context) {
+        neverc_context_free(owned_background);
         if (error) *error = "out of memory";
         return NULL;
     }
@@ -1376,6 +1385,7 @@ neverc_h2_client_t *neverc_h2_client_dial_context(
         neverc_tcp_dial_context(addr, context, &tcp);
     if (dialed.status != NEVERC_NET_OK || !tcp) {
         neverc_context_free(context);
+        neverc_context_free(owned_background);
         if (error) *error = "HTTP/2 TCP dial failed";
         return NULL;
     }
@@ -1391,6 +1401,7 @@ neverc_h2_client_t *neverc_h2_client_dial_context(
         if (!tls_config) {
             neverc_tcp_close(tcp);
             neverc_context_free(context);
+            neverc_context_free(owned_background);
             if (error) *error = "out of memory";
             return NULL;
         }
@@ -1404,6 +1415,7 @@ neverc_h2_client_t *neverc_h2_client_dial_context(
             neverc_tls_config_free(tls_config);
             neverc_tcp_close(tcp);
             neverc_context_free(context);
+            neverc_context_free(owned_background);
             if (error) *error = "invalid HTTP/2 TLS configuration";
             return NULL;
         }
@@ -1420,6 +1432,7 @@ neverc_h2_client_t *neverc_h2_client_dial_context(
             if (tls) neverc_tls_close(tls);
             neverc_tcp_close(tcp);
             neverc_context_free(context);
+            neverc_context_free(owned_background);
             if (error) *error = tls_error
                 ? tls_error : "HTTP/2 ALPN negotiation failed";
             return NULL;
@@ -1432,6 +1445,7 @@ neverc_h2_client_t *neverc_h2_client_dial_context(
         if (tls) neverc_tls_close(tls);
         neverc_tcp_close(tcp);
         neverc_context_free(context);
+        neverc_context_free(owned_background);
         if (error) *error = "out of memory";
         return NULL;
     }
@@ -1465,6 +1479,7 @@ neverc_h2_client_t *neverc_h2_client_dial_context(
     if (!client->authority || !client->encoder || !client->decoder) {
         if (error) *error = "out of memory";
         neverc_context_free(context);
+        neverc_context_free(owned_background);
         neverc_h2_client_free(client);
         return NULL;
     }
@@ -1475,6 +1490,7 @@ neverc_h2_client_t *neverc_h2_client_dial_context(
         h2_client_write_settings(client) != 0) {
         if (error) *error = "failed to start HTTP/2 connection";
         neverc_context_free(context);
+        neverc_context_free(owned_background);
         neverc_h2_client_free(client);
         return NULL;
     }
@@ -1486,11 +1502,13 @@ neverc_h2_client_t *neverc_h2_client_dial_context(
                          h2_client_reader_main, client) != 0) {
         if (error) *error = "failed to start HTTP/2 connection";
         neverc_context_free(context);
+        neverc_context_free(owned_background);
         neverc_h2_client_free(client);
         return NULL;
     }
     client->reader_started = 1;
     neverc_context_free(context);
+    neverc_context_free(owned_background);
     return client;
 }
 
