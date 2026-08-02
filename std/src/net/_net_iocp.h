@@ -48,8 +48,8 @@ typedef struct {
  * address, so the poller recovers the owning operation with a plain cast.
  * Callers own the operation and every referenced buffer until completion.
  * The socket must first be associated with the destination completion port
- * through nc_poller_add(). After cancellation, callers must still dequeue the
- * completion before cleaning up the operation or its buffer.
+ * through nc_poller_associate_completion(). After cancellation, callers must
+ * still dequeue the completion before cleaning up the operation or its buffer.
  */
 typedef struct nc_iocp_op {
     OVERLAPPED overlapped;

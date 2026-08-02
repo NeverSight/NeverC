@@ -111,6 +111,12 @@ int neverc_ws_send_close(neverc_ws_conn_t *conn, uint16_t code, const char *reas
 int neverc_ws_read_message(neverc_ws_conn_t *conn, char *buf, size_t buflen,
                             size_t *out_len);
 
+/* Read one complete text or binary message and preserve its opcode. Control
+ * frames are handled internally. output is not NUL-terminated. */
+int neverc_ws_read_data_message(neverc_ws_conn_t *conn, int *opcode,
+                                void *output, size_t output_capacity,
+                                size_t *output_length);
+
 /* Write a complete text message. */
 int neverc_ws_write_message(neverc_ws_conn_t *conn, const char *msg);
 

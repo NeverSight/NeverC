@@ -44,6 +44,25 @@ TEST_F(BasicTest, SwarTokenBoundaries) {
                      "test_swar_token_boundaries: ALL PASSED");
 }
 
+TEST_F(BasicTest, SelfAssignFieldComparesFullObjectIdentity) {
+  auto src = tmpFile("self_assign_field_identity.c");
+  writeFile(src,
+            "struct Node { struct Node *next; };\n"
+            "void distinct(struct Node *a, struct Node *b) {\n"
+            "  a->next = b->next;\n"
+            "}\n"
+            "void same(struct Node *a) { a->next = a->next; }\n");
+  auto result = ncc({"-std=c11", "-Wall", "-Wself-assign-field",
+                     "-fsyntax-only", src.string()});
+  ASSERT_EQ(result.exitCode, 0) << result.err;
+  EXPECT_NE(result.err.find("same(struct Node"), std::string::npos)
+      << result.err;
+  EXPECT_NE(result.err.find("assigning field to itself"), std::string::npos)
+      << result.err;
+  EXPECT_EQ(result.err.find("distinct(struct Node"), std::string::npos)
+      << result.err;
+}
+
 // NeverC builtin string tests
 static const char *kStrFlags = "-std=c23 -fbuiltin-string";
 static const char *kStrGFlags = "-std=c23 -fbuiltin-string -g";

@@ -52,6 +52,9 @@ typedef struct {
 struct neverc_http_client {
     neverc_http_client_config_t config;
     http_conn_pool_t            pool;
+    char                       *root_cert_file;
+    char                       *client_cert_file;
+    char                       *client_key_file;
 };
 
 static neverc_http_client_t g_default_client = {
@@ -61,6 +64,10 @@ static neverc_http_client_t g_default_client = {
         .max_idle_per_host = POOL_MAX_IDLE_DEFAULT,
         .max_response_header_size = CLIENT_HEADER_LIMIT_DEFAULT,
         .max_response_body_size = CLIENT_BODY_LIMIT_DEFAULT,
+        .root_cert_file = NULL,
+        .client_cert_file = NULL,
+        .client_key_file = NULL,
+        .insecure_skip_verify = 0,
     },
     .pool = { .max_idle_per_host = POOL_MAX_IDLE_DEFAULT },
 };
@@ -192,12 +199,20 @@ neverc_http_client_config_t neverc_http_client_config_default(void) {
     config.max_idle_per_host = POOL_MAX_IDLE_DEFAULT;
     config.max_response_header_size = CLIENT_HEADER_LIMIT_DEFAULT;
     config.max_response_body_size = CLIENT_BODY_LIMIT_DEFAULT;
+    config.root_cert_file = NULL;
+    config.client_cert_file = NULL;
+    config.client_key_file = NULL;
+    config.insecure_skip_verify = 0;
     return config;
 }
 
 static int client_config_valid(const neverc_http_client_config_t *config) {
     return config && config->max_redirects >= 0 && config->timeout_ms > 0 &&
            config->max_idle_per_host >= 0 &&
+           (config->insecure_skip_verify == 0 ||
+            config->insecure_skip_verify == 1) &&
+           ((config->client_cert_file == NULL) ==
+            (config->client_key_file == NULL)) &&
            config->max_response_header_size > 0 &&
            config->max_response_body_size > 0 &&
            config->max_response_header_size <= SIZE_MAX - 4 &&
@@ -214,6 +229,27 @@ neverc_http_client_t *neverc_http_client_new(
         (neverc_http_client_t *)calloc(1, sizeof(*client));
     if (!client) return NULL;
     client->config = effective;
+    if (effective.root_cert_file)
+        client->root_cert_file = strndup_safe(
+            effective.root_cert_file, strlen(effective.root_cert_file));
+    if (effective.client_cert_file)
+        client->client_cert_file = strndup_safe(
+            effective.client_cert_file, strlen(effective.client_cert_file));
+    if (effective.client_key_file)
+        client->client_key_file = strndup_safe(
+            effective.client_key_file, strlen(effective.client_key_file));
+    if ((effective.root_cert_file && !client->root_cert_file) ||
+        (effective.client_cert_file && !client->client_cert_file) ||
+        (effective.client_key_file && !client->client_key_file)) {
+        free(client->client_key_file);
+        free(client->client_cert_file);
+        free(client->root_cert_file);
+        free(client);
+        return NULL;
+    }
+    client->config.root_cert_file = client->root_cert_file;
+    client->config.client_cert_file = client->client_cert_file;
+    client->config.client_key_file = client->client_key_file;
     client->pool.max_idle_per_host = effective.max_idle_per_host;
     pool_init(&client->pool);
     return client;
@@ -224,6 +260,9 @@ void neverc_http_client_free(neverc_http_client_t *client) {
     pool_close_idle(&client->pool);
     if (nc_atomic_load(&client->pool.initialized))
         nc_mutex_destroy(&client->pool.lock);
+    free(client->client_key_file);
+    free(client->client_cert_file);
+    free(client->root_cert_file);
     free(client);
 }
 
@@ -743,7 +782,8 @@ static int client_connection_read(client_connection_t *connection,
 }
 
 static client_connection_t *client_connection_dial(
-    const parsed_url_t *url, const char *connect_addr,
+    neverc_http_client_t *client, const parsed_url_t *url,
+    const char *connect_addr,
     neverc_context_t *context, const char **error) {
     neverc_tcp_conn_t *tcp = NULL;
     neverc_net_result_t dial_result = neverc_tcp_dial_context(
@@ -778,6 +818,20 @@ static client_connection_t *client_connection_dial(
         if (error) *error = "out of memory";
         return NULL;
     }
+    if ((client->config.root_cert_file &&
+         neverc_tls_config_add_root_certificates(
+             tls_config, client->config.root_cert_file) != 0) ||
+        (client->config.client_cert_file &&
+         neverc_tls_config_load_cert(tls_config,
+                                     client->config.client_cert_file,
+                                     client->config.client_key_file) != 0)) {
+        neverc_tls_config_free(tls_config);
+        client_connection_close(connection);
+        if (error) *error = "failed to configure HTTP client TLS identity";
+        return NULL;
+    }
+    if (client->config.insecure_skip_verify)
+        neverc_tls_config_insecure_skip_verify(tls_config);
     neverc_tls_config_set_server_name(tls_config, url->host);
     const char *alpn[] = { "http/1.1" };
     neverc_tls_config_set_alpn(tls_config, alpn, 1);
@@ -829,7 +883,8 @@ static neverc_http_response_t *do_request(neverc_http_client_t *client,
         from_pool = 1;
     } else {
         const char *dial_error = NULL;
-        conn = client_connection_dial(url, connect_addr, context, &dial_error);
+        conn = client_connection_dial(client, url, connect_addr, context,
+                                      &dial_error);
         if (!conn) return make_error_response(dial_error);
     }
 
@@ -851,7 +906,8 @@ static neverc_http_response_t *do_request(neverc_http_client_t *client,
     if (wr == -1 && from_pool && !url->is_https) {
         client_connection_close(conn);
         const char *dial_error = NULL;
-        conn = client_connection_dial(url, connect_addr, context, &dial_error);
+        conn = client_connection_dial(client, url, connect_addr, context,
+                                      &dial_error);
         if (!conn) return make_error_response(dial_error);
 
         if (build_http_request(&req, method, url, content_type, body,
@@ -1333,7 +1389,7 @@ static neverc_http_response_t *do_stream_request(
     if (!connection) {
         const char *dial_error = NULL;
         connection = client_connection_dial(
-            url, connect_addr, context, &dial_error);
+            client, url, connect_addr, context, &dial_error);
         if (!connection) return make_error_response(dial_error);
     }
 

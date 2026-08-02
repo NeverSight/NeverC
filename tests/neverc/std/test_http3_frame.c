@@ -94,9 +94,9 @@ static void test_frame_header_empty_buf(void) {
 static void test_settings_default(void) {
     h3_settings_t s;
     neverc_h3_settings_default(&s);
-    ASSERT_EQ(s.qpack_max_table_capacity, 4096);
+    ASSERT_EQ(s.qpack_max_table_capacity, 0);
     ASSERT_EQ(s.max_field_section_size, 16 * 1024 * 1024);
-    ASSERT_EQ(s.qpack_blocked_streams, 100);
+    ASSERT_EQ(s.qpack_blocked_streams, 0);
 }
 
 static void test_settings_encode_decode_roundtrip(void) {

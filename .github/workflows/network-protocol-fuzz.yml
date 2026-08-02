@@ -1,0 +1,142 @@
+name: network-protocol-fuzz
+
+permissions:
+  contents: read
+
+on:
+  push:
+    paths:
+      - 'std/include/neverc/std/net/**'
+      - 'std/src/net/**'
+      - 'tests/neverc/NetworkProtocolFuzzer.cpp'
+      - 'tests/neverc/NetworkProtocolFuzzAdapters.c'
+      - 'tests/neverc/network-protocol-corpus/**'
+      - 'tests/neverc/CMakeLists.txt'
+      - '.github/workflows/network-protocol-fuzz.yml'
+  pull_request:
+    paths:
+      - 'std/include/neverc/std/net/**'
+      - 'std/src/net/**'
+      - 'tests/neverc/NetworkProtocolFuzzer.cpp'
+      - 'tests/neverc/NetworkProtocolFuzzAdapters.c'
+      - 'tests/neverc/network-protocol-corpus/**'
+      - 'tests/neverc/CMakeLists.txt'
+      - '.github/workflows/network-protocol-fuzz.yml'
+  schedule:
+    - cron: '0 8 * * *'
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: 'Fuzz seconds (max_total_time)'
+        required: false
+        default: '600'
+
+concurrency:
+  group: network-protocol-fuzz-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fuzz:
+    if: >-
+      !startsWith(github.ref, 'refs/tags/') &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-22.04
+    env:
+      LLVM_APT_VER: '22'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          path: neverc
+
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y ninja-build cmake ccache
+
+      - name: Install Clang and compiler-rt
+        run: |
+          wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
+          chmod +x /tmp/llvm.sh
+          sudo /tmp/llvm.sh "$LLVM_APT_VER"
+          sudo apt-get install -y "libclang-rt-${LLVM_APT_VER}-dev" "lld-${LLVM_APT_VER}"
+          echo "CC=clang-${LLVM_APT_VER}" >> "$GITHUB_ENV"
+          echo "CXX=clang++-${LLVM_APT_VER}" >> "$GITHUB_ENV"
+
+      - name: Compute fuzz duration
+        run: |
+          case "${{ github.event_name }}" in
+            schedule) echo "FUZZ_SECONDS=1800" >> "$GITHUB_ENV" ;;
+            workflow_dispatch) echo "FUZZ_SECONDS=${{ github.event.inputs.duration }}" >> "$GITHUB_ENV" ;;
+            *) echo "FUZZ_SECONDS=120" >> "$GITHUB_ENV" ;;
+          esac
+
+      - name: Restore compiler cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: network-protocol-fuzz-ccache-${{ github.sha }}
+          restore-keys: |
+            network-protocol-fuzz-ccache-
+
+      - name: Configure protocol fuzzer
+        run: |
+          cmake -GNinja -Bbuild \
+            -DCMAKE_C_COMPILER="$CC" \
+            -DCMAKE_CXX_COMPILER="$CXX" \
+            -DLLVM_ENABLE_ASSERTIONS=ON \
+            -DNEVERC_ENABLE_LTO=OFF \
+            -DNEVERC_ENABLE_MIMALLOC=OFF \
+            -DNEVERC_NATIVE_ARCH=OFF \
+            -DNEVERC_STRIP_BINARY=OFF \
+            -DNEVERC_INCLUDE_TESTS=ON \
+            -DNEVERC_ENABLE_NETWORK_PROTOCOL_FUZZER=ON \
+            -C neverc/neverc/cmake/caches/NeverC.cmake \
+            neverc/llvm
+
+      - name: Build protocol fuzzer
+        run: cmake --build build --target neverc-network-protocol-fuzzer
+
+      - name: Restore fuzz corpus
+        uses: actions/cache/restore@v4
+        with:
+          path: fuzz-corpus
+          key: network-protocol-fuzz-corpus-${{ github.run_id }}
+          restore-keys: |
+            network-protocol-fuzz-corpus-
+
+      - name: Add committed seeds
+        run: |
+          mkdir -p fuzz-corpus
+          cp -R neverc/tests/neverc/network-protocol-corpus/. fuzz-corpus/
+
+      - name: Fuzz server protocol inputs
+        env:
+          ASAN_OPTIONS: detect_leaks=1:abort_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1:abort_on_error=1
+        run: |
+          mkdir -p fuzz-artifacts
+          FUZZER=$(find build -type f -name neverc-network-protocol-fuzzer | head -1)
+          test -x "$FUZZER"
+          "$FUZZER" \
+            -max_total_time="$FUZZ_SECONDS" \
+            -max_len=65536 \
+            -timeout=30 \
+            -rss_limit_mb=0 \
+            -print_final_stats=1 \
+            -artifact_prefix=fuzz-artifacts/ \
+            fuzz-corpus
+
+      - name: Save fuzz corpus
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: fuzz-corpus
+          key: network-protocol-fuzz-corpus-${{ github.run_id }}
+
+      - name: Upload findings
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: network-protocol-fuzz-findings
+          path: fuzz-artifacts
+          if-no-files-found: ignore

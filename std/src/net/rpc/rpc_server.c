@@ -1,6 +1,7 @@
 #include "neverc/std/net/rpc.h"
 
 #include "neverc/std/crypto/tls.h"
+#include "neverc/std/net/quic.h"
 #include "neverc/std/net/tcp.h"
 #include "neverc/std/thread.h"
 #include "../_net_buffer.h"
@@ -70,6 +71,8 @@ struct rpc_server_connection {
     neverc_rpc_server_t *server;
     neverc_tcp_conn_t *tcp;
     neverc_tls_conn_t *tls;
+    neverc_quic_conn_t *quic;
+    neverc_quic_stream_t *quic_stream;
     neverc_tls_config_t *tls_config;
     neverc_thread_channel_t *send_queue;
     nc_thread_t writer_thread;
@@ -96,6 +99,7 @@ struct neverc_rpc_server {
     neverc_context_t *serve_context;
     neverc_context_cancel_handle_t *serve_cancel;
     neverc_tcp_listener_t *listener;
+    neverc_quic_endpoint_t *quic_endpoint;
     neverc_thread_executor_t *connection_executor;
     neverc_thread_executor_t *handler_executor;
     neverc_tls_config_t *tls_config;
@@ -217,6 +221,9 @@ neverc_rpc_server_config_t neverc_rpc_server_config_default(void) {
 
 static int rpc_server_transport_read(rpc_server_connection_t *connection,
                                      void *data, size_t length) {
+    if (connection->quic_stream)
+        return neverc_quic_stream_read(connection->quic_stream,
+                                       data, length);
     return connection->tls
         ? neverc_tls_read(connection->tls, data, length)
         : neverc_tcp_read(connection->tcp, data, length);
@@ -228,7 +235,10 @@ static int rpc_server_transport_write_all(
     while (written < length) {
         size_t chunk = length - written;
         if (chunk > (size_t)INT_MAX) chunk = (size_t)INT_MAX;
-        int n = connection->tls
+        int n = connection->quic_stream
+            ? neverc_quic_stream_write(connection->quic_stream,
+                                       (const uint8_t *)data + written, chunk)
+            : connection->tls
             ? neverc_tls_write(connection->tls,
                                (const uint8_t *)data + written, chunk)
             : neverc_tcp_write(connection->tcp,
@@ -302,6 +312,9 @@ static void rpc_server_stop_connection(rpc_server_connection_t *connection) {
         (void)neverc_tcp_shutdown_read(connection->tcp);
         (void)neverc_tcp_shutdown_write(connection->tcp);
     }
+    if (connection->quic)
+        neverc_quic_conn_close(connection->quic, 0,
+                               "RPC server connection stopped");
     if (connection->send_queue)
         neverc_thread_channel_close(connection->send_queue);
     rpc_server_cancel_streams(connection);
@@ -384,6 +397,15 @@ const neverc_rpc_metadata_t *neverc_rpc_server_stream_metadata(
 neverc_rpc_codec_t neverc_rpc_server_stream_codec(
     neverc_rpc_server_stream_t *stream) {
     return stream ? stream->codec : NEVERC_RPC_CODEC_RAW;
+}
+
+const uint8_t *neverc_rpc_server_stream_peer_certificate(
+    neverc_rpc_server_stream_t *stream, size_t *out_len) {
+    if (!stream || !stream->connection || !stream->connection->tls) {
+        if (out_len) *out_len = 0;
+        return NULL;
+    }
+    return neverc_tls_peer_certificate(stream->connection->tls, out_len);
 }
 
 int neverc_rpc_server_stream_recv(
@@ -789,6 +811,9 @@ static void rpc_server_connection_destroy(
     }
     if (connection->tls) neverc_tls_close(connection->tls);
     if (connection->tcp) neverc_tcp_close(connection->tcp);
+    if (connection->quic_stream)
+        neverc_quic_stream_free(connection->quic_stream);
+    if (connection->quic) neverc_quic_conn_free(connection->quic);
     if (connection->send_queue)
         neverc_thread_channel_free(connection->send_queue);
     nc_cond_destroy(&connection->handlers_done);
@@ -801,6 +826,13 @@ static void rpc_server_connection_destroy(
 static void rpc_server_connection_task(void *arg) {
     rpc_server_connection_t *connection =
         (rpc_server_connection_t *)arg;
+    if (connection->quic && !connection->quic_stream) {
+        const char *stream_error = NULL;
+        connection->quic_stream = neverc_quic_accept_stream(
+            connection->quic, &stream_error);
+        (void)stream_error;
+        if (!connection->quic_stream) goto finished;
+    }
     if (connection->tls_config) {
         const char *tls_error = NULL;
         connection->tls = neverc_tls_server(
@@ -856,12 +888,14 @@ finished:
 }
 
 static rpc_server_connection_t *rpc_server_connection_create(
-    neverc_rpc_server_t *server, neverc_tcp_conn_t *tcp) {
+    neverc_rpc_server_t *server, neverc_tcp_conn_t *tcp,
+    neverc_quic_conn_t *quic) {
     rpc_server_connection_t *connection =
         (rpc_server_connection_t *)calloc(1, sizeof(*connection));
     if (!connection) return NULL;
     connection->server = server;
     connection->tcp = tcp;
+    connection->quic = quic;
     connection->tls_config = server->tls_config;
     connection->send_queue = neverc_thread_channel_create(
         server->config.send_queue_capacity);
@@ -1031,17 +1065,24 @@ void neverc_rpc_server_shutdown(neverc_rpc_server_t *server) {
     nc_atomic_store(&server->stop_requested, 1);
     nc_atomic_store(&server->running, 0);
     nc_mutex_lock(&server->lifecycle_lock);
+    neverc_quic_endpoint_t *quic_endpoint = server->quic_endpoint;
+    server->quic_endpoint = NULL;
     if (server->serve_cancel)
         neverc_context_cancel_handle_cancel(server->serve_cancel);
     for (rpc_server_connection_t *connection = server->connections;
          connection; connection = connection->next)
         rpc_server_stop_connection(connection);
     nc_mutex_unlock(&server->lifecycle_lock);
+    if (quic_endpoint) neverc_quic_endpoint_close(quic_endpoint);
 }
 
 static int rpc_server_serve(neverc_rpc_server_t *server, const char *addr,
-                            const char *cert_file, const char *key_file) {
+                            const char *cert_file, const char *key_file,
+                            const char *client_ca_file, int use_quic) {
     if (!server || !addr || ((cert_file == NULL) != (key_file == NULL)))
+        return -1;
+    if ((client_ca_file && !cert_file) ||
+        (use_quic && (!cert_file || !key_file || client_ca_file)))
         return -1;
     nc_atomic_store(&server->stop_requested, 0);
     if (!nc_atomic_cas(&server->serving, 0, 1)) return -1;
@@ -1059,22 +1100,47 @@ static int rpc_server_serve(neverc_rpc_server_t *server, const char *addr,
     if (!server->connection_executor || !server->handler_executor)
         goto cleanup;
 
-    if (cert_file) {
+    if (cert_file && !use_quic) {
         server->tls_config = neverc_tls_config_new();
         if (!server->tls_config ||
             neverc_tls_config_load_cert(server->tls_config, cert_file,
-                                        key_file) != 0)
+                                        key_file) != 0 ||
+            (client_ca_file &&
+             (neverc_tls_config_add_root_certificates(
+                  server->tls_config, client_ca_file) != 0 ||
+              neverc_tls_config_set_client_auth(
+                  server->tls_config,
+                  NEVERC_TLS_CLIENT_AUTH_REQUIRE_AND_VERIFY) != 0)))
             goto cleanup;
         const char *alpn[] = { "nrpc/1" };
         neverc_tls_config_set_alpn(server->tls_config, alpn, 1);
     }
     const char *listen_error = NULL;
-    server->listener = neverc_tcp_listen(addr, &listen_error);
-    (void)listen_error;
-    if (!server->listener) goto cleanup;
-    neverc_tcp_addr_t local_addr;
-    if (neverc_tcp_listener_addr(server->listener, &local_addr) == 0)
-        nc_atomic_store(&server->bound_port, local_addr.port);
+    neverc_quic_endpoint_t *quic_endpoint = NULL;
+    if (use_quic) {
+        const char *alpn[] = { "nrpc/1", NULL };
+        neverc_quic_config_t quic_config = neverc_quic_config_default();
+        quic_config.cert_file = cert_file;
+        quic_config.key_file = key_file;
+        quic_config.alpn = alpn;
+        quic_config.max_idle_timeout_ms =
+            (uint64_t)server->config.io_timeout_ms;
+        quic_endpoint = neverc_quic_listen(addr, &quic_config,
+                                            &listen_error);
+        if (!quic_endpoint) goto cleanup;
+        nc_mutex_lock(&server->lifecycle_lock);
+        server->quic_endpoint = quic_endpoint;
+        nc_mutex_unlock(&server->lifecycle_lock);
+        int port = neverc_quic_endpoint_bound_port(quic_endpoint);
+        if (port < 0) goto cleanup;
+        nc_atomic_store(&server->bound_port, port);
+    } else {
+        server->listener = neverc_tcp_listen(addr, &listen_error);
+        if (!server->listener) goto cleanup;
+        neverc_tcp_addr_t local_addr;
+        if (neverc_tcp_listener_addr(server->listener, &local_addr) == 0)
+            nc_atomic_store(&server->bound_port, local_addr.port);
+    }
     if (nc_atomic_load(&server->stop_requested)) {
         result = 0;
         goto cleanup;
@@ -1085,25 +1151,39 @@ static int rpc_server_serve(neverc_rpc_server_t *server, const char *addr,
 
     while (nc_atomic_load(&server->running)) {
         neverc_tcp_conn_t *tcp = NULL;
-        neverc_net_result_t accepted = neverc_tcp_accept_context(
-            server->listener, server->serve_context, &tcp);
-        if (accepted.status != NEVERC_NET_OK || !tcp) {
-            if (neverc_context_done(server->serve_context) ||
-                !nc_atomic_load(&server->running))
-                break;
-            result = -1;
-            goto cleanup;
+        neverc_quic_conn_t *quic = NULL;
+        if (use_quic) {
+            quic = neverc_quic_accept(quic_endpoint, &listen_error);
+            if (!quic) {
+                if (!nc_atomic_load(&server->running)) break;
+                result = -1;
+                goto cleanup;
+            }
+        } else {
+            neverc_net_result_t accepted = neverc_tcp_accept_context(
+                server->listener, server->serve_context, &tcp);
+            if (accepted.status != NEVERC_NET_OK || !tcp) {
+                if (neverc_context_done(server->serve_context) ||
+                    !nc_atomic_load(&server->running))
+                    break;
+                result = -1;
+                goto cleanup;
+            }
         }
         if ((size_t)nc_atomic_load(&server->active_connections) >=
             server->config.max_connections) {
-            neverc_tcp_close(tcp);
+            if (quic) neverc_quic_conn_free(quic);
+            if (tcp) neverc_tcp_close(tcp);
             continue;
         }
-        (void)neverc_tcp_set_timeout(tcp, server->config.io_timeout_ms);
+        if (tcp)
+            (void)neverc_tcp_set_timeout(tcp,
+                                         server->config.io_timeout_ms);
         rpc_server_connection_t *connection =
-            rpc_server_connection_create(server, tcp);
+            rpc_server_connection_create(server, tcp, quic);
         if (!connection) {
-            neverc_tcp_close(tcp);
+            if (quic) neverc_quic_conn_free(quic);
+            if (tcp) neverc_tcp_close(tcp);
             continue;
         }
 
@@ -1166,14 +1246,30 @@ cleanup:
 
 int neverc_rpc_server_listen_and_serve(neverc_rpc_server_t *server,
                                        const char *addr) {
-    return rpc_server_serve(server, addr, NULL, NULL);
+    return rpc_server_serve(server, addr, NULL, NULL, NULL, 0);
 }
 
 int neverc_rpc_server_listen_and_serve_tls(
     neverc_rpc_server_t *server, const char *addr,
     const char *cert_file, const char *key_file) {
     if (!cert_file || !key_file) return -1;
-    return rpc_server_serve(server, addr, cert_file, key_file);
+    return rpc_server_serve(server, addr, cert_file, key_file, NULL, 0);
+}
+
+int neverc_rpc_server_listen_and_serve_mtls(
+    neverc_rpc_server_t *server, const char *addr,
+    const char *cert_file, const char *key_file,
+    const char *client_ca_file) {
+    if (!cert_file || !key_file || !client_ca_file) return -1;
+    return rpc_server_serve(server, addr, cert_file, key_file,
+                            client_ca_file, 0);
+}
+
+int neverc_rpc_server_listen_and_serve_quic(
+    neverc_rpc_server_t *server, const char *addr,
+    const char *cert_file, const char *key_file) {
+    if (!cert_file || !key_file) return -1;
+    return rpc_server_serve(server, addr, cert_file, key_file, NULL, 1);
 }
 
 size_t neverc_rpc_server_active_connections(neverc_rpc_server_t *server) {

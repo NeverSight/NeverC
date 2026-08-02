@@ -1327,6 +1327,10 @@ neverc_h2_client_config_t neverc_h2_client_config_default(void) {
     config.max_response_header_list_size =
         NC_H2_DEFAULT_MAX_HEADER_LIST_SIZE;
     config.max_response_body_size = 16U * 1024U * 1024U;
+    config.root_cert_file = NULL;
+    config.client_cert_file = NULL;
+    config.client_key_file = NULL;
+    config.insecure_skip_verify = 0;
     return config;
 }
 
@@ -1337,7 +1341,11 @@ static int h2_client_config_valid(
            config->initial_window_size <= INT32_MAX &&
            config->max_response_header_list_size > 0 &&
            config->max_response_header_list_size <= UINT32_MAX &&
-           config->max_response_body_size > 0;
+           config->max_response_body_size > 0 &&
+           (config->insecure_skip_verify == 0 ||
+            config->insecure_skip_verify == 1) &&
+           ((config->client_cert_file == NULL) ==
+            (config->client_key_file == NULL));
 }
 
 neverc_h2_client_t *neverc_h2_client_dial_context(
@@ -1348,6 +1356,10 @@ neverc_h2_client_t *neverc_h2_client_dial_context(
     neverc_h2_client_config_t config = input_config
         ? *input_config : neverc_h2_client_config_default();
     if (!addr || !server_name || !server_name[0] ||
+        (use_tls != 0 && use_tls != 1) ||
+        (!use_tls && (config.root_cert_file || config.client_cert_file ||
+                      config.client_key_file ||
+                      config.insecure_skip_verify)) ||
         !h2_client_config_valid(&config)) {
         if (error) *error = "invalid HTTP/2 client configuration";
         return NULL;
@@ -1382,6 +1394,21 @@ neverc_h2_client_t *neverc_h2_client_dial_context(
             if (error) *error = "out of memory";
             return NULL;
         }
+        if ((config.root_cert_file &&
+             neverc_tls_config_add_root_certificates(
+                 tls_config, config.root_cert_file) != 0) ||
+            (config.client_cert_file &&
+             neverc_tls_config_load_cert(tls_config,
+                                         config.client_cert_file,
+                                         config.client_key_file) != 0)) {
+            neverc_tls_config_free(tls_config);
+            neverc_tcp_close(tcp);
+            neverc_context_free(context);
+            if (error) *error = "invalid HTTP/2 TLS configuration";
+            return NULL;
+        }
+        if (config.insecure_skip_verify)
+            neverc_tls_config_insecure_skip_verify(tls_config);
         neverc_tls_config_set_server_name(tls_config, server_name);
         const char *alpn[] = {"h2"};
         neverc_tls_config_set_alpn(tls_config, alpn, 1);
@@ -1409,6 +1436,9 @@ neverc_h2_client_t *neverc_h2_client_dial_context(
         return NULL;
     }
     client->config = config;
+    client->config.root_cert_file = NULL;
+    client->config.client_cert_file = NULL;
+    client->config.client_key_file = NULL;
     client->tcp = tcp;
     client->tls = tls;
     client->authority = strdup(server_name);
@@ -1442,8 +1472,17 @@ neverc_h2_client_t *neverc_h2_client_dial_context(
     if (h2_client_transport_write_all(
             client, NC_H2_CLIENT_PREFACE,
             NC_H2_CLIENT_PREFACE_LEN) != 0 ||
-        h2_client_write_settings(client) != 0 ||
-        nc_thread_create(&client->reader_thread,
+        h2_client_write_settings(client) != 0) {
+        if (error) *error = "failed to start HTTP/2 connection";
+        neverc_context_free(context);
+        neverc_h2_client_free(client);
+        return NULL;
+    }
+    if (deadline > 0) {
+        (void)neverc_tcp_set_read_deadline(tcp, 0);
+        (void)neverc_tcp_set_write_deadline(tcp, 0);
+    }
+    if (nc_thread_create(&client->reader_thread,
                          h2_client_reader_main, client) != 0) {
         if (error) *error = "failed to start HTTP/2 connection";
         neverc_context_free(context);
@@ -1451,10 +1490,6 @@ neverc_h2_client_t *neverc_h2_client_dial_context(
         return NULL;
     }
     client->reader_started = 1;
-    if (deadline > 0) {
-        (void)neverc_tcp_set_read_deadline(tcp, 0);
-        (void)neverc_tcp_set_write_deadline(tcp, 0);
-    }
     neverc_context_free(context);
     return client;
 }

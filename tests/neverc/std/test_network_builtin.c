@@ -1,6 +1,7 @@
 #include "neverc/std/net.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define CHECK(condition)                                                     \
@@ -60,7 +61,7 @@ int main(void) {
     net.udp.close(udp);
 
     err = NULL;
-    CHECK(net.websocket.dial("wss://localhost/ws", NULL, &err) == NULL);
+    CHECK(net.websocket.dial("not-a-websocket-url", NULL, &err) == NULL);
     CHECK(err != NULL);
 
     neverc_quic_config_t quic_cfg = net.quic.config_default();
@@ -74,6 +75,45 @@ int main(void) {
     CHECK(net.http3.listen_and_serve("127.0.0.1:0", http3,
                                       "cert.pem", "key.pem") == -1);
     net.http3.server_destroy(http3);
+
+    neverc_http_unified_server_t *unified =
+        net.http3.unified_server_create(NULL);
+    CHECK(unified != NULL);
+    CHECK(net.http3.unified_server_is_running(unified) == 0);
+    CHECK(net.http3.unified_server_bound_port(unified) == -1);
+    CHECK(net.http3.unified_server_listen_and_serve(
+              unified, "127.0.0.1:0", "cert.pem", "key.pem") == -1);
+    net.http3.unified_server_shutdown(unified);
+    neverc_qpack_encoder_t *qpack_encoder =
+        net.http3.qpack_encoder_create(0);
+    neverc_qpack_decoder_t *qpack_decoder =
+        net.http3.qpack_decoder_create(0);
+    CHECK(qpack_encoder != NULL);
+    CHECK(qpack_decoder != NULL);
+    neverc_qpack_header_t source_header;
+    source_header.name = ":method";
+    source_header.value = "GET";
+    uint8_t encoded_header[64];
+    size_t encoded_length = 0;
+    CHECK(net.http3.qpack_encode(qpack_encoder, &source_header, 1,
+                                 encoded_header, sizeof(encoded_header),
+                                 &encoded_length) == 0);
+    CHECK(encoded_length > 0);
+    neverc_qpack_header_t decoded_header;
+    int decoded_count = 0;
+    CHECK(net.http3.qpack_decode(qpack_decoder, encoded_header,
+                                 encoded_length, &decoded_header, 1,
+                                 &decoded_count) == 0);
+    CHECK(decoded_count == 1);
+    CHECK(strcmp(decoded_header.name, ":method") == 0);
+    CHECK(strcmp(decoded_header.value, "GET") == 0);
+    free(decoded_header.name);
+    free(decoded_header.value);
+    net.http3.qpack_encoder_destroy(qpack_encoder);
+    net.http3.qpack_decoder_destroy(qpack_decoder);
+    net.http3.unified_server_destroy(unified);
+    CHECK(net.http3.serve_all("127.0.0.1:0", NULL,
+                              "cert.pem", "key.pem") == -1);
 #else
     CHECK(strcmp(neverc_http_status_text(200), "OK") == 0);
 #endif

@@ -2,6 +2,7 @@
 
 #include "neverc/std/crypto/rand.h"
 #include "neverc/std/crypto/tls.h"
+#include "neverc/std/net/quic.h"
 #include "neverc/std/net/tcp.h"
 #include "neverc/std/thread.h"
 #include "../_net_buffer.h"
@@ -41,8 +42,12 @@ struct neverc_rpc_client {
     char *addr;
     char *server_name;
     char *root_ca_file;
+    char *client_cert_file;
+    char *client_key_file;
     neverc_tcp_conn_t *tcp;
     neverc_tls_conn_t *tls;
+    neverc_quic_conn_t *quic;
+    neverc_quic_stream_t *quic_stream;
     neverc_thread_channel_t *send_queue;
     nc_thread_t reader_thread;
     nc_thread_t writer_thread;
@@ -85,7 +90,13 @@ static int rpc_config_valid(const neverc_rpc_client_config_t *config) {
            (config->reconnect_enabled == 0 ||
             config->reconnect_enabled == 1) &&
            config->reconnect_backoff_ms >= 0 &&
-           (config->use_tls == 0 || config->use_tls == 1);
+           (config->use_tls == 0 || config->use_tls == 1) &&
+           (config->use_quic == 0 || config->use_quic == 1) &&
+           !(config->use_tls && config->use_quic) &&
+           ((config->client_cert_file == NULL) ==
+            (config->client_key_file == NULL)) &&
+           (!config->client_cert_file ||
+            (config->use_tls == 1 && config->use_quic == 0));
 }
 
 neverc_rpc_client_config_t neverc_rpc_client_config_default(void) {
@@ -115,6 +126,8 @@ neverc_rpc_call_options_t neverc_rpc_call_options_default(void) {
 
 static int rpc_transport_read(neverc_rpc_client_t *client,
                               void *data, size_t length) {
+    if (client->quic_stream)
+        return neverc_quic_stream_read(client->quic_stream, data, length);
     return client->tls ? neverc_tls_read(client->tls, data, length)
                        : neverc_tcp_read(client->tcp, data, length);
 }
@@ -125,7 +138,10 @@ static int rpc_transport_write_all(neverc_rpc_client_t *client,
     while (written < length) {
         size_t chunk = length - written;
         if (chunk > (size_t)INT_MAX) chunk = (size_t)INT_MAX;
-        int n = client->tls
+        int n = client->quic_stream
+            ? neverc_quic_stream_write(client->quic_stream,
+                                       (const uint8_t *)data + written, chunk)
+            : client->tls
             ? neverc_tls_write(client->tls,
                                (const uint8_t *)data + written, chunk)
             : neverc_tcp_write(client->tcp,
@@ -181,6 +197,8 @@ static void rpc_client_stop_transport(neverc_rpc_client_t *client,
         (void)neverc_tcp_shutdown_read(client->tcp);
         (void)neverc_tcp_shutdown_write(client->tcp);
     }
+    if (client->quic)
+        neverc_quic_conn_close(client->quic, 0, "RPC transport stopped");
     neverc_thread_channel_close(client->send_queue);
     rpc_client_fail_streams(client, code, message);
 }
@@ -422,12 +440,85 @@ static int rpc_addr_host(const char *addr, char *host, size_t capacity) {
     return 0;
 }
 
+typedef struct {
+    neverc_tcp_conn_t *tcp;
+    neverc_tls_conn_t *tls;
+    neverc_quic_conn_t *quic;
+    neverc_quic_stream_t *quic_stream;
+} rpc_client_transport_t;
+
+static void rpc_close_dialed_transport(rpc_client_transport_t *transport) {
+    if (!transport) return;
+    if (transport->tls) neverc_tls_close(transport->tls);
+    if (transport->tcp) neverc_tcp_close(transport->tcp);
+    if (transport->quic_stream)
+        neverc_quic_stream_free(transport->quic_stream);
+    if (transport->quic) neverc_quic_conn_free(transport->quic);
+    memset(transport, 0, sizeof(*transport));
+}
+
 static int rpc_dial_transport(
     const char *addr, const neverc_rpc_client_config_t *config,
-    neverc_context_t *parent, neverc_tcp_conn_t **tcp_out,
-    neverc_tls_conn_t **tls_out, const char **errp) {
-    *tcp_out = NULL;
-    *tls_out = NULL;
+    neverc_context_t *parent, rpc_client_transport_t *transport,
+    const char **errp) {
+    memset(transport, 0, sizeof(*transport));
+    if (config->use_quic) {
+        if (neverc_context_done(parent)) {
+            rpc_set_error(errp, "RPC QUIC dial cancelled");
+            return -1;
+        }
+        char derived_host[256];
+        const char *server_name = config->server_name;
+        if (!server_name && rpc_addr_host(addr, derived_host,
+                                          sizeof(derived_host)) == 0)
+            server_name = derived_host;
+        const char *alpn[] = { "nrpc/1", NULL };
+        neverc_quic_config_t quic_config = neverc_quic_config_default();
+        quic_config.alpn = alpn;
+        quic_config.server_name = server_name;
+        quic_config.root_cert_file = config->root_ca_file;
+        quic_config.max_idle_timeout_ms =
+            (uint64_t)config->io_timeout_ms;
+        if (!server_name || !server_name[0]) {
+            rpc_set_error(errp, "RPC QUIC dial requires a server name");
+            return -1;
+        }
+        neverc_context_cancel_handle_t *dial_cancel = NULL;
+        neverc_context_t *dial_context = neverc_context_with_timeout_handle(
+            parent, config->connect_timeout_ms, &dial_cancel);
+        if (!dial_context || !dial_cancel) {
+            if (dial_context) neverc_context_free(dial_context);
+            if (dial_cancel)
+                neverc_context_cancel_handle_free(dial_cancel);
+            rpc_set_error(errp, "failed to create RPC QUIC dial context");
+            return -1;
+        }
+        transport->quic = neverc_quic_dial_context(
+            addr, &quic_config, dial_context, errp);
+        neverc_context_cancel_handle_cancel(dial_cancel);
+        neverc_context_free(dial_context);
+        neverc_context_cancel_handle_free(dial_cancel);
+        if (!transport->quic) return -1;
+        if (neverc_context_done(parent)) {
+            rpc_close_dialed_transport(transport);
+            rpc_set_error(errp, "RPC QUIC dial cancelled");
+            return -1;
+        }
+        const char *negotiated = neverc_quic_conn_alpn(transport->quic);
+        if (!negotiated || strcmp(negotiated, "nrpc/1") != 0) {
+            rpc_close_dialed_transport(transport);
+            rpc_set_error(errp, "RPC peer did not negotiate nrpc/1");
+            return -1;
+        }
+        transport->quic_stream = neverc_quic_open_stream(
+            transport->quic, errp);
+        if (!transport->quic_stream) {
+            rpc_close_dialed_transport(transport);
+            return -1;
+        }
+        return 0;
+    }
+
     neverc_context_cancel_handle_t *dial_cancel = NULL;
     neverc_context_t *dial_context = neverc_context_with_timeout_handle(
         parent, config->connect_timeout_ms, &dial_cancel);
@@ -464,7 +555,11 @@ static int rpc_dial_transport(
         if (!tls_config || !server_name || !server_name[0] ||
             (config->root_ca_file &&
              neverc_tls_config_add_root_certificates(
-                 tls_config, config->root_ca_file) != 0)) {
+                 tls_config, config->root_ca_file) != 0) ||
+            (config->client_cert_file &&
+             neverc_tls_config_load_cert(tls_config,
+                                         config->client_cert_file,
+                                         config->client_key_file) != 0)) {
             neverc_tls_config_free(tls_config);
             neverc_tcp_close(tcp);
             rpc_set_error(errp, "invalid RPC TLS configuration");
@@ -490,8 +585,8 @@ static int rpc_dial_transport(
             return -1;
         }
     }
-    *tcp_out = tcp;
-    *tls_out = tls;
+    transport->tcp = tcp;
+    transport->tls = tls;
     return 0;
 }
 
@@ -506,10 +601,9 @@ neverc_rpc_client_t *neverc_rpc_client_dial(
         return NULL;
     }
 
-    neverc_tcp_conn_t *tcp = NULL;
-    neverc_tls_conn_t *tls = NULL;
+    rpc_client_transport_t transport;
     if (rpc_dial_transport(addr, &effective, neverc_context_background(),
-                           &tcp, &tls, errp) != 0)
+                           &transport, errp) != 0)
         return NULL;
 
     neverc_rpc_client_t *client =
@@ -521,10 +615,18 @@ neverc_rpc_client_t *neverc_rpc_client_dial(
         client->server_name = strdup(effective.server_name);
     if (effective.root_ca_file)
         client->root_ca_file = strdup(effective.root_ca_file);
+    if (effective.client_cert_file)
+        client->client_cert_file = strdup(effective.client_cert_file);
+    if (effective.client_key_file)
+        client->client_key_file = strdup(effective.client_key_file);
     client->config.server_name = NULL;
     client->config.root_ca_file = NULL;
-    client->tcp = tcp;
-    client->tls = tls;
+    client->config.client_cert_file = NULL;
+    client->config.client_key_file = NULL;
+    client->tcp = transport.tcp;
+    client->tls = transport.tls;
+    client->quic = transport.quic;
+    client->quic_stream = transport.quic_stream;
     client->next_request_id = 1;
     client->streams = (neverc_rpc_stream_t **)calloc(
         effective.max_inflight_streams, sizeof(*client->streams));
@@ -533,7 +635,11 @@ neverc_rpc_client_t *neverc_rpc_client_dial(
     if (!client->addr ||
         (effective.server_name && !client->server_name) ||
         (effective.root_ca_file && !client->root_ca_file) ||
+        (effective.client_cert_file && !client->client_cert_file) ||
+        (effective.client_key_file && !client->client_key_file) ||
         !client->streams || !client->send_queue) {
+        free(client->client_key_file);
+        free(client->client_cert_file);
         free(client->root_ca_file);
         free(client->server_name);
         free(client->addr);
@@ -568,8 +674,13 @@ neverc_rpc_client_t *neverc_rpc_client_dial(
 start_failed:
     nc_atomic_store(&client->running, 0);
     neverc_thread_channel_close(client->send_queue);
-    (void)neverc_tcp_shutdown_read(tcp);
-    (void)neverc_tcp_shutdown_write(tcp);
+    if (client->tcp) {
+        (void)neverc_tcp_shutdown_read(client->tcp);
+        (void)neverc_tcp_shutdown_write(client->tcp);
+    }
+    if (client->quic)
+        neverc_quic_conn_close(client->quic, 0,
+                               "RPC client startup failed");
     if (client->keepalive_started) nc_thread_join(client->keepalive_thread);
     if (client->reader_started) nc_thread_join(client->reader_thread);
     if (client->writer_started) nc_thread_join(client->writer_thread);
@@ -578,13 +689,14 @@ start_failed:
     nc_mutex_destroy(&client->lifecycle_lock);
     neverc_thread_channel_free(client->send_queue);
     free(client->streams);
+    free(client->client_key_file);
+    free(client->client_cert_file);
     free(client->root_ca_file);
     free(client->server_name);
     free(client->addr);
     free(client);
 allocation_failed:
-    if (tls) neverc_tls_close(tls);
-    neverc_tcp_close(tcp);
+    rpc_close_dialed_transport(&transport);
     rpc_set_error(errp, "failed to allocate RPC client");
     return NULL;
 }
@@ -624,6 +736,14 @@ static void rpc_client_release_transport(neverc_rpc_client_t *client) {
     if (client->tcp) {
         neverc_tcp_close(client->tcp);
         client->tcp = NULL;
+    }
+    if (client->quic_stream) {
+        neverc_quic_stream_free(client->quic_stream);
+        client->quic_stream = NULL;
+    }
+    if (client->quic) {
+        neverc_quic_conn_free(client->quic);
+        client->quic = NULL;
     }
     if (client->send_queue) {
         neverc_thread_channel_free(client->send_queue);
@@ -697,24 +817,26 @@ int neverc_rpc_client_reconnect(neverc_rpc_client_t *client,
     neverc_rpc_client_config_t dial_config = client->config;
     dial_config.server_name = client->server_name;
     dial_config.root_ca_file = client->root_ca_file;
-    neverc_tcp_conn_t *tcp = NULL;
-    neverc_tls_conn_t *tls = NULL;
+    dial_config.client_cert_file = client->client_cert_file;
+    dial_config.client_key_file = client->client_key_file;
+    rpc_client_transport_t transport;
     if (rpc_dial_transport(client->addr, &dial_config, context,
-                           &tcp, &tls, errp) != 0) {
+                           &transport, errp) != 0) {
         nc_mutex_unlock(&client->lifecycle_lock);
         return NEVERC_RPC_IO_CLOSED;
     }
     neverc_thread_channel_t *send_queue = neverc_thread_channel_create(
         client->config.send_queue_capacity);
     if (!send_queue) {
-        if (tls) neverc_tls_close(tls);
-        neverc_tcp_close(tcp);
+        rpc_close_dialed_transport(&transport);
         nc_mutex_unlock(&client->lifecycle_lock);
         rpc_set_error(errp, "failed to allocate RPC reconnect queue");
         return NEVERC_RPC_IO_NOMEM;
     }
-    client->tcp = tcp;
-    client->tls = tls;
+    client->tcp = transport.tcp;
+    client->tls = transport.tls;
+    client->quic = transport.quic;
+    client->quic_stream = transport.quic_stream;
     client->send_queue = send_queue;
     client->generation++;
     nc_mutex_lock(&client->keepalive_lock);
@@ -836,6 +958,7 @@ neverc_rpc_stream_t *neverc_rpc_stream_open_codec(
         client->next_request_id > UINT64_MAX - 2) {
         nc_mutex_unlock(&client->streams_lock);
         rpc_set_error(errp, "RPC connection stream limit reached");
+        free(payload);
         goto open_failed;
     }
     stream->request_id = client->next_request_id;
@@ -1082,6 +1205,8 @@ void neverc_rpc_client_close(neverc_rpc_client_t *client) {
         (void)neverc_tcp_shutdown_read(client->tcp);
         (void)neverc_tcp_shutdown_write(client->tcp);
     }
+    if (client->quic)
+        neverc_quic_conn_close(client->quic, 0, "RPC client closed");
     rpc_client_join_pumps(client);
     rpc_client_release_transport(client);
     nc_mutex_unlock(&client->lifecycle_lock);
@@ -1089,6 +1214,8 @@ void neverc_rpc_client_close(neverc_rpc_client_t *client) {
     nc_mutex_destroy(&client->streams_lock);
     nc_mutex_destroy(&client->lifecycle_lock);
     free(client->streams);
+    free(client->client_key_file);
+    free(client->client_cert_file);
     free(client->root_ca_file);
     free(client->server_name);
     free(client->addr);

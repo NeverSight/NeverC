@@ -9,6 +9,7 @@ fi
 
 repo_root=$1
 compiler=${CC:-clang}
+cxx_compiler=${CXX:-clang++}
 std_root="$repo_root/std"
 test_root="$repo_root/tests/neverc/std"
 work_dir=$(mktemp -d "${TMPDIR:-/tmp}/neverc-network-sanitizers.XXXXXX")
@@ -74,5 +75,108 @@ TSAN_OPTIONS=${TSAN_OPTIONS:-halt_on_error=1:history_size=7} \
   "$work_dir/net-internals-tsan"
 TSAN_OPTIONS=${TSAN_OPTIONS:-halt_on_error=1:history_size=7} \
   "$work_dir/net-transport-tsan"
+
+protocol_flags=(
+  -O1
+  -g
+  -fno-omit-frame-pointer
+  -ffunction-sections
+  -fdata-sections
+  -Wall
+  -Wextra
+  -Werror
+  -Wno-unused-parameter
+  -Wno-unused-function
+  -DNEVERC_NETWORK_PROTOCOL_FUZZING=1
+  -fsanitize=address,undefined
+  "-I$std_root/include"
+  "-I$std_root/src/net"
+  "-I$std_root/src/net/quic"
+)
+protocol_sources=(
+  "$repo_root/tests/neverc/NetworkProtocolFuzzAdapters.c"
+  "$std_root/src/net/http/http.c"
+  "$std_root/src/net/websocket/websocket.c"
+  "$std_root/src/net/http/http2/http2.c"
+  "$std_root/src/net/http/http2/http2_server.c"
+  "$std_root/src/net/http3/http3_frame.c"
+  "$std_root/src/net/quic/quic_varint.c"
+  "$std_root/src/net/quic/quic_packet.c"
+  "$std_root/src/net/quic/quic_frame.c"
+  "$std_root/src/net/quic/quic_transport_params.c"
+  "$std_root/src/net/rpc/rpc_frame.c"
+)
+protocol_objects=()
+for source in "${protocol_sources[@]}"; do
+  object="$work_dir/protocol-${#protocol_objects[@]}.o"
+  "$compiler" -std=gnu11 "${protocol_flags[@]}" -c "$source" -o "$object"
+  protocol_objects+=("$object")
+done
+for source in \
+  "$repo_root/tests/neverc/NetworkProtocolFuzzer.cpp" \
+  "$repo_root/tests/neverc/NetworkProtocolCorpusRunner.cpp"; do
+  object="$work_dir/protocol-${#protocol_objects[@]}.o"
+  "$cxx_compiler" -std=c++17 "${protocol_flags[@]}" -c "$source" -o "$object"
+  protocol_objects+=("$object")
+done
+dead_strip_flag=-Wl,--gc-sections
+if [[ $(uname -s) == Darwin ]]; then
+  dead_strip_flag=-Wl,-dead_strip
+fi
+"$cxx_compiler" -fsanitize=address,undefined "$dead_strip_flag" \
+  "${protocol_objects[@]}" -pthread -lm -o "$work_dir/network-protocol-corpus"
+ASAN_OPTIONS=$asan_options \
+UBSAN_OPTIONS=${UBSAN_OPTIONS:-halt_on_error=1:print_stacktrace=1} \
+  "$work_dir/network-protocol-corpus" \
+  "$repo_root/tests/neverc/network-protocol-corpus"
+
+full_std_sources=()
+while IFS= read -r source; do
+  full_std_sources+=("$repo_root/$source")
+done < <(cd "$repo_root" && rg --files std/src | rg '\.c$')
+full_platform_libraries=(-pthread -lm -lresolv)
+if [[ $(uname -s) == Linux ]]; then
+  full_platform_libraries+=(-ldl)
+fi
+full_stack_tests=(
+  http_stage5
+  rpc
+  grpc
+  quic_e2e
+  quic_network_sim
+  http3_e2e
+)
+for name in "${full_stack_tests[@]}"; do
+  "$compiler" -std=gnu11 "${protocol_flags[@]}" \
+    "$test_root/test_$name.c" "${full_std_sources[@]}" \
+    "${full_platform_libraries[@]}" -o "$work_dir/$name-asan-ubsan"
+  (cd "$work_dir" && \
+    ASAN_OPTIONS=$asan_options \
+    UBSAN_OPTIONS=${UBSAN_OPTIONS:-halt_on_error=1:print_stacktrace=1} \
+      "./$name-asan-ubsan")
+done
+
+full_tsan_flags=(
+  -O1
+  -g
+  -fno-omit-frame-pointer
+  -Wall
+  -Wextra
+  -Werror
+  -Wno-unused-parameter
+  -Wno-unused-function
+  -fsanitize=thread
+  "-I$std_root/include"
+  "-I$std_root/src/net"
+  "-I$std_root/src/net/quic"
+)
+for name in "${full_stack_tests[@]}"; do
+  "$compiler" -std=gnu11 "${full_tsan_flags[@]}" \
+    "$test_root/test_$name.c" "${full_std_sources[@]}" \
+    "${full_platform_libraries[@]}" -o "$work_dir/$name-tsan"
+  (cd "$work_dir" && \
+    TSAN_OPTIONS=${TSAN_OPTIONS:-halt_on_error=1:history_size=7} \
+      "./$name-tsan")
+done
 
 echo "network-core sanitizer gates passed"

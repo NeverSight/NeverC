@@ -9,9 +9,11 @@
 #include <pthread.h>
 #include <unistd.h>
 #include <signal.h>
+#include <sys/resource.h>
 #include <sys/time.h>
 #else
 #include <windows.h>
+#include <psapi.h>
 #endif
 
 /* ======================================================================
@@ -43,6 +45,44 @@ static uint64_t now_us(void) {
     gettimeofday(&tv, NULL);
     return (uint64_t)tv.tv_sec * 1000000 + (uint64_t)tv.tv_usec;
 #endif
+}
+
+static uint64_t process_rss_bytes(void) {
+#ifdef _WIN32
+    typedef BOOL(WINAPI *get_memory_info_fn)(
+        HANDLE, PPROCESS_MEMORY_COUNTERS, DWORD);
+    HMODULE kernel = GetModuleHandleA("kernel32.dll");
+    get_memory_info_fn get_memory_info = kernel ? (get_memory_info_fn)(
+        void *)GetProcAddress(kernel, "K32GetProcessMemoryInfo") : NULL;
+    PROCESS_MEMORY_COUNTERS counters;
+    if (!get_memory_info ||
+        !get_memory_info(GetCurrentProcess(), &counters, sizeof(counters)))
+        return 0;
+    return (uint64_t)counters.WorkingSetSize;
+#else
+    struct rusage usage;
+    if (getrusage(RUSAGE_SELF, &usage) != 0) return 0;
+#ifdef __APPLE__
+    return (uint64_t)usage.ru_maxrss;
+#else
+    return (uint64_t)usage.ru_maxrss * 1024U;
+#endif
+#endif
+}
+
+static int compare_u64(const void *left, const void *right) {
+    uint64_t a = *(const uint64_t *)left;
+    uint64_t b = *(const uint64_t *)right;
+    return (a > b) - (a < b);
+}
+
+static uint64_t percentile_us(const uint64_t *sorted, size_t count,
+                              unsigned percentile) {
+    if (!sorted || count == 0) return 0;
+    size_t rank = ((size_t)percentile * count + 99U) / 100U;
+    if (rank == 0) rank = 1;
+    if (rank > count) rank = count;
+    return sorted[rank - 1U];
 }
 
 /* ===== Handlers ===== */
@@ -100,6 +140,7 @@ typedef struct {
     int requests;
     int success;
     uint64_t elapsed_us;
+    uint64_t *latencies_us;
 } bench_result_t;
 
 #ifdef _WIN32
@@ -134,6 +175,7 @@ static void *bench_worker(void *arg) {
     size_t req_len = strlen(req_buf);
 
     for (int i = 0; i < res->requests; i++) {
+        uint64_t request_start = now_us();
         if (neverc_tcp_write(conn, req_buf, req_len) <= 0) break;
 
         char resp[4096];
@@ -158,8 +200,11 @@ static void *bench_worker(void *arg) {
                 }
             }
         }
-        if (found_end && strstr(resp, "200 OK"))
+        if (found_end && strstr(resp, "200 OK")) {
+            if (res->latencies_us)
+                res->latencies_us[res->success] = now_us() - request_start;
             res->success++;
+        }
     }
 
     neverc_tcp_close(conn);
@@ -197,6 +242,8 @@ static void test_throughput(void) {
         results[i].requests = requests_per_thread;
         results[i].success = 0;
         results[i].elapsed_us = 0;
+        results[i].latencies_us = (uint64_t *)calloc(
+            (size_t)requests_per_thread, sizeof(uint64_t));
 #ifdef _WIN32
         threads[i] = CreateThread(NULL, 0, bench_worker, &results[i], 0, NULL);
 #else
@@ -220,6 +267,20 @@ static void test_throughput(void) {
     for (int i = 0; i < nthreads; i++)
         total_success += results[i].success;
 
+    uint64_t *latencies = (uint64_t *)calloc(
+        (size_t)(total_success > 0 ? total_success : 1), sizeof(uint64_t));
+    size_t latency_count = 0;
+    for (int i = 0; i < nthreads; i++) {
+        if (latencies && results[i].latencies_us) {
+            memcpy(latencies + latency_count, results[i].latencies_us,
+                   (size_t)results[i].success * sizeof(uint64_t));
+            latency_count += (size_t)results[i].success;
+        }
+        free(results[i].latencies_us);
+    }
+    if (latencies) qsort(latencies, latency_count, sizeof(uint64_t),
+                         compare_u64);
+
     double rps = (double)total_success / ((double)elapsed / 1000000.0);
     double success_pct = 100.0 * (double)total_success / (double)total_requests;
 
@@ -228,6 +289,11 @@ static void test_throughput(void) {
            total_requests, total_success, success_pct);
     printf("  elapsed: %.2f ms\n", (double)elapsed / 1000.0);
     printf("  throughput: %.0f req/s\n", rps);
+    printf("  latency: p50=%.3f ms p95=%.3f ms p99=%.3f ms\n",
+           (double)percentile_us(latencies, latency_count, 50) / 1000.0,
+           (double)percentile_us(latencies, latency_count, 95) / 1000.0,
+           (double)percentile_us(latencies, latency_count, 99) / 1000.0);
+    free(latencies);
 
 #if defined(_WIN32)
     check_true("success rate > 80%", success_pct > 80.0);
@@ -307,6 +373,7 @@ static void test_concurrent_connections(void) {
         (neverc_tcp_conn_t **)calloc((size_t)max_conns, sizeof(neverc_tcp_conn_t *));
     int open_count = 0;
 
+    uint64_t rss_before = process_rss_bytes();
     uint64_t start = now_us();
 
     for (int i = 0; i < max_conns; i++) {
@@ -317,6 +384,7 @@ static void test_concurrent_connections(void) {
             open_count++;
         }
     }
+    uint64_t rss_after = process_rss_bytes();
 
     int success_count = 0;
     for (int i = 0; i < max_conns; i++) {
@@ -340,11 +408,51 @@ static void test_concurrent_connections(void) {
     printf("  opened: %d/%d, responded: %d\n",
            open_count, max_conns, success_count);
     printf("  elapsed: %.2f ms\n", (double)elapsed / 1000.0);
+    uint64_t rss_growth = rss_after > rss_before ?
+        rss_after - rss_before : 0;
+    printf("  memory: rss=%.2f MiB growth=%.2f MiB per-connection=%.0f bytes\n",
+           (double)rss_after / (1024.0 * 1024.0),
+           (double)rss_growth / (1024.0 * 1024.0),
+           open_count > 0 ? (double)rss_growth / open_count : 0.0);
 
     check_true("open rate > 90%",
                 (double)open_count / (double)max_conns > 0.90);
     check_true("response rate > 80%",
                 (double)success_count / (double)open_count > 0.80);
+}
+
+static int bench_single_close_request(int port) {
+    char address[32];
+    snprintf(address, sizeof(address), "127.0.0.1:%d", port);
+    const char *error = NULL;
+    neverc_tcp_conn_t *conn = neverc_tcp_dial(address, &error);
+    if (!conn) return -1;
+    neverc_tcp_set_timeout(conn, 2000);
+    const char request[] =
+        "GET / HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n";
+    int result = -1;
+    if (neverc_tcp_write(conn, request, sizeof(request) - 1U) > 0) {
+        char response[2048];
+        int count = neverc_tcp_read(conn, response, sizeof(response) - 1U);
+        if (count > 0) {
+            response[count] = '\0';
+            result = strstr(response, "200 OK") ? 0 : -1;
+        }
+    }
+    neverc_tcp_close(conn);
+    return result;
+}
+
+static void test_disconnect_recovery(void) {
+    printf("[disconnect_recovery]\n");
+    check_true("initial close request succeeds",
+               bench_single_close_request(g_server_port) == 0);
+    uint64_t start = now_us();
+    int recovered = bench_single_close_request(g_server_port) == 0;
+    uint64_t recovery_us = now_us() - start;
+    printf("  recovery: %.3f ms\n", (double)recovery_us / 1000.0);
+    check_true("request recovers on a new connection", recovered);
+    check_true("disconnect recovery < 2 seconds", recovery_us < 2000000U);
 }
 
 /* ===== Benchmark: Pipelining throughput ===== */
@@ -387,10 +495,12 @@ static void test_pipelining_bench(void) {
             resp[total] = '\0';
 
             char *scan = resp;
+            int complete_responses = 0;
             while ((scan = strstr(scan, "200 OK")) != NULL) {
-                responses_found++;
+                complete_responses++;
                 scan += 6;
             }
+            responses_found = complete_responses;
         }
         success += responses_found;
     }
@@ -407,8 +517,7 @@ static void test_pipelining_bench(void) {
            success, (double)elapsed / 1000.0);
     printf("  pipelining throughput: %.0f req/s\n", rps);
 
-    check_true("pipeline success > 80%",
-                (double)success / (double)total_requests > 0.80);
+    check_true("pipeline success is 100%", success == total_requests);
 }
 
 /* ===== Helpers ===== */
@@ -486,6 +595,7 @@ int main(void) {
 
     test_connection_rate();
     test_throughput();
+    test_disconnect_recovery();
 #ifndef _WIN32
     test_concurrent_connections();
     test_pipelining_bench();

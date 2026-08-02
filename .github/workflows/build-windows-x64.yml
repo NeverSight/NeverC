@@ -117,6 +117,10 @@ jobs:
       shell: bash
       run: cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc-pluginsdk
 
+    - name: Build network product examples
+      shell: bash
+      run: neverc/utils/ci/build-network-product-examples.sh "$PWD/build/bin/neverc.exe" "$PWD/neverc" x86_64-pc-windows-msvc
+
     - name: Test Plugin SDK (build + load)
       shell: bash
       run: |

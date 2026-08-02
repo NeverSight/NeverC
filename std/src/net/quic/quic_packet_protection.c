@@ -20,31 +20,12 @@
 
 #include "_quic_internal.h"
 
+#include "neverc/std/_platform.h"
+#include "neverc/std/crypto/aes.h"
+#include "neverc/std/crypto/gcm.h"
+#include "neverc/std/crypto/hkdf.h"
+
 #include <string.h>
-
-/* External crypto functions from NeverC crypto module */
-extern void neverc_sha256_init(void *ctx);
-extern void neverc_sha256_update(void *ctx, const void *data, size_t len);
-extern void neverc_sha256_final(void *ctx, uint8_t *out);
-extern int neverc_hkdf_extract_sha256(const uint8_t *salt, size_t salt_len,
-                                       const uint8_t *ikm, size_t ikm_len,
-                                       uint8_t *prk);
-extern int neverc_hkdf_expand_sha256(const uint8_t *prk, size_t prk_len,
-                                      const uint8_t *info, size_t info_len,
-                                      uint8_t *okm, size_t okm_len);
-
-/* AES-128-GCM */
-extern int neverc_gcm_seal(const uint8_t *key, size_t key_len,
-                            const uint8_t *nonce, size_t nonce_len,
-                            const uint8_t *plaintext, size_t pt_len,
-                            const uint8_t *aad, size_t aad_len,
-                            uint8_t *out, uint8_t *tag);
-extern int neverc_gcm_open(const uint8_t *key, size_t key_len,
-                            const uint8_t *nonce, size_t nonce_len,
-                            const uint8_t *ciphertext, size_t ct_len,
-                            const uint8_t *aad, size_t aad_len,
-                            const uint8_t *tag,
-                            uint8_t *out);
 
 /* ======================================================================
  * QUIC v1 Initial Salt (RFC 9001 §5.2)
@@ -78,6 +59,10 @@ static int hkdf_expand_label(const uint8_t *secret, size_t secret_len,
                               const char *label, size_t label_len,
                               const uint8_t *context, size_t context_len,
                               uint8_t *out, size_t out_len) {
+    if (!secret || !label || !out || secret_len != 32 ||
+        out_len > UINT16_MAX || label_len > 249 || context_len > 255 ||
+        (!context && context_len != 0))
+        return -1;
     /* Build HkdfLabel */
     uint8_t info[512];
     size_t pos = 0;
@@ -101,7 +86,7 @@ static int hkdf_expand_label(const uint8_t *secret, size_t secret_len,
         pos += context_len;
     }
 
-    return neverc_hkdf_expand_sha256(secret, secret_len, info, pos, out, out_len);
+    return neverc_hkdf_expand_sha256(out, out_len, secret, info, pos);
 }
 
 /* ======================================================================
@@ -119,43 +104,52 @@ int neverc_quic_derive_initial_keys(const uint8_t *dcid, size_t dcid_len,
 
     /* initial_secret = HKDF-Extract(salt, dcid) */
     uint8_t initial_secret[32];
-    if (neverc_hkdf_extract_sha256(salt, 20, dcid, dcid_len, initial_secret) != 0)
+    if (!dcid || dcid_len == 0 || dcid_len > QUIC_MAX_CID_LEN || !keys ||
+        neverc_hkdf_extract_sha256(initial_secret, salt, 20,
+                                   dcid, dcid_len) != 0)
         return -1;
 
     /* Client Initial Secret */
     uint8_t client_secret[32];
     if (hkdf_expand_label(initial_secret, 32, "client in", 9,
                            NULL, 0, client_secret, 32) != 0)
-        return -1;
+        goto failed;
 
     /* Server Initial Secret */
     uint8_t server_secret[32];
     if (hkdf_expand_label(initial_secret, 32, "server in", 9,
                            NULL, 0, server_secret, 32) != 0)
-        return -1;
+        goto failed;
 
     /* Derive client keys */
     if (hkdf_expand_label(client_secret, 32, "quic key", 8,
-                           NULL, 0, keys->client.key, 16) != 0) return -1;
+                           NULL, 0, keys->client.key, 16) != 0) goto failed;
     if (hkdf_expand_label(client_secret, 32, "quic iv", 7,
-                           NULL, 0, keys->client.iv, 12) != 0) return -1;
+                           NULL, 0, keys->client.iv, 12) != 0) goto failed;
     if (hkdf_expand_label(client_secret, 32, "quic hp", 7,
-                           NULL, 0, keys->client.hp, 16) != 0) return -1;
+                           NULL, 0, keys->client.hp, 16) != 0) goto failed;
 
     /* Derive server keys */
     if (hkdf_expand_label(server_secret, 32, "quic key", 8,
-                           NULL, 0, keys->server.key, 16) != 0) return -1;
+                           NULL, 0, keys->server.key, 16) != 0) goto failed;
     if (hkdf_expand_label(server_secret, 32, "quic iv", 7,
-                           NULL, 0, keys->server.iv, 12) != 0) return -1;
+                           NULL, 0, keys->server.iv, 12) != 0) goto failed;
     if (hkdf_expand_label(server_secret, 32, "quic hp", 7,
-                           NULL, 0, keys->server.hp, 16) != 0) return -1;
+                           NULL, 0, keys->server.hp, 16) != 0) goto failed;
 
     /* Zero intermediate secrets */
-    memset(initial_secret, 0, sizeof(initial_secret));
-    memset(client_secret, 0, sizeof(client_secret));
-    memset(server_secret, 0, sizeof(server_secret));
+    neverc_platform_secure_zero(initial_secret, sizeof(initial_secret));
+    neverc_platform_secure_zero(client_secret, sizeof(client_secret));
+    neverc_platform_secure_zero(server_secret, sizeof(server_secret));
 
     return 0;
+
+failed:
+    neverc_platform_secure_zero(initial_secret, sizeof(initial_secret));
+    neverc_platform_secure_zero(client_secret, sizeof(client_secret));
+    neverc_platform_secure_zero(server_secret, sizeof(server_secret));
+    neverc_platform_secure_zero(keys, sizeof(*keys));
+    return -1;
 }
 
 /* ======================================================================
@@ -182,15 +176,17 @@ int neverc_quic_encrypt_payload(const quic_keys_t *keys,
                                  const uint8_t *header, size_t header_len,
                                  const uint8_t *plaintext, size_t pt_len,
                                  uint8_t *out) {
+    if (!keys || (!plaintext && pt_len != 0) || !header || !out) return -1;
     uint8_t nonce[12];
     construct_nonce(keys->iv, pkt_number, nonce);
-
-    /* out = ciphertext || tag (16 bytes) */
+    neverc_gcm_ctx context;
+    if (neverc_gcm_init(&context, keys->key, 16) != 0) return -1;
     uint8_t *tag = out + pt_len;
-    return neverc_gcm_seal(keys->key, 16, nonce, 12,
-                            plaintext, pt_len,
-                            header, header_len,
-                            out, tag);
+    int result = neverc_gcm_seal(&context, nonce, plaintext, pt_len,
+                                 header, header_len, out, tag);
+    neverc_platform_secure_zero(&context, sizeof(context));
+    neverc_platform_secure_zero(nonce, sizeof(nonce));
+    return result;
 }
 
 int neverc_quic_decrypt_payload(const quic_keys_t *keys,
@@ -198,17 +194,21 @@ int neverc_quic_decrypt_payload(const quic_keys_t *keys,
                                  const uint8_t *header, size_t header_len,
                                  const uint8_t *ciphertext, size_t ct_len,
                                  uint8_t *out) {
-    if (ct_len < 16) return -1;  /* Must have at least a tag */
+    if (!keys || !header || !ciphertext || !out || ct_len < 16)
+        return -1;
     size_t pt_len = ct_len - 16;
     const uint8_t *tag = ciphertext + pt_len;
 
     uint8_t nonce[12];
     construct_nonce(keys->iv, pkt_number, nonce);
 
-    return neverc_gcm_open(keys->key, 16, nonce, 12,
-                            ciphertext, pt_len,
-                            header, header_len,
-                            tag, out);
+    neverc_gcm_ctx context;
+    if (neverc_gcm_init(&context, keys->key, 16) != 0) return -1;
+    int result = neverc_gcm_open(&context, nonce, ciphertext, pt_len,
+                                 header, header_len, tag, out);
+    neverc_platform_secure_zero(&context, sizeof(context));
+    neverc_platform_secure_zero(nonce, sizeof(nonce));
+    return result;
 }
 
 /* ======================================================================
@@ -222,10 +222,6 @@ int neverc_quic_decrypt_payload(const quic_keys_t *keys,
  * For long headers: first byte mask = mask[0] & 0x0f
  * For short headers: first byte mask = mask[0] & 0x1f
  * ====================================================================== */
-
-/* Simple AES-128-ECB for header protection (single block) */
-extern void neverc_aes128_encrypt_block(const uint8_t *key,
-                                          const uint8_t *in, uint8_t *out);
 
 int neverc_quic_apply_header_protection(const uint8_t *hp_key,
                                           uint8_t *packet, size_t packet_len,
@@ -242,7 +238,9 @@ int neverc_quic_apply_header_protection(const uint8_t *hp_key,
 
     /* Generate mask via AES-ECB */
     uint8_t mask[16];
-    neverc_aes128_encrypt_block(hp_key, sample, mask);
+    neverc_aes_ctx_t aes;
+    if (neverc_aes_init(&aes, hp_key, 16) != 0) return -1;
+    neverc_aes_encrypt_block(&aes, mask, sample);
 
     /* Apply mask to first byte */
     int is_long = (packet[0] & 0x80) != 0;
@@ -255,7 +253,8 @@ int neverc_quic_apply_header_protection(const uint8_t *hp_key,
     for (int i = 0; i < pn_len; i++) {
         packet[pn_offset + i] ^= mask[1 + i];
     }
-
+    neverc_platform_secure_zero(&aes, sizeof(aes));
+    neverc_platform_secure_zero(mask, sizeof(mask));
     return 0;
 }
 
@@ -268,7 +267,9 @@ int neverc_quic_remove_header_protection(const uint8_t *hp_key,
 
     const uint8_t *sample = packet + pn_offset + 4;
     uint8_t mask[16];
-    neverc_aes128_encrypt_block(hp_key, sample, mask);
+    neverc_aes_ctx_t aes;
+    if (neverc_aes_init(&aes, hp_key, 16) != 0) return -1;
+    neverc_aes_encrypt_block(&aes, mask, sample);
 
     int is_long = (packet[0] & 0x80) != 0;
     packet[0] ^= is_long ? (mask[0] & 0x0f) : (mask[0] & 0x1f);
@@ -276,5 +277,7 @@ int neverc_quic_remove_header_protection(const uint8_t *hp_key,
     if (pn_len > packet_len - pn_offset) return -1;
     for (int i = 0; i < pn_len; i++)
         packet[pn_offset + i] ^= mask[1 + i];
+    neverc_platform_secure_zero(&aes, sizeof(aes));
+    neverc_platform_secure_zero(mask, sizeof(mask));
     return 0;
 }

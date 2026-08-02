@@ -23,6 +23,7 @@
   typedef int ssize_t;
 #else
   #include <sys/socket.h>
+  #include <sys/time.h>
   #include <unistd.h>
   #ifndef MSG_NOSIGNAL
   #define MSG_NOSIGNAL 0
@@ -76,6 +77,13 @@ void neverc_h2_settings_init(neverc_h2_settings_t *s) {
 }
 
 typedef struct h2_conn h2_conn_t;
+#define H2_CLOSED_STREAM_HISTORY 256
+
+typedef struct {
+    uint32_t id;
+    int reset;
+} h2_closed_stream_t;
+
 typedef struct h2_inbound_chunk {
     size_t length;
     size_t offset;
@@ -87,6 +95,7 @@ struct neverc_h2_server {
     neverc_h2_settings_t  settings;
     size_t                 max_body_size;
     int                    handler_timeout_ms;
+    char                  *alt_svc;
     neverc_thread_executor_t *handler_executor;
     neverc_thread_executor_t *connection_executor;
     nc_mutex_t              lifecycle_lock;
@@ -139,6 +148,7 @@ void neverc_h2_server_destroy(neverc_h2_server_t *srv) {
     neverc_thread_executor_shutdown(srv->handler_executor);
     neverc_thread_executor_free(srv->handler_executor);
     neverc_tls_config_free(srv->tls_config);
+    free(srv->alt_svc);
     if (srv->serve_cancel)
         neverc_context_cancel_handle_free(srv->serve_cancel);
     if (srv->serve_context)
@@ -172,6 +182,15 @@ void neverc_h2_server_set_max_body_size(neverc_h2_server_t *srv, size_t max) {
 
 void neverc_h2_server_set_handler_timeout(neverc_h2_server_t *srv, int ms) {
     if (srv && ms >= 0) srv->handler_timeout_ms = ms;
+}
+
+void neverc_h2_server_set_alt_svc(neverc_h2_server_t *srv,
+                                  const char *value) {
+    if (!srv || nc_atomic_load(&srv->running)) return;
+    char *copy = value ? strdup(value) : NULL;
+    if (value && !copy) return;
+    free(srv->alt_svc);
+    srv->alt_svc = copy;
 }
 
 /* ======================================================================
@@ -226,7 +245,7 @@ typedef enum {
 
 typedef struct {
     h2_io_kind_t         kind;
-    int                  fd;
+    nc_sock_t            fd;
     neverc_tcp_conn_t   *tcp;
     neverc_tls_conn_t   *tls;
 } h2_io_t;
@@ -245,6 +264,8 @@ struct h2_conn {
     uint32_t last_stream_id;
     uint32_t max_stream_id;
     volatile int goaway_sent;
+    uint32_t goaway_error_code;
+    int      peer_goaway_received;
     int      initial_settings_received;
     volatile int running;
     nc_mutex_t state_lock;
@@ -254,6 +275,10 @@ struct h2_conn {
     size_t active_handlers;
     h2_conn_t *server_next;
     h2_conn_t *server_prev;
+
+    h2_closed_stream_t closed_streams[H2_CLOSED_STREAM_HISTORY];
+    size_t closed_stream_count;
+    size_t closed_stream_next;
 
     h2_stream_t *streams;
     volatile int  active_streams;
@@ -266,7 +291,7 @@ struct h2_conn {
     int       pending_end_stream;
 };
 
-static void h2_io_init_socket(h2_io_t *io, int fd) {
+static void h2_io_init_socket(h2_io_t *io, nc_sock_t fd) {
     io->kind = H2_IO_SOCKET;
     io->fd = fd;
     io->tcp = NULL;
@@ -310,6 +335,32 @@ static int h2_io_read_all(h2_io_t *io, void *buf, size_t len) {
         if (n <= 0)
             return -1;
         got += (size_t)n;
+    }
+    return 0;
+}
+
+static int h2_io_read_some(h2_io_t *io, void *buf, size_t len) {
+    switch (io->kind) {
+    case H2_IO_SOCKET:
+#ifdef _WIN32
+        return recv(io->fd, (char *)buf, (int)len, 0);
+#else
+        return (int)recv(io->fd, buf, len, 0);
+#endif
+    case H2_IO_TCP:
+        return neverc_tcp_read(io->tcp, buf, len);
+    case H2_IO_TLS:
+        return neverc_tls_read(io->tls, buf, len);
+    }
+    return -1;
+}
+
+static int h2_io_discard(h2_io_t *io, size_t len) {
+    uint8_t buffer[4096];
+    while (len > 0) {
+        size_t chunk = len < sizeof(buffer) ? len : sizeof(buffer);
+        if (h2_io_read_all(io, buffer, chunk) != 0) return -1;
+        len -= chunk;
     }
     return 0;
 }
@@ -358,6 +409,53 @@ static void h2_io_shutdown(h2_io_t *io) {
         (void)neverc_tls_shutdown_read(io->tls);
         (void)neverc_tls_shutdown_write(io->tls);
         break;
+    }
+}
+
+static void h2_io_shutdown_write(h2_io_t *io) {
+    switch (io->kind) {
+    case H2_IO_SOCKET:
+#ifdef _WIN32
+        (void)shutdown((SOCKET)io->fd, SD_SEND);
+#else
+        (void)shutdown(io->fd, SHUT_WR);
+#endif
+        break;
+    case H2_IO_TCP:
+        (void)neverc_tcp_shutdown_write(io->tcp);
+        break;
+    case H2_IO_TLS:
+        (void)neverc_tls_shutdown_write(io->tls);
+        break;
+    }
+}
+
+static void h2_io_drain_after_error(h2_io_t *io) {
+    uint8_t buffer[4096];
+    size_t drained = 0;
+    const size_t maximum = 64U * 1024U;
+
+    h2_io_shutdown_write(io);
+    if (io->kind == H2_IO_TLS) return;
+    if (io->kind == H2_IO_TCP) {
+        (void)neverc_tcp_set_read_timeout(io->tcp, 100);
+    } else {
+#ifdef _WIN32
+        DWORD timeout = 100;
+        (void)setsockopt(io->fd, SOL_SOCKET, SO_RCVTIMEO,
+                         (const char *)&timeout, sizeof(timeout));
+#else
+        struct timeval timeout = { .tv_sec = 0, .tv_usec = 100000 };
+        (void)setsockopt(io->fd, SOL_SOCKET, SO_RCVTIMEO,
+                         &timeout, sizeof(timeout));
+#endif
+    }
+    while (drained < maximum) {
+        size_t capacity = maximum - drained;
+        if (capacity > sizeof(buffer)) capacity = sizeof(buffer);
+        int count = h2_io_read_some(io, buffer, capacity);
+        if (count <= 0) break;
+        drained += (size_t)count;
     }
 }
 
@@ -485,6 +583,7 @@ static int h2_conn_write_goaway(h2_conn_t *conn, uint32_t error_code) {
     if (!nc_atomic_load(&conn->goaway_sent)) {
         result = h2_write_goaway(&conn->io, conn->last_stream_id,
                                  error_code);
+        conn->goaway_error_code = error_code;
         nc_atomic_store(&conn->goaway_sent, 1);
     }
     nc_mutex_unlock(&conn->write_lock);
@@ -603,15 +702,11 @@ void neverc_h2_request_stream_cancel(void *protocol_stream,
 }
 
 static uint32_t h2_frame_header_error(const neverc_h2_frame_header_t *header) {
-    uint8_t allowed_flags = 0;
     switch (header->type) {
     case NC_H2_FRAME_DATA:
-        allowed_flags = NC_H2_FLAG_END_STREAM | NC_H2_FLAG_PADDED;
         if (header->stream_id == 0) return NC_H2_PROTOCOL_ERROR;
         break;
     case NC_H2_FRAME_HEADERS:
-        allowed_flags = NC_H2_FLAG_END_STREAM | NC_H2_FLAG_END_HEADERS |
-                        NC_H2_FLAG_PADDED | NC_H2_FLAG_PRIORITY;
         if (header->stream_id == 0) return NC_H2_PROTOCOL_ERROR;
         break;
     case NC_H2_FRAME_PRIORITY:
@@ -623,7 +718,6 @@ static uint32_t h2_frame_header_error(const neverc_h2_frame_header_t *header) {
         if (header->length != 4) return NC_H2_FRAME_SIZE_ERROR;
         break;
     case NC_H2_FRAME_SETTINGS:
-        allowed_flags = NC_H2_FLAG_ACK;
         if (header->stream_id != 0) return NC_H2_PROTOCOL_ERROR;
         if ((header->flags & NC_H2_FLAG_ACK) != 0 && header->length != 0)
             return NC_H2_FRAME_SIZE_ERROR;
@@ -634,7 +728,6 @@ static uint32_t h2_frame_header_error(const neverc_h2_frame_header_t *header) {
     case NC_H2_FRAME_PUSH_PROMISE:
         return NC_H2_PROTOCOL_ERROR; /* clients cannot push */
     case NC_H2_FRAME_PING:
-        allowed_flags = NC_H2_FLAG_ACK;
         if (header->stream_id != 0) return NC_H2_PROTOCOL_ERROR;
         if (header->length != 8) return NC_H2_FRAME_SIZE_ERROR;
         break;
@@ -646,20 +739,22 @@ static uint32_t h2_frame_header_error(const neverc_h2_frame_header_t *header) {
         if (header->length != 4) return NC_H2_FRAME_SIZE_ERROR;
         break;
     case NC_H2_FRAME_CONTINUATION:
-        allowed_flags = NC_H2_FLAG_END_HEADERS;
         if (header->stream_id == 0) return NC_H2_PROTOCOL_ERROR;
         break;
     default:
         return NC_H2_NO_ERROR; /* unknown frame types are ignored */
     }
-    return (header->flags & ~allowed_flags) != 0
-        ? NC_H2_PROTOCOL_ERROR : NC_H2_NO_ERROR;
+    /* RFC 9113 requires recipients to ignore undefined frame flags. */
+    return NC_H2_NO_ERROR;
 }
 
 static int h2_header_fragment(const neverc_h2_frame_header_t *header,
                               const uint8_t *payload,
                               const uint8_t **fragment,
                               size_t *fragment_length) {
+    if (!header || !fragment || !fragment_length ||
+        (header->length != 0 && !payload))
+        return -1;
     size_t offset = 0;
     size_t padding = 0;
     if ((header->flags & NC_H2_FLAG_PADDED) != 0) {
@@ -676,14 +771,17 @@ static int h2_header_fragment(const neverc_h2_frame_header_t *header,
         offset += 5;
     }
     if (padding > (size_t)header->length - offset) return -1;
-    *fragment = payload + offset;
     *fragment_length = (size_t)header->length - offset - padding;
+    *fragment = payload ? payload + offset : NULL;
     return 0;
 }
 
 static int h2_data_fragment(const neverc_h2_frame_header_t *header,
                             const uint8_t *payload, const uint8_t **data,
                             size_t *data_length) {
+    if (!header || !data || !data_length ||
+        (header->length != 0 && !payload))
+        return -1;
     size_t offset = 0;
     size_t padding = 0;
     if ((header->flags & NC_H2_FLAG_PADDED) != 0) {
@@ -691,8 +789,8 @@ static int h2_data_fragment(const neverc_h2_frame_header_t *header,
         padding = payload[offset++];
     }
     if (padding > (size_t)header->length - offset) return -1;
-    *data = payload + offset;
     *data_length = (size_t)header->length - offset - padding;
+    *data = payload ? payload + offset : NULL;
     return 0;
 }
 
@@ -841,6 +939,77 @@ static int h2_validate_request_headers(h2_conn_t *conn,
     return 0;
 }
 
+static int h2_validate_trailers(h2_conn_t *conn,
+                                neverc_hpack_header_t *trailers,
+                                int count) {
+    size_t list_size = 0;
+    for (int i = 0; i < count; i++) {
+        const char *name = trailers[i].name;
+        const char *value = trailers[i].value;
+        size_t name_length = strlen(name);
+        size_t value_length = strlen(value);
+        if (name_length == 0 || name[0] == ':' || !h2_value_valid(value) ||
+            name_length > SIZE_MAX - value_length - 32 ||
+            list_size > SIZE_MAX - name_length - value_length - 32)
+            return -1;
+        list_size += name_length + value_length + 32;
+        if (list_size > conn->local_settings.max_header_list_size)
+            return -1;
+        for (size_t j = 0; j < name_length; j++)
+            if ((unsigned char)name[j] >= 'A' &&
+                (unsigned char)name[j] <= 'Z')
+                return -1;
+        if (strcmp(name, "connection") == 0 ||
+            strcmp(name, "proxy-connection") == 0 ||
+            strcmp(name, "keep-alive") == 0 ||
+            strcmp(name, "transfer-encoding") == 0 ||
+            strcmp(name, "upgrade") == 0 ||
+            strcmp(name, "content-length") == 0 ||
+            strcmp(name, "host") == 0 || strcmp(name, "te") == 0)
+            return -1;
+    }
+    return 0;
+}
+
+static int h2_process_trailer_block(h2_conn_t *conn, h2_stream_t *stream,
+                                    const uint8_t *block, size_t block_len,
+                                    int end_stream) {
+    neverc_hpack_header_t trailers[64];
+    memset(trailers, 0, sizeof(trailers));
+    int count = 0;
+    if (!end_stream ||
+        (stream->state != H2_STREAM_OPEN &&
+         stream->state != H2_STREAM_HALF_CLOSED_LOCAL))
+        return -2;
+    if (neverc_hpack_decode(conn->hpack_dec, block, block_len,
+                            trailers, 64, &count) != 0) {
+        for (int i = 0; i < count; i++) {
+            free(trailers[i].name);
+            free(trailers[i].value);
+        }
+        return -1;
+    }
+    int valid = h2_validate_trailers(conn, trailers, count) == 0 &&
+        (stream->content_length < 0 ||
+         (uint64_t)stream->content_length == stream->body_len);
+    for (int i = 0; i < count; i++) {
+        free(trailers[i].name);
+        free(trailers[i].value);
+    }
+    if (!valid) return -2;
+
+    nc_mutex_lock(&conn->state_lock);
+    stream->state = stream->state == H2_STREAM_HALF_CLOSED_LOCAL
+        ? H2_STREAM_CLOSED : H2_STREAM_HALF_CLOSED_REMOTE;
+    nc_mutex_unlock(&conn->state_lock);
+    nc_atomic_store(&stream->remote_ended, 1);
+    if (stream->receive_queue)
+        (void)neverc_thread_channel_close(stream->receive_queue);
+    if (!stream->streaming_request)
+        (void)h2_submit_request(conn, stream);
+    return 0;
+}
+
 static int h2_request_uses_streaming_route(h2_conn_t *connection,
                                            h2_stream_t *stream) {
     const char *method = NULL;
@@ -865,7 +1034,9 @@ static int h2_request_uses_streaming_route(h2_conn_t *connection,
 static int h2_process_header_block(h2_conn_t *conn, h2_stream_t *stream,
                                     const uint8_t *block, size_t block_len,
                                     int end_stream) {
-    if (stream->headers_complete) return -2;
+    if (stream->headers_complete)
+        return h2_process_trailer_block(conn, stream, block, block_len,
+                                        end_stream);
     int nh = 0;
     if (neverc_hpack_decode(conn->hpack_dec, block, block_len,
                              stream->headers, 64, &nh) != 0) {
@@ -912,8 +1083,17 @@ static int h2_handle_header_result(h2_conn_t *conn, h2_stream_t *stream,
     if (result == 0) return 0;
     if (result == -2) {
         h2_clear_pending_hdr(conn);
+        nc_atomic_store(&stream->reset, 1);
+        if (stream->cancel)
+            neverc_context_cancel_handle_cancel(stream->cancel);
+        if (stream->receive_queue)
+            (void)neverc_thread_channel_close(stream->receive_queue);
         (void)h2_conn_write_rst(conn, stream->id, NC_H2_PROTOCOL_ERROR);
-        h2_remove_stream(conn, stream->id);
+        nc_mutex_lock(&conn->state_lock);
+        int handler_active = stream->handler_active;
+        nc_mutex_unlock(&conn->state_lock);
+        if (!handler_active)
+            h2_remove_stream(conn, stream->id);
         return 0;
     }
     (void)h2_conn_write_goaway(conn, NC_H2_COMPRESSION_ERROR);
@@ -924,6 +1104,30 @@ static h2_stream_t *h2_find_stream(h2_conn_t *conn, uint32_t id) {
     for (h2_stream_t *s = conn->streams; s; s = s->next)
         if (s->id == id) return s;
     return NULL;
+}
+
+static void h2_record_closed_stream(h2_conn_t *conn, h2_stream_t *stream) {
+    h2_closed_stream_t *entry =
+        &conn->closed_streams[conn->closed_stream_next];
+    entry->id = stream->id;
+    entry->reset = nc_atomic_load(&stream->reset) != 0;
+    conn->closed_stream_next =
+        (conn->closed_stream_next + 1U) % H2_CLOSED_STREAM_HISTORY;
+    if (conn->closed_stream_count < H2_CLOSED_STREAM_HISTORY)
+        conn->closed_stream_count++;
+}
+
+static int h2_closed_stream_was_reset(h2_conn_t *conn, uint32_t id,
+                                      int *found) {
+    *found = 0;
+    for (size_t i = 0; i < conn->closed_stream_count; i++) {
+        const h2_closed_stream_t *entry = &conn->closed_streams[i];
+        if (entry->id == id) {
+            *found = 1;
+            return entry->reset;
+        }
+    }
+    return 0;
 }
 
 static h2_stream_t *h2_create_stream(h2_conn_t *conn, uint32_t id) {
@@ -993,6 +1197,7 @@ static void h2_remove_stream(h2_conn_t *conn, uint32_t id) {
         if ((*pp)->id == id) {
             h2_stream_t *s = *pp;
             *pp = s->next;
+            h2_record_closed_stream(conn, s);
             h2_close_stream(conn, s);
             free(s);
             return;
@@ -1010,6 +1215,7 @@ static void h2_reap_completed_streams(h2_conn_t *conn) {
             continue;
         }
         *link = stream->next;
+        h2_record_closed_stream(conn, stream);
         h2_close_stream(conn, stream);
         free(stream);
     }
@@ -1283,7 +1489,7 @@ static void h2_dispatch_request(h2_conn_t *conn, h2_stream_t *stream) {
     request.content_type = content_type;
     request.body = stream->streaming_request
         ? NULL : (const char *)stream->body;
-    request.body_len = stream->body_len;
+    request.body_len = stream->streaming_request ? 0U : stream->body_len;
     request.raw_headers = raw_headers.data;
     request.nheaders = regular_headers;
     request.context = stream->context;
@@ -1294,7 +1500,12 @@ static void h2_dispatch_request(h2_conn_t *conn, h2_stream_t *stream) {
     request.body_stream_cancel = stream->streaming_request
         ? neverc_h2_request_stream_cancel : NULL;
     writer->head_request = strcmp(method, "HEAD") == 0;
-    writer->request_body_len = stream->body_len;
+    writer->request_body_len = stream->streaming_request
+        ? (stream->content_length > 0 ?
+           (size_t)stream->content_length : 0U)
+        : stream->body_len;
+    if (conn->srv->alt_svc)
+        neverc_http_set_header(writer, "Alt-Svc", conn->srv->alt_svc);
     h2_response_adapter_t response_adapter = {
         .connection = conn, .stream = stream, .ended = 0};
     nc_http_writer_set_protocol(writer, &response_adapter,
@@ -1366,6 +1577,7 @@ static int h2_submit_request(h2_conn_t *conn, h2_stream_t *stream) {
     conn->active_handlers--;
     nc_cond_broadcast(&conn->handlers_done);
     nc_mutex_unlock(&conn->state_lock);
+    nc_atomic_store(&stream->reset, 1);
     (void)h2_conn_write_rst(conn, stream->id, NC_H2_REFUSED_STREAM);
     h2_remove_stream(conn, stream->id);
     return -1;
@@ -1469,8 +1681,10 @@ static int h2_serve_io(neverc_h2_server_t *srv, h2_io_t *io) {
     if (h2_io_read_all(io, preface, NC_H2_CLIENT_PREFACE_LEN) != 0)
         goto cleanup;
     if (memcmp(preface, NC_H2_CLIENT_PREFACE,
-               NC_H2_CLIENT_PREFACE_LEN) != 0)
+               NC_H2_CLIENT_PREFACE_LEN) != 0) {
+        (void)h2_conn_write_goaway(&conn, NC_H2_PROTOCOL_ERROR);
         goto cleanup;
+    }
     preface_received = 1;
 
     conn.hpack_dec = neverc_hpack_decoder_create(conn.local_settings.header_table_size);
@@ -1495,19 +1709,7 @@ static int h2_serve_io(neverc_h2_server_t *srv, h2_io_t *io) {
 
         if (fhdr.length > conn.local_settings.max_frame_size) {
             (void)h2_conn_write_goaway(&conn, NC_H2_FRAME_SIZE_ERROR);
-            break;
-        }
-        uint32_t header_error = h2_frame_header_error(&fhdr);
-        if (header_error != NC_H2_NO_ERROR ||
-            (!conn.initial_settings_received &&
-             (fhdr.type != NC_H2_FRAME_SETTINGS ||
-              (fhdr.flags & NC_H2_FLAG_ACK) != 0)) ||
-            (conn.pending_hdr_active &&
-             fhdr.type != NC_H2_FRAME_CONTINUATION)) {
-            (void)h2_conn_write_goaway(
-                &conn,
-                header_error != NC_H2_NO_ERROR
-                    ? header_error : NC_H2_PROTOCOL_ERROR);
+            (void)h2_io_discard(&conn.io, fhdr.length);
             break;
         }
 
@@ -1520,6 +1722,21 @@ static int h2_serve_io(neverc_h2_server_t *srv, h2_io_t *io) {
                 free(payload);
                 break;
             }
+        }
+
+        uint32_t header_error = h2_frame_header_error(&fhdr);
+        if (header_error != NC_H2_NO_ERROR ||
+            (!conn.initial_settings_received &&
+             (fhdr.type != NC_H2_FRAME_SETTINGS ||
+              (fhdr.flags & NC_H2_FLAG_ACK) != 0)) ||
+            (conn.pending_hdr_active &&
+             fhdr.type != NC_H2_FRAME_CONTINUATION)) {
+            (void)h2_conn_write_goaway(
+                &conn,
+                header_error != NC_H2_NO_ERROR
+                    ? header_error : NC_H2_PROTOCOL_ERROR);
+            free(payload);
+            goto cleanup;
         }
 
         switch (fhdr.type) {
@@ -1551,16 +1768,44 @@ static int h2_serve_io(neverc_h2_server_t *srv, h2_io_t *io) {
 
         case NC_H2_FRAME_HEADERS: {
             h2_stream_t *stream = h2_find_stream(&conn, fhdr.stream_id);
+            if (stream && stream->state == H2_STREAM_CLOSED &&
+                !nc_atomic_load(&stream->reset)) {
+                (void)h2_conn_write_goaway(&conn, NC_H2_STREAM_CLOSED);
+                free(payload);
+                goto cleanup;
+            }
+            if (stream &&
+                (stream->state == H2_STREAM_HALF_CLOSED_REMOTE ||
+                 stream->state == H2_STREAM_CLOSED ||
+                 nc_atomic_load(&stream->reset))) {
+                (void)h2_conn_write_rst(&conn, fhdr.stream_id,
+                                        NC_H2_STREAM_CLOSED);
+                break;
+            }
             if (!stream) {
                 if (nc_atomic_load(&conn.goaway_sent)) {
                     (void)h2_conn_write_rst(&conn, fhdr.stream_id,
                                             NC_H2_REFUSED_STREAM);
                     break;
                 }
-                if ((fhdr.stream_id & 1U) == 0 ||
-                    fhdr.stream_id <= conn.max_stream_id) {
+                if ((fhdr.stream_id & 1U) == 0) {
                     (void)h2_conn_write_goaway(&conn,
                                                NC_H2_PROTOCOL_ERROR);
+                    free(payload);
+                    goto cleanup;
+                }
+                if (fhdr.stream_id <= conn.max_stream_id) {
+                    int found = 0;
+                    int reset = h2_closed_stream_was_reset(
+                        &conn, fhdr.stream_id, &found);
+                    if (found && reset) {
+                        (void)h2_conn_write_rst(&conn, fhdr.stream_id,
+                                                NC_H2_STREAM_CLOSED);
+                        break;
+                    }
+                    (void)h2_conn_write_goaway(
+                        &conn, found ? NC_H2_STREAM_CLOSED
+                                     : NC_H2_PROTOCOL_ERROR);
                     free(payload);
                     goto cleanup;
                 }
@@ -1632,6 +1877,11 @@ static int h2_serve_io(neverc_h2_server_t *srv, h2_io_t *io) {
 
         case NC_H2_FRAME_DATA: {
             h2_stream_t *stream = h2_find_stream(&conn, fhdr.stream_id);
+            if (!stream && fhdr.stream_id > conn.max_stream_id) {
+                (void)h2_conn_write_goaway(&conn, NC_H2_PROTOCOL_ERROR);
+                free(payload);
+                goto cleanup;
+            }
             nc_mutex_lock(&conn.state_lock);
             h2_stream_state_t stream_state = stream
                 ? stream->state : H2_STREAM_CLOSED;
@@ -1678,6 +1928,7 @@ static int h2_serve_io(neverc_h2_server_t *srv, h2_io_t *io) {
             if (data_length > 0) {
                 if (data_length > conn.srv->max_body_size ||
                     stream->body_len > conn.srv->max_body_size - data_length) {
+                    nc_atomic_store(&stream->reset, 1);
                     (void)h2_conn_write_rst(&conn, stream->id,
                                             NC_H2_ENHANCE_YOUR_CALM);
                     if (stream->streaming_request) {
@@ -1746,6 +1997,7 @@ static int h2_serve_io(neverc_h2_server_t *srv, h2_io_t *io) {
             if (fhdr.flags & NC_H2_FLAG_END_STREAM) {
                 if (stream->content_length >= 0 &&
                     (uint64_t)stream->content_length != stream->body_len) {
+                    nc_atomic_store(&stream->reset, 1);
                     (void)h2_conn_write_rst(&conn, stream->id,
                                             NC_H2_PROTOCOL_ERROR);
                     if (stream->streaming_request) {
@@ -1804,7 +2056,14 @@ static int h2_serve_io(neverc_h2_server_t *srv, h2_io_t *io) {
                 conn.conn_send_window += (int32_t)inc;
             } else {
                 h2_stream_t *s = h2_find_stream(&conn, fhdr.stream_id);
-                if (s && (int64_t)s->send_window + inc <= INT32_MAX) {
+                if (!s && fhdr.stream_id > conn.max_stream_id) {
+                    nc_mutex_unlock(&conn.state_lock);
+                    (void)h2_conn_write_goaway(
+                        &conn, NC_H2_PROTOCOL_ERROR);
+                    free(payload);
+                    goto cleanup;
+                } else if (s &&
+                           (int64_t)s->send_window + inc <= INT32_MAX) {
                     s->send_window += (int32_t)inc;
                 } else if (s) {
                     nc_atomic_store(&s->reset, 1);
@@ -1846,8 +2105,8 @@ static int h2_serve_io(neverc_h2_server_t *srv, h2_io_t *io) {
         }
 
         case NC_H2_FRAME_GOAWAY: {
-            free(payload);
-            goto cleanup;
+            conn.peer_goaway_received = 1;
+            break;
         }
 
         case NC_H2_FRAME_PRIORITY: {
@@ -1926,6 +2185,9 @@ cleanup:
         neverc_hpack_encoder_destroy(conn.hpack_enc);
     if (preface_received && !nc_atomic_load(&conn.goaway_sent))
         (void)h2_conn_write_goaway(&conn, NC_H2_NO_ERROR);
+    if (nc_atomic_load(&conn.goaway_sent) &&
+        conn.goaway_error_code != NC_H2_NO_ERROR)
+        h2_io_drain_after_error(&conn.io);
     if (registered)
         h2_server_remove_connection(srv, &conn);
     nc_cond_destroy(&conn.handlers_done);
@@ -1935,13 +2197,16 @@ cleanup:
     return 0;
 }
 
-int neverc_h2_serve_conn(neverc_h2_server_t *srv, int fd) {
+int neverc_h2_serve_conn(neverc_h2_server_t *srv,
+                         uintptr_t socket_handle) {
 #ifdef _WIN32
-    if (!srv || fd == (int)INVALID_SOCKET)
+    if (!srv || socket_handle == (uintptr_t)INVALID_SOCKET)
         return -1;
+    nc_sock_t fd = (nc_sock_t)socket_handle;
 #else
-    if (!srv || fd < 0)
+    if (!srv || socket_handle > (uintptr_t)INT_MAX)
         return -1;
+    nc_sock_t fd = (nc_sock_t)socket_handle;
 #endif
     h2_io_t io;
     h2_io_init_socket(&io, fd);

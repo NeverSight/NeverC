@@ -193,6 +193,7 @@ typedef struct {
     size_t gzip_min_size;
     int access_log_enabled;
     neverc_http_access_log_func_t access_log;
+    const char *alt_svc; /* optional per-server Alt-Svc response value */
 } neverc_http_server_config_t;
 
 /* Return a complete server configuration populated with safe defaults. */
@@ -364,6 +365,12 @@ typedef struct {
     int max_idle_per_host;
     size_t max_response_header_size;
     size_t max_response_body_size;
+    /* Per-client TLS identity and trust. Paths are copied by client_new. */
+    const char *root_cert_file;
+    const char *client_cert_file;
+    const char *client_key_file;
+    /* Explicit verification opt-out. Defaults to false. */
+    int insecure_skip_verify;
 } neverc_http_client_config_t;
 
 /* Create an independent HTTP client and connection pool. */

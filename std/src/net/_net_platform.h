@@ -45,6 +45,12 @@
   #define nc_cond_broadcast(c) WakeAllConditionVariable(c)
   #define nc_cond_wait(c, m)  SleepConditionVariableCS(c, m, INFINITE)
 
+  static inline int nc_cond_wait_ms(nc_cond_t *cond, nc_mutex_t *mutex,
+                                    uint32_t timeout_ms) {
+      if (SleepConditionVariableCS(cond, mutex, (DWORD)timeout_ms)) return 0;
+      return GetLastError() == ERROR_TIMEOUT ? 1 : -1;
+  }
+
   static inline uint64_t nc_monotonic_ms(void) {
       return (uint64_t)GetTickCount64();
   }
@@ -87,6 +93,20 @@
   #define nc_cond_signal(c)   pthread_cond_signal(c)
   #define nc_cond_broadcast(c) pthread_cond_broadcast(c)
   #define nc_cond_wait(c, m)  pthread_cond_wait(c, m)
+
+  static inline int nc_cond_wait_ms(nc_cond_t *cond, nc_mutex_t *mutex,
+                                    uint32_t timeout_ms) {
+      struct timespec deadline;
+      if (clock_gettime(CLOCK_REALTIME, &deadline) != 0) return -1;
+      deadline.tv_sec += (time_t)(timeout_ms / 1000U);
+      deadline.tv_nsec += (long)(timeout_ms % 1000U) * 1000000L;
+      if (deadline.tv_nsec >= 1000000000L) {
+          deadline.tv_sec++;
+          deadline.tv_nsec -= 1000000000L;
+      }
+      int result = pthread_cond_timedwait(cond, mutex, &deadline);
+      return result == 0 ? 0 : result == ETIMEDOUT ? 1 : -1;
+  }
 
   static inline uint64_t nc_monotonic_ms(void) {
       struct timespec ts;

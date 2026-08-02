@@ -13,6 +13,21 @@
 
 /* Pull in source directly for unit testing */
 #include "../../../std/src/net/quic/quic_varint.c"
+#include "../../../std/src/net/quic/quic_transport_params.c"
+#include "../../../std/src/net/quic/quic_loss.c"
+
+/*
+ * This unit owns neither a UDP endpoint nor a TLS/transport engine.  Keep
+ * those boundaries inert while exercising the real connection, flow-control,
+ * transport-parameter, and loss-detection state.
+ */
+void neverc_quic_tls_destroy(quic_tls_t *tls) { (void)tls; }
+void neverc_udp_close(neverc_udp_conn_t *conn) { (void)conn; }
+int neverc_quic_conn_flush(struct neverc_quic_conn *conn) {
+    (void)conn;
+    return 0;
+}
+
 #include "../../../std/src/net/quic/quic_conn.c"
 
 static int tests_run = 0, tests_passed = 0, tests_failed = 0;
@@ -195,10 +210,14 @@ static void test_stream_write_read(void) {
     ASSERT_EQ(written, (int)strlen(msg));
     ASSERT_EQ(s->send_len, strlen(msg));
 
-    /* Simulate receiving data into the recv buffer */
+    /* Feed the reply through the real receive/reassembly path. */
     const char *reply = "OK";
-    memcpy(s->recv_buf, reply, 2);
-    s->recv_len = 2;
+    quic_frame_stream_t frame;
+    memset(&frame, 0, sizeof(frame));
+    frame.stream_id = s->id;
+    frame.data = (const uint8_t *)reply;
+    frame.data_len = 2;
+    ASSERT_EQ(neverc_quic_stream_receive(conn, &frame), 0);
 
     char buf[64] = {0};
     int nread = neverc_quic_stream_read_data(s, buf, sizeof(buf));
@@ -350,36 +369,6 @@ static void test_stream_get_id(void) {
     neverc_quic_conn_destroy(conn);
 }
 
-static void test_public_transport_fails_closed(void) {
-    neverc_quic_config_t cfg = neverc_quic_config_default();
-    ASSERT_EQ(cfg.max_idle_timeout_ms, 30000);
-    ASSERT_EQ(cfg.max_udp_payload_size, 1200);
-
-    const char *err = NULL;
-#ifdef _WIN32
-    WSASetLastError(0);
-#else
-    errno = 0;
-#endif
-    neverc_quic_endpoint_t *ep =
-        neverc_quic_listen("127.0.0.1:0", &cfg, &err);
-    ASSERT_NULL(ep);
-    ASSERT_NOT_NULL(err);
-    ASSERT_TRUE(strstr(err, "unavailable") != NULL);
-#ifdef _WIN32
-    ASSERT_EQ(WSAGetLastError(), WSAEOPNOTSUPP);
-#else
-    ASSERT_EQ(errno, ENOSYS);
-#endif
-
-    err = NULL;
-    neverc_quic_conn_t *conn =
-        neverc_quic_dial("127.0.0.1:4433", &cfg, &err);
-    ASSERT_NULL(conn);
-    ASSERT_NOT_NULL(err);
-    ASSERT_TRUE(strstr(err, "unavailable") != NULL);
-}
-
 /* ======================================================================
  * main
  * ====================================================================== */
@@ -406,8 +395,7 @@ int main(void) {
     test_conn_is_alive();
     test_conn_alpn();
     test_stream_get_id();
-    test_public_transport_fails_closed();
-
     printf("\n%d passed, %d failed (of %d)\n", tests_passed, tests_failed, tests_run);
+    if (tests_failed == 0) puts("passed");
     return tests_failed > 0 ? 1 : 0;
 }

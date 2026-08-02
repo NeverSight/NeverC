@@ -1685,6 +1685,7 @@ struct http_conn {
     size_t             gzip_min_size;
     int                access_log_enabled;
     neverc_http_access_log_func_t access_log;
+    const char         *alt_svc;
     int                handler_timeout_ms;
     nc_threadpool_t    *stream_pool;
     void               *active_stream_task;
@@ -1781,6 +1782,7 @@ static http_conn_t *http_conn_new(nc_sock_t fd, nc_evloop_t *loop,
     hc->gzip_min_size = config->gzip_min_size;
     hc->access_log_enabled = config->access_log_enabled;
     hc->access_log = config->access_log;
+    hc->alt_svc = config->alt_svc;
     hc->handler_timeout_ms = config->handler_timeout_ms;
     hc->stream_pool = stream_pool;
     hc->active_stream_task = NULL;
@@ -2313,6 +2315,9 @@ static int http_conn_start_streaming(http_conn_t *connection,
     task->writer->gzip_level = connection->gzip_level;
     task->writer->gzip_min_size = connection->gzip_min_size;
     task->writer->write_timeout_ms = connection->write_timeout_ms;
+    if (connection->alt_svc)
+        neverc_http_set_header(task->writer, "Alt-Svc",
+                               connection->alt_svc);
     if (connection->tls) {
         task->writer->transport_write = https_transport_write;
         task->writer->transport_context = connection->tls;
@@ -2477,6 +2482,8 @@ static void http_conn_process(http_conn_t *hc) {
         w->gzip_level = hc->gzip_level;
         w->gzip_min_size = hc->gzip_min_size;
         w->write_timeout_ms = hc->write_timeout_ms;
+        if (hc->alt_svc)
+            neverc_http_set_header(w, "Alt-Svc", hc->alt_svc);
         w->transport_write = http_conn_transport_write;
         w->transport_context = hc;
         if (hc->tls) w->transport_tcp = hc->tcp;
@@ -2838,6 +2845,11 @@ static int http_conn_drive_handshake(http_conn_t *connection) {
     connection->request_started = 0;
     connection->last_active = nc_monotonic_ms();
     connection->handshake_interest = NC_EV_READ;
+
+    /* The TLS record reader may have consumed the first HTTP record while
+     * reassembling Client Finished. It then lives in TLS userspace buffers
+     * and cannot produce another edge-triggered socket event. */
+    http_conn_on_read(connection);
     return 0;
 }
 
@@ -3162,6 +3174,7 @@ neverc_http_server_config_t neverc_http_server_config_default(void) {
     config.gzip_min_size = 256;
     config.access_log_enabled = 0;
     config.access_log = NULL;
+    config.alt_svc = NULL;
     return config;
 }
 
@@ -3178,7 +3191,11 @@ static int server_config_valid(const neverc_http_server_config_t *config) {
            config->gzip_level >= 1 && config->gzip_level <= 9 &&
            config->gzip_min_size > 0 &&
            (config->access_log_enabled == 0 ||
-            config->access_log_enabled == 1);
+            config->access_log_enabled == 1) &&
+           (!config->alt_svc ||
+            (strlen(config->alt_svc) <= 1024U &&
+             !strchr(config->alt_svc, '\r') &&
+             !strchr(config->alt_svc, '\n')));
 }
 
 neverc_http_server_t *neverc_http_server_new(
@@ -3199,9 +3216,15 @@ neverc_http_server_t *neverc_http_server_new(
     neverc_http_server_t *server =
         (neverc_http_server_t *)calloc(1, sizeof(*server));
     if (!server) return NULL;
+    char *alt_svc = effective.alt_svc ? strdup(effective.alt_svc) : NULL;
+    if (effective.alt_svc && !alt_svc) {
+        free(server);
+        return NULL;
+    }
     server->listen_fd = NC_INVALID_SOCK;
     server->mux = mux;
     server->config = effective;
+    server->config.alt_svc = alt_svc;
     nc_conn_limiter_init(&server->conn_limiter, effective.max_connections);
     nc_mutex_init(&server->lifecycle_lock);
     return server;
@@ -3216,6 +3239,7 @@ void neverc_http_server_free(neverc_http_server_t *server) {
     }
     nc_mutex_unlock(&server->lifecycle_lock);
     nc_mutex_destroy(&server->lifecycle_lock);
+    free((char *)server->config.alt_svc);
     free(server);
 }
 
@@ -3631,6 +3655,7 @@ int neverc_http_server_listen_and_serve_tls(
     neverc_tls_config_set_alpn(tls_config, alpn, 2);
     h2_server = neverc_h2_server_create(server->mux);
     if (!h2_server) goto done;
+    neverc_h2_server_set_alt_svc(h2_server, server->config.alt_svc);
     neverc_h2_server_set_max_body_size(
         h2_server, (size_t)server->config.max_body_size);
     neverc_h2_server_set_handler_timeout(

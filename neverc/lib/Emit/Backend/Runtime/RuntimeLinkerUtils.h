@@ -2,6 +2,7 @@
 #define NEVERC_LIB_EMIT_BACKEND_RUNTIME_RUNTIMELINKERUTILS_H
 
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/IR/Comdat.h"
@@ -29,6 +30,31 @@ inline void stripHostTargetAttributes(llvm::Module &Mod) {
     F.removeFnAttr("target-features");
     F.removeFnAttr("tune-cpu");
   }
+}
+
+inline bool isDebugModuleFlag(const llvm::MDNode &Flag) {
+  if (Flag.getNumOperands() < 2)
+    return false;
+  auto *Key = llvm::dyn_cast_or_null<llvm::MDString>(Flag.getOperand(1));
+  if (!Key)
+    return false;
+  return Key->getString() == "Debug Info Version" ||
+         Key->getString() == "Dwarf Version" ||
+         Key->getString() == "DWARF64" || Key->getString() == "CodeView" ||
+         Key->getString() == "PDB Info Version";
+}
+
+inline void stripNonDebugModuleFlags(llvm::Module &Mod) {
+  auto *Flags = Mod.getModuleFlagsMetadata();
+  if (!Flags)
+    return;
+  llvm::SmallVector<llvm::TrackingMDNodeRef, 4> DebugFlags;
+  for (llvm::MDNode *Flag : Flags->operands())
+    if (isDebugModuleFlag(*Flag))
+      DebugFlags.emplace_back(Flag);
+  Flags->clearOperands();
+  for (const llvm::TrackingMDNodeRef &Flag : DebugFlags)
+    Flags->addOperand(llvm::cast<llvm::MDNode>(Flag.get()));
 }
 
 // ===----------------------------------------------------------------------===//
@@ -60,8 +86,10 @@ parseBitcodeAndPrepare(llvm::StringRef Embedded, llvm::Module &M,
   Mod->setDataLayout(M.getDataLayout());
   Mod->setTargetTriple(M.getTargetTriple());
 
-  if (auto *Flags = Mod->getModuleFlagsMetadata())
-    Flags->clearOperands();
+  // Target-specific flags from bootstrap modules must not override the
+  // consumer. Keep only the version flags required to make retained runtime
+  // debug metadata valid and mergeable.
+  stripNonDebugModuleFlags(*Mod);
 
   // Embedded runtimes may have been bootstrapped for another object format
   // (e.g. a Windows-hosted string runtime retargeted to Linux). COFF encodes

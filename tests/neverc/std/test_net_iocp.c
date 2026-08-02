@@ -10,18 +10,36 @@
 static int wait_for_operation(nc_poller_t *poller, nc_iocp_op_t *operation,
                               void *data, int events, size_t transferred,
                               int expected_error) {
-    nc_event_t completed[4];
-    int count = nc_poller_wait(poller, completed, 4, 2000);
-    if (count <= 0) return -1;
+    uint64_t deadline = nc_monotonic_ms() + 2000U;
+    while (nc_monotonic_ms() < deadline) {
+        nc_event_t completed[4];
+        int count = nc_poller_wait(poller, completed, 4, 50);
+        if (count < 0) return -1;
+        for (int i = 0; i < count; i++) {
+            if (completed[i].operation != operation) continue;
+            if (completed[i].data != data ||
+                (completed[i].events & events) != events ||
+                completed[i].transferred != transferred ||
+                completed[i].error != expected_error)
+                return -1;
+            return 0;
+        }
+    }
+    return -1;
+}
 
-    for (int i = 0; i < count; i++) {
-        if (completed[i].operation != operation) continue;
-        if (completed[i].data != data ||
-            (completed[i].events & events) != events ||
-            completed[i].transferred != transferred ||
-            completed[i].error != expected_error)
-            return -1;
-        return 0;
+static int wait_for_readiness(nc_poller_t *poller, nc_sock_t fd,
+                              void *data, int events) {
+    uint64_t deadline = nc_monotonic_ms() + 2000U;
+    while (nc_monotonic_ms() < deadline) {
+        nc_event_t ready[4];
+        int count = nc_poller_wait(poller, ready, 4, 50);
+        if (count < 0) return -1;
+        for (int i = 0; i < count; i++)
+            if (!ready[i].operation && ready[i].fd == fd &&
+                ready[i].data == data &&
+                (ready[i].events & events) == events)
+                return 0;
     }
     return -1;
 }
@@ -55,7 +73,7 @@ static int bind_listener(nc_sock_t *listener, struct sockaddr_in *bound) {
 int main(void) {
     if (nc_net_init() != 0) return 1;
     if (!nc_poller_supports_completions() ||
-        nc_poller_supports_readiness())
+        !nc_poller_supports_readiness())
         return 2;
 
     nc_sock_t listener = NC_INVALID_SOCK;
@@ -79,6 +97,7 @@ int main(void) {
 
     poller = nc_poller_create();
     if (!poller ||
+        nc_poller_associate_completion(poller, listener, NULL) != 0 ||
         nc_poller_add(poller, listener, NC_EV_READ, NULL) != 0)
         goto done;
 
@@ -99,6 +118,7 @@ int main(void) {
     accepted = nc_iocp_accept_take(&accept_op);
     if (accepted == NC_INVALID_SOCK ||
         nc_iocp_accept_take(&accept_op) != NC_INVALID_SOCK ||
+        nc_poller_associate_completion(poller, accepted, NULL) != 0 ||
         nc_poller_add(poller, accepted, NC_EV_READ | NC_EV_WRITE, NULL) != 0)
         goto done;
 
@@ -124,6 +144,15 @@ int main(void) {
     char output[4];
     if (recv(client, output, sizeof(output), MSG_WAITALL) != 4 ||
         memcmp(output, "pong", 4) != 0)
+        goto done;
+
+    int readiness_tag;
+    char readiness_byte;
+    if (nc_poller_mod(poller, accepted, NC_EV_READ, &readiness_tag) != 0 ||
+        send(client, "r", 1, 0) != 1 ||
+        wait_for_readiness(poller, accepted, &readiness_tag, NC_EV_READ) != 0 ||
+        recv(accepted, &readiness_byte, 1, 0) != 1 ||
+        readiness_byte != 'r')
         goto done;
 
     char cancelled_buffer[1];

@@ -26,6 +26,29 @@ using namespace neverc;
 using namespace sema;
 
 namespace {
+bool areSameIdentityFieldExpr(const Expr *LHSExpr, const Expr *RHSExpr) {
+  LHSExpr = LHSExpr->IgnoreParenImpCasts();
+  RHSExpr = RHSExpr->IgnoreParenImpCasts();
+  if (LHSExpr->getStmtClass() != RHSExpr->getStmtClass())
+    return false;
+
+  if (const auto *LHSDeclRef = dyn_cast<DeclRefExpr>(LHSExpr)) {
+    const auto *RHSDeclRef = cast<DeclRefExpr>(RHSExpr);
+    return LHSDeclRef->getDecl()->getCanonicalDecl() ==
+           RHSDeclRef->getDecl()->getCanonicalDecl();
+  }
+
+  if (const auto *LHSMember = dyn_cast<MemberExpr>(LHSExpr)) {
+    const auto *RHSMember = cast<MemberExpr>(RHSExpr);
+    return LHSMember->getMemberDecl()->getCanonicalDecl() ==
+               RHSMember->getMemberDecl()->getCanonicalDecl() &&
+           areSameIdentityFieldExpr(LHSMember->getBase(),
+                                    RHSMember->getBase());
+  }
+
+  return false;
+}
+
 void checkIdentityFieldAssignment(Expr *LHSExpr, Expr *RHSExpr,
                                   SourceLocation Loc, Sema &Sema) {
   if (Sema.isUnevaluatedContext())
@@ -35,9 +58,8 @@ void checkIdentityFieldAssignment(Expr *LHSExpr, Expr *RHSExpr,
   if (LHSExpr->getExprLoc().isMacroID() || RHSExpr->getExprLoc().isMacroID())
     return;
 
-  // Member-to-member assignment
-  MemberExpr *ML = dyn_cast<MemberExpr>(LHSExpr);
-  MemberExpr *MR = dyn_cast<MemberExpr>(RHSExpr);
+  MemberExpr *ML = dyn_cast<MemberExpr>(LHSExpr->IgnoreParenImpCasts());
+  MemberExpr *MR = dyn_cast<MemberExpr>(RHSExpr->IgnoreParenImpCasts());
   if (ML && MR) {
     const ValueDecl *LHSDecl =
         cast<ValueDecl>(ML->getMemberDecl()->getCanonicalDecl());
@@ -46,6 +68,8 @@ void checkIdentityFieldAssignment(Expr *LHSExpr, Expr *RHSExpr,
     if (LHSDecl != RHSDecl)
       return;
     if (LHSDecl->getType().isVolatileQualified())
+      return;
+    if (!areSameIdentityFieldExpr(ML, MR))
       return;
 
     Sema.Diag(Loc, diag::warn_identity_field_assign);

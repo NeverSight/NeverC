@@ -2,7 +2,6 @@
 
 #include "neverc/std/encoding/base64.h"
 
-#include <ctype.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -536,7 +535,8 @@ static int grpc_metadata_key_valid(const char *key) {
     if (!key || !key[0] || key[0] == ':') return 0;
     for (const unsigned char *cursor = (const unsigned char *)key;
          *cursor; cursor++)
-        if (!(isalnum(*cursor) && !isupper(*cursor)) &&
+        if (!((*cursor >= 'a' && *cursor <= 'z') ||
+              (*cursor >= '0' && *cursor <= '9')) &&
             *cursor != '-' && *cursor != '_' && *cursor != '.')
             return 0;
     return strcmp(key, "content-type") != 0 &&

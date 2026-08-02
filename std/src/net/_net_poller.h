@@ -40,6 +40,10 @@ typedef struct {
     int kqfd;
 #elif defined(NC_USE_IOCP)
     HANDLE iocp;
+    WSAPOLLFD *pfds;
+    void **pdata;
+    int npfds;
+    int cap_pfds;
 #else
     struct pollfd *pfds;
     void **pdata;
@@ -49,16 +53,28 @@ typedef struct {
 } nc_poller_t;
 
 static inline int nc_poller_supports_readiness(void) {
-#if defined(NC_USE_IOCP)
-    return 0;
-#else
     return 1;
-#endif
 }
 
 static inline int nc_poller_supports_completions(void) {
     return NC_HAS_IOCP_COMPLETIONS;
 }
+
+#if defined(NC_USE_IOCP)
+/*
+ * Completion I/O and readiness polling are independent on Windows.  Sockets
+ * using AcceptEx/WSARecv/WSASend must opt into the completion port explicitly;
+ * nc_poller_add() only registers a socket with the WSAPoll readiness set.
+ */
+static inline int nc_poller_associate_completion(nc_poller_t *poller,
+                                                  nc_sock_t fd,
+                                                  void *data) {
+    if (!poller || fd == NC_INVALID_SOCK) return -1;
+    HANDLE handle = CreateIoCompletionPort(
+        (HANDLE)fd, poller->iocp, (ULONG_PTR)data, 0);
+    return handle ? 0 : -1;
+}
+#endif
 
 static inline nc_poller_t *nc_poller_create(void) {
     nc_poller_t *poller =
@@ -117,6 +133,18 @@ static inline nc_poller_t *nc_poller_create(void) {
         free(poller);
         return NULL;
     }
+    poller->cap_pfds = 64;
+    poller->pfds = (WSAPOLLFD *)NC_POLLER_CALLOC(
+        (size_t)poller->cap_pfds, sizeof(*poller->pfds));
+    poller->pdata = (void **)NC_POLLER_CALLOC(
+        (size_t)poller->cap_pfds, sizeof(*poller->pdata));
+    if (!poller->pfds || !poller->pdata) {
+        free(poller->pfds);
+        free(poller->pdata);
+        CloseHandle(poller->iocp);
+        free(poller);
+        return NULL;
+    }
 #else
     poller->cap_pfds = 64;
     poller->pfds = (struct pollfd *)NC_POLLER_CALLOC(
@@ -152,6 +180,8 @@ static inline void nc_poller_destroy(nc_poller_t *poller) {
 #elif defined(NC_USE_KQUEUE)
     close(poller->kqfd);
 #elif defined(NC_USE_IOCP)
+    free(poller->pfds);
+    free(poller->pdata);
     CloseHandle(poller->iocp);
 #else
     free(poller->pfds);
@@ -161,11 +191,16 @@ static inline void nc_poller_destroy(nc_poller_t *poller) {
 }
 
 #if !defined(NC_USE_IO_URING) && !defined(NC_USE_EPOLL) && \
-    !defined(NC_USE_KQUEUE) && !defined(NC_USE_IOCP)
+    !defined(NC_USE_KQUEUE)
 static inline int nc_poller_reserve(nc_poller_t *poller, int capacity) {
     if (capacity <= poller->cap_pfds) return 0;
+#if defined(NC_USE_IOCP)
+    WSAPOLLFD *pfds = (WSAPOLLFD *)NC_POLLER_CALLOC(
+        (size_t)capacity, sizeof(*pfds));
+#else
     struct pollfd *pfds = (struct pollfd *)NC_POLLER_CALLOC(
         (size_t)capacity, sizeof(struct pollfd));
+#endif
     void **pdata =
         (void **)NC_POLLER_CALLOC((size_t)capacity, sizeof(void *));
     if (!pfds || !pdata) {
@@ -175,7 +210,7 @@ static inline int nc_poller_reserve(nc_poller_t *poller, int capacity) {
     }
     if (poller->npfds > 0) {
         memcpy(pfds, poller->pfds,
-               (size_t)poller->npfds * sizeof(struct pollfd));
+               (size_t)poller->npfds * sizeof(*pfds));
         memcpy(pdata, poller->pdata,
                (size_t)poller->npfds * sizeof(void *));
     }
@@ -301,11 +336,20 @@ static inline int nc_poller_add(nc_poller_t *poller, nc_sock_t fd,
     }
     return kevent(poller->kqfd, changes, count, NULL, 0, NULL);
 #elif defined(NC_USE_IOCP)
-    (void)events;
-    HANDLE handle =
-        CreateIoCompletionPort((HANDLE)fd, poller->iocp,
-                               (ULONG_PTR)data, 0);
-    return handle ? 0 : -1;
+    for (int i = 0; i < poller->npfds; i++)
+        if (poller->pfds[i].fd == fd) return -1;
+    if (poller->npfds >= poller->cap_pfds) {
+        if (poller->cap_pfds > INT_MAX / 2 ||
+            nc_poller_reserve(poller, poller->cap_pfds * 2) != 0)
+            return -1;
+    }
+    WSAPOLLFD *entry = &poller->pfds[poller->npfds];
+    memset(entry, 0, sizeof(*entry));
+    entry->fd = fd;
+    if (events & NC_EV_READ) entry->events |= POLLRDNORM;
+    if (events & NC_EV_WRITE) entry->events |= POLLWRNORM;
+    poller->pdata[poller->npfds++] = data;
+    return 0;
 #else
     for (int i = 0; i < poller->npfds; i++)
         if (poller->pfds[i].fd == fd) return -1;
@@ -374,9 +418,16 @@ static inline int nc_poller_mod(nc_poller_t *poller, nc_sock_t fd,
         (events & NC_EV_WRITE) ? (EV_ADD | EV_CLEAR) : EV_DELETE,
         data, !(events & NC_EV_WRITE));
 #elif defined(NC_USE_IOCP)
-    (void)fd;
-    (void)events;
-    (void)data;
+    for (int i = 0; i < poller->npfds; i++) {
+        if (poller->pfds[i].fd != fd) continue;
+        poller->pfds[i].events = 0;
+        if (events & NC_EV_READ)
+            poller->pfds[i].events |= POLLRDNORM;
+        if (events & NC_EV_WRITE)
+            poller->pfds[i].events |= POLLWRNORM;
+        poller->pdata[i] = data;
+        return 0;
+    }
     return -1;
 #else
     for (int i = 0; i < poller->npfds; i++) {
@@ -426,8 +477,14 @@ static inline int nc_poller_del(nc_poller_t *poller, nc_sock_t fd) {
         poller, fd, EVFILT_WRITE, EV_DELETE, NULL, 1);
     return read_result != 0 ? read_result : write_result;
 #elif defined(NC_USE_IOCP)
-    (void)fd;
-    return 0;
+    for (int i = 0; i < poller->npfds; i++) {
+        if (poller->pfds[i].fd != fd) continue;
+        poller->pfds[i] = poller->pfds[poller->npfds - 1];
+        poller->pdata[i] = poller->pdata[poller->npfds - 1];
+        poller->npfds--;
+        return 0;
+    }
+    return -1;
 #else
     for (int i = 0; i < poller->npfds; i++) {
         if (poller->pfds[i].fd != fd) continue;
@@ -439,6 +496,49 @@ static inline int nc_poller_del(nc_poller_t *poller, nc_sock_t fd) {
     return -1;
 #endif
 }
+
+#if defined(NC_USE_IOCP)
+static inline int nc_poller_iocp_dequeue(nc_poller_t *poller,
+                                         nc_event_t *out,
+                                         int max_events,
+                                         DWORD timeout) {
+    OVERLAPPED_ENTRY entries[NC_POLLER_MAX_BATCH];
+    ULONG removed = 0;
+    BOOL ok = GetQueuedCompletionStatusEx(
+        poller->iocp, entries, (ULONG)max_events, &removed, timeout, FALSE);
+    if (!ok) {
+        DWORD error = GetLastError();
+        return error == WAIT_TIMEOUT ? 0 : -1;
+    }
+    for (ULONG i = 0; i < removed; i++) {
+        nc_iocp_op_t *operation =
+            (nc_iocp_op_t *)entries[i].lpOverlapped;
+        out[i].operation = operation;
+        out[i].transferred = 0;
+        out[i].error = 0;
+        out[i].fd = NC_INVALID_SOCK;
+        out[i].events = 0;
+        if (!operation) {
+            out[i].data = (void *)entries[i].lpCompletionKey;
+            continue;
+        }
+
+        nc_iocp_op_complete(
+            operation, entries[i].dwNumberOfBytesTransferred);
+        out[i].data = operation->data;
+        out[i].fd = operation->fd;
+        out[i].transferred = (size_t)operation->transferred;
+        out[i].error = operation->error;
+        if (operation->kind == NC_IOCP_OP_ACCEPT ||
+            operation->kind == NC_IOCP_OP_RECV)
+            out[i].events |= NC_EV_READ;
+        else if (operation->kind == NC_IOCP_OP_SEND)
+            out[i].events |= NC_EV_WRITE;
+        if (operation->error != 0) out[i].events |= NC_EV_ERROR;
+    }
+    return (int)removed;
+}
+#endif
 
 static inline int nc_poller_wait(nc_poller_t *poller, nc_event_t *out,
                                  int max_events, int timeout_ms) {
@@ -572,44 +672,57 @@ static inline int nc_poller_wait(nc_poller_t *poller, nc_event_t *out,
     }
     return count;
 #elif defined(NC_USE_IOCP)
-    OVERLAPPED_ENTRY entries[NC_POLLER_MAX_BATCH];
-    ULONG removed = 0;
-    DWORD timeout =
-        timeout_ms >= 0 ? (DWORD)timeout_ms : INFINITE;
-    BOOL ok = GetQueuedCompletionStatusEx(
-        poller->iocp, entries, (ULONG)max_events, &removed, timeout, FALSE);
-    if (!ok) {
-        DWORD error = GetLastError();
-        return error == WAIT_TIMEOUT ? 0 : -1;
+    if (poller->npfds == 0) {
+        DWORD timeout = timeout_ms >= 0 ? (DWORD)timeout_ms : INFINITE;
+        return nc_poller_iocp_dequeue(poller, out, max_events, timeout);
     }
-    for (ULONG i = 0; i < removed; i++) {
-        nc_iocp_op_t *operation =
-            (nc_iocp_op_t *)entries[i].lpOverlapped;
-        out[i].operation = operation;
-        out[i].transferred = 0;
-        out[i].error = 0;
-        out[i].fd = NC_INVALID_SOCK;
-        out[i].events = 0;
-        if (!operation) {
-            out[i].data = (void *)entries[i].lpCompletionKey;
-            continue;
-        }
 
-        nc_iocp_op_complete(
-            operation, entries[i].dwNumberOfBytesTransferred);
-        out[i].data = operation->data;
-        out[i].fd = operation->fd;
-        out[i].transferred = (size_t)operation->transferred;
-        out[i].error = operation->error;
-        if (operation->kind == NC_IOCP_OP_ACCEPT ||
-            operation->kind == NC_IOCP_OP_RECV)
-            out[i].events |= NC_EV_READ;
-        else if (operation->kind == NC_IOCP_OP_SEND)
-            out[i].events |= NC_EV_WRITE;
-        if (operation->error != 0)
-            out[i].events |= NC_EV_ERROR;
+    uint64_t deadline = 0;
+    if (timeout_ms >= 0) {
+        uint64_t now = nc_monotonic_ms();
+        deadline = now + (uint64_t)timeout_ms;
+        if (deadline < now) deadline = UINT64_MAX;
     }
-    return (int)removed;
+    for (;;) {
+        int completed = nc_poller_iocp_dequeue(
+            poller, out, max_events, 0);
+        if (completed != 0) return completed;
+
+        int slice_ms = 10;
+        if (timeout_ms >= 0) {
+            uint64_t now = nc_monotonic_ms();
+            if (now >= deadline) slice_ms = 0;
+            else if (deadline - now < (uint64_t)slice_ms)
+                slice_ms = (int)(deadline - now);
+        }
+        int ready = WSAPoll(poller->pfds, (ULONG)poller->npfds, slice_ms);
+        if (ready == SOCKET_ERROR) return -1;
+
+        completed = nc_poller_iocp_dequeue(poller, out, max_events, 0);
+        if (completed != 0) return completed;
+        if (ready > 0) {
+            int count = 0;
+            for (int i = 0; i < poller->npfds && count < max_events; i++) {
+                short revents = poller->pfds[i].revents;
+                if (!revents) continue;
+                out[count].fd = poller->pfds[i].fd;
+                out[count].data = poller->pdata[i];
+                out[count].operation = NULL;
+                out[count].transferred = 0;
+                out[count].error = 0;
+                out[count].events = 0;
+                if (revents & (POLLRDNORM | POLLIN))
+                    out[count].events |= NC_EV_READ;
+                if (revents & (POLLWRNORM | POLLOUT))
+                    out[count].events |= NC_EV_WRITE;
+                if (revents & (POLLERR | POLLHUP | POLLNVAL))
+                    out[count].events |= NC_EV_ERROR;
+                count++;
+            }
+            return count;
+        }
+        if (timeout_ms >= 0 && nc_monotonic_ms() >= deadline) return 0;
+    }
 #else
     int ready;
     do {

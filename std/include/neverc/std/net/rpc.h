@@ -142,8 +142,11 @@ typedef struct {
     int reconnect_enabled;
     int reconnect_backoff_ms;
     int use_tls;
+    int use_quic; /* mutually exclusive with use_tls; QUIC always uses TLS */
     const char *server_name; /* required for TLS when addr is not a DNS name */
     const char *root_ca_file; /* optional custom PEM roots */
+    const char *client_cert_file; /* optional mTLS certificate PEM */
+    const char *client_key_file;  /* required with client_cert_file */
 } neverc_rpc_client_config_t;
 
 typedef struct {
@@ -171,8 +174,9 @@ enum {
 neverc_rpc_client_config_t neverc_rpc_client_config_default(void);
 neverc_rpc_call_options_t neverc_rpc_call_options_default(void);
 
-/* Dial one multiplexed TCP or verified TLS connection and start its bounded
- * reader/writer pumps. The config strings are copied or consumed during dial. */
+/* Dial one multiplexed TCP, verified TLS, or verified QUIC connection and
+ * start its bounded reader/writer pumps. The config strings are copied or
+ * consumed during dial. */
 neverc_rpc_client_t *neverc_rpc_client_dial(
     const char *addr, const neverc_rpc_client_config_t *config,
     const char **errp);
@@ -303,6 +307,16 @@ int neverc_rpc_server_listen_and_serve(neverc_rpc_server_t *server,
 int neverc_rpc_server_listen_and_serve_tls(
     neverc_rpc_server_t *server, const char *addr,
     const char *cert_file, const char *key_file);
+/* Serve NRPC over TLS 1.3 and require a client certificate chaining to one of
+ * the PEM roots in client_ca_file. */
+int neverc_rpc_server_listen_and_serve_mtls(
+    neverc_rpc_server_t *server, const char *addr,
+    const char *cert_file, const char *key_file,
+    const char *client_ca_file);
+/* Serve one multiplexed NRPC connection per verified QUIC stream. */
+int neverc_rpc_server_listen_and_serve_quic(
+    neverc_rpc_server_t *server, const char *addr,
+    const char *cert_file, const char *key_file);
 void neverc_rpc_server_shutdown(neverc_rpc_server_t *server);
 size_t neverc_rpc_server_active_connections(neverc_rpc_server_t *server);
 int neverc_rpc_server_bound_port(neverc_rpc_server_t *server);
@@ -318,6 +332,10 @@ const neverc_rpc_metadata_t *neverc_rpc_server_stream_metadata(
     neverc_rpc_server_stream_t *stream, size_t *count);
 neverc_rpc_codec_t neverc_rpc_server_stream_codec(
     neverc_rpc_server_stream_t *stream);
+/* Return the DER leaf certificate authenticated by the TLS transport. The
+ * view remains valid for the lifetime of the server stream. */
+const uint8_t *neverc_rpc_server_stream_peer_certificate(
+    neverc_rpc_server_stream_t *stream, size_t *out_len);
 int neverc_rpc_server_stream_recv(
     neverc_rpc_server_stream_t *stream, void *buf, size_t buflen,
     size_t *out_len);

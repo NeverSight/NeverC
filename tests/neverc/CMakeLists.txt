@@ -2288,6 +2288,63 @@ if(NEVERC_ENABLE_TLS_PROTOCOL_FUZZER)
   unset(_neverc_tls_fuzzer_std_root)
 endif()
 
+option(NEVERC_ENABLE_NETWORK_PROTOCOL_FUZZER
+  "Build the HTTP/RPC/QUIC protocol libFuzzer target" OFF)
+if(NEVERC_ENABLE_NETWORK_PROTOCOL_FUZZER)
+  if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    message(FATAL_ERROR
+      "NEVERC_ENABLE_NETWORK_PROTOCOL_FUZZER requires Clang and libFuzzer")
+  endif()
+  set(_neverc_network_fuzzer_std_root
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../std/src)
+  add_executable(neverc-network-protocol-fuzzer
+    NetworkProtocolFuzzer.cpp
+    NetworkProtocolFuzzAdapters.c
+    ${_neverc_network_fuzzer_std_root}/net/http/http.c
+    ${_neverc_network_fuzzer_std_root}/net/websocket/websocket.c
+    ${_neverc_network_fuzzer_std_root}/net/http/http2/http2.c
+    ${_neverc_network_fuzzer_std_root}/net/http/http2/http2_server.c
+    ${_neverc_network_fuzzer_std_root}/net/http3/http3_frame.c
+    ${_neverc_network_fuzzer_std_root}/net/quic/quic_varint.c
+    ${_neverc_network_fuzzer_std_root}/net/quic/quic_packet.c
+    ${_neverc_network_fuzzer_std_root}/net/quic/quic_frame.c
+    ${_neverc_network_fuzzer_std_root}/net/quic/quic_transport_params.c
+    ${_neverc_network_fuzzer_std_root}/net/rpc/rpc_frame.c
+  )
+  target_include_directories(neverc-network-protocol-fuzzer PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../std/include
+    ${_neverc_network_fuzzer_std_root}/net/quic
+  )
+  target_compile_features(neverc-network-protocol-fuzzer PRIVATE cxx_std_17)
+  target_compile_definitions(neverc-network-protocol-fuzzer PRIVATE
+    NEVERC_NETWORK_PROTOCOL_FUZZING=1
+  )
+  target_compile_options(neverc-network-protocol-fuzzer PRIVATE
+    -O1
+    -g
+    -fno-omit-frame-pointer
+    -Wall
+    -Wextra
+    -Werror
+    -Wno-unused-function
+    -Wno-unused-parameter
+    -ffunction-sections
+    -fdata-sections
+    -fsanitize=fuzzer-no-link,address,undefined
+  )
+  target_link_options(neverc-network-protocol-fuzzer PRIVATE
+    -fsanitize=fuzzer,address,undefined
+  )
+  if(APPLE)
+    target_link_options(neverc-network-protocol-fuzzer PRIVATE
+      -Wl,-dead_strip)
+  else()
+    target_link_options(neverc-network-protocol-fuzzer PRIVATE
+      -Wl,--gc-sections)
+  endif()
+  unset(_neverc_network_fuzzer_std_root)
+endif()
+
 # Standard library runtime tests — compile std/tests/*.c with neverc, run, verify
 add_executable(neverc-std-tests
   NeverCTestFixture.cpp

@@ -1,0 +1,65 @@
+name: http3-quiche-interop
+
+permissions:
+  contents: read
+
+on:
+  push:
+    paths:
+      - 'std/include/neverc/std/net/http3.h'
+      - 'std/include/neverc/std/net/quic.h'
+      - 'std/src/net/http3/**'
+      - 'std/src/net/quic/**'
+      - 'tests/neverc/std/http3_interop_server.c'
+      - 'tests/neverc/std/network_test_certs.h'
+      - 'tests/neverc/std/network_test_support.h'
+      - 'utils/ci/run-http3-quiche-interop.sh'
+      - '.github/workflows/http3-quiche-interop.yml'
+  pull_request:
+    paths:
+      - 'std/include/neverc/std/net/http3.h'
+      - 'std/include/neverc/std/net/quic.h'
+      - 'std/src/net/http3/**'
+      - 'std/src/net/quic/**'
+      - 'tests/neverc/std/http3_interop_server.c'
+      - 'tests/neverc/std/network_test_certs.h'
+      - 'tests/neverc/std/network_test_support.h'
+      - 'utils/ci/run-http3-quiche-interop.sh'
+      - '.github/workflows/http3-quiche-interop.yml'
+  schedule:
+    - cron: '30 9 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: http3-quiche-interop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  interop:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y clang cmake ninja-build perl pkg-config ripgrep
+
+      - name: Restore Cargo cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            quiche/target
+          key: quiche-0.24.5-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Build official quiche client
+        run: |
+          git clone --depth 1 --branch 0.24.5 --recursive https://github.com/cloudflare/quiche.git quiche
+          cargo build --release --manifest-path quiche/apps/Cargo.toml --bin quiche-client
+
+      - name: Run external QUIC and HTTP/3 interoperability
+        env:
+          NEVERC_RUN_NGTCP2: '1'
+        run: utils/ci/run-http3-quiche-interop.sh "$PWD" "$PWD/quiche/target/release/quiche-client" clang 19092

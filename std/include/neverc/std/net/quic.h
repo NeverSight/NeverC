@@ -4,9 +4,9 @@
 /*
  * NeverC QUIC Transport (RFC 9000, RFC 9001, RFC 9002)
  *
- * The packet, frame, loss-recovery, and connection-state building blocks are
- * experimental. Endpoint handshake and UDP I/O are not integrated yet, so
- * listen/dial/accept and stream/datagram operations currently fail closed.
+ * Provides integrated UDP endpoints, TLS 1.3 handshake, protected packets,
+ * multiplexed streams, unreliable datagrams, migration validation, flow
+ * control, loss recovery, and NewReno congestion control.
  *
  * Target capabilities:
  *   - UDP-based multiplexed transport
@@ -14,13 +14,12 @@
  *   - Bidirectional and unidirectional streams
  *   - Connection migration
  *   - Flow control (per-stream + connection-level)
- *   - Loss detection and congestion control (New Reno / BBR)
- *   - 0-RTT early data
+ *   - Loss detection and congestion control (NewReno)
  *   - Connection ID rotation
  *
  * Cross-platform: POSIX (Linux/macOS/iOS/Android) + Windows.
  *
- * Target usage after endpoint integration (server):
+ * Server usage:
  *   neverc_quic_config_t cfg = neverc_quic_config_default();
  *   cfg.cert_file = "cert.pem";
  *   cfg.key_file = "key.pem";
@@ -30,13 +29,14 @@
  *   neverc_quic_stream_t *s = neverc_quic_accept_stream(conn, &err);
  *   neverc_quic_stream_read(s, buf, len);
  *
- * Target usage after endpoint integration (client):
+ * Client usage:
  *   neverc_quic_conn_t *conn =
  *       neverc_quic_dial("example.com:4433", &cfg, &err);
  *   neverc_quic_stream_t *s = neverc_quic_open_stream(conn, &err);
  *   neverc_quic_stream_write(s, data, len);
  */
 
+#include "neverc/std/context.h"
 #include <stddef.h>
 #include <stdint.h>
 
@@ -82,6 +82,9 @@ typedef struct {
     const char *cert_file;
     const char *key_file;
     const char **alpn;         /* NULL-terminated array, e.g. {"h3", NULL} */
+    const char *server_name;   /* client SNI/hostname; inferred when NULL */
+    const char *root_cert_file;/* optional PEM trust roots for the client */
+    int insecure_skip_verify;  /* explicit opt-out; never enabled by default */
 
     /* Limits */
     uint64_t max_idle_timeout_ms;           /* default 30000 */
@@ -93,10 +96,10 @@ typedef struct {
     uint64_t max_streams_uni;               /* default 100 */
     uint32_t max_udp_payload_size;          /* default 1200 */
 
-    /* 0-RTT */
+    /* Reserved. Non-zero is rejected until ticket anti-replay is available. */
     int      enable_0rtt;
 
-    /* Congestion control: 0=NewReno (default), 1=BBR */
+    /* Congestion control: 0=NewReno. Other values are rejected. */
     int      congestion_algorithm;
 
     /* Connection migration */
@@ -106,18 +109,27 @@ typedef struct {
 /* Get sensible defaults */
 neverc_quic_config_t neverc_quic_config_default(void);
 
+/* QUIC variable-length integer helpers (RFC 9000 section 16). */
+int neverc_quic_varint_decode(const uint8_t *buffer, size_t length,
+                              uint64_t *value, size_t *consumed);
+int neverc_quic_varint_encode(uint64_t value, uint8_t *buffer,
+                              size_t capacity, size_t *written);
+size_t neverc_quic_varint_len(uint64_t value);
+
 /* ======================================================================
  * Endpoint (listener)
  * ====================================================================== */
 
-/* Currently returns NULL with an unsupported error. */
 neverc_quic_endpoint_t *neverc_quic_listen(const char *addr,
                                             const neverc_quic_config_t *cfg,
                                             const char **errp);
 
-/* Currently returns NULL with an unsupported error. */
 neverc_quic_conn_t *neverc_quic_accept(neverc_quic_endpoint_t *ep,
                                         const char **errp);
+
+/* Return the UDP port selected by bind, including an ephemeral port requested
+ * with :0. Returns -1 after close or on invalid input. */
+int neverc_quic_endpoint_bound_port(neverc_quic_endpoint_t *ep);
 
 /* Close the endpoint (stops accepting new connections). */
 void neverc_quic_endpoint_close(neverc_quic_endpoint_t *ep);
@@ -126,10 +138,14 @@ void neverc_quic_endpoint_close(neverc_quic_endpoint_t *ep);
  * Client Connection
  * ====================================================================== */
 
-/* Currently returns NULL with an unsupported error. */
 neverc_quic_conn_t *neverc_quic_dial(const char *addr,
                                       const neverc_quic_config_t *cfg,
                                       const char **errp);
+
+/* Dial while observing context cancellation during the TLS handshake. */
+neverc_quic_conn_t *neverc_quic_dial_context(
+    const char *addr, const neverc_quic_config_t *cfg,
+    neverc_context_t *context, const char **errp);
 
 /* ======================================================================
  * Connection
@@ -138,6 +154,10 @@ neverc_quic_conn_t *neverc_quic_dial(const char *addr,
 /* Close a connection with application error code and reason. */
 void neverc_quic_conn_close(neverc_quic_conn_t *conn,
                              uint64_t error_code, const char *reason);
+
+/* Release connection storage after close. Client connections stop and join
+ * their UDP loop; accepted server connections detach from their endpoint. */
+void neverc_quic_conn_free(neverc_quic_conn_t *conn);
 
 /* Get remote address string. */
 const char *neverc_quic_conn_remote_addr(neverc_quic_conn_t *conn);
@@ -170,8 +190,18 @@ neverc_quic_stream_t *neverc_quic_open_uni_stream(neverc_quic_conn_t *conn,
 neverc_quic_stream_t *neverc_quic_accept_stream(neverc_quic_conn_t *conn,
                                                   const char **errp);
 
+/* Non-blocking accept. Returns 1 with *out set, 0 if no stream is ready, and
+ * -1 after connection close. */
+int neverc_quic_try_accept_stream(neverc_quic_conn_t *conn,
+                                  neverc_quic_stream_t **out);
+
 /* Read from stream. Returns bytes read, 0 on FIN, -1 on error. */
 int neverc_quic_stream_read(neverc_quic_stream_t *s, void *buf, size_t len);
+
+/* Non-blocking read. Returns bytes, 0 on FIN, -2 when no data is currently
+ * available, and -1 on error. */
+int neverc_quic_stream_try_read(neverc_quic_stream_t *s, void *buf,
+                                size_t len);
 
 /* Write to stream. Returns bytes written or -1 on error. */
 int neverc_quic_stream_write(neverc_quic_stream_t *s,
@@ -197,7 +227,7 @@ void neverc_quic_stream_free(neverc_quic_stream_t *s);
  * Datagram (RFC 9221)
  * ====================================================================== */
 
-/* Send an unreliable datagram over the connection. */
+/* Queue and flush an unreliable datagram. Returns 0 on success or -1. */
 int neverc_quic_send_datagram(neverc_quic_conn_t *conn,
                                const void *data, size_t len);
 

@@ -264,6 +264,25 @@ static void detect_lost_packets(quic_loss_detector_t *ld, int space,
     }
 }
 
+int neverc_quic_loss_detect(quic_loss_detector_t *ld, uint64_t now_ms) {
+    if (!ld) return 0;
+    int lost = 0;
+    for (int space = 0; space < QUIC_PN_SPACE_COUNT; space++) {
+        quic_loss_space_t *loss_space = &ld->spaces[space];
+        if (loss_space->loss_time == 0 || loss_space->loss_time > now_ms)
+            continue;
+        detect_lost_packets(ld, space, now_ms);
+        for (quic_sent_packet_t *packet = loss_space->sent_packets;
+             packet; packet = packet->next) {
+            if (packet->lost) {
+                lost = 1;
+                break;
+            }
+        }
+    }
+    return lost;
+}
+
 /* Mark a specific packet as acknowledged */
 void neverc_quic_loss_mark_acked(quic_loss_detector_t *ld, int space,
                                    uint64_t pkt_number, uint64_t now_ms) {

@@ -173,13 +173,17 @@ void neverc_h2_server_set_initial_window_size(neverc_h2_server_t *srv, uint32_t 
 void neverc_h2_server_set_max_header_list_size(neverc_h2_server_t *srv, uint32_t max);
 void neverc_h2_server_set_max_body_size(neverc_h2_server_t *srv, size_t max);
 void neverc_h2_server_set_handler_timeout(neverc_h2_server_t *srv, int ms);
+void neverc_h2_server_set_alt_svc(neverc_h2_server_t *srv,
+                                  const char *value);
 size_t neverc_h2_server_active_connections(neverc_h2_server_t *srv);
 
 /* Stop this server instance, cancel accept, and drain active connections. */
 void neverc_h2_server_shutdown(neverc_h2_server_t *srv);
 
-/* Serve a single HTTP/2 connection on a raw socket (after ALPN or upgrade) */
-int neverc_h2_serve_conn(neverc_h2_server_t *srv, int fd);
+/* Serve a single HTTP/2 connection on a pointer-width-safe native socket
+ * handle (after ALPN or upgrade). The caller retains ownership. */
+int neverc_h2_serve_conn(neverc_h2_server_t *srv,
+                         uintptr_t socket_handle);
 
 /* Serve a single HTTP/2 connection over an existing TLS connection.
  * Used by the HTTPS server after ALPN negotiates "h2". */
@@ -221,6 +225,10 @@ typedef struct {
     uint32_t initial_window_size;
     size_t max_response_header_list_size;
     size_t max_response_body_size;
+    const char *root_cert_file;   /* optional custom PEM roots */
+    const char *client_cert_file; /* optional mTLS certificate PEM */
+    const char *client_key_file;  /* required with client_cert_file */
+    int insecure_skip_verify;     /* explicit verification opt-out */
 } neverc_h2_client_config_t;
 
 typedef struct {

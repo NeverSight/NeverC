@@ -1,0 +1,1 @@
+mws://localhost:8080/game?session=seed

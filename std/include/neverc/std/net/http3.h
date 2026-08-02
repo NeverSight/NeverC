@@ -4,17 +4,16 @@
 /*
  * NeverC HTTP/3 (RFC 9114) + QPACK (RFC 9204)
  *
- * QPACK and HTTP/3 frame helpers are available for experimentation. The QUIC
- * endpoint is not integrated yet, so server and unified serving entry points
- * fail closed instead of blocking or pretending that HTTP/3 is active.
+ * Provides HTTP/3 control streams, static-table QPACK, mux-backed request
+ * dispatch, graceful GOAWAY, a verified one-shot client, and unified serving
+ * with HTTP/1.1 and HTTP/2 over TCP/TLS plus HTTP/3 over UDP/QUIC.
  *
  * Architecture:
  *   - Each HTTP/3 connection maps to one QUIC connection
  *   - Each HTTP request/response pair uses one bidirectional QUIC stream
- *   - QPACK encoder/decoder use unidirectional control streams
- *   - Server push uses unidirectional push streams
+ *   - Static-only QPACK uses capacity-zero encoder/decoder streams
  *
- * Target usage after QUIC endpoint integration:
+ * Server usage:
  *   neverc_http3_server_t *h3 = neverc_http3_server_create(mux);
  *   neverc_http3_listen_and_serve(":443", h3, "cert.pem", "key.pem");
  *
@@ -93,6 +92,22 @@ int neverc_qpack_decode(neverc_qpack_decoder_t *dec,
                           neverc_qpack_header_t *headers, int max_headers,
                           int *nheaders);
 
+/* HTTP/3 namespace aliases used by net.http3 dot syntax. */
+neverc_qpack_encoder_t *neverc_http3_qpack_encoder_create(
+    uint32_t max_table_cap);
+void neverc_http3_qpack_encoder_destroy(neverc_qpack_encoder_t *encoder);
+int neverc_http3_qpack_encode(
+    neverc_qpack_encoder_t *encoder,
+    const neverc_qpack_header_t *headers, int header_count,
+    uint8_t *output, size_t output_capacity, size_t *output_length);
+neverc_qpack_decoder_t *neverc_http3_qpack_decoder_create(
+    uint32_t max_table_cap);
+void neverc_http3_qpack_decoder_destroy(neverc_qpack_decoder_t *decoder);
+int neverc_http3_qpack_decode(
+    neverc_qpack_decoder_t *decoder,
+    const uint8_t *data, size_t length,
+    neverc_qpack_header_t *headers, int max_headers, int *header_count);
+
 /* ======================================================================
  * HTTP/3 Server
  * ====================================================================== */
@@ -109,8 +124,7 @@ void neverc_http3_server_destroy(neverc_http3_server_t *srv);
 void neverc_http3_server_set_max_streams(neverc_http3_server_t *srv,
                                           uint32_t max);
 
-/* Listen and serve HTTP/3 on addr with TLS.
- * Returns -1/ENOSYS until QUIC endpoint integration is complete. */
+/* Listen and serve HTTP/3 on addr with TLS. */
 int neverc_http3_listen_and_serve(const char *addr,
                                    neverc_http3_server_t *srv,
                                    const char *cert_file,
@@ -133,27 +147,77 @@ uint32_t neverc_http3_server_max_streams(const neverc_http3_server_t *srv);
  *   - UDP port for HTTP/3 (QUIC with ALPN: h3)
  *   - Sends Alt-Svc header to upgrade TCP clients to HTTP/3
  *
- * This will be the recommended serving entry point after QUIC is available.
+ * This is the recommended serving entry point for all HTTP versions.
  * ====================================================================== */
 
-/* Serve all HTTP versions on the same port.
- * Returns -1/ENOSYS until the HTTP/3 transport is available. */
+typedef struct neverc_http_unified_server neverc_http_unified_server_t;
+
+/* Create a manageable all-versions server. The mux is borrowed and must
+ * outlive the unified server. */
+neverc_http_unified_server_t *neverc_http_unified_server_create(
+    neverc_http_mux_t *mux);
+void neverc_http_unified_server_destroy(
+    neverc_http_unified_server_t *server);
+
+/* Serve all versions on one non-zero TCP/UDP port until shutdown. */
+int neverc_http_unified_server_listen_and_serve(
+    neverc_http_unified_server_t *server, const char *addr,
+    const char *cert_file, const char *key_file);
+void neverc_http_unified_server_shutdown(
+    neverc_http_unified_server_t *server);
+int neverc_http_unified_server_is_running(
+    const neverc_http_unified_server_t *server);
+int neverc_http_unified_server_bound_port(
+    const neverc_http_unified_server_t *server);
+
+/* HTTP/3 namespace aliases used by net.http3 dot syntax. */
+neverc_http_unified_server_t *neverc_http3_unified_server_create(
+    neverc_http_mux_t *mux);
+void neverc_http3_unified_server_destroy(
+    neverc_http_unified_server_t *server);
+int neverc_http3_unified_server_listen_and_serve(
+    neverc_http_unified_server_t *server, const char *addr,
+    const char *cert_file, const char *key_file);
+void neverc_http3_unified_server_shutdown(
+    neverc_http_unified_server_t *server);
+int neverc_http3_unified_server_is_running(
+    const neverc_http_unified_server_t *server);
+int neverc_http3_unified_server_bound_port(
+    const neverc_http_unified_server_t *server);
+
+/* Blocking compatibility wrapper. New code should retain a unified server
+ * instance so it can request graceful shutdown. */
 int neverc_http_serve_all(const char *addr, neverc_http_mux_t *mux,
                             const char *cert_file, const char *key_file);
+int neverc_http3_serve_all(const char *addr, neverc_http_mux_t *mux,
+                           const char *cert_file, const char *key_file);
 
 /* ======================================================================
  * HTTP/3 Client
  * ====================================================================== */
 
-/* HTTP/3 GET request. Currently returns a response carrying an unavailable
- * error; no implicit protocol fallback is performed.
+typedef struct {
+    const char *server_name;    /* optional SNI/hostname override */
+    const char *root_cert_file; /* optional PEM trust roots */
+    int insecure_skip_verify;   /* explicit opt-out; never the default */
+} neverc_http3_client_config_t;
+
+neverc_http3_client_config_t neverc_http3_client_config_default(void);
+
+/* Verified HTTP/3 GET request. No implicit protocol fallback is performed.
  * Caller must call neverc_http_response_free(). */
 neverc_http_response_t *neverc_http3_get(const char *url);
+neverc_http_response_t *neverc_http3_get_with_config(
+    const char *url, const neverc_http3_client_config_t *config);
 
-/* HTTP/3 POST request. Currently returns an unavailable error response. */
+/* Verified HTTP/3 POST request. */
 neverc_http_response_t *neverc_http3_post(const char *url,
                                             const char *content_type,
                                             const void *body, size_t body_len);
+neverc_http_response_t *neverc_http3_post_with_config(
+    const char *url, const char *content_type,
+    const void *body, size_t body_len,
+    const neverc_http3_client_config_t *config);
 
 #ifdef __cplusplus
 }
