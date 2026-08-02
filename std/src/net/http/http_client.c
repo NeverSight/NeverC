@@ -1713,16 +1713,25 @@ static neverc_http_response_t *execute_client_request(
     neverc_http_client_t *client, neverc_context_t *parent,
     const char *method, const char *url, const char *content_type,
     const void *body, size_t body_len) {
+    neverc_context_t *owned_background = NULL;
+    if (!parent) {
+        parent = owned_background = neverc_context_background();
+        if (!parent)
+            return make_error_response("out of memory");
+    }
     neverc_context_cancel_handle_t *cancel_handle = NULL;
     neverc_context_t *context = neverc_context_with_timeout_handle(
-        parent ? parent : neverc_context_background(),
-        nc_atomic_load(&client->config.timeout_ms), &cancel_handle);
-    if (!context) return make_error_response("out of memory");
+        parent, nc_atomic_load(&client->config.timeout_ms), &cancel_handle);
+    if (!context) {
+        neverc_context_free(owned_background);
+        return make_error_response("out of memory");
+    }
     neverc_http_response_t *response = do_request_with_redirects(
         client, context, method, url, content_type, body, body_len);
     neverc_context_cancel_handle_cancel(cancel_handle);
     neverc_context_cancel_handle_free(cancel_handle);
     neverc_context_free(context);
+    neverc_context_free(owned_background);
     return response;
 }
 

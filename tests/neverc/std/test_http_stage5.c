@@ -187,8 +187,12 @@ static void http_stage5_plain_e2e(void) {
     http_stage5_sink_t sink;
     memset(&sink, 0, sizeof(sink));
     neverc_context_cancel_handle_t *cancel = NULL;
-    neverc_context_t *context = neverc_context_with_timeout_handle(
-        neverc_context_background(), 5000, &cancel);
+    neverc_context_t *background = NULL;
+    neverc_context_t *context = NULL;
+    background = neverc_context_background();
+    neverc_context_t *context = background
+        ? neverc_context_with_timeout_handle(background, 5000, &cancel)
+        : NULL;
     response = client && context
         ? neverc_http_client_do_stream_context(
               client, context, "POST", url, "application/octet-stream",
@@ -207,12 +211,15 @@ static void http_stage5_plain_e2e(void) {
         neverc_context_cancel_handle_free(cancel);
     }
     neverc_context_free(context);
+    neverc_context_free(background);
 
     (void)snprintf(url, sizeof(url), "http://127.0.0.1:%d/chunks", port);
     memset(&sink, 0, sizeof(sink));
     cancel = NULL;
-    context = neverc_context_with_timeout_handle(
-        neverc_context_background(), 5000, &cancel);
+    background = neverc_context_background();
+    context = background
+        ? neverc_context_with_timeout_handle(background, 5000, &cancel)
+        : NULL;
     response = client && context
         ? neverc_http_client_do_stream_context(
               client, context, "GET", url, NULL, 0, NULL, NULL,
@@ -229,11 +236,14 @@ static void http_stage5_plain_e2e(void) {
         neverc_context_cancel_handle_free(cancel);
     }
     neverc_context_free(context);
+    neverc_context_free(background);
 
     (void)snprintf(url, sizeof(url), "http://127.0.0.1:%d/slow", port);
     cancel = NULL;
-    context = neverc_context_with_timeout_handle(
-        neverc_context_background(), 25, &cancel);
+    background = neverc_context_background();
+    context = background
+        ? neverc_context_with_timeout_handle(background, 25, &cancel)
+        : NULL;
     response = client && context
         ? neverc_http_client_do_context(client, context, "GET", url, NULL,
                                          NULL, 0U) : NULL;
@@ -244,6 +254,7 @@ static void http_stage5_plain_e2e(void) {
         neverc_context_cancel_handle_free(cancel);
     }
     neverc_context_free(context);
+    neverc_context_free(background);
 
     neverc_http_client_free(client);
     neverc_http_server_shutdown(test.server);
