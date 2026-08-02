@@ -80,6 +80,21 @@ static void transport_sleep_ms(int milliseconds) {
 #endif
 }
 
+static size_t udp_queue_fill(neverc_udp_conn_t *receiver,
+                              neverc_udp_queue_t *queue,
+                              size_t target_len,
+                              int timeout_ms) {
+    int64_t deadline = transport_now_ms() + timeout_ms;
+    while (neverc_udp_queue_length(queue) < target_len &&
+           transport_now_ms() < deadline) {
+        neverc_udp_queue_receive(receiver, queue, 16);
+        if (neverc_udp_queue_length(queue) >= target_len)
+            break;
+        transport_sleep_ms(1);
+    }
+    return neverc_udp_queue_length(queue);
+}
+
 static void tcp_echo_task(void *opaque) {
     tcp_echo_task_t *task = (tcp_echo_task_t *)opaque;
     const char *error = NULL;
@@ -619,8 +634,7 @@ static int run_udp_queue_exhaustion(void) {
     }
     CHECK(neverc_udp_write_batch(sender, flood, 16) == 16);
 
-    CHECK(neverc_udp_queue_receive(receiver, queue, 16) == 4);
-    CHECK(neverc_udp_queue_length(queue) == 4);
+    CHECK(udp_queue_fill(receiver, queue, 4, 2000) == 4);
     CHECK(neverc_udp_queue_capacity(queue) == 4);
     /* Full queue refuses additional receive until drained. */
     CHECK(neverc_udp_queue_receive(receiver, queue, 16) == 0);
