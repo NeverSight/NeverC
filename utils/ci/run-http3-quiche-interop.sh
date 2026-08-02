@@ -85,7 +85,7 @@ if [[ ${NEVERC_RUN_NGTCP2:-0} == 1 ]]; then
     --entrypoint /usr/local/bin/wsslclient \
     -v "$work_dir/ngtcp2-responses:/downloads" \
     ghcr.io/ngtcp2/ngtcp2-interop:latest \
-    localhost "$port" --download /downloads --no-quic-dump \
+    127.0.0.1 "$port" --download /downloads --no-quic-dump \
     --no-http-dump --exit-on-all-streams-close -v v1 \
     "https://localhost:$port/interop" >"$work_dir/ngtcp2.log" 2>&1
   rg --fixed-strings 'NeverC HTTP/3 interop' \

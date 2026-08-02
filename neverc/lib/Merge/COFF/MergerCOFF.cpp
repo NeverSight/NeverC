@@ -186,8 +186,9 @@ bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     auto BufRef = MemoryBufferRef(
         StringRef(Buffers[p].data(), Buffers[p].size()), "partition");
     // Bounds of this input, used to validate the manual auxiliary-symbol-record
-    // arithmetic below (LLVM's symbol iterator validates the 18-byte primary
-    // record but not the aux slots a malformed NumberOfAuxSymbols points at).
+    // arithmetic below (LLVM's symbol iterator validates the primary record but
+    // not the aux slots a malformed NumberOfAuxSymbols points at).  Entry size
+    // is 18 for a normal COFF object and 20 for /bigobj (coff_symbol32).
     const char *BufBegin = Buffers[p].data();
     const char *BufEnd = BufBegin + Buffers[p].size();
     auto ObjOrErr = COFFObjectFile::create(BufRef);
@@ -196,6 +197,7 @@ bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
       return false;
     }
     auto &Obj = **ObjOrErr;
+    const size_t SymEntrySize = Obj.getSymbolTableEntrySize();
     uint16_t ThisMachine = Obj.getMachine();
     if (ThisMachine != IMAGE_FILE_MACHINE_UNKNOWN) {
       if (!HaveArch) {
@@ -333,7 +335,7 @@ bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
           // otherwise).
           const char *SymPtr =
               reinterpret_cast<const char *>(SymOrErr->getRawDataRefImpl().p);
-          if (SymPtr < BufBegin || SymPtr + sizeof(coff_symbol16) > BufEnd) {
+          if (SymPtr < BufBegin || SymPtr + SymEntrySize > BufEnd) {
             errs() << "neverc: COFF relocatable merge: relocation references a "
                       "symbol outside the object's symbol table (malformed); "
                       "refusing to merge\n";
@@ -374,7 +376,7 @@ bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
         return false;
       }
       const char *TagRec = reinterpret_cast<const char *>(TagSym->getRawPtr());
-      if (TagRec < BufBegin || TagRec + sizeof(coff_symbol16) > BufEnd)
+      if (TagRec < BufBegin || TagRec + SymEntrySize > BufEnd)
         return false;
       return TagSym->getSectionNumber() == COFF::IMAGE_SYM_ABSOLUTE &&
              TagSym->getValue() == 0;
@@ -396,7 +398,7 @@ bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
       // fuzzer reproduces.  Validate the whole primary record lies inside this
       // input before touching it.
       const char *SymRec = reinterpret_cast<const char *>(CSym.getRawPtr());
-      if (SymRec < BufBegin || SymRec + sizeof(coff_symbol16) > BufEnd) {
+      if (SymRec < BufBegin || SymRec + SymEntrySize > BufEnd) {
         errs() << "neverc: COFF relocatable merge: symbol record runs past the "
                   "end of the object (malformed symbol table); refusing to "
                   "merge\n";
@@ -434,8 +436,8 @@ bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
       // checks its own reads.
       if (CSym.getStorageClass() == COFF::IMAGE_SYM_CLASS_WEAK_EXTERNAL &&
           CSym.getNumberOfAuxSymbols() == 1) {
-        const char *AuxRec = SymRec + sizeof(coff_symbol16);
-        if (AuxRec + sizeof(coff_symbol16) <= BufEnd) {
+        const char *AuxRec = SymRec + SymEntrySize;
+        if (AuxRec + SymEntrySize <= BufEnd) {
           coff_aux_weak_external AuxWE;
           memcpy(&AuxWE, AuxRec, sizeof(AuxWE));
           if (namesPlaceholderDefault(AuxWE.TagIndex)) {
@@ -493,7 +495,8 @@ bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
 
       for (unsigned a = 0; a < CSym.getNumberOfAuxSymbols(); ++a) {
         const uint8_t *AuxData =
-            reinterpret_cast<const uint8_t *>(CSym.getRawPtr()) + 18 * (a + 1);
+            reinterpret_cast<const uint8_t *>(CSym.getRawPtr()) +
+            SymEntrySize * (a + 1);
 
         // A symbol whose NumberOfAuxSymbols runs past the end of the symbol
         // table makes this 18-byte read (and the memcpy of aux structs below)

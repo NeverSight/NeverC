@@ -198,6 +198,9 @@ jobs:
         diagnose "string_encrypt" \
           "$TESTDIR/string/test_neverc_string_encrypt.c" \
           "-std=c23 -fbuiltin-string"
+        diagnose "inline_asm_gcc" \
+          "$TESTDIR/asm/test_inline_asm_gcc.c" \
+          "-std=gnu11"
 
     - name: Fail if tests failed
       if: steps.tests.outcome == 'failure'
