@@ -309,6 +309,7 @@ int neverc_hpack_huffman_decode(const uint8_t *in, size_t in_len,
             code = (code << 1) | ((in[i] >> bit) & 1);
             code_len++;
 
+            if (code_len > 30) return -1; /* invalid */
             if (count_len[code_len] > 0) {
                 uint32_t off = code - first_code[code_len];
                 if (code >= first_code[code_len] &&
@@ -320,7 +321,6 @@ int neverc_hpack_huffman_decode(const uint8_t *in, size_t in_len,
                     continue;
                 }
             }
-            if (code_len > 30) return -1; /* invalid */
         }
     }
     /* Remaining bits should be EOS padding (all 1s) */

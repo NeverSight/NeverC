@@ -1,3 +1,6 @@
+#if defined(__GLIBC__) && !defined(_GNU_SOURCE)
+#define _GNU_SOURCE
+#endif
 #include "neverc/std/bytes.h"
 #include "strsearch.h"
 #include <stdlib.h>
