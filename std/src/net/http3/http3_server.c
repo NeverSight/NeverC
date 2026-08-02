@@ -758,6 +758,8 @@ static void h3_request_task(h3_stream_task_t *task) {
     writer->head_request = strcmp(parsed.method, "HEAD") == 0;
     writer->request_body_len = parsed.body_len;
     nc_http_mux_dispatch(connection->server->mux, &request, writer);
+    neverc_context_free(request.context);
+    request.context = NULL;
     if (h3_send_response(connection, stream, writer) != 0 &&
         neverc_quic_conn_is_alive(connection->quic))
         (void)neverc_quic_stream_reset(stream, NC_H3_INTERNAL_ERROR);

@@ -1932,10 +1932,14 @@ static int http_conn_ready_to_free(http_conn_t *connection) {
 static void http_request_context_release(
     neverc_context_t *context,
     neverc_context_cancel_handle_t *cancel_handle) {
-    if (!cancel_handle) return;
-    neverc_context_cancel_handle_cancel(cancel_handle);
-    neverc_context_cancel_handle_free(cancel_handle);
-    neverc_context_free(context);
+    if (cancel_handle) {
+        neverc_context_cancel_handle_cancel(cancel_handle);
+        neverc_context_cancel_handle_free(cancel_handle);
+        if (context)
+            neverc_context_free(context);
+    } else if (context) {
+        neverc_context_free(context);
+    }
 }
 
 typedef enum {
