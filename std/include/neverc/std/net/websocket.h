@@ -101,6 +101,8 @@ int neverc_ws_read_frame(neverc_ws_conn_t *conn, int *opcode, int *fin,
  * connections leave frames unmasked as required by RFC 6455. */
 int neverc_ws_write_text(neverc_ws_conn_t *conn, const void *data, size_t len);
 int neverc_ws_write_binary(neverc_ws_conn_t *conn, const void *data, size_t len);
+int neverc_ws_write_frame(neverc_ws_conn_t *conn, int opcode, int fin,
+                          const void *data, size_t len);
 
 /* Control frames */
 int neverc_ws_send_ping(neverc_ws_conn_t *conn, const void *data, size_t len);

@@ -19,17 +19,21 @@ static void websocket_echo(neverc_http_request_t *request,
         return;
     }
     (void)neverc_ws_set_read_limit(websocket, INTEROP_MAX_MESSAGE);
+    uint8_t *frame = (uint8_t *)message;
     for (;;) {
         int opcode = 0;
-        size_t message_length = 0;
-        if (neverc_ws_read_data_message(websocket, &opcode, message,
-                                        INTEROP_MAX_MESSAGE,
-                                        &message_length) != 0)
+        int fin = 0;
+        size_t frame_length = 0;
+        if (neverc_ws_read_frame(websocket, &opcode, &fin, frame,
+                                 INTEROP_MAX_MESSAGE, &frame_length) != 0)
             break;
-        int sent = opcode == NC_WS_OPCODE_TEXT
-            ? neverc_ws_write_text(websocket, message, message_length)
-            : neverc_ws_write_binary(websocket, message, message_length);
-        if (sent != 0) break;
+        if (opcode == NC_WS_OPCODE_CLOSE)
+            break;
+        if (opcode == NC_WS_OPCODE_PING || opcode == NC_WS_OPCODE_PONG)
+            continue;
+        if (neverc_ws_write_frame(websocket, opcode, fin, frame,
+                                  frame_length) != 0)
+            break;
     }
     free(message);
     neverc_ws_conn_free(websocket);
