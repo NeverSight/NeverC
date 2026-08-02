@@ -21,7 +21,63 @@
  * those boundaries inert while exercising the real connection, flow-control,
  * transport-parameter, and loss-detection state.
  */
+static quic_tls_t g_stub_tls;
+
+quic_tls_t *neverc_quic_tls_create(int is_server) {
+    (void)is_server;
+    return &g_stub_tls;
+}
+
 void neverc_quic_tls_destroy(quic_tls_t *tls) { (void)tls; }
+
+int neverc_quic_tls_set_initial_dcid(quic_tls_t *tls, const uint8_t *dcid,
+                                     size_t dcid_len, uint32_t version) {
+    (void)tls;
+    (void)dcid;
+    (void)dcid_len;
+    (void)version;
+    return 0;
+}
+
+int neverc_quic_tls_configure(quic_tls_t *tls,
+                              const neverc_quic_config_t *config,
+                              const char *server_name,
+                              const quic_transport_params_t *local_params,
+                              quic_transport_params_t *peer_params) {
+    (void)tls;
+    (void)config;
+    (void)server_name;
+    (void)local_params;
+    if (peer_params)
+        neverc_quic_transport_params_default(peer_params);
+    return 0;
+}
+
+const char *neverc_quic_tls_error(const quic_tls_t *tls) {
+    (void)tls;
+    return "stub tls error";
+}
+
+int neverc_quic_tls_start(quic_tls_t *tls) {
+    (void)tls;
+    return 0;
+}
+
+void neverc_quic_tls_crypto_data_acked(quic_tls_t *tls, quic_enc_level_t level,
+                                       uint64_t offset, size_t length) {
+    (void)tls;
+    (void)level;
+    (void)offset;
+    (void)length;
+}
+
+void neverc_quic_tls_crypto_data_lost(quic_tls_t *tls, quic_enc_level_t level,
+                                    uint64_t offset) {
+    (void)tls;
+    (void)level;
+    (void)offset;
+}
+
 void neverc_udp_close(neverc_udp_conn_t *conn) { (void)conn; }
 int neverc_quic_conn_flush(struct neverc_quic_conn *conn) {
     (void)conn;
