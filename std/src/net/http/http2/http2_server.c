@@ -220,6 +220,7 @@ typedef struct h2_stream {
     int64_t            content_length;
     int                headers_complete;
     neverc_context_t  *context;
+    neverc_context_t  *context_background;
     neverc_context_cancel_handle_t *cancel;
     int                handler_active;
     volatile int       handler_done;
@@ -1134,15 +1135,21 @@ static h2_stream_t *h2_create_stream(h2_conn_t *conn, uint32_t id) {
     h2_stream_t *s = (h2_stream_t *)calloc(1, sizeof(*s));
     if (!s) return NULL;
     s->conn = conn;
+    s->context_background = neverc_context_background();
+    if (!s->context_background) {
+        free(s);
+        return NULL;
+    }
     s->context = conn->srv->handler_timeout_ms > 0
         ? neverc_context_with_timeout_handle(
-              neverc_context_background(), conn->srv->handler_timeout_ms,
+              s->context_background, conn->srv->handler_timeout_ms,
               &s->cancel)
         : neverc_context_with_cancel_handle(
-              neverc_context_background(), &s->cancel);
+              s->context_background, &s->cancel);
     if (!s->context || !s->cancel) {
         if (s->context) neverc_context_free(s->context);
         if (s->cancel) neverc_context_cancel_handle_free(s->cancel);
+        neverc_context_free(s->context_background);
         free(s);
         return NULL;
     }
@@ -1183,8 +1190,10 @@ static void h2_close_stream(h2_conn_t *conn, h2_stream_t *s) {
     s->receive_current = NULL;
     if (s->cancel) neverc_context_cancel_handle_free(s->cancel);
     if (s->context) neverc_context_free(s->context);
+    if (s->context_background) neverc_context_free(s->context_background);
     s->cancel = NULL;
     s->context = NULL;
+    s->context_background = NULL;
     if (s->counted_active) {
         nc_atomic_dec(&conn->active_streams);
         s->counted_active = 0;
@@ -2372,6 +2381,7 @@ static int h2_server_serve(neverc_h2_server_t *server, const char *addr,
     int result = -1;
     neverc_context_cancel_handle_t *cancel = NULL;
     neverc_context_t *context = NULL;
+    neverc_context_t *serve_background = NULL;
     neverc_tls_config_t *tls_config = NULL;
     neverc_tcp_listener_t *listener = NULL;
     if (!server->connection_executor) {
@@ -2379,8 +2389,10 @@ static int h2_server_serve(neverc_h2_server_t *server, const char *addr,
             neverc_thread_executor_create(32, 1024);
         if (!server->connection_executor) goto cleanup;
     }
+    serve_background = neverc_context_background();
+    if (!serve_background) goto cleanup;
     context = neverc_context_with_cancel_handle(
-        neverc_context_background(), &cancel);
+        serve_background, &cancel);
     if (!context || !cancel) goto cleanup;
 
     if (cert_file) {
@@ -2452,6 +2464,7 @@ cleanup:
     if (owned_listener) neverc_tcp_listener_close(owned_listener);
     if (owned_cancel) neverc_context_cancel_handle_free(owned_cancel);
     if (owned_context) neverc_context_free(owned_context);
+    neverc_context_free(serve_background);
     neverc_tls_config_free(owned_tls_config);
     if (listener) neverc_tcp_listener_close(listener);
     if (cancel) neverc_context_cancel_handle_free(cancel);
