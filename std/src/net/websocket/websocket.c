@@ -1658,3 +1658,11 @@ int neverc_ws_write_message(neverc_ws_conn_t *conn, const char *msg) {
     if (!msg) return -1;
     return neverc_ws_write_text(conn, msg, strlen(msg));
 }
+
+int neverc_ws_valid_utf8(const void *data, size_t len) {
+    return data ? ws_valid_utf8((const uint8_t *)data, len) : (len == 0);
+}
+
+int neverc_ws_valid_utf8_prefix(const void *data, size_t len) {
+    return data ? ws_valid_utf8_prefix((const uint8_t *)data, len) : (len == 0);
+}

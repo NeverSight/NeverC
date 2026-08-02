@@ -7,19 +7,32 @@
 #include <string.h>
 
 #define INTEROP_MAX_MESSAGE (16U * 1024U * 1024U)
+#define WS_CLOSE_INVALID_PAYLOAD 1007
+
+static int append_text(uint8_t *acc, size_t *acc_len, size_t acc_cap,
+                       const uint8_t *frame, size_t frame_len) {
+    if (*acc_len > acc_cap || frame_len > acc_cap - *acc_len) return -1;
+    memcpy(acc + *acc_len, frame, frame_len);
+    *acc_len += frame_len;
+    return 0;
+}
 
 static void websocket_echo(neverc_http_request_t *request,
                            neverc_http_response_writer_t *writer) {
     neverc_ws_conn_t *websocket = neverc_ws_upgrade_http(request, writer);
     if (!websocket) return;
-    void *message = malloc(INTEROP_MAX_MESSAGE);
-    if (!message) {
+    uint8_t *frame = (uint8_t *)malloc(INTEROP_MAX_MESSAGE);
+    uint8_t *text_acc = (uint8_t *)malloc(INTEROP_MAX_MESSAGE);
+    if (!frame || !text_acc) {
+        free(frame);
+        free(text_acc);
         (void)neverc_ws_send_close(websocket, 1011, "allocation failed");
         neverc_ws_conn_free(websocket);
         return;
     }
     (void)neverc_ws_set_read_limit(websocket, INTEROP_MAX_MESSAGE);
-    uint8_t *frame = (uint8_t *)message;
+    size_t text_len = 0;
+    int in_text = 0;
     for (;;) {
         int opcode = 0;
         int fin = 0;
@@ -31,11 +44,40 @@ static void websocket_echo(neverc_http_request_t *request,
             break;
         if (opcode == NC_WS_OPCODE_PING || opcode == NC_WS_OPCODE_PONG)
             continue;
+
+        if (opcode == NC_WS_OPCODE_TEXT ||
+            (opcode == NC_WS_OPCODE_CONTINUATION && in_text)) {
+            if (opcode == NC_WS_OPCODE_TEXT) {
+                text_len = 0;
+                in_text = 1;
+            }
+            if (append_text(text_acc, &text_len, INTEROP_MAX_MESSAGE, frame,
+                            frame_length) != 0 ||
+                !neverc_ws_valid_utf8_prefix(text_acc, text_len) ||
+                (fin && !neverc_ws_valid_utf8(text_acc, text_len))) {
+                (void)neverc_ws_send_close(websocket, WS_CLOSE_INVALID_PAYLOAD,
+                                           NULL);
+                break;
+            }
+            if (neverc_ws_write_frame(websocket, opcode, fin, frame,
+                                      frame_length) != 0)
+                break;
+            if (fin)
+                in_text = 0;
+            continue;
+        }
+
+        if (opcode == NC_WS_OPCODE_CONTINUATION && !in_text) {
+            (void)neverc_ws_send_close(websocket, 1002, NULL);
+            break;
+        }
+
         if (neverc_ws_write_frame(websocket, opcode, fin, frame,
                                   frame_length) != 0)
             break;
     }
-    free(message);
+    free(frame);
+    free(text_acc);
     neverc_ws_conn_free(websocket);
 }
 

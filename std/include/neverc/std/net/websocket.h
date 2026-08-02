@@ -122,6 +122,10 @@ int neverc_ws_read_data_message(neverc_ws_conn_t *conn, int *opcode,
 /* Write a complete text message. */
 int neverc_ws_write_message(neverc_ws_conn_t *conn, const char *msg);
 
+/* UTF-8 helpers for callers doing their own frame assembly. */
+int neverc_ws_valid_utf8(const void *data, size_t len);
+int neverc_ws_valid_utf8_prefix(const void *data, size_t len);
+
 #ifdef __cplusplus
 }
 #endif
