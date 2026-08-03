@@ -233,7 +233,20 @@ static void h2_client_push_terminal_event(h2_client_stream_t *stream,
                             : NEVERC_H2_CLIENT_EVENT_END;
         event->error = error;
         event->error_code = error_code;
-        (void)h2_client_push_event(stream, event);
+        int sent = neverc_thread_channel_try_send(
+            stream->receive_queue, event);
+        if (sent != NEVERC_THREAD_OK && error) {
+            void *dropped = NULL;
+            if (neverc_thread_channel_try_receive(
+                    stream->receive_queue, &dropped) == NEVERC_THREAD_OK) {
+                neverc_h2_client_event_free(
+                    (neverc_h2_client_event_t *)dropped);
+                sent = neverc_thread_channel_try_send(
+                    stream->receive_queue, event);
+            }
+        }
+        if (sent != NEVERC_THREAD_OK)
+            neverc_h2_client_event_free(event);
     }
     (void)neverc_thread_channel_close(stream->receive_queue);
 }
@@ -555,7 +568,8 @@ static int h2_client_decode_pending(neverc_h2_client_t *client,
             stream->error = "HTTP/2 response consumer is too slow";
             stream->error_code = NC_H2_ENHANCE_YOUR_CALM;
             stream->done = 1;
-            (void)neverc_thread_channel_close(stream->receive_queue);
+            h2_client_push_terminal_event(stream, stream->error,
+                                          stream->error_code);
             return 0;
         }
     }

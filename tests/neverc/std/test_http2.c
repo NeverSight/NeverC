@@ -751,7 +751,8 @@ TEST(h2c_continuation_headers) {
 
 }
 
-static void h2_run_invalid_trailer_child(neverc_tcp_listener_t *listener) {
+static void h2_run_adversarial_response_child(
+    neverc_tcp_listener_t *listener, int overflow_queue) {
     const char *error = NULL;
     neverc_tcp_conn_t *connection = neverc_tcp_accept(listener, &error);
     if (!connection) _exit(1);
@@ -802,11 +803,25 @@ static void h2_run_invalid_trailer_child(neverc_tcp_listener_t *listener) {
         0, 0, 0, 1};
     uint8_t status_200 = 0x88;
     if (sock_write_all(fd, response_header, sizeof(response_header)) != 0 ||
-        sock_write_all(fd, &status_200, 1U) != 0 ||
-        sock_write_all(fd, invalid_trailer_header,
-                       sizeof(invalid_trailer_header)) != 0 ||
         sock_write_all(fd, &status_200, 1U) != 0)
         _exit(1);
+    if (!overflow_queue) {
+        if (sock_write_all(fd, invalid_trailer_header,
+                           sizeof(invalid_trailer_header)) != 0 ||
+            sock_write_all(fd, &status_200, 1U) != 0)
+            _exit(1);
+    } else {
+        uint8_t data_header[NC_H2_FRAME_HEADER_SIZE] = {
+            0, 0, 1, NC_H2_FRAME_DATA, 0, 0, 0, 0, 1};
+        uint8_t body = 'a';
+        for (int i = 0; i < 12; i++) {
+            if (sock_write_all(fd, data_header, sizeof(data_header)) != 0 ||
+                sock_write_all(fd, &body, 1U) != 0)
+                _exit(1);
+        }
+        char drain[256];
+        while (read(fd, drain, sizeof(drain)) > 0) { }
+    }
     neverc_tcp_close(connection);
     neverc_tcp_listener_close(listener);
     _exit(0);
@@ -823,7 +838,7 @@ TEST(h2_client_invalid_trailer_emits_terminal_error) {
     pid_t child = fork();
     ASSERT_TRUE(child >= 0);
     if (child == 0)
-        h2_run_invalid_trailer_child(listener);
+        h2_run_adversarial_response_child(listener, 0);
     neverc_tcp_listener_close(listener);
 
     char dial_address[64];
@@ -866,6 +881,60 @@ TEST(h2_client_invalid_trailer_emits_terminal_error) {
     ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
     ASSERT_TRUE(ok);
 }
+
+TEST(h2_client_queue_overflow_emits_terminal_error) {
+    const char *error = NULL;
+    neverc_tcp_listener_t *listener =
+        neverc_tcp_listen("127.0.0.1:0", &error);
+    ASSERT_TRUE(listener != NULL);
+    neverc_tcp_addr_t address;
+    ASSERT_EQ(neverc_tcp_listener_addr(listener, &address), 0);
+
+    pid_t child = fork();
+    ASSERT_TRUE(child >= 0);
+    if (child == 0)
+        h2_run_adversarial_response_child(listener, 1);
+    neverc_tcp_listener_close(listener);
+
+    char dial_address[64];
+    snprintf(dial_address, sizeof(dial_address), "127.0.0.1:%d",
+             address.port);
+    neverc_h2_client_config_t config = neverc_h2_client_config_default();
+    config.timeout_ms = 3000;
+    neverc_h2_client_t *client = neverc_h2_client_dial(
+        dial_address, "localhost", 0, &config, &error);
+    neverc_h2_client_stream_t *stream = client
+        ? neverc_h2_client_stream_open(client, NULL, "GET", "/",
+                                       NULL, 0U, 1, &error)
+        : NULL;
+    usleep(300000);
+
+    neverc_context_t *background = neverc_context_background();
+    neverc_context_t *context = background
+        ? neverc_context_with_timeout(background, 2000, NULL) : NULL;
+    int saw_error = 0;
+    for (int i = 0; stream && context && i < 16; i++) {
+        neverc_h2_client_event_t *event = NULL;
+        int received = neverc_h2_client_stream_receive(
+            stream, context, &event);
+        if (received != 1) break;
+        if (event && event->type == NEVERC_H2_CLIENT_EVENT_ERROR)
+            saw_error = 1;
+        neverc_h2_client_event_free(event);
+        if (saw_error) break;
+    }
+    if (!client)
+        kill(child, SIGTERM);
+
+    neverc_context_free(context);
+    neverc_context_free(background);
+    neverc_h2_client_stream_free(stream);
+    neverc_h2_client_free(client);
+    int status = 0;
+    waitpid(child, &status, 0);
+    ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+    ASSERT_TRUE(saw_error);
+}
 #endif /* !_WIN32 */
 
 int main(void) {
@@ -894,6 +963,7 @@ int main(void) {
     run_test_h2c_serve_conn_roundtrip();
     run_test_h2c_continuation_headers();
     run_test_h2_client_invalid_trailer_emits_terminal_error();
+    run_test_h2_client_queue_overflow_emits_terminal_error();
 #endif
 
     printf("\n%d passed, %d failed\n", tests_passed, tests_failed);
