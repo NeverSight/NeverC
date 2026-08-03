@@ -33,6 +33,7 @@ typedef struct jar_entry {
     int64_t     expires;
     int         secure;
     int         http_only;
+    int         host_only;
     struct jar_entry *next;
 } jar_entry_t;
 
@@ -63,58 +64,156 @@ static void str_tolower(char *s) {
     for (; *s; s++) *s = (char)tolower((unsigned char)*s);
 }
 
+static int valid_cookie_name(const char *name) {
+    if (!name || !name[0]) return 0;
+    static const char separators[] = "()<>@,;:\\\"/[]?={} \t";
+    for (const unsigned char *p = (const unsigned char *)name; *p; p++) {
+        if (*p <= 0x20 || *p >= 0x7f || strchr(separators, *p)) return 0;
+    }
+    return 1;
+}
+
+static int valid_cookie_value(const char *value) {
+    if (!value) return 0;
+    for (const unsigned char *p = (const unsigned char *)value; *p; p++) {
+        if (*p != 0x21 && !(*p >= 0x23 && *p <= 0x2b) &&
+            !(*p >= 0x2d && *p <= 0x3a) &&
+            !(*p >= 0x3c && *p <= 0x5b) &&
+            !(*p >= 0x5d && *p <= 0x7e))
+            return 0;
+    }
+    return 1;
+}
+
 /* Parse scheme, host, and path from a URL. */
-static void parse_url_parts(const char *url, char *scheme, size_t slen,
-                             char *host, size_t hlen,
-                             char *path, size_t plen) {
+static int parse_url_parts(const char *url, char *scheme, size_t slen,
+                           char *host, size_t hlen,
+                           char *path, size_t plen) {
+    if (!url || !scheme || slen == 0 || !host || hlen == 0 ||
+        !path || plen < 2)
+        return -1;
     scheme[0] = host[0] = path[0] = '\0';
 
-    const char *p = url;
-    const char *colon_slash = strstr(p, "://");
-    if (colon_slash) {
-        size_t sl = (size_t)(colon_slash - p);
-        if (sl < slen) { memcpy(scheme, p, sl); scheme[sl] = '\0'; }
-        p = colon_slash + 3;
-    }
+    const char *scheme_end = strstr(url, "://");
+    if (!scheme_end || scheme_end == url) return -1;
+    size_t scheme_length = (size_t)(scheme_end - url);
+    if (scheme_length >= slen) return -1;
+    memcpy(scheme, url, scheme_length);
+    scheme[scheme_length] = '\0';
 
-    const char *slash = strchr(p, '/');
-    if (slash) {
-        size_t hl = (size_t)(slash - p);
-        if (hl < hlen) { memcpy(host, p, hl); host[hl] = '\0'; }
-        size_t pl = strlen(slash);
-        if (pl < plen) { memcpy(path, slash, pl); path[pl] = '\0'; }
+    const char *authority = scheme_end + 3;
+    const char *authority_end = authority + strcspn(authority, "/?#");
+    if (authority_end == authority) return -1;
+
+    const char *host_start = authority;
+    for (const char *p = authority; p < authority_end; p++) {
+        if (*p == '@') host_start = p + 1;
+    }
+    if (host_start == authority_end) return -1;
+
+    const char *host_end = authority_end;
+    if (*host_start == '[') {
+        const char *close = memchr(host_start + 1, ']',
+                                   (size_t)(authority_end - host_start - 1));
+        if (!close || close == host_start + 1) return -1;
+        host_start++;
+        host_end = close;
+        if (close + 1 < authority_end) {
+            if (close[1] != ':' || close + 2 == authority_end) return -1;
+            for (const char *p = close + 2; p < authority_end; p++)
+                if (!isdigit((unsigned char)*p)) return -1;
+        }
     } else {
-        size_t hl = strlen(p);
-        if (hl < hlen) { memcpy(host, p, hl); host[hl] = '\0'; }
-        path[0] = '/'; path[1] = '\0';
+        const char *colon = NULL;
+        for (const char *p = host_start; p < authority_end; p++) {
+            if (*p != ':') continue;
+            if (colon) return -1;
+            colon = p;
+        }
+        if (colon) {
+            if (colon == host_start || colon + 1 == authority_end) return -1;
+            for (const char *p = colon + 1; p < authority_end; p++)
+                if (!isdigit((unsigned char)*p)) return -1;
+            host_end = colon;
+        }
     }
 
-    /* Strip port from host */
-    char *port_sep = strrchr(host, ':');
-    if (port_sep) *port_sep = '\0';
+    size_t host_length = (size_t)(host_end - host_start);
+    if (host_length == 0 || host_length >= hlen) return -1;
+    memcpy(host, host_start, host_length);
+    host[host_length] = '\0';
+
+    if (*authority_end == '/') {
+        const char *path_end = authority_end + strcspn(authority_end, "?#");
+        size_t path_length = (size_t)(path_end - authority_end);
+        if (path_length >= plen) return -1;
+        memcpy(path, authority_end, path_length);
+        path[path_length] = '\0';
+    } else {
+        path[0] = '/';
+        path[1] = '\0';
+    }
 
     str_tolower(scheme);
     str_tolower(host);
+    if (!strchr(host, ':') && host_length > 1 && host[host_length - 1] == '.')
+        host[host_length - 1] = '\0';
+    return host[0] ? 0 : -1;
 }
 
-/* RFC 6265 §5.1.3: domain matching.
- * "example.com" matches ".example.com" and "example.com".
- * "foo.example.com" matches ".example.com". */
+static int host_is_ip_literal(const char *host) {
+    if (strchr(host, ':')) return 1;
+    int saw_dot = 0;
+    for (const unsigned char *p = (const unsigned char *)host; *p; p++) {
+        if (*p == '.') {
+            saw_dot = 1;
+        } else if (!isdigit(*p)) {
+            return 0;
+        }
+    }
+    return saw_dot;
+}
+
+/* RFC 6265 section 5.1.3 domain matching for normalized domains. */
 static int domain_match(const char *cookie_domain, const char *request_host) {
     if (!cookie_domain || !request_host) return 0;
     if (strcmp(cookie_domain, request_host) == 0) return 1;
+    if (host_is_ip_literal(request_host)) return 0;
+    size_t domain_length = strlen(cookie_domain);
+    size_t host_length = strlen(request_host);
+    return host_length > domain_length &&
+        request_host[host_length - domain_length - 1] == '.' &&
+        strcmp(request_host + host_length - domain_length, cookie_domain) == 0;
+}
 
-    /* cookie_domain starts with '.' → match any subdomain */
-    if (cookie_domain[0] == '.') {
-        size_t dlen = strlen(cookie_domain + 1);
-        size_t hlen = strlen(request_host);
-        if (hlen >= dlen &&
-            strcmp(request_host + hlen - dlen, cookie_domain + 1) == 0) {
-            if (hlen == dlen) return 1;
-            if (request_host[hlen - dlen - 1] == '.') return 1;
-        }
+static int normalize_cookie_domain(const char *input, char *domain,
+                                   size_t capacity) {
+    while (*input == '.') input++;
+    size_t length = strlen(input);
+    if (length == 0 || length >= capacity || input[length - 1] == '.')
+        return -1;
+    for (size_t i = 0; i < length; i++) {
+        unsigned char c = (unsigned char)input[i];
+        if (c <= 0x20 || c >= 0x7f || c == '/' || c == '\\' || c == ':')
+            return -1;
+        domain[i] = (char)tolower(c);
     }
+    domain[length] = '\0';
     return 0;
+}
+
+static void default_cookie_path(const char *request_path, char *path,
+                                size_t capacity) {
+    const char *last_slash = strrchr(request_path, '/');
+    if (!last_slash || last_slash == request_path) {
+        path[0] = '/';
+        path[1] = '\0';
+        return;
+    }
+    size_t length = (size_t)(last_slash - request_path);
+    if (length >= capacity) length = capacity - 1;
+    memcpy(path, request_path, length);
+    path[length] = '\0';
 }
 
 /* RFC 6265 §5.1.4: path matching. */
@@ -161,24 +260,37 @@ void neverc_cookiejar_set_cookies(neverc_cookiejar_t *jar,
     if (!jar || !url || !cookies || count <= 0) return;
 
     char scheme[16], host[256], path[1024];
-    parse_url_parts(url, scheme, sizeof(scheme),
-                    host, sizeof(host), path, sizeof(path));
+    if (parse_url_parts(url, scheme, sizeof(scheme), host, sizeof(host), path,
+                        sizeof(path)) != 0)
+        return;
 
     jar_mutex_lock(&jar->lock);
 
     for (int i = 0; i < count; i++) {
         const neverc_cookiejar_entry_t *c = &cookies[i];
-        if (!c->name || !c->name[0] || !c->value) continue;
+        if (!valid_cookie_name(c->name) || !valid_cookie_value(c->value))
+            continue;
 
         char domain[256];
+        int host_only = 1;
         if (c->domain && c->domain[0]) {
-            snprintf(domain, sizeof(domain), "%s", c->domain);
-            str_tolower(domain);
+            if (normalize_cookie_domain(c->domain, domain, sizeof(domain)) != 0 ||
+                !domain_match(domain, host))
+                continue;
+            host_only = 0;
         } else {
             snprintf(domain, sizeof(domain), "%s", host);
         }
 
-        const char *cpath = (c->path && c->path[0]) ? c->path : "/";
+        char cookie_path[1024];
+        if (c->path && c->path[0] == '/') {
+            size_t path_length = strlen(c->path);
+            if (path_length >= sizeof(cookie_path)) continue;
+            memcpy(cookie_path, c->path, path_length + 1);
+        } else {
+            default_cookie_path(path, cookie_path, sizeof(cookie_path));
+        }
+        const char *cpath = cookie_path;
 
         /* Check for existing entry with same name/domain/path → update */
         jar_entry_t *e = jar->entries;
@@ -201,6 +313,7 @@ void neverc_cookiejar_set_cookies(neverc_cookiejar_t *jar,
             found->expires = c->expires;
             found->secure = c->secure;
             found->http_only = c->http_only;
+            found->host_only = host_only;
         } else {
             jar_entry_t *ne = (jar_entry_t *)calloc(1, sizeof(*ne));
             if (!ne) continue;
@@ -215,6 +328,7 @@ void neverc_cookiejar_set_cookies(neverc_cookiejar_t *jar,
             ne->expires = c->expires;
             ne->secure = c->secure;
             ne->http_only = c->http_only;
+            ne->host_only = host_only;
             ne->next = jar->entries;
             jar->entries = ne;
             jar->count++;
@@ -231,8 +345,9 @@ int neverc_cookiejar_cookies(neverc_cookiejar_t *jar,
     if (!jar || !url) return 0;
 
     char scheme[16], host[256], path[1024];
-    parse_url_parts(url, scheme, sizeof(scheme),
-                    host, sizeof(host), path, sizeof(path));
+    if (parse_url_parts(url, scheme, sizeof(scheme), host, sizeof(host), path,
+                        sizeof(path)) != 0)
+        return 0;
 
     int is_secure = (strcmp(scheme, "https") == 0);
     int64_t now = now_unix();
@@ -255,7 +370,8 @@ int neverc_cookiejar_cookies(neverc_cookiejar_t *jar,
     int n = 0;
     jar_entry_t *e = jar->entries;
     while (e && n < max_out) {
-        if (domain_match(e->domain, host) &&
+        if ((e->host_only ? strcmp(e->domain, host) == 0
+                          : domain_match(e->domain, host)) &&
             path_match(e->path, path) &&
             (!e->secure || is_secure)) {
             if (out) {
@@ -327,6 +443,9 @@ void neverc_cookiejar_set_cookie_header(neverc_cookiejar_t *jar,
             *aeq = '\0';
             aval = aeq + 1;
             while (*aval == ' ') aval++;
+            size_t value_length = strlen(aval);
+            while (value_length > 0 && aval[value_length - 1] == ' ')
+                aval[--value_length] = '\0';
         }
         while (*aname == ' ') aname++;
         size_t anlen = strlen(aname);
@@ -335,10 +454,6 @@ void neverc_cookiejar_set_cookie_header(neverc_cookiejar_t *jar,
         if (anlen == 6 && strncasecmp(aname, "Domain", 6) == 0 && aval) {
             snprintf(domain, sizeof(domain), "%s", aval);
             str_tolower(domain);
-            if (domain[0] != '.') {
-                memmove(domain + 1, domain, strlen(domain) + 1);
-                domain[0] = '.';
-            }
         } else if (anlen == 4 && strncasecmp(aname, "Path", 4) == 0 && aval) {
             snprintf(cpath, sizeof(cpath), "%s", aval);
         } else if (anlen == 6 && strncasecmp(aname, "Secure", 6) == 0) {

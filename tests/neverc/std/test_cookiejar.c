@@ -100,6 +100,46 @@ static void test_domain_matching(void) {
     neverc_cookiejar_free(jar);
 }
 
+static void test_domain_security(void) {
+    printf("[domain_security]\n");
+
+    neverc_cookiejar_entry_t cookie = {
+        .name = "session", .value = "secret", .domain = ".evil.com",
+        .path = "/",
+    };
+    neverc_cookiejar_t *jar = neverc_cookiejar_new();
+    neverc_cookiejar_set_cookies(
+        jar, "https://example.com/", &cookie, 1);
+    check_int("reject cross-domain cookie", neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    cookie.domain = "example.com";
+    neverc_cookiejar_set_cookies(
+        jar, "https://example.com/", &cookie, 1);
+    neverc_cookiejar_entry_t out[1];
+    int n = neverc_cookiejar_cookies(
+        jar, "https://sub.example.com/", out, 1);
+    check_int("domain cookie matches subdomain", n, 1);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    cookie.domain = NULL;
+    neverc_cookiejar_set_cookies(
+        jar, "https://example.com/", &cookie, 1);
+    n = neverc_cookiejar_cookies(
+        jar, "https://sub.example.com/", out, 1);
+    check_int("host-only cookie excludes subdomain", n, 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    neverc_cookiejar_set_cookie_header(
+        jar, "https://example.com/", "session=x; Domain=evil.com; Path=/");
+    check_int("reject cross-domain Set-Cookie",
+              neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_free(jar);
+}
+
 /* ===== Path matching ===== */
 
 static void test_path_matching(void) {
@@ -126,6 +166,64 @@ static void test_path_matching(void) {
 
     n = neverc_cookiejar_cookies(jar, "https://example.com/other", out, 10);
     check_int("other path root only", n, 1);
+
+    neverc_cookiejar_free(jar);
+}
+
+static void test_default_path(void) {
+    printf("[default_path]\n");
+
+    neverc_cookiejar_t *jar = neverc_cookiejar_new();
+    neverc_cookiejar_entry_t cookie = {
+        .name = "account", .value = "1",
+    };
+    neverc_cookiejar_set_cookies(
+        jar, "https://example.com/account/login", &cookie, 1);
+
+    neverc_cookiejar_entry_t out[1];
+    int n = neverc_cookiejar_cookies(
+        jar, "https://example.com/account/profile", out, 1);
+    check_int("default path matches request directory", n, 1);
+    n = neverc_cookiejar_cookies(
+        jar, "https://example.com/other", out, 1);
+    check_int("default path excludes sibling directory", n, 0);
+
+    neverc_cookiejar_free(jar);
+}
+
+static void test_ipv6_host_isolation(void) {
+    printf("[ipv6_host_isolation]\n");
+
+    neverc_cookiejar_t *jar = neverc_cookiejar_new();
+    neverc_cookiejar_entry_t cookie = {
+        .name = "ipv6", .value = "one", .path = "/",
+    };
+    neverc_cookiejar_set_cookies(
+        jar, "http://[2001:db8::1]/", &cookie, 1);
+
+    neverc_cookiejar_entry_t out[1];
+    int n = neverc_cookiejar_cookies(
+        jar, "http://[2001:db8::1]/", out, 1);
+    check_int("same IPv6 host matches", n, 1);
+    n = neverc_cookiejar_cookies(
+        jar, "http://[2001:db8::2]/", out, 1);
+    check_int("different IPv6 host excluded", n, 0);
+
+    neverc_cookiejar_free(jar);
+}
+
+static void test_invalid_cookie_octets(void) {
+    printf("[invalid_cookie_octets]\n");
+
+    neverc_cookiejar_t *jar = neverc_cookiejar_new();
+    neverc_cookiejar_entry_t invalid[3] = {
+        {.name = "bad\r\nX-Injected", .value = "1", .path = "/"},
+        {.name = "bad-value", .value = "one\r\ntwo", .path = "/"},
+        {.name = "bad-semicolon", .value = "one;two", .path = "/"},
+    };
+    neverc_cookiejar_set_cookies(
+        jar, "https://example.com/", invalid, 3);
+    check_int("reject unsafe cookie octets", neverc_cookiejar_count(jar), 0);
 
     neverc_cookiejar_free(jar);
 }
@@ -309,7 +407,11 @@ int main(void) {
 
     test_basic();
     test_domain_matching();
+    test_domain_security();
     test_path_matching();
+    test_default_path();
+    test_ipv6_host_isolation();
+    test_invalid_cookie_octets();
     test_secure();
     test_set_cookie_header();
     test_cookie_header();
