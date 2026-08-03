@@ -677,6 +677,7 @@ int neverc_quic_stream_close_write_side(quic_stream_t *stream);
 void neverc_quic_conn_close_internal(struct neverc_quic_conn *conn,
                                      uint64_t error_code,
                                      const char *reason, int is_app);
+void quic_stream_mark_connection_closing(quic_stream_t *stream);
 int neverc_quic_conn_close_locked(struct neverc_quic_conn *conn,
                                   uint64_t error_code,
                                   const char *reason, int is_app);

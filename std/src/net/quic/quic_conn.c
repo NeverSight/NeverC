@@ -826,6 +826,19 @@ void neverc_quic_conn_on_packet_lost(struct neverc_quic_conn *conn,
     }
 }
 
+void quic_stream_mark_connection_closing(quic_stream_t *stream) {
+    if (!stream) return;
+    nc_mutex_lock(&stream->lock);
+    if (stream->recv_fin || stream->state == QUIC_STREAM_RESET)
+        stream->state = QUIC_STREAM_CLOSED;
+    else if (stream->state == QUIC_STREAM_OPEN ||
+             stream->state == QUIC_STREAM_HALF_CLOSED_LOCAL)
+        stream->state = QUIC_STREAM_HALF_CLOSED_REMOTE;
+    nc_cond_broadcast(&stream->read_cond);
+    nc_cond_broadcast(&stream->write_cond);
+    nc_mutex_unlock(&stream->lock);
+}
+
 int neverc_quic_conn_close_locked(struct neverc_quic_conn *conn,
                                   uint64_t error_code,
                                   const char *reason, int is_app) {
@@ -845,15 +858,8 @@ int neverc_quic_conn_close_locked(struct neverc_quic_conn *conn,
         memcpy(conn->close_reason, reason, length);
         conn->close_reason[length] = '\0';
     }
-    for (int i = 0; i < conn->n_streams; i++) {
-        quic_stream_t *stream = conn->streams[i];
-        if (!stream) continue;
-        nc_mutex_lock(&stream->lock);
-        stream->state = QUIC_STREAM_CLOSED;
-        nc_cond_broadcast(&stream->read_cond);
-        nc_cond_broadcast(&stream->write_cond);
-        nc_mutex_unlock(&stream->lock);
-    }
+    for (int i = 0; i < conn->n_streams; i++)
+        quic_stream_mark_connection_closing(conn->streams[i]);
     nc_cond_broadcast(&conn->stream_avail_cond);
     nc_cond_broadcast(&conn->datagram_cond);
     nc_cond_broadcast(&conn->state_cond);

@@ -469,16 +469,8 @@ static int qt_handle_frames(struct neverc_quic_conn *conn,
             conn->state = QUIC_CONN_DRAINING;
             conn->draining_started_ms = nc_monotonic_ms();
             conn->close_pending = 0;
-            conn->io_running = 0;
-            for (int i = 0; i < conn->n_streams; i++) {
-                quic_stream_t *stream = conn->streams[i];
-                if (!stream) continue;
-                nc_mutex_lock(&stream->lock);
-                stream->state = QUIC_STREAM_CLOSED;
-                nc_cond_broadcast(&stream->read_cond);
-                nc_cond_broadcast(&stream->write_cond);
-                nc_mutex_unlock(&stream->lock);
-            }
+            for (int i = 0; i < conn->n_streams; i++)
+                quic_stream_mark_connection_closing(conn->streams[i]);
             nc_cond_broadcast(&conn->state_cond);
             nc_cond_broadcast(&conn->stream_avail_cond);
             nc_cond_broadcast(&conn->datagram_cond);
