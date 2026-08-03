@@ -141,7 +141,8 @@ void neverc_http_mux_handle(neverc_http_mux_t *mux, const char *pattern,
                              neverc_http_handler_func_t handler);
 
 /* Register an instance-bound handler. context is borrowed and must outlive
- * the mux route. Returns 0 on success and -1 on invalid input/capacity. */
+ * the mux route. Returns 0 on success and -1 on invalid input, capacity, or
+ * allocation failure. */
 int neverc_http_mux_handle_context(
     neverc_http_mux_t *mux, const char *pattern,
     neverc_http_handler_context_func_t handler, void *context);

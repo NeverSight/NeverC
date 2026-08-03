@@ -727,23 +727,37 @@ static void ensure_default_mux(void) {
 #endif
 }
 
-static void route_parse_pattern(route_t *r, const char *pattern) {
-    r->pattern = strdup(pattern);
-    r->pattern_len = strlen(pattern);
-    r->method = NULL;
-    r->has_params = 0;
+static int route_parse_pattern(route_t *r, const char *pattern) {
+    char *pattern_copy = strdup(pattern);
+    char *method = NULL;
+    char *path_pattern = NULL;
+    if (!pattern_copy) return -1;
 
-    /* Check for "METHOD /path" syntax */
+    /* Check for "METHOD /path" syntax. */
     const char *space = strchr(pattern, ' ');
     if (space && space > pattern) {
-        r->method = strndup_safe(pattern, (size_t)(space - pattern));
-        r->path_pattern = strdup(space + 1);
+        method = strndup_safe(pattern, (size_t)(space - pattern));
+        path_pattern = strdup(space + 1);
+        if (!method || !path_pattern) {
+            free(path_pattern);
+            free(method);
+            free(pattern_copy);
+            return -1;
+        }
     } else {
-        r->path_pattern = strdup(pattern);
+        path_pattern = strdup(pattern);
+        if (!path_pattern) {
+            free(pattern_copy);
+            return -1;
+        }
     }
 
-    if (strchr(r->path_pattern, '{'))
-        r->has_params = 1;
+    r->pattern = pattern_copy;
+    r->pattern_len = strlen(pattern);
+    r->method = method;
+    r->path_pattern = path_pattern;
+    r->has_params = strchr(path_pattern, '{') != NULL;
+    return 0;
 }
 
 neverc_http_mux_t *neverc_http_new_mux(void) {
@@ -757,9 +771,11 @@ void neverc_http_mux_handle(neverc_http_mux_t *mux, const char *pattern,
     if (!mux || !pattern || !handler) return;
     nc_mutex_lock(&mux->lock);
     if (mux->nroutes < MAX_ROUTES) {
-        route_parse_pattern(&mux->routes[mux->nroutes], pattern);
-        mux->routes[mux->nroutes].handler = handler;
-        mux->nroutes++;
+        route_t *route = &mux->routes[mux->nroutes];
+        if (route_parse_pattern(route, pattern) == 0) {
+            route->handler = handler;
+            mux->nroutes++;
+        }
     }
     nc_mutex_unlock(&mux->lock);
 }
@@ -772,11 +788,12 @@ int neverc_http_mux_handle_context(
     nc_mutex_lock(&mux->lock);
     if (mux->nroutes < MAX_ROUTES) {
         route_t *route = &mux->routes[mux->nroutes];
-        route_parse_pattern(route, pattern);
-        route->context_handler = handler;
-        route->handler_context = context;
-        mux->nroutes++;
-        result = 0;
+        if (route_parse_pattern(route, pattern) == 0) {
+            route->context_handler = handler;
+            route->handler_context = context;
+            mux->nroutes++;
+            result = 0;
+        }
     }
     nc_mutex_unlock(&mux->lock);
     return result;
@@ -790,12 +807,13 @@ int neverc_http_mux_handle_stream_context(
     nc_mutex_lock(&mux->lock);
     if (mux->nroutes < MAX_ROUTES) {
         route_t *route = &mux->routes[mux->nroutes];
-        route_parse_pattern(route, pattern);
-        route->context_handler = handler;
-        route->handler_context = context;
-        route->streaming = 1;
-        mux->nroutes++;
-        result = 0;
+        if (route_parse_pattern(route, pattern) == 0) {
+            route->context_handler = handler;
+            route->handler_context = context;
+            route->streaming = 1;
+            mux->nroutes++;
+            result = 0;
+        }
     }
     nc_mutex_unlock(&mux->lock);
     return result;
