@@ -4,7 +4,7 @@
 /*
  * NeverC log — logging (mirrors Go log package).
  *
- * Supports configurable prefix, flags (date/time/file), and output writer.
+ * Supports configurable prefix, date/time flags, and output writer.
  * Default output is stderr.
  */
 
@@ -19,6 +19,8 @@ extern "C" {
 #define NEVERC_LOG_LDATE     (1 << 0)
 #define NEVERC_LOG_LTIME     (1 << 1)
 #define NEVERC_LOG_LMICRO    (1 << 2)
+/* Reserved for Go API compatibility. The C ABI does not carry call-site
+ * metadata, so these flags currently do not emit a file location. */
 #define NEVERC_LOG_LLONGFILE (1 << 3)
 #define NEVERC_LOG_LSHORTFILE (1 << 4)
 #define NEVERC_LOG_LUTC      (1 << 5)

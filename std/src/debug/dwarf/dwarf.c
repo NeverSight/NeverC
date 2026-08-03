@@ -195,9 +195,9 @@ int neverc_dwarf_parse_comp_unit(const neverc_dwarf_data_t *d,
         p++; /* unit_type */
         hdr->address_size = *p++;
         if (hdr->is_64bit) {
-            hdr->abbrev_offset = rd64(p); p += 8;
+            hdr->abbrev_offset = rd64(p);
         } else {
-            hdr->abbrev_offset = rd32(p); p += 4;
+            hdr->abbrev_offset = rd32(p);
         }
     } else {
         if (hdr->is_64bit) {
@@ -205,7 +205,7 @@ int neverc_dwarf_parse_comp_unit(const neverc_dwarf_data_t *d,
         } else {
             hdr->abbrev_offset = rd32(p); p += 4;
         }
-        hdr->address_size = *p++;
+        hdr->address_size = *p;
     }
     return 0;
 }

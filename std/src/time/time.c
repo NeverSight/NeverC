@@ -320,35 +320,46 @@ int neverc_time_parse_duration(const char *s, neverc_duration_t *out) {
 }
 
 char *neverc_time_format_duration(neverc_duration_t d) {
-    char buf[128];
+    char buf[128] = {0};
     int pos = 0;
-    if (d < 0) { buf[pos++] = '-'; d = -d; }
+    int negative = d < 0;
+    uint64_t magnitude = negative
+        ? (uint64_t)(-(d + 1)) + 1U
+        : (uint64_t)d;
+    if (negative) buf[pos++] = '-';
 
-    if (d == 0) {
+    if (magnitude == 0) {
         buf[pos++] = '0'; buf[pos++] = 's'; buf[pos] = '\0';
-    } else if (d < NEVERC_TIME_MICROSECOND) {
-        pos += snprintf(buf + pos, sizeof(buf) - pos, "%lldns", (long long)d);
-    } else if (d < NEVERC_TIME_MILLISECOND) {
-        double us = (double)d / 1000.0;
+    } else if (magnitude < (uint64_t)NEVERC_TIME_MICROSECOND) {
+        pos += snprintf(buf + pos, sizeof(buf) - (size_t)pos, "%lluns",
+                        (unsigned long long)magnitude);
+    } else if (magnitude < (uint64_t)NEVERC_TIME_MILLISECOND) {
+        double us = (double)magnitude / 1000.0;
         pos += snprintf(buf + pos, sizeof(buf) - pos, "%.3gus", us);
-    } else if (d < NEVERC_TIME_SECOND) {
-        double ms = (double)d / 1000000.0;
+    } else if (magnitude < (uint64_t)NEVERC_TIME_SECOND) {
+        double ms = (double)magnitude / 1000000.0;
         pos += snprintf(buf + pos, sizeof(buf) - pos, "%.3gms", ms);
     } else {
-        int64_t h = d / NEVERC_TIME_HOUR;
-        d %= NEVERC_TIME_HOUR;
-        int64_t m = d / NEVERC_TIME_MINUTE;
-        d %= NEVERC_TIME_MINUTE;
-        double s = (double)d / 1e9;
+        uint64_t h = magnitude / (uint64_t)NEVERC_TIME_HOUR;
+        magnitude %= (uint64_t)NEVERC_TIME_HOUR;
+        uint64_t m = magnitude / (uint64_t)NEVERC_TIME_MINUTE;
+        magnitude %= (uint64_t)NEVERC_TIME_MINUTE;
+        double s = (double)magnitude / 1e9;
 
-        if (h > 0) pos += snprintf(buf + pos, sizeof(buf) - pos, "%lldh", (long long)h);
-        if (m > 0) pos += snprintf(buf + pos, sizeof(buf) - pos, "%lldm", (long long)m);
+        if (h > 0)
+            pos += snprintf(buf + pos, sizeof(buf) - (size_t)pos, "%lluh",
+                            (unsigned long long)h);
+        if (m > 0)
+            pos += snprintf(buf + pos, sizeof(buf) - (size_t)pos, "%llum",
+                            (unsigned long long)m);
         if (s > 0 || (h == 0 && m == 0))
             pos += snprintf(buf + pos, sizeof(buf) - pos, "%.3gs", s);
     }
 
-    char *result = (char *)malloc(pos + 1);
-    for (int i = 0; i <= pos; i++) result[i] = buf[i];
+    buf[pos] = '\0';
+    char *result = (char *)malloc((size_t)pos + 1U);
+    if (!result) return NULL;
+    memcpy(result, buf, (size_t)pos + 1U);
     return result;
 }
 

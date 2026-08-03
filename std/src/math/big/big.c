@@ -2,15 +2,22 @@
 #include <stdlib.h>
 #include <string.h>
 
-static void ensure_cap(neverc_bigint_t *z, size_t need) {
-    if (need <= z->cap) return;
+static int ensure_cap(neverc_bigint_t *z, size_t need) {
+    if (!z || need > SIZE_MAX / sizeof(uint32_t)) return 0;
+    if (need <= z->cap) return 1;
+    size_t maxcap = SIZE_MAX / sizeof(uint32_t);
     size_t newcap = z->cap ? z->cap * 2 : 4;
-    while (newcap < need) newcap *= 2;
+    if (z->cap > maxcap / 2) newcap = need;
+    while (newcap < need) {
+        if (newcap > maxcap / 2) { newcap = need; break; }
+        newcap *= 2;
+    }
     uint32_t *nd = (uint32_t *)realloc(z->digits, newcap * sizeof(uint32_t));
-    if (!nd) return;
+    if (!nd) return 0;
     memset(nd + z->cap, 0, (newcap - z->cap) * sizeof(uint32_t));
     z->digits = nd;
     z->cap = newcap;
+    return 1;
 }
 
 static void trim(neverc_bigint_t *z) {
@@ -29,9 +36,9 @@ static int abs_cmp(const neverc_bigint_t *x, const neverc_bigint_t *y) {
     return 0;
 }
 
-static void abs_add(neverc_bigint_t *z, const neverc_bigint_t *x, const neverc_bigint_t *y) {
+static int abs_add(neverc_bigint_t *z, const neverc_bigint_t *x, const neverc_bigint_t *y) {
     size_t m = x->len > y->len ? x->len : y->len;
-    ensure_cap(z, m + 1);
+    if (m == SIZE_MAX || !ensure_cap(z, m + 1)) return 0;
     uint64_t carry = 0;
     size_t i = 0;
     for (; i < m; i++) {
@@ -47,10 +54,11 @@ static void abs_add(neverc_bigint_t *z, const neverc_bigint_t *x, const neverc_b
      * words that trim would then mistake for significant digits. */
     z->len = i;
     trim(z);
+    return 1;
 }
 
-static void abs_sub(neverc_bigint_t *z, const neverc_bigint_t *a, const neverc_bigint_t *b) {
-    ensure_cap(z, a->len);
+static int abs_sub(neverc_bigint_t *z, const neverc_bigint_t *a, const neverc_bigint_t *b) {
+    if (!ensure_cap(z, a->len)) return 0;
     int64_t borrow = 0;
     for (size_t i = 0; i < a->len; i++) {
         int64_t diff = (int64_t)a->digits[i] - borrow;
@@ -61,6 +69,7 @@ static void abs_sub(neverc_bigint_t *z, const neverc_bigint_t *a, const neverc_b
     }
     z->len = a->len;
     trim(z);
+    return 1;
 }
 
 void neverc_bigint_init(neverc_bigint_t *z) {
@@ -77,38 +86,41 @@ void neverc_bigint_free(neverc_bigint_t *z) {
 }
 
 void neverc_bigint_set_int64(neverc_bigint_t *z, int64_t x) {
-    z->neg = (x < 0);
     /* Negate in unsigned space: -x on INT64_MIN is signed-overflow UB. */
     uint64_t v = (x < 0) ? -(uint64_t)x : (uint64_t)x;
-    if (v == 0) { z->len = 0; return; }
-    ensure_cap(z, 2);
+    if (v == 0) { z->len = 0; z->neg = 0; return; }
+    if (!ensure_cap(z, 2)) return;
+    z->neg = (x < 0);
     z->digits[0] = (uint32_t)(v & 0xFFFFFFFFULL);
     z->digits[1] = (uint32_t)(v >> 32);
     z->len = z->digits[1] ? 2 : 1;
 }
 
 void neverc_bigint_set_uint64(neverc_bigint_t *z, uint64_t x) {
+    if (x == 0) { z->len = 0; z->neg = 0; return; }
+    if (!ensure_cap(z, 2)) return;
     z->neg = 0;
-    if (x == 0) { z->len = 0; return; }
-    ensure_cap(z, 2);
     z->digits[0] = (uint32_t)(x & 0xFFFFFFFFULL);
     z->digits[1] = (uint32_t)(x >> 32);
     z->len = z->digits[1] ? 2 : 1;
 }
 
-void neverc_bigint_set(neverc_bigint_t *z, const neverc_bigint_t *x) {
-    if (z == x) return;
+static int bigint_set_checked(neverc_bigint_t *z, const neverc_bigint_t *x) {
+    if (z == x) return 1;
     if (x->len == 0) {
         z->len = 0;
         z->neg = 0;
-        return;
+        return 1;
     }
-    ensure_cap(z, x->len);
-    if (!z->digits)
-        return;
+    if (!ensure_cap(z, x->len)) return 0;
     memcpy(z->digits, x->digits, x->len * sizeof(uint32_t));
     z->len = x->len;
     z->neg = x->neg;
+    return 1;
+}
+
+void neverc_bigint_set(neverc_bigint_t *z, const neverc_bigint_t *x) {
+    (void)bigint_set_checked(z, x);
 }
 
 /* Above this many word-chunks, parse with the subquadratic divide-and-conquer
@@ -188,11 +200,12 @@ int neverc_bigint_set_string(neverc_bigint_t *z, const char *s, int base) {
         ndigits++;
     }
 
-    ensure_cap(z, 1);
+    if (!ensure_cap(z, 1)) return -1;
     z->len = 0;
     if (ndigits == 0) { z->neg = 0; return 0; }   /* e.g. "0x" with no digits */
 
-    size_t m = (ndigits + (size_t)k - 1) / (size_t)k;   /* number of word-chunks */
+    if (k <= 0) return -1;
+    size_t m = (ndigits - 1U) / (size_t)k + 1U; /* word-chunks */
 
     if (m >= (size_t)NCI_BASECONV_THRESHOLD) {
         uint32_t *limb = (uint32_t *)malloc(m * sizeof(uint32_t));
@@ -316,26 +329,38 @@ int neverc_bigint_bit_len(const neverc_bigint_t *x) {
 void neverc_bigint_add(neverc_bigint_t *z, const neverc_bigint_t *x, const neverc_bigint_t *y) {
     neverc_bigint_t tx, ty;
     neverc_bigint_init(&tx); neverc_bigint_init(&ty);
-    if (z == x) { neverc_bigint_set(&tx, x); x = &tx; }
-    if (z == y) { neverc_bigint_set(&ty, y); y = &ty; }
+    if (z == x) {
+        if (!bigint_set_checked(&tx, x)) goto done;
+        x = &tx;
+    }
+    if (z == y) {
+        if (!bigint_set_checked(&ty, y)) goto done;
+        y = &ty;
+    }
 
     if (x->neg == y->neg) {
-        abs_add(z, x, y);
+        if (!abs_add(z, x, y)) goto done;
         z->neg = x->neg;
     } else {
         int c = abs_cmp(x, y);
         if (c == 0) { z->len = 0; z->neg = 0; }
-        else if (c > 0) { abs_sub(z, x, y); z->neg = x->neg; }
-        else { abs_sub(z, y, x); z->neg = y->neg; }
+        else if (c > 0) {
+            if (!abs_sub(z, x, y)) goto done;
+            z->neg = x->neg;
+        } else {
+            if (!abs_sub(z, y, x)) goto done;
+            z->neg = y->neg;
+        }
     }
     trim(z);
+done:
     neverc_bigint_free(&tx); neverc_bigint_free(&ty);
 }
 
 void neverc_bigint_sub(neverc_bigint_t *z, const neverc_bigint_t *x, const neverc_bigint_t *y) {
     neverc_bigint_t ny;
     neverc_bigint_init(&ny);
-    neverc_bigint_set(&ny, y);
+    if (!bigint_set_checked(&ny, y)) return;
     ny.neg = !ny.neg;
     if (ny.len == 0) ny.neg = 0;
     neverc_bigint_add(z, x, &ny);
@@ -791,8 +816,9 @@ void neverc_bigint_mul(neverc_bigint_t *z, const neverc_bigint_t *x, const never
 
     neverc_bigint_t result;
     neverc_bigint_init(&result);
+    if (x->len > SIZE_MAX - y->len) return;
     size_t rlen = x->len + y->len;
-    ensure_cap(&result, rlen);
+    if (!ensure_cap(&result, rlen)) return;
     memset(result.digits, 0, rlen * sizeof(uint32_t));
     result.len = rlen;
 
@@ -879,19 +905,21 @@ static void nat_divmod(neverc_bigint_t *q, neverc_bigint_t *r,
     }
 
     if (q) {
-        ensure_cap(q, m + 1);
-        memcpy(q->digits, qd, (m + 1) * sizeof(uint32_t));
-        q->len = m + 1; q->neg = 0; trim(q);
+        if (ensure_cap(q, m + 1)) {
+            memcpy(q->digits, qd, (m + 1) * sizeof(uint32_t));
+            q->len = m + 1; q->neg = 0; trim(q);
+        }
     }
     if (r) {
-        ensure_cap(r, n);
-        uint32_t c = 0;                       /* D8: remainder = u[0..n) >> s */
-        for (size_t i = n; i-- > 0; ) {
-            uint32_t cur = u[i];
-            r->digits[i] = s ? ((cur >> s) | c) : cur;
-            c = s ? (cur << (32 - s)) : 0;
+        if (ensure_cap(r, n)) {
+            uint32_t c = 0;                   /* D8: remainder = u[0..n) >> s */
+            for (size_t i = n; i-- > 0; ) {
+                uint32_t cur = u[i];
+                r->digits[i] = s ? ((cur >> s) | c) : cur;
+                c = s ? (cur << (32 - s)) : 0;
+            }
+            r->len = n; r->neg = 0; trim(r);
         }
-        r->len = n; r->neg = 0; trim(r);
     }
     free(v); free(u); free(qd);
 }
@@ -931,10 +959,9 @@ static void bn_block(neverc_bigint_t *out, const neverc_bigint_t *src,
                      size_t lo, size_t cnt) {
     out->neg = 0;
     if (lo >= src->len || cnt == 0) { out->len = 0; return; }
-    size_t hi = lo + cnt;
-    if (hi > src->len) hi = src->len;
+    size_t hi = cnt > src->len - lo ? src->len : lo + cnt;
     size_t m = hi - lo;
-    ensure_cap(out, m);
+    if (!ensure_cap(out, m)) return;
     memcpy(out->digits, src->digits + lo, m * sizeof(uint32_t));
     out->len = m;
     trim(out);
@@ -965,7 +992,7 @@ static void mag_divmod_basic(neverc_bigint_t *q, neverc_bigint_t *r,
         uint32_t d = y->digits[0];
         neverc_bigint_t quot;
         neverc_bigint_init(&quot);
-        ensure_cap(&quot, x->len);
+        if (!ensure_cap(&quot, x->len)) return;
         quot.len = x->len;
         uint64_t rem = 0;
         for (size_t i = x->len; i > 0; i--) {
@@ -1008,7 +1035,7 @@ static void bz_div3n2n(neverc_bigint_t *q, neverc_bigint_t *r,
     if (abs_cmp(&a1, &b1) < 0) {
         bz_div2n1n(&qh, &rh, &a12, &b1, n);          /* qh = a12 / b1 */
     } else {
-        ensure_cap(&qh, n);                          /* qh = base^n - 1 */
+        if (!ensure_cap(&qh, n)) goto cleanup;       /* qh = base^n - 1 */
         for (size_t i = 0; i < n; i++) qh.digits[i] = 0xFFFFFFFFu;
         qh.len = n; qh.neg = 0; trim(&qh);
         neverc_bigint_set(&t, &b1);                  /* rh = a12 + b1 - (b1<<n) */
@@ -1031,6 +1058,7 @@ static void bz_div3n2n(neverc_bigint_t *q, neverc_bigint_t *r,
     neverc_bigint_set(q, &qh);
     neverc_bigint_set(r, &rh);
 
+cleanup:
     neverc_bigint_free(&b1); neverc_bigint_free(&b2);
     neverc_bigint_free(&a12); neverc_bigint_free(&a3); neverc_bigint_free(&a1);
     neverc_bigint_free(&qh); neverc_bigint_free(&rh);
@@ -1148,7 +1176,7 @@ void neverc_bigint_div(neverc_bigint_t *q, neverc_bigint_t *r,
         uint32_t d = y->digits[0];
         neverc_bigint_t quot;
         neverc_bigint_init(&quot);
-        ensure_cap(&quot, x->len);
+        if (!ensure_cap(&quot, x->len)) return;
         quot.len = x->len;
         uint64_t rem = 0;
         for (size_t i = x->len; i > 0; i--) {
@@ -1210,11 +1238,12 @@ void neverc_bigint_lsh(neverc_bigint_t *z, const neverc_bigint_t *x, unsigned n)
     if (x->len == 0) { z->len = 0; z->neg = 0; return; }
     unsigned words = n / 32;
     unsigned bits = n % 32;
-    size_t newlen = x->len + words + 1;
+    if ((size_t)words > SIZE_MAX - x->len - 1U) return;
+    size_t newlen = x->len + (size_t)words + 1U;
 
     neverc_bigint_t tmp;
     neverc_bigint_init(&tmp);
-    ensure_cap(&tmp, newlen);
+    if (!ensure_cap(&tmp, newlen)) return;
     memset(tmp.digits, 0, newlen * sizeof(uint32_t));
     tmp.len = newlen;
     tmp.neg = x->neg;
@@ -1240,7 +1269,7 @@ void neverc_bigint_rsh(neverc_bigint_t *z, const neverc_bigint_t *x, unsigned n)
     size_t newlen = x->len - words;
     neverc_bigint_t tmp;
     neverc_bigint_init(&tmp);
-    ensure_cap(&tmp, newlen);
+    if (!ensure_cap(&tmp, newlen)) return;
     tmp.len = newlen;
     tmp.neg = x->neg;
 
@@ -1257,7 +1286,7 @@ void neverc_bigint_rsh(neverc_bigint_t *z, const neverc_bigint_t *x, unsigned n)
 
 void neverc_bigint_and(neverc_bigint_t *z, const neverc_bigint_t *x, const neverc_bigint_t *y) {
     size_t m = x->len < y->len ? x->len : y->len;
-    ensure_cap(z, m);
+    if (!ensure_cap(z, m)) return;
     for (size_t i = 0; i < m; i++)
         z->digits[i] = x->digits[i] & y->digits[i];
     z->len = m;
@@ -1267,7 +1296,7 @@ void neverc_bigint_and(neverc_bigint_t *z, const neverc_bigint_t *x, const never
 
 void neverc_bigint_or(neverc_bigint_t *z, const neverc_bigint_t *x, const neverc_bigint_t *y) {
     size_t m = x->len > y->len ? x->len : y->len;
-    ensure_cap(z, m);
+    if (!ensure_cap(z, m)) return;
     for (size_t i = 0; i < m; i++) {
         uint32_t a = i < x->len ? x->digits[i] : 0;
         uint32_t b = i < y->len ? y->digits[i] : 0;
@@ -1280,7 +1309,7 @@ void neverc_bigint_or(neverc_bigint_t *z, const neverc_bigint_t *x, const neverc
 
 void neverc_bigint_xor(neverc_bigint_t *z, const neverc_bigint_t *x, const neverc_bigint_t *y) {
     size_t m = x->len > y->len ? x->len : y->len;
-    ensure_cap(z, m);
+    if (!ensure_cap(z, m)) return;
     for (size_t i = 0; i < m; i++) {
         uint32_t a = i < x->len ? x->digits[i] : 0;
         uint32_t b = i < y->len ? y->digits[i] : 0;
@@ -1516,7 +1545,12 @@ static int exp_montgomery(neverc_bigint_t *z, const neverc_bigint_t *base,
 
     mont_mul(other, cur, onew, M, n, n0inv, t);    /* map out of Montgomery */
 
-    ensure_cap(z, n);
+    if (!ensure_cap(z, n)) {
+        free(t); free(R2w); free(basew); free(amont);
+        free(onew); free(buf0); free(buf1); free(g);
+        neverc_bigint_free(&R2); neverc_bigint_free(&bmod);
+        return -1;
+    }
     memcpy(z->digits, other, n * sizeof(uint32_t));
     z->len = n; z->neg = 0;
     trim(z);

@@ -11,15 +11,48 @@ static inline void *vec_elem_ptr(const neverc_vector_t *v, size_t index) {
     return (char *)v->data + index * v->elem_size;
 }
 
+static bool vec_prepare_input(const neverc_vector_t *v, const void *input,
+                              size_t bytes, const void **stable,
+                              void **owned_copy) {
+    *stable = input;
+    *owned_copy = NULL;
+    if (bytes == 0 || !v->data) return true;
+    if (v->elem_size == 0 || v->size > v->capacity ||
+        v->capacity > SIZE_MAX / v->elem_size)
+        return false;
+
+    uintptr_t base = (uintptr_t)v->data;
+    uintptr_t address = (uintptr_t)input;
+    if (address < base) return true;
+    size_t offset = (size_t)(address - base);
+    size_t allocated_bytes = v->capacity * v->elem_size;
+    if (offset > allocated_bytes) return true;
+    if (offset == allocated_bytes) return false;
+
+    size_t used_bytes = v->size * v->elem_size;
+    if (offset > used_bytes || bytes > used_bytes - offset) return false;
+    void *copy = malloc(bytes);
+    if (!copy) return false;
+    memcpy(copy, input, bytes);
+    *stable = copy;
+    *owned_copy = copy;
+    return true;
+}
+
 static bool vec_grow(neverc_vector_t *v, size_t min_cap) {
+    if (!v || v->elem_size == 0 || min_cap > SIZE_MAX / v->elem_size)
+        return false;
     if (v->capacity >= min_cap)
         return true;
+    size_t max_cap = SIZE_MAX / v->elem_size;
     size_t new_cap = v->capacity ? v->capacity : VEC_INITIAL_CAP;
+    if (new_cap > max_cap)
+        new_cap = max_cap;
     while (new_cap < min_cap) {
-        size_t doubled = new_cap * VEC_GROWTH_FACTOR;
-        if (doubled <= new_cap)
-            return false;
-        new_cap = doubled;
+        if (new_cap > max_cap / VEC_GROWTH_FACTOR)
+            new_cap = max_cap;
+        else
+            new_cap *= VEC_GROWTH_FACTOR;
     }
     size_t alloc_size = new_cap * v->elem_size;
     if (v->elem_size != 0 && alloc_size / v->elem_size != new_cap)
@@ -39,7 +72,7 @@ neverc_vector_t *neverc_vector_new(size_t elem_size) {
 }
 
 neverc_vector_t *neverc_vector_new_with_capacity(size_t elem_size, size_t cap) {
-    if (elem_size == 0)
+    if (elem_size == 0 || cap > SIZE_MAX / elem_size)
         return NULL;
     neverc_vector_t *v = (neverc_vector_t *)calloc(1, sizeof(*v));
     if (!v)
@@ -74,7 +107,9 @@ neverc_vector_t *neverc_vector_new_with_size(size_t elem_size, size_t count,
 }
 
 neverc_vector_t *neverc_vector_copy(const neverc_vector_t *src) {
-    if (!src)
+    if (!src || src->elem_size == 0 || src->size > src->capacity ||
+        (src->size != 0 && !src->data) ||
+        src->size > SIZE_MAX / src->elem_size)
         return NULL;
     neverc_vector_t *v = neverc_vector_new_with_capacity(src->elem_size,
                                                           src->size);
@@ -152,14 +187,14 @@ void *neverc_vector_data(const neverc_vector_t *v) {
 bool neverc_vector_get(const neverc_vector_t *v, size_t index, void *out) {
     if (!v || !out || index >= v->size)
         return false;
-    memcpy(out, vec_elem_ptr(v, index), v->elem_size);
+    memmove(out, vec_elem_ptr(v, index), v->elem_size);
     return true;
 }
 
 bool neverc_vector_set(neverc_vector_t *v, size_t index, const void *value) {
     if (!v || !value || index >= v->size)
         return false;
-    memcpy(vec_elem_ptr(v, index), value, v->elem_size);
+    memmove(vec_elem_ptr(v, index), value, v->elem_size);
     return true;
 }
 
@@ -217,9 +252,18 @@ bool neverc_vector_shrink_to_fit(neverc_vector_t *v) {
 bool neverc_vector_push_back(neverc_vector_t *v, const void *value) {
     if (!v || !value)
         return false;
-    if (!vec_grow(v, v->size + 1))
+    if (v->size == SIZE_MAX)
         return false;
-    memcpy(vec_elem_ptr(v, v->size), value, v->elem_size);
+    const void *stable;
+    void *copy;
+    if (!vec_prepare_input(v, value, v->elem_size, &stable, &copy))
+        return false;
+    if (!vec_grow(v, v->size + 1)) {
+        free(copy);
+        return false;
+    }
+    memcpy(vec_elem_ptr(v, v->size), stable, v->elem_size);
+    free(copy);
     v->size++;
     return true;
 }
@@ -237,13 +281,22 @@ bool neverc_vector_insert(neverc_vector_t *v, size_t index,
                            const void *value) {
     if (!v || !value || index > v->size)
         return false;
-    if (!vec_grow(v, v->size + 1))
+    if (v->size == SIZE_MAX)
         return false;
+    const void *stable;
+    void *copy;
+    if (!vec_prepare_input(v, value, v->elem_size, &stable, &copy))
+        return false;
+    if (!vec_grow(v, v->size + 1)) {
+        free(copy);
+        return false;
+    }
     if (index < v->size) {
         memmove(vec_elem_ptr(v, index + 1), vec_elem_ptr(v, index),
                 (v->size - index) * v->elem_size);
     }
-    memcpy(vec_elem_ptr(v, index), value, v->elem_size);
+    memcpy(vec_elem_ptr(v, index), stable, v->elem_size);
+    free(copy);
     v->size++;
     return true;
 }
@@ -256,13 +309,23 @@ bool neverc_vector_insert_range(neverc_vector_t *v, size_t index,
         return true;
     if (!values)
         return false;
-    if (!vec_grow(v, v->size + count))
+    if (v->elem_size == 0 || count > SIZE_MAX / v->elem_size ||
+        count > SIZE_MAX - v->size)
         return false;
+    const void *stable;
+    void *copy;
+    if (!vec_prepare_input(v, values, count * v->elem_size, &stable, &copy))
+        return false;
+    if (!vec_grow(v, v->size + count)) {
+        free(copy);
+        return false;
+    }
     if (index < v->size) {
         memmove(vec_elem_ptr(v, index + count), vec_elem_ptr(v, index),
                 (v->size - index) * v->elem_size);
     }
-    memcpy(vec_elem_ptr(v, index), values, count * v->elem_size);
+    memcpy(vec_elem_ptr(v, index), stable, count * v->elem_size);
+    free(copy);
     v->size += count;
     return true;
 }
@@ -273,8 +336,16 @@ bool neverc_vector_insert_fill(neverc_vector_t *v, size_t index,
         return false;
     if (count == 0)
         return true;
-    if (!vec_grow(v, v->size + count))
+    if (v->elem_size == 0 || count > SIZE_MAX - v->size)
         return false;
+    const void *stable;
+    void *copy;
+    if (!vec_prepare_input(v, value, v->elem_size, &stable, &copy))
+        return false;
+    if (!vec_grow(v, v->size + count)) {
+        free(copy);
+        return false;
+    }
     if (index < v->size) {
         memmove(vec_elem_ptr(v, index + count), vec_elem_ptr(v, index),
                 (v->size - index) * v->elem_size);
@@ -282,9 +353,9 @@ bool neverc_vector_insert_fill(neverc_vector_t *v, size_t index,
     char *dst = (char *)vec_elem_ptr(v, index);
     size_t sz = v->elem_size;
     if (sz == 1) {
-        memset(dst, *(const unsigned char *)value, count);
+        memset(dst, *(const unsigned char *)stable, count);
     } else {
-        memcpy(dst, value, sz);
+        memcpy(dst, stable, sz);
         for (size_t copied = 1; copied < count; ) {
             size_t chunk = count - copied;
             if (chunk > copied) chunk = copied;
@@ -292,6 +363,7 @@ bool neverc_vector_insert_fill(neverc_vector_t *v, size_t index,
             copied += chunk;
         }
     }
+    free(copy);
     v->size += count;
     return true;
 }
@@ -310,7 +382,7 @@ bool neverc_vector_erase(neverc_vector_t *v, size_t index) {
 bool neverc_vector_erase_range(neverc_vector_t *v, size_t first, size_t count) {
     if (!v || first >= v->size || count == 0)
         return false;
-    if (first + count > v->size)
+    if (count > v->size - first)
         count = v->size - first;
     size_t after = v->size - first - count;
     if (after > 0) {
@@ -334,15 +406,23 @@ bool neverc_vector_resize(neverc_vector_t *v, size_t new_size,
         v->size = new_size;
         return true;
     }
-    if (!vec_grow(v, new_size))
+    const void *stable = fill_value;
+    void *copy = NULL;
+    if (fill_value &&
+        !vec_prepare_input(v, fill_value, v->elem_size, &stable, &copy))
         return false;
-    if (fill_value) {
+    if (!vec_grow(v, new_size)) {
+        free(copy);
+        return false;
+    }
+    if (stable) {
         for (size_t i = v->size; i < new_size; i++)
-            memcpy(vec_elem_ptr(v, i), fill_value, v->elem_size);
+            memcpy(vec_elem_ptr(v, i), stable, v->elem_size);
     } else {
         memset(vec_elem_ptr(v, v->size), 0,
                (new_size - v->size) * v->elem_size);
     }
+    free(copy);
     v->size = new_size;
     return true;
 }
@@ -359,14 +439,22 @@ bool neverc_vector_assign(neverc_vector_t *v, const void *values,
                            size_t count) {
     if (!v)
         return false;
-    v->size = 0;
-    if (count == 0)
+    if (count == 0) {
+        v->size = 0;
         return true;
-    if (!values)
+    }
+    if (!values || v->elem_size == 0 || count > SIZE_MAX / v->elem_size)
         return false;
-    if (!vec_grow(v, count))
+    const void *stable;
+    void *copy;
+    if (!vec_prepare_input(v, values, count * v->elem_size, &stable, &copy))
         return false;
-    memcpy(v->data, values, count * v->elem_size);
+    if (!vec_grow(v, count)) {
+        free(copy);
+        return false;
+    }
+    memcpy(v->data, stable, count * v->elem_size);
+    free(copy);
     v->size = count;
     return true;
 }
@@ -376,6 +464,16 @@ bool neverc_vector_append(neverc_vector_t *v, const neverc_vector_t *other) {
         return v != NULL;
     if (v->elem_size != other->elem_size)
         return false;
+    if (v == other) {
+        size_t old_size = v->size;
+        if (old_size > SIZE_MAX - old_size ||
+            !vec_grow(v, old_size + old_size))
+            return false;
+        memcpy(vec_elem_ptr(v, old_size), v->data,
+               old_size * v->elem_size);
+        v->size = old_size + old_size;
+        return true;
+    }
     return neverc_vector_insert_range(v, v->size, other->data, other->size);
 }
 
@@ -528,6 +626,8 @@ bool neverc_vector_none(const neverc_vector_t *v,
 void *neverc_vector_emplace_back(neverc_vector_t *v) {
     if (!v)
         return NULL;
+    if (v->size == SIZE_MAX)
+        return NULL;
     if (!vec_grow(v, v->size + 1))
         return NULL;
     void *ptr = vec_elem_ptr(v, v->size);
@@ -538,6 +638,8 @@ void *neverc_vector_emplace_back(neverc_vector_t *v) {
 
 void *neverc_vector_emplace(neverc_vector_t *v, size_t index) {
     if (!v || index > v->size)
+        return NULL;
+    if (v->size == SIZE_MAX)
         return NULL;
     if (!vec_grow(v, v->size + 1))
         return NULL;
@@ -1151,7 +1253,7 @@ neverc_vector_t *neverc_vector_slice(const neverc_vector_t *v,
                                       size_t start, size_t count) {
     if (!v || start >= v->size)
         return neverc_vector_new(v ? v->elem_size : 1);
-    if (start + count > v->size)
+    if (count > v->size - start)
         count = v->size - start;
     return neverc_vector_from_array(vec_elem_ptr(v, start), count,
                                     v->elem_size);
@@ -1165,8 +1267,11 @@ neverc_vector_t *neverc_vector_filter(const neverc_vector_t *v,
     if (!result)
         return NULL;
     for (size_t i = 0; i < v->size; i++) {
-        if (pred(vec_elem_ptr(v, i)))
-            neverc_vector_push_back(result, vec_elem_ptr(v, i));
+        if (pred(vec_elem_ptr(v, i)) &&
+            !neverc_vector_push_back(result, vec_elem_ptr(v, i))) {
+            neverc_vector_free(result);
+            return NULL;
+        }
     }
     return result;
 }
@@ -1200,10 +1305,15 @@ neverc_vector_t *neverc_vector_merge(const neverc_vector_t *a,
         return neverc_vector_copy(b);
     if (!b)
         return neverc_vector_copy(a);
-    if (a->elem_size != b->elem_size || !cmp)
+    if (a->elem_size == 0 || a->elem_size != b->elem_size || !cmp ||
+        a->size > a->capacity || b->size > b->capacity ||
+        (a->size != 0 && !a->data) || (b->size != 0 && !b->data))
+        return NULL;
+    if (a->size > SIZE_MAX - b->size)
         return NULL;
     size_t total = a->size + b->size;
     size_t sz = a->elem_size;
+    if (total == 0) return neverc_vector_new(sz);
     neverc_vector_t *result = neverc_vector_new_with_capacity(sz, total);
     if (!result)
         return NULL;
@@ -1244,13 +1354,21 @@ enum { VEC_SET_UNION, VEC_SET_INTERSECT, VEC_SET_DIFF, VEC_SET_SYMDIFF };
 static neverc_vector_t *vec_set_op(const neverc_vector_t *a,
                                    const neverc_vector_t *b,
                                    neverc_vector_cmp_fn cmp, int op) {
-    if (!a || !b || !cmp || a->elem_size != b->elem_size)
+    if (!a || !b || !cmp || a->elem_size == 0 ||
+        a->elem_size != b->elem_size || a->size > a->capacity ||
+        b->size > b->capacity || (a->size != 0 && !a->data) ||
+        (b->size != 0 && !b->data))
         return NULL;
     size_t sz = a->elem_size;
     size_t cap;
     if (op == VEC_SET_INTERSECT)   cap = a->size < b->size ? a->size : b->size;
     else if (op == VEC_SET_DIFF)   cap = a->size;
-    else                           cap = a->size + b->size;
+    else {
+        if (a->size > SIZE_MAX - b->size)
+            return NULL;
+        cap = a->size + b->size;
+    }
+    if (cap == 0) return neverc_vector_new(sz);
     neverc_vector_t *r = neverc_vector_new_with_capacity(sz, cap);
     if (!r)
         return NULL;

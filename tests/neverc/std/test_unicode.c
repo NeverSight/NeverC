@@ -83,6 +83,8 @@ static void test_case_conversion(void) {
     check_u32("to_lower('A')", neverc_unicode_to_lower('A'), 'a');
     check_u32("to_lower('Z')", neverc_unicode_to_lower('Z'), 'z');
     check_u32("to_lower('a')", neverc_unicode_to_lower('a'), 'a');
+    check_u32("to_title('a')", neverc_unicode_to_title('a'), 'A');
+    check_u32("to_title(Dz)", neverc_unicode_to_title(0x01C6), 0x01C5);
 
     /* Latin-1 */
     check_u32("to_upper(à)", neverc_unicode_to_upper(0xE0), 0xC0);

@@ -50,6 +50,9 @@ static void test_new_with_capacity(void) {
     ASSERT(neverc_vector_capacity(v) >= 100, "capacity >= 100");
     ASSERT(neverc_vector_size(v) == 0, "size == 0");
     neverc_vector_free(v);
+
+    v = neverc_vector_new_with_capacity(SIZE_MAX / 2U + 1U, 2U);
+    ASSERT(v == NULL, "capacity byte-size overflow is rejected");
 }
 
 static void test_new_with_size(void) {
@@ -267,6 +270,9 @@ static void test_erase_range(void) {
     ASSERT(*(int *)neverc_vector_at(v, 2) == 5, "[2]==5");
 
     ASSERT(!neverc_vector_erase_range(v, 10, 1), "erase_range oob fails");
+    ASSERT(neverc_vector_erase_range(v, 1, SIZE_MAX),
+           "overflowing erase count is clamped to the suffix");
+    ASSERT(neverc_vector_size(v) == 1, "overflowing erase leaves prefix");
 
     neverc_vector_free(v);
 }
@@ -328,7 +334,70 @@ static void test_assign_append(void) {
     ASSERT(neverc_vector_size(v) == 5, "append size == 5");
     ASSERT(*(int *)neverc_vector_at(v, 4) == 9, "[4]==9");
 
+    ASSERT(neverc_vector_append(v, v), "self append");
+    ASSERT(neverc_vector_size(v) == 10, "self append doubles size");
+    ASSERT(*(int *)neverc_vector_at(v, 5) == 5, "self append copies first");
+    ASSERT(*(int *)neverc_vector_at(v, 9) == 9, "self append copies last");
+
     neverc_vector_free(other);
+    neverc_vector_free(v);
+}
+
+static void test_self_aliased_modifiers(void) {
+    printf("test_self_aliased_modifiers:\n");
+    int initial[] = {0, 1, 2, 3, 4, 5, 6, 7};
+
+    neverc_vector_t *v = neverc_vector_from_array(initial, 8, sizeof(int));
+    const int *value = (const int *)neverc_vector_at(v, 2);
+    ASSERT(neverc_vector_push_back(v, value), "self-aliased push succeeds");
+    ASSERT(*(int *)neverc_vector_back(v) == 2, "self-aliased push preserves value");
+    neverc_vector_free(v);
+
+    v = neverc_vector_from_array(initial, 8, sizeof(int));
+    ASSERT(neverc_vector_reserve(v, 16), "reserve for aliased insert");
+    value = (const int *)neverc_vector_at(v, 6);
+    ASSERT(neverc_vector_insert(v, 1, value), "self-aliased insert succeeds");
+    ASSERT(*(int *)neverc_vector_at(v, 1) == 6,
+           "self-aliased insert preserves moved value");
+    neverc_vector_free(v);
+
+    v = neverc_vector_from_array(initial, 8, sizeof(int));
+    ASSERT(neverc_vector_reserve(v, 16), "reserve for aliased range insert");
+    const int *range = (const int *)neverc_vector_at(v, 2);
+    ASSERT(neverc_vector_insert_range(v, 1, range, 3),
+           "self-aliased range insert succeeds");
+    ASSERT(*(int *)neverc_vector_at(v, 1) == 2 &&
+           *(int *)neverc_vector_at(v, 2) == 3 &&
+           *(int *)neverc_vector_at(v, 3) == 4,
+           "self-aliased range insert preserves range");
+    neverc_vector_free(v);
+
+    v = neverc_vector_from_array(initial, 8, sizeof(int));
+    ASSERT(neverc_vector_reserve(v, 16), "reserve for aliased fill insert");
+    value = (const int *)neverc_vector_at(v, 6);
+    ASSERT(neverc_vector_insert_fill(v, 1, 3, value),
+           "self-aliased fill insert succeeds");
+    ASSERT(*(int *)neverc_vector_at(v, 1) == 6 &&
+           *(int *)neverc_vector_at(v, 2) == 6 &&
+           *(int *)neverc_vector_at(v, 3) == 6,
+           "self-aliased fill insert preserves value");
+    neverc_vector_free(v);
+
+    v = neverc_vector_from_array(initial, 8, sizeof(int));
+    value = (const int *)neverc_vector_at(v, 3);
+    ASSERT(neverc_vector_resize(v, 12, value), "self-aliased resize succeeds");
+    ASSERT(*(int *)neverc_vector_at(v, 8) == 3 &&
+           *(int *)neverc_vector_at(v, 11) == 3,
+           "self-aliased resize preserves fill value");
+    neverc_vector_free(v);
+
+    v = neverc_vector_from_array(initial, 8, sizeof(int));
+    range = (const int *)neverc_vector_at(v, 2);
+    ASSERT(neverc_vector_assign(v, range, 4), "self-aliased assign succeeds");
+    ASSERT(neverc_vector_size(v) == 4 &&
+           *(int *)neverc_vector_at(v, 0) == 2 &&
+           *(int *)neverc_vector_at(v, 3) == 5,
+           "self-aliased assign preserves range");
     neverc_vector_free(v);
 }
 
@@ -1987,6 +2056,7 @@ int main(void) {
     test_resize_clear();
     test_swap();
     test_assign_append();
+    test_self_aliased_modifiers();
     test_sort();
     test_reverse();
     test_unique();

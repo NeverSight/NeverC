@@ -252,12 +252,68 @@ static void test_append_family(void) {
     check_true("appendln has newline", buf2[strlen(buf2)-1] == '\n');
 }
 
+static void test_append_boundaries(void) {
+    printf("[append boundaries]\n");
+
+    char guard = 'Q';
+    check_int("append zero capacity",
+              neverc_fmt_append(&guard, 0, "data"), 0);
+    check_int("appendln zero capacity",
+              neverc_fmt_appendln(&guard, 0, "data"), 0);
+    check_int("appendf zero capacity",
+              neverc_fmt_appendf(&guard, 0, "%s", "data"), 0);
+    check_int("zero capacity leaves target alone", guard, 'Q');
+
+    check_int("append null target", neverc_fmt_append(NULL, 4, "data"), 0);
+    check_int("appendf null target", neverc_fmt_appendf(NULL, 4, "%s", "data"), 0);
+
+    char unterminated[4] = {'a', 'b', 'c', 'd'};
+    check_int("append unterminated target",
+              neverc_fmt_append(unterminated, sizeof(unterminated), "x"), 0);
+    check_true("unterminated target unchanged",
+               memcmp(unterminated, "abcd", sizeof(unterminated)) == 0);
+}
+
+static void test_invalid_formats(void) {
+    printf("[invalid formats]\n");
+    char *result = neverc_fmt_sprintf(NULL);
+    check_true("null format rejected", result == NULL);
+    free(result);
+
+    result = neverc_fmt_sprintf("%999999999999999999999999d", 42);
+    check_true("overflowing width rejected", result == NULL);
+    free(result);
+
+    result = neverc_fmt_sprintf("%.999999999999999999999999d", 42);
+    check_true("overflowing precision rejected", result == NULL);
+    free(result);
+}
+
 static void test_sscanln(void) {
     printf("[sscanln]\n");
     int a = 0;
     int n = neverc_fmt_sscanln("42 hello\nmore", "%d", &a);
     check_int("sscanln matched", n, 1);
     check_int("sscanln val", a, 42);
+}
+
+static void test_stream_scan(void) {
+    printf("[stream scan]\n");
+    FILE *tmp = tmpfile();
+    check_true("stream fixture", tmp != NULL);
+    if (!tmp) return;
+    fputs("17\n-2 word\n", tmp);
+    rewind(tmp);
+
+    int value = 0;
+    check_int("fscan matched", neverc_fmt_fscan(tmp, &value), 1);
+    check_int("fscan value", value, 17);
+    char word[256] = {0};
+    check_int("fscanln matched",
+              neverc_fmt_fscanln(tmp, "%d %s", &value, word), 2);
+    check_int("fscanln value", value, -2);
+    check_str("fscanln word", word, "word");
+    fclose(tmp);
 }
 
 int main(void) {
@@ -273,7 +329,10 @@ int main(void) {
     test_errorf();
     test_sprint_family();
     test_append_family();
+    test_append_boundaries();
+    test_invalid_formats();
     test_sscanln();
+    test_stream_scan();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

@@ -142,6 +142,75 @@ static void test_rfc8448_tls13_early_secret(void) {
                memcmp(wrong, expected, 32) != 0);
 }
 
+static void test_large_info_sha256_sha512(void) {
+    printf("[HKDF large info]\n");
+
+    uint8_t info[300];
+    uint8_t prk256[32], prk512[64];
+    for (int i = 0; i < 300; i++) info[i] = (uint8_t)(i * 7 + 3);
+    for (int i = 0; i < 32; i++) prk256[i] = (uint8_t)i;
+    for (int i = 0; i < 64; i++) prk512[i] = (uint8_t)i;
+
+    uint8_t expected256[64];
+    hex_to_bytes(
+        "521af4a732d1d7b3b9a5113bf5f801217cbe1bfce48d3cc3ba4486ad0f900e1b"
+        "470dc2d9fb367824a8cc88d2aa6ef91cac2d4a85290dfc30a0280eb46aa276cb",
+        expected256, 64);
+    uint8_t okm256[64];
+    check_true("SHA-256 large info succeeds",
+               neverc_hkdf_expand_sha256(okm256, sizeof(okm256), prk256,
+                                         info, sizeof(info)) == 0);
+    check_true("SHA-256 large info output",
+               memcmp(okm256, expected256, sizeof(okm256)) == 0);
+
+    uint8_t expected512[96];
+    hex_to_bytes(
+        "b60f0563b3d1ef761aed4d438c8b6fd772eb84443e3062159f1b4e07e1380a0a"
+        "eb61706636c326aa34aff6b7abdb0231ee035a758f91583473df885b0c2501982"
+        "0b2d573147e3259d8f42ce6de81dadd430fb9dc6df0082593b8e5ca9156642a",
+        expected512, 96);
+    uint8_t okm512[96];
+    check_true("SHA-512 large info succeeds",
+               neverc_hkdf_expand_sha512(okm512, sizeof(okm512), prk512,
+                                         info, sizeof(info)) == 0);
+    check_true("SHA-512 large info output",
+               memcmp(okm512, expected512, sizeof(okm512)) == 0);
+}
+
+static void test_sha512_extract_and_full(void) {
+    printf("[HKDF SHA-512 oracle]\n");
+
+    uint8_t ikm[22], salt[13], info[10];
+    memset(ikm, 0x0b, sizeof(ikm));
+    for (int i = 0; i < 13; i++) salt[i] = (uint8_t)i;
+    for (int i = 0; i < 10; i++) info[i] = (uint8_t)(0xf0 + i);
+
+    uint8_t expected_prk[64];
+    hex_to_bytes(
+        "665799823737ded04a88e47e54a5890bb2c3d247c7a4254a8e61350723590a26c"
+        "36238127d8661b88cf80ef802d57e2f7cebcf1e00e083848be19929c61b4237",
+        expected_prk, 64);
+    uint8_t prk[64];
+    check_true("SHA-512 extract succeeds",
+               neverc_hkdf_extract_sha512(prk, salt, sizeof(salt),
+                                           ikm, sizeof(ikm)) == 0);
+    check_true("SHA-512 extract output",
+               memcmp(prk, expected_prk, sizeof(prk)) == 0);
+
+    uint8_t expected_okm[42];
+    hex_to_bytes(
+        "832390086cda71fb47625bb5ceb168e4c8e26a1a16ed34d9fc7fe92c148157933"
+        "8da362cb8d9f925d7cb",
+        expected_okm, 42);
+    uint8_t okm[42];
+    check_true("SHA-512 full succeeds",
+               neverc_hkdf_sha512(okm, sizeof(okm), ikm, sizeof(ikm),
+                                   salt, sizeof(salt), info,
+                                   sizeof(info)) == 0);
+    check_true("SHA-512 full output",
+               memcmp(okm, expected_okm, sizeof(okm)) == 0);
+}
+
 int main(void) {
     printf("=== NeverC HKDF Tests ===\n\n");
     test_rfc5869_case1();
@@ -149,6 +218,8 @@ int main(void) {
     test_rfc5869_case3();
     test_deterministic();
     test_rfc8448_tls13_early_secret();
+    test_large_info_sha256_sha512();
+    test_sha512_extract_and_full();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");

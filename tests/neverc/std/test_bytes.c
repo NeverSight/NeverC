@@ -128,6 +128,24 @@ static void test_transform(void) {
                                                      B("bb"), B(""), &outlen);
     check_bytes("replace shrink", repl_shrink, outlen, "aacc");
     free(repl_shrink);
+
+    uint8_t *repl_excess = neverc_bytes_replace(B("a-b"), B("-"), B("::"),
+                                                100, &outlen);
+    check_bytes("replace count exceeds matches", repl_excess, outlen, "a::b");
+    free(repl_excess);
+
+    uint8_t *repl_empty = neverc_bytes_replace_all(B("ab"), B(""), B("-"),
+                                                   &outlen);
+    check_bytes("replace empty old", repl_empty, outlen, "-a-b-");
+    free(repl_empty);
+
+    uint8_t one = 1;
+    outlen = 99;
+    uint8_t *overflow = neverc_bytes_repeat(&one, SIZE_MAX / 2 + 1, 2,
+                                            &outlen);
+    check_bool("repeat overflow rejected", overflow == NULL, 1);
+    check_size("repeat overflow length", outlen, 0);
+    free(overflow);
 }
 
 static void test_trim(void) {
@@ -222,6 +240,16 @@ static void test_join(void) {
     uint8_t *j1 = neverc_bytes_join(slices, lens, 1, B(", "), &outlen);
     check_bytes("join single", j1, outlen, "foo");
     free(j1);
+
+    const uint8_t one = 1;
+    const uint8_t *overflow_slices[] = {&one, &one};
+    size_t overflow_lens[] = {SIZE_MAX, 1};
+    outlen = 99;
+    uint8_t *overflow = neverc_bytes_join(overflow_slices, overflow_lens, 2,
+                                          NULL, 0, &outlen);
+    check_bool("join overflow rejected", overflow == NULL, 1);
+    check_size("join overflow length", outlen, 0);
+    free(overflow);
 }
 
 static void test_cut(void) {
@@ -359,6 +387,10 @@ static void test_index_rune(void) {
     /* UTF-8 multibyte: U+4E16 (世) is 0xE4 0xB8 0x96 */
     const uint8_t s[] = { 'h', 'i', 0xE4, 0xB8, 0x96, 0 };
     check_bool("index_rune utf8", neverc_bytes_index_rune(s, 5, 0x4E16) == 2, 1);
+    check_bool("contains_rune utf8",
+               neverc_bytes_contains_rune(s, 5, 0x4E16), 1);
+    check_bool("contains_rune not found",
+               neverc_bytes_contains_rune(s, 5, 0x754C), 0);
 }
 
 static void test_runes(void) {

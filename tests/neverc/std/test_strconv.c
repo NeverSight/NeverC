@@ -238,6 +238,10 @@ static void test_quote(void) {
     q = neverc_strconv_quote("\x01\x02\x03");
     check_str("quote control", q, "\"\\x01\\x02\\x03\"");
     free(q);
+
+    q = neverc_strconv_quote_to_graphic("hello world");
+    check_str("quote graphic", q, "\"hello world\"");
+    free(q);
 }
 
 /* ===== QuoteRune ===== */
@@ -259,6 +263,14 @@ static void test_quote_rune(void) {
 
     q = neverc_strconv_quote_rune(0x4e16);
     check_str("rune unicode", q, "'\xe4\xb8\x96'");
+    free(q);
+
+    q = neverc_strconv_quote_rune_to_ascii(0x4e16);
+    check_str("rune unicode ascii", q, "'\\u4e16'");
+    free(q);
+
+    q = neverc_strconv_quote_rune_to_graphic(0x4e16);
+    check_str("rune unicode graphic", q, "'\xe4\xb8\x96'");
     free(q);
 }
 
@@ -325,6 +337,7 @@ static void test_can_backquote(void) {
     check_int("backtick bad", neverc_strconv_can_backquote("back`tick"), 0);
     check_int("control bad", neverc_strconv_can_backquote("\x01"), 0);
     check_int("empty ok", neverc_strconv_can_backquote(""), 1);
+    check_int("null rejected", neverc_strconv_can_backquote(NULL), 0);
 }
 
 /* ===== IsPrint / IsGraphic ===== */
@@ -384,6 +397,9 @@ static void test_append_variants(void) {
     check_int("append_quote_rune_to_graphic A",
               neverc_strconv_append_quote_rune_to_graphic(buf, sizeof(buf), 'A'), 3);
     check_str("val", buf, "'A'");
+
+    check_int("append quote null target",
+              neverc_strconv_append_quote(NULL, sizeof(buf), "x"), -1);
 }
 
 /* ===== QuotedPrefix ===== */

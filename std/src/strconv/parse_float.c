@@ -362,7 +362,7 @@ int neverc_strconv_parse_float(const char *s, double *result) {
     }
 
     /* Layer 3: exact big-decimal fallback. */
-    nc_decimal d;
+    nc_decimal d = {0};
     dec_set(&d, lit, lit_end, neg);
     int overflow;
     uint64_t bits = dec_to_bits(&d, &overflow);

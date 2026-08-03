@@ -331,7 +331,7 @@ int neverc_strconv_format_float(double f, char fmt, int prec, char *buf, size_t 
     uint32_t ieee_exp = (uint32_t)((bits >> NC_MANT_BITS) & ((1u << NC_EXP_BITS) - 1));
     uint64_t ieee_mant = bits & (((uint64_t)1 << NC_MANT_BITS) - 1);
 
-    nc_decimal d;
+    nc_decimal d = {0};
     d.neg = neg;
 
     int shortest = (prec < 0);

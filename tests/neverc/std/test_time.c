@@ -86,6 +86,7 @@ static void test_duration(void) {
     neverc_duration_t d = 2500 * NEVERC_TIME_MILLISECOND;
     check_int64("milliseconds", neverc_time_duration_milliseconds(d), 2500);
     check_int64("microseconds", neverc_time_duration_microseconds(d), 2500000);
+    check_int64("nanoseconds", neverc_time_duration_nanoseconds(d), d);
 
     double sec = neverc_time_duration_seconds(d);
     tests_run++;
@@ -216,6 +217,11 @@ static void test_format_duration(void) {
 
     s = neverc_time_format_duration(NEVERC_TIME_HOUR + 30 * NEVERC_TIME_MINUTE);
     check_bool("1h30m", strcmp(s, "1h30m") == 0, 1);
+    free(s);
+
+    s = neverc_time_format_duration(INT64_MIN);
+    check_bool("minimum duration formats", s != NULL, 1);
+    if (s) check_bool("minimum duration remains negative", s[0] == '-', 1);
     free(s);
 }
 

@@ -199,6 +199,165 @@ static void test_nop_closer(void) {
     check_int("nop_closer close", rc, 0);
 }
 
+static int no_progress_read(void *ctx, uint8_t *buf, size_t len, size_t *n) {
+    (void)ctx;
+    (void)buf;
+    (void)len;
+    *n = 0;
+    return 0;
+}
+
+static void test_no_progress_guards(void) {
+    printf("[no progress guards]\n");
+
+    neverc_io_reader_t reader = { NULL, no_progress_read };
+    uint8_t byte = 0;
+    check_int("read_full rejects no progress",
+              neverc_io_read_full(&reader, &byte, 1),
+              NEVERC_IO_ERR_UNEXP);
+
+    neverc_io_writer_t discard;
+    neverc_io_discard_init(&discard);
+    check_size("copy_buffer rejects zero buffer",
+               (size_t)neverc_io_copy_buffer(&discard, &reader, &byte, 0), 0);
+}
+
+static int oversized_count_read(void *ctx, uint8_t *buf, size_t len,
+                                size_t *n) {
+    (void)ctx;
+    (void)buf;
+    *n = len + 1;
+    return NEVERC_IO_EOF;
+}
+
+static int one_byte_eof_read(void *ctx, uint8_t *buf, size_t len, size_t *n) {
+    int *used = (int *)ctx;
+    if (*used || len == 0) {
+        *n = 0;
+        return NEVERC_IO_EOF;
+    }
+    buf[0] = 'x';
+    *used = 1;
+    *n = 1;
+    return NEVERC_IO_EOF;
+}
+
+static int one_byte_error_read(void *ctx, uint8_t *buf, size_t len, size_t *n) {
+    int rc = one_byte_eof_read(ctx, buf, len, n);
+    return rc == NEVERC_IO_EOF ? NEVERC_IO_ERR_UNEXP : rc;
+}
+
+static void test_invalid_reader_counts(void) {
+    printf("[invalid reader counts]\n");
+
+    neverc_io_reader_t reader = { NULL, oversized_count_read };
+    size_t len = 99;
+    uint8_t *all = neverc_io_read_all(&reader, &len);
+    check_int("read_all rejects oversized count", all == NULL, 1);
+    check_size("read_all clears oversized count length", len, 0);
+    free(all);
+
+    uint8_t byte = 0;
+    check_int("read_full rejects oversized count",
+              neverc_io_read_full(&reader, &byte, 1),
+              NEVERC_IO_ERR_UNEXP);
+    size_t n = 99;
+    check_int("read_at_least rejects oversized count",
+              neverc_io_read_at_least(&reader, &byte, 1, 1, &n),
+              NEVERC_IO_ERR_UNEXP);
+    check_size("read_at_least clears invalid count", n, 0);
+
+    int used = 0;
+    neverc_io_reader_t final_reader = { &used, one_byte_eof_read };
+    n = 0;
+    check_int("read_at_least accepts enough data with eof",
+              neverc_io_read_at_least(&final_reader, &byte, 1, 1, &n), 0);
+    check_size("read_at_least reports final data", n, 1);
+
+    used = 0;
+    neverc_io_reader_t error_reader = { &used, one_byte_error_read };
+    check_int("read_full accepts enough data with terminal error",
+              neverc_io_read_full(&error_reader, &byte, 1), 0);
+}
+
+static void test_capacity_overflow_guards(void) {
+    printf("[capacity overflow guards]\n");
+
+    neverc_io_mem_writer_t mw = {
+        (uint8_t *)malloc(1), SIZE_MAX, SIZE_MAX
+    };
+    size_t n = 99;
+    check_int("memory writer rejects capacity overflow",
+              neverc_io_mem_writer_write(&mw, (const uint8_t *)"x", 1, &n),
+              NEVERC_IO_ERR_UNEXP);
+    check_size("memory writer overflow writes nothing", n, 0);
+    neverc_io_mem_writer_free(&mw);
+
+    neverc_io_pipe_t pipe_ctx;
+    neverc_io_reader_t pipe_reader;
+    neverc_io_writer_t pipe_writer;
+    neverc_io_pipe(&pipe_ctx, &pipe_reader, &pipe_writer);
+    pipe_ctx.buf = (uint8_t *)malloc(1);
+    pipe_ctx.len = SIZE_MAX;
+    pipe_ctx.cap = SIZE_MAX;
+    n = 99;
+    check_int("pipe rejects capacity overflow",
+              pipe_writer.write(pipe_writer.ctx, (const uint8_t *)"x", 1, &n),
+              NEVERC_IO_ERR_UNEXP);
+    check_size("pipe overflow writes nothing", n, 0);
+    neverc_io_pipe_free(&pipe_ctx);
+}
+
+static int chunked_mem_read(void *ctx, uint8_t *buf, size_t len, size_t *n) {
+    if (len > 2) len = 2;
+    return neverc_io_mem_reader_read(ctx, buf, len, n);
+}
+
+static int short_write(void *ctx, const uint8_t *buf, size_t len, size_t *n) {
+    (void)ctx;
+    (void)buf;
+    *n = len > 0 ? len - 1 : 0;
+    return 0;
+}
+
+static int rejecting_write(void *ctx, const uint8_t *buf, size_t len,
+                           size_t *n) {
+    (void)ctx;
+    (void)buf;
+    (void)len;
+    *n = 0;
+    return NEVERC_IO_ERR_UNEXP;
+}
+
+static void test_partial_writer_propagation(void) {
+    printf("[partial writer propagation]\n");
+
+    neverc_io_mem_reader_t source;
+    neverc_io_mem_reader_init(&source, (const uint8_t *)"abcd", 4);
+    neverc_io_reader_t reader = { &source, chunked_mem_read };
+    neverc_io_writer_t writer = { NULL, short_write };
+    check_size("copy_n stops at first short write",
+               (size_t)neverc_io_copy_n(&writer, &reader, 4), 1);
+    check_size("copy_n stops consuming after short write", source.pos, 2);
+
+    size_t n = 99;
+    check_int("write_string reports short write",
+              neverc_io_write_string(&writer, "x", &n), NEVERC_IO_ERR_SHORT);
+    check_size("write_string reports accepted bytes", n, 0);
+
+    neverc_io_mem_reader_init(&source, (const uint8_t *)"tail", 4);
+    neverc_io_reader_t inner = { &source, neverc_io_mem_reader_read };
+    neverc_io_writer_t rejecting = { NULL, rejecting_write };
+    neverc_io_tee_reader_t tee;
+    neverc_io_tee_reader_init(&tee, &inner, &rejecting);
+    uint8_t buf[4];
+    n = 99;
+    check_int("tee propagates writer error",
+              tee.reader.read(tee.reader.ctx, buf, sizeof(buf), &n),
+              NEVERC_IO_ERR_UNEXP);
+    check_size("tee reports bytes accepted by writer", n, 0);
+}
+
 int main(void) {
     printf("=== NeverC IO Module Tests ===\n\n");
     test_read_all();
@@ -211,6 +370,10 @@ int main(void) {
     test_multi_writer();
     test_pipe();
     test_nop_closer();
+    test_no_progress_guards();
+    test_capacity_overflow_guards();
+    test_invalid_reader_counts();
+    test_partial_writer_propagation();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

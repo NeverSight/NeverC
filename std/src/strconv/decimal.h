@@ -69,6 +69,8 @@ static const struct { int delta; const char *cutoff; } nc_leftcheats[] = {
 };
 
 static void nc_dec_trim(nc_decimal *a) {
+    if (a->nd < 0) a->nd = 0;
+    if (a->nd > NC_DEC_CAP) a->nd = NC_DEC_CAP;
     while (a->nd > 0 && a->d[a->nd - 1] == '0') a->nd--;
     if (a->nd == 0) a->dp = 0;
 }
@@ -84,6 +86,7 @@ static int nc_prefix_less(const nc_decimal *a, const char *s) {
 }
 
 static void nc_left_shift(nc_decimal *a, unsigned k) {
+    if (k > NC_MAX_SHIFT) return;
     int delta = nc_leftcheats[k].delta;
     if (nc_prefix_less(a, nc_leftcheats[k].cutoff)) delta--;
 
@@ -95,7 +98,7 @@ static void nc_left_shift(nc_decimal *a, unsigned k) {
         uint64_t quo = n / 10;
         uint64_t rem = n - 10 * quo;
         w--;
-        if (w < NC_DEC_CAP) a->d[w] = (uint8_t)(rem + '0');
+        if (w >= 0 && w < NC_DEC_CAP) a->d[w] = (uint8_t)(rem + '0');
         else if (rem != 0) a->trunc = 1;
         n = quo;
     }
@@ -103,7 +106,7 @@ static void nc_left_shift(nc_decimal *a, unsigned k) {
         uint64_t quo = n / 10;
         uint64_t rem = n - 10 * quo;
         w--;
-        if (w < NC_DEC_CAP) a->d[w] = (uint8_t)(rem + '0');
+        if (w >= 0 && w < NC_DEC_CAP) a->d[w] = (uint8_t)(rem + '0');
         else if (rem != 0) a->trunc = 1;
         n = quo;
     }

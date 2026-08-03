@@ -1,4 +1,5 @@
 #include "neverc/std/image/image.h"
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -132,17 +133,34 @@ neverc_rect_t neverc_rect_canon(neverc_rect_t r) {
 
 /* --- RGBA Image --- */
 
-int neverc_image_rgba_init(neverc_image_rgba_t *img, neverc_rect_t r) {
-    int w = r.max.x - r.min.x;
-    int h = r.max.y - r.min.y;
-    if (w <= 0 || h <= 0) {
-        memset(img, 0, sizeof(*img));
+static int image_layout(neverc_rect_t r, int bytes_per_pixel,
+                        int *stride, size_t *size) {
+    int64_t width = (int64_t)r.max.x - (int64_t)r.min.x;
+    int64_t height = (int64_t)r.max.y - (int64_t)r.min.y;
+    if (width <= 0 || height <= 0 ||
+        width > INT_MAX / bytes_per_pixel) {
         return -1;
     }
-    img->stride = w * 4;
-    size_t sz = (size_t)img->stride * (size_t)h;
+
+    int row_stride = (int)width * bytes_per_pixel;
+    if (height > INT_MAX / row_stride) return -1;
+
+    *stride = row_stride;
+    *size = (size_t)row_stride * (size_t)height;
+    return 0;
+}
+
+int neverc_image_rgba_init(neverc_image_rgba_t *img, neverc_rect_t r) {
+    if (!img) return -1;
+    memset(img, 0, sizeof(*img));
+
+    size_t sz;
+    if (image_layout(r, 4, &img->stride, &sz) != 0) return -1;
     img->pix = (uint8_t *)calloc(1, sz);
-    if (!img->pix) return -1;
+    if (!img->pix) {
+        img->stride = 0;
+        return -1;
+    }
     img->rect = r;
     return 0;
 }
@@ -182,16 +200,16 @@ neverc_rect_t neverc_image_rgba_bounds(const neverc_image_rgba_t *img) {
 /* --- Gray Image --- */
 
 int neverc_image_gray_init(neverc_image_gray_t *img, neverc_rect_t r) {
-    int w = r.max.x - r.min.x;
-    int h = r.max.y - r.min.y;
-    if (w <= 0 || h <= 0) {
-        memset(img, 0, sizeof(*img));
+    if (!img) return -1;
+    memset(img, 0, sizeof(*img));
+
+    size_t sz;
+    if (image_layout(r, 1, &img->stride, &sz) != 0) return -1;
+    img->pix = (uint8_t *)calloc(1, sz);
+    if (!img->pix) {
+        img->stride = 0;
         return -1;
     }
-    img->stride = w;
-    size_t sz = (size_t)img->stride * (size_t)h;
-    img->pix = (uint8_t *)calloc(1, sz);
-    if (!img->pix) return -1;
     img->rect = r;
     return 0;
 }

@@ -1019,7 +1019,6 @@ static int parse_ipv6_literal(const char *text, size_t len,
                 (uint16_t)(((uint16_t)ipv4[0] << 8) | ipv4[1]);
             words[word_count++] =
                 (uint16_t)(((uint16_t)ipv4[2] << 8) | ipv4[3]);
-            pos = len;
             break;
         }
 

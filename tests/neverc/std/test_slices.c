@@ -60,6 +60,8 @@ static void test_is_sorted(void) {
     int unsorted[] = {3, 1, 2};
     ASSERT_TRUE(neverc_slices_is_sorted(sorted, 4, sizeof(int), cmp_int));
     ASSERT_TRUE(!neverc_slices_is_sorted(unsorted, 3, sizeof(int), cmp_int));
+    ASSERT_TRUE(neverc_slices_is_sorted_ints(sorted, 4));
+    ASSERT_TRUE(!neverc_slices_is_sorted_ints(unsorted, 3));
 }
 
 static void test_binary_search(void) {
@@ -99,6 +101,8 @@ static void test_min_max(void) {
     int arr[] = {5, 3, 1, 4, 2};
     ASSERT_INT_EQ(neverc_slices_min(arr, 5, sizeof(int), cmp_int), 2);
     ASSERT_INT_EQ(neverc_slices_max(arr, 5, sizeof(int), cmp_int), 0);
+    ASSERT_INT_EQ(neverc_slices_min_int(arr, 5), 2);
+    ASSERT_INT_EQ(neverc_slices_max_int(arr, 5), 0);
 }
 
 static void test_stable_sort(void) {

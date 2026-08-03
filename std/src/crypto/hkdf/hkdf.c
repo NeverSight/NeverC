@@ -39,10 +39,16 @@ static void hmac256_pre_init(hmac256_pre *p, const uint8_t *key, size_t key_len)
 }
 
 static void hmac256_pre_compute(const hmac256_pre *p,
-                                const uint8_t *msg, size_t msg_len,
+                                const uint8_t *previous, size_t previous_len,
+                                const uint8_t *info, size_t info_len,
+                                uint8_t counter,
                                 uint8_t out[32]) {
     neverc_sha256_ctx c = p->ipad;
-    neverc_sha256_update(&c, msg, msg_len);
+    if (previous_len > 0)
+        neverc_sha256_update(&c, previous, previous_len);
+    if (info != NULL && info_len > 0)
+        neverc_sha256_update(&c, info, info_len);
+    neverc_sha256_update(&c, &counter, 1);
     uint8_t inner[32];
     neverc_sha256_final(&c, inner);
 
@@ -77,10 +83,16 @@ static void hmac512_pre_init(hmac512_pre *p, const uint8_t *key, size_t key_len)
 }
 
 static void hmac512_pre_compute(const hmac512_pre *p,
-                                const uint8_t *msg, size_t msg_len,
+                                const uint8_t *previous, size_t previous_len,
+                                const uint8_t *info, size_t info_len,
+                                uint8_t counter,
                                 uint8_t out[64]) {
     neverc_sha512_ctx c = p->ipad;
-    neverc_sha512_update(&c, msg, msg_len);
+    if (previous_len > 0)
+        neverc_sha512_update(&c, previous, previous_len);
+    if (info != NULL && info_len > 0)
+        neverc_sha512_update(&c, info, info_len);
+    neverc_sha512_update(&c, &counter, 1);
     uint8_t inner[64];
     neverc_sha512_final(&c, inner);
 
@@ -118,20 +130,7 @@ int neverc_hkdf_expand_sha256(uint8_t *okm, size_t okm_len,
     uint8_t counter = 1;
 
     while (off < okm_len) {
-        uint8_t hmac_input[32 + 256 + 1];
-        size_t input_len = 0;
-
-        if (t_len > 0) {
-            memcpy(hmac_input, t, t_len);
-            input_len += t_len;
-        }
-        if (info != NULL && info_len > 0) {
-            memcpy(hmac_input + input_len, info, info_len);
-            input_len += info_len;
-        }
-        hmac_input[input_len++] = counter;
-
-        hmac256_pre_compute(&pre, hmac_input, input_len, t);
+        hmac256_pre_compute(&pre, t, t_len, info, info_len, counter, t);
         t_len = 32;
 
         size_t n = okm_len - off;
@@ -182,20 +181,7 @@ int neverc_hkdf_expand_sha512(uint8_t *okm, size_t okm_len,
     uint8_t counter = 1;
 
     while (off < okm_len) {
-        uint8_t hmac_input[64 + 256 + 1];
-        size_t input_len = 0;
-
-        if (t_len > 0) {
-            memcpy(hmac_input, t, t_len);
-            input_len += t_len;
-        }
-        if (info != NULL && info_len > 0) {
-            memcpy(hmac_input + input_len, info, info_len);
-            input_len += info_len;
-        }
-        hmac_input[input_len++] = counter;
-
-        hmac512_pre_compute(&pre, hmac_input, input_len, t);
+        hmac512_pre_compute(&pre, t, t_len, info, info_len, counter, t);
         t_len = 64;
 
         size_t n = okm_len - off;

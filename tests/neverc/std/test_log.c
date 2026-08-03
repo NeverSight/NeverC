@@ -110,6 +110,35 @@ static void test_msg_prefix(void) {
     check_contains("msg prefix after date", buf, "[WARN] warning!");
 }
 
+static void test_microseconds_and_accessors(void) {
+    printf("[microseconds/accessors]\n");
+    char buf[512];
+    FILE *tmp = tmpfile();
+    neverc_log_logger_t l;
+    neverc_log_init(&l, tmp, "MICRO ", NEVERC_LOG_LMICRO);
+
+    check_bool("flags accessor",
+               neverc_log_flags(&l) == NEVERC_LOG_LMICRO, 1);
+    check_bool("prefix accessor",
+               strcmp(neverc_log_prefix(&l), "MICRO ") == 0, 1);
+    check_bool("writer accessor", neverc_log_writer(&l) == tmp, 1);
+
+    neverc_log_println(&l, "timed");
+    fflush(tmp);
+    rewind(tmp);
+    size_t n = fread(buf, 1, sizeof(buf) - 1, tmp);
+    buf[n] = '\0';
+    fclose(tmp);
+
+    const char *dot = strchr(buf, '.');
+    check_bool("microseconds include time", strchr(buf, ':') != NULL, 1);
+    check_bool("microseconds include fraction", dot != NULL, 1);
+    int six_digits = dot != NULL;
+    for (int i = 1; i <= 6 && six_digits; i++)
+        six_digits = dot[i] >= '0' && dot[i] <= '9';
+    check_bool("microseconds have six digits", six_digits, 1);
+}
+
 int main(void) {
     printf("=== NeverC Log Module Tests ===\n\n");
     test_basic_output();
@@ -117,6 +146,7 @@ int main(void) {
     test_date_time();
     test_printf();
     test_msg_prefix();
+    test_microseconds_and_accessors();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

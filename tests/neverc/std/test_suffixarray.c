@@ -35,6 +35,16 @@ static void test_empty(void) {
     neverc_suffixarray_free(&idx);
 }
 
+static void test_invalid_input(void) {
+    printf("[invalid_input]\n");
+    neverc_suffixarray_t idx;
+    unsigned char byte = 'x';
+    ASSERT_INT_EQ(neverc_suffixarray_new(&idx, NULL, 1), -1);
+    ASSERT_TRUE(idx.sa == NULL);
+    ASSERT_INT_EQ(neverc_suffixarray_new(&idx, &byte, (size_t)INT32_MAX), -1);
+    ASSERT_TRUE(idx.sa == NULL);
+}
+
 static void test_lookup_basic(void) {
     printf("[lookup_basic]\n");
     neverc_suffixarray_t idx;
@@ -302,6 +312,7 @@ int main(void) {
     printf("=== NeverC index/suffixarray Tests ===\n");
     test_new_free();
     test_empty();
+    test_invalid_input();
     test_lookup_basic();
     test_lookup_positions();
     test_single_char();

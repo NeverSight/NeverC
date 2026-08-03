@@ -3,29 +3,52 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
+#include <limits.h>
 
 /* Dynamic buffer for building formatted strings */
 typedef struct {
     char  *data;
     size_t len;
     size_t cap;
+    int failed;
 } fmtbuf_t;
 
 static void buf_init(fmtbuf_t *b) {
     b->cap = 128;
     b->data = (char *)malloc(b->cap);
     b->len = 0;
+    b->failed = b->data == NULL;
+    if (b->failed) b->cap = 0;
 }
 
-static void buf_grow(fmtbuf_t *b, size_t need) {
-    while (b->len + need >= b->cap) {
-        b->cap *= 2;
-        b->data = (char *)realloc(b->data, b->cap);
+static int buf_grow(fmtbuf_t *b, size_t need) {
+    if (b->failed || b->len == SIZE_MAX ||
+        need > SIZE_MAX - b->len - 1) {
+        b->failed = 1;
+        return 0;
     }
+    size_t required = b->len + need + 1;
+    if (required <= b->cap) return 1;
+    size_t next = b->cap < 128 ? 128 : b->cap;
+    while (next < required) {
+        if (next > SIZE_MAX / 2) {
+            next = required;
+            break;
+        }
+        next *= 2;
+    }
+    char *grown = (char *)realloc(b->data, next);
+    if (!grown) {
+        b->failed = 1;
+        return 0;
+    }
+    b->data = grown;
+    b->cap = next;
+    return 1;
 }
 
 static void buf_putc(fmtbuf_t *b, char c) {
-    buf_grow(b, 1);
+    if (!buf_grow(b, 1)) return;
     b->data[b->len++] = c;
 }
 
@@ -33,20 +56,29 @@ static void buf_puts(fmtbuf_t *b, const char *s, size_t n) {
     /* One capacity check for the whole run (vs. one per byte through buf_putc),
      * then a copy the compiler lowers to memcpy/vector stores. The single grow
      * check is what makes copying literal runs and verb output cheap. */
-    buf_grow(b, n);
+    if (!buf_grow(b, n)) return;
     char *d = b->data + b->len;
     for (size_t i = 0; i < n; i++) d[i] = s[i];
     b->len += n;
 }
 
 static void buf_pad(fmtbuf_t *b, char c, int count) {
-    for (int i = 0; i < count; i++) buf_putc(b, c);
+    for (int i = 0; i < count && !b->failed; i++) buf_putc(b, c);
 }
 
 static size_t my_strlen(const char *s) {
     size_t n = 0;
     while (s[n]) n++;
     return n;
+}
+
+static int append_position(const char *buf, size_t cap, size_t *position) {
+    if (!buf || cap == 0) return 0;
+    size_t n = 0;
+    while (n < cap && buf[n]) n++;
+    if (n == cap) return 0;
+    *position = n;
+    return 1;
 }
 
 /* Two-digit lookup table for base-10 conversion: emit two decimal digits per
@@ -148,6 +180,7 @@ static int fmt_float_g(char *buf, size_t cap, double val, int prec, int uppercas
 
 /* Core formatting engine */
 char *neverc_fmt_vsprintf(const char *format, va_list args) {
+    if (!format) return NULL;
     fmtbuf_t buf;
     buf_init(&buf);
 
@@ -195,7 +228,9 @@ char *neverc_fmt_vsprintf(const char *format, va_list args) {
             i++;
         } else {
             while (i < flen && format[i] >= '0' && format[i] <= '9') {
-                width = width * 10 + (format[i] - '0');
+                int digit = format[i] - '0';
+                if (width > (INT_MAX - digit) / 10) goto format_fail;
+                width = width * 10 + digit;
                 has_width = 1;
                 i++;
             }
@@ -211,7 +246,9 @@ char *neverc_fmt_vsprintf(const char *format, va_list args) {
                 i++;
             } else {
                 while (i < flen && format[i] >= '0' && format[i] <= '9') {
-                    prec = prec * 10 + (format[i] - '0');
+                    int digit = format[i] - '0';
+                    if (prec > (INT_MAX - digit) / 10) goto format_fail;
+                    prec = prec * 10 + digit;
                     i++;
                 }
             }
@@ -282,7 +319,8 @@ char *neverc_fmt_vsprintf(const char *format, va_list args) {
             if (!s) s = "(null)";
             size_t slen = my_strlen(s);
             if (prec >= 0 && (size_t)prec < slen) slen = (size_t)prec;
-            int pad = (has_width && width > (int)slen) ? width - (int)slen : 0;
+            int pad = (has_width && width > 0 && (size_t)width > slen)
+                          ? width - (int)slen : 0;
             if (!flag_minus) buf_pad(&buf, ' ', pad);
             buf_puts(&buf, s, slen);
             if (flag_minus) buf_pad(&buf, ' ', pad);
@@ -337,7 +375,12 @@ char *neverc_fmt_vsprintf(const char *format, va_list args) {
     }
 
     buf_putc(&buf, '\0');
+    if (buf.failed) goto format_fail;
     return buf.data;
+
+format_fail:
+    free(buf.data);
+    return NULL;
 }
 
 char *neverc_fmt_sprintf(const char *format, ...) {
@@ -744,14 +787,16 @@ fdone:
 }
 
 int neverc_fmt_appendf(char *buf, size_t cap, const char *format, ...) {
+    size_t existing;
+    if (!format || !append_position(buf, cap, &existing)) return 0;
+
     va_list args;
     va_start(args, format);
     char *s = neverc_fmt_vsprintf(format, args);
     va_end(args);
     if (!s) return 0;
     size_t slen = my_strlen(s);
-    size_t existing = my_strlen(buf);
-    size_t space = cap > existing ? cap - existing - 1 : 0;
+    size_t space = cap - existing - 1;
     size_t copy = slen < space ? slen : space;
     for (size_t i = 0; i < copy; i++) buf[existing + i] = s[i];
     buf[existing + copy] = '\0';
@@ -760,10 +805,10 @@ int neverc_fmt_appendf(char *buf, size_t cap, const char *format, ...) {
 }
 
 int neverc_fmt_append(char *buf, size_t cap, const char *s) {
-    if (!buf || !s) return 0;
-    size_t existing = my_strlen(buf);
+    size_t existing;
+    if (!s || !append_position(buf, cap, &existing)) return 0;
     size_t slen = my_strlen(s);
-    size_t space = cap > existing ? cap - existing - 1 : 0;
+    size_t space = cap - existing - 1;
     size_t copy = slen < space ? slen : space;
     for (size_t i = 0; i < copy; i++) buf[existing + i] = s[i];
     buf[existing + copy] = '\0';
@@ -771,10 +816,10 @@ int neverc_fmt_append(char *buf, size_t cap, const char *s) {
 }
 
 int neverc_fmt_appendln(char *buf, size_t cap, const char *s) {
-    if (!buf || !s) return 0;
-    size_t existing = my_strlen(buf);
+    size_t existing;
+    if (!s || !append_position(buf, cap, &existing)) return 0;
     size_t slen = my_strlen(s);
-    size_t space = cap > existing ? cap - existing - 1 : 0;
+    size_t space = cap - existing - 1;
     size_t need = slen + 1;
     size_t copy = need < space ? need : space;
     size_t scopy = copy > 0 ? (copy > slen ? slen : copy) : 0;

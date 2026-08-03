@@ -23,37 +23,59 @@ typedef struct {
     char  *data;
     size_t len;
     size_t cap;
+    int failed;
 } strbuf_t;
 
 static void buf_init(strbuf_t *b, size_t initial) {
     b->cap = initial < 64 ? 64 : initial;
     b->data = (char *)malloc(b->cap);
     b->len = 0;
+    b->failed = b->data == NULL;
+    if (b->failed) b->cap = 0;
 }
 
-static void buf_grow(strbuf_t *b, size_t extra) {
-    if (b->len + extra + 1 > b->cap) {
-        size_t newcap = b->cap * 2;
-        if (newcap < b->len + extra + 1)
-            newcap = b->len + extra + 1;
-        b->data = (char *)realloc(b->data, newcap);
-        b->cap = newcap;
+static int buf_grow(strbuf_t *b, size_t extra) {
+    if (b->failed || b->len == SIZE_MAX ||
+        extra > SIZE_MAX - b->len - 1) {
+        b->failed = 1;
+        return 0;
     }
+    size_t needed = b->len + extra + 1;
+    if (needed <= b->cap) return 1;
+    size_t newcap = b->cap < 64 ? 64 : b->cap;
+    while (newcap < needed) {
+        if (newcap > SIZE_MAX / 2) {
+            newcap = needed;
+            break;
+        }
+        newcap *= 2;
+    }
+    char *grown = (char *)realloc(b->data, newcap);
+    if (!grown) {
+        b->failed = 1;
+        return 0;
+    }
+    b->data = grown;
+    b->cap = newcap;
+    return 1;
 }
 
 static void buf_putc(strbuf_t *b, char c) {
-    buf_grow(b, 1);
+    if (!buf_grow(b, 1)) return;
     b->data[b->len++] = c;
 }
 
 static void buf_puts(strbuf_t *b, const char *s, size_t n) {
-    buf_grow(b, n);
+    if (!buf_grow(b, n)) return;
     memcpy(b->data + b->len, s, n);
     b->len += n;
 }
 
 static char *buf_finish(strbuf_t *b) {
-    buf_grow(b, 1);
+    if (!buf_grow(b, 0)) {
+        free(b->data);
+        return NULL;
+    }
     b->data[b->len] = '\0';
     return b->data;
 }
@@ -111,7 +133,9 @@ static void append_escaped_rune(strbuf_t *b, uint32_t r, char quote,
 }
 
 static char *quote_with(const char *s, char quote, int ascii_only, int graphic_only) {
+    if (!s) return NULL;
     size_t slen = strlen(s);
+    if (slen > SIZE_MAX - 2) return NULL;
     strbuf_t b;
     buf_init(&b, slen + 2);
     buf_putc(&b, quote);
@@ -186,6 +210,7 @@ char *neverc_strconv_quote_rune_to_graphic(uint32_t r) {
 }
 
 int neverc_strconv_can_backquote(const char *s) {
+    if (!s) return 0;
     size_t slen = strlen(s);
     size_t i = 0;
     while (i < slen) {
@@ -214,7 +239,7 @@ static int unhex(char c) {
 
 int neverc_strconv_unquote_char(const char *s, size_t slen, char quote,
                                 uint32_t *r, int *multibyte) {
-    if (!s || slen == 0) return -1;
+    if (!s || slen == 0 || !r || !multibyte) return -1;
     *multibyte = 0;
 
     unsigned char c = (unsigned char)s[0];
@@ -357,6 +382,7 @@ int neverc_strconv_is_graphic(uint32_t r) {
 
 static int append_quoted_helper(char *buf, size_t cap, char *q) {
     if (!q) return -1;
+    if (!buf || cap == 0) { free(q); return -1; }
     size_t len = strlen(q);
     if (len + 1 > cap) { free(q); return -1; }
     memcpy(buf, q, len + 1);

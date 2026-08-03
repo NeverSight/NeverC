@@ -13,23 +13,27 @@
 #define SAIS_SET(i) (st[(i)>>3] |= (uint8_t)(1<<((i)&7)))
 #define SAIS_LMS(i) ((i)>0 && SAIS_TP(i) && !SAIS_TP((i)-1))
 
-static void sais_core(int32_t *T, int32_t *SA, int32_t n, int32_t K) {
-    if (n <= 1) { if (n == 1) SA[0] = 0; return; }
+static int sais_core(int32_t *T, int32_t *SA, int32_t n, int32_t K) {
+    if (n <= 1) { if (n == 1) SA[0] = 0; return 0; }
     if (n == 2) {
         SA[0] = (T[0] < T[1]) ? 0 : 1;
         SA[1] = 1 - SA[0];
-        return;
+        return 0;
     }
 
     uint8_t *st = (uint8_t *)calloc(((size_t)n + 7u) >> 3, 1);
+    int32_t *bkt = (int32_t *)calloc((size_t)K, sizeof(int32_t));
+    int32_t *cur = (int32_t *)malloc((size_t)K * sizeof(int32_t));
+    if (!st || !bkt || !cur) {
+        free(st); free(bkt); free(cur);
+        return -1;
+    }
     SAIS_SET(n - 1);
     for (int32_t i = n - 2; i >= 0; i--)
         if (T[i] < T[i+1] || (T[i] == T[i+1] && SAIS_TP(i+1)))
             SAIS_SET(i);
 
-    int32_t *bkt = (int32_t *)calloc((size_t)K, sizeof(int32_t));
     for (int32_t i = 0; i < n; i++) bkt[T[i]]++;
-    int32_t *cur = (int32_t *)malloc((size_t)K * sizeof(int32_t));
 
 #define BUCKET_ENDS   { int32_t s=0; for(int32_t c=0;c<K;c++){s+=bkt[c];cur[c]=s;} }
 #define BUCKET_STARTS { int32_t s=0; for(int32_t c=0;c<K;c++){cur[c]=s;s+=bkt[c];} }
@@ -84,8 +88,12 @@ static void sais_core(int32_t *T, int32_t *SA, int32_t n, int32_t K) {
 
     /* --- Step 3: recurse or directly compute --- */
     int32_t *s1 = SA + n - m;
-    if (name < m)
-        sais_core(s1, SA, m, name);
+    if (name < m) {
+        if (sais_core(s1, SA, m, name) != 0) {
+            free(st); free(bkt); free(cur);
+            return -1;
+        }
+    }
     else
         for (int32_t i = 0; i < m; i++) SA[s1[i]] = i;
 
@@ -117,27 +125,36 @@ static void sais_core(int32_t *T, int32_t *SA, int32_t n, int32_t K) {
     free(st); free(bkt); free(cur);
 #undef BUCKET_ENDS
 #undef BUCKET_STARTS
+    return 0;
 }
 
 #undef SAIS_TP
 #undef SAIS_SET
 #undef SAIS_LMS
 
-static void build_suffix_array(const unsigned char *data, size_t n, int32_t *sa) {
-    if (n == 0) return;
-    if (n == 1) { sa[0] = 0; return; }
+static int build_suffix_array(const unsigned char *data, size_t n, int32_t *sa) {
+    if (n == 0) return 0;
+    if (n == 1) { sa[0] = 0; return 0; }
 
     int32_t n1 = (int32_t)(n + 1);
     int32_t *T  = (int32_t *)malloc((size_t)n1 * sizeof(int32_t));
     int32_t *SA = (int32_t *)malloc((size_t)n1 * sizeof(int32_t));
+    if (!T || !SA) {
+        free(T); free(SA);
+        return -1;
+    }
     for (size_t i = 0; i < n; i++) T[i] = (int32_t)data[i] + 1;
     T[n] = 0;
 
-    sais_core(T, SA, n1, 257);
+    if (sais_core(T, SA, n1, 257) != 0) {
+        free(T); free(SA);
+        return -1;
+    }
 
     for (int32_t i = 1; i < n1; i++) sa[i - 1] = SA[i];
     free(T);
     free(SA);
+    return 0;
 }
 
 /* Recursively fill llcp[mid]/rlcp[mid] for every binary-search interval [lo,hi];
@@ -164,9 +181,9 @@ static void build_search_index(neverc_suffixarray_t *idx) {
     const unsigned char *data = idx->data;
     const int32_t *sa = idx->sa;
     int32_t *rank = (int32_t *)malloc(n * sizeof(int32_t));
-    int32_t *lcp  = (int32_t *)malloc(n * sizeof(int32_t));
-    int32_t *llcp = (int32_t *)malloc(n * sizeof(int32_t));
-    int32_t *rlcp = (int32_t *)malloc(n * sizeof(int32_t));
+    int32_t *lcp  = (int32_t *)calloc(n, sizeof(int32_t));
+    int32_t *llcp = (int32_t *)calloc(n, sizeof(int32_t));
+    int32_t *rlcp = (int32_t *)calloc(n, sizeof(int32_t));
     if (!rank || !lcp || !llcp || !rlcp) {
         free(rank); free(lcp); free(llcp); free(rlcp);
         return;
@@ -196,8 +213,12 @@ static void build_search_index(neverc_suffixarray_t *idx) {
 }
 
 int neverc_suffixarray_new(neverc_suffixarray_t *idx, const unsigned char *data, size_t len) {
+    if (!idx) return -1;
     memset(idx, 0, sizeof(*idx));
     if (len == 0) return 0;
+    if (!data || len > (size_t)INT32_MAX - 1U ||
+        len > SIZE_MAX / sizeof(int32_t))
+        return -1;
 
     idx->data = data;
     idx->data_len = len;
@@ -205,7 +226,11 @@ int neverc_suffixarray_new(neverc_suffixarray_t *idx, const unsigned char *data,
     idx->sa = (int32_t *)malloc(len * sizeof(int32_t));
     if (!idx->sa) return -1;
 
-    build_suffix_array(data, len, idx->sa);
+    if (build_suffix_array(data, len, idx->sa) != 0) {
+        free(idx->sa);
+        memset(idx, 0, sizeof(*idx));
+        return -1;
+    }
     build_search_index(idx);
     return 0;
 }

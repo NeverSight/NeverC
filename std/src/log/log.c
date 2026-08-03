@@ -28,7 +28,12 @@ static void write_header(neverc_log_logger_t *l) {
     }
 
     if (l->flags & (NEVERC_LOG_LDATE | NEVERC_LOG_LTIME | NEVERC_LOG_LMICRO)) {
-        time_t now = time(NULL);
+        struct timespec now_ts = {0, 0};
+        time_t now;
+        if (timespec_get(&now_ts, TIME_UTC) == TIME_UTC)
+            now = now_ts.tv_sec;
+        else
+            now = time(NULL);
         struct tm tm_buf;
         struct tm *tm;
 #if defined(_WIN32)
@@ -47,9 +52,12 @@ static void write_header(neverc_log_logger_t *l) {
             fprintf(l->output, "%04d/%02d/%02d ",
                     tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday);
         }
-        if (l->flags & NEVERC_LOG_LTIME) {
-            fprintf(l->output, "%02d:%02d:%02d ",
+        if (l->flags & (NEVERC_LOG_LTIME | NEVERC_LOG_LMICRO)) {
+            fprintf(l->output, "%02d:%02d:%02d",
                     tm->tm_hour, tm->tm_min, tm->tm_sec);
+            if (l->flags & NEVERC_LOG_LMICRO)
+                fprintf(l->output, ".%06ld", now_ts.tv_nsec / 1000);
+            fputc(' ', l->output);
         }
     }
 

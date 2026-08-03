@@ -1,4 +1,5 @@
 #include "neverc/std/image/image.h"
+#include <limits.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -78,6 +79,8 @@ static void test_rgba_image(void) {
     int rc = neverc_image_rgba_init(&img, neverc_rect(0, 0, 100, 100));
     check("init", rc == 0);
     check("bounds", neverc_rect_dx(img.rect) == 100 && neverc_rect_dy(img.rect) == 100);
+    check("bounds accessor",
+          neverc_rect_eq(neverc_image_rgba_bounds(&img), img.rect));
 
     neverc_image_rgba_set(&img, 10, 20, 255, 128, 64, 200);
     uint8_t r, g, b, a;
@@ -104,9 +107,13 @@ static void test_gray_image(void) {
     neverc_image_gray_t img;
     int rc = neverc_image_gray_init(&img, neverc_rect(0, 0, 50, 50));
     check("init", rc == 0);
+    check("gray bounds accessor",
+          neverc_rect_eq(neverc_image_gray_bounds(&img), img.rect));
 
     neverc_image_gray_set(&img, 10, 10, 128);
     check("set_get", neverc_image_gray_at(&img, 10, 10) == 128);
+    check("gray pixel_offset",
+          neverc_image_gray_pixel_offset(&img, 10, 10) == 10 * 50 + 10);
     check("default_zero", neverc_image_gray_at(&img, 0, 0) == 0);
     check("out_of_bounds", neverc_image_gray_at(&img, -1, -1) == 0);
 
@@ -114,11 +121,29 @@ static void test_gray_image(void) {
     check("free", img.pix == NULL);
 }
 
+static void test_invalid_image_sizes(void) {
+    printf("[invalid image sizes]\n");
+
+    neverc_rect_t huge = {{INT_MIN, 0}, {INT_MAX, 1}};
+    neverc_image_rgba_t rgba;
+    check("rgba rejects overflowing width",
+          neverc_image_rgba_init(&rgba, huge) == -1);
+    check("rgba failure clears image",
+          rgba.pix == NULL && rgba.stride == 0);
+
+    neverc_image_gray_t gray;
+    check("gray rejects overflowing width",
+          neverc_image_gray_init(&gray, huge) == -1);
+    check("gray failure clears image",
+          gray.pix == NULL && gray.stride == 0);
+}
+
 int main(void) {
     test_point();
     test_rect();
     test_rgba_image();
     test_gray_image();
+    test_invalid_image_sizes();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_passed == tests_run ? 0 : 1;
 }
