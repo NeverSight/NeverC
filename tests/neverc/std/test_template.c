@@ -5,6 +5,12 @@
 
 static int tests_run = 0, tests_passed = 0, tests_failed = 0;
 
+static void check_true(const char *name, int condition) {
+    tests_run++;
+    if (condition) tests_passed++;
+    else { tests_failed++; printf("  FAIL: %s\n", name); }
+}
+
 static void check_str(const char *name, const char *got, const char *expected) {
     tests_run++;
     if (got && expected && strcmp(got, expected) == 0) tests_passed++;
@@ -150,6 +156,71 @@ static void test_falsy_values(void) {
     neverc_template_data_free(&data);
 }
 
+static void test_range_subset(void) {
+    printf("[range subset]\n");
+    neverc_template_data_t data;
+    neverc_template_data_init(&data);
+    size_t outlen = 0;
+
+    char *r = neverc_template_render(
+        "A{{range .Present}}B{{end}}C", &data, &outlen);
+    check_str("range absent", r, "AC");
+    free(r);
+
+    neverc_template_data_set(&data, "Present", "value");
+    r = neverc_template_render(
+        "A{{range .Present}}B{{end}}C", &data, &outlen);
+    check_str("range present once", r, "ABC");
+    free(r);
+    neverc_template_data_free(&data);
+}
+
+static void test_parse_errors(void) {
+    printf("[parse errors]\n");
+    const char *bad[] = {
+        "{{.Name",
+        "{{if .Show}}unterminated",
+        "{{if .Show}}yes{{else}}no",
+        "{{end}}",
+        "{{else}}",
+        "{{if}}",
+        "{{range}}"
+    };
+
+    for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); i++) {
+        const char *err = NULL;
+        neverc_template_t *tmpl = neverc_template_parse(bad[i], &err);
+        check_true("invalid template rejected", tmpl == NULL);
+        check_true("invalid template reports error", err != NULL);
+        neverc_template_free(tmpl);
+    }
+}
+
+static void test_null_safety(void) {
+    printf("[null safety]\n");
+    size_t outlen = 99;
+    char *r = neverc_template_render(NULL, NULL, &outlen);
+    check_true("NULL render rejected", r == NULL && outlen == 0);
+
+    outlen = 99;
+    r = neverc_template_execute(NULL, NULL, &outlen);
+    check_true("NULL execute rejected", r == NULL && outlen == 0);
+
+    neverc_template_data_init(NULL);
+    neverc_template_data_set(NULL, "key", "value");
+    neverc_template_data_free(NULL);
+    check_true("NULL data get", neverc_template_data_get(NULL, "key") == NULL);
+
+    neverc_template_data_t data;
+    neverc_template_data_init(&data);
+    neverc_template_data_set(&data, NULL, "value");
+    check_true("NULL key ignored", data.nvars == 0);
+    r = neverc_template_render("ok", &data, NULL);
+    check_str("optional output length", r, "ok");
+    free(r);
+    neverc_template_data_free(&data);
+}
+
 int main(void) {
     printf("=== NeverC Text/Template Module Tests ===\n\n");
     test_simple_var();
@@ -161,6 +232,9 @@ int main(void) {
     test_literal_text();
     test_complex();
     test_falsy_values();
+    test_range_subset();
+    test_parse_errors();
+    test_null_safety();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

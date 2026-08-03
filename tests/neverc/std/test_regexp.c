@@ -277,8 +277,52 @@ static void test_repeat_braces(void) {
     check_bool("a{5000} rejected", re == NULL, 1);
     neverc_regexp_free(re);
 
+    re = neverc_regexp_compile("a{999999999999999999999999999999}", &err);
+    check_bool("huge repeat rejected", re == NULL, 1);
+    neverc_regexp_free(re);
+
+    re = neverc_regexp_compile("a{4,2}", &err);
+    check_bool("descending repeat rejected", re == NULL, 1);
+    neverc_regexp_free(re);
+
     /* an incomplete brace is a literal '{' (matches Go) */
     check_bool("literal {", neverc_regexp_match_string("^a{$", "a{"), 1);
+}
+
+static void test_invalid_inputs(void) {
+    printf("[invalid inputs]\n");
+    const char *err = NULL;
+    neverc_regexp_t *re = neverc_regexp_compile(NULL, &err);
+    check_bool("null pattern rejected", re == NULL && err != NULL, 1);
+
+    static const char *invalid[] = {
+        "[abc", "[]", "[z-a]", "a)", "a]", "\\", "a**", "a+?"
+    };
+    for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
+        err = NULL;
+        re = neverc_regexp_compile(invalid[i], &err);
+        check_bool(invalid[i], re == NULL && err != NULL, 1);
+        neverc_regexp_free(re);
+    }
+
+    size_t match_len = 99;
+    check_bool("match null regexp", neverc_regexp_match(NULL, "x"), 0);
+    re = neverc_regexp_compile("x", NULL);
+    check_bool("match null text", neverc_regexp_match(re, NULL), 0);
+    check_bool("find null regexp",
+               neverc_regexp_find(NULL, "x", &match_len) == NULL && match_len == 0,
+               1);
+    match_len = 99;
+    check_bool("find null text",
+               neverc_regexp_find(re, NULL, &match_len) == NULL && match_len == 0,
+               1);
+    check_bool("find accepts null length",
+               neverc_regexp_find(re, "x", NULL) != NULL, 1);
+    check_bool("submatch null output",
+               neverc_regexp_find_submatch(re, "x", NULL, 1), 1);
+    neverc_regexp_free(re);
+
+    check_bool("quote null", neverc_regexp_quote_meta(NULL) == NULL, 1);
 }
 
 static void test_must_compile(void) {
@@ -416,6 +460,7 @@ int main(void) {
     test_anchors();
     test_find_anchors();
     test_repeat_braces();
+    test_invalid_inputs();
     test_empty_and_edge_cases();
     test_quote_meta();
     test_must_compile();

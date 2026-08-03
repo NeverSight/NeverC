@@ -26,8 +26,8 @@ int neverc_mail_parse_address(const char *s, neverc_mail_address_t *out) {
     if (!s || !out) return -1;
     memset(out, 0, sizeof(*out));
 
-    const char *start;
-    size_t slen;
+    const char *start = NULL;
+    size_t slen = 0;
     trim(s, strlen(s), &start, &slen);
     if (slen == 0) return -1;
 
@@ -77,15 +77,27 @@ int neverc_mail_parse_address_list(const char *s,
 
         /* Find the end of this address (comma or end) */
         int depth = 0;
+        int quoted = 0;
+        int escaped = 0;
         const char *start = p;
         while (*p) {
-            if (*p == '<') depth++;
-            else if (*p == '>') depth--;
-            else if (*p == ',' && depth == 0) break;
+            if (escaped) {
+                escaped = 0;
+            } else if (quoted && *p == '\\') {
+                escaped = 1;
+            } else if (*p == '"') {
+                quoted = !quoted;
+            } else if (!quoted && *p == '<') {
+                depth++;
+            } else if (!quoted && *p == '>' && depth > 0) {
+                depth--;
+            } else if (!quoted && *p == ',' && depth == 0) {
+                break;
+            }
             p++;
         }
 
-        char buf[512];
+        char buf[512] = {0};
         size_t len = (size_t)(p - start);
         if (len >= sizeof(buf)) len = sizeof(buf) - 1;
         memcpy(buf, start, len);
@@ -202,8 +214,11 @@ long long neverc_mail_parse_date(const char *s) {
 
     int day = 0, year = 0, hour = 0, min = 0, sec = 0;
     char month_str[16] = {0};
+    char zone[8] = {0};
 
-    if (sscanf(p, "%d %15s %d %d:%d:%d", &day, month_str, &year, &hour, &min, &sec) < 5)
+    int fields = sscanf(p, "%d %15s %d %d:%d:%d %7s", &day, month_str,
+                        &year, &hour, &min, &sec, zone);
+    if (fields < 5)
         return -1;
 
     static const char *months[] = {
@@ -218,6 +233,33 @@ long long neverc_mail_parse_date(const char *s) {
     if (month < 0) return -1;
 
     if (year < 100) year += (year < 50) ? 2000 : 1900;
+    int leap = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
+    static const int month_days[] = {
+        31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31
+    };
+    int max_day = month_days[month] + (month == 1 && leap);
+    if (day < 1 || day > max_day || hour < 0 || hour > 23 ||
+        min < 0 || min > 59 || sec < 0 || sec > 60)
+        return -1;
+
+    int zone_offset = 0;
+    if (fields >= 7) {
+        size_t zone_len = strlen(zone);
+        if (zone_len == 5 && (zone[0] == '+' || zone[0] == '-') &&
+            zone[1] >= '0' && zone[1] <= '9' &&
+            zone[2] >= '0' && zone[2] <= '9' &&
+            zone[3] >= '0' && zone[3] <= '9' &&
+            zone[4] >= '0' && zone[4] <= '9') {
+            int zone_hour = (zone[1] - '0') * 10 + zone[2] - '0';
+            int zone_minute = (zone[3] - '0') * 10 + zone[4] - '0';
+            if (zone_hour > 23 || zone_minute > 59) return -1;
+            zone_offset = zone_hour * 3600 + zone_minute * 60;
+            if (zone[0] == '-') zone_offset = -zone_offset;
+        } else if (strcmp(zone, "UT") != 0 && strcmp(zone, "UTC") != 0 &&
+                   strcmp(zone, "GMT") != 0) {
+            return -1;
+        }
+    }
 
     /* Days since the Unix epoch via Howard Hinnant's O(1) days_from_civil (the
      * same closed form time.c uses). Replaces a naive O(year-1970) leap-day loop
@@ -231,5 +273,6 @@ long long neverc_mail_parse_date(const char *s) {
     long long doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;          /* [0, 146096] */
     long long days = era * 146097 + doe - 719468;
 
-    return days * 86400 + (long long)hour * 3600 + (long long)min * 60 + sec;
+    return days * 86400 + (long long)hour * 3600 +
+           (long long)min * 60 + sec - zone_offset;
 }

@@ -145,6 +145,27 @@ static void test_nested(void) {
     neverc_xml_node_free(root);
 }
 
+static void test_self_closing_and_errors(void) {
+    printf("[self closing/errors]\n");
+    const char *xml = "<root><empty/><sibling>ok</sibling></root>";
+    neverc_xml_node_t *tree = neverc_xml_parse(xml, strlen(xml));
+    neverc_xml_node_t *root = tree ? neverc_xml_node_child(tree, "root") : NULL;
+    neverc_xml_node_t *empty = root ? neverc_xml_node_child(root, "empty") : NULL;
+    neverc_xml_node_t *sibling = root ? neverc_xml_node_child(root, "sibling") : NULL;
+    check_bool("self closing parse", tree != NULL, 1);
+    check_bool("empty is root child", empty != NULL, 1);
+    check_bool("sibling is root child", sibling != NULL, 1);
+    if (sibling) check_str("sibling text", sibling->text, "ok");
+    neverc_xml_node_free(tree);
+
+    check_bool("mismatched tags rejected",
+               neverc_xml_parse("<a></b>", 7) == NULL, 1);
+    check_bool("unclosed tags rejected",
+               neverc_xml_parse("<a>", 3) == NULL, 1);
+    check_bool("unclosed comment rejected",
+               neverc_xml_parse("<!-- bad", 8) == NULL, 1);
+}
+
 /* Regression: an element whose text is split into many runs by interspersed
  * children (mixed content) must concatenate every run in order. The builder
  * previously did strlen + realloc-to-exact on each run -> O(n^2); the parallel
@@ -198,6 +219,7 @@ int main(void) {
     test_proc_inst();
     test_escape();
     test_nested();
+    test_self_closing_and_errors();
     test_mixed_content();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;

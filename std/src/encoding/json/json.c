@@ -5,6 +5,7 @@
 
 #include "neverc/std/encoding/json.h"
 #include "neverc/std/strconv.h"
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -17,7 +18,8 @@ static neverc_json_value_t *alloc_val(neverc_json_type_t type) {
 }
 
 static char *dup_str(const char *s, size_t len) {
-    char *d = (char *)malloc(len + 1);
+    if ((!s && len > 0) || len == SIZE_MAX) return NULL;
+    char *d = (char *)malloc(len + 1U);
     if (d) { memcpy(d, s, len); d[len] = '\0'; }
     return d;
 }
@@ -556,6 +558,7 @@ static neverc_json_value_t *parse_value(parser_t *p) {
 /* ---- public API ---- */
 
 neverc_json_value_t *neverc_json_parse(const char *text, size_t len) {
+    if (!text && len > 0) return NULL;
     parser_t p = { .src = text, .len = len, .pos = 0, .depth = 0 };
     neverc_json_value_t *v = parse_value(&p);
     if (!v) return NULL;
@@ -598,8 +601,9 @@ typedef struct {
 } marshal_t;
 
 static int mw(marshal_t *m, const char *s, size_t n) {
-    if (m->pos + n > m->cap) return -1;
-    memcpy(m->buf + m->pos, s, n);
+    if ((!s && n > 0) || m->pos > m->cap || n > m->cap - m->pos)
+        return -1;
+    if (n > 0) memcpy(m->buf + m->pos, s, n);
     m->pos += n;
     return 0;
 }
@@ -624,6 +628,7 @@ static int json_needs_escape(unsigned char c) {
 }
 
 static int marshal_string(marshal_t *m, const char *s) {
+    if (!s) return -1;
     if (mw_char(m, '"') < 0) return -1;
     const char *p = s;
     while (*p) {
@@ -665,6 +670,7 @@ static int marshal_number(marshal_t *m, double val) {
 }
 
 static int marshal_value(marshal_t *m, const neverc_json_value_t *v) {
+    if (!v) return -1;
     switch (v->type) {
         case NEVERC_JSON_NULL:
             return mw(m, "null", 4);
@@ -708,10 +714,11 @@ static int marshal_value(marshal_t *m, const neverc_json_value_t *v) {
 int neverc_json_marshal(const neverc_json_value_t *v,
                         char *dst, size_t dst_len,
                         const char *indent) {
+    if (!v || (!dst && dst_len > 0)) return -1;
     marshal_t m = { .buf = dst, .cap = dst_len, .pos = 0,
                     .indent = indent, .depth = 0 };
     if (marshal_value(&m, v) < 0) return -1;
-    return (int)m.pos;
+    return m.pos <= (size_t)INT_MAX ? (int)m.pos : -1;
 }
 
 /* ---- query helpers ---- */
@@ -749,7 +756,8 @@ int neverc_json_object_len(const neverc_json_value_t *v) {
 neverc_json_value_t *neverc_json_object_get(const neverc_json_value_t *v, const char *key) {
     if (!v || v->type != NEVERC_JSON_OBJECT || !key) return NULL;
     for (int i = 0; i < v->u.obj.len; i++)
-        if (strcmp(v->u.obj.pairs[i].key, key) == 0)
+        if (v->u.obj.pairs[i].key &&
+            strcmp(v->u.obj.pairs[i].key, key) == 0)
             return v->u.obj.pairs[i].value;
     return NULL;
 }
@@ -771,6 +779,7 @@ neverc_json_value_t *neverc_json_new_number(double val) {
 }
 
 neverc_json_value_t *neverc_json_new_string(const char *s) {
+    if (!s) return NULL;
     neverc_json_value_t *v = alloc_val(NEVERC_JSON_STRING);
     if (v) {
         v->u.str_val = dup_str(s, strlen(s));
@@ -800,9 +809,13 @@ neverc_json_value_t *neverc_json_new_object(void) {
 }
 
 int neverc_json_array_append(neverc_json_value_t *arr, neverc_json_value_t *val) {
-    if (!arr || arr->type != NEVERC_JSON_ARRAY) return -1;
+    if (!arr || arr->type != NEVERC_JSON_ARRAY || !val ||
+        arr->u.arr.len < 0 || arr->u.arr.cap < 0 ||
+        arr->u.arr.len > arr->u.arr.cap ||
+        (arr->u.arr.cap > 0 && !arr->u.arr.items)) return -1;
     if (arr->u.arr.len >= arr->u.arr.cap) {
-        int nc = arr->u.arr.cap * 2;
+        if (arr->u.arr.cap > INT_MAX / 2) return -1;
+        int nc = arr->u.arr.cap == 0 ? 8 : arr->u.arr.cap * 2;
         neverc_json_value_t **ni = (neverc_json_value_t **)realloc(arr->u.arr.items, (size_t)nc * sizeof(neverc_json_value_t *));
         if (!ni) return -1;
         arr->u.arr.items = ni;
@@ -813,17 +826,23 @@ int neverc_json_array_append(neverc_json_value_t *arr, neverc_json_value_t *val)
 }
 
 int neverc_json_object_set(neverc_json_value_t *obj, const char *key, neverc_json_value_t *val) {
-    if (!obj || obj->type != NEVERC_JSON_OBJECT) return -1;
+    if (!obj || obj->type != NEVERC_JSON_OBJECT || !key || !val ||
+        obj->u.obj.len < 0 || obj->u.obj.cap < 0 ||
+        obj->u.obj.len > obj->u.obj.cap ||
+        (obj->u.obj.cap > 0 && !obj->u.obj.pairs)) return -1;
     /* overwrite existing key */
     for (int i = 0; i < obj->u.obj.len; i++) {
-        if (strcmp(obj->u.obj.pairs[i].key, key) == 0) {
+        if (obj->u.obj.pairs[i].key &&
+            strcmp(obj->u.obj.pairs[i].key, key) == 0) {
+            if (obj->u.obj.pairs[i].value == val) return 0;
             neverc_json_free(obj->u.obj.pairs[i].value);
             obj->u.obj.pairs[i].value = val;
             return 0;
         }
     }
     if (obj->u.obj.len >= obj->u.obj.cap) {
-        int nc = obj->u.obj.cap * 2;
+        if (obj->u.obj.cap > INT_MAX / 2) return -1;
+        int nc = obj->u.obj.cap == 0 ? 8 : obj->u.obj.cap * 2;
         neverc_json_pair_t *np = (neverc_json_pair_t *)realloc(obj->u.obj.pairs, (size_t)nc * sizeof(neverc_json_pair_t));
         if (!np) return -1;
         obj->u.obj.pairs = np;

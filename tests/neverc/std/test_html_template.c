@@ -109,6 +109,58 @@ static void test_template_if(void) {
     neverc_html_template_data_free(&data);
 }
 
+static void test_template_if_else(void) {
+    printf("[template_if_else]\n");
+    neverc_html_template_data_t data;
+    neverc_html_template_data_init(&data);
+    neverc_html_template_data_set(&data, "Show", "1");
+
+    char *out = neverc_html_template_render(
+        "{{if .Show}}yes{{else}}no{{end}}", &data);
+    check_str("if_else_true", out, "yes");
+    free(out);
+
+    neverc_html_template_data_set(&data, "Show", "0");
+    out = neverc_html_template_render(
+        "{{if .Show}}yes{{else}}no{{end}}", &data);
+    check_str("if_else_false", out, "no");
+    free(out);
+    neverc_html_template_data_free(&data);
+}
+
+static void test_template_range_subset(void) {
+    printf("[template_range_subset]\n");
+    neverc_html_template_data_t data;
+    neverc_html_template_data_init(&data);
+
+    char *out = neverc_html_template_render(
+        "A{{range .Items}}B{{end}}C", &data);
+    check_str("range_absent", out, "AC");
+    free(out);
+
+    neverc_html_template_data_set(&data, "Items", "present");
+    out = neverc_html_template_render(
+        "A{{range .Items}}B{{end}}C", &data);
+    check_str("range_present_once", out, "ABC");
+    free(out);
+    neverc_html_template_data_free(&data);
+}
+
+static void test_template_parse_errors(void) {
+    printf("[template_parse_errors]\n");
+    const char *bad[] = {
+        "{{.Name", "{{if .Show}}open", "{{else}}", "{{end}}",
+        "{{if}}", "{{range}}"
+    };
+    for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); i++) {
+        neverc_html_template_t *t = neverc_html_template_parse(bad[i]);
+        check("invalid template rejected", t == NULL);
+        neverc_html_template_free(t);
+    }
+    check("NULL template rejected", neverc_html_template_parse(NULL) == NULL);
+    check("NULL render rejected", neverc_html_template_render(NULL, NULL) == NULL);
+}
+
 static void test_data_operations(void) {
     printf("[data_operations]\n");
     neverc_html_template_data_t data;
@@ -132,6 +184,9 @@ int main(void) {
     test_template_auto_escape();
     test_template_missing_var();
     test_template_if();
+    test_template_if_else();
+    test_template_range_subset();
+    test_template_parse_errors();
     test_data_operations();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_passed == tests_run ? 0 : 1;

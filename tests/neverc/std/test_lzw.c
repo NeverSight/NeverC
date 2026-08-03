@@ -96,6 +96,28 @@ static void test_invalid_params(void) {
     ASSERT_INT_EQ(neverc_lzw_compress((uint8_t*)"a", 1, buf, &len, NEVERC_LZW_LSB, 9), -1);
     len = sizeof(buf);
     ASSERT_INT_EQ(neverc_lzw_compress((uint8_t*)"a", 1, buf, &len, 5, 8), -1);
+
+    len = sizeof(buf);
+    ASSERT_INT_EQ(neverc_lzw_compress(NULL, 1, buf, &len, NEVERC_LZW_LSB, 8), -1);
+    ASSERT_INT_EQ(neverc_lzw_compress((uint8_t*)"a", 1, buf, NULL,
+                                     NEVERC_LZW_LSB, 8), -1);
+    len = sizeof(buf);
+    ASSERT_INT_EQ(neverc_lzw_compress((uint8_t*)"a", 1, NULL, &len,
+                                     NEVERC_LZW_LSB, 8), -1);
+
+    uint8_t invalid_literal[] = {0, 4};
+    len = sizeof(buf);
+    ASSERT_INT_EQ(neverc_lzw_compress(invalid_literal, sizeof(invalid_literal),
+                                     buf, &len, NEVERC_LZW_LSB, 2), -1);
+
+    len = sizeof(buf);
+    ASSERT_INT_EQ(neverc_lzw_decompress(NULL, 1, buf, &len,
+                                       NEVERC_LZW_LSB, 8), -1);
+    ASSERT_INT_EQ(neverc_lzw_decompress(buf, 1, buf, NULL,
+                                       NEVERC_LZW_LSB, 8), -1);
+    len = sizeof(buf);
+    ASSERT_INT_EQ(neverc_lzw_decompress(buf, 1, NULL, &len,
+                                       NEVERC_LZW_LSB, 8), -1);
 }
 
 int main(void) {

@@ -44,6 +44,13 @@ static void test_parse_address_list(void) {
     ASSERT_STREQ(addrs[0].address, "alice@x.com");
     ASSERT_STREQ(addrs[1].address, "bob@y.com");
     ASSERT_STREQ(addrs[2].name, "Charlie");
+
+    n = neverc_mail_parse_address_list(
+        "\"Doe, John\" <john@example.com>, other@example.com", addrs, 8);
+    ASSERT_EQ(n, 2);
+    ASSERT_STREQ(addrs[0].name, "Doe, John");
+    ASSERT_STREQ(addrs[0].address, "john@example.com");
+    ASSERT_STREQ(addrs[1].address, "other@example.com");
 }
 
 static void test_format_address(void) {
@@ -86,10 +93,13 @@ static void test_parse_date(void) {
     printf("[parse date]\n");
     /* Mon, 02 Jan 2006 15:04:05 -0700 */
     long long t = neverc_mail_parse_date("Mon, 02 Jan 2006 15:04:05 -0700");
-    ASSERT_TRUE(t > 0);
+    ASSERT_TRUE(t == 1136239445LL);
 
     long long t2 = neverc_mail_parse_date("01 Jan 1970 00:00:00 +0000");
     ASSERT_EQ((int)t2, 0);
+
+    ASSERT_TRUE(neverc_mail_parse_date("01 Jan 1970 25:00:00 +0000") == -1);
+    ASSERT_TRUE(neverc_mail_parse_date("31 Feb 2024 00:00:00 +0000") == -1);
 }
 
 int main(void) {

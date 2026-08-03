@@ -62,7 +62,7 @@ static inline uint32_t bz_bits(bz_br_t *br, int n) {
         if (br->nbits < n) {
             int avail = br->nbits;
             uint32_t v = 0;
-            if (avail) {
+            if (avail > 0) {
                 /* Left-align the available low bits into the n-bit field,
                  * zero-padded on the right. avail >= 1 and n <= 32 keep the
                  * shift < 32, so a uint32_t is never shifted by its full width

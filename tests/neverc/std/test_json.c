@@ -492,6 +492,31 @@ static void test_keymap_hash_lengths(void) {
     neverc_json_free(v);
 }
 
+static void test_invalid_api_inputs(void) {
+    printf("[invalid_api_inputs]\n");
+    char out[16];
+    ASSERT_NULL(neverc_json_parse(NULL, 1));
+    ASSERT_NULL(neverc_json_new_string(NULL));
+    ASSERT_INT_EQ(neverc_json_marshal(NULL, out, sizeof(out), NULL), -1);
+
+    neverc_json_value_t *array = neverc_json_new_array();
+    ASSERT_NOT_NULL(array);
+    ASSERT_INT_EQ(neverc_json_array_append(array, NULL), -1);
+    neverc_json_free(array);
+
+    neverc_json_value_t *object = neverc_json_new_object();
+    neverc_json_value_t *value = neverc_json_new_number(7);
+    ASSERT_NOT_NULL(object);
+    ASSERT_NOT_NULL(value);
+    ASSERT_INT_EQ(neverc_json_object_set(object, NULL, value), -1);
+    ASSERT_INT_EQ(neverc_json_object_set(object, "key", NULL), -1);
+    ASSERT_INT_EQ(neverc_json_object_set(object, "key", value), 0);
+    ASSERT_INT_EQ(neverc_json_object_set(object, "key", value), 0);
+    ASSERT_DBL_EQ(neverc_json_number(
+                      neverc_json_object_get(object, "key")), 7.0, 0.01);
+    neverc_json_free(object);
+}
+
 int main(void) {
     printf("=== NeverC encoding/json Tests ===\n");
     test_parse_null();
@@ -511,6 +536,7 @@ int main(void) {
     test_large_strings();
     test_large_and_dup_objects();
     test_keymap_hash_lengths();
+    test_invalid_api_inputs();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

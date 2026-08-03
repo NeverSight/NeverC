@@ -7,6 +7,10 @@
 extern "C" {
 #endif
 
+/* String-keyed HTML templates with {{.Key}}, if/else, and the same
+ * presence-based range subset as text/template. Inserted values are HTML
+ * escaped. Parse/render return NULL for invalid syntax or allocation failure. */
+
 typedef struct neverc_html_template neverc_html_template_t;
 
 typedef struct {

@@ -125,6 +125,7 @@ static int br_read_code(bit_reader_t *r, unsigned width, uint16_t *out) {
 int neverc_lzw_compress(const uint8_t *src, size_t src_len,
                         uint8_t *dst, size_t *dst_len,
                         int order, int lit_width) {
+    if (!dst_len || !dst || (!src && src_len != 0)) return -1;
     if (lit_width < 2 || lit_width > 8) return -1;
     if (order != NEVERC_LZW_LSB && order != NEVERC_LZW_MSB) return -1;
 
@@ -150,9 +151,11 @@ int neverc_lzw_compress(const uint8_t *src, size_t src_len,
         return 0;
     }
 
+    if (src[0] >= clear_code) return -1;
     uint32_t code = (uint32_t)src[0];
     for (size_t i = 1; i < src_len; i++) {
         uint32_t literal = (uint32_t)src[i];
+        if (literal >= clear_code) return -1;
         uint32_t key = (code << 8) | literal;
         uint32_t hash = ((key >> 12) ^ key) & TABLE_MASK;
 
@@ -194,7 +197,7 @@ int neverc_lzw_compress(const uint8_t *src, size_t src_len,
 
     if (bw_write_code(&bw, code, width) < 0) return -1;
     hi++;
-    if (hi == overflow) { width++; overflow <<= 1; }
+    if (hi == overflow) width++;
     if (bw_write_code(&bw, eof_code, width) < 0) return -1;
     if (bw_flush(&bw) < 0) return -1;
 
@@ -207,6 +210,7 @@ int neverc_lzw_compress(const uint8_t *src, size_t src_len,
 int neverc_lzw_decompress(const uint8_t *src, size_t src_len,
                           uint8_t *dst, size_t *dst_len,
                           int order, int lit_width) {
+    if (!src || !dst || !dst_len) return -1;
     if (lit_width < 2 || lit_width > 8) return -1;
     if (order != NEVERC_LZW_LSB && order != NEVERC_LZW_MSB) return -1;
 
@@ -276,7 +280,7 @@ int neverc_lzw_decompress(const uint8_t *src, size_t src_len,
              * is required to decode TIFF/GIF "deferred clear" streams that keep
              * using the highest code instead of emitting a clear. */
             size_t L = length[code];
-            if (out_pos + L > out_cap) return -1;
+            if (L > out_cap - out_pos) return -1;
             size_t w = out_pos + L;
             uint16_t c = code;
             while (c >= clear_code) { dst[--w] = suffix[c]; c = prefix[c]; }
@@ -286,7 +290,7 @@ int neverc_lzw_decompress(const uint8_t *src, size_t src_len,
         } else if (code == hi && last != INVALID_CODE16) {
             /* KwKwK: S(code) = S(last) + firstByte(S(last)) */
             size_t L = (size_t)length[last] + 1;
-            if (out_pos + L > out_cap) return -1;
+            if (L > out_cap - out_pos) return -1;
             size_t w = out_pos + L;
             dst[--w] = last_first;                 /* the self-referential byte */
             uint16_t c = last;

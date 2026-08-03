@@ -2,10 +2,12 @@
 #define NEVERC_TEXT_TEMPLATE_H
 
 /*
- * NeverC text/template — simple template engine (mirrors Go text/template).
+ * NeverC text/template -- small string-keyed template engine.
  *
- * Supports: {{.Key}}, {{if .Key}}...{{end}}, {{range .Key}}...{{end}},
- * {{.Key | func}}, literal text. Template variables are string key-value pairs.
+ * Supports literal text, {{.Key}}, {{if .Key}}...{{else}}...{{end}}, and
+ * {{range .Key}}...{{end}}. Data values are borrowed strings. Since the data
+ * model has no collection type, range executes its body once when the named
+ * value exists; pipelines and template functions are not supported.
  */
 
 #include <stddef.h>
@@ -27,6 +29,8 @@ typedef struct {
 
 typedef struct neverc_template neverc_template_t;
 
+/* Returns NULL for invalid syntax or allocation failure. errp, when non-NULL,
+ * receives a static diagnostic string on failure and NULL on success. */
 neverc_template_t *neverc_template_parse(const char *text, const char **errp);
 void               neverc_template_free(neverc_template_t *tmpl);
 

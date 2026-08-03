@@ -14,6 +14,59 @@
   #include <fnmatch.h>
 #endif
 
+static int fs_entries_reserve(neverc_fs_dir_entry_t **entries, size_t *cap,
+                              size_t needed) {
+    if (needed <= *cap) return 1;
+    size_t next = *cap;
+    while (next < needed) {
+        if (next > SIZE_MAX / 2) {
+            next = needed;
+            break;
+        }
+        next *= 2;
+    }
+    if (next > SIZE_MAX / sizeof(**entries)) return 0;
+    neverc_fs_dir_entry_t *grown = (neverc_fs_dir_entry_t *)realloc(
+        *entries, next * sizeof(**entries));
+    if (!grown) return 0;
+    *entries = grown;
+    *cap = next;
+    return 1;
+}
+
+static int fs_matches_reserve(char ***matches, size_t *cap, size_t needed) {
+    if (needed <= *cap) return 1;
+    size_t next = *cap;
+    while (next < needed) {
+        if (next > SIZE_MAX / 2) {
+            next = needed;
+            break;
+        }
+        next *= 2;
+    }
+    if (next > SIZE_MAX / sizeof(**matches)) return 0;
+    char **grown = (char **)realloc(*matches, next * sizeof(**matches));
+    if (!grown) return 0;
+    *matches = grown;
+    *cap = next;
+    return 1;
+}
+
+static char *fs_join_path(const char *dir, const char *name) {
+    size_t dlen = strlen(dir), nlen = strlen(name);
+    if (dlen > SIZE_MAX - nlen - 2) return NULL;
+    char *full = (char *)malloc(dlen + nlen + 2);
+    if (!full) return NULL;
+    memcpy(full, dir, dlen);
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    full[dlen] = '\\';
+#else
+    full[dlen] = '/';
+#endif
+    memcpy(full + dlen + 1, name, nlen + 1);
+    return full;
+}
+
 int neverc_fs_valid_path(const char *name) {
     if (!name || name[0] == '\0') return 0;
     if (name[0] == '/') return 0;
@@ -75,15 +128,23 @@ int neverc_fs_stat(const char *path, neverc_fs_file_info_t *info) {
 
 int neverc_fs_read_file(const char *path, uint8_t **data, size_t *size) {
     if (!path || !data || !size) return -1;
+    *data = NULL;
+    *size = 0;
     FILE *f = fopen(path, "rb");
     if (!f) return -1;
-    fseek(f, 0, SEEK_END);
+    if (fseek(f, 0, SEEK_END) != 0) { fclose(f); return -1; }
     long len = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    if (len < 0) { fclose(f); return -1; }
+    if (len < 0 || fseek(f, 0, SEEK_SET) != 0) { fclose(f); return -1; }
     *data = (uint8_t *)malloc((size_t)len + 1);
     if (!*data) { fclose(f); return -1; }
     *size = fread(*data, 1, (size_t)len, f);
+    if (*size < (size_t)len && ferror(f)) {
+        free(*data);
+        *data = NULL;
+        *size = 0;
+        fclose(f);
+        return -1;
+    }
     (*data)[*size] = 0;
     fclose(f);
     return 0;
@@ -96,20 +157,25 @@ int neverc_fs_read_dir(const char *path, neverc_fs_dir_entry_t **entries,
 
 #if defined(NEVERC_PLATFORM_WINDOWS)
     char pattern[MAX_PATH];
-    snprintf(pattern, sizeof(pattern), "%s\\*", path);
+    int pattern_len = snprintf(pattern, sizeof(pattern), "%s\\*", path);
+    if (pattern_len < 0 || (size_t)pattern_len >= sizeof(pattern)) return -1;
     WIN32_FIND_DATAA fd;
     HANDLE h = FindFirstFileA(pattern, &fd);
     if (h == INVALID_HANDLE_VALUE) return -1;
     size_t cap = 16;
-    *entries = (neverc_fs_dir_entry_t *)malloc(cap * sizeof(**entries));
+    neverc_fs_dir_entry_t *result =
+        (neverc_fs_dir_entry_t *)malloc(cap * sizeof(*result));
+    if (!result) { FindClose(h); return -1; }
     do {
         if (strcmp(fd.cFileName, ".") == 0 || strcmp(fd.cFileName, "..") == 0)
             continue;
-        if (*count >= cap) {
-            cap *= 2;
-            *entries = (neverc_fs_dir_entry_t *)realloc(*entries, cap * sizeof(**entries));
+        if (!fs_entries_reserve(&result, &cap, *count + 1)) {
+            free(result);
+            FindClose(h);
+            *count = 0;
+            return -1;
         }
-        neverc_fs_dir_entry_t *e = &(*entries)[*count];
+        neverc_fs_dir_entry_t *e = &result[*count];
         memset(e, 0, sizeof(*e));
         strncpy(e->name, fd.cFileName, sizeof(e->name) - 1);
         e->is_dir = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) ? 1 : 0;
@@ -117,26 +183,32 @@ int neverc_fs_read_dir(const char *path, neverc_fs_dir_entry_t **entries,
         (*count)++;
     } while (FindNextFileA(h, &fd));
     FindClose(h);
+    *entries = result;
 #else
     DIR *d = opendir(path);
     if (!d) return -1;
     size_t cap = 16;
-    *entries = (neverc_fs_dir_entry_t *)malloc(cap * sizeof(**entries));
+    neverc_fs_dir_entry_t *result =
+        (neverc_fs_dir_entry_t *)malloc(cap * sizeof(*result));
+    if (!result) { closedir(d); return -1; }
     struct dirent *de;
     while ((de = readdir(d)) != NULL) {
         if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0)
             continue;
-        if (*count >= cap) {
-            cap *= 2;
-            *entries = (neverc_fs_dir_entry_t *)realloc(*entries, cap * sizeof(**entries));
+        if (!fs_entries_reserve(&result, &cap, *count + 1)) {
+            free(result);
+            closedir(d);
+            *count = 0;
+            return -1;
         }
-        neverc_fs_dir_entry_t *e = &(*entries)[*count];
+        neverc_fs_dir_entry_t *e = &result[*count];
         memset(e, 0, sizeof(*e));
         strncpy(e->name, de->d_name, sizeof(e->name) - 1);
         e->is_dir = (de->d_type == DT_DIR) ? 1 : 0;
         (*count)++;
     }
     closedir(d);
+    *entries = result;
 #endif
     return 0;
 }
@@ -151,7 +223,11 @@ int neverc_fs_glob(const char *dir, const char *pattern,
     if (neverc_fs_read_dir(dir, &entries, &nentries) != 0) return -1;
 
     size_t cap = 8;
-    *matches = (char **)malloc(cap * sizeof(char *));
+    char **result = (char **)malloc(cap * sizeof(*result));
+    if (!result) {
+        neverc_fs_free_entries(entries);
+        return -1;
+    }
 
     for (size_t i = 0; i < nentries; i++) {
 #if defined(NEVERC_PLATFORM_WINDOWS)
@@ -168,22 +244,24 @@ int neverc_fs_glob(const char *dir, const char *pattern,
         int matched = (fnmatch(pattern, entries[i].name, 0) == 0);
 #endif
         if (matched) {
-            if (*count >= cap) {
-                cap *= 2;
-                *matches = (char **)realloc(*matches, cap * sizeof(char *));
-            }
-            size_t dlen = strlen(dir);
-            size_t nlen = strlen(entries[i].name);
-            char *full = (char *)malloc(dlen + 1 + nlen + 1);
-            memcpy(full, dir, dlen);
-            full[dlen] = '/';
-            memcpy(full + dlen + 1, entries[i].name, nlen + 1);
-            (*matches)[*count] = full;
+            if (!fs_matches_reserve(&result, &cap, *count + 1))
+                goto glob_fail;
+            char *full = fs_join_path(dir, entries[i].name);
+            if (!full) goto glob_fail;
+            result[*count] = full;
             (*count)++;
         }
     }
     neverc_fs_free_entries(entries);
+    *matches = result;
     return 0;
+
+glob_fail:
+    neverc_fs_free_entries(entries);
+    neverc_fs_free_matches(result, *count);
+    *matches = NULL;
+    *count = 0;
+    return -1;
 }
 
 static int walk_recursive(const char *path,
@@ -194,12 +272,11 @@ static int walk_recursive(const char *path,
     if (neverc_fs_read_dir(path, &entries, &count) != 0) return -1;
 
     for (size_t i = 0; i < count; i++) {
-        size_t plen = strlen(path);
-        size_t nlen = strlen(entries[i].name);
-        char *full = (char *)malloc(plen + 1 + nlen + 1);
-        memcpy(full, path, plen);
-        full[plen] = '/';
-        memcpy(full + plen + 1, entries[i].name, nlen + 1);
+        char *full = fs_join_path(path, entries[i].name);
+        if (!full) {
+            neverc_fs_free_entries(entries);
+            return -1;
+        }
 
         int rc = fn(full, &entries[i], userdata);
         if (rc != 0) { free(full); neverc_fs_free_entries(entries); return rc; }

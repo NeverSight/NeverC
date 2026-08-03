@@ -2,9 +2,12 @@
 #define NEVERC_REGEXP_H
 
 /*
- * NeverC regexp — regular expressions (mirrors Go regexp package).
+ * NeverC regexp — Thompson-NFA regular expressions inspired by Go regexp.
  *
- * NFA-based engine (Thompson construction). No backtracking.
+ * This is a deliberately small byte-oriented syntax subset, not a complete
+ * implementation of Go regexp or RE2. Matching APIs require the whole string;
+ * find/replace/split use leftmost-longest non-empty matches.
+ * No backtracking is used.
  * Supported syntax: . * + ? | () [] [^] \d \w \s ^ $ {n} {n,m}
  * Character classes: [a-z] [^abc] \d (digit) \w (word) \s (space)
  */
@@ -48,7 +51,7 @@ void neverc_regexp_free_strings(char **strs, int count);
 /* QuoteMeta: escape all regex metacharacters in s.  Caller frees result. */
 char *neverc_regexp_quote_meta(const char *s);
 
-/* CompilePOSIX: leftmost-longest match semantics (POSIX ERE rules). */
+/* CompilePOSIX: the supported syntax subset with leftmost-longest semantics. */
 neverc_regexp_t *neverc_regexp_compile_posix(const char *pattern, const char **errp);
 
 /* MustCompile: like Compile but aborts on error */

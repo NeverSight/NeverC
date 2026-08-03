@@ -1,21 +1,30 @@
 #include "neverc/std/net/textproto.h"
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
+
+#ifndef NC_TEXTPROTO_MALLOC
+#define NC_TEXTPROTO_MALLOC malloc
+#endif
+#ifndef NC_TEXTPROTO_CALLOC
+#define NC_TEXTPROTO_CALLOC calloc
+#endif
 
 static int nc_toupper(int c) { return (c >= 'a' && c <= 'z') ? c - 32 : c; }
 static int nc_tolower(int c) { return (c >= 'A' && c <= 'Z') ? c + 32 : c; }
 static int nc_isdigit(int c) { return c >= '0' && c <= '9'; }
 
 void neverc_mime_header_init(neverc_mime_header_t *h) {
+    if (!h) return;
     memset(h, 0, sizeof(*h));
-    h->capacity = 8;
-    h->keys   = (char **)calloc(h->capacity, sizeof(char *));
-    h->values = (char **)calloc(h->capacity, sizeof(char *));
 }
 
 void neverc_mime_header_free(neverc_mime_header_t *h) {
-    for (size_t i = 0; i < h->count; i++) {
-        free(h->keys[i]); free(h->values[i]);
+    if (!h) return;
+    if (h->keys && h->values) {
+        for (size_t i = 0; i < h->count; i++) {
+            free(h->keys[i]); free(h->values[i]);
+        }
     }
     free(h->keys); free(h->values);
     memset(h, 0, sizeof(*h));
@@ -24,7 +33,9 @@ void neverc_mime_header_free(neverc_mime_header_t *h) {
 char *neverc_textproto_canonical_mime_header_key(const char *key) {
     if (!key) return NULL;
     size_t len = strlen(key);
-    char *out = (char *)malloc(len + 1);
+    if (len == SIZE_MAX) return NULL;
+    char *out = (char *)NC_TEXTPROTO_MALLOC(len + 1U);
+    if (!out) return NULL;
     int upper = 1;
     for (size_t i = 0; i < len; i++) {
         if (key[i] == '-') {
@@ -51,6 +62,7 @@ char *neverc_textproto_canonical_mime_header_key(const char *key) {
  * only the lookup key needs normalizing, and that can be done allocation-free.
  */
 static int canon_eq(const char *canonical, const char *key) {
+    if (!canonical || !key) return 0;
     int upper = 1;
     size_t i = 0;
     for (; key[i]; i++) {
@@ -63,22 +75,71 @@ static int canon_eq(const char *canonical, const char *key) {
     return canonical[i] == '\0';
 }
 
-void neverc_mime_header_add(neverc_mime_header_t *h, const char *key, const char *value) {
-    if (h->count >= h->capacity) {
-        h->capacity *= 2;
-        h->keys   = (char **)realloc(h->keys, h->capacity * sizeof(char *));
-        h->values = (char **)realloc(h->values, h->capacity * sizeof(char *));
+static char *textproto_dup(const char *s) {
+    if (!s) s = "";
+    size_t len = strlen(s);
+    if (len == SIZE_MAX) return NULL;
+    char *copy = (char *)NC_TEXTPROTO_MALLOC(len + 1U);
+    if (!copy) return NULL;
+    memcpy(copy, s, len + 1U);
+    return copy;
+}
+
+static int mime_header_grow(neverc_mime_header_t *h) {
+    if (h->capacity > SIZE_MAX / 2U) return -1;
+    size_t new_capacity = h->capacity == 0 ? 8U : h->capacity * 2U;
+    if (new_capacity > SIZE_MAX / sizeof(char *)) return -1;
+    char **new_keys = (char **)NC_TEXTPROTO_CALLOC(
+        new_capacity, sizeof(char *));
+    if (!new_keys) return -1;
+    char **new_values = (char **)NC_TEXTPROTO_CALLOC(
+        new_capacity, sizeof(char *));
+    if (!new_values) { free(new_keys); return -1; }
+    if (h->count > 0) {
+        memcpy(new_keys, h->keys, h->count * sizeof(char *));
+        memcpy(new_values, h->values, h->count * sizeof(char *));
     }
-    h->keys[h->count]   = neverc_textproto_canonical_mime_header_key(key);
-    h->values[h->count]  = strdup(value ? value : "");
+    free(h->keys);
+    free(h->values);
+    h->keys = new_keys;
+    h->values = new_values;
+    h->capacity = new_capacity;
+    return 0;
+}
+
+static int mime_header_add_checked(neverc_mime_header_t *h, const char *key,
+                                   const char *value) {
+    if (!h || !key || h->count > h->capacity ||
+        (h->capacity > 0 && (!h->keys || !h->values))) return -1;
+    char *canonical = neverc_textproto_canonical_mime_header_key(key);
+    if (!canonical) return -1;
+    char *value_copy = textproto_dup(value);
+    if (!value_copy) { free(canonical); return -1; }
+    if (h->count >= h->capacity && mime_header_grow(h) != 0) {
+        free(canonical);
+        free(value_copy);
+        return -1;
+    }
+    h->keys[h->count] = canonical;
+    h->values[h->count] = value_copy;
     h->count++;
+    return 0;
+}
+
+void neverc_mime_header_add(neverc_mime_header_t *h, const char *key,
+                            const char *value) {
+    (void)mime_header_add_checked(h, key, value);
 }
 
 void neverc_mime_header_set(neverc_mime_header_t *h, const char *key, const char *value) {
+    if (!h || !key || h->count > h->capacity ||
+        (h->capacity > 0 && (!h->keys || !h->values))) return;
     for (size_t i = 0; i < h->count; i++) {
         if (canon_eq(h->keys[i], key)) {
+            char *value_copy = textproto_dup(value);
+            if (!value_copy) return;
             free(h->values[i]);
-            h->values[i] = strdup(value ? value : "");
+            h->values[i] = value_copy;
             return;
         }
     }
@@ -86,12 +147,16 @@ void neverc_mime_header_set(neverc_mime_header_t *h, const char *key, const char
 }
 
 const char *neverc_mime_header_get(const neverc_mime_header_t *h, const char *key) {
+    if (!h || !key || h->count > h->capacity ||
+        (h->count > 0 && (!h->keys || !h->values))) return NULL;
     for (size_t i = 0; i < h->count; i++)
         if (canon_eq(h->keys[i], key)) return h->values[i];
     return NULL;
 }
 
 void neverc_mime_header_del(neverc_mime_header_t *h, const char *key) {
+    if (!h || !key || h->count > h->capacity ||
+        (h->count > 0 && (!h->keys || !h->values))) return;
     for (size_t i = 0; i < h->count; i++) {
         if (canon_eq(h->keys[i], key)) {
             free(h->keys[i]); free(h->values[i]);
@@ -106,12 +171,13 @@ void neverc_mime_header_del(neverc_mime_header_t *h, const char *key) {
 }
 
 size_t neverc_mime_header_len(const neverc_mime_header_t *h) {
-    return h->count;
+    return h ? h->count : 0;
 }
 
 int neverc_textproto_read_line(const char *data, size_t len,
                                 char *line, size_t line_cap, size_t *consumed) {
-    if (!data || len == 0) return -1;
+    if (consumed) *consumed = 0;
+    if (!data || len == 0 || !line || line_cap == 0) return -1;
     /* Find the '\n' terminator with memchr rather than a byte-at-a-time scan.
        libc's memchr is vectorized, so long lines and large header/body blocks
        fed through this primitive (read_mime_header, read_dot_lines) locate the
@@ -145,7 +211,10 @@ int neverc_textproto_read_mime_header(const char *data, size_t len,
         *colon = '\0';
         const char *val = colon + 1;
         while (*val == ' ' || *val == '\t') val++;
-        neverc_mime_header_add(h, line, val);
+        if (mime_header_add_checked(h, line, val) != 0) {
+            if (consumed) *consumed = pos;
+            return -1;
+        }
     }
     if (consumed) *consumed = pos;
     return 0;
@@ -167,7 +236,11 @@ int neverc_textproto_read_dot_lines(const char *data, size_t len,
         if (strcmp(line, ".") == 0) break;
         const char *src = line;
         if (src[0] == '.' && src[1] == '.') src++;
-        lines[*nlines] = strdup(src);
+        lines[*nlines] = textproto_dup(src);
+        if (!lines[*nlines]) {
+            if (consumed) *consumed = pos;
+            return -1;
+        }
         (*nlines)++;
     }
     if (consumed) *consumed = pos;
@@ -176,7 +249,7 @@ int neverc_textproto_read_dot_lines(const char *data, size_t len,
 
 int neverc_textproto_read_code_line(const char *line, int *code,
                                      const char **msg) {
-    if (!line || strlen(line) < 3) return -1;
+    if (!line || !code || strlen(line) < 3) return -1;
     if (!nc_isdigit((unsigned char)line[0]) || !nc_isdigit((unsigned char)line[1]) ||
         !nc_isdigit((unsigned char)line[2])) return -1;
     *code = (line[0] - '0') * 100 + (line[1] - '0') * 10 + (line[2] - '0');
@@ -191,7 +264,7 @@ int neverc_textproto_read_code_line(const char *line, int *code,
 }
 
 int neverc_textproto_trim_string(const char *s, char *out, size_t cap) {
-    if (!s || !out) return -1;
+    if (!s || !out || cap == 0) return -1;
     while (*s == ' ' || *s == '\t') s++;
     size_t len = strlen(s);
     while (len > 0 && (s[len-1] == ' ' || s[len-1] == '\t')) len--;

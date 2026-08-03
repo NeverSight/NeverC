@@ -1,5 +1,6 @@
 #include "neverc/std/regexp_syntax.h"
 #include <stdlib.h>
+#include <limits.h>
 
 /* ======================================================================
  * Internal helpers
@@ -17,10 +18,23 @@ static void nc_mcpy(void *dst, const void *src, size_t n) {
     for (size_t i = 0; i < n; i++) d[i] = s[i];
 }
 
-static neverc_regexp_syntax_node_t *mk_node(neverc_regexp_op_t op) {
+typedef struct {
+    const char *src;
+    int         pos;
+    int         len;
+    int         flags;
+    int         ncap;
+    const char *err;
+} parser_t;
+
+static neverc_regexp_syntax_node_t *mk_node(parser_t *p,
+                                             neverc_regexp_op_t op) {
     neverc_regexp_syntax_node_t *n =
         (neverc_regexp_syntax_node_t *)calloc(1, sizeof(*n));
-    if (!n) return NULL;
+    if (!n) {
+        p->err = "out of memory";
+        return NULL;
+    }
     n->op = op;
     n->max = -1;
     return n;
@@ -33,40 +47,98 @@ static neverc_regexp_syntax_node_t *mk_node(neverc_regexp_op_t op) {
  * allocation is invisible to every reader (count, string, equal) and to free(),
  * which just releases the pointer — no struct/API change. realloc is only
  * issued when the count crosses a power-of-two boundary. */
-static void add_sub(neverc_regexp_syntax_node_t *parent,
-                    neverc_regexp_syntax_node_t *child) {
+static int add_sub(parser_t *p, neverc_regexp_syntax_node_t *parent,
+                   neverc_regexp_syntax_node_t *child) {
+    if (!parent || !child || parent->nsubs < 0 || parent->nsubs == INT_MAX) {
+        p->err = "out of memory";
+        return 0;
+    }
     size_t n = (size_t)parent->nsubs;
     if ((n & (n - 1)) == 0) {
+        if (n > SIZE_MAX / 2) {
+            p->err = "out of memory";
+            return 0;
+        }
         size_t cap = n ? n * 2 : 1;
-        parent->subs = (neverc_regexp_syntax_node_t **)realloc(
+        if (cap > SIZE_MAX / sizeof(*parent->subs)) {
+            p->err = "out of memory";
+            return 0;
+        }
+        neverc_regexp_syntax_node_t **grown =
+            (neverc_regexp_syntax_node_t **)realloc(
             parent->subs, cap * sizeof(neverc_regexp_syntax_node_t *));
+        if (!grown) {
+            p->err = "out of memory";
+            return 0;
+        }
+        parent->subs = grown;
     }
     parent->subs[n] = child;
     parent->nsubs++;
+    return 1;
 }
 
-static void add_rune(neverc_regexp_syntax_node_t *n, int r) {
+static int add_rune(parser_t *p, neverc_regexp_syntax_node_t *n, int r) {
+    if (!n || n->nrunes < 0 || n->nrunes == INT_MAX) {
+        p->err = "out of memory";
+        return 0;
+    }
     size_t k = (size_t)n->nrunes;
     if ((k & (k - 1)) == 0) {
+        if (k > SIZE_MAX / 2) {
+            p->err = "out of memory";
+            return 0;
+        }
         size_t cap = k ? k * 2 : 1;
-        n->runes = (int *)realloc(n->runes, cap * sizeof(int));
+        if (cap > SIZE_MAX / sizeof(*n->runes)) {
+            p->err = "out of memory";
+            return 0;
+        }
+        int *grown = (int *)realloc(n->runes, cap * sizeof(int));
+        if (!grown) {
+            p->err = "out of memory";
+            return 0;
+        }
+        n->runes = grown;
     }
     n->runes[k] = r;
     n->nrunes++;
+    return 1;
+}
+
+static neverc_regexp_syntax_node_t *literal_node(parser_t *p, int rune) {
+    neverc_regexp_syntax_node_t *n = mk_node(p, NC_RE_OP_LITERAL);
+    if (!n || !add_rune(p, n, rune)) {
+        neverc_regexp_syntax_free(n);
+        return NULL;
+    }
+    return n;
+}
+
+static int add_escape_class(parser_t *p, neverc_regexp_syntax_node_t *n,
+                            int escape) {
+    switch (escape | 0x20) {
+    case 'd':
+        return add_rune(p, n, '0') && add_rune(p, n, '9');
+    case 'w':
+        return add_rune(p, n, '0') && add_rune(p, n, '9') &&
+               add_rune(p, n, 'A') && add_rune(p, n, 'Z') &&
+               add_rune(p, n, 'a') && add_rune(p, n, 'z') &&
+               add_rune(p, n, '_') && add_rune(p, n, '_');
+    case 's':
+        return add_rune(p, n, '\t') && add_rune(p, n, '\t') &&
+               add_rune(p, n, '\n') && add_rune(p, n, '\n') &&
+               add_rune(p, n, '\f') && add_rune(p, n, '\f') &&
+               add_rune(p, n, '\r') && add_rune(p, n, '\r') &&
+               add_rune(p, n, ' ') && add_rune(p, n, ' ');
+    default:
+        return 0;
+    }
 }
 
 /* ======================================================================
  * Parser
  * ====================================================================== */
-
-typedef struct {
-    const char *src;
-    int         pos;
-    int         len;
-    int         flags;
-    int         ncap;
-    const char *err;
-} parser_t;
 
 static neverc_regexp_syntax_node_t *parse_alternation(parser_t *p);
 static neverc_regexp_syntax_node_t *parse_concat(parser_t *p);
@@ -83,13 +155,24 @@ static int next(parser_t *p) {
     return (unsigned char)p->src[p->pos++];
 }
 
-static int parse_int(parser_t *p) {
+static int parse_int(parser_t *p, int *value) {
     int val = 0;
+    int start = p->pos;
     while (p->pos < p->len && p->src[p->pos] >= '0' && p->src[p->pos] <= '9') {
-        val = val * 10 + (p->src[p->pos] - '0');
+        int digit = p->src[p->pos] - '0';
+        if (val > (INT_MAX - digit) / 10) {
+            p->err = "repeat count overflow";
+            return 0;
+        }
+        val = val * 10 + digit;
         p->pos++;
     }
-    return val;
+    if (p->pos == start) {
+        p->err = "bad repeat syntax";
+        return 0;
+    }
+    *value = val;
+    return 1;
 }
 
 static neverc_regexp_syntax_node_t *parse_escape(parser_t *p) {
@@ -98,47 +181,33 @@ static neverc_regexp_syntax_node_t *parse_escape(parser_t *p) {
 
     switch (c) {
     case 'd': case 'D': case 'w': case 'W': case 's': case 'S': {
-        neverc_regexp_syntax_node_t *n = mk_node(NC_RE_OP_CHAR_CLASS);
+        neverc_regexp_syntax_node_t *n = mk_node(p, NC_RE_OP_CHAR_CLASS);
+        if (!n) return NULL;
         int negate = (c == 'D' || c == 'W' || c == 'S');
-        switch (c | 0x20) {
-        case 'd': add_rune(n, '0'); add_rune(n, '9'); break;
-        case 'w':
-            add_rune(n, '0'); add_rune(n, '9');
-            add_rune(n, 'A'); add_rune(n, 'Z');
-            add_rune(n, 'a'); add_rune(n, 'z');
-            add_rune(n, '_'); add_rune(n, '_');
-            break;
-        case 's':
-            add_rune(n, '\t'); add_rune(n, '\t');
-            add_rune(n, '\n'); add_rune(n, '\n');
-            add_rune(n, '\f'); add_rune(n, '\f');
-            add_rune(n, '\r'); add_rune(n, '\r');
-            add_rune(n, ' ');  add_rune(n, ' ');
-            break;
+        if (!add_escape_class(p, n, c)) {
+            neverc_regexp_syntax_free(n);
+            return NULL;
         }
         if (negate) n->flags |= NC_RE_FLAG_FOLD_CASE; /* reuse flag to mark negation */
         return n;
     }
-    case 'b': return mk_node(NC_RE_OP_WORD_BOUNDARY);
-    case 'B': return mk_node(NC_RE_OP_NO_WORD_BOUNDARY);
-    case 'A': return mk_node(NC_RE_OP_BEGIN_TEXT);
-    case 'z': return mk_node(NC_RE_OP_END_TEXT);
-    case 'a': { neverc_regexp_syntax_node_t *n = mk_node(NC_RE_OP_LITERAL); add_rune(n, '\a'); return n; }
-    case 'f': { neverc_regexp_syntax_node_t *n = mk_node(NC_RE_OP_LITERAL); add_rune(n, '\f'); return n; }
-    case 't': { neverc_regexp_syntax_node_t *n = mk_node(NC_RE_OP_LITERAL); add_rune(n, '\t'); return n; }
-    case 'n': { neverc_regexp_syntax_node_t *n = mk_node(NC_RE_OP_LITERAL); add_rune(n, '\n'); return n; }
-    case 'r': { neverc_regexp_syntax_node_t *n = mk_node(NC_RE_OP_LITERAL); add_rune(n, '\r'); return n; }
-    case 'v': { neverc_regexp_syntax_node_t *n = mk_node(NC_RE_OP_LITERAL); add_rune(n, '\v'); return n; }
-    default: {
-        neverc_regexp_syntax_node_t *n = mk_node(NC_RE_OP_LITERAL);
-        add_rune(n, c);
-        return n;
-    }
+    case 'b': return mk_node(p, NC_RE_OP_WORD_BOUNDARY);
+    case 'B': return mk_node(p, NC_RE_OP_NO_WORD_BOUNDARY);
+    case 'A': return mk_node(p, NC_RE_OP_BEGIN_TEXT);
+    case 'z': return mk_node(p, NC_RE_OP_END_TEXT);
+    case 'a': return literal_node(p, '\a');
+    case 'f': return literal_node(p, '\f');
+    case 't': return literal_node(p, '\t');
+    case 'n': return literal_node(p, '\n');
+    case 'r': return literal_node(p, '\r');
+    case 'v': return literal_node(p, '\v');
+    default: return literal_node(p, c);
     }
 }
 
 static neverc_regexp_syntax_node_t *parse_char_class(parser_t *p) {
-    neverc_regexp_syntax_node_t *n = mk_node(NC_RE_OP_CHAR_CLASS);
+    neverc_regexp_syntax_node_t *n = mk_node(p, NC_RE_OP_CHAR_CLASS);
+    if (!n) return NULL;
     int negate = 0;
     if (peek(p) == '^') { next(p); negate = 1; }
     if (negate) n->flags |= NC_RE_FLAG_FOLD_CASE;
@@ -154,19 +223,11 @@ static neverc_regexp_syntax_node_t *parse_char_class(parser_t *p) {
             int esc = next(p);
             if (esc < 0) { p->err = "bad escape in char class"; neverc_regexp_syntax_free(n); return NULL; }
             switch (esc) {
-            case 'd': add_rune(n, '0'); add_rune(n, '9'); continue;
-            case 'w':
-                add_rune(n, '0'); add_rune(n, '9');
-                add_rune(n, 'A'); add_rune(n, 'Z');
-                add_rune(n, 'a'); add_rune(n, 'z');
-                add_rune(n, '_'); add_rune(n, '_');
-                continue;
-            case 's':
-                add_rune(n, '\t'); add_rune(n, '\t');
-                add_rune(n, '\n'); add_rune(n, '\n');
-                add_rune(n, '\f'); add_rune(n, '\f');
-                add_rune(n, '\r'); add_rune(n, '\r');
-                add_rune(n, ' ');  add_rune(n, ' ');
+            case 'd': case 'w': case 's':
+                if (!add_escape_class(p, n, esc)) {
+                    neverc_regexp_syntax_free(n);
+                    return NULL;
+                }
                 continue;
             case 'n': c = '\n'; break;
             case 't': c = '\t'; break;
@@ -189,11 +250,15 @@ static neverc_regexp_syntax_node_t *parse_char_class(parser_t *p) {
             } else {
                 hi = next(p);
             }
-            add_rune(n, c);
-            add_rune(n, hi);
+            if (!add_rune(p, n, c) || !add_rune(p, n, hi)) {
+                neverc_regexp_syntax_free(n);
+                return NULL;
+            }
         } else {
-            add_rune(n, c);
-            add_rune(n, c);
+            if (!add_rune(p, n, c) || !add_rune(p, n, c)) {
+                neverc_regexp_syntax_free(n);
+                return NULL;
+            }
         }
     }
     p->err = "unclosed character class";
@@ -218,28 +283,47 @@ static neverc_regexp_syntax_node_t *parse_group(parser_t *p) {
         int name_start = p->pos;
         char close_ch = (p->src[p->pos - 1] == '\'') ? '\'' : '>';
         while (p->pos < p->len && p->src[p->pos] != close_ch) p->pos++;
+        if (p->pos >= p->len) {
+            p->err = "unclosed capture name";
+            return NULL;
+        }
         int name_len = p->pos - name_start;
         p->pos++; /* skip > or ' */
 
-        neverc_regexp_syntax_node_t *cap = mk_node(NC_RE_OP_CAPTURE);
+        neverc_regexp_syntax_node_t *cap = mk_node(p, NC_RE_OP_CAPTURE);
+        if (!cap) return NULL;
         cap->cap = ++p->ncap;
         cap->name = (char *)malloc((size_t)name_len + 1);
+        if (!cap->name) {
+            p->err = "out of memory";
+            neverc_regexp_syntax_free(cap);
+            return NULL;
+        }
         nc_mcpy(cap->name, p->src + name_start, (size_t)name_len);
         cap->name[name_len] = '\0';
 
         neverc_regexp_syntax_node_t *inner = parse_alternation(p);
         if (!inner) { neverc_regexp_syntax_free(cap); return NULL; }
-        add_sub(cap, inner);
+        if (!add_sub(p, cap, inner)) {
+            neverc_regexp_syntax_free(inner);
+            neverc_regexp_syntax_free(cap);
+            return NULL;
+        }
         if (next(p) != ')') { p->err = "unclosed group"; neverc_regexp_syntax_free(cap); return NULL; }
         return cap;
     }
 
     /* Regular capturing group */
-    neverc_regexp_syntax_node_t *cap = mk_node(NC_RE_OP_CAPTURE);
+    neverc_regexp_syntax_node_t *cap = mk_node(p, NC_RE_OP_CAPTURE);
+    if (!cap) return NULL;
     cap->cap = ++p->ncap;
     neverc_regexp_syntax_node_t *inner = parse_alternation(p);
     if (!inner) { neverc_regexp_syntax_free(cap); return NULL; }
-    add_sub(cap, inner);
+    if (!add_sub(p, cap, inner)) {
+        neverc_regexp_syntax_free(inner);
+        neverc_regexp_syntax_free(cap);
+        return NULL;
+    }
     if (next(p) != ')') { p->err = "unclosed group"; neverc_regexp_syntax_free(cap); return NULL; }
     return cap;
 }
@@ -253,17 +337,18 @@ static neverc_regexp_syntax_node_t *parse_atom(parser_t *p) {
     case '[': next(p); return parse_char_class(p);
     case '.':
         next(p);
-        return mk_node((p->flags & NC_RE_FLAG_DOT_NL) ?
-                        NC_RE_OP_ANY_CHAR : NC_RE_OP_ANY_CHAR_NOT_NL);
+        return mk_node(p, (p->flags & NC_RE_FLAG_DOT_NL) ?
+                           NC_RE_OP_ANY_CHAR : NC_RE_OP_ANY_CHAR_NOT_NL);
     case '^':
         next(p);
-        return mk_node((p->flags & NC_RE_FLAG_MULTI_LINE) ?
-                        NC_RE_OP_BEGIN_LINE : NC_RE_OP_BEGIN_TEXT);
+        return mk_node(p, (p->flags & NC_RE_FLAG_MULTI_LINE) ?
+                           NC_RE_OP_BEGIN_LINE : NC_RE_OP_BEGIN_TEXT);
     case '$':
         next(p);
         {
-            neverc_regexp_syntax_node_t *n = mk_node(
+            neverc_regexp_syntax_node_t *n = mk_node(p,
                 (p->flags & NC_RE_FLAG_MULTI_LINE) ? NC_RE_OP_END_LINE : NC_RE_OP_END_TEXT);
+            if (!n) return NULL;
             n->flags |= NC_RE_FLAG_WAS_DOLLAR;
             return n;
         }
@@ -278,9 +363,7 @@ static neverc_regexp_syntax_node_t *parse_atom(parser_t *p) {
     default:
         next(p);
         {
-            neverc_regexp_syntax_node_t *n = mk_node(NC_RE_OP_LITERAL);
-            add_rune(n, c);
-            return n;
+            return literal_node(p, c);
         }
     }
 }
@@ -293,22 +376,38 @@ static neverc_regexp_syntax_node_t *parse_repeat(parser_t *p) {
     neverc_regexp_syntax_node_t *rep = NULL;
 
     switch (c) {
-    case '*': next(p); rep = mk_node(NC_RE_OP_STAR); break;
-    case '+': next(p); rep = mk_node(NC_RE_OP_PLUS); break;
-    case '?': next(p); rep = mk_node(NC_RE_OP_QUEST); break;
+    case '*': next(p); rep = mk_node(p, NC_RE_OP_STAR); break;
+    case '+': next(p); rep = mk_node(p, NC_RE_OP_PLUS); break;
+    case '?': next(p); rep = mk_node(p, NC_RE_OP_QUEST); break;
     case '{': {
         next(p);
-        int min_val = parse_int(p);
+        int min_val;
+        if (!parse_int(p, &min_val)) {
+            neverc_regexp_syntax_free(atom);
+            return NULL;
+        }
         int max_val = min_val;
         if (peek(p) == ',') {
             next(p);
             if (peek(p) == '}')
                 max_val = -1;
             else
-                max_val = parse_int(p);
+                if (!parse_int(p, &max_val)) {
+                    neverc_regexp_syntax_free(atom);
+                    return NULL;
+                }
         }
         if (next(p) != '}') { p->err = "bad repeat syntax"; neverc_regexp_syntax_free(atom); return NULL; }
-        rep = mk_node(NC_RE_OP_REPEAT);
+        if (max_val >= 0 && max_val < min_val) {
+            p->err = "invalid repeat range";
+            neverc_regexp_syntax_free(atom);
+            return NULL;
+        }
+        rep = mk_node(p, NC_RE_OP_REPEAT);
+        if (!rep) {
+            neverc_regexp_syntax_free(atom);
+            return NULL;
+        }
         rep->min = min_val;
         rep->max = max_val;
         break;
@@ -317,17 +416,27 @@ static neverc_regexp_syntax_node_t *parse_repeat(parser_t *p) {
         return atom;
     }
 
+    if (!rep) {
+        neverc_regexp_syntax_free(atom);
+        return NULL;
+    }
+
     if (peek(p) == '?') {
         next(p);
         rep->flags |= NC_RE_FLAG_NON_GREEDY;
     }
 
-    add_sub(rep, atom);
+    if (!add_sub(p, rep, atom)) {
+        neverc_regexp_syntax_free(atom);
+        neverc_regexp_syntax_free(rep);
+        return NULL;
+    }
     return rep;
 }
 
 static neverc_regexp_syntax_node_t *parse_concat(parser_t *p) {
-    neverc_regexp_syntax_node_t *cat = mk_node(NC_RE_OP_CONCAT);
+    neverc_regexp_syntax_node_t *cat = mk_node(p, NC_RE_OP_CONCAT);
+    if (!cat) return NULL;
 
     while (p->pos < p->len && peek(p) != '|' && peek(p) != ')') {
         neverc_regexp_syntax_node_t *sub = parse_repeat(p);
@@ -335,12 +444,16 @@ static neverc_regexp_syntax_node_t *parse_concat(parser_t *p) {
             if (p->err) { neverc_regexp_syntax_free(cat); return NULL; }
             break;
         }
-        add_sub(cat, sub);
+        if (!add_sub(p, cat, sub)) {
+            neverc_regexp_syntax_free(sub);
+            neverc_regexp_syntax_free(cat);
+            return NULL;
+        }
     }
 
     if (cat->nsubs == 0) {
         neverc_regexp_syntax_free(cat);
-        return mk_node(NC_RE_OP_EMPTY_MATCH);
+        return mk_node(p, NC_RE_OP_EMPTY_MATCH);
     }
     if (cat->nsubs == 1) {
         neverc_regexp_syntax_node_t *only = cat->subs[0];
@@ -358,14 +471,26 @@ static neverc_regexp_syntax_node_t *parse_alternation(parser_t *p) {
     if (!left) return NULL;
     if (peek(p) != '|') return left;
 
-    neverc_regexp_syntax_node_t *alt = mk_node(NC_RE_OP_ALTERNATE);
-    add_sub(alt, left);
+    neverc_regexp_syntax_node_t *alt = mk_node(p, NC_RE_OP_ALTERNATE);
+    if (!alt) {
+        neverc_regexp_syntax_free(left);
+        return NULL;
+    }
+    if (!add_sub(p, alt, left)) {
+        neverc_regexp_syntax_free(left);
+        neverc_regexp_syntax_free(alt);
+        return NULL;
+    }
 
     while (peek(p) == '|') {
         next(p);
         neverc_regexp_syntax_node_t *branch = parse_concat(p);
         if (!branch) { if (p->err) { neverc_regexp_syntax_free(alt); return NULL; } break; }
-        add_sub(alt, branch);
+        if (!add_sub(p, alt, branch)) {
+            neverc_regexp_syntax_free(branch);
+            neverc_regexp_syntax_free(alt);
+            return NULL;
+        }
     }
 
     if (alt->nsubs == 1) {
@@ -385,10 +510,20 @@ static neverc_regexp_syntax_node_t *parse_alternation(parser_t *p) {
 
 neverc_regexp_syntax_node_t *neverc_regexp_syntax_parse(
     const char *pattern, int flags, const char **errp) {
+    if (errp) *errp = NULL;
+    if (!pattern) {
+        if (errp) *errp = "null pattern";
+        return NULL;
+    }
+    size_t pattern_len = nc_slen(pattern);
+    if (pattern_len > INT_MAX) {
+        if (errp) *errp = "pattern too long";
+        return NULL;
+    }
     parser_t p;
     p.src = pattern;
     p.pos = 0;
-    p.len = (int)nc_slen(pattern);
+    p.len = (int)pattern_len;
     p.flags = flags;
     p.ncap = 0;
     p.err = NULL;
@@ -426,26 +561,49 @@ typedef struct {
     char  *buf;
     size_t len;
     size_t cap;
+    int failed;
 } strbuf_t;
 
-static void sb_init(strbuf_t *sb) { sb->buf = NULL; sb->len = 0; sb->cap = 0; }
+static void sb_init(strbuf_t *sb) {
+    sb->buf = NULL;
+    sb->len = 0;
+    sb->cap = 0;
+    sb->failed = 0;
+}
 
-static void sb_grow(strbuf_t *sb, size_t extra) {
+static int sb_grow(strbuf_t *sb, size_t extra) {
+    if (sb->failed || sb->len == SIZE_MAX ||
+        extra > SIZE_MAX - sb->len - 1) {
+        sb->failed = 1;
+        return 0;
+    }
     size_t need = sb->len + extra + 1;
-    if (need <= sb->cap) return;
+    if (need <= sb->cap) return 1;
     size_t nc = sb->cap < 16 ? 16 : sb->cap;
-    while (nc < need) nc *= 2;
-    sb->buf = (char *)realloc(sb->buf, nc);
+    while (nc < need) {
+        if (nc > SIZE_MAX / 2) {
+            nc = need;
+            break;
+        }
+        nc *= 2;
+    }
+    char *grown = (char *)realloc(sb->buf, nc);
+    if (!grown) {
+        sb->failed = 1;
+        return 0;
+    }
+    sb->buf = grown;
     sb->cap = nc;
+    return 1;
 }
 
 static void sb_putc(strbuf_t *sb, char c) {
-    sb_grow(sb, 1);
+    if (!sb_grow(sb, 1)) return;
     sb->buf[sb->len++] = c;
 }
 
 static void sb_puts(strbuf_t *sb, const char *s) {
-    while (*s) sb_putc(sb, *s++);
+    while (*s && !sb->failed) sb_putc(sb, *s++);
 }
 
 static void sb_putint(strbuf_t *sb, int v) {
@@ -457,7 +615,10 @@ static void sb_putint(strbuf_t *sb, int v) {
 }
 
 static char *sb_finish(strbuf_t *sb) {
-    sb_grow(sb, 0);
+    if (!sb_grow(sb, 0)) {
+        free(sb->buf);
+        return NULL;
+    }
     sb->buf[sb->len] = '\0';
     return sb->buf;
 }
@@ -583,6 +744,7 @@ static void node_to_str(const neverc_regexp_syntax_node_t *n, strbuf_t *sb) {
 char *neverc_regexp_syntax_string(const neverc_regexp_syntax_node_t *node) {
     if (!node) {
         char *r = (char *)malloc(1);
+        if (!r) return NULL;
         r[0] = '\0';
         return r;
     }

@@ -102,10 +102,27 @@ static void test_empty_tar(void) {
     neverc_tar_writer_free(&w);
 }
 
+static void test_invalid_lengths(void) {
+    printf("[invalid lengths]\n");
+    neverc_tar_writer_t w;
+    neverc_tar_writer_init(&w);
+    uint8_t byte = 0;
+    check_int("write length overflow",
+              neverc_tar_writer_write(&w, &byte, SIZE_MAX), -1);
+
+    neverc_tar_header_t hdr = {0};
+    strcpy(hdr.name, "bad");
+    hdr.size = -1;
+    check_int("negative header size",
+              neverc_tar_writer_write_header(&w, &hdr), -1);
+    neverc_tar_writer_free(&w);
+}
+
 int main(void) {
     printf("=== NeverC Archive/Tar Module Tests ===\n\n");
     test_write_read_roundtrip();
     test_empty_tar();
+    test_invalid_lengths();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

@@ -35,6 +35,7 @@ typedef struct {
     size_t           data_len;
     neverc_xml_attr_t *attrs;
     int              nattrs;
+    int              self_closing;
 } neverc_xml_token_t;
 
 /* SAX-style tokenizer */

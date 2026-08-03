@@ -9,8 +9,9 @@ static void write16(uint8_t *p, uint16_t v) { p[0] = v; p[1] = v >> 8; }
 static void write32(uint8_t *p, uint32_t v) { p[0] = v; p[1] = v>>8; p[2] = v>>16; p[3] = v>>24; }
 
 int neverc_zip_reader_init(neverc_zip_reader_t *r, const uint8_t *data, size_t len) {
+    if (!r) return -1;
     r->data = data;
-    r->len = len;
+    r->len = data || len == 0 ? len : 0;
     r->files = NULL;
     r->nfiles = 0;
     r->file_data = NULL;
@@ -18,6 +19,13 @@ int neverc_zip_reader_init(neverc_zip_reader_t *r, const uint8_t *data, size_t l
     int cap = 16;
     r->files = (neverc_zip_file_header_t *)malloc(cap * sizeof(neverc_zip_file_header_t));
     r->file_data = (const uint8_t **)malloc(cap * sizeof(uint8_t *));
+    if (!r->files || !r->file_data || (!data && len != 0)) {
+        free(r->files);
+        free(r->file_data);
+        r->files = NULL;
+        r->file_data = NULL;
+        return -1;
+    }
 
     size_t pos = 0;
     while (pos + 30 <= len) {
@@ -43,10 +51,27 @@ int neverc_zip_reader_init(neverc_zip_reader_t *r, const uint8_t *data, size_t l
         if ((uint64_t)comp_size > len - hdr_end) break;
 
         if (r->nfiles >= cap) {
-            cap *= 2;
-            r->files = (neverc_zip_file_header_t *)realloc(r->files, cap * sizeof(neverc_zip_file_header_t));
-            r->file_data = (const uint8_t **)realloc(r->file_data, cap * sizeof(uint8_t *));
-            if (!r->files || !r->file_data) return -1;
+            if (cap > INT32_MAX / 2) goto reader_error;
+            int next_cap = cap * 2;
+            neverc_zip_file_header_t *new_files =
+                (neverc_zip_file_header_t *)malloc(
+                    (size_t)next_cap * sizeof(*new_files));
+            const uint8_t **new_data = (const uint8_t **)malloc(
+                (size_t)next_cap * sizeof(*new_data));
+            if (!new_files || !new_data) {
+                free(new_files);
+                free(new_data);
+                goto reader_error;
+            }
+            memcpy(new_files, r->files,
+                   (size_t)r->nfiles * sizeof(*new_files));
+            memcpy(new_data, r->file_data,
+                   (size_t)r->nfiles * sizeof(*new_data));
+            free(r->files);
+            free(r->file_data);
+            r->files = new_files;
+            r->file_data = new_data;
+            cap = next_cap;
         }
 
         neverc_zip_file_header_t *f = &r->files[r->nfiles];
@@ -68,22 +93,35 @@ int neverc_zip_reader_init(neverc_zip_reader_t *r, const uint8_t *data, size_t l
         pos = (size_t)(hdr_end + comp_size);
     }
     return 0;
+
+reader_error:
+    free(r->files);
+    free(r->file_data);
+    r->files = NULL;
+    r->file_data = NULL;
+    r->nfiles = 0;
+    return -1;
 }
 
-int neverc_zip_reader_count(const neverc_zip_reader_t *r) { return r->nfiles; }
+int neverc_zip_reader_count(const neverc_zip_reader_t *r) {
+    return r ? r->nfiles : 0;
+}
 
 const neverc_zip_file_header_t *neverc_zip_reader_file(const neverc_zip_reader_t *r, int idx) {
-    if (idx < 0 || idx >= r->nfiles) return NULL;
+    if (!r || idx < 0 || idx >= r->nfiles) return NULL;
     return &r->files[idx];
 }
 
 const uint8_t *neverc_zip_reader_file_data(const neverc_zip_reader_t *r, int idx, size_t *len) {
-    if (idx < 0 || idx >= r->nfiles) { *len = 0; return NULL; }
+    if (!len) return NULL;
+    *len = 0;
+    if (!r || idx < 0 || idx >= r->nfiles) return NULL;
     *len = (size_t)r->files[idx].compressed_size;
     return r->file_data[idx];
 }
 
 void neverc_zip_reader_free(neverc_zip_reader_t *r) {
+    if (!r) return;
     free(r->files);
     free(r->file_data);
     r->files = NULL;
@@ -93,6 +131,7 @@ void neverc_zip_reader_free(neverc_zip_reader_t *r) {
 
 /* Writer */
 void neverc_zip_writer_init(neverc_zip_writer_t *w) {
+    if (!w) return;
     w->cap = 4096;
     w->data = (uint8_t *)malloc(w->cap);
     w->len = 0;
@@ -100,22 +139,77 @@ void neverc_zip_writer_init(neverc_zip_writer_t *w) {
     w->entries = (neverc_zip_file_header_t *)malloc(w->entries_cap * sizeof(neverc_zip_file_header_t));
     w->offsets = (uint32_t *)malloc(w->entries_cap * sizeof(uint32_t));
     w->nentries = 0;
+    if (!w->data || !w->entries || !w->offsets) {
+        free(w->data);
+        free(w->entries);
+        free(w->offsets);
+        w->data = NULL;
+        w->entries = NULL;
+        w->offsets = NULL;
+        w->cap = 0;
+        w->entries_cap = 0;
+    }
 }
 
-static void wgrow(neverc_zip_writer_t *w, size_t need) {
-    while (w->len + need > w->cap) { w->cap *= 2; w->data = (uint8_t *)realloc(w->data, w->cap); }
+static int wgrow(neverc_zip_writer_t *w, size_t need) {
+    if (!w || need > SIZE_MAX - w->len) return 0;
+    size_t required = w->len + need;
+    if (w->data && required <= w->cap) return 1;
+    size_t next = w->cap < 4096 ? 4096 : w->cap;
+    while (next < required) {
+        if (next > SIZE_MAX / 2) {
+            next = required;
+            break;
+        }
+        next *= 2;
+    }
+    uint8_t *grown = (uint8_t *)realloc(w->data, next);
+    if (!grown) return 0;
+    w->data = grown;
+    w->cap = next;
+    return 1;
+}
+
+static int wentries_grow(neverc_zip_writer_t *w) {
+    if (w->entries && w->offsets && w->nentries < w->entries_cap) return 1;
+    if (w->nentries < 0 || (w->nentries > 0 && (!w->entries || !w->offsets)) ||
+        w->entries_cap > INT32_MAX / 2) return 0;
+    int next_cap = w->entries_cap < 16 ? 16 : w->entries_cap * 2;
+    neverc_zip_file_header_t *entries =
+        (neverc_zip_file_header_t *)malloc(
+            (size_t)next_cap * sizeof(*entries));
+    uint32_t *offsets = (uint32_t *)malloc(
+        (size_t)next_cap * sizeof(*offsets));
+    if (!entries || !offsets) {
+        free(entries);
+        free(offsets);
+        return 0;
+    }
+    if (w->nentries > 0) {
+        memcpy(entries, w->entries,
+               (size_t)w->nentries * sizeof(*entries));
+        memcpy(offsets, w->offsets,
+               (size_t)w->nentries * sizeof(*offsets));
+    }
+    free(w->entries);
+    free(w->offsets);
+    w->entries = entries;
+    w->offsets = offsets;
+    w->entries_cap = next_cap;
+    return 1;
 }
 
 int neverc_zip_writer_add(neverc_zip_writer_t *w, const char *name,
                           const uint8_t *data, size_t len) {
-    uint16_t name_len = (uint16_t)strlen(name);
+    if (!w || !name || (!data && len != 0) || len > UINT32_MAX ||
+        w->len > UINT32_MAX || w->nentries < 0 || w->nentries >= UINT16_MAX)
+        return -1;
+    size_t name_size = strlen(name);
+    if (name_size > 255 || len > SIZE_MAX - 30 - name_size) return -1;
+    uint16_t name_len = (uint16_t)name_size;
+    size_t record_len = 30 + name_size + len;
+    if (!wentries_grow(w) || !wgrow(w, record_len)) return -1;
     uint32_t crc = neverc_crc32_ieee(data, len);
-
-    if (w->nentries >= w->entries_cap) {
-        w->entries_cap *= 2;
-        w->entries = (neverc_zip_file_header_t *)realloc(w->entries, w->entries_cap * sizeof(neverc_zip_file_header_t));
-        w->offsets = (uint32_t *)realloc(w->offsets, w->entries_cap * sizeof(uint32_t));
-    }
 
     w->offsets[w->nentries] = (uint32_t)w->len;
 
@@ -129,7 +223,6 @@ int neverc_zip_writer_add(neverc_zip_writer_t *w, const char *name,
     w->nentries++;
 
     /* Local file header */
-    wgrow(w, 30 + name_len + len);
     uint8_t *p = w->data + w->len;
     write32(p, 0x04034b50);
     write16(p + 4, 20);
@@ -150,13 +243,15 @@ int neverc_zip_writer_add(neverc_zip_writer_t *w, const char *name,
 }
 
 int neverc_zip_writer_close(neverc_zip_writer_t *w) {
+    if (!w || !w->data || w->nentries < 0 || w->nentries > UINT16_MAX ||
+        w->len > UINT32_MAX) return -1;
     uint32_t cd_start = (uint32_t)w->len;
 
     for (int i = 0; i < w->nentries; i++) {
         neverc_zip_file_header_t *e = &w->entries[i];
         uint16_t name_len = (uint16_t)strlen(e->name);
 
-        wgrow(w, 46 + name_len);
+        if (!wgrow(w, 46 + name_len)) return -1;
         uint8_t *p = w->data + w->len;
         write32(p, 0x02014b50);
         write16(p + 4, 20);
@@ -179,10 +274,11 @@ int neverc_zip_writer_close(neverc_zip_writer_t *w) {
         w->len += 46 + name_len;
     }
 
+    if (w->len > UINT32_MAX) return -1;
     uint32_t cd_size = (uint32_t)w->len - cd_start;
 
     /* End of central directory */
-    wgrow(w, 22);
+    if (!wgrow(w, 22)) return -1;
     uint8_t *p = w->data + w->len;
     write32(p, 0x06054b50);
     write16(p + 4, 0);
@@ -198,10 +294,13 @@ int neverc_zip_writer_close(neverc_zip_writer_t *w) {
 }
 
 void neverc_zip_writer_free(neverc_zip_writer_t *w) {
+    if (!w) return;
     free(w->data);
     free(w->entries);
     free(w->offsets);
     w->data = NULL;
     w->entries = NULL;
     w->offsets = NULL;
+    w->len = w->cap = 0;
+    w->nentries = w->entries_cap = 0;
 }

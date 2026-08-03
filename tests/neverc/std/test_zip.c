@@ -98,11 +98,30 @@ static void test_truncated_entry(void) {
     neverc_zip_reader_free(&r);
 }
 
+static void test_invalid_args(void) {
+    printf("[invalid args]\n");
+    neverc_zip_writer_t w;
+    neverc_zip_writer_init(&w);
+
+    char long_name[257];
+    memset(long_name, 'x', sizeof(long_name) - 1);
+    long_name[sizeof(long_name) - 1] = '\0';
+    check_int("oversized name rejected",
+              neverc_zip_writer_add(&w, long_name,
+                                     (const uint8_t *)"", 0), -1);
+
+    uint8_t byte = 0;
+    check_int("oversized data rejected",
+              neverc_zip_writer_add(&w, "huge", &byte, SIZE_MAX), -1);
+    neverc_zip_writer_free(&w);
+}
+
 int main(void) {
     printf("=== NeverC Archive/ZIP Module Tests ===\n\n");
     test_roundtrip();
     test_crc_integrity();
     test_truncated_entry();
+    test_invalid_args();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

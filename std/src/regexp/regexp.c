@@ -2,6 +2,17 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <limits.h>
+
+#ifndef NC_REGEXP_MALLOC
+#define NC_REGEXP_MALLOC malloc
+#endif
+#ifndef NC_REGEXP_CALLOC
+#define NC_REGEXP_CALLOC calloc
+#endif
+#ifndef NC_REGEXP_REALLOC
+#define NC_REGEXP_REALLOC realloc
+#endif
 
 /* NFA state types */
 enum { NFA_MATCH, NFA_CHAR, NFA_ANY, NFA_SPLIT, NFA_CLASS, NFA_ANCHOR_START, NFA_ANCHOR_END };
@@ -49,14 +60,22 @@ static nfa_state_t *state_at(neverc_regexp_t *re, int idx) {
 }
 
 static nfa_state_t *new_state(neverc_regexp_t *re, int type) {
+    if (re->nstates == INT_MAX) { re->oom = 1; return &re->dummy; }
     if (re->nstates % NFA_BLK == 0) {           /* current block full */
         if (re->nsblk == re->sblkcap) {
+            if (re->sblkcap > INT_MAX / 2) { re->oom = 1; return &re->dummy; }
             int nc = re->sblkcap ? re->sblkcap * 2 : 8;
-            nfa_state_t **nb = (nfa_state_t **)realloc(re->sblk, (size_t)nc * sizeof(*nb));
+            if ((size_t)nc > SIZE_MAX / sizeof(*re->sblk)) {
+                re->oom = 1;
+                return &re->dummy;
+            }
+            nfa_state_t **nb = (nfa_state_t **)NC_REGEXP_REALLOC(
+                re->sblk, (size_t)nc * sizeof(*nb));
             if (!nb) { re->oom = 1; return &re->dummy; }
             re->sblk = nb; re->sblkcap = nc;
         }
-        nfa_state_t *blk = (nfa_state_t *)calloc(NFA_BLK, sizeof(nfa_state_t));
+        nfa_state_t *blk = (nfa_state_t *)NC_REGEXP_CALLOC(
+            NFA_BLK, sizeof(nfa_state_t));
         if (!blk) { re->oom = 1; return &re->dummy; }
         re->sblk[re->nsblk++] = blk;
     }
@@ -67,14 +86,22 @@ static nfa_state_t *new_state(neverc_regexp_t *re, int type) {
 }
 
 static charclass_t *new_class(neverc_regexp_t *re) {
+    if (re->nclasses == INT_MAX) { re->oom = 1; return &re->dummy_class; }
     if (re->nclasses % NFA_BLK == 0) {
         if (re->ncblk == re->cblkcap) {
+            if (re->cblkcap > INT_MAX / 2) { re->oom = 1; return &re->dummy_class; }
             int nc = re->cblkcap ? re->cblkcap * 2 : 4;
-            charclass_t **nb = (charclass_t **)realloc(re->cblk, (size_t)nc * sizeof(*nb));
+            if ((size_t)nc > SIZE_MAX / sizeof(*re->cblk)) {
+                re->oom = 1;
+                return &re->dummy_class;
+            }
+            charclass_t **nb = (charclass_t **)NC_REGEXP_REALLOC(
+                re->cblk, (size_t)nc * sizeof(*nb));
             if (!nb) { re->oom = 1; return &re->dummy_class; }
             re->cblk = nb; re->cblkcap = nc;
         }
-        charclass_t *blk = (charclass_t *)calloc(NFA_BLK, sizeof(charclass_t));
+        charclass_t *blk = (charclass_t *)NC_REGEXP_CALLOC(
+            NFA_BLK, sizeof(charclass_t));
         if (!blk) { re->oom = 1; return &re->dummy_class; }
         re->cblk[re->ncblk++] = blk;
     }
@@ -148,29 +175,43 @@ static frag_t parse_atom(parser_t *par) {
         par->p++;
         charclass_t *cc = new_class(par->re);
         if (*par->p == '^') { cc->negated = 1; par->p++; }
+        int entries = 0;
         while (*par->p && *par->p != ']') {
             int lo = (uint8_t)*par->p++;
             if (lo == '\\' && *par->p) {
                 char esc = *par->p++;
-                if (esc == 'd') { for (int i = '0'; i <= '9'; i++) cc_set(cc, i); continue; }
+                if (esc == 'd') { for (int i = '0'; i <= '9'; i++) cc_set(cc, i); entries++; continue; }
                 if (esc == 'w') {
                     for (int i = 'a'; i <= 'z'; i++) cc_set(cc, i);
                     for (int i = 'A'; i <= 'Z'; i++) cc_set(cc, i);
                     for (int i = '0'; i <= '9'; i++) cc_set(cc, i);
-                    cc_set(cc, '_'); continue;
+                    cc_set(cc, '_'); entries++; continue;
                 }
-                if (esc == 's') { cc_set(cc, ' '); cc_set(cc, '\t'); cc_set(cc, '\n'); cc_set(cc, '\r'); continue; }
+                if (esc == 's') { cc_set(cc, ' '); cc_set(cc, '\t'); cc_set(cc, '\n'); cc_set(cc, '\r'); entries++; continue; }
                 lo = (uint8_t)esc;
             }
             if (*par->p == '-' && par->p[1] && par->p[1] != ']') {
                 par->p++;
                 int hi = (uint8_t)*par->p++;
+                if (hi < lo) {
+                    par->err = "invalid character class range";
+                    return frag(NULL, NULL);
+                }
                 for (int i = lo; i <= hi; i++) cc_set(cc, i);
             } else {
                 cc_set(cc, lo);
             }
+            entries++;
         }
-        if (*par->p == ']') par->p++;
+        if (*par->p != ']') {
+            par->err = "missing ]";
+            return frag(NULL, NULL);
+        }
+        par->p++;
+        if (entries == 0) {
+            par->err = "empty character class";
+            return frag(NULL, NULL);
+        }
         nfa_state_t *s = new_state(par->re, NFA_CLASS);
         s->cls = cc;
         nfa_state_t *e = new_state(par->re, NFA_MATCH);
@@ -234,6 +275,11 @@ static frag_t parse_atom(parser_t *par) {
         nfa_state_t *e = new_state(par->re, NFA_MATCH);
         s->out1 = e;
         return frag(s, e);
+    }
+
+    if (c == '\\') {
+        par->err = "trailing backslash";
+        return frag(NULL, NULL);
     }
 
     if (c && !is_meta(c) && c != ')' && c != ']') {
@@ -315,7 +361,7 @@ static frag_t expand_repeat(neverc_regexp_t *re, frag_t f,
         return frag(e, e);
     }
     int total = (hi == -1) ? (lo == 0 ? 1 : lo + 1) : hi;
-    frag_t *cp = (frag_t *)malloc((size_t)total * sizeof(frag_t));
+    frag_t *cp = (frag_t *)NC_REGEXP_CALLOC((size_t)total, sizeof(frag_t));
     if (!cp) { re->oom = 1; return f; }
     cp[0] = f;
     for (int i = 1; i < total; i++) {        /* clone before any gluing mutates f */
@@ -346,19 +392,33 @@ static frag_t parse_repeat(parser_t *par) {
     frag_t f = parse_atom(par);
     if (!f.start || par->err) return f;
 
+    int repeated = 0;
     while (*par->p == '*' || *par->p == '+' || *par->p == '?' || *par->p == '{') {
         char op = *par->p;
         if (op == '{') {
             const char *save = par->p;
             par->p++;
-            int lo = 0, hi, have = 0;
-            while (*par->p >= '0' && *par->p <= '9') { lo = lo * 10 + (*par->p++ - '0'); have = 1; }
+            int lo = 0, hi, have = 0, too_large = 0;
+            while (*par->p >= '0' && *par->p <= '9') {
+                int digit = *par->p++ - '0';
+                have = 1;
+                if (!too_large) {
+                    if (lo > (NFA_MAX_REPEAT - digit) / 10) too_large = 1;
+                    else lo = lo * 10 + digit;
+                }
+            }
             hi = lo;
             if (*par->p == ',') {
                 par->p++;
                 if (*par->p >= '0' && *par->p <= '9') {
                     hi = 0;
-                    while (*par->p >= '0' && *par->p <= '9') hi = hi * 10 + (*par->p++ - '0');
+                    while (*par->p >= '0' && *par->p <= '9') {
+                        int digit = *par->p++ - '0';
+                        if (!too_large) {
+                            if (hi > (NFA_MAX_REPEAT - digit) / 10) too_large = 1;
+                            else hi = hi * 10 + digit;
+                        }
+                    }
                 } else {
                     hi = -1;                 /* {n,} -> n or more */
                 }
@@ -372,14 +432,26 @@ static frag_t parse_repeat(parser_t *par) {
                 continue;
             }
             par->p++;                        /* consume '}' */
-            if (hi != -1 && hi < lo) hi = lo;
-            if (lo > NFA_MAX_REPEAT || (hi != -1 && hi > NFA_MAX_REPEAT)) {
+            if (repeated) {
+                par->err = "invalid nested repetition operator";
+                return f;
+            }
+            if (too_large) {
                 par->err = "repeat count too large";
+                return f;
+            }
+            if (hi != -1 && hi < lo) {
+                par->err = "invalid repeat range";
                 return f;
             }
             f = expand_repeat(par->re, f, atom_base, par->re->nstates, lo, hi);
             if (par->re->oom) { par->err = "out of memory"; return f; }
+            repeated = 1;
             continue;
+        }
+        if (repeated) {
+            par->err = "invalid nested repetition operator";
+            return f;
         }
         par->p++;
         nfa_state_t *split = new_state(par->re, NFA_SPLIT);
@@ -401,6 +473,7 @@ static frag_t parse_repeat(parser_t *par) {
             f.end->out1 = end;
             f = frag(split, end);
         }
+        repeated = 1;
     }
     return f;
 }
@@ -442,11 +515,18 @@ static frag_t parse_expr(parser_t *par) {
 }
 
 neverc_regexp_t *neverc_regexp_compile(const char *pattern, const char **errp) {
-    neverc_regexp_t *re = (neverc_regexp_t *)calloc(1, sizeof(neverc_regexp_t));
+    if (!pattern) {
+        if (errp) *errp = "invalid pattern";
+        return NULL;
+    }
+    neverc_regexp_t *re = (neverc_regexp_t *)NC_REGEXP_CALLOC(
+        1, sizeof(neverc_regexp_t));
     if (!re) { if (errp) *errp = "out of memory"; return NULL; }
 
     parser_t par = { pattern, re, NULL, 0 };
     frag_t f = parse_expr(&par);
+
+    if (!par.err && *par.p != '\0') par.err = "unexpected character";
 
     if (par.err || re->oom) {
         if (errp) *errp = par.err ? par.err : "out of memory";
@@ -485,7 +565,8 @@ typedef struct {
 
 static void sl_init(statelist_t *sl, int cap) {
     sl->cap = cap;
-    sl->states = (nfa_state_t **)malloc(cap * sizeof(nfa_state_t *));
+    sl->states = (nfa_state_t **)NC_REGEXP_MALLOC(
+        (size_t)cap * sizeof(nfa_state_t *));
     sl->n = 0;
 }
 
@@ -517,14 +598,26 @@ typedef struct {
     int         *visited;
     statelist_t  cur, next;
     int          gen;
+    int          nstates;
 } nfa_ctx;
+
+static int next_generation(int *gen, int *visited, int nstates) {
+    if (*gen == INT_MAX) {
+        memset(visited, 0, (size_t)nstates * sizeof(*visited));
+        *gen = 1;
+    } else {
+        (*gen)++;
+    }
+    return *gen;
+}
 
 static int nfa_ctx_init(nfa_ctx *c, int nstates) {
     if (nstates < 1) nstates = 1;
-    c->visited = (int *)calloc((size_t)nstates, sizeof(int));
+    c->visited = (int *)NC_REGEXP_CALLOC((size_t)nstates, sizeof(int));
     sl_init(&c->cur, nstates);
     sl_init(&c->next, nstates);
     c->gen = 0;
+    c->nstates = nstates;
     if (!c->visited || !c->cur.states || !c->next.states) {
         free(c->visited); free(c->cur.states); free(c->next.states);
         return -1;
@@ -577,7 +670,8 @@ static void fb_walk(nfa_state_t *s, int *vis, int gen, uint8_t fb[32],
 
 static int compute_first_set(neverc_regexp_t *re, uint8_t fb[32]) {
     memset(fb, 0, 32);
-    int *vis = (int *)calloc((size_t)(re->nstates > 0 ? re->nstates : 1), sizeof(int));
+    int *vis = (int *)NC_REGEXP_CALLOC(
+        (size_t)(re->nstates > 0 ? re->nstates : 1), sizeof(int));
     if (!vis) return 0;
     int full = 0, unsafe = 0;
     fb_walk(re->start, vis, 1, fb, &full, &unsafe);
@@ -627,7 +721,7 @@ static int nfa_exec_ctx(nfa_ctx *ctx, neverc_regexp_t *re, const char *s,
     statelist_t cur = ctx->cur, next = ctx->next;   /* share buffers, reset n */
     cur.n = 0;
 
-    int gen = ++ctx->gen;
+    int gen = next_generation(&ctx->gen, visited, ctx->nstates);
     add_state(&cur, re->start, visited, gen);
 
     /* Handle anchor-start states */
@@ -647,7 +741,7 @@ static int nfa_exec_ctx(nfa_ctx *ctx, neverc_regexp_t *re, const char *s,
     for (size_t i = start; i < slen; i++) {
         int ch = (uint8_t)s[i];
         next.n = 0;
-        gen = ++ctx->gen;
+        gen = next_generation(&ctx->gen, visited, ctx->nstates);
 
         for (int j = 0; j < cur.n; j++) {
             nfa_state_t *st = cur.states[j];
@@ -692,7 +786,7 @@ static int nfa_exec_ctx(nfa_ctx *ctx, neverc_regexp_t *re, const char *s,
     for (int j = 0; j < cur.n; j++) {
         nfa_state_t *st = cur.states[j];
         if (st->type == NFA_ANCHOR_END) {
-            gen = ++ctx->gen;
+            gen = next_generation(&ctx->gen, visited, ctx->nstates);
             add_state(&cur, st->out1, visited, gen);
         }
     }
@@ -718,6 +812,7 @@ static int nfa_exec(neverc_regexp_t *re, const char *s, size_t slen,
 }
 
 int neverc_regexp_match(neverc_regexp_t *re, const char *s) {
+    if (!re || !s) return 0;
     size_t slen = strlen(s);
     size_t end;
     if (nfa_exec(re, s, slen, 0, &end))
@@ -763,17 +858,23 @@ typedef struct {
     int    *visited;        /* gen-stamped, so no per-call re-zeroing */
     tlist_t cur, next;
     int     gen;
+    int     nstates;
 } search_ctx;
 
 static int search_ctx_init(search_ctx *c, int nstates) {
     if (nstates < 1) nstates = 1;
-    c->visited     = (int *)calloc((size_t)nstates, sizeof(int));
-    c->cur.st      = (nfa_state_t **)malloc((size_t)nstates * sizeof(nfa_state_t *));
-    c->cur.start   = (size_t *)malloc((size_t)nstates * sizeof(size_t));
-    c->next.st     = (nfa_state_t **)malloc((size_t)nstates * sizeof(nfa_state_t *));
-    c->next.start  = (size_t *)malloc((size_t)nstates * sizeof(size_t));
+    c->visited     = (int *)NC_REGEXP_CALLOC((size_t)nstates, sizeof(int));
+    c->cur.st      = (nfa_state_t **)NC_REGEXP_MALLOC(
+        (size_t)nstates * sizeof(nfa_state_t *));
+    c->cur.start   = (size_t *)NC_REGEXP_MALLOC(
+        (size_t)nstates * sizeof(size_t));
+    c->next.st     = (nfa_state_t **)NC_REGEXP_MALLOC(
+        (size_t)nstates * sizeof(nfa_state_t *));
+    c->next.start  = (size_t *)NC_REGEXP_MALLOC(
+        (size_t)nstates * sizeof(size_t));
     c->cur.n = c->next.n = 0;
     c->gen = 0;
+    c->nstates = nstates;
     if (!c->visited || !c->cur.st || !c->cur.start || !c->next.st || !c->next.start) {
         free(c->visited); free(c->cur.st); free(c->cur.start);
         free(c->next.st); free(c->next.start);
@@ -832,7 +933,7 @@ static int nfa_search(search_ctx *ctx, neverc_regexp_t *re, const char *s,
     size_t b_start = 0, b_end = 0;
 
     size_t pos = next_cand(s, slen, from, fb, use_skip, first_byte);
-    int gen = ++ctx->gen;
+    int gen = next_generation(&ctx->gen, visited, ctx->nstates);
     clist.n = 0;
     if (pos < slen && (!use_skip || fb_has(fb, (unsigned char)s[pos])))
         search_add(&clist, re->start, pos, pos, slen, visited, gen);
@@ -864,7 +965,7 @@ static int nfa_search(search_ctx *ctx, neverc_regexp_t *re, const char *s,
         if (clist.n == 0 && matched) break;
 
         int ch = (unsigned char)s[pos];
-        gen = ++ctx->gen;
+        gen = next_generation(&ctx->gen, visited, ctx->nstates);
         nlist.n = 0;
         for (int j = 0; j < clist.n; j++) {
             nfa_state_t *st = clist.st[j];
@@ -882,7 +983,7 @@ static int nfa_search(search_ctx *ctx, neverc_regexp_t *re, const char *s,
         if (!matched) {
             if (nlist.n == 0) {                          /* no in-flight: jump to next start */
                 npos = next_cand(s, slen, npos, fb, use_skip, first_byte);
-                gen = ++ctx->gen;                        /* fresh stamp for clean seed */
+                gen = next_generation(&ctx->gen, visited, ctx->nstates);
             }
             if (npos < slen && (!use_skip || fb_has(fb, (unsigned char)s[npos])))
                 search_add(&nlist, re->start, npos, npos, slen, visited, gen);
@@ -900,9 +1001,11 @@ static int nfa_search(search_ctx *ctx, neverc_regexp_t *re, const char *s,
 
 const char *neverc_regexp_find(neverc_regexp_t *re, const char *s,
                                size_t *match_len) {
+    if (match_len) *match_len = 0;
+    if (!re || !s) return NULL;
     size_t slen = strlen(s);
     search_ctx ctx;
-    if (search_ctx_init(&ctx, re->nstates) != 0) { *match_len = 0; return NULL; }
+    if (search_ctx_init(&ctx, re->nstates) != 0) return NULL;
     uint8_t fb[32];
     int use_skip = compute_first_set(re, fb);
 
@@ -910,10 +1013,8 @@ const char *neverc_regexp_find(neverc_regexp_t *re, const char *s,
     const char *res = NULL;
     size_t ms, me;
     if (nfa_search(&ctx, re, s, slen, 0, fb, use_skip, fbyte, &ms, &me)) {
-        *match_len = me - ms;
+        if (match_len) *match_len = me - ms;
         res = s + ms;
-    } else {
-        *match_len = 0;
     }
     search_ctx_free(&ctx);
     return res;
@@ -924,22 +1025,40 @@ int neverc_regexp_find_submatch(neverc_regexp_t *re, const char *s,
     size_t match_len;
     const char *found = neverc_regexp_find(re, s, &match_len);
     if (!found) return 0;
-    if (max_matches > 0) {
+    if (max_matches > 0 && matches) {
         matches[0].start = found;
         matches[0].len = match_len;
     }
     return 1;
 }
 
+static int regexp_string_array_grow(char ***items, size_t *cap) {
+    if (*cap > (size_t)INT_MAX / 2U || *cap > SIZE_MAX / 2U / sizeof(**items))
+        return -1;
+    size_t next_cap = *cap * 2U;
+    char **next = (char **)NC_REGEXP_REALLOC(
+        *items, next_cap * sizeof(*next));
+    if (!next) return -1;
+    *items = next;
+    *cap = next_cap;
+    return 0;
+}
+
 char **neverc_regexp_find_all(neverc_regexp_t *re, const char *s,
                               int n, int *count) {
-    size_t slen = strlen(s);
-    int cap = 16;
-    char **results = (char **)malloc(cap * sizeof(char *));
+    if (!count) return NULL;
     *count = 0;
+    if (!re || !s || n == 0) return NULL;
+    size_t slen = strlen(s);
+    size_t cap = 16;
+    char **results = (char **)NC_REGEXP_MALLOC(cap * sizeof(*results));
+    if (!results) return NULL;
 
     search_ctx ctx;
-    if (search_ctx_init(&ctx, re->nstates) != 0) return results;
+    if (search_ctx_init(&ctx, re->nstates) != 0) {
+        free(results);
+        return NULL;
+    }
     uint8_t fb[32];
     int use_skip = compute_first_set(re, fb);
 
@@ -949,32 +1068,67 @@ char **neverc_regexp_find_all(neverc_regexp_t *re, const char *s,
         size_t ms, me;
         if (!nfa_search(&ctx, re, s, slen, pos, fb, use_skip, fbyte, &ms, &me)) break;
         size_t mlen = me - ms;
-        char *match = (char *)malloc(mlen + 1);
+        char *match = (char *)NC_REGEXP_MALLOC(mlen + 1U);
+        if (!match) goto oom;
         memcpy(match, s + ms, mlen);
         match[mlen] = '\0';
-        if (*count >= cap) {
-            cap *= 2;
-            results = (char **)realloc(results, cap * sizeof(char *));
+        if ((size_t)*count >= cap) {
+            if (regexp_string_array_grow(&results, &cap) != 0) {
+                free(match);
+                goto oom;
+            }
         }
         results[(*count)++] = match;
         pos = me;                               /* non-empty match -> always advances */
     }
     search_ctx_free(&ctx);
     return results;
+
+oom:
+    search_ctx_free(&ctx);
+    neverc_regexp_free_strings(results, *count);
+    *count = 0;
+    return NULL;
+}
+
+static int regexp_append(char **buffer, size_t *length, size_t *capacity,
+                         const char *data, size_t data_len) {
+    if (data_len > SIZE_MAX - *length - 1U) return -1;
+    size_t needed = *length + data_len + 1U;
+    if (needed > *capacity) {
+        size_t next_capacity = *capacity;
+        while (next_capacity < needed) {
+            if (next_capacity > SIZE_MAX / 2U) {
+                next_capacity = needed;
+                break;
+            }
+            next_capacity *= 2U;
+        }
+        char *next = (char *)NC_REGEXP_REALLOC(*buffer, next_capacity);
+        if (!next) return -1;
+        *buffer = next;
+        *capacity = next_capacity;
+    }
+    if (data_len != 0) memcpy(*buffer + *length, data, data_len);
+    *length += data_len;
+    return 0;
 }
 
 char *neverc_regexp_replace_all(neverc_regexp_t *re, const char *src,
                                 const char *repl, size_t *outlen) {
+    if (outlen) *outlen = 0;
+    if (!re || !src || !repl) return NULL;
     size_t slen = strlen(src);
     size_t rlen = strlen(repl);
-    size_t cap = slen * 2 + 64;
-    char *result = (char *)malloc(cap);
+    size_t cap = 64;
+    char *result = (char *)NC_REGEXP_MALLOC(cap);
+    if (!result) return NULL;
     size_t wi = 0, pos = 0;
 
     search_ctx ctx;
     if (search_ctx_init(&ctx, re->nstates) != 0) {
-        memcpy(result, src, slen); result[slen] = '\0';
-        *outlen = slen; return result;
+        free(result);
+        return NULL;
     }
     uint8_t fb[32];
     int use_skip = compute_first_set(re, fb);
@@ -985,44 +1139,45 @@ char *neverc_regexp_replace_all(neverc_regexp_t *re, const char *src,
         if (!nfa_search(&ctx, re, src, slen, pos, fb, use_skip, fbyte, &i, &end)) break;
         /* Copy unmatched part before match */
         size_t before = i - pos;
-        if (wi + before >= cap) { cap = (wi + before) * 2 + 64; result = (char *)realloc(result, cap); }
-        memcpy(result + wi, src + pos, before);
-        wi += before;
+        if (regexp_append(&result, &wi, &cap, src + pos, before) != 0)
+            goto oom;
         /* Copy replacement */
-        if (wi + rlen >= cap) { cap = (wi + rlen) * 2 + 64; result = (char *)realloc(result, cap); }
-        memcpy(result + wi, repl, rlen);
-        wi += rlen;
+        if (regexp_append(&result, &wi, &cap, repl, rlen) != 0) goto oom;
         pos = end;                              /* non-empty match -> always advances */
     }
 
     /* Copy remaining */
     if (pos < slen) {
         size_t rem = slen - pos;
-        if (wi + rem >= cap) { cap = (wi + rem) * 2; result = (char *)realloc(result, cap); }
-        memcpy(result + wi, src + pos, rem);
-        wi += rem;
+        if (regexp_append(&result, &wi, &cap, src + pos, rem) != 0) goto oom;
     }
 
     result[wi] = '\0';
-    *outlen = wi;
+    if (outlen) *outlen = wi;
     search_ctx_free(&ctx);
     return result;
+
+oom:
+    search_ctx_free(&ctx);
+    free(result);
+    return NULL;
 }
 
 char **neverc_regexp_split(neverc_regexp_t *re, const char *s,
                            int n, int *count) {
-    size_t slen = strlen(s);
-    int cap = 16;
-    char **results = (char **)malloc(cap * sizeof(char *));
+    if (!count) return NULL;
     *count = 0;
+    if (!re || !s || n == 0) return NULL;
+    size_t slen = strlen(s);
+    size_t cap = 16;
+    char **results = (char **)NC_REGEXP_MALLOC(cap * sizeof(*results));
+    if (!results) return NULL;
     size_t pos = 0;
 
     search_ctx ctx;
     if (search_ctx_init(&ctx, re->nstates) != 0) {
-        char *whole = (char *)malloc(slen + 1);
-        memcpy(whole, s, slen); whole[slen] = '\0';
-        results[(*count)++] = whole;
-        return results;
+        free(results);
+        return NULL;
     }
     uint8_t fb[32];
     int use_skip = compute_first_set(re, fb);
@@ -1034,27 +1189,40 @@ char **neverc_regexp_split(neverc_regexp_t *re, const char *s,
         if (!nfa_search(&ctx, re, s, slen, pos, fb, use_skip, fbyte, &mstart, &end)) break;
 
         size_t seg_len = mstart - pos;          /* 0 when the match is at pos */
-        char *seg = (char *)malloc(seg_len + 1);
+        if ((size_t)*count >= cap &&
+            regexp_string_array_grow(&results, &cap) != 0)
+            goto oom;
+        char *seg = (char *)NC_REGEXP_MALLOC(seg_len + 1U);
+        if (!seg) goto oom;
         memcpy(seg, s + pos, seg_len);
         seg[seg_len] = '\0';
-        if (*count >= cap) { cap *= 2; results = (char **)realloc(results, cap * sizeof(char *)); }
         results[(*count)++] = seg;
         pos = end;
     }
 
     /* Remaining */
     size_t rem = slen - pos;
-    char *seg = (char *)malloc(rem + 1);
+    if ((size_t)*count >= cap &&
+        regexp_string_array_grow(&results, &cap) != 0)
+        goto oom;
+    char *seg = (char *)NC_REGEXP_MALLOC(rem + 1U);
+    if (!seg) goto oom;
     memcpy(seg, s + pos, rem);
     seg[rem] = '\0';
-    if (*count >= cap) { cap *= 2; results = (char **)realloc(results, cap * sizeof(char *)); }
     results[(*count)++] = seg;
 
     search_ctx_free(&ctx);
     return results;
+
+oom:
+    search_ctx_free(&ctx);
+    neverc_regexp_free_strings(results, *count);
+    *count = 0;
+    return NULL;
 }
 
 void neverc_regexp_free_strings(char **strs, int count) {
+    if (!strs) return;
     for (int i = 0; i < count; i++) free(strs[i]);
     free(strs);
 }
@@ -1074,7 +1242,8 @@ static const uint8_t regexp_meta_tbl[256] = {
 char *neverc_regexp_quote_meta(const char *s) {
     if (!s) return NULL;
     size_t slen = strlen(s);
-    char *result = (char *)malloc(slen * 2 + 1);
+    if (slen > (SIZE_MAX - 1U) / 2U) return NULL;
+    char *result = (char *)NC_REGEXP_MALLOC(slen * 2U + 1U);
     if (!result) return NULL;
 
     /* Copy the leading run of ordinary bytes in one shot. A string with no
@@ -1108,7 +1277,8 @@ neverc_regexp_t *neverc_regexp_must_compile(const char *pattern) {
     const char *err = NULL;
     neverc_regexp_t *re = neverc_regexp_compile(pattern, &err);
     if (!re) {
-        fprintf(stderr, "neverc_regexp_must_compile: %s: %s\n", pattern, err ? err : "unknown error");
+        fprintf(stderr, "neverc_regexp_must_compile: %s: %s\n",
+                pattern ? pattern : "(null)", err ? err : "unknown error");
         abort();
     }
     return re;
@@ -1118,7 +1288,8 @@ neverc_regexp_t *neverc_regexp_must_compile_posix(const char *pattern) {
     const char *err = NULL;
     neverc_regexp_t *re = neverc_regexp_compile_posix(pattern, &err);
     if (!re) {
-        fprintf(stderr, "neverc_regexp_must_compile_posix: %s: %s\n", pattern, err ? err : "unknown error");
+        fprintf(stderr, "neverc_regexp_must_compile_posix: %s: %s\n",
+                pattern ? pattern : "(null)", err ? err : "unknown error");
         abort();
     }
     return re;

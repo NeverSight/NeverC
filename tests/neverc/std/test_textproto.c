@@ -94,6 +94,12 @@ static void test_read_line(void) {
                                      line, sizeof(line), &consumed);
     check("line2_ok", rc == 0);
     check_str("line2", line, "foo");
+
+    rc = neverc_textproto_read_line(data, strlen(data), line, 0, &consumed);
+    check("zero line capacity rejected", rc == -1);
+    rc = neverc_textproto_read_line(
+        data, strlen(data), NULL, sizeof(line), &consumed);
+    check("NULL line buffer rejected", rc == -1);
 }
 
 static void test_read_code_line(void) {
@@ -138,6 +144,23 @@ static void test_trim(void) {
     check_str("no_trim", out, "no_trim");
     neverc_textproto_trim_string("", out, sizeof(out));
     check_str("empty", out, "");
+    check("zero trim capacity rejected",
+          neverc_textproto_trim_string("x", out, 0) == -1);
+}
+
+static void test_null_safety(void) {
+    printf("[null_safety]\n");
+    neverc_mime_header_init(NULL);
+    neverc_mime_header_free(NULL);
+    neverc_mime_header_add(NULL, "Key", "Value");
+    neverc_mime_header_set(NULL, "Key", "Value");
+    neverc_mime_header_del(NULL, "Key");
+    check("NULL header get", neverc_mime_header_get(NULL, "Key") == NULL);
+    check("NULL header len", neverc_mime_header_len(NULL) == 0);
+    check("NULL canonical key",
+          neverc_textproto_canonical_mime_header_key(NULL) == NULL);
+    check("NULL code output rejected",
+          neverc_textproto_read_code_line("200 ok", NULL, NULL) == -1);
 }
 
 int main(void) {
@@ -148,6 +171,7 @@ int main(void) {
     test_read_code_line();
     test_dot_lines();
     test_trim();
+    test_null_safety();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_passed == tests_run ? 0 : 1;
 }
