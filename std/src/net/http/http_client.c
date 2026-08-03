@@ -220,6 +220,26 @@ static int client_config_valid(const neverc_http_client_config_t *config) {
                SIZE_MAX - config->max_response_header_size - 4;
 }
 
+static size_t client_saturating_add_size(size_t left, size_t right) {
+    return left > SIZE_MAX - right ? SIZE_MAX : left + right;
+}
+
+static size_t client_saturating_mul_size(size_t value, size_t multiplier) {
+    return value != 0 && multiplier > SIZE_MAX / value
+        ? SIZE_MAX : value * multiplier;
+}
+
+/* One-byte chunks need at most five framing bytes per body byte. The second
+ * header allowance is shared by chunk extensions and trailers. */
+static size_t client_response_wire_limit(size_t header_limit,
+                                         size_t body_limit) {
+    size_t limit = client_saturating_add_size(header_limit, 4U);
+    limit = client_saturating_add_size(
+        limit, client_saturating_mul_size(body_limit, 6U));
+    limit = client_saturating_add_size(limit, header_limit);
+    return client_saturating_add_size(limit, 5U);
+}
+
 neverc_http_client_t *neverc_http_client_new(
     const neverc_http_client_config_t *config) {
     neverc_http_client_config_t effective = config
@@ -642,18 +662,68 @@ fail:
     return -1;
 }
 
+typedef struct {
+    size_t cursor;
+    size_t decoded_length;
+    size_t trailer_offset;
+    size_t auxiliary_length;
+    int reading_trailers;
+} client_chunk_scan_t;
+
 /* 1 = complete, 0 = incomplete, -1 = malformed or decoded body too large. */
 static int scan_chunked_body(const char *source, size_t source_length,
-                             size_t body_limit, size_t *wire_consumed,
-                             size_t *decoded_length,
-                             size_t *trailer_offset,
+                             size_t body_limit, size_t trailer_limit,
+                             client_chunk_scan_t *state,
+                             size_t *wire_consumed,
                              size_t *trailer_length) {
     const char *end = source + source_length;
-    const char *cursor = source;
-    size_t decoded = 0;
+    if (state->cursor > source_length) return -1;
+    const char *cursor = source + state->cursor;
     for (;;) {
+        if (state->reading_trailers) {
+            const char *trailers = source + state->trailer_offset;
+            size_t trailer_budget = trailer_limit - state->auxiliary_length;
+            const char *line_end = client_find_crlf(cursor, end);
+            if (!line_end) {
+                if ((size_t)(end - trailers) > trailer_budget + 2U)
+                    return -1;
+                return 0;
+            }
+            if (line_end == cursor) {
+                if ((size_t)(cursor - trailers) > trailer_budget)
+                    return -1;
+                *wire_consumed = (size_t)(line_end + 2 - source);
+                *trailer_length = (size_t)(cursor - trailers);
+                return 1;
+            }
+            if (*cursor == ' ' || *cursor == '\t') return -1;
+            const char *colon = (const char *)memchr(
+                cursor, ':', (size_t)(line_end - cursor));
+            if (!colon || !client_valid_token(
+                    cursor, (size_t)(colon - cursor))) return -1;
+            const char *value = colon + 1;
+            size_t value_length = (size_t)(line_end - value);
+            client_trim_ows(&value, &value_length);
+            size_t name_length = (size_t)(colon - cursor);
+            if (!client_valid_field_value(value, value_length) ||
+                client_name_is(cursor, name_length, "Content-Length") ||
+                client_name_is(cursor, name_length, "Transfer-Encoding") ||
+                client_name_is(cursor, name_length, "Host"))
+                return -1;
+            state->cursor = (size_t)(line_end + 2 - source);
+            if (state->cursor - state->trailer_offset > trailer_budget + 2U)
+                return -1;
+            cursor = source + state->cursor;
+            continue;
+        }
+
         const char *line_end = client_find_crlf(cursor, end);
-        if (!line_end) return 0;
+        if (!line_end) {
+            if ((size_t)(end - cursor) > 8194U) return -1;
+            return 0;
+        }
+        size_t line_length = (size_t)(line_end - cursor);
+        if (line_length > 8192U) return -1;
         size_t chunk_size = 0;
         size_t digits = 0;
         while (cursor + digits < line_end) {
@@ -673,46 +743,31 @@ static int scan_chunked_body(const char *source, size_t source_length,
                                       (size_t)(line_end -
                                                (cursor + digits))))
             return -1;
+        size_t auxiliary_increment = line_length - 1U;
+        if (state->auxiliary_length > trailer_limit ||
+            auxiliary_increment > trailer_limit - state->auxiliary_length)
+            return -1;
         cursor = line_end + 2;
 
         if (chunk_size == 0) {
-            const char *trailers = cursor;
-            for (;;) {
-                line_end = client_find_crlf(cursor, end);
-                if (!line_end) return 0;
-                if (line_end == cursor) {
-                    *wire_consumed = (size_t)(line_end + 2 - source);
-                    *decoded_length = decoded;
-                    *trailer_offset = (size_t)(trailers - source);
-                    *trailer_length = (size_t)(cursor - trailers);
-                    return 1;
-                }
-                if (*cursor == ' ' || *cursor == '\t') return -1;
-                const char *colon = (const char *)memchr(
-                    cursor, ':', (size_t)(line_end - cursor));
-                if (!colon || !client_valid_token(
-                        cursor, (size_t)(colon - cursor))) return -1;
-                const char *value = colon + 1;
-                size_t value_length = (size_t)(line_end - value);
-                client_trim_ows(&value, &value_length);
-                size_t name_length = (size_t)(colon - cursor);
-                if (!client_valid_field_value(value, value_length) ||
-                    client_name_is(cursor, name_length, "Content-Length") ||
-                    client_name_is(cursor, name_length, "Transfer-Encoding") ||
-                    client_name_is(cursor, name_length, "Host"))
-                    return -1;
-                cursor = line_end + 2;
-            }
+            state->auxiliary_length += auxiliary_increment;
+            state->reading_trailers = 1;
+            state->trailer_offset = (size_t)(cursor - source);
+            state->cursor = state->trailer_offset;
+            continue;
         }
 
-        if (decoded > body_limit || chunk_size > body_limit - decoded)
+        if (state->decoded_length > body_limit ||
+            chunk_size > body_limit - state->decoded_length)
             return -1;
         size_t available = (size_t)(end - cursor);
         if (chunk_size > available || available - chunk_size < 2) return 0;
         if (cursor[chunk_size] != '\r' || cursor[chunk_size + 1] != '\n')
             return -1;
-        decoded += chunk_size;
+        state->auxiliary_length += auxiliary_increment;
+        state->decoded_length += chunk_size;
         cursor += chunk_size + 2;
+        state->cursor = (size_t)(cursor - source);
     }
 }
 
@@ -940,17 +995,14 @@ static neverc_http_response_t *do_request(neverc_http_client_t *client,
     response_framing_t framing;
     memset(&framing, 0, sizeof(framing));
     size_t chunk_wire_consumed = 0;
-    size_t chunk_decoded_length = 0;
-    size_t trailer_offset = 0;
+    client_chunk_scan_t chunk_scan;
+    memset(&chunk_scan, 0, sizeof(chunk_scan));
     size_t trailer_length = 0;
 
     const size_t header_limit = client->config.max_response_header_size;
     const size_t body_limit = client->config.max_response_body_size;
-    size_t response_limit = header_limit + 4 + body_limit;
-    if (response_limit <= SIZE_MAX - header_limit)
-        response_limit += header_limit;
-    if (response_limit <= SIZE_MAX - 65536)
-        response_limit += 65536;
+    size_t response_limit = client_response_wire_limit(header_limit,
+                                                       body_limit);
     char chunk[8192];
     while (!response_complete) {
         size_t read_size = sizeof(chunk);
@@ -1053,8 +1105,8 @@ analyze_response:
         } else if (framing.is_chunked) {
             int scan_result = scan_chunked_body(
                 resp_buf.data + hdr_end_offset + 4, body_received,
-                body_limit, &chunk_wire_consumed, &chunk_decoded_length,
-                &trailer_offset, &trailer_length);
+                body_limit, header_limit, &chunk_scan,
+                &chunk_wire_consumed, &trailer_length);
             if (scan_result < 0) {
                 client_connection_close(conn);
                 nc_buf_free(&resp_buf);
@@ -1117,19 +1169,20 @@ analyze_response:
         if (!status_has_no_body && framing.is_chunked) {
             char *decoded = NULL;
             if (decode_chunked_body(body_start, chunk_wire_consumed,
-                                    chunk_decoded_length, &decoded) != 0) {
+                                    chunk_scan.decoded_length, &decoded) != 0) {
                 r->error = "invalid or incomplete chunked response";
                 server_keepalive = 0;
             } else {
                 r->body = decoded;
-                r->body_len = chunk_decoded_length;
+                r->body_len = chunk_scan.decoded_length;
                 if (trailer_length > 0) {
                     r->trailers = (char *)malloc(trailer_length + 1);
                     if (!r->trailers) {
                         r->error = "out of memory";
                         server_keepalive = 0;
                     } else {
-                        memcpy(r->trailers, body_start + trailer_offset,
+                        memcpy(r->trailers,
+                               body_start + chunk_scan.trailer_offset,
                                trailer_length);
                         r->trailers[trailer_length] = '\0';
                     }
@@ -1296,6 +1349,7 @@ static int stream_read_chunked_response(
            STREAM_CHUNK_DATA_CRLF, STREAM_CHUNK_TRAILERS } state =
         STREAM_CHUNK_SIZE;
     size_t remaining = 0;
+    size_t auxiliary_length = 0;
     char input[8192];
 
     for (;;) {
@@ -1310,6 +1364,11 @@ static int stream_read_chunked_response(
                     stream_chunk_size(wire->data, line_length,
                                       &remaining) != 0)
                     return -1;
+                size_t auxiliary_increment = line_length - 1U;
+                if (auxiliary_length > header_limit ||
+                    auxiliary_increment > header_limit - auxiliary_length)
+                    return -1;
+                auxiliary_length += auxiliary_increment;
                 nc_buf_consume(wire, line_length + 2);
                 state = remaining == 0 ? STREAM_CHUNK_TRAILERS
                                        : STREAM_CHUNK_DATA;
@@ -1340,7 +1399,8 @@ static int stream_read_chunked_response(
             }
         } else {
             int trailer_result = stream_parse_trailers(
-                wire, header_limit, &response->trailers);
+                wire, header_limit - auxiliary_length,
+                &response->trailers);
             if (trailer_result == -2) return -4;
             if (trailer_result < 0) return -1;
             if (trailer_result > 0) return 0;

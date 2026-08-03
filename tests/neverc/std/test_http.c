@@ -1492,6 +1492,102 @@ static void test_client_chunked_response(void) {
     stop_test_server(srv);
 }
 
+static int raw_write_all(neverc_tcp_conn_t *connection,
+                         const void *data, size_t length) {
+    const char *bytes = (const char *)data;
+    size_t offset = 0;
+    while (offset < length) {
+        int written = neverc_tcp_write(connection, bytes + offset,
+                                       length - offset);
+        if (written <= 0) return -1;
+        offset += (size_t)written;
+    }
+    return 0;
+}
+
+static void test_client_many_tiny_chunks(void) {
+    printf("[client_many_tiny_chunks]\n");
+
+    const char *error = NULL;
+    neverc_tcp_listener_t *listener =
+        neverc_tcp_listen("127.0.0.1:0", &error);
+    check_not_null("tiny chunk listener", listener);
+    if (!listener) return;
+
+    neverc_tcp_addr_t address;
+    if (neverc_tcp_listener_addr(listener, &address) != 0) {
+        neverc_tcp_listener_close(listener);
+        check_int("tiny chunk listener address", 0, 1);
+        return;
+    }
+
+    pid_t server = fork();
+    if (server == 0) {
+        neverc_tcp_conn_t *connection = neverc_tcp_accept(listener, &error);
+        if (!connection) _exit(1);
+        char request[1024];
+        if (neverc_tcp_read(connection, request, sizeof(request)) <= 0)
+            _exit(1);
+        static const char headers[] =
+            "HTTP/1.1 200 OK\r\n"
+            "Transfer-Encoding: chunked\r\n"
+            "Connection: close\r\n\r\n";
+        char chunks[6000];
+        for (size_t i = 0; i < 1000U; i++)
+            memcpy(chunks + i * 6U, "1\r\na\r\n", 6U);
+        if (raw_write_all(connection, headers, sizeof(headers) - 1U) != 0)
+            _exit(1);
+        for (int batch = 0; batch < 20; batch++) {
+            if (raw_write_all(connection, chunks, sizeof(chunks)) != 0)
+                _exit(1);
+        }
+        (void)raw_write_all(connection, "0\r\n\r\n", 5U);
+        neverc_tcp_close(connection);
+        neverc_tcp_listener_close(listener);
+        _exit(0);
+    }
+    neverc_tcp_listener_close(listener);
+    if (server < 0) {
+        check_int("tiny chunk server fork", 0, 1);
+        return;
+    }
+
+    neverc_http_client_config_t config =
+        neverc_http_client_config_default();
+    config.timeout_ms = 5000;
+    config.max_idle_per_host = 0;
+    config.max_response_header_size = 1024U;
+    config.max_response_body_size = 20000U;
+    neverc_http_client_t *client = neverc_http_client_new(&config);
+    check_not_null("tiny chunk client", client);
+    if (!client) {
+        kill(server, SIGTERM);
+        waitpid(server, NULL, 0);
+        return;
+    }
+    char url[96];
+    snprintf(url, sizeof(url), "http://127.0.0.1:%d/tiny", address.port);
+    neverc_http_response_t *response =
+        neverc_http_client_do(client, "GET", url, NULL, NULL, 0U);
+    if (response && response->error)
+        printf("  tiny chunk error: %s\n", response->error);
+    check_int("tiny chunk response success",
+              response != NULL && response->error == NULL, 1);
+    check_int("tiny chunk decoded length",
+              response != NULL && response->body_len == 20000U, 1);
+    int body_ok = response && response->body;
+    for (size_t i = 0; body_ok && i < response->body_len; i++)
+        body_ok = response->body[i] == 'a';
+    check_int("tiny chunk decoded body", body_ok, 1);
+
+    neverc_http_response_free(response);
+    neverc_http_client_free(client);
+    int status = 0;
+    waitpid(server, &status, 0);
+    check_int("tiny chunk server status",
+              WIFEXITED(status) && WEXITSTATUS(status) == 0, 1);
+}
+
 /* ===== Test: concurrent connection limit ===== */
 
 static void slow_handler(neverc_http_request_t *req,
@@ -2688,6 +2784,7 @@ int main(void) {
     test_chunked_encoding();
     test_config_apis();
     test_client_chunked_response();
+    test_client_many_tiny_chunks();
     test_connection_limit();
     test_server_lifecycle();
     test_connection_pool();

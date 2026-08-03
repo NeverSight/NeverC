@@ -364,6 +364,8 @@ typedef struct {
     int max_redirects;
     int timeout_ms;
     int max_idle_per_host;
+    /* Applied independently to the main header block and to the combined
+     * chunk-extension/trailer metadata. */
     size_t max_response_header_size;
     size_t max_response_body_size;
     /* Per-client TLS identity and trust. Paths are copied by client_new. */

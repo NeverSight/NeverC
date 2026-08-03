@@ -43,6 +43,61 @@ static void *controlled_realloc(void *pointer, size_t size) {
         }                                                                    \
     } while (0)
 
+static int test_chunk_scanner(void) {
+    static const char incremental[] =
+        "1\r\na\r\n1\r\nb\r\n0\r\n\r\n";
+    client_chunk_scan_t state;
+    memset(&state, 0, sizeof(state));
+    size_t wire_consumed = 0;
+    size_t trailer_length = 0;
+    CHECK(scan_chunked_body(incremental, 6U, 2U, 1024U, &state,
+                            &wire_consumed, &trailer_length) == 0);
+    CHECK(state.cursor == 6U && state.decoded_length == 1U);
+    CHECK(scan_chunked_body(incremental, 12U, 2U, 1024U, &state,
+                            &wire_consumed, &trailer_length) == 0);
+    CHECK(state.cursor == 12U && state.decoded_length == 2U);
+    CHECK(scan_chunked_body(incremental, sizeof(incremental) - 1U,
+                            2U, 1024U, &state, &wire_consumed,
+                            &trailer_length) == 1);
+    CHECK(wire_consumed == sizeof(incremental) - 1U);
+    CHECK(trailer_length == 0U);
+
+    char oversized_line[8195];
+    memset(oversized_line, '1', 8193U);
+    oversized_line[8193] = '\r';
+    oversized_line[8194] = '\n';
+    memset(&state, 0, sizeof(state));
+    CHECK(scan_chunked_body(oversized_line, sizeof(oversized_line),
+                            SIZE_MAX, 1024U, &state, &wire_consumed,
+                            &trailer_length) == -1);
+
+    static const char oversized_extension[] =
+        "1;abcde\r\na\r\n0\r\n\r\n";
+    memset(&state, 0, sizeof(state));
+    CHECK(scan_chunked_body(oversized_extension,
+                            sizeof(oversized_extension) - 1U,
+                            1U, 4U, &state, &wire_consumed,
+                            &trailer_length) == -1);
+    nc_buf_t stream_wire;
+    nc_buf_init(&stream_wire);
+    CHECK(nc_buf_append(&stream_wire, oversized_extension,
+                        sizeof(oversized_extension) - 1U) == 0);
+    neverc_http_response_t stream_response;
+    memset(&stream_response, 0, sizeof(stream_response));
+    CHECK(stream_read_chunked_response(NULL, NULL, &stream_wire,
+                                       &stream_response, 4U, 1U,
+                                       NULL, NULL) == -1);
+    nc_buf_free(&stream_wire);
+
+    static const char oversized_trailer[] = "0\r\nX: 12345\r\n\r\n";
+    memset(&state, 0, sizeof(state));
+    CHECK(scan_chunked_body(oversized_trailer,
+                            sizeof(oversized_trailer) - 1U,
+                            0U, 4U, &state, &wire_consumed,
+                            &trailer_length) == -1);
+    return 0;
+}
+
 static void body_handler(neverc_http_request_t *request,
                          neverc_http_response_writer_t *writer) {
     (void)request;
@@ -63,6 +118,8 @@ static int free_port(void) {
 }
 
 int main(void) {
+    CHECK(test_chunk_scanner() == 0);
+
     nc_buf_t trailer_wire;
     nc_buf_init(&trailer_wire);
     CHECK(nc_buf_append(&trailer_wire,
