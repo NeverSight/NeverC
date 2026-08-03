@@ -983,6 +983,7 @@ int neverc_quic_conn_is_alive_check(struct neverc_quic_conn *conn) {
 }
 
 static int quic_conn_allows_stream_read(struct neverc_quic_conn *conn) {
+    /* Draining permits buffered reads, but no new application work. */
     if (!conn) return 0;
     return conn->state == QUIC_CONN_HANDSHAKING ||
            conn->state == QUIC_CONN_ESTABLISHED ||

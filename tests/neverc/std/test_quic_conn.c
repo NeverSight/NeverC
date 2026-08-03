@@ -394,9 +394,11 @@ static void test_conn_is_alive(void) {
 
     conn->state = QUIC_CONN_DRAINING;
     ASSERT_EQ(neverc_quic_conn_is_alive_check(conn), 0);
+    ASSERT_EQ(quic_conn_allows_stream_read(conn), 1);
 
     conn->state = QUIC_CONN_CLOSED;
     ASSERT_EQ(neverc_quic_conn_is_alive_check(conn), 0);
+    ASSERT_EQ(quic_conn_allows_stream_read(conn), 0);
 
     neverc_quic_conn_destroy(conn);
 }
