@@ -1086,10 +1086,23 @@ static int h2_client_send_body(neverc_h2_client_t *client,
 }
 
 static neverc_context_t *h2_client_operation_context(
-    neverc_h2_client_t *client, neverc_context_t *parent) {
-    return neverc_context_with_timeout(
-        parent ? parent : neverc_context_background(),
-        client->config.timeout_ms, NULL);
+    neverc_h2_client_t *client, neverc_context_t *parent,
+    neverc_context_t **owned_background_out) {
+    neverc_context_t *owned_background = NULL;
+    if (!parent) {
+        parent = owned_background = neverc_context_background();
+        if (!parent)
+            return NULL;
+    }
+    neverc_context_t *context = neverc_context_with_timeout(
+        parent, client->config.timeout_ms, NULL);
+    if (!context) {
+        neverc_context_free(owned_background);
+        return NULL;
+    }
+    if (owned_background_out)
+        *owned_background_out = owned_background;
+    return context;
 }
 
 neverc_h2_client_stream_t *neverc_h2_client_stream_open(
@@ -1126,8 +1139,9 @@ neverc_h2_client_stream_t *neverc_h2_client_stream_open(
             return NULL;
         }
     }
+    neverc_context_t *owned_background = NULL;
     neverc_context_t *context = h2_client_operation_context(
-        client, parent_context);
+        client, parent_context, &owned_background);
     if (!context) {
         if (error) *error = "out of memory";
         return NULL;
@@ -1136,6 +1150,7 @@ neverc_h2_client_stream_t *neverc_h2_client_stream_open(
         (h2_client_stream_t *)calloc(1, sizeof(*stream));
     if (!stream) {
         neverc_context_free(context);
+        neverc_context_free(owned_background);
         if (error) *error = "out of memory";
         return NULL;
     }
@@ -1150,6 +1165,7 @@ neverc_h2_client_stream_t *neverc_h2_client_stream_open(
     if (!stream->receive_queue) {
         h2_client_stream_destroy(stream);
         neverc_context_free(context);
+        neverc_context_free(owned_background);
         if (error) *error = "out of memory";
         return NULL;
     }
@@ -1167,6 +1183,7 @@ neverc_h2_client_stream_t *neverc_h2_client_stream_open(
         nc_mutex_unlock(&client->state_lock);
         h2_client_stream_destroy(stream);
         neverc_context_free(context);
+        neverc_context_free(owned_background);
         if (error) *error = "HTTP/2 connection cannot accept a stream";
         return NULL;
     }
@@ -1197,6 +1214,7 @@ neverc_h2_client_stream_t *neverc_h2_client_stream_open(
     int result = h2_client_send_header_block(
         client, stream->id, request_headers, request_count, end_stream);
     neverc_context_free(context);
+    neverc_context_free(owned_background);
     if (result == 0) return stream;
 
     nc_mutex_lock(&client->state_lock);
@@ -1215,8 +1233,9 @@ int neverc_h2_client_stream_send(
         (end_stream != 0 && end_stream != 1))
         return -1;
     neverc_h2_client_t *client = stream->client;
+    neverc_context_t *owned_background = NULL;
     neverc_context_t *context = h2_client_operation_context(
-        client, parent_context);
+        client, parent_context, &owned_background);
     if (!context) return -1;
     nc_mutex_lock(&client->state_lock);
     int permitted = stream->linked && !stream->local_closed &&
@@ -1225,6 +1244,7 @@ int neverc_h2_client_stream_send(
     nc_mutex_unlock(&client->state_lock);
     if (!permitted) {
         neverc_context_free(context);
+        neverc_context_free(owned_background);
         return -1;
     }
     int result = length > 0
@@ -1241,6 +1261,7 @@ int neverc_h2_client_stream_send(
         nc_mutex_unlock(&client->state_lock);
     }
     neverc_context_free(context);
+    neverc_context_free(owned_background);
     if (result != 0)
         neverc_h2_client_stream_cancel(stream, NC_H2_CANCEL);
     return result;
@@ -1557,15 +1578,16 @@ neverc_h2_response_t *neverc_h2_client_do_context(
              strcasecmp(value, "trailers") != 0))
             return h2_client_error_response("invalid HTTP/2 header", 0);
     }
-    neverc_context_t *context = neverc_context_with_timeout(
-        parent_context ? parent_context : neverc_context_background(),
-        client->config.timeout_ms, NULL);
+    neverc_context_t *owned_background = NULL;
+    neverc_context_t *context = h2_client_operation_context(
+        client, parent_context, &owned_background);
     if (!context)
         return h2_client_error_response("out of memory", 0);
     h2_client_stream_t *stream =
         (h2_client_stream_t *)calloc(1, sizeof(*stream));
     if (!stream) {
         neverc_context_free(context);
+        neverc_context_free(owned_background);
         return h2_client_error_response("out of memory", 0);
     }
     nc_buf_init(&stream->body);
@@ -1585,6 +1607,7 @@ neverc_h2_response_t *neverc_h2_client_do_context(
         nc_mutex_unlock(&client->state_lock);
         h2_client_stream_destroy(stream);
         neverc_context_free(context);
+        neverc_context_free(owned_background);
         return h2_client_error_response(
             draining ? "HTTP/2 connection is draining" :
             "HTTP/2 request cancelled before send", NC_H2_REFUSED_STREAM);
@@ -1682,6 +1705,7 @@ neverc_h2_response_t *neverc_h2_client_do_context(
     }
     h2_client_stream_destroy(stream);
     neverc_context_free(context);
+    neverc_context_free(owned_background);
     return response;
 }
 
