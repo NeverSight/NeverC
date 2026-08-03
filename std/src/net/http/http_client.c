@@ -283,9 +283,11 @@ static int parse_url_port(const char *start, const char *end,
     if (!start || start == end) return -1;
     unsigned value = 0;
     for (const char *p = start; p < end; p++) {
-        if (*p < '0' || *p > '9' || value > (65535U - (*p - '0')) / 10)
-            return -1;
-        value = value * 10 + (unsigned)(*p - '0');
+        unsigned char c = (unsigned char)*p;
+        if (c < '0' || c > '9') return -1;
+        unsigned digit = (unsigned)(c - '0');
+        if (value > (65535U - digit) / 10U) return -1;
+        value = value * 10U + digit;
     }
     if (value == 0) return -1;
     *port = (uint16_t)value;
@@ -299,9 +301,9 @@ static int parse_http_url(const char *url, parsed_url_t *out) {
     out->port = 80;
 
     const char *p;
-    if (strncmp(url, "http://", 7) == 0) {
+    if (strncasecmp(url, "http://", 7) == 0) {
         p = url + 7;
-    } else if (strncmp(url, "https://", 8) == 0) {
+    } else if (strncasecmp(url, "https://", 8) == 0) {
         p = url + 8;
         out->port = 443;
         out->is_https = 1;
@@ -668,7 +670,8 @@ static int scan_chunked_body(const char *source, size_t source_length,
         if (digits == 0 || (cursor + digits < line_end &&
                             cursor[digits] != ';') ||
             !client_valid_field_value(cursor + digits,
-                                      (size_t)(line_end - cursor - digits)))
+                                      (size_t)(line_end -
+                                               (cursor + digits))))
             return -1;
         cursor = line_end + 2;
 
@@ -1606,9 +1609,10 @@ void neverc_http_client_set_pool(int max_idle_per_host) {
     nc_mutex_unlock(&pool->lock);
 }
 
-static const char *parse_response_header_value(const char *headers,
-                                                 size_t hdr_len,
-                                                 const char *name) {
+static int copy_response_header_value(const char *headers, size_t hdr_len,
+                                      const char *name, char **value) {
+    if (!headers || !name || !value) return -1;
+    *value = NULL;
     size_t namelen = strlen(name);
     const char *p = headers;
     const char *end = headers + hdr_len;
@@ -1621,18 +1625,166 @@ static const char *parse_response_header_value(const char *headers,
         if ((size_t)(nl - p) > namelen + 1 &&
             strncasecmp(p, name, namelen) == 0 && p[namelen] == ':') {
             const char *v = p + namelen + 1;
-            while (v < nl && *v == ' ') v++;
+            while (v < nl && (*v == ' ' || *v == '\t')) v++;
             size_t vlen = (size_t)(nl - v);
+            while (vlen > 0 && (v[vlen - 1] == ' ' ||
+                                v[vlen - 1] == '\t'))
+                vlen--;
             char *val = (char *)malloc(vlen + 1);
-            if (val) {
-                memcpy(val, v, vlen);
-                val[vlen] = '\0';
-            }
-            return val;
+            if (!val) return -1;
+            memcpy(val, v, vlen);
+            val[vlen] = '\0';
+            *value = val;
+            return 1;
         }
         p = nl + 2;
     }
-    return NULL;
+    return 0;
+}
+
+static int redirect_status(int status) {
+    return status == 301 || status == 302 || status == 303 ||
+        status == 307 || status == 308;
+}
+
+static int redirect_prefix(const char *input, size_t length,
+                           const char *prefix) {
+    size_t prefix_length = strlen(prefix);
+    return length >= prefix_length &&
+        memcmp(input, prefix, prefix_length) == 0;
+}
+
+static void redirect_remove_last_segment(char *output, size_t *length) {
+    while (*length > 0 && output[*length - 1] != '/') (*length)--;
+    if (*length > 0) (*length)--;
+}
+
+/* RFC 3986 section 5.2.4 dot-segment removal for an absolute path. */
+static int normalize_redirect_target(const char *target, char *output,
+                                     size_t capacity) {
+    const char *query = strchr(target, '?');
+    size_t path_length = query ? (size_t)(query - target) : strlen(target);
+    size_t input = 0;
+    size_t written = 0;
+
+    while (input < path_length) {
+        size_t remaining = path_length - input;
+        const char *current = target + input;
+        if (redirect_prefix(current, remaining, "../")) {
+            input += 3;
+        } else if (redirect_prefix(current, remaining, "./")) {
+            input += 2;
+        } else if (redirect_prefix(current, remaining, "/./")) {
+            input += 2;
+        } else if (remaining == 2 && memcmp(current, "/.", 2) == 0) {
+            if (written == 0 || output[written - 1] != '/') {
+                if (written >= capacity - 1) return -1;
+                output[written++] = '/';
+            }
+            input = path_length;
+        } else if (redirect_prefix(current, remaining, "/../")) {
+            input += 3;
+            redirect_remove_last_segment(output, &written);
+        } else if (remaining == 3 && memcmp(current, "/..", 3) == 0) {
+            redirect_remove_last_segment(output, &written);
+            if (written == 0 || output[written - 1] != '/') {
+                if (written >= capacity - 1) return -1;
+                output[written++] = '/';
+            }
+            input = path_length;
+        } else if ((remaining == 1 && current[0] == '.') ||
+                   (remaining == 2 && memcmp(current, "..", 2) == 0)) {
+            input = path_length;
+        } else {
+            size_t end = input;
+            if (target[end] == '/') end++;
+            while (end < path_length && target[end] != '/') end++;
+            size_t segment_length = end - input;
+            if (segment_length >= capacity - written) return -1;
+            memcpy(output + written, target + input, segment_length);
+            written += segment_length;
+            input = end;
+        }
+    }
+
+    if (written == 0) {
+        if (capacity < 2) return -1;
+        output[written++] = '/';
+    }
+    if (query) {
+        size_t query_length = strlen(query);
+        if (query_length >= capacity - written) return -1;
+        memcpy(output + written, query, query_length);
+        written += query_length;
+    }
+    output[written] = '\0';
+    return 0;
+}
+
+static int resolve_redirect_url(const parsed_url_t *base,
+                                const char *location,
+                                char *output, size_t capacity) {
+    if (!base || !location || !output || capacity == 0) return -1;
+
+    size_t reference_length = strlen(location);
+    const char *fragment = strchr(location, '#');
+    if (fragment) reference_length = (size_t)(fragment - location);
+    if (reference_length >= capacity) return -1;
+
+    char reference[4096];
+    if (reference_length >= sizeof(reference)) return -1;
+    memcpy(reference, location, reference_length);
+    reference[reference_length] = '\0';
+
+    const char *scheme = base->is_https ? "https" : "http";
+    if (strncasecmp(reference, "http://", 7) == 0 ||
+        strncasecmp(reference, "https://", 8) == 0) {
+        memcpy(output, reference, reference_length + 1);
+        return 0;
+    }
+    const char *reference_colon = strchr(reference, ':');
+    const char *reference_delimiter = strpbrk(reference, "/?");
+    if (reference_colon &&
+        (!reference_delimiter || reference_colon < reference_delimiter))
+        return -1;
+    if (reference[0] == '/' && reference[1] == '/') {
+        int length = snprintf(output, capacity, "%s:%s", scheme, reference);
+        return length < 0 || (size_t)length >= capacity ? -1 : 0;
+    }
+
+    char target[4096];
+    if (reference[0] == '\0') {
+        size_t base_length = strlen(base->path);
+        if (base_length >= sizeof(target)) return -1;
+        memcpy(target, base->path, base_length + 1);
+    } else if (reference[0] == '?') {
+        const char *base_query = strchr(base->path, '?');
+        size_t base_path_length = base_query
+            ? (size_t)(base_query - base->path) : strlen(base->path);
+        if (base_path_length + reference_length >= sizeof(target)) return -1;
+        memcpy(target, base->path, base_path_length);
+        memcpy(target + base_path_length, reference, reference_length + 1);
+    } else if (reference[0] == '/') {
+        memcpy(target, reference, reference_length + 1);
+    } else {
+        const char *base_query = strchr(base->path, '?');
+        size_t base_path_length = base_query
+            ? (size_t)(base_query - base->path) : strlen(base->path);
+        size_t directory_length = base_path_length;
+        while (directory_length > 0 &&
+               base->path[directory_length - 1] != '/')
+            directory_length--;
+        if (directory_length + reference_length >= sizeof(target)) return -1;
+        memcpy(target, base->path, directory_length);
+        memcpy(target + directory_length, reference, reference_length + 1);
+    }
+
+    char normalized[4096];
+    if (normalize_redirect_target(target, normalized, sizeof(normalized)) != 0)
+        return -1;
+    int length = snprintf(output, capacity, "%s://%s%s",
+                          scheme, base->authority, normalized);
+    return length < 0 || (size_t)length >= capacity ? -1 : 0;
 }
 
 static neverc_http_response_t *do_request_with_redirects(
@@ -1646,63 +1798,63 @@ static neverc_http_response_t *do_request_with_redirects(
         return make_error_response("url is too long");
     memcpy(current_url, url, strlen(url) + 1);
     const char *current_method = method;
+    const char *current_content_type = content_type;
+    const void *current_body = body;
+    size_t current_body_len = body_len;
 
     int last_status = 0;
     int max_redirects = nc_atomic_load(&client->config.max_redirects);
-    for (int redirects = 0; redirects <= max_redirects; redirects++) {
+    for (int redirects = 0; ; redirects++) {
         parsed_url_t pu;
         if (parse_http_url(current_url, &pu) != 0)
             return make_error_response("invalid url");
 
-        neverc_http_response_t *resp;
-        /* 301/302/303: convert POST/PUT/PATCH to GET (RFC 7231).
-         * 307/308: preserve original method (RFC 7538). */
-        if (redirects > 0 && last_status != 307 && last_status != 308 &&
-            (strcmp(current_method, "POST") == 0 ||
-             strcmp(current_method, "PUT") == 0 ||
-             strcmp(current_method, "PATCH") == 0)) {
-            resp = do_request(client, context, "GET", &pu, NULL, NULL, 0);
+        /* 303 changes every method except HEAD to GET. For compatibility,
+         * 301/302 change POST to GET; 307/308 preserve method and body. */
+        if (redirects > 0 &&
+            ((last_status == 303 && strcmp(current_method, "HEAD") != 0) ||
+             ((last_status == 301 || last_status == 302) &&
+              strcmp(current_method, "POST") == 0))) {
             current_method = "GET";
-        } else {
-            resp = do_request(client, context, current_method, &pu,
-                              content_type, body, body_len);
+            current_content_type = NULL;
+            current_body = NULL;
+            current_body_len = 0;
         }
+        neverc_http_response_t *resp = do_request(
+            client, context, current_method, &pu, current_content_type,
+            current_body, current_body_len);
 
         if (!resp || resp->error) return resp;
 
-        if (resp->status_code >= 301 && resp->status_code <= 308 &&
-            resp->status_code != 304 &&
+        if (redirect_status(resp->status_code) &&
             max_redirects > 0 && resp->headers) {
-            const char *loc = parse_response_header_value(
-                resp->headers, strlen(resp->headers), "Location");
-            if (loc) {
-                last_status = resp->status_code;
-                if (loc[0] == '/') {
-                    int n = snprintf(current_url, sizeof(current_url),
-                                     "%s://%s%s",
-                                     pu.is_https ? "https" : "http",
-                                     pu.authority, loc);
-                    if (n < 0 || (size_t)n >= sizeof(current_url)) {
-                        free((void *)loc);
-                        neverc_http_response_free(resp);
-                        return make_error_response("redirect url is too long");
-                    }
-                } else {
-                    if (strlen(loc) >= sizeof(current_url)) {
-                        free((void *)loc);
-                        neverc_http_response_free(resp);
-                        return make_error_response("redirect url is too long");
-                    }
-                    memcpy(current_url, loc, strlen(loc) + 1);
+            char *location = NULL;
+            int location_result = copy_response_header_value(
+                resp->headers, strlen(resp->headers), "Location", &location);
+            if (location_result < 0) {
+                neverc_http_response_free(resp);
+                return make_error_response("out of memory");
+            }
+            if (location_result > 0) {
+                if (redirects >= max_redirects) {
+                    free(location);
+                    neverc_http_response_free(resp);
+                    return make_error_response("too many redirects");
                 }
-                free((void *)loc);
+                last_status = resp->status_code;
+                if (resolve_redirect_url(
+                        &pu, location, current_url, sizeof(current_url)) != 0) {
+                    free(location);
+                    neverc_http_response_free(resp);
+                    return make_error_response("invalid redirect url");
+                }
+                free(location);
                 neverc_http_response_free(resp);
                 continue;
             }
         }
         return resp;
     }
-    return make_error_response("too many redirects");
 }
 
 static neverc_http_response_t *execute_client_request(

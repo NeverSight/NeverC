@@ -208,6 +208,79 @@ static void header_handler(neverc_http_request_t *req,
         neverc_http_write_string(w, "no ua");
 }
 
+static void redirect_relative_handler(neverc_http_request_t *req,
+                                      neverc_http_response_writer_t *w) {
+    (void)req;
+    neverc_http_redirect(w, "../target?via=relative", 302);
+}
+
+static void redirect_target_handler(neverc_http_request_t *req,
+                                    neverc_http_response_writer_t *w) {
+    neverc_http_writef(w, "target:%s", req->query ? req->query : "");
+}
+
+static void redirect_query_handler(neverc_http_request_t *req,
+                                   neverc_http_response_writer_t *w) {
+    if (req->query && strcmp(req->query, "done=1") == 0)
+        neverc_http_write_string(w, "query-target");
+    else
+        neverc_http_redirect(w, "?done=1", 302);
+}
+
+static void redirect_scheme_relative_handler(
+    neverc_http_request_t *req, neverc_http_response_writer_t *w) {
+    const char *host = neverc_http_request_header(req, "Host");
+    char location[320];
+    int length = snprintf(location, sizeof(location), "//%s/hello",
+                          host ? host : "invalid");
+    if (length < 0 || (size_t)length >= sizeof(location)) {
+        neverc_http_error(w, "host too long", 500);
+        return;
+    }
+    neverc_http_redirect(w, location, 302);
+}
+
+static void redirect_fragment_handler(neverc_http_request_t *req,
+                                      neverc_http_response_writer_t *w) {
+    (void)req;
+    neverc_http_redirect(w, "/hello#section", 302);
+}
+
+static void redirect_303_handler(neverc_http_request_t *req,
+                                 neverc_http_response_writer_t *w) {
+    (void)req;
+    neverc_http_redirect(w, "/method", 303);
+}
+
+static void redirect_305_handler(neverc_http_request_t *req,
+                                 neverc_http_response_writer_t *w) {
+    (void)req;
+    neverc_http_redirect(w, "/hello", 305);
+}
+
+static void redirect_post_first_handler(neverc_http_request_t *req,
+                                        neverc_http_response_writer_t *w) {
+    (void)req;
+    neverc_http_redirect(w, "/redirect/post-second", 302);
+}
+
+static void redirect_post_second_handler(neverc_http_request_t *req,
+                                         neverc_http_response_writer_t *w) {
+    (void)req;
+    neverc_http_redirect(w, "/redirect/inspect", 307);
+}
+
+static void redirect_307_handler(neverc_http_request_t *req,
+                                 neverc_http_response_writer_t *w) {
+    (void)req;
+    neverc_http_redirect(w, "/redirect/inspect", 307);
+}
+
+static void redirect_inspect_handler(neverc_http_request_t *req,
+                                     neverc_http_response_writer_t *w) {
+    neverc_http_writef(w, "%s:%zu", req->method, req->body_len);
+}
+
 static int get_free_port(void) {
     const char *err = NULL;
     neverc_tcp_listener_t *probe = neverc_tcp_listen("127.0.0.1:0", &err);
@@ -258,6 +331,22 @@ static pid_t start_test_server(int port) {
         neverc_http_mux_handle(mux, "/header", header_handler);
         neverc_http_mux_handle(mux, "/method", method_handler);
         neverc_http_mux_handle(mux, "/delete", delete_handler);
+        neverc_http_mux_handle(mux, "/a/b/start", redirect_relative_handler);
+        neverc_http_mux_handle(mux, "/a/target", redirect_target_handler);
+        neverc_http_mux_handle(mux, "/redirect/query", redirect_query_handler);
+        neverc_http_mux_handle(mux, "/redirect/scheme",
+                               redirect_scheme_relative_handler);
+        neverc_http_mux_handle(mux, "/redirect/fragment",
+                               redirect_fragment_handler);
+        neverc_http_mux_handle(mux, "/redirect/303", redirect_303_handler);
+        neverc_http_mux_handle(mux, "/redirect/305", redirect_305_handler);
+        neverc_http_mux_handle(mux, "/redirect/post-first",
+                               redirect_post_first_handler);
+        neverc_http_mux_handle(mux, "/redirect/post-second",
+                               redirect_post_second_handler);
+        neverc_http_mux_handle(mux, "/redirect/307", redirect_307_handler);
+        neverc_http_mux_handle(mux, "/redirect/inspect",
+                               redirect_inspect_handler);
 
         char addr[32];
         snprintf(addr, sizeof(addr), "127.0.0.1:%d", port);
@@ -530,6 +619,85 @@ static void test_http_client(void) {
             neverc_http_response_free(resp);
         }
     }
+
+    stop_test_server(server_pid);
+}
+
+static void test_http_client_redirects(void) {
+    printf("[http_client_redirects]\n");
+
+    int port = get_free_port();
+    if (port < 0) { printf("  SKIP: cannot find free port\n"); return; }
+    pid_t server_pid = start_test_server(port);
+    char url[128];
+
+    snprintf(url, sizeof(url),
+             "http://127.0.0.1:%d/a/b/start", port);
+    neverc_http_response_t *resp = neverc_http_get(url);
+    check_int("relative redirect succeeds",
+              resp && !resp->error && resp->status_code == 200, 1);
+    check_int("relative redirect resolves dot segments",
+              resp && resp->body &&
+                  strcmp(resp->body, "target:via=relative") == 0, 1);
+    neverc_http_response_free(resp);
+
+    snprintf(url, sizeof(url),
+             "http://127.0.0.1:%d/redirect/query", port);
+    resp = neverc_http_get(url);
+    check_int("query-only redirect succeeds",
+              resp && !resp->error && resp->status_code == 200, 1);
+    check_int("query-only redirect keeps path",
+              resp && resp->body && strcmp(resp->body, "query-target") == 0, 1);
+    neverc_http_response_free(resp);
+
+    snprintf(url, sizeof(url),
+             "http://127.0.0.1:%d/redirect/scheme", port);
+    resp = neverc_http_get(url);
+    check_int("scheme-relative redirect succeeds",
+              resp && !resp->error && resp->status_code == 200, 1);
+    check_int("scheme-relative redirect changes authority",
+              resp && resp->body && strstr(resp->body, "Hello, World!") != NULL,
+              1);
+    neverc_http_response_free(resp);
+
+    snprintf(url, sizeof(url),
+             "http://127.0.0.1:%d/redirect/fragment", port);
+    resp = neverc_http_get(url);
+    check_int("redirect fragment is not sent",
+              resp && !resp->error && resp->status_code == 200, 1);
+    neverc_http_response_free(resp);
+
+    snprintf(url, sizeof(url),
+             "http://127.0.0.1:%d/redirect/303", port);
+    resp = neverc_http_do("DELETE", url, NULL, NULL, 0);
+    check_int("303 redirect succeeds",
+              resp && !resp->error && resp->status_code == 200, 1);
+    check_int("303 changes DELETE to GET",
+              resp && resp->body && strcmp(resp->body, "method=GET") == 0, 1);
+    neverc_http_response_free(resp);
+
+    snprintf(url, sizeof(url),
+             "http://127.0.0.1:%d/redirect/305", port);
+    resp = neverc_http_get(url);
+    check_int("305 is not followed",
+              resp && !resp->error && resp->status_code == 305, 1);
+    neverc_http_response_free(resp);
+
+    snprintf(url, sizeof(url),
+             "http://127.0.0.1:%d/redirect/post-first", port);
+    resp = neverc_http_post(url, "text/plain", "secret", 6);
+    check_int("rewritten GET survives later 307",
+              resp && !resp->error && resp->body &&
+                  strcmp(resp->body, "GET:0") == 0, 1);
+    neverc_http_response_free(resp);
+
+    snprintf(url, sizeof(url),
+             "http://127.0.0.1:%d/redirect/307", port);
+    resp = neverc_http_post(url, "text/plain", "data", 4);
+    check_int("307 preserves method and body",
+              resp && !resp->error && resp->body &&
+                  strcmp(resp->body, "POST:4") == 0, 1);
+    neverc_http_response_free(resp);
 
     stop_test_server(server_pid);
 }
@@ -2502,6 +2670,7 @@ int main(void) {
 #ifndef _WIN32
     test_http_server();
     test_http_client();
+    test_http_client_redirects();
     test_stress();
     test_large_post();
     test_http_methods();
