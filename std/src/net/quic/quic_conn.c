@@ -148,6 +148,7 @@ struct neverc_quic_conn *neverc_quic_conn_create(quic_conn_side_t side,
     if (!conn) return NULL;
     conn->state = QUIC_CONN_IDLE;
     conn->side = side;
+    conn->peer_completed_address_validation = side == QUIC_SIDE_SERVER;
     conn->udp_fd = udp_fd;
     conn->version = NEVERC_QUIC_VERSION_1;
     conn->idle_timeout_ms = 30000;
@@ -911,6 +912,68 @@ int neverc_quic_conn_send_drained(struct neverc_quic_conn *conn) {
     }
     nc_mutex_unlock(&conn->lock);
     return drained;
+}
+
+uint64_t neverc_quic_conn_loss_timeout(struct neverc_quic_conn *conn,
+                                       uint64_t now_ms) {
+    if (!conn) return 0;
+    uint64_t earliest_loss = 0;
+    for (int space = 0; space < QUIC_PN_SPACE_COUNT; space++) {
+        uint64_t loss_time = conn->loss.spaces[space].loss_time;
+        if (loss_time && (!earliest_loss || loss_time < earliest_loss))
+            earliest_loss = loss_time;
+    }
+    if (earliest_loss) {
+        conn->validation_pto_deadline_ms = 0;
+        return earliest_loss;
+    }
+
+    if (conn->side == QUIC_SIDE_SERVER && !conn->address_validated) {
+        uint64_t received = conn->bytes_received_before_validation;
+        uint64_t limit = received > UINT64_MAX / 3U ?
+            UINT64_MAX : received * 3U;
+        if (conn->bytes_sent_before_validation >= limit) {
+            conn->validation_pto_deadline_ms = 0;
+            return 0;
+        }
+    }
+
+    if (neverc_quic_conn_has_ack_eliciting_in_flight(conn)) {
+        conn->validation_pto_deadline_ms = 0;
+        return neverc_quic_loss_get_timeout(
+            &conn->loss, conn->handshake_confirmed);
+    }
+    if (conn->peer_completed_address_validation ||
+        conn->side != QUIC_SIDE_CLIENT) {
+        conn->validation_pto_deadline_ms = 0;
+        return 0;
+    }
+    if (!conn->validation_pto_deadline_ms) {
+        uint64_t duration = neverc_quic_pto(&conn->loss.rtt, 0);
+        if (conn->loss.pto_count >= 63 ||
+            duration > (UINT64_MAX >> conn->loss.pto_count))
+            duration = UINT64_MAX;
+        else
+            duration <<= conn->loss.pto_count;
+        conn->validation_pto_deadline_ms =
+            now_ms > UINT64_MAX - duration ? UINT64_MAX : now_ms + duration;
+    }
+    return conn->validation_pto_deadline_ms;
+}
+
+int neverc_quic_conn_has_ack_eliciting_in_flight(
+    const struct neverc_quic_conn *conn) {
+    if (!conn) return 0;
+    for (int space = 0; space < QUIC_PN_SPACE_COUNT; space++) {
+        for (const quic_sent_packet_t *packet =
+                 conn->loss.spaces[space].sent_packets;
+             packet; packet = packet->next) {
+            if (packet->ack_eliciting && packet->in_flight &&
+                !packet->acked && !packet->lost)
+                return 1;
+        }
+    }
+    return 0;
 }
 
 int neverc_quic_conn_is_alive_check(struct neverc_quic_conn *conn) {

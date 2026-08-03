@@ -231,6 +231,10 @@ static void detect_lost_packets(quic_loss_detector_t *ld, int space,
             pkt = pkt->next;
             continue;
         }
+        if (pkt->pkt_number > largest_acked) {
+            pkt = pkt->next;
+            continue;
+        }
 
         int lost = 0;
 
@@ -242,7 +246,7 @@ static void detect_lost_packets(quic_loss_detector_t *ld, int space,
 
         /* Time threshold: lost if sent long enough ago */
         if (now_ms >= pkt->sent_time_ms &&
-            now_ms - pkt->sent_time_ms > time_threshold) {
+            now_ms - pkt->sent_time_ms >= time_threshold) {
             lost = 1;
         }
 
@@ -335,7 +339,8 @@ void neverc_quic_loss_on_ack(quic_loss_detector_t *ld, int space,
 }
 
 /* Get loss detection timeout (0 = no timer needed) */
-uint64_t neverc_quic_loss_get_timeout(const quic_loss_detector_t *ld) {
+uint64_t neverc_quic_loss_get_timeout(const quic_loss_detector_t *ld,
+                                      int handshake_confirmed) {
     /* Check loss times first */
     uint64_t earliest_loss_time = 0;
     for (int i = 0; i < 3; i++) {
@@ -347,22 +352,36 @@ uint64_t neverc_quic_loss_get_timeout(const quic_loss_detector_t *ld) {
     if (earliest_loss_time > 0)
         return earliest_loss_time;
 
-    /* PTO timer */
-    uint64_t last_ack_eliciting = 0;
-    for (int i = 0; i < 3; i++) {
-        if (ld->spaces[i].time_of_last_ack_eliciting > last_ack_eliciting)
-            last_ack_eliciting = ld->spaces[i].time_of_last_ack_eliciting;
+    /* PTO is selected independently from spaces with packets in flight. */
+    uint64_t earliest_pto = 0;
+    for (int space = 0; space < QUIC_PN_SPACE_COUNT; space++) {
+        if (space == QUIC_PNS_APPLICATION && !handshake_confirmed)
+            continue;
+        int has_ack_eliciting_in_flight = 0;
+        for (const quic_sent_packet_t *packet =
+                 ld->spaces[space].sent_packets;
+             packet; packet = packet->next) {
+            if (packet->ack_eliciting && packet->in_flight &&
+                !packet->acked && !packet->lost) {
+                has_ack_eliciting_in_flight = 1;
+                break;
+            }
+        }
+        if (!has_ack_eliciting_in_flight) continue;
+
+        uint64_t duration = neverc_quic_pto(
+            &ld->rtt, space == QUIC_PNS_APPLICATION);
+        if (ld->pto_count >= 63 ||
+            duration > (UINT64_MAX >> ld->pto_count))
+            duration = UINT64_MAX;
+        else
+            duration <<= ld->pto_count;
+        uint64_t candidate = quic_saturating_add(
+            ld->spaces[space].time_of_last_ack_eliciting, duration);
+        if (earliest_pto == 0 || candidate < earliest_pto)
+            earliest_pto = candidate;
     }
-    if (last_ack_eliciting == 0) return 0;
-
-    int include_ack_delay = 1; /* simplified: always include in app space */
-    uint64_t pto = neverc_quic_pto(&ld->rtt, include_ack_delay);
-    if (ld->pto_count >= 63 || pto > (UINT64_MAX >> ld->pto_count))
-        pto = UINT64_MAX;
-    else
-        pto <<= ld->pto_count;
-
-    return quic_saturating_add(last_ack_eliciting, pto);
+    return earliest_pto;
 }
 
 /* Clean up acknowledged/lost packets from the tracking list */

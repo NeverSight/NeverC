@@ -259,7 +259,7 @@ static void test_loss_timeout(void) {
     neverc_quic_loss_init(&ld);
 
     neverc_quic_loss_on_sent(&ld, 2, 0, 1000, 1200, 1);
-    uint64_t timeout = neverc_quic_loss_get_timeout(&ld);
+    uint64_t timeout = neverc_quic_loss_get_timeout(&ld, 1);
     /* PTO = smoothed_rtt(333) + 4*rttvar(166) + max_ack_delay(25)
      * = 333 + 664 + 25 = 1022 from time 1000 → timeout = 2022 */
     ASSERT_TRUE(timeout > 1000);
@@ -277,13 +277,78 @@ static void test_loss_pto_backoff(void) {
     ld.pto_count = 1;
     /* PTO is exponentially backed off */
     neverc_quic_loss_on_sent(&ld, 2, 0, 1000, 1200, 1);
-    uint64_t t1 = neverc_quic_loss_get_timeout(&ld);
+    uint64_t t1 = neverc_quic_loss_get_timeout(&ld, 1);
 
     ld.pto_count = 2;
-    uint64_t t2 = neverc_quic_loss_get_timeout(&ld);
+    uint64_t t2 = neverc_quic_loss_get_timeout(&ld, 1);
     /* t2 should have larger PTO than t1 */
     ASSERT_TRUE(t2 > t1);
     (void)pto0;
+
+    neverc_quic_loss_destroy(&ld);
+}
+
+static void test_loss_timeout_skips_empty_packet_number_space(void) {
+    quic_loss_detector_t ld;
+    neverc_quic_loss_init(&ld);
+    neverc_quic_loss_on_sent(&ld, QUIC_PNS_INITIAL, 0, 1000, 1200, 1);
+    neverc_quic_loss_on_sent(&ld, QUIC_PNS_APPLICATION, 0, 2000,
+                             1200, 1);
+    neverc_quic_loss_mark_acked(&ld, QUIC_PNS_APPLICATION, 0, 2100);
+    neverc_quic_loss_on_ack(&ld, QUIC_PNS_APPLICATION, 0, 0, 2100);
+    neverc_quic_loss_cleanup(&ld, QUIC_PNS_APPLICATION);
+
+    uint64_t expected = 1000 + neverc_quic_pto(&ld.rtt, 0);
+    ASSERT_EQ(neverc_quic_loss_get_timeout(&ld, 1), expected);
+
+    neverc_quic_loss_destroy(&ld);
+}
+
+static void test_loss_timeout_skips_app_before_handshake_confirmation(void) {
+    quic_loss_detector_t ld;
+    neverc_quic_loss_init(&ld);
+    neverc_quic_loss_on_sent(&ld, QUIC_PNS_APPLICATION, 0, 1000,
+                             1200, 1);
+    neverc_quic_loss_on_sent(&ld, QUIC_PNS_INITIAL, 0, 2000, 1200, 1);
+
+    uint64_t initial = 2000 + neverc_quic_pto(&ld.rtt, 0);
+    uint64_t app = 1000 + neverc_quic_pto(&ld.rtt, 1);
+    ASSERT_TRUE(app < initial);
+    ASSERT_EQ(neverc_quic_loss_get_timeout(&ld, 0), initial);
+    ASSERT_EQ(neverc_quic_loss_get_timeout(&ld, 1), app);
+
+    neverc_quic_loss_destroy(&ld);
+}
+
+static void test_loss_time_ignores_packets_newer_than_largest_acked(void) {
+    quic_loss_detector_t ld;
+    neverc_quic_loss_init(&ld);
+    neverc_quic_loss_on_sent(&ld, QUIC_PNS_APPLICATION, 0, 1000,
+                             1200, 1);
+    neverc_quic_loss_on_sent(&ld, QUIC_PNS_APPLICATION, 1, 1090,
+                             1200, 1);
+    neverc_quic_loss_mark_acked(&ld, QUIC_PNS_APPLICATION, 0, 1100);
+    neverc_quic_loss_on_ack(&ld, QUIC_PNS_APPLICATION, 0, 0, 1100);
+
+    ASSERT_EQ(ld.spaces[QUIC_PNS_APPLICATION].loss_time, 0);
+    ASSERT_TRUE(!ld.spaces[QUIC_PNS_APPLICATION].sent_packets->next->lost);
+
+    neverc_quic_loss_destroy(&ld);
+}
+
+static void test_time_threshold_loss_expires_at_deadline(void) {
+    quic_loss_detector_t ld;
+    neverc_quic_loss_init(&ld);
+    ld.rtt.smoothed_rtt = 8;
+    neverc_quic_loss_on_sent(&ld, QUIC_PNS_APPLICATION, 0, 1000,
+                             1200, 1);
+    ld.spaces[QUIC_PNS_APPLICATION].has_largest_acked = 1;
+    ld.spaces[QUIC_PNS_APPLICATION].largest_acked_packet = 1;
+
+    detect_lost_packets(&ld, QUIC_PNS_APPLICATION, 1009);
+
+    ASSERT_TRUE(ld.spaces[QUIC_PNS_APPLICATION].sent_packets->lost);
+    ASSERT_EQ(ld.spaces[QUIC_PNS_APPLICATION].loss_time, 0);
 
     neverc_quic_loss_destroy(&ld);
 }
@@ -313,6 +378,10 @@ int main(void) {
     test_loss_cleanup();
     test_loss_timeout();
     test_loss_pto_backoff();
+    test_loss_timeout_skips_empty_packet_number_space();
+    test_loss_timeout_skips_app_before_handshake_confirmation();
+    test_loss_time_ignores_packets_newer_than_largest_acked();
+    test_time_threshold_loss_expires_at_deadline();
 
     printf("\n%d passed, %d failed (of %d)\n", tests_passed, tests_failed, tests_run);
     return tests_failed > 0 ? 1 : 0;

@@ -447,6 +447,9 @@ struct neverc_quic_conn {
     uint64_t idle_timeout_ms;
     uint64_t last_activity_ms;
     uint64_t handshake_start_ms;
+    int handshake_confirmed;
+    int peer_completed_address_validation;
+    uint64_t validation_pto_deadline_ms;
     uint64_t draining_started_ms;
     uint64_t bytes_received_before_validation;
     uint64_t bytes_sent_before_validation;
@@ -583,6 +586,8 @@ int neverc_quic_transport_params_encode(
     size_t *written);
 
 void neverc_quic_loss_init(quic_loss_detector_t *detector);
+uint64_t neverc_quic_pto(const quic_rtt_t *rtt,
+                         int include_max_ack_delay);
 void neverc_quic_loss_on_sent(quic_loss_detector_t *detector, int space,
                               uint64_t packet_number, uint64_t sent_time,
                               size_t sent_bytes, int ack_eliciting);
@@ -593,7 +598,7 @@ void neverc_quic_loss_on_ack(quic_loss_detector_t *detector, int space,
                              uint64_t ack_delay_ms, uint64_t now);
 int neverc_quic_loss_detect(quic_loss_detector_t *detector, uint64_t now);
 uint64_t neverc_quic_loss_get_timeout(
-    const quic_loss_detector_t *detector);
+    const quic_loss_detector_t *detector, int handshake_confirmed);
 void neverc_quic_loss_cleanup(quic_loss_detector_t *detector, int space);
 void neverc_quic_loss_destroy(quic_loss_detector_t *detector);
 
@@ -683,6 +688,10 @@ int neverc_quic_conn_close_locked(struct neverc_quic_conn *conn,
                                   uint64_t error_code,
                                   const char *reason, int is_app);
 int neverc_quic_conn_send_drained(struct neverc_quic_conn *conn);
+int neverc_quic_conn_has_ack_eliciting_in_flight(
+    const struct neverc_quic_conn *conn);
+uint64_t neverc_quic_conn_loss_timeout(struct neverc_quic_conn *conn,
+                                       uint64_t now_ms);
 int neverc_quic_conn_is_alive_check(struct neverc_quic_conn *conn);
 const char *neverc_quic_conn_get_alpn(struct neverc_quic_conn *conn);
 uint64_t neverc_quic_stream_get_id(quic_stream_t *stream);

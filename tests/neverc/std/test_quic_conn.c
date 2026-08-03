@@ -401,6 +401,64 @@ static void test_conn_is_alive(void) {
     neverc_quic_conn_destroy(conn);
 }
 
+static void seed_idle_loss_history(struct neverc_quic_conn *conn) {
+    neverc_quic_loss_on_sent(&conn->loss, QUIC_PNS_APPLICATION, 0, 1000,
+                             1200, 1);
+    neverc_quic_loss_mark_acked(&conn->loss, QUIC_PNS_APPLICATION, 0, 1100);
+    neverc_quic_loss_on_ack(&conn->loss, QUIC_PNS_APPLICATION, 0, 0, 1100);
+    neverc_quic_loss_cleanup(&conn->loss, QUIC_PNS_APPLICATION);
+}
+
+static void test_conn_loss_timeout_disarmed_after_address_validation(void) {
+    struct neverc_quic_conn *conn =
+        neverc_quic_conn_create(QUIC_SIDE_SERVER, -1);
+    conn->peer_completed_address_validation = 1;
+    conn->handshake_confirmed = 1;
+    seed_idle_loss_history(conn);
+
+    ASSERT_EQ(neverc_quic_loss_get_timeout(&conn->loss, 1), 0);
+    ASSERT_EQ(neverc_quic_conn_loss_timeout(conn, 2000), 0);
+
+    neverc_quic_conn_destroy(conn);
+}
+
+static void test_conn_loss_timeout_fresh_before_peer_validation(void) {
+    struct neverc_quic_conn *conn =
+        neverc_quic_conn_create(QUIC_SIDE_CLIENT, -1);
+    conn->peer_completed_address_validation = 0;
+    seed_idle_loss_history(conn);
+
+    uint64_t expected = 2000 + neverc_quic_pto(&conn->loss.rtt, 0);
+    ASSERT_EQ(neverc_quic_conn_loss_timeout(conn, 2000), expected);
+    ASSERT_EQ(neverc_quic_conn_loss_timeout(conn, 2100), expected);
+
+    neverc_quic_loss_on_sent(&conn->loss, QUIC_PNS_HANDSHAKE, 1, 2150,
+                             1200, 1);
+    ASSERT_TRUE(neverc_quic_conn_loss_timeout(conn, 2150) > 0);
+    neverc_quic_loss_mark_acked(&conn->loss, QUIC_PNS_HANDSHAKE, 1, 2160);
+    neverc_quic_loss_on_ack(&conn->loss, QUIC_PNS_HANDSHAKE, 1, 0, 2160);
+    neverc_quic_loss_cleanup(&conn->loss, QUIC_PNS_HANDSHAKE);
+    uint64_t reentered = 2200 + neverc_quic_pto(&conn->loss.rtt, 0);
+    ASSERT_EQ(neverc_quic_conn_loss_timeout(conn, 2200), reentered);
+    ASSERT_TRUE(reentered != expected);
+
+    neverc_quic_conn_destroy(conn);
+}
+
+static void test_conn_loss_timeout_cancelled_at_amplification_limit(void) {
+    struct neverc_quic_conn *conn =
+        neverc_quic_conn_create(QUIC_SIDE_SERVER, -1);
+    conn->address_validated = 0;
+    conn->bytes_received_before_validation = 100;
+    conn->bytes_sent_before_validation = 300;
+    neverc_quic_loss_on_sent(&conn->loss, QUIC_PNS_INITIAL, 0, 1000,
+                             1200, 1);
+
+    ASSERT_EQ(neverc_quic_conn_loss_timeout(conn, 2000), 0);
+
+    neverc_quic_conn_destroy(conn);
+}
+
 static void test_conn_alpn(void) {
     struct neverc_quic_conn *conn = neverc_quic_conn_create(QUIC_SIDE_CLIENT, -1);
 
@@ -449,6 +507,9 @@ int main(void) {
     test_conn_close_wakes_streams();
     test_conn_close_idempotent();
     test_conn_is_alive();
+    test_conn_loss_timeout_disarmed_after_address_validation();
+    test_conn_loss_timeout_fresh_before_peer_validation();
+    test_conn_loss_timeout_cancelled_at_amplification_limit();
     test_conn_alpn();
     test_stream_get_id();
     printf("\n%d passed, %d failed (of %d)\n", tests_passed, tests_failed, tests_run);

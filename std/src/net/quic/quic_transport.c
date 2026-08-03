@@ -186,10 +186,12 @@ static int qt_process_ack(struct neverc_quic_conn *conn, int space,
                         encoded_delay > (UINT64_MAX >> exponent) ?
                             UINT64_MAX : encoded_delay << exponent;
     uint64_t delay_ms = delay_us == UINT64_MAX ? UINT64_MAX : delay_us / 1000U;
+    int acknowledged_sent_packet = 0;
     for (size_t i = 0; i < QUIC_TX_RECORD_CAPACITY; i++) {
         quic_tx_record_t *record = &conn->tx_records[i];
         if (record->used && record->space == space &&
             qt_ack_contains(ack, record->packet_number)) {
+            acknowledged_sent_packet = 1;
             neverc_quic_loss_mark_acked(&conn->loss, space,
                                         record->packet_number, now_ms);
             neverc_quic_conn_on_packet_acked(conn, space,
@@ -198,6 +200,9 @@ static int qt_process_ack(struct neverc_quic_conn *conn, int space,
     }
     neverc_quic_loss_on_ack(&conn->loss, space, ack->largest_acked,
                             delay_ms, now_ms);
+    if (conn->side == QUIC_SIDE_CLIENT && space == QUIC_PNS_HANDSHAKE &&
+        acknowledged_sent_packet)
+        conn->peer_completed_address_validation = 1;
     if (!conn->pn[space].largest_acked ||
         ack->largest_acked > conn->pn[space].largest_acked)
         conn->pn[space].largest_acked = ack->largest_acked;
@@ -478,6 +483,8 @@ static int qt_handle_frames(struct neverc_quic_conn *conn,
             if (conn->side != QUIC_SIDE_CLIENT ||
                 level != QUIC_ENC_APPLICATION)
                 return -1;
+            conn->handshake_confirmed = 1;
+            conn->peer_completed_address_validation = 1;
             consumed = type_len;
             *ack_eliciting = 1;
         } else if (frame_type == QUIC_FRAME_DATAGRAM ||
@@ -700,7 +707,10 @@ decrypt_complete:
             memcpy(conn->alpn, alpn, alpn_len);
             conn->alpn[alpn_len] = '\0';
         }
-        if (conn->side == QUIC_SIDE_SERVER) conn->handshake_done_pending = 1;
+        if (conn->side == QUIC_SIDE_SERVER) {
+            conn->handshake_confirmed = 1;
+            conn->handshake_done_pending = 1;
+        }
         nc_cond_broadcast(&conn->state_cond);
     }
     free(plaintext);
@@ -1451,7 +1461,7 @@ void neverc_quic_conn_tick(struct neverc_quic_conn *conn, uint64_t now_ms) {
         if (changed) (void)neverc_quic_conn_flush(conn);
         return;
     }
-    uint64_t timeout = neverc_quic_loss_get_timeout(&conn->loss);
+    uint64_t timeout = neverc_quic_conn_loss_timeout(conn, now_ms);
     if (timeout && now_ms >= timeout) {
         int detected_loss = neverc_quic_loss_detect(&conn->loss, now_ms);
         if (detected_loss) {
@@ -1467,6 +1477,7 @@ void neverc_quic_conn_tick(struct neverc_quic_conn *conn, uint64_t now_ms) {
                 neverc_quic_loss_cleanup(&conn->loss, space);
             }
         } else {
+            conn->validation_pto_deadline_ms = 0;
             conn->loss.pto_count++;
             if (conn->loss.pto_count > 8) {
                 int changed = neverc_quic_conn_close_locked(
@@ -1478,13 +1489,21 @@ void neverc_quic_conn_tick(struct neverc_quic_conn *conn, uint64_t now_ms) {
             }
             conn->pto_probe_pending = 2;
             conn->pto_probe_level = QUIC_ENC_INITIAL;
-            for (int space = QUIC_PNS_APPLICATION;
-                 space >= QUIC_PNS_INITIAL; space--) {
-                if (!conn->loss.spaces[space].sent_packets) continue;
-                conn->pto_probe_level = space == QUIC_PNS_APPLICATION ?
-                    QUIC_ENC_APPLICATION : space == QUIC_PNS_HANDSHAKE ?
-                    QUIC_ENC_HANDSHAKE : QUIC_ENC_INITIAL;
-                break;
+            if (!neverc_quic_conn_has_ack_eliciting_in_flight(conn) &&
+                conn->side == QUIC_SIDE_CLIENT &&
+                !conn->peer_completed_address_validation) {
+                if (neverc_quic_tls_get_write_keys(
+                        conn->tls, QUIC_ENC_HANDSHAKE))
+                    conn->pto_probe_level = QUIC_ENC_HANDSHAKE;
+            } else {
+                for (int space = QUIC_PNS_APPLICATION;
+                     space >= QUIC_PNS_INITIAL; space--) {
+                    if (!conn->loss.spaces[space].sent_packets) continue;
+                    conn->pto_probe_level = space == QUIC_PNS_APPLICATION ?
+                        QUIC_ENC_APPLICATION : space == QUIC_PNS_HANDSHAKE ?
+                        QUIC_ENC_HANDSHAKE : QUIC_ENC_INITIAL;
+                    break;
+                }
             }
         }
     }
