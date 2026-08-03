@@ -423,6 +423,11 @@ STD_TEST(mime, "src/mime/mime.c")
 STD_TEST(context, "src/context/context.c")
 STD_TEST(maps, "src/maps/maps.c")
 STD_TEST(slices, "src/slices/slices.c")
+TEST_F(StdLibTest, SlicesAllocationFailure) {
+  auto r = compileAndRunStdTest("slices_oom", {}, {"-fno-builtin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
 
 // ===== Container =====
 STD_TEST(heap, "src/container/heap/heap.c")

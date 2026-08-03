@@ -5,8 +5,18 @@
 
 #include "neverc/std/slices.h"
 #include "../sort/sort_impl.h"
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+
+static int slices_ranges_overlap(const void *a, size_t a_bytes,
+                                 const void *b, size_t b_bytes) {
+    if (a_bytes == 0 || b_bytes == 0) return 0;
+    uintptr_t a_start = (uintptr_t)a;
+    uintptr_t b_start = (uintptr_t)b;
+    if (a_start <= b_start) return b_start - a_start < a_bytes;
+    return a_start - b_start < b_bytes;
+}
 
 int neverc_slices_equal(const void *s1, size_t len1, const void *s2, size_t len2, size_t elem_size) {
     if (len1 != len2) return 0;
@@ -223,22 +233,63 @@ size_t neverc_slices_delete(void *slice, size_t len, size_t elem_size, size_t i,
 size_t neverc_slices_insert(void *slice, size_t len, size_t elem_size,
                              size_t i, const void *elems, size_t count) {
     if (count == 0) return len;
+    if (!slice || !elems || elem_size == 0 || i > len ||
+        len > SIZE_MAX - count || count > SIZE_MAX / elem_size)
+        return len;
+    size_t new_len = len + count;
+    if (new_len > SIZE_MAX / elem_size) return len;
+
     char *p = (char *)slice;
+    size_t input_bytes = count * elem_size;
+    void *input_copy = NULL;
+    if (slices_ranges_overlap(elems, input_bytes, slice,
+                              new_len * elem_size)) {
+        input_copy = malloc(input_bytes);
+        if (!input_copy) return len;
+        memcpy(input_copy, elems, input_bytes);
+        elems = input_copy;
+    }
+
     size_t tail = len - i;
-    if (tail > 0) memmove(p + (i + count) * elem_size, p + i * elem_size, tail * elem_size);
-    memcpy(p + i * elem_size, elems, count * elem_size);
-    return len + count;
+    if (tail > 0)
+        memmove(p + (i + count) * elem_size, p + i * elem_size,
+                tail * elem_size);
+    memcpy(p + i * elem_size, elems, input_bytes);
+    free(input_copy);
+    return new_len;
 }
 
 size_t neverc_slices_replace(void *slice, size_t len, size_t elem_size,
                               size_t i, size_t j, const void *elems, size_t count) {
+    if (!slice || elem_size == 0 || i > j || j > len ||
+        len > SIZE_MAX / elem_size)
+        return len;
     size_t removed = j - i;
+    size_t retained = len - removed;
+    if (count > SIZE_MAX - retained || count > SIZE_MAX / elem_size)
+        return len;
+    size_t new_len = retained + count;
+    if (new_len > SIZE_MAX / elem_size || (count > 0 && !elems)) return len;
+
     char *p = (char *)slice;
+    size_t input_bytes = count * elem_size;
+    void *input_copy = NULL;
+    size_t touched_len = len > new_len ? len : new_len;
+    if (slices_ranges_overlap(elems, input_bytes, slice,
+                              touched_len * elem_size)) {
+        input_copy = malloc(input_bytes);
+        if (!input_copy) return len;
+        memcpy(input_copy, elems, input_bytes);
+        elems = input_copy;
+    }
+
     size_t tail = len - j;
     if (count != removed && tail > 0)
-        memmove(p + (i + count) * elem_size, p + j * elem_size, tail * elem_size);
-    if (count > 0) memcpy(p + i * elem_size, elems, count * elem_size);
-    return len - removed + count;
+        memmove(p + (i + count) * elem_size, p + j * elem_size,
+                tail * elem_size);
+    if (count > 0) memcpy(p + i * elem_size, elems, input_bytes);
+    free(input_copy);
+    return new_len;
 }
 
 void *neverc_slices_concat(const void *s1, size_t len1, const void *s2, size_t len2,

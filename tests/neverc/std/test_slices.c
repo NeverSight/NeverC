@@ -137,6 +137,16 @@ static void test_insert(void) {
     ASSERT_INT_EQ(arr[5], 6);
 }
 
+static void test_insert_overlapping_source(void) {
+    printf("[insert overlapping source]\n");
+    int arr[8] = {1, 2, 3, 4};
+    size_t newlen = neverc_slices_insert(arr, 4, sizeof(int), 1, &arr[3],
+                                          1);
+    int expected[] = {1, 4, 2, 3, 4};
+    ASSERT_INT_EQ((int)newlen, 5);
+    ASSERT_TRUE(neverc_slices_equal_ints(arr, newlen, expected, 5));
+}
+
 static void test_replace(void) {
     printf("[replace]\n");
     int arr[10] = {1, 2, 3, 4, 5};
@@ -149,6 +159,16 @@ static void test_replace(void) {
     ASSERT_INT_EQ(arr[3], 30);
     ASSERT_INT_EQ(arr[4], 4);
     ASSERT_INT_EQ(arr[5], 5);
+}
+
+static void test_replace_overlapping_source(void) {
+    printf("[replace overlapping source]\n");
+    int arr[10] = {1, 2, 3, 4, 5};
+    size_t newlen = neverc_slices_replace(arr, 5, sizeof(int), 1, 2,
+                                           &arr[3], 2);
+    int expected[] = {1, 4, 5, 3, 4, 5};
+    ASSERT_INT_EQ((int)newlen, 6);
+    ASSERT_TRUE(neverc_slices_equal_ints(arr, newlen, expected, 6));
 }
 
 static void test_concat(void) {
@@ -195,7 +215,9 @@ int main(void) {
     test_stable_sort();
     test_delete();
     test_insert();
+    test_insert_overlapping_source();
     test_replace();
+    test_replace_overlapping_source();
     test_concat();
     test_func_ops();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
