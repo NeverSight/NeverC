@@ -32,6 +32,8 @@ struct neverc_os_file {
     int   is_std;
 };
 
+static neverc_os_file_t *file_from_descriptor(int fd, const char *mode);
+
 static neverc_os_file_t g_stdin  = { NULL, 0, 1 };
 static neverc_os_file_t g_stdout = { NULL, 1, 1 };
 static neverc_os_file_t g_stderr = { NULL, 2, 1 };
@@ -123,26 +125,43 @@ int neverc_os_chdir(const char *dir) {
 
 neverc_os_file_t *neverc_os_open(const char *name, int flags, uint32_t perm) {
     if (!name) return NULL;
-    const char *mode;
     int rw = flags & 0x03;
-    int create = flags & NEVERC_OS_O_CREATE;
-    int trunc = flags & NEVERC_OS_O_TRUNC;
-    int append = flags & NEVERC_OS_O_APPEND;
+    if (rw != NEVERC_OS_O_RDONLY && rw != NEVERC_OS_O_WRONLY &&
+        rw != NEVERC_OS_O_RDWR)
+        return NULL;
 
-    if (rw == NEVERC_OS_O_RDONLY) mode = "rb";
-    else if (append) mode = create ? "ab+" : "ab";
-    else if (trunc || create) mode = (rw == NEVERC_OS_O_RDWR) ? "wb+" : "wb";
-    else mode = (rw == NEVERC_OS_O_RDWR) ? "rb+" : "wb";
+    int native_flags;
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    native_flags = _O_BINARY | _O_NOINHERIT;
+    native_flags |= rw == NEVERC_OS_O_RDONLY ? _O_RDONLY
+                  : rw == NEVERC_OS_O_WRONLY ? _O_WRONLY : _O_RDWR;
+    if (flags & NEVERC_OS_O_CREATE) native_flags |= _O_CREAT;
+    if (flags & NEVERC_OS_O_EXCL) native_flags |= _O_EXCL;
+    if (flags & NEVERC_OS_O_TRUNC) native_flags |= _O_TRUNC;
+    if (flags & NEVERC_OS_O_APPEND) native_flags |= _O_APPEND;
+    int native_perm = 0;
+    if (perm & 0444) native_perm |= _S_IREAD;
+    if (perm & 0222) native_perm |= _S_IWRITE;
+    int fd = _open(name, native_flags, native_perm);
+#else
+    native_flags = rw == NEVERC_OS_O_RDONLY ? O_RDONLY
+                 : rw == NEVERC_OS_O_WRONLY ? O_WRONLY : O_RDWR;
+    if (flags & NEVERC_OS_O_CREATE) native_flags |= O_CREAT;
+    if (flags & NEVERC_OS_O_EXCL) native_flags |= O_EXCL;
+    if (flags & NEVERC_OS_O_TRUNC) native_flags |= O_TRUNC;
+    if (flags & NEVERC_OS_O_APPEND) native_flags |= O_APPEND;
+#ifdef O_CLOEXEC
+    native_flags |= O_CLOEXEC;
+#endif
+    int fd = open(name, native_flags, (mode_t)(perm & NEVERC_OS_MODE_PERM));
+#endif
+    if (fd < 0) return NULL;
 
-    FILE *fp = fopen(name, mode);
-    if (!fp) return NULL;
-
-    neverc_os_file_t *f = (neverc_os_file_t*)calloc(1, sizeof(*f));
-    if (!f) { fclose(fp); return NULL; }
-    f->fp = fp;
-    f->fd = fileno(fp);
-    (void)perm;
-    return f;
+    const char *mode = rw == NEVERC_OS_O_RDONLY ? "rb"
+                     : rw == NEVERC_OS_O_RDWR
+                           ? ((flags & NEVERC_OS_O_APPEND) ? "ab+" : "rb+")
+                           : ((flags & NEVERC_OS_O_APPEND) ? "ab" : "wb");
+    return file_from_descriptor(fd, mode);
 }
 
 neverc_os_file_t *neverc_os_create(const char *name) {

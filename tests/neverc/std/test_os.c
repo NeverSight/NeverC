@@ -74,6 +74,50 @@ static void test_file_ops(void) {
     ASSERT_TRUE(!neverc_os_exists(path));
 }
 
+static void test_open_flag_semantics(void) {
+    printf("[open flag semantics]\n");
+    char pathbuf[1024];
+    make_test_path(pathbuf, sizeof(pathbuf), "neverc_test_os_flags.txt");
+    const unsigned char data[] = "preserve me";
+
+    ASSERT_EQ(neverc_os_write_file(pathbuf, data, sizeof(data) - 1, 0600), 0);
+    neverc_os_file_t *f = neverc_os_open(pathbuf, NEVERC_OS_O_WRONLY, 0);
+    ASSERT_TRUE(f != NULL);
+    neverc_os_close(f);
+
+    f = neverc_os_open(pathbuf, NEVERC_OS_O_WRONLY | NEVERC_OS_O_CREATE,
+                       0600);
+    ASSERT_TRUE(f != NULL);
+    neverc_os_close(f);
+
+    unsigned char *out = NULL;
+    size_t out_len = 0;
+    ASSERT_EQ(neverc_os_read_file(pathbuf, &out, &out_len), 0);
+    ASSERT_EQ((int)out_len, (int)(sizeof(data) - 1));
+    ASSERT_TRUE(out != NULL && memcmp(out, data, out_len) == 0);
+    free(out);
+
+    f = neverc_os_open(pathbuf, NEVERC_OS_O_WRONLY | NEVERC_OS_O_APPEND, 0);
+    ASSERT_TRUE(f != NULL);
+    ASSERT_EQ(neverc_os_write(f, "!", 1), 1);
+    neverc_os_close(f);
+    neverc_os_fileinfo_t info;
+    ASSERT_EQ(neverc_os_stat(pathbuf, &info), 0);
+    ASSERT_EQ((int)info.size, (int)sizeof(data));
+
+    f = neverc_os_open(pathbuf, NEVERC_OS_O_WRONLY | NEVERC_OS_O_CREATE |
+                                    NEVERC_OS_O_EXCL,
+                       0600);
+    ASSERT_TRUE(f == NULL);
+
+    f = neverc_os_open(pathbuf, NEVERC_OS_O_WRONLY | NEVERC_OS_O_TRUNC, 0);
+    ASSERT_TRUE(f != NULL);
+    neverc_os_close(f);
+    ASSERT_EQ(neverc_os_stat(pathbuf, &info), 0);
+    ASSERT_EQ((int)info.size, 0);
+    neverc_os_remove(pathbuf);
+}
+
 static void test_read_write_file(void) {
     printf("[read/write file]\n");
     char pathbuf[1024];
@@ -319,6 +363,7 @@ int main(void) {
     test_getwd();
     test_hostname();
     test_file_ops();
+    test_open_flag_semantics();
     test_read_write_file();
     test_stat();
     test_mkdir();
