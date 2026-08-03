@@ -24,6 +24,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <limits.h>
 
 #ifdef _WIN32
   #include <winsock2.h>
@@ -203,11 +204,13 @@ static int hpack_decode_int(const uint8_t *data, size_t len, int prefix_bits,
     for (;;) {
         if (i >= len) return -1;
         uint8_t b = data[i];
-        *value += (uint64_t)(b & 0x7f) << m;
-        m += 7;
+        uint64_t payload = b & 0x7fU;
+        if (m >= 64 || payload > (UINT64_MAX - *value) >> m) return -1;
+        *value += payload << m;
         i++;
         if (!(b & 0x80)) break;
-        if (m > 63) return -1;
+        if (m > 56) return -1;
+        m += 7;
     }
     *consumed = i;
     return 0;
@@ -243,6 +246,8 @@ static int hpack_encode_int(uint8_t *out, size_t cap, int prefix_bits,
 
 int neverc_hpack_huffman_encode(const uint8_t *in, size_t in_len,
                                  uint8_t *out, size_t out_cap, size_t *out_len) {
+    if (!out_len || (!in && in_len > 0) || (!out && out_cap > 0)) return -1;
+    *out_len = 0;
     uint64_t x = 0;
     unsigned n = 0;
     size_t pos = 0;
@@ -270,6 +275,8 @@ int neverc_hpack_huffman_encode(const uint8_t *in, size_t in_len,
 
 int neverc_hpack_huffman_decode(const uint8_t *in, size_t in_len,
                                  uint8_t *out, size_t out_cap, size_t *out_len) {
+    if (!out_len || (!in && in_len > 0) || (!out && out_cap > 0)) return -1;
+    *out_len = 0;
     /* Canonical Huffman decode. The previous version scanned all 256 symbols
      * for every input *bit* — O(in_len * 8 * 256). RFC 7541's Huffman code is
      * canonical, so we build per-length decode tables once (on the stack: cheap,
@@ -522,6 +529,9 @@ int neverc_hpack_decode(neverc_hpack_decoder_t *dec,
                          const uint8_t *data, size_t len,
                          neverc_hpack_header_t *headers, int max_headers,
                          int *nheaders) {
+    if (!dec || !nheaders || (!data && len > 0) || max_headers < 0 ||
+        (!headers && max_headers > 0))
+        return -1;
     *nheaders = 0;
     size_t pos = 0;
     int saw_header = 0;
@@ -541,7 +551,8 @@ int neverc_hpack_decode(neverc_hpack_decoder_t *dec,
             if (hpack_decode_int(data + pos, len - pos, 7, &index, &consumed) != 0)
                 return -1;
             pos += consumed;
-            if (hpack_lookup(dec, (int)index, &name, &value) != 0)
+            if (index > INT_MAX ||
+                hpack_lookup(dec, (int)index, &name, &value) != 0)
                 return -1;
             headers[*nheaders].name = strdup(name);
             headers[*nheaders].value = strdup(value);
@@ -562,8 +573,11 @@ int neverc_hpack_decode(neverc_hpack_decoder_t *dec,
             pos += consumed;
 
             if (index > 0) {
-                if (hpack_lookup(dec, (int)index, &name, &value) != 0) return -1;
+                if (index > INT_MAX ||
+                    hpack_lookup(dec, (int)index, &name, &value) != 0)
+                    return -1;
                 alloc_name = strdup(name);
+                if (!alloc_name) return -1;
             } else {
                 if (hpack_decode_string(data + pos, len - pos, &alloc_name, &consumed) != 0)
                     return -1;
@@ -591,8 +605,11 @@ int neverc_hpack_decode(neverc_hpack_decoder_t *dec,
             pos += consumed;
 
             if (index > 0) {
-                if (hpack_lookup(dec, (int)index, &name, &value) != 0) return -1;
+                if (index > INT_MAX ||
+                    hpack_lookup(dec, (int)index, &name, &value) != 0)
+                    return -1;
                 alloc_name = strdup(name);
+                if (!alloc_name) return -1;
             } else {
                 if (hpack_decode_string(data + pos, len - pos, &alloc_name, &consumed) != 0)
                     return -1;
@@ -687,7 +704,7 @@ static int hpack_encode_string(uint8_t *out, size_t cap, const char *str,
         size_t hdr_len;
         if (hpack_encode_int(out, cap, 7, slen, 0x00, &hdr_len) != 0)
             return -1;
-        if (hdr_len + slen > cap) return -1;
+        if (hdr_len > cap || slen > cap - hdr_len) return -1;
         memcpy(out + hdr_len, str, slen);
         *written = hdr_len + slen;
         return 0;
@@ -701,7 +718,7 @@ static int hpack_encode_string(uint8_t *out, size_t cap, const char *str,
     size_t hdr_len;
     if (hpack_encode_int(out, cap, 7, huf_len, 0x80, &hdr_len) != 0)
         return -1;
-    if (hdr_len + huf_len > cap) return -1;
+    if (hdr_len > cap || huf_len > cap - hdr_len) return -1;
     memcpy(out + hdr_len, huf_buf, huf_len);
     *written = hdr_len + huf_len;
     return 0;
@@ -710,14 +727,20 @@ static int hpack_encode_string(uint8_t *out, size_t cap, const char *str,
 int neverc_hpack_encode(neverc_hpack_encoder_t *enc,
                          const neverc_hpack_header_t *headers, int nheaders,
                          uint8_t *out, size_t out_cap, size_t *out_len) {
+    if (!enc || !out_len || nheaders < 0 ||
+        (!headers && nheaders > 0) || (!out && out_cap > 0))
+        return -1;
+    *out_len = 0;
     size_t pos = 0;
 
     for (int i = 0; i < nheaders; i++) {
         const char *name = headers[i].name;
         const char *value = headers[i].value;
+        if (!name || !value || !out) return -1;
 
         int idx = hpack_find_static(name, value);
-        if (idx > 0) {
+        int sensitive = headers[i].sensitive != 0;
+        if (idx > 0 && !sensitive) {
             /* Full indexed reference */
             size_t written;
             if (hpack_encode_int(out + pos, out_cap - pos, 7,
@@ -725,16 +748,19 @@ int neverc_hpack_encode(neverc_hpack_encoder_t *enc,
                 return -1;
             pos += written;
         } else {
-            /* Literal with incremental indexing */
-            int name_idx = idx < 0 ? -idx : 0;
+            int name_idx = idx < 0 ? -idx : idx;
+            int prefix_bits = sensitive ? 4 : 6;
+            uint8_t prefix_byte = sensitive ? 0x10 : 0x40;
             size_t written;
             if (name_idx > 0) {
-                if (hpack_encode_int(out + pos, out_cap - pos, 6,
-                                      (uint64_t)name_idx, 0x40, &written) != 0)
+                if (hpack_encode_int(out + pos, out_cap - pos, prefix_bits,
+                                     (uint64_t)name_idx, prefix_byte,
+                                     &written) != 0)
                     return -1;
                 pos += written;
             } else {
-                out[pos++] = 0x40; /* literal new name */
+                if (pos >= out_cap) return -1;
+                out[pos++] = prefix_byte;
                 if (hpack_encode_string(out + pos, out_cap - pos, name,
                                          1, &written) != 0)
                     return -1;
@@ -745,7 +771,7 @@ int neverc_hpack_encode(neverc_hpack_encoder_t *enc,
                 return -1;
             pos += written;
 
-            if (!headers[i].sensitive &&
+            if (!sensitive &&
                 dyn_table_add(&enc->dyn, name, value) != 0)
                 return -1;
         }

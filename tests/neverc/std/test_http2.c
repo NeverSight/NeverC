@@ -442,6 +442,67 @@ TEST(hpack_dynamic_table_honors_supported_capacity) {
     neverc_hpack_decoder_destroy(dec);
 }
 
+TEST(hpack_zero_capacity_output_is_not_written) {
+    neverc_hpack_encoder_t *enc = neverc_hpack_encoder_create(4096);
+    ASSERT_TRUE(enc != NULL);
+    neverc_hpack_header_t header = {
+        .name = "custom", .value = "value", .sensitive = 0,
+    };
+    uint8_t output[128];
+    memset(output, 0xa5, sizeof(output));
+    size_t output_length = 123;
+
+    ASSERT_EQ(neverc_hpack_encode(
+                  enc, &header, 1, output, 0, &output_length), -1);
+    ASSERT_EQ(output[0], 0xa5);
+    neverc_hpack_encoder_destroy(enc);
+}
+
+TEST(hpack_sensitive_headers_are_never_indexed) {
+    neverc_hpack_encoder_t *enc = neverc_hpack_encoder_create(4096);
+    neverc_hpack_decoder_t *dec = neverc_hpack_decoder_create(4096);
+    ASSERT_TRUE(enc != NULL && dec != NULL);
+    neverc_hpack_header_t sensitive = {
+        .name = "authorization", .value = "secret", .sensitive = 1,
+    };
+    uint8_t encoded[256];
+    size_t encoded_length = 0;
+    ASSERT_EQ(neverc_hpack_encode(enc, &sensitive, 1, encoded,
+                                  sizeof(encoded), &encoded_length), 0);
+    ASSERT_TRUE(encoded_length > 0);
+    ASSERT_EQ(encoded[0] & 0xf0, 0x10);
+
+    neverc_hpack_header_t decoded[1];
+    int nheaders = 0;
+    ASSERT_EQ(neverc_hpack_decode(dec, encoded, encoded_length, decoded, 1,
+                                  &nheaders), 0);
+    ASSERT_EQ(nheaders, 1);
+    free(decoded[0].name);
+    free(decoded[0].value);
+
+    uint8_t dynamic_index[] = {0xbe};
+    nheaders = 0;
+    ASSERT_EQ(neverc_hpack_decode(dec, dynamic_index, sizeof(dynamic_index),
+                                  decoded, 1, &nheaders), -1);
+    neverc_hpack_encoder_destroy(enc);
+    neverc_hpack_decoder_destroy(dec);
+}
+
+TEST(hpack_rejects_overflowing_integer) {
+    neverc_hpack_decoder_t *dec = neverc_hpack_decoder_create(4096);
+    ASSERT_TRUE(dec != NULL);
+    uint8_t overflowing_size_update[] = {
+        0x3f, 0x80, 0x80, 0x80, 0x80, 0x80,
+        0x80, 0x80, 0x80, 0x80, 0x02,
+    };
+    neverc_hpack_header_t headers[1];
+    int nheaders = 0;
+    ASSERT_EQ(neverc_hpack_decode(dec, overflowing_size_update,
+                                  sizeof(overflowing_size_update), headers, 1,
+                                  &nheaders), -1);
+    neverc_hpack_decoder_destroy(dec);
+}
+
 /* ===== Test 14: Frame types and flags ===== */
 TEST(frame_types_and_flags) {
     uint8_t types[] = {
@@ -708,6 +769,9 @@ int main(void) {
     run_test_hpack_dynamic_table_eviction();
     run_test_hpack_oversized_entries_do_not_expand_table();
     run_test_hpack_dynamic_table_honors_supported_capacity();
+    run_test_hpack_zero_capacity_output_is_not_written();
+    run_test_hpack_sensitive_headers_are_never_indexed();
+    run_test_hpack_rejects_overflowing_integer();
     run_test_frame_types_and_flags();
 #ifndef _WIN32
     run_test_h2c_serve_conn_roundtrip();

@@ -89,6 +89,19 @@ int main(void) {
         dyn_table_free(&table);
     }
 
+    neverc_hpack_decoder_t decoder;
+    dyn_table_init(&decoder.dyn, 4096);
+    decoder.max_table_size = 4096;
+    uint8_t indexed_name[] = {0x44, 0x01, 'x'};
+    neverc_hpack_header_t headers[1];
+    int nheaders = 0;
+    reset_allocator(1);
+    CHECK(neverc_hpack_decode(&decoder, indexed_name, sizeof(indexed_name),
+                              headers, 1, &nheaders) == -1);
+    CHECK(nheaders == 0);
+    CHECK(free_count == successful_allocations);
+    dyn_table_free(&decoder.dyn);
+
     puts("passed");
     return 0;
 }
