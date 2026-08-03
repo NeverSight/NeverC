@@ -59,7 +59,7 @@ extern int neverc_h3_write_goaway_frame(uint8_t *buffer, size_t capacity,
 #define H3_DATA_CHUNK         (64U * 1024U)
 #define H3_MAX_CONNECTIONS    4096U
 #define H3_GRACEFUL_SHUTDOWN_MS 5000U
-#define H3_POST_DRAIN_GRACE_MS 100U
+#define H3_POST_DRAIN_GRACE_MS 250U
 #define H3_QPACK_DECOMPRESSION_FAILED 0x0200U
 
 typedef struct h3_conn h3_conn_t;
@@ -1182,20 +1182,33 @@ static void h3_server_close_connections(neverc_http3_server_t *server) {
     for (size_t i = 0; i < server->connection_count; i++)
         h3_server_send_goaway(server->connections[i]);
 
+    unsigned drained_for_ms = 0;
     for (unsigned waited = 0; waited < H3_GRACEFUL_SHUTDOWN_MS; waited += 2U) {
         int drained = 1;
         for (size_t i = 0; i < server->connection_count; i++) {
             h3_conn_t *connection = server->connections[i];
             if (h3_connection_needs_worker(connection)) {
                 drained = 0;
+                drained_for_ms = 0;
                 (void)neverc_quic_conn_flush(connection->quic);
                 break;
             }
         }
-        if (drained) break;
+        if (drained) {
+            drained_for_ms += 2U;
+            if (drained_for_ms >= H3_POST_DRAIN_GRACE_MS)
+                break;
+        }
         h3_sleep_ms(2);
     }
-    h3_sleep_ms(H3_POST_DRAIN_GRACE_MS);
+
+    for (size_t i = 0; i < server->connection_count; i++) {
+        h3_conn_t *connection = server->connections[i];
+        if (connection->thread_started) {
+            (void)nc_thread_join(connection->thread);
+            connection->thread_started = 0;
+        }
+    }
 
     for (size_t i = 0; i < server->connection_count; i++)
         h3_protocol_error(server->connections[i], NC_H3_NO_ERROR,
