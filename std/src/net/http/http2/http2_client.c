@@ -520,6 +520,8 @@ static int h2_client_decode_pending(neverc_h2_client_t *client,
         stream->error = "invalid HTTP/2 response headers";
         stream->error_code = NC_H2_PROTOCOL_ERROR;
         stream->done = 1;
+        h2_client_push_terminal_event(stream, stream->error,
+                                      stream->error_code);
         nc_cond_broadcast(&stream->changed);
         return 0;
     }
@@ -1286,12 +1288,20 @@ int neverc_h2_client_stream_receive(
         received->flow_controlled_length > 0) {
         neverc_h2_client_t *client = stream->client;
         size_t increment = received->flow_controlled_length;
+        if (increment > (size_t)INT32_MAX) {
+            neverc_h2_client_event_free(received);
+            return -1;
+        }
+        int32_t signed_increment = (int32_t)increment;
         nc_mutex_lock(&client->state_lock);
-        if ((int64_t)stream->recv_window + increment <= INT32_MAX)
-            stream->recv_window += (int32_t)increment;
+        if (stream->recv_window > INT32_MAX - signed_increment) {
+            nc_mutex_unlock(&client->state_lock);
+            neverc_h2_client_event_free(received);
+            return -1;
+        }
+        stream->recv_window += signed_increment;
         nc_mutex_unlock(&client->state_lock);
-        if (increment > UINT32_MAX ||
-            h2_client_write_u32(client, NC_H2_FRAME_WINDOW_UPDATE,
+        if (h2_client_write_u32(client, NC_H2_FRAME_WINDOW_UPDATE,
                                 stream->id, (uint32_t)increment) != 0) {
             neverc_h2_client_event_free(received);
             return -1;

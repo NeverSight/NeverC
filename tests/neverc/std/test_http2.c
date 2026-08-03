@@ -13,6 +13,7 @@
 #include "neverc/std/net/tcp.h"
 
 #ifndef _WIN32
+#include <signal.h>
 #include <unistd.h>
 #include <sys/socket.h>
 #include <sys/wait.h>
@@ -749,6 +750,122 @@ TEST(h2c_continuation_headers) {
     ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
 
 }
+
+static void h2_run_invalid_trailer_child(neverc_tcp_listener_t *listener) {
+    const char *error = NULL;
+    neverc_tcp_conn_t *connection = neverc_tcp_accept(listener, &error);
+    if (!connection) _exit(1);
+    int fd = neverc_tcp_conn_fd(connection);
+    char preface[NC_H2_CLIENT_PREFACE_LEN];
+    if (sock_read_all(fd, preface, sizeof(preface)) != 0 ||
+        memcmp(preface, NC_H2_CLIENT_PREFACE, sizeof(preface)) != 0)
+        _exit(1);
+
+    uint8_t header[NC_H2_FRAME_HEADER_SIZE];
+    if (sock_read_all(fd, header, sizeof(header)) != 0)
+        _exit(1);
+    uint32_t length = ((uint32_t)header[0] << 16) |
+                      ((uint32_t)header[1] << 8) | header[2];
+    if (header[3] != NC_H2_FRAME_SETTINGS ||
+        h2_drain_frame_payload(fd, length) != 0)
+        _exit(1);
+
+    uint8_t server_settings[NC_H2_FRAME_HEADER_SIZE] = {
+        0, 0, 0, NC_H2_FRAME_SETTINGS, 0, 0, 0, 0, 0};
+    uint8_t settings_ack[NC_H2_FRAME_HEADER_SIZE] = {
+        0, 0, 0, NC_H2_FRAME_SETTINGS, NC_H2_FLAG_ACK, 0, 0, 0, 0};
+    if (sock_write_all(fd, server_settings, sizeof(server_settings)) != 0 ||
+        sock_write_all(fd, settings_ack, sizeof(settings_ack)) != 0)
+        _exit(1);
+
+    int request_headers_seen = 0;
+    while (!request_headers_seen) {
+        if (sock_read_all(fd, header, sizeof(header)) != 0)
+            _exit(1);
+        length = ((uint32_t)header[0] << 16) |
+                 ((uint32_t)header[1] << 8) | header[2];
+        uint32_t stream_id = ((uint32_t)(header[5] & 0x7f) << 24) |
+                             ((uint32_t)header[6] << 16) |
+                             ((uint32_t)header[7] << 8) | header[8];
+        request_headers_seen = header[3] == NC_H2_FRAME_HEADERS &&
+                               stream_id == 1U;
+        if (h2_drain_frame_payload(fd, length) != 0)
+            _exit(1);
+    }
+
+    uint8_t response_header[NC_H2_FRAME_HEADER_SIZE] = {
+        0, 0, 1, NC_H2_FRAME_HEADERS, NC_H2_FLAG_END_HEADERS,
+        0, 0, 0, 1};
+    uint8_t invalid_trailer_header[NC_H2_FRAME_HEADER_SIZE] = {
+        0, 0, 1, NC_H2_FRAME_HEADERS,
+        (uint8_t)(NC_H2_FLAG_END_HEADERS | NC_H2_FLAG_END_STREAM),
+        0, 0, 0, 1};
+    uint8_t status_200 = 0x88;
+    if (sock_write_all(fd, response_header, sizeof(response_header)) != 0 ||
+        sock_write_all(fd, &status_200, 1U) != 0 ||
+        sock_write_all(fd, invalid_trailer_header,
+                       sizeof(invalid_trailer_header)) != 0 ||
+        sock_write_all(fd, &status_200, 1U) != 0)
+        _exit(1);
+    neverc_tcp_close(connection);
+    neverc_tcp_listener_close(listener);
+    _exit(0);
+}
+
+TEST(h2_client_invalid_trailer_emits_terminal_error) {
+    const char *error = NULL;
+    neverc_tcp_listener_t *listener =
+        neverc_tcp_listen("127.0.0.1:0", &error);
+    ASSERT_TRUE(listener != NULL);
+    neverc_tcp_addr_t address;
+    ASSERT_EQ(neverc_tcp_listener_addr(listener, &address), 0);
+
+    pid_t child = fork();
+    ASSERT_TRUE(child >= 0);
+    if (child == 0)
+        h2_run_invalid_trailer_child(listener);
+    neverc_tcp_listener_close(listener);
+
+    char dial_address[64];
+    snprintf(dial_address, sizeof(dial_address), "127.0.0.1:%d",
+             address.port);
+    neverc_h2_client_config_t config = neverc_h2_client_config_default();
+    config.timeout_ms = 3000;
+    neverc_h2_client_t *client = neverc_h2_client_dial(
+        dial_address, "localhost", 0, &config, &error);
+    neverc_h2_client_stream_t *stream = client
+        ? neverc_h2_client_stream_open(client, NULL, "GET", "/",
+                                       NULL, 0U, 1, &error)
+        : NULL;
+    neverc_context_t *background = neverc_context_background();
+    neverc_context_t *context = background
+        ? neverc_context_with_timeout(background, 2000, NULL) : NULL;
+    neverc_h2_client_event_t *headers = NULL;
+    neverc_h2_client_event_t *terminal = NULL;
+    int first = stream && context
+        ? neverc_h2_client_stream_receive(stream, context, &headers) : -1;
+    int second = first == 1
+        ? neverc_h2_client_stream_receive(stream, context, &terminal) : -1;
+    int ok = first == 1 && headers &&
+             headers->type == NEVERC_H2_CLIENT_EVENT_HEADERS &&
+             second == 1 && terminal &&
+             terminal->type == NEVERC_H2_CLIENT_EVENT_ERROR &&
+             terminal->error_code == NC_H2_PROTOCOL_ERROR;
+
+    if (!client)
+        kill(child, SIGTERM);
+
+    neverc_h2_client_event_free(headers);
+    neverc_h2_client_event_free(terminal);
+    neverc_context_free(context);
+    neverc_context_free(background);
+    neverc_h2_client_stream_free(stream);
+    neverc_h2_client_free(client);
+    int status = 0;
+    waitpid(child, &status, 0);
+    ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+    ASSERT_TRUE(ok);
+}
 #endif /* !_WIN32 */
 
 int main(void) {
@@ -776,6 +893,7 @@ int main(void) {
 #ifndef _WIN32
     run_test_h2c_serve_conn_roundtrip();
     run_test_h2c_continuation_headers();
+    run_test_h2_client_invalid_trailer_emits_terminal_error();
 #endif
 
     printf("\n%d passed, %d failed\n", tests_passed, tests_failed);
