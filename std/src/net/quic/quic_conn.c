@@ -431,9 +431,10 @@ static int quic_stream_read_impl(quic_stream_t *stream, void *buffer,
     if (stream_is_uni(stream->id) && !stream->peer_initiated) return -1;
     nc_mutex_lock(&stream->lock);
     while (stream->recv_len == 0 && !stream->recv_fin &&
-           stream->state != QUIC_STREAM_CLOSED &&
            stream->state != QUIC_STREAM_RESET &&
-           quic_conn_allows_stream_read(stream->conn)) {
+           quic_conn_allows_stream_read(stream->conn) &&
+           !(stream->state == QUIC_STREAM_CLOSED &&
+             stream->conn->state == QUIC_CONN_CLOSED)) {
         if (!blocking) {
             nc_mutex_unlock(&stream->lock);
             return -2;
