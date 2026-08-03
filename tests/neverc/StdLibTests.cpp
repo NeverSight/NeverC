@@ -264,6 +264,16 @@ TEST_F(StdLibTest, EmbeddedRuntimeKeepsModuleLocalsDistinct) {
 // ===== Math =====
 STD_TEST(math, "src/math/abs.c", "src/math/acos.c", "src/math/acosh.c", "src/math/asin.c", "src/math/asinh.c", "src/math/atan.c", "src/math/atan2.c", "src/math/atanh.c", "src/math/cbrt.c", "src/math/ceil.c", "src/math/copysign.c", "src/math/cos.c", "src/math/cosh.c", "src/math/dim.c", "src/math/erf.c", "src/math/erfc.c", "src/math/erfcinv.c", "src/math/erfinv.c", "src/math/exp.c", "src/math/exp2.c", "src/math/expm1.c", "src/math/float32bits.c", "src/math/float64bits.c", "src/math/floor.c", "src/math/fma.c", "src/math/fmod.c", "src/math/frexp.c", "src/math/gamma.c", "src/math/hypot.c", "src/math/ilogb.c", "src/math/inf.c", "src/math/isinf.c", "src/math/isnan.c", "src/math/j0.c", "src/math/j1.c", "src/math/jn.c", "src/math/ldexp.c", "src/math/lgamma.c", "src/math/log.c", "src/math/log10.c", "src/math/log1p.c", "src/math/log2.c", "src/math/logb.c", "src/math/max.c", "src/math/min.c", "src/math/modf.c", "src/math/nan.c", "src/math/nextafter.c", "src/math/nextafter32.c", "src/math/pow.c", "src/math/pow10.c", "src/math/remainder.c", "src/math/round.c", "src/math/roundtoeven.c", "src/math/signbit.c", "src/math/sin.c", "src/math/sincos.c", "src/math/sinh.c", "src/math/sqrt.c", "src/math/tan.c", "src/math/tanh.c", "src/math/trunc.c")
 STD_TEST(strconv, "src/strconv/format_bool.c", "src/strconv/format_float.c", "src/strconv/format_int.c", "src/strconv/parse_bool.c", "src/strconv/parse_float.c", "src/strconv/parse_int.c", "src/strconv/quote.c", "src/unicode/utf8/utf8.c", "src/unicode/unicode.c")
+TEST_F(StdLibTest, StrconvAllocationFailure) {
+  auto r = compileAndRunStdTest(
+      "strconv_oom",
+      {"src/strconv/format_bool.c", "src/strconv/format_float.c",
+       "src/strconv/format_int.c", "src/strconv/parse_float.c",
+       "src/unicode/utf8/utf8.c", "src/unicode/unicode.c"},
+      {"-fno-builtin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
 STD_TEST(path, "src/path/base.c", "src/path/dir.c", "src/path/ext.c", "src/path/isabs.c", "src/path/clean.c", "src/path/join.c", "src/path/split.c", "src/path/match.c")
 STD_TEST(sort, "src/sort/sort.c")
 // Differential fuzz over the shared sort + substring-search engines (catches
@@ -273,6 +283,11 @@ STD_TEST(rand, "src/math/rand/rand.c", "src/math/log.c", "src/math/exp.c", "src/
 STD_TEST(bits, "src/math/bits/bits.c")
 STD_TEST(cmplx, "src/math/cmplx/cmplx.c", "src/math/abs.c", "src/math/acos.c", "src/math/acosh.c", "src/math/asin.c", "src/math/asinh.c", "src/math/atan.c", "src/math/atan2.c", "src/math/atanh.c", "src/math/cbrt.c", "src/math/ceil.c", "src/math/copysign.c", "src/math/cos.c", "src/math/cosh.c", "src/math/dim.c", "src/math/erf.c", "src/math/erfc.c", "src/math/erfcinv.c", "src/math/erfinv.c", "src/math/exp.c", "src/math/exp2.c", "src/math/expm1.c", "src/math/float32bits.c", "src/math/float64bits.c", "src/math/floor.c", "src/math/fma.c", "src/math/fmod.c", "src/math/frexp.c", "src/math/gamma.c", "src/math/hypot.c", "src/math/ilogb.c", "src/math/inf.c", "src/math/isinf.c", "src/math/isnan.c", "src/math/j0.c", "src/math/j1.c", "src/math/jn.c", "src/math/ldexp.c", "src/math/lgamma.c", "src/math/log.c", "src/math/log10.c", "src/math/log1p.c", "src/math/log2.c", "src/math/logb.c", "src/math/max.c", "src/math/min.c", "src/math/modf.c", "src/math/nan.c", "src/math/nextafter.c", "src/math/nextafter32.c", "src/math/pow.c", "src/math/pow10.c", "src/math/remainder.c", "src/math/round.c", "src/math/roundtoeven.c", "src/math/signbit.c", "src/math/sin.c", "src/math/sincos.c", "src/math/sinh.c", "src/math/sqrt.c", "src/math/tan.c", "src/math/tanh.c", "src/math/trunc.c")
 STD_TEST(big, "src/math/big/big.c")
+TEST_F(StdLibTest, MathBigAllocationFailure) {
+  auto r = compileAndRunStdTest("big_oom", {}, {"-fno-builtin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
 
 // ===== Encoding =====
 STD_TEST(hex, "src/encoding/hex/decode.c", "src/encoding/hex/encode.c")
@@ -284,6 +299,11 @@ STD_TEST(pem, "src/encoding/pem/pem.c", "src/encoding/base64/base64.c")
 STD_TEST(json, "src/encoding/json/json.c", "src/strconv/format_float.c", "src/strconv/parse_float.c")
 STD_TEST(csv, "src/encoding/csv/csv.c")
 STD_TEST(xml, "src/encoding/xml/xml.c")
+TEST_F(StdLibTest, XmlAllocationFailure) {
+  auto r = compileAndRunStdTest("xml_oom", {}, {"-fno-builtin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
 STD_TEST(asn1, "src/encoding/asn1/asn1.c")
 
 // ===== Hash =====
@@ -370,9 +390,22 @@ STD_TEST(utf16, "src/unicode/utf16/utf16.c")
 // ===== Core =====
 STD_TEST(cmp, "src/cmp/cmp.c")
 STD_TEST(bytes, "src/bytes/bytes.c")
+TEST_F(StdLibTest, BytesAllocationFailure) {
+  auto r = compileAndRunStdTest("bytes_oom", {}, {"-fno-builtin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
 STD_TEST(errors, "src/errors/errors.c")
 STD_TEST(html, "src/html/html.c")
 STD_TEST(fmt, "src/fmt/fmt.c", "src/strconv/format_float.c", "src/strconv/parse_float.c")
+TEST_F(StdLibTest, FmtAllocationFailure) {
+  auto r = compileAndRunStdTest(
+      "fmt_oom",
+      {"src/strconv/format_float.c", "src/strconv/parse_float.c"},
+      {"-fno-builtin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
 STD_TEST(io, "src/io/io.c")
 STD_TEST(bufio, "src/bufio/bufio.c", "src/io/io.c")
 STD_TEST(flag, "src/flag/flag.c", "src/strconv/parse_float.c")
@@ -381,6 +414,11 @@ STD_TEST(slog, "src/log/slog/slog.c")
 STD_TEST(time, "src/time/time.c")
 STD_TEST(uuid, "src/uuid/uuid.c")
 STD_TEST(regexp, "src/regexp/regexp.c")
+TEST_F(StdLibTest, RegexpAllocationFailure) {
+  auto r = compileAndRunStdTest("regexp_oom", {}, {"-fno-builtin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
 STD_TEST(mime, "src/mime/mime.c")
 STD_TEST(context, "src/context/context.c")
 STD_TEST(maps, "src/maps/maps.c")
@@ -401,13 +439,29 @@ STD_TEST(bzip2, "src/compress/bzip2/bzip2.c")
 
 // ===== Archive =====
 STD_TEST(tar, "src/archive/tar/tar.c")
+TEST_F(StdLibTest, TarAllocationFailure) {
+  auto r = compileAndRunStdTest("tar_oom", {}, {"-fno-builtin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
 STD_TEST(zip, "src/archive/zip/zip.c", "src/hash/crc32/crc32.c")
+TEST_F(StdLibTest, ZipAllocationFailure) {
+  auto r = compileAndRunStdTest(
+      "zip_oom", {"src/hash/crc32/crc32.c"}, {"-fno-builtin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
 
 // ===== Text =====
 // Note: 'template' is a C++ keyword, use template_ prefix
 TEST_F(StdLibTest, text_template) {
   auto r = compileAndRunStdTest("template", {"src/text/template/template.c"});
   ASSERT_TRUE(r.ok()) << "stderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
+TEST_F(StdLibTest, TextTemplateAllocationFailure) {
+  auto r = compileAndRunStdTest("template_oom", {}, {"-fno-builtin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
   EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
 }
 STD_TEST(scanner, "src/text/scanner/scanner.c")
@@ -488,6 +542,11 @@ STD_TEST(url, "src/net/url/url.c")
 STD_TEST(netip, "src/net/netip/netip.c")
 STD_TEST(mail, "src/net/mail/mail.c")
 STD_TEST(textproto, "src/net/textproto/textproto.c")
+TEST_F(StdLibTest, TextprotoAllocationFailure) {
+  auto r = compileAndRunStdTest("textproto_oom", {}, {"-fno-builtin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
 STD_TEST(httptest, "src/net/http/httptest/httptest.c",
     "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", "src/net/http/http2/http2_client.c", TCP_DEPS, HTTP_TLS_DEPS)
 
@@ -580,7 +639,17 @@ STD_TEST(image, "src/image/image/image.c", "src/image/color/color.c")
 STD_TEST(draw, "src/image/draw/draw.c", "src/image/image/image.c", "src/image/color/color.c")
 STD_TEST(png, "src/image/png/png.c", "src/image/image/image.c", "src/image/color/color.c", "src/compress/flate/flate.c", "src/hash/crc32/crc32.c", "src/hash/adler32/adler32.c")
 STD_TEST(jpeg, "src/image/jpeg/jpeg.c", "src/image/image/image.c", "src/image/color/color.c")
+TEST_F(StdLibTest, JpegAllocationFailure) {
+  auto r = compileAndRunStdTest("jpeg_oom", {}, {"-fno-builtin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
 STD_TEST(gif, "src/image/gif/gif.c", "src/image/image/image.c", "src/image/color/color.c", "src/compress/lzw/lzw.c")
+TEST_F(StdLibTest, GifAllocationFailure) {
+  auto r = compileAndRunStdTest("gif_oom", {}, {"-fno-builtin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
 // Locks in the Wu-quantizer quality win in neverc_gif_from_rgba (lower error
 // than the old 216-color web-safe cube; near-lossless on small off-grid palettes).
 STD_TEST(gif_quant, "src/image/gif/gif.c", "src/image/image/image.c", "src/image/color/color.c", "src/compress/lzw/lzw.c")
@@ -588,12 +657,28 @@ STD_TEST(palette, "src/image/color/palette/palette.c")
 
 // ===== OS =====
 STD_TEST(os, "src/os/os.c")
+TEST_F(StdLibTest, OsAllocationFailure) {
+  auto r = compileAndRunStdTest("os_oom", {}, {"-fno-builtin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
 STD_TEST(exec, "src/os/exec/exec.c")
+TEST_F(StdLibTest, ExecAllocationFailure) {
+  auto r = compileAndRunStdTest("exec_oom", {}, {"-fno-builtin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
 STD_TEST(signal, "src/os/signal/signal.c")
 STD_TEST(user, "src/os/user/user.c")
 
 // ===== HTML =====
 STD_TEST(html_template, "src/html/template/template.c", "src/html/html.c")
+TEST_F(StdLibTest, HtmlTemplateAllocationFailure) {
+  auto r = compileAndRunStdTest("html_template_oom", {},
+                                {"-fno-builtin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
 
 // ===== MIME =====
 STD_TEST(quotedprintable, "src/mime/quotedprintable/quotedprintable.c")
@@ -601,6 +686,11 @@ STD_TEST(multipart, "src/mime/multipart/multipart.c")
 
 // ===== IO =====
 STD_TEST(fs, "src/io/fs/fs.c")
+TEST_F(StdLibTest, FsAllocationFailure) {
+  auto r = compileAndRunStdTest("fs_oom", {}, {"-fno-builtin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
 
 // ===== Log =====
 STD_TEST(syslog, "src/log/syslog/syslog.c")
@@ -764,6 +854,12 @@ TEST_F(StdLibTest, EmbeddedTlsCertificateVerifyDotSyntax) {
 
 // ===== Regexp =====
 STD_TEST(regexp_syntax, "src/regexp/syntax/syntax.c")
+TEST_F(StdLibTest, RegexpSyntaxAllocationFailure) {
+  auto r = compileAndRunStdTest("regexp_syntax_oom", {},
+                                {"-fno-builtin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
 
 // ===== Time =====
 STD_TEST(tzdata, "src/time/tzdata/tzdata.c")
