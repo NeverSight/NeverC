@@ -343,7 +343,7 @@ uint64_t neverc_quic_loss_get_timeout(const quic_loss_detector_t *ld,
                                       int handshake_confirmed) {
     /* Check loss times first */
     uint64_t earliest_loss_time = 0;
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < QUIC_PN_SPACE_COUNT; i++) {
         if (ld->spaces[i].loss_time > 0) {
             if (earliest_loss_time == 0 || ld->spaces[i].loss_time < earliest_loss_time)
                 earliest_loss_time = ld->spaces[i].loss_time;
