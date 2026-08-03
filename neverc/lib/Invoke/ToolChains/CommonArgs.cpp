@@ -883,6 +883,14 @@ void tools::AddRunTimeLibs(const ToolChain &TC, const Driver &D,
       addLibgcc(TC, D, CmdArgs, Args);
     break;
   }
+
+  // NeverC C++ ABI runtime (operator new/delete, RTTI, cxa_*, coro helpers).
+  // Always offered alongside compiler-rt/libgcc unless the user disabled
+  // default libs. Harmless for pure-C links if the archive is thin/unreferenced.
+  if (!Args.hasArg(options::OPT_nostdlib) &&
+      !Args.hasArg(options::OPT_nodefaultlibs)) {
+    CmdArgs.push_back(Args.MakeArgString("-lneverc_cxx_runtime"));
+  }
 }
 
 llvm::SmallString<128> tools::getStatsFileName(const llvm::opt::ArgList &Args,

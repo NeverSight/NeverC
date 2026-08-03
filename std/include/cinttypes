@@ -1,0 +1,8 @@
+// NeverC <cinttypes> scaffold
+#pragma once
+#include <inttypes.h>
+#include <cstdint>
+namespace std {
+  using ::imaxdiv_t;
+  using ::imaxabs; using ::imaxdiv;
+}

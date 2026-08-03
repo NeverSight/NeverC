@@ -1,0 +1,17 @@
+// NeverC <future> scaffold (non-stream)
+#pragma once
+namespace std {
+enum class future_status { ready, timeout, deferred };
+template <class T> class future {
+public:
+  future() = default;
+  bool valid() const noexcept { return false; }
+  T get() { return T{}; }
+};
+template <class T> class promise {
+public:
+  promise() = default;
+  future<T> get_future() { return {}; }
+  void set_value(const T &) {}
+};
+} // namespace std

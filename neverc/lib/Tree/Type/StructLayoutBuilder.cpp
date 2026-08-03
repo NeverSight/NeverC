@@ -1,6 +1,8 @@
 #include "neverc/Foundation/Target/TargetInfo.h"
 #include "neverc/Tree/Core/Attr.h"
 #include "neverc/Tree/Core/TreeContext.h"
+#include "neverc/Tree/Decl/Decl.h"
+#include "neverc/Tree/Decl/CXXBaseSpecifier.h"
 #include "neverc/Tree/Core/TreeDiag.h"
 #include "neverc/Tree/Type/StructLayout.h"
 #include "llvm/Support/MathExtras.h"
@@ -157,7 +159,96 @@ void ItaniumRecordLayoutBuilder::Layout(const RecordDecl *D) {
 }
 
 void ItaniumRecordLayoutBuilder::LayoutFields(const RecordDecl *D) {
-  // Layout each field, for now, just sequentially, respecting alignment.  In
+  // NeverC ABI v1 complete-object layout (simplified):
+  //   [vptr?] [non-virtual bases...] [fields...] [unique virtual bases...]
+  // Primary-base vptr sharing is implemented above. VTT is a separate global
+  // (_ZTT) emitted by NeverCCXXABI::emitVTT; no in-object vbptr yet.
+  if (const auto *CXXRD = dyn_cast<CXXRecordDecl>(D)) {
+    if (!IsUnion) {
+      bool NeedOwnVPtr = CXXRD->isDynamicClass();
+      // NeverC ABI v1: reuse the leading vptr of the first non-virtual dynamic
+      // base (primary-base style). Only emit a fresh vptr when no such base.
+      if (NeedOwnVPtr) {
+        for (const CXXBaseSpecifier *B = CXXRD->bases_begin(),
+                                    *BE = CXXRD->bases_end();
+             B != BE; ++B) {
+          if (B->isVirtual())
+            continue;
+          QualType BT = B->getType();
+          if (const CXXRecordDecl *BRD =
+                  BT.isNull() ? nullptr : BT->getAsCXXRecordDecl()) {
+            if (BRD->isDynamicClass()) {
+              NeedOwnVPtr = false;
+              break;
+            }
+          }
+        }
+      }
+      if (NeedOwnVPtr) {
+        /* neverc-vptr */
+        CharUnits PtrAlign = Context.toCharUnitsFromBits(
+            Context.getTargetInfo().getPointerAlign(LangAS::Default));
+        CharUnits PtrWidth = Context.toCharUnitsFromBits(
+            Context.getTargetInfo().getPointerWidth(LangAS::Default));
+        CharUnits FieldOffset = getDataSize().alignTo(PtrAlign);
+        setDataSize(FieldOffset + PtrWidth);
+        PaddedFieldSize = std::max(PaddedFieldSize, FieldOffset + PtrWidth);
+        setSize(std::max(getSizeInBits(), getDataSizeInBits()));
+        UnadjustedAlignment = std::max(UnadjustedAlignment, PtrAlign);
+        UpdateAlignment(PtrAlign);
+      }
+
+      // Non-virtual bases as contiguous subobjects.
+      for (const CXXBaseSpecifier *B = CXXRD->bases_begin(),
+                                  *E = CXXRD->bases_end();
+           B != E; ++B) {
+        if (B->isVirtual())
+          continue;
+        QualType BaseTy = B->getType();
+        if (BaseTy.isNull())
+          continue;
+        auto TI = Context.getTypeInfoInChars(BaseTy);
+        CharUnits BaseAlign = TI.Align;
+        CharUnits BaseSize = TI.Width;
+        CharUnits Off = getDataSize().alignTo(BaseAlign);
+        setDataSize(Off + BaseSize);
+        PaddedFieldSize = std::max(PaddedFieldSize, Off + BaseSize);
+        setSize(std::max(getSizeInBits(), getDataSizeInBits()));
+        UnadjustedAlignment = std::max(UnadjustedAlignment, BaseAlign);
+        UpdateAlignment(BaseAlign);
+      }
+
+      // Virtual bases: NeverC ABI v1 simplified — append each unique virtual
+      // base once after non-virtual bases. VTT is out-of-line (_ZTT); no vbptr.
+      llvm::SmallPtrSet<const CXXRecordDecl *, 4> SeenVBases;
+      for (const CXXBaseSpecifier *B = CXXRD->bases_begin(),
+                                  *E = CXXRD->bases_end();
+           B != E; ++B) {
+        if (!B->isVirtual())
+          continue;
+        QualType BaseTy = B->getType();
+        if (BaseTy.isNull())
+          continue;
+        const CXXRecordDecl *BRD = BaseTy->getAsCXXRecordDecl();
+        if (BRD) {
+          BRD = cast<CXXRecordDecl>(BRD->getCanonicalDecl());
+          if (!SeenVBases.insert(BRD).second)
+            continue;
+        }
+        auto TI = Context.getTypeInfoInChars(BaseTy);
+        CharUnits BaseAlign = TI.Align;
+        CharUnits BaseSize = TI.Width;
+        CharUnits Off = getDataSize().alignTo(BaseAlign);
+        setDataSize(Off + BaseSize);
+        PaddedFieldSize = std::max(PaddedFieldSize, Off + BaseSize);
+        setSize(std::max(getSizeInBits(), getDataSizeInBits()));
+        UnadjustedAlignment = std::max(UnadjustedAlignment, BaseAlign);
+        UpdateAlignment(BaseAlign);
+      }
+    }
+  }
+
+  // Layout each field, for now, just sequentially, respecting alignment. In
   // the future, this will need to be tweakable by targets.
   for (auto I = D->field_begin(), End = D->field_end(); I != End; ++I)
     LayoutField(*I);

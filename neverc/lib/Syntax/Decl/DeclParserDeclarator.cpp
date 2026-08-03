@@ -28,9 +28,12 @@ void Parser::ParseDeclarator(Declarator &D) {
 }
 
 namespace {
-bool isPointerOpToken(tok::TokenKind Kind, const LangOptions &Lang,
-                      DeclaratorContext TheContext) {
-  return Kind == tok::star;
+bool isPointerOrRefOpToken(tok::TokenKind Kind, const LangOptions &Lang) {
+  if (Kind == tok::star)
+    return true;
+  if (Lang.CPlusPlus && (Kind == tok::amp || Kind == tok::ampamp))
+    return true;
+  return false;
 }
 } // namespace
 
@@ -38,7 +41,7 @@ void Parser::ParseDeclaratorInternal(Declarator &D,
                                      DirectDeclParseFunction DirectDeclParser) {
   tok::TokenKind Kind = Tok.getKind();
 
-  if (!isPointerOpToken(Kind, getLangOpts(), D.getContext())) {
+  if (!isPointerOrRefOpToken(Kind, getLangOpts())) {
     if (DirectDeclParser)
       (this->*DirectDeclParser)(D);
     return;
@@ -47,7 +50,6 @@ void Parser::ParseDeclaratorInternal(Declarator &D,
   SourceLocation Loc = ConsumeToken();
   D.SetRangeEnd(Loc);
 
-  assert(Kind == tok::star && "Only pointer operator expected");
   DeclSpec DS(AttrFactory);
 
   unsigned Reqs = AR_BracketAttributesParsed | AR_DeclspecAttributesParsed |
@@ -57,11 +59,20 @@ void Parser::ParseDeclaratorInternal(Declarator &D,
 
   Actions.runWithSufficientStackSpace(
       D.getBeginLoc(), [&] { ParseDeclaratorInternal(D, DirectDeclParser); });
-  D.AddTypeInfo(DeclaratorChunk::getPointer(
-                    DS.getTypeQualifiers(), Loc, DS.getConstSpecLoc(),
-                    DS.getVolatileSpecLoc(), DS.getRestrictSpecLoc(),
-                    DS.getAtomicSpecLoc(), DS.getUnalignedSpecLoc()),
-                std::move(DS.getAttributes()), SourceLocation());
+
+  if (Kind == tok::star) {
+    D.AddTypeInfo(DeclaratorChunk::getPointer(
+                      DS.getTypeQualifiers(), Loc, DS.getConstSpecLoc(),
+                      DS.getVolatileSpecLoc(), DS.getRestrictSpecLoc(),
+                      DS.getAtomicSpecLoc(), DS.getUnalignedSpecLoc()),
+                  std::move(DS.getAttributes()), SourceLocation());
+  } else {
+    assert(getLangOpts().CPlusPlus && "reference without C++");
+    bool LValue = Kind == tok::amp;
+    D.AddTypeInfo(
+        DeclaratorChunk::getReference(LValue, DS.getTypeQualifiers(), Loc),
+        std::move(DS.getAttributes()), SourceLocation());
+  }
 }
 
 namespace {
@@ -75,6 +86,40 @@ SourceLocation locateMissingDeclaratorName(Declarator &D, SourceLocation Loc) {
 } // namespace
 
 NEVERC_HOT void Parser::ParseDirectDeclarator(Declarator &D) {
+  // C++ nested-name-specifier on declarator-id (e.g. N::f, ::f).
+  if (getLangOpts().CPlusPlus &&
+      (Tok.is(tok::coloncolon) ||
+       (Tok.is(tok::identifier) && NextToken().is(tok::coloncolon)))) {
+    NestedNameSpecifierLocBuilder SS;
+    (void)ParseOptionalCXXScopeSpecifier(SS, /*EnteringContext=*/true);
+    D.setCXXScopeSpec(SS);
+  }
+
+  // C++ destructor name: ~Class
+  if (getLangOpts().CPlusPlus && Tok.is(tok::tilde) && D.mayHaveIdentifier()) {
+    SourceLocation TildeLoc = ConsumeToken();
+    if (Tok.is(tok::identifier)) {
+      IdentifierInfo *II = Tok.getIdentifierInfo();
+      SourceLocation NameLoc = ConsumeToken();
+      D.setDestructor(TildeLoc, II, NameLoc);
+      D.SetRangeEnd(NameLoc);
+      goto PastIdentifier;
+    }
+    Diag(Tok, diag::err_expected) << "class name";
+  }
+
+  // C++ operator-function-id
+  if (getLangOpts().CPlusPlus && Tok.is(tok::kw_operator) &&
+      D.mayHaveIdentifier()) {
+    SourceLocation OpLoc;
+    OverloadedOperatorKind Op = OO_None;
+    if (!ParseOperatorFunctionId(OpLoc, Op)) {
+      D.setOperatorFunctionId(OpLoc, Op, OpLoc);
+      D.SetRangeEnd(OpLoc);
+      goto PastIdentifier;
+    }
+  }
+
   if (Tok.is(tok::identifier) && D.mayHaveIdentifier()) {
     assert(Tok.getIdentifierInfo() && "Not an identifier?");
     D.SetIdentifier(Tok.getIdentifierInfo(), Tok.getLocation());
@@ -320,6 +365,11 @@ void Parser::ParseFunctionDeclarator(Declarator &D,
 
     MaybeParseBracketAttributes(FnAttrs);
   }
+
+  // C++ exception-specification after the parameter list: noexcept / noexcept(expr)
+  // Record presence on the local DeclSpec used for the function type chunk.
+  if (getLangOpts().CPlusPlus && Tok.is(tok::kw_noexcept))
+    ParseExceptionSpecification(DS);
 
   // Collect non-parameter declarations from the prototype if this is a function
   // declaration; they are moved into the scope of the function.
@@ -718,4 +768,48 @@ void Parser::ParseMisplacedBracketDeclarator(Declarator &D) {
                EndLoc, CharSourceRange(BracketRange, true))
         << FixItHint::CreateRemoval(BracketRange);
   }
+}
+
+
+/// C++ exception-specification scaffolding: noexcept / noexcept(expr)
+bool Parser::ParseExceptionSpecification(DeclSpec &DS) {
+  if (!getLangOpts().CPlusPlus)
+    return false;
+  if (Tok.isNot(tok::kw_noexcept))
+    return false;
+  SourceLocation NoexceptLoc = ConsumeToken();
+  bool IsFalse = false;
+  bool IsDependent = false;
+  if (Tok.is(tok::l_paren)) {
+    BalancedDelimiterTracker T(*this, tok::l_paren);
+    T.consumeOpen();
+    if (Tok.isNot(tok::r_paren)) {
+      // noexcept(false) / noexcept(true) / noexcept(expr)
+      if (Tok.is(tok::kw_false)) {
+        IsFalse = true;
+        ConsumeToken();
+      } else if (Tok.is(tok::kw_true)) {
+        ConsumeToken();
+      } else {
+        ExprResult ER = ParseConstantExpression();
+        if (ER.isUsable()) {
+          // Non-literal: treat as dependent until full const-eval of noexcept.
+          llvm::APSInt Val;
+          if (Actions.EvaluateAsConstantExpr(ER.get(), Val)) {
+            IsFalse = Val == 0;
+          } else {
+            IsDependent = true;
+          }
+        } else {
+          IsDependent = true;
+        }
+      }
+    }
+    T.consumeClose();
+  }
+  const char *PrevSpec = nullptr;
+  unsigned DiagID = 0;
+  DS.setFunctionSpecNoexcept(NoexceptLoc, PrevSpec, DiagID);
+  DS.setNoexceptValue(IsFalse, IsDependent);
+  return true;
 }

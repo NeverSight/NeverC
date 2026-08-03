@@ -173,3 +173,18 @@ if(IS_DIRECTORY "${RUNTIME_SRC}/android/kernel")
     "android/kernel:android/kernel"
   )
 endif()
+
+# NeverC C++ runtime ABI (scaffold)
+if (NEVERC_ENABLE_CXX_RUNTIME OR TRUE)
+  add_library(neverc_cxx_runtime STATIC
+    cxx/cxa_guard.cpp
+    cxx/cxa_atexit.cpp
+    cxx/cxa_exception.cpp
+    cxx/operator_new_delete.cpp
+    cxx/rtti.cpp
+    cxx/pure_virtual.cpp
+    cxx/operator_new_nothrow.cpp
+    cxx/coroutine.cpp
+  )
+  target_include_directories(neverc_cxx_runtime PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/cxx)
+endif()

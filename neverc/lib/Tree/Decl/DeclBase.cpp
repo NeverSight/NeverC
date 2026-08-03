@@ -500,6 +500,17 @@ unsigned Decl::getIdentifierNamespaceForKind(Kind DeclKind) {
   case Enum:
     return IDNS_Tag | IDNS_Type;
 
+  case Namespace:
+  case NamespaceAlias:
+    return IDNS_Ordinary | IDNS_Tag | IDNS_Type;
+
+  case Using:
+  case UsingShadow:
+  case UsingEnum:
+    return IDNS_Ordinary;
+
+  case UsingDirective:
+  case LinkageSpec:
   case FileScopeAsm:
   case StaticAssert:
   case PragmaComment:
@@ -566,6 +577,10 @@ Decl *Decl::castFromDeclContext(const DeclContext *D) {
     return static_cast<ExternCContextDecl *>(const_cast<DeclContext *>(D));
   case Decl::TranslationUnit:
     return static_cast<TranslationUnitDecl *>(const_cast<DeclContext *>(D));
+  case Decl::Namespace:
+    return static_cast<NamespaceDecl *>(const_cast<DeclContext *>(D));
+  case Decl::LinkageSpec:
+    return static_cast<LinkageSpecDecl *>(const_cast<DeclContext *>(D));
   default:
     if (DK == Function)
       return static_cast<FunctionDecl *>(const_cast<DeclContext *>(D));
@@ -582,6 +597,10 @@ DeclContext *Decl::castToDeclContext(const Decl *D) {
     return static_cast<ExternCContextDecl *>(const_cast<Decl *>(D));
   case Decl::TranslationUnit:
     return static_cast<TranslationUnitDecl *>(const_cast<Decl *>(D));
+  case Decl::Namespace:
+    return static_cast<NamespaceDecl *>(const_cast<Decl *>(D));
+  case Decl::LinkageSpec:
+    return static_cast<LinkageSpecDecl *>(const_cast<Decl *>(D));
   default:
     if (DK == Function)
       return static_cast<FunctionDecl *>(const_cast<Decl *>(D));
@@ -693,8 +712,12 @@ DeclContext *DeclContext::getNonTransparentContext() {
 DeclContext *DeclContext::getPrimaryContext() {
   switch (getDeclKind()) {
   case Decl::ExternCContext:
+  case Decl::LinkageSpec:
     // There is only one DeclContext for these entities.
     return this;
+
+  case Decl::Namespace:
+    return static_cast<NamespaceDecl *>(this)->getFirstDecl();
 
   case Decl::TranslationUnit:
     return static_cast<TranslationUnitDecl *>(this)->getFirstDecl();

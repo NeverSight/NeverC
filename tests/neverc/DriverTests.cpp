@@ -132,15 +132,20 @@ TEST_F(DriverTest, RejectDarwinArch) {
   }
 }
 
-TEST_F(DriverTest, RejectCxxMode) {
+// C++ is a supported language mode; Objective-C remains rejected.
+TEST_F(DriverTest, AcceptCxxModeRejectObjC) {
   auto src = (testDir() / "test_basic.c").string();
   auto sf = sysrootFlags();
   auto af = archFlags();
   {
+    // Empty/minimal C source accepted under -x c++ (syntax-only).
     std::vector<std::string> args = {"-x", "c++", "-fsyntax-only", src};
     for (auto &f : sf) args.push_back(f);
     for (auto &f : af) args.push_back(f);
-    expectCommandFail("reject_x_cxx", "c++", args);
+    {
+      auto r = ncc(args);
+      EXPECT_EQ(r.exitCode, 0) << "accept_x_cxx failed: " << r.err << r.out;
+    }
   }
   {
     std::vector<std::string> args = {"-x", "objective-c", "-fsyntax-only", src};

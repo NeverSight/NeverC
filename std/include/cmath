@@ -1,0 +1,3 @@
+// NeverC <cmath> scaffold
+#pragma once
+#include <math.h>

@@ -1,12 +1,16 @@
 #include "ABI/EmitterABI.h"
 #include "Core/FunctionEmitter.h"
 #include "Core/ModuleEmitter.h"
+#include "neverc/Emit/CXXABI.h"
 
 using namespace neverc;
 using namespace Emit;
 
 CGABI::CGABI(ModuleEmitter &ME)
-    : ME(ME), MangleCtx(ME.getContext().createMangleContext()) {}
+    : ME(ME), MangleCtx(ME.getContext().createMangleContext()) {
+  if (ME.getLangOpts().CPlusPlus)
+    TheCXXABI.reset(CreateNeverCCXXABI(ME));
+}
 
 CGABI::~CGABI() {}
 

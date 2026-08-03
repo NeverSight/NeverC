@@ -59,9 +59,14 @@ ENUM(Enum, TagDecl)
 #define RECORD(Type, Base) TAG(Type, Base)
 #endif
 RECORD(Record, TagDecl)
+#ifndef CXXRECORD
+#define CXXRECORD(Type, Base) RECORD(Type, Base)
+#endif
+CXXRECORD(CXXRecord, RecordDecl)
+#undef CXXRECORD
 #undef RECORD
 
-DECL_RANGE(Tag, Enum, Record)
+DECL_RANGE(Tag, Enum, CXXRecord)
 
 #undef TAG
 
@@ -78,6 +83,13 @@ TYPEDEF(Typedef, TypedefNameDecl)
 DECL_RANGE(TypedefName, Typedef, Typedef)
 
 #undef TYPEDEFNAME
+
+// C++ using-declaration / using-directive / namespace alias placeholders.
+#ifndef USING
+#define USING(Type, Base) TYPE(Type, Base)
+#endif
+// Using decls are NamedDecls, not TypeDecls; keep under Named below.
+#undef USING
 
 DECL_RANGE(Type, Enum, Typedef)
 
@@ -104,9 +116,29 @@ FIELD(Field, DeclaratorDecl)
 #define FUNCTION(Type, Base) DECLARATOR(Type, Base)
 #endif
 FUNCTION(Function, DeclaratorDecl)
+#ifndef CXXMETHOD
+#define CXXMETHOD(Type, Base) FUNCTION(Type, Base)
+#endif
+CXXMETHOD(CXXMethod, FunctionDecl)
+#ifndef CXXCONSTRUCTOR
+#define CXXCONSTRUCTOR(Type, Base) CXXMETHOD(Type, Base)
+#endif
+CXXCONSTRUCTOR(CXXConstructor, CXXMethodDecl)
+#undef CXXCONSTRUCTOR
+#ifndef CXXDESTRUCTOR
+#define CXXDESTRUCTOR(Type, Base) CXXMETHOD(Type, Base)
+#endif
+CXXDESTRUCTOR(CXXDestructor, CXXMethodDecl)
+#undef CXXDESTRUCTOR
+#ifndef CXXCONVERSION
+#define CXXCONVERSION(Type, Base) CXXMETHOD(Type, Base)
+#endif
+CXXCONVERSION(CXXConversion, CXXMethodDecl)
+#undef CXXCONVERSION
+#undef CXXMETHOD
 #undef FUNCTION
 
-DECL_RANGE(Function, Function, Function)
+DECL_RANGE(Function, Function, CXXConversion)
 
 #ifndef VAR
 #define VAR(Type, Base) DECLARATOR(Type, Base)
@@ -128,7 +160,7 @@ DECL_RANGE(Var, Var, ParmVar)
 
 #undef VAR
 
-DECL_RANGE(Declarator, Field, ParmVar)
+DECL_RANGE(Declarator, Field, CXXConversion)
 
 #undef DECLARATOR
 
@@ -146,13 +178,55 @@ INDIRECTFIELD(IndirectField, ValueDecl)
 
 DECL_RANGE(Value, Field, IndirectField)
 
+// C++ named entities that are not value decls.
+#ifndef NAMESPACE
+#define NAMESPACE(Type, Base) NAMED(Type, Base)
+#endif
+NAMESPACE(Namespace, NamedDecl)
+#undef NAMESPACE
+
+#ifndef NAMESPACEALIAS
+#define NAMESPACEALIAS(Type, Base) NAMED(Type, Base)
+#endif
+NAMESPACEALIAS(NamespaceAlias, NamedDecl)
+#undef NAMESPACEALIAS
+
+#ifndef USING
+#define USING(Type, Base) NAMED(Type, Base)
+#endif
+USING(Using, NamedDecl)
+#undef USING
+
+#ifndef USINGDIRECTIVE
+#define USINGDIRECTIVE(Type, Base) NAMED(Type, Base)
+#endif
+USINGDIRECTIVE(UsingDirective, NamedDecl)
+#undef USINGDIRECTIVE
+
+#ifndef USINGSHADOW
+#define USINGSHADOW(Type, Base) NAMED(Type, Base)
+#endif
+USINGSHADOW(UsingShadow, NamedDecl)
+#undef USINGSHADOW
+
+#ifndef USINGENUM
+#define USINGENUM(Type, Base) NAMED(Type, Base)
+#endif
+USINGENUM(UsingEnum, NamedDecl)
+#undef USINGENUM
+
+DECL_RANGE(Named, Label, UsingEnum)
+
 #undef VALUE
-
-DECL_RANGE(Named, Label, IndirectField)
-
 #undef NAMED
 
 // --- Top-level declarations ---
+
+#ifndef LINKAGESPEC
+#define LINKAGESPEC(Type, Base) DECL(Type, Base)
+#endif
+LINKAGESPEC(LinkageSpec, Decl)
+#undef LINKAGESPEC
 
 #ifndef PRAGMACOMMENT
 #define PRAGMACOMMENT(Type, Base) DECL(Type, Base)
@@ -178,6 +252,73 @@ STATICASSERT(StaticAssert, Decl)
 TRANSLATIONUNIT(TranslationUnit, Decl)
 #undef TRANSLATIONUNIT
 
+
+// --- C++ template / modern declarations ---
+#ifndef TEMPLATE
+#define TEMPLATE(Type, Base) DECL(Type, Base)
+#endif
+ABSTRACT_DECL(TEMPLATE(Template, Decl))
+#ifndef TEMPLATETYPEPARM
+#define TEMPLATETYPEPARM(Type, Base) DECL(Type, Base)
+#endif
+TEMPLATETYPEPARM(TemplateTypeParm, Decl)
+#undef TEMPLATETYPEPARM
+#ifndef NONTYPETEMPLATEPARM
+#define NONTYPETEMPLATEPARM(Type, Base) DECL(Type, Base)
+#endif
+NONTYPETEMPLATEPARM(NonTypeTemplateParm, Decl)
+#undef NONTYPETEMPLATEPARM
+#ifndef TEMPLATETEMPLATEPARM
+#define TEMPLATETEMPLATEPARM(Type, Base) TEMPLATE(Type, Base)
+#endif
+TEMPLATETEMPLATEPARM(TemplateTemplateParm, TemplateDecl)
+#undef TEMPLATETEMPLATEPARM
+#ifndef CLASSTEMPLATE
+#define CLASSTEMPLATE(Type, Base) TEMPLATE(Type, Base)
+#endif
+CLASSTEMPLATE(ClassTemplate, TemplateDecl)
+#undef CLASSTEMPLATE
+#ifndef FUNCTIONTEMPLATE
+#define FUNCTIONTEMPLATE(Type, Base) TEMPLATE(Type, Base)
+#endif
+FUNCTIONTEMPLATE(FunctionTemplate, TemplateDecl)
+#undef FUNCTIONTEMPLATE
+#ifndef TYPEALIASTEMPLATE
+#define TYPEALIASTEMPLATE(Type, Base) TEMPLATE(Type, Base)
+#endif
+TYPEALIASTEMPLATE(TypeAliasTemplate, TemplateDecl)
+#undef TYPEALIASTEMPLATE
+#ifndef VARTEMPLATE
+#define VARTEMPLATE(Type, Base) TEMPLATE(Type, Base)
+#endif
+VARTEMPLATE(VarTemplate, TemplateDecl)
+#undef VARTEMPLATE
+#ifndef CONCEPT
+#define CONCEPT(Type, Base) TEMPLATE(Type, Base)
+#endif
+CONCEPT(Concept, TemplateDecl)
+#undef CONCEPT
+DECL_RANGE(Template, Template, Concept)
+#undef TEMPLATE
+
+#ifndef TYPEALIAS
+#define TYPEALIAS(Type, Base) DECL(Type, Base)
+#endif
+TYPEALIAS(TypeAlias, Decl)
+#undef TYPEALIAS
+
+#ifndef BINDING
+#define BINDING(Type, Base) DECL(Type, Base)
+#endif
+BINDING(Binding, Decl)
+#undef BINDING
+
+#ifndef DECOMPOSITION
+#define DECOMPOSITION(Type, Base) DECL(Type, Base)
+#endif
+DECOMPOSITION(Decomposition, Decl)
+#undef DECOMPOSITION
+
 LAST_DECL_RANGE(Decl, Empty, TranslationUnit)
 
 #undef DECL
@@ -196,6 +337,10 @@ LAST_DECL_RANGE(Decl, Empty, TranslationUnit)
 DECL_CONTEXT_BASE(Tag)
 DECL_CONTEXT(ExternCContext)
 DECL_CONTEXT(Function)
+DECL_CONTEXT(LinkageSpec)
+DECL_CONTEXT(Namespace)
+DECL_CONTEXT(ClassTemplate)
+DECL_CONTEXT(FunctionTemplate)
 DECL_CONTEXT(TranslationUnit)
 #undef DECL_CONTEXT
 #undef DECL_CONTEXT_BASE

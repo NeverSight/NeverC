@@ -56,10 +56,55 @@ FunctionDecl *createNewFunctionDecl(Sema &SemaRef, Declarator &D,
   assert((HasPrototype || !SemaRef.getLangOpts().requiresStrictPrototypes()) &&
          "Strict prototypes are required");
 
-  NewFD = FunctionDecl::Create(
-      SemaRef.Context, DC, D.getBeginLoc(), NameInfo, R, TInfo, SC,
-      SemaRef.getCurFPFeatures().isFPConstrained(), isInline, HasPrototype,
-      ConstexprSpecKind::Unspecified);
+  NewFD = nullptr;
+  if (SemaRef.getLangOpts().CPlusPlus) {
+    bool IsExplicit = DS.isExplicitSpecified();
+    bool IsVirtual = DS.isVirtualSpecified();
+    ConstexprSpecKind CSK = DS.getConstexprSpecifier();
+    if (auto *RD = dyn_cast<CXXRecordDecl>(DC)) {
+      // Member function: ctor / dtor / conversion / method.
+      DeclarationName Name = NameInfo.getName();
+      IdentifierInfo *II = Name.getAsIdentifierInfo();
+      if (II && II == RD->getIdentifier()) {
+        // Constructor (name matches class name).
+        NewFD = CXXConstructorDecl::Create(
+            SemaRef.Context, RD, D.getBeginLoc(), NameInfo, R, TInfo,
+            IsExplicit, isInline, /*isImplicitlyDeclared=*/false, CSK);
+      } else if (II && II->getName().starts_with("~") &&
+                 II->getName().drop_front() == RD->getName()) {
+        NewFD = CXXDestructorDecl::Create(
+            SemaRef.Context, RD, D.getBeginLoc(), NameInfo, R, TInfo, isInline,
+            /*isImplicitlyDeclared=*/false);
+      } else {
+        NewFD = CXXMethodDecl::Create(
+            SemaRef.Context, RD, D.getBeginLoc(), NameInfo, R, TInfo, SC,
+            SemaRef.getCurFPFeatures().isFPConstrained(), isInline, CSK);
+      }
+      // Virtual methods make the class polymorphic (dynamic).
+      if (auto *MD = dyn_cast_or_null<CXXMethodDecl>(NewFD)) {
+        if (IsVirtual) {
+          MD->setVirtualAsWritten(true);
+          if (RD->hasDefinitionData() || RD->getDefinition()) {
+            CXXRecordDecl *Def = RD->getDefinition() ? RD->getDefinition() : RD;
+            if (!Def->hasDefinitionData())
+              Def->startDefinition();
+            Def->setPolymorphic(true);
+          } else {
+            // Ensure definition data exists on the current record.
+            RD->startDefinition();
+            RD->setPolymorphic(true);
+          }
+        }
+      }
+      (void)IsExplicit;
+    }
+  }
+  if (!NewFD) {
+    NewFD = FunctionDecl::Create(
+        SemaRef.Context, DC, D.getBeginLoc(), NameInfo, R, TInfo, SC,
+        SemaRef.getCurFPFeatures().isFPConstrained(), isInline, HasPrototype,
+        ConstexprSpecKind::Unspecified);
+  }
   if (D.isInvalidType())
     NewFD->setInvalidDecl();
 
@@ -195,6 +240,20 @@ NamedDecl *Sema::OnFunctionDeclarator(Scope *S, Declarator &D, DeclContext *DC,
 
   if (FDS.isNoreturnSpecified())
     NewFD->addAttr(C11NoReturnAttr::Create(Context, FDS.getNoreturnSpecLoc()));
+
+  // C++ function-specifiers that attach to the declaration (not only the type).
+  if (getLangOpts().CPlusPlus) {
+    if (auto *MD = dyn_cast<CXXMethodDecl>(NewFD)) {
+      if (FDS.isVirtualSpecified()) {
+        MD->setVirtualAsWritten(true);
+        if (auto *RD = dyn_cast<CXXRecordDecl>(MD->getParent())) {
+          if (!RD->hasDefinitionData())
+            RD->startDefinition();
+          RD->setPolymorphic(true);
+        }
+      }
+    }
+  }
 
   // Functions returning a variably modified type violate C99 6.7.5.2p2
   // because all functions have linkage.

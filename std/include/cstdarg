@@ -1,0 +1,6 @@
+// NeverC <cstdarg> scaffold
+#pragma once
+#include <stdarg.h>
+namespace std {
+  using ::va_list;
+}

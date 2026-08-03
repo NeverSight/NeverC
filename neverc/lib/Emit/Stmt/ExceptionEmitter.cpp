@@ -46,6 +46,7 @@ const EHPersonality EHPersonality::GNU_C = {"__gcc_personality_v0"};
 const EHPersonality EHPersonality::GNU_C_SEH = {"__gcc_personality_seh0"};
 const EHPersonality EHPersonality::MSVC_C_specific_handler = {
     "__C_specific_handler"};
+const EHPersonality EHPersonality::NeverC_CXX = {"__neverc_personality_v0"};
 
 namespace {
 const EHPersonality &getCPersonality(const TargetInfo &Target,
@@ -74,6 +75,11 @@ const EHPersonality &EHPersonality::get(ModuleEmitter &ME,
   // Functions using SEH get an SEH personality.
   if (FD && FD->usesSEHTry())
     return getSEHPersonalityMSVC(T);
+
+  // NeverC C++ ABI v1: always use bundled personality for C++ TUs.
+  // Landing pads are still incremental; symbol must resolve via neverc_cxx_runtime.
+  if (L.CPlusPlus)
+    return EHPersonality::NeverC_CXX;
 
   return getCPersonality(Target, L);
 }

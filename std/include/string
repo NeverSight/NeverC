@@ -1,0 +1,60 @@
+// NeverC expanded <string> scaffold (minimal)
+#pragma once
+#include <stddef.h>
+#include <string.h>
+#include <utility>
+namespace std {
+template <class CharT>
+class basic_string {
+  CharT *Data = nullptr;
+  size_t Size = 0;
+  size_t Cap = 0;
+  void ensure(size_t n) {
+    if (n <= Cap) return;
+    size_t nc = Cap ? Cap * 2 : 16;
+    if (nc < n) nc = n;
+    CharT *nd = static_cast<CharT *>(::operator new(nc * sizeof(CharT)));
+    if (Data) {
+      memcpy(nd, Data, Size * sizeof(CharT));
+      ::operator delete(Data);
+    }
+    Data = nd;
+    Cap = nc;
+  }
+public:
+  using size_type = size_t;
+  basic_string() = default;
+  basic_string(const CharT *s) {
+    if (!s) return;
+    size_t n = 0; while (s[n]) ++n;
+    ensure(n + 1);
+    memcpy(Data, s, n * sizeof(CharT));
+    Size = n;
+    Data[Size] = CharT();
+  }
+  ~basic_string() { ::operator delete(Data); }
+  size_t size() const { return Size; }
+  bool empty() const { return Size == 0; }
+  const CharT *c_str() const {
+    return Data ? Data : reinterpret_cast<const CharT *>("");
+  }
+  CharT &operator[](size_t i) { return Data[i]; }
+  const CharT &operator[](size_t i) const { return Data[i]; }
+  void push_back(CharT c) {
+    ensure(Size + 2);
+    Data[Size++] = c;
+    Data[Size] = CharT();
+  }
+  basic_string &operator+=(const CharT *s) {
+    if (!s) return *this;
+    size_t n = 0; while (s[n]) ++n;
+    ensure(Size + n + 1);
+    memcpy(Data + Size, s, n * sizeof(CharT));
+    Size += n;
+    Data[Size] = CharT();
+    return *this;
+  }
+};
+using string = basic_string<char>;
+using wstring = basic_string<wchar_t>;
+} // namespace std

@@ -1,0 +1,3 @@
+// NeverC <tuple> scaffold
+#pragma once
+namespace std { template<class... T> class tuple; }

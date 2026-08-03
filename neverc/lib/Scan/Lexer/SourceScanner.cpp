@@ -459,6 +459,9 @@ SourceScanner::dispatchSlowPath(Token &Result, const char *CurPtr, char Char,
       Kind = tok::ellipsis;
       CurPtr =
           consumeChar(consumeChar(CurPtr, SizeTmp, Result), SizeTmp2, Result);
+    } else if (LangOpts.CPlusPlus && Char == '*') {
+      CurPtr = consumeChar(CurPtr, SizeTmp, Result);
+      Kind = tok::periodstar;
     } else {
       Kind = tok::period;
     }
@@ -502,7 +505,12 @@ SourceScanner::dispatchSlowPath(Token &Result, const char *CurPtr, char Char,
       Kind = tok::minusminus;
     } else if (Char == '>') {
       CurPtr = consumeChar(CurPtr, SizeTmp, Result);
-      Kind = tok::arrow;
+      if (LangOpts.CPlusPlus && peekCharSize(CurPtr, SizeTmp) == '*') {
+        CurPtr = consumeChar(CurPtr, SizeTmp, Result);
+        Kind = tok::arrowstar;
+      } else {
+        Kind = tok::arrow;
+      }
     } else if (Char == '=') {
       CurPtr = consumeChar(CurPtr, SizeTmp, Result);
       Kind = tok::minusequal;
@@ -607,8 +615,16 @@ SourceScanner::dispatchSlowPath(Token &Result, const char *CurPtr, char Char,
         Kind = tok::lessless;
       }
     } else if (Char == '=') {
-      CurPtr = consumeChar(CurPtr, SizeTmp, Result);
-      Kind = tok::lessequal;
+      char After = peekCharSize(CurPtr + SizeTmp, SizeTmp2);
+      if (LangOpts.CPlusPlus && After == '>') {
+        // C++20 three-way comparison operator <=>.
+        Kind = tok::spaceship;
+        CurPtr =
+            consumeChar(consumeChar(CurPtr, SizeTmp, Result), SizeTmp2, Result);
+      } else {
+        CurPtr = consumeChar(CurPtr, SizeTmp, Result);
+        Kind = tok::lessequal;
+      }
     } else if (LangOpts.Digraphs && Char == ':') {
       CurPtr = consumeChar(CurPtr, SizeTmp, Result);
       Kind = tok::l_square;

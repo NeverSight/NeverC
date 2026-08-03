@@ -1,0 +1,13 @@
+// NeverC <scoped_allocator> scaffold (non-stream)
+#pragma once
+#include <memory>
+namespace std {
+template <class OuterAlloc, class... InnerAllocs>
+class scoped_allocator_adaptor : public OuterAlloc {
+public:
+  using outer_allocator_type = OuterAlloc;
+  scoped_allocator_adaptor() = default;
+  outer_allocator_type &outer_allocator() noexcept { return *this; }
+  const outer_allocator_type &outer_allocator() const noexcept { return *this; }
+};
+} // namespace std

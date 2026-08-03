@@ -217,10 +217,13 @@ Error verifyActionGraph(
         return E;
       if (!typeIs(inputType(0), {NEVERC_DRIVER_TYPE_C,
                                  NEVERC_DRIVER_TYPE_C_HEADER,
+                                 NEVERC_DRIVER_TYPE_CXX,
+                                 NEVERC_DRIVER_TYPE_CXX_HEADER,
                                  NEVERC_DRIVER_TYPE_ASM}) ||
           !typeIs(Node.OutputType,
-                  {NEVERC_DRIVER_TYPE_PP_C, NEVERC_DRIVER_TYPE_PP_ASM,
-                   NEVERC_DRIVER_TYPE_DEPENDENCIES, NEVERC_DRIVER_TYPE_C,
+                  {NEVERC_DRIVER_TYPE_PP_C, NEVERC_DRIVER_TYPE_PP_CXX,
+                   NEVERC_DRIVER_TYPE_PP_ASM, NEVERC_DRIVER_TYPE_DEPENDENCIES,
+                   NEVERC_DRIVER_TYPE_C, NEVERC_DRIVER_TYPE_CXX,
                    NEVERC_DRIVER_TYPE_ASM}))
         return actionGraphError("incompatible action graph edge");
       break;
@@ -228,6 +231,7 @@ Error verifyActionGraph(
       if (Error E = requireInputs(1))
         return E;
       if (!typeIs(inputType(0), {NEVERC_DRIVER_TYPE_PP_C,
+                                 NEVERC_DRIVER_TYPE_PP_CXX,
                                  NEVERC_DRIVER_TYPE_LLVM_IR,
                                  NEVERC_DRIVER_TYPE_LLVM_BC}) ||
           !typeIs(Node.OutputType, {NEVERC_DRIVER_TYPE_LLVM_BC,
@@ -315,6 +319,12 @@ Expected<NevercDriverType> toPublicDriverType(types::ID Type) {
     return NEVERC_DRIVER_TYPE_C;
   case types::TY_CHeader:
     return NEVERC_DRIVER_TYPE_C_HEADER;
+  case types::TY_PP_CXX:
+    return NEVERC_DRIVER_TYPE_PP_CXX;
+  case types::TY_CXX:
+    return NEVERC_DRIVER_TYPE_CXX;
+  case types::TY_CXXHeader:
+    return NEVERC_DRIVER_TYPE_CXX_HEADER;
   case types::TY_PP_Asm:
     return NEVERC_DRIVER_TYPE_PP_ASM;
   case types::TY_Asm:
@@ -352,6 +362,12 @@ Expected<types::ID> toInternalDriverType(NevercDriverType Type) {
     return types::TY_C;
   case NEVERC_DRIVER_TYPE_C_HEADER:
     return types::TY_CHeader;
+  case NEVERC_DRIVER_TYPE_PP_CXX:
+    return types::TY_PP_CXX;
+  case NEVERC_DRIVER_TYPE_CXX:
+    return types::TY_CXX;
+  case NEVERC_DRIVER_TYPE_CXX_HEADER:
+    return types::TY_CXXHeader;
   case NEVERC_DRIVER_TYPE_PP_ASM:
     return types::TY_PP_Asm;
   case NEVERC_DRIVER_TYPE_ASM:

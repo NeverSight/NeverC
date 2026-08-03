@@ -1,0 +1,105 @@
+// NeverC <memory> expanded scaffold (non-stream)
+#pragma once
+#include <type_traits>
+#include <utility>
+#include <cstddef>
+#include <new>
+
+namespace std {
+
+template <class T>
+struct default_delete {
+  void operator()(T *p) const { delete p; }
+};
+
+template <class T>
+struct default_delete<T[]> {
+  void operator()(T *p) const { delete[] p; }
+};
+
+template <class T, class Deleter = default_delete<T>>
+class unique_ptr {
+  T *ptr_ = nullptr;
+  Deleter del_{};
+
+public:
+  using pointer = T *;
+  using element_type = T;
+  using deleter_type = Deleter;
+
+  constexpr unique_ptr() noexcept = default;
+  explicit unique_ptr(pointer p) noexcept : ptr_(p) {}
+  unique_ptr(unique_ptr &&o) noexcept
+      : ptr_(o.ptr_), del_(static_cast<Deleter &&>(o.del_)) {
+    o.ptr_ = nullptr;
+  }
+  unique_ptr(const unique_ptr &) = delete;
+  ~unique_ptr() { reset(); }
+
+  unique_ptr &operator=(unique_ptr &&o) noexcept {
+    if (this != &o) {
+      reset();
+      ptr_ = o.ptr_;
+      del_ = static_cast<Deleter &&>(o.del_);
+      o.ptr_ = nullptr;
+    }
+    return *this;
+  }
+  unique_ptr &operator=(const unique_ptr &) = delete;
+
+  pointer get() const noexcept { return ptr_; }
+  explicit operator bool() const noexcept { return ptr_ != nullptr; }
+  T &operator*() const { return *ptr_; }
+  pointer operator->() const noexcept { return ptr_; }
+
+  pointer release() noexcept {
+    pointer p = ptr_;
+    ptr_ = nullptr;
+    return p;
+  }
+  void reset(pointer p = nullptr) noexcept {
+    pointer old = ptr_;
+    ptr_ = p;
+    if (old)
+      del_(old);
+  }
+};
+
+template <class T, class... Args>
+unique_ptr<T> make_unique(Args &&...args) {
+  return unique_ptr<T>(new T(static_cast<Args &&>(args)...));
+}
+
+template <class T>
+class shared_ptr {
+  T *ptr_ = nullptr;
+
+public:
+  constexpr shared_ptr() noexcept = default;
+  explicit shared_ptr(T *p) : ptr_(p) {}
+  T *get() const noexcept { return ptr_; }
+  T &operator*() const { return *ptr_; }
+  T *operator->() const noexcept { return ptr_; }
+  explicit operator bool() const noexcept { return ptr_ != nullptr; }
+};
+
+template <class T>
+struct allocator {
+  using value_type = T;
+  T *allocate(size_t n) {
+    return static_cast<T *>(::operator new(n * sizeof(T)));
+  }
+  void deallocate(T *p, size_t) noexcept { ::operator delete(p); }
+};
+
+template <class T>
+void destroy_at(T *p) {
+  p->~T();
+}
+
+template <class T, class... Args>
+T *construct_at(T *p, Args &&...args) {
+  return ::new (static_cast<void *>(p)) T(static_cast<Args &&>(args)...);
+}
+
+} // namespace std

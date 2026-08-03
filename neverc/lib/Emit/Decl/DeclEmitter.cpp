@@ -46,6 +46,13 @@ NEVERC_HOT void FunctionEmitter::genDecl(const Decl &D) {
   case Decl::StaticAssert:
   case Decl::Label:
   case Decl::Empty:
+  case Decl::Namespace:
+  case Decl::NamespaceAlias:
+  case Decl::Using:
+  case Decl::UsingDirective:
+  case Decl::UsingShadow:
+  case Decl::UsingEnum:
+  case Decl::LinkageSpec:
     return;
 
   case Decl::Var: {

@@ -1,0 +1,45 @@
+// NeverC <bit> scaffold (C++20)
+#pragma once
+#include <type_traits>
+#include <cstdint>
+
+namespace std {
+
+enum class endian {
+#ifdef _WIN32
+  little = 0,
+  big = 1,
+  native = little
+#else
+  little = __ORDER_LITTLE_ENDIAN__,
+  big = __ORDER_BIG_ENDIAN__,
+  native = __BYTE_ORDER__
+#endif
+};
+
+template <class T>
+constexpr bool has_single_bit(T x) noexcept {
+  return x != 0 && (x & (x - 1)) == 0;
+}
+
+template <class T>
+constexpr int popcount(T x) noexcept {
+  int c = 0;
+  while (x) {
+    c += int(x & 1);
+    x >>= 1;
+  }
+  return c;
+}
+
+template <class To, class From>
+constexpr To bit_cast(const From &from) noexcept {
+  static_assert(sizeof(To) == sizeof(From), "bit_cast size mismatch");
+  // Scaffold: no real lifetime; use union for trivially copyable path.
+  union U { From f; To t; };
+  U u{};
+  u.f = from;
+  return u.t;
+}
+
+} // namespace std

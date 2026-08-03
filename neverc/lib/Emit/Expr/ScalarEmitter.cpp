@@ -2,10 +2,13 @@
 #include "Core/ConstantEmitter.h"
 #include "Core/FunctionEmitter.h"
 #include "Core/ModuleEmitter.h"
+#include "neverc/Emit/CXXABI.h"
 #include "Debug/DebugEmitterInfo.h"
 #include "Stmt/CleanupEmitterInfo.h"
 #include "neverc/Tree/Core/Attr.h"
 #include "neverc/Tree/Core/TreeContext.h"
+#include "neverc/Tree/Decl/Decl.h"
+#include "neverc/Tree/Decl/GlobalDecl.h"
 #include "neverc/Tree/Stmt/StmtVisitor.h"
 #include "neverc/Tree/Type/StructLayout.h"
 #include "llvm/ADT/APFixedPoint.h"
@@ -24,6 +27,7 @@
 #include "llvm/Support/TypeSize.h"
 #include <cstdarg>
 #include <optional>
+#include <string>
 
 using namespace neverc;
 using namespace Emit;
@@ -362,6 +366,498 @@ public:
     if (FunctionEmitter::ConstantEmission Constant = FE.tryEmitAsConstant(E))
       return FE.emitScalarConstant(Constant);
     return genLoadOfLValue(E);
+  }
+
+  Value *VisitCXXTypeidExpr(CXXTypeidExpr *E) {
+    // NeverC ABI v1: typeid yields address of _ZTI* descriptor.
+    QualType Queried;
+    if (Expr *Op = E->getExprOperand())
+      Queried = Op->getType();
+    else
+      Queried = E->getType(); // type-operand form still stores result type
+    llvm::Type *ResTy = convertType(E->getType());
+    if (CXXABI *A = FE.ME.getCXXABI()) {
+      if (!Queried.isNull()) {
+        if (llvm::Constant *TI = A->getAddrOfRTTIDescriptor(Queried)) {
+          if (TI->getType() != ResTy)
+            return Builder.CreateBitCast(TI, ResTy);
+          return TI;
+        }
+      }
+    }
+    return llvm::Constant::getNullValue(ResTy);
+  }
+
+  Value *VisitCXXThisExpr(CXXThisExpr *E) {
+    (void)E;
+    // Prefer the FunctionEmitter-managed CXX this value when present.
+    if (llvm::Value *This = FE.CXXThisValue) {
+      llvm::Type *Ty = convertType(E->getType());
+      if (This->getType() != Ty)
+        return Builder.CreateBitCast(This, Ty);
+      return This;
+    }
+    llvm::Type *Ty = convertType(E->getType());
+    return llvm::Constant::getNullValue(Ty);
+  }
+
+  Value *VisitCXXNewExpr(CXXNewExpr *E) {
+    if (CXXABI *A = FE.ME.getCXXABI()) {
+      if (llvm::Value *V = A->emitCXXNew(FE, E))
+        return V;
+    }
+    llvm::Type *Ty = convertType(E->getType());
+    return llvm::Constant::getNullValue(Ty);
+  }
+
+  Value *VisitCXXDeleteExpr(CXXDeleteExpr *E) {
+    if (CXXABI *A = FE.ME.getCXXABI()) {
+      A->emitCXXDelete(FE, E);
+      return nullptr;
+    }
+    if (E->getArgument())
+      (void)Visit(E->getArgument());
+    return nullptr;
+  }
+
+  Value *VisitCXXThrowExpr(CXXThrowExpr *E) {
+    if (CXXABI *A = FE.ME.getCXXABI()) {
+      A->emitThrow(FE, E);
+    } else if (E->getSubExpr()) {
+      (void)Visit(E->getSubExpr());
+    }
+    Builder.CreateUnreachable();
+    llvm::BasicBlock *Cont = FE.createBasicBlock("throw.cont");
+    Builder.SetInsertPoint(Cont);
+    return nullptr;
+  }
+
+  Value *VisitCXXStaticCastExpr(CXXStaticCastExpr *E) {
+    Value *Src = Visit(E->getSubExpr());
+    llvm::Type *DestTy = convertType(E->getType());
+    if (!Src || Src->getType() == DestTy)
+      return Src;
+    return Builder.CreateBitCast(Src, DestTy);
+  }
+  Value *VisitCXXDynamicCastExpr(CXXDynamicCastExpr *E) {
+    Value *Src = Visit(E->getSubExpr());
+    llvm::Type *DestTy = convertType(E->getType());
+    if (!Src)
+      return Src;
+    if (CXXABI *A = FE.ME.getCXXABI()) {
+      QualType SrcTy = E->getSubExpr()->getType();
+      QualType DstTy = E->getType();
+      if (llvm::Value *V = A->emitDynamicCast(FE, Src, SrcTy, DstTy)) {
+        if (V->getType() != DestTy)
+          V = Builder.CreateBitCast(V, DestTy);
+        return V;
+      }
+    }
+    if (Src->getType() == DestTy)
+      return Src;
+    return Builder.CreateBitCast(Src, DestTy);
+  }
+  Value *VisitCXXReinterpretCastExpr(CXXReinterpretCastExpr *E) {
+    Value *Src = Visit(E->getSubExpr());
+    llvm::Type *DestTy = convertType(E->getType());
+    if (!Src || Src->getType() == DestTy)
+      return Src;
+    return Builder.CreateBitCast(Src, DestTy);
+  }
+  Value *VisitCXXConstCastExpr(CXXConstCastExpr *E) {
+    return Visit(E->getSubExpr());
+  }
+
+  Value *VisitCXXConstructExpr(CXXConstructExpr *E) {
+    // NeverC ABI v1 construct scaffold: temp + call ctor(this, args...) when
+    // the constructor is addressable. Full base/member init lists later.
+    llvm::Type *Ty = convertType(E->getType());
+    if (Ty->isVoidTy())
+      return nullptr;
+
+    Address Tmp = FE.createMemTemp(E->getType(), "ctor.tmp");
+    llvm::Value *ThisPtr = Tmp.getPointer();
+    if (ThisPtr->getType() != FE.VoidPtrTy)
+      ThisPtr = Builder.CreateBitCast(ThisPtr, FE.VoidPtrTy);
+
+    if (const CXXRecordDecl *RD = E->getType()->getAsCXXRecordDecl()) {
+      if (RD->isDynamicClass()) {
+        if (CXXABI *A = FE.ME.getCXXABI()) {
+          A->emitVTable(FE.ME, RD);
+          // Ctor prologue scaffold: initialize primary vptr for dynamic class
+          // before the constructor body runs (NeverC ABI v1 slot 0).
+          // Match NeverCCXXABI::mangleVTableName: _ZTV + N + name.
+          std::string VTName = "_ZTV";
+          if (const IdentifierInfo *RII = RD->getIdentifier()) {
+            VTName += std::to_string(RII->getName().size());
+            VTName += RII->getName().str();
+          } else {
+            VTName += "4anon";
+          }
+          if (llvm::GlobalVariable *VT =
+                  FE.ME.getModule().getNamedGlobal(VTName)) {
+            llvm::Value *V = VT;
+            if (V->getType() != FE.VoidPtrTy)
+              V = Builder.CreateBitCast(V, FE.VoidPtrTy);
+            llvm::Type *PPTy =
+                llvm::PointerType::getUnqual(Builder.getContext());
+            llvm::Value *Slot = Builder.CreateBitCast(Tmp.getPointer(), PPTy);
+            Builder.CreateStore(V, Slot);
+          }
+        }
+      }
+    }
+
+    if (CXXConstructorDecl *Ctor = E->getConstructor()) {
+      if (llvm::Constant *CFn = FE.ME.addrOfFunction(GlobalDecl(Ctor))) {
+        if (auto *Fn = llvm::dyn_cast<llvm::Function>(CFn->stripPointerCasts())) {
+          llvm::SmallVector<llvm::Value *, 8> Args;
+          Args.push_back(ThisPtr);
+          for (unsigned I = 0, N = E->getNumArgs(); I != N; ++I) {
+            if (Expr *ArgE = E->getArg(I)) {
+              if (Value *AV = Visit(ArgE))
+                Args.push_back(AV);
+            }
+          }
+          Builder.CreateCall(Fn, Args);
+        }
+      }
+    }
+
+    return Builder.CreateLoad(Tmp.getElementType(), Tmp.getPointer(), "ctor.val");
+  }
+
+  Value *VisitCXXMemberCallExpr(CXXMemberCallExpr *E) {
+    // NeverC ABI v1 member call: evaluate base, then call method(this, ...)
+    // when the member is a known FunctionDecl. Virtual dispatch remains
+    // Phase-4 (direct call through method address for now).
+    Expr *Callee = E->getCallee();
+    if (!Callee) {
+      llvm::Type *RetTy = convertType(E->getType());
+      return RetTy->isVoidTy() ? nullptr : llvm::Constant::getNullValue(RetTy);
+    }
+
+    llvm::Value *ThisPtr = nullptr;
+    FunctionDecl *Method = nullptr;
+    if (auto *ME = dyn_cast<MemberExpr>(Callee)) {
+      if (Expr *Base = ME->getBase()) {
+        if (Value *BV = Visit(Base)) {
+          ThisPtr = BV;
+          // If base is an object value (not pointer), take address via temp.
+          if (!ME->isArrow()) {
+            Address Tmp = FE.createMemTemp(Base->getType(), "memcall.this");
+            Builder.CreateStore(BV, Tmp.getPointer());
+            ThisPtr = Tmp.getPointer();
+          }
+        }
+      }
+      Method = dyn_cast_or_null<FunctionDecl>(ME->getMemberDecl());
+    } else {
+      (void)Visit(Callee);
+    }
+
+    llvm::SmallVector<llvm::Value *, 8> Args;
+    if (ThisPtr) {
+      if (ThisPtr->getType() != FE.VoidPtrTy)
+        ThisPtr = Builder.CreateBitCast(ThisPtr, FE.VoidPtrTy);
+      Args.push_back(ThisPtr);
+    }
+
+    if (Method) {
+      llvm::Value *CalleeV = nullptr;
+      if (auto *MD = dyn_cast<CXXMethodDecl>(Method)) {
+        if (MD->isVirtual()) {
+          if (CXXABI *A = FE.ME.getCXXABI()) {
+            if (ThisPtr)
+              CalleeV = A->getVirtualFunctionPointer(FE, ThisPtr, MD);
+          }
+        }
+      }
+      if (!CalleeV) {
+        if (llvm::Constant *CFn = FE.ME.addrOfFunction(GlobalDecl(Method)))
+          CalleeV = CFn;
+      }
+      if (CalleeV) {
+        llvm::Type *RetTy = convertType(E->getType());
+        llvm::SmallVector<llvm::Type *, 8> ParamTys;
+        for (llvm::Value *A : Args)
+          ParamTys.push_back(A->getType());
+        llvm::FunctionType *FTy =
+            llvm::FunctionType::get(RetTy->isVoidTy() ? Builder.getVoidTy()
+                                                     : RetTy,
+                                   ParamTys, /*isVarArg=*/false);
+        if (auto *Fn = llvm::dyn_cast<llvm::Function>(
+                CalleeV->stripPointerCasts())) {
+          llvm::CallInst *CI = Builder.CreateCall(Fn, Args);
+          if (RetTy->isVoidTy())
+            return nullptr;
+          if (CI->getType() != RetTy)
+            return Builder.CreateBitCast(CI, RetTy);
+          return CI;
+        }
+        llvm::Value *C = CalleeV;
+        llvm::Type *FnPtrTy = llvm::PointerType::getUnqual(Builder.getContext());
+        if (C->getType() != FnPtrTy)
+          C = Builder.CreateBitCast(C, FnPtrTy);
+        llvm::CallInst *CI = Builder.CreateCall(FTy, C, Args);
+        if (RetTy->isVoidTy())
+          return nullptr;
+        return CI;
+      }
+    }
+
+    llvm::Type *RetTy = convertType(E->getType());
+    return RetTy->isVoidTy() ? nullptr : llvm::Constant::getNullValue(RetTy);
+  }
+
+  Value *VisitCXXOperatorCallExpr(CXXOperatorCallExpr *E) {
+    // Lower rewritten operator calls as direct calls when the callee names a
+    // function/method; evaluate args left-to-right.
+    llvm::SmallVector<llvm::Value *, 4> Args;
+    for (unsigned I = 0, N = E->getNumArgs(); I != N; ++I) {
+      if (Expr *A = E->getArg(I)) {
+        if (Value *V = Visit(A))
+          Args.push_back(V);
+      }
+    }
+    Expr *CalleeE = E->getCallee();
+    if (!CalleeE)
+      return nullptr;
+    if (auto *DRE = dyn_cast<DeclRefExpr>(CalleeE)) {
+      if (auto *FD = dyn_cast_or_null<FunctionDecl>(DRE->getDecl())) {
+        if (llvm::Constant *CFn = FE.ME.addrOfFunction(GlobalDecl(FD))) {
+          if (auto *Fn = llvm::dyn_cast<llvm::Function>(
+                  CFn->stripPointerCasts())) {
+            llvm::CallInst *CI = Builder.CreateCall(Fn, Args);
+            llvm::Type *RetTy = convertType(E->getType());
+            if (RetTy->isVoidTy())
+              return nullptr;
+            if (CI->getType() == RetTy)
+              return CI;
+            return Builder.CreateBitCast(CI, RetTy);
+          }
+        }
+      }
+    }
+    Value *CalleeV = Visit(CalleeE);
+    (void)CalleeV;
+    llvm::Type *RetTy = convertType(E->getType());
+    return RetTy->isVoidTy() ? nullptr : llvm::Constant::getNullValue(RetTy);
+  }
+
+  Value *VisitMaterializeTemporaryExpr(MaterializeTemporaryExpr *E) {
+    if (Expr *Sub = E->getSubExpr())
+      return Visit(Sub);
+    return nullptr;
+  }
+
+  Value *VisitCXXScalarValueInitExpr(CXXScalarValueInitExpr *E) {
+    llvm::Type *Ty = convertType(E->getType());
+    return llvm::Constant::getNullValue(Ty);
+  }
+
+  Value *VisitCXXDefaultArgExpr(CXXDefaultArgExpr *E) {
+    llvm::Type *Ty = convertType(E->getType());
+    return llvm::Constant::getNullValue(Ty);
+  }
+
+  Value *VisitCXXDefaultInitExpr(CXXDefaultInitExpr *E) {
+    llvm::Type *Ty = convertType(E->getType());
+    return llvm::Constant::getNullValue(Ty);
+  }
+
+  Value *VisitCXXUnresolvedConstructExpr(CXXUnresolvedConstructExpr *E) {
+    llvm::Type *Ty = convertType(E->getType());
+    return llvm::Constant::getNullValue(Ty);
+  }
+
+  Value *VisitCXXDependentScopeMemberExpr(CXXDependentScopeMemberExpr *E) {
+    if (Expr *Base = E->getBase())
+      return Visit(Base);
+    return nullptr;
+  }
+
+  Value *VisitLambdaExpr(LambdaExpr *E) {
+    // Closure object: allocate temp, init capture fields from enclosing locals
+    // when names match LambdaExpr capture-ids / closure fields.
+    llvm::Type *Ty = convertType(E->getType());
+    if (Ty->isVoidTy())
+      return nullptr;
+    const CXXRecordDecl *Closure = nullptr;
+    if (!E->getType().isNull())
+      Closure = E->getType()->getAsCXXRecordDecl();
+    if (!Closure)
+      return llvm::Constant::getNullValue(Ty);
+
+    Address Tmp = FE.createMemTemp(E->getType(), "lambda.tmp");
+    Builder.CreateStore(llvm::Constant::getNullValue(Ty), Tmp.getPointer());
+
+    llvm::Type *I8Ptr = llvm::PointerType::getUnqual(Builder.getContext());
+    llvm::Value *Base = Tmp.getPointer();
+    if (Base->getType() != I8Ptr)
+      Base = Builder.CreateBitCast(Base, I8Ptr);
+
+    const CXXRecordDecl *Def =
+        Closure->getDefinition() ? Closure->getDefinition() : Closure;
+    for (const Decl *D : Def->decls()) {
+      const auto *FD = dyn_cast<FieldDecl>(D);
+      if (!FD || !FD->getIdentifier())
+        continue;
+      // Look up enclosing local/param with same name for capture value.
+      llvm::Value *CapV = nullptr;
+      auto tryLoadLocal = [&](const VarDecl *VD) -> llvm::Value * {
+        if (!VD)
+          return nullptr;
+        Address A = FE.tryAddrOfLocalVar(VD);
+        if (!A.isValid())
+          return nullptr;
+        llvm::Value *LV = A.getPointer();
+        if (!LV)
+          return nullptr;
+        return Builder.CreateLoad(convertType(VD->getType()), LV, "cap.ld");
+      };
+      if (const FunctionDecl *CurFD =
+              dyn_cast_or_null<FunctionDecl>(FE.getCurFuncDecl())) {
+        for (unsigned PI = 0, PE = CurFD->getNumParams(); PI != PE; ++PI) {
+          if (const ParmVarDecl *P = CurFD->getParamDecl(PI)) {
+            if (P->getIdentifier() == FD->getIdentifier()) {
+              CapV = tryLoadLocal(P);
+              break;
+            }
+          }
+        }
+      }
+      if (!CapV) {
+        if (const VarDecl *VD = FE.findLocalVarByName(FD->getIdentifier()))
+          CapV = tryLoadLocal(VD);
+      }
+      if (!CapV)
+        continue;
+      uint64_t OffBits = FE.getContext().getFieldOffset(FD);
+      uint64_t OffBytes = OffBits / 8;
+      llvm::Value *FieldPtr = Builder.CreateConstGEP1_64(
+          Builder.getInt8Ty(), Base, OffBytes, "lambda.cap");
+      llvm::Type *FTy = convertType(FD->getType());
+      // By-ref capture: field is pointer type — store address of value temp.
+      if (FD->getType()->isPointerType() && CapV) {
+        // CapV is loaded value; re-materialize address via temp for by-ref.
+        Address CapTmp = FE.createMemTemp(FD->getType()->getPointeeType(),
+                                          "cap.ref");
+        // If CapV type matches pointee, store it then take address.
+        llvm::Type *PointeeTy = convertType(FD->getType()->getPointeeType());
+        if (CapV->getType() != PointeeTy && !PointeeTy->isVoidTy()) {
+          if (CapV->getType()->isPointerTy())
+            CapV = Builder.CreateLoad(PointeeTy, CapV, "cap.ld");
+          else
+            CapV = Builder.CreateBitCast(CapV, PointeeTy);
+        }
+        Builder.CreateStore(CapV, CapTmp.getPointer());
+        CapV = CapTmp.getPointer();
+        if (CapV->getType() != FTy)
+          CapV = Builder.CreateBitCast(CapV, FTy);
+      } else if (CapV->getType() != FTy && !FTy->isVoidTy()) {
+        if (CapV->getType()->isPointerTy() && !FTy->isPointerTy())
+          CapV = Builder.CreateLoad(FTy, CapV, "cap.val");
+        else
+          CapV = Builder.CreateBitCast(CapV, FTy);
+      }
+      llvm::Value *StorePtr = Builder.CreateBitCast(
+          FieldPtr, llvm::PointerType::getUnqual(Builder.getContext()));
+      Builder.CreateStore(CapV, StorePtr);
+    }
+
+    return Builder.CreateLoad(Tmp.getElementType(), Tmp.getPointer(),
+                             "lambda.val");
+  }
+
+  Value *VisitRequiresExpr(RequiresExpr *E) {
+    // Evaluate requires-expr as bool: false if body has a zero integer
+    // literal statement/expr; true otherwise (including empty body).
+    bool Ok = true;
+    if (Stmt *B = E->getBody()) {
+      if (const auto *CS = dyn_cast<CompoundStmt>(B)) {
+        for (const Stmt *S : CS->body()) {
+          if (!S)
+            continue;
+          if (const auto *IL = dyn_cast<IntegerLiteral>(S)) {
+            if (IL->getValue().isZero())
+              Ok = false;
+          } else if (const auto *Ex = dyn_cast<Expr>(S)) {
+            if (const auto *IL = dyn_cast<IntegerLiteral>(Ex)) {
+              if (IL->getValue().isZero())
+                Ok = false;
+            }
+          }
+        }
+      } else if (const auto *IL = dyn_cast<IntegerLiteral>(B)) {
+        if (IL->getValue().isZero())
+          Ok = false;
+      }
+    }
+    return llvm::ConstantInt::get(Builder.getInt1Ty(), Ok ? 1 : 0);
+  }
+
+Value *VisitCoreturnExpr(CoreturnExpr *E) {
+    // co_return: evaluate operand (promise.return_value/return_void scaffold).
+    // Call __neverc_coro_resume on null frame after side-effecting operand.
+    if (Expr *Op = E->getOperand())
+      (void)Visit(Op);
+    llvm::LLVMContext &Ctx = Builder.getContext();
+    llvm::Module *M = Builder.GetInsertBlock()->getModule();
+    llvm::Type *VoidTy = llvm::Type::getVoidTy(Ctx);
+    llvm::Type *PtrTy = llvm::PointerType::getUnqual(Ctx);
+    llvm::FunctionType *ResumeTy =
+        llvm::FunctionType::get(VoidTy, {PtrTy}, false);
+    llvm::FunctionCallee ResumeFn =
+        M->getOrInsertFunction("__neverc_coro_resume", ResumeTy);
+    llvm::Value *Null = llvm::ConstantPointerNull::get(
+        cast<llvm::PointerType>(PtrTy));
+    Builder.CreateCall(ResumeFn, {Null});
+    return nullptr;
+  }
+
+Value *VisitCoawaitExpr(CoawaitExpr *E) {
+    // NeverC ABI v1 coroutine await scaffold: evaluate operand, then call
+    // __neverc_coro_resume on a frame pointer when the operand is pointer-
+    // typed. Full promise/await_ready/suspend/resume lowering is later.
+    Value *OpV = nullptr;
+    if (E->getOperand())
+      OpV = Visit(E->getOperand());
+
+    llvm::LLVMContext &Ctx = Builder.getContext();
+    llvm::Module *M = Builder.GetInsertBlock()->getModule();
+    llvm::Type *VoidTy = llvm::Type::getVoidTy(Ctx);
+    llvm::Type *PtrTy = llvm::PointerType::getUnqual(Ctx);
+    llvm::FunctionType *ResumeTy =
+        llvm::FunctionType::get(VoidTy, {PtrTy}, false);
+    llvm::FunctionCallee ResumeFn =
+        M->getOrInsertFunction("__neverc_coro_resume", ResumeTy);
+    if (OpV) {
+      llvm::Value *Frame = OpV;
+      if (Frame->getType() != PtrTy)
+        Frame = Builder.CreateBitCast(Frame, PtrTy);
+      Builder.CreateCall(ResumeFn, {Frame});
+    }
+
+    llvm::Type *Ty = convertType(E->getType());
+    if (Ty->isVoidTy())
+      return nullptr;
+    if (OpV && OpV->getType() == Ty)
+      return OpV;
+    return llvm::Constant::getNullValue(Ty);
+  }
+
+Value *Value *Value *VisitCoyieldExpr(CoyieldExpr *E) {
+    // co_yield scaffold: evaluate operand; full promise.yield_value later.
+    Value *OpV = nullptr;
+    if (E->getOperand())
+      OpV = Visit(E->getOperand());
+    llvm::Type *Ty = convertType(E->getType());
+    if (Ty->isVoidTy())
+      return nullptr;
+    if (OpV && OpV->getType() == Ty)
+      return OpV;
+    return llvm::Constant::getNullValue(Ty);
   }
 
   Value *VisitArraySubscriptExpr(ArraySubscriptExpr *E);

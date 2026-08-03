@@ -35,6 +35,39 @@ Parser::DeclGroupPtrTy Parser::ParseDeclaration(DeclaratorContext Context,
     return ParseSimpleDeclaration(Context, DeclEnd, DeclAttrs, DeclSpecAttrs,
                                   true, DeclSpecStart);
 
+  case tok::kw_module:
+      return ParseModuleDecl(ConsumeToken());
+    case tok::kw_import:
+      return ParseModuleDecl(ConsumeToken());
+    case tok::kw_template: {
+      if (!getLangOpts().CPlusPlus) {
+        Diag(Tok, diag::err_expected_type);
+        ConsumeToken();
+        return nullptr;
+      }
+      SourceLocation TemplateLoc = ConsumeToken();
+      return ParseTemplateDeclaration(TemplateLoc);
+    }
+    case tok::kw_namespace:
+    if (!getLangOpts().CPlusPlus) {
+      Diag(Tok, diag::err_expected_external_declaration);
+      ConsumeToken();
+      return nullptr;
+    }
+    ProhibitAttributes(DeclSpecAttrs);
+    SingleDecl = ParseNamespace(DeclEnd, DeclAttrs);
+    break;
+
+  case tok::kw_using:
+    if (!getLangOpts().CPlusPlus) {
+      Diag(Tok, diag::err_expected_external_declaration);
+      ConsumeToken();
+      return nullptr;
+    }
+    ProhibitAttributes(DeclSpecAttrs);
+    SingleDecl = ParseUsingDirectiveOrDeclaration(DeclEnd, DeclAttrs);
+    break;
+
   case tok::kw_static_assert:
   case tok::kw__Static_assert:
     ProhibitAttributes(DeclAttrs);
@@ -101,7 +134,8 @@ bool Parser::CouldBeDeclarator(DeclaratorContext Context) {
 
   case tok::amp:
   case tok::ampamp:
-    return false;
+    // C++ reference declarators.
+    return getLangOpts().CPlusPlus;
 
   case tok::l_square: // Might be an attribute on an unnamed bit-field.
     return false;
@@ -512,6 +546,9 @@ bool Parser::ParseImpliedInt(DeclSpec &DS, AccessSpecifier AS,
     break;
   case DeclSpec::TST_struct:
     TagKind = tok::kw_struct;
+    break;
+  case DeclSpec::TST_class:
+    TagKind = tok::kw_class;
     break;
   }
 

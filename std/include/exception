@@ -1,0 +1,24 @@
+// NeverC <exception> (non-stream)
+#pragma once
+namespace std {
+class exception {
+public:
+  exception() noexcept = default;
+  exception(const exception &) noexcept = default;
+  exception &operator=(const exception &) noexcept = default;
+  virtual ~exception() = default;
+  virtual const char *what() const noexcept { return "std::exception"; }
+};
+
+class bad_exception : public exception {
+public:
+  const char *what() const noexcept override { return "std::bad_exception"; }
+};
+
+using terminate_handler = void (*)();
+terminate_handler set_terminate(terminate_handler) noexcept;
+terminate_handler get_terminate() noexcept;
+[[noreturn]] void terminate() noexcept;
+
+int uncaught_exceptions() noexcept;
+} // namespace std

@@ -1,0 +1,3 @@
+// NeverC <unordered_map> scaffold
+#pragma once
+namespace std { template<class K, class V> class unordered_map; }

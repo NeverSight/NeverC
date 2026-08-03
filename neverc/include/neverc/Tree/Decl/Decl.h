@@ -14,6 +14,7 @@
 #include "neverc/Tree/Core/ExternalTreeSource.h"
 #include "neverc/Tree/Core/TreeContextAlloc.h"
 #include "neverc/Tree/Decl/DeclBase.h"
+#include "neverc/Tree/Decl/CXXBaseSpecifier.h"
 #include "neverc/Tree/Decl/DeclarationName.h"
 #include "neverc/Tree/Decl/Redeclarable.h"
 #include "neverc/Tree/Type/Type.h"
@@ -181,6 +182,59 @@ public:
   }
 };
 
+// C++ linkage-specification: extern "C" { ... } / extern "C++" { ... }
+// Declared before NamedDecl because it only depends on Decl/DeclContext.
+class LinkageSpecDecl : public Decl, public DeclContext {
+public:
+  enum LanguageIDs { lang_c, lang_cxx };
+
+private:
+  SourceLocation ExternLoc;
+  SourceLocation RBraceLoc;
+  LanguageIDs Language : 3;
+  bool HasBraces : 1;
+
+  LinkageSpecDecl(DeclContext *DC, SourceLocation ExternLoc,
+                  SourceLocation LangLoc, LanguageIDs Lang, bool HasBraces)
+      : Decl(LinkageSpec, DC, LangLoc), DeclContext(LinkageSpec),
+        ExternLoc(ExternLoc), RBraceLoc(), Language(Lang),
+        HasBraces(HasBraces) {}
+
+  virtual void anchor();
+
+public:
+  static LinkageSpecDecl *Create(TreeContext &C, DeclContext *DC,
+                                 SourceLocation ExternLoc,
+                                 SourceLocation LangLoc, LanguageIDs Lang,
+                                 bool HasBraces);
+
+  LanguageIDs getLanguage() const { return Language; }
+  void setLanguage(LanguageIDs L) { Language = L; }
+  bool hasBraces() const { return HasBraces; }
+  void setHasBraces(bool B) { HasBraces = B; }
+  SourceLocation getExternLoc() const { return ExternLoc; }
+  SourceLocation getRBraceLoc() const { return RBraceLoc; }
+  void setRBraceLoc(SourceLocation L) {
+    RBraceLoc = L;
+    HasBraces = L.isValid();
+  }
+  SourceLocation getEndLoc() const LLVM_READONLY {
+    return HasBraces ? RBraceLoc : getLocation();
+  }
+  SourceRange getSourceRange() const override LLVM_READONLY {
+    return SourceRange(ExternLoc, getEndLoc());
+  }
+
+  static bool classof(const Decl *D) { return classofKind(D->getKind()); }
+  static bool classofKind(Kind K) { return K == LinkageSpec; }
+  static DeclContext *castToDeclContext(const LinkageSpecDecl *D) {
+    return static_cast<DeclContext *>(const_cast<LinkageSpecDecl *>(D));
+  }
+  static LinkageSpecDecl *castFromDeclContext(const DeclContext *DC) {
+    return static_cast<LinkageSpecDecl *>(const_cast<DeclContext *>(DC));
+  }
+};
+
 class NamedDecl : public Decl {
   DeclarationName Name;
 
@@ -289,6 +343,214 @@ inline llvm::raw_ostream &operator<<(llvm::raw_ostream &OS,
   ND.printName(OS);
   return OS;
 }
+
+// C++ namespace declaration (NeverC C++20 foundation).
+class NamespaceDecl : public NamedDecl,
+                      public DeclContext,
+                      public Redeclarable<NamespaceDecl> {
+  SourceLocation LocStart;
+  SourceLocation RBraceLoc;
+  bool IsInline : 1;
+  bool IsAnonymous : 1;
+
+  NamespaceDecl(const TreeContext &C, DeclContext *DC, bool Inline,
+                SourceLocation StartLoc, SourceLocation IdLoc,
+                IdentifierInfo *Id, NamespaceDecl *PrevDecl);
+
+  void anchor() override;
+
+  using redeclarable_base = Redeclarable<NamespaceDecl>;
+
+  NamespaceDecl *getNextRedeclarationImpl() override {
+    return getNextRedeclaration();
+  }
+  NamespaceDecl *getPreviousDeclImpl() override { return getPreviousDecl(); }
+  NamespaceDecl *getMostRecentDeclImpl() override {
+    return getMostRecentDecl();
+  }
+
+public:
+  static NamespaceDecl *Create(TreeContext &C, DeclContext *DC, bool Inline,
+                               SourceLocation StartLoc, SourceLocation IdLoc,
+                               IdentifierInfo *Id, NamespaceDecl *PrevDecl);
+
+  using redecl_range = redeclarable_base::redecl_range;
+  using redecl_iterator = redeclarable_base::redecl_iterator;
+  using redeclarable_base::getMostRecentDecl;
+  using redeclarable_base::getPreviousDecl;
+  using redeclarable_base::isFirstDecl;
+  using redeclarable_base::redecls;
+  using redeclarable_base::redecls_begin;
+  using redeclarable_base::redecls_end;
+
+  bool isInline() const { return IsInline; }
+  void setInline(bool I) { IsInline = I; }
+  bool isAnonymousNamespace() const { return IsAnonymous; }
+
+  SourceLocation getBeginLoc() const LLVM_READONLY { return LocStart; }
+  SourceLocation getRBraceLoc() const { return RBraceLoc; }
+  void setRBraceLoc(SourceLocation L) { RBraceLoc = L; }
+  SourceRange getSourceRange() const override LLVM_READONLY {
+    return SourceRange(LocStart, RBraceLoc);
+  }
+
+  static bool classof(const Decl *D) { return classofKind(D->getKind()); }
+  static bool classofKind(Kind K) { return K == Namespace; }
+  static DeclContext *castToDeclContext(const NamespaceDecl *D) {
+    return static_cast<DeclContext *>(const_cast<NamespaceDecl *>(D));
+  }
+  static NamespaceDecl *castFromDeclContext(const DeclContext *DC) {
+    return static_cast<NamespaceDecl *>(const_cast<DeclContext *>(DC));
+  }
+};
+
+// C++ namespace alias: namespace A = B;
+class NamespaceAliasDecl : public NamedDecl {
+  SourceLocation NamespaceLoc;
+  SourceLocation TargetNameLoc;
+  NamespaceDecl *Namespace;
+
+  NamespaceAliasDecl(DeclContext *DC, SourceLocation NamespaceLoc,
+                     SourceLocation AliasLoc, IdentifierInfo *Alias,
+                     SourceLocation TargetNameLoc, NamespaceDecl *Namespace)
+      : NamedDecl(NamespaceAlias, DC, AliasLoc, Alias),
+        NamespaceLoc(NamespaceLoc), TargetNameLoc(TargetNameLoc),
+        Namespace(Namespace) {}
+
+  void anchor() override;
+
+public:
+  static NamespaceAliasDecl *Create(TreeContext &C, DeclContext *DC,
+                                    SourceLocation NamespaceLoc,
+                                    SourceLocation AliasLoc,
+                                    IdentifierInfo *Alias,
+                                    SourceLocation TargetNameLoc,
+                                    NamespaceDecl *Namespace);
+
+  NamespaceDecl *getNamespace() const { return Namespace; }
+  SourceLocation getNamespaceLoc() const { return NamespaceLoc; }
+  SourceLocation getTargetNameLoc() const { return TargetNameLoc; }
+  SourceRange getSourceRange() const override LLVM_READONLY {
+    return SourceRange(NamespaceLoc, TargetNameLoc);
+  }
+
+  static bool classof(const Decl *D) { return classofKind(D->getKind()); }
+  static bool classofKind(Kind K) { return K == NamespaceAlias; }
+};
+
+// C++ using-declaration (using N::x;).
+class UsingDecl : public NamedDecl {
+  SourceLocation UsingLoc;
+  NamedDecl *Target;
+
+  UsingDecl(DeclContext *DC, SourceLocation UL, SourceLocation IdLoc,
+            DeclarationName Name, NamedDecl *Target)
+      : NamedDecl(Using, DC, IdLoc, Name), UsingLoc(UL), Target(Target) {}
+
+  void anchor() override;
+
+public:
+  static UsingDecl *Create(TreeContext &C, DeclContext *DC, SourceLocation UL,
+                           SourceLocation IdLoc, DeclarationName Name,
+                           NamedDecl *Target);
+
+  SourceLocation getUsingLoc() const { return UsingLoc; }
+  NamedDecl *getTargetDecl() const { return Target; }
+  void setTargetDecl(NamedDecl *T) { Target = T; }
+  SourceRange getSourceRange() const override LLVM_READONLY {
+    return SourceRange(UsingLoc, getLocation());
+  }
+
+  static bool classof(const Decl *D) { return classofKind(D->getKind()); }
+  static bool classofKind(Kind K) { return K == Using; }
+};
+
+// C++ using-directive (using namespace N;).
+class UsingDirectiveDecl : public NamedDecl {
+  SourceLocation UsingLoc;
+  SourceLocation NamespaceLoc;
+  NamespaceDecl *NominatedNamespace;
+  DeclContext *CommonAncestor;
+
+  UsingDirectiveDecl(DeclContext *DC, SourceLocation UsingLoc,
+                     SourceLocation NamespaceLoc, SourceLocation IdentLoc,
+                     NamespaceDecl *Nominated, DeclContext *CommonAncestor)
+      : NamedDecl(UsingDirective, DC, IdentLoc, DeclarationName()),
+        UsingLoc(UsingLoc), NamespaceLoc(NamespaceLoc),
+        NominatedNamespace(Nominated), CommonAncestor(CommonAncestor) {}
+
+  void anchor() override;
+
+public:
+  static UsingDirectiveDecl *
+  Create(TreeContext &C, DeclContext *DC, SourceLocation UsingLoc,
+         SourceLocation NamespaceLoc, SourceLocation IdentLoc,
+         NamespaceDecl *Nominated, DeclContext *CommonAncestor);
+
+  NamespaceDecl *getNominatedNamespace() const { return NominatedNamespace; }
+  DeclContext *getCommonAncestor() const { return CommonAncestor; }
+  SourceLocation getUsingLoc() const { return UsingLoc; }
+  SourceLocation getNamespaceKeyLocation() const { return NamespaceLoc; }
+  SourceRange getSourceRange() const override LLVM_READONLY {
+    return SourceRange(UsingLoc, getLocation());
+  }
+
+  static bool classof(const Decl *D) { return classofKind(D->getKind()); }
+  static bool classofKind(Kind K) { return K == UsingDirective; }
+};
+
+// Shadow declaration introduced by a using-declaration.
+class UsingShadowDecl : public NamedDecl {
+  NamedDecl *Underlying;
+  UsingDecl *Using;
+
+  UsingShadowDecl(DeclContext *DC, SourceLocation Loc, UsingDecl *Using,
+                  NamedDecl *Target)
+      : NamedDecl(UsingShadow, DC, Loc,
+                  Target ? Target->getDeclName() : DeclarationName()),
+        Underlying(Target), Using(Using) {}
+
+  void anchor() override;
+
+public:
+  static UsingShadowDecl *Create(TreeContext &C, DeclContext *DC,
+                                 SourceLocation Loc, UsingDecl *Using,
+                                 NamedDecl *Target);
+
+  NamedDecl *getTargetDecl() const { return Underlying; }
+  UsingDecl *getUsingDecl() const { return Using; }
+
+  static bool classof(const Decl *D) { return classofKind(D->getKind()); }
+  static bool classofKind(Kind K) { return K == UsingShadow; }
+};
+
+// C++20 using-enum declaration.
+class UsingEnumDecl : public NamedDecl {
+  SourceLocation UsingLoc;
+  SourceLocation EnumLoc;
+  EnumDecl *Enum;
+
+  UsingEnumDecl(DeclContext *DC, SourceLocation UsingLoc,
+                SourceLocation EnumLoc, SourceLocation IdLoc,
+                DeclarationName Name, EnumDecl *Enum)
+      : NamedDecl(UsingEnum, DC, IdLoc, Name), UsingLoc(UsingLoc),
+        EnumLoc(EnumLoc), Enum(Enum) {}
+
+  void anchor() override;
+
+public:
+  static UsingEnumDecl *Create(TreeContext &C, DeclContext *DC,
+                               SourceLocation UsingLoc, SourceLocation EnumLoc,
+                               SourceLocation IdLoc, EnumDecl *Enum);
+
+  EnumDecl *getEnumDecl() const { return Enum; }
+  SourceRange getSourceRange() const override LLVM_READONLY {
+    return SourceRange(UsingLoc, getLocation());
+  }
+
+  static bool classof(const Decl *D) { return classofKind(D->getKind()); }
+  static bool classofKind(Kind K) { return K == UsingEnum; }
+};
 
 class LabelDecl : public NamedDecl {
   LabelStmt *TheStmt;
@@ -1262,7 +1524,9 @@ public:
 
   // Implement isa/cast/dyncast/etc.
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
-  static bool classofKind(Kind K) { return K == Function; }
+  static bool classofKind(Kind K) {
+    return K >= firstFunction && K <= lastFunction;
+  }
   static DeclContext *castToDeclContext(const FunctionDecl *D) {
     return static_cast<DeclContext *>(const_cast<FunctionDecl *>(D));
   }
@@ -1270,6 +1534,275 @@ public:
     return static_cast<FunctionDecl *>(const_cast<DeclContext *>(DC));
   }
 };
+
+
+//===----------------------------------------------------------------------===//
+// C++ Declarations
+//===----------------------------------------------------------------------===//
+
+/// Represents a C++ struct/union/class.
+class CXXRecordDecl : public RecordDecl {
+  friend class TreeContext;
+
+  struct DefinitionData {
+    bool UserDeclaredConstructor : 1;
+    bool UserDeclaredSpecialMembers : 1;
+    bool Aggregate : 1;
+    bool PlainOldData : 1;
+    bool Empty : 1;
+    bool Polymorphic : 1;
+    bool Abstract : 1;
+    bool IsStandardLayout : 1;
+    bool HasTrivialSpecialMembers : 1;
+    bool DeclaredSpecialMembers : 1;
+    bool HasConstexprNonCopyMoveConstructor : 1;
+    bool HasMutableFields : 1;
+    bool HasVariantMembers : 1;
+    bool DeclaredNonTrivialSpecialMembers : 1;
+
+    /// Number of base class specifiers.
+    unsigned NumBases = 0;
+    /// Number of virtual base class specifiers.
+    unsigned NumVBases = 0;
+    /// Base class specifiers (owned by TreeContext allocation).
+    CXXBaseSpecifier *Bases = nullptr;
+    CXXBaseSpecifier *VBases = nullptr;
+
+    DefinitionData()
+        : UserDeclaredConstructor(false), UserDeclaredSpecialMembers(false),
+          Aggregate(true), PlainOldData(true), Empty(true), Polymorphic(false),
+          Abstract(false), IsStandardLayout(true),
+          HasTrivialSpecialMembers(true), DeclaredSpecialMembers(false),
+          HasConstexprNonCopyMoveConstructor(false), HasMutableFields(false),
+          HasVariantMembers(false), DeclaredNonTrivialSpecialMembers(false) {}
+  };
+
+  DefinitionData *DefinitionDataPtr = nullptr;
+
+protected:
+  CXXRecordDecl(const TreeContext &C, TagKind TK, DeclContext *DC,
+                SourceLocation StartLoc, SourceLocation IdLoc,
+                IdentifierInfo *Id, CXXRecordDecl *PrevDecl);
+
+public:
+  static CXXRecordDecl *Create(const TreeContext &C, TagKind TK,
+                               DeclContext *DC, SourceLocation StartLoc,
+                               SourceLocation IdLoc, IdentifierInfo *Id,
+                               CXXRecordDecl *PrevDecl = nullptr,
+                               bool DelayTypeCreation = false);
+
+  CXXRecordDecl *getPreviousDecl() {
+    return cast_or_null<CXXRecordDecl>(
+        static_cast<TagDecl *>(this)->getPreviousDecl());
+  }
+  const CXXRecordDecl *getPreviousDecl() const {
+    return const_cast<CXXRecordDecl *>(this)->getPreviousDecl();
+  }
+  CXXRecordDecl *getMostRecentDecl() {
+    return cast<CXXRecordDecl>(
+        static_cast<TagDecl *>(this)->getMostRecentDecl());
+  }
+  const CXXRecordDecl *getMostRecentDecl() const {
+    return const_cast<CXXRecordDecl *>(this)->getMostRecentDecl();
+  }
+  CXXRecordDecl *getDefinition() const {
+    return cast_or_null<CXXRecordDecl>(TagDecl::getDefinition());
+  }
+
+  void setBases(CXXBaseSpecifier *Bases, unsigned NumBases) {
+    assert(DefinitionDataPtr && "setBases on incomplete class");
+    DefinitionDataPtr->Bases = Bases;
+    DefinitionDataPtr->NumBases = NumBases;
+    if (NumBases)
+      DefinitionDataPtr->Aggregate = false;
+  }
+  unsigned getNumBases() const {
+    return DefinitionDataPtr ? DefinitionDataPtr->NumBases : 0;
+  }
+  CXXBaseSpecifier *bases_begin() {
+    return DefinitionDataPtr ? DefinitionDataPtr->Bases : nullptr;
+  }
+  const CXXBaseSpecifier *bases_begin() const {
+    return DefinitionDataPtr ? DefinitionDataPtr->Bases : nullptr;
+  }
+  CXXBaseSpecifier *bases_end() {
+    return bases_begin() + getNumBases();
+  }
+  const CXXBaseSpecifier *bases_end() const {
+    return bases_begin() + getNumBases();
+  }
+
+  bool isCXXClass() const { return isClass() || isStruct() || isUnion(); }
+
+  bool isPOD() const {
+    return DefinitionDataPtr ? DefinitionDataPtr->PlainOldData : true;
+  }
+  bool isEmpty() const {
+    return DefinitionDataPtr ? DefinitionDataPtr->Empty : true;
+  }
+  bool isPolymorphic() const {
+    return DefinitionDataPtr ? DefinitionDataPtr->Polymorphic : false;
+  }
+  void setPolymorphic(bool P) {
+    assert(DefinitionDataPtr && "setPolymorphic on incomplete class");
+    DefinitionDataPtr->Polymorphic = P;
+  }
+  void setAbstract(bool A) {
+    assert(DefinitionDataPtr && "setAbstract on incomplete class");
+    DefinitionDataPtr->Abstract = A;
+  }
+  bool hasDefinitionData() const { return DefinitionDataPtr != nullptr; }
+  bool isDynamicClass() const { return isPolymorphic(); }
+  bool isAbstract() const {
+    return DefinitionDataPtr ? DefinitionDataPtr->Abstract : false;
+  }
+  bool isAggregate() const {
+    return DefinitionDataPtr ? DefinitionDataPtr->Aggregate : true;
+  }
+  bool isStandardLayout() const {
+    return DefinitionDataPtr ? DefinitionDataPtr->IsStandardLayout : true;
+  }
+
+  void startDefinition();
+  void completeDefinition() override;
+
+  static bool classof(const Decl *D) { return classofKind(D->getKind()); }
+  static bool classofKind(Kind K) { return K == CXXRecord; }
+};
+
+/// Represents a static or instance method of a C++ struct/union/class.
+class CXXMethodDecl : public FunctionDecl {
+protected:
+  CXXMethodDecl(Kind DK, TreeContext &C, CXXRecordDecl *RD,
+                SourceLocation StartLoc, const DeclarationNameInfo &NameInfo,
+                QualType T, TypeSourceInfo *TInfo, StorageClass SC,
+                bool UsesFPIntrin, bool isInline, ConstexprSpecKind ConstexprKind)
+      : FunctionDecl(DK, C, RD, StartLoc, NameInfo, T, TInfo, SC, UsesFPIntrin,
+                     isInline, ConstexprKind) {}
+
+public:
+  static CXXMethodDecl *Create(TreeContext &C, CXXRecordDecl *RD,
+                               SourceLocation StartLoc,
+                               const DeclarationNameInfo &NameInfo, QualType T,
+                               TypeSourceInfo *TInfo, StorageClass SC,
+                               bool UsesFPIntrin, bool isInline,
+                               ConstexprSpecKind ConstexprKind);
+
+  bool isStatic() const { return getStorageClass() == SC_Static; }
+  bool isInstance() const { return !isStatic(); }
+
+  /// True when the method was declared with the \c virtual keyword or is
+  /// virtual because it overrides a virtual base method (simplified Phase-2).
+  bool isVirtualAsWritten() const { return MethodBits.IsVirtualAsWritten; }
+  void setVirtualAsWritten(bool V) { MethodBits.IsVirtualAsWritten = V; }
+  bool isVirtual() const { return isVirtualAsWritten(); }
+  bool isPureVirtual() const { return MethodBits.IsPureVirtual; }
+  void setPureVirtual(bool P) {
+    MethodBits.IsPureVirtual = P;
+    if (P)
+      setVirtualAsWritten(true);
+  }
+
+  CXXRecordDecl *getParent() {
+    return cast<CXXRecordDecl>(FunctionDecl::getParent());
+  }
+  const CXXRecordDecl *getParent() const {
+    return cast<CXXRecordDecl>(FunctionDecl::getParent());
+  }
+
+  static bool classof(const Decl *D) { return classofKind(D->getKind()); }
+  static bool classofKind(Kind K) {
+    return K == CXXMethod || K == CXXConstructor || K == CXXDestructor ||
+           K == CXXConversion;
+  }
+};
+
+/// Represents a C++ constructor.
+class CXXCtorInitializer; // neverc/Tree/Decl/CXXCtorInitializer.h
+
+class CXXConstructorDecl : public CXXMethodDecl {
+  void anchor() override;
+
+  CXXCtorInitializer **CtorInitializers = nullptr;
+  unsigned NumCtorInitializers = 0;
+
+  CXXConstructorDecl(TreeContext &C, CXXRecordDecl *RD, SourceLocation StartLoc,
+                     const DeclarationNameInfo &NameInfo, QualType T,
+                     TypeSourceInfo *TInfo, bool isExplicit, bool isInline,
+                     bool isImplicitlyDeclared, ConstexprSpecKind ConstexprKind);
+
+public:
+  static CXXConstructorDecl *
+  Create(TreeContext &C, CXXRecordDecl *RD, SourceLocation StartLoc,
+         const DeclarationNameInfo &NameInfo, QualType T,
+         TypeSourceInfo *TInfo, bool isExplicit, bool isInline,
+         bool isImplicitlyDeclared, ConstexprSpecKind ConstexprKind);
+
+  void setCtorInitializers(CXXCtorInitializer **Inits, unsigned Num) {
+    CtorInitializers = Inits;
+    NumCtorInitializers = Num;
+  }
+  unsigned getNumCtorInitializers() const { return NumCtorInitializers; }
+  CXXCtorInitializer **init_begin() const { return CtorInitializers; }
+  CXXCtorInitializer **init_end() const {
+    return CtorInitializers + NumCtorInitializers;
+  }
+  llvm::ArrayRef<CXXCtorInitializer *> inits() const {
+    return llvm::ArrayRef(CtorInitializers, NumCtorInitializers);
+  }
+
+  bool isDefaultConstructor() const;
+  bool isCopyConstructor() const;
+  bool isMoveConstructor() const;
+
+  static bool classof(const Decl *D) { return classofKind(D->getKind()); }
+  static bool classofKind(Kind K) { return K == CXXConstructor; }
+};
+
+/// Represents a C++ destructor.
+class CXXDestructorDecl : public CXXMethodDecl {
+  void anchor() override;
+
+  CXXDestructorDecl(TreeContext &C, CXXRecordDecl *RD, SourceLocation StartLoc,
+                    const DeclarationNameInfo &NameInfo, QualType T,
+                    TypeSourceInfo *TInfo, bool isInline,
+                    bool isImplicitlyDeclared);
+
+public:
+  static CXXDestructorDecl *Create(TreeContext &C, CXXRecordDecl *RD,
+                                   SourceLocation StartLoc,
+                                   const DeclarationNameInfo &NameInfo,
+                                   QualType T, TypeSourceInfo *TInfo,
+                                   bool isInline, bool isImplicitlyDeclared);
+
+  static bool classof(const Decl *D) { return classofKind(D->getKind()); }
+  static bool classofKind(Kind K) { return K == CXXDestructor; }
+};
+
+/// Represents a C++ conversion function.
+class CXXConversionDecl : public CXXMethodDecl {
+  void anchor() override;
+
+  CXXConversionDecl(TreeContext &C, CXXRecordDecl *RD, SourceLocation StartLoc,
+                    const DeclarationNameInfo &NameInfo, QualType T,
+                    TypeSourceInfo *TInfo, bool isInline, bool isExplicit,
+                    ConstexprSpecKind ConstexprKind);
+
+public:
+  static CXXConversionDecl *
+  Create(TreeContext &C, CXXRecordDecl *RD, SourceLocation StartLoc,
+         const DeclarationNameInfo &NameInfo, QualType T,
+         TypeSourceInfo *TInfo, bool isInline, bool isExplicit,
+         ConstexprSpecKind ConstexprKind);
+
+  QualType getConversionType() const {
+    return getType()->castAs<FunctionType>()->getReturnType();
+  }
+
+  static bool classof(const Decl *D) { return classofKind(D->getKind()); }
+  static bool classofKind(Kind K) { return K == CXXConversion; }
+};
+
 
 class FieldDecl : public DeclaratorDecl, public Mergeable<FieldDecl> {
   LLVM_PREFERRED_TYPE(bool)
@@ -1689,7 +2222,9 @@ public:
 
   bool isStruct() const { return getTagKind() == TagTypeKind::Struct; }
   bool isUnion() const { return getTagKind() == TagTypeKind::Union; }
+  bool isClass() const { return getTagKind() == TagTypeKind::Class; }
   bool isEnum() const { return getTagKind() == TagTypeKind::Enum; }
+  bool isStructOrClass() const { return isStruct() || isClass(); }
 
   bool hasNameForLinkage() const {
     return (getDeclName() || getTypedefNameForAnonDecl());
@@ -1975,7 +2510,9 @@ public:
   virtual void completeDefinition();
 
   static bool classof(const Decl *D) { return classofKind(D->getKind()); }
-  static bool classofKind(Kind K) { return K == Record; }
+  static bool classofKind(Kind K) {
+    return K == Record || K == CXXRecord;
+  }
 
   bool isMsStruct(const TreeContext &C) const;
 

@@ -1,0 +1,39 @@
+// NeverC <initializer_list>
+#pragma once
+#include <cstddef>
+
+namespace std {
+
+template <class E>
+class initializer_list {
+public:
+  using value_type = E;
+  using reference = const E &;
+  using const_reference = const E &;
+  using size_type = size_t;
+  using iterator = const E *;
+  using const_iterator = const E *;
+
+  constexpr initializer_list() noexcept : begin_(nullptr), size_(0) {}
+
+  constexpr size_type size() const noexcept { return size_; }
+  constexpr const E *begin() const noexcept { return begin_; }
+  constexpr const E *end() const noexcept { return begin_ + size_; }
+
+private:
+  constexpr initializer_list(const E *b, size_type n) noexcept
+      : begin_(b), size_(n) {}
+  const E *begin_;
+  size_type size_;
+};
+
+template <class E>
+constexpr const E *begin(initializer_list<E> il) noexcept {
+  return il.begin();
+}
+template <class E>
+constexpr const E *end(initializer_list<E> il) noexcept {
+  return il.end();
+}
+
+} // namespace std

@@ -91,6 +91,7 @@ class IdentifierInfo;
 class NamedDecl;
 struct PrintingPolicy;
 class RecordDecl;
+class CXXRecordDecl;
 class Stmt;
 class TagDecl;
 class TypeLoc;
@@ -1059,7 +1060,7 @@ protected:
     unsigned NumParams : 16;
 
     LLVM_PREFERRED_TYPE(ExceptionSpecificationType)
-    unsigned ExceptionSpecType : 1;
+    unsigned ExceptionSpecType : 3;
 
     /// Whether this function has extended parameter information.
     LLVM_PREFERRED_TYPE(bool)
@@ -1287,6 +1288,9 @@ public:
   bool isFunctionProtoType() const { return getAs<FunctionProtoType>(); }
   bool isPointerType() const;
   bool isAnyPointerType() const; // Any C pointer
+  bool isReferenceType() const;
+  bool isLValueReferenceType() const;
+  bool isRValueReferenceType() const;
   bool isVoidPointerType() const;
   bool isObjectPointerType() const;
   bool isFunctionPointerType() const;
@@ -1366,6 +1370,8 @@ public:
   const ComplexType *getAsComplexIntegerType() const; // GCC complex int type.
 
   RecordDecl *getAsRecordDecl() const;
+
+  CXXRecordDecl *getAsCXXRecordDecl() const;
 
   TagDecl *getAsTagDecl() const;
 
@@ -1600,6 +1606,89 @@ public:
 
   static bool classof(const Type *T) { return T->getTypeClass() == Pointer; }
 };
+
+
+/// C++ lvalue / rvalue reference types (NeverC C++20 foundation).
+class ReferenceType : public Type, public llvm::FoldingSetNode {
+protected:
+  QualType PointeeType;
+  ReferenceType(TypeClass TC, QualType Referencee, QualType CanonicalRef)
+      : Type(TC, CanonicalRef, Referencee->getDependence()),
+        PointeeType(Referencee) {}
+
+public:
+  bool isSpelledAsLValue() const { return getTypeClass() == LValueReference; }
+  QualType getPointeeType() const { return PointeeType; }
+  bool isSugared() const { return false; }
+  QualType desugar() const { return QualType(this, 0); }
+  void Profile(llvm::FoldingSetNodeID &ID) { Profile(ID, getPointeeType()); }
+  static void Profile(llvm::FoldingSetNodeID &ID, QualType Referencee) {
+    ID.AddPointer(Referencee.getAsOpaquePtr());
+  }
+  static bool classof(const Type *T) {
+    return T->getTypeClass() == LValueReference ||
+           T->getTypeClass() == RValueReference;
+  }
+};
+
+class LValueReferenceType : public ReferenceType {
+  friend class TreeContext;
+  LValueReferenceType(QualType Referencee, QualType CanonicalRef)
+      : ReferenceType(LValueReference, Referencee, CanonicalRef) {}
+public:
+  static bool classof(const Type *T) {
+    return T->getTypeClass() == LValueReference;
+  }
+};
+
+class RValueReferenceType : public ReferenceType {
+  friend class TreeContext;
+  RValueReferenceType(QualType Referencee, QualType CanonicalRef)
+      : ReferenceType(RValueReference, Referencee, CanonicalRef) {}
+public:
+  static bool classof(const Type *T) {
+    return T->getTypeClass() == RValueReference;
+  }
+};
+
+/// Placeholder for a template type parameter (e.g. typename T).
+class TemplateTypeParmType : public Type, public llvm::FoldingSetNode {
+  friend class TreeContext;
+
+  unsigned Depth;
+  unsigned Index;
+  bool ParameterPack;
+
+  TemplateTypeParmType(unsigned D, unsigned I, bool Pack, QualType Canon)
+      : Type(TemplateTypeParm, Canon,
+             TypeDependence::DependentInstantiation |
+                 (Pack ? TypeDependence::DependentInstantiation
+                       : TypeDependence::None)),
+        Depth(D), Index(I), ParameterPack(Pack) {}
+
+public:
+  unsigned getDepth() const { return Depth; }
+  unsigned getIndex() const { return Index; }
+  bool isParameterPack() const { return ParameterPack; }
+
+  bool isSugared() const { return false; }
+  QualType desugar() const { return QualType(this, 0); }
+
+  void Profile(llvm::FoldingSetNodeID &ID) {
+    Profile(ID, Depth, Index, ParameterPack);
+  }
+  static void Profile(llvm::FoldingSetNodeID &ID, unsigned Depth,
+                      unsigned Index, bool ParameterPack) {
+    ID.AddInteger(Depth);
+    ID.AddInteger(Index);
+    ID.AddBoolean(ParameterPack);
+  }
+
+  static bool classof(const Type *T) {
+    return T->getTypeClass() == TemplateTypeParm;
+  }
+};
+
 
 class AdjustedType : public Type, public llvm::FoldingSetNode {
   QualType OriginalTy;
@@ -2422,7 +2511,11 @@ public:
     return Result;
   }
 
-  bool isNothrow() const { return getExceptionSpecType() == EST_NoThrow; }
+  bool isNothrow() const {
+    ExceptionSpecificationType EST = getExceptionSpecType();
+    return EST == EST_NoThrow || EST == EST_BasicNoexcept ||
+           EST == EST_DynamicNone;
+  }
 
   bool isVariadic() const { return FunctionTypeBits.Variadic; }
 
@@ -2841,6 +2934,8 @@ enum class ElaboratedTypeKeyword {
 
   Union,
 
+  Class,
+
   Enum,
 
   None
@@ -2850,6 +2945,8 @@ enum class TagTypeKind {
   Struct,
 
   Union,
+
+  Class,
 
   Enum
 };
@@ -3212,6 +3309,15 @@ inline bool Type::isPointerType() const {
 }
 
 inline bool Type::isAnyPointerType() const { return isPointerType(); }
+inline bool Type::isReferenceType() const {
+  return isLValueReferenceType() ; isRValueReferenceType();
+}
+inline bool Type::isLValueReferenceType() const {
+  return isa<LValueReferenceType>(CanonicalType);
+}
+inline bool Type::isRValueReferenceType() const {
+  return isa<RValueReferenceType>(CanonicalType);
+}
 
 inline bool Type::isObjectPointerType() const {
   // Note: an "object pointer type" is not the same thing as a pointer to an

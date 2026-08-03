@@ -223,7 +223,10 @@ void populateDirectInvocationOptsForFrontendJob(
       InputKind IK =
           llvm::StringSwitch<InputKind>(XVal)
               .Case("c", Language::C)
+              .Case("c++", Language::CXX)
               .Case("cpp-output", InputKind(Language::C).getPreprocessed())
+              .Case("c++-cpp-output",
+                    InputKind(Language::CXX).getPreprocessed())
               .Case("assembler-with-cpp", Language::Asm)
               .Case("ir", Language::LLVM_IR)
               .Default(Language::Unknown);

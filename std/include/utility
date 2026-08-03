@@ -1,0 +1,27 @@
+// NeverC expanded <utility> scaffold
+#pragma once
+#include <type_traits>
+namespace std {
+template <class T, class U>
+struct pair {
+  T first;
+  U second;
+  pair() = default;
+  pair(const T &a, const U &b) : first(a), second(b) {}
+  template <class A, class B>
+  pair(A &&a, B &&b) : first(static_cast<A &&>(a)), second(static_cast<B &&>(b)) {}
+};
+template <class T, class U>
+constexpr pair<T, U> make_pair(T t, U u) { return pair<T, U>(t, u); }
+
+template <class T>
+constexpr T &&move(T &t) noexcept {
+  return static_cast<T &&>(t);
+}
+template <class T>
+void swap(T &a, T &b) {
+  T tmp = static_cast<T &&>(a);
+  a = static_cast<T &&>(b);
+  b = static_cast<T &&>(tmp);
+}
+} // namespace std

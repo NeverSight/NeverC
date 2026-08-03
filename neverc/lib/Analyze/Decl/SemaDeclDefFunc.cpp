@@ -746,7 +746,8 @@ TypedefDecl *Sema::ParseTypedefDecl(Scope *S, Declarator &D, QualType T,
   switch (TDS.getTypeSpecType()) {
   case TST_enum:
   case TST_struct:
-  case TST_union: {
+  case TST_union:
+  case TST_class: {
     TagDecl *tagFromDeclSpec = cast<TagDecl>(TDS.getRepAsDecl());
     setTagNameForLinkagePurposes(tagFromDeclSpec, NewTD);
     break;
@@ -799,6 +800,7 @@ Sema::NonTagKind Sema::getNonTagTypeDeclKind(const Decl *PrevDecl,
     return NTK_Typedef;
   switch (TTK) {
   case TagTypeKind::Struct:
+  case TagTypeKind::Class:
     return NTK_NonStruct;
   case TagTypeKind::Union:
     return NTK_NonUnion;

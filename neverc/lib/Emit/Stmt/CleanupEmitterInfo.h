@@ -450,6 +450,8 @@ struct EHPersonality {
   static const EHPersonality GNU_C;
   static const EHPersonality GNU_C_SEH;
   static const EHPersonality MSVC_C_specific_handler;
+  /// NeverC C++ ABI v1 personality (bundled runtime).
+  static const EHPersonality NeverC_CXX;
 
   bool usesFuncletPads() const { return isMSVCPersonality(); }
 

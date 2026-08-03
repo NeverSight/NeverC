@@ -1,0 +1,34 @@
+// NeverC <source_location> scaffold (C++20)
+#pragma once
+#include <cstdint>
+
+namespace std {
+
+struct source_location {
+  static constexpr source_location current(
+      const char *file = __builtin_FILE(),
+      const char *func = __builtin_FUNCTION(),
+      uint_least32_t line = __builtin_LINE(),
+      uint_least32_t col = 0) noexcept {
+    source_location L;
+    L.file_ = file;
+    L.func_ = func;
+    L.line_ = line;
+    L.col_ = col;
+    return L;
+  }
+
+  constexpr source_location() noexcept = default;
+  constexpr uint_least32_t line() const noexcept { return line_; }
+  constexpr uint_least32_t column() const noexcept { return col_; }
+  constexpr const char *file_name() const noexcept { return file_; }
+  constexpr const char *function_name() const noexcept { return func_; }
+
+private:
+  const char *file_ = "";
+  const char *func_ = "";
+  uint_least32_t line_ = 0;
+  uint_least32_t col_ = 0;
+};
+
+} // namespace std

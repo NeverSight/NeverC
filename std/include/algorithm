@@ -1,0 +1,3 @@
+// NeverC <algorithm> scaffold
+#pragma once
+namespace std { template<class I> void sort(I, I); }

@@ -1,0 +1,3 @@
+// NeverC <cassert> scaffold
+#pragma once
+#include <assert.h>

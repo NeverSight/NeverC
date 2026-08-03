@@ -1,0 +1,3 @@
+// NeverC <array> scaffold
+#pragma once
+namespace std { template<class T, unsigned long N> struct array; }

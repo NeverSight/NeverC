@@ -1,0 +1,15 @@
+// NeverC <forward_list> scaffold (non-stream)
+#pragma once
+#include <stddef.h>
+namespace std {
+template <class T> class forward_list {
+  size_t Size = 0;
+public:
+  using value_type = T;
+  forward_list() = default;
+  bool empty() const noexcept { return Size == 0; }
+  void push_front(const T &) { ++Size; }
+  void pop_front() { if (Size) --Size; }
+  void clear() noexcept { Size = 0; }
+};
+} // namespace std

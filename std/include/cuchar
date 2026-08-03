@@ -1,0 +1,6 @@
+// NeverC <cuchar> scaffold
+#pragma once
+#include <stddef.h>
+namespace std {
+  using mbstate_t = int;
+}

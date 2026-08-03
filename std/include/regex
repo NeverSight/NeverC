@@ -1,0 +1,14 @@
+// NeverC <regex> scaffold (non-stream) — minimal API surface only
+#pragma once
+#include <string>
+namespace std {
+class regex {
+public:
+  regex() = default;
+  explicit regex(const char *) {}
+  explicit regex(const std::string &) {}
+};
+class smatch {};
+inline bool regex_match(const std::string &, const regex &) { return false; }
+inline bool regex_search(const std::string &, const regex &) { return false; }
+} // namespace std

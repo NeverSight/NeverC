@@ -337,6 +337,74 @@ ExprResult Sema::FormUnaryOp(Scope *S, SourceLocation OpLoc,
     Input = Result.get();
   }
 
+  // C++: unique member operatorOP on class type of operand.
+  if (getLangOpts().CPlusPlus && Input && !Input->getType().isNull()) {
+    QualType OpTy = Input->getType();
+    if (const Type *T = OpTy.getTypePtrOrNull()) {
+      if (T->isReferenceType())
+        OpTy = T->getPointeeType();
+    }
+    OverloadedOperatorKind OpKind = NUM_OVERLOADED_OPERATORS;
+    switch (Opc) {
+    case UO_PreInc:
+    case UO_PostInc:
+      OpKind = OO_PlusPlus;
+      break;
+    case UO_PreDec:
+    case UO_PostDec:
+      OpKind = OO_MinusMinus;
+      break;
+    case UO_Plus:
+      OpKind = OO_Plus;
+      break;
+    case UO_Minus:
+      OpKind = OO_Minus;
+      break;
+    case UO_Not:
+      OpKind = OO_Tilde;
+      break;
+    case UO_LNot:
+      OpKind = OO_Exclaim;
+      break;
+    case UO_Deref:
+      OpKind = OO_Star;
+      break;
+    case UO_AddrOf:
+      OpKind = OO_Amp;
+      break;
+    case UO_Real:
+    case UO_Imag:
+    case UO_Extension:
+      break;
+    }
+    if (OpKind != NUM_OVERLOADED_OPERATORS) {
+      if (const CXXRecordDecl *LRD = OpTy->getAsCXXRecordDecl()) {
+        const CXXRecordDecl *Def =
+            LRD->getDefinition() ? LRD->getDefinition() : LRD;
+        CXXMethodDecl *Found = nullptr;
+        unsigned FoundCount = 0;
+        for (Decl *D : Def->decls()) {
+          auto *MD = dyn_cast<CXXMethodDecl>(D);
+          if (!MD)
+            continue;
+          if (MD->getDeclName().getCXXOverloadedOperator() != OpKind)
+            continue;
+          Found = MD;
+          ++FoundCount;
+        }
+        if (FoundCount == 1 && Found) {
+          QualType CallTy = Found->getReturnType();
+          if (CallTy.isNull())
+            CallTy = Context.IntTy;
+          Expr *Callee = DeclRefExpr::Create(
+              Context, Found, OpLoc, Found->getType(), VK_LValue);
+          return new (Context)
+              CXXOperatorCallExpr(CallTy, OpLoc, Callee, Input, nullptr);
+        }
+      }
+    }
+  }
+
   return CreateBuiltinUnaryOp(OpLoc, Opc, Input, IsAfterAmp);
 }
 

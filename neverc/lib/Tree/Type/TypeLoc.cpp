@@ -452,6 +452,14 @@ public:
     return Visit(T.getPointeeLoc());
   }
 
+  TypeLoc VisitLValueReferenceTypeLoc(LValueReferenceTypeLoc T) {
+    return Visit(T.getPointeeLoc());
+  }
+
+  TypeLoc VisitRValueReferenceTypeLoc(RValueReferenceTypeLoc T) {
+    return Visit(T.getPointeeLoc());
+  }
+
   TypeLoc VisitArrayTypeLoc(ArrayTypeLoc T) { return Visit(T.getElementLoc()); }
 
   TypeLoc VisitFunctionTypeLoc(FunctionTypeLoc T) {

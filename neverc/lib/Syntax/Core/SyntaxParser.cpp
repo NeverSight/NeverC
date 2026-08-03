@@ -6,6 +6,9 @@
 #include "neverc/Tree/Core/TreeConsumer.h"
 #include "neverc/Tree/Core/TreeContext.h"
 #include "llvm/Support/TimeProfiler.h"
+#include "neverc/Tree/Decl/CXXCtorInitializer.h"
+#include "neverc/Tree/Decl/Decl.h"
+#include "neverc/Tree/Decl/CXXBaseSpecifier.h"
 using namespace neverc;
 
 // ===----------------------------------------------------------------------===
@@ -551,6 +554,30 @@ Parser::ParseExternalDeclaration(ParsedAttributes &Attrs,
                               DeclSpecAttrs);
     }
 
+  case tok::kw_module:
+      return ParseModuleDecl(ConsumeToken());
+    case tok::kw_import:
+      return ParseModuleDecl(ConsumeToken());
+    case tok::kw_template: {
+      if (!getLangOpts().CPlusPlus) {
+        Diag(Tok, diag::err_expected_type);
+        ConsumeToken();
+        return nullptr;
+      }
+      SourceLocation TemplateLoc = ConsumeToken();
+      return ParseTemplateDeclaration(TemplateLoc);
+    }
+    case tok::kw_namespace:
+  case tok::kw_using:
+    if (getLangOpts().CPlusPlus) {
+      SourceLocation DeclEnd;
+      return ParseDeclaration(DeclaratorContext::File, DeclEnd, Attrs,
+                              DeclSpecAttrs);
+    }
+    Diag(Tok, diag::err_expected_external_declaration);
+    ConsumeToken();
+    return nullptr;
+
   case tok::kw_static:
     goto dont_know;
 
@@ -558,6 +585,20 @@ Parser::ParseExternalDeclaration(ParsedAttributes &Attrs,
     goto dont_know;
 
   case tok::kw_extern:
+    // C++ linkage-specification: extern "C" ...
+    if (getLangOpts().CPlusPlus && NextToken().is(tok::string_literal)) {
+      ParsingDeclSpec DS(*this);
+      // Record extern as the storage-class so ParseLinkage can recover its loc.
+      {
+        const char *PrevSpec = nullptr;
+        unsigned DiagID = 0;
+        DS.SetStorageClassSpec(Actions, DeclSpec::SCS_extern, Tok.getLocation(),
+                               PrevSpec, DiagID,
+                               Actions.getTreeContext().getPrintingPolicy());
+      }
+      ConsumeToken(); // extern
+      return ParseLinkage(DS, AS_none);
+    }
     goto dont_know;
 
   case tok::kw___if_exists:
@@ -625,6 +666,8 @@ Parser::DeclGroupPtrTy Parser::ParseDeclOrFunctionDefInternal(
       case DeclSpec::TST_struct:
         return 6;
       case DeclSpec::TST_union:
+        return 5;
+      case DeclSpec::TST_class:
         return 5;
       case DeclSpec::TST_enum:
         return 4;
@@ -708,6 +751,70 @@ Decl *Parser::ParseFunctionDefinition(ParsingDeclarator &D,
   if (FTI.isKNRPrototype())
     ParseOldStyleParams(D);
 
+  // C++ ctor-initializer: : mem(e), base(e) ...
+  struct PendingCtorInit {
+    IdentifierInfo *Name = nullptr;
+    SourceLocation NameLoc;
+    bool IsVirtual = false;
+    SourceLocation LP, RP;
+    Expr *Init = nullptr;
+  };
+  llvm::SmallVector<PendingCtorInit, 4> PendingCtorInits;
+  if (getLangOpts().CPlusPlus && Tok.is(tok::colon)) {
+    ConsumeToken(); // :
+    while (Tok.isNot(tok::l_brace) && Tok.isNot(tok::eof) &&
+           Tok.isNot(tok::semi)) {
+      PendingCtorInit PCI;
+      if (Tok.is(tok::kw_virtual)) {
+        PCI.IsVirtual = true;
+        ConsumeToken();
+      }
+      if (Tok.is(tok::identifier)) {
+        PCI.Name = Tok.getIdentifierInfo();
+        PCI.NameLoc = ConsumeToken();
+        while (Tok.is(tok::coloncolon)) {
+          ConsumeToken();
+          if (Tok.is(tok::identifier)) {
+            PCI.Name = Tok.getIdentifierInfo();
+            PCI.NameLoc = ConsumeToken();
+          }
+        }
+      } else {
+        ConsumeAnyToken();
+        continue;
+      }
+      if (Tok.is(tok::l_paren)) {
+        PCI.LP = ConsumeParen();
+        if (Tok.isNot(tok::r_paren)) {
+          ExprResult ER = ParseExpression();
+          if (ER.isUsable())
+            PCI.Init = ER.get();
+          while (Tok.is(tok::comma)) {
+            ConsumeToken();
+            (void)ParseExpression();
+          }
+        }
+        PCI.RP = Tok.getLocation();
+        if (Tok.is(tok::r_paren))
+          ConsumeParen();
+      } else if (Tok.is(tok::l_brace)) {
+        PCI.LP = Tok.getLocation();
+        BalancedDelimiterTracker Br(*this, tok::l_brace);
+        Br.consumeOpen();
+        while (Tok.isNot(tok::r_brace) && Tok.isNot(tok::eof))
+          ConsumeAnyToken();
+        Br.consumeClose();
+        PCI.RP = Tok.getLocation();
+      }
+      PendingCtorInits.push_back(PCI);
+      if (Tok.is(tok::comma)) {
+        ConsumeToken();
+        continue;
+      }
+      break;
+    }
+  }
+
   // We should have an opening brace for the function body.
   if (Tok.isNot(tok::l_brace)) {
     Diag(Tok, diag::err_expected_fn_body);
@@ -743,6 +850,65 @@ Decl *Parser::ParseFunctionDefinition(ParsingDeclarator &D,
 
   // Break out of the ParsingDeclarator context before we parse the body.
   D.complete(Res);
+
+  // Resolve ctor-initializer names against the constructor's class.
+  if (auto *Ctor = dyn_cast_or_null<CXXConstructorDecl>(Res)) {
+    llvm::SmallVector<CXXCtorInitializer *, 4> Resolved;
+    CXXRecordDecl *RD = Ctor->getParent();
+    const CXXRecordDecl *Def =
+        RD && RD->getDefinition() ? RD->getDefinition() : RD;
+    for (const PendingCtorInit &PCI : PendingCtorInits) {
+      if (!PCI.Name)
+        continue;
+      FieldDecl *FD = nullptr;
+      if (Def) {
+        for (Decl *MD : Def->decls()) {
+          if (auto *F = dyn_cast<FieldDecl>(MD)) {
+            if (F->getIdentifier() == PCI.Name) {
+              FD = F;
+              break;
+            }
+          }
+        }
+      }
+      if (FD) {
+        if (CXXCtorInitializer *CI = Actions.BuildMemberInitializer(
+                FD, PCI.NameLoc, PCI.LP, PCI.Init, PCI.RP))
+          Resolved.push_back(CI);
+      } else if (Def) {
+        // Base class by name match against base specifier identifiers.
+        QualType BaseTy;
+        bool IsVirt = PCI.IsVirtual;
+        for (const CXXBaseSpecifier *B = Def->bases_begin(),
+                                    *BE = Def->bases_end();
+             B != BE; ++B) {
+          QualType BT = B->getType();
+          if (BT.isNull())
+            continue;
+          if (const CXXRecordDecl *BRD = BT->getAsCXXRecordDecl()) {
+            if (BRD->getIdentifier() == PCI.Name) {
+              BaseTy = BT;
+              IsVirt = IsVirt || B->isVirtual();
+              break;
+            }
+          }
+        }
+        if (!BaseTy.isNull()) {
+          if (CXXCtorInitializer *CI = Actions.BuildBaseInitializer(
+                  BaseTy, IsVirt, PCI.LP, PCI.Init, PCI.RP))
+            Resolved.push_back(CI);
+        } else {
+          // Delegating / unknown — treat as base with IntTy record name scaffold.
+          QualType Dummy = Actions.getTreeContext().IntTy;
+          if (CXXCtorInitializer *CI = Actions.BuildBaseInitializer(
+                  Dummy, IsVirt, PCI.LP, PCI.Init, PCI.RP))
+            Resolved.push_back(CI);
+        }
+      }
+    }
+    if (!Resolved.empty())
+      Actions.SetCtorInitializers(Ctor, Resolved);
+  }
 
   // Break out of the ParsingDeclSpec context, too.  This const_cast is
   // safe because we're always the sole owner.

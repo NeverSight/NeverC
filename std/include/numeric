@@ -1,0 +1,16 @@
+// NeverC <numeric> scaffold (non-stream)
+#pragma once
+namespace std {
+template <class InputIt, class T>
+T accumulate(InputIt first, InputIt last, T init) {
+  for (; first != last; ++first) init = init + *first;
+  return init;
+}
+template <class T> constexpr T gcd(T a, T b) {
+  while (b) { T t = b; b = a % b; a = t; } return a;
+}
+template <class T> constexpr T lcm(T a, T b) {
+  return a && b ? (a / gcd(a, b)) * b : T(0);
+}
+template <class T> constexpr T midpoint(T a, T b) { return a + (b - a) / 2; }
+} // namespace std

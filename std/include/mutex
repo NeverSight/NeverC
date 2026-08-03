@@ -1,0 +1,3 @@
+// NeverC <mutex> scaffold
+#pragma once
+namespace std { class mutex; }

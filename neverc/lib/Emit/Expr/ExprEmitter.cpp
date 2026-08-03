@@ -2565,6 +2565,52 @@ FnCallee FunctionEmitter::genCallee(const Expr *E) {
     }
   } else if (auto ME = dyn_cast<MemberExpr>(E)) {
     if (auto FD = dyn_cast<FunctionDecl>(ME->getMemberDecl())) {
+      // Virtual C++ methods: load callee from NeverC ABI v1 vtable.
+      if (const auto *MD = dyn_cast<CXXMethodDecl>(FD)) {
+        if (MD->isVirtual() && !MD->isPureVirtual()) {
+          llvm::Value *ThisVal = nullptr;
+          if (ME->isArrow())
+            ThisVal = genScalarExpr(ME->getBase());
+          else {
+            LValue BaseLV = genLValue(ME->getBase());
+            ThisVal = BaseLV.getPointer(*this);
+          }
+          if (ThisVal) {
+            llvm::Type *PtrTy = UnqualPtrTy;
+            llvm::Value *Obj = ThisVal;
+            if (Obj->getType() != PtrTy)
+              Obj = Builder.CreateBitCast(Obj, PtrTy);
+            // Slot 0 of the complete object is the vtable pointer (simplified ABI).
+            llvm::Value *VTable = Builder.CreateLoad(PtrTy, Obj, "vtable");
+            // Layout: [offset-to-top, RTTI, vfunc*...]; method index + 2.
+            unsigned Slot = 2;
+            if (const CXXRecordDecl *RD = MD->getParent()) {
+              const CXXRecordDecl *Def =
+                  RD->getDefinition() ? RD->getDefinition() : RD;
+              unsigned Idx = 0;
+              for (Decl *D : Def->decls()) {
+                if (const auto *VM = dyn_cast<CXXMethodDecl>(D)) {
+                  if (!VM->isVirtual())
+                    continue;
+                  if (VM->getCanonicalDecl() == MD->getCanonicalDecl()) {
+                    Slot = 2 + Idx;
+                    break;
+                  }
+                  ++Idx;
+                }
+              }
+            }
+            llvm::Value *SlotIdx = llvm::ConstantInt::get(Int32Ty, Slot);
+            llvm::Value *FPtrSlot =
+                Builder.CreateGEP(PtrTy, VTable, SlotIdx, "vfn.slot");
+            llvm::Value *FPtr = Builder.CreateLoad(PtrTy, FPtrSlot, "vfn");
+            QualType FTy = MD->getType();
+            const FunctionProtoType *FPT = FTy->getAs<FunctionProtoType>();
+            FnCalleeInfo Info(FPT, GlobalDecl(MD));
+            return FnCallee(Info, FPtr);
+          }
+        }
+      }
       genIgnoredExpr(ME->getBase());
       return genDirectCallee(*this, FD);
     }

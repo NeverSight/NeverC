@@ -100,6 +100,9 @@ bool types::isAcceptedByNeverC(ID Id) {
   case TY_C:
   case TY_PP_C:
   case TY_CHeader:
+  case TY_CXX:
+  case TY_PP_CXX:
+  case TY_CXXHeader:
   case TY_LLVM_IR:
   case TY_LLVM_BC:
     return true;
@@ -114,6 +117,9 @@ bool types::isDerivedFromC(ID Id) {
   case TY_PP_C:
   case TY_C:
   case TY_CHeader:
+  case TY_PP_CXX:
+  case TY_CXX:
+  case TY_CXXHeader:
     return true;
   }
 }
@@ -139,8 +145,11 @@ types::ID types::lookupTypeForExtension(llvm::StringRef Ext) {
   return llvm::StringSwitch<types::ID>(Ext)
       .Case("c", TY_C)
       .Case("nc", TY_C)
+      .Cases("cpp", "cc", "cxx", "c++", "CPP", "C", TY_CXX)
       .Case("h", TY_CHeader)
+      .Cases("hpp", "hh", "hxx", "H", TY_CXXHeader)
       .Case("i", TY_PP_C)
+      .Case("ii", TY_PP_CXX)
       .Case("o", TY_Object)
       .Case("S", TY_Asm)
       .Case("s", TY_PP_Asm)
@@ -185,5 +194,7 @@ ID types::lookupHeaderTypeForSourceType(ID Id) {
     return Id;
   case types::TY_C:
     return types::TY_CHeader;
+  case types::TY_CXX:
+    return types::TY_CXXHeader;
   }
 }

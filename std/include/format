@@ -1,0 +1,23 @@
+// NeverC <format> scaffold (C++20, non-stream — no iostream)
+#pragma once
+#include <string>
+#include <string_view>
+#include <cstddef>
+
+namespace std {
+
+class format_error {
+public:
+  explicit format_error(const char *m) : msg_(m) {}
+  const char *what() const noexcept { return msg_; }
+private:
+  const char *msg_;
+};
+
+// Minimal type-erased formatting is not implemented; provide API surface only.
+template <class... Args>
+string format(string_view /*fmt*/, const Args &.../*args*/) {
+  return string();
+}
+
+} // namespace std

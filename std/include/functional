@@ -1,0 +1,48 @@
+// NeverC <functional> scaffold (non-stream)
+#pragma once
+#include <type_traits>
+#include <utility>
+
+namespace std {
+
+template <class T = void>
+struct less {
+  constexpr bool operator()(const T &a, const T &b) const { return a < b; }
+};
+template <>
+struct less<void> {
+  template <class A, class B>
+  constexpr auto operator()(A &&a, B &&b) const
+      -> decltype(static_cast<A &&>(a) < static_cast<B &&>(b)) {
+    return static_cast<A &&>(a) < static_cast<B &&>(b);
+  }
+};
+
+template <class T = void>
+struct equal_to {
+  constexpr bool operator()(const T &a, const T &b) const { return a == b; }
+};
+
+template <class T = void>
+struct greater {
+  constexpr bool operator()(const T &a, const T &b) const { return a > b; }
+};
+
+template <class T>
+class reference_wrapper {
+  T *ptr_;
+public:
+  reference_wrapper(T &r) noexcept : ptr_(&r) {}
+  T &get() const noexcept { return *ptr_; }
+  operator T &() const noexcept { return *ptr_; }
+};
+
+template <class T>
+reference_wrapper<T> ref(T &t) noexcept { return reference_wrapper<T>(t); }
+
+template <class T>
+struct hash {
+  size_t operator()(const T &) const noexcept { return 0; }
+};
+
+} // namespace std

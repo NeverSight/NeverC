@@ -655,6 +655,20 @@ protected:
     SourceLocation Loc;
   };
 
+  class CXXThisExprBitfields {
+    friend class CXXThisExpr;
+
+    LLVM_PREFERRED_TYPE(ExprBitfields)
+    unsigned : NumExprBits;
+
+    /// Whether this is an implicit 'this'.
+    LLVM_PREFERRED_TYPE(bool)
+    unsigned IsImplicit : 1;
+
+    /// Location of the 'this' keyword.
+    SourceLocation Loc;
+  };
+
   class ExprWithCleanupsBitfields {
 
     friend class ExprWithCleanups;
@@ -731,6 +745,7 @@ protected:
 
     // Shared expression shapes (e.g. cleanups, nullptr literal)
     NullPtrLiteralExprBitfields NullPtrLiteralExprBits;
+    CXXThisExprBitfields CXXThisExprBits;
     ExprWithCleanupsBitfields ExprWithCleanupsBits;
 
     // NeverC Extensions
@@ -2855,3 +2870,190 @@ public:
 } // namespace neverc
 
 #endif // NEVERC_TREE_STMT_H
+
+
+// --- C++ statement stubs (Phase 1 scaffolding) ---
+class CXXCatchStmt : public Stmt {
+  SourceLocation CatchLoc;
+  Decl *ExceptionDecl = nullptr;
+  Stmt *HandlerBlock = nullptr;
+public:
+  CXXCatchStmt(SourceLocation CatchLoc, Decl *ExDecl, Stmt *Handler)
+      : Stmt(CXXCatchStmtClass), CatchLoc(CatchLoc), ExceptionDecl(ExDecl),
+        HandlerBlock(Handler) {}
+  explicit CXXCatchStmt(EmptyShell Empty) : Stmt(CXXCatchStmtClass, Empty) {}
+  SourceLocation getBeginLoc() const { return CatchLoc; }
+  Decl *getExceptionDecl() const { return ExceptionDecl; }
+  Stmt *getHandlerBlock() { return HandlerBlock; }
+  const Stmt *getHandlerBlock() const { return HandlerBlock; }
+  SourceLocation getEndLoc() const {
+    return HandlerBlock ? HandlerBlock->getEndLoc() : CatchLoc;
+  }
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXCatchStmtClass;
+  }
+  child_range children() {
+    return HandlerBlock ? child_range(&HandlerBlock, &HandlerBlock + 1)
+                        : child_range(child_iterator(), child_iterator());
+  }
+  const_child_range children() const {
+    return HandlerBlock ? const_child_range(&HandlerBlock, &HandlerBlock + 1)
+                        : const_child_range(const_child_iterator(),
+                                           const_child_iterator());
+  }
+};
+
+class CXXTryStmt : public Stmt {
+  SourceLocation TryLoc;
+  /// Stmts[0] = try-block; Stmts[1 + I] = catch-handler I.
+  /// Array is allocated from TreeContext (AST bump).
+  Stmt **Stmts = nullptr;
+  unsigned NumHandlers = 0;
+
+  CXXTryStmt(SourceLocation TryLoc, Stmt **Stmts, unsigned NumHandlers)
+      : Stmt(CXXTryStmtClass), TryLoc(TryLoc), Stmts(Stmts),
+        NumHandlers(NumHandlers) {}
+
+public:
+  static CXXTryStmt *Create(const TreeContext &C, SourceLocation TryLoc,
+                            Stmt *TryBlock, ArrayRef<Stmt *> Handlers);
+
+  /// Compatibility: try with no handlers (TryBlock stored via Create preferred).
+  CXXTryStmt(SourceLocation TryLoc, Stmt *TryBlock)
+      : Stmt(CXXTryStmtClass), TryLoc(TryLoc), Stmts(nullptr), NumHandlers(0) {
+    // Prefer Create(); this path cannot allocate. Store nothing if no context.
+    (void)TryBlock;
+  }
+
+  explicit CXXTryStmt(EmptyShell Empty) : Stmt(CXXTryStmtClass, Empty) {}
+
+  SourceLocation getTryLoc() const { return TryLoc; }
+  SourceLocation getBeginLoc() const { return TryLoc; }
+  SourceLocation getEndLoc() const {
+    if (Stmts && NumHandlers)
+      return Stmts[NumHandlers]->getEndLoc();
+    if (Stmts && Stmts[0])
+      return Stmts[0]->getEndLoc();
+    return TryLoc;
+  }
+
+  Stmt *getTryBlock() { return Stmts ? Stmts[0] : nullptr; }
+  const Stmt *getTryBlock() const { return Stmts ? Stmts[0] : nullptr; }
+  unsigned getNumHandlers() const { return NumHandlers; }
+  Stmt *getHandlerStmt(unsigned I) {
+    assert(I < NumHandlers && Stmts);
+    return Stmts[I + 1];
+  }
+  const Stmt *getHandlerStmt(unsigned I) const {
+    assert(I < NumHandlers && Stmts);
+    return Stmts[I + 1];
+  }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXTryStmtClass;
+  }
+
+  child_range children() {
+    if (!Stmts)
+      return child_range(child_iterator(), child_iterator());
+    return child_range(Stmts, Stmts + NumHandlers + 1);
+  }
+  const_child_range children() const {
+    if (!Stmts)
+      return const_child_range(const_child_iterator(), const_child_iterator());
+    return const_child_range(
+        const_cast<Stmt **>(Stmts),
+        const_cast<Stmt **>(Stmts) + NumHandlers + 1);
+  }
+};
+
+
+class CXXForRangeStmt : public Stmt {
+  enum {
+    RANGE = 0, BEGIN_STMT = 1, END_STMT = 2, COND = 3, INC = 4,
+    LOOP_VAR = 5, BODY = 6, END_EXPR
+  };
+  Stmt *SubExprs[END_EXPR] = {};
+  SourceLocation ForLoc;
+  SourceLocation CoawaitLoc; // invalid unless co_await range-for
+  SourceLocation ColonLoc;
+  SourceLocation RParenLoc;
+
+public:
+  CXXForRangeStmt(SourceLocation ForLoc, SourceLocation ColonLoc,
+                  SourceLocation RParenLoc, Stmt *RangeStmt, Stmt *BeginStmt,
+                  Stmt *EndStmt, Expr *Cond, Expr *Inc, Stmt *LoopVar,
+                  Stmt *Body)
+      : Stmt(CXXForRangeStmtClass), ForLoc(ForLoc), ColonLoc(ColonLoc),
+        RParenLoc(RParenLoc) {
+    SubExprs[RANGE] = RangeStmt;
+    SubExprs[BEGIN_STMT] = BeginStmt;
+    SubExprs[END_STMT] = EndStmt;
+    SubExprs[COND] = reinterpret_cast<Stmt *>(Cond);
+    SubExprs[INC] = reinterpret_cast<Stmt *>(Inc);
+    SubExprs[LOOP_VAR] = LoopVar;
+    SubExprs[BODY] = Body;
+  }
+
+  explicit CXXForRangeStmt(EmptyShell Empty)
+      : Stmt(CXXForRangeStmtClass, Empty) {}
+
+  SourceLocation getForLoc() const { return ForLoc; }
+  SourceLocation getColonLoc() const { return ColonLoc; }
+  SourceLocation getRParenLoc() const { return RParenLoc; }
+  SourceLocation getBeginLoc() const { return ForLoc; }
+  SourceLocation getEndLoc() const {
+    return SubExprs[BODY] ? SubExprs[BODY]->getEndLoc() : RParenLoc;
+  }
+
+  Stmt *getRangeStmt() { return SubExprs[RANGE]; }
+  const Stmt *getRangeStmt() const { return SubExprs[RANGE]; }
+  Stmt *getBeginStmt() { return SubExprs[BEGIN_STMT]; }
+  Stmt *getEndStmt() { return SubExprs[END_STMT]; }
+  Expr *getCond() { return reinterpret_cast<Expr *>(SubExprs[COND]); }
+  Expr *getInc() { return reinterpret_cast<Expr *>(SubExprs[INC]); }
+  Stmt *getLoopVarStmt() { return SubExprs[LOOP_VAR]; }
+  Stmt *getBody() { return SubExprs[BODY]; }
+  const Stmt *getBody() const { return SubExprs[BODY]; }
+
+  void setBody(Stmt *S) { SubExprs[BODY] = S; }
+  void setRangeStmt(Stmt *S) { SubExprs[RANGE] = S; }
+  void setBeginStmt(Stmt *S) { SubExprs[BEGIN_STMT] = S; }
+  void setEndStmt(Stmt *S) { SubExprs[END_STMT] = S; }
+  void setCond(Expr *E) { SubExprs[COND] = reinterpret_cast<Stmt *>(E); }
+  void setInc(Expr *E) { SubExprs[INC] = reinterpret_cast<Stmt *>(E); }
+  void setLoopVarStmt(Stmt *S) { SubExprs[LOOP_VAR] = S; }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXForRangeStmtClass;
+  }
+
+  child_range children() {
+    return child_range(&SubExprs[0], &SubExprs[0] + END_EXPR);
+  }
+  const_child_range children() const {
+    return const_child_range(&SubExprs[0], &SubExprs[0] + END_EXPR);
+  }
+};
+
+class CoroutineBodyStmt : public Stmt {
+  Stmt *Body = nullptr;
+public:
+  CoroutineBodyStmt(Stmt *Body) : Stmt(CoroutineBodyStmtClass), Body(Body) {}
+  explicit CoroutineBodyStmt(EmptyShell Empty)
+      : Stmt(CoroutineBodyStmtClass, Empty) {}
+  SourceLocation getBeginLoc() const { return SourceLocation(); }
+  SourceLocation getEndLoc() const { return SourceLocation(); }
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CoroutineBodyStmtClass;
+  }
+  child_range children() {
+    return Body ? child_range(&Body, &Body + 1)
+                : child_range(child_iterator(), child_iterator());
+  }
+  const_child_range children() const {
+    return Body ? const_child_range(&Body, &Body + 1)
+                : const_child_range(const_child_iterator(), const_child_iterator());
+  }
+};
+

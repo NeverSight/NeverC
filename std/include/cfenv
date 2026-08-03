@@ -1,0 +1,9 @@
+// NeverC <cfenv> scaffold
+#pragma once
+// Minimal freestanding-friendly scaffold when fenv.h may be absent.
+namespace std {
+  using fenv_t = int;
+  using fexcept_t = int;
+  inline int feclearexcept(int) { return 0; }
+  inline int fetestexcept(int) { return 0; }
+}

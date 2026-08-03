@@ -1,0 +1,10 @@
+#ifndef NEVERC_CXX_CSTDDEF
+#define NEVERC_CXX_CSTDDEF
+#include <stddef.h>
+namespace std {
+  using ::size_t;
+  using ::ptrdiff_t;
+  using ::nullptr_t;
+  using ::max_align_t;
+}
+#endif

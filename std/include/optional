@@ -1,0 +1,80 @@
+// NeverC <optional> expanded scaffold
+#pragma once
+#include <type_traits>
+#include <utility>
+
+namespace std {
+
+struct nullopt_t { explicit nullopt_t() = default; };
+inline constexpr nullopt_t nullopt{};
+
+class bad_optional_access {
+public:
+  const char *what() const noexcept { return "bad_optional_access"; }
+};
+
+template <class T>
+class optional {
+  bool has_ = false;
+  alignas(T) unsigned char storage_[sizeof(T)];
+
+  T *ptr() { return reinterpret_cast<T *>(storage_); }
+  const T *ptr() const { return reinterpret_cast<const T *>(storage_); }
+
+public:
+  constexpr optional() noexcept = default;
+  constexpr optional(nullopt_t) noexcept {}
+  optional(const T &v) { emplace(v); }
+  optional(T &&v) { emplace(static_cast<T &&>(v)); }
+  ~optional() { reset(); }
+
+  optional &operator=(nullopt_t) noexcept {
+    reset();
+    return *this;
+  }
+
+  constexpr bool has_value() const noexcept { return has_; }
+  constexpr explicit operator bool() const noexcept { return has_; }
+
+  T &value() & {
+    if (!has_)
+      abort_optional();
+    return *ptr();
+  }
+  const T &value() const & {
+    if (!has_)
+      abort_optional();
+    return *ptr();
+  }
+  T &operator*() & { return *ptr(); }
+  const T &operator*() const & { return *ptr(); }
+  T *operator->() { return ptr(); }
+  const T *operator->() const { return ptr(); }
+
+  template <class... Args>
+  T &emplace(Args &&...args) {
+    reset();
+    ::new (static_cast<void *>(storage_)) T(static_cast<Args &&>(args)...);
+    has_ = true;
+    return *ptr();
+  }
+
+  void reset() noexcept {
+    if (has_) {
+      ptr()->~T();
+      has_ = false;
+    }
+  }
+
+private:
+  [[noreturn]] static void abort_optional() {
+#if defined(__GNUC__) || defined(__clang__)
+    __builtin_trap();
+#else
+    for (;;) {
+    }
+#endif
+  }
+};
+
+} // namespace std

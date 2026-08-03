@@ -1,0 +1,3 @@
+// NeverC <cstdlib> scaffold
+#pragma once
+#include <stdlib.h>

@@ -392,6 +392,31 @@ StmtResult Parser::ParseForStatement(SourceLocation *TrailingElseLoc) {
   assert(Tok.is(tok::kw_for) && "Not a for stmt!");
   SourceLocation ForLoc = ConsumeToken(); // eat the 'for'.
 
+  // C++ range-for: for ( for-range-declaration : for-range-initializer )
+  // Disambiguate with a shallow lookahead for ':' before ';' at paren depth 1.
+  if (getLangOpts().CPlusPlus && Tok.is(tok::l_paren)) {
+    bool MaybeRangeFor = false;
+    unsigned Depth = 0;
+    for (unsigned I = 0; I < 64; ++I) {
+      const Token &LA = GetLookAheadToken(I);
+      if (LA.is(tok::eof))
+        break;
+      if (LA.is(tok::l_paren))
+        ++Depth;
+      else if (LA.is(tok::r_paren)) {
+        if (Depth == 0)
+          break;
+        --Depth;
+      } else if (Depth == 1 && LA.is(tok::colon)) {
+        MaybeRangeFor = true;
+        break;
+      } else if (Depth == 1 && LA.is(tok::semi))
+        break;
+    }
+    if (MaybeRangeFor)
+      return ParseCXXForRangeStatement(ForLoc);
+  }
+
   if (Tok.isNot(tok::l_paren)) {
     Diag(Tok, diag::err_expected_lparen_after)
         << tok::getKeywordSpelling(tok::kw_for);

@@ -2,6 +2,10 @@
 #include "ABI/EmitterABI.h"
 #include "ABI/TargetInfo.h"
 #include "Core/ModuleEmitter.h"
+#include "neverc/Emit/CXXABI.h"
+#include "neverc/Tree/Decl/Decl.h"
+#include "neverc/Tree/Decl/CXXCtorInitializer.h"
+#include <string>
 #include "Debug/DebugEmitterInfo.h"
 #include "Stmt/CleanupEmitterInfo.h"
 #include "neverc/Foundation/Diagnostic/DiagnosticFrontend.h"
@@ -206,6 +210,8 @@ TypeEvaluationKind FunctionEmitter::getEvaluationKind(QualType type) {
     // Various scalar types.
     case Type::Builtin:
     case Type::Pointer:
+    case Type::LValueReference:
+    case Type::RValueReference:
     case Type::Vector:
     case Type::ExtVector:
     case Type::ConstantMatrix:
@@ -288,6 +294,7 @@ void emitPendingBlock(FunctionEmitter &FE, llvm::BasicBlock *BB) {
 
 NEVERC_HOT void
 FunctionEmitter::finishFunction(SourceLocation EndLoc) {
+  CXXThisValue = nullptr;
   assert(BreakContinueStack.empty() &&
          "mismatched push/pop in break/continue stack!");
 
@@ -601,6 +608,23 @@ NEVERC_HOT void FunctionEmitter::startFunction(
 
   genFunctionProlog(*CurFnInfo, CurFn, Args);
 
+  // Capture C++ 'this' for VisitCXXThisExpr / member access.
+  CXXThisValue = nullptr;
+  if (const auto *MD = dyn_cast_or_null<CXXMethodDecl>(CurFuncDecl)) {
+    if (MD->isInstance() && !Args.empty()) {
+      if (const auto *ThisVD = dyn_cast<ImplicitParamDecl>(Args.front())) {
+        auto It = LocalDeclMap.find(ThisVD);
+        if (It != LocalDeclMap.end()) {
+          CXXThisValue = genLoadOfScalar(
+              It->second, /*Volatile=*/false, ThisVD->getType(),
+              MD->getLocation());
+          if (CXXThisValue)
+            CXXThisValue->setName("this");
+        }
+      }
+    }
+  }
+
   // If any of the arguments have a variably modified type, make sure to
   // emit the type size, but only if the function is not naked. Naked functions
   // have no prolog to run this evaluation.
@@ -653,6 +677,20 @@ QualType FunctionEmitter::formFunctionArgList(GlobalDecl GD,
                                               FunctionArgList &Args) {
   const FunctionDecl *FD = cast<FunctionDecl>(GD.getDecl());
   QualType ResTy = FD->getReturnType();
+
+  // C++ instance methods: inject implicit 'this' as the first IR argument.
+  if (const auto *MD = dyn_cast<CXXMethodDecl>(FD)) {
+    if (MD->isInstance()) {
+      QualType RecordTy =
+          getContext().getRecordType(const_cast<CXXRecordDecl *>(MD->getParent()));
+      QualType ThisTy = getContext().getPointerType(RecordTy);
+      IdentifierInfo &ThisId = getContext().Idents.get("this");
+      ImplicitParamDecl *ThisDecl = ImplicitParamDecl::Create(
+          getContext(), const_cast<CXXMethodDecl *>(MD), MD->getLocation(),
+          &ThisId, ThisTy);
+      Args.push_back(ThisDecl);
+    }
+  }
 
   {
     for (auto *Param : FD->parameters()) {
@@ -748,6 +786,91 @@ FunctionEmitter::generateCode(GlobalDecl GD, llvm::Function *Fn,
   // is required by certain optimizations.
   if (checkIfFunctionMustProgress())
     CurFn->addFnAttr(llvm::Attribute::MustProgress);
+
+  // NeverC ABI v1: constructor prologue — vptr, then ctor-initializer list.
+  if (const auto *Ctor = dyn_cast<CXXConstructorDecl>(FD)) {
+    llvm::Value *This = nullptr;
+    if (CurFn && !CurFn->arg_empty())
+      This = &*CurFn->arg_begin();
+    if (const CXXRecordDecl *RD = Ctor->getParent()) {
+      if (RD->isDynamicClass()) {
+        if (CXXABI *A = ME.getCXXABI()) {
+          A->emitVTable(ME, RD);
+          // Also ensure VTT exists for classes with virtual bases.
+          A->emitVTT(ME, RD);
+          std::string VTName = "_ZTV";
+          if (const IdentifierInfo *RII = RD->getIdentifier()) {
+            VTName += std::to_string(RII->getName().size());
+            VTName += RII->getName().str();
+          } else {
+            VTName += "4anon";
+          }
+          if (llvm::GlobalVariable *VT = ME.getModule().getNamedGlobal(VTName)) {
+            if (This) {
+              llvm::Value *V = VT;
+              if (V->getType() != VoidPtrTy)
+                V = Builder.CreateBitCast(V, VoidPtrTy);
+              llvm::Type *PPTy =
+                  llvm::PointerType::getUnqual(Builder.getContext());
+              llvm::Value *Slot = Builder.CreateBitCast(This, PPTy);
+              Builder.CreateStore(V, Slot);
+            }
+          }
+        }
+      }
+    }
+    // Emit member/base initializers from the ctor-initializer list.
+    if (This && Ctor->getNumCtorInitializers()) {
+      llvm::Type *I8Ptr =
+          llvm::PointerType::getUnqual(Builder.getContext());
+      llvm::Value *ThisI8 = This;
+      if (ThisI8->getType() != I8Ptr)
+        ThisI8 = Builder.CreateBitCast(ThisI8, I8Ptr);
+      for (const CXXCtorInitializer *CI : Ctor->inits()) {
+        if (!CI)
+          continue;
+        Expr *InitE = CI->getInit();
+        llvm::Value *InitV = nullptr;
+        if (InitE)
+          InitV = genScalarExpr(InitE);
+        if (CI->isMemberInitializer()) {
+          if (FieldDecl *FDMem = CI->getMember()) {
+            uint64_t OffBits = getContext().getFieldOffset(FDMem);
+            uint64_t OffBytes = OffBits / 8;
+            llvm::Value *FieldPtr = Builder.CreateConstGEP1_64(
+                Builder.getInt8Ty(), ThisI8, OffBytes, "ctor.mem");
+            if (InitV) {
+              llvm::Type *FTy = convertType(FDMem->getType());
+              llvm::Value *StorePtr = Builder.CreateBitCast(
+                  FieldPtr, llvm::PointerType::getUnqual(Builder.getContext()));
+              if (InitV->getType() != FTy && !FTy->isVoidTy())
+                InitV = Builder.CreateBitCast(InitV, FTy);
+              Builder.CreateStore(InitV, StorePtr);
+            }
+          }
+        } else if (CI->isBaseInitializer() || CI->isDelegatingInitializer()) {
+          // Base/delegating: call base/target ctor when Init is a construct
+          // or store InitV into base subobject at offset 0 scaffold.
+          if (InitV) {
+            (void)InitV;
+          }
+          QualType BaseTy = CI->getBaseClass();
+          if (!BaseTy.isNull()) {
+            if (const CXXRecordDecl *BRD = BaseTy->getAsCXXRecordDecl()) {
+              // Prefer a user-provided default/matching ctor if InitE is null.
+              if (CXXABI *A = ME.getCXXABI()) {
+                if (BRD->isDynamicClass())
+                  A->emitVTable(ME, BRD);
+              }
+              // If InitE is a CXXConstructExpr, its emission already ran via
+              // genScalarExpr above when present; otherwise leave base zeroed.
+              (void)BRD;
+            }
+          }
+        }
+      }
+    }
+  }
 
   if (Body) {
     genFunctionBody(Body);
@@ -1344,6 +1467,11 @@ void FunctionEmitter::genVariablyModifiedType(QualType type) {
 
     case Type::Pointer:
       type = cast<PointerType>(ty)->getPointeeType();
+      break;
+
+    case Type::LValueReference:
+    case Type::RValueReference:
+      type = cast<ReferenceType>(ty)->getPointeeType();
       break;
 
     case Type::ConstantArray:

@@ -310,6 +310,30 @@ Parser::ParseDeclarationSpecifiers(DeclSpec &DS, AccessSpecifier AS,
       break;
 
     // function-specifier
+    case tok::kw_virtual:
+      if (!getLangOpts().CPlusPlus) {
+        Diag(Tok, diag::err_expected_type);
+        ConsumeToken();
+        continue;
+      }
+      isInvalid = DS.setFunctionSpecVirtual(Loc, PrevSpec, DiagID);
+      break;
+    case tok::kw_explicit:
+      if (!getLangOpts().CPlusPlus) {
+        Diag(Tok, diag::err_expected_type);
+        ConsumeToken();
+        continue;
+      }
+      isInvalid = DS.setFunctionSpecExplicit(Loc, PrevSpec, DiagID);
+      break;
+    case tok::kw_friend:
+      if (!getLangOpts().CPlusPlus) {
+        Diag(Tok, diag::err_expected_type);
+        ConsumeToken();
+        continue;
+      }
+      isInvalid = DS.setFunctionSpecFriend(Loc, PrevSpec, DiagID);
+      break;
     case tok::kw_inline:
       isInvalid = DS.setFunctionSpecInline(Loc, PrevSpec, DiagID);
       break;
@@ -526,7 +550,14 @@ Parser::ParseDeclarationSpecifiers(DeclSpec &DS, AccessSpecifier AS,
 
     // record-specifier:
     case tok::kw_struct:
-    case tok::kw_union: {
+    case tok::kw_union:
+    case tok::kw_class: {
+      // C++ class-key is accepted only in C++ modes.
+      if (Tok.is(tok::kw_class) && !getLangOpts().CPlusPlus) {
+        Diag(Tok, diag::err_expected_type);
+        ConsumeToken();
+        continue;
+      }
       tok::TokenKind Kind = Tok.getKind();
       ConsumeToken();
 
@@ -715,12 +746,31 @@ void Parser::ParseStructUnionBody(SourceLocation RecordLoc,
   ParseScope StructScope(this, Scope::RecordScope | Scope::DeclScope);
   Actions.OnTagStartDefinition(getCurScope(), TagDecl);
 
+  // Default access: private for class, public for struct/union.
+  AccessSpecifier CurAS = AS_public;
+  if (getLangOpts().CPlusPlus)
+    CurAS = Actions.getDefaultCXXAccessSpecifierFor(TagDecl);
+
   // While we still have something to read, read the declarations in the struct.
   while (Tok.isNot(tok::r_brace) && Tok.isNot(tok::eof)) {
     // Each iteration of this loop reads one struct-declaration.
     if (Tok.is(tok::semi)) {
       ConsumeRedundantSemicolons(InsideStruct, TagType);
       continue;
+    }
+
+    // C++ access-specifier: public: / protected: / private:
+    if (getLangOpts().CPlusPlus) {
+      AccessSpecifier AS = getAccessSpecifierIfPresent();
+      if (AS != AS_none) {
+        ConsumeToken();
+        if (Tok.is(tok::colon))
+          ConsumeToken();
+        else
+          Diag(Tok, diag::err_expected) << tok::colon;
+        CurAS = AS;
+        continue;
+      }
     }
 
     if (Tok.isOneOf(tok::kw__Static_assert, tok::kw_static_assert)) {
@@ -748,10 +798,12 @@ void Parser::ParseStructUnionBody(SourceLocation RecordLoc,
     }
 
     auto CFieldCallback = [&](ParsingFieldDeclarator &FD) {
-      Decl *Field =
-          Actions.OnField(getCurScope(), TagDecl,
-                          FD.D.getDeclSpec().getSourceRange().getBegin(), FD.D,
-                          FD.BitfieldSize);
+      // Prefer the AccessSpecifier-aware overload so C++ class fields get
+      // the current access level (default private for class).
+      FieldDecl *Field = Actions.OnField(
+          getCurScope(), TagDecl,
+          FD.D.getDeclSpec().getSourceRange().getBegin(), FD.D,
+          FD.BitfieldSize, CurAS);
       FD.complete(Field);
     };
 
@@ -1145,9 +1197,10 @@ bool Parser::isKnownToBeTypeSpecifier(const Token &Tok) const {
   case tok::kw_isize:
   case tok::kw_usize:
 
-    // struct-or-union-specifier (C99)
+    // struct-or-union-specifier (C99) / class-key (C++)
   case tok::kw_struct:
   case tok::kw_union:
+  case tok::kw_class:
     // enum-specifier
   case tok::kw_enum:
 
@@ -1216,9 +1269,10 @@ bool Parser::isTypeSpecifierQualifier() {
   case tok::kw_isize:
   case tok::kw_usize:
 
-    // struct-or-union-specifier (C99)
+    // struct-or-union-specifier (C99) / class-key (C++)
   case tok::kw_struct:
   case tok::kw_union:
+  case tok::kw_class:
     // enum-specifier
   case tok::kw_enum:
 
@@ -1323,9 +1377,10 @@ bool Parser::isDeclarationSpecifier() {
   case tok::kw_isize:
   case tok::kw_usize:
 
-    // struct-or-union-specifier (C99)
+    // struct-or-union-specifier (C99) / class-key (C++)
   case tok::kw_struct:
   case tok::kw_union:
+  case tok::kw_class:
     // enum-specifier
   case tok::kw_enum:
 

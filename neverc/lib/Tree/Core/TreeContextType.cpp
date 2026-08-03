@@ -2337,6 +2337,14 @@ QualType getCommonNonSugarTypeNode(TreeContext &Ctx, const Type *X,
     const auto *PX = cast<PointerType>(X), *PY = cast<PointerType>(Y);
     return Ctx.getPointerType(getCommonPointeeType(Ctx, PX, PY));
   }
+  case Type::LValueReference: {
+    const auto *PX = cast<LValueReferenceType>(X), *PY = cast<LValueReferenceType>(Y);
+    return Ctx.getLValueReferenceType(getCommonPointeeType(Ctx, PX, PY));
+  }
+  case Type::RValueReference: {
+    const auto *PX = cast<RValueReferenceType>(X), *PY = cast<RValueReferenceType>(Y);
+    return Ctx.getRValueReferenceType(getCommonPointeeType(Ctx, PX, PY));
+  }
   case Type::FunctionNoProto: {
     const auto *FX = cast<FunctionNoProtoType>(X),
                *FY = cast<FunctionNoProtoType>(Y);
@@ -2846,3 +2854,25 @@ neverc::operator<<(const StreamingDiagnostic &DB,
     return DB << Section.Decl;
   return DB << "a prior #pragma section";
 }
+
+
+QualType TreeContext::getTemplateTypeParmType(unsigned Depth, unsigned Index,
+                                              bool ParameterPack) const {
+  llvm::FoldingSetNodeID ID;
+  TemplateTypeParmType::Profile(ID, Depth, Index, ParameterPack);
+  void *InsertPos = nullptr;
+  if (TemplateTypeParmType *TTPT =
+          TemplateTypeParmTypes.FindNodeOrInsertPos(ID, InsertPos))
+    return QualType(TTPT, 0);
+
+  auto *TTPT = new (*this, alignof(TemplateTypeParmType))
+      TemplateTypeParmType(Depth, Index, ParameterPack, QualType());
+  Types.push_back(TTPT);
+  TemplateTypeParmTypes.InsertNode(TTPT, InsertPos);
+  // Canonical type is itself.
+  QualType Canon = QualType(TTPT, 0);
+  // Re-set canonical via const_cast pattern used elsewhere if needed.
+  (void)Canon;
+  return QualType(TTPT, 0);
+}
+

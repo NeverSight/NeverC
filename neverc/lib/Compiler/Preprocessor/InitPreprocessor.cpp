@@ -75,7 +75,9 @@ void initializeStandardPredefinedMacros(const TargetInfo &TI,
                                         const FrontendOptions &FEOpts,
                                         MacroBuilder &Builder) {
   //   -- __STDC__
-  if (!LangOpts.MSVCCompat && !LangOpts.TraditionalCPP)
+  // C++ requires __STDC__ to be defined; C does too except in MSVC/traditional.
+  if (LangOpts.CPlusPlus ||
+      (!LangOpts.MSVCCompat && !LangOpts.TraditionalCPP))
     Builder.defineMacro("__STDC__");
   //   -- __STDC_HOSTED__
   if (LangOpts.Freestanding)
@@ -83,17 +85,41 @@ void initializeStandardPredefinedMacros(const TargetInfo &TI,
   else
     Builder.defineMacro("__STDC_HOSTED__");
 
-  //   -- __STDC_VERSION__
-  if (LangOpts.C23)
-    Builder.defineMacro("__STDC_VERSION__", "202311L");
-  else if (LangOpts.C17)
-    Builder.defineMacro("__STDC_VERSION__", "201710L");
-  else if (LangOpts.C11)
-    Builder.defineMacro("__STDC_VERSION__", "201112L");
-  else if (LangOpts.C99)
-    Builder.defineMacro("__STDC_VERSION__", "199901L");
-  else if (!LangOpts.GNUMode && LangOpts.Digraphs)
-    Builder.defineMacro("__STDC_VERSION__", "199409L");
+  //   -- __STDC_VERSION__ (C only; not defined in pure C++ modes)
+  if (!LangOpts.CPlusPlus) {
+    if (LangOpts.C23)
+      Builder.defineMacro("__STDC_VERSION__", "202311L");
+    else if (LangOpts.C17)
+      Builder.defineMacro("__STDC_VERSION__", "201710L");
+    else if (LangOpts.C11)
+      Builder.defineMacro("__STDC_VERSION__", "201112L");
+    else if (LangOpts.C99)
+      Builder.defineMacro("__STDC_VERSION__", "199901L");
+    else if (!LangOpts.GNUMode && LangOpts.Digraphs)
+      Builder.defineMacro("__STDC_VERSION__", "199409L");
+  }
+
+  // C++ language version macros (NeverC C++20 target).
+  if (LangOpts.CPlusPlus) {
+    Builder.defineMacro("__cplusplus", "202002L");
+    if (LangOpts.CPlusPlus11)
+      Builder.defineMacro("__cpp_unicode_characters", "200704L");
+    if (LangOpts.CPlusPlus14)
+      Builder.defineMacro("__cpp_binary_literals", "201304L");
+    if (LangOpts.CPlusPlus17)
+      Builder.defineMacro("__cpp_inline_variables", "201606L");
+    if (LangOpts.CPlusPlus20) {
+      Builder.defineMacro("__cpp_concepts", "201907L");
+      Builder.defineMacro("__cpp_coroutines", "201902L");
+      Builder.defineMacro("__cpp_modules", "201907L");
+      Builder.defineMacro("__cpp_char8_t", "201811L");
+      Builder.defineMacro("__cpp_impl_three_way_comparison", "201907L");
+    }
+    // NeverC C++ deliberately excludes iostream/stream facilities.
+    if (LangOpts.NoStreams)
+      Builder.defineMacro("__NEVERC_NO_STREAMS__", "1");
+    Builder.defineMacro("__NEVERC_CXX__", "1");
+  }
 
   Builder.defineMacro("__STDC_UTF_16__", "1");
   Builder.defineMacro("__STDC_UTF_32__", "1");

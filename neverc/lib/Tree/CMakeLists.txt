@@ -7,6 +7,7 @@ set(LLVM_LINK_COMPONENTS
 
 add_neverc_library(nevercTree
   Core/TreeConsumer.cpp
+  Stmt/CXXStmt.cpp
   Core/TreeContext.cpp
   Core/TreeContextType.cpp
   Core/TreeDiag.cpp
@@ -18,8 +19,11 @@ add_neverc_library(nevercTree
   Decl/Decl.cpp
   Decl/DeclBase.cpp
   Decl/DeclC.cpp
+  Decl/DeclCXX.cpp
+  Decl/DeclTemplate.cpp
   Decl/DeclPrinter.cpp
   Decl/DeclarationName.cpp
+  NestedNameSpecifier.cpp
 
   Expr/Expr.cpp
   Expr/ExprClassification.cpp

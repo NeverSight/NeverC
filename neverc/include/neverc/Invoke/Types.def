@@ -28,6 +28,11 @@ TYPE("c",                        C,            PP_C,            "c",      phases
 // C header files (preprocess only; precompilation removed).
 TYPE("c-header",                 CHeader,      INVALID,         "h",      phases::Preprocess)
 
+// C++ family source language (with and without preprocessing).
+TYPE("c++-cpp-output",           PP_CXX,       INVALID,         "ii",     phases::Compile, phases::Backend, phases::Assemble, phases::Link)
+TYPE("c++",                      CXX,          PP_CXX,          "cpp",    phases::Preprocess, phases::Compile, phases::Backend, phases::Assemble, phases::Link)
+TYPE("c++-header",               CXXHeader,    INVALID,         "hxx",    phases::Preprocess)
+
 // Assembler.
 TYPE("assembler",                PP_Asm,       INVALID,         "s",      phases::Assemble, phases::Link)
 TYPE("assembler-with-cpp",       Asm,          PP_Asm,          "S",      phases::Preprocess, phases::Assemble, phases::Link)

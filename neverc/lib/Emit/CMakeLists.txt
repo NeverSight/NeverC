@@ -67,6 +67,7 @@ add_neverc_library(nevercEmit
   Expr/ComplexEmitter.cpp
   Expr/ConstantEmitter.cpp
   Expr/ScalarEmitter.cpp
+  CXX/NeverCCXXABI.cpp
 
   Decl/DeclEmitter.cpp
   Decl/NeverCStringCleanupEmitter.cpp

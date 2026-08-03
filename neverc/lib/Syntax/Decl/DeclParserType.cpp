@@ -298,8 +298,11 @@ void Parser::ParseStructOrUnionSpecifier(tok::TokenKind TagTokKind,
   DeclSpec::TST TagType;
   if (TagTokKind == tok::kw_struct)
     TagType = DeclSpec::TST_struct;
-  else {
-    assert(TagTokKind == tok::kw_union && "Not a struct/union specifier");
+  else if (TagTokKind == tok::kw_class) {
+    assert(getLangOpts().CPlusPlus && "class-key only valid in C++");
+    TagType = DeclSpec::TST_class;
+  } else {
+    assert(TagTokKind == tok::kw_union && "Not a struct/union/class specifier");
     TagType = DeclSpec::TST_union;
   }
 
@@ -345,7 +348,8 @@ void Parser::ParseStructOrUnionSpecifier(tok::TokenKind TagTokKind,
   Sema::TagUseKind TUK;
   if (isDefiningTypeSpecifierContext(DSC) == AllowDefiningTypeSpec::No)
     TUK = Sema::TUK_Reference;
-  else if (Tok.is(tok::l_brace)) {
+  else if (Tok.is(tok::l_brace) ||
+           (getLangOpts().CPlusPlus && Tok.is(tok::colon))) {
     TUK = Sema::TUK_Definition;
   } else if (!isTypeSpecifier(DSC) &&
              (Tok.is(tok::semi) ||
@@ -405,7 +409,19 @@ void Parser::ParseStructOrUnionSpecifier(tok::TokenKind TagTokKind,
   }
 
   if (TUK == Sema::TUK_Definition) {
-    assert(Tok.is(tok::l_brace));
+    // C++ base-clause: class X : public Y, virtual Z { ... }
+    if (getLangOpts().CPlusPlus && Tok.is(tok::colon) &&
+        !TagOrTempResult.isInvalid()) {
+      if (auto *CXXRD = dyn_cast_or_null<CXXRecordDecl>(TagOrTempResult.get()))
+        ParseCXXBaseClause(CXXRD);
+      else {
+        // Skip base-clause for non-CXX records.
+        ConsumeToken();
+        while (Tok.isNot(tok::l_brace) && Tok.isNot(tok::eof))
+          ConsumeAnyToken();
+      }
+    }
+    assert(Tok.is(tok::l_brace) || SkipBody.ShouldSkip);
     if (SkipBody.ShouldSkip)
       SkipBraceEnclosedBody();
     else {

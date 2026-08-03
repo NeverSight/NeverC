@@ -1,0 +1,14 @@
+// NeverC <execution> scaffold (C++17/20 parallel policies, non-stream)
+#pragma once
+namespace std {
+namespace execution {
+class sequenced_policy {};
+class parallel_policy {};
+class parallel_unsequenced_policy {};
+class unsequenced_policy {};
+inline constexpr sequenced_policy seq{};
+inline constexpr parallel_policy par{};
+inline constexpr parallel_unsequenced_policy par_unseq{};
+inline constexpr unsequenced_policy unseq{};
+} // namespace execution
+} // namespace std

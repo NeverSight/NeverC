@@ -757,6 +757,10 @@ bool typeIsPostfix(QualType QT) {
     case Type::Pointer:
       QT = cast<PointerType>(T)->getPointeeType();
       break;
+    case Type::LValueReference:
+    case Type::RValueReference:
+      QT = cast<ReferenceType>(T)->getPointeeType();
+      break;
     case Type::Paren:
     case Type::ConstantArray:
     case Type::IncompleteArray:
@@ -863,6 +867,21 @@ template <typename T> LanguageLinkage getDeclLanguageLinkage(const T &D) {
   if (!D.hasExternalFormalLinkage())
     return NoLanguageLinkage;
 
+  // Walk contexts for an explicit linkage-specification (extern "C" / "C++").
+  const DeclContext *DC = D.getDeclContext();
+  while (DC) {
+    if (const auto *LS = dyn_cast<LinkageSpecDecl>(DC)) {
+      if (LS->getLanguage() == LinkageSpecDecl::lang_c)
+        return CLanguageLinkage;
+      if (LS->getLanguage() == LinkageSpecDecl::lang_cxx)
+        return CXXLanguageLinkage;
+    }
+    DC = DC->getParent();
+  }
+
+  // Default: C linkage in C mode, C++ linkage in C++ mode.
+  if (D.getTreeContext().getLangOpts().CPlusPlus)
+    return CXXLanguageLinkage;
   return CLanguageLinkage;
 }
 } // namespace
@@ -2172,6 +2191,81 @@ void ExternCContextDecl::anchor() {}
 ExternCContextDecl *ExternCContextDecl::Create(const TreeContext &C,
                                                TranslationUnitDecl *DC) {
   return new (C, DC) ExternCContextDecl(DC);
+}
+
+void LinkageSpecDecl::anchor() {}
+
+LinkageSpecDecl *LinkageSpecDecl::Create(TreeContext &C, DeclContext *DC,
+                                         SourceLocation ExternLoc,
+                                         SourceLocation LangLoc,
+                                         LanguageIDs Lang, bool HasBraces) {
+  return new (C, DC) LinkageSpecDecl(DC, ExternLoc, LangLoc, Lang, HasBraces);
+}
+
+void NamespaceDecl::anchor() {}
+
+NamespaceDecl::NamespaceDecl(const TreeContext &C, DeclContext *DC, bool Inline,
+                             SourceLocation StartLoc, SourceLocation IdLoc,
+                             IdentifierInfo *Id, NamespaceDecl *PrevDecl)
+    : NamedDecl(Namespace, DC, IdLoc, Id), DeclContext(Namespace),
+      redeclarable_base(C), LocStart(StartLoc), RBraceLoc(), IsInline(Inline),
+      IsAnonymous(Id == nullptr) {
+  setPreviousDecl(PrevDecl);
+}
+
+NamespaceDecl *NamespaceDecl::Create(TreeContext &C, DeclContext *DC,
+                                     bool Inline, SourceLocation StartLoc,
+                                     SourceLocation IdLoc, IdentifierInfo *Id,
+                                     NamespaceDecl *PrevDecl) {
+  return new (C, DC)
+      NamespaceDecl(C, DC, Inline, StartLoc, IdLoc, Id, PrevDecl);
+}
+
+void NamespaceAliasDecl::anchor() {}
+
+NamespaceAliasDecl *NamespaceAliasDecl::Create(
+    TreeContext &C, DeclContext *DC, SourceLocation NamespaceLoc,
+    SourceLocation AliasLoc, IdentifierInfo *Alias, SourceLocation TargetNameLoc,
+    NamespaceDecl *Namespace) {
+  return new (C, DC) NamespaceAliasDecl(DC, NamespaceLoc, AliasLoc, Alias,
+                                        TargetNameLoc, Namespace);
+}
+
+void UsingDecl::anchor() {}
+
+UsingDecl *UsingDecl::Create(TreeContext &C, DeclContext *DC, SourceLocation UL,
+                             SourceLocation IdLoc, DeclarationName Name,
+                             NamedDecl *Target) {
+  return new (C, DC) UsingDecl(DC, UL, IdLoc, Name, Target);
+}
+
+void UsingDirectiveDecl::anchor() {}
+
+UsingDirectiveDecl *UsingDirectiveDecl::Create(
+    TreeContext &C, DeclContext *DC, SourceLocation UsingLoc,
+    SourceLocation NamespaceLoc, SourceLocation IdentLoc,
+    NamespaceDecl *Nominated, DeclContext *CommonAncestor) {
+  return new (C, DC) UsingDirectiveDecl(DC, UsingLoc, NamespaceLoc, IdentLoc,
+                                        Nominated, CommonAncestor);
+}
+
+void UsingShadowDecl::anchor() {}
+
+UsingShadowDecl *UsingShadowDecl::Create(TreeContext &C, DeclContext *DC,
+                                         SourceLocation Loc, UsingDecl *Using,
+                                         NamedDecl *Target) {
+  return new (C, DC) UsingShadowDecl(DC, Loc, Using, Target);
+}
+
+void UsingEnumDecl::anchor() {}
+
+UsingEnumDecl *UsingEnumDecl::Create(TreeContext &C, DeclContext *DC,
+                                     SourceLocation UsingLoc,
+                                     SourceLocation EnumLoc,
+                                     SourceLocation IdLoc, EnumDecl *Enum) {
+  DeclarationName Name = Enum ? Enum->getDeclName() : DeclarationName();
+  return new (C, DC)
+      UsingEnumDecl(DC, UsingLoc, EnumLoc, IdLoc, Name, Enum);
 }
 
 void LabelDecl::anchor() {}

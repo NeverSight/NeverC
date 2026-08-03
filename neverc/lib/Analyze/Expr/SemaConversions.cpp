@@ -122,6 +122,55 @@ ExprResult Sema::PerformImplicitConversion(
     break;
   }
 
+  case ImplicitConversionSequence::UserDefinedConversion: {
+    // NeverC Phase-4: apply unique conversion operator if present on the
+    // source class type; otherwise fall back to the embedded standard seq.
+    if (getLangOpts().CPlusPlus && From && !From->getType().isNull()) {
+      QualType FromTy = From->getType();
+      if (const Type *T = FromTy.getTypePtrOrNull()) {
+        if (T->isReferenceType())
+          FromTy = T->getPointeeType();
+      }
+      if (const CXXRecordDecl *RD = FromTy->getAsCXXRecordDecl()) {
+        const CXXRecordDecl *Def =
+            RD->getDefinition() ? RD->getDefinition() : RD;
+        CXXConversionDecl *Found = nullptr;
+        unsigned N = 0;
+        for (Decl *D : Def->decls()) {
+          auto *CD = dyn_cast<CXXConversionDecl>(D);
+          if (!CD)
+            continue;
+          QualType CT = CD->getConversionType();
+          if (CT.isNull())
+            continue;
+          // Exact match or both pointers / arithmetic left to later ranking.
+          if (Context.hasSameUnqualifiedType(CT, ToType) ||
+              Context.hasSameType(CT, ToType)) {
+            Found = CD;
+            ++N;
+          }
+        }
+        if (N == 1 && Found) {
+          Expr *Callee = DeclRefExpr::Create(
+              Context, Found, From->getExprLoc(), Found->getType(), VK_LValue);
+          Expr *Call = new (Context) CXXOperatorCallExpr(
+              ToType, From->getExprLoc(), Callee, From, nullptr);
+          return Call;
+        }
+      }
+    }
+    // Fallback: try standard sequence stored alongside (scaffold ICS).
+    {
+      ExprResult Res =
+          PerformImplicitConversion(From, ToType, ICS.Standard, CCK);
+      if (Res.isInvalid())
+        return ExprError();
+      return Res.get();
+    }
+  }
+  case ImplicitConversionSequence::EllipsisConversion:
+    // Ellipsis conversion is only for overload ranking; not a real convert.
+    return ExprError();
   case ImplicitConversionSequence::BadConversion: {
     Sema::AssignConvertType ConvTy =
         CheckAssignmentConstraints(From->getExprLoc(), ToType, From->getType());

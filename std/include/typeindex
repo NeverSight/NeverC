@@ -1,0 +1,18 @@
+// NeverC <typeindex> scaffold (non-stream)
+#pragma once
+#include <typeinfo>
+namespace std {
+class type_index {
+  const type_info *Target = nullptr;
+public:
+  type_index(const type_info &rhs) noexcept : Target(&rhs) {}
+  const char *name() const noexcept { return Target ? Target->name() : ""; }
+  bool operator==(const type_index &rhs) const noexcept {
+    return Target && rhs.Target && *Target == *rhs.Target;
+  }
+  bool operator!=(const type_index &rhs) const noexcept { return !(*this == rhs); }
+  bool operator<(const type_index &rhs) const noexcept {
+    return Target && rhs.Target && Target->before(*rhs.Target);
+  }
+};
+} // namespace std

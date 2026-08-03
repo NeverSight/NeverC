@@ -1,0 +1,3 @@
+// NeverC <thread> scaffold
+#pragma once
+namespace std { class thread; }

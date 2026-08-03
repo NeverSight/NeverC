@@ -1,0 +1,36 @@
+// NeverC <span> scaffold (C++20)
+#pragma once
+#include <cstddef>
+#include <type_traits>
+
+namespace std {
+
+inline constexpr size_t dynamic_extent = size_t(-1);
+
+template <class T, size_t Extent = dynamic_extent>
+class span {
+public:
+  using element_type = T;
+  using value_type = remove_cv_t<T>;
+  using size_type = size_t;
+  using pointer = T *;
+  using reference = T &;
+
+  constexpr span() noexcept : data_(nullptr), size_(0) {}
+  constexpr span(T *ptr, size_type count) noexcept : data_(ptr), size_(count) {}
+  template <size_t N>
+  constexpr span(T (&arr)[N]) noexcept : data_(arr), size_(N) {}
+
+  constexpr pointer data() const noexcept { return data_; }
+  constexpr size_type size() const noexcept { return size_; }
+  constexpr bool empty() const noexcept { return size_ == 0; }
+  constexpr reference operator[](size_type i) const { return data_[i]; }
+  constexpr pointer begin() const noexcept { return data_; }
+  constexpr pointer end() const noexcept { return data_ + size_; }
+
+private:
+  pointer data_;
+  size_type size_;
+};
+
+} // namespace std

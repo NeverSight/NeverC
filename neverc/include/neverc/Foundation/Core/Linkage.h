@@ -21,7 +21,11 @@ enum class Linkage : unsigned char {
   External
 };
 
-enum LanguageLinkage { CLanguageLinkage, NoLanguageLinkage };
+enum LanguageLinkage {
+  CLanguageLinkage,
+  CXXLanguageLinkage,
+  NoLanguageLinkage
+};
 
 enum GVALinkage {
   GVA_Internal,

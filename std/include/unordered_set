@@ -1,0 +1,17 @@
+// NeverC <unordered_set> scaffold (non-stream)
+#pragma once
+#include <stddef.h>
+namespace std {
+template <class Key> class unordered_set {
+  Key *Data = nullptr;
+  size_t Size = 0;
+public:
+  using value_type = Key;
+  unordered_set() = default;
+  size_t size() const noexcept { return Size; }
+  bool empty() const noexcept { return Size == 0; }
+  void clear() noexcept { Size = 0; }
+  bool insert(const Key &) { return true; }
+  bool contains(const Key &) const { return false; }
+};
+} // namespace std

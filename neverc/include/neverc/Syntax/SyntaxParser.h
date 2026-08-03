@@ -8,6 +8,7 @@
 #include "llvm/Support/SaveAndRestore.h"
 
 namespace neverc {
+class TemplateParameterList;
 class PragmaDispatch;
 class Scope;
 class BalancedDelimiterTracker;
@@ -944,6 +945,46 @@ private:
   void ParseEnumBody(SourceLocation StartLoc, Decl *TagDecl);
   void ParseStructUnionBody(SourceLocation StartLoc, DeclSpec::TST TagType,
                             RecordDecl *TagDecl);
+
+  // C++ declarations
+  Decl *ParseNamespace(SourceLocation &DeclEnd, ParsedAttributes &Attrs);
+  Decl *ParseUsingDirectiveOrDeclaration(SourceLocation &DeclEnd,
+                                         ParsedAttributes &Attrs);
+  DeclGroupPtrTy ParseLinkage(ParsingDeclSpec &DS, AccessSpecifier AS);
+  AccessSpecifier getAccessSpecifierIfPresent();
+
+  /// Parse an optional C++ nested-name-specifier (e.g. A::B::).
+  /// Returns true if a specifier was parsed into \p SS.
+  bool ParseOptionalCXXScopeSpecifier(NestedNameSpecifierLocBuilder &SS,
+                                      bool EnteringContext = false);
+
+  /// Parse C++ operator-function-id: operator <op>
+  bool ParseOperatorFunctionId(SourceLocation &OpLoc, OverloadedOperatorKind &Op);
+  DeclGroupPtrTy ParseTemplateDeclaration(SourceLocation TemplateLoc);
+  DeclGroupPtrTy ParseModuleDecl(SourceLocation ModuleLoc);
+  TemplateParameterList *ParseTemplateParameterList(unsigned Depth);
+  ExprResult ParseLambdaExpression();
+  ExprResult ParseCXXNewExpression(bool UseGlobal, SourceLocation NewLoc);
+  ExprResult ParseCXXDeleteExpression(bool UseGlobal, SourceLocation DeleteLoc);
+  ExprResult ParseCXXNamedCast(tok::TokenKind Kind, SourceLocation KWLoc);
+  ExprResult ParseThrowExpression();
+  ExprResult ParseCoawaitExpression();
+  ExprResult ParseCoyieldExpression();
+  StmtResult ParseCXXTryBlock();
+  StmtResult ParseCXXForRangeStatement(SourceLocation ForLoc);
+  bool ParseExceptionSpecification(DeclSpec &DS);
+  StmtResult ParseCXXCatchBlock();
+
+
+  void ParseCXXBaseClause(CXXRecordDecl *ClassDecl);
+
+  /// Parse an optional C++ nested-name-specifier (e.g. A::B::).
+  /// Returns true if a specifier was parsed into \p SS.
+  bool ParseOptionalCXXScopeSpecifier(NestedNameSpecifierLocBuilder &SS,
+                                      bool EnteringContext = false);
+
+  /// Parse C++ operator-function-id: operator <op>
+  bool ParseOperatorFunctionId(SourceLocation &OpLoc, OverloadedOperatorKind &Op);
 
   void ParseStructDeclaration(
       ParsingDeclSpec &DS,

@@ -1,0 +1,37 @@
+// NeverC <typeinfo> (non-stream)
+#pragma once
+#include <cstddef>
+
+namespace std {
+
+class type_info {
+public:
+  virtual ~type_info();
+  const char *name() const noexcept;
+  bool before(const type_info &rhs) const noexcept;
+  bool operator==(const type_info &rhs) const noexcept;
+  bool operator!=(const type_info &rhs) const noexcept {
+    return !(*this == rhs);
+  }
+  type_info(const type_info &) = delete;
+  type_info &operator=(const type_info &) = delete;
+protected:
+  const char *__name;
+  explicit type_info(const char *Name) : __name(Name) {}
+};
+
+class bad_cast {
+public:
+  bad_cast() noexcept = default;
+  virtual ~bad_cast() = default;
+  virtual const char *what() const noexcept { return "std::bad_cast"; }
+};
+
+class bad_typeid {
+public:
+  bad_typeid() noexcept = default;
+  virtual ~bad_typeid() = default;
+  virtual const char *what() const noexcept { return "std::bad_typeid"; }
+};
+
+} // namespace std

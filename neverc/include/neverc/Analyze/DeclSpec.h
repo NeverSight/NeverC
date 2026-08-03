@@ -2,6 +2,7 @@
 #define NEVERC_ANALYZE_DECLSPEC_H
 
 #include "neverc/Analyze/Ownership.h"
+#include "neverc/Tree/DeclarationName.h"
 #include "neverc/Analyze/ParsedAttr.h"
 #include "neverc/Foundation/Core/Specifiers.h"
 #include "neverc/Scan/Token.h"
@@ -65,6 +66,7 @@ public:
   static const TST TST_enum = neverc::TST_enum;
   static const TST TST_union = neverc::TST_union;
   static const TST TST_struct = neverc::TST_struct;
+  static const TST TST_class = neverc::TST_class;
   static const TST TST_typename = neverc::TST_typename;
   static const TST TST_typeofType = neverc::TST_typeofType;
   static const TST TST_typeofExpr = neverc::TST_typeofExpr;
@@ -128,6 +130,12 @@ private:
   unsigned FS_inline_specified : 1;
   unsigned FS_forceinline_specified : 1;
   unsigned FS_noreturn_specified : 1;
+  unsigned FS_virtual_specified : 1;
+  unsigned FS_explicit_specified : 1;
+  unsigned FS_friend_specified : 1;
+  unsigned FS_noexcept_specified : 1;
+  unsigned FS_noexcept_false : 1;
+  unsigned FS_noexcept_dependent : 1;
 
   // constexpr-specifier
   unsigned ConstexprSpecifier : 2;
@@ -154,6 +162,8 @@ private:
       TQ_unalignedLoc;
   SourceLocation FS_inlineLoc, FS_noreturnLoc;
   SourceLocation FS_forceinlineLoc;
+  SourceLocation FS_virtualLoc, FS_explicitLoc, FS_friendLoc;
+  SourceLocation FS_noexceptLoc;
   SourceLocation ConstexprLoc;
 
   WrittenBuiltinSpecs writtenBS;
@@ -172,7 +182,8 @@ private:
 
 public:
   static bool isDeclRep(TST T) {
-    return (T == TST_enum || T == TST_struct || T == TST_union);
+    return (T == TST_enum || T == TST_struct || T == TST_union ||
+            T == TST_class);
   }
 
   DeclSpec(AttributeFactory &attrFactory)
@@ -185,6 +196,9 @@ public:
         TypeSpecType(TST_unspecified), TypeSpecOwned(false), TypeSpecSat(false),
         TypeQualifiers(TQ_unspecified), FS_inline_specified(false),
         FS_forceinline_specified(false), FS_noreturn_specified(false),
+        FS_virtual_specified(false), FS_explicit_specified(false),
+        FS_friend_specified(false), FS_noexcept_specified(false),
+        FS_noexcept_false(false), FS_noexcept_dependent(false),
         ConstexprSpecifier(
             static_cast<unsigned>(ConstexprSpecKind::Unspecified)),
         Attrs(attrFactory), writtenBS() {}
@@ -305,6 +319,16 @@ public:
 
   bool isNoreturnSpecified() const { return FS_noreturn_specified; }
   SourceLocation getNoreturnSpecLoc() const { return FS_noreturnLoc; }
+  bool isVirtualSpecified() const { return FS_virtual_specified; }
+  SourceLocation getVirtualSpecLoc() const { return FS_virtualLoc; }
+  bool isExplicitSpecified() const { return FS_explicit_specified; }
+  SourceLocation getExplicitSpecLoc() const { return FS_explicitLoc; }
+  bool isFriendSpecified() const { return FS_friend_specified; }
+  SourceLocation getFriendSpecLoc() const { return FS_friendLoc; }
+  bool isNoexceptSpecified() const { return FS_noexcept_specified; }
+  bool isNoexceptFalse() const { return FS_noexcept_false; }
+  bool isNoexceptDependent() const { return FS_noexcept_dependent; }
+  SourceLocation getNoexceptSpecLoc() const { return FS_noexceptLoc; }
 
   void ClearFunctionSpecs() {
     FS_inline_specified = false;
@@ -313,6 +337,16 @@ public:
     FS_forceinlineLoc = SourceLocation();
     FS_noreturn_specified = false;
     FS_noreturnLoc = SourceLocation();
+    FS_virtual_specified = false;
+    FS_virtualLoc = SourceLocation();
+    FS_explicit_specified = false;
+    FS_explicitLoc = SourceLocation();
+    FS_friend_specified = false;
+    FS_friendLoc = SourceLocation();
+    FS_noexcept_specified = false;
+    FS_noexcept_false = false;
+    FS_noexcept_dependent = false;
+    FS_noexceptLoc = SourceLocation();
   }
 
   void forEachCVRUQualifier(
@@ -403,6 +437,18 @@ public:
                                   unsigned &DiagID);
   bool setFunctionSpecNoreturn(SourceLocation Loc, const char *&PrevSpec,
                                unsigned &DiagID);
+  bool setFunctionSpecVirtual(SourceLocation Loc, const char *&PrevSpec,
+                              unsigned &DiagID);
+  bool setFunctionSpecExplicit(SourceLocation Loc, const char *&PrevSpec,
+                               unsigned &DiagID);
+  bool setFunctionSpecFriend(SourceLocation Loc, const char *&PrevSpec,
+                             unsigned &DiagID);
+  bool setFunctionSpecNoexcept(SourceLocation Loc, const char *&PrevSpec,
+                               unsigned &DiagID);
+  void setNoexceptValue(bool IsFalse, bool IsDependent) {
+    FS_noexcept_false = IsFalse;
+    FS_noexcept_dependent = IsDependent;
+  }
 
   bool SetConstexprSpec(ConstexprSpecKind ConstexprKind, SourceLocation Loc,
                         const char *&PrevSpec, unsigned &DiagID);
@@ -444,32 +490,76 @@ public:
 };
 
 class UnqualifiedId {
+public:
+  enum Kind {
+    IK_Identifier,
+    IK_OperatorFunctionId,
+    IK_ConversionFunctionId,
+    IK_ConstructorName,
+    IK_DestructorName,
+    IK_LiteralOperatorId
+  };
+
 private:
   UnqualifiedId(const UnqualifiedId &Other) = delete;
   const UnqualifiedId &operator=(const UnqualifiedId &) = delete;
 
-  IdentifierInfo *Identifier;
+  Kind IdKind = IK_Identifier;
+  IdentifierInfo *Identifier = nullptr;
+  OverloadedOperatorKind Operator = OO_None;
   SourceLocation StartLocation;
   SourceLocation EndLocation;
 
 public:
-  UnqualifiedId() : Identifier(nullptr) {}
+  UnqualifiedId() = default;
 
   void clear() {
+    IdKind = IK_Identifier;
     Identifier = nullptr;
+    Operator = OO_None;
     StartLocation = SourceLocation();
     EndLocation = SourceLocation();
   }
 
   bool isValid() const { return StartLocation.isValid(); }
   bool isInvalid() const { return !isValid(); }
+  Kind getKind() const { return IdKind; }
 
   void setIdentifier(const IdentifierInfo *Id, SourceLocation IdLoc) {
+    IdKind = IK_Identifier;
     Identifier = const_cast<IdentifierInfo *>(Id);
+    Operator = OO_None;
     StartLocation = EndLocation = IdLoc;
   }
 
+  void setOperatorFunctionId(SourceLocation OperatorLoc,
+                             OverloadedOperatorKind Op,
+                             SourceLocation EndLoc) {
+    IdKind = IK_OperatorFunctionId;
+    Identifier = nullptr;
+    Operator = Op;
+    StartLocation = OperatorLoc;
+    EndLocation = EndLoc;
+  }
+
+  void setDestructorName(SourceLocation TildeLoc, IdentifierInfo *ClassName,
+                         SourceLocation NameEndLoc) {
+    IdKind = IK_DestructorName;
+    Identifier = ClassName;
+    Operator = OO_None;
+    StartLocation = TildeLoc;
+    EndLocation = NameEndLoc;
+  }
+
+  void setConstructorName(IdentifierInfo *ClassName, SourceLocation NameLoc) {
+    IdKind = IK_ConstructorName;
+    Identifier = ClassName;
+    Operator = OO_None;
+    StartLocation = EndLocation = NameLoc;
+  }
+
   IdentifierInfo *getIdentifierInfo() const { return Identifier; }
+  OverloadedOperatorKind getOperator() const { return Operator; }
 
   void setEndLoc(SourceLocation Loc) { EndLocation = Loc; }
 
@@ -485,7 +575,7 @@ typedef llvm::SmallVector<Token, 4> CachedTokens;
 struct DeclaratorChunk {
   DeclaratorChunk() {};
 
-  enum { Pointer, Array, Function, Paren } Kind;
+  enum { Pointer, Reference, Array, Function, Paren } Kind;
 
   SourceLocation Loc;
   SourceLocation EndLoc;
@@ -497,6 +587,14 @@ struct DeclaratorChunk {
   }
 
   ParsedAttributesView AttrList;
+
+  struct ReferenceTypeInfo {
+    /// True if this is an lvalue reference (&); false for &&.
+    unsigned LValueRef : 1;
+    /// The type qualifiers on the reference (usually empty).
+    unsigned TypeQuals : 5;
+    void destroy() {}
+  };
 
   struct PointerTypeInfo {
     /// The type qualifiers: const/volatile/restrict/unaligned/atomic.
@@ -667,6 +765,7 @@ struct DeclaratorChunk {
 
   union {
     PointerTypeInfo Ptr;
+    ReferenceTypeInfo Ref;
     ArrayTypeInfo Arr;
     FunctionTypeInfo Fun;
   };
@@ -677,6 +776,8 @@ struct DeclaratorChunk {
       return Fun.destroy();
     case DeclaratorChunk::Pointer:
       return Ptr.destroy();
+    case DeclaratorChunk::Reference:
+      return Ref.destroy();
     case DeclaratorChunk::Array:
       return Arr.destroy();
     case DeclaratorChunk::Paren:
@@ -686,6 +787,17 @@ struct DeclaratorChunk {
 
   const ParsedAttributesView &getAttrs() const { return AttrList; }
   ParsedAttributesView &getAttrs() { return AttrList; }
+
+  static DeclaratorChunk getReference(bool LValue, unsigned TypeQuals,
+                                     SourceLocation Loc) {
+    DeclaratorChunk I;
+    I.Kind = Reference;
+    I.Loc = Loc;
+    new (&I.Ref) ReferenceTypeInfo;
+    I.Ref.LValueRef = LValue ? 1 : 0;
+    I.Ref.TypeQuals = TypeQuals;
+    return I;
+  }
 
   static DeclaratorChunk getPointer(unsigned TypeQuals, SourceLocation Loc,
                                     SourceLocation ConstQualLoc,

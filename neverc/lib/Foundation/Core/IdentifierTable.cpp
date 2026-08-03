@@ -85,16 +85,21 @@ enum TokenKey : unsigned {
   KEYGNU = 0x8,
   KEYMS = 0x10,
   BOOLSUPPORT = 0x20,
+  KEYCXX = 0x40,
+  KEYCXX11 = 0x80,
   KEYC23 = 0x400,
   KEYNOMS18 = 0x800,
+  KEYCXX20 = 0x1000,
   WCHARSUPPORT = 0x2000,
   CHAR8SUPPORT = 0x8000,
   KEYMSCOMPAT = 0x400000,
   KEYFIXEDPOINT = 0x4000000,
   KEYNEVERC = 0x8000000,
   KEYMAX = KEYNEVERC,
-  KEYALL = (KEYMAX | (KEYMAX - 1)) & ~KEYNOMS18 & ~KEYNEVERC & ~0x10000 &
-           ~0x100 & ~0x80
+  // Exclude mode-specific and reserved bits from KEYALL so C keywords stay
+  // stable while C++/NeverC-only keywords remain gated by language options.
+  KEYALL = (KEYMAX | (KEYMAX - 1)) & ~KEYNOMS18 & ~KEYNEVERC & ~KEYCXX &
+           ~KEYCXX11 & ~KEYCXX20 & ~0x10000 & ~0x100
 };
 
 enum KeywordStatus {
@@ -116,6 +121,12 @@ KeywordStatus resolveKeywordFlag(const LangOptions &LangOpts, TokenKey Flag) {
     return LangOpts.C99 ? KS_Enabled : KS_Future;
   case KEYC23:
     return LangOpts.C23 ? KS_Enabled : KS_Future;
+  case KEYCXX:
+    return LangOpts.CPlusPlus ? KS_Enabled : KS_Unknown;
+  case KEYCXX11:
+    return LangOpts.CPlusPlus11 ? KS_Enabled : KS_Unknown;
+  case KEYCXX20:
+    return LangOpts.CPlusPlus20 ? KS_Enabled : KS_Unknown;
   case KEYGNU:
     return LangOpts.GNUKeywords ? KS_Extension : KS_Unknown;
   case KEYMS:

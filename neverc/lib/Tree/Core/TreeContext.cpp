@@ -1403,6 +1403,43 @@ NEVERC_HOT QualType TreeContext::getPointerType(QualType T) const {
   return QualType(New, 0);
 }
 
+
+NEVERC_HOT QualType TreeContext::getLValueReferenceType(QualType T) const {
+  llvm::FoldingSetNodeID ID;
+  LValueReferenceType::Profile(ID, T);
+  void *InsertPos = nullptr;
+  if (auto *RT = LValueReferenceTypes.FindNodeOrInsertPos(ID, InsertPos))
+    return QualType(RT, 0);
+  QualType Canonical;
+  if (!T.isCanonical()) {
+    Canonical = getLValueReferenceType(getCanonicalType(T));
+    (void)LValueReferenceTypes.FindNodeOrInsertPos(ID, InsertPos);
+  }
+  auto *New = new (*this, alignof(LValueReferenceType))
+      LValueReferenceType(T, Canonical);
+  Types.push_back(New);
+  LValueReferenceTypes.InsertNode(New, InsertPos);
+  return QualType(New, 0);
+}
+
+NEVERC_HOT QualType TreeContext::getRValueReferenceType(QualType T) const {
+  llvm::FoldingSetNodeID ID;
+  RValueReferenceType::Profile(ID, T);
+  void *InsertPos = nullptr;
+  if (auto *RT = RValueReferenceTypes.FindNodeOrInsertPos(ID, InsertPos))
+    return QualType(RT, 0);
+  QualType Canonical;
+  if (!T.isCanonical()) {
+    Canonical = getRValueReferenceType(getCanonicalType(T));
+    (void)RValueReferenceTypes.FindNodeOrInsertPos(ID, InsertPos);
+  }
+  auto *New = new (*this, alignof(RValueReferenceType))
+      RValueReferenceType(T, Canonical);
+  Types.push_back(New);
+  RValueReferenceTypes.InsertNode(New, InsertPos);
+  return QualType(New, 0);
+}
+
 QualType TreeContext::getAdjustedType(QualType Orig, QualType New) const {
   llvm::FoldingSetNodeID ID;
   AdjustedType::Profile(ID, Orig, New);

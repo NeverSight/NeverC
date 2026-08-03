@@ -20,6 +20,7 @@
 #include "neverc/Plugin/Host/PluginTargetInfo.h"
 #include "neverc/Tree/Core/CharUnits.h"
 #include "neverc/Tree/Core/Mangle.h"
+#include "neverc/Emit/CXXABI.h"
 #include "neverc/Tree/Core/RecursiveTreeVisitor.h"
 #include "neverc/Tree/Core/TreeContext.h"
 #include "neverc/Tree/Stmt/StmtVisitor.h"
@@ -3862,6 +3863,37 @@ NEVERC_HOT void ModuleEmitter::lowerTopLevel(Decl *D) {
     if (DebugEmitter *DI = getModuleDebugInfo())
       if (cast<RecordDecl>(D)->getDefinition())
         DI->genAndRetainType(getContext().getRecordType(cast<RecordDecl>(D)));
+    break;
+
+  case Decl::CXXRecord: {
+    auto *RD = cast<CXXRecordDecl>(D);
+    if (DebugEmitter *DI = getModuleDebugInfo())
+      if (RD->getDefinition())
+        DI->genAndRetainType(getContext().getRecordType(RD));
+    // NeverC ABI v1: emit vtable group for dynamic classes.
+    if (CXXABI *CXXA = getCXXABI()) {
+      if (RD->getDefinition() && RD->isDynamicClass())
+        CXXA->emitVTable(*this, RD);
+    }
+    // Emit nested decls (methods, nested types).
+    if (RD->getDefinition())
+      genDeclContext(RD);
+    break;
+  }
+
+  case Decl::CXXMethod:
+  case Decl::CXXConstructor:
+  case Decl::CXXDestructor:
+  case Decl::CXXConversion:
+    lowerGlobal(cast<FunctionDecl>(D));
+    break;
+
+  case Decl::Namespace:
+    genDeclContext(cast<NamespaceDecl>(D));
+    break;
+
+  case Decl::LinkageSpec:
+    genDeclContext(cast<LinkageSpecDecl>(D));
     break;
 
   case Decl::Enum:

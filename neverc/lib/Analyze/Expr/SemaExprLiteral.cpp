@@ -574,6 +574,14 @@ bool validateDeclForExpr(Sema &S, SourceLocation Loc, NamedDecl *D) {
 } // namespace
 
 ExprResult Sema::FormDeclarationNameExpr(LookupResult &R) {
+  // C++: preserve overloaded function sets until call (or address-of) resolution.
+  if (getLangOpts().CPlusPlus && R.isOverloadedResult()) {
+    llvm::SmallVector<NamedDecl *, 8> Decls;
+    for (NamedDecl *D : R)
+      Decls.push_back(D->getUnderlyingDecl());
+    return UnresolvedLookupExpr::Create(Context, R.getLookupNameInfo(),
+                                        /*RequiresADL=*/false, Decls);
+  }
   return FormDeclarationNameExpr(R.getLookupNameInfo(), R.getFoundDecl(),
                                  R.getRepresentativeDecl());
 }

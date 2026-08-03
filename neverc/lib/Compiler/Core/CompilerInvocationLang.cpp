@@ -202,6 +202,9 @@ bool isInputCompatibleWithStandard(InputKind IK, const LangStandard &S) {
   case Language::C:
     return S.getLanguage() == Language::C;
 
+  case Language::CXX:
+    return S.getLanguage() == Language::CXX;
+
   case Language::Asm:
     return true;
   }
@@ -211,6 +214,8 @@ llvm::StringRef getInputKindName(InputKind IK) {
   switch (IK.getLanguage()) {
   case Language::C:
     return "C";
+  case Language::CXX:
+    return "C++";
   case Language::Asm:
     return "Asm";
   case Language::LLVM_IR:

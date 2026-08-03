@@ -1,0 +1,33 @@
+// NeverC <memory_resource> scaffold (C++17/20, non-stream)
+#pragma once
+#include <stddef.h>
+namespace std {
+namespace pmr {
+class memory_resource {
+public:
+  virtual ~memory_resource() = default;
+  void *allocate(size_t bytes, size_t alignment = alignof(max_align_t)) {
+    return do_allocate(bytes, alignment);
+  }
+  void deallocate(void *p, size_t bytes, size_t alignment = alignof(max_align_t)) {
+    do_deallocate(p, bytes, alignment);
+  }
+protected:
+  virtual void *do_allocate(size_t, size_t) = 0;
+  virtual void do_deallocate(void *, size_t, size_t) = 0;
+  virtual bool do_is_equal(const memory_resource &) const noexcept = 0;
+};
+memory_resource *get_default_resource() noexcept;
+memory_resource *set_default_resource(memory_resource *) noexcept;
+memory_resource *new_delete_resource() noexcept;
+memory_resource *null_memory_resource() noexcept;
+template <class T = byte>
+class polymorphic_allocator {
+  memory_resource *res = nullptr;
+public:
+  polymorphic_allocator() noexcept : res(get_default_resource()) {}
+  explicit polymorphic_allocator(memory_resource *r) : res(r) {}
+  memory_resource *resource() const noexcept { return res; }
+};
+} // namespace pmr
+} // namespace std

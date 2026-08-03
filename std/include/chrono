@@ -1,0 +1,3 @@
+// NeverC <chrono> scaffold
+#pragma once
+namespace std { namespace chrono {} }

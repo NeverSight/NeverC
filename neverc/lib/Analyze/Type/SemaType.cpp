@@ -256,6 +256,7 @@ DeclaratorChunk *maybeMovePastReturnType(Declarator &declarator, unsigned i,
       continue;
 
     case DeclaratorChunk::Pointer:
+    case DeclaratorChunk::Reference:
     case DeclaratorChunk::Array:
       return result;
 
@@ -269,6 +270,7 @@ DeclaratorChunk *maybeMovePastReturnType(Declarator &declarator, unsigned i,
           continue;
 
         case DeclaratorChunk::Pointer:
+        case DeclaratorChunk::Reference:
           result = &ptrChunk;
           goto continue_outer;
         }
@@ -304,6 +306,7 @@ void distributeFunctionTypeAttr(TypeProcessingState &state, ParsedAttr &attr,
 
     case DeclaratorChunk::Paren:
     case DeclaratorChunk::Pointer:
+    case DeclaratorChunk::Reference:
     case DeclaratorChunk::Array:
       continue;
     }
@@ -701,7 +704,8 @@ QualType convertDeclSpecToType(TypeProcessingState &state) {
     break;
   case DeclSpec::TST_enum:
   case DeclSpec::TST_union:
-  case DeclSpec::TST_struct: {
+  case DeclSpec::TST_struct:
+  case DeclSpec::TST_class: {
     TagDecl *D = dyn_cast_or_null<TagDecl>(DS.getRepAsDecl());
     if (!D) {
       // Missing tag decl after lookup (parse error recovery).
@@ -1000,6 +1004,20 @@ QualType Sema::FormPointerType(QualType T, SourceLocation Loc,
     return QualType();
 
   return Context.getPointerType(T);
+}
+
+QualType Sema::FormReferenceType(QualType T, bool LValueRef,
+                                 SourceLocation Loc,
+                                 DeclarationName Entity) {
+  (void)Entity;
+  if (checkQualifiedFunction(*this, T, Loc))
+    return QualType();
+  // Collapse reference-to-reference (C++ [dcl.ref]p6 simplified).
+  if (const ReferenceType *RT = T->getAs<ReferenceType>())
+    T = RT->getPointeeType();
+  if (LValueRef)
+    return Context.getLValueReferenceType(T);
+  return Context.getRValueReferenceType(T);
 }
 
 QualType Sema::FormBitIntType(bool IsUnsigned, Expr *BitWidth,
@@ -1497,6 +1515,13 @@ void diagnoseRedundantReturnTypeQualifiers(Sema &S, QualType RetTy,
       return;
     }
 
+    case DeclaratorChunk::Reference: {
+      DeclaratorChunk::ReferenceTypeInfo &RTI = OuterChunk.Ref;
+      S.diagnoseIgnoredQualifiers(diag::warn_qual_return_type, RTI.TypeQuals,
+                                  SourceLocation());
+      return;
+    }
+
     case DeclaratorChunk::Function:
     case DeclaratorChunk::Array:
       unsigned AtomicQual = RetTy->isAtomicType() ? DeclSpec::TQ_atomic : 0;
@@ -1568,6 +1593,7 @@ QualType getDeclSpecTypeForDeclarator(TypeProcessingState &state,
       case TagTypeKind::Enum:
         llvm_unreachable("unhandled tag kind");
       case TagTypeKind::Struct:
+      case TagTypeKind::Class:
         Error = 1;
         break;
       case TagTypeKind::Union:
@@ -1918,6 +1944,7 @@ bool hasOuterPointerLikeChunk(const Declarator &D, unsigned endIndex) {
       break;
     case DeclaratorChunk::Array:
     case DeclaratorChunk::Pointer:
+    case DeclaratorChunk::Reference:
       return true;
     case DeclaratorChunk::Function:
       break;
@@ -1928,6 +1955,7 @@ bool hasOuterPointerLikeChunk(const Declarator &D, unsigned endIndex) {
 
 bool isNoDerefableChunk(const DeclaratorChunk &Chunk) {
   return (Chunk.Kind == DeclaratorChunk::Pointer ||
+          Chunk.Kind == DeclaratorChunk::Reference ||
           Chunk.Kind == DeclaratorChunk::Array);
 }
 
@@ -2039,6 +2067,7 @@ TypeSourceInfo *getFullTypeForDeclarator(TypeProcessingState &state,
         continue;
 
       case DeclaratorChunk::Pointer:
+      case DeclaratorChunk::Reference:
         ++NumPointersRemaining;
         continue;
       }
@@ -2213,6 +2242,12 @@ TypeSourceInfo *getFullTypeForDeclarator(TypeProcessingState &state,
       if (DeclType.Ptr.TypeQuals)
         T = S.FormQualifiedType(T, DeclType.Loc, DeclType.Ptr.TypeQuals);
       break;
+    case DeclaratorChunk::Reference:
+      T = S.FormReferenceType(T, DeclType.Ref.LValueRef != 0, DeclType.Loc,
+                              Name);
+      if (DeclType.Ref.TypeQuals)
+        T = S.FormQualifiedType(T, DeclType.Loc, DeclType.Ref.TypeQuals);
+      break;
     case DeclaratorChunk::Array: {
       DeclaratorChunk::ArrayTypeInfo &ATI = DeclType.Arr;
       Expr *ArraySize = static_cast<Expr *>(ATI.NumElts);
@@ -2354,6 +2389,18 @@ TypeSourceInfo *getFullTypeForDeclarator(TypeProcessingState &state,
         EPI.ExtInfo = EI;
         EPI.Variadic = FTI.isVariadic;
         EPI.EllipsisLoc = FTI.getEllipsisLoc();
+
+        // C++ exception-specification from the function-chunk MethodQualifiers
+        // DeclSpec (local DS updated by ParseExceptionSpecification).
+        if (LangOpts.CPlusPlus && FTI.MethodQualifiers &&
+            FTI.MethodQualifiers->isNoexceptSpecified()) {
+          if (FTI.MethodQualifiers->isNoexceptDependent())
+            EPI.ExceptionSpec.Type = EST_DependentNoexcept;
+          else if (FTI.MethodQualifiers->isNoexceptFalse())
+            EPI.ExceptionSpec.Type = EST_NoexceptFalse;
+          else
+            EPI.ExceptionSpec.Type = EST_BasicNoexcept;
+        }
 
         // Otherwise, we have a function with a parameter list that is
         // potentially variadic.
@@ -2579,6 +2626,12 @@ public:
   // Allow to fill pointee's type locations, e.g.,
   //   int __attr * __attr * __attr *p;
   void VisitPointerTypeLoc(PointerTypeLoc TL) { Visit(TL.getNextTypeLoc()); }
+  void VisitLValueReferenceTypeLoc(LValueReferenceTypeLoc TL) {
+    Visit(TL.getNextTypeLoc());
+  }
+  void VisitRValueReferenceTypeLoc(RValueReferenceTypeLoc TL) {
+    Visit(TL.getNextTypeLoc());
+  }
   void VisitTypedefTypeLoc(TypedefTypeLoc TL) {
     TL.setNameLoc(DS.getTypeSpecTypeLoc());
   }
@@ -2692,6 +2745,14 @@ public:
     assert(Chunk.Kind == DeclaratorChunk::Pointer);
     TL.setStarLoc(Chunk.Loc);
   }
+  void VisitLValueReferenceTypeLoc(LValueReferenceTypeLoc TL) {
+    assert(Chunk.Kind == DeclaratorChunk::Reference);
+    TL.setAmpLoc(Chunk.Loc);
+  }
+  void VisitRValueReferenceTypeLoc(RValueReferenceTypeLoc TL) {
+    assert(Chunk.Kind == DeclaratorChunk::Reference);
+    TL.setAmpAmpLoc(Chunk.Loc);
+  }
   void VisitArrayTypeLoc(ArrayTypeLoc TL) {
     assert(Chunk.Kind == DeclaratorChunk::Array);
     TL.setLBracketLoc(Chunk.Loc);
@@ -2741,6 +2802,15 @@ void fillAtomicQualLoc(AtomicTypeLoc ATL, const DeclaratorChunk &Chunk) {
   case DeclaratorChunk::Paren:
   case DeclaratorChunk::Pointer:
     Loc = Chunk.Ptr.AtomicQualLoc;
+    break;
+  case DeclaratorChunk::Reference:
+    Loc = Chunk.Loc;
+    break;
+  case DeclaratorChunk::Reference:
+    Loc = Chunk.Loc;
+    break;
+  case DeclaratorChunk::Reference:
+    Loc = Chunk.Loc;
     break;
   }
 
@@ -3349,6 +3419,7 @@ bool distributeNullabilityTypeAttr(TypeProcessingState &state, QualType type,
     DeclaratorChunk &chunk = declarator.getTypeObject(i - 1);
     switch (chunk.Kind) {
     case DeclaratorChunk::Pointer:
+    case DeclaratorChunk::Reference:
       return moveToChunk(chunk, false);
 
     case DeclaratorChunk::Paren:

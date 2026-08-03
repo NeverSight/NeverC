@@ -1,0 +1,4 @@
+// NeverC <stdexcept> scaffold
+#pragma once
+#include <exception>
+namespace std { class logic_error; class runtime_error; }

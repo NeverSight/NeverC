@@ -190,6 +190,8 @@ bool TypePrinter::canPrefixQualifiers(const Type *T) {
   case Type::Adjusted:
   case Type::Decayed:
   case Type::Pointer:
+  case Type::LValueReference:
+  case Type::RValueReference:
   case Type::Vector:
   case Type::ExtVector:
   case Type::ConstantMatrix:
@@ -458,8 +460,25 @@ void TypePrinter::printConstantMatrixAfter(const ConstantMatrixType *T,
 
 void FunctionProtoType::printExceptionSpecification(
     llvm::raw_ostream &OS, const PrintingPolicy &) const {
-  if (getExceptionSpecType() == EST_NoThrow)
+  switch (getExceptionSpecType()) {
+  case EST_NoThrow:
     OS << " __attribute__((nothrow))";
+    break;
+  case EST_BasicNoexcept:
+    OS << " noexcept";
+    break;
+  case EST_NoexceptFalse:
+    OS << " noexcept(false)";
+    break;
+  case EST_DependentNoexcept:
+    OS << " noexcept(/*expr*/)";
+    break;
+  case EST_DynamicNone:
+    OS << " throw()";
+    break;
+  default:
+    break;
+  }
 }
 
 void TypePrinter::printFunctionProtoBefore(const FunctionProtoType *T,

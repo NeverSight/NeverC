@@ -89,6 +89,7 @@ bool Declarator::isDeclarationOfFunction() const {
     case DeclaratorChunk::Paren:
       continue;
     case DeclaratorChunk::Pointer:
+    case DeclaratorChunk::Reference:
     case DeclaratorChunk::Array:
       return false;
     }
@@ -121,6 +122,7 @@ bool Declarator::isDeclarationOfFunction() const {
   case TST_bitint:
   case TST_struct:
   case TST_union:
+  case TST_class:
   case TST_unspecified:
   case TST_void:
   case TST_wchar:
@@ -347,6 +349,8 @@ const char *DeclSpec::getSpecifierName(DeclSpec::TST T,
     return tok::getKeywordSpelling(tok::kw_union);
   case DeclSpec::TST_struct:
     return tok::getKeywordSpelling(tok::kw_struct);
+  case DeclSpec::TST_class:
+    return tok::getKeywordSpelling(tok::kw_class);
   case DeclSpec::TST_typename:
     return "type-name";
   case DeclSpec::TST_typeofType:
@@ -706,6 +710,43 @@ bool DeclSpec::setFunctionSpecNoreturn(SourceLocation Loc,
   return false;
 }
 
+bool DeclSpec::setFunctionSpecVirtual(SourceLocation Loc, const char *&PrevSpec,
+                                      unsigned &DiagID) {
+  if (FS_virtual_specified) {
+    DiagID = diag::warn_duplicate_declspec;
+    PrevSpec = tok::getKeywordSpelling(tok::kw_virtual);
+    return true;
+  }
+  FS_virtual_specified = true;
+  FS_virtualLoc = Loc;
+  return false;
+}
+
+bool DeclSpec::setFunctionSpecExplicit(SourceLocation Loc, const char *&PrevSpec,
+                                       unsigned &DiagID) {
+  if (FS_explicit_specified) {
+    DiagID = diag::warn_duplicate_declspec;
+    PrevSpec = tok::getKeywordSpelling(tok::kw_explicit);
+    return true;
+  }
+  FS_explicit_specified = true;
+  FS_explicitLoc = Loc;
+  return false;
+}
+
+bool DeclSpec::setFunctionSpecFriend(SourceLocation Loc, const char *&PrevSpec,
+                                     unsigned &DiagID) {
+  if (FS_friend_specified) {
+    DiagID = diag::warn_duplicate_declspec;
+    PrevSpec = tok::getKeywordSpelling(tok::kw_friend);
+    return true;
+  }
+  FS_friend_specified = true;
+  FS_friendLoc = Loc;
+  return false;
+}
+
+
 bool DeclSpec::SetConstexprSpec(ConstexprSpecKind ConstexprKind,
                                 SourceLocation Loc, const char *&PrevSpec,
                                 unsigned &DiagID) {
@@ -844,3 +885,18 @@ bool DeclSpec::isMissingDeclaratorOk() {
   return isDeclRep(tst) && getRepAsDecl() != nullptr &&
          StorageClassSpec != DeclSpec::SCS_typedef;
 }
+
+
+
+bool DeclSpec::setFunctionSpecNoexcept(SourceLocation Loc, const char *&PrevSpec,
+                                      unsigned &DiagID) {
+  if (FS_noexcept_specified) {
+    DiagID = diag::warn_duplicate_declspec;
+    PrevSpec = tok::getKeywordSpelling(tok::kw_noexcept);
+    return true;
+  }
+  FS_noexcept_specified = true;
+  FS_noexceptLoc = Loc;
+  return false;
+}
+

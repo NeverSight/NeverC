@@ -31,8 +31,11 @@ using namespace sema;
 
 Decl *Sema::OnField(Scope *S, Decl *TagD, SourceLocation DeclStart,
                     Declarator &D, Expr *BitfieldWidth) {
+  AccessSpecifier AS = AS_public;
+  if (getLangOpts().CPlusPlus)
+    AS = getDefaultCXXAccessSpecifierFor(dyn_cast_or_null<TagDecl>(TagD));
   FieldDecl *Res = OnField(S, cast_if_present<RecordDecl>(TagD), DeclStart, D,
-                           BitfieldWidth, AS_public);
+                           BitfieldWidth, AS);
   return Res;
 }
 

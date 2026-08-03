@@ -1,0 +1,60 @@
+// NeverC <concepts> scaffold (C++20, non-stream)
+#pragma once
+#include <type_traits>
+
+namespace std {
+
+template <class T, class U>
+concept same_as = is_same_v<T, U> && is_same_v<U, T>;
+
+template <class Derived, class Base>
+concept derived_from =
+    is_base_of_v<Base, Derived> &&
+    is_convertible_v<const volatile Derived *, const volatile Base *>;
+
+template <class T>
+concept integral = is_integral_v<T>;
+
+template <class T>
+concept signed_integral = integral<T> && is_signed_v<T>;
+
+template <class T>
+concept unsigned_integral = integral<T> && is_unsigned_v<T>;
+
+template <class T>
+concept floating_point = is_floating_point_v<T>;
+
+template <class F, class... Args>
+concept invocable = requires(F &&f, Args &&...args) {
+  ((F &&)f)((Args &&)args...);
+};
+
+template <class T>
+concept destructible = is_nothrow_destructible_v<T>;
+
+template <class T, class... Args>
+concept constructible_from =
+    destructible<T> && is_constructible_v<T, Args...>;
+
+template <class T>
+concept default_initializable = constructible_from<T> && requires {
+  T{};
+};
+
+template <class T>
+concept move_constructible = is_move_constructible_v<T>;
+
+template <class T>
+concept copy_constructible =
+    move_constructible<T> && is_copy_constructible_v<T>;
+
+template <class LHS, class RHS>
+concept assignable_from = is_assignable_v<LHS, RHS>;
+
+template <class T>
+concept swappable = requires(T &a, T &b) {
+  // std::swap may be declared later; require exchange-like usability.
+  a = static_cast<T &&>(b);
+};
+
+} // namespace std

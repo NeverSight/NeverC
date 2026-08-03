@@ -1,0 +1,8 @@
+// NeverC <cwchar> scaffold
+#pragma once
+#include <wchar.h>
+namespace std {
+  using ::wchar_t;
+  using ::wint_t;
+  using ::wcslen; using ::wcscmp; using ::wcsncmp;
+}

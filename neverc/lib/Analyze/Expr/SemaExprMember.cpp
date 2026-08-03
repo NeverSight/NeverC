@@ -867,8 +867,11 @@ ExprResult Sema::OnMemberAccessExpr(Scope *S, Expr *Base, SourceLocation OpLoc,
   ExprResult Res =
       FormMemberReferenceExpr(Base, Base->getType(), OpLoc, IsArrow, NameInfo);
 
-  if (!Res.isInvalid() && isa<MemberExpr>(Res.get()))
+  if (!Res.isInvalid() && isa<MemberExpr>(Res.get())) {
+    if (ValueDecl *MD = cast<MemberExpr>(Res.get())->getMemberDecl())
+      (void)CheckMemberAccess(OpLoc, MD);
     CheckMemberAccessOfNoDeref(cast<MemberExpr>(Res.get()));
+  }
 
   return Res;
 }

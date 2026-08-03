@@ -4,6 +4,8 @@
 #include "neverc/Analyze/CleanupInfo.h"
 #include "neverc/Analyze/DeclSpec.h"
 #include "neverc/Analyze/IdentifierResolver.h"
+#include "neverc/Analyze/Overload.h"
+#include "neverc/Analyze/Template.h"
 #include "neverc/Analyze/Ownership.h"
 #include "neverc/Analyze/Scope.h"
 #include "neverc/Analyze/SemaNameLookupKinds.h"
@@ -30,6 +32,7 @@
 #include <optional>
 #include <string>
 #include <tuple>
+#include <cstdint>
 #include <vector>
 
 namespace llvm {
@@ -39,6 +42,8 @@ struct InlineAsmIdentifierInfo;
 } // namespace llvm
 
 namespace neverc {
+class CXXCtorInitializer;
+class TemplateParameterList;
 class TreeConsumer;
 class TreeContext;
 class ArrayType;
@@ -53,18 +58,24 @@ class EnumConstantDecl;
 class Expr;
 class FormatAttr;
 class FunctionDecl;
+class CXXMethodDecl;
+class CXXRecordDecl;
 class FunctionProtoType;
-class ImplicitConversionSequence;
 class InitializationSequence;
 class InitializedEntity;
 class LangOptions;
 class LookupResult;
 class NamedDecl;
+class TagDecl;
+class NamespaceDecl;
+class NestedNameSpecifier;
+class NestedNameSpecifierLocBuilder;
+class UsingDirectiveDecl;
+class LinkageSpecDecl;
 class ParmVarDecl;
 class PrepEngine;
 class QualType;
 class SemaPluginHooks;
-class StandardConversionSequence;
 class Stmt;
 class StringLiteral;
 class Token;
@@ -905,6 +916,9 @@ public:
                              const DeclSpec *DS = nullptr);
   QualType FormPointerType(QualType T, SourceLocation Loc,
                            DeclarationName Entity);
+  QualType FormReferenceType(QualType T, bool LValueRef,
+                            SourceLocation Loc,
+                            DeclarationName Entity = DeclarationName());
   QualType FormArrayType(QualType T, ArraySizeModifier ASM, Expr *ArraySize,
                          unsigned Quals, SourceRange Brackets,
                          DeclarationName Entity);
@@ -1353,6 +1367,140 @@ public:
                 SourceLocation RBrac, const ParsedAttributesView &AttrList);
 
   void OnTagStartDefinition(Scope *S, Decl *TagDecl);
+
+  //===--------------------------------------------------------------------===//
+  // C++ namespaces / linkage / using
+  //===--------------------------------------------------------------------===//
+  Decl *OnStartNamespaceDef(Scope *NamespcScope, SourceLocation InlineLoc,
+                            SourceLocation NamespaceLoc, SourceLocation IdentLoc,
+                            IdentifierInfo *II, SourceLocation LBrace,
+                            const ParsedAttributesView &AttrList,
+                            UsingDirectiveDecl *&ImplicitUsing);
+  void OnFinishNamespaceDef(Decl *Dcl, SourceLocation RBrace);
+  Decl *OnNamespaceAliasDef(Scope *S, SourceLocation NamespaceLoc,
+                            SourceLocation AliasLoc, IdentifierInfo *Alias,
+                            SourceLocation TargetNameLoc,
+                            IdentifierInfo *TargetName);
+  Decl *OnUsingDirective(Scope *S, SourceLocation UsingLoc,
+                         SourceLocation NamespcLoc, SourceLocation IdentLoc,
+                         IdentifierInfo *NamespcName);
+  Decl *OnUsingDeclaration(Scope *S, SourceLocation UsingLoc,
+                           SourceLocation NameLoc, IdentifierInfo *Name);
+  Decl *OnStartLinkageSpec(Scope *S, SourceLocation ExternLoc,
+                           SourceLocation LangLoc, llvm::StringRef Lang,
+                           SourceLocation LBraceLoc);
+  Decl *OnFinishLinkageSpec(Scope *S, Decl *LinkageSpec,
+                            SourceLocation RBraceLoc);
+  AccessSpecifier getDefaultCXXAccessSpecifierFor(const TagDecl *TD);
+
+  /// Build a C++ 'this' expression. Type is pointer-to-current-class or dependent.
+  ExprResult OnCXXThis(SourceLocation Loc);
+  TypeResult OnBaseTypeSpecifier(Scope *S, NestedNameSpecifierLocBuilder &SS,
+                                  IdentifierInfo *Name, SourceLocation NameLoc);
+
+  // C++ Phase 1 scaffolding actions
+  TemplateParameterList *
+  OnTemplateParameterList(unsigned Depth, SourceLocation ExportLoc,
+                          SourceLocation TemplateLoc,
+                          ArrayRef<NamedDecl *> Params,
+                          SourceLocation RAngleLoc);
+  bool CheckRequiresClause(TemplateParameterList *Params);
+  NamedDecl *OnTypeParameter(Scope *S, bool Typename, SourceLocation KeyLoc,
+                             unsigned Depth, unsigned Position,
+                             IdentifierInfo *Id, SourceLocation IdLoc);
+  NamedDecl *OnNonTypeTemplateParameter(Scope *S, Declarator &D, unsigned Depth,
+                                        unsigned Position);
+  NamedDecl *OnTemplateTemplateParameter(Scope *S, SourceLocation TmpLoc,
+                                         unsigned Depth, unsigned Position,
+                                         TemplateParameterList *Params,
+                                         IdentifierInfo *Id,
+                                         SourceLocation IdLoc);
+  Decl *OnConceptDefinition(Scope *S, SourceLocation TemplateLoc,
+                            TemplateParameterList *Params,
+                            SourceLocation ConceptLoc, IdentifierInfo *Id,
+                            SourceLocation IdLoc, Expr *Constraint);
+  Decl *OnTemplateDeclarator(Scope *S, TemplateParameterList *Params,
+                             Declarator &D);
+  /// Substitute template arguments into a type (Phase-2 scaffold).
+  QualType SubstType(QualType T, const MultiLevelTemplateArgumentList &Args,
+                     SourceLocation Loc, DeclarationName Entity);
+
+  /// Substitute template arguments into an expression (Phase-4 scaffold).
+  ExprResult SubstExpr(Expr *E, const MultiLevelTemplateArgumentList &Args);
+
+  /// Instantiate a function template specialization (Phase-3 scaffold).
+  FunctionDecl *InstantiateFunctionTemplate(
+      FunctionTemplateDecl *FTD, const MultiLevelTemplateArgumentList &Args,
+      SourceLocation PointOfInstantiation);
+
+  /// Instantiate a class template specialization (Phase-3 scaffold).
+  CXXRecordDecl *InstantiateClassTemplate(
+      ClassTemplateDecl *CTD, const MultiLevelTemplateArgumentList &Args,
+      SourceLocation PointOfInstantiation);
+
+  
+  void AddOverloadCandidate(FunctionDecl *FD, ArrayRef<Expr *> Args,
+                            OverloadCandidateSet &CandidateSet);
+  void AddMethodCandidate(CXXMethodDecl *Method, Expr *Object,
+                          ArrayRef<Expr *> Args,
+                          OverloadCandidateSet &CandidateSet);
+  FunctionDecl *ResolveAddressOfOverloadedFunction(Expr *Fn, QualType TargetType,
+                                                   bool Complain,
+                                                   DeclAccessPair &Found);
+
+  ExprResult OnLambdaExpr(SourceLocation BeginLoc, SourceLocation EndIntro,
+                          Stmt *Body, unsigned CaptureDefault = 0,
+                          ArrayRef<IdentifierInfo *> Captures = {},
+                          ArrayRef<QualType> ParamTypes = {});
+  void SetCtorInitializers(CXXConstructorDecl *Ctor,
+                           ArrayRef<CXXCtorInitializer *> Inits);
+  CXXCtorInitializer *BuildMemberInitializer(FieldDecl *Member,
+                                             SourceLocation MemberLoc,
+                                             SourceLocation LParen,
+                                             Expr *Init, SourceLocation RParen);
+  CXXCtorInitializer *BuildBaseInitializer(QualType BaseTy, bool IsVirtual,
+                                           SourceLocation LParen, Expr *Init,
+                                           SourceLocation RParen);
+  ExprResult OnCXXNew(SourceLocation NewLoc, Declarator &D, Expr *Init);
+  ExprResult OnCXXDelete(SourceLocation DeleteLoc, bool ArrayForm, Expr *Arg);
+  ExprResult OnCXXNamedCast(SourceLocation KWLoc, tok::TokenKind Kind,
+                            TypeResult Ty, Expr *Op);
+  ExprResult OnCXXThrow(SourceLocation ThrowLoc, Expr *Op);
+  ExprResult OnCXXTypeidOfExpr(SourceLocation TypeidLoc, Expr *E);
+  ExprResult OnCXXTypeidOfType(SourceLocation TypeidLoc, TypeResult T);
+  ExprResult OnCoawaitExpr(SourceLocation Loc, Expr *Op);
+  ExprResult OnRequiresExpr(SourceLocation Loc, Stmt *Body);
+  ExprResult OnCoyieldExpr(SourceLocation Loc, Expr *Op);
+  StmtResult OnCoreturnStmt(SourceLocation Loc, Expr *Op);
+  
+  /// C++ constexpr / consteval scaffolding.
+  bool CheckConstexprFunctionDefinition(const FunctionDecl *FD);
+  bool EvaluateAsConstantExpr(const Expr *E, llvm::APSInt &Result);
+
+  StmtResult OnCXXForRangeStmt(SourceLocation ForLoc, Expr *Range,
+                               Stmt *Body, Stmt *LoopVar = nullptr);
+  StmtResult OnCXXTryBlock(SourceLocation TryLoc, Stmt *TryBlock,
+                           ArrayRef<Stmt *> Handlers);
+  StmtResult OnCXXCatchBlock(SourceLocation CatchLoc, Decl *ExDecl,
+                             Stmt *Handler);
+  /// C++20 modules: scaffold for module-declaration / import.
+  Decl *OnModuleDecl(SourceLocation ModuleLoc, bool IsExport, bool IsImport,
+                     StringRef ModuleName = {});
+  unsigned getNumModuleDirectives() const { return NumModuleDirectives; }
+  const std::vector<uint8_t> &getLastBMIBlob() const { return LastBMIBlob; }
+  Decl *OnExceptionDeclarator(Scope *S, Declarator &D);
+
+
+  /// Resolve a nested-name-specifier sequence into a NestedNameSpecifier*.
+  NestedNameSpecifier *BuildNestedNameSpecifier(
+      Scope *S, NestedNameSpecifierLocBuilder &Builder);
+
+  /// Build a C++ 'this' expression. Type is pointer-to-current-class or dependent.
+  ExprResult OnCXXThis(SourceLocation Loc);
+
+  /// Resolve a nested-name-specifier sequence into a NestedNameSpecifier*.
+  NestedNameSpecifier *BuildNestedNameSpecifier(
+      Scope *S, NestedNameSpecifierLocBuilder &Builder);
 
   void OnTagFinishDefinition(Scope *S, Decl *TagDecl, SourceRange BraceRange);
 
@@ -2848,6 +2996,10 @@ public:
 
   bool IsStringLiteralToNonConstPointerConversion(Expr *From, QualType ToType);
 
+  /// Build an ICS for overload ranking (standard conversions + bad).
+  ImplicitConversionSequence TryImplicitConversion(Expr *From, QualType ToType,
+                                                   bool CStyle = false);
+
   ExprResult PerformImplicitConversion(Expr *From, QualType ToType,
                                        AssignmentAction Action);
   ExprResult
@@ -3322,6 +3474,8 @@ public:
   }
 
 private:
+  unsigned NumModuleDirectives = 0;
+  std::vector<uint8_t> LastBMIBlob;
   struct MisalignedMember {
     Expr *E;
     RecordDecl *RD;

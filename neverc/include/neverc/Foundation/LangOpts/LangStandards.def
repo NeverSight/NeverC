@@ -90,6 +90,18 @@ LANGSTANDARD(gnu23, "gnu23",
              LineComment | C99 | C11 | C17 | C23 | Digraphs | GNUMode | HexFloat)
 LANGSTANDARD_ALIAS_DEPR(gnu23, "gnu2x")
 
+// C++20 modes (NeverC C++ support target).
+LANGSTANDARD(cxx20, "c++20",
+             CXX, "ISO C++ 2020",
+             LineComment | Digraphs | HexFloat | CPlusPlus | CPlusPlus11 |
+             CPlusPlus14 | CPlusPlus17 | CPlusPlus20)
+LANGSTANDARD_ALIAS(cxx20, "c++2a")
+LANGSTANDARD(gnucxx20, "gnu++20",
+             CXX, "ISO C++ 2020 with GNU extensions",
+             LineComment | Digraphs | HexFloat | GNUMode | CPlusPlus |
+             CPlusPlus11 | CPlusPlus14 | CPlusPlus17 | CPlusPlus20)
+LANGSTANDARD_ALIAS(gnucxx20, "gnu++2a")
+
 #undef LANGSTANDARD
 #undef LANGSTANDARD_ALIAS
 #undef LANGSTANDARD_ALIAS_DEPR

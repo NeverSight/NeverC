@@ -17,6 +17,9 @@ add_neverc_library(nevercAnalyze
   Core/SemaFixItUtils.cpp
 
   Decl/SemaDecl.cpp
+  Decl/SemaCXX.cpp
+  SemaOverload.cpp
+  SemaTemplate.cpp
   Decl/SemaDeclMerge.cpp
   Decl/SemaDeclMergeRedecl.cpp
   Decl/SemaDeclDeclarator.cpp

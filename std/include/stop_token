@@ -1,0 +1,21 @@
+// NeverC <stop_token> scaffold (C++20)
+#pragma once
+namespace std {
+class stop_token {
+public:
+  stop_token() noexcept = default;
+  bool stop_requested() const noexcept { return false; }
+  bool stop_possible() const noexcept { return false; }
+};
+class stop_source {
+public:
+  stop_source() = default;
+  stop_token get_token() const noexcept { return {}; }
+  bool request_stop() noexcept { return false; }
+};
+template <class Callback> class stop_callback {
+public:
+  template <class C>
+  stop_callback(const stop_token &, C &&) {}
+};
+} // namespace std

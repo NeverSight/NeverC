@@ -1,0 +1,21 @@
+// NeverC <filesystem> scaffold (non-stream, C++17/20)
+#pragma once
+#include <string>
+namespace std {
+namespace filesystem {
+class path {
+  std::string s;
+public:
+  path() = default;
+  path(const std::string &p) : s(p) {}
+  path(const char *p) : s(p ? p : "") {}
+  const std::string &string() const { return s; }
+  path filename() const { return path(s); }
+  bool empty() const noexcept { return s.empty(); }
+};
+inline bool exists(const path &) { return false; }
+inline bool is_regular_file(const path &) { return false; }
+inline bool is_directory(const path &) { return false; }
+inline path current_path() { return path("."); }
+} // namespace filesystem
+} // namespace std

@@ -1,0 +1,53 @@
+// NeverC <compare> scaffold (C++20)
+#pragma once
+
+namespace std {
+
+class partial_ordering {
+  signed char v;
+  explicit constexpr partial_ordering(signed char x) noexcept : v(x) {}
+public:
+  static const partial_ordering less;
+  static const partial_ordering equivalent;
+  static const partial_ordering greater;
+  static const partial_ordering unordered;
+  friend constexpr bool operator==(partial_ordering lhs,
+                                   partial_ordering rhs) noexcept {
+    return lhs.v == rhs.v;
+  }
+};
+
+class weak_ordering {
+  signed char v;
+  explicit constexpr weak_ordering(signed char x) noexcept : v(x) {}
+public:
+  static const weak_ordering less;
+  static const weak_ordering equivalent;
+  static const weak_ordering greater;
+};
+
+class strong_ordering {
+  signed char v;
+  explicit constexpr strong_ordering(signed char x) noexcept : v(x) {}
+public:
+  static const strong_ordering less;
+  static const strong_ordering equal;
+  static const strong_ordering equivalent;
+  static const strong_ordering greater;
+};
+
+inline constexpr partial_ordering partial_ordering::less{-1};
+inline constexpr partial_ordering partial_ordering::equivalent{0};
+inline constexpr partial_ordering partial_ordering::greater{1};
+inline constexpr partial_ordering partial_ordering::unordered{-127};
+
+inline constexpr weak_ordering weak_ordering::less{-1};
+inline constexpr weak_ordering weak_ordering::equivalent{0};
+inline constexpr weak_ordering weak_ordering::greater{1};
+
+inline constexpr strong_ordering strong_ordering::less{-1};
+inline constexpr strong_ordering strong_ordering::equal{0};
+inline constexpr strong_ordering strong_ordering::equivalent{0};
+inline constexpr strong_ordering strong_ordering::greater{1};
+
+} // namespace std

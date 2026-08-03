@@ -229,7 +229,20 @@ Retry:
     Res = ParseBreakStatement();
     SemiError = tok::getKeywordSpelling(tok::kw_break);
     break;
-  case tok::kw_return:
+  case tok::kw_co_return: {
+      if (!getLangOpts().CPlusPlus) {
+        Diag(Tok, diag::err_expected) << "statement";
+        ConsumeToken();
+        return StmtError();
+      }
+      SourceLocation Loc = ConsumeToken();
+      ExprResult E;
+      if (Tok.isNot(tok::semi))
+        E = ParseExpression();
+      if (Tok.is(tok::semi)) ConsumeToken(); else Diag(Tok, diag::err_expected) << ";";
+      return Actions.OnCoreturnStmt(Loc, E.get());
+    }
+    case tok::kw_return:
     Res = ParseReturnStatement();
     SemiError = tok::getKeywordSpelling(tok::kw_return);
     break;
@@ -262,7 +275,13 @@ Retry:
     // a new scope.
     return StmtEmpty();
 
-  case tok::kw___try:
+  case tok::kw_try:
+      if (getLangOpts().CPlusPlus)
+        return ParseCXXTryBlock();
+      Diag(Tok, diag::err_expected) << "statement";
+      ConsumeToken();
+      return StmtError();
+    case tok::kw___try:
     ProhibitAttributes(BracketAttrs);
     ProhibitAttributes(GNUAttrs);
     return ParseSEHTryBlock();
@@ -716,4 +735,58 @@ StmtResult Parser::ParseDefaultStatement(ParsedStmtContext StmtCtx) {
   warnDeclAfterLabel(*this, SubStmt.get());
   return Actions.OnDefaultStmt(DefaultLoc, ColonLoc, SubStmt.get(),
                                getCurScope());
+}
+
+
+StmtResult Parser::ParseCXXForRangeStatement(SourceLocation ForLoc) {
+  // for ( for-range-declaration : for-range-initializer ) statement
+  assert(getLangOpts().CPlusPlus && "range-for is a C++ feature");
+
+  if (Tok.is(tok::l_paren))
+    ConsumeParen();
+  else {
+    Diag(Tok, diag::err_expected) << tok::l_paren;
+    return StmtError();
+  }
+
+  // Parse for-range-declaration (reuse ForInit declarator context).
+  ParsedAttributes attrs(AttrFactory);
+  ParsedAttributes DeclSpecAttrs(AttrFactory);
+  SourceLocation DeclStart = Tok.getLocation(), DeclEnd;
+  Stmt *LoopVar = nullptr;
+  {
+    ColonProtectionRAIIObject ColonProtection(*this, /*ProtectColon=*/true);
+    DeclGroupPtrTy DG = ParseSimpleDeclaration(
+        DeclaratorContext::ForInit, DeclEnd, attrs, DeclSpecAttrs,
+        /*RequireSemi=*/false);
+    if (DG)
+      LoopVar = Actions.OnDeclStmt(DG, DeclStart, DeclEnd).get();
+  }
+
+  if (Tok.is(tok::colon))
+    ConsumeToken();
+  else
+    Diag(Tok, diag::err_expected) << tok::colon;
+
+  ExprResult RangeInit;
+  if (Tok.isNot(tok::r_paren) && Tok.isNot(tok::eof))
+    RangeInit = ParseExpression();
+
+  if (Tok.is(tok::r_paren))
+    ConsumeParen();
+  else
+    Diag(Tok, diag::err_expected) << tok::r_paren;
+
+  StmtVector Stmts;
+  ParsedAttributes DeclAttrs(AttrFactory);
+  ParsedAttributes BodyDeclSpecAttrs(AttrFactory);
+  StmtResult Body = ParseStatementOrDeclarationAfterAttributes(
+      Stmts, ParsedStmtContext::SubStmt, /*TrailingElseLoc=*/nullptr,
+      DeclAttrs, BodyDeclSpecAttrs);
+  if (Body.isInvalid())
+    return StmtError();
+
+  return Actions.OnCXXForRangeStmt(ForLoc, RangeInit.isUsable() ? RangeInit.get()
+                                                               : nullptr,
+                                   Body.get(), LoopVar);
 }

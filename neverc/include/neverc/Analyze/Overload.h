@@ -2,6 +2,7 @@
 #define NEVERC_ANALYZE_OVERLOAD_H
 
 #include "neverc/Foundation/Core/SourceLocation.h"
+#include "neverc/Foundation/Core/Specifiers.h"
 #include "neverc/Tree/Decl/Decl.h"
 #include "neverc/Tree/Expr/Expr.h"
 #include "neverc/Tree/Type/Type.h"
@@ -141,10 +142,15 @@ public:
 
 class ImplicitConversionSequence {
 public:
-  enum Kind { StandardConversion = 0, BadConversion = 1 };
+  enum Kind {
+    StandardConversion = 0,
+    UserDefinedConversion = 1,
+    EllipsisConversion = 2,
+    BadConversion = 3
+  };
 
 private:
-  enum { Uninitialized = 2 };
+  enum { Uninitialized = 4 };
 
   unsigned ConversionKind = Uninitialized;
 
@@ -166,6 +172,8 @@ public:
     case Uninitialized:
       break;
     case StandardConversion:
+    case UserDefinedConversion:
+    case EllipsisConversion:
       Standard = Other.Standard;
       break;
     case BadConversion:
@@ -204,6 +212,14 @@ public:
 
   void setStandard() { setKind(StandardConversion); }
 
+  void setUserDefined() { setKind(UserDefinedConversion); }
+
+  void setEllipsis() { setKind(EllipsisConversion); }
+
+  bool isUserDefined() const {
+    return isInitialized() && getKind() == UserDefinedConversion;
+  }
+
   void setAsIdentityConversion(QualType T) {
     setStandard();
     Standard.setAsIdentityConversion();
@@ -227,6 +243,85 @@ public:
     return ICS;
   }
 };
+
+
+// ===----------------------------------------------------------------------===
+// C++ overload candidate set (NeverC C++20 scaffolding)
+// ===----------------------------------------------------------------------===
+
+class CXXMethodDecl;
+class CXXRecordDecl;
+class Sema;
+
+/// Pair a named declaration with the access through which it was found.
+class DeclAccessPair {
+  NamedDecl *D = nullptr;
+  AccessSpecifier AS = AS_none;
+
+public:
+  DeclAccessPair() = default;
+  static DeclAccessPair make(NamedDecl *D, AccessSpecifier AS) {
+    DeclAccessPair P;
+    P.D = D;
+    P.AS = AS;
+    return P;
+  }
+  NamedDecl *getDecl() const { return D; }
+  NamedDecl *operator->() const { return D; }
+  operator NamedDecl *() const { return D; }
+  AccessSpecifier getAccess() const { return AS; }
+  void setDecl(NamedDecl *ND) { D = ND; }
+  void setAccess(AccessSpecifier A) { AS = A; }
+};
+
+struct OverloadCandidate {
+  FunctionDecl *Function = nullptr;
+  DeclAccessPair FoundDecl;
+  bool Viable = false;
+  bool IsSurrogate = false;
+  bool IgnoreObjectArgument = false;
+  unsigned ExplicitCallArguments = 0;
+  llvm::SmallVector<ImplicitConversionSequence, 4> Conversions;
+  ImplicitConversionSequence FailureKind;
+};
+
+class OverloadCandidateSet {
+public:
+  enum class CandidateSetKind { CSK_Normal, CSK_Operator, CSK_InitList, CSK_AddressOf };
+
+private:
+  SourceLocation Loc;
+  CandidateSetKind Kind;
+  llvm::SmallVector<OverloadCandidate, 16> Candidates;
+
+public:
+  explicit OverloadCandidateSet(SourceLocation Loc,
+                                CandidateSetKind Kind = CandidateSetKind::CSK_Normal)
+      : Loc(Loc), Kind(Kind) {}
+
+  SourceLocation getLocation() const { return Loc; }
+  CandidateSetKind getKind() const { return Kind; }
+
+  using iterator = OverloadCandidate *;
+  using const_iterator = const OverloadCandidate *;
+  iterator begin() { return Candidates.begin(); }
+  iterator end() { return Candidates.end(); }
+  const_iterator begin() const { return Candidates.begin(); }
+  const_iterator end() const { return Candidates.end(); }
+  bool empty() const { return Candidates.empty(); }
+  unsigned size() const { return static_cast<unsigned>(Candidates.size()); }
+  void clear() { Candidates.clear(); }
+
+  OverloadCandidate &addCandidate(unsigned NumConversions = 0) {
+    Candidates.emplace_back();
+    Candidates.back().Conversions.resize(NumConversions);
+    return Candidates.back();
+  }
+
+  /// Best viable function, or nullptr if none / ambiguous.
+  OverloadCandidate *BestViableFunction(Sema &S, SourceLocation Loc);
+};
+
 
 } // namespace neverc
 

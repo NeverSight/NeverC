@@ -1,0 +1,3 @@
+// NeverC <map> scaffold
+#pragma once
+namespace std { template<class K, class V> class map; }

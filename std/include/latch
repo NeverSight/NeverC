@@ -1,0 +1,14 @@
+// NeverC <latch> scaffold (C++20)
+#pragma once
+#include <cstddef>
+namespace std {
+class latch {
+  std::ptrdiff_t Count = 0;
+public:
+  explicit latch(std::ptrdiff_t expected) : Count(expected) {}
+  void count_down(std::ptrdiff_t n = 1) { Count -= n; }
+  void wait() const {}
+  void arrive_and_wait(std::ptrdiff_t n = 1) { count_down(n); wait(); }
+  bool try_wait() const noexcept { return Count <= 0; }
+};
+} // namespace std

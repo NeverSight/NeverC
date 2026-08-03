@@ -15,8 +15,10 @@ add_neverc_library(nevercSyntax
   Decl/DeclParserDeclarator.cpp
   Decl/DeclParserType.cpp
   Decl/DeclParserAttr.cpp
+  Decl/DeclParserCXX.cpp
 
   Expr/ExprParser.cpp
+  Expr/ExprParserCXX.cpp
   Expr/ExprParserLiteral.cpp
   Expr/InitParser.cpp
 

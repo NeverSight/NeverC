@@ -82,12 +82,24 @@ void LangOptions::setLangDefaults(LangOptions &Opts, Language Lang,
   Opts.C11 = Std.isC11();
   Opts.C17 = Std.isC17();
   Opts.C23 = Std.isC23();
+  Opts.CPlusPlus = Std.isCPlusPlus();
+  Opts.CPlusPlus11 = Std.isCPlusPlus11();
+  Opts.CPlusPlus14 = Std.isCPlusPlus14();
+  Opts.CPlusPlus17 = Std.isCPlusPlus17();
+  Opts.CPlusPlus20 = Std.isCPlusPlus20();
   Opts.GNUMode = Std.isGNUMode();
   Opts.GNUCVersion = Opts.GNUMode ? 40201 : 0;
   Opts.HexFloats = Std.hasHexFloats();
   Opts.Digraphs = Std.hasDigraphs();
 
-  Opts.Bool = Opts.C23;
+  // bool/true/false are keywords in C23 and all C++ modes.
+  Opts.Bool = Opts.C23 || Opts.CPlusPlus;
+  // wchar_t is a keyword in C++.
+  Opts.WChar = Opts.CPlusPlus;
+  // char8_t is a keyword in C++20.
+  Opts.Char8 = Opts.CPlusPlus20;
+  // NeverC C++ deliberately rejects iostream/stream facilities by default.
+  Opts.NoStreams = Opts.CPlusPlus;
 }
 
 FPOptions FPOptions::defaultWithoutTrailingStorage(const LangOptions &LO) {
@@ -129,6 +141,8 @@ llvm::StringRef neverc::languageToString(Language L) {
     return "LLVM IR";
   case Language::C:
     return "C";
+  case Language::CXX:
+    return "C++";
   }
   llvm_unreachable("invalid Language");
 }
@@ -180,6 +194,8 @@ LangStandard::Kind neverc::getDefaultLanguageStandard(neverc::Language Lang,
   (void)T;
   if (hasDefaultCLanguageStandard(Lang))
     return LangStandard::lang_gnu23;
+  if (Lang == Language::CXX)
+    return LangStandard::lang_gnucxx20;
   llvm::report_fatal_error("unsupported language for default standard");
 }
 

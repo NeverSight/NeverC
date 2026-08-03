@@ -1,0 +1,44 @@
+// NeverC <string_view> scaffold
+#pragma once
+#include <cstddef>
+#include <cstring>
+
+namespace std {
+
+template <class CharT>
+class basic_string_view {
+public:
+  using value_type = CharT;
+  using size_type = size_t;
+  using const_pointer = const CharT *;
+  using const_iterator = const CharT *;
+  static constexpr size_type npos = size_type(-1);
+
+  constexpr basic_string_view() noexcept : data_(nullptr), size_(0) {}
+  constexpr basic_string_view(const CharT *s, size_type count) noexcept
+      : data_(s), size_(count) {}
+  constexpr basic_string_view(const CharT *s)
+      : data_(s), size_(s ? __len(s) : 0) {}
+
+  constexpr const_pointer data() const noexcept { return data_; }
+  constexpr size_type size() const noexcept { return size_; }
+  constexpr bool empty() const noexcept { return size_ == 0; }
+  constexpr const CharT &operator[](size_type i) const { return data_[i]; }
+  constexpr const_iterator begin() const noexcept { return data_; }
+  constexpr const_iterator end() const noexcept { return data_ + size_; }
+
+private:
+  static constexpr size_type __len(const CharT *s) {
+    size_type n = 0;
+    while (s[n])
+      ++n;
+    return n;
+  }
+  const_pointer data_;
+  size_type size_;
+};
+
+using string_view = basic_string_view<char>;
+using wstring_view = basic_string_view<wchar_t>;
+
+} // namespace std

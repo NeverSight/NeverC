@@ -1,0 +1,72 @@
+// NeverC expanded <vector> scaffold (minimal)
+#pragma once
+#include <stddef.h>
+#include <new>
+#include <utility>
+#include <initializer_list>
+namespace std {
+template <class T>
+class vector {
+  T *Data = nullptr;
+  size_t Size = 0;
+  size_t Cap = 0;
+  void reallocate(size_t n) {
+    T *nd = static_cast<T *>(::operator new(n * sizeof(T)));
+    for (size_t i = 0; i < Size; ++i) {
+      new (nd + i) T(static_cast<T &&>(Data[i]));
+      Data[i].~T();
+    }
+    ::operator delete(Data);
+    Data = nd;
+    Cap = n;
+  }
+public:
+  using value_type = T;
+  using size_type = size_t;
+  using iterator = T *;
+  using const_iterator = const T *;
+  vector() = default;
+  explicit vector(size_t n) {
+    if (n) {
+      Data = static_cast<T *>(::operator new(n * sizeof(T)));
+      Cap = Size = n;
+      for (size_t i = 0; i < n; ++i) new (Data + i) T();
+    }
+  }
+  vector(initializer_list<T> il) {
+    for (auto &e : il) push_back(e);
+  }
+  ~vector() {
+    for (size_t i = 0; i < Size; ++i) Data[i].~T();
+    ::operator delete(Data);
+  }
+  size_t size() const { return Size; }
+  size_t capacity() const { return Cap; }
+  bool empty() const { return Size == 0; }
+  T &operator[](size_t i) { return Data[i]; }
+  const T &operator[](size_t i) const { return Data[i]; }
+  T *begin() { return Data; }
+  T *end() { return Data + Size; }
+  const T *begin() const { return Data; }
+  const T *end() const { return Data + Size; }
+  void push_back(const T &v) {
+    if (Size == Cap) reallocate(Cap ? Cap * 2 : 4);
+    new (Data + Size) T(v);
+    ++Size;
+  }
+  void push_back(T &&v) {
+    if (Size == Cap) reallocate(Cap ? Cap * 2 : 4);
+    new (Data + Size) T(static_cast<T &&>(v));
+    ++Size;
+  }
+  void pop_back() {
+    if (Size) {
+      --Size;
+      Data[Size].~T();
+    }
+  }
+  void clear() {
+    while (Size) pop_back();
+  }
+};
+} // namespace std

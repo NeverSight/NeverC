@@ -6881,6 +6881,8 @@ GCCTypeClass evaluateBuiltinClassifyType(QualType T,
     return GCCTypeClass::Integer;
 
   case Type::Pointer:
+  case Type::LValueReference:
+  case Type::RValueReference:
   case Type::ConstantArray:
   case Type::VariableArray:
   case Type::IncompleteArray:

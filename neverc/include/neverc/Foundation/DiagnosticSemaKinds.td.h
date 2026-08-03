@@ -347,6 +347,7 @@ DIAG(err_invalid_cpu_specific_dispatch_value, CLASS_ERROR, (unsigned)diag::Sever
 DIAG(err_invalid_cpu_supports, CLASS_ERROR, (unsigned)diag::Severity::Error, "invalid cpu feature string for builtin", 0, false, true, true, false, 2)
 DIAG(err_invalid_decl_spec_combination, CLASS_ERROR, (unsigned)diag::Severity::Error, "cannot combine with previous '%0' declaration specifier", 0, false, true, true, false, 2)
 DIAG(err_invalid_mask_type_size, CLASS_ERROR, (unsigned)diag::Severity::Error, "mask type size must be between 1-byte and 8-bytes", 0, false, true, true, false, 2)
+DIAG(err_invalid_this_use, CLASS_ERROR, (unsigned)diag::Severity::Error, "invalid use of 'this' outside of a non-static member function", 0, false, true, true, false, 0)
 DIAG(err_invalid_neon_type_code, CLASS_ERROR, (unsigned)diag::Severity::Error, "incompatible constant for this __builtin_neon function", 0, false, true, true, false, 2)
 DIAG(err_invalid_saturation_spec, CLASS_ERROR, (unsigned)diag::Severity::Error, "'_Sat' specifier is only valid on '_Fract' or '_Accum', not '%0'", 0, false, true, true, false, 2)
 DIAG(err_invalid_sign_spec, CLASS_ERROR, (unsigned)diag::Severity::Error, "'%0' cannot be signed or unsigned", 0, false, true, true, false, 2)

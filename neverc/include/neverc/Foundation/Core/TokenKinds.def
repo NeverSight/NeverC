@@ -13,6 +13,15 @@
 #ifndef C23_KEYWORD
 #define C23_KEYWORD(X,Y) KEYWORD(X,KEYC23|(Y))
 #endif
+#ifndef CXX_KEYWORD
+#define CXX_KEYWORD(X,Y) KEYWORD(X,KEYCXX|(Y))
+#endif
+#ifndef CXX11_KEYWORD
+#define CXX11_KEYWORD(X,Y) KEYWORD(X,KEYCXX11|(Y))
+#endif
+#ifndef CXX20_KEYWORD
+#define CXX20_KEYWORD(X,Y) KEYWORD(X,KEYCXX20|(Y))
+#endif
 #ifndef UNARY_EXPR_OR_TYPE_TRAIT
 #define UNARY_EXPR_OR_TYPE_TRAIT(I,E,K) KEYWORD(I,K)
 #endif
@@ -182,6 +191,11 @@ PUNCTUATOR(hashat,              "#@")
 // '::' is used by inline-asm parsing and the preprocessor.
 PUNCTUATOR(coloncolon,          "::")
 
+// C++ punctuators.
+PUNCTUATOR(arrowstar,           "->*")
+PUNCTUATOR(periodstar,          ".*")
+PUNCTUATOR(spaceship,           "<=>")
+
 // C99 6.4.1: Keywords.  These turn into kw_* tokens.
 // Flags allowed:
 //   KEYALL   - This is a keyword in all variants of C, or it is a keyword
@@ -247,13 +261,56 @@ KEYWORD(_Static_assert              , KEYALL)
 KEYWORD(_Thread_local               , KEYALL)
 KEYWORD(__func__                    , KEYALL)
 
-
 // GNU/C extensions.
 KEYWORD(asm                         , KEYGNU)
-KEYWORD(bool                        , BOOLSUPPORT|KEYC23)
-KEYWORD(false                       , BOOLSUPPORT|KEYC23)
-KEYWORD(true                        , BOOLSUPPORT|KEYC23)
+KEYWORD(bool                        , BOOLSUPPORT|KEYC23|KEYCXX)
+KEYWORD(false                       , BOOLSUPPORT|KEYC23|KEYCXX)
+KEYWORD(true                        , BOOLSUPPORT|KEYC23|KEYCXX)
 KEYWORD(wchar_t                     , WCHARSUPPORT)
+
+// C++ keywords.
+CXX_KEYWORD(class                       , 0)
+CXX_KEYWORD(catch                       , 0)
+CXX_KEYWORD(const_cast                  , 0)
+CXX_KEYWORD(delete                      , 0)
+CXX_KEYWORD(dynamic_cast                , 0)
+CXX_KEYWORD(explicit                    , 0)
+CXX_KEYWORD(export                      , 0)
+CXX_KEYWORD(friend                      , 0)
+CXX_KEYWORD(mutable                     , 0)
+CXX_KEYWORD(namespace                   , 0)
+CXX_KEYWORD(new                         , 0)
+CXX_KEYWORD(operator                    , 0)
+CXX_KEYWORD(private                     , 0)
+CXX_KEYWORD(protected                   , 0)
+CXX_KEYWORD(public                      , 0)
+CXX_KEYWORD(reinterpret_cast            , 0)
+CXX_KEYWORD(static_cast                 , 0)
+CXX_KEYWORD(template                    , 0)
+CXX_KEYWORD(this                        , 0)
+CXX_KEYWORD(throw                       , 0)
+CXX_KEYWORD(try                         , 0)
+CXX_KEYWORD(typename                    , 0)
+CXX_KEYWORD(typeid                      , 0)
+CXX_KEYWORD(using                       , 0)
+CXX_KEYWORD(virtual                     , 0)
+
+// C++11-only keywords (shared C23 names are updated on the C23 entries).
+CXX11_KEYWORD(char16_t                  , 0)
+CXX11_KEYWORD(char32_t                  , 0)
+CXX11_KEYWORD(decltype                  , 0)
+CXX11_KEYWORD(noexcept                  , 0)
+
+// C++20-only keywords (char8_t is gated via CHAR8SUPPORT + LangOpts.Char8).
+CXX20_KEYWORD(co_await                  , 0)
+CXX20_KEYWORD(co_return                 , 0)
+CXX20_KEYWORD(co_yield                  , 0)
+CXX20_KEYWORD(concept                   , 0)
+CXX20_KEYWORD(module                    , 0)
+CXX20_KEYWORD(import                    , 0)
+CXX20_KEYWORD(consteval                 , 0)
+CXX20_KEYWORD(constinit                 , 0)
+CXX20_KEYWORD(requires                  , 0)
 
 // C99 Keywords.
 C99_KEYWORD(restrict                    , 0)
@@ -261,12 +318,13 @@ C99_KEYWORD(inline                      , KEYGNU)
 
 
 // C23 keywords (also available as extensions in earlier C modes).
-C23_KEYWORD(alignas                 , 0)
-UNARY_EXPR_OR_TYPE_TRAIT(alignof, AlignOf, KEYC23)
-C23_KEYWORD(constexpr               , 0)
-C23_KEYWORD(nullptr                 , 0)
-C23_KEYWORD(static_assert           , KEYMSCOMPAT)
-C23_KEYWORD(thread_local            , 0)
+// KEYCXX11 makes the same spellings keywords in C++11+ modes.
+C23_KEYWORD(alignas                 , KEYCXX11)
+UNARY_EXPR_OR_TYPE_TRAIT(alignof, AlignOf, KEYC23|KEYCXX11)
+C23_KEYWORD(constexpr               , KEYCXX11)
+C23_KEYWORD(nullptr                 , KEYCXX11)
+C23_KEYWORD(static_assert           , KEYMSCOMPAT|KEYCXX11)
+C23_KEYWORD(thread_local            , KEYCXX11)
 
 KEYWORD(char8_t                     , CHAR8SUPPORT)
 

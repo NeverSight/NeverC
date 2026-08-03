@@ -1,0 +1,3 @@
+// NeverC <cerrno> scaffold
+#pragma once
+#include <errno.h>

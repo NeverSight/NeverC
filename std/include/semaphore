@@ -1,0 +1,20 @@
+// NeverC <semaphore> scaffold (C++20)
+#pragma once
+#include <cstddef>
+namespace std {
+template <std::ptrdiff_t LeastMaxValue = 0x7fffffff>
+class counting_semaphore {
+  std::ptrdiff_t Count = 0;
+public:
+  static constexpr std::ptrdiff_t max() noexcept { return LeastMaxValue; }
+  explicit counting_semaphore(std::ptrdiff_t desired) : Count(desired) {}
+  void release(std::ptrdiff_t update = 1) { Count += update; }
+  void acquire() { if (Count) --Count; }
+  bool try_acquire() noexcept {
+    if (!Count) return false;
+    --Count;
+    return true;
+  }
+};
+using binary_semaphore = counting_semaphore<1>;
+} // namespace std

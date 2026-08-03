@@ -1,0 +1,90 @@
+// NeverC <variant> expanded scaffold (non-stream)
+#pragma once
+#include <type_traits>
+#include <utility>
+#include <cstddef>
+
+namespace std {
+
+inline constexpr size_t variant_npos = size_t(-1);
+
+class bad_variant_access {
+public:
+  const char *what() const noexcept { return "bad_variant_access"; }
+};
+
+template <class... Ts>
+class variant;
+
+template <class T>
+struct variant_size;
+
+template <class... Ts>
+struct variant_size<variant<Ts...>>
+    : integral_constant<size_t, sizeof...(Ts)> {};
+
+template <class T>
+inline constexpr size_t variant_size_v = variant_size<T>::value;
+
+// Minimal monostate + single-alternative-friendly scaffold.
+struct monostate {};
+
+template <class T>
+class variant<T> {
+  bool has_ = false;
+  alignas(T) unsigned char storage_[sizeof(T) > 0 ? sizeof(T) : 1];
+
+  T *ptr() { return reinterpret_cast<T *>(storage_); }
+  const T *ptr() const { return reinterpret_cast<const T *>(storage_); }
+
+public:
+  variant() = default;
+  variant(const T &v) { emplace(v); }
+  ~variant() { reset(); }
+
+  size_t index() const noexcept { return has_ ? 0 : variant_npos; }
+  bool valueless_by_exception() const noexcept { return !has_; }
+
+  T &get() {
+    if (!has_)
+      trap();
+    return *ptr();
+  }
+  const T &get() const {
+    if (!has_)
+      trap();
+    return *ptr();
+  }
+
+  template <class... Args>
+  T &emplace(Args &&...args) {
+    reset();
+    ::new (static_cast<void *>(storage_)) T(static_cast<Args &&>(args)...);
+    has_ = true;
+    return *ptr();
+  }
+
+  void reset() {
+    if (has_) {
+      ptr()->~T();
+      has_ = false;
+    }
+  }
+
+private:
+  [[noreturn]] static void trap() {
+#if defined(__GNUC__) || defined(__clang__)
+    __builtin_trap();
+#else
+    for (;;) {
+    }
+#endif
+  }
+};
+
+template <class T>
+T &get(variant<T> &v) { return v.get(); }
+template <class T>
+const T &get(const variant<T> &v) { return v.get(); }
+
+} // namespace std

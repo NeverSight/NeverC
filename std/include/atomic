@@ -1,0 +1,3 @@
+// NeverC <atomic> scaffold
+#pragma once
+namespace std { template<class T> struct atomic; }

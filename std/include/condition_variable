@@ -1,0 +1,16 @@
+// NeverC <condition_variable> scaffold (non-stream)
+#pragma once
+namespace std {
+class condition_variable {
+public:
+  condition_variable() = default;
+  void notify_one() noexcept {}
+  void notify_all() noexcept {}
+  template <class Lock> void wait(Lock &) {}
+};
+class condition_variable_any {
+public:
+  void notify_one() noexcept {}
+  void notify_all() noexcept {}
+};
+} // namespace std

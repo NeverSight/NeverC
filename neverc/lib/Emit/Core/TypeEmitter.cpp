@@ -432,6 +432,14 @@ llvm::Type *TypeEmitter::convertType(QualType T) {
     ResultType = llvm::PointerType::get(getLLVMContext(), AS);
     break;
   }
+  case Type::LValueReference:
+  case Type::RValueReference: {
+    const auto *RTy = cast<ReferenceType>(Ty);
+    QualType ETy = RTy->getPointeeType();
+    unsigned AS = getTargetAddressSpace(ETy);
+    ResultType = llvm::PointerType::get(getLLVMContext(), AS);
+    break;
+  }
 
   case Type::VariableArray: {
     const VariableArrayType *A = cast<VariableArrayType>(Ty);

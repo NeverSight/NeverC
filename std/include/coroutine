@@ -1,0 +1,62 @@
+// NeverC <coroutine> scaffold (C++20)
+#pragma once
+#include <cstddef>
+#include <type_traits>
+
+namespace std {
+
+template <class R, class... Args>
+struct coroutine_traits {
+  using promise_type = typename R::promise_type;
+};
+
+template <class Promise = void>
+struct coroutine_handle;
+
+template <>
+struct coroutine_handle<void> {
+  constexpr coroutine_handle() noexcept = default;
+  constexpr void *address() const noexcept { return ptr_; }
+  static constexpr coroutine_handle from_address(void *addr) noexcept {
+    coroutine_handle h;
+    h.ptr_ = addr;
+    return h;
+  }
+  constexpr explicit operator bool() const noexcept { return ptr_ != nullptr; }
+  void resume() const;
+  void destroy() const;
+  bool done() const;
+
+protected:
+  void *ptr_ = nullptr;
+};
+
+template <class Promise>
+struct coroutine_handle : coroutine_handle<void> {
+  using coroutine_handle<void>::coroutine_handle;
+  Promise &promise() const {
+    return *static_cast<Promise *>(ptr_);
+  }
+  static coroutine_handle from_promise(Promise &p) {
+    coroutine_handle h;
+    h.ptr_ = static_cast<void *>(&p);
+    return h;
+  }
+};
+
+struct suspend_always {
+  constexpr bool await_ready() const noexcept { return false; }
+  constexpr void await_suspend(coroutine_handle<>) const noexcept {}
+  constexpr void await_resume() const noexcept {}
+};
+
+struct suspend_never {
+  constexpr bool await_ready() const noexcept { return true; }
+  constexpr void await_suspend(coroutine_handle<>) const noexcept {}
+  constexpr void await_resume() const noexcept {}
+};
+
+template <class... Args>
+struct noop_coroutine_promise {};
+
+} // namespace std

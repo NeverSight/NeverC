@@ -1,0 +1,12 @@
+// NeverC <barrier> scaffold (C++20)
+#pragma once
+#include <cstddef>
+namespace std {
+template <class CompletionFunction = void (*)()>
+class barrier {
+public:
+  explicit barrier(std::ptrdiff_t) {}
+  void arrive_and_wait() {}
+  void arrive_and_drop() {}
+};
+} // namespace std

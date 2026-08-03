@@ -1,0 +1,3 @@
+// NeverC <cfloat> scaffold
+#pragma once
+#include <float.h>

@@ -12,6 +12,7 @@
 #include "neverc/Foundation/Target/TargetInfo.h"
 #include "neverc/Scan/PrepEngine.h"
 #include "neverc/Tree/Decl/DeclC.h"
+#include "neverc/Tree/Decl/Decl.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -71,12 +72,63 @@ bool checkPlaceholderForOverload(Sema &S, Expr *&E) {
 
 //
 namespace {
-ImplicitConversionSequence TryImplicitConversion(Sema &S, Expr *From,
-                                                 QualType ToType, bool CStyle) {
+ImplicitConversionSequence tryImplicitConversionImpl(Sema &S, Expr *From,
+                                                     QualType ToType,
+                                                     bool CStyle) {
   ImplicitConversionSequence ICS;
+  if (!From) {
+    ICS.setBad(QualType(), ToType);
+    return ICS;
+  }
   if (isStandardConversion(S, From, ToType, ICS.Standard, CStyle)) {
     ICS.setStandard();
     return ICS;
+  }
+
+  // User-defined conversion via unique conversion operator on class From.
+  if (S.getLangOpts().CPlusPlus && !From->getType().isNull()) {
+    QualType FromTy = From->getType().getUnqualifiedType();
+    if (const Type *T = FromTy.getTypePtrOrNull()) {
+      if (T->isReferenceType())
+        FromTy = T->getPointeeType().getUnqualifiedType();
+    }
+    if (const CXXRecordDecl *RD = FromTy->getAsCXXRecordDecl()) {
+      const CXXRecordDecl *Def =
+          RD->getDefinition() ? RD->getDefinition() : RD;
+      CXXConversionDecl *Exact = nullptr;
+      CXXConversionDecl *Best = nullptr;
+      unsigned ExactN = 0, BestN = 0;
+      for (Decl *D : Def->decls()) {
+        auto *CD = dyn_cast<CXXConversionDecl>(D);
+        if (!CD)
+          continue;
+        QualType CT = CD->getConversionType();
+        if (CT.isNull())
+          continue;
+        if (S.Context.hasSameUnqualifiedType(CT, ToType)) {
+          Exact = CD;
+          ++ExactN;
+        } else {
+          QualType CTu = CT.getUnqualifiedType();
+          QualType TTu = ToType.getUnqualifiedType();
+          if ((CTu->isArithmeticType() && TTu->isArithmeticType()) ||
+              (CTu->isPointerType() && TTu->isPointerType()) ||
+              CTu->isBooleanType() || TTu->isBooleanType()) {
+            Best = CD;
+            ++BestN;
+          }
+        }
+      }
+      if (ExactN == 1 || (ExactN == 0 && BestN == 1)) {
+        ICS.setUserDefined();
+        ICS.Standard.setAsIdentityConversion();
+        ICS.Standard.setFromType(From->getType());
+        ICS.Standard.setAllToTypes(ToType);
+        (void)Exact;
+        (void)Best;
+        return ICS;
+      }
+    }
   }
 
   ICS.setBad(From, ToType);
@@ -84,13 +136,18 @@ ImplicitConversionSequence TryImplicitConversion(Sema &S, Expr *From,
 }
 } // namespace
 
+ImplicitConversionSequence
+Sema::TryImplicitConversion(Expr *From, QualType ToType, bool CStyle) {
+  return tryImplicitConversionImpl(*this, From, ToType, CStyle);
+}
+
 ExprResult Sema::PerformImplicitConversion(Expr *From, QualType ToType,
                                            AssignmentAction Action) {
   if (checkPlaceholderForOverload(*this, From))
     return ExprError();
 
   ImplicitConversionSequence ICS =
-      ::TryImplicitConversion(*this, From, ToType, /*CStyle=*/false);
+      TryImplicitConversion(From, ToType, /*CStyle=*/false);
   return PerformImplicitConversion(From, ToType, ICS, Action);
 }
 
@@ -966,7 +1023,7 @@ ImplicitConversionSequence tryContextuallyConvertToBool(Sema &S, Expr *From) {
 
   // All other direct-initialization of bool is equivalent to an implicit
   // conversion to bool in which explicit conversions are permitted.
-  return TryImplicitConversion(S, From, S.Context.BoolTy, /*CStyle=*/false);
+  return S.TryImplicitConversion(From, S.Context.BoolTy, /*CStyle=*/false);
 }
 } // namespace
 

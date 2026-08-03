@@ -435,6 +435,9 @@ void generateFrontendArgs(const FrontendOptions &Opts,
     case Language::C:
       Lang = "c";
       break;
+    case Language::CXX:
+      Lang = "c++";
+      break;
     case Language::Asm:
       Lang = "assembler-with-cpp";
       break;
@@ -485,17 +488,22 @@ bool parseFrontendArgs(FrontendOptions &Opts, ArgList &Args,
     IsHeaderFile = IsHeader && !Preprocessed;
 
     if (XValue != "c" && XValue != "c-header" && XValue != "cpp-output" &&
-        XValue != "assembler-with-cpp" && XValue != "ir" && XValue != "ast") {
+        XValue != "c++" && XValue != "c++-header" &&
+        XValue != "c++-cpp-output" && XValue != "assembler-with-cpp" &&
+        XValue != "ir" && XValue != "ast") {
       Diags.Report(diag::err_drv_unsupported) << XValue;
       return false;
     }
     DashX = llvm::StringSwitch<InputKind>(XValue)
                 .Case("c", Language::C)
+                .Case("c++", Language::CXX)
                 .Default(Language::Unknown);
 
     if (DashX.isUnknown() && !Preprocessed && !IsHeaderFile)
       DashX = llvm::StringSwitch<InputKind>(XValue)
                   .Case("cpp-output", InputKind(Language::C).getPreprocessed())
+                  .Case("c++-cpp-output",
+                        InputKind(Language::CXX).getPreprocessed())
                   .Case("assembler-with-cpp", Language::Asm)
                   .Case("ir", Language::LLVM_IR)
                   .Default(Language::Unknown);
@@ -524,7 +532,8 @@ bool parseFrontendArgs(FrontendOptions &Opts, ArgList &Args,
         IK = Language::C;
     }
 
-    if (IK.getLanguage() != Language::C && IK.getLanguage() != Language::Asm &&
+    if (IK.getLanguage() != Language::C && IK.getLanguage() != Language::CXX &&
+        IK.getLanguage() != Language::Asm &&
         IK.getLanguage() != Language::LLVM_IR &&
         IK.getLanguage() != Language::Unknown) {
       Diags.Report(diag::err_drv_unsupported) << Inputs[i];

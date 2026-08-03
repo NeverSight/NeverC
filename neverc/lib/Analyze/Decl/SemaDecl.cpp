@@ -294,6 +294,8 @@ DeclSpec::TST Sema::isTagName(IdentifierInfo &II, Scope *S) {
         return DeclSpec::TST_struct;
       case TagTypeKind::Union:
         return DeclSpec::TST_union;
+      case TagTypeKind::Class:
+        return DeclSpec::TST_class;
       case TagTypeKind::Enum:
         return DeclSpec::TST_enum;
       }
@@ -345,6 +347,9 @@ bool isTagTypeWithMissingTag(Sema &SemaRef, LookupResult &Result, Scope *S,
       break;
     case TagTypeKind::Union:
       TagTokKind = tok::kw_union;
+      break;
+    case TagTypeKind::Class:
+      TagTokKind = tok::kw_class;
       break;
     }
     if (TagTokKind == tok::unknown)

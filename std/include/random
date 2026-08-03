@@ -1,0 +1,33 @@
+// NeverC <random> scaffold (non-stream)
+#pragma once
+#include <cstdint>
+namespace std {
+class random_device {
+public:
+  using result_type = unsigned;
+  result_type operator()() { return 0; }
+  static constexpr result_type min() { return 0; }
+  static constexpr result_type max() { return 0xffffffffu; }
+};
+template <class UIntType, UIntType a, UIntType c, UIntType m>
+class linear_congruential_engine {
+  UIntType x = 1;
+public:
+  using result_type = UIntType;
+  explicit linear_congruential_engine(result_type s = 1u) : x(s) {}
+  result_type operator()() { x = (a * x + c) % m; return x; }
+  static constexpr result_type min() { return c == 0u ? 1u : 0u; }
+  static constexpr result_type max() { return m - 1u; }
+};
+using minstd_rand0 = linear_congruential_engine<uint_fast32_t, 16807, 0, 2147483647>;
+using minstd_rand = linear_congruential_engine<uint_fast32_t, 48271, 0, 2147483647>;
+template <class IntType = int>
+class uniform_int_distribution {
+  IntType a = 0, b = 0;
+public:
+  uniform_int_distribution(IntType aa = 0, IntType bb = 0) : a(aa), b(bb) {}
+  template <class URBG> IntType operator()(URBG &g) {
+    return a + (IntType)(g() % (uint_fast32_t)(b - a + 1));
+  }
+};
+} // namespace std

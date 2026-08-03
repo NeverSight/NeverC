@@ -440,6 +440,32 @@ DeclRefExpr *DeclRefExpr::Create(const TreeContext &Context, ValueDecl *D,
   return new (Mem) DeclRefExpr(Context, D, NameInfo, FoundD, T, VK, NOUR);
 }
 
+
+//===----------------------------------------------------------------------===//
+// UnresolvedLookupExpr
+//===----------------------------------------------------------------------===//
+
+UnresolvedLookupExpr::UnresolvedLookupExpr(
+    const TreeContext &Ctx, const DeclarationNameInfo &Name, bool RequiresADL,
+    llvm::ArrayRef<NamedDecl *> Decls)
+    : Expr(UnresolvedLookupExprClass, Ctx.OverloadTy, VK_LValue, OK_Ordinary),
+      NameInfo(Name), NumDecls(Decls.size()), RequiresADL(RequiresADL) {
+  setDependence(ExprDependence::None);
+  NamedDecl **Stored = getTrailingObjects<NamedDecl *>();
+  for (unsigned I = 0, E = Decls.size(); I != E; ++I)
+    Stored[I] = Decls[I];
+  (void)Ctx;
+}
+
+UnresolvedLookupExpr *UnresolvedLookupExpr::Create(
+    const TreeContext &Ctx, const DeclarationNameInfo &Name, bool RequiresADL,
+    llvm::ArrayRef<NamedDecl *> Decls) {
+  std::size_t Size =
+      UnresolvedLookupExpr::totalSizeToAlloc<NamedDecl *>(Decls.size());
+  void *Mem = Ctx.Allocate(Size, alignof(UnresolvedLookupExpr));
+  return new (Mem) UnresolvedLookupExpr(Ctx, Name, RequiresADL, Decls);
+}
+
 DeclRefExpr *DeclRefExpr::CreateEmpty(const TreeContext &Context,
                                       bool HasFoundDecl) {
   std::size_t Size = totalSizeToAlloc<NamedDecl *>(HasFoundDecl ? 1 : 0);

@@ -106,8 +106,12 @@ DeclResult Sema::OnTag(Scope *S, unsigned TagSpec, TagUseKind TUK,
                                  : EnumTy);
       }
     } else { // struct/union
-      New = RecordDecl::Create(Context, Kind, SearchDC, KWLoc, Loc, Name,
-                               nullptr);
+      if (getLangOpts().CPlusPlus)
+        New = CXXRecordDecl::Create(Context, Kind, SearchDC, KWLoc, Loc, Name,
+                                    nullptr);
+      else
+        New = RecordDecl::Create(Context, Kind, SearchDC, KWLoc, Loc, Name,
+                                 nullptr);
     }
 
     if (RecordDecl *RD = dyn_cast<RecordDecl>(New)) {

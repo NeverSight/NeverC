@@ -34,6 +34,8 @@ ABSTRACT_TYPE(Matrix, Type)
 TYPE(ConstantMatrix, MatrixType)
 NON_CANONICAL_TYPE(Paren, Type)
 TYPE(Pointer, Type)
+TYPE(LValueReference, Type)
+TYPE(RValueReference, Type)
 ABSTRACT_TYPE(Tag, Type)
 TYPE(Enum, TagType)
 TYPE(Record, TagType)
@@ -42,9 +44,10 @@ NON_CANONICAL_UNLESS_DEPENDENT_TYPE(TypeOf, Type)
 NON_CANONICAL_TYPE(Typedef, Type)
 TYPE(Vector, Type)
 TYPE(ExtVector, VectorType)
+DEPENDENT_TYPE(TemplateTypeParm, Type)
 
 #ifdef LAST_TYPE
-LAST_TYPE(ExtVector)
+LAST_TYPE(TemplateTypeParm)
 #undef LAST_TYPE
 #endif
 

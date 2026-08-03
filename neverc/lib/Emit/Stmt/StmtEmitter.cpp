@@ -1,6 +1,7 @@
 #include "ABI/TargetInfo.h"
 #include "Core/FunctionEmitter.h"
 #include "Core/ModuleEmitter.h"
+#include "neverc/Emit/CXXABI.h"
 #include "Debug/DebugEmitterInfo.h"
 #include "neverc/Foundation/Builtin/Builtins.h"
 #include "neverc/Foundation/Core/PrettyStackTrace.h"
@@ -120,6 +121,14 @@ FunctionEmitter::genStmt(const Stmt *S, llvm::ArrayRef<const Attr *> Attrs) {
     break;
   case Stmt::ForStmtClass:
     genForStmt(cast<ForStmt>(*S), Attrs);
+    break;
+  case Stmt::CXXForRangeStmtClass:
+    genCXXForRangeStmt(cast<CXXForRangeStmt>(*S), Attrs);
+    break;
+  case Stmt::CXXTryStmtClass:
+    genCXXTryStmt(cast<CXXTryStmt>(*S));
+    break;
+  case Stmt::CXXCatchStmtClass:
     break;
 
   case Stmt::ReturnStmtClass:
@@ -797,6 +806,175 @@ struct SaveRetExprRAII {
   FunctionEmitter &FE;
 };
 } // namespace
+
+
+NEVERC_HOT void FunctionEmitter::genCXXTryStmt(const CXXTryStmt &S) {
+  // NeverC ABI v1 C++ try/catch via EHCatchScope + __neverc_personality_v0.
+  // With a catch scope on EHStack, calls inside the try body become invokes
+  // through getInvokeDest() / landing-pad machinery.
+  if (ME.getCodeGenOpts().DisableTryStmt ||
+      (CurCodeDecl && CurCodeDecl->hasAttr<DisableTryStmtAttr>())) {
+    if (const Stmt *Body = S.getTryBlock())
+      genStmt(Body);
+    return;
+  }
+
+  const unsigned NumHandlers = S.getNumHandlers();
+  if (NumHandlers == 0) {
+    if (const Stmt *Body = S.getTryBlock())
+      genStmt(Body);
+    return;
+  }
+
+  EHCatchScope *CatchScope = EHStack.pushCatch(NumHandlers);
+  llvm::BasicBlock *Cont = createBasicBlock("try.cont");
+
+  for (unsigned I = 0; I != NumHandlers; ++I) {
+    llvm::BasicBlock *HandlerBB = createBasicBlock("catch");
+    llvm::Constant *TypeInfo = nullptr;
+    if (const Stmt *HS = S.getHandlerStmt(I)) {
+      if (const auto *Catch = dyn_cast<CXXCatchStmt>(HS)) {
+        if (const Decl *ED = Catch->getExceptionDecl()) {
+          if (const auto *VD = dyn_cast<ValueDecl>(ED)) {
+            QualType Caught = VD->getType();
+            if (!Caught.isNull()) {
+              if (CXXABI *A = ME.getCXXABI())
+                TypeInfo = A->getAddrOfRTTIDescriptor(Caught);
+            }
+          }
+        }
+      }
+    }
+    if (TypeInfo)
+      CatchScope->setHandler(I, TypeInfo, HandlerBB);
+    else
+      CatchScope->setCatchAllHandler(I, HandlerBB);
+  }
+
+  if (const Stmt *Body = S.getTryBlock())
+    genStmt(Body);
+
+  if (haveInsertPoint())
+    Builder.CreateBr(Cont);
+
+  llvm::FunctionType *BeginCatchTy =
+      llvm::FunctionType::get(VoidPtrTy, {VoidPtrTy}, /*isVarArg=*/false);
+  llvm::FunctionCallee BeginCatch =
+      ME.createRuntimeFunction(BeginCatchTy, "__cxa_begin_catch");
+  llvm::FunctionType *EndCatchTy =
+      llvm::FunctionType::get(VoidTy, {}, /*isVarArg=*/false);
+  llvm::FunctionCallee EndCatch =
+      ME.createRuntimeFunction(EndCatchTy, "__cxa_end_catch");
+
+  for (unsigned I = 0; I != NumHandlers; ++I) {
+    const EHCatchScope::Handler &H = CatchScope->getHandler(I);
+    genBlock(H.Block);
+
+    llvm::Value *ExObj = getExceptionFromSlot();
+    if (!ExObj)
+      ExObj = llvm::ConstantPointerNull::get(VoidPtrTy);
+    llvm::Value *CaughtPtr =
+        Builder.CreateCall(BeginCatch, {ExObj}, "exn.caught");
+
+    if (const Stmt *HS = S.getHandlerStmt(I)) {
+      if (const auto *Catch = dyn_cast<CXXCatchStmt>(HS)) {
+        // Bind catch parameter: __cxa_begin_catch returns the exception
+        // object pointer; store into the catch var alloca when present.
+        if (const Decl *ED = Catch->getExceptionDecl()) {
+          if (const auto *VD = dyn_cast<VarDecl>(ED)) {
+            Address Loc = createMemTemp(VD->getType(), "catch.param");
+            llvm::Value *StoreVal = CaughtPtr;
+            llvm::Type *ElemTy = Loc.getElementType();
+            if (StoreVal->getType() != ElemTy) {
+              if (ElemTy->isPointerTy())
+                StoreVal = Builder.CreateBitCast(StoreVal, ElemTy);
+              else if (ElemTy->isIntegerTy() &&
+                       StoreVal->getType()->isPointerTy()) {
+                // Reference-to-object catch params keep the pointer; value
+                // catches would need copy-ctor — store bitcast pointer bits.
+                StoreVal = Builder.CreatePtrToInt(StoreVal, ElemTy);
+              }
+            }
+            Builder.CreateStore(StoreVal, Loc.getPointer());
+            setAddrOfLocalVar(VD, Loc);
+          }
+        }
+        if (const Stmt *HB = Catch->getHandlerBlock())
+          genStmt(HB);
+      } else {
+        genStmt(HS);
+      }
+    }
+
+    if (haveInsertPoint()) {
+      Builder.CreateCall(EndCatch);
+      Builder.CreateBr(Cont);
+    }
+  }
+
+  EHStack.popCatch();
+  genBlock(Cont);
+}
+
+NEVERC_HOT void
+FunctionEmitter::genCXXForRangeStmt(const CXXForRangeStmt &S,
+                                    llvm::ArrayRef<const Attr *> ForAttrs) {
+  // Phase-3 scaffold: emit range side-effects then body once when begin/end
+  // have not been fully built by Sema yet. Prefer classic for-shape when
+  // Cond/Inc/Begin/End are populated.
+  (void)ForAttrs;
+
+  if (const Stmt *Range = S.getRangeStmt())
+    genStmt(Range);
+
+  if (S.getBeginStmt())
+    genStmt(S.getBeginStmt());
+  if (S.getEndStmt())
+    genStmt(S.getEndStmt());
+
+  if (S.getCond() && S.getInc()) {
+    JumpDest LoopExit = getJumpDestInCurrentScope("forrange.end");
+    JumpDest CondDest = getJumpDestInCurrentScope("forrange.cond");
+    genBlock(CondDest.getBlock());
+
+    LoopStack.push(CondDest.getBlock(), ME.getContext(), ME.getCodeGenOpts(),
+                   ForAttrs, sourceLocToDebugLoc(S.getBeginLoc()),
+                   sourceLocToDebugLoc(S.getEndLoc()),
+                   /*MustProgress=*/true);
+
+    JumpDest Continue = getJumpDestInCurrentScope("forrange.inc");
+    BreakContinueStack.push_back(BreakContinue(LoopExit, Continue));
+
+    llvm::BasicBlock *BodyBB = createBasicBlock("forrange.body");
+    llvm::Value *CondV = evaluateExprAsBool(S.getCond());
+    Builder.CreateCondBr(CondV, BodyBB, LoopExit.getBlock());
+
+    genBlock(BodyBB);
+    {
+      RunCleanupsScope BodyScope(*this);
+      if (S.getLoopVarStmt())
+        genStmt(S.getLoopVarStmt());
+      if (S.getBody())
+        genStmt(S.getBody());
+    }
+
+    genBlock(Continue.getBlock());
+    genStmt(S.getInc());
+    Builder.CreateBr(CondDest.getBlock());
+
+    BreakContinueStack.pop_back();
+    LoopStack.pop();
+    genBlock(LoopExit.getBlock());
+    return;
+  }
+
+  // Incomplete range-for: run body once (keeps IR well-formed).
+  if (S.getLoopVarStmt())
+    genStmt(S.getLoopVarStmt());
+  if (S.getBody())
+    genStmt(S.getBody());
+}
+
 
 NEVERC_HOT void FunctionEmitter::genReturnStmt(const ReturnStmt &S) {
 

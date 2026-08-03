@@ -1,0 +1,15 @@
+// NeverC <valarray> scaffold (non-stream)
+#pragma once
+#include <stddef.h>
+namespace std {
+template <class T> class valarray {
+  T *Data = nullptr;
+  size_t Size = 0;
+public:
+  valarray() = default;
+  explicit valarray(size_t n) : Size(n) {}
+  size_t size() const { return Size; }
+  T &operator[](size_t i) { return Data[i]; }
+  const T &operator[](size_t i) const { return Data[i]; }
+};
+} // namespace std

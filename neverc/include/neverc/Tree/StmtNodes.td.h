@@ -296,6 +296,12 @@ COMPOUNDLITERALEXPR(CompoundLiteralExpr, Expr)
 CONVERTVECTOREXPR(ConvertVectorExpr, Expr)
 #undef CONVERTVECTOREXPR
 
+#ifndef CXXTHISEXPR
+#define CXXTHISEXPR(Type, Base) EXPR(Type, Base)
+#endif
+CXXTHISEXPR(CXXThisExpr, Expr)
+#undef CXXTHISEXPR
+
 #ifndef DECLREFEXPR
 #define DECLREFEXPR(Type, Base) EXPR(Type, Base)
 #endif
@@ -496,7 +502,176 @@ UNARYOPERATOR(UnaryOperator, Expr)
 VAARGEXPR(VAArgExpr, Expr)
 #undef VAARGEXPR
 
-STMT_RANGE(Expr, BinaryConditionalOperator, VAArgExpr)
+
+#ifndef CXXNEWEXPR
+#define CXXNEWEXPR(Type, Base) EXPR(Type, Base)
+#endif
+CXXNEWEXPR(CXXNewExpr, Expr)
+#undef CXXNEWEXPR
+
+#ifndef CXXDELETEEXPR
+#define CXXDELETEEXPR(Type, Base) EXPR(Type, Base)
+#endif
+CXXDELETEEXPR(CXXDeleteExpr, Expr)
+#undef CXXDELETEEXPR
+
+#ifndef CXXTHROWEXPR
+#define CXXTHROWEXPR(Type, Base) EXPR(Type, Base)
+#endif
+CXXTHROWEXPR(CXXThrowExpr, Expr)
+#undef CXXTHROWEXPR
+
+#ifndef CXXTYPEIDEXPR
+#define CXXTYPEIDEXPR(Type, Base) EXPR(Type, Base)
+#endif
+CXXTYPEIDEXPR(CXXTypeidExpr, Expr)
+#undef CXXTYPEIDEXPR
+
+#ifndef CXXSTATICCASTEXPR
+#define CXXSTATICCASTEXPR(Type, Base) EXPR(Type, Base)
+#endif
+CXXSTATICCASTEXPR(CXXStaticCastExpr, Expr)
+#undef CXXSTATICCASTEXPR
+
+#ifndef CXXDYNAMICCASTEXPR
+#define CXXDYNAMICCASTEXPR(Type, Base) EXPR(Type, Base)
+#endif
+CXXDYNAMICCASTEXPR(CXXDynamicCastExpr, Expr)
+#undef CXXDYNAMICCASTEXPR
+
+#ifndef CXXREINTERPRETCASTEXPR
+#define CXXREINTERPRETCASTEXPR(Type, Base) EXPR(Type, Base)
+#endif
+CXXREINTERPRETCASTEXPR(CXXReinterpretCastExpr, Expr)
+#undef CXXREINTERPRETCASTEXPR
+
+#ifndef CXXCONSTCASTEXPR
+#define CXXCONSTCASTEXPR(Type, Base) EXPR(Type, Base)
+#endif
+CXXCONSTCASTEXPR(CXXConstCastExpr, Expr)
+#undef CXXCONSTCASTEXPR
+
+#ifndef CXXFUNCTIONALCASTEXPR
+#define CXXFUNCTIONALCASTEXPR(Type, Base) EXPR(Type, Base)
+#endif
+CXXFUNCTIONALCASTEXPR(CXXFunctionalCastExpr, Expr)
+#undef CXXFUNCTIONALCASTEXPR
+
+#ifndef CXXUNRESOLVEDCONSTRUCTEXPR
+#define CXXUNRESOLVEDCONSTRUCTEXPR(Type, Base) EXPR(Type, Base)
+#endif
+CXXUNRESOLVEDCONSTRUCTEXPR(CXXUnresolvedConstructExpr, Expr)
+#undef CXXUNRESOLVEDCONSTRUCTEXPR
+
+#ifndef CXXCONSTRUCTEXPR
+#define CXXCONSTRUCTEXPR(Type, Base) EXPR(Type, Base)
+#endif
+CXXCONSTRUCTEXPR(CXXConstructExpr, Expr)
+#undef CXXCONSTRUCTEXPR
+
+#ifndef CXXMEMBERCALLEXPR
+#define CXXMEMBERCALLEXPR(Type, Base) EXPR(Type, Base)
+#endif
+CXXMEMBERCALLEXPR(CXXMemberCallExpr, Expr)
+#undef CXXMEMBERCALLEXPR
+
+#ifndef CXXOPERATORCALLEXPR
+#define CXXOPERATORCALLEXPR(Type, Base) EXPR(Type, Base)
+#endif
+CXXOPERATORCALLEXPR(CXXOperatorCallExpr, Expr)
+#undef CXXOPERATORCALLEXPR
+
+#ifndef LAMBDAEXPR
+#define LAMBDAEXPR(Type, Base) EXPR(Type, Base)
+#endif
+LAMBDAEXPR(LambdaExpr, Expr)
+#undef LAMBDAEXPR
+
+#ifndef PACKEXPANSIONEXPR
+#define PACKEXPANSIONEXPR(Type, Base) EXPR(Type, Base)
+#endif
+PACKEXPANSIONEXPR(PackExpansionExpr, Expr)
+#undef PACKEXPANSIONEXPR
+
+#ifndef SIZEOFPACKEXPR
+#define SIZEOFPACKEXPR(Type, Base) EXPR(Type, Base)
+#endif
+SIZEOFPACKEXPR(SizeOfPackExpr, Expr)
+#undef SIZEOFPACKEXPR
+
+#ifndef SUBSTNONTYPETEMPLATEPARMEXPR
+#define SUBSTNONTYPETEMPLATEPARMEXPR(Type, Base) EXPR(Type, Base)
+#endif
+SUBSTNONTYPETEMPLATEPARMEXPR(SubstNonTypeTemplateParmExpr, Expr)
+#undef SUBSTNONTYPETEMPLATEPARMEXPR
+
+#ifndef COAWAITEXPR
+#define COAWAITEXPR(Type, Base) EXPR(Type, Base)
+#endif
+COAWAITEXPR(CoawaitExpr, Expr)
+#undef COAWAITEXPR
+
+#ifndef COYIELDEXPR
+#define COYIELDEXPR(Type, Base) EXPR(Type, Base)
+#endif
+COYIELDEXPR(CoyieldExpr, Expr)
+#undef COYIELDEXPR
+
+#ifndef REQUIRESEXPR
+#define REQUIRESEXPR(Type, Base) EXPR(Type, Base)
+#endif
+REQUIRESEXPR(RequiresExpr, Expr)
+#undef REQUIRESEXPR
+
+#ifndef COREXPR
+#define COREXPR(Type, Base) EXPR(Type, Base)
+#endif
+COREXPR(CoreturnExpr, Expr)
+#undef COREXPR
+
+#ifndef UNRESOLVEDLOOKUPEXPR
+#define UNRESOLVEDLOOKUPEXPR(Type, Base) EXPR(Type, Base)
+#endif
+UNRESOLVEDLOOKUPEXPR(UnresolvedLookupExpr, Expr)
+#undef UNRESOLVEDLOOKUPEXPR
+
+#ifndef DEPENDENTSCOPEDECLREFEXPR
+#define DEPENDENTSCOPEDECLREFEXPR(Type, Base) EXPR(Type, Base)
+#endif
+DEPENDENTSCOPEDECLREFEXPR(DependentScopeDeclRefExpr, Expr)
+#undef DEPENDENTSCOPEDECLREFEXPR
+
+#ifndef CXXDEPENDENTSCOPEMEMBEREXPR
+#define CXXDEPENDENTSCOPEMEMBEREXPR(Type, Base) EXPR(Type, Base)
+#endif
+CXXDEPENDENTSCOPEMEMBEREXPR(CXXDependentScopeMemberExpr, Expr)
+#undef CXXDEPENDENTSCOPEMEMBEREXPR
+
+#ifndef MATERIALIZETEMPORARYEXPR
+#define MATERIALIZETEMPORARYEXPR(Type, Base) EXPR(Type, Base)
+#endif
+MATERIALIZETEMPORARYEXPR(MaterializeTemporaryExpr, Expr)
+#undef MATERIALIZETEMPORARYEXPR
+
+#ifndef CXXDEFAULTEDEXPR
+#define CXXDEFAULTEDEXPR(Type, Base) EXPR(Type, Base)
+#endif
+CXXDEFAULTEDEXPR(CXXDefaultArgExpr, Expr)
+#undef CXXDEFAULTEDEXPR
+
+#ifndef CXXDEFAULTINITEXPR
+#define CXXDEFAULTINITEXPR(Type, Base) EXPR(Type, Base)
+#endif
+CXXDEFAULTINITEXPR(CXXDefaultInitExpr, Expr)
+#undef CXXDEFAULTINITEXPR
+
+#ifndef CXXSCALARVALUEINITEXPR
+#define CXXSCALARVALUEINITEXPR(Type, Base) EXPR(Type, Base)
+#endif
+CXXSCALARVALUEINITEXPR(CXXScalarValueInitExpr, Expr)
+#undef CXXSCALARVALUEINITEXPR
+
+STMT_RANGE(Expr, BinaryConditionalOperator, CXXScalarValueInitExpr)
 
 #undef EXPR
 
@@ -518,7 +693,32 @@ STMT_RANGE(ValueStmt, AttributedStmt, LabelStmt)
 WHILESTMT(WhileStmt, Stmt)
 #undef WHILESTMT
 
-LAST_STMT_RANGE(Stmt, GCCAsmStmt, WhileStmt)
+
+#ifndef CXXCATCHSTMT
+#define CXXCATCHSTMT(Type, Base) STMT(Type, Base)
+#endif
+CXXCATCHSTMT(CXXCatchStmt, Stmt)
+#undef CXXCATCHSTMT
+
+#ifndef CXXTRYSTMT
+#define CXXTRYSTMT(Type, Base) STMT(Type, Base)
+#endif
+CXXTRYSTMT(CXXTryStmt, Stmt)
+#undef CXXTRYSTMT
+
+#ifndef CXXFORRANGESTMT
+#define CXXFORRANGESTMT(Type, Base) STMT(Type, Base)
+#endif
+CXXFORRANGESTMT(CXXForRangeStmt, Stmt)
+#undef CXXFORRANGESTMT
+
+#ifndef COROUTINEBODYSTMT
+#define COROUTINEBODYSTMT(Type, Base) STMT(Type, Base)
+#endif
+COROUTINEBODYSTMT(CoroutineBodyStmt, Stmt)
+#undef COROUTINEBODYSTMT
+
+LAST_STMT_RANGE(Stmt, GCCAsmStmt, CoroutineBodyStmt)
 
 #undef STMT
 #undef STMT_RANGE

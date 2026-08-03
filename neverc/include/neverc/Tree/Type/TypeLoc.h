@@ -725,6 +725,21 @@ public:
   void setStarLoc(SourceLocation Loc) { setSigilLoc(Loc); }
 };
 
+
+class LValueReferenceTypeLoc
+    : public PointerLikeTypeLoc<LValueReferenceTypeLoc, LValueReferenceType> {
+public:
+  SourceLocation getAmpLoc() const { return getSigilLoc(); }
+  void setAmpLoc(SourceLocation Loc) { setSigilLoc(Loc); }
+};
+
+class RValueReferenceTypeLoc
+    : public PointerLikeTypeLoc<RValueReferenceTypeLoc, RValueReferenceType> {
+public:
+  SourceLocation getAmpAmpLoc() const { return getSigilLoc(); }
+  void setAmpAmpLoc(SourceLocation Loc) { setSigilLoc(Loc); }
+};
+
 struct FunctionLocInfo {
   SourceLocation LocalRangeBegin;
   SourceLocation LParenLoc;

@@ -83,6 +83,7 @@ unsigned mapTypeSpecifierToDiagID(const DeclSpec &DS) {
   DeclSpec::TST T = DS.getTypeSpecType();
   switch (T) {
   case DeclSpec::TST_struct:
+  case DeclSpec::TST_class:
     return 0;
   case DeclSpec::TST_union:
     return 1;
@@ -101,6 +102,7 @@ Decl *Sema::ParsedFreeStandingDeclSpec(Scope *S, AccessSpecifier AS,
   TagDecl *Tag = nullptr;
   if (DS.getTypeSpecType() == DeclSpec::TST_struct ||
       DS.getTypeSpecType() == DeclSpec::TST_union ||
+      DS.getTypeSpecType() == DeclSpec::TST_class ||
       DS.getTypeSpecType() == DeclSpec::TST_enum) {
     TagD = DS.getRepAsDecl();
 
@@ -271,6 +273,7 @@ Decl *Sema::ParsedFreeStandingDeclSpec(Scope *S, AccessSpecifier AS,
     DeclSpec::TST TypeSpecType = DS.getTypeSpecType();
     if (TypeSpecType == DeclSpec::TST_struct ||
         TypeSpecType == DeclSpec::TST_union ||
+        TypeSpecType == DeclSpec::TST_class ||
         TypeSpecType == DeclSpec::TST_enum) {
 
       auto GenAttributeDiagnostic = [this, &DS](const ParsedAttr &AL) {

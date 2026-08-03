@@ -426,7 +426,116 @@ Parser::ParseCastExpression(CastParseKind ParseKind, bool isAddressOfOperand,
     Res = Actions.OnNullPtrLiteral(ConsumeToken());
     break;
 
-  case tok::identifier: { // primary-expression: identifier
+  case tok::kw_this:
+    if (!getLangOpts().CPlusPlus) {
+      Diag(Tok, diag::err_expected) << "expression";
+      return ExprError();
+    }
+    Res = Actions.OnCXXThis(ConsumeToken());
+    break;
+
+  case tok::kw_requires: {
+    if (!getLangOpts().CPlusPlus) {
+      Diag(Tok, diag::err_expected) << "expression";
+      return ExprError();
+    }
+    // requires-expression (scaffold): requires (opt-params) { ... }
+    SourceLocation ReqLoc = ConsumeToken();
+    if (Tok.is(tok::l_paren)) {
+      BalancedDelimiterTracker T(*this, tok::l_paren);
+      T.consumeOpen();
+      // Skip parameter-declaration-clause lightly.
+      while (!Tok.is(tok::r_paren) && !Tok.is(tok::eof)) {
+        if (Tok.is(tok::l_paren)) {
+          ConsumeAnyToken();
+          // nested
+          unsigned D = 1;
+          while (D && !Tok.is(tok::eof)) {
+            if (Tok.is(tok::l_paren))
+              ++D;
+            else if (Tok.is(tok::r_paren))
+              --D;
+            if (D)
+              ConsumeAnyToken();
+          }
+          if (Tok.is(tok::r_paren))
+            ConsumeToken();
+        } else {
+          ConsumeAnyToken();
+        }
+      }
+      T.consumeClose();
+    }
+    StmtResult Body = StmtError();
+    if (Tok.is(tok::l_brace)) {
+      Body = ParseCompoundStatement();
+    } else {
+      Diag(Tok, diag::err_expected) << "{";
+    }
+    Res = Actions.OnRequiresExpr(ReqLoc, Body.isUsable() ? Body.get() : nullptr);
+    break;
+  }
+
+  case tok::kw_new:
+    if (!getLangOpts().CPlusPlus) {
+      Diag(Tok, diag::err_expected) << "expression";
+      return ExprError();
+    }
+    Res = ParseCXXNewExpression(/*UseGlobal=*/false, ConsumeToken());
+    break;
+
+  case tok::kw_delete:
+    if (!getLangOpts().CPlusPlus) {
+      Diag(Tok, diag::err_expected) << "expression";
+      return ExprError();
+    }
+    Res = ParseCXXDeleteExpression(/*UseGlobal=*/false, ConsumeToken());
+    break;
+
+  case tok::kw_throw:
+    if (!getLangOpts().CPlusPlus) {
+      Diag(Tok, diag::err_expected) << "expression";
+      return ExprError();
+    }
+    Res = ParseThrowExpression();
+    break;
+
+  case tok::kw_co_await:
+    if (!getLangOpts().CPlusPlus) {
+      Diag(Tok, diag::err_expected) << "expression";
+      return ExprError();
+    }
+    Res = ParseCoawaitExpression();
+    break;
+
+  case tok::kw_co_yield:
+    if (!getLangOpts().CPlusPlus) {
+      Diag(Tok, diag::err_expected) << "expression";
+      return ExprError();
+    }
+    Res = ParseCoyieldExpression();
+    break;
+
+  case tok::kw_static_cast:
+  case tok::kw_dynamic_cast:
+  case tok::kw_reinterpret_cast:
+  case tok::kw_const_cast: {
+    if (!getLangOpts().CPlusPlus) {
+      Diag(Tok, diag::err_expected) << "expression";
+      return ExprError();
+    }
+    tok::TokenKind Kind = Tok.getKind();
+    Res = ParseCXXNamedCast(Kind, ConsumeToken());
+    break;
+  }
+
+  case tok::coloncolon:
+    if (!getLangOpts().CPlusPlus) {
+      Diag(Tok, diag::err_expected) << "expression";
+      return ExprError();
+    }
+    LLVM_FALLTHROUGH;
+  case tok::identifier: { // primary-expression: identifier / qualified-id
                           // unqualified-id: identifier
     // constant: enumeration-constant
 
@@ -621,6 +730,10 @@ Parser::ParseCastExpression(CastParseKind ParseKind, bool isAddressOfOperand,
   }
 
   case tok::l_square:
+    if (getLangOpts().CPlusPlus) {
+      Res = ParseLambdaExpression();
+      break;
+    }
     [[fallthrough]];
   default:
     NotCastExpr = true;

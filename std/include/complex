@@ -1,0 +1,15 @@
+// NeverC <complex> scaffold (non-stream)
+#pragma once
+namespace std {
+template <class T> class complex {
+  T Re{}, Im{};
+public:
+  constexpr complex(const T &re = T(), const T &im = T()) : Re(re), Im(im) {}
+  constexpr T real() const { return Re; }
+  constexpr T imag() const { return Im; }
+  void real(T v) { Re = v; }
+  void imag(T v) { Im = v; }
+};
+template <class T> constexpr T real(const complex<T> &z) { return z.real(); }
+template <class T> constexpr T imag(const complex<T> &z) { return z.imag(); }
+} // namespace std

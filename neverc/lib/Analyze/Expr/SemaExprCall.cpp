@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Expr/SemaExprUtils.h"
+#include "neverc/Analyze/Overload.h"
 #include "Expr/TreeTransform.h"
 #include "neverc/Analyze/Designator.h"
 #include "neverc/Analyze/EnterExpressionEvaluationContext.h"
@@ -34,6 +35,28 @@ using namespace sema;
 
 ExprResult Sema::OnCallExpr(Scope *Scope, Expr *Fn, SourceLocation LParenLoc,
                             MultiExprArg ArgExprs, SourceLocation RParenLoc) {
+  // C++: resolve overloaded callee before forming the call.
+  if (getLangOpts().CPlusPlus) {
+    if (auto *ULE = dyn_cast<UnresolvedLookupExpr>(Fn->IgnoreParens())) {
+      OverloadCandidateSet CandidateSet(ULE->getNameLoc());
+      for (NamedDecl *D : ULE->decls()) {
+        if (auto *FD = dyn_cast<FunctionDecl>(D))
+          AddOverloadCandidate(FD, ArgExprs, CandidateSet);
+      }
+      FunctionDecl *Chosen = nullptr;
+      if (OverloadCandidate *Best =
+              CandidateSet.BestViableFunction(*this, LParenLoc)) {
+        Chosen = Best->Function;
+      } else if (!ULE->decls().empty()) {
+        // Ambiguous or no viable candidate: recover with the first function.
+        Chosen = dyn_cast<FunctionDecl>(ULE->decls().front());
+      }
+      if (Chosen) {
+        Fn = DeclRefExpr::Create(Context, Chosen, ULE->getNameLoc(),
+                                 Chosen->getType(), VK_PRValue, Chosen);
+      }
+    }
+  }
   return FormCallExpr(Scope, Fn, LParenLoc, ArgExprs, RParenLoc,
                       /*AllowRecovery=*/true);
 }

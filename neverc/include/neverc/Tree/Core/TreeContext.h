@@ -1,3 +1,4 @@
+#include "neverc/Tree/NestedNameSpecifier.h"
 #ifndef NEVERC_TREE_ASTCONTEXT_H
 #define NEVERC_TREE_ASTCONTEXT_H
 
@@ -33,6 +34,7 @@ template <typename T, unsigned N> class SmallPtrSet;
 } // namespace llvm
 
 namespace neverc {
+class NestedNameSpecifier;
 
 using llvm::dyn_cast_or_null;
 
@@ -99,8 +101,14 @@ struct TypeInfoChars {
 class TreeContext : public llvm::RefCountedBase<TreeContext> {
   mutable llvm::SmallVector<Type *, 0> Types;
   mutable llvm::FoldingSet<ExtQuals> ExtQualNodes;
+  mutable llvm::FoldingSet<TemplateTypeParmType> TemplateTypeParmTypes;
   mutable llvm::FoldingSet<ComplexType> ComplexTypes;
   mutable llvm::FoldingSet<PointerType> PointerTypes{GeneralTypesLog2InitSize};
+  mutable llvm::FoldingSet<LValueReferenceType> LValueReferenceTypes{
+      GeneralTypesLog2InitSize};
+  mutable llvm::FoldingSet<RValueReferenceType> RValueReferenceTypes{
+      GeneralTypesLog2InitSize};
+  mutable llvm::FoldingSet<NestedNameSpecifier> NestedNameSpecifiers;
   mutable llvm::FoldingSet<AdjustedType> AdjustedTypes;
   mutable llvm::ContextualFoldingSet<ConstantArrayType, TreeContext &>
       ConstantArrayTypes;
@@ -187,6 +195,7 @@ private:
 
   DeclListNode *ListNodeFreeList = nullptr;
 
+  friend class NestedNameSpecifier;
 public:
   IdentifierTable &Idents;
   Builtin::Context &BuiltinInfo;
@@ -409,9 +418,17 @@ public:
   }
 
   QualType getPointerType(QualType T) const;
+  llvm::FoldingSet<NestedNameSpecifier> &getNestedNameSpecifiers() const {
+    return NestedNameSpecifiers;
+  }
   CanQualType getPointerType(CanQualType T) const {
     return CanQualType::CreateUnsafe(getPointerType((QualType)T));
   }
+  QualType   QualType getTemplateTypeParmType(unsigned Depth, unsigned Index,
+                                   bool ParameterPack = false) const;
+
+  getLValueReferenceType(QualType T) const;
+  QualType getRValueReferenceType(QualType T) const;
 
   QualType getAdjustedType(QualType Orig, QualType New) const;
   CanQualType getAdjustedType(CanQualType Orig, CanQualType New) const {

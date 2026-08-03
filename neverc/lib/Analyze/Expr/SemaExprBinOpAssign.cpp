@@ -1265,5 +1265,64 @@ NEVERC_HOT ExprResult Sema::FormBinOp(Scope *S, SourceLocation OpLoc,
                                   CurFPFeatureOverrides());
   }
 
+  // C++: class-type operands — look up a unique member operatorOP on LHS record.
+  if (getLangOpts().CPlusPlus && !BinaryOperator::isAssignmentOp(Opc)) {
+    auto recordFrom = [](QualType Ty) -> const CXXRecordDecl * {
+      if (Ty.isNull())
+        return nullptr;
+      const Type *T = Ty.getTypePtr();
+      if (T->isReferenceType())
+        T = T->getPointeeType().getTypePtrOrNull();
+      return T ? T->getAsCXXRecordDecl() : nullptr;
+    };
+    if (const CXXRecordDecl *LRD = recordFrom(LHSExpr->getType())) {
+      OverloadedOperatorKind OpKind = OO_None;
+      switch (Opc) {
+      case BO_Add: OpKind = OO_Plus; break;
+      case BO_Sub: OpKind = OO_Minus; break;
+      case BO_Mul: OpKind = OO_Star; break;
+      case BO_Div: OpKind = OO_Slash; break;
+      case BO_Rem: OpKind = OO_Percent; break;
+      case BO_EQ: OpKind = OO_EqualEqual; break;
+      case BO_NE: OpKind = OO_Exclaimequal; break;
+      case BO_LT: OpKind = OO_Less; break;
+      case BO_GT: OpKind = OO_Greater; break;
+      case BO_LE: OpKind = OO_Lessequal; break;
+      case BO_GE: OpKind = OO_Greaterequal; break;
+      case BO_And: OpKind = OO_Amp; break;
+      case BO_Or: OpKind = OO_Pipe; break;
+      case BO_Xor: OpKind = OO_Caret; break;
+      case BO_Shl: OpKind = OO_LessLess; break;
+      case BO_Shr: OpKind = OO_GreaterGreater; break;
+      default: break;
+      }
+      if (OpKind != OO_None) {
+        const CXXRecordDecl *Def =
+            LRD->getDefinition() ? LRD->getDefinition() : LRD;
+        CXXMethodDecl *Found = nullptr;
+        unsigned FoundCount = 0;
+        for (Decl *D : Def->decls()) {
+          auto *MD = dyn_cast<CXXMethodDecl>(D);
+          if (!MD)
+            continue;
+          if (MD->getDeclName().getCXXOverloadedOperator() != OpKind)
+            continue;
+          Found = MD;
+          ++FoundCount;
+        }
+        if (FoundCount == 1 && Found) {
+          QualType CallTy = Found->getReturnType();
+          if (CallTy.isNull())
+            CallTy = Context.IntTy;
+          Expr *Callee = DeclRefExpr::Create(
+              Context, Found, OpLoc, Found->getType(), VK_LValue);
+          (void)S;
+          return new (Context)
+              CXXOperatorCallExpr(CallTy, OpLoc, Callee, LHSExpr, RHSExpr);
+        }
+      }
+    }
+  }
+
   return CreateBuiltinBinOp(OpLoc, Opc, LHSExpr, RHSExpr);
 }

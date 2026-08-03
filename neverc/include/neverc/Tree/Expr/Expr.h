@@ -35,6 +35,8 @@ template <> struct PointerLikeTypeTraits<neverc::Expr *> {
 } // namespace llvm
 
 namespace neverc {
+
+class CXXConstructorDecl;
 class APValue;
 class TreeContext;
 class CastExpr;
@@ -3158,6 +3160,797 @@ public:
   }
   const_child_range children() const {
     return const_child_range(&SubExprs[0], &SubExprs[0] + END_EXPR);
+  }
+};
+
+class CXXThisExpr : public Expr {
+public:
+  CXXThisExpr(SourceLocation L, QualType Ty, bool IsImplicit)
+      : Expr(CXXThisExprClass, Ty, VK_LValue, OK_Ordinary) {
+    CXXThisExprBits.IsImplicit = IsImplicit;
+    CXXThisExprBits.Loc = L;
+    setDependence(ExprDependence::None);
+  }
+
+  explicit CXXThisExpr(EmptyShell Empty) : Expr(CXXThisExprClass, Empty) {}
+
+  SourceLocation getLocation() const { return CXXThisExprBits.Loc; }
+  void setLocation(SourceLocation L) { CXXThisExprBits.Loc = L; }
+
+  SourceLocation getBeginLoc() const { return getLocation(); }
+  SourceLocation getEndLoc() const { return getLocation(); }
+
+  bool isImplicit() const { return CXXThisExprBits.IsImplicit; }
+  void setImplicit(bool I) { CXXThisExprBits.IsImplicit = I; }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXThisExprClass;
+  }
+
+  child_range children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+};
+
+
+// --- C++ expression stubs (Phase 1 scaffolding) ---
+
+class CXXNewExpr : public Expr {
+  Stmt *SubExpr = nullptr;
+  SourceLocation Loc;
+public:
+  CXXNewExpr(QualType Ty, SourceLocation L, Expr *Init = nullptr)
+      : Expr(CXXNewExprClass, Ty, VK_PRValue, OK_Ordinary), SubExpr(Init), Loc(L) {
+    setDependence(ExprDependence::None);
+  }
+  explicit CXXNewExpr(EmptyShell Empty) : Expr(CXXNewExprClass, Empty) {}
+  SourceLocation getBeginLoc() const { return Loc; }
+  SourceLocation getEndLoc() const { return Loc; }
+  Expr *getInitializer() { return static_cast<Expr *>(SubExpr); }
+  const Expr *getInitializer() const { return static_cast<const Expr *>(SubExpr); }
+  static bool classof(const Stmt *T) { return T->getStmtClass() == CXXNewExprClass; }
+  child_range children() {
+    return SubExpr ? child_range(&SubExpr, &SubExpr + 1)
+                   : child_range(child_iterator(), child_iterator());
+  }
+  const_child_range children() const {
+    return SubExpr ? const_child_range(&SubExpr, &SubExpr + 1)
+                   : const_child_range(const_child_iterator(), const_child_iterator());
+  }
+};
+
+class CXXDeleteExpr : public Expr {
+  Stmt *Arg = nullptr;
+  SourceLocation Loc;
+  bool ArrayForm = false;
+public:
+  CXXDeleteExpr(QualType Ty, SourceLocation L, Expr *A, bool IsArray)
+      : Expr(CXXDeleteExprClass, Ty, VK_PRValue, OK_Ordinary), Arg(A), Loc(L),
+        ArrayForm(IsArray) {
+    setDependence(ExprDependence::None);
+  }
+  explicit CXXDeleteExpr(EmptyShell Empty) : Expr(CXXDeleteExprClass, Empty) {}
+  bool isArrayForm() const { return ArrayForm; }
+  SourceLocation getBeginLoc() const { return Loc; }
+  SourceLocation getEndLoc() const { return Loc; }
+  Expr *getArgument() { return static_cast<Expr *>(Arg); }
+  const Expr *getArgument() const { return static_cast<const Expr *>(Arg); }
+  static bool classof(const Stmt *T) { return T->getStmtClass() == CXXDeleteExprClass; }
+  child_range children() {
+    return Arg ? child_range(&Arg, &Arg + 1)
+               : child_range(child_iterator(), child_iterator());
+  }
+  const_child_range children() const {
+    return Arg ? const_child_range(&Arg, &Arg + 1)
+               : const_child_range(const_child_iterator(), const_child_iterator());
+  }
+};
+
+class CXXThrowExpr : public Expr {
+  Stmt *Op = nullptr;
+  SourceLocation Loc;
+public:
+  CXXThrowExpr(QualType Ty, SourceLocation L, Expr *Operand = nullptr)
+      : Expr(CXXThrowExprClass, Ty, VK_PRValue, OK_Ordinary), Op(Operand), Loc(L) {
+    setDependence(ExprDependence::None);
+  }
+  explicit CXXThrowExpr(EmptyShell Empty) : Expr(CXXThrowExprClass, Empty) {}
+  SourceLocation getBeginLoc() const { return Loc; }
+  SourceLocation getEndLoc() const { return Loc; }
+  Expr *getSubExpr() { return static_cast<Expr *>(Op); }
+  const Expr *getSubExpr() const { return static_cast<const Expr *>(Op); }
+  static bool classof(const Stmt *T) { return T->getStmtClass() == CXXThrowExprClass; }
+  child_range children() {
+    return Op ? child_range(&Op, &Op + 1)
+              : child_range(child_iterator(), child_iterator());
+  }
+  const_child_range children() const {
+    return Op ? const_child_range(&Op, &Op + 1)
+              : const_child_range(const_child_iterator(), const_child_iterator());
+  }
+};
+
+class CXXStaticCastExpr : public Expr {
+  Stmt *Op = nullptr;
+  SourceLocation Loc;
+public:
+  CXXStaticCastExpr(QualType Ty, SourceLocation L, Expr *Operand)
+      : Expr(CXXStaticCastExprClass, Ty, VK_PRValue, OK_Ordinary), Op(Operand), Loc(L) {
+    setDependence(ExprDependence::None);
+  }
+  explicit CXXStaticCastExpr(EmptyShell Empty) : Expr(CXXStaticCastExprClass, Empty) {}
+  SourceLocation getBeginLoc() const { return Loc; }
+  SourceLocation getEndLoc() const { return Loc; }
+  Expr *getSubExpr() { return static_cast<Expr *>(Op); }
+  const Expr *getSubExpr() const { return static_cast<const Expr *>(Op); }
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXStaticCastExprClass;
+  }
+  child_range children() {
+    return Op ? child_range(&Op, &Op + 1)
+              : child_range(child_iterator(), child_iterator());
+  }
+  const_child_range children() const {
+    return Op ? const_child_range(&Op, &Op + 1)
+              : const_child_range(const_child_iterator(), const_child_iterator());
+  }
+};
+
+class CXXDynamicCastExpr : public Expr {
+  Stmt *Op = nullptr;
+  SourceLocation Loc;
+public:
+  CXXDynamicCastExpr(QualType Ty, SourceLocation L, Expr *Operand)
+      : Expr(CXXDynamicCastExprClass, Ty, VK_PRValue, OK_Ordinary), Op(Operand), Loc(L) {
+    setDependence(ExprDependence::None);
+  }
+  explicit CXXDynamicCastExpr(EmptyShell Empty) : Expr(CXXDynamicCastExprClass, Empty) {}
+  SourceLocation getBeginLoc() const { return Loc; }
+  SourceLocation getEndLoc() const { return Loc; }
+  Expr *getSubExpr() { return static_cast<Expr *>(Op); }
+  const Expr *getSubExpr() const { return static_cast<const Expr *>(Op); }
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXDynamicCastExprClass;
+  }
+  child_range children() {
+    return Op ? child_range(&Op, &Op + 1)
+              : child_range(child_iterator(), child_iterator());
+  }
+  const_child_range children() const {
+    return Op ? const_child_range(&Op, &Op + 1)
+              : const_child_range(const_child_iterator(), const_child_iterator());
+  }
+};
+
+class CXXReinterpretCastExpr : public Expr {
+  Stmt *Op = nullptr;
+  SourceLocation Loc;
+public:
+  CXXReinterpretCastExpr(QualType Ty, SourceLocation L, Expr *Operand)
+      : Expr(CXXReinterpretCastExprClass, Ty, VK_PRValue, OK_Ordinary), Op(Operand),
+        Loc(L) {
+    setDependence(ExprDependence::None);
+  }
+  explicit CXXReinterpretCastExpr(EmptyShell Empty)
+      : Expr(CXXReinterpretCastExprClass, Empty) {}
+  SourceLocation getBeginLoc() const { return Loc; }
+  SourceLocation getEndLoc() const { return Loc; }
+  Expr *getSubExpr() { return static_cast<Expr *>(Op); }
+  const Expr *getSubExpr() const { return static_cast<const Expr *>(Op); }
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXReinterpretCastExprClass;
+  }
+  child_range children() {
+    return Op ? child_range(&Op, &Op + 1)
+              : child_range(child_iterator(), child_iterator());
+  }
+  const_child_range children() const {
+    return Op ? const_child_range(&Op, &Op + 1)
+              : const_child_range(const_child_iterator(), const_child_iterator());
+  }
+};
+
+class CXXConstCastExpr : public Expr {
+  Stmt *Op = nullptr;
+  SourceLocation Loc;
+public:
+  CXXConstCastExpr(QualType Ty, SourceLocation L, Expr *Operand)
+      : Expr(CXXConstCastExprClass, Ty, VK_PRValue, OK_Ordinary), Op(Operand), Loc(L) {
+    setDependence(ExprDependence::None);
+  }
+  explicit CXXConstCastExpr(EmptyShell Empty) : Expr(CXXConstCastExprClass, Empty) {}
+  SourceLocation getBeginLoc() const { return Loc; }
+  SourceLocation getEndLoc() const { return Loc; }
+  Expr *getSubExpr() { return static_cast<Expr *>(Op); }
+  const Expr *getSubExpr() const { return static_cast<const Expr *>(Op); }
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXConstCastExprClass;
+  }
+  child_range children() {
+    return Op ? child_range(&Op, &Op + 1)
+              : child_range(child_iterator(), child_iterator());
+  }
+  const_child_range children() const {
+    return Op ? const_child_range(&Op, &Op + 1)
+              : const_child_range(const_child_iterator(), const_child_iterator());
+  }
+};
+
+class CXXFunctionalCastExpr : public Expr {
+  Stmt *Op = nullptr;
+  SourceLocation Loc;
+public:
+  CXXFunctionalCastExpr(QualType Ty, SourceLocation L, Expr *Operand)
+      : Expr(CXXFunctionalCastExprClass, Ty, VK_PRValue, OK_Ordinary), Op(Operand),
+        Loc(L) {
+    setDependence(ExprDependence::None);
+  }
+  explicit CXXFunctionalCastExpr(EmptyShell Empty)
+      : Expr(CXXFunctionalCastExprClass, Empty) {}
+  SourceLocation getBeginLoc() const { return Loc; }
+  SourceLocation getEndLoc() const { return Loc; }
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXFunctionalCastExprClass;
+  }
+  child_range children() {
+    return Op ? child_range(&Op, &Op + 1)
+              : child_range(child_iterator(), child_iterator());
+  }
+  const_child_range children() const {
+    return Op ? const_child_range(&Op, &Op + 1)
+              : const_child_range(const_child_iterator(), const_child_iterator());
+  }
+};
+
+class CXXTypeidExpr : public Expr {
+  Stmt *Op = nullptr;
+  SourceLocation Loc;
+public:
+  CXXTypeidExpr(QualType Ty, SourceLocation L, Expr *Operand = nullptr)
+      : Expr(CXXTypeidExprClass, Ty, VK_LValue, OK_Ordinary), Op(Operand), Loc(L) {
+    setDependence(ExprDependence::None);
+  }
+  explicit CXXTypeidExpr(EmptyShell Empty) : Expr(CXXTypeidExprClass, Empty) {}
+  bool isTypeOperand() const { return Op == nullptr; }
+  Expr *getExprOperand() { return cast_or_null<Expr>(Op); }
+  const Expr *getExprOperand() const { return cast_or_null<Expr>(Op); }
+  SourceLocation getBeginLoc() const { return Loc; }
+  SourceLocation getEndLoc() const { return Loc; }
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXTypeidExprClass;
+  }
+  child_range children() {
+    return Op ? child_range(&Op, &Op + 1)
+              : child_range(child_iterator(), child_iterator());
+  }
+  const_child_range children() const {
+    return Op ? const_child_range(&Op, &Op + 1)
+              : const_child_range(const_child_iterator(), const_child_iterator());
+  }
+};
+
+class LambdaExpr : public Expr {
+  Stmt *Body = nullptr;
+  SourceLocation IntroducerRangeBegin;
+  SourceLocation IntroducerRangeEnd;
+  /// 0 = none, 1 = [=], 2 = [&]
+  unsigned CaptureDefault = 0;
+  unsigned NumCaptures = 0;
+  IdentifierInfo **CaptureIds = nullptr;
+
+public:
+  LambdaExpr(QualType Ty, SourceLocation Begin, SourceLocation End, Stmt *B,
+             unsigned CapDefault = 0, unsigned NCaps = 0,
+             IdentifierInfo **Caps = nullptr)
+      : Expr(LambdaExprClass, Ty, VK_PRValue, OK_Ordinary), Body(B),
+        IntroducerRangeBegin(Begin), IntroducerRangeEnd(End),
+        CaptureDefault(CapDefault), NumCaptures(NCaps), CaptureIds(Caps) {
+    setDependence(ExprDependence::None);
+  }
+  explicit LambdaExpr(EmptyShell Empty) : Expr(LambdaExprClass, Empty) {}
+  SourceLocation getBeginLoc() const { return IntroducerRangeBegin; }
+  SourceLocation getEndLoc() const { return IntroducerRangeEnd; }
+  Stmt *getBody() { return Body; }
+  const Stmt *getBody() const { return Body; }
+  unsigned getCaptureDefault() const { return CaptureDefault; }
+  unsigned getNumCaptures() const { return NumCaptures; }
+  IdentifierInfo *getCaptureId(unsigned I) const {
+    return CaptureIds && I < NumCaptures ? CaptureIds[I] : nullptr;
+  }
+  static bool classof(const Stmt *T) { return T->getStmtClass() == LambdaExprClass; }
+  child_range children() {
+    return Body ? child_range(&Body, &Body + 1)
+                : child_range(child_iterator(), child_iterator());
+  }
+  const_child_range children() const {
+    return Body ? const_child_range(&Body, &Body + 1)
+                : const_child_range(const_child_iterator(), const_child_iterator());
+  }
+};
+
+
+
+/// C++ constructor call expression (scaffold).
+class CXXConstructExpr : public Expr {
+  CXXConstructorDecl *Constructor = nullptr;
+  SourceLocation Loc;
+  bool Elidable = false;
+  Stmt **Args = nullptr;
+  unsigned NumArgs = 0;
+
+public:
+  CXXConstructExpr(QualType Ty, SourceLocation L, CXXConstructorDecl *Ctor,
+                   bool IsElidable, Stmt **ArgsIn = nullptr,
+                   unsigned NumArgsIn = 0)
+      : Expr(CXXConstructExprClass, Ty, VK_PRValue, OK_Ordinary),
+        Constructor(Ctor), Loc(L), Elidable(IsElidable), Args(ArgsIn),
+        NumArgs(NumArgsIn) {
+    setDependence(ExprDependence::None);
+  }
+  explicit CXXConstructExpr(EmptyShell Empty)
+      : Expr(CXXConstructExprClass, Empty) {}
+  CXXConstructorDecl *getConstructor() const { return Constructor; }
+  bool isElidable() const { return Elidable; }
+  unsigned getNumArgs() const { return NumArgs; }
+  Expr *getArg(unsigned I) {
+    assert(I < NumArgs);
+    return cast_or_null<Expr>(Args[I]);
+  }
+  const Expr *getArg(unsigned I) const {
+    assert(I < NumArgs);
+    return cast_or_null<Expr>(Args[I]);
+  }
+  SourceLocation getBeginLoc() const { return Loc; }
+  SourceLocation getEndLoc() const { return Loc; }
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXConstructExprClass;
+  }
+  child_range children() {
+    return NumArgs ? child_range(Args, Args + NumArgs)
+                   : child_range(child_iterator(), child_iterator());
+  }
+  const_child_range children() const {
+    return NumArgs ? const_child_range(Args, Args + NumArgs)
+                   : const_child_range(const_child_iterator(),
+                                       const_child_iterator());
+  }
+};
+
+/// C++ member call: obj.f(args) / obj->f(args). Scaffold (not CallExpr-derived yet).
+class CXXMemberCallExpr : public Expr {
+  Stmt *Callee = nullptr; // typically MemberExpr
+  SourceLocation RParenLoc;
+
+public:
+  CXXMemberCallExpr(QualType Ty, SourceLocation Loc, Expr *CalleeE)
+      : Expr(CXXMemberCallExprClass, Ty, VK_PRValue, OK_Ordinary),
+        Callee(CalleeE), RParenLoc(Loc) {
+    setDependence(ExprDependence::None);
+  }
+  explicit CXXMemberCallExpr(EmptyShell Empty)
+      : Expr(CXXMemberCallExprClass, Empty) {}
+
+  Expr *getCallee() { return cast_or_null<Expr>(Callee); }
+  const Expr *getCallee() const { return cast_or_null<Expr>(Callee); }
+  SourceLocation getBeginLoc() const {
+    return Callee ? Callee->getBeginLoc() : RParenLoc;
+  }
+  SourceLocation getEndLoc() const { return RParenLoc; }
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXMemberCallExprClass;
+  }
+  child_range children() {
+    return Callee ? child_range(&Callee, &Callee + 1)
+                  : child_range(child_iterator(), child_iterator());
+  }
+  const_child_range children() const {
+    return Callee ? const_child_range(&Callee, &Callee + 1)
+                  : const_child_range(const_child_iterator(),
+                                     const_child_iterator());
+  }
+};
+
+/// C++ operator call: a + b rewritten as operator+(a,b).
+class CXXOperatorCallExpr : public Expr {
+  enum { CALLEE = 0, ARG0 = 1, ARG1 = 2, NUM_SUBEXPRS = 3 };
+  Stmt *SubExprs[NUM_SUBEXPRS] = {};
+  SourceLocation Loc;
+  unsigned NumArgs = 0;
+
+public:
+  CXXOperatorCallExpr(QualType Ty, SourceLocation L, Expr *CalleeE,
+                      Expr *Arg0 = nullptr, Expr *Arg1 = nullptr)
+      : Expr(CXXOperatorCallExprClass, Ty, VK_PRValue, OK_Ordinary), Loc(L) {
+    SubExprs[CALLEE] = CalleeE;
+    SubExprs[ARG0] = Arg0;
+    SubExprs[ARG1] = Arg1;
+    NumArgs = Arg1 ? 2 : (Arg0 ? 1 : 0);
+    setDependence(ExprDependence::None);
+  }
+  explicit CXXOperatorCallExpr(EmptyShell Empty)
+      : Expr(CXXOperatorCallExprClass, Empty) {}
+  Expr *getCallee() { return cast_or_null<Expr>(SubExprs[CALLEE]); }
+  const Expr *getCallee() const {
+    return cast_or_null<Expr>(SubExprs[CALLEE]);
+  }
+  unsigned getNumArgs() const { return NumArgs; }
+  Expr *getArg(unsigned I) {
+    return I < NumArgs ? cast_or_null<Expr>(SubExprs[ARG0 + I]) : nullptr;
+  }
+  const Expr *getArg(unsigned I) const {
+    return I < NumArgs ? cast_or_null<Expr>(SubExprs[ARG0 + I]) : nullptr;
+  }
+  SourceLocation getBeginLoc() const { return Loc; }
+  SourceLocation getEndLoc() const { return Loc; }
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXOperatorCallExprClass;
+  }
+  child_range children() {
+    return child_range(&SubExprs[0], &SubExprs[0] + NUM_SUBEXPRS);
+  }
+  const_child_range children() const {
+    return const_child_range(&SubExprs[0], &SubExprs[0] + NUM_SUBEXPRS);
+  }
+};
+
+class MaterializeTemporaryExpr : public Expr {
+  Stmt *Temporary = nullptr;
+public:
+  MaterializeTemporaryExpr(QualType Ty, Expr *Temp)
+      : Expr(MaterializeTemporaryExprClass, Ty, VK_LValue, OK_Ordinary),
+        Temporary(Temp) {
+    setDependence(ExprDependence::None);
+  }
+  explicit MaterializeTemporaryExpr(EmptyShell Empty)
+      : Expr(MaterializeTemporaryExprClass, Empty) {}
+  Expr *getSubExpr() { return cast_or_null<Expr>(Temporary); }
+  const Expr *getSubExpr() const { return cast_or_null<Expr>(Temporary); }
+  SourceLocation getBeginLoc() const {
+    return Temporary ? Temporary->getBeginLoc() : SourceLocation();
+  }
+  SourceLocation getEndLoc() const {
+    return Temporary ? Temporary->getEndLoc() : SourceLocation();
+  }
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == MaterializeTemporaryExprClass;
+  }
+  child_range children() {
+    return Temporary ? child_range(&Temporary, &Temporary + 1)
+                     : child_range(child_iterator(), child_iterator());
+  }
+  const_child_range children() const {
+    return Temporary ? const_child_range(&Temporary, &Temporary + 1)
+                     : const_child_range(const_child_iterator(),
+                                        const_child_iterator());
+  }
+};
+
+class CXXDefaultArgExpr : public Expr {
+  SourceLocation Loc;
+public:
+  CXXDefaultArgExpr(QualType Ty, SourceLocation L)
+      : Expr(CXXDefaultArgExprClass, Ty, VK_PRValue, OK_Ordinary), Loc(L) {
+    setDependence(ExprDependence::None);
+  }
+  explicit CXXDefaultArgExpr(EmptyShell Empty)
+      : Expr(CXXDefaultArgExprClass, Empty) {}
+  SourceLocation getBeginLoc() const { return Loc; }
+  SourceLocation getEndLoc() const { return Loc; }
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXDefaultArgExprClass;
+  }
+  child_range children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+};
+
+class CXXDefaultInitExpr : public Expr {
+  SourceLocation Loc;
+public:
+  CXXDefaultInitExpr(QualType Ty, SourceLocation L)
+      : Expr(CXXDefaultInitExprClass, Ty, VK_PRValue, OK_Ordinary), Loc(L) {
+    setDependence(ExprDependence::None);
+  }
+  explicit CXXDefaultInitExpr(EmptyShell Empty)
+      : Expr(CXXDefaultInitExprClass, Empty) {}
+  SourceLocation getBeginLoc() const { return Loc; }
+  SourceLocation getEndLoc() const { return Loc; }
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXDefaultInitExprClass;
+  }
+  child_range children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+};
+
+class CXXScalarValueInitExpr : public Expr {
+  SourceLocation RParenLoc;
+public:
+  CXXScalarValueInitExpr(QualType Ty, SourceLocation RP)
+      : Expr(CXXScalarValueInitExprClass, Ty, VK_PRValue, OK_Ordinary),
+        RParenLoc(RP) {
+    setDependence(ExprDependence::None);
+  }
+  explicit CXXScalarValueInitExpr(EmptyShell Empty)
+      : Expr(CXXScalarValueInitExprClass, Empty) {}
+  SourceLocation getBeginLoc() const { return RParenLoc; }
+  SourceLocation getEndLoc() const { return RParenLoc; }
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXScalarValueInitExprClass;
+  }
+  child_range children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+};
+
+class CXXUnresolvedConstructExpr : public Expr {
+  SourceLocation LParenLoc;
+  SourceLocation RParenLoc;
+public:
+  CXXUnresolvedConstructExpr(QualType Ty, SourceLocation LP, SourceLocation RP)
+      : Expr(CXXUnresolvedConstructExprClass, Ty, VK_PRValue, OK_Ordinary),
+        LParenLoc(LP), RParenLoc(RP) {
+    setDependence(ExprDependence::TypeValueInstantiation);
+  }
+  explicit CXXUnresolvedConstructExpr(EmptyShell Empty)
+      : Expr(CXXUnresolvedConstructExprClass, Empty) {}
+  SourceLocation getBeginLoc() const { return LParenLoc; }
+  SourceLocation getEndLoc() const { return RParenLoc; }
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXUnresolvedConstructExprClass;
+  }
+  child_range children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+};
+
+class CXXDependentScopeMemberExpr : public Expr {
+  Stmt *Base = nullptr;
+  SourceLocation OperatorLoc;
+  bool IsArrow = false;
+public:
+  CXXDependentScopeMemberExpr(QualType Ty, Expr *BaseE, bool Arrow,
+                              SourceLocation OpLoc)
+      : Expr(CXXDependentScopeMemberExprClass, Ty, VK_LValue, OK_Ordinary),
+        Base(BaseE), OperatorLoc(OpLoc), IsArrow(Arrow) {
+    setDependence(ExprDependence::TypeValueInstantiation);
+  }
+  explicit CXXDependentScopeMemberExpr(EmptyShell Empty)
+      : Expr(CXXDependentScopeMemberExprClass, Empty) {}
+  Expr *getBase() { return cast_or_null<Expr>(Base); }
+  const Expr *getBase() const { return cast_or_null<Expr>(Base); }
+  bool isArrow() const { return IsArrow; }
+  SourceLocation getBeginLoc() const {
+    return Base ? Base->getBeginLoc() : OperatorLoc;
+  }
+  SourceLocation getEndLoc() const { return OperatorLoc; }
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXDependentScopeMemberExprClass;
+  }
+  child_range children() {
+    return Base ? child_range(&Base, &Base + 1)
+                : child_range(child_iterator(), child_iterator());
+  }
+  const_child_range children() const {
+    return Base ? const_child_range(&Base, &Base + 1)
+                : const_child_range(const_child_iterator(),
+                                   const_child_iterator());
+  }
+};
+
+class CoawaitExpr : public Expr {
+  Stmt *Op = nullptr;
+  SourceLocation Loc;
+public:
+  CoawaitExpr(QualType Ty, SourceLocation L, Expr *Operand)
+      : Expr(CoawaitExprClass, Ty, VK_PRValue, OK_Ordinary), Op(Operand), Loc(L) {
+    setDependence(ExprDependence::None);
+  }
+  explicit CoawaitExpr(EmptyShell Empty) : Expr(CoawaitExprClass, Empty) {}
+  SourceLocation getBeginLoc() const { return Loc; }
+  SourceLocation getEndLoc() const { return Loc; }
+  Expr *getOperand() { return static_cast<Expr *>(Op); }
+  const Expr *getOperand() const { return static_cast<const Expr *>(Op); }
+  static bool classof(const Stmt *T) { return T->getStmtClass() == CoawaitExprClass; }
+  child_range children() {
+    return Op ? child_range(&Op, &Op + 1)
+              : child_range(child_iterator(), child_iterator());
+  }
+  const_child_range children() const {
+    return Op ? const_child_range(&Op, &Op + 1)
+              : const_child_range(const_child_iterator(), const_child_iterator());
+  }
+};
+
+class CoyieldExpr : public Expr {
+  Stmt *Op = nullptr;
+  SourceLocation Loc;
+public:
+  CoyieldExpr(QualType Ty, SourceLocation L, Expr *Operand)
+      : Expr(CoyieldExprClass, Ty, VK_PRValue, OK_Ordinary), Op(Operand), Loc(L) {
+    setDependence(ExprDependence::None);
+  }
+  explicit CoyieldExpr(EmptyShell Empty) : Expr(CoyieldExprClass, Empty) {}
+  SourceLocation getBeginLoc() const { return Loc; }
+  SourceLocation getEndLoc() const { return Loc; }
+  Expr *getOperand() { return static_cast<Expr *>(Op); }
+  const Expr *getOperand() const { return static_cast<const Expr *>(Op); }
+  static bool classof(const Stmt *T) { return T->getStmtClass() == CoyieldExprClass; }
+  child_range children() {
+    return Op ? child_range(&Op, &Op + 1)
+              : child_range(child_iterator(), child_iterator());
+  }
+  const_child_range children() const {
+    return Op ? const_child_range(&Op, &Op + 1)
+              : const_child_range(const_child_iterator(), const_child_iterator());
+  }
+};
+
+/// C++20 requires-expression: requires (params?) { requirements }.
+/// Scaffold: type is bool; body not yet stored as requirement list.
+class RequiresExpr : public Expr {
+  SourceLocation RequiresLoc;
+  Stmt *Body = nullptr; // optional compound of requirement placeholders
+public:
+  RequiresExpr(QualType Ty, SourceLocation Loc, Stmt *B = nullptr)
+      : Expr(RequiresExprClass, Ty, VK_PRValue, OK_Ordinary), RequiresLoc(Loc),
+        Body(B) {
+    setDependence(ExprDependence::None);
+  }
+  explicit RequiresExpr(EmptyShell Empty) : Expr(RequiresExprClass, Empty) {}
+  SourceLocation getBeginLoc() const { return RequiresLoc; }
+  SourceLocation getEndLoc() const {
+    return Body ? Body->getEndLoc() : RequiresLoc;
+  }
+  Stmt *getBody() { return Body; }
+  const Stmt *getBody() const { return Body; }
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == RequiresExprClass;
+  }
+  child_range children() {
+    return Body ? child_range(&Body, &Body + 1)
+                : child_range(child_iterator(), child_iterator());
+  }
+  const_child_range children() const {
+    return Body ? const_child_range(&Body, &Body + 1)
+                : const_child_range(const_child_iterator(),
+                                    const_child_iterator());
+  }
+};
+
+
+class CoreturnExpr : public Expr {
+  Stmt *Op = nullptr;
+  SourceLocation Loc;
+public:
+  CoreturnExpr(QualType Ty, SourceLocation L, Expr *Operand = nullptr)
+      : Expr(CoreturnExprClass, Ty, VK_PRValue, OK_Ordinary), Op(Operand), Loc(L) {
+    setDependence(ExprDependence::None);
+  }
+  explicit CoreturnExpr(EmptyShell Empty) : Expr(CoreturnExprClass, Empty) {}
+  SourceLocation getBeginLoc() const { return Loc; }
+  SourceLocation getEndLoc() const { return Loc; }
+  Expr *getOperand() { return static_cast<Expr *>(Op); }
+  const Expr *getOperand() const { return static_cast<const Expr *>(Op); }
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CoreturnExprClass;
+  }
+  child_range children() {
+    return Op ? child_range(&Op, &Op + 1)
+              : child_range(child_iterator(), child_iterator());
+  }
+  const_child_range children() const {
+    return Op ? const_child_range(&Op, &Op + 1)
+              : const_child_range(const_child_iterator(), const_child_iterator());
+  }
+};
+
+// Lightweight placeholders for remaining C++ expr node classes (classof only).
+#define NEVERC_CXX_EXPR_PLACEHOLDER(CLASS)                                     \
+  class CLASS : public Expr {                                                  \
+  public:                                                                      \
+    explicit CLASS(EmptyShell Empty) : Expr(CLASS##Class, Empty) {}            \
+    CLASS(QualType Ty, SourceLocation L)                                       \
+        : Expr(CLASS##Class, Ty, VK_PRValue, OK_Ordinary) {                    \
+      (void)L;                                                                 \
+      setDependence(ExprDependence::None);                                     \
+    }                                                                          \
+    SourceLocation getBeginLoc() const { return SourceLocation(); }            \
+    SourceLocation getEndLoc() const { return SourceLocation(); }              \
+    static bool classof(const Stmt *T) {                                       \
+      return T->getStmtClass() == CLASS##Class;                                \
+    }                                                                          \
+    child_range children() {                                                   \
+      return child_range(child_iterator(), child_iterator());                  \
+    }                                                                          \
+    const_child_range children() const {                                       \
+      return const_child_range(const_child_iterator(), const_child_iterator());\
+    }                                                                          \
+  };
+
+NEVERC_CXX_EXPR_PLACEHOLDER(CXXUnresolvedConstructExpr)
+NEVERC_CXX_EXPR_PLACEHOLDER(CXXMemberCallExpr)
+NEVERC_CXX_EXPR_PLACEHOLDER(CXXOperatorCallExpr)
+NEVERC_CXX_EXPR_PLACEHOLDER(PackExpansionExpr)
+NEVERC_CXX_EXPR_PLACEHOLDER(SizeOfPackExpr)
+NEVERC_CXX_EXPR_PLACEHOLDER(SubstNonTypeTemplateParmExpr)
+NEVERC_CXX_EXPR_PLACEHOLDER(DependentScopeDeclRefExpr)
+NEVERC_CXX_EXPR_PLACEHOLDER(CXXDependentScopeMemberExpr)
+NEVERC_CXX_EXPR_PLACEHOLDER(MaterializeTemporaryExpr)
+NEVERC_CXX_EXPR_PLACEHOLDER(CXXDefaultArgExpr)
+NEVERC_CXX_EXPR_PLACEHOLDER(CXXDefaultInitExpr)
+NEVERC_CXX_EXPR_PLACEHOLDER(CXXScalarValueInitExpr)
+#undef NEVERC_CXX_EXPR_PLACEHOLDER
+
+
+
+/// Represents a C++ overloaded function set that has not yet been resolved
+/// to a single function (typically the callee of a call expression).
+class UnresolvedLookupExpr final
+    : public Expr,
+      private llvm::TrailingObjects<UnresolvedLookupExpr, NamedDecl *> {
+  friend TrailingObjects;
+
+  DeclarationNameInfo NameInfo;
+  unsigned NumDecls = 0;
+  bool RequiresADL = false;
+
+  size_t numTrailingObjects(OverloadToken<NamedDecl *>) const {
+    return NumDecls;
+  }
+
+  UnresolvedLookupExpr(const TreeContext &Ctx, const DeclarationNameInfo &Name,
+                       bool RequiresADL, llvm::ArrayRef<NamedDecl *> Decls);
+
+public:
+  static UnresolvedLookupExpr *
+  Create(const TreeContext &Ctx, const DeclarationNameInfo &Name,
+         bool RequiresADL, llvm::ArrayRef<NamedDecl *> Decls);
+
+  explicit UnresolvedLookupExpr(EmptyShell Empty)
+      : Expr(UnresolvedLookupExprClass, Empty) {}
+
+  DeclarationName getName() const { return NameInfo.getName(); }
+  const DeclarationNameInfo &getNameInfo() const { return NameInfo; }
+  SourceLocation getNameLoc() const { return NameInfo.getLoc(); }
+  bool requiresADL() const { return RequiresADL; }
+
+  unsigned getNumDecls() const { return NumDecls; }
+  llvm::ArrayRef<NamedDecl *> decls() const {
+    return {getTrailingObjects<NamedDecl *>(), NumDecls};
+  }
+
+  SourceLocation getBeginLoc() const LLVM_READONLY {
+    return NameInfo.getBeginLoc();
+  }
+  SourceLocation getEndLoc() const LLVM_READONLY {
+    return NameInfo.getEndLoc();
+  }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == UnresolvedLookupExprClass;
+  }
+
+  child_range children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
   }
 };
 

@@ -56,6 +56,7 @@ namespace Emit {
 class FunctionEmitter;
 class TBAAEmitter;
 class CGABI;
+class CXXABI;
 class DebugEmitter;
 class TargetCodeGenInfo;
 
@@ -231,6 +232,8 @@ public:
   DebugEmitter *getModuleDebugInfo() { return DebugInfo.get(); }
 
   TreeContext &getContext() const { return Context; }
+  CXXABI *getCXXABI() { return ABI ? ABI->getCXXABI() : nullptr; }
+
   const LangOptions &getLangOpts() const { return LangOpts; }
   const llvm::IntrusiveRefCntPtr<llvm::vfs::FileSystem> &getFileSystem() const {
     return FS;

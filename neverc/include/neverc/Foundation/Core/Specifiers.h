@@ -42,7 +42,8 @@ enum TypeSpecifierType {
   TST_enum,
   TST_union,
   TST_struct,
-  TST_typename,          // typedef name, struct/union/enum name
+  TST_class,             // C++ class-key
+  TST_typename,          // typedef name, struct/union/enum/class name
   TST_typeofType,        // C23 (and GNU extension) typeof(type-name)
   TST_typeofExpr,        // C23 (and GNU extension) typeof(expression)
   TST_typeof_unqualType, // C23 typeof_unqual(type-name)
@@ -78,7 +79,12 @@ struct WrittenBuiltinSpecs {
   unsigned ModeAttr : 1;
 };
 
-enum AccessSpecifier { AS_public, AS_none };
+enum AccessSpecifier {
+  AS_public,
+  AS_protected,
+  AS_private,
+  AS_none
+};
 
 enum ExprValueKind {
   VK_PRValue,

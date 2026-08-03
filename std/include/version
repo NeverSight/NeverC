@@ -1,0 +1,14 @@
+// NeverC <version> scaffold (C++20 feature-test macros)
+#pragma once
+#define __cpp_lib_concepts 202002L
+#define __cpp_lib_ranges 201911L
+#define __cpp_lib_span 202002L
+#define __cpp_lib_constexpr_algorithms 201806L
+#define __cpp_lib_three_way_comparison 201907L
+#define __cpp_lib_char8_t 201907L
+#define __cpp_lib_bit_cast 201806L
+#define __cpp_lib_integer_comparison_functions 202002L
+#define __cpp_lib_is_constant_evaluated 201811L
+#define __cpp_lib_math_constants 201907L
+#define __cpp_lib_source_location 201907L
+// NeverC does not provide iostream feature tests.

@@ -1,0 +1,23 @@
+// NeverC <bitset> scaffold (non-stream)
+#pragma once
+#include <stddef.h>
+namespace std {
+template <size_t N> class bitset {
+  unsigned long long Bits = 0;
+public:
+  constexpr bitset() noexcept = default;
+  constexpr bool test(size_t pos) const { return (Bits >> pos) & 1ULL; }
+  bitset &set(size_t pos, bool val = true) {
+    if (val) Bits |= (1ULL << pos); else Bits &= ~(1ULL << pos);
+    return *this;
+  }
+  bitset &reset(size_t pos) { return set(pos, false); }
+  bitset &flip(size_t pos) { return set(pos, !test(pos)); }
+  size_t size() const noexcept { return N; }
+  bool any() const noexcept { return Bits != 0; }
+  bool none() const noexcept { return Bits == 0; }
+  size_t count() const noexcept {
+    size_t c = 0; auto b = Bits; while (b) { c += b & 1; b >>= 1; } return c;
+  }
+};
+} // namespace std

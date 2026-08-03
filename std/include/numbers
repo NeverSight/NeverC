@@ -1,0 +1,12 @@
+// NeverC <numbers> scaffold (C++20)
+#pragma once
+namespace std::numbers {
+template <class T> inline constexpr T e_v = T(2.71828182845904523536L);
+template <class T> inline constexpr T pi_v = T(3.14159265358979323846L);
+template <class T> inline constexpr T sqrt2_v = T(1.41421356237309504880L);
+template <class T> inline constexpr T phi_v = T(1.61803398874989484820L);
+inline constexpr double e = e_v<double>;
+inline constexpr double pi = pi_v<double>;
+inline constexpr double sqrt2 = sqrt2_v<double>;
+inline constexpr double phi = phi_v<double>;
+} // namespace std::numbers

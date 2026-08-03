@@ -1,0 +1,15 @@
+// NeverC <stack> scaffold (non-stream)
+#pragma once
+#include <deque>
+namespace std {
+template <class T, class Container = deque<T>>
+class stack {
+  Container C;
+public:
+  using value_type = T;
+  bool empty() const { return C.empty(); }
+  size_t size() const { return C.size(); }
+  void push(const T &v) { C.push_back(v); }
+  void pop() { C.pop_back(); }
+};
+} // namespace std

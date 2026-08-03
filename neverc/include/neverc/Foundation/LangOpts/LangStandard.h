@@ -19,6 +19,7 @@ enum class Language : uint8_t {
 
   ///@{ Languages that the frontend can parse and compile.
   C,
+  CXX,
   ///@}
 };
 llvm::StringRef languageToString(Language L);
@@ -31,7 +32,12 @@ enum LangFeatures {
   C23 = (1 << 4),
   Digraphs = (1 << 5),
   GNUMode = (1 << 6),
-  HexFloat = (1 << 7)
+  HexFloat = (1 << 7),
+  CPlusPlus = (1 << 8),
+  CPlusPlus11 = (1 << 9),
+  CPlusPlus14 = (1 << 10),
+  CPlusPlus17 = (1 << 11),
+  CPlusPlus20 = (1 << 12)
 };
 
 struct LangStandard {
@@ -62,6 +68,16 @@ public:
   bool isC17() const { return Flags & C17; }
 
   bool isC23() const { return Flags & C23; }
+
+  bool isCPlusPlus() const { return Flags & CPlusPlus; }
+
+  bool isCPlusPlus11() const { return Flags & CPlusPlus11; }
+
+  bool isCPlusPlus14() const { return Flags & CPlusPlus14; }
+
+  bool isCPlusPlus17() const { return Flags & CPlusPlus17; }
+
+  bool isCPlusPlus20() const { return Flags & CPlusPlus20; }
 
   bool hasDigraphs() const { return Flags & Digraphs; }
 

@@ -1589,6 +1589,14 @@ llvm::DIType *DebugEmitter::CreateTypeNode(QualType Ty, llvm::DIFile *Unit) {
     return CreateType(cast<ComplexType>(Ty));
   case Type::Pointer:
     return CreateType(cast<PointerType>(Ty), Unit);
+  case Type::LValueReference:
+  case Type::RValueReference: {
+    QualType Pointee = cast<ReferenceType>(Ty)->getPointeeType();
+    // Represent C++ references as pointers in debug info (NeverC ABI v1).
+    return CreateType(
+        cast<PointerType>(CGM.getContext().getPointerType(Pointee).getTypePtr()),
+        Unit);
+  }
   case Type::Typedef:
     return CreateType(cast<TypedefType>(Ty), Unit);
   case Type::Record:

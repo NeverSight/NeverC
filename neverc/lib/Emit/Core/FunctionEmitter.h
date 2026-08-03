@@ -142,6 +142,9 @@ template <> struct DominatingValue<RValue> {
   }
 };
 
+class CXXForRangeStmt;
+class CXXTryStmt;
+
 class FunctionEmitter : public TypeEmitterCache {
   FunctionEmitter(const FunctionEmitter &) = delete;
   void operator=(const FunctionEmitter &) = delete;
@@ -220,6 +223,9 @@ public:
 
   ModuleEmitter &ME; // Per-module state.
   const TargetInfo &Target;
+
+  /// Current CXX this value for method emission (null outside methods).
+  llvm::Value *CXXThisValue = nullptr;
 
   // For EH/SEH outlined funclets, this field points to parent's FE
   FunctionEmitter *ParentFnEmitter = nullptr;
@@ -1181,6 +1187,29 @@ public:
     return it->second;
   }
 
+  /// Lookup local without asserting; empty Address if not mapped.
+  Address tryAddrOfLocalVar(const VarDecl *VD) {
+    auto it = LocalDeclMap.find(VD);
+    if (it == LocalDeclMap.end())
+      return Address::invalid();
+    return it->second;
+  }
+
+  /// Find a mapped local/param by identifier name (for lambda capture emit).
+  const VarDecl *findLocalVarByName(const IdentifierInfo *II) {
+    if (!II)
+      return nullptr;
+    for (const auto &KV : LocalDeclMap) {
+      if (const VarDecl *VD = dyn_cast_or_null<VarDecl>(KV.first)) {
+        if (VD->getIdentifier() == II)
+          return VD;
+      }
+    }
+    return nullptr;
+  }
+
+  const Decl *getCurFuncDecl() const { return CurFuncDecl; }
+
   LValue getOrCreateOpaqueLValueMapping(const OpaqueValueExpr *e);
 
   RValue getOrCreateOpaqueRValueMapping(const OpaqueValueExpr *e);
@@ -1401,6 +1430,9 @@ public:
                  llvm::ArrayRef<const Attr *> Attrs = std::nullopt);
   void genForStmt(const ForStmt &S,
                   llvm::ArrayRef<const Attr *> Attrs = std::nullopt);
+  void genCXXForRangeStmt(const CXXForRangeStmt &S,
+                           llvm::ArrayRef<const Attr *> Attrs = std::nullopt);
+  void genCXXTryStmt(const CXXTryStmt &S);
   void genReturnStmt(const ReturnStmt &S);
   void genDeclStmt(const DeclStmt &S);
   void genBreakStmt(const BreakStmt &S);

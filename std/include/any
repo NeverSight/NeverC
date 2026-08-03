@@ -1,0 +1,19 @@
+// NeverC <any> scaffold (non-stream)
+#pragma once
+namespace std {
+class bad_any_cast {
+public:
+  const char *what() const noexcept { return "bad_any_cast"; }
+};
+class any {
+  void *Ptr = nullptr;
+public:
+  constexpr any() noexcept = default;
+  any(const any &) = default;
+  any(any &&) noexcept = default;
+  template <class T> any(T &&) {}
+  bool has_value() const noexcept { return Ptr != nullptr; }
+  void reset() noexcept { Ptr = nullptr; }
+};
+template <class T> T any_cast(const any &) { return T{}; }
+} // namespace std

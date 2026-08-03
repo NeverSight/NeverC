@@ -918,10 +918,20 @@ public:
 
   bool isLookupContext() const { return !isFunctionOrMethod(); }
 
-  bool isFileContext() const { return getDeclKind() == Decl::TranslationUnit; }
+  bool isFileContext() const {
+    return getDeclKind() == Decl::TranslationUnit ||
+           getDeclKind() == Decl::Namespace ||
+           getDeclKind() == Decl::LinkageSpec;
+  }
 
   bool isTranslationUnit() const {
     return getDeclKind() == Decl::TranslationUnit;
+  }
+
+  bool isNamespace() const { return getDeclKind() == Decl::Namespace; }
+
+  bool isLinkageSpecContext() const {
+    return getDeclKind() == Decl::LinkageSpec;
   }
 
   bool isRecord() const { return getDeclKind() == Decl::Record; }

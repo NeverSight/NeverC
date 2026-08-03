@@ -1,0 +1,35 @@
+// NeverC <system_error> scaffold (non-stream)
+#pragma once
+namespace std {
+enum class errc {
+  success = 0,
+  invalid_argument = 22,
+  not_enough_memory = 12,
+  operation_not_permitted = 1
+};
+class error_category {
+public:
+  virtual ~error_category() = default;
+  virtual const char *name() const noexcept = 0;
+  virtual const char *message(int) const = 0;
+};
+const error_category &generic_category() noexcept;
+const error_category &system_category() noexcept;
+class error_code {
+  int Val = 0;
+  const error_category *Cat = nullptr;
+public:
+  error_code() noexcept = default;
+  error_code(int v, const error_category &c) noexcept : Val(v), Cat(&c) {}
+  explicit operator bool() const noexcept { return Val != 0; }
+  int value() const noexcept { return Val; }
+  const error_category &category() const noexcept { return *Cat; }
+};
+class system_error {
+  error_code Ec;
+public:
+  explicit system_error(error_code ec) : Ec(ec) {}
+  const error_code &code() const noexcept { return Ec; }
+  const char *what() const noexcept { return "system_error"; }
+};
+} // namespace std

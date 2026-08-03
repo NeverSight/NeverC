@@ -788,6 +788,10 @@ RecordDecl *Type::getAsRecordDecl() const {
   return dyn_cast_or_null<RecordDecl>(getAsTagDecl());
 }
 
+CXXRecordDecl *Type::getAsCXXRecordDecl() const {
+  return dyn_cast_or_null<CXXRecordDecl>(getAsRecordDecl());
+}
+
 TagDecl *Type::getAsTagDecl() const {
   if (const auto *TT = getAs<TagType>())
     return TT->getDecl();
@@ -1293,6 +1297,8 @@ bool QualType::isPODType(const TreeContext &Context) const {
   case Type::Builtin:
   case Type::Complex:
   case Type::Pointer:
+  case Type::LValueReference:
+  case Type::RValueReference:
   case Type::Vector:
   case Type::ExtVector:
   case Type::BitInt:
@@ -1447,6 +1453,8 @@ TypeWithKeyword::getKeywordForTypeSpec(unsigned TypeSpec) {
     return ElaboratedTypeKeyword::Struct;
   case TST_union:
     return ElaboratedTypeKeyword::Union;
+  case TST_class:
+    return ElaboratedTypeKeyword::Class;
   case TST_enum:
     return ElaboratedTypeKeyword::Enum;
   }
@@ -1458,6 +1466,8 @@ TagTypeKind TypeWithKeyword::getTagTypeKindForTypeSpec(unsigned TypeSpec) {
     return TagTypeKind::Struct;
   case TST_union:
     return TagTypeKind::Union;
+  case TST_class:
+    return TagTypeKind::Class;
   case TST_enum:
     return TagTypeKind::Enum;
   }
@@ -1472,6 +1482,8 @@ TypeWithKeyword::getKeywordForTagTypeKind(TagTypeKind Kind) {
     return ElaboratedTypeKeyword::Struct;
   case TagTypeKind::Union:
     return ElaboratedTypeKeyword::Union;
+  case TagTypeKind::Class:
+    return ElaboratedTypeKeyword::Class;
   case TagTypeKind::Enum:
     return ElaboratedTypeKeyword::Enum;
   }
@@ -1485,6 +1497,8 @@ TypeWithKeyword::getTagTypeKindForKeyword(ElaboratedTypeKeyword Keyword) {
     return TagTypeKind::Struct;
   case ElaboratedTypeKeyword::Union:
     return TagTypeKind::Union;
+  case ElaboratedTypeKeyword::Class:
+    return TagTypeKind::Class;
   case ElaboratedTypeKeyword::Enum:
     return TagTypeKind::Enum;
   case ElaboratedTypeKeyword::None:
@@ -1499,6 +1513,7 @@ bool TypeWithKeyword::KeywordIsTagTypeKind(ElaboratedTypeKeyword Keyword) {
     return false;
   case ElaboratedTypeKeyword::Struct:
   case ElaboratedTypeKeyword::Union:
+  case ElaboratedTypeKeyword::Class:
   case ElaboratedTypeKeyword::Enum:
     return true;
   }
@@ -1513,6 +1528,8 @@ llvm::StringRef TypeWithKeyword::getKeywordName(ElaboratedTypeKeyword Keyword) {
     return tok::getKeywordSpelling(tok::kw_struct);
   case ElaboratedTypeKeyword::Union:
     return tok::getKeywordSpelling(tok::kw_union);
+  case ElaboratedTypeKeyword::Class:
+    return tok::getKeywordSpelling(tok::kw_class);
   case ElaboratedTypeKeyword::Enum:
     return tok::getKeywordSpelling(tok::kw_enum);
   }
@@ -2087,6 +2104,9 @@ CachedProperties computeCachedProperties(const Type *T) {
     return Cache::get(cast<ComplexType>(T)->getElementType());
   case Type::Pointer:
     return Cache::get(cast<PointerType>(T)->getPointeeType());
+  case Type::LValueReference:
+  case Type::RValueReference:
+    return Cache::get(cast<ReferenceType>(T)->getPointeeType());
 
   case Type::ConstantArray:
   case Type::IncompleteArray:
@@ -2149,6 +2169,9 @@ LinkageInfo LinkageComputer::computeTypeLinkageInfo(const Type *T) {
     return computeTypeLinkageInfo(cast<ComplexType>(T)->getElementType());
   case Type::Pointer:
     return computeTypeLinkageInfo(cast<PointerType>(T)->getPointeeType());
+  case Type::LValueReference:
+  case Type::RValueReference:
+    return computeTypeLinkageInfo(cast<ReferenceType>(T)->getPointeeType());
   case Type::ConstantArray:
   case Type::IncompleteArray:
   case Type::VariableArray:
@@ -2222,8 +2245,10 @@ bool Type::canHaveNullability(bool ResultIfUnknown) const {
 #define TYPE(Class, Parent)
 #include "neverc/Tree/TypeNodes.td.h"
 
-  // Pointer types.
+  // Pointer and reference types.
   case Type::Pointer:
+  case Type::LValueReference:
+  case Type::RValueReference:
   // Dependent types that could instantiate to pointer types.
   case Type::TypeOfExpr:
   case Type::TypeOf:

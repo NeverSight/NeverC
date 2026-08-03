@@ -1,0 +1,40 @@
+// NeverC <ranges> scaffold (C++20, non-stream)
+#pragma once
+#include <iterator>
+#include <type_traits>
+#include <concepts>
+
+namespace std::ranges {
+
+template <class T>
+concept range = requires(T &t) {
+  t.begin();
+  t.end();
+};
+
+template <class T>
+using iterator_t = decltype(std::declval<T &>().begin());
+
+template <class T>
+using range_value_t = typename iterator_traits<iterator_t<T>>::value_type;
+
+struct identity {
+  template <class T>
+  constexpr T &&operator()(T &&t) const noexcept {
+    return static_cast<T &&>(t);
+  }
+};
+
+template <class I, class S = I>
+class subrange {
+  I begin_{};
+  S end_{};
+public:
+  subrange() = default;
+  constexpr subrange(I b, S e) : begin_(b), end_(e) {}
+  constexpr I begin() const { return begin_; }
+  constexpr S end() const { return end_; }
+  constexpr bool empty() const { return begin_ == end_; }
+};
+
+} // namespace std::ranges
