@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 static int tests_run = 0, tests_passed = 0, tests_failed = 0;
 
@@ -281,6 +282,96 @@ static void test_set_cookie_header(void) {
     neverc_cookiejar_free(jar);
 }
 
+static void test_set_cookie_header_edges(void) {
+    printf("[set_cookie_header_edges]\n");
+
+    neverc_cookiejar_t *jar = neverc_cookiejar_new();
+    neverc_cookiejar_set_cookie_header(
+        jar, "https://example.com/", "token=old; Path=/");
+    neverc_cookiejar_set_cookie_header(
+        jar, "https://example.com/", "token=new; Max-Age=bogus; Path=/");
+
+    neverc_cookiejar_entry_t out[4];
+    int n = neverc_cookiejar_cookies(
+        jar, "https://example.com/", out, 4);
+    check_int("invalid Max-Age is ignored", n, 1);
+    if (n == 1) check_str("invalid Max-Age keeps new value", out[0].value, "new");
+
+    neverc_cookiejar_set_cookie_header(
+        jar, "https://example.com/",
+        "large=ok; Max-Age=999999999999999999999999999999; Path=/");
+    n = neverc_cookiejar_cookies(jar, "https://example.com/", out, 4);
+    check_int("overflowing positive Max-Age remains valid", n, 2);
+
+    neverc_cookiejar_set_cookie_header(
+        jar, "https://example.com/", "quoted=\"hello\"; Path=/");
+    n = neverc_cookiejar_cookies(jar, "https://example.com/", out, 4);
+    check_int("quoted cookie value accepted", n, 3);
+    for (int i = 0; i < n; i++) {
+        if (strcmp(out[i].name, "quoted") == 0)
+            check_str("quoted cookie value unwrapped", out[i].value, "hello");
+    }
+
+    neverc_cookiejar_set_cookie_header(
+        jar, "https://example.com/",
+        "past=gone; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Path=/");
+    n = neverc_cookiejar_cookies(jar, "https://example.com/", out, 4);
+    check_int("past Expires cookie is discarded", n, 3);
+
+    neverc_cookiejar_set_cookie_header(
+        jar, "https://example.com/",
+        "future=ok; Expires=Tue, 19 Jan 2038 03:14:07 GMT; Path=/");
+    n = neverc_cookiejar_cookies(jar, "https://example.com/", out, 4);
+    check_int("future Expires cookie accepted", n, 4);
+    for (int i = 0; i < n; i++) {
+        if (strcmp(out[i].name, "future") == 0)
+            check_int("future Expires timestamp parsed",
+                      out[i].expires > (int64_t)time(NULL), 1);
+    }
+
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    neverc_cookiejar_set_cookie_header(
+        jar, "https://example.com/account/login", "scoped=one");
+    neverc_cookiejar_set_cookie_header(
+        jar, "https://example.com/account/login", "scoped=gone; Max-Age=0");
+    check_int("Max-Age deletes cookie at default path",
+              neverc_cookiejar_count(jar), 0);
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    size_t long_value_length = 5000;
+    char *long_header = (char *)malloc(long_value_length + 16);
+    check_not_null("allocate long cookie header", long_header);
+    if (long_header) {
+        memcpy(long_header, "long=", 5);
+        memset(long_header + 5, 'a', long_value_length);
+        memcpy(long_header + 5 + long_value_length, "; Path=/", 9);
+        long_header[14 + long_value_length] = '\0';
+        neverc_cookiejar_set_cookie_header(
+            jar, "https://example.com/", long_header);
+        check_int("oversized cookie value is rejected",
+                  neverc_cookiejar_count(jar), 0);
+        free(long_header);
+    }
+
+    size_t long_path_length = 1300;
+    long_header = (char *)malloc(long_path_length + 16);
+    check_not_null("allocate long path header", long_header);
+    if (long_header) {
+        memcpy(long_header, "path=v; Path=/", 14);
+        memset(long_header + 14, 'p', long_path_length);
+        long_header[14 + long_path_length] = '\0';
+        neverc_cookiejar_set_cookie_header(
+            jar, "https://example.com/", long_header);
+        check_int("oversized cookie path is rejected",
+                  neverc_cookiejar_count(jar), 0);
+        free(long_header);
+    }
+    neverc_cookiejar_free(jar);
+}
+
 /* ===== Cookie header generation ===== */
 
 static void test_cookie_header(void) {
@@ -305,6 +396,33 @@ static void test_cookie_header(void) {
     char *empty = neverc_cookiejar_cookie_header(jar, "https://other.com/");
     check_int("no match null", empty == NULL, 1);
 
+    neverc_cookiejar_free(jar);
+}
+
+static void test_cookie_header_many_matches(void) {
+    printf("[cookie_header_many_matches]\n");
+
+    neverc_cookiejar_t *jar = neverc_cookiejar_new();
+    for (int i = 0; i < 80; i++) {
+        char name[16];
+        snprintf(name, sizeof(name), "cookie%02d", i);
+        neverc_cookiejar_entry_t cookie = {
+            .name = name, .value = "value", .path = "/",
+        };
+        neverc_cookiejar_set_cookies(
+            jar, "https://example.com/", &cookie, 1);
+    }
+
+    char *header = neverc_cookiejar_cookie_header(
+        jar, "https://example.com/");
+    check_not_null("many-match Cookie header", header);
+    if (header) {
+        check_int("Cookie header includes oldest match",
+                  strstr(header, "cookie00=value") != NULL, 1);
+        check_int("Cookie header includes newest match",
+                  strstr(header, "cookie79=value") != NULL, 1);
+        free(header);
+    }
     neverc_cookiejar_free(jar);
 }
 
@@ -349,9 +467,39 @@ static void test_clear(void) {
     neverc_cookiejar_clear_domain(jar, "b.com");
     check_int("after clear b.com", neverc_cookiejar_count(jar), 2);
 
+    neverc_cookiejar_set_cookie_header(
+        jar, "https://example.com/", "domain=1; Domain=.example.com; Path=/");
+    check_int("domain cookie added", neverc_cookiejar_count(jar), 3);
+    neverc_cookiejar_clear_domain(jar, ".EXAMPLE.COM");
+    check_int("clear normalized domain", neverc_cookiejar_count(jar), 2);
+
     neverc_cookiejar_clear_all(jar);
     check_int("after clear all", neverc_cookiejar_count(jar), 0);
 
+    neverc_cookiejar_free(jar);
+}
+
+static void test_secure_origin(void) {
+    printf("[secure_origin]\n");
+
+    neverc_cookiejar_t *jar = neverc_cookiejar_new();
+    neverc_cookiejar_set_cookie_header(
+        jar, "http://example.com/", "token=attacker; Secure; Path=/");
+    check_int("reject Secure cookie from HTTP origin",
+              neverc_cookiejar_count(jar), 0);
+
+    neverc_cookiejar_set_cookie_header(
+        jar, "https://example.com/", "token=secret; Secure; Path=/");
+    check_int("accept Secure cookie from HTTPS origin",
+              neverc_cookiejar_count(jar), 1);
+    neverc_cookiejar_set_cookie_header(
+        jar, "http://example.com/", "token=attacker; Path=/");
+
+    neverc_cookiejar_entry_t out[1];
+    int n = neverc_cookiejar_cookies(
+        jar, "https://example.com/", out, 1);
+    check_int("HTTP origin cannot overwrite Secure cookie", n, 1);
+    if (n == 1) check_str("Secure value preserved", out[0].value, "secret");
     neverc_cookiejar_free(jar);
 }
 
@@ -414,9 +562,12 @@ int main(void) {
     test_invalid_cookie_octets();
     test_secure();
     test_set_cookie_header();
+    test_set_cookie_header_edges();
     test_cookie_header();
+    test_cookie_header_many_matches();
     test_update();
     test_clear();
+    test_secure_origin();
     test_null_safety();
     test_batch();
 

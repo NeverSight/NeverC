@@ -615,6 +615,14 @@ STD_TEST(httputil, "src/net/http/httputil/httputil.c",
 
 // ===== Cookie Jar =====
 STD_TEST(cookiejar, "src/net/http/cookiejar/cookiejar.c")
+#ifndef _WIN32
+TEST_F(StdLibTest, CookieJarConcurrency) {
+  auto r = compileAndRunStdTest(
+      "cookiejar_concurrency", {"src/net/http/cookiejar/cookiejar.c"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
+#endif
 TEST_F(StdLibTest, CookieJarAllocationFailure) {
   auto r = compileAndRunStdTest("cookiejar_oom", {}, {"-fno-builtin-std"});
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;

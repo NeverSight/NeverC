@@ -47,7 +47,8 @@ void neverc_cookiejar_set_cookies(neverc_cookiejar_t *jar,
 
 /* Retrieve matching cookies for a URL (like Go jar.Cookies).
  * Returns the number of cookies written to out (up to max_out).
- * Expired cookies are automatically pruned. */
+ * Expired cookies are automatically pruned. String pointers in out are
+ * borrowed and remain valid only until the jar is next mutated or freed. */
 int neverc_cookiejar_cookies(neverc_cookiejar_t *jar,
                               const char *url,
                               neverc_cookiejar_entry_t *out,

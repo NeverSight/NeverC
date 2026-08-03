@@ -134,6 +134,23 @@ int main(void) {
     CHECK(neverc_cookiejar_count(jar) == 0);
     neverc_cookiejar_free(jar);
 
+    jar = new_jar();
+    CHECK(jar != NULL);
+    reset_allocator(0);
+    neverc_cookiejar_set_cookies(
+        jar, "https://example.com/", &old_cookie, 1);
+    reset_allocator(1);
+    char *header = neverc_cookiejar_cookie_header(
+        jar, "https://example.com/");
+    CHECK(header == NULL);
+    CHECK(neverc_cookiejar_count(jar) == 1);
+    neverc_cookiejar_entry_t out[1];
+    CHECK(neverc_cookiejar_cookies(
+              jar, "https://example.com/", out, 1) == 1);
+    CHECK(strcmp(out[0].value, "old") == 0);
+    reset_allocator(0);
+    neverc_cookiejar_free(jar);
+
     puts("passed");
     return 0;
 }

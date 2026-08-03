@@ -1,7 +1,6 @@
 #include "neverc/std/net/http/cookiejar.h"
 #include <stdlib.h>
 #include <string.h>
-#include <stdio.h>
 #include <time.h>
 #include <ctype.h>
 
@@ -12,12 +11,8 @@ typedef CRITICAL_SECTION jar_mutex_t;
 #define jar_mutex_destroy(m) DeleteCriticalSection(m)
 #define jar_mutex_lock(m)    EnterCriticalSection(m)
 #define jar_mutex_unlock(m)  LeaveCriticalSection(m)
-static int strncasecmp(const char *a, const char *b, size_t n) {
-    return _strnicmp(a, b, n);
-}
 #else
 #include <pthread.h>
-#include <strings.h>
 typedef pthread_mutex_t jar_mutex_t;
 #define jar_mutex_init(m)    pthread_mutex_init(m, NULL)
 #define jar_mutex_destroy(m) pthread_mutex_destroy(m)
@@ -34,6 +29,7 @@ typedef struct jar_entry {
     int         secure;
     int         http_only;
     int         host_only;
+    uint64_t    creation;
     struct jar_entry *next;
 } jar_entry_t;
 
@@ -41,7 +37,13 @@ struct neverc_cookiejar {
     jar_entry_t *entries;
     jar_mutex_t  lock;
     int          count;
+    uint64_t     next_creation;
 };
+
+typedef struct cookie_span {
+    const char *data;
+    size_t      length;
+} cookie_span_t;
 
 static char *strdup_safe(const char *s) {
     if (!s) return NULL;
@@ -83,6 +85,209 @@ static int valid_cookie_value(const char *value) {
             return 0;
     }
     return 1;
+}
+
+static cookie_span_t trim_cookie_ows(cookie_span_t span) {
+    while (span.length > 0 &&
+           (span.data[0] == ' ' || span.data[0] == '\t')) {
+        span.data++;
+        span.length--;
+    }
+    while (span.length > 0 &&
+           (span.data[span.length - 1] == ' ' ||
+            span.data[span.length - 1] == '\t'))
+        span.length--;
+    return span;
+}
+
+static int span_case_equal(cookie_span_t span, const char *literal) {
+    size_t length = strlen(literal);
+    if (span.length != length) return 0;
+    for (size_t i = 0; i < length; i++) {
+        if (tolower((unsigned char)span.data[i]) !=
+            tolower((unsigned char)literal[i]))
+            return 0;
+    }
+    return 1;
+}
+
+static int copy_cookie_span(cookie_span_t span, char *output,
+                            size_t capacity) {
+    if (!output || capacity == 0 || span.length >= capacity) return -1;
+    memcpy(output, span.data, span.length);
+    output[span.length] = '\0';
+    return 0;
+}
+
+/* Parse Max-Age without signed overflow. Positive overflow saturates. */
+static int parse_max_age(cookie_span_t span, int64_t *result) {
+    if (!result || span.length == 0) return -1;
+
+    size_t offset = 0;
+    int negative = 0;
+    if (span.data[0] == '-') {
+        negative = 1;
+        offset = 1;
+    } else if (span.data[0] == '+') {
+        return -1;
+    }
+    if (offset == span.length) return -1;
+
+    uint64_t value = 0;
+    for (; offset < span.length; offset++) {
+        unsigned char c = (unsigned char)span.data[offset];
+        if (!isdigit(c)) return -1;
+        unsigned digit = (unsigned)(c - '0');
+        if (value > ((uint64_t)INT64_MAX - digit) / 10U)
+            value = (uint64_t)INT64_MAX;
+        else
+            value = value * 10U + digit;
+    }
+
+    if (negative || value == 0)
+        *result = -1;
+    else
+        *result = (int64_t)value;
+    return 0;
+}
+
+static int parse_decimal_token(const char *token, size_t length,
+                               size_t min_length, size_t max_length,
+                               int *result) {
+    if (!result || length < min_length || length > max_length) return -1;
+    int value = 0;
+    for (size_t i = 0; i < length; i++) {
+        unsigned char c = (unsigned char)token[i];
+        if (!isdigit(c)) return -1;
+        value = value * 10 + (int)(c - '0');
+    }
+    *result = value;
+    return 0;
+}
+
+static int parse_cookie_time(const char *token, size_t length,
+                             int *hour, int *minute, int *second) {
+    const char *first_colon = memchr(token, ':', length);
+    if (!first_colon) return -1;
+    size_t remaining = length - (size_t)(first_colon - token) - 1;
+    const char *second_colon = memchr(first_colon + 1, ':', remaining);
+    if (!second_colon ||
+        memchr(second_colon + 1, ':',
+               length - (size_t)(second_colon - token) - 1))
+        return -1;
+
+    size_t hour_length = (size_t)(first_colon - token);
+    size_t minute_length = (size_t)(second_colon - first_colon - 1);
+    size_t second_length = length - (size_t)(second_colon - token) - 1;
+    if (parse_decimal_token(token, hour_length, 1, 2, hour) != 0 ||
+        parse_decimal_token(first_colon + 1, minute_length, 1, 2,
+                            minute) != 0 ||
+        parse_decimal_token(second_colon + 1, second_length, 1, 2,
+                            second) != 0)
+        return -1;
+    return 0;
+}
+
+static int cookie_month(const char *token, size_t length) {
+    static const char *const months[] = {
+        "jan", "feb", "mar", "apr", "may", "jun",
+        "jul", "aug", "sep", "oct", "nov", "dec",
+    };
+    if (length < 3) return 0;
+    for (int month = 0; month < 12; month++) {
+        int matches = 1;
+        for (size_t i = 0; i < 3; i++) {
+            if (tolower((unsigned char)token[i]) != months[month][i]) {
+                matches = 0;
+                break;
+            }
+        }
+        if (matches) return month + 1;
+    }
+    return 0;
+}
+
+static int days_in_cookie_month(int year, int month) {
+    static const int days[] = {
+        31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31,
+    };
+    int result = days[month - 1];
+    if (month == 2 &&
+        ((year % 4 == 0 && year % 100 != 0) || year % 400 == 0))
+        result++;
+    return result;
+}
+
+static int64_t cookie_days_from_civil(int year, unsigned month,
+                                      unsigned day) {
+    year -= month <= 2;
+    int era = (year >= 0 ? year : year - 399) / 400;
+    unsigned year_of_era = (unsigned)(year - era * 400);
+    unsigned adjusted_month = month > 2 ? month - 3U : month + 9U;
+    unsigned day_of_year =
+        (153U * adjusted_month + 2U) / 5U + day - 1U;
+    unsigned day_of_era = year_of_era * 365U + year_of_era / 4U -
+        year_of_era / 100U + day_of_year;
+    return (int64_t)era * 146097 + (int64_t)day_of_era - 719468;
+}
+
+/* RFC 6265 section 5.1.1 cookie-date parser, interpreted as UTC. */
+static int parse_cookie_date(cookie_span_t span, int64_t *result) {
+    int hour = -1, minute = -1, second = -1;
+    int day = -1, month = 0, year = -1;
+    size_t offset = 0;
+
+    while (offset < span.length) {
+        while (offset < span.length) {
+            unsigned char c = (unsigned char)span.data[offset];
+            if (isalnum(c) || c == ':') break;
+            offset++;
+        }
+        size_t start = offset;
+        while (offset < span.length) {
+            unsigned char c = (unsigned char)span.data[offset];
+            if (!isalnum(c) && c != ':') break;
+            offset++;
+        }
+        size_t length = offset - start;
+        if (length == 0) continue;
+
+        if (hour < 0 &&
+            parse_cookie_time(span.data + start, length,
+                              &hour, &minute, &second) == 0)
+            continue;
+        int number = 0;
+        if (day < 0 &&
+            parse_decimal_token(span.data + start, length, 1, 2,
+                                &number) == 0) {
+            day = number;
+            continue;
+        }
+        if (month == 0) {
+            int parsed_month = cookie_month(span.data + start, length);
+            if (parsed_month != 0) {
+                month = parsed_month;
+                continue;
+            }
+        }
+        if (year < 0 &&
+            parse_decimal_token(span.data + start, length, 2, 4,
+                                &number) == 0)
+            year = number;
+    }
+
+    if (year >= 70 && year <= 99) year += 1900;
+    else if (year >= 0 && year <= 69) year += 2000;
+    if (!result || year < 1601 || month == 0 || day < 1 ||
+        day > days_in_cookie_month(year, month) ||
+        hour < 0 || hour > 23 || minute < 0 || minute > 59 ||
+        second < 0 || second > 59)
+        return -1;
+
+    int64_t days = cookie_days_from_civil(
+        year, (unsigned)month, (unsigned)day);
+    *result = days * 86400 + hour * 3600 + minute * 60 + second;
+    return 0;
 }
 
 /* Parse scheme, host, and path from a URL. */
@@ -202,6 +407,26 @@ static int normalize_cookie_domain(const char *input, char *domain,
     return 0;
 }
 
+static int normalize_clear_domain(const char *input, char *domain,
+                                  size_t capacity) {
+    if (!input || !domain || capacity == 0) return -1;
+    while (*input == '.') input++;
+    size_t length = strlen(input);
+    if (length > 1 && input[length - 1] == '.') length--;
+    if (length >= 2 && input[0] == '[' && input[length - 1] == ']') {
+        input++;
+        length -= 2;
+    }
+    if (length == 0 || length >= capacity) return -1;
+    for (size_t i = 0; i < length; i++) {
+        unsigned char c = (unsigned char)input[i];
+        if (c <= 0x20 || c >= 0x7f || c == '/' || c == '\\') return -1;
+        domain[i] = (char)tolower(c);
+    }
+    domain[length] = '\0';
+    return 0;
+}
+
 static void default_cookie_path(const char *request_path, char *path,
                                 size_t capacity) {
     const char *last_slash = strrchr(request_path, '/');
@@ -234,6 +459,56 @@ static int64_t now_unix(void) {
     return (int64_t)time(NULL);
 }
 
+static void prune_expired_locked(neverc_cookiejar_t *jar, int64_t now) {
+    jar_entry_t **link = &jar->entries;
+    while (*link) {
+        jar_entry_t *entry = *link;
+        if (entry->expires != 0 && entry->expires <= now) {
+            *link = entry->next;
+            entry_free(entry);
+            jar->count--;
+        } else {
+            link = &entry->next;
+        }
+    }
+}
+
+static int entry_matches_request(const jar_entry_t *entry,
+                                 const char *host, const char *path,
+                                 int is_secure) {
+    return (entry->host_only ? strcmp(entry->domain, host) == 0
+                             : domain_match(entry->domain, host)) &&
+        path_match(entry->path, path) &&
+        (!entry->secure || is_secure);
+}
+
+static int entry_precedes(const jar_entry_t *left,
+                          const jar_entry_t *right) {
+    size_t left_path_length = strlen(left->path);
+    size_t right_path_length = strlen(right->path);
+    if (left_path_length != right_path_length)
+        return left_path_length > right_path_length;
+    return left->creation < right->creation;
+}
+
+static jar_entry_t *next_matching_entry_locked(
+    neverc_cookiejar_t *jar, const char *host, const char *path,
+    int is_secure, const jar_entry_t *previous) {
+    jar_entry_t *best = NULL;
+    for (jar_entry_t *entry = jar->entries; entry; entry = entry->next) {
+        if (!entry_matches_request(entry, host, path, is_secure)) continue;
+        if (previous && !entry_precedes(previous, entry)) continue;
+        if (!best || entry_precedes(entry, best)) best = entry;
+    }
+    return best;
+}
+
+static int checked_size_add(size_t *value, size_t increment) {
+    if (increment > SIZE_MAX - *value) return -1;
+    *value += increment;
+    return 0;
+}
+
 neverc_cookiejar_t *neverc_cookiejar_new(void) {
     neverc_cookiejar_t *jar =
         (neverc_cookiejar_t *)calloc(1, sizeof(*jar));
@@ -264,12 +539,16 @@ void neverc_cookiejar_set_cookies(neverc_cookiejar_t *jar,
                         sizeof(path)) != 0)
         return;
 
+    int source_is_secure = strcmp(scheme, "https") == 0;
+    int64_t now = now_unix();
     jar_mutex_lock(&jar->lock);
+    prune_expired_locked(jar, now);
 
     for (int i = 0; i < count; i++) {
         const neverc_cookiejar_entry_t *c = &cookies[i];
         if (!valid_cookie_name(c->name) || !valid_cookie_value(c->value))
             continue;
+        if (c->secure && !source_is_secure) continue;
 
         char domain[256];
         int host_only = 1;
@@ -278,8 +557,13 @@ void neverc_cookiejar_set_cookies(neverc_cookiejar_t *jar,
                 !domain_match(domain, host))
                 continue;
             host_only = 0;
+            /* Reject obvious public-suffix attributes such as Domain=com. */
+            if (!host_is_ip_literal(host) && !strchr(domain, '.')) {
+                if (strcmp(domain, host) != 0) continue;
+                host_only = 1;
+            }
         } else {
-            snprintf(domain, sizeof(domain), "%s", host);
+            memcpy(domain, host, strlen(host) + 1);
         }
 
         char cookie_path[1024];
@@ -292,17 +576,39 @@ void neverc_cookiejar_set_cookies(neverc_cookiejar_t *jar,
         }
         const char *cpath = cookie_path;
 
-        /* Check for existing entry with same name/domain/path → update */
-        jar_entry_t *e = jar->entries;
-        jar_entry_t *found = NULL;
-        while (e) {
-            if (strcmp(e->name, c->name) == 0 &&
-                strcmp(e->domain, domain) == 0 &&
-                strcmp(e->path, cpath) == 0) {
-                found = e;
-                break;
+        /* An insecure origin cannot overlay a matching Secure cookie. */
+        int overlays_secure = 0;
+        if (!source_is_secure && !c->secure) {
+            for (jar_entry_t *entry = jar->entries; entry;
+                 entry = entry->next) {
+                if (entry->secure && strcmp(entry->name, c->name) == 0 &&
+                    domain_match(entry->domain, domain) &&
+                    path_match(entry->path, cpath)) {
+                    overlays_secure = 1;
+                    break;
+                }
             }
-            e = e->next;
+        }
+        if (overlays_secure) continue;
+
+        jar_entry_t **found_link = &jar->entries;
+        while (*found_link) {
+            jar_entry_t *entry = *found_link;
+            if (strcmp(entry->name, c->name) == 0 &&
+                strcmp(entry->domain, domain) == 0 &&
+                strcmp(entry->path, cpath) == 0)
+                break;
+            found_link = &entry->next;
+        }
+        jar_entry_t *found = *found_link;
+
+        if (c->expires != 0 && c->expires <= now) {
+            if (found) {
+                *found_link = found->next;
+                entry_free(found);
+                jar->count--;
+            }
+            continue;
         }
 
         if (found) {
@@ -329,6 +635,7 @@ void neverc_cookiejar_set_cookies(neverc_cookiejar_t *jar,
             ne->secure = c->secure;
             ne->http_only = c->http_only;
             ne->host_only = host_only;
+            ne->creation = jar->next_creation++;
             ne->next = jar->entries;
             jar->entries = ne;
             jar->count++;
@@ -353,39 +660,25 @@ int neverc_cookiejar_cookies(neverc_cookiejar_t *jar,
     int64_t now = now_unix();
 
     jar_mutex_lock(&jar->lock);
-
-    /* Prune expired cookies first */
-    jar_entry_t **pp = &jar->entries;
-    while (*pp) {
-        jar_entry_t *e = *pp;
-        if (e->expires > 0 && e->expires <= now) {
-            *pp = e->next;
-            entry_free(e);
-            jar->count--;
-        } else {
-            pp = &(*pp)->next;
-        }
-    }
+    prune_expired_locked(jar, now);
 
     int n = 0;
-    jar_entry_t *e = jar->entries;
-    while (e && n < max_out) {
-        if ((e->host_only ? strcmp(e->domain, host) == 0
-                          : domain_match(e->domain, host)) &&
-            path_match(e->path, path) &&
-            (!e->secure || is_secure)) {
-            if (out) {
-                out[n].name = e->name;
-                out[n].value = e->value;
-                out[n].domain = e->domain;
-                out[n].path = e->path;
-                out[n].expires = e->expires;
-                out[n].secure = e->secure;
-                out[n].http_only = e->http_only;
-            }
-            n++;
+    jar_entry_t *previous = NULL;
+    while (n < max_out) {
+        jar_entry_t *entry = next_matching_entry_locked(
+            jar, host, path, is_secure, previous);
+        if (!entry) break;
+        if (out) {
+            out[n].name = entry->name;
+            out[n].value = entry->value;
+            out[n].domain = entry->domain;
+            out[n].path = entry->path;
+            out[n].expires = entry->expires;
+            out[n].secure = entry->secure;
+            out[n].http_only = entry->http_only;
         }
-        e = e->next;
+        previous = entry;
+        n++;
     }
 
     jar_mutex_unlock(&jar->lock);
@@ -397,90 +690,108 @@ void neverc_cookiejar_set_cookie_header(neverc_cookiejar_t *jar,
                                          const char *header) {
     if (!jar || !url || !header) return;
 
-    neverc_cookiejar_entry_t cookie;
-    memset(&cookie, 0, sizeof(cookie));
-
+    neverc_cookiejar_entry_t cookie = {0};
     char name[256] = {0}, value[4096] = {0};
     char domain[256] = {0}, cpath[1024] = {0};
+    int have_max_age = 0;
+    int64_t max_age = 0;
+    int have_expires = 0;
+    int64_t expires = 0;
 
-    /* Parse "name=value" part */
+    const char *first_semi = strchr(header, ';');
     const char *eq = strchr(header, '=');
-    if (!eq) return;
+    if (!eq || (first_semi && eq > first_semi)) return;
 
-    size_t nlen = (size_t)(eq - header);
-    while (nlen > 0 && header[nlen - 1] == ' ') nlen--;
-    if (nlen == 0 || nlen >= sizeof(name)) return;
-    memcpy(name, header, nlen);
-    name[nlen] = '\0';
-
-    const char *vstart = eq + 1;
-    const char *semi = strchr(vstart, ';');
-    size_t vlen = semi ? (size_t)(semi - vstart) : strlen(vstart);
-    while (vlen > 0 && vstart[vlen - 1] == ' ') vlen--;
-    if (vlen >= sizeof(value)) vlen = sizeof(value) - 1;
-    memcpy(value, vstart, vlen);
-    value[vlen] = '\0';
+    cookie_span_t name_span = {
+        header, (size_t)(eq - header),
+    };
+    name_span = trim_cookie_ows(name_span);
+    const char *value_start = eq + 1;
+    const char *semi = strchr(value_start, ';');
+    cookie_span_t value_span = {
+        value_start,
+        semi ? (size_t)(semi - value_start) : strlen(value_start),
+    };
+    value_span = trim_cookie_ows(value_span);
+    if (value_span.length > 0 &&
+        (value_span.data[0] == '"' ||
+         value_span.data[value_span.length - 1] == '"')) {
+        if (value_span.length < 2 || value_span.data[0] != '"' ||
+            value_span.data[value_span.length - 1] != '"')
+            return;
+        value_span.data++;
+        value_span.length -= 2;
+    }
+    if (copy_cookie_span(name_span, name, sizeof(name)) != 0 ||
+        copy_cookie_span(value_span, value, sizeof(value)) != 0 ||
+        !valid_cookie_name(name) || !valid_cookie_value(value))
+        return;
 
     cookie.name = name;
     cookie.value = value;
 
-    /* Parse attributes */
     const char *p = semi ? semi + 1 : NULL;
     while (p && *p) {
-        while (*p == ' ') p++;
         const char *attr_end = strchr(p, ';');
-        size_t alen = attr_end ? (size_t)(attr_end - p) : strlen(p);
-
-        char attr[512];
-        if (alen >= sizeof(attr)) alen = sizeof(attr) - 1;
-        memcpy(attr, p, alen);
-        attr[alen] = '\0';
-
-        char *aeq = strchr(attr, '=');
-        char *aname = attr;
-        char *aval = NULL;
-        if (aeq) {
-            *aeq = '\0';
-            aval = aeq + 1;
-            while (*aval == ' ') aval++;
-            size_t value_length = strlen(aval);
-            while (value_length > 0 && aval[value_length - 1] == ' ')
-                aval[--value_length] = '\0';
+        cookie_span_t attribute = {
+            p, attr_end ? (size_t)(attr_end - p) : strlen(p),
+        };
+        const char *attribute_eq = memchr(
+            attribute.data, '=', attribute.length);
+        cookie_span_t attribute_name = attribute;
+        cookie_span_t attribute_value = {NULL, 0};
+        int have_value = attribute_eq != NULL;
+        if (have_value) {
+            attribute_name.length =
+                (size_t)(attribute_eq - attribute.data);
+            attribute_value.data = attribute_eq + 1;
+            attribute_value.length = attribute.length -
+                (size_t)(attribute_eq - attribute.data) - 1;
+            attribute_value = trim_cookie_ows(attribute_value);
         }
-        while (*aname == ' ') aname++;
-        size_t anlen = strlen(aname);
-        while (anlen > 0 && aname[anlen - 1] == ' ') aname[--anlen] = '\0';
+        attribute_name = trim_cookie_ows(attribute_name);
 
-        if (anlen == 6 && strncasecmp(aname, "Domain", 6) == 0 && aval) {
-            snprintf(domain, sizeof(domain), "%s", aval);
-            str_tolower(domain);
-        } else if (anlen == 4 && strncasecmp(aname, "Path", 4) == 0 && aval) {
-            snprintf(cpath, sizeof(cpath), "%s", aval);
-        } else if (anlen == 6 && strncasecmp(aname, "Secure", 6) == 0) {
+        if (span_case_equal(attribute_name, "Domain") && have_value) {
+            if (copy_cookie_span(attribute_value, domain,
+                                 sizeof(domain)) != 0)
+                return;
+        } else if (span_case_equal(attribute_name, "Path") && have_value) {
+            if (copy_cookie_span(attribute_value, cpath,
+                                 sizeof(cpath)) != 0)
+                return;
+        } else if (span_case_equal(attribute_name, "Secure")) {
             cookie.secure = 1;
-        } else if (anlen == 8 && strncasecmp(aname, "HttpOnly", 8) == 0) {
+        } else if (span_case_equal(attribute_name, "HttpOnly")) {
             cookie.http_only = 1;
-        } else if (anlen == 7 && strncasecmp(aname, "Max-Age", 7) == 0 && aval) {
-            int ma = atoi(aval);
-            if (ma > 0) cookie.expires = now_unix() + ma;
-            else if (ma <= 0) cookie.expires = -1; /* delete */
+        } else if (span_case_equal(attribute_name, "Max-Age") &&
+                   have_value) {
+            int64_t parsed = 0;
+            if (parse_max_age(attribute_value, &parsed) == 0) {
+                have_max_age = 1;
+                max_age = parsed;
+            }
+        } else if (span_case_equal(attribute_name, "Expires") &&
+                   have_value) {
+            int64_t parsed = 0;
+            if (parse_cookie_date(attribute_value, &parsed) == 0) {
+                have_expires = 1;
+                expires = parsed;
+            }
         }
 
         p = attr_end ? attr_end + 1 : NULL;
     }
 
-    if (cookie.expires == -1) {
-        /* Max-Age=0 means delete the cookie */
-        neverc_cookiejar_entry_t tmp;
-        tmp.name = name;
-        tmp.value = "";
-        tmp.domain = domain[0] ? domain : NULL;
-        tmp.path = cpath[0] ? cpath : "/";
-        tmp.expires = 1; /* already expired */
-        tmp.secure = 0;
-        tmp.http_only = 0;
-        neverc_cookiejar_set_cookies(jar, url, &tmp, 1);
-        return;
+    if (have_max_age) {
+        if (max_age <= 0) {
+            cookie.expires = -1;
+        } else {
+            int64_t now = now_unix();
+            cookie.expires = max_age > INT64_MAX - now
+                ? INT64_MAX : now + max_age;
+        }
+    } else if (have_expires) {
+        cookie.expires = expires <= 0 ? -1 : expires;
     }
 
     cookie.domain = domain[0] ? domain : NULL;
@@ -493,27 +804,58 @@ char *neverc_cookiejar_cookie_header(neverc_cookiejar_t *jar,
                                       const char *url) {
     if (!jar || !url) return NULL;
 
-    neverc_cookiejar_entry_t matches[64];
-    int n = neverc_cookiejar_cookies(jar, url, matches, 64);
-    if (n <= 0) return NULL;
+    char scheme[16], host[256], path[1024];
+    if (parse_url_parts(url, scheme, sizeof(scheme), host, sizeof(host), path,
+                        sizeof(path)) != 0)
+        return NULL;
+    int is_secure = strcmp(scheme, "https") == 0;
 
     size_t total = 0;
-    for (int i = 0; i < n; i++)
-        total += strlen(matches[i].name) + 1 + strlen(matches[i].value) + 2;
+    int match_count = 0;
+    jar_mutex_lock(&jar->lock);
+    prune_expired_locked(jar, now_unix());
+    for (jar_entry_t *entry = jar->entries; entry; entry = entry->next) {
+        if (!entry_matches_request(entry, host, path, is_secure)) continue;
+        if ((match_count > 0 && checked_size_add(&total, 2) != 0) ||
+            checked_size_add(&total, strlen(entry->name)) != 0 ||
+            checked_size_add(&total, 1) != 0 ||
+            checked_size_add(&total, strlen(entry->value)) != 0) {
+            jar_mutex_unlock(&jar->lock);
+            return NULL;
+        }
+        match_count++;
+    }
+    if (match_count == 0 || total == SIZE_MAX) {
+        jar_mutex_unlock(&jar->lock);
+        return NULL;
+    }
 
     char *buf = (char *)malloc(total + 1);
-    if (!buf) return NULL;
+    if (!buf) {
+        jar_mutex_unlock(&jar->lock);
+        return NULL;
+    }
 
     size_t off = 0;
-    for (int i = 0; i < n; i++) {
+    jar_entry_t *previous = NULL;
+    for (int i = 0; i < match_count; i++) {
+        jar_entry_t *entry = next_matching_entry_locked(
+            jar, host, path, is_secure, previous);
+        if (!entry) {
+            free(buf);
+            jar_mutex_unlock(&jar->lock);
+            return NULL;
+        }
         if (i > 0) { buf[off++] = ';'; buf[off++] = ' '; }
-        size_t nlen = strlen(matches[i].name);
-        size_t vlen = strlen(matches[i].value);
-        memcpy(buf + off, matches[i].name, nlen); off += nlen;
+        size_t nlen = strlen(entry->name);
+        size_t vlen = strlen(entry->value);
+        memcpy(buf + off, entry->name, nlen); off += nlen;
         buf[off++] = '=';
-        memcpy(buf + off, matches[i].value, vlen); off += vlen;
+        memcpy(buf + off, entry->value, vlen); off += vlen;
+        previous = entry;
     }
     buf[off] = '\0';
+    jar_mutex_unlock(&jar->lock);
     return buf;
 }
 
@@ -522,8 +864,9 @@ void neverc_cookiejar_clear_domain(neverc_cookiejar_t *jar,
     if (!jar || !domain) return;
 
     char lower_domain[256];
-    snprintf(lower_domain, sizeof(lower_domain), "%s", domain);
-    str_tolower(lower_domain);
+    if (normalize_clear_domain(domain, lower_domain,
+                               sizeof(lower_domain)) != 0)
+        return;
 
     jar_mutex_lock(&jar->lock);
     jar_entry_t **pp = &jar->entries;
