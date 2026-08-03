@@ -1,5 +1,6 @@
 #include "neverc/std/slices.h"
 #include <stdio.h>
+#include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
 
@@ -94,6 +95,15 @@ static void test_clone(void) {
     c[0] = 99;
     ASSERT_TRUE(!neverc_slices_equal_ints(arr, 3, c, 3));
     free(c);
+}
+
+static void test_size_overflow_rejected(void) {
+    printf("[size overflow rejected]\n");
+    unsigned char a = 1, b = 2;
+    size_t overflowing_len = SIZE_MAX / 2 + 1;
+    ASSERT_TRUE(!neverc_slices_equal(&a, overflowing_len, &b,
+                                     overflowing_len, 2));
+    ASSERT_TRUE(neverc_slices_clone(&a, overflowing_len, 2) == NULL);
 }
 
 static void test_min_max(void) {
@@ -211,6 +221,7 @@ int main(void) {
     test_binary_search();
     test_compact();
     test_clone();
+    test_size_overflow_rejected();
     test_min_max();
     test_stable_sort();
     test_delete();

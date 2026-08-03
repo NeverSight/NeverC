@@ -9,6 +9,12 @@
 #include <stdlib.h>
 #include <string.h>
 
+static int slices_byte_size(size_t len, size_t elem_size, size_t *bytes) {
+    if (elem_size == 0 || len > SIZE_MAX / elem_size) return 0;
+    *bytes = len * elem_size;
+    return 1;
+}
+
 static int slices_ranges_overlap(const void *a, size_t a_bytes,
                                  const void *b, size_t b_bytes) {
     if (a_bytes == 0 || b_bytes == 0) return 0;
@@ -21,7 +27,9 @@ static int slices_ranges_overlap(const void *a, size_t a_bytes,
 int neverc_slices_equal(const void *s1, size_t len1, const void *s2, size_t len2, size_t elem_size) {
     if (len1 != len2) return 0;
     if (len1 == 0) return 1;
-    return memcmp(s1, s2, len1 * elem_size) == 0;
+    size_t bytes;
+    if (!s1 || !s2 || !slices_byte_size(len1, elem_size, &bytes)) return 0;
+    return memcmp(s1, s2, bytes) == 0;
 }
 
 int neverc_slices_compare(const void *s1, size_t len1, const void *s2, size_t len2,
@@ -127,8 +135,10 @@ size_t neverc_slices_compact(void *slice, size_t len, size_t elem_size, neverc_e
 
 void *neverc_slices_clone(const void *slice, size_t len, size_t elem_size) {
     if (len == 0) return NULL;
-    void *out = malloc(len * elem_size);
-    if (out) memcpy(out, slice, len * elem_size);
+    size_t bytes;
+    if (!slice || !slices_byte_size(len, elem_size, &bytes)) return NULL;
+    void *out = malloc(bytes);
+    if (out) memcpy(out, slice, bytes);
     return out;
 }
 
