@@ -979,7 +979,8 @@ int neverc_quic_conn_has_ack_eliciting_in_flight(
 int neverc_quic_conn_is_alive_check(struct neverc_quic_conn *conn) {
     if (!conn) return 0;
     return conn->state == QUIC_CONN_HANDSHAKING ||
-           conn->state == QUIC_CONN_ESTABLISHED;
+           conn->state == QUIC_CONN_ESTABLISHED ||
+           conn->state == QUIC_CONN_DRAINING;
 }
 
 static int quic_conn_allows_stream_read(struct neverc_quic_conn *conn) {

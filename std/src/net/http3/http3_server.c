@@ -59,7 +59,8 @@ extern int neverc_h3_write_goaway_frame(uint8_t *buffer, size_t capacity,
 #define H3_DATA_CHUNK         (64U * 1024U)
 #define H3_MAX_CONNECTIONS    4096U
 #define H3_GRACEFUL_SHUTDOWN_MS 5000U
-#define H3_POST_DRAIN_GRACE_MS 2000U
+#define H3_POST_DRAIN_GRACE_MS 3000U
+#define H3_SHUTDOWN_ABSOLUTE_MAX_MS 30000U
 #define H3_QPACK_DECOMPRESSION_FAILED 0x0200U
 
 typedef struct h3_conn h3_conn_t;
@@ -167,7 +168,7 @@ static int h3_conn_allows_client_read(const neverc_quic_conn_t *conn) {
 
 static int h3_stream_read(neverc_quic_stream_t *stream, void *buffer,
                           size_t length) {
-    for (unsigned attempt = 0; attempt < 200U; attempt++) {
+    for (unsigned attempt = 0; attempt < 240U; attempt++) {
         int count = neverc_quic_stream_try_read(stream, buffer, length);
         if (count >= 0) return count;
         if (count != -2) {
@@ -1209,23 +1210,45 @@ static void h3_server_send_goaway(h3_conn_t *connection) {
 
 static void h3_server_close_connections(neverc_http3_server_t *server) {
     nc_mutex_lock(&server->lock);
+
+    for (unsigned waited = 0; waited < H3_SHUTDOWN_ABSOLUTE_MAX_MS;
+         waited += 2U) {
+        int pending = 0;
+        uint64_t now = nc_monotonic_ms();
+        for (size_t i = 0; i < server->connection_count; i++) {
+            h3_conn_t *connection = server->connections[i];
+            if (atomic_load_explicit(&connection->active_requests,
+                                       memory_order_acquire) != 0 ||
+                atomic_load_explicit(&connection->task_count,
+                                     memory_order_acquire) != 0)
+                pending = 1;
+            (void)neverc_quic_conn_flush(connection->quic);
+            neverc_quic_conn_tick(connection->quic, now);
+        }
+        if (!pending) break;
+        h3_sleep_ms(2);
+    }
+
     for (size_t i = 0; i < server->connection_count; i++)
         h3_server_send_goaway(server->connections[i]);
 
     unsigned drained_for_ms = 0;
-    for (unsigned waited = 0; waited < H3_GRACEFUL_SHUTDOWN_MS; waited += 2U) {
-        int drained = 1;
+    for (unsigned waited = 0; waited < H3_SHUTDOWN_ABSOLUTE_MAX_MS;
+         waited += 2U) {
+        int idle = 1;
         uint64_t now = nc_monotonic_ms();
         for (size_t i = 0; i < server->connection_count; i++) {
             h3_conn_t *connection = server->connections[i];
-            if (h3_connection_needs_worker(connection)) {
-                drained = 0;
-                drained_for_ms = 0;
-            }
+            if (h3_connection_needs_worker(connection))
+                idle = 0;
             (void)neverc_quic_conn_flush(connection->quic);
             neverc_quic_conn_tick(connection->quic, now);
         }
-        if (drained) {
+        if (!idle) {
+            drained_for_ms = 0;
+        } else if (server->connection_count == 0) {
+            break;
+        } else {
             drained_for_ms += 2U;
             if (drained_for_ms >= H3_POST_DRAIN_GRACE_MS)
                 break;
