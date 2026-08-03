@@ -2,13 +2,11 @@
 //
 // Drives the link and LTO phases through the public CLI:
 //
-//  * Baseline: linking a full executable with a plugin loaded succeeds and the
-//    plugin's driver-phase observer still fires, proving the same PluginSession
-//    reaches the linker.
-//  * OBSERVABLE (best effort): neverc.link.full; recorded as a capability-bound
-//    skip when the host's default link path (system linker) does not surface
-//    the coarse link seam. The 13 typed LinkGraph transitions are covered
-//    in-tree by neverc-plugin-link-tests.
+//  * Baseline + OBSERVABLE (best effort): one non-LTO executable link proves a
+//    plugin can span the driver/link pipeline and probes neverc.link.full. The
+//    latter is recorded as a capability-bound skip when the host's native link
+//    path does not surface the coarse seam. The 13 typed LinkGraph transitions
+//    are covered in-tree by neverc-plugin-link-tests.
 //  * LTO (best effort): a -flto link with a plugin loaded still links.
 //
 //===----------------------------------------------------------------------===//
@@ -31,34 +29,27 @@ protected:
   }
 };
 
-TEST_F(LinkLTOConformance, LinksExecutableWithPluginLoaded) {
+TEST_F(LinkLTOConformance,
+       LinksNonLTOExecutableAndProbesLinkFullObserver) {
   const std::string Plugin =
-      buildOrFail("DomainConformancePlugin", {"NCF_OBSERVE_DRIVER_ARGS"});
+      buildOrFail("DomainConformancePlugin",
+                  {"NCF_OBSERVE_DRIVER_ARGS", "NCF_OBSERVE_LINK_FULL"});
   ASSERT_FALSE(Plugin.empty());
   const std::string Input = mainInput();
 
   const RunResult R = Env.runNeverc(
-      {"-fplugin=" + Plugin, "--no-default-config", Input, "-o", exePath()},
+      {"-fplugin=" + Plugin, "--no-default-config", "-fno-lto",
+       "-fno-builtin-mimalloc", Input, "-o", exePath()},
       {{"NEVERC_CONFORMANCE_LOG", logPath()}});
   ASSERT_EQ(R.exitCode, 0) << R.err;
   EXPECT_FALSE(readBytes(exePath()).empty()) << "no executable produced";
-  EXPECT_NE(readLog().find("observe:driver_args"), std::string::npos)
+  const std::string Log = readLog();
+  EXPECT_NE(Log.find("observe:driver_args"), std::string::npos)
       << "the same PluginSession did not reach the link driver:\n"
-      << readLog();
+      << Log;
   recordCapability("neverc.link.driver_session", CapStatus::Pass);
-}
 
-TEST_F(LinkLTOConformance, LinkFullObserverBestEffort) {
-  const std::string Plugin =
-      buildOrFail("DomainConformancePlugin", {"NCF_OBSERVE_LINK_FULL"});
-  ASSERT_FALSE(Plugin.empty());
-  const std::string Input = mainInput();
-
-  const RunResult R = Env.runNeverc(
-      {"-fplugin=" + Plugin, "--no-default-config", Input, "-o", exePath()},
-      {{"NEVERC_CONFORMANCE_LOG", logPath()}});
-  ASSERT_EQ(R.exitCode, 0) << R.err;
-  if (readLog().find("observe:link_full") != std::string::npos) {
+  if (Log.find("observe:link_full") != std::string::npos) {
     recordCapability("neverc.link.full/observe", CapStatus::Pass);
   } else {
     recordCapability(
@@ -66,7 +57,6 @@ TEST_F(LinkLTOConformance, LinkFullObserverBestEffort) {
         "host default link path does not surface the coarse link.full seam; "
         "13 typed LinkGraph transitions covered in-tree by "
         "neverc-plugin-link-tests");
-    GTEST_SKIP() << "link.full observer not exercised on this host path";
   }
 }
 
@@ -76,9 +66,11 @@ TEST_F(LinkLTOConformance, LTOLinkWithPluginLoadedBestEffort) {
   ASSERT_FALSE(Plugin.empty());
   const std::string Input = mainInput();
 
+  // The plugin/LTO handshake is the subject; pulling the default allocator's
+  // large bitcode module into a trivial link adds no conformance coverage.
   const RunResult R = Env.runNeverc(
-      {"-fplugin=" + Plugin, "--no-default-config", "-flto", Input, "-o",
-       exePath()},
+      {"-fplugin=" + Plugin, "--no-default-config", "-flto",
+       "-fno-builtin-mimalloc", Input, "-o", exePath()},
       {{"NEVERC_CONFORMANCE_LOG", logPath()}});
   if (R.exitCode == 0 && !readBytes(exePath()).empty()) {
     recordCapability("neverc.lto.link_with_plugin", CapStatus::Pass);

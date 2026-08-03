@@ -5,7 +5,9 @@
 //  * OBSERVABLE: neverc.driver.raw_arguments observer runs and sees the phase.
 //  * INTERCEPTABLE: neverc.driver.execute_job interceptor runs, calls
 //    InvokeNext and returns CONTINUE, leaving a correct compile.
-//  * OBSERVABLE: neverc.ir.generate observer runs during front-end codegen.
+//
+// IR generation belongs to the IR / MIR domain suite. Keeping that probe there
+// avoids running the same NCF_OBSERVE_IR_GENERATE fixture and compile twice.
 //
 // Firings are observed through a deterministic on-disk log the fixture writes,
 // independent of diagnostic formatting.
@@ -57,23 +59,6 @@ TEST_F(DriverFrontendConformance, ExecuteJobInterceptorRunsAndContinues) {
   EXPECT_FALSE(readBytes(Object).empty())
       << "interceptor that continued should still produce the object";
   recordCapability("neverc.driver.execute_job/intercept", CapStatus::Pass);
-}
-
-TEST_F(DriverFrontendConformance, IRGenerateObserverRuns) {
-  const std::string Plugin =
-      buildOrFail("DomainConformancePlugin", {"NCF_OBSERVE_IR_GENERATE"});
-  ASSERT_FALSE(Plugin.empty());
-  const std::string Input = trivialInput();
-
-  const RunResult R = Env.runNeverc(
-      {"-fplugin=" + Plugin, "--no-default-config", "-c", Input, "-o",
-       objectPath()},
-      {{"NEVERC_CONFORMANCE_LOG", logPath()}});
-  ASSERT_EQ(R.exitCode, 0) << R.err;
-  EXPECT_NE(readLog().find("observe:ir_generate"), std::string::npos)
-      << "ir.generate observer did not run:\n"
-      << readLog();
-  recordCapability("neverc.ir.generate/observe", CapStatus::Pass);
 }
 
 } // namespace

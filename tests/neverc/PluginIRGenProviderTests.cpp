@@ -21,9 +21,12 @@ TEST_F(PluginIRGenProviderTest,
   EXPECT_NE(Module.find("define i32 @main()"), std::string::npos);
   EXPECT_NE(Module.find("ret i32 42"), std::string::npos);
 
+  // Executability is the proof here; LTO and allocator injection are covered
+  // by their dedicated suites. NeverC otherwise enables both for every link.
   std::vector<std::string> Arguments = {
       std::string("-fplugin=") + NEVERC_TEST_IRGEN_PROVIDER_PLUGIN,
-      "-std=c11", Source.string(), "-o", Executable.string()};
+      "-fno-lto", "-fno-builtin-mimalloc", "-std=c11", Source.string(), "-o",
+      Executable.string()};
   std::vector<std::string> LinkArguments = linkFlags();
   Arguments.insert(Arguments.end(), LinkArguments.begin(), LinkArguments.end());
   CmdResult Compile = ncc(Arguments);
@@ -70,10 +73,12 @@ TEST_F(PluginIRGenProviderTest,
         << Line;
   }
 
-  // And the whole way through: a declaration where a definition belongs is an
-  // undefined symbol at link time.
-  std::vector<std::string> Arguments = {Plugin, "-std=c11", Source.string(),
-                                        "-o", Executable.string()};
+  // And the whole way through a native link: a declaration where a definition
+  // belongs is an undefined symbol. LTO and the allocator are unrelated to
+  // that storage contract.
+  std::vector<std::string> Arguments = {
+      Plugin, "-fno-lto", "-fno-builtin-mimalloc", "-std=c11", Source.string(),
+      "-o", Executable.string()};
   std::vector<std::string> LinkArguments = linkFlags();
   Arguments.insert(Arguments.end(), LinkArguments.begin(), LinkArguments.end());
   CmdResult Compile = ncc(Arguments);

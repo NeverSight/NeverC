@@ -37,8 +37,12 @@ TEST_F(PluginLTOIRPassTest, RunsInLTOChildAndParallelPartitions) {
 
   CmdResult Result = ncc(
       {std::string("-fplugin=") + NEVERC_TEST_LTO_IR_PASS_PLUGIN, "-O2",
-       "-fparallel-codegen=2", "-mllvm", "-neverc-pcg-min-funcs=2", "-mllvm",
-       "-neverc-pcg-weight-floor=0", Source.string(), "-o", Output.string()});
+       // The 12 functions above are sufficient to force parallel partitions;
+       // the allocator is unrelated input that makes Windows LTO dominate the
+       // test and can push an LTO-built compiler past CTest's 900 s timeout.
+       "-fno-builtin-mimalloc", "-fparallel-codegen=2", "-mllvm",
+       "-neverc-pcg-min-funcs=2", "-mllvm", "-neverc-pcg-weight-floor=0",
+       Source.string(), "-o", Output.string()});
   EXPECT_EQ(Result.exitCode, 0) << Result.err;
   EXPECT_TRUE(fs::exists(Output));
 }

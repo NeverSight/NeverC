@@ -115,9 +115,12 @@ TEST_F(PluginTaskLifecycleTest, FrontendAndLinkerShareDriverSession) {
   writeFile(Source, "int main(void) { return 0; }\n");
   writeFile(Trace, "");
 
+  // This checks the frontend/link task boundary, not the LTO child or allocator
+  // injection. Keep those independent lifecycle paths in their own suites.
   std::vector<std::string> Arguments = {
       std::string("-fplugin=") + NEVERC_TEST_TASK_LIFECYCLE_PLUGIN,
-      Source.string(), "-o", Output.string()};
+      "-fno-lto", "-fno-builtin-mimalloc", Source.string(), "-o",
+      Output.string()};
   std::vector<std::string> LinkArguments = linkFlags();
   Arguments.insert(Arguments.end(), LinkArguments.begin(),
                    LinkArguments.end());

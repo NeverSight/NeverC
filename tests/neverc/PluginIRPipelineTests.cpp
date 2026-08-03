@@ -23,10 +23,14 @@ TEST_F(PluginIRPipelineTest,
   EXPECT_NE(Module.find("define i32 @main()"), std::string::npos);
   EXPECT_NE(Module.find("ret i32 42"), std::string::npos);
 
+  // Run the replacement through native codegen and link. The dedicated LTO and
+  // allocator suites cover those orthogonal paths; NeverC enables both unless
+  // explicitly disabled.
   std::vector<std::string> Arguments = {
       std::string("-fplugin=") +
           NEVERC_TEST_IR_OPTIMIZATION_PROVIDER_PLUGIN,
-      "-O2", "-std=c11", Source.string(), "-o", Executable.string()};
+      "-fno-lto", "-fno-builtin-mimalloc", "-O2", "-std=c11",
+      Source.string(), "-o", Executable.string()};
   std::vector<std::string> LinkArguments = linkFlags();
   Arguments.insert(Arguments.end(), LinkArguments.begin(), LinkArguments.end());
   CmdResult Compile = ncc(Arguments);

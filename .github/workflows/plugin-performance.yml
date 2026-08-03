@@ -19,7 +19,6 @@ on:
       - "neverc/lib/Plugin/**"
       - "neverc/include/neverc/Plugin/**"
       - "tests/neverc/PluginPerformanceTests.cpp"
-      - "tests/neverc/BenchmarkTests.cpp"
       - "utils/plugin-api/measure-plugin-overhead.py"
       - ".github/workflows/plugin-performance.yml"
 
