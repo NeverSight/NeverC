@@ -924,9 +924,14 @@ static int h3_poll_control_stream(h3_conn_t *connection, int *worked) {
                                                 scratch, sizeof(scratch));
         if (count == -2) return h3_parse_control_buffer(connection);
         if (count == 0) {
-            if (neverc_quic_conn_is_alive(connection->quic))
-                h3_protocol_error(connection, NC_H3_CLOSED_CRITICAL_STREAM,
-                                  "HTTP/3 control stream closed");
+            if (!neverc_quic_conn_is_alive(connection->quic))
+                return -1;
+            if (connection->goaway_sent ||
+                !atomic_load_explicit(&connection->server->running,
+                                      memory_order_acquire))
+                return 0;
+            h3_protocol_error(connection, NC_H3_CLOSED_CRITICAL_STREAM,
+                              "HTTP/3 control stream closed");
             return -1;
         }
         if (count < 0 || h3_append_bytes(&connection->control_buffer,
@@ -948,9 +953,14 @@ static int h3_poll_qpack_stream(h3_conn_t *connection,
                                                 sizeof(scratch));
         if (count == -2) return 0;
         if (count == 0) {
-            if (neverc_quic_conn_is_alive(connection->quic))
-                h3_protocol_error(connection, NC_H3_CLOSED_CRITICAL_STREAM,
-                                  "QPACK critical stream closed");
+            if (!neverc_quic_conn_is_alive(connection->quic))
+                return -1;
+            if (connection->goaway_sent ||
+                !atomic_load_explicit(&connection->server->running,
+                                      memory_order_acquire))
+                return 0;
+            h3_protocol_error(connection, NC_H3_CLOSED_CRITICAL_STREAM,
+                              "QPACK critical stream closed");
             return -1;
         }
         if (count < 0) return -1;
