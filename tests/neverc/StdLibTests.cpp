@@ -550,6 +550,15 @@ TEST_F(StdLibTest, HttpRouteAllocationFailure) {
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
   EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
 }
+TEST_F(StdLibTest, HttpStripPrefixAllocationFailure) {
+  auto r = compileAndRunStdTest(
+      "http_strip_prefix_oom",
+      {"src/net/http/http.c", "src/net/http/http2/http2.c",
+       "src/net/http/http2/http2_server.c",
+       "src/net/http/http2/http2_client.c", TCP_DEPS, HTTP_TLS_DEPS});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
 STD_TEST(websocket, "src/net/websocket/websocket.c", TCP_DEPS,
     "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", "src/net/http/http2/http2_client.c", HTTP_TLS_DEPS)
 STD_TEST(url, "src/net/url/url.c")

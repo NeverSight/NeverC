@@ -82,6 +82,18 @@ int nc_http_writer_add_header(neverc_http_response_writer_t *writer,
 int nc_http_mux_is_streaming(neverc_http_mux_t *mux, const char *method,
                              const char *path);
 
+typedef void (*nc_http_context_destroy_func_t)(void *context);
+
+/* Register a route that owns its handler context. Ownership transfers only on
+ * success; the mux invokes destroy_context when the route is released. */
+int nc_http_mux_handle_owned_context(
+    neverc_http_mux_t *mux, const char *pattern,
+    neverc_http_handler_context_func_t handler, void *context,
+    nc_http_context_destroy_func_t destroy_context);
+int nc_http_default_handle_owned_context(
+    const char *pattern, neverc_http_handler_context_func_t handler,
+    void *context, nc_http_context_destroy_func_t destroy_context);
+
 /* Transfer an HTTPS writer's TLS and TCP transports to an upgraded protocol.
  * Both output pointers are owned by the caller after success. */
 int nc_http_hijack_tls(neverc_http_response_writer_t *writer,

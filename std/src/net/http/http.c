@@ -687,6 +687,7 @@ typedef struct {
     neverc_http_handler_func_t handler;
     neverc_http_handler_context_func_t context_handler;
     void *handler_context;
+    void (*destroy_context)(void *context);
     int streaming;
 } route_t;
 
@@ -799,6 +800,27 @@ int neverc_http_mux_handle_context(
     return result;
 }
 
+int nc_http_mux_handle_owned_context(
+    neverc_http_mux_t *mux, const char *pattern,
+    neverc_http_handler_context_func_t handler, void *context,
+    void (*destroy_context)(void *context)) {
+    if (!mux || !pattern || !handler || !destroy_context) return -1;
+    int result = -1;
+    nc_mutex_lock(&mux->lock);
+    if (mux->nroutes < MAX_ROUTES) {
+        route_t *route = &mux->routes[mux->nroutes];
+        if (route_parse_pattern(route, pattern) == 0) {
+            route->context_handler = handler;
+            route->handler_context = context;
+            route->destroy_context = destroy_context;
+            mux->nroutes++;
+            result = 0;
+        }
+    }
+    nc_mutex_unlock(&mux->lock);
+    return result;
+}
+
 int neverc_http_mux_handle_stream_context(
     neverc_http_mux_t *mux, const char *pattern,
     neverc_http_handler_context_func_t handler, void *context) {
@@ -825,6 +847,8 @@ void neverc_http_mux_free(neverc_http_mux_t *mux) {
         free(mux->routes[i].pattern);
         free(mux->routes[i].method);
         free(mux->routes[i].path_pattern);
+        if (mux->routes[i].destroy_context)
+            mux->routes[i].destroy_context(mux->routes[i].handler_context);
     }
     nc_mutex_destroy(&mux->lock);
     free(mux);
@@ -834,6 +858,14 @@ void neverc_http_handle_func(const char *pattern,
                               neverc_http_handler_func_t handler) {
     ensure_default_mux();
     neverc_http_mux_handle(&default_mux, pattern, handler);
+}
+
+int nc_http_default_handle_owned_context(
+    const char *pattern, neverc_http_handler_context_func_t handler,
+    void *context, void (*destroy_context)(void *context)) {
+    ensure_default_mux();
+    return nc_http_mux_handle_owned_context(
+        &default_mux, pattern, handler, context, destroy_context);
 }
 
 /* Match a pattern with path parameters.

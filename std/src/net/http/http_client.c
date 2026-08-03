@@ -2419,21 +2419,24 @@ typedef struct {
     neverc_http_handler_func_t inner;
 } strip_prefix_ctx_t;
 
-#define MAX_STRIP_PREFIX 16
-static strip_prefix_ctx_t g_strip_prefixes[MAX_STRIP_PREFIX];
-static int g_strip_prefix_count = 0;
+static void strip_prefix_context_free(void *context) {
+    strip_prefix_ctx_t *ctx = (strip_prefix_ctx_t *)context;
+    if (!ctx) return;
+    free(ctx->prefix);
+    free(ctx);
+}
 
 static void strip_prefix_handler_fn(neverc_http_request_t *req,
-                                      neverc_http_response_writer_t *w) {
-    for (int i = 0; i < g_strip_prefix_count; i++) {
-        strip_prefix_ctx_t *ctx = &g_strip_prefixes[i];
-        if (req->path && strncmp(req->path, ctx->prefix, ctx->prefix_len) == 0) {
-            neverc_http_request_t stripped = *req;
-            stripped.path = req->path + ctx->prefix_len;
-            if (stripped.path[0] == '\0') stripped.path = "/";
-            ctx->inner(&stripped, w);
-            return;
-        }
+                                    neverc_http_response_writer_t *w,
+                                    void *context) {
+    strip_prefix_ctx_t *ctx = (strip_prefix_ctx_t *)context;
+    if (req->path &&
+        strncmp(req->path, ctx->prefix, ctx->prefix_len) == 0) {
+        neverc_http_request_t stripped = *req;
+        stripped.path = req->path + ctx->prefix_len;
+        if (stripped.path[0] == '\0') stripped.path = "/";
+        ctx->inner(&stripped, w);
+        return;
     }
     neverc_http_not_found(req, w);
 }
@@ -2441,20 +2444,26 @@ static void strip_prefix_handler_fn(neverc_http_request_t *req,
 void neverc_http_strip_prefix(neverc_http_mux_t *mux, const char *prefix,
                                 const char *pattern,
                                 neverc_http_handler_func_t handler) {
-    if (!prefix || !handler || g_strip_prefix_count >= MAX_STRIP_PREFIX)
-        return;
+    if (!prefix || !handler) return;
 
-    strip_prefix_ctx_t *ctx = &g_strip_prefixes[g_strip_prefix_count++];
+    strip_prefix_ctx_t *ctx = (strip_prefix_ctx_t *)calloc(1, sizeof(*ctx));
+    if (!ctx) return;
     ctx->prefix = strdup(prefix);
+    if (!ctx->prefix) {
+        free(ctx);
+        return;
+    }
     ctx->prefix_len = strlen(prefix);
     ctx->inner = handler;
 
-    if (mux)
-        neverc_http_mux_handle(mux, pattern ? pattern : prefix,
-                                strip_prefix_handler_fn);
-    else
-        neverc_http_handle_func(pattern ? pattern : prefix,
-                                 strip_prefix_handler_fn);
+    int result = mux
+        ? nc_http_mux_handle_owned_context(
+              mux, pattern ? pattern : prefix, strip_prefix_handler_fn, ctx,
+              strip_prefix_context_free)
+        : nc_http_default_handle_owned_context(
+              pattern ? pattern : prefix, strip_prefix_handler_fn, ctx,
+              strip_prefix_context_free);
+    if (result != 0) strip_prefix_context_free(ctx);
 }
 
 /* ======================================================================

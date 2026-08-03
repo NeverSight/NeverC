@@ -2178,6 +2178,11 @@ static void strip_inner_handler(neverc_http_request_t *req,
     neverc_http_writef(w, "stripped_path=%s", req->path);
 }
 
+static void strip_version_handler(neverc_http_request_t *req,
+                                  neverc_http_response_writer_t *w) {
+    neverc_http_writef(w, "version_path=%s", req->path);
+}
+
 static void test_strip_prefix(void) {
     printf("[strip_prefix]\n");
 
@@ -2189,6 +2194,8 @@ static void test_strip_prefix(void) {
         neverc_http_mux_t *mux = neverc_http_new_mux();
         neverc_http_strip_prefix(mux, "/api", "/api/",
                                   strip_inner_handler);
+        neverc_http_strip_prefix(mux, "/api/v2", "/api/v2/",
+                                 strip_version_handler);
         char addr[32];
         snprintf(addr, sizeof(addr), "127.0.0.1:%d", port);
         neverc_http_listen_and_serve(addr, mux);
@@ -2202,6 +2209,13 @@ static void test_strip_prefix(void) {
         buf, sizeof(buf));
     check_int("strip resp", n > 0, 1);
     check_int("strip body", strstr(buf, "stripped_path=/users") != NULL, 1);
+
+    n = do_http_request(port,
+        "GET /api/v2/users HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("overlapping strip resp", n > 0, 1);
+    check_int("overlapping strip handler",
+              strstr(buf, "version_path=/users") != NULL, 1);
 
     stop_test_server(pid);
 }
