@@ -740,11 +740,37 @@ if(NEVERC_INCLUDE_TESTS AND EXISTS "${NEVERC_TEST_DIR}/CMakeLists.txt")
   if(TARGET neverc-runtime-macos-arm64)
     list(APPEND _neverc_check_runtime_deps neverc-runtime-macos-arm64)
   endif()
+
+  # CTest registers every discovered GoogleTest executable in the test tree.
+  # Build those executables when invoking check-neverc directly; relying on a
+  # prior `all` build leaves `_NOT_BUILT` placeholders that fail the gate.
+  set(_neverc_check_test_deps
+    neverc-tests
+    neverc-build-tests
+    neverc-merge-tests
+    neverc-std-tests
+  )
+  foreach(_neverc_test_target IN ITEMS
+      neverc-plugin-core-tests
+      neverc-plugin-frontend-tests
+      neverc-plugin-ir-tests
+      neverc-plugin-target-mc-tests
+      neverc-plugin-dyncode-tests
+      neverc-plugin-link-tests
+      neverc-plugin-object-merge-tests
+      neverc-plugin-lto-input-tests
+      neverc-support-tests
+      neverc-plugin-io-tests
+      neverc-plugin-conformance)
+    if(TARGET ${_neverc_test_target})
+      list(APPEND _neverc_check_test_deps ${_neverc_test_target})
+    endif()
+  endforeach()
   add_custom_target(check-neverc
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure -C $<CONFIG>
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/tests
     DEPENDS neverc-embed-runtime-bitcode
-            neverc-tests neverc-build-tests neverc-merge-tests neverc-std-tests
+            ${_neverc_check_test_deps}
             ${_neverc_check_runtime_deps}
     USES_TERMINAL
     COMMENT "Running NeverC test suite (GoogleTest + CTest)")
