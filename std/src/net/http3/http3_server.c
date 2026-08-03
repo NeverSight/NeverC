@@ -158,17 +158,38 @@ static void h3_sleep_ms(unsigned milliseconds) {
 #endif
 }
 
+static int h3_conn_allows_client_read(const neverc_quic_conn_t *conn) {
+    if (!conn) return 0;
+    return conn->state == QUIC_CONN_HANDSHAKING ||
+           conn->state == QUIC_CONN_ESTABLISHED ||
+           conn->state == QUIC_CONN_DRAINING;
+}
+
+static int h3_stream_read(neverc_quic_stream_t *stream, void *buffer,
+                          size_t length) {
+    for (unsigned attempt = 0; attempt < 32U; attempt++) {
+        int count = neverc_quic_stream_read(stream, buffer, length);
+        if (count >= 0) return count;
+        if (!stream || !stream->conn ||
+            !h3_conn_allows_client_read(stream->conn))
+            return -1;
+        h3_sleep_ms(25);
+        (void)neverc_quic_conn_flush(stream->conn);
+    }
+    return -1;
+}
+
 /* Returns 1 for a value, 0 for clean FIN, and -1 for a truncated/error read. */
 static int h3_read_varint(neverc_quic_stream_t *stream, uint64_t *value) {
     uint8_t encoded[8];
-    int first = neverc_quic_stream_read(stream, encoded, 1);
+    int first = h3_stream_read(stream, encoded, 1);
     if (first == 0) return 0;
     if (first != 1) return -1;
     size_t width = (size_t)1U << (encoded[0] >> 6);
     size_t position = 1;
     while (position < width) {
-        int count = neverc_quic_stream_read(stream, encoded + position,
-                                            width - position);
+        int count = h3_stream_read(stream, encoded + position,
+                                   width - position);
         if (count <= 0) return -1;
         position += (size_t)count;
     }
@@ -181,8 +202,8 @@ static int h3_read_exact(neverc_quic_stream_t *stream, uint8_t *buffer,
                          size_t length) {
     size_t position = 0;
     while (position < length) {
-        int count = neverc_quic_stream_read(stream, buffer + position,
-                                            length - position);
+        int count = h3_stream_read(stream, buffer + position,
+                                   length - position);
         if (count <= 0) return -1;
         position += (size_t)count;
     }
