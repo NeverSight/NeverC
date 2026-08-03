@@ -2,7 +2,7 @@
   "version": "0.1.0",
   "modules": {
     "math": {
-      "header": "include/neverc/math.h",
+      "header": "include/neverc/std/math.h",
       "description": "Mathematical functions \u2014 constants, trigonometry, exponential, rounding, and more (mirrors Go math package)",
       "symbols": {
         "neverc_math_abs": "src/math/abs.c",
@@ -146,7 +146,7 @@
       }
     },
     "strconv": {
-      "header": "include/neverc/strconv.h",
+      "header": "include/neverc/std/strconv.h",
       "description": "String-to-value and value-to-string conversions (mirrors Go strconv package)",
       "symbols": {
         "neverc_strconv_atoi": "src/strconv/parse_int.c",
@@ -160,7 +160,31 @@
         "neverc_strconv_format_int": "src/strconv/format_int.c",
         "neverc_strconv_format_uint": "src/strconv/format_int.c",
         "neverc_strconv_format_float": "src/strconv/format_float.c",
-        "neverc_strconv_format_bool": "src/strconv/format_bool.c"
+        "neverc_strconv_format_bool": "src/strconv/format_bool.c",
+        "neverc_strconv_append_bool": "src/strconv/quote.c",
+        "neverc_strconv_append_float": "src/strconv/quote.c",
+        "neverc_strconv_append_int": "src/strconv/quote.c",
+        "neverc_strconv_append_quote": "src/strconv/quote.c",
+        "neverc_strconv_append_quote_rune": "src/strconv/quote.c",
+        "neverc_strconv_append_quote_rune_to_ascii": "src/strconv/quote.c",
+        "neverc_strconv_append_quote_rune_to_graphic": "src/strconv/quote.c",
+        "neverc_strconv_append_quote_to_ascii": "src/strconv/quote.c",
+        "neverc_strconv_append_quote_to_graphic": "src/strconv/quote.c",
+        "neverc_strconv_append_uint": "src/strconv/quote.c",
+        "neverc_strconv_can_backquote": "src/strconv/quote.c",
+        "neverc_strconv_format_complex": "src/strconv/quote.c",
+        "neverc_strconv_is_graphic": "src/strconv/quote.c",
+        "neverc_strconv_is_print": "src/strconv/quote.c",
+        "neverc_strconv_parse_complex": "src/strconv/quote.c",
+        "neverc_strconv_quote": "src/strconv/quote.c",
+        "neverc_strconv_quote_rune": "src/strconv/quote.c",
+        "neverc_strconv_quote_rune_to_ascii": "src/strconv/quote.c",
+        "neverc_strconv_quote_rune_to_graphic": "src/strconv/quote.c",
+        "neverc_strconv_quote_to_ascii": "src/strconv/quote.c",
+        "neverc_strconv_quote_to_graphic": "src/strconv/quote.c",
+        "neverc_strconv_quoted_prefix": "src/strconv/quote.c",
+        "neverc_strconv_unquote": "src/strconv/quote.c",
+        "neverc_strconv_unquote_char": "src/strconv/quote.c"
       },
       "dot_methods": {
         "atoi": "neverc_strconv_atoi",
@@ -178,7 +202,7 @@
       }
     },
     "math/rand": {
-      "header": "include/neverc/math/rand.h",
+      "header": "include/neverc/std/math/rand.h",
       "description": "Pseudo-random number generation using xoshiro256** with Ziggurat distributions (mirrors Go math/rand + rand/v2)",
       "symbols": {
         "neverc_rand_seed": "src/math/rand/rand.c",
@@ -232,7 +256,7 @@
       }
     },
     "encoding/base64": {
-      "header": "include/neverc/encoding/base64.h",
+      "header": "include/neverc/std/encoding/base64.h",
       "description": "Base64 encoding/decoding with standard and URL-safe alphabets (mirrors Go encoding/base64 package)",
       "symbols": {
         "neverc_base64_encoded_len": "src/encoding/base64/base64.c",
@@ -252,7 +276,7 @@
       }
     },
     "sort": {
-      "header": "include/neverc/sort.h",
+      "header": "include/neverc/std/sort.h",
       "description": "Sorting and binary search utilities (mirrors Go sort package)",
       "symbols": {
         "neverc_sort_ints": "src/sort/sort.c",
@@ -266,7 +290,13 @@
         "neverc_sort_strings": "src/sort/sort.c",
         "neverc_sort_strings_are_sorted": "src/sort/sort.c",
         "neverc_sort_search_strings": "src/sort/sort.c",
-        "neverc_sort_reverse": "src/sort/sort.c"
+        "neverc_sort_reverse": "src/sort/sort.c",
+        "neverc_sort_doubles_are_sorted": "src/sort/sort.c",
+        "neverc_sort_find": "src/sort/sort.c",
+        "neverc_sort_ints_are_sorted": "src/sort/sort.c",
+        "neverc_sort_slice": "src/sort/sort.c",
+        "neverc_sort_slice_is_sorted": "src/sort/sort.c",
+        "neverc_sort_slice_stable": "src/sort/sort.c"
       },
       "dot_methods": {
         "ints": "neverc_sort_ints",
@@ -284,7 +314,7 @@
       }
     },
     "encoding/hex": {
-      "header": "include/neverc/encoding/hex.h",
+      "header": "include/neverc/std/encoding/hex.h",
       "description": "Hexadecimal encoding and decoding (mirrors Go encoding/hex package)",
       "symbols": {
         "neverc_hex_encoded_len": "src/encoding/hex/encode.c",
@@ -300,7 +330,7 @@
       }
     },
     "hash/fnv": {
-      "header": "include/neverc/hash/fnv.h",
+      "header": "include/neverc/std/hash/fnv.h",
       "description": "FNV-1 and FNV-1a non-cryptographic hash functions (mirrors Go hash/fnv package)",
       "symbols": {
         "neverc_fnv_sum32": "src/hash/fnv/fnv.c",
@@ -320,7 +350,7 @@
       }
     },
     "hash/crc32": {
-      "header": "include/neverc/hash/crc32.h",
+      "header": "include/neverc/std/hash/crc32.h",
       "description": "CRC-32 checksum (mirrors Go hash/crc32 package)",
       "symbols": {
         "neverc_crc32_make_table": "src/hash/crc32/crc32.c",
@@ -346,7 +376,7 @@
       }
     },
     "hash/crc64": {
-      "header": "include/neverc/hash/crc64.h",
+      "header": "include/neverc/std/hash/crc64.h",
       "description": "CRC-64 checksum with ISO and ECMA polynomials (mirrors Go hash/crc64 package)",
       "symbols": {
         "neverc_crc64_make_table": "src/hash/crc64/crc64.c",
@@ -360,7 +390,7 @@
       }
     },
     "unicode": {
-      "header": "include/neverc/unicode.h",
+      "header": "include/neverc/std/unicode.h",
       "description": "Unicode character classification and case conversion (mirrors Go unicode package)",
       "symbols": {
         "neverc_unicode_is_upper": "src/unicode/unicode.c",
@@ -373,7 +403,13 @@
         "neverc_unicode_is_graphic": "src/unicode/unicode.c",
         "neverc_unicode_is_print": "src/unicode/unicode.c",
         "neverc_unicode_to_upper": "src/unicode/unicode.c",
-        "neverc_unicode_to_lower": "src/unicode/unicode.c"
+        "neverc_unicode_to_lower": "src/unicode/unicode.c",
+        "neverc_unicode_is_mark": "src/unicode/unicode.c",
+        "neverc_unicode_is_number": "src/unicode/unicode.c",
+        "neverc_unicode_is_symbol": "src/unicode/unicode.c",
+        "neverc_unicode_is_title": "src/unicode/unicode.c",
+        "neverc_unicode_simple_fold": "src/unicode/unicode.c",
+        "neverc_unicode_to_title": "src/unicode/unicode.c"
       },
       "dot_methods": {
         "is_upper": "neverc_unicode_is_upper",
@@ -390,7 +426,7 @@
       }
     },
     "encoding/binary": {
-      "header": "include/neverc/encoding/binary.h",
+      "header": "include/neverc/std/encoding/binary.h",
       "description": "Binary encoding \u2014 BigEndian/LittleEndian byte order read/write (mirrors Go encoding/binary package)",
       "symbols": {
         "neverc_binary_big_endian_uint16": "src/encoding/binary/binary.c",
@@ -484,7 +520,7 @@
       }
     },
     "math/bits": {
-      "header": "include/neverc/math/bits.h",
+      "header": "include/neverc/std/math/bits.h",
       "description": "Bit counting and manipulation \u2014 popcount, CLZ, CTZ, rotate, reverse (mirrors Go math/bits package)",
       "symbols": {
         "neverc_bits_leading_zeros": "src/math/bits/bits.c",
@@ -590,7 +626,7 @@
       }
     },
     "unicode/utf8": {
-      "header": "include/neverc/unicode/utf8.h",
+      "header": "include/neverc/std/unicode/utf8.h",
       "description": "UTF-8 encoding and decoding utilities (mirrors Go unicode/utf8 package)",
       "symbols": {
         "neverc_utf8_rune_len": "src/unicode/utf8/utf8.c",
@@ -612,7 +648,7 @@
       }
     },
     "hash/adler32": {
-      "header": "include/neverc/hash/adler32.h",
+      "header": "include/neverc/std/hash/adler32.h",
       "description": "Adler-32 checksum (mirrors Go hash/adler32 package)",
       "symbols": {
         "neverc_adler32_update": "src/hash/adler32/adler32.c",
@@ -624,7 +660,7 @@
       }
     },
     "path": {
-      "header": "include/neverc/path.h",
+      "header": "include/neverc/std/path.h",
       "description": "Slash-separated path manipulation utilities (mirrors Go path package)",
       "symbols": {
         "neverc_path_base": "src/path/base.c",
@@ -648,7 +684,7 @@
       }
     },
     "crypto/sha256": {
-      "header": "include/neverc/crypto/sha256.h",
+      "header": "include/neverc/std/crypto/sha256.h",
       "description": "SHA-256 cryptographic hash (FIPS 180-4)",
       "symbols": {
         "neverc_sha256_init": "src/crypto/sha256/sha256.c",
@@ -664,7 +700,7 @@
       }
     },
     "crypto/sha1": {
-      "header": "include/neverc/crypto/sha1.h",
+      "header": "include/neverc/std/crypto/sha1.h",
       "description": "SHA-1 cryptographic hash (FIPS 180-4)",
       "symbols": {
         "neverc_sha1_init": "src/crypto/sha1/sha1.c",
@@ -680,7 +716,7 @@
       }
     },
     "crypto/sha512": {
-      "header": "include/neverc/crypto/sha512.h",
+      "header": "include/neverc/std/crypto/sha512.h",
       "description": "SHA-512 cryptographic hash (FIPS 180-4)",
       "symbols": {
         "neverc_sha512_init": "src/crypto/sha512/sha512.c",
@@ -696,7 +732,7 @@
       }
     },
     "crypto/md5": {
-      "header": "include/neverc/crypto/md5.h",
+      "header": "include/neverc/std/crypto/md5.h",
       "description": "MD5 message-digest hash (RFC 1321)",
       "symbols": {
         "neverc_md5_init": "src/crypto/md5/md5.c",
@@ -712,7 +748,7 @@
       }
     },
     "crypto/subtle": {
-      "header": "include/neverc/crypto/subtle.h",
+      "header": "include/neverc/std/crypto/subtle.h",
       "description": "Constant-time cryptographic operations (mirrors Go crypto/subtle package)",
       "symbols": {
         "neverc_subtle_constant_time_compare": "src/crypto/subtle/subtle.c",
@@ -732,7 +768,7 @@
       }
     },
     "unicode/utf16": {
-      "header": "include/neverc/unicode/utf16.h",
+      "header": "include/neverc/std/unicode/utf16.h",
       "description": "UTF-16 encoding and decoding with surrogate pair handling (mirrors Go unicode/utf16 package)",
       "symbols": {
         "neverc_utf16_is_surrogate": "src/unicode/utf16/utf16.c",
@@ -748,7 +784,7 @@
       }
     },
     "encoding/pem": {
-      "header": "include/neverc/encoding/pem.h",
+      "header": "include/neverc/std/encoding/pem.h",
       "description": "PEM encoding and decoding (RFC 1421, mirrors Go encoding/pem package)",
       "symbols": {
         "neverc_pem_encode": "src/encoding/pem/pem.c",
@@ -760,7 +796,7 @@
       }
     },
     "crypto/hmac": {
-      "header": "include/neverc/crypto/hmac.h",
+      "header": "include/neverc/std/crypto/hmac.h",
       "description": "HMAC keyed-hash message authentication (FIPS 198-1, mirrors Go crypto/hmac package)",
       "symbols": {
         "neverc_hmac_sha256": "src/crypto/hmac/hmac.c",
@@ -778,7 +814,7 @@
       }
     },
     "encoding/ascii85": {
-      "header": "include/neverc/encoding/ascii85.h",
+      "header": "include/neverc/std/encoding/ascii85.h",
       "description": "ASCII85 (Base85) encoding and decoding (mirrors Go encoding/ascii85 package)",
       "symbols": {
         "neverc_ascii85_max_encoded_len": "src/encoding/ascii85/ascii85.c",
@@ -792,7 +828,7 @@
       }
     },
     "crypto/aes": {
-      "header": "include/neverc/crypto/aes.h",
+      "header": "include/neverc/std/crypto/aes.h",
       "description": "AES block cipher \u2014 FIPS 197, supports AES-128/192/256 (mirrors Go crypto/aes package)",
       "symbols": {
         "neverc_aes_init": "src/crypto/aes/aes.c",
@@ -806,7 +842,7 @@
       }
     },
     "crypto/sha384": {
-      "header": "include/neverc/crypto/sha384.h",
+      "header": "include/neverc/std/crypto/sha384.h",
       "description": "SHA-384 cryptographic hash (FIPS 180-4, SHA-512 variant)",
       "symbols": {
         "neverc_sha384_init": "src/crypto/sha384/sha384.c",
@@ -822,7 +858,7 @@
       }
     },
     "crypto/chacha20": {
-      "header": "include/neverc/crypto/chacha20.h",
+      "header": "include/neverc/std/crypto/chacha20.h",
       "description": "ChaCha20 stream cipher (RFC 7539, mirrors Go crypto/chacha20 package)",
       "symbols": {
         "neverc_chacha20_init": "src/crypto/chacha20/chacha20.c",
@@ -836,7 +872,7 @@
       }
     },
     "crypto/poly1305": {
-      "header": "include/neverc/crypto/poly1305.h",
+      "header": "include/neverc/std/crypto/poly1305.h",
       "description": "Poly1305 MAC (RFC 7539, pairs with ChaCha20 for AEAD)",
       "symbols": {
         "neverc_poly1305_auth": "src/crypto/poly1305/poly1305.c",
@@ -848,12 +884,15 @@
       }
     },
     "crypto/hkdf": {
-      "header": "include/neverc/crypto/hkdf.h",
+      "header": "include/neverc/std/crypto/hkdf.h",
       "description": "HKDF \u2014 HMAC-based Key Derivation Function (RFC 5869)",
       "symbols": {
         "neverc_hkdf_sha256": "src/crypto/hkdf/hkdf.c",
         "neverc_hkdf_extract_sha256": "src/crypto/hkdf/hkdf.c",
-        "neverc_hkdf_expand_sha256": "src/crypto/hkdf/hkdf.c"
+        "neverc_hkdf_expand_sha256": "src/crypto/hkdf/hkdf.c",
+        "neverc_hkdf_expand_sha512": "src/crypto/hkdf/hkdf.c",
+        "neverc_hkdf_extract_sha512": "src/crypto/hkdf/hkdf.c",
+        "neverc_hkdf_sha512": "src/crypto/hkdf/hkdf.c"
       },
       "dot_methods": {
         "sha256": "neverc_hkdf_sha256",
@@ -862,7 +901,7 @@
       }
     },
     "crypto/pbkdf2": {
-      "header": "include/neverc/crypto/pbkdf2.h",
+      "header": "include/neverc/std/crypto/pbkdf2.h",
       "description": "PBKDF2 password-based key derivation (RFC 2898/8018)",
       "symbols": {
         "neverc_pbkdf2_sha256": "src/crypto/pbkdf2/pbkdf2.c"
@@ -872,7 +911,7 @@
       }
     },
     "crypto/sha224": {
-      "header": "include/neverc/crypto/sha224.h",
+      "header": "include/neverc/std/crypto/sha224.h",
       "description": "SHA-224 cryptographic hash (FIPS 180-4, SHA-256 variant)",
       "symbols": {
         "neverc_sha224_init": "src/crypto/sha224/sha224.c",
@@ -888,7 +927,7 @@
       }
     },
     "crypto/sha512_224": {
-      "header": "include/neverc/crypto/sha512_224.h",
+      "header": "include/neverc/std/crypto/sha512_224.h",
       "description": "SHA-512/224 cryptographic hash (FIPS 180-4, SHA-512 variant)",
       "symbols": {
         "neverc_sha512_224_init": "src/crypto/sha512_224/sha512_224.c",
@@ -904,7 +943,7 @@
       }
     },
     "crypto/sha512_256": {
-      "header": "include/neverc/crypto/sha512_256.h",
+      "header": "include/neverc/std/crypto/sha512_256.h",
       "description": "SHA-512/256 cryptographic hash (FIPS 180-4, SHA-512 variant)",
       "symbols": {
         "neverc_sha512_256_init": "src/crypto/sha512_256/sha512_256.c",
@@ -920,7 +959,7 @@
       }
     },
     "crypto/cipher": {
-      "header": "include/neverc/crypto/cipher.h",
+      "header": "include/neverc/std/crypto/cipher.h",
       "description": "AES block cipher modes \u2014 CBC and CTR (mirrors Go crypto/cipher package)",
       "symbols": {
         "neverc_cipher_cbc_encrypt": "src/crypto/cipher/cipher.c",
@@ -934,7 +973,7 @@
       }
     },
     "math/cmplx": {
-      "header": "include/neverc/math/cmplx.h",
+      "header": "include/neverc/std/math/cmplx.h",
       "description": "Complex number math \u2014 exponential, logarithmic, trigonometric, and root functions (mirrors Go math/cmplx package)",
       "symbols": {
         "neverc_cmplx_abs": "src/math/cmplx/cmplx.c",
@@ -988,7 +1027,7 @@
       }
     },
     "crypto/chacha20poly1305": {
-      "header": "include/neverc/crypto/chacha20poly1305.h",
+      "header": "include/neverc/std/crypto/chacha20poly1305.h",
       "description": "ChaCha20-Poly1305 AEAD authenticated encryption (RFC 8439)",
       "symbols": {
         "neverc_chacha20poly1305_seal": "src/crypto/chacha20poly1305/chacha20poly1305.c",
@@ -1000,7 +1039,7 @@
       }
     },
     "crypto/sha3": {
-      "header": "include/neverc/crypto/sha3.h",
+      "header": "include/neverc/std/crypto/sha3.h",
       "description": "SHA-3 (Keccak) hash family \u2014 FIPS 202: SHA3-224/256/384/512 and SHAKE128/256",
       "symbols": {
         "neverc_sha3_224_init": "src/crypto/sha3/sha3.c",
@@ -1068,7 +1107,7 @@
       }
     },
     "crypto/gcm": {
-      "header": "include/neverc/crypto/gcm.h",
+      "header": "include/neverc/std/crypto/gcm.h",
       "description": "AES-GCM authenticated encryption \u2014 NIST SP 800-38D, supports AES-128/192/256-GCM",
       "symbols": {
         "neverc_gcm_init": "src/crypto/gcm/gcm.c",
@@ -1082,7 +1121,7 @@
       }
     },
     "encoding/base32": {
-      "header": "include/neverc/encoding/base32.h",
+      "header": "include/neverc/std/encoding/base32.h",
       "description": "Base32 encoding/decoding \u2014 RFC 4648, standard and hex alphabets",
       "symbols": {
         "neverc_base32_encoded_len": "src/encoding/base32/base32.c",
@@ -1102,7 +1141,7 @@
       }
     },
     "crypto/des": {
-      "header": "include/neverc/crypto/des.h",
+      "header": "include/neverc/std/crypto/des.h",
       "description": "DES and Triple DES (3DES/TDEA) block ciphers \u2014 FIPS 46-3, cryptographically broken",
       "symbols": {
         "neverc_des_init": "src/crypto/des/des.c",
@@ -1122,7 +1161,7 @@
       }
     },
     "crypto/rc4": {
-      "header": "include/neverc/crypto/rc4.h",
+      "header": "include/neverc/std/crypto/rc4.h",
       "description": "RC4 stream cipher \u2014 cryptographically broken, for compatibility only",
       "symbols": {
         "neverc_rc4_init": "src/crypto/rc4/rc4.c",
@@ -1136,7 +1175,7 @@
       }
     },
     "cmp": {
-      "header": "include/neverc/cmp.h",
+      "header": "include/neverc/std/cmp.h",
       "description": "Ordered comparison utilities \u2014 Compare, Less, Min, Max, Clamp (mirrors Go cmp package)",
       "symbols": {
         "neverc_cmp_compare_int": "src/cmp/cmp.c",
@@ -1158,7 +1197,10 @@
         "neverc_cmp_max_float64": "src/cmp/cmp.c",
         "neverc_cmp_clamp_int": "src/cmp/cmp.c",
         "neverc_cmp_clamp_int64": "src/cmp/cmp.c",
-        "neverc_cmp_clamp_float64": "src/cmp/cmp.c"
+        "neverc_cmp_clamp_float64": "src/cmp/cmp.c",
+        "neverc_cmp_or_float64": "src/cmp/cmp.c",
+        "neverc_cmp_or_int": "src/cmp/cmp.c",
+        "neverc_cmp_or_int64": "src/cmp/cmp.c"
       },
       "dot_methods": {
         "compare_int": "neverc_cmp_compare_int",
@@ -1184,7 +1226,7 @@
       }
     },
     "container/heap": {
-      "header": "include/neverc/container/heap.h",
+      "header": "include/neverc/std/container/heap.h",
       "description": "Binary min-heap on contiguous array (mirrors Go container/heap package)",
       "symbols": {
         "neverc_heap_init": "src/container/heap/heap.c",
@@ -1202,7 +1244,7 @@
       }
     },
     "container/list": {
-      "header": "include/neverc/container/list.h",
+      "header": "include/neverc/std/container/list.h",
       "description": "Doubly linked list with sentinel root (mirrors Go container/list package)",
       "symbols": {
         "neverc_list_new": "src/container/list/list.c",
@@ -1244,7 +1286,7 @@
       }
     },
     "container/ring": {
-      "header": "include/neverc/container/ring.h",
+      "header": "include/neverc/std/container/ring.h",
       "description": "Circular doubly linked list (mirrors Go container/ring package)",
       "symbols": {
         "neverc_ring_new": "src/container/ring/ring.c",
@@ -1270,7 +1312,7 @@
       }
     },
     "hash/maphash": {
-      "header": "include/neverc/hash/maphash.h",
+      "header": "include/neverc/std/hash/maphash.h",
       "description": "Fast non-cryptographic hash (wyhash) for hash tables (mirrors Go hash/maphash package)",
       "symbols": {
         "neverc_maphash_make_seed": "src/hash/maphash/maphash.c",
@@ -1296,7 +1338,7 @@
       }
     },
     "compress/lzw": {
-      "header": "include/neverc/compress/lzw.h",
+      "header": "include/neverc/std/compress/lzw.h",
       "description": "LZW compression \u2014 GIF/TIFF/PDF compatible (mirrors Go compress/lzw package)",
       "symbols": {
         "neverc_lzw_compress": "src/compress/lzw/lzw.c",
@@ -1308,7 +1350,7 @@
       }
     },
     "compress/flate": {
-      "header": "include/neverc/compress/flate.h",
+      "header": "include/neverc/std/compress/flate.h",
       "description": "DEFLATE compression (RFC 1951, mirrors Go compress/flate package)",
       "symbols": {
         "neverc_flate_compress": "src/compress/flate/flate.c",
@@ -1320,7 +1362,7 @@
       }
     },
     "compress/gzip": {
-      "header": "include/neverc/compress/gzip.h",
+      "header": "include/neverc/std/compress/gzip.h",
       "description": "Gzip format (RFC 1952, DEFLATE + CRC32, mirrors Go compress/gzip package)",
       "deps": ["compress/flate", "hash/crc32"],
       "symbols": {
@@ -1333,7 +1375,7 @@
       }
     },
     "compress/zlib": {
-      "header": "include/neverc/compress/zlib.h",
+      "header": "include/neverc/std/compress/zlib.h",
       "description": "Zlib format (RFC 1950, DEFLATE + Adler-32, mirrors Go compress/zlib package)",
       "symbols": {
         "neverc_zlib_compress": "src/compress/zlib/zlib.c",
@@ -1345,7 +1387,7 @@
       }
     },
     "compress/bzip2": {
-      "header": "include/neverc/compress/bzip2.h",
+      "header": "include/neverc/std/compress/bzip2.h",
       "description": "Bzip2 decompression (mirrors Go compress/bzip2 package, decompress only)",
       "symbols": {
         "neverc_bzip2_decompress": "src/compress/bzip2/bzip2.c"
@@ -1355,7 +1397,7 @@
       }
     },
     "encoding/json": {
-      "header": "include/neverc/encoding/json.h",
+      "header": "include/neverc/std/encoding/json.h",
       "description": "JSON parsing and generation \u2014 DOM API (mirrors Go encoding/json package)",
       "symbols": {
         "neverc_json_parse": "src/encoding/json/json.c",
@@ -1403,7 +1445,7 @@
       }
     },
     "path/filepath": {
-      "header": "include/neverc/path/filepath.h",
+      "header": "include/neverc/std/path/filepath.h",
       "description": "OS-specific file path manipulation (mirrors Go path/filepath package)",
       "symbols": {
         "neverc_filepath_base": "src/path/filepath/filepath.c",
@@ -1431,7 +1473,7 @@
       }
     },
     "encoding/csv": {
-      "header": "include/neverc/encoding/csv.h",
+      "header": "include/neverc/std/encoding/csv.h",
       "description": "CSV reading and writing (RFC 4180, mirrors Go encoding/csv package)",
       "symbols": {
         "neverc_csv_read_line": "src/encoding/csv/csv.c",
@@ -1447,7 +1489,7 @@
       }
     },
     "encoding/xml": {
-      "header": "include/neverc/encoding/xml.h",
+      "header": "include/neverc/std/encoding/xml.h",
       "description": "XML parsing and generation (SAX tokenizer + DOM tree, mirrors Go encoding/xml package)",
       "symbols": {
         "neverc_xml_decoder_init": "src/encoding/xml/xml.c",
@@ -1471,7 +1513,7 @@
       }
     },
     "encoding/asn1": {
-      "header": "include/neverc/encoding/asn1.h",
+      "header": "include/neverc/std/encoding/asn1.h",
       "description": "ASN.1 DER encoding/decoding (mirrors Go encoding/asn1 package)",
       "symbols": {
         "neverc_asn1_decode_element": "src/encoding/asn1/asn1.c",
@@ -1499,7 +1541,7 @@
       }
     },
     "bytes": {
-      "header": "include/neverc/bytes.h",
+      "header": "include/neverc/std/bytes.h",
       "description": "Byte slice manipulation (mirrors Go bytes package)",
       "symbols": {
         "neverc_bytes_equal": "src/bytes/bytes.c",
@@ -1550,7 +1592,8 @@
         "neverc_bytes_trim_right": "src/bytes/bytes.c",
         "neverc_bytes_trim_prefix": "src/bytes/bytes.c",
         "neverc_bytes_trim_suffix": "src/bytes/bytes.c",
-        "neverc_bytes_split_n": "src/bytes/bytes.c"
+        "neverc_bytes_split_n": "src/bytes/bytes.c",
+        "neverc_bytes_contains_rune": "src/bytes/bytes.c"
       },
       "dot_methods": {
         "equal": "neverc_bytes_equal",
@@ -1605,7 +1648,7 @@
       }
     },
     "errors": {
-      "header": "include/neverc/errors.h",
+      "header": "include/neverc/std/errors.h",
       "description": "Error handling (mirrors Go errors package)",
       "symbols": {
         "neverc_errors_new": "src/errors/errors.c",
@@ -1627,7 +1670,7 @@
       }
     },
     "html": {
-      "header": "include/neverc/html.h",
+      "header": "include/neverc/std/html.h",
       "description": "HTML escaping/unescaping (mirrors Go html package)",
       "symbols": {
         "neverc_html_escape_string": "src/html/html.c",
@@ -1639,7 +1682,7 @@
       }
     },
     "fmt": {
-      "header": "include/neverc/fmt.h",
+      "header": "include/neverc/std/fmt.h",
       "description": "Formatted I/O \u2014 self-implemented formatting engine (mirrors Go fmt package)",
       "symbols": {
         "neverc_fmt_sprintf": "src/fmt/fmt.c",
@@ -1657,7 +1700,14 @@
         "neverc_fmt_scanf": "src/fmt/fmt.c",
         "neverc_fmt_scan": "src/fmt/fmt.c",
         "neverc_fmt_fscanf": "src/fmt/fmt.c",
-        "neverc_fmt_appendf": "src/fmt/fmt.c"
+        "neverc_fmt_appendf": "src/fmt/fmt.c",
+        "neverc_fmt_append": "src/fmt/fmt.c",
+        "neverc_fmt_appendln": "src/fmt/fmt.c",
+        "neverc_fmt_fscan": "src/fmt/fmt.c",
+        "neverc_fmt_fscanln": "src/fmt/fmt.c",
+        "neverc_fmt_scanln": "src/fmt/fmt.c",
+        "neverc_fmt_sprintfln": "src/fmt/fmt.c",
+        "neverc_fmt_sscanln": "src/fmt/fmt.c"
       },
       "dot_methods": {
         "sprintf": "neverc_fmt_sprintf",
@@ -1679,7 +1729,7 @@
       }
     },
     "io": {
-      "header": "include/neverc/io.h",
+      "header": "include/neverc/std/io.h",
       "description": "I/O primitives \u2014 Reader/Writer interfaces + utilities (mirrors Go io package)",
       "symbols": {
         "neverc_io_read_all": "src/io/io.c",
@@ -1701,7 +1751,10 @@
         "neverc_io_pipe": "src/io/io.c",
         "neverc_io_pipe_close": "src/io/io.c",
         "neverc_io_pipe_free": "src/io/io.c",
-        "neverc_io_nop_closer_init": "src/io/io.c"
+        "neverc_io_nop_closer_init": "src/io/io.c",
+        "neverc_io_mem_reader_read": "src/io/io.c",
+        "neverc_io_mem_writer_free": "src/io/io.c",
+        "neverc_io_mem_writer_write": "src/io/io.c"
       },
       "dot_methods": {
         "read_all": "neverc_io_read_all",
@@ -1727,7 +1780,7 @@
       }
     },
     "bufio": {
-      "header": "include/neverc/bufio.h",
+      "header": "include/neverc/std/bufio.h",
       "description": "Buffered I/O \u2014 Scanner, Reader, Writer (mirrors Go bufio package)",
       "symbols": {
         "neverc_bufio_scanner_init": "src/bufio/bufio.c",
@@ -1746,7 +1799,9 @@
         "neverc_bufio_reader_free": "src/bufio/bufio.c",
         "neverc_bufio_writer_init_size": "src/bufio/bufio.c",
         "neverc_bufio_writer_write_byte": "src/bufio/bufio.c",
-        "neverc_bufio_writer_free": "src/bufio/bufio.c"
+        "neverc_bufio_writer_free": "src/bufio/bufio.c",
+        "neverc_bufio_scanner_bytes": "src/bufio/bufio.c",
+        "neverc_bufio_scanner_text": "src/bufio/bufio.c"
       },
       "dot_methods": {
         "scanner_init": "neverc_bufio_scanner_init",
@@ -1769,7 +1824,7 @@
       }
     },
     "flag": {
-      "header": "include/neverc/flag.h",
+      "header": "include/neverc/std/flag.h",
       "description": "Command-line flag parsing (mirrors Go flag package)",
       "symbols": {
         "neverc_flag_string": "src/flag/flag.c",
@@ -1780,7 +1835,15 @@
         "neverc_flag_narg": "src/flag/flag.c",
         "neverc_flag_arg": "src/flag/flag.c",
         "neverc_flag_print_defaults": "src/flag/flag.c",
-        "neverc_flag_reset": "src/flag/flag.c"
+        "neverc_flag_reset": "src/flag/flag.c",
+        "neverc_flag_int64": "src/flag/flag.c",
+        "neverc_flag_lookup": "src/flag/flag.c",
+        "neverc_flag_nflag": "src/flag/flag.c",
+        "neverc_flag_parsed": "src/flag/flag.c",
+        "neverc_flag_set": "src/flag/flag.c",
+        "neverc_flag_uint64": "src/flag/flag.c",
+        "neverc_flag_visit": "src/flag/flag.c",
+        "neverc_flag_visit_all": "src/flag/flag.c"
       },
       "dot_methods": {
         "string": "neverc_flag_string",
@@ -1795,7 +1858,7 @@
       }
     },
     "log": {
-      "header": "include/neverc/log.h",
+      "header": "include/neverc/std/log.h",
       "description": "Logging with configurable prefix, date/time flags (mirrors Go log package)",
       "symbols": {
         "neverc_log_init": "src/log/log.c",
@@ -1810,7 +1873,17 @@
         "neverc_log_set_flags": "src/log/log.c",
         "neverc_log_set_output": "src/log/log.c",
         "neverc_log_default_println": "src/log/log.c",
-        "neverc_log_default_fatal": "src/log/log.c"
+        "neverc_log_default_fatal": "src/log/log.c",
+        "neverc_log_default_fatalf": "src/log/log.c",
+        "neverc_log_default_panic": "src/log/log.c",
+        "neverc_log_default_panicf": "src/log/log.c",
+        "neverc_log_fatalln": "src/log/log.c",
+        "neverc_log_flags": "src/log/log.c",
+        "neverc_log_panic": "src/log/log.c",
+        "neverc_log_panicf": "src/log/log.c",
+        "neverc_log_panicln": "src/log/log.c",
+        "neverc_log_prefix": "src/log/log.c",
+        "neverc_log_writer": "src/log/log.c"
       },
       "dot_methods": {
         "init": "neverc_log_init",
@@ -1829,7 +1902,7 @@
       }
     },
     "time": {
-      "header": "include/neverc/time.h",
+      "header": "include/neverc/std/time.h",
       "description": "Time operations \u2014 Now, Parse, Format, Duration (mirrors Go time package)",
       "symbols": {
         "neverc_time_now": "src/time/time.c",
@@ -1866,7 +1939,12 @@
         "neverc_time_duration_seconds": "src/time/time.c",
         "neverc_time_duration_milliseconds": "src/time/time.c",
         "neverc_time_duration_microseconds": "src/time/time.c",
-        "neverc_time_duration_nanoseconds": "src/time/time.c"
+        "neverc_time_duration_nanoseconds": "src/time/time.c",
+        "neverc_time_format": "src/time/time.c",
+        "neverc_time_parse": "src/time/time.c",
+        "neverc_time_round": "src/time/time.c",
+        "neverc_time_truncate": "src/time/time.c",
+        "neverc_time_unix_milli_to_time": "src/time/time.c"
       },
       "dot_methods": {
         "now": "neverc_time_now",
@@ -1907,7 +1985,7 @@
       }
     },
     "uuid": {
-      "header": "include/neverc/uuid.h",
+      "header": "include/neverc/std/uuid.h",
       "description": "UUID v4 generation, parsing, formatting (mirrors Go uuid package)",
       "symbols": {
         "neverc_uuid_new": "src/uuid/uuid.c",
@@ -1931,7 +2009,7 @@
       }
     },
     "regexp": {
-      "header": "include/neverc/regexp.h",
+      "header": "include/neverc/std/regexp.h",
       "description": "Regular expressions \u2014 NFA engine (mirrors Go regexp package)",
       "symbols": {
         "neverc_regexp_compile": "src/regexp/regexp.c",
@@ -1967,7 +2045,7 @@
       }
     },
     "archive/tar": {
-      "header": "include/neverc/archive/tar.h",
+      "header": "include/neverc/std/archive/tar.h",
       "description": "POSIX tar archive format reader/writer (mirrors Go archive/tar package)",
       "symbols": {
         "neverc_tar_reader_init": "src/archive/tar/tar.c",
@@ -1991,7 +2069,7 @@
       }
     },
     "archive/zip": {
-      "header": "include/neverc/archive/zip.h",
+      "header": "include/neverc/std/archive/zip.h",
       "description": "ZIP archive format reader/writer (stored mode, mirrors Go archive/zip package)",
       "symbols": {
         "neverc_zip_reader_init": "src/archive/zip/zip.c",
@@ -2017,7 +2095,7 @@
       }
     },
     "text/template": {
-      "header": "include/neverc/text/template.h",
+      "header": "include/neverc/std/text/template.h",
       "description": "Simple template engine with {{.Var}}, {{if}}, {{else}}, {{range}} (mirrors Go text/template package)",
       "symbols": {
         "neverc_template_parse": "src/text/template/template.c",
@@ -2041,7 +2119,7 @@
       }
     },
     "crypto/rand": {
-      "header": "include/neverc/crypto/rand.h",
+      "header": "include/neverc/std/crypto/rand.h",
       "description": "Cryptographic random number generator using OS entropy (mirrors Go crypto/rand package)",
       "symbols": {
         "neverc_crypto_rand_read": "src/crypto/rand/rand.c",
@@ -2055,7 +2133,7 @@
       }
     },
     "crypto/elliptic": {
-      "header": "include/neverc/crypto/elliptic.h",
+      "header": "include/neverc/std/crypto/elliptic.h",
       "description": "Elliptic curve operations \u2014 NIST P-256/P-384 (mirrors Go crypto/elliptic package)",
       "symbols": {
         "neverc_elliptic_p256": "src/crypto/elliptic/elliptic.c",
@@ -2085,7 +2163,7 @@
       }
     },
     "crypto/rsa": {
-      "header": "include/neverc/crypto/rsa.h",
+      "header": "include/neverc/std/crypto/rsa.h",
       "description": "RSA encryption/signing \u2014 PKCS#1 v1.5 and RSA-PSS verification (mirrors Go crypto/rsa package)",
       "symbols": {
         "neverc_rsa_public_key_init": "src/crypto/rsa/rsa.c",
@@ -2100,7 +2178,9 @@
         "neverc_rsa_verify_pss_sha256": "src/crypto/rsa/rsa.c",
         "neverc_rsa_verify_pss_sha384": "src/crypto/rsa/rsa.c",
         "neverc_rsa_verify_pss_sha512": "src/crypto/rsa/rsa.c",
-        "neverc_rsa_key_size": "src/crypto/rsa/rsa.c"
+        "neverc_rsa_key_size": "src/crypto/rsa/rsa.c",
+        "neverc_rsa_private_key_free": "src/crypto/rsa/rsa.c",
+        "neverc_rsa_public_key_free": "src/crypto/rsa/rsa.c"
       },
       "dot_methods": {
         "generate_key": "neverc_rsa_generate_key",
@@ -2123,14 +2203,18 @@
       }
     },
     "crypto/ecdsa": {
-      "header": "include/neverc/crypto/ecdsa.h",
+      "header": "include/neverc/std/crypto/ecdsa.h",
       "description": "ECDSA digital signatures on NIST curves (mirrors Go crypto/ecdsa package)",
       "symbols": {
         "neverc_ecdsa_public_key_init": "src/crypto/ecdsa/ecdsa.c",
         "neverc_ecdsa_private_key_init": "src/crypto/ecdsa/ecdsa.c",
         "neverc_ecdsa_generate_key": "src/crypto/ecdsa/ecdsa.c",
         "neverc_ecdsa_sign": "src/crypto/ecdsa/ecdsa.c",
-        "neverc_ecdsa_verify": "src/crypto/ecdsa/ecdsa.c"
+        "neverc_ecdsa_verify": "src/crypto/ecdsa/ecdsa.c",
+        "neverc_ecdsa_private_key_free": "src/crypto/ecdsa/ecdsa.c",
+        "neverc_ecdsa_public_key_free": "src/crypto/ecdsa/ecdsa.c",
+        "neverc_ecdsa_signature_free": "src/crypto/ecdsa/ecdsa.c",
+        "neverc_ecdsa_signature_init": "src/crypto/ecdsa/ecdsa.c"
       },
       "dot_methods": {
         "generate_key": "neverc_ecdsa_generate_key",
@@ -2141,13 +2225,17 @@
       }
     },
     "crypto/dsa": {
-      "header": "include/neverc/crypto/dsa.h",
+      "header": "include/neverc/std/crypto/dsa.h",
       "description": "DSA digital signatures (FIPS 186-4, mirrors Go crypto/dsa package)",
       "symbols": {
         "neverc_dsa_public_key_init": "src/crypto/dsa/dsa.c",
         "neverc_dsa_private_key_init": "src/crypto/dsa/dsa.c",
         "neverc_dsa_sign": "src/crypto/dsa/dsa.c",
-        "neverc_dsa_verify": "src/crypto/dsa/dsa.c"
+        "neverc_dsa_verify": "src/crypto/dsa/dsa.c",
+        "neverc_dsa_private_key_free": "src/crypto/dsa/dsa.c",
+        "neverc_dsa_public_key_free": "src/crypto/dsa/dsa.c",
+        "neverc_dsa_signature_free": "src/crypto/dsa/dsa.c",
+        "neverc_dsa_signature_init": "src/crypto/dsa/dsa.c"
       },
       "dot_methods": {
         "sign": "neverc_dsa_sign",
@@ -2191,7 +2279,7 @@
       }
     },
     "image/color": {
-      "header": "include/neverc/image/color.h",
+      "header": "include/neverc/std/image/color.h",
       "description": "Color models \u2014 RGBA, NRGBA, Gray, CMYK, HSL, hex parsing (mirrors Go image/color package)",
       "symbols": {
         "neverc_color_rgba": "src/image/color/color.c",
@@ -2229,7 +2317,7 @@
       }
     },
     "crypto/ed25519": {
-      "header": "include/neverc/crypto/ed25519.h",
+      "header": "include/neverc/std/crypto/ed25519.h",
       "description": "Ed25519 digital signatures (RFC 8032, Curve25519)",
       "symbols": {
         "neverc_ed25519_generate_key": "src/crypto/ed25519/ed25519.c",
@@ -2247,7 +2335,7 @@
       }
     },
     "text/scanner": {
-      "header": "include/neverc/text/scanner.h",
+      "header": "include/neverc/std/text/scanner.h",
       "description": "UTF-8 text scanner/tokenizer \u2014 identifiers, numbers, strings, comments (mirrors Go text/scanner package)",
       "symbols": {
         "neverc_scanner_init": "src/text/scanner/scanner.c",
@@ -2269,7 +2357,7 @@
       }
     },
     "text/tabwriter": {
-      "header": "include/neverc/text/tabwriter.h",
+      "header": "include/neverc/std/text/tabwriter.h",
       "description": "Tab-aligned text formatting with elastic tabstops (mirrors Go text/tabwriter package)",
       "symbols": {
         "neverc_tabwriter_init": "src/text/tabwriter/tabwriter.c",
@@ -2287,7 +2375,7 @@
       }
     },
     "log/slog": {
-      "header": "include/neverc/log/slog.h",
+      "header": "include/neverc/std/log/slog.h",
       "description": "Structured logging with text/JSON output and level filtering (mirrors Go log/slog package)",
       "symbols": {
         "neverc_slog_string": "src/log/slog/slog.c",
@@ -2325,7 +2413,7 @@
       }
     },
     "index/suffixarray": {
-      "header": "include/neverc/index/suffixarray.h",
+      "header": "include/neverc/std/index/suffixarray.h",
       "description": "Suffix array for fast substring search (mirrors Go index/suffixarray package)",
       "symbols": {
         "neverc_suffixarray_new": "src/index/suffixarray/suffixarray.c",
@@ -2343,7 +2431,7 @@
       }
     },
     "mime": {
-      "header": "include/neverc/mime.h",
+      "header": "include/neverc/std/mime.h",
       "description": "MIME type lookup, media type parsing, quoted-printable encoding (mirrors Go mime package)",
       "symbols": {
         "neverc_mime_type_by_extension": "src/mime/mime.c",
@@ -2363,7 +2451,7 @@
       }
     },
     "math/big": {
-      "header": "include/neverc/math/big.h",
+      "header": "include/neverc/std/math/big.h",
       "description": "Arbitrary precision integers \u2014 add, sub, mul, div, mod, exp, gcd (mirrors Go math/big package)",
       "symbols": {
         "neverc_bigint_init": "src/math/big/big.c",
@@ -2427,7 +2515,7 @@
       }
     },
     "sync": {
-      "header": "include/neverc/sync.h",
+      "header": "include/neverc/std/sync.h",
       "description": "Synchronization primitives \u2014 Mutex, RWMutex, WaitGroup, Once, Cond (mirrors Go sync package)",
       "symbols": {
         "neverc_sync_mutex_init": "src/sync/sync.c",
@@ -2519,7 +2607,7 @@
       }
     },
     "sync/atomic": {
-      "header": "include/neverc/sync/atomic.h",
+      "header": "include/neverc/std/sync/atomic.h",
       "description": "Atomic operations \u2014 load, store, add, swap, CAS for int32/int64/uint32/uint64/pointer (mirrors Go sync/atomic package)",
       "symbols": {
         "neverc_atomic_load_int32": "src/sync/atomic/atomic.c",
@@ -2575,7 +2663,7 @@
       }
     },
     "crypto/ecdh": {
-      "header": "include/neverc/crypto/ecdh.h",
+      "header": "include/neverc/std/crypto/ecdh.h",
       "description": "ECDH key exchange \u2014 P-256, P-384, X25519 (mirrors Go crypto/ecdh package)",
       "symbols": {
         "neverc_ecdh_generate_key": "src/crypto/ecdh/ecdh.c",
@@ -2665,7 +2753,7 @@
       }
     },
     "mime/quotedprintable": {
-      "header": "include/neverc/mime/quotedprintable.h",
+      "header": "include/neverc/std/mime/quotedprintable.h",
       "description": "Quoted-printable encoding/decoding (RFC 2045, mirrors Go mime/quotedprintable package)",
       "symbols": {
         "neverc_qp_decode": "src/mime/quotedprintable/quotedprintable.c",
@@ -2679,7 +2767,7 @@
       }
     },
     "mime/multipart": {
-      "header": "include/neverc/mime/multipart.h",
+      "header": "include/neverc/std/mime/multipart.h",
       "description": "Multipart MIME parsing and writing (RFC 2046, mirrors Go mime/multipart package)",
       "symbols": {
         "neverc_multipart_parse": "src/mime/multipart/multipart.c",
@@ -2715,7 +2803,7 @@
       }
     },
     "log/syslog": {
-      "header": "include/neverc/log/syslog.h",
+      "header": "include/neverc/std/log/syslog.h",
       "description": "System logging \u2014 syslog on POSIX, Event Log on Windows (mirrors Go log/syslog package)",
       "symbols": {
         "neverc_syslog_open": "src/log/syslog/syslog.c",
@@ -2745,7 +2833,7 @@
       }
     },
     "os": {
-      "header": "include/neverc/os.h",
+      "header": "include/neverc/std/os.h",
       "description": "OS operations \u2014 file I/O, env vars, directories, process info (mirrors Go os package)",
       "symbols": {
         "neverc_os_getenv": "src/os/os.c",
@@ -2798,7 +2886,13 @@
         "neverc_os_user_config_dir": "src/os/os.c",
         "neverc_os_is_exist": "src/os/os.c",
         "neverc_os_is_not_exist": "src/os/os.c",
-        "neverc_os_is_permission": "src/os/os.c"
+        "neverc_os_is_permission": "src/os/os.c",
+        "neverc_os_chown": "src/os/os.c",
+        "neverc_os_lchown": "src/os/os.c",
+        "neverc_os_pipe": "src/os/os.c",
+        "neverc_os_stderr": "src/os/os.c",
+        "neverc_os_stdin": "src/os/os.c",
+        "neverc_os_stdout": "src/os/os.c"
       },
       "dot_methods": {
         "getenv": "neverc_os_getenv",
@@ -2855,7 +2949,7 @@
       }
     },
     "os/exec": {
-      "header": "include/neverc/os/exec.h",
+      "header": "include/neverc/std/os/exec.h",
       "description": "Process execution \u2014 fork/exec on POSIX, CreateProcess on Windows (mirrors Go os/exec package)",
       "symbols": {
         "neverc_exec_command": "src/os/exec/exec.c",
@@ -2886,7 +2980,7 @@
       }
     },
     "os/signal": {
-      "header": "include/neverc/os/signal.h",
+      "header": "include/neverc/std/os/signal.h",
       "description": "Signal handling \u2014 sigaction on POSIX, SetConsoleCtrlHandler on Windows (mirrors Go os/signal package)",
       "symbols": {
         "neverc_signal_notify": "src/os/signal/signal.c",
@@ -2904,7 +2998,7 @@
       }
     },
     "context": {
-      "header": "include/neverc/context.h",
+      "header": "include/neverc/std/context.h",
       "description": "Cancellation and deadline propagation (mirrors Go context package)",
       "symbols": {
         "neverc_context_background": "src/context/context.c",
@@ -2956,7 +3050,7 @@
       }
     },
     "thread": {
-      "header": "include/neverc/thread.h",
+      "header": "include/neverc/std/thread.h",
       "description": "Bounded task executor and cross-thread channels",
       "deps": [
         "context"
@@ -3009,7 +3103,7 @@
       }
     },
     "slices": {
-      "header": "include/neverc/slices.h",
+      "header": "include/neverc/std/slices.h",
       "description": "Generic array/slice manipulation \u2014 equal, sort, search, reverse, compact (mirrors Go slices package)",
       "symbols": {
         "neverc_slices_equal": "src/slices/slices.c",
@@ -3023,7 +3117,24 @@
         "neverc_slices_compact": "src/slices/slices.c",
         "neverc_slices_clone": "src/slices/slices.c",
         "neverc_slices_min": "src/slices/slices.c",
-        "neverc_slices_max": "src/slices/slices.c"
+        "neverc_slices_max": "src/slices/slices.c",
+        "neverc_slices_binary_search_int": "src/slices/slices.c",
+        "neverc_slices_concat": "src/slices/slices.c",
+        "neverc_slices_contains_func": "src/slices/slices.c",
+        "neverc_slices_contains_int": "src/slices/slices.c",
+        "neverc_slices_delete": "src/slices/slices.c",
+        "neverc_slices_delete_func": "src/slices/slices.c",
+        "neverc_slices_equal_ints": "src/slices/slices.c",
+        "neverc_slices_index_func": "src/slices/slices.c",
+        "neverc_slices_index_int": "src/slices/slices.c",
+        "neverc_slices_insert": "src/slices/slices.c",
+        "neverc_slices_is_sorted_ints": "src/slices/slices.c",
+        "neverc_slices_max_int": "src/slices/slices.c",
+        "neverc_slices_min_int": "src/slices/slices.c",
+        "neverc_slices_replace": "src/slices/slices.c",
+        "neverc_slices_reverse_ints": "src/slices/slices.c",
+        "neverc_slices_sort_ints": "src/slices/slices.c",
+        "neverc_slices_sort_stable": "src/slices/slices.c"
       },
       "dot_methods": {
         "equal": "neverc_slices_equal",
@@ -3041,7 +3152,7 @@
       }
     },
     "maps": {
-      "header": "include/neverc/maps.h",
+      "header": "include/neverc/std/maps.h",
       "description": "String-keyed hash map \u2014 set, get, delete, keys, values, clone (mirrors Go maps package)",
       "symbols": {
         "neverc_maps_new": "src/maps/maps.c",
@@ -3079,7 +3190,7 @@
       }
     },
     "image": {
-      "header": "include/neverc/image/image.h",
+      "header": "include/neverc/std/image/image.h",
       "description": "Image types \u2014 Point, Rectangle, RGBA/Gray images (mirrors Go image package)",
       "symbols": {
         "neverc_pt": "src/image/image/image.c",
@@ -3110,7 +3221,11 @@
         "neverc_image_gray_init": "src/image/image/image.c",
         "neverc_image_gray_free": "src/image/image/image.c",
         "neverc_image_gray_set": "src/image/image/image.c",
-        "neverc_image_gray_at": "src/image/image/image.c"
+        "neverc_image_gray_at": "src/image/image/image.c",
+        "neverc_image_gray_bounds": "src/image/image/image.c",
+        "neverc_image_gray_pixel_offset": "src/image/image/image.c",
+        "neverc_image_rgba_bounds": "src/image/image/image.c",
+        "neverc_image_rgba_pixel_offset": "src/image/image/image.c"
       },
       "dot_methods": {
         "pt": "neverc_pt",
@@ -3145,7 +3260,7 @@
       }
     },
     "image/draw": {
-      "header": "include/neverc/image/draw.h",
+      "header": "include/neverc/std/image/draw.h",
       "description": "Image compositing \u2014 Src/Over draw operations (mirrors Go image/draw package)",
       "symbols": {
         "neverc_draw": "src/image/draw/draw.c",
@@ -3160,7 +3275,7 @@
       }
     },
     "io/fs": {
-      "header": "include/neverc/io/fs.h",
+      "header": "include/neverc/std/io/fs.h",
       "description": "Filesystem abstraction \u2014 stat, readdir, glob, walk (mirrors Go io/fs package)",
       "symbols": {
         "neverc_fs_valid_path": "src/io/fs/fs.c",
@@ -3168,7 +3283,9 @@
         "neverc_fs_read_file": "src/io/fs/fs.c",
         "neverc_fs_read_dir": "src/io/fs/fs.c",
         "neverc_fs_glob": "src/io/fs/fs.c",
-        "neverc_fs_walk_dir": "src/io/fs/fs.c"
+        "neverc_fs_walk_dir": "src/io/fs/fs.c",
+        "neverc_fs_free_entries": "src/io/fs/fs.c",
+        "neverc_fs_free_matches": "src/io/fs/fs.c"
       },
       "dot_methods": {
         "valid_path": "neverc_fs_valid_path",
@@ -3180,7 +3297,7 @@
       }
     },
     "html/template": {
-      "header": "include/neverc/html/template.h",
+      "header": "include/neverc/std/html/template.h",
       "description": "HTML template engine with auto-escaping (mirrors Go html/template package)",
       "symbols": {
         "neverc_html_template_parse": "src/html/template/template.c",
@@ -3191,7 +3308,11 @@
         "neverc_html_attr_escape": "src/html/template/template.c",
         "neverc_html_js_escape": "src/html/template/template.c",
         "neverc_html_css_escape": "src/html/template/template.c",
-        "neverc_html_url_query_escape": "src/html/template/template.c"
+        "neverc_html_url_query_escape": "src/html/template/template.c",
+        "neverc_html_template_data_free": "src/html/template/template.c",
+        "neverc_html_template_data_get": "src/html/template/template.c",
+        "neverc_html_template_data_init": "src/html/template/template.c",
+        "neverc_html_template_data_set": "src/html/template/template.c"
       },
       "dot_methods": {
         "parse": "neverc_html_template_parse",
@@ -3242,7 +3363,7 @@
       }
     },
     "os/user": {
-      "header": "include/neverc/os/user.h",
+      "header": "include/neverc/std/os/user.h",
       "description": "User account information \u2014 current user, lookup by name/ID, home/cache/config dirs (mirrors Go os/user)",
       "symbols": {
         "neverc_user_current": "src/os/user/user.c",
@@ -3266,7 +3387,7 @@
       }
     },
     "image/png": {
-      "header": "include/neverc/image/png.h",
+      "header": "include/neverc/std/image/png.h",
       "description": "PNG image codec \u2014 encode/decode 8-bit grayscale/RGB/RGBA (mirrors Go image/png)",
       "symbols": {
         "neverc_png_decode": "src/image/png/png.c",
@@ -3284,7 +3405,7 @@
       }
     },
     "image/jpeg": {
-      "header": "include/neverc/image/jpeg.h",
+      "header": "include/neverc/std/image/jpeg.h",
       "description": "JPEG image codec \u2014 baseline DCT encode/decode with Huffman coding (mirrors Go image/jpeg)",
       "symbols": {
         "neverc_jpeg_decode": "src/image/jpeg/jpeg.c",
@@ -3298,7 +3419,7 @@
       }
     },
     "image/gif": {
-      "header": "include/neverc/image/gif.h",
+      "header": "include/neverc/std/image/gif.h",
       "description": "GIF image codec \u2014 LZW encode/decode, single/multi-frame (mirrors Go image/gif)",
       "symbols": {
         "neverc_gif_decode": "src/image/gif/gif.c",
@@ -3314,7 +3435,7 @@
       }
     },
     "debug/elf": {
-      "header": "include/neverc/debug/elf.h",
+      "header": "include/neverc/std/debug/elf.h",
       "description": "ELF binary format parser \u2014 sections, symbols, segments for ELF32/ELF64 (mirrors Go debug/elf)",
       "symbols": {
         "neverc_elf_open": "src/debug/elf/elf.c",
@@ -3346,7 +3467,7 @@
       }
     },
     "debug/pe": {
-      "header": "include/neverc/debug/pe.h",
+      "header": "include/neverc/std/debug/pe.h",
       "description": "PE (Portable Executable) format parser \u2014 sections, symbols, imports for PE32/PE32+ (mirrors Go debug/pe)",
       "symbols": {
         "neverc_pe_open": "src/debug/pe/pe.c",
@@ -3374,7 +3495,7 @@
       }
     },
     "debug/macho": {
-      "header": "include/neverc/debug/macho.h",
+      "header": "include/neverc/std/debug/macho.h",
       "description": "Mach-O format parser \u2014 segments, sections, symbols, dylibs for 32/64-bit (mirrors Go debug/macho)",
       "symbols": {
         "neverc_macho_open": "src/debug/macho/macho.c",
@@ -3402,7 +3523,7 @@
       }
     },
     "debug/dwarf": {
-      "header": "include/neverc/debug/dwarf.h",
+      "header": "include/neverc/std/debug/dwarf.h",
       "description": "DWARF debug info parser (v2-v5) \u2014 abbreviations, DIE trees, string tables (mirrors Go debug/dwarf)",
       "symbols": {
         "neverc_dwarf_init": "src/debug/dwarf/dwarf.c",
@@ -3964,7 +4085,22 @@
         "neverc_vector_none": "src/container/vector/vector.c",
         "neverc_vector_partition": "src/container/vector/vector.c",
         "neverc_vector_generate": "src/container/vector/vector.c",
-        "neverc_vector_merge": "src/container/vector/vector.c"
+        "neverc_vector_merge": "src/container/vector/vector.c",
+        "neverc_vector_equal_range": "src/container/vector/vector.c",
+        "neverc_vector_includes": "src/container/vector/vector.c",
+        "neverc_vector_inplace_merge": "src/container/vector/vector.c",
+        "neverc_vector_minmax_element": "src/container/vector/vector.c",
+        "neverc_vector_next_permutation": "src/container/vector/vector.c",
+        "neverc_vector_nth_element": "src/container/vector/vector.c",
+        "neverc_vector_partition_point": "src/container/vector/vector.c",
+        "neverc_vector_prev_permutation": "src/container/vector/vector.c",
+        "neverc_vector_sample": "src/container/vector/vector.c",
+        "neverc_vector_set_difference": "src/container/vector/vector.c",
+        "neverc_vector_set_intersection": "src/container/vector/vector.c",
+        "neverc_vector_set_symmetric_difference": "src/container/vector/vector.c",
+        "neverc_vector_set_union": "src/container/vector/vector.c",
+        "neverc_vector_shuffle": "src/container/vector/vector.c",
+        "neverc_vector_stable_partition": "src/container/vector/vector.c"
       },
       "dot_methods": {
         "new": "neverc_vector_new",
@@ -4844,7 +4980,7 @@
       }
     },
     "image/palette": {
-      "header": "include/neverc/image/color/palette.h",
+      "header": "include/neverc/std/image/color/palette.h",
       "description": "image/palette module",
       "symbols": {
         "neverc_palette_plan9_index": "src/image/color/palette/palette.c",
@@ -4856,7 +4992,7 @@
       }
     },
     "debug/plan9obj": {
-      "header": "include/neverc/debug/plan9obj.h",
+      "header": "include/neverc/std/debug/plan9obj.h",
       "description": "debug/plan9obj module",
       "symbols": {
         "neverc_plan9_close": "src/debug/plan9obj/plan9obj.c",

@@ -1,4 +1,8 @@
+import contextlib
 import importlib.util
+import io
+import json
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -10,6 +14,49 @@ SPEC.loader.exec_module(CHECK_TEST_DEPS)
 
 
 class CheckTestDepsTest(unittest.TestCase):
+    def run_validation_fixture(self, manifest, sources=None, headers=None):
+        sources = sources or {}
+        headers = headers or {}
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo = Path(temp_dir)
+            manifest_path = repo / "std" / "manifest.json"
+            tests_cpp = repo / "tests" / "neverc" / "StdLibTests.cpp"
+            manifest_path.parent.mkdir(parents=True)
+            tests_cpp.parent.mkdir(parents=True)
+            manifest_path.write_text(json.dumps(manifest))
+            tests_cpp.write_text("")
+
+            for relative_path, contents in sources.items():
+                path = repo / "std" / relative_path
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(contents)
+            for relative_path, contents in headers.items():
+                path = repo / "std" / relative_path
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(contents)
+
+            original_paths = (
+                CHECK_TEST_DEPS.REPO,
+                CHECK_TEST_DEPS.MANIFEST,
+                CHECK_TEST_DEPS.TESTS_CPP,
+            )
+            CHECK_TEST_DEPS.REPO = repo
+            CHECK_TEST_DEPS.MANIFEST = manifest_path
+            CHECK_TEST_DEPS.TESTS_CPP = tests_cpp
+            output = io.StringIO()
+            try:
+                with contextlib.redirect_stdout(output):
+                    result = CHECK_TEST_DEPS.main()
+            finally:
+                (
+                    CHECK_TEST_DEPS.REPO,
+                    CHECK_TEST_DEPS.MANIFEST,
+                    CHECK_TEST_DEPS.TESTS_CPP,
+                ) = original_paths
+
+        return result, output.getvalue()
+
     def test_function_parser_ignores_comments_and_literals(self):
         source = r'''
         /* int neverc_fake(void) { return 0; } */
@@ -100,6 +147,49 @@ STD_TEST(tcp, TCP_DEPS)
                 },
             },
         )
+
+    def test_main_rejects_missing_header_for_non_network_module(self):
+        result, output = self.run_validation_fixture(
+            {
+                "modules": {
+                    "fmt": {
+                        "header": "include/neverc/std/fmt.h",
+                        "symbols": {"neverc_fmt_print": "src/fmt.c"},
+                    }
+                }
+            },
+            sources={
+                "src/fmt.c": "int neverc_fmt_print(void) { return 0; }\n"
+            },
+        )
+
+        self.assertEqual(result, 1)
+        self.assertIn("header 'include/neverc/std/fmt.h' does not exist", output)
+
+    def test_main_rejects_unregistered_non_network_public_api(self):
+        result, output = self.run_validation_fixture(
+            {
+                "modules": {
+                    "fmt": {
+                        "header": "include/neverc/std/fmt.h",
+                        "symbols": {"neverc_fmt_anchor": "src/fmt.c"},
+                    }
+                }
+            },
+            sources={
+                "src/fmt.c": (
+                    "int neverc_fmt_anchor(void) { return 0; }\n"
+                    "int neverc_fmt_print(void) { return 0; }\n"
+                )
+            },
+            headers={
+                "include/neverc/std/fmt.h": "int neverc_fmt_print(void);\n"
+            },
+        )
+
+        self.assertEqual(result, 1)
+        self.assertIn("public std API 'neverc_fmt_print'", output)
+        self.assertIn("is not registered in manifest.json", output)
 
 
 if __name__ == "__main__":

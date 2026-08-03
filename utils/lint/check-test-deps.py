@@ -5,7 +5,8 @@ Checks that:
 * every manifest symbol is defined by the source file that registers it;
 * every manifest dependency names an existing module;
 * each STD_TEST() source list covers the transitive manifest dependencies;
-* every function declared by a public network header has a source definition
+* every manifest module names an existing public header;
+* every function declared by a public standard-library header has a definition
   and a manifest registration.
 
 The checks are deliberately source-only so they can run in lint jobs without
@@ -181,21 +182,28 @@ def load_function_aliases():
     return aliases
 
 
+def resolve_function_alias(symbol, aliases):
+    """Resolve an object-like function alias to its emitted symbol name."""
+    seen = set()
+    while symbol in aliases and symbol not in seen:
+        seen.add(symbol)
+        symbol = aliases[symbol]
+    return symbol
+
+
 def preprocessed_definitions(definitions, aliases):
     """Resolve macro-spelled source definitions to emitted symbol names."""
-    resolved = set()
-    for definition in definitions:
-        symbol = definition
-        seen = set()
-        while symbol in aliases and symbol not in seen:
-            seen.add(symbol)
-            symbol = aliases[symbol]
-        resolved.add(symbol)
-    return resolved
+    return {
+        resolve_function_alias(definition, aliases)
+        for definition in definitions
+    }
 
 
-def is_network_module(module_key):
-    return module_key == "http" or module_key.startswith("net/")
+def is_public_api_symbol(symbol):
+    """Reject parser false positives and explicitly test-only TLS hooks."""
+    return not symbol.endswith("_t") and not symbol.startswith(
+        "neverc_tls_test_"
+    )
 
 
 def dependency_source_files(module_key, modules, errors):
@@ -290,16 +298,13 @@ def main():
     function_aliases = load_function_aliases()
 
     for module_key, mod in sorted(modules.items()):
-        if is_network_module(module_key):
-            header = mod.get("header")
-            if not header:
-                errors.append(
-                    f"  {module_key}: public network module has no header"
-                )
-            elif not (REPO / "std" / header).is_file():
-                errors.append(
-                    f"  {module_key}: header '{header}' does not exist"
-                )
+        header = mod.get("header")
+        if not header:
+            errors.append(f"  {module_key}: public module has no header")
+        elif not (REPO / "std" / header).is_file():
+            errors.append(
+                f"  {module_key}: header '{header}' does not exist"
+            )
 
         symbols = mod.get("symbols", {})
         for method, symbol in sorted(mod.get("dot_methods", {}).items()):
@@ -343,36 +348,43 @@ def main():
                 + "\n".join(f"    - {f}" for f in sorted(missing))
             )
 
-    network_definitions = set()
+    runtime_definitions = set()
     registered_symbols = {
         symbol
         for mod in modules.values()
         for symbol in mod.get("symbols", {})
     }
-    for source_path in sorted((REPO / "std" / "src" / "net").rglob("*.c")):
-        network_definitions.update(
+    for source_path in sorted((REPO / "std" / "src").rglob("*.c")):
+        runtime_definitions.update(
             preprocessed_definitions(
                 source_definitions(source_path, definition_cache),
                 function_aliases,
             )
         )
     for header_path in sorted(
-        (REPO / "std" / "include" / "neverc" / "std" / "net").rglob("*.h")
+        (REPO / "std" / "include" / "neverc" / "std").rglob("*.h")
     ):
-        declarations = {
-            symbol
-            for symbol in c_function_symbols(header_path.read_text(), ";")
-            if not symbol.endswith("_t")
-        }
-        for symbol in sorted(declarations - network_definitions):
+        declarations = set()
+        for declared_symbol in c_function_symbols(
+            header_path.read_text(), ";"
+        ):
+            symbol = resolve_function_alias(
+                declared_symbol, function_aliases
+            )
+            if is_public_api_symbol(declared_symbol) and is_public_api_symbol(
+                symbol
+            ):
+                declarations.add(symbol)
+
+        for symbol in sorted(declarations - runtime_definitions):
             errors.append(
-                f"  public network API '{symbol}' from "
+                f"  public std API '{symbol}' from "
                 f"'{header_path.relative_to(REPO / 'std')}' has no source "
                 "definition"
             )
         for symbol in sorted(declarations - registered_symbols):
             errors.append(
-                f"  public network API '{symbol}' from "
+                f"  public std API '{symbol}' from "
                 f"'{header_path.relative_to(REPO / 'std')}' is not registered "
                 "in manifest.json"
             )
@@ -382,7 +394,7 @@ def main():
         print("\n".join(errors))
         return 1
     else:
-        print("OK: manifest symbols, network APIs, and test deps are valid")
+        print("OK: manifest symbols, public APIs, and test deps are valid")
         return 0
 
 
