@@ -109,6 +109,14 @@ neverc -fdyncode -target aarch64-pc-windows-msvc hello.c -o hello.bin
 
 ## Участие в разработке
 
+NeverC **намеренно поддерживает только C** (C23). C++, Objective-C, CUDA и похожие
+языковые фронтенды вне области проекта; pull request с их добавлением будут закрыты.
+Если нужна LLVM-цепочка, ориентированная на C++, рассмотрите
+[llvm-msvc](https://github.com/backengineering/llvm-msvc).
+
+Крупные изменения языка, ABI или runtime сначала обсудите в issue, и только потом
+отправляйте pull request.
+
 Ветка разработки по умолчанию — **`dev`**. Перед началом работы клонируйте репозиторий и переключитесь на `dev`; pull request отправляйте в `dev`.
 
 ```bash

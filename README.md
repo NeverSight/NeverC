@@ -109,6 +109,14 @@ See **[Local Development](docs/local-dev/README.md)** for build requirements, bu
 
 ## Contributing
 
+NeverC is **C-only by design** (C23). C++, Objective-C, CUDA, and similar language
+frontends are out of scope; pull requests that add them will be closed. If you need a
+C++-oriented LLVM toolchain, consider [llvm-msvc](https://github.com/backengineering/llvm-msvc)
+instead.
+
+For large language, ABI, or runtime changes, open an issue first and discuss scope
+before sending a pull request.
+
 The default development branch is **`dev`**. Clone and check it out before
 you start work; open pull requests against `dev`.
 

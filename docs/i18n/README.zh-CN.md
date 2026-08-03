@@ -109,6 +109,12 @@ neverc -fdyncode -target aarch64-pc-windows-msvc hello.c -o hello.bin
 
 ## 贡献
 
+NeverC **设计上仅支持 C**（C23）。C++、Objective-C、CUDA 及类似语言前端不在项目范围内；
+相关 Pull Request 将被直接关闭。若需要面向 C++ 的 LLVM 工具链，请考虑
+[llvm-msvc](https://github.com/backengineering/llvm-msvc)。
+
+涉及语言、ABI 或运行时的大范围改动，请先开 issue 讨论范围，再提交 Pull Request。
+
 默认开发分支为 **`dev`**。开始工作前请克隆并检出该分支；向 `dev` 提交 Pull Request。
 
 ```bash

@@ -109,6 +109,14 @@ Requisitos, comandos de compilación, binarios macOS precompilados, compilación
 
 ## Contribuir
 
+NeverC es **solo C por diseño** (C23). Los frontends de C++, Objective-C, CUDA y lenguajes
+similares quedan fuera de alcance; las pull requests que los añadan se cerrarán. Si
+necesita una toolchain LLVM orientada a C++, considere
+[llvm-msvc](https://github.com/backengineering/llvm-msvc).
+
+Para cambios grandes de lenguaje, ABI o runtime, abra primero un issue y acuerde el
+alcance antes de enviar una pull request.
+
 La rama de desarrollo predeterminada es **`dev`**. Clone el repositorio, cambie a `dev` antes de trabajar y abra pull requests contra `dev`.
 
 ```bash

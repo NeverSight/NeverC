@@ -109,6 +109,14 @@ Voraussetzungen, Build-Befehle, vorgefertigte macOS-Binärdateien, Cross-Kompili
 
 ## Mitwirken
 
+NeverC ist **bewusst nur C** (C23). C++, Objective-C, CUDA und ähnliche Sprach-Frontends
+liegen außerhalb des Projektumfangs; entsprechende Pull Requests werden geschlossen.
+Wer eine C++-orientierte LLVM-Toolchain braucht, sollte
+[llvm-msvc](https://github.com/backengineering/llvm-msvc) in Betracht ziehen.
+
+Große Änderungen an Sprache, ABI oder Runtime bitte zuerst als Issue diskutieren, bevor
+ein Pull Request kommt.
+
 Der Standard-Entwicklungsbranch ist **`dev`**. Vor dem Start klonen und `dev` auschecken; Pull Requests bitte gegen `dev` öffnen.
 
 ```bash

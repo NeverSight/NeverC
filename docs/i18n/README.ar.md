@@ -111,6 +111,13 @@ neverc -fdyncode -target aarch64-pc-windows-msvc hello.c -o hello.bin
 
 ## المساهمة
 
+NeverC **مخصّص للغة C فقط** حسب التصميم (C23). واجهات C++ و Objective-C و CUDA واللغات
+المشابهة خارج النطاق؛ ستُغلق طلبات السحب التي تضيفها. إن احتجت سلسلة أدوات LLVM موجّهة
+إلى C++، فكّر في [llvm-msvc](https://github.com/backengineering/llvm-msvc).
+
+للتغييرات الكبيرة في اللغة أو ABI أو وقت التشغيل، افتح issue أولًا لمناقشة النطاق قبل
+إرسال طلب سحب.
+
 فرع التطوير الافتراضي هو **`dev`**. استنسخ المستودع وانتقل إلى `dev` قبل البدء، وافتح طلبات السحب (Pull Request) نحو `dev`.
 
 ```bash

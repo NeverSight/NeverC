@@ -109,6 +109,14 @@ Requisiti, comandi di compilazione, binari macOS precompilati, cross-compilazion
 
 ## Contribuire
 
+NeverC è **solo C per design** (C23). Frontend C++, Objective-C, CUDA e linguaggi simili
+sono fuori scope; le pull request che li aggiungono verranno chiuse. Per una toolchain
+LLVM orientata al C++, considerare
+[llvm-msvc](https://github.com/backengineering/llvm-msvc).
+
+Per modifiche ampie a linguaggio, ABI o runtime, aprire prima una issue e discutere lo
+scope prima di inviare una pull request.
+
 Il branch di sviluppo predefinito è **`dev`**. Clonare il repository, eseguire checkout di `dev` prima di iniziare e aprire pull request verso `dev`.
 
 ```bash

@@ -109,6 +109,14 @@ neverc -fdyncode -target aarch64-pc-windows-msvc hello.c -o hello.bin
 
 ## コントリビューション
 
+NeverC は**設計上 C のみ**（C23）です。C++ / Objective-C / CUDA などの言語フロントエンドは
+スコープ外であり、それらを追加する Pull Request はクローズされます。C++ 向けの LLVM
+ツールチェーンが必要な場合は [llvm-msvc](https://github.com/backengineering/llvm-msvc) を
+検討してください。
+
+言語・ABI・ランタイムに関する大規模な変更は、Pull Request の前にまず issue を開いて
+スコープを相談してください。
+
 既定の開発ブランチは **`dev`** です。作業前に clone して checkout し、Pull Request は `dev` 向けに送ってください。
 
 ```bash
