@@ -340,6 +340,10 @@ int neverc_hpack_huffman_decode(const uint8_t *in, size_t in_len,
 #define HPACK_DYN_MAX_ENTRIES 256
 #define HPACK_MAX_STRING_LENGTH (1024U * 1024U)
 
+_Static_assert(NEVERC_HPACK_MAX_DYNAMIC_TABLE_SIZE <=
+                   HPACK_DYN_MAX_ENTRIES * 32U,
+               "HPACK byte limit exceeds fixed entry capacity");
+
 typedef struct {
     neverc_hpack_header_t entries[HPACK_DYN_MAX_ENTRIES];
     int head;
@@ -357,37 +361,63 @@ static uint32_t hpack_entry_size(const char *name, const char *value) {
     return (uint32_t)(strlen(name) + strlen(value) + 32);
 }
 
-static void dyn_table_evict(hpack_dyn_table_t *t) {
-    while (t->count > 0 && t->size > t->max_size) {
-        int tail = (t->head + t->count - 1) % HPACK_DYN_MAX_ENTRIES;
-        t->size -= hpack_entry_size(t->entries[tail].name, t->entries[tail].value);
-        free(t->entries[tail].name);
-        free(t->entries[tail].value);
-        t->entries[tail].name = NULL;
-        t->entries[tail].value = NULL;
-        t->count--;
-    }
+static void dyn_table_remove_oldest(hpack_dyn_table_t *t) {
+    int tail = (t->head + t->count - 1) % HPACK_DYN_MAX_ENTRIES;
+    uint32_t entry_size = hpack_entry_size(
+        t->entries[tail].name, t->entries[tail].value);
+    t->size = entry_size <= t->size ? t->size - entry_size : 0;
+    free(t->entries[tail].name);
+    free(t->entries[tail].value);
+    t->entries[tail].name = NULL;
+    t->entries[tail].value = NULL;
+    t->count--;
 }
 
-static void dyn_table_add(hpack_dyn_table_t *t, const char *name, const char *value) {
-    uint32_t entry_sz = hpack_entry_size(name, value);
-    if (entry_sz > t->max_size) {
-        /* Entry too large — clear entire table (RFC 7541 §4.4) */
-        while (t->count > 0) {
-            t->max_size = 0;
-            dyn_table_evict(t);
-            t->max_size = entry_sz; /* restore for eviction loop */
-        }
-        t->max_size = entry_sz;
-        return;
+static void dyn_table_evict(hpack_dyn_table_t *t) {
+    while (t->count > 0 && t->size > t->max_size)
+        dyn_table_remove_oldest(t);
+}
+
+static void dyn_table_clear(hpack_dyn_table_t *t) {
+    while (t->count > 0) dyn_table_remove_oldest(t);
+}
+
+static int dyn_table_add(hpack_dyn_table_t *t, const char *name,
+                         const char *value) {
+    size_t name_length = strlen(name);
+    size_t value_length = strlen(value);
+    if (name_length > UINT32_MAX - 32U ||
+        value_length > UINT32_MAX - 32U - name_length) {
+        dyn_table_clear(t);
+        return 0;
     }
-    t->size += entry_sz;
-    dyn_table_evict(t);
+    uint32_t entry_size = (uint32_t)(name_length + value_length + 32U);
+    if (entry_size > t->max_size) {
+        /* RFC 7541 section 4.4: an oversized entry empties the table. */
+        dyn_table_clear(t);
+        return 0;
+    }
+
+    char *name_copy = strdup(name);
+    if (!name_copy) return -1;
+    char *value_copy = strdup(value);
+    if (!value_copy) {
+        free(name_copy);
+        return -1;
+    }
+
+    while (t->count > 0 &&
+           (t->count >= HPACK_DYN_MAX_ENTRIES ||
+            t->size > t->max_size - entry_size))
+        dyn_table_remove_oldest(t);
 
     t->head = (t->head - 1 + HPACK_DYN_MAX_ENTRIES) % HPACK_DYN_MAX_ENTRIES;
-    t->entries[t->head].name = strdup(name);
-    t->entries[t->head].value = strdup(value);
+    t->entries[t->head].name = name_copy;
+    t->entries[t->head].value = value_copy;
+    t->entries[t->head].sensitive = 0;
+    t->size += entry_size;
     t->count++;
+    return 0;
 }
 
 static int dyn_table_get(hpack_dyn_table_t *t, int index,
@@ -420,6 +450,7 @@ struct neverc_hpack_decoder {
 };
 
 neverc_hpack_decoder_t *neverc_hpack_decoder_create(uint32_t max_table_size) {
+    if (max_table_size > NEVERC_HPACK_MAX_DYNAMIC_TABLE_SIZE) return NULL;
     neverc_hpack_decoder_t *dec = (neverc_hpack_decoder_t *)calloc(1, sizeof(*dec));
     if (!dec) return NULL;
     dyn_table_init(&dec->dyn, max_table_size);
@@ -593,9 +624,9 @@ int neverc_hpack_decode(neverc_hpack_decoder_t *dec,
             return -1;
         }
 
-        if (add_to_dyn && alloc_name && alloc_value) {
-            dyn_table_add(&dec->dyn, alloc_name, alloc_value);
-        }
+        if (add_to_dyn && alloc_name && alloc_value &&
+            dyn_table_add(&dec->dyn, alloc_name, alloc_value) != 0)
+            return -1;
     }
     return pos == len ? 0 : -1;
 }
@@ -609,6 +640,7 @@ struct neverc_hpack_encoder {
 };
 
 neverc_hpack_encoder_t *neverc_hpack_encoder_create(uint32_t max_table_size) {
+    if (max_table_size > NEVERC_HPACK_MAX_DYNAMIC_TABLE_SIZE) return NULL;
     neverc_hpack_encoder_t *enc = (neverc_hpack_encoder_t *)calloc(1, sizeof(*enc));
     if (!enc) return NULL;
     dyn_table_init(&enc->dyn, max_table_size);
@@ -623,7 +655,8 @@ void neverc_hpack_encoder_destroy(neverc_hpack_encoder_t *enc) {
 
 int neverc_hpack_encoder_set_max_table_size(neverc_hpack_encoder_t *enc,
                                              uint32_t max_table_size) {
-    if (!enc) return -1;
+    if (!enc || max_table_size > NEVERC_HPACK_MAX_DYNAMIC_TABLE_SIZE)
+        return -1;
     enc->dyn.max_size = max_table_size;
     dyn_table_evict(&enc->dyn);
     return 0;
@@ -712,8 +745,9 @@ int neverc_hpack_encode(neverc_hpack_encoder_t *enc,
                 return -1;
             pos += written;
 
-            if (!headers[i].sensitive)
-                dyn_table_add(&enc->dyn, name, value);
+            if (!headers[i].sensitive &&
+                dyn_table_add(&enc->dyn, name, value) != 0)
+                return -1;
         }
     }
     *out_len = pos;

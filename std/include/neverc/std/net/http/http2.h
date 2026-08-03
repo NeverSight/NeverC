@@ -104,6 +104,9 @@ typedef struct {
 typedef struct neverc_hpack_decoder neverc_hpack_decoder_t;
 typedef struct neverc_hpack_encoder neverc_hpack_encoder_t;
 
+/* Maximum dynamic table size supported by the fixed-capacity implementation. */
+#define NEVERC_HPACK_MAX_DYNAMIC_TABLE_SIZE 8192U
+
 neverc_hpack_decoder_t *neverc_hpack_decoder_create(uint32_t max_table_size);
 void neverc_hpack_decoder_destroy(neverc_hpack_decoder_t *dec);
 int neverc_hpack_decode(neverc_hpack_decoder_t *dec,

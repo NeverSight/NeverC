@@ -581,6 +581,11 @@ STD_TEST(http2, "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c
     HTTP_TLS_DEPS)
 STD_TEST(http2_oom, "src/net/http/http2/http2.c", "src/net/http/http.c",
     "src/net/http/http_client.c", TCP_DEPS, HTTP_TLS_DEPS)
+TEST_F(StdLibTest, HpackAllocationFailure) {
+  auto r = compileAndRunStdTest("hpack_oom", {}, {"-fno-builtin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
 
 // ===== QUIC / HTTP/3 experimental components =====
 STD_TEST(quic_frame)

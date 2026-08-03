@@ -358,6 +358,90 @@ TEST(hpack_dynamic_table_eviction) {
     neverc_hpack_decoder_destroy(dec);
 }
 
+TEST(hpack_oversized_entries_do_not_expand_table) {
+    neverc_hpack_decoder_t *dec = neverc_hpack_decoder_create(64);
+    ASSERT_TRUE(dec != NULL);
+
+    char oversized_value[41];
+    memset(oversized_value, 'a', sizeof(oversized_value) - 1);
+    oversized_value[sizeof(oversized_value) - 1] = '\0';
+    char medium_value[34];
+    memset(medium_value, 'b', sizeof(medium_value) - 1);
+    medium_value[sizeof(medium_value) - 1] = '\0';
+
+    const char *values[] = {oversized_value, medium_value};
+    for (int i = 0; i < 2; i++) {
+        uint8_t data[128];
+        size_t value_len = strlen(values[i]);
+        size_t pos = 0;
+        data[pos++] = 0x40;
+        data[pos++] = 1;
+        data[pos++] = 'x';
+        data[pos++] = (uint8_t)value_len;
+        memcpy(data + pos, values[i], value_len);
+        pos += value_len;
+
+        neverc_hpack_header_t headers[1];
+        int nheaders = 0;
+        ASSERT_EQ(neverc_hpack_decode(
+                      dec, data, pos, headers, 1, &nheaders), 0);
+        ASSERT_EQ(nheaders, 1);
+        free(headers[0].name);
+        free(headers[0].value);
+    }
+
+    uint8_t newest_dynamic_entry[] = {0xbe};
+    neverc_hpack_header_t headers[1];
+    int nheaders = 0;
+    ASSERT_EQ(neverc_hpack_decode(dec, newest_dynamic_entry,
+                                  sizeof(newest_dynamic_entry), headers, 1,
+                                  &nheaders), -1);
+    neverc_hpack_decoder_destroy(dec);
+}
+
+TEST(hpack_dynamic_table_honors_supported_capacity) {
+    ASSERT_TRUE(neverc_hpack_decoder_create(UINT32_MAX) == NULL);
+    ASSERT_TRUE(neverc_hpack_encoder_create(UINT32_MAX) == NULL);
+
+    neverc_hpack_encoder_t *enc = neverc_hpack_encoder_create(
+        NEVERC_HPACK_MAX_DYNAMIC_TABLE_SIZE);
+    ASSERT_TRUE(enc != NULL);
+    ASSERT_EQ(neverc_hpack_encoder_set_max_table_size(enc, UINT32_MAX), -1);
+    neverc_hpack_encoder_destroy(enc);
+
+    neverc_hpack_decoder_t *dec = neverc_hpack_decoder_create(
+        NEVERC_HPACK_MAX_DYNAMIC_TABLE_SIZE);
+    ASSERT_TRUE(dec != NULL);
+
+    uint8_t literal[] = {0x40, 0x00, 0x00};
+    for (int i = 0; i < 257; i++) {
+        neverc_hpack_header_t headers[1];
+        int nheaders = 0;
+        ASSERT_EQ(neverc_hpack_decode(dec, literal, sizeof(literal), headers,
+                                      1, &nheaders), 0);
+        ASSERT_EQ(nheaders, 1);
+        free(headers[0].name);
+        free(headers[0].value);
+    }
+
+    uint8_t oldest_retained[] = {0xff, 0xbe, 0x01};
+    neverc_hpack_header_t headers[1];
+    int nheaders = 0;
+    ASSERT_EQ(neverc_hpack_decode(dec, oldest_retained,
+                                  sizeof(oldest_retained), headers, 1,
+                                  &nheaders), 0);
+    ASSERT_EQ(nheaders, 1);
+    free(headers[0].name);
+    free(headers[0].value);
+
+    uint8_t beyond_capacity[] = {0xff, 0xbf, 0x01};
+    nheaders = 0;
+    ASSERT_EQ(neverc_hpack_decode(dec, beyond_capacity,
+                                  sizeof(beyond_capacity), headers, 1,
+                                  &nheaders), -1);
+    neverc_hpack_decoder_destroy(dec);
+}
+
 /* ===== Test 14: Frame types and flags ===== */
 TEST(frame_types_and_flags) {
     uint8_t types[] = {
@@ -622,6 +706,8 @@ int main(void) {
     run_test_h2_server_lifecycle();
     run_test_client_preface();
     run_test_hpack_dynamic_table_eviction();
+    run_test_hpack_oversized_entries_do_not_expand_table();
+    run_test_hpack_dynamic_table_honors_supported_capacity();
     run_test_frame_types_and_flags();
 #ifndef _WIN32
     run_test_h2c_serve_conn_roundtrip();
