@@ -431,10 +431,9 @@ static int quic_stream_read_impl(quic_stream_t *stream, void *buffer,
     if (stream_is_uni(stream->id) && !stream->peer_initiated) return -1;
     nc_mutex_lock(&stream->lock);
     while (stream->recv_len == 0 && !stream->recv_fin &&
+           stream->state != QUIC_STREAM_CLOSED &&
            stream->state != QUIC_STREAM_RESET &&
-           quic_conn_allows_stream_read(stream->conn) &&
-           !(stream->state == QUIC_STREAM_CLOSED &&
-             stream->conn->state == QUIC_CONN_CLOSED)) {
+           quic_conn_allows_stream_read(stream->conn)) {
         if (!blocking) {
             nc_mutex_unlock(&stream->lock);
             return -2;
@@ -837,6 +836,20 @@ void quic_stream_mark_connection_closing(quic_stream_t *stream) {
     nc_cond_broadcast(&stream->read_cond);
     nc_cond_broadcast(&stream->write_cond);
     nc_mutex_unlock(&stream->lock);
+}
+
+void quic_conn_finalize_streams(struct neverc_quic_conn *conn) {
+    if (!conn) return;
+    for (int i = 0; i < conn->n_streams; i++) {
+        quic_stream_t *stream = conn->streams[i];
+        if (!stream) continue;
+        nc_mutex_lock(&stream->lock);
+        if (stream->state != QUIC_STREAM_RESET)
+            stream->state = QUIC_STREAM_CLOSED;
+        nc_cond_broadcast(&stream->read_cond);
+        nc_cond_broadcast(&stream->write_cond);
+        nc_mutex_unlock(&stream->lock);
+    }
 }
 
 int neverc_quic_conn_close_locked(struct neverc_quic_conn *conn,

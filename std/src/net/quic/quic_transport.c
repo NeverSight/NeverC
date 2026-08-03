@@ -1437,6 +1437,7 @@ void neverc_quic_conn_tick(struct neverc_quic_conn *conn, uint64_t now_ms) {
             now_ms - conn->draining_started_ms >= 3U * pto) {
             conn->state = QUIC_CONN_CLOSED;
             conn->io_running = 0;
+            quic_conn_finalize_streams(conn);
             nc_cond_broadcast(&conn->state_cond);
         }
         nc_mutex_unlock(&conn->lock);
