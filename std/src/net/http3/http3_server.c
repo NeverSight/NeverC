@@ -167,7 +167,7 @@ static int h3_conn_allows_client_read(const neverc_quic_conn_t *conn) {
 
 static int h3_stream_read(neverc_quic_stream_t *stream, void *buffer,
                           size_t length) {
-    for (unsigned attempt = 0; attempt < 120U; attempt++) {
+    for (unsigned attempt = 0; attempt < 200U; attempt++) {
         int count = neverc_quic_stream_try_read(stream, buffer, length);
         if (count >= 0) return count;
         if (count != -2) {
@@ -179,7 +179,11 @@ static int h3_stream_read(neverc_quic_stream_t *stream, void *buffer,
             (void)neverc_quic_conn_flush(stream->conn);
             neverc_quic_conn_tick(stream->conn, nc_monotonic_ms());
         }
-        h3_sleep_ms(50);
+        unsigned delay_ms = 50U;
+        if (stream && stream->conn &&
+            stream->conn->state == QUIC_CONN_DRAINING)
+            delay_ms = 10U;
+        h3_sleep_ms(delay_ms);
     }
     return -1;
 }
@@ -1211,14 +1215,15 @@ static void h3_server_close_connections(neverc_http3_server_t *server) {
     unsigned drained_for_ms = 0;
     for (unsigned waited = 0; waited < H3_GRACEFUL_SHUTDOWN_MS; waited += 2U) {
         int drained = 1;
+        uint64_t now = nc_monotonic_ms();
         for (size_t i = 0; i < server->connection_count; i++) {
             h3_conn_t *connection = server->connections[i];
             if (h3_connection_needs_worker(connection)) {
                 drained = 0;
                 drained_for_ms = 0;
-                (void)neverc_quic_conn_flush(connection->quic);
-                break;
             }
+            (void)neverc_quic_conn_flush(connection->quic);
+            neverc_quic_conn_tick(connection->quic, now);
         }
         if (drained) {
             drained_for_ms += 2U;
