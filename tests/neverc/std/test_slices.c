@@ -194,6 +194,15 @@ static void test_concat(void) {
     free(c);
 }
 
+static void test_concat_size_overflow_rejected(void) {
+    printf("[concat size overflow rejected]\n");
+    unsigned char a[2] = {1, 2}, b[2] = {3, 4};
+    size_t huge = SIZE_MAX / 2 + 1;
+    void *result = neverc_slices_concat(a, huge, b, huge + 1, 2);
+    ASSERT_TRUE(result == NULL);
+    free(result);
+}
+
 static int is_even(const void *elem) { return (*(const int *)elem) % 2 == 0; }
 
 static void test_func_ops(void) {
@@ -230,6 +239,7 @@ int main(void) {
     test_replace();
     test_replace_overlapping_source();
     test_concat();
+    test_concat_size_overflow_rejected();
     test_func_ops();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);

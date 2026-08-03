@@ -304,9 +304,14 @@ size_t neverc_slices_replace(void *slice, size_t len, size_t elem_size,
 
 void *neverc_slices_concat(const void *s1, size_t len1, const void *s2, size_t len2,
                             size_t elem_size) {
+    if (len1 > SIZE_MAX - len2) return NULL;
     size_t total = len1 + len2;
     if (total == 0) return NULL;
-    void *out = malloc(total * elem_size);
+    size_t bytes;
+    if ((len1 > 0 && !s1) || (len2 > 0 && !s2) ||
+        !slices_byte_size(total, elem_size, &bytes))
+        return NULL;
+    void *out = malloc(bytes);
     if (!out) return NULL;
     if (len1 > 0) memcpy(out, s1, len1 * elem_size);
     if (len2 > 0) memcpy((char *)out + len1 * elem_size, s2, len2 * elem_size);
