@@ -59,7 +59,7 @@ extern int neverc_h3_write_goaway_frame(uint8_t *buffer, size_t capacity,
 #define H3_DATA_CHUNK         (64U * 1024U)
 #define H3_MAX_CONNECTIONS    4096U
 #define H3_GRACEFUL_SHUTDOWN_MS 5000U
-#define H3_POST_DRAIN_GRACE_MS 1000U
+#define H3_POST_DRAIN_GRACE_MS 2000U
 #define H3_QPACK_DECOMPRESSION_FAILED 0x0200U
 
 typedef struct h3_conn h3_conn_t;
@@ -167,14 +167,19 @@ static int h3_conn_allows_client_read(const neverc_quic_conn_t *conn) {
 
 static int h3_stream_read(neverc_quic_stream_t *stream, void *buffer,
                           size_t length) {
-    for (unsigned attempt = 0; attempt < 32U; attempt++) {
-        int count = neverc_quic_stream_read(stream, buffer, length);
+    for (unsigned attempt = 0; attempt < 120U; attempt++) {
+        int count = neverc_quic_stream_try_read(stream, buffer, length);
         if (count >= 0) return count;
-        if (!stream || !stream->conn ||
-            !h3_conn_allows_client_read(stream->conn))
-            return -1;
-        h3_sleep_ms(25);
-        (void)neverc_quic_conn_flush(stream->conn);
+        if (count != -2) {
+            if (!stream || !stream->conn ||
+                !h3_conn_allows_client_read(stream->conn))
+                return -1;
+        }
+        if (stream && stream->conn) {
+            (void)neverc_quic_conn_flush(stream->conn);
+            neverc_quic_conn_tick(stream->conn, nc_monotonic_ms());
+        }
+        h3_sleep_ms(50);
     }
     return -1;
 }

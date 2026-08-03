@@ -357,7 +357,7 @@ static void test_conn_close_wakes_streams(void) {
     ASSERT_EQ(s->state, QUIC_STREAM_OPEN);
 
     neverc_quic_conn_close_internal(conn, 0, "done", 0);
-    ASSERT_EQ(s->state, QUIC_STREAM_CLOSED);
+    ASSERT_EQ(s->state, QUIC_STREAM_HALF_CLOSED_REMOTE);
 
     neverc_quic_conn_destroy(conn);
 }

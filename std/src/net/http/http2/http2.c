@@ -338,6 +338,7 @@ int neverc_hpack_huffman_decode(const uint8_t *in, size_t in_len,
  * ====================================================================== */
 
 #define HPACK_DYN_MAX_ENTRIES 256
+#define HPACK_MAX_STRING_LENGTH (1024U * 1024U)
 
 typedef struct {
     neverc_hpack_header_t entries[HPACK_DYN_MAX_ENTRIES];
@@ -451,7 +452,9 @@ static int hpack_decode_string(const uint8_t *data, size_t len,
     size_t hdr_consumed;
     if (hpack_decode_int(data, len, 7, &slen, &hdr_consumed) != 0)
         return -1;
-    if (hdr_consumed + slen > len) return -1;
+    if (slen > HPACK_MAX_STRING_LENGTH || hdr_consumed > len ||
+        slen > len - hdr_consumed)
+        return -1;
 
     if (huffman) {
         if (slen > (SIZE_MAX - 1) / 2) return -1;
