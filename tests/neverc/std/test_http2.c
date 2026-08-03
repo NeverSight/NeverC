@@ -13,6 +13,7 @@
 #include "neverc/std/net/tcp.h"
 
 #ifndef _WIN32
+#include <poll.h>
 #include <signal.h>
 #include <unistd.h>
 #include <sys/socket.h>
@@ -540,6 +541,18 @@ static const char *buf_contains(const char *buf, size_t len, const char *needle)
     return NULL;
 }
 
+TEST(h2_client_rejects_zero_timeout) {
+    neverc_h2_client_config_t config = neverc_h2_client_config_default();
+    config.timeout_ms = 0;
+    const char *error = NULL;
+    neverc_h2_client_t *client = neverc_h2_client_dial(
+        "127.0.0.1:1", "localhost", 0, &config, &error);
+    neverc_h2_client_free(client);
+    ASSERT_TRUE(client == NULL);
+    ASSERT_TRUE(error != NULL);
+    ASSERT_STREQ(error, "invalid HTTP/2 client configuration");
+}
+
 #ifndef _WIN32
 static int sock_write_all(int fd, const void *buf, size_t len) {
     const char *p = (const char *)buf;
@@ -752,7 +765,7 @@ TEST(h2c_continuation_headers) {
 }
 
 static void h2_run_adversarial_response_child(
-    neverc_tcp_listener_t *listener, int overflow_queue) {
+    neverc_tcp_listener_t *listener, int response_kind, int notify_fd) {
     const char *error = NULL;
     neverc_tcp_conn_t *connection = neverc_tcp_accept(listener, &error);
     if (!connection) _exit(1);
@@ -770,6 +783,30 @@ static void h2_run_adversarial_response_child(
     if (header[3] != NC_H2_FRAME_SETTINGS ||
         h2_drain_frame_payload(fd, length) != 0)
         _exit(1);
+
+    if (response_kind == 2) {
+        uint8_t forbidden_settings[NC_H2_FRAME_HEADER_SIZE] = {
+            0, 0, 6, NC_H2_FRAME_SETTINGS, 0, 0, 0, 0, 0};
+        uint8_t enable_push[] = {
+            0, NC_H2_SETTINGS_ENABLE_PUSH, 0, 0, 0, 1};
+        if (sock_write_all(fd, forbidden_settings,
+                           sizeof(forbidden_settings)) != 0 ||
+            sock_write_all(fd, enable_push, sizeof(enable_push)) != 0)
+            _exit(1);
+        int got_frame = sock_read_all(fd, header, sizeof(header)) == 0;
+        if (write(notify_fd, "x", 1U) != 1)
+            _exit(1);
+        if (got_frame &&
+            (header[3] != NC_H2_FRAME_SETTINGS ||
+             !(header[4] & NC_H2_FLAG_ACK)))
+            _exit(1);
+        char drain[256];
+        while (got_frame && read(fd, drain, sizeof(drain)) > 0) { }
+        neverc_tcp_close(connection);
+        neverc_tcp_listener_close(listener);
+        close(notify_fd);
+        _exit(0);
+    }
 
     uint8_t server_settings[NC_H2_FRAME_HEADER_SIZE] = {
         0, 0, 0, NC_H2_FRAME_SETTINGS, 0, 0, 0, 0, 0};
@@ -805,7 +842,7 @@ static void h2_run_adversarial_response_child(
     if (sock_write_all(fd, response_header, sizeof(response_header)) != 0 ||
         sock_write_all(fd, &status_200, 1U) != 0)
         _exit(1);
-    if (!overflow_queue) {
+    if (response_kind == 0) {
         if (sock_write_all(fd, invalid_trailer_header,
                            sizeof(invalid_trailer_header)) != 0 ||
             sock_write_all(fd, &status_200, 1U) != 0)
@@ -838,7 +875,7 @@ TEST(h2_client_invalid_trailer_emits_terminal_error) {
     pid_t child = fork();
     ASSERT_TRUE(child >= 0);
     if (child == 0)
-        h2_run_adversarial_response_child(listener, 0);
+        h2_run_adversarial_response_child(listener, 0, -1);
     neverc_tcp_listener_close(listener);
 
     char dial_address[64];
@@ -893,7 +930,7 @@ TEST(h2_client_queue_overflow_emits_terminal_error) {
     pid_t child = fork();
     ASSERT_TRUE(child >= 0);
     if (child == 0)
-        h2_run_adversarial_response_child(listener, 1);
+        h2_run_adversarial_response_child(listener, 1, -1);
     neverc_tcp_listener_close(listener);
 
     char dial_address[64];
@@ -935,6 +972,58 @@ TEST(h2_client_queue_overflow_emits_terminal_error) {
     ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
     ASSERT_TRUE(saw_error);
 }
+
+TEST(h2_client_rejects_server_enable_push) {
+    const char *error = NULL;
+    neverc_tcp_listener_t *listener =
+        neverc_tcp_listen("127.0.0.1:0", &error);
+    ASSERT_TRUE(listener != NULL);
+    neverc_tcp_addr_t address;
+    ASSERT_EQ(neverc_tcp_listener_addr(listener, &address), 0);
+    int notified[2];
+    ASSERT_EQ(pipe(notified), 0);
+
+    pid_t child = fork();
+    ASSERT_TRUE(child >= 0);
+    if (child == 0) {
+        close(notified[0]);
+        h2_run_adversarial_response_child(listener, 2, notified[1]);
+    }
+    close(notified[1]);
+    neverc_tcp_listener_close(listener);
+
+    char dial_address[64];
+    snprintf(dial_address, sizeof(dial_address), "127.0.0.1:%d",
+             address.port);
+    neverc_h2_client_config_t config = neverc_h2_client_config_default();
+    config.timeout_ms = 3000;
+    neverc_h2_client_t *client = neverc_h2_client_dial(
+        dial_address, "localhost", 0, &config, &error);
+    struct pollfd ready = {
+        .fd = notified[0],
+        .events = POLLIN,
+        .revents = 0,
+    };
+    int processed = client && poll(&ready, 1U, 3000) == 1;
+    char signal = 0;
+    if (processed)
+        processed = read(notified[0], &signal, 1U) == 1;
+    close(notified[0]);
+    neverc_h2_client_stream_t *stream = processed
+        ? neverc_h2_client_stream_open(client, NULL, "GET", "/",
+                                       NULL, 0U, 1, &error)
+        : NULL;
+    int rejected = processed && stream == NULL;
+    if (!processed)
+        kill(child, SIGTERM);
+
+    neverc_h2_client_stream_free(stream);
+    neverc_h2_client_free(client);
+    int status = 0;
+    waitpid(child, &status, 0);
+    ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+    ASSERT_TRUE(rejected);
+}
 #endif /* !_WIN32 */
 
 int main(void) {
@@ -959,11 +1048,13 @@ int main(void) {
     run_test_hpack_sensitive_headers_are_never_indexed();
     run_test_hpack_rejects_overflowing_integer();
     run_test_frame_types_and_flags();
+    run_test_h2_client_rejects_zero_timeout();
 #ifndef _WIN32
     run_test_h2c_serve_conn_roundtrip();
     run_test_h2c_continuation_headers();
     run_test_h2_client_invalid_trailer_emits_terminal_error();
     run_test_h2_client_queue_overflow_emits_terminal_error();
+    run_test_h2_client_rejects_server_enable_push();
 #endif
 
     printf("\n%d passed, %d failed\n", tests_passed, tests_failed);

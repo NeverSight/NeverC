@@ -629,7 +629,7 @@ static int h2_client_apply_settings(neverc_h2_client_t *client,
                          ((uint32_t)payload[offset + 3] << 16) |
                          ((uint32_t)payload[offset + 4] << 8) |
                          payload[offset + 5];
-        if (id == NC_H2_SETTINGS_ENABLE_PUSH && value > 1) {
+        if (id == NC_H2_SETTINGS_ENABLE_PUSH && value != 0) {
             nc_mutex_unlock(&client->state_lock);
             return -1;
         }
@@ -1381,7 +1381,7 @@ neverc_h2_client_config_t neverc_h2_client_config_default(void) {
 
 static int h2_client_config_valid(
     const neverc_h2_client_config_t *config) {
-    return config && config->timeout_ms >= 0 &&
+    return config && config->timeout_ms > 0 &&
            config->max_concurrent_streams > 0 &&
            config->initial_window_size <= INT32_MAX &&
            config->max_response_header_list_size > 0 &&
