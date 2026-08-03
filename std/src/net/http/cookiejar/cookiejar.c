@@ -168,7 +168,7 @@ void neverc_cookiejar_set_cookies(neverc_cookiejar_t *jar,
 
     for (int i = 0; i < count; i++) {
         const neverc_cookiejar_entry_t *c = &cookies[i];
-        if (!c->name || !c->name[0]) continue;
+        if (!c->name || !c->name[0] || !c->value) continue;
 
         char domain[256];
         if (c->domain && c->domain[0]) {
@@ -194,8 +194,10 @@ void neverc_cookiejar_set_cookies(neverc_cookiejar_t *jar,
         }
 
         if (found) {
+            char *value_copy = strdup_safe(c->value);
+            if (!value_copy) continue;
             free(found->value);
-            found->value = strdup_safe(c->value);
+            found->value = value_copy;
             found->expires = c->expires;
             found->secure = c->secure;
             found->http_only = c->http_only;
@@ -206,6 +208,10 @@ void neverc_cookiejar_set_cookies(neverc_cookiejar_t *jar,
             ne->value = strdup_safe(c->value);
             ne->domain = strdup_safe(domain);
             ne->path = strdup_safe(cpath);
+            if (!ne->name || !ne->value || !ne->domain || !ne->path) {
+                entry_free(ne);
+                continue;
+            }
             ne->expires = c->expires;
             ne->secure = c->secure;
             ne->http_only = c->http_only;

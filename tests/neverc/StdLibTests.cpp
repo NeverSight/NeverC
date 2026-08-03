@@ -615,6 +615,11 @@ STD_TEST(httputil, "src/net/http/httputil/httputil.c",
 
 // ===== Cookie Jar =====
 STD_TEST(cookiejar, "src/net/http/cookiejar/cookiejar.c")
+TEST_F(StdLibTest, CookieJarAllocationFailure) {
+  auto r = compileAndRunStdTest("cookiejar_oom", {}, {"-fno-builtin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
 
 // ===== SMTP =====
 STD_TEST(smtp, "src/net/smtp/smtp.c", TCP_DEPS)
