@@ -59,7 +59,7 @@ extern int neverc_h3_write_goaway_frame(uint8_t *buffer, size_t capacity,
 #define H3_DATA_CHUNK         (64U * 1024U)
 #define H3_MAX_CONNECTIONS    4096U
 #define H3_GRACEFUL_SHUTDOWN_MS 5000U
-#define H3_POST_DRAIN_GRACE_MS 250U
+#define H3_POST_DRAIN_GRACE_MS 1000U
 #define H3_QPACK_DECOMPRESSION_FAILED 0x0200U
 
 typedef struct h3_conn h3_conn_t;

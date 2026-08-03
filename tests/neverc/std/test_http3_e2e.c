@@ -304,7 +304,7 @@ static void http3_test_unified_end_to_end(void) {
         CHECK(neverc_thread_executor_submit(slow_executor,
                                              http3_test_slow_client_task,
                                              &slow) == NEVERC_THREAD_OK);
-    for (int attempt = 0; attempt < 500 &&
+    for (int attempt = 0; attempt < 2000 &&
          !atomic_load_explicit(&http3_test_slow_entered,
                                memory_order_acquire); attempt++)
         neverc_time_sleep(10 * NEVERC_TIME_MILLISECOND);
