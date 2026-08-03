@@ -100,6 +100,7 @@ typedef struct {
     size_t   pos;
     uint32_t bit_buf;
     int      bit_cnt;
+    int      failed;
 } bitwriter_t;
 
 static void bw_init(bitwriter_t *bw, size_t initial_cap) {
@@ -108,23 +109,37 @@ static void bw_init(bitwriter_t *bw, size_t initial_cap) {
     bw->pos = 0;
     bw->bit_buf = 0;
     bw->bit_cnt = 0;
+    bw->failed = bw->buf == NULL;
 }
 
-static void bw_ensure(bitwriter_t *bw, size_t need) {
-    if (bw->pos + need > bw->cap) {
-        bw->cap = (bw->pos + need) * 2;
-        bw->buf = (uint8_t *)realloc(bw->buf, bw->cap);
+static int bw_ensure(bitwriter_t *bw, size_t need) {
+    if (bw->failed) return -1;
+    if (need > SIZE_MAX - bw->pos) { bw->failed = 1; return -1; }
+    size_t required = bw->pos + need;
+    if (required <= bw->cap) return 0;
+    size_t capacity = bw->cap ? bw->cap : 256;
+    while (capacity < required) {
+        if (capacity > SIZE_MAX / 2) { capacity = required; break; }
+        capacity *= 2;
     }
+    uint8_t *grown = (uint8_t *)realloc(bw->buf, capacity);
+    if (!grown) { bw->failed = 1; return -1; }
+    bw->buf = grown;
+    bw->cap = capacity;
+    return 0;
 }
 
 static void bw_write_byte(bitwriter_t *bw, uint8_t b) {
-    bw_ensure(bw, 2);
+    if (bw_ensure(bw, 2) != 0) return;
     bw->buf[bw->pos++] = b;
     if (b == 0xFF) bw->buf[bw->pos++] = 0x00; /* byte stuffing */
 }
 
 static void bw_write_raw(bitwriter_t *bw, const uint8_t *data, size_t len) {
-    bw_ensure(bw, len);
+    if ((!data && len != 0) || bw_ensure(bw, len) != 0) {
+        bw->failed = 1;
+        return;
+    }
     memcpy(bw->buf + bw->pos, data, len);
     bw->pos += len;
 }
@@ -282,7 +297,7 @@ static void encode_block(bitwriter_t *bw, int *block, const double *recip,
 }
 
 static void write_marker(bitwriter_t *bw, uint8_t marker) {
-    bw_ensure(bw, 2);
+    if (bw_ensure(bw, 2) != 0) return;
     bw->buf[bw->pos++] = 0xFF;
     bw->buf[bw->pos++] = marker;
 }
@@ -292,7 +307,7 @@ static void write_dht(bitwriter_t *bw, uint8_t cls_id, const uint8_t *bits, cons
     for (int i = 1; i <= 16; i++) total += bits[i];
     int len = 2 + 1 + 16 + total;
     write_marker(bw, 0xC4);
-    bw_ensure(bw, (size_t)len);
+    if (bw_ensure(bw, (size_t)len) != 0) return;
     bw->buf[bw->pos++] = (uint8_t)(len >> 8);
     bw->buf[bw->pos++] = (uint8_t)(len);
     bw->buf[bw->pos++] = cls_id;
@@ -304,9 +319,19 @@ static void write_dht(bitwriter_t *bw, uint8_t cls_id, const uint8_t *bits, cons
 
 int neverc_jpeg_encode(const neverc_jpeg_image_t *img, int quality,
                        uint8_t **out_data, size_t *out_len) {
-    if (!img || !img->pixels || !out_data || !out_len) return -1;
+    if (!out_data || !out_len) return -1;
+    *out_data = NULL;
+    *out_len = 0;
+    if (!img || !img->pixels) return -1;
     if (img->width == 0 || img->height == 0) return -1;
+    if (img->width > UINT16_MAX || img->height > UINT16_MAX) return -1;
     if (img->channels != 1 && img->channels != 3) return -1;
+    size_t row_size = (size_t)img->width * img->channels;
+    if (img->stride < row_size ||
+        (img->height > 1 &&
+         img->stride > (SIZE_MAX - row_size) / (img->height - 1))) return -1;
+    uint64_t pixel_count = (uint64_t)img->width * img->height;
+    if (pixel_count > (1u << 28) || pixel_count > SIZE_MAX / 2) return -1;
 
     uint8_t lum_quant[64], chrom_quant[64];
     scale_quant_table(lum_quant, std_lum_quant, quality);
@@ -325,7 +350,10 @@ int neverc_jpeg_encode(const neverc_jpeg_image_t *img, int quality,
     build_huffman_table(ac_chrom_bits, ac_chrom_val, ac_chr, 256);
 
     bitwriter_t bw;
-    bw_init(&bw, img->width * img->height * 2);
+    size_t initial_capacity = (size_t)pixel_count * 2;
+    if (initial_capacity < 256) initial_capacity = 256;
+    bw_init(&bw, initial_capacity);
+    if (bw.failed) return -1;
 
     /* SOI */
     write_marker(&bw, 0xD8);
@@ -338,7 +366,7 @@ int neverc_jpeg_encode(const neverc_jpeg_image_t *img, int quality,
     /* DQT - luminance. The DQT segment carries the 64 quant values in zigzag
      * scan order (ITU T.81 B.2.4.1), so reorder our natural-order table. */
     write_marker(&bw, 0xDB);
-    bw_ensure(&bw, 69);
+    if (bw_ensure(&bw, 69) != 0) goto encode_failed;
     bw.buf[bw.pos++] = 0; bw.buf[bw.pos++] = 67; /* length */
     bw.buf[bw.pos++] = 0; /* table 0 */
     for (int s = 0; s < 64; s++) bw.buf[bw.pos++] = lum_quant[jpeg_natural_order[s]];
@@ -346,7 +374,7 @@ int neverc_jpeg_encode(const neverc_jpeg_image_t *img, int quality,
     /* DQT - chrominance (only for color) */
     if (img->channels == 3) {
         write_marker(&bw, 0xDB);
-        bw_ensure(&bw, 69);
+        if (bw_ensure(&bw, 69) != 0) goto encode_failed;
         bw.buf[bw.pos++] = 0; bw.buf[bw.pos++] = 67;
         bw.buf[bw.pos++] = 1; /* table 1 */
         for (int s = 0; s < 64; s++) bw.buf[bw.pos++] = chrom_quant[jpeg_natural_order[s]];
@@ -356,7 +384,7 @@ int neverc_jpeg_encode(const neverc_jpeg_image_t *img, int quality,
     int ncomp = img->channels;
     int sof_len = 8 + 3 * ncomp;
     write_marker(&bw, 0xC0);
-    bw_ensure(&bw, (size_t)sof_len);
+    if (bw_ensure(&bw, (size_t)sof_len) != 0) goto encode_failed;
     bw.buf[bw.pos++] = (uint8_t)(sof_len >> 8);
     bw.buf[bw.pos++] = (uint8_t)(sof_len);
     bw.buf[bw.pos++] = 8; /* precision */
@@ -384,7 +412,7 @@ int neverc_jpeg_encode(const neverc_jpeg_image_t *img, int quality,
     /* SOS */
     int sos_len = 6 + 2 * ncomp;
     write_marker(&bw, 0xDA);
-    bw_ensure(&bw, (size_t)sos_len);
+    if (bw_ensure(&bw, (size_t)sos_len) != 0) goto encode_failed;
     bw.buf[bw.pos++] = (uint8_t)(sos_len >> 8);
     bw.buf[bw.pos++] = (uint8_t)(sos_len);
     bw.buf[bw.pos++] = (uint8_t)ncomp;
@@ -470,9 +498,15 @@ int neverc_jpeg_encode(const neverc_jpeg_image_t *img, int quality,
     /* EOI */
     write_marker(&bw, 0xD9);
 
+    if (bw.failed) goto encode_failed;
+
     *out_data = bw.buf;
     *out_len = bw.pos;
     return 0;
+
+encode_failed:
+    free(bw.buf);
+    return -1;
 }
 
 /* =========================================================================

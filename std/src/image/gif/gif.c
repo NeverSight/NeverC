@@ -1,6 +1,7 @@
 #include "neverc/std/image/gif.h"
 #include <stdlib.h>
 #include <string.h>
+#include <limits.h>
 
 /* =========================================================================
  * GIF Encoder/Decoder
@@ -13,28 +14,43 @@ typedef struct {
     size_t cap, pos;
     uint32_t bit_buf;
     int bit_cnt;
+    int failed;
 } gif_writer_t;
 
 static void gw_init(gif_writer_t *w, size_t cap) {
     w->buf = (uint8_t *)malloc(cap);
     w->cap = cap; w->pos = 0;
     w->bit_buf = 0; w->bit_cnt = 0;
+    w->failed = w->buf == NULL;
 }
 
-static void gw_ensure(gif_writer_t *w, size_t n) {
-    if (w->pos + n > w->cap) {
-        w->cap = (w->pos + n) * 2;
-        w->buf = (uint8_t *)realloc(w->buf, w->cap);
+static int gw_ensure(gif_writer_t *w, size_t n) {
+    if (w->failed) return -1;
+    if (n > SIZE_MAX - w->pos) { w->failed = 1; return -1; }
+    size_t required = w->pos + n;
+    if (required <= w->cap) return 0;
+    size_t capacity = w->cap ? w->cap : 256;
+    while (capacity < required) {
+        if (capacity > SIZE_MAX / 2) { capacity = required; break; }
+        capacity *= 2;
     }
+    uint8_t *grown = (uint8_t *)realloc(w->buf, capacity);
+    if (!grown) { w->failed = 1; return -1; }
+    w->buf = grown;
+    w->cap = capacity;
+    return 0;
 }
 
 static void gw_byte(gif_writer_t *w, uint8_t b) {
-    gw_ensure(w, 1);
+    if (gw_ensure(w, 1) != 0) return;
     w->buf[w->pos++] = b;
 }
 
 static void gw_bytes(gif_writer_t *w, const uint8_t *d, size_t n) {
-    gw_ensure(w, n);
+    if ((!d && n != 0) || gw_ensure(w, n) != 0) {
+        w->failed = 1;
+        return;
+    }
     memcpy(w->buf + w->pos, d, n);
     w->pos += n;
 }
@@ -54,14 +70,15 @@ typedef struct {
     int next;   /* next sibling sharing the same prefix */
 } lzw_entry_t;
 
-static void gif_lzw_compress(gif_writer_t *out, const uint8_t *data, size_t len,
-                             int min_code_size) {
+static int gif_lzw_compress(gif_writer_t *out, const uint8_t *data, size_t len,
+                            int min_code_size) {
     int clear_code = 1 << min_code_size;
     int eoi_code = clear_code + 1;
     int next_code = eoi_code + 1;
     int code_size = min_code_size + 1;
 
     lzw_entry_t *table = (lzw_entry_t *)calloc(LZW_MAX_CODE, sizeof(lzw_entry_t));
+    if (!table) { out->failed = 1; return -1; }
     for (int i = 0; i < LZW_MAX_CODE; i++) {
         table[i].prefix = -1;
         table[i].suffix = -1;
@@ -146,6 +163,9 @@ static void gif_lzw_compress(gif_writer_t *out, const uint8_t *data, size_t len,
     }
 
     EMIT_CODE(current);
+    /* The decoder adds one final dictionary entry after this data code before
+       it can know EOI follows. Keep EOI's width in sync at that boundary. */
+    if (next_code >= (1 << code_size) && code_size < 12) code_size++;
     EMIT_CODE(eoi_code);
 
 flush:
@@ -160,20 +180,28 @@ flush:
 
     #undef EMIT_CODE
     free(table);
+    return out->failed ? -1 : 0;
 }
 
 int neverc_gif_encode(const neverc_gif_frame_t *frame,
                       uint8_t **out_data, size_t *out_len) {
-    if (!frame || !frame->indices || !out_data || !out_len) return -1;
+    if (!out_data || !out_len) return -1;
+    *out_data = NULL;
+    *out_len = 0;
+    if (!frame || !frame->indices) return -1;
     if (frame->width == 0 || frame->height == 0) return -1;
+    if (frame->width > UINT16_MAX || frame->height > UINT16_MAX) return -1;
     if (frame->palette_size < 2 || frame->palette_size > 256) return -1;
+    size_t pixel_count = (size_t)frame->width * frame->height;
+    if (pixel_count > SIZE_MAX - 1024) return -1;
 
     int color_bits = 1;
     while ((1 << color_bits) < frame->palette_size) color_bits++;
     int palette_entries = 1 << color_bits;
 
     gif_writer_t w;
-    gw_init(&w, frame->width * frame->height + 1024);
+    gw_init(&w, pixel_count + 1024);
+    if (w.failed) return -1;
 
     /* Header */
     gw_bytes(&w, (const uint8_t *)"GIF89a", 6);
@@ -223,10 +251,15 @@ int neverc_gif_encode(const neverc_gif_frame_t *frame,
     gw_byte(&w, (uint8_t)min_code_size);
 
     /* LZW compressed data */
-    gif_lzw_compress(&w, frame->indices, (size_t)frame->width * frame->height, min_code_size);
+    if (gif_lzw_compress(&w, frame->indices, pixel_count, min_code_size) != 0) {
+        free(w.buf);
+        return -1;
+    }
 
     /* Trailer */
     gw_byte(&w, 0x3B);
+
+    if (w.failed) { free(w.buf); return -1; }
 
     *out_data = w.buf;
     *out_len = w.pos;
@@ -235,8 +268,9 @@ int neverc_gif_encode(const neverc_gif_frame_t *frame,
 
 /* GIF LZW decoder */
 int neverc_gif_decode(const uint8_t *data, size_t len, neverc_gif_image_t *img) {
-    if (!data || len < 13 || !img) return -1;
+    if (!img) return -1;
     memset(img, 0, sizeof(*img));
+    if (!data || len < 13) return -1;
 
     if (memcmp(data, "GIF87a", 6) != 0 && memcmp(data, "GIF89a", 6) != 0)
         return -1;
@@ -254,7 +288,8 @@ int neverc_gif_decode(const uint8_t *data, size_t len, neverc_gif_image_t *img) 
     neverc_gif_color_t gct[256];
     memset(gct, 0, sizeof(gct));
     if (has_gct) {
-        for (int i = 0; i < gct_size && pos + 2 < len; i++) {
+        if ((size_t)gct_size > (len - pos) / 3) return -1;
+        for (int i = 0; i < gct_size; i++) {
             gct[i].r = data[pos++];
             gct[i].g = data[pos++];
             gct[i].b = data[pos++];
@@ -267,37 +302,42 @@ int neverc_gif_decode(const uint8_t *data, size_t len, neverc_gif_image_t *img) 
     int frame_cap = 4;
     img->frames = (neverc_gif_frame_t *)calloc((size_t)frame_cap, sizeof(neverc_gif_frame_t));
     img->num_frames = 0;
+    if (!img->frames) return -1;
 
     int pending_delay = 0;
     int pending_transparent = -1;
+    int saw_trailer = 0;
 
     while (pos < len) {
         uint8_t block = data[pos++];
 
-        if (block == 0x3B) break; /* Trailer */
+        if (block == 0x3B) { saw_trailer = 1; break; } /* Trailer */
 
         if (block == 0x21) { /* Extension */
-            if (pos >= len) break;
+            if (pos >= len) goto decode_failed;
             uint8_t label = data[pos++];
-            if (label == 0xF9 && pos + 5 <= len) { /* Graphic Control Extension */
-                pos++; /* block size */
+            if (label == 0xF9) { /* Graphic Control Extension */
+                if (len - pos < 6 || data[pos++] != 4) goto decode_failed;
                 uint8_t gce_packed = data[pos++];
                 pending_delay = (int)data[pos] | ((int)data[pos+1] << 8); pos += 2;
                 uint8_t trans_idx = data[pos++];
                 if (gce_packed & 1) pending_transparent = trans_idx;
-                pos++; /* block terminator */
+                if (data[pos++] != 0) goto decode_failed;
             } else {
+                int terminated = 0;
                 while (pos < len) {
                     uint8_t bs = data[pos++];
-                    if (bs == 0) break;
+                    if (bs == 0) { terminated = 1; break; }
+                    if ((size_t)bs > len - pos) goto decode_failed;
                     pos += bs;
                 }
+                if (!terminated) goto decode_failed;
             }
             continue;
         }
 
         if (block == 0x2C) { /* Image Descriptor */
-            if (pos + 8 >= len) break;
+            if (len - pos < 9) goto decode_failed;
             uint16_t left = (uint16_t)data[pos] | ((uint16_t)data[pos+1] << 8); pos += 2;
             uint16_t top  = (uint16_t)data[pos] | ((uint16_t)data[pos+1] << 8); pos += 2;
             uint16_t fw   = (uint16_t)data[pos] | ((uint16_t)data[pos+1] << 8); pos += 2;
@@ -314,7 +354,8 @@ int neverc_gif_decode(const uint8_t *data, size_t len, neverc_gif_image_t *img) 
             neverc_gif_color_t lct[256];
             if (has_lct) {
                 memset(lct, 0, sizeof(lct));
-                for (int i = 0; i < lct_size && pos + 2 < len; i++) {
+                if ((size_t)lct_size > (len - pos) / 3) goto decode_failed;
+                for (int i = 0; i < lct_size; i++) {
                     lct[i].r = data[pos++];
                     lct[i].g = data[pos++];
                     lct[i].b = data[pos++];
@@ -322,26 +363,43 @@ int neverc_gif_decode(const uint8_t *data, size_t len, neverc_gif_image_t *img) 
                 palette = lct;
                 pal_size = lct_size;
             }
+            if (fw == 0 || fh == 0 || pal_size < 2) goto decode_failed;
 
             /* LZW decode */
-            if (pos >= len) break;
+            if (pos >= len) goto decode_failed;
             int min_code_size = data[pos++];
-            if (min_code_size < 2 || min_code_size > 11) break;
+            if (min_code_size < 2 || min_code_size > 8) goto decode_failed;
 
             /* Collect sub-blocks */
             uint8_t *lzw_data = NULL;
             size_t lzw_len = 0, lzw_cap = 0;
+            int sub_blocks_terminated = 0;
             while (pos < len) {
                 uint8_t bs = data[pos++];
-                if (bs == 0) break;
-                if (pos + bs > len) break;
-                if (lzw_len + bs > lzw_cap) {
-                    lzw_cap = (lzw_len + bs) * 2;
-                    lzw_data = (uint8_t *)realloc(lzw_data, lzw_cap);
+                if (bs == 0) { sub_blocks_terminated = 1; break; }
+                if ((size_t)bs > len - pos || (size_t)bs > SIZE_MAX - lzw_len) {
+                    free(lzw_data);
+                    goto decode_failed;
+                }
+                size_t required = lzw_len + bs;
+                if (required > lzw_cap) {
+                    size_t capacity = lzw_cap ? lzw_cap : 256;
+                    while (capacity < required) {
+                        if (capacity > SIZE_MAX / 2) { capacity = required; break; }
+                        capacity *= 2;
+                    }
+                    uint8_t *grown = (uint8_t *)realloc(lzw_data, capacity);
+                    if (!grown) { free(lzw_data); goto decode_failed; }
+                    lzw_data = grown;
+                    lzw_cap = capacity;
                 }
                 memcpy(lzw_data + lzw_len, data + pos, bs);
                 lzw_len += bs;
                 pos += bs;
+            }
+            if (!sub_blocks_terminated || lzw_len == 0) {
+                free(lzw_data);
+                goto decode_failed;
             }
 
             /* LZW decompress */
@@ -351,6 +409,7 @@ int neverc_gif_decode(const uint8_t *data, size_t len, neverc_gif_image_t *img) 
 
             size_t pixel_count = (size_t)fw * fh;
             uint8_t *indices = (uint8_t *)calloc(1, pixel_count);
+            if (!indices) { free(lzw_data); goto decode_failed; }
             size_t pix_pos = 0;
 
             /* LZW dictionary as prefix/suffix chains. The previous version
@@ -379,6 +438,8 @@ int neverc_gif_decode(const uint8_t *data, size_t len, neverc_gif_image_t *img) 
 
             int prev_code = -1;
             uint8_t first_byte = 0;
+            int saw_eoi = 0;
+            int lzw_error = 0;
             /*
              * Decode every *complete* code, not just while input bytes remain.
              * The final sub-block byte(s) usually pack several codes — including
@@ -398,7 +459,7 @@ int neverc_gif_decode(const uint8_t *data, size_t len, neverc_gif_image_t *img) 
                 bit_buf >>= code_size;
                 bit_cnt -= code_size;
 
-                if (code == eoi_code) break;
+                if (code == eoi_code) { saw_eoi = 1; break; }
                 if (code == clear_code) {
                     next_code_d = eoi_code + 1;
                     code_size = min_code_size + 1;
@@ -424,6 +485,7 @@ int neverc_gif_decode(const uint8_t *data, size_t len, neverc_gif_image_t *img) 
                     walk = prev_code;
                     is_kwkwk = 1;
                 } else {
+                    lzw_error = 1;
                     break;
                 }
 
@@ -470,6 +532,10 @@ int neverc_gif_decode(const uint8_t *data, size_t len, neverc_gif_image_t *img) 
             }
 
             free(lzw_data);
+            if (lzw_error || !saw_eoi || pix_pos != pixel_count) {
+                free(indices);
+                goto decode_failed;
+            }
 
             /* De-interlace. A GIF marked interlaced stores its rows in four
              * passes (start/step: 0/8, 4/8, 2/4, 1/2); the LZW output above is
@@ -478,7 +544,8 @@ int neverc_gif_decode(const uint8_t *data, size_t len, neverc_gif_image_t *img) 
              * undecoded on truncated input stay zero — same as before. */
             if (interlaced && fw > 0 && fh > 0) {
                 uint8_t *deint = (uint8_t *)malloc(pixel_count);
-                if (deint) {
+                if (!deint) { free(indices); goto decode_failed; }
+                {
                     static const int pass_start[4] = {0, 4, 2, 1};
                     static const int pass_step[4]  = {8, 8, 4, 2};
                     size_t src = 0;
@@ -497,9 +564,17 @@ int neverc_gif_decode(const uint8_t *data, size_t len, neverc_gif_image_t *img) 
 
             /* Store frame */
             if (img->num_frames >= frame_cap) {
-                frame_cap *= 2;
-                img->frames = (neverc_gif_frame_t *)realloc(img->frames,
-                    (size_t)frame_cap * sizeof(neverc_gif_frame_t));
+                if (frame_cap > INT_MAX / 2 ||
+                    (size_t)frame_cap * 2 > SIZE_MAX / sizeof(*img->frames)) {
+                    free(indices);
+                    goto decode_failed;
+                }
+                int new_cap = frame_cap * 2;
+                neverc_gif_frame_t *grown = (neverc_gif_frame_t *)realloc(
+                    img->frames, (size_t)new_cap * sizeof(*img->frames));
+                if (!grown) { free(indices); goto decode_failed; }
+                img->frames = grown;
+                frame_cap = new_cap;
             }
             neverc_gif_frame_t *f = &img->frames[img->num_frames++];
             memset(f, 0, sizeof(*f));
@@ -515,16 +590,19 @@ int neverc_gif_decode(const uint8_t *data, size_t len, neverc_gif_image_t *img) 
             }
             pending_delay = 0;
             pending_transparent = -1;
+            continue;
         }
+
+        goto decode_failed;
     }
 
-    if (img->num_frames == 0) {
-        free(img->frames);
-        img->frames = NULL;
-        return -1;
-    }
+    if (!saw_trailer || img->num_frames == 0) goto decode_failed;
 
     return 0;
+
+decode_failed:
+    neverc_gif_free(img);
+    return -1;
 }
 
 void neverc_gif_free(neverc_gif_image_t *img) {

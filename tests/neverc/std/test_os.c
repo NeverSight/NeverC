@@ -192,6 +192,7 @@ static void test_environ(void) {
     ASSERT_TRUE(env != NULL);
     for (int i = 0; i < count; i++) free(env[i]);
     free(env);
+    ASSERT_TRUE(neverc_os_environ(NULL) == NULL);
 }
 
 static void test_expand_env(void) {
@@ -203,6 +204,10 @@ static void test_expand_env(void) {
 
     result = neverc_os_expand_env("${NEVERC_EXPAND_VAR}!");
     ASSERT_TRUE(result != NULL && strcmp(result, "hello!") == 0);
+    free(result);
+
+    result = neverc_os_expand_env("cost $- and ${UNCLOSED");
+    ASSERT_TRUE(result != NULL && strcmp(result, "cost $- and ${UNCLOSED") == 0);
     free(result);
     neverc_os_unsetenv("NEVERC_EXPAND_VAR");
 }
@@ -218,6 +223,9 @@ static void test_read_dir(void) {
     ASSERT_TRUE(err == 0);
     ASSERT_TRUE(count >= 0);
     free(entries);
+
+    ASSERT_EQ(neverc_os_read_dir(NULL, &entries, &count), -1);
+    ASSERT_EQ(neverc_os_readlink("unused", (char *)&count, 0), -1);
 }
 
 static void test_user_dirs(void) {
@@ -256,6 +264,7 @@ static void test_chmod_truncate(void) {
 
     rc = neverc_os_truncate(path, 5);
     ASSERT_TRUE(rc == 0);
+    ASSERT_EQ(neverc_os_truncate(path, -1), -1);
 
     unsigned char *data; size_t len;
     neverc_os_read_file(path, &data, &len);
@@ -263,6 +272,45 @@ static void test_chmod_truncate(void) {
     ASSERT_TRUE(memcmp(data, "hello", 5) == 0);
     free(data);
     neverc_os_remove(path);
+}
+
+static void test_pipe(void) {
+    printf("[pipe]\n");
+    neverc_os_file_t *reader = NULL, *writer = NULL;
+    ASSERT_EQ(neverc_os_pipe(&reader, &writer), 0);
+    ASSERT_TRUE(reader != NULL);
+    ASSERT_TRUE(writer != NULL);
+    if (!reader || !writer) {
+        neverc_os_close(reader);
+        neverc_os_close(writer);
+        return;
+    }
+
+    ASSERT_EQ(neverc_os_write(writer, "ping", 4), 4);
+    char buf[4] = {0};
+    ASSERT_EQ(neverc_os_read(reader, buf, sizeof(buf)), 4);
+    ASSERT_TRUE(memcmp(buf, "ping", sizeof(buf)) == 0);
+    neverc_os_close(reader);
+    neverc_os_close(writer);
+}
+
+static void test_error_classification_and_ownership(void) {
+    printf("[error classification/ownership]\n");
+    ASSERT_TRUE(neverc_os_is_permission(13));
+    ASSERT_TRUE(!neverc_os_is_permission(12));
+
+    char path[1024];
+    make_test_path(path, sizeof(path), "neverc_missing_chown_target");
+    neverc_os_remove(path);
+#if defined(_WIN32)
+    ASSERT_EQ(neverc_os_chown(path, 0, 0), 0);
+    ASSERT_EQ(neverc_os_lchown(path, 0, 0), 0);
+#else
+    ASSERT_EQ(neverc_os_chown(path, neverc_os_geteuid(),
+                              neverc_os_getegid()), -1);
+    ASSERT_EQ(neverc_os_lchown(path, neverc_os_geteuid(),
+                               neverc_os_getegid()), -1);
+#endif
 }
 
 int main(void) {
@@ -285,6 +333,8 @@ int main(void) {
     test_user_dirs();
     test_executable();
     test_chmod_truncate();
+    test_pipe();
+    test_error_classification_and_ownership();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

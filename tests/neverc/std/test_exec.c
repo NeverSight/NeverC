@@ -187,6 +187,9 @@ static void test_set_dir(void) {
 
 int main(void) {
     printf("=== NeverC os/exec Tests ===\n");
+    ASSERT_TRUE(neverc_exec_command(NULL, NULL, 0) == NULL);
+    ASSERT_TRUE(neverc_exec_command("echo", NULL, -1) == NULL);
+    ASSERT_INT_EQ(neverc_exec_cmd_run(NULL, NULL), -1);
     test_command_echo();
     test_command_false();
     test_command_true();

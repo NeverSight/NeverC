@@ -150,6 +150,19 @@ static void test_invalid_data(void) {
     ASSERT_EQ(neverc_jpeg_decode(NULL, 0, &img), -1);
     ASSERT_EQ(neverc_jpeg_decode((const uint8_t *)"xx", 2, &img), -1);
     ASSERT_EQ(neverc_jpeg_encode(NULL, 90, NULL, NULL), -1);
+    uint8_t pixel[3] = {0};
+    neverc_jpeg_image_t too_wide = {
+        .width = 65536, .height = 1, .channels = 3,
+        .pixels = pixel, .stride = 3
+    };
+    uint8_t *output = NULL;
+    size_t output_length = 0;
+    ASSERT_EQ(neverc_jpeg_encode(&too_wide, 90, &output, &output_length), -1);
+    neverc_jpeg_image_t short_stride = {
+        .width = 2, .height = 1, .channels = 3,
+        .pixels = pixel, .stride = 3
+    };
+    ASSERT_EQ(neverc_jpeg_encode(&short_stride, 90, &output, &output_length), -1);
 }
 
 static void test_quality_levels(void) {

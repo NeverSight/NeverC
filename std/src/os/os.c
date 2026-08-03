@@ -4,6 +4,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <errno.h>
+#include <limits.h>
 
 #if defined(NEVERC_PLATFORM_APPLE)
 #include <mach-o/dyld.h>
@@ -12,6 +13,7 @@
 #if defined(NEVERC_PLATFORM_WINDOWS)
 #include <windows.h>
 #include <direct.h>
+#include <fcntl.h>
 #include <io.h>
 #include <process.h>
 #include <sys/types.h>
@@ -154,14 +156,14 @@ void neverc_os_close(neverc_os_file_t *f) {
 }
 
 int neverc_os_read(neverc_os_file_t *f, void *buf, size_t count) {
-    if (!f || !f->fp || !buf) return -1;
+    if (!f || !f->fp || (!buf && count != 0) || count > INT_MAX) return -1;
     size_t n = fread(buf, 1, count, f->fp);
     if (n == 0 && ferror(f->fp)) return -1;
     return (int)n;
 }
 
 int neverc_os_write(neverc_os_file_t *f, const void *buf, size_t count) {
-    if (!f || !f->fp || !buf) return -1;
+    if (!f || !f->fp || (!buf && count != 0) || count > INT_MAX) return -1;
     size_t n = fwrite(buf, 1, count, f->fp);
     if (n == 0 && ferror(f->fp)) return -1;
     return (int)n;
@@ -175,7 +177,7 @@ int64_t neverc_os_seek(neverc_os_file_t *f, int64_t offset, int whence) {
 
 int neverc_os_sync(neverc_os_file_t *f) {
     if (!f || !f->fp) return -1;
-    fflush(f->fp);
+    if (fflush(f->fp) != 0) return -1;
 #if defined(NEVERC_PLATFORM_WINDOWS)
     return 0;
 #else
@@ -187,16 +189,24 @@ int neverc_os_sync(neverc_os_file_t *f) {
 
 int neverc_os_read_file(const char *name, unsigned char **out, size_t *out_len) {
     if (!name || !out || !out_len) return -1;
+    *out = NULL;
+    *out_len = 0;
     FILE *fp = fopen(name, "rb");
     if (!fp) return -1;
-    fseek(fp, 0, SEEK_END);
+    if (fseek(fp, 0, SEEK_END) != 0) { fclose(fp); return -1; }
     long sz = ftell(fp);
-    fseek(fp, 0, SEEK_SET);
     if (sz < 0) { fclose(fp); return -1; }
+    if ((uint64_t)sz > (uint64_t)(SIZE_MAX - 1)) { fclose(fp); return -1; }
+    if (fseek(fp, 0, SEEK_SET) != 0) { fclose(fp); return -1; }
     unsigned char *buf = (unsigned char*)malloc((size_t)sz + 1);
     if (!buf) { fclose(fp); return -1; }
     size_t n = fread(buf, 1, (size_t)sz, fp);
-    fclose(fp);
+    if (n != (size_t)sz && ferror(fp)) {
+        free(buf);
+        fclose(fp);
+        return -1;
+    }
+    if (fclose(fp) != 0) { free(buf); return -1; }
     buf[n] = '\0';
     *out = buf;
     *out_len = n;
@@ -446,32 +456,62 @@ int neverc_os_lookup_env(const char *key, const char **value) {
 }
 
 char **neverc_os_environ(int *count) {
+    if (!count) return NULL;
+    *count = 0;
 #if defined(NEVERC_PLATFORM_WINDOWS)
     char *env = GetEnvironmentStringsA();
-    if (!env) { *count = 0; return NULL; }
-    int n = 0;
+    if (!env) return NULL;
+    size_t n = 0;
     char *p = env;
-    while (*p) { n++; p += strlen(p) + 1; }
-    char **result = (char **)malloc((size_t)(n + 1) * sizeof(char *));
+    while (*p) {
+        if (n == (size_t)INT_MAX) { FreeEnvironmentStringsA(env); return NULL; }
+        n++;
+        p += strlen(p) + 1;
+    }
+    if (n > SIZE_MAX / sizeof(char *) - 1) {
+        FreeEnvironmentStringsA(env);
+        return NULL;
+    }
+    char **result = (char **)malloc((n + 1) * sizeof(char *));
+    if (!result) { FreeEnvironmentStringsA(env); return NULL; }
     p = env;
-    for (int i = 0; i < n; i++) {
+    size_t i = 0;
+    for (; i < n; i++) {
         result[i] = strdup(p);
+        if (!result[i]) {
+            while (i > 0) free(result[--i]);
+            free(result);
+            FreeEnvironmentStringsA(env);
+            return NULL;
+        }
         p += strlen(p) + 1;
     }
     result[n] = NULL;
-    *count = n;
+    *count = (int)n;
     FreeEnvironmentStringsA(env);
     return result;
 #else
     extern char **environ;
-    if (!environ) { *count = 0; return NULL; }
-    int n = 0;
-    while (environ[n]) n++;
-    char **result = (char **)malloc((size_t)(n + 1) * sizeof(char *));
-    if (!result) { *count = 0; return NULL; }
-    for (int i = 0; i < n; i++) result[i] = strdup(environ[i]);
+    if (!environ) return NULL;
+    size_t n = 0;
+    while (environ[n]) {
+        if (n == (size_t)INT_MAX) return NULL;
+        n++;
+    }
+    if (n > SIZE_MAX / sizeof(char *) - 1) return NULL;
+    char **result = (char **)malloc((n + 1) * sizeof(char *));
+    if (!result) return NULL;
+    size_t i = 0;
+    for (; i < n; i++) {
+        result[i] = strdup(environ[i]);
+        if (!result[i]) {
+            while (i > 0) free(result[--i]);
+            free(result);
+            return NULL;
+        }
+    }
     result[n] = NULL;
-    *count = n;
+    *count = (int)n;
     return result;
 #endif
 }
@@ -501,37 +541,88 @@ void neverc_os_clearenv(void) {
 #endif
 }
 
+static int os_buffer_append(char **buffer, size_t *length, size_t *capacity,
+                            const char *data, size_t data_length) {
+    if (*length == SIZE_MAX || data_length > SIZE_MAX - *length - 1) return -1;
+    size_t needed = *length + data_length + 1;
+    if (needed > *capacity) {
+        size_t new_capacity = *capacity;
+        while (new_capacity < needed) {
+            if (new_capacity > SIZE_MAX / 2) {
+                new_capacity = needed;
+                break;
+            }
+            new_capacity *= 2;
+        }
+        char *grown = (char *)realloc(*buffer, new_capacity);
+        if (!grown) return -1;
+        *buffer = grown;
+        *capacity = new_capacity;
+    }
+    if (data_length != 0) memcpy(*buffer + *length, data, data_length);
+    *length += data_length;
+    return 0;
+}
+
 char *neverc_os_expand_env(const char *s) {
     if (!s) return NULL;
     size_t cap = 256, len = 0;
     char *out = (char *)malloc(cap);
+    if (!out) return NULL;
     const char *p = s;
     while (*p) {
         if (*p == '$') {
             p++;
-            char varname[256];
-            size_t vlen = 0;
+            const char *name = p;
+            size_t name_length = 0;
             if (*p == '{') {
                 p++;
-                while (*p && *p != '}' && vlen < sizeof(varname) - 1)
-                    varname[vlen++] = *p++;
-                if (*p == '}') p++;
+                name = p;
+                while (*p && *p != '}') p++;
+                if (*p != '}') {
+                    if (os_buffer_append(&out, &len, &cap, "${", 2) != 0 ||
+                        os_buffer_append(&out, &len, &cap, name,
+                                         (size_t)(p - name)) != 0) {
+                        free(out);
+                        return NULL;
+                    }
+                    break;
+                }
+                name_length = (size_t)(p - name);
+                p++;
             } else {
                 while ((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') ||
                        (*p >= '0' && *p <= '9') || *p == '_')
-                    varname[vlen++] = *p++;
+                    p++;
+                name_length = (size_t)(p - name);
+                if (name_length == 0) {
+                    if (os_buffer_append(&out, &len, &cap, "$", 1) != 0) {
+                        free(out);
+                        return NULL;
+                    }
+                    continue;
+                }
             }
-            varname[vlen] = '\0';
+            if (name_length == SIZE_MAX) { free(out); return NULL; }
+            char *varname = (char *)malloc(name_length + 1);
+            if (!varname) { free(out); return NULL; }
+            memcpy(varname, name, name_length);
+            varname[name_length] = '\0';
             const char *val = neverc_os_getenv(varname);
+            free(varname);
             if (val) {
                 size_t vallen = strlen(val);
-                while (len + vallen >= cap) { cap *= 2; out = (char *)realloc(out, cap); }
-                memcpy(out + len, val, vallen);
-                len += vallen;
+                if (os_buffer_append(&out, &len, &cap, val, vallen) != 0) {
+                    free(out);
+                    return NULL;
+                }
             }
         } else {
-            if (len + 1 >= cap) { cap *= 2; out = (char *)realloc(out, cap); }
-            out[len++] = *p++;
+            if (os_buffer_append(&out, &len, &cap, p, 1) != 0) {
+                free(out);
+                return NULL;
+            }
+            p++;
         }
     }
     out[len] = '\0';
@@ -541,6 +632,7 @@ char *neverc_os_expand_env(const char *s) {
 /* ---- Extended file operations ---- */
 
 int neverc_os_chmod(const char *name, uint32_t mode) {
+    if (!name) return -1;
 #if defined(NEVERC_PLATFORM_WINDOWS)
     (void)name; (void)mode;
     return 0;
@@ -550,12 +642,15 @@ int neverc_os_chmod(const char *name, uint32_t mode) {
 }
 
 int neverc_os_truncate(const char *name, int64_t size) {
+    if (!name || size < 0) return -1;
 #if defined(NEVERC_PLATFORM_WINDOWS)
     HANDLE h = CreateFileA(name, GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
     if (h == INVALID_HANDLE_VALUE) return -1;
     LARGE_INTEGER li; li.QuadPart = size;
-    SetFilePointerEx(h, li, NULL, FILE_BEGIN);
-    SetEndOfFile(h);
+    if (!SetFilePointerEx(h, li, NULL, FILE_BEGIN) || !SetEndOfFile(h)) {
+        CloseHandle(h);
+        return -1;
+    }
     CloseHandle(h);
     return 0;
 #else
@@ -564,6 +659,7 @@ int neverc_os_truncate(const char *name, int64_t size) {
 }
 
 int neverc_os_link(const char *oldname, const char *newname) {
+    if (!oldname || !newname) return -1;
 #if defined(NEVERC_PLATFORM_WINDOWS)
     return CreateHardLinkA(newname, oldname, NULL) ? 0 : -1;
 #else
@@ -572,6 +668,7 @@ int neverc_os_link(const char *oldname, const char *newname) {
 }
 
 int neverc_os_symlink(const char *oldname, const char *newname) {
+    if (!oldname || !newname) return -1;
 #if defined(NEVERC_PLATFORM_WINDOWS)
     DWORD flags = SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE;
     DWORD attr = GetFileAttributesA(oldname);
@@ -584,6 +681,7 @@ int neverc_os_symlink(const char *oldname, const char *newname) {
 }
 
 int neverc_os_readlink(const char *name, char *buf, size_t cap) {
+    if (!name || !buf || cap == 0) return -1;
 #if defined(NEVERC_PLATFORM_WINDOWS)
     (void)name; (void)buf; (void)cap;
     return -1;
@@ -597,22 +695,41 @@ int neverc_os_readlink(const char *name, char *buf, size_t cap) {
 
 int neverc_os_read_dir(const char *dirname, neverc_os_dir_entry_t **entries,
                        size_t *count) {
-    *entries = NULL; *count = 0;
+    if (!dirname || !entries || !count) return -1;
+    *entries = NULL;
+    *count = 0;
     size_t cap = 16;
     neverc_os_dir_entry_t *arr = (neverc_os_dir_entry_t *)malloc(cap * sizeof(*arr));
+    if (!arr) return -1;
+    size_t length = 0;
 
 #if defined(NEVERC_PLATFORM_WINDOWS)
     char pattern[4096];
-    snprintf(pattern, sizeof(pattern), "%s\\*", dirname);
+    int pattern_length = snprintf(pattern, sizeof(pattern), "%s\\*", dirname);
+    if (pattern_length < 0 || (size_t)pattern_length >= sizeof(pattern)) {
+        free(arr);
+        return -1;
+    }
     WIN32_FIND_DATAA fd;
     HANDLE h = FindFirstFileA(pattern, &fd);
     if (h == INVALID_HANDLE_VALUE) { free(arr); return -1; }
     do {
         if (strcmp(fd.cFileName, ".") == 0 || strcmp(fd.cFileName, "..") == 0) continue;
-        if (*count >= cap) { cap *= 2; arr = (neverc_os_dir_entry_t *)realloc(arr, cap * sizeof(*arr)); }
-        strncpy(arr[*count].name, fd.cFileName, sizeof(arr[*count].name) - 1);
-        arr[*count].is_dir = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) ? 1 : 0;
-        (*count)++;
+        if (length >= cap) {
+            if (cap > SIZE_MAX / 2 || cap * 2 > SIZE_MAX / sizeof(*arr)) {
+                FindClose(h); free(arr); return -1;
+            }
+            size_t new_cap = cap * 2;
+            neverc_os_dir_entry_t *grown = (neverc_os_dir_entry_t *)realloc(
+                arr, new_cap * sizeof(*arr));
+            if (!grown) { FindClose(h); free(arr); return -1; }
+            arr = grown;
+            cap = new_cap;
+        }
+        memset(&arr[length], 0, sizeof(arr[length]));
+        strncpy(arr[length].name, fd.cFileName, sizeof(arr[length].name) - 1);
+        arr[length].is_dir = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) ? 1 : 0;
+        length++;
     } while (FindNextFileA(h, &fd));
     FindClose(h);
 #else
@@ -621,14 +738,26 @@ int neverc_os_read_dir(const char *dirname, neverc_os_dir_entry_t **entries,
     struct dirent *ent;
     while ((ent = readdir(d)) != NULL) {
         if (strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0) continue;
-        if (*count >= cap) { cap *= 2; arr = (neverc_os_dir_entry_t *)realloc(arr, cap * sizeof(*arr)); }
-        strncpy(arr[*count].name, ent->d_name, sizeof(arr[*count].name) - 1);
-        arr[*count].is_dir = (ent->d_type == DT_DIR) ? 1 : 0;
-        (*count)++;
+        if (length >= cap) {
+            if (cap > SIZE_MAX / 2 || cap * 2 > SIZE_MAX / sizeof(*arr)) {
+                closedir(d); free(arr); return -1;
+            }
+            size_t new_cap = cap * 2;
+            neverc_os_dir_entry_t *grown = (neverc_os_dir_entry_t *)realloc(
+                arr, new_cap * sizeof(*arr));
+            if (!grown) { closedir(d); free(arr); return -1; }
+            arr = grown;
+            cap = new_cap;
+        }
+        memset(&arr[length], 0, sizeof(arr[length]));
+        strncpy(arr[length].name, ent->d_name, sizeof(arr[length].name) - 1);
+        arr[length].is_dir = (ent->d_type == DT_DIR) ? 1 : 0;
+        length++;
     }
     closedir(d);
 #endif
     *entries = arr;
+    *count = length;
     return 0;
 }
 
@@ -745,30 +874,81 @@ int neverc_os_user_config_dir(char *buf, size_t cap) {
 #endif
 }
 
+static void close_file_descriptor(int fd) {
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    _close(fd);
+#else
+    close(fd);
+#endif
+}
+
+static neverc_os_file_t *file_from_descriptor(int fd, const char *mode) {
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    FILE *fp = _fdopen(fd, mode);
+#else
+    FILE *fp = fdopen(fd, mode);
+#endif
+    if (!fp) {
+        close_file_descriptor(fd);
+        return NULL;
+    }
+
+    neverc_os_file_t *file = (neverc_os_file_t *)calloc(1, sizeof(*file));
+    if (!file) {
+        fclose(fp);
+        return NULL;
+    }
+    file->fp = fp;
+    file->fd = fd;
+    if (setvbuf(fp, NULL, _IONBF, 0) != 0) {
+        neverc_os_close(file);
+        return NULL;
+    }
+    return file;
+}
+
 int neverc_os_pipe(neverc_os_file_t **r, neverc_os_file_t **w) {
-    if (!r || !w) return -1;
+    if (!r || !w || r == w) return -1;
+    *r = NULL;
+    *w = NULL;
+
+    int rfd, wfd;
 #if defined(NEVERC_PLATFORM_WINDOWS)
     HANDLE hRead, hWrite;
-    SECURITY_ATTRIBUTES sa = { sizeof(sa), NULL, TRUE };
-    if (!CreatePipe(&hRead, &hWrite, &sa, 0)) return -1;
-    int rfd = _open_osfhandle((intptr_t)hRead, 0);
-    int wfd = _open_osfhandle((intptr_t)hWrite, 0);
-    if (rfd < 0 || wfd < 0) return -1;
-    *r = neverc_os_open("/dev/null", NEVERC_OS_O_RDONLY, 0);
-    *w = neverc_os_open("/dev/null", NEVERC_OS_O_WRONLY, 0);
-    return (rfd >= 0 && wfd >= 0) ? 0 : -1;
+    if (!CreatePipe(&hRead, &hWrite, NULL, 0)) return -1;
+    rfd = _open_osfhandle((intptr_t)hRead, _O_RDONLY | _O_BINARY);
+    if (rfd < 0) {
+        CloseHandle(hRead);
+        CloseHandle(hWrite);
+        return -1;
+    }
+    wfd = _open_osfhandle((intptr_t)hWrite, _O_WRONLY | _O_BINARY);
+    if (wfd < 0) {
+        close_file_descriptor(rfd);
+        CloseHandle(hWrite);
+        return -1;
+    }
 #else
     int fds[2];
     if (pipe(fds) < 0) return -1;
-    *r = (neverc_os_file_t *)calloc(1, sizeof(neverc_os_file_t));
-    *w = (neverc_os_file_t *)calloc(1, sizeof(neverc_os_file_t));
-    if (!*r || !*w) { close(fds[0]); close(fds[1]); return -1; }
-    (*r)->fp = fdopen(fds[0], "r");
-    (*r)->fd = fds[0];
-    (*w)->fp = fdopen(fds[1], "w");
-    (*w)->fd = fds[1];
-    return 0;
+    rfd = fds[0];
+    wfd = fds[1];
 #endif
+
+    neverc_os_file_t *reader = file_from_descriptor(rfd, "rb");
+    if (!reader) {
+        close_file_descriptor(wfd);
+        return -1;
+    }
+    neverc_os_file_t *writer = file_from_descriptor(wfd, "wb");
+    if (!writer) {
+        neverc_os_close(reader);
+        return -1;
+    }
+
+    *r = reader;
+    *w = writer;
+    return 0;
 }
 
 int neverc_os_chown(const char *name, int uid, int gid) {

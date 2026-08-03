@@ -115,6 +115,16 @@ static void test_invalid_data(void) {
     ASSERT_EQ(neverc_gif_decode(NULL, 0, &img), -1);
     ASSERT_EQ(neverc_gif_decode((const uint8_t *)"notgif", 6, &img), -1);
     ASSERT_EQ(neverc_gif_encode(NULL, NULL, NULL), -1);
+    neverc_gif_frame_t frame;
+    memset(&frame, 0, sizeof(frame));
+    uint8_t pixel = 0;
+    frame.indices = &pixel;
+    frame.width = 65536;
+    frame.height = 1;
+    frame.palette_size = 2;
+    uint8_t *output = NULL;
+    size_t output_length = 0;
+    ASSERT_EQ(neverc_gif_encode(&frame, &output, &output_length), -1);
 }
 
 static void test_single_color(void) {
@@ -231,9 +241,9 @@ static void test_interlaced_decode(void) {
     for (size_t i = 0; i < sizeof(hdr) - 1; i++) gw_put(&gif, &cap, &pos, hdr[i]);
     gw_put(&gif, &cap, &pos, (uint8_t)fw); gw_put(&gif, &cap, &pos, 0);
     gw_put(&gif, &cap, &pos, (uint8_t)fh); gw_put(&gif, &cap, &pos, 0);
-    gw_put(&gif, &cap, &pos, 0x91); /* GCT, 2-color */
+    gw_put(&gif, &cap, &pos, 0x90); /* GCT, 2-color */
     gw_put(&gif, &cap, &pos, 0); gw_put(&gif, &cap, &pos, 0);
-    for (int i = 0; i < 8; i++) { gw_put(&gif, &cap, &pos, 0); gw_put(&gif, &cap, &pos, 0); gw_put(&gif, &cap, &pos, 0); }
+    for (int i = 0; i < 2; i++) { gw_put(&gif, &cap, &pos, 0); gw_put(&gif, &cap, &pos, 0); gw_put(&gif, &cap, &pos, 0); }
     gw_put(&gif, &cap, &pos, 0x2C);
     gw_put(&gif, &cap, &pos, 0); gw_put(&gif, &cap, &pos, 0);
     gw_put(&gif, &cap, &pos, 0); gw_put(&gif, &cap, &pos, 0);
