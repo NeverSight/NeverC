@@ -59,6 +59,7 @@ extern int neverc_h3_write_goaway_frame(uint8_t *buffer, size_t capacity,
 #define H3_DATA_CHUNK         (64U * 1024U)
 #define H3_MAX_CONNECTIONS    4096U
 #define H3_GRACEFUL_SHUTDOWN_MS 5000U
+#define H3_POST_DRAIN_GRACE_MS 100U
 #define H3_QPACK_DECOMPRESSION_FAILED 0x0200U
 
 typedef struct h3_conn h3_conn_t;
@@ -1049,9 +1050,15 @@ static int h3_dispatch_request_stream(h3_conn_t *connection,
 
 static void *h3_connection_worker(void *argument) {
     h3_conn_t *connection = (h3_conn_t *)argument;
-    while (neverc_quic_conn_is_alive(connection->quic) &&
-           atomic_load_explicit(&connection->server->running,
-                                memory_order_acquire)) {
+    while (neverc_quic_conn_is_alive(connection->quic)) {
+        int serving = atomic_load_explicit(&connection->server->running,
+                                           memory_order_acquire);
+        uint32_t active = atomic_load_explicit(
+            &connection->active_requests, memory_order_acquire);
+        uint32_t tasks = atomic_load_explicit(
+            &connection->task_count, memory_order_acquire);
+        if (!serving && active == 0 && tasks == 0)
+            break;
         int worked = 0;
         if (h3_poll_pending_uni(connection, &worked) != 0 ||
             h3_poll_control_stream(connection, &worked) != 0 ||
@@ -1165,12 +1172,9 @@ static void h3_server_close_connections(neverc_http3_server_t *server) {
         int drained = 1;
         for (size_t i = 0; i < server->connection_count; i++) {
             h3_conn_t *connection = server->connections[i];
-            if (atomic_load_explicit(&connection->active_requests,
-                                     memory_order_acquire) != 0 ||
-                atomic_load_explicit(&connection->task_count,
-                                     memory_order_acquire) != 0 ||
-                !neverc_quic_conn_send_drained(connection->quic)) {
+            if (h3_connection_needs_worker(connection)) {
                 drained = 0;
+                (void)neverc_quic_conn_flush(connection->quic);
                 break;
             }
         }

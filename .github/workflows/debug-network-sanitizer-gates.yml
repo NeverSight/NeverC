@@ -1,0 +1,93 @@
+# On-demand repro for linux-x64 "Run network sanitizer gates".
+# Does NOT rebuild neverc — only compiles/runs the std test harness with
+# clang-22 + ASan/UBSan exactly like run-network-core-sanitizers.sh.
+#
+# workflow_dispatch only. Commit with "[skip ci]" so pushing this file does
+# not kick the heavy matrix; trigger manually:
+#   gh workflow run debug-network-sanitizer-gates.yml --ref dev
+#   gh workflow run debug-network-sanitizer-gates.yml --ref dev -f test=http3_e2e
+name: debug-network-sanitizer-gates
+
+on:
+  workflow_dispatch:
+    inputs:
+      test:
+        description: 'Test name (blank = full sanitizer script; http3_e2e = fast gate)'
+        required: false
+        default: 'http3_e2e'
+      iterations:
+        description: 'Repeat count for single-test mode'
+        required: false
+        default: '1'
+
+permissions:
+  contents: read
+
+jobs:
+  repro:
+    name: Repro network sanitizer gates (no neverc rebuild)
+    runs-on: ubuntu-22.04
+    env:
+      LLVM_APT_VER: '22'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          path: neverc
+
+      - name: Install Clang (apt.llvm.org)
+        run: |
+          wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
+          chmod +x /tmp/llvm.sh
+          sudo /tmp/llvm.sh "$LLVM_APT_VER"
+          echo "CC=clang-${LLVM_APT_VER}" >> "$GITHUB_ENV"
+          echo "CXX=clang++-${LLVM_APT_VER}" >> "$GITHUB_ENV"
+          clang-${LLVM_APT_VER} --version
+
+      - name: Run sanitizer gates
+        run: |
+          set -euxo pipefail
+          TEST="${{ github.event.inputs.test }}"
+          N="${{ github.event.inputs.iterations }}"
+          if [ -z "$TEST" ]; then
+            CC="$CC" neverc/utils/ci/run-network-core-sanitizers.sh "$PWD/neverc"
+            exit 0
+          fi
+
+          repo_root="$PWD/neverc"
+          std_root="$repo_root/std"
+          test_root="$repo_root/tests/neverc/std"
+          work_dir=$(mktemp -d)
+          trap 'rm -rf "$work_dir"' EXIT
+
+          flags=(
+            -std=gnu11 -O1 -g -fno-omit-frame-pointer
+            -Wall -Wextra -Werror
+            -Wno-unused-parameter -Wno-unused-function
+            -fsanitize=address,undefined
+            "-I$std_root/include"
+            "-I$std_root/src/net"
+            "-I$std_root/src/net/quic"
+          )
+          full_std_sources=()
+          while IFS= read -r source; do
+            full_std_sources+=("$source")
+          done < <(find "$repo_root/std/src" -name '*.c' | sort)
+          libs=(-pthread -lm -lresolv -ldl)
+
+          "$CC" "${flags[@]}" \
+            "$test_root/test_${TEST}.c" "${full_std_sources[@]}" \
+            "${libs[@]}" -o "$work_dir/${TEST}-asan-ubsan"
+
+          fails=0
+          for i in $(seq 1 "$N"); do
+            if ! (cd "$work_dir" && \
+              ASAN_OPTIONS=detect_leaks=1 \
+              UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
+              "./${TEST}-asan-ubsan"); then
+              echo "iteration #$i FAILED"
+              fails=$((fails + 1))
+            fi
+          done
+          echo "completed $N iterations: failures=$fails"
+          [ "$fails" -eq 0 ]
