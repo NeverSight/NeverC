@@ -1048,16 +1048,20 @@ static int h3_dispatch_request_stream(h3_conn_t *connection,
     return 0;
 }
 
+static int h3_connection_needs_worker(h3_conn_t *connection) {
+    return atomic_load_explicit(&connection->active_requests,
+                                memory_order_acquire) != 0 ||
+           atomic_load_explicit(&connection->task_count,
+                                memory_order_acquire) != 0 ||
+           !neverc_quic_conn_send_drained(connection->quic);
+}
+
 static void *h3_connection_worker(void *argument) {
     h3_conn_t *connection = (h3_conn_t *)argument;
     while (neverc_quic_conn_is_alive(connection->quic)) {
-        int serving = atomic_load_explicit(&connection->server->running,
-                                           memory_order_acquire);
-        uint32_t active = atomic_load_explicit(
-            &connection->active_requests, memory_order_acquire);
-        uint32_t tasks = atomic_load_explicit(
-            &connection->task_count, memory_order_acquire);
-        if (!serving && active == 0 && tasks == 0)
+        if (!atomic_load_explicit(&connection->server->running,
+                                  memory_order_acquire) &&
+            !h3_connection_needs_worker(connection))
             break;
         int worked = 0;
         if (h3_poll_pending_uni(connection, &worked) != 0 ||
@@ -1181,6 +1185,7 @@ static void h3_server_close_connections(neverc_http3_server_t *server) {
         if (drained) break;
         h3_sleep_ms(2);
     }
+    h3_sleep_ms(H3_POST_DRAIN_GRACE_MS);
 
     for (size_t i = 0; i < server->connection_count; i++)
         h3_protocol_error(server->connections[i], NC_H3_NO_ERROR,
