@@ -182,7 +182,8 @@ static int http_wait_writable(nc_sock_t fd, int timeout_ms) {
 
 int nc_http_sock_write_all_timeout(nc_sock_t fd, const void *data, size_t len,
                                    int timeout_ms) {
-    if ((!data && len > 0) || timeout_ms < 0) return -1;
+    if (fd == NC_INVALID_SOCK || (!data && len > 0) || timeout_ms < 0)
+        return -1;
     const char *p = (const char *)data;
     size_t sent = 0;
     uint64_t deadline = 0;
@@ -407,6 +408,29 @@ void neverc_http_set_status(neverc_http_response_writer_t *w, int code) {
     if (w && code >= 100 && code <= 999) w->status = code;
 }
 
+int nc_http_writer_add_header(neverc_http_response_writer_t *w,
+                              const char *name, const char *value) {
+    if (!w || !name || !value || !http_valid_token(name, strlen(name)) ||
+        !http_valid_field_value(value, strlen(value)) ||
+        strcasecmp(name, "Connection") == 0 ||
+        strcasecmp(name, "Content-Length") == 0 ||
+        strcasecmp(name, "Transfer-Encoding") == 0 ||
+        w->nheaders >= HTTP_MAX_HEADERS)
+        return -1;
+
+    char *name_copy = strdup(name);
+    char *value_copy = strdup(value);
+    if (!name_copy || !value_copy) {
+        free(name_copy);
+        free(value_copy);
+        return -1;
+    }
+    w->header_names[w->nheaders] = name_copy;
+    w->header_values[w->nheaders] = value_copy;
+    w->nheaders++;
+    return 0;
+}
+
 void neverc_http_set_header(neverc_http_response_writer_t *w,
                              const char *name, const char *value) {
     if (!w || !name || !value || !http_valid_token(name, strlen(name)) ||
@@ -428,17 +452,7 @@ void neverc_http_set_header(neverc_http_response_writer_t *w,
             return;
         }
     }
-    if (w->nheaders >= HTTP_MAX_HEADERS) return;
-    char *name_copy = strdup(name);
-    char *value_copy = strdup(value);
-    if (!name_copy || !value_copy) {
-        free(name_copy);
-        free(value_copy);
-        return;
-    }
-    w->header_names[w->nheaders] = name_copy;
-    w->header_values[w->nheaders] = value_copy;
-    w->nheaders++;
+    (void)nc_http_writer_add_header(w, name, value);
 }
 
 void neverc_http_set_trailer(neverc_http_response_writer_t *w,

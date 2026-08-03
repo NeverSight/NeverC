@@ -188,7 +188,6 @@ int neverc_netip_parse_addr(const char *s, neverc_netip_addr_t *out) {
             if (ngroups > 6) return -1;
             groups[ngroups++] = (uint16_t)((v4[0] << 8) | v4[1]);
             groups[ngroups++] = (uint16_t)((v4[2] << 8) | v4[3]);
-            pos = end;
             break;
         }
 

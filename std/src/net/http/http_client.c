@@ -955,7 +955,6 @@ static neverc_http_response_t *do_request(neverc_http_client_t *client,
             int extra = client_connection_read(conn, context, chunk, 1);
             if (extra == 0 && hdr_end_offset != SIZE_MAX &&
                 !framing.is_chunked && !framing.has_content_length) {
-                response_complete = 1;
                 break;
             }
             client_connection_close(conn);
@@ -972,7 +971,6 @@ static neverc_http_response_t *do_request(neverc_http_client_t *client,
                 (!framing.has_content_length ||
                  resp_buf.len - hdr_end_offset - 4 ==
                      framing.content_length)) {
-                response_complete = 1;
                 break;
             }
             client_connection_close(conn);
@@ -1113,9 +1111,7 @@ analyze_response:
             (framing.status_code >= 100 && framing.status_code < 200) ||
             framing.status_code == 204 || framing.status_code == 304;
 
-        if (status_has_no_body) {
-            raw_blen = 0;
-        } else if (framing.is_chunked) {
+        if (!status_has_no_body && framing.is_chunked) {
             char *decoded = NULL;
             if (decode_chunked_body(body_start, chunk_wire_consumed,
                                     chunk_decoded_length, &decoded) != 0) {
@@ -1136,7 +1132,7 @@ analyze_response:
                     }
                 }
             }
-        } else {
+        } else if (!status_has_no_body) {
             if (framing.has_content_length)
                 raw_blen = framing.content_length;
             if (raw_blen > 0) {
@@ -1850,27 +1846,37 @@ void neverc_http_set_cookie(neverc_http_response_writer_t *w,
                               const neverc_http_cookie_t *c) {
     if (!w || !c || !c->name || !c->value) return;
 
-    char buf[2048];
-    int n = snprintf(buf, sizeof(buf), "%s=%s", c->name, c->value);
+    nc_buf_t value;
+    nc_buf_init(&value);
+    int failed = nc_buf_append(&value, c->name, strlen(c->name)) != 0 ||
+                 nc_buf_append(&value, "=", 1) != 0 ||
+                 nc_buf_append(&value, c->value, strlen(c->value)) != 0;
+    if (!failed && c->path && c->path[0])
+        failed = nc_buf_append(&value, "; Path=", 7) != 0 ||
+                 nc_buf_append(&value, c->path, strlen(c->path)) != 0;
+    if (!failed && c->domain && c->domain[0])
+        failed = nc_buf_append(&value, "; Domain=", 9) != 0 ||
+                 nc_buf_append(&value, c->domain, strlen(c->domain)) != 0;
+    if (!failed && c->max_age != 0) {
+        char max_age[32];
+        int length = snprintf(max_age, sizeof(max_age), "; Max-Age=%d",
+                              c->max_age);
+        failed = length < 0 || (size_t)length >= sizeof(max_age) ||
+                 nc_buf_append(&value, max_age, (size_t)length) != 0;
+    }
+    if (!failed && c->secure)
+        failed = nc_buf_append(&value, "; Secure", 8) != 0;
+    if (!failed && c->http_only)
+        failed = nc_buf_append(&value, "; HttpOnly", 10) != 0;
+    if (!failed && c->same_site == 1)
+        failed = nc_buf_append(&value, "; SameSite=Lax", 14) != 0;
+    else if (!failed && c->same_site == 2)
+        failed = nc_buf_append(&value, "; SameSite=Strict", 17) != 0;
+    else if (!failed && c->same_site == 3)
+        failed = nc_buf_append(&value, "; SameSite=None", 15) != 0;
 
-    if (c->path && c->path[0])
-        n += snprintf(buf + n, sizeof(buf) - (size_t)n, "; Path=%s", c->path);
-    if (c->domain && c->domain[0])
-        n += snprintf(buf + n, sizeof(buf) - (size_t)n, "; Domain=%s", c->domain);
-    if (c->max_age != 0)
-        n += snprintf(buf + n, sizeof(buf) - (size_t)n, "; Max-Age=%d", c->max_age);
-    if (c->secure)
-        n += snprintf(buf + n, sizeof(buf) - (size_t)n, "; Secure");
-    if (c->http_only)
-        n += snprintf(buf + n, sizeof(buf) - (size_t)n, "; HttpOnly");
-    if (c->same_site == 1)
-        n += snprintf(buf + n, sizeof(buf) - (size_t)n, "; SameSite=Lax");
-    else if (c->same_site == 2)
-        n += snprintf(buf + n, sizeof(buf) - (size_t)n, "; SameSite=Strict");
-    else if (c->same_site == 3)
-        n += snprintf(buf + n, sizeof(buf) - (size_t)n, "; SameSite=None");
-
-    neverc_http_set_header(w, "Set-Cookie", buf);
+    if (!failed) (void)nc_http_writer_add_header(w, "Set-Cookie", value.data);
+    nc_buf_free(&value);
 }
 
 const char *neverc_http_get_cookie(const neverc_http_request_t *req,
@@ -2023,7 +2029,7 @@ static void parse_part_headers(const char *hdr, size_t hdrlen,
             if (q[0] == '\r' && q[1] == '\n') { line_end = q; break; }
         }
         if (!line_end) break;
-        if (line_end == p) { p = line_end + 2; break; }
+        if (line_end == p) break;
 
         size_t llen = (size_t)(line_end - p);
         if (llen > 20 && strncasecmp(p, "Content-Disposition:", 20) == 0) {
@@ -2467,11 +2473,14 @@ void neverc_http_serve_file(neverc_http_response_writer_t *w,
         return;
     }
 
-    fseek(f, 0, SEEK_END);
+    if (fseek(f, 0, SEEK_END) != 0) {
+        fclose(f);
+        neverc_http_set_status(w, 500);
+        neverc_http_write_string(w, "internal error\n");
+        return;
+    }
     long fsize = ftell(f);
-    fseek(f, 0, SEEK_SET);
-
-    if (fsize < 0) {
+    if (fsize < 0 || fseek(f, 0, SEEK_SET) != 0) {
         fclose(f);
         neverc_http_set_status(w, 500);
         neverc_http_write_string(w, "internal error\n");
@@ -2480,8 +2489,16 @@ void neverc_http_serve_file(neverc_http_response_writer_t *w,
 
     /* Detect content type from first 512 bytes */
     unsigned char sniff_buf[512];
-    size_t sniff_n = fread(sniff_buf, 1, sizeof(sniff_buf), f);
-    fseek(f, 0, SEEK_SET);
+    size_t sniff_size = (size_t)fsize < sizeof(sniff_buf)
+        ? (size_t)fsize : sizeof(sniff_buf);
+    size_t sniff_n = fread(sniff_buf, 1, sniff_size, f);
+    if (ferror(f)) {
+        fclose(f);
+        neverc_http_set_status(w, 500);
+        neverc_http_write_string(w, "internal error\n");
+        return;
+    }
+    if (sniff_n < sniff_size) fsize = (long)sniff_n;
 
     const char *ct = neverc_http_detect_content_type(sniff_buf, sniff_n);
 
@@ -2514,7 +2531,8 @@ void neverc_http_serve_file(neverc_http_response_writer_t *w,
 
     /* Read and write the file */
     char buf[8192];
-    size_t total = 0;
+    size_t total = sniff_n;
+    if (sniff_n != 0) neverc_http_write(w, sniff_buf, sniff_n);
     while (total < (size_t)fsize) {
         size_t to_read = sizeof(buf);
         if (total + to_read > (size_t)fsize)
@@ -2523,6 +2541,7 @@ void neverc_http_serve_file(neverc_http_response_writer_t *w,
         if (n == 0) break;
         neverc_http_write(w, buf, n);
         total += n;
+        if (n < to_read) break;
     }
 
     fclose(f);

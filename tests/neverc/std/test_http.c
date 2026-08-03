@@ -1683,6 +1683,8 @@ static void test_connection_pool(void) {
 
 /* ===== Test: Cookie API ===== */
 
+static char long_cookie_value[4097];
+
 static void cookie_handler(neverc_http_request_t *req,
                               neverc_http_response_writer_t *w) {
     neverc_http_cookie_t c = {0};
@@ -1693,6 +1695,12 @@ static void cookie_handler(neverc_http_request_t *req,
     c.http_only = 1;
     c.same_site = 1; /* Lax */
     neverc_http_set_cookie(w, &c);
+
+    neverc_http_cookie_t large = {0};
+    large.name = "large";
+    large.value = long_cookie_value;
+    large.path = "/long-cookie-tail";
+    neverc_http_set_cookie(w, &large);
 
     /* Check incoming cookie */
     char buf[128];
@@ -1705,6 +1713,8 @@ static void cookie_handler(neverc_http_request_t *req,
 
 static void test_cookies(void) {
     printf("[cookies]\n");
+    memset(long_cookie_value, 'x', sizeof(long_cookie_value) - 1U);
+    long_cookie_value[sizeof(long_cookie_value) - 1U] = '\0';
 
     /* Test cookie parsing from request header */
     neverc_http_request_t req;
@@ -1764,7 +1774,7 @@ static void test_cookies(void) {
             "Connection: close\r\n\r\n";
         neverc_tcp_write(conn, req_str, strlen(req_str));
 
-        char resp[4096];
+        char resp[16384];
         size_t total = 0;
         int n;
         while ((n = neverc_tcp_read(conn, resp + total,
@@ -1779,6 +1789,8 @@ static void test_cookies(void) {
                      strstr(resp, "HttpOnly") != NULL, 1);
         check_int("has SameSite=Lax",
                      strstr(resp, "SameSite=Lax") != NULL, 1);
+        check_int("long Set-Cookie remains complete",
+                     strstr(resp, "; Path=/long-cookie-tail") != NULL, 1);
         check_int("body has cookie value",
                      strstr(resp, "cookie=hello_world") != NULL, 1);
     }
@@ -2133,6 +2145,25 @@ static void test_serve_file(void) {
 
         check_int("serve_file 404 status", status, 404);
 
+        free(data);
+        neverc_http_memory_writer_free(w);
+    }
+
+    /* A directory can be opened as a FILE on some POSIX systems but cannot be
+     * read as a regular file. It must not be reported as an empty 200 response. */
+    w = neverc_http_memory_writer_new();
+    if (w) {
+        neverc_http_request_t req;
+        memset(&req, 0, sizeof(req));
+        req.method = "GET";
+        req.path = "/directory";
+
+        neverc_http_serve_file(w, &req, "/tmp");
+
+        char *data = NULL;
+        size_t data_len = 0;
+        int status = neverc_http_memory_writer_result(w, &data, &data_len);
+        check_int("serve_file unreadable input status", status, 500);
         free(data);
         neverc_http_memory_writer_free(w);
     }

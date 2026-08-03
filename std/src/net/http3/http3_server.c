@@ -329,7 +329,10 @@ static int h3_setup_local_streams(h3_conn_t *connection) {
 
 static int h3_append_bytes(uint8_t **buffer, size_t *length, size_t maximum,
                            const uint8_t *data, size_t count) {
-    if (count > maximum - *length) return -1;
+    if (!buffer || !length || (!data && count != 0) || *length > maximum ||
+        *length == SIZE_MAX ||
+        count > maximum - *length || count > SIZE_MAX - *length - 1U)
+        return -1;
     uint8_t *grown = (uint8_t *)realloc(*buffer, *length + count + 1U);
     if (!grown) return -1;
     *buffer = grown;
@@ -1483,18 +1486,27 @@ static int h3_client_receive_settings(h3_conn_t *connection) {
 
 static int h3_append_header_line(char **text, size_t *length,
                                  const char *name, const char *value) {
+    if (!text || !length || !name || !value ||
+        *length > H3_MAX_HEADER_SECTION) return -1;
     size_t name_length = strlen(name);
     size_t value_length = strlen(value);
     if (name_length > H3_MAX_HEADER_SECTION - *length ||
+        H3_MAX_HEADER_SECTION - *length - name_length < 4U ||
         value_length > H3_MAX_HEADER_SECTION - *length - name_length - 4U)
         return -1;
     size_t needed = *length + name_length + value_length + 4U;
     char *grown = (char *)realloc(*text, needed + 1U);
     if (!grown) return -1;
     *text = grown;
-    int written = snprintf(grown + *length, needed - *length + 1U,
-                           "%s: %s\r\n", name, value);
-    if (written < 0 || (size_t)written != needed - *length) return -1;
+    size_t position = *length;
+    memcpy(grown + position, name, name_length);
+    position += name_length;
+    memcpy(grown + position, ": ", 2U);
+    position += 2U;
+    memcpy(grown + position, value, value_length);
+    position += value_length;
+    memcpy(grown + position, "\r\n", 2U);
+    grown[needed] = '\0';
     *length = needed;
     return 0;
 }

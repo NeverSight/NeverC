@@ -30,6 +30,7 @@
   #define NC_SOCK_ERR      SOCKET_ERROR
   #define nc_sock_close(s) closesocket(s)
   #define nc_sock_errno    WSAGetLastError()
+  #define nc_sock_set_errno(e) WSASetLastError(e)
 
   typedef HANDLE nc_thread_t;
   typedef CRITICAL_SECTION nc_mutex_t;
@@ -79,6 +80,7 @@
   #define NC_SOCK_ERR      (-1)
   #define nc_sock_close(s) close(s)
   #define nc_sock_errno    errno
+  #define nc_sock_set_errno(e) (errno = (e))
 
   typedef pthread_t nc_thread_t;
   typedef pthread_mutex_t nc_mutex_t;

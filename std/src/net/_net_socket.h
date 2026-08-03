@@ -210,7 +210,9 @@ static inline nc_sock_t nc_accept_nonblock(nc_sock_t listen_fd,
         setup_failed = setup_failed || nc_set_cloexec(fd) != 0;
 #endif
         if (setup_failed) {
+            int setup_error = nc_sock_errno;
             nc_sock_close(fd);
+            nc_sock_set_errno(setup_error);
             return NC_INVALID_SOCK;
         }
     }

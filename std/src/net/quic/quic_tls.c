@@ -143,16 +143,27 @@ static int qt_crypto_reserve(quic_crypto_buf_t *buffer, size_t needed,
         }
         next *= 2U;
     }
-    uint8_t *grown = (uint8_t *)realloc(buffer->data, next);
-    if (!grown) return -1;
-    if (next > buffer->cap) memset(grown + buffer->cap, 0, next - buffer->cap);
-    buffer->data = grown;
     if (receive) {
-        uint8_t *presence = (uint8_t *)realloc(buffer->present, next);
-        if (!presence) return -1;
-        if (next > buffer->cap)
-            memset(presence + buffer->cap, 0, next - buffer->cap);
+        uint8_t *grown = (uint8_t *)malloc(next);
+        uint8_t *presence = (uint8_t *)malloc(next);
+        if (!grown || !presence) { free(grown); free(presence); return -1; }
+        if (buffer->cap) {
+            memcpy(grown, buffer->data, buffer->cap);
+            memcpy(presence, buffer->present, buffer->cap);
+        }
+        memset(grown + buffer->cap, 0, next - buffer->cap);
+        memset(presence + buffer->cap, 0, next - buffer->cap);
+        if (buffer->data)
+            neverc_platform_secure_zero(buffer->data, buffer->cap);
+        free(buffer->data);
+        free(buffer->present);
+        buffer->data = grown;
         buffer->present = presence;
+    } else {
+        uint8_t *grown = (uint8_t *)realloc(buffer->data, next);
+        if (!grown) return -1;
+        memset(grown + buffer->cap, 0, next - buffer->cap);
+        buffer->data = grown;
     }
     buffer->cap = next;
     return 0;
@@ -204,7 +215,8 @@ static void qt_crypto_free(quic_crypto_buf_t *buffer) {
 
 static int qt_read_bytes(qt_cursor_t *cursor, size_t length,
                          const uint8_t **output) {
-    if (!cursor || !output || length > cursor->len - cursor->pos) return -1;
+    if (!cursor || !output || cursor->pos > cursor->len ||
+        length > cursor->len - cursor->pos) return -1;
     *output = cursor->data + cursor->pos;
     cursor->pos += length;
     return 0;

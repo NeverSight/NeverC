@@ -1865,7 +1865,6 @@ static int h2_serve_io(neverc_h2_server_t *srv, h2_io_t *io) {
                     free(payload);
                     goto cleanup;
                 }
-                end_stream = conn.pending_end_stream;
                 int header_result = h2_finish_header_block(&conn, stream);
                 if (h2_handle_header_result(&conn, stream,
                                             header_result) != 0) {

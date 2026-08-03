@@ -77,6 +77,8 @@ void nc_http_writer_set_protocol(neverc_http_response_writer_t *writer,
                                  void *context,
                                  nc_http_protocol_flush_func_t flush);
 int nc_http_writer_finish(neverc_http_response_writer_t *writer);
+int nc_http_writer_add_header(neverc_http_response_writer_t *writer,
+                              const char *name, const char *value);
 int nc_http_mux_is_streaming(neverc_http_mux_t *mux, const char *method,
                              const char *path);
 
