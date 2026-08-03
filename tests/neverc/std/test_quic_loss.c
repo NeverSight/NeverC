@@ -332,6 +332,8 @@ static void test_loss_time_ignores_packets_newer_than_largest_acked(void) {
 
     ASSERT_EQ(ld.spaces[QUIC_PNS_APPLICATION].loss_time, 0);
     ASSERT_TRUE(!ld.spaces[QUIC_PNS_APPLICATION].sent_packets->next->lost);
+    ASSERT_EQ(neverc_quic_loss_get_timeout(&ld, 1),
+              1090 + neverc_quic_pto(&ld.rtt, 1));
 
     neverc_quic_loss_destroy(&ld);
 }

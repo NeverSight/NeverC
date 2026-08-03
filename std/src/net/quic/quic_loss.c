@@ -341,7 +341,7 @@ void neverc_quic_loss_on_ack(quic_loss_detector_t *ld, int space,
 /* Get loss detection timeout (0 = no timer needed) */
 uint64_t neverc_quic_loss_get_timeout(const quic_loss_detector_t *ld,
                                       int handshake_confirmed) {
-    /* Check loss times first */
+    /* Time-threshold loss deadlines take precedence over PTO candidates. */
     uint64_t earliest_loss_time = 0;
     for (int i = 0; i < QUIC_PN_SPACE_COUNT; i++) {
         if (ld->spaces[i].loss_time > 0) {
