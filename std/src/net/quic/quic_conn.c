@@ -423,6 +423,8 @@ int neverc_quic_stream_write_data(quic_stream_t *stream,
     return (int)length;
 }
 
+static int quic_conn_allows_stream_read(struct neverc_quic_conn *conn);
+
 static int quic_stream_read_impl(quic_stream_t *stream, void *buffer,
                                  size_t capacity, int blocking) {
     if (!stream || !buffer || capacity == 0 || capacity > INT_MAX) return -1;
@@ -431,7 +433,7 @@ static int quic_stream_read_impl(quic_stream_t *stream, void *buffer,
     while (stream->recv_len == 0 && !stream->recv_fin &&
            stream->state != QUIC_STREAM_CLOSED &&
            stream->state != QUIC_STREAM_RESET &&
-           neverc_quic_conn_is_alive_check(stream->conn)) {
+           quic_conn_allows_stream_read(stream->conn)) {
         if (!blocking) {
             nc_mutex_unlock(&stream->lock);
             return -2;
@@ -895,6 +897,13 @@ int neverc_quic_conn_is_alive_check(struct neverc_quic_conn *conn) {
     if (!conn) return 0;
     return conn->state == QUIC_CONN_HANDSHAKING ||
            conn->state == QUIC_CONN_ESTABLISHED;
+}
+
+static int quic_conn_allows_stream_read(struct neverc_quic_conn *conn) {
+    if (!conn) return 0;
+    return conn->state == QUIC_CONN_HANDSHAKING ||
+           conn->state == QUIC_CONN_ESTABLISHED ||
+           conn->state == QUIC_CONN_DRAINING;
 }
 
 const char *neverc_quic_conn_get_alpn(struct neverc_quic_conn *conn) {
