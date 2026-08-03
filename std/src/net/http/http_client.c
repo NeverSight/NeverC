@@ -1144,6 +1144,9 @@ analyze_response:
                     memcpy(r->body, body_start, raw_blen);
                     r->body[raw_blen] = '\0';
                     r->body_len = raw_blen;
+                } else {
+                    r->error = "out of memory";
+                    server_keepalive = 0;
                 }
             }
         }
@@ -1238,7 +1241,7 @@ static int stream_chunk_size(const char *line, size_t length,
     return 0;
 }
 
-/* 1 = complete, 0 = incomplete, -1 = malformed. */
+/* 1 = complete, 0 = incomplete, -1 = malformed, -2 = out of memory. */
 static int stream_parse_trailers(nc_buf_t *wire, size_t trailer_limit,
                                  char **trailers) {
     size_t cursor = 0;
@@ -1254,9 +1257,9 @@ static int stream_parse_trailers(nc_buf_t *wire, size_t trailer_limit,
         if (line_length == 0) {
             if (cursor > trailer_limit) return -1;
             if (cursor > 0) {
-                size_t copy_length = cursor >= 2 ? cursor - 2 : 0;
+                size_t copy_length = cursor;
                 char *copy = (char *)malloc(copy_length + 1);
-                if (!copy) return -1;
+                if (!copy) return -2;
                 if (copy_length > 0)
                     memcpy(copy, wire->data, copy_length);
                 copy[copy_length] = '\0';
@@ -1338,6 +1341,7 @@ static int stream_read_chunked_response(
         } else {
             int trailer_result = stream_parse_trailers(
                 wire, header_limit, &response->trailers);
+            if (trailer_result == -2) return -4;
             if (trailer_result < 0) return -1;
             if (trailer_result > 0) return 0;
         }
