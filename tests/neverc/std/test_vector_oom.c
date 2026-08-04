@@ -40,6 +40,12 @@ typedef struct {
     unsigned char padding[300];
 } large_value_t;
 
+typedef struct {
+    int key;
+    int order;
+    unsigned char padding[300];
+} stable_value_t;
+
 static bool is_even(const void *element) {
     return ((const large_value_t *)element)->value % 2 == 0;
 }
@@ -47,6 +53,12 @@ static bool is_even(const void *element) {
 static int compare_values(const void *left, const void *right) {
     int a = ((const large_value_t *)left)->value;
     int b = ((const large_value_t *)right)->value;
+    return (a > b) - (a < b);
+}
+
+static int compare_stable_values(const void *left, const void *right) {
+    int a = ((const stable_value_t *)left)->key;
+    int b = ((const stable_value_t *)right)->key;
     return (a > b) - (a < b);
 }
 
@@ -135,6 +147,97 @@ int main(void) {
     neverc_vector_swap_elements(&swap_vector, 0, 1);
     CHECK(swap_values[0].value == 2);
     CHECK(swap_values[1].value == 1);
+
+    large_value_t sort_values[4] = {
+        {4, {0}}, {1, {0}}, {3, {0}}, {2, {0}}
+    };
+    neverc_vector_t sort_vector = {
+        sort_values, 4, 4, sizeof(sort_values[0])
+    };
+    neverc_vector_sort(&sort_vector, compare_values);
+    for (size_t i = 0; i < 4; i++)
+        CHECK(sort_values[i].value == (int)i + 1);
+
+    large_value_t nth_values[4] = {
+        {4, {0}}, {3, {0}}, {2, {0}}, {1, {0}}
+    };
+    neverc_vector_t nth_vector = {
+        nth_values, 4, 4, sizeof(nth_values[0])
+    };
+    neverc_vector_nth_element(&nth_vector, 2, compare_values);
+    CHECK(nth_values[2].value == 3);
+    CHECK(nth_values[0].value <= nth_values[2].value);
+    CHECK(nth_values[1].value <= nth_values[2].value);
+    CHECK(nth_values[3].value >= nth_values[2].value);
+
+    large_value_t partial_values[5] = {
+        {5, {0}}, {4, {0}}, {3, {0}}, {2, {0}}, {1, {0}}
+    };
+    neverc_vector_t partial_vector = {
+        partial_values, 5, 5, sizeof(partial_values[0])
+    };
+    neverc_vector_partial_sort(&partial_vector, 3, compare_values);
+    CHECK(partial_values[0].value == 1);
+    CHECK(partial_values[1].value == 2);
+    CHECK(partial_values[2].value == 3);
+
+    stable_value_t stable_values[4] = {
+        {2, 0, {0}}, {1, 1, {0}}, {2, 2, {0}}, {1, 3, {0}}
+    };
+    neverc_vector_t stable_vector = {
+        stable_values, 4, 4, sizeof(stable_values[0])
+    };
+    neverc_vector_stable_sort(&stable_vector, compare_stable_values);
+    CHECK(stable_values[0].key == 1 && stable_values[0].order == 1);
+    CHECK(stable_values[1].key == 1 && stable_values[1].order == 3);
+    CHECK(stable_values[2].key == 2 && stable_values[2].order == 0);
+    CHECK(stable_values[3].key == 2 && stable_values[3].order == 2);
+
+    stable_value_t large_stable_values[40];
+    for (size_t i = 0; i < 40; i++) {
+        large_stable_values[i].key = (int)((i * 17) % 5);
+        large_stable_values[i].order = (int)i;
+    }
+    neverc_vector_t large_stable_vector = {
+        large_stable_values, 40, 40, sizeof(large_stable_values[0])
+    };
+    neverc_vector_stable_sort(&large_stable_vector,
+                              compare_stable_values);
+    for (size_t i = 1; i < 40; i++) {
+        CHECK(large_stable_values[i - 1].key <= large_stable_values[i].key);
+        if (large_stable_values[i - 1].key == large_stable_values[i].key)
+            CHECK(large_stable_values[i - 1].order <
+                  large_stable_values[i].order);
+    }
+
+    for (size_t count = 0; count <= 64; count++) {
+        large_value_t fuzz_values[64];
+        stable_value_t stable_fuzz_values[64];
+        for (size_t i = 0; i < count; i++) {
+            int key = (int)((i * 37 + count * 13) % 23);
+            fuzz_values[i].value = key;
+            stable_fuzz_values[i].key = key % 7;
+            stable_fuzz_values[i].order = (int)i;
+        }
+        neverc_vector_t fuzz_vector = {
+            fuzz_values, count, count, sizeof(fuzz_values[0])
+        };
+        neverc_vector_t stable_fuzz_vector = {
+            stable_fuzz_values, count, count,
+            sizeof(stable_fuzz_values[0])
+        };
+        neverc_vector_sort(&fuzz_vector, compare_values);
+        neverc_vector_stable_sort(&stable_fuzz_vector,
+                                  compare_stable_values);
+        for (size_t i = 1; i < count; i++) {
+            CHECK(fuzz_values[i - 1].value <= fuzz_values[i].value);
+            CHECK(stable_fuzz_values[i - 1].key <=
+                  stable_fuzz_values[i].key);
+            if (stable_fuzz_values[i - 1].key == stable_fuzz_values[i].key)
+                CHECK(stable_fuzz_values[i - 1].order <
+                      stable_fuzz_values[i].order);
+        }
+    }
 
     puts("passed");
     return 0;

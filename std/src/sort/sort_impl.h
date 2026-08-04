@@ -45,6 +45,63 @@ static inline void nci_swap(char *a, char *b, size_t es, char *tmp) {
     memcpy(b, tmp, es);
 }
 
+static inline void nci_swap_chunked(char *a, char *b, size_t es) {
+    if (a == b) return;
+    char tmp[256];
+    size_t offset = 0;
+    while (offset < es) {
+        size_t chunk = es - offset;
+        if (chunk > sizeof(tmp)) chunk = sizeof(tmp);
+        memcpy(tmp, a + offset, chunk);
+        memcpy(a + offset, b + offset, chunk);
+        memcpy(b + offset, tmp, chunk);
+        offset += chunk;
+    }
+}
+
+static void nci_sift_down_noalloc(char *base, size_t n, size_t es,
+                                  nci_cmp_fn cmp, size_t root) {
+    while (root < n / 2) {
+        size_t child = root * 2 + 1;
+        if (child + 1 < n &&
+            cmp(NCI_ELEM(base, child, es),
+                NCI_ELEM(base, child + 1, es)) < 0)
+            child++;
+        if (cmp(NCI_ELEM(base, root, es),
+                NCI_ELEM(base, child, es)) >= 0)
+            return;
+        nci_swap_chunked(NCI_ELEM(base, root, es),
+                         NCI_ELEM(base, child, es), es);
+        root = child;
+    }
+}
+
+static void nci_heapsort_noalloc(void *base_, size_t n, size_t es,
+                                 nci_cmp_fn cmp) {
+    char *base = (char *)base_;
+    for (size_t i = n / 2; i > 0; i--)
+        nci_sift_down_noalloc(base, n, es, cmp, i - 1);
+    for (size_t end = n; end > 1; end--) {
+        nci_swap_chunked(base, NCI_ELEM(base, end - 1, es), es);
+        nci_sift_down_noalloc(base, end - 1, es, cmp, 0);
+    }
+}
+
+static void nci_stable_sort_noalloc(void *base_, size_t n, size_t es,
+                                    nci_cmp_fn cmp) {
+    char *base = (char *)base_;
+    for (size_t i = 1; i < n; i++) {
+        size_t j = i;
+        while (j > 0 &&
+               cmp(NCI_ELEM(base, j, es),
+                   NCI_ELEM(base, j - 1, es)) < 0) {
+            nci_swap_chunked(NCI_ELEM(base, j, es),
+                             NCI_ELEM(base, j - 1, es), es);
+            j--;
+        }
+    }
+}
+
 static void nci_reverse(char *base, size_t n, size_t es, char *tmp) {
     if (n <= 1) return;
     for (size_t i = 0, j = n - 1; i < j; i++, j--)
@@ -391,7 +448,10 @@ static void nci_pdqsort(void *base, size_t n, size_t es, nci_cmp_fn cmp) {
     if (n <= 1 || es == 0) return;
     char stack_tmp[256];
     char *tmp = es <= sizeof(stack_tmp) ? stack_tmp : (char *)malloc(es);
-    if (!tmp) return;
+    if (!tmp) {
+        nci_heapsort_noalloc(base, n, es, cmp);
+        return;
+    }
     nci_pdqsort_loop((char *)base, n, es, cmp, tmp, nci_log2(n) + 1);
     if (tmp != stack_tmp) free(tmp);
 }
@@ -454,7 +514,10 @@ static void nci_nth_element(void *base, size_t n, size_t es,
     if (n <= 1 || es == 0 || nth >= n) return;
     char stack_tmp[256];
     char *tmp = es <= sizeof(stack_tmp) ? stack_tmp : (char *)malloc(es);
-    if (!tmp) return;
+    if (!tmp) {
+        nci_heapsort_noalloc(base, n, es, cmp);
+        return;
+    }
     nci_nth_element_loop((char *)base, n, es, cmp, tmp, nth, nci_log2(n) + 1);
     if (tmp != stack_tmp) free(tmp);
 }
@@ -707,7 +770,10 @@ static void nci_timsort(void *base_, size_t n, size_t es, nci_cmp_fn cmp) {
     if (n <= NCI_TIM_MIN_MERGE) {
         char stack_tmp[256];
         char *tmp = es <= sizeof(stack_tmp) ? stack_tmp : (char *)malloc(es);
-        if (!tmp) return;
+        if (!tmp) {
+            nci_stable_sort_noalloc(base_, n, es, cmp);
+            return;
+        }
         size_t run = nci_tim_count_run(base, 0, n, es, cmp, tmp);
         nci_binary_insertion_sort(base, 0, n, run, es, cmp, tmp);
         if (tmp != stack_tmp) free(tmp);
@@ -720,10 +786,10 @@ static void nci_timsort(void *base_, size_t n, size_t es, nci_cmp_fn cmp) {
      * reserves (the same bound Java/CPython Timsort use).  Halving the peak
      * scratch matters most on memory-constrained targets (Android / iOS) and
      * for large stable sorts.  The +1 keeps room for the 1-element swap buffer.
-     * On failure, fall back to PDQSort (unstable). */
+     * On failure, use an allocation-free stable in-place fallback. */
     char *aux = (char *)malloc((n / 2 + 1) * es);
     if (!aux) {
-        nci_pdqsort(base_, n, es, cmp);
+        nci_stable_sort_noalloc(base_, n, es, cmp);
         return;
     }
     char *tmp = aux; /* first es bytes double as swap buffer */

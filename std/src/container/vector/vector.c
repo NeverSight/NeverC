@@ -12,18 +12,8 @@ static inline void *vec_elem_ptr(const neverc_vector_t *v, size_t index) {
 }
 
 static void vec_swap_chunked(neverc_vector_t *v, size_t i, size_t j) {
-    char tmp[256];
-    char *a = (char *)vec_elem_ptr(v, i);
-    char *b = (char *)vec_elem_ptr(v, j);
-    size_t offset = 0;
-    while (offset < v->elem_size) {
-        size_t chunk = v->elem_size - offset;
-        if (chunk > sizeof(tmp)) chunk = sizeof(tmp);
-        memcpy(tmp, a + offset, chunk);
-        memcpy(a + offset, b + offset, chunk);
-        memcpy(b + offset, tmp, chunk);
-        offset += chunk;
-    }
+    nci_swap_chunked((char *)vec_elem_ptr(v, i),
+                     (char *)vec_elem_ptr(v, j), v->elem_size);
 }
 
 static bool vec_prepare_input(const neverc_vector_t *v, const void *input,
@@ -862,8 +852,10 @@ void neverc_vector_partial_sort(neverc_vector_t *v, size_t k,
     size_t sz = v->elem_size;
     char stack_tmp[256];
     char *buf = sz <= sizeof(stack_tmp) ? stack_tmp : (char *)malloc(sz);
-    if (!buf)
+    if (!buf) {
+        nci_heapsort_noalloc(v->data, v->size, sz, (nci_cmp_fn)cmp);
         return;
+    }
 
     nci_cmp_fn icmp = (nci_cmp_fn)cmp;
 
