@@ -11,6 +11,21 @@ static inline void *vec_elem_ptr(const neverc_vector_t *v, size_t index) {
     return (char *)v->data + index * v->elem_size;
 }
 
+static void vec_swap_chunked(neverc_vector_t *v, size_t i, size_t j) {
+    char tmp[256];
+    char *a = (char *)vec_elem_ptr(v, i);
+    char *b = (char *)vec_elem_ptr(v, j);
+    size_t offset = 0;
+    while (offset < v->elem_size) {
+        size_t chunk = v->elem_size - offset;
+        if (chunk > sizeof(tmp)) chunk = sizeof(tmp);
+        memcpy(tmp, a + offset, chunk);
+        memcpy(a + offset, b + offset, chunk);
+        memcpy(b + offset, tmp, chunk);
+        offset += chunk;
+    }
+}
+
 static bool vec_prepare_input(const neverc_vector_t *v, const void *input,
                               size_t bytes, const void **stable,
                               void **owned_copy) {
@@ -488,23 +503,12 @@ void neverc_vector_sort(neverc_vector_t *v, neverc_vector_cmp_fn cmp) {
 void neverc_vector_reverse(neverc_vector_t *v) {
     if (!v || v->size < 2)
         return;
-    char tmp[256];
-    char *buf = v->elem_size <= sizeof(tmp) ? tmp :
-                (char *)malloc(v->elem_size);
-    if (!buf)
-        return;
     size_t lo = 0, hi = v->size - 1;
     while (lo < hi) {
-        void *a = vec_elem_ptr(v, lo);
-        void *b = vec_elem_ptr(v, hi);
-        memcpy(buf, a, v->elem_size);
-        memcpy(a, b, v->elem_size);
-        memcpy(b, buf, v->elem_size);
+        vec_swap_chunked(v, lo, hi);
         lo++;
         hi--;
     }
-    if (buf != tmp)
-        free(buf);
 }
 
 void neverc_vector_unique(neverc_vector_t *v, neverc_vector_cmp_fn cmp) {
@@ -700,33 +704,15 @@ void neverc_vector_fill(neverc_vector_t *v, const void *value) {
 void neverc_vector_swap_elements(neverc_vector_t *v, size_t i, size_t j) {
     if (!v || i >= v->size || j >= v->size || i == j)
         return;
-    char tmp[256];
-    char *buf = v->elem_size <= sizeof(tmp) ? tmp :
-                (char *)malloc(v->elem_size);
-    if (!buf)
-        return;
-    memcpy(buf, vec_elem_ptr(v, i), v->elem_size);
-    memcpy(vec_elem_ptr(v, i), vec_elem_ptr(v, j), v->elem_size);
-    memcpy(vec_elem_ptr(v, j), buf, v->elem_size);
-    if (buf != tmp)
-        free(buf);
+    vec_swap_chunked(v, i, j);
 }
 
 static void vec_reverse_range(neverc_vector_t *v, size_t lo, size_t hi) {
-    char tmp[256];
-    char *buf = v->elem_size <= sizeof(tmp) ? tmp :
-                (char *)malloc(v->elem_size);
-    if (!buf)
-        return;
     while (lo < hi) {
-        memcpy(buf, vec_elem_ptr(v, lo), v->elem_size);
-        memcpy(vec_elem_ptr(v, lo), vec_elem_ptr(v, hi), v->elem_size);
-        memcpy(vec_elem_ptr(v, hi), buf, v->elem_size);
+        vec_swap_chunked(v, lo, hi);
         lo++;
         hi--;
     }
-    if (buf != tmp)
-        free(buf);
 }
 
 void neverc_vector_rotate(neverc_vector_t *v, size_t mid) {
@@ -741,11 +727,6 @@ size_t neverc_vector_partition(neverc_vector_t *v,
                                 bool (*pred)(const void *elem)) {
     if (!v || !pred || v->size == 0)
         return 0;
-    char tmp[256];
-    char *buf = v->elem_size <= sizeof(tmp) ? tmp :
-                (char *)malloc(v->elem_size);
-    if (!buf)
-        return 0;
     size_t lo = 0, hi = v->size - 1;
     while (lo < hi) {
         while (lo < hi && pred(vec_elem_ptr(v, lo)))
@@ -753,15 +734,11 @@ size_t neverc_vector_partition(neverc_vector_t *v,
         while (lo < hi && !pred(vec_elem_ptr(v, hi)))
             hi--;
         if (lo < hi) {
-            memcpy(buf, vec_elem_ptr(v, lo), v->elem_size);
-            memcpy(vec_elem_ptr(v, lo), vec_elem_ptr(v, hi), v->elem_size);
-            memcpy(vec_elem_ptr(v, hi), buf, v->elem_size);
+            vec_swap_chunked(v, lo, hi);
             lo++;
             hi--;
         }
     }
-    if (buf != tmp)
-        free(buf);
     size_t boundary = pred(vec_elem_ptr(v, lo)) ? lo + 1 : lo;
     return boundary;
 }
@@ -917,32 +894,28 @@ void neverc_vector_nth_element(neverc_vector_t *v, size_t k,
 
 /* ===== Shared in-place rotation helpers (reused by merge / partition) ===== */
 
-/* Reverse the half-open range [lo, hi) using a caller-provided element scratch
- * so a deep recursion never re-allocates per rotation. */
-static void vec_reverse_buf(neverc_vector_t *v, size_t lo, size_t hi,
-                            char *tmp) {
+/* Reverse the half-open range [lo, hi) without allocating an element-sized
+ * scratch buffer. */
+static void vec_reverse_buf(neverc_vector_t *v, size_t lo, size_t hi) {
     if (hi <= lo)
         return;
-    size_t es = v->elem_size;
     size_t i = lo, j = hi - 1;
     while (i < j) {
-        memcpy(tmp, vec_elem_ptr(v, i), es);
-        memcpy(vec_elem_ptr(v, i), vec_elem_ptr(v, j), es);
-        memcpy(vec_elem_ptr(v, j), tmp, es);
+        vec_swap_chunked(v, i, j);
         i++;
         j--;
     }
 }
 
 /* Rotate [lo, hi) left so the block starting at `mid` comes first
- * (reversal algorithm: O(n), no extra storage beyond one element). */
+ * (reversal algorithm: O(n), fixed-size stack scratch only). */
 static void vec_rotate_buf(neverc_vector_t *v, size_t lo, size_t mid,
-                           size_t hi, char *tmp) {
+                           size_t hi) {
     if (mid <= lo || mid >= hi)
         return;
-    vec_reverse_buf(v, lo, mid, tmp);
-    vec_reverse_buf(v, mid, hi, tmp);
-    vec_reverse_buf(v, lo, hi, tmp);
+    vec_reverse_buf(v, lo, mid);
+    vec_reverse_buf(v, mid, hi);
+    vec_reverse_buf(v, lo, hi);
 }
 
 /* ===== inplace_merge ===== */
@@ -971,25 +944,21 @@ static size_t vec_upper_bound_idx(neverc_vector_t *v, size_t lo, size_t hi,
 
 /*
  * Kronrod's symmetric rotation merge of the sorted runs [lo,mid) and [mid,hi):
- * O(n log n), stable, and allocation-free (one element of scratch). Used as the
- * fallback when the O(n) buffer cannot be allocated. Stability mirrors
+ * O(n log n), stable, and allocation-free (fixed-size stack scratch). Used as
+ * the fallback when the O(n) buffer cannot be allocated. Stability mirrors
  * libstdc++ __merge_without_buffer: split the longer run at its midpoint and
  * locate the cut in the other run with lower_bound when the pivot comes from
  * the left run (equal right elements stay after it) and upper_bound when it
  * comes from the right run (equal left elements stay before it).
  */
 static void vec_merge_rotate(neverc_vector_t *v, size_t lo, size_t mid,
-                             size_t hi, nci_cmp_fn cmp, char *tmp) {
+                             size_t hi, nci_cmp_fn cmp) {
     size_t len1 = mid - lo, len2 = hi - mid;
     if (len1 == 0 || len2 == 0)
         return;
     if (len1 + len2 == 2) {
-        if (cmp(vec_elem_ptr(v, mid), vec_elem_ptr(v, lo)) < 0) {
-            size_t es = v->elem_size;
-            memcpy(tmp, vec_elem_ptr(v, lo), es);
-            memcpy(vec_elem_ptr(v, lo), vec_elem_ptr(v, mid), es);
-            memcpy(vec_elem_ptr(v, mid), tmp, es);
-        }
+        if (cmp(vec_elem_ptr(v, mid), vec_elem_ptr(v, lo)) < 0)
+            vec_swap_chunked(v, lo, mid);
         return;
     }
     size_t mid1, mid2;
@@ -1001,9 +970,9 @@ static void vec_merge_rotate(neverc_vector_t *v, size_t lo, size_t mid,
         mid1 = vec_upper_bound_idx(v, lo, mid, vec_elem_ptr(v, mid2), cmp);
     }
     size_t newmid = mid1 + (mid2 - mid);
-    vec_rotate_buf(v, mid1, mid, mid2, tmp);
-    vec_merge_rotate(v, lo, mid1, newmid, cmp, tmp);
-    vec_merge_rotate(v, newmid, mid2, hi, cmp, tmp);
+    vec_rotate_buf(v, mid1, mid, mid2);
+    vec_merge_rotate(v, lo, mid1, newmid, cmp);
+    vec_merge_rotate(v, newmid, mid2, hi, cmp);
 }
 
 void neverc_vector_inplace_merge(neverc_vector_t *v, size_t mid,
@@ -1024,13 +993,7 @@ void neverc_vector_inplace_merge(neverc_vector_t *v, size_t mid,
         return;
     }
     /* OOM: allocation-free rotation merge (still stable, O(n log n)). */
-    char el_buf[256];
-    char *tmp = es <= sizeof(el_buf) ? el_buf : (char *)malloc(es);
-    if (!tmp)
-        return;
-    vec_merge_rotate(v, 0, mid, n, (nci_cmp_fn)cmp, tmp);
-    if (tmp != el_buf)
-        free(tmp);
+    vec_merge_rotate(v, 0, mid, n, (nci_cmp_fn)cmp);
 }
 
 /* ===== Randomized & Partition Algorithms ===== */
@@ -1057,38 +1020,28 @@ static uint64_t vec_rand_bounded(uint64_t *s, uint64_t bound) {
 void neverc_vector_shuffle(neverc_vector_t *v, uint64_t seed) {
     if (!v || v->size < 2)
         return;
-    size_t es = v->elem_size;
-    char stack_buf[256];
-    char *tmp = es <= sizeof(stack_buf) ? stack_buf : (char *)malloc(es);
-    if (!tmp)
-        return;
     uint64_t s = seed;
     for (size_t i = v->size - 1; i > 0; i--) {
         size_t j = (size_t)vec_rand_bounded(&s, (uint64_t)i + 1);
-        if (j != i) {
-            memcpy(tmp, vec_elem_ptr(v, i), es);
-            memcpy(vec_elem_ptr(v, i), vec_elem_ptr(v, j), es);
-            memcpy(vec_elem_ptr(v, j), tmp, es);
-        }
+        if (j != i)
+            vec_swap_chunked(v, i, j);
     }
-    if (tmp != stack_buf)
-        free(tmp);
 }
 
 /* Allocation-free stable partition, O(n log n): partition each half, then
  * rotate the second half's true-group in front of the first half's
  * false-group. Used when the O(n) buffer cannot be allocated. */
 static size_t vec_stable_part_rotate(neverc_vector_t *v, size_t lo, size_t hi,
-                                     bool (*pred)(const void *), char *tmp) {
+                                     bool (*pred)(const void *)) {
     size_t n = hi - lo;
     if (n == 0)
         return lo;
     if (n == 1)
         return pred(vec_elem_ptr(v, lo)) ? hi : lo;
     size_t mid = lo + n / 2;
-    size_t left = vec_stable_part_rotate(v, lo, mid, pred, tmp);
-    size_t right = vec_stable_part_rotate(v, mid, hi, pred, tmp);
-    vec_rotate_buf(v, left, mid, right, tmp);
+    size_t left = vec_stable_part_rotate(v, lo, mid, pred);
+    size_t right = vec_stable_part_rotate(v, mid, hi, pred);
+    vec_rotate_buf(v, left, mid, right);
     return left + (right - mid);
 }
 
@@ -1127,15 +1080,8 @@ size_t neverc_vector_stable_partition(neverc_vector_t *v,
         free(buf);
         return ntrue;
     }
-    /* OOM: allocation-free rotation partition (one element of scratch). */
-    char el_buf[256];
-    char *tmp = es <= sizeof(el_buf) ? el_buf : (char *)malloc(es);
-    if (!tmp)
-        return ntrue;   /* cannot reorder; report the count so callers still know */
-    size_t p = vec_stable_part_rotate(v, 0, n, pred, tmp);
-    if (tmp != el_buf)
-        free(tmp);
-    return p;
+    /* OOM: allocation-free stable rotation partition, O(n log n). */
+    return vec_stable_part_rotate(v, 0, n, pred);
 }
 
 neverc_vector_t *neverc_vector_sample(const neverc_vector_t *v, size_t k,

@@ -434,6 +434,11 @@ STD_TEST(heap, "src/container/heap/heap.c")
 STD_TEST(list, "src/container/list/list.c")
 STD_TEST(ring, "src/container/ring/ring.c")
 STD_TEST(vector, "src/container/vector/vector.c")
+TEST_F(StdLibTest, VectorAllocationFailure) {
+  auto r = compileAndRunStdTest("vector_oom", {}, {"-fno-builtin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
 
 // ===== Compress =====
 STD_TEST(lzw, "src/compress/lzw/lzw.c")
