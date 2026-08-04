@@ -297,7 +297,7 @@ main() {
 
   say "Quick start:"
   say "  neverc --version"
-  say "  neverc hello.c -o hello"
+  say "  neverc hello.c -o hello -fbuiltin-string"
   say ""
   say "Cross-compilation runtimes (optional):"
   say "  neverc runtime install all"

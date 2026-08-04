@@ -123,7 +123,7 @@ curl -fsSL https://raw.githubusercontent.com/NeverSight/NeverC/v3389.1.2/install
 
 ```bash
 neverc --version
-neverc hello.c -o hello
+neverc hello.c -o hello -fbuiltin-string
 ```
 
 **Windows x64/arm64** 패키지는 [GitHub Releases](https://github.com/NeverSight/NeverC/releases)에서 수동으로 받으세요. macOS arm64 바이너리는 Apple Developer ID로 서명되고 공증되었습니다.

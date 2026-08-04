@@ -123,7 +123,7 @@ curl -fsSL https://raw.githubusercontent.com/NeverSight/NeverC/v3389.1.2/install
 
 ```bash
 neverc --version
-neverc hello.c -o hello
+neverc hello.c -o hello -fbuiltin-string
 ```
 
 Пакеты **Windows x64/arm64** — на [GitHub Releases](https://github.com/NeverSight/NeverC/releases) для ручной загрузки. Бинарник macOS arm64 подписан Apple Developer ID и нотаризован.

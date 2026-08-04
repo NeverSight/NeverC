@@ -123,7 +123,7 @@ Vérifier l’installation :
 
 ```bash
 neverc --version
-neverc hello.c -o hello
+neverc hello.c -o hello -fbuiltin-string
 ```
 
 Les paquets **Windows x64/arm64** sont sur [GitHub Releases](https://github.com/NeverSight/NeverC/releases) pour installation manuelle. Le binaire macOS arm64 est signé Apple Developer ID et notarisé.
