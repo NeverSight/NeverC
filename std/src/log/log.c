@@ -1,33 +1,89 @@
 #include "neverc/std/log.h"
 #include <stdlib.h>
-#include <string.h>
 #include <time.h>
+
+typedef struct {
+    FILE *output;
+    const char *prefix;
+    int flags;
+} log_entry_t;
+
+static void logger_lock(neverc_log_logger_t *l) {
+    while (__atomic_exchange_n(&l->state_lock, 1, __ATOMIC_ACQUIRE)) {}
+}
+
+static void logger_unlock(neverc_log_logger_t *l) {
+    __atomic_store_n(&l->state_lock, 0, __ATOMIC_RELEASE);
+}
+
+static void output_lock(FILE *output) {
+#ifdef _WIN32
+    _lock_file(output);
+#else
+    flockfile(output);
+#endif
+}
+
+static void output_unlock(FILE *output) {
+#ifdef _WIN32
+    _unlock_file(output);
+#else
+    funlockfile(output);
+#endif
+}
+
+static int begin_entry(neverc_log_logger_t *l, log_entry_t *entry) {
+    if (!l || !entry) return 0;
+    logger_lock(l);
+    entry->output = l->output ? l->output : stderr;
+    entry->prefix = l->prefix;
+    entry->flags = l->flags;
+    logger_unlock(l);
+    output_lock(entry->output);
+    return 1;
+}
+
+static void end_entry(log_entry_t *entry, int flush) {
+    if (flush) fflush(entry->output);
+    output_unlock(entry->output);
+}
 
 void neverc_log_init(neverc_log_logger_t *l, FILE *output,
                      const char *prefix, int flags) {
+    if (!l) return;
     l->output = output ? output : stderr;
     l->prefix = prefix;
     l->flags = flags;
+    __atomic_store_n(&l->state_lock, 0, __ATOMIC_RELEASE);
 }
 
 void neverc_log_set_output(neverc_log_logger_t *l, FILE *output) {
-    l->output = output;
+    if (!l) return;
+    logger_lock(l);
+    l->output = output ? output : stderr;
+    logger_unlock(l);
 }
 
 void neverc_log_set_prefix(neverc_log_logger_t *l, const char *prefix) {
+    if (!l) return;
+    logger_lock(l);
     l->prefix = prefix;
+    logger_unlock(l);
 }
 
 void neverc_log_set_flags(neverc_log_logger_t *l, int flags) {
+    if (!l) return;
+    logger_lock(l);
     l->flags = flags;
+    logger_unlock(l);
 }
 
-static void write_header(neverc_log_logger_t *l) {
-    if (l->prefix && !(l->flags & NEVERC_LOG_LMSGPREFIX)) {
-        fputs(l->prefix, l->output);
-    }
+static void write_header(log_entry_t *entry) {
+    if (entry->prefix && !(entry->flags & NEVERC_LOG_LMSGPREFIX))
+        fputs(entry->prefix, entry->output);
 
-    if (l->flags & (NEVERC_LOG_LDATE | NEVERC_LOG_LTIME | NEVERC_LOG_LMICRO)) {
+    if (entry->flags &
+        (NEVERC_LOG_LDATE | NEVERC_LOG_LTIME | NEVERC_LOG_LMICRO)) {
         struct timespec now_ts = {0, 0};
         time_t now;
         if (timespec_get(&now_ts, TIME_UTC) == TIME_UTC)
@@ -35,105 +91,141 @@ static void write_header(neverc_log_logger_t *l) {
         else
             now = time(NULL);
         struct tm tm_buf;
-        struct tm *tm;
+        struct tm *tm = NULL;
 #if defined(_WIN32)
-        if (l->flags & NEVERC_LOG_LUTC)
-            { gmtime_s(&tm_buf, &now); tm = &tm_buf; }
+        errno_t rc;
+        if (entry->flags & NEVERC_LOG_LUTC)
+            rc = gmtime_s(&tm_buf, &now);
         else
-            { localtime_s(&tm_buf, &now); tm = &tm_buf; }
+            rc = localtime_s(&tm_buf, &now);
+        if (rc == 0) tm = &tm_buf;
 #else
-        if (l->flags & NEVERC_LOG_LUTC)
+        if (entry->flags & NEVERC_LOG_LUTC)
             tm = gmtime_r(&now, &tm_buf);
         else
             tm = localtime_r(&now, &tm_buf);
 #endif
 
-        if (l->flags & NEVERC_LOG_LDATE) {
-            fprintf(l->output, "%04d/%02d/%02d ",
+        if (tm && (entry->flags & NEVERC_LOG_LDATE)) {
+            fprintf(entry->output, "%04d/%02d/%02d ",
                     tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday);
         }
-        if (l->flags & (NEVERC_LOG_LTIME | NEVERC_LOG_LMICRO)) {
-            fprintf(l->output, "%02d:%02d:%02d",
+        if (tm &&
+            (entry->flags & (NEVERC_LOG_LTIME | NEVERC_LOG_LMICRO))) {
+            fprintf(entry->output, "%02d:%02d:%02d",
                     tm->tm_hour, tm->tm_min, tm->tm_sec);
-            if (l->flags & NEVERC_LOG_LMICRO)
-                fprintf(l->output, ".%06ld", now_ts.tv_nsec / 1000);
-            fputc(' ', l->output);
+            if (entry->flags & NEVERC_LOG_LMICRO)
+                fprintf(entry->output, ".%06ld", now_ts.tv_nsec / 1000);
+            fputc(' ', entry->output);
         }
     }
 
-    if (l->prefix && (l->flags & NEVERC_LOG_LMSGPREFIX)) {
-        fputs(l->prefix, l->output);
-    }
+    if (entry->prefix && (entry->flags & NEVERC_LOG_LMSGPREFIX))
+        fputs(entry->prefix, entry->output);
+}
+
+static void print_message(neverc_log_logger_t *l, const char *msg,
+                          int newline, int flush) {
+    if (!l || !msg) return;
+    log_entry_t entry;
+    if (!begin_entry(l, &entry)) return;
+    write_header(&entry);
+    fputs(msg, entry.output);
+    if (newline) fputc('\n', entry.output);
+    end_entry(&entry, flush);
+}
+
+static void vprint_message(neverc_log_logger_t *l, const char *fmt,
+                           va_list args, int newline, int flush) {
+    if (!l || !fmt) return;
+    log_entry_t entry;
+    if (!begin_entry(l, &entry)) return;
+    write_header(&entry);
+    vfprintf(entry.output, fmt, args);
+    if (newline) fputc('\n', entry.output);
+    end_entry(&entry, flush);
 }
 
 void neverc_log_print(neverc_log_logger_t *l, const char *msg) {
-    write_header(l);
-    fputs(msg, l->output);
+    print_message(l, msg, 0, 0);
 }
 
 void neverc_log_printf(neverc_log_logger_t *l, const char *fmt, ...) {
-    write_header(l);
     va_list args;
     va_start(args, fmt);
-    vfprintf(l->output, fmt, args);
+    vprint_message(l, fmt, args, 0, 0);
     va_end(args);
 }
 
 void neverc_log_println(neverc_log_logger_t *l, const char *msg) {
-    write_header(l);
-    fputs(msg, l->output);
-    fputc('\n', l->output);
+    print_message(l, msg, 1, 0);
 }
 
 void neverc_log_fatal(neverc_log_logger_t *l, const char *msg) {
-    neverc_log_println(l, msg);
+    print_message(l, msg, 1, 1);
     exit(1);
 }
 
 void neverc_log_fatalf(neverc_log_logger_t *l, const char *fmt, ...) {
-    write_header(l);
     va_list args;
     va_start(args, fmt);
-    vfprintf(l->output, fmt, args);
+    vprint_message(l, fmt, args, 1, 1);
     va_end(args);
-    fputc('\n', l->output);
     exit(1);
 }
 
 void neverc_log_fatalln(neverc_log_logger_t *l, const char *msg) {
-    neverc_log_println(l, msg);
-    exit(1);
+    neverc_log_fatal(l, msg);
 }
 
 void neverc_log_panic(neverc_log_logger_t *l, const char *msg) {
-    neverc_log_print(l, msg);
+    print_message(l, msg, 0, 1);
     abort();
 }
 
 void neverc_log_panicf(neverc_log_logger_t *l, const char *fmt, ...) {
-    write_header(l);
     va_list args;
     va_start(args, fmt);
-    vfprintf(l->output, fmt, args);
+    vprint_message(l, fmt, args, 1, 1);
     va_end(args);
-    fputc('\n', l->output);
     abort();
 }
 
 void neverc_log_panicln(neverc_log_logger_t *l, const char *msg) {
-    neverc_log_println(l, msg);
+    print_message(l, msg, 1, 1);
     abort();
 }
 
-int neverc_log_flags(neverc_log_logger_t *l) { return l->flags; }
-const char *neverc_log_prefix(neverc_log_logger_t *l) { return l->prefix; }
-FILE *neverc_log_writer(neverc_log_logger_t *l) { return l->output; }
+int neverc_log_flags(neverc_log_logger_t *l) {
+    if (!l) return 0;
+    logger_lock(l);
+    int flags = l->flags;
+    logger_unlock(l);
+    return flags;
+}
+
+const char *neverc_log_prefix(neverc_log_logger_t *l) {
+    if (!l) return NULL;
+    logger_lock(l);
+    const char *prefix = l->prefix;
+    logger_unlock(l);
+    return prefix;
+}
+
+FILE *neverc_log_writer(neverc_log_logger_t *l) {
+    if (!l) return stderr;
+    logger_lock(l);
+    FILE *output = l->output ? l->output : stderr;
+    logger_unlock(l);
+    return output;
+}
 
 /* Default logger */
-static neverc_log_logger_t default_logger = { NULL, "", NEVERC_LOG_LSTD };
+static neverc_log_logger_t default_logger = {
+    NULL, "", NEVERC_LOG_LSTD, 0
+};
 
 static neverc_log_logger_t *get_default(void) {
-    if (!default_logger.output) default_logger.output = stderr;
     return &default_logger;
 }
 
@@ -142,11 +234,9 @@ void neverc_log_default_print(const char *msg) {
 }
 
 void neverc_log_default_printf(const char *fmt, ...) {
-    neverc_log_logger_t *l = get_default();
-    write_header(l);
     va_list args;
     va_start(args, fmt);
-    vfprintf(l->output, fmt, args);
+    vprint_message(get_default(), fmt, args, 0, 0);
     va_end(args);
 }
 
@@ -159,13 +249,10 @@ void neverc_log_default_fatal(const char *msg) {
 }
 
 void neverc_log_default_fatalf(const char *fmt, ...) {
-    neverc_log_logger_t *l = get_default();
-    write_header(l);
     va_list args;
     va_start(args, fmt);
-    vfprintf(l->output, fmt, args);
+    vprint_message(get_default(), fmt, args, 1, 1);
     va_end(args);
-    fputc('\n', l->output);
     exit(1);
 }
 
@@ -174,12 +261,9 @@ void neverc_log_default_panic(const char *msg) {
 }
 
 void neverc_log_default_panicf(const char *fmt, ...) {
-    neverc_log_logger_t *l = get_default();
-    write_header(l);
     va_list args;
     va_start(args, fmt);
-    vfprintf(l->output, fmt, args);
+    vprint_message(get_default(), fmt, args, 1, 1);
     va_end(args);
-    fputc('\n', l->output);
     abort();
 }

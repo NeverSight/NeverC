@@ -31,6 +31,8 @@ typedef struct {
     FILE       *output;
     const char *prefix;
     int         flags;
+    /* Internal synchronization state; initialize loggers with neverc_log_init. */
+    int         state_lock;
 } neverc_log_logger_t;
 
 void neverc_log_init(neverc_log_logger_t *l, FILE *output,
