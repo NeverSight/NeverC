@@ -474,6 +474,11 @@ TEST_F(StdLibTest, SlicesAllocationFailure) {
 // ===== Container =====
 STD_TEST(heap, "src/container/heap/heap.c")
 STD_TEST(list, "src/container/list/list.c")
+TEST_F(StdLibTest, ListAllocationFailure) {
+  auto r = compileAndRunStdTest("list_oom", {}, {"-fno-builtin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
 STD_TEST(ring, "src/container/ring/ring.c")
 STD_TEST(vector, "src/container/vector/vector.c")
 TEST_F(StdLibTest, VectorAllocationFailure) {

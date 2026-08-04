@@ -4,6 +4,7 @@
  */
 #include "neverc/std/container/list.h"
 #include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 
 static int tests_run = 0, tests_passed = 0, tests_failed = 0;
@@ -27,8 +28,8 @@ static int tests_run = 0, tests_passed = 0, tests_failed = 0;
     if ((expr) != NULL) tests_passed++; \
     else { tests_failed++; printf("  FAIL: %s is NULL\n", #expr); } } while(0)
 
-#define INT_VAL(n) ((void *)(long)(n))
-#define TO_INT(p) ((int)(long)(p))
+#define INT_VAL(n) ((void *)(intptr_t)(n))
+#define TO_INT(p) ((int)(intptr_t)(p))
 
 static void test_basic(void) {
     printf("[basic]\n");
@@ -198,6 +199,50 @@ static void test_remove_all(void) {
     free(l);
 }
 
+static void test_zero_value_and_invalid_input(void) {
+    printf("[zero_value_and_invalid_input]\n");
+    neverc_list_t zero = {0};
+    ASSERT_INT_EQ(neverc_list_len(&zero), 0);
+    ASSERT_NULL(neverc_list_front(&zero));
+    ASSERT_NULL(neverc_list_back(&zero));
+    neverc_list_free(&zero);
+    ASSERT_INT_EQ(neverc_list_len(&zero), 0);
+
+    neverc_list_element_t *element =
+        neverc_list_push_back(&zero, INT_VAL(42));
+    ASSERT_NOT_NULL(element);
+    ASSERT_INT_EQ(neverc_list_len(&zero), 1);
+
+    ASSERT_INT_EQ(neverc_list_len(NULL), 0);
+    ASSERT_NULL(neverc_list_front(NULL));
+    ASSERT_NULL(neverc_list_back(NULL));
+    ASSERT_NULL(neverc_list_push_front(NULL, INT_VAL(1)));
+    ASSERT_NULL(neverc_list_push_back(NULL, INT_VAL(1)));
+    ASSERT_NULL(neverc_list_remove(NULL, element));
+    ASSERT_NULL(neverc_list_remove(&zero, NULL));
+    ASSERT_NULL(neverc_list_insert_before(&zero, INT_VAL(1), NULL));
+    ASSERT_NULL(neverc_list_insert_after(&zero, INT_VAL(1), NULL));
+    ASSERT_NULL(neverc_list_insert_before(NULL, INT_VAL(1), element));
+    ASSERT_NULL(neverc_list_insert_after(NULL, INT_VAL(1), element));
+
+    neverc_list_move_to_front(NULL, element);
+    neverc_list_move_to_back(NULL, element);
+    neverc_list_move_before(NULL, element, element);
+    neverc_list_move_after(NULL, element, element);
+    neverc_list_move_to_front(&zero, NULL);
+    neverc_list_move_to_back(&zero, NULL);
+    neverc_list_move_before(&zero, NULL, element);
+    neverc_list_move_after(&zero, element, NULL);
+    ASSERT_NULL(neverc_list_element_next(NULL));
+    ASSERT_NULL(neverc_list_element_prev(NULL));
+    ASSERT_INT_EQ(neverc_list_len(&zero), 1);
+    ASSERT_PTR_EQ(neverc_list_front(&zero), element);
+
+    neverc_list_init(NULL);
+    neverc_list_free(NULL);
+    neverc_list_free(&zero);
+}
+
 int main(void) {
     printf("=== NeverC container/list Tests ===\n");
     test_basic();
@@ -208,6 +253,7 @@ int main(void) {
     test_iteration();
     test_move_before_after();
     test_remove_all();
+    test_zero_value_and_invalid_input();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

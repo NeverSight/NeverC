@@ -31,6 +31,9 @@ struct neverc_list {
 };
 
 neverc_list_t *neverc_list_new(void);
+/* A zero-initialized list is valid. NULL queries return empty results and
+ * invalid mutation arguments are safe no-ops. Init must not be called on a
+ * non-empty list; free releases nodes but not the list object itself. */
 void           neverc_list_init(neverc_list_t *l);
 void           neverc_list_free(neverc_list_t *l);
 

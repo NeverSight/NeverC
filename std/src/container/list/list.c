@@ -66,6 +66,7 @@ neverc_list_t *neverc_list_new(void) {
 }
 
 void neverc_list_init(neverc_list_t *l) {
+    if (!l) return;
     l->root.next = &l->root;
     l->root.prev = &l->root;
     l->root.list = NULL;
@@ -75,42 +76,47 @@ void neverc_list_init(neverc_list_t *l) {
 
 void neverc_list_free(neverc_list_t *l) {
     if (!l) return;
+    if (!l->root.next) {
+        neverc_list_init(l);
+        return;
+    }
     neverc_list_element_t *e = l->root.next;
     while (e != &l->root) {
         neverc_list_element_t *next = e->next;
         free(e);
         e = next;
     }
-    l->root.next = &l->root;
-    l->root.prev = &l->root;
-    l->len = 0;
+    neverc_list_init(l);
 }
 
 int neverc_list_len(const neverc_list_t *l) {
-    return l->len;
+    return l ? l->len : 0;
 }
 
 neverc_list_element_t *neverc_list_front(const neverc_list_t *l) {
-    if (l->len == 0) return NULL;
+    if (!l || l->len <= 0 || !l->root.next) return NULL;
     return l->root.next;
 }
 
 neverc_list_element_t *neverc_list_back(const neverc_list_t *l) {
-    if (l->len == 0) return NULL;
+    if (!l || l->len <= 0 || !l->root.prev) return NULL;
     return l->root.prev;
 }
 
 neverc_list_element_t *neverc_list_push_front(neverc_list_t *l, void *value) {
+    if (!l) return NULL;
     lazy_init(l);
     return insert_value(l, value, &l->root);
 }
 
 neverc_list_element_t *neverc_list_push_back(neverc_list_t *l, void *value) {
+    if (!l) return NULL;
     lazy_init(l);
     return insert_value(l, value, l->root.prev);
 }
 
 void *neverc_list_remove(neverc_list_t *l, neverc_list_element_t *e) {
+    if (!l || !e) return NULL;
     if (e->list != l) return e->value;
     void *v = e->value;
     remove_elem(l, e);
@@ -120,48 +126,56 @@ void *neverc_list_remove(neverc_list_t *l, neverc_list_element_t *e) {
 
 neverc_list_element_t *neverc_list_insert_before(neverc_list_t *l, void *value,
                                                   neverc_list_element_t *mark) {
+    if (!l || !mark) return NULL;
     if (mark->list != l) return NULL;
     return insert_value(l, value, mark->prev);
 }
 
 neverc_list_element_t *neverc_list_insert_after(neverc_list_t *l, void *value,
                                                  neverc_list_element_t *mark) {
+    if (!l || !mark) return NULL;
     if (mark->list != l) return NULL;
     return insert_value(l, value, mark);
 }
 
 void neverc_list_move_to_front(neverc_list_t *l, neverc_list_element_t *e) {
+    if (!l || !e) return;
     if (e->list != l || l->root.next == e) return;
     move_elem(e, &l->root);
 }
 
 void neverc_list_move_to_back(neverc_list_t *l, neverc_list_element_t *e) {
+    if (!l || !e) return;
     if (e->list != l || l->root.prev == e) return;
     move_elem(e, l->root.prev);
 }
 
 void neverc_list_move_before(neverc_list_t *l, neverc_list_element_t *e,
                               neverc_list_element_t *mark) {
+    if (!l || !e || !mark) return;
     if (e->list != l || e == mark || mark->list != l) return;
     move_elem(e, mark->prev);
 }
 
 void neverc_list_move_after(neverc_list_t *l, neverc_list_element_t *e,
                              neverc_list_element_t *mark) {
+    if (!l || !e || !mark) return;
     if (e->list != l || e == mark || mark->list != l) return;
     move_elem(e, mark);
 }
 
 neverc_list_element_t *neverc_list_element_next(const neverc_list_element_t *e) {
+    if (!e || !e->list) return NULL;
     neverc_list_element_t *p = e->next;
-    if (e->list != NULL && p != &e->list->root)
+    if (p && p != &e->list->root)
         return p;
     return NULL;
 }
 
 neverc_list_element_t *neverc_list_element_prev(const neverc_list_element_t *e) {
+    if (!e || !e->list) return NULL;
     neverc_list_element_t *p = e->prev;
-    if (e->list != NULL && p != &e->list->root)
+    if (p && p != &e->list->root)
         return p;
     return NULL;
 }
