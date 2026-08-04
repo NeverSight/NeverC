@@ -1,0 +1,228 @@
+# Build every supported distribution and publish one complete compiler release.
+name: neverc-release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: compiler-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate release contract
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: Test installer and version contract
+        run: |
+          sh utils/release/test-install.sh
+          sh utils/release/test-version.sh
+          shellcheck install.sh utils/release/*.sh
+
+      - name: Validate numeric CMake version
+        run: sh utils/release/check-version.sh llvm/CMakeLists.txt
+
+      - name: Validate tag matches CMake version
+        if: github.event_name == 'push'
+        run: sh utils/release/check-version.sh llvm/CMakeLists.txt "$GITHUB_REF_NAME"
+
+      - name: Validate release workflows
+        run: |
+          go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7 \
+            .github/workflows/release.yml \
+            .github/workflows/release-linux-x64.yml \
+            .github/workflows/release-linux-arm64.yml \
+            .github/workflows/release-windows-x64.yml \
+            .github/workflows/release-windows-arm64.yml \
+            .github/workflows/release-macos-arm64.yml \
+            .github/workflows/release-runtime.yml
+
+  linux-x64:
+    name: Linux x64
+    needs: validate
+    permissions:
+      contents: read
+    uses: ./.github/workflows/release-linux-x64.yml
+
+  linux-arm64:
+    name: Linux arm64
+    needs: validate
+    permissions:
+      contents: read
+    uses: ./.github/workflows/release-linux-arm64.yml
+
+  windows-x64:
+    name: Windows x64
+    needs: validate
+    permissions:
+      contents: read
+    uses: ./.github/workflows/release-windows-x64.yml
+
+  windows-arm64:
+    name: Windows arm64
+    needs: validate
+    permissions:
+      contents: read
+    uses: ./.github/workflows/release-windows-arm64.yml
+
+  macos-arm64:
+    name: macOS arm64
+    needs: validate
+    permissions:
+      contents: read
+    secrets: inherit
+    uses: ./.github/workflows/release-macos-arm64.yml
+
+  runtime:
+    name: Cross-compilation runtimes
+    needs: validate
+    permissions:
+      contents: read
+    uses: ./.github/workflows/release-runtime.yml
+
+  publish:
+    name: Publish complete release
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    needs:
+      - linux-x64
+      - linux-arm64
+      - windows-x64
+      - windows-arm64
+      - macos-arm64
+      - runtime
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout release metadata and tags
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Verify complete distribution and generate checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected=(
+            linux-arm64-neverc.zip
+            linux-x64-neverc.zip
+            macos-arm64-neverc.zip
+            neverc-linux-arm64.zip
+            neverc-linux-x64.zip
+            neverc-macos-arm64.zip
+            neverc-runtime-android-arm64.zip
+            neverc-runtime-android-kernel-arm64.zip
+            neverc-runtime-linux-arm64.zip
+            neverc-runtime-linux-x64.zip
+            neverc-runtime-macos-arm64.zip
+            neverc-runtime-windows-arm64.zip
+            neverc-runtime-windows-x64.zip
+            windows-arm64-neverc-release.zip
+            windows-x64-neverc-release.zip
+          )
+
+          printf '%s\n' "${expected[@]}" > expected-assets.txt
+          find dist -maxdepth 1 -type f -name '*.zip' -printf '%f\n' \
+            | sort > actual-assets.txt
+          diff -u expected-assets.txt actual-assets.txt
+
+          for archive in "${expected[@]}"; do
+            unzip -tq "dist/$archive" > /dev/null
+          done
+
+          for installer_archive in \
+            neverc-linux-arm64.zip \
+            neverc-linux-x64.zip \
+            neverc-macos-arm64.zip; do
+            unzip -Z1 "dist/$installer_archive" \
+              | grep -Fx 'bin/neverc' > /dev/null
+          done
+
+          (
+            cd dist
+            sha256sum "${expected[@]}" > SHA256SUMS
+          )
+
+      - name: Render tag-pinned release notes
+        run: sed "s/@RELEASE_TAG@/${GITHUB_REF_NAME}/g" .github/release-notes-prefix.md > release-notes.md
+
+      - name: Create or recover draft and upload assets
+        id: upload
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag=$GITHUB_REF_NAME
+          state=$(gh api --paginate \
+            "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+            --jq ".[] | select(.tag_name == \"${tag}\") | if .draft then \"draft\" else \"published\" end" \
+            | sed -n '1p')
+
+          case "$state" in
+            published)
+              echo "Release $tag is already published; verifying without mutation."
+              echo 'already-published=true' >> "$GITHUB_OUTPUT"
+              ;;
+            draft)
+              echo "Recovering existing draft for $tag."
+              gh release upload "$tag" dist/* --clobber
+              echo 'already-published=false' >> "$GITHUB_OUTPUT"
+              ;;
+            '')
+              previous_tag=$(git tag --merged "$GITHUB_SHA" --sort=-version:refname \
+                | awk -v current="$tag" '
+                    /^v[0-9]+\.[0-9]+\.[0-9]+$/ && $0 != current {
+                      print
+                      exit
+                    }
+                  ')
+              notes_args=(--generate-notes)
+              if [ -n "$previous_tag" ]; then
+                notes_args+=(--notes-start-tag "$previous_tag")
+              fi
+              gh release create "$tag" \
+                --verify-tag \
+                --draft \
+                --latest=false \
+                "${notes_args[@]}" \
+                --notes-file release-notes.md \
+                dist/*
+              echo 'already-published=false' >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "Unexpected release state '$state' for $tag" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Verify remote asset contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          find dist -maxdepth 1 -type f -printf '%f\n' | sort > local-release-assets.txt
+          gh release view "$GITHUB_REF_NAME" --json assets \
+            --jq '.assets[].name' | sort > remote-release-assets.txt
+          diff -u local-release-assets.txt remote-release-assets.txt
+
+      - name: Publish draft as latest compiler release
+        if: steps.upload.outputs.already-published != 'true'
+        run: gh release edit "$GITHUB_REF_NAME" --draft=false --latest

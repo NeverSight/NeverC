@@ -188,7 +188,8 @@ template <typename T> T readPOD(ArrayRef<char> Buf, uint64_t Off) {
   return V;
 }
 
-bool parseRawELF(ArrayRef<char> Buf, RawELF &Out) {
+bool parseRawELF(ArrayRef<char> Buf, RawELF &Out,
+                 uint64_t MaxDecompressedBytes) {
   using namespace ELF;
   using Ehdr = Elf64_Ehdr;
   using Shdr = Elf64_Shdr;
@@ -227,6 +228,7 @@ bool parseRawELF(ArrayRef<char> Buf, RawELF &Out) {
 
   Out.Secs.reserve(ShNum);
   Out.DecompressedSecs.resize(ShNum);
+  uint64_t RemainingDecompressedBytes = MaxDecompressedBytes;
   for (unsigned I = 0; I < ShNum; ++I) {
     RawSec RS;
     RS.Name = cstrAt(Buf, ShStrBase, ShStrSize, SH[I].sh_name);
@@ -253,8 +255,11 @@ bool parseRawELF(ArrayRef<char> Buf, RawELF &Out) {
       else
         return false;
       if (Header.ch_reserved != 0 ||
-          Header.ch_size > std::numeric_limits<size_t>::max())
+          Header.ch_size > std::numeric_limits<size_t>::max() ||
+          Header.ch_size > RemainingDecompressedBytes ||
+          compression::getReasonIfUnsupported(CompressionFormat))
         return false;
+      RemainingDecompressedBytes -= Header.ch_size;
 
       ArrayRef<uint8_t> Payload(reinterpret_cast<const uint8_t *>(Buf.data()) +
                                     RS.Offset + sizeof(Chdr),
@@ -483,8 +488,27 @@ bool verifyMergeELFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
                         const Options &Opts, std::string *Err) {
   using namespace ELF;
 
+  // A supported merge starts from uncompressed input sections and only adds
+  // output-sized metadata such as package indexes. Bound materialized logical
+  // bytes by all actual input and output bytes the caller supplied. This keeps
+  // generated metadata valid while preventing a tiny hostile object from
+  // amplifying an untrusted ch_size into an unbounded allocation.
+  uint64_t MaxDecompressedBytes = 0;
+  for (StringRef Input : Inputs) {
+    if (Input.size() >
+        std::numeric_limits<uint64_t>::max() - MaxDecompressedBytes)
+      MaxDecompressedBytes = std::numeric_limits<uint64_t>::max();
+    else
+      MaxDecompressedBytes += Input.size();
+  }
+  if (Output.size() >
+      std::numeric_limits<uint64_t>::max() - MaxDecompressedBytes)
+    MaxDecompressedBytes = std::numeric_limits<uint64_t>::max();
+  else
+    MaxDecompressedBytes += Output.size();
+
   RawELF Out;
-  if (!parseRawELF(Output, Out))
+  if (!parseRawELF(Output, Out, MaxDecompressedBytes))
     return fail(Err, "verify: merged output is not a parseable ELF64LE object");
 
   // ---- Structural integrity of the merged object itself ----
@@ -646,7 +670,8 @@ bool verifyMergeELFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
     if (Inputs[p].empty())
       continue;
     RawELF In;
-    if (!parseRawELF(ArrayRef<char>(Inputs[p].data(), Inputs[p].size()), In))
+    if (!parseRawELF(ArrayRef<char>(Inputs[p].data(), Inputs[p].size()), In,
+                     Inputs[p].size()))
       return fail(Err, "verify: input partition " + Twine(p) +
                            " is not a parseable ELF64LE object");
 

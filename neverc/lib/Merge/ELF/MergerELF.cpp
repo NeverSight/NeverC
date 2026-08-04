@@ -242,6 +242,22 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
   for (unsigned p = 0; p < Buffers.size(); ++p) {
     if (Buffers[p].empty())
       continue;
+
+    // ELFObjectFile<ELFT>::create assumes its caller has already identified the
+    // container and only checks that an ELF header fits. Feeding arbitrary
+    // bytes directly to that typed parser can therefore manufacture a seemingly
+    // valid section table from a non-ELF fuzz input. Validate the format
+    // contract before any eager parsing or allocation.
+    const auto &Input = Buffers[p];
+    if (Input.size() < EI_NIDENT || memcmp(Input.data(), ElfMagic, 4) != 0 ||
+        static_cast<uint8_t>(Input[EI_CLASS]) != ELFCLASS64 ||
+        static_cast<uint8_t>(Input[EI_DATA]) != ELFDATA2LSB ||
+        static_cast<uint8_t>(Input[EI_VERSION]) != EV_CURRENT) {
+      errs() << "neverc: relocatable merge: input is not an ELF64LE object; "
+                "refusing to merge\n";
+      return false;
+    }
+
     Maps.resize(p + 1);
     auto &PM = Maps[p];
     PM.SecMap[0] = 0;
@@ -373,14 +389,6 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
       }
       StringRef SecName = *NameOrErr;
 
-      if (Opts.artifact == ArtifactKind::SplitDwarf &&
-          (S.sh_flags & SHF_COMPRESSED)) {
-        errs() << "neverc: split-DWARF merge requires uncompressed partition "
-                  "sections; refusing pre-compressed section '"
-               << SecName << "'\n";
-        return false;
-      }
-
       // SHF_LINK_ORDER sections (e.g. __patchable_function_entries emitted by
       // -fpatchable-function-entry for ftrace) carry an sh_link to an
       // associated code section.  The link target's *canonical* name is read
@@ -412,6 +420,20 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
           (SecName.starts_with(".debug_") || SecName == ".debug" ||
            SecName.starts_with(".zdebug_")))
         continue;
+
+      // The merger lays out and concatenates on-disk section bytes. For an
+      // SHF_COMPRESSED input those bytes are a compression header plus an
+      // independent frame, while symbol values and relocations address the
+      // logical uncompressed contents. Concatenating such frames would make the
+      // later contributions invisible and invalidate all following offsets.
+      // Refuse so callers use the regular linker instead. Output compression is
+      // still supported after uncompressed contributions have been merged.
+      if (S.sh_flags & SHF_COMPRESSED) {
+        errs() << "neverc: relocatable merge does not support pre-compressed "
+                  "section '"
+               << SecName << "'; refusing to merge\n";
+        return false;
+      }
 
       // SHT_NOTE dedup.  When parallel codegen splits one module every
       // partition re-emits byte-identical notes (e.g. .note.gnu.property for

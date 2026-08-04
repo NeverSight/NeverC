@@ -1,4 +1,4 @@
-# Package and upload per-target runtime sysroot assets to GitHub Releases.
+# Package per-target runtime sysroot artifacts for release.yml.
 #
 # Runtime packages are platform-independent archives of cross-compilation
 # sysroots (headers + libraries).  They are uploaded alongside the per-platform
@@ -9,12 +9,10 @@
 name: release-runtime
 
 permissions:
-  contents: write
+  contents: read
 
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_call:
   workflow_dispatch:
 
 jobs:
@@ -23,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Install zip
         run: sudo apt-get update && sudo apt-get install -y zip
@@ -64,15 +62,8 @@ jobs:
         run: ls -lh neverc-runtime-*.zip
 
       - name: Upload CI artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: neverc-runtime-packages
           path: neverc-runtime-*.zip
           retention-days: 14
-
-      - name: GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          prerelease: ${{ contains(github.ref, '-pre') || contains(github.ref, '-rc') }}
-          files: neverc-runtime-*.zip

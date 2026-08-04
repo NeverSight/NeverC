@@ -384,6 +384,7 @@ jobs:
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" "${files[@]}" --clobber
           else
-            gh release create "$tag" "${files[@]}" --title "$title" --notes "$notes"
+            gh release create "$tag" "${files[@]}" \
+              --title "$title" --notes "$notes" --latest=false
           fi
           echo "Published ${#files[@]} asset(s) to release $tag"

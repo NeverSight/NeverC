@@ -1,20 +1,17 @@
 # Release build for macOS arm64 (non-PGO).
-# Tag push: build + test + sign + notarize + GitHub Release upload.
-# Manual dispatch: same pipeline but artifacts only (no release).
+# Called by release.yml; manual dispatch builds signed artifacts without publishing.
 name: macos-arm64-neverc-release
 
 permissions:
-  contents: write
+  contents: read
 
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_call:
   workflow_dispatch:
 
 jobs:
   release:
-    name: Build + test + sign + release
+    name: Build + test + sign + package
     if: github.repository == 'NeverSight/NeverC'
     runs-on: macos-15
     env:
@@ -26,12 +23,12 @@ jobs:
       MACOSX_DEPLOYMENT_TARGET: "13.0"
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           path: neverc
 
       - name: Select latest stable Xcode (Apple Clang)
-        uses: maxim-lobanov/setup-xcode@v1
+        uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
         with:
           xcode-version: latest-stable
 
@@ -174,8 +171,8 @@ jobs:
         run: |
           set -e
           make -C build/pluginsdk/examples \
-            NEVERC=$PWD/build/bin/neverc \
-            INCLUDE_DIR=$PWD/build/pluginsdk/include
+            "NEVERC=$PWD/build/bin/neverc" \
+            "INCLUDE_DIR=$PWD/build/pluginsdk/include"
           printf 'int main(void) { return 0; }\n' > /tmp/plugin_test.c
           for plugin in ExamplePlugin CrtShimPlugin BenchPlugin; do
             echo "--- Testing $plugin ---"
@@ -277,37 +274,9 @@ jobs:
             --prefix "$RUNNER_TEMP/pkg-check"
 
       - name: Upload CI artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: macos-arm64-neverc
           path: |
             macos-arm64-neverc.zip
             neverc-macos-arm64.zip
-
-      - name: GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          prerelease: ${{ contains(github.ref, '-pre') || contains(github.ref, '-rc') }}
-          files: |
-            macos-arm64-neverc.zip
-            neverc-macos-arm64.zip
-          generate_release_notes: true
-          body: |
-            ### Quick install (macOS / Linux)
-
-            ```
-            curl -fsSL https://raw.githubusercontent.com/NeverSight/NeverC/HEAD/install.sh | sh
-            ```
-
-            ### macOS note
-
-            Signed with Apple Developer ID and notarized by Apple.
-            Extract the archive and use directly — no quarantine workaround needed.
-
-            ### Cross-compilation runtimes (optional)
-
-            ```
-            neverc runtime install windows-x64
-            neverc runtime list
-            ```

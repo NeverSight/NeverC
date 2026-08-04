@@ -1,5 +1,5 @@
-# Release build for Windows x86_64.  Tag push: package + GitHub Release.
-# Manual dispatch: artifacts only (no release).
+# Release build producer for Windows x86_64.
+# Called by release.yml; manual dispatch builds artifacts without publishing.
 #
 # Uses MSVC (cl.exe) via Ninja for reliable Windows builds.
 # Compiler speed comes from:
@@ -8,21 +8,19 @@
 name: windows-x64-neverc-release
 
 permissions:
-  contents: write
+  contents: read
 
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_call:
   workflow_dispatch:
 
 jobs:
   release:
-    name: Release build
+    name: Build + test + package
     runs-on: windows-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Setup build deps
         shell: pwsh
@@ -38,10 +36,10 @@ jobs:
           Add-Content $env:GITHUB_PATH "C:\tools\cmake-$cmakeVer-windows-x86_64\bin"
 
       - name: Setup MSVC
-        uses: ilammy/msvc-dev-cmd@v1
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
 
       - name: Setup sccache
-        uses: mozilla/sccache-action@v0.0.7
+        uses: mozilla/sccache-action@054db53350805f83040bf3e6e9b8cf5a139aa7c9 # v0.0.7
 
       - name: Build neverc (Release)
         shell: bash
@@ -52,7 +50,7 @@ jobs:
             -DNEVERC_ENABLE_LTO=ON \
             -DCMAKE_INSTALL_PREFIX=install \
             -DCMAKE_BUILD_TYPE=Release
-          cmake --build build --target neverc-embed-runtime-bitcode --parallel $NUMBER_OF_PROCESSORS
+          cmake --build build --target neverc-embed-runtime-bitcode --parallel "$NUMBER_OF_PROCESSORS"
 
       - name: Build bundled Windows runtime
         shell: bash
@@ -72,8 +70,8 @@ jobs:
         run: |
           set -e
           make -C build/pluginsdk/examples \
-            NEVERC=$PWD/build/bin/neverc \
-            INCLUDE_DIR=$PWD/build/pluginsdk/include
+            "NEVERC=$PWD/build/bin/neverc" \
+            "INCLUDE_DIR=$PWD/build/pluginsdk/include"
           printf 'int main(void) { return 0; }\n' > /tmp/plugin_test.c
           for plugin in ExamplePlugin CrtShimPlugin BenchPlugin; do
             echo "--- Testing $plugin ---"
@@ -92,14 +90,7 @@ jobs:
         run: 7z a windows-x64-neverc-release.zip install
 
       - name: Upload CI artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: windows-x64-neverc-release
           path: windows-x64-neverc-release.zip
-
-      - name: GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          prerelease: ${{ contains(github.ref, '-pre') || contains(github.ref, '-rc') }}
-          files: windows-x64-neverc-release.zip

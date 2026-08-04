@@ -1000,6 +1000,38 @@ bool patchSymValue(SmallVectorImpl<char> &Buf, StringRef Name,
   return false;
 }
 
+bool patchELFCompressedSize(SmallVectorImpl<char> &Buf, StringRef Name,
+                            uint64_t NewSize) {
+  using namespace ELF;
+  if (Buf.size() < sizeof(Elf64_Ehdr))
+    return false;
+  auto *H = reinterpret_cast<Elf64_Ehdr *>(Buf.data());
+  if (H->e_shoff > Buf.size() ||
+      (uint64_t)H->e_shnum * sizeof(Elf64_Shdr) > Buf.size() - H->e_shoff ||
+      H->e_shstrndx >= H->e_shnum)
+    return false;
+  auto *Secs = reinterpret_cast<Elf64_Shdr *>(Buf.data() + H->e_shoff);
+  const Elf64_Shdr &ShStr = Secs[H->e_shstrndx];
+  if (ShStr.sh_offset > Buf.size() ||
+      ShStr.sh_size > Buf.size() - ShStr.sh_offset)
+    return false;
+  StringRef Names(Buf.data() + ShStr.sh_offset, ShStr.sh_size);
+  for (unsigned I = 0; I < H->e_shnum; ++I) {
+    if (Secs[I].sh_name >= Names.size() ||
+        Names.drop_front(Secs[I].sh_name).split('\0').first != Name)
+      continue;
+    if (!(Secs[I].sh_flags & SHF_COMPRESSED) ||
+        Secs[I].sh_offset > Buf.size() ||
+        sizeof(Elf64_Chdr) > Buf.size() - Secs[I].sh_offset)
+      return false;
+    auto *Header =
+        reinterpret_cast<Elf64_Chdr *>(Buf.data() + Secs[I].sh_offset);
+    Header->ch_size = NewSize;
+    return true;
+  }
+  return false;
+}
+
 bool corruptSymbolContentByte(SmallVectorImpl<char> &Buf, StringRef Name) {
   using namespace ELF;
   if (Buf.size() < sizeof(Elf64_Ehdr))
@@ -2141,6 +2173,42 @@ TEST(MergeELFCompression, ZstdRoundTripsAndIsDeterministic) {
   if (const char *Reason = compression::getReasonIfUnsupported(Format))
     GTEST_SKIP() << Reason;
   expectDeterministicDebugCompression(DebugCompressionType::Zstd);
+}
+
+TEST(MergeELFCompression, HugeDeclaredSizeIsRejectedBeforeAllocation) {
+  using namespace ELF;
+  const compression::Format CompressionFormat =
+      compression::formatFor(DebugCompressionType::Zstd);
+  if (const char *Reason =
+          compression::getReasonIfUnsupported(CompressionFormat))
+    GTEST_SKIP() << Reason;
+
+  auto Object = buildSectionedELF(
+      {SecSpec{".debug_str", 4096, 16, SHT_PROGBITS, 0, 0x41}},
+      {SymSpec{"debug_anchor", 0, 0}}, {});
+  SmallVector<SmallVector<char, 0>, 1> Buffers;
+  Buffers.push_back(std::move(Object));
+  Options Opts;
+  Opts.debugCompression = DebugCompressionType::Zstd;
+  auto [OK, Output] = mergeELF(Buffers, Opts);
+  ASSERT_TRUE(OK);
+
+  ASSERT_TRUE(patchELFCompressedSize(Output, ".debug_str", 0xffffffff1100ull));
+  std::string VerifyError;
+  EXPECT_FALSE(
+      verifyMerge(Buffers, Output, Format::ELF64LE, Opts, &VerifyError));
+}
+
+TEST(MergeELFCompression, RefusesPreCompressedInputWithVerifyOff) {
+  using namespace ELF;
+  SecSpec Compressed{".debug_info", 64, 1, SHT_PROGBITS, SHF_COMPRESSED, 0x11};
+  SmallVector<SmallVector<char, 0>, 1> Buffers;
+  Buffers.push_back(buildSectionedELF({Compressed}, {}, {}));
+  Options Opts;
+  Opts.verify = false;
+  auto [OK, Output] = mergeELF(Buffers, Opts);
+  EXPECT_FALSE(OK);
+  (void)Output;
 }
 
 // Standalone Split-DWARF contributions must arrive uncompressed. Concatenating
@@ -5979,21 +6047,10 @@ static std::vector<SmallVector<char, 0>> carveCorpus(ArrayRef<uint8_t> Data) {
 }
 
 // Replays the merge-fuzzer crash artifacts that exposed (and now guard against)
-// real memory-safety bugs in the merger/verifier:
-//   * macho-nlist-misaligned      — misaligned typed read in parseRawMachO
-//   * macho-section-name-uaf       — dangling section-name StringRef into a
-//                                    temporary local copy
-//   * coff-reloc-reserved-densekey — DenseMap reserved-key lookup (BUS) in the
-//                                    COFF verifier's symbol-by-index helper
-//   * elf-reloc-shinfo-reserved-densekey — a non-ELF buffer that
-//   ELFObjectFile::
-//                                    create still parses as ELF64LE, with a
-//                                    SHT_REL section whose sh_info is the
-//                                    DenseMap reserved empty key (~0u):
-//                                    inserting it into the merger's
-//                                    SectionHasRelocTarget DenseSet
-//                                    asserted/aborted (the recurring nightly
-//                                    merge-fuzz failure)
+// real memory-safety bugs in the merger/verifier. The corpus covers malformed
+// COFF records and names, reserved DenseMap keys, invalid ELF virtual sizes,
+// eager Mach-O parser allocations, misaligned reads, dangling names, and huge
+// file-less sections.
 // Each is carved exactly as the fuzzer does and pushed through every format
 // with verify on and off, plus the ELF kernel-module section-folding path.  The
 // invariant is simply "the merger never crashes on these inputs" — most
@@ -6001,9 +6058,19 @@ static std::vector<SmallVector<char, 0>> carveCorpus(ArrayRef<uint8_t> Data) {
 // Keeping the artifacts in-tree turns one-off fuzzer finds into permanent CI
 // regression coverage without needing the fuzzer harness itself.
 TEST(MergeFuzzCorpus, NoCrashOnSavedRegressions) {
-  const char *Names[] = {"macho-nlist-misaligned", "macho-section-name-uaf",
-                         "coff-reloc-reserved-densekey",
-                         "elf-reloc-shinfo-reserved-densekey"};
+  const char *Names[] = {
+      "coff-invalid-section-name-unchecked",
+      "coff-pe-lfanew-oob-read",
+      "coff-reloc-reserved-densekey",
+      "coff-reloc-symbol-oob",
+      "coff-symbol-record-oob",
+      "elf-nobits-shsize-alloc-oom",
+      "elf-reloc-shinfo-reserved-densekey",
+      "macho-huge-ncmds-oom",
+      "macho-nlist-misaligned",
+      "macho-section-name-uaf",
+      "macho-zerofill-size-alloc-oom",
+  };
   for (const char *N : Names) {
     SmallString<256> Path(TEST_SOURCE_DIR);
     sys::path::append(Path, "merge-corpus", N);
@@ -6027,6 +6094,37 @@ TEST(MergeFuzzCorpus, NoCrashOnSavedRegressions) {
     SmallVector<char, 0> Out;
     raw_svector_ostream OS(Out);
     mergeObjects(Bufs, OS, Format::ELF64LE, Folded); // must not crash
+  }
+}
+
+TEST(MergeFuzzCorpus, RejectsHugeCompressedELFWithoutAllocation) {
+  // Exact crash-c01ac293... artifact from the nightly merge-fuzz job. A tiny
+  // malformed input reached the ELF verifier with an SHF_COMPRESSED section
+  // declaring a 0xffffffff1100-byte logical size, which made zstd decompression
+  // attempt that allocation before validating the payload.
+  const uint8_t Crash[] = {
+      0x23, 0x0a, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x11,
+      0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x16, 0xfa, 0xce, 0x05, 0x00, 0x00,
+      0x00, 0x02, 0x18, 0x00, 0x00, 0x00, 0x20, 0x00, 0x00, 0x00, 0x02, 0x00,
+      0x04, 0x19, 0x00, 0x00, 0x00, 0x88, 0x11, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x4f, 0x00,
+      0x40, 0x00, 0x02, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x5f, 0x5f, 0x74, 0x65, 0x78, 0x74, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x0f, 0x00, 0x00, 0x00, 0x00, 0x5f, 0x5f, 0x33, 0x45,
+      0x10, 0x58, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x2b, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x76, 0x00, 0x00, 0x66, 0x75,
+      0x65, 0x66, 0x49, 0x11};
+  auto Bufs = carveCorpus(Crash);
+
+  for (bool Verify : {true, false}) {
+    Options Opts;
+    Opts.verify = Verify;
+    SmallVector<char, 0> Out;
+    raw_svector_ostream OS(Out);
+    EXPECT_FALSE(mergeObjects(Bufs, OS, Format::ELF64LE, Opts))
+        << "Verify=" << Verify;
   }
 }
 #endif // TEST_SOURCE_DIR

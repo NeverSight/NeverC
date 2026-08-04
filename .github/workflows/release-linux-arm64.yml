@@ -1,20 +1,17 @@
 # Release build for Linux arm64 (non-PGO).
-# Tag push: build + test + GitHub Release upload.
-# Manual dispatch: same pipeline but artifacts only (no release).
+# Called by release.yml; manual dispatch builds artifacts without publishing.
 name: linux-arm64-neverc-release
 
 permissions:
-  contents: write
+  contents: read
 
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_call:
   workflow_dispatch:
 
 jobs:
   release:
-    name: Build + test + release
+    name: Build + test + package
     runs-on: ubuntu-22.04-arm
     env:
       BUILD_TYPE: Release
@@ -43,7 +40,7 @@ jobs:
           free -h
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           path: neverc
 
@@ -57,13 +54,13 @@ jobs:
           sudo /tmp/llvm.sh "$LLVM_APT_VER"
           echo "CC=clang-${LLVM_APT_VER}" >> "$GITHUB_ENV"
           echo "CXX=clang++-${LLVM_APT_VER}" >> "$GITHUB_ENV"
-          clang-${LLVM_APT_VER} --version
+          "clang-${LLVM_APT_VER}" --version
 
       - name: Build neverc
         run: |
           cmake -GNinja -Bbuild \
-          -DCMAKE_C_COMPILER=$CC \
-          -DCMAKE_CXX_COMPILER=$CXX \
+          "-DCMAKE_C_COMPILER=$CC" \
+          "-DCMAKE_CXX_COMPILER=$CXX" \
           -DCMAKE_INSTALL_PREFIX=install \
           -DLLVM_ENABLE_ASSERTIONS=OFF \
           -DLLVM_TOOL_LLVM_SHLIB_BUILD=off \
@@ -82,8 +79,8 @@ jobs:
         run: |
           set -e
           make -C build/pluginsdk/examples \
-            NEVERC=$PWD/build/bin/neverc \
-            INCLUDE_DIR=$PWD/build/pluginsdk/include \
+            "NEVERC=$PWD/build/bin/neverc" \
+            "INCLUDE_DIR=$PWD/build/pluginsdk/include" \
             HOST_TARGET=aarch64-unknown-linux-gnu
           printf 'int main(void) { return 0; }\n' > /tmp/plugin_test.c
           for plugin in ExamplePlugin CrtShimPlugin BenchPlugin; do
@@ -120,18 +117,9 @@ jobs:
             --prefix "$RUNNER_TEMP/pkg-check"
 
       - name: Upload CI artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: linux-arm64-neverc
           path: |
-            linux-arm64-neverc.zip
-            neverc-linux-arm64.zip
-
-      - name: GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          prerelease: ${{ contains(github.ref, '-pre') || contains(github.ref, '-rc') }}
-          files: |
             linux-arm64-neverc.zip
             neverc-linux-arm64.zip

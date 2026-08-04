@@ -108,6 +108,9 @@ struct Options {
   /// uncompressed sections; concatenating independent compressed frames would
   /// make every contribution after the first invisible.
   ///
+  /// Pre-compressed ELF input sections are not supported by this in-process
+  /// merger. It returns false so callers can fall back to the regular linker.
+  ///
   /// COFF intentionally ignores this setting, matching LLVM's object writer.
   llvm::DebugCompressionType debugCompression =
       llvm::DebugCompressionType::None;
