@@ -1,4 +1,5 @@
 #include "neverc/std/flag.h"
+#include <limits.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -98,6 +99,7 @@ static void test_remaining_args(void) {
     neverc_flag_parse(4, argv);
 
     check_int("verbose on", verbose, 1);
+    check_int("positional parse marks parsed", neverc_flag_parsed(), 1);
     check_int("narg", neverc_flag_narg(), 2);
     check_str("arg0", neverc_flag_arg(0), "file1.txt");
     check_str("arg1", neverc_flag_arg(1), "file2.txt");
@@ -132,6 +134,134 @@ static void test_int64_uint64(void) {
 
     check_int("big val", (int)big, 999);
     check_int("ubig val", (int)ubig, 1234);
+}
+
+static void test_numeric_limits(void) {
+    printf("[numeric limits]\n");
+    neverc_flag_reset();
+
+    int integer = 0;
+    long long signed_value = 0;
+    unsigned long long unsigned_value = 0;
+    double number = 0.0;
+    neverc_flag_int("integer", 0, "integer", &integer);
+    neverc_flag_int64("signed", 0, "signed", &signed_value);
+    neverc_flag_uint64("unsigned", 0, "unsigned", &unsigned_value);
+    neverc_flag_double("number", 0.0, "number", &number);
+
+    char *argv[] = {
+        "prog", "-integer=-2147483648", "-signed=9223372036854775807",
+        "-unsigned=18446744073709551615", "-number=1e2"
+    };
+    check_int("limit parse succeeds", neverc_flag_parse(5, argv), 0);
+    check_int("int minimum parses", integer == INT_MIN, 1);
+    check_int("int64 maximum parses", signed_value == LLONG_MAX, 1);
+    check_int("uint64 maximum parses", unsigned_value == ULLONG_MAX, 1);
+    check_double("exponent parses", number, 100.0);
+}
+
+static void test_invalid_values(void) {
+    printf("[invalid values]\n");
+
+    neverc_flag_reset();
+    int count = 7;
+    neverc_flag_int("count", count, "count", &count);
+    char *bad_int[] = {"prog", "-count=12x"};
+    check_int("invalid integer is rejected", neverc_flag_parse(2, bad_int), -1);
+    check_int("invalid integer preserves value", count, 7);
+    check_int("invalid integer is not counted", neverc_flag_nflag(), 0);
+    check_int("failed parse marks parsed", neverc_flag_parsed(), 1);
+
+    neverc_flag_reset();
+    count = 7;
+    neverc_flag_int("count", count, "count", &count);
+    char *overflow_int[] = {"prog", "-count=2147483648"};
+    check_int("overflowing integer is rejected",
+              neverc_flag_parse(2, overflow_int), -1);
+    check_int("overflowing integer preserves value", count, 7);
+    check_int("overflowing integer is not counted", neverc_flag_nflag(), 0);
+
+    neverc_flag_reset();
+    int enabled = 1;
+    neverc_flag_bool("enabled", enabled, "enabled", &enabled);
+    char *bad_bool[] = {"prog", "-enabled=maybe"};
+    check_int("invalid boolean is rejected", neverc_flag_parse(2, bad_bool), -1);
+    check_int("invalid boolean preserves value", enabled, 1);
+    check_int("invalid boolean is not counted", neverc_flag_nflag(), 0);
+
+    neverc_flag_reset();
+    double rate = 2.5;
+    neverc_flag_double("rate", rate, "rate", &rate);
+    char *bad_double[] = {"prog", "-rate=1e"};
+    check_int("invalid double is rejected",
+              neverc_flag_parse(2, bad_double), -1);
+    check_double("invalid double preserves value", rate, 2.5);
+    check_int("invalid double is not counted", neverc_flag_nflag(), 0);
+
+    neverc_flag_reset();
+    count = 7;
+    neverc_flag_int("count", count, "count", &count);
+    char *missing[] = {"prog", "-count"};
+    check_int("missing value is rejected", neverc_flag_parse(2, missing), -1);
+    check_int("missing value preserves value", count, 7);
+    check_int("missing value is not counted", neverc_flag_nflag(), 0);
+
+    neverc_flag_reset();
+    count = 7;
+    neverc_flag_int("count", count, "count", &count);
+    check_int("set rejects invalid integer",
+              neverc_flag_set("count", "junk"), -1);
+    check_int("invalid set preserves value", count, 7);
+    check_int("invalid set is not counted", neverc_flag_nflag(), 0);
+}
+
+static void test_long_names(void) {
+    printf("[long names]\n");
+    neverc_flag_reset();
+
+    char short_name[128];
+    char long_name[129];
+    memset(short_name, 'a', sizeof(short_name) - 1);
+    short_name[sizeof(short_name) - 1] = '\0';
+    memset(long_name, 'a', sizeof(long_name) - 1);
+    long_name[sizeof(long_name) - 1] = '\0';
+
+    int short_value = 0, long_value = 0;
+    neverc_flag_int(short_name, 0, "short", &short_value);
+    neverc_flag_int(long_name, 0, "long", &long_value);
+
+    char argument[133];
+    argument[0] = '-';
+    argument[1] = '-';
+    memcpy(argument + 2, long_name, sizeof(long_name) - 1);
+    argument[130] = '=';
+    argument[131] = '7';
+    argument[132] = '\0';
+    char *argv[] = {"prog", argument};
+    check_int("long name parse succeeds", neverc_flag_parse(2, argv), 0);
+    check_int("long name does not match prefix", short_value, 0);
+    check_int("long name matches exact flag", long_value, 7);
+}
+
+static void test_null_safety(void) {
+    printf("[null safety]\n");
+    neverc_flag_reset();
+
+    int untouched = 44;
+    neverc_flag_int(NULL, 1, "invalid", &untouched);
+    check_int("null name registration is ignored", untouched, 44);
+    check_int("null lookup is rejected", neverc_flag_lookup(NULL, NULL), -1);
+    neverc_flag_visit(NULL, NULL);
+    neverc_flag_visit_all(NULL, NULL);
+
+    neverc_flag_reset();
+    neverc_flag_int("invalid", 1, "invalid", NULL);
+    check_int("null target registration is ignored",
+              neverc_flag_lookup("invalid", NULL), -1);
+
+    neverc_flag_reset();
+    check_int("null argv is rejected", neverc_flag_parse(2, NULL), -1);
+    check_int("null argv parse marks parsed", neverc_flag_parsed(), 1);
 }
 
 static void test_parsed_nflag(void) {
@@ -201,9 +331,13 @@ int main(void) {
     test_remaining_args();
     test_double_dash();
     test_int64_uint64();
+    test_numeric_limits();
+    test_invalid_values();
+    test_long_names();
     test_parsed_nflag();
     test_set_lookup();
     test_visit();
+    test_null_safety();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

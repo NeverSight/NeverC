@@ -423,7 +423,8 @@ TEST_F(StdLibTest, BufioAllocationFailure) {
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
   EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
 }
-STD_TEST(flag, "src/flag/flag.c", "src/strconv/parse_float.c")
+STD_TEST(flag, "src/flag/flag.c", "src/strconv/parse_int.c",
+         "src/strconv/parse_float.c", "src/strconv/parse_bool.c")
 STD_TEST(log, "src/log/log.c")
 STD_TEST(slog, "src/log/slog/slog.c")
 STD_TEST(time, "src/time/time.c")
@@ -981,6 +982,7 @@ STD_TEST(dot_syntax,
     "src/math/bits/bits.c",
     "src/strconv/format_int.c", "src/strconv/parse_int.c", "src/strconv/format_bool.c",
     "src/strconv/format_float.c", "src/strconv/parse_float.c",
+    "src/strconv/parse_bool.c",
     "src/encoding/hex/encode.c", "src/encoding/hex/decode.c",
     "src/hash/fnv/fnv.c",
     "src/hash/adler32/adler32.c",
