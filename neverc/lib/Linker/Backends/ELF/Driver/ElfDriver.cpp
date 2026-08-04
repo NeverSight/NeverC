@@ -2478,7 +2478,7 @@ void LinkerDriver::execute(opt::InputArgList &args) {
             toString(LinkPhases.takeError()));
       return;
     }
-    if ((*LinkPhases)->hasPluginBindings()) {
+    if ((*LinkPhases)->requiresNativeProjection()) {
       StringRef Triple;
       if (config->driverCfg->executionRequest)
         Triple = config->driverCfg->executionRequest->TargetTriple;

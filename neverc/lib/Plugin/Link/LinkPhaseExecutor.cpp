@@ -579,10 +579,10 @@ LinkPhasePipeline::execute(std::shared_ptr<PluginLinkGraph> Input,
   return Current;
 }
 
-bool LinkPhasePipeline::hasPluginBindings() const {
-  for (size_t Index = 0; Index != State->Registry.graph().size(); ++Index)
-    if (State->Executor->hasBindings(
-            State->Registry.graph().phaseAt(Index).ID))
+bool LinkPhasePipeline::requiresNativeProjection() const {
+  for (const LinkTransitionDefinition &Transition :
+       State->Registry.transitions())
+    if (State->Executor->hasBindings(Transition.Phase))
       return true;
   return false;
 }

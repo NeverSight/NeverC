@@ -53,7 +53,7 @@ TEST(PluginLinkPhaseTest,
   auto Pipeline = LinkPhasePipeline::create(Scope.task());
   ASSERT_TRUE(static_cast<bool>(Pipeline))
       << errorText(Pipeline.takeError());
-  EXPECT_FALSE((*Pipeline)->hasPluginBindings());
+  EXPECT_FALSE((*Pipeline)->requiresNativeProjection());
 
   NevercTestLinkPhaseTrace Trace{};
   Trace.PhaseAPI = &Scope.phaseAPI();
@@ -67,7 +67,30 @@ TEST(PluginLinkPhaseTest,
   Observer.UserData = &Trace;
   ASSERT_FALSE(
       (*Pipeline)->addObserver(LinkTestPluginID, Observer));
-  EXPECT_TRUE((*Pipeline)->hasPluginBindings());
+  EXPECT_TRUE((*Pipeline)->requiresNativeProjection());
+}
+
+TEST(PluginLinkPhaseTest,
+     CoarseLinkGateDoesNotRequireNativeGraphProjection) {
+  LinkTaskScope Scope;
+  ASSERT_TRUE(Scope.initialize());
+  auto Pipeline = LinkPhasePipeline::create(Scope.task());
+  ASSERT_TRUE(static_cast<bool>(Pipeline))
+      << errorText(Pipeline.takeError());
+
+  NevercTestLinkPhaseTrace Trace{};
+  Trace.PhaseAPI = &Scope.phaseAPI();
+  NevercObserverDescriptor Observer{};
+  Observer.Header = {sizeof(Observer), NEVERC_PLUGIN_ABI_MAJOR,
+                     NEVERC_PLUGIN_ABI_MINOR, 0};
+  Observer.Phase = phaseID(NEVERC_PHASE_LINK_FULL_HIGH,
+                           NEVERC_PHASE_LINK_FULL_LOW);
+  Observer.Points = NEVERC_OBSERVER_BEFORE | NEVERC_OBSERVER_AFTER;
+  Observer.Callback = neverc_test_link_observer;
+  Observer.UserData = &Trace;
+  ASSERT_FALSE(
+      (*Pipeline)->addObserver(LinkTestPluginID, Observer));
+  EXPECT_FALSE((*Pipeline)->requiresNativeProjection());
 }
 
 TEST(PluginLinkPhaseTest, BuiltinPipelineExecutesAllTypedTransitions) {
