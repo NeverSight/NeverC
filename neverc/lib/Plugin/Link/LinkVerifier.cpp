@@ -1,9 +1,9 @@
 #include "LinkGraph.h"
 #include "llvm/Support/Errc.h"
 #include "llvm/Support/raw_ostream.h"
-#include <set>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 
 using namespace llvm;
 
@@ -32,7 +32,7 @@ bool isPowerOfTwo(uint64_t Value) {
 
 template <typename Storage>
 Error checkIDs(const Storage &Values, StringRef Kind,
-               std::set<uint64_t> &AllIDs) {
+               std::unordered_set<uint64_t> &AllIDs) {
   for (const auto &Value : Values) {
     if (Value.ID == 0)
       return verificationError(Kind, Value.ID, nullptr,
@@ -46,15 +46,54 @@ Error checkIDs(const Storage &Values, StringRef Kind,
   return Error::success();
 }
 
-Error checkOrigin(const PluginLinkGraph &Graph,
+template <typename Storage>
+void collectIDs(const Storage &Values,
+                std::unordered_set<uint64_t> &IDs) {
+  IDs.reserve(Values.size());
+  for (const auto &Value : Values)
+    IDs.insert(Value.ID);
+}
+
+struct GraphIndex {
+  std::unordered_set<uint64_t> Inputs;
+  std::unordered_set<uint64_t> Archives;
+  std::unordered_set<uint64_t> ArchiveMembers;
+  std::unordered_set<uint64_t> SharedLibraries;
+  std::unordered_set<uint64_t> BitcodeModules;
+  std::unordered_set<uint64_t> Comdats;
+  std::unordered_set<uint64_t> Sections;
+  std::unordered_map<uint64_t, const PluginLinkAtom *> Atoms;
+  std::unordered_set<uint64_t> Symbols;
+
+  explicit GraphIndex(const PluginLinkGraph &Graph) {
+    collectIDs(Graph.inputs(), Inputs);
+    collectIDs(Graph.archives(), Archives);
+    collectIDs(Graph.archiveMembers(), ArchiveMembers);
+    collectIDs(Graph.sharedLibraries(), SharedLibraries);
+    collectIDs(Graph.bitcodeModules(), BitcodeModules);
+    collectIDs(Graph.comdats(), Comdats);
+    collectIDs(Graph.sections(), Sections);
+    Atoms.reserve(Graph.atoms().size());
+    for (const PluginLinkAtom &Atom : Graph.atoms())
+      Atoms.emplace(Atom.ID, &Atom);
+    collectIDs(Graph.symbols(), Symbols);
+  }
+
+  const PluginLinkAtom *findAtom(uint64_t ID) const {
+    auto It = Atoms.find(ID);
+    return It == Atoms.end() ? nullptr : It->second;
+  }
+};
+
+Error checkOrigin(const GraphIndex &Index,
                   const PluginLinkOriginData &Origin, StringRef Kind,
                   uint64_t ID) {
-  if (Origin.InputID != 0 && !Graph.findInput(Origin.InputID))
+  if (Origin.InputID != 0 && !Index.Inputs.count(Origin.InputID))
     return verificationError(
         Kind, ID, &Origin, "origin refers to a missing input",
         "retain the originating input or clear the invalid reference");
   if (Origin.ArchiveMemberID != 0 &&
-      !Graph.findArchiveMember(Origin.ArchiveMemberID))
+      !Index.ArchiveMembers.count(Origin.ArchiveMemberID))
     return verificationError(
         Kind, ID, &Origin, "origin refers to a missing archive member",
         "retain the archive member or clear the invalid reference");
@@ -62,10 +101,10 @@ Error checkOrigin(const PluginLinkGraph &Graph,
 }
 
 template <typename Storage>
-Error checkOrigins(const PluginLinkGraph &Graph, const Storage &Values,
+Error checkOrigins(const GraphIndex &Index, const Storage &Values,
                    StringRef Kind) {
   for (const auto &Value : Values)
-    if (Error E = checkOrigin(Graph, Value.Origin, Kind, Value.ID))
+    if (Error E = checkOrigin(Index, Value.Origin, Kind, Value.ID))
       return E;
   return Error::success();
 }
@@ -79,7 +118,7 @@ bool exceedsPointerWidth(uint64_t Value, uint32_t PointerWidth) {
 } // namespace
 
 Error verifyPluginLinkGraph(const PluginLinkGraph &Graph) {
-  std::set<uint64_t> IDs;
+  std::unordered_set<uint64_t> IDs;
   if (Error E = checkIDs(Graph.inputs(), "input", IDs))
     return E;
   if (Error E = checkIDs(Graph.archives(), "archive", IDs))
@@ -113,24 +152,26 @@ Error verifyPluginLinkGraph(const PluginLinkGraph &Graph) {
   if (Error E = checkIDs(Graph.constraints(), "constraint", IDs))
     return E;
 
+  const GraphIndex Index(Graph);
+
   for (const PluginLinkInput &Input : Graph.inputs()) {
     if (Input.LogicalURI.empty() && neverc_handle_is_null(Input.ObjectGraph))
       return verificationError(
           "input", Input.ID, nullptr,
           "input has neither a logical URI nor an ObjectGraph",
           "supply an authorized URI or a task-scoped ObjectGraph");
-    if (Input.ArchiveID != 0 && !Graph.findArchive(Input.ArchiveID))
+    if (Input.ArchiveID != 0 && !Index.Archives.count(Input.ArchiveID))
       return verificationError("input", Input.ID, nullptr,
                                "input refers to a missing archive",
                                "retain or clear the archive association");
     if (Input.SharedLibraryID != 0 &&
-        !Graph.findSharedLibrary(Input.SharedLibraryID))
+        !Index.SharedLibraries.count(Input.SharedLibraryID))
       return verificationError(
           "input", Input.ID, nullptr,
           "input refers to a missing shared library",
           "retain or clear the shared-library association");
     if (Input.BitcodeModuleID != 0 &&
-        !Graph.findBitcodeModule(Input.BitcodeModuleID))
+        !Index.BitcodeModules.count(Input.BitcodeModuleID))
       return verificationError(
           "input", Input.ID, nullptr,
           "input refers to a missing bitcode module",
@@ -138,7 +179,7 @@ Error verifyPluginLinkGraph(const PluginLinkGraph &Graph) {
   }
 
   for (const PluginLinkArchive &Archive : Graph.archives()) {
-    if (!Graph.findInput(Archive.InputID))
+    if (!Index.Inputs.count(Archive.InputID))
       return verificationError("archive", Archive.ID, &Archive.Origin,
                                "archive has no owning input",
                                "bind the archive to a live input");
@@ -148,12 +189,12 @@ Error verifyPluginLinkGraph(const PluginLinkGraph &Graph) {
                                "provide a deterministic archive name");
   }
   for (const PluginLinkArchiveMember &Member : Graph.archiveMembers()) {
-    if (!Graph.findInput(Member.InputID))
+    if (!Index.Inputs.count(Member.InputID))
       return verificationError(
           "archive-member", Member.ID, &Member.Origin,
           "archive member has no owning input",
           "bind the member to the input that supplies its bytes");
-    if (Member.ArchiveID != 0 && !Graph.findArchive(Member.ArchiveID))
+    if (Member.ArchiveID != 0 && !Index.Archives.count(Member.ArchiveID))
       return verificationError(
           "archive-member", Member.ID, &Member.Origin,
           "archive member refers to a missing archive",
@@ -166,14 +207,14 @@ Error verifyPluginLinkGraph(const PluginLinkGraph &Graph) {
   }
   for (const PluginLinkSharedLibrary &Library :
        Graph.sharedLibraries()) {
-    if (!Graph.findInput(Library.InputID))
+    if (!Index.Inputs.count(Library.InputID))
       return verificationError(
           "shared-library", Library.ID, &Library.Origin,
           "shared library has no owning input",
           "bind the shared library to a live input");
   }
   for (const PluginLinkBitcodeModule &Module : Graph.bitcodeModules()) {
-    if (!Graph.findInput(Module.InputID))
+    if (!Index.Inputs.count(Module.InputID))
       return verificationError(
           "bitcode-module", Module.ID, &Module.Origin,
           "bitcode module has no owning input",
@@ -199,7 +240,7 @@ Error verifyPluginLinkGraph(const PluginLinkGraph &Graph) {
                                "COMDAT name is empty",
                                "provide the source COMDAT signature");
     if (Comdat.SelectedID != 0 &&
-        !Graph.findComdat(Comdat.SelectedID))
+        !Index.Comdats.count(Comdat.SelectedID))
       return verificationError("comdat", Comdat.ID, &Comdat.Origin,
                                "selected COMDAT is missing",
                                "clear or replace the selected COMDAT");
@@ -216,7 +257,7 @@ Error verifyPluginLinkGraph(const PluginLinkGraph &Graph) {
                                "section alignment is not a power of two",
                                "use a non-zero power-of-two alignment");
     if (Section.ComdatID != 0 &&
-        !Graph.findComdat(Section.ComdatID))
+        !Index.Comdats.count(Section.ComdatID))
       return verificationError("section", Section.ID, &Section.Origin,
                                "section COMDAT is missing",
                                "retain or clear the COMDAT reference");
@@ -230,7 +271,7 @@ Error verifyPluginLinkGraph(const PluginLinkGraph &Graph) {
   }
 
   for (const PluginLinkAtom &Atom : Graph.atoms()) {
-    if (!Graph.findSection(Atom.SectionID))
+    if (!Index.Sections.count(Atom.SectionID))
       return verificationError("atom", Atom.ID, &Atom.Origin,
                                "atom section is missing",
                                "bind the atom to a live section");
@@ -243,12 +284,12 @@ Error verifyPluginLinkGraph(const PluginLinkGraph &Graph) {
           "atom", Atom.ID, &Atom.Origin,
           "atom mixes initialized bytes with zero-fill size",
           "represent initialized and zero-fill ranges as separate atoms");
-    if (Atom.ComdatID != 0 && !Graph.findComdat(Atom.ComdatID))
+    if (Atom.ComdatID != 0 && !Index.Comdats.count(Atom.ComdatID))
       return verificationError("atom", Atom.ID, &Atom.Origin,
                                "atom COMDAT is missing",
                                "retain or clear the COMDAT reference");
     if (Atom.FoldLeaderID != 0 &&
-        (!Graph.findAtom(Atom.FoldLeaderID) ||
+        (!Index.findAtom(Atom.FoldLeaderID) ||
          Atom.FoldLeaderID == Atom.ID))
       return verificationError("atom", Atom.ID, &Atom.Origin,
                                "fold leader is missing or self-referential",
@@ -269,7 +310,7 @@ Error verifyPluginLinkGraph(const PluginLinkGraph &Graph) {
                                "symbol name is empty",
                                "provide the source or synthetic symbol name");
     if (Symbol.Definition == NEVERC_LINK_SYMBOL_DEFINED &&
-        !Graph.findAtom(Symbol.AtomID))
+        !Index.findAtom(Symbol.AtomID))
       return verificationError("symbol", Symbol.ID, &Symbol.Origin,
                                "defined symbol has no live atom",
                                "rebind it to a live atom or make it undefined");
@@ -294,7 +335,7 @@ Error verifyPluginLinkGraph(const PluginLinkGraph &Graph) {
   }
 
   for (const PluginLinkEdge &Edge : Graph.edges()) {
-    const PluginLinkAtom *Source = Graph.findAtom(Edge.SourceAtomID);
+    const PluginLinkAtom *Source = Index.findAtom(Edge.SourceAtomID);
     if (!Source)
       return verificationError("edge", Edge.ID, &Edge.Origin,
                                "edge source atom is missing",
@@ -305,12 +346,12 @@ Error verifyPluginLinkGraph(const PluginLinkGraph &Graph) {
           "edge must have exactly one symbol or atom target",
           "set one target and clear the other");
     if (Edge.TargetSymbolID != 0 &&
-        !Graph.findSymbol(Edge.TargetSymbolID))
+        !Index.Symbols.count(Edge.TargetSymbolID))
       return verificationError("edge", Edge.ID, &Edge.Origin,
                                "edge target symbol is missing",
                                "retarget the edge to a live symbol");
     if (Edge.TargetAtomID != 0 &&
-        !Graph.findAtom(Edge.TargetAtomID))
+        !Index.findAtom(Edge.TargetAtomID))
       return verificationError("edge", Edge.ID, &Edge.Origin,
                                "edge target atom is missing",
                                "retarget the edge to a live atom");
@@ -327,14 +368,14 @@ Error verifyPluginLinkGraph(const PluginLinkGraph &Graph) {
 
   for (const PluginLinkImport &Import : Graph.imports()) {
     if (Import.Name.empty() ||
-        (Import.SymbolID != 0 && !Graph.findSymbol(Import.SymbolID)))
+        (Import.SymbolID != 0 && !Index.Symbols.count(Import.SymbolID)))
       return verificationError(
           "import", Import.ID, &Import.Origin,
           "import name or symbol reference is invalid",
           "bind a named import to a live symbol");
   }
   for (const PluginLinkExport &Export : Graph.exports()) {
-    if (Export.Name.empty() || !Graph.findSymbol(Export.SymbolID))
+    if (Export.Name.empty() || !Index.Symbols.count(Export.SymbolID))
       return verificationError(
           "export", Export.ID, &Export.Origin,
           "export name or symbol reference is invalid",
@@ -342,9 +383,9 @@ Error verifyPluginLinkGraph(const PluginLinkGraph &Graph) {
   }
   for (const PluginLinkUnwindRecord &Unwind :
        Graph.unwindRecords()) {
-    if (!Graph.findAtom(Unwind.AtomID) ||
+    if (!Index.findAtom(Unwind.AtomID) ||
         (Unwind.PersonalitySymbolID != 0 &&
-         !Graph.findSymbol(Unwind.PersonalitySymbolID)))
+         !Index.Symbols.count(Unwind.PersonalitySymbolID)))
       return verificationError(
           "unwind", Unwind.ID, &Unwind.Origin,
           "unwind atom or personality symbol is missing",
@@ -354,8 +395,8 @@ Error verifyPluginLinkGraph(const PluginLinkGraph &Graph) {
     if (Synthetic.Role.empty() ||
         (Synthetic.SectionID == 0 && Synthetic.AtomID == 0) ||
         (Synthetic.SectionID != 0 &&
-         !Graph.findSection(Synthetic.SectionID)) ||
-        (Synthetic.AtomID != 0 && !Graph.findAtom(Synthetic.AtomID)))
+         !Index.Sections.count(Synthetic.SectionID)) ||
+        (Synthetic.AtomID != 0 && !Index.findAtom(Synthetic.AtomID)))
       return verificationError(
           "synthetic", Synthetic.ID, &Synthetic.Origin,
           "synthetic role or entity reference is invalid",
@@ -376,36 +417,36 @@ Error verifyPluginLinkGraph(const PluginLinkGraph &Graph) {
           "provide a stable kind and subject for required constraints");
   }
 
-  if (Error E = checkOrigins(Graph, Graph.archives(), "archive"))
+  if (Error E = checkOrigins(Index, Graph.archives(), "archive"))
     return E;
   if (Error E =
-          checkOrigins(Graph, Graph.archiveMembers(), "archive-member"))
+          checkOrigins(Index, Graph.archiveMembers(), "archive-member"))
     return E;
-  if (Error E = checkOrigins(Graph, Graph.sharedLibraries(),
+  if (Error E = checkOrigins(Index, Graph.sharedLibraries(),
                              "shared-library"))
     return E;
   if (Error E =
-          checkOrigins(Graph, Graph.bitcodeModules(), "bitcode-module"))
+          checkOrigins(Index, Graph.bitcodeModules(), "bitcode-module"))
     return E;
-  if (Error E = checkOrigins(Graph, Graph.comdats(), "comdat"))
+  if (Error E = checkOrigins(Index, Graph.comdats(), "comdat"))
     return E;
-  if (Error E = checkOrigins(Graph, Graph.sections(), "section"))
+  if (Error E = checkOrigins(Index, Graph.sections(), "section"))
     return E;
-  if (Error E = checkOrigins(Graph, Graph.atoms(), "atom"))
+  if (Error E = checkOrigins(Index, Graph.atoms(), "atom"))
     return E;
-  if (Error E = checkOrigins(Graph, Graph.symbols(), "symbol"))
+  if (Error E = checkOrigins(Index, Graph.symbols(), "symbol"))
     return E;
-  if (Error E = checkOrigins(Graph, Graph.edges(), "edge"))
+  if (Error E = checkOrigins(Index, Graph.edges(), "edge"))
     return E;
-  if (Error E = checkOrigins(Graph, Graph.imports(), "import"))
+  if (Error E = checkOrigins(Index, Graph.imports(), "import"))
     return E;
-  if (Error E = checkOrigins(Graph, Graph.exports(), "export"))
+  if (Error E = checkOrigins(Index, Graph.exports(), "export"))
     return E;
-  if (Error E = checkOrigins(Graph, Graph.unwindRecords(), "unwind"))
+  if (Error E = checkOrigins(Index, Graph.unwindRecords(), "unwind"))
     return E;
-  if (Error E = checkOrigins(Graph, Graph.synthetics(), "synthetic"))
+  if (Error E = checkOrigins(Index, Graph.synthetics(), "synthetic"))
     return E;
-  return checkOrigins(Graph, Graph.constraints(), "constraint");
+  return checkOrigins(Index, Graph.constraints(), "constraint");
 }
 
 } // namespace neverc::plugin
