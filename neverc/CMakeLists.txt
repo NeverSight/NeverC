@@ -412,6 +412,7 @@ neverc_target_link_libraries(neverc
   PRIVATE
   nevercBuild
   nevercRuntime
+  nevercUpdate
   nevercEmit
   nevercDynCode
   nevercPluginLink
@@ -747,6 +748,7 @@ if(NEVERC_INCLUDE_TESTS AND EXISTS "${NEVERC_TEST_DIR}/CMakeLists.txt")
   set(_neverc_check_test_deps
     neverc-tests
     neverc-build-tests
+    neverc-update-tests
     neverc-merge-tests
     neverc-std-tests
   )

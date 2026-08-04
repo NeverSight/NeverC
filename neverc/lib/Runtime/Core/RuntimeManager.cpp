@@ -6,6 +6,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "neverc/Runtime/RuntimeManager.h"
+#include "neverc/Release/ReleaseClient.h"
 #include "neverc/Runtime/RuntimeManifest.h"
 
 #include "llvm/ADT/ArrayRef.h"
@@ -13,12 +14,10 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/FormatVariadic.h"
-#include "llvm/Support/JSON.h"
-#include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
-#include "llvm/Support/Program.h"
 #include "llvm/Support/raw_ostream.h"
 
+#include <cstdio>
 #include <map>
 #include <optional>
 #include <string>
@@ -30,33 +29,19 @@ namespace runtime {
 
 namespace {
 
-constexpr StringLiteral RepoSlug("NeverSight/NeverC");
-
 // ===----------------------------------------------------------------------===
 // Target definitions
 // ===----------------------------------------------------------------------===
 
-struct TargetDef {
-  StringLiteral Name;
-  StringLiteral CheckDir; // subdirectory whose presence means "installed"
+constexpr RuntimeTarget Targets[] = {
+    {{"windows-x64"}, {"windows/x64"}, {"windows/shared"}},
+    {{"windows-arm64"}, {"windows/arm64"}, {"windows/shared"}},
+    {{"linux-x64"}, {"linux/x64"}, {""}},
+    {{"linux-arm64"}, {"linux/arm64"}, {""}},
+    {{"macos-arm64"}, {"macos/arm64"}, {""}},
+    {{"android-arm64"}, {"android/arm64"}, {""}},
+    {{"android-kernel-arm64"}, {"android/kernel"}, {""}},
 };
-
-constexpr TargetDef Targets[] = {
-    {{"windows-x64"}, {"windows/x64"}},
-    {{"windows-arm64"}, {"windows/arm64"}},
-    {{"linux-x64"}, {"linux/x64"}},
-    {{"linux-arm64"}, {"linux/arm64"}},
-    {{"macos-arm64"}, {"macos/arm64"}},
-    {{"android-arm64"}, {"android/arm64"}},
-    {{"android-kernel-arm64"}, {"android/kernel"}},
-};
-
-const TargetDef *lookupTarget(StringRef Name) {
-  for (const auto &T : Targets)
-    if (T.Name == Name)
-      return &T;
-  return nullptr;
-}
 
 bool isAllTarget(StringRef Name) { return Name.equals_insensitive("all"); }
 
@@ -96,134 +81,19 @@ bool isInstalled(StringRef RuntimeDir, StringRef CheckDir) {
 }
 
 // ===----------------------------------------------------------------------===
-// External tool wrappers (curl / tar)
+// Temporary-file cleanup
 // ===----------------------------------------------------------------------===
-
-/// Locate an executable on PATH. Returns an empty string on failure.
-std::string findProgram(StringRef Name) {
-  if (auto P = sys::findProgramByName(Name))
-    return std::string(*P);
-  return {};
-}
 
 /// RAII guard that removes a file when the scope exits.
 struct TempFileGuard {
   SmallString<256> Path;
-  bool Released = false;
 
   explicit TempFileGuard(SmallString<256> P) : Path(std::move(P)) {}
   ~TempFileGuard() {
-    if (!Released) {
-      std::error_code EC = sys::fs::remove(Path);
-      (void)EC; // Best-effort cleanup; nothing to do on failure.
-    }
+    std::error_code EC = sys::fs::remove(Path);
+    (void)EC; // Best-effort cleanup; nothing to do on failure.
   }
-  void release() { Released = true; }
 };
-
-/// Run an external program with the given arguments. Returns the exit code.
-int run(StringRef Program, ArrayRef<StringRef> Args) {
-  SmallString<256> ErrMsg;
-  int Rc =
-      sys::ExecuteAndWait(Program, Args, /*Env=*/std::nullopt,
-                          /*Redirects=*/{}, /*SecondsToWait=*/0,
-                          /*MemoryLimit=*/0, &ErrMsg);
-  if (Rc != 0 && !ErrMsg.empty())
-    errs() << "error: " << sys::path::filename(Program) << ": " << ErrMsg
-           << "\n";
-  return Rc;
-}
-
-/// Download \p Url to \p DestPath via `curl`. Returns 0 on success.
-int download(StringRef Url, StringRef DestPath) {
-  std::string Curl = findProgram("curl");
-  if (Curl.empty()) {
-    errs() << "error: 'curl' not found — install curl and retry\n";
-    return 1;
-  }
-
-  StringRef Args[] = {Curl, "-fSL", "--progress-bar", "-o", DestPath, Url};
-  return run(Curl, Args);
-}
-
-/// Extract a .zip archive into \p DestDir. Returns 0 on success.
-///
-/// Strategy:
-///   - Unix: `unzip -o <archive> -d <dest>`
-///   - Windows: `tar.exe xf <archive> -C <dest>` (bsdtar, ships with
-///     Windows 10 1803+). Falls back to PowerShell Expand-Archive.
-int extractZip(StringRef Archive, StringRef DestDir) {
-#ifdef _WIN32
-  // Windows 10+ ships bsdtar which handles .zip natively.
-  std::string Tar = findProgram("tar");
-  if (!Tar.empty()) {
-    StringRef Args[] = {Tar, "xf", Archive, "-C", DestDir};
-    return run(Tar, Args);
-  }
-  // Fallback: PowerShell (always available on modern Windows).
-  std::string PS = findProgram("powershell");
-  if (PS.empty()) {
-    errs() << "error: neither 'tar' nor 'powershell' found\n";
-    return 1;
-  }
-  std::string Cmd =
-      formatv("Expand-Archive -Path '{0}' -DestinationPath '{1}' -Force",
-              Archive, DestDir)
-          .str();
-  StringRef Args[] = {PS, "-NoProfile", "-Command", Cmd};
-  return run(PS, Args);
-#else
-  std::string Unzip = findProgram("unzip");
-  if (Unzip.empty()) {
-    errs() << "error: 'unzip' not found — install unzip and retry\n";
-    return 1;
-  }
-  StringRef Args[] = {Unzip, "-o", Archive, "-d", DestDir};
-  return run(Unzip, Args);
-#endif
-}
-
-/// Resolve the concrete Git tag behind GitHub's "latest" release pointer.
-std::optional<std::string> queryLatestReleaseTag() {
-  std::string Curl = findProgram("curl");
-  if (Curl.empty())
-    return std::nullopt;
-
-  SmallString<256> TmpPath;
-  if (auto EC = sys::fs::createTemporaryFile("neverc-rt-tag", "json", TmpPath))
-    return std::nullopt;
-  TempFileGuard TmpGuard(TmpPath);
-
-  std::string Url =
-      formatv("https://api.github.com/repos/{0}/releases/latest", RepoSlug)
-          .str();
-  StringRef Args[] = {Curl,      "-fSL",
-                      "-H",      "Accept: application/vnd.github+json",
-                      "-H",      "User-Agent: neverc-runtime",
-                      "-o",      TmpPath,
-                      Url};
-  if (run(Curl, Args) != 0)
-    return std::nullopt;
-
-  ErrorOr<std::unique_ptr<MemoryBuffer>> Buf = MemoryBuffer::getFile(TmpPath);
-  if (!Buf || Buf.getError())
-    return std::nullopt;
-
-  Expected<json::Value> Parsed = json::parse(Buf.get()->getBuffer());
-  if (!Parsed) {
-    consumeError(Parsed.takeError());
-    return std::nullopt;
-  }
-
-  if (const json::Object *Obj = Parsed->getAsObject())
-    if (std::optional<StringRef> Tag = Obj->getString("tag_name")) {
-      std::string Normalized = normalizeReleaseTag(*Tag);
-      if (Normalized.empty() || Normalized == "latest")
-        return std::nullopt;
-      return Normalized;
-    }
-  return std::nullopt;
-}
 
 // ===----------------------------------------------------------------------===
 // Interactive prompt
@@ -250,8 +120,8 @@ bool promptYesNo(StringRef Question) {
 
 /// Validate the target name and return the TargetDef, printing an error
 /// on failure.
-const TargetDef *requireTarget(StringRef Name) {
-  const TargetDef *T = lookupTarget(Name);
+const RuntimeTarget *requireTarget(StringRef Name) {
+  const RuntimeTarget *T = findRuntimeTarget(Name);
   if (!T) {
     errs() << "error: unknown target '" << Name << "'\n"
            << "available targets:";
@@ -264,21 +134,21 @@ const TargetDef *requireTarget(StringRef Name) {
 /// Download and extract the runtime for \p T into \p RtDir.
 /// If \p RemoveFirst is true, the existing directory is removed before
 /// extraction (used for update / reinstall).
-int fetchAndExtract(const TargetDef *T, StringRef RtDir, StringRef UserVersion,
-                    bool DefaultToLatest, bool RemoveFirst,
-                    std::string *OutReleaseTag = nullptr) {
-  std::string ReleaseTag =
-      resolveFetchReleaseTag(UserVersion, DefaultToLatest);
-  std::string ManifestTag = ReleaseTag;
+int fetchAndExtract(const RuntimeTarget *T, StringRef RtDir,
+                    StringRef UserVersion, bool DefaultToLatest,
+                    bool RemoveFirst, std::string *OutReleaseTag = nullptr) {
+  std::string ReleaseTag = resolveFetchReleaseTag(UserVersion, DefaultToLatest);
+  std::string Asset = formatv("neverc-runtime-{0}.zip", T->Name).str();
 
   if (ReleaseTag == "latest") {
-    if (auto Resolved = queryLatestReleaseTag()) {
-      ManifestTag = *Resolved;
-      ReleaseTag = *Resolved;
-    } else {
-      errs() << "warning: could not resolve latest release tag; manifest "
-                "will not be updated\n";
+    Expected<std::string> Resolved =
+        release::queryLatestReleaseTagForAsset(Asset);
+    if (!Resolved) {
+      errs() << "error: cannot resolve latest runtime release: "
+             << toString(Resolved.takeError()) << "\n";
+      return 1;
     }
+    ReleaseTag = std::move(*Resolved);
   } else if (ReleaseTag.empty()) {
     errs() << "error: invalid release tag";
     if (!UserVersion.empty())
@@ -287,19 +157,8 @@ int fetchAndExtract(const TargetDef *T, StringRef RtDir, StringRef UserVersion,
     return 1;
   }
 
-  std::string Asset = formatv("neverc-runtime-{0}.zip", T->Name).str();
-
-  std::string Url;
-  if (ReleaseTag == "latest")
-    Url = formatv("https://github.com/{0}/releases/latest/download/{1}",
-                  RepoSlug, Asset)
-              .str();
-  else
-    Url = formatv("https://github.com/{0}/releases/download/{1}/{2}",
-                  RepoSlug, ReleaseTag, Asset)
-              .str();
-
-  outs() << "  Source: " << Url << "\n"
+  outs() << "  Release: " << ReleaseTag << "\n"
+         << "  Asset:   " << Asset << "\n"
          << "  Dest:   " << RtDir << "/\n\n";
 
   // Create temp file for download.
@@ -310,12 +169,31 @@ int fetchAndExtract(const TargetDef *T, StringRef RtDir, StringRef UserVersion,
   }
   TempFileGuard TmpGuard(TmpPath);
 
-  outs() << "Downloading " << Asset << "...\n";
-  if (download(Url, TmpPath) != 0) {
-    errs() << "error: download failed — check that release " << ReleaseTag
-           << " has asset '" << Asset << "'\n";
+  SmallString<256> ChecksumPath;
+  if (auto EC = sys::fs::createTemporaryFile("neverc-rt", "SHA256SUMS",
+                                             ChecksumPath)) {
+    errs() << "error: cannot create checksum temp file: " << EC.message()
+           << "\n";
     return 1;
   }
+  TempFileGuard ChecksumGuard(ChecksumPath);
+
+  outs() << "Downloading " << Asset << "...\n";
+  if (Error E = release::downloadReleaseAsset(ReleaseTag, Asset, TmpPath)) {
+    errs() << "error: " << toString(std::move(E)) << "\n";
+    return 1;
+  }
+  outs() << "Downloading SHA256SUMS...\n";
+  if (Error E = release::downloadReleaseAsset(ReleaseTag, "SHA256SUMS",
+                                              ChecksumPath)) {
+    errs() << "error: " << toString(std::move(E)) << "\n";
+    return 1;
+  }
+  if (Error E = release::verifyReleaseAsset(TmpPath, ChecksumPath, Asset)) {
+    errs() << "error: " << toString(std::move(E)) << "\n";
+    return 1;
+  }
+  outs() << "Checksum verified.\n";
 
   // Remove old runtime before extraction if requested.
   if (RemoveFirst) {
@@ -336,32 +214,28 @@ int fetchAndExtract(const TargetDef *T, StringRef RtDir, StringRef UserVersion,
   }
 
   outs() << "Extracting...\n";
-  if (extractZip(TmpPath, RtDir) != 0) {
-    errs() << "error: extraction failed\n";
+  if (Error E = release::extractZip(TmpPath, RtDir)) {
+    errs() << "error: extraction failed: " << toString(std::move(E)) << "\n";
     return 1;
   }
 
-  if (ManifestTag != "latest" &&
-      !recordInstalledTarget(RtDir, T->Name, ManifestTag)) {
+  if (!recordInstalledTarget(RtDir, T->Name, ReleaseTag)) {
     errs() << "warning: installed runtime but failed to update manifest\n";
   }
 
-  if (OutReleaseTag) {
-    if (ManifestTag != "latest")
-      *OutReleaseTag = ManifestTag;
-    else
-      OutReleaseTag->clear();
-  }
+  if (OutReleaseTag)
+    *OutReleaseTag = ReleaseTag;
   return 0;
 }
 
 int doInstall(StringRef TargetName, StringRef Root, StringRef UserVersion) {
-  const TargetDef *T = requireTarget(TargetName);
+  const RuntimeTarget *T = requireTarget(TargetName);
   if (!T)
     return 1;
 
   auto RtDir = runtimeDir(Root);
-  std::string DesiredTag = resolveFetchReleaseTag(UserVersion, /*Latest=*/false);
+  std::string DesiredTag =
+      resolveFetchReleaseTag(UserVersion, /*Latest=*/false);
   if (DesiredTag.empty()) {
     errs() << "error: invalid release tag";
     if (!UserVersion.empty())
@@ -416,7 +290,8 @@ int doInstall(StringRef TargetName, StringRef Root, StringRef UserVersion) {
 
 int doInstallAll(StringRef Root, StringRef UserVersion) {
   auto RtDir = runtimeDir(Root);
-  std::string DesiredTag = resolveFetchReleaseTag(UserVersion, /*Latest=*/false);
+  std::string DesiredTag =
+      resolveFetchReleaseTag(UserVersion, /*Latest=*/false);
   if (DesiredTag.empty()) {
     errs() << "error: invalid release tag";
     if (!UserVersion.empty())
@@ -473,15 +348,14 @@ int doInstallAll(StringRef Root, StringRef UserVersion) {
 
 /// `neverc runtime update <target>` — force-update without prompting.
 int doUpdate(StringRef TargetName, StringRef Root, StringRef UserVersion) {
-  const TargetDef *T = requireTarget(TargetName);
+  const RuntimeTarget *T = requireTarget(TargetName);
   if (!T)
     return 1;
 
   auto RtDir = runtimeDir(Root);
   bool WasInstalled = isInstalled(RtDir, T->CheckDir);
   std::string ReleaseTag;
-  std::string DesiredTag =
-      resolveFetchReleaseTag(UserVersion, /*Latest=*/true);
+  std::string DesiredTag = resolveFetchReleaseTag(UserVersion, /*Latest=*/true);
   if (DesiredTag.empty()) {
     errs() << "error: invalid release tag";
     if (!UserVersion.empty())
@@ -490,8 +364,8 @@ int doUpdate(StringRef TargetName, StringRef Root, StringRef UserVersion) {
     return 1;
   }
 
-  outs() << (WasInstalled ? "Updating" : "Installing") << " runtime: "
-         << T->Name << " (" << DesiredTag << ")\n";
+  outs() << (WasInstalled ? "Updating" : "Installing")
+         << " runtime: " << T->Name << " (" << DesiredTag << ")\n";
   int Rc = fetchAndExtract(T, RtDir, UserVersion, /*DefaultToLatest=*/true,
                            /*RemoveFirst=*/WasInstalled, &ReleaseTag);
   if (Rc == 0) {
@@ -505,7 +379,7 @@ int doUpdate(StringRef TargetName, StringRef Root, StringRef UserVersion) {
 }
 
 int doRemove(StringRef TargetName, StringRef Root) {
-  const TargetDef *T = lookupTarget(TargetName);
+  const RuntimeTarget *T = findRuntimeTarget(TargetName);
   if (!T) {
     errs() << "error: unknown target '" << TargetName << "'\n";
     return 1;
@@ -585,6 +459,20 @@ void printUsage() {
 }
 
 } // anonymous namespace
+
+ArrayRef<RuntimeTarget> getRuntimeTargets() { return Targets; }
+
+const RuntimeTarget *findRuntimeTarget(StringRef Name) {
+  for (const RuntimeTarget &Target : Targets)
+    if (Target.Name == Name)
+      return &Target;
+  return nullptr;
+}
+
+bool isRuntimeTargetInstalled(StringRef RuntimeDirectory,
+                              const RuntimeTarget &Target) {
+  return isInstalled(RuntimeDirectory, Target.CheckDir);
+}
 
 // ===----------------------------------------------------------------------===
 // Entry point — dispatched from neverc main()

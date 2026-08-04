@@ -22,6 +22,7 @@
 #include "neverc/Plugin/Host/PluginSession.h"
 #include "neverc/Plugin/Host/PluginTaskContext.h"
 #include "neverc/Runtime/RuntimeManager.h"
+#include "neverc/Update/UpdateManager.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/IntrusiveRefCntPtr.h"
 #include "llvm/ADT/SmallString.h"
@@ -225,9 +226,10 @@ std::optional<int> handleTestSignCertQuery(ArrayRef<const char *> Args) {
     if (StringRef(Arg) != "--print-test-sign-cert")
       continue;
     if (llvm::outs().is_displayed()) {
-      llvm::errs() << "neverc: error: --print-test-sign-cert writes binary DER; "
-                      "redirect it to a file, e.g. neverc "
-                      "--print-test-sign-cert > neverc-test-signing.cer\n";
+      llvm::errs()
+          << "neverc: error: --print-test-sign-cert writes binary DER; "
+             "redirect it to a file, e.g. neverc "
+             "--print-test-sign-cert > neverc-test-signing.cer\n";
       llvm::errs().flush();
       return 1;
     }
@@ -392,6 +394,17 @@ int neverc_main(int Argc, char **Argv, const llvm::ToolContext &ToolContext) {
 
   if (llvm::sys::Process::FixupStandardFileDescriptors())
     return 1;
+
+  if (Argc > 1 && StringRef(Argv[1]) == "__neverc_apply_update") {
+    return neverc::update::runUpdateHelper(
+        Argc - 1, const_cast<const char **>(Argv) + 1, Argv[0]);
+  }
+
+  if (Argc > 1 &&
+      (StringRef(Argv[1]) == "update" || StringRef(Argv[1]) == "upgrade")) {
+    return neverc::update::runUpdate(
+        Argc - 1, const_cast<const char **>(Argv) + 1, Argv[0]);
+  }
 
   initializeLLVMTargets();
 

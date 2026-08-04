@@ -2151,6 +2151,34 @@ gtest_discover_tests(neverc-build-tests
   DISCOVERY_TIMEOUT 300
 )
 
+# Focused tests for release downloads and self-update transactions. Keep this
+# separate from neverc-tests so updater changes do not rebuild the full suite.
+add_executable(neverc-update-tests UpdateManagerTests.cpp)
+
+target_link_libraries(neverc-update-tests PRIVATE
+  GTest::gtest
+  GTest::gtest_main
+  nevercRelease
+  nevercRuntime
+  nevercUpdate
+)
+
+target_compile_features(neverc-update-tests PRIVATE cxx_std_17)
+
+target_compile_definitions(neverc-update-tests PRIVATE
+  NEVERC_BINARY="${_NEVERC_BINARY}"
+  NEVERC_UPDATE_TEST_SCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/../../utils/release/test-update.sh"
+)
+
+neverc_tests_link_neverc(neverc-update-tests)
+
+gtest_discover_tests(neverc-update-tests
+  TEST_PREFIX "neverc-update."
+  PROPERTIES
+    TIMEOUT 180
+  DISCOVERY_TIMEOUT 300
+)
+
 # Object merger unit tests (ELF, COFF, MachO fuzzing + edge cases)
 add_executable(neverc-merge-tests MergeTests.cpp)
 

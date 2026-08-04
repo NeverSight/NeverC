@@ -144,6 +144,19 @@ neverc runtime install windows-x64
 neverc runtime list
 ```
 
+Release 安装可将编译器与已经安装的交叉编译 runtime 作为一个版本单元同步更新：
+
+```bash
+neverc update                 # 更新到最新完整 release
+neverc update v3389.1.2       # 切换到精确版本，也支持降级
+```
+
+`neverc upgrade` 是同义命令。NeverC 只解析一个明确的 release 标签，仅重装原本
+已经存在的 runtime，并把它们全部固定到编译器目标版本。所有必需的包都会在修改
+现有文件前完成下载、SHA256 校验、解压与内容验证；暂存或校验失败不会改动当前安装，
+提交失败则自动回滚。如果某个 runtime release 有问题，执行
+`neverc update <较早版本>` 即可让编译器和所有已安装 runtime 一起回退。
+
 ## 从源码构建
 
 构建依赖、构建命令、Windows 交叉编译、PATH 设置，以及在 release 安装与本地源码构建之间切换，详见 **[本地开发](../local-dev/README.zh-CN.md)**。

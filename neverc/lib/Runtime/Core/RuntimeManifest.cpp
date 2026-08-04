@@ -6,9 +6,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "neverc/Runtime/RuntimeManifest.h"
+#include "neverc/Foundation/Core/Version.h"
+#include "neverc/Release/ReleaseClient.h"
 
-#include "llvm/ADT/STLExtras.h"
-#include "llvm/Config/llvm-config.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/FormatVariadic.h"
@@ -34,30 +34,6 @@ constexpr StringLiteral ManifestTargetsKey("targets");
 constexpr StringLiteral ManifestReleaseTagKey("release_tag");
 constexpr int ManifestSchemaVersion = 1;
 
-bool isValidReleaseTag(StringRef Tag) {
-  // Match install.sh / release contract: vMAJOR.MINOR.PATCH
-  if (!Tag.starts_with("v") || Tag.size() < 5)
-    return false;
-
-  size_t FirstDot = Tag.find('.', 1);
-  if (FirstDot == StringRef::npos)
-    return false;
-  size_t SecondDot = Tag.find('.', FirstDot + 1);
-  if (SecondDot == StringRef::npos || SecondDot + 1 >= Tag.size())
-    return false;
-  if (Tag.find('.', SecondDot + 1) != StringRef::npos)
-    return false;
-
-  auto IsDigits = [](StringRef S) {
-    return !S.empty() &&
-           llvm::all_of(S, [](char C) { return C >= '0' && C <= '9'; });
-  };
-
-  return IsDigits(Tag.slice(1, FirstDot)) &&
-         IsDigits(Tag.slice(FirstDot + 1, SecondDot)) &&
-         IsDigits(Tag.slice(SecondDot + 1, Tag.size()));
-}
-
 SmallString<256> manifestPath(StringRef RuntimeDir) {
   SmallString<256> P(RuntimeDir);
   sys::path::append(P, ManifestFileName);
@@ -72,8 +48,7 @@ Expected<json::Object> readManifestObject(StringRef RuntimeDir) {
     if (Buf.getError() == std::errc::no_such_file_or_directory)
       return json::Object{};
     return createStringError(Buf.getError(),
-                             "cannot read runtime manifest '%s'",
-                             Path.c_str());
+                             "cannot read runtime manifest '%s'", Path.c_str());
   }
 
   Expected<json::Value> Parsed = json::parse(Buf.get()->getBuffer());
@@ -105,8 +80,8 @@ Error writeManifestObject(StringRef RuntimeDir, const json::Object &Obj) {
   return Error::success();
 }
 
-std::optional<std::string>
-readTargetReleaseTag(const json::Object &Manifest, StringRef TargetName) {
+std::optional<std::string> readTargetReleaseTag(const json::Object &Manifest,
+                                                StringRef TargetName) {
   const json::Object *Targets = Manifest.getObject(ManifestTargetsKey);
   if (!Targets)
     return std::nullopt;
@@ -115,8 +90,7 @@ readTargetReleaseTag(const json::Object &Manifest, StringRef TargetName) {
   if (!Target)
     return std::nullopt;
 
-  if (std::optional<StringRef> Tag =
-          Target->getString(ManifestReleaseTagKey))
+  if (std::optional<StringRef> Tag = Target->getString(ManifestReleaseTagKey))
     return Tag->str();
   return std::nullopt;
 }
@@ -124,25 +98,13 @@ readTargetReleaseTag(const json::Object &Manifest, StringRef TargetName) {
 } // anonymous namespace
 
 std::string getCompilerReleaseTag() {
-  return formatv("v{0}.{1}.{2}", LLVM_VERSION_MAJOR, LLVM_VERSION_MINOR,
-                 LLVM_VERSION_PATCH)
+  return formatv("v{0}.{1}.{2}", NEVERC_VERSION_MAJOR, NEVERC_VERSION_MINOR,
+                 NEVERC_VERSION_PATCHLEVEL)
       .str();
 }
 
 std::string normalizeReleaseTag(StringRef Tag) {
-  if (Tag.equals_insensitive("latest"))
-    return "latest";
-  if (Tag.empty())
-    return {};
-
-  StringRef Normalized = Tag;
-  if (Normalized.starts_with_insensitive("v"))
-    Normalized = Normalized.drop_front();
-
-  std::string Result = formatv("v{0}", Normalized).str();
-  if (!isValidReleaseTag(Result))
-    return {};
-  return Result;
+  return release::normalizeReleaseTag(Tag);
 }
 
 std::string resolveFetchReleaseTag(StringRef UserVersion,
@@ -154,8 +116,8 @@ std::string resolveFetchReleaseTag(StringRef UserVersion,
   return getCompilerReleaseTag();
 }
 
-std::optional<std::string>
-getInstalledReleaseTag(StringRef RuntimeDir, StringRef TargetName) {
+std::optional<std::string> getInstalledReleaseTag(StringRef RuntimeDir,
+                                                  StringRef TargetName) {
   Expected<json::Object> Manifest = readManifestObject(RuntimeDir);
   if (!Manifest) {
     consumeError(Manifest.takeError());
@@ -181,8 +143,7 @@ readInstalledTargetVersions(StringRef RuntimeDir) {
     const json::Object *Target = Entry.second.getAsObject();
     if (!Target)
       continue;
-    if (std::optional<StringRef> Tag =
-            Target->getString(ManifestReleaseTagKey))
+    if (std::optional<StringRef> Tag = Target->getString(ManifestReleaseTagKey))
       Result.emplace(Entry.first.str(), Tag->str());
   }
   return Result;

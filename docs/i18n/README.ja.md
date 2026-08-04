@@ -144,6 +144,20 @@ neverc runtime install windows-x64
 neverc runtime list
 ```
 
+Release インストールでは、コンパイラとインストール済みのクロスコンパイル runtime を一つのバージョン単位として同期更新できます：
+
+```bash
+neverc update                 # 最新の完全な release へ更新
+neverc update v3389.1.2       # 指定したバージョンへ切り替え（ダウングレードも可）
+```
+
+`neverc upgrade` は同義コマンドです。NeverC は一つの具体的な release タグを解決し、
+すでに存在する runtime だけを再インストールして、すべてをコンパイラの対象バージョンに固定します。
+必要な全アーカイブは既存ファイルを変更する前にダウンロード、SHA256 検証、展開、内容検証されます。
+ステージングや検証の失敗では現在のインストールは変わらず、コミット失敗時は自動的にロールバックします。
+runtime release に問題がある場合は `neverc update <古いバージョン>` を実行すると、
+コンパイラとインストール済み runtime をまとめて戻せます。
+
 ## ソースからビルド
 
 ビルド要件、ビルドコマンド、Windows クロスコンパイル、PATH 設定、release インストールとツリー内ビルドの切り替えについては **[ローカル開発](../local-dev/README.ja.md)** を参照してください。

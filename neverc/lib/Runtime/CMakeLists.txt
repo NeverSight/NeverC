@@ -5,6 +5,9 @@ set(LLVM_LINK_COMPONENTS
 add_neverc_library(nevercRuntime
   Core/RuntimeManager.cpp
   Core/RuntimeManifest.cpp
+
+  LINK_LIBS
+  nevercRelease
   )
 
 target_include_directories(nevercRuntime

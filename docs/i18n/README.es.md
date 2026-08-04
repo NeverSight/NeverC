@@ -144,6 +144,20 @@ neverc runtime install windows-x64
 neverc runtime list
 ```
 
+Una instalación release puede actualizar el compilador y los runtimes de compilación cruzada ya instalados como una sola unidad versionada:
+
+```bash
+neverc update                 # release completa más reciente
+neverc update v3389.1.2       # versión exacta, incluido un downgrade
+```
+
+`neverc upgrade` es un alias. NeverC resuelve un único tag release concreto y solo reinstala
+los runtimes que ya estaban presentes, fijándolos todos a la versión objetivo del compilador.
+Antes de modificar archivos activos, se descargan, verifican por SHA256, extraen y validan todos
+los archivos necesarios. Un fallo de preparación o verificación deja intacta la instalación actual,
+y un fallo de commit provoca un rollback automático. Si una release de runtime tiene problemas,
+`neverc update <versión anterior>` revierte juntos el compilador y todos los runtimes instalados.
+
 ## Compilación desde el código fuente
 
 Requisitos, comandos de compilación, compilación cruzada a Windows, configuración de PATH y cambio entre release instalada y build in-tree — consulte **[Desarrollo local](../local-dev/README.es.md)**.
