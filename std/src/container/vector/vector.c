@@ -31,8 +31,10 @@ static bool vec_prepare_input(const neverc_vector_t *v, const void *input,
     if (address < base) return true;
     size_t offset = (size_t)(address - base);
     size_t allocated_bytes = v->capacity * v->elem_size;
-    if (offset > allocated_bytes) return true;
-    if (offset == allocated_bytes) return false;
+    /* The allocation is [base, base + allocated_bytes). A distinct malloc
+     * object may begin exactly at the numeric end address, so treating that
+     * address as an internal one-past pointer rejects valid adjacent blocks. */
+    if (offset >= allocated_bytes) return true;
 
     size_t used_bytes = v->size * v->elem_size;
     if (offset > used_bytes || bytes > used_bytes - offset) return false;
@@ -1487,6 +1489,10 @@ int neverc_vector_compare(const neverc_vector_t *a, const neverc_vector_t *b,
     if (!a)
         return -1;
     if (!b)
+        return 1;
+    if (a->elem_size < b->elem_size)
+        return -1;
+    if (a->elem_size > b->elem_size)
         return 1;
     size_t min_sz = a->size < b->size ? a->size : b->size;
     for (size_t i = 0; i < min_sz; i++) {

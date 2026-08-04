@@ -399,6 +399,18 @@ static void test_self_aliased_modifiers(void) {
            *(int *)neverc_vector_at(v, 3) == 5,
            "self-aliased assign preserves range");
     neverc_vector_free(v);
+
+    int adjacent_storage[] = {1, 0, 2};
+    neverc_vector_t adjacent_target = {
+        adjacent_storage, 1, 2, sizeof(adjacent_storage[0])
+    };
+    neverc_vector_t adjacent_source = {
+        adjacent_storage + 2, 1, 1, sizeof(adjacent_storage[0])
+    };
+    ASSERT(neverc_vector_append(&adjacent_target, &adjacent_source),
+           "object at target capacity end is treated as external");
+    ASSERT(adjacent_target.size == 2 && adjacent_storage[1] == 2,
+           "adjacent external object is appended correctly");
 }
 
 /* ========== Sort / Reverse / Unique ========== */
@@ -1546,6 +1558,19 @@ static void test_compare(void) {
     neverc_vector_free(va);
     neverc_vector_free(vb);
     neverc_vector_free(vc);
+
+    struct wide_value { unsigned char bytes[32]; } wide = {{7}};
+    unsigned char narrow = 7;
+    neverc_vector_t *vw = neverc_vector_from_array(
+        &wide, 1, sizeof(wide));
+    neverc_vector_t *vn = neverc_vector_from_array(
+        &narrow, 1, sizeof(narrow));
+    ASSERT(neverc_vector_compare(vw, vn, NULL) > 0,
+           "wider element vector sorts after narrower element vector");
+    ASSERT(neverc_vector_compare(vn, vw, NULL) < 0,
+           "narrower element vector sorts before wider element vector");
+    neverc_vector_free(vw);
+    neverc_vector_free(vn);
 }
 
 /* ========== Max Size ========== */

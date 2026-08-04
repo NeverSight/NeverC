@@ -282,6 +282,9 @@ void  *neverc_vector_rend(const neverc_vector_t *v);
 
 bool   neverc_vector_equal(const neverc_vector_t *a, const neverc_vector_t *b,
                             neverc_vector_cmp_fn cmp);
+/* Lexicographic order. Vectors with different element widths are ordered by
+ * elem_size before examining elements, so incompatible comparators are never
+ * called and raw comparison cannot read past a narrower element. */
 int    neverc_vector_compare(const neverc_vector_t *a, const neverc_vector_t *b,
                               neverc_vector_cmp_fn cmp);
 
