@@ -1,0 +1,209 @@
+name: debug-windows-x64-clang-lto
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Build run containing the compiler and PDB artifacts
+        required: true
+        default: "30848126024"
+      snapshot_after_seconds:
+        description: Capture debugger stacks after this many seconds
+        required: true
+        default: "90"
+      max_seconds:
+        description: Stop a diagnostic command after this many seconds
+        required: true
+        default: "240"
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  repro:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Download exact CI compiler and symbols
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD_RUN_ID: ${{ inputs.run_id }}
+        run: |
+          gh run download $env:BUILD_RUN_ID `
+            --name windows-x64-neverc-clang-lto `
+            --dir artifacts/compiler `
+            --repo $env:GITHUB_REPOSITORY
+          gh run download $env:BUILD_RUN_ID `
+            --name windows-x64-neverc-clang-lto-pdb `
+            --dir artifacts/pdb `
+            --repo $env:GITHUB_REPOSITORY
+
+          New-Item -ItemType Directory -Force extracted | Out-Null
+          7z x artifacts/compiler/windows-x64-neverc-clang-lto.zip `
+            -oextracted | Out-Null
+          7z x artifacts/pdb/windows-x64-neverc-clang-lto-pdb.zip `
+            -oextracted/pdb | Out-Null
+
+          $compiler = Resolve-Path extracted/install/bin/neverc.exe
+          "NEVERC_DIAG_BINARY=$compiler" | Out-File `
+            -FilePath $env:GITHUB_ENV -Append
+          "compiler_sha256=$((Get-FileHash $compiler -Algorithm SHA256).Hash)"
+          & $compiler --version
+
+      - name: Build minimal lifecycle plugin
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force diag | Out-Null
+          clang -shared -O2 -D_CRT_SECURE_NO_WARNINGS `
+            -I neverc/include `
+            tests/neverc/Inputs/Plugin/TaskLifecyclePlugin.c `
+            -o diag/task-lifecycle.dll
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dumpbin /exports diag/task-lifecycle.dll |
+            Select-String neverc_plugin_entry
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          'int main(void) { return 0; }' |
+            Set-Content -Encoding Ascii diag/minimal.c
+
+      - name: Characterize plugin-aware link slowdown
+        shell: pwsh
+        env:
+          SNAPSHOT_AFTER_SECONDS: ${{ inputs.snapshot_after_seconds }}
+          MAX_SECONDS: ${{ inputs.max_seconds }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ncc = $env:NEVERC_DIAG_BINARY
+          $plugin = (Resolve-Path diag/task-lifecycle.dll).Path
+          $source = (Resolve-Path diag/minimal.c).Path
+          $compilerPdb = Get-ChildItem extracted/pdb -Filter neverc.pdb `
+            -Recurse | Select-Object -First 1
+          $symbolPath = if ($compilerPdb) {
+            $compilerPdb.DirectoryName
+          } else {
+            (Resolve-Path extracted/pdb).Path
+          }
+          $cdb = Get-ChildItem `
+            'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\cdb.exe' `
+            -ErrorAction SilentlyContinue | Select-Object -First 1
+
+          function Invoke-Timed([string] $label, [string[]] $arguments,
+                                [bool] $captureHang = $false) {
+            $stdout = Join-Path $PWD "diag/$label.stdout.txt"
+            $stderr = Join-Path $PWD "diag/$label.stderr.txt"
+            $watch = [Diagnostics.Stopwatch]::StartNew()
+            $process = Start-Process -FilePath $ncc -ArgumentList $arguments `
+              -PassThru -RedirectStandardOutput $stdout `
+              -RedirectStandardError $stderr
+            $snapshotTaken = $false
+            $lastReport = -10
+
+            while (-not $process.HasExited) {
+              Start-Sleep -Seconds 2
+              $process.Refresh()
+              $elapsed = [int]$watch.Elapsed.TotalSeconds
+              if ($elapsed -ge ($lastReport + 10)) {
+                $lastReport = $elapsed
+                $all = Get-CimInstance Win32_Process
+                $known = @($process.Id)
+                do {
+                  $children = @($all | Where-Object {
+                    $known -contains [int]$_.ParentProcessId -and
+                    $known -notcontains [int]$_.ProcessId
+                  } | ForEach-Object { [int]$_.ProcessId })
+                  $known += $children
+                } while ($children.Count -ne 0)
+                Write-Host "[$label +${elapsed}s] root_pid=$($process.Id) descendants=$($known -join ',')"
+                $all | Where-Object { $known -contains [int]$_.ProcessId } |
+                  Select-Object ProcessId, ParentProcessId, Name, CommandLine |
+                  Format-Table -Wrap | Out-String | Write-Host
+                Get-Process -Id $known -ErrorAction SilentlyContinue |
+                  Select-Object Id, ProcessName, CPU, WorkingSet64, Handles |
+                  Format-Table | Out-String | Write-Host
+              }
+
+              if ($captureHang -and -not $snapshotTaken -and
+                  $elapsed -ge [int]$env:SNAPSHOT_AFTER_SECONDS) {
+                $snapshotTaken = $true
+                if ($cdb) {
+                  $debugTargets = @($all | Where-Object {
+                    $known -contains [int]$_.ProcessId -and
+                    $_.Name -eq 'neverc.exe'
+                  } | ForEach-Object { [int]$_.ProcessId })
+                  foreach ($debugPid in $debugTargets) {
+                    Write-Host "[$label] capturing all-thread stack for pid $debugPid"
+                    $stackFile = Join-Path $PWD "diag/$label.$debugPid.cdb.txt"
+                    $debugCommands = ".symfix;.sympath+ $symbolPath;.reload;!runaway;~* kb;.detach;q"
+                    & $cdb.FullName -p $debugPid -y $symbolPath `
+                      -c $debugCommands 2>&1 |
+                      Tee-Object -FilePath $stackFile |
+                      ForEach-Object { Write-Host $_ }
+                  }
+                } else {
+                  Write-Host 'cdb.exe was not found on this runner'
+                }
+              }
+
+              if ($elapsed -ge [int]$env:MAX_SECONDS) {
+                Write-Host "[$label] diagnostic deadline reached; terminating process tree"
+                taskkill /pid $process.Id /t /f 2>&1 | Write-Host
+                break
+              }
+            }
+
+            $process.WaitForExit()
+            $watch.Stop()
+            $exitCode = if ($process.HasExited) { $process.ExitCode } else { -1 }
+            Write-Host "TIMING label=$label seconds=$([math]::Round($watch.Elapsed.TotalSeconds, 2)) exit=$exitCode"
+            if (Test-Path $stderr) {
+              Get-Content $stderr | ForEach-Object { Write-Host $_ }
+            }
+            return $exitCode
+          }
+
+          $common = @('-fno-lto', '-fno-builtin-mimalloc')
+          if ((Invoke-Timed 'no_plugin_link' `
+                ($common + @($source, '-o', "$PWD/diag/no_plugin.exe")) $true) -ne 0) {
+            throw 'no-plugin baseline failed'
+          }
+          if ((Invoke-Timed 'plugin_emit_ir' `
+                @("-fplugin=$plugin", '-S', '-emit-llvm', $source, '-o',
+                  "$PWD/diag/plugin.ll")) -ne 0) {
+            throw 'plugin emit-IR baseline failed'
+          }
+          if ((Invoke-Timed 'plugin_compile_object' `
+                (@("-fplugin=$plugin") + $common + @('-c', $source, '-o',
+                  "$PWD/diag/plugin.obj"))) -ne 0) {
+            throw 'plugin compile-object baseline failed'
+          }
+          if ((Invoke-Timed 'object_link_without_plugin' `
+                ($common + @("$PWD/diag/plugin.obj", '-o',
+                  "$PWD/diag/split.exe")) $true) -ne 0) {
+            throw 'split object link baseline failed'
+          }
+
+          $trace = "$PWD/diag/plugin.trace"
+          New-Item -ItemType File -Force $trace | Out-Null
+          $env:NEVERC_PLUGIN_TRACE_FILE = $trace
+          $slowExit = Invoke-Timed 'plugin_one_shot_link' `
+            (@("-fplugin=$plugin") + $common + @($source, '-o',
+              "$PWD/diag/plugin.exe")) $true
+          Write-Host "slow_path_exit=$slowExit"
+          if (Test-Path $trace) {
+            Get-Content $trace | ForEach-Object { Write-Host $_ }
+          }
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64-clang-lto-link-diagnostics
+          path: diag
+          if-no-files-found: warn
