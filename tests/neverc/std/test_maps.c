@@ -162,6 +162,92 @@ static int delete_even_filter(const char *key, void *value) {
     return (*(int *)value) % 2 == 0;
 }
 
+static neverc_map_t *g_filter_map;
+
+static int delete_current_but_keep_filter(const char *key, void *value) {
+    (void)value;
+    neverc_maps_delete(g_filter_map, key);
+    return 0;
+}
+
+static void test_delete_func_callback_can_delete_current(void) {
+    printf("[delete_func_callback_delete_current]\n");
+    neverc_map_t *m = neverc_map_new();
+    int value = 1;
+    neverc_map_set(m, "victim", &value);
+    g_filter_map = m;
+
+    neverc_maps_delete_func(m, delete_current_but_keep_filter);
+
+    ASSERT_INT_EQ((int)neverc_map_len(m), 0);
+    ASSERT_TRUE(!neverc_map_has(m, "victim"));
+    g_filter_map = NULL;
+    neverc_map_free(m);
+}
+
+static neverc_map_t *g_foreach_map;
+static size_t g_foreach_key_length;
+
+static void delete_current_then_read_key(const char *key, void *value,
+                                         void *user_data) {
+    (void)value;
+    (void)user_data;
+    neverc_maps_delete(g_foreach_map, key);
+    g_foreach_key_length = strlen(key);
+}
+
+static void test_foreach_callback_key_survives_mutation(void) {
+    printf("[foreach_callback_key_survives_mutation]\n");
+    neverc_map_t *m = neverc_map_new();
+    int value = 1;
+    neverc_map_set(m, "victim", &value);
+    g_foreach_map = m;
+    g_foreach_key_length = 0;
+
+    neverc_maps_foreach(m, delete_current_then_read_key, NULL);
+
+    ASSERT_INT_EQ((int)g_foreach_key_length, 6);
+    ASSERT_INT_EQ((int)neverc_map_len(m), 0);
+    g_foreach_map = NULL;
+    neverc_map_free(m);
+}
+
+static int g_resize_values[100];
+static int g_resize_inserted;
+
+static int insert_during_filter(const char *key, void *value) {
+    (void)value;
+    if (!g_resize_inserted) {
+        g_resize_inserted = 1;
+        for (int i = 0; i < 100; i++) {
+            char inserted[32];
+            snprintf(inserted, sizeof(inserted), "inserted_%d", i);
+            g_resize_values[i] = i;
+            neverc_maps_set(g_filter_map, inserted, &g_resize_values[i]);
+        }
+    }
+    return strcmp(key, "remove") == 0;
+}
+
+static void test_delete_func_callback_can_resize(void) {
+    printf("[delete_func_callback_resize]\n");
+    neverc_map_t *m = neverc_map_new();
+    int keep = 1, remove = 2;
+    neverc_map_set(m, "keep", &keep);
+    neverc_map_set(m, "remove", &remove);
+    g_filter_map = m;
+    g_resize_inserted = 0;
+
+    neverc_maps_delete_func(m, insert_during_filter);
+
+    ASSERT_INT_EQ((int)neverc_map_len(m), 101);
+    ASSERT_TRUE(neverc_map_has(m, "keep"));
+    ASSERT_TRUE(!neverc_map_has(m, "remove"));
+    ASSERT_TRUE(neverc_map_has(m, "inserted_99"));
+    g_filter_map = NULL;
+    neverc_map_free(m);
+}
+
 static void test_delete_func_probe_chain(void) {
     printf("[delete_func_probe_chain]\n");
     neverc_map_t *m = neverc_map_new();
@@ -227,6 +313,9 @@ int main(void) {
     test_many_entries();
     test_copy();
     test_delete_func_probe_chain();
+    test_delete_func_callback_can_delete_current();
+    test_foreach_callback_key_survives_mutation();
+    test_delete_func_callback_can_resize();
     test_delete_then_reinsert();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);

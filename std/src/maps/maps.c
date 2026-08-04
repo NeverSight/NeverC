@@ -35,8 +35,13 @@ typedef struct {
     char    *key;
     void    *value;
     uint64_t hash;
-    uint32_t key_len;
+    size_t   key_len;
 } map_entry_t;
+
+typedef struct {
+    char *key;
+    void *value;
+} map_callback_entry_t;
 
 struct neverc_map {
     uint8_t     *ctrl;       /* cap + NCI_GROUP control bytes (head mirrored at tail) */
@@ -215,6 +220,8 @@ static inline size_t map_max_load(size_t cap) { return cap - cap / 8; }
  * ------------------------------------------------------------------ */
 
 static int map_alloc_tables(size_t cap, uint8_t **pctrl, map_entry_t **pslots) {
+    if (cap > SIZE_MAX - NCI_GROUP ||
+        cap > SIZE_MAX / sizeof(map_entry_t)) return 0;
     uint8_t *ctrl = (uint8_t *)malloc(cap + NCI_GROUP);
     if (!ctrl) return 0;
     memset(ctrl, NCI_EMPTY, cap + NCI_GROUP);
@@ -275,7 +282,7 @@ static int map_resize(neverc_map_t *m, size_t new_cap) {
 
 /* Return the slot holding key, or SIZE_MAX. */
 static size_t map_find(const neverc_map_t *m, const char *key,
-                       uint64_t h, uint8_t h2, uint32_t klen) {
+                       uint64_t h, uint8_t h2, size_t klen) {
     size_t mask = m->cap - 1;
     size_t pos = (size_t)(h >> 7) & mask;
     size_t stride = 0;
@@ -311,6 +318,39 @@ static size_t map_find_insert(const neverc_map_t *m, uint64_t h) {
     }
 }
 
+static void map_free_callback_snapshot(map_callback_entry_t *entries,
+                                       size_t count) {
+    if (!entries) return;
+    for (size_t i = 0; i < count; i++) free(entries[i].key);
+    free(entries);
+}
+
+static map_callback_entry_t *map_callback_snapshot(const neverc_map_t *m,
+                                                   size_t *count) {
+    *count = 0;
+    if (m->len == 0 || m->len > SIZE_MAX / sizeof(map_callback_entry_t))
+        return NULL;
+    map_callback_entry_t *entries =
+        (map_callback_entry_t *)calloc(m->len, sizeof(*entries));
+    if (!entries) return NULL;
+
+    size_t k = 0;
+    for (size_t i = 0; i < m->cap; i++) {
+        if (!NCI_IS_FULL(m->ctrl[i])) continue;
+        size_t len = m->slots[i].key_len;
+        entries[k].key = (char *)malloc(len + 1);
+        if (!entries[k].key) {
+            map_free_callback_snapshot(entries, k);
+            return NULL;
+        }
+        memcpy(entries[k].key, m->slots[i].key, len + 1);
+        entries[k].value = m->slots[i].value;
+        k++;
+    }
+    *count = k;
+    return entries;
+}
+
 /* ------------------------------------------------------------------ *
  * Public API
  * ------------------------------------------------------------------ */
@@ -343,7 +383,7 @@ void neverc_maps_clear(neverc_map_t *m) {
 
 int neverc_maps_set(neverc_map_t *m, const char *key, void *value) {
     if (!m || !key) return -1;
-    uint32_t klen = (uint32_t)strlen(key);
+    size_t klen = strlen(key);
     uint64_t h = hash_string(key);
     uint8_t h2 = (uint8_t)(h & 0x7F);
 
@@ -405,7 +445,7 @@ int neverc_maps_set(neverc_map_t *m, const char *key, void *value) {
 
 void *neverc_maps_get(const neverc_map_t *m, const char *key) {
     if (!m || !key) return NULL;
-    uint32_t klen = (uint32_t)strlen(key);
+    size_t klen = strlen(key);
     uint64_t h = hash_string(key);
     size_t idx = map_find(m, key, h, (uint8_t)(h & 0x7F), klen);
     return idx == (size_t)-1 ? NULL : m->slots[idx].value;
@@ -413,14 +453,14 @@ void *neverc_maps_get(const neverc_map_t *m, const char *key) {
 
 int neverc_maps_has(const neverc_map_t *m, const char *key) {
     if (!m || !key) return 0;
-    uint32_t klen = (uint32_t)strlen(key);
+    size_t klen = strlen(key);
     uint64_t h = hash_string(key);
     return map_find(m, key, h, (uint8_t)(h & 0x7F), klen) != (size_t)-1;
 }
 
 int neverc_maps_delete(neverc_map_t *m, const char *key) {
     if (!m || !key) return -1;
-    uint32_t klen = (uint32_t)strlen(key);
+    size_t klen = strlen(key);
     uint64_t h = hash_string(key);
     size_t idx = map_find(m, key, h, (uint8_t)(h & 0x7F), klen);
     if (idx == (size_t)-1) return -1;
@@ -485,32 +525,24 @@ void **neverc_maps_values(const neverc_map_t *m, size_t *count) {
 }
 
 void neverc_maps_foreach(const neverc_map_t *m, neverc_maps_iter_func_t fn, void *user_data) {
-    if (!m || !fn) return;
-    for (size_t i = 0; i < m->cap; i++)
-        if (NCI_IS_FULL(m->ctrl[i])) fn(m->slots[i].key, m->slots[i].value, user_data);
+    if (!m || !fn || m->len == 0) return;
+    size_t count;
+    map_callback_entry_t *entries = map_callback_snapshot(m, &count);
+    if (!entries) return;
+    for (size_t i = 0; i < count; i++)
+        fn(entries[i].key, entries[i].value, user_data);
+    map_free_callback_snapshot(entries, count);
 }
 
 void neverc_maps_delete_func(neverc_map_t *m, neverc_maps_filter_func_t fn) {
     if (!m || !fn || m->len == 0) return;
-    uint8_t *nctrl;
-    map_entry_t *nslots;
-    if (!map_alloc_tables(m->cap, &nctrl, &nslots)) return;
-    size_t kept = 0;
-    for (size_t i = 0; i < m->cap; i++) {
-        if (!NCI_IS_FULL(m->ctrl[i])) continue;
-        if (fn(m->slots[i].key, m->slots[i].value)) {
-            free(m->slots[i].key);
-        } else {
-            map_emplace(nctrl, nslots, m->cap, m->slots[i]);
-            kept++;
-        }
-    }
-    free(m->ctrl);
-    free(m->slots);
-    m->ctrl = nctrl;
-    m->slots = nslots;
-    m->len = kept;
-    m->tombstones = 0;
+    size_t count;
+    map_callback_entry_t *entries = map_callback_snapshot(m, &count);
+    if (!entries) return;
+    for (size_t i = 0; i < count; i++)
+        if (fn(entries[i].key, entries[i].value))
+            neverc_maps_delete(m, entries[i].key);
+    map_free_callback_snapshot(entries, count);
 }
 
 neverc_map_t *neverc_maps_clone(const neverc_map_t *m) {
@@ -521,7 +553,7 @@ neverc_map_t *neverc_maps_clone(const neverc_map_t *m) {
     if (!map_alloc_tables(c->cap, &c->ctrl, &c->slots)) { free(c); return NULL; }
     for (size_t i = 0; i < m->cap; i++) {
         if (!NCI_IS_FULL(m->ctrl[i])) continue;
-        uint32_t klen = m->slots[i].key_len;
+        size_t klen = m->slots[i].key_len;
         char *dup = (char *)malloc(klen + 1);
         if (!dup) { neverc_maps_free(c); return NULL; }
         memcpy(dup, m->slots[i].key, klen + 1);
