@@ -46,6 +46,30 @@ TEST(PluginLinkPhaseTest, RegistryMatchesGeneratedStableSchema) {
   }
 }
 
+TEST(PluginLinkPhaseTest,
+     NativeProjectionIsRequiredOnlyByLinkPhaseBindings) {
+  LinkTaskScope Scope;
+  ASSERT_TRUE(Scope.initialize());
+  auto Pipeline = LinkPhasePipeline::create(Scope.task());
+  ASSERT_TRUE(static_cast<bool>(Pipeline))
+      << errorText(Pipeline.takeError());
+  EXPECT_FALSE((*Pipeline)->hasPluginBindings());
+
+  NevercTestLinkPhaseTrace Trace{};
+  Trace.PhaseAPI = &Scope.phaseAPI();
+  NevercObserverDescriptor Observer{};
+  Observer.Header = {sizeof(Observer), NEVERC_PLUGIN_ABI_MAJOR,
+                     NEVERC_PLUGIN_ABI_MINOR, 0};
+  Observer.Phase = phaseID(NEVERC_PHASE_LINK_LAYOUT_HIGH,
+                           NEVERC_PHASE_LINK_LAYOUT_LOW);
+  Observer.Points = NEVERC_OBSERVER_BEFORE | NEVERC_OBSERVER_AFTER;
+  Observer.Callback = neverc_test_link_observer;
+  Observer.UserData = &Trace;
+  ASSERT_FALSE(
+      (*Pipeline)->addObserver(LinkTestPluginID, Observer));
+  EXPECT_TRUE((*Pipeline)->hasPluginBindings());
+}
+
 TEST(PluginLinkPhaseTest, BuiltinPipelineExecutesAllTypedTransitions) {
   LinkTaskScope Scope;
   ASSERT_TRUE(Scope.initialize());

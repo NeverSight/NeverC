@@ -47,6 +47,7 @@ public:
           NevercLinkState ThroughState =
               NEVERC_LINK_STATE_IMAGE_EMITTED);
 
+  bool hasPluginBindings() const;
   const LinkPhaseRegistry &registry() const;
   uint32_t rerunCount(NevercInterfaceID Phase) const;
 

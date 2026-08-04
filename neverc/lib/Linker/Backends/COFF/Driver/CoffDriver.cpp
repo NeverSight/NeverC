@@ -1,4 +1,5 @@
 #include "COFF/COFFLinkGraphAdapter.h"
+#include "Link/LinkPhaseExecutor.h"
 #include "Linker/COFF/COFFLinkerContext.h"
 #include "Linker/COFF/Config.h"
 #include "Linker/COFF/Driver.h"
@@ -1793,26 +1794,35 @@ void LinkerDriver::run(ArrayRef<const char *> argsArr,
     config->printSymbolOrder = saver().save(driverCfg.printSymbolOrder);
 
   if (config->driverCfg && config->driverCfg->pluginTask) {
-    StringRef Triple;
-    if (config->driverCfg->executionRequest)
-      Triple = config->driverCfg->executionRequest->TargetTriple;
-    if (Triple.empty())
-      Triple = config->machine == ARM64 ? "aarch64-pc-windows-msvc"
-                                        : "x86_64-pc-windows-msvc";
-    auto Adapter = COFFLinkGraphAdapter::create(
-        *config->driverCfg->pluginTask, ctx, Triple, config->driverCfg->cpu,
-        config->dynamicBase || config->dll ? NEVERC_TARGET_RELOCATION_PIC
-                                           : NEVERC_TARGET_RELOCATION_STATIC);
-    if (!Adapter) {
-      error("could not initialize COFF plugin adapter: " +
-            toString(Adapter.takeError()));
+    auto LinkPhases = neverc::plugin::LinkPhasePipeline::create(
+        *config->driverCfg->pluginTask);
+    if (!LinkPhases) {
+      error("could not inspect COFF plugin link phases: " +
+            toString(LinkPhases.takeError()));
       return;
     }
-    ctx.pluginLinkAdapter = std::move(*Adapter);
-    if (Error e = ctx.pluginLinkAdapter->advanceTo(
-            NEVERC_LINK_STATE_COMDAT_SELECTED)) {
-      error("COFF plugin input phases failed: " + toString(std::move(e)));
-      return;
+    if ((*LinkPhases)->hasPluginBindings()) {
+      StringRef Triple;
+      if (config->driverCfg->executionRequest)
+        Triple = config->driverCfg->executionRequest->TargetTriple;
+      if (Triple.empty())
+        Triple = config->machine == ARM64 ? "aarch64-pc-windows-msvc"
+                                          : "x86_64-pc-windows-msvc";
+      auto Adapter = COFFLinkGraphAdapter::create(
+          *config->driverCfg->pluginTask, ctx, Triple, config->driverCfg->cpu,
+          config->dynamicBase || config->dll ? NEVERC_TARGET_RELOCATION_PIC
+                                             : NEVERC_TARGET_RELOCATION_STATIC);
+      if (!Adapter) {
+        error("could not initialize COFF plugin adapter: " +
+              toString(Adapter.takeError()));
+        return;
+      }
+      ctx.pluginLinkAdapter = std::move(*Adapter);
+      if (Error e = ctx.pluginLinkAdapter->advanceTo(
+              NEVERC_LINK_STATE_COMDAT_SELECTED)) {
+        error("COFF plugin input phases failed: " + toString(std::move(e)));
+        return;
+      }
     }
   }
 

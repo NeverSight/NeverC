@@ -1,4 +1,5 @@
 #include "ELF/ELFLinkGraphAdapter.h"
+#include "Link/LinkPhaseExecutor.h"
 #include "Linker/Core/Driver/ArgList.h"
 #include "Linker/Core/Driver/CommonLTOConfig.h"
 #include "Linker/Core/Driver/Dispatcher.h"
@@ -2470,26 +2471,35 @@ void LinkerDriver::execute(opt::InputArgList &args) {
   config->imageBase = getImageBase(args);
 
   if (config->driverCfg && config->driverCfg->pluginTask) {
-    StringRef Triple;
-    if (config->driverCfg->executionRequest)
-      Triple = config->driverCfg->executionRequest->TargetTriple;
-    if (Triple.empty())
-      Triple = config->emachine == EM_AARCH64 ? "aarch64-unknown-linux-gnu"
-                                              : "x86_64-unknown-linux-gnu";
-    auto Adapter = ELFLinkGraphAdapter::create(
-        *config->driverCfg->pluginTask, Triple, config->driverCfg->cpu,
-        config->shared || config->pie ? NEVERC_TARGET_RELOCATION_PIC
-                                      : NEVERC_TARGET_RELOCATION_STATIC);
-    if (!Adapter) {
-      error("could not initialize ELF plugin adapter: " +
-            toString(Adapter.takeError()));
+    auto LinkPhases = neverc::plugin::LinkPhasePipeline::create(
+        *config->driverCfg->pluginTask);
+    if (!LinkPhases) {
+      error("could not inspect ELF plugin link phases: " +
+            toString(LinkPhases.takeError()));
       return;
     }
-    elfPluginLinkAdapter() = std::move(*Adapter);
-    if (Error E = elfPluginLinkAdapter()->advanceTo(
-            NEVERC_LINK_STATE_COMDAT_SELECTED)) {
-      error("ELF plugin input phases failed: " + toString(std::move(E)));
-      return;
+    if ((*LinkPhases)->hasPluginBindings()) {
+      StringRef Triple;
+      if (config->driverCfg->executionRequest)
+        Triple = config->driverCfg->executionRequest->TargetTriple;
+      if (Triple.empty())
+        Triple = config->emachine == EM_AARCH64 ? "aarch64-unknown-linux-gnu"
+                                                : "x86_64-unknown-linux-gnu";
+      auto Adapter = ELFLinkGraphAdapter::create(
+          *config->driverCfg->pluginTask, Triple, config->driverCfg->cpu,
+          config->shared || config->pie ? NEVERC_TARGET_RELOCATION_PIC
+                                        : NEVERC_TARGET_RELOCATION_STATIC);
+      if (!Adapter) {
+        error("could not initialize ELF plugin adapter: " +
+              toString(Adapter.takeError()));
+        return;
+      }
+      elfPluginLinkAdapter() = std::move(*Adapter);
+      if (Error E = elfPluginLinkAdapter()->advanceTo(
+              NEVERC_LINK_STATE_COMDAT_SELECTED)) {
+        error("ELF plugin input phases failed: " + toString(std::move(E)));
+        return;
+      }
     }
   }
 
