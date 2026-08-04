@@ -140,7 +140,7 @@ jobs:
                   foreach ($debugPid in $debugTargets) {
                     Write-Host "[$label] capturing all-thread stack for pid $debugPid"
                     $stackFile = Join-Path $PWD "diag/$label.$debugPid.cdb.txt"
-                    $debugCommands = ".symfix;.sympath+ $symbolPath;.reload;!runaway;~* kb;.detach;q"
+                    $debugCommands = "!runaway;~* kb;.detach;q"
                     & $cdb.FullName -p $debugPid -y $symbolPath `
                       -c $debugCommands 2>&1 |
                       Tee-Object -FilePath $stackFile |
@@ -199,6 +199,7 @@ jobs:
           if (Test-Path $trace) {
             Get-Content $trace | ForEach-Object { Write-Host $_ }
           }
+          exit 0
 
       - name: Upload diagnostics
         if: always()
