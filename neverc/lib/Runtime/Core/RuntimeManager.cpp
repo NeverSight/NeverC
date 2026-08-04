@@ -6,16 +6,21 @@
 //===----------------------------------------------------------------------===//
 
 #include "neverc/Runtime/RuntimeManager.h"
+#include "neverc/Runtime/RuntimeManifest.h"
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/FormatVariadic.h"
+#include "llvm/Support/JSON.h"
+#include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/Program.h"
 #include "llvm/Support/raw_ostream.h"
 
+#include <map>
+#include <optional>
 #include <string>
 
 using namespace llvm;
@@ -178,6 +183,48 @@ int extractZip(StringRef Archive, StringRef DestDir) {
 #endif
 }
 
+/// Resolve the concrete Git tag behind GitHub's "latest" release pointer.
+std::optional<std::string> queryLatestReleaseTag() {
+  std::string Curl = findProgram("curl");
+  if (Curl.empty())
+    return std::nullopt;
+
+  SmallString<256> TmpPath;
+  if (auto EC = sys::fs::createTemporaryFile("neverc-rt-tag", "json", TmpPath))
+    return std::nullopt;
+  TempFileGuard TmpGuard(TmpPath);
+
+  std::string Url =
+      formatv("https://api.github.com/repos/{0}/releases/latest", RepoSlug)
+          .str();
+  StringRef Args[] = {Curl,      "-fSL",
+                      "-H",      "Accept: application/vnd.github+json",
+                      "-H",      "User-Agent: neverc-runtime",
+                      "-o",      TmpPath,
+                      Url};
+  if (run(Curl, Args) != 0)
+    return std::nullopt;
+
+  ErrorOr<std::unique_ptr<MemoryBuffer>> Buf = MemoryBuffer::getFile(TmpPath);
+  if (!Buf || Buf.getError())
+    return std::nullopt;
+
+  Expected<json::Value> Parsed = json::parse(Buf.get()->getBuffer());
+  if (!Parsed) {
+    consumeError(Parsed.takeError());
+    return std::nullopt;
+  }
+
+  if (const json::Object *Obj = Parsed->getAsObject())
+    if (std::optional<StringRef> Tag = Obj->getString("tag_name")) {
+      std::string Normalized = normalizeReleaseTag(*Tag);
+      if (Normalized.empty() || Normalized == "latest")
+        return std::nullopt;
+      return Normalized;
+    }
+  return std::nullopt;
+}
+
 // ===----------------------------------------------------------------------===
 // Interactive prompt
 // ===----------------------------------------------------------------------===
@@ -217,19 +264,39 @@ const TargetDef *requireTarget(StringRef Name) {
 /// Download and extract the runtime for \p T into \p RtDir.
 /// If \p RemoveFirst is true, the existing directory is removed before
 /// extraction (used for update / reinstall).
-int fetchAndExtract(const TargetDef *T, StringRef RtDir, StringRef Version,
-                    bool RemoveFirst) {
-  std::string Asset =
-      formatv("neverc-runtime-{0}.zip", T->Name).str();
+int fetchAndExtract(const TargetDef *T, StringRef RtDir, StringRef UserVersion,
+                    bool DefaultToLatest, bool RemoveFirst,
+                    std::string *OutReleaseTag = nullptr) {
+  std::string ReleaseTag =
+      resolveFetchReleaseTag(UserVersion, DefaultToLatest);
+  std::string ManifestTag = ReleaseTag;
+
+  if (ReleaseTag == "latest") {
+    if (auto Resolved = queryLatestReleaseTag()) {
+      ManifestTag = *Resolved;
+      ReleaseTag = *Resolved;
+    } else {
+      errs() << "warning: could not resolve latest release tag; manifest "
+                "will not be updated\n";
+    }
+  } else if (ReleaseTag.empty()) {
+    errs() << "error: invalid release tag";
+    if (!UserVersion.empty())
+      errs() << " '" << UserVersion << "'";
+    errs() << " — expected vMAJOR.MINOR.PATCH\n";
+    return 1;
+  }
+
+  std::string Asset = formatv("neverc-runtime-{0}.zip", T->Name).str();
 
   std::string Url;
-  if (Version.empty() || Version == "latest")
+  if (ReleaseTag == "latest")
     Url = formatv("https://github.com/{0}/releases/latest/download/{1}",
                   RepoSlug, Asset)
               .str();
   else
     Url = formatv("https://github.com/{0}/releases/download/{1}/{2}",
-                  RepoSlug, Version, Asset)
+                  RepoSlug, ReleaseTag, Asset)
               .str();
 
   outs() << "  Source: " << Url << "\n"
@@ -245,8 +312,8 @@ int fetchAndExtract(const TargetDef *T, StringRef RtDir, StringRef Version,
 
   outs() << "Downloading " << Asset << "...\n";
   if (download(Url, TmpPath) != 0) {
-    errs() << "error: download failed — check that the release has asset '"
-           << Asset << "'\n";
+    errs() << "error: download failed — check that release " << ReleaseTag
+           << " has asset '" << Asset << "'\n";
     return 1;
   }
 
@@ -274,54 +341,119 @@ int fetchAndExtract(const TargetDef *T, StringRef RtDir, StringRef Version,
     return 1;
   }
 
+  if (ManifestTag != "latest" &&
+      !recordInstalledTarget(RtDir, T->Name, ManifestTag)) {
+    errs() << "warning: installed runtime but failed to update manifest\n";
+  }
+
+  if (OutReleaseTag) {
+    if (ManifestTag != "latest")
+      *OutReleaseTag = ManifestTag;
+    else
+      OutReleaseTag->clear();
+  }
   return 0;
 }
 
-int doInstall(StringRef TargetName, StringRef Root, StringRef Version) {
+int doInstall(StringRef TargetName, StringRef Root, StringRef UserVersion) {
   const TargetDef *T = requireTarget(TargetName);
   if (!T)
     return 1;
 
   auto RtDir = runtimeDir(Root);
+  std::string DesiredTag = resolveFetchReleaseTag(UserVersion, /*Latest=*/false);
+  if (DesiredTag.empty()) {
+    errs() << "error: invalid release tag";
+    if (!UserVersion.empty())
+      errs() << " '" << UserVersion << "'";
+    errs() << " — expected vMAJOR.MINOR.PATCH\n";
+    return 1;
+  }
 
   if (isInstalled(RtDir, T->CheckDir)) {
-    outs() << "runtime '" << T->Name << "' is already installed.\n";
-    if (!promptYesNo("Update to latest version?")) {
+    std::optional<std::string> InstalledTag =
+        getInstalledReleaseTag(RtDir, T->Name);
+
+    if (InstalledTag && *InstalledTag == DesiredTag) {
+      outs() << "runtime '" << T->Name << "' is already installed at "
+             << DesiredTag << ".\n";
+      return 0;
+    }
+
+    outs() << "runtime '" << T->Name << "' is already installed";
+    if (InstalledTag)
+      outs() << " at " << *InstalledTag;
+    else
+      outs() << " (version unknown)";
+    outs() << ".\n";
+
+    if (!promptYesNo(formatv("Reinstall at {0}?", DesiredTag).str())) {
       outs() << "Skipped.\n";
       return 0;
     }
-    outs() << "Updating runtime: " << T->Name << "\n";
-    int Rc = fetchAndExtract(T, RtDir, Version, /*RemoveFirst=*/true);
-    if (Rc == 0)
-      outs() << "\nDone! Runtime '" << T->Name << "' updated.\n";
+
+    outs() << "Reinstalling runtime: " << T->Name << " (" << DesiredTag
+           << ")\n";
+    std::string ActualTag;
+    int Rc = fetchAndExtract(T, RtDir, UserVersion, /*DefaultToLatest=*/false,
+                             /*RemoveFirst=*/true, &ActualTag);
+    if (Rc == 0) {
+      outs() << "\nDone! Runtime '" << T->Name << "' installed at "
+             << (ActualTag.empty() ? DesiredTag : ActualTag) << ".\n";
+    }
     return Rc;
   }
 
-  outs() << "Installing runtime: " << T->Name << "\n";
-  int Rc = fetchAndExtract(T, RtDir, Version, /*RemoveFirst=*/false);
+  outs() << "Installing runtime: " << T->Name << " (" << DesiredTag << ")\n";
+  std::string ActualTag;
+  int Rc = fetchAndExtract(T, RtDir, UserVersion, /*DefaultToLatest=*/false,
+                           /*RemoveFirst=*/false, &ActualTag);
   if (Rc == 0)
     outs() << "\nDone! Runtime '" << T->Name << "' installed to " << RtDir
-           << "/\n";
+           << "/ (" << (ActualTag.empty() ? DesiredTag : ActualTag) << ")\n";
   return Rc;
 }
 
-int doInstallAll(StringRef Root, StringRef Version) {
+int doInstallAll(StringRef Root, StringRef UserVersion) {
   auto RtDir = runtimeDir(Root);
+  std::string DesiredTag = resolveFetchReleaseTag(UserVersion, /*Latest=*/false);
+  if (DesiredTag.empty()) {
+    errs() << "error: invalid release tag";
+    if (!UserVersion.empty())
+      errs() << " '" << UserVersion << "'";
+    errs() << " — expected vMAJOR.MINOR.PATCH\n";
+    return 1;
+  }
   int Installed = 0;
   int Skipped = 0;
   int Failures = 0;
 
-  outs() << "Installing all cross-compilation runtimes into " << RtDir << "/\n\n";
+  outs() << "Installing cross-compilation runtimes into " << RtDir << "/ ("
+         << DesiredTag << ")\n\n";
 
   for (const auto &T : Targets) {
     if (isInstalled(RtDir, T.CheckDir)) {
-      outs() << "Skipping " << T.Name << " (already installed)\n";
+      std::optional<std::string> InstalledTag =
+          getInstalledReleaseTag(RtDir, T.Name);
+      if (InstalledTag && *InstalledTag == DesiredTag) {
+        outs() << "Skipping " << T.Name << " (already installed at "
+               << DesiredTag << ")\n";
+      } else {
+        outs() << "Skipping " << T.Name << " (already installed";
+        if (InstalledTag)
+          outs() << " at " << *InstalledTag;
+        else
+          outs() << ", version unknown";
+        outs() << "; run 'neverc runtime install " << T.Name
+               << "' to reinstall at " << DesiredTag << ")\n";
+      }
       ++Skipped;
       continue;
     }
 
-    outs() << "Installing runtime: " << T.Name << "\n";
-    if (fetchAndExtract(&T, RtDir, Version, /*RemoveFirst=*/false) != 0) {
+    outs() << "Installing runtime: " << T.Name << " (" << DesiredTag << ")\n";
+    if (fetchAndExtract(&T, RtDir, UserVersion, /*DefaultToLatest=*/false,
+                        /*RemoveFirst=*/false) != 0) {
       errs() << "error: failed to install runtime '" << T.Name << "'\n\n";
       ++Failures;
       continue;
@@ -340,20 +472,35 @@ int doInstallAll(StringRef Root, StringRef Version) {
 }
 
 /// `neverc runtime update <target>` — force-update without prompting.
-int doUpdate(StringRef TargetName, StringRef Root, StringRef Version) {
+int doUpdate(StringRef TargetName, StringRef Root, StringRef UserVersion) {
   const TargetDef *T = requireTarget(TargetName);
   if (!T)
     return 1;
 
   auto RtDir = runtimeDir(Root);
   bool WasInstalled = isInstalled(RtDir, T->CheckDir);
+  std::string ReleaseTag;
+  std::string DesiredTag =
+      resolveFetchReleaseTag(UserVersion, /*Latest=*/true);
+  if (DesiredTag.empty()) {
+    errs() << "error: invalid release tag";
+    if (!UserVersion.empty())
+      errs() << " '" << UserVersion << "'";
+    errs() << " — expected vMAJOR.MINOR.PATCH or latest\n";
+    return 1;
+  }
 
   outs() << (WasInstalled ? "Updating" : "Installing") << " runtime: "
-         << T->Name << "\n";
-  int Rc = fetchAndExtract(T, RtDir, Version, /*RemoveFirst=*/WasInstalled);
-  if (Rc == 0)
-    outs() << "\nDone! Runtime '" << T->Name
-           << (WasInstalled ? "' updated.\n" : "' installed.\n");
+         << T->Name << " (" << DesiredTag << ")\n";
+  int Rc = fetchAndExtract(T, RtDir, UserVersion, /*DefaultToLatest=*/true,
+                           /*RemoveFirst=*/WasInstalled, &ReleaseTag);
+  if (Rc == 0) {
+    outs() << "\nDone! Runtime '" << T->Name << "' "
+           << (WasInstalled ? "updated" : "installed");
+    if (!ReleaseTag.empty())
+      outs() << " at " << ReleaseTag;
+    outs() << ".\n";
+  }
   return Rc;
 }
 
@@ -379,33 +526,50 @@ int doRemove(StringRef TargetName, StringRef Root) {
     return 1;
   }
 
+  if (!removeInstalledTarget(RtDir, T->Name))
+    errs() << "warning: removed runtime but failed to update manifest\n";
+
   outs() << "  removed " << P << "\nDone.\n";
   return 0;
 }
 
 int doList(StringRef Root) {
   auto RtDir = runtimeDir(Root);
-  outs() << "NeverC runtimes  (" << RtDir << "/)\n\n";
+  std::map<std::string, std::string> Versions =
+      readInstalledTargetVersions(RtDir);
+  std::string CompilerTag = getCompilerReleaseTag();
+
+  outs() << "NeverC runtimes  (" << RtDir << "/)\n"
+         << "Compiler: " << CompilerTag << "\n\n";
 
   for (const auto &T : Targets) {
     bool Ok = isInstalled(RtDir, T.CheckDir);
-    outs() << formatv("  {0,-20}  {1}\n", T.Name,
-                      Ok ? "installed" : "not installed");
+    if (Ok) {
+      auto It = Versions.find(std::string(T.Name));
+      if (It != Versions.end())
+        outs() << formatv("  {0,-20}  installed  {1}\n", T.Name, It->second);
+      else
+        outs() << formatv("  {0,-20}  installed  (version unknown)\n", T.Name);
+    } else {
+      outs() << formatv("  {0,-20}  not installed\n", T.Name);
+    }
   }
 
   outs() << "\nInstall a runtime:  neverc runtime install <target>\n"
-         << "Install all runtimes: neverc runtime install all\n";
+         << "Install all runtimes: neverc runtime install all\n"
+         << "Update a runtime:     neverc runtime update <target>\n";
   return 0;
 }
 
 void printUsage() {
   outs() << "neverc runtime — manage cross-compilation runtimes\n\n"
          << "Usage:\n"
-         << "  neverc runtime install <target>   Install (or prompt to "
-            "update)\n"
-         << "  neverc runtime install all        Install every runtime that "
-            "is not yet present\n"
-         << "  neverc runtime update  <target>   Force-update to latest\n"
+         << "  neverc runtime install <target>   Install at the compiler "
+            "version\n"
+         << "  neverc runtime install all        Install missing runtimes at "
+            "the compiler version\n"
+         << "  neverc runtime update  <target>   Update to the latest release "
+            "(or --version)\n"
          << "  neverc runtime remove  <target>   Remove an installed runtime\n"
          << "  neverc runtime list               List available and installed "
             "runtimes\n\n"
@@ -414,8 +578,10 @@ void printUsage() {
   printTargetNames(outs());
   outs() << "\n\n"
          << "Options:\n"
-         << "  --version <tag>     Use a specific release version (e.g. "
-            "v0.1.0)\n";
+         << "  --version <tag>     Use a specific release tag (e.g. "
+            "v3389.1.2)\n"
+         << "                      install defaults to the compiler version; "
+            "update defaults to latest\n";
 }
 
 } // anonymous namespace
@@ -438,10 +604,10 @@ int runRuntime(int Argc, const char **Argv, const char *Argv0) {
 
   StringRef Cmd(Argv[1]);
 
-  StringRef Version;
+  StringRef UserVersion;
   for (int I = 2; I < Argc; ++I) {
     if (StringRef(Argv[I]) == "--version" && I + 1 < Argc)
-      Version = Argv[++I];
+      UserVersion = Argv[++I];
   }
 
   if (Cmd == "install") {
@@ -452,8 +618,8 @@ int runRuntime(int Argc, const char **Argv, const char *Argv0) {
     }
     StringRef Target(Argv[2]);
     if (isAllTarget(Target))
-      return doInstallAll(Root, Version);
-    return doInstall(Target, Root, Version);
+      return doInstallAll(Root, UserVersion);
+    return doInstall(Target, Root, UserVersion);
   }
 
   if (Cmd == "update" || Cmd == "upgrade") {
@@ -461,7 +627,7 @@ int runRuntime(int Argc, const char **Argv, const char *Argv0) {
       errs() << "usage: neverc runtime update <target>\n";
       return 1;
     }
-    return doUpdate(Argv[2], Root, Version);
+    return doUpdate(Argv[2], Root, UserVersion);
   }
 
   if (Cmd == "remove" || Cmd == "uninstall") {
