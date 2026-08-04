@@ -1,4 +1,5 @@
 #include "neverc/std/context.h"
+#include "neverc/std/_platform.h"
 #include <stdio.h>
 #include <string.h>
 #if defined(_WIN32)
@@ -61,6 +62,44 @@ static void test_with_timeout(void) {
     ASSERT_TRUE(strcmp(neverc_context_err(ctx), "context deadline exceeded") == 0);
 
     neverc_context_free(ctx);
+    neverc_context_free(bg);
+}
+
+static void test_timeout_bounds_and_deadline_precedence(void) {
+    printf("[timeout_bounds_deadline_precedence]\n");
+    neverc_context_t *bg = neverc_context_background();
+
+    neverc_context_t *future =
+        neverc_context_with_timeout(bg, INT64_MAX, NULL);
+    ASSERT_TRUE(future != NULL);
+    ASSERT_TRUE(neverc_context_deadline(future) == INT64_MAX);
+    ASSERT_INT_EQ(neverc_context_done(future), 0);
+
+    neverc_context_t *past =
+        neverc_context_with_timeout(bg, INT64_MIN, NULL);
+    ASSERT_TRUE(past != NULL);
+    ASSERT_TRUE(neverc_context_deadline(past) > 0);
+    ASSERT_INT_EQ(neverc_context_done(past), 1);
+
+    neverc_context_t *parent =
+        neverc_context_with_deadline(bg, INT64_MAX - 100, NULL);
+    neverc_context_t *child =
+        neverc_context_with_deadline(parent, INT64_MAX, NULL);
+    ASSERT_TRUE(parent != NULL && child != NULL);
+    ASSERT_TRUE(neverc_context_deadline(child) == INT64_MAX - 100);
+
+    neverc_context_cancel_handle_t *handle = NULL;
+    neverc_context_t *handled = neverc_context_with_timeout_handle(
+        bg, INT64_MAX, &handle);
+    ASSERT_TRUE(handled != NULL && handle != NULL);
+    ASSERT_TRUE(neverc_context_deadline(handled) == INT64_MAX);
+
+    neverc_context_cancel_handle_free(handle);
+    neverc_context_free(handled);
+    neverc_context_free(child);
+    neverc_context_free(parent);
+    neverc_context_free(past);
+    neverc_context_free(future);
     neverc_context_free(bg);
 }
 
@@ -316,17 +355,23 @@ static void test_without_cancel(void) {
     printf("[without_cancel]\n");
     neverc_context_t *bg = neverc_context_background();
     neverc_cancel_func_t cancel = NULL;
-    neverc_context_t *parent = neverc_context_with_cancel(bg, &cancel);
+    neverc_context_t *parent = neverc_context_with_cancel_cause(
+        bg, &cancel, "parent canceled");
+    neverc_context_t *timed =
+        neverc_context_with_deadline(parent, INT64_MAX, NULL);
 
-    neverc_context_t *detached = neverc_context_without_cancel(parent);
+    neverc_context_t *detached = neverc_context_without_cancel(timed);
     ASSERT_INT_EQ(neverc_context_done(detached), 0);
+    ASSERT_INT_EQ(neverc_context_deadline(detached), 0);
 
     cancel();
     ASSERT_INT_EQ(neverc_context_done(parent), 1);
     ASSERT_INT_EQ(neverc_context_done(detached), 0);
     ASSERT_TRUE(neverc_context_err(detached) == NULL);
+    ASSERT_TRUE(neverc_context_cause(detached) == NULL);
 
     neverc_context_free(detached);
+    neverc_context_free(timed);
     neverc_context_free(parent);
     neverc_context_free(bg);
 }
@@ -347,6 +392,25 @@ static void test_without_cancel_value(void) {
     neverc_context_free(bg);
 }
 
+static void test_deep_chain_is_iterative(void) {
+    printf("[deep_chain_iterative]\n");
+    neverc_context_t *ctx = neverc_context_background();
+    ASSERT_TRUE(ctx != NULL);
+
+    for (int i = 0; i < 100000 && ctx; i++) {
+        neverc_context_t *child =
+            neverc_context_with_value(ctx, "depth", (const void *)1);
+        neverc_context_free(ctx);
+        ctx = child;
+    }
+
+    ASSERT_TRUE(ctx != NULL);
+    ASSERT_TRUE(neverc_context_value(ctx, "missing") == NULL);
+    ASSERT_INT_EQ(neverc_context_done(ctx), 0);
+    ASSERT_INT_EQ(neverc_context_deadline(ctx), 0);
+    neverc_context_free(ctx);
+}
+
 static void test_with_cancel_cause(void) {
     printf("[with_cancel_cause]\n");
     neverc_context_t *bg = neverc_context_background();
@@ -354,13 +418,21 @@ static void test_with_cancel_cause(void) {
     neverc_context_t *ctx = neverc_context_with_cancel_cause(bg, &cancel, "user abort");
     ASSERT_TRUE(ctx != NULL);
     ASSERT_INT_EQ(neverc_context_done(ctx), 0);
+    ASSERT_TRUE(neverc_context_cause(ctx) == NULL);
+
+    neverc_context_t *child =
+        neverc_context_with_value(ctx, "child", "value");
 
     cancel();
     ASSERT_INT_EQ(neverc_context_done(ctx), 1);
     const char *cause = neverc_context_cause(ctx);
     ASSERT_TRUE(cause != NULL);
     ASSERT_TRUE(strcmp(cause, "user abort") == 0);
+    cause = neverc_context_cause(child);
+    ASSERT_TRUE(cause != NULL);
+    ASSERT_TRUE(strcmp(cause, "user abort") == 0);
 
+    neverc_context_free(child);
     neverc_context_free(ctx);
     neverc_context_free(bg);
 }
@@ -370,6 +442,7 @@ static void test_with_timeout_cause(void) {
     neverc_context_t *bg = neverc_context_background();
     neverc_context_t *ctx = neverc_context_with_timeout_cause(bg, 1, NULL, "slow query");
     ASSERT_TRUE(ctx != NULL);
+    ASSERT_TRUE(neverc_context_cause(ctx) == NULL);
 
 #if defined(_WIN32)
     Sleep(10);
@@ -399,15 +472,15 @@ static void test_with_deadline_cause(void) {
     neverc_context_free(bg);
 }
 
-static volatile int g_after_called = 0;
-static void after_cb(void) { g_after_called = 1; }
+static volatile int32_t g_after_called = 0;
+static void after_cb(void) { NEVERC_ATOMIC_STORE32(&g_after_called, 1); }
 static neverc_context_t *g_after_self_free_ctx = NULL;
-static volatile int g_after_self_free_done = 0;
+static volatile int32_t g_after_self_free_done = 0;
 
 static void after_self_free_cb(void) {
     neverc_context_free(g_after_self_free_ctx);
     g_after_self_free_ctx = NULL;
-    g_after_self_free_done = 1;
+    NEVERC_ATOMIC_STORE32(&g_after_self_free_done, 1);
 }
 
 static void test_after_func(void) {
@@ -416,18 +489,18 @@ static void test_after_func(void) {
     neverc_cancel_func_t cancel = NULL;
     neverc_context_t *ctx = neverc_context_with_cancel(bg, &cancel);
 
-    g_after_called = 0;
+    NEVERC_ATOMIC_STORE32(&g_after_called, 0);
     neverc_context_stop_func_t stop = neverc_context_after_func(ctx, after_cb);
     ASSERT_TRUE(stop != NULL);
 
-    ASSERT_INT_EQ(g_after_called, 0);
+    ASSERT_INT_EQ(NEVERC_ATOMIC_LOAD32(&g_after_called), 0);
     cancel();
 #if defined(_WIN32)
     Sleep(50);
 #else
     usleep(50000);
 #endif
-    ASSERT_INT_EQ(g_after_called, 1);
+    ASSERT_INT_EQ(NEVERC_ATOMIC_LOAD32(&g_after_called), 1);
 
     neverc_context_free(ctx);
     neverc_context_free(bg);
@@ -439,7 +512,7 @@ static void test_after_func_stop(void) {
     neverc_cancel_func_t cancel = NULL;
     neverc_context_t *ctx = neverc_context_with_cancel(bg, &cancel);
 
-    g_after_called = 0;
+    NEVERC_ATOMIC_STORE32(&g_after_called, 0);
     neverc_context_stop_func_t stop = neverc_context_after_func(ctx, after_cb);
     ASSERT_TRUE(stop != NULL);
 
@@ -452,7 +525,7 @@ static void test_after_func_stop(void) {
 #else
     usleep(50000);
 #endif
-    ASSERT_INT_EQ(g_after_called, 0);
+    ASSERT_INT_EQ(NEVERC_ATOMIC_LOAD32(&g_after_called), 0);
 
     neverc_context_free(ctx);
     neverc_context_free(bg);
@@ -464,7 +537,7 @@ static void test_after_func_stopped_before_context_free(void) {
     neverc_context_t *ctx =
         neverc_context_with_timeout(bg, 10000, NULL);
 
-    g_after_called = 0;
+    NEVERC_ATOMIC_STORE32(&g_after_called, 0);
     neverc_context_stop_func_t stop =
         neverc_context_after_func(ctx, after_cb);
     ASSERT_TRUE(stop != NULL);
@@ -476,7 +549,7 @@ static void test_after_func_stopped_before_context_free(void) {
 #else
     usleep(10000);
 #endif
-    ASSERT_INT_EQ(g_after_called, 0);
+    ASSERT_INT_EQ(NEVERC_ATOMIC_LOAD32(&g_after_called), 0);
 
     neverc_context_free(bg);
 }
@@ -490,20 +563,21 @@ static void test_after_func_can_free_own_context(void) {
     ASSERT_TRUE(cancel != NULL);
 
     g_after_self_free_ctx = ctx;
-    g_after_self_free_done = 0;
+    NEVERC_ATOMIC_STORE32(&g_after_self_free_done, 0);
     neverc_context_stop_func_t stop =
         neverc_context_after_func(ctx, after_self_free_cb);
     ASSERT_TRUE(stop != NULL);
 
     cancel();
-    for (int i = 0; i < 1000 && !g_after_self_free_done; i++) {
+    for (int i = 0; i < 1000 &&
+                    !NEVERC_ATOMIC_LOAD32(&g_after_self_free_done); i++) {
 #if defined(_WIN32)
         Sleep(1);
 #else
         usleep(1000);
 #endif
     }
-    ASSERT_INT_EQ(g_after_self_free_done, 1);
+    ASSERT_INT_EQ(NEVERC_ATOMIC_LOAD32(&g_after_self_free_done), 1);
     ASSERT_TRUE(g_after_self_free_ctx == NULL);
     ASSERT_INT_EQ(stop(), 0);
 
@@ -515,6 +589,7 @@ int main(void) {
     test_background();
     test_with_value();
     test_with_timeout();
+    test_timeout_bounds_and_deadline_precedence();
     test_not_done();
     test_with_cancel();
     test_cancel_propagates_to_child();
@@ -528,6 +603,7 @@ int main(void) {
     test_children_and_cancel_handles_retain_context_lifetime();
     test_without_cancel();
     test_without_cancel_value();
+    test_deep_chain_is_iterative();
     test_with_cancel_cause();
     test_with_timeout_cause();
     test_with_deadline_cause();

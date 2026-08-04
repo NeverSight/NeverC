@@ -426,6 +426,11 @@ TEST_F(StdLibTest, RegexpAllocationFailure) {
 }
 STD_TEST(mime, "src/mime/mime.c")
 STD_TEST(context, "src/context/context.c")
+TEST_F(StdLibTest, ContextAllocationFailure) {
+  auto r = compileAndRunStdTest("context_oom", {}, {"-fno-builtin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
 STD_TEST(maps, "src/maps/maps.c")
 STD_TEST(slices, "src/slices/slices.c")
 TEST_F(StdLibTest, SlicesAllocationFailure) {

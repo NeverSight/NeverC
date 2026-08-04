@@ -26,6 +26,16 @@
   }
 #endif
 
+static int64_t deadline_after(int64_t timeout_ms) {
+    int64_t now = now_ms();
+    if (timeout_ms > 0 && now > INT64_MAX - timeout_ms)
+        return INT64_MAX;
+    if (timeout_ms < 0 && now < INT64_MIN - timeout_ms)
+        return 1;
+    int64_t deadline = now + timeout_ms;
+    return deadline > 0 ? deadline : 1;
+}
+
 typedef enum {
     CTX_BACKGROUND,
     CTX_CANCEL,
@@ -227,7 +237,7 @@ neverc_context_t *neverc_context_with_cancel_handle(
 neverc_context_t *neverc_context_with_timeout_handle(
     neverc_context_t *parent, int64_t timeout_ms,
     neverc_context_cancel_handle_t **cancel_out) {
-    return ctx_with_cancel_handle(CTX_TIMEOUT, parent, now_ms() + timeout_ms,
+    return ctx_with_cancel_handle(CTX_TIMEOUT, parent, deadline_after(timeout_ms),
                                   cancel_out);
 }
 
@@ -262,7 +272,7 @@ neverc_context_t *neverc_context_with_timeout(neverc_context_t *parent,
         if (cancel_out) *cancel_out = NULL;
         return NULL;
     }
-    ctx->deadline_ms = now_ms() + timeout_ms;
+    ctx->deadline_ms = deadline_after(timeout_ms);
     if (bind_cancel_func(ctx, cancel_out) != 0) {
         neverc_context_free(ctx);
         return NULL;
@@ -320,65 +330,79 @@ neverc_context_t *neverc_context_without_cancel(neverc_context_t *parent) {
 }
 
 int neverc_context_done(const neverc_context_t *ctx) {
-    if (!ctx) return 0;
-    if (NEVERC_ATOMIC_LOAD32((int32_t *)&ctx->cancelled)) return 1;
-    if (ctx->kind == CTX_TIMEOUT && ctx->deadline_ms > 0) {
-        if (now_ms() >= ctx->deadline_ms) return 1;
+    while (ctx) {
+        if (NEVERC_ATOMIC_LOAD32((int32_t *)&ctx->cancelled)) return 1;
+        if (ctx->kind == CTX_TIMEOUT && ctx->deadline_ms > 0 &&
+            now_ms() >= ctx->deadline_ms) return 1;
+        if (ctx->kind == CTX_WITHOUT_CANCEL) return 0;
+        ctx = ctx->parent;
     }
-    if (ctx->kind == CTX_WITHOUT_CANCEL) return 0;
-    if (ctx->parent) return neverc_context_done(ctx->parent);
     return 0;
 }
 
 const char *neverc_context_err(const neverc_context_t *ctx) {
-    if (!ctx) return NULL;
-    if (NEVERC_ATOMIC_LOAD32((int32_t *)&ctx->cancelled)) return "context canceled";
-    if (ctx->kind == CTX_TIMEOUT && ctx->deadline_ms > 0 && now_ms() >= ctx->deadline_ms)
-        return "context deadline exceeded";
-    if (ctx->kind == CTX_WITHOUT_CANCEL) return NULL;
-    if (ctx->parent) return neverc_context_err(ctx->parent);
+    while (ctx) {
+        if (NEVERC_ATOMIC_LOAD32((int32_t *)&ctx->cancelled))
+            return "context canceled";
+        if (ctx->kind == CTX_TIMEOUT && ctx->deadline_ms > 0 &&
+            now_ms() >= ctx->deadline_ms)
+            return "context deadline exceeded";
+        if (ctx->kind == CTX_WITHOUT_CANCEL) return NULL;
+        ctx = ctx->parent;
+    }
     return NULL;
 }
 
 const void *neverc_context_value(const neverc_context_t *ctx, const char *key) {
-    if (!ctx) return NULL;
-    if (ctx->kind == CTX_VALUE && ctx->key && key && strcmp(ctx->key, key) == 0)
-        return ctx->value;
-    if (ctx->parent) return neverc_context_value(ctx->parent, key);
+    while (ctx) {
+        if (ctx->kind == CTX_VALUE && ctx->key && key &&
+            strcmp(ctx->key, key) == 0)
+            return ctx->value;
+        ctx = ctx->parent;
+    }
     return NULL;
 }
 
 const char *neverc_context_cause(const neverc_context_t *ctx) {
-    if (!ctx) return NULL;
-    if (ctx->cause) return ctx->cause;
-    const char *err = neverc_context_err(ctx);
-    if (err) return err;
-    if (ctx->parent) return neverc_context_cause(ctx->parent);
+    while (ctx) {
+        if (NEVERC_ATOMIC_LOAD32((int32_t *)&ctx->cancelled))
+            return ctx->cause ? ctx->cause : "context canceled";
+        if (ctx->kind == CTX_TIMEOUT && ctx->deadline_ms > 0 &&
+            now_ms() >= ctx->deadline_ms)
+            return ctx->cause ? ctx->cause :
+                                "context deadline exceeded";
+        if (ctx->kind == CTX_WITHOUT_CANCEL) return NULL;
+        ctx = ctx->parent;
+    }
     return NULL;
 }
 
 int64_t neverc_context_deadline(const neverc_context_t *ctx) {
-    if (!ctx) return 0;
-    if (ctx->kind == CTX_TIMEOUT && ctx->deadline_ms > 0)
-        return ctx->deadline_ms;
-    if (ctx->parent) return neverc_context_deadline(ctx->parent);
-    return 0;
+    int64_t earliest = 0;
+    while (ctx) {
+        if (ctx->kind == CTX_WITHOUT_CANCEL) break;
+        if (ctx->kind == CTX_TIMEOUT && ctx->deadline_ms > 0 &&
+            (earliest == 0 || ctx->deadline_ms < earliest))
+            earliest = ctx->deadline_ms;
+        ctx = ctx->parent;
+    }
+    return earliest;
 }
 
 static void ctx_stop_after_funcs(neverc_context_t *ctx);
 
 void neverc_context_free(neverc_context_t *ctx) {
-    if (!ctx)
-        return;
-    if (NEVERC_ATOMIC_ADD32(&ctx->refs, -1) != 0)
-        return;
+    while (ctx) {
+        if (NEVERC_ATOMIC_ADD32(&ctx->refs, -1) != 0)
+            return;
 
-    neverc_context_t *parent = ctx->parent;
-    ctx->parent = NULL;
-    ctx_stop_after_funcs(ctx);
-    release_cancel_slot(ctx);
-    free(ctx);
-    neverc_context_free(parent);
+        neverc_context_t *parent = ctx->parent;
+        ctx_stop_after_funcs(ctx);
+        ctx->parent = NULL;
+        release_cancel_slot(ctx);
+        free(ctx);
+        ctx = parent;
+    }
 }
 
 /*
