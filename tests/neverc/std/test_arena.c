@@ -1,4 +1,5 @@
 #include "neverc/std/arena.h"
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -116,6 +117,35 @@ static void test_aligned_alloc(void) {
     neverc_arena_free(a);
 }
 
+static void test_invalid_and_overflow_requests(void) {
+    printf("[invalid_and_overflow_requests]\n");
+
+    neverc_arena_t *a = neverc_arena_new();
+    size_t chunks = neverc_arena_num_chunks(a);
+    ASSERT_TRUE(neverc_arena_alloc_aligned(a, 1, 3) == NULL);
+    ASSERT_INT_EQ(neverc_arena_bytes_allocated(a), 0);
+    ASSERT_INT_EQ(neverc_arena_num_chunks(a), chunks);
+    neverc_arena_free(a);
+
+    a = neverc_arena_new();
+    chunks = neverc_arena_num_chunks(a);
+    ASSERT_TRUE(neverc_arena_calloc(a, SIZE_MAX / 2 + 2, 2) == NULL);
+    ASSERT_INT_EQ(neverc_arena_bytes_allocated(a), 0);
+    ASSERT_INT_EQ(neverc_arena_num_chunks(a), chunks);
+    neverc_arena_free(a);
+
+    a = neverc_arena_new();
+    chunks = neverc_arena_num_chunks(a);
+    ASSERT_TRUE(neverc_arena_alloc_aligned(a, SIZE_MAX, 8) == NULL);
+    ASSERT_INT_EQ(neverc_arena_bytes_allocated(a), 0);
+    ASSERT_INT_EQ(neverc_arena_num_chunks(a), chunks);
+    neverc_arena_free(a);
+
+    ASSERT_TRUE(neverc_arena_alloc_aligned(NULL, 8, 8) == NULL);
+    ASSERT_TRUE(neverc_arena_alloc(NULL, 8) == NULL);
+    ASSERT_TRUE(neverc_arena_calloc(NULL, 1, 8) == NULL);
+}
+
 int main(void) {
     test_basic_alloc();
     test_calloc();
@@ -125,6 +155,7 @@ int main(void) {
     test_many_small_allocs();
     test_reset();
     test_aligned_alloc();
+    test_invalid_and_overflow_requests();
     printf("\narena: %d/%d passed", tests_passed, tests_run);
     if (tests_failed) printf(", %d FAILED", tests_failed);
     printf("\n");

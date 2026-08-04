@@ -26,6 +26,9 @@ void            neverc_arena_free(neverc_arena_t *a);
 void            neverc_arena_reset(neverc_arena_t *a);
 
 void *neverc_arena_alloc(neverc_arena_t *a, size_t size);
+/* align==0 selects pointer alignment; otherwise align must be a power of two.
+ * All allocation functions return NULL without changing arena state when a
+ * size calculation overflows or the backing allocation fails. */
 void *neverc_arena_alloc_aligned(neverc_arena_t *a, size_t size, size_t align);
 void *neverc_arena_calloc(neverc_arena_t *a, size_t count, size_t size);
 char *neverc_arena_strdup(neverc_arena_t *a, const char *s);

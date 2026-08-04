@@ -978,6 +978,11 @@ STD_TEST(cstring, "src/cstring/cstring.c")
 
 // ===== Arena =====
 STD_TEST(arena, "src/arena/arena.c")
+TEST_F(StdLibTest, ArenaAllocationFailure) {
+  auto r = compileAndRunStdTest("arena_oom", {}, {"-fno-builtin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
 
 // ===== Unique =====
 STD_TEST(unique, "src/unique/unique.c")
