@@ -2129,9 +2129,16 @@ add_dependencies(neverc-tests
   neverc-test-plugin-argument-observer
 )
 
+set(NEVERC_INTEGRATION_TEST_TIMEOUT_SECONDS 900 CACHE STRING
+  "Per-test timeout for the NeverC driver integration suite")
+if(NOT NEVERC_INTEGRATION_TEST_TIMEOUT_SECONDS MATCHES "^[1-9][0-9]*$")
+  message(FATAL_ERROR
+    "NEVERC_INTEGRATION_TEST_TIMEOUT_SECONDS must be a positive integer")
+endif()
+
 gtest_discover_tests(neverc-tests
   PROPERTIES
-    TIMEOUT 900
+    TIMEOUT ${NEVERC_INTEGRATION_TEST_TIMEOUT_SECONDS}
   DISCOVERY_TIMEOUT 300
 )
 

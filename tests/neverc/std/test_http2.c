@@ -856,9 +856,14 @@ static void h2_run_adversarial_response_child(
                 sock_write_all(fd, &body, 1U) != 0)
                 _exit(1);
         }
-        char drain[256];
-        while (read(fd, drain, sizeof(drain)) > 0) { }
     }
+    /*
+     * The client SETTINGS ACK and request HEADERS are written by different
+     * threads.  If HEADERS arrives first, closing with the ACK unread resets
+     * the socket and can discard the adversarial response still in flight.
+     */
+    char drain[256];
+    while (read(fd, drain, sizeof(drain)) > 0) { }
     neverc_tcp_close(connection);
     neverc_tcp_listener_close(listener);
     _exit(0);
@@ -898,11 +903,12 @@ TEST(h2_client_invalid_trailer_emits_terminal_error) {
         ? neverc_h2_client_stream_receive(stream, context, &headers) : -1;
     int second = first == 1
         ? neverc_h2_client_stream_receive(stream, context, &terminal) : -1;
-    int ok = first == 1 && headers &&
-             headers->type == NEVERC_H2_CLIENT_EVENT_HEADERS &&
-             second == 1 && terminal &&
-             terminal->type == NEVERC_H2_CLIENT_EVENT_ERROR &&
-             terminal->error_code == NC_H2_PROTOCOL_ERROR;
+    int header_type = headers ? (int)headers->type : -1;
+    const char *header_error = headers ? headers->error : NULL;
+    uint32_t header_error_code = headers ? headers->error_code : 0;
+    int terminal_type = terminal ? (int)terminal->type : -1;
+    const char *terminal_error = terminal ? terminal->error : NULL;
+    uint32_t terminal_error_code = terminal ? terminal->error_code : 0;
 
     if (!client)
         kill(child, SIGTERM);
@@ -916,7 +922,22 @@ TEST(h2_client_invalid_trailer_emits_terminal_error) {
     int status = 0;
     waitpid(child, &status, 0);
     ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
-    ASSERT_TRUE(ok);
+    if (first != 1 || header_type != NEVERC_H2_CLIENT_EVENT_HEADERS ||
+        second != 1 || terminal_type != NEVERC_H2_CLIENT_EVENT_ERROR ||
+        terminal_error_code != NC_H2_PROTOCOL_ERROR) {
+        printf("\n    first=%d header_type=%d header_code=%u header_error=%s"
+               " second=%d terminal_type=%d terminal_code=%u"
+               " terminal_error=%s\n    ",
+               first, header_type, header_error_code,
+               header_error ? header_error : "(null)", second, terminal_type,
+               terminal_error_code,
+               terminal_error ? terminal_error : "(null)");
+    }
+    ASSERT_EQ(first, 1);
+    ASSERT_EQ(header_type, NEVERC_H2_CLIENT_EVENT_HEADERS);
+    ASSERT_EQ(second, 1);
+    ASSERT_EQ(terminal_type, NEVERC_H2_CLIENT_EVENT_ERROR);
+    ASSERT_EQ(terminal_error_code, NC_H2_PROTOCOL_ERROR);
 }
 
 TEST(h2_client_queue_overflow_emits_terminal_error) {

@@ -79,6 +79,7 @@ jobs:
           cmake -S llvm -B build -G Ninja \
             -C neverc/cmake/caches/NeverC.cmake \
             -DNEVERC_INCLUDE_TESTS=ON \
+            -DNEVERC_INTEGRATION_TEST_TIMEOUT_SECONDS=2700 \
             -DCMAKE_INSTALL_PREFIX=install \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_C_FLAGS_RELEASE="-O2 -DNDEBUG -flto=thin -ffunction-sections -fdata-sections" \
