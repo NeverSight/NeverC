@@ -426,7 +426,7 @@ TEST_F(StdLibTest, BufioAllocationFailure) {
 STD_TEST(flag, "src/flag/flag.c", "src/strconv/parse_int.c",
          "src/strconv/parse_float.c", "src/strconv/parse_bool.c")
 STD_TEST(log, "src/log/log.c")
-STD_TEST(slog, "src/log/slog/slog.c")
+STD_TEST(slog, "src/log/slog/slog.c", "src/strconv/format_float.c")
 STD_TEST(time, "src/time/time.c")
 STD_TEST(uuid, "src/uuid/uuid.c")
 STD_TEST(regexp, "src/regexp/regexp.c")

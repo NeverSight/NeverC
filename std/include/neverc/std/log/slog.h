@@ -47,6 +47,8 @@ typedef struct {
     neverc_slog_level_t  level;
     neverc_slog_format_t format;
     int                  add_source;
+    /* Internal synchronization state; initialize handlers with neverc_slog_init. */
+    int                  state_lock;
 } neverc_slog_handler_t;
 
 neverc_slog_attr_t neverc_slog_string(const char *key, const char *val);
