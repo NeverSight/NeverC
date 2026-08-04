@@ -24,6 +24,8 @@ typedef struct neverc_heap_interface {
     void (*pop_fn)(void *data, void *out);
 } neverc_heap_interface_t;
 
+/* Invalid interfaces, empty heaps, and out-of-range indices are safe no-ops.
+ * Push and pop/remove additionally require non-NULL elem/out pointers. */
 void neverc_heap_init(neverc_heap_interface_t *h);
 void neverc_heap_push(neverc_heap_interface_t *h, const void *elem);
 void neverc_heap_pop(neverc_heap_interface_t *h, void *out);
