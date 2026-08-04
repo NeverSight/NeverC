@@ -1,72 +1,147 @@
 #include "neverc/std/time.h"
 #include "neverc/std/_platform.h"
+#include <errno.h>
+#include <limits.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
 
-#ifdef __APPLE__
-#include <mach/mach_time.h>
-#endif
-
-#if defined(NEVERC_PLATFORM_WINDOWS)
-static struct tm *gmtime_r(const time_t *timer, struct tm *result) {
-    gmtime_s(result, timer);
-    return result;
+static int64_t wrapped_int64(uint64_t bits) {
+    if (bits <= (uint64_t)INT64_MAX) return (int64_t)bits;
+    return INT64_MIN + (int64_t)(bits - (UINT64_C(1) << 63));
 }
-#endif
+
+static int64_t wrapping_add(int64_t a, int64_t b) {
+    return wrapped_int64((uint64_t)a + (uint64_t)b);
+}
+
+static int64_t wrapping_scale_add(int64_t value, uint64_t scale,
+                                  uint64_t extra) {
+    return wrapped_int64((uint64_t)value * scale + extra);
+}
+
+static neverc_time_t normalize_time(neverc_time_t t) {
+    int64_t whole = (int64_t)t.nsec / NEVERC_TIME_SECOND;
+    int64_t remainder = (int64_t)t.nsec % NEVERC_TIME_SECOND;
+    t.sec = wrapping_add(t.sec, whole);
+    if (remainder < 0) {
+        t.sec = wrapping_add(t.sec, -1);
+        remainder += NEVERC_TIME_SECOND;
+    }
+    t.nsec = (int32_t)remainder;
+    return t;
+}
 
 neverc_time_t neverc_time_now(void) {
-    neverc_time_t t;
+    neverc_time_t t = {0, 0};
 #if defined(NEVERC_PLATFORM_WINDOWS)
     FILETIME ft;
     GetSystemTimeAsFileTime(&ft);
     uint64_t u = ((uint64_t)ft.dwHighDateTime << 32) | ft.dwLowDateTime;
-    u -= 116444736000000000ULL;
-    t.sec = (int64_t)(u / 10000000ULL);
-    t.nsec = (int32_t)((u % 10000000ULL) * 100);
+    const uint64_t epoch = 116444736000000000ULL;
+    if (u >= epoch) {
+        u -= epoch;
+        t.sec = (int64_t)(u / 10000000ULL);
+        t.nsec = (int32_t)((u % 10000000ULL) * 100ULL);
+    } else {
+        uint64_t delta = epoch - u;
+        uint64_t seconds = delta / 10000000ULL;
+        uint64_t remainder = delta % 10000000ULL;
+        t.sec = -(int64_t)seconds;
+        if (remainder != 0) {
+            t.sec--;
+            t.nsec = (int32_t)((10000000ULL - remainder) * 100ULL);
+        }
+    }
 #else
-    struct timespec ts;
-    clock_gettime(CLOCK_REALTIME, &ts);
-    t.sec = ts.tv_sec;
-    t.nsec = (int32_t)ts.tv_nsec;
+    struct timespec ts = {0, 0};
+    if (clock_gettime(CLOCK_REALTIME, &ts) == 0 ||
+        timespec_get(&ts, TIME_UTC) == TIME_UTC) {
+        t.sec = (int64_t)ts.tv_sec;
+        t.nsec = (int32_t)ts.tv_nsec;
+    }
 #endif
     return t;
 }
 
 neverc_time_t neverc_time_unix(int64_t sec, int64_t nsec) {
     neverc_time_t t;
-    t.sec = sec + nsec / 1000000000LL;
-    t.nsec = (int32_t)(nsec % 1000000000LL);
-    if (t.nsec < 0) { t.sec--; t.nsec += 1000000000; }
+    int64_t whole = nsec / NEVERC_TIME_SECOND;
+    int64_t remainder = nsec % NEVERC_TIME_SECOND;
+    t.sec = wrapping_add(sec, whole);
+    if (remainder < 0) {
+        t.sec = wrapping_add(t.sec, -1);
+        remainder += NEVERC_TIME_SECOND;
+    }
+    t.nsec = (int32_t)remainder;
     return t;
 }
 
-static void decompose(neverc_time_t t, struct tm *tm) {
+static int decompose(neverc_time_t t, struct tm *tm) {
+    if (!tm) return 0;
+    memset(tm, 0, sizeof(*tm));
+    t = normalize_time(t);
     time_t s = (time_t)t.sec;
-    gmtime_r(&s, tm);
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    return gmtime_s(tm, &s) == 0;
+#else
+    return gmtime_r(&s, tm) != NULL;
+#endif
 }
 
-int neverc_time_year(neverc_time_t t)       { struct tm m; decompose(t, &m); return m.tm_year + 1900; }
-int neverc_time_month(neverc_time_t t)      { struct tm m; decompose(t, &m); return m.tm_mon + 1; }
-int neverc_time_day(neverc_time_t t)        { struct tm m; decompose(t, &m); return m.tm_mday; }
-int neverc_time_hour(neverc_time_t t)       { struct tm m; decompose(t, &m); return m.tm_hour; }
-int neverc_time_minute(neverc_time_t t)     { struct tm m; decompose(t, &m); return m.tm_min; }
-int neverc_time_second(neverc_time_t t)     { struct tm m; decompose(t, &m); return m.tm_sec; }
-int neverc_time_nanosecond(neverc_time_t t) { return t.nsec; }
-int neverc_time_weekday(neverc_time_t t)    { struct tm m; decompose(t, &m); return m.tm_wday; }
-int neverc_time_yearday(neverc_time_t t)    { struct tm m; decompose(t, &m); return m.tm_yday + 1; }
+int neverc_time_year(neverc_time_t t)       { struct tm m; return decompose(t, &m) ? m.tm_year + 1900 : 0; }
+int neverc_time_month(neverc_time_t t)      { struct tm m; return decompose(t, &m) ? m.tm_mon + 1 : 0; }
+int neverc_time_day(neverc_time_t t)        { struct tm m; return decompose(t, &m) ? m.tm_mday : 0; }
+int neverc_time_hour(neverc_time_t t)       { struct tm m; return decompose(t, &m) ? m.tm_hour : 0; }
+int neverc_time_minute(neverc_time_t t)     { struct tm m; return decompose(t, &m) ? m.tm_min : 0; }
+int neverc_time_second(neverc_time_t t)     { struct tm m; return decompose(t, &m) ? m.tm_sec : 0; }
+int neverc_time_nanosecond(neverc_time_t t) { return normalize_time(t).nsec; }
+int neverc_time_weekday(neverc_time_t t)    { struct tm m; return decompose(t, &m) ? m.tm_wday : 0; }
+int neverc_time_yearday(neverc_time_t t)    { struct tm m; return decompose(t, &m) ? m.tm_yday + 1 : 0; }
 
 neverc_time_t neverc_time_add(neverc_time_t t, neverc_duration_t d) {
-    int64_t total_nsec = (int64_t)t.nsec + d;
-    t.sec += total_nsec / 1000000000LL;
-    t.nsec = (int32_t)(total_nsec % 1000000000LL);
-    if (t.nsec < 0) { t.sec--; t.nsec += 1000000000; }
+    t = normalize_time(t);
+    int64_t seconds = d / NEVERC_TIME_SECOND;
+    int64_t nanos = d % NEVERC_TIME_SECOND;
+    int64_t combined = (int64_t)t.nsec + nanos;
+    if (combined >= NEVERC_TIME_SECOND) {
+        seconds++;
+        combined -= NEVERC_TIME_SECOND;
+    } else if (combined < 0) {
+        seconds--;
+        combined += NEVERC_TIME_SECOND;
+    }
+    t.sec = wrapping_add(t.sec, seconds);
+    t.nsec = (int32_t)combined;
     return t;
 }
 
 neverc_duration_t neverc_time_sub(neverc_time_t a, neverc_time_t b) {
-    return (a.sec - b.sec) * 1000000000LL + (a.nsec - b.nsec);
+    a = normalize_time(a);
+    b = normalize_time(b);
+    int negative = neverc_time_before(a, b);
+    neverc_time_t later = negative ? b : a;
+    neverc_time_t earlier = negative ? a : b;
+    uint64_t seconds = (uint64_t)later.sec - (uint64_t)earlier.sec;
+    int64_t nanos = (int64_t)later.nsec - earlier.nsec;
+    if (nanos < 0) {
+        seconds--;
+        nanos += NEVERC_TIME_SECOND;
+    }
+
+    uint64_t limit = negative ? (UINT64_C(1) << 63) : (uint64_t)INT64_MAX;
+    uint64_t magnitude;
+    if (seconds > limit / (uint64_t)NEVERC_TIME_SECOND ||
+        (seconds == limit / (uint64_t)NEVERC_TIME_SECOND &&
+         (uint64_t)nanos > limit % (uint64_t)NEVERC_TIME_SECOND)) {
+        magnitude = limit;
+    } else {
+        magnitude = seconds * (uint64_t)NEVERC_TIME_SECOND + (uint64_t)nanos;
+    }
+    if (!negative) return (int64_t)magnitude;
+    if (magnitude == (UINT64_C(1) << 63)) return INT64_MIN;
+    return -(int64_t)magnitude;
 }
 
 neverc_duration_t neverc_time_since(neverc_time_t t) {
@@ -78,31 +153,48 @@ neverc_duration_t neverc_time_until(neverc_time_t t) {
 }
 
 int neverc_time_before(neverc_time_t a, neverc_time_t b) {
+    a = normalize_time(a);
+    b = normalize_time(b);
     return a.sec < b.sec || (a.sec == b.sec && a.nsec < b.nsec);
 }
 
 int neverc_time_after(neverc_time_t a, neverc_time_t b) {
+    a = normalize_time(a);
+    b = normalize_time(b);
     return a.sec > b.sec || (a.sec == b.sec && a.nsec > b.nsec);
 }
 
 int neverc_time_equal(neverc_time_t a, neverc_time_t b) {
+    a = normalize_time(a);
+    b = normalize_time(b);
     return a.sec == b.sec && a.nsec == b.nsec;
 }
 
 int neverc_time_is_zero(neverc_time_t t) {
+    t = normalize_time(t);
     return t.sec == 0 && t.nsec == 0;
 }
 
-int64_t neverc_time_unix_sec(neverc_time_t t)   { return t.sec; }
-int64_t neverc_time_unix_milli(neverc_time_t t)  { return t.sec * 1000 + t.nsec / 1000000; }
-int64_t neverc_time_unix_nano(neverc_time_t t)   { return t.sec * 1000000000LL + t.nsec; }
+int64_t neverc_time_unix_sec(neverc_time_t t) {
+    return normalize_time(t).sec;
+}
+
+int64_t neverc_time_unix_milli(neverc_time_t t) {
+    t = normalize_time(t);
+    return wrapping_scale_add(t.sec, 1000U, (uint32_t)t.nsec / 1000000U);
+}
+
+int64_t neverc_time_unix_nano(neverc_time_t t) {
+    t = normalize_time(t);
+    return wrapping_scale_add(t.sec, 1000000000ULL, (uint32_t)t.nsec);
+}
 
 double  neverc_time_duration_seconds(neverc_duration_t d)       { return (double)d / 1e9; }
 int64_t neverc_time_duration_milliseconds(neverc_duration_t d)  { return d / 1000000; }
 int64_t neverc_time_duration_microseconds(neverc_duration_t d)  { return d / 1000; }
 int64_t neverc_time_duration_nanoseconds(neverc_duration_t d)   { return d; }
 
-static void write_int(char *buf, int *pos, int val, int width) {
+static void write_int(char *buf, size_t *pos, int val, int width) {
     char tmp[16];
     int len = 0;
     if (val == 0) { tmp[len++] = '0'; }
@@ -115,16 +207,34 @@ static void write_int(char *buf, int *pos, int val, int width) {
 }
 
 char *neverc_time_format_rfc3339(neverc_time_t t) {
+    t = normalize_time(t);
     struct tm m;
-    decompose(t, &m);
+    if (!decompose(t, &m)) return NULL;
+    int year = m.tm_year + 1900;
+    if (year < 0 || year > 9999) return NULL;
     char *buf = (char *)malloc(32);
-    int p = 0;
-    write_int(buf, &p, m.tm_year + 1900, 4); buf[p++] = '-';
+    if (!buf) return NULL;
+    size_t p = 0;
+    write_int(buf, &p, year, 4);             buf[p++] = '-';
     write_int(buf, &p, m.tm_mon + 1, 2);     buf[p++] = '-';
     write_int(buf, &p, m.tm_mday, 2);        buf[p++] = 'T';
     write_int(buf, &p, m.tm_hour, 2);        buf[p++] = ':';
     write_int(buf, &p, m.tm_min, 2);         buf[p++] = ':';
-    write_int(buf, &p, m.tm_sec, 2);         buf[p++] = 'Z';
+    write_int(buf, &p, m.tm_sec, 2);
+    if (t.nsec != 0) {
+        char fraction[9];
+        int32_t value = t.nsec;
+        for (int i = 8; i >= 0; i--) {
+            fraction[i] = (char)('0' + value % 10);
+            value /= 10;
+        }
+        int digits = 9;
+        while (digits > 0 && fraction[digits - 1] == '0') digits--;
+        buf[p++] = '.';
+        memcpy(buf + p, fraction, (size_t)digits);
+        p += digits;
+    }
+    buf[p++] = 'Z';
     buf[p] = '\0';
     return buf;
 }
@@ -134,9 +244,12 @@ char *neverc_time_format_unix_date(neverc_time_t t) {
     static const char *months[] = {"Jan","Feb","Mar","Apr","May","Jun",
                                    "Jul","Aug","Sep","Oct","Nov","Dec"};
     struct tm m;
-    decompose(t, &m);
+    if (!decompose(t, &m) || m.tm_wday < 0 || m.tm_wday > 6 ||
+        m.tm_mon < 0 || m.tm_mon > 11)
+        return NULL;
     char *buf = (char *)malloc(64);
-    int p = 0;
+    if (!buf) return NULL;
+    size_t p = 0;
     const char *wd = weekdays[m.tm_wday];
     while (*wd) buf[p++] = *wd++;
     buf[p++] = ' ';
@@ -190,20 +303,21 @@ static int64_t days_from_civil(int64_t y, int m, int d) {
 }
 
 int neverc_time_parse_rfc3339(const char *s, neverc_time_t *out) {
+    if (!s || !out) return -1;
     const char *p = s;
     int year = parse_digits(&p, 4); if (year < 0 || *p++ != '-') return -1;
     int month = parse_digits(&p, 2); if (month < 1 || month > 12 || *p++ != '-') return -1;
     int day = parse_digits(&p, 2);
     if (day < 1 || day > days_in_month(year, month)) return -1;
-    if (*p != 'T' && *p != 't' && *p != ' ') return -1;
-    p++;
+    if (*p++ != 'T') return -1;
     int hour = parse_digits(&p, 2); if (hour < 0 || hour > 23 || *p++ != ':') return -1;
     int min = parse_digits(&p, 2);  if (min < 0 || min > 59 || *p++ != ':') return -1;
-    int sec = parse_digits(&p, 2);  if (sec < 0 || sec > 60) return -1;
+    int sec = parse_digits(&p, 2);  if (sec < 0 || sec > 59) return -1;
 
     int32_t nsec = 0;
     if (*p == '.') {
         p++;
+        if (*p < '0' || *p > '9') return -1;
         int64_t frac = 0;
         int digits = 0;
         while (*p >= '0' && *p <= '9' && digits < 9) {
@@ -217,48 +331,66 @@ int neverc_time_parse_rfc3339(const char *s, neverc_time_t *out) {
     }
 
     int64_t tz_offset = 0;
-    if (*p == 'Z' || *p == 'z') { p++; }
+    if (*p == 'Z') { p++; }
     else if (*p == '+' || *p == '-') {
         int sign = (*p == '-') ? -1 : 1;
         p++;
-        int tzh = parse_digits(&p, 2); if (tzh < 0 || *p++ != ':') return -1;
-        int tzm = parse_digits(&p, 2); if (tzm < 0) return -1;
+        int tzh = parse_digits(&p, 2);
+        if (tzh < 0 || tzh > 23 || *p++ != ':') return -1;
+        int tzm = parse_digits(&p, 2);
+        if (tzm < 0 || tzm > 59) return -1;
         tz_offset = sign * (tzh * 3600 + tzm * 60);
-    }
+    } else return -1;
+    if (*p != '\0') return -1;
 
     /* Convert to Unix timestamp */
     int64_t days = days_from_civil(year, month, day);
 
     int64_t total_sec = days * 86400 + hour * 3600 + min * 60 + sec - tz_offset;
-    out->sec = total_sec;
-    out->nsec = nsec;
+    neverc_time_t parsed = {total_sec, nsec};
+    *out = parsed;
     return 0;
 }
 
 void neverc_time_sleep(neverc_duration_t d) {
     if (d <= 0) return;
 #if defined(NEVERC_PLATFORM_WINDOWS)
-    Sleep((DWORD)(d / 1000000LL));
+    uint64_t millis = (uint64_t)(d / NEVERC_TIME_MILLISECOND);
+    if (d % NEVERC_TIME_MILLISECOND != 0) millis++;
+    while (millis > UINT32_MAX) {
+        Sleep(UINT32_MAX);
+        millis -= UINT32_MAX;
+    }
+    Sleep((DWORD)millis);
 #else
     struct timespec ts;
-    ts.tv_sec = d / 1000000000LL;
-    ts.tv_nsec = d % 1000000000LL;
-    nanosleep(&ts, NULL);
+    ts.tv_sec = (time_t)(d / NEVERC_TIME_SECOND);
+    ts.tv_nsec = (long)(d % NEVERC_TIME_SECOND);
+    while (nanosleep(&ts, &ts) != 0 && errno == EINTR) {}
 #endif
 }
 
 neverc_time_t neverc_time_date(int year, int month, int day,
                                 int hour, int min, int sec, int nsec) {
-    int64_t days = days_from_civil(year, month, day);
+    int64_t month_index = (int64_t)month - 1;
+    int64_t normalized_year = (int64_t)year + month_index / 12;
+    int normalized_month = (int)(month_index % 12);
+    if (normalized_month < 0) {
+        normalized_month += 12;
+        normalized_year--;
+    }
+    normalized_month++;
 
-    neverc_time_t t;
-    t.sec = days * 86400 + hour * 3600 + min * 60 + sec;
-    t.nsec = nsec;
-    return t;
+    int64_t days = days_from_civil(normalized_year, normalized_month, 1) +
+                   (int64_t)day - 1;
+    int64_t total_sec = days * 86400 + (int64_t)hour * 3600 +
+                        (int64_t)min * 60 + sec;
+    return neverc_time_unix(total_sec, nsec);
 }
 
 int64_t neverc_time_unix_micro(neverc_time_t t) {
-    return t.sec * 1000000LL + t.nsec / 1000;
+    t = normalize_time(t);
+    return wrapping_scale_add(t.sec, 1000000ULL, (uint32_t)t.nsec / 1000U);
 }
 
 neverc_time_t neverc_time_unix_micro_to_time(int64_t usec) {
@@ -269,23 +401,76 @@ neverc_time_t neverc_time_unix_micro_to_time(int64_t usec) {
     return t;
 }
 
-static int parse_dur_num(const char **p, double *val) {
-    if (**p < '0' || **p > '9') return 0;
-    *val = 0;
+static int consume_duration_integer(const char **p, uint64_t *value,
+                                    int *consumed) {
+    const uint64_t limit = UINT64_C(1) << 63;
+    uint64_t result = 0;
+    int digits = 0;
     while (**p >= '0' && **p <= '9') {
-        *val = *val * 10 + (**p - '0');
+        unsigned digit = (unsigned)(**p - '0');
+        if (result > limit / 10U ||
+            (result == limit / 10U && digit > limit % 10U))
+            return -1;
+        result = result * 10U + digit;
         (*p)++;
+        digits++;
     }
-    if (**p == '.') {
-        (*p)++;
-        double frac = 0.1;
-        while (**p >= '0' && **p <= '9') {
-            *val += (**p - '0') * frac;
-            frac *= 0.1;
-            (*p)++;
+    *value = result;
+    *consumed = digits != 0;
+    return 0;
+}
+
+static void consume_duration_fraction(const char **p, uint64_t *value,
+                                      double *scale, int *consumed) {
+    const uint64_t limit = UINT64_C(1) << 63;
+    uint64_t result = 0;
+    double divisor = 1.0;
+    int overflow = 0;
+    int digits = 0;
+    while (**p >= '0' && **p <= '9') {
+        unsigned digit = (unsigned)(**p - '0');
+        if (!overflow) {
+            if (result > (limit - 1U) / 10U) {
+                overflow = 1;
+            } else {
+                uint64_t next = result * 10U + digit;
+                if (next > limit)
+                    overflow = 1;
+                else {
+                    result = next;
+                    divisor *= 10.0;
+                }
+            }
         }
+        (*p)++;
+        digits++;
     }
-    return 1;
+    *value = result;
+    *scale = divisor;
+    *consumed = digits != 0;
+}
+
+static int consume_duration_unit(const char **p, uint64_t *unit) {
+    const unsigned char *u = (const unsigned char *)*p;
+    if (u[0] == 'n' && u[1] == 's') {
+        *unit = 1U; *p += 2;
+    } else if (u[0] == 'u' && u[1] == 's') {
+        *unit = 1000U; *p += 2;
+    } else if (((u[0] == 0xc2U && u[1] == 0xb5U) ||
+                (u[0] == 0xceU && u[1] == 0xbcU)) && u[2] == 's') {
+        *unit = 1000U; *p += 3;
+    } else if (u[0] == 'm' && u[1] == 's') {
+        *unit = 1000000U; *p += 2;
+    } else if (u[0] == 's') {
+        *unit = 1000000000ULL; *p += 1;
+    } else if (u[0] == 'm') {
+        *unit = 60000000000ULL; *p += 1;
+    } else if (u[0] == 'h') {
+        *unit = 3600000000000ULL; *p += 1;
+    } else {
+        return -1;
+    }
+    return 0;
 }
 
 int neverc_time_parse_duration(const char *s, neverc_duration_t *out) {
@@ -295,33 +480,81 @@ int neverc_time_parse_duration(const char *s, neverc_duration_t *out) {
     if (*p == '-') { neg = 1; p++; }
     else if (*p == '+') { p++; }
 
+    if (strcmp(p, "0") == 0) {
+        *out = 0;
+        return 0;
+    }
     if (*p == '\0') return -1;
 
-    int64_t total = 0;
+    const uint64_t negative_limit = UINT64_C(1) << 63;
+    uint64_t total = 0;
     while (*p) {
-        double val;
-        if (!parse_dur_num(&p, &val)) return -1;
+        uint64_t integer, fraction = 0;
+        double scale = 1.0;
+        int before_decimal, after_decimal = 0;
+        if (consume_duration_integer(&p, &integer, &before_decimal) != 0)
+            return -1;
+        if (*p == '.') {
+            p++;
+            consume_duration_fraction(&p, &fraction, &scale, &after_decimal);
+        }
+        if (!before_decimal && !after_decimal) return -1;
 
-        int64_t unit = 0;
-        if (*p == 'n' && *(p+1) == 's') { unit = 1; p += 2; }
-        else if (*p == 'u' && *(p+1) == 's') { unit = 1000; p += 2; }
-        else if (*p == '\xc2' && *(p+1) == '\xb5' && *(p+2) == 's') { unit = 1000; p += 3; }
-        else if (*p == 'm' && *(p+1) == 's') { unit = 1000000; p += 2; }
-        else if (*p == 's') { unit = 1000000000LL; p += 1; }
-        else if (*p == 'm') { unit = 60000000000LL; p += 1; }
-        else if (*p == 'h') { unit = 3600000000000LL; p += 1; }
-        else return -1;
-
-        total += (int64_t)(val * (double)unit);
+        uint64_t unit;
+        if (consume_duration_unit(&p, &unit) != 0) return -1;
+        if (integer > negative_limit / unit) return -1;
+        uint64_t segment = integer * unit;
+        if (fraction != 0) {
+            uint64_t fractional_ns =
+                (uint64_t)((double)fraction * ((double)unit / scale));
+            if (fractional_ns > negative_limit - segment) return -1;
+            segment += fractional_ns;
+        }
+        if (segment > negative_limit - total) return -1;
+        total += segment;
     }
 
-    *out = neg ? -total : total;
+    if (!neg && total > (uint64_t)INT64_MAX) return -1;
+    if (neg && total == negative_limit)
+        *out = INT64_MIN;
+    else
+        *out = neg ? -(int64_t)total : (int64_t)total;
     return 0;
 }
 
+static void append_uint64(char *buf, size_t *pos, uint64_t value) {
+    char reversed[20];
+    int digits = 0;
+    do {
+        reversed[digits++] = (char)('0' + value % 10U);
+        value /= 10U;
+    } while (value != 0);
+    while (digits > 0) buf[(*pos)++] = reversed[--digits];
+}
+
+static void append_duration_decimal(char *buf, size_t *pos, uint64_t value,
+                                    uint64_t unit, int fraction_digits,
+                                    const char *suffix) {
+    append_uint64(buf, pos, value / unit);
+    uint64_t fraction = value % unit;
+    if (fraction != 0) {
+        char digits[9];
+        for (int i = fraction_digits - 1; i >= 0; i--) {
+            digits[i] = (char)('0' + fraction % 10U);
+            fraction /= 10U;
+        }
+        while (fraction_digits > 0 && digits[fraction_digits - 1] == '0')
+            fraction_digits--;
+        buf[(*pos)++] = '.';
+        memcpy(buf + *pos, digits, (size_t)fraction_digits);
+        *pos += (size_t)fraction_digits;
+    }
+    while (*suffix) buf[(*pos)++] = *suffix++;
+}
+
 char *neverc_time_format_duration(neverc_duration_t d) {
-    char buf[128] = {0};
-    int pos = 0;
+    char buf[128];
+    size_t pos = 0;
     int negative = d < 0;
     uint64_t magnitude = negative
         ? (uint64_t)(-(d + 1)) + 1U
@@ -329,37 +562,36 @@ char *neverc_time_format_duration(neverc_duration_t d) {
     if (negative) buf[pos++] = '-';
 
     if (magnitude == 0) {
-        buf[pos++] = '0'; buf[pos++] = 's'; buf[pos] = '\0';
+        buf[pos++] = '0'; buf[pos++] = 's';
     } else if (magnitude < (uint64_t)NEVERC_TIME_MICROSECOND) {
-        pos += snprintf(buf + pos, sizeof(buf) - (size_t)pos, "%lluns",
-                        (unsigned long long)magnitude);
+        append_uint64(buf, &pos, magnitude);
+        buf[pos++] = 'n'; buf[pos++] = 's';
     } else if (magnitude < (uint64_t)NEVERC_TIME_MILLISECOND) {
-        double us = (double)magnitude / 1000.0;
-        pos += snprintf(buf + pos, sizeof(buf) - pos, "%.3gus", us);
+        append_duration_decimal(buf, &pos, magnitude, 1000U, 3, "us");
     } else if (magnitude < (uint64_t)NEVERC_TIME_SECOND) {
-        double ms = (double)magnitude / 1000000.0;
-        pos += snprintf(buf + pos, sizeof(buf) - pos, "%.3gms", ms);
+        append_duration_decimal(buf, &pos, magnitude, 1000000U, 6, "ms");
     } else {
-        uint64_t h = magnitude / (uint64_t)NEVERC_TIME_HOUR;
+        uint64_t hours = magnitude / (uint64_t)NEVERC_TIME_HOUR;
         magnitude %= (uint64_t)NEVERC_TIME_HOUR;
-        uint64_t m = magnitude / (uint64_t)NEVERC_TIME_MINUTE;
+        uint64_t minutes = magnitude / (uint64_t)NEVERC_TIME_MINUTE;
         magnitude %= (uint64_t)NEVERC_TIME_MINUTE;
-        double s = (double)magnitude / 1e9;
-
-        if (h > 0)
-            pos += snprintf(buf + pos, sizeof(buf) - (size_t)pos, "%lluh",
-                            (unsigned long long)h);
-        if (m > 0)
-            pos += snprintf(buf + pos, sizeof(buf) - (size_t)pos, "%llum",
-                            (unsigned long long)m);
-        if (s > 0 || (h == 0 && m == 0))
-            pos += snprintf(buf + pos, sizeof(buf) - pos, "%.3gs", s);
+        if (hours != 0) {
+            append_uint64(buf, &pos, hours);
+            buf[pos++] = 'h';
+        }
+        if (minutes != 0) {
+            append_uint64(buf, &pos, minutes);
+            buf[pos++] = 'm';
+        }
+        if (magnitude != 0 || (hours == 0 && minutes == 0))
+            append_duration_decimal(buf, &pos, magnitude,
+                                    (uint64_t)NEVERC_TIME_SECOND, 9, "s");
     }
 
     buf[pos] = '\0';
-    char *result = (char *)malloc((size_t)pos + 1U);
+    char *result = (char *)malloc(pos + 1U);
     if (!result) return NULL;
-    memcpy(result, buf, (size_t)pos + 1U);
+    memcpy(result, buf, pos + 1U);
     return result;
 }
 
@@ -373,22 +605,22 @@ neverc_time_t neverc_time_unix_milli_to_time(int64_t msec) {
 
 char *neverc_time_format(neverc_time_t t, const char *layout) {
     if (!layout) return NULL;
-    /* Decompose once: the previous code called six accessors, each doing its
-     * own gmtime_r, so a single format cost six broken-down-time conversions. */
     struct tm m;
-    decompose(t, &m);
+    if (!decompose(t, &m)) return NULL;
     int yr = m.tm_year + 1900;
+    if (yr < 0 || yr > 9999) return NULL;
     int mo = m.tm_mon + 1;
     int dy = m.tm_mday;
     int hr = m.tm_hour;
     int mi = m.tm_min;
     int sc = m.tm_sec;
 
-    char buf[256];
-    int out = 0;
     size_t llen = strlen(layout);
+    char *buf = (char *)malloc(llen + 1U);
+    if (!buf) return NULL;
+    size_t out = 0;
 
-    for (size_t i = 0; i < llen && out < (int)sizeof(buf) - 20;) {
+    for (size_t i = 0; i < llen;) {
         if (i + 4 <= llen && memcmp(layout + i, "2006", 4) == 0) {
             write_int(buf, &out, yr, 4); i += 4;
         } else if (i + 2 <= llen && memcmp(layout + i, "01", 2) == 0) {
@@ -406,18 +638,20 @@ char *neverc_time_format(neverc_time_t t, const char *layout) {
         }
     }
     buf[out] = '\0';
-    char *result = (char *)malloc((size_t)out + 1);
-    if (result) memcpy(result, buf, (size_t)out + 1);
-    return result;
+    return buf;
 }
 
-static int parse_n_digits(const char *value, size_t vlen, size_t *vi, int n) {
+static int parse_n_digits(const char *value, size_t vlen, size_t *vi, int n,
+                          int *out) {
+    if (vlen - *vi < (size_t)n) return -1;
     int result = 0;
-    for (int j = 0; j < n && *vi < vlen && value[*vi] >= '0' && value[*vi] <= '9'; j++) {
+    for (int j = 0; j < n; j++) {
+        if (value[*vi] < '0' || value[*vi] > '9') return -1;
         result = result * 10 + (value[*vi] - '0');
         (*vi)++;
     }
-    return result;
+    *out = result;
+    return 0;
 }
 
 int neverc_time_parse(const char *layout, const char *value, neverc_time_t *out) {
@@ -426,54 +660,78 @@ int neverc_time_parse(const char *layout, const char *value, neverc_time_t *out)
     size_t li = 0, vi = 0;
     size_t llen = strlen(layout), vlen = strlen(value);
 
-    while (li < llen && vi < vlen) {
+    while (li < llen) {
         if (li + 4 <= llen && memcmp(layout + li, "2006", 4) == 0) {
-            yr = parse_n_digits(value, vlen, &vi, 4);
+            if (parse_n_digits(value, vlen, &vi, 4, &yr) != 0) return -1;
             li += 4;
         } else if (li + 2 <= llen && memcmp(layout + li, "01", 2) == 0) {
-            mo = parse_n_digits(value, vlen, &vi, 2);
+            if (parse_n_digits(value, vlen, &vi, 2, &mo) != 0) return -1;
             li += 2;
         } else if (li + 2 <= llen && memcmp(layout + li, "02", 2) == 0) {
-            dy = parse_n_digits(value, vlen, &vi, 2);
+            if (parse_n_digits(value, vlen, &vi, 2, &dy) != 0) return -1;
             li += 2;
         } else if (li + 2 <= llen && memcmp(layout + li, "15", 2) == 0) {
-            hr = parse_n_digits(value, vlen, &vi, 2);
+            if (parse_n_digits(value, vlen, &vi, 2, &hr) != 0) return -1;
             li += 2;
         } else if (li + 2 <= llen && memcmp(layout + li, "04", 2) == 0) {
-            mi = parse_n_digits(value, vlen, &vi, 2);
+            if (parse_n_digits(value, vlen, &vi, 2, &mi) != 0) return -1;
             li += 2;
         } else if (li + 2 <= llen && memcmp(layout + li, "05", 2) == 0) {
-            sc = parse_n_digits(value, vlen, &vi, 2);
+            if (parse_n_digits(value, vlen, &vi, 2, &sc) != 0) return -1;
             li += 2;
         } else {
-            li++; vi++;
+            if (vi >= vlen || layout[li] != value[vi]) return -1;
+            li++;
+            vi++;
         }
     }
-    *out = neverc_time_date(yr, mo, dy, hr, mi, sc, 0);
+    if (vi != vlen || mo < 1 || mo > 12 || dy < 1 ||
+        dy > days_in_month(yr, mo) || hr < 0 || hr > 23 ||
+        mi < 0 || mi > 59 || sc < 0 || sc > 59)
+        return -1;
+    neverc_time_t parsed = neverc_time_date(yr, mo, dy, hr, mi, sc, 0);
+    *out = parsed;
     return 0;
+}
+
+static uint64_t add_mod(uint64_t a, uint64_t b, uint64_t modulus) {
+    return a >= modulus - b ? a - (modulus - b) : a + b;
+}
+
+static uint64_t mul_mod(uint64_t a, uint64_t b, uint64_t modulus) {
+    uint64_t result = 0;
+    while (b != 0) {
+        if (b & 1U) result = add_mod(result, a, modulus);
+        b >>= 1;
+        if (b != 0) a = add_mod(a, a, modulus);
+    }
+    return result;
+}
+
+static uint64_t timestamp_remainder(neverc_time_t t, neverc_duration_t d) {
+    t = normalize_time(t);
+    uint64_t modulus = (uint64_t)d;
+    int64_t signed_sec_rem = t.sec % d;
+    uint64_t sec_rem = signed_sec_rem < 0
+        ? modulus - (uint64_t)(-signed_sec_rem)
+        : (uint64_t)signed_sec_rem;
+    uint64_t result = mul_mod(sec_rem,
+                              (uint64_t)NEVERC_TIME_SECOND % modulus,
+                              modulus);
+    return add_mod(result, (uint32_t)t.nsec % modulus, modulus);
 }
 
 neverc_time_t neverc_time_truncate(neverc_time_t t, neverc_duration_t d) {
     if (d <= 0) return t;
-    int64_t ns = t.sec * 1000000000LL + t.nsec;
-    int64_t rem = ns % d;
-    if (rem < 0) rem += d;
-    ns -= rem;
-    neverc_time_t result;
-    result.sec = ns / 1000000000LL;
-    result.nsec = (int32_t)(ns % 1000000000LL);
-    return result;
+    uint64_t remainder = timestamp_remainder(t, d);
+    return neverc_time_add(t, -(int64_t)remainder);
 }
 
 neverc_time_t neverc_time_round(neverc_time_t t, neverc_duration_t d) {
     if (d <= 0) return t;
-    int64_t ns = t.sec * 1000000000LL + t.nsec;
-    int64_t rem = ns % d;
-    if (rem < 0) rem += d;
-    if (rem * 2 >= d) ns += d - rem;
-    else ns -= rem;
-    neverc_time_t result;
-    result.sec = ns / 1000000000LL;
-    result.nsec = (int32_t)(ns % 1000000000LL);
-    return result;
+    uint64_t remainder = timestamp_remainder(t, d);
+    uint64_t upper = (uint64_t)d - remainder;
+    if (remainder < upper)
+        return neverc_time_add(t, -(int64_t)remainder);
+    return neverc_time_add(t, (int64_t)upper);
 }

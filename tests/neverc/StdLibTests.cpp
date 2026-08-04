@@ -428,6 +428,11 @@ STD_TEST(flag, "src/flag/flag.c", "src/strconv/parse_int.c",
 STD_TEST(log, "src/log/log.c")
 STD_TEST(slog, "src/log/slog/slog.c", "src/strconv/format_float.c")
 STD_TEST(time, "src/time/time.c")
+TEST_F(StdLibTest, TimeAllocationFailure) {
+  auto r = compileAndRunStdTest("time_oom", {}, {"-fno-builtin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
 STD_TEST(uuid, "src/uuid/uuid.c")
 STD_TEST(regexp, "src/regexp/regexp.c")
 TEST_F(StdLibTest, RegexpAllocationFailure) {

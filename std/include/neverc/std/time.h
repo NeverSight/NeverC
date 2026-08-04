@@ -45,6 +45,8 @@ int  neverc_time_weekday(neverc_time_t t);
 int  neverc_time_yearday(neverc_time_t t);
 
 /* Arithmetic */
+/* Add wraps the seconds field on representational overflow. Sub saturates to
+   INT64_MIN/INT64_MAX when the duration is out of range. */
 neverc_time_t     neverc_time_add(neverc_time_t t, neverc_duration_t d);
 neverc_duration_t neverc_time_sub(neverc_time_t a, neverc_time_t b);
 neverc_duration_t neverc_time_since(neverc_time_t t);
@@ -57,6 +59,8 @@ int  neverc_time_equal(neverc_time_t a, neverc_time_t b);
 int  neverc_time_is_zero(neverc_time_t t);
 
 /* Epoch conversions */
+/* Narrow epoch conversions use defined two's-complement wrapping when the
+   mathematical result is outside int64_t. */
 int64_t neverc_time_unix_sec(neverc_time_t t);
 int64_t neverc_time_unix_milli(neverc_time_t t);
 int64_t neverc_time_unix_nano(neverc_time_t t);

@@ -270,6 +270,221 @@ static void test_unix_milli_to_time(void) {
     check_bool("1500ms nsec", t.nsec == 500000000, 1);
 }
 
+static int64_t int64_from_bits(uint64_t bits) {
+    int64_t value;
+    memcpy(&value, &bits, sizeof(value));
+    return value;
+}
+
+static uint64_t time_test_random_state = 0x9e3779b97f4a7c15ULL;
+
+static uint64_t time_test_random(void) {
+    uint64_t x = time_test_random_state;
+    x ^= x >> 12;
+    x ^= x << 25;
+    x ^= x >> 27;
+    time_test_random_state = x;
+    return x * 0x2545f4914f6cdd1dULL;
+}
+
+static void test_overflow_safety(void) {
+    printf("[overflow safety]\n");
+    neverc_time_t t = neverc_time_unix(INT64_MAX, NEVERC_TIME_SECOND);
+    check_int64("unix wraps positive sec", t.sec, INT64_MIN);
+    check_int("unix wraps positive nsec", t.nsec, 0);
+    t = neverc_time_unix(INT64_MIN, -NEVERC_TIME_SECOND);
+    check_int64("unix wraps negative sec", t.sec, INT64_MAX);
+    check_int("unix wraps negative nsec", t.nsec, 0);
+
+    t.sec = INT64_MAX;
+    t.nsec = 999999999;
+    neverc_time_t added = neverc_time_add(t, 1);
+    check_int64("add wraps sec", added.sec, INT64_MIN);
+    check_int("add normalizes nsec", added.nsec, 0);
+
+    neverc_time_t lo = {INT64_MIN, 0};
+    neverc_time_t hi = {INT64_MAX, 999999999};
+    check_int64("sub saturates positive", neverc_time_sub(hi, lo), INT64_MAX);
+    check_int64("sub saturates negative", neverc_time_sub(lo, hi), INT64_MIN);
+
+    check_int64("unix nano wraps", neverc_time_unix_nano(hi),
+                int64_from_bits((uint64_t)INT64_MAX * 1000000000ULL +
+                                999999999ULL));
+    check_int64("unix milli wraps", neverc_time_unix_milli(hi),
+                int64_from_bits((uint64_t)INT64_MAX * 1000ULL + 999ULL));
+    check_int64("unix micro wraps", neverc_time_unix_micro(hi),
+                int64_from_bits((uint64_t)INT64_MAX * 1000000ULL + 999999ULL));
+
+    neverc_time_t far = {INT64_MAX, 123456789};
+    neverc_time_t truncated = neverc_time_truncate(far, NEVERC_TIME_SECOND);
+    check_int64("far truncate sec", truncated.sec, INT64_MAX);
+    check_int("far truncate nsec", truncated.nsec, 0);
+
+    neverc_time_t round_input = neverc_time_unix(5000000000LL, 0);
+    neverc_time_t rounded = neverc_time_round(round_input, INT64_MAX);
+    check_int64("large duration round sec", rounded.sec, 9223372036LL);
+    check_int("large duration round nsec", rounded.nsec, 854775807);
+}
+
+static void test_strict_rfc3339(void) {
+    printf("[strict rfc3339]\n");
+    static const char *invalid[] = {
+        "2024-01-15T12:30:45",
+        "2024-01-15T12:30:45Zjunk",
+        "2024-01-15T12:30:45.Z",
+        "2024-01-15T12:30:60Z",
+        "2024-01-15T12:30:45+24:00",
+        "2024-01-15T12:30:45+08:60",
+        "2024-01-15 12:30:45Z",
+        "2024-01-15t12:30:45z"
+    };
+    for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
+        neverc_time_t out = {123, 456};
+        check_int("reject malformed rfc3339",
+                  neverc_time_parse_rfc3339(invalid[i], &out), -1);
+        check_bool("malformed rfc3339 is atomic",
+                   out.sec == 123 && out.nsec == 456, 1);
+    }
+
+    neverc_time_t out;
+    check_int("null rfc3339 input", neverc_time_parse_rfc3339(NULL, &out), -1);
+    check_int("null rfc3339 output",
+              neverc_time_parse_rfc3339("1970-01-01T00:00:00Z", NULL), -1);
+
+    neverc_time_t fractional = neverc_time_unix(0, 123400000);
+    char *formatted = neverc_time_format_rfc3339(fractional);
+    check_str("fractional rfc3339", formatted,
+              "1970-01-01T00:00:00.1234Z");
+    free(formatted);
+}
+
+static void test_duration_boundaries(void) {
+    printf("[duration boundaries]\n");
+    neverc_duration_t d = 17;
+    check_int("parse unitless zero", neverc_time_parse_duration("0", &d), 0);
+    check_int64("unitless zero value", d, 0);
+    check_int("parse leading fraction", neverc_time_parse_duration(".5s", &d), 0);
+    check_int64("leading fraction value", d, 500000000);
+    check_int("parse negative leading fraction",
+              neverc_time_parse_duration("-.5s", &d), 0);
+    check_int64("negative leading fraction value", d, -500000000);
+    check_int("parse Greek mu", neverc_time_parse_duration("2\xce\xbcs", &d), 0);
+    check_int64("Greek mu value", d, 2000);
+
+    check_int("parse max duration",
+              neverc_time_parse_duration("9223372036854775807ns", &d), 0);
+    check_int64("max duration value", d, INT64_MAX);
+    check_int("parse min duration",
+              neverc_time_parse_duration("-9223372036854775808ns", &d), 0);
+    check_int64("min duration value", d, INT64_MIN);
+
+    d = 99;
+    check_int("reject positive duration overflow",
+              neverc_time_parse_duration("9223372036854775808ns", &d), -1);
+    check_int64("duration overflow is atomic", d, 99);
+    check_int("reject accumulated duration overflow",
+              neverc_time_parse_duration("2562047h47m16.854775808s", &d), -1);
+    check_int("reject huge duration",
+              neverc_time_parse_duration("999999999999999999999999999h", &d), -1);
+
+    static const neverc_duration_t values[] = {
+        INT64_MIN, INT64_MAX, -1234567890123456LL, -1001, -1,
+        0, 1, 1001, 1234567890123456LL
+    };
+    for (size_t i = 0; i < sizeof(values) / sizeof(values[0]); i++) {
+        char *text = neverc_time_format_duration(values[i]);
+        neverc_duration_t parsed = 0;
+        check_bool("duration format allocation", text != NULL, 1);
+        if (text) {
+            check_int("formatted duration parses",
+                      neverc_time_parse_duration(text, &parsed), 0);
+            check_int64("duration format roundtrip", parsed, values[i]);
+        }
+        free(text);
+    }
+}
+
+static void test_strict_layout_and_date_normalization(void) {
+    printf("[strict layout/date normalization]\n");
+    neverc_time_t out = {77, 88};
+    static const char *invalid_values[] = {
+        "2024/06/15", "2024-6-15", "2024-06-15junk",
+        "2024-13-01", "2024-02-30"
+    };
+    for (size_t i = 0; i < sizeof(invalid_values) / sizeof(invalid_values[0]); i++) {
+        out.sec = 77;
+        out.nsec = 88;
+        check_int("reject malformed layout value",
+                  neverc_time_parse("2006-01-02", invalid_values[i], &out), -1);
+        check_bool("layout failure is atomic", out.sec == 77 && out.nsec == 88, 1);
+    }
+    check_int("null layout output",
+              neverc_time_parse("2006", "2024", NULL), -1);
+
+    neverc_time_t normalized = neverc_time_date(2024, 1, 1, 24, 0, 0, -1);
+    check_int("normalized date year", neverc_time_year(normalized), 2024);
+    check_int("normalized date month", neverc_time_month(normalized), 1);
+    check_int("normalized date day", neverc_time_day(normalized), 1);
+    check_int("normalized date hour", neverc_time_hour(normalized), 23);
+    check_int("normalized date minute", neverc_time_minute(normalized), 59);
+    check_int("normalized date second", neverc_time_second(normalized), 59);
+    check_int("normalized date nsec", normalized.nsec, 999999999);
+
+    char long_layout[401];
+    memset(long_layout, 'x', sizeof(long_layout) - 1);
+    long_layout[sizeof(long_layout) - 1] = '\0';
+    char *formatted = neverc_time_format(neverc_time_unix(0, 0), long_layout);
+    check_bool("long layout allocation", formatted != NULL, 1);
+    if (formatted)
+        check_int64("long layout is not truncated", (int64_t)strlen(formatted), 400);
+    free(formatted);
+}
+
+static void test_randomized_arithmetic(void) {
+    printf("[randomized arithmetic]\n");
+    for (int i = 0; i < 500; i++) {
+        int64_t sec = (int64_t)(time_test_random() % 2000000001ULL) -
+                      1000000000LL;
+        int32_t nsec = (int32_t)(time_test_random() % 1000000000ULL);
+        neverc_time_t t = {sec, nsec};
+        neverc_duration_t d =
+            (neverc_duration_t)(time_test_random() % 1000000000000000ULL) + 1;
+        int64_t total = sec * NEVERC_TIME_SECOND + nsec;
+        int64_t remainder = total % d;
+        if (remainder < 0) remainder += d;
+        int64_t truncated = total - remainder;
+        int64_t rounded = remainder < d - remainder
+            ? truncated
+            : total + (d - remainder);
+
+        check_int64("random truncate",
+                    neverc_time_unix_nano(neverc_time_truncate(t, d)),
+                    truncated);
+        check_int64("random round",
+                    neverc_time_unix_nano(neverc_time_round(t, d)),
+                    rounded);
+
+        neverc_duration_t delta =
+            (neverc_duration_t)(time_test_random() % 2000000000000001ULL) -
+            1000000000000000LL;
+        neverc_time_t added = neverc_time_add(t, delta);
+        check_int64("random add/sub", neverc_time_sub(added, t), delta);
+    }
+
+    for (int i = 0; i < 500; i++) {
+        neverc_duration_t value = int64_from_bits(time_test_random());
+        char *text = neverc_time_format_duration(value);
+        neverc_duration_t parsed = 0;
+        check_bool("random duration format", text != NULL, 1);
+        if (text) {
+            check_int("random duration parse",
+                      neverc_time_parse_duration(text, &parsed), 0);
+            check_int64("random duration roundtrip", parsed, value);
+        }
+        free(text);
+    }
+}
+
 int main(void) {
     printf("=== NeverC Time Module Tests ===\n\n");
     test_unix_epoch();
@@ -290,6 +505,11 @@ int main(void) {
     test_parse_layout();
     test_truncate_round();
     test_unix_milli_to_time();
+    test_overflow_safety();
+    test_strict_rfc3339();
+    test_duration_boundaries();
+    test_strict_layout_and_date_normalization();
+    test_randomized_arithmetic();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }
