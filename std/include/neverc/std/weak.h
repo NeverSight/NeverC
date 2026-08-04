@@ -16,7 +16,9 @@ extern "C" {
  * counts.  When the strong count drops to zero the payload is freed
  * but the control block survives until the last weak ref is released.
  *
- * Thread-safe: all ref-count operations are atomic.
+ * Thread-safe: all ref-count operations are atomic. Retain returns an
+ * independently releasable reference and fails with an empty/NULL result if
+ * its count cannot be increased.
  */
 
 typedef struct neverc_weak_ref neverc_weak_ref_t;
@@ -36,6 +38,8 @@ neverc_weak_ref_t *neverc_weak_make(neverc_weak_strong_t s);
 neverc_weak_ref_t *neverc_weak_ref_retain(neverc_weak_ref_t *w);
 void               neverc_weak_ref_release(neverc_weak_ref_t *w);
 
+/* Value is only a snapshot and does not keep the payload alive. Use upgrade
+ * when the final strong release may happen concurrently. */
 void *neverc_weak_value(neverc_weak_ref_t *w);
 neverc_weak_strong_t neverc_weak_upgrade(neverc_weak_ref_t *w);
 

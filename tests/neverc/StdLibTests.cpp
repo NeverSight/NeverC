@@ -994,6 +994,16 @@ TEST_F(StdLibTest, UniqueAllocationFailure) {
 
 // ===== Weak =====
 STD_TEST(weak, "src/weak/weak.c")
+TEST_F(StdLibTest, WeakRetainLifecycle) {
+  auto r = compileAndRunStdTest("weak_retain", {"src/weak/weak.c"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
+TEST_F(StdLibTest, WeakAllocationFailure) {
+  auto r = compileAndRunStdTest("weak_oom", {}, {"-fno-builtin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
 
 // ===== Dot-syntax (comprehensive) =====
 STD_TEST(dot_syntax,
