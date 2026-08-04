@@ -410,6 +410,10 @@ void neverc_sync_map_store(neverc_sync_map_t *m, const char *key, void *value) {
 }
 
 void *neverc_sync_map_load(neverc_sync_map_t *m, const char *key, int *ok) {
+    if (!m || !key) {
+        if (ok) *ok = 0;
+        return NULL;
+    }
     neverc_rwmutex_rlock(&m->rw);
     smap_entry_t *slot = smap_find_slot(m->buckets, m->cap, key);
     void *val = NULL;
@@ -453,6 +457,10 @@ void *neverc_sync_map_load_or_store(neverc_sync_map_t *m, const char *key, void 
 }
 
 void *neverc_sync_map_load_and_delete(neverc_sync_map_t *m, const char *key, int *loaded) {
+    if (!m || !key) {
+        if (loaded) *loaded = 0;
+        return NULL;
+    }
     neverc_rwmutex_lock(&m->rw);
     smap_entry_t *slot = smap_find_slot(m->buckets, m->cap, key);
     void *val = NULL;
@@ -476,6 +484,8 @@ void neverc_sync_map_delete(neverc_sync_map_t *m, const char *key) {
 }
 
 void neverc_sync_map_clear(neverc_sync_map_t *m) {
+    if (!m)
+        return;
     neverc_rwmutex_lock(&m->rw);
     for (size_t i = 0; i < m->cap; i++) {
         if (m->buckets[i].occupied == SMAP_OCCUPIED)
@@ -489,14 +499,58 @@ void neverc_sync_map_clear(neverc_sync_map_t *m) {
 }
 
 void neverc_sync_map_range(neverc_sync_map_t *m, int (*f)(const char *key, void *value, void *user), void *user) {
+    if (!m || !f)
+        return;
+
+    typedef struct smap_range_item {
+        char *key;
+        void *value;
+    } smap_range_item_t;
+
     neverc_rwmutex_rlock(&m->rw);
+    if (m->count == 0 ||
+        m->count > SIZE_MAX / sizeof(smap_range_item_t)) {
+        neverc_rwmutex_runlock(&m->rw);
+        return;
+    }
+
+    smap_range_item_t *items = (smap_range_item_t *)NC_SYNC_CALLOC(
+        m->count, sizeof(*items));
+    if (!items) {
+        neverc_rwmutex_runlock(&m->rw);
+        return;
+    }
+
+    size_t count = 0;
+    int complete = 1;
     for (size_t i = 0; i < m->cap; i++) {
         if (m->buckets[i].occupied == SMAP_OCCUPIED) {
-            if (!f(m->buckets[i].key, m->buckets[i].value, user))
+            size_t key_len = strlen(m->buckets[i].key);
+            if (key_len == SIZE_MAX) {
+                complete = 0;
                 break;
+            }
+            items[count].key = (char *)NC_SYNC_MALLOC(key_len + 1);
+            if (!items[count].key) {
+                complete = 0;
+                break;
+            }
+            memcpy(items[count].key, m->buckets[i].key, key_len + 1);
+            items[count].value = m->buckets[i].value;
+            count++;
         }
     }
     neverc_rwmutex_runlock(&m->rw);
+
+    if (complete) {
+        for (size_t i = 0; i < count; i++) {
+            if (!f(items[i].key, items[i].value, user))
+                break;
+        }
+    }
+    for (size_t i = 0; i < count; i++)
+        free(items[i].key);
+    free(items);
 }
 
 void *neverc_sync_map_swap(neverc_sync_map_t *m, const char *key, void *value, int *loaded) {
@@ -531,6 +585,8 @@ void *neverc_sync_map_swap(neverc_sync_map_t *m, const char *key, void *value, i
 }
 
 int neverc_sync_map_compare_and_swap(neverc_sync_map_t *m, const char *key, void *old_val, void *new_val) {
+    if (!m || !key)
+        return 0;
     neverc_rwmutex_lock(&m->rw);
     smap_entry_t *slot = smap_find_slot(m->buckets, m->cap, key);
     int swapped = 0;
@@ -543,6 +599,8 @@ int neverc_sync_map_compare_and_swap(neverc_sync_map_t *m, const char *key, void
 }
 
 int neverc_sync_map_compare_and_delete(neverc_sync_map_t *m, const char *key, void *old_val) {
+    if (!m || !key)
+        return 0;
     neverc_rwmutex_lock(&m->rw);
     smap_entry_t *slot = smap_find_slot(m->buckets, m->cap, key);
     int deleted = 0;

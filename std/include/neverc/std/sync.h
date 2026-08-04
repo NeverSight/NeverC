@@ -140,6 +140,8 @@ void  *neverc_sync_map_load_or_store(neverc_sync_map_t *m, const char *key, void
 void  *neverc_sync_map_load_and_delete(neverc_sync_map_t *m, const char *key, int *loaded);
 void   neverc_sync_map_delete(neverc_sync_map_t *m, const char *key);
 void   neverc_sync_map_clear(neverc_sync_map_t *m);
+/* The callback runs without the map lock and may call methods on m.  key
+ * remains valid for the duration of its callback invocation. */
 void   neverc_sync_map_range(neverc_sync_map_t *m, int (*f)(const char *key, void *value, void *user), void *user);
 void  *neverc_sync_map_swap(neverc_sync_map_t *m, const char *key, void *value, int *loaded);
 int    neverc_sync_map_compare_and_swap(neverc_sync_map_t *m, const char *key, void *old_val, void *new_val);

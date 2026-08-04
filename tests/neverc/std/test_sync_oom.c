@@ -29,6 +29,16 @@ static void *controlled_calloc(size_t count, size_t size) {
         }                                                                    \
     } while (0)
 
+static int range_calls;
+
+static int count_range_call(const char *key, void *value, void *user) {
+    (void)key;
+    (void)value;
+    (void)user;
+    range_calls++;
+    return 1;
+}
+
 int main(void) {
     neverc_sync_map_t *map = neverc_sync_map_new();
     CHECK(map != NULL);
@@ -45,6 +55,10 @@ int main(void) {
     }
 
     fail_bucket_allocation = 1;
+
+    range_calls = 0;
+    neverc_sync_map_range(map, count_range_call, NULL);
+    CHECK(range_calls == 0);
 
     /* Existing keys do not require growth and must remain usable when a
      * speculative grow would fail. */
@@ -81,6 +95,10 @@ int main(void) {
     fail_bucket_allocation = 0;
     fail_key_allocation = 1;
 
+    range_calls = 0;
+    neverc_sync_map_range(map, count_range_call, NULL);
+    CHECK(range_calls == 0);
+
     /* Replacing an existing value does not allocate a key. */
     neverc_sync_map_store(map, "existing", &replacement);
     CHECK(neverc_sync_map_load(map, "existing", &ok) == &replacement);
@@ -105,6 +123,11 @@ int main(void) {
     CHECK(loaded == 0);
     CHECK(neverc_sync_map_load(map, "swap-oom", &ok) == NULL);
     CHECK(ok == 0);
+
+    fail_key_allocation = 0;
+    range_calls = 0;
+    neverc_sync_map_range(map, count_range_call, NULL);
+    CHECK(range_calls == 12);
 
     neverc_sync_map_free(map);
     puts("passed");

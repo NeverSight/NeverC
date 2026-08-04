@@ -309,6 +309,49 @@ static void test_sync_map_basic(void) {
     neverc_sync_map_free(m);
 }
 
+static void test_sync_map_load_invalid_inputs(void) {
+    printf("[sync_map_load_invalid_inputs]\n");
+    int ok = 1;
+    ASSERT_TRUE(neverc_sync_map_load(NULL, "key", &ok) == NULL);
+    ASSERT_INT_EQ(ok, 0);
+
+    neverc_sync_map_t *m = neverc_sync_map_new();
+    ASSERT_TRUE(m != NULL);
+    ok = 1;
+    ASSERT_TRUE(neverc_sync_map_load(m, NULL, &ok) == NULL);
+    ASSERT_INT_EQ(ok, 0);
+
+    int loaded = 1;
+    ASSERT_TRUE(neverc_sync_map_load_and_delete(
+                    NULL, "key", &loaded) == NULL);
+    ASSERT_INT_EQ(loaded, 0);
+    loaded = 1;
+    ASSERT_TRUE(neverc_sync_map_load_and_delete(
+                    m, NULL, &loaded) == NULL);
+    ASSERT_INT_EQ(loaded, 0);
+
+    int value = 1;
+    ASSERT_TRUE(!neverc_sync_map_compare_and_swap(
+                    NULL, "key", &value, &value));
+    ASSERT_TRUE(!neverc_sync_map_compare_and_swap(
+                    m, NULL, &value, &value));
+    ASSERT_TRUE(!neverc_sync_map_compare_and_delete(
+                    NULL, "key", &value));
+    ASSERT_TRUE(!neverc_sync_map_compare_and_delete(
+                    m, NULL, &value));
+    neverc_sync_map_clear(NULL);
+    tests_run++;
+    tests_passed++;
+    neverc_sync_map_range(NULL, NULL, NULL);
+    tests_run++;
+    tests_passed++;
+    neverc_sync_map_store(m, "range-key", &value);
+    neverc_sync_map_range(m, NULL, NULL);
+    tests_run++;
+    tests_passed++;
+    neverc_sync_map_free(m);
+}
+
 static void test_sync_map_overwrite(void) {
     printf("[sync_map_overwrite]\n");
     neverc_sync_map_t *m = neverc_sync_map_new();
@@ -402,6 +445,36 @@ static int range_cb(const char *key, void *value, void *user) {
     return 1;
 }
 
+typedef struct {
+    neverc_sync_map_t *map;
+    int *value;
+} range_mutation_t;
+
+typedef struct {
+    neverc_sync_map_t *map;
+    int count;
+    int keys_remained_valid;
+} range_delete_t;
+
+static int range_store_cb(const char *key, void *value, void *user) {
+    (void)key;
+    (void)value;
+    range_mutation_t *mutation = (range_mutation_t *)user;
+    neverc_sync_map_store(mutation->map, "added-during-range",
+                          mutation->value);
+    return 0;
+}
+
+static int range_delete_cb(const char *key, void *value, void *user) {
+    (void)value;
+    range_delete_t *deletion = (range_delete_t *)user;
+    neverc_sync_map_delete(deletion->map, key);
+    if (key[0] == '\0')
+        deletion->keys_remained_valid = 0;
+    deletion->count++;
+    return 1;
+}
+
 static void test_sync_map_range(void) {
     printf("[sync_map_range]\n");
     neverc_sync_map_t *m = neverc_sync_map_new();
@@ -413,6 +486,21 @@ static void test_sync_map_range(void) {
     range_count = 0;
     neverc_sync_map_range(m, range_cb, NULL);
     ASSERT_INT_EQ(range_count, 3);
+
+    range_mutation_t mutation = {m, &v};
+    neverc_sync_map_range(m, range_store_cb, &mutation);
+    int ok = 0;
+    ASSERT_TRUE(neverc_sync_map_load(
+                    m, "added-during-range", &ok) == &v);
+    ASSERT_TRUE(ok);
+
+    range_delete_t deletion = {m, 0, 1};
+    neverc_sync_map_range(m, range_delete_cb, &deletion);
+    ASSERT_INT_EQ(deletion.count, 4);
+    ASSERT_TRUE(deletion.keys_remained_valid);
+    range_count = 0;
+    neverc_sync_map_range(m, range_cb, NULL);
+    ASSERT_INT_EQ(range_count, 0);
 
     neverc_sync_map_free(m);
 }
@@ -610,6 +698,7 @@ int main(void) {
     test_pool_basic();
     test_pool_no_new_func();
     test_sync_map_basic();
+    test_sync_map_load_invalid_inputs();
     test_sync_map_overwrite();
     test_sync_map_delete();
     test_sync_map_load_or_store();
