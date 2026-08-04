@@ -139,6 +139,7 @@ Variabili d’ambiente opzionali:
 I sysroot per cross-compilazione (Windows SDK, sysroot Linux, ecc.) si installano on demand dopo che il compilatore è nel `PATH`:
 
 ```bash
+neverc runtime install all
 neverc runtime install windows-x64
 neverc runtime list
 ```

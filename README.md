@@ -139,6 +139,7 @@ Optional installer environment variables:
 Cross-compilation sysroots (Windows SDK, Linux sysroot, etc.) are installed on demand after the compiler is on your `PATH`:
 
 ```bash
+neverc runtime install all
 neverc runtime install windows-x64
 neverc runtime list
 ```

@@ -141,6 +141,7 @@ neverc hello.c -o hello
 جذور sysroot للتجميع المتقاطع (Windows SDK وLinux sysroot وغيرها) تُثبَّت عند الحاجة بعد أن يصبح المترجم على `PATH`:
 
 ```bash
+neverc runtime install all
 neverc runtime install windows-x64
 neverc runtime list
 ```

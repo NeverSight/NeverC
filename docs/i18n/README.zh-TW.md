@@ -139,6 +139,7 @@ neverc hello.c -o hello
 交叉編譯 sysroot（Windows SDK、Linux sysroot 等）在編譯器加入 `PATH` 後按需安裝：
 
 ```bash
+neverc runtime install all
 neverc runtime install windows-x64
 neverc runtime list
 ```

@@ -139,6 +139,7 @@ Variables de entorno opcionales:
 Los sysroots de compilación cruzada (Windows SDK, sysroot Linux, etc.) se instalan bajo demanda cuando el compilador ya está en el `PATH`:
 
 ```bash
+neverc runtime install all
 neverc runtime install windows-x64
 neverc runtime list
 ```

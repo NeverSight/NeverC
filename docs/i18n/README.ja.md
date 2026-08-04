@@ -139,6 +139,7 @@ neverc hello.c -o hello
 クロスコンパイル用 sysroot（Windows SDK、Linux sysroot など）は、コンパイラが `PATH` に入った後に必要に応じてインストールします：
 
 ```bash
+neverc runtime install all
 neverc runtime install windows-x64
 neverc runtime list
 ```

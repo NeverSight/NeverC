@@ -139,6 +139,7 @@ neverc hello.c -o hello
 Sysroot для кросс-компиляции (Windows SDK, Linux sysroot и т. д.) ставятся по требованию, когда компилятор уже в `PATH`:
 
 ```bash
+neverc runtime install all
 neverc runtime install windows-x64
 neverc runtime list
 ```

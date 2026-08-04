@@ -19,6 +19,7 @@ The macOS arm64 binaries are signed with an Apple Developer ID and notarized by 
 Runtime sysroots are installed on demand:
 
 ```sh
+neverc runtime install all
 neverc runtime install windows-x64
 neverc runtime list
 ```

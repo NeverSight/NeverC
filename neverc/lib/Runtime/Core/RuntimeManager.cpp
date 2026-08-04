@@ -53,6 +53,8 @@ const TargetDef *lookupTarget(StringRef Name) {
   return nullptr;
 }
 
+bool isAllTarget(StringRef Name) { return Name.equals_insensitive("all"); }
+
 void printTargetNames(raw_ostream &OS) {
   for (const auto &T : Targets)
     OS << " " << T.Name;
@@ -303,6 +305,40 @@ int doInstall(StringRef TargetName, StringRef Root, StringRef Version) {
   return Rc;
 }
 
+int doInstallAll(StringRef Root, StringRef Version) {
+  auto RtDir = runtimeDir(Root);
+  int Installed = 0;
+  int Skipped = 0;
+  int Failures = 0;
+
+  outs() << "Installing all cross-compilation runtimes into " << RtDir << "/\n\n";
+
+  for (const auto &T : Targets) {
+    if (isInstalled(RtDir, T.CheckDir)) {
+      outs() << "Skipping " << T.Name << " (already installed)\n";
+      ++Skipped;
+      continue;
+    }
+
+    outs() << "Installing runtime: " << T.Name << "\n";
+    if (fetchAndExtract(&T, RtDir, Version, /*RemoveFirst=*/false) != 0) {
+      errs() << "error: failed to install runtime '" << T.Name << "'\n\n";
+      ++Failures;
+      continue;
+    }
+
+    outs() << "Done: " << T.Name << "\n\n";
+    ++Installed;
+  }
+
+  outs() << "Summary: " << Installed << " installed, " << Skipped << " skipped";
+  if (Failures)
+    outs() << ", " << Failures << " failed";
+  outs() << "\n";
+
+  return Failures ? 1 : 0;
+}
+
 /// `neverc runtime update <target>` — force-update without prompting.
 int doUpdate(StringRef TargetName, StringRef Root, StringRef Version) {
   const TargetDef *T = requireTarget(TargetName);
@@ -357,7 +393,8 @@ int doList(StringRef Root) {
                       Ok ? "installed" : "not installed");
   }
 
-  outs() << "\nInstall a runtime:  neverc runtime install <target>\n";
+  outs() << "\nInstall a runtime:  neverc runtime install <target>\n"
+         << "Install all runtimes: neverc runtime install all\n";
   return 0;
 }
 
@@ -366,6 +403,8 @@ void printUsage() {
          << "Usage:\n"
          << "  neverc runtime install <target>   Install (or prompt to "
             "update)\n"
+         << "  neverc runtime install all        Install every runtime that "
+            "is not yet present\n"
          << "  neverc runtime update  <target>   Force-update to latest\n"
          << "  neverc runtime remove  <target>   Remove an installed runtime\n"
          << "  neverc runtime list               List available and installed "
@@ -407,10 +446,14 @@ int runRuntime(int Argc, const char **Argv, const char *Argv0) {
 
   if (Cmd == "install") {
     if (Argc < 3) {
-      errs() << "usage: neverc runtime install <target>\n";
+      errs() << "usage: neverc runtime install <target>\n"
+             << "       neverc runtime install all\n";
       return 1;
     }
-    return doInstall(Argv[2], Root, Version);
+    StringRef Target(Argv[2]);
+    if (isAllTarget(Target))
+      return doInstallAll(Root, Version);
+    return doInstall(Target, Root, Version);
   }
 
   if (Cmd == "update" || Cmd == "upgrade") {
