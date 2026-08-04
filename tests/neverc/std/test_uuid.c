@@ -61,6 +61,20 @@ static void test_parse(void) {
 
     err = neverc_uuid_parse("550e8400e29b41d4a716446655440000", &u);
     check_int("parse no dashes", err, -1);
+
+    memset(&u, 0xa5, sizeof(u));
+    neverc_uuid_t unchanged = u;
+    err = neverc_uuid_parse("550e8400-e29b-41d4-a716-44665544000g", &u);
+    check_int("parse invalid hex", err, -1);
+    check_int("invalid parse is atomic", neverc_uuid_equal(u, unchanged), 1);
+
+    err = neverc_uuid_parse(NULL, &u);
+    check_int("parse null input", err, -1);
+    err = neverc_uuid_parse("550e8400-e29b-41d4-a716-446655440000", NULL);
+    check_int("parse null output", err, -1);
+
+    neverc_uuid_to_string(u, NULL);
+    check_int("format null output is safe", 1, 1);
 }
 
 static void test_nil(void) {

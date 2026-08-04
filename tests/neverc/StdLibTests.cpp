@@ -434,6 +434,12 @@ TEST_F(StdLibTest, TimeAllocationFailure) {
   EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
 }
 STD_TEST(uuid, "src/uuid/uuid.c")
+TEST_F(StdLibTest, UuidEntropyFailure) {
+  auto r = compileAndRunStdTest(
+      "uuid_entropy_failure", {}, {"-fno-builtin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
 STD_TEST(regexp, "src/regexp/regexp.c")
 TEST_F(StdLibTest, RegexpAllocationFailure) {
   auto r = compileAndRunStdTest("regexp_oom", {}, {"-fno-builtin-std"});

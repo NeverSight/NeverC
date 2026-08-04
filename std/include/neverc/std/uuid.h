@@ -18,13 +18,14 @@ typedef struct {
     uint8_t bytes[16];
 } neverc_uuid_t;
 
-/* Generate a new UUID v4 (random) */
+/* Generate a new UUID v4. Returns the nil UUID if the platform CSPRNG fails. */
 neverc_uuid_t neverc_uuid_new(void);
 
-/* Format UUID to string (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx) */
+/* Format UUID to string (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx).
+   A NULL output pointer is ignored. */
 void neverc_uuid_to_string(neverc_uuid_t u, char out[37]);
 
-/* Parse UUID from string */
+/* Parse UUID from string. On failure, out is left unchanged. */
 int neverc_uuid_parse(const char *s, neverc_uuid_t *out);
 
 /* Compare two UUIDs */

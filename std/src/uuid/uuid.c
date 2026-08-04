@@ -12,13 +12,16 @@
 #  define NEVERC_HEX_PAIR_ATTR
 #endif
 
-static void fill_random(uint8_t *buf, size_t len) {
-    neverc_platform_random(buf, len);
+static int fill_random(uint8_t *buf, size_t len) {
+    return neverc_platform_random(buf, len);
 }
 
 neverc_uuid_t neverc_uuid_new(void) {
-    neverc_uuid_t u;
-    fill_random(u.bytes, 16);
+    neverc_uuid_t u = {{0}};
+    if (fill_random(u.bytes, sizeof(u.bytes)) != 0) {
+        memset(u.bytes, 0, sizeof(u.bytes));
+        return u;
+    }
     u.bytes[6] = (u.bytes[6] & 0x0F) | 0x40;
     u.bytes[8] = (u.bytes[8] & 0x3F) | 0x80;
     return u;
@@ -83,6 +86,7 @@ static const uint8_t byte_off[16] = {
 };
 
 void neverc_uuid_to_string(neverc_uuid_t u, char out[37]) {
+    if (!out) return;
     out[8] = out[13] = out[18] = out[23] = '-';
     for (int i = 0; i < 16; i++)
         memcpy(out + byte_off[i], hex_pair[u.bytes[i]], 2);
@@ -90,19 +94,22 @@ void neverc_uuid_to_string(neverc_uuid_t u, char out[37]) {
 }
 
 int neverc_uuid_parse(const char *s, neverc_uuid_t *out) {
+    if (!s || !out) return -1;
     if (strlen(s) != 36) return -1;
     if (s[8] != '-' || s[13] != '-' || s[18] != '-' || s[23] != '-')
         return -1;
 
     const uint8_t *p = (const uint8_t *)s;
+    neverc_uuid_t parsed;
     uint8_t bad = 0;
     for (int i = 0; i < 16; i++) {
         uint8_t hi = reverse_hex[p[byte_off[i]]];
         uint8_t lo = reverse_hex[p[byte_off[i] + 1]];
         bad |= (uint8_t)(hi | lo);
-        out->bytes[i] = (uint8_t)((hi << 4) | lo);
+        parsed.bytes[i] = (uint8_t)((hi << 4) | lo);
     }
     if (bad & 0xf0) return -1;
+    *out = parsed;
     return 0;
 }
 
