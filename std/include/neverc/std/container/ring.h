@@ -24,8 +24,13 @@ struct neverc_ring {
 };
 
 neverc_ring_t *neverc_ring_new(int n);
+/* Free is only for heap-owned rings returned by new or detached by unlink;
+ * it must not be used for a stack zero-value ring. */
 void           neverc_ring_free(neverc_ring_t *r);
 
+/* A zero-initialized ring is a one-element ring. NULL represents an empty
+ * ring; operations on it return NULL/zero or do nothing. Move uses n modulo
+ * the ring length, including for INT_MIN/INT_MAX. */
 neverc_ring_t *neverc_ring_next(neverc_ring_t *r);
 neverc_ring_t *neverc_ring_prev(neverc_ring_t *r);
 neverc_ring_t *neverc_ring_move(neverc_ring_t *r, int n);

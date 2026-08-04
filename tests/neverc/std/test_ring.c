@@ -3,7 +3,9 @@
  * Tests circular list operations — mirrors Go container/ring test cases.
  */
 #include "neverc/std/container/ring.h"
+#include <limits.h>
 #include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 
 static int tests_run = 0, tests_passed = 0, tests_failed = 0;
@@ -23,8 +25,8 @@ static int tests_run = 0, tests_passed = 0, tests_failed = 0;
     if ((expr) != NULL) tests_passed++; \
     else { tests_failed++; printf("  FAIL: %s is NULL\n", #expr); } } while(0)
 
-#define INT_VAL(n) ((void *)(long)(n))
-#define TO_INT(p) ((int)(long)(p))
+#define INT_VAL(n) ((void *)(intptr_t)(n))
+#define TO_INT(p) ((int)(intptr_t)(p))
 
 static void test_new(void) {
     printf("[new]\n");
@@ -152,6 +154,56 @@ static void test_single_element(void) {
     neverc_ring_free(r);
 }
 
+static int zero_do_count;
+
+static void count_fn(void *value, void *ctx) {
+    (void)value;
+    (void)ctx;
+    zero_do_count++;
+}
+
+static void test_zero_value_and_null_input(void) {
+    printf("[zero_value_and_null_input]\n");
+    neverc_ring_t zero = {0};
+    ASSERT_INT_EQ(neverc_ring_len(&zero), 1);
+    ASSERT_INT_EQ(neverc_ring_next(&zero) == &zero, 1);
+    ASSERT_INT_EQ(neverc_ring_prev(&zero) == &zero, 1);
+    ASSERT_INT_EQ(neverc_ring_move(&zero, INT_MIN) == &zero, 1);
+    zero_do_count = 0;
+    neverc_ring_do(&zero, count_fn, NULL);
+    ASSERT_INT_EQ(zero_do_count, 1);
+
+    ASSERT_NULL(neverc_ring_next(NULL));
+    ASSERT_NULL(neverc_ring_prev(NULL));
+    ASSERT_NULL(neverc_ring_move(NULL, 1));
+    ASSERT_NULL(neverc_ring_link(NULL, &zero));
+    ASSERT_NULL(neverc_ring_unlink(NULL, 1));
+    ASSERT_INT_EQ(neverc_ring_len(NULL), 0);
+    neverc_ring_do(NULL, count_fn, NULL);
+    neverc_ring_do(&zero, NULL, NULL);
+    neverc_ring_free(NULL);
+}
+
+static void test_extreme_move_and_unlink(void) {
+    printf("[extreme_move_and_unlink]\n");
+    neverc_ring_t *r = neverc_ring_new(5);
+    for (int i = 0; i < 5; i++)
+        neverc_ring_move(r, i)->value = INT_VAL(i);
+
+    int expected_backward = INT_MIN % 5;
+    if (expected_backward < 0) expected_backward += 5;
+    ASSERT_INT_EQ(TO_INT(neverc_ring_move(r, INT_MIN)->value),
+                  expected_backward);
+
+    int removed_count = INT_MAX % 5;
+    neverc_ring_t *removed = neverc_ring_unlink(r, INT_MAX);
+    ASSERT_NOT_NULL(removed);
+    ASSERT_INT_EQ(neverc_ring_len(removed), removed_count);
+    ASSERT_INT_EQ(neverc_ring_len(r), 5 - removed_count);
+    neverc_ring_free(removed);
+    neverc_ring_free(r);
+}
+
 int main(void) {
     printf("=== NeverC container/ring Tests ===\n");
     test_new();
@@ -162,6 +214,8 @@ int main(void) {
     test_unlink_zero();
     test_do_simple();
     test_single_element();
+    test_zero_value_and_null_input();
+    test_extreme_move_and_unlink();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }
