@@ -412,6 +412,11 @@ TEST_F(StdLibTest, FmtAllocationFailure) {
   EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
 }
 STD_TEST(io, "src/io/io.c")
+TEST_F(StdLibTest, IoAllocationFailure) {
+  auto r = compileAndRunStdTest("io_oom", {}, {"-fno-builtin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
 STD_TEST(bufio, "src/bufio/bufio.c", "src/io/io.c")
 TEST_F(StdLibTest, BufioAllocationFailure) {
   auto r = compileAndRunStdTest("bufio_oom", {}, {"-fno-builtin-std"});

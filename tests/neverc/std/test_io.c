@@ -207,6 +207,22 @@ static int no_progress_read(void *ctx, uint8_t *buf, size_t len, size_t *n) {
     return 0;
 }
 
+typedef struct {
+    int calls;
+} delayed_reader_t;
+
+static int delayed_read(void *ctx, uint8_t *buf, size_t len, size_t *n) {
+    delayed_reader_t *reader = (delayed_reader_t *)ctx;
+    reader->calls++;
+    *n = 0;
+    if (reader->calls == 1) return 0;
+    if (reader->calls == 2 && len > 0) {
+        buf[0] = 'x';
+        *n = 1;
+    }
+    return NEVERC_IO_EOF;
+}
+
 static void test_no_progress_guards(void) {
     printf("[no progress guards]\n");
 
@@ -220,7 +236,65 @@ static void test_no_progress_guards(void) {
     neverc_io_discard_init(&discard);
     check_size("copy_buffer rejects zero buffer",
                (size_t)neverc_io_copy_buffer(&discard, &reader, &byte, 0), 0);
+
+    delayed_reader_t delayed = {0};
+    neverc_io_reader_t delayed_io = { &delayed, delayed_read };
+    neverc_io_multi_reader_t multi;
+    neverc_io_multi_reader_init(&multi, &delayed_io, 1);
+    size_t n = 99;
+    check_int("multi_reader preserves temporarily idle reader",
+              neverc_io_multi_reader_read(&multi, &byte, 1, &n), 0);
+    check_size("multi_reader idle read reports no bytes", n, 0);
+    check_int("multi_reader idle read does not advance", multi.current, 0);
+    check_int("multi_reader resumes temporarily idle reader",
+              neverc_io_multi_reader_read(&multi, &byte, 1, &n), 0);
+    check_size("multi_reader resumed byte count", n, 1);
+    check_int("multi_reader resumed content", byte, 'x');
+
+    neverc_io_mem_reader_t memory;
+    neverc_io_mem_reader_init(&memory, (const uint8_t *)"z", 1);
+    neverc_io_reader_t memory_io = { &memory, neverc_io_mem_reader_read };
+    neverc_io_multi_reader_init(&multi, &memory_io, 1);
+    n = 99;
+    check_int("multi_reader zero-length read succeeds",
+              neverc_io_multi_reader_read(&multi, NULL, 0, &n), 0);
+    check_size("multi_reader zero-length read reports no bytes", n, 0);
+    check_int("multi_reader zero-length read does not advance", multi.current, 0);
+    check_int("multi_reader data remains after zero-length read",
+              neverc_io_multi_reader_read(&multi, &byte, 1, &n), 0);
+    check_int("multi_reader retained content", byte, 'z');
 }
+
+#if SIZE_MAX > INT64_MAX
+static int enormous_count_read(void *ctx, uint8_t *buf, size_t len, size_t *n) {
+    (void)ctx;
+    (void)buf;
+    *n = len;
+    return NEVERC_IO_EOF;
+}
+
+static int enormous_count_write(void *ctx, const uint8_t *buf, size_t len,
+                                size_t *n) {
+    (void)ctx;
+    (void)buf;
+    *n = len;
+    return 0;
+}
+
+static void test_copy_count_saturation(void) {
+    printf("[copy count saturation]\n");
+
+    neverc_io_reader_t reader = { NULL, enormous_count_read };
+    neverc_io_writer_t writer = { NULL, enormous_count_write };
+    uint8_t scratch = 0;
+    check_int("copy_buffer saturates enormous callback count",
+              neverc_io_copy_buffer(&writer, &reader, &scratch, SIZE_MAX) ==
+                  INT64_MAX,
+              1);
+}
+#else
+static void test_copy_count_saturation(void) {}
+#endif
 
 static int oversized_count_read(void *ctx, uint8_t *buf, size_t len,
                                 size_t *n) {
@@ -371,6 +445,7 @@ int main(void) {
     test_pipe();
     test_nop_closer();
     test_no_progress_guards();
+    test_copy_count_saturation();
     test_capacity_overflow_guards();
     test_invalid_reader_counts();
     test_partial_writer_propagation();
