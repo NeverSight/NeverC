@@ -137,12 +137,12 @@ static inline void neverc_platform_secure_zero(void *ptr, size_t len) {
   #define NEVERC_ATOMIC_STORE32(addr, val)    __atomic_store_n(addr, val, __ATOMIC_SEQ_CST)
   #define NEVERC_ATOMIC_ADD32(addr, delta)    (__atomic_fetch_add(addr, delta, __ATOMIC_SEQ_CST) + (delta))
   #define NEVERC_ATOMIC_SWAP32(addr, val)     __atomic_exchange_n(addr, val, __ATOMIC_SEQ_CST)
-  #define NEVERC_ATOMIC_CAS32(addr, old, new) ({ typeof(old) _o = (old); __atomic_compare_exchange_n(addr, &_o, new, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST); })
+  #define NEVERC_ATOMIC_CAS32(addr, old, new) ({ __typeof__(old) _o = (old); __atomic_compare_exchange_n(addr, &_o, new, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST); })
   #define NEVERC_ATOMIC_LOAD64(addr)          __atomic_load_n(addr, __ATOMIC_SEQ_CST)
   #define NEVERC_ATOMIC_STORE64(addr, val)    __atomic_store_n(addr, val, __ATOMIC_SEQ_CST)
   #define NEVERC_ATOMIC_ADD64(addr, delta)    (__atomic_fetch_add(addr, delta, __ATOMIC_SEQ_CST) + (delta))
   #define NEVERC_ATOMIC_SWAP64(addr, val)     __atomic_exchange_n(addr, val, __ATOMIC_SEQ_CST)
-  #define NEVERC_ATOMIC_CAS64(addr, old, new) ({ typeof(old) _o = (old); __atomic_compare_exchange_n(addr, &_o, new, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST); })
+  #define NEVERC_ATOMIC_CAS64(addr, old, new) ({ __typeof__(old) _o = (old); __atomic_compare_exchange_n(addr, &_o, new, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST); })
 #endif
 
 #endif /* NEVERC_PLATFORM_H */
