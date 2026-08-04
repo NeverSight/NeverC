@@ -12,9 +12,14 @@ static char *dup_string(const char *s) {
 }
 
 neverc_error_t *neverc_errors_new(const char *text) {
+    if (!text) return NULL;
     neverc_error_t *e = (neverc_error_t *)malloc(sizeof(neverc_error_t));
     if (!e) return NULL;
     e->msg = dup_string(text);
+    if (!e->msg) {
+        free(e);
+        return NULL;
+    }
     e->wrapped = NULL;
     e->owned = 1;
     return e;
@@ -29,6 +34,7 @@ neverc_error_t *neverc_errors_unwrap(const neverc_error_t *err) {
 }
 
 int neverc_errors_is(const neverc_error_t *err, const neverc_error_t *target) {
+    if (!target) return err == NULL;
     const neverc_error_t *cur = err;
     while (cur) {
         if (cur == target) return 1;
@@ -40,6 +46,7 @@ int neverc_errors_is(const neverc_error_t *err, const neverc_error_t *target) {
 }
 
 neverc_error_t *neverc_errors_wrap(const char *text, neverc_error_t *cause) {
+    if (!text) return NULL;
     neverc_error_t *e = (neverc_error_t *)malloc(sizeof(neverc_error_t));
     if (!e) return NULL;
 
@@ -59,12 +66,17 @@ neverc_error_t *neverc_errors_wrap(const char *text, neverc_error_t *cause) {
     } else {
         e->msg = dup_string(text);
     }
+    if (!e->msg) {
+        free(e);
+        return NULL;
+    }
     e->wrapped = cause;
     e->owned = 1;
     return e;
 }
 
 neverc_error_t *neverc_errors_join(neverc_error_t **errs, size_t count) {
+    if (!errs) return NULL;
     size_t valid = 0;
     size_t total_len = 0;
     for (size_t i = 0; i < count; i++) {

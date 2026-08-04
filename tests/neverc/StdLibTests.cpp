@@ -396,6 +396,11 @@ TEST_F(StdLibTest, BytesAllocationFailure) {
   EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
 }
 STD_TEST(errors, "src/errors/errors.c")
+TEST_F(StdLibTest, ErrorsAllocationFailure) {
+  auto r = compileAndRunStdTest("errors_oom", {}, {"-fno-builtin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
 STD_TEST(html, "src/html/html.c")
 STD_TEST(fmt, "src/fmt/fmt.c", "src/strconv/format_float.c", "src/strconv/parse_float.c")
 TEST_F(StdLibTest, FmtAllocationFailure) {

@@ -29,6 +29,7 @@ static void test_new_and_message(void) {
     neverc_errors_free(e);
 
     check_str("null msg", neverc_errors_message(NULL), NULL);
+    check_bool("new null text", neverc_errors_new(NULL) == NULL, 1);
 }
 
 static void test_wrap_unwrap(void) {
@@ -42,6 +43,13 @@ static void test_wrap_unwrap(void) {
               "file not found");
 
     neverc_errors_free(wrapped);
+
+    cause = neverc_errors_new("still owned");
+    wrapped = neverc_errors_wrap(NULL, cause);
+    check_bool("wrap null text", wrapped == NULL, 1);
+    check_str("failed wrap preserves cause",
+              neverc_errors_message(cause), "still owned");
+    neverc_errors_free(cause);
 }
 
 static void test_is(void) {
@@ -59,6 +67,8 @@ static void test_is(void) {
 
     neverc_error_t *same_msg = neverc_errors_new("not found");
     check_bool("is same msg", neverc_errors_is(top, same_msg), 1);
+    check_bool("non-null is not nil", neverc_errors_is(top, NULL), 0);
+    check_bool("nil is nil", neverc_errors_is(NULL, NULL), 1);
 
     neverc_errors_free(top);
     neverc_errors_free(other);
@@ -79,6 +89,9 @@ static void test_join(void) {
     neverc_error_t *nulls[] = {NULL, NULL};
     neverc_error_t *jnull = neverc_errors_join(nulls, 2);
     check_bool("join all null", jnull == NULL, 1);
+    check_bool("join null empty", neverc_errors_join(NULL, 0) == NULL, 1);
+    check_bool("join null non-empty",
+               neverc_errors_join(NULL, 1) == NULL, 1);
 
     neverc_errors_free(e1);
     neverc_errors_free(e2);
