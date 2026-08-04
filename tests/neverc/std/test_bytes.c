@@ -223,6 +223,35 @@ static void test_split(void) {
     neverc_bytes_slice_t *fempty = neverc_bytes_fields(B("   "), &count);
     check_size("fields empty", count, 0);
     free(fempty);
+
+    static const uint8_t utf8[] = {
+        'A', 0xE4, 0xB8, 0x96, 0xF0, 0x9F, 0x98, 0x80, 0xFF, 'B'
+    };
+    neverc_bytes_slice_t *runes = neverc_bytes_split(
+        utf8, sizeof(utf8), NULL, 0, &count);
+    check_size("split empty separator UTF-8 count", count, 5);
+    if (count >= 5) {
+        check_bytes("split UTF-8[0]", runes[0].data, runes[0].len, "A");
+        check_bool("split UTF-8[1]", runes[1].len == 3 &&
+                   memcmp(runes[1].data, utf8 + 1, 3) == 0, 1);
+        check_bool("split UTF-8[2]", runes[2].len == 4 &&
+                   memcmp(runes[2].data, utf8 + 4, 4) == 0, 1);
+        check_bool("split invalid UTF-8 byte", runes[3].len == 1 &&
+                   runes[3].data[0] == 0xFF, 1);
+        check_bytes("split UTF-8[4]", runes[4].data, runes[4].len, "B");
+    }
+    free(runes);
+
+    runes = neverc_bytes_split_n(utf8, sizeof(utf8), NULL, 0, 3, &count);
+    check_size("split_n empty separator UTF-8 count", count, 3);
+    if (count >= 3) {
+        check_bytes("split_n UTF-8[0]", runes[0].data, runes[0].len, "A");
+        check_bool("split_n UTF-8[1]", runes[1].len == 3 &&
+                   memcmp(runes[1].data, utf8 + 1, 3) == 0, 1);
+        check_bool("split_n UTF-8 remainder", runes[2].len == 6 &&
+                   memcmp(runes[2].data, utf8 + 4, 6) == 0, 1);
+    }
+    free(runes);
 }
 
 static void test_join(void) {
@@ -277,6 +306,12 @@ static void test_cut(void) {
                                    &before, &blen);
     check_bool("cut_suffix found", found, 1);
     check_bytes("cut_suffix before", before, blen, "Hello");
+
+    found = neverc_bytes_cut(NULL, 0, NULL, 0,
+                            &before, &blen, &after, &alen);
+    check_bool("cut empty nil span", found, 1);
+    check_bool("cut empty nil before", before == NULL && blen == 0, 1);
+    check_bool("cut empty nil after", after == NULL && alen == 0, 1);
 }
 
 static void test_clone(void) {
@@ -344,6 +379,49 @@ static void test_split_after(void) {
         check_bool("split_after[2]", parts[2].len == 1 && parts[2].data[0] == 'c', 1);
     }
     free(parts);
+
+    parts = neverc_bytes_split_after(B("a,"), B(","), &count);
+    check_size("split_after trailing separator count", count, 2);
+    if (count >= 2) {
+        check_bytes("split_after trailing[0]", parts[0].data,
+                    parts[0].len, "a,");
+        check_bytes("split_after trailing[1]", parts[1].data,
+                    parts[1].len, "");
+    }
+    free(parts);
+
+    parts = neverc_bytes_split_after(NULL, 0, B(","), &count);
+    check_size("split_after empty input count", count, 1);
+    if (count >= 1)
+        check_size("split_after empty input length", parts[0].len, 0);
+    free(parts);
+
+    static const uint8_t utf8[] = {
+        'A', 0xE4, 0xB8, 0x96, 0xF0, 0x9F, 0x98, 0x80, 'B'
+    };
+    parts = neverc_bytes_split_after(utf8, sizeof(utf8), NULL, 0, &count);
+    check_size("split_after empty separator UTF-8 count", count, 4);
+    if (count >= 4) {
+        check_bytes("split_after UTF-8[0]", parts[0].data, parts[0].len, "A");
+        check_bool("split_after UTF-8[1]", parts[1].len == 3 &&
+                   memcmp(parts[1].data, utf8 + 1, 3) == 0, 1);
+        check_bool("split_after UTF-8[2]", parts[2].len == 4 &&
+                   memcmp(parts[2].data, utf8 + 4, 4) == 0, 1);
+        check_bytes("split_after UTF-8[3]", parts[3].data, parts[3].len, "B");
+    }
+    free(parts);
+
+    parts = neverc_bytes_split_after_n(
+        utf8, sizeof(utf8), NULL, 0, 3, &count);
+    check_size("split_after_n empty separator UTF-8 count", count, 3);
+    if (count >= 3) {
+        check_bytes("split_after_n UTF-8[0]", parts[0].data, parts[0].len, "A");
+        check_bool("split_after_n UTF-8[1]", parts[1].len == 3 &&
+                   memcmp(parts[1].data, utf8 + 1, 3) == 0, 1);
+        check_bool("split_after_n UTF-8 remainder", parts[2].len == 5 &&
+                   memcmp(parts[2].data, utf8 + 4, 5) == 0, 1);
+    }
+    free(parts);
 }
 
 static void test_fields_func(void) {
@@ -377,6 +455,12 @@ static void test_cut_last(void) {
     check_bool("cut_last dot found", found, 1);
     check_bool("cut_last dot before", blen == 3 && memcmp(before, "a.b", 3) == 0, 1);
     check_bool("cut_last dot after", alen == 1 && after[0] == 'c', 1);
+
+    found = neverc_bytes_cut_last(NULL, 0, NULL, 0,
+                                  &before, &blen, &after, &alen);
+    check_bool("cut_last empty nil span", found, 1);
+    check_bool("cut_last empty nil before", before == NULL && blen == 0, 1);
+    check_bool("cut_last empty nil after", after == NULL && alen == 0, 1);
 }
 
 static void test_index_rune(void) {
@@ -391,6 +475,17 @@ static void test_index_rune(void) {
                neverc_bytes_contains_rune(s, 5, 0x4E16), 1);
     check_bool("contains_rune not found",
                neverc_bytes_contains_rune(s, 5, 0x754C), 0);
+
+    static const uint8_t invalid[] = { 'x', 0xFF, 'y' };
+    check_size("index_rune RuneError matches invalid byte",
+               neverc_bytes_index_rune(invalid, sizeof(invalid), 0xFFFD), 1);
+    static const uint8_t truncated[] = { 0xE2, 0x98 };
+    check_size("index_rune RuneError matches truncated sequence",
+               neverc_bytes_index_rune(truncated, sizeof(truncated), 0xFFFD), 0);
+    static const uint8_t literal_error[] = { 0xEF, 0xBF, 0xBD };
+    check_size("index_rune RuneError matches encoded rune",
+               neverc_bytes_index_rune(
+                   literal_error, sizeof(literal_error), 0xFFFD), 0);
 }
 
 static void test_runes(void) {
@@ -431,6 +526,19 @@ static void test_to_valid_utf8(void) {
     /* Multiple replacement bytes */
     r = neverc_bytes_to_valid_utf8(bad, 3, (const uint8_t *)"\xEF\xBF\xBD", 3, &outlen);
     check_bool("replacement U+FFFD len", outlen == 5, 1);
+    free(r);
+
+    static const uint8_t invalid_runs[] = {
+        'a', 0xFF, 0xC0, 0xAF, 'b', 0xE0, 0x80, 0xAF, 'c'
+    };
+    r = neverc_bytes_to_valid_utf8(
+        invalid_runs, sizeof(invalid_runs), B("?"), &outlen);
+    check_bytes("invalid UTF-8 runs replaced once", r, outlen, "a?b?c");
+    free(r);
+
+    r = neverc_bytes_to_valid_utf8(
+        invalid_runs, sizeof(invalid_runs), NULL, 0, &outlen);
+    check_bytes("invalid UTF-8 runs removed", r, outlen, "abc");
     free(r);
 }
 

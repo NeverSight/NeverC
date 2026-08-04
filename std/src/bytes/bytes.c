@@ -590,9 +590,12 @@ neverc_bytes_slice_t *neverc_bytes_split_n(const uint8_t *s, size_t slen,
         size_t idx;
         if (seplen == 0) {
             if (pos >= slen) break;
-            if (!bytes_slices_append(&result, &cap, count, current, 1))
+            uint32_t rune;
+            size_t width = utf8_decode(current, slen - pos, &rune);
+            if (width == 0) width = 1;
+            if (!bytes_slices_append(&result, &cap, count, current, width))
                 goto fail;
-            pos += 1;
+            pos += width;
             continue;
         }
         idx = nci_ss_finder_next(&f, current, slen - pos);
@@ -665,7 +668,7 @@ int neverc_bytes_cut(const uint8_t *s, size_t slen,
         return 0;
     }
     *before = s; *blen = idx;
-    *after = s + idx + seplen; *alen = slen - idx - seplen;
+    *after = bytes_offset(s, idx + seplen); *alen = slen - idx - seplen;
     return 1;
 }
 
@@ -817,8 +820,18 @@ neverc_bytes_slice_t *neverc_bytes_split_after_n(const uint8_t *s, size_t slen,
                 goto split_after_fail;
             break;
         }
+        if (seplen == 0) {
+            uint32_t rune;
+            size_t width = utf8_decode(p, remaining, &rune);
+            if (width == 0) width = 1;
+            if (!bytes_slices_append(&result, &cap, count, p, width))
+                goto split_after_fail;
+            p += width;
+            remaining -= width;
+            continue;
+        }
         size_t idx;
-        if (seplen == 0 || remaining < seplen)
+        if (remaining < seplen)
             idx = (size_t)-1;
         else
             idx = nci_ss_finder_next(&f, p, remaining);
@@ -833,6 +846,9 @@ neverc_bytes_slice_t *neverc_bytes_split_after_n(const uint8_t *s, size_t slen,
         p += chunk;
         remaining -= chunk;
     }
+    if (seplen > 0 && remaining == 0 &&
+        !bytes_slices_append(&result, &cap, count, p, 0))
+        goto split_after_fail;
     return result;
 
 split_after_fail:
@@ -866,7 +882,7 @@ int neverc_bytes_cut_last(const uint8_t *s, size_t slen,
         return 0;
     }
     *before = s; *blen = idx;
-    *after = s + idx + seplen; *alen = slen - idx - seplen;
+    *after = bytes_offset(s, idx + seplen); *alen = slen - idx - seplen;
     return 1;
 }
 
@@ -906,6 +922,16 @@ size_t neverc_bytes_index_rune(const uint8_t *s, size_t slen, uint32_t r) {
     if (!bytes_span_valid(s, slen) || r > 0x10FFFF ||
         (r >= 0xD800 && r <= 0xDFFF)) return (size_t)-1;
     if (r < 0x80) return neverc_bytes_index_byte(s, slen, (uint8_t)r);
+    if (r == 0xFFFD) {
+        size_t pos = 0;
+        while (pos < slen) {
+            uint32_t decoded;
+            size_t width = utf8_decode(s + pos, slen - pos, &decoded);
+            if (width == 0 || decoded == r) return pos;
+            pos += width;
+        }
+        return (size_t)-1;
+    }
     uint8_t enc[4];
     size_t elen = utf8_encode(r, enc);
     return neverc_bytes_index(s, slen, enc, elen);
@@ -946,14 +972,23 @@ uint8_t *neverc_bytes_to_valid_utf8(const uint8_t *s, size_t slen,
     if (!result) return NULL;
     size_t out = 0;
     size_t i = 0;
+    int invalid = 0;
     while (i < slen) {
         uint32_t r;
         size_t n = utf8_decode(s + i, slen - i, &r);
         if (n == 0) {
-            if (!bytes_buffer_reserve(&result, &cap, out, rlen)) goto utf8_fail;
-            if (rlen > 0) { memcpy(result + out, replacement, rlen); out += rlen; }
+            if (!invalid) {
+                if (!bytes_buffer_reserve(&result, &cap, out, rlen))
+                    goto utf8_fail;
+                if (rlen > 0) {
+                    memcpy(result + out, replacement, rlen);
+                    out += rlen;
+                }
+                invalid = 1;
+            }
             i++;
         } else {
+            invalid = 0;
             if (!bytes_buffer_reserve(&result, &cap, out, n)) goto utf8_fail;
             memcpy(result + out, s + i, n); out += n;
             i += n;
