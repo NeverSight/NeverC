@@ -84,6 +84,39 @@ source ./utils/build/neverc-env.sh --install
 source ./utils/build/neverc-env.sh --uninstall
 ```
 
+### 切換本地開發版 / 線上 release 版
+
+如果本機同時安裝了 release（預設在 `~/.neverc`）又在原始碼樹中建置過，使用 `neverc-env.sh` 可在目前 shell 中切換，不會互相覆蓋檔案：
+
+```bash
+source ./utils/build/neverc-env.sh              # 本地開發版（build-neverc/bin）
+source ./utils/build/neverc-env.sh --local      # 同上
+source ./utils/build/neverc-env.sh --release    # 線上 release 版（~/.neverc/bin）
+source ./utils/build/neverc-env.sh --status     # 查看目前使用的是哪個 neverc
+source ./utils/build/neverc-env.sh --remove     # 從 PATH 移除兩個版本
+```
+
+切換後會設定 `NEVERC_ENV`（`local` 或 `release`），方便腳本判斷目前模式：
+
+```bash
+echo "$NEVERC_ENV"
+neverc --version
+which neverc
+```
+
+若 release 安裝在其他目錄，切換前指定與 `install.sh` 相同的 prefix：
+
+```bash
+NEVERC_INSTALL_DIR=$HOME/.neverc-v3389.1.2 source ./utils/build/neverc-env.sh --release
+```
+
+可選：在 shell 設定中加入別名，任意目錄一行切換（將路徑替換為你的儲存庫絕對路徑）：
+
+```bash
+alias neverc-dev='source /path/to/NeverC/utils/build/neverc-env.sh --local'
+alias neverc-rel='source /path/to/NeverC/utils/build/neverc-env.sh --release'
+```
+
 ---
 
 ## Windows (CMD)

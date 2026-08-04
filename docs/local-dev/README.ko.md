@@ -86,6 +86,39 @@ source ./utils/build/neverc-env.sh --install
 source ./utils/build/neverc-env.sh --uninstall
 ```
 
+### 로컬 개발판 / 릴리스판 전환
+
+release(기본: `~/.neverc`)와 소스 트리 빌드가 모두 있는 경우, `neverc-env.sh`로 현재 셸에서 활성 `neverc`를 전환할 수 있습니다. 어느 쪽 설치도 덮어쓰지 않습니다:
+
+```bash
+source ./utils/build/neverc-env.sh              # 로컬 개발판（build-neverc/bin）
+source ./utils/build/neverc-env.sh --local      # 위와 동일
+source ./utils/build/neverc-env.sh --release    # 릴리스판（~/.neverc/bin）
+source ./utils/build/neverc-env.sh --status     # 현재 neverc 확인
+source ./utils/build/neverc-env.sh --remove     # PATH에서 둘 다 제거
+```
+
+전환 후 `NEVERC_ENV`가 `local` 또는 `release`로 설정됩니다:
+
+```bash
+echo "$NEVERC_ENV"
+neverc --version
+which neverc
+```
+
+release를 다른 prefix에 설치한 경우, `install.sh`와 동일한 디렉터리를 지정합니다:
+
+```bash
+NEVERC_INSTALL_DIR=$HOME/.neverc-v3389.1.2 source ./utils/build/neverc-env.sh --release
+```
+
+선택: 셸 설정에 별칭 추가(경로를 저장소 절대 경로로 바꿉니다):
+
+```bash
+alias neverc-dev='source /path/to/NeverC/utils/build/neverc-env.sh --local'
+alias neverc-rel='source /path/to/NeverC/utils/build/neverc-env.sh --release'
+```
+
 ---
 
 ## Windows (CMD)

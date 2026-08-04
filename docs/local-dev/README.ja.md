@@ -86,6 +86,39 @@ source ./utils/build/neverc-env.sh --install
 source ./utils/build/neverc-env.sh --uninstall
 ```
 
+### ローカル開発版 / リリース版の切り替え
+
+release（デフォルト: `~/.neverc`）とソースツリー内のビルドの両方がある場合、`neverc-env.sh` で現在のシェル内のアクティブな `neverc` を切り替えられます。どちらのインストールも上書きされません：
+
+```bash
+source ./utils/build/neverc-env.sh              # ローカル開発版（build-neverc/bin）
+source ./utils/build/neverc-env.sh --local      # 同上
+source ./utils/build/neverc-env.sh --release    # リリース版（~/.neverc/bin）
+source ./utils/build/neverc-env.sh --status     # 使用中の neverc を表示
+source ./utils/build/neverc-env.sh --remove     # 両方を PATH から削除
+```
+
+切り替え後、`NEVERC_ENV` が `local` または `release` に設定されます：
+
+```bash
+echo "$NEVERC_ENV"
+neverc --version
+which neverc
+```
+
+release を別の prefix にインストールした場合は、`install.sh` と同じディレクトリを指定します：
+
+```bash
+NEVERC_INSTALL_DIR=$HOME/.neverc-v3389.1.2 source ./utils/build/neverc-env.sh --release
+```
+
+任意：シェル設定にエイリアスを追加（パスをリポジトリの絶対パスに置き換え）：
+
+```bash
+alias neverc-dev='source /path/to/NeverC/utils/build/neverc-env.sh --local'
+alias neverc-rel='source /path/to/NeverC/utils/build/neverc-env.sh --release'
+```
+
 ---
 
 ## Windows (CMD)

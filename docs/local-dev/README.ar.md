@@ -86,6 +86,39 @@ source ./utils/build/neverc-env.sh --install
 source ./utils/build/neverc-env.sh --uninstall
 ```
 
+### التبديل بين التطوير المحلي وإصدار release
+
+إذا كان لديك تثبيت release (افتراضيًا: `~/.neverc`) وبناء داخل شجرة المصدر، استخدم `neverc-env.sh` للتبديل بين `neverc` النشط في جلسة الصَّدفة الحالية دون الكتابة فوق أي تثبيت:
+
+```bash
+source ./utils/build/neverc-env.sh              # التطوير المحلي (build-neverc/bin)
+source ./utils/build/neverc-env.sh --local      # كما أعلاه
+source ./utils/build/neverc-env.sh --release    # إصدار release (~/.neverc/bin)
+source ./utils/build/neverc-env.sh --status     # عرض neverc النشط
+source ./utils/build/neverc-env.sh --remove     # إزالة كليهما من PATH
+```
+
+بعد التبديل يُضبط `NEVERC_ENV` على `local` أو `release`:
+
+```bash
+echo "$NEVERC_ENV"
+neverc --version
+which neverc
+```
+
+إذا ثُبّت release في prefix آخر، حدّد نفس المجلد المستخدم مع `install.sh`:
+
+```bash
+NEVERC_INSTALL_DIR=$HOME/.neverc-v3389.1.2 source ./utils/build/neverc-env.sh --release
+```
+
+اختياري — أسماء مستعارة في إعداد الصَّدفة (استبدل المسار بالمسار المطلق لمستودعك):
+
+```bash
+alias neverc-dev='source /path/to/NeverC/utils/build/neverc-env.sh --local'
+alias neverc-rel='source /path/to/NeverC/utils/build/neverc-env.sh --release'
+```
+
 ---
 
 ## Windows (CMD)

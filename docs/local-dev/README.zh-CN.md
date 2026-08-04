@@ -84,6 +84,39 @@ source ./utils/build/neverc-env.sh --install
 source ./utils/build/neverc-env.sh --uninstall
 ```
 
+### 切换本地开发版 / 线上 release 版
+
+如果本机同时装了 release（默认在 `~/.neverc`）又在源码树里 build 过，用 `neverc-env.sh` 在当前 shell 里切换即可，不会互相覆盖文件：
+
+```bash
+source ./utils/build/neverc-env.sh              # 本地开发版（build-neverc/bin）
+source ./utils/build/neverc-env.sh --local      # 同上
+source ./utils/build/neverc-env.sh --release    # 线上 release 版（~/.neverc/bin）
+source ./utils/build/neverc-env.sh --status     # 查看当前用的是哪个 neverc
+source ./utils/build/neverc-env.sh --remove     # 从 PATH 移除两个版本
+```
+
+切换后会设置 `NEVERC_ENV`（`local` 或 `release`），方便脚本判断当前模式：
+
+```bash
+echo "$NEVERC_ENV"
+neverc --version
+which neverc
+```
+
+如果 release 装在其他目录，切换前指定与 `install.sh` 相同的 prefix：
+
+```bash
+NEVERC_INSTALL_DIR=$HOME/.neverc-v3389.1.2 source ./utils/build/neverc-env.sh --release
+```
+
+可选：在 shell 配置里加别名，任意目录一行切换（把路径换成你的仓库绝对路径）：
+
+```bash
+alias neverc-dev='source /path/to/NeverC/utils/build/neverc-env.sh --local'
+alias neverc-rel='source /path/to/NeverC/utils/build/neverc-env.sh --release'
+```
+
 ---
 
 ## Windows (CMD)

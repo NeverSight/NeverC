@@ -86,6 +86,39 @@ source ./utils/build/neverc-env.sh --install
 source ./utils/build/neverc-env.sh --uninstall
 ```
 
+### Переключение между локальной сборкой и release
+
+Если у вас установлена release (по умолчанию: `~/.neverc`) и есть сборка из исходников, используйте `neverc-env.sh` для переключения активного `neverc` в текущей сессии shell без перезаписи установок:
+
+```bash
+source ./utils/build/neverc-env.sh              # локальная сборка (build-neverc/bin)
+source ./utils/build/neverc-env.sh --local      # то же самое
+source ./utils/build/neverc-env.sh --release    # release (~/.neverc/bin)
+source ./utils/build/neverc-env.sh --status     # показать активный neverc
+source ./utils/build/neverc-env.sh --remove     # удалить оба из PATH
+```
+
+При переключении устанавливается `NEVERC_ENV` в `local` или `release`:
+
+```bash
+echo "$NEVERC_ENV"
+neverc --version
+which neverc
+```
+
+Если release установлена в другой prefix, укажите тот же каталог, что и для `install.sh`:
+
+```bash
+NEVERC_INSTALL_DIR=$HOME/.neverc-v3389.1.2 source ./utils/build/neverc-env.sh --release
+```
+
+По желанию — алиасы в конфигурации shell (замените путь на абсолютный к вашему репозиторию):
+
+```bash
+alias neverc-dev='source /path/to/NeverC/utils/build/neverc-env.sh --local'
+alias neverc-rel='source /path/to/NeverC/utils/build/neverc-env.sh --release'
+```
+
 ---
 
 ## Windows (CMD)

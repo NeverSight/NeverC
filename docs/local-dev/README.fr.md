@@ -86,6 +86,39 @@ Annuler :
 source ./utils/build/neverc-env.sh --uninstall
 ```
 
+### Basculer entre développement local et release
+
+Si vous avez à la fois une installation release (par défaut : `~/.neverc`) et une compilation dans l’arborescence source, utilisez `neverc-env.sh` pour changer le `neverc` actif dans le shell courant sans écraser l’une ou l’autre installation :
+
+```bash
+source ./utils/build/neverc-env.sh              # dev local (build-neverc/bin)
+source ./utils/build/neverc-env.sh --local      # idem
+source ./utils/build/neverc-env.sh --release    # release (~/.neverc/bin)
+source ./utils/build/neverc-env.sh --status     # afficher le neverc actif
+source ./utils/build/neverc-env.sh --remove     # retirer les deux du PATH
+```
+
+Le basculement définit `NEVERC_ENV` sur `local` ou `release` :
+
+```bash
+echo "$NEVERC_ENV"
+neverc --version
+which neverc
+```
+
+Si la release est installée dans un autre préfixe, indiquez le même répertoire que `install.sh` :
+
+```bash
+NEVERC_INSTALL_DIR=$HOME/.neverc-v3389.1.2 source ./utils/build/neverc-env.sh --release
+```
+
+Optionnel — alias dans la configuration du shell (remplacez par le chemin absolu de votre dépôt) :
+
+```bash
+alias neverc-dev='source /path/to/NeverC/utils/build/neverc-env.sh --local'
+alias neverc-rel='source /path/to/NeverC/utils/build/neverc-env.sh --release'
+```
+
 ---
 
 ## Windows (CMD)
