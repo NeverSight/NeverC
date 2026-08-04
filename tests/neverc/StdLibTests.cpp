@@ -413,6 +413,11 @@ TEST_F(StdLibTest, FmtAllocationFailure) {
 }
 STD_TEST(io, "src/io/io.c")
 STD_TEST(bufio, "src/bufio/bufio.c", "src/io/io.c")
+TEST_F(StdLibTest, BufioAllocationFailure) {
+  auto r = compileAndRunStdTest("bufio_oom", {}, {"-fno-builtin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
 STD_TEST(flag, "src/flag/flag.c", "src/strconv/parse_float.c")
 STD_TEST(log, "src/log/log.c")
 STD_TEST(slog, "src/log/slog/slog.c")

@@ -48,6 +48,7 @@ typedef struct {
     size_t              buf_cap;
     size_t              r, w;
     int                 eof;
+    int                 err;
 } neverc_bufio_reader_t;
 
 void    neverc_bufio_reader_init(neverc_bufio_reader_t *br,

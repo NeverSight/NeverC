@@ -214,6 +214,36 @@ static void test_buffered_reader(void) {
     neverc_bufio_reader_free(&br);
 }
 
+static void test_buffered_reader_preserves_terminal_error(void) {
+    printf("[buffered reader terminal error]\n");
+
+    data_error_reader_t empty_error = {
+        (const uint8_t *)"", 0, NEVERC_IO_ERR_UNEXP, 0
+    };
+    neverc_io_reader_t r = { &empty_error, data_error_reader_read };
+    neverc_bufio_reader_t br;
+    neverc_bufio_reader_init_size(&br, r, 8);
+    uint8_t byte = 0;
+    check_int("empty terminal error preserved",
+              neverc_bufio_reader_read_byte(&br, &byte),
+              NEVERC_IO_ERR_UNEXP);
+    neverc_bufio_reader_free(&br);
+
+    static const uint8_t one_byte[] = "x";
+    data_error_reader_t data_error = {
+        one_byte, 1, NEVERC_IO_ERR_UNEXP, 0
+    };
+    r.ctx = &data_error;
+    neverc_bufio_reader_init_size(&br, r, 8);
+    check_int("terminal error data read succeeds",
+              neverc_bufio_reader_read_byte(&br, &byte), 0);
+    check_int("terminal error data value", byte, 'x');
+    check_int("terminal error follows buffered data",
+              neverc_bufio_reader_read_byte(&br, &byte),
+              NEVERC_IO_ERR_UNEXP);
+    neverc_bufio_reader_free(&br);
+}
+
 static void test_buffered_reader_readline(void) {
     printf("[buffered reader readline]\n");
     const char *data = "first\nsecond\nthird";
@@ -277,6 +307,14 @@ static int partial_error_write(void *ctx, const uint8_t *buf, size_t len,
     return NEVERC_IO_ERR_UNEXP;
 }
 
+static int partial_success_write(void *ctx, const uint8_t *buf, size_t len,
+                                 size_t *n) {
+    (void)ctx;
+    (void)buf;
+    *n = len / 2;
+    return 0;
+}
+
 static void test_partial_write_error(void) {
     printf("[partial write error]\n");
 
@@ -290,6 +328,24 @@ static void test_partial_write_error(void) {
     check_size("partial write accepted input", n, 4);
     check_size("partial write keeps remainder", bw.n, 2);
     check_bytes("partial write remainder", bw.buf, bw.n, "cd");
+    neverc_bufio_writer_free(&bw);
+}
+
+static void test_partial_write_without_error(void) {
+    printf("[partial write without error]\n");
+
+    neverc_io_writer_t w = { NULL, partial_success_write };
+    neverc_bufio_writer_t bw;
+    neverc_bufio_writer_init_size(&bw, w, 4);
+    size_t n = 0;
+    check_int("partial success buffers input",
+              neverc_bufio_writer_write(
+                  &bw, (const uint8_t *)"ab", 2, &n), 0);
+    check_size("partial success accepted input", n, 2);
+    check_int("partial success flush reports short write",
+              neverc_bufio_writer_flush(&bw), NEVERC_IO_ERR_SHORT);
+    check_size("partial success keeps remainder", bw.n, 1);
+    check_bytes("partial success remainder", bw.buf, bw.n, "b");
     neverc_bufio_writer_free(&bw);
 }
 
@@ -332,6 +388,28 @@ static int no_progress_read(void *ctx, uint8_t *buf, size_t len, size_t *n) {
     return 0;
 }
 
+static int overreporting_read(void *ctx, uint8_t *buf, size_t len, size_t *n) {
+    (void)ctx;
+    (void)buf;
+    *n = len + 1;
+    return 0;
+}
+
+static void test_reader_rejects_invalid_count(void) {
+    printf("[reader invalid count]\n");
+
+    neverc_io_reader_t r = { NULL, overreporting_read };
+    neverc_bufio_reader_t br;
+    neverc_bufio_reader_init_size(&br, r, 8);
+    uint8_t output[16] = {0};
+    size_t n = 99;
+    check_int("invalid count becomes unexpected error",
+              neverc_bufio_reader_read(&br, output, 9, &n),
+              NEVERC_IO_ERR_UNEXP);
+    check_size("invalid count copies nothing", n, 0);
+    neverc_bufio_reader_free(&br);
+}
+
 static void test_reader_no_progress(void) {
     printf("[reader no progress]\n");
 
@@ -343,6 +421,23 @@ static void test_reader_no_progress(void) {
               neverc_bufio_reader_peek(&br, &byte, 1), 0);
     check_int("no progress becomes EOF",
               neverc_bufio_reader_read_byte(&br, &byte), NEVERC_IO_EOF);
+    neverc_bufio_reader_free(&br);
+}
+
+static void test_reader_peek_larger_than_buffer(void) {
+    printf("[reader peek larger than buffer]\n");
+
+    static const uint8_t input[] = "abcdefghijklmnop";
+    neverc_io_mem_reader_t mr;
+    neverc_io_mem_reader_init(&mr, input, sizeof(input) - 1);
+    neverc_io_reader_t r = { &mr, neverc_io_mem_reader_read };
+    neverc_bufio_reader_t br;
+    neverc_bufio_reader_init_size(&br, r, 8);
+    uint8_t output[9] = {0};
+    check_int("oversized peek returns buffered bytes",
+              neverc_bufio_reader_peek(&br, output, sizeof(output)), 8);
+    check_int("oversized peek preserves data",
+              memcmp(output, "abcdefgh", 8) == 0, 1);
     neverc_bufio_reader_free(&br);
 }
 
@@ -359,6 +454,72 @@ static void test_scanner_missing_reader(void) {
     neverc_bufio_scanner_free(&sc);
 }
 
+static void test_invalid_arguments(void) {
+    printf("[invalid arguments]\n");
+
+    neverc_io_reader_t reader = {0};
+    neverc_bufio_scanner_init(NULL, reader);
+    size_t len = 99;
+    check_int("nil scanner bytes", neverc_bufio_scanner_bytes(
+                  NULL, &len) == NULL, 1);
+    check_size("nil scanner bytes length", len, 0);
+    check_int("nil scanner bytes length output",
+              neverc_bufio_scanner_bytes(NULL, NULL) == NULL, 1);
+    check_int("nil scanner text",
+              neverc_bufio_scanner_text(NULL) == NULL, 1);
+    check_int("nil scanner error", neverc_bufio_scanner_err(NULL),
+              NEVERC_IO_ERR_UNEXP);
+    neverc_bufio_scanner_free(NULL);
+
+    neverc_bufio_reader_init_size(NULL, reader, 8);
+    uint8_t byte = 0;
+    check_int("nil buffered reader byte",
+              neverc_bufio_reader_read_byte(NULL, &byte),
+              NEVERC_IO_ERR_UNEXP);
+    neverc_bufio_reader_t br = {0};
+    check_int("nil buffered reader byte output",
+              neverc_bufio_reader_read_byte(&br, NULL),
+              NEVERC_IO_ERR_UNEXP);
+    size_t n = 99;
+    check_int("nil buffered reader",
+              neverc_bufio_reader_read(NULL, &byte, 1, &n),
+              NEVERC_IO_ERR_UNEXP);
+    check_size("nil buffered reader count", n, 0);
+    check_int("nil buffered reader count output",
+              neverc_bufio_reader_read(&br, &byte, 1, NULL),
+              NEVERC_IO_ERR_UNEXP);
+    check_int("nil read line length output",
+              neverc_bufio_reader_read_line(&br, NULL) == NULL, 1);
+    check_int("nil read line reader",
+              neverc_bufio_reader_read_line(NULL, &len) == NULL, 1);
+    check_size("nil read line length", len, 0);
+    check_int("nil peek reader",
+              neverc_bufio_reader_peek(NULL, &byte, 1),
+              NEVERC_IO_ERR_UNEXP);
+    check_int("nil peek output",
+              neverc_bufio_reader_peek(&br, NULL, 1),
+              NEVERC_IO_ERR_UNEXP);
+    neverc_bufio_reader_free(NULL);
+
+    neverc_io_writer_t writer = {0};
+    neverc_bufio_writer_init_size(NULL, writer, 8);
+    check_int("nil buffered writer flush",
+              neverc_bufio_writer_flush(NULL), NEVERC_IO_ERR_UNEXP);
+    n = 99;
+    check_int("nil buffered writer",
+              neverc_bufio_writer_write(NULL, &byte, 1, &n),
+              NEVERC_IO_ERR_UNEXP);
+    check_size("nil buffered writer count", n, 0);
+    neverc_bufio_writer_t bw = {0};
+    check_int("nil buffered writer count output",
+              neverc_bufio_writer_write(&bw, &byte, 1, NULL),
+              NEVERC_IO_ERR_UNEXP);
+    check_int("nil buffered writer byte",
+              neverc_bufio_writer_write_byte(NULL, byte),
+              NEVERC_IO_ERR_UNEXP);
+    neverc_bufio_writer_free(NULL);
+}
+
 int main(void) {
     printf("=== NeverC Bufio Module Tests ===\n\n");
     test_scanner();
@@ -367,12 +528,17 @@ int main(void) {
     test_scanner_full_buffer_with_eof();
     test_scanner_data_with_terminal_error();
     test_buffered_reader();
+    test_buffered_reader_preserves_terminal_error();
     test_buffered_reader_readline();
     test_buffered_writer();
     test_partial_write_error();
+    test_partial_write_without_error();
     test_zero_size_buffers();
     test_reader_no_progress();
+    test_reader_peek_larger_than_buffer();
+    test_reader_rejects_invalid_count();
     test_scanner_missing_reader();
+    test_invalid_arguments();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

@@ -1,11 +1,21 @@
 #include "neverc/std/bufio.h"
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 
 /* --- Scanner --- */
 
+static void bufio_scanner_fail(neverc_bufio_scanner_t *s, int err) {
+    s->err = err;
+    s->done = 1;
+    s->start = s->buf_len;
+    s->token = NULL;
+    s->token_len = 0;
+}
+
 void neverc_bufio_scanner_init(neverc_bufio_scanner_t *s,
                                neverc_io_reader_t reader) {
+    if (!s) return;
     s->reader = reader;
     s->buf_cap = NEVERC_BUFIO_DEFAULT_SIZE;
     s->buf = (uint8_t *)malloc(s->buf_cap);
@@ -26,8 +36,7 @@ int neverc_bufio_scanner_scan(neverc_bufio_scanner_t *s) {
     if (!s) return 0;
     if (s->done && s->start >= s->buf_len) return 0;
     if (!s->buf || s->buf_cap == 0 || !s->reader.read) {
-        s->err = NEVERC_IO_ERR_UNEXP;
-        s->done = 1;
+        bufio_scanner_fail(s, NEVERC_IO_ERR_UNEXP);
         return 0;
     }
 
@@ -81,15 +90,13 @@ int neverc_bufio_scanner_scan(neverc_bufio_scanner_t *s) {
          * NUL-terminated token, including data returned together with EOF. */
         if (s->buf_len >= s->buf_cap - 1) {
             if (s->buf_cap > SIZE_MAX / 2) {
-                s->err = NEVERC_IO_ERR_UNEXP;
-                s->done = 1;
+                bufio_scanner_fail(s, NEVERC_IO_ERR_UNEXP);
                 return 0;
             }
             size_t new_cap = s->buf_cap * 2;
             uint8_t *new_buf = (uint8_t *)realloc(s->buf, new_cap);
             if (!new_buf) {
-                s->err = NEVERC_IO_ERR_UNEXP;
-                s->done = 1;
+                bufio_scanner_fail(s, NEVERC_IO_ERR_UNEXP);
                 return 0;
             }
             s->buf = new_buf;
@@ -102,8 +109,7 @@ int neverc_bufio_scanner_scan(neverc_bufio_scanner_t *s) {
                                  s->buf + s->buf_len,
                                  available, &nr);
         if (nr > available) {
-            s->err = NEVERC_IO_ERR_UNEXP;
-            s->done = 1;
+            bufio_scanner_fail(s, NEVERC_IO_ERR_UNEXP);
             continue;
         }
         s->buf_len += nr;
@@ -121,21 +127,29 @@ int neverc_bufio_scanner_scan(neverc_bufio_scanner_t *s) {
 
 const uint8_t *neverc_bufio_scanner_bytes(const neverc_bufio_scanner_t *s,
                                           size_t *len) {
+    if (!len) return NULL;
+    *len = 0;
+    if (!s) return NULL;
     *len = s->token_len;
     return s->token;
 }
 
 const char *neverc_bufio_scanner_text(const neverc_bufio_scanner_t *s) {
-    return (const char *)s->token;
+    return s ? (const char *)s->token : NULL;
 }
 
 int neverc_bufio_scanner_err(const neverc_bufio_scanner_t *s) {
-    return s->err;
+    return s ? s->err : NEVERC_IO_ERR_UNEXP;
 }
 
 void neverc_bufio_scanner_free(neverc_bufio_scanner_t *s) {
+    if (!s) return;
     free(s->buf);
     s->buf = NULL;
+    s->buf_len = s->buf_cap = s->start = 0;
+    s->token = NULL;
+    s->token_len = 0;
+    s->done = 1;
 }
 
 /* --- Buffered Reader --- */
@@ -147,17 +161,20 @@ void neverc_bufio_reader_init(neverc_bufio_reader_t *br,
 
 void neverc_bufio_reader_init_size(neverc_bufio_reader_t *br,
                                    neverc_io_reader_t reader, size_t size) {
+    if (!br) return;
     if (size == 0) size = 1;
     br->reader = reader;
     br->buf_cap = size;
     br->buf = (uint8_t *)malloc(size);
     br->r = br->w = 0;
     br->eof = br->buf ? 0 : 1;
+    br->err = br->buf ? 0 : NEVERC_IO_ERR_UNEXP;
 }
 
-static int bufio_fill(neverc_bufio_reader_t *br) {
+static size_t bufio_fill(neverc_bufio_reader_t *br) {
     if (!br->buf || !br->reader.read) {
         br->eof = 1;
+        br->err = NEVERC_IO_ERR_UNEXP;
         return 0;
     }
     if (br->r > 0) {
@@ -167,19 +184,36 @@ static int bufio_fill(neverc_bufio_reader_t *br) {
         br->r = 0;
     }
     if (br->w >= br->buf_cap) return 0;
+    size_t available = br->buf_cap - br->w;
     size_t nr = 0;
     int err = br->reader.read(br->reader.ctx, br->buf + br->w,
-                              br->buf_cap - br->w, &nr);
+                              available, &nr);
+    if (nr > available) {
+        br->eof = 1;
+        br->err = NEVERC_IO_ERR_UNEXP;
+        return 0;
+    }
     br->w += nr;
-    if (err != 0 || nr == 0) br->eof = 1;
-    return (int)nr;
+    if (err != 0) {
+        br->eof = 1;
+        br->err = err;
+    } else if (nr == 0) {
+        br->eof = 1;
+        br->err = NEVERC_IO_EOF;
+    }
+    return nr;
+}
+
+static int bufio_reader_terminal_error(const neverc_bufio_reader_t *br) {
+    return br->err != 0 ? br->err : NEVERC_IO_EOF;
 }
 
 int neverc_bufio_reader_read_byte(neverc_bufio_reader_t *br, uint8_t *b) {
+    if (!br || !b) return NEVERC_IO_ERR_UNEXP;
     if (br->r >= br->w) {
-        if (br->eof) return NEVERC_IO_EOF;
+        if (br->eof) return bufio_reader_terminal_error(br);
         bufio_fill(br);
-        if (br->r >= br->w) return NEVERC_IO_EOF;
+        if (br->r >= br->w) return bufio_reader_terminal_error(br);
     }
     *b = br->buf[br->r++];
     return 0;
@@ -187,12 +221,18 @@ int neverc_bufio_reader_read_byte(neverc_bufio_reader_t *br, uint8_t *b) {
 
 int neverc_bufio_reader_read(neverc_bufio_reader_t *br,
                              uint8_t *buf, size_t len, size_t *n) {
+    if (!n) return NEVERC_IO_ERR_UNEXP;
     *n = 0;
+    if (len == 0) return 0;
+    if (!br || !buf || br->r > br->w || br->w > br->buf_cap)
+        return NEVERC_IO_ERR_UNEXP;
     while (*n < len) {
         if (br->r >= br->w) {
-            if (br->eof) return *n > 0 ? 0 : NEVERC_IO_EOF;
+            if (br->eof)
+                return *n > 0 ? 0 : bufio_reader_terminal_error(br);
             bufio_fill(br);
-            if (br->r >= br->w) return *n > 0 ? 0 : NEVERC_IO_EOF;
+            if (br->r >= br->w)
+                return *n > 0 ? 0 : bufio_reader_terminal_error(br);
         }
         size_t avail = br->w - br->r;
         size_t want = len - *n;
@@ -205,6 +245,9 @@ int neverc_bufio_reader_read(neverc_bufio_reader_t *br,
 }
 
 uint8_t *neverc_bufio_reader_read_line(neverc_bufio_reader_t *br, size_t *len) {
+    if (!len) return NULL;
+    *len = 0;
+    if (!br) return NULL;
     size_t cap = 256, wlen = 0;
     uint8_t *line = (uint8_t *)malloc(cap);
     if (!line) { *len = 0; return NULL; }
@@ -212,7 +255,7 @@ uint8_t *neverc_bufio_reader_read_line(neverc_bufio_reader_t *br, size_t *len) {
     for (;;) {
         uint8_t b;
         int err = neverc_bufio_reader_read_byte(br, &b);
-        if (err == NEVERC_IO_EOF) {
+        if (err != 0) {
             if (wlen == 0) { free(line); *len = 0; return NULL; }
             break;
         }
@@ -244,16 +287,25 @@ uint8_t *neverc_bufio_reader_read_line(neverc_bufio_reader_t *br, size_t *len) {
 
 int neverc_bufio_reader_peek(neverc_bufio_reader_t *br,
                              uint8_t *buf, size_t n) {
-    while (br->w - br->r < n && !br->eof) bufio_fill(br);
+    if (!br || (!buf && n > 0) || br->r > br->w || br->w > br->buf_cap)
+        return NEVERC_IO_ERR_UNEXP;
+    if (n == 0) return 0;
+    while (br->w - br->r < n && !br->eof)
+        if (bufio_fill(br) == 0) break;
     size_t avail = br->w - br->r;
     size_t copy = avail < n ? avail : n;
+    if (copy > INT_MAX) copy = INT_MAX;
     if (copy > 0) memcpy(buf, br->buf + br->r, copy);
     return (int)copy;
 }
 
 void neverc_bufio_reader_free(neverc_bufio_reader_t *br) {
+    if (!br) return;
     free(br->buf);
     br->buf = NULL;
+    br->buf_cap = br->r = br->w = 0;
+    br->eof = 1;
+    br->err = NEVERC_IO_EOF;
 }
 
 /* --- Buffered Writer --- */
@@ -265,6 +317,7 @@ void neverc_bufio_writer_init(neverc_bufio_writer_t *bw,
 
 void neverc_bufio_writer_init_size(neverc_bufio_writer_t *bw,
                                    neverc_io_writer_t writer, size_t size) {
+    if (!bw) return;
     if (size == 0) size = 1;
     bw->writer = writer;
     bw->buf_cap = size;
@@ -273,6 +326,7 @@ void neverc_bufio_writer_init_size(neverc_bufio_writer_t *bw,
 }
 
 int neverc_bufio_writer_flush(neverc_bufio_writer_t *bw) {
+    if (!bw || bw->n > bw->buf_cap) return NEVERC_IO_ERR_UNEXP;
     if (bw->n == 0) return 0;
     if (!bw->buf || !bw->writer.write) return NEVERC_IO_ERR_UNEXP;
     size_t nw = 0;
@@ -284,6 +338,7 @@ int neverc_bufio_writer_flush(neverc_bufio_writer_t *bw) {
         size_t remaining = bw->n - nw;
         memmove(bw->buf, bw->buf + nw, remaining);
         bw->n = remaining;
+        return err != 0 ? err : NEVERC_IO_ERR_SHORT;
     } else {
         bw->n = 0;
     }
@@ -292,8 +347,11 @@ int neverc_bufio_writer_flush(neverc_bufio_writer_t *bw) {
 
 int neverc_bufio_writer_write(neverc_bufio_writer_t *bw,
                               const uint8_t *data, size_t len, size_t *n) {
+    if (!n) return NEVERC_IO_ERR_UNEXP;
     *n = 0;
-    if (len > 0 && (!bw->buf || bw->buf_cap == 0 || !data))
+    if (len == 0) return 0;
+    if (!bw || !bw->buf || bw->buf_cap == 0 || !data ||
+        bw->n > bw->buf_cap)
         return NEVERC_IO_ERR_UNEXP;
     while (*n < len) {
         size_t avail = bw->buf_cap - bw->n;
@@ -303,23 +361,26 @@ int neverc_bufio_writer_write(neverc_bufio_writer_t *bw,
         *n += copy;
         if (bw->n >= bw->buf_cap) {
             int err = neverc_bufio_writer_flush(bw);
-            if (err < 0) return err;
+            if (err != 0) return err;
         }
     }
     return 0;
 }
 
 int neverc_bufio_writer_write_byte(neverc_bufio_writer_t *bw, uint8_t c) {
-    if (!bw->buf || bw->buf_cap == 0) return NEVERC_IO_ERR_UNEXP;
+    if (!bw || !bw->buf || bw->buf_cap == 0 || bw->n > bw->buf_cap)
+        return NEVERC_IO_ERR_UNEXP;
     if (bw->n >= bw->buf_cap) {
         int err = neverc_bufio_writer_flush(bw);
-        if (err < 0) return err;
+        if (err != 0) return err;
     }
     bw->buf[bw->n++] = c;
     return 0;
 }
 
 void neverc_bufio_writer_free(neverc_bufio_writer_t *bw) {
+    if (!bw) return;
     free(bw->buf);
     bw->buf = NULL;
+    bw->buf_cap = bw->n = 0;
 }
