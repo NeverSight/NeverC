@@ -7,6 +7,7 @@
  * All functions operate on null-terminated const char * strings.
  * Functions that produce new strings allocate with malloc; caller frees.
  * Index functions return -1 when not found.
+ * Index and count results that exceed INT_MAX are saturated to INT_MAX.
  *
  * This module is separate from the built-in neverc_string_* (which is a
  * managed string type). cstring operates on raw C strings for lightweight
@@ -77,6 +78,8 @@ char **neverc_cstring_fields(const char *s, size_t *count);
 void   neverc_cstring_free_split(char **arr, size_t count);
 
 /* --- Cut --- */
+/* Cut functions return 1 when found, 0 when not found, and -1 on allocation
+ * failure or invalid output arguments. Outputs are either all valid or NULL. */
 int  neverc_cstring_cut(const char *s, const char *sep,
                          char **before, char **after);
 int  neverc_cstring_cut_prefix(const char *s, const char *prefix,

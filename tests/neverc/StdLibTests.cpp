@@ -975,6 +975,11 @@ STD_TEST(tzdata, "src/time/tzdata/tzdata.c")
 
 // ===== CString =====
 STD_TEST(cstring, "src/cstring/cstring.c")
+TEST_F(StdLibTest, CStringAllocationFailure) {
+  auto r = compileAndRunStdTest("cstring_oom", {}, {"-fno-builtin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
 
 // ===== Arena =====
 STD_TEST(arena, "src/arena/arena.c")

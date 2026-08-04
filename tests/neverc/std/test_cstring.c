@@ -52,6 +52,30 @@ static void test_equal_fold(void) {
     check_int("fold empty", neverc_cstring_equal_fold("", ""), 1);
     check_int("fold diff len", neverc_cstring_equal_fold("abc", "abcd"), 0);
     check_int("fold numbers", neverc_cstring_equal_fold("123", "123"), 1);
+
+    srand(9173);
+    int mismatches = 0;
+    char left[129], right[129];
+    for (int round = 0; round < 50000 && mismatches == 0; round++) {
+        size_t len = (size_t)(rand() % 129);
+        for (size_t i = 0; i < len; i++) {
+            left[i] = (char)(1 + rand() % 127);
+            right[i] = (char)(1 + rand() % 127);
+        }
+        left[len] = '\0';
+        right[len] = '\0';
+        int expected = 1;
+        for (size_t i = 0; i < len; i++) {
+            char l = left[i] >= 'A' && left[i] <= 'Z'
+                         ? (char)(left[i] + ('a' - 'A')) : left[i];
+            char r = right[i] >= 'A' && right[i] <= 'Z'
+                         ? (char)(right[i] + ('a' - 'A')) : right[i];
+            if (l != r) { expected = 0; break; }
+        }
+        if (neverc_cstring_equal_fold(left, right) != expected)
+            mismatches++;
+    }
+    check_int("fold randomized ASCII differential", mismatches, 0);
 }
 
 /* ===== Search / Index ===== */
@@ -83,6 +107,7 @@ static void test_index_byte(void) {
     check_int("index_byte not found", neverc_cstring_index_byte("hello", 'z'), -1);
     check_int("index_byte first", neverc_cstring_index_byte("hello", 'h'), 0);
     check_int("index_byte last", neverc_cstring_index_byte("hello", 'o'), 4);
+    check_int("index_byte terminator", neverc_cstring_index_byte("hello", '\0'), -1);
 }
 
 static void test_last_index_byte(void) {
@@ -90,6 +115,8 @@ static void test_last_index_byte(void) {
     check_int("last_index_byte dup", neverc_cstring_last_index_byte("hello", 'l'), 3);
     check_int("last_index_byte none", neverc_cstring_last_index_byte("hello", 'z'), -1);
     check_int("last_index_byte first", neverc_cstring_last_index_byte("a", 'a'), 0);
+    check_int("last_index_byte terminator",
+              neverc_cstring_last_index_byte("hello", '\0'), -1);
 }
 
 static void test_index_any(void) {
@@ -117,6 +144,7 @@ static void test_contains(void) {
     check_int("contains any no", neverc_cstring_contains_any("crwth", "aeiou"), 0);
     check_int("contains char yes", neverc_cstring_contains_char("hello", 'e'), 1);
     check_int("contains char no", neverc_cstring_contains_char("hello", 'z'), 0);
+    check_int("contains terminator", neverc_cstring_contains_char("hello", '\0'), 0);
 }
 
 static void test_count(void) {
