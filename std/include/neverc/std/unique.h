@@ -16,7 +16,9 @@ extern "C" {
  * canonical copy.  Handles are trivially comparable (pointer equality)
  * and carry no ownership—freeing happens when the table is destroyed.
  *
- * Thread-safe: all operations use internal locking.
+ * Thread-safe: table operations use internal locking and interned values are
+ * immutable.  Destroy invalidates every handle and must not run concurrently
+ * with handle/value access.
  */
 
 typedef struct { const void *ptr; } neverc_unique_handle_t;

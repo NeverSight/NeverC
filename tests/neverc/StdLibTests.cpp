@@ -986,6 +986,11 @@ TEST_F(StdLibTest, ArenaAllocationFailure) {
 
 // ===== Unique =====
 STD_TEST(unique, "src/unique/unique.c")
+TEST_F(StdLibTest, UniqueAllocationFailure) {
+  auto r = compileAndRunStdTest("unique_oom", {}, {"-fno-builtin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
 
 // ===== Weak =====
 STD_TEST(weak, "src/weak/weak.c")

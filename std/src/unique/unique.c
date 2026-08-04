@@ -33,10 +33,9 @@ static size_t          g_count = 0;
 
 #if defined(NEVERC_PLATFORM_WINDOWS)
 #include <windows.h>
-static CRITICAL_SECTION g_lock;
-static int g_lock_init = 0;
-#define LOCK()   do { if (!g_lock_init) { InitializeCriticalSection(&g_lock); g_lock_init = 1; } EnterCriticalSection(&g_lock); } while(0)
-#define UNLOCK() LeaveCriticalSection(&g_lock)
+static SRWLOCK g_lock = SRWLOCK_INIT;
+#define LOCK()   AcquireSRWLockExclusive(&g_lock)
+#define UNLOCK() ReleaseSRWLockExclusive(&g_lock)
 #else
 #include <pthread.h>
 static pthread_mutex_t g_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -101,20 +100,20 @@ static uint64_t intern_hash(const void *data, size_t len) {
         }
     } else if (len <= 48) {
         size_t i = 0;
-        for (; i + 16 <= len; i += 16)
+        for (; len - i >= 16; i += 16)
             seed = nci_wymix(nci_read8(p + i) ^ NCI_WY_S1, nci_read8(p + i + 8) ^ seed);
         a = nci_read8(p + len - 16);
         b = nci_read8(p + len - 8);
     } else {
         uint64_t s1 = seed, s2 = seed;
         size_t i = 0;
-        for (; i + 48 <= len; i += 48) {
+        for (; len - i >= 48; i += 48) {
             seed = nci_wymix(nci_read8(p + i)      ^ NCI_WY_S0, nci_read8(p + i + 8)  ^ seed);
             s1   = nci_wymix(nci_read8(p + i + 16) ^ NCI_WY_S1, nci_read8(p + i + 24) ^ s1);
             s2   = nci_wymix(nci_read8(p + i + 32) ^ NCI_WY_S2, nci_read8(p + i + 40) ^ s2);
         }
         seed ^= s1 ^ s2;
-        for (; i + 16 <= len; i += 16)
+        for (; len - i >= 16; i += 16)
             seed = nci_wymix(nci_read8(p + i) ^ NCI_WY_S1, nci_read8(p + i + 8) ^ seed);
         a = nci_read8(p + len - 16);
         b = nci_read8(p + len - 8);
@@ -129,6 +128,7 @@ static uint64_t intern_hash(const void *data, size_t len) {
  * issue (the block is malloc-aligned, but this keeps it portable regardless).
  */
 static void *intern_alloc(const void *data, size_t len) {
+    if (len > SIZE_MAX - sizeof(size_t)) return NULL;
     unsigned char *base = (unsigned char *)malloc(sizeof(size_t) + len);
     if (!base) return NULL;
     memcpy(base, &len, sizeof(size_t));
@@ -169,7 +169,9 @@ void neverc_unique_destroy(void) {
 
 /* Returns 1 on success, 0 on allocation failure (table left unchanged). */
 static int grow_table(void) {
+    if (g_cap == 0 || g_cap > SIZE_MAX / 2) return 0;
     size_t new_cap = g_cap * 2;                  /* stays a power of two */
+    if (new_cap > SIZE_MAX / sizeof(intern_entry_t)) return 0;
     intern_entry_t *new_tab = (intern_entry_t *)calloc(new_cap, sizeof(intern_entry_t));
     if (!new_tab) return 0;
     size_t mask = new_cap - 1;
@@ -216,12 +218,16 @@ static neverc_unique_handle_t intern(uk_kind_t kind, const void *data, size_t le
     }
 
     /* Grow at 75% load. */
-    if ((g_count + 1) * 4 > g_cap * 3) {
+    if (g_count == SIZE_MAX) {
+        UNLOCK();
+        return h;
+    }
+    if (g_count >= g_cap - g_cap / 4) {
         if (grow_table()) {
             mask = g_cap - 1;
             idx = (size_t)(hash & mask);
             while (g_table[idx].kind != UK_EMPTY) idx = (idx + 1) & mask;
-        } else if (g_count + 1 >= g_cap) {
+        } else if (g_count >= g_cap - 1) {
             /* Grow failed under memory pressure and the table is otherwise
              * full: consuming the last EMPTY slot would make every future
              * probe loop (lookup and insert) non-terminating, so refuse the
@@ -247,7 +253,9 @@ static neverc_unique_handle_t intern(uk_kind_t kind, const void *data, size_t le
 
 neverc_unique_handle_t neverc_unique_make_string(const char *s) {
     if (!s) { neverc_unique_handle_t h = {NULL}; return h; }
-    return intern(UK_STRING, s, strlen(s) + 1);
+    size_t len = strlen(s);
+    if (len == SIZE_MAX) { neverc_unique_handle_t h = {NULL}; return h; }
+    return intern(UK_STRING, s, len + 1);
 }
 
 neverc_unique_handle_t neverc_unique_make_int64(int64_t v) {
