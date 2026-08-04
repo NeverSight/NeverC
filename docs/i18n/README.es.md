@@ -103,9 +103,49 @@ neverc -fdyncode -target aarch64-pc-windows-msvc hello.c -o hello.bin
 
 Consulte el **[índice de documentación](../README.es.md)** para diseño detallado, matriz de plataformas, referencia CLI y ejemplos. Ejemplos compilables completos: **[examples](../examples/README.es.md)**.
 
-## Compilación
+## Instalación
 
-Requisitos, comandos de compilación, binarios macOS precompilados, compilación cruzada a Windows, configuración de PATH y entorno — consulte **[Desarrollo local](../local-dev/README.es.md)**.
+En **Linux x64/arm64** y **macOS arm64**, instale la última release con un solo comando:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/NeverSight/NeverC/HEAD/install.sh | sh
+```
+
+El instalador descarga el archivo release de su plataforma, lo verifica con `SHA256SUMS`, instala en `~/.neverc` y antepone `~/.neverc/bin` al `PATH` del shell.
+
+Para fijar una versión concreta:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/NeverSight/NeverC/v3389.1.2/install.sh | NEVERC_VERSION=v3389.1.2 sh
+```
+
+Verificar la instalación:
+
+```bash
+neverc --version
+neverc hello.c -o hello
+```
+
+Los paquetes **Windows x64/arm64** están en [GitHub Releases](https://github.com/NeverSight/NeverC/releases) para descarga manual. El binario macOS arm64 está firmado con Apple Developer ID y notarizado.
+
+Variables de entorno opcionales:
+
+| Variable | Propósito |
+|----------|-----------|
+| `NEVERC_INSTALL_DIR` | Prefijo de instalación (predeterminado: `~/.neverc`) |
+| `NEVERC_VERSION` | Tag release, p. ej. `v3389.1.2` (predeterminado: latest) |
+| `NEVERC_NO_MODIFY_PATH=1` | No modificar el perfil del shell |
+
+Los sysroots de compilación cruzada (Windows SDK, sysroot Linux, etc.) se instalan bajo demanda cuando el compilador ya está en el `PATH`:
+
+```bash
+neverc runtime install windows-x64
+neverc runtime list
+```
+
+## Compilación desde el código fuente
+
+Requisitos, comandos de compilación, compilación cruzada a Windows, configuración de PATH y cambio entre release instalada y build in-tree — consulte **[Desarrollo local](../local-dev/README.es.md)**.
 
 ## Contribuir
 

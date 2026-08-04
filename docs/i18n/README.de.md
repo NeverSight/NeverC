@@ -103,9 +103,49 @@ neverc -fdyncode -target aarch64-pc-windows-msvc hello.c -o hello.bin
 
 Ausführliche Designnotizen, Plattformmatrix, CLI-Referenz und Beispiele: **[Dokumentationsindex](../README.de.md)**. Vollständig kompilierbare Beispiele: **[examples](../examples/README.de.md)**.
 
-## Bauen
+## Installation
 
-Voraussetzungen, Build-Befehle, vorgefertigte macOS-Binärdateien, Cross-Kompilierung nach Windows, PATH-Einrichtung und Umgebungskonfiguration — siehe **[Lokale Entwicklung](../local-dev/README.de.md)**.
+Unter **Linux x64/arm64** und **macOS arm64** installieren Sie die neueste Release mit einem Befehl:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/NeverSight/NeverC/HEAD/install.sh | sh
+```
+
+Das Skript lädt das Release-Archiv für Ihre Plattform herunter, prüft es gegen `SHA256SUMS`, installiert nach `~/.neverc` und hängt `~/.neverc/bin` an den Shell-`PATH` an.
+
+Eine bestimmte Version pinnen:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/NeverSight/NeverC/v3389.1.2/install.sh | NEVERC_VERSION=v3389.1.2 sh
+```
+
+Installation prüfen:
+
+```bash
+neverc --version
+neverc hello.c -o hello
+```
+
+**Windows x64/arm64**-Pakete stehen auf [GitHub Releases](https://github.com/NeverSight/NeverC/releases) zum manuellen Download bereit. Das macOS-arm64-Binary ist mit Apple Developer ID signiert und notarisiert.
+
+Optionale Umgebungsvariablen:
+
+| Variable | Zweck |
+|----------|-------|
+| `NEVERC_INSTALL_DIR` | Installationspräfix (Standard: `~/.neverc`) |
+| `NEVERC_VERSION` | Release-Tag, z. B. `v3389.1.2` (Standard: latest) |
+| `NEVERC_NO_MODIFY_PATH=1` | Shell-Profil nicht ändern |
+
+Cross-Compilation-Sysroots (Windows SDK, Linux-Sysroot usw.) werden bei Bedarf installiert, sobald der Compiler im `PATH` liegt:
+
+```bash
+neverc runtime install windows-x64
+neverc runtime list
+```
+
+## Aus den Quellen bauen
+
+Voraussetzungen, Build-Befehle, Cross-Kompilierung nach Windows, PATH-Einrichtung und Wechsel zwischen Release-Installation und In-Tree-Build — siehe **[Lokale Entwicklung](../local-dev/README.de.md)**.
 
 ## Mitwirken
 

@@ -103,9 +103,49 @@ neverc -fdyncode -target aarch64-pc-windows-msvc hello.c -o hello.bin
 
 Подробности: **[индекс документации](../README.ru.md)** — дизайн, матрица платформ, справочник CLI, примеры. Полные собираемые примеры: **[examples](../examples/README.ru.md)**.
 
-## Сборка
+## Установка
 
-Требования, команды сборки, готовые бинарники macOS, кросс-компиляция под Windows, настройка PATH и конфигурация среды — см. **[Локальная разработка](../local-dev/README.ru.md)**.
+На **Linux x64/arm64** и **macOS arm64** последний release ставится одной командой:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/NeverSight/NeverC/HEAD/install.sh | sh
+```
+
+Установщик скачивает архив release для вашей платформы, проверяет его по `SHA256SUMS`, устанавливает в `~/.neverc` и добавляет `~/.neverc/bin` в начало `PATH` shell.
+
+Чтобы зафиксировать конкретную версию:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/NeverSight/NeverC/v3389.1.2/install.sh | NEVERC_VERSION=v3389.1.2 sh
+```
+
+Проверка установки:
+
+```bash
+neverc --version
+neverc hello.c -o hello
+```
+
+Пакеты **Windows x64/arm64** — на [GitHub Releases](https://github.com/NeverSight/NeverC/releases) для ручной загрузки. Бинарник macOS arm64 подписан Apple Developer ID и нотаризован.
+
+Необязательные переменные окружения:
+
+| Переменная | Назначение |
+|------------|------------|
+| `NEVERC_INSTALL_DIR` | Каталог установки (по умолчанию: `~/.neverc`) |
+| `NEVERC_VERSION` | Тег release, напр. `v3389.1.2` (по умолчанию: latest) |
+| `NEVERC_NO_MODIFY_PATH=1` | Не менять профиль shell |
+
+Sysroot для кросс-компиляции (Windows SDK, Linux sysroot и т. д.) ставятся по требованию, когда компилятор уже в `PATH`:
+
+```bash
+neverc runtime install windows-x64
+neverc runtime list
+```
+
+## Сборка из исходников
+
+Требования, команды сборки, кросс-компиляция под Windows, настройка PATH и переключение между release и in-tree сборкой — см. **[Локальная разработка](../local-dev/README.ru.md)**.
 
 ## Участие в разработке
 

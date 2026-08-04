@@ -105,9 +105,49 @@ neverc -fdyncode -target aarch64-pc-windows-msvc hello.c -o hello.bin
 
 للتفاصيل راجع **[فهرس التوثيق](../README.ar.md)** — التصميم، مصفوفة المنصات، مرجع CLI، الأمثلة. لأمثلة قابلة للبناء راجع **[examples](../examples/README.ar.md)**.
 
-## البناء
+## التثبيت
 
-المتطلبات وأوامر البناء وثنائيات macOS الجاهزة والتجميع المتقاطع إلى Windows وإعداد PATH وتهيئة البيئة — راجع **[التطوير المحلي](../local-dev/README.ar.md)**.
+على **Linux x64/arm64** و **macOS arm64**، ثبّت أحدث release بأمر واحد:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/NeverSight/NeverC/HEAD/install.sh | sh
+```
+
+يُنزِّل المثبِّت أرشيف release لمنصتك، يتحقق منه عبر `SHA256SUMS`، يثبّت في `~/.neverc`، ويضيف `~/.neverc/bin` إلى مقدمة `PATH` في الصَّدفة.
+
+لتثبيت إصدار محدد:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/NeverSight/NeverC/v3389.1.2/install.sh | NEVERC_VERSION=v3389.1.2 sh
+```
+
+التحقق من التثبيت:
+
+```bash
+neverc --version
+neverc hello.c -o hello
+```
+
+حزم **Windows x64/arm64** متاحة على [GitHub Releases](https://github.com/NeverSight/NeverC/releases) للتنزيل اليدوي. ثنائي macOS arm64 موقَّع بشهادة Apple Developer ID ومعتمد (notarized).
+
+متغيرات بيئة اختيارية:
+
+| المتغير | الغرض |
+|---------|--------|
+| `NEVERC_INSTALL_DIR` | بادئة التثبيت (افتراضي: `~/.neverc`) |
+| `NEVERC_VERSION` | وسم release، مثل `v3389.1.2` (افتراضي: latest) |
+| `NEVERC_NO_MODIFY_PATH=1` | عدم تعديل ملف تعريف الصَّدفة |
+
+جذور sysroot للتجميع المتقاطع (Windows SDK وLinux sysroot وغيرها) تُثبَّت عند الحاجة بعد أن يصبح المترجم على `PATH`:
+
+```bash
+neverc runtime install windows-x64
+neverc runtime list
+```
+
+## البناء من المصدر
+
+المتطلبات وأوامر البناء والتجميع المتقاطع إلى Windows وإعداد PATH والتبديل بين release والبناء داخل الشجرة — راجع **[التطوير المحلي](../local-dev/README.ar.md)**.
 
 ## المساهمة
 

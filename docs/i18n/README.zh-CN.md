@@ -103,9 +103,49 @@ neverc -fdyncode -target aarch64-pc-windows-msvc hello.c -o hello.bin
 
 详细设计说明、平台矩阵、CLI 参考与示例见 **[文档索引](../README.zh-CN.md)**。更多完整可构建示例见 **[examples](../examples/README.zh-CN.md)**。
 
-## 构建
+## 安装
 
-构建依赖、构建命令、macOS 预编译产物、Windows 交叉编译、PATH 设置和环境配置详见 **[本地开发](../local-dev/README.zh-CN.md)**。
+在 **Linux x64/arm64** 和 **macOS arm64** 上，一条命令安装最新 release：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/NeverSight/NeverC/HEAD/install.sh | sh
+```
+
+安装脚本会下载对应平台的 release 包、对照 `SHA256SUMS` 校验、安装到 `~/.neverc`，并把 `~/.neverc/bin` 加入 shell 的 `PATH`。
+
+安装指定版本：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/NeverSight/NeverC/v3389.1.2/install.sh | NEVERC_VERSION=v3389.1.2 sh
+```
+
+验证安装：
+
+```bash
+neverc --version
+neverc hello.c -o hello
+```
+
+**Windows x64/arm64** 安装包请从 [GitHub Releases](https://github.com/NeverSight/NeverC/releases) 手动下载。macOS arm64 二进制已使用 Apple Developer ID 签名并完成公证。
+
+可选安装环境变量：
+
+| 变量 | 说明 |
+|------|------|
+| `NEVERC_INSTALL_DIR` | 安装目录（默认：`~/.neverc`） |
+| `NEVERC_VERSION` | Release 标签，如 `v3389.1.2`（默认：最新版） |
+| `NEVERC_NO_MODIFY_PATH=1` | 不修改 shell 配置文件 |
+
+交叉编译 sysroot（Windows SDK、Linux sysroot 等）在编译器加入 `PATH` 后按需安装：
+
+```bash
+neverc runtime install windows-x64
+neverc runtime list
+```
+
+## 从源码构建
+
+构建依赖、构建命令、Windows 交叉编译、PATH 设置，以及在 release 安装与本地源码构建之间切换，详见 **[本地开发](../local-dev/README.zh-CN.md)**。
 
 ## 贡献
 

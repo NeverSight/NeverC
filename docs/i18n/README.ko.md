@@ -103,9 +103,49 @@ neverc -fdyncode -target aarch64-pc-windows-msvc hello.c -o hello.bin
 
 상세 설계, 플랫폼 매트릭스, CLI 참조, 예제는 **[문서 색인](../README.ko.md)** 을 참조하세요. 빌드 가능한 샘플은 **[examples](../examples/README.ko.md)** 참조.
 
-## 빌드
+## 설치
 
-빌드 요구 사항, 빌드 명령, macOS 사전 빌드 바이너리, Windows 크로스 컴파일, PATH 설정, 환경 구성은 **[로컬 개발](../local-dev/README.ko.md)**을 참조하세요.
+**Linux x64/arm64** 및 **macOS arm64**에서는 다음 한 줄로 최신 release를 설치할 수 있습니다:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/NeverSight/NeverC/HEAD/install.sh | sh
+```
+
+설치 스크립트는 플랫폼용 release 아카이브를 내려받아 `SHA256SUMS`로 검증한 뒤 `~/.neverc`에 설치하고, shell `PATH` 앞에 `~/.neverc/bin`을 추가합니다.
+
+특정 버전을 고정하려면:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/NeverSight/NeverC/v3389.1.2/install.sh | NEVERC_VERSION=v3389.1.2 sh
+```
+
+설치 확인:
+
+```bash
+neverc --version
+neverc hello.c -o hello
+```
+
+**Windows x64/arm64** 패키지는 [GitHub Releases](https://github.com/NeverSight/NeverC/releases)에서 수동으로 받으세요. macOS arm64 바이너리는 Apple Developer ID로 서명되고 공증되었습니다.
+
+선택적 설치 환경 변수:
+
+| 변수 | 용도 |
+|------|------|
+| `NEVERC_INSTALL_DIR` | 설치 prefix（기본：`~/.neverc`） |
+| `NEVERC_VERSION` | Release 태그（예：`v3389.1.2`, 기본：최신） |
+| `NEVERC_NO_MODIFY_PATH=1` | shell 설정 파일 변경 건너뛰기 |
+
+크로스 컴파일 sysroot(Windows SDK, Linux sysroot 등)는 컴파일러가 `PATH`에 올라간 뒤 필요할 때 설치합니다:
+
+```bash
+neverc runtime install windows-x64
+neverc runtime list
+```
+
+## 소스에서 빌드
+
+빌드 요구 사항, 빌드 명령, Windows 크로스 컴파일, PATH 설정, release 설치와 트리 내 빌드 전환은 **[로컬 개발](../local-dev/README.ko.md)**을 참조하세요.
 
 ## 기여
 

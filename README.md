@@ -103,9 +103,49 @@ neverc -fdyncode -target aarch64-pc-windows-msvc hello.c -o hello.bin
 
 See the **[documentation index](docs/README.md)** for detailed design notes, platform matrix, CLI reference, and examples. For complete buildable samples, see the **[examples](docs/examples/README.md)** directory.
 
-## Building
+## Installation
 
-See **[Local Development](docs/local-dev/README.md)** for build requirements, build commands, prebuilt macOS binaries, cross-compiling to Windows, PATH setup, and environment configuration.
+On **Linux x64/arm64** and **macOS arm64**, install the latest release with one command:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/NeverSight/NeverC/HEAD/install.sh | sh
+```
+
+This downloads the release archive for your platform, verifies it against `SHA256SUMS`, installs to `~/.neverc`, and prepends `~/.neverc/bin` to your shell `PATH`.
+
+To pin a specific version:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/NeverSight/NeverC/v3389.1.2/install.sh | NEVERC_VERSION=v3389.1.2 sh
+```
+
+Verify the install:
+
+```bash
+neverc --version
+neverc hello.c -o hello
+```
+
+**Windows x64/arm64** packages are on [GitHub Releases](https://github.com/NeverSight/NeverC/releases) for manual download. The macOS arm64 binary is Apple Developer ID signed and notarized.
+
+Optional installer environment variables:
+
+| Variable | Purpose |
+|----------|---------|
+| `NEVERC_INSTALL_DIR` | Install prefix (default: `~/.neverc`) |
+| `NEVERC_VERSION` | Release tag, e.g. `v3389.1.2` (default: latest) |
+| `NEVERC_NO_MODIFY_PATH=1` | Skip shell profile changes |
+
+Cross-compilation sysroots (Windows SDK, Linux sysroot, etc.) are installed on demand after the compiler is on your `PATH`:
+
+```bash
+neverc runtime install windows-x64
+neverc runtime list
+```
+
+## Building from Source
+
+See **[Local Development](docs/local-dev/README.md)** for build requirements, build commands, cross-compiling to Windows, PATH setup, and switching between a release install and an in-tree build.
 
 ## Contributing
 

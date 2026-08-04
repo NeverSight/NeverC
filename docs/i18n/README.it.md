@@ -103,9 +103,49 @@ neverc -fdyncode -target aarch64-pc-windows-msvc hello.c -o hello.bin
 
 Vedi l'**[indice della documentazione](../README.it.md)** per design dettagliato, matrice piattaforme, riferimento CLI ed esempi. Esempi completi compilabili: **[examples](../examples/README.it.md)**.
 
-## Compilazione
+## Installazione
 
-Requisiti, comandi di compilazione, binari macOS precompilati, cross-compilazione verso Windows, configurazione PATH e ambiente — consultate **[Sviluppo locale](../local-dev/README.it.md)**.
+Su **Linux x64/arm64** e **macOS arm64**, installate l’ultima release con un solo comando:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/NeverSight/NeverC/HEAD/install.sh | sh
+```
+
+L’installer scarica l’archivio release per la vostra piattaforma, lo verifica con `SHA256SUMS`, installa in `~/.neverc` e antepone `~/.neverc/bin` al `PATH` della shell.
+
+Per fissare una versione specifica:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/NeverSight/NeverC/v3389.1.2/install.sh | NEVERC_VERSION=v3389.1.2 sh
+```
+
+Verificare l’installazione:
+
+```bash
+neverc --version
+neverc hello.c -o hello
+```
+
+I pacchetti **Windows x64/arm64** sono su [GitHub Releases](https://github.com/NeverSight/NeverC/releases) per download manuale. Il binario macOS arm64 è firmato con Apple Developer ID e notarizzato.
+
+Variabili d’ambiente opzionali:
+
+| Variabile | Scopo |
+|-----------|-------|
+| `NEVERC_INSTALL_DIR` | Prefisso di installazione (predefinito: `~/.neverc`) |
+| `NEVERC_VERSION` | Tag release, es. `v3389.1.2` (predefinito: latest) |
+| `NEVERC_NO_MODIFY_PATH=1` | Non modificare il profilo shell |
+
+I sysroot per cross-compilazione (Windows SDK, sysroot Linux, ecc.) si installano on demand dopo che il compilatore è nel `PATH`:
+
+```bash
+neverc runtime install windows-x64
+neverc runtime list
+```
+
+## Compilazione dal sorgente
+
+Requisiti, comandi di compilazione, cross-compilazione verso Windows, configurazione PATH e passaggio tra release installata e build in-tree — consultate **[Sviluppo locale](../local-dev/README.it.md)**.
 
 ## Contribuire
 
