@@ -447,6 +447,11 @@ TEST_F(StdLibTest, RegexpAllocationFailure) {
   EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
 }
 STD_TEST(mime, "src/mime/mime.c")
+TEST_F(StdLibTest, MimeAllocationFailure) {
+  auto r = compileAndRunStdTest("mime_oom", {}, {"-fno-builtin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
 STD_TEST(context, "src/context/context.c")
 TEST_F(StdLibTest, ContextAllocationFailure) {
   auto r = compileAndRunStdTest("context_oom", {}, {"-fno-builtin-std"});

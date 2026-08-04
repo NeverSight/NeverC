@@ -1,4 +1,6 @@
 #include "neverc/std/mime.h"
+#include <limits.h>
+#include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
 
@@ -90,8 +92,24 @@ static int nc_tolower(int c) {
     return (c >= 'A' && c <= 'Z') ? c + 32 : c;
 }
 
-static int nc_isspace(int c) {
-    return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v';
+static int mime_is_ows(int c) {
+    return c == ' ' || c == '\t';
+}
+
+static int mime_is_token_char(unsigned char c) {
+    static const char specials[] = "()<>@,;:\\\"/[]?=";
+    return c > 32 && c < 127 && strchr(specials, (int)c) == NULL;
+}
+
+static int mime_span_case_equal(const char *a, size_t alen,
+                                const char *b, size_t blen) {
+    if (alen != blen) return 0;
+    for (size_t i = 0; i < alen; i++) {
+        if (nc_tolower((unsigned char)a[i]) !=
+            nc_tolower((unsigned char)b[i]))
+            return 0;
+    }
+    return 1;
 }
 
 static int strcasecmp_local(const char *a, const char *b) {
@@ -115,83 +133,160 @@ const char *neverc_mime_type_by_extension(const char *ext) {
 
 const char *neverc_mime_extension_by_type(const char *mime_type) {
     if (!mime_type) return NULL;
+    while (mime_is_ows((unsigned char)*mime_type)) mime_type++;
+    const char *end = strchr(mime_type, ';');
+    if (!end) end = mime_type + strlen(mime_type);
+    while (end > mime_type && mime_is_ows((unsigned char)end[-1])) end--;
+    size_t input_len = (size_t)(end - mime_type);
     for (const mime_entry_t *e = mime_table; e->ext; e++) {
         size_t mlen = strlen(e->mime);
-        if (strncmp(e->mime, mime_type, mlen) == 0 &&
-            (mime_type[mlen] == '\0' || mime_type[mlen] == ';'))
+        if (mime_span_case_equal(e->mime, mlen, mime_type, input_len))
             return e->ext;
     }
     return NULL;
+}
+
+static void mime_free_params(char *keys[], char *vals[], int count) {
+    for (int i = 0; i < count; i++) {
+        free(keys[i]);
+        free(vals[i]);
+        keys[i] = NULL;
+        vals[i] = NULL;
+    }
 }
 
 int neverc_mime_parse_media_type(const char *v,
                                  char *media_type, size_t mt_cap,
                                  char *params_keys[], char *params_vals[],
                                  int max_params, int *nparams) {
-    if (!v || !media_type) return -1;
+    int count = 0;
+    if (!nparams) {
+        if (media_type && mt_cap) media_type[0] = '\0';
+        return -1;
+    }
     *nparams = 0;
-
-    while (*v && nc_isspace((unsigned char)*v)) v++;
-
-    const char *semi = strchr(v, ';');
-    size_t mt_len = semi ? (size_t)(semi - v) : strlen(v);
-    while (mt_len > 0 && nc_isspace((unsigned char)v[mt_len - 1])) mt_len--;
-
-    if (mt_len >= mt_cap) mt_len = mt_cap - 1;
-    memcpy(media_type, v, mt_len);
-    media_type[mt_len] = '\0';
-
-    for (size_t i = 0; i < mt_len; i++)
-        media_type[i] = (char)nc_tolower((unsigned char)media_type[i]);
-
-    if (!semi) return 0;
-    const char *p = semi + 1;
-
-    while (*p && *nparams < max_params) {
-        while (*p && nc_isspace((unsigned char)*p)) p++;
-        if (!*p) break;
-
-        const char *eq = strchr(p, '=');
-        if (!eq) break;
-
-        size_t klen = (size_t)(eq - p);
-        while (klen > 0 && nc_isspace((unsigned char)p[klen - 1])) klen--;
-
-        if (params_keys && params_vals) {
-            char *key = (char *)malloc(klen + 1);
-            memcpy(key, p, klen);
-            key[klen] = '\0';
-            for (size_t i = 0; i < klen; i++)
-                key[i] = (char)nc_tolower((unsigned char)key[i]);
-
-            const char *vs = eq + 1;
-            while (*vs && nc_isspace((unsigned char)*vs)) vs++;
-
-            const char *ve;
-            if (*vs == '"') {
-                vs++;
-                ve = strchr(vs, '"');
-                if (!ve) ve = vs + strlen(vs);
-            } else {
-                ve = vs;
-                while (*ve && *ve != ';' && !nc_isspace((unsigned char)*ve)) ve++;
-            }
-
-            size_t vlen = (size_t)(ve - vs);
-            char *val = (char *)malloc(vlen + 1);
-            memcpy(val, vs, vlen);
-            val[vlen] = '\0';
-
-            params_keys[*nparams] = key;
-            params_vals[*nparams] = val;
-        }
-        (*nparams)++;
-
-        p = strchr(eq + 1, ';');
-        if (!p) break;
-        p++;
+    if (!v || !media_type || mt_cap == 0 || max_params < 0 ||
+        (max_params > 0 && (!params_keys || !params_vals ||
+                            params_keys == params_vals))) {
+        if (media_type && mt_cap) media_type[0] = '\0';
+        return -1;
     }
 
+    const char *p = v;
+    while (mime_is_ows((unsigned char)*p)) p++;
+    const char *mt_start = p;
+    while (mime_is_token_char((unsigned char)*p)) p++;
+    if (p == mt_start || *p != '/') goto fail;
+    p++;
+    const char *subtype = p;
+    while (mime_is_token_char((unsigned char)*p)) p++;
+    if (p == subtype) goto fail;
+    const char *mt_end = p;
+    while (mime_is_ows((unsigned char)*p)) p++;
+    if (*p != '\0' && *p != ';') goto fail;
+
+    size_t mt_len = (size_t)(mt_end - mt_start);
+    if (mt_len >= mt_cap) goto fail;
+
+    while (*p == ';') {
+        p++;
+        while (mime_is_ows((unsigned char)*p)) p++;
+        if (!*p) goto fail;
+
+        const char *key_start = p;
+        while (mime_is_token_char((unsigned char)*p)) p++;
+        const char *key_end = p;
+        if (key_end == key_start) goto fail;
+        while (mime_is_ows((unsigned char)*p)) p++;
+        if (*p != '=') goto fail;
+        p++;
+        while (mime_is_ows((unsigned char)*p)) p++;
+
+        const char *value_start;
+        const char *value_end;
+        size_t value_len = 0;
+        int quoted = 0;
+        if (*p == '"') {
+            quoted = 1;
+            value_start = ++p;
+            while (*p && *p != '"') {
+                unsigned char c = (unsigned char)*p++;
+                if (c == '\\') {
+                    c = (unsigned char)*p++;
+                    if (c == '\0' || c == '\r' || c == '\n') goto fail;
+                } else if ((c < 32 && c != '\t') || c == 127) {
+                    goto fail;
+                }
+                if (value_len == SIZE_MAX) goto fail;
+                value_len++;
+            }
+            if (*p != '"') goto fail;
+            value_end = p++;
+        } else {
+            value_start = p;
+            while (mime_is_token_char((unsigned char)*p)) p++;
+            value_end = p;
+            if (value_end == value_start) goto fail;
+            value_len = (size_t)(value_end - value_start);
+        }
+
+        while (mime_is_ows((unsigned char)*p)) p++;
+        if (*p != '\0' && *p != ';') goto fail;
+        if (count >= max_params) goto fail;
+
+        size_t key_len = (size_t)(key_end - key_start);
+        for (int i = 0; i < count; i++) {
+            if (mime_span_case_equal(params_keys[i], strlen(params_keys[i]),
+                                     key_start, key_len))
+                goto fail;
+        }
+        if (key_len == SIZE_MAX || value_len == SIZE_MAX) goto fail;
+        char *key = (char *)malloc(key_len + 1);
+        if (!key) goto fail;
+        char *value = (char *)malloc(value_len + 1);
+        if (!value) {
+            free(key);
+            goto fail;
+        }
+
+        for (size_t i = 0; i < key_len; i++)
+            key[i] = (char)nc_tolower((unsigned char)key_start[i]);
+        key[key_len] = '\0';
+        if (quoted) {
+            const char *from = value_start;
+            size_t to = 0;
+            while (from < value_end) {
+                if (*from == '\\') from++;
+                value[to++] = *from++;
+            }
+            value[to] = '\0';
+        } else {
+            memcpy(value, value_start, value_len);
+            value[value_len] = '\0';
+        }
+        params_keys[count] = key;
+        params_vals[count] = value;
+        count++;
+    }
+
+    if (*p != '\0') goto fail;
+    memmove(media_type, mt_start, mt_len);
+    for (size_t i = 0; i < mt_len; i++)
+        media_type[i] = (char)nc_tolower((unsigned char)media_type[i]);
+    media_type[mt_len] = '\0';
+    *nparams = count;
+    return 0;
+
+fail:
+    if (params_keys && params_vals) mime_free_params(params_keys, params_vals, count);
+    media_type[0] = '\0';
+    *nparams = 0;
+    return -1;
+}
+
+static int mime_size_add(size_t *total, size_t amount) {
+    if (amount > SIZE_MAX - *total) return -1;
+    *total += amount;
     return 0;
 }
 
@@ -200,42 +295,81 @@ int neverc_mime_format_media_type(const char *media_type,
                                   const char *param_vals[],
                                   int nparams,
                                   char *out, size_t out_cap) {
-    if (!media_type || !out || out_cap == 0) return -1;
+    if (!out || out_cap == 0) return -1;
+    if (!media_type || nparams < 0 ||
+        (nparams > 0 && (!param_keys || !param_vals)))
+        goto fail;
 
-    size_t pos = 0;
-    size_t mt_len = strlen(media_type);
-    if (mt_len >= out_cap) return -1;
-    memcpy(out, media_type, mt_len);
-    pos = mt_len;
+    const char *slash = media_type;
+    while (mime_is_token_char((unsigned char)*slash)) slash++;
+    if (slash == media_type || *slash != '/') goto fail;
+    const char *subtype = slash + 1;
+    const char *end = subtype;
+    while (mime_is_token_char((unsigned char)*end)) end++;
+    if (end == subtype || *end != '\0') goto fail;
 
-    for (int i = 0; i < nparams && param_keys && param_vals; i++) {
-        const char *k = param_keys[i];
-        const char *v = param_vals[i];
-        size_t klen = strlen(k);
-        size_t vlen = strlen(v);
-
-        int need_quote = 0;
-        for (size_t j = 0; j < vlen; j++) {
-            if (v[j] == ' ' || v[j] == ';' || v[j] == '"') {
-                need_quote = 1;
-                break;
-            }
+    size_t total = (size_t)(end - media_type);
+    for (int i = 0; i < nparams; i++) {
+        const char *key = param_keys[i];
+        const char *value = param_vals[i];
+        if (!key || !value || !*key) goto fail;
+        size_t key_len = 0;
+        while (mime_is_token_char((unsigned char)key[key_len])) key_len++;
+        if (key[key_len] != '\0') goto fail;
+        for (int j = 0; j < i; j++) {
+            if (strcasecmp_local(key, param_keys[j]) == 0) goto fail;
         }
 
-        size_t needed = 2 + klen + 1 + vlen + (need_quote ? 2 : 0);
-        if (pos + needed >= out_cap) return -1;
+        size_t value_len = 0;
+        int quote = *value == '\0';
+        for (const unsigned char *s = (const unsigned char *)value; *s; s++) {
+            if ((*s < 32 && *s != '\t') || *s == 127) goto fail;
+            if (!mime_is_token_char(*s)) quote = 1;
+            if (*s == '"' || *s == '\\') {
+                if (value_len == SIZE_MAX) goto fail;
+                value_len++;
+            }
+            if (value_len == SIZE_MAX) goto fail;
+            value_len++;
+        }
+
+        if (mime_size_add(&total, 2) != 0 ||
+            mime_size_add(&total, key_len) != 0 ||
+            mime_size_add(&total, 1) != 0 ||
+            mime_size_add(&total, value_len) != 0 ||
+            (quote && mime_size_add(&total, 2) != 0))
+            goto fail;
+    }
+    if (total >= out_cap || total > (size_t)INT_MAX) goto fail;
+
+    size_t pos = 0;
+    for (const char *s = media_type; *s; s++)
+        out[pos++] = (char)nc_tolower((unsigned char)*s);
+    for (int i = 0; i < nparams; i++) {
+        const char *key = param_keys[i];
+        const char *value = param_vals[i];
+        int quote = *value == '\0';
+        for (const unsigned char *s = (const unsigned char *)value; *s; s++)
+            if (!mime_is_token_char(*s)) quote = 1;
 
         out[pos++] = ';';
         out[pos++] = ' ';
-        memcpy(out + pos, k, klen); pos += klen;
+        while (*key)
+            out[pos++] = (char)nc_tolower((unsigned char)*key++);
         out[pos++] = '=';
-        if (need_quote) out[pos++] = '"';
-        memcpy(out + pos, v, vlen); pos += vlen;
-        if (need_quote) out[pos++] = '"';
+        if (quote) out[pos++] = '"';
+        while (*value) {
+            if (*value == '"' || *value == '\\') out[pos++] = '\\';
+            out[pos++] = *value++;
+        }
+        if (quote) out[pos++] = '"';
     }
-
     out[pos] = '\0';
     return (int)pos;
+
+fail:
+    out[0] = '\0';
+    return -1;
 }
 
 /* Hex value per byte, -1 for non-hex. A compile-time constant table: it is
@@ -261,65 +395,56 @@ static const signed char mime_qp_hex[256] = {
     -1,-1,-1,-1,-1,-1,-1,-1, -1,-1,-1,-1,-1,-1,-1,-1,
 };
 
+static size_t mime_qp_decoded_size(const char *src, size_t src_len) {
+    size_t si = 0, size = 0;
+    while (si < src_len) {
+        size_t remaining = src_len - si;
+        if (src[si] == '=' && remaining >= 3 &&
+            src[si + 1] == '\r' && src[si + 2] == '\n') {
+            si += 3;
+        } else if (src[si] == '=' && remaining >= 2 &&
+                   src[si + 1] == '\n') {
+            si += 2;
+        } else if (src[si] == '=' && remaining >= 3 &&
+                   mime_qp_hex[(unsigned char)src[si + 1]] >= 0 &&
+                   mime_qp_hex[(unsigned char)src[si + 2]] >= 0) {
+            si += 3;
+            size++;
+        } else {
+            si++;
+            size++;
+        }
+    }
+    return size;
+}
+
 int neverc_mime_qp_decode(const char *src, size_t src_len,
                            char *dst, size_t dst_cap, size_t *out_len) {
-    size_t si = 0, di = 0;
-    while (si < src_len && di < dst_cap) {
-        if (src[si] == '=') {
-            /* Tight loop for consecutive =XX hex escapes. */
-            if (si + 2 < src_len &&
-                src[si + 1] != '\r' && src[si + 1] != '\n') {
-                int h = mime_qp_hex[(unsigned char)src[si + 1]];
-                int l = mime_qp_hex[(unsigned char)src[si + 2]];
-                if (h >= 0 && l >= 0) {
-                    do {
-                        dst[di++] = (char)((h << 4) | l);
-                        si += 3;
-                        if (di >= dst_cap ||
-                            si + 2 >= src_len || src[si] != '=' ||
-                            src[si + 1] == '\r' || src[si + 1] == '\n')
-                            break;
-                        h = mime_qp_hex[(unsigned char)src[si + 1]];
-                        l = mime_qp_hex[(unsigned char)src[si + 2]];
-                    } while (h >= 0 && l >= 0);
-                    continue;
-                }
-            }
-            if (si + 2 < src_len) {
-                if (src[si + 1] == '\r' && si + 3 <= src_len && src[si + 2] == '\n') {
-                    si += 3;
-                    continue;
-                }
-                if (src[si + 1] == '\n') {
-                    si += 2;
-                    continue;
-                }
-                {
-                    int h = mime_qp_hex[(unsigned char)src[si + 1]];
-                    int l = mime_qp_hex[(unsigned char)src[si + 2]];
-                    if (h >= 0 && l >= 0) {
-                        dst[di++] = (char)((h << 4) | l);
-                        si += 3;
-                        continue;
-                    }
-                }
-            }
-            dst[di++] = src[si++];
-            continue;
-        }
+    if (out_len) *out_len = 0;
+    if ((!src || !dst) && src_len != 0) return -1;
+    size_t required = mime_qp_decoded_size(src, src_len);
+    if (required > dst_cap) return -1;
 
-        /* Literal run up to the next '='. */
-        {
-            const char *from = src + si;
-            size_t rem = src_len - si;
-            const char *eq = memchr(from, '=', rem);
-            size_t run = eq ? (size_t)(eq - from) : rem;
-            if (run > dst_cap - di) run = dst_cap - di;
-            if (run) {
-                memcpy(dst + di, from, run);
-                di += run;
-                si += run;
+    size_t si = 0, di = 0;
+    while (si < src_len) {
+        size_t remaining = src_len - si;
+        if (src[si] == '=' && remaining >= 3 &&
+            src[si + 1] == '\r' && src[si + 2] == '\n') {
+            si += 3;
+        } else if (src[si] == '=' && remaining >= 2 &&
+                   src[si + 1] == '\n') {
+            si += 2;
+        } else if (src[si] == '=' && remaining >= 3) {
+            int high = mime_qp_hex[(unsigned char)src[si + 1]];
+            int low = mime_qp_hex[(unsigned char)src[si + 2]];
+            if (high >= 0 && low >= 0) {
+                dst[di++] = (char)((high << 4) | low);
+                si += 3;
+            } else {
+                dst[di++] = src[si++];
             }
+        } else {
+            dst[di++] = src[si++];
         }
     }
     if (out_len) *out_len = di;
@@ -330,22 +455,31 @@ static const char hex_chars[] = "0123456789ABCDEF";
 
 int neverc_mime_qp_encode(const char *src, size_t src_len,
                            char *dst, size_t dst_cap, size_t *out_len) {
-    size_t si = 0, di = 0;
-    while (si < src_len) {
+    if (out_len) *out_len = 0;
+    if ((!src || !dst) && src_len != 0) return -1;
+
+    size_t required = 0;
+    for (size_t i = 0; i < src_len; i++) {
+        unsigned char c = (unsigned char)src[i];
+        size_t amount = ((c >= 33 && c <= 126 && c != '=') ||
+                         c == '\t' || c == ' ' || c == '\r' || c == '\n')
+                            ? 1U : 3U;
+        if (amount > SIZE_MAX - required) return -1;
+        required += amount;
+    }
+    if (required > dst_cap) return -1;
+
+    size_t di = 0;
+    for (size_t si = 0; si < src_len; si++) {
         unsigned char c = (unsigned char)src[si];
-        if ((c >= 33 && c <= 126 && c != '=') || c == '\t' || c == ' ') {
-            if (di >= dst_cap) break;
-            dst[di++] = (char)c;
-        } else if (c == '\r' || c == '\n') {
-            if (di >= dst_cap) break;
+        if ((c >= 33 && c <= 126 && c != '=') ||
+            c == '\t' || c == ' ' || c == '\r' || c == '\n') {
             dst[di++] = (char)c;
         } else {
-            if (di + 3 > dst_cap) break;
             dst[di++] = '=';
             dst[di++] = hex_chars[c >> 4];
             dst[di++] = hex_chars[c & 0x0F];
         }
-        si++;
     }
     if (out_len) *out_len = di;
     return 0;

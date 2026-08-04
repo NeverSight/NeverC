@@ -25,6 +25,13 @@ static int tests_run = 0, tests_passed = 0, tests_failed = 0;
            printf("  FAIL: %s = %d, expected %d (line %d)\n", #expr, _v, _e, __LINE__); } \
 } while(0)
 
+static void free_params(char *keys[], char *vals[], int count) {
+    for (int i = 0; i < count; i++) {
+        free(keys[i]);
+        free(vals[i]);
+    }
+}
+
 static void test_type_by_extension(void) {
     printf("[type_by_extension]\n");
     ASSERT_STR_EQ(neverc_mime_type_by_extension(".html"), "text/html");
@@ -64,6 +71,8 @@ static void test_extension_by_type(void) {
     ASSERT_STR_EQ(neverc_mime_extension_by_type("text/html"), ".htm");
     ASSERT_STR_EQ(neverc_mime_extension_by_type("application/json"), ".json");
     ASSERT_STR_EQ(neverc_mime_extension_by_type("image/png"), ".png");
+    ASSERT_STR_EQ(neverc_mime_extension_by_type(
+                      "  Text/HTML ; charset=utf-8"), ".htm");
     ASSERT_NULL(neverc_mime_extension_by_type("application/x-unknown-thing"));
     ASSERT_NULL(neverc_mime_extension_by_type(NULL));
 }
@@ -101,6 +110,64 @@ static void test_parse_quoted_params(void) {
     ASSERT_STR_EQ(keys[0], "boundary");
     ASSERT_STR_EQ(vals[0], "----WebKit");
     free(keys[0]); free(vals[0]);
+
+    ASSERT_INT_EQ(neverc_mime_parse_media_type(
+                      "Text/Plain; boundary=\"a\\\";b\\\\c\"; CHARSET = utf-8",
+                      mt, sizeof(mt), keys, vals, 8, &nparams), 0);
+    ASSERT_STR_EQ(mt, "text/plain");
+    ASSERT_INT_EQ(nparams, 2);
+    ASSERT_STR_EQ(keys[0], "boundary");
+    ASSERT_STR_EQ(vals[0], "a\";b\\c");
+    ASSERT_STR_EQ(keys[1], "charset");
+    ASSERT_STR_EQ(vals[1], "utf-8");
+    free_params(keys, vals, nparams);
+}
+
+static void test_parse_rejects_invalid_input(void) {
+    printf("[parse_rejects_invalid_input]\n");
+    char mt[32] = "unchanged";
+    char *keys[2] = {NULL, NULL};
+    char *vals[2] = {NULL, NULL};
+    int nparams = 99;
+
+    ASSERT_INT_EQ(neverc_mime_parse_media_type(
+                      "text/html", mt, 0, keys, vals, 2, &nparams), -1);
+    ASSERT_INT_EQ(nparams, 0);
+    ASSERT_INT_EQ(neverc_mime_parse_media_type(
+                      "text/html", mt, sizeof(mt), keys, vals, 2, NULL), -1);
+
+    const char *invalid[] = {
+        "text", "text/", "/plain", "text/plain garbage",
+        "text/plain; charset", "text/plain; =utf-8",
+        "text/plain; charset=", "text/plain; charset=\"unterminated",
+        "text/plain; charset=utf-8 trailing",
+        "text/plain; charset=utf-8; CHARSET=ascii"
+    };
+    for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
+        strcpy(mt, "unchanged");
+        nparams = 99;
+        ASSERT_INT_EQ(neverc_mime_parse_media_type(
+                          invalid[i], mt, sizeof(mt), keys, vals, 2,
+                          &nparams), -1);
+        ASSERT_STR_EQ(mt, "");
+        ASSERT_INT_EQ(nparams, 0);
+    }
+
+    strcpy(mt, "unchanged");
+    nparams = 99;
+    ASSERT_INT_EQ(neverc_mime_parse_media_type(
+                      "text/plain; a=1; b=2; c=3", mt, sizeof(mt),
+                      keys, vals, 2, &nparams), -1);
+    ASSERT_STR_EQ(mt, "");
+    ASSERT_INT_EQ(nparams, 0);
+
+    char tiny[4] = "old";
+    nparams = 99;
+    ASSERT_INT_EQ(neverc_mime_parse_media_type(
+                      "text/plain", tiny, sizeof(tiny), keys, vals, 2,
+                      &nparams), -1);
+    ASSERT_STR_EQ(tiny, "");
+    ASSERT_INT_EQ(nparams, 0);
 }
 
 static void test_format_media_type(void) {
@@ -112,6 +179,54 @@ static void test_format_media_type(void) {
     int len = neverc_mime_format_media_type("text/html", keys, vals, 1, out, sizeof(out));
     ASSERT_STR_EQ(out, "text/html; charset=utf-8");
     ASSERT_INT_EQ(len, (int)strlen("text/html; charset=utf-8"));
+
+    const char *quoted_keys[] = {"boundary", "empty"};
+    const char *quoted_vals[] = {"a\";b\\c", ""};
+    len = neverc_mime_format_media_type("Text/Plain", quoted_keys,
+                                        quoted_vals, 2, out, sizeof(out));
+    ASSERT_STR_EQ(out,
+                  "text/plain; boundary=\"a\\\";b\\\\c\"; empty=\"\"");
+    ASSERT_INT_EQ(len, (int)strlen(out));
+}
+
+static void test_format_rejects_invalid_input(void) {
+    printf("[format_rejects_invalid_input]\n");
+    char out[64] = "unchanged";
+    const char *keys[] = {"charset"};
+    const char *vals[] = {"utf-8"};
+    const char *bad_keys[] = {"bad key"};
+    const char *bad_vals[] = {"ok\r\nInjected: yes"};
+    const char *null_keys[] = {NULL};
+
+    ASSERT_INT_EQ(neverc_mime_format_media_type(
+                      "invalid", keys, vals, 1, out, sizeof(out)), -1);
+    ASSERT_STR_EQ(out, "");
+    strcpy(out, "unchanged");
+    ASSERT_INT_EQ(neverc_mime_format_media_type(
+                      "text/plain", bad_keys, vals, 1, out,
+                      sizeof(out)), -1);
+    ASSERT_STR_EQ(out, "");
+    strcpy(out, "unchanged");
+    ASSERT_INT_EQ(neverc_mime_format_media_type(
+                      "text/plain", keys, bad_vals, 1, out,
+                      sizeof(out)), -1);
+    ASSERT_STR_EQ(out, "");
+    strcpy(out, "unchanged");
+    ASSERT_INT_EQ(neverc_mime_format_media_type(
+                      "text/plain", null_keys, vals, 1, out,
+                      sizeof(out)), -1);
+    ASSERT_STR_EQ(out, "");
+    strcpy(out, "unchanged");
+    ASSERT_INT_EQ(neverc_mime_format_media_type(
+                      "text/plain", keys, vals, -1, out,
+                      sizeof(out)), -1);
+    ASSERT_STR_EQ(out, "");
+
+    char tiny[12] = "unchanged";
+    ASSERT_INT_EQ(neverc_mime_format_media_type(
+                      "text/plain", keys, vals, 1, tiny,
+                      sizeof(tiny)), -1);
+    ASSERT_STR_EQ(tiny, "");
 }
 
 static void test_qp_decode(void) {
@@ -125,6 +240,18 @@ static void test_qp_decode(void) {
 
     neverc_mime_qp_decode("=E4=BD=A0=E5=A5=BD", 18, out, sizeof(out), &out_len);
     ASSERT_INT_EQ((int)out_len, 6);
+
+    ASSERT_INT_EQ(neverc_mime_qp_decode("a=\nb", 4, out,
+                                        sizeof(out), &out_len), 0);
+    out[out_len] = '\0';
+    ASSERT_STR_EQ(out, "ab");
+
+    out_len = 99;
+    ASSERT_INT_EQ(neverc_mime_qp_decode("abcd", 4, out, 3, &out_len), -1);
+    ASSERT_INT_EQ((int)out_len, 0);
+    ASSERT_INT_EQ(neverc_mime_qp_decode(NULL, 1, out,
+                                        sizeof(out), &out_len), -1);
+    ASSERT_INT_EQ(neverc_mime_qp_decode("x", 1, NULL, 1, &out_len), -1);
 }
 
 static void test_qp_encode(void) {
@@ -139,6 +266,13 @@ static void test_qp_encode(void) {
     neverc_mime_qp_encode("\x80\xFF", 2, out, sizeof(out), &out_len);
     out[out_len] = '\0';
     ASSERT_STR_EQ(out, "=80=FF");
+
+    out_len = 99;
+    ASSERT_INT_EQ(neverc_mime_qp_encode("\x80", 1, out, 2, &out_len), -1);
+    ASSERT_INT_EQ((int)out_len, 0);
+    ASSERT_INT_EQ(neverc_mime_qp_encode(NULL, 1, out,
+                                        sizeof(out), &out_len), -1);
+    ASSERT_INT_EQ(neverc_mime_qp_encode("x", 1, NULL, 1, &out_len), -1);
 }
 
 int main(void) {
@@ -149,7 +283,9 @@ int main(void) {
     test_extension_by_type();
     test_parse_media_type();
     test_parse_quoted_params();
+    test_parse_rejects_invalid_input();
     test_format_media_type();
+    test_format_rejects_invalid_input();
     test_qp_decode();
     test_qp_encode();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
