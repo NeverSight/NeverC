@@ -33,11 +33,26 @@ set(core_files
   unwind.h
   string.h
   stdlib.h
+  varargs.h
+  )
+
+# Keep resource headers with public nested include names out of the flat header
+# list.  CMake's install(FILES) preserves each basename, not its source-relative
+# directory, so installing these through core_files would incorrectly produce
+# include/xorstr.h instead of include/neverc/xorstr/xorstr.h.
+set(neverc_strhash_files
   neverc/strhash/strhash.h
   neverc/strhash/strhash_impl.inc
+  )
+
+set(neverc_xorstr_files
   neverc/xorstr/xorstr.h
   neverc/xorstr/xorstr_impl.inc
-  varargs.h
+  )
+
+set(neverc_nested_resource_files
+  ${neverc_strhash_files}
+  ${neverc_xorstr_files}
   )
 
 set(aarch64_common_files
@@ -153,6 +168,7 @@ set(utility_files
 # Only x86/x64, AArch64.
 set(files
   ${core_files}
+  ${neverc_nested_resource_files}
   ${aarch64_common_files}
   ${aarch64_only_files}
   ${x86_files}
@@ -256,7 +272,8 @@ add_dependencies("neverc-resource-headers"
                  "windows-resource-headers"
                  "utility-resource-headers")
 # Core/common headers
-add_header_target("core-resource-headers" ${core_files})
+add_header_target("core-resource-headers"
+                  "${core_files};${neverc_nested_resource_files}")
 add_header_target("aarch64-common-resource-headers" "${aarch64_common_files};${aarch64_common_generated_files}")
 add_header_target("aarch64-resource-headers" "${aarch64_only_files};${aarch64_only_generated_files}")
 add_header_target("x86-resource-headers" "${x86_files}")
@@ -267,8 +284,20 @@ get_neverc_resource_dir(header_install_dir SUBDIR include)
 #############################################################
 # Install rules for the catch-all NeverC resource-headers target
 install(
-  FILES ${files}
+  FILES ${core_files}
+        ${aarch64_common_files}
+        ${aarch64_only_files}
+        ${x86_files}
+        ${windows_only_files}
+        ${utility_files}
   DESTINATION ${header_install_dir}
+  COMPONENT neverc-resource-headers)
+
+install(FILES ${neverc_strhash_files}
+  DESTINATION ${header_install_dir}/neverc/strhash
+  COMPONENT neverc-resource-headers)
+install(FILES ${neverc_xorstr_files}
+  DESTINATION ${header_install_dir}/neverc/xorstr
   COMPONENT neverc-resource-headers)
 
 # Install dyncode system-header overrides at top level
@@ -285,6 +314,15 @@ install(FILES neverc/dyncode/kernel.h
 install(
   FILES ${core_files}
   DESTINATION ${header_install_dir}
+  EXCLUDE_FROM_ALL
+  COMPONENT core-resource-headers)
+
+install(FILES ${neverc_strhash_files}
+  DESTINATION ${header_install_dir}/neverc/strhash
+  EXCLUDE_FROM_ALL
+  COMPONENT core-resource-headers)
+install(FILES ${neverc_xorstr_files}
+  DESTINATION ${header_install_dir}/neverc/xorstr
   EXCLUDE_FROM_ALL
   COMPONENT core-resource-headers)
 

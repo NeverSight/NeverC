@@ -195,6 +195,13 @@ jobs:
           test ! -e compiler-root/install/runtime
           cp -a runtime compiler-root/install/runtime
           compiler-root/install/bin/neverc --version
+          resource_dir=$(compiler-root/install/bin/neverc -print-resource-dir)
+          case "$resource_dir" in
+            "$PWD"/compiler-root/install/lib/neverc/*) ;;
+            *) echo "unexpected compiler resource directory: $resource_dir" >&2; exit 1 ;;
+          esac
+          test -f "$resource_dir/include/neverc/strhash/strhash.h"
+          test -f "$resource_dir/include/neverc/xorstr/xorstr.h"
 
       - name: Run runtime source and unit gates
         run: |

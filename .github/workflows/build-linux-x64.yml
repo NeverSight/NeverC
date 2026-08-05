@@ -71,7 +71,11 @@ jobs:
     # neverc binary is always downloadable for local Docker reproduction even
     # when a later step fails.
     - name: Install neverc
-      run: cmake --build build --config ${{ env.BUILD_TYPE }} --target install
+      run: |
+        cmake --build build --config ${{ env.BUILD_TYPE }} --target install
+        resource_dir=$(install/bin/neverc -print-resource-dir)
+        test -f "$resource_dir/include/neverc/strhash/strhash.h"
+        test -f "$resource_dir/include/neverc/xorstr/xorstr.h"
 
     - name: Package neverc
       run: 7z a linux-x64-neverc.zip install
