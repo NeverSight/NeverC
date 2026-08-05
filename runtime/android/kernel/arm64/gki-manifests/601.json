@@ -21,9 +21,9 @@
   "evidence": {
     "config_sha256": "0f8bb251a72cd0066191acbd01224e9642098c52f2a136949e0e5c9bcb4d3a51",
     "layout_format": "BTF",
-    "layout_sha256": "2ea4cdfb9973e3503012bf3383eeab204785cd30b7010ec1ef2e8b307225da6f",
+    "layout_sha256": "826879c4782c086fbbb1630f192d4dd6523debf8a3ffcd08ec9fcc8d5118377c",
     "symvers_sha256": "b5704806be6dee30d939f18ed2977850f0181c58dd62452d3d8c6f15221d6f35",
-    "vmlinux_build_id": "677592b1b59ce497208c298eb8557306d5f2c9ba"
+    "vmlinux_build_id": "fa5e8475c0a2a08b6f4413e63bd586f8dd23af75"
   },
   "kernel_name": "android14-6.1",
   "layouts": {
@@ -1060,6 +1060,10 @@
         "use_memdelay": {
           "bit_offset": 12103,
           "bit_size": 1
+        },
+        "user_dumpable": {
+          "bit_offset": 28928,
+          "bit_size": 1
         }
       },
       "members": {
@@ -1103,6 +1107,7 @@
         "default_timer_slack_ns": 2848,
         "dirty_paused_when": 2832,
         "dl": 592,
+        "dmabuf_info": 3608,
         "exit_code": 1480,
         "exit_signal": 1484,
         "exit_state": 1476,

@@ -1,0 +1,58 @@
+{
+  "profiles": {
+    "510": {
+      "asset": "gki-android12-5.10-build.tar.gz",
+      "kernel_name": "android12-5.10",
+      "offset_module": "neverc_probe.ko",
+      "sha256": "18e5651f2c6af583e54d640fb35baa61ae01e761380169acc9ee0804fe6e2ba0",
+      "size": 264618963,
+      "vermagic": "5.10.257-android12-9-gc6284a493b89 SMP preempt mod_unload modversions aarch64"
+    },
+    "515": {
+      "asset": "gki-android13-5.15-build.tar.gz",
+      "kernel_name": "android13-5.15",
+      "offset_module": "dist/zsmalloc.ko",
+      "sha256": "544eb73ade57b6612da5ee8d7a515c34b015226bed3f0739a5f6dfb48fcd820e",
+      "size": 305322501,
+      "vermagic": "5.15.208-android13-8-gc33e1c033f09 SMP preempt mod_unload modversions aarch64"
+    },
+    "601": {
+      "asset": "gki-android14-6.1-build.tar.gz",
+      "kernel_name": "android14-6.1",
+      "offset_module": "dist/zsmalloc.ko",
+      "sha256": "95dd5ddcfd3df471f849aa94c4a78b49ab9fb240f1deb761b5abc5e3ae2d38c4",
+      "size": 204323132,
+      "vermagic": "6.1.174-android14-11-maybe-dirty SMP preempt mod_unload modversions aarch64"
+    },
+    "606": {
+      "asset": "gki-android15-6.6-build.tar.gz",
+      "kernel_name": "android15-6.6",
+      "offset_module": "dist/zsmalloc.ko",
+      "sha256": "6d033a8a151453fcca9b7c760837f8db8461d5e9b5a713e2fea680f7cfad00fb",
+      "size": 196909433,
+      "vermagic": "6.6.139-android15-8-maybe-dirty-4k SMP preempt mod_unload modversions aarch64"
+    },
+    "612": {
+      "asset": "gki-android16-6.12-build.tar.gz",
+      "kernel_name": "android16-6.12",
+      "offset_module": "dist/zsmalloc.ko",
+      "sha256": "7de7a31875686e28bad23a257eea00767ac51937e7405e1adb4a425d5a528f76",
+      "size": 237510960,
+      "vermagic": "6.12.89-android16-6-maybe-dirty-4k SMP preempt mod_unload modversions aarch64"
+    },
+    "618": {
+      "asset": "gki-android17-6.18-build.tar.gz",
+      "kernel_name": "android17-6.18",
+      "offset_module": "dist/zsmalloc.ko",
+      "sha256": "67e1bcba1dd72b9b6297959d1bc36a8856e65968d155b2e3747d8bcbc0409398",
+      "size": 249324598,
+      "vermagic": "6.18.24-android17-5-maybe-dirty-4k SMP preempt mod_unload modversions aarch64"
+    }
+  },
+  "repository": {
+    "id": 1240844551,
+    "name": "NeverSight/NeverC"
+  },
+  "schema": 1,
+  "tag": "gki-build-20260701"
+}

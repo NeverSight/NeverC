@@ -2,10 +2,10 @@
 /*
  * Minimal NeverC Android kernel module (GKI .ko).
  *
- * Imports zero kernel symbols, so it loads on any GKI kernel whose vermagic
- * matches: it is the cleanest end-to-end validation that compile -> relocatable
- * link -> .ko -> insmod works (a successful insmod means init() was found at the
- * right struct module offset and returned 0).
+ * This is the smallest runtime-bootstrap example. It resolves the kprobe
+ * bootstrap imports, initializes the NeverC runtime, and logs load/unload.
+ * The CI-only gki-qemu-smoke-module.c is the deliberately zero-import loader
+ * offset probe.
  *
  * Build:  neverc make            (or: make)
  * Deploy: adb push neverc_krt_hello.ko /data/local/tests/

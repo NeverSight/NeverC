@@ -5,7 +5,7 @@
     "CONFIG_ARM64_64K_PAGES": false,
     "CONFIG_ARM64_PA_BITS": 48,
     "CONFIG_ARM64_VA_BITS": 39,
-    "CONFIG_CFI_CLANG": true,
+    "CONFIG_CFI_CLANG": false,
     "CONFIG_COMPAT": true,
     "CONFIG_DEBUG_INFO_BTF_MODULES": false,
     "CONFIG_DEBUG_LOCK_ALLOC": false,
@@ -19,11 +19,11 @@
     "PAGE_SHIFT": 12
   },
   "evidence": {
-    "config_sha256": "3ce3565dde844c0e3d8920a4378ca10e3dad036ed7d656b4d91a3c119593cd86",
+    "config_sha256": "5980b8400de5cc449e41630f28d49a9ebd9748e8750e721d48f117c24dcf68d1",
     "layout_format": "DWARF",
-    "layout_sha256": "fbb980d42959763b8638ef044bf4ef7852b77e0183c8b7726a5eb846c705b891",
-    "symvers_sha256": "903f87e42948b1cc120cffeacb809a91b156fa87d4a2c5bd27ce4615c4a6cfb1",
-    "vmlinux_build_id": "e6d8eab7727734158d38eb6201f4a68d587a70b3"
+    "layout_sha256": "02fdb433320203a2ea3634225a7d459e7e9c36ec6fd1d450d64a493c80a2402a",
+    "symvers_sha256": "68edc87161e6bc70599b0381278da063fe7a5228fee9c4bac302c249118d2bd8",
+    "vmlinux_build_id": "e8707e1241541a9bc7faef5aa909c9ee0942e19c"
   },
   "kernel_name": "android12-5.10",
   "layouts": {
@@ -1037,6 +1037,7 @@
         "uclamp_req": 1032,
         "usage": 64,
         "use_memdelay": 1416,
+        "user_dumpable": 3560,
         "utask": 2736,
         "utime": 1712,
         "vfork_done": 1688,

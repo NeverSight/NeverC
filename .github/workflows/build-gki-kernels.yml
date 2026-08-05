@@ -380,7 +380,7 @@ jobs:
           fi
           tag="gki-build-$(date -u +%Y%m%d)"
           title="GKI prebuilt kernels $(date -u +%Y-%m-%d)"
-          notes="Automated GKI builds (5.10/5.15/6.1/6.6/6.12/6.18) with struct module offset verification against nvkmod_version.h (6.18 offsets are discovered/unverified)."
+          notes="Automated GKI builds (5.10/5.15/6.1/6.6/6.12/6.18) with struct module offset verification against nvkmod_version.h for every profile."
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" "${files[@]}" --clobber
           else

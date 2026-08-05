@@ -78,6 +78,8 @@ runtime/android/kernel/
     gen_fops_offsets.c           # file_operations offsetof/size probe
     gen_layout_offsets.c       # proc_ops / sk_buff / nf_hook_ops layout probe
     extract-btf-layouts.py     # extract authoritative layouts from GKI BTF
+    verify-gki-release.py      # verify a pinned release archive + complete manifest
+    run-gki-qemu-smoke.sh      # boot Image and require module load + unload
     check-source-boundaries.py # enforce public/private source boundaries
     test-sdk-layouts.sh        # compile layout-sensitive headers for every GKI
     test-runtime-linkage.sh    # focused multi-TU auto/full/no-LTO checks
@@ -107,6 +109,37 @@ in `src/nvk_internal.h`, while file-local helpers remain `static` in their C
 file.
 
 You then pass `-r -nostdlib -o mod.ko mod.c` to relocatably link the module.
+
+## GKI build producer vs runtime validation gate
+
+The two GKI workflows have deliberately different jobs:
+
+- `.github/workflows/build-gki-kernels.yml` is the expensive, manual producer.
+  It syncs and builds complete Android kernel trees, verifies their direct
+  `struct module` relocation evidence, and publishes release archives.
+- `.github/workflows/validate-gki-runtime.yml` is the lightweight consumer and
+  compatibility gate. It downloads the six pinned archives from release
+  `gki-build-20260701` instead of rebuilding kernels.
+
+The consumer checks each asset's name, byte size, and SHA-256 before safe
+extraction; regenerates all 55 checked BTF/DWARF layouts from `vmlinux`; checks
+every packaged config and `Module.symvers` occurrence; and independently derives
+`init`, `exit`, and `sizeof(struct module)` from the lock-pinned packaged `.ko`.
+It also runs the complete current runtime SDK/layout/linkage/demo suites.
+
+For the loader proof, the workflow compiles a dedicated zero-import module from
+the exact same source SHA as the reused `linux-x64-neverc-compiler` artifact.
+It boots every released `dist/Image` under QEMU, calls `finit_module`, then
+`delete_module`, and requires separate load/unload success markers. This smoke
+test proves module format and loader entry-point offsets; runtime symbol
+bootstrap and API behavior remain covered by the compile/link suites.
+
+Automatic validation is a reusable job in the same Linux build run/check suite,
+so a result cannot be attached to a different default-branch SHA. For diagnosis,
+dispatch `validate-gki-runtime` with an exact matching compiler run ID and one
+profile (or `all`). These archives describe pinned stock GKI builds only: an OEM
+kernel with different config, KMI, layout, or local-version vermagic requires
+its own evidence and is not certified by this gate.
 
 ## SDK headers
 
@@ -165,11 +198,11 @@ headers via `tools/gen_struct_module_offsets.c`):
 
 | preset | release | NAME | INIT | EXIT | sizeof |
 |--------|---------|------|------|------|--------|
-| `510` (android12-5.10) | 5.10    | 24 | 400 (0x190) | 960 (0x3C0)  | 1024 (0x400) |
-| `515` (android13-5.15) | 5.15.206| 24 | 376 (0x178) | 888 (0x378)  | 960 (0x3C0)  |
-| `601` (android14-6.1)  | 6.1.172 | 24 | 368 (0x170) | 984 (0x3D8)  | 1088 (0x440) |
-| `606` (android15-6.6)  | 6.6.138 | 24 | 392 (0x188) | 1464 (0x5B8) | 1536 (0x600) |
-| `612` (android16-6.12) | 6.12.81 | 24 | 392 (0x188) | 1528 (0x5F8) | 1600 (0x640) |
+| `510` (android12-5.10) | 5.10.257| 24 | 400 (0x190) | 960 (0x3C0)  | 1024 (0x400) |
+| `515` (android13-5.15) | 5.15.208| 24 | 376 (0x178) | 888 (0x378)  | 960 (0x3C0)  |
+| `601` (android14-6.1)  | 6.1.174 | 24 | 368 (0x170) | 984 (0x3D8)  | 1088 (0x440) |
+| `606` (android15-6.6)  | 6.6.139 | 24 | 392 (0x188) | 1464 (0x5B8) | 1536 (0x600) |
+| `612` (android16-6.12) | 6.12.89 | 24 | 392 (0x188) | 1528 (0x5F8) | 1600 (0x640) |
 | `618` (android17-6.18) | 6.18.24 | 24 | 376 (0x178) | 1536 (0x600) | 1664 (0x680) |
 
 `name` (offset 24) is stable across current GKI builds; `init`/`exit`/sizeof

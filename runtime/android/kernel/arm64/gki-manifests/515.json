@@ -5,7 +5,7 @@
     "CONFIG_ARM64_64K_PAGES": false,
     "CONFIG_ARM64_PA_BITS": 48,
     "CONFIG_ARM64_VA_BITS": 39,
-    "CONFIG_CFI_CLANG": true,
+    "CONFIG_CFI_CLANG": false,
     "CONFIG_COMPAT": true,
     "CONFIG_DEBUG_INFO_BTF_MODULES": true,
     "CONFIG_DEBUG_LOCK_ALLOC": false,
@@ -19,11 +19,11 @@
     "PAGE_SHIFT": 12
   },
   "evidence": {
-    "config_sha256": "3427d7527b9ea042e7ee18925513e909309b969a02ef6aa9cab74456419c184f",
+    "config_sha256": "4ca175ef54c8ccf68203b2e93517373687c8a284259d7711c6982def7584dd34",
     "layout_format": "BTF",
-    "layout_sha256": "1fe21ec9aa923ecd3fa422b8f73897ddfaa28c66837def476f49b1ddda0063c8",
-    "symvers_sha256": "9bddc12983770677b919509d28fb489ccc34eb0e49e771dd3e9ee4183b5d5b3e",
-    "vmlinux_build_id": "46bce3e578063bb112e1ba144d4f6067054216ed"
+    "layout_sha256": "10279f23fd2da25ec4e7308e735a950edbc67e003ee082295c3a4265568881fa",
+    "symvers_sha256": "135db76e09948f659c6650c07f85f59c496326d04c5a09aa64e422afe2d54f1c",
+    "vmlinux_build_id": "c9d6826901380c3bbf749f0bda901c0759907040"
   },
   "kernel_name": "android13-5.15",
   "layouts": {
@@ -1047,6 +1047,10 @@
         },
         "use_memdelay": {
           "bit_offset": 11399,
+          "bit_size": 1
+        },
+        "user_dumpable": {
+          "bit_offset": 27584,
           "bit_size": 1
         }
       },

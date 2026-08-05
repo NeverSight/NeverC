@@ -2,11 +2,12 @@
 """Verify that SDK extern declarations resolve in an official GKI KMI."""
 
 import argparse
-import json
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
+import tempfile
 
 from elftools.elf.elffile import ELFFile
 
@@ -38,20 +39,50 @@ def find_builtin_include(compiler):
     return Path(result.stdout.strip()) / "include"
 
 
-def ast_declarations(node, declarations):
-    kind = node.get("kind")
-    name = node.get("name")
-    storage = node.get("storageClass")
-    children = node.get("inner", ())
+TOP_LEVEL_DECLARATION = re.compile(r"^(?:\|-|`-)(FunctionDecl|VarDecl)\b")
+DECLARATION_NAME = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)\s+'")
 
-    if kind == "FunctionDecl" and name and storage != "static":
-        if not any(child.get("kind") == "CompoundStmt" for child in children):
-            declarations.add(name)
-    elif kind == "VarDecl" and name and storage == "extern":
-        declarations.add(name)
 
-    for child in children:
-        ast_declarations(child, declarations)
+def ast_text_declarations(lines):
+    """Extract external top-level declarations from a streamed Clang AST.
+
+    JSON AST dumps for the aggregate SDK translation unit can exceed runner
+    memory by many gigabytes.  Clang's text dump preserves the facts needed
+    here and can be reduced one line at a time.
+    """
+    declarations = set()
+    current = None
+
+    def finish():
+        if current is None:
+            return
+        if current["kind"] == "FunctionDecl":
+            if not current["static"] and not current["defined"]:
+                declarations.add(current["name"])
+        elif current["extern"]:
+            declarations.add(current["name"])
+
+    for raw_line in lines:
+        line = raw_line.rstrip("\n")
+        match = TOP_LEVEL_DECLARATION.match(line)
+        if match is not None:
+            finish()
+            name_match = DECLARATION_NAME.search(line)
+            if name_match is None:
+                current = None
+                continue
+            storage = line[name_match.end() :].rsplit("'", 1)[-1]
+            current = {
+                "kind": match.group(1),
+                "name": name_match.group(1),
+                "static": bool(re.search(r"\bstatic\b", storage)),
+                "extern": bool(re.search(r"\bextern\b", storage)),
+                "defined": False,
+            }
+        elif current is not None and "CompoundStmt" in line:
+            current["defined"] = True
+    finish()
+    return declarations
 
 
 def resolve_ast_compiler(compiler):
@@ -81,26 +112,43 @@ def sdk_declarations(compiler, kernel):
         f"-I{PUBLIC_INCLUDE}",
         f"-I{NEVERC_HEADERS}",
         f"-DNVK_KERNEL={kernel}",
+        "-D__KERNEL__=1",
+        "-DMODULE=1",
         "-Wno-everything",
         "-Xclang",
-        "-ast-dump=json",
+        "-ast-dump",
         "-fsyntax-only",
         "-x",
         "c",
         "-",
     ]
-    result = subprocess.run(
-        command,
-        input=aggregate_source(),
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode:
-        sys.stderr.write(result.stderr)
+    with tempfile.TemporaryFile(mode="w+t", encoding="utf-8") as errors:
+        process = subprocess.Popen(
+            command,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=errors,
+            text=True,
+        )
+        if process.stdin is None or process.stdout is None:
+            process.kill()
+            raise RuntimeError("failed to open Clang AST pipes")
+        try:
+            process.stdin.write(aggregate_source())
+            process.stdin.close()
+            declarations = ast_text_declarations(process.stdout)
+            process.stdout.close()
+            returncode = process.wait()
+        except BaseException:
+            process.kill()
+            process.wait()
+            raise
+        errors.seek(0)
+        diagnostics = errors.read()
+    if returncode:
+        sys.stderr.write(diagnostics)
         raise RuntimeError("failed to parse SDK headers")
 
-    declarations = set()
-    ast_declarations(json.loads(result.stdout), declarations)
     return {
         name
         for name in declarations - LOCAL_DEFINITIONS
@@ -119,7 +167,7 @@ def exported_symbols(path):
             for symbol in symbols.iter_symbols():
                 prefix = "__ksymtab_"
                 if symbol.name.startswith(prefix):
-                    exports[symbol.name[len(prefix):]] = ""
+                    exports[symbol.name[len(prefix) :]] = ""
             return exports
 
     with path.open(encoding="utf-8", errors="replace") as stream:
@@ -142,7 +190,7 @@ def main():
     try:
         declarations = sdk_declarations(args.compiler, args.kernel)
         exports = exported_symbols(args.symvers)
-    except (OSError, RuntimeError, subprocess.SubprocessError, json.JSONDecodeError) as error:
+    except (OSError, RuntimeError, subprocess.SubprocessError) as error:
         print(f"check-sdk-exports: {error}", file=sys.stderr)
         return 2
 

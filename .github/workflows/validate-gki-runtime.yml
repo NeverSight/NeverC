@@ -1,0 +1,365 @@
+name: validate-gki-runtime
+
+on:
+  workflow_call:
+    inputs:
+      compiler_run_id:
+        description: Compiler artifact run in this same build check suite
+        required: true
+        type: string
+      source_sha:
+        description: Exact source SHA compiled by the caller
+        required: true
+        type: string
+      profile:
+        description: GKI profile key or all
+        default: all
+        type: string
+  workflow_dispatch:
+    inputs:
+      compiler_run_id:
+        description: Exact linux-x64-neverc-build run ID for this source SHA
+        required: true
+        type: string
+      profile:
+        description: GKI profile to validate
+        required: true
+        default: "618"
+        type: choice
+        options:
+          - "618"
+          - "510"
+          - "515"
+          - "601"
+          - "606"
+          - "612"
+          - all
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  prepare:
+    name: Resolve trusted compiler and release
+    runs-on: ubuntu-22.04
+    outputs:
+      source_sha: ${{ steps.resolve.outputs.source_sha }}
+      compiler_run_id: ${{ steps.resolve.outputs.compiler_run_id }}
+      compiler_artifact_id: ${{ steps.resolve.outputs.compiler_artifact_id }}
+      matrix: ${{ steps.resolve.outputs.matrix }}
+      release_repository: ${{ steps.resolve.outputs.release_repository }}
+      release_tag: ${{ steps.resolve.outputs.release_tag }}
+    steps:
+      - name: Validate caller, compiler artifact, and release lock
+        id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          CURRENT_RUN_ID: ${{ github.run_id }}
+          CURRENT_SHA: ${{ github.sha }}
+          CURRENT_REF_TYPE: ${{ github.ref_type }}
+          REPOSITORY: ${{ github.repository }}
+          REPOSITORY_ID: ${{ github.repository_id }}
+          INPUT_RUN_ID: ${{ inputs.compiler_run_id }}
+          INPUT_SOURCE_SHA: ${{ inputs.source_sha }}
+          INPUT_PROFILE: ${{ inputs.profile }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          die() {
+            echo "prepare: error: $*" >&2
+            exit 1
+          }
+
+          [ "$REPOSITORY" = "NeverSight/NeverC" ] || die "unexpected repository: $REPOSITORY"
+          [ "$REPOSITORY_ID" = "1240844551" ] || die "unexpected repository ID: $REPOSITORY_ID"
+          [[ "$INPUT_RUN_ID" =~ ^[1-9][0-9]*$ ]] || die "compiler_run_id must be numeric"
+          [[ "$CURRENT_SHA" =~ ^[0-9a-f]{40}$ ]] || die "github.sha is not a full commit SHA"
+
+          if [ "$EVENT_NAME" = "push" ]; then
+            [ "$CURRENT_REF_TYPE" != "tag" ] || die "automatic tag validation is forbidden"
+            [ "$INPUT_RUN_ID" = "$CURRENT_RUN_ID" ] || die "automatic call must use its own run ID"
+            [ "$INPUT_SOURCE_SHA" = "$CURRENT_SHA" ] || die "automatic source SHA differs from github.sha"
+            source_sha=$INPUT_SOURCE_SHA
+          elif [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            [ -z "$INPUT_SOURCE_SHA" ] || die "manual dispatch must not inject source_sha"
+            source_sha=$CURRENT_SHA
+          else
+            die "unsupported invocation event: $EVENT_NAME"
+          fi
+
+          run_json=$(gh api "repos/$REPOSITORY/actions/runs/$INPUT_RUN_ID")
+          [ "$(jq -r .id <<<"$run_json")" = "$INPUT_RUN_ID" ] || die "run ID response mismatch"
+          [ "$(jq -r .event <<<"$run_json")" = "push" ] || die "compiler run was not a push"
+          [ "$(jq -r .path <<<"$run_json")" = ".github/workflows/build-linux-x64.yml" ] || die "wrong compiler workflow path"
+          [ "$(jq -r .head_sha <<<"$run_json")" = "$source_sha" ] || die "compiler run SHA does not match source SHA"
+          [ "$(jq -r .repository.id <<<"$run_json")" = "$REPOSITORY_ID" ] || die "compiler run repository ID mismatch"
+          [ "$(jq -r .repository.full_name <<<"$run_json")" = "$REPOSITORY" ] || die "compiler run repository name mismatch"
+          [ "$(jq -r .head_repository.id <<<"$run_json")" = "$REPOSITORY_ID" ] || die "untrusted compiler head repository ID"
+          [ "$(jq -r .head_repository.full_name <<<"$run_json")" = "$REPOSITORY" ] || die "untrusted compiler head repository"
+
+          artifacts_json=$(gh api "repos/$REPOSITORY/actions/runs/$INPUT_RUN_ID/artifacts?per_page=100")
+          artifact_count=$(jq '[.artifacts[] | select(.name == "linux-x64-neverc-compiler" and .expired == false)] | length' <<<"$artifacts_json")
+          [ "$artifact_count" = "1" ] || die "expected one unexpired linux-x64-neverc-compiler artifact, found $artifact_count"
+          artifact_id=$(jq -r '.artifacts[] | select(.name == "linux-x64-neverc-compiler" and .expired == false) | .id' <<<"$artifacts_json")
+          [[ "$artifact_id" =~ ^[1-9][0-9]*$ ]] || die "invalid compiler artifact ID"
+
+          lock_path=/tmp/gki-release.json
+          gh api -X GET "repos/$REPOSITORY/contents/runtime/android/kernel/arm64/gki-release.json" \
+            -f "ref=$source_sha" --jq .content | tr -d '\n' | base64 --decode >"$lock_path"
+          jq -e '.schema == 1' "$lock_path" >/dev/null || die "unsupported release lock schema"
+          profiles=$(jq -r '.profiles | keys | join(",")' "$lock_path")
+          [ "$profiles" = "510,515,601,606,612,618" ] || die "release lock profile set is invalid: $profiles"
+
+          selected=${INPUT_PROFILE:-all}
+          if [ "$selected" = "all" ]; then
+            matrix=$(jq -c '.profiles | keys' "$lock_path")
+          else
+            jq -e --arg profile "$selected" '.profiles[$profile] != null' "$lock_path" >/dev/null || die "unknown profile: $selected"
+            matrix=$(jq -cn --arg profile "$selected" '[$profile]')
+          fi
+          release_repository=$(jq -r .repository.name "$lock_path")
+          release_repository_id=$(jq -r .repository.id "$lock_path")
+          release_tag=$(jq -r .tag "$lock_path")
+          [[ "$release_repository" =~ ^[^/]+/[^/]+$ ]] || die "invalid release repository"
+          [[ "$release_repository_id" =~ ^[1-9][0-9]*$ ]] || die "invalid release repository ID"
+          [ -n "$release_tag" ] && [ "$release_tag" != "null" ] || die "invalid release tag"
+
+          release_repo_json=$(gh api "repos/$release_repository")
+          [ "$(jq -r .id <<<"$release_repo_json")" = "$release_repository_id" ] || die "release repository ID mismatch"
+          release_json=$(gh api "repos/$release_repository/releases/tags/$release_tag")
+          [ "$(jq -r .tag_name <<<"$release_json")" = "$release_tag" ] || die "release tag response mismatch"
+          while IFS=$'\t' read -r asset size digest; do
+            count=$(jq --arg asset "$asset" '[.assets[] | select(.name == $asset)] | length' <<<"$release_json")
+            [ "$count" = "1" ] || die "release asset $asset appears $count times"
+            actual_size=$(jq -r --arg asset "$asset" '.assets[] | select(.name == $asset) | .size' <<<"$release_json")
+            actual_digest=$(jq -r --arg asset "$asset" '.assets[] | select(.name == $asset) | .digest' <<<"$release_json")
+            [ "$actual_size" = "$size" ] || die "release metadata size mismatch for $asset"
+            [ "$actual_digest" = "sha256:$digest" ] || die "release metadata digest mismatch for $asset"
+          done < <(jq -r '.profiles[] | [.asset, (.size | tostring), .sha256] | @tsv' "$lock_path")
+
+          {
+            echo "source_sha=$source_sha"
+            echo "compiler_run_id=$INPUT_RUN_ID"
+            echo "compiler_artifact_id=$artifact_id"
+            echo "matrix=$matrix"
+            echo "release_repository=$release_repository"
+            echo "release_tag=$release_tag"
+          } >>"$GITHUB_OUTPUT"
+
+          {
+            echo "### Trusted GKI validation inputs"
+            echo
+            echo "- Source SHA: \`$source_sha\`"
+            echo "- Compiler run/artifact: \`$INPUT_RUN_ID\` / \`$artifact_id\`"
+            echo "- Release: \`$release_repository@$release_tag\`"
+            echo "- Profiles: \`$matrix\`"
+          } >>"$GITHUB_STEP_SUMMARY"
+
+  runtime:
+    name: Validate current runtime and build smoke modules
+    needs: prepare
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout exact compiler source SHA
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.source_sha }}
+          persist-credentials: false
+
+      - name: Download exact compiler artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: linux-x64-neverc-compiler
+          path: compiler-artifact
+          run-id: ${{ needs.prepare.outputs.compiler_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Install runtime validation dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y binutils clang llvm p7zip-full
+          python3 -m pip install --disable-pip-version-check pyelftools==0.32
+          clang --version | head -n 1
+          llvm-readelf --version | head -n 1
+          python3 -c 'import elftools; print("pyelftools", elftools.__version__)'
+
+      - name: Restore compiler with current checkout runtime
+        run: |
+          mkdir -p compiler-root
+          7z x -y compiler-artifact/linux-x64-neverc-compiler.zip -ocompiler-root
+          test -f compiler-root/install/bin/neverc
+          chmod +x compiler-root/install/bin/neverc
+          test ! -e compiler-root/install/runtime
+          cp -a runtime compiler-root/install/runtime
+          compiler-root/install/bin/neverc --version
+
+      - name: Run runtime source and unit gates
+        run: |
+          python3 runtime/android/kernel/tools/check-source-boundaries.py
+          python3 runtime/android/kernel/tools/check-user-copy-backend.py
+          python3 runtime/android/kernel/tools/test-check-sdk-exports.py -v
+          python3 runtime/android/kernel/tools/test-user-copy-backend.py -v
+          python3 runtime/android/kernel/tools/test-user-copy-adapter.py
+          python3 runtime/android/kernel/tools/test-verify-gki-release.py -v
+          python3 runtime/android/kernel/tools/test-gki-qemu-smoke.py -v
+          python3 runtime/android/kernel/tools/generate-compat-table.py --check
+
+      - name: Run all SDK layout and runtime linkage gates
+        env:
+          NM: llvm-nm
+          READELF: llvm-readelf
+        run: |
+          sh runtime/android/kernel/tools/test-sdk-layouts.sh compiler-root/install/bin/neverc
+          bash runtime/android/kernel/tools/test-runtime-linkage.sh compiler-root/install/bin/neverc --full
+          bash runtime/android/kernel/tools/test-all.sh compiler-root/install/bin/neverc
+
+      - name: Build six zero-import smoke modules
+        run: |
+          python3 runtime/android/kernel/tools/build-gki-smoke-modules.py \
+            --compiler compiler-root/install/bin/neverc \
+            --output-dir smoke-modules \
+            --nm llvm-nm \
+            --readelf llvm-readelf \
+            --profiles all
+
+      - name: Upload checked smoke modules
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: gki-runtime-smoke-modules
+          path: smoke-modules
+          if-no-files-found: error
+          retention-days: 7
+
+  kernel:
+    name: GKI ${{ matrix.profile }} release + QEMU
+    needs:
+      - prepare
+      - runtime
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        profile: ${{ fromJSON(needs.prepare.outputs.matrix || '[]') }}
+    steps:
+      - name: Checkout exact compiler source SHA
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.source_sha }}
+          persist-credentials: false
+
+      - name: Download checked smoke modules
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: gki-runtime-smoke-modules
+          path: smoke-modules
+
+      - name: Install release and QEMU dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            binutils \
+            clang \
+            gcc-aarch64-linux-gnu \
+            libc6-dev-arm64-cross \
+            qemu-system-arm
+          python3 -m pip install --disable-pip-version-check pyelftools==0.32
+          clang --version | head -n 1
+          readelf --version | head -n 1
+          aarch64-linux-gnu-gcc --version | head -n 1
+          qemu-system-aarch64 --version | head -n 1
+          timeout --version | head -n 1
+          python3 -c 'import elftools; print("pyelftools", elftools.__version__)'
+
+      - name: Resolve and download pinned release asset
+        id: asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PROFILE: ${{ matrix.profile }}
+          RELEASE_REPOSITORY: ${{ needs.prepare.outputs.release_repository }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+        run: |
+          asset=$(jq -r --arg profile "$PROFILE" '.profiles[$profile].asset' runtime/android/kernel/arm64/gki-release.json)
+          [ -n "$asset" ] && [ "$asset" != "null" ]
+          mkdir -p release logs
+          gh release download "$RELEASE_TAG" \
+            --repo "$RELEASE_REPOSITORY" \
+            --pattern "$asset" \
+            --dir release
+          test -f "release/$asset"
+          echo "asset=$asset" >>"$GITHUB_OUTPUT"
+
+      - name: Verify complete release evidence
+        env:
+          PROFILE: ${{ matrix.profile }}
+          ASSET: ${{ steps.asset.outputs.asset }}
+        run: |
+          set -o pipefail
+          python3 runtime/android/kernel/tools/verify-gki-release.py \
+            --profile "$PROFILE" \
+            --archive "release/$ASSET" \
+            --extract-to extracted-gki \
+            --compiler clang \
+            --readelf readelf \
+            2>&1 | tee logs/release-verification.log
+
+      - name: Boot released Image and load/unload current smoke module
+        env:
+          PROFILE: ${{ matrix.profile }}
+        run: |
+          bash runtime/android/kernel/tools/run-gki-qemu-smoke.sh \
+            --image extracted-gki/dist/Image \
+            --module "smoke-modules/neverc-gki-smoke-$PROFILE.ko" \
+            --output-dir logs/qemu \
+            --timeout 180
+
+      - name: Upload release verification and guest logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: gki-${{ matrix.profile }}-validation-logs
+          path: logs
+          if-no-files-found: warn
+          retention-days: 14
+
+  aggregate:
+    name: GKI runtime validation gate
+    if: always()
+    needs:
+      - prepare
+      - runtime
+      - kernel
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Summarize and enforce selected validation
+        env:
+          PREPARE_RESULT: ${{ needs.prepare.result }}
+          RUNTIME_RESULT: ${{ needs.runtime.result }}
+          KERNEL_RESULT: ${{ needs.kernel.result }}
+          SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
+          COMPILER_RUN_ID: ${{ needs.prepare.outputs.compiler_run_id }}
+          RELEASE_REPOSITORY: ${{ needs.prepare.outputs.release_repository }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+          MATRIX: ${{ needs.prepare.outputs.matrix }}
+        run: |
+          {
+            echo "### GKI runtime validation gate"
+            echo
+            echo "- Source SHA: \`${SOURCE_SHA:-unresolved}\`"
+            echo "- Compiler run: \`${COMPILER_RUN_ID:-unresolved}\`"
+            echo "- Release: \`${RELEASE_REPOSITORY:-unresolved}@${RELEASE_TAG:-unresolved}\`"
+            echo "- Profiles: \`${MATRIX:-unresolved}\`"
+            echo "- Prepare: \`$PREPARE_RESULT\`"
+            echo "- Current runtime: \`$RUNTIME_RESULT\`"
+            echo "- Release/QEMU matrix: \`$KERNEL_RESULT\`"
+          } >>"$GITHUB_STEP_SUMMARY"
+          if [ "$PREPARE_RESULT" != "success" ] || \
+             [ "$RUNTIME_RESULT" != "success" ] || \
+             [ "$KERNEL_RESULT" != "success" ]; then
+            echo "GKI runtime validation failed" >&2
+            exit 1
+          fi

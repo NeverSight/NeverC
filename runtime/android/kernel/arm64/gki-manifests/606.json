@@ -21,9 +21,9 @@
   "evidence": {
     "config_sha256": "f8144579bc3abed286615cb14c0a4a07b016d34dfc6b34503f06523a0785a596",
     "layout_format": "BTF",
-    "layout_sha256": "4c4bcc8266da74b84e24258656d0542f52965b7708a2b3cd305c978c49ed26c3",
+    "layout_sha256": "30cc3dae48ed85eea1654188830c1665edf66f06ff6a29aaf999dbb1db7edb92",
     "symvers_sha256": "d48f67ddb2391469ca11ca9e1b08b9404fc016449562a4c69479ae3b2e04fba1",
-    "vmlinux_build_id": "c8217a07b30c199c79ee075785a9e5419a13860e"
+    "vmlinux_build_id": "918625727c3f09f2afc582653695771adc4fef83"
   },
   "kernel_name": "android15-6.6",
   "layouts": {
@@ -1047,6 +1047,10 @@
         "use_memdelay": {
           "bit_offset": 11911,
           "bit_size": 1
+        },
+        "user_dumpable": {
+          "bit_offset": 28672,
+          "bit_size": 1
         }
       },
       "members": {
@@ -1090,6 +1094,7 @@
         "delays": 2776,
         "dirty_paused_when": 2792,
         "dl": 592,
+        "dmabuf_info": 3576,
         "exit_code": 1460,
         "exit_signal": 1464,
         "exit_state": 1456,

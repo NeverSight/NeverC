@@ -38,8 +38,8 @@
 #  ifndef NEVERC_KRT_KERNEL_STR
 #    define NEVERC_KRT_KERNEL_STR "android12-5.10"
 #  endif
-/* Computed from the prepared android12-5.10 GKI tree via
- * tools/gen_struct_module_offsets.c (CONFIG_CFI_CLANG=y, MODULE_UNLOAD=y, ...). */
+/* Reverified from pinned release 5.10.257 via packaged-module relocations.
+ * That release has CONFIG_CFI_CLANG=n and CONFIG_MODULE_UNLOAD=y. */
 #  ifndef NEVERC_KRT_OFF_INIT
 #    define NEVERC_KRT_OFF_INIT 400 /* 0x190 */
 #  endif
@@ -65,8 +65,8 @@
 #  ifndef NEVERC_KRT_KERNEL_STR
 #    define NEVERC_KRT_KERNEL_STR "android13-5.15"
 #  endif
-/* Verified from GKI android13-5.15 (release 5.15.206) via gki_defconfig +
- * modules_prepare + tools/gen_struct_module_offsets.c.
+/* Reverified from pinned GKI android13-5.15 release 5.15.208 via the packaged
+ * module relocations.
  * CONFIG_DEBUG_INFO_BTF_MODULES=y adds btf_data_size+btf_data (+16 bytes)
  * between init and exit. */
 #  ifndef NEVERC_KRT_OFF_INIT
@@ -94,8 +94,8 @@
 #  ifndef NEVERC_KRT_KERNEL_STR
 #    define NEVERC_KRT_KERNEL_STR "android14-6.1"
 #  endif
-/* Verified from GKI android14-6.1 (release 6.1.172) via gki_defconfig +
- * modules_prepare + tools/gen_struct_module_offsets.c.
+/* Reverified from pinned GKI android14-6.1 release 6.1.174 via the packaged
+ * module relocations.
  * CONFIG_DEBUG_INFO_BTF_MODULES=y adds btf_data_size+btf_data (+16 bytes). */
 #  ifndef NEVERC_KRT_OFF_INIT
 #    define NEVERC_KRT_OFF_INIT 368 /* 0x170 */
@@ -122,8 +122,8 @@
 #  ifndef NEVERC_KRT_KERNEL_STR
 #    define NEVERC_KRT_KERNEL_STR "android15-6.6"
 #  endif
-/* Verified from GKI android15-6.6 (release 6.6.138) via gki_defconfig +
- * modules_prepare + tools/gen_struct_module_offsets.c.
+/* Reverified from pinned GKI android15-6.6 release 6.6.139 via the packaged
+ * module relocations.
  * CONFIG_DEBUG_INFO_BTF_MODULES=y adds btf_data_size+btf_data (+16 bytes). */
 #  ifndef NEVERC_KRT_OFF_INIT
 #    define NEVERC_KRT_OFF_INIT 392 /* 0x188 */
@@ -150,8 +150,8 @@
 #  ifndef NEVERC_KRT_KERNEL_STR
 #    define NEVERC_KRT_KERNEL_STR "android16-6.12"
 #  endif
-/* Verified from GKI android16-6.12 (release 6.12.81) via gki_defconfig +
- * modules_prepare + tools/gen_struct_module_offsets.c.
+/* Reverified from pinned GKI android16-6.12 release 6.12.89 via the packaged
+ * module relocations.
  * CONFIG_DEBUG_INFO_BTF_MODULES=y adds btf_data_size+btf_base_data_size+
  * btf_data+btf_base_data (+24 bytes, 4 fields vs 2 in older kernels). */
 #  ifndef NEVERC_KRT_OFF_INIT
