@@ -128,7 +128,8 @@ Driver::Driver(llvm::StringRef NeverCExecutable, llvm::StringRef TargetTriple,
   if (!this->VFS)
     this->VFS = llvm::vfs::getRealFileSystem();
 
-  Name = std::string(llvm::sys::path::filename(NeverCExecutable));
+  // Use stem() so help/diagnostics say "neverc", not "neverc.exe" on Windows.
+  Name = std::string(llvm::sys::path::stem(NeverCExecutable));
   Dir = std::string(llvm::sys::path::parent_path(NeverCExecutable));
   InstalledDir = Dir; // Provide a sensible default installed dir.
 
