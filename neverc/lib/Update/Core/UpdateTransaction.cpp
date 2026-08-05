@@ -11,6 +11,12 @@
 #include "llvm/Support/Path.h"
 #include "llvm/Support/raw_ostream.h"
 
+#ifdef _WIN32
+#include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/Windows/WindowsSupport.h"
+#include <windows.h>
+#endif
+
 #include <set>
 #include <string>
 #include <system_error>
@@ -54,7 +60,8 @@ Expected<std::string> validatedRelativePath(StringRef Path,
                                "%s contains path traversal: '%s'",
                                Description.str().c_str(), Path.str().c_str());
   }
-  return Native.str().str();
+  SmallString<256> Slashes = sys::path::convert_to_slash(Native);
+  return Slashes.str().str();
 }
 
 SmallString<256> appendRelative(StringRef Base, StringRef Relative) {
@@ -103,6 +110,34 @@ Error renameError(std::error_code EC, StringRef From, StringRef To) {
                            To.str().c_str());
 }
 
+std::error_code moveExactItem(StringRef From, StringRef To) {
+  sys::fs::file_status Status;
+  std::error_code EC = sys::fs::status(From, Status, /*follow=*/false);
+  if (EC)
+    return EC;
+
+#ifdef _WIN32
+  if (sys::fs::is_directory(Status)) {
+    SmallVector<wchar_t, 260> WideFrom;
+    SmallVector<wchar_t, 260> WideTo;
+    if (std::error_code WEC = sys::windows::widenPath(From, WideFrom))
+      return WEC;
+    if (std::error_code WEC = sys::windows::widenPath(To, WideTo))
+      return WEC;
+    SmallString<256> Parent(sys::path::parent_path(To));
+    if (!Parent.empty()) {
+      if (std::error_code DEC = sys::fs::create_directories(Parent))
+        return DEC;
+    }
+    if (!::MoveFileExW(WideFrom.data(), WideTo.data(), MOVEFILE_WRITE_THROUGH))
+      return mapWindowsError(::GetLastError());
+    return {};
+  }
+#endif
+
+  return sys::fs::rename(From, To);
+}
+
 Error removeExactItem(StringRef Path) {
   sys::fs::file_status Status;
   std::error_code EC = sys::fs::status(Path, Status, /*follow=*/false);
@@ -129,9 +164,7 @@ UpdateTransaction::UpdateTransaction(std::string Root, std::string Stage,
     : Root(std::move(Root)), Stage(std::move(Stage)),
       TargetTag(std::move(TargetTag)), Rename(std::move(Rename)) {
   if (!this->Rename)
-    this->Rename = [](StringRef From, StringRef To) {
-      return sys::fs::rename(From, To);
-    };
+    this->Rename = moveExactItem;
 }
 
 Expected<UpdateTransaction> UpdateTransaction::create(StringRef Root,

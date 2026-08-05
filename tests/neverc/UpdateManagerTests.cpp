@@ -131,14 +131,13 @@ TEST(ReleaseClientTest, MapsTheCurrentHostToAPublishedAsset) {
     FAIL() << errorText(Host.takeError());
   EXPECT_FALSE(Host->Platform.empty());
   EXPECT_TRUE(StringRef(Host->CompilerAsset).ends_with(".zip"));
-  EXPECT_TRUE(StringRef(Host->ExecutableRelativePath)
-                  .ends_with(
-#ifdef _WIN32
-                      "neverc.exe"
+#if defined(_WIN32)
+  StringRef ExpectedExecutableSuffix = "neverc.exe";
 #else
-                      "neverc"
+  StringRef ExpectedExecutableSuffix = "neverc";
 #endif
-                      ));
+  EXPECT_TRUE(StringRef(Host->ExecutableRelativePath)
+                  .ends_with(ExpectedExecutableSuffix));
 }
 
 TEST(RuntimeCatalogTest, HasOneCanonicalDefinitionForPublishedTargets) {
