@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build and inspect the six zero-import GKI loader smoke modules."""
+"""Build and inspect six zero-import GKI loader/entry-ABI smoke modules."""
 
 import argparse
 import importlib.util
@@ -51,6 +51,65 @@ def parse_args(argv=None):
         help="all or a comma-separated subset of 510,515,601,606,612,618",
     )
     return parser.parse_args(argv)
+
+
+def patch_entry_prefixes(module, records, expected, byteorder):
+    module = Path(module)
+    zero = bytes(4)
+    if expected is None:
+        for name, record in records.items():
+            prefix = record["prefix"]
+            if prefix not in (None, zero):
+                raise RuntimeError(
+                    f"non-KCFI profile has a nonzero {name} entry prefix"
+                )
+        return
+
+    writes = []
+    for name in ("init_module", "cleanup_module"):
+        record = records[name]
+        if record["file_offset"] is None or record["section_offset"] < 4:
+            raise RuntimeError(f"{name} has no prefix space for its KCFI type ID")
+        if record["prefix"] != zero:
+            raise RuntimeError(f"{name} KCFI prefix space is not zero-filled")
+        value = int(expected[name], 16)
+        writes.append(
+            (record["file_offset"], value.to_bytes(4, byteorder=byteorder), name)
+        )
+
+    with module.open("r+b") as stream:
+        for offset, payload, _name in writes:
+            stream.seek(offset)
+            stream.write(payload)
+
+
+def apply_locked_kcfi_typeids(module, expected, verify):
+    records, byteorder = verify.entry_prefix_records(module)
+    patch_entry_prefixes(module, records, expected, byteorder)
+    checked, checked_byteorder = verify.entry_prefix_records(module)
+    if checked_byteorder != byteorder:
+        raise RuntimeError("module byte order changed while applying KCFI type IDs")
+
+    if expected is None:
+        for name, record in checked.items():
+            if record["prefix"] not in (None, bytes(4)):
+                raise RuntimeError(f"unexpected KCFI type ID remained on {name}")
+        print("[smoke] KCFI entry ABI: disabled")
+        return None
+
+    actual = {}
+    for name in sorted(expected):
+        prefix = checked[name]["prefix"]
+        if not isinstance(prefix, bytes) or len(prefix) != 4:
+            raise RuntimeError(f"missing patched KCFI type ID for {name}")
+        actual[name] = f"0x{int.from_bytes(prefix, byteorder):08x}"
+    if actual != expected:
+        raise RuntimeError(
+            f"patched KCFI type IDs mismatch: expected {expected!r}, got {actual!r}"
+        )
+    rendered = " ".join(f"{name}={value}" for name, value in actual.items())
+    print(f"[smoke] KCFI entry ABI: {rendered}")
+    return actual
 
 
 def main(argv=None):
@@ -110,6 +169,10 @@ def main(argv=None):
                     f"NeverC failed to build profile {profile} with status {result.returncode}"
                 )
 
+            kcfi_typeids = apply_locked_kcfi_typeids(
+                output, entry["kcfi_typeids"], verify
+            )
+
             undefined = subprocess.run(
                 [nm, "-u", str(output)],
                 text=True,
@@ -132,6 +195,7 @@ def main(argv=None):
             digest = verify.sha256_file(output)
             index["modules"][profile] = {
                 "file": output.name,
+                "kcfi_typeids": kcfi_typeids,
                 "sha256": digest,
                 "size": output.stat().st_size,
                 "vermagic": details["vermagic"],

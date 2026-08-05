@@ -211,6 +211,7 @@ jobs:
           python3 runtime/android/kernel/tools/test-user-copy-backend.py -v
           python3 runtime/android/kernel/tools/test-user-copy-adapter.py
           python3 runtime/android/kernel/tools/test-verify-gki-release.py -v
+          python3 runtime/android/kernel/tools/test-build-gki-smoke-modules.py -v
           python3 runtime/android/kernel/tools/test-gki-qemu-smoke.py -v
           python3 runtime/android/kernel/tools/generate-compat-table.py --check
 

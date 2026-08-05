@@ -14,7 +14,7 @@
 
 **Files and responsibilities:**
 
-- `runtime/android/kernel/arm64/gki-release.json`: immutable release asset identity, sizes, SHA-256 digests, and exact packaged vermagic strings.
+- `runtime/android/kernel/arm64/gki-release.json`: immutable release asset identity, sizes, SHA-256 digests, exact packaged vermagic strings, and module-entry KCFI type IDs.
 - `runtime/android/kernel/arm64/gki-manifests/{510,515,601,606,612}.json`: re-anchor stale layout/config evidence to the pinned release output.
 - `runtime/android/kernel/tools/verify-gki-release.py`: safe extraction and full manifest/evidence/module-offset validation for one profile.
 - `runtime/android/kernel/tools/test-verify-gki-release.py`: focused unit coverage for lock validation, digests, archive safety, and structural diffs.
@@ -57,7 +57,9 @@
   kernel name and asset filename, the GitHub-reported byte size, its `sha256:`
   release digest, the full vermagic extracted from a packaged module, and an
   exact normalized archive member path for a `.ko` proven to contain
-  `.gnu.linkonce.this_module` plus both init/cleanup relocations. Require exactly
+  `.gnu.linkonce.this_module` plus both init/cleanup relocations, and the exact
+  KCFI type-id word immediately preceding each entry symbol (or explicit null
+  when both symbols begin at section offset zero). Require exactly
   `510/515/601/606/612/618` and unique asset/member identities.
 
 - [ ] **Step 4: Implement validation and safe extraction**
@@ -79,8 +81,9 @@
 
   Resolve only the lock-pinned `.ko` member, prove that it has the expected
   module section plus both relocations, verify its `.modinfo` vermagic and the
-  `vmlinux` `linux_banner` release against the lock, copy only that module into
-  an isolated temporary directory, and invoke
+  `vmlinux` `linux_banner` release against the lock, and independently derive
+  the uniform absent/present KCFI entry-prefix ABI and exact type IDs. Copy only
+  that module into an isolated temporary directory, and invoke
   `utils/build/verify_gki_offsets.sh <profile> <isolated-directory>`. Assert and
   report that the verifier selected the isolated `.ko`, never a `.mod.o`.
 
@@ -126,8 +129,12 @@
   `NEVERC_KRT_DEFINE_MODULE("neverc_gki_smoke")` without calling bootstrap,
   printk, or any runtime helper. Compile it for each profile with only the
   locked vermagic overridden, require an empty `nm -u`, and assert the emitted
-  `.modinfo` string before upload. Existing layout/linkage suites continue to
-  use the unmodified presets and cover current runtime code.
+  `.modinfo` string before upload. For profiles whose official pinned module
+  carries KCFI entry prefixes, write the locked four-byte type IDs into the
+  verified zero padding immediately before the smoke entry symbols and read
+  them back; require zero padding for non-KCFI profiles. Existing
+  layout/linkage suites continue to use the unmodified presets and cover
+  current runtime code.
 
 - [ ] **Step 2: Add strict argument/tool/input preflight behavior**
 

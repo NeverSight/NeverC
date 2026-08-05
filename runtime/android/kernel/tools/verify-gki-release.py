@@ -16,6 +16,7 @@ import tempfile
 
 from elftools.common.exceptions import ELFError
 from elftools.elf.elffile import ELFFile
+from elftools.elf.sections import SymbolTableSection
 
 
 EXPECTED_PROFILES = ("510", "515", "601", "606", "612", "618")
@@ -23,7 +24,10 @@ MAX_ARCHIVE_MEMBERS = 10_000
 MAX_ARCHIVE_FILE_SIZE = 1024 * 1024 * 1024
 MAX_ARCHIVE_TOTAL_SIZE = 2 * 1024 * 1024 * 1024
 SHA256_RE = re.compile(r"[0-9a-f]{64}\Z")
+KCFI_TYPEID_RE = re.compile(r"0x[0-9a-f]{8}\Z")
 LINUX_RELEASE_RE = re.compile(rb"Linux version ([0-9][^ \x00]*)")
+MODULE_ENTRY_SYMBOLS = ("init_module", "cleanup_module")
+SKIP_KCFI_VALIDATION = object()
 
 
 class ValidationError(RuntimeError):
@@ -63,6 +67,27 @@ def normalize_member_name(name):
     return normalized.rstrip("/") or "."
 
 
+def validate_kcfi_typeids(value, profile):
+    if value is None:
+        return
+    required = set(MODULE_ENTRY_SYMBOLS)
+    if not isinstance(value, dict) or set(value) != required:
+        raise ValidationError(
+            f"profile {profile} KCFI type IDs must be null or exactly "
+            "cleanup_module and init_module"
+        )
+    for symbol in MODULE_ENTRY_SYMBOLS:
+        typeid = value[symbol]
+        if (
+            not isinstance(typeid, str)
+            or not KCFI_TYPEID_RE.fullmatch(typeid)
+            or typeid == "0x00000000"
+        ):
+            raise ValidationError(
+                f"profile {profile} has an invalid canonical KCFI type ID for {symbol}"
+            )
+
+
 def validate_lock(lock):
     if not isinstance(lock, dict):
         raise ValidationError("release lock must be a JSON object")
@@ -88,6 +113,7 @@ def validate_lock(lock):
     ordered = {}
     required = {
         "asset",
+        "kcfi_typeids",
         "kernel_name",
         "offset_module",
         "sha256",
@@ -120,6 +146,7 @@ def validate_lock(lock):
             raise ValidationError(f"profile {profile} has an invalid kernel name")
         if not isinstance(entry["vermagic"], str) or " " not in entry["vermagic"]:
             raise ValidationError(f"profile {profile} has an invalid vermagic")
+        validate_kcfi_typeids(entry["kcfi_typeids"], profile)
         member = entry["offset_module"]
         if not isinstance(member, str):
             raise ValidationError(f"profile {profile} has an invalid offset module")
@@ -378,7 +405,107 @@ def parse_vermagic(modinfo, expected):
     return entries[0]
 
 
-def inspect_offset_module(path, expected_vermagic):
+def entry_prefix_records_from_elf(elf, path):
+    path = Path(path)
+    symbols = elf.get_section_by_name(".symtab")
+    if not isinstance(symbols, SymbolTableSection):
+        raise ValidationError(f"module symbol table is missing: {path}")
+
+    records = {}
+    for name in MODULE_ENTRY_SYMBOLS:
+        matches = [symbol for symbol in symbols.iter_symbols() if symbol.name == name]
+        if len(matches) != 1:
+            raise ValidationError(
+                f"module must define exactly one {name} symbol, "
+                f"found {len(matches)}: {path}"
+            )
+        symbol = matches[0]
+        if symbol["st_info"]["type"] != "STT_FUNC":
+            raise ValidationError(f"module {name} is not a function symbol: {path}")
+        section_index = symbol["st_shndx"]
+        if not isinstance(section_index, int):
+            raise ValidationError(
+                f"module {name} does not reference a concrete section: {path}"
+            )
+        section = elf.get_section(section_index)
+        if section is None or not (int(section["sh_flags"]) & 0x4):
+            raise ValidationError(
+                f"module {name} does not reference executable code: {path}"
+            )
+        section_offset = int(symbol["st_value"]) - int(section["sh_addr"])
+        symbol_size = int(symbol["st_size"])
+        if (
+            section_offset < 0
+            or section_offset > int(section["sh_size"])
+            or section_offset + symbol_size > int(section["sh_size"])
+        ):
+            raise ValidationError(
+                f"module {name} lies outside its executable section: {path}"
+            )
+        if section_offset >= 4:
+            prefix = section.data()[section_offset - 4 : section_offset]
+            if len(prefix) != 4:
+                raise ValidationError(f"module {name} has a truncated prefix: {path}")
+            file_offset = int(section["sh_offset"]) + section_offset - 4
+        else:
+            prefix = None
+            file_offset = None
+        records[name] = {
+            "file_offset": file_offset,
+            "prefix": prefix,
+            "section": section.name,
+            "section_offset": section_offset,
+        }
+    return records
+
+
+def entry_prefix_records(path):
+    path = Path(path)
+    try:
+        with path.open("rb") as stream:
+            elf = ELFFile(stream)
+            byteorder = "little" if elf.little_endian else "big"
+            return entry_prefix_records_from_elf(elf, path), byteorder
+    except (OSError, ELFError) as error:
+        raise ValidationError(
+            f"module is not a usable ELF file {path}: {error}"
+        ) from error
+
+
+def derive_pinned_kcfi_typeids(records, byteorder="little"):
+    if set(records) != set(MODULE_ENTRY_SYMBOLS):
+        raise ValidationError("pinned module entry records are incomplete")
+    offsets = {record["section_offset"] for record in records.values()}
+    if offsets == {0}:
+        if any(record["prefix"] is not None for record in records.values()):
+            raise ValidationError("non-KCFI entry unexpectedly has prefix bytes")
+        return None
+    if 0 in offsets:
+        raise ValidationError(
+            "pinned module entry symbols do not use a uniform KCFI prefix layout"
+        )
+    if offsets != {4}:
+        rendered = ", ".join(str(value) for value in sorted(offsets))
+        raise ValidationError(
+            "pinned KCFI entry symbols must start at section offset 4, "
+            f"found {rendered}"
+        )
+
+    typeids = {}
+    for name in sorted(MODULE_ENTRY_SYMBOLS):
+        prefix = records[name]["prefix"]
+        if not isinstance(prefix, bytes) or len(prefix) != 4:
+            raise ValidationError(f"pinned KCFI entry prefix is missing for {name}")
+        value = int.from_bytes(prefix, byteorder=byteorder)
+        if value == 0:
+            raise ValidationError(f"pinned KCFI entry type ID is zero for {name}")
+        typeids[name] = f"0x{value:08x}"
+    return typeids
+
+
+def inspect_offset_module(
+    path, expected_vermagic, expected_kcfi_typeids=SKIP_KCFI_VALIDATION
+):
     path = Path(path)
     try:
         with path.open("rb") as stream:
@@ -415,6 +542,17 @@ def inspect_offset_module(path, expected_vermagic):
                 "exit": found["cleanup_module"][0],
                 "vermagic": vermagic,
             }
+            if expected_kcfi_typeids is not SKIP_KCFI_VALIDATION:
+                actual_typeids = derive_pinned_kcfi_typeids(
+                    entry_prefix_records_from_elf(elf, path),
+                    byteorder="little" if elf.little_endian else "big",
+                )
+                if actual_typeids != expected_kcfi_typeids:
+                    raise ValidationError(
+                        "pinned module KCFI type IDs mismatch: "
+                        f"expected {expected_kcfi_typeids!r}, got {actual_typeids!r}"
+                    )
+                result["kcfi_typeids"] = actual_typeids
     except (OSError, ELFError) as error:
         raise ValidationError(
             f"pinned module is not a usable ELF file {path}: {error}"
@@ -424,6 +562,15 @@ def inspect_offset_module(path, expected_vermagic):
         f"size={result['size']} init={result['init']} exit={result['exit']}"
     )
     print(f"[module] vermagic OK: {result['vermagic']}")
+    if "kcfi_typeids" in result:
+        if result["kcfi_typeids"] is None:
+            print("[module] KCFI entry ABI OK: disabled")
+        else:
+            rendered = " ".join(
+                f"{name}={value}"
+                for name, value in sorted(result["kcfi_typeids"].items())
+            )
+            print(f"[module] KCFI entry ABI OK: {rendered}")
     return result
 
 
@@ -665,7 +812,7 @@ def verify_extracted_release(*, repo_root, root, profile, entry, compiler, reade
 
     module = resolve_pinned_module(root, entry["offset_module"])
     print(f"[module] pinned member={module.relative_to(root)}")
-    inspect_offset_module(module, entry["vermagic"])
+    inspect_offset_module(module, entry["vermagic"], entry["kcfi_typeids"])
     verify_linux_banner_path(vmlinux, entry["vermagic"])
     verifier = repo_root / "utils/build/verify_gki_offsets.sh"
     header = repo_root / "runtime/android/kernel/include/nvkmod_version.h"

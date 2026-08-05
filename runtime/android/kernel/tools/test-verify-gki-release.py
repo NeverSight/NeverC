@@ -35,6 +35,14 @@ def profile_entry(profile):
             "618": "android17-6.18",
         }[profile],
         "asset": f"gki-{profile}.tar.gz",
+        "kcfi_typeids": (
+            None
+            if profile in ("510", "515")
+            else {
+                "cleanup_module": "0xe5c47d60",
+                "init_module": "0x6fbb3035",
+            }
+        ),
         "size": 123,
         "sha256": hashlib.sha256(profile.encode()).hexdigest(),
         "vermagic": f"6.0.{profile}-android SMP mod_unload aarch64",
@@ -76,6 +84,25 @@ class LockTests(unittest.TestCase):
         ]
         with self.assertRaisesRegex(verify.ValidationError, "duplicate asset"):
             verify.validate_lock(lock)
+
+    def test_kcfi_typeids_are_exact_and_canonical(self):
+        for value in (
+            {},
+            {"init_module": "0x6fbb3035"},
+            {
+                "cleanup_module": "0XE5C47D60",
+                "init_module": "0x6fbb3035",
+            },
+            {
+                "cleanup_module": "0x00000000",
+                "init_module": "0x6fbb3035",
+            },
+        ):
+            with self.subTest(value=value):
+                lock = valid_lock()
+                lock["profiles"]["618"]["kcfi_typeids"] = value
+                with self.assertRaisesRegex(verify.ValidationError, "KCFI"):
+                    verify.validate_lock(lock)
 
 
 class ArchiveIdentityTests(unittest.TestCase):
@@ -215,6 +242,44 @@ class EvidenceTests(unittest.TestCase):
 
 
 class ModuleEvidenceTests(unittest.TestCase):
+    def test_pinned_entry_typeids_require_exact_uniform_prefix_layout(self):
+        no_kcfi = {
+            "init_module": {"section_offset": 0, "prefix": None},
+            "cleanup_module": {"section_offset": 0, "prefix": None},
+        }
+        self.assertIsNone(verify.derive_pinned_kcfi_typeids(no_kcfi))
+
+        with_kcfi = {
+            "init_module": {
+                "section_offset": 4,
+                "prefix": bytes.fromhex("3530bb6f"),
+            },
+            "cleanup_module": {
+                "section_offset": 4,
+                "prefix": bytes.fromhex("607dc4e5"),
+            },
+        }
+        self.assertEqual(
+            verify.derive_pinned_kcfi_typeids(with_kcfi, byteorder="little"),
+            {
+                "cleanup_module": "0xe5c47d60",
+                "init_module": "0x6fbb3035",
+            },
+        )
+
+        mixed = dict(with_kcfi)
+        mixed["cleanup_module"] = {"section_offset": 0, "prefix": None}
+        with self.assertRaisesRegex(verify.ValidationError, "uniform"):
+            verify.derive_pinned_kcfi_typeids(mixed)
+
+        displaced = dict(with_kcfi)
+        displaced["init_module"] = {
+            "section_offset": 8,
+            "prefix": bytes.fromhex("3530bb6f"),
+        }
+        with self.assertRaisesRegex(verify.ValidationError, "section offset"):
+            verify.derive_pinned_kcfi_typeids(displaced)
+
     def test_vermagic_malformed_and_mismatch(self):
         expected = "6.18.24-android17-5 SMP preempt aarch64"
         with self.assertRaisesRegex(verify.ValidationError, "exactly one"):

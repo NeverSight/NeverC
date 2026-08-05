@@ -33,7 +33,8 @@ to this pinned release rather than weakening byte-level comparison.
 
 1. Pin the release tag, repository identity, asset names, byte sizes, SHA-256
    digests, each packaged kernel's exact full vermagic, and the exact internal
-   `.ko` member used for relocation evidence in a reviewable JSON lock file.
+   `.ko` member used for relocation evidence, and its module-entry KCFI type IDs
+   (or explicit absence) in a reviewable JSON lock file.
 2. Download release assets rather than rebuilding Android kernel source trees.
 3. Reject corrupt, substituted, malformed, or path-traversing archives before
    extracting or executing any checkout code against them.
@@ -44,8 +45,10 @@ to this pinned release rather than weakening byte-level comparison.
    compatibility table; never normalize away a real layout/config difference.
 5. Independently derive `struct module` `init`, `exit`, and size from a
    deterministically selected packaged `.ko` relocation section and compare
-   them with `nvkmod_version.h`. Isolate that `.ko` so the existing verifier
-   cannot silently prefer a packaged `.mod.o`.
+   them with `nvkmod_version.h`. From that same module, require both entry
+   symbols to start uniformly at section offset zero (no KCFI) or four (one
+   KCFI type-id word), and compare the exact words with the lock. Isolate that
+   `.ko` so the existing verifier cannot silently prefer a packaged `.mod.o`.
 6. When a release archive contains `.config` or `Module.symvers`, verify every
    occurrence against its recorded evidence digest and independently regenerate
    that part of the config/export evidence, even when only one is present.
@@ -59,11 +62,14 @@ to this pinned release rather than weakening byte-level comparison.
    linkage, and demo/module ELF validation suites.
 9. Build one dedicated, checked-in zero-import offset-smoke module per profile.
    Assert that `nm -u` is empty and its `.modinfo` carries the locked release
-   vermagic, boot every released `Image` under QEMU with a minimal initramfs,
-   and require successful `finit_module` and `delete_module` markers. This is
-   the end-to-end proof that the loader consumed the configured offsets and
-   executed both entry points; runtime bootstrap behavior remains covered by
-   the compile/link suites rather than being conflated with this loader test.
+   vermagic. For KCFI profiles, write the release-derived type-id immediately
+   before each entry symbol and byte-check the result; require zero prefixes on
+   non-KCFI profiles. Boot every released `Image` under QEMU with a minimal
+   initramfs, and require successful `finit_module` and `delete_module` markers.
+   This is the end-to-end proof that the loader consumed the configured offsets
+   and entry-call ABI and executed both entry points; runtime bootstrap behavior
+   remains covered by the compile/link suites rather than being conflated with
+   this loader test.
 10. Run automatically as a reusable workflow job called by the existing
     same-commit Linux compiler workflow, so the validation jobs and required
     check stay in that source commit's check suite. Also support a manual

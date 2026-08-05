@@ -124,15 +124,20 @@ The two GKI workflows have deliberately different jobs:
 The consumer checks each asset's name, byte size, and SHA-256 before safe
 extraction; regenerates all 55 checked BTF/DWARF layouts from `vmlinux`; checks
 every packaged config and `Module.symvers` occurrence; and independently derives
-`init`, `exit`, and `sizeof(struct module)` from the lock-pinned packaged `.ko`.
-It also runs the complete current runtime SDK/layout/linkage/demo suites.
+`init`, `exit`, `sizeof(struct module)`, and the module-entry KCFI type IDs from
+the lock-pinned packaged `.ko`. It also runs the complete current runtime
+SDK/layout/linkage/demo suites.
 
 For the loader proof, the workflow compiles a dedicated zero-import module from
 the exact same source SHA as the reused `linux-x64-neverc-compiler` artifact.
+For KCFI kernels, its build helper writes the independently release-derived
+`init_module` and `cleanup_module` type-id words into the reserved bytes before
+those symbols; non-KCFI profiles are required to retain zero prefixes.
 It boots every released `dist/Image` under QEMU, calls `finit_module`, then
 `delete_module`, and requires separate load/unload success markers. This smoke
-test proves module format and loader entry-point offsets; runtime symbol
-bootstrap and API behavior remain covered by the compile/link suites.
+test proves module format, loader entry-point offsets, and the pinned entry-call
+ABI; runtime symbol bootstrap and API behavior remain covered by the
+compile/link suites.
 
 Automatic validation is a reusable job in the same Linux build run/check suite,
 so a result cannot be attached to a different default-branch SHA. For diagnosis,
