@@ -400,6 +400,7 @@ if(NEVERC_PLUGIN_SUPPORT)
 endif()
 
 add_neverc_tool(neverc
+  Driver/ArgumentHandlers.cpp
   main.cpp
 
   DEPENDS

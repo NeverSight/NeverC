@@ -2,6 +2,47 @@
 
 class DriverTest : public NeverCTest {};
 
+TEST_F(DriverTest, PrintArgumentsEchoesTheDriverInvocation) {
+  auto Result = ncc({"-fprint-arguments", "-fsyntax-only",
+                     (testDir() / "test_basic.c").string()});
+
+  ASSERT_EQ(Result.exitCode, 0) << Result.err;
+  EXPECT_NE(Result.out.find("compiler arguments:\n"), std::string::npos)
+      << Result.out;
+  EXPECT_NE(Result.out.find("\"-fprint-arguments\",\n"), std::string::npos)
+      << Result.out;
+}
+
+TEST_F(DriverTest, PluginCapabilityQueryPrintsJsonWithoutCompiling) {
+  for (const char *Option : {"--print-plugin-capabilities",
+                             "--print-plugin-capabilities=json"}) {
+    SCOPED_TRACE(Option);
+    auto Result = ncc({Option});
+
+    ASSERT_EQ(Result.exitCode, 0) << Result.err;
+    EXPECT_NE(Result.out.find("\"abi\""), std::string::npos) << Result.out;
+    EXPECT_NE(Result.out.find("\"modules\""), std::string::npos) << Result.out;
+    EXPECT_TRUE(Result.err.empty()) << Result.err;
+  }
+}
+
+TEST_F(DriverTest, PluginCapabilityQueryRejectsUnsupportedFormat) {
+  auto Result = ncc({"--print-plugin-capabilities=yaml"});
+
+  EXPECT_EQ(Result.exitCode, 1) << Result.out << Result.err;
+  EXPECT_NE(Result.err.find("only 'json' is supported"), std::string::npos)
+      << Result.err;
+}
+
+TEST_F(DriverTest, TestSignCertificateQueryWritesRedirectedDer) {
+  auto Result = ncc({"--print-test-sign-cert"});
+
+  ASSERT_EQ(Result.exitCode, 0) << Result.err;
+  ASSERT_GE(Result.out.size(), 2u) << "certificate output was truncated";
+  EXPECT_EQ(static_cast<unsigned char>(Result.out[0]), 0x30u)
+      << "certificate must start with an ASN.1 SEQUENCE";
+}
+
 TEST_F(DriverTest, KernelStyleC) {
   syntaxCheck("kernel_style_c_test",
               (testDir() / "kernel/kernel_style_c_test.c").string(), "gnu11",

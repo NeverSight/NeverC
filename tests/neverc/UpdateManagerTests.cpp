@@ -264,7 +264,14 @@ TEST(UpdateTransactionTest, PersistsAndValidatesItsRelativePathPlan) {
       update::UpdateTransaction::create(Scratch.Path, Stage, "v3389.1.1");
   if (!Transaction)
     FAIL() << errorText(Transaction.takeError());
-  expectSuccess(Transaction->addEntry("compiler/bin/neverc", "bin/neverc"));
+#if defined(_WIN32)
+  StringRef StagedRelativePath = R"(compiler\bin\neverc)";
+  StringRef LiveRelativePath = R"(bin\neverc)";
+#else
+  StringRef StagedRelativePath = "compiler/bin/neverc";
+  StringRef LiveRelativePath = "bin/neverc";
+#endif
+  expectSuccess(Transaction->addEntry(StagedRelativePath, LiveRelativePath));
   expectSuccess(Transaction->writePlan());
 
   Expected<update::UpdateTransaction> Read =

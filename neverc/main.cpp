@@ -1,3 +1,4 @@
+#include "Driver/ArgumentHandlers.h"
 #include "Linker/Core/Driver/Dispatcher.h"
 #include "Linker/Core/Runtime/LinkerExecutionContext.h"
 #include "neverc/Build/BuildDriver.h"
@@ -17,8 +18,6 @@
 #include "neverc/Invoke/DriverDiagnostic.h"
 #include "neverc/Invoke/Options.h"
 #include "neverc/Invoke/ToolChain.h"
-#include "neverc/Linker/COFF/TestSign.h"
-#include "neverc/Plugin/Host/PluginCapabilityInventory.h"
 #include "neverc/Plugin/Host/PluginSession.h"
 #include "neverc/Plugin/Host/PluginTaskContext.h"
 #include "neverc/Run/RunDriver.h"
@@ -169,91 +168,6 @@ void initializeLLVMTargets() {
   LLVMInitializeAArch64TargetMC();
   LLVMInitializeAArch64AsmPrinter();
   LLVMInitializeAArch64AsmParser();
-}
-
-// --- Argument processing ----------------------------------------------------
-
-void handlePrintArguments(ArrayRef<const char *> Args) {
-  for (auto Arg : Args) {
-    if (StringRef(Arg) == "-fprint-arguments") {
-      llvm::outs() << "compiler arguments:\n";
-      for (auto A : Args)
-        llvm::outs() << "\"" << A << "\",\n";
-      return;
-    }
-  }
-}
-
-// Handle the read-only `--print-plugin-capabilities[=json]` query. It dumps the
-// host's compiled-in plugin capability inventory as JSON and returns an exit
-// code; it loads no plugins and builds no compilation. Returns std::nullopt if
-// the query was not requested so normal driver processing continues.
-std::optional<int> handlePluginCapabilityQuery(ArrayRef<const char *> Args) {
-  for (const char *Arg : Args) {
-    if (Arg == nullptr)
-      continue;
-    StringRef A(Arg);
-    if (A == "--print-plugin-capabilities" ||
-        A == "--print-plugin-capabilities=json") {
-      neverc::plugin::emitCapabilityInventoryJSON(llvm::outs());
-      llvm::outs().flush();
-      return 0;
-    }
-    if (A.starts_with("--print-plugin-capabilities=")) {
-      llvm::errs() << "neverc: error: unsupported --print-plugin-capabilities "
-                      "format '"
-                   << A.substr(StringRef("--print-plugin-capabilities=").size())
-                   << "'; only 'json' is supported\n";
-      llvm::errs().flush();
-      return 1;
-    }
-  }
-  return std::nullopt;
-}
-
-// Handle the read-only `--print-test-sign-cert` query: write the DER
-// certificate that `-ftest-sign` signs with to stdout.
-//
-// The certificate is emitted from the compiler rather than shipped as a file
-// because it is already compiled in, and because that makes it impossible for
-// the two to drift: a rebuilt signing identity changes what images are signed
-// with and what this prints in the same step.  A stale .cer next to a newer
-// compiler would install a certificate that trusts nothing the compiler
-// produces, which is a miserable thing to debug.
-std::optional<int> handleTestSignCertQuery(ArrayRef<const char *> Args) {
-  for (const char *Arg : Args) {
-    if (Arg == nullptr)
-      continue;
-    if (StringRef(Arg) != "--print-test-sign-cert")
-      continue;
-    if (llvm::outs().is_displayed()) {
-      llvm::errs()
-          << "neverc: error: --print-test-sign-cert writes binary DER; "
-             "redirect it to a file, e.g. neverc "
-             "--print-test-sign-cert > neverc-test-signing.cer\n";
-      llvm::errs().flush();
-      return 1;
-    }
-    llvm::outs().write(
-        reinterpret_cast<const char *>(linker::coff::testsign::CertificateDer),
-        linker::coff::testsign::CertificateDerSize);
-    llvm::outs().flush();
-    return 0;
-  }
-  return std::nullopt;
-}
-
-bool scanCanonicalPrefixes(ArrayRef<const char *> Args) {
-  bool CanonicalPrefixes = true;
-  for (int i = 1, size = Args.size(); i < size; ++i) {
-    if (Args[i] == nullptr)
-      continue;
-    if (StringRef(Args[i]) == "-canonical-prefixes")
-      CanonicalPrefixes = true;
-    else if (StringRef(Args[i]) == "-no-canonical-prefixes")
-      CanonicalPrefixes = false;
-  }
-  return CanonicalPrefixes;
 }
 
 // --- Driver configuration ---------------------------------------------------
@@ -437,12 +351,12 @@ int neverc_main(int Argc, char **Argv, const llvm::ToolContext &ToolContext) {
     return 1;
   }
 
-  handlePrintArguments(Args);
-  if (std::optional<int> ExitCode = handlePluginCapabilityQuery(Args))
-    return *ExitCode;
-  if (std::optional<int> ExitCode = handleTestSignCertQuery(Args))
-    return *ExitCode;
-  bool CanonicalPrefixes = scanCanonicalPrefixes(Args);
+  driver::EarlyArgumentResult EarlyArguments =
+      driver::processEarlyDriverArguments(Args, llvm::outs(), llvm::errs(),
+                                          llvm::outs().is_displayed());
+  if (EarlyArguments.ExitCode)
+    return *EarlyArguments.ExitCode;
+  bool CanonicalPrefixes = EarlyArguments.CanonicalPrefixes;
   std::set<std::string> SavedStrings;
 
   // --- Diagnostics ---
