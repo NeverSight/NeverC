@@ -1,4 +1,5 @@
 #include "NeverCTestFixture.h"
+#include <algorithm>
 #include <array>
 #include <cstdio>
 #include <cstdlib>
@@ -198,6 +199,10 @@ static std::string shellEscape(const std::string &s) {
 }
 #endif
 
+static void normalizeCapturedText(std::string &text) {
+  text.erase(std::remove(text.begin(), text.end(), '\r'), text.end());
+}
+
 #ifdef _WIN32
 // Quote a single argument according to the MSVC C runtime's argv parsing rules
 // so that CreateProcess passes it through verbatim. (See MSDN
@@ -322,6 +327,8 @@ CmdResult NeverCTest::exec(const std::string &program,
 
   result.out = readFileBinary(outFile);
   result.err = readFileBinary(errFile);
+  normalizeCapturedText(result.out);
+  normalizeCapturedText(result.err);
   return result;
 }
 #else
@@ -352,6 +359,8 @@ CmdResult NeverCTest::exec(const std::string &program,
     std::ifstream f(errFile);
     result.err.assign(std::istreambuf_iterator<char>(f), {});
   }
+  normalizeCapturedText(result.out);
+  normalizeCapturedText(result.err);
   return result;
 }
 #endif
