@@ -14,6 +14,7 @@
 #include <string>
 #include <system_error>
 #include <vector>
+#include <algorithm>
 
 using namespace llvm;
 using namespace neverc;
@@ -68,9 +69,14 @@ void writeFile(StringRef Path, StringRef Contents) {
 
 std::string readFile(StringRef Path) {
   ErrorOr<std::unique_ptr<MemoryBuffer>> Buffer =
-      MemoryBuffer::getFile(Path, /*IsText=*/true);
+      MemoryBuffer::getFile(Path, /*IsText=*/false);
   EXPECT_TRUE(Buffer) << Buffer.getError().message();
-  return Buffer ? Buffer.get()->getBuffer().str() : std::string();
+  if (!Buffer)
+    return {};
+  std::string Contents = Buffer.get()->getBuffer().str();
+  Contents.erase(std::remove(Contents.begin(), Contents.end(), '\r'),
+                 Contents.end());
+  return Contents;
 }
 
 int executeNeverC(ArrayRef<StringRef> Tail,

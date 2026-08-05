@@ -2616,7 +2616,7 @@ void Driver::PrintHelp(bool ShowHidden) const {
   std::string Usage =
       llvm::formatv("{0} [options] file...\n       {0} <command> "
                     "[command options]",
-                    Name)
+                    "neverc")
           .str();
   getOpts().printHelp(llvm::outs(), Usage.c_str(), DriverTitle.c_str(),
                       ShowHidden, /*ShowAllAliases=*/false, VisibilityMask);
