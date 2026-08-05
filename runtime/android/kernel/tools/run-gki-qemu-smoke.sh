@@ -126,6 +126,18 @@ fail_with_log() {
 	exit 1
 }
 
+has_exact_guest_marker() {
+	local expected=$1
+
+	# PL011/QEMU serial output uses CRLF.  Do not rely on grep treating the ERE
+	# escape \r as a carriage return: GNU grep treats it as a literal "r".
+	LC_ALL=C awk -v expected="$expected" '
+		{ gsub(/\r/, "") }
+		$0 == expected { found = 1 }
+		END { exit(found ? 0 : 1) }
+	' "$QEMU_LOG"
+}
+
 if grep -Eq 'NEVERC_GKI_(LOAD|UNLOAD)_FAIL' "$QEMU_LOG"; then
 	fail_with_log "guest emitted a load/unload failure marker"
 fi
@@ -135,8 +147,8 @@ fi
 if [ "$QEMU_STATUS" -ne 0 ]; then
 	fail_with_log "QEMU exited with status $QEMU_STATUS"
 fi
-if ! grep -Eq '^NEVERC_GKI_LOAD_PASS\r?$' "$QEMU_LOG" || \
-	! grep -Eq '^NEVERC_GKI_UNLOAD_PASS\r?$' "$QEMU_LOG"; then
+if ! has_exact_guest_marker NEVERC_GKI_LOAD_PASS || \
+	! has_exact_guest_marker NEVERC_GKI_UNLOAD_PASS; then
 	fail_with_log "missing guest success markers"
 fi
 

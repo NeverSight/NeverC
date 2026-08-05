@@ -115,6 +115,10 @@ class HarnessTests(unittest.TestCase):
             if scenario == 'success':
                 print('NEVERC_GKI_LOAD_PASS')
                 print('NEVERC_GKI_UNLOAD_PASS')
+            elif scenario == 'success-crlf':
+                sys.stdout.buffer.write(
+                    b'NEVERC_GKI_LOAD_PASS\\r\\nNEVERC_GKI_UNLOAD_PASS\\r\\n'
+                )
             elif scenario == 'load-failure':
                 print('NEVERC_GKI_LOAD_FAIL errno=8 Exec format error')
             elif scenario == 'unload-failure':
@@ -174,6 +178,13 @@ class HarnessTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout)
         self.assertIn("NEVERC_GKI_LOAD_PASS", log)
         self.assertIn("NEVERC_GKI_UNLOAD_PASS", log)
+
+    def test_success_accepts_real_qemu_crlf_markers(self):
+        result, _ = self.run_harness("success-crlf")
+        self.assertEqual(result.returncode, 0, result.stdout)
+        raw_log = (self.root / "output-success-crlf/qemu.log").read_bytes()
+        self.assertIn(b"NEVERC_GKI_LOAD_PASS\r\n", raw_log)
+        self.assertIn(b"NEVERC_GKI_UNLOAD_PASS\r\n", raw_log)
 
     def test_load_failure_is_rejected(self):
         result, _ = self.run_harness("load-failure")
