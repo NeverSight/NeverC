@@ -20,6 +20,7 @@ enum NeverCFlags {
 
 enum NeverCVisibility {
   NeverCOption = llvm::opt::DefaultVis,
+  DriverHelpOption = (1 << 1),
 };
 
 enum ID {

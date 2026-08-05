@@ -219,6 +219,82 @@ TEST(NeverCRunIntegrationTest, HelpIsRunSpecificAndDoesNotCompile) {
             std::string::npos);
 }
 
+TEST(NeverCCommandHelpIntegrationTest, TopLevelListsEveryPublicCommand) {
+  ScratchDirectory Scratch;
+  SmallString<256> Stdout = Scratch.child("stdout.txt");
+  SmallString<256> Stderr = Scratch.child("stderr.txt");
+  SmallVector<StringRef, 1> Args = {"--help"};
+  StringRef Redirects[] = {StringRef(), Stdout, Stderr};
+
+  EXPECT_EQ(executeNeverC(Args, Redirects), 0) << readFile(Stderr);
+  std::string Help = readFile(Stdout);
+  const char *ExpectedInvocations[] = {
+      "USAGE: neverc [options] file...",
+      "neverc <command> [command options]",
+      "COMMANDS:",
+      "build [options] [target...]",
+      "make [options] [target...]",
+      "run [compiler options] <file...> [program arguments...]",
+      "runtime <install|update|remove|list> [options]",
+      "update [version]",
+      "upgrade [version]",
+  };
+  for (const char *Invocation : ExpectedInvocations)
+    EXPECT_NE(Help.find(Invocation), std::string::npos) << Invocation;
+
+  size_t Overview = Help.find("OVERVIEW:");
+  size_t Commands = Help.find("COMMANDS:");
+  size_t Options = Help.find("OPTIONS:");
+  ASSERT_NE(Overview, std::string::npos);
+  ASSERT_NE(Commands, std::string::npos);
+  ASSERT_NE(Options, std::string::npos);
+  EXPECT_LT(Overview, Commands);
+  EXPECT_LT(Commands, Options);
+  EXPECT_EQ(Help.find("COMMANDS:", Commands + 1), std::string::npos);
+  EXPECT_EQ(Help.find("__neverc_apply_update"), std::string::npos);
+}
+
+TEST(NeverCCommandHelpIntegrationTest, EveryAdvertisedCommandAndAliasHasHelp) {
+  struct HelpCase {
+    const char *Command;
+    const char *ExpectedText;
+  };
+  const HelpCase Cases[] = {
+      {"run", "neverc run [compiler flags]"},
+      {"build", "Usage: neverc build"},
+      {"make", "neverc make  [options]"},
+      {"runtime", "neverc runtime — manage cross-compilation runtimes"},
+      {"update", "neverc update — update the compiler"},
+      {"upgrade", "neverc update — update the compiler"},
+  };
+
+  ScratchDirectory Scratch;
+  for (const HelpCase &Case : Cases) {
+    SmallString<256> Stdout = Scratch.child(std::string(Case.Command) + ".out");
+    SmallString<256> Stderr = Scratch.child(std::string(Case.Command) + ".err");
+    SmallVector<StringRef, 2> Args = {Case.Command, "--help"};
+    StringRef Redirects[] = {StringRef(), Stdout, Stderr};
+
+    EXPECT_EQ(executeNeverC(Args, Redirects), 0)
+        << Case.Command << ": " << readFile(Stderr);
+    EXPECT_NE(readFile(Stdout).find(Case.ExpectedText), std::string::npos)
+        << Case.Command;
+  }
+}
+
+TEST(NeverCCommandHelpIntegrationTest, InternalFrontendHelpOmitsCommands) {
+  ScratchDirectory Scratch;
+  SmallString<256> Stdout = Scratch.child("stdout.txt");
+  SmallString<256> Stderr = Scratch.child("stderr.txt");
+  SmallVector<StringRef, 2> Args = {"-cc1", "--help"};
+  StringRef Redirects[] = {StringRef(), Stdout, Stderr};
+
+  EXPECT_EQ(executeNeverC(Args, Redirects), 0) << readFile(Stderr);
+  std::string Help = readFile(Stdout);
+  EXPECT_NE(Help.find("OVERVIEW: NeverC Compiler"), std::string::npos);
+  EXPECT_EQ(Help.find("COMMANDS:"), std::string::npos);
+}
+
 TEST(NeverCRunIntegrationTest, InheritsWorkingDirectoryEnvironmentAndStdio) {
   ScratchDirectory Scratch;
   SmallString<256> Source = Scratch.child("inheritance.c");

@@ -381,7 +381,7 @@ Error addRuntimeEntries(UpdateTransaction &Transaction, StringRef Stage,
 }
 
 #ifdef _WIN32
-void scheduleSelfDeletion(StringRef Argv0) {
+void scheduleSelfDeletion(const char *Argv0) {
   std::string Executable =
       sys::fs::getMainExecutable(Argv0, (void *)(intptr_t)&runUpdateHelper);
   SmallVector<wchar_t, 260> WidePath;

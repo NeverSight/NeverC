@@ -44,6 +44,9 @@ OPTION(llvm::ArrayRef<llvm::StringLiteral>(), "<action group>", Action_Group,
 OPTION(llvm::ArrayRef<llvm::StringLiteral>(), "<CompileOnly group>",
        CompileOnly_Group, Group, INVALID, INVALID, nullptr, 0, 0, 0, nullptr,
        nullptr, nullptr)
+OPTION(llvm::ArrayRef<llvm::StringLiteral>(), "<NeverC commands>",
+       Command_Group, Group, INVALID, INVALID, nullptr, 0, 0, 0, "COMMANDS",
+       nullptr, nullptr)
 OPTION(llvm::ArrayRef<llvm::StringLiteral>(), "<g group>", DebugInfo_Group,
        Group, CompileOnly_Group, INVALID, nullptr, 0, 0, 0, nullptr, nullptr,
        nullptr)
@@ -163,6 +166,9 @@ OPTION(prefix_3, "--autocomplete=", autocomplete, Joined, INVALID, INVALID,
        nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
 OPTION(prefix_1, "-bind_at_load", bind__at__load, Flag, INVALID, INVALID,
        nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
+OPTION(prefix_0, "build", command_build, RemainingArgs, Command_Group, INVALID,
+       nullptr, 0, DriverHelpOption, 0, "Build targets from a Makefile",
+       "[options] [target...]", nullptr)
 OPTION(prefix_1, "-bundle_loader", bundle__loader, Separate, INVALID, INVALID,
        nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
 OPTION(prefix_1, "-bundle", bundle, Flag, INVALID, INVALID, nullptr, 0,
@@ -2578,6 +2584,9 @@ OPTION(prefix_1, "-main-file-name", main_file_name, Separate, INVALID, INVALID,
        nullptr, HelpHidden, DefaultVis, 0,
        "Main file name to use for debug info and source if missing", nullptr,
        nullptr)
+OPTION(prefix_0, "make", command_make, RemainingArgs, Command_Group, INVALID,
+       nullptr, 0, DriverHelpOption, 0, "Alias for 'build'",
+       "[options] [target...]", nullptr)
 OPTION(prefix_1, "-malign-branch-boundary=", malign_branch_boundary_EQ, Joined,
        m_Group, INVALID, nullptr, TargetSpecific, DefaultVis | DefaultVis, 0,
        "Specify the boundary's size to align branches", nullptr, nullptr)
@@ -4010,6 +4019,14 @@ OPTION(prefix_3, "--rsp-quoting=", rsp_quoting, Joined, internal_driver_Group,
        "Set the rsp quoting to either 'posix', or 'windows'", nullptr, nullptr)
 OPTION(prefix_2, "-rtlib=", rtlib_EQ, Joined, INVALID, INVALID, nullptr, 0,
        DefaultVis, 0, "Compiler runtime library to use", nullptr, nullptr)
+OPTION(prefix_0, "runtime", command_runtime, RemainingArgs, Command_Group,
+       INVALID, nullptr, 0, DriverHelpOption, 0,
+       "Manage cross-compilation runtimes (aliases: upgrade, uninstall, ls)",
+       "<install|update|remove|list> [options]", nullptr)
+OPTION(prefix_0, "run", command_run, RemainingArgs, Command_Group, INVALID,
+       nullptr, 0, DriverHelpOption, 0,
+       "Compile a program to a temporary executable and run it",
+       "[compiler options] <file...> [program arguments...]", nullptr)
 OPTION(prefix_1, "-R", R_Joined, Joined, R_Group, INVALID, nullptr, 0,
        DefaultVis, 0, "Enable the specified remark", "<remark>", nullptr)
 OPTION(prefix_1, "-r", r, Flag, Link_Group, INVALID, nullptr, NoArgumentUnused,
@@ -4196,6 +4213,14 @@ OPTION(prefix_1, "-unexported_symbols_list", unexported__symbols__list,
 OPTION(prefix_2, "-unwindlib=", unwindlib_EQ, Joined, INVALID, INVALID, nullptr,
        0, DefaultVis, 0, "Unwind library to use", nullptr,
        "libgcc,unwindlib,platform")
+OPTION(prefix_0, "update", command_update, RemainingArgs, Command_Group,
+       INVALID, nullptr, 0, DriverHelpOption, 0,
+       "Update or downgrade the compiler and installed runtimes as one "
+       "versioned unit",
+       "[version]", nullptr)
+OPTION(prefix_0, "upgrade", command_upgrade, RemainingArgs, Command_Group,
+       INVALID, nullptr, 0, DriverHelpOption, 0, "Alias for 'update'",
+       "[version]", nullptr)
 OPTION(prefix_1, "-U", U, JoinedOrSeparate, Preprocessor_Group, INVALID,
        nullptr, 0, DefaultVis, 0, "Undefine macro <macro>", "<macro>", nullptr)
 OPTION(prefix_1, "-u", u, JoinedOrSeparate, u_Group, INVALID, nullptr, 0,

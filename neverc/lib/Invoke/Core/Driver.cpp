@@ -2609,9 +2609,14 @@ int Driver::ExecuteCompilation(
 // ===----------------------------------------------------------------------===
 
 void Driver::PrintHelp(bool ShowHidden) const {
-  llvm::opt::Visibility VisibilityMask = getOptionVisibilityMask();
+  llvm::opt::Visibility VisibilityMask(options::NeverCOption |
+                                       options::DriverHelpOption);
 
-  std::string Usage = llvm::formatv("{0} [options] file...", Name).str();
+  std::string Usage =
+      llvm::formatv("{0} [options] file...\n       {0} <command> "
+                    "[command options]",
+                    Name)
+          .str();
   getOpts().printHelp(llvm::outs(), Usage.c_str(), DriverTitle.c_str(),
                       ShowHidden, /*ShowAllAliases=*/false, VisibilityMask);
   if (!PluginBootstrapState || !PluginBootstrapState->isActive())
