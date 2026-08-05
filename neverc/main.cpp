@@ -21,6 +21,7 @@
 #include "neverc/Plugin/Host/PluginCapabilityInventory.h"
 #include "neverc/Plugin/Host/PluginSession.h"
 #include "neverc/Plugin/Host/PluginTaskContext.h"
+#include "neverc/Run/RunDriver.h"
 #include "neverc/Runtime/RuntimeManager.h"
 #include "neverc/Update/UpdateManager.h"
 #include "llvm/ADT/ArrayRef.h"
@@ -404,6 +405,12 @@ int neverc_main(int Argc, char **Argv, const llvm::ToolContext &ToolContext) {
       (StringRef(Argv[1]) == "update" || StringRef(Argv[1]) == "upgrade")) {
     return neverc::update::runUpdate(
         Argc - 1, const_cast<const char **>(Argv) + 1, Argv[0]);
+  }
+
+  if (Argc > 1 && StringRef(Argv[1]) == "run") {
+    return neverc::run::runCommand(
+        Argc - 1, const_cast<const char **>(Argv) + 1, ToolContext.Path,
+        ToolContext.NeedsPrependArg ? ToolContext.PrependArg : nullptr);
   }
 
   initializeLLVMTargets();

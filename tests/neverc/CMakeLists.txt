@@ -2179,6 +2179,63 @@ gtest_discover_tests(neverc-update-tests
   DISCOVERY_TIMEOUT 300
 )
 
+# Focused tests for the script-like compile-and-run command. Keep these out of
+# neverc-tests so argument-parser changes do not rebuild the full suite.
+add_executable(neverc-run-tests RunDriverTests.cpp)
+
+target_link_libraries(neverc-run-tests PRIVATE
+  GTest::gtest
+  GTest::gtest_main
+  nevercRun
+)
+
+target_compile_features(neverc-run-tests PRIVATE cxx_std_17)
+
+target_compile_definitions(neverc-run-tests PRIVATE
+  NEVERC_BINARY="${_NEVERC_BINARY}"
+)
+
+neverc_tests_link_neverc(neverc-run-tests)
+
+# A focused target build must stage the native SDK/CRT just like
+# check-neverc does; these integration tests compile and link host programs.
+set(_neverc_run_sdk_deps)
+if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin")
+  if(TARGET neverc-runtime-macos-arm64)
+    list(APPEND _neverc_run_sdk_deps neverc-runtime-macos-arm64)
+  endif()
+elseif(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
+  if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "ARM64|aarch64|arm64")
+    if(TARGET neverc-runtime-linux-arm64)
+      list(APPEND _neverc_run_sdk_deps neverc-runtime-linux-arm64)
+    endif()
+  elseif(TARGET neverc-runtime-linux-x64)
+    list(APPEND _neverc_run_sdk_deps neverc-runtime-linux-x64)
+  endif()
+elseif(CMAKE_HOST_WIN32)
+  if(TARGET neverc-runtime-shared-msvc)
+    list(APPEND _neverc_run_sdk_deps neverc-runtime-shared-msvc)
+  endif()
+  if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "ARM64|aarch64|arm64")
+    if(TARGET neverc-runtime-arm64-msvc)
+      list(APPEND _neverc_run_sdk_deps neverc-runtime-arm64-msvc)
+    endif()
+  elseif(TARGET neverc-runtime-x64-msvc)
+    list(APPEND _neverc_run_sdk_deps neverc-runtime-x64-msvc)
+  endif()
+endif()
+if(_neverc_run_sdk_deps)
+  add_dependencies(neverc-run-tests ${_neverc_run_sdk_deps})
+endif()
+unset(_neverc_run_sdk_deps)
+
+gtest_discover_tests(neverc-run-tests
+  TEST_PREFIX "neverc-run."
+  PROPERTIES
+    TIMEOUT 180
+  DISCOVERY_TIMEOUT 300
+)
+
 # Object merger unit tests (ELF, COFF, MachO fuzzing + edge cases)
 add_executable(neverc-merge-tests MergeTests.cpp)
 
@@ -2419,6 +2476,7 @@ set(_neverc_llvm_test_targets
   neverc-support-tests
   neverc-plugin-io-tests
   neverc-build-tests
+  neverc-run-tests
   neverc-merge-tests
   neverc-merge-fuzzer
   neverc-tls-protocol-fuzzer

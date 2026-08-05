@@ -126,6 +126,13 @@ neverc --version
 neverc hello.c -o hello -fbuiltin-string
 ```
 
+只想直接執行而不保留二進位檔時，可使用 `neverc run -O2 hello.c Alice`。
+編譯選項應放在連續的 `.c`/`.nc` 原始檔清單之前，清單後的參數會傳給程式。
+複雜的編譯呼叫可用 `--` 明確分隔，例如
+`neverc run hello.c helper.o -O2 -- Alice`。暫存執行檔會繼承目前目錄、
+環境變數與標準輸入輸出，並回傳程式結束碼；執行後會自動刪除。需要保留產物時，
+仍請使用一般編譯命令。
+
 **Windows x64/arm64** 安裝包請從 [GitHub Releases](https://github.com/NeverSight/NeverC/releases) 手動下載。macOS arm64 二進位已使用 Apple Developer ID 簽名並完成公證。
 
 可選安裝環境變數：

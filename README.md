@@ -126,6 +126,14 @@ neverc --version
 neverc hello.c -o hello -fbuiltin-string
 ```
 
+To run a program without keeping a binary, use `neverc run -O2 hello.c Alice`.
+Compiler flags precede the consecutive `.c`/`.nc` source list and following
+arguments are passed to the program. For an advanced compiler invocation, use
+an explicit separator, as in `neverc run hello.c helper.o -O2 -- Alice`.
+The temporary executable inherits the current directory, environment, and
+standard streams, returns the program's exit status, and is removed afterward;
+use the normal compiler command when you need to keep the artifact.
+
 **Windows x64/arm64** packages are on [GitHub Releases](https://github.com/NeverSight/NeverC/releases) for manual download. The macOS arm64 binary is Apple Developer ID signed and notarized.
 
 Optional installer environment variables:

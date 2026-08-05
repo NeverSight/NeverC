@@ -126,6 +126,15 @@ neverc --version
 neverc hello.c -o hello -fbuiltin-string
 ```
 
+Pour exécuter un programme sans conserver le binaire, utilisez
+`neverc run -O2 hello.c Alice`. Les options de compilation précèdent la liste
+continue des sources `.c`/`.nc` et les arguments suivants sont transmis au
+programme. Pour un appel avancé, `--` sépare explicitement les deux parties,
+par exemple `neverc run hello.c helper.o -O2 -- Alice`. L'exécutable temporaire
+hérite du répertoire courant, de l'environnement et des flux standards,
+renvoie le statut de sortie du programme, puis est supprimé. Utilisez la
+commande de compilation normale pour conserver l'artefact.
+
 Les paquets **Windows x64/arm64** sont sur [GitHub Releases](https://github.com/NeverSight/NeverC/releases) pour installation manuelle. Le binaire macOS arm64 est signé Apple Developer ID et notarisé.
 
 Variables d’environnement optionnelles :

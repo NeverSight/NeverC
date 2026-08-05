@@ -411,6 +411,7 @@ add_neverc_tool(neverc
 neverc_target_link_libraries(neverc
   PRIVATE
   nevercBuild
+  nevercRun
   nevercRuntime
   nevercUpdate
   nevercEmit
@@ -749,6 +750,7 @@ if(NEVERC_INCLUDE_TESTS AND EXISTS "${NEVERC_TEST_DIR}/CMakeLists.txt")
     neverc-tests
     neverc-build-tests
     neverc-update-tests
+    neverc-run-tests
     neverc-merge-tests
     neverc-std-tests
   )

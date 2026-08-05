@@ -126,6 +126,14 @@ neverc --version
 neverc hello.c -o hello -fbuiltin-string
 ```
 
+バイナリを残さずにプログラムを実行するには、
+`neverc run -O2 hello.c Alice` を使います。コンパイラオプションは連続する
+`.c`/`.nc` ソース一覧より前に置き、それ以降の引数はプログラムへ渡されます。
+複雑な呼び出しでは `neverc run hello.c helper.o -O2 -- Alice` のように `--` で
+明示的に分離できます。一時実行ファイルは現在のディレクトリ、環境、標準ストリームを
+継承し、プログラムの終了ステータスを返した後に削除されます。成果物を残す場合は通常の
+コンパイラコマンドを使用してください。
+
 **Windows x64/arm64** は [GitHub Releases](https://github.com/NeverSight/NeverC/releases) から手動でダウンロードしてください。macOS arm64 バイナリは Apple Developer ID 署名済みで公証されています。
 
 任意のインストール環境変数：

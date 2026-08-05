@@ -126,6 +126,13 @@ neverc --version
 neverc hello.c -o hello -fbuiltin-string
 ```
 
+只想直接运行而不保留二进制时，可执行 `neverc run -O2 hello.c Alice`。
+编译选项应放在连续的 `.c`/`.nc` 源文件列表之前，列表后的参数会传给程序。
+复杂编译调用可用 `--` 明确分隔，例如
+`neverc run hello.c helper.o -O2 -- Alice`。临时可执行文件会继承当前目录、
+环境变量和标准输入输出，并返回程序退出码；运行结束后自动删除。需要保留产物时，
+仍请使用普通编译命令。
+
 **Windows x64/arm64** 安装包请从 [GitHub Releases](https://github.com/NeverSight/NeverC/releases) 手动下载。macOS arm64 二进制已使用 Apple Developer ID 签名并完成公证。
 
 可选安装环境变量：
