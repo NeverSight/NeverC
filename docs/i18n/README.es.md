@@ -127,10 +127,10 @@ neverc hello.c -o hello -fbuiltin-string
 ```
 
 Para ejecutar un programa sin conservar el binario, usa
-`neverc run -O2 hello.c Alice`. Las opciones de compilación preceden a la lista
+`neverc run -O2 -fbuiltin-string hello.c`. Las opciones de compilación preceden a la lista
 consecutiva de fuentes `.c`/`.nc`; los argumentos posteriores se pasan al
 programa. En invocaciones avanzadas, `--` separa ambas partes de forma
-explícita, por ejemplo `neverc run hello.c helper.o -O2 -- Alice`. El ejecutable
+explícita, por ejemplo `neverc run hello.c -O2 -fbuiltin-string --`. El ejecutable
 temporal hereda el directorio actual, el entorno y los flujos estándar,
 devuelve el estado de salida del programa y se elimina al terminar. Usa el
 compilador normal cuando necesites conservar el artefacto.

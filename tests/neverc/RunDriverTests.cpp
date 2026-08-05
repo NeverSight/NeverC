@@ -213,7 +213,10 @@ TEST(NeverCRunIntegrationTest, HelpIsRunSpecificAndDoesNotCompile) {
   StringRef Redirects[] = {StringRef(), Stdout, Stderr};
 
   EXPECT_EQ(executeNeverC(Args, Redirects), 0) << readFile(Stderr);
-  EXPECT_NE(readFile(Stdout).find("neverc run"), std::string::npos);
+  std::string Help = readFile(Stdout);
+  EXPECT_NE(Help.find("neverc run"), std::string::npos);
+  EXPECT_NE(Help.find("neverc run -O2 -fbuiltin-string hello.c"),
+            std::string::npos);
 }
 
 TEST(NeverCRunIntegrationTest, InheritsWorkingDirectoryEnvironmentAndStdio) {

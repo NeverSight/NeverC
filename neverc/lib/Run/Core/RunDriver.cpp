@@ -75,8 +75,8 @@ void printRunHelp() {
             "Use '--' to\n"
          << "separate advanced compiler invocations unambiguously.\n\n"
          << "Examples:\n"
-         << "  neverc run -O2 hello.c Alice\n"
-         << "  neverc run hello.c helper.o -O2 -- Alice\n";
+         << "  neverc run -O2 -fbuiltin-string hello.c\n"
+         << "  neverc run hello.c -O2 -fbuiltin-string --\n";
 }
 
 int executeProcess(StringRef Program, ArrayRef<StringRef> Arguments,

@@ -126,10 +126,10 @@ neverc --version
 neverc hello.c -o hello -fbuiltin-string
 ```
 
-바이너리를 남기지 않고 프로그램을 실행하려면 `neverc run -O2 hello.c Alice`를
+바이너리를 남기지 않고 프로그램을 실행하려면 `neverc run -O2 -fbuiltin-string hello.c`를
 사용합니다. 컴파일러 옵션은 연속된 `.c`/`.nc` 소스 목록 앞에 두며, 그 뒤의
 인자는 프로그램에 전달됩니다. 고급 호출은
-`neverc run hello.c helper.o -O2 -- Alice`처럼 `--`로 명확히 구분할 수 있습니다.
+`neverc run hello.c -O2 -fbuiltin-string --`처럼 `--`로 명확히 구분할 수 있습니다.
 임시 실행 파일은 현재 디렉터리, 환경 및 표준 스트림을 상속하고 프로그램의 종료
 상태를 반환한 뒤 삭제됩니다. 결과물을 보관하려면 일반 컴파일러 명령을 사용하세요.
 
