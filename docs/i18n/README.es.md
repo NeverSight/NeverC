@@ -126,14 +126,26 @@ neverc --version
 neverc hello.c -o hello -fbuiltin-string
 ```
 
-Para ejecutar un programa sin conservar el binario, usa
-`neverc run -O2 -fbuiltin-string hello.c`. Las opciones de compilación preceden a la lista
-consecutiva de fuentes `.c`/`.nc`; los argumentos posteriores se pasan al
-programa. En invocaciones avanzadas, `--` separa ambas partes de forma
-explícita, por ejemplo `neverc run hello.c -O2 -fbuiltin-string --`. El ejecutable
-temporal hereda el directorio actual, el entorno y los flujos estándar,
-devuelve el estado de salida del programa y se elimina al terminar. Usa el
-compilador normal cuando necesites conservar el artefacto.
+### `neverc run`
+
+Compila a un ejecutable temporal, lo ejecuta en el **host local** y lo elimina — similar a `go run`. Para conservar el binario, usa `neverc ... -o out`.
+
+```bash
+neverc run -O2 -fbuiltin-string hello.c
+neverc run -O2 main.c helper.nc -- --verbose two words
+neverc run hello.c -O1 -- program-arg
+```
+
+| Tema | Comportamiento |
+|------|----------------|
+| División predeterminada | Flags del compilador antes del primer `.c`/`.nc`; fuentes consecutivas se compilan juntas; el resto va a `main` |
+| `--` explícito | Antes de `--` al compilador; después al programa (cuando hay flags de enlace tras las fuentes) |
+| Directorio de trabajo | Se ejecuta en el directorio actual — rutas relativas como un binario normal |
+| Entorno y E/S | Hereda el entorno; stdin/stdout/stderr conectados al proceso temporal |
+| Código de salida | Devuelve el código del programa; si falla la compilación, el del compilador sin ejecutar el programa |
+| Artefacto | Guardado en `neverc-run-*` y eliminado después |
+
+Los flags de cross-compilación pueden compilar, pero el binario temporal siempre se ejecuta en el host. Reglas, ejemplos y límites: **[`neverc run` →](../run/README.es.md)**.
 
 Los paquetes **Windows x64/arm64** están en [GitHub Releases](https://github.com/NeverSight/NeverC/releases) para descarga manual. El binario macOS arm64 está firmado con Apple Developer ID y notarizado.
 

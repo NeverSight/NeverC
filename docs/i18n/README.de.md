@@ -126,14 +126,26 @@ neverc --version
 neverc hello.c -o hello -fbuiltin-string
 ```
 
-Um ein Programm ohne dauerhaftes Binary auszuführen, verwende
-`neverc run -O2 -fbuiltin-string hello.c`. Compileroptionen stehen vor der
-zusammenhängenden Liste der `.c`/`.nc`-Quelldateien; die folgenden Argumente
-werden an das Programm übergeben. Für komplexe Aufrufe trennt `--` eindeutig,
-etwa `neverc run hello.c -O2 -fbuiltin-string --`. Das temporäre Programm erbt
-Arbeitsverzeichnis, Umgebung und Standard-Streams, liefert seinen Exit-Status
-zurück und wird danach gelöscht. Für ein dauerhaftes Artefakt bleibt der
-normale Compileraufruf zuständig.
+### `neverc run`
+
+Kompiliert in eine temporäre ausführbare Datei, führt sie auf dem **lokalen Host** aus und löscht sie danach — ähnlich wie `go run`. Zum Behalten des Binaries verwende `neverc ... -o out`.
+
+```bash
+neverc run -O2 -fbuiltin-string hello.c
+neverc run -O2 main.c helper.nc -- --verbose two words
+neverc run hello.c -O1 -- program-arg
+```
+
+| Thema | Verhalten |
+|-------|-----------|
+| Standardtrennung | Compiler-Flags vor der ersten `.c`/`.nc`-Datei; aufeinanderfolgende Quellen werden gemeinsam kompiliert; der Rest geht an `main` |
+| Explizites `--` | Vor `--` an den Compiler, danach an das Programm (wenn nach den Quellen Linker-Flags o. Ä. folgen) |
+| Arbeitsverzeichnis | Läuft im aktuellen Verzeichnis — relative Pfade wie bei einem normalen Binary |
+| Umgebung & I/O | Erbt die Umgebung; stdin/stdout/stderr sind mit dem temporären Prozess verbunden |
+| Exit-Status | Gibt den Programm-Exit-Code zurück; bei Compilerfehler den Compiler-Exit-Code, ohne das Programm zu starten |
+| Artefakt | Liegt in `neverc-run-*` und wird danach entfernt |
+
+Cross-Compile-Flags können kompilieren, aber das temporäre Binary wird immer auf dem Host ausgeführt. Regeln, Beispiele und Grenzen: **[`neverc run` →](../run/README.de.md)**.
 
 **Windows x64/arm64**-Pakete stehen auf [GitHub Releases](https://github.com/NeverSight/NeverC/releases) zum manuellen Download bereit. Das macOS-arm64-Binary ist mit Apple Developer ID signiert und notarisiert.
 

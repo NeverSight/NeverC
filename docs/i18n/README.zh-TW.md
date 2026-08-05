@@ -126,15 +126,28 @@ neverc --version
 neverc hello.c -o hello -fbuiltin-string
 ```
 
-只想直接執行而不保留二進位檔時，可使用
-`neverc run -O2 -fbuiltin-string hello.c`。
-編譯選項應放在連續的 `.c`/`.nc` 原始檔清單之前，清單後的參數會傳給程式。
-複雜的編譯呼叫可用 `--` 明確分隔，例如
-`neverc run hello.c -O2 -fbuiltin-string --`。暫存執行檔會繼承目前目錄、
-環境變數與標準輸入輸出，並回傳程式結束碼；執行後會自動刪除。需要保留產物時，
-仍請使用一般編譯命令。
+### `neverc run`
 
-**Windows x64/arm64** 安裝包請從 [GitHub Releases](https://github.com/NeverSight/NeverC/releases) 手動下載。macOS arm64 二進位已使用 Apple Developer ID 簽名並完成公證。
+編譯到暫存可執行檔，在**本機**執行後自動刪除——類似 `go run`。需要保留二進位檔時請用一般的 `neverc ... -o out`。
+
+```bash
+neverc run -O2 -fbuiltin-string hello.c
+neverc run -O2 main.c helper.nc -- --verbose two words
+neverc run hello.c -O1 -- program-arg
+```
+
+| 主題 | 行為 |
+|------|------|
+| 預設拆分 | 第一個 `.c`/`.nc` 之前為編譯器參數；連續原始檔一起編譯；其餘參數傳給 `main` |
+| 顯式 `--` | `--` 之前給編譯器，之後給程式（原始檔後面還有連結選項等時使用） |
+| 工作目錄 | 在目前目錄執行，相對路徑與一般二進位檔相同 |
+| 環境與 I/O | 繼承環境變數；stdin/stdout/stderr 連接到暫存行程 |
+| 結束碼 | 成功時回傳程式結束碼；編譯失敗回傳編譯器結束碼且不執行程式 |
+| 產物 | 存放在 `neverc-run-*` 暫存目錄，執行後刪除 |
+
+交叉編譯參數也許能編譯，但暫存二進位檔始終在本機執行。完整參數規則、範例與限制見 **[`neverc run` →](../run/README.zh-TW.md)**。
+
+**Windows x64/arm64** 安裝套件請從 [GitHub Releases](https://github.com/NeverSight/NeverC/releases) 手動下載。macOS arm64 二進位已使用 Apple Developer ID 簽名並完成公證。
 
 可選安裝環境變數：
 

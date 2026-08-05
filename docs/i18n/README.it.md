@@ -126,14 +126,26 @@ neverc --version
 neverc hello.c -o hello -fbuiltin-string
 ```
 
-Per eseguire un programma senza conservare il binario, usa
-`neverc run -O2 -fbuiltin-string hello.c`. Le opzioni di compilazione precedono l'elenco
-consecutivo dei sorgenti `.c`/`.nc`; gli argomenti successivi vengono passati al
-programma. Per invocazioni avanzate, `--` separa esplicitamente le due parti,
-ad esempio `neverc run hello.c -O2 -fbuiltin-string --`. L'eseguibile temporaneo
-eredita directory corrente, ambiente e stream standard, restituisce lo stato
-di uscita del programma e viene poi eliminato. Usa il normale comando del
-compilatore quando vuoi conservare l'artefatto.
+### `neverc run`
+
+Compila in un eseguibile temporaneo, lo esegue sull'**host locale** e lo elimina — simile a `go run`. Per conservare il binario usa `neverc ... -o out`.
+
+```bash
+neverc run -O2 -fbuiltin-string hello.c
+neverc run -O2 main.c helper.nc -- --verbose two words
+neverc run hello.c -O1 -- program-arg
+```
+
+| Argomento | Comportamento |
+|-----------|---------------|
+| Divisione predefinita | Flag compilatore prima del primo `.c`/`.nc`; sorgenti consecutive compilate insieme; il resto va a `main` |
+| `--` esplicito | Prima di `--` al compilatore, dopo al programma (flag di link dopo le sorgenti) |
+| Directory di lavoro | Esegue nella directory corrente — percorsi relativi come un binario normale |
+| Ambiente e I/O | Eredita l'ambiente; stdin/stdout/stderr collegati al processo temporaneo |
+| Codice di uscita | Restituisce il codice del programma; se la compilazione fallisce, quello del compilatore senza avviare il programma |
+| Artefatto | Salvato in `neverc-run-*` e rimosso dopo l'esecuzione |
+
+I flag di cross-compilazione possono compilare, ma il binario temporaneo viene sempre eseguito sull'host. Regole, esempi e limiti: **[`neverc run` →](../run/README.it.md)**.
 
 I pacchetti **Windows x64/arm64** sono su [GitHub Releases](https://github.com/NeverSight/NeverC/releases) per download manuale. Il binario macOS arm64 è firmato con Apple Developer ID e notarizzato.
 

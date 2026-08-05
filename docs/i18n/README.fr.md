@@ -126,14 +126,26 @@ neverc --version
 neverc hello.c -o hello -fbuiltin-string
 ```
 
-Pour exécuter un programme sans conserver le binaire, utilisez
-`neverc run -O2 -fbuiltin-string hello.c`. Les options de compilation précèdent la liste
-continue des sources `.c`/`.nc` et les arguments suivants sont transmis au
-programme. Pour un appel avancé, `--` sépare explicitement les deux parties,
-par exemple `neverc run hello.c -O2 -fbuiltin-string --`. L'exécutable temporaire
-hérite du répertoire courant, de l'environnement et des flux standards,
-renvoie le statut de sortie du programme, puis est supprimé. Utilisez la
-commande de compilation normale pour conserver l'artefact.
+### `neverc run`
+
+Compile en un exécutable temporaire, exécute-le sur l'**hôte local**, puis le supprime — proche de `go run`. Pour conserver le binaire, utilisez `neverc ... -o out`.
+
+```bash
+neverc run -O2 -fbuiltin-string hello.c
+neverc run -O2 main.c helper.nc -- --verbose two words
+neverc run hello.c -O1 -- program-arg
+```
+
+| Sujet | Comportement |
+|-------|--------------|
+| Séparation par défaut | Options compilateur avant le premier `.c`/`.nc` ; sources consécutives compilées ensemble ; le reste va à `main` |
+| `--` explicite | Avant `--` pour le compilateur, après pour le programme (flags de link après les sources) |
+| Répertoire de travail | S'exécute dans le répertoire courant — chemins relatifs comme un binaire normal |
+| Environnement & E/S | Hérite de l'environnement ; stdin/stdout/stderr connectés au processus temporaire |
+| Code de sortie | Retourne le code du programme ; en cas d'échec de compilation, le code du compilateur sans lancer le programme |
+| Artefact | Stocké dans `neverc-run-*` puis supprimé |
+
+Les flags de cross-compilation peuvent compiler, mais le binaire temporaire s'exécute toujours sur l'hôte. Règles, exemples et limites : **[`neverc run` →](../run/README.fr.md)**.
 
 Les paquets **Windows x64/arm64** sont sur [GitHub Releases](https://github.com/NeverSight/NeverC/releases) pour installation manuelle. Le binaire macOS arm64 est signé Apple Developer ID et notarisé.
 

@@ -126,12 +126,26 @@ neverc --version
 neverc hello.c -o hello -fbuiltin-string
 ```
 
-바이너리를 남기지 않고 프로그램을 실행하려면 `neverc run -O2 -fbuiltin-string hello.c`를
-사용합니다. 컴파일러 옵션은 연속된 `.c`/`.nc` 소스 목록 앞에 두며, 그 뒤의
-인자는 프로그램에 전달됩니다. 고급 호출은
-`neverc run hello.c -O2 -fbuiltin-string --`처럼 `--`로 명확히 구분할 수 있습니다.
-임시 실행 파일은 현재 디렉터리, 환경 및 표준 스트림을 상속하고 프로그램의 종료
-상태를 반환한 뒤 삭제됩니다. 결과물을 보관하려면 일반 컴파일러 명령을 사용하세요.
+### `neverc run`
+
+임시 실행 파일로 컴파일한 뒤 **로컬 호스트**에서 실행하고 삭제합니다 — `go run`과 유사합니다. 바이너리를 보관하려면 일반 `neverc ... -o out` 명령을 사용하세요.
+
+```bash
+neverc run -O2 -fbuiltin-string hello.c
+neverc run -O2 main.c helper.nc -- --verbose two words
+neverc run hello.c -O1 -- program-arg
+```
+
+| 항목 | 동작 |
+|------|------|
+| 기본 분리 | 첫 `.c`/`.nc` 앞은 컴파일러 인자. 연속 소스는 함께 컴파일. 나머지는 `main`에 전달 |
+| 명시적 `--` | `--` 앞은 컴파일러, 뒤는 프로그램(소스 뒤에 링크 옵션 등이 있을 때) |
+| 작업 디렉터리 | 현재 디렉터리에서 실행. 상대 경로는 일반 바이너리와 동일 |
+| 환경 및 I/O | 환경 변수 상속. stdin/stdout/stderr는 임시 프로세스에 연결 |
+| 종료 상태 | 성공 시 프로그램 종료 코드. 컴파일 실패 시 컴파일러 종료 코드를 반환하고 프로그램은 실행하지 않음 |
+| 결과물 | `neverc-run-*` 임시 디렉터리에 저장 후 실행 뒤 삭제 |
+
+크로스 컴파일 플래그로 컴파일할 수 있어도 임시 바이너리는 항상 호스트에서 실행됩니다. 인자 규칙, 예제, 제한은 **[`neverc run` →](../run/README.ko.md)** 를 참고하세요.
 
 **Windows x64/arm64** 패키지는 [GitHub Releases](https://github.com/NeverSight/NeverC/releases)에서 수동으로 받으세요. macOS arm64 바이너리는 Apple Developer ID로 서명되고 공증되었습니다.
 

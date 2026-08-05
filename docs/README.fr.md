@@ -93,6 +93,16 @@ Grandes orientations du projet NeverC : bibliothèque standard, backend EVM pour
 
 ---
 
+## Outils CLI
+
+Commandes utilisateur au-delà d'une simple compilation.
+
+| Document | Description |
+|----------|-------------|
+| [`neverc run`](run/README.fr.md) | Compiler, exécuter localement et supprimer un binaire temporaire (style `go run`) |
+
+---
+
 ## Développement local
 
 Compiler NeverC à partir des sources et configurer l'environnement de développement local, y compris le PATH.

@@ -93,6 +93,16 @@ Wichtigste geplante Richtungen des NeverC-Projekts: Standardbibliothek, EVM-Smar
 
 ---
 
+## CLI-Tools
+
+Benutzerbefehle jenseits einer einzelnen Kompilierung.
+
+| Dokument | Beschreibung |
+|----------|--------------|
+| [`neverc run`](run/README.de.md) | Temporäres Binary kompilieren, lokal ausführen und löschen (`go run`-Stil) |
+
+---
+
 ## Lokale Entwicklung
 
 NeverC aus dem Quellcode kompilieren und die lokale Entwicklungsumgebung einrichten, einschließlich PATH-Konfiguration.

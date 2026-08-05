@@ -93,6 +93,16 @@ Major planned directions for the NeverC project: standard library, EVM smart con
 
 ---
 
+## CLI Tools
+
+User-facing commands beyond a single compile invocation.
+
+| Document | Description |
+|----------|-------------|
+| [`neverc run`](run/README.md) | Compile, execute locally, and discard a temporary binary (`go run`-style workflow) |
+
+---
+
 ## Local Development
 
 Build NeverC from source and set up the local development environment with PATH configuration.

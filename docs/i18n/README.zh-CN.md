@@ -126,13 +126,26 @@ neverc --version
 neverc hello.c -o hello -fbuiltin-string
 ```
 
-只想直接运行而不保留二进制时，可执行
-`neverc run -O2 -fbuiltin-string hello.c`。
-编译选项应放在连续的 `.c`/`.nc` 源文件列表之前，列表后的参数会传给程序。
-复杂编译调用可用 `--` 明确分隔，例如
-`neverc run hello.c -O2 -fbuiltin-string --`。临时可执行文件会继承当前目录、
-环境变量和标准输入输出，并返回程序退出码；运行结束后自动删除。需要保留产物时，
-仍请使用普通编译命令。
+### `neverc run`
+
+编译到临时可执行文件，在**本机**运行后自动删除——类似 `go run`。需要保留二进制时请用普通的 `neverc ... -o out`。
+
+```bash
+neverc run -O2 -fbuiltin-string hello.c
+neverc run -O2 main.c helper.nc -- --verbose two words
+neverc run hello.c -O1 -- program-arg
+```
+
+| 主题 | 行为 |
+|------|------|
+| 默认拆分 | 第一个 `.c`/`.nc` 之前为编译器参数；连续源文件一起编译；其余参数传给 `main` |
+| 显式 `--` | `--` 之前给编译器，之后给程序（源文件后面还有链接选项等时使用） |
+| 工作目录 | 在当前目录运行，相对路径与普通二进制一致 |
+| 环境与 I/O | 继承环境变量；stdin/stdout/stderr 连接到临时进程 |
+| 退出码 | 成功时返回程序退出码；编译失败返回编译器退出码且不运行程序 |
+| 产物 | 存放在 `neverc-run-*` 临时目录，运行后删除 |
+
+交叉编译参数可能能编译，但临时二进制始终在本机执行。完整参数规则、示例与限制见 **[`neverc run` →](../run/README.zh-CN.md)**。
 
 **Windows x64/arm64** 安装包请从 [GitHub Releases](https://github.com/NeverSight/NeverC/releases) 手动下载。macOS arm64 二进制已使用 Apple Developer ID 签名并完成公证。
 

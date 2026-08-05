@@ -126,13 +126,26 @@ neverc --version
 neverc hello.c -o hello -fbuiltin-string
 ```
 
-バイナリを残さずにプログラムを実行するには、
-`neverc run -O2 -fbuiltin-string hello.c` を使います。コンパイラオプションは連続する
-`.c`/`.nc` ソース一覧より前に置き、それ以降の引数はプログラムへ渡されます。
-複雑な呼び出しでは `neverc run hello.c -O2 -fbuiltin-string --` のように `--` で
-明示的に分離できます。一時実行ファイルは現在のディレクトリ、環境、標準ストリームを
-継承し、プログラムの終了ステータスを返した後に削除されます。成果物を残す場合は通常の
-コンパイラコマンドを使用してください。
+### `neverc run`
+
+一時実行ファイルにコンパイルし、**ローカルホスト**で実行した後に削除します — `go run` に近い動作です。バイナリを残す場合は通常の `neverc ... -o out` を使ってください。
+
+```bash
+neverc run -O2 -fbuiltin-string hello.c
+neverc run -O2 main.c helper.nc -- --verbose two words
+neverc run hello.c -O1 -- program-arg
+```
+
+| 項目 | 動作 |
+|------|------|
+| 既定の分割 | 最初の `.c`/`.nc` より前がコンパイラ引数。連続するソースはまとめてコンパイル。残りは `main` へ |
+| 明示的 `--` | `--` より前はコンパイラ、後はプログラム（ソースの後にリンクオプションなどがある場合） |
+| 作業ディレクトリ | 現在のディレクトリで実行。相対パスは通常のバイナリと同じ |
+| 環境と I/O | 環境変数を継承。stdin/stdout/stderr は一時プロセスに接続 |
+| 終了ステータス | 成功時はプログラムの終了コード。コンパイル失敗時はコンパイラの終了コードを返し、プログラムは実行しない |
+| 成果物 | `neverc-run-*` 一時ディレクトリに置き、実行後に削除 |
+
+クロスコンパイルフラグでコンパイルできても、一時バイナリは常にホスト上で実行されます。引数規則・例・制限の詳細は **[`neverc run` →](../run/README.ja.md)** を参照してください。
 
 **Windows x64/arm64** は [GitHub Releases](https://github.com/NeverSight/NeverC/releases) から手動でダウンロードしてください。macOS arm64 バイナリは Apple Developer ID 署名済みで公証されています。
 

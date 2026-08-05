@@ -93,6 +93,16 @@ Principali direzioni pianificate del progetto NeverC: libreria standard, backend
 
 ---
 
+## Strumenti CLI
+
+Comandi utente oltre a una singola compilazione.
+
+| Documento | Descrizione |
+|-----------|-------------|
+| [`neverc run`](run/README.it.md) | Compila, esegue localmente ed elimina un binario temporaneo (stile `go run`) |
+
+---
+
 ## Sviluppo locale
 
 Compilare NeverC dal codice sorgente e configurare l'ambiente di sviluppo locale, inclusa la configurazione del PATH.

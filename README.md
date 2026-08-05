@@ -126,15 +126,30 @@ neverc --version
 neverc hello.c -o hello -fbuiltin-string
 ```
 
-To run a program without keeping a binary, use
-`neverc run -O2 -fbuiltin-string hello.c`.
-Compiler flags precede the consecutive `.c`/`.nc` source list and following
-arguments are passed to the program. For an advanced compiler invocation, use
-an explicit separator, as in
-`neverc run hello.c -O2 -fbuiltin-string --`.
-The temporary executable inherits the current directory, environment, and
-standard streams, returns the program's exit status, and is removed afterward;
-use the normal compiler command when you need to keep the artifact.
+### `neverc run`
+
+Compile to a temporary executable, run it on the **local host**, and delete the
+artifact afterward — similar to `go run`. Use a normal `neverc ... -o out`
+invocation when you need to keep the binary.
+
+```bash
+neverc run -O2 -fbuiltin-string hello.c
+neverc run -O2 main.c helper.nc -- --verbose two words
+neverc run hello.c -O1 -- program-arg
+```
+
+| Topic | Behavior |
+|-------|----------|
+| Default split | Compiler flags before the first `.c`/`.nc` file; consecutive sources compile together; remaining arguments are passed to `main` |
+| Explicit `--` | Everything before `--` goes to the compiler; everything after goes to the program (for linker flags or other compiler args that follow the sources) |
+| Working directory | Runs in your current directory — relative paths behave like a normal binary |
+| Environment & I/O | Inherits the environment; stdin/stdout/stderr are connected to the temporary process |
+| Exit status | Returns the program exit code; compilation failure returns the compiler exit code and does not run the program |
+| Artifact | Stored under a `neverc-run-*` temp directory and removed afterward |
+
+Cross-compilation flags may compile but the temporary binary is always executed
+on the host. For argument rules, edge cases, and examples, see
+**[`neverc run` →](docs/run/README.md)**.
 
 **Windows x64/arm64** packages are on [GitHub Releases](https://github.com/NeverSight/NeverC/releases) for manual download. The macOS arm64 binary is Apple Developer ID signed and notarized.
 
