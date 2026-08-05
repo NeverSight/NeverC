@@ -60,42 +60,42 @@ current_tag=v$current_body
 
 write_fake_curl() {
   destination=$1
-  printf '%s\n' \
-    '#!/bin/sh' \
-    'set -eu' \
-    'output=' \
-    'url=' \
-    'while [ "$#" -gt 0 ]; do' \
-    '  case "$1" in' \
-    '    -o) output=$2; shift 2 ;;' \
-    '    -H) shift 2 ;;' \
-    '    -fSL|--progress-bar|--silent) shift ;;' \
-    '    *) url=$1; shift ;;' \
-    '  esac' \
-    'done' \
-    '[ -n "$output" ] && [ -n "$url" ]' \
-    'printf "%s\n" "$url" >> "$FAKE_CURL_LOG"' \
-    'case "$url" in' \
-    '  https://api.github.com/*) source_file=$FAKE_RELEASE_DIR/releases.json ;;' \
-    '  https://github.com/*) source_file=$FAKE_RELEASE_DIR/${url##*/} ;;' \
-    '  *) exit 22 ;;' \
-    'esac' \
-    'cp "$source_file" "$output"' \
-    > "$destination"
+  cat > "$destination" <<'EOF'
+#!/bin/sh
+set -eu
+output=
+url=
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -o) output=$2; shift 2 ;;
+    -H) shift 2 ;;
+    -fSL|--progress-bar|--silent) shift ;;
+    *) url=$1; shift ;;
+  esac
+done
+[ -n "$output" ] && [ -n "$url" ]
+printf "%s\n" "$url" >> "$FAKE_CURL_LOG"
+case "$url" in
+  https://api.github.com/*) source_file=$FAKE_RELEASE_DIR/releases.json ;;
+  https://github.com/*) source_file=$FAKE_RELEASE_DIR/${url##*/} ;;
+  *) exit 22 ;;
+esac
+cp "$source_file" "$output"
+EOF
   chmod +x "$destination"
 }
 
 write_fake_compiler() {
   destination=$1
   version_body=$2
-  printf '%s\n' \
-    '#!/bin/sh' \
-    'if [ "${1-}" = "-dumpversion" ]; then' \
-    "  printf '%s\\n' '$version_body'" \
-    '  exit 0' \
-    'fi' \
-    'printf "fake NeverC compiler fixture\\n"' \
-    > "$destination"
+  cat > "$destination" <<EOF
+#!/bin/sh
+if [ "\${1-}" = "-dumpversion" ]; then
+  printf '%s\\n' '$version_body'
+  exit 0
+fi
+printf "fake NeverC compiler fixture\\n"
+EOF
   chmod +x "$destination"
 }
 

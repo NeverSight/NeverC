@@ -14,12 +14,12 @@ test_tag_matches_cmake_version() {
   trap 'rm -f "$output_file"' EXIT HUP INT TERM
 
   if ! sh "$repo_root/utils/release/check-version.sh" \
-    "$repo_root/llvm/CMakeLists.txt" v3389.1.3 > "$output_file" 2>&1; then
+    "$repo_root/llvm/CMakeLists.txt" v3389.1.4 > "$output_file" 2>&1; then
     sed 's/^/  checker: /' "$output_file" >&2
-    fail "v3389.1.3 did not match the CMake version"
+    fail "v3389.1.4 did not match the CMake version"
   fi
 
-  [ "$(cat "$output_file")" = 3389.1.3 ] \
+  [ "$(cat "$output_file")" = 3389.1.4 ] \
     || fail "checker did not print the canonical CMake version"
 }
 
@@ -32,7 +32,7 @@ test_mismatched_tag_is_rejected() {
     fail "checker accepted a tag that does not match the CMake version"
   fi
 
-  grep -F "does not match CMake version 'v3389.1.3'" "$output_file" > /dev/null \
+  grep -F "does not match CMake version 'v3389.1.4'" "$output_file" > /dev/null \
     || fail "checker did not explain the tag/CMake mismatch"
 }
 
