@@ -58,7 +58,7 @@ case "$url" in
     "assets": [{"name": "gki-android17-6.18-build.tar.gz"}]
   },
   {
-    "tag_name": "v3389.1.2",
+    "tag_name": "v3389.1.3",
     "draft": false,
     "prerelease": false,
     "assets": [{"name": "neverc-linux-x64.zip"}]
@@ -119,7 +119,7 @@ test_latest_selects_platform_asset() {
   installer_status=0
   run_installer || installer_status=$?
 
-  grep -F '/releases/download/v3389.1.2/neverc-linux-x64.zip' \
+  grep -F '/releases/download/v3389.1.3/neverc-linux-x64.zip' \
     "$test_root/curl.log" > /dev/null \
     || fail "latest install did not select the release containing the platform asset"
 
@@ -167,11 +167,11 @@ test_unsupported_platform_fails_before_network() {
 
 test_explicit_version_is_normalized() {
   write_fake_commands
-  NEVERC_VERSION=3389.1.2
+  NEVERC_VERSION=3389.1.3
   export NEVERC_VERSION
   run_installer
 
-  grep -F '/releases/download/v3389.1.2/neverc-linux-x64.zip' \
+  grep -F '/releases/download/v3389.1.3/neverc-linux-x64.zip' \
     "$test_root/curl.log" > /dev/null \
     || fail "bare explicit version was not normalized to its release tag"
 
