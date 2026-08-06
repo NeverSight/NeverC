@@ -261,6 +261,75 @@ libmissing.so => not found
             self.assertFalse(self.module.is_elf(text))
             self.assertFalse(self.module.is_macho(text))
 
+    def test_macos_repair_only_adds_rpath_for_bundled_dependencies(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            prefix = Path(temporary) / "install"
+            neverc = (prefix / "bin" / "neverc").resolve()
+            runtime = (prefix / "python" / "lib" / "libpython3.12.dylib").resolve()
+            extension = (
+                prefix
+                / "python"
+                / "lib"
+                / "python3.12"
+                / "lib-dynload"
+                / "_crypt.cpython-312-darwin.so"
+            ).resolve()
+            dependencies = {
+                neverc: ["@rpath/libpython3.12.dylib", "/usr/lib/libSystem.B.dylib"],
+                runtime: [
+                    "/install/lib/libpython3.12.dylib",
+                    "/usr/lib/libSystem.B.dylib",
+                ],
+                extension: ["/usr/lib/libSystem.B.dylib"],
+            }
+            commands = []
+
+            def run_tool(command, *, check=True):
+                commands.append(command)
+                if command[:2] == ["otool", "-L"]:
+                    binary = Path(command[2]).resolve()
+                    output = f"{binary}:\n" + "".join(
+                        f"\t{dependency} (compatibility version 0.0.0)\n"
+                        for dependency in dependencies[binary]
+                    )
+                    return subprocess.CompletedProcess(command, 0, output, "")
+                if command[:2] == ["otool", "-l"]:
+                    return subprocess.CompletedProcess(command, 0, "", "")
+                return subprocess.CompletedProcess(command, 0, "", "")
+
+            with mock.patch.object(
+                self.module, "native_files", return_value=[neverc, runtime, extension]
+            ), mock.patch.object(
+                self.module, "is_macho", return_value=True
+            ), mock.patch.object(
+                self.module, "run_tool", side_effect=run_tool
+            ):
+                self.module.repair_macos(prefix, neverc)
+
+            add_rpath_commands = [
+                command
+                for command in commands
+                if command[:2] == ["install_name_tool", "-add_rpath"]
+            ]
+            self.assertEqual(
+                add_rpath_commands,
+                [[
+                    "install_name_tool",
+                    "-add_rpath",
+                    "@executable_path/../python/lib",
+                    str(neverc),
+                ]],
+            )
+            self.assertIn(
+                [
+                    "install_name_tool",
+                    "-id",
+                    "@rpath/libpython3.12.dylib",
+                    str(runtime),
+                ],
+                commands,
+            )
+
     def test_windows_distribution_dependency_precedes_system_fallback(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

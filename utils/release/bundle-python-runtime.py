@@ -465,12 +465,24 @@ def repair_macos(prefix: Path, neverc: Path) -> None:
     bundled_names = {path.name for path in binaries if path != neverc.resolve()}
     for binary in binaries:
         dependencies = parse_otool(run_tool(["otool", "-L", str(binary)]).stdout)
+        needs_runtime_rpath = False
         for dependency in dependencies:
             name = Path(dependency).name
             if name in bundled_names and dependency != f"@rpath/{name}":
                 run_tool([
                     "install_name_tool", "-change", dependency, f"@rpath/{name}", str(binary)
                 ])
+            # A dylib reports its own install name in `otool -L`, but that is
+            # not a dependency and does not require an LC_RPATH.  Likewise,
+            # extension modules that only use Apple system libraries need no
+            # runtime search path.  Avoiding unnecessary load commands matters
+            # for stripped CPython extensions that have no spare Mach-O header
+            # padding (notably the x86_64 _crypt module).
+            is_own_install_name = (
+                binary.parent == runtime_lib.resolve() and name == binary.name
+            )
+            if name in bundled_names and not is_own_install_name:
+                needs_runtime_rpath = True
         if binary.parent == runtime_lib.resolve() and binary != neverc.resolve():
             run_tool(["install_name_tool", "-id", f"@rpath/{binary.name}", str(binary)])
         if binary == neverc.resolve():
@@ -478,7 +490,7 @@ def repair_macos(prefix: Path, neverc: Path) -> None:
         else:
             relative = os.path.relpath(runtime_lib, binary.parent)
             rpath = "@loader_path" if relative == "." else f"@loader_path/{relative}"
-        if rpath not in macho_rpaths(binary):
+        if needs_runtime_rpath and rpath not in macho_rpaths(binary):
             run_tool(["install_name_tool", "-add_rpath", rpath, str(binary)])
         # install_name_tool invalidates the linker-generated ad-hoc signature.
         # Keep CI artifacts executable; release jobs replace this with
