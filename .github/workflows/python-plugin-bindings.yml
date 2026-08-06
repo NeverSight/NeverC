@@ -199,7 +199,50 @@ jobs:
       - name: Run Python lifecycle and SDK tests
         run: |
           ctest --test-dir build --output-on-failure \
-            -R '^(PythonPluginTest\.|PluginPythonPhaseBindings$|PluginPythonSDKTests$)'
+            -R '^(PythonPluginTest\.|PluginPythonPhaseBindings$|PluginPythonABIGeneration$|PluginPythonABILayout$|PluginPythonSDKTests$)'
+
+      - name: Run Python OLLVM end-to-end smoke
+        run: |
+          ollvm_plugin="$PWD/neverc/pluginsdk/python/examples/ollvm/ollvm_plugin.py"
+          ollvm_source="$PWD/neverc/tests/neverc/Inputs/Plugin/Python/OLLVMInput.c"
+          ollvm_args=(
+            "-fplugin=$ollvm_plugin"
+            --ollvm-sub --ollvm-bcf --ollvm-fla
+            --ollvm-seed 42 --ollvm-include ollvm_transform
+          )
+          executable_suffix=""
+          if [ "${{ runner.os }}" = Windows ]; then
+            executable_suffix=".exe"
+          fi
+          for optimization in O0 O2; do
+            output="$PWD/ollvm-${optimization}${executable_suffix}"
+            "${{ matrix.compiler }}" "${ollvm_args[@]}" \
+              "-${optimization}" "$ollvm_source" -o "$output"
+            "$output"
+          done
+          for target in x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu; do
+            output="$PWD/ollvm-${target}.ll"
+            "${{ matrix.compiler }}" "${ollvm_args[@]}" \
+              "--target=${target}" -O0 -S -emit-llvm \
+              "$ollvm_source" -o "$output"
+            grep -F 'ollvm.sub' "$output"
+            grep -F 'ollvm.bcf.gate' "$output"
+            grep -F 'ollvm.fla.dispatch' "$output"
+          done
+          "${{ matrix.compiler }}" "${ollvm_args[@]}" \
+            --target=x86_64-unknown-linux-gnu -O0 -S -emit-llvm \
+            "$ollvm_source" -o "$PWD/ollvm-x86_64-repeat.ll"
+          cmp "$PWD/ollvm-x86_64-unknown-linux-gnu.ll" \
+            "$PWD/ollvm-x86_64-repeat.ll"
+
+      - name: Run native Python bridge integration tests (Linux x64)
+        if: matrix.host == 'linux-x64'
+        run: |
+          cmake --build build --config ${{ env.BUILD_TYPE }} \
+            --target neverc-tests
+          build/bin/neverc-tests \
+            --gtest_filter='PluginPythonBridgeTest.*' \
+            --gtest_color=no
 
       - name: Run sanitized managed-runtime smoke
         run: |

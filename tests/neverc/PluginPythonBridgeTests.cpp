@@ -71,3 +71,76 @@ TEST_F(PluginPythonBridgeTest, LoadsNativeAndPythonPluginsTogether) {
   EXPECT_NE(Result.err.find("python raw arguments"), std::string::npos)
       << Result.err;
 }
+
+TEST_F(PluginPythonBridgeTest, ExposesCapabilitiesAndRejectsStaleViews) {
+  fs::path Source = source("python_ffi_capabilities.c");
+  CmdResult Result =
+      ncc({std::string("-fplugin=") + NEVERC_TEST_PYTHON_FFI_CAPABILITY_PLUGIN,
+           "-fsyntax-only", Source.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.err;
+  EXPECT_NE(Result.err.find("Python FFI capabilities and stale guards passed"),
+            std::string::npos)
+      << Result.err;
+}
+
+TEST_F(PluginPythonBridgeTest, RunsGeneratedStatusAndVoidCallbackTrampolines) {
+  fs::path Source = source("python_raw_ffi_callback.c");
+  CmdResult Result = ncc(
+      {std::string("-fplugin=") + NEVERC_TEST_PYTHON_RAW_FFI_CALLBACK_PLUGIN,
+       "-fsyntax-only", Source.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.err;
+  EXPECT_NE(Result.err.find("Python generated callback trampoline passed"),
+            std::string::npos)
+      << Result.err;
+}
+
+TEST_F(PluginPythonBridgeTest,
+       PythonOLLVMTransformsRunsAndIsCrossTargetDeterministic) {
+  const fs::path Source = tmpFile("python_ollvm.c");
+  writeFile(
+      Source,
+      "int ollvm_transform(int x, int y) {\n"
+      "  int result = x + y;\n"
+      "  if ((x & 1) != 0) result ^= y; else result |= y;\n"
+      "  return result;\n"
+      "}\n"
+      "int main(void) { return ollvm_transform(7, 11) == 25 ? 0 : 1; }\n");
+  const std::string Plugin =
+      std::string("-fplugin=") + NEVERC_TEST_PYTHON_OLLVM_PLUGIN;
+  const std::vector<std::string> OLLVM = {
+      Plugin,         "--ollvm-sub", "--ollvm-bcf",     "--ollvm-fla",
+      "--ollvm-seed", "42",          "--ollvm-include", "ollvm_transform"};
+
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    fs::path Executable = tmpFile("python_ollvm" + Optimization.substr(1));
+    std::vector<std::string> Arguments = OLLVM;
+    Arguments.push_back(Optimization);
+    Arguments.push_back(Source.string());
+    Arguments.push_back("-o");
+    Arguments.push_back(Executable.string());
+    CmdResult Compile = ncc(Arguments);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.err;
+    CmdResult Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+
+  std::vector<fs::path> Outputs;
+  for (const std::string &Target :
+       {"x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu",
+        "x86_64-unknown-linux-gnu"}) {
+    fs::path IR =
+        tmpFile("python_ollvm_" + std::to_string(Outputs.size()) + ".ll");
+    std::vector<std::string> Arguments = OLLVM;
+    Arguments.insert(Arguments.end(),
+                     {"--target=" + Target, "-O0", "-S", "-emit-llvm",
+                      Source.string(), "-o", IR.string()});
+    CmdResult Emit = ncc(Arguments);
+    ASSERT_EQ(Emit.exitCode, 0) << Emit.err;
+    const std::string Module = readFile(IR);
+    EXPECT_NE(Module.find("ollvm.sub"), std::string::npos);
+    EXPECT_NE(Module.find("ollvm.bcf.gate"), std::string::npos);
+    EXPECT_NE(Module.find("ollvm.fla.dispatch"), std::string::npos);
+    Outputs.push_back(IR);
+  }
+  EXPECT_EQ(readFile(Outputs[0]), readFile(Outputs[2]));
+}

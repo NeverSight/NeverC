@@ -74,7 +74,9 @@ All hooks are optional:
 
 A begin hook may return a Python value or assign `ctx.state`; that value is
 available on the matching end hook. Other hooks and observer callbacks must
-return `None`. v1 Python plugins are session-serial and non-reentrant.
+return `None`. The default descriptor is session-serial and non-reentrant;
+`@Plugin` can select the same concurrency and reentrancy models as a native
+plugin.
 
 ## Options and observers
 
@@ -116,6 +118,77 @@ Option kinds are `flag`, `joined`, `separate`, and `multi_arg`; value types are
 `single`, `last_wins`, and `append`. Enum options pass an `enum_values={name:
 integer}` mapping. `argument_count` applies only to `multi_arg`.
 
+## Complete C ABI access
+
+The high-level lifecycle, option, and observer helpers sit on top of the full
+public C plugin ABI. The checked-in Python ABI is generated from the same
+headers and Clang layouts as the C SDK. The current inventory contains all 36
+official interface tables, 366 public records, 815 public function-pointer
+fields, more than 5,000 constants, and all 75 `UserData` callback slots. CI
+fails if a C header changes without regenerating or testing the Python view.
+
+```python
+from neverc_plugin import abi
+from neverc_plugin.domains import ir
+from neverc_plugin.ffi import bind_callbacks, require_ok
+
+
+def register(self, context):
+    scope = context.ffi
+    core = ir.CORE.query(scope)
+    builder = ir.BUILDER.query(scope)
+    passes = ir.PASS.query(scope)
+    # core.function("GetValueKind") has the exact generated C signature.
+```
+
+`neverc_plugin.abi` exports the `ctypes` record, union, enum, typedef,
+constant, callback, function signature, and host-layout definition for every
+public C declaration. Each module under `neverc_plugin.domains` exposes thin
+descriptors for its official tables; `Interface.query()` performs the native
+`QueryInterface` call and checks version and `StructSize`. `TableView.function`
+and `TableView.call` invoke any generated slot without a feature-specific
+Python shim.
+
+Use `bind_callbacks(scope, descriptor, callbacks)` for observers,
+interceptors, providers, passes, analyses, target/MC/object/link/LTO/dynamic-code
+providers, and every other descriptor carrying `UserData`. The native bridge
+installs generated C-callable trampolines, owns transferred callback state,
+holds the GIL while calling Python, converts exceptions to structured plugin
+diagnostics, and invalidates the callback `Scope` on return. A callback receives
+that scope first, followed by exact integer values, pointer addresses, or owned
+bytes for by-value records. `decode_record()` converts record bytes back into a
+generated `ctypes` value. Output pointers remain writable through `ctypes`.
+Returning `None`, `True`, or a zero status means success; a status integer,
+three-item `(code, flags, detail)` tuple, or generated status record returns an
+explicit native status.
+
+`Transaction` provides exactly-once commit/abort/destroy handling and
+`OneShotContinuation` prevents a continuation from being invoked twice. All
+tables, pointers, and scopes are lifetime checked. Do not retain raw host
+pointers after their callback, and do not call a table from a context that does
+not advertise the required capability.
+
+`@Plugin` also maps the complete native descriptor metadata: ABI flags,
+concurrency, reentrancy, required and optional interfaces, dependency kind,
+semantic-version ranges, and prerelease policy. See the generated
+`neverc_plugin.abi` module and the native C headers for the authoritative field
+contracts.
+
+## Python OLLVM example
+
+The SDK ships a compiler-transforming plugin written only against this public
+binding at
+[`pluginsdk/python/examples/ollvm`](../../pluginsdk/python/examples/ollvm/README.md).
+It implements deterministic classic instruction substitution (SUB), bogus
+control flow (BCF), and control-flow flattening (FLA):
+
+```sh
+neverc -fplugin=/path/to/ollvm_plugin.py \
+  --ollvm-sub --ollvm-bcf --ollvm-fla \
+  --ollvm-seed 42 --ollvm-probability 80 \
+  input.c -o output
+```
+
 ## Errors, security, and current scope
 
 An uncaught Python exception becomes `NEVERC_STATUS_PLUGIN_EXCEPTION`. NeverC
@@ -128,8 +201,9 @@ Python plugins are trusted compiler extensions. They run in-process, can import
 arbitrary modules, and have the same filesystem and process permissions as
 NeverC. There is no sandbox.
 
-v1 is deliberately read-only beyond option registration. It does not expose
-interceptors, providers, artifact mutation, domain-specific IR/MIR/Link object
-models, subinterpreters, manifests, or module/factory entry points. These need
-transaction and continuation wrappers whose lifetimes can be enforced; the
-native C ABI remains available when those capabilities are required.
+The Python binding is not a sandbox and it is not a second, reduced compiler
+API. It exposes the same stable C interface tables and mutation operations as a
+native plugin through generated `ctypes` definitions and checked native
+trampolines. The Python decorator and script loader replace the C shared-library
+entry point; once activated, both plugin forms participate in the same phase
+graph, registration system, capability checks, transactions, and diagnostics.

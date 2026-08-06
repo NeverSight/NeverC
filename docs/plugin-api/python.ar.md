@@ -73,7 +73,8 @@ neverc -fplugin=/absolute/path/to/minimal.py -fsyntax-only input.c
 
 يمكن لـ begin hook إرجاع قيمة Python أو تعيين `ctx.state`؛ وتتوفر القيمة للـ
 end hook المقابل. يجب أن تعيد بقية الـ hooks وobserver callbacks القيمة `None`.
-إضافات Python في v1 تعمل بنمط session-serial وغير قابلة لإعادة الدخول.
+الوضع الافتراضي هو session-serial وغير قابل لإعادة الدخول، ويمكن لـ `@Plugin`
+اختيار النماذج نفسها المتاحة للإضافة الأصلية.
 
 ## الخيارات وobservers
 
@@ -124,10 +125,12 @@ session/task callback نشط، يصدر NeverC الـ traceback المنسق ك�
 إضافات Python امتدادات موثوقة للمصرّف. تعمل داخل العملية، ويمكنها import أي
 module، ولها صلاحيات الملفات والعملية نفسها التي يملكها NeverC. لا يوجد sandbox.
 
-يبقى v1 للقراءة فقط عمداً باستثناء تسجيل الخيارات. لا يعرض interceptors أو
-providers أو تعديل artifacts أو نماذج IR/MIR/Link الخاصة بالنطاق أو
-subinterpreters أو manifests أو نقاط دخول module/factory. تحتاج هذه القدرات
-إلى wrappers للـ transaction والـ continuation تفرض مدة الحياة؛ وتبقى واجهة C
-الأصلية متاحة عند الحاجة إليها.
+ربط Python ليس API مصغراً: تغطي تعريفات `ctypes` المولدة والـ trampolines
+الأصلية جميع جداول C ABI الرسمية البالغ عددها 36، وكل records وfunctions
+وعائلات callbacks، بما في ذلك mutation وinterceptors وproviders. كما تُفحص
+lifetimes وtransactions وcontinuations. يوجد مثال OLLVM كامل بلغة Python ينفذ
+SUB وBCF وFLA في `pluginsdk/python/examples/ollvm/`.
+توجد التعريفات الخام في `neverc_plugin.abi` وواصفات الجداول في
+`neverc_plugin.domains`.
 
 </div>

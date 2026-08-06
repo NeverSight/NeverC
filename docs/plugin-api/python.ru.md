@@ -73,7 +73,8 @@ neverc -fplugin=/absolute/path/to/minimal.py -fsyntax-only input.c
 
 Begin-hook может вернуть значение Python или присвоить `ctx.state`; парный
 end-hook увидит это значение. Остальные hooks и observer callbacks должны
-возвращать `None`. Плагины Python v1 работают session-serial и без reentrancy.
+возвращать `None`. По умолчанию плагины работают session-serial и без
+reentrancy; `@Plugin` позволяет выбрать те же модели, что у нативного плагина.
 
 ## Опции и observers
 
@@ -128,8 +129,10 @@ import и activation включают его в сообщение loader. Вс�
 могут импортировать любые модули и имеют те же системные права, что и NeverC.
 Sandbox отсутствует.
 
-Версия v1 намеренно доступна только для чтения, кроме регистрации опций. Она не
-предоставляет interceptors, providers, изменение artifacts, доменные модели
-IR/MIR/Link, subinterpreters, manifests или точки входа module/factory. Для
-этого нужны wrappers транзакций и continuations с проверяемым lifetime; когда
-такие возможности необходимы, остаётся доступен нативный C ABI.
+Python binding не является урезанным API: сгенерированные определения `ctypes`
+и нативные trampolines охватывают все 36 официальных таблиц C ABI, records,
+functions и семейства callbacks, включая mutation, interceptors и providers.
+Lifetimes, transactions и continuations проверяются. Полный пример Python
+OLLVM с SUB, BCF и FLA находится в `pluginsdk/python/examples/ollvm/`.
+Низкоуровневые определения находятся в `neverc_plugin.abi`, а дескрипторы
+таблиц — в `neverc_plugin.domains`.

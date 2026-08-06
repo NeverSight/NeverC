@@ -74,7 +74,8 @@ Todos los hooks son opcionales:
 
 Un hook begin puede devolver un valor de Python o asignar `ctx.state`; el hook
 end correspondiente puede leerlo. Los demás hooks y callbacks observer deben
-devolver `None`. Los plugins Python v1 son session-serial y no reentrantes.
+devolver `None`. Por defecto son session-serial y no reentrantes; `@Plugin`
+puede elegir los mismos modelos que un plugin nativo.
 
 ## Opciones y observers
 
@@ -129,8 +130,11 @@ Los plugins Python son extensiones de compilador de confianza. Se ejecutan en
 el proceso, pueden importar cualquier módulo y tienen los mismos permisos de
 sistema que NeverC. No existe sandbox.
 
-La v1 es deliberadamente de solo lectura salvo el registro de opciones. No
-expone interceptors, providers, mutación de artifacts, modelos IR/MIR/Link por
-dominio, subinterpreters, manifests ni puntos de entrada module/factory. Esas
-funciones necesitan wrappers de transacción y continuation cuya vida útil pueda
-imponerse; la ABI C nativa sigue disponible cuando sean necesarias.
+El binding de Python no es una API reducida: las definiciones `ctypes` generadas
+y los trampolines nativos cubren las 36 tablas oficiales de la ABI C, todos los
+records, funciones y callbacks, incluidas las mutaciones, los interceptors y
+los providers. También se comprueban lifetimes, transactions y continuations.
+Hay un ejemplo OLLVM completo en Python con SUB, BCF y FLA en
+`pluginsdk/python/examples/ollvm/`.
+Las definiciones crudas están en `neverc_plugin.abi` y los descriptores de tabla
+en `neverc_plugin.domains`.

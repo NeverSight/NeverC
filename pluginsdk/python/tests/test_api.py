@@ -4,7 +4,16 @@ import sys
 import types
 import unittest
 
-from neverc_plugin import Phase, Plugin
+from neverc_plugin import (
+    Concurrency,
+    DependencyKind,
+    InterfaceRequirement,
+    InterfaceStability,
+    Phase,
+    Plugin,
+    PluginDependency,
+    Reentrancy,
+)
 from neverc_plugin import api
 from neverc_plugin import phases
 
@@ -90,6 +99,85 @@ class Second:
     pass
 """,
                 "neverc_duplicate_plugin",
+            )
+
+    def test_records_complete_native_metadata(self):
+        module = types.ModuleType("neverc_metadata_plugin")
+        module.__dict__.update(
+            Plugin=Plugin,
+            InterfaceRequirement=InterfaceRequirement,
+            PluginDependency=PluginDependency,
+        )
+        sys.modules[module.__name__] = module
+        self.addCleanup(sys.modules.pop, module.__name__, None)
+        exec(
+            '''
+@Plugin(
+    id="org.neverc.metadata",
+    name="Metadata",
+    version="2.3.4",
+    concurrency="thread_safe",
+    reentrancy="allowed",
+    required_interfaces=(InterfaceRequirement("IR_BUILDER", minimum_minor=1),),
+    optional_interfaces=(InterfaceRequirement("MIR"),),
+    dependencies=(
+        PluginDependency(
+            "org.neverc.base", minimum="1.2.0", maximum="2.0.0",
+            kind="after", allow_prerelease=True,
+        ),
+    ),
+)
+class MetadataPlugin:
+    pass
+''',
+            module.__dict__,
+        )
+        spec = module.__neverc_plugin__
+        self.assertEqual(spec.concurrency, Concurrency.THREAD_SAFE)
+        self.assertEqual(spec.reentrancy, Reentrancy.ALLOWED)
+        self.assertEqual(spec.required_interfaces[0].interface, "IR_BUILDER")
+        self.assertEqual(spec.required_interfaces[0].minimum_minor, 1)
+        self.assertEqual(spec.optional_interfaces[0].stability, InterfaceStability.STABLE)
+        self.assertEqual(spec.dependencies[0].kind, DependencyKind.AFTER)
+        self.assertEqual(spec.dependencies[0].minimum_info, (1, 2, 0))
+        self.assertEqual(spec.dependencies[0].maximum_info, (2, 0, 0))
+
+    def test_rejects_invalid_complete_metadata(self):
+        with self.assertRaises(ValueError):
+            InterfaceRequirement("DOES_NOT_EXIST")
+        with self.assertRaises(ValueError):
+            InterfaceRequirement((1, 2))
+        with self.assertRaises(ValueError):
+            PluginDependency("org.neverc.base", minimum="2.0.0", maximum="1.0.0")
+        with self.assertRaises(ValueError):
+            PluginDependency(
+                "org.neverc.base",
+                minimum="2.0.0-alpha",
+                maximum="1.0.0-beta",
+            )
+        self.assertEqual(
+            PluginDependency(
+                "org.neverc.base",
+                minimum="2.0.0-alpha",
+                maximum="2.0.0",
+            ).maximum_info,
+            (2, 0, 0),
+        )
+        requirement = InterfaceRequirement("IR_BUILDER")
+        with self.assertRaises(ValueError):
+            Plugin(
+                id="org.neverc.bad",
+                name="Bad",
+                version="1.0.0",
+                abi_flags=1,
+            )
+        with self.assertRaises(ValueError):
+            Plugin(
+                id="org.neverc.bad",
+                name="Bad",
+                version="1.0.0",
+                required_interfaces=(requirement,),
+                optional_interfaces=(requirement,),
             )
 
 

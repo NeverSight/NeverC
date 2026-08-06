@@ -66,8 +66,8 @@ decorator 接受一個規範外掛 ID、非空白顯示名稱與嚴格語意版�
 - `on_task_begin(ctx)` 與 `on_task_end(ctx)` 包住一個編譯工作單元。
 
 begin hook 可回傳 Python 值或指派 `ctx.state`；配對的 end hook 可讀取該值。
-其他 hook 與 observer callback 必須回傳 `None`。v1 Python 外掛採
-session-serial 且不可重入。
+其他 hook 與 observer callback 必須回傳 `None`。預設採 session-serial 且
+不可重入；`@Plugin` 可選擇與原生外掛相同的模型。
 
 ## 選項與 observer
 
@@ -119,7 +119,10 @@ diagnostic；import 與 activation 失敗則會在 loader error 中包含 traceb
 Python 外掛是受信任的編譯器擴充。它們在 process 內執行，可 import 任意
 module，並擁有與 NeverC 相同的檔案系統與 process 權限；沒有 sandbox。
 
-v1 除了選項註冊外刻意維持唯讀。它不公開 interceptor、provider、artifact
-修改、各 domain 專用的 IR/MIR/Link 物件模型、subinterpreter、manifest 或
-module/factory entry point。這些能力需要能強制生命週期的 transaction 與
-continuation wrapper；需要時仍可使用原生 C ABI。
+Python binding 並不是縮減版 API：自動生成的 `ctypes` 定義與原生 trampoline
+涵蓋全部 36 個官方 C ABI interface table、record、function 與 callback family，
+包括 mutation、interceptor 和 provider。lifetime、transaction 與 continuation
+都會接受檢查。實作 SUB、BCF 與 FLA 的完整 Python OLLVM 範例位於
+`pluginsdk/python/examples/ollvm/`。
+底層定義位於 `neverc_plugin.abi`，table descriptor 位於
+`neverc_plugin.domains`。

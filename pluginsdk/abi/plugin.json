@@ -4,13 +4,13 @@
       "arch": "aarch64",
       "calling_convention": "sysv",
       "endian": "little",
-      "field_count": 2541,
+      "field_count": 2675,
       "pack_invariant_under": [
         1,
         16
       ],
       "pointer_width": 64,
-      "struct_count": 346,
+      "struct_count": 366,
       "structs": {
         "NevercABIArgumentClassification": {
           "align": 8,
@@ -1888,6 +1888,130 @@
           },
           "size": 328
         },
+        "NevercDynCodeBinaryVerifyRequest": {
+          "align": 8,
+          "fields": {
+            "Binary": {
+              "offset": 80,
+              "size": 8
+            },
+            "Builder": {
+              "offset": 88,
+              "size": 16
+            },
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Image": {
+              "offset": 64,
+              "size": 16
+            },
+            "ImageDigest": {
+              "offset": 112,
+              "size": 32
+            },
+            "ImageGeneration": {
+              "offset": 104,
+              "size": 8
+            },
+            "Request": {
+              "offset": 32,
+              "size": 16
+            },
+            "TargetID": {
+              "offset": 48,
+              "size": 16
+            },
+            "Task": {
+              "offset": 16,
+              "size": 16
+            }
+          },
+          "size": 144
+        },
+        "NevercDynCodeBinaryVerifyResult": {
+          "align": 8,
+          "fields": {
+            "Accepted": {
+              "offset": 16,
+              "size": 4
+            },
+            "Diagnostic": {
+              "offset": 32,
+              "size": 16
+            },
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Reserved8": {
+              "offset": 20,
+              "size": 7
+            }
+          },
+          "size": 48
+        },
+        "NevercDynCodeCharsetEncodeRequest": {
+          "align": 8,
+          "fields": {
+            "BadByteSet": {
+              "offset": 88,
+              "size": 16
+            },
+            "Binary": {
+              "offset": 64,
+              "size": 8
+            },
+            "Builder": {
+              "offset": 72,
+              "size": 16
+            },
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Image": {
+              "offset": 48,
+              "size": 16
+            },
+            "Request": {
+              "offset": 32,
+              "size": 16
+            },
+            "Task": {
+              "offset": 16,
+              "size": 16
+            }
+          },
+          "size": 104
+        },
+        "NevercDynCodeCharsetEncodeResult": {
+          "align": 8,
+          "fields": {
+            "DecoderStubProvenance": {
+              "offset": 40,
+              "size": 16
+            },
+            "EncodedEntryOffset": {
+              "offset": 16,
+              "size": 8
+            },
+            "EntryUpdated": {
+              "offset": 24,
+              "size": 4
+            },
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Reserved8": {
+              "offset": 28,
+              "size": 7
+            }
+          },
+          "size": 56
+        },
         "NevercDynCodeCharsetEncoderDescriptor": {
           "align": 8,
           "fields": {
@@ -1977,6 +2101,52 @@
             }
           },
           "size": 72
+        },
+        "NevercDynCodeExtractionRequest": {
+          "align": 8,
+          "fields": {
+            "Binary": {
+              "offset": 120,
+              "size": 8
+            },
+            "Builder": {
+              "offset": 128,
+              "size": 16
+            },
+            "Graph": {
+              "offset": 72,
+              "size": 16
+            },
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Image": {
+              "offset": 104,
+              "size": 16
+            },
+            "Object": {
+              "offset": 64,
+              "size": 8
+            },
+            "Plan": {
+              "offset": 88,
+              "size": 16
+            },
+            "Request": {
+              "offset": 32,
+              "size": 16
+            },
+            "TargetID": {
+              "offset": 48,
+              "size": 16
+            },
+            "Task": {
+              "offset": 16,
+              "size": 16
+            }
+          },
+          "size": 144
         },
         "NevercDynCodeExtractorDescriptor": {
           "align": 8,
@@ -2147,6 +2317,74 @@
             }
           },
           "size": 368
+        },
+        "NevercDynCodeImportRequest": {
+          "align": 8,
+          "fields": {
+            "ExecutionLevel": {
+              "offset": 64,
+              "size": 4
+            },
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Kind": {
+              "offset": 68,
+              "size": 4
+            },
+            "Module": {
+              "offset": 72,
+              "size": 16
+            },
+            "Request": {
+              "offset": 32,
+              "size": 16
+            },
+            "Symbol": {
+              "offset": 48,
+              "size": 16
+            },
+            "Task": {
+              "offset": 16,
+              "size": 16
+            }
+          },
+          "size": 88
+        },
+        "NevercDynCodeImportResult": {
+          "align": 8,
+          "fields": {
+            "CookieParameter": {
+              "offset": 40,
+              "size": 16
+            },
+            "Disposition": {
+              "offset": 16,
+              "size": 4
+            },
+            "EntryABIChanged": {
+              "offset": 56,
+              "size": 4
+            },
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Reserved8": {
+              "offset": 60,
+              "size": 7
+            },
+            "ResolvedKind": {
+              "offset": 20,
+              "size": 4
+            },
+            "ResolverContract": {
+              "offset": 24,
+              "size": 16
+            }
+          },
+          "size": 72
         },
         "NevercDynCodePhaseAPI": {
           "align": 8,
@@ -4034,6 +4272,44 @@
           },
           "size": 120
         },
+        "NevercLTOProductCandidate": {
+          "align": 8,
+          "fields": {
+            "CacheKey": {
+              "offset": 88,
+              "size": 16
+            },
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Objects": {
+              "offset": 32,
+              "size": 24
+            },
+            "OptimizedBitcode": {
+              "offset": 56,
+              "size": 16
+            },
+            "ProducerRouteDigest": {
+              "offset": 120,
+              "size": 32
+            },
+            "Product": {
+              "offset": 16,
+              "size": 16
+            },
+            "ProductID": {
+              "offset": 104,
+              "size": 16
+            },
+            "ThinIndex": {
+              "offset": 72,
+              "size": 16
+            }
+          },
+          "size": 152
+        },
         "NevercLTOProviderDescriptor": {
           "align": 8,
           "fields": {
@@ -4093,6 +4369,60 @@
             }
           },
           "size": 32
+        },
+        "NevercLTORequest": {
+          "align": 8,
+          "fields": {
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "LinkGraph": {
+              "offset": 64,
+              "size": 16
+            },
+            "LinkRequest": {
+              "offset": 48,
+              "size": 16
+            },
+            "Modules": {
+              "offset": 472,
+              "size": 24
+            },
+            "Options": {
+              "offset": 352,
+              "size": 120
+            },
+            "OutputFormat": {
+              "offset": 336,
+              "size": 16
+            },
+            "Request": {
+              "offset": 16,
+              "size": 16
+            },
+            "RequestDigest": {
+              "offset": 552,
+              "size": 32
+            },
+            "ResolutionDigest": {
+              "offset": 520,
+              "size": 32
+            },
+            "Resolutions": {
+              "offset": 496,
+              "size": 24
+            },
+            "Target": {
+              "offset": 80,
+              "size": 256
+            },
+            "Task": {
+              "offset": 32,
+              "size": 16
+            }
+          },
+          "size": 584
         },
         "NevercLTOSymbolResolution": {
           "align": 8,
@@ -5034,6 +5364,60 @@
           },
           "size": 48
         },
+        "NevercLinkRequest": {
+          "align": 8,
+          "fields": {
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "InputFormat": {
+              "offset": 304,
+              "size": 16
+            },
+            "Options": {
+              "offset": 360,
+              "size": 168
+            },
+            "OutputFormat": {
+              "offset": 320,
+              "size": 16
+            },
+            "OutputKind": {
+              "offset": 336,
+              "size": 4
+            },
+            "OutputURI": {
+              "offset": 344,
+              "size": 16
+            },
+            "RawInputs": {
+              "offset": 528,
+              "size": 72
+            },
+            "Request": {
+              "offset": 16,
+              "size": 16
+            },
+            "RequestDigest": {
+              "offset": 600,
+              "size": 32
+            },
+            "Reserved": {
+              "offset": 340,
+              "size": 4
+            },
+            "Target": {
+              "offset": 48,
+              "size": 256
+            },
+            "Task": {
+              "offset": 32,
+              "size": 16
+            }
+          },
+          "size": 632
+        },
         "NevercLinkSectionInfo": {
           "align": 8,
           "fields": {
@@ -5301,6 +5685,32 @@
             }
           },
           "size": 224
+        },
+        "NevercLinkerProductCandidate": {
+          "align": 8,
+          "fields": {
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Image": {
+              "offset": 16,
+              "size": 16
+            },
+            "Outputs": {
+              "offset": 32,
+              "size": 16
+            },
+            "ProducerRouteDigest": {
+              "offset": 64,
+              "size": 32
+            },
+            "ProductID": {
+              "offset": 48,
+              "size": 16
+            }
+          },
+          "size": 96
         },
         "NevercLinkerProviderDescriptor": {
           "align": 8,
@@ -7870,6 +8280,20 @@
           },
           "size": 96
         },
+        "NevercMutableBinaryAPI": {
+          "align": 8,
+          "fields": {
+            "Context": {
+              "offset": 16,
+              "size": 8
+            },
+            "Header": {
+              "offset": 0,
+              "size": 16
+            }
+          },
+          "size": 88
+        },
         "NevercMutableByteView": {
           "align": 8,
           "fields": {
@@ -8158,6 +8582,46 @@
           },
           "size": 56
         },
+        "NevercObjectMergeCandidate": {
+          "align": 8,
+          "fields": {
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Object": {
+              "offset": 16,
+              "size": 16
+            },
+            "ProducerRouteDigest": {
+              "offset": 48,
+              "size": 32
+            },
+            "ProductID": {
+              "offset": 32,
+              "size": 16
+            }
+          },
+          "size": 80
+        },
+        "NevercObjectMergeInput": {
+          "align": 8,
+          "fields": {
+            "Graph": {
+              "offset": 24,
+              "size": 16
+            },
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Object": {
+              "offset": 16,
+              "size": 8
+            }
+          },
+          "size": 40
+        },
         "NevercObjectMergeProviderDescriptor": {
           "align": 8,
           "fields": {
@@ -8204,6 +8668,52 @@
           },
           "size": 128
         },
+        "NevercObjectMergeRequest": {
+          "align": 8,
+          "fields": {
+            "Extensions": {
+              "offset": 336,
+              "size": 24
+            },
+            "Flags": {
+              "offset": 328,
+              "size": 8
+            },
+            "FormatID": {
+              "offset": 288,
+              "size": 16
+            },
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Objects": {
+              "offset": 304,
+              "size": 24
+            },
+            "OutputGraph": {
+              "offset": 368,
+              "size": 16
+            },
+            "OutputMutation": {
+              "offset": 384,
+              "size": 16
+            },
+            "OutputObject": {
+              "offset": 360,
+              "size": 8
+            },
+            "Target": {
+              "offset": 32,
+              "size": 256
+            },
+            "Task": {
+              "offset": 16,
+              "size": 16
+            }
+          },
+          "size": 400
+        },
         "NevercObjectPhaseAPI": {
           "align": 8,
           "fields": {
@@ -8243,6 +8753,92 @@
             }
           },
           "size": 64
+        },
+        "NevercObjectProbeRequest": {
+          "align": 8,
+          "fields": {
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Input": {
+              "offset": 32,
+              "size": 40
+            },
+            "LogicalPath": {
+              "offset": 72,
+              "size": 16
+            },
+            "Target": {
+              "offset": 88,
+              "size": 256
+            },
+            "Task": {
+              "offset": 16,
+              "size": 16
+            }
+          },
+          "size": 344
+        },
+        "NevercObjectProbeResult": {
+          "align": 8,
+          "fields": {
+            "ArtifactKind": {
+              "offset": 20,
+              "size": 4
+            },
+            "Confidence": {
+              "offset": 16,
+              "size": 4
+            },
+            "ConsumedMinimum": {
+              "offset": 24,
+              "size": 8
+            },
+            "Header": {
+              "offset": 0,
+              "size": 16
+            }
+          },
+          "size": 32
+        },
+        "NevercObjectReadRequest": {
+          "align": 8,
+          "fields": {
+            "Graph": {
+              "offset": 352,
+              "size": 16
+            },
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Input": {
+              "offset": 32,
+              "size": 40
+            },
+            "LogicalPath": {
+              "offset": 72,
+              "size": 16
+            },
+            "Mutation": {
+              "offset": 368,
+              "size": 16
+            },
+            "Object": {
+              "offset": 344,
+              "size": 8
+            },
+            "Target": {
+              "offset": 88,
+              "size": 256
+            },
+            "Task": {
+              "offset": 16,
+              "size": 16
+            }
+          },
+          "size": 384
         },
         "NevercObjectRelocationDescriptor": {
           "align": 8,
@@ -8453,6 +9049,48 @@
             }
           },
           "size": 152
+        },
+        "NevercObjectWriteRequest": {
+          "align": 8,
+          "fields": {
+            "Binary": {
+              "offset": 344,
+              "size": 8
+            },
+            "Builder": {
+              "offset": 352,
+              "size": 16
+            },
+            "FormatID": {
+              "offset": 288,
+              "size": 16
+            },
+            "Graph": {
+              "offset": 312,
+              "size": 16
+            },
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "LayoutProof": {
+              "offset": 328,
+              "size": 16
+            },
+            "Object": {
+              "offset": 304,
+              "size": 8
+            },
+            "Target": {
+              "offset": 32,
+              "size": 256
+            },
+            "Task": {
+              "offset": 16,
+              "size": 16
+            }
+          },
+          "size": 368
         },
         "NevercObserverDescriptor": {
           "align": 8,
@@ -9853,6 +10491,24 @@
             }
           },
           "size": 128
+        },
+        "NevercRawLinkInputSet": {
+          "align": 8,
+          "fields": {
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Inputs": {
+              "offset": 16,
+              "size": 24
+            },
+            "OrderDigest": {
+              "offset": 40,
+              "size": 32
+            }
+          },
+          "size": 72
         },
         "NevercRecordDeclInfo": {
           "align": 8,
@@ -12258,13 +12914,13 @@
       "arch": "aarch64",
       "calling_convention": "win",
       "endian": "little",
-      "field_count": 2541,
+      "field_count": 2675,
       "pack_invariant_under": [
         1,
         16
       ],
       "pointer_width": 64,
-      "struct_count": 346,
+      "struct_count": 366,
       "structs": {
         "NevercABIArgumentClassification": {
           "align": 8,
@@ -14142,6 +14798,130 @@
           },
           "size": 328
         },
+        "NevercDynCodeBinaryVerifyRequest": {
+          "align": 8,
+          "fields": {
+            "Binary": {
+              "offset": 80,
+              "size": 8
+            },
+            "Builder": {
+              "offset": 88,
+              "size": 16
+            },
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Image": {
+              "offset": 64,
+              "size": 16
+            },
+            "ImageDigest": {
+              "offset": 112,
+              "size": 32
+            },
+            "ImageGeneration": {
+              "offset": 104,
+              "size": 8
+            },
+            "Request": {
+              "offset": 32,
+              "size": 16
+            },
+            "TargetID": {
+              "offset": 48,
+              "size": 16
+            },
+            "Task": {
+              "offset": 16,
+              "size": 16
+            }
+          },
+          "size": 144
+        },
+        "NevercDynCodeBinaryVerifyResult": {
+          "align": 8,
+          "fields": {
+            "Accepted": {
+              "offset": 16,
+              "size": 4
+            },
+            "Diagnostic": {
+              "offset": 32,
+              "size": 16
+            },
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Reserved8": {
+              "offset": 20,
+              "size": 7
+            }
+          },
+          "size": 48
+        },
+        "NevercDynCodeCharsetEncodeRequest": {
+          "align": 8,
+          "fields": {
+            "BadByteSet": {
+              "offset": 88,
+              "size": 16
+            },
+            "Binary": {
+              "offset": 64,
+              "size": 8
+            },
+            "Builder": {
+              "offset": 72,
+              "size": 16
+            },
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Image": {
+              "offset": 48,
+              "size": 16
+            },
+            "Request": {
+              "offset": 32,
+              "size": 16
+            },
+            "Task": {
+              "offset": 16,
+              "size": 16
+            }
+          },
+          "size": 104
+        },
+        "NevercDynCodeCharsetEncodeResult": {
+          "align": 8,
+          "fields": {
+            "DecoderStubProvenance": {
+              "offset": 40,
+              "size": 16
+            },
+            "EncodedEntryOffset": {
+              "offset": 16,
+              "size": 8
+            },
+            "EntryUpdated": {
+              "offset": 24,
+              "size": 4
+            },
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Reserved8": {
+              "offset": 28,
+              "size": 7
+            }
+          },
+          "size": 56
+        },
         "NevercDynCodeCharsetEncoderDescriptor": {
           "align": 8,
           "fields": {
@@ -14231,6 +15011,52 @@
             }
           },
           "size": 72
+        },
+        "NevercDynCodeExtractionRequest": {
+          "align": 8,
+          "fields": {
+            "Binary": {
+              "offset": 120,
+              "size": 8
+            },
+            "Builder": {
+              "offset": 128,
+              "size": 16
+            },
+            "Graph": {
+              "offset": 72,
+              "size": 16
+            },
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Image": {
+              "offset": 104,
+              "size": 16
+            },
+            "Object": {
+              "offset": 64,
+              "size": 8
+            },
+            "Plan": {
+              "offset": 88,
+              "size": 16
+            },
+            "Request": {
+              "offset": 32,
+              "size": 16
+            },
+            "TargetID": {
+              "offset": 48,
+              "size": 16
+            },
+            "Task": {
+              "offset": 16,
+              "size": 16
+            }
+          },
+          "size": 144
         },
         "NevercDynCodeExtractorDescriptor": {
           "align": 8,
@@ -14401,6 +15227,74 @@
             }
           },
           "size": 368
+        },
+        "NevercDynCodeImportRequest": {
+          "align": 8,
+          "fields": {
+            "ExecutionLevel": {
+              "offset": 64,
+              "size": 4
+            },
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Kind": {
+              "offset": 68,
+              "size": 4
+            },
+            "Module": {
+              "offset": 72,
+              "size": 16
+            },
+            "Request": {
+              "offset": 32,
+              "size": 16
+            },
+            "Symbol": {
+              "offset": 48,
+              "size": 16
+            },
+            "Task": {
+              "offset": 16,
+              "size": 16
+            }
+          },
+          "size": 88
+        },
+        "NevercDynCodeImportResult": {
+          "align": 8,
+          "fields": {
+            "CookieParameter": {
+              "offset": 40,
+              "size": 16
+            },
+            "Disposition": {
+              "offset": 16,
+              "size": 4
+            },
+            "EntryABIChanged": {
+              "offset": 56,
+              "size": 4
+            },
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Reserved8": {
+              "offset": 60,
+              "size": 7
+            },
+            "ResolvedKind": {
+              "offset": 20,
+              "size": 4
+            },
+            "ResolverContract": {
+              "offset": 24,
+              "size": 16
+            }
+          },
+          "size": 72
         },
         "NevercDynCodePhaseAPI": {
           "align": 8,
@@ -16288,6 +17182,44 @@
           },
           "size": 120
         },
+        "NevercLTOProductCandidate": {
+          "align": 8,
+          "fields": {
+            "CacheKey": {
+              "offset": 88,
+              "size": 16
+            },
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Objects": {
+              "offset": 32,
+              "size": 24
+            },
+            "OptimizedBitcode": {
+              "offset": 56,
+              "size": 16
+            },
+            "ProducerRouteDigest": {
+              "offset": 120,
+              "size": 32
+            },
+            "Product": {
+              "offset": 16,
+              "size": 16
+            },
+            "ProductID": {
+              "offset": 104,
+              "size": 16
+            },
+            "ThinIndex": {
+              "offset": 72,
+              "size": 16
+            }
+          },
+          "size": 152
+        },
         "NevercLTOProviderDescriptor": {
           "align": 8,
           "fields": {
@@ -16347,6 +17279,60 @@
             }
           },
           "size": 32
+        },
+        "NevercLTORequest": {
+          "align": 8,
+          "fields": {
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "LinkGraph": {
+              "offset": 64,
+              "size": 16
+            },
+            "LinkRequest": {
+              "offset": 48,
+              "size": 16
+            },
+            "Modules": {
+              "offset": 472,
+              "size": 24
+            },
+            "Options": {
+              "offset": 352,
+              "size": 120
+            },
+            "OutputFormat": {
+              "offset": 336,
+              "size": 16
+            },
+            "Request": {
+              "offset": 16,
+              "size": 16
+            },
+            "RequestDigest": {
+              "offset": 552,
+              "size": 32
+            },
+            "ResolutionDigest": {
+              "offset": 520,
+              "size": 32
+            },
+            "Resolutions": {
+              "offset": 496,
+              "size": 24
+            },
+            "Target": {
+              "offset": 80,
+              "size": 256
+            },
+            "Task": {
+              "offset": 32,
+              "size": 16
+            }
+          },
+          "size": 584
         },
         "NevercLTOSymbolResolution": {
           "align": 8,
@@ -17288,6 +18274,60 @@
           },
           "size": 48
         },
+        "NevercLinkRequest": {
+          "align": 8,
+          "fields": {
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "InputFormat": {
+              "offset": 304,
+              "size": 16
+            },
+            "Options": {
+              "offset": 360,
+              "size": 168
+            },
+            "OutputFormat": {
+              "offset": 320,
+              "size": 16
+            },
+            "OutputKind": {
+              "offset": 336,
+              "size": 4
+            },
+            "OutputURI": {
+              "offset": 344,
+              "size": 16
+            },
+            "RawInputs": {
+              "offset": 528,
+              "size": 72
+            },
+            "Request": {
+              "offset": 16,
+              "size": 16
+            },
+            "RequestDigest": {
+              "offset": 600,
+              "size": 32
+            },
+            "Reserved": {
+              "offset": 340,
+              "size": 4
+            },
+            "Target": {
+              "offset": 48,
+              "size": 256
+            },
+            "Task": {
+              "offset": 32,
+              "size": 16
+            }
+          },
+          "size": 632
+        },
         "NevercLinkSectionInfo": {
           "align": 8,
           "fields": {
@@ -17555,6 +18595,32 @@
             }
           },
           "size": 224
+        },
+        "NevercLinkerProductCandidate": {
+          "align": 8,
+          "fields": {
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Image": {
+              "offset": 16,
+              "size": 16
+            },
+            "Outputs": {
+              "offset": 32,
+              "size": 16
+            },
+            "ProducerRouteDigest": {
+              "offset": 64,
+              "size": 32
+            },
+            "ProductID": {
+              "offset": 48,
+              "size": 16
+            }
+          },
+          "size": 96
         },
         "NevercLinkerProviderDescriptor": {
           "align": 8,
@@ -20124,6 +21190,20 @@
           },
           "size": 96
         },
+        "NevercMutableBinaryAPI": {
+          "align": 8,
+          "fields": {
+            "Context": {
+              "offset": 16,
+              "size": 8
+            },
+            "Header": {
+              "offset": 0,
+              "size": 16
+            }
+          },
+          "size": 88
+        },
         "NevercMutableByteView": {
           "align": 8,
           "fields": {
@@ -20412,6 +21492,46 @@
           },
           "size": 56
         },
+        "NevercObjectMergeCandidate": {
+          "align": 8,
+          "fields": {
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Object": {
+              "offset": 16,
+              "size": 16
+            },
+            "ProducerRouteDigest": {
+              "offset": 48,
+              "size": 32
+            },
+            "ProductID": {
+              "offset": 32,
+              "size": 16
+            }
+          },
+          "size": 80
+        },
+        "NevercObjectMergeInput": {
+          "align": 8,
+          "fields": {
+            "Graph": {
+              "offset": 24,
+              "size": 16
+            },
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Object": {
+              "offset": 16,
+              "size": 8
+            }
+          },
+          "size": 40
+        },
         "NevercObjectMergeProviderDescriptor": {
           "align": 8,
           "fields": {
@@ -20458,6 +21578,52 @@
           },
           "size": 128
         },
+        "NevercObjectMergeRequest": {
+          "align": 8,
+          "fields": {
+            "Extensions": {
+              "offset": 336,
+              "size": 24
+            },
+            "Flags": {
+              "offset": 328,
+              "size": 8
+            },
+            "FormatID": {
+              "offset": 288,
+              "size": 16
+            },
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Objects": {
+              "offset": 304,
+              "size": 24
+            },
+            "OutputGraph": {
+              "offset": 368,
+              "size": 16
+            },
+            "OutputMutation": {
+              "offset": 384,
+              "size": 16
+            },
+            "OutputObject": {
+              "offset": 360,
+              "size": 8
+            },
+            "Target": {
+              "offset": 32,
+              "size": 256
+            },
+            "Task": {
+              "offset": 16,
+              "size": 16
+            }
+          },
+          "size": 400
+        },
         "NevercObjectPhaseAPI": {
           "align": 8,
           "fields": {
@@ -20497,6 +21663,92 @@
             }
           },
           "size": 64
+        },
+        "NevercObjectProbeRequest": {
+          "align": 8,
+          "fields": {
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Input": {
+              "offset": 32,
+              "size": 40
+            },
+            "LogicalPath": {
+              "offset": 72,
+              "size": 16
+            },
+            "Target": {
+              "offset": 88,
+              "size": 256
+            },
+            "Task": {
+              "offset": 16,
+              "size": 16
+            }
+          },
+          "size": 344
+        },
+        "NevercObjectProbeResult": {
+          "align": 8,
+          "fields": {
+            "ArtifactKind": {
+              "offset": 20,
+              "size": 4
+            },
+            "Confidence": {
+              "offset": 16,
+              "size": 4
+            },
+            "ConsumedMinimum": {
+              "offset": 24,
+              "size": 8
+            },
+            "Header": {
+              "offset": 0,
+              "size": 16
+            }
+          },
+          "size": 32
+        },
+        "NevercObjectReadRequest": {
+          "align": 8,
+          "fields": {
+            "Graph": {
+              "offset": 352,
+              "size": 16
+            },
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Input": {
+              "offset": 32,
+              "size": 40
+            },
+            "LogicalPath": {
+              "offset": 72,
+              "size": 16
+            },
+            "Mutation": {
+              "offset": 368,
+              "size": 16
+            },
+            "Object": {
+              "offset": 344,
+              "size": 8
+            },
+            "Target": {
+              "offset": 88,
+              "size": 256
+            },
+            "Task": {
+              "offset": 16,
+              "size": 16
+            }
+          },
+          "size": 384
         },
         "NevercObjectRelocationDescriptor": {
           "align": 8,
@@ -20707,6 +21959,48 @@
             }
           },
           "size": 152
+        },
+        "NevercObjectWriteRequest": {
+          "align": 8,
+          "fields": {
+            "Binary": {
+              "offset": 344,
+              "size": 8
+            },
+            "Builder": {
+              "offset": 352,
+              "size": 16
+            },
+            "FormatID": {
+              "offset": 288,
+              "size": 16
+            },
+            "Graph": {
+              "offset": 312,
+              "size": 16
+            },
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "LayoutProof": {
+              "offset": 328,
+              "size": 16
+            },
+            "Object": {
+              "offset": 304,
+              "size": 8
+            },
+            "Target": {
+              "offset": 32,
+              "size": 256
+            },
+            "Task": {
+              "offset": 16,
+              "size": 16
+            }
+          },
+          "size": 368
         },
         "NevercObserverDescriptor": {
           "align": 8,
@@ -22107,6 +23401,24 @@
             }
           },
           "size": 128
+        },
+        "NevercRawLinkInputSet": {
+          "align": 8,
+          "fields": {
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Inputs": {
+              "offset": 16,
+              "size": 24
+            },
+            "OrderDigest": {
+              "offset": 40,
+              "size": 32
+            }
+          },
+          "size": 72
         },
         "NevercRecordDeclInfo": {
           "align": 8,
@@ -24512,13 +25824,13 @@
       "arch": "x86_64",
       "calling_convention": "sysv",
       "endian": "little",
-      "field_count": 2541,
+      "field_count": 2675,
       "pack_invariant_under": [
         1,
         16
       ],
       "pointer_width": 64,
-      "struct_count": 346,
+      "struct_count": 366,
       "structs": {
         "NevercABIArgumentClassification": {
           "align": 8,
@@ -26396,6 +27708,130 @@
           },
           "size": 328
         },
+        "NevercDynCodeBinaryVerifyRequest": {
+          "align": 8,
+          "fields": {
+            "Binary": {
+              "offset": 80,
+              "size": 8
+            },
+            "Builder": {
+              "offset": 88,
+              "size": 16
+            },
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Image": {
+              "offset": 64,
+              "size": 16
+            },
+            "ImageDigest": {
+              "offset": 112,
+              "size": 32
+            },
+            "ImageGeneration": {
+              "offset": 104,
+              "size": 8
+            },
+            "Request": {
+              "offset": 32,
+              "size": 16
+            },
+            "TargetID": {
+              "offset": 48,
+              "size": 16
+            },
+            "Task": {
+              "offset": 16,
+              "size": 16
+            }
+          },
+          "size": 144
+        },
+        "NevercDynCodeBinaryVerifyResult": {
+          "align": 8,
+          "fields": {
+            "Accepted": {
+              "offset": 16,
+              "size": 4
+            },
+            "Diagnostic": {
+              "offset": 32,
+              "size": 16
+            },
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Reserved8": {
+              "offset": 20,
+              "size": 7
+            }
+          },
+          "size": 48
+        },
+        "NevercDynCodeCharsetEncodeRequest": {
+          "align": 8,
+          "fields": {
+            "BadByteSet": {
+              "offset": 88,
+              "size": 16
+            },
+            "Binary": {
+              "offset": 64,
+              "size": 8
+            },
+            "Builder": {
+              "offset": 72,
+              "size": 16
+            },
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Image": {
+              "offset": 48,
+              "size": 16
+            },
+            "Request": {
+              "offset": 32,
+              "size": 16
+            },
+            "Task": {
+              "offset": 16,
+              "size": 16
+            }
+          },
+          "size": 104
+        },
+        "NevercDynCodeCharsetEncodeResult": {
+          "align": 8,
+          "fields": {
+            "DecoderStubProvenance": {
+              "offset": 40,
+              "size": 16
+            },
+            "EncodedEntryOffset": {
+              "offset": 16,
+              "size": 8
+            },
+            "EntryUpdated": {
+              "offset": 24,
+              "size": 4
+            },
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Reserved8": {
+              "offset": 28,
+              "size": 7
+            }
+          },
+          "size": 56
+        },
         "NevercDynCodeCharsetEncoderDescriptor": {
           "align": 8,
           "fields": {
@@ -26485,6 +27921,52 @@
             }
           },
           "size": 72
+        },
+        "NevercDynCodeExtractionRequest": {
+          "align": 8,
+          "fields": {
+            "Binary": {
+              "offset": 120,
+              "size": 8
+            },
+            "Builder": {
+              "offset": 128,
+              "size": 16
+            },
+            "Graph": {
+              "offset": 72,
+              "size": 16
+            },
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Image": {
+              "offset": 104,
+              "size": 16
+            },
+            "Object": {
+              "offset": 64,
+              "size": 8
+            },
+            "Plan": {
+              "offset": 88,
+              "size": 16
+            },
+            "Request": {
+              "offset": 32,
+              "size": 16
+            },
+            "TargetID": {
+              "offset": 48,
+              "size": 16
+            },
+            "Task": {
+              "offset": 16,
+              "size": 16
+            }
+          },
+          "size": 144
         },
         "NevercDynCodeExtractorDescriptor": {
           "align": 8,
@@ -26655,6 +28137,74 @@
             }
           },
           "size": 368
+        },
+        "NevercDynCodeImportRequest": {
+          "align": 8,
+          "fields": {
+            "ExecutionLevel": {
+              "offset": 64,
+              "size": 4
+            },
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Kind": {
+              "offset": 68,
+              "size": 4
+            },
+            "Module": {
+              "offset": 72,
+              "size": 16
+            },
+            "Request": {
+              "offset": 32,
+              "size": 16
+            },
+            "Symbol": {
+              "offset": 48,
+              "size": 16
+            },
+            "Task": {
+              "offset": 16,
+              "size": 16
+            }
+          },
+          "size": 88
+        },
+        "NevercDynCodeImportResult": {
+          "align": 8,
+          "fields": {
+            "CookieParameter": {
+              "offset": 40,
+              "size": 16
+            },
+            "Disposition": {
+              "offset": 16,
+              "size": 4
+            },
+            "EntryABIChanged": {
+              "offset": 56,
+              "size": 4
+            },
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Reserved8": {
+              "offset": 60,
+              "size": 7
+            },
+            "ResolvedKind": {
+              "offset": 20,
+              "size": 4
+            },
+            "ResolverContract": {
+              "offset": 24,
+              "size": 16
+            }
+          },
+          "size": 72
         },
         "NevercDynCodePhaseAPI": {
           "align": 8,
@@ -28542,6 +30092,44 @@
           },
           "size": 120
         },
+        "NevercLTOProductCandidate": {
+          "align": 8,
+          "fields": {
+            "CacheKey": {
+              "offset": 88,
+              "size": 16
+            },
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Objects": {
+              "offset": 32,
+              "size": 24
+            },
+            "OptimizedBitcode": {
+              "offset": 56,
+              "size": 16
+            },
+            "ProducerRouteDigest": {
+              "offset": 120,
+              "size": 32
+            },
+            "Product": {
+              "offset": 16,
+              "size": 16
+            },
+            "ProductID": {
+              "offset": 104,
+              "size": 16
+            },
+            "ThinIndex": {
+              "offset": 72,
+              "size": 16
+            }
+          },
+          "size": 152
+        },
         "NevercLTOProviderDescriptor": {
           "align": 8,
           "fields": {
@@ -28601,6 +30189,60 @@
             }
           },
           "size": 32
+        },
+        "NevercLTORequest": {
+          "align": 8,
+          "fields": {
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "LinkGraph": {
+              "offset": 64,
+              "size": 16
+            },
+            "LinkRequest": {
+              "offset": 48,
+              "size": 16
+            },
+            "Modules": {
+              "offset": 472,
+              "size": 24
+            },
+            "Options": {
+              "offset": 352,
+              "size": 120
+            },
+            "OutputFormat": {
+              "offset": 336,
+              "size": 16
+            },
+            "Request": {
+              "offset": 16,
+              "size": 16
+            },
+            "RequestDigest": {
+              "offset": 552,
+              "size": 32
+            },
+            "ResolutionDigest": {
+              "offset": 520,
+              "size": 32
+            },
+            "Resolutions": {
+              "offset": 496,
+              "size": 24
+            },
+            "Target": {
+              "offset": 80,
+              "size": 256
+            },
+            "Task": {
+              "offset": 32,
+              "size": 16
+            }
+          },
+          "size": 584
         },
         "NevercLTOSymbolResolution": {
           "align": 8,
@@ -29542,6 +31184,60 @@
           },
           "size": 48
         },
+        "NevercLinkRequest": {
+          "align": 8,
+          "fields": {
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "InputFormat": {
+              "offset": 304,
+              "size": 16
+            },
+            "Options": {
+              "offset": 360,
+              "size": 168
+            },
+            "OutputFormat": {
+              "offset": 320,
+              "size": 16
+            },
+            "OutputKind": {
+              "offset": 336,
+              "size": 4
+            },
+            "OutputURI": {
+              "offset": 344,
+              "size": 16
+            },
+            "RawInputs": {
+              "offset": 528,
+              "size": 72
+            },
+            "Request": {
+              "offset": 16,
+              "size": 16
+            },
+            "RequestDigest": {
+              "offset": 600,
+              "size": 32
+            },
+            "Reserved": {
+              "offset": 340,
+              "size": 4
+            },
+            "Target": {
+              "offset": 48,
+              "size": 256
+            },
+            "Task": {
+              "offset": 32,
+              "size": 16
+            }
+          },
+          "size": 632
+        },
         "NevercLinkSectionInfo": {
           "align": 8,
           "fields": {
@@ -29809,6 +31505,32 @@
             }
           },
           "size": 224
+        },
+        "NevercLinkerProductCandidate": {
+          "align": 8,
+          "fields": {
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Image": {
+              "offset": 16,
+              "size": 16
+            },
+            "Outputs": {
+              "offset": 32,
+              "size": 16
+            },
+            "ProducerRouteDigest": {
+              "offset": 64,
+              "size": 32
+            },
+            "ProductID": {
+              "offset": 48,
+              "size": 16
+            }
+          },
+          "size": 96
         },
         "NevercLinkerProviderDescriptor": {
           "align": 8,
@@ -32378,6 +34100,20 @@
           },
           "size": 96
         },
+        "NevercMutableBinaryAPI": {
+          "align": 8,
+          "fields": {
+            "Context": {
+              "offset": 16,
+              "size": 8
+            },
+            "Header": {
+              "offset": 0,
+              "size": 16
+            }
+          },
+          "size": 88
+        },
         "NevercMutableByteView": {
           "align": 8,
           "fields": {
@@ -32666,6 +34402,46 @@
           },
           "size": 56
         },
+        "NevercObjectMergeCandidate": {
+          "align": 8,
+          "fields": {
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Object": {
+              "offset": 16,
+              "size": 16
+            },
+            "ProducerRouteDigest": {
+              "offset": 48,
+              "size": 32
+            },
+            "ProductID": {
+              "offset": 32,
+              "size": 16
+            }
+          },
+          "size": 80
+        },
+        "NevercObjectMergeInput": {
+          "align": 8,
+          "fields": {
+            "Graph": {
+              "offset": 24,
+              "size": 16
+            },
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Object": {
+              "offset": 16,
+              "size": 8
+            }
+          },
+          "size": 40
+        },
         "NevercObjectMergeProviderDescriptor": {
           "align": 8,
           "fields": {
@@ -32712,6 +34488,52 @@
           },
           "size": 128
         },
+        "NevercObjectMergeRequest": {
+          "align": 8,
+          "fields": {
+            "Extensions": {
+              "offset": 336,
+              "size": 24
+            },
+            "Flags": {
+              "offset": 328,
+              "size": 8
+            },
+            "FormatID": {
+              "offset": 288,
+              "size": 16
+            },
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Objects": {
+              "offset": 304,
+              "size": 24
+            },
+            "OutputGraph": {
+              "offset": 368,
+              "size": 16
+            },
+            "OutputMutation": {
+              "offset": 384,
+              "size": 16
+            },
+            "OutputObject": {
+              "offset": 360,
+              "size": 8
+            },
+            "Target": {
+              "offset": 32,
+              "size": 256
+            },
+            "Task": {
+              "offset": 16,
+              "size": 16
+            }
+          },
+          "size": 400
+        },
         "NevercObjectPhaseAPI": {
           "align": 8,
           "fields": {
@@ -32751,6 +34573,92 @@
             }
           },
           "size": 64
+        },
+        "NevercObjectProbeRequest": {
+          "align": 8,
+          "fields": {
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Input": {
+              "offset": 32,
+              "size": 40
+            },
+            "LogicalPath": {
+              "offset": 72,
+              "size": 16
+            },
+            "Target": {
+              "offset": 88,
+              "size": 256
+            },
+            "Task": {
+              "offset": 16,
+              "size": 16
+            }
+          },
+          "size": 344
+        },
+        "NevercObjectProbeResult": {
+          "align": 8,
+          "fields": {
+            "ArtifactKind": {
+              "offset": 20,
+              "size": 4
+            },
+            "Confidence": {
+              "offset": 16,
+              "size": 4
+            },
+            "ConsumedMinimum": {
+              "offset": 24,
+              "size": 8
+            },
+            "Header": {
+              "offset": 0,
+              "size": 16
+            }
+          },
+          "size": 32
+        },
+        "NevercObjectReadRequest": {
+          "align": 8,
+          "fields": {
+            "Graph": {
+              "offset": 352,
+              "size": 16
+            },
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Input": {
+              "offset": 32,
+              "size": 40
+            },
+            "LogicalPath": {
+              "offset": 72,
+              "size": 16
+            },
+            "Mutation": {
+              "offset": 368,
+              "size": 16
+            },
+            "Object": {
+              "offset": 344,
+              "size": 8
+            },
+            "Target": {
+              "offset": 88,
+              "size": 256
+            },
+            "Task": {
+              "offset": 16,
+              "size": 16
+            }
+          },
+          "size": 384
         },
         "NevercObjectRelocationDescriptor": {
           "align": 8,
@@ -32961,6 +34869,48 @@
             }
           },
           "size": 152
+        },
+        "NevercObjectWriteRequest": {
+          "align": 8,
+          "fields": {
+            "Binary": {
+              "offset": 344,
+              "size": 8
+            },
+            "Builder": {
+              "offset": 352,
+              "size": 16
+            },
+            "FormatID": {
+              "offset": 288,
+              "size": 16
+            },
+            "Graph": {
+              "offset": 312,
+              "size": 16
+            },
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "LayoutProof": {
+              "offset": 328,
+              "size": 16
+            },
+            "Object": {
+              "offset": 304,
+              "size": 8
+            },
+            "Target": {
+              "offset": 32,
+              "size": 256
+            },
+            "Task": {
+              "offset": 16,
+              "size": 16
+            }
+          },
+          "size": 368
         },
         "NevercObserverDescriptor": {
           "align": 8,
@@ -34361,6 +36311,24 @@
             }
           },
           "size": 128
+        },
+        "NevercRawLinkInputSet": {
+          "align": 8,
+          "fields": {
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Inputs": {
+              "offset": 16,
+              "size": 24
+            },
+            "OrderDigest": {
+              "offset": 40,
+              "size": 32
+            }
+          },
+          "size": 72
         },
         "NevercRecordDeclInfo": {
           "align": 8,
@@ -36766,13 +38734,13 @@
       "arch": "x86_64",
       "calling_convention": "win",
       "endian": "little",
-      "field_count": 2541,
+      "field_count": 2675,
       "pack_invariant_under": [
         1,
         16
       ],
       "pointer_width": 64,
-      "struct_count": 346,
+      "struct_count": 366,
       "structs": {
         "NevercABIArgumentClassification": {
           "align": 8,
@@ -38650,6 +40618,130 @@
           },
           "size": 328
         },
+        "NevercDynCodeBinaryVerifyRequest": {
+          "align": 8,
+          "fields": {
+            "Binary": {
+              "offset": 80,
+              "size": 8
+            },
+            "Builder": {
+              "offset": 88,
+              "size": 16
+            },
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Image": {
+              "offset": 64,
+              "size": 16
+            },
+            "ImageDigest": {
+              "offset": 112,
+              "size": 32
+            },
+            "ImageGeneration": {
+              "offset": 104,
+              "size": 8
+            },
+            "Request": {
+              "offset": 32,
+              "size": 16
+            },
+            "TargetID": {
+              "offset": 48,
+              "size": 16
+            },
+            "Task": {
+              "offset": 16,
+              "size": 16
+            }
+          },
+          "size": 144
+        },
+        "NevercDynCodeBinaryVerifyResult": {
+          "align": 8,
+          "fields": {
+            "Accepted": {
+              "offset": 16,
+              "size": 4
+            },
+            "Diagnostic": {
+              "offset": 32,
+              "size": 16
+            },
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Reserved8": {
+              "offset": 20,
+              "size": 7
+            }
+          },
+          "size": 48
+        },
+        "NevercDynCodeCharsetEncodeRequest": {
+          "align": 8,
+          "fields": {
+            "BadByteSet": {
+              "offset": 88,
+              "size": 16
+            },
+            "Binary": {
+              "offset": 64,
+              "size": 8
+            },
+            "Builder": {
+              "offset": 72,
+              "size": 16
+            },
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Image": {
+              "offset": 48,
+              "size": 16
+            },
+            "Request": {
+              "offset": 32,
+              "size": 16
+            },
+            "Task": {
+              "offset": 16,
+              "size": 16
+            }
+          },
+          "size": 104
+        },
+        "NevercDynCodeCharsetEncodeResult": {
+          "align": 8,
+          "fields": {
+            "DecoderStubProvenance": {
+              "offset": 40,
+              "size": 16
+            },
+            "EncodedEntryOffset": {
+              "offset": 16,
+              "size": 8
+            },
+            "EntryUpdated": {
+              "offset": 24,
+              "size": 4
+            },
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Reserved8": {
+              "offset": 28,
+              "size": 7
+            }
+          },
+          "size": 56
+        },
         "NevercDynCodeCharsetEncoderDescriptor": {
           "align": 8,
           "fields": {
@@ -38739,6 +40831,52 @@
             }
           },
           "size": 72
+        },
+        "NevercDynCodeExtractionRequest": {
+          "align": 8,
+          "fields": {
+            "Binary": {
+              "offset": 120,
+              "size": 8
+            },
+            "Builder": {
+              "offset": 128,
+              "size": 16
+            },
+            "Graph": {
+              "offset": 72,
+              "size": 16
+            },
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Image": {
+              "offset": 104,
+              "size": 16
+            },
+            "Object": {
+              "offset": 64,
+              "size": 8
+            },
+            "Plan": {
+              "offset": 88,
+              "size": 16
+            },
+            "Request": {
+              "offset": 32,
+              "size": 16
+            },
+            "TargetID": {
+              "offset": 48,
+              "size": 16
+            },
+            "Task": {
+              "offset": 16,
+              "size": 16
+            }
+          },
+          "size": 144
         },
         "NevercDynCodeExtractorDescriptor": {
           "align": 8,
@@ -38909,6 +41047,74 @@
             }
           },
           "size": 368
+        },
+        "NevercDynCodeImportRequest": {
+          "align": 8,
+          "fields": {
+            "ExecutionLevel": {
+              "offset": 64,
+              "size": 4
+            },
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Kind": {
+              "offset": 68,
+              "size": 4
+            },
+            "Module": {
+              "offset": 72,
+              "size": 16
+            },
+            "Request": {
+              "offset": 32,
+              "size": 16
+            },
+            "Symbol": {
+              "offset": 48,
+              "size": 16
+            },
+            "Task": {
+              "offset": 16,
+              "size": 16
+            }
+          },
+          "size": 88
+        },
+        "NevercDynCodeImportResult": {
+          "align": 8,
+          "fields": {
+            "CookieParameter": {
+              "offset": 40,
+              "size": 16
+            },
+            "Disposition": {
+              "offset": 16,
+              "size": 4
+            },
+            "EntryABIChanged": {
+              "offset": 56,
+              "size": 4
+            },
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Reserved8": {
+              "offset": 60,
+              "size": 7
+            },
+            "ResolvedKind": {
+              "offset": 20,
+              "size": 4
+            },
+            "ResolverContract": {
+              "offset": 24,
+              "size": 16
+            }
+          },
+          "size": 72
         },
         "NevercDynCodePhaseAPI": {
           "align": 8,
@@ -40796,6 +43002,44 @@
           },
           "size": 120
         },
+        "NevercLTOProductCandidate": {
+          "align": 8,
+          "fields": {
+            "CacheKey": {
+              "offset": 88,
+              "size": 16
+            },
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Objects": {
+              "offset": 32,
+              "size": 24
+            },
+            "OptimizedBitcode": {
+              "offset": 56,
+              "size": 16
+            },
+            "ProducerRouteDigest": {
+              "offset": 120,
+              "size": 32
+            },
+            "Product": {
+              "offset": 16,
+              "size": 16
+            },
+            "ProductID": {
+              "offset": 104,
+              "size": 16
+            },
+            "ThinIndex": {
+              "offset": 72,
+              "size": 16
+            }
+          },
+          "size": 152
+        },
         "NevercLTOProviderDescriptor": {
           "align": 8,
           "fields": {
@@ -40855,6 +43099,60 @@
             }
           },
           "size": 32
+        },
+        "NevercLTORequest": {
+          "align": 8,
+          "fields": {
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "LinkGraph": {
+              "offset": 64,
+              "size": 16
+            },
+            "LinkRequest": {
+              "offset": 48,
+              "size": 16
+            },
+            "Modules": {
+              "offset": 472,
+              "size": 24
+            },
+            "Options": {
+              "offset": 352,
+              "size": 120
+            },
+            "OutputFormat": {
+              "offset": 336,
+              "size": 16
+            },
+            "Request": {
+              "offset": 16,
+              "size": 16
+            },
+            "RequestDigest": {
+              "offset": 552,
+              "size": 32
+            },
+            "ResolutionDigest": {
+              "offset": 520,
+              "size": 32
+            },
+            "Resolutions": {
+              "offset": 496,
+              "size": 24
+            },
+            "Target": {
+              "offset": 80,
+              "size": 256
+            },
+            "Task": {
+              "offset": 32,
+              "size": 16
+            }
+          },
+          "size": 584
         },
         "NevercLTOSymbolResolution": {
           "align": 8,
@@ -41796,6 +44094,60 @@
           },
           "size": 48
         },
+        "NevercLinkRequest": {
+          "align": 8,
+          "fields": {
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "InputFormat": {
+              "offset": 304,
+              "size": 16
+            },
+            "Options": {
+              "offset": 360,
+              "size": 168
+            },
+            "OutputFormat": {
+              "offset": 320,
+              "size": 16
+            },
+            "OutputKind": {
+              "offset": 336,
+              "size": 4
+            },
+            "OutputURI": {
+              "offset": 344,
+              "size": 16
+            },
+            "RawInputs": {
+              "offset": 528,
+              "size": 72
+            },
+            "Request": {
+              "offset": 16,
+              "size": 16
+            },
+            "RequestDigest": {
+              "offset": 600,
+              "size": 32
+            },
+            "Reserved": {
+              "offset": 340,
+              "size": 4
+            },
+            "Target": {
+              "offset": 48,
+              "size": 256
+            },
+            "Task": {
+              "offset": 32,
+              "size": 16
+            }
+          },
+          "size": 632
+        },
         "NevercLinkSectionInfo": {
           "align": 8,
           "fields": {
@@ -42063,6 +44415,32 @@
             }
           },
           "size": 224
+        },
+        "NevercLinkerProductCandidate": {
+          "align": 8,
+          "fields": {
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Image": {
+              "offset": 16,
+              "size": 16
+            },
+            "Outputs": {
+              "offset": 32,
+              "size": 16
+            },
+            "ProducerRouteDigest": {
+              "offset": 64,
+              "size": 32
+            },
+            "ProductID": {
+              "offset": 48,
+              "size": 16
+            }
+          },
+          "size": 96
         },
         "NevercLinkerProviderDescriptor": {
           "align": 8,
@@ -44632,6 +47010,20 @@
           },
           "size": 96
         },
+        "NevercMutableBinaryAPI": {
+          "align": 8,
+          "fields": {
+            "Context": {
+              "offset": 16,
+              "size": 8
+            },
+            "Header": {
+              "offset": 0,
+              "size": 16
+            }
+          },
+          "size": 88
+        },
         "NevercMutableByteView": {
           "align": 8,
           "fields": {
@@ -44920,6 +47312,46 @@
           },
           "size": 56
         },
+        "NevercObjectMergeCandidate": {
+          "align": 8,
+          "fields": {
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Object": {
+              "offset": 16,
+              "size": 16
+            },
+            "ProducerRouteDigest": {
+              "offset": 48,
+              "size": 32
+            },
+            "ProductID": {
+              "offset": 32,
+              "size": 16
+            }
+          },
+          "size": 80
+        },
+        "NevercObjectMergeInput": {
+          "align": 8,
+          "fields": {
+            "Graph": {
+              "offset": 24,
+              "size": 16
+            },
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Object": {
+              "offset": 16,
+              "size": 8
+            }
+          },
+          "size": 40
+        },
         "NevercObjectMergeProviderDescriptor": {
           "align": 8,
           "fields": {
@@ -44966,6 +47398,52 @@
           },
           "size": 128
         },
+        "NevercObjectMergeRequest": {
+          "align": 8,
+          "fields": {
+            "Extensions": {
+              "offset": 336,
+              "size": 24
+            },
+            "Flags": {
+              "offset": 328,
+              "size": 8
+            },
+            "FormatID": {
+              "offset": 288,
+              "size": 16
+            },
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Objects": {
+              "offset": 304,
+              "size": 24
+            },
+            "OutputGraph": {
+              "offset": 368,
+              "size": 16
+            },
+            "OutputMutation": {
+              "offset": 384,
+              "size": 16
+            },
+            "OutputObject": {
+              "offset": 360,
+              "size": 8
+            },
+            "Target": {
+              "offset": 32,
+              "size": 256
+            },
+            "Task": {
+              "offset": 16,
+              "size": 16
+            }
+          },
+          "size": 400
+        },
         "NevercObjectPhaseAPI": {
           "align": 8,
           "fields": {
@@ -45005,6 +47483,92 @@
             }
           },
           "size": 64
+        },
+        "NevercObjectProbeRequest": {
+          "align": 8,
+          "fields": {
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Input": {
+              "offset": 32,
+              "size": 40
+            },
+            "LogicalPath": {
+              "offset": 72,
+              "size": 16
+            },
+            "Target": {
+              "offset": 88,
+              "size": 256
+            },
+            "Task": {
+              "offset": 16,
+              "size": 16
+            }
+          },
+          "size": 344
+        },
+        "NevercObjectProbeResult": {
+          "align": 8,
+          "fields": {
+            "ArtifactKind": {
+              "offset": 20,
+              "size": 4
+            },
+            "Confidence": {
+              "offset": 16,
+              "size": 4
+            },
+            "ConsumedMinimum": {
+              "offset": 24,
+              "size": 8
+            },
+            "Header": {
+              "offset": 0,
+              "size": 16
+            }
+          },
+          "size": 32
+        },
+        "NevercObjectReadRequest": {
+          "align": 8,
+          "fields": {
+            "Graph": {
+              "offset": 352,
+              "size": 16
+            },
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Input": {
+              "offset": 32,
+              "size": 40
+            },
+            "LogicalPath": {
+              "offset": 72,
+              "size": 16
+            },
+            "Mutation": {
+              "offset": 368,
+              "size": 16
+            },
+            "Object": {
+              "offset": 344,
+              "size": 8
+            },
+            "Target": {
+              "offset": 88,
+              "size": 256
+            },
+            "Task": {
+              "offset": 16,
+              "size": 16
+            }
+          },
+          "size": 384
         },
         "NevercObjectRelocationDescriptor": {
           "align": 8,
@@ -45215,6 +47779,48 @@
             }
           },
           "size": 152
+        },
+        "NevercObjectWriteRequest": {
+          "align": 8,
+          "fields": {
+            "Binary": {
+              "offset": 344,
+              "size": 8
+            },
+            "Builder": {
+              "offset": 352,
+              "size": 16
+            },
+            "FormatID": {
+              "offset": 288,
+              "size": 16
+            },
+            "Graph": {
+              "offset": 312,
+              "size": 16
+            },
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "LayoutProof": {
+              "offset": 328,
+              "size": 16
+            },
+            "Object": {
+              "offset": 304,
+              "size": 8
+            },
+            "Target": {
+              "offset": 32,
+              "size": 256
+            },
+            "Task": {
+              "offset": 16,
+              "size": 16
+            }
+          },
+          "size": 368
         },
         "NevercObserverDescriptor": {
           "align": 8,
@@ -46615,6 +49221,24 @@
             }
           },
           "size": 128
+        },
+        "NevercRawLinkInputSet": {
+          "align": 8,
+          "fields": {
+            "Header": {
+              "offset": 0,
+              "size": 16
+            },
+            "Inputs": {
+              "offset": 16,
+              "size": 24
+            },
+            "OrderDigest": {
+              "offset": 40,
+              "size": 32
+            }
+          },
+          "size": 72
         },
         "NevercRecordDeclInfo": {
           "align": 8,

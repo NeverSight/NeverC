@@ -1,5 +1,7 @@
 """Stable NeverC driver phase constants."""
 
+from ._base import interface
+
 from ..phases import (
     DRIVER_BUILD_ACTIONS as BUILD_ACTIONS,
     DRIVER_BUILD_JOBS as BUILD_JOBS,
@@ -9,6 +11,9 @@ from ..phases import (
     DRIVER_SELECT_TOOLCHAIN as SELECT_TOOLCHAIN,
 )
 
+DRIVER = interface("DRIVER")
+query = DRIVER.query
+
 __all__ = [
     "BUILD_ACTIONS",
     "BUILD_JOBS",
@@ -16,4 +21,6 @@ __all__ = [
     "PARSED_ARGUMENTS",
     "RAW_ARGUMENTS",
     "SELECT_TOOLCHAIN",
+    "DRIVER",
+    "query",
 ]

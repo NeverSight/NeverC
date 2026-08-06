@@ -199,6 +199,7 @@ add_custom_target(nevercPythonPluginPhaseSchema
 set(NEVERC_PLUGIN_PYTHON_SOURCES)
 if(NEVERC_ENABLE_PYTHON_PLUGINS)
   list(APPEND NEVERC_PLUGIN_PYTHON_SOURCES
+    Python/PythonPluginFFI.cpp
     Python/PythonPluginLoader.cpp
   )
 endif()
@@ -246,6 +247,7 @@ if(MSVC)
     Core/PluginPhaseExecutor.cpp
     Core/PluginSession.cpp
     Core/PluginTaskContext.cpp
+    Python/PythonPluginFFI.cpp
     Python/PythonPluginLoader.cpp
     PROPERTIES COMPILE_OPTIONS "/EHsc"
   )
@@ -258,6 +260,7 @@ else()
     Core/PluginPhaseExecutor.cpp
     Core/PluginSession.cpp
     Core/PluginTaskContext.cpp
+    Python/PythonPluginFFI.cpp
     Python/PythonPluginLoader.cpp
     PROPERTIES COMPILE_OPTIONS "-fexceptions;-funwind-tables"
   )

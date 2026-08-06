@@ -139,6 +139,34 @@ TEST(PythonPluginTest, LoadsIndependentScriptsAndRejectsDuplicateIDs) {
   EXPECT_EQ(Registry.moduleCount(), 2u);
 }
 
+TEST(PythonPluginTest, LoadsCompleteNativeDescriptorMetadata) {
+  PluginRegistry Registry("neverc-python-plugin-tests", LLVM_VERSION_MAJOR);
+  auto Loaded = Registry.load(NEVERC_TEST_PYTHON_METADATA_PLUGIN);
+  if (!Loaded)
+    FAIL() << takeErrorMessage(Loaded);
+  const PluginDescriptorRecord &Descriptor = (*Loaded)->descriptor();
+  EXPECT_EQ(Descriptor.ABIFlags, 0u);
+  EXPECT_EQ(Descriptor.Concurrency, NEVERC_CONCURRENCY_THREAD_SAFE);
+  EXPECT_EQ(Descriptor.Reentrancy, NEVERC_REENTRANCY_ALLOWED);
+  ASSERT_EQ(Descriptor.RequiredInterfaces.size(), 1u);
+  EXPECT_TRUE(Descriptor.RequiredInterfaces[0].Required);
+  EXPECT_EQ(Descriptor.RequiredInterfaces[0].Major, 1u);
+  EXPECT_EQ(Descriptor.RequiredInterfaces[0].Stability,
+            NEVERC_INTERFACE_STABLE);
+  ASSERT_EQ(Descriptor.OptionalInterfaces.size(), 1u);
+  EXPECT_FALSE(Descriptor.OptionalInterfaces[0].Required);
+  ASSERT_EQ(Descriptor.Dependencies.size(), 1u);
+  const OwnedPluginDependency &Dependency = Descriptor.Dependencies[0];
+  EXPECT_EQ(Dependency.PluginID, "org.neverc.test.python-minimal");
+  EXPECT_EQ(Dependency.Kind, NEVERC_DEPENDENCY_AFTER);
+  EXPECT_EQ(Dependency.Version.MinimumInclusive.Major, 1u);
+  EXPECT_EQ(Dependency.Version.MinimumInclusive.Minor, 2u);
+  EXPECT_EQ(Dependency.MinimumPrerelease, "beta.1");
+  EXPECT_EQ(Dependency.Version.MaximumExclusive.Major, 2u);
+  EXPECT_EQ(Dependency.Version.HasMaximum, NEVERC_TRUE);
+  EXPECT_EQ(Dependency.Version.AllowPrerelease, NEVERC_TRUE);
+}
+
 TEST(PythonPluginTest, ImportFailuresContainThePythonTraceback) {
   PluginRegistry Registry("neverc-python-plugin-tests", LLVM_VERSION_MAJOR);
   auto Loaded = Registry.load(NEVERC_TEST_PYTHON_INVALID_PLUGIN);
@@ -210,6 +238,30 @@ TEST(PythonPluginTest, RunsProcessSessionTaskAndDestroyLifecycle) {
                 "process_begin", "register", "session_begin",
                 "task_begin:translation_unit", "task_end:translation_unit",
                 "session_end", "destroy"}));
+}
+
+TEST(PythonPluginTest, BindsEveryGeneratedFFICallbackSlot) {
+  PluginProcessServices Services("neverc-python-plugin-tests",
+                                 LLVM_VERSION_MAJOR);
+  ASSERT_FALSE(Services.interfaces().freeze());
+  auto Loaded =
+      Services.registry().load(NEVERC_TEST_PYTHON_ALL_FFI_CALLBACKS_PLUGIN);
+  if (!Loaded)
+    FAIL() << takeErrorMessage(Loaded);
+
+  {
+    const StringRef Selected[] = {"org.neverc.test.python-all-ffi-callbacks"};
+    auto Plan = makePluginActivationPlan(Services.registry(), Selected);
+    if (!Plan)
+      FAIL() << takeErrorMessage(Plan.takeError());
+    auto Session = PluginSession::create(Services, *Plan);
+    if (!Session)
+      FAIL() << takeErrorMessage(Session.takeError());
+    EXPECT_FALSE((*Session)->end());
+    Session->reset();
+  }
+  Loaded->reset();
+  EXPECT_FALSE(Services.shutdown());
 }
 
 TEST(PythonPluginTest, UnloadAndReloadCreateFreshRuntimeInstances) {

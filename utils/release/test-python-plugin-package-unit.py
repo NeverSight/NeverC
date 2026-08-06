@@ -87,6 +87,27 @@ class PythonPluginPackageTest(unittest.TestCase):
         for module in ("ssl", "hashlib", "ctypes", "bz2", "lzma", "sqlite3"):
             self.assertIn(f"import {module}", self.module.PROBE_PLUGIN)
 
+    def test_python_sdk_contract_requires_full_ffi_and_ollvm_example(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            prefix = Path(temporary)
+            for relative in self.module.REQUIRED_PYTHON_SDK_FILES:
+                path = prefix / "pluginsdk" / "python" / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("", encoding="utf-8")
+            sdk = self.module.check_python_sdk(prefix)
+            self.assertEqual(sdk, prefix / "pluginsdk" / "python")
+            (sdk / "neverc_plugin" / "ffi.py").unlink()
+            with self.assertRaisesRegex(ValueError, "ffi.py"):
+                self.module.check_python_sdk(prefix)
+
+    def test_ollvm_ir_contract_requires_all_three_transforms(self):
+        complete = "ollvm.sub\nollvm.bcf.gate\nollvm.fla.dispatch\n"
+        self.module.check_ollvm_ir(complete, "x86_64")
+        with self.assertRaisesRegex(ValueError, "ollvm.bcf.gate"):
+            self.module.check_ollvm_ir(
+                complete.replace("ollvm.bcf.gate", "missing"), "x86_64"
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

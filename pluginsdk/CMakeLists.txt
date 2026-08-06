@@ -105,14 +105,33 @@ set(PYTHON_SDK_ROOT_FILES
     "${PLUGINSDK_SRC}/python/README.md")
 set(PYTHON_SDK_PACKAGE_FILES
     "${PLUGINSDK_SRC}/python/neverc_plugin/__init__.py"
+    "${PLUGINSDK_SRC}/python/neverc_plugin/abi.py"
     "${PLUGINSDK_SRC}/python/neverc_plugin/api.py"
+    "${PLUGINSDK_SRC}/python/neverc_plugin/ffi.py"
     "${PLUGINSDK_SRC}/python/neverc_plugin/phases.py")
 set(PYTHON_SDK_DOMAIN_FILES
     "${PLUGINSDK_SRC}/python/neverc_plugin/domains/__init__.py"
-    "${PLUGINSDK_SRC}/python/neverc_plugin/domains/driver.py")
+    "${PLUGINSDK_SRC}/python/neverc_plugin/domains/_base.py"
+    "${PLUGINSDK_SRC}/python/neverc_plugin/domains/ast.py"
+    "${PLUGINSDK_SRC}/python/neverc_plugin/domains/core.py"
+    "${PLUGINSDK_SRC}/python/neverc_plugin/domains/driver.py"
+    "${PLUGINSDK_SRC}/python/neverc_plugin/domains/dyncode.py"
+    "${PLUGINSDK_SRC}/python/neverc_plugin/domains/ir.py"
+    "${PLUGINSDK_SRC}/python/neverc_plugin/domains/link.py"
+    "${PLUGINSDK_SRC}/python/neverc_plugin/domains/lto.py"
+    "${PLUGINSDK_SRC}/python/neverc_plugin/domains/mc.py"
+    "${PLUGINSDK_SRC}/python/neverc_plugin/domains/mir.py"
+    "${PLUGINSDK_SRC}/python/neverc_plugin/domains/object.py"
+    "${PLUGINSDK_SRC}/python/neverc_plugin/domains/prep.py"
+    "${PLUGINSDK_SRC}/python/neverc_plugin/domains/sema.py"
+    "${PLUGINSDK_SRC}/python/neverc_plugin/domains/source.py"
+    "${PLUGINSDK_SRC}/python/neverc_plugin/domains/target.py")
 set(PYTHON_SDK_EXAMPLE_FILES
     "${PLUGINSDK_SRC}/python/examples/minimal.py"
     "${PLUGINSDK_SRC}/python/examples/driver_trace.py")
+set(PYTHON_SDK_OLLVM_EXAMPLE_FILES
+    "${PLUGINSDK_SRC}/python/examples/ollvm/ollvm_plugin.py"
+    "${PLUGINSDK_SRC}/python/examples/ollvm/README.md")
 
 # ---------------------------------------------------------------------------
 # Build-tree copy
@@ -225,6 +244,8 @@ add_custom_command(
       "${PLUGINSDK_DST}/python/neverc_plugin/domains"
   COMMAND "${CMAKE_COMMAND}" -E make_directory
       "${PLUGINSDK_DST}/python/examples"
+  COMMAND "${CMAKE_COMMAND}" -E make_directory
+      "${PLUGINSDK_DST}/python/examples/ollvm"
   COMMAND "${CMAKE_COMMAND}" -E copy_if_different
       ${PYTHON_SDK_ROOT_FILES}
       "${PLUGINSDK_DST}/python"
@@ -237,6 +258,9 @@ add_custom_command(
   COMMAND "${CMAKE_COMMAND}" -E copy_if_different
       ${PYTHON_SDK_EXAMPLE_FILES}
       "${PLUGINSDK_DST}/python/examples"
+  COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+      ${PYTHON_SDK_OLLVM_EXAMPLE_FILES}
+      "${PLUGINSDK_DST}/python/examples/ollvm"
   COMMAND "${CMAKE_COMMAND}" -E touch "${_stamp}"
   DEPENDS
       "${PLUGIN_HEADER}"
@@ -274,6 +298,7 @@ add_custom_command(
       ${PYTHON_SDK_PACKAGE_FILES}
       ${PYTHON_SDK_DOMAIN_FILES}
       ${PYTHON_SDK_EXAMPLE_FILES}
+      ${PYTHON_SDK_OLLVM_EXAMPLE_FILES}
   COMMENT "Copying pluginsdk to build tree..."
 )
 
@@ -381,10 +406,15 @@ add_custom_target(neverc-pluginsdk-examples
 set_target_properties(neverc-pluginsdk-examples
                       PROPERTIES FOLDER "NeverC/Plugin SDK")
 
-add_custom_target(neverc-pluginsdk ALL DEPENDS "${_stamp}")
-add_dependencies(neverc-pluginsdk neverc-pluginsdk-examples)
+add_custom_target(neverc-pluginsdk-stage DEPENDS "${_stamp}")
+set_target_properties(neverc-pluginsdk-stage
+                      PROPERTIES FOLDER "NeverC/Plugin SDK")
+add_custom_target(neverc-pluginsdk ALL)
+add_dependencies(neverc-pluginsdk
+                 neverc-pluginsdk-stage
+                 neverc-pluginsdk-examples)
 if(TARGET nevercPythonPluginPhaseSchema)
-  add_dependencies(neverc-pluginsdk nevercPythonPluginPhaseSchema)
+  add_dependencies(neverc-pluginsdk-stage nevercPythonPluginPhaseSchema)
 endif()
 
 # ---------------------------------------------------------------------------
@@ -449,6 +479,9 @@ install(FILES ${PYTHON_SDK_DOMAIN_FILES}
         COMPONENT neverc-pluginsdk)
 install(FILES ${PYTHON_SDK_EXAMPLE_FILES}
         DESTINATION "pluginsdk/python/examples"
+        COMPONENT neverc-pluginsdk)
+install(FILES ${PYTHON_SDK_OLLVM_EXAMPLE_FILES}
+        DESTINATION "pluginsdk/python/examples/ollvm"
         COMPONENT neverc-pluginsdk)
 
 # ---------------------------------------------------------------------------

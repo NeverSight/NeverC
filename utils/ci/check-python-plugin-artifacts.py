@@ -201,6 +201,11 @@ def check_source_build_contract() -> list[str]:
         "windows-latest",
         "NEVERC_MANAGED_PYTHON_ROOT",
         '"neverc/cmake/**"',
+        "PluginPythonABIGeneration",
+        "PluginPythonABILayout",
+        "PluginPythonBridgeTest.*",
+        "examples/ollvm/ollvm_plugin.py",
+        "ollvm.fla.dispatch",
     )
     for token in required_workflow:
         if token not in workflow:

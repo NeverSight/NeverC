@@ -1,19 +1,24 @@
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
 
+#include "PythonPluginFFI.h"
 #include "PythonPluginLoader.h"
 #include "neverc/Plugin/PluginDriver.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Config/llvm-config.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/JSON.h"
 #include "llvm/Support/Path.h"
+#include <array>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -40,7 +45,7 @@ std::string findAdjacentPythonHome(StringRef Executable) {
 namespace {
 
 constexpr const char *BridgeModuleName = "_neverc_plugin";
-constexpr const char *ContextCapsuleName = "neverc_plugin.context.v1";
+constexpr const char *ContextCapsuleName = PythonContextCapsuleName;
 
 Error pythonPluginError(const Twine &Message) {
   return createStringError(inconvertibleErrorCode(), Message);
@@ -186,7 +191,7 @@ PyModuleDef BridgeModule = {
 bool prepareBridgeMethods() {
   if (BridgeModule.m_methods)
     return true;
-  PyMethodDef *Methods = PyMem_New(PyMethodDef, 7);
+  PyMethodDef *Methods = PyMem_New(PyMethodDef, 12);
   if (!Methods) {
     PyErr_NoMemory();
     return false;
@@ -203,7 +208,18 @@ bool prepareBridgeMethods() {
                 "Emit a structured NeverC diagnostic."};
   Methods[5] = {"frame_arguments", frameArguments, METH_VARARGS,
                 "Read raw driver arguments from a phase frame."};
-  Methods[6] = {nullptr, nullptr, 0, nullptr};
+  Methods[6] = {"context_capabilities", pythonContextCapabilities, METH_VARARGS,
+                "Return a lifetime-bound native capability snapshot."};
+  Methods[7] = {"context_is_active", pythonContextIsActive, METH_VARARGS,
+                "Check a native capability snapshot before dereference."};
+  Methods[8] = {"bind_callback_record", pythonBindCallbackRecord, METH_VARARGS,
+                "Patch an official callback record with native trampolines."};
+  Methods[9] = {"transfer_callback_binding", pythonTransferCallbackBinding,
+                METH_VARARGS,
+                "Transfer a callback record to the compiler runtime."};
+  Methods[10] = {"release_callback_binding", pythonReleaseCallbackBinding,
+                 METH_VARARGS, "Release an untransferred callback record."};
+  Methods[11] = {nullptr, nullptr, 0, nullptr};
   BridgeModule.m_methods = Methods;
   return true;
 }
@@ -311,63 +327,12 @@ void addAdjacentSDKPath() {
 
 class PythonPluginRuntime;
 
-struct RuntimeToken {
-  PythonPluginRuntime *Runtime = nullptr;
-};
-
-enum class ContextKind {
-  Registration,
-  Process,
-  Session,
-  Task,
-  Frame,
-};
-
-struct NativeContext {
-  ContextKind Kind = ContextKind::Process;
-  bool Active = true;
-  std::shared_ptr<RuntimeToken> Token;
-  const NevercCoreAPI *Core = nullptr;
-  const NevercRegistrarAPI *Registrar = nullptr;
-  void *RegistrarContext = nullptr;
-  NevercSessionHandle Session{};
-  NevercTaskHandle Task{};
-  const NevercPhaseFrame *Frame = nullptr;
-  std::string PhaseName;
-};
-
-void contextCapsuleDestructor(PyObject *Capsule) {
-  void *Pointer = PyCapsule_GetPointer(Capsule, ContextCapsuleName);
-  if (!Pointer) {
-    PyErr_Clear();
-    return;
-  }
-  delete static_cast<NativeContext *>(Pointer);
-}
-
-PyObject *makeContextCapsule(std::unique_ptr<NativeContext> Context,
-                             NativeContext **OutContext) {
-  NativeContext *Raw = Context.get();
-  PyObject *Capsule =
-      PyCapsule_New(Raw, ContextCapsuleName, contextCapsuleDestructor);
-  if (!Capsule)
-    return nullptr;
-  (void)Context.release();
-  if (OutContext)
-    *OutContext = Raw;
-  return Capsule;
-}
+using RuntimeToken = PythonPluginRuntimeToken;
+using ContextKind = PythonContextKind;
+using NativeContext = PythonPluginNativeContext;
 
 NativeContext *checkedContext(PyObject *Object) {
-  auto *Context = static_cast<NativeContext *>(
-      PyCapsule_GetPointer(Object, ContextCapsuleName));
-  if (!Context)
-    return nullptr;
-  if (!Context->Active || !Context->Token || !Context->Token->Runtime) {
-    PyErr_SetString(PyExc_RuntimeError, "NeverC context is no longer active");
-    return nullptr;
-  }
-  return Context;
+  return checkedPythonContext(Object);
 }
 
 bool isKind(const NativeContext &Context,
@@ -482,13 +447,12 @@ public:
         PluginClass(ClassValue), APIModule(APIModuleValue),
         PluginID(std::move(PluginIDValue)),
         HasSessionHooks(HasSessionHooksValue), HasTaskHooks(HasTaskHooksValue),
-        Token(std::make_shared<RuntimeToken>()) {
-    Token->Runtime = this;
-  }
+        Token(makePythonRuntimeToken(this)) {}
 
   ~PythonPluginRuntime() override {
     GILGuard Guard;
-    Token->Runtime = nullptr;
+    Token->Runtime.store(nullptr, std::memory_order_release);
+    destroyPythonRuntimeBindings(Token);
     if (ProcessNative)
       ProcessNative->Active = false;
     Py_XDECREF(ProcessContext);
@@ -606,8 +570,21 @@ PyObject *PythonPluginRuntime::createContext(
   Context->Session = Session;
   Context->Task = Task;
   Context->Frame = Frame;
+  Context->PluginID = PluginID;
   Context->PhaseName = PhaseName.str();
-  PyRef Capsule(makeContextCapsule(std::move(Context), OutNative));
+  Context->CapabilityMask = Core ? PythonCapabilityCore : 0;
+  if (Registrar)
+    Context->CapabilityMask |= PythonCapabilityRegistrar;
+  if (RegistrarContext)
+    Context->CapabilityMask |= PythonCapabilityRegistrarContext;
+  if (Kind == ContextKind::Session || Kind == ContextKind::Task ||
+      Kind == ContextKind::Frame)
+    Context->CapabilityMask |= PythonCapabilitySession;
+  if (Kind == ContextKind::Task || Kind == ContextKind::Frame)
+    Context->CapabilityMask |= PythonCapabilityTask;
+  if (Frame)
+    Context->CapabilityMask |= PythonCapabilityFrame;
+  PyRef Capsule(makePythonContextCapsule(std::move(Context), OutNative));
   if (!Capsule)
     return nullptr;
   if (Info)
@@ -891,9 +868,12 @@ NevercStatus NEVERC_CALL observerCallback(const NevercPhaseFrame *Frame,
                                           NevercObserverPoint Point,
                                           void *UserData) {
   auto *Binding = static_cast<ObserverBinding *>(UserData);
-  if (!Binding || !Binding->Token || !Binding->Token->Runtime)
+  if (!Binding || !Binding->Token ||
+      !Binding->Token->Runtime.load(std::memory_order_acquire))
     return status(NEVERC_STATUS_STALE_HANDLE);
-  return Binding->Token->Runtime->invokeObserver(Frame, Point, *Binding);
+  return static_cast<PythonPluginRuntime *>(
+             Binding->Token->Runtime.load(std::memory_order_acquire))
+      ->invokeObserver(Frame, Point, *Binding);
 }
 
 void NEVERC_CALL destroyObserverBinding(void *UserData) {
@@ -1192,7 +1172,10 @@ PyObject *optionValues(PyObject *, PyObject *Arguments) {
                     "option_values requires an active session callback");
     return nullptr;
   }
-  StringRef PluginID = Context->Token->Runtime->pluginID();
+  StringRef PluginID =
+      static_cast<PythonPluginRuntime *>(
+          Context->Token->Runtime.load(std::memory_order_acquire))
+          ->pluginID();
   NevercStringView PluginIDView = view(PluginID);
   NevercStringView Spelling{SpellingData,
                             static_cast<uint64_t>(SpellingLength)};
@@ -1279,7 +1262,10 @@ PyObject *emitDiagnostic(PyObject *, PyObject *Arguments) {
     PyErr_SetString(PyExc_ValueError, "invalid diagnostic severity or code");
     return nullptr;
   }
-  StringRef PluginID = Context->Token->Runtime->pluginID();
+  StringRef PluginID =
+      static_cast<PythonPluginRuntime *>(
+          Context->Token->Runtime.load(std::memory_order_acquire))
+          ->pluginID();
   NevercDiagnosticDescriptor Descriptor{};
   Descriptor.Header = {sizeof(Descriptor), NEVERC_CORE_API_MAJOR,
                        NEVERC_CORE_API_MINOR, 0};
@@ -1420,6 +1406,227 @@ Error validateSemVerIdentifiers(StringRef Value, bool IsPrerelease,
       return pythonPluginError(Description +
                                " has a numeric identifier with a leading zero");
     Value = Part.second;
+  }
+  return Error::success();
+}
+
+Expected<uint64_t> unsignedAttribute(PyObject *Object, const char *Name,
+                                     StringRef Description, uint64_t Maximum) {
+  PyRef Attribute(PyObject_GetAttrString(Object, Name));
+  if (!Attribute)
+    return pythonPluginError("missing " + Description + ": " +
+                             formatPythonException());
+  if (!PyLong_Check(Attribute.get()) || PyBool_Check(Attribute.get()))
+    return pythonPluginError(Description + " must be an integer");
+  unsigned long long Value = PyLong_AsUnsignedLongLong(Attribute.get());
+  if (PyErr_Occurred())
+    return pythonPluginError("invalid " + Description + ": " +
+                             formatPythonException());
+  if (Value > Maximum)
+    return pythonPluginError(Description + " is out of range");
+  return static_cast<uint64_t>(Value);
+}
+
+Expected<bool> booleanAttribute(PyObject *Object, const char *Name,
+                                StringRef Description) {
+  PyRef Attribute(PyObject_GetAttrString(Object, Name));
+  if (!Attribute)
+    return pythonPluginError("missing " + Description + ": " +
+                             formatPythonException());
+  if (!PyBool_Check(Attribute.get()))
+    return pythonPluginError(Description + " must be a boolean");
+  return Attribute.get() == Py_True;
+}
+
+Expected<std::array<uint32_t, 3>> versionTupleAttribute(PyObject *Object,
+                                                        const char *Name,
+                                                        StringRef Description) {
+  PyRef Value(PyObject_GetAttrString(Object, Name));
+  PyRef Sequence(
+      Value ? PySequence_Fast(Value.get(), "version must be a 3-item sequence")
+            : nullptr);
+  if (!Sequence || PySequence_Fast_GET_SIZE(Sequence.get()) != 3)
+    return pythonPluginError("invalid " + Description + ": " +
+                             formatPythonException());
+  std::array<uint32_t, 3> Result{};
+  for (size_t Index = 0; Index != Result.size(); ++Index) {
+    PyObject *Item = PySequence_Fast_GET_ITEM(Sequence.get(),
+                                              static_cast<Py_ssize_t>(Index));
+    if (!PyLong_Check(Item) || PyBool_Check(Item))
+      return pythonPluginError(Description + " components must be integers");
+    unsigned long Component = PyLong_AsUnsignedLong(Item);
+    if (PyErr_Occurred() || Component > UINT32_MAX)
+      return pythonPluginError("invalid " + Description + ": " +
+                               formatPythonException());
+    Result[Index] = static_cast<uint32_t>(Component);
+  }
+  return Result;
+}
+
+Error copyPythonRequirements(
+    PyObject *Spec, const char *AttributeName, bool Required,
+    std::vector<OwnedInterfaceRequirement> &Destination) {
+  PyRef Attribute(PyObject_GetAttrString(Spec, AttributeName));
+  PyRef Sequence(
+      Attribute ? PySequence_Fast(Attribute.get(),
+                                  "interface requirements must be a sequence")
+                : nullptr);
+  if (!Sequence)
+    return pythonPluginError(Twine("invalid ") + AttributeName + ": " +
+                             formatPythonException());
+  const Py_ssize_t Count = PySequence_Fast_GET_SIZE(Sequence.get());
+  Destination.reserve(static_cast<size_t>(Count));
+  std::set<std::pair<uint64_t, uint64_t>> Seen;
+  for (Py_ssize_t Index = 0; Index != Count; ++Index) {
+    PyObject *Item = PySequence_Fast_GET_ITEM(Sequence.get(), Index);
+    auto High =
+        unsignedAttribute(Item, "high", "interface ID high", UINT64_MAX);
+    auto Low = unsignedAttribute(Item, "low", "interface ID low", UINT64_MAX);
+    auto Major =
+        unsignedAttribute(Item, "major", "interface major", UINT16_MAX);
+    auto MinimumMinor = unsignedAttribute(
+        Item, "minimum_minor", "interface minimum minor", UINT16_MAX);
+    auto Stability =
+        unsignedAttribute(Item, "stability", "interface stability", UINT32_MAX);
+    auto LLVMMajor = unsignedAttribute(Item, "llvm_major",
+                                       "interface LLVM major", UINT32_MAX);
+    if (!High)
+      return High.takeError();
+    if (!Low)
+      return Low.takeError();
+    if (!Major)
+      return Major.takeError();
+    if (!MinimumMinor)
+      return MinimumMinor.takeError();
+    if (!Stability)
+      return Stability.takeError();
+    if (!LLVMMajor)
+      return LLVMMajor.takeError();
+    if (*Stability != NEVERC_INTERFACE_STABLE &&
+        *Stability != NEVERC_INTERFACE_LOCKSTEP)
+      return pythonPluginError("interface requirement has invalid stability");
+    if (*Stability == NEVERC_INTERFACE_LOCKSTEP &&
+        *LLVMMajor != LLVM_VERSION_MAJOR)
+      return pythonPluginError(
+          "unstable interface LLVM major does not match host");
+    auto Producer = unicodeAttribute(Item, "producer_build_id",
+                                     "interface producer build ID", true);
+    auto Target = unicodeAttribute(Item, "target_abi_key",
+                                   "interface target ABI key", true);
+    if (!Producer)
+      return Producer.takeError();
+    if (!Target)
+      return Target.takeError();
+    if (!Seen.emplace(*High, *Low).second)
+      return pythonPluginError("duplicate interface requirement");
+
+    OwnedInterfaceRequirement Requirement;
+    Requirement.Interface = {*High, *Low};
+    Requirement.Major = static_cast<uint16_t>(*Major);
+    Requirement.MinimumMinor = static_cast<uint16_t>(*MinimumMinor);
+    Requirement.Required = Required;
+    Requirement.Stability = static_cast<NevercInterfaceStability>(*Stability);
+    Requirement.Compatibility.ProducerBuildID = std::move(*Producer);
+    Requirement.Compatibility.TargetABIKey = std::move(*Target);
+    Requirement.Compatibility.LLVMMajor = static_cast<uint32_t>(*LLVMMajor);
+    Destination.push_back(std::move(Requirement));
+  }
+  return Error::success();
+}
+
+Error copyPythonDependencies(PyObject *Spec,
+                             std::vector<OwnedPluginDependency> &Destination) {
+  PyRef Attribute(PyObject_GetAttrString(Spec, "dependencies"));
+  PyRef Sequence(Attribute
+                     ? PySequence_Fast(Attribute.get(),
+                                       "plugin dependencies must be a sequence")
+                     : nullptr);
+  if (!Sequence)
+    return pythonPluginError("invalid dependencies: " +
+                             formatPythonException());
+  const Py_ssize_t Count = PySequence_Fast_GET_SIZE(Sequence.get());
+  Destination.reserve(static_cast<size_t>(Count));
+  std::set<std::pair<std::string, uint32_t>> Seen;
+  for (Py_ssize_t Index = 0; Index != Count; ++Index) {
+    PyObject *Item = PySequence_Fast_GET_ITEM(Sequence.get(), Index);
+    auto ID = unicodeAttribute(Item, "id", "dependency plugin ID");
+    auto Kind = unsignedAttribute(Item, "kind", "dependency kind", UINT32_MAX);
+    auto AllowPrerelease = booleanAttribute(Item, "allow_prerelease",
+                                            "dependency allow_prerelease");
+    auto Minimum = versionTupleAttribute(Item, "minimum_info",
+                                         "dependency minimum version");
+    auto Maximum = versionTupleAttribute(Item, "maximum_info",
+                                         "dependency maximum version");
+    auto MinimumPrerelease = unicodeAttribute(
+        Item, "minimum_prerelease", "dependency minimum prerelease", true);
+    auto MinimumBuild =
+        unicodeAttribute(Item, "minimum_build_metadata",
+                         "dependency minimum build metadata", true);
+    auto MaximumPrerelease = unicodeAttribute(
+        Item, "maximum_prerelease", "dependency maximum prerelease", true);
+    auto MaximumBuild =
+        unicodeAttribute(Item, "maximum_build_metadata",
+                         "dependency maximum build metadata", true);
+    PyRef MaximumText(PyObject_GetAttrString(Item, "maximum"));
+    if (!ID)
+      return ID.takeError();
+    if (!isCanonicalPluginID(*ID))
+      return pythonPluginError("dependency plugin ID is not canonical");
+    if (!Kind)
+      return Kind.takeError();
+    if (*Kind != NEVERC_DEPENDENCY_REQUIRED &&
+        *Kind != NEVERC_DEPENDENCY_BEFORE && *Kind != NEVERC_DEPENDENCY_AFTER)
+      return pythonPluginError("dependency has invalid kind");
+    if (!AllowPrerelease)
+      return AllowPrerelease.takeError();
+    if (!Minimum)
+      return Minimum.takeError();
+    if (!Maximum)
+      return Maximum.takeError();
+    if (!MinimumPrerelease)
+      return MinimumPrerelease.takeError();
+    if (!MinimumBuild)
+      return MinimumBuild.takeError();
+    if (!MaximumPrerelease)
+      return MaximumPrerelease.takeError();
+    if (!MaximumBuild)
+      return MaximumBuild.takeError();
+    if (!MaximumText)
+      return pythonPluginError("missing dependency maximum: " +
+                               formatPythonException());
+    if (Error E = validateSemVerIdentifiers(*MinimumPrerelease, true,
+                                            "dependency minimum prerelease"))
+      return E;
+    if (Error E = validateSemVerIdentifiers(
+            *MinimumBuild, false, "dependency minimum build metadata"))
+      return E;
+    if (Error E = validateSemVerIdentifiers(*MaximumPrerelease, true,
+                                            "dependency maximum prerelease"))
+      return E;
+    if (Error E = validateSemVerIdentifiers(
+            *MaximumBuild, false, "dependency maximum build metadata"))
+      return E;
+    if (!Seen.emplace(*ID, static_cast<uint32_t>(*Kind)).second)
+      return pythonPluginError("duplicate plugin dependency");
+
+    OwnedPluginDependency Dependency;
+    Dependency.PluginID = std::move(*ID);
+    Dependency.Kind = static_cast<NevercDependencyKind>(*Kind);
+    Dependency.Version.MinimumInclusive.Major = (*Minimum)[0];
+    Dependency.Version.MinimumInclusive.Minor = (*Minimum)[1];
+    Dependency.Version.MinimumInclusive.Patch = (*Minimum)[2];
+    Dependency.Version.MaximumExclusive.Major = (*Maximum)[0];
+    Dependency.Version.MaximumExclusive.Minor = (*Maximum)[1];
+    Dependency.Version.MaximumExclusive.Patch = (*Maximum)[2];
+    Dependency.Version.HasMaximum =
+        MaximumText.get() == Py_None ? NEVERC_FALSE : NEVERC_TRUE;
+    Dependency.Version.AllowPrerelease =
+        *AllowPrerelease ? NEVERC_TRUE : NEVERC_FALSE;
+    Dependency.MinimumPrerelease = std::move(*MinimumPrerelease);
+    Dependency.MinimumBuildMetadata = std::move(*MinimumBuild);
+    Dependency.MaximumPrerelease = std::move(*MaximumPrerelease);
+    Dependency.MaximumBuildMetadata = std::move(*MaximumBuild);
+    Destination.push_back(std::move(Dependency));
   }
   return Error::success();
 }
@@ -1581,6 +1788,28 @@ Expected<PythonPluginLoadResult> loadPythonPluginImpl(StringRef CanonicalPath) {
     VersionComponents[Index] = static_cast<uint32_t>(Component);
   }
 
+  auto ABIFlags = unsignedAttribute(Spec.get(), "abi_flags", "plugin ABI flags",
+                                    UINT64_MAX);
+  auto Concurrency = unsignedAttribute(Spec.get(), "concurrency",
+                                       "plugin concurrency", UINT32_MAX);
+  auto Reentrancy = unsignedAttribute(Spec.get(), "reentrancy",
+                                      "plugin reentrancy", UINT32_MAX);
+  if (!ABIFlags)
+    return ABIFlags.takeError();
+  if (*ABIFlags != 0)
+    return pythonPluginError("Python plugin has unsupported ABI flags");
+  if (!Concurrency)
+    return Concurrency.takeError();
+  if (*Concurrency != NEVERC_CONCURRENCY_SESSION_SERIAL &&
+      *Concurrency != NEVERC_CONCURRENCY_THREAD_SAFE &&
+      *Concurrency != NEVERC_CONCURRENCY_PROCESS_SERIAL)
+    return pythonPluginError("Python plugin has invalid concurrency model");
+  if (!Reentrancy)
+    return Reentrancy.takeError();
+  if (*Reentrancy != NEVERC_REENTRANCY_NONE &&
+      *Reentrancy != NEVERC_REENTRANCY_ALLOWED)
+    return pythonPluginError("Python plugin has invalid reentrancy model");
+
   PyRef PluginClass(PyObject_GetAttrString(Spec.get(), "plugin_class"));
   if (!PluginClass)
     return pythonPluginError("missing plugin class: " +
@@ -1615,6 +1844,7 @@ Expected<PythonPluginLoadResult> loadPythonPluginImpl(StringRef CanonicalPath) {
   PluginDescriptorRecord Descriptor;
   Descriptor.ABIMajor = NEVERC_PLUGIN_ABI_MAJOR;
   Descriptor.ABIMinor = NEVERC_PLUGIN_ABI_MINOR;
+  Descriptor.ABIFlags = *ABIFlags;
   Descriptor.PluginID = *PluginID;
   Descriptor.DisplayName = *DisplayName;
   Descriptor.Version.Major = VersionComponents[0];
@@ -1622,8 +1852,26 @@ Expected<PythonPluginLoadResult> loadPythonPluginImpl(StringRef CanonicalPath) {
   Descriptor.Version.Patch = VersionComponents[2];
   Descriptor.VersionPrerelease = *Prerelease;
   Descriptor.VersionBuildMetadata = *BuildMetadata;
-  Descriptor.Concurrency = NEVERC_CONCURRENCY_SESSION_SERIAL;
-  Descriptor.Reentrancy = NEVERC_REENTRANCY_NONE;
+  Descriptor.Concurrency = static_cast<NevercConcurrencyModel>(*Concurrency);
+  Descriptor.Reentrancy = static_cast<NevercReentrancyModel>(*Reentrancy);
+  if (Error E = copyPythonRequirements(Spec.get(), "required_interfaces", true,
+                                       Descriptor.RequiredInterfaces))
+    return std::move(E);
+  if (Error E = copyPythonRequirements(Spec.get(), "optional_interfaces", false,
+                                       Descriptor.OptionalInterfaces))
+    return std::move(E);
+  std::set<std::pair<uint64_t, uint64_t>> RequiredIDs;
+  for (const OwnedInterfaceRequirement &Requirement :
+       Descriptor.RequiredInterfaces)
+    RequiredIDs.emplace(Requirement.Interface.High, Requirement.Interface.Low);
+  for (const OwnedInterfaceRequirement &Requirement :
+       Descriptor.OptionalInterfaces)
+    if (RequiredIDs.count(
+            {Requirement.Interface.High, Requirement.Interface.Low}) != 0)
+      return pythonPluginError(
+          "Python interface cannot be both required and optional");
+  if (Error E = copyPythonDependencies(Spec.get(), Descriptor.Dependencies))
+    return std::move(E);
 
   auto Runtime = std::make_unique<PythonPluginRuntime>(
       ModuleName, Module.release(), PluginClass.release(), APIModule.release(),

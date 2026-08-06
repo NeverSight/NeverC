@@ -106,7 +106,11 @@ if(NEVERC_ENABLE_PYTHON_PLUGINS)
     NEVERC_TEST_PYTHON_MINIMAL_PLUGIN="${CMAKE_CURRENT_SOURCE_DIR}/Inputs/Plugin/Python/MinimalPlugin.py"
     NEVERC_TEST_PYTHON_DRIVER_TRACE_PLUGIN="${CMAKE_CURRENT_SOURCE_DIR}/Inputs/Plugin/Python/DriverTracePlugin.py"
     NEVERC_TEST_PYTHON_EXCEPTION_PLUGIN="${CMAKE_CURRENT_SOURCE_DIR}/Inputs/Plugin/Python/ExceptionPlugin.py"
+    NEVERC_TEST_PYTHON_FFI_CAPABILITY_PLUGIN="${CMAKE_CURRENT_SOURCE_DIR}/Inputs/Plugin/Python/FFICapabilityPlugin.py"
+    NEVERC_TEST_PYTHON_RAW_FFI_CALLBACK_PLUGIN="${CMAKE_CURRENT_SOURCE_DIR}/Inputs/Plugin/Python/RawFFICallbackPlugin.py"
+    NEVERC_TEST_PYTHON_OLLVM_PLUGIN="${CMAKE_CURRENT_SOURCE_DIR}/../../pluginsdk/python/examples/ollvm/ollvm_plugin.py"
   )
+  add_dependencies(neverc-tests neverc-pluginsdk-stage)
 endif()
 
 # Apply the C23 compile feature to an ABI smoke-compile target, falling back to
@@ -1311,6 +1315,7 @@ add_executable(neverc-plugin-core-tests
 )
 if(NEVERC_ENABLE_PYTHON_PLUGINS)
   target_sources(neverc-plugin-core-tests PRIVATE PythonPluginTests.cpp)
+  add_dependencies(neverc-plugin-core-tests neverc-pluginsdk-stage)
 endif()
 target_link_libraries(neverc-plugin-core-tests PRIVATE
   GTest::gtest
@@ -1369,6 +1374,8 @@ if(NEVERC_ENABLE_PYTHON_PLUGINS)
     NEVERC_TEST_PYTHON_INVALID_PLUGIN="${CMAKE_CURRENT_SOURCE_DIR}/Inputs/Plugin/Python/InvalidPlugin.py"
     NEVERC_TEST_PYTHON_LIFECYCLE_PLUGIN="${CMAKE_CURRENT_SOURCE_DIR}/Inputs/Plugin/Python/LifecyclePlugin.py"
     NEVERC_TEST_PYTHON_PROCESS_EXCEPTION_PLUGIN="${CMAKE_CURRENT_SOURCE_DIR}/Inputs/Plugin/Python/ProcessExceptionPlugin.py"
+    NEVERC_TEST_PYTHON_METADATA_PLUGIN="${CMAKE_CURRENT_SOURCE_DIR}/Inputs/Plugin/Python/MetadataPlugin.py"
+    NEVERC_TEST_PYTHON_ALL_FFI_CALLBACKS_PLUGIN="${CMAKE_CURRENT_SOURCE_DIR}/Inputs/Plugin/Python/AllFFICallbackBindingsPlugin.py"
   )
 endif()
 add_dependencies(neverc-plugin-core-tests
@@ -1885,6 +1892,21 @@ add_test(
   COMMAND ${Python3_EXECUTABLE}
           ${CMAKE_CURRENT_SOURCE_DIR}/../../utils/plugin-api/gen-python-phases.py
           --check
+)
+add_test(
+  NAME PluginPythonABIGeneration
+  COMMAND ${Python3_EXECUTABLE}
+          ${CMAKE_CURRENT_SOURCE_DIR}/../../utils/plugin-api/gen-python-abi.py
+          --check
+)
+add_test(
+  NAME PluginPythonABILayout
+  COMMAND ${CMAKE_COMMAND} -E env
+          ${_NEVERC_PYTHON_TEST_ENV}
+          ${Python3_EXECUTABLE} -m unittest discover
+          -s ${CMAKE_CURRENT_SOURCE_DIR}/../../pluginsdk/python/tests
+          -p test_abi.py
+          -v
 )
 add_test(
   NAME PluginPythonSDKTests

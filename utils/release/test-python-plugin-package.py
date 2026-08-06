@@ -31,6 +31,22 @@ class PackageProbe:
     pass
 """
 PROBE_SOURCE = "int neverc_python_package_probe(void) { return 0; }\n"
+OLLVM_PROBE_SOURCE = """\
+int ollvm_package_probe(int x, int y) {
+  int result = x + y;
+  if ((x & 1) != 0) result ^= y; else result |= y;
+  return result;
+}
+"""
+REQUIRED_PYTHON_SDK_FILES = (
+    "neverc_plugin/abi.py",
+    "neverc_plugin/api.py",
+    "neverc_plugin/ffi.py",
+    "neverc_plugin/domains/__init__.py",
+    "neverc_plugin/domains/ir.py",
+    "examples/ollvm/ollvm_plugin.py",
+    "examples/ollvm/README.md",
+)
 HIDDEN_ENVIRONMENT = {
     "PYTHONPATH", "PYTHONHOME", "PYTHONUSERBASE", "Python3_ROOT_DIR",
     "LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH", "DYLD_FALLBACK_LIBRARY_PATH",
@@ -225,11 +241,72 @@ def run_plugin_probe(prefix: Path, executable: Path) -> None:
         ], environment=environment)
 
 
+def check_python_sdk(prefix: Path) -> Path:
+    sdk = prefix / "pluginsdk" / "python"
+    missing = [relative for relative in REQUIRED_PYTHON_SDK_FILES
+               if not (sdk / relative).is_file()]
+    if missing:
+        raise ValueError(
+            "installed Python SDK is incomplete: " + ", ".join(missing)
+        )
+    return sdk
+
+
+def check_ollvm_ir(output: str, target: str) -> None:
+    for marker in ("ollvm.sub", "ollvm.bcf.gate", "ollvm.fla.dispatch"):
+        if marker not in output:
+            raise ValueError(
+                f"Python OLLVM package probe for {target} is missing {marker}"
+            )
+
+
+def run_ollvm_probe(prefix: Path, executable: Path) -> None:
+    sdk = check_python_sdk(prefix)
+    plugin = sdk / "examples" / "ollvm" / "ollvm_plugin.py"
+    environment = sanitized_environment(os.environ)
+    with tempfile.TemporaryDirectory(prefix="neverc-python-ollvm-probe-") as temporary:
+        work = Path(temporary)
+        source = work / "ollvm_probe.c"
+        source.write_text(OLLVM_PROBE_SOURCE, encoding="utf-8")
+
+        outputs: list[str] = []
+        for index, target in enumerate((
+            "x86_64-unknown-linux-gnu",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-unknown-linux-gnu",
+        )):
+            ir = work / f"ollvm-{index}.ll"
+            run([
+                str(executable),
+                f"-fplugin={plugin}",
+                "--ollvm-sub",
+                "--ollvm-bcf",
+                "--ollvm-fla",
+                "--ollvm-seed",
+                "42",
+                "--ollvm-include",
+                "ollvm_package_probe",
+                f"--target={target}",
+                "-O0",
+                "-S",
+                "-emit-llvm",
+                str(source),
+                "-o",
+                str(ir),
+            ], environment=environment)
+            output = ir.read_text(encoding="utf-8")
+            check_ollvm_ir(output, target)
+            outputs.append(output)
+        if outputs[0] != outputs[2]:
+            raise ValueError("Python OLLVM package probe is not deterministic")
+
+
 def verify_prefix(prefix: Path) -> None:
     prefix = find_prefix(prefix)
     executable = prefix / "bin" / ("neverc.exe" if os.name == "nt" else "neverc")
     check_loader(prefix, executable)
     run_plugin_probe(prefix, executable)
+    run_ollvm_probe(prefix, executable)
 
 
 def main() -> int:
@@ -250,7 +327,10 @@ def main() -> int:
     except (OSError, RuntimeError, ValueError, zipfile.BadZipFile) as error:
         fail(str(error))
         return 1
-    print("test-python-plugin-package: relocated Python plugin loaded successfully")
+    print(
+        "test-python-plugin-package: relocated Python ABI and OLLVM plugin "
+        "loaded successfully"
+    )
     return 0
 
 

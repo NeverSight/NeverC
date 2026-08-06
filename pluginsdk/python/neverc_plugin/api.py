@@ -1,4 +1,4 @@
-"""Small, lifetime-checked Python surface for NeverC plugins.
+"""Complete, lifetime-checked Python surface for NeverC plugins.
 
 The implementation deliberately keeps policy and ergonomic validation here,
 while `_neverc_plugin` performs authoritative host validation and all access to
@@ -7,7 +7,7 @@ NeverC-owned objects.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import IntEnum
 import re
 import sys
@@ -54,6 +54,201 @@ def _parse_semver(value: str) -> tuple[tuple[int, int, int], str, str]:
     return numeric, match.group(4) or "", match.group(5) or ""
 
 
+def _compare_semver(
+    left: tuple[tuple[int, int, int], str],
+    right: tuple[tuple[int, int, int], str],
+) -> int:
+    left_version, left_prerelease = left
+    right_version, right_prerelease = right
+    if left_version != right_version:
+        return -1 if left_version < right_version else 1
+    if not left_prerelease or not right_prerelease:
+        if left_prerelease == right_prerelease:
+            return 0
+        return 1 if not left_prerelease else -1
+    left_parts = left_prerelease.split(".")
+    right_parts = right_prerelease.split(".")
+    for left_part, right_part in zip(left_parts, right_parts):
+        if left_part == right_part:
+            continue
+        left_numeric = left_part.isdigit()
+        right_numeric = right_part.isdigit()
+        if left_numeric and right_numeric:
+            return -1 if int(left_part) < int(right_part) else 1
+        if left_numeric != right_numeric:
+            return -1 if left_numeric else 1
+        return -1 if left_part < right_part else 1
+    if len(left_parts) == len(right_parts):
+        return 0
+    return -1 if len(left_parts) < len(right_parts) else 1
+
+
+class InterfaceStability(IntEnum):
+    STABLE = 0
+    LOCKSTEP = 1
+
+
+class Concurrency(IntEnum):
+    SESSION_SERIAL = 0
+    THREAD_SAFE = 1
+    PROCESS_SERIAL = 2
+
+
+class Reentrancy(IntEnum):
+    NONE = 0
+    ALLOWED = 1
+
+
+class DependencyKind(IntEnum):
+    REQUIRED = 0
+    BEFORE = 1
+    AFTER = 2
+
+
+def _enum_value(name: str, value: Any, enum_type: type[IntEnum]) -> IntEnum:
+    if isinstance(value, str):
+        key = value.upper().replace("-", "_")
+        try:
+            return enum_type[key]
+        except KeyError as error:
+            choices = ", ".join(item.name.lower() for item in enum_type)
+            raise ValueError(f"{name} must be one of: {choices}") from error
+    try:
+        result = enum_type(value)
+    except (TypeError, ValueError) as error:
+        choices = ", ".join(item.name.lower() for item in enum_type)
+        raise ValueError(f"{name} must be one of: {choices}") from error
+    if isinstance(value, bool):
+        raise TypeError(f"{name} must not be a boolean")
+    return result
+
+
+def _bounded_integer(name: str, value: Any, maximum: int) -> int:
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise TypeError(f"{name} must be an integer")
+    if value < 0 or value > maximum:
+        raise ValueError(f"{name} must fit uint{maximum.bit_length()}")
+    return value
+
+
+def _metadata_string(name: str, value: Any, *, allow_empty: bool = True) -> str:
+    if not isinstance(value, str):
+        raise TypeError(f"{name} must be a string")
+    if "\x00" in value or (not allow_empty and not value):
+        qualifier = "non-empty and " if not allow_empty else ""
+        raise ValueError(f"{name} must be {qualifier}free of NUL characters")
+    return value
+
+
+@dataclass(frozen=True, slots=True)
+class InterfaceRequirement:
+    """A versioned requirement for one official or custom plugin interface.
+
+    ``interface`` may be an official generated interface name or a ``(high,
+    low)`` identifier pair.  Custom identifiers must provide ``major``.
+    """
+
+    interface: str | tuple[int, int]
+    major: int | None = None
+    minimum_minor: int = 0
+    stability: InterfaceStability | str | int = InterfaceStability.STABLE
+    producer_build_id: str = ""
+    target_abi_key: str = ""
+    llvm_major: int = 0
+    high: int = field(init=False, default=0)
+    low: int = field(init=False, default=0)
+
+    def __post_init__(self) -> None:
+        major = self.major
+        if isinstance(self.interface, str):
+            from .abi import INTERFACE_SPECS
+
+            name = self.interface.upper()
+            try:
+                spec = INTERFACE_SPECS[name]
+            except KeyError as error:
+                raise ValueError(f"unknown NeverC interface: {self.interface!r}") from error
+            high, low = spec["high"], spec["low"]
+            if major is None:
+                major = spec["major"]
+            object.__setattr__(self, "interface", name)
+        else:
+            if (
+                not isinstance(self.interface, tuple)
+                or len(self.interface) != 2
+            ):
+                raise TypeError(
+                    "interface must be an official name or a (high, low) tuple"
+                )
+            high, low = self.interface
+            if major is None:
+                raise ValueError("custom interface requirements must provide major")
+        object.__setattr__(self, "high", _bounded_integer("interface high", high, 0xFFFFFFFFFFFFFFFF))
+        object.__setattr__(self, "low", _bounded_integer("interface low", low, 0xFFFFFFFFFFFFFFFF))
+        object.__setattr__(self, "major", _bounded_integer("interface major", major, 0xFFFF))
+        object.__setattr__(
+            self,
+            "minimum_minor",
+            _bounded_integer("interface minimum minor", self.minimum_minor, 0xFFFF),
+        )
+        object.__setattr__(
+            self,
+            "stability",
+            _enum_value("interface stability", self.stability, InterfaceStability),
+        )
+        object.__setattr__(
+            self,
+            "producer_build_id",
+            _metadata_string("producer build ID", self.producer_build_id),
+        )
+        object.__setattr__(
+            self,
+            "target_abi_key",
+            _metadata_string("target ABI key", self.target_abi_key),
+        )
+        object.__setattr__(
+            self,
+            "llvm_major",
+            _bounded_integer("LLVM major", self.llvm_major, 0xFFFFFFFF),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class PluginDependency:
+    id: str
+    minimum: str = "0.0.0"
+    maximum: str | None = None
+    kind: DependencyKind | str | int = DependencyKind.REQUIRED
+    allow_prerelease: bool = False
+    minimum_info: tuple[int, int, int] = field(init=False, default=(0, 0, 0))
+    minimum_prerelease: str = field(init=False, default="")
+    minimum_build_metadata: str = field(init=False, default="")
+    maximum_info: tuple[int, int, int] = field(init=False, default=(0, 0, 0))
+    maximum_prerelease: str = field(init=False, default="")
+    maximum_build_metadata: str = field(init=False, default="")
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "id", _validate_plugin_id(self.id))
+        minimum_info, minimum_pre, minimum_build = _parse_semver(self.minimum)
+        if self.maximum is None:
+            maximum_info, maximum_pre, maximum_build = (0, 0, 0), "", ""
+        else:
+            maximum_info, maximum_pre, maximum_build = _parse_semver(self.maximum)
+            if _compare_semver(
+                (minimum_info, minimum_pre), (maximum_info, maximum_pre)
+            ) >= 0:
+                raise ValueError("dependency maximum must be greater than minimum")
+        if not isinstance(self.allow_prerelease, bool):
+            raise TypeError("dependency allow_prerelease must be a boolean")
+        object.__setattr__(self, "kind", _enum_value("dependency kind", self.kind, DependencyKind))
+        object.__setattr__(self, "minimum_info", minimum_info)
+        object.__setattr__(self, "minimum_prerelease", minimum_pre)
+        object.__setattr__(self, "minimum_build_metadata", minimum_build)
+        object.__setattr__(self, "maximum_info", maximum_info)
+        object.__setattr__(self, "maximum_prerelease", maximum_pre)
+        object.__setattr__(self, "maximum_build_metadata", maximum_build)
+
+
 @dataclass(frozen=True, slots=True)
 class PluginSpec:
     id: str
@@ -62,13 +257,30 @@ class PluginSpec:
     version_info: tuple[int, int, int]
     prerelease: str
     build_metadata: str
+    abi_flags: int
+    concurrency: Concurrency
+    reentrancy: Reentrancy
+    required_interfaces: tuple[InterfaceRequirement, ...]
+    optional_interfaces: tuple[InterfaceRequirement, ...]
+    dependencies: tuple[PluginDependency, ...]
     plugin_class: type[Any]
 
 
 _PluginClass = TypeVar("_PluginClass", bound=type[Any])
 
 
-def Plugin(*, id: str, name: str, version: str) -> Callable[[_PluginClass], _PluginClass]:
+def Plugin(
+    *,
+    id: str,
+    name: str,
+    version: str,
+    abi_flags: int = 0,
+    concurrency: Concurrency | str | int = Concurrency.SESSION_SERIAL,
+    reentrancy: Reentrancy | str | int = Reentrancy.NONE,
+    required_interfaces: Sequence[InterfaceRequirement] = (),
+    optional_interfaces: Sequence[InterfaceRequirement] = (),
+    dependencies: Sequence[PluginDependency] = (),
+) -> Callable[[_PluginClass], _PluginClass]:
     """Declare the single NeverC plugin class exported by a script module."""
 
     plugin_id = _validate_plugin_id(id)
@@ -77,6 +289,31 @@ def Plugin(*, id: str, name: str, version: str) -> Callable[[_PluginClass], _Plu
     if not name or "\x00" in name:
         raise ValueError("plugin name must be non-empty and contain no NUL")
     version_info, prerelease, build_metadata = _parse_semver(version)
+    normalized_flags = _bounded_integer("plugin ABI flags", abi_flags, 0xFFFFFFFFFFFFFFFF)
+    if normalized_flags != 0:
+        raise ValueError("this NeverC plugin ABI defines no non-zero plugin flags")
+    normalized_concurrency = _enum_value("concurrency", concurrency, Concurrency)
+    normalized_reentrancy = _enum_value("reentrancy", reentrancy, Reentrancy)
+    normalized_required = tuple(required_interfaces)
+    normalized_optional = tuple(optional_interfaces)
+    normalized_dependencies = tuple(dependencies)
+    if any(not isinstance(item, InterfaceRequirement) for item in normalized_required):
+        raise TypeError("required_interfaces must contain InterfaceRequirement values")
+    if any(not isinstance(item, InterfaceRequirement) for item in normalized_optional):
+        raise TypeError("optional_interfaces must contain InterfaceRequirement values")
+    if any(not isinstance(item, PluginDependency) for item in normalized_dependencies):
+        raise TypeError("dependencies must contain PluginDependency values")
+    required_ids = {(item.high, item.low) for item in normalized_required}
+    optional_ids = {(item.high, item.low) for item in normalized_optional}
+    if len(required_ids) != len(normalized_required):
+        raise ValueError("required_interfaces must not contain duplicate IDs")
+    if len(optional_ids) != len(normalized_optional):
+        raise ValueError("optional_interfaces must not contain duplicate IDs")
+    if required_ids & optional_ids:
+        raise ValueError("an interface cannot be both required and optional")
+    dependency_keys = {(item.id, int(item.kind)) for item in normalized_dependencies}
+    if len(dependency_keys) != len(normalized_dependencies):
+        raise ValueError("dependencies must not contain duplicate ID/kind pairs")
 
     def decorate(plugin_class: _PluginClass) -> _PluginClass:
         if not isinstance(plugin_class, type):
@@ -93,6 +330,12 @@ def Plugin(*, id: str, name: str, version: str) -> Callable[[_PluginClass], _Plu
             version_info=version_info,
             prerelease=prerelease,
             build_metadata=build_metadata,
+            abi_flags=normalized_flags,
+            concurrency=normalized_concurrency,
+            reentrancy=normalized_reentrancy,
+            required_interfaces=normalized_required,
+            optional_interfaces=normalized_optional,
+            dependencies=normalized_dependencies,
             plugin_class=plugin_class,
         )
         setattr(module, "__neverc_plugin__", spec)
@@ -170,6 +413,13 @@ class _Context:
 
     def __init__(self, native_handle: object) -> None:
         self._native_handle = native_handle
+
+    @property
+    def ffi(self):
+        """Return the complete lifetime-checked low-level ABI scope."""
+        from .ffi import Scope
+
+        return Scope(self._native_handle)
 
     def option_values(self, spelling: str) -> tuple[str, ...]:
         if not isinstance(spelling, str) or not spelling or "\x00" in spelling:

@@ -71,7 +71,8 @@ script는 독립 module이며 native plugin과 함께 사용할 수 있습니다
 
 begin hook은 Python 값을 반환하거나 `ctx.state`에 대입할 수 있으며, 대응하는
 end hook에서 그 값을 읽을 수 있습니다. 그 밖의 hook과 observer callback은
-`None`을 반환해야 합니다. v1 Python plugin은 session-serial이며 재진입하지 않습니다.
+`None`을 반환해야 합니다. 기본값은 session-serial 및 non-reentrant이며,
+`@Plugin`으로 native plugin과 같은 모델을 선택할 수 있습니다.
 
 ## 옵션과 observer
 
@@ -125,8 +126,10 @@ Python plugin은 신뢰되는 compiler extension입니다. process 내부에서 
 임의의 module을 import할 수 있으며 NeverC와 같은 filesystem/process 권한을
 가집니다. sandbox는 없습니다.
 
-v1은 option registration 외에는 의도적으로 read-only입니다. interceptor,
-provider, artifact mutation, domain별 IR/MIR/Link object model, subinterpreter,
-manifest, module/factory entry point는 노출하지 않습니다. 이런 기능에는 lifetime을
-강제할 수 있는 transaction 및 continuation wrapper가 필요하며, 필요할 때는
-native C ABI를 계속 사용할 수 있습니다.
+Python binding은 축소된 API가 아닙니다. 생성된 `ctypes` 정의와 native
+trampoline이 공식 C ABI의 36개 interface table, 모든 record, function 및 callback
+family를 포함하며 mutation, interceptor, provider도 지원합니다. lifetime,
+transaction, continuation도 검사합니다. SUB, BCF, FLA를 구현한 완전한 Python
+OLLVM 예제는 `pluginsdk/python/examples/ollvm/`에 있습니다.
+raw 정의는 `neverc_plugin.abi`, table descriptor는
+`neverc_plugin.domains`에 있습니다.

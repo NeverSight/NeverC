@@ -60,6 +60,13 @@ SDK_MANIFEST = ROOT / "pluginsdk/manifest/plugin.json"
 STRUCT_TYPEDEF = re.compile(
     r"typedef\s+(?:struct|union)\b[^{;]*\{(.*?)\}\s*(Neverc\w+)\s*;", re.DOTALL
 )
+# Some request/product records are forward-typedefed and defined later as a
+# tagged record (``struct NevercName { ... };``).  The old inline-only pattern
+# silently omitted those records from every shipped ABI layout.
+TAGGED_DEFINITION = re.compile(
+    r"(?:^|\n)\s*(?:struct|union)\s+(Neverc\w+)\s*\{(.*?)\}\s*;",
+    re.DOTALL,
+)
 
 # Outer packings the ABI layout must be invariant under.
 PACK_VARIANTS = (1, 16)
@@ -123,13 +130,15 @@ def top_level_fields(body: str) -> list[str]:
 
 def struct_layouts() -> list[tuple[str, list[str]]]:
     text = SINGLE_HEADER.read_text(encoding="utf-8")
-    pairs = STRUCT_TYPEDEF.findall(text)
-    names = [name for _body, name in pairs]
-    unique = sorted(set(names))
-    if len(unique) != len(names):
-        raise ValueError("duplicate public struct typedef names")
-    fields_by_name = {name: top_level_fields(body) for body, name in pairs}
-    return [(name, fields_by_name[name]) for name in unique]
+    pairs = [(name, body) for body, name in STRUCT_TYPEDEF.findall(text)]
+    pairs += TAGGED_DEFINITION.findall(text)
+    fields_by_name: dict[str, list[str]] = {}
+    for name, body in pairs:
+        fields = top_level_fields(body)
+        if name in fields_by_name and fields_by_name[name] != fields:
+            raise ValueError(f"conflicting public record definitions for {name}")
+        fields_by_name[name] = fields
+    return sorted(fields_by_name.items())
 
 
 def find_compiler(explicit: str | None) -> str:

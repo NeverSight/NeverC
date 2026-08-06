@@ -43,6 +43,19 @@ def main() -> int:
     failures: list[str] = []
     checks = 0
 
+    # 0. Layout discovery covers both inline typedef definitions and public
+    #    records declared by a forward typedef followed by a tagged definition.
+    discovered = dict(mod.struct_layouts())
+    expect(len(discovered) == 366,
+           f"layout discovery found {len(discovered)} records, expected 366",
+           failures)
+    for name in ("NevercObjectReadRequest", "NevercLinkRequest",
+                 "NevercLTORequest", "NevercDynCodeExtractionRequest"):
+        expect(name in discovered,
+               f"layout discovery omitted tagged definition {name}", failures)
+        checks += 1
+    checks += 1
+
     # 1. Every architecture x calling-convention pair the conformance matrix
     #    covers (linux/macOS sysv and Windows, on x86_64 and aarch64) ships a
     #    layout, so no native host can hit an unrecorded key.

@@ -72,7 +72,8 @@ decorator は canonical な plugin ID、空でない表示名、厳密な semant
 
 begin hook は Python value を返すか `ctx.state` に代入でき、対応する end hook
 から参照できます。それ以外の hook と observer callback は `None` を返す必要
-があります。v1 Python plugin は session-serial かつ non-reentrant です。
+があります。既定値は session-serial かつ non-reentrant ですが、`@Plugin` で
+native plugin と同じモデルを選択できます。
 
 ## オプションと observer
 
@@ -128,8 +129,10 @@ Python plugin は信頼された compiler extension です。同一 process 内�
 任意の module を import でき、NeverC と同じ filesystem/process 権限を持ちます。
 sandbox はありません。
 
-v1 は option registration 以外を意図的に read-only としています。
-interceptor、provider、artifact mutation、domain 固有の IR/MIR/Link object
-model、subinterpreter、manifest、module/factory entry point は公開しません。
-これらには lifetime を強制できる transaction/continuation wrapper が必要で、
-必要な場合は引き続き native C ABI を利用できます。
+Python binding は縮小版 API ではありません。生成された `ctypes` 定義と
+native trampoline が、公式 C ABI の全 36 interface table、record、function、
+callback family を網羅し、mutation、interceptor、provider も利用できます。
+lifetime、transaction、continuation も検査されます。SUB、BCF、FLA を実装した
+完全な Python OLLVM 例は `pluginsdk/python/examples/ollvm/` にあります。
+raw 定義は `neverc_plugin.abi`、table descriptor は
+`neverc_plugin.domains` にあります。
