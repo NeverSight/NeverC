@@ -13,6 +13,17 @@ endfunction()
 assert_equal("${NEVERC_MANAGED_CPYTHON_VERSION}" "3.12.10" "version")
 assert_equal("${NEVERC_MANAGED_CPYTHON_RELEASE}" "20250409" "release")
 
+_neverc_managed_cpython_comparison_path(
+  "D:/a/NeverC/build/python/include" "Windows" _windows_cmake_path)
+_neverc_managed_cpython_comparison_path(
+  [=[D:\a\NeverC\build\python\include]=] "Windows" _windows_python_path)
+_neverc_managed_cpython_comparison_path(
+  "d:/A/neverc/build/python/include" "Windows" _windows_mixed_case_path)
+assert_equal("${_windows_python_path}" "${_windows_cmake_path}"
+             "Windows native separators")
+assert_equal("${_windows_mixed_case_path}" "${_windows_cmake_path}"
+             "Windows path case")
+
 set(_cases
   "Darwin|arm64|aarch64-apple-darwin|0be1fe0b35a4d3c382141764ef16ed3b8cc2b4620b657f678daa7b7f8df39699|unix"
   "Darwin|x86_64|x86_64-apple-darwin|ad3bef94b6054adcf8e0a47886e21b00dfc6a37f22eea229cf0f8725bd0e1023|unix"

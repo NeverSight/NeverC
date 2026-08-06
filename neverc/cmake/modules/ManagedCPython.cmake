@@ -20,6 +20,20 @@ function(_neverc_managed_cpython_normalize_arch value output)
   set(${output} "${_arch}" PARENT_SCOPE)
 endfunction()
 
+function(_neverc_managed_cpython_comparison_path value system output)
+  # CMake spells native Windows paths with '/', while the managed interpreter
+  # reports os.path.realpath() with '\\'. Normalize both representations before
+  # applying containment or equality checks. Windows path comparisons are also
+  # case-insensitive.
+  set(_path "${value}")
+  string(REPLACE "\\" "/" _path "${_path}")
+  cmake_path(NORMAL_PATH _path)
+  if(system STREQUAL "Windows")
+    string(TOLOWER "${_path}" _path)
+  endif()
+  set(${output} "${_path}" PARENT_SCOPE)
+endfunction()
+
 function(neverc_managed_cpython_artifact
          system processor output_url output_sha256 output_layout
          output_archive_name)
@@ -312,21 +326,34 @@ print(os.path.realpath(sysconfig.get_path("stdlib")))
   file(REAL_PATH "${root}" _root_real)
   file(REAL_PATH "${include_dir}" _include_real)
   file(REAL_PATH "${stdlib_dir}" _stdlib_real)
-  foreach(_reported IN ITEMS "${_base_prefix}" "${_reported_include}"
-                             "${_reported_stdlib}")
-    cmake_path(IS_PREFIX _root_real "${_reported}" NORMALIZE _inside_root)
+  _neverc_managed_cpython_comparison_path(
+    "${_root_real}" "${system}" _root_compare)
+  _neverc_managed_cpython_comparison_path(
+    "${_include_real}" "${system}" _include_compare)
+  _neverc_managed_cpython_comparison_path(
+    "${_stdlib_real}" "${system}" _stdlib_compare)
+  _neverc_managed_cpython_comparison_path(
+    "${_base_prefix}" "${system}" _base_prefix_compare)
+  _neverc_managed_cpython_comparison_path(
+    "${_reported_include}" "${system}" _reported_include_compare)
+  _neverc_managed_cpython_comparison_path(
+    "${_reported_stdlib}" "${system}" _reported_stdlib_compare)
+  foreach(_reported IN ITEMS "${_base_prefix_compare}"
+                             "${_reported_include_compare}"
+                             "${_reported_stdlib_compare}")
+    cmake_path(IS_PREFIX _root_compare "${_reported}" NORMALIZE _inside_root)
     if(NOT _inside_root)
       message(FATAL_ERROR
         "NeverC rejected managed CPython path outside its staged root: "
         "${_reported} (root: ${_root_real})")
     endif()
   endforeach()
-  if(NOT _reported_include STREQUAL _include_real)
+  if(NOT _reported_include_compare STREQUAL _include_compare)
     message(FATAL_ERROR
       "NeverC managed CPython include mismatch: selected ${_include_real}, "
       "interpreter reports ${_reported_include}")
   endif()
-  if(NOT _reported_stdlib STREQUAL _stdlib_real)
+  if(NOT _reported_stdlib_compare STREQUAL _stdlib_compare)
     message(FATAL_ERROR
       "NeverC managed CPython stdlib mismatch: selected ${_stdlib_real}, "
       "interpreter reports ${_reported_stdlib}")
