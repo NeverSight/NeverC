@@ -442,7 +442,7 @@ def repair_macos(prefix: Path, neverc: Path) -> None:
         if rpath not in macho_rpaths(binary):
             run_tool(["install_name_tool", "-add_rpath", rpath, str(binary)])
         # install_name_tool invalidates the linker-generated ad-hoc signature.
-        # Keep normal/PGO artifacts executable; release jobs replace this with
+        # Keep CI artifacts executable; release jobs replace this with
         # their Developer ID signature afterwards.
         run_tool(["codesign", "--force", "--sign", "-", str(binary)])
 

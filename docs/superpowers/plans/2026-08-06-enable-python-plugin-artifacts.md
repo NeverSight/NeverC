@@ -18,9 +18,8 @@
 - `utils/release/test-python-plugin-package.py`: extract or inspect a package in a fresh temporary location, hide all build-time Python environment paths, inspect platform loader metadata, and load a plugin that imports representative native standard-library modules.
 - `utils/ci/check-python-plugin-artifacts.py`: discover all workflows that install and upload a NeverC compiler and enforce the enablement, bundling, interpreter, relocation-smoke, and explicit-OFF contracts.
 - `.github/workflows/python-plugin-bindings.yml`: run the policy check, add a real `OFF` build, and trigger when any governed workflow or packaging input changes.
-- `.github/workflows/build-*.yml`: enable/bundle CPython in normal, LTO, and PGO compiler artifacts and test relocated archives.
+- `.github/workflows/build-*.yml`: enable/bundle CPython in normal and LTO compiler artifacts and test relocated archives.
 - `.github/workflows/release-{linux,macos,windows}-*.yml`: enable/bundle CPython in release artifacts, sign the bundled macOS runtime, include it in curl-installer archives, and test relocated archives.
-- `utils/build/build_pgo.sh`: pass the workflow-selected Python enablement, bundling mode, and interpreter into both PGO configure phases.
 - `docs/plugin-api/python*.md`: document the bundled official runtime and the still-optional source-build mode.
 
 ### Task 1: Add failing policy and packaging tests
@@ -32,7 +31,7 @@
 
 - [ ] **Step 1: Write the producer-discovery policy check**
 
-  Discover every `.github/workflows/*.yml` file containing `actions/upload-artifact@`, a NeverC install command (`cmake --install` or `--target install`), and a NeverC compiler archive. Assert the currently known count is 15 so changes to discovery are reviewed. For direct CMake producers require a pinned/setup CPython step, `-DPython3_EXECUTABLE=...`, `-DNEVERC_ENABLE_PYTHON_PLUGINS=ON`, `-DNEVERC_BUNDLE_PYTHON_RUNTIME=ON`, the bundler invocation, and the package verifier invocation. For PGO producers require the equivalent three workflow environment inputs and the same bundler/verifier calls. Parse every uploaded archive path and classify all archives that contain `bin/neverc[.exe]`: full and compiler-only archives in normal/LTO/PGO workflows, full archives in Windows releases, and full plus curl-installer archives in Linux/macOS releases. Require a verifier call for every classified archive while excluding runtime-only, PDB, profile-data, and log artifacts. Require the feature workflow to contain an explicit OFF job.
+  Discover every `.github/workflows/*.yml` file containing `actions/upload-artifact@`, a NeverC install command (`cmake --install` or `--target install`), and a NeverC compiler archive. Assert the currently known count is 12 so changes to discovery are reviewed. Require a pinned/setup CPython step, `-DPython3_EXECUTABLE=...`, `-DNEVERC_ENABLE_PYTHON_PLUGINS=ON`, `-DNEVERC_BUNDLE_PYTHON_RUNTIME=ON`, the bundler invocation, and the package verifier invocation. Parse every uploaded archive path and classify all archives that contain `bin/neverc[.exe]`: full and compiler-only archives in normal/LTO workflows, full archives in Windows releases, and full plus curl-installer archives in Linux/macOS releases. Require a verifier call for every classified archive while excluding runtime-only, PDB, and log artifacts. Require the feature workflow to contain an explicit OFF job.
 
 - [ ] **Step 2: Write the package verifier interface**
 
@@ -49,13 +48,13 @@
 
 - [ ] **Step 3: Wire checks into the feature workflow**
 
-  Broaden the workflow path filter to `.github/workflows/**`, `utils/build/build_pgo.sh`, `utils/ci/check-python-plugin-artifacts.py`, `utils/release/**`, and the existing implementation/docs paths. Add a fast policy job that runs the checker.
+  Broaden the workflow path filter to `.github/workflows/**`, `utils/ci/check-python-plugin-artifacts.py`, `utils/release/**`, and the existing implementation/docs paths. Add a fast policy job that runs the checker.
 
 - [ ] **Step 4: Run the policy check and verify it fails**
 
   Run: `python3 utils/ci/check-python-plugin-artifacts.py`
 
-  Expected: failure listing the 15 producers that still omit enablement/bundling/relocation verification and the missing OFF job.
+  Expected: failure listing the 12 producers that still omit enablement/bundling/relocation verification and the missing OFF job.
 
 ### Task 2: Make the embedded interpreter relocatable
 
@@ -151,31 +150,7 @@
 
   After creating each full compiler archive, run `test-python-plugin-package.py --archive <archive>`. Normal and LTO workflows also create a compiler-only archive after temporarily removing `install/runtime`; verify that archive independently before upload. Runtime-only, PDB, log, and profile-data archives are intentionally excluded. The verifier must run with build-time Python paths hidden and must validate both loader metadata and representative native-module imports.
 
-### Task 5: Forward the same feature set through PGO
-
-**Files:**
-- Modify: `utils/build/build_pgo.sh`
-- Modify: `.github/workflows/build-linux-x64-pgo.yml`
-- Modify: `.github/workflows/build-linux-arm64-pgo.yml`
-- Modify: `.github/workflows/build-macos-arm64-pgo.yml`
-
-- [ ] **Step 1: Add validated PGO inputs**
-
-  Read `NEVERC_ENABLE_PYTHON_PLUGINS` and `NEVERC_BUNDLE_PYTHON_RUNTIME` with `OFF` defaults and reject non-boolean values. When Python is enabled, require `NEVERC_PGO_PYTHON3_EXECUTABLE` to be an executable file.
-
-- [ ] **Step 2: Pass the inputs to both configure phases**
-
-  Build an argument array containing the two feature flags and optional exact interpreter. Expand it in both `generate` and `use` CMake invocations so profile and final compilers match.
-
-- [ ] **Step 3: Configure both independent PGO jobs**
-
-  Set both feature variables to `"ON"`, provision pinned CPython 3.12 in profile and use jobs, and set `NEVERC_PGO_PYTHON3_EXECUTABLE` from the matching setup output on every `build_pgo.sh` invocation. Install `patchelf` in every Linux PGO job that invokes the bundler/package verifier (in particular the final `use` job).
-
-- [ ] **Step 4: Bundle and verify every relocated PGO compiler archive**
-
-  Bundle after the PGO install. Verify both the full archive and the compiler-only archive produced after `install/runtime` is moved aside. Do not apply the compiler verifier to the runtime-only or profile-data archives.
-
-### Task 6: Enable, bundle, sign, and verify releases
+### Task 5: Enable, bundle, sign, and verify releases
 
 **Files:**
 - Modify: `.github/workflows/release-linux-x64.yml`
@@ -200,7 +175,7 @@
 
   Run the package verifier on every full release archive and on each Linux/macOS curl-installer archive. Its loader inspection must reject build-host Python paths and its plugin must import `ssl`, `hashlib`, `ctypes`, `bz2`, `lzma`, and `sqlite3`. Perform these checks after signing/notarization on macOS so the tested bytes are the shipped bytes.
 
-### Task 7: Retain the explicit disabled build
+### Task 6: Retain the explicit disabled build
 
 **Files:**
 - Modify: `.github/workflows/python-plugin-bindings.yml`
@@ -217,7 +192,7 @@
 
   Extend `check-python-plugin-artifacts.py` to require the job name, both explicit OFF values, disabled diagnostic test, and no-libpython assertion.
 
-### Task 8: Document and locally verify the complete result
+### Task 7: Document and locally verify the complete result
 
 **Files:**
 - Modify: `docs/plugin-api/python.md`
@@ -239,10 +214,6 @@
   Run: `python3 utils/plugin-api/check-docs-links.py`
 
   Run: `python3 utils/plugin-api/check-docs-facts.py`
-
-  Run: `bash -n utils/build/build_pgo.sh`
-
-  Run: `shellcheck utils/build/build_pgo.sh`
 
   Run: `command -v patchelf` on Linux before the local bundle/relocation test, installing it first when absent.
 

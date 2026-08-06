@@ -12,7 +12,7 @@ from pathlib import Path
 REPOSITORY = Path(__file__).resolve().parents[2]
 WORKFLOWS = REPOSITORY / ".github" / "workflows"
 SETUP_PYTHON_COMMIT = "a26af69be951a213d495a4c3e4e4022e16d87065"
-EXPECTED_PRODUCERS = 15
+EXPECTED_PRODUCERS = 12
 REQUIRED_COMMON = (
     SETUP_PYTHON_COMMIT,
     'python-version: "3.12"',
@@ -59,9 +59,9 @@ def check_producer(path: Path, text: str) -> list[str]:
     for required in REQUIRED_COMMON:
         if required not in text:
             failures.append(f"missing {required}")
-    if "Python3_EXECUTABLE" not in text and "NEVERC_PGO_PYTHON3_EXECUTABLE" not in text:
+    if "Python3_EXECUTABLE" not in text:
         failures.append("missing exact CMake Python interpreter forwarding")
-    if "build_pgo.sh" not in text and "steps.python.outputs.python-path" not in text:
+    if "steps.python.outputs.python-path" not in text:
         failures.append("does not bind CMake to setup-python's exact interpreter")
     if "linux" in path.name and "patchelf" not in text:
         failures.append("Linux bundling job does not install patchelf")

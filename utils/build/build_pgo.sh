@@ -30,32 +30,6 @@ CURL_DIR="$REPO_ROOT/local_docs/curl"
 
 JOBS="${JOBS:-$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo "${NUMBER_OF_PROCESSORS:-8}")}"
 
-NEVERC_ENABLE_PYTHON_PLUGINS="${NEVERC_ENABLE_PYTHON_PLUGINS:-OFF}"
-NEVERC_BUNDLE_PYTHON_RUNTIME="${NEVERC_BUNDLE_PYTHON_RUNTIME:-OFF}"
-for value_name in NEVERC_ENABLE_PYTHON_PLUGINS NEVERC_BUNDLE_PYTHON_RUNTIME; do
-  value="${!value_name}"
-  case "$value" in
-    ON|OFF) ;;
-    *)
-      echo "ERROR: $value_name must be ON or OFF (got '$value')" >&2
-      exit 1
-      ;;
-  esac
-done
-
-PYTHON_CMAKE_ARGS=(
-  "-DNEVERC_ENABLE_PYTHON_PLUGINS=$NEVERC_ENABLE_PYTHON_PLUGINS"
-  "-DNEVERC_BUNDLE_PYTHON_RUNTIME=$NEVERC_BUNDLE_PYTHON_RUNTIME"
-)
-if [ "$NEVERC_ENABLE_PYTHON_PLUGINS" = "ON" ]; then
-  if [ -z "${NEVERC_PGO_PYTHON3_EXECUTABLE:-}" ] ||
-     [ ! -x "$NEVERC_PGO_PYTHON3_EXECUTABLE" ]; then
-    echo "ERROR: NEVERC_PGO_PYTHON3_EXECUTABLE must name the selected executable when Python plugins are enabled" >&2
-    exit 1
-  fi
-  PYTHON_CMAKE_ARGS+=("-DPython3_EXECUTABLE=$NEVERC_PGO_PYTHON3_EXECUTABLE")
-fi
-
 find_profdata_tool() {
   if command -v llvm-profdata &>/dev/null; then
     echo "llvm-profdata"
@@ -89,7 +63,6 @@ phase_generate() {
   # profile runtime's atexit flush (profraw ends up 0 bytes on macOS).
   cmake -S "$REPO_ROOT/llvm" -B "$BUILD_PGO_GEN" -G Ninja \
     -C "$CACHE" \
-    "${PYTHON_CMAKE_ARGS[@]}" \
     -DNEVERC_ENABLE_LTO=OFF \
     -DNEVERC_ENABLE_MIMALLOC=OFF \
     -DCMAKE_C_FLAGS_RELEASE="-O2 -DNDEBUG -march=native -fprofile-instr-generate -DNEVERC_PGO_TRAINING -ffunction-sections -fdata-sections" \
@@ -272,7 +245,6 @@ phase_use() {
 
   cmake -S "$REPO_ROOT/llvm" -B "$BUILD_PGO_USE" -G Ninja \
     -C "$CACHE" \
-    "${PYTHON_CMAKE_ARGS[@]}" \
     -DNEVERC_ENABLE_LTO=ON \
     -DCMAKE_C_FLAGS_RELEASE="-O2 -DNDEBUG -march=native -fprofile-instr-use=$PROFDATA -ffunction-sections -fdata-sections" \
     -DCMAKE_CXX_FLAGS_RELEASE="-O2 -DNDEBUG -march=native -fprofile-instr-use=$PROFDATA -ffunction-sections -fdata-sections" \
