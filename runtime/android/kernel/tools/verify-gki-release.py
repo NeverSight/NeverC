@@ -734,17 +734,17 @@ def run_manifest_generator(
     if symvers is not None:
         command.extend(("--symvers", str(symvers)))
     try:
+        print(
+            f"[manifest] regenerate profile={profile} from {vmlinux}",
+            flush=True,
+        )
         result = subprocess.run(
             command,
             cwd=repo_root,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
             check=False,
         )
     except OSError as error:
         raise ValidationError(f"cannot run manifest generator: {error}") from error
-    print(result.stdout, end="" if result.stdout.endswith("\n") else "\n")
     if result.returncode != 0:
         raise ValidationError(
             f"manifest generator failed with status {result.returncode}"

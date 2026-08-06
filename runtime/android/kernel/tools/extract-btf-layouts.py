@@ -394,6 +394,53 @@ def dwarf_structure_layout(die, expression_parser):
     return layout
 
 
+def extract_dwarf_cu_layouts(
+    compilation_unit,
+    expression_parser,
+    remaining,
+    layouts,
+    constants_only,
+):
+    """Scan one CU so its DIE locals are dead before its cache is released."""
+    for die in compilation_unit.iter_DIEs():
+        if constants_only and die.tag == "DW_TAG_enumerator":
+            name = dwarf_name(die)
+            if name not in remaining:
+                continue
+            value = die.attributes.get("DW_AT_const_value")
+            if value is not None:
+                layouts[name] = int(value.value)
+                remaining.remove(name)
+        elif (
+            not constants_only
+            and die.tag == "DW_TAG_structure_type"
+            and dwarf_name(die) in remaining
+        ):
+            name = dwarf_name(die)
+            layout = dwarf_structure_layout(die, expression_parser)
+            if layout is not None:
+                layouts[name] = layout
+                remaining.remove(name)
+        if not remaining:
+            return True
+    return False
+
+
+def release_dwarf_caches(dwarf, compilation_unit):
+    """Bound pyelftools memory after a CU has produced plain Python data.
+
+    pyelftools 0.32 retains every parsed DIE through both the CompileUnit and
+    DWARFInfo caches.  A DWARF-only GKI vmlinux can otherwise expand hundreds
+    of megabytes of .debug_info into more memory than a hosted CI runner has.
+    ``iter_CUs`` computes its next offset before yielding, so clearing these
+    caches after the CU scan does not disturb sequential iteration.
+    """
+    compilation_unit._dielist.clear()
+    compilation_unit._diemap.clear()
+    dwarf._cu_cache.clear()
+    dwarf._cu_offsets_map.clear()
+
+
 def extract_dwarf_layouts(elf, requested, constants_only=False):
     if not elf.has_dwarf_info():
         raise ValueError("ELF has neither .BTF nor DWARF layout information")
@@ -403,27 +450,18 @@ def extract_dwarf_layouts(elf, requested, constants_only=False):
     remaining = set(requested)
     layouts = {}
     for compilation_unit in dwarf.iter_CUs():
-        for die in compilation_unit.iter_DIEs():
-            if constants_only and die.tag == "DW_TAG_enumerator":
-                name = dwarf_name(die)
-                if name not in remaining:
-                    continue
-                value = die.attributes.get("DW_AT_const_value")
-                if value is not None:
-                    layouts[name] = int(value.value)
-                    remaining.remove(name)
-            elif (
-                not constants_only
-                and die.tag == "DW_TAG_structure_type"
-                and dwarf_name(die) in remaining
-            ):
-                name = dwarf_name(die)
-                layout = dwarf_structure_layout(die, expression_parser)
-                if layout is not None:
-                    layouts[name] = layout
-                    remaining.remove(name)
-            if not remaining:
-                return layouts
+        try:
+            complete = extract_dwarf_cu_layouts(
+                compilation_unit,
+                expression_parser,
+                remaining,
+                layouts,
+                constants_only,
+            )
+        finally:
+            release_dwarf_caches(dwarf, compilation_unit)
+        if complete:
+            return layouts
     return layouts
 
 

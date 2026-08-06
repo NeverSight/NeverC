@@ -128,6 +128,11 @@ every packaged config and `Module.symvers` occurrence; and independently derives
 the lock-pinned packaged `.ko`. It also runs the complete current runtime
 SDK/layout/linkage/demo suites.
 
+The 5.10 image carries DWARF rather than BTF. Its extractor releases each
+pyelftools compilation-unit cache after producing plain layout data, and hashes
+large ELF evidence sections in chunks; this preserves byte-for-byte evidence
+while keeping the validation job within hosted-runner memory limits.
+
 For the loader proof, the workflow compiles a dedicated zero-import module from
 the exact same source SHA as the reused `linux-x64-neverc-compiler` artifact.
 For KCFI kernels, its build helper writes the independently release-derived

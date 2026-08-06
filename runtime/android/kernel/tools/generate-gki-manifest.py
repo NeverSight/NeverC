@@ -87,6 +87,8 @@ CONFIG_KEYS = (
     "CONFIG_PREEMPT_RT",
     "CONFIG_SECCOMP",
 )
+SHF_COMPRESSED = 0x800
+ELF_HASH_CHUNK_SIZE = 1024 * 1024
 
 
 def load_tool(name, filename):
@@ -106,6 +108,42 @@ def sha256_file(path):
             if not chunk:
                 break
             digest.update(chunk)
+    return digest.hexdigest()
+
+
+def update_digest_from_elf_section(
+    digest,
+    section,
+    chunk_size=ELF_HASH_CHUNK_SIZE,
+):
+    """Hash section contents without materializing an uncompressed section."""
+    if chunk_size <= 0:
+        raise ValueError("ELF hash chunk size must be positive")
+    if int(section["sh_flags"]) & SHF_COMPRESSED:
+        # pyelftools owns the compression format handling.  Compressed debug
+        # sections are uncommon in the pinned GKI assets; retain the existing
+        # decompressed-byte digest semantics for them.
+        digest.update(section.data())
+        return
+
+    stream = section.stream
+    original_offset = stream.tell()
+    remaining = int(section["sh_size"])
+    try:
+        stream.seek(int(section["sh_offset"]))
+        while remaining:
+            chunk = stream.read(min(chunk_size, remaining))
+            if not chunk:
+                raise ValueError("ELF section is truncated while hashing")
+            digest.update(chunk)
+            remaining -= len(chunk)
+    finally:
+        stream.seek(original_offset)
+
+
+def elf_section_sha256(section, chunk_size=ELF_HASH_CHUNK_SIZE):
+    digest = hashlib.sha256()
+    update_digest_from_elf_section(digest, section, chunk_size)
     return digest.hexdigest()
 
 
@@ -192,7 +230,7 @@ def elf_evidence(path):
         btf = elf.get_section_by_name(".BTF")
         if btf is not None:
             layout_format = "BTF"
-            layout_sha256 = hashlib.sha256(btf.data()).hexdigest()
+            layout_sha256 = elf_section_sha256(btf)
         elif elf.has_dwarf_info():
             layout_format = "DWARF"
             digest = hashlib.sha256()
@@ -206,7 +244,7 @@ def elf_evidence(path):
                     continue
                 digest.update(section_name.encode("ascii"))
                 digest.update(b"\0")
-                digest.update(section.data())
+                update_digest_from_elf_section(digest, section)
             layout_sha256 = digest.hexdigest()
         else:
             raise ValueError(f"{path}: ELF has no BTF or DWARF evidence")
@@ -275,7 +313,15 @@ def main():
         layout_tool = load_tool(
             "nvk_extract_btf_layouts", "extract-btf-layouts.py"
         )
+        print(
+            f"generate-gki-manifest: extracting GKI {args.profile} layouts",
+            flush=True,
+        )
         layouts = layout_tool.extract_layouts(args.vmlinux, STRUCTURES)
+        print(
+            f"generate-gki-manifest: extracted {len(layouts)} layouts",
+            flush=True,
+        )
         missing = sorted(set(STRUCTURES) - set(layouts))
         if missing:
             raise ValueError(
