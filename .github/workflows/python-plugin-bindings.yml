@@ -223,14 +223,16 @@ jobs:
           for target in x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu; do
             output="$PWD/ollvm-${target}.ll"
             "${{ matrix.compiler }}" "${ollvm_args[@]}" \
-              "--target=${target}" -O0 -S -emit-llvm \
+              "--target=${target}" -O0 -fno-discard-value-names \
+              -S -emit-llvm \
               "$ollvm_source" -o "$output"
             grep -F 'ollvm.sub' "$output"
             grep -F 'ollvm.bcf.gate' "$output"
             grep -F 'ollvm.fla.dispatch' "$output"
           done
           "${{ matrix.compiler }}" "${ollvm_args[@]}" \
-            --target=x86_64-unknown-linux-gnu -O0 -S -emit-llvm \
+            --target=x86_64-unknown-linux-gnu -O0 \
+            -fno-discard-value-names -S -emit-llvm \
             "$ollvm_source" -o "$PWD/ollvm-x86_64-repeat.ll"
           cmp "$PWD/ollvm-x86_64-unknown-linux-gnu.ll" \
             "$PWD/ollvm-x86_64-repeat.ll"

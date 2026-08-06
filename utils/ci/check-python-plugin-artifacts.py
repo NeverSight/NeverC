@@ -126,11 +126,14 @@ def check_source_build_contract() -> list[str]:
         managed_text = managed_module.read_text(encoding="utf-8")
         required_managed = (
             'set(NEVERC_MANAGED_CPYTHON_VERSION "3.12.10")',
+            'set(NEVERC_MANAGED_CPYTHON_ACTIONS_RELEASE "3.12.10-14343898437")',
             "neverc_managed_cpython_artifact",
             "EXPECTED_HASH",
             "NEVERC_MANAGED_PYTHON_ROOT",
             "NeverCPython::Python",
             "Py_InitializeFromConfig",
+            "import ctypes",
+            '"$ORIGIN/../lib"',
         )
         for token in required_managed:
             if token not in managed_text:

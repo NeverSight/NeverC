@@ -5,6 +5,7 @@ include_guard(GLOBAL)
 
 set(NEVERC_MANAGED_CPYTHON_VERSION "3.12.10")
 set(NEVERC_MANAGED_CPYTHON_RELEASE "20250409")
+set(NEVERC_MANAGED_CPYTHON_ACTIONS_RELEASE "3.12.10-14343898437")
 set(_NEVERC_MANAGED_CPYTHON_LICENSE_SOURCE_COMMIT
     "186813f11c67ce8f6b424b4c355f7052204a04cc")
 set(_NEVERC_MANAGED_CPYTHON_LICENSE_SOURCE_SHA256
@@ -45,6 +46,8 @@ function(neverc_managed_cpython_artifact
       "https://github.com/astral-sh/python-build-standalone/releases/download/${NEVERC_MANAGED_CPYTHON_RELEASE}")
   set(_pbs_prefix
       "cpython-${NEVERC_MANAGED_CPYTHON_VERSION}%2B${NEVERC_MANAGED_CPYTHON_RELEASE}")
+  set(_actions_base
+      "https://github.com/actions/python-versions/releases/download/${NEVERC_MANAGED_CPYTHON_ACTIONS_RELEASE}")
 
   if(system STREQUAL "Darwin" AND _arch STREQUAL "arm64")
     set(_artifact "aarch64-apple-darwin")
@@ -55,13 +58,25 @@ function(neverc_managed_cpython_artifact
     set(_sha256
         "ad3bef94b6054adcf8e0a47886e21b00dfc6a37f22eea229cf0f8725bd0e1023")
   elseif(system STREQUAL "Linux" AND _arch STREQUAL "arm64")
-    set(_artifact "aarch64-unknown-linux-gnu")
+    # python-build-standalone links _ctypes into its Linux interpreter but
+    # does not expose it to applications embedding libpython.  NeverC is an
+    # embedding application, so use the checksum-pinned actions/python-versions
+    # distribution that ships _ctypes as a regular extension module.
+    set(_artifact "linux-22.04-arm64")
+    set(_archive_name
+        "python-${NEVERC_MANAGED_CPYTHON_VERSION}-${_artifact}.tar.gz")
+    set(_url "${_actions_base}/${_archive_name}")
     set(_sha256
-        "e1f450b77b81a250411855bb5e5cbd0f0acbc9ad46b5ea97f224452831bb3276")
+        "9f687d7707ece744e6b41a4184669c2e6adb1383c934fbadeaed5254d09de0ea")
+    set(_layout "unix-root")
   elseif(system STREQUAL "Linux" AND _arch STREQUAL "x86_64")
-    set(_artifact "x86_64-unknown-linux-gnu")
+    set(_artifact "linux-22.04-x64")
+    set(_archive_name
+        "python-${NEVERC_MANAGED_CPYTHON_VERSION}-${_artifact}.tar.gz")
+    set(_url "${_actions_base}/${_archive_name}")
     set(_sha256
-        "8c59b9ac6bff2dc3934181d7bc82594f9f59a613afed8d72c9e89d7194e790ee")
+        "f8e0109b3eeb6cb0a246725d16595793f5f3c882df77bd4acf195fbab64819ac")
+    set(_layout "unix-root")
   elseif(system STREQUAL "Windows" AND _arch STREQUAL "arm64")
     set(_artifact "arm64")
     set(_archive_name "python-${NEVERC_MANAGED_CPYTHON_VERSION}-arm64.zip")
@@ -262,6 +277,20 @@ function(_neverc_managed_cpython_repair_macos root library)
   endif()
 endfunction()
 
+function(_neverc_managed_cpython_repair_linux executable)
+  find_program(_patchelf patchelf REQUIRED)
+  execute_process(
+    COMMAND "${_patchelf}" --set-rpath "$ORIGIN/../lib" "${executable}"
+    RESULT_VARIABLE _result
+    ERROR_VARIABLE _error)
+  if(NOT _result EQUAL 0)
+    string(STRIP "${_error}" _error)
+    message(FATAL_ERROR
+      "NeverC could not make the managed CPython interpreter relocatable: "
+      "${_error}")
+  endif()
+endfunction()
+
 function(_neverc_managed_cpython_validate_interpreter
          root system processor executable include_dir stdlib_dir)
   set(_script "${CMAKE_BINARY_DIR}/CMakeFiles/neverc-managed-cpython-check.py")
@@ -387,6 +416,13 @@ int main(int argc, char **argv) {
   const char *runtime_version = Py_GetVersion();
   if (!runtime_version || strncmp(runtime_version, "3.12.10", 7) != 0)
     return 13;
+  if (PyRun_SimpleString(
+          "import ctypes\n"
+          "callback = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_int)(lambda value: value + 1)\n"
+          "assert callback(41) == 42\n") != 0) {
+    Py_FinalizeEx();
+    return 15;
+  }
   printf("%s\n%s\n", runtime_version, Py_GetPlatform());
   return Py_FinalizeEx() < 0 ? 14 : 0;
 }
@@ -484,6 +520,9 @@ function(_neverc_managed_cpython_stage
   if(system STREQUAL "Darwin")
     _neverc_managed_cpython_require_files("${_stage}" "${system}")
     _neverc_managed_cpython_repair_macos("${_stage}" "${_library}")
+  elseif(system STREQUAL "Linux")
+    _neverc_managed_cpython_require_files("${_stage}" "${system}")
+    _neverc_managed_cpython_repair_linux("${_executable}")
   endif()
   _neverc_managed_cpython_validate("${_stage}" "${system}" "${processor}")
   _neverc_managed_cpython_fingerprint("${_stage}" "${system}" _fingerprint)
