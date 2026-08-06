@@ -15,18 +15,23 @@ cmake --build build --target install
 ```
 
 Les nouveaux builds utilisent par défaut `NEVERC_ENABLE_PYTHON_PLUGINS=ON` et
-`NEVERC_BUNDLE_PYTHON_RUNTIME=ON`. La configuration exige CPython 3.10 ou plus,
-ses headers d'embedding et sa bibliothèque partagée. L'installation copie
-automatiquement la version exacte sélectionnée dans le répertoire adjacent
-`python/`. L'exécutable du build tree peut encore utiliser le Python de build,
-mais le compiler installé n'a besoin ni de Python externe, ni de `PYTHONHOME`,
-ni de `PYTHONPATH` à l'exécution. Les archives officielles sélectionnent et
-embarquent CPython 3.12.10.
+`NEVERC_BUNDLE_PYTHON_RUNTIME=ON`. CMake peut employer le Python système pour
+les scripts de build, mais cet interpréteur ne choisit pas l'ABI des plugins.
+NeverC télécharge séparément une distribution de développement/runtime CPython
+3.12.10 figée et vérifiée par SHA-256, lie le bridge des plugins à celle-ci,
+la place dans `build/python`, puis installe le même runtime dans le répertoire
+adjacent `python/`. Les builds source ordinaires et les archives officielles
+exécutent donc les plugins avec CPython 3.12.10 sans Python runtime externe,
+`PYTHONHOME` ni `PYTHONPATH`.
 
-Sous Linux, le bundler d'installation exige `patchelf` dans `PATH`. Avec
-`CMAKE_CROSSCOMPILING`, l'emballage automatique est refusé pour éviter de placer
-l'interpréteur host dans un compiler target ; désactivez-le et packagez
-explicitement un runtime target. Pour un compiler sans Python, passez
+Pour un build hors ligne, utilisez `-DNEVERC_MANAGED_PYTHON_ROOT=/path/to/cpython-3.12.10` pour un arbre de
+développement/runtime CPython 3.12.10 exact déjà extrait. NeverC le valide et
+le copie dans le build sans modifier la source fournie.
+
+Sous Linux, le bundler d'installation exige `patchelf` dans `PATH`. Comme CMake
+exécute une sonde ABI, les builds de plugins Python gérés doivent actuellement
+être natifs ; pour un cross build, désactivez Python ou utilisez une étape de
+packaging native sur la plateforme target. Pour un compiler sans Python, passez
 `-DNEVERC_ENABLE_PYTHON_PLUGINS=OFF` et
 `-DNEVERC_BUNDLE_PYTHON_RUNTIME=OFF` ensemble.
 

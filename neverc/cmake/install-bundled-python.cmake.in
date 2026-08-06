@@ -8,7 +8,7 @@ set(_neverc_python_bundler
 
 execute_process(
   COMMAND
-    "@Python3_EXECUTABLE@"
+    "@NEVERC_MANAGED_PYTHON_EXECUTABLE@"
     "${_neverc_python_bundler}"
     --prefix "${_neverc_physical_prefix}"
     --neverc "${_neverc_executable}"

@@ -104,6 +104,72 @@ class BundlePythonRuntimeTest(unittest.TestCase):
 
             self.assertEqual(selected, fallback)
 
+    def test_relocatable_distribution_falls_back_from_stale_libdir(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary) / "cpython"
+            stdlib = base / "lib" / "python3.12"
+            stdlib.mkdir(parents=True)
+            runtime = base / "lib" / "libpython3.12.so.1.0"
+            runtime.write_bytes(b"runtime")
+
+            def config_var(name):
+                return {
+                    "SOABI": "cpython-312-x86_64-linux-gnu",
+                    "LDLIBRARY": runtime.name,
+                    "LIBDIR": "/install/lib",
+                }.get(name)
+
+            with mock.patch.object(
+                self.module, "host_platform", return_value="linux"
+            ), mock.patch.object(
+                self.module.sys, "base_prefix", str(base)
+            ), mock.patch.object(
+                self.module.sysconfig, "get_path", return_value=str(stdlib)
+            ), mock.patch.object(
+                self.module.sysconfig, "get_config_var", side_effect=config_var
+            ), mock.patch.object(
+                self.module.platform, "python_version", return_value="3.12.10"
+            ):
+                layout = self.module.discover_layout()
+
+            self.assertEqual(layout.libdir, (base / "lib").resolve())
+            self.assertEqual(layout.runtime_name, runtime.name)
+
+    def test_distribution_license_bundle_is_preserved(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            layout = self.make_posix_layout(root)
+            distribution_licenses = layout.base_prefix / "licenses"
+            distribution_licenses.mkdir()
+            (distribution_licenses / "LICENSE.openssl-3.txt").write_text(
+                "OpenSSL license\n", encoding="utf-8"
+            )
+            (distribution_licenses / "README.md").write_text(
+                "not a license\n", encoding="utf-8"
+            )
+            prefix = root / "install"
+            neverc = prefix / "bin" / "neverc"
+            neverc.parent.mkdir(parents=True)
+            neverc.write_bytes(b"not-an-elf")
+
+            manifest = self.module.bundle_runtime(
+                prefix, neverc, layout=layout, repair=False
+            )
+
+            copied = (
+                prefix
+                / "python"
+                / "licenses"
+                / "distribution"
+                / "LICENSE.openssl-3.txt"
+            )
+            self.assertEqual(copied.read_text(encoding="utf-8"), "OpenSSL license\n")
+            self.assertFalse((copied.parent / "README.md").exists())
+            self.assertEqual(
+                manifest["licenses"]["distribution"],
+                ["licenses/distribution/LICENSE.openssl-3.txt"],
+            )
+
     def test_windows_layout_places_runtime_beside_executable(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

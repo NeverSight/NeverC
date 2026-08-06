@@ -234,7 +234,7 @@ if(NEVERC_ENABLE_PYTHON_PLUGINS)
   # definitions placed only on the archive wrapper do not reach those sources.
   target_compile_definitions(obj.nevercPluginCore
     PRIVATE NEVERC_ENABLE_PYTHON_PLUGINS=1)
-  target_link_libraries(nevercPluginCore PRIVATE Python3::Python)
+  target_link_libraries(nevercPluginCore PRIVATE NeverCPython::Python)
 endif()
 
 if(MSVC)

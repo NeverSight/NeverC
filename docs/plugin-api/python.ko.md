@@ -15,17 +15,22 @@ cmake --build build --target install
 ```
 
 새 build의 기본값은 `NEVERC_ENABLE_PYTHON_PLUGINS=ON`과
-`NEVERC_BUNDLE_PYTHON_RUNTIME=ON`입니다. configure에는 CPython 3.10 이상의
-embedding header와 shared library가 필요하며, install은 선택된 interpreter의 정확한
-version을 인접한 `python/` 디렉터리에 자동 복사합니다. build tree executable은 build
-시 Python을 사용할 수 있지만 install된 compiler는 실행 시 외부 Python,
-`PYTHONHOME`, `PYTHONPATH`가 필요하지 않습니다. 공식 NeverC archive는 CPython
-3.12.10을 선택하여 포함합니다.
+`NEVERC_BUNDLE_PYTHON_RUNTIME=ON`입니다. CMake는 build script에 system Python을
+사용할 수 있지만 그 interpreter가 plugin ABI를 선택하지는 않습니다. NeverC는 별도로
+SHA-256으로 검증된 고정 CPython 3.12.10 development/runtime distribution을 내려받아
+plugin bridge를 link하고 `build/python`에 배치한 뒤, install 시에도 동일한 runtime을
+인접한 `python/` 디렉터리에 포함합니다. 따라서 일반 source build와 공식 archive 모두
+CPython 3.12.10으로 plugin을 실행하며 외부 Python runtime, `PYTHONHOME`,
+`PYTHONPATH`가 필요하지 않습니다.
 
-Linux install bundler에는 `PATH`의 `patchelf`가 필요합니다.
-`CMAKE_CROSSCOMPILING`이면 host interpreter를 target architecture package에 넣지
-않도록 자동 bundling을 거부합니다. 이 경우 bundling을 끄고 target runtime을 명시적으로
-package해야 합니다. Python 없는 compiler는 `-DNEVERC_ENABLE_PYTHON_PLUGINS=OFF`와
+offline build에서는 `-DNEVERC_MANAGED_PYTHON_ROOT=/path/to/cpython-3.12.10`를 미리 압축 해제한 정확한
+CPython 3.12.10 development/runtime tree로 지정할 수 있습니다. NeverC는 이를 검증해
+build 디렉터리로 복사하며 원본 디렉터리는 수정하지 않습니다.
+
+Linux install bundler에는 `PATH`의 `patchelf`가 필요합니다. CMake가 ABI probe를
+실행하므로 managed Python plugin build는 현재 native build여야 합니다. cross build는
+Python feature를 끄거나 target platform의 별도 native packaging stage를 사용해야 합니다.
+Python 없는 compiler는 `-DNEVERC_ENABLE_PYTHON_PLUGINS=OFF`와
 `-DNEVERC_BUNDLE_PYTHON_RUNTIME=OFF`를 함께 지정해 build할 수 있습니다.
 
 `python3 -m pip install ./pluginsdk/python`으로 작성 패키지를 설치하거나,

@@ -17,15 +17,22 @@ cmake --build build --target install
 ```
 
 تستخدم البنيات الجديدة افتراضياً `NEVERC_ENABLE_PYTHON_PLUGINS=ON` و
-`NEVERC_BUNDLE_PYTHON_RUNTIME=ON`. يتطلب الإعداد CPython 3.10 أو أحدث مع headers
-الخاصة بالتضمين وshared library. ينسخ التثبيت تلقائياً الإصدار المحدد نفسه إلى
-مجلد `python/` المجاور. قد يستعمل executable في build tree نسخة Python الخاصة
-بالبناء، لكن compiler المثبّت لا يحتاج وقت التشغيل إلى Python خارجي أو
-`PYTHONHOME` أو `PYTHONPATH`. تختار أرشيفات NeverC الرسمية CPython 3.12.10 وتضمّنه.
+`NEVERC_BUNDLE_PYTHON_RUNTIME=ON`. يمكن لـ CMake استعمال Python الخاص بالنظام
+لتشغيل build scripts، لكن ذلك المفسّر لا يحدد ABI الإضافات. ينزّل NeverC بصورة
+منفصلة حزمة development/runtime ثابتة من CPython 3.12.10 ويتحقق منها بواسطة
+SHA-256، ثم يربط بها plugin bridge ويضعها في `build/python` ويثبّت runtime نفسه
+في مجلد `python/` المجاور. لذلك تشغّل بنيات المصدر العادية والأرشيفات الرسمية
+الإضافات على CPython 3.12.10 من دون Python runtime خارجي أو `PYTHONHOME` أو
+`PYTHONPATH`.
 
-على Linux يحتاج bundler الخاص بالتثبيت إلى `patchelf` ضمن `PATH`. عند
-`CMAKE_CROSSCOMPILING` يُرفض bundling التلقائي كي لا تُحزم نسخة host مع compiler
-للـtarget؛ عطّله واحزم runtime للـtarget صراحة. لبناء compiler من دون Python مرّر
+للبناء دون اتصال، استخدم `-DNEVERC_MANAGED_PYTHON_ROOT=/path/to/cpython-3.12.10` للإشارة إلى شجرة
+development/runtime مفكوكة مسبقاً وبالإصدار الدقيق CPython 3.12.10. يتحقق NeverC
+منها وينسخها إلى build من دون تعديل مجلد المصدر المحدد.
+
+على Linux يحتاج bundler الخاص بالتثبيت إلى `patchelf` ضمن `PATH`. لأن CMake
+يشغّل ABI probe، يجب أن يكون managed Python plugin build حالياً native؛ على
+cross build تعطيل Python أو استخدام native packaging stage منفصلة على منصة
+target. لبناء compiler من دون Python مرّر
 `-DNEVERC_ENABLE_PYTHON_PLUGINS=OFF` و
 `-DNEVERC_BUNDLE_PYTHON_RUNTIME=OFF` معاً.
 

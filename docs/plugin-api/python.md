@@ -15,18 +15,24 @@ cmake --build build --target install
 ```
 
 Fresh builds default `NEVERC_ENABLE_PYTHON_PLUGINS=ON` and
-`NEVERC_BUNDLE_PYTHON_RUNTIME=ON`. Configuration needs CPython 3.10 or newer,
-including its embedding headers and shared library. Installation automatically
-copies that exact selected interpreter into the adjacent `python/` directory.
-The raw build-tree executable may still use the build-time Python, but the
-installed compiler needs no external Python, `PYTHONHOME`, or `PYTHONPATH` at
-run time. Official NeverC archives select and bundle CPython 3.12.10.
+`NEVERC_BUNDLE_PYTHON_RUNTIME=ON`. CMake may use the system Python for build
+scripts, but that interpreter does not select the plugin ABI. NeverC separately
+downloads a checksum-pinned CPython 3.12.10 development/runtime distribution,
+links the plugin bridge to it, stages it in `build/python`, and installs that
+same runtime in the adjacent `python/` directory. Both ordinary source builds
+and official archives therefore run plugins on CPython 3.12.10; neither the
+build-tree nor installed compiler needs an external Python runtime,
+`PYTHONHOME`, or `PYTHONPATH`.
 
-On Linux the install-time bundler requires `patchelf` on `PATH`. Automatic
-bundling is rejected when `CMAKE_CROSSCOMPILING` because a host interpreter
-cannot be shipped with a target-architecture compiler; disable bundling and
-package a target runtime explicitly for that case. To intentionally build a
-Python-free compiler, pass both `-DNEVERC_ENABLE_PYTHON_PLUGINS=OFF` and
+For an offline build, set `-DNEVERC_MANAGED_PYTHON_ROOT=/path/to/cpython-3.12.10` to a pre-extracted exact
+CPython 3.12.10 development/runtime tree. NeverC validates and copies that tree
+into the build directory without modifying the supplied source.
+
+On Linux the install-time bundler requires `patchelf` on `PATH`. Managed Python
+plugin builds currently require a native build because CMake executes an ABI
+probe; cross builds must disable the Python feature or provide a separate
+native target packaging stage. To intentionally build a Python-free compiler,
+pass both `-DNEVERC_ENABLE_PYTHON_PLUGINS=OFF` and
 `-DNEVERC_BUNDLE_PYTHON_RUNTIME=OFF`.
 
 Install the authoring package with `python3 -m pip install

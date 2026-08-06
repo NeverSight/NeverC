@@ -87,6 +87,17 @@ def discover_layout() -> RuntimeLayout:
         runtime = str(sysconfig.get_config_var("LDLIBRARY") or "")
         libdir_value = sysconfig.get_config_var("LIBDIR")
         libdir = Path(libdir_value).resolve() if libdir_value else base / "lib"
+        # Relocatable distributions can retain the build-time LIBDIR (for
+        # example /install/lib) in sysconfig while rebasing every real file
+        # below sys.base_prefix. Prefer the selected runtime beside that
+        # rebased prefix when the configured location is stale.
+        rebased_libdir = base / "lib"
+        if (
+            runtime
+            and not (libdir / Path(runtime).name).is_file()
+            and (rebased_libdir / Path(runtime).name).is_file()
+        ):
+            libdir = rebased_libdir.resolve()
     if not runtime:
         raise RuntimeError("the selected CPython does not expose a shared runtime")
     return RuntimeLayout(system, base, stdlib, libdir, Path(runtime).name, version, abi)
@@ -134,6 +145,22 @@ def find_license(layout: RuntimeLayout) -> Path:
         if candidate.is_file():
             return candidate
     raise RuntimeError("the selected CPython distribution has no LICENSE file")
+
+
+def copy_distribution_licenses(layout: RuntimeLayout, destination: Path) -> list[str]:
+    source = layout.base_prefix / "licenses"
+    if not source.is_dir():
+        return []
+    copied: list[str] = []
+    target_root = destination / "distribution"
+    for candidate in sorted(source.iterdir(), key=lambda path: path.name.casefold()):
+        if not candidate.is_file() or not candidate.name.casefold().startswith(
+            ("license", "copying", "notice")
+        ):
+            continue
+        target = copy_file(candidate, target_root / candidate.name)
+        copied.append(f"licenses/distribution/{target.name}")
+    return copied
 
 
 def runtime_sources(layout: RuntimeLayout) -> list[Path]:
@@ -514,6 +541,7 @@ def bundle_runtime(
     cpython_license = find_license(layout)
     copy_file(cpython_license, python_root / "LICENSE.txt")
     copy_file(cpython_license, licenses / "CPython-LICENSE.txt")
+    distribution_licenses = copy_distribution_licenses(layout, licenses)
     copied_runtime_names: list[str] = []
     for source in runtime_sources(layout):
         target = copy_file(source, runtime_destination / source.name)
@@ -550,7 +578,10 @@ def bundle_runtime(
         "native_dependencies": [dependency_records[name]
                                 for name in sorted(dependency_records)],
         "system_dependencies": system_dependencies,
-        "licenses": {"cpython": "licenses/CPython-LICENSE.txt"},
+        "licenses": {
+            "cpython": "licenses/CPython-LICENSE.txt",
+            "distribution": distribution_licenses,
+        },
     }
     (python_root / "runtime.json").write_text(
         json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"

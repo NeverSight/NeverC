@@ -15,17 +15,22 @@ cmake --build build --target install
 ```
 
 Новые сборки по умолчанию используют `NEVERC_ENABLE_PYTHON_PLUGINS=ON` и
-`NEVERC_BUNDLE_PYTHON_RUNTIME=ON`. Для конфигурации нужны CPython 3.10 или
-новее, заголовки embedding и shared library. Установка автоматически копирует
-точно выбранную версию в соседний каталог `python/`. Исполняемый файл в build
-tree ещё может использовать Python сборки, но установленному compiler при
-запуске не нужны внешний Python, `PYTHONHOME` или `PYTHONPATH`. Официальные
-архивы выбирают и включают CPython 3.12.10.
+`NEVERC_BUNDLE_PYTHON_RUNTIME=ON`. CMake может использовать системный Python
+для build-скриптов, но этот интерпретатор не определяет ABI плагинов. NeverC
+отдельно загружает фиксированный и проверенный по SHA-256 development/runtime
+дистрибутив CPython 3.12.10, связывает с ним plugin bridge, размещает его в
+`build/python` и устанавливает тот же runtime в соседний каталог `python/`.
+Поэтому обычные сборки из исходников и официальные архивы запускают плагины на
+CPython 3.12.10 без внешнего Python runtime, `PYTHONHOME` или `PYTHONPATH`.
 
-В Linux установочному bundler нужен `patchelf` в `PATH`. При
-`CMAKE_CROSSCOMPILING` автоматический bundling отклоняется, чтобы host-
-интерпретатор не попал в target compiler; отключите его и явно упакуйте target
-runtime. Для compiler без Python одновременно задайте
+Для offline build укажите `-DNEVERC_MANAGED_PYTHON_ROOT=/path/to/cpython-3.12.10` для уже распакованного
+точное development/runtime-дерево CPython 3.12.10. NeverC проверит и скопирует
+его в build, не изменяя предоставленный исходный каталог.
+
+В Linux установочному bundler нужен `patchelf` в `PATH`. Поскольку CMake
+запускает ABI probe, managed Python plugin build пока должен быть нативным;
+cross build должен отключить Python или использовать отдельный native packaging
+stage на target-платформе. Для compiler без Python одновременно задайте
 `-DNEVERC_ENABLE_PYTHON_PLUGINS=OFF` и
 `-DNEVERC_BUNDLE_PYTHON_RUNTIME=OFF`.
 

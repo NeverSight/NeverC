@@ -108,6 +108,62 @@ def check_source_build_contract() -> list[str]:
         failures.append(
             f"{cmake_path.relative_to(REPOSITORY)}: CMake install does not own Python runtime bundling"
         )
+    for token in (
+        "ManagedCPython.cmake",
+        "neverc_setup_managed_cpython()",
+    ):
+        if token not in cmake:
+            failures.append(
+                f"{cmake_path.relative_to(REPOSITORY)}: missing managed Python token {token}"
+            )
+
+    managed_module = REPOSITORY / "neverc" / "cmake" / "modules" / "ManagedCPython.cmake"
+    if not managed_module.is_file():
+        failures.append(
+            f"{managed_module.relative_to(REPOSITORY)}: managed CPython module is missing"
+        )
+    else:
+        managed_text = managed_module.read_text(encoding="utf-8")
+        required_managed = (
+            'set(NEVERC_MANAGED_CPYTHON_VERSION "3.12.10")',
+            "neverc_managed_cpython_artifact",
+            "EXPECTED_HASH",
+            "NEVERC_MANAGED_PYTHON_ROOT",
+            "NeverCPython::Python",
+            "Py_InitializeFromConfig",
+        )
+        for token in required_managed:
+            if token not in managed_text:
+                failures.append(
+                    f"{managed_module.relative_to(REPOSITORY)}: missing managed runtime contract {token}"
+                )
+
+    plugin_cmake_path = REPOSITORY / "neverc" / "lib" / "Plugin" / "CMakeLists.txt"
+    plugin_cmake = plugin_cmake_path.read_text(encoding="utf-8")
+    if "NeverCPython::Python" not in plugin_cmake or "Python3::Python" in plugin_cmake:
+        failures.append(
+            f"{plugin_cmake_path.relative_to(REPOSITORY)}: plugin bridge must link only managed CPython"
+        )
+
+    contract_test = REPOSITORY / "neverc" / "cmake" / "tests" / "ManagedCPythonContract.cmake"
+    if not contract_test.is_file():
+        failures.append(
+            f"{contract_test.relative_to(REPOSITORY)}: managed CPython mapping test is missing"
+        )
+    else:
+        contract_text = contract_test.read_text(encoding="utf-8")
+        for token in (
+            "Darwin|arm64",
+            "Darwin|x86_64",
+            "Linux|aarch64",
+            "Linux|x86_64",
+            "Windows|ARM64",
+            "Windows|AMD64",
+        ):
+            if token not in contract_text:
+                failures.append(
+                    f"{contract_test.relative_to(REPOSITORY)}: missing host contract {token}"
+                )
 
     install_script = REPOSITORY / "neverc" / "cmake" / "install-bundled-python.cmake.in"
     if not install_script.is_file():
@@ -119,7 +175,7 @@ def check_source_build_contract() -> list[str]:
         for token in (
             "$ENV{DESTDIR}",
             "${CMAKE_INSTALL_PREFIX}",
-            "@Python3_EXECUTABLE@",
+            "@NEVERC_MANAGED_PYTHON_EXECUTABLE@",
             "bundle-python-runtime.py",
         ):
             if token not in install_text:
@@ -135,7 +191,15 @@ def check_source_build_contract() -> list[str]:
         "--component neverc",
         "--component neverc-pluginsdk",
         "DESTDIR=",
-        "default-source-install.zip",
+        "default-source-install-${{ matrix.host }}.zip",
+        "RuntimeVersionPlugin.py",
+        'data["version"] == "3.12.10"',
+        "ubuntu-22.04-arm",
+        "macos-15-intel",
+        "macos-15",
+        "windows-11-arm",
+        "windows-latest",
+        "NEVERC_MANAGED_PYTHON_ROOT",
         '"neverc/cmake/**"',
     )
     for token in required_workflow:

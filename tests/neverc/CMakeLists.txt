@@ -1405,6 +1405,10 @@ add_dependencies(neverc-plugin-core-tests
   neverc-test-plugin-missing-entry
 )
 
+if(NEVERC_ENABLE_PYTHON_PLUGINS)
+  neverc_stage_managed_python_dll(neverc-plugin-core-tests)
+endif()
+
 gtest_discover_tests(neverc-plugin-core-tests
   PROPERTIES
     TIMEOUT 60
@@ -2190,6 +2194,10 @@ add_dependencies(neverc-tests
   neverc-test-plugin-minimal
   neverc-test-plugin-argument-observer
 )
+
+if(NEVERC_ENABLE_PYTHON_PLUGINS)
+  neverc_stage_managed_python_dll(neverc-tests)
+endif()
 
 gtest_discover_tests(neverc-tests
   PROPERTIES

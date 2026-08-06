@@ -344,10 +344,11 @@ if(NEVERC_BUNDLE_PYTHON_RUNTIME AND CMAKE_CROSSCOMPILING)
     "the packaging environment instead.")
 endif()
 
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+
 if(NEVERC_ENABLE_PYTHON_PLUGINS)
-  find_package(Python3 3.10 REQUIRED COMPONENTS Interpreter Development.Embed)
-else()
-  find_package(Python3 REQUIRED COMPONENTS Interpreter)
+  include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/modules/ManagedCPython.cmake")
+  neverc_setup_managed_cpython()
 endif()
 
 if(NEVERC_BUNDLE_PYTHON_RUNTIME)
@@ -473,8 +474,13 @@ if(NEVERC_BUNDLE_PYTHON_RUNTIME AND NOT WIN32)
   # with the adjacent runtime path in installed/package artifacts.
   set_target_properties(neverc PROPERTIES
     BUILD_WITH_INSTALL_RPATH OFF
+    BUILD_RPATH "${NEVERC_MANAGED_PYTHON_LIBRARY_DIR}"
     INSTALL_RPATH "${_neverc_python_install_rpath}"
     )
+endif()
+
+if(NEVERC_ENABLE_PYTHON_PLUGINS)
+  neverc_stage_managed_python_dll(neverc)
 endif()
 
 neverc_target_link_libraries(neverc

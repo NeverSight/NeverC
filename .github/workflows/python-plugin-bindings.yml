@@ -47,9 +47,12 @@ jobs:
       - name: Check every compiler artifact producer
         run: python3 utils/ci/check-python-plugin-artifacts.py
 
+      - name: Check managed CPython artifact map
+        run: cmake -P neverc/cmake/tests/ManagedCPythonContract.cmake
+
   bindings:
     needs: policy
-    name: ${{ matrix.host }} / CPython 3.10
+    name: ${{ matrix.host }} / build Python ${{ matrix.python-version }} / plugin CPython 3.12.10
     runs-on: ${{ matrix.runs-on }}
     timeout-minutes: 90
     strategy:
@@ -58,11 +61,48 @@ jobs:
         include:
           - host: linux-x64
             runs-on: ubuntu-22.04
+            python-version: "3.10"
+            python-arch: x64
+            managed-python: build/python/bin/python3.12
+            compiler: build/bin/neverc
+          - host: linux-arm64
+            runs-on: ubuntu-22.04-arm
+            python-version: "3.12.10"
+            python-arch: arm64
+            managed-python: build/python/bin/python3.12
+            compiler: build/bin/neverc
+          - host: macos-x64
+            runs-on: macos-15-intel
+            python-version: "3.10"
+            python-arch: x64
+            managed-python: build/python/bin/python3.12
+            compiler: build/bin/neverc
           - host: macos-arm64
             runs-on: macos-15
+            python-version: "3.10"
+            python-arch: arm64
+            managed-python: build/python/bin/python3.12
+            compiler: build/bin/neverc
           - host: windows-x64
             runs-on: windows-latest
+            python-version: "3.10"
+            python-arch: x64
             msvc-arch: x64
+            cmake-arch: x86_64
+            ninja-archive: ninja-win.zip
+            managed-python: build/python/python.exe
+            compiler: build/bin/neverc.exe
+            cmake_extra: ""
+          - host: windows-arm64
+            runs-on: windows-11-arm
+            python-version: "3.12.10"
+            python-arch: arm64
+            msvc-arch: arm64
+            cmake-arch: arm64
+            ninja-archive: ninja-winarm64.zip
+            managed-python: build/python/python.exe
+            compiler: build/bin/neverc.exe
+            cmake_extra: -DCMAKE_SYSTEM_PROCESSOR=ARM64
     defaults:
       run:
         shell: bash
@@ -77,11 +117,12 @@ jobs:
         with:
           path: neverc
 
-      - name: Set up CPython 3.10
+      - name: Set up build-tool Python
         id: python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
-          python-version: "3.10"
+          python-version: ${{ matrix.python-version }}
+          architecture: ${{ matrix.python-arch }}
 
       - name: Setup build deps (Linux)
         if: runner.os == 'Linux'
@@ -108,12 +149,17 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          choco install ninja -y
-
           $cmakeVer = '3.31.11'
-          Invoke-WebRequest "https://github.com/Kitware/CMake/releases/download/v$cmakeVer/cmake-$cmakeVer-windows-x86_64.zip" -OutFile cmake.zip
+          $cmakeArch = '${{ matrix.cmake-arch }}'
+          Invoke-WebRequest "https://github.com/Kitware/CMake/releases/download/v$cmakeVer/cmake-$cmakeVer-windows-$cmakeArch.zip" -OutFile cmake.zip
           Expand-Archive cmake.zip C:\tools -Force
-          Add-Content $env:GITHUB_PATH "C:\tools\cmake-$cmakeVer-windows-x86_64\bin"
+          Add-Content $env:GITHUB_PATH "C:\tools\cmake-$cmakeVer-windows-$cmakeArch\bin"
+
+          $ninjaVer = '1.13.1'
+          $ninjaArchive = '${{ matrix.ninja-archive }}'
+          Invoke-WebRequest "https://github.com/ninja-build/ninja/releases/download/v$ninjaVer/$ninjaArchive" -OutFile ninja.zip
+          Expand-Archive ninja.zip C:\tools\ninja -Force
+          Add-Content $env:GITHUB_PATH "C:\tools\ninja"
 
       - name: Setup MSVC (Windows)
         if: runner.os == 'Windows'
@@ -126,6 +172,7 @@ jobs:
           cmake -GNinja -Bbuild \
             ${CC:+-DCMAKE_C_COMPILER=$CC} \
             ${CXX:+-DCMAKE_CXX_COMPILER=$CXX} \
+            ${{ matrix.cmake_extra }} \
             -DPython3_EXECUTABLE="${{ steps.python.outputs.python-path }}" \
             -DLLVM_ENABLE_ASSERTIONS=OFF \
             -DLLVM_TOOL_LLVM_SHLIB_BUILD=off \
@@ -136,25 +183,54 @@ jobs:
             -C neverc/neverc/cmake/caches/NeverC.cmake \
             neverc/llvm
 
-      - name: Verify Python features default to enabled and bundled
+      - name: Verify Python roles and default feature contract
         run: |
           grep -Fx 'NEVERC_ENABLE_PYTHON_PLUGINS:BOOL=ON' build/CMakeCache.txt
           grep -Fx 'NEVERC_BUNDLE_PYTHON_RUNTIME:BOOL=ON' build/CMakeCache.txt
+          "${{ steps.python.outputs.python-path }}" --version
+          "${{ matrix.managed-python }}" -I -c \
+            'import platform, sys; assert platform.python_implementation() == "CPython"; assert sys.version_info[:3] == (3, 12, 10); print(sys.base_prefix)'
 
-      - name: Build Python bridge, core tests and SDK
+      - name: Build compiler, Python bridge, core tests and SDK
         run: |
           cmake --build build --config ${{ env.BUILD_TYPE }} \
-            --target neverc-plugin-core-tests neverc-pluginsdk
+            --target neverc neverc-plugin-core-tests neverc-pluginsdk
 
       - name: Run Python lifecycle and SDK tests
         run: |
           ctest --test-dir build --output-on-failure \
             -R '^(PythonPluginTest\.|PluginPythonPhaseBindings$|PluginPythonSDKTests$)'
 
-      - name: Build compiler and run full driver smoke (Linux)
+      - name: Run sanitized managed-runtime smoke
+        run: |
+          env -u PYTHONHOME -u PYTHONPATH -u PYTHONUSERBASE \
+            PYTHONDONTWRITEBYTECODE=1 \
+            "${{ matrix.compiler }}" \
+            -fplugin=neverc/tests/neverc/Inputs/Plugin/Python/RuntimeVersionPlugin.py \
+            -fsyntax-only neverc/tests/neverc/override/lib_foo.c
+
+      - name: Verify Linux managed loader path
+        if: runner.os == 'Linux'
+        run: |
+          ldd "${{ matrix.compiler }}" | grep -E 'libpython3\.12'
+          readelf -d "${{ matrix.compiler }}" | grep -F "$PWD/build/python/lib"
+
+      - name: Verify macOS managed loader path
+        if: runner.os == 'macOS'
+        run: |
+          otool -L "${{ matrix.compiler }}" | grep -F '@rpath/libpython3.12.dylib'
+          otool -l "${{ matrix.compiler }}" | grep -F "$PWD/build/python/lib"
+
+      - name: Verify Windows managed loader path
+        if: runner.os == 'Windows'
+        run: |
+          test -f build/bin/python312.dll
+          MSYS2_ARG_CONV_EXCL='*' dumpbin.exe /dependents \
+            "${{ matrix.compiler }}" | grep -i 'python312.dll'
+
+      - name: Run full driver smoke (Linux x64)
         if: matrix.host == 'linux-x64'
         run: |
-          cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc
           env -u PYTHONPATH PYTHONDONTWRITEBYTECODE=1 \
             build/bin/neverc \
             -fplugin=neverc/tests/neverc/Inputs/Plugin/Python/DriverTracePlugin.py \
@@ -162,7 +238,6 @@ jobs:
             -fsyntax-only neverc/tests/neverc/override/lib_foo.c \
             2>python-driver.log
           grep -F "python raw arguments (before): mode=compact" python-driver.log
-          ldd build/bin/neverc | grep -E 'libpython3\.10|Python'
 
       - name: Check plugin global state (Linux)
         if: matrix.host == 'linux-x64'
@@ -171,26 +246,59 @@ jobs:
             neverc/utils/plugin-api/check-global-state.py \
             --build-dir build --strict
 
-      - name: Verify default source install is relocated and self-contained (Linux)
+      - name: Verify read-only offline runtime override (Linux x64)
         if: matrix.host == 'linux-x64'
         run: |
-          stage_root="$PWD/install stage"
+          prepared="$PWD/prepared python"
+          cp -R build/python "$prepared"
+          before=$(sha256sum "$prepared/lib/libpython3.12.so.1.0")
+          cmake -Bbuild \
+            -DNEVERC_MANAGED_PYTHON_ROOT="$prepared" \
+            neverc/llvm
+          after=$(sha256sum "$prepared/lib/libpython3.12.so.1.0")
+          test "$before" = "$after"
+          cmake --build build --config "${{ env.BUILD_TYPE }}" --target neverc
+          env -u PYTHONHOME -u PYTHONPATH -u PYTHONUSERBASE \
+            build/bin/neverc \
+            -fplugin=neverc/tests/neverc/Inputs/Plugin/Python/RuntimeVersionPlugin.py \
+            -fsyntax-only neverc/tests/neverc/override/lib_foo.c
+
+      - name: Verify native source install is relocated and self-contained
+        run: |
+          install_prefix="$PWD/install prefix"
+          cmake --install build \
+            --config "${{ env.BUILD_TYPE }}" \
+            --component neverc \
+            --prefix "$install_prefix"
+          cmake --install build \
+            --config "${{ env.BUILD_TYPE }}" \
+            --component neverc-pluginsdk \
+            --prefix "$install_prefix"
+          test -f "$install_prefix/python/runtime.json"
+          "${{ steps.python.outputs.python-path }}" -c \
+            'import json, pathlib, sys; data=json.loads((pathlib.Path(sys.argv[1]) / "python" / "runtime.json").read_text()); assert data["version"] == "3.12.10"' \
+            "$install_prefix"
+          "${{ steps.python.outputs.python-path }}" -c \
+            'import shutil, sys; shutil.make_archive(sys.argv[1], "zip", root_dir=sys.argv[2])' \
+            "$PWD/default-source-install-${{ matrix.host }}" "$install_prefix"
+          "${{ steps.python.outputs.python-path }}" \
+            neverc/utils/release/test-python-plugin-package.py \
+            --archive "default-source-install-${{ matrix.host }}.zip"
+
+      - name: Verify DESTDIR source install semantics (Linux x64)
+        if: matrix.host == 'linux-x64'
+        run: |
+          stage_root="$PWD/destdir stage"
           logical_prefix="/neverc prefix"
           physical_prefix="${stage_root}${logical_prefix}"
           DESTDIR="$stage_root" cmake --install build \
             --config "${{ env.BUILD_TYPE }}" \
             --component neverc \
             --prefix "$logical_prefix"
-          DESTDIR="$stage_root" cmake --install build \
-            --config "${{ env.BUILD_TYPE }}" \
-            --component neverc-pluginsdk \
-            --prefix "$logical_prefix"
           test -f "$physical_prefix/python/runtime.json"
           "${{ steps.python.outputs.python-path }}" -c \
-            'import shutil; shutil.make_archive("default-source-install", "zip", root_dir="install stage", base_dir="neverc prefix")'
-          "${{ steps.python.outputs.python-path }}" \
-            neverc/utils/release/test-python-plugin-package.py \
-            --archive default-source-install.zip
+            'import json, pathlib, sys; assert json.loads(pathlib.Path(sys.argv[1]).read_text())["version"] == "3.12.10"' \
+            "$physical_prefix/python/runtime.json"
 
       - name: Upload driver log
         if: always() && matrix.host == 'linux-x64'

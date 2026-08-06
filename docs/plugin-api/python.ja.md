@@ -15,17 +15,22 @@ cmake --build build --target install
 ```
 
 新規 build の既定値は `NEVERC_ENABLE_PYTHON_PLUGINS=ON` と
-`NEVERC_BUNDLE_PYTHON_RUNTIME=ON` です。configure には CPython 3.10 以降の
-embedding header と shared library が必要で、install は選択した interpreter
-の正確な version を隣接する `python/` directory に自動コピーします。build tree
-の executable は build 時の Python を使う場合がありますが、install 済み compiler
-は実行時に外部 Python、`PYTHONHOME`、`PYTHONPATH` を必要としません。公式
-NeverC archive は CPython 3.12.10 を選択して同梱します。
+`NEVERC_BUNDLE_PYTHON_RUNTIME=ON` です。CMake は build script に system Python
+を使用できますが、その interpreter は plugin ABI を決めません。NeverC は別途、
+SHA-256 で検証した固定 CPython 3.12.10 の development/runtime distribution を
+download し、それに plugin bridge を link して `build/python` に配置し、install
+時にも同じ runtime を隣接する `python/` directory に収録します。したがって通常の
+source build と公式 archive はどちらも CPython 3.12.10 で plugin を実行し、外部
+Python runtime、`PYTHONHOME`、`PYTHONPATH` は不要です。
 
-Linux の install bundler には `PATH` 上の `patchelf` が必要です。
-`CMAKE_CROSSCOMPILING` の場合、host interpreter を target architecture の package
-に含めないよう自動 bundling は拒否されます。この場合は bundling を無効にして
-target runtime を明示的に package してください。Python を含まない compiler は
+offline build では、`-DNEVERC_MANAGED_PYTHON_ROOT=/path/to/cpython-3.12.10` に展開済みの正確な CPython
+3.12.10 development/runtime tree を指定できます。NeverC はその tree を検証して
+build directory にコピーし、指定元は変更しません。
+
+Linux の install bundler には `PATH` 上の `patchelf` が必要です。CMake が ABI
+probe を実行するため、managed Python plugin build は現在 native build が必要です。
+cross build では Python feature を無効にするか、target platform 上に別の native
+packaging stage を用意してください。Python を含まない compiler は
 `-DNEVERC_ENABLE_PYTHON_PLUGINS=OFF` と
 `-DNEVERC_BUNDLE_PYTHON_RUNTIME=OFF` の両方を指定して build できます。
 

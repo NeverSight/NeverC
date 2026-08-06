@@ -14,15 +14,20 @@ cmake --build build --target install
 ```
 
 全新建置預設採用 `NEVERC_ENABLE_PYTHON_PLUGINS=ON` 與
-`NEVERC_BUNDLE_PYTHON_RUNTIME=ON`。設定階段需要 CPython 3.10 或更新版本，
-包括嵌入用開發標頭與共享函式庫；安裝時會自動把所選解譯器的確切版本複製到相鄰
-的 `python/` 目錄。建置樹中的原始執行檔仍可能使用建置期 Python，但安裝後的
-編譯器在執行時不需要外部 Python、`PYTHONHOME` 或 `PYTHONPATH`。NeverC 官方
-封存檔固定選用並捆綁 CPython 3.12.10。
+`NEVERC_BUNDLE_PYTHON_RUNTIME=ON`。CMake 可使用系統 Python 執行建置腳本，
+但該解譯器不會決定外掛 ABI。NeverC 會另外下載經 SHA-256 驗證且版本固定為
+CPython 3.12.10 的開發/執行環境，用它編譯並連結外掛橋接層，暫存於
+`build/python`，安裝時再把同一套執行環境放進相鄰的 `python/` 目錄。因此一般
+原始碼建置與官方封存檔都固定以 CPython 3.12.10 執行外掛；建置樹及安裝後的
+編譯器皆不需要外部 Python 執行環境、`PYTHONHOME` 或 `PYTHONPATH`。
 
-Linux 安裝階段要求 `PATH` 中有 `patchelf`。當 `CMAKE_CROSSCOMPILING` 時會拒絕
-自動捆綁，因為不能把主機解譯器放入目標架構編譯器套件；此時應關閉捆綁並明確
-封裝目標執行環境。若要刻意建置完全不含 Python 的編譯器，請同時傳入
+離線建置時，可用 `-DNEVERC_MANAGED_PYTHON_ROOT=/path/to/cpython-3.12.10` 指向預先解壓、確切版本為
+CPython 3.12.10 且含開發檔案的執行環境。NeverC 會先驗證再複製到建置目錄，
+不會修改提供的來源目錄。
+
+Linux 安裝階段要求 `PATH` 中有 `patchelf`。由於 CMake 會實際執行 ABI 探針，
+目前啟用受管 Python 外掛的建置必須是原生建置；交叉編譯時應關閉 Python 功能，
+或另設目標平台的原生封裝階段。若要刻意建置完全不含 Python 的編譯器，請同時傳入
 `-DNEVERC_ENABLE_PYTHON_PLUGINS=OFF` 與
 `-DNEVERC_BUNDLE_PYTHON_RUNTIME=OFF`。
 

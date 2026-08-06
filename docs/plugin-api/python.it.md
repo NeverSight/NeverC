@@ -15,18 +15,23 @@ cmake --build build --target install
 ```
 
 Le nuove build usano `NEVERC_ENABLE_PYTHON_PLUGINS=ON` e
-`NEVERC_BUNDLE_PYTHON_RUNTIME=ON` per default. La configurazione richiede
-CPython 3.10 o successivo, gli header per l'embedding e la libreria condivisa.
-L'installazione copia automaticamente la versione esatta selezionata nella
-directory adiacente `python/`. L'eseguibile nel build tree può ancora usare il
-Python di build, ma il compiler installato non richiede Python esterno,
-`PYTHONHOME` o `PYTHONPATH` in esecuzione. Gli archivi ufficiali selezionano e
-includono CPython 3.12.10.
+`NEVERC_BUNDLE_PYTHON_RUNTIME=ON` per default. CMake può usare il Python di
+sistema per gli script di build, ma quell'interprete non seleziona l'ABI dei
+plugin. NeverC scarica separatamente una distribution development/runtime
+CPython 3.12.10 fissa e verificata con SHA-256, collega il bridge dei plugin,
+la prepara in `build/python` e installa lo stesso runtime nella directory
+adiacente `python/`. Le normali build da sorgente e gli archivi ufficiali
+eseguono quindi i plugin con CPython 3.12.10 senza Python runtime esterno,
+`PYTHONHOME` o `PYTHONPATH`.
 
-Su Linux il bundler d'installazione richiede `patchelf` in `PATH`. Con
-`CMAKE_CROSSCOMPILING` il bundling automatico è rifiutato per non inserire
-l'interprete host in un compiler target; disabilitarlo e impacchettare
-esplicitamente un runtime target. Per un compiler senza Python, passare insieme
+Per una build offline, impostare `-DNEVERC_MANAGED_PYTHON_ROOT=/path/to/cpython-3.12.10` su un albero
+development/runtime CPython 3.12.10 esatto già estratto. NeverC lo verifica e
+lo copia nella build senza modificare la directory sorgente fornita.
+
+Su Linux il bundler d'installazione richiede `patchelf` in `PATH`. Poiché CMake
+esegue una sonda ABI, le build con plugin Python gestiti devono essere native;
+una cross build deve disabilitare Python o usare una fase di packaging nativa
+sulla piattaforma target. Per un compiler senza Python, passare insieme
 `-DNEVERC_ENABLE_PYTHON_PLUGINS=OFF` e
 `-DNEVERC_BUNDLE_PYTHON_RUNTIME=OFF`.
 

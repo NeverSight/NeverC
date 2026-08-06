@@ -34,8 +34,9 @@ plugin behavior unchanged.
   plugin diagnostic.
 - Native `.so`, `.dylib`, and `.dll` plugins remain byte-for-byte ABI compatible
   and mixed native/Python loading works.
-- Python support is optional at build time and requires CPython 3.10 or newer
-  development/embedding files only when enabled.
+- Python support is optional at build time. When enabled, the plugin ABI and
+  runtime use NeverC's checksum-pinned CPython 3.12.10 distribution; the
+  system Python remains only a build-script interpreter.
 - The pure-Python SDK is copied into the build-tree Plugin SDK and installed as
   part of the existing `neverc-pluginsdk` component.
 
