@@ -145,7 +145,7 @@ Error PluginTaskContext::initialize() {
 
   for (auto &State : PluginStates) {
     const PluginDescriptorRecord &Descriptor = State->Module->descriptor();
-    if (!Descriptor.TaskBegin)
+    if (!State->Module->hasTaskBegin())
       continue;
     void *SessionState = nullptr;
     NevercStatus SessionStateStatus =
@@ -158,7 +158,7 @@ Error PluginTaskContext::initialize() {
     auto Result = Session.invokeCallback(
         Descriptor.PluginID, "TaskBegin",
         [&] {
-          return Descriptor.TaskBegin(
+          return State->Module->invokeTaskBegin(
               &ProcessServices.coreAPI(), Handle, Kind,
               State->Module->processState(), SessionState, &OutState);
         },
@@ -193,11 +193,11 @@ Error PluginTaskContext::rollbackBegunPlugins() {
       CleanupErrors = joinErrors(
           std::move(CleanupErrors),
           taskError("cannot resolve plugin session state for TaskEnd"));
-    } else if (Descriptor.TaskEnd) {
+    } else if (State.Module->hasTaskEnd()) {
       auto Result = Session.invokeCallback(
           Descriptor.PluginID, "TaskEnd",
           [&] {
-            return Descriptor.TaskEnd(
+            return State.Module->invokeTaskEnd(
                 &ProcessServices.coreAPI(), Handle, Kind,
                 State.Module->processState(), SessionState, State.State);
           },

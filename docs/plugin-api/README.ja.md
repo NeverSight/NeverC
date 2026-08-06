@@ -24,6 +24,7 @@ neverc_plugin_entry(const NevercBootstrapAPI *Bootstrap,
 
 | ガイド | 扱う範囲 |
 |---|---|
+| [Python プラグイン](python.ja.md) | 任意の埋め込み Python、ライフサイクル、オプション、read-only observer、診断、現在の制限 |
 | [ドライバー API](driver.ja.md) | [コマンドライン](driver.ja.md#生の引数)、[ツールチェーン選択](driver.ja.md#ツールチェーンの選択)、[アクショングラフ](driver.ja.md#アクショングラフ)、[ジョブグラフ](driver.ja.md#ジョブグラフ) |
 | [ソースと I/O API](source.ja.md) | [VFS プロバイダー](source.ja.md#仮想ファイルシステムプロバイダ)、[ソース位置](source.ja.md#ソース位置)、[バッファー](source.ja.md#ファイルの読み取り)、[出力シンク](source.ja.md#出力の書き出し)、[依存関係](source.ja.md#依存関係の記録) |
 | [プリプロセッサー API](prep.ja.md) | [トークン](prep.ja.md#トークンの読み取り)、[マクロ](prep.ja.md#識別子とマクロ)、[pragma](prep.ja.md#pragma-と機能問い合わせ)、[include](prep.ja.md#include-のリダイレクト)、[機能クエリ](prep.ja.md#pragma-と機能問い合わせ)、[39 種類のイベント](prep.ja.md#イベントの購読) |

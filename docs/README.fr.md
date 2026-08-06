@@ -63,6 +63,7 @@ NeverC expose l'intégralité de sa chaîne d'outils via une ABI C pure. Un gref
 | Document | Description |
 |----------|-------------|
 | [README](plugin-api/README.fr.md) | Point d'entrée, phases, négociation d'interface, enregistrement, règles ABI |
+| [Plugins Python](plugin-api/python.fr.md) | Python embarqué facultatif, cycle de vie, options, observers en lecture seule, diagnostics et limites |
 | [API Driver](plugin-api/driver.fr.md) | Ligne de commande, choix de la chaîne d'outils, graphe d'actions, graphe de jobs |
 | [API Source et E/S](plugin-api/source.fr.md) | Fournisseurs VFS, positions source, tampons, puits de sortie, dépendances |
 | [API Préprocesseur](plugin-api/prep.fr.md) | Jetons, macros, pragmas, inclusions, requêtes de fonctionnalités, 39 types d'événements |

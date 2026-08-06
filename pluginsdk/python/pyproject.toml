@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "neverc-plugin"
+version = "1.0.0"
+description = "Python authoring SDK for NeverC compiler plugins"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "Apache-2.0 WITH LLVM-exception"}
+authors = [{name = "NeverSight"}]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["neverc_plugin*"]

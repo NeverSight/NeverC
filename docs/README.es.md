@@ -63,6 +63,7 @@ NeverC abre toda su cadena de herramientas mediante una ABI C pura. Un complemen
 | Documento | Descripción |
 |-----------|-------------|
 | [README](plugin-api/README.es.md) | Punto de entrada, fases, negociación de interfaces, registro, reglas ABI |
+| [Plugins de Python](plugin-api/python.es.md) | Python embebido opcional, ciclo de vida, opciones, observers de solo lectura, diagnósticos y límites |
 | [API del driver](plugin-api/driver.es.md) | Línea de órdenes, selección de cadena de herramientas, grafo de acciones, grafo de trabajos |
 | [API de fuentes y E/S](plugin-api/source.es.md) | Proveedores VFS, ubicaciones de origen, búferes, sumideros de salida, dependencias |
 | [API del preprocesador](plugin-api/prep.es.md) | Tokens, macros, pragmas, inclusiones, consultas de características, 39 tipos de eventos |

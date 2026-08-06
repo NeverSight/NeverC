@@ -70,6 +70,18 @@ TEST(PluginRegistryTest, RejectsMissingEntryPoint) {
             std::string::npos);
 }
 
+#if !NEVERC_TEST_PYTHON_PLUGINS_ENABLED
+TEST(PluginRegistryTest, PythonPluginReportsDisabledBuildFeature) {
+  auto Registry = makeRegistry();
+  auto Loaded = Registry.load(NEVERC_TEST_PYTHON_MINIMAL_PLUGIN);
+  ASSERT_FALSE(static_cast<bool>(Loaded));
+  std::string Message = takeErrorMessage(Loaded);
+  EXPECT_NE(Message.find("Python plugin support disabled"), std::string::npos);
+  EXPECT_NE(Message.find("NEVERC_ENABLE_PYTHON_PLUGINS=ON"),
+            std::string::npos);
+}
+#endif
+
 TEST(PluginRegistryTest, RejectsRemovedPrototypeBinaryWithMigrationDiagnostic) {
   auto Registry = makeRegistry();
   auto Loaded = Registry.load(NEVERC_TEST_REMOVED_PROTOTYPE_PLUGIN);

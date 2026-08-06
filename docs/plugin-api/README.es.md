@@ -26,6 +26,7 @@ identificador.
 
 | Guía | Cubre |
 |---|---|
+| [Plugins de Python](python.es.md) | Python embebido opcional, ciclo de vida, opciones, observers de solo lectura, diagnósticos y límites actuales |
 | [API del driver](driver.es.md) | [Línea de órdenes](driver.es.md#argumentos-en-bruto), [selección de cadena de herramientas](driver.es.md#selección-de-la-cadena-de-herramientas), [grafo de acciones](driver.es.md#el-grafo-de-acciones), [grafo de trabajos](driver.es.md#el-grafo-de-trabajos) |
 | [API de fuentes y E/S](source.es.md) | [Proveedores VFS](source.es.md#proveedores-de-sistema-de-archivos-virtual), [ubicaciones de origen](source.es.md#ubicaciones-de-fuente), [búferes](source.es.md#leer-archivos), [sumideros de salida](source.es.md#escribir-salidas), [dependencias](source.es.md#registrar-dependencias) |
 | [API del preprocesador](prep.es.md) | [Tokens](prep.es.md#leer-tokens), [macros](prep.es.md#identificadores-y-macros), [pragmas](prep.es.md#pragmas-y-consultas-de-características), [inclusiones](prep.es.md#redirigir-una-inclusión), [consultas de características](prep.es.md#pragmas-y-consultas-de-características), [39 tipos de eventos](prep.es.md#suscripción-a-eventos) |

@@ -24,6 +24,7 @@ neverc_plugin_entry(const NevercBootstrapAPI *Bootstrap,
 
 | 가이드 | 다루는 범위 |
 |---|---|
+| [Python 플러그인](python.ko.md) | 선택적 embedded Python, 수명 주기, 옵션, read-only observer, 진단 및 현재 제한 |
 | [드라이버 API](driver.ko.md) | [명령줄](driver.ko.md#원시-인자), [툴체인 선택](driver.ko.md#툴체인-선택), [액션 그래프](driver.ko.md#액션-그래프), [잡 그래프](driver.ko.md#작업-그래프) |
 | [소스와 I/O API](source.ko.md) | [VFS 프로바이더](source.ko.md#가상-파일-시스템-제공자), [소스 위치](source.ko.md#소스-위치), [버퍼](source.ko.md#파일-읽기), [출력 싱크](source.ko.md#출력-쓰기), [의존성](source.ko.md#의존성-기록) |
 | [전처리기 API](prep.ko.md) | [토큰](prep.ko.md#토큰-읽기), [매크로](prep.ko.md#식별자와-매크로), [pragma](prep.ko.md#프래그마와-기능-질의), [include](prep.ko.md#include-방향-바꾸기), [기능 질의](prep.ko.md#프래그마와-기능-질의), [39가지 이벤트](prep.ko.md#이벤트-구독) |

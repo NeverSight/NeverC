@@ -63,6 +63,7 @@ NeverC 通过一套纯 C ABI 开放整条工具链。插件是一个共享模块
 | 文档 | 说明 |
 |------|------|
 | [README](plugin-api/README.zh-CN.md) | 入口点、阶段、接口协商、注册、ABI 规则 |
+| [Python 插件](plugin-api/python.zh-CN.md) | 可选的嵌入式 Python、生命周期、选项、只读 observer、诊断与限制 |
 | [驱动 API](plugin-api/driver.zh-CN.md) | 命令行、工具链选择、action 图、job 图 |
 | [源与 I/O API](plugin-api/source.zh-CN.md) | VFS Provider、源位置、缓冲区、输出 sink、依赖 |
 | [预处理器 API](plugin-api/prep.zh-CN.md) | token、宏、pragma、include、特性查询、39 种事件 |

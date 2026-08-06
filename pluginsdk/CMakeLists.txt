@@ -100,6 +100,20 @@ list(TRANSFORM EXAMPLE_FILES
      PREPEND "${PLUGINSDK_SRC}/examples/"
      OUTPUT_VARIABLE _example_abs)
 
+set(PYTHON_SDK_ROOT_FILES
+    "${PLUGINSDK_SRC}/python/pyproject.toml"
+    "${PLUGINSDK_SRC}/python/README.md")
+set(PYTHON_SDK_PACKAGE_FILES
+    "${PLUGINSDK_SRC}/python/neverc_plugin/__init__.py"
+    "${PLUGINSDK_SRC}/python/neverc_plugin/api.py"
+    "${PLUGINSDK_SRC}/python/neverc_plugin/phases.py")
+set(PYTHON_SDK_DOMAIN_FILES
+    "${PLUGINSDK_SRC}/python/neverc_plugin/domains/__init__.py"
+    "${PLUGINSDK_SRC}/python/neverc_plugin/domains/driver.py")
+set(PYTHON_SDK_EXAMPLE_FILES
+    "${PLUGINSDK_SRC}/python/examples/minimal.py"
+    "${PLUGINSDK_SRC}/python/examples/driver_trace.py")
+
 # ---------------------------------------------------------------------------
 # Build-tree copy
 # ---------------------------------------------------------------------------
@@ -207,6 +221,22 @@ add_custom_command(
   COMMAND "${CMAKE_COMMAND}" -E copy_directory
       "${PLUGINSDK_SRC}/examples"
       "${PLUGINSDK_DST}/examples"
+  COMMAND "${CMAKE_COMMAND}" -E make_directory
+      "${PLUGINSDK_DST}/python/neverc_plugin/domains"
+  COMMAND "${CMAKE_COMMAND}" -E make_directory
+      "${PLUGINSDK_DST}/python/examples"
+  COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+      ${PYTHON_SDK_ROOT_FILES}
+      "${PLUGINSDK_DST}/python"
+  COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+      ${PYTHON_SDK_PACKAGE_FILES}
+      "${PLUGINSDK_DST}/python/neverc_plugin"
+  COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+      ${PYTHON_SDK_DOMAIN_FILES}
+      "${PLUGINSDK_DST}/python/neverc_plugin/domains"
+  COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+      ${PYTHON_SDK_EXAMPLE_FILES}
+      "${PLUGINSDK_DST}/python/examples"
   COMMAND "${CMAKE_COMMAND}" -E touch "${_stamp}"
   DEPENDS
       "${PLUGIN_HEADER}"
@@ -240,6 +270,10 @@ add_custom_command(
       "${PLUGIN_OBJECT_SCHEMA_INC}"
       "${PLUGIN_MANIFEST}"
       ${_example_abs}
+      ${PYTHON_SDK_ROOT_FILES}
+      ${PYTHON_SDK_PACKAGE_FILES}
+      ${PYTHON_SDK_DOMAIN_FILES}
+      ${PYTHON_SDK_EXAMPLE_FILES}
   COMMENT "Copying pluginsdk to build tree..."
 )
 
@@ -349,6 +383,9 @@ set_target_properties(neverc-pluginsdk-examples
 
 add_custom_target(neverc-pluginsdk ALL DEPENDS "${_stamp}")
 add_dependencies(neverc-pluginsdk neverc-pluginsdk-examples)
+if(TARGET nevercPythonPluginPhaseSchema)
+  add_dependencies(neverc-pluginsdk nevercPythonPluginPhaseSchema)
+endif()
 
 # ---------------------------------------------------------------------------
 # Install
@@ -399,6 +436,19 @@ install(FILES "${PLUGIN_MANIFEST}"
 
 install(FILES ${_example_abs}
         DESTINATION "pluginsdk/examples"
+        COMPONENT neverc-pluginsdk)
+
+install(FILES ${PYTHON_SDK_ROOT_FILES}
+        DESTINATION "pluginsdk/python"
+        COMPONENT neverc-pluginsdk)
+install(FILES ${PYTHON_SDK_PACKAGE_FILES}
+        DESTINATION "pluginsdk/python/neverc_plugin"
+        COMPONENT neverc-pluginsdk)
+install(FILES ${PYTHON_SDK_DOMAIN_FILES}
+        DESTINATION "pluginsdk/python/neverc_plugin/domains"
+        COMPONENT neverc-pluginsdk)
+install(FILES ${PYTHON_SDK_EXAMPLE_FILES}
+        DESTINATION "pluginsdk/python/examples"
         COMPONENT neverc-pluginsdk)
 
 # ---------------------------------------------------------------------------

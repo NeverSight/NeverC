@@ -325,6 +325,9 @@ CMAKE_DEPENDENT_OPTION(NEVERC_PLUGIN_SUPPORT
   "Build NeverC with plugin support" ON
   "HAVE_NEVERC_PLUGIN_SUPPORT" OFF)
 
+option(NEVERC_ENABLE_PYTHON_PLUGINS
+  "Enable embedded CPython bindings for -fplugin=*.py" OFF)
+
 if(NEVERC_ENABLE_BOOTSTRAP)
   message(FATAL_ERROR
     "NeverC: NEVERC_ENABLE_BOOTSTRAP is unsupported (NeverC is a C-only compiler).")

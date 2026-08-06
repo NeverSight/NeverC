@@ -24,6 +24,7 @@ optimization pipeline — is reached through tables you ask the host for by ID.
 
 | Guide | Covers |
 |---|---|
+| [Python plugins](python.md) | Optional embedded Python, lifecycle, options, read-only observers, diagnostics, and current limitations |
 | [Driver API](driver.md) | [Command line](driver.md#raw-arguments), [toolchain selection](driver.md#toolchain-selection), [action graph](driver.md#the-action-graph), [job graph](driver.md#the-job-graph) |
 | [Source and I/O API](source.md) | [VFS providers](source.md#virtual-file-system-providers), [source locations](source.md#source-locations), [buffers](source.md#reading-files), [output sinks](source.md#writing-outputs), [dependencies](source.md#recording-dependencies) |
 | [Preprocessor API](prep.md) | [Tokens](prep.md#reading-tokens), [macros](prep.md#identifiers-and-macros), [pragmas](prep.md#pragmas-and-feature-queries), [includes](prep.md#redirecting-an-include), [feature queries](prep.md#pragmas-and-feature-queries), [39 event kinds](prep.md#event-subscription) |

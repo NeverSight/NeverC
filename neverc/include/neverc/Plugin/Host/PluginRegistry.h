@@ -92,6 +92,38 @@ private:
 
   bool processBegun() const;
   bool registered() const;
+  bool hasProcessBegin() const;
+  bool hasRegister() const;
+  bool hasSessionBegin() const;
+  bool hasSessionEnd() const;
+  bool hasTaskBegin() const;
+  bool hasTaskEnd() const;
+  bool hasDestroy() const;
+  NevercStatus invokeProcessBegin(const NevercCoreAPI *Core,
+                                  void **OutProcessState) const;
+  NevercStatus invokeRegister(const NevercCoreAPI *Core,
+                              const NevercRegistrarAPI *Registrar,
+                              void *RegistrarContext,
+                              void *ProcessState) const;
+  NevercStatus invokeSessionBegin(const NevercCoreAPI *Core,
+                                  NevercSessionHandle Session,
+                                  void *ProcessState,
+                                  void **OutSessionState) const;
+  NevercStatus invokeSessionEnd(const NevercCoreAPI *Core,
+                                NevercSessionHandle Session,
+                                void *ProcessState,
+                                void *SessionState) const;
+  NevercStatus invokeTaskBegin(const NevercCoreAPI *Core,
+                               NevercTaskHandle Task, NevercTaskKind Kind,
+                               void *ProcessState, void *SessionState,
+                               void **OutTaskState) const;
+  NevercStatus invokeTaskEnd(const NevercCoreAPI *Core,
+                             NevercTaskHandle Task, NevercTaskKind Kind,
+                             void *ProcessState, void *SessionState,
+                             void *TaskState) const;
+  NevercStatus invokeDestroy(const NevercCoreAPI *Core,
+                             void *ProcessState) const;
+  std::string runtimeError() const;
   void *processState() const;
   void setProcessState(void *State);
   void clearProcessState();

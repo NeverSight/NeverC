@@ -63,6 +63,7 @@ NeverC apre l'intera toolchain attraverso una ABI C pura. Un plugin è un modulo
 | Documento | Descrizione |
 |-----------|-------------|
 | [README](plugin-api/README.it.md) | Punto di ingresso, fasi, negoziazione delle interfacce, registrazione, regole ABI |
+| [Plugin Python](plugin-api/python.it.md) | Python embedded opzionale, ciclo di vita, opzioni, observer read-only, diagnostica e limiti |
 | [API Driver](plugin-api/driver.it.md) | Riga di comando, scelta della toolchain, grafo delle azioni, grafo dei job |
 | [API Source e I/O](plugin-api/source.it.md) | Provider VFS, posizioni sorgente, buffer, sink di output, dipendenze |
 | [API Preprocessore](plugin-api/prep.it.md) | Token, macro, pragma, inclusioni, interrogazioni sulle funzionalità, 39 tipi di evento |

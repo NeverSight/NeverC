@@ -21,6 +21,7 @@ neverc_plugin_entry(const NevercBootstrapAPI *Bootstrap,
 
 | 指南 | 覆盖内容 |
 |---|---|
+| [Python 插件](python.zh-CN.md) | 可选的嵌入式 Python、生命周期、选项、只读 observer、诊断与当前限制 |
 | [驱动 API](driver.zh-CN.md) | [命令行](driver.zh-CN.md#原始参数)、[工具链选择](driver.zh-CN.md#工具链选择)、[action 图](driver.zh-CN.md#action-图)、[job 图](driver.zh-CN.md#job-图) |
 | [源与 I/O API](source.zh-CN.md) | [VFS Provider](source.zh-CN.md#虚拟文件系统-provider)、[源位置](source.zh-CN.md#源位置)、[缓冲区](source.zh-CN.md#读文件)、[输出 sink](source.zh-CN.md#写输出)、[依赖](source.zh-CN.md#记录依赖) |
 | [预处理器 API](prep.zh-CN.md) | [token](prep.zh-CN.md#读取-token)、[宏](prep.zh-CN.md#标识符与宏)、[pragma](prep.zh-CN.md#pragma-与特性查询)、[include](prep.zh-CN.md#重定向一个-include)、[特性查询](prep.zh-CN.md#pragma-与特性查询)、[39 种事件](prep.zh-CN.md#事件订阅) |

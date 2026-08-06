@@ -2,12 +2,17 @@
 #include "neverc/Plugin/Host/PluginInterfaceRegistry.h"
 #include "neverc/Plugin/Host/PluginOptionRegistry.h"
 #include "neverc/Plugin/Host/PluginRegistration.h"
+#include "PluginRuntime.h"
+#if defined(NEVERC_ENABLE_PYTHON_PLUGINS)
+#include "../Python/PythonPluginLoader.h"
+#endif
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/DynamicLibrary.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/JSON.h"
+#include "llvm/Support/Path.h"
 #include <algorithm>
 #include <cstddef>
 #include <cstring>
@@ -400,6 +405,7 @@ struct PluginModule::Storage {
   std::string CanonicalPath;
   sys::fs::UniqueID Identity;
   sys::DynamicLibrary Library;
+  std::unique_ptr<PluginRuntime> Runtime;
   PluginDescriptorRecord Descriptor;
   void *ProcessState = nullptr;
   bool ProcessBegun = false;
@@ -433,6 +439,112 @@ bool PluginModule::processBegun() const { return Impl->ProcessBegun; }
 
 bool PluginModule::registered() const {
   return static_cast<bool>(Impl->Registration);
+}
+
+bool PluginModule::hasProcessBegin() const {
+  return Impl->Runtime ? Impl->Runtime->hasProcessBegin()
+                       : Impl->Descriptor.ProcessBegin != nullptr;
+}
+
+bool PluginModule::hasRegister() const {
+  return Impl->Runtime ? Impl->Runtime->hasRegister()
+                       : Impl->Descriptor.Register != nullptr;
+}
+
+bool PluginModule::hasSessionBegin() const {
+  return Impl->Runtime ? Impl->Runtime->hasSessionBegin()
+                       : Impl->Descriptor.SessionBegin != nullptr;
+}
+
+bool PluginModule::hasSessionEnd() const {
+  return Impl->Runtime ? Impl->Runtime->hasSessionEnd()
+                       : Impl->Descriptor.SessionEnd != nullptr;
+}
+
+bool PluginModule::hasTaskBegin() const {
+  return Impl->Runtime ? Impl->Runtime->hasTaskBegin()
+                       : Impl->Descriptor.TaskBegin != nullptr;
+}
+
+bool PluginModule::hasTaskEnd() const {
+  return Impl->Runtime ? Impl->Runtime->hasTaskEnd()
+                       : Impl->Descriptor.TaskEnd != nullptr;
+}
+
+bool PluginModule::hasDestroy() const {
+  return Impl->Runtime ? Impl->Runtime->hasDestroy()
+                       : Impl->Descriptor.Destroy != nullptr;
+}
+
+NevercStatus PluginModule::invokeProcessBegin(const NevercCoreAPI *Core,
+                                              void **OutProcessState) const {
+  return Impl->Runtime ? Impl->Runtime->processBegin(Core, OutProcessState)
+                       : Impl->Descriptor.ProcessBegin(Core, OutProcessState);
+}
+
+NevercStatus PluginModule::invokeRegister(const NevercCoreAPI *Core,
+                                          const NevercRegistrarAPI *Registrar,
+                                          void *RegistrarContext,
+                                          void *ProcessState) const {
+  return Impl->Runtime
+             ? Impl->Runtime->registerPlugin(Core, Registrar, RegistrarContext,
+                                             ProcessState)
+             : Impl->Descriptor.Register(Core, Registrar, RegistrarContext,
+                                         ProcessState);
+}
+
+NevercStatus PluginModule::invokeSessionBegin(const NevercCoreAPI *Core,
+                                              NevercSessionHandle Session,
+                                              void *ProcessState,
+                                              void **OutSessionState) const {
+  return Impl->Runtime
+             ? Impl->Runtime->sessionBegin(Core, Session, ProcessState,
+                                           OutSessionState)
+             : Impl->Descriptor.SessionBegin(Core, Session, ProcessState,
+                                             OutSessionState);
+}
+
+NevercStatus PluginModule::invokeSessionEnd(const NevercCoreAPI *Core,
+                                            NevercSessionHandle Session,
+                                            void *ProcessState,
+                                            void *SessionState) const {
+  return Impl->Runtime ? Impl->Runtime->sessionEnd(Core, Session, ProcessState,
+                                                   SessionState)
+                       : Impl->Descriptor.SessionEnd(
+                             Core, Session, ProcessState, SessionState);
+}
+
+NevercStatus
+PluginModule::invokeTaskBegin(const NevercCoreAPI *Core, NevercTaskHandle Task,
+                              NevercTaskKind Kind, void *ProcessState,
+                              void *SessionState, void **OutTaskState) const {
+  return Impl->Runtime
+             ? Impl->Runtime->taskBegin(Core, Task, Kind, ProcessState,
+                                        SessionState, OutTaskState)
+             : Impl->Descriptor.TaskBegin(Core, Task, Kind, ProcessState,
+                                          SessionState, OutTaskState);
+}
+
+NevercStatus PluginModule::invokeTaskEnd(const NevercCoreAPI *Core,
+                                         NevercTaskHandle Task,
+                                         NevercTaskKind Kind,
+                                         void *ProcessState, void *SessionState,
+                                         void *TaskState) const {
+  return Impl->Runtime
+             ? Impl->Runtime->taskEnd(Core, Task, Kind, ProcessState,
+                                      SessionState, TaskState)
+             : Impl->Descriptor.TaskEnd(Core, Task, Kind, ProcessState,
+                                        SessionState, TaskState);
+}
+
+NevercStatus PluginModule::invokeDestroy(const NevercCoreAPI *Core,
+                                         void *ProcessState) const {
+  return Impl->Runtime ? Impl->Runtime->destroy(Core, ProcessState)
+                       : Impl->Descriptor.Destroy(Core, ProcessState);
+}
+
+std::string PluginModule::runtimeError() const {
+  return Impl->Runtime ? Impl->Runtime->lastError() : std::string();
 }
 
 void *PluginModule::processState() const { return Impl->ProcessState; }
@@ -591,6 +703,49 @@ PluginRegistry::load(StringRef Path) {
     if (Module->identity() == BeforeLoad)
       return std::static_pointer_cast<const PluginModule>(Module);
 
+  const bool IsPython =
+      sys::path::extension(CanonicalPath).equals_insensitive(".py");
+  if (IsPython) {
+#if !defined(NEVERC_ENABLE_PYTHON_PLUGINS)
+    return pluginError(
+        "cannot load Python plugin '" + CanonicalPath +
+        "': this NeverC build has Python plugin support disabled; rebuild "
+        "with -DNEVERC_ENABLE_PYTHON_PLUGINS=ON");
+#else
+    auto Python = loadPythonPlugin(CanonicalPath);
+    if (!Python)
+      return Python.takeError();
+
+    sys::fs::UniqueID AfterLoad;
+    if (std::error_code EC = getFileIdentity(CanonicalPath, AfterLoad))
+      return pluginError("cannot revalidate Python plugin identity: " +
+                         EC.message());
+    if (BeforeLoad != AfterLoad)
+      return pluginError(
+          "Python plugin file identity changed while it was loading");
+
+    PluginDescriptorRecord &Descriptor = Python->Descriptor;
+    if (!isCanonicalPluginID(Descriptor.PluginID))
+      return pluginError("Python plugin ID is not canonical");
+    for (const auto &Module : Modules)
+      if (Module->descriptor().PluginID == Descriptor.PluginID)
+        return pluginError("duplicate plugin ID '" + Descriptor.PluginID + "'");
+
+    auto StorageValue = std::make_unique<PluginModule::Storage>();
+    StorageValue->CanonicalPath = CanonicalPath.str().str();
+    StorageValue->Identity = AfterLoad;
+    StorageValue->Runtime = std::move(Python->Runtime);
+    StorageValue->Descriptor = std::move(Descriptor);
+    std::unique_ptr<PluginModule> OwnedModule(
+        new PluginModule(std::move(StorageValue)));
+    auto Module = std::shared_ptr<PluginModule>(std::move(OwnedModule));
+    Modules.push_back(Module);
+    ++Generation;
+    publishSnapshot();
+    return std::static_pointer_cast<const PluginModule>(Module);
+#endif
+  }
+
   SmallString<256> LoadError;
   sys::DynamicLibrary Library =
       sys::DynamicLibrary::getLibrary(CanonicalPath.c_str(), &LoadError);
@@ -715,14 +870,14 @@ Error PluginRegistry::unload(StringRef PluginID) {
         ActivityState, RegistryActivityLease::Kind::Callback);
     Target->clearRegistration();
   }
-  if (Target->processBegun() && Descriptor.Destroy && CoreAPI) {
+  if (Target->processBegun() && Target->hasDestroy() && CoreAPI) {
     NevercStatus Status = neverc_status_ok();
     bool Threw = false;
     {
       RegistryActivityLease Lease(
           ActivityState, RegistryActivityLease::Kind::Callback);
       try {
-        Status = Descriptor.Destroy(CoreAPI, Target->processState());
+        Status = Target->invokeDestroy(CoreAPI, Target->processState());
       } catch (...) {
         Threw = true;
       }
@@ -823,14 +978,14 @@ Error PluginRegistry::shutdown() {
       Module.clearRegistration();
     }
 
-    if (Module.processBegun() && Descriptor.Destroy && CoreAPI) {
+    if (Module.processBegun() && Module.hasDestroy() && CoreAPI) {
       NevercStatus Status = neverc_status_ok();
       bool Threw = false;
       {
         RegistryActivityLease Lease(
             ActivityState, RegistryActivityLease::Kind::Callback);
         try {
-          Status = Descriptor.Destroy(CoreAPI, Module.processState());
+          Status = Module.invokeDestroy(CoreAPI, Module.processState());
         } catch (...) {
           Threw = true;
         }

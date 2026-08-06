@@ -63,6 +63,7 @@ NeverC は純粋な C ABI を通じてツールチェーン全体を公開しま
 | ドキュメント | 説明 |
 |-------------|------|
 | [README](plugin-api/README.ja.md) | エントリーポイント、フェーズ、インターフェース交渉、登録、ABI 規則 |
+| [Python プラグイン](plugin-api/python.ja.md) | 任意の埋め込み Python、ライフサイクル、オプション、read-only observer、診断、制限 |
 | [ドライバー API](plugin-api/driver.ja.md) | コマンドライン、ツールチェーン選択、アクショングラフ、ジョブグラフ |
 | [ソースと I/O API](plugin-api/source.ja.md) | VFS プロバイダー、ソース位置、バッファー、出力シンク、依存関係 |
 | [プリプロセッサー API](plugin-api/prep.ja.md) | トークン、マクロ、pragma、include、機能クエリ、39 種類のイベント |
