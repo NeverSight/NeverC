@@ -5,20 +5,29 @@
 # Python 플러그인
 
 NeverC는 네이티브 플러그인과 동일한 `-fplugin=` 옵션으로 Python 소스 파일을
-불러올 수 있습니다. Python 지원은 선택 사항이므로 일반 빌드에는 CPython
-의존성이 추가되지 않습니다.
+불러올 수 있습니다. 일반 source build는 Python plugin과 install 시 runtime
+bundling을 기본으로 활성화합니다.
 
 ```sh
-cmake -S llvm -B build -DNEVERC_ENABLE_PYTHON_PLUGINS=ON
-cmake --build build --target neverc
+cmake -S llvm -B build -C neverc/cmake/caches/NeverC.cmake \
+  -DCMAKE_INSTALL_PREFIX="$PWD/neverc-install"
+cmake --build build --target install
 ```
 
-NeverC 공식 compiler archive는 이 option을 활성화하고 인접한 `python/` 디렉터리에
-이동 가능한 CPython 3.12 runtime과 standard library를 포함하므로 실행 시 Python을
-별도로 설치할 필요가 없습니다. 사용자 source build의 기본값은 계속 `OFF`이며,
-직접 활성화할 때 외부 CPython 3.10 이상을 사용할 수도 있습니다.
+새 build의 기본값은 `NEVERC_ENABLE_PYTHON_PLUGINS=ON`과
+`NEVERC_BUNDLE_PYTHON_RUNTIME=ON`입니다. configure에는 CPython 3.10 이상의
+embedding header와 shared library가 필요하며, install은 선택된 interpreter의 정확한
+version을 인접한 `python/` 디렉터리에 자동 복사합니다. build tree executable은 build
+시 Python을 사용할 수 있지만 install된 compiler는 실행 시 외부 Python,
+`PYTHONHOME`, `PYTHONPATH`가 필요하지 않습니다. 공식 NeverC archive는 CPython
+3.12를 선택하여 포함합니다.
 
-활성화한 빌드에는 CPython 3.10 이상과 embedding 개발 파일이 필요합니다.
+Linux install bundler에는 `PATH`의 `patchelf`가 필요합니다.
+`CMAKE_CROSSCOMPILING`이면 host interpreter를 target architecture package에 넣지
+않도록 자동 bundling을 거부합니다. 이 경우 bundling을 끄고 target runtime을 명시적으로
+package해야 합니다. Python 없는 compiler는 `-DNEVERC_ENABLE_PYTHON_PLUGINS=OFF`와
+`-DNEVERC_BUNDLE_PYTHON_RUNTIME=OFF`를 함께 지정해 build할 수 있습니다.
+
 `python3 -m pip install ./pluginsdk/python`으로 작성 패키지를 설치하거나,
 해당 디렉터리를 `PYTHONPATH`에 추가하거나, `neverc-pluginsdk` component를
 빌드·설치하십시오. NeverC는 `<neverc 디렉터리>/../pluginsdk/python`에 staging된

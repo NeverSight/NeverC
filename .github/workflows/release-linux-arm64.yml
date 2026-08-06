@@ -104,9 +104,6 @@ jobs:
       - name: Install neverc
         run: |
           cmake --build build --config ${{ env.BUILD_TYPE }} --target install
-          "${{ steps.python.outputs.python-path }}" \
-            neverc/utils/release/bundle-python-runtime.py \
-            --prefix "$PWD/install" --neverc "$PWD/install/bin/neverc"
 
       - name: Package (full, with runtime)
         run: 7z a linux-arm64-neverc.zip install

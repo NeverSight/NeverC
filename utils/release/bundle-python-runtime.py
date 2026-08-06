@@ -32,6 +32,11 @@ EXCLUDED_SUFFIXES = {".a", ".la", ".pc", ".pyc", ".pyo"}
 EXCLUDED_EXTENSION_PREFIXES = (
     "_ctypes_test.", "_test", "_tkinter.", "_xxtestfuzz.", "xxlimited"
 )
+DEBIAN_DOC_ROOT = Path("/usr/share/doc")
+LICENSE_FILENAMES = {"copyright", "license", "license.txt", "copying"}
+BUNDLED_CPYTHON_LICENSE = (
+    Path(__file__).resolve().parent / "licenses" / "CPython-LICENSE.txt"
+)
 LINUX_SYSTEM_LIBRARIES = {
     "libatomic.so.1", "libc.so.6", "libdl.so.2", "libgcc_s.so.1",
     "libm.so.6", "libpthread.so.0", "libresolv.so.2", "librt.so.1",
@@ -123,6 +128,7 @@ def find_license(layout: RuntimeLayout) -> Path:
         layout.stdlib / "LICENSE",
         layout.base_prefix / "LICENSE.txt",
         layout.base_prefix / "LICENSE",
+        BUNDLED_CPYTHON_LICENSE,
     ]
     for candidate in candidates:
         if candidate.is_file():
@@ -282,11 +288,17 @@ def dependency_license(source: Path, layout: RuntimeLayout, licenses: Path) -> s
                 listed = run_tool(["dpkg-query", "-L", package], check=False)
                 if listed.returncode != 0:
                     continue
-                for value in listed.stdout.splitlines():
-                    candidate = Path(value)
-                    if candidate.is_file() and candidate.name.casefold() in {
-                        "copyright", "license", "license.txt", "copying"
-                    }:
+                package_name = package.split(":", 1)[0]
+                candidates = [Path(value) for value in listed.stdout.splitlines()]
+                candidates.extend(
+                    DEBIAN_DOC_ROOT / package_name / name
+                    for name in sorted(LICENSE_FILENAMES)
+                )
+                for candidate in dict.fromkeys(candidates):
+                    if (
+                        candidate.is_file()
+                        and candidate.name.casefold() in LICENSE_FILENAMES
+                    ):
                         target_name = f"{source.name}-{package.replace(':', '_')}-{candidate.name}"
                         copy_file(candidate, licenses / target_name)
                         return f"licenses/{target_name}"

@@ -5,23 +5,33 @@
 # Plugins Python
 
 NeverC peut charger un fichier source Python avec la même option `-fplugin=`
-que les plugins natifs. La prise en charge de Python est facultative ; une
-compilation normale n'ajoute donc aucune dépendance à CPython :
+que les plugins natifs. Une compilation source normale active par défaut les
+plugins Python et l'installation du runtime embarqué :
 
 ```sh
-cmake -S llvm -B build -DNEVERC_ENABLE_PYTHON_PLUGINS=ON
-cmake --build build --target neverc
+cmake -S llvm -B build -C neverc/cmake/caches/NeverC.cmake \
+  -DCMAKE_INSTALL_PREFIX="$PWD/neverc-install"
+cmake --build build --target install
 ```
 
-Les archives officielles du compilateur NeverC activent cette option et
-incluent un runtime CPython 3.12 relocalisable ainsi que sa bibliothèque
-standard dans le répertoire adjacent `python/` ; aucune installation Python
-séparée n'est donc requise à l'exécution. Les builds source personnalisés
-gardent `OFF` par défaut et peuvent utiliser un CPython externe 3.10 ou récent.
+Les nouveaux builds utilisent par défaut `NEVERC_ENABLE_PYTHON_PLUGINS=ON` et
+`NEVERC_BUNDLE_PYTHON_RUNTIME=ON`. La configuration exige CPython 3.10 ou plus,
+ses headers d'embedding et sa bibliothèque partagée. L'installation copie
+automatiquement la version exacte sélectionnée dans le répertoire adjacent
+`python/`. L'exécutable du build tree peut encore utiliser le Python de build,
+mais le compiler installé n'a besoin ni de Python externe, ni de `PYTHONHOME`,
+ni de `PYTHONPATH` à l'exécution. Les archives officielles sélectionnent et
+embarquent CPython 3.12.
 
-Une compilation activée nécessite CPython 3.10 ou ultérieur et ses fichiers de
-développement pour l'embarquement. Installez le package d'écriture avec
-`python3 -m pip install ./pluginsdk/python`, ajoutez ce répertoire à
+Sous Linux, le bundler d'installation exige `patchelf` dans `PATH`. Avec
+`CMAKE_CROSSCOMPILING`, l'emballage automatique est refusé pour éviter de placer
+l'interpréteur host dans un compiler target ; désactivez-le et packagez
+explicitement un runtime target. Pour un compiler sans Python, passez
+`-DNEVERC_ENABLE_PYTHON_PLUGINS=OFF` et
+`-DNEVERC_BUNDLE_PYTHON_RUNTIME=OFF` ensemble.
+
+Installez le package d'écriture avec `python3 -m pip install
+./pluginsdk/python`, ajoutez ce répertoire à
 `PYTHONPATH`, ou compilez et installez le composant `neverc-pluginsdk`. NeverC
 détecte aussi le SDK préparé dans
 `<répertoire de neverc>/../pluginsdk/python`.

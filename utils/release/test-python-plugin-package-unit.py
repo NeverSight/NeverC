@@ -75,6 +75,14 @@ class PythonPluginPackageTest(unittest.TestCase):
                 Path("/tmp/package"),
             )
 
+    def test_loader_filter_accepts_relocated_prefix_with_spaces(self):
+        prefix = Path("/private/tmp/neverc-python-package/test prefix")
+        metadata = f"""\
+{prefix}/bin/neverc:
+\t@rpath/libpython3.12.dylib (compatibility version 3.12.0)
+"""
+        self.module.reject_build_paths(metadata, prefix)
+
     def test_probe_imports_cover_native_stdlib_modules(self):
         for module in ("ssl", "hashlib", "ctypes", "bz2", "lzma", "sqlite3"):
             self.assertIn(f"import {module}", self.module.PROBE_PLUGIN)

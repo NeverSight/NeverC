@@ -1,0 +1,29 @@
+# CMake install script for the relocatable CPython runtime. This runs after the
+# neverc executable has been installed and its install RPATH has been applied.
+set(_neverc_physical_prefix "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}")
+set(_neverc_executable
+    "${_neverc_physical_prefix}/@CMAKE_INSTALL_BINDIR@/neverc@CMAKE_EXECUTABLE_SUFFIX@")
+set(_neverc_python_bundler
+    "@NEVERC_PYTHON_BUNDLER_DIR@/bundle-python-runtime.py")
+
+execute_process(
+  COMMAND
+    "@Python3_EXECUTABLE@"
+    "${_neverc_python_bundler}"
+    --prefix "${_neverc_physical_prefix}"
+    --neverc "${_neverc_executable}"
+  RESULT_VARIABLE _neverc_bundle_result
+  OUTPUT_VARIABLE _neverc_bundle_stdout
+  ERROR_VARIABLE _neverc_bundle_stderr
+)
+
+if(_neverc_bundle_stdout)
+  string(STRIP "${_neverc_bundle_stdout}" _neverc_bundle_stdout)
+  message(STATUS "${_neverc_bundle_stdout}")
+endif()
+if(NOT _neverc_bundle_result EQUAL 0)
+  string(STRIP "${_neverc_bundle_stderr}" _neverc_bundle_stderr)
+  message(FATAL_ERROR
+    "NeverC failed to bundle its adjacent CPython runtime: "
+    "${_neverc_bundle_stderr}")
+endif()

@@ -2018,6 +2018,12 @@ target_include_directories(neverc-tests PRIVATE
 
 target_compile_features(neverc-tests PRIVATE cxx_std_17)
 
+# setup-python reports native backslashes on Windows. Normalize the executable
+# before embedding it in a C++ string literal so sequences such as \h and \P do
+# not corrupt the path at compile time.
+string(REPLACE "\\" "/" _NEVERC_TEST_PYTHON_EXECUTABLE
+       "${Python3_EXECUTABLE}")
+
 target_compile_definitions(neverc-tests PRIVATE
   NEVERC_BINARY="${_NEVERC_BINARY}"
   TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
@@ -2027,7 +2033,7 @@ target_compile_definitions(neverc-tests PRIVATE
   NEVERC_PLUGINSDK_SINGLE_HEADER="${CMAKE_CURRENT_SOURCE_DIR}/../../pluginsdk/include/neverc/Plugin/NevercPluginAPI.h"
   NEVERC_CMAKE_COMMAND="${CMAKE_COMMAND}"
   NEVERC_BUILD_DIR="${CMAKE_BINARY_DIR}"
-  NEVERC_PYTHON="${Python3_EXECUTABLE}"
+  NEVERC_PYTHON="${_NEVERC_TEST_PYTHON_EXECUTABLE}"
   NEVERC_TEST_INSTALLED_SDK_SCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/../../utils/plugin-api/test-installed-sdk.py"
   NEVERC_TEST_ARGUMENT_REWRITE_PLUGIN="$<TARGET_FILE:neverc-test-plugin-argument-rewrite>"
   NEVERC_TEST_PARSED_ARGUMENT_PLUGIN="$<TARGET_FILE:neverc-test-plugin-parsed-argument-rewrite>"

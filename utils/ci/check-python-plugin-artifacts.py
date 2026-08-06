@@ -18,7 +18,6 @@ REQUIRED_COMMON = (
     'python-version: "3.12"',
     "NEVERC_ENABLE_PYTHON_PLUGINS=ON",
     "NEVERC_BUNDLE_PYTHON_RUNTIME=ON",
-    "bundle-python-runtime.py",
     "test-python-plugin-package.py",
 )
 
@@ -65,6 +64,10 @@ def check_producer(path: Path, text: str) -> list[str]:
         failures.append("does not bind CMake to setup-python's exact interpreter")
     if "linux" in path.name and "patchelf" not in text:
         failures.append("Linux bundling job does not install patchelf")
+    if "bundle-python-runtime.py" in text:
+        failures.append(
+            "directly invokes the Python bundler instead of relying on CMake install"
+        )
     expected = compiler_archives(text)
     actual = verified_archives(text)
     if not expected:
@@ -73,6 +76,86 @@ def check_producer(path: Path, text: str) -> list[str]:
         failures.append(f"archive is not relocation-tested: {archive}")
     for archive in sorted(actual - expected):
         failures.append(f"verifier references an unclassified archive: {archive}")
+    return failures
+
+
+def option_defaults_to_on(text: str, option: str) -> bool:
+    return bool(
+        re.search(
+            rf"option\(\s*{re.escape(option)}\s+\"[^\"]*\"\s+ON\s*\)",
+            text,
+            re.DOTALL,
+        )
+    )
+
+
+def check_source_build_contract() -> list[str]:
+    failures: list[str] = []
+    cmake_path = REPOSITORY / "neverc" / "CMakeLists.txt"
+    cmake = cmake_path.read_text(encoding="utf-8")
+    for option in (
+        "NEVERC_ENABLE_PYTHON_PLUGINS",
+        "NEVERC_BUNDLE_PYTHON_RUNTIME",
+    ):
+        if not option_defaults_to_on(cmake, option):
+            failures.append(f"{cmake_path.relative_to(REPOSITORY)}: {option} must default to ON")
+    if "CMAKE_CROSSCOMPILING" not in cmake:
+        failures.append(
+            f"{cmake_path.relative_to(REPOSITORY)}: bundled host Python is not guarded during cross-compilation"
+        )
+    if "install-bundled-python.cmake" not in cmake or "install(SCRIPT" not in cmake:
+        failures.append(
+            f"{cmake_path.relative_to(REPOSITORY)}: CMake install does not own Python runtime bundling"
+        )
+
+    install_script = REPOSITORY / "neverc" / "cmake" / "install-bundled-python.cmake.in"
+    if not install_script.is_file():
+        failures.append(
+            f"{install_script.relative_to(REPOSITORY)}: install-time bundler script is missing"
+        )
+    else:
+        install_text = install_script.read_text(encoding="utf-8")
+        for token in (
+            "$ENV{DESTDIR}",
+            "${CMAKE_INSTALL_PREFIX}",
+            "@Python3_EXECUTABLE@",
+            "bundle-python-runtime.py",
+        ):
+            if token not in install_text:
+                failures.append(
+                    f"{install_script.relative_to(REPOSITORY)}: missing install contract token {token}"
+                )
+
+    workflow_path = WORKFLOWS / "python-plugin-bindings.yml"
+    workflow = workflow_path.read_text(encoding="utf-8")
+    required_workflow = (
+        "NEVERC_ENABLE_PYTHON_PLUGINS:BOOL=ON",
+        "NEVERC_BUNDLE_PYTHON_RUNTIME:BOOL=ON",
+        "--component neverc",
+        "--component neverc-pluginsdk",
+        "DESTDIR=",
+        "default-source-install.zip",
+        '"neverc/cmake/**"',
+    )
+    for token in required_workflow:
+        if token not in workflow:
+            failures.append(
+                f"{workflow_path.relative_to(REPOSITORY)}: missing default source-build proof {token}"
+            )
+
+    tests_cmake_path = REPOSITORY / "tests" / "neverc" / "CMakeLists.txt"
+    tests_cmake = tests_cmake_path.read_text(encoding="utf-8")
+    required_test_tokens = (
+        'string(REPLACE "\\\\" "/" _NEVERC_TEST_PYTHON_EXECUTABLE',
+        'NEVERC_PYTHON="${_NEVERC_TEST_PYTHON_EXECUTABLE}"',
+    )
+    for token in required_test_tokens:
+        if token not in tests_cmake:
+            failures.append(
+                f"{tests_cmake_path.relative_to(REPOSITORY)}: "
+                "Windows Python test paths are not normalized before C++ compilation"
+            )
+            break
     return failures
 
 
@@ -106,6 +189,7 @@ def main() -> int:
     for path, text in producers:
         for failure in check_producer(path, text):
             failures.append(f"{path.relative_to(REPOSITORY)}: {failure}")
+    failures.extend(check_source_build_contract())
     failures.extend(check_disabled_job())
     if failures:
         print("check-python-plugin-artifacts: FAILED", file=sys.stderr)

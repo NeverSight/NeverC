@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -86,6 +87,22 @@ class BundlePythonRuntimeTest(unittest.TestCase):
             self.assertEqual(manifest["runtime"], "libpython3.12.so.1.0")
             self.assertNotIn(str(layout.base_prefix), (python / "runtime.json").read_text())
             self.assertTrue((python / "licenses" / "CPython-LICENSE.txt").is_file())
+
+    def test_source_installed_cpython_uses_bundler_license_fallback(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            layout = self.make_posix_layout(root)
+            (layout.stdlib / "LICENSE.txt").unlink()
+            fallback = root / "bundler" / "licenses" / "CPython-LICENSE.txt"
+            fallback.parent.mkdir(parents=True)
+            fallback.write_text("PSF license fallback\n", encoding="utf-8")
+
+            with mock.patch.object(
+                self.module, "BUNDLED_CPYTHON_LICENSE", fallback, create=True
+            ):
+                selected = self.module.find_license(layout)
+
+            self.assertEqual(selected, fallback)
 
     def test_windows_layout_places_runtime_beside_executable(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -222,6 +239,56 @@ libmissing.so => not found
             self.assertTrue((prefix / "bin" / "vcruntime140.dll").is_file())
             self.assertEqual(copied[0]["name"], "vcruntime140.dll")
             self.assertEqual(system, [])
+
+    def test_debian_shared_documentation_directory_attributes_license(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            layout = self.make_posix_layout(root)
+            source = root / "vendor" / "lib" / "libncursesw.so.6"
+            source.parent.mkdir(parents=True)
+            source.write_bytes(b"ncurses runtime")
+            licenses = root / "install" / "python" / "licenses"
+            licenses.mkdir(parents=True)
+
+            doc_root = root / "usr" / "share" / "doc"
+            shared_doc = doc_root / "libtinfo6"
+            shared_doc.mkdir(parents=True)
+            copyright_file = shared_doc / "copyright"
+            copyright_file.write_text("ncurses license\n", encoding="utf-8")
+            (doc_root / "libncursesw6").symlink_to(
+                shared_doc.name, target_is_directory=True
+            )
+
+            def dpkg_query(command, *, check=True):
+                if command[1] == "-S":
+                    return subprocess.CompletedProcess(
+                        command,
+                        0,
+                        stdout=f"libncursesw6:arm64: {source}\n",
+                        stderr="",
+                    )
+                if command[1] == "-L":
+                    return subprocess.CompletedProcess(
+                        command,
+                        0,
+                        stdout="/usr/share/doc/libncursesw6\n",
+                        stderr="",
+                    )
+                raise AssertionError(command)
+
+            with mock.patch.object(
+                self.module.shutil, "which", return_value="/usr/bin/dpkg-query"
+            ), mock.patch.object(
+                self.module, "run_tool", side_effect=dpkg_query
+            ), mock.patch.object(
+                self.module, "DEBIAN_DOC_ROOT", doc_root, create=True
+            ):
+                attributed = self.module.dependency_license(
+                    source, layout, licenses
+                )
+
+            copied = root / "install" / "python" / attributed
+            self.assertEqual(copied.read_text(encoding="utf-8"), "ncurses license\n")
 
 
 if __name__ == "__main__":

@@ -4,21 +4,31 @@
 
 # Python プラグイン
 
-NeverC は、ネイティブプラグインと同じ `-fplugin=` オプションで Python
-ソースファイルを読み込めます。Python 対応は任意なので、通常のビルドには
-CPython への依存が追加されません。
+NeverC はネイティブプラグインと同じ `-fplugin=` オプションで Python
+ソースファイルを読み込めます。通常の source build は Python plugin と
+install 時の runtime bundling を既定で有効にします。
 
 ```sh
-cmake -S llvm -B build -DNEVERC_ENABLE_PYTHON_PLUGINS=ON
-cmake --build build --target neverc
+cmake -S llvm -B build -C neverc/cmake/caches/NeverC.cmake \
+  -DCMAKE_INSTALL_PREFIX="$PWD/neverc-install"
+cmake --build build --target install
 ```
 
-NeverC の公式 compiler archive はこの option を有効にし、隣接する `python/`
-directory に relocatable な CPython 3.12 runtime と standard library を同梱する
-ため、実行時に Python を別途インストールする必要はありません。独自の source
-build では既定値が `OFF` のままで、有効化時は外部 CPython 3.10 以降も使えます。
+新規 build の既定値は `NEVERC_ENABLE_PYTHON_PLUGINS=ON` と
+`NEVERC_BUNDLE_PYTHON_RUNTIME=ON` です。configure には CPython 3.10 以降の
+embedding header と shared library が必要で、install は選択した interpreter
+の正確な version を隣接する `python/` directory に自動コピーします。build tree
+の executable は build 時の Python を使う場合がありますが、install 済み compiler
+は実行時に外部 Python、`PYTHONHOME`、`PYTHONPATH` を必要としません。公式
+NeverC archive は CPython 3.12 を選択して同梱します。
 
-有効化したビルドには CPython 3.10 以降と埋め込み用開発ファイルが必要です。
+Linux の install bundler には `PATH` 上の `patchelf` が必要です。
+`CMAKE_CROSSCOMPILING` の場合、host interpreter を target architecture の package
+に含めないよう自動 bundling は拒否されます。この場合は bundling を無効にして
+target runtime を明示的に package してください。Python を含まない compiler は
+`-DNEVERC_ENABLE_PYTHON_PLUGINS=OFF` と
+`-DNEVERC_BUNDLE_PYTHON_RUNTIME=OFF` の両方を指定して build できます。
+
 `python3 -m pip install ./pluginsdk/python` で authoring package を導入するか、
 そのディレクトリを `PYTHONPATH` に追加するか、`neverc-pluginsdk` component
 をビルド・インストールしてください。NeverC は

@@ -5,19 +5,28 @@
 # Python 外掛
 
 NeverC 可透過原生外掛所使用的同一個 `-fplugin=` 選項載入 Python
-原始檔。Python 支援是選用功能，因此一般建置不會引入 CPython 相依性：
+原始檔。一般原始碼建置現在預設啟用 Python 外掛，並在安裝時捆綁執行環境：
 
 ```sh
-cmake -S llvm -B build -DNEVERC_ENABLE_PYTHON_PLUGINS=ON
-cmake --build build --target neverc
+cmake -S llvm -B build -C neverc/cmake/caches/NeverC.cmake \
+  -DCMAKE_INSTALL_PREFIX="$PWD/neverc-install"
+cmake --build build --target install
 ```
 
-NeverC 官方編譯器封存檔會啟用此選項，並在相鄰的 `python/` 目錄中攜帶可移轉的
-CPython 3.12 執行環境與標準函式庫，因此執行時不必另外安裝 Python。自訂原始碼
-建置仍預設為 `OFF`，手動啟用時也可嵌入外部 CPython 3.10 或更新版本。
+全新建置預設採用 `NEVERC_ENABLE_PYTHON_PLUGINS=ON` 與
+`NEVERC_BUNDLE_PYTHON_RUNTIME=ON`。設定階段需要 CPython 3.10 或更新版本，
+包括嵌入用開發標頭與共享函式庫；安裝時會自動把所選解譯器的確切版本複製到相鄰
+的 `python/` 目錄。建置樹中的原始執行檔仍可能使用建置期 Python，但安裝後的
+編譯器在執行時不需要外部 Python、`PYTHONHOME` 或 `PYTHONPATH`。NeverC 官方
+封存檔固定選用並捆綁 CPython 3.12。
 
-啟用後的建置需要 CPython 3.10 或更新版本及其嵌入開發檔案。可用
-`python3 -m pip install ./pluginsdk/python` 安裝開發套件，也可將該目錄加入
+Linux 安裝階段要求 `PATH` 中有 `patchelf`。當 `CMAKE_CROSSCOMPILING` 時會拒絕
+自動捆綁，因為不能把主機解譯器放入目標架構編譯器套件；此時應關閉捆綁並明確
+封裝目標執行環境。若要刻意建置完全不含 Python 的編譯器，請同時傳入
+`-DNEVERC_ENABLE_PYTHON_PLUGINS=OFF` 與
+`-DNEVERC_BUNDLE_PYTHON_RUNTIME=OFF`。
+
+可用 `python3 -m pip install ./pluginsdk/python` 安裝開發套件，也可將該目錄加入
 `PYTHONPATH`，或建置/安裝 `neverc-pluginsdk` 元件。NeverC 也會自動尋找
 `<neverc 所在目錄>/../pluginsdk/python` 中已暫存的 SDK。
 

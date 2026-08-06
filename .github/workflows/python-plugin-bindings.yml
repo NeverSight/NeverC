@@ -8,6 +8,7 @@ on:
   push:
     paths:
       - "neverc/CMakeLists.txt"
+      - "neverc/cmake/**"
       - "neverc/include/neverc/Plugin/**"
       - "neverc/lib/Plugin/**"
       - "pluginsdk/**"
@@ -20,6 +21,7 @@ on:
   pull_request:
     paths:
       - "neverc/CMakeLists.txt"
+      - "neverc/cmake/**"
       - "neverc/include/neverc/Plugin/**"
       - "neverc/lib/Plugin/**"
       - "pluginsdk/**"
@@ -85,7 +87,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build cmake
+          sudo apt-get install -y ninja-build cmake patchelf
           wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
           chmod +x /tmp/llvm.sh
           sudo /tmp/llvm.sh "$LLVM_APT_VER"
@@ -128,12 +130,16 @@ jobs:
             -DLLVM_ENABLE_ASSERTIONS=OFF \
             -DLLVM_TOOL_LLVM_SHLIB_BUILD=off \
             -DNEVERC_INCLUDE_TESTS=ON \
-            -DNEVERC_ENABLE_PYTHON_PLUGINS=ON \
             -DNEVERC_STRIP_BINARY=OFF \
             -DNEVERC_ENABLE_LTO=OFF \
             -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
             -C neverc/neverc/cmake/caches/NeverC.cmake \
             neverc/llvm
+
+      - name: Verify Python features default to enabled and bundled
+        run: |
+          grep -Fx 'NEVERC_ENABLE_PYTHON_PLUGINS:BOOL=ON' build/CMakeCache.txt
+          grep -Fx 'NEVERC_BUNDLE_PYTHON_RUNTIME:BOOL=ON' build/CMakeCache.txt
 
       - name: Build Python bridge, core tests and SDK
         run: |
@@ -164,6 +170,27 @@ jobs:
           "${{ steps.python.outputs.python-path }}" \
             neverc/utils/plugin-api/check-global-state.py \
             --build-dir build --strict
+
+      - name: Verify default source install is relocated and self-contained (Linux)
+        if: matrix.host == 'linux-x64'
+        run: |
+          stage_root="$PWD/install stage"
+          logical_prefix="/neverc prefix"
+          physical_prefix="${stage_root}${logical_prefix}"
+          DESTDIR="$stage_root" cmake --install build \
+            --config "${{ env.BUILD_TYPE }}" \
+            --component neverc \
+            --prefix "$logical_prefix"
+          DESTDIR="$stage_root" cmake --install build \
+            --config "${{ env.BUILD_TYPE }}" \
+            --component neverc-pluginsdk \
+            --prefix "$logical_prefix"
+          test -f "$physical_prefix/python/runtime.json"
+          "${{ steps.python.outputs.python-path }}" -c \
+            'import shutil; shutil.make_archive("default-source-install", "zip", root_dir="install stage", base_dir="neverc prefix")'
+          "${{ steps.python.outputs.python-path }}" \
+            neverc/utils/release/test-python-plugin-package.py \
+            --archive default-source-install.zip
 
       - name: Upload driver log
         if: always() && matrix.host == 'linux-x64'

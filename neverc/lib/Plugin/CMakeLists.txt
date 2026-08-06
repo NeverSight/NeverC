@@ -1,10 +1,4 @@
 set(LLVM_LINK_COMPONENTS Support)
-
-if(NEVERC_ENABLE_PYTHON_PLUGINS)
-  find_package(Python3 3.10 REQUIRED COMPONENTS Interpreter Development.Embed)
-else()
-  find_package(Python3 REQUIRED COMPONENTS Interpreter)
-endif()
 set(NEVERC_PLUGIN_PHASE_SCHEMA_GENERATOR
     "${CMAKE_CURRENT_SOURCE_DIR}/../../../utils/plugin-api/gen-phase-schema.py")
 set(NEVERC_PLUGIN_PHASE_SCHEMA

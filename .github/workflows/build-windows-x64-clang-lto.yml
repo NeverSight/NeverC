@@ -109,9 +109,6 @@ jobs:
         shell: bash
         run: |
           cmake --build build --target install
-          "${{ steps.python.outputs.python-path }}" \
-            utils/release/bundle-python-runtime.py \
-            --prefix "$PWD/install" --neverc "$PWD/install/bin/neverc.exe"
 
       - name: Package neverc
         run: 7z a windows-x64-neverc-clang-lto.zip install

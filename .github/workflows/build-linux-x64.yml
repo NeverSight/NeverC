@@ -85,9 +85,6 @@ jobs:
         resource_dir=$(install/bin/neverc -print-resource-dir)
         test -f "$resource_dir/include/neverc/strhash/strhash.h"
         test -f "$resource_dir/include/neverc/xorstr/xorstr.h"
-        "${{ steps.python.outputs.python-path }}" \
-          neverc/utils/release/bundle-python-runtime.py \
-          --prefix "$PWD/install" --neverc "$PWD/install/bin/neverc"
 
     - name: Package neverc
       run: 7z a linux-x64-neverc.zip install

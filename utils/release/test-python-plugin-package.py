@@ -93,7 +93,8 @@ def run(command: list[str], *, environment: Mapping[str, str] | None = None) -> 
 
 def reject_build_paths(output: str, prefix: Path) -> None:
     normalized = output.replace("\\", "/")
-    normalized_prefix = str(prefix).replace("\\", "/").casefold()
+    prefix_text = str(prefix).replace("\\", "/")
+    normalized_prefix = prefix_text.casefold()
     forbidden = (
         "/hostedtoolcache/Python/", "/Users/runner/hostedtoolcache/",
         "C:/hostedtoolcache/", "C:/actions-runner/",
@@ -102,12 +103,15 @@ def reject_build_paths(output: str, prefix: Path) -> None:
         if value.casefold() in normalized.casefold():
             raise ValueError(f"loader metadata retains build-time Python path {value}")
     for line in normalized.splitlines():
-        if "python" not in line.casefold():
+        line_without_prefix = re.sub(
+            re.escape(prefix_text), "", line, flags=re.IGNORECASE
+        )
+        if "python" not in line_without_prefix.casefold():
             continue
         absolute_only = re.sub(
             r"(?:\$ORIGIN|@executable_path|@loader_path|@rpath)(?:/[^\s\]\)]*)?",
             "",
-            line,
+            line_without_prefix,
         )
         for token in re.findall(
             r"(?<![A-Za-z0-9_.$@-])(?:[A-Za-z]:)?/[^\s\]\)]+",

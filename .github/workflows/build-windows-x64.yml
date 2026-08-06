@@ -83,9 +83,6 @@ jobs:
       shell: bash
       run: |
         cmake --build build --config ${{ env.BUILD_TYPE }} --target install
-        "${{ steps.python.outputs.python-path }}" \
-          neverc/utils/release/bundle-python-runtime.py \
-          --prefix "$PWD/install" --neverc "$PWD/install/bin/neverc.exe"
 
     - name: Package neverc
       run: 7z a windows-x64-neverc.zip install

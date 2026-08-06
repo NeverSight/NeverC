@@ -7,20 +7,28 @@
 # إضافات Python
 
 يستطيع NeverC تحميل ملف مصدر Python بواسطة خيار `-fplugin=` نفسه المستخدم
-للإضافات الأصلية. دعم Python اختياري، لذلك لا تضيف البنية العادية اعتماداً على
-CPython:
+للإضافات الأصلية. تفعّل البنية العادية من المصدر إضافات Python وتثبيت بيئة
+التشغيل المضمّنة افتراضياً:
 
 ```sh
-cmake -S llvm -B build -DNEVERC_ENABLE_PYTHON_PLUGINS=ON
-cmake --build build --target neverc
+cmake -S llvm -B build -C neverc/cmake/caches/NeverC.cmake \
+  -DCMAKE_INSTALL_PREFIX="$PWD/neverc-install"
+cmake --build build --target install
 ```
 
-تفعّل أرشيفات مترجم NeverC الرسمية هذا الخيار، وتتضمن بيئة CPython 3.12 قابلة
-للنقل ومكتبتها القياسية في مجلد `python/` المجاور، لذلك لا تحتاج إلى تثبيت
-Python منفصل وقت التشغيل. تبقي البنيات المخصصة من المصدر الخيار `OFF` افتراضياً،
-ويمكنها عند تفعيله تضمين CPython 3.10 خارجي أو إصدار أحدث.
+تستخدم البنيات الجديدة افتراضياً `NEVERC_ENABLE_PYTHON_PLUGINS=ON` و
+`NEVERC_BUNDLE_PYTHON_RUNTIME=ON`. يتطلب الإعداد CPython 3.10 أو أحدث مع headers
+الخاصة بالتضمين وshared library. ينسخ التثبيت تلقائياً الإصدار المحدد نفسه إلى
+مجلد `python/` المجاور. قد يستعمل executable في build tree نسخة Python الخاصة
+بالبناء، لكن compiler المثبّت لا يحتاج وقت التشغيل إلى Python خارجي أو
+`PYTHONHOME` أو `PYTHONPATH`. تختار أرشيفات NeverC الرسمية CPython 3.12 وتضمّنه.
 
-تتطلب البنية المفعلة CPython 3.10 أو أحدث وملفات التطوير الخاصة بالتضمين.
+على Linux يحتاج bundler الخاص بالتثبيت إلى `patchelf` ضمن `PATH`. عند
+`CMAKE_CROSSCOMPILING` يُرفض bundling التلقائي كي لا تُحزم نسخة host مع compiler
+للـtarget؛ عطّله واحزم runtime للـtarget صراحة. لبناء compiler من دون Python مرّر
+`-DNEVERC_ENABLE_PYTHON_PLUGINS=OFF` و
+`-DNEVERC_BUNDLE_PYTHON_RUNTIME=OFF` معاً.
+
 ثبّت حزمة التأليف بالأمر `python3 -m pip install ./pluginsdk/python`، أو أضف
 المجلد إلى `PYTHONPATH`، أو ابنِ وثبّت المكوّن `neverc-pluginsdk`. يكتشف NeverC
 أيضاً نسخة SDK المجهزة في `<مجلد neverc>/../pluginsdk/python`.

@@ -5,23 +5,32 @@
 # Плагины Python
 
 NeverC может загружать исходный файл Python через тот же параметр
-`-fplugin=`, что и нативные плагины. Поддержка Python необязательна, поэтому
-обычная сборка не получает зависимость от CPython:
+`-fplugin=`, что и нативные плагины. Обычная сборка из исходников по умолчанию
+включает плагины Python и установку встроенной среды выполнения:
 
 ```sh
-cmake -S llvm -B build -DNEVERC_ENABLE_PYTHON_PLUGINS=ON
-cmake --build build --target neverc
+cmake -S llvm -B build -C neverc/cmake/caches/NeverC.cmake \
+  -DCMAKE_INSTALL_PREFIX="$PWD/neverc-install"
+cmake --build build --target install
 ```
 
-Официальные архивы компилятора NeverC включают этот параметр и содержат
-переносимую среду CPython 3.12 со стандартной библиотекой в соседнем каталоге
-`python/`, поэтому отдельная установка Python при запуске не нужна. Для
-пользовательских сборок из исходников по умолчанию сохраняется `OFF`; при
-включении можно использовать внешний CPython 3.10 или новее.
+Новые сборки по умолчанию используют `NEVERC_ENABLE_PYTHON_PLUGINS=ON` и
+`NEVERC_BUNDLE_PYTHON_RUNTIME=ON`. Для конфигурации нужны CPython 3.10 или
+новее, заголовки embedding и shared library. Установка автоматически копирует
+точно выбранную версию в соседний каталог `python/`. Исполняемый файл в build
+tree ещё может использовать Python сборки, но установленному compiler при
+запуске не нужны внешний Python, `PYTHONHOME` или `PYTHONPATH`. Официальные
+архивы выбирают и включают CPython 3.12.
 
-Для включённой сборки нужны CPython 3.10 или новее и файлы разработки для
-встраивания. Установите пакет авторинга командой
-`python3 -m pip install ./pluginsdk/python`, добавьте каталог в `PYTHONPATH`
+В Linux установочному bundler нужен `patchelf` в `PATH`. При
+`CMAKE_CROSSCOMPILING` автоматический bundling отклоняется, чтобы host-
+интерпретатор не попал в target compiler; отключите его и явно упакуйте target
+runtime. Для compiler без Python одновременно задайте
+`-DNEVERC_ENABLE_PYTHON_PLUGINS=OFF` и
+`-DNEVERC_BUNDLE_PYTHON_RUNTIME=OFF`.
+
+Установите пакет авторинга командой `python3 -m pip install
+./pluginsdk/python`, добавьте каталог в `PYTHONPATH`
 или соберите и установите компонент `neverc-pluginsdk`. NeverC также находит
 подготовленный SDK в `<каталог neverc>/../pluginsdk/python`.
 

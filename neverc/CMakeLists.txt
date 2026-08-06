@@ -326,14 +326,47 @@ CMAKE_DEPENDENT_OPTION(NEVERC_PLUGIN_SUPPORT
   "HAVE_NEVERC_PLUGIN_SUPPORT" OFF)
 
 option(NEVERC_ENABLE_PYTHON_PLUGINS
-  "Enable embedded CPython bindings for -fplugin=*.py" OFF)
+  "Enable embedded CPython bindings for -fplugin=*.py" ON)
 option(NEVERC_BUNDLE_PYTHON_RUNTIME
-  "Install NeverC with a relocatable adjacent CPython runtime" OFF)
+  "Install NeverC with a relocatable adjacent CPython runtime" ON)
 
 if(NEVERC_BUNDLE_PYTHON_RUNTIME AND NOT NEVERC_ENABLE_PYTHON_PLUGINS)
   message(FATAL_ERROR
     "NEVERC_BUNDLE_PYTHON_RUNTIME=ON requires "
     "NEVERC_ENABLE_PYTHON_PLUGINS=ON")
+endif()
+
+if(NEVERC_BUNDLE_PYTHON_RUNTIME AND CMAKE_CROSSCOMPILING)
+  message(FATAL_ERROR
+    "NEVERC_BUNDLE_PYTHON_RUNTIME=ON cannot bundle the host CPython into a "
+    "cross-compiled NeverC installation. Configure with "
+    "-DNEVERC_BUNDLE_PYTHON_RUNTIME=OFF and provide a target runtime through "
+    "the packaging environment instead.")
+endif()
+
+if(NEVERC_ENABLE_PYTHON_PLUGINS)
+  find_package(Python3 3.10 REQUIRED COMPONENTS Interpreter Development.Embed)
+else()
+  find_package(Python3 REQUIRED COMPONENTS Interpreter)
+endif()
+
+if(NEVERC_BUNDLE_PYTHON_RUNTIME)
+  set(NEVERC_PYTHON_BUNDLER_DIR
+      "${CMAKE_CURRENT_BINARY_DIR}/python-runtime-bundler")
+  file(MAKE_DIRECTORY "${NEVERC_PYTHON_BUNDLER_DIR}")
+  configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/../utils/release/bundle-python-runtime.py"
+    "${NEVERC_PYTHON_BUNDLER_DIR}/bundle-python-runtime.py"
+    COPYONLY)
+  file(MAKE_DIRECTORY "${NEVERC_PYTHON_BUNDLER_DIR}/licenses")
+  configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/../utils/release/licenses/CPython-LICENSE.txt"
+    "${NEVERC_PYTHON_BUNDLER_DIR}/licenses/CPython-LICENSE.txt"
+    COPYONLY)
+  configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/install-bundled-python.cmake.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/install-bundled-python.cmake"
+    @ONLY)
 endif()
 
 if(NEVERC_ENABLE_BOOTSTRAP)
@@ -419,6 +452,14 @@ add_neverc_tool(neverc
   ${support_plugins}
   GENERATE_DRIVER
   )
+
+if(NEVERC_BUNDLE_PYTHON_RUNTIME)
+  # add_neverc_tool installs the executable first in this directory. Keep the
+  # bundler directly after it so component and full installs always operate on
+  # the final installed binary (including its relative install RPATH).
+  install(SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/install-bundled-python.cmake"
+          COMPONENT neverc)
+endif()
 
 if(NEVERC_BUNDLE_PYTHON_RUNTIME AND NOT WIN32)
   if(APPLE)
