@@ -1,0 +1,157 @@
+name: python-plugin-bindings
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "neverc/CMakeLists.txt"
+      - "neverc/include/neverc/Plugin/**"
+      - "neverc/lib/Plugin/**"
+      - "pluginsdk/**"
+      - "tests/neverc/**"
+      - "utils/plugin-api/**"
+      - ".github/workflows/python-plugin-bindings.yml"
+  pull_request:
+    paths:
+      - "neverc/CMakeLists.txt"
+      - "neverc/include/neverc/Plugin/**"
+      - "neverc/lib/Plugin/**"
+      - "pluginsdk/**"
+      - "tests/neverc/**"
+      - "utils/plugin-api/**"
+      - ".github/workflows/python-plugin-bindings.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ vars.CI_CANCEL_IN_PROGRESS != 'false' }}
+
+jobs:
+  bindings:
+    name: ${{ matrix.host }} / CPython 3.10
+    runs-on: ${{ matrix.runs-on }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - host: linux-x64
+            runs-on: ubuntu-22.04
+          - host: macos-arm64
+            runs-on: macos-15
+          - host: windows-x64
+            runs-on: windows-latest
+            msvc-arch: x64
+    defaults:
+      run:
+        shell: bash
+    env:
+      BUILD_TYPE: RelWithDebInfo
+      LLVM_APT_VER: "22"
+      MACOSX_DEPLOYMENT_TARGET: "13.0"
+
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+        with:
+          path: neverc
+
+      - name: Set up CPython 3.10
+        id: python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Setup build deps (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build cmake
+          wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
+          chmod +x /tmp/llvm.sh
+          sudo /tmp/llvm.sh "$LLVM_APT_VER"
+          echo "CC=clang-${LLVM_APT_VER}" >> "$GITHUB_ENV"
+          echo "CXX=clang++-${LLVM_APT_VER}" >> "$GITHUB_ENV"
+
+      - name: Select latest stable Xcode (macOS)
+        if: runner.os == 'macOS'
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Setup build deps (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ninja cmake
+
+      - name: Setup build deps (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install ninja -y
+
+          $cmakeVer = '3.31.11'
+          Invoke-WebRequest "https://github.com/Kitware/CMake/releases/download/v$cmakeVer/cmake-$cmakeVer-windows-x86_64.zip" -OutFile cmake.zip
+          Expand-Archive cmake.zip C:\tools -Force
+          Add-Content $env:GITHUB_PATH "C:\tools\cmake-$cmakeVer-windows-x86_64\bin"
+
+      - name: Setup MSVC (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.msvc-arch }}
+
+      - name: Configure Python-enabled build
+        run: |
+          cmake -GNinja -Bbuild \
+            ${CC:+-DCMAKE_C_COMPILER=$CC} \
+            ${CXX:+-DCMAKE_CXX_COMPILER=$CXX} \
+            -DPython3_EXECUTABLE="${{ steps.python.outputs.python-path }}" \
+            -DLLVM_ENABLE_ASSERTIONS=OFF \
+            -DLLVM_TOOL_LLVM_SHLIB_BUILD=off \
+            -DNEVERC_INCLUDE_TESTS=ON \
+            -DNEVERC_ENABLE_PYTHON_PLUGINS=ON \
+            -DNEVERC_STRIP_BINARY=OFF \
+            -DNEVERC_ENABLE_LTO=OFF \
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            -C neverc/neverc/cmake/caches/NeverC.cmake \
+            neverc/llvm
+
+      - name: Build Python bridge, core tests and SDK
+        run: |
+          cmake --build build --config ${{ env.BUILD_TYPE }} \
+            --target neverc-plugin-core-tests neverc-pluginsdk
+
+      - name: Run Python lifecycle and SDK tests
+        run: |
+          ctest --test-dir build --output-on-failure \
+            -R '^(PythonPluginTest\.|PluginPythonPhaseBindings$|PluginPythonSDKTests$)'
+
+      - name: Build compiler and run full driver smoke (Linux)
+        if: matrix.host == 'linux-x64'
+        run: |
+          cmake --build build --config ${{ env.BUILD_TYPE }} --target neverc
+          env -u PYTHONPATH PYTHONDONTWRITEBYTECODE=1 \
+            build/bin/neverc \
+            -fplugin=neverc/tests/neverc/Inputs/Plugin/Python/DriverTracePlugin.py \
+            --python-driver-trace --python-driver-mode compact \
+            -fsyntax-only neverc/tests/neverc/override/lib_foo.c \
+            2>python-driver.log
+          grep -F "python raw arguments (before): mode=compact" python-driver.log
+          ldd build/bin/neverc | grep -E 'libpython3\.10|Python'
+
+      - name: Check plugin global state (Linux)
+        if: matrix.host == 'linux-x64'
+        run: |
+          "${{ steps.python.outputs.python-path }}" \
+            neverc/utils/plugin-api/check-global-state.py \
+            --build-dir build --strict
+
+      - name: Upload driver log
+        if: always() && matrix.host == 'linux-x64'
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-plugin-driver-log
+          path: python-driver.log
+          if-no-files-found: ignore
