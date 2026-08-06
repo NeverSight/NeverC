@@ -116,6 +116,41 @@ option kind は `flag`、`joined`、`separate`、`multi_arg`、value type は
 `enum_values={name: integer}` mapping を渡します。`argument_count` は
 `multi_arg` 専用です。
 
+## C ABI への完全なアクセス
+
+ライフサイクル、オプション、observer の高水準ヘルパーは、公開 C
+プラグイン ABI 全体の上に構築されています。`neverc_plugin.abi` は生成済みの
+`ctypes` 定義を提供し、`neverc_plugin.domains` の各モジュールはバージョンと
+サイズを検証してすべての公式テーブルを取得します。`bind_callbacks` は正確な
+シグネチャを持つネイティブ trampoline を介して Python callback を接続します。
+
+```python
+from neverc_plugin import abi
+from neverc_plugin.domains import ir
+from neverc_plugin.ffi import bind_callbacks, require_ok
+
+
+def register(self, context):
+    scope = context.ffi
+    core = ir.CORE.query(scope)
+    builder = ir.BUILDER.query(scope)
+    passes = ir.PASS.query(scope)
+```
+
+## Python OLLVM の例
+
+SDK の
+[`pluginsdk/python/examples/ollvm`](../../pluginsdk/python/examples/ollvm/README.md)
+には、この公開 binding だけで記述された決定的な命令置換 (SUB)、bogus control
+flow (BCF)、control-flow flattening (FLA) の例が含まれています。
+
+```sh
+neverc -fplugin=/path/to/ollvm_plugin.py \
+  --ollvm-sub --ollvm-bcf --ollvm-fla \
+  --ollvm-seed 42 --ollvm-probability 80 \
+  input.c -o output
+```
+
 ## エラー、セキュリティ、現在の範囲
 
 捕捉されなかった Python exception は `NEVERC_STATUS_PLUGIN_EXCEPTION` になり

@@ -116,6 +116,42 @@ Kinds опций: `flag`, `joined`, `separate`, `multi_arg`; типы значе
 `append`. Для enum передаётся mapping `enum_values={имя: целое}`.
 `argument_count` применяется только к `multi_arg`.
 
+## Полный доступ к C ABI
+
+Высокоуровневые средства жизненного цикла, опций и observers построены поверх
+полного публичного C ABI плагинов. `neverc_plugin.abi` содержит сгенерированные
+определения `ctypes`, а модули `neverc_plugin.domains` запрашивают все
+официальные таблицы с проверкой версии и размера. `bind_callbacks` связывает
+Python-callbacks с нативными trampolines точной сигнатуры.
+
+```python
+from neverc_plugin import abi
+from neverc_plugin.domains import ir
+from neverc_plugin.ffi import bind_callbacks, require_ok
+
+
+def register(self, context):
+    scope = context.ffi
+    core = ir.CORE.query(scope)
+    builder = ir.BUILDER.query(scope)
+    passes = ir.PASS.query(scope)
+```
+
+## Пример OLLVM на Python
+
+SDK включает в
+[`pluginsdk/python/examples/ollvm`](../../pluginsdk/python/examples/ollvm/README.md)
+пример, написанный только через этот публичный binding. Он детерминированно
+реализует подстановку инструкций (SUB), ложный поток управления (BCF) и
+уплощение потока управления (FLA):
+
+```sh
+neverc -fplugin=/path/to/ollvm_plugin.py \
+  --ollvm-sub --ollvm-bcf --ollvm-fla \
+  --ollvm-seed 42 --ollvm-probability 80 \
+  input.c -o output
+```
+
 ## Ошибки, безопасность и текущий объём
 
 Необработанное исключение Python превращается в

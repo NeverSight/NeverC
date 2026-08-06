@@ -115,6 +115,41 @@ class TracePlugin:
 `last_wins` أو `append`. يمرر خيار enum الخريطة
 `enum_values={الاسم: عدد صحيح}`. يخص `argument_count` النوع `multi_arg` فقط.
 
+## الوصول الكامل إلى C ABI
+
+تعتمد مساعدات دورة الحياة والخيارات وobservers عالية المستوى على واجهة C ABI
+العامة الكاملة للإضافات. توفر `neverc_plugin.abi` تعريفات `ctypes` المولدة،
+وتستعلم وحدات `neverc_plugin.domains` عن جميع الجداول الرسمية مع التحقق من
+الإصدار والحجم. تربط `bind_callbacks` استدعاءات Python عبر trampolines أصلية
+ذات تواقيع مطابقة تمامًا.
+
+```python
+from neverc_plugin import abi
+from neverc_plugin.domains import ir
+from neverc_plugin.ffi import bind_callbacks, require_ok
+
+
+def register(self, context):
+    scope = context.ffi
+    core = ir.CORE.query(scope)
+    builder = ir.BUILDER.query(scope)
+    passes = ir.PASS.query(scope)
+```
+
+## مثال OLLVM بلغة Python
+
+تتضمن SDK في
+[`pluginsdk/python/examples/ollvm`](../../pluginsdk/python/examples/ollvm/README.md)
+مثالًا مكتوبًا باستخدام هذا الربط العام فقط، وينفذ بصورة حتمية استبدال
+التعليمات (SUB) وتدفق التحكم الزائف (BCF) وتسطيح تدفق التحكم (FLA):
+
+```sh
+neverc -fplugin=/path/to/ollvm_plugin.py \
+  --ollvm-sub --ollvm-bcf --ollvm-fla \
+  --ollvm-seed 42 --ollvm-probability 80 \
+  input.c -o output
+```
+
 ## الأخطاء والأمان والنطاق الحالي
 
 يتحول استثناء Python غير الملتقط إلى `NEVERC_STATUS_PLUGIN_EXCEPTION`. أثناء

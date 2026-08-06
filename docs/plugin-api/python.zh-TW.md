@@ -108,6 +108,40 @@ class TracePlugin:
 `single`、`last_wins`、`append`。enum 選項傳入
 `enum_values={名稱: 整數}` mapping。`argument_count` 僅適用於 `multi_arg`。
 
+## 完整 C ABI 存取
+
+高階生命週期、選項與 observer 輔助功能建立在完整的公開 C 外掛 ABI
+之上。`neverc_plugin.abi` 提供產生的 `ctypes` 定義，
+`neverc_plugin.domains` 下的模組會檢查版本與大小後查詢全部官方介面表。
+`bind_callbacks` 透過簽章完全相符的原生 trampoline 連接 Python callback。
+
+```python
+from neverc_plugin import abi
+from neverc_plugin.domains import ir
+from neverc_plugin.ffi import bind_callbacks, require_ok
+
+
+def register(self, context):
+    scope = context.ffi
+    core = ir.CORE.query(scope)
+    builder = ir.BUILDER.query(scope)
+    passes = ir.PASS.query(scope)
+```
+
+## Python OLLVM 範例
+
+SDK 在
+[`pluginsdk/python/examples/ollvm`](../../pluginsdk/python/examples/ollvm/README.md)
+提供一個只使用此公開 binding 撰寫的範例，確定性實作指令替換（SUB）、
+偽控制流程（BCF）與控制流程平坦化（FLA）：
+
+```sh
+neverc -fplugin=/path/to/ollvm_plugin.py \
+  --ollvm-sub --ollvm-bcf --ollvm-fla \
+  --ollvm-seed 42 --ollvm-probability 80 \
+  input.c -o output
+```
+
 ## 錯誤、安全性與目前範圍
 
 未捕捉的 Python exception 會轉換成 `NEVERC_STATUS_PLUGIN_EXCEPTION`。在活動

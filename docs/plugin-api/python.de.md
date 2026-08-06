@@ -118,6 +118,43 @@ Options-kinds sind `flag`, `joined`, `separate` und `multi_arg`; Werttypen sind
 `single`, `last_wins` und `append`. Enum-Optionen erhalten ein Mapping
 `enum_values={Name: Ganzzahl}`. `argument_count` gilt nur für `multi_arg`.
 
+## Vollständiger Zugriff auf die C-ABI
+
+Die komfortablen Lebenszyklus-, Options- und Observer-Helfer bauen auf der
+vollständigen öffentlichen C-Plugin-ABI auf. `neverc_plugin.abi` enthält die
+generierten `ctypes`-Definitionen; die Module unter
+`neverc_plugin.domains` fragen alle offiziellen Tabellen versions- und
+größengeprüft ab. `bind_callbacks` verbindet Python-Callbacks über die exakt
+generierten nativen Trampolines.
+
+```python
+from neverc_plugin import abi
+from neverc_plugin.domains import ir
+from neverc_plugin.ffi import bind_callbacks, require_ok
+
+
+def register(self, context):
+    scope = context.ffi
+    core = ir.CORE.query(scope)
+    builder = ir.BUILDER.query(scope)
+    passes = ir.PASS.query(scope)
+```
+
+## Python-OLLVM-Beispiel
+
+Das SDK enthält unter
+[`pluginsdk/python/examples/ollvm`](../../pluginsdk/python/examples/ollvm/README.md)
+ein ausschließlich gegen diese öffentliche Bindung geschriebenes Beispiel für
+deterministische Instruction Substitution (SUB), Bogus Control Flow (BCF) und
+Control-Flow Flattening (FLA):
+
+```sh
+neverc -fplugin=/path/to/ollvm_plugin.py \
+  --ollvm-sub --ollvm-bcf --ollvm-fla \
+  --ollvm-seed 42 --ollvm-probability 80 \
+  input.c -o output
+```
+
 ## Fehler, Sicherheit und aktueller Umfang
 
 Eine nicht behandelte Python-Ausnahme wird zu

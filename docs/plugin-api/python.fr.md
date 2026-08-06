@@ -118,6 +118,42 @@ de valeur sont `bool`, `int`, `uint`, `string`, `enum` et `path`; les
 multiplicités sont `single`, `last_wins` et `append`. Une enum reçoit le mapping
 `enum_values={nom: entier}`. `argument_count` ne s'applique qu'à `multi_arg`.
 
+## Accès complet à l’ABI C
+
+Les aides de cycle de vie, d’options et d’observation reposent sur l’intégralité
+de l’ABI publique des plugins C. `neverc_plugin.abi` fournit les définitions
+`ctypes` générées et les modules de `neverc_plugin.domains` interrogent toutes
+les tables officielles avec contrôle de version et de taille. `bind_callbacks`
+relie les callbacks Python à des trampolines natifs de signature exacte.
+
+```python
+from neverc_plugin import abi
+from neverc_plugin.domains import ir
+from neverc_plugin.ffi import bind_callbacks, require_ok
+
+
+def register(self, context):
+    scope = context.ffi
+    core = ir.CORE.query(scope)
+    builder = ir.BUILDER.query(scope)
+    passes = ir.PASS.query(scope)
+```
+
+## Exemple OLLVM en Python
+
+Le SDK fournit dans
+[`pluginsdk/python/examples/ollvm`](../../pluginsdk/python/examples/ollvm/README.md)
+un exemple écrit uniquement avec ce binding public. Il implémente de manière
+déterministe la substitution d’instructions (SUB), le faux flot de contrôle
+(BCF) et l’aplatissement du flot de contrôle (FLA) :
+
+```sh
+neverc -fplugin=/path/to/ollvm_plugin.py \
+  --ollvm-sub --ollvm-bcf --ollvm-fla \
+  --ollvm-seed 42 --ollvm-probability 80 \
+  input.c -o output
+```
+
 ## Erreurs, sécurité et périmètre actuel
 
 Une exception Python non interceptée devient `NEVERC_STATUS_PLUGIN_EXCEPTION`.

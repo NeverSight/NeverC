@@ -114,6 +114,41 @@ option kind는 `flag`, `joined`, `separate`, `multi_arg`, value type은
 `last_wins`, `append`입니다. enum option에는 `enum_values={name: integer}`
 mapping을 전달합니다. `argument_count`는 `multi_arg`에만 적용됩니다.
 
+## C ABI 전체 접근
+
+수명 주기, 옵션, observer 고수준 도우미는 공개 C 플러그인 ABI 전체를
+기반으로 합니다. `neverc_plugin.abi`는 생성된 `ctypes` 정의를 제공하고,
+`neverc_plugin.domains`의 각 모듈은 버전과 크기를 검사하며 모든 공식 테이블을
+조회합니다. `bind_callbacks`는 정확한 시그니처의 네이티브 trampoline을 통해
+Python callback을 연결합니다.
+
+```python
+from neverc_plugin import abi
+from neverc_plugin.domains import ir
+from neverc_plugin.ffi import bind_callbacks, require_ok
+
+
+def register(self, context):
+    scope = context.ffi
+    core = ir.CORE.query(scope)
+    builder = ir.BUILDER.query(scope)
+    passes = ir.PASS.query(scope)
+```
+
+## Python OLLVM 예제
+
+SDK의
+[`pluginsdk/python/examples/ollvm`](../../pluginsdk/python/examples/ollvm/README.md)
+에는 이 공개 binding만 사용해 작성한 결정적 명령어 치환(SUB), 가짜 제어 흐름
+(BCF), 제어 흐름 평탄화(FLA) 예제가 포함되어 있습니다.
+
+```sh
+neverc -fplugin=/path/to/ollvm_plugin.py \
+  --ollvm-sub --ollvm-bcf --ollvm-fla \
+  --ollvm-seed 42 --ollvm-probability 80 \
+  input.c -o output
+```
+
 ## 오류, 보안 및 현재 범위
 
 잡히지 않은 Python exception은 `NEVERC_STATUS_PLUGIN_EXCEPTION`으로 변환됩니다.
