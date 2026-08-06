@@ -21,6 +21,22 @@
 using namespace llvm;
 
 namespace neverc::plugin {
+
+std::string findAdjacentPythonHome(StringRef Executable) {
+  if (Executable.empty())
+    return {};
+  SmallString<256> PythonHome(Executable);
+  sys::path::remove_filename(PythonHome);
+  sys::path::append(PythonHome, "..", "python");
+  sys::path::remove_dots(PythonHome, true);
+  if (!sys::fs::is_directory(PythonHome))
+    return {};
+  SmallString<256> Canonical;
+  if (!sys::fs::real_path(PythonHome, Canonical))
+    return Canonical.str().str();
+  return PythonHome.str().str();
+}
+
 namespace {
 
 constexpr const char *BridgeModuleName = "_neverc_plugin";
@@ -235,6 +251,20 @@ std::string initializeInterpreter() {
     Config.parse_argv = 0;
     Config.install_signal_handlers = 0;
     Config.write_bytecode = 0;
+    std::string Executable =
+        sys::fs::getMainExecutable(nullptr, static_cast<void *>(&BridgeModule));
+    std::string PythonHome = findAdjacentPythonHome(Executable);
+    if (!PythonHome.empty()) {
+      PyStatus HomeStatus =
+          PyConfig_SetBytesString(&Config, &Config.home, PythonHome.c_str());
+      if (PyStatus_Exception(HomeStatus)) {
+        InitializationError = HomeStatus.err_msg
+                                  ? HomeStatus.err_msg
+                                  : "could not select bundled CPython home";
+        PyConfig_Clear(&Config);
+        return;
+      }
+    }
     PyStatus Initialization = Py_InitializeFromConfig(&Config);
     if (PyStatus_Exception(Initialization)) {
       InitializationError = Initialization.err_msg

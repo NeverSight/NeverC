@@ -15,6 +15,11 @@ cmake -S llvm -B build -DNEVERC_ENABLE_PYTHON_PLUGINS=ON
 cmake --build build --target neverc
 ```
 
+تفعّل أرشيفات مترجم NeverC الرسمية هذا الخيار، وتتضمن بيئة CPython 3.12 قابلة
+للنقل ومكتبتها القياسية في مجلد `python/` المجاور، لذلك لا تحتاج إلى تثبيت
+Python منفصل وقت التشغيل. تبقي البنيات المخصصة من المصدر الخيار `OFF` افتراضياً،
+ويمكنها عند تفعيله تضمين CPython 3.10 خارجي أو إصدار أحدث.
+
 تتطلب البنية المفعلة CPython 3.10 أو أحدث وملفات التطوير الخاصة بالتضمين.
 ثبّت حزمة التأليف بالأمر `python3 -m pip install ./pluginsdk/python`، أو أضف
 المجلد إلى `PYTHONPATH`، أو ابنِ وثبّت المكوّن `neverc-pluginsdk`. يكتشف NeverC

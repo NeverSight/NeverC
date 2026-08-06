@@ -327,6 +327,14 @@ CMAKE_DEPENDENT_OPTION(NEVERC_PLUGIN_SUPPORT
 
 option(NEVERC_ENABLE_PYTHON_PLUGINS
   "Enable embedded CPython bindings for -fplugin=*.py" OFF)
+option(NEVERC_BUNDLE_PYTHON_RUNTIME
+  "Install NeverC with a relocatable adjacent CPython runtime" OFF)
+
+if(NEVERC_BUNDLE_PYTHON_RUNTIME AND NOT NEVERC_ENABLE_PYTHON_PLUGINS)
+  message(FATAL_ERROR
+    "NEVERC_BUNDLE_PYTHON_RUNTIME=ON requires "
+    "NEVERC_ENABLE_PYTHON_PLUGINS=ON")
+endif()
 
 if(NEVERC_ENABLE_BOOTSTRAP)
   message(FATAL_ERROR
@@ -411,6 +419,22 @@ add_neverc_tool(neverc
   ${support_plugins}
   GENERATE_DRIVER
   )
+
+if(NEVERC_BUNDLE_PYTHON_RUNTIME AND NOT WIN32)
+  if(APPLE)
+    set(_neverc_python_install_rpath
+      "@executable_path/../python/lib")
+  else()
+    set(_neverc_python_install_rpath
+      "\$ORIGIN/../python/lib")
+  endif()
+  # Keep the build-tree Python search path computed by CMake, but replace it
+  # with the adjacent runtime path in installed/package artifacts.
+  set_target_properties(neverc PROPERTIES
+    BUILD_WITH_INSTALL_RPATH OFF
+    INSTALL_RPATH "${_neverc_python_install_rpath}"
+    )
+endif()
 
 neverc_target_link_libraries(neverc
   PRIVATE

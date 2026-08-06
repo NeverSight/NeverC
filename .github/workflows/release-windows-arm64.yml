@@ -22,6 +22,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
+      - name: Set up CPython 3.12 for official artifacts
+        id: python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+          architecture: arm64
+
       - name: Install ARM64-native CMake & Ninja
         shell: pwsh
         run: |
@@ -52,6 +59,9 @@ jobs:
             -DCMAKE_SYSTEM_PROCESSOR=ARM64 \
             -C neverc/cmake/caches/NeverC.cmake \
             -DNEVERC_INCLUDE_TESTS=OFF \
+            -DPython3_EXECUTABLE="${{ steps.python.outputs.python-path }}" \
+            -DNEVERC_ENABLE_PYTHON_PLUGINS=ON \
+            -DNEVERC_BUNDLE_PYTHON_RUNTIME=ON \
             -DNEVERC_ENABLE_LTO=ON \
             -DCMAKE_INSTALL_PREFIX=install \
             -DCMAKE_BUILD_TYPE=Release
@@ -90,10 +100,21 @@ jobs:
 
       - name: Install neverc
         shell: bash
-        run: cmake --build build --target install
+        run: |
+          cmake --build build --target install
+          "${{ steps.python.outputs.python-path }}" \
+            utils/release/bundle-python-runtime.py \
+            --prefix "$PWD/install" --neverc "$PWD/install/bin/neverc.exe"
 
       - name: Package
         run: 7z a windows-arm64-neverc-release.zip install
+
+      - name: Verify relocated release archive
+        shell: bash
+        run: |
+          "${{ steps.python.outputs.python-path }}" \
+            utils/release/test-python-plugin-package.py \
+            --archive windows-arm64-neverc-release.zip
 
       - name: Upload CI artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

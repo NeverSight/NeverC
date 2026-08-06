@@ -6,6 +6,7 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
 #include <memory>
+#include <string>
 
 namespace neverc::plugin {
 
@@ -13,6 +14,10 @@ struct PythonPluginLoadResult {
   PluginDescriptorRecord Descriptor;
   std::unique_ptr<PluginRuntime> Runtime;
 };
+
+/// Return the canonical adjacent CPython home for an installed executable, or
+/// an empty string when the package does not contain one.
+std::string findAdjacentPythonHome(llvm::StringRef Executable);
 
 llvm::Expected<PythonPluginLoadResult>
 loadPythonPlugin(llvm::StringRef CanonicalPath);

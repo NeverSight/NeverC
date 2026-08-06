@@ -13,6 +13,11 @@ cmake -S llvm -B build -DNEVERC_ENABLE_PYTHON_PLUGINS=ON
 cmake --build build --target neverc
 ```
 
+NeverC の公式 compiler archive はこの option を有効にし、隣接する `python/`
+directory に relocatable な CPython 3.12 runtime と standard library を同梱する
+ため、実行時に Python を別途インストールする必要はありません。独自の source
+build では既定値が `OFF` のままで、有効化時は外部 CPython 3.10 以降も使えます。
+
 有効化したビルドには CPython 3.10 以降と埋め込み用開発ファイルが必要です。
 `python3 -m pip install ./pluginsdk/python` で authoring package を導入するか、
 そのディレクトリを `PYTHONPATH` に追加するか、`neverc-pluginsdk` component
