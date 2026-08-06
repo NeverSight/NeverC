@@ -30,6 +30,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up CPython 3.12 for official artifacts
+        id: python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+          architecture: arm64
+
       - name: Install ARM64-native CMake & Ninja
         shell: pwsh
         run: |
@@ -88,6 +95,9 @@ jobs:
             -DCMAKE_ASM_COMPILER_TARGET=aarch64-pc-windows-msvc \
             -C neverc/cmake/caches/NeverC.cmake \
             -DNEVERC_INCLUDE_TESTS=ON \
+            -DPython3_EXECUTABLE="${{ steps.python.outputs.python-path }}" \
+            -DNEVERC_ENABLE_PYTHON_PLUGINS=ON \
+            -DNEVERC_BUNDLE_PYTHON_RUNTIME=ON \
             -DNEVERC_NATIVE_ARCH=OFF \
             -DCMAKE_INSTALL_PREFIX=install \
             -DCMAKE_BUILD_TYPE=Release \
@@ -108,10 +118,21 @@ jobs:
       # ── Package + upload ─────────────────────────────────────
       - name: Install neverc
         shell: bash
-        run: cmake --build build --target install
+        run: |
+          cmake --build build --target install
+          "${{ steps.python.outputs.python-path }}" \
+            utils/release/bundle-python-runtime.py \
+            --prefix "$PWD/install" --neverc "$PWD/install/bin/neverc.exe"
 
       - name: Package neverc
         run: 7z a windows-arm64-neverc-clang-lto.zip install
+
+      - name: Verify relocated full compiler archive
+        shell: bash
+        run: |
+          "${{ steps.python.outputs.python-path }}" \
+            utils/release/test-python-plugin-package.py \
+            --archive windows-arm64-neverc-clang-lto.zip
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
@@ -125,6 +146,13 @@ jobs:
           mv install/runtime install-runtime-stash
           7z a windows-arm64-neverc-clang-lto-compiler.zip install
           mv install-runtime-stash install/runtime
+
+      - name: Verify relocated compiler-only archive
+        shell: bash
+        run: |
+          "${{ steps.python.outputs.python-path }}" \
+            utils/release/test-python-plugin-package.py \
+            --archive windows-arm64-neverc-clang-lto-compiler.zip
 
       - name: Upload Compiler Artifact
         uses: actions/upload-artifact@v4

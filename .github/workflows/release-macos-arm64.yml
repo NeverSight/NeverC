@@ -27,6 +27,12 @@ jobs:
         with:
           path: neverc
 
+      - name: Set up CPython 3.12 for official artifacts
+        id: python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+
       - name: Select latest stable Xcode (Apple Clang)
         uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
         with:
@@ -157,6 +163,9 @@ jobs:
           -DLLVM_TOOL_LLVM_SHLIB_BUILD=off \
           -DHAVE_STD_IS_TRIVIALLY_COPYABLE=0 \
           -DNEVERC_INCLUDE_TESTS=OFF \
+          -DPython3_EXECUTABLE="${{ steps.python.outputs.python-path }}" \
+          -DNEVERC_ENABLE_PYTHON_PLUGINS=ON \
+          -DNEVERC_BUNDLE_PYTHON_RUNTIME=ON \
           -DNEVERC_STRIP_BINARY=ON \
           -DNEVERC_ENABLE_LTO=ON \
           -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
@@ -184,7 +193,11 @@ jobs:
           done
 
       - name: Install neverc
-        run: cmake --build build --config ${{ env.BUILD_TYPE }} --target install
+        run: |
+          cmake --build build --config ${{ env.BUILD_TYPE }} --target install
+          "${{ steps.python.outputs.python-path }}" \
+            neverc/utils/release/bundle-python-runtime.py \
+            --prefix "$PWD/install" --neverc "$PWD/install/bin/neverc"
 
       - name: Sign neverc binaries
         if: github.repository == 'NeverSight/NeverC'
@@ -255,12 +268,18 @@ jobs:
       - name: Package (full, with runtime)
         run: 7z a macos-arm64-neverc.zip install
 
+      - name: Verify relocated full release archive
+        run: |
+          "${{ steps.python.outputs.python-path }}" \
+            neverc/utils/release/test-python-plugin-package.py \
+            --archive macos-arm64-neverc.zip
+
       # runtime/ is deliberately absent: it is fetched on demand by
       # `neverc runtime install <target>`.  pluginsdk/ has no such fallback,
       # so leaving it out would make the SDK reachable only from the full
       # archive, which install.sh never downloads.
       - name: Package (binary + headers + plugin SDK, for curl installer)
-        run: cd install && zip -r ../neverc-macos-arm64.zip bin lib pluginsdk
+        run: cd install && zip -r ../neverc-macos-arm64.zip bin lib pluginsdk python
 
       # Consumes the archive a curl install actually receives, from a clean
       # prefix and with a compiler that is not neverc, so a packaging gap fails
@@ -272,6 +291,12 @@ jobs:
           unzip -q neverc-macos-arm64.zip -d "$RUNNER_TEMP/pkg-check"
           python3 neverc/utils/plugin-api/test-installed-sdk.py \
             --prefix "$RUNNER_TEMP/pkg-check"
+
+      - name: Verify relocated curl-installer archive
+        run: |
+          "${{ steps.python.outputs.python-path }}" \
+            neverc/utils/release/test-python-plugin-package.py \
+            --archive neverc-macos-arm64.zip
 
       - name: Upload CI artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

@@ -13,6 +13,12 @@ cmake -S llvm -B build -DNEVERC_ENABLE_PYTHON_PLUGINS=ON
 cmake --build build --target neverc
 ```
 
+Gli archivi ufficiali del compiler NeverC abilitano questa opzione e includono
+un runtime CPython 3.12 rilocabile con la libreria standard nella directory
+adiacente `python/`; in esecuzione non serve quindi un'installazione Python
+separata. Le build personalizzate da sorgente mantengono `OFF` come default e
+possono incorporare un'installazione esterna di CPython 3.10 o successiva.
+
 La build abilitata richiede CPython 3.10 o successivo e i relativi file di
 sviluppo per l'embedding. Installare il pacchetto di authoring con
 `python3 -m pip install ./pluginsdk/python`, aggiungere la directory a

@@ -12,6 +12,10 @@ cmake -S llvm -B build -DNEVERC_ENABLE_PYTHON_PLUGINS=ON
 cmake --build build --target neverc
 ```
 
+NeverC 官方编译器归档会启用此选项，并在相邻的 `python/` 目录中携带可迁移的
+CPython 3.12 运行时和标准库，因此运行时无需另行安装 Python。自定义源码构建
+仍默认设为 `OFF`，手动启用时也可以嵌入外部 CPython 3.10 或更高版本。
+
 启用后的构建需要 CPython 3.10 或更高版本及其嵌入开发文件。可用
 `python3 -m pip install ./pluginsdk/python` 安装创作包，也可将该目录加入
 `PYTHONPATH`，或构建/安装 `neverc-pluginsdk` 组件。NeverC 还会自动发现

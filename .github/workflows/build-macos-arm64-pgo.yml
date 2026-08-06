@@ -40,6 +40,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up CPython 3.12 for PGO generate
+        id: python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+
       - name: Select latest stable Xcode (Apple Clang)
         uses: maxim-lobanov/setup-xcode@v1
         with:
@@ -85,7 +91,11 @@ jobs:
       # ── Phase 1: instrumented build (skipped on cache hit) ───
       - name: Build instrumented neverc
         if: steps.check-profdata.outputs.has_profdata != 'true'
-        run: ./utils/build/build_pgo.sh generate
+        run: |
+          NEVERC_ENABLE_PYTHON_PLUGINS=ON \
+          NEVERC_BUNDLE_PYTHON_RUNTIME=ON \
+          NEVERC_PGO_PYTHON3_EXECUTABLE="${{ steps.python.outputs.python-path }}" \
+            ./utils/build/build_pgo.sh generate
 
       # ── Phase 1b: training (skipped on cache hit) ────────────
       - name: Download PGO training workloads
@@ -246,6 +256,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up CPython 3.12 for official artifacts
+        id: python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+
       - name: Select latest stable Xcode (Apple Clang)
         uses: maxim-lobanov/setup-xcode@v1
         with:
@@ -271,13 +287,27 @@ jobs:
           path: pgo-profiles
 
       - name: Build PGO-optimised neverc
-        run: ./utils/build/build_pgo.sh use
+        run: |
+          NEVERC_ENABLE_PYTHON_PLUGINS=ON \
+          NEVERC_BUNDLE_PYTHON_RUNTIME=ON \
+          NEVERC_PGO_PYTHON3_EXECUTABLE="${{ steps.python.outputs.python-path }}" \
+            ./utils/build/build_pgo.sh use
 
       - name: Install neverc
-        run: cmake --install build-pgo-use --prefix "${GITHUB_WORKSPACE}/install"
+        run: |
+          cmake --install build-pgo-use --prefix "${GITHUB_WORKSPACE}/install"
+          "${{ steps.python.outputs.python-path }}" \
+            utils/release/bundle-python-runtime.py \
+            --prefix "$PWD/install" --neverc "$PWD/install/bin/neverc"
 
       - name: Package neverc
         run: 7z a macos-arm64-neverc-pgo.zip install
+
+      - name: Verify relocated full compiler archive
+        run: |
+          "${{ steps.python.outputs.python-path }}" \
+            utils/release/test-python-plugin-package.py \
+            --archive macos-arm64-neverc-pgo.zip
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
@@ -290,6 +320,12 @@ jobs:
           mv install/runtime install-runtime-stash
           7z a macos-arm64-neverc-pgo-compiler.zip install
           mv install-runtime-stash install/runtime
+
+      - name: Verify relocated compiler-only archive
+        run: |
+          "${{ steps.python.outputs.python-path }}" \
+            utils/release/test-python-plugin-package.py \
+            --archive macos-arm64-neverc-pgo-compiler.zip
 
       - name: Upload Compiler Artifact
         uses: actions/upload-artifact@v4

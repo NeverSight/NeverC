@@ -12,6 +12,10 @@ cmake -S llvm -B build -DNEVERC_ENABLE_PYTHON_PLUGINS=ON
 cmake --build build --target neverc
 ```
 
+NeverC 官方編譯器封存檔會啟用此選項，並在相鄰的 `python/` 目錄中攜帶可移轉的
+CPython 3.12 執行環境與標準函式庫，因此執行時不必另外安裝 Python。自訂原始碼
+建置仍預設為 `OFF`，手動啟用時也可嵌入外部 CPython 3.10 或更新版本。
+
 啟用後的建置需要 CPython 3.10 或更新版本及其嵌入開發檔案。可用
 `python3 -m pip install ./pluginsdk/python` 安裝開發套件，也可將該目錄加入
 `PYTHONPATH`，或建置/安裝 `neverc-pluginsdk` 元件。NeverC 也會自動尋找

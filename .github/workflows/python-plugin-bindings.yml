@@ -12,8 +12,12 @@ on:
       - "neverc/lib/Plugin/**"
       - "pluginsdk/**"
       - "tests/neverc/**"
+      - "docs/plugin-api/**"
+      - "utils/build/build_pgo.sh"
+      - "utils/ci/check-python-plugin-artifacts.py"
       - "utils/plugin-api/**"
-      - ".github/workflows/python-plugin-bindings.yml"
+      - "utils/release/**"
+      - ".github/workflows/**"
   pull_request:
     paths:
       - "neverc/CMakeLists.txt"
@@ -21,15 +25,30 @@ on:
       - "neverc/lib/Plugin/**"
       - "pluginsdk/**"
       - "tests/neverc/**"
+      - "docs/plugin-api/**"
+      - "utils/build/build_pgo.sh"
+      - "utils/ci/check-python-plugin-artifacts.py"
       - "utils/plugin-api/**"
-      - ".github/workflows/python-plugin-bindings.yml"
+      - "utils/release/**"
+      - ".github/workflows/**"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ vars.CI_CANCEL_IN_PROGRESS != 'false' }}
 
 jobs:
+  policy:
+    name: Official artifact policy
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+
+      - name: Check every compiler artifact producer
+        run: python3 utils/ci/check-python-plugin-artifacts.py
+
   bindings:
+    needs: policy
     name: ${{ matrix.host }} / CPython 3.10
     runs-on: ${{ matrix.runs-on }}
     timeout-minutes: 90
@@ -60,7 +79,7 @@ jobs:
 
       - name: Set up CPython 3.10
         id: python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.10"
 
@@ -155,3 +174,73 @@ jobs:
           name: python-plugin-driver-log
           path: python-driver.log
           if-no-files-found: ignore
+
+  python-disabled:
+    name: Linux x64 / Python plugins explicitly OFF
+    needs: policy
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    env:
+      BUILD_TYPE: RelWithDebInfo
+      LLVM_APT_VER: "22"
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+        with:
+          path: neverc
+
+      - name: Set up build-time Python
+        id: python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+
+      - name: Setup build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build cmake
+          wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
+          chmod +x /tmp/llvm.sh
+          sudo /tmp/llvm.sh "$LLVM_APT_VER"
+          echo "CC=clang-${LLVM_APT_VER}" >> "$GITHUB_ENV"
+          echo "CXX=clang++-${LLVM_APT_VER}" >> "$GITHUB_ENV"
+
+      - name: Configure explicitly disabled build
+        run: |
+          cmake -GNinja -Bbuild-off \
+            -DCMAKE_C_COMPILER="$CC" \
+            -DCMAKE_CXX_COMPILER="$CXX" \
+            -DPython3_EXECUTABLE="${{ steps.python.outputs.python-path }}" \
+            -DLLVM_ENABLE_ASSERTIONS=OFF \
+            -DLLVM_TOOL_LLVM_SHLIB_BUILD=off \
+            -DNEVERC_INCLUDE_TESTS=ON \
+            -DNEVERC_ENABLE_PYTHON_PLUGINS=OFF \
+            -DNEVERC_BUNDLE_PYTHON_RUNTIME=OFF \
+            -DNEVERC_STRIP_BINARY=OFF \
+            -DNEVERC_ENABLE_LTO=OFF \
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            -C neverc/neverc/cmake/caches/NeverC.cmake \
+            neverc/llvm
+
+      - name: Build compiler and core tests
+        run: |
+          cmake --build build-off --config ${{ env.BUILD_TYPE }} \
+            --target neverc neverc-plugin-core-tests
+
+      - name: Verify disabled diagnostic and link contract
+        run: |
+          ctest --test-dir build-off --output-on-failure \
+            -R '^PluginRegistryTest\.PythonPluginReportsDisabledBuildFeature$'
+          set +e
+          diagnostic=$(build-off/bin/neverc \
+            -fplugin=neverc/pluginsdk/python/examples/minimal.py \
+            -fsyntax-only neverc/tests/neverc/override/lib_foo.c 2>&1)
+          status=$?
+          set -e
+          test "$status" -ne 0
+          grep -F "Python plugin support disabled" <<<"$diagnostic"
+          grep -F "NEVERC_ENABLE_PYTHON_PLUGINS=ON" <<<"$diagnostic"
+          if ldd build-off/bin/neverc | tee neverc-off.ldd | grep -qi libpython; then
+            echo "Python-disabled neverc unexpectedly links libpython" >&2
+            exit 1
+          fi

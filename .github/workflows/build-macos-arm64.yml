@@ -47,6 +47,12 @@ jobs:
         with:
           path: neverc
 
+      - name: Set up CPython 3.12 for official artifacts
+        id: python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+
       - name: Select latest stable Xcode (Apple Clang)
         uses: maxim-lobanov/setup-xcode@v1
         with:
@@ -71,6 +77,9 @@ jobs:
             -DLLVM_TOOL_LLVM_SHLIB_BUILD=off \
             -DHAVE_STD_IS_TRIVIALLY_COPYABLE=0 \
             -DNEVERC_INCLUDE_TESTS=ON \
+            -DPython3_EXECUTABLE="${{ steps.python.outputs.python-path }}" \
+            -DNEVERC_ENABLE_PYTHON_PLUGINS=ON \
+            -DNEVERC_BUNDLE_PYTHON_RUNTIME=ON \
             -DCMAKE_GTEST_DISCOVER_TESTS_DISCOVERY_MODE=PRE_TEST \
             -DNEVERC_STRIP_BINARY=OFF \
             -DNEVERC_ENABLE_LTO=ON \
@@ -83,10 +92,20 @@ jobs:
       # plugin-SDK / test steps below, so the binary is always downloadable as
       # an artifact even when a later step fails.
       - name: Install neverc
-        run: cmake --build build --config ${{ env.BUILD_TYPE }} --target install
+        run: |
+          cmake --build build --config ${{ env.BUILD_TYPE }} --target install
+          "${{ steps.python.outputs.python-path }}" \
+            neverc/utils/release/bundle-python-runtime.py \
+            --prefix "$PWD/install" --neverc "$PWD/install/bin/neverc"
 
       - name: Package neverc
         run: 7z a macos-arm64-neverc.zip install
+
+      - name: Verify relocated full compiler archive
+        run: |
+          "${{ steps.python.outputs.python-path }}" \
+            neverc/utils/release/test-python-plugin-package.py \
+            --archive macos-arm64-neverc.zip
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
@@ -99,6 +118,12 @@ jobs:
           mv install/runtime install-runtime-stash
           7z a macos-arm64-neverc-compiler.zip install
           mv install-runtime-stash install/runtime
+
+      - name: Verify relocated compiler-only archive
+        run: |
+          "${{ steps.python.outputs.python-path }}" \
+            neverc/utils/release/test-python-plugin-package.py \
+            --archive macos-arm64-neverc-compiler.zip
 
       - name: Upload Compiler Artifact
         uses: actions/upload-artifact@v4

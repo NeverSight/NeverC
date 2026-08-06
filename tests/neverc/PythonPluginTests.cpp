@@ -1,3 +1,4 @@
+#include "../../neverc/lib/Plugin/Python/PythonPluginLoader.h"
 #include "neverc/Plugin/Host/PluginProcessServices.h"
 #include "neverc/Plugin/Host/PluginRegistration.h"
 #include "neverc/Plugin/Host/PluginSession.h"
@@ -74,6 +75,27 @@ private:
 TEST(PythonPluginTest, TraceLineParsingNormalizesCRLF) {
   EXPECT_EQ(splitTraceLines("first\r\nsecond\n\r\nthird\r\n"),
             (std::vector<std::string>{"first", "second", "third"}));
+}
+
+TEST(PythonPluginTest, FindsOnlyAnExistingAdjacentPythonHome) {
+  SmallString<128> Temporary;
+  ASSERT_FALSE(sys::fs::createUniqueDirectory("neverc-python-home", Temporary));
+  SmallString<128> Bin(Temporary);
+  sys::path::append(Bin, "bin");
+  ASSERT_FALSE(sys::fs::create_directories(Bin));
+  SmallString<128> Executable(Bin);
+  sys::path::append(Executable, "neverc");
+
+  EXPECT_TRUE(findAdjacentPythonHome(Executable).empty());
+
+  SmallString<128> PythonHome(Temporary);
+  sys::path::append(PythonHome, "python");
+  ASSERT_FALSE(sys::fs::create_directories(PythonHome));
+  SmallString<128> Canonical;
+  ASSERT_FALSE(sys::fs::real_path(PythonHome, Canonical));
+  EXPECT_EQ(findAdjacentPythonHome(Executable), Canonical.str());
+
+  EXPECT_FALSE(sys::fs::remove_directories(Temporary));
 }
 
 TEST(PythonPluginTest, LoadsMetadataAndDeduplicatesTheScriptFile) {
