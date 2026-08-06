@@ -131,8 +131,11 @@ TEST_F(PluginPythonBridgeTest,
     fs::path IR =
         tmpFile("python_ollvm_" + std::to_string(Outputs.size()) + ".ll");
     std::vector<std::string> Arguments = OLLVM;
+    // Assertions-off builds default to -fdiscard-value-names, while these
+    // checks intentionally prove that each named Python transformation ran.
     Arguments.insert(Arguments.end(),
-                     {"--target=" + Target, "-O0", "-S", "-emit-llvm",
+                     {"--target=" + Target, "-O0",
+                      "-fno-discard-value-names", "-S", "-emit-llvm",
                       Source.string(), "-o", IR.string()});
     CmdResult Emit = ncc(Arguments);
     ASSERT_EQ(Emit.exitCode, 0) << Emit.err;

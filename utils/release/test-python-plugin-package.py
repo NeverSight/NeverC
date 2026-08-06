@@ -47,6 +47,10 @@ REQUIRED_PYTHON_SDK_FILES = (
     "examples/ollvm/ollvm_plugin.py",
     "examples/ollvm/README.md",
 )
+# Assertions-off compiler builds discard IR value names by default.  The OLLVM
+# package probe deliberately checks the public pass's names, so preserve them
+# explicitly instead of making the result depend on the compiler build mode.
+OLLVM_IR_FLAGS = ("-O0", "-fno-discard-value-names", "-S", "-emit-llvm")
 HIDDEN_ENVIRONMENT = {
     "PYTHONPATH", "PYTHONHOME", "PYTHONUSERBASE", "Python3_ROOT_DIR",
     "LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH", "DYLD_FALLBACK_LIBRARY_PATH",
@@ -287,9 +291,7 @@ def run_ollvm_probe(prefix: Path, executable: Path) -> None:
                 "--ollvm-include",
                 "ollvm_package_probe",
                 f"--target={target}",
-                "-O0",
-                "-S",
-                "-emit-llvm",
+                *OLLVM_IR_FLAGS,
                 str(source),
                 "-o",
                 str(ir),

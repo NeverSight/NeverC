@@ -108,6 +108,11 @@ class PythonPluginPackageTest(unittest.TestCase):
                 complete.replace("ollvm.bcf.gate", "missing"), "x86_64"
             )
 
+    def test_ollvm_ir_probe_preserves_names_in_release_builds(self):
+        self.assertIn(
+            "-fno-discard-value-names", self.module.OLLVM_IR_FLAGS
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

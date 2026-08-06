@@ -186,6 +186,16 @@ def check_source_build_contract() -> list[str]:
                     f"{install_script.relative_to(REPOSITORY)}: missing install contract token {token}"
                 )
 
+    package_verifier = (
+        REPOSITORY / "utils" / "release" / "test-python-plugin-package.py"
+    )
+    package_verifier_text = package_verifier.read_text(encoding="utf-8")
+    if "-fno-discard-value-names" not in package_verifier_text:
+        failures.append(
+            f"{package_verifier.relative_to(REPOSITORY)}: OLLVM IR package "
+            "proof does not preserve transformation names in release builds"
+        )
+
     workflow_path = WORKFLOWS / "python-plugin-bindings.yml"
     workflow = workflow_path.read_text(encoding="utf-8")
     required_workflow = (
@@ -209,6 +219,7 @@ def check_source_build_contract() -> list[str]:
         "PluginPythonBridgeTest.*",
         "examples/ollvm/ollvm_plugin.py",
         "ollvm.fla.dispatch",
+        "-fno-discard-value-names",
     )
     for token in required_workflow:
         if token not in workflow:
