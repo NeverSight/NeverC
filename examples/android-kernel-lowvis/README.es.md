@@ -26,7 +26,7 @@ O manualmente:
 ```bash
 adb push nvk_lowvis.ko /data/local/tests/
 adb shell su -c 'insmod /data/local/tests/nvk_lowvis.ko'
-adb shell su -c 'dmesg | grep nvk_lowvis'
+adb shell su -c 'dmesg | grep neverc_krt_lowvis'
 ```
 
 ## Descarga
@@ -38,5 +38,5 @@ neverc make rmmod
 O manualmente:
 
 ```bash
-adb shell su -c 'rmmod nvk_lowvis'
+adb shell su -c 'rmmod neverc_krt_lowvis'
 ```

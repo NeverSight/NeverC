@@ -26,7 +26,7 @@ Ou manuellement :
 ```bash
 adb push nvk_full.ko /data/local/tests/
 adb shell su -c 'insmod /data/local/tests/nvk_full.ko'
-adb shell su -c 'dmesg | grep nvk_full'
+adb shell su -c 'dmesg | grep neverc_krt_full'
 ```
 
 ## Déchargement
@@ -38,5 +38,5 @@ neverc make rmmod
 Ou manuellement :
 
 ```bash
-adb shell su -c 'rmmod nvk_full'
+adb shell su -c 'rmmod neverc_krt_full'
 ```

@@ -26,7 +26,7 @@ neverc make run
 ```bash
 adb push nvk_hello.ko /data/local/tests/
 adb shell su -c 'insmod /data/local/tests/nvk_hello.ko'
-adb shell su -c 'dmesg | grep nvk_hello'
+adb shell su -c 'dmesg | grep neverc_krt_hello'
 ```
 
 ## 卸载模块
@@ -38,5 +38,5 @@ neverc make rmmod
 或手动操作：
 
 ```bash
-adb shell su -c 'rmmod nvk_hello'
+adb shell su -c 'rmmod neverc_krt_hello'
 ```

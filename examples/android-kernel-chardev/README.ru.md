@@ -26,7 +26,7 @@ neverc make run
 ```bash
 adb push nvk_chardev.ko /data/local/tests/
 adb shell su -c 'insmod /data/local/tests/nvk_chardev.ko'
-adb shell su -c 'dmesg | grep nvk_chardev'
+adb shell su -c 'dmesg | grep neverc_krt_chardev'
 ```
 
 ## Выгрузка
@@ -38,5 +38,5 @@ neverc make rmmod
 Или вручную:
 
 ```bash
-adb shell su -c 'rmmod nvk_chardev'
+adb shell su -c 'rmmod neverc_krt_chardev'
 ```

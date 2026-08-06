@@ -26,7 +26,7 @@ Oppure manualmente:
 ```bash
 adb push nvk_hello.ko /data/local/tests/
 adb shell su -c 'insmod /data/local/tests/nvk_hello.ko'
-adb shell su -c 'dmesg | grep nvk_hello'
+adb shell su -c 'dmesg | grep neverc_krt_hello'
 ```
 
 ## Scaricamento
@@ -38,5 +38,5 @@ neverc make rmmod
 Oppure manualmente:
 
 ```bash
-adb shell su -c 'rmmod nvk_hello'
+adb shell su -c 'rmmod neverc_krt_hello'
 ```

@@ -26,7 +26,7 @@ Oder manuell:
 ```bash
 adb push nvk_driver.ko /data/local/tests/
 adb shell su -c 'insmod /data/local/tests/nvk_driver.ko'
-adb shell su -c 'dmesg | grep nvk_driver'
+adb shell su -c 'dmesg | grep neverc_krt_driver'
 ```
 
 ## Entladen
@@ -38,5 +38,5 @@ neverc make rmmod
 Oder manuell:
 
 ```bash
-adb shell su -c 'rmmod nvk_driver'
+adb shell su -c 'rmmod neverc_krt_driver'
 ```

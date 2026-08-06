@@ -10,6 +10,7 @@ NEVERC ?= ../../build-neverc/bin/neverc
 
 TARGET  = aarch64-linux-android
 MODULE  = nvk_probe.ko
+MODNAME = neverc_krt_probe_demo
 SRCS    = main.c
 
 KERNEL ?= 510
@@ -34,7 +35,7 @@ insmod: push
 	adb shell su -c 'insmod /data/local/tests/$(MODULE)'
 
 rmmod:
-	adb shell su -c 'rmmod $(MODULE:.ko=)'
+	adb shell su -c 'rmmod $(MODNAME)'
 
 log:
 	adb shell su -c 'dmesg | grep neverc_krt_probe | tail -20'

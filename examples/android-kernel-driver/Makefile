@@ -5,6 +5,7 @@ NEVERC ?= ../../build-neverc/bin/neverc
 
 TARGET  = aarch64-linux-android
 MODULE  = nvk_driver.ko
+MODNAME = neverc_krt_driver
 SRCS    = main.c
 
 # -DNVK_KERNEL=510|515|601|606|612|618 selects the target kernel preset (default 510).
@@ -28,7 +29,7 @@ insmod: push
 	adb shell su -c 'insmod /data/local/tests/$(MODULE)'
 
 rmmod:
-	adb shell su -c 'rmmod $(MODULE:.ko=)'
+	adb shell su -c 'rmmod $(MODNAME)'
 
 run: insmod
 	adb shell su -c 'dmesg | tail -5'

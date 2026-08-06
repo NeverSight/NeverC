@@ -8,6 +8,7 @@ NEVERC ?= ../../build-neverc/bin/neverc
 
 TARGET  = aarch64-linux-android
 MODULE  = nvk_netlink.ko
+MODNAME = neverc_krt_netlink
 SRCS    = main.c
 
 KERNEL ?= 510
@@ -32,7 +33,7 @@ insmod: push
 	adb shell su -c 'insmod /data/local/tests/$(MODULE)'
 
 rmmod:
-	adb shell su -c 'rmmod $(MODULE:.ko=)'
+	adb shell su -c 'rmmod $(MODNAME)'
 
 run: insmod
 	adb shell su -c 'dmesg | tail -5'

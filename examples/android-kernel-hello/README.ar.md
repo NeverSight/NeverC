@@ -28,7 +28,7 @@ neverc make run
 ```bash
 adb push nvk_hello.ko /data/local/tests/
 adb shell su -c 'insmod /data/local/tests/nvk_hello.ko'
-adb shell su -c 'dmesg | grep nvk_hello'
+adb shell su -c 'dmesg | grep neverc_krt_hello'
 ```
 
 ## إلغاء التحميل
@@ -40,7 +40,7 @@ neverc make rmmod
 أو يدويًا:
 
 ```bash
-adb shell su -c 'rmmod nvk_hello'
+adb shell su -c 'rmmod neverc_krt_hello'
 ```
 
 </div>

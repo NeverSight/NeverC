@@ -26,7 +26,7 @@ neverc make run
 ```bash
 adb push nvk_netlink.ko /data/local/tests/
 adb shell su -c 'insmod /data/local/tests/nvk_netlink.ko'
-adb shell su -c 'dmesg | grep nvk_netlink'
+adb shell su -c 'dmesg | grep neverc_krt_netlink'
 ```
 
 ## 언로드
@@ -38,5 +38,5 @@ neverc make rmmod
 또는 수동으로:
 
 ```bash
-adb shell su -c 'rmmod nvk_netlink'
+adb shell su -c 'rmmod neverc_krt_netlink'
 ```
