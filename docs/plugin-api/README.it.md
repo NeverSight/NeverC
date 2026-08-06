@@ -26,6 +26,7 @@ chiedono all'host per identificatore.
 
 | Guida | Contenuto |
 |---|---|
+| [Plugin Python](python.it.md) | Python embedded opzionale, ciclo di vita, opzioni, observer read-only, diagnostica e limiti attuali |
 | [API Driver](driver.it.md) | [Riga di comando](driver.it.md#argomenti-grezzi), [scelta della toolchain](driver.it.md#selezione-della-toolchain), [grafo delle azioni](driver.it.md#il-grafo-delle-azioni), [grafo dei job](driver.it.md#il-grafo-dei-job) |
 | [API Source e I/O](source.it.md) | [Provider VFS](source.it.md#provider-di-file-system-virtuale), [posizioni sorgente](source.it.md#posizioni-sorgente), [buffer](source.it.md#leggere-file), [sink di output](source.it.md#scrivere-output), [dipendenze](source.it.md#registrare-le-dipendenze) |
 | [API Preprocessore](prep.it.md) | [Token](prep.it.md#leggere-i-token), [macro](prep.it.md#identificatori-e-macro), [pragma](prep.it.md#pragma-e-interrogazioni-di-funzionalità), [inclusioni](prep.it.md#reindirizzare-uninclusione), [interrogazioni sulle funzionalità](prep.it.md#pragma-e-interrogazioni-di-funzionalità), [39 tipi di evento](prep.it.md#sottoscrizione-agli-eventi) |

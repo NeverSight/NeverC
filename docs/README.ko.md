@@ -63,6 +63,7 @@ NeverC는 순수 C ABI로 툴체인 전체를 개방합니다. 플러그인은 �
 | 문서 | 설명 |
 |------|------|
 | [README](plugin-api/README.ko.md) | 진입점, 페이즈, 인터페이스 협상, 등록, ABI 규칙 |
+| [Python 플러그인](plugin-api/python.ko.md) | 선택적 embedded Python, 수명 주기, 옵션, read-only observer, 진단 및 제한 |
 | [드라이버 API](plugin-api/driver.ko.md) | 명령줄, 툴체인 선택, 액션 그래프, 잡 그래프 |
 | [소스와 I/O API](plugin-api/source.ko.md) | VFS 프로바이더, 소스 위치, 버퍼, 출력 싱크, 의존성 |
 | [전처리기 API](plugin-api/prep.ko.md) | 토큰, 매크로, pragma, include, 기능 질의, 39가지 이벤트 |

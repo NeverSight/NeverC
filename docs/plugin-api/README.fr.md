@@ -26,6 +26,7 @@ vous demandez à l'hôte par identifiant.
 
 | Guide | Contenu |
 |---|---|
+| [Plugins Python](python.fr.md) | Python embarqué facultatif, cycle de vie, options, observers en lecture seule, diagnostics et limites actuelles |
 | [API Driver](driver.fr.md) | [Ligne de commande](driver.fr.md#arguments-bruts), [choix de la chaîne d'outils](driver.fr.md#sélection-de-la-chaîne-doutils), [graphe d'actions](driver.fr.md#le-graphe-dactions), [graphe de jobs](driver.fr.md#le-graphe-de-tâches) |
 | [API Source et E/S](source.fr.md) | [Fournisseurs VFS](source.fr.md#fournisseurs-de-système-de-fichiers-virtuel), [positions source](source.fr.md#emplacements-source), [tampons](source.fr.md#lire-des-fichiers), [puits de sortie](source.fr.md#écrire-des-sorties), [dépendances](source.fr.md#enregistrer-les-dépendances) |
 | [API Préprocesseur](prep.fr.md) | [Jetons](prep.fr.md#lire-les-jetons), [macros](prep.fr.md#identifiants-et-macros), [pragmas](prep.fr.md#pragmas-et-requêtes-de-fonctionnalité), [inclusions](prep.fr.md#rediriger-une-inclusion), [requêtes de fonctionnalités](prep.fr.md#pragmas-et-requêtes-de-fonctionnalité), [39 types d'événements](prep.fr.md#abonnement-aux-événements) |

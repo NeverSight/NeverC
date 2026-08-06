@@ -158,13 +158,13 @@ Error PluginSession::initialize() {
 
   for (auto &State : PluginStates) {
     const PluginDescriptorRecord &Descriptor = State->Module->descriptor();
-    if (!Descriptor.SessionBegin)
+    if (!State->Module->hasSessionBegin())
       continue;
     void *OutState = nullptr;
     auto Result = invokeCallback(
         Descriptor.PluginID, "SessionBegin",
         [&] {
-          return Descriptor.SessionBegin(
+          return State->Module->invokeSessionBegin(
               &ProcessServices.coreAPI(), Handle,
               State->Module->processState(), &OutState);
         },
@@ -214,11 +214,11 @@ Error PluginSession::rollbackBegunPlugins() {
     if (!State.Begun)
       continue;
     const PluginDescriptorRecord &Descriptor = State.Module->descriptor();
-    if (Descriptor.SessionEnd) {
+    if (State.Module->hasSessionEnd()) {
       auto Result = invokeCallback(
           Descriptor.PluginID, "SessionEnd",
           [&] {
-            return Descriptor.SessionEnd(
+            return State.Module->invokeSessionEnd(
                 &ProcessServices.coreAPI(), Handle,
                 State.Module->processState(), State.State);
           },

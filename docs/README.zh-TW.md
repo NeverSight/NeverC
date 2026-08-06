@@ -63,6 +63,7 @@ NeverC 透過一套純 C ABI 開放整條工具鏈。外掛是一個共享模組
 | 文件 | 說明 |
 |------|------|
 | [README](plugin-api/README.zh-TW.md) | 進入點、階段、介面協商、註冊、ABI 規則 |
+| [Python 外掛](plugin-api/python.zh-TW.md) | 選用的嵌入式 Python、生命週期、選項、唯讀 observer、diagnostic 與限制 |
 | [驅動程式 API](plugin-api/driver.zh-TW.md) | 命令列、工具鏈選擇、action 圖、job 圖 |
 | [Source 與 I/O API](plugin-api/source.zh-TW.md) | VFS Provider、原始碼位置、緩衝區、輸出 sink、相依性 |
 | [前置處理器 API](plugin-api/prep.zh-TW.md) | token、巨集、pragma、include、特性查詢、39 種事件 |

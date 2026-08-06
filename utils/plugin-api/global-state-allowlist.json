@@ -66,7 +66,7 @@
       "cleared_by_test": "MergeTests"
     }
   ],
-  "_binary_symbols_comment": "Writable *process* data symbols in the shipped `neverc` binary (build-dir/bin/neverc) whose name is under neverc::plugin/neverc::dyncode but which are NOT process-global mutable compilation state. Thread-local symbols never belong here: the binary layer skips them, because ELF names one `.tbss` object where Mach-O emits a `__thread_vars` descriptor plus a `$tlv$init` storage symbol, and judging that here made the gate pass on one host and fail on another for identical sources. Put them in `entries` instead. Eligible categories: (a) address-only LLVM legacy-pass identity tokens (`char Pass::ID`), (b) const objects whose vtable pointer forces a relocation into writable storage, and (c) synchronization primitives with no compilation state. A const interface or lookup table is NOT eligible: make it `constexpr` so it is constant-initialized into read-only storage instead of adding it here. Session/Task/options/graph/symbol/output/cache-journal payloads must NEVER appear here.",
+  "_binary_symbols_comment": "Writable *process* data symbols in the shipped `neverc` binary (build-dir/bin/neverc) whose name is under neverc::plugin/neverc::dyncode but which are NOT process-global mutable compilation state. Thread-local symbols never belong here: the binary layer skips them, because ELF names one `.tbss` object where Mach-O emits a `__thread_vars` descriptor plus a `$tlv$init` storage symbol, and judging that here made the gate pass on one host and fail on another for identical sources. Put them in `entries` instead. Eligible categories: (a) address-only LLVM legacy-pass identity tokens (`char Pass::ID`), (b) const objects whose vtable pointer forces a relocation into writable storage, (c) synchronization primitives with no compilation state, and (d) foreign-runtime descriptors that the foreign ABI requires to have static writable lifetime but that contain no NeverC compilation payload. A const interface or lookup table is NOT eligible: make it `constexpr` so it is constant-initialized into read-only storage instead of adding it here. Session/Task/options/graph/symbol/output/cache-journal payloads must NEVER appear here.",
   "binary_symbols": [
     {
       "symbol": "neverc::dyncode::(anonymous namespace)::DynCodeMIRTransformPass::ID",
@@ -115,6 +115,18 @@
       "owner": "plugin PluginLLVMOptionSnapshot",
       "kind": "synchronization primitive (no compilation state)",
       "justification": "`static std::shared_mutex Gate` -- the process-serial gate guarding LLVM cl::opt install/restore. A lock, not compilation state; the spec explicitly permits sync primitives without compilation state."
+    },
+    {
+      "symbol": "neverc::plugin::(anonymous namespace)::InterpreterOnce",
+      "owner": "PythonPluginLoader",
+      "kind": "synchronization primitive (no compilation state)",
+      "justification": "`std::once_flag InterpreterOnce` serializes CPython initialization. It stores no session, task, plugin, option, graph, artifact, or compiler payload."
+    },
+    {
+      "symbol": "neverc::plugin::(anonymous namespace)::BridgeModule",
+      "owner": "PythonPluginLoader",
+      "kind": "CPython-required static module descriptor",
+      "justification": "CPython's `PyModuleDef` ABI requires a static writable descriptor because CPython owns its internal reference-count base. Its method table is allocated once from CPython's heap under the GIL; neither object contains NeverC compilation payload."
     }
   ]
 }

@@ -5,6 +5,8 @@ buildable examples. Start with
 [`docs/plugin-api/README.md`](../docs/plugin-api/README.md); the Target/MC/
 assembly/object guide is
 [`docs/plugin-api/target-mc-object.md`](../docs/plugin-api/target-mc-object.md).
+The optional Python authoring package lives in [`python/`](python/) and is
+documented in [`docs/plugin-api/python.md`](../docs/plugin-api/python.md).
 
 Build every example with both the configured host C compiler and NeverC:
 

@@ -1571,22 +1571,30 @@ Error activatePluginPlan(PluginProcessServices &ProcessServices,
 
   auto callbackError = [&](const PluginModule &Module, StringRef Callback,
                            NevercStatus StatusValue) -> Error {
+    auto withRuntimeDetail = [&](std::string Message) -> Error {
+      std::string Detail = Module.runtimeError();
+      if (!Detail.empty())
+        Message += ":\n" + Detail;
+      return registrationError(Message);
+    };
     if (StatusValue.Code == NEVERC_STATUS_OK) {
       if (StatusValue.Flags == 0 && StatusValue.Detail == 0)
         return Error::success();
-      return registrationError(
-          "plugin '" + Module.descriptor().PluginID + "' callback '" +
-          Callback + "' returned an invalid success status");
+      return withRuntimeDetail(
+          (Twine("plugin '") + Module.descriptor().PluginID + "' callback '" +
+           Callback + "' returned an invalid success status")
+              .str());
     }
     if (StatusValue.Code < NEVERC_STATUS_INVALID_ARGUMENT ||
         StatusValue.Code > NEVERC_STATUS_NOT_FOUND)
-      return registrationError(
-          "plugin '" + Module.descriptor().PluginID + "' callback '" +
-          Callback + "' returned an unknown status code");
-    return registrationError("plugin '" + Module.descriptor().PluginID +
-                             "' callback '" + Callback +
-                             "' failed with status code " +
-                             Twine(StatusValue.Code));
+      return withRuntimeDetail((Twine("plugin '") +
+                                Module.descriptor().PluginID + "' callback '" +
+                                Callback + "' returned an unknown status code")
+                                   .str());
+    return withRuntimeDetail(
+        (Twine("plugin '") + Module.descriptor().PluginID + "' callback '" +
+         Callback + "' failed with status code " + Twine(StatusValue.Code))
+            .str());
   };
 
   auto invoke = [&](auto &&Callback) -> Expected<NevercStatus> {
@@ -1604,10 +1612,9 @@ Error activatePluginPlan(PluginProcessServices &ProcessServices,
   auto destroyBegun = [&] {
     for (auto It = NewlyBegun.rbegin(); It != NewlyBegun.rend(); ++It) {
       PluginModule &Module = **It;
-      const PluginDescriptorRecord &Descriptor = Module.descriptor();
-      if (Descriptor.Destroy) {
+      if (Module.hasDestroy()) {
         auto Ignored = invoke([&] {
-          return Descriptor.Destroy(Core, Module.processState());
+          return Module.invokeDestroy(Core, Module.processState());
         });
         if (!Ignored)
           consumeError(Ignored.takeError());
@@ -1631,9 +1638,9 @@ Error activatePluginPlan(PluginProcessServices &ProcessServices,
 
     void *ProcessState = nullptr;
     NevercStatus StatusValue = neverc_status_ok();
-    if (Module->descriptor().ProcessBegin) {
+    if (Module->hasProcessBegin()) {
       auto Result = invoke([&] {
-        return Module->descriptor().ProcessBegin(Core, &ProcessState);
+        return Module->invokeProcessBegin(Core, &ProcessState);
       });
       if (!Result) {
         destroyBegun();
@@ -1664,7 +1671,7 @@ Error activatePluginPlan(PluginProcessServices &ProcessServices,
     auto Transaction = std::make_unique<RegistrationTransaction>(
         Module->descriptor().PluginID);
     auto Result = invoke([&] {
-      return Module->descriptor().Register(
+      return Module->invokeRegister(
           Core, &Registrar, Transaction.get(), Module->processState());
     });
     if (!Result) {

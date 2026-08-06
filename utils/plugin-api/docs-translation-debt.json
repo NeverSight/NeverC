@@ -8,7 +8,7 @@
     "Two other checks read it, because a page that carries less prose also",
     "cites less of the repository and has to point at English anchors its own",
     "locale does not have yet.",
-    "The plugin API guides are deliberately absent: all 121 are complete."
+    "The plugin API guides are deliberately absent: all 132 are complete."
   ],
   "incomplete": [
     "docs/builtins/README.ar.md",
@@ -84,6 +84,14 @@
     "docs/dyncode-compiler/kernel-mode-dyncode/README.ja.md",
     "docs/dyncode-compiler/kernel-mode-dyncode/README.ko.md",
     "docs/dyncode-compiler/kernel-mode-dyncode/README.ru.md",
-    "docs/dyncode-compiler/kernel-mode-dyncode/README.zh-TW.md"
+    "docs/dyncode-compiler/kernel-mode-dyncode/README.zh-TW.md",
+    "docs/run/README.ar.md",
+    "docs/run/README.de.md",
+    "docs/run/README.es.md",
+    "docs/run/README.fr.md",
+    "docs/run/README.it.md",
+    "docs/run/README.ja.md",
+    "docs/run/README.ko.md",
+    "docs/run/README.ru.md"
   ]
 }

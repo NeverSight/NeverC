@@ -26,6 +26,7 @@ per ID anfordert.
 
 | Leitfaden | Inhalt |
 |---|---|
+| [Python-Plugins](python.de.md) | Optionales eingebettetes Python, Lebenszyklus, Optionen, schreibgeschützte Observer, Diagnosen und aktuelle Grenzen |
 | [Driver-API](driver.de.md) | [Kommandozeile](driver.de.md#rohe-argumente), [Toolchain-Auswahl](driver.de.md#toolchain-auswahl), [Aktionsgraph](driver.de.md#der-aktionsgraph), [Job-Graph](driver.de.md#der-job-graph) |
 | [Source- und E/A-API](source.de.md) | [VFS-Provider](source.de.md#anbieter-für-virtuelle-dateisysteme), [Quellpositionen](source.de.md#quelltextpositionen), [Puffer](source.de.md#dateien-lesen), [Ausgabesenken](source.de.md#ausgaben-schreiben), [Abhängigkeiten](source.de.md#abhängigkeiten-festhalten) |
 | [Präprozessor-API](prep.de.md) | [Token](prep.de.md#token-lesen), [Makros](prep.de.md#bezeichner-und-makros), [Pragmas](prep.de.md#pragmas-und-feature-abfragen), [Includes](prep.de.md#ein-include-umleiten), [Feature-Abfragen](prep.de.md#pragmas-und-feature-abfragen), [39 Ereignisarten](prep.de.md#ereignisabonnement) |

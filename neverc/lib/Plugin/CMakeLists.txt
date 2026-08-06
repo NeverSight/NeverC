@@ -1,6 +1,10 @@
 set(LLVM_LINK_COMPONENTS Support)
 
-find_package(Python3 REQUIRED COMPONENTS Interpreter)
+if(NEVERC_ENABLE_PYTHON_PLUGINS)
+  find_package(Python3 3.10 REQUIRED COMPONENTS Interpreter Development.Embed)
+else()
+  find_package(Python3 REQUIRED COMPONENTS Interpreter)
+endif()
 set(NEVERC_PLUGIN_PHASE_SCHEMA_GENERATOR
     "${CMAKE_CURRENT_SOURCE_DIR}/../../../utils/plugin-api/gen-phase-schema.py")
 set(NEVERC_PLUGIN_PHASE_SCHEMA
@@ -69,6 +73,10 @@ set(NEVERC_PLUGIN_OBJECT_SCHEMA_TEMPLATE
     "${CMAKE_CURRENT_SOURCE_DIR}/../../include/neverc/Plugin/Schema/PluginObjectSchema.inc.in")
 set(NEVERC_PLUGIN_OBJECT_SCHEMA_OUTPUT
     "${CMAKE_CURRENT_SOURCE_DIR}/../../include/neverc/Plugin/Schema/PluginObjectSchema.inc")
+set(NEVERC_PLUGIN_PYTHON_PHASE_GENERATOR
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../../utils/plugin-api/gen-python-phases.py")
+set(NEVERC_PLUGIN_PYTHON_PHASE_OUTPUT
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../../pluginsdk/python/neverc_plugin/phases.py")
 
 add_custom_target(nevercPluginPhaseSchema
   COMMAND ${Python3_EXECUTABLE}
@@ -180,6 +188,27 @@ add_custom_target(nevercPluginObjectSchema
   VERBATIM
   )
 
+add_custom_target(nevercPythonPluginPhaseSchema
+  COMMAND ${Python3_EXECUTABLE}
+          ${NEVERC_PLUGIN_PYTHON_PHASE_GENERATOR}
+          --check
+          --schema ${NEVERC_PLUGIN_PHASE_SCHEMA}
+          --output ${NEVERC_PLUGIN_PYTHON_PHASE_OUTPUT}
+  DEPENDS
+    ${NEVERC_PLUGIN_PYTHON_PHASE_GENERATOR}
+    ${NEVERC_PLUGIN_PHASE_SCHEMA}
+    ${NEVERC_PLUGIN_PYTHON_PHASE_OUTPUT}
+  COMMENT "Checking NeverC Python plugin phase bindings"
+  VERBATIM
+  )
+
+set(NEVERC_PLUGIN_PYTHON_SOURCES)
+if(NEVERC_ENABLE_PYTHON_PLUGINS)
+  list(APPEND NEVERC_PLUGIN_PYTHON_SOURCES
+    Python/PythonPluginLoader.cpp
+  )
+endif()
+
 add_neverc_library(nevercPluginCore
   Core/CoreAPIBridge.cpp
   Core/PluginArtifactRegistry.cpp
@@ -198,9 +227,21 @@ add_neverc_library(nevercPluginCore
   Core/PluginSession.cpp
   Core/PluginTaskContext.cpp
 
+  ${NEVERC_PLUGIN_PYTHON_SOURCES}
+
   LINK_LIBS
   nevercFoundation
   )
+
+add_dependencies(nevercPluginCore nevercPythonPluginPhaseSchema)
+
+if(NEVERC_ENABLE_PYTHON_PLUGINS)
+  # add_neverc_library compiles sources through an object-library target;
+  # definitions placed only on the archive wrapper do not reach those sources.
+  target_compile_definitions(obj.nevercPluginCore
+    PRIVATE NEVERC_ENABLE_PYTHON_PLUGINS=1)
+  target_link_libraries(nevercPluginCore PRIVATE Python3::Python)
+endif()
 
 if(MSVC)
   set_source_files_properties(
@@ -211,6 +252,7 @@ if(MSVC)
     Core/PluginPhaseExecutor.cpp
     Core/PluginSession.cpp
     Core/PluginTaskContext.cpp
+    Python/PythonPluginLoader.cpp
     PROPERTIES COMPILE_OPTIONS "/EHsc"
   )
 else()
@@ -222,6 +264,7 @@ else()
     Core/PluginPhaseExecutor.cpp
     Core/PluginSession.cpp
     Core/PluginTaskContext.cpp
+    Python/PythonPluginLoader.cpp
     PROPERTIES COMPILE_OPTIONS "-fexceptions;-funwind-tables"
   )
 endif()

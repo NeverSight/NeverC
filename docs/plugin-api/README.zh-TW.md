@@ -21,6 +21,7 @@ neverc_plugin_entry(const NevercBootstrapAPI *Bootstrap,
 
 | 指南 | 涵蓋內容 |
 |---|---|
+| [Python 外掛](python.zh-TW.md) | 選用的嵌入式 Python、生命週期、選項、唯讀 observer、diagnostic 與目前限制 |
 | [驅動程式 API](driver.zh-TW.md) | [命令列](driver.zh-TW.md#原始引數)、[工具鏈選擇](driver.zh-TW.md#工具鏈選擇)、[action 圖](driver.zh-TW.md#action-圖)、[job 圖](driver.zh-TW.md#job-圖) |
 | [Source 與 I/O API](source.zh-TW.md) | [VFS Provider](source.zh-TW.md#虛擬檔案系統-provider)、[原始碼位置](source.zh-TW.md#原始碼位置)、[緩衝區](source.zh-TW.md#讀取檔案)、[輸出 sink](source.zh-TW.md#寫出輸出)、[相依性](source.zh-TW.md#記錄相依) |
 | [前置處理器 API](prep.zh-TW.md) | [token](prep.zh-TW.md#讀取-token)、[巨集](prep.zh-TW.md#識別字與巨集)、[pragma](prep.zh-TW.md#pragma-與功能查詢)、[include](prep.zh-TW.md#導向另一個-include)、[特性查詢](prep.zh-TW.md#pragma-與功能查詢)、[39 種事件](prep.zh-TW.md#事件訂閱) |

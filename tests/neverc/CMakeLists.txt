@@ -57,6 +57,24 @@ set(NEVERC_TEST_SOURCES
   StrHashTests.cpp
   XorStrTests.cpp
 )
+if(NEVERC_ENABLE_PYTHON_PLUGINS)
+  list(APPEND NEVERC_TEST_SOURCES PluginPythonBridgeTests.cpp)
+endif()
+
+set(_NEVERC_PYTHON_SDK_SOURCE
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../pluginsdk/python")
+set(_NEVERC_PYTHON_TEST_ENV
+    "PYTHONDONTWRITEBYTECODE=1;PYTHONPATH=${_NEVERC_PYTHON_SDK_SOURCE}")
+if(DEFINED ENV{PYTHONPATH} AND NOT "$ENV{PYTHONPATH}" STREQUAL "")
+  if(CMAKE_HOST_WIN32)
+    string(REPLACE ";" "\\;" _NEVERC_EXISTING_PYTHONPATH
+                   "$ENV{PYTHONPATH}")
+    string(APPEND _NEVERC_PYTHON_TEST_ENV
+           "\\;${_NEVERC_EXISTING_PYTHONPATH}")
+  else()
+    string(APPEND _NEVERC_PYTHON_TEST_ENV ":$ENV{PYTHONPATH}")
+  endif()
+endif()
 
 # NEVERC_EXTERNAL_BINARY: spawn a prebuilt neverc (e.g. downloaded from CI) instead
 # of $<TARGET_FILE:neverc>. Debug workflows use this to build only the gtest
@@ -83,6 +101,13 @@ target_link_libraries(neverc-tests PRIVATE
   LLVMBitWriter
   LLVMObject
 )
+if(NEVERC_ENABLE_PYTHON_PLUGINS)
+  target_compile_definitions(neverc-tests PRIVATE
+    NEVERC_TEST_PYTHON_MINIMAL_PLUGIN="${CMAKE_CURRENT_SOURCE_DIR}/Inputs/Plugin/Python/MinimalPlugin.py"
+    NEVERC_TEST_PYTHON_DRIVER_TRACE_PLUGIN="${CMAKE_CURRENT_SOURCE_DIR}/Inputs/Plugin/Python/DriverTracePlugin.py"
+    NEVERC_TEST_PYTHON_EXCEPTION_PLUGIN="${CMAKE_CURRENT_SOURCE_DIR}/Inputs/Plugin/Python/ExceptionPlugin.py"
+  )
+endif()
 
 # Apply the C23 compile feature to an ABI smoke-compile target, falling back to
 # C11 on toolchains whose CMake does not advertise `c_std_23` (for example
@@ -1284,6 +1309,9 @@ add_executable(neverc-plugin-core-tests
   PluginRegistryTests.cpp
   PluginSessionTests.cpp
 )
+if(NEVERC_ENABLE_PYTHON_PLUGINS)
+  target_sources(neverc-plugin-core-tests PRIVATE PythonPluginTests.cpp)
+endif()
 target_link_libraries(neverc-plugin-core-tests PRIVATE
   GTest::gtest
   GTest::gtest_main
@@ -1300,6 +1328,8 @@ target_include_directories(neverc-plugin-core-tests PRIVATE
 )
 target_compile_features(neverc-plugin-core-tests PRIVATE cxx_std_17)
 target_compile_definitions(neverc-plugin-core-tests PRIVATE
+  NEVERC_TEST_PYTHON_PLUGINS_ENABLED=$<BOOL:${NEVERC_ENABLE_PYTHON_PLUGINS}>
+  NEVERC_TEST_PYTHON_MINIMAL_PLUGIN="${CMAKE_CURRENT_SOURCE_DIR}/Inputs/Plugin/Python/MinimalPlugin.py"
   NEVERC_TEST_MINIMAL_PLUGIN="$<TARGET_FILE:neverc-test-plugin-minimal>"
   NEVERC_TEST_REMOVED_PROTOTYPE_PLUGIN="$<TARGET_FILE:neverc-test-plugin-removed-prototype>"
   NEVERC_TEST_DUPLICATE_ID_PLUGIN="$<TARGET_FILE:neverc-test-plugin-duplicate-id>"
@@ -1332,6 +1362,15 @@ target_compile_definitions(neverc-plugin-core-tests PRIVATE
   NEVERC_TEST_TASK_FAILURE_PLUGIN="$<TARGET_FILE:neverc-test-plugin-task-failure>"
   NEVERC_TEST_MISSING_ENTRY_PLUGIN="$<TARGET_FILE:neverc-test-plugin-missing-entry>"
 )
+if(NEVERC_ENABLE_PYTHON_PLUGINS)
+  target_compile_definitions(neverc-plugin-core-tests PRIVATE
+    NEVERC_TEST_PYTHON_OTHER_PLUGIN="${CMAKE_CURRENT_SOURCE_DIR}/Inputs/Plugin/Python/OtherPlugin.py"
+    NEVERC_TEST_PYTHON_DUPLICATE_PLUGIN="${CMAKE_CURRENT_SOURCE_DIR}/Inputs/Plugin/Python/DuplicatePlugin.py"
+    NEVERC_TEST_PYTHON_INVALID_PLUGIN="${CMAKE_CURRENT_SOURCE_DIR}/Inputs/Plugin/Python/InvalidPlugin.py"
+    NEVERC_TEST_PYTHON_LIFECYCLE_PLUGIN="${CMAKE_CURRENT_SOURCE_DIR}/Inputs/Plugin/Python/LifecyclePlugin.py"
+    NEVERC_TEST_PYTHON_PROCESS_EXCEPTION_PLUGIN="${CMAKE_CURRENT_SOURCE_DIR}/Inputs/Plugin/Python/ProcessExceptionPlugin.py"
+  )
+endif()
 add_dependencies(neverc-plugin-core-tests
   neverc-test-plugin-minimal
   neverc-test-plugin-removed-prototype
@@ -1369,6 +1408,7 @@ add_dependencies(neverc-plugin-core-tests
 gtest_discover_tests(neverc-plugin-core-tests
   PROPERTIES
     TIMEOUT 60
+    ENVIRONMENT "${_NEVERC_PYTHON_TEST_ENV}"
   DISCOVERY_TIMEOUT 300
 )
 
@@ -1837,6 +1877,20 @@ add_test(
           --check
 )
 add_test(
+  NAME PluginPythonPhaseBindings
+  COMMAND ${Python3_EXECUTABLE}
+          ${CMAKE_CURRENT_SOURCE_DIR}/../../utils/plugin-api/gen-python-phases.py
+          --check
+)
+add_test(
+  NAME PluginPythonSDKTests
+  COMMAND ${CMAKE_COMMAND} -E env
+          ${_NEVERC_PYTHON_TEST_ENV}
+          ${Python3_EXECUTABLE} -m unittest discover
+          -s ${CMAKE_CURRENT_SOURCE_DIR}/../../pluginsdk/python/tests
+          -v
+)
+add_test(
   NAME PluginASTSchemaGeneratorTests
   COMMAND ${Python3_EXECUTABLE}
           ${CMAKE_CURRENT_SOURCE_DIR}/../../utils/plugin-api/gen-ast-schema.py
@@ -1927,6 +1981,8 @@ add_test(
 set_tests_properties(
   PluginPhaseSchemaGeneratorTests
   PluginPrepSchemaGeneratorTests
+  PluginPythonPhaseBindings
+  PluginPythonSDKTests
   PluginASTSchemaGeneratorTests
   PluginPrepObserverCoverageTests
   PluginCoverageManifestUnitTests
@@ -2132,6 +2188,7 @@ add_dependencies(neverc-tests
 gtest_discover_tests(neverc-tests
   PROPERTIES
     TIMEOUT 900
+    ENVIRONMENT "${_NEVERC_PYTHON_TEST_ENV}"
   DISCOVERY_TIMEOUT 300
 )
 
