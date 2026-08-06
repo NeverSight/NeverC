@@ -20,7 +20,7 @@ neuer samt Embedding-Headern und Shared Library. Die Installation kopiert die
 exakt gewählte Version automatisch in das benachbarte Verzeichnis `python/`.
 Das Build-Tree-Programm kann noch das Build-Python verwenden; der installierte
 Compiler benötigt zur Laufzeit weder externes Python noch `PYTHONHOME` oder
-`PYTHONPATH`. Offizielle NeverC-Archive wählen und bündeln CPython 3.12.
+`PYTHONPATH`. Offizielle NeverC-Archive wählen und bündeln CPython 3.12.10.
 
 Unter Linux benötigt der Installations-Bundler `patchelf` in `PATH`. Bei
 `CMAKE_CROSSCOMPILING` wird automatisches Bündeln abgelehnt, damit kein Host-

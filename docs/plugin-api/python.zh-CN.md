@@ -18,7 +18,7 @@ cmake --build build --target install
 包括嵌入开发头文件和共享库；安装时会自动把所选解释器的准确版本复制到相邻的
 `python/` 目录。构建树中的原始可执行文件仍可能使用构建期 Python，但安装后的
 编译器在运行时不需要外部 Python、`PYTHONHOME` 或 `PYTHONPATH`。NeverC 官方
-归档固定选择并捆绑 CPython 3.12。
+归档固定选择并捆绑 CPython 3.12.10。
 
 Linux 安装阶段要求 `PATH` 中存在 `patchelf`。当 `CMAKE_CROSSCOMPILING` 时会
 拒绝自动捆绑，因为不能把主机解释器放进目标架构编译器包；这种情况应关闭捆绑并

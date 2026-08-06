@@ -12,10 +12,11 @@ from pathlib import Path
 REPOSITORY = Path(__file__).resolve().parents[2]
 WORKFLOWS = REPOSITORY / ".github" / "workflows"
 SETUP_PYTHON_COMMIT = "a26af69be951a213d495a4c3e4e4022e16d87065"
+OFFICIAL_CPYTHON_VERSION = "3.12.10"
 EXPECTED_PRODUCERS = 12
 REQUIRED_COMMON = (
     SETUP_PYTHON_COMMIT,
-    'python-version: "3.12"',
+    f'python-version: "{OFFICIAL_CPYTHON_VERSION}"',
     "NEVERC_ENABLE_PYTHON_PLUGINS=ON",
     "NEVERC_BUNDLE_PYTHON_RUNTIME=ON",
     "test-python-plugin-package.py",
@@ -164,6 +165,7 @@ def check_disabled_job() -> list[str]:
     text = path.read_text(encoding="utf-8")
     required = (
         "python-disabled",
+        f'python-version: "{OFFICIAL_CPYTHON_VERSION}"',
         "NEVERC_ENABLE_PYTHON_PLUGINS=OFF",
         "NEVERC_BUNDLE_PYTHON_RUNTIME=OFF",
         "NEVERC_ENABLE_PYTHON_PLUGINS=ON",
@@ -189,6 +191,12 @@ def main() -> int:
     for path, text in producers:
         for failure in check_producer(path, text):
             failures.append(f"{path.relative_to(REPOSITORY)}: {failure}")
+    for path in sorted(WORKFLOWS.glob("*.yml")):
+        if 'python-version: "3.12"' in path.read_text(encoding="utf-8"):
+            failures.append(
+                f"{path.relative_to(REPOSITORY)}: official CPython must use "
+                f"the exact {OFFICIAL_CPYTHON_VERSION} patch version"
+            )
     failures.extend(check_source_build_contract())
     failures.extend(check_disabled_job())
     if failures:

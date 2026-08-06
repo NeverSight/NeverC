@@ -21,7 +21,7 @@ automatiquement la version exacte sélectionnée dans le répertoire adjacent
 `python/`. L'exécutable du build tree peut encore utiliser le Python de build,
 mais le compiler installé n'a besoin ni de Python externe, ni de `PYTHONHOME`,
 ni de `PYTHONPATH` à l'exécution. Les archives officielles sélectionnent et
-embarquent CPython 3.12.
+embarquent CPython 3.12.10.
 
 Sous Linux, le bundler d'installation exige `patchelf` dans `PATH`. Avec
 `CMAKE_CROSSCOMPILING`, l'emballage automatique est refusé pour éviter de placer

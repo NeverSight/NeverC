@@ -20,7 +20,7 @@ including its embedding headers and shared library. Installation automatically
 copies that exact selected interpreter into the adjacent `python/` directory.
 The raw build-tree executable may still use the build-time Python, but the
 installed compiler needs no external Python, `PYTHONHOME`, or `PYTHONPATH` at
-run time. Official NeverC archives select and bundle CPython 3.12.
+run time. Official NeverC archives select and bundle CPython 3.12.10.
 
 On Linux the install-time bundler requires `patchelf` on `PATH`. Automatic
 bundling is rejected when `CMAKE_CROSSCOMPILING` because a host interpreter

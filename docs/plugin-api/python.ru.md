@@ -20,7 +20,7 @@ cmake --build build --target install
 точно выбранную версию в соседний каталог `python/`. Исполняемый файл в build
 tree ещё может использовать Python сборки, но установленному compiler при
 запуске не нужны внешний Python, `PYTHONHOME` или `PYTHONPATH`. Официальные
-архивы выбирают и включают CPython 3.12.
+архивы выбирают и включают CPython 3.12.10.
 
 В Linux установочному bundler нужен `patchelf` в `PATH`. При
 `CMAKE_CROSSCOMPILING` автоматический bundling отклоняется, чтобы host-

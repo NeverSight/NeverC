@@ -21,7 +21,7 @@ cmake --build build --target install
 الخاصة بالتضمين وshared library. ينسخ التثبيت تلقائياً الإصدار المحدد نفسه إلى
 مجلد `python/` المجاور. قد يستعمل executable في build tree نسخة Python الخاصة
 بالبناء، لكن compiler المثبّت لا يحتاج وقت التشغيل إلى Python خارجي أو
-`PYTHONHOME` أو `PYTHONPATH`. تختار أرشيفات NeverC الرسمية CPython 3.12 وتضمّنه.
+`PYTHONHOME` أو `PYTHONPATH`. تختار أرشيفات NeverC الرسمية CPython 3.12.10 وتضمّنه.
 
 على Linux يحتاج bundler الخاص بالتثبيت إلى `patchelf` ضمن `PATH`. عند
 `CMAKE_CROSSCOMPILING` يُرفض bundling التلقائي كي لا تُحزم نسخة host مع compiler

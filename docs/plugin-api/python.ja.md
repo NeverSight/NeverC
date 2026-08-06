@@ -20,7 +20,7 @@ embedding header と shared library が必要で、install は選択した inter
 の正確な version を隣接する `python/` directory に自動コピーします。build tree
 の executable は build 時の Python を使う場合がありますが、install 済み compiler
 は実行時に外部 Python、`PYTHONHOME`、`PYTHONPATH` を必要としません。公式
-NeverC archive は CPython 3.12 を選択して同梱します。
+NeverC archive は CPython 3.12.10 を選択して同梱します。
 
 Linux の install bundler には `PATH` 上の `patchelf` が必要です。
 `CMAKE_CROSSCOMPILING` の場合、host interpreter を target architecture の package

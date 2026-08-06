@@ -20,7 +20,7 @@ embedding header와 shared library가 필요하며, install은 선택된 interpr
 version을 인접한 `python/` 디렉터리에 자동 복사합니다. build tree executable은 build
 시 Python을 사용할 수 있지만 install된 compiler는 실행 시 외부 Python,
 `PYTHONHOME`, `PYTHONPATH`가 필요하지 않습니다. 공식 NeverC archive는 CPython
-3.12를 선택하여 포함합니다.
+3.12.10을 선택하여 포함합니다.
 
 Linux install bundler에는 `PATH`의 `patchelf`가 필요합니다.
 `CMAKE_CROSSCOMPILING`이면 host interpreter를 target architecture package에 넣지
