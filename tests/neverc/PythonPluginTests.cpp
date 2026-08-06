@@ -27,6 +27,18 @@ takeErrorMessage(Expected<std::shared_ptr<const PluginModule>> &Result) {
   return takeErrorMessage(Result.takeError());
 }
 
+std::vector<std::string> splitTraceLines(StringRef Buffer) {
+  SmallVector<StringRef, 16> Split;
+  Buffer.split(Split, '\n', -1, false);
+  std::vector<std::string> Result;
+  for (StringRef Line : Split) {
+    Line.consume_back("\r");
+    if (!Line.empty())
+      Result.push_back(Line.str());
+  }
+  return Result;
+}
+
 class TraceFile {
 public:
   TraceFile() {
@@ -52,18 +64,17 @@ public:
       ADD_FAILURE() << Buffer.getError().message();
       return {};
     }
-    SmallVector<StringRef, 16> Split;
-    (*Buffer)->getBuffer().split(Split, '\n', -1, false);
-    std::vector<std::string> Result;
-    for (StringRef Line : Split)
-      if (!Line.empty())
-        Result.push_back(Line.str());
-    return Result;
+    return splitTraceLines((*Buffer)->getBuffer());
   }
 
 private:
   SmallString<128> Path;
 };
+
+TEST(PythonPluginTest, TraceLineParsingNormalizesCRLF) {
+  EXPECT_EQ(splitTraceLines("first\r\nsecond\n\r\nthird\r\n"),
+            (std::vector<std::string>{"first", "second", "third"}));
+}
 
 TEST(PythonPluginTest, LoadsMetadataAndDeduplicatesTheScriptFile) {
   PluginRegistry Registry("neverc-python-plugin-tests", LLVM_VERSION_MAJOR);
