@@ -10,6 +10,21 @@ The command is pinned to this release tag. The installer verifies the downloaded
 
 Windows x64 and arm64 packages are available as release assets for manual installation.
 
+## Python plugin ABI parity
+
+NeverC 3389.1.5 promotes Python plugins from the original observer-oriented
+surface to complete public C plugin ABI coverage. The installed SDK now ships
+generated `ctypes` definitions for all 36 official interface tables, every
+public record, function slot, constant, and callback family. Python plugins can
+register interceptors, providers, analyses and passes, mutate IR/MIR/object/link
+state, and use the same descriptor metadata, capability checks, transactions,
+continuations, diagnostics, and lifecycle rules as native plugins.
+
+The SDK also includes a Python-only classic OLLVM example implementing
+deterministic instruction substitution (SUB), bogus control flow (BCF), and
+control-flow flattening (FLA). Release packages execute the example against
+x86_64 and AArch64 IR as part of relocation testing.
+
 ## Choosing a download
 
 Choose the compiler package for the machine that will run NeverC. A runtime package describes the target platform that NeverC will generate code for, not the host platform running the compiler.
