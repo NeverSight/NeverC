@@ -5,6 +5,7 @@
 #include "Linker/Core/Support/Strings.h"
 #include "Linker/ELF/Config.h"
 #include "Linker/ELF/DWARF.h"
+#include "Linker/ELF/ELFContextAccess.h"
 #include "Linker/ELF/EhFrame.h"
 #include "Linker/ELF/Emit.h"
 #include "Linker/ELF/InputFiles.h"
@@ -24,7 +25,6 @@
 #include "llvm/Support/LEB128.h"
 #include "llvm/Support/TimeProfiler.h"
 #include <cstdlib>
-#include "Linker/ELF/ELFContextAccess.h"
 
 using namespace llvm;
 using namespace llvm::dwarf;
@@ -641,7 +641,7 @@ DynamicSection<ELFT>::computeContents() {
     addInt(config->enableNewDtags ? DT_RUNPATH : DT_RPATH,
            part.dynStrTab->addString(config->rpath));
 
-  for (SharedFile *file : ctx.sharedFiles)
+  for (SharedFile *file : elfState().sharedFiles)
     if (file->isNeeded)
       addInt(DT_NEEDED, part.dynStrTab->addString(file->soName));
 
@@ -683,7 +683,7 @@ DynamicSection<ELFT>::computeContents() {
   }
   if (!config->zText)
     dtFlags |= DF_TEXTREL;
-  if (ctx.hasTlsIe && config->shared)
+  if (elfState().hasTlsIe && config->shared)
     dtFlags |= DF_STATIC_TLS;
 
   if (dtFlags)
@@ -809,7 +809,7 @@ DynamicSection<ELFT>::computeContents() {
   if (part.verNeed && part.verNeed->isNeeded()) {
     addInSec(DT_VERNEED, *part.verNeed);
     unsigned needNum = 0;
-    for (SharedFile *f : ctx.sharedFiles)
+    for (SharedFile *f : elfState().sharedFiles)
       if (!f->vernauxs.empty())
         ++needNum;
     addInt(DT_VERNEEDNUM, needNum);
@@ -2073,7 +2073,7 @@ template <class ELFT> GdbIndexSection *GdbIndexSection::create() {
   // future lightweight parsing should parallelise the isec->data()
   // decompression path.
   SetVector<InputFile *> files;
-  for (InputSectionBase *s : ctx.inputSections) {
+  for (InputSectionBase *s : elfState().inputSections) {
     InputSection *isec = dyn_cast<InputSection>(s);
     if (!isec)
       continue;
@@ -2086,7 +2086,7 @@ template <class ELFT> GdbIndexSection *GdbIndexSection::create() {
       files.insert(isec->file);
   }
   // Drop .rel[a].debug_gnu_pub{names,types} for --emit-relocs.
-  llvm::erase_if(ctx.inputSections, [](InputSectionBase *s) {
+  llvm::erase_if(elfState().inputSections, [](InputSectionBase *s) {
     if (auto *isec = dyn_cast<InputSection>(s))
       if (InputSectionBase *rel = isec->getRelocatedSection())
         return !rel->isLive();
@@ -2358,7 +2358,7 @@ VersionNeedSection<ELFT>::VersionNeedSection()
                        ".gnu.version_r") {}
 
 template <class ELFT> void VersionNeedSection<ELFT>::finalizeContents() {
-  for (SharedFile *f : ctx.sharedFiles) {
+  for (SharedFile *f : elfState().sharedFiles) {
     if (f->vernauxs.empty())
       continue;
     verneeds.emplace_back();
@@ -2379,8 +2379,7 @@ template <class ELFT> void VersionNeedSection<ELFT>::finalizeContents() {
     }
     if (isGlibc2) {
       const char *ver = "GLIBC_ABI_DT_RELR";
-      vn.vernauxs.push_back({hashSysV(ver),
-                             ++elfVernauxNum() + getVerDefNum(),
+      vn.vernauxs.push_back({hashSysV(ver), ++elfVernauxNum() + getVerDefNum(),
                              getPartition().dynStrTab->addString(ver)});
     }
   }
@@ -2525,7 +2524,7 @@ template <class ELFT> void elf::splitSections() {
   llvm::TimeTraceScope timeScope("Split sections");
   // splitIntoPieces needs to be called on each MergeInputSection
   // before calling finalizeContents().
-  parallelForEach(ctx.objectFiles, [](ELFFileBase *file) {
+  parallelForEach(elfState().objectFiles, [](ELFFileBase *file) {
     for (InputSectionBase *sec : file->getSections()) {
       if (!sec)
         continue;
@@ -2539,7 +2538,7 @@ template <class ELFT> void elf::splitSections() {
 
 void elf::combineEhSections() {
   llvm::TimeTraceScope timeScope("Combine EH sections");
-  for (EhInputSection *sec : ctx.ehInputSections) {
+  for (EhInputSection *sec : elfState().ehInputSections) {
     EhFrameSection &eh = *sec->getPartition().ehFrame;
     sec->parent = &eh;
     eh.addralign = std::max(eh.addralign, sec->addralign);

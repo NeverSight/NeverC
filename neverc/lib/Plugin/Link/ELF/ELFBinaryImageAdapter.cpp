@@ -20,7 +20,7 @@
 #include <limits>
 
 // NOTE: This adapter deliberately does NOT include ELFContextAccess.h. That
-// header defines source-compatibility macros (`in`, `ctx`, `symtab`) for the
+// header defines source-compatibility macros (`in`, `symtab`) for the
 // incrementally-ported backend .cpp files; in particular `#define in elfIn()`
 // rewrites the ubiquitous identifier `in`, colliding with std::ios_base::in
 // whenever a standard-library <istream>/<ios> header is parsed in the same TU.

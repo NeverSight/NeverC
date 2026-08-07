@@ -21,6 +21,7 @@
 #include "Linker/ELF/AArch64ErrataFix.h"
 #include "Linker/Core/Runtime/Session.h"
 #include "Linker/Core/Support/Strings.h"
+#include "Linker/ELF/ELFContextAccess.h"
 #include "Linker/ELF/InputFiles.h"
 #include "Linker/ELF/LinkerScript.h"
 #include "Linker/ELF/OutputSections.h"
@@ -31,7 +32,6 @@
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/Endian.h"
 #include <algorithm>
-#include "Linker/ELF/ELFContextAccess.h"
 
 using namespace llvm;
 using namespace llvm::ELF;
@@ -472,7 +472,7 @@ void AArch64Err843419Patcher::init() {
   };
 
   // Collect mapping symbols for every executable InputSection.
-  for (ELFFileBase *file : ctx.objectFiles) {
+  for (ELFFileBase *file : elfState().objectFiles) {
     for (Symbol *b : file->getLocalSymbols()) {
       auto *def = dyn_cast<Defined>(b);
       if (!def)

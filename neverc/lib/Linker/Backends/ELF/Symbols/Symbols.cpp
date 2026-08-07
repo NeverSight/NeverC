@@ -1,6 +1,7 @@
 #include "Linker/ELF/Symbols.h"
 #include "Linker/Core/Runtime/Diagnostic.h"
 #include "Linker/ELF/Driver.h"
+#include "Linker/ELF/ELFContextAccess.h"
 #include "Linker/ELF/Emit.h"
 #include "Linker/ELF/InputFiles.h"
 #include "Linker/ELF/InputSection.h"
@@ -8,7 +9,6 @@
 #include "Linker/ELF/SyntheticSections.h"
 #include "Linker/ELF/Target.h"
 #include "llvm/Support/Compiler.h"
-#include "Linker/ELF/ELFContextAccess.h"
 
 using namespace llvm;
 using namespace llvm::object;
@@ -274,7 +274,8 @@ void elf::printTraceSymbol(const Symbol &sym, StringRef name) {
 namespace {
 void recordWhyExtract(const InputFile *reference, const InputFile &extracted,
                       const Symbol &sym) {
-  ctx.whyExtractRecords.emplace_back(toString(reference), &extracted, sym);
+  elfState().whyExtractRecords.emplace_back(toString(reference), &extracted,
+                                            sym);
 }
 } // namespace
 
@@ -452,8 +453,8 @@ void Symbol::resolve(const Undefined &other) {
     // definition. this->file needs to be saved because in the case of LTO it
     // may be reset to nullptr or replaced with the LTO codegen output.
     if (backref && !isWeak())
-      ctx.backwardReferences.try_emplace(this,
-                                         std::make_pair(other.file, file));
+      elfState().backwardReferences.try_emplace(
+          this, std::make_pair(other.file, file));
     return;
   }
 
@@ -494,7 +495,7 @@ void elf::reportDuplicate(const Symbol &sym, const InputFile *newFile,
   if (config->allowMultipleDefinition)
     return;
 
-  if (ctx.overrideSymbols.count(sym.getName()))
+  if (elfState().overrideSymbols.count(sym.getName()))
     return;
   // In glibc<2.32, crti.o has .gnu.linkonce.t.__x86.get_pc_thunk.bx, which
   // is sort of proto-comdat. There is actually no duplicate if we have
@@ -592,8 +593,8 @@ void Symbol::resolve(const Defined &other) {
   // of the same name. Run this check before the standard weak/strong logic so
   // that override wins regardless of binding on either side.
   if (isDefined() && file != other.file) {
-    auto overIt = ctx.overrideSymbols.find(getName());
-    if (overIt != ctx.overrideSymbols.end()) {
+    auto overIt = elfState().overrideSymbols.find(getName());
+    if (overIt != elfState().overrideSymbols.end()) {
       const InputFile *overrideSource = overIt->second;
       bool incomingIsOverride =
           overrideSource == nullptr || overrideSource == other.file;
@@ -621,7 +622,7 @@ void Symbol::resolve(const LazyObject &other) {
   if (!isUndefined()) {
     // See the comment in resolveUndefined().
     if (isDefined())
-      ctx.backwardReferences.erase(this);
+      elfState().backwardReferences.erase(this);
     return;
   }
 

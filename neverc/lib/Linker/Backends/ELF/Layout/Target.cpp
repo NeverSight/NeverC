@@ -1,12 +1,12 @@
 #include "Linker/ELF/Target.h"
 #include "Linker/Core/Runtime/Diagnostic.h"
+#include "Linker/ELF/ELFContextAccess.h"
 #include "Linker/ELF/InputFiles.h"
 #include "Linker/ELF/OutputSections.h"
 #include "Linker/ELF/SymbolTable.h"
 #include "Linker/ELF/Symbols.h"
 #include "Linker/ELF/SyntheticSections.h"
 #include "llvm/Object/ELF.h"
-#include "Linker/ELF/ELFContextAccess.h"
 
 using namespace llvm;
 using namespace llvm::object;
@@ -35,16 +35,15 @@ TargetInfo *elf::getTarget() {
 
 ErrorPlace elf::getErrorPlace(const uint8_t *loc) {
   assert(loc != nullptr);
-  for (InputSectionBase *d : ctx.inputSections) {
+  for (InputSectionBase *d : elfState().inputSections) {
     auto *isec = dyn_cast<InputSection>(d);
     if (!isec || !isec->getParent() || (isec->type & SHT_NOBITS))
       continue;
 
-    const uint8_t *isecLoc =
-        elfOut().bufferStart
-            ? (elfOut().bufferStart + isec->getParent()->offset +
-               isec->outSecOff)
-            : isec->contentMaybeDecompress().data();
+    const uint8_t *isecLoc = elfOut().bufferStart
+                                 ? (elfOut().bufferStart +
+                                    isec->getParent()->offset + isec->outSecOff)
+                                 : isec->contentMaybeDecompress().data();
     if (isecLoc == nullptr) {
       assert(isa<SyntheticSection>(isec) && "No data but not synthetic?");
       continue;

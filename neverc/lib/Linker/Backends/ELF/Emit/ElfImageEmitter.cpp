@@ -1,3 +1,4 @@
+#include "ELF/ELFLinkGraphAdapter.h"
 #include "Linker/Core/Runtime/LinkerParallel.h"
 #include "Linker/Core/Runtime/Session.h"
 #include "Linker/Core/Support/Chunks.h"
@@ -17,14 +18,13 @@
 #include "Linker/ELF/SyntheticSections.h"
 #include "Linker/ELF/Target.h"
 #include "neverc/Merge/Merger.h"
-#include "ELF/ELFLinkGraphAdapter.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/Support/BLAKE3.h"
 #include "llvm/Support/RandomNumberGenerator.h"
-#include <random>
 #include "llvm/Support/TimeProfiler.h"
 #include "llvm/Support/xxhash.h"
+#include <random>
 #if defined(__unix__) || defined(__APPLE__)
 #include <sys/mman.h>
 #include <unistd.h>
@@ -117,9 +117,9 @@ void removeEmptyPTLoad(SmallVector<PhdrEntry *, 0> &phdrs) {
 
 void elf::copySectionsIntoPartitions() {
   SmallVector<InputSectionBase *, 0> newSections;
-  const size_t ehSize = ctx.ehInputSections.size();
+  const size_t ehSize = elfState().ehInputSections.size();
   for (unsigned part = 2; part != partitions.size() + 1; ++part) {
-    for (InputSectionBase *s : ctx.inputSections) {
+    for (InputSectionBase *s : elfState().inputSections) {
       if (!(s->flags & SHF_ALLOC) || !s->isLive() || s->type != SHT_NOTE)
         continue;
       auto *copy = make<InputSection>(cast<InputSection>(*s));
@@ -127,15 +127,15 @@ void elf::copySectionsIntoPartitions() {
       newSections.push_back(copy);
     }
     for (size_t i = 0; i != ehSize; ++i) {
-      assert(ctx.ehInputSections[i]->isLive());
-      auto *copy = make<EhInputSection>(*ctx.ehInputSections[i]);
+      assert(elfState().ehInputSections[i]->isLive());
+      auto *copy = make<EhInputSection>(*elfState().ehInputSections[i]);
       copy->partition = part;
-      ctx.ehInputSections.push_back(copy);
+      elfState().ehInputSections.push_back(copy);
     }
   }
 
-  ctx.inputSections.insert(ctx.inputSections.end(), newSections.begin(),
-                           newSections.end());
+  elfState().inputSections.insert(elfState().inputSections.end(),
+                                  newSections.begin(), newSections.end());
 }
 
 Defined *addOptionalRegular(StringRef name, SectionBase *sec, uint64_t val,
@@ -258,11 +258,13 @@ template <class ELFT> void elf::createSyntheticSections() {
     for (size_t i = 1; i <= partitions.size(); ++i) {
       InputSection *sec = createInterpSection();
       sec->partition = i;
-      ctx.inputSections.push_back(sec);
+      elfState().inputSections.push_back(sec);
     }
   }
 
-  auto add = [](SyntheticSection &sec) { ctx.inputSections.push_back(&sec); };
+  auto add = [](SyntheticSection &sec) {
+    elfState().inputSections.push_back(&sec);
+  };
 
   in.shStrTab = std::make_unique<StringTableSection>(".shstrtab", false);
 
@@ -292,7 +294,7 @@ template <class ELFT> void elf::createSyntheticSections() {
   for (Partition &part : partitions) {
     auto add = [&](SyntheticSection &sec) {
       sec.partition = part.getNumber();
-      ctx.inputSections.push_back(&sec);
+      elfState().inputSections.push_back(&sec);
     };
 
     if (!part.name.empty()) {
@@ -466,8 +468,7 @@ template <class ELFT> void OutputWriter<ELFT>::run() {
   if (elfPluginLinkAdapter())
     if (Error E = elfPluginLinkAdapter()->advanceTo(
             NEVERC_LINK_STATE_THUNKS_RELAXED)) {
-      error("ELF plugin relaxation phase failed: " +
-            toString(std::move(E)));
+      error("ELF plugin relaxation phase failed: " + toString(std::move(E)));
       return;
     }
   checkExecuteOnly();
@@ -492,8 +493,7 @@ template <class ELFT> void OutputWriter<ELFT>::run() {
   if (elfPluginLinkAdapter())
     if (Error E = elfPluginLinkAdapter()->advanceTo(
             NEVERC_LINK_STATE_LAYOUT_COMPLETE)) {
-      error("ELF plugin layout phase failed: " +
-            toString(std::move(E)));
+      error("ELF plugin layout phase failed: " + toString(std::move(E)));
       return;
     }
 
@@ -522,7 +522,8 @@ template <class ELFT> void OutputWriter<ELFT>::run() {
       // the following RW data segment, so filling up to the page boundary would
       // clobber that data — most damagingly the reserved .got.plt[1]/[2] slots,
       // which glibc misreads as a prelink marker and then crashes the lazy PLT
-      // resolver.  This mirrors LLD, which guards writeTrapInstr() the same way.
+      // resolver.  This mirrors LLD, which guards writeTrapInstr() the same
+      // way.
       if (config->zSeparate != SeparateSegmentKind::None)
         writeTrapInstr();
       writeHeader();
@@ -534,8 +535,7 @@ template <class ELFT> void OutputWriter<ELFT>::run() {
     if (elfPluginLinkAdapter())
       if (Error E = elfPluginLinkAdapter()->advanceTo(
               NEVERC_LINK_STATE_RELOCATIONS_APPLIED)) {
-        error("ELF plugin relocation phase failed: " +
-              toString(std::move(E)));
+        error("ELF plugin relocation phase failed: " + toString(std::move(E)));
         return;
       }
 
@@ -549,8 +549,7 @@ template <class ELFT> void OutputWriter<ELFT>::run() {
     if (elfPluginLinkAdapter()) {
       if (Error E = elfPluginLinkAdapter()->advanceTo(
               NEVERC_LINK_STATE_IMAGE_EMITTED)) {
-        error("ELF plugin image phase failed: " +
-              toString(std::move(E)));
+        error("ELF plugin image phase failed: " + toString(std::move(E)));
         return;
       }
       std::vector<uint8_t> Bytes(elfOut().bufferStart,
@@ -558,8 +557,7 @@ template <class ELFT> void OutputWriter<ELFT>::run() {
       buffer.reset();
       elfOut().bufferStart = nullptr;
       if (Error E = elfPluginLinkAdapter()->publishImage(Bytes)) {
-        error("failed to publish ELF plugin output: " +
-              toString(std::move(E)));
+        error("failed to publish ELF plugin output: " + toString(std::move(E)));
         return;
       }
     } else if (auto e = buffer->commit()) {
@@ -567,7 +565,6 @@ template <class ELFT> void OutputWriter<ELFT>::run() {
             "': " + toString(std::move(e)));
     }
   }
-
 }
 
 template <class ELFT, class RelTy>
@@ -582,7 +579,7 @@ void markUsedLocalSymbolsImpl(ObjFile<ELFT> *file, llvm::ArrayRef<RelTy> rels) {
 template <class ELFT> static void markUsedLocalSymbols() {
   if (config->gcSections)
     return;
-  parallelForEach(ctx.objectFiles, [](ELFFileBase *file) {
+  parallelForEach(elfState().objectFiles, [](ELFFileBase *file) {
     ObjFile<ELFT> *f = cast<ObjFile<ELFT>>(file);
     for (InputSectionBase *s : f->getSections()) {
       InputSection *isec = dyn_cast_or_null<InputSection>(s);
@@ -649,12 +646,12 @@ bool linker::elf::includeInSymtab(const Symbol &b) {
 void demoteAndCopyLocalSymbols() {
   llvm::TimeTraceScope timeScope("Add local symbols");
 
-  const size_t numFiles = ctx.objectFiles.size();
+  const size_t numFiles = elfState().objectFiles.size();
   std::vector<SmallVector<Symbol *, 0>> perFileSyms(numFiles);
 
   parallelFor(0, numFiles, [&](size_t i) {
     DenseMap<SectionBase *, size_t> sectionIndexMap;
-    for (Symbol *b : ctx.objectFiles[i]->getLocalSymbols()) {
+    for (Symbol *b : elfState().objectFiles[i]->getLocalSymbols()) {
       assert(b->isLocal() && "should have been caught in initializeSymbols()");
       auto *dr = dyn_cast<Defined>(b);
       if (!dr)
@@ -1003,7 +1000,8 @@ void maybeShuffle(DenseMap<const InputSectionBase *, int> &order) {
   if (config->shuffleSections.empty())
     return;
 
-  SmallVector<InputSectionBase *, 0> matched, sections = ctx.inputSections;
+  SmallVector<InputSectionBase *, 0> matched,
+      sections = elfState().inputSections;
   matched.reserve(sections.size());
   for (const auto &patAndSeed : config->shuffleSections) {
     matched.clear();
@@ -1081,7 +1079,7 @@ DenseMap<const InputSectionBase *, int> buildSectionOrder() {
   for (Symbol *sym : symtab.getSymbols())
     addSym(*sym);
 
-  for (ELFFileBase *file : ctx.objectFiles)
+  for (ELFFileBase *file : elfState().objectFiles)
     for (Symbol *sym : file->getLocalSymbols())
       addSym(*sym);
 
@@ -1409,7 +1407,7 @@ void OutputWriter<ELFT>::finalizeAddressDependentContent() {
 // block sections, input sections can shrink when the jump instructions at
 // the end of the section are relaxed.
 void fixSymbolsAfterShrinking() {
-  for (InputFile *File : ctx.objectFiles) {
+  for (InputFile *File : elfState().objectFiles) {
     parallelForEach(File->getSymbols(), [&](Symbol *Sym) {
       auto *def = dyn_cast<Defined>(Sym);
       if (!def)
@@ -1491,21 +1489,22 @@ template <class ELFT> void OutputWriter<ELFT>::optimizeBasicBlockJumps() {
 
 // Drop synthetic sections that turned out empty after reloc scanning.
 void removeUnusedSyntheticSections() {
-  auto start =
-      llvm::find_if(llvm::reverse(ctx.inputSections), [](InputSectionBase *s) {
-        return !isa<SyntheticSection>(s);
-      }).base();
+  auto start = llvm::find_if(llvm::reverse(elfState().inputSections),
+                             [](InputSectionBase *s) {
+                               return !isa<SyntheticSection>(s);
+                             })
+                   .base();
 
   SmallPtrSet<InputSectionBase *, 8> unused;
-  auto end =
-      std::remove_if(start, ctx.inputSections.end(), [&](InputSectionBase *s) {
-        auto *sec = cast<SyntheticSection>(s);
-        if (sec->getParent() && sec->isNeeded())
-          return false;
-        unused.insert(sec);
-        return true;
-      });
-  ctx.inputSections.erase(end, ctx.inputSections.end());
+  auto end = std::remove_if(start, elfState().inputSections.end(),
+                            [&](InputSectionBase *s) {
+                              auto *sec = cast<SyntheticSection>(s);
+                              if (sec->getParent() && sec->isNeeded())
+                                return false;
+                              unused.insert(sec);
+                              return true;
+                            });
+  elfState().inputSections.erase(end, elfState().inputSections.end());
 
   for (auto *sec : unused)
     if (OutputSection *osec = cast<SyntheticSection>(sec)->getParent())
@@ -1587,7 +1586,7 @@ template <class ELFT> void OutputWriter<ELFT>::prepareLayout() {
       // Diagnose undefined references coming from a DSO only when all of
       // its DT_NEEDED libraries are present; otherwise the missing graph
       // edges turn into spurious link-time errors.
-      for (SharedFile *file : ctx.sharedFiles) {
+      for (SharedFile *file : elfState().sharedFiles) {
         bool allNeededIsKnown =
             llvm::all_of(file->dtNeeded, [&](StringRef needed) {
               return symtab.soNames.count(CachedHashStringRef(needed));
@@ -1702,8 +1701,7 @@ template <class ELFT> void OutputWriter<ELFT>::prepareLayout() {
       LinkerTaskGroup tg;
       auto finPar = [&](SyntheticSection *s) {
         if (s)
-          tg.spawn(
-              bindLinkerContext([s] { finalizeSynthetic(s); }));
+          tg.spawn(bindLinkerContext([s] { finalizeSynthetic(s); }));
       };
       finPar(in.bss.get());
       finPar(in.bssRelRo.get());
@@ -1739,8 +1737,7 @@ template <class ELFT> void OutputWriter<ELFT>::prepareLayout() {
         LinkerTaskGroup tg;
         auto finPar = [&](SyntheticSection *s) {
           if (s)
-            tg.spawn(
-                bindLinkerContext([s] { finalizeSynthetic(s); }));
+            tg.spawn(bindLinkerContext([s] { finalizeSynthetic(s); }));
         };
         finPar(part.gnuHashTab.get());
         finPar(part.hashTab.get());
@@ -1836,8 +1833,7 @@ template <class ELFT> void OutputWriter<ELFT>::addStartEndSymbols() {
     }
   };
 
-  define("__preinit_array_start", "__preinit_array_end",
-         elfOut().preinitArray);
+  define("__preinit_array_start", "__preinit_array_end", elfOut().preinitArray);
   define("__init_array_start", "__init_array_end", elfOut().initArray);
   define("__fini_array_start", "__fini_array_end", elfOut().finiArray);
 }
@@ -2061,8 +2057,7 @@ template <class ELFT> void OutputWriter<ELFT>::fixSectionAlignments() {
       // p_align for dynamic TLS blocks (PR/24606), musl (TLS Variant 1
       // architectures) before 1.1.23 handled TLS blocks correctly. We need to
       // keep the workaround for a while.
-      else if (elfOut().tlsPhdr &&
-               elfOut().tlsPhdr->firstSec == p->firstSec)
+      else if (elfOut().tlsPhdr && elfOut().tlsPhdr->firstSec == p->firstSec)
         cmd->addrExpr = [] {
           return alignToPowerOf2(script->getDot(), config->maxPageSize) +
                  alignToPowerOf2(script->getDot() % config->maxPageSize,

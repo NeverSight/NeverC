@@ -2,6 +2,7 @@
 #include "Linker/Core/Runtime/Allocator.h"
 #include "Linker/Core/Runtime/Diagnostic.h"
 #include "Linker/ELF/Config.h"
+#include "Linker/ELF/ELFContextAccess.h"
 #include "Linker/ELF/InputFiles.h"
 #include "Linker/ELF/LinkerScript.h"
 #include "Linker/ELF/OutputSections.h"
@@ -14,7 +15,6 @@
 #include "llvm/BinaryFormat/ELF.h"
 #include "llvm/Support/Endian.h"
 #include <algorithm>
-#include "Linker/ELF/ELFContextAccess.h"
 
 using namespace llvm;
 using namespace llvm::ELF;
@@ -1039,7 +1039,7 @@ unsigned handleTlsRelocation(RelType type, Symbol &sym, InputSectionBase &c,
     }
     if (expr == R_TLSLD_HINT)
       return 1;
-    ctx.needsTlsLd.store(true, std::memory_order_relaxed);
+    elfState().needsTlsLd.store(true, std::memory_order_relaxed);
     c.addReloc({expr, type, offset, addend, &sym});
     return 1;
   }
@@ -1083,7 +1083,7 @@ unsigned handleTlsRelocation(RelType type, Symbol &sym, InputSectionBase &c,
 
   if (oneof<R_GOT, R_GOTPLT, R_GOT_PC, R_AARCH64_GOT_PAGE_PC, R_GOT_OFF,
             R_TLSIE_HINT>(expr)) {
-    ctx.hasTlsIe.store(true, std::memory_order_relaxed);
+    elfState().hasTlsIe.store(true, std::memory_order_relaxed);
     // Initial-Exec relocs can be relaxed to Local-Exec if the symbol is locally
     // defined.
     if (toExecRelax && isLocalInExecutable) {
@@ -1193,7 +1193,7 @@ template <class ELFT> void elf::scanRelocations() {
   // for -z nocombreloc.
   bool serial = !config->zCombreloc;
   LinkerTaskGroup tg;
-  for (ELFFileBase *f : ctx.objectFiles) {
+  for (ELFFileBase *f : elfState().objectFiles) {
     auto fn = [f]() {
       RelocationScanner scanner;
       for (InputSectionBase *s : f->getSections()) {
@@ -1376,7 +1376,8 @@ void elf::postScanRelocations() {
   };
 
   GotSection *got = in.got.get();
-  if (ctx.needsTlsLd.load(std::memory_order_relaxed) && got->addTlsIndex()) {
+  if (elfState().needsTlsLd.load(std::memory_order_relaxed) &&
+      got->addTlsIndex()) {
     static Undefined dummy(nullptr, "", STB_LOCAL, 0, 0);
     if (config->shared)
       mainPart->relaDyn->addReloc(
@@ -1392,7 +1393,7 @@ void elf::postScanRelocations() {
 
   // Local symbols may need the aforementioned non-preemptible ifunc and GOT
   // handling. They don't need regular PLT.
-  for (ELFFileBase *file : ctx.objectFiles)
+  for (ELFFileBase *file : elfState().objectFiles)
     for (Symbol *sym : file->getLocalSymbols())
       fn(*sym);
 }

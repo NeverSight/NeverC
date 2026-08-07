@@ -4,6 +4,7 @@
 #include "Linker/Core/Runtime/LinkerParallel.h"
 #include "Linker/Core/Support/Strings.h"
 #include "Linker/ELF/Config.h"
+#include "Linker/ELF/ELFContextAccess.h"
 #include "Linker/ELF/InputFiles.h"
 #include "Linker/ELF/SymbolTable.h"
 #include "Linker/ELF/Symbols.h"
@@ -13,7 +14,6 @@
 #include <cstddef>
 #include <memory>
 #include <vector>
-#include "Linker/ELF/ELFContextAccess.h"
 
 using namespace llvm;
 using namespace llvm::ELF;
@@ -46,7 +46,7 @@ BitcodeCompiler::BitcodeCompiler() {
                                       config->driverCfg->ltoPartitions);
   cacheUsable = ltoCacheUsable(*config->driverCfg);
 
-  if (ctx.bitcodeFiles.empty())
+  if (elfState().bitcodeFiles.empty())
     return;
   for (Symbol *sym : symtab.getSymbols()) {
     if (sym->isPlaceholder())
@@ -95,7 +95,7 @@ BitcodeCompiler::prepare(BitcodeFile &f) const {
     r.Prevailing = !objSym.isUndefined() && sym->file == &f;
 
     if (!objSym.isUndefined() && sym->file == &f &&
-        ctx.overrideSymbols.count(sym->getName()))
+        elfState().overrideSymbols.count(sym->getName()))
       r.Prevailing = true;
 
     // Preserved symbols: anything visible to non-IR consumers --
@@ -156,7 +156,7 @@ std::vector<InputFile *> BitcodeCompiler::compile() {
   unsigned maxTasks = ltoObj->getMaxTasks();
   buf.resize(maxTasks);
 
-  if (!ctx.bitcodeFiles.empty())
+  if (!elfState().bitcodeFiles.empty())
     runLTOWithCache(*ltoObj, cacheKey, cacheUsable, *config->driverCfg,
                     ltoCacheBackendTag, emitAddrsig, buf);
 

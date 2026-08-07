@@ -21,10 +21,10 @@
 #include <limits>
 #include <set>
 
-// Included last: ELFContextAccess.h defines source-compatibility macros
-// (`in`, `ctx`, `symtab`) that must not be active while standard-library or
-// LLVM headers are parsed, otherwise the ubiquitous identifier `in` collides
-// with e.g. std::ios_base::in. See Backends/ELF/*.cpp for the same convention.
+// Included last: ELFContextAccess.h still defines the transitional `in` and
+// `symtab` spellings. They must not be active while standard-library or LLVM
+// headers are parsed because `in` collides with identifiers such as
+// std::ios_base::in. Linker state uses the explicit elfState() accessor.
 #include "neverc/Linker/ELF/ELFContextAccess.h"
 
 using namespace llvm;
@@ -427,15 +427,15 @@ ELFLinkGraphAdapter::capture(const PluginLinkGraph &Previous,
     return ID;
   };
 
-  for (ELFFileBase *File : ctx.objectFiles)
+  for (ELFFileBase *File : elfState().objectFiles)
     CaptureInput(File, NEVERC_LINK_INPUT_OBJECT);
-  for (SharedFile *File : ctx.sharedFiles)
+  for (SharedFile *File : elfState().sharedFiles)
     CaptureInput(File, NEVERC_LINK_INPUT_SHARED_LIBRARY);
-  for (BinaryFile *File : ctx.binaryFiles)
+  for (BinaryFile *File : elfState().binaryFiles)
     CaptureInput(File, NEVERC_LINK_INPUT_BLOB);
-  for (BitcodeFile *File : ctx.bitcodeFiles)
+  for (BitcodeFile *File : elfState().bitcodeFiles)
     CaptureInput(File, NEVERC_LINK_INPUT_BITCODE);
-  for (BitcodeFile *File : ctx.lazyBitcodeFiles)
+  for (BitcodeFile *File : elfState().lazyBitcodeFiles)
     CaptureInput(File, NEVERC_LINK_INPUT_BITCODE);
 
   const bool HasLayout = State >= NEVERC_LINK_STATE_LAYOUT_COMPLETE;
@@ -600,9 +600,9 @@ ELFLinkGraphAdapter::capture(const PluginLinkGraph &Previous,
     }
   };
 
-  for (InputSectionBase *Section : ctx.inputSections)
+  for (InputSectionBase *Section : elfState().inputSections)
     CaptureSection(Section);
-  for (EhInputSection *Section : ctx.ehInputSections)
+  for (EhInputSection *Section : elfState().ehInputSections)
     CaptureSection(Section);
 
   // Native synthetic sections can also be reachable only through output
@@ -711,7 +711,7 @@ ELFLinkGraphAdapter::capture(const PluginLinkGraph &Previous,
   for (Symbol *SymbolValue : symtab.getSymbols())
     CaptureSymbol(SymbolValue);
 
-  for (InputSectionBase *Native : ctx.inputSections) {
+  for (InputSectionBase *Native : elfState().inputSections) {
     if (!Native || Native == &InputSection::discarded)
       continue;
     const uint64_t SourceAtomID = AtomIDs.lookup(Native);
@@ -987,7 +987,7 @@ Error ELFLinkGraphAdapter::applyDelta(const PluginLinkGraph &Before,
       }
       if ((Atom.Flags & NEVERC_LINK_ATOM_LIVE) == 0)
         Created->markDead();
-      ctx.inputSections.push_back(Created);
+      elfState().inputSections.push_back(Created);
       NativeSections[Section->ID] = Created;
       NativeAtoms[Atom.ID] = Created;
       SectionIDs[Created] = Section->ID;

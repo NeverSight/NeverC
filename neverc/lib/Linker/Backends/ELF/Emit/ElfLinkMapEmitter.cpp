@@ -1,16 +1,16 @@
+#include "Linker/Core/Runtime/LinkerParallel.h"
+#include "Linker/ELF/ELFContextAccess.h"
 #include "Linker/ELF/InputFiles.h"
 #include "Linker/ELF/LinkerScript.h"
 #include "Linker/ELF/MapFile.h"
 #include "Linker/ELF/OutputSections.h"
 #include "Linker/ELF/Symbols.h"
 #include "Linker/ELF/SyntheticSections.h"
-#include "Linker/Core/Runtime/LinkerParallel.h"
 #include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Support/TimeProfiler.h"
 #include "llvm/Support/raw_ostream.h"
-#include "Linker/ELF/ELFContextAccess.h"
 
 using namespace llvm;
 using namespace llvm::object;
@@ -37,7 +37,7 @@ void writeHeader(raw_ostream &os, uint64_t vma, uint64_t lma, uint64_t size,
 // Returns a list of all symbols that we want to print out.
 std::vector<Defined *> getSymbols() {
   std::vector<Defined *> v;
-  for (ELFFileBase *file : ctx.objectFiles)
+  for (ELFFileBase *file : elfState().objectFiles)
     for (Symbol *b : file->getSymbols())
       if (auto *dr = dyn_cast<Defined>(b))
         if (!dr->isSection() && dr->section && dr->section->isLive() &&
@@ -221,7 +221,7 @@ namespace {
 void writeCref(raw_fd_ostream &os) {
   // Collect symbols and files.
   MapVector<Symbol *, SetVector<InputFile *>> map;
-  for (ELFFileBase *file : ctx.objectFiles) {
+  for (ELFFileBase *file : elfState().objectFiles) {
     for (Symbol *sym : file->getSymbols()) {
       if (isa<SharedSymbol>(sym))
         map[sym].insert(file);
@@ -265,7 +265,7 @@ void elf::writeMapAndCref() {
   // Open a map file for writing.
   std::error_code ec;
   StringRef mapFile = config->mapFile.empty() ? "-" : config->mapFile;
-  raw_fd_ostream os = ctx.openAuxiliaryFile(mapFile, ec);
+  raw_fd_ostream os = elfState().openAuxiliaryFile(mapFile, ec);
   if (ec) {
     error("cannot open " + mapFile + ": " + ec.message());
     return;

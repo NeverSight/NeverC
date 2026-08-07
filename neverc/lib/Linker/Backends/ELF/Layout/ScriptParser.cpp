@@ -2,6 +2,7 @@
 #include "Linker/Core/Runtime/Session.h"
 #include "Linker/ELF/Config.h"
 #include "Linker/ELF/Driver.h"
+#include "Linker/ELF/ELFContextAccess.h"
 #include "Linker/ELF/InputFiles.h"
 #include "Linker/ELF/LinkerScript.h"
 #include "Linker/ELF/OutputSections.h"
@@ -22,7 +23,6 @@
 #include "llvm/Support/SaveAndRestore.h"
 #include "llvm/Support/TimeProfiler.h"
 #include <cassert>
-#include "Linker/ELF/ELFContextAccess.h"
 
 using namespace llvm;
 using namespace llvm::ELF;
@@ -301,7 +301,7 @@ void ScriptParser::addFile(StringRef s) {
     SmallString<128> pathData;
     StringRef path = (config->sysroot + s).toStringRef(pathData);
     if (sys::fs::exists(path))
-      ctx.driver.addFile(saver().save(path), /*withLOption=*/false);
+      elfState().driver.addFile(saver().save(path), /*withLOption=*/false);
     else
       setError("cannot find " + s + " inside " + config->sysroot);
     return;
@@ -309,17 +309,18 @@ void ScriptParser::addFile(StringRef s) {
 
   if (s.starts_with("/")) {
     // Case 1: s is an absolute path. Just open it.
-    ctx.driver.addFile(s, /*withLOption=*/false);
+    elfState().driver.addFile(s, /*withLOption=*/false);
   } else if (s.starts_with("=")) {
     // Case 2: relative to the sysroot.
     if (config->sysroot.empty())
-      ctx.driver.addFile(s.substr(1), /*withLOption=*/false);
+      elfState().driver.addFile(s.substr(1), /*withLOption=*/false);
     else
-      ctx.driver.addFile(saver().save(config->sysroot + "/" + s.substr(1)),
-                         /*withLOption=*/false);
+      elfState().driver.addFile(
+          saver().save(config->sysroot + "/" + s.substr(1)),
+          /*withLOption=*/false);
   } else if (s.starts_with("-l")) {
     // Case 3: search in the list of library paths.
-    ctx.driver.addLibrary(s.substr(2));
+    elfState().driver.addLibrary(s.substr(2));
   } else {
     // Case 4: s is a relative path. Search in the directory of the script file.
     std::string filename = std::string(getCurrentMB().getBufferIdentifier());
@@ -328,17 +329,17 @@ void ScriptParser::addFile(StringRef s) {
       SmallString<0> path(directory);
       sys::path::append(path, s);
       if (sys::fs::exists(path)) {
-        ctx.driver.addFile(path, /*withLOption=*/false);
+        elfState().driver.addFile(path, /*withLOption=*/false);
         return;
       }
     }
     // Then search in the current working directory.
     if (sys::fs::exists(s)) {
-      ctx.driver.addFile(s, /*withLOption=*/false);
+      elfState().driver.addFile(s, /*withLOption=*/false);
     } else {
       // Finally, search in the list of library paths.
       if (std::optional<std::string> path = findFromSearchPaths(s))
-        ctx.driver.addFile(saver().save(*path), /*withLOption=*/true);
+        elfState().driver.addFile(saver().save(*path), /*withLOption=*/true);
       else
         setError("unable to find " + s);
     }
@@ -1095,7 +1096,7 @@ SymbolAssignment *ScriptParser::readSymbolAssignment(StringRef name) {
       }
     };
   }
-  return make<SymbolAssignment>(name, e, ctx.scriptSymOrderCounter++,
+  return make<SymbolAssignment>(name, e, elfState().scriptSymOrderCounter++,
                                 getCurrentLocation());
 }
 
@@ -1455,11 +1456,12 @@ Expr ScriptParser::readPrimary() {
     StringRef name = unquote(readParenLiteral());
     // Return 1 if s is defined. If the definition is only found in a linker
     // script, it must happen before this DEFINED.
-    auto order = ctx.scriptSymOrderCounter++;
+    auto order = elfState().scriptSymOrderCounter++;
     return [=] {
       Symbol *s = symtab.find(name);
-      return s && s->isDefined() && ctx.scriptSymOrder.lookup(s) < order ? 1
-                                                                         : 0;
+      return s && s->isDefined() && elfState().scriptSymOrder.lookup(s) < order
+                 ? 1
+                 : 0;
     };
   }
   if (tok == "LENGTH") {

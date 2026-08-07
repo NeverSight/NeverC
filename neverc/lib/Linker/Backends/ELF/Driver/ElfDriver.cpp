@@ -199,7 +199,8 @@ std::vector<std::pair<MemoryBufferRef, uint64_t>> static getArchiveMembers(
 
   // Take ownership of memory buffers created for members of thin archives.
   std::vector<std::unique_ptr<MemoryBuffer>> mbs = file->takeThinBuffers();
-  std::move(mbs.begin(), mbs.end(), std::back_inserter(ctx.memoryBuffers));
+  std::move(mbs.begin(), mbs.end(),
+            std::back_inserter(elfState().memoryBuffers));
 
   return v;
 }
@@ -801,7 +802,7 @@ namespace {
 void readCallGraph(MemoryBufferRef mb) {
   // Build a map from symbol name to section
   DenseMap<StringRef, Symbol *> map;
-  for (ELFFileBase *file : ctx.objectFiles)
+  for (ELFFileBase *file : elfState().objectFiles)
     for (Symbol *sym : file->getSymbols())
       map[sym->getName()] = sym;
 
@@ -882,7 +883,7 @@ bool processCallGraphRelocations(SmallVector<uint32_t, 32> &symbolIndices,
 template <class ELFT> static void readCallGraphsFromObjectFiles() {
   SmallVector<uint32_t, 32> symbolIndices;
   ArrayRef<typename ELFT::CGProfile> cgProfile;
-  for (auto file : ctx.objectFiles) {
+  for (auto file : elfState().objectFiles) {
     auto *obj = cast<ObjFile<ELFT>>(file);
     if (!processCallGraphRelocations(symbolIndices, cgProfile, obj))
       continue;
@@ -1007,7 +1008,7 @@ void readConfigs(opt::InputArgList &args, const LinkerDriverConfig &driverCfg) {
                    OPT_no_allow_multiple_definition, false) ||
       hasZOption(args, "muldefs");
   for (auto *arg : args.filtered(OPT_override))
-    ctx.overrideSymbols.try_emplace(arg->getValue(), nullptr);
+    elfState().overrideSymbols.try_emplace(arg->getValue(), nullptr);
   config->androidMemtagHeap =
       args.hasFlag(OPT_android_memtag_heap, OPT_no_android_memtag_heap, false);
   config->androidMemtagStack = args.hasFlag(OPT_android_memtag_stack,
@@ -1611,10 +1612,10 @@ void excludeLibs(opt::InputArgList &args) {
         sym->versionId = VER_NDX_LOCAL;
   };
 
-  for (ELFFileBase *file : ctx.objectFiles)
+  for (ELFFileBase *file : elfState().objectFiles)
     visit(file);
 
-  for (BitcodeFile *file : ctx.bitcodeFiles)
+  for (BitcodeFile *file : elfState().bitcodeFiles)
     visit(file);
 }
 } // namespace
@@ -1630,7 +1631,7 @@ void handleUndefined(Symbol *sym, const char *option) {
     return;
   sym->extract();
   if (!config->whyExtract.empty())
-    ctx.whyExtractRecords.emplace_back(option, sym->file, *sym);
+    elfState().whyExtractRecords.emplace_back(option, sym->file, *sym);
 }
 } // namespace
 
@@ -1677,7 +1678,8 @@ void writeArchiveStats() {
     return;
 
   std::error_code ec;
-  raw_fd_ostream os = ctx.openAuxiliaryFile(config->printArchiveStats, ec);
+  raw_fd_ostream os =
+      elfState().openAuxiliaryFile(config->printArchiveStats, ec);
   if (ec) {
     error("--print-archive-stats=: cannot open " + config->printArchiveStats +
           ": " + ec.message());
@@ -1688,13 +1690,13 @@ void writeArchiveStats() {
 
   SmallVector<StringRef, 0> archives;
   DenseMap<CachedHashStringRef, unsigned> all, extracted;
-  for (ELFFileBase *file : ctx.objectFiles)
+  for (ELFFileBase *file : elfState().objectFiles)
     if (file->archiveName.size())
       ++extracted[CachedHashStringRef(file->archiveName)];
-  for (BitcodeFile *file : ctx.bitcodeFiles)
+  for (BitcodeFile *file : elfState().bitcodeFiles)
     if (file->archiveName.size())
       ++extracted[CachedHashStringRef(file->archiveName)];
-  for (std::pair<StringRef, unsigned> f : ctx.driver.archiveFiles) {
+  for (std::pair<StringRef, unsigned> f : elfState().driver.archiveFiles) {
     unsigned &v = extracted[CachedHashString(f.first)];
     os << f.second << '\t' << v << '\t' << f.first << '\n';
     // If the archive occurs multiple times, other instances have a count of 0.
@@ -1709,7 +1711,7 @@ void writeWhyExtract() {
     return;
 
   std::error_code ec;
-  raw_fd_ostream os = ctx.openAuxiliaryFile(config->whyExtract, ec);
+  raw_fd_ostream os = elfState().openAuxiliaryFile(config->whyExtract, ec);
   if (ec) {
     error("cannot open --why-extract= file " + config->whyExtract + ": " +
           ec.message());
@@ -1717,7 +1719,7 @@ void writeWhyExtract() {
   }
 
   os << "reference\textracted\tsymbol\n";
-  for (auto &entry : ctx.whyExtractRecords) {
+  for (auto &entry : elfState().whyExtractRecords) {
     os << std::get<0>(entry) << '\t' << toString(std::get<1>(entry)) << '\t'
        << toString(std::get<2>(entry)) << '\n';
   }
@@ -1726,7 +1728,7 @@ void writeWhyExtract() {
 
 namespace {
 void reportBackrefs() {
-  for (auto &ref : ctx.backwardReferences) {
+  for (auto &ref : elfState().backwardReferences) {
     const Symbol &sym = *ref.first;
     std::string to = toString(ref.second.second);
     // Some libraries have known problems and can cause noise. Filter them out
@@ -1772,7 +1774,7 @@ void reportBackrefs() {
 namespace {
 void writeDependencyFile() {
   std::error_code ec;
-  raw_fd_ostream os = ctx.openAuxiliaryFile(config->dependencyFile, ec);
+  raw_fd_ostream os = elfState().openAuxiliaryFile(config->dependencyFile, ec);
   if (ec) {
     error("cannot open " + config->dependencyFile + ": " + ec.message());
     return;
@@ -1816,7 +1818,7 @@ void writeDependencyFile() {
 namespace {
 void replaceCommonSymbols() {
   llvm::TimeTraceScope timeScope("Replace common symbols");
-  for (ELFFileBase *file : ctx.objectFiles) {
+  for (ELFFileBase *file : elfState().objectFiles) {
     if (!file->hasCommonSyms)
       continue;
     for (Symbol *sym : file->getGlobalSymbols()) {
@@ -1826,7 +1828,7 @@ void replaceCommonSymbols() {
 
       auto *bss = make<BssSection>("COMMON", s->size, s->alignment);
       bss->file = s->file;
-      ctx.inputSections.push_back(bss);
+      elfState().inputSections.push_back(bss);
       Defined(s->file, StringRef(), s->binding, s->stOther, s->type,
               /*value=*/0, s->size, bss)
           .overwrite(*s);
@@ -1867,7 +1869,7 @@ template <class ELFT> void findKeepUniqueSections(opt::InputArgList &args) {
     if (sym->includeInDynsym())
       markAddrsig(sym);
 
-  for (InputFile *f : ctx.objectFiles) {
+  for (InputFile *f : elfState().objectFiles) {
     auto *obj = cast<ObjFile<ELFT>>(f);
     ArrayRef<Symbol *> syms = obj->getSymbols();
     if (obj->addrsigSec) {
@@ -1946,15 +1948,15 @@ Symbol *addUnusedUndefined(StringRef name, uint8_t binding = STB_GLOBAL) {
 
 namespace {
 void markBuffersAsDontNeed() {
-  if (ctx.memoryBuffers.empty())
+  if (elfState().memoryBuffers.empty())
     return;
 
   SmallPtrSet<const char *, 16> bufs;
-  for (BitcodeFile *file : ctx.bitcodeFiles)
+  for (BitcodeFile *file : elfState().bitcodeFiles)
     bufs.insert(file->mb.getBufferStart());
-  for (BitcodeFile *file : ctx.lazyBitcodeFiles)
+  for (BitcodeFile *file : elfState().lazyBitcodeFiles)
     bufs.insert(file->mb.getBufferStart());
-  for (MemoryBuffer &mb : llvm::make_pointee_range(ctx.memoryBuffers))
+  for (MemoryBuffer &mb : llvm::make_pointee_range(elfState().memoryBuffers))
     if (bufs.count(mb.getBufferStart()))
       mb.dontNeedIfMmap();
 }
@@ -1969,12 +1971,12 @@ template <class ELFT> void LinkerDriver::compileBitcodeFiles() {
   // Creating BitcodeCompiler also creates the plugin LTO child task.  With no
   // bitcode inputs there is no backend run (and therefore no BackendDoneHook)
   // to finish that child, which prevents the parent LinkTask from ending.
-  if (ctx.bitcodeFiles.empty()) {
+  if (elfState().bitcodeFiles.empty()) {
     lto.reset();
     return;
   }
   lto.reset(new BitcodeCompiler);
-  lto->addBatch(ctx.bitcodeFiles);
+  lto->addBatch(elfState().bitcodeFiles);
 
   markBuffersAsDontNeed();
 
@@ -1988,7 +1990,7 @@ template <class ELFT> void LinkerDriver::compileBitcodeFiles() {
       for (Symbol *sym : obj->getGlobalSymbols())
         if (sym->hasVersionSuffix)
           sym->parseSymbolVersion();
-    ctx.objectFiles.push_back(obj);
+    elfState().objectFiles.push_back(obj);
   }
 }
 
@@ -2105,7 +2107,7 @@ void redirectSymbols(ArrayRef<WrappedSymbol> wrapped) {
     return;
 
   // Update pointers in input files.
-  parallelForEach(ctx.objectFiles, [&](ELFFileBase *file) {
+  parallelForEach(elfState().objectFiles, [&](ELFFileBase *file) {
     for (Symbol *&sym : file->getMutableGlobalSymbols())
       if (Symbol *s = map.lookup(sym))
         sym = s;
@@ -2143,7 +2145,7 @@ uint32_t getAndFeatures() {
     return 0;
 
   uint32_t ret = -1;
-  for (ELFFileBase *f : ctx.objectFiles) {
+  for (ELFFileBase *f : elfState().objectFiles) {
     uint32_t features = f->andFeatures;
 
     checkAndReportMissingFeature(
@@ -2276,7 +2278,7 @@ void LinkerDriver::execute(opt::InputArgList &args) {
   }
 
   config->hasDynSymTab =
-      !ctx.sharedFiles.empty() || config->isPic || config->exportDynamic;
+      !elfState().sharedFiles.empty() || config->isPic || config->exportDynamic;
 
   for (StringRef name : script->referencedSymbols) {
     Symbol *sym = addUnusedUndefined(name);
@@ -2300,30 +2302,30 @@ void LinkerDriver::execute(opt::InputArgList &args) {
     sym->isUsedInRegularObj = true;
 
   // Pre-LTO: pull in bitcode-defined libcall symbols only.
-  if (!ctx.bitcodeFiles.empty())
+  if (!elfState().bitcodeFiles.empty())
     for (auto *s : lto::LTO::getRuntimeLibcallSymbols())
       handleLibcall(s);
 
   // Archive members defining __wrap symbols may be extracted.
   std::vector<WrappedSymbol> wrapped = addWrappedSymbols(args);
 
-  parallelForEach(ctx.objectFiles, [](ELFFileBase *file) {
+  parallelForEach(elfState().objectFiles, [](ELFFileBase *file) {
     prepareSectionsAndLocals(file, /*ignoreComdats=*/false);
   });
-  parallelForEach(ctx.objectFiles, finalizeObjectFile);
-  parallelForEach(ctx.bitcodeFiles,
+  parallelForEach(elfState().objectFiles, finalizeObjectFile);
+  parallelForEach(elfState().bitcodeFiles,
                   [](BitcodeFile *file) { file->postParse(); });
-  for (auto &it : ctx.nonPrevailingSyms) {
+  for (auto &it : elfState().nonPrevailingSyms) {
     Symbol &sym = *it.first;
     Undefined(sym.file, sym.getName(), sym.binding, sym.stOther, sym.type,
               it.second)
         .overwrite(sym);
     cast<Undefined>(sym).nonPrevailing = true;
   }
-  ctx.nonPrevailingSyms.clear();
-  for (const DuplicateSymbol &d : ctx.duplicates)
+  elfState().nonPrevailingSyms.clear();
+  for (const DuplicateSymbol &d : elfState().duplicates)
     reportDuplicate(*d.sym, d.file, d.section, d.value);
-  ctx.duplicates.clear();
+  elfState().duplicates.clear();
 
   if (errorCount())
     return;
@@ -2343,7 +2345,7 @@ void LinkerDriver::execute(opt::InputArgList &args) {
     symtab.scanVersionScript();
   }
 
-  const size_t numObjsBeforeLTO = ctx.objectFiles.size();
+  const size_t numObjsBeforeLTO = elfState().objectFiles.size();
   dispatchByFormat(compileBitcodeFiles);
 
   reportBackrefs();
@@ -2352,12 +2354,13 @@ void LinkerDriver::execute(opt::InputArgList &args) {
   if (errorCount())
     return;
 
-  auto newObjectFiles = ArrayRef(ctx.objectFiles).slice(numObjsBeforeLTO);
+  auto newObjectFiles =
+      ArrayRef(elfState().objectFiles).slice(numObjsBeforeLTO);
   parallelForEach(newObjectFiles, [](ELFFileBase *file) {
     prepareSectionsAndLocals(file, /*ignoreComdats=*/true);
   });
   parallelForEach(newObjectFiles, finalizeObjectFile);
-  for (const DuplicateSymbol &d : ctx.duplicates)
+  for (const DuplicateSymbol &d : elfState().duplicates)
     reportDuplicate(*d.sym, d.file, d.section, d.value);
 
   // Relocatable merge (-r): use the shared neverc::merge module for
@@ -2366,7 +2369,7 @@ void LinkerDriver::execute(opt::InputArgList &args) {
   if (config->relocatable) {
     llvm::TimeTraceScope timeScope("Relocatable merge");
     SmallVector<StringRef, 32> buffers;
-    for (ELFFileBase *f : ctx.objectFiles)
+    for (ELFFileBase *f : elfState().objectFiles)
       buffers.push_back(f->mb.getBuffer());
 
     neverc::merge::Options mergeOpts;
@@ -2402,12 +2405,12 @@ void LinkerDriver::execute(opt::InputArgList &args) {
   {
     llvm::TimeTraceScope timeScope("Aggregate sections");
     // Per-file buckets fill in parallel; single sequential merge.
-    const size_t numFiles = ctx.objectFiles.size();
+    const size_t numFiles = elfState().objectFiles.size();
     std::vector<SmallVector<InputSectionBase *, 0>> perFileSections(numFiles);
     std::vector<SmallVector<EhInputSection *, 0>> perFileEh(numFiles);
 
     parallelFor(0, numFiles, [&](size_t i) {
-      for (InputSectionBase *s : ctx.objectFiles[i]->getSections()) {
+      for (InputSectionBase *s : elfState().objectFiles[i]->getSections()) {
         if (!s || s == &InputSection::discarded)
           continue;
         if (LLVM_UNLIKELY(isa<EhInputSection>(s)))
@@ -2422,26 +2425,30 @@ void LinkerDriver::execute(opt::InputArgList &args) {
       totalSections += perFileSections[i].size();
       totalEh += perFileEh[i].size();
     }
-    ctx.inputSections.reserve(ctx.inputSections.size() + totalSections);
-    ctx.ehInputSections.reserve(ctx.ehInputSections.size() + totalEh);
+    elfState().inputSections.reserve(elfState().inputSections.size() +
+                                     totalSections);
+    elfState().ehInputSections.reserve(elfState().ehInputSections.size() +
+                                       totalEh);
     for (size_t i = 0; i < numFiles; ++i) {
-      ctx.inputSections.append(perFileSections[i].begin(),
-                               perFileSections[i].end());
-      ctx.ehInputSections.append(perFileEh[i].begin(), perFileEh[i].end());
+      elfState().inputSections.append(perFileSections[i].begin(),
+                                      perFileSections[i].end());
+      elfState().ehInputSections.append(perFileEh[i].begin(),
+                                        perFileEh[i].end());
     }
 
-    for (BinaryFile *f : ctx.binaryFiles)
+    for (BinaryFile *f : elfState().binaryFiles)
       for (InputSectionBase *s : f->getSections())
-        ctx.inputSections.push_back(cast<InputSection>(s));
+        elfState().inputSections.push_back(cast<InputSection>(s));
   }
 
   {
     llvm::TimeTraceScope timeScope("Strip sections");
-    const bool hasSympart = ctx.hasSympart.load(std::memory_order_relaxed);
+    const bool hasSympart =
+        elfState().hasSympart.load(std::memory_order_relaxed);
     const bool stripDebug = config->strip != StripPolicy::None;
 
     if (hasSympart || stripDebug) {
-      llvm::erase_if(ctx.inputSections, [&](InputSectionBase *s) {
+      llvm::erase_if(elfState().inputSections, [&](InputSectionBase *s) {
         if (hasSympart && s->type == SHT_LLVM_SYMPART) {
           dispatchByFormat(readSymbolPartitionSection, s);
           return true;
@@ -2517,7 +2524,7 @@ void LinkerDriver::execute(opt::InputArgList &args) {
 
   if (canHaveMemtagGlobals()) {
     llvm::TimeTraceScope timeScope("Process memory tagged symbols");
-    createTaggedSymbols(ctx.objectFiles);
+    createTaggedSymbols(elfState().objectFiles);
   }
 
   dispatchByFormat(createSyntheticSections, );

@@ -2,6 +2,7 @@
 #include "Linker/Core/Runtime/Session.h"
 #include "Linker/Core/Support/Strings.h"
 #include "Linker/ELF/Config.h"
+#include "Linker/ELF/ELFContextAccess.h"
 #include "Linker/ELF/Emit.h"
 #include "Linker/ELF/InputFiles.h"
 #include "Linker/ELF/InputSection.h"
@@ -18,7 +19,6 @@
 #include <algorithm>
 #include <cassert>
 #include <string>
-#include "Linker/ELF/ELFContextAccess.h"
 
 using namespace llvm;
 using namespace llvm::ELF;
@@ -242,7 +242,7 @@ void declareSymbol(SymbolAssignment *cmd) {
   // 0); otherwise it's assigned the order of the SymbolAssignment.
   Symbol *sym = symtab.insert(cmd->name);
   if (!sym->isDefined())
-    ctx.scriptSymOrder.insert({sym, cmd->symOrder});
+    elfState().scriptSymOrder.insert({sym, cmd->symOrder});
 
   // We can't calculate final value right now.
   sym->mergeProperties(newSym);
@@ -582,7 +582,7 @@ LinkerScript::createInputSectionList(OutputSection &outCmd) {
 
   for (SectionCommand *cmd : outCmd.commands) {
     if (auto *isd = dyn_cast<InputSectionDescription>(cmd)) {
-      isd->sectionBases = computeInputSections(isd, ctx.inputSections);
+      isd->sectionBases = computeInputSections(isd, elfState().inputSections);
       for (InputSectionBase *s : isd->sectionBases)
         s->parent = &outCmd;
       ret.insert(ret.end(), isd->sectionBases.begin(), isd->sectionBases.end());
@@ -830,9 +830,9 @@ void LinkerScript::addOrphanSections() {
   // to create target sections first. We do not want priority handling
   // for synthetic sections because them are special.
   size_t n = 0;
-  for (InputSectionBase *isec : ctx.inputSections) {
+  for (InputSectionBase *isec : elfState().inputSections) {
     if (LLVM_LIKELY(isa<InputSection>(isec)))
-      ctx.inputSections[n++] = isec;
+      elfState().inputSections[n++] = isec;
 
     // In -r links, SHF_LINK_ORDER sections are added while adding their parent
     // sections because we need to know the parent's output section before we
@@ -844,7 +844,7 @@ void LinkerScript::addOrphanSections() {
     add(isec);
   }
   // Keep just InputSection.
-  ctx.inputSections.resize(n);
+  elfState().inputSections.resize(n);
 
   // If no SECTIONS command was given, we should insert sections commands
   // before others, so that we can handle scripts which refers them,

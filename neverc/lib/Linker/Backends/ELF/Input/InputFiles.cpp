@@ -134,7 +134,7 @@ std::optional<MemoryBufferRef> elf::readFile(StringRef path) {
   }
 
   MemoryBufferRef mbref = (*mbOrErr)->getMemBufferRef();
-  ctx.memoryBuffers.push_back(std::move(*mbOrErr)); // take MB ownership
+  elfState().memoryBuffers.push_back(std::move(*mbOrErr)); // take MB ownership
 
   return mbref;
 }
@@ -159,12 +159,12 @@ bool isCompatible(InputFile *file) {
   }
 
   InputFile *existing = nullptr;
-  if (!ctx.objectFiles.empty())
-    existing = ctx.objectFiles[0];
-  else if (!ctx.sharedFiles.empty())
-    existing = ctx.sharedFiles[0];
-  else if (!ctx.bitcodeFiles.empty())
-    existing = ctx.bitcodeFiles[0];
+  if (!elfState().objectFiles.empty())
+    existing = elfState().objectFiles[0];
+  else if (!elfState().sharedFiles.empty())
+    existing = elfState().sharedFiles[0];
+  else if (!elfState().bitcodeFiles.empty())
+    existing = elfState().bitcodeFiles[0];
   std::string with;
   if (existing)
     with = " with " + toString(existing);
@@ -179,7 +179,7 @@ template <class ELFT> void doParseFile(InputFile *file) {
   // Lazy object file
   if (file->lazy) {
     if (auto *f = dyn_cast<BitcodeFile>(file)) {
-      ctx.lazyBitcodeFiles.push_back(f);
+      elfState().lazyBitcodeFiles.push_back(f);
       f->parseLazy();
     } else {
       cast<ObjFile<ELFT>>(file)->parseLazy();
@@ -191,15 +191,15 @@ template <class ELFT> void doParseFile(InputFile *file) {
     message(toString(file));
 
   if (file->kind() == InputFile::ObjKind) {
-    ctx.objectFiles.push_back(cast<ELFFileBase>(file));
+    elfState().objectFiles.push_back(cast<ELFFileBase>(file));
     cast<ObjFile<ELFT>>(file)->parse();
   } else if (auto *f = dyn_cast<SharedFile>(file)) {
     f->parse<ELFT>();
   } else if (auto *f = dyn_cast<BitcodeFile>(file)) {
-    ctx.bitcodeFiles.push_back(f);
+    elfState().bitcodeFiles.push_back(f);
     f->parse();
   } else {
-    ctx.binaryFiles.push_back(cast<BinaryFile>(file));
+    elfState().binaryFiles.push_back(cast<BinaryFile>(file));
     cast<BinaryFile>(file)->parse();
   }
 }
@@ -271,11 +271,11 @@ void addDependentLibrary(StringRef specifier, const InputFile *f) {
   if (!config->dependentLibraries)
     return;
   if (std::optional<std::string> s = searchLibraryBaseName(specifier))
-    ctx.driver.addFile(saver().save(*s), /*withLOption=*/true);
+    elfState().driver.addFile(saver().save(*s), /*withLOption=*/true);
   else if (std::optional<std::string> s = findFromSearchPaths(specifier))
-    ctx.driver.addFile(saver().save(*s), /*withLOption=*/true);
+    elfState().driver.addFile(saver().save(*s), /*withLOption=*/true);
   else if (fs::exists(specifier))
-    ctx.driver.addFile(specifier, /*withLOption=*/false);
+    elfState().driver.addFile(specifier, /*withLOption=*/false);
   else
     error(toString(f) +
           ": unable to find library from dependent library specifier: " +
@@ -543,23 +543,24 @@ template <class ELFT> void ObjFile<ELFT>::parse(bool ignoreComdats) {
                 ": invalid native Android kernel profile contract");
           continue;
         }
-        if (!ctx.androidKernelContract) {
-          ctx.androidKernelContract = contract;
-          ctx.androidKernelContractFile = this;
+        if (!elfState().androidKernelContract) {
+          elfState().androidKernelContract = contract;
+          elfState().androidKernelContractFile = this;
           continue;
         }
-        if (*ctx.androidKernelContract != contract) {
+        if (*elfState().androidKernelContract != contract) {
           uint32_t existingProfile =
               neverc::AndroidKernelProfileContract::profile(
-                  *ctx.androidKernelContract);
+                  *elfState().androidKernelContract);
           uint32_t existingMode =
               neverc::AndroidKernelProfileContract::kcfiMode(
-                  *ctx.androidKernelContract);
+                  *elfState().androidKernelContract);
           error("incompatible Android kernel profile contracts\n>>> " +
-                toString(ctx.androidKernelContractFile) + " selects profile " +
-                Twine(existingProfile) + " / KCFI mode " + Twine(existingMode) +
-                "\n>>> " + toString(this) + " selects profile " +
-                Twine(profile) + " / KCFI mode " + Twine(mode));
+                toString(elfState().androidKernelContractFile) +
+                " selects profile " + Twine(existingProfile) + " / KCFI mode " +
+                Twine(existingMode) + "\n>>> " + toString(this) +
+                " selects profile " + Twine(profile) + " / KCFI mode " +
+                Twine(mode));
         }
       }
     }
@@ -569,8 +570,8 @@ template <class ELFT> void ObjFile<ELFT>::parse(bool ignoreComdats) {
             "with -fandroid-kernel-driver-mode");
   }
 
-  // Eagerly scan `.neverc.overrides` so that ctx.overrideSymbols is fully
-  // populated for *this* file before symbol resolution begins. This must
+  // Eagerly scan `.neverc.overrides` so that elfState().overrideSymbols is
+  // fully populated for *this* file before symbol resolution begins. This must
   // run before initializeSymbols() (which triggers Symbol::resolve) because
   // resolve relies on the set to decide whether an incoming definition is
   // allowed to overwrite an existing one. The scan happens in the serial
@@ -592,7 +593,8 @@ template <class ELFT> void ObjFile<ELFT>::parse(bool ignoreComdats) {
         auto [sym, rest] = payload.split('\0');
         if (!sym.empty()) {
           StringRef saved = saver().save(sym);
-          auto [it, inserted] = ctx.overrideSymbols.try_emplace(saved, this);
+          auto [it, inserted] =
+              elfState().overrideSymbols.try_emplace(saved, this);
           if (!inserted && it->second != nullptr && it->second != this) {
             warn("symbol '" + saved +
                  "' marked override in multiple files; last definition wins"
@@ -742,7 +744,7 @@ void ObjFile<ELFT>::initializeSections(bool ignoreComdats,
     case SHT_NULL:
       break;
     case SHT_LLVM_SYMPART:
-      ctx.hasSympart.store(true, std::memory_order_relaxed);
+      elfState().hasSympart.store(true, std::memory_order_relaxed);
       [[fallthrough]];
     default:
       this->sections[i] =
@@ -1164,7 +1166,7 @@ template <class ELFT> void ObjFile<ELFT>::postParse() {
       }
       if (sym.file == this) {
         std::lock_guard<std::mutex> lock(mu);
-        ctx.nonPrevailingSyms.emplace_back(&sym, secIdx);
+        elfState().nonPrevailingSyms.emplace_back(&sym, secIdx);
       }
       continue;
     }
@@ -1177,7 +1179,7 @@ template <class ELFT> void ObjFile<ELFT>::postParse() {
     if (sym.binding == STB_WEAK || binding == STB_WEAK)
       continue;
     std::lock_guard<std::mutex> lock(mu);
-    ctx.duplicates.push_back({&sym, this, sec, eSym.st_value});
+    elfState().duplicates.push_back({&sym, this, sec, eSym.st_value});
   }
 }
 
@@ -1357,7 +1359,7 @@ template <class ELFT> void SharedFile::parse() {
   if (!wasInserted)
     return;
 
-  ctx.sharedFiles.push_back(this);
+  elfState().sharedFiles.push_back(this);
 
   verdefs = parseVerdefs<ELFT>(obj.base(), verdefSec);
   std::vector<uint32_t> verneeds = parseVerneed<ELFT>(obj, verneedSec);
@@ -1583,7 +1585,7 @@ void BitcodeFile::parse() {
     if (!name.consume_front(overridePrefix))
       continue;
     StringRef saved = saver().save(name);
-    auto [it, inserted] = ctx.overrideSymbols.try_emplace(saved, this);
+    auto [it, inserted] = elfState().overrideSymbols.try_emplace(saved, this);
     if (!inserted && it->second != nullptr && it->second != this) {
       warn("symbol '" + saved +
            "' marked override in multiple files; last definition wins"
@@ -1616,7 +1618,8 @@ void BitcodeFile::parseLazy() {
   numSymbols = obj->symbols().size();
   symbols = std::make_unique<Symbol *[]>(numSymbols);
   for (auto [i, irSym] : llvm::enumerate(obj->symbols()))
-    if (!irSym.isUndefined() && !irSym.getName().starts_with(neverc::OverrideNames::SymbolPrefix)) {
+    if (!irSym.isUndefined() &&
+        !irSym.getName().starts_with(neverc::OverrideNames::SymbolPrefix)) {
       auto *sym = symtab.insert(saver().save(irSym.getName()));
       sym->resolve(LazyObject{*this});
       symbols[i] = sym;

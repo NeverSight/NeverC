@@ -2,6 +2,7 @@
 #include "Linker/Core/Runtime/LinkerParallel.h"
 #include "Linker/Core/Runtime/Session.h"
 #include "Linker/Core/Support/Strings.h"
+#include "Linker/ELF/ELFContextAccess.h"
 #include "Linker/ELF/InputFiles.h"
 #include "Linker/ELF/InputSection.h"
 #include "Linker/ELF/LinkerScript.h"
@@ -13,7 +14,6 @@
 #include "llvm/Support/TimeProfiler.h"
 #include <algorithm>
 #include <vector>
-#include "Linker/ELF/ELFContextAccess.h"
 
 using namespace llvm;
 using namespace llvm::ELF;
@@ -228,14 +228,14 @@ template <class ELFT> void MarkLive<ELFT>::run() {
   // that point to .eh_frames. Otherwise, the garbage collector would drop
   // all of them. We also want to preserve personality routines and LSDA
   // referenced by .eh_frame sections, so we scan them for that here.
-  for (EhInputSection *eh : ctx.ehInputSections) {
+  for (EhInputSection *eh : elfState().ehInputSections) {
     const RelsOrRelas<ELFT> rels = eh->template relsOrRelas<ELFT>();
     if (rels.areRelocsRel())
       scanEhFrameSection(*eh, rels.rels);
     else if (rels.relas.size())
       scanEhFrameSection(*eh, rels.relas);
   }
-  for (InputSectionBase *sec : ctx.inputSections) {
+  for (InputSectionBase *sec : elfState().inputSections) {
     if (sec->flags & SHF_GNU_RETAIN) {
       enqueue(sec, 0);
       continue;
@@ -395,14 +395,14 @@ template <class ELFT> void MarkLive<ELFT>::mark() {
 // to from __start_/__stop_ symbols because there will only be one set of
 // symbols for the whole program.
 template <class ELFT> void MarkLive<ELFT>::moveToMain() {
-  for (ELFFileBase *file : ctx.objectFiles)
+  for (ELFFileBase *file : elfState().objectFiles)
     for (Symbol *s : file->getSymbols())
       if (auto *d = dyn_cast<Defined>(s))
         if ((d->type == STT_GNU_IFUNC || d->type == STT_TLS) && d->section &&
             d->section->isLive())
           markSymbol(s);
 
-  for (InputSectionBase *sec : ctx.inputSections) {
+  for (InputSectionBase *sec : elfState().inputSections) {
     if (!sec->isLive() || !isValidCIdentifier(sec->name))
       continue;
     if (symtab.find(("__start_" + sec->name).str()) ||
@@ -428,7 +428,7 @@ template <class ELFT> void elf::markLive() {
     return;
   }
 
-  for (InputSectionBase *sec : ctx.inputSections)
+  for (InputSectionBase *sec : elfState().inputSections)
     sec->markDead();
 
   // Follow the graph to mark all live sections.
@@ -443,7 +443,7 @@ template <class ELFT> void elf::markLive() {
 
   // Report garbage-collected sections.
   if (config->printGcSections)
-    for (InputSectionBase *sec : ctx.inputSections)
+    for (InputSectionBase *sec : elfState().inputSections)
       if (!sec->isLive())
         message("removing unused section " + toString(sec));
 }

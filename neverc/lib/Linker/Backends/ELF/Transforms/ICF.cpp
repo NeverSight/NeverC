@@ -1,12 +1,13 @@
 #include "Linker/ELF/ICF.h"
+#include "Linker/Core/Runtime/LinkerParallel.h"
 #include "Linker/ELF/Config.h"
+#include "Linker/ELF/ELFContextAccess.h"
 #include "Linker/ELF/InputFiles.h"
 #include "Linker/ELF/LinkerScript.h"
 #include "Linker/ELF/OutputSections.h"
 #include "Linker/ELF/SymbolTable.h"
 #include "Linker/ELF/Symbols.h"
 #include "Linker/ELF/SyntheticSections.h"
-#include "Linker/Core/Runtime/LinkerParallel.h"
 #include "llvm/ADT/Hashing.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/BinaryFormat/ELF.h"
@@ -16,7 +17,6 @@
 #include <algorithm>
 #include <atomic>
 #include <vector>
-#include "Linker/ELF/ELFContextAccess.h"
 
 using namespace llvm;
 using namespace llvm::ELF;
@@ -359,8 +359,7 @@ void ICF<ELFT>::forEachClass(llvm::function_ref<void(size_t, size_t)> fn) {
   // The sharding must be completed before any calls to Fn are made
   // so that Fn can modify the Chunks in its shard without causing data
   // races.
-  size_t numShards =
-      std::max<size_t>(1, parallelThreadCount() * 4);
+  size_t numShards = std::max<size_t>(1, parallelThreadCount() * 4);
   numShards = std::min<size_t>(numShards, 256);
   numShards = std::min<size_t>(numShards, sections.size());
   if (numShards <= 1) {
@@ -404,8 +403,7 @@ bool combineRelocHashes(unsigned cnt, InputSection *isec,
         hash ^= refHash + 0x9e3779b9 + (hash << 6) + (hash >> 2);
       }
     } else if (isa<SharedSymbol>(s)) {
-      uint32_t refHash =
-          static_cast<uint32_t>(llvm::hash_value(s.getName()));
+      uint32_t refHash = static_cast<uint32_t>(llvm::hash_value(s.getName()));
       hash ^= refHash + 0x9e3779b9 + (hash << 6) + (hash >> 2);
     }
   }
@@ -449,18 +447,17 @@ template <class ELFT> void ICF<ELFT>::foldLeafSectionsEarly() {
   if (leafSections.size() < 2)
     return;
 
-  parallelSort(leafSections,
-               [](const LeafCandidate &a, const LeafCandidate &b) {
-                 if (a.hash != b.hash)
-                   return a.hash < b.hash;
-                 if (a.sec->file != b.sec->file) {
-                   int cmp =
-                       a.sec->file->getName().compare(b.sec->file->getName());
-                   if (cmp != 0)
-                     return cmp < 0;
-                 }
-                 return a.sec->name.compare(b.sec->name) < 0;
-               });
+  parallelSort(
+      leafSections, [](const LeafCandidate &a, const LeafCandidate &b) {
+        if (a.hash != b.hash)
+          return a.hash < b.hash;
+        if (a.sec->file != b.sec->file) {
+          int cmp = a.sec->file->getName().compare(b.sec->file->getName());
+          if (cmp != 0)
+            return cmp < 0;
+        }
+        return a.sec->name.compare(b.sec->name) < 0;
+      });
 
   SmallPtrSet<InputSection *, 32> removed;
   SmallPtrSet<InputSection *, 16> printedSelected;
@@ -522,7 +519,7 @@ template <class ELFT> void ICF<ELFT>::run() {
         [&](InputSection &s) { s.eqClass[0] = s.eqClass[1] = ++uniqueId; });
 
   // Collect sections to merge.
-  for (InputSectionBase *sec : ctx.inputSections) {
+  for (InputSectionBase *sec : elfState().inputSections) {
     auto *s = dyn_cast<InputSection>(sec);
     if (s && s->eqClass[0] == 0) {
       if (isEligible(s))
@@ -548,10 +545,8 @@ template <class ELFT> void ICF<ELFT>::run() {
     const unsigned nextSlot = (hashPass + 1) % 2;
     bool changedAny = false;
     static constexpr size_t kParallelHashPassThreshold = 1024;
-    if (parallelEnabled() &&
-        sections.size() >= kParallelHashPassThreshold) {
-      size_t numChunks =
-          std::max<size_t>(1, parallelThreadCount() * 4);
+    if (parallelEnabled() && sections.size() >= kParallelHashPassThreshold) {
+      size_t numChunks = std::max<size_t>(1, parallelThreadCount() * 4);
       numChunks = std::min<size_t>(numChunks, sections.size());
       std::vector<uint8_t> changedByChunk(numChunks, 0);
       parallelFor(0, numChunks, [&](size_t chunkIdx) {
@@ -658,7 +653,7 @@ template <class ELFT> void ICF<ELFT>::run() {
   };
   for (Symbol *sym : symtab.getSymbols())
     fold(sym);
-  parallelForEach(ctx.objectFiles, [&](ELFFileBase *file) {
+  parallelForEach(elfState().objectFiles, [&](ELFFileBase *file) {
     for (Symbol *sym : file->getLocalSymbols())
       fold(sym);
   });
