@@ -1,0 +1,125 @@
+{
+  "profiles": [
+    {
+      "android_release": 12,
+      "capabilities": {
+        "do_mmap_abi": "without_vm_flags",
+        "filldir_abi": "returns_int",
+        "ftrace_callback_abi": "pt_regs",
+        "ftrace_registration_api": true,
+        "kallsyms_iter_abi": "with_module"
+      },
+      "kcfi_mode": "disabled",
+      "kernel_name": "android12-5.10",
+      "kimage_vaddr": "0xFFFFFFC008000000",
+      "kmi_generation": 9,
+      "legacy_id": 510,
+      "linux_major": 5,
+      "linux_minor": 10,
+      "linux_patch": 257,
+      "page_shift": 12,
+      "symbol": "ANDROID12_5_10_KMI9"
+    },
+    {
+      "android_release": 13,
+      "capabilities": {
+        "do_mmap_abi": "without_vm_flags",
+        "filldir_abi": "returns_int",
+        "ftrace_callback_abi": "ftrace_regs",
+        "ftrace_registration_api": true,
+        "kallsyms_iter_abi": "with_module"
+      },
+      "kcfi_mode": "disabled",
+      "kernel_name": "android13-5.15",
+      "kimage_vaddr": "0xFFFFFFC008000000",
+      "kmi_generation": 8,
+      "legacy_id": 515,
+      "linux_major": 5,
+      "linux_minor": 15,
+      "linux_patch": 208,
+      "page_shift": 12,
+      "symbol": "ANDROID13_5_15_KMI8"
+    },
+    {
+      "android_release": 14,
+      "capabilities": {
+        "do_mmap_abi": "without_vm_flags",
+        "filldir_abi": "returns_bool",
+        "ftrace_callback_abi": "ftrace_regs",
+        "ftrace_registration_api": true,
+        "kallsyms_iter_abi": "with_module"
+      },
+      "kcfi_mode": "classic",
+      "kernel_name": "android14-6.1",
+      "kimage_vaddr": "0xFFFFFFC008000000",
+      "kmi_generation": 11,
+      "legacy_id": 601,
+      "linux_major": 6,
+      "linux_minor": 1,
+      "linux_patch": 174,
+      "page_shift": 12,
+      "symbol": "ANDROID14_6_1_KMI11"
+    },
+    {
+      "android_release": 15,
+      "capabilities": {
+        "do_mmap_abi": "with_vm_flags",
+        "filldir_abi": "returns_bool",
+        "ftrace_callback_abi": "ftrace_regs",
+        "ftrace_registration_api": true,
+        "kallsyms_iter_abi": "address_only"
+      },
+      "kcfi_mode": "classic",
+      "kernel_name": "android15-6.6",
+      "kimage_vaddr": "0xFFFFFFC080000000",
+      "kmi_generation": 8,
+      "legacy_id": 606,
+      "linux_major": 6,
+      "linux_minor": 6,
+      "linux_patch": 139,
+      "page_shift": 12,
+      "symbol": "ANDROID15_6_6_KMI8"
+    },
+    {
+      "android_release": 16,
+      "capabilities": {
+        "do_mmap_abi": "with_vm_flags",
+        "filldir_abi": "returns_bool",
+        "ftrace_callback_abi": "ftrace_regs",
+        "ftrace_registration_api": true,
+        "kallsyms_iter_abi": "address_only"
+      },
+      "kcfi_mode": "normalized",
+      "kernel_name": "android16-6.12",
+      "kimage_vaddr": "0xFFFFFFC080000000",
+      "kmi_generation": 6,
+      "legacy_id": 612,
+      "linux_major": 6,
+      "linux_minor": 12,
+      "linux_patch": 89,
+      "page_shift": 12,
+      "symbol": "ANDROID16_6_12_KMI6"
+    },
+    {
+      "android_release": 17,
+      "capabilities": {
+        "do_mmap_abi": "with_vm_flags",
+        "filldir_abi": "returns_bool",
+        "ftrace_callback_abi": "ftrace_regs",
+        "ftrace_registration_api": false,
+        "kallsyms_iter_abi": "address_only"
+      },
+      "kcfi_mode": "normalized",
+      "kernel_name": "android17-6.18",
+      "kimage_vaddr": "0xFFFFFFC080000000",
+      "kmi_generation": 5,
+      "legacy_id": 618,
+      "linux_major": 6,
+      "linux_minor": 18,
+      "linux_patch": 24,
+      "page_shift": 12,
+      "symbol": "ANDROID17_6_18_KMI5"
+    }
+  ],
+  "schema": 1
+}

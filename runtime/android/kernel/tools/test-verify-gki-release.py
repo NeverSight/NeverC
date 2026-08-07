@@ -323,7 +323,11 @@ class ModuleEvidenceTests(unittest.TestCase):
             )
             verifier.chmod(verifier.stat().st_mode | stat.S_IXUSR)
             output = verify.run_offset_verifier(
-                "618", module, verifier, Path("unused-header"), "unused-readelf"
+                "618",
+                module,
+                verifier,
+                Path("unused-generator"),
+                "unused-readelf",
             )
             self.assertIn("PASS", output)
 

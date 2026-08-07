@@ -25,7 +25,7 @@ struct work_struct {
 	unsigned long data;
 	struct list_head entry;
 	work_func_t func;
-#if NEVERC_KRT_KERNEL < 612
+#if NEVERC_KRT_LINUX_BEFORE(6, 12, 0)
 	u64 __kabi_reserved1;
 	u64 __kabi_reserved2;
 #endif
@@ -46,7 +46,7 @@ struct delayed_work {
 	u64 __kabi_reserved2;
 };
 
-#if NEVERC_KRT_KERNEL < 612
+#if NEVERC_KRT_LINUX_BEFORE(6, 12, 0)
 _Static_assert(sizeof(struct work_struct) == 48,
 	       "unexpected GKI 5.10-6.6 work_struct layout");
 _Static_assert(__builtin_offsetof(struct delayed_work, timer) == 48,
@@ -73,7 +73,7 @@ _Static_assert(sizeof(struct delayed_work) == 104,
 #define WORK_STRUCT_PWQ_SHIFT \
 	(WORK_STRUCT_COLOR_SHIFT + WORK_STRUCT_COLOR_BITS)
 #define WORK_OFFQ_FLAG_BITS 1
-#if NEVERC_KRT_KERNEL < 612
+#if NEVERC_KRT_LINUX_BEFORE(6, 12, 0)
 #define WORK_OFFQ_POOL_SHIFT \
 	(WORK_STRUCT_COLOR_SHIFT + WORK_OFFQ_FLAG_BITS)
 #else
@@ -89,7 +89,7 @@ _Static_assert(sizeof(struct delayed_work) == 104,
 
 _Static_assert(WORK_DATA_INIT() != 0,
 	       "work_struct must start in the no-pool state");
-#if NEVERC_KRT_KERNEL < 612
+#if NEVERC_KRT_LINUX_BEFORE(6, 12, 0)
 _Static_assert(WORK_OFFQ_POOL_SHIFT == 5,
 	       "unexpected GKI 5.10-6.6 off-queue work encoding");
 #else
@@ -152,7 +152,7 @@ void delayed_work_timer_fn(struct timer_list *timer);
  * 6.18+ renamed alloc_workqueue to alloc_workqueue_noprof.
  * The macro below provides source-level compat for both.
  */
-#if NEVERC_KRT_KERNEL >= 618
+#if NEVERC_KRT_LINUX_AT_LEAST(6, 18, 0)
 struct workqueue_struct *alloc_workqueue_noprof(const char *fmt,
 					       unsigned int flags,
 					       int max_active, ...);
@@ -184,7 +184,7 @@ void destroy_workqueue(struct workqueue_struct *wq);
 #endif
 #define WORK_CPU_UNBOUND NEVERC_KRT_GKI_NR_CPUS
 
-#if NEVERC_KRT_KERNEL >= 618
+#if NEVERC_KRT_LINUX_AT_LEAST(6, 18, 0)
 extern struct workqueue_struct *system_percpu_wq;
 #define NEVERC_KRT_SYSTEM_WORKQUEUE system_percpu_wq
 #else
@@ -242,7 +242,7 @@ bool flush_work(struct work_struct *work);
  * 5.10–5.15: flush_workqueue exported directly.
  * 6.1+:      renamed to __flush_workqueue.
  */
-#if NEVERC_KRT_KERNEL >= 601
+#if NEVERC_KRT_LINUX_AT_LEAST(6, 1, 0)
 void __flush_workqueue(struct workqueue_struct *wq);
 #define flush_workqueue(wq) __flush_workqueue(wq)
 #else

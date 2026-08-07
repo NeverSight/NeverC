@@ -28,9 +28,9 @@
  *   6.18  = 120 bytes (0x78) — trailing KABI reserve removed
  */
 #ifndef NEVERC_KRT_KP_SIZE
-#if NEVERC_KRT_KERNEL == 510
+#if NEVERC_KRT_LINUX_IS_SERIES(5, 10)
 #define NEVERC_KRT_KP_SIZE 136
-#elif NEVERC_KRT_KERNEL >= 618
+#elif NEVERC_KRT_LINUX_AT_LEAST(6, 18, 0)
 #define NEVERC_KRT_KP_SIZE 120
 #else
 #define NEVERC_KRT_KP_SIZE 128

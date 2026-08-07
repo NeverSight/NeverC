@@ -1,5 +1,7 @@
 #include "neverc/Plugin/PluginObject.h"
 #include <stddef.h>
+#include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define STRING_VIEW(Value)                                                   \
@@ -20,8 +22,13 @@ static NevercStatus NEVERC_CALL intercept_post_write(
   NevercObjectImageInfo Image;
   NevercPhaseResult Downstream;
   NevercStatus Status;
+#ifdef NEVERC_TEST_CORRUPT_ANDROID_CONTRACT
+  const uint8_t Marker = UINT8_C(0x01);
+#else
   const uint8_t Marker = UINT8_C(0x42);
+#endif
   uint64_t MarkerOffset;
+  int WriteMarker = 1;
 
   if (Frame == NULL || Continuation == NULL || OutResult == NULL ||
       Phase == NULL)
@@ -36,13 +43,66 @@ static NevercStatus NEVERC_CALL intercept_post_write(
   if (Image.Binary == NULL || neverc_handle_is_null(Image.Builder) ||
       Image.OutputState != NEVERC_OUTPUT_OPEN || Image.Size < 5)
     return status_code(NEVERC_STATUS_INVALID_STATE);
-  MarkerOffset = Image.Size > 9 ? 9 : 4;
+#ifdef NEVERC_TEST_CORRUPT_ANDROID_CONTRACT
+  {
+    static const uint8_t Contract612[] = {
+        UINT8_C(0x02), UINT8_C(0x00), UINT8_C(0x00), UINT8_C(0x00),
+        UINT8_C(0x64), UINT8_C(0x02), UINT8_C(0x00), UINT8_C(0x00),
+    };
+    uint8_t *Bytes;
+    unsigned int Matches = 0;
+    uint64_t Offset;
 
-  Status = Image.Binary->WriteAt(
-      Image.Binary->Context, Frame->Task, Image.Builder, MarkerOffset,
-      (NevercByteView){&Marker, 1});
-  if (Status.Code != NEVERC_STATUS_OK)
-    return Status;
+    if (Image.Size > (uint64_t)SIZE_MAX)
+      return status_code(NEVERC_STATUS_RESOURCE_EXHAUSTED);
+    Bytes = (uint8_t *)malloc((size_t)Image.Size);
+    if (Bytes == NULL)
+      return status_code(NEVERC_STATUS_RESOURCE_EXHAUSTED);
+    Status =
+        Image.Binary->ReadAt(Image.Binary->Context, Frame->Task, Image.Builder,
+                             0, (NevercMutableByteView){Bytes, Image.Size});
+    if (Status.Code != NEVERC_STATUS_OK) {
+      free(Bytes);
+      return Status;
+    }
+    MarkerOffset = Image.Size;
+    for (Offset = 0; Offset + sizeof(Contract612) <= Image.Size; ++Offset) {
+      if (memcmp(Bytes + Offset, Contract612, sizeof(Contract612)) == 0) {
+        if (Matches == 0)
+          MarkerOffset = Offset;
+        ++Matches;
+      }
+    }
+    /* The built-in merger serializes each input through this same pipeline.
+     * Leave those one-contract images intact and corrupt only the final merged
+     * image, which retains one record per input. */
+    if (Matches >= 2) {
+      for (Offset = 0; Offset + sizeof(Contract612) <= Image.Size; ++Offset) {
+        if (memcmp(Bytes + Offset, Contract612, sizeof(Contract612)) != 0)
+          continue;
+        Status = Image.Binary->WriteAt(Image.Binary->Context, Frame->Task,
+                                       Image.Builder, Offset,
+                                       (NevercByteView){&Marker, 1});
+        if (Status.Code != NEVERC_STATUS_OK)
+          break;
+      }
+    }
+    free(Bytes);
+    if (Status.Code != NEVERC_STATUS_OK)
+      return Status;
+    WriteMarker = 0;
+  }
+#else
+  MarkerOffset = Image.Size > 9 ? 9 : 4;
+#endif
+
+  if (WriteMarker) {
+    Status =
+        Image.Binary->WriteAt(Image.Binary->Context, Frame->Task, Image.Builder,
+                              MarkerOffset, (NevercByteView){&Marker, 1});
+    if (Status.Code != NEVERC_STATUS_OK)
+      return Status;
+  }
 
   memset(&Downstream, 0, sizeof(Downstream));
   Downstream.Header.StructSize = sizeof(Downstream);
@@ -112,9 +172,15 @@ neverc_plugin_entry(const NevercBootstrapAPI *Bootstrap,
   Descriptor.Header.Major = NEVERC_PLUGIN_ABI_MAJOR;
   Descriptor.Header.Minor = NEVERC_PLUGIN_ABI_MINOR;
   Descriptor.PluginID =
+#ifdef NEVERC_TEST_CORRUPT_ANDROID_CONTRACT
+      (NevercStringView)STRING_VIEW("org.neverc.test.object-contract-corrupt");
+  Descriptor.DisplayName =
+      (NevercStringView)STRING_VIEW("NeverC Object Contract Corruption Test");
+#else
       (NevercStringView)STRING_VIEW("org.neverc.test.object-post-write");
   Descriptor.DisplayName =
       (NevercStringView)STRING_VIEW("NeverC Object Post-Write Test");
+#endif
   Descriptor.Version.Major = 1;
   Descriptor.Concurrency = NEVERC_CONCURRENCY_THREAD_SAFE;
   Descriptor.Reentrancy = NEVERC_REENTRANCY_NONE;

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # verify_gki_offsets.sh -- verify (or discover) struct module offsets from a
-# built GKI kernel, comparing against runtime/android/kernel/include/nvkmod_version.h.
+# built GKI kernel, comparing against the checked profile catalog and manifests.
 #
 # WHY: the module loader reads `init` and `exit` from the
 # .gnu.linkonce.this_module blob at offsets fixed by *that kernel's* struct
 # module (see runtime/android/kernel/tools/gen_struct_module_offsets.c). If the
-# constants baked into nvkmod_version.h drift from the real kernel, the runtime
+# generated profile contract drifts from the real kernel, the runtime
 # loads garbage. This script re-derives them straight from a build artifact:
 #
 #   * section size of .gnu.linkonce.this_module   == sizeof(struct module)
@@ -17,15 +17,14 @@
 # (always ELF, even for ThinLTO builds) when every `.mod.o` is bitcode.
 #
 # Two modes:
-#   verify_gki_offsets.sh <kernel-key> <dir...>   compare vs nvkmod_version.h
+#   verify_gki_offsets.sh <profile-id> <dir...>   compare vs profile evidence
 #   verify_gki_offsets.sh --print     <dir...>   just extract + print (no header),
-#                                                useful to seed a NEW version
-#                                                block (e.g. a fresh 6.18 build).
+#                                                useful to seed a NEW profile.
 set -euo pipefail
 
 PROG=${0##*/}
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
-DEFAULT_HEADER="$SCRIPT_DIR/../../runtime/android/kernel/include/nvkmod_version.h"
+DEFAULT_GENERATOR="$SCRIPT_DIR/../../runtime/android/kernel/tools/generate-compat-table.py"
 
 usage() {
 	cat <<EOF
@@ -33,14 +32,16 @@ Usage:
   $PROG [options] <kernel-key> <search-dir> [search-dir...]   # compare
   $PROG [options] --print       <search-dir> [search-dir...]   # discover
 
-  <kernel-key>   one of: 510 515 601 606 612 618
+# The supported IDs are validated by the catalog rather than duplicated here.
+  <profile-id>   an ID present in arm64/gki-profiles.json
   <search-dir>   directory tree(s) to scan for .mod.o / .ko objects
 
 Options:
   --print         discover mode: extract offsets from the build and print them
-                  as paste-ready #define lines; does not read nvkmod_version.h
-  --header PATH   nvkmod_version.h to compare against
-                  (default: <repo>/runtime/android/kernel/include/nvkmod_version.h)
+                  as evidence values; does not query the profile catalog
+  --generator PATH
+                  profile contract generator/query tool
+                  (default: runtime/android/kernel/tools/generate-compat-table.py)
   --readelf BIN   readelf to use (default: \$READELF, else auto-detect
                   llvm-readelf*/readelf)
   -h, --help      show this help
@@ -55,14 +56,14 @@ die() {
 }
 
 # ---- parse args --------------------------------------------------------------
-HEADER=$DEFAULT_HEADER
+GENERATOR=$DEFAULT_GENERATOR
 READELF_OVERRIDE=${READELF:-}
 PRINT_MODE=0
 POS=()
 while [ $# -gt 0 ]; do
 	case "$1" in
 	--print) PRINT_MODE=1; shift ;;
-	--header) HEADER=${2:?--header needs a path}; shift 2 ;;
+	--generator) GENERATOR=${2:?--generator needs a path}; shift 2 ;;
 	--readelf) READELF_OVERRIDE=${2:?--readelf needs a binary}; shift 2 ;;
 	-h | --help) usage; exit 0 ;;
 	--) shift; break ;;
@@ -84,10 +85,9 @@ fi
 if [ "$PRINT_MODE" != 1 ]; then
 	[ -n "$KEY" ] || { usage >&2; die "missing <kernel-key>"; }
 	case "$KEY" in
-	510 | 515 | 601 | 606 | 612 | 618) ;;
-	*) die "invalid kernel-key '$KEY' (want 510/515/601/606/612/618)" ;;
+	'' | *[!0-9]*) die "invalid profile ID '$KEY'" ;;
 	esac
-	[ -f "$HEADER" ] || die "header not found: $HEADER"
+	[ -f "$GENERATOR" ] || die "profile generator not found: $GENERATOR"
 fi
 
 # ---- pick a readelf ----------------------------------------------------------
@@ -111,24 +111,29 @@ pick_readelf() {
 READELF=$(pick_readelf) ||
 	die "no readelf/llvm-readelf on PATH (apt-get install binutils llvm)"
 
-# ---- expected values from nvkmod_version.h -----------------------------------
-# Walk the #if NEVERC_KRT_KERNEL == <key> chain and grab the first define of
-# each macro inside the matching block (first-wins also dodges the global
-# MODULE_SIZE fallback that trails the last version block).
+# ---- expected values from the validated profile contract --------------------
+# The generator owns catalog/manifest validation and exposes a stable JSON query
+# so this verifier never needs to parse generated C preprocessor structure.
 read_expected() {
-	awk -v ver="$KEY" '
-		index($0,"NEVERC_KRT_KERNEL")>0 && index($0,"==")>0 {
-			inblk = ($NF==ver); next
-		}
-		inblk {
-			for (i=1;i<=NF;i++) {
-				if ($i=="NEVERC_KRT_OFF_INIT"    && e_init=="") e_init=$(i+1)
-				if ($i=="NEVERC_KRT_OFF_EXIT"    && e_exit=="") e_exit=$(i+1)
-				if ($i=="NEVERC_KRT_MODULE_SIZE" && e_size=="") e_size=$(i+1)
-			}
-		}
-		END { print e_init "|" e_exit "|" e_size }
-	' "$HEADER"
+	python3 - "$GENERATOR" "$KEY" <<'PY'
+import json
+import subprocess
+import sys
+
+generator, profile = sys.argv[1:]
+query = subprocess.run(
+    [sys.executable, generator, "--query-profile", profile],
+    check=True,
+    stdout=subprocess.PIPE,
+    text=True,
+)
+contract = json.loads(query.stdout)
+print(
+    f"{contract['module_init_offset']}|"
+    f"{contract['module_exit_offset']}|"
+    f"{contract['module_size']}"
+)
+PY
 }
 
 # ---- extraction helpers ------------------------------------------------------
@@ -201,7 +206,7 @@ fi
 if [ "$PRINT_MODE" = 1 ]; then
 	echo "[discover] readelf=$READELF"
 	echo "[discover] object=$USED"
-	echo "[discover] paste into the matching block of nvkmod_version.h:"
+	echo "[discover] record these values in the profile layout manifest:"
 	printf '#    define NEVERC_KRT_OFF_INIT %s /* 0x%X */\n' "$GOT_INIT" "$GOT_INIT"
 	printf '#    define NEVERC_KRT_OFF_EXIT %s /* 0x%X */\n' "$GOT_EXIT" "$GOT_EXIT"
 	printf '#    define NEVERC_KRT_MODULE_SIZE %s /* 0x%X */\n' "$GOT_SIZE" "$GOT_SIZE"
@@ -215,7 +220,7 @@ rest=${exp#*|}
 EXP_EXIT=${rest%%|*}
 EXP_SIZE=${rest#*|}
 { [ -n "$EXP_INIT" ] && [ -n "$EXP_EXIT" ] && [ -n "$EXP_SIZE" ]; } ||
-	die "could not read expected offsets for kernel $KEY from $HEADER"
+	die "could not read expected offsets for profile $KEY from generated evidence"
 
 status=0
 row() {
@@ -227,16 +232,16 @@ row() {
 	printf '  %-12s expected=%-6s got=%-6s  %s\n' "$1" "$2" "$3" "$tag"
 }
 
-echo "[verify] kernel=$KEY  readelf=$READELF"
-echo "[verify] header=$HEADER"
+echo "[verify] profile=$KEY  readelf=$READELF"
+echo "[verify] generator=$GENERATOR"
 echo "[verify] object=$USED"
 row "OFF_INIT" "$EXP_INIT" "$GOT_INIT"
 row "OFF_EXIT" "$EXP_EXIT" "$GOT_EXIT"
 row "MODULE_SIZE" "$EXP_SIZE" "$GOT_SIZE"
 
 if [ "$status" -ne 0 ]; then
-	echo "[verify] FAIL: nvkmod_version.h does not match the built kernel ($KEY)" >&2
-	echo "[verify] hint: re-run with --print to get paste-ready values" >&2
+	echo "[verify] FAIL: generated profile evidence does not match the built kernel ($KEY)" >&2
+	echo "[verify] hint: re-run with --print, update the manifest, and regenerate" >&2
 	exit 1
 fi
 echo "[verify] PASS: struct module offsets match for kernel $KEY"

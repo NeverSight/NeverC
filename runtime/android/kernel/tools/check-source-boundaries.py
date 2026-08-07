@@ -274,7 +274,9 @@ def check_function_interfaces(source_paths):
         for path in sorted(root.rglob("*.h"))
     )
     internal_path = RUNTIME_ROOT / "src" / "nvk_internal.h"
+    profile_path = RUNTIME_ROOT / "src" / "nvk_profile.h"
     internal_code = code_only(internal_path.read_text(encoding="utf-8"))
+    internal_code += "\n" + code_only(profile_path.read_text(encoding="utf-8"))
 
     for path, code in source_code.items():
         for match in FUNCTION_DEFINITION.finditer(code):
@@ -300,7 +302,8 @@ def check_function_interfaces(source_paths):
                         "or internal interface declaration",
                     )
                 )
-            elif declared_internal and not declared_public and not referenced_elsewhere:
+            elif (declared_internal and not declared_public
+                  and not referenced_elsewhere):
                 violations.append(
                     (
                         path,

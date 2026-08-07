@@ -10,7 +10,7 @@ Usage:
 If the tree is already prepared (has include/generated/autoconf.h),
 pass the source root as both arguments.
 
-Output: NEVERC_KRT_* values ready for nvkmod_version.h.
+Output: NEVERC_KRT_* evidence values for a profile layout manifest.
 """
 import os
 import re
@@ -185,7 +185,7 @@ def main():
         sys.exit(1)
 
     print()
-    print("// paste into runtime/android/kernel/include/nvkmod_version.h:")
+    print("// record in the profile layout manifest, then regenerate:")
     for name in sorted(offsets):
         val = offsets[name]
         print(f"#  define {name} {val}  /* 0x{val:X} */")

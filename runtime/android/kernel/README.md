@@ -28,8 +28,21 @@ exports). Building without MODVERSIONS (no `__versions` section) makes the
 loader skip CRC checks, so those few imports load on any matching-vermagic
 kernel.
 
-The only per-kernel data therefore lives in `include/nvkmod_version.h`, selected
-with `-DNVK_KERNEL=510|515|601|606|612|618` (default `510` = android12-5.10).
+Per-kernel data is one generated, atomic **profile contract** rather than a set
+of independently overridable macros:
+
+- `arm64/gki-profiles.json` names each profile and owns semantic identity plus
+  ABI capabilities;
+- `arm64/gki-manifests/<id>.json` is the checked layout/config evidence;
+- `arm64/gki-release.json` pins exact release, vermagic, and KCFI evidence;
+- `tools/generate-compat-table.py` validates those three sources together and
+  generates the public profile configuration and private runtime tables.
+
+Select a current profile with `-DNVK_KERNEL=<id>` (for example `612`). The
+numeric values are compatibility handles, not ordered kernel versions; new
+code should use the generated `NEVERC_KRT_PROFILE_*` names when it needs to
+refer to a profile symbolically. The source-compatibility default remains the
+android12 5.10 profile.
 
 ## Layout
 
@@ -37,8 +50,12 @@ with `-DNVK_KERNEL=510|515|601|606|612|618` (default `510` = android12-5.10).
 runtime/android/kernel/
   include/                     # public NeverC kernel SDK headers
     nvkmod.h                   #   module entry point and NEVERC_KRT_BOOTSTRAP()
-    nvkmod_version.h           #   per-kernel vermagic + struct module offsets (5.10–6.18)
-    nvk.h                      #   all-in-one include (initializes all subsystems, auto vermagic fix)
+    nvkmod_version.h           #   stable profile-selection facade
+    nvk_profile_ids.h          #   generated symbolic profile handles
+    nvk_profile_config.h       #   generated exact compile-time contract
+    nvk_profile_marker.h       #   re-entrant source-to-compiler contract marker
+    nvk_profile_contract_asm.h #   native contract for profile-aware .S inputs
+    nvk.h                      #   all-in-one include and subsystem initialization
     nvk_interpose.h                 #   arm64 inline-interpose engine v2 (simple + context + batch + chain + ftrace + kCFI)
     nvk_mem.h                  #   safe memory read/write, pattern scan (BMH), write-protected memory update
     nvk_syscall.h              #   sys_call_table operations + arm64 syscall number table
@@ -66,6 +83,9 @@ runtime/android/kernel/
     nvk_power.h                #   PM notifier (suspend/resume) + reboot notifier
     nvk_cpu.h                  #   CPU topology, online enumeration, per-CPU data, SMP calls
   arm64/
+    gki-profiles.json          # semantic profile identity + named capabilities
+    gki-manifests/*.json       # authoritative layout/config evidence
+    gki-release.json           # pinned release/vermagic/KCFI evidence
     include/                   # minimal cross-version kernel compatibility headers
       linux/*.h                #   types, kernel, printk, list, slab, fs, ...
       asm/*.h                  #   barrier, current, page, ptrace, syscall, ...
@@ -92,6 +112,11 @@ runtime/android/kernel/
   (`include/` + `arm64/include/`),
 - enables auto-LTO by default for multi-file modules; explicit `-flto=full` and
   `-fno-lto` builds are both supported and covered by the runtime matrix,
+- carries the selected profile and KCFI mode as one opaque compiler contract:
+  LLVM module flags enforce equality before every LTO merge, while native
+  objects carry the same pair in `.neverc.android.kernel.profile`; native,
+  plugin-mediated, and repeated relocatable links reject missing, malformed,
+  or mixed contracts,
 - adds `-D__KERNEL__ -DMODULE -ffreestanding`, direct external-data access
   (the arm64 module loader has no GOT), reserved `x18`, and disables outline
   atomics and CFI checks,
@@ -109,6 +134,11 @@ in `src/nvk_internal.h`, while file-local helpers remain `static` in their C
 file.
 
 You then pass `-r -nostdlib -o mod.ko mod.c` to relocatably link the module.
+Preprocessed assembly (`.S`) receives the generated native contract
+automatically. Raw `.s` and third-party/prebuilt objects cannot infer a source
+profile and are rejected unless their producer emits the same documented
+`.neverc.android.kernel.profile` record; this is an intentional fail-closed
+boundary, not a one-profile-per-command assumption.
 
 ## GKI build producer vs runtime validation gate
 
@@ -200,12 +230,14 @@ string literals via xorstr.
 | `android-kernel-netlink` | User↔kernel netlink IPC channel (ping/version/echo) |
 | `android-kernel-full` | Full SDK demo — initializes all subsystems, exercises interpose/cred/vis/netlink |
 
-## struct module offsets (important before loading on a device)
+## Profile evidence and `struct module` offsets
 
-`include/nvkmod_version.h` holds the `name`/`init`/`exit` offsets and total size
-of `struct module` per kernel. All six presets are **verified** against the
-stock GKI `gki_defconfig` (computed from each kernel's own `make modules_prepare`
-headers via `tools/gen_struct_module_offsets.c`):
+The checked manifest for each profile holds the `name`/`init`/`exit` offsets and
+total size of `struct module`. Generated headers consume those facts; no
+handwritten runtime or compiler source branch enumerates `510` through `618`.
+All current profiles
+are **verified** against stock GKI `gki_defconfig` evidence computed from each
+kernel's own prepared headers via `tools/gen_struct_module_offsets.c`:
 
 | preset | release | NAME | INIT | EXIT | sizeof |
 |--------|---------|------|------|------|--------|
@@ -220,14 +252,23 @@ headers via `tools/gen_struct_module_offsets.c`):
 depend on the target kernel's `CONFIG_*` (CFI_CLANG, MODULE_UNLOAD, TRACEPOINTS,
 DEBUG_INFO_BTF_MODULES, ...). The values above match a stock GKI kernel built
 with `gki_defconfig` (BTF module debug info shifts `exit` and may grow
-`sizeof(struct module)`). If an
-OEM ships a different config, regenerate them for that kernel before loading:
+`sizeof(struct module)`). An OEM kernel with a different config, patch release,
+page size, layout, or local-version string is a different atomic profile. To
+support it, collect evidence first:
 
 ```
 # On a prepared tree (Linux: make ARCH=arm64 LLVM=1 gki_defconfig modules_prepare):
 runtime/android/kernel/tools/gen-offsets.sh <path-to-GKI>/common
-# prints:  #  define NEVERC_KRT_OFF_INIT ...  etc. -> paste into nvkmod_version.h
+# prints measured layout facts for the new manifest
 ```
+
+Then add a catalog record, matching manifest and release-lock record, run
+`tools/generate-compat-table.py`, and execute the profile/runtime/smoke tests.
+The generator rejects incomplete or inconsistent profile sets. Per-TU
+`NEVERC_KRT_OFF_*`, `NEVERC_KRT_MODULE_SIZE`, `NEVERC_KRT_KCFI_MODE`, and
+`NEVERC_KRT_VERMAGIC` overrides are intentionally rejected: mixing any one of
+those facts with a different profile would recreate the ABI ambiguity this
+contract prevents.
 
 `tools/gen-offsets.sh` drives `tools/gen_struct_module_offsets.c` (a no-run
 "asm-offsets" probe). It works fully on Linux / an already-prepared tree; on
@@ -253,13 +294,9 @@ docker run --rm -v <repo>/local_docs:/work -v <repo>/runtime/android/kernel/tool
 # NOTE: android16-6.12 needs libdw-dev (its gendwarfksyms host tool includes <dwarf.h>).
 ```
 
-You can also override per build with
-`-DNEVERC_KRT_OFF_INIT=… -DNEVERC_KRT_OFF_EXIT=…`
-`-DNEVERC_KRT_MODULE_SIZE=…`.
-
-`vermagic` is likewise device-specific; override with
-`-DNEVERC_KRT_VERMAGIC='"…"'` to match your target (`cat /proc/version` /
-`modinfo` of an existing module).
+At runtime, bootstrap also requires the exact release token, Android/KMI
+identity, and page size selected by the profile before exposing any layout.
+There is no nearest-version or maximum-layout fallback.
 
 ## Linux 6.18 (android17-6.18) notes
 
@@ -290,9 +327,11 @@ Verified against GKI `6.18.24` (`gki_defconfig`, `CONFIG_COMPAT=y`):
   kernel symbols on 6.18 but not exported to modules. The runtime avoids
   `get_task_cred` paths unless a matching release helper is available.
 
-OEM kernels with `CONFIG_LOCALVERSION` (e.g. `"-4k"`) share the same
-`struct module` layout as stock GKI but need a matching `vermagic` string —
-`neverc_krt_patch_vermagic()` patches it from `linux_banner` at load time.
+OEM kernels with `CONFIG_LOCALVERSION` (for example `"-4k"`) may share a
+`struct module` layout with stock GKI, but their release identity and vermagic
+still require a separate evidence-backed profile. When explicitly requested,
+runtime vermagic patching is performed only after that exact profile identity
+has been accepted.
 
 ## Source-level debugging
 

@@ -114,7 +114,7 @@ def main(argv=None):
         args.output_dir.mkdir(parents=True, exist_ok=True)
         source = TOOLS / "gki-qemu-smoke-module.c"
         verifier = REPO_ROOT / "utils/build/verify_gki_offsets.sh"
-        header = REPO_ROOT / "runtime/android/kernel/include/nvkmod_version.h"
+        generator = TOOLS / "generate-compat-table.py"
         index = {"schema": 1, "modules": {}}
         for profile in profiles:
             entry = lock["profiles"][profile]
@@ -124,7 +124,6 @@ def main(argv=None):
                 "--target=aarch64-linux-android",
                 "-fandroid-kernel-driver-mode",
                 f"-DNVK_KERNEL={profile}",
-                f'-DNEVERC_KRT_VERMAGIC="{entry["vermagic"]}"',
                 "-std=gnu11",
                 "-Wall",
                 "-Werror",
@@ -171,7 +170,9 @@ def main(argv=None):
                 )
 
             details = verify.inspect_offset_module(output, entry["vermagic"])
-            verify.run_offset_verifier(profile, output, verifier, header, readelf)
+            verify.run_offset_verifier(
+                profile, output, verifier, generator, readelf
+            )
             digest = verify.sha256_file(output)
             index["modules"][profile] = {
                 "file": output.name,

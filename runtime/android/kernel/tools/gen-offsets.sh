@@ -1,6 +1,6 @@
 #!/bin/sh
 # gen-offsets.sh — compute exact struct module offsets for a GKI kernel and
-# print them with the NEVERC_KRT_* names consumed by nvkmod_version.h.
+# print them with stable NEVERC_KRT_* evidence names for a profile manifest.
 #
 #   Usage: gen-offsets.sh <path-to-GKI-common> [generated-dir-or-headers.tar.gz]
 #
@@ -169,5 +169,5 @@ fi
   -S -o "$OUT" "$PROBE" || { echo "probe compile failed; prepare the tree first"; exit 1; }
 
 echo
-echo "// paste into runtime/android/kernel/include/nvkmod_version.h:"
+echo "// record in the profile layout manifest, then regenerate the contract:"
 sed -n 's/.*==NVK== \([A-Z_]*\) \([0-9]*\) ==.*/#  define \1 \2/p' "$OUT"

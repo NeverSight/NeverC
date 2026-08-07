@@ -26,14 +26,14 @@ struct pt_regs {
 	u64 pstate;     /* offset 264 */
 	u64 orig_x0;    /* offset 272 */
 	s32 syscallno;  /* offset 280 */
-#if NEVERC_KRT_KERNEL >= 618
+#if NEVERC_KRT_LINUX_AT_LEAST(6, 18, 0)
 	u8 _tail[36];   /* offsets 284–319 */
 #else
 	u8 _tail[52];   /* offsets 284–335 */
 #endif
 };
 
-#if NEVERC_KRT_KERNEL >= 618
+#if NEVERC_KRT_LINUX_AT_LEAST(6, 18, 0)
 _Static_assert(sizeof(struct pt_regs) == 320,
 	       "unexpected GKI 6.18 pt_regs layout");
 #else

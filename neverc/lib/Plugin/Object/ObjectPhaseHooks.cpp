@@ -664,9 +664,33 @@ ObjectPhasePipeline::executeNative(
     const PluginObjectGraph &InputGraph,
     ArrayRef<uint8_t> NativeImage,
     const ObjectOutputDestination &Destination) {
+  return executeNative(InputGraph, NativeImage, Destination, {});
+}
+
+Expected<std::shared_ptr<PluginObjectImage>>
+ObjectPhasePipeline::executeNative(const PluginObjectGraph &InputGraph,
+                                   ArrayRef<uint8_t> NativeImage,
+                                   const ObjectOutputDestination &Destination,
+                                   ObjectPhaseSemanticValidators Validators) {
+  auto ValidateGraph = [&Validators](const PluginObjectGraph &Object) -> Error {
+    if (!Validators.Graph)
+      return Error::success();
+    return Validators.Graph(Object);
+  };
+  auto ValidateImage = [&Validators](const PluginObjectImage &Image) -> Error {
+    if (!Validators.Image)
+      return Error::success();
+    auto Bytes = Image.pendingBytes();
+    if (!Bytes)
+      return Bytes.takeError();
+    return Validators.Image(*Bytes);
+  };
+
   if (Error E = State->freeze())
     return std::move(E);
   if (Error E = verifyPluginObjectGraph(InputGraph))
+    return std::move(E);
+  if (Error E = ValidateGraph(InputGraph))
     return std::move(E);
   State->setRoute(InputGraph);
   State->ActiveNativeImage = NativeImage;
@@ -686,6 +710,8 @@ ObjectPhasePipeline::executeNative(
   CurrentGraph = std::move(*PreWrite);
   if (Error E = verifyPluginObjectGraph(*CurrentGraph))
     return std::move(E);
+  if (Error E = ValidateGraph(*CurrentGraph))
+    return std::move(E);
 
   constexpr unsigned MaxRelayoutAttempts = 8;
   bool LayoutAccepted = false;
@@ -697,6 +723,8 @@ ObjectPhasePipeline::executeNative(
       return PostLayout.takeError();
     CurrentGraph = std::move(*PostLayout);
     if (Error E = verifyPluginObjectGraph(*CurrentGraph))
+      return std::move(E);
+    if (Error E = ValidateGraph(*CurrentGraph))
       return std::move(E);
     const PluginObjectLayoutProof *Proof =
         CurrentGraph->layoutProof();
@@ -748,6 +776,8 @@ ObjectPhasePipeline::executeNative(
   if (!PostWrite)
     return PostWrite.takeError();
   CurrentImage = std::move(*PostWrite);
+  if (Error E = ValidateImage(*CurrentImage))
+    return std::move(E);
   if (Error E = CurrentImage->finish())
     return std::move(E);
 

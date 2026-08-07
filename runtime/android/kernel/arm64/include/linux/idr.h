@@ -28,11 +28,11 @@ _Static_assert(__builtin_offsetof(struct idr, __idr_base) == 16,
  * IDR_RT_MARKER is ROOT_IS_IDR | XA_FLAGS_MARK(IDR_FREE).  Its high-bit
  * position follows the official GKI gfp_t configuration for each profile.
  */
-#if NEVERC_KRT_KERNEL == 510
+#if NEVERC_KRT_LINUX_IS_SERIES(5, 10)
 #define __NEVERC_KRT_IDR_GFP_SHIFT 26
-#elif NEVERC_KRT_KERNEL == 515 || NEVERC_KRT_KERNEL == 601
+#elif NEVERC_KRT_LINUX_IS_SERIES(5, 15) || NEVERC_KRT_LINUX_IS_SERIES(6, 1)
 #define __NEVERC_KRT_IDR_GFP_SHIFT 28
-#elif NEVERC_KRT_KERNEL == 606
+#elif NEVERC_KRT_LINUX_IS_SERIES(6, 6)
 #define __NEVERC_KRT_IDR_GFP_SHIFT 27
 #else /* 6.12 / 6.18 */
 #define __NEVERC_KRT_IDR_GFP_SHIFT 28

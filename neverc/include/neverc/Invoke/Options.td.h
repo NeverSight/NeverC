@@ -5218,8 +5218,8 @@ CODEGEN_OPTION_WITH_MARSHALLING(
     prefix_1, "-fandroid-kernel-kcfi-mode=", fandroid_kernel_kcfi_mode_EQ,
     Joined, f_neverc_Group, INVALID, nullptr, HelpHidden, DefaultVis, 0,
     "Select Android kernel KCFI profile mode", "<0|1|2>", nullptr, true, 0,
-    CodeGenOpts.AndroidKernelKCFIMode, 0, false, 0,
-    normalizeStringIntegral<unsigned>, denormalizeString<unsigned>,
+    CodeGenOpts.AndroidKernelKCFIMode, 3, false, 0,
+    normalizeAndroidKernelKCFIMode, denormalizeString<unsigned>,
     mergeForwardValue, extractForwardValue, -1)
 #endif // CODEGEN_OPTION_WITH_MARSHALLING
 #ifdef CODEGEN_OPTION_WITH_MARSHALLING

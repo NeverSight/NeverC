@@ -376,7 +376,7 @@ def generate_source(manifest):
         ]
     )
 
-    if manifest["profile"] >= 612:
+    if "cpu" in layouts["thread_info"]["members"]:
         task_cpu = (
             layouts["task_struct"]["members"]["thread_info"]
             + layouts["thread_info"]["members"]["cpu"]

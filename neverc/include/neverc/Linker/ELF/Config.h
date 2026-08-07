@@ -389,6 +389,12 @@ struct Ctx {
   // Maps symbol name → originating InputFile (nullptr for --override flag).
   llvm::DenseMap<llvm::StringRef, const InputFile *> overrideSymbols;
 
+  // Opaque profile contract retained by native Android-kernel objects.  LTO
+  // module flags protect IR merges; this state extends the same equality check
+  // across explicit -fno-lto and mixed native/LTO links.
+  std::optional<uint64_t> androidKernelContract;
+  const InputFile *androidKernelContractFile = nullptr;
+
   // Each symbol assignment and DEFINED(sym) reference is assigned an increasing
   // order. Each DEFINED(sym) evaluation checks whether the reference happens
   // before a possible `sym = expr;`.

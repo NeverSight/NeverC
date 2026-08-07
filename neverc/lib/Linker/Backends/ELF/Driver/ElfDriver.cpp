@@ -93,6 +93,8 @@ void Ctx::reset() {
   scriptSymOrderCounter = 1;
   scriptSymOrder.clear();
   overrideSymbols.clear();
+  androidKernelContract.reset();
+  androidKernelContractFile = nullptr;
 }
 
 llvm::raw_fd_ostream Ctx::openAuxiliaryFile(llvm::StringRef filename,

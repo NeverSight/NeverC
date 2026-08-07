@@ -17,7 +17,7 @@ struct attribute {
 struct attribute_group {
 	const char *name;
 	umode_t (*is_visible)(struct kobject *, struct attribute *, int);
-#if NEVERC_KRT_KERNEL >= 618
+#if NEVERC_KRT_LINUX_AT_LEAST(6, 18, 0)
 	umode_t (*is_bin_visible)(struct kobject *,
 				   const struct bin_attribute *, int);
 	size_t (*bin_size)(struct kobject *, const struct bin_attribute *, int);
@@ -25,7 +25,7 @@ struct attribute_group {
 	umode_t (*is_bin_visible)(struct kobject *, struct bin_attribute *, int);
 #endif
 	struct attribute **attrs;
-#if NEVERC_KRT_KERNEL >= 618
+#if NEVERC_KRT_LINUX_AT_LEAST(6, 18, 0)
 	const struct bin_attribute *const *bin_attrs;
 #else
 	struct bin_attribute **bin_attrs;
@@ -36,7 +36,7 @@ _Static_assert(sizeof(struct attribute) == 16,
 	       "unexpected GKI attribute layout");
 _Static_assert(__builtin_offsetof(struct attribute, mode) == 8,
 	       "unexpected GKI attribute.mode offset");
-#if NEVERC_KRT_KERNEL >= 618
+#if NEVERC_KRT_LINUX_AT_LEAST(6, 18, 0)
 _Static_assert(sizeof(struct attribute_group) == 48,
 	       "unexpected GKI 6.18 attribute_group layout");
 _Static_assert(__builtin_offsetof(struct attribute_group, attrs) == 32,

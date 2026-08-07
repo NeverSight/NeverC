@@ -119,6 +119,14 @@ PluginObjectImage::outputSummary() const {
   return Summary;
 }
 
+Expected<ArrayRef<uint8_t>> PluginObjectImage::pendingBytes() const {
+  if (State != PluginObjectImageState::Candidate || !Builder)
+    return createStringError(
+        errc::invalid_argument,
+        "object image has no mutable bytes pending final verification");
+  return Builder->bytes();
+}
+
 Error PluginObjectImage::finish() {
   if (!Builder)
     return neverc_handle_is_null(Seal.Handle)

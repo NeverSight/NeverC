@@ -6,15 +6,15 @@
 /* ---- internal types (file-local) ---- */
 
 /* Keep both callback ABIs in the version-neutral embedded runtime bitcode. */
-typedef int (*neverc_krt_ksym_iter_legacy_fn)(void *data, const char *name,
+typedef int (*neverc_krt_ksym_iter_with_module_fn)(void *data, const char *name,
 					      struct module *module,
 					      unsigned long addr);
-typedef int (*neverc_krt_ksym_iter_modern_fn)(void *data, const char *name,
+typedef int (*neverc_krt_ksym_iter_address_only_fn)(void *data, const char *name,
 					      unsigned long addr);
-typedef int (*neverc_krt_ksym_on_each_legacy_fn)(
-	neverc_krt_ksym_iter_legacy_fn callback, void *data);
-typedef int (*neverc_krt_ksym_on_each_modern_fn)(
-	neverc_krt_ksym_iter_modern_fn callback, void *data);
+typedef int (*neverc_krt_ksym_on_each_with_module_fn)(
+	neverc_krt_ksym_iter_with_module_fn callback, void *data);
+typedef int (*neverc_krt_ksym_on_each_address_only_fn)(
+	neverc_krt_ksym_iter_address_only_fn callback, void *data);
 typedef unsigned long (*neverc_krt_sprint_symbol_fn)(char *buf, unsigned long addr);
 
 /* ---- resolver state shared with nvkmod.c ---- */
@@ -299,7 +299,7 @@ static int _neverc_krt_ksym_adapt_common(void *data, const char *name,
 	return ctx->cb(name, addr, ctx->data);
 }
 
-static int _neverc_krt_ksym_adapt_legacy(void *data, const char *name,
+static int _neverc_krt_ksym_adapt_with_module(void *data, const char *name,
 					 struct module *module,
 					 unsigned long addr)
 {
@@ -307,7 +307,7 @@ static int _neverc_krt_ksym_adapt_legacy(void *data, const char *name,
 	return _neverc_krt_ksym_adapt_common(data, name, addr);
 }
 
-static int _neverc_krt_ksym_adapt_modern(void *data, const char *name,
+static int _neverc_krt_ksym_adapt_address_only(void *data, const char *name,
 					 unsigned long addr)
 {
 	return _neverc_krt_ksym_adapt_common(data, name, addr);
@@ -324,7 +324,7 @@ static int _neverc_krt_walk_cb_common(void *data, const char *name,
 	return ret;
 }
 
-static int _neverc_krt_walk_cb_legacy(void *data, const char *name,
+static int _neverc_krt_walk_cb_with_module(void *data, const char *name,
 				      struct module *module,
 				      unsigned long addr)
 {
@@ -332,7 +332,7 @@ static int _neverc_krt_walk_cb_legacy(void *data, const char *name,
 	return _neverc_krt_walk_cb_common(data, name, addr);
 }
 
-static int _neverc_krt_walk_cb_modern(void *data, const char *name,
+static int _neverc_krt_walk_cb_address_only(void *data, const char *name,
 				      unsigned long addr)
 {
 	return _neverc_krt_walk_cb_common(data, name, addr);
@@ -340,7 +340,7 @@ static int _neverc_krt_walk_cb_modern(void *data, const char *name,
 
 int neverc_krt_ksyms_walk(neverc_krt_ksym_callback_t cb, void *data, int max)
 {
-	int kernel_ver;
+	const struct neverc_krt_runtime_caps *caps;
 
 	if (!cb) return -1;
 	if (!_neverc_krt_on_each_symbol) return -1;
@@ -351,22 +351,33 @@ int neverc_krt_ksyms_walk(neverc_krt_ksym_callback_t cb, void *data, int max)
 	wctx.count = 0;
 	wctx.max = max;
 
-	kernel_ver = __atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE);
-	if (kernel_ver >= 606) {
-		neverc_krt_ksym_on_each_modern_fn on_each =
-			(neverc_krt_ksym_on_each_modern_fn)_neverc_krt_on_each_symbol;
-		on_each(_neverc_krt_walk_cb_modern, &wctx);
-	} else {
-		neverc_krt_ksym_on_each_legacy_fn on_each =
-			(neverc_krt_ksym_on_each_legacy_fn)_neverc_krt_on_each_symbol;
-		on_each(_neverc_krt_walk_cb_legacy, &wctx);
+	caps = _neverc_krt_current_caps();
+	if (!caps)
+		return -1;
+	switch (caps->kallsyms_iter_abi) {
+	case NEVERC_KRT_KALLSYMS_ABI_ADDRESS_ONLY: {
+		neverc_krt_ksym_on_each_address_only_fn on_each =
+			(neverc_krt_ksym_on_each_address_only_fn)
+			_neverc_krt_on_each_symbol;
+		on_each(_neverc_krt_walk_cb_address_only, &wctx);
+		break;
+	}
+	case NEVERC_KRT_KALLSYMS_ABI_WITH_MODULE: {
+		neverc_krt_ksym_on_each_with_module_fn on_each =
+			(neverc_krt_ksym_on_each_with_module_fn)
+			_neverc_krt_on_each_symbol;
+		on_each(_neverc_krt_walk_cb_with_module, &wctx);
+		break;
+	}
+	default:
+		return -1;
 	}
 	return wctx.count;
 }
 
 int neverc_krt_ksyms_for_each(neverc_krt_ksym_callback_t cb, void *data)
 {
-	int kernel_ver;
+	const struct neverc_krt_runtime_caps *caps;
 
 	if (!cb) return -1;
 	if (!_neverc_krt_on_each_symbol) return -1;
@@ -375,16 +386,25 @@ int neverc_krt_ksyms_for_each(neverc_krt_ksym_callback_t cb, void *data)
 	ctx.cb = cb;
 	ctx.data = data;
 
-	kernel_ver = __atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE);
-	if (kernel_ver >= 606) {
-		neverc_krt_ksym_on_each_modern_fn on_each =
-			(neverc_krt_ksym_on_each_modern_fn)_neverc_krt_on_each_symbol;
-		return on_each(_neverc_krt_ksym_adapt_modern, &ctx);
+	caps = _neverc_krt_current_caps();
+	if (!caps)
+		return -1;
+	switch (caps->kallsyms_iter_abi) {
+	case NEVERC_KRT_KALLSYMS_ABI_ADDRESS_ONLY: {
+		neverc_krt_ksym_on_each_address_only_fn on_each =
+			(neverc_krt_ksym_on_each_address_only_fn)
+			_neverc_krt_on_each_symbol;
+		return on_each(_neverc_krt_ksym_adapt_address_only, &ctx);
 	}
-
-	neverc_krt_ksym_on_each_legacy_fn on_each =
-		(neverc_krt_ksym_on_each_legacy_fn)_neverc_krt_on_each_symbol;
-	return on_each(_neverc_krt_ksym_adapt_legacy, &ctx);
+	case NEVERC_KRT_KALLSYMS_ABI_WITH_MODULE: {
+		neverc_krt_ksym_on_each_with_module_fn on_each =
+			(neverc_krt_ksym_on_each_with_module_fn)
+			_neverc_krt_on_each_symbol;
+		return on_each(_neverc_krt_ksym_adapt_with_module, &ctx);
+	}
+	default:
+		return -1;
+	}
 }
 
 int neverc_krt_ksyms_resolve(const char *name, unsigned long *out_addr)

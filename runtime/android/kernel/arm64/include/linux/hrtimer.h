@@ -45,7 +45,7 @@ typedef enum hrtimer_restart (*hrtimer_func_t)(struct hrtimer *);
 struct hrtimer {
 	unsigned char __before_function[40];
 	hrtimer_func_t function;
-#if NEVERC_KRT_KERNEL < 612
+#if NEVERC_KRT_LINUX_BEFORE(6, 12, 0)
 	unsigned char __after_function[24];
 #else
 	unsigned char __after_function[16];
@@ -54,7 +54,7 @@ struct hrtimer {
 
 _Static_assert(__builtin_offsetof(struct hrtimer, function) == 40,
 	       "unexpected GKI hrtimer function offset");
-#if NEVERC_KRT_KERNEL < 612
+#if NEVERC_KRT_LINUX_BEFORE(6, 12, 0)
 _Static_assert(sizeof(struct hrtimer) == 72,
 	       "unexpected GKI 5.10-6.6 hrtimer layout");
 #else
@@ -71,7 +71,7 @@ _Static_assert(sizeof(struct hrtimer) == 64,
  *   hrtimer_forward_now was NEVER exported (accesses base->get_time()).
  *   Use hrtimer_forward (always exported) instead.
  */
-#if NEVERC_KRT_KERNEL >= 618
+#if NEVERC_KRT_LINUX_AT_LEAST(6, 18, 0)
 void hrtimer_setup(struct hrtimer *timer, hrtimer_func_t function,
 		   int which_clock, enum hrtimer_mode mode);
 #else

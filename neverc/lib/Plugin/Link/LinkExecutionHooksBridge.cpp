@@ -1,4 +1,5 @@
 #include "neverc/Plugin/Host/LinkExecutionHooksBridge.h"
+#include "AndroidKernelProfileContractVerifier.h"
 #include "BuiltinObjectMergeAdapter.h"
 #include "LinkInputReader.h"
 #include "LinkRequest.h"
@@ -317,6 +318,15 @@ LinkExecutionHooksBridge::execute(const linker::LinkExecutionRequest &Request,
       return bridgeError(
           "ObjectMergeProvider received no materialized ObjectGraph inputs");
 
+    std::optional<uint64_t> AndroidKernelContract;
+    if (Config.androidKernelModule) {
+      auto Contract = requireMatchingAndroidKernelProfileContracts(
+          Objects, "Android kernel ObjectMergeProvider boundary");
+      if (!Contract)
+        return Contract.takeError();
+      AndroidKernelContract = *Contract;
+    }
+
     const auto &Provider = *Plan->objectMergeProvider();
     BuiltinObjectMergeConfig MergeConfig;
     MergeConfig.AndroidKernelModule = Config.androidKernelModule;
@@ -331,11 +341,39 @@ LinkExecutionHooksBridge::execute(const linker::LinkExecutionRequest &Request,
                   Objects, (*FrozenRequest)->options().Flags);
     if (!Merged)
       return Merged.takeError();
+    if (AndroidKernelContract) {
+      if (Error E = requireAndroidKernelProfileContract(
+              *Merged->Object, *AndroidKernelContract,
+              "Android kernel ObjectMergeProvider output"))
+        return std::move(E);
+      if (Provider.Builtin && !Merged->MergedImage.empty()) {
+        if (Error E = requireAndroidKernelProfileContract(
+                ArrayRef<uint8_t>(reinterpret_cast<const uint8_t *>(
+                                      Merged->MergedImage.data()),
+                                  Merged->MergedImage.size()),
+                *AndroidKernelContract,
+                "Android kernel ObjectMergeProvider output image"))
+          return std::move(E);
+      }
+    }
 
     auto OutputPipeline =
         ObjectPhasePipeline::create(*Config.pluginTask, TargetSnapshot);
     if (!OutputPipeline)
       return OutputPipeline.takeError();
+    ObjectPhaseSemanticValidators Validators;
+    if (AndroidKernelContract) {
+      Validators.Graph =
+          [Expected = *AndroidKernelContract](const PluginObjectGraph &Object) {
+            return requireAndroidKernelProfileContract(
+                Object, Expected, "Android kernel object phase graph");
+          };
+      Validators.Image = [Expected =
+                              *AndroidKernelContract](ArrayRef<uint8_t> Image) {
+        return requireAndroidKernelProfileContract(
+            Image, Expected, "Android kernel object phase image");
+      };
+    }
     // Write the merged object through the native-image passthrough: the merged
     // graph was just parsed from these exact bytes, so unless a plugin output
     // phase mutates it, the file is written verbatim (byte-identical to the
@@ -347,7 +385,8 @@ LinkExecutionHooksBridge::execute(const linker::LinkExecutionRequest &Request,
                       ->executeNative(*Merged->Object, MergedImage,
                                       ObjectOutputDestination::file(
                                           (*FrozenRequest)->outputURI(),
-                                          std::numeric_limits<uint64_t>::max()));
+                                          std::numeric_limits<uint64_t>::max()),
+                                      std::move(Validators));
     if (!Output)
       return Output.takeError();
     return linker::LinkHookResult{linker::LinkHookDisposition::Completed, 0};

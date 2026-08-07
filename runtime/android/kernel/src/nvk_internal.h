@@ -8,6 +8,8 @@
 #ifndef NEVERC_KRT_INTERNAL_H
 #define NEVERC_KRT_INTERNAL_H
 
+#include "nvk_profile.h"
+
 #include <linux/types.h>
 #include <linux/compiler.h>
 #include <linux/sched.h>
@@ -140,15 +142,12 @@ int _neverc_krt_patch_multi(u32 *target, u32 *insns, int count);
 
 /* ---- nvk_compat.c ---- */
 
-extern int           _neverc_krt_kernel_ver;
-
-void _neverc_krt_version_setup(int kv);
+int _neverc_krt_version_setup(unsigned int profile_id);
+const struct neverc_krt_runtime_caps *_neverc_krt_current_caps(void);
 const struct neverc_krt_gki_layout *_neverc_krt_get_gki_layout(void);
 unsigned long _neverc_krt_get_module_size(void);
 unsigned long _neverc_krt_get_kimage_vaddr_base(void);
 unsigned long _neverc_krt_get_file_dentry_off(void);
-
-void _neverc_krt_version_try_detect_from_banner(void);
 
 void neverc_krt_interpose_pause(struct neverc_krt_interpose *h);
 

@@ -8,7 +8,7 @@
 /*
  * do_mmap signature changed in 6.6: an extra vm_flags parameter was
  * inserted between flags and pgoff.  Both typedefs are kept so the
- * runtime can cast to the right ABI depending on _neverc_krt_kernel_ver.
+ * runtime dispatches through the selected profile's named do_mmap ABI.
  *
  *   5.10/5.15/6.1:      do_mmap(file,addr,len,prot,flags,pgoff,*pop,*uf)       8 params
  *   6.6/6.12/6.18:      do_mmap(file,addr,len,prot,flags,vm_flags,pgoff,*pop,*uf)  9 params

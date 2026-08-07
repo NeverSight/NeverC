@@ -1,4 +1,5 @@
 #include "BuiltinObjectMergeAdapter.h"
+#include "AndroidKernelProfileContractVerifier.h"
 #include "neverc/Merge/Merger.h"
 #include "neverc/Plugin/Host/BuiltinTargetProvider.h"
 #include "neverc/Plugin/Host/ObjectPhaseHooks.h"
@@ -159,6 +160,15 @@ executeBuiltinObjectMergeAdapter(
         reinterpret_cast<const char *>(Input.Bytes.data()),
         Input.Bytes.size());
 
+  std::optional<uint64_t> AndroidKernelContract;
+  if (*Format == neverc::merge::Format::ELF64LE && Config.AndroidKernelModule) {
+    auto Contract = requireMatchingAndroidKernelProfileContracts(
+        InputBytes, "built-in Android kernel object merge");
+    if (!Contract)
+      return Contract.takeError();
+    AndroidKernelContract = *Contract;
+  }
+
   SmallVector<char, 0> MergedBytes;
   raw_svector_ostream Output(MergedBytes);
   neverc::merge::Options MergeOptions;
@@ -185,6 +195,14 @@ executeBuiltinObjectMergeAdapter(
   if (MergedBytes.empty())
     return createStringError(errc::invalid_argument,
                              "built-in object merge produced an empty image");
+  if (AndroidKernelContract) {
+    if (Error E = requireAndroidKernelProfileContract(
+            ArrayRef<uint8_t>(
+                reinterpret_cast<const uint8_t *>(MergedBytes.data()),
+                MergedBytes.size()),
+            *AndroidKernelContract, "built-in Android kernel merge output"))
+      return std::move(E);
+  }
 
   auto Reader = ObjectReaderProvider::create(Snapshot);
   if (!Reader)

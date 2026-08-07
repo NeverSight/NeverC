@@ -14,6 +14,8 @@ struct neverc_krt_kernel_info {
 	u32 minor;
 	u32 patch;
 	u32 android_version;
+	u32 kmi_generation;
+	u32 page_shift;
 	u32 sublevel;
 	int detected;
 };

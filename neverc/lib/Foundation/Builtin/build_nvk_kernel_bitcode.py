@@ -155,6 +155,12 @@ def main():
     boundary_checker = os.path.join(
         args.runtime_dir, "tools", "check-source-boundaries.py"
     )
+    profile_policy_checker = os.path.join(
+        args.runtime_dir, "tools", "check-profile-policy.py"
+    )
+    profile_generator = os.path.join(
+        args.runtime_dir, "tools", "generate-compat-table.py"
+    )
     user_copy_checker = os.path.join(
         args.runtime_dir, "tools", "check-user-copy-backend.py"
     )
@@ -176,6 +182,14 @@ def main():
         print(f"error: boundary checker not found: {boundary_checker}",
               file=sys.stderr)
         sys.exit(1)
+    if not os.path.isfile(profile_policy_checker):
+        print(f"error: profile-policy checker not found: "
+              f"{profile_policy_checker}", file=sys.stderr)
+        sys.exit(1)
+    if not os.path.isfile(profile_generator):
+        print(f"error: profile generator not found: {profile_generator}",
+              file=sys.stderr)
+        sys.exit(1)
     if not os.path.isfile(user_copy_checker):
         print(f"error: user-copy checker not found: {user_copy_checker}",
               file=sys.stderr)
@@ -192,6 +206,17 @@ def main():
         subprocess.check_call([sys.executable, boundary_checker])
     except subprocess.CalledProcessError as e:
         print(f"error: source-boundary check failed (exit {e.returncode})",
+              file=sys.stderr)
+        sys.exit(1)
+
+    print("  [check] profile policy", file=sys.stderr)
+    try:
+        subprocess.check_call([sys.executable, profile_policy_checker])
+        subprocess.check_call(
+            [sys.executable, profile_generator, "--check"]
+        )
+    except subprocess.CalledProcessError as e:
+        print(f"error: profile-policy check failed (exit {e.returncode})",
               file=sys.stderr)
         sys.exit(1)
 

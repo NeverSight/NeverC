@@ -22,18 +22,10 @@ on:
         required: true
         type: string
       profile:
-        description: GKI profile to validate
+        description: GKI catalog profile ID or all
         required: true
         default: "618"
-        type: choice
-        options:
-          - "618"
-          - "510"
-          - "515"
-          - "601"
-          - "606"
-          - "612"
-          - all
+        type: string
 
 permissions:
   contents: read
@@ -107,11 +99,17 @@ jobs:
           [[ "$artifact_id" =~ ^[1-9][0-9]*$ ]] || die "invalid compiler artifact ID"
 
           lock_path=/tmp/gki-release.json
+          catalog_path=/tmp/gki-profiles.json
           gh api -X GET "repos/$REPOSITORY/contents/runtime/android/kernel/arm64/gki-release.json" \
             -f "ref=$source_sha" --jq .content | tr -d '\n' | base64 --decode >"$lock_path"
+          gh api -X GET "repos/$REPOSITORY/contents/runtime/android/kernel/arm64/gki-profiles.json" \
+            -f "ref=$source_sha" --jq .content | tr -d '\n' | base64 --decode >"$catalog_path"
           jq -e '.schema == 1' "$lock_path" >/dev/null || die "unsupported release lock schema"
-          profiles=$(jq -r '.profiles | keys | join(",")' "$lock_path")
-          [ "$profiles" = "510,515,601,606,612,618" ] || die "release lock profile set is invalid: $profiles"
+          jq -e '.schema == 1' "$catalog_path" >/dev/null || die "unsupported profile catalog schema"
+          release_profiles=$(jq -c '.profiles | keys | sort' "$lock_path")
+          catalog_profiles=$(jq -c '[.profiles[].legacy_id | tostring] | sort' "$catalog_path")
+          [ "$release_profiles" = "$catalog_profiles" ] || \
+            die "release lock and catalog profile sets differ"
 
           selected=${INPUT_PROFILE:-all}
           if [ "$selected" = "all" ]; then
@@ -206,6 +204,7 @@ jobs:
       - name: Run runtime source and unit gates
         run: |
           python3 runtime/android/kernel/tools/check-source-boundaries.py
+          python3 runtime/android/kernel/tools/check-profile-policy.py
           python3 runtime/android/kernel/tools/check-user-copy-backend.py
           python3 runtime/android/kernel/tools/test-check-sdk-exports.py -v
           python3 runtime/android/kernel/tools/test-user-copy-backend.py -v
@@ -215,6 +214,7 @@ jobs:
           python3 runtime/android/kernel/tools/test-build-gki-smoke-modules.py -v
           python3 runtime/android/kernel/tools/test-gki-qemu-smoke.py -v
           python3 runtime/android/kernel/tools/generate-compat-table.py --check
+          python3 runtime/android/kernel/tools/test-profile-policy.py
 
       - name: Run all SDK layout and runtime linkage gates
         env:

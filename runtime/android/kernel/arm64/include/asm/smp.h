@@ -15,7 +15,7 @@
  * cpu_number is exported only by the former kernels.  NEVERC_KRT_TASK_CPU is
  * verified from the official 6.12 and 6.18 GKI asm-offsets.h / BTF layouts.
  */
-#if NEVERC_KRT_KERNEL < 612
+#if NEVERC_KRT_LINUX_BEFORE(6, 12, 0)
 extern int cpu_number;
 
 static __always_inline unsigned int raw_smp_processor_id(void)
@@ -36,7 +36,7 @@ static __always_inline unsigned int raw_smp_processor_id(void)
 }
 #endif
 
-#if NEVERC_KRT_KERNEL >= 612
+#if NEVERC_KRT_LINUX_AT_LEAST(6, 12, 0)
 _Static_assert(NEVERC_KRT_TASK_CPU == 40,
 	       "6.12+ GKI task_struct.thread_info.cpu offset mismatch");
 #endif

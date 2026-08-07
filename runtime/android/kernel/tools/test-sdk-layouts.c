@@ -39,14 +39,14 @@ _Static_assert(sizeof(pgprot_t) == sizeof(u64),
 	       "arm64 pgprot_t must remain one 64-bit descriptor");
 _Static_assert(__builtin_offsetof(pgprot_t, pgprot) == 0,
 	       "arm64 pgprot_t descriptor must remain at offset zero");
-#if NEVERC_KRT_KERNEL < 606
+#if NEVERC_KRT_LINUX_BEFORE(6, 6, 0)
 _Static_assert(GFP_ATOMIC == 0xA20,
 	       "pre-6.6 GFP_ATOMIC flags must match GKI");
 #else
 _Static_assert(GFP_ATOMIC == 0x820,
 	       "6.6+ GFP_ATOMIC must not set the removed atomic bit");
 #endif
-#if NEVERC_KRT_KERNEL >= 612
+#if NEVERC_KRT_LINUX_AT_LEAST(6, 12, 0)
 _Static_assert(GFP_NOWAIT == 0x2800,
 	       "6.12+ GFP_NOWAIT must include __GFP_NOWARN");
 #else
@@ -55,7 +55,7 @@ _Static_assert(GFP_NOWAIT == 0x800,
 #endif
 _Static_assert(GFP_USER == 0x100CC0,
 	       "GFP_USER must include the GKI hardwall bit");
-#if NEVERC_KRT_KERNEL >= 612
+#if NEVERC_KRT_LINUX_AT_LEAST(6, 12, 0)
 _Static_assert(NEVERC_KRT_TASK_CPU == 40,
 	       "6.12+ task_struct.thread_info.cpu offset must match GKI");
 #endif

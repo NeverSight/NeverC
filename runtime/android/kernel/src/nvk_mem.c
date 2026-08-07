@@ -157,15 +157,6 @@ int neverc_krt_mem_init(void)
 	_neverc_krt_insn_patch_text =
 		(neverc_krt_insn_patch_text_fn)NEVERC_KRT_LOOKUP("aarch64_insn_patch_text");
 
-	/*
-	 * NEVERC_KRT_BOOTSTRAP() records the caller's profile before this
-	 * function runs.  neverc_krt_init_all() is part of the neutral
-	 * embedded bitcode, so it cannot carry a compile-time profile and
-	 * reaches this banner-based fallback instead.
-	 */
-	if (!__atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE))
-		_neverc_krt_version_try_detect_from_banner();
-
 	_neverc_krt_mem_inited = 1;
 	return 0;
 }
@@ -617,4 +608,3 @@ void *neverc_krt_mem_scan_mask_safe(const void *start, size_t region_len,
 }
 
 #undef NEVERC_KRT_MEM_FORCE_INLINE
-

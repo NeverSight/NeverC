@@ -4,12 +4,14 @@
 #include "Linker/ELF/Config.h"
 #include "Linker/ELF/DWARF.h"
 #include "Linker/ELF/Driver.h"
+#include "Linker/ELF/ELFContextAccess.h"
 #include "Linker/ELF/InputSection.h"
 #include "Linker/ELF/LinkerScript.h"
 #include "Linker/ELF/SymbolTable.h"
 #include "Linker/ELF/Symbols.h"
 #include "Linker/ELF/SyntheticSections.h"
 #include "Linker/ELF/Target.h"
+#include "neverc/Foundation/AndroidKernelProfileContract.h"
 #include "neverc/Foundation/OverrideNames.h"
 #include "neverc/Invoke/InMemoryFileStore.h"
 #include "llvm/ADT/CachedHashString.h"
@@ -21,7 +23,6 @@
 #include "llvm/Support/Path.h"
 #include "llvm/Support/raw_ostream.h"
 #include <optional>
-#include "Linker/ELF/ELFContextAccess.h"
 
 using namespace llvm;
 using namespace llvm::ELF;
@@ -508,6 +509,64 @@ template <class ELFT> void ObjFile<ELFT>::parse(bool ignoreComdats) {
               ": invalid section index in group: " + Twine(secIndex));
       this->sections[secIndex] = &InputSection::discarded;
     }
+  }
+
+  // LLVM module flags protect profile equality while inputs are still IR.
+  // Native objects retain the same opaque value in a dedicated section so an
+  // explicit -fno-lto link, or a link mixing native and LTO-produced objects,
+  // cannot silently combine incompatible Android kernel profiles.
+  if (config->androidKernelModule) {
+    bool hasProfileContract = false;
+    for (size_t i = 0; i != size; ++i) {
+      const Elf_Shdr &sec = objSections[i];
+      StringRef name = check(obj.getSectionName(sec, shstrtab));
+      if (name != neverc::AndroidKernelProfileContract::NativeSection)
+        continue;
+      hasProfileContract = true;
+      ArrayRef<uint8_t> data = check(this->getObj().getSectionContents(sec));
+      if (data.empty() || data.size() % sizeof(uint64_t) != 0) {
+        error(toString(this) +
+              ": malformed native Android kernel profile contract");
+        continue;
+      }
+      for (size_t offset = 0; offset != data.size();
+           offset += sizeof(uint64_t)) {
+        uint64_t contract =
+            llvm::support::endian::read64<ELFT::TargetEndianness>(data.data() +
+                                                                  offset);
+        uint32_t profile =
+            neverc::AndroidKernelProfileContract::profile(contract);
+        uint32_t mode =
+            neverc::AndroidKernelProfileContract::kcfiMode(contract);
+        if (!neverc::AndroidKernelProfileContract::isValid(contract)) {
+          error(toString(this) +
+                ": invalid native Android kernel profile contract");
+          continue;
+        }
+        if (!ctx.androidKernelContract) {
+          ctx.androidKernelContract = contract;
+          ctx.androidKernelContractFile = this;
+          continue;
+        }
+        if (*ctx.androidKernelContract != contract) {
+          uint32_t existingProfile =
+              neverc::AndroidKernelProfileContract::profile(
+                  *ctx.androidKernelContract);
+          uint32_t existingMode =
+              neverc::AndroidKernelProfileContract::kcfiMode(
+                  *ctx.androidKernelContract);
+          error("incompatible Android kernel profile contracts\n>>> " +
+                toString(ctx.androidKernelContractFile) + " selects profile " +
+                Twine(existingProfile) + " / KCFI mode " + Twine(existingMode) +
+                "\n>>> " + toString(this) + " selects profile " +
+                Twine(profile) + " / KCFI mode " + Twine(mode));
+        }
+      }
+    }
+    if (!hasProfileContract)
+      error(toString(this) +
+            ": missing native Android kernel profile contract; recompile "
+            "with -fandroid-kernel-driver-mode");
   }
 
   // Eagerly scan `.neverc.overrides` so that ctx.overrideSymbols is fully

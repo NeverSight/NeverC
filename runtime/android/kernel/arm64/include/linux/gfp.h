@@ -13,7 +13,7 @@
 #define ___GFP_IO 0x40u
 #define ___GFP_FS 0x80u
 #define ___GFP_ZERO 0x100u
-#if NEVERC_KRT_KERNEL < 606
+#if NEVERC_KRT_LINUX_BEFORE(6, 6, 0)
 #define ___GFP_ATOMIC 0x200u
 #endif
 #define ___GFP_DIRECT_RECLAIM 0x400u
@@ -29,13 +29,13 @@
 #define __GFP_HARDWALL ((gfp_t)___GFP_HARDWALL)
 #define __GFP_RECLAIM ((gfp_t)(___GFP_DIRECT_RECLAIM | ___GFP_KSWAPD_RECLAIM))
 
-#if NEVERC_KRT_KERNEL < 606
+#if NEVERC_KRT_LINUX_BEFORE(6, 6, 0)
 #define GFP_ATOMIC ((gfp_t)(___GFP_HIGH | ___GFP_ATOMIC | ___GFP_KSWAPD_RECLAIM))
 #else
 #define GFP_ATOMIC ((gfp_t)(___GFP_HIGH | ___GFP_KSWAPD_RECLAIM))
 #endif
 #define GFP_KERNEL ((gfp_t)(___GFP_IO | ___GFP_FS | __GFP_RECLAIM))
-#if NEVERC_KRT_KERNEL >= 612
+#if NEVERC_KRT_LINUX_AT_LEAST(6, 12, 0)
 #define GFP_NOWAIT ((gfp_t)(___GFP_KSWAPD_RECLAIM | ___GFP_NOWARN))
 #else
 #define GFP_NOWAIT ((gfp_t)(___GFP_KSWAPD_RECLAIM))

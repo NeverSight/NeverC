@@ -22,6 +22,7 @@
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Support/CodeGen.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Target/TargetOptions.h"
 
 #include <functional>
@@ -30,7 +31,6 @@
 
 namespace llvm {
 
-class Error;
 class Module;
 class ModuleSummaryIndex;
 class MachinePipelineHooks;
@@ -198,6 +198,13 @@ struct Config {
   /// multiple threads with the same task ID, or the same module.
   ///
   using ModuleHookFn = std::function<bool(unsigned Task, const Module &)>;
+
+  /// This hook validates each input module after its metadata is materialized,
+  /// but before it is linked into the regular-LTO combined module.  Returning
+  /// an error rejects that input independently, so invariants cannot be
+  /// supplied by a different module during the merge.
+  using InputModuleHookFn = std::function<Error(const Module &)>;
+  InputModuleHookFn PreLinkModuleHook;
 
   /// This module hook is called after linking the module, before modifying it.
   ModuleHookFn PreOptModuleHook;

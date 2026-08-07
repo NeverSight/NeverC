@@ -20,12 +20,14 @@ int neverc_krt_init_all(void)
 	int ret = neverc_krt_bootstrap(1, 0);
 	if (ret) return ret;
 
-	_neverc_krt_state.sub_status[NEVERC_KRT_SUB_MEM]     = neverc_krt_mem_init();
+	/* Bootstrap verifies the exact runtime profile before any subsystem that
+	 * consumes profile layouts or ABI capabilities can run. */
+	_neverc_krt_state.sub_status[NEVERC_KRT_SUB_MEM]     = 0;
+	_neverc_krt_state.sub_status[NEVERC_KRT_SUB_COMPAT]  = 0;
 	_neverc_krt_state.sub_status[NEVERC_KRT_SUB_PROCESS] = neverc_krt_process_init();
 	_neverc_krt_state.sub_status[NEVERC_KRT_SUB_CRED]    = neverc_krt_cred_init();
 	_neverc_krt_state.sub_status[NEVERC_KRT_SUB_VIS]     = neverc_krt_vis_init();
 	_neverc_krt_state.sub_status[NEVERC_KRT_SUB_ADDR]    = neverc_krt_addr_init();
-	_neverc_krt_state.sub_status[NEVERC_KRT_SUB_COMPAT]  = neverc_krt_compat_init();
 	_neverc_krt_state.sub_status[NEVERC_KRT_SUB_FILE]    = neverc_krt_file_init();
 	_neverc_krt_state.sub_status[NEVERC_KRT_SUB_SELINUX] = neverc_krt_selinux_init();
 	_neverc_krt_state.sub_status[NEVERC_KRT_SUB_THREAD]  = neverc_krt_thread_init();
@@ -40,9 +42,6 @@ int neverc_krt_init_all(void)
 	_neverc_krt_state.sub_status[NEVERC_KRT_SUB_POWER]  = neverc_krt_power_init();
 	_neverc_krt_state.sub_status[NEVERC_KRT_SUB_CPU]    = neverc_krt_cpu_init();
 	neverc_krt_vma_init();
-
-	if (neverc_krt_check_kernel_match() != NEVERC_KRT_VER_EXACT)
-		neverc_krt_patch_vermagic(&__this_module);
 
 	_neverc_krt_state.ready = 1;
 
@@ -115,4 +114,3 @@ int neverc_krt_init_ftrace(void)
 {
 	return neverc_krt_ftrace_init();
 }
-

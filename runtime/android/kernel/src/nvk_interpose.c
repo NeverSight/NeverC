@@ -1728,7 +1728,7 @@ static void _neverc_krt_ftrace_thunk_common(unsigned long ip,
 }
 
 /* The embedded runtime is compiled once, so retain both source-level KCFI types. */
-static void _neverc_krt_ftrace_thunk_510(unsigned long ip,
+static void _neverc_krt_ftrace_thunk_pt_regs(unsigned long ip,
 					 unsigned long parent_ip,
 					 struct ftrace_ops *ops,
 					 struct pt_regs *regs)
@@ -1736,7 +1736,7 @@ static void _neverc_krt_ftrace_thunk_510(unsigned long ip,
 	_neverc_krt_ftrace_thunk_common(ip, parent_ip, ops, regs);
 }
 
-static void _neverc_krt_ftrace_thunk_modern(unsigned long ip,
+static void _neverc_krt_ftrace_thunk_ftrace_regs(unsigned long ip,
 					    unsigned long parent_ip,
 					    struct ftrace_ops *ops,
 					    struct ftrace_regs *regs)
@@ -1749,10 +1749,13 @@ int neverc_krt_ftrace_interpose_install(struct neverc_krt_ftrace_interpose *h,
 				   void **orig)
 {
 	int ret;
-	int kernel_ver;
+	const struct neverc_krt_runtime_caps *caps;
 	struct ftrace_ops *ops;
 
-	if (!_neverc_krt_ftrace_avail) return -1;
+	caps = _neverc_krt_current_caps();
+	if (!caps || !caps->has_ftrace_registration_api ||
+	    !_neverc_krt_ftrace_avail)
+		return -1;
 	if (!h || !target || !replace) return -2;
 
 	h->target = target;
@@ -1771,13 +1774,18 @@ int neverc_krt_ftrace_interpose_install(struct neverc_krt_ftrace_interpose *h,
 	 *   [8]  next   (kernel-managed, leave zero)
 	 *   [16] flags  (unsigned long)
 	 */
-	kernel_ver = __atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE);
-	if (kernel_ver >= 515)
+	switch (caps->ftrace_callback_abi) {
+	case NEVERC_KRT_FTRACE_ABI_FTRACE_REGS:
 		h->_ops_storage[0] =
-			(unsigned long)_neverc_krt_ftrace_thunk_modern;
-	else
+			(unsigned long)_neverc_krt_ftrace_thunk_ftrace_regs;
+		break;
+	case NEVERC_KRT_FTRACE_ABI_PT_REGS:
 		h->_ops_storage[0] =
-			(unsigned long)_neverc_krt_ftrace_thunk_510;
+			(unsigned long)_neverc_krt_ftrace_thunk_pt_regs;
+		break;
+	default:
+		return -3;
+	}
 	h->_ops_storage[2] = NEVERC_KRT_FTRACE_FL_SAVE_REGS
 			    | NEVERC_KRT_FTRACE_FL_IPMODIFY
 			    | NEVERC_KRT_FTRACE_FL_RECURSION;

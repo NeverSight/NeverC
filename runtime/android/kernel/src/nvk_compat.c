@@ -3,111 +3,93 @@
 #include "nvk_internal.h"
 #include "nvk_compat_table.inc"
 
-static unsigned long _neverc_krt_module_size;
-int           _neverc_krt_kernel_ver = 0;
+static const struct neverc_krt_profile *_neverc_krt_selected_profile;
+static const struct neverc_krt_profile *_neverc_krt_active_profile;
+static const struct neverc_krt_layout_entry *_neverc_krt_active_layout;
 
-static __always_inline const struct neverc_krt_version_entry *
-_neverc_krt_lookup_version(int kv)
+static __always_inline const struct neverc_krt_layout_entry *
+_neverc_krt_find_layout(unsigned int profile_id)
 {
-	int i;
-	const struct neverc_krt_version_entry *best =
-		&_neverc_krt_version_table[0];
-	for (i = 0; i < NEVERC_KRT_VERSION_TABLE_LEN; i++) {
-		if (_neverc_krt_version_table[i].kv <= kv)
-			best = &_neverc_krt_version_table[i];
+	unsigned long i;
+
+	for (i = 0; i < NEVERC_KRT_LAYOUT_COUNT; i++) {
+		if (_neverc_krt_layouts[i].profile_id == profile_id)
+			return &_neverc_krt_layouts[i];
 	}
-	return best;
+	return (const struct neverc_krt_layout_entry *)0;
 }
 
-static __always_inline unsigned long _neverc_krt_module_size_for(int kv)
+static __always_inline const struct neverc_krt_profile *
+_neverc_krt_current_profile(void)
 {
-	return _neverc_krt_lookup_version(kv)->module_size;
+	return __atomic_load_n(&_neverc_krt_active_profile, __ATOMIC_ACQUIRE);
 }
 
-void _neverc_krt_version_try_detect_from_banner(void)
+static __always_inline const struct neverc_krt_layout_entry *
+_neverc_krt_current_layout(void)
 {
-	const char *banner;
-	char buf[64];
-	const char *p;
-	u32 major, minor;
-	int kv;
-
-	if (__atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE))
-		return;
-
-	banner = (const char *)NEVERC_KRT_LOOKUP("linux_banner");
-	if (!banner)
-		banner = (const char *)NEVERC_KRT_LOOKUP("linux_proc_banner");
-	if (!banner)
-		return;
-
-	if (neverc_krt_mem_read(buf, banner, sizeof(buf)) != 0)
-		return;
-	buf[63] = '\0';
-
-	p = buf;
-	while (*p && !(*p >= '0' && *p <= '9'))
-		p++;
-	major = 0;
-	minor = 0;
-	while (*p >= '0' && *p <= '9') {
-		major = major * 10 + (*p - '0');
-		p++;
-	}
-	if (*p == '.') {
-		p++;
-		while (*p >= '0' && *p <= '9') {
-			minor = minor * 10 + (*p - '0');
-			p++;
-		}
-	}
-	kv = (int)(major * 100 + minor);
-	if (kv < 510)
-		kv = 510;
-
-	__atomic_store_n(&_neverc_krt_module_size,
-			 _neverc_krt_module_size_for(kv),
-			 __ATOMIC_RELAXED);
-	__atomic_store_n(&_neverc_krt_kernel_ver, kv, __ATOMIC_RELEASE);
+	if (!_neverc_krt_current_profile())
+		return (const struct neverc_krt_layout_entry *)0;
+	return __atomic_load_n(&_neverc_krt_active_layout, __ATOMIC_ACQUIRE);
 }
 
-void _neverc_krt_version_setup(int kv)
+int _neverc_krt_version_setup(unsigned int profile_id)
 {
-	if (!__atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE)) {
-		__atomic_store_n(&_neverc_krt_module_size,
-				 _neverc_krt_module_size_for(kv),
-				 __ATOMIC_RELAXED);
-		__atomic_store_n(&_neverc_krt_kernel_ver,
-				 kv, __ATOMIC_RELEASE);
-	}
+	const struct neverc_krt_profile *profile =
+		neverc_krt_find_profile(profile_id);
+	const struct neverc_krt_profile *selected;
+
+	if (!profile || !_neverc_krt_find_layout(profile_id))
+		return -1;
+	selected = __atomic_load_n(&_neverc_krt_selected_profile,
+				   __ATOMIC_ACQUIRE);
+	if (selected)
+		return selected->legacy_id == profile_id ? 0 : -2;
+	if (!__atomic_compare_exchange_n(&_neverc_krt_selected_profile, &selected,
+					 profile, 0, __ATOMIC_RELEASE,
+					 __ATOMIC_ACQUIRE))
+		return selected->legacy_id == profile_id ? 0 : -2;
+	return 0;
+}
+
+const struct neverc_krt_runtime_caps *_neverc_krt_current_caps(void)
+{
+	const struct neverc_krt_profile *profile = _neverc_krt_current_profile();
+
+	return profile ? &profile->caps :
+		(const struct neverc_krt_runtime_caps *)0;
 }
 
 unsigned long _neverc_krt_get_module_size(void)
 {
-	unsigned long sz = __atomic_load_n(&_neverc_krt_module_size,
-					   __ATOMIC_RELAXED);
-	return sz ? sz : _neverc_krt_version_table[
-		NEVERC_KRT_VERSION_TABLE_LEN - 1].module_size;
+	const struct neverc_krt_layout_entry *layout =
+		_neverc_krt_current_layout();
+
+	return layout ? layout->module_size : 0;
 }
 
 unsigned long _neverc_krt_get_kimage_vaddr_base(void)
 {
-	int kv = __atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE);
+	const struct neverc_krt_profile *profile = _neverc_krt_current_profile();
 
-	return _neverc_krt_lookup_version(kv ? kv : 510)->kimage_vaddr;
+	return profile ? profile->kimage_vaddr : 0;
 }
 
 const struct neverc_krt_gki_layout *_neverc_krt_get_gki_layout(void)
 {
-	int kv = __atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE);
+	const struct neverc_krt_layout_entry *layout =
+		_neverc_krt_current_layout();
 
-	return &_neverc_krt_lookup_version(kv ? kv : 510)->layout;
+	return layout ? &layout->layout :
+		(const struct neverc_krt_gki_layout *)0;
 }
 
 unsigned long _neverc_krt_get_file_dentry_off(void)
 {
-	int kv = __atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE);
-	return _neverc_krt_lookup_version(kv ? kv : 510)->file_dentry_off;
+	const struct neverc_krt_layout_entry *layout =
+		_neverc_krt_current_layout();
+
+	return layout ? layout->file_dentry_off : 0;
 }
 
 /* ---- internal variables ---- */
@@ -124,83 +106,110 @@ static neverc_krt_vsscanf_fn   _neverc_krt_vsscanf_ptr;
 static unsigned long _neverc_krt_rt_off_init;
 static unsigned long _neverc_krt_rt_off_exit;
 
-static int _neverc_krt_compat_inited;
-
-static void _neverc_krt_parse_version(const char *str, struct neverc_krt_kernel_info *info)
+static __always_inline unsigned int _neverc_krt_runtime_page_shift(void)
 {
-	const char *p = str;
-	u32 parts[3] = {0, 0, 0};
-	int pi = 0;
+	unsigned long tcr;
 
-	while (*p && pi < 3) {
-		if (*p >= '0' && *p <= '9') {
-			parts[pi] = parts[pi] * 10 + (*p - '0');
-		} else if (*p == '.') {
-			pi++;
-		} else {
-			break;
-		}
-		p++;
+	__asm__ __volatile__("mrs %0, tcr_el1" : "=r"(tcr));
+	switch ((tcr >> 30) & 3UL) {
+	case 1:
+		return 14; /* 16 KiB */
+	case 2:
+		return 12; /* 4 KiB */
+	case 3:
+		return 16; /* 64 KiB */
+	default:
+		return 0;
 	}
+}
 
-	info->major = parts[0];
-	info->minor = parts[1];
-	info->patch = parts[2];
+static int
+_neverc_krt_activate_observed(
+	const struct neverc_krt_kernel_info *observed,
+	const char *release_token, unsigned long release_token_length)
+{
+	const struct neverc_krt_profile *profile;
+	const struct neverc_krt_profile *selected;
+	const struct neverc_krt_profile *active;
+	const struct neverc_krt_layout_entry *layout;
 
-	while (*p && *p != '-') p++;
-	if (*p == '-') p++;
-	if (p[0] == 'a' && p[1] == 'n' && p[2] == 'd' && p[3] == 'r') {
-		while (*p && !(*p >= '0' && *p <= '9')) p++;
-		u32 av = 0;
-		while (*p >= '0' && *p <= '9') {
-			av = av * 10 + (*p - '0');
-			p++;
-		}
-		info->android_version = av;
-	}
+	profile = neverc_krt_find_profile_by_identity(
+		observed->major, observed->minor, observed->patch,
+		observed->android_version, observed->kmi_generation,
+		observed->page_shift, release_token, release_token_length);
+	if (!profile)
+		return -1;
+	selected = __atomic_load_n(&_neverc_krt_selected_profile,
+				   __ATOMIC_ACQUIRE);
+	if (selected && selected->legacy_id != profile->legacy_id)
+		return -2;
+	if (!selected &&
+	    !__atomic_compare_exchange_n(&_neverc_krt_selected_profile, &selected,
+					 profile, 0, __ATOMIC_RELEASE,
+					 __ATOMIC_ACQUIRE) &&
+	    selected->legacy_id != profile->legacy_id)
+		return -2;
+	layout = _neverc_krt_find_layout(profile->legacy_id);
+	if (!layout)
+		return -1;
 
-	info->detected = 1;
+	_neverc_krt_kinfo = *observed;
+	__atomic_store_n(&_neverc_krt_active_layout, layout, __ATOMIC_RELEASE);
+	active = (const struct neverc_krt_profile *)0;
+	if (!__atomic_compare_exchange_n(&_neverc_krt_active_profile, &active,
+					 profile, 0, __ATOMIC_RELEASE,
+					 __ATOMIC_ACQUIRE) &&
+	    active->legacy_id != profile->legacy_id)
+		return -2;
+	return 0;
+}
+
+static int _neverc_krt_version_try_detect_from_banner(void)
+{
+	const char *banner;
+	char buf[128];
+	struct neverc_krt_observed_identity identity;
+	struct neverc_krt_kernel_info observed = {0};
+
+	if (_neverc_krt_current_profile())
+		return 0;
+	banner = (const char *)NEVERC_KRT_LOOKUP("linux_banner");
+	if (!banner)
+		banner = (const char *)NEVERC_KRT_LOOKUP("linux_proc_banner");
+	if (!banner)
+		return -1;
+	if (neverc_krt_mem_read(buf, banner, sizeof(buf)) != 0)
+		return -1;
+	buf[sizeof(buf) - 1] = '\0';
+	if (neverc_krt_parse_banner_identity(buf, &identity))
+		return -1;
+
+	observed.major = identity.linux_major;
+	observed.minor = identity.linux_minor;
+	observed.patch = identity.linux_patch;
+	observed.android_version = identity.android_release;
+	observed.kmi_generation = identity.kmi_generation;
+	observed.page_shift = _neverc_krt_runtime_page_shift();
+	observed.detected = 1;
+	_neverc_krt_kinfo = observed;
+	return _neverc_krt_activate_observed(
+		&observed, identity.release_token,
+		identity.release_token_length);
 }
 
 int neverc_krt_compat_init(void)
 {
-	const char *banner;
+	int ret;
 
-	if (_neverc_krt_compat_inited) return 0;
-
-	neverc_krt_mem_init();
-
-	banner = (const char *)NEVERC_KRT_LOOKUP("linux_banner");
-	if (!banner) {
-		banner = (const char *)NEVERC_KRT_LOOKUP("linux_proc_banner");
-	}
-
-	if (banner) {
-		char banbuf[64];
-		if (!neverc_krt_mem_read(banbuf, banner, sizeof(banbuf))) {
-			banbuf[63] = '\0';
-			const char *ver_start = banbuf;
-			while (*ver_start && !(*ver_start >= '0' && *ver_start <= '9'))
-				ver_start++;
-			if (*ver_start)
-				_neverc_krt_parse_version(ver_start, &_neverc_krt_kinfo);
-		}
-	}
-
-	if (!_neverc_krt_kinfo.detected) {
-		int kv = __atomic_load_n(&_neverc_krt_kernel_ver,
-					__ATOMIC_ACQUIRE);
-		const struct neverc_krt_version_entry *ent =
-			_neverc_krt_lookup_version(kv ? kv : 510);
-		_neverc_krt_kinfo.major = ent->major;
-		_neverc_krt_kinfo.minor = ent->minor;
-		_neverc_krt_kinfo.android_version = ent->android_version;
-		_neverc_krt_kinfo.detected = 1;
-	}
-
-	neverc_krt_fmt_init();
-
-	_neverc_krt_compat_inited = 1;
+	if (_neverc_krt_current_profile())
+		return 0;
+	ret = neverc_krt_mem_init();
+	if (ret)
+		return ret;
+	ret = _neverc_krt_version_try_detect_from_banner();
+	if (ret)
+		return ret;
+	(void)neverc_krt_fmt_init();
 	return 0;
 }
 
@@ -244,22 +253,12 @@ int neverc_krt_has_cfi(void)
 
 int neverc_krt_check_kernel_match(void)
 {
-	neverc_krt_compat_init();
-	if (!_neverc_krt_kinfo.detected)
-		return NEVERC_KRT_VER_UNKNOWN;
+	int ret = neverc_krt_compat_init();
 
-	int kv = __atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE);
-	const struct neverc_krt_version_entry *ent =
-		_neverc_krt_lookup_version(kv ? kv : 510);
-
-	if (_neverc_krt_kinfo.major == ent->major &&
-	    _neverc_krt_kinfo.minor == ent->minor)
+	if (!ret && _neverc_krt_current_profile())
 		return NEVERC_KRT_VER_EXACT;
-
-	if (_neverc_krt_kinfo.major == ent->major)
-		return NEVERC_KRT_VER_COMPAT;
-
-	return NEVERC_KRT_VER_MISMATCH;
+	return _neverc_krt_kinfo.detected ? NEVERC_KRT_VER_MISMATCH :
+		NEVERC_KRT_VER_UNKNOWN;
 }
 
 int neverc_krt_verify_module_offsets(struct neverc_krt_this_module *mod,
@@ -270,6 +269,8 @@ int neverc_krt_verify_module_offsets(struct neverc_krt_this_module *mod,
 	struct list_head *list;
 	const char *name;
 
+	if (!layout || !mod)
+		return -1;
 	list = (struct list_head *)((char *)mod + layout->module_list);
 	{
 		unsigned long ln, lp;
@@ -349,17 +350,20 @@ int neverc_krt_validate_runtime(struct neverc_krt_this_module *mod,
 	int ret;
 
 	ret = neverc_krt_check_kernel_match();
-	if (ret == NEVERC_KRT_VER_MISMATCH) {
-		neverc_krt_probe_module_offsets(mod, init_fn, exit_fn);
-	}
-
-	ret = neverc_krt_verify_module_offsets(mod, name);
-	return ret;
+	if (ret != NEVERC_KRT_VER_EXACT)
+		return ret;
+	(void)init_fn;
+	(void)exit_fn;
+	return neverc_krt_verify_module_offsets(mod, name);
 }
 
 int neverc_krt_patch_vermagic(struct neverc_krt_this_module *mod)
 {
 	const char *banner;
+	int match = neverc_krt_check_kernel_match();
+
+	if (match != NEVERC_KRT_VER_EXACT)
+		return match;
 
 	banner = (const char *)NEVERC_KRT_LOOKUP("linux_banner");
 	if (!banner)
@@ -424,10 +428,10 @@ int neverc_krt_fixup_runtime(struct neverc_krt_this_module *mod,
 	int ret;
 
 	ret = neverc_krt_check_kernel_match();
-	if (ret == NEVERC_KRT_VER_MISMATCH || ret == NEVERC_KRT_VER_COMPAT) {
-		neverc_krt_probe_module_offsets(mod, init_fn, exit_fn);
-	}
-
+	if (ret != NEVERC_KRT_VER_EXACT)
+		return ret;
+	(void)init_fn;
+	(void)exit_fn;
 	return neverc_krt_verify_module_offsets(mod, name);
 }
 
@@ -507,20 +511,23 @@ int neverc_krt_kernel_lt(u32 maj, u32 min)
 int neverc_krt_should_abort_on_mismatch(void)
 {
 	int r = neverc_krt_check_kernel_match();
-	return r == NEVERC_KRT_VER_MISMATCH;
+	return r != NEVERC_KRT_VER_EXACT;
 }
 
 unsigned long neverc_krt_rt_off_init(void)
 {
+	const struct neverc_krt_layout_entry *layout;
+
 	if (_neverc_krt_rt_off_init) return _neverc_krt_rt_off_init;
-	int kv = __atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE);
-	return _neverc_krt_lookup_version(kv ? kv : 510)->off_init;
+	layout = _neverc_krt_current_layout();
+	return layout ? layout->off_init : 0;
 }
 
 unsigned long neverc_krt_rt_off_exit(void)
 {
-	if (_neverc_krt_rt_off_exit) return _neverc_krt_rt_off_exit;
-	int kv = __atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE);
-	return _neverc_krt_lookup_version(kv ? kv : 510)->off_exit;
-}
+	const struct neverc_krt_layout_entry *layout;
 
+	if (_neverc_krt_rt_off_exit) return _neverc_krt_rt_off_exit;
+	layout = _neverc_krt_current_layout();
+	return layout ? layout->off_exit : 0;
+}

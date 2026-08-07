@@ -25,7 +25,7 @@
 
 /* ---- kmalloc / kzalloc / kcalloc ---- */
 
-#if NEVERC_KRT_KERNEL >= 612
+#if NEVERC_KRT_LINUX_AT_LEAST(6, 12, 0)
 void *__kmalloc_noprof(size_t size, gfp_t flags);
 #define kmalloc(size, flags) __kmalloc_noprof(size, flags)
 #else
@@ -38,12 +38,12 @@ void *__kmalloc(size_t size, gfp_t flags);
 
 /* ---- krealloc ---- */
 
-#if NEVERC_KRT_KERNEL >= 618
+#if NEVERC_KRT_LINUX_AT_LEAST(6, 18, 0)
 void *krealloc_node_align_noprof(const void *p, size_t new_size,
 				 gfp_t flags, int node, unsigned long align);
 #define krealloc(p, new_size, flags) \
 	krealloc_node_align_noprof(p, new_size, flags, -1, 0)
-#elif NEVERC_KRT_KERNEL >= 612
+#elif NEVERC_KRT_LINUX_AT_LEAST(6, 12, 0)
 void *krealloc_noprof(const void *p, size_t new_size, gfp_t flags);
 #define krealloc(p, new_size, flags) krealloc_noprof(p, new_size, flags)
 #else
@@ -56,7 +56,7 @@ void kfree(const void *objp);
 
 /* ---- vmalloc / vzalloc ---- */
 
-#if NEVERC_KRT_KERNEL >= 612
+#if NEVERC_KRT_LINUX_AT_LEAST(6, 12, 0)
 void *vmalloc_noprof(unsigned long size);
 void *vzalloc_noprof(unsigned long size);
 #define vmalloc(size) vmalloc_noprof(size)
@@ -70,7 +70,7 @@ void vfree(const void *addr);
 
 /* ---- kvmalloc / kvfree ---- */
 
-#if NEVERC_KRT_KERNEL >= 612
+#if NEVERC_KRT_LINUX_AT_LEAST(6, 12, 0)
 void *__kvmalloc_node_noprof(size_t size, gfp_t flags, int node);
 #define kvmalloc(size, flags) __kvmalloc_node_noprof(size, flags, -1)
 #else

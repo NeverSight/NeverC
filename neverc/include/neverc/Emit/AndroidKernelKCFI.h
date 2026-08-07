@@ -12,9 +12,44 @@ class Module;
 
 namespace neverc::Emit::AndroidKernel {
 
+/// Serialized values 0..2 are part of the Android-kernel IR contract.  The
+/// frontend-only Unspecified state must be resolved before a module is emitted.
+enum class KCFIMode : uint8_t {
+  Disabled = 0,
+  Classic = 1,
+  Normalized = 2,
+  Unspecified = 3,
+};
+
+constexpr bool isConcrete(KCFIMode Mode) {
+  return Mode != KCFIMode::Unspecified;
+}
+
 /// Read and validate the module's selected Android kernel KCFI mode. A missing
 /// flag denotes a non-Android module; malformed values fail closed.
-std::optional<unsigned> getKCFIMode(const llvm::Module &M);
+std::optional<KCFIMode> getKCFIMode(const llvm::Module &M);
+
+/// Read and validate the opaque Android kernel profile contract carried by the
+/// module.  The compiler deliberately assigns no version semantics to it.
+std::optional<uint32_t> getProfile(const llvm::Module &M);
+
+/// The complete compiler-visible Android kernel contract.  Keeping the fields
+/// together makes every backend/provider boundary preserve new invariants as a
+/// unit instead of duplicating parallel checks.
+struct Contract {
+  KCFIMode Mode;
+  uint32_t Profile;
+
+  bool operator==(const Contract &Other) const {
+    return Mode == Other.Mode && Profile == Other.Profile;
+  }
+  bool operator!=(const Contract &Other) const { return !(*this == Other); }
+};
+
+/// Return the complete contract only when both invariants are present.  A
+/// caller requiring Android mode treats nullopt (including a partial contract)
+/// as a fail-closed boundary violation.
+std::optional<Contract> getContract(const llvm::Module &M);
 
 /// Attach the profile-neutral pair of source-level KCFI IDs to a function.
 /// Repeated attachment is accepted only when both IDs agree.

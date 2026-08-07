@@ -3,6 +3,7 @@
 
 #include "neverc/Plugin/Host/PluginIOBridge.h"
 #include "neverc/Plugin/PluginObject.h"
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
 #include <memory>
@@ -59,6 +60,7 @@ public:
   NevercMutableBinaryBuilderHandle binaryBuilder() const;
 
   llvm::Expected<NevercOutputSummary> outputSummary() const;
+  llvm::Expected<llvm::ArrayRef<uint8_t>> pendingBytes() const;
   llvm::Error finish();
   llvm::Error verify();
   llvm::Expected<NevercOutputSummary> commit();

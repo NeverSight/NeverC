@@ -138,11 +138,16 @@ int neverc_krt_bootstrap(int cfi, int kernel_profile)
 {
 	int ret;
 
-	if (kernel_profile)
-		_neverc_krt_version_setup(kernel_profile);
+	if (kernel_profile) {
+		ret = _neverc_krt_version_setup((unsigned int)kernel_profile);
+		if (ret)
+			return ret;
+	}
 
 	ret = _neverc_krt_ksym_bootstrap(cfi);
 	if (!ret)
 		ret = _neverc_krt_log_bootstrap();
+	if (!ret)
+		ret = neverc_krt_compat_init();
 	return ret;
 }

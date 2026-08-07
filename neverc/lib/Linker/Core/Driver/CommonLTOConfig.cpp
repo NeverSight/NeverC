@@ -15,6 +15,7 @@
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/CodeGen/CommandFlags.h"
 #include "llvm/Support/CommandLine.h"
+#include "llvm/Support/Error.h"
 #include <mutex>
 #include <optional>
 
@@ -134,15 +135,23 @@ lto::Config linker::createLTOConfig(const LinkerDriverConfig &Cfg,
   // profile flag and the otherwise idempotent KCFI finalizer would treat it as
   // an unrelated module.  Reject that boundary explicitly instead of silently
   // emitting callbacks without loader-visible type prefixes.
-  if (Cfg.androidKernelModule)
-    c.PreOptModuleHook = [](unsigned, const Module &M) {
-      if (neverc::Emit::AndroidKernel::getKCFIMode(M))
-        return true;
-      linker::error(
-          "Android kernel LTO input is missing the KCFI mode invariant; "
+  if (Cfg.androidKernelModule) {
+    c.PreLinkModuleHook = [](const Module &M) -> Error {
+      if (neverc::Emit::AndroidKernel::getContract(M))
+        return Error::success();
+      return createStringError(
+          inconvertibleErrorCode(),
+          "Android kernel LTO input is missing the profile contract; "
           "recompile it with -fandroid-kernel-driver-mode");
+    };
+    c.PreOptModuleHook = [](unsigned, const Module &M) {
+      if (neverc::Emit::AndroidKernel::getContract(M))
+        return true;
+      linker::error("Android kernel LTO input is missing the profile contract; "
+                    "recompile it with -fandroid-kernel-driver-mode");
       return false;
     };
+  }
 
   c.PTO.LoopVectorization = OptLevel > 1;
   c.PTO.SLPVectorization = OptLevel > 1;
@@ -184,8 +193,9 @@ lto::Config linker::createLTOConfig(const LinkerDriverConfig &Cfg,
       c.ModuleOptimizeHook =
           [PluginContext, OptLevel](std::unique_ptr<Module> &ModuleValue,
                                     bool &SkipBuiltin) {
-            const std::optional<unsigned> RequiredAndroidKCFIMode =
-                neverc::Emit::AndroidKernel::getKCFIMode(*ModuleValue);
+            const std::optional<neverc::Emit::AndroidKernel::Contract>
+                RequiredAndroidContract =
+                    neverc::Emit::AndroidKernel::getContract(*ModuleValue);
             auto Runtime =
                 neverc::plugin::PluginIROptimizationProviderRuntime::create(
                     *PluginContext->Task, *ModuleValue, OptLevel,
@@ -206,14 +216,15 @@ lto::Config linker::createLTOConfig(const LinkerDriverConfig &Cfg,
               ModuleValue = (*Runtime)->releaseOwnedModule();
             if (!ModuleValue)
               return false;
-            if (RequiredAndroidKCFIMode) {
-              const std::optional<unsigned> PublishedMode =
-                  neverc::Emit::AndroidKernel::getKCFIMode(*ModuleValue);
-              if (!PublishedMode ||
-                  *PublishedMode != *RequiredAndroidKCFIMode) {
+            if (RequiredAndroidContract) {
+              const std::optional<neverc::Emit::AndroidKernel::Contract>
+                  PublishedContract =
+                      neverc::Emit::AndroidKernel::getContract(*ModuleValue);
+              if (!PublishedContract ||
+                  *PublishedContract != *RequiredAndroidContract) {
                 linker::error(
                     "LTO optimization provider dropped or changed the "
-                    "Android kernel KCFI mode invariant");
+                    "Android kernel profile contract");
                 return false;
               }
             }

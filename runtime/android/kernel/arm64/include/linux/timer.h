@@ -13,13 +13,13 @@ struct timer_list {
 	void (*function)(struct timer_list *);
 	u32 flags;
 	u32 _pad;
-#if NEVERC_KRT_KERNEL < 612
+#if NEVERC_KRT_LINUX_BEFORE(6, 12, 0)
 	u64 __kabi_reserved1;
 	u64 __kabi_reserved2;
 #endif
 };
 
-#if NEVERC_KRT_KERNEL < 612
+#if NEVERC_KRT_LINUX_BEFORE(6, 12, 0)
 _Static_assert(sizeof(struct timer_list) == 56,
 	       "unexpected GKI 5.10-6.6 timer_list layout");
 #else
@@ -46,7 +46,7 @@ _Static_assert(sizeof(struct timer_list) == 40,
  * debug-object state when enabled.
  */
 struct lock_class_key;
-#if NEVERC_KRT_KERNEL >= 618
+#if NEVERC_KRT_LINUX_AT_LEAST(6, 18, 0)
 void timer_init_key(struct timer_list *timer,
 		    void (*callback)(struct timer_list *), unsigned int flags,
 		    const char *name, struct lock_class_key *key);
@@ -71,7 +71,7 @@ void add_timer(struct timer_list *timer);
  *   6.6–6.18:  timer_delete ✓  timer_delete_sync ✓
  *   (verified from GKI android17-6.18 System.map __ksymtab)
  */
-#if NEVERC_KRT_KERNEL >= 606
+#if NEVERC_KRT_LINUX_AT_LEAST(6, 6, 0)
 int timer_delete(struct timer_list *timer);
 int timer_delete_sync(struct timer_list *timer);
 #define del_timer(t) timer_delete(t)

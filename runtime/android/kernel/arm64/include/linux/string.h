@@ -38,7 +38,7 @@ int scnprintf(char *buf, size_t size, const char *fmt, ...) __printf(3, 4);
  * strlcpy was removed in 6.12+ (replaced by strscpy which is inline).
  * Provide an inline fallback for cross-version compat.
  */
-#if NEVERC_KRT_KERNEL >= 612
+#if NEVERC_KRT_LINUX_AT_LEAST(6, 12, 0)
 static __always_inline size_t strlcpy(char *dest, const char *src, size_t size)
 {
 	size_t ret = strlen(src);

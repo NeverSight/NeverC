@@ -6,12 +6,21 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
+#include <functional>
 #include <memory>
 
 namespace neverc::plugin {
 
 class PluginProcessServices;
 class PluginTaskContext;
+
+/// Optional host-owned invariants that plugins may preserve but never weaken.
+/// Graph validation runs after every mutable graph phase; image validation runs
+/// after every post-write interceptor and before the output is sealed.
+struct ObjectPhaseSemanticValidators {
+  std::function<llvm::Error(const PluginObjectGraph &)> Graph;
+  std::function<llvm::Error(llvm::ArrayRef<uint8_t>)> Image;
+};
 
 class ObjectPhasePipeline {
 public:
@@ -40,9 +49,13 @@ public:
                 llvm::ArrayRef<uint8_t> NativeImage,
                 const ObjectOutputDestination &Destination);
   llvm::Expected<std::shared_ptr<PluginObjectImage>>
-  verifyAndCommitFinished(
-      NevercTargetKey Target,
-      std::shared_ptr<PluginObjectImage> Image);
+  executeNative(const PluginObjectGraph &Graph,
+                llvm::ArrayRef<uint8_t> NativeImage,
+                const ObjectOutputDestination &Destination,
+                ObjectPhaseSemanticValidators Validators);
+  llvm::Expected<std::shared_ptr<PluginObjectImage>>
+  verifyAndCommitFinished(NevercTargetKey Target,
+                          std::shared_ptr<PluginObjectImage> Image);
 
 private:
   struct Impl;

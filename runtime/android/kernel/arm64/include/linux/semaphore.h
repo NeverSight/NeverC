@@ -18,12 +18,12 @@ struct semaphore {
 	u32 lock;
 	unsigned int count;
 	struct list_head wait_list;
-#if NEVERC_KRT_KERNEL >= 618
+#if NEVERC_KRT_LINUX_AT_LEAST(6, 18, 0)
 	unsigned long last_holder;
 #endif
 };
 
-#if NEVERC_KRT_KERNEL >= 618
+#if NEVERC_KRT_LINUX_AT_LEAST(6, 18, 0)
 _Static_assert(sizeof(struct semaphore) == 32,
 	       "unexpected GKI 6.18 semaphore layout");
 #else

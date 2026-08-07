@@ -12,7 +12,7 @@ namespace neverc::Emit::AndroidKernel {
 
 /// Emit sections, symbols, and linkage fixups required for loading an
 /// out-of-tree module on GKI (Generic Kernel Image) kernels.  arm64-only.
-void emitFixups(llvm::Module &M, unsigned Arch, unsigned KCFIMode);
+void emitFixups(llvm::Module &M, unsigned Arch, KCFIMode Mode);
 
 /// Apply ShadowCallStack, BTI, PAC-RET attributes and strip UWTable from
 /// every non-declaration function.  Runs at pipeline start, right after

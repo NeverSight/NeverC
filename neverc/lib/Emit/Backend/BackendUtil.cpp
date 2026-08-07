@@ -917,13 +917,13 @@ bool GenAssemblyHelper::runOptimizationPipeline(
     return runBuiltinOptimizationPipeline(Action, BC);
   };
 
-  std::optional<unsigned> RequiredAndroidKCFIMode;
+  std::optional<neverc::Emit::AndroidKernel::Contract> RequiredAndroidContract;
   if (CodeGenOpts.AndroidKernelDriverMode) {
-    RequiredAndroidKCFIMode =
-        neverc::Emit::AndroidKernel::getKCFIMode(*TheModule);
-    if (!RequiredAndroidKCFIMode) {
+    RequiredAndroidContract =
+        neverc::Emit::AndroidKernel::getContract(*TheModule);
+    if (!RequiredAndroidContract) {
       Diags.Report(diag::err_fe_error_backend)
-          << "Android kernel module has no KCFI mode invariant";
+          << "Android kernel module has no profile contract";
       return false;
     }
   }
@@ -949,13 +949,15 @@ bool GenAssemblyHelper::runOptimizationPipeline(
           << "IR optimization provider published no module";
       return false;
     }
-    if (RequiredAndroidKCFIMode) {
-      const std::optional<unsigned> PublishedMode =
-          neverc::Emit::AndroidKernel::getKCFIMode(*TheModule);
-      if (!PublishedMode || *PublishedMode != *RequiredAndroidKCFIMode) {
+    if (RequiredAndroidContract) {
+      const std::optional<neverc::Emit::AndroidKernel::Contract>
+          PublishedContract =
+              neverc::Emit::AndroidKernel::getContract(*TheModule);
+      if (!PublishedContract ||
+          *PublishedContract != *RequiredAndroidContract) {
         Diags.Report(diag::err_fe_error_backend)
             << "IR optimization provider dropped or changed the Android "
-               "kernel KCFI mode invariant";
+               "kernel profile contract";
         return false;
       }
     }

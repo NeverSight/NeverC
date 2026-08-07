@@ -513,13 +513,15 @@ void ModuleEmitter::release() {
 
   if (CodeGenOpts.AndroidKernelDriverMode) {
     AndroidKernel::emitFixups(getModule(), Arch,
-                              CodeGenOpts.AndroidKernelKCFIMode);
+                              static_cast<AndroidKernel::KCFIMode>(
+                                  CodeGenOpts.AndroidKernelKCFIMode));
   }
   emitDeferredKCFITypeMetadata();
   if (CodeGenOpts.AndroidKernelDriverMode) {
-    const std::optional<unsigned> KCFIMode =
+    const std::optional<AndroidKernel::KCFIMode> KCFIMode =
         AndroidKernel::getKCFIMode(getModule());
-    if (AndroidKernelMultiversionFunction && KCFIMode && *KCFIMode != 0)
+    if (AndroidKernelMultiversionFunction && KCFIMode &&
+        *KCFIMode != AndroidKernel::KCFIMode::Disabled)
       Diags.Report(AndroidKernelMultiversionFunction->getLocation(),
                    diag::err_fe_backend_unsupported)
           << "function multiversioning is not supported in Android kernel "
@@ -1713,11 +1715,12 @@ void ModuleEmitter::emitDeferredKCFITypeMetadata() {
     return;
 
   const bool EmitProfileNeutralPairs = CodeGenOpts.AndroidKernelKCFITypePairs;
-  const std::optional<unsigned> Mode =
+  const std::optional<AndroidKernel::KCFIMode> Mode =
       CodeGenOpts.AndroidKernelDriverMode
           ? AndroidKernel::getKCFIMode(getModule())
           : std::nullopt;
-  if (!EmitProfileNeutralPairs && (!Mode || *Mode == 0)) {
+  if (!EmitProfileNeutralPairs &&
+      (!Mode || *Mode == AndroidKernel::KCFIMode::Disabled)) {
     DeferredKCFITypes.clear();
     return;
   }
@@ -1755,8 +1758,11 @@ void ModuleEmitter::emitDeferredKCFITypeMetadata() {
       AndroidKernel::setKCFITypePair(*F, CreateTypeID(Deferred.GD, false),
                                      CreateTypeID(Deferred.GD, true));
     } else {
-      assert(Mode && *Mode != 0 && "KCFI mode was filtered above");
-      AndroidKernel::setKCFIType(*F, CreateTypeID(Deferred.GD, *Mode == 2));
+      assert(Mode && *Mode != AndroidKernel::KCFIMode::Disabled &&
+             "KCFI mode was filtered above");
+      AndroidKernel::setKCFIType(
+          *F, CreateTypeID(Deferred.GD,
+                           *Mode == AndroidKernel::KCFIMode::Normalized));
     }
   }
   DeferredKCFITypes.clear();

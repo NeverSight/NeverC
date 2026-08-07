@@ -84,13 +84,13 @@ static __always_inline int commit_creds(struct cred *new_cred)
  * and neverc_krt_cred_* APIs handle all version differences internally
  * via NEVERC_KRT_LOOKUP.
  */
-#if NEVERC_KRT_KERNEL >= 515
+#if NEVERC_KRT_LINUX_AT_LEAST(5, 15, 0)
 void __put_cred(struct cred *cred);
 #define abort_creds(cred) __put_cred(cred)
 #endif
 
-#if defined(NEVERC_KRT_NON_KMI_API) && NEVERC_KRT_KERNEL >= 515 && \
-	NEVERC_KRT_KERNEL < 618
+#if defined(NEVERC_KRT_NON_KMI_API) && NEVERC_KRT_LINUX_AT_LEAST(5, 15, 0) && \
+	NEVERC_KRT_LINUX_BEFORE(6, 18, 0)
 const struct cred *override_creds(const struct cred *new_cred);
 void revert_creds(const struct cred *old);
 #endif

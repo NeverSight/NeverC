@@ -4,7 +4,7 @@
 
 #include <linux/slab.h>
 
-#if NEVERC_KRT_KERNEL >= 612
+#if NEVERC_KRT_LINUX_AT_LEAST(6, 12, 0)
 void *vmalloc_user_noprof(unsigned long size);
 void *__vmalloc_noprof(unsigned long size, gfp_t gfp_mask);
 

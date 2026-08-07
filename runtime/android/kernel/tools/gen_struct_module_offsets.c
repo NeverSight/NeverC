@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
  * gen_struct_module_offsets.c - emit exact struct module offsets for a target
- * kernel so nvkmod_version.h can load on a real device.
+ * kernel so an evidence-backed profile can load on a real device.
  *
  * WHY: the kernel module loader reads `name`, `init` and `exit` from the
  * .gnu.linkonce.this_module blob at the offsets defined by *that kernel's*
@@ -26,9 +26,8 @@
  *     -include <k>/include/generated/autoconf.h \
  *     -S -o - gen_struct_module_offsets.c | grep '==NVK=='
  *
- * Then drop the values into nvkmod_version.h (or pass them via
- * -DNEVERC_KRT_OFF_INIT=.. -DNEVERC_KRT_OFF_EXIT=..
- * -DNEVERC_KRT_MODULE_SIZE=..).
+ * Record the values in that kernel profile's layout manifest, update the
+ * matching catalog and release-lock entries, and regenerate the contract.
  */
 #ifdef NVK_GEN_KSRC
 #include <linux/module.h>

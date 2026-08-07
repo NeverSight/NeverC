@@ -21,6 +21,7 @@
 #include <cstdlib>
 #include <optional>
 #include <sstream>
+#include <tuple>
 #include <utility>
 
 // MSVC has no POSIX setenv/unsetenv; _putenv_s keeps the CRT and Win32
@@ -1657,7 +1658,6 @@ int kcfi_call_direct_only(void) { return kcfi_static_direct_only(); }
 // while a direct-only local remains prefix-free.
 TEST_F(LTOTest, AndroidKernelKcfiSurvivesParallelFullLtoPartitions) {
   auto Source = tmpFile("android_kernel_kcfi_pcg.c");
-  auto Object = tmpFile("android_kernel_kcfi_pcg.ko");
   writeFile(Source, R"c(
 volatile int kcfi_pcg_seed;
 
@@ -1685,46 +1685,61 @@ KCFI_PCG_HELPER(7)
 
   ScopedEnvVar Strict("NEVERC_PCG_STRICT", "1");
   ScopedEnvVar Debug("NEVERC_PCG_DEBUG", "1");
-  auto Build = ncc({
-      "--target=aarch64-linux-android",
-      "-std=c11",
-      "-O2",
-      "-fandroid-kernel-driver-mode",
-      "-DNVK_KERNEL=612",
-      "-flto=full",
-      "-mllvm",
-      "-neverc-pcg-min-funcs=2",
-      "-mllvm",
-      "-neverc-pcg-weight-floor=0",
-      "-mllvm",
-      "-neverc-pcg-opt-weight-div=1",
-      "-r",
-      "-nostdlib",
-      "-o",
-      Object.string(),
-      Source.string(),
-  });
-  ASSERT_EQ(Build.exitCode, 0) << Build.err;
-  ASSERT_TRUE(Build.stderrContains("[pcg] SUCCESS"))
-      << "test did not exercise parallel full-LTO:\n"
-      << Build.err;
+  struct Pipeline {
+    const char *Name;
+    const char *LTOFlag;
+  };
+  const Pipeline Pipelines[] = {
+      {"auto", nullptr},
+      {"explicit_full", "-flto=full"},
+  };
+  for (const Pipeline &P : Pipelines) {
+    SCOPED_TRACE(P.Name);
+    auto Object =
+        tmpFile(std::string("android_kernel_kcfi_pcg_") + P.Name + ".ko");
+    std::vector<std::string> Args = {
+        "--target=aarch64-linux-android", "-std=c11",         "-O2",
+        "-fandroid-kernel-driver-mode",   "-DNVK_KERNEL=612",
+    };
+    if (P.LTOFlag)
+      Args.push_back(P.LTOFlag);
+    Args.insert(Args.end(), {
+                                "-mllvm",
+                                "-neverc-pcg-min-funcs=2",
+                                "-mllvm",
+                                "-neverc-pcg-weight-floor=0",
+                                "-mllvm",
+                                "-neverc-pcg-opt-weight-div=1",
+                                "-r",
+                                "-nostdlib",
+                                "-o",
+                                Object.string(),
+                                Source.string(),
+                            });
+    auto Build = ncc(Args);
+    ASSERT_EQ(Build.exitCode, 0) << Build.err;
+    ASSERT_TRUE(Build.stderrContains("[pcg] SUCCESS"))
+        << "test did not exercise parallel codegen in " << P.Name << ":\n"
+        << Build.err;
 
-  const std::string Bytes = readFile(Object);
-  auto TakenOffset = readELFSymbolSectionOffset(Bytes, "kcfi_pcg_taken", true);
-  ASSERT_TRUE(static_cast<bool>(TakenOffset))
-      << llvm::toString(TakenOffset.takeError()).str().str();
-  EXPECT_EQ(*TakenOffset, 4u);
+    const std::string Bytes = readFile(Object);
+    auto TakenOffset =
+        readELFSymbolSectionOffset(Bytes, "kcfi_pcg_taken", true);
+    ASSERT_TRUE(static_cast<bool>(TakenOffset))
+        << llvm::toString(TakenOffset.takeError()).str().str();
+    EXPECT_EQ(*TakenOffset, 4u);
 
-  auto TakenPrefix = readELFSymbolPrefix32(Bytes, "kcfi_pcg_taken", true);
-  ASSERT_TRUE(static_cast<bool>(TakenPrefix))
-      << llvm::toString(TakenPrefix.takeError()).str().str();
-  EXPECT_EQ(*TakenPrefix, 0x6fbb3035u);
+    auto TakenPrefix = readELFSymbolPrefix32(Bytes, "kcfi_pcg_taken", true);
+    ASSERT_TRUE(static_cast<bool>(TakenPrefix))
+        << llvm::toString(TakenPrefix.takeError()).str().str();
+    EXPECT_EQ(*TakenPrefix, 0x6fbb3035u);
 
-  auto DirectOffset =
-      readELFSymbolSectionOffset(Bytes, "kcfi_pcg_direct", true);
-  ASSERT_TRUE(static_cast<bool>(DirectOffset))
-      << llvm::toString(DirectOffset.takeError()).str().str();
-  EXPECT_EQ(*DirectOffset, 0u);
+    auto DirectOffset =
+        readELFSymbolSectionOffset(Bytes, "kcfi_pcg_direct", true);
+    ASSERT_TRUE(static_cast<bool>(DirectOffset))
+        << llvm::toString(DirectOffset.takeError()).str().str();
+    EXPECT_EQ(*DirectOffset, 0u);
+  }
 }
 
 // An IR optimization provider may publish the input module while deliberately
@@ -2052,9 +2067,9 @@ int no_kcfi_multiversion(int value) { return value + 1; }
   EXPECT_EQ(Result.exitCode, 0) << Result.err;
 }
 
-// The preprocessor can select a profile through a configuration header or a
-// valid integer spelling the driver cannot safely evaluate. The source marker
-// is authoritative when the driver's conservative default is mode 0.
+// The preprocessor can select a profile through source configuration or an
+// integer spelling that no driver-side mini-parser should attempt to evaluate.
+// The generated source marker is authoritative.
 TEST_F(LTOTest, AndroidKernelSourceProfileMarkerSelectsKcfiMode) {
   auto Source = tmpFile("android_kernel_kcfi_source_profile.c");
   writeFile(Source, R"c(
@@ -2092,6 +2107,179 @@ int kcfi_source_profile_callback(void) { return 1; }
   }
 }
 
+// Profile spelling is C preprocessor syntax, not a driver mini-language.  The
+// driver forces the generated marker policy and lets preprocessing resolve
+// forms such as parenthesized integer constants with suffixes.
+TEST_F(LTOTest, AndroidKernelImplicitProfileMarkerSelectsNormalizedKcfi) {
+  auto Source = tmpFile("android_kernel_kcfi_implicit_profile.c");
+  auto Object = tmpFile("android_kernel_kcfi_implicit_profile.o");
+  writeFile(Source, R"c(
+__attribute__((noinline, section(".kcfi_test.implicit_profile")))
+int kcfi_implicit_profile_callback(void) { return 1; }
+)c");
+
+  auto Build = ncc({
+      "--target=aarch64-linux-android",
+      "-std=c11",
+      "-fandroid-kernel-driver-mode",
+      "-DNVK_KERNEL=(612U)",
+      "-fno-lto",
+      "-c",
+      "-o",
+      Object.string(),
+      Source.string(),
+  });
+  ASSERT_EQ(Build.exitCode, 0) << Build.err;
+
+  const std::string Bytes = readFile(Object);
+  auto Prefix = readELFSymbolPrefix32(Bytes, "kcfi_implicit_profile_callback");
+  ASSERT_TRUE(static_cast<bool>(Prefix))
+      << llvm::toString(Prefix.takeError()).str().str();
+  EXPECT_EQ(*Prefix, 0x6fbb3035u);
+  EXPECT_EQ(Bytes.find("__neverc_krt_kcfi_mode_marker"), std::string::npos);
+  EXPECT_EQ(Bytes.find("__neverc_krt_profile_marker"), std::string::npos);
+}
+
+TEST_F(LTOTest, AndroidKernelUserForcedConfigPrecedesProfileMarker) {
+  auto Config = tmpFile("android_kernel_profile_config.h");
+  auto Source = tmpFile("android_kernel_profile_config.c");
+  auto Object = tmpFile("android_kernel_profile_config.o");
+  writeFile(Config, "#define NVK_KERNEL (612U)\n");
+  writeFile(Source, R"c(
+__attribute__((noinline, section(".kcfi_test.forced_config")))
+int kcfi_forced_config_callback(void) { return 1; }
+)c");
+
+  auto Build = ncc({
+      "--target=aarch64-linux-android",
+      "-std=c11",
+      "-fandroid-kernel-driver-mode",
+      "-include",
+      Config.string(),
+      "-fno-lto",
+      "-c",
+      "-o",
+      Object.string(),
+      Source.string(),
+  });
+  ASSERT_EQ(Build.exitCode, 0) << Build.err;
+
+  const std::string Bytes = readFile(Object);
+  auto Prefix = readELFSymbolPrefix32(Bytes, "kcfi_forced_config_callback");
+  ASSERT_TRUE(static_cast<bool>(Prefix))
+      << llvm::toString(Prefix.takeError()).str().str();
+  EXPECT_EQ(*Prefix, 0x6fbb3035u);
+  EXPECT_EQ(Bytes.find("__neverc_krt_kcfi_mode_marker"), std::string::npos);
+  EXPECT_EQ(Bytes.find("__neverc_krt_profile_marker"), std::string::npos);
+}
+
+TEST_F(LTOTest, AndroidKernelTextualIROutputKeepsProfileContractPrintable) {
+  auto Source = tmpFile("android_kernel_profile_textual_ir.c");
+  auto Output = tmpFile("android_kernel_profile_textual_ir.ll");
+  writeFile(Source, "int android_profile_textual_ir(void) { return 1; }\n");
+
+  auto Result = ncc({
+      "--target=aarch64-linux-android",
+      "-std=c11",
+      "-fandroid-kernel-driver-mode",
+      "-DNVK_KERNEL=612",
+      "-fno-lto",
+      "-S",
+      "-emit-llvm",
+      "-o",
+      Output.string(),
+      Source.string(),
+  });
+  ASSERT_EQ(Result.exitCode, 0) << Result.err;
+
+  const std::string IR = readFile(Output);
+  EXPECT_NE(IR.find("neverc.android.kernel.profile"), std::string::npos);
+  EXPECT_NE(IR.find(".neverc.android.kernel.profile"), std::string::npos);
+  EXPECT_NE(IR.find("shadowcallstack"), std::string::npos);
+  std::istringstream Lines(IR);
+  for (std::string Line; std::getline(Lines, Line);)
+    if (Line.rfind("attributes #", 0) == 0)
+      EXPECT_EQ(Line.find("uwtable"), std::string::npos) << Line;
+}
+
+TEST_F(LTOTest, AndroidKernelProfileContractFailsClosed) {
+  auto Plain = tmpFile("android_kernel_profile_contract_plain.c");
+  auto InvalidMarker =
+      tmpFile("android_kernel_profile_contract_invalid_marker.c");
+  auto ZeroProfile = tmpFile("android_kernel_profile_contract_zero_profile.c");
+  writeFile(Plain, "int android_profile_contract_plain(void) { return 1; }\n");
+  writeFile(InvalidMarker, R"c(
+__attribute__((visibility("hidden")))
+const unsigned int __neverc_krt_kcfi_mode_marker = 7;
+__attribute__((visibility("hidden")))
+const unsigned int __neverc_krt_profile_marker = 1234;
+int android_profile_contract_invalid(void) { return 1; }
+)c");
+  writeFile(ZeroProfile, R"c(
+__attribute__((visibility("hidden")))
+const unsigned int __neverc_krt_kcfi_mode_marker = 0;
+__attribute__((visibility("hidden")))
+const unsigned int __neverc_krt_profile_marker = 0;
+int android_profile_contract_zero(void) { return 1; }
+)c");
+
+  struct Failure {
+    const char *Name;
+    std::vector<std::string> ExtraArgs;
+    fs::path Source;
+    const char *Diagnostic;
+  };
+  const Failure Failures[] = {
+      {"missing_markers",
+       {},
+       Plain,
+       "Android kernel source is missing a KCFI mode marker"},
+      {"missing_profile",
+       {"-fandroid-kernel-kcfi-mode=0"},
+       Plain,
+       "Android kernel source is missing a profile marker"},
+      {"explicit_conflict",
+       {"-DNVK_KERNEL=612", "-fandroid-kernel-kcfi-mode=0"},
+       Plain,
+       "conflicting command-line and source Android kernel KCFI modes"},
+      {"invalid_source_marker",
+       {},
+       InvalidMarker,
+       "invalid Android kernel source KCFI mode marker"},
+      {"zero_profile_marker",
+       {},
+       ZeroProfile,
+       "invalid Android kernel source profile marker"},
+      {"unsupported_profile",
+       {"-DNVK_KERNEL=620"},
+       Plain,
+       "Unsupported NEVERC_KRT_KERNEL profile"},
+      {"invalid_explicit_mode",
+       {"-fandroid-kernel-kcfi-mode=4"},
+       Plain,
+       "invalid value"},
+  };
+
+  for (const Failure &Failure : Failures) {
+    SCOPED_TRACE(Failure.Name);
+    std::vector<std::string> Args = {
+        "--target=aarch64-linux-android",
+        "-std=c11",
+        "-fandroid-kernel-driver-mode",
+        "-fno-lto",
+        "-c",
+        "-o",
+        tmpFile(std::string(Failure.Name) + ".o").string(),
+    };
+    Args.insert(Args.end(), Failure.ExtraArgs.begin(), Failure.ExtraArgs.end());
+    Args.push_back(Failure.Source.string());
+    auto Result = ncc(Args);
+    EXPECT_NE(Result.exitCode, 0);
+    EXPECT_NE(Result.err.find(Failure.Diagnostic), std::string::npos)
+        << Result.err;
+  }
+}
+
 TEST_F(LTOTest, AndroidKernelKcfiRejectsProviderThatDropsMode) {
   auto Source = tmpFile("android_kernel_kcfi_provider_drops_mode.c");
   writeFile(Source, "int kcfi_provider_input(void) { return 1; }\n");
@@ -2112,7 +2300,7 @@ TEST_F(LTOTest, AndroidKernelKcfiRejectsProviderThatDropsMode) {
         Source.string(),
     });
     EXPECT_NE(Result.exitCode, 0);
-    EXPECT_NE(Result.err.find("KCFI mode invariant"), std::string::npos)
+    EXPECT_NE(Result.err.find("profile contract"), std::string::npos)
         << Result.err;
   }
 }
@@ -2122,7 +2310,11 @@ TEST_F(LTOTest, AndroidKernelKcfiRejectsProviderThatDropsMode) {
 // carriers, so accepting it would silently emit unprefixed callbacks.
 TEST_F(LTOTest, AndroidKernelKcfiRejectsFlaglessFullLtoInput) {
   auto Source = tmpFile("android_kernel_kcfi_flagless_input.c");
+  auto ContractSource =
+      tmpFile("android_kernel_kcfi_contract_hitchhike_input.c");
   auto Input = tmpFile("android_kernel_kcfi_flagless_input.o");
+  auto ContractInput =
+      tmpFile("android_kernel_kcfi_contract_hitchhike_input.o");
   auto PlainOutput = tmpFile("android_kernel_kcfi_flagless_plain.o");
   auto Output = tmpFile("android_kernel_kcfi_flagless_output.ko");
   auto CacheDir = tmpFile("android_kernel_kcfi_flagless_cache");
@@ -2132,6 +2324,10 @@ TEST_F(LTOTest, AndroidKernelKcfiRejectsFlaglessFullLtoInput) {
   writeFile(Source, R"c(
 __attribute__((noinline))
 int kcfi_flagless_callback(void) { return 1; }
+)c");
+  writeFile(ContractSource, R"c(
+__attribute__((noinline))
+int kcfi_contract_callback(void) { return 2; }
 )c");
 
   auto Compile = ncc({
@@ -2144,6 +2340,19 @@ int kcfi_flagless_callback(void) { return 1; }
       Source.string(),
   });
   ASSERT_EQ(Compile.exitCode, 0) << Compile.err;
+
+  auto ContractCompile = ncc({
+      "--target=aarch64-linux-android",
+      "-std=c11",
+      "-fandroid-kernel-driver-mode",
+      "-DNVK_KERNEL=612",
+      "-flto=full",
+      "-c",
+      "-o",
+      ContractInput.string(),
+      ContractSource.string(),
+  });
+  ASSERT_EQ(ContractCompile.exitCode, 0) << ContractCompile.err;
 
   // Warm the full-link cache with the same flagless bitcode in an ordinary
   // relocatable link.  Android mode must be part of the cache key; otherwise
@@ -2168,11 +2377,12 @@ int kcfi_flagless_callback(void) { return 1; }
       "-nostdlib",
       "-o",
       Output.string(),
+      ContractInput.string(),
       Input.string(),
   });
   EXPECT_NE(Link.exitCode, 0);
-  EXPECT_NE(Link.err.find("Android kernel LTO input is missing the KCFI mode "
-                          "invariant"),
+  EXPECT_NE(Link.err.find("Android kernel LTO input is missing the profile "
+                          "contract"),
             std::string::npos)
       << Link.err;
 }
@@ -2213,6 +2423,369 @@ int kcfi_separate_callback(void) { return 1; }
   ASSERT_TRUE(static_cast<bool>(Prefix))
       << llvm::toString(Prefix.takeError()).str().str();
   EXPECT_EQ(*Prefix, 0x6fbb3035u);
+}
+
+TEST_F(LTOTest, AndroidKernelFullLtoRejectsMixedOpaqueProfiles) {
+  auto SourceA = tmpFile("android_kernel_profile_a.c");
+  auto SourceB = tmpFile("android_kernel_profile_b.c");
+  auto InputA = tmpFile("android_kernel_profile_a.o");
+  auto InputB = tmpFile("android_kernel_profile_b.o");
+  auto Output = tmpFile("android_kernel_mixed_profiles.ko");
+  writeFile(SourceA, "int android_profile_a(void) { return 1; }\n");
+  writeFile(SourceB, "int android_profile_b(void) { return 2; }\n");
+
+  auto Compile = [&](llvm::StringRef Profile, const fs::path &Source,
+                     const fs::path &Object) {
+    return ncc({
+        "--target=aarch64-linux-android",
+        "-std=c11",
+        "-fandroid-kernel-driver-mode",
+        std::string("-DNVK_KERNEL=") + Profile.str(),
+        "-flto=full",
+        "-c",
+        "-o",
+        Object.string(),
+        Source.string(),
+    });
+  };
+  auto CompileA = Compile("612", SourceA, InputA);
+  ASSERT_EQ(CompileA.exitCode, 0) << CompileA.err;
+  auto CompileB = Compile("618", SourceB, InputB);
+  ASSERT_EQ(CompileB.exitCode, 0) << CompileB.err;
+
+  auto Link = ncc({
+      "--target=aarch64-linux-android",
+      "-fandroid-kernel-driver-mode",
+      "-DNVK_KERNEL=612",
+      "-flto=full",
+      "-r",
+      "-nostdlib",
+      "-o",
+      Output.string(),
+      InputA.string(),
+      InputB.string(),
+  });
+  EXPECT_NE(Link.exitCode, 0);
+  EXPECT_NE(Link.err.find("neverc.android.kernel.profile"), std::string::npos)
+      << Link.err;
+}
+
+TEST_F(LTOTest, AndroidKernelAutoLtoRejectsMixedOpaqueProfiles) {
+  auto SourceA = tmpFile("android_kernel_auto_profile_a.c");
+  auto SourceB = tmpFile("android_kernel_auto_profile_b.c");
+  auto Output = tmpFile("android_kernel_auto_mixed_profiles.ko");
+  writeFile(SourceA, R"c(
+#define NVK_KERNEL 612
+#include <nvkmod_version.h>
+int android_auto_profile_a(void) { return 1; }
+)c");
+  writeFile(SourceB, R"c(
+#define NVK_KERNEL 618
+#include <nvkmod_version.h>
+int android_auto_profile_b(void) { return 2; }
+)c");
+
+  auto Link = ncc({
+      "--target=aarch64-linux-android",
+      "-std=c11",
+      "-fandroid-kernel-driver-mode",
+      "-r",
+      "-nostdlib",
+      "-o",
+      Output.string(),
+      SourceA.string(),
+      SourceB.string(),
+  });
+  EXPECT_NE(Link.exitCode, 0);
+  EXPECT_NE(Link.err.find("neverc.android.kernel.profile"), std::string::npos)
+      << Link.err;
+}
+
+TEST_F(LTOTest, AndroidKernelFullLtoAcceptsMatchingOpaqueProfiles) {
+  auto SourceA = tmpFile("android_kernel_matching_profile_a.c");
+  auto SourceB = tmpFile("android_kernel_matching_profile_b.c");
+  auto InputA = tmpFile("android_kernel_matching_profile_a.o");
+  auto InputB = tmpFile("android_kernel_matching_profile_b.o");
+  auto Output = tmpFile("android_kernel_matching_profiles.ko");
+  writeFile(SourceA, "int android_matching_profile_a(void) { return 1; }\n");
+  writeFile(SourceB, "int android_matching_profile_b(void) { return 2; }\n");
+
+  for (const auto &[Source, Object] :
+       {std::pair{SourceA, InputA}, std::pair{SourceB, InputB}}) {
+    auto Compile = ncc({
+        "--target=aarch64-linux-android",
+        "-std=c11",
+        "-fandroid-kernel-driver-mode",
+        "-DNVK_KERNEL=612",
+        "-flto=full",
+        "-c",
+        "-o",
+        Object.string(),
+        Source.string(),
+    });
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.err;
+  }
+
+  auto Link = ncc({
+      "--target=aarch64-linux-android",
+      "-fandroid-kernel-driver-mode",
+      "-DNVK_KERNEL=612",
+      "-flto=full",
+      "-r",
+      "-nostdlib",
+      "-o",
+      Output.string(),
+      InputA.string(),
+      InputB.string(),
+  });
+  EXPECT_EQ(Link.exitCode, 0) << Link.err;
+}
+
+TEST_F(LTOTest, AndroidKernelNativeProfileContractIsAtomicAcrossLinks) {
+  auto SourceA = tmpFile("android_kernel_native_profile_a.c");
+  auto SourceB = tmpFile("android_kernel_native_profile_b.c");
+  auto SourceC = tmpFile("android_kernel_native_profile_c.c");
+  auto Assembly = tmpFile("android_kernel_native_profile_asm.S");
+  auto SourceLocalAssembly =
+      tmpFile("android_kernel_native_profile_asm_source_local.S");
+  auto ObjectA612 = tmpFile("android_kernel_native_profile_a_612.o");
+  auto ObjectA510 = tmpFile("android_kernel_native_profile_a_510.o");
+  auto ObjectB612 = tmpFile("android_kernel_native_profile_b_612.o");
+  auto ObjectB618 = tmpFile("android_kernel_native_profile_b_618.o");
+  auto ObjectC612 = tmpFile("android_kernel_native_profile_c_612.o");
+  auto LTOObjectC612 = tmpFile("android_kernel_lto_profile_c_612.o");
+  auto LTOObjectC618 = tmpFile("android_kernel_lto_profile_c_618.o");
+  auto PlainObject = tmpFile("android_kernel_native_profile_plain.o");
+  auto AssemblyObject = tmpFile("android_kernel_native_profile_asm.o");
+  auto DefaultAssemblyObject =
+      tmpFile("android_kernel_native_profile_asm_default.o");
+  auto SourceLocalAssemblyObject =
+      tmpFile("android_kernel_native_profile_asm_source_local.o");
+  writeFile(SourceA, "int android_native_profile_a(void) { return 1; }\n");
+  writeFile(SourceB, "int android_native_profile_b(void) { return 2; }\n");
+  writeFile(SourceC, "int android_native_profile_c(void) { return 3; }\n");
+  writeFile(Assembly, R"s(
+#include <nvkmod_version.h>
+.text
+.globl android_native_profile_asm
+.type android_native_profile_asm,%function
+android_native_profile_asm:
+  mov w0, #4
+  ret
+.size android_native_profile_asm, .-android_native_profile_asm
+)s");
+  writeFile(SourceLocalAssembly, R"s(
+#define NVK_KERNEL 618
+#include <nvkmod_version.h>
+.text
+.globl android_native_profile_asm_source_local
+.type android_native_profile_asm_source_local,%function
+android_native_profile_asm_source_local:
+  mov w0, #5
+  ret
+.size android_native_profile_asm_source_local, .-android_native_profile_asm_source_local
+)s");
+
+  auto Compile = [&](llvm::StringRef Profile, const fs::path &Source,
+                     const fs::path &Object) {
+    return ncc({
+        "--target=aarch64-linux-android",
+        "-std=c11",
+        "-fandroid-kernel-driver-mode",
+        std::string("-DNVK_KERNEL=") + Profile.str(),
+        "-fno-lto",
+        "-c",
+        "-o",
+        Object.string(),
+        Source.string(),
+    });
+  };
+  for (const auto &[Profile, Source, Object] : {
+           std::tuple{"612", SourceA, ObjectA612},
+           std::tuple{"510", SourceA, ObjectA510},
+           std::tuple{"612", SourceB, ObjectB612},
+           std::tuple{"618", SourceB, ObjectB618},
+           std::tuple{"612", SourceC, ObjectC612},
+       }) {
+    auto Result = Compile(Profile, Source, Object);
+    ASSERT_EQ(Result.exitCode, 0) << Result.err;
+  }
+  auto CompileLTO = [&](llvm::StringRef Profile, const fs::path &Object) {
+    return ncc({
+        "--target=aarch64-linux-android",
+        "-std=c11",
+        "-fandroid-kernel-driver-mode",
+        std::string("-DNVK_KERNEL=") + Profile.str(),
+        "-flto=full",
+        "-c",
+        "-o",
+        Object.string(),
+        SourceC.string(),
+    });
+  };
+  for (const auto &[Profile, Object] : {
+           std::pair{"612", LTOObjectC612},
+           std::pair{"618", LTOObjectC618},
+       }) {
+    auto Result = CompileLTO(Profile, Object);
+    ASSERT_EQ(Result.exitCode, 0) << Result.err;
+  }
+  auto PlainCompile = ncc({
+      "--target=aarch64-linux-android",
+      "-std=c11",
+      "-fno-lto",
+      "-c",
+      "-o",
+      PlainObject.string(),
+      SourceC.string(),
+  });
+  ASSERT_EQ(PlainCompile.exitCode, 0) << PlainCompile.err;
+  auto AssemblyCompile = ncc({
+      "--target=aarch64-linux-android",
+      "-fandroid-kernel-driver-mode",
+      "-DNVK_KERNEL=612",
+      "-fno-lto",
+      "-c",
+      "-o",
+      AssemblyObject.string(),
+      Assembly.string(),
+  });
+  ASSERT_EQ(AssemblyCompile.exitCode, 0) << AssemblyCompile.err;
+  auto DefaultAssemblyCompile = ncc({
+      "--target=aarch64-linux-android",
+      "-fandroid-kernel-driver-mode",
+      "-fno-lto",
+      "-c",
+      "-o",
+      DefaultAssemblyObject.string(),
+      Assembly.string(),
+  });
+  ASSERT_EQ(DefaultAssemblyCompile.exitCode, 0) << DefaultAssemblyCompile.err;
+  auto SourceLocalAssemblyCompile = ncc({
+      "--target=aarch64-linux-android",
+      "-fandroid-kernel-driver-mode",
+      "-fno-lto",
+      "-c",
+      "-o",
+      SourceLocalAssemblyObject.string(),
+      SourceLocalAssembly.string(),
+  });
+  ASSERT_EQ(SourceLocalAssemblyCompile.exitCode, 0)
+      << SourceLocalAssemblyCompile.err;
+
+  auto Link = [&](const std::vector<fs::path> &Inputs, const fs::path &Output,
+                  const char *Plugin = nullptr) {
+    std::vector<std::string> Args;
+    if (Plugin)
+      Args.push_back(std::string("-fplugin=") + Plugin);
+    Args.insert(Args.end(), {
+                                "--target=aarch64-linux-android",
+                                "-fandroid-kernel-driver-mode",
+                                "-fno-lto",
+                                "-r",
+                                "-nostdlib",
+                                "-o",
+                                Output.string(),
+                            });
+    for (const fs::path &Input : Inputs)
+      Args.push_back(Input.string());
+    return ncc(Args);
+  };
+
+  auto MatchingOutput = tmpFile("android_kernel_native_matching.ko");
+  auto Matching = Link({ObjectA612, ObjectB612}, MatchingOutput);
+  ASSERT_EQ(Matching.exitCode, 0) << Matching.err;
+
+  auto AssemblyOutput = tmpFile("android_kernel_native_assembly.ko");
+  auto AssemblyLink = Link({ObjectA612, AssemblyObject}, AssemblyOutput);
+  EXPECT_EQ(AssemblyLink.exitCode, 0) << AssemblyLink.err;
+  auto DefaultAssemblyOutput =
+      tmpFile("android_kernel_native_assembly_default.ko");
+  auto DefaultAssemblyLink =
+      Link({ObjectA510, DefaultAssemblyObject}, DefaultAssemblyOutput);
+  EXPECT_EQ(DefaultAssemblyLink.exitCode, 0) << DefaultAssemblyLink.err;
+  auto SourceLocalAssemblyOutput =
+      tmpFile("android_kernel_native_assembly_source_local.ko");
+  auto SourceLocalAssemblyLink =
+      Link({ObjectB618, SourceLocalAssemblyObject}, SourceLocalAssemblyOutput);
+  EXPECT_EQ(SourceLocalAssemblyLink.exitCode, 0) << SourceLocalAssemblyLink.err;
+
+  // A relocatable output remains a checked input to a subsequent module link;
+  // the dedicated contract section must not be folded into ordinary rodata.
+  auto RelinkedOutput = tmpFile("android_kernel_native_relinked.ko");
+  auto Relinked = Link({MatchingOutput, ObjectC612}, RelinkedOutput);
+  EXPECT_EQ(Relinked.exitCode, 0) << Relinked.err;
+
+  auto LinkMixed = [&](const fs::path &Native, const fs::path &Bitcode,
+                       const fs::path &Output) {
+    return ncc({
+        "--target=aarch64-linux-android",
+        "-fandroid-kernel-driver-mode",
+        "-flto=full",
+        "-r",
+        "-nostdlib",
+        "-o",
+        Output.string(),
+        Native.string(),
+        Bitcode.string(),
+    });
+  };
+  auto MixedMatchingOutput = tmpFile("android_kernel_native_lto_matching.ko");
+  auto MixedMatching =
+      LinkMixed(ObjectA612, LTOObjectC612, MixedMatchingOutput);
+  EXPECT_EQ(MixedMatching.exitCode, 0) << MixedMatching.err;
+
+  auto MixedMismatchOutput = tmpFile("android_kernel_native_lto_mismatched.ko");
+  auto MixedMismatch =
+      LinkMixed(ObjectA612, LTOObjectC618, MixedMismatchOutput);
+  EXPECT_NE(MixedMismatch.exitCode, 0);
+  EXPECT_NE(
+      MixedMismatch.err.find("incompatible Android kernel profile contracts"),
+      std::string::npos)
+      << MixedMismatch.err;
+
+  auto MismatchedOutput = tmpFile("android_kernel_native_mismatched.ko");
+  auto Mismatched = Link({ObjectA612, ObjectB618}, MismatchedOutput);
+  EXPECT_NE(Mismatched.exitCode, 0);
+  EXPECT_NE(
+      Mismatched.err.find("incompatible Android kernel profile contracts"),
+      std::string::npos)
+      << Mismatched.err;
+
+  auto MissingOutput = tmpFile("android_kernel_native_missing.ko");
+  auto Missing = Link({ObjectA612, PlainObject}, MissingOutput);
+  EXPECT_NE(Missing.exitCode, 0);
+  EXPECT_NE(Missing.err.find("missing native Android kernel profile contract"),
+            std::string::npos)
+      << Missing.err;
+
+  // The object-plugin route has its own merge boundary and must enforce the
+  // same contract before a provider can select or discard one input record.
+  auto PluginOutput = tmpFile("android_kernel_native_plugin_matching.ko");
+  auto PluginMatching = Link({ObjectA612, ObjectB612}, PluginOutput,
+                             NEVERC_TEST_OBJECT_POST_WRITE_PLUGIN);
+  EXPECT_EQ(PluginMatching.exitCode, 0) << PluginMatching.err;
+
+  auto PluginCorruptOutput = tmpFile("android_kernel_native_plugin_corrupt.ko");
+  auto PluginCorrupt = Link({ObjectA612, ObjectB612}, PluginCorruptOutput,
+                            NEVERC_TEST_OBJECT_CONTRACT_CORRUPT_PLUGIN);
+  EXPECT_NE(PluginCorrupt.exitCode, 0);
+  EXPECT_NE(
+      PluginCorrupt.err.find("incompatible Android kernel profile contracts"),
+      std::string::npos)
+      << PluginCorrupt.err;
+  EXPECT_FALSE(fs::exists(PluginCorruptOutput))
+      << "a rejected contract mutation must not publish a .ko";
+
+  auto PluginMismatchOutput =
+      tmpFile("android_kernel_native_plugin_mismatched.ko");
+  auto PluginMismatch = Link({ObjectA612, ObjectB618}, PluginMismatchOutput,
+                             NEVERC_TEST_OBJECT_POST_WRITE_PLUGIN);
+  EXPECT_NE(PluginMismatch.exitCode, 0);
+  EXPECT_NE(
+      PluginMismatch.err.find("incompatible Android kernel profile contracts"),
+      std::string::npos)
+      << PluginMismatch.err;
 }
 
 // NVK_KERNEL=618 must select the 6.18 preset (vermagic + file_operations layout).

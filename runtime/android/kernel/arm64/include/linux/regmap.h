@@ -16,7 +16,7 @@ struct device;
  * ranges represent fields that drivers using this SDK do not initialize.
  */
 struct regmap_config {
-#if NEVERC_KRT_KERNEL == 510
+#if NEVERC_KRT_LINUX_IS_SERIES(5, 10)
 	const char *name;
 	int reg_bits;
 	int reg_stride;
@@ -30,7 +30,7 @@ struct regmap_config {
 	const void *reg_defaults;
 	unsigned int num_reg_defaults;
 	u8 __tail[92];
-#elif NEVERC_KRT_KERNEL == 515
+#elif NEVERC_KRT_LINUX_IS_SERIES(5, 15)
 	const char *name;
 	int reg_bits;
 	int reg_stride;
@@ -44,7 +44,7 @@ struct regmap_config {
 	const void *reg_defaults;
 	unsigned int num_reg_defaults;
 	u8 __tail[92];
-#elif NEVERC_KRT_KERNEL == 601 || NEVERC_KRT_KERNEL == 606
+#elif NEVERC_KRT_LINUX_IS_SERIES(6, 1) || NEVERC_KRT_LINUX_IS_SERIES(6, 6)
 	const char *name;
 	int reg_bits;
 	int reg_stride;
@@ -75,21 +75,21 @@ struct regmap_config {
 #endif
 };
 
-#if NEVERC_KRT_KERNEL == 510
+#if NEVERC_KRT_LINUX_IS_SERIES(5, 10)
 #define __NVK_REGMAP_SIZE             280
 #define __NVK_REGMAP_VAL_BITS_OFF     20
 #define __NVK_REGMAP_FAST_IO_OFF      120
 #define __NVK_REGMAP_MAX_REGISTER_OFF 124
 #define __NVK_REGMAP_DEFAULTS_OFF     176
 #define __NVK_REGMAP_NUM_DEFAULTS_OFF 184
-#elif NEVERC_KRT_KERNEL == 515
+#elif NEVERC_KRT_LINUX_IS_SERIES(5, 15)
 #define __NVK_REGMAP_SIZE             288
 #define __NVK_REGMAP_VAL_BITS_OFF     20
 #define __NVK_REGMAP_FAST_IO_OFF      128
 #define __NVK_REGMAP_MAX_REGISTER_OFF 132
 #define __NVK_REGMAP_DEFAULTS_OFF     184
 #define __NVK_REGMAP_NUM_DEFAULTS_OFF 192
-#elif NEVERC_KRT_KERNEL == 601 || NEVERC_KRT_KERNEL == 606
+#elif NEVERC_KRT_LINUX_IS_SERIES(6, 1) || NEVERC_KRT_LINUX_IS_SERIES(6, 6)
 #define __NVK_REGMAP_SIZE             328
 #define __NVK_REGMAP_VAL_BITS_OFF     28
 #define __NVK_REGMAP_FAST_IO_OFF      168

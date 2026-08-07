@@ -305,6 +305,9 @@ LTO::addRegularLTO(BitcodeModule BM, ArrayRef<InputFile::Symbol> Syms,
 
   if (Error Err = M.materializeMetadata())
     return std::move(Err);
+  if (Conf.PreLinkModuleHook)
+    if (Error Err = Conf.PreLinkModuleHook(M))
+      return std::move(Err);
 
   // If cfi.functions is present and we are in regular LTO mode, LowerTypeTests
   // will rename local functions in the merged module as "<function name>.1".

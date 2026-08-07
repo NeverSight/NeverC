@@ -1,4 +1,5 @@
 #include "Core/AndroidKernelEmitter.h"
+#include "neverc/Foundation/AndroidKernelProfileContract.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/Attributes.h"
 #include "llvm/IR/BasicBlock.h"
@@ -11,17 +12,25 @@
 #include "llvm/IR/Module.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/TargetParser/Triple.h"
+#include "llvm/Transforms/Utils/ModuleUtils.h"
 #include <cstdint>
 
 using namespace neverc::Emit;
+
+static_assert(neverc::AndroidKernelProfileContract::MaxKCFIMode ==
+              static_cast<uint32_t>(AndroidKernel::KCFIMode::Normalized));
 
 namespace {
 
 constexpr llvm::StringLiteral KCFITypePairMetadata = "neverc.kcfi.typeids";
 constexpr llvm::StringLiteral KCFIModeModuleFlag =
     "neverc.android.kernel.kcfi.mode";
+constexpr llvm::StringLiteral ProfileModuleFlag =
+    "neverc.android.kernel.profile";
 constexpr llvm::StringLiteral KCFIModeSourceMarker =
     "__neverc_krt_kcfi_mode_marker";
+constexpr llvm::StringLiteral ProfileSourceMarker =
+    "__neverc_krt_profile_marker";
 constexpr llvm::StringLiteral PCGOriginalLocalAttr =
     "neverc.pcg.original-local";
 constexpr llvm::StringLiteral PCGOriginalAddressTakenAttr =
@@ -86,16 +95,17 @@ std::optional<uint32_t> getSelectedKCFIType(const llvm::Function &F) {
 }
 
 void prepareKCFITypes(llvm::Module &M) {
-  const std::optional<unsigned> ModuleMode = AndroidKernel::getKCFIMode(M);
+  const std::optional<AndroidKernel::KCFIMode> ModuleMode =
+      AndroidKernel::getKCFIMode(M);
   if (!ModuleMode)
     return;
-  const unsigned Mode = *ModuleMode;
+  const AndroidKernel::KCFIMode Mode = *ModuleMode;
   for (llvm::Function &F : M) {
     // Profiles without KCFI must not validate dormant source carriers. This is
     // deliberately before parsing either attachment: a profile-neutral input
     // may contain IDs (or unsupported types) that only matter to KCFI-enabled
     // consumers.
-    if (Mode == 0) {
+    if (Mode == AndroidKernel::KCFIMode::Disabled) {
       F.setMetadata(llvm::LLVMContext::MD_kcfi_type, nullptr);
       F.setMetadata(KCFITypePairMetadata, nullptr);
       continue;
@@ -107,7 +117,8 @@ void prepareKCFITypes(llvm::Module &M) {
     const std::optional<uint32_t> Existing = getSelectedKCFIType(F);
 
     if (HasPair) {
-      const uint32_t Selected = Mode == 1 ? Standard : Normalized;
+      const uint32_t Selected =
+          Mode == AndroidKernel::KCFIMode::Classic ? Standard : Normalized;
       if (Existing && *Existing != Selected)
         llvm::report_fatal_error(
             "conflicting selected Android kernel KCFI type ID on " +
@@ -144,16 +155,97 @@ void prepareKCFITypes(llvm::Module &M) {
   }
 }
 
+std::optional<uint32_t> consumeSourceMarker(llvm::Module &M,
+                                            llvm::StringRef MarkerName,
+                                            llvm::StringRef Description) {
+  llvm::GlobalVariable *Marker = M.getNamedGlobal(MarkerName);
+  if (!Marker)
+    return std::nullopt;
+  const auto *Value =
+      llvm::dyn_cast_or_null<llvm::ConstantInt>(Marker->getInitializer());
+  if (!Value || Value->getBitWidth() > 32)
+    llvm::report_fatal_error("invalid Android kernel source " + Description);
+  if (!Marker->use_empty())
+    llvm::report_fatal_error("referenced Android kernel source " + Description);
+  const uint32_t Result = static_cast<uint32_t>(Value->getZExtValue());
+  Marker->eraseFromParent();
+  return Result;
+}
+
+void materializeNativeProfileContract(llvm::Module &M, uint32_t Profile,
+                                      AndroidKernel::KCFIMode Mode) {
+  namespace ProfileContract = neverc::AndroidKernelProfileContract;
+  const uint64_t Serialized =
+      ProfileContract::encode(Profile, static_cast<unsigned>(Mode));
+  llvm::GlobalVariable *Record =
+      M.getNamedGlobal(ProfileContract::NativeSymbol);
+  if (Record) {
+    const auto *Value =
+        llvm::dyn_cast_or_null<llvm::ConstantInt>(Record->getInitializer());
+    if (!Record->isConstant() || !Value || Value->getBitWidth() != 64 ||
+        Value->getZExtValue() != Serialized ||
+        Record->getSection() != ProfileContract::NativeSection)
+      llvm::report_fatal_error(
+          "conflicting native Android kernel profile contract");
+  } else {
+    llvm::LLVMContext &Ctx = M.getContext();
+    llvm::Type *I64 = llvm::Type::getInt64Ty(Ctx);
+    Record = new llvm::GlobalVariable(
+        M, I64, true, llvm::GlobalValue::InternalLinkage,
+        llvm::ConstantInt::get(I64, Serialized), ProfileContract::NativeSymbol);
+  }
+
+  // A provider may return a pre-existing record.  Normalize every emission
+  // property instead of trusting a same-valued global that could otherwise be
+  // available_externally, discarded, or omitted from the object.
+  Record->setLinkage(llvm::GlobalValue::InternalLinkage);
+  Record->setConstant(true);
+  Record->setVisibility(llvm::GlobalValue::DefaultVisibility);
+  Record->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
+  Record->setSection(ProfileContract::NativeSection);
+  Record->setAlignment(llvm::Align(8));
+  Record->setComdat(nullptr);
+
+  llvm::SmallVector<llvm::GlobalValue *, 8> CompilerUsed;
+  llvm::collectUsedGlobalVariables(M, CompilerUsed, true);
+  bool IsCompilerUsed = false;
+  for (const llvm::GlobalValue *Value : CompilerUsed)
+    IsCompilerUsed |= Value == Record;
+  if (!IsCompilerUsed)
+    llvm::appendToCompilerUsed(M, {Record});
+}
+
 } // namespace
 
-std::optional<unsigned> AndroidKernel::getKCFIMode(const llvm::Module &M) {
+std::optional<AndroidKernel::KCFIMode>
+AndroidKernel::getKCFIMode(const llvm::Module &M) {
   llvm::Metadata *Flag = M.getModuleFlag(KCFIModeModuleFlag);
   if (!Flag)
     return std::nullopt;
   const auto *Value = llvm::mdconst::dyn_extract<llvm::ConstantInt>(Flag);
-  if (!Value || Value->getBitWidth() > 32 || Value->getZExtValue() > 2)
+  if (!Value || Value->getBitWidth() > 32 ||
+      Value->getZExtValue() > static_cast<unsigned>(KCFIMode::Normalized))
     llvm::report_fatal_error("invalid Android kernel KCFI mode module flag");
-  return static_cast<unsigned>(Value->getZExtValue());
+  return static_cast<KCFIMode>(Value->getZExtValue());
+}
+
+std::optional<uint32_t> AndroidKernel::getProfile(const llvm::Module &M) {
+  llvm::Metadata *Flag = M.getModuleFlag(ProfileModuleFlag);
+  if (!Flag)
+    return std::nullopt;
+  const auto *Value = llvm::mdconst::dyn_extract<llvm::ConstantInt>(Flag);
+  if (!Value || Value->getBitWidth() > 32 || Value->isZero())
+    llvm::report_fatal_error("invalid Android kernel profile module flag");
+  return static_cast<uint32_t>(Value->getZExtValue());
+}
+
+std::optional<AndroidKernel::Contract>
+AndroidKernel::getContract(const llvm::Module &M) {
+  const std::optional<KCFIMode> Mode = getKCFIMode(M);
+  const std::optional<uint32_t> Profile = getProfile(M);
+  if (!Mode || !Profile)
+    return std::nullopt;
+  return Contract{*Mode, *Profile};
 }
 
 void AndroidKernel::setKCFITypePair(llvm::Function &F, uint32_t Standard,
@@ -187,15 +279,20 @@ void AndroidKernel::setKCFIType(llvm::Function &F, uint32_t TypeID) {
 }
 
 void AndroidKernel::finalizeKCFIPrefixes(llvm::Module &M) {
-  const std::optional<unsigned> Mode = getKCFIMode(M);
+  const std::optional<KCFIMode> Mode = getKCFIMode(M);
   if (!Mode)
     return;
+  const std::optional<uint32_t> Profile = getProfile(M);
+  if (!Profile)
+    llvm::report_fatal_error(
+        "Android kernel module is missing its native profile contract");
+  materializeNativeProfileContract(M, *Profile, *Mode);
 
   // This is intentionally also the fail-safe selection point.  The normal
   // builtin pipeline prepares types earlier, but an IR optimization provider
   // may replace or pass through the module while suppressing that pipeline.
   prepareKCFITypes(M);
-  if (*Mode == 0)
+  if (*Mode == KCFIMode::Disabled)
     return;
 
   for (llvm::Function &F : M) {
@@ -312,7 +409,6 @@ static void applyKernelFunctionAttrs(llvm::Module &M) {
     F.addFnAttr("sign-return-address", "all");
     F.addFnAttr("sign-return-address-key", "a_key");
     F.removeFnAttr(llvm::Attribute::UWTable);
-    F.setUWTableKind(llvm::UWTableKind::None);
   }
 }
 
@@ -324,31 +420,40 @@ AndroidKernel::KernelFunctionAttrsPass::run(llvm::Module &M,
   return llvm::PreservedAnalyses::none();
 }
 
-void AndroidKernel::emitFixups(llvm::Module &M, unsigned Arch,
-                               unsigned KCFIMode) {
+void AndroidKernel::emitFixups(llvm::Module &M, unsigned Arch, KCFIMode Mode) {
   if (Arch != llvm::Triple::aarch64)
     return;
-  if (KCFIMode > 2)
+  if (static_cast<unsigned>(Mode) >
+      static_cast<unsigned>(KCFIMode::Unspecified))
     llvm::report_fatal_error("invalid Android kernel KCFI profile mode");
 
-  if (llvm::GlobalVariable *Marker = M.getNamedGlobal(KCFIModeSourceMarker)) {
-    const auto *Value =
-        llvm::dyn_cast_or_null<llvm::ConstantInt>(Marker->getInitializer());
-    if (!Value || Value->getBitWidth() > 32 || Value->getZExtValue() > 2)
+  const std::optional<uint32_t> SourceModeValue =
+      consumeSourceMarker(M, KCFIModeSourceMarker, "KCFI mode marker");
+  if (SourceModeValue) {
+    if (*SourceModeValue > static_cast<unsigned>(KCFIMode::Normalized))
       llvm::report_fatal_error(
           "invalid Android kernel source KCFI mode marker");
-    if (!Marker->use_empty())
-      llvm::report_fatal_error(
-          "referenced Android kernel source KCFI mode marker");
-    const unsigned SourceMode = static_cast<unsigned>(Value->getZExtValue());
-    Marker->eraseFromParent();
-    if (KCFIMode != 0 && KCFIMode != SourceMode)
+    const KCFIMode SourceMode = static_cast<KCFIMode>(*SourceModeValue);
+    if (isConcrete(Mode) && Mode != SourceMode)
       llvm::report_fatal_error(
           "conflicting command-line and source Android kernel KCFI modes");
-    KCFIMode = SourceMode;
+    Mode = SourceMode;
   }
+  if (!isConcrete(Mode))
+    llvm::report_fatal_error(
+        "Android kernel source is missing a KCFI mode marker");
 
-  M.addModuleFlag(llvm::Module::Error, KCFIModeModuleFlag, KCFIMode);
+  const std::optional<uint32_t> Profile =
+      consumeSourceMarker(M, ProfileSourceMarker, "profile marker");
+  if (!Profile)
+    llvm::report_fatal_error(
+        "Android kernel source is missing a profile marker");
+  if (*Profile == 0)
+    llvm::report_fatal_error("invalid Android kernel source profile marker");
+
+  M.addModuleFlag(llvm::Module::Error, KCFIModeModuleFlag,
+                  static_cast<unsigned>(Mode));
+  M.addModuleFlag(llvm::Module::Error, ProfileModuleFlag, *Profile);
 
   emitPLTSections(M);
   emitEmptyVersionsSection(M);

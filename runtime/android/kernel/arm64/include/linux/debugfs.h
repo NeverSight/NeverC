@@ -15,7 +15,7 @@ struct dentry *debugfs_create_dir(const char *name, struct dentry *parent);
  * (with proxy fops) and debugfs_create_file_short.  The plain name is
  * no longer exported.
  */
-#if NEVERC_KRT_KERNEL >= 618
+#if NEVERC_KRT_LINUX_AT_LEAST(6, 18, 0)
 struct dentry *debugfs_create_file_full(const char *name, umode_t mode,
 					struct dentry *parent, void *data,
 					const struct file_operations *fops);

@@ -408,6 +408,23 @@ set_target_properties(
   neverc-test-plugin-object-post-write PROPERTIES PREFIX ""
 )
 
+add_library(neverc-test-plugin-object-contract-corrupt MODULE
+  Inputs/Plugin/ObjectPostWritePlugin.c
+)
+target_include_directories(neverc-test-plugin-object-contract-corrupt PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(
+  neverc-test-plugin-object-contract-corrupt PRIVATE c_std_11
+)
+target_compile_definitions(
+  neverc-test-plugin-object-contract-corrupt PRIVATE
+  NEVERC_TEST_CORRUPT_ANDROID_CONTRACT=1
+)
+set_target_properties(
+  neverc-test-plugin-object-contract-corrupt PROPERTIES PREFIX ""
+)
+
 add_neverc_registry_fixture(neverc-test-plugin-target-indirect)
 target_compile_definitions(neverc-test-plugin-target-indirect PRIVATE
   NEVERC_TEST_PLUGIN_ID="org.neverc.test.target-indirect"
@@ -2140,6 +2157,7 @@ target_compile_definitions(neverc-tests PRIVATE
   NEVERC_TEST_TARGET_LANGUAGE_PLUGIN="$<TARGET_FILE:neverc-test-plugin-target-language>"
   NEVERC_TEST_ASSEMBLY_PROVIDER_PLUGIN="$<TARGET_FILE:neverc-test-plugin-assembly-provider>"
   NEVERC_TEST_OBJECT_POST_WRITE_PLUGIN="$<TARGET_FILE:neverc-test-plugin-object-post-write>"
+  NEVERC_TEST_OBJECT_CONTRACT_CORRUPT_PLUGIN="$<TARGET_FILE:neverc-test-plugin-object-contract-corrupt>"
   NEVERC_TEST_NEW_BACKEND_PLUGIN="$<TARGET_FILE:PluginTestTarget>"
   NEVERC_TEST_TARGET_INDIRECT_PLUGIN="$<TARGET_FILE:neverc-test-plugin-target-indirect>"
   NEVERC_TEST_TARGET_COERCE_EXPAND_PLUGIN="$<TARGET_FILE:neverc-test-plugin-target-coerce-expand>"
@@ -2220,6 +2238,7 @@ add_dependencies(neverc-tests
   neverc-test-plugin-target-language
   neverc-test-plugin-assembly-provider
   neverc-test-plugin-object-post-write
+  neverc-test-plugin-object-contract-corrupt
   PluginTestTarget
   neverc-test-plugin-target-indirect
   neverc-test-plugin-target-coerce-expand

@@ -75,7 +75,8 @@ TEST_F(MimallocTest, KernelModesSuppressDefault) {
       {"mkernel", {"-mkernel"}},
       {"ms_kernel", {"--target=x86_64-pc-windows-msvc", "-fms-kernel"}},
       {"android_kernel",
-       {"--target=aarch64-linux-android", "-fandroid-kernel-driver-mode"}},
+       {"--target=aarch64-linux-android", "-fandroid-kernel-driver-mode",
+        "-DNVK_KERNEL=510"}},
       // A driver build that picks up -fbuiltin-mimalloc from shared flags has
       // to come out clean too: the suppression wins over the explicit request.
       {"ms_kernel_explicit_request",

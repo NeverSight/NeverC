@@ -28,7 +28,7 @@ struct mutex {
 	raw_spinlock_t wait_lock;
 	struct optimistic_spin_queue osq;
 	struct list_head wait_list;
-#if NEVERC_KRT_KERNEL >= 618
+#if NEVERC_KRT_LINUX_AT_LEAST(6, 18, 0)
 	u64 __kabi_reserved1;
 #else
 	u64 __kabi_reserved1;
@@ -44,7 +44,7 @@ _Static_assert(__builtin_offsetof(struct mutex, osq) == 12,
 	       "unexpected GKI mutex osq offset");
 _Static_assert(__builtin_offsetof(struct mutex, wait_list) == 16,
 	       "unexpected GKI mutex wait_list offset");
-#if NEVERC_KRT_KERNEL >= 618
+#if NEVERC_KRT_LINUX_AT_LEAST(6, 18, 0)
 _Static_assert(sizeof(struct mutex) == 40,
 	       "unexpected GKI 6.18 mutex layout");
 #else

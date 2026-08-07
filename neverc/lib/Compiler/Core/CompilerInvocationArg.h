@@ -226,6 +226,19 @@ std::optional<IntTy> normalizeStringIntegral(OptSpecifier Opt, int,
   return Res;
 }
 
+static inline std::optional<unsigned>
+normalizeAndroidKernelKCFIMode(OptSpecifier Opt, int TableIndex,
+                               const ArgList &Args, DiagnosticsEngine &Diags) {
+  std::optional<unsigned> Mode =
+      normalizeStringIntegral<unsigned>(Opt, TableIndex, Args, Diags);
+  if (!Mode || *Mode <= 2)
+    return Mode;
+  const Arg *A = Args.getLastArg(Opt);
+  Diags.Report(diag::err_drv_invalid_value)
+      << A->getAsString(Args) << A->getValue();
+  return std::nullopt;
+}
+
 static inline std::optional<std::vector<std::string>>
 normalizeStringVector(OptSpecifier Opt, int, const ArgList &Args,
                       DiagnosticsEngine &) {

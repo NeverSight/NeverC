@@ -39,6 +39,7 @@ protected:
       Args.push_back("-fplugin=" + PluginPath);
     Args.push_back("--target=aarch64-linux-android");
     Args.push_back("-fandroid-kernel-driver-mode");
+    Args.push_back("-DNVK_KERNEL=510");
     Args.push_back("-nostdlib");
     Args.push_back("-r");
     for (const fs::path &Source : Sources)

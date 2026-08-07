@@ -513,10 +513,12 @@ else()
 endif()
 
 set(LLVM_LINK_COMPONENTS
+  Object
   Support
   )
 
 add_neverc_library(nevercPluginLink
+  Link/AndroidKernelProfileContractVerifier.cpp
   Link/ArchiveGraph.cpp
   Link/BinaryImage.cpp
   Link/BinaryImageCAPI.cpp

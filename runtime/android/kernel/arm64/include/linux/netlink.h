@@ -54,14 +54,14 @@ struct netlink_kernel_cfg {
 	unsigned int groups;
 	unsigned int flags;
 	void (*input)(struct sk_buff *skb);
-#if NEVERC_KRT_KERNEL >= 612
+#if NEVERC_KRT_LINUX_AT_LEAST(6, 12, 0)
 	unsigned char __opaque[24];
 #else
 	unsigned char __opaque[32];
 #endif
 };
 
-#if NEVERC_KRT_KERNEL >= 612
+#if NEVERC_KRT_LINUX_AT_LEAST(6, 12, 0)
 _Static_assert(sizeof(struct netlink_kernel_cfg) == 40,
 	       "unexpected GKI 6.12+ netlink_kernel_cfg layout");
 #else

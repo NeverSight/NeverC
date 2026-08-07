@@ -619,7 +619,7 @@ def resolve_pinned_module(root, member):
     return candidate
 
 
-def run_offset_verifier(profile, module, verifier, header, readelf):
+def run_offset_verifier(profile, module, verifier, generator, readelf):
     module = Path(module)
     verifier = Path(verifier)
     with tempfile.TemporaryDirectory(prefix=f"gki-{profile}-offset-") as directory:
@@ -628,8 +628,8 @@ def run_offset_verifier(profile, module, verifier, header, readelf):
         shutil.copyfile(module, pinned)
         command = [
             str(verifier),
-            "--header",
-            str(header),
+            "--generator",
+            str(generator),
             "--readelf",
             str(readelf),
             profile,
@@ -815,8 +815,11 @@ def verify_extracted_release(*, repo_root, root, profile, entry, compiler, reade
     inspect_offset_module(module, entry["vermagic"], entry["kcfi_typeids"])
     verify_linux_banner_path(vmlinux, entry["vermagic"])
     verifier = repo_root / "utils/build/verify_gki_offsets.sh"
-    header = repo_root / "runtime/android/kernel/include/nvkmod_version.h"
-    run_offset_verifier(profile, module, verifier, header, readelf)
+    generator = (
+        repo_root
+        / "runtime/android/kernel/tools/generate-compat-table.py"
+    )
+    run_offset_verifier(profile, module, verifier, generator, readelf)
     print(f"[release] PASS profile={profile} kernel={entry['kernel_name']}")
     return {"vmlinux": vmlinux, "image": image, "module": module}
 

@@ -4,15 +4,14 @@
 
 /* ---- file-local typedefs ---- */
 
-typedef void *(*neverc_krt_do_mmap_fn)(void *file, unsigned long addr,
-				       unsigned long len, unsigned long prot,
-				       unsigned long flags, unsigned long pgoff,
-				       unsigned long *populate, void *uf);
-typedef unsigned long (*neverc_krt_do_mmap_v2_fn)(void *file, unsigned long addr,
-						  unsigned long len, unsigned long prot,
-						  unsigned long flags, unsigned long vm_flags,
-						  unsigned long pgoff, unsigned long *populate,
-						  void *uf);
+typedef unsigned long (*neverc_krt_do_mmap_without_vm_flags_fn)(
+	void *file, unsigned long addr, unsigned long len, unsigned long prot,
+	unsigned long flags, unsigned long pgoff, unsigned long *populate,
+	void *uf);
+typedef unsigned long (*neverc_krt_do_mmap_with_vm_flags_fn)(
+	void *file, unsigned long addr, unsigned long len, unsigned long prot,
+	unsigned long flags, unsigned long vm_flags, unsigned long pgoff,
+	unsigned long *populate, void *uf);
 typedef int (*neverc_krt_vm_mmap_fn)(void *file, unsigned long addr,
 				     unsigned long len, unsigned long prot,
 				     unsigned long flags, unsigned long pgoff);
@@ -23,7 +22,7 @@ typedef void  (*neverc_krt_mmap_write_unlock_fn)(void *mm);
 typedef void  (*neverc_krt_use_mm_fn)(void *mm);
 typedef void  (*neverc_krt_unuse_mm_fn)(void *mm);
 
-static neverc_krt_do_mmap_fn          _neverc_krt_do_mmap;
+static neverc_krt_do_mmap_without_vm_flags_fn _neverc_krt_do_mmap;
 static neverc_krt_vm_mmap_fn          _neverc_krt_vm_mmap;
 static neverc_krt_do_munmap_fn        _neverc_krt_do_munmap;
 static int                            _neverc_krt_xmem_inited;
@@ -36,7 +35,8 @@ int neverc_krt_xmem_init(void)
 {
 	if (_neverc_krt_xmem_inited) return 0;
 
-	_neverc_krt_do_mmap = (neverc_krt_do_mmap_fn)NEVERC_KRT_LOOKUP("do_mmap");
+	_neverc_krt_do_mmap =
+		(neverc_krt_do_mmap_without_vm_flags_fn)NEVERC_KRT_LOOKUP("do_mmap");
 	_neverc_krt_vm_mmap = (neverc_krt_vm_mmap_fn)NEVERC_KRT_LOOKUP("vm_mmap");
 	_neverc_krt_do_munmap = (neverc_krt_do_munmap_fn)NEVERC_KRT_LOOKUP("do_munmap");
 	if (!_neverc_krt_do_munmap)
@@ -130,8 +130,12 @@ unsigned long neverc_krt_xmem_mmap(struct task_struct *task,
 {
 	unsigned long addr = 0;
 	void *mm;
+	const struct neverc_krt_runtime_caps *caps;
 
-	if (!__atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE))
+	caps = _neverc_krt_current_caps();
+	if (!caps ||
+	    (caps->do_mmap_abi != NEVERC_KRT_DO_MMAP_ABI_WITHOUT_VM_FLAGS &&
+	     caps->do_mmap_abi != NEVERC_KRT_DO_MMAP_ABI_WITH_VM_FLAGS))
 		return 0;
 
 	_neverc_krt_xmem_resolve_mm();
@@ -148,13 +152,13 @@ unsigned long neverc_krt_xmem_mmap(struct task_struct *task,
 	_neverc_krt_use_mm(mm);
 	if (_neverc_krt_mmap_wlock) _neverc_krt_mmap_wlock(mm);
 
-	if (__atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE) >= 606) {
-		neverc_krt_do_mmap_v2_fn fn =
-			(neverc_krt_do_mmap_v2_fn)(void *)_neverc_krt_do_mmap;
+	if (caps->do_mmap_abi == NEVERC_KRT_DO_MMAP_ABI_WITH_VM_FLAGS) {
+		neverc_krt_do_mmap_with_vm_flags_fn fn =
+			(neverc_krt_do_mmap_with_vm_flags_fn)(void *)_neverc_krt_do_mmap;
 		result = fn((void *)0, 0, len, prot, flags,
 			    0, 0, &populate, (void *)0);
 	} else {
-		result = (unsigned long)_neverc_krt_do_mmap(
+		result = _neverc_krt_do_mmap(
 			(void *)0, 0, len, prot, flags,
 			0, &populate, (void *)0);
 	}
@@ -287,4 +291,3 @@ int neverc_krt_xmem_load_elf(struct task_struct *task,
 	info->total_size = total;
 	return 0;
 }
-

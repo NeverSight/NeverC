@@ -28,7 +28,7 @@ enum nf_inet_hooks {
 };
 
 struct nf_hook_state {
-#if NEVERC_KRT_KERNEL == 510
+#if NEVERC_KRT_LINUX_IS_SERIES(5, 10)
 	unsigned int hook;
 	u8 pf;
 	u8 __pad[3];
@@ -50,10 +50,10 @@ typedef unsigned int nf_hookfn(void *priv, struct sk_buff *skb,
 enum nf_hook_ops_type {
 	NF_HOOK_OP_UNDEFINED,
 	NF_HOOK_OP_NF_TABLES,
-#if NEVERC_KRT_KERNEL >= 612
+#if NEVERC_KRT_LINUX_AT_LEAST(6, 12, 0)
 	NF_HOOK_OP_BPF,
 #endif
-#if NEVERC_KRT_KERNEL >= 618
+#if NEVERC_KRT_LINUX_AT_LEAST(6, 18, 0)
 	NF_HOOK_OP_NFT_FT,
 #endif
 };
@@ -64,7 +64,7 @@ enum nf_hook_ops_type {
  * their upstream names and exact offsets for each selected GKI profile.
  */
 struct nf_hook_ops {
-#if NEVERC_KRT_KERNEL >= 618
+#if NEVERC_KRT_LINUX_AT_LEAST(6, 18, 0)
 	u8 __kernel_private[32];
 #endif
 	nf_hookfn *hook;
@@ -77,7 +77,7 @@ struct nf_hook_ops {
 	int priority;
 };
 
-#if NEVERC_KRT_KERNEL >= 618
+#if NEVERC_KRT_LINUX_AT_LEAST(6, 18, 0)
 _Static_assert(sizeof(struct nf_hook_ops) == 72,
 	       "unexpected GKI 6.18 nf_hook_ops layout");
 _Static_assert(__builtin_offsetof(struct nf_hook_ops, hook) == 32,

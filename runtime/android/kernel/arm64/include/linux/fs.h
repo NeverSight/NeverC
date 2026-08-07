@@ -50,7 +50,7 @@ typedef void *fl_owner_t;
  * designated initializers land at the offsets the running kernel expects.
  */
 
-#if NEVERC_KRT_KERNEL >= 618
+#if NEVERC_KRT_LINUX_AT_LEAST(6, 18, 0)
 
 typedef unsigned int __bitwise fop_flags_t;
 struct vm_area_desc; /* opaque, new in 6.18 */
@@ -90,7 +90,7 @@ _Static_assert(__builtin_offsetof(struct file_operations, release) == 120,
 _Static_assert(sizeof(struct file_operations) == NEVERC_KRT_FOPS_SIZE,
 	       "file_operations size mismatch (6.18)");
 
-#elif NEVERC_KRT_KERNEL >= 612
+#elif NEVERC_KRT_LINUX_AT_LEAST(6, 12, 0)
 
 typedef unsigned int __bitwise fop_flags_t;
 
@@ -126,7 +126,7 @@ _Static_assert(__builtin_offsetof(struct file_operations, release) == 120,
 _Static_assert(sizeof(struct file_operations) == NEVERC_KRT_FOPS_SIZE,
 	       "file_operations size mismatch (6.12)");
 
-#elif NEVERC_KRT_KERNEL >= 606
+#elif NEVERC_KRT_LINUX_AT_LEAST(6, 6, 0)
 
 struct file_operations {
 	struct module *owner;
@@ -168,7 +168,7 @@ struct file_operations {
 	ssize_t (*write)(struct file *, const char __user *, size_t, loff_t *);
 	ssize_t (*read_iter)(struct kiocb *, struct iov_iter *);
 	ssize_t (*write_iter)(struct kiocb *, struct iov_iter *);
-#if NEVERC_KRT_KERNEL <= 515
+#if NEVERC_KRT_LINUX_BEFORE(6, 1, 0)
 	int (*iopoll)(struct kiocb *, bool);
 #else
 	int (*iopoll)(struct kiocb *, struct io_comp_batch *, unsigned int);
@@ -197,6 +197,6 @@ _Static_assert(__builtin_offsetof(struct file_operations, release) == 128,
 _Static_assert(sizeof(struct file_operations) == NEVERC_KRT_FOPS_SIZE,
 	       "file_operations size mismatch (5.10-6.1)");
 
-#endif /* NEVERC_KRT_KERNEL */
+#endif /* semantic Linux API series */
 
 #endif /* _NEVERC_KRT_LINUX_FS_H */
