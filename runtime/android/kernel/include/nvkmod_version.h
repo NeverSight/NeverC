@@ -219,6 +219,38 @@
 #endif
 
 /*
+ * KCFI type hashes stored in the four bytes immediately before the module
+ * entry symbols.  These are ABI facts derived from the pinned stock GKI
+ * modules, not arbitrary version constants:
+ *
+ *   5.10 / 5.15: no module-entry KCFI prefix
+ *   6.1  / 6.6:  Clang KCFI
+ *   6.12 / 6.18: Clang KCFI with integer type normalization
+ *
+ * OEM kernels built with a different CFI configuration may override either
+ * value on the compiler command line.
+ */
+#ifndef NEVERC_KRT_KCFI_INIT_MODULE_TYPEID
+#  if NEVERC_KRT_KERNEL <= 515
+#    define NEVERC_KRT_KCFI_INIT_MODULE_TYPEID 0x00000000U
+#  elif NEVERC_KRT_KERNEL <= 606
+#    define NEVERC_KRT_KCFI_INIT_MODULE_TYPEID 0x36b1c5a6U
+#  else
+#    define NEVERC_KRT_KCFI_INIT_MODULE_TYPEID 0x6fbb3035U
+#  endif
+#endif
+
+#ifndef NEVERC_KRT_KCFI_CLEANUP_MODULE_TYPEID
+#  if NEVERC_KRT_KERNEL <= 515
+#    define NEVERC_KRT_KCFI_CLEANUP_MODULE_TYPEID 0x00000000U
+#  elif NEVERC_KRT_KERNEL <= 606
+#    define NEVERC_KRT_KCFI_CLEANUP_MODULE_TYPEID 0xa540670cU
+#  else
+#    define NEVERC_KRT_KCFI_CLEANUP_MODULE_TYPEID 0xe5c47d60U
+#  endif
+#endif
+
+/*
  * offsetof(struct task_struct, thread_info.preempt_count), verified from each
  * configured profile's BTF/DWARF manifest.  Android 12's thread_info still
  * contains addr_limit; it was removed before Android 13.

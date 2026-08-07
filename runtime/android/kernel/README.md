@@ -135,9 +135,10 @@ while keeping the validation job within hosted-runner memory limits.
 
 For the loader proof, the workflow compiles a dedicated zero-import module from
 the exact same source SHA as the reused `linux-x64-neverc-compiler` artifact.
-For KCFI kernels, its build helper writes the independently release-derived
-`init_module` and `cleanup_module` type-id words into the reserved bytes before
-those symbols; non-KCFI profiles are required to retain zero prefixes.
+For KCFI kernels, NeverC emits the independently release-derived
+`init_module` and `cleanup_module` type-id words as function prefix data during
+code generation. The build helper verifies those bytes without modifying the
+`.ko`; non-KCFI profiles are required to retain zero prefixes.
 It boots every released `dist/Image` under QEMU, calls `finit_module`, then
 `delete_module`, and requires separate load/unload success markers. This smoke
 test proves module format, loader entry-point offsets, and the pinned entry-call

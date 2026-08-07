@@ -2,9 +2,9 @@
 /*
  * Loader-offset smoke module.  Deliberately do not call the NeverC runtime or
  * any kernel API: QEMU only proves that the pinned GKI loader finds and calls
- * the init/exit pointers at the configured struct module offsets.  The build
- * helper also writes the release-derived KCFI type-id word immediately before
- * each entry symbol on profiles whose pinned module carries that entry ABI.
+ * the init/exit pointers at the configured struct module offsets.  NeverC
+ * emits the release-derived KCFI type-id word immediately before each entry
+ * symbol on profiles whose pinned module carries that entry ABI.
  */
 #include <nvkmod.h>
 

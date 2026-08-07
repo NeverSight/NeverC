@@ -9,6 +9,9 @@
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
+#include "llvm/Object/ObjectFile.h"
+#include "llvm/Support/Endian.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <algorithm>
@@ -64,6 +67,53 @@ static double medianSeconds(std::vector<double> Values) {
   assert(!Values.empty());
   std::sort(Values.begin(), Values.end());
   return Values[Values.size() / 2];
+}
+
+static llvm::Expected<uint32_t>
+readELFSymbolPrefix32(llvm::StringRef Bytes, llvm::StringRef SymbolName) {
+  auto Object = llvm::object::ObjectFile::createObjectFile(
+      llvm::MemoryBufferRef(Bytes, "android-kernel-kcfi-test"));
+  if (!Object)
+    return Object.takeError();
+  if (!(*Object)->isELF() || !(*Object)->isLittleEndian())
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   "expected a little-endian ELF object");
+
+  for (const llvm::object::SymbolRef &Symbol : (*Object)->symbols()) {
+    llvm::Expected<llvm::StringRef> Name = Symbol.getName();
+    if (!Name)
+      return Name.takeError();
+    if (*Name != SymbolName)
+      continue;
+
+    llvm::Expected<uint64_t> Address = Symbol.getAddress();
+    if (!Address)
+      return Address.takeError();
+    llvm::Expected<llvm::object::section_iterator> Section =
+        Symbol.getSection();
+    if (!Section)
+      return Section.takeError();
+    if (*Section == (*Object)->section_end())
+      return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                     "entry symbol has no section");
+
+    llvm::Expected<llvm::StringRef> Contents = (*Section)->getContents();
+    if (!Contents)
+      return Contents.takeError();
+    const uint64_t SectionAddress = (*Section)->getAddress();
+    if (*Address < SectionAddress)
+      return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                     "entry symbol precedes its section");
+    const uint64_t Offset = *Address - SectionAddress;
+    if (Offset < sizeof(uint32_t) || Offset > Contents->size())
+      return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                     "entry symbol has no 32-bit prefix");
+    return llvm::support::endian::read32le(Contents->data() + Offset -
+                                           sizeof(uint32_t));
+  }
+
+  return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                 "entry symbol not found");
 }
 
 class LTOTest : public NeverCTest {
@@ -1323,6 +1373,57 @@ TEST_F(LTOTest, AndroidKernelMultifileMergeSectionOffsets) {
   EXPECT_NE(interposesInit, interposesCleanup);
   EXPECT_NE(interposesInit, initMod);
   EXPECT_NE(initMod, cleanupMod);
+}
+
+// Android GKI 6.1+ calls module entries through KCFI-checked function
+// pointers. The compiler must place the profile's 32-bit type ID immediately
+// before each exported entry symbol; a zero prefix reproduces the load-time
+// KCFI failure this test guards against.
+TEST_F(LTOTest, AndroidKernelProfilesEmitKcfiEntryTypeIds) {
+  auto Source =
+      fs::canonical(testDir() /
+                    "../../runtime/android/kernel/tools/gki-qemu-smoke-module.c");
+
+  struct Profile {
+    const char *Name;
+    uint32_t InitTypeId;
+    uint32_t ExitTypeId;
+  };
+  const Profile Profiles[] = {
+      {"510", 0x00000000, 0x00000000},
+      {"515", 0x00000000, 0x00000000},
+      {"601", 0x36b1c5a6, 0xa540670c},
+      {"606", 0x36b1c5a6, 0xa540670c},
+      {"612", 0x6fbb3035, 0xe5c47d60},
+      {"618", 0x6fbb3035, 0xe5c47d60},
+  };
+
+  for (const Profile &P : Profiles) {
+    SCOPED_TRACE(P.Name);
+    auto Ko = tmpFile(std::string("nvk_kcfi_") + P.Name + ".ko");
+    auto Build = ncc({
+        "--target=aarch64-linux-android",
+        "-fandroid-kernel-driver-mode",
+        std::string("-DNVK_KERNEL=") + P.Name,
+        "-r",
+        "-nostdlib",
+        "-o",
+        Ko.string(),
+        Source.string(),
+    });
+    ASSERT_EQ(Build.exitCode, 0) << Build.err;
+
+    const std::string Bytes = readFile(Ko);
+    auto Init = readELFSymbolPrefix32(Bytes, "init_module");
+    ASSERT_TRUE(static_cast<bool>(Init))
+        << llvm::toString(Init.takeError()).str().str();
+    EXPECT_EQ(*Init, P.InitTypeId);
+
+    auto Exit = readELFSymbolPrefix32(Bytes, "cleanup_module");
+    ASSERT_TRUE(static_cast<bool>(Exit))
+        << llvm::toString(Exit.takeError()).str().str();
+    EXPECT_EQ(*Exit, P.ExitTypeId);
+  }
 }
 
 // NVK_KERNEL=618 must select the 6.18 preset (vermagic + file_operations layout).

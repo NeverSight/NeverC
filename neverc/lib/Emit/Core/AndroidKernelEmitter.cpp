@@ -7,7 +7,9 @@
 #include "llvm/IR/InlineAsm.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
+#include "llvm/Support/ErrorHandling.h"
 #include "llvm/TargetParser/Triple.h"
+#include <cstdint>
 
 using namespace neverc::Emit;
 
@@ -75,6 +77,61 @@ static void emitCFICheckStubs(llvm::Module &M) {
                 llvm::GlobalValue::HiddenVisibility, 4);
 }
 
+static uint32_t consumeKCFITypeId(llvm::Module &M,
+                                  llvm::StringRef MarkerName) {
+  llvm::GlobalVariable *Marker = M.getNamedGlobal(MarkerName);
+  if (!Marker)
+    return 0;
+
+  auto *Value =
+      llvm::dyn_cast_or_null<llvm::ConstantInt>(Marker->getInitializer());
+  if (!Value || Value->getBitWidth() != 32)
+    llvm::report_fatal_error("invalid Android kernel KCFI type-id marker " +
+                             MarkerName);
+  if (!Marker->use_empty())
+    llvm::report_fatal_error("referenced Android kernel KCFI type-id marker " +
+                             MarkerName);
+
+  const uint32_t TypeId = static_cast<uint32_t>(Value->getZExtValue());
+  Marker->eraseFromParent();
+  return TypeId;
+}
+
+static void emitKCFIEntryPrefix(llvm::Module &M, llvm::StringRef EntryName,
+                                llvm::StringRef MarkerName) {
+  const uint32_t TypeId = consumeKCFITypeId(M, MarkerName);
+  if (TypeId == 0)
+    return;
+
+  llvm::GlobalValue *Entry = M.getNamedValue(EntryName);
+  llvm::Function *Function =
+      Entry
+          ? llvm::dyn_cast_or_null<llvm::Function>(Entry->getAliaseeObject())
+          : nullptr;
+  if (!Function || Function->isDeclaration())
+    llvm::report_fatal_error("Android kernel KCFI entry is not defined: " +
+                             EntryName);
+
+  auto *Prefix = llvm::ConstantInt::get(
+      llvm::Type::getInt32Ty(M.getContext()), TypeId);
+  if (Function->hasPrefixData()) {
+    auto *Existing =
+        llvm::dyn_cast<llvm::ConstantInt>(Function->getPrefixData());
+    if (!Existing || Existing->getValue() != Prefix->getValue())
+      llvm::report_fatal_error("conflicting prefix data on Android kernel "
+                               "KCFI entry " +
+                               EntryName);
+    return;
+  }
+  Function->setPrefixData(Prefix);
+}
+
+static void emitKCFIEntryPrefixes(llvm::Module &M) {
+  emitKCFIEntryPrefix(M, "init_module",
+                      "__neverc_krt_kcfi_init_module_typeid");
+  emitKCFIEntryPrefix(M, "cleanup_module",
+                      "__neverc_krt_kcfi_cleanup_module_typeid");
+}
 
 // Apply per-function attributes that cannot be expressed via ToolChain flags:
 //   ShadowCallStack  — -fsanitize=shadow-call-stack would pull in the
@@ -107,4 +164,5 @@ void AndroidKernel::emitFixups(llvm::Module &M, unsigned Arch) {
   emitPLTSections(M);
   emitEmptyVersionsSection(M);
   emitCFICheckStubs(M);
+  emitKCFIEntryPrefixes(M);
 }
