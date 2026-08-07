@@ -455,9 +455,26 @@ int main(int argc, char **argv) {
     file(GLOB _runtime_dlls "${root}/*.dll")
     file(COPY ${_runtime_dlls} DESTINATION "${_probe_dir}")
   endif()
+
+  # This executable is an ABI/runtime identity probe, not a sanitizer target.
+  # Instrumented fuzz configurations pass their sanitizer flags through
+  # try_compile(), while the separately built CPython distribution can retain
+  # process-lifetime allocations that LeakSanitizer reports as leaks.  Disable
+  # leak detection for this one subprocess without weakening sanitizer coverage
+  # for NeverC or its fuzz targets.
+  set(_probe_asan_options "detect_leaks=0")
+  if(NOT "$ENV{ASAN_OPTIONS}" STREQUAL "")
+    set(_probe_asan_options "$ENV{ASAN_OPTIONS}:detect_leaks=0")
+  endif()
+  set(_probe_lsan_options "detect_leaks=0")
+  if(NOT "$ENV{LSAN_OPTIONS}" STREQUAL "")
+    set(_probe_lsan_options "$ENV{LSAN_OPTIONS}:detect_leaks=0")
+  endif()
   execute_process(
     COMMAND "${CMAKE_COMMAND}" -E env
             --unset=PYTHONHOME --unset=PYTHONPATH --unset=PYTHONUSERBASE
+            "ASAN_OPTIONS=${_probe_asan_options}"
+            "LSAN_OPTIONS=${_probe_lsan_options}"
             "${_probe}" "${root}"
     RESULT_VARIABLE _result
     OUTPUT_VARIABLE _output
