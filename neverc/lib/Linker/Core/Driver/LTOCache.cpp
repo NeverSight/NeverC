@@ -94,11 +94,12 @@ void linker::LTOCacheKey::appendConfig(const LinkerDriverConfig &cfg) {
     appendStr(material, opt);
   appendU64(material, cfg.ltoPartitions);
   appendU64(material, cfg.threadCount);
-  appendU64(material,
-            uint64_t(cfg.shared) | uint64_t(cfg.bundle) << 1 |
-                uint64_t(cfg.pie) << 2 | uint64_t(cfg.relocatable) << 3 |
-                uint64_t(cfg.staticLink) << 4 |
-                uint64_t(cfg.exportDynamic) << 5);
+  appendU64(material, uint64_t(cfg.shared) | uint64_t(cfg.bundle) << 1 |
+                          uint64_t(cfg.pie) << 2 |
+                          uint64_t(cfg.relocatable) << 3 |
+                          uint64_t(cfg.staticLink) << 4 |
+                          uint64_t(cfg.exportDynamic) << 5 |
+                          uint64_t(cfg.androidKernelModule) << 6);
 }
 
 std::string linker::LTOCacheKey::finalize(const LinkerDriverConfig &cfg,

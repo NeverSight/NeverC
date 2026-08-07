@@ -8,7 +8,7 @@
 #define _NEVERC_KRT_SYM_PRINTK_PRIMARY  "_printk"
 #define _NEVERC_KRT_SYM_PRINTK_FALLBACK "printk"
 
-static int _neverc_krt_kp_stub(struct kprobe *p, void *regs);
+static int _neverc_krt_kp_stub(struct kprobe *p, struct pt_regs *regs);
 static void *_neverc_krt_kprobe_lookup(const char *name);
 static unsigned long _neverc_krt_kprobe_resolve_sym(const char *name);
 static int _neverc_krt_is_stub(void *addr);
@@ -16,7 +16,7 @@ static int _neverc_krt_ksym_bootstrap(int cfi);
 static int _neverc_krt_log_bootstrap(void);
 
 static __attribute__((naked))
-int _neverc_krt_kp_stub(struct kprobe *p, void *regs)
+int _neverc_krt_kp_stub(struct kprobe *p, struct pt_regs *regs)
 {
 	__asm__ __volatile__(
 		"hint #34\n"

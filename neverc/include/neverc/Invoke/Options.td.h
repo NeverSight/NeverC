@@ -418,6 +418,9 @@ OPTION(prefix_1, "-falign-loops=", falign_loops_EQ, Joined, f_Group, INVALID,
 OPTION(prefix_1, "-fandroid-kernel-driver-mode", fandroid_kernel_driver_mode,
        Flag, f_neverc_Group, INVALID, nullptr, 0, DefaultVis, 0,
        "Android kernel driver development mode", nullptr, nullptr)
+OPTION(prefix_1, "-fandroid-kernel-kcfi-mode=", fandroid_kernel_kcfi_mode_EQ,
+       Joined, f_neverc_Group, INVALID, nullptr, HelpHidden, DefaultVis, 0,
+       "Select Android kernel KCFI profile mode", "<0|1|2>", nullptr)
 OPTION(prefix_1, "-fansi-escape-codes", fansi_escape_codes, Flag, f_Group,
        INVALID, nullptr, 0, DefaultVis, 0,
        "Use ANSI escape codes for diagnostics", nullptr, nullptr)
@@ -844,6 +847,11 @@ OPTION(prefix_1, "-feliminate-unused-debug-types",
 OPTION(prefix_1, "-femit-all-decls", femit_all_decls, Flag, f_Group, INVALID,
        nullptr, 0, DefaultVis, 0, "Emit all declarations, even if unused",
        nullptr, nullptr)
+OPTION(prefix_1, "-femit-android-kernel-kcfi-type-pairs",
+       femit_android_kernel_kcfi_type_pairs, Flag, f_neverc_Group, INVALID,
+       nullptr, HelpHidden, DefaultVis, 0,
+       "Emit standard and normalized Android kernel KCFI type IDs", nullptr,
+       nullptr)
 OPTION(prefix_1, "-femit-compact-unwind-non-canonical",
        femit_compact_unwind_non_canonical, Flag, f_Group, INVALID, nullptr, 0,
        DefaultVis | DefaultVis, 0,
@@ -5204,6 +5212,25 @@ CODEGEN_OPTION_WITH_MARSHALLING(prefix_1, "-fandroid-kernel-driver-mode",
                                 false, false, normalizeSimpleFlag,
                                 denormalizeSimpleFlag, mergeForwardValue,
                                 extractForwardValue, -1)
+#endif // CODEGEN_OPTION_WITH_MARSHALLING
+#ifdef CODEGEN_OPTION_WITH_MARSHALLING
+CODEGEN_OPTION_WITH_MARSHALLING(
+    prefix_1, "-fandroid-kernel-kcfi-mode=", fandroid_kernel_kcfi_mode_EQ,
+    Joined, f_neverc_Group, INVALID, nullptr, HelpHidden, DefaultVis, 0,
+    "Select Android kernel KCFI profile mode", "<0|1|2>", nullptr, true, 0,
+    CodeGenOpts.AndroidKernelKCFIMode, 0, false, 0,
+    normalizeStringIntegral<unsigned>, denormalizeString<unsigned>,
+    mergeForwardValue, extractForwardValue, -1)
+#endif // CODEGEN_OPTION_WITH_MARSHALLING
+#ifdef CODEGEN_OPTION_WITH_MARSHALLING
+CODEGEN_OPTION_WITH_MARSHALLING(
+    prefix_1, "-femit-android-kernel-kcfi-type-pairs",
+    femit_android_kernel_kcfi_type_pairs, Flag, f_neverc_Group, INVALID,
+    nullptr, HelpHidden, DefaultVis, 0,
+    "Emit standard and normalized Android kernel KCFI type IDs", nullptr,
+    nullptr, true, 0, CodeGenOpts.AndroidKernelKCFITypePairs, false, false,
+    false, normalizeSimpleFlag, denormalizeSimpleFlag, mergeForwardValue,
+    extractForwardValue, -1)
 #endif // CODEGEN_OPTION_WITH_MARSHALLING
 #ifdef LANG_OPTION_WITH_MARSHALLING
 LANG_OPTION_WITH_MARSHALLING(prefix_1, "-funsafe-math-optimizations",

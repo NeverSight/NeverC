@@ -1,21 +1,21 @@
 #include "Core/ModuleEmitter.h"
-#include "Core/AndroidKernelEmitter.h"
 #include "ABI/ABIInfo.h"
 #include "ABI/EmitterABI.h"
 #include "ABI/TargetInfo.h"
+#include "Core/AndroidKernelEmitter.h"
 #include "Core/ConstantEmitter.h"
 #include "Core/FunctionEmitter.h"
 #include "Debug/DebugEmitterInfo.h"
 #include "Stmt/CallEmitterInfo.h"
-#include "neverc/Foundation/Diagnostic/DiagnosticFrontend.h"
 #include "neverc/Emit/Backend/BackendUtil.h"
 #include "neverc/Emit/Decl/ConstantInitBuilder.h"
 #include "neverc/Foundation/Builtin/BuiltinString.h"
 #include "neverc/Foundation/Builtin/BuiltinStringNames.h"
 #include "neverc/Foundation/Builtin/Builtins.h"
-#include "neverc/Foundation/OverrideNames.h"
 #include "neverc/Foundation/Core/SourceManager.h"
 #include "neverc/Foundation/Core/Version.h"
+#include "neverc/Foundation/Diagnostic/DiagnosticFrontend.h"
+#include "neverc/Foundation/OverrideNames.h"
 #include "neverc/Plugin/Host/BuiltinTargetProvider.h"
 #include "neverc/Plugin/Host/PluginTargetInfo.h"
 #include "neverc/Tree/Core/CharUnits.h"
@@ -33,6 +33,7 @@
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/MDBuilder.h"
 #include "llvm/IR/Mangler.h"
 #include "llvm/IR/Module.h"
 #include "llvm/ProfileData/SampleProf.h"
@@ -41,6 +42,7 @@
 #include "llvm/Support/ConvertUTF.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/TimeProfiler.h"
+#include "llvm/Support/xxhash.h"
 #include "llvm/TargetParser/Triple.h"
 #include "llvm/TargetParser/X86TargetParser.h"
 #include <optional>
@@ -509,8 +511,20 @@ void ModuleEmitter::release() {
   if (CodeGenOpts.DisableTryStmt)
     getModule().addModuleFlag(llvm::Module::Override, "DisableTryStmt", 1);
 
-  if (CodeGenOpts.AndroidKernelDriverMode)
-    AndroidKernel::emitFixups(getModule(), Arch);
+  if (CodeGenOpts.AndroidKernelDriverMode) {
+    AndroidKernel::emitFixups(getModule(), Arch,
+                              CodeGenOpts.AndroidKernelKCFIMode);
+  }
+  emitDeferredKCFITypeMetadata();
+  if (CodeGenOpts.AndroidKernelDriverMode) {
+    const std::optional<unsigned> KCFIMode =
+        AndroidKernel::getKCFIMode(getModule());
+    if (AndroidKernelMultiversionFunction && KCFIMode && *KCFIMode != 0)
+      Diags.Report(AndroidKernelMultiversionFunction->getLocation(),
+                   diag::err_fe_backend_unsupported)
+          << "function multiversioning is not supported in Android kernel "
+             "KCFI mode";
+  }
   if (CodeGenOpts.Jumptablerdata)
     getModule().addModuleFlag(llvm::Module::Override, "Jumptablerdata", 1);
 
@@ -1619,6 +1633,7 @@ void ModuleEmitter::setFunctionAttributes(GlobalDecl GD, llvm::Function *F,
   }
 
   const auto *FD = cast<FunctionDecl>(GD.getDecl());
+  deferKCFITypeMetadata(GD, F);
 
   if (!IsIncompleteFunction)
     setLLVMFunctionAttributes(GD, getTypes().arrangeGlobalDeclaration(GD), F);
@@ -1683,6 +1698,68 @@ void ModuleEmitter::setFunctionAttributes(GlobalDecl GD, llvm::Function *F,
   if (LLVM_UNLIKELY(FD->getIdentifier() &&
                     BuiltinString::isRuntimeFunctionName(FD->getName())))
     F->addFnAttr(BuiltinStringNames::RuntimeFnAttr);
+}
+
+void ModuleEmitter::deferKCFITypeMetadata(GlobalDecl GD, llvm::Function *F) {
+  if (!CodeGenOpts.AndroidKernelDriverMode &&
+      !CodeGenOpts.AndroidKernelKCFITypePairs)
+    return;
+
+  DeferredKCFITypes.push_back({GD, llvm::WeakTrackingVH(F)});
+}
+
+void ModuleEmitter::emitDeferredKCFITypeMetadata() {
+  if (DeferredKCFITypes.empty())
+    return;
+
+  const bool EmitProfileNeutralPairs = CodeGenOpts.AndroidKernelKCFITypePairs;
+  const std::optional<unsigned> Mode =
+      CodeGenOpts.AndroidKernelDriverMode
+          ? AndroidKernel::getKCFIMode(getModule())
+          : std::nullopt;
+  if (!EmitProfileNeutralPairs && (!Mode || *Mode == 0)) {
+    DeferredKCFITypes.clear();
+    return;
+  }
+
+  auto CreateTypeID = [&](GlobalDecl GD, bool NormalizeIntegers) {
+    const auto *FD = cast<FunctionDecl>(GD.getDecl());
+    QualType Type = FD->getType();
+    if (const auto *FnType = Type->getAs<FunctionProtoType>())
+      Type = getContext().getFunctionType(
+          FnType->getReturnType(), FnType->getParamTypes(),
+          FnType->getExtProtoInfo().withExceptionSpec(EST_None));
+    std::string TypeName;
+    llvm::raw_string_ostream Out(TypeName);
+    getCGABI().getMangleContext().mangleCanonicalTypeName(Type, Out,
+                                                          NormalizeIntegers);
+    if (NormalizeIntegers)
+      Out << ".normalized";
+    Out.flush();
+    return static_cast<uint32_t>(llvm::xxHash64(TypeName));
+  };
+
+  for (const DeferredKCFITypeMetadata &Deferred : DeferredKCFITypes) {
+    llvm::Value *Value = Deferred.FunctionValue;
+    if (!Value)
+      continue;
+    auto *F = llvm::dyn_cast<llvm::Function>(Value->stripPointerCasts());
+    if (!F)
+      if (auto *GV =
+              llvm::dyn_cast<llvm::GlobalValue>(Value->stripPointerCasts()))
+        F = llvm::dyn_cast_or_null<llvm::Function>(GV->getAliaseeObject());
+    if (!F)
+      llvm::report_fatal_error(
+          "cannot resolve deferred Android kernel KCFI function");
+    if (EmitProfileNeutralPairs) {
+      AndroidKernel::setKCFITypePair(*F, CreateTypeID(Deferred.GD, false),
+                                     CreateTypeID(Deferred.GD, true));
+    } else {
+      assert(Mode && *Mode != 0 && "KCFI mode was filtered above");
+      AndroidKernel::setKCFIType(*F, CreateTypeID(Deferred.GD, *Mode == 2));
+    }
+  }
+  DeferredKCFITypes.clear();
 }
 
 // ===----------------------------------------------------------------------===
@@ -2618,6 +2695,9 @@ llvm::Constant *ModuleEmitter::getOrCreateMultiVersionResolver(GlobalDecl GD) {
   const auto *FD = cast<FunctionDecl>(GD.getDecl());
   assert(FD && "Not a FunctionDecl?");
 
+  if (CodeGenOpts.AndroidKernelDriverMode && !AndroidKernelMultiversionFunction)
+    AndroidKernelMultiversionFunction = FD;
+
   std::string MangledName =
       getMangledNameImpl(*this, GD, FD, /*OmitMultiVersionMangling=*/true);
 
@@ -3487,6 +3567,12 @@ ModuleEmitter::genGlobalFunctionDefinition(GlobalDecl GD,
 
   FunctionEmitter(*this).generateCode(GD, Fn, FI);
 
+  // A declaration can create the LLVM Function before the defining
+  // FunctionDecl is seen. Record the definition as well so final-profile
+  // selection diagnoses conflicting source types instead of inheriting stale
+  // declaration metadata.
+  deferKCFITypeMetadata(GD, Fn);
+
   setNonAliasAttributes(GD, Fn, /*SkipCPUFeatures=*/true);
   setLLVMFunctionAttributesForDefinition(D, Fn);
 
@@ -3523,6 +3609,11 @@ void ModuleEmitter::genAliasDefinition(GlobalDecl GD) {
   llvm::GlobalValue::LinkageTypes LT;
   if (isa<llvm::FunctionType>(DeclTy)) {
     Aliasee = obtainLLVMFunction(AA->getAliasee(), DeclTy, GD);
+    if (auto *AliaseeValue =
+            llvm::dyn_cast<llvm::GlobalValue>(Aliasee->stripPointerCasts()))
+      if (auto *AliaseeFunction = llvm::dyn_cast_or_null<llvm::Function>(
+              AliaseeValue->getAliaseeObject()))
+        deferKCFITypeMetadata(GD, AliaseeFunction);
     LT = getFunctionLinkage(GD);
   } else {
     Aliasee = obtainLLVMGlobal(AA->getAliasee(), DeclTy, LangAS::Default,

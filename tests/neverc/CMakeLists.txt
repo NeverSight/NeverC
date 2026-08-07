@@ -769,6 +769,23 @@ target_compile_features(
 set_target_properties(
   neverc-test-plugin-ir-optimization-provider PROPERTIES PREFIX ""
 )
+add_library(neverc-test-plugin-ir-optimization-passthrough MODULE
+  Inputs/Plugin/IROptimizationProvider.c
+)
+target_include_directories(
+  neverc-test-plugin-ir-optimization-passthrough PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(
+  neverc-test-plugin-ir-optimization-passthrough PRIVATE c_std_11
+)
+target_compile_definitions(
+  neverc-test-plugin-ir-optimization-passthrough PRIVATE
+  NEVERC_TEST_IR_OPTIMIZATION_PASSTHROUGH=1
+)
+set_target_properties(
+  neverc-test-plugin-ir-optimization-passthrough PROPERTIES PREFIX ""
+)
 add_library(neverc-test-plugin-ir-optimization-invalid MODULE
   Inputs/Plugin/IROptimizationProvider.c
 )
@@ -2103,6 +2120,7 @@ target_compile_definitions(neverc-tests PRIVATE
   NEVERC_TEST_SEMA_PROVIDER_CUSTOM_PLUGIN="$<TARGET_FILE:neverc-test-plugin-sema-provider-custom>"
   NEVERC_TEST_IRGEN_PROVIDER_PLUGIN="$<TARGET_FILE:neverc-test-plugin-irgen-provider>"
   NEVERC_TEST_IR_OPTIMIZATION_PROVIDER_PLUGIN="$<TARGET_FILE:neverc-test-plugin-ir-optimization-provider>"
+  NEVERC_TEST_IR_OPTIMIZATION_PASSTHROUGH_PLUGIN="$<TARGET_FILE:neverc-test-plugin-ir-optimization-passthrough>"
   NEVERC_TEST_IR_OPTIMIZATION_INVALID_PLUGIN="$<TARGET_FILE:neverc-test-plugin-ir-optimization-invalid>"
   NEVERC_TEST_IR_PASS_PLUGIN="$<TARGET_FILE:neverc-test-plugin-ir-pass>"
   NEVERC_TEST_IR_PASS_INVALID_PLUGIN="$<TARGET_FILE:neverc-test-plugin-ir-pass-invalid>"
@@ -2182,6 +2200,7 @@ add_dependencies(neverc-tests
   neverc-test-plugin-sema-provider-custom
   neverc-test-plugin-irgen-provider
   neverc-test-plugin-ir-optimization-provider
+  neverc-test-plugin-ir-optimization-passthrough
   neverc-test-plugin-ir-optimization-invalid
   neverc-test-plugin-ir-pass
   neverc-test-plugin-ir-pass-invalid

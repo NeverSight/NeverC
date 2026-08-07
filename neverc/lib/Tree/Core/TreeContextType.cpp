@@ -89,6 +89,15 @@ QualType TreeContext::getAdjustedParameterType(QualType T) const {
   return T;
 }
 
+QualType TreeContext::getSignatureParameterType(QualType T) const {
+  // Function type identity ignores top-level parameter qualifiers, and array
+  // and function parameters participate through their adjusted pointer type.
+  // This is the source type spelling used by the Itanium ABI mangler.
+  T = getVariableArrayDecayedType(T);
+  T = getAdjustedParameterType(T);
+  return T.getUnqualifiedType();
+}
+
 QualType TreeContext::getArrayDecayedType(QualType Ty) const {
   // Get the element type with 'getAsArrayType' so that we don't lose any
   // typedefs in the element type of the array.  This also handles propagation

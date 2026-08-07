@@ -1,4 +1,5 @@
 #include "Core/AndroidKernelEmitter.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/Attributes.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Constants.h"
@@ -6,12 +7,230 @@
 #include "llvm/IR/GlobalVariable.h"
 #include "llvm/IR/InlineAsm.h"
 #include "llvm/IR/Instructions.h"
+#include "llvm/IR/Metadata.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/TargetParser/Triple.h"
 #include <cstdint>
 
 using namespace neverc::Emit;
+
+namespace {
+
+constexpr llvm::StringLiteral KCFITypePairMetadata = "neverc.kcfi.typeids";
+constexpr llvm::StringLiteral KCFIModeModuleFlag =
+    "neverc.android.kernel.kcfi.mode";
+constexpr llvm::StringLiteral KCFIModeSourceMarker =
+    "__neverc_krt_kcfi_mode_marker";
+constexpr llvm::StringLiteral PCGOriginalLocalAttr =
+    "neverc.pcg.original-local";
+constexpr llvm::StringLiteral PCGOriginalAddressTakenAttr =
+    "neverc.pcg.original-address-taken";
+
+llvm::MDNode *makeKCFITypeNode(llvm::LLVMContext &Ctx, uint32_t TypeID) {
+  auto *Value = llvm::ConstantInt::get(llvm::Type::getInt32Ty(Ctx), TypeID);
+  return llvm::MDNode::get(Ctx, llvm::ConstantAsMetadata::get(Value));
+}
+
+uint32_t getKCFITypeOperand(const llvm::MDNode &Node, unsigned Index,
+                            llvm::StringRef Description) {
+  if (Node.getNumOperands() <= Index)
+    llvm::report_fatal_error("invalid " + Description);
+  const auto *Value =
+      llvm::mdconst::dyn_extract<llvm::ConstantInt>(Node.getOperand(Index));
+  if (!Value || Value->getBitWidth() != 32)
+    llvm::report_fatal_error("invalid " + Description);
+  return static_cast<uint32_t>(Value->getZExtValue());
+}
+
+bool getKCFITypePair(const llvm::Function &F, uint32_t &Standard,
+                     uint32_t &Normalized) {
+  llvm::SmallVector<llvm::MDNode *, 2> Pairs;
+  F.getMetadata(KCFITypePairMetadata, Pairs);
+  if (Pairs.empty())
+    return false;
+
+  Standard = getKCFITypeOperand(*Pairs.front(), 0,
+                                "Android kernel KCFI standard type ID");
+  Normalized = getKCFITypeOperand(*Pairs.front(), 1,
+                                  "Android kernel KCFI normalized type ID");
+  for (const llvm::MDNode *Pair : Pairs) {
+    if (Pair->getNumOperands() != 2 ||
+        getKCFITypeOperand(*Pair, 0, "Android kernel KCFI standard type ID") !=
+            Standard ||
+        getKCFITypeOperand(
+            *Pair, 1, "Android kernel KCFI normalized type ID") != Normalized)
+      llvm::report_fatal_error(
+          "conflicting source-level Android kernel KCFI type IDs on " +
+          F.getName());
+  }
+  return true;
+}
+
+std::optional<uint32_t> getSelectedKCFIType(const llvm::Function &F) {
+  llvm::SmallVector<llvm::MDNode *, 2> Types;
+  F.getMetadata(llvm::LLVMContext::MD_kcfi_type, Types);
+  if (Types.empty())
+    return std::nullopt;
+
+  const uint32_t TypeID = getKCFITypeOperand(
+      *Types.front(), 0, "selected Android kernel KCFI type ID");
+  for (const llvm::MDNode *Type : Types) {
+    if (Type->getNumOperands() != 1 ||
+        getKCFITypeOperand(*Type, 0, "selected Android kernel KCFI type ID") !=
+            TypeID)
+      llvm::report_fatal_error(
+          "conflicting selected Android kernel KCFI type ID on " + F.getName());
+  }
+  return TypeID;
+}
+
+void prepareKCFITypes(llvm::Module &M) {
+  const std::optional<unsigned> ModuleMode = AndroidKernel::getKCFIMode(M);
+  if (!ModuleMode)
+    return;
+  const unsigned Mode = *ModuleMode;
+  for (llvm::Function &F : M) {
+    // Profiles without KCFI must not validate dormant source carriers. This is
+    // deliberately before parsing either attachment: a profile-neutral input
+    // may contain IDs (or unsupported types) that only matter to KCFI-enabled
+    // consumers.
+    if (Mode == 0) {
+      F.setMetadata(llvm::LLVMContext::MD_kcfi_type, nullptr);
+      F.setMetadata(KCFITypePairMetadata, nullptr);
+      continue;
+    }
+
+    uint32_t Standard = 0;
+    uint32_t Normalized = 0;
+    const bool HasPair = getKCFITypePair(F, Standard, Normalized);
+    const std::optional<uint32_t> Existing = getSelectedKCFIType(F);
+
+    if (HasPair) {
+      const uint32_t Selected = Mode == 1 ? Standard : Normalized;
+      if (Existing && *Existing != Selected)
+        llvm::report_fatal_error(
+            "conflicting selected Android kernel KCFI type ID on " +
+            F.getName());
+      // Also coalesce duplicate identical attachments introduced by an
+      // in-memory IR link into the one attachment required by the verifier.
+      F.setMetadata(llvm::LLVMContext::MD_kcfi_type,
+                    makeKCFITypeNode(M.getContext(), Selected));
+    } else if (Existing) {
+      F.setMetadata(llvm::LLVMContext::MD_kcfi_type,
+                    makeKCFITypeNode(M.getContext(), *Existing));
+    }
+    F.setMetadata(KCFITypePairMetadata, nullptr);
+
+    // Match Clang's finalizeKCFITypes(): direct-only local functions do not
+    // need a prefix because no indirect call can legally target them.
+    // Parallel codegen promotes local functions to hidden external symbols and
+    // partitions their uses.  Its private attributes retain the pre-split
+    // facts, so a direct-only local remains exempt while an address-taken local
+    // keeps its prefix even when the taking use lives in another partition.
+    const bool IsLocal =
+        F.hasLocalLinkage() || F.hasFnAttribute(PCGOriginalLocalAttr);
+    const bool AddressTaken =
+        F.hasAddressTaken() || F.hasFnAttribute(PCGOriginalAddressTakenAttr);
+    if (!AddressTaken && IsLocal)
+      F.eraseMetadata(llvm::LLVMContext::MD_kcfi_type);
+
+    if (!F.isDeclaration() && !F.hasAvailableExternallyLinkage() &&
+        (!IsLocal || AddressTaken) &&
+        !F.getMetadata(llvm::LLVMContext::MD_kcfi_type))
+      llvm::report_fatal_error(
+          "Android kernel function lacks a source-level KCFI type ID: " +
+          F.getName());
+  }
+}
+
+} // namespace
+
+std::optional<unsigned> AndroidKernel::getKCFIMode(const llvm::Module &M) {
+  llvm::Metadata *Flag = M.getModuleFlag(KCFIModeModuleFlag);
+  if (!Flag)
+    return std::nullopt;
+  const auto *Value = llvm::mdconst::dyn_extract<llvm::ConstantInt>(Flag);
+  if (!Value || Value->getBitWidth() > 32 || Value->getZExtValue() > 2)
+    llvm::report_fatal_error("invalid Android kernel KCFI mode module flag");
+  return static_cast<unsigned>(Value->getZExtValue());
+}
+
+void AndroidKernel::setKCFITypePair(llvm::Function &F, uint32_t Standard,
+                                    uint32_t Normalized) {
+  uint32_t ExistingStandard = 0;
+  uint32_t ExistingNormalized = 0;
+  if (getKCFITypePair(F, ExistingStandard, ExistingNormalized) &&
+      (ExistingStandard != Standard || ExistingNormalized != Normalized))
+    llvm::report_fatal_error(
+        "conflicting source-level Android kernel KCFI type IDs on " +
+        F.getName());
+
+  llvm::LLVMContext &Ctx = F.getContext();
+  llvm::Metadata *Values[] = {
+      llvm::ConstantAsMetadata::get(
+          llvm::ConstantInt::get(llvm::Type::getInt32Ty(Ctx), Standard)),
+      llvm::ConstantAsMetadata::get(
+          llvm::ConstantInt::get(llvm::Type::getInt32Ty(Ctx), Normalized)),
+  };
+  F.setMetadata(KCFITypePairMetadata, llvm::MDNode::get(Ctx, Values));
+}
+
+void AndroidKernel::setKCFIType(llvm::Function &F, uint32_t TypeID) {
+  const std::optional<uint32_t> Existing = getSelectedKCFIType(F);
+  if (Existing && *Existing != TypeID)
+    llvm::report_fatal_error(
+        "conflicting source-level Android kernel KCFI type IDs on " +
+        F.getName());
+  F.setMetadata(llvm::LLVMContext::MD_kcfi_type,
+                makeKCFITypeNode(F.getContext(), TypeID));
+}
+
+void AndroidKernel::finalizeKCFIPrefixes(llvm::Module &M) {
+  const std::optional<unsigned> Mode = getKCFIMode(M);
+  if (!Mode)
+    return;
+
+  // This is intentionally also the fail-safe selection point.  The normal
+  // builtin pipeline prepares types earlier, but an IR optimization provider
+  // may replace or pass through the module while suppressing that pipeline.
+  prepareKCFITypes(M);
+  if (*Mode == 0)
+    return;
+
+  for (llvm::Function &F : M) {
+    if (F.isDeclaration() || F.hasAvailableExternallyLinkage())
+      continue;
+    llvm::MDNode *Type = F.getMetadata(llvm::LLVMContext::MD_kcfi_type);
+    if (!Type)
+      continue;
+    if (Type->getNumOperands() != 1)
+      llvm::report_fatal_error(
+          "invalid selected Android kernel KCFI type ID on " + F.getName());
+    const uint32_t TypeID =
+        getKCFITypeOperand(*Type, 0, "selected Android kernel KCFI type ID");
+    auto *Prefix =
+        llvm::ConstantInt::get(llvm::Type::getInt32Ty(M.getContext()), TypeID);
+    if (F.hasPrefixData()) {
+      const auto *Existing =
+          llvm::dyn_cast<llvm::ConstantInt>(F.getPrefixData());
+      if (!Existing || Existing->getBitWidth() != 32 ||
+          Existing->getZExtValue() != TypeID)
+        llvm::report_fatal_error(
+            "conflicting prefix data on Android kernel KCFI function " +
+            F.getName());
+      continue;
+    }
+    F.setPrefixData(Prefix);
+  }
+}
+
+llvm::PreservedAnalyses
+AndroidKernel::FinalizeKCFIPrefixesPass::run(llvm::Module &M,
+                                             llvm::ModuleAnalysisManager &) {
+  finalizeKCFIPrefixes(M);
+  return llvm::PreservedAnalyses::none();
+}
 
 static llvm::GlobalVariable *
 emitWeakPad(llvm::Module &M, llvm::StringRef Name, llvm::StringRef Section) {
@@ -61,6 +280,9 @@ static void emitCFIStubFn(llvm::Module &M, llvm::StringRef Name,
   F->setSection(".text");
   F->addFnAttr(llvm::Attribute::Naked);
   F->addFnAttr(llvm::Attribute::NoUnwind);
+  // The source-equivalent stub type is void(void). Keep both profile hashes;
+  // the runtime-link preparation pass selects the active one.
+  AndroidKernel::setKCFITypePair(*F, 0xa540670cU, 0xe5c47d60U);
   auto *BB = llvm::BasicBlock::Create(Ctx, "", F);
   auto *IAsmTy = llvm::FunctionType::get(llvm::Type::getVoidTy(Ctx), false);
   auto *Body = llvm::InlineAsm::get(IAsmTy, "hint #25\nhint #29\nret",
@@ -75,62 +297,6 @@ static void emitCFICheckStubs(llvm::Module &M) {
                 llvm::GlobalValue::DefaultVisibility, 4096);
   emitCFIStubFn(M, "__cfi_check_fail",
                 llvm::GlobalValue::HiddenVisibility, 4);
-}
-
-static uint32_t consumeKCFITypeId(llvm::Module &M,
-                                  llvm::StringRef MarkerName) {
-  llvm::GlobalVariable *Marker = M.getNamedGlobal(MarkerName);
-  if (!Marker)
-    return 0;
-
-  auto *Value =
-      llvm::dyn_cast_or_null<llvm::ConstantInt>(Marker->getInitializer());
-  if (!Value || Value->getBitWidth() != 32)
-    llvm::report_fatal_error("invalid Android kernel KCFI type-id marker " +
-                             MarkerName);
-  if (!Marker->use_empty())
-    llvm::report_fatal_error("referenced Android kernel KCFI type-id marker " +
-                             MarkerName);
-
-  const uint32_t TypeId = static_cast<uint32_t>(Value->getZExtValue());
-  Marker->eraseFromParent();
-  return TypeId;
-}
-
-static void emitKCFIEntryPrefix(llvm::Module &M, llvm::StringRef EntryName,
-                                llvm::StringRef MarkerName) {
-  const uint32_t TypeId = consumeKCFITypeId(M, MarkerName);
-  if (TypeId == 0)
-    return;
-
-  llvm::GlobalValue *Entry = M.getNamedValue(EntryName);
-  llvm::Function *Function =
-      Entry
-          ? llvm::dyn_cast_or_null<llvm::Function>(Entry->getAliaseeObject())
-          : nullptr;
-  if (!Function || Function->isDeclaration())
-    llvm::report_fatal_error("Android kernel KCFI entry is not defined: " +
-                             EntryName);
-
-  auto *Prefix = llvm::ConstantInt::get(
-      llvm::Type::getInt32Ty(M.getContext()), TypeId);
-  if (Function->hasPrefixData()) {
-    auto *Existing =
-        llvm::dyn_cast<llvm::ConstantInt>(Function->getPrefixData());
-    if (!Existing || Existing->getValue() != Prefix->getValue())
-      llvm::report_fatal_error("conflicting prefix data on Android kernel "
-                               "KCFI entry " +
-                               EntryName);
-    return;
-  }
-  Function->setPrefixData(Prefix);
-}
-
-static void emitKCFIEntryPrefixes(llvm::Module &M) {
-  emitKCFIEntryPrefix(M, "init_module",
-                      "__neverc_krt_kcfi_init_module_typeid");
-  emitKCFIEntryPrefix(M, "cleanup_module",
-                      "__neverc_krt_kcfi_cleanup_module_typeid");
 }
 
 // Apply per-function attributes that cannot be expressed via ToolChain flags:
@@ -153,16 +319,38 @@ static void applyKernelFunctionAttrs(llvm::Module &M) {
 llvm::PreservedAnalyses
 AndroidKernel::KernelFunctionAttrsPass::run(llvm::Module &M,
                                             llvm::ModuleAnalysisManager &) {
+  prepareKCFITypes(M);
   applyKernelFunctionAttrs(M);
   return llvm::PreservedAnalyses::none();
 }
 
-void AndroidKernel::emitFixups(llvm::Module &M, unsigned Arch) {
+void AndroidKernel::emitFixups(llvm::Module &M, unsigned Arch,
+                               unsigned KCFIMode) {
   if (Arch != llvm::Triple::aarch64)
     return;
+  if (KCFIMode > 2)
+    llvm::report_fatal_error("invalid Android kernel KCFI profile mode");
+
+  if (llvm::GlobalVariable *Marker = M.getNamedGlobal(KCFIModeSourceMarker)) {
+    const auto *Value =
+        llvm::dyn_cast_or_null<llvm::ConstantInt>(Marker->getInitializer());
+    if (!Value || Value->getBitWidth() > 32 || Value->getZExtValue() > 2)
+      llvm::report_fatal_error(
+          "invalid Android kernel source KCFI mode marker");
+    if (!Marker->use_empty())
+      llvm::report_fatal_error(
+          "referenced Android kernel source KCFI mode marker");
+    const unsigned SourceMode = static_cast<unsigned>(Value->getZExtValue());
+    Marker->eraseFromParent();
+    if (KCFIMode != 0 && KCFIMode != SourceMode)
+      llvm::report_fatal_error(
+          "conflicting command-line and source Android kernel KCFI modes");
+    KCFIMode = SourceMode;
+  }
+
+  M.addModuleFlag(llvm::Module::Error, KCFIModeModuleFlag, KCFIMode);
 
   emitPLTSections(M);
   emitEmptyVersionsSection(M);
   emitCFICheckStubs(M);
-  emitKCFIEntryPrefixes(M);
 }

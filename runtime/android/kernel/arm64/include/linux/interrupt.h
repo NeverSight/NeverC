@@ -5,11 +5,13 @@
 #include <linux/types.h>
 #include <linux/compiler.h>
 
-/* IRQ return values. */
-typedef int irqreturn_t;
-#define IRQ_NONE        0
-#define IRQ_HANDLED     1
-#define IRQ_WAKE_THREAD 2
+/* Keep the enum type: KCFI distinguishes enum irqreturn from plain int. */
+enum irqreturn {
+	IRQ_NONE = (0 << 0),
+	IRQ_HANDLED = (1 << 0),
+	IRQ_WAKE_THREAD = (1 << 1),
+};
+typedef enum irqreturn irqreturn_t;
 
 /* IRQ handler type. */
 typedef irqreturn_t (*irq_handler_t)(int irq, void *dev_id);

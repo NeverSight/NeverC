@@ -55,7 +55,8 @@ public:
   virtual void mangleSEHFinallyBlock(GlobalDecl EnclosingDecl,
                                      llvm::raw_ostream &Out) = 0;
 
-  virtual void mangleCanonicalTypeName(QualType T, llvm::raw_ostream &) = 0;
+  virtual void mangleCanonicalTypeName(QualType T, llvm::raw_ostream &,
+                                       bool NormalizeIntegers = false) = 0;
 };
 
 class ItaniumMangleContext : public MangleContext {

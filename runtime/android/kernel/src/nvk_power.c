@@ -1,10 +1,10 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 #include <nvk.h>
 
-typedef int (*neverc_krt_reg_pm_fn)(void *nb);
-typedef int (*neverc_krt_unreg_pm_fn)(void *nb);
-typedef int (*neverc_krt_reg_reboot_fn)(void *nb);
-typedef int (*neverc_krt_unreg_reboot_fn)(void *nb);
+typedef int (*neverc_krt_reg_pm_fn)(struct notifier_block *nb);
+typedef int (*neverc_krt_unreg_pm_fn)(struct notifier_block *nb);
+typedef int (*neverc_krt_reg_reboot_fn)(struct notifier_block *nb);
+typedef int (*neverc_krt_unreg_reboot_fn)(struct notifier_block *nb);
 
 static neverc_krt_reg_pm_fn       _neverc_krt_register_pm;
 static neverc_krt_unreg_pm_fn     _neverc_krt_unregister_pm;
@@ -29,10 +29,11 @@ int neverc_krt_power_init(void)
 	return 0;
 }
 
-static int _neverc_krt_pm_trampoline(void *nb_ptr, unsigned long event, void *unused)
+static int _neverc_krt_pm_trampoline(struct notifier_block *nb,
+				     unsigned long event, void *unused)
 {
 	struct neverc_krt_pm_notifier *pm = (struct neverc_krt_pm_notifier *)(
-		(char *)nb_ptr -
+		(char *)nb -
 		__builtin_offsetof(struct neverc_krt_pm_notifier, nb));
 	(void)unused;
 	if (pm->callback)
@@ -48,7 +49,7 @@ int neverc_krt_pm_register(struct neverc_krt_pm_notifier *pm,
 
 	__builtin_memset(pm, 0, sizeof(*pm));
 	pm->callback = cb;
-	pm->nb.notifier_call = (unsigned long)_neverc_krt_pm_trampoline;
+	pm->nb.notifier_call = _neverc_krt_pm_trampoline;
 	pm->nb.priority = priority;
 
 	int ret = _neverc_krt_register_pm(&pm->nb);
@@ -65,11 +66,11 @@ void neverc_krt_pm_unregister(struct neverc_krt_pm_notifier *pm)
 	pm->registered = 0;
 }
 
-static int _neverc_krt_reboot_trampoline(void *nb_ptr, unsigned long event,
-					 void *unused)
+static int _neverc_krt_reboot_trampoline(struct notifier_block *nb,
+					 unsigned long event, void *unused)
 {
 	struct neverc_krt_reboot_notifier *rn = (struct neverc_krt_reboot_notifier *)(
-		(char *)nb_ptr -
+		(char *)nb -
 		__builtin_offsetof(struct neverc_krt_reboot_notifier, nb));
 	(void)unused;
 	if (rn->callback)
@@ -85,7 +86,7 @@ int neverc_krt_reboot_register(struct neverc_krt_reboot_notifier *rn,
 
 	__builtin_memset(rn, 0, sizeof(*rn));
 	rn->callback = cb;
-	rn->nb.notifier_call = (unsigned long)_neverc_krt_reboot_trampoline;
+	rn->nb.notifier_call = _neverc_krt_reboot_trampoline;
 	rn->nb.priority = priority;
 
 	int ret = _neverc_krt_register_reboot(&rn->nb);
@@ -119,4 +120,3 @@ int neverc_krt_is_resume_event(unsigned long event)
 	       event == NEVERC_KRT_PM_POST_HIBERNATION ||
 	       event == NEVERC_KRT_PM_POST_RESTORE;
 }
-

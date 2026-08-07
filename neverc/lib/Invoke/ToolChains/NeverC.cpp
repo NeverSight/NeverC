@@ -40,6 +40,7 @@
 #include "llvm/TargetParser/AArch64TargetParser.h"
 #include "llvm/TargetParser/Host.h"
 #include <cctype>
+#include <optional>
 using namespace neverc::driver;
 using namespace neverc::driver::tools;
 using namespace neverc;
@@ -2708,7 +2709,67 @@ void renderDebugRecordingFlags(const ToolChain &TC, const Driver &D,
   }
 }
 
+static unsigned getAndroidKernelKCFIMode(const ArgList &Args) {
+  if (const Arg *A =
+          Args.getLastArg(options::OPT_fandroid_kernel_kcfi_mode_EQ)) {
+    unsigned Mode = 0;
+    if (!llvm::StringRef(A->getValue()).getAsInteger(10, Mode) && Mode <= 2)
+      return Mode;
+  }
+
+  unsigned Profile = 510;
+  bool HasDirectProfile = false;
+  std::optional<unsigned> ExplicitMode;
+  for (const std::string &Definition : Args.getAllArgValues(options::OPT_D)) {
+    llvm::StringRef Value(Definition);
+    llvm::StringRef Number;
+    if (Value.consume_front("NEVERC_KRT_KCFI_MODE=")) {
+      Number = Value;
+      unsigned Mode = 0;
+      if (!Number.getAsInteger(10, Mode) && Mode <= 2)
+        ExplicitMode = Mode;
+      continue;
+    }
+    Value = Definition;
+    if (Value.consume_front("NEVERC_KRT_KERNEL=")) {
+      Number = Value;
+      unsigned Parsed = 0;
+      if (!Number.getAsInteger(10, Parsed)) {
+        Profile = Parsed;
+        HasDirectProfile = true;
+      }
+      continue;
+    }
+    Value = Definition;
+    if (!HasDirectProfile && Value.consume_front("NVK_KERNEL=")) {
+      Number = Value;
+      unsigned Parsed = 0;
+      if (!Number.getAsInteger(10, Parsed))
+        Profile = Parsed;
+    }
+  }
+
+  if (ExplicitMode)
+    return *ExplicitMode;
+  switch (Profile) {
+  case 510:
+  case 515:
+    return 0;
+  case 601:
+  case 606:
+    return 1;
+  case 612:
+  case 618:
+    return 2;
+  default:
+    // nvkmod_version.h diagnoses unknown profiles. Do not guess a KCFI ABI.
+    return 0;
+  }
+}
+
 void addNeverCSpecificFlags(const ArgList &Args, ArgStringList &CmdArgs) {
+  if (Args.hasArg(options::OPT_femit_android_kernel_kcfi_type_pairs))
+    CmdArgs.push_back("-femit-android-kernel-kcfi-type-pairs");
   if (Args.hasArg(options::OPT_fjumptable_rdata)) {
     CmdArgs.push_back("-fjumptable-rdata");
     CmdArgs.push_back("-mllvm");
@@ -2720,6 +2781,9 @@ void addNeverCSpecificFlags(const ArgList &Args, ArgStringList &CmdArgs) {
     CmdArgs.push_back("-fdisable-try-stmt");
   if (Args.hasArg(options::OPT_fandroid_kernel_driver_mode)) {
     CmdArgs.push_back("-fandroid-kernel-driver-mode");
+    const unsigned KCFIMode = getAndroidKernelKCFIMode(Args);
+    CmdArgs.push_back(Args.MakeArgString("-fandroid-kernel-kcfi-mode=" +
+                                         llvm::Twine(KCFIMode)));
     // Android kernel module compilation environment.  These mirror the flags
     // the in-tree GKI kernel build uses for out-of-tree modules so the object
     // is a loadable .ko:

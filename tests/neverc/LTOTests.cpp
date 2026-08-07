@@ -70,7 +70,8 @@ static double medianSeconds(std::vector<double> Values) {
 }
 
 static llvm::Expected<uint32_t>
-readELFSymbolPrefix32(llvm::StringRef Bytes, llvm::StringRef SymbolName) {
+readELFSymbolPrefix32(llvm::StringRef Bytes, llvm::StringRef SymbolName,
+                      bool MatchPCGSuffix = false) {
   auto Object = llvm::object::ObjectFile::createObjectFile(
       llvm::MemoryBufferRef(Bytes, "android-kernel-kcfi-test"));
   if (!Object)
@@ -83,7 +84,10 @@ readELFSymbolPrefix32(llvm::StringRef Bytes, llvm::StringRef SymbolName) {
     llvm::Expected<llvm::StringRef> Name = Symbol.getName();
     if (!Name)
       return Name.takeError();
-    if (*Name != SymbolName)
+    const bool IsPCGName =
+        MatchPCGSuffix && Name->starts_with(SymbolName) &&
+        Name->drop_front(SymbolName.size()).starts_with(".__pcg");
+    if (*Name != SymbolName && !IsPCGName)
       continue;
 
     llvm::Expected<uint64_t> Address = Symbol.getAddress();
@@ -110,6 +114,49 @@ readELFSymbolPrefix32(llvm::StringRef Bytes, llvm::StringRef SymbolName) {
                                      "entry symbol has no 32-bit prefix");
     return llvm::support::endian::read32le(Contents->data() + Offset -
                                            sizeof(uint32_t));
+  }
+
+  return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                 "entry symbol not found");
+}
+
+static llvm::Expected<uint64_t>
+readELFSymbolSectionOffset(llvm::StringRef Bytes, llvm::StringRef SymbolName,
+                           bool MatchPCGSuffix = false) {
+  auto Object = llvm::object::ObjectFile::createObjectFile(
+      llvm::MemoryBufferRef(Bytes, "android-kernel-kcfi-test"));
+  if (!Object)
+    return Object.takeError();
+  if (!(*Object)->isELF())
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   "expected an ELF object");
+
+  for (const llvm::object::SymbolRef &Symbol : (*Object)->symbols()) {
+    llvm::Expected<llvm::StringRef> Name = Symbol.getName();
+    if (!Name)
+      return Name.takeError();
+    const bool IsPCGName =
+        MatchPCGSuffix && Name->starts_with(SymbolName) &&
+        Name->drop_front(SymbolName.size()).starts_with(".__pcg");
+    if (*Name != SymbolName && !IsPCGName)
+      continue;
+
+    llvm::Expected<uint64_t> Address = Symbol.getAddress();
+    if (!Address)
+      return Address.takeError();
+    llvm::Expected<llvm::object::section_iterator> Section =
+        Symbol.getSection();
+    if (!Section)
+      return Section.takeError();
+    if (*Section == (*Object)->section_end())
+      return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                     "entry symbol has no section");
+
+    const uint64_t SectionAddress = (*Section)->getAddress();
+    if (*Address < SectionAddress)
+      return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                     "entry symbol precedes its section");
+    return *Address - SectionAddress;
   }
 
   return llvm::createStringError(llvm::inconvertibleErrorCode(),
@@ -1424,6 +1471,748 @@ TEST_F(LTOTest, AndroidKernelProfilesEmitKcfiEntryTypeIds) {
         << llvm::toString(Exit.takeError()).str().str();
     EXPECT_EQ(*Exit, P.ExitTypeId);
   }
+}
+
+// KCFI protects every externally visible function definition and every
+// address-taken local definition, not only init_module/cleanup_module. Clang
+// deliberately drops the metadata from a local function that is called only
+// directly. Keep every test function in its own non-.text.* section so its
+// section-relative symbol offset says unambiguously whether a 4-byte prefix
+// was emitted: 0 means no prefix and 4 means one exact type ID precedes it.
+TEST_F(LTOTest, AndroidKernelProfilesEmitKcfiPrefixesForAllFunctions) {
+  auto Source = tmpFile("android_kernel_kcfi_all_functions.c");
+  writeFile(Source, R"c(
+typedef long ssize_t;
+typedef unsigned long size_t;
+typedef long long loff_t;
+typedef unsigned long long u64;
+typedef int kcfi_array3[3];
+
+struct file { int unused; };
+struct notifier_block { int unused; };
+struct kprobe { int unused; };
+struct pt_regs { int unused; };
+struct dir_context { int unused; };
+
+__attribute__((noinline, section(".kcfi_test.int_void")))
+int kcfi_int_void(void) { return 1; }
+
+__attribute__((noinline, section(".kcfi_test.void_void")))
+void kcfi_void_void(void) {}
+
+__attribute__((noinline, section(".kcfi_test.fops_read")))
+ssize_t kcfi_fops_read(struct file *file, char *buf, size_t len,
+                       loff_t *pos) {
+  return (ssize_t)(file != (void *)0) + (ssize_t)(buf != (void *)0) +
+         (ssize_t)len + (ssize_t)(pos != (void *)0);
+}
+
+__attribute__((noinline, section(".kcfi_test.notifier")))
+int kcfi_notifier(struct notifier_block *nb, unsigned long action,
+                  void *data) {
+  return (int)(nb != (void *)0) + (int)action + (int)(data != (void *)0);
+}
+
+__attribute__((noinline, section(".kcfi_test.kprobe")))
+int kcfi_kprobe(struct kprobe *kp, struct pt_regs *regs) {
+  return (int)(kp != (void *)0) + (int)(regs != (void *)0);
+}
+
+// In the normalized spelling, _Bool and Android's unsigned plain char share
+// u2u8, so const char * uses the Itanium substitution spelling PKS_.
+__attribute__((noinline, section(".kcfi_test.qualifier_substitution")))
+_Bool kcfi_qualifier_substitution(struct dir_context *ctx, const char *name,
+                                  int namelen, loff_t offset, u64 ino,
+                                  unsigned int dtype) {
+  return ctx != (void *)0 && name != (void *)0 && namelen != 0 &&
+         offset != 0 && ino != 0 && dtype != 0;
+}
+
+// Itanium mangling pushes an array's const qualifier down to its element
+// type: _ZTSFvPA3_KiE, not _ZTSFvPKA3_iE.
+__attribute__((noinline, section(".kcfi_test.qualified_array")))
+void kcfi_qualified_array(const kcfi_array3 *array) { (void)array; }
+
+__attribute__((noinline, section(".kcfi_test.vla")))
+void kcfi_vla(int n, int (*array)[n]) { (void)array; }
+
+__attribute__((noinline, section(".kcfi_test.noescape")))
+void kcfi_noescape(void *pointer __attribute__((noescape))) {
+  (void)pointer;
+}
+
+__attribute__((noinline, ms_abi, section(".kcfi_test.noproto")))
+void kcfi_noproto() {}
+
+static __attribute__((noinline, section(".kcfi_test.static_taken")))
+int kcfi_static_taken(void) { return 2; }
+int (*kcfi_static_taken_slot)(void) = kcfi_static_taken;
+
+volatile int kcfi_direct_seed;
+static __attribute__((noinline, section(".kcfi_test.static_direct_only")))
+int kcfi_static_direct_only(void) { return kcfi_direct_seed; }
+
+__attribute__((noinline, section(".kcfi_test.call_direct_only")))
+int kcfi_call_direct_only(void) { return kcfi_static_direct_only(); }
+)c");
+
+  struct Profile {
+    const char *Name;
+    bool HasKCFI;
+    uint32_t IntVoid;
+    uint32_t VoidVoid;
+    uint32_t FopsRead;
+    uint32_t Notifier;
+    uint32_t Kprobe;
+    uint32_t QualifierSubstitution;
+    uint32_t QualifiedArray;
+    uint32_t VLA;
+    uint32_t NoEscape;
+    uint32_t NoProto;
+  };
+  const Profile Profiles[] = {
+      // Android's Linux 5.x kernel profiles predate KCFI, so these functions
+      // begin at section+0.
+      {"510", false, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+      // `_ZTSF...E`, XXH64(seed=0), low 32 bits.
+      {"601", true, 0x36b1c5a6, 0xa540670c, 0xe866e2f4, 0x2a4cec24, 0xa6be5dd9,
+       0xb1edbef0, 0xc70e1b41, 0xefb34d3c, 0x0b3d818b, 0xbcf98444},
+      // Same canonical names with integer normalization and `.normalized`.
+      {"612", true, 0x6fbb3035, 0xe5c47d60, 0xf4e9d97c, 0xd5127a3b, 0xc073bc77,
+       0x4737d63b, 0x6d6ad630, 0xbd6434cc, 0x931474c0, 0x521bb1c4},
+  };
+
+  struct Mode {
+    const char *Name;
+    const char *Flag;
+  };
+  const Mode Modes[] = {
+      {"no_lto", "-fno-lto"},
+      {"default_lto", nullptr},
+      {"full_lto", "-flto=full"},
+  };
+
+  for (const Profile &P : Profiles) {
+    for (const Mode &M : Modes) {
+      SCOPED_TRACE(std::string(P.Name) + "/" + M.Name);
+      auto Object =
+          tmpFile(std::string("nvk_kcfi_all_") + P.Name + "_" + M.Name + ".ko");
+      std::vector<std::string> Args = {
+          "--target=aarch64-linux-android",
+          "-std=c11",
+          "-fandroid-kernel-driver-mode",
+          std::string("-DNVK_KERNEL=") + P.Name,
+      };
+      if (M.Flag)
+        Args.push_back(M.Flag);
+      Args.insert(Args.end(),
+                  {"-r", "-nostdlib", "-o", Object.string(), Source.string()});
+      auto Build = ncc(Args);
+      ASSERT_EQ(Build.exitCode, 0) << Build.err;
+
+      const std::string Bytes = readFile(Object);
+      auto ExpectDefinition = [&](const char *Name, uint32_t TypeId) {
+        auto Offset = readELFSymbolSectionOffset(Bytes, Name);
+        ASSERT_TRUE(static_cast<bool>(Offset))
+            << llvm::toString(Offset.takeError()).str().str();
+        EXPECT_EQ(*Offset, P.HasKCFI ? 4u : 0u) << Name;
+        if (!P.HasKCFI)
+          return;
+
+        auto Prefix = readELFSymbolPrefix32(Bytes, Name);
+        ASSERT_TRUE(static_cast<bool>(Prefix))
+            << llvm::toString(Prefix.takeError()).str().str();
+        EXPECT_EQ(*Prefix, TypeId) << Name;
+      };
+
+      ExpectDefinition("kcfi_int_void", P.IntVoid);
+      ExpectDefinition("kcfi_void_void", P.VoidVoid);
+      ExpectDefinition("kcfi_fops_read", P.FopsRead);
+      ExpectDefinition("kcfi_notifier", P.Notifier);
+      ExpectDefinition("kcfi_kprobe", P.Kprobe);
+      ExpectDefinition("kcfi_qualifier_substitution", P.QualifierSubstitution);
+      ExpectDefinition("kcfi_qualified_array", P.QualifiedArray);
+      ExpectDefinition("kcfi_vla", P.VLA);
+      ExpectDefinition("kcfi_noescape", P.NoEscape);
+      ExpectDefinition("kcfi_noproto", P.NoProto);
+      ExpectDefinition("kcfi_static_taken", P.IntVoid);
+      ExpectDefinition("kcfi_call_direct_only", P.IntVoid);
+
+      // Upstream Clang removes !kcfi_type from local definitions whose
+      // address is never taken. The volatile load and noinline call preserve
+      // this function through both LTO pipelines without making it
+      // address-taken.
+      auto DirectOnly =
+          readELFSymbolSectionOffset(Bytes, "kcfi_static_direct_only");
+      ASSERT_TRUE(static_cast<bool>(DirectOnly))
+          << llvm::toString(DirectOnly.takeError()).str().str();
+      EXPECT_EQ(*DirectOnly, 0u);
+    }
+  }
+}
+
+// Parallel full-LTO promotes static functions to hidden external symbols and
+// divides their use-lists between partitions. KCFI must still use the facts
+// from before that transformation: an address-taken local keeps its prefix,
+// while a direct-only local remains prefix-free.
+TEST_F(LTOTest, AndroidKernelKcfiSurvivesParallelFullLtoPartitions) {
+  auto Source = tmpFile("android_kernel_kcfi_pcg.c");
+  auto Object = tmpFile("android_kernel_kcfi_pcg.ko");
+  writeFile(Source, R"c(
+volatile int kcfi_pcg_seed;
+
+static __attribute__((noinline, section(".kcfi_test.pcg_taken")))
+int kcfi_pcg_taken(void) { return kcfi_pcg_seed + 1; }
+int (*kcfi_pcg_slot)(void) = kcfi_pcg_taken;
+
+static __attribute__((noinline, section(".kcfi_test.pcg_direct")))
+int kcfi_pcg_direct(void) { return kcfi_pcg_seed + 2; }
+int kcfi_pcg_call_direct(void) { return kcfi_pcg_direct(); }
+
+#define KCFI_PCG_HELPER(N)                                                    \
+  __attribute__((noinline)) int kcfi_pcg_helper_##N(int value) {             \
+    return value + N + kcfi_pcg_seed;                                        \
+  }
+KCFI_PCG_HELPER(0)
+KCFI_PCG_HELPER(1)
+KCFI_PCG_HELPER(2)
+KCFI_PCG_HELPER(3)
+KCFI_PCG_HELPER(4)
+KCFI_PCG_HELPER(5)
+KCFI_PCG_HELPER(6)
+KCFI_PCG_HELPER(7)
+)c");
+
+  ScopedEnvVar Strict("NEVERC_PCG_STRICT", "1");
+  ScopedEnvVar Debug("NEVERC_PCG_DEBUG", "1");
+  auto Build = ncc({
+      "--target=aarch64-linux-android",
+      "-std=c11",
+      "-O2",
+      "-fandroid-kernel-driver-mode",
+      "-DNVK_KERNEL=612",
+      "-flto=full",
+      "-mllvm",
+      "-neverc-pcg-min-funcs=2",
+      "-mllvm",
+      "-neverc-pcg-weight-floor=0",
+      "-mllvm",
+      "-neverc-pcg-opt-weight-div=1",
+      "-r",
+      "-nostdlib",
+      "-o",
+      Object.string(),
+      Source.string(),
+  });
+  ASSERT_EQ(Build.exitCode, 0) << Build.err;
+  ASSERT_TRUE(Build.stderrContains("[pcg] SUCCESS"))
+      << "test did not exercise parallel full-LTO:\n"
+      << Build.err;
+
+  const std::string Bytes = readFile(Object);
+  auto TakenOffset = readELFSymbolSectionOffset(Bytes, "kcfi_pcg_taken", true);
+  ASSERT_TRUE(static_cast<bool>(TakenOffset))
+      << llvm::toString(TakenOffset.takeError()).str().str();
+  EXPECT_EQ(*TakenOffset, 4u);
+
+  auto TakenPrefix = readELFSymbolPrefix32(Bytes, "kcfi_pcg_taken", true);
+  ASSERT_TRUE(static_cast<bool>(TakenPrefix))
+      << llvm::toString(TakenPrefix.takeError()).str().str();
+  EXPECT_EQ(*TakenPrefix, 0x6fbb3035u);
+
+  auto DirectOffset =
+      readELFSymbolSectionOffset(Bytes, "kcfi_pcg_direct", true);
+  ASSERT_TRUE(static_cast<bool>(DirectOffset))
+      << llvm::toString(DirectOffset.takeError()).str().str();
+  EXPECT_EQ(*DirectOffset, 0u);
+}
+
+// An IR optimization provider may publish the input module while deliberately
+// suppressing NeverC's builtin pipeline. KCFI preparation/finalization is a
+// code-generation invariant and must still run in both native and full-LTO
+// backends on that path.
+TEST_F(LTOTest, AndroidKernelKcfiSurvivesOptimizationProviderBypass) {
+  auto Source = tmpFile("android_kernel_kcfi_provider.c");
+  writeFile(Source, R"c(
+__attribute__((noinline, section(".kcfi_test.provider")))
+int kcfi_provider_callback(void) { return 1; }
+)c");
+
+  struct Mode {
+    const char *Name;
+    const char *Flag;
+  };
+  const Mode Modes[] = {
+      {"no_lto", "-fno-lto"},
+      {"full_lto", "-flto=full"},
+  };
+
+  for (const Mode &M : Modes) {
+    SCOPED_TRACE(M.Name);
+    auto Object = tmpFile(std::string("nvk_kcfi_provider_") + M.Name + ".ko");
+    auto Build = ncc({
+        std::string("-fplugin=") +
+            NEVERC_TEST_IR_OPTIMIZATION_PASSTHROUGH_PLUGIN,
+        "--target=aarch64-linux-android",
+        "-std=c11",
+        "-fandroid-kernel-driver-mode",
+        "-DNVK_KERNEL=612",
+        M.Flag,
+        "-r",
+        "-nostdlib",
+        "-o",
+        Object.string(),
+        Source.string(),
+    });
+    ASSERT_EQ(Build.exitCode, 0) << Build.err;
+
+    const std::string Bytes = readFile(Object);
+    auto Offset = readELFSymbolSectionOffset(Bytes, "kcfi_provider_callback");
+    ASSERT_TRUE(static_cast<bool>(Offset))
+        << llvm::toString(Offset.takeError()).str().str();
+    EXPECT_EQ(*Offset, 4u);
+
+    auto Prefix = readELFSymbolPrefix32(Bytes, "kcfi_provider_callback");
+    ASSERT_TRUE(static_cast<bool>(Prefix))
+        << llvm::toString(Prefix.takeError()).str().str();
+    EXPECT_EQ(*Prefix, 0x6fbb3035u);
+  }
+}
+
+// A provider that publishes the complete optimized module suppresses every
+// builtin IR optimization stage, including the deferred per-partition stage.
+// Parallel full-LTO may still split that final module for code generation, but
+// it must use the codegen-only hook: rerunning the partition optimizer would
+// violate the provider contract and would mutate functions after KCFI prefixes
+// have already been sealed.
+TEST_F(LTOTest, AndroidKernelKcfiProviderBypassUsesParallelCodegenOnly) {
+  auto Source = tmpFile("android_kernel_kcfi_provider_pcg.c");
+  auto Object = tmpFile("nvk_kcfi_provider_pcg.ko");
+  writeFile(Source, R"c(
+volatile int kcfi_provider_pcg_seed;
+
+__attribute__((noinline, section(".kcfi_test.provider_pcg")))
+int kcfi_provider_pcg_callback(void) { return kcfi_provider_pcg_seed; }
+
+#define KCFI_PROVIDER_HELPER(N)                                               \
+  __attribute__((noinline)) int kcfi_provider_helper_##N(int value) {         \
+    return value + N + kcfi_provider_pcg_seed;                               \
+  }
+KCFI_PROVIDER_HELPER(0)
+KCFI_PROVIDER_HELPER(1)
+KCFI_PROVIDER_HELPER(2)
+KCFI_PROVIDER_HELPER(3)
+KCFI_PROVIDER_HELPER(4)
+KCFI_PROVIDER_HELPER(5)
+KCFI_PROVIDER_HELPER(6)
+KCFI_PROVIDER_HELPER(7)
+)c");
+
+  ScopedEnvVar Strict("NEVERC_PCG_STRICT", "1");
+  ScopedEnvVar Debug("NEVERC_PCG_DEBUG", "1");
+  auto Build = ncc({
+      std::string("-fplugin=") + NEVERC_TEST_IR_OPTIMIZATION_PASSTHROUGH_PLUGIN,
+      "--target=aarch64-linux-android",
+      "-std=c11",
+      "-O2",
+      "-fandroid-kernel-driver-mode",
+      "-DNVK_KERNEL=612",
+      "-flto=full",
+      "-mllvm",
+      "-neverc-pcg-min-funcs=2",
+      "-mllvm",
+      "-neverc-pcg-weight-floor=0",
+      "-mllvm",
+      "-neverc-pcg-opt-weight-div=1",
+      "-r",
+      "-nostdlib",
+      "-o",
+      Object.string(),
+      Source.string(),
+  });
+  ASSERT_EQ(Build.exitCode, 0) << Build.err;
+  ASSERT_TRUE(Build.stderrContains("[pcg] SUCCESS"))
+      << "test did not exercise parallel full-LTO:\n"
+      << Build.err;
+  EXPECT_FALSE(Build.stderrContains("[pcg] p-opt engaged"))
+      << "provider-owned optimization must use parallel codegen only:\n"
+      << Build.err;
+
+  const std::string Bytes = readFile(Object);
+  auto Offset = readELFSymbolSectionOffset(Bytes, "kcfi_provider_pcg_callback");
+  ASSERT_TRUE(static_cast<bool>(Offset))
+      << llvm::toString(Offset.takeError()).str().str();
+  EXPECT_EQ(*Offset, 4u);
+
+  auto Prefix = readELFSymbolPrefix32(Bytes, "kcfi_provider_pcg_callback");
+  ASSERT_TRUE(static_cast<bool>(Prefix))
+      << llvm::toString(Prefix.takeError()).str().str();
+  EXPECT_EQ(*Prefix, 0x6fbb3035u);
+}
+
+// Pre-link modules commonly contain a declaration in one TU and the matching
+// definition in another. Their source type carriers must coalesce to one
+// selected KCFI attachment when full LTO merges the modules.
+TEST_F(LTOTest, AndroidKernelKcfiFullLtoCoalescesDeclarationMetadata) {
+  auto Caller = tmpFile("android_kernel_kcfi_decl.c");
+  auto Definition = tmpFile("android_kernel_kcfi_def.c");
+  auto Object = tmpFile("android_kernel_kcfi_decl_def.ko");
+  writeFile(Caller, R"c(
+int kcfi_cross_tu_callback(void);
+int kcfi_cross_tu_caller(void) { return kcfi_cross_tu_callback(); }
+)c");
+  writeFile(Definition, R"c(
+__attribute__((noinline, section(".kcfi_test.cross_tu")))
+int kcfi_cross_tu_callback(void) { return 7; }
+)c");
+
+  auto Build = ncc({
+      "--target=aarch64-linux-android",
+      "-std=c11",
+      "-fandroid-kernel-driver-mode",
+      "-DNVK_KERNEL=612",
+      "-flto=full",
+      "-r",
+      "-nostdlib",
+      "-o",
+      Object.string(),
+      Caller.string(),
+      Definition.string(),
+  });
+  ASSERT_EQ(Build.exitCode, 0) << Build.err;
+
+  const std::string Bytes = readFile(Object);
+  auto Offset = readELFSymbolSectionOffset(Bytes, "kcfi_cross_tu_callback");
+  ASSERT_TRUE(static_cast<bool>(Offset))
+      << llvm::toString(Offset.takeError()).str().str();
+  EXPECT_EQ(*Offset, 4u);
+
+  auto Prefix = readELFSymbolPrefix32(Bytes, "kcfi_cross_tu_callback");
+  ASSERT_TRUE(static_cast<bool>(Prefix))
+      << llvm::toString(Prefix.takeError()).str().str();
+  EXPECT_EQ(*Prefix, 0x6fbb3035u);
+}
+
+// A function alias shares its aliasee's machine-code prefix. Reject a source
+// declaration whose KCFI type differs even when both declarations lower to
+// the same LLVM function type; otherwise indirect calls through the alias
+// would compare against a prefix that can never match.
+TEST_F(LTOTest, AndroidKernelKcfiRejectsMismatchedFunctionAlias) {
+  auto Source = tmpFile("android_kernel_kcfi_alias_mismatch.c");
+  writeFile(Source, R"c(
+enum kcfi_alias_argument { KCFI_ALIAS_ARGUMENT_ZERO };
+int kcfi_alias_target(int value) { return value; }
+extern int kcfi_alias(enum kcfi_alias_argument)
+    __attribute__((alias("kcfi_alias_target")));
+)c");
+
+  auto Result = ncc({
+      "--target=aarch64-linux-android",
+      "-std=c11",
+      "-fandroid-kernel-driver-mode",
+      "-DNVK_KERNEL=601",
+      "-fno-lto",
+      "-c",
+      "-o",
+      tmpFile("nvk_kcfi_alias_mismatch.o").string(),
+      Source.string(),
+  });
+  EXPECT_NE(Result.exitCode, 0);
+  EXPECT_NE(
+      Result.err.find("conflicting source-level Android kernel KCFI type IDs"),
+      std::string::npos)
+      << Result.err;
+}
+
+// The alias and its target share one prefix, but only the active profile's
+// source type spelling matters. long and long long lower to the same AArch64
+// LLVM type; classic KCFI distinguishes them while normalized KCFI does not.
+// A non-KCFI profile must not inspect either dormant ID.
+TEST_F(LTOTest, AndroidKernelAliasChecksOnlySelectedKcfiProfile) {
+  auto Source = tmpFile("android_kernel_kcfi_alias_selected_mode.c");
+  writeFile(Source, R"c(
+long kcfi_alias_target(long value) { return value; }
+extern long long kcfi_alias(long long)
+    __attribute__((alias("kcfi_alias_target")));
+)c");
+
+  struct Profile {
+    const char *Name;
+    bool Accepted;
+  };
+  const Profile Profiles[] = {
+      {"510", true},
+      {"601", false},
+      {"612", true},
+  };
+  for (const Profile &P : Profiles) {
+    SCOPED_TRACE(P.Name);
+    auto Result = ncc({
+        "--target=aarch64-linux-android",
+        "-std=c11",
+        "-fandroid-kernel-driver-mode",
+        std::string("-DNVK_KERNEL=") + P.Name,
+        "-fno-lto",
+        "-c",
+        "-o",
+        tmpFile(std::string("nvk_kcfi_alias_selected_") + P.Name + ".o")
+            .string(),
+        Source.string(),
+    });
+    if (P.Accepted) {
+      EXPECT_EQ(Result.exitCode, 0) << Result.err;
+    } else {
+      EXPECT_NE(Result.exitCode, 0);
+      EXPECT_NE(Result.err.find(
+                    "conflicting source-level Android kernel KCFI type IDs"),
+                std::string::npos)
+          << Result.err;
+    }
+  }
+}
+
+// KCFI-disabled profiles must never ask the KCFI-only canonical mangler to
+// describe a legal source type. This block-scope tag deliberately lies outside
+// the supported KCFI subset but is valid for an ordinary 5.10 module.
+TEST_F(LTOTest, AndroidKernelWithoutKcfiSkipsUnsupportedTypeMangling) {
+  auto Source = tmpFile("android_kernel_no_kcfi_local_tag.c");
+  writeFile(Source, R"c(
+int kcfi_local_tag_user(void) {
+  struct kcfi_local_tag { int value; };
+  extern int kcfi_local_tag_callback(struct kcfi_local_tag *);
+  return kcfi_local_tag_callback((struct kcfi_local_tag *)0);
+}
+)c");
+
+  auto Result = ncc({
+      "--target=aarch64-linux-android",
+      "-std=c11",
+      "-fandroid-kernel-driver-mode",
+      "-DNVK_KERNEL=510",
+      "-fno-lto",
+      "-c",
+      "-o",
+      tmpFile("nvk_no_kcfi_local_tag.o").string(),
+      Source.string(),
+  });
+  EXPECT_EQ(Result.exitCode, 0) << Result.err;
+}
+
+// The compiler-generated target_clones resolver has no source-level KCFI
+// signature. Until its complete loader/call semantics are defined, reject the
+// construct at the source location instead of failing later in the backend.
+TEST_F(LTOTest, AndroidKernelKcfiRejectsFunctionMultiversioning) {
+  auto Source = tmpFile("android_kernel_kcfi_target_clones.c");
+  writeFile(Source, R"c(
+#define NVK_KERNEL (612U)
+#include <nvkmod_version.h>
+__attribute__((target_clones("default", "crc")))
+int kcfi_multiversion(int value) { return value + 1; }
+)c");
+
+  auto Result = ncc({
+      "--target=aarch64-linux-android",
+      "-std=c11",
+      "-fandroid-kernel-driver-mode",
+      "-fno-lto",
+      "-c",
+      "-o",
+      tmpFile("nvk_kcfi_target_clones.o").string(),
+      Source.string(),
+  });
+  EXPECT_NE(Result.exitCode, 0);
+  EXPECT_NE(Result.err.find(
+                "function multiversioning is not supported in Android kernel "
+                "KCFI mode"),
+            std::string::npos)
+      << Result.err;
+  EXPECT_EQ(Result.err.find("lacks a source-level KCFI type ID"),
+            std::string::npos)
+      << Result.err;
+}
+
+TEST_F(LTOTest, AndroidKernelWithoutKcfiAllowsFunctionMultiversioning) {
+  auto Source = tmpFile("android_kernel_no_kcfi_target_clones.c");
+  writeFile(Source, R"c(
+__attribute__((target_clones("default", "crc")))
+int no_kcfi_multiversion(int value) { return value + 1; }
+)c");
+
+  auto Result = ncc({
+      "--target=aarch64-linux-android",
+      "-std=c11",
+      "-fandroid-kernel-driver-mode",
+      "-DNVK_KERNEL=510",
+      "-fno-lto",
+      "-c",
+      "-o",
+      tmpFile("nvk_no_kcfi_target_clones.o").string(),
+      Source.string(),
+  });
+  EXPECT_EQ(Result.exitCode, 0) << Result.err;
+}
+
+// The preprocessor can select a profile through a configuration header or a
+// valid integer spelling the driver cannot safely evaluate. The source marker
+// is authoritative when the driver's conservative default is mode 0.
+TEST_F(LTOTest, AndroidKernelSourceProfileMarkerSelectsKcfiMode) {
+  auto Source = tmpFile("android_kernel_kcfi_source_profile.c");
+  writeFile(Source, R"c(
+#define NVK_KERNEL (612U)
+#include <nvkmod_version.h>
+__attribute__((__noinline__, section(".kcfi_test.source_profile")))
+int kcfi_source_profile_callback(void) { return 1; }
+)c");
+
+  const char *Modes[] = {"-fno-lto", "-flto=full"};
+  for (const char *Mode : Modes) {
+    SCOPED_TRACE(Mode);
+    auto Object =
+        tmpFile(std::string("nvk_kcfi_source_profile_") +
+                (std::string(Mode) == "-fno-lto" ? "none" : "full") + ".ko");
+    auto Build = ncc({
+        "--target=aarch64-linux-android",
+        "-std=c11",
+        "-fandroid-kernel-driver-mode",
+        Mode,
+        "-r",
+        "-nostdlib",
+        "-o",
+        Object.string(),
+        Source.string(),
+    });
+    ASSERT_EQ(Build.exitCode, 0) << Build.err;
+
+    const std::string Bytes = readFile(Object);
+    auto Prefix = readELFSymbolPrefix32(Bytes, "kcfi_source_profile_callback");
+    ASSERT_TRUE(static_cast<bool>(Prefix))
+        << llvm::toString(Prefix.takeError()).str().str();
+    EXPECT_EQ(*Prefix, 0x6fbb3035u);
+    EXPECT_EQ(Bytes.find("__neverc_krt_kcfi_mode_marker"), std::string::npos);
+  }
+}
+
+TEST_F(LTOTest, AndroidKernelKcfiRejectsProviderThatDropsMode) {
+  auto Source = tmpFile("android_kernel_kcfi_provider_drops_mode.c");
+  writeFile(Source, "int kcfi_provider_input(void) { return 1; }\n");
+
+  const char *Modes[] = {"-fno-lto", "-flto=full"};
+  for (const char *Mode : Modes) {
+    SCOPED_TRACE(Mode);
+    auto Result = ncc({
+        std::string("-fplugin=") + NEVERC_TEST_IR_OPTIMIZATION_PROVIDER_PLUGIN,
+        "--target=aarch64-linux-android",
+        "-std=c11",
+        "-fandroid-kernel-driver-mode",
+        "-DNVK_KERNEL=612",
+        Mode,
+        "-c",
+        "-o",
+        tmpFile("nvk_kcfi_provider_drops_mode.o").string(),
+        Source.string(),
+    });
+    EXPECT_NE(Result.exitCode, 0);
+    EXPECT_NE(Result.err.find("KCFI mode invariant"), std::string::npos)
+        << Result.err;
+  }
+}
+
+// Link-only Android kernel invocations can receive precompiled full-LTO
+// objects.  A plain object has neither the selected profile nor source type
+// carriers, so accepting it would silently emit unprefixed callbacks.
+TEST_F(LTOTest, AndroidKernelKcfiRejectsFlaglessFullLtoInput) {
+  auto Source = tmpFile("android_kernel_kcfi_flagless_input.c");
+  auto Input = tmpFile("android_kernel_kcfi_flagless_input.o");
+  auto PlainOutput = tmpFile("android_kernel_kcfi_flagless_plain.o");
+  auto Output = tmpFile("android_kernel_kcfi_flagless_output.ko");
+  auto CacheDir = tmpFile("android_kernel_kcfi_flagless_cache");
+  ScopedEnvVar CacheDirOverride(linker::ltoCacheDirEnvVar,
+                                CacheDir.string().c_str());
+  ScopedEnvVar CacheEnabled(linker::ltoCacheEnvVar, "1");
+  writeFile(Source, R"c(
+__attribute__((noinline))
+int kcfi_flagless_callback(void) { return 1; }
+)c");
+
+  auto Compile = ncc({
+      "--target=aarch64-linux-android",
+      "-std=c11",
+      "-flto=full",
+      "-c",
+      "-o",
+      Input.string(),
+      Source.string(),
+  });
+  ASSERT_EQ(Compile.exitCode, 0) << Compile.err;
+
+  // Warm the full-link cache with the same flagless bitcode in an ordinary
+  // relocatable link.  Android mode must be part of the cache key; otherwise
+  // the next link could bypass its pre-optimization invariant check entirely.
+  auto PlainLink = ncc({
+      "--target=aarch64-linux-android",
+      "-flto=full",
+      "-r",
+      "-nostdlib",
+      "-o",
+      PlainOutput.string(),
+      Input.string(),
+  });
+  ASSERT_EQ(PlainLink.exitCode, 0) << PlainLink.err;
+
+  auto Link = ncc({
+      "--target=aarch64-linux-android",
+      "-fandroid-kernel-driver-mode",
+      "-DNVK_KERNEL=612",
+      "-flto=full",
+      "-r",
+      "-nostdlib",
+      "-o",
+      Output.string(),
+      Input.string(),
+  });
+  EXPECT_NE(Link.exitCode, 0);
+  EXPECT_NE(Link.err.find("Android kernel LTO input is missing the KCFI mode "
+                          "invariant"),
+            std::string::npos)
+      << Link.err;
+}
+
+TEST_F(LTOTest, AndroidKernelKcfiAcceptsSeparateFullLtoInput) {
+  auto Source = tmpFile("android_kernel_kcfi_separate_input.c");
+  auto Input = tmpFile("android_kernel_kcfi_separate_input.o");
+  auto Output = tmpFile("android_kernel_kcfi_separate_output.ko");
+  writeFile(Source, R"c(
+__attribute__((noinline, section(".kcfi_test.separate")))
+int kcfi_separate_callback(void) { return 1; }
+)c");
+
+  const std::vector<std::string> AndroidArgs = {
+      "--target=aarch64-linux-android",
+      "-fandroid-kernel-driver-mode",
+      "-DNVK_KERNEL=612",
+      "-flto=full",
+  };
+  auto CompileArgs = AndroidArgs;
+  CompileArgs.insert(CompileArgs.end(),
+                     {"-std=c11", "-c", "-o", Input.string(), Source.string()});
+  auto Compile = ncc(CompileArgs);
+  ASSERT_EQ(Compile.exitCode, 0) << Compile.err;
+
+  auto LinkArgs = AndroidArgs;
+  LinkArgs.insert(LinkArgs.end(),
+                  {"-r", "-nostdlib", "-o", Output.string(), Input.string()});
+  auto Link = ncc(LinkArgs);
+  ASSERT_EQ(Link.exitCode, 0) << Link.err;
+
+  const std::string Bytes = readFile(Output);
+  auto Offset = readELFSymbolSectionOffset(Bytes, "kcfi_separate_callback");
+  ASSERT_TRUE(static_cast<bool>(Offset))
+      << llvm::toString(Offset.takeError()).str().str();
+  EXPECT_EQ(*Offset, 4u);
+  auto Prefix = readELFSymbolPrefix32(Bytes, "kcfi_separate_callback");
+  ASSERT_TRUE(static_cast<bool>(Prefix))
+      << llvm::toString(Prefix.takeError()).str().str();
+  EXPECT_EQ(*Prefix, 0x6fbb3035u);
 }
 
 // NVK_KERNEL=618 must select the 6.18 preset (vermagic + file_operations layout).

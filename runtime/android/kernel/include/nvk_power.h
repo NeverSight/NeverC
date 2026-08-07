@@ -4,6 +4,7 @@
 
 #include <linux/types.h>
 #include <linux/compiler.h>
+#include <linux/notifier.h>
 
 /*
  * GKI kernels 5.10–6.18 all export register_pm_notifier and
@@ -28,21 +29,6 @@
 #define NEVERC_KRT_NOTIFY_OK    0x0001
 #define NEVERC_KRT_NOTIFY_STOP  0x8000
 
-/*
- * Opaque notifier_block layout — stable across 5.10–6.18:
- *   struct notifier_block {
- *       int (*notifier_call)(struct notifier_block *, unsigned long, void *);
- *       struct notifier_block *next;
- *       int priority;
- *   };
- */
-struct neverc_krt_notifier_block {
-	unsigned long notifier_call;
-	unsigned long next;
-	int           priority;
-	int           _pad;
-};
-
 int neverc_krt_power_init(void);
 
 /* ------------------------------------------------------------------ */
@@ -52,9 +38,9 @@ int neverc_krt_power_init(void);
 typedef void (*neverc_krt_pm_callback_t)(unsigned long event);
 
 struct neverc_krt_pm_notifier {
-	struct neverc_krt_notifier_block nb;
-	neverc_krt_pm_callback_t         callback;
-	int                       registered;
+	struct notifier_block nb;
+	neverc_krt_pm_callback_t callback;
+	int registered;
 };
 
 int neverc_krt_pm_register(struct neverc_krt_pm_notifier *pm,
@@ -68,9 +54,9 @@ void neverc_krt_pm_unregister(struct neverc_krt_pm_notifier *pm);
 typedef void (*neverc_krt_reboot_callback_t)(unsigned long event);
 
 struct neverc_krt_reboot_notifier {
-	struct neverc_krt_notifier_block nb;
-	neverc_krt_reboot_callback_t     callback;
-	int                       registered;
+	struct notifier_block nb;
+	neverc_krt_reboot_callback_t callback;
+	int registered;
 };
 
 int neverc_krt_reboot_register(struct neverc_krt_reboot_notifier *rn,

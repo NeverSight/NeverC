@@ -31,7 +31,9 @@ static __always_inline void init_waitqueue_head(wait_queue_head_t *wq)
 }
 
 /* Wait-queue entry (created on stack by wait_event macros). */
-typedef int (*wait_queue_func_t)(void *wq_entry, unsigned mode,
+struct wait_queue_entry;
+typedef int (*wait_queue_func_t)(struct wait_queue_entry *wq_entry,
+				 unsigned mode,
 				 int flags, void *key);
 
 struct wait_queue_entry {
@@ -53,7 +55,7 @@ void prepare_to_wait(wait_queue_head_t *wq_head,
 long prepare_to_wait_event(wait_queue_head_t *wq_head,
 			   wait_queue_entry_t *wq_entry, int state);
 void finish_wait(wait_queue_head_t *wq_head, wait_queue_entry_t *wq_entry);
-int autoremove_wake_function(void *wq_entry, unsigned mode,
+int autoremove_wake_function(struct wait_queue_entry *wq_entry, unsigned mode,
 			     int sync, void *key);
 
 /* Task states for prepare_to_wait and wake_up macros. */

@@ -498,7 +498,7 @@ Error lto::backend(const Config &C, AddStreamFn AddStream,
       report_fatal_error(std::move(Err));
     auto &Stream = *StreamOrErr;
 
-    if (C.LTOParallelOpt && C.ParallelOptCodeGenHook) {
+    if (!CodeGenOnly && C.LTOParallelOpt && C.ParallelOptCodeGenHook) {
       if (C.ParallelOptCodeGenHook(Mod, *TM, *Stream->OS,
                                    ParallelCodeGenParallelismLevel, C.OptLevel))
         return Error::success();

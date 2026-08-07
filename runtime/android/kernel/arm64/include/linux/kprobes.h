@@ -37,13 +37,15 @@
 #endif
 #endif
 
+struct pt_regs;
+
 struct kprobe {
 	unsigned char _head[40];
 	void *addr;
 	const char *symbol_name;
 	unsigned int offset;
 	unsigned int _pad;
-	int (*pre_handler)(struct kprobe *, void *);
+	int (*pre_handler)(struct kprobe *, struct pt_regs *);
 	unsigned char _tail[NEVERC_KRT_KP_SIZE - 72];
 };
 

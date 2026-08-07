@@ -17,16 +17,19 @@ struct attribute {
 struct attribute_group {
 	const char *name;
 	umode_t (*is_visible)(struct kobject *, struct attribute *, int);
-	umode_t (*is_bin_visible)(struct kobject *, struct bin_attribute *, int);
 #if NEVERC_KRT_KERNEL >= 618
-	/*
-	 * Linux 6.18 inserted bin_size before attrs.  Keep the callback opaque:
-	 * callers that do not publish binary attributes must leave it zero.
-	 */
-	void *__bin_size;
+	umode_t (*is_bin_visible)(struct kobject *,
+				   const struct bin_attribute *, int);
+	size_t (*bin_size)(struct kobject *, const struct bin_attribute *, int);
+#else
+	umode_t (*is_bin_visible)(struct kobject *, struct bin_attribute *, int);
 #endif
 	struct attribute **attrs;
+#if NEVERC_KRT_KERNEL >= 618
+	const struct bin_attribute *const *bin_attrs;
+#else
 	struct bin_attribute **bin_attrs;
+#endif
 };
 
 _Static_assert(sizeof(struct attribute) == 16,

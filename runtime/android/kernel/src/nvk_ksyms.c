@@ -5,11 +5,16 @@
 
 /* ---- internal types (file-local) ---- */
 
-typedef int (*neverc_krt_ksym_iter_fn)(void *data, const char *name,
-				       unsigned long third_arg,
-				       unsigned long fourth_arg);
-typedef int (*neverc_krt_ksym_on_each_fn)(neverc_krt_ksym_iter_fn callback,
-					  void *data);
+/* Keep both callback ABIs in the version-neutral embedded runtime bitcode. */
+typedef int (*neverc_krt_ksym_iter_legacy_fn)(void *data, const char *name,
+					      struct module *module,
+					      unsigned long addr);
+typedef int (*neverc_krt_ksym_iter_modern_fn)(void *data, const char *name,
+					      unsigned long addr);
+typedef int (*neverc_krt_ksym_on_each_legacy_fn)(
+	neverc_krt_ksym_iter_legacy_fn callback, void *data);
+typedef int (*neverc_krt_ksym_on_each_modern_fn)(
+	neverc_krt_ksym_iter_modern_fn callback, void *data);
 typedef unsigned long (*neverc_krt_sprint_symbol_fn)(char *buf, unsigned long addr);
 
 /* ---- resolver state shared with nvkmod.c ---- */
@@ -37,7 +42,7 @@ static struct _neverc_krt_sym_entry
 	_neverc_krt_sym_cache[_NEVERC_KRT_SYM_CACHE_SIZE];
 static unsigned long _neverc_krt_cache_key;
 static u64 _neverc_krt_cache_epoch = 1;
-static neverc_krt_ksym_on_each_fn    _neverc_krt_on_each_symbol;
+static void                         *_neverc_krt_on_each_symbol;
 static neverc_krt_sprint_symbol_fn   _neverc_krt_sprint_symbol;
 static neverc_krt_sprint_symbol_fn   _neverc_krt_sprint_symbol_no_off;
 static int                           _neverc_krt_ksyms_inited;
@@ -276,8 +281,7 @@ int neverc_krt_ksyms_init(void)
 {
 	if (_neverc_krt_ksyms_inited) return 0;
 
-	_neverc_krt_on_each_symbol =
-		(neverc_krt_ksym_on_each_fn)NEVERC_KRT_LOOKUP("kallsyms_on_each_symbol");
+	_neverc_krt_on_each_symbol = NEVERC_KRT_LOOKUP("kallsyms_on_each_symbol");
 	_neverc_krt_sprint_symbol =
 		(neverc_krt_sprint_symbol_fn)NEVERC_KRT_LOOKUP("sprint_symbol");
 	_neverc_krt_sprint_symbol_no_off =
@@ -287,40 +291,32 @@ int neverc_krt_ksyms_init(void)
 	return _neverc_krt_on_each_symbol ? 0 : -1;
 }
 
-static unsigned long _neverc_krt_ksym_callback_addr(
-	unsigned long third_arg, unsigned long fourth_arg)
-{
-	int kernel_ver = __atomic_load_n(&_neverc_krt_kernel_ver,
-					 __ATOMIC_ACQUIRE);
-
-	/*
-	 * kallsyms_on_each_symbol() dropped the module argument in GKI 6.6
-	 * and restored it in 6.18.  Keep one ABI-tolerant callback shape and
-	 * select the register containing addr from the detected runtime profile.
-	 */
-	if (kernel_ver == 606 || kernel_ver == 612)
-		return third_arg;
-	return fourth_arg;
-}
-
-static int _neverc_krt_ksym_adapt(void *data, const char *name,
-				   unsigned long third_arg,
-				   unsigned long fourth_arg)
+static int _neverc_krt_ksym_adapt_common(void *data, const char *name,
+					 unsigned long addr)
 {
 	struct _neverc_krt_ksym_ctx *ctx = (struct _neverc_krt_ksym_ctx *)data;
-	unsigned long addr = _neverc_krt_ksym_callback_addr(third_arg,
-							    fourth_arg);
 	if (!ctx || !ctx->cb) return 0;
 	return ctx->cb(name, addr, ctx->data);
 }
 
-static int _neverc_krt_walk_cb(void *data, const char *name,
-			       unsigned long third_arg,
-			       unsigned long fourth_arg)
+static int _neverc_krt_ksym_adapt_legacy(void *data, const char *name,
+					 struct module *module,
+					 unsigned long addr)
+{
+	(void)module;
+	return _neverc_krt_ksym_adapt_common(data, name, addr);
+}
+
+static int _neverc_krt_ksym_adapt_modern(void *data, const char *name,
+					 unsigned long addr)
+{
+	return _neverc_krt_ksym_adapt_common(data, name, addr);
+}
+
+static int _neverc_krt_walk_cb_common(void *data, const char *name,
+				      unsigned long addr)
 {
 	struct _neverc_krt_walk_ctx *ctx = (struct _neverc_krt_walk_ctx *)data;
-	unsigned long addr = _neverc_krt_ksym_callback_addr(third_arg,
-							    fourth_arg);
 	if (!ctx || !ctx->cb) return 0;
 	if (ctx->max > 0 && ctx->count >= ctx->max) return 1;
 	int ret = ctx->cb(name, addr, ctx->data);
@@ -328,8 +324,24 @@ static int _neverc_krt_walk_cb(void *data, const char *name,
 	return ret;
 }
 
+static int _neverc_krt_walk_cb_legacy(void *data, const char *name,
+				      struct module *module,
+				      unsigned long addr)
+{
+	(void)module;
+	return _neverc_krt_walk_cb_common(data, name, addr);
+}
+
+static int _neverc_krt_walk_cb_modern(void *data, const char *name,
+				      unsigned long addr)
+{
+	return _neverc_krt_walk_cb_common(data, name, addr);
+}
+
 int neverc_krt_ksyms_walk(neverc_krt_ksym_callback_t cb, void *data, int max)
 {
+	int kernel_ver;
+
 	if (!cb) return -1;
 	if (!_neverc_krt_on_each_symbol) return -1;
 
@@ -339,12 +351,23 @@ int neverc_krt_ksyms_walk(neverc_krt_ksym_callback_t cb, void *data, int max)
 	wctx.count = 0;
 	wctx.max = max;
 
-	_neverc_krt_on_each_symbol(_neverc_krt_walk_cb, &wctx);
+	kernel_ver = __atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE);
+	if (kernel_ver >= 606) {
+		neverc_krt_ksym_on_each_modern_fn on_each =
+			(neverc_krt_ksym_on_each_modern_fn)_neverc_krt_on_each_symbol;
+		on_each(_neverc_krt_walk_cb_modern, &wctx);
+	} else {
+		neverc_krt_ksym_on_each_legacy_fn on_each =
+			(neverc_krt_ksym_on_each_legacy_fn)_neverc_krt_on_each_symbol;
+		on_each(_neverc_krt_walk_cb_legacy, &wctx);
+	}
 	return wctx.count;
 }
 
 int neverc_krt_ksyms_for_each(neverc_krt_ksym_callback_t cb, void *data)
 {
+	int kernel_ver;
+
 	if (!cb) return -1;
 	if (!_neverc_krt_on_each_symbol) return -1;
 
@@ -352,7 +375,16 @@ int neverc_krt_ksyms_for_each(neverc_krt_ksym_callback_t cb, void *data)
 	ctx.cb = cb;
 	ctx.data = data;
 
-	return _neverc_krt_on_each_symbol(_neverc_krt_ksym_adapt, &ctx);
+	kernel_ver = __atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE);
+	if (kernel_ver >= 606) {
+		neverc_krt_ksym_on_each_modern_fn on_each =
+			(neverc_krt_ksym_on_each_modern_fn)_neverc_krt_on_each_symbol;
+		return on_each(_neverc_krt_ksym_adapt_modern, &ctx);
+	}
+
+	neverc_krt_ksym_on_each_legacy_fn on_each =
+		(neverc_krt_ksym_on_each_legacy_fn)_neverc_krt_on_each_symbol;
+	return on_each(_neverc_krt_ksym_adapt_legacy, &ctx);
 }
 
 int neverc_krt_ksyms_resolve(const char *name, unsigned long *out_addr)
@@ -717,4 +749,3 @@ int neverc_krt_ksyms_raw_batch(struct neverc_krt_batch_entry *entries, int count
 	neverc_krt_ksyms_raw_walk(_neverc_krt_batch_cb, &ctx, 0);
 	return ctx.resolved;
 }
-

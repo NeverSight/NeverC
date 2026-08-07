@@ -917,6 +917,17 @@ bool GenAssemblyHelper::runOptimizationPipeline(
     return runBuiltinOptimizationPipeline(Action, BC);
   };
 
+  std::optional<unsigned> RequiredAndroidKCFIMode;
+  if (CodeGenOpts.AndroidKernelDriverMode) {
+    RequiredAndroidKCFIMode =
+        neverc::Emit::AndroidKernel::getKCFIMode(*TheModule);
+    if (!RequiredAndroidKCFIMode) {
+      Diags.Report(diag::err_fe_error_backend)
+          << "Android kernel module has no KCFI mode invariant";
+      return false;
+    }
+  }
+
   if (PluginTask) {
     auto Created = plugin::PluginIROptimizationProviderRuntime::create(
         *PluginTask, *TheModule,
@@ -938,6 +949,16 @@ bool GenAssemblyHelper::runOptimizationPipeline(
           << "IR optimization provider published no module";
       return false;
     }
+    if (RequiredAndroidKCFIMode) {
+      const std::optional<unsigned> PublishedMode =
+          neverc::Emit::AndroidKernel::getKCFIMode(*TheModule);
+      if (!PublishedMode || *PublishedMode != *RequiredAndroidKCFIMode) {
+        Diags.Report(diag::err_fe_error_backend)
+            << "IR optimization provider dropped or changed the Android "
+               "kernel KCFI mode invariant";
+        return false;
+      }
+    }
   } else if (Error E = RunBuiltin(*TheModule)) {
     Diags.Report(diag::err_fe_error_backend) << toString(std::move(E));
     return false;
@@ -950,6 +971,12 @@ bool GenAssemblyHelper::runOptimizationPipeline(
           << toString(std::move(E));
       return false;
     }
+
+  // Prefix data must be attached to the final module, after an IR provider may
+  // have replaced it, but never while producing pre-link LTO bitcode. Full LTO
+  // performs the same operation in its post-optimization hook.
+  if (CodeGenOpts.AndroidKernelDriverMode && !CodeGenOpts.PrepareForLTO)
+    neverc::Emit::AndroidKernel::finalizeKCFIPrefixes(*TheModule);
 
   emitOptimizedIR(Action, OS);
   return true;

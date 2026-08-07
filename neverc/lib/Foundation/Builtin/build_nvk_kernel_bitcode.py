@@ -46,7 +46,9 @@ LOCAL_DEFINITION_RE = re.compile(
 ATTRIBUTE_GROUP_RE = re.compile(
     r'^\s*attributes\s+#(\d+)\s*=\s*\{(.*)\}\s*$'
 )
-FUNCTION_ATTRIBUTE_RE = re.compile(r'\s#(\d+)\s*\{\s*$')
+# Function metadata (including the profile-neutral KCFI type pair) can appear
+# between the attribute-group reference and the opening brace.
+FUNCTION_ATTRIBUTE_RE = re.compile(r'\s#(\d+)\b')
 REQUIRED_RUNTIME_SYMBOLS = frozenset({
     "neverc_krt_bootstrap",
     "neverc_krt_mem_init",
@@ -214,10 +216,12 @@ def main():
     inc_nvk_abs = os.path.abspath(inc_nvk)
     common_args = [
         "-fno-lto",
+        "-femit-android-kernel-kcfi-type-pairs",
         "--target=aarch64-linux-android",
         "-mbranch-protection=bti+pac-ret",
         "-ffreestanding", "-std=gnu11",
         "-D__KERNEL__", "-DMODULE",
+        "-DNEVERC_KRT_SUPPRESS_KCFI_MODE_MARKER",
         f"-I{inc_kern_abs}",
         f"-I{inc_nvk_abs}",
         # Clang resolves prefix maps last-match-wins, so the caller's general

@@ -4,6 +4,11 @@
 
 #include "nvk_internal.h"
 
+struct ftrace_ops;
+struct ftrace_regs;
+struct pt_regs;
+struct kprobe;
+
 #define NEVERC_KRT_INTERPOSE_FORCE_INLINE __attribute__((always_inline))
 
 NEVERC_KRT_INTERPOSE_FORCE_INLINE long
@@ -540,13 +545,13 @@ typedef void  (*neverc_krt_syncrcu_fn)(void);
 typedef void  (*neverc_krt_msleep_fn)(unsigned int);
 typedef int   (*neverc_krt_ksize_fn)(unsigned long addr, unsigned long *sz,
 				     unsigned long *off);
-typedef int   (*neverc_krt_register_ftrace_fn)(void *ops);
-typedef int   (*neverc_krt_unregister_ftrace_fn)(void *ops);
-typedef int   (*neverc_krt_ftrace_set_filter_ip_fn)(void *ops,
+typedef int   (*neverc_krt_register_ftrace_fn)(struct ftrace_ops *ops);
+typedef int   (*neverc_krt_unregister_ftrace_fn)(struct ftrace_ops *ops);
+typedef int   (*neverc_krt_ftrace_set_filter_ip_fn)(struct ftrace_ops *ops,
 						    unsigned long ip,
 						    int remove, int reset);
-typedef int   (*neverc_krt_register_kprobe_fn)(void *kp);
-typedef void  (*neverc_krt_unregister_kprobe_fn)(void *kp);
+typedef int   (*neverc_krt_register_kprobe_fn)(struct kprobe *kp);
+typedef void  (*neverc_krt_unregister_kprobe_fn)(struct kprobe *kp);
 
 /* ---- internal structs ---- */
 
@@ -600,8 +605,6 @@ static void _neverc_krt_full_barrier(void);
 static void _neverc_krt_quiesce(void);
 static void _neverc_krt_quiesce_deep(void);
 static void _neverc_krt_poison_tramp(u32 *tramp, int max_words);
-static void _neverc_krt_ftrace_thunk(unsigned long ip, unsigned long parent_ip,
-				     void *ops, void *regs);
 static int neverc_krt_a64_gen_mov64(u32 *out, int rd, u64 addr);
 static int neverc_krt_a64_relocate_abs(u32 insn, unsigned long old_pc, u32 *out);
 static enum neverc_krt_pcrel neverc_krt_a64_classify(u32 i);
@@ -1708,8 +1711,10 @@ int neverc_krt_ftrace_init(void)
 	return 0;
 }
 
-static void _neverc_krt_ftrace_thunk(unsigned long ip, unsigned long parent_ip,
-				     void *ops, void *regs)
+static void _neverc_krt_ftrace_thunk_common(unsigned long ip,
+					    unsigned long parent_ip,
+					    struct ftrace_ops *ops,
+					    void *regs)
 {
 	(void)ip;
 	(void)parent_ip;
@@ -1722,11 +1727,30 @@ static void _neverc_krt_ftrace_thunk(unsigned long ip, unsigned long parent_ip,
 	r[32] = (unsigned long)h->replace;
 }
 
+/* The embedded runtime is compiled once, so retain both source-level KCFI types. */
+static void _neverc_krt_ftrace_thunk_510(unsigned long ip,
+					 unsigned long parent_ip,
+					 struct ftrace_ops *ops,
+					 struct pt_regs *regs)
+{
+	_neverc_krt_ftrace_thunk_common(ip, parent_ip, ops, regs);
+}
+
+static void _neverc_krt_ftrace_thunk_modern(unsigned long ip,
+					    unsigned long parent_ip,
+					    struct ftrace_ops *ops,
+					    struct ftrace_regs *regs)
+{
+	_neverc_krt_ftrace_thunk_common(ip, parent_ip, ops, regs);
+}
+
 int neverc_krt_ftrace_interpose_install(struct neverc_krt_ftrace_interpose *h,
 				   void *target, void *replace,
 				   void **orig)
 {
 	int ret;
+	int kernel_ver;
+	struct ftrace_ops *ops;
 
 	if (!_neverc_krt_ftrace_avail) return -1;
 	if (!h || !target || !replace) return -2;
@@ -1739,6 +1763,7 @@ int neverc_krt_ftrace_interpose_install(struct neverc_krt_ftrace_interpose *h,
 	unsigned char *p = (unsigned char *)h->_ops_storage;
 	unsigned long i;
 	for (i = 0; i < sizeof(h->_ops_storage); i++) p[i] = 0;
+	ops = (struct ftrace_ops *)h->_ops_storage;
 
 	/*
 	 * Kernel's struct ftrace_ops layout:
@@ -1746,19 +1771,25 @@ int neverc_krt_ftrace_interpose_install(struct neverc_krt_ftrace_interpose *h,
 	 *   [8]  next   (kernel-managed, leave zero)
 	 *   [16] flags  (unsigned long)
 	 */
-	h->_ops_storage[0] = (unsigned long)_neverc_krt_ftrace_thunk;
+	kernel_ver = __atomic_load_n(&_neverc_krt_kernel_ver, __ATOMIC_ACQUIRE);
+	if (kernel_ver >= 515)
+		h->_ops_storage[0] =
+			(unsigned long)_neverc_krt_ftrace_thunk_modern;
+	else
+		h->_ops_storage[0] =
+			(unsigned long)_neverc_krt_ftrace_thunk_510;
 	h->_ops_storage[2] = NEVERC_KRT_FTRACE_FL_SAVE_REGS
 			    | NEVERC_KRT_FTRACE_FL_IPMODIFY
 			    | NEVERC_KRT_FTRACE_FL_RECURSION;
 
-	ret = _neverc_krt_ftrace_set_filter(h->_ops_storage,
+	ret = _neverc_krt_ftrace_set_filter(ops,
 				     (unsigned long)target, 0, 1);
 	if (ret) return ret;
 
-	ret = _neverc_krt_register_ftrace(h->_ops_storage);
+	ret = _neverc_krt_register_ftrace(ops);
 	if (ret) {
 		_neverc_krt_ftrace_set_filter(
-			h->_ops_storage, (unsigned long)target, 1, 0);
+			ops, (unsigned long)target, 1, 0);
 		return ret;
 	}
 
@@ -1769,12 +1800,15 @@ int neverc_krt_ftrace_interpose_install(struct neverc_krt_ftrace_interpose *h,
 
 void neverc_krt_ftrace_interpose_remove(struct neverc_krt_ftrace_interpose *h)
 {
+	struct ftrace_ops *ops;
+
 	if (!h || !h->active) return;
+	ops = (struct ftrace_ops *)h->_ops_storage;
 	if (_neverc_krt_unregister_ftrace)
-		_neverc_krt_unregister_ftrace(h->_ops_storage);
+		_neverc_krt_unregister_ftrace(ops);
 	if (_neverc_krt_ftrace_set_filter)
 		_neverc_krt_ftrace_set_filter(
-			h->_ops_storage, (unsigned long)h->target, 1, 0);
+			ops, (unsigned long)h->target, 1, 0);
 	h->active = 0;
 }
 
@@ -2814,4 +2848,3 @@ void neverc_krt_interpose_cleanup(void)
 }
 
 #undef NEVERC_KRT_INTERPOSE_FORCE_INLINE
-

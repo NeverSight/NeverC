@@ -29,21 +29,10 @@ int neverc_krt_bootstrap(int cfi, int kernel_profile);
 
 /* __versions section is handled by -fandroid-kernel-driver-mode. */
 
-/*
- * Compiler-consumed ABI markers.  AndroidKernelEmitter removes these globals
- * and turns their values into LLVM function prefix data on init_module and
- * cleanup_module; they are never exported by the finished .ko.
- */
 #define NEVERC_KRT_DEFINE_MODULE(modname)                                            \
 	MODULE_INFO(name, modname);                                           \
 	MODULE_INFO(vermagic, NEVERC_KRT_VERMAGIC);                                  \
 	MODULE_INFO(depends, "");                                             \
-	__attribute__((visibility("hidden")))                                 \
-	const unsigned int __neverc_krt_kcfi_init_module_typeid =             \
-	    NEVERC_KRT_KCFI_INIT_MODULE_TYPEID;                                \
-	__attribute__((visibility("hidden")))                                 \
-	const unsigned int __neverc_krt_kcfi_cleanup_module_typeid =          \
-	    NEVERC_KRT_KCFI_CLEANUP_MODULE_TYPEID;                             \
 	__attribute__((section(".gnu.linkonce.this_module"), used,            \
 		       aligned(64)))                                          \
 	struct neverc_krt_this_module __this_module = {                              \

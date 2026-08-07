@@ -4,9 +4,10 @@
 #include "Linker/Core/Driver/Dispatcher.h"
 #include "Linker/Core/Driver/LTOCache.h"
 #include "Linker/Core/Runtime/Diagnostic.h"
+#include "neverc/Emit/AndroidKernelKCFI.h"
 #include "neverc/Emit/Backend/ParallelCodeGenMerge.h"
-#include "neverc/Plugin/Host/IRPassPlugin.h"
 #include "neverc/Plugin/Host/IROptimizationProvider.h"
+#include "neverc/Plugin/Host/IRPassPlugin.h"
 #include "neverc/Plugin/Host/MIRPassPlugin.h"
 #include "neverc/Plugin/Host/PluginLLVMOptionSnapshot.h"
 #include "neverc/Plugin/Host/PluginSession.h"
@@ -15,6 +16,7 @@
 #include "llvm/CodeGen/CommandFlags.h"
 #include "llvm/Support/CommandLine.h"
 #include <mutex>
+#include <optional>
 
 using namespace llvm;
 
@@ -127,6 +129,21 @@ lto::Config linker::createLTOConfig(const LinkerDriverConfig &Cfg,
   c.OptLevel = OptLevel;
   c.CPU = Cfg.cpu;
 
+  // An Android kernel link may consume precompiled full-LTO inputs.  If none
+  // of them were compiled in Android kernel mode, the merged module has no
+  // profile flag and the otherwise idempotent KCFI finalizer would treat it as
+  // an unrelated module.  Reject that boundary explicitly instead of silently
+  // emitting callbacks without loader-visible type prefixes.
+  if (Cfg.androidKernelModule)
+    c.PreOptModuleHook = [](unsigned, const Module &M) {
+      if (neverc::Emit::AndroidKernel::getKCFIMode(M))
+        return true;
+      linker::error(
+          "Android kernel LTO input is missing the KCFI mode invariant; "
+          "recompile it with -fandroid-kernel-driver-mode");
+      return false;
+    };
+
   c.PTO.LoopVectorization = OptLevel > 1;
   c.PTO.SLPVectorization = OptLevel > 1;
 
@@ -167,6 +184,8 @@ lto::Config linker::createLTOConfig(const LinkerDriverConfig &Cfg,
       c.ModuleOptimizeHook =
           [PluginContext, OptLevel](std::unique_ptr<Module> &ModuleValue,
                                     bool &SkipBuiltin) {
+            const std::optional<unsigned> RequiredAndroidKCFIMode =
+                neverc::Emit::AndroidKernel::getKCFIMode(*ModuleValue);
             auto Runtime =
                 neverc::plugin::PluginIROptimizationProviderRuntime::create(
                     *PluginContext->Task, *ModuleValue, OptLevel,
@@ -185,7 +204,26 @@ lto::Config linker::createLTOConfig(const LinkerDriverConfig &Cfg,
             SkipBuiltin = !(*Runtime)->ranBuiltinPipeline();
             if ((*Runtime)->ownsModule())
               ModuleValue = (*Runtime)->releaseOwnedModule();
-            return ModuleValue != nullptr;
+            if (!ModuleValue)
+              return false;
+            if (RequiredAndroidKCFIMode) {
+              const std::optional<unsigned> PublishedMode =
+                  neverc::Emit::AndroidKernel::getKCFIMode(*ModuleValue);
+              if (!PublishedMode ||
+                  *PublishedMode != *RequiredAndroidKCFIMode) {
+                linker::error(
+                    "LTO optimization provider dropped or changed the "
+                    "Android kernel KCFI mode invariant");
+                return false;
+              }
+            }
+            // A provider that owns the complete optimization transition asks
+            // LTO to bypass opt(), which also bypasses PostOptPassHook.  KCFI
+            // prefix materialization is a code-generation invariant, so seal
+            // the provider's final module here on that path.
+            if (SkipBuiltin)
+              neverc::Emit::AndroidKernel::finalizeKCFIPrefixes(*ModuleValue);
+            return true;
           };
       c.BackendDoneHook = [PluginContext] { PluginContext->finish(); };
       c.DisableVerify = false;
@@ -194,6 +232,13 @@ lto::Config linker::createLTOConfig(const LinkerDriverConfig &Cfg,
 
   NevercIROptimizationLevel PluginLevel =
       pluginOptimizationLevel(OptLevel);
+  auto AddAndroidKCFIFinalizer = [](ModulePassManager &MPM) {
+    MPM.addPass(neverc::Emit::AndroidKernel::FinalizeKCFIPrefixesPass());
+  };
+  c.PostOptPassHook = AddAndroidKCFIFinalizer;
+
+  auto ParallelHooks = std::make_shared<neverc::ParallelOptimizationHooks>();
+  ParallelHooks->PostOpt = AddAndroidKCFIFinalizer;
   if (PluginContext && PluginContext->IRPasses &&
       !PluginContext->IRPasses->empty()) {
     neverc::plugin::IRPassPlan *IRPasses =
@@ -235,14 +280,20 @@ lto::Config linker::createLTOConfig(const LinkerDriverConfig &Cfg,
               });
         };
     c.PreOptPassHook = AddPreOpt;
-    c.PostOptPassHook = AddPostOpt;
+    c.PostOptPassHook = [AddPostOpt,
+                         AddAndroidKCFIFinalizer](ModulePassManager &MPM) {
+      AddPostOpt(MPM);
+      AddAndroidKCFIFinalizer(MPM);
+    };
     c.PassBuilderHook = ConfigurePassBuilder;
-    PluginContext->ParallelHooks =
-        std::make_shared<neverc::ParallelOptimizationHooks>();
-    PluginContext->ParallelHooks->ConfigurePassBuilder =
-        ConfigurePassBuilder;
-    PluginContext->ParallelHooks->PreOpt = AddPreOpt;
-    PluginContext->ParallelHooks->PostOpt = AddPostOpt;
+    ParallelHooks->ConfigurePassBuilder = ConfigurePassBuilder;
+    ParallelHooks->PreOpt = AddPreOpt;
+    ParallelHooks->PostOpt = [AddPostOpt,
+                              AddAndroidKCFIFinalizer](ModulePassManager &MPM) {
+      AddPostOpt(MPM);
+      AddAndroidKCFIFinalizer(MPM);
+    };
+    PluginContext->ParallelHooks = ParallelHooks;
   }
 
   // Per-partition object cache: with stable partition assignment, an
@@ -273,17 +324,14 @@ lto::Config linker::createLTOConfig(const LinkerDriverConfig &Cfg,
     return neverc::runParallelCodeGen(M, TM, neverc::ParallelCodeGenOutputs{OS},
                                       NP, pcgCache.get());
   };
-  c.ParallelOptCodeGenHook = [pcgCache, PluginContext](
-                                 Module &M, TargetMachine &TM,
-                                 raw_pwrite_stream &OS, unsigned NP,
-                                 unsigned OL) {
+  c.ParallelOptCodeGenHook = [pcgCache, PluginContext,
+                              ParallelHooks](Module &M, TargetMachine &TM,
+                                             raw_pwrite_stream &OS, unsigned NP,
+                                             unsigned OL) {
     if (PluginContext && PluginContext->MIRPasses &&
         PluginContext->MIRPasses->requiresSerialCodeGen())
       return false;
-    const neverc::ParallelOptimizationHooks *Hooks =
-        PluginContext && PluginContext->ParallelHooks
-            ? PluginContext->ParallelHooks.get()
-            : nullptr;
+    const neverc::ParallelOptimizationHooks *Hooks = ParallelHooks.get();
     return neverc::runParallelOptAndCodeGen(M, TM,
                                             neverc::ParallelCodeGenOutputs{OS},
                                             NP, OL, pcgCache.get(), Hooks);

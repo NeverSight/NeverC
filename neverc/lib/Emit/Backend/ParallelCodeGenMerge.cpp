@@ -339,7 +339,18 @@ struct LinkageEntry {
   std::string OrigName;
   GlobalValue::LinkageTypes Linkage;
   GlobalValue::VisibilityTypes Visibility;
+  bool AddedOriginalLocalAttr = false;
+  bool AddedOriginalAddressTakenAttr = false;
 };
+
+// Parallel partitioning has to promote file-local functions to hidden external
+// symbols so another partition can refer to them.  Preserve the source-level
+// facts KCFI uses to decide whether a local definition needs a prefix: after
+// the split, the promoted linkage and the per-partition use-list can no longer
+// answer either question reliably.
+constexpr StringLiteral PCGOriginalLocalAttr = "neverc.pcg.original-local";
+constexpr StringLiteral PCGOriginalAddressTakenAttr =
+    "neverc.pcg.original-address-taken";
 
 struct PartitionResult {
   SmallVector<char, 0> ObjBuffer;
@@ -715,8 +726,20 @@ bool ParallelCGContext::externalizeAndSerialize(Module &Mod) {
   auto ExternalizeGV = [&](GlobalValue &GV) {
     if (!GV.hasLocalLinkage())
       return;
-    SavedLinkage.push_back(
-        {&GV, GV.getName().str(), GV.getLinkage(), GV.getVisibility()});
+    LinkageEntry Saved{&GV, GV.getName().str(), GV.getLinkage(),
+                       GV.getVisibility()};
+    if (auto *F = dyn_cast<Function>(&GV)) {
+      if (!F->hasFnAttribute(PCGOriginalLocalAttr)) {
+        F->addFnAttr(PCGOriginalLocalAttr);
+        Saved.AddedOriginalLocalAttr = true;
+      }
+      if (F->hasAddressTaken() &&
+          !F->hasFnAttribute(PCGOriginalAddressTakenAttr)) {
+        F->addFnAttr(PCGOriginalAddressTakenAttr);
+        Saved.AddedOriginalAddressTakenAttr = true;
+      }
+    }
+    SavedLinkage.push_back(std::move(Saved));
     SmallString<64> NewName(GV.getName());
     NewName += PCGSuffix;
     GV.setName(NewName);
@@ -1311,6 +1334,12 @@ void ParallelCGContext::restoreLinkage(Module &Mod) {
     E.GV->setName(E.OrigName);
     E.GV->setLinkage(E.Linkage);
     E.GV->setVisibility(E.Visibility);
+    if (auto *F = dyn_cast<Function>(E.GV)) {
+      if (E.AddedOriginalLocalAttr)
+        F->removeFnAttr(PCGOriginalLocalAttr);
+      if (E.AddedOriginalAddressTakenAttr)
+        F->removeFnAttr(PCGOriginalAddressTakenAttr);
+    }
   }
   for (auto &S : SavedMD) {
     auto *NMD = Mod.getOrInsertNamedMetadata(S.Name);

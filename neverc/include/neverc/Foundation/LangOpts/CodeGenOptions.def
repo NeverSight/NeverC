@@ -120,6 +120,8 @@ CODEGENOPT(Jumptablerdata, 1, 0) ///< Put switch case jump tables in .rdata
 CODEGENOPT(DisableInlineOpt, 1, 0) ///< Disables the optimization of inline functions.
 CODEGENOPT(DisableTryStmt, 1, 0) ///< Disables the try statements.
 CODEGENOPT(AndroidKernelDriverMode, 1, 0) ///< Android kernel module (.ko) codegen.
+VALUE_CODEGENOPT(AndroidKernelKCFIMode, 2, 0) ///< 0=off, 1=KCFI, 2=normalized KCFI.
+CODEGENOPT(AndroidKernelKCFITypePairs, 1, 0) ///< Emit profile-neutral source type IDs.
 CODEGENOPT(SimplifyLibCalls  , 1, 1) ///< Set when -fbuiltin is enabled.
 CODEGENOPT(SoftFloat         , 1, 0) ///< -soft-float.
 CODEGENOPT(SpeculativeLoadHardening, 1, 0) ///< Enable speculative load hardening.

@@ -127,6 +127,17 @@ private:
 
   std::vector<GlobalDecl> MultiVersionFuncs;
 
+  struct DeferredKCFITypeMetadata {
+    GlobalDecl GD;
+    llvm::WeakTrackingVH FunctionValue;
+  };
+  std::vector<DeferredKCFITypeMetadata> DeferredKCFITypes;
+
+  // First source declaration that required a compiler-generated multiversion
+  // resolver. Android kernel KCFI diagnoses it after the source-selected
+  // profile has been resolved during module finalization.
+  const FunctionDecl *AndroidKernelMultiversionFunction = nullptr;
+
   llvm::MapVector<llvm::StringRef, llvm::TrackingVH<llvm::Constant>>
       Replacements;
 
@@ -559,6 +570,8 @@ private:
 
   void setFunctionAttributes(GlobalDecl GD, llvm::Function *F,
                              bool IsIncompleteFunction);
+  void deferKCFITypeMetadata(GlobalDecl GD, llvm::Function *F);
+  void emitDeferredKCFITypeMetadata();
 
   void genGlobalDef(GlobalDecl D, llvm::GlobalValue *GV = nullptr);
 

@@ -218,36 +218,29 @@
       "Unknown NEVERC_KRT_KERNEL; use 510 / 515 / 601 / 606 / 612 / 618 or define presets manually"
 #endif
 
-/*
- * KCFI type hashes stored in the four bytes immediately before the module
- * entry symbols.  These are ABI facts derived from the pinned stock GKI
- * modules, not arbitrary version constants:
- *
- *   5.10 / 5.15: no module-entry KCFI prefix
- *   6.1  / 6.6:  Clang KCFI
- *   6.12 / 6.18: Clang KCFI with integer type normalization
- *
- * OEM kernels built with a different CFI configuration may override either
- * value on the compiler command line.
- */
-#ifndef NEVERC_KRT_KCFI_INIT_MODULE_TYPEID
+/* Keep the public profile fact in sync with the driver's source-level KCFI
+ * selection: 0 = disabled, 1 = classic KCFI, 2 = integer-normalized KCFI. */
+#ifndef NEVERC_KRT_KCFI_MODE
 #  if NEVERC_KRT_KERNEL <= 515
-#    define NEVERC_KRT_KCFI_INIT_MODULE_TYPEID 0x00000000U
+#    define NEVERC_KRT_KCFI_MODE 0
 #  elif NEVERC_KRT_KERNEL <= 606
-#    define NEVERC_KRT_KCFI_INIT_MODULE_TYPEID 0x36b1c5a6U
+#    define NEVERC_KRT_KCFI_MODE 1
 #  else
-#    define NEVERC_KRT_KCFI_INIT_MODULE_TYPEID 0x6fbb3035U
+#    define NEVERC_KRT_KCFI_MODE 2
 #  endif
 #endif
 
-#ifndef NEVERC_KRT_KCFI_CLEANUP_MODULE_TYPEID
-#  if NEVERC_KRT_KERNEL <= 515
-#    define NEVERC_KRT_KCFI_CLEANUP_MODULE_TYPEID 0x00000000U
-#  elif NEVERC_KRT_KERNEL <= 606
-#    define NEVERC_KRT_KCFI_CLEANUP_MODULE_TYPEID 0xa540670cU
-#  else
-#    define NEVERC_KRT_KCFI_CLEANUP_MODULE_TYPEID 0xe5c47d60U
-#  endif
+/*
+ * Preserve the preprocessor-selected profile for the compiler.  The driver
+ * can read simple decimal -D values, but valid C forms such as 612U, macro
+ * expressions, and configuration headers are only knowable after
+ * preprocessing.  AndroidKernelEmitter consumes this internal marker before
+ * optimization and removes it from the finished object.
+ */
+#if defined(__neverc__) && defined(__KERNEL__) && defined(MODULE) && \
+    !defined(NEVERC_KRT_SUPPRESS_KCFI_MODE_MARKER)
+__attribute__((visibility("hidden")))
+const unsigned int __neverc_krt_kcfi_mode_marker = NEVERC_KRT_KCFI_MODE;
 #endif
 
 /*

@@ -58,6 +58,31 @@ provide_optimized_module(const NevercPhaseFrame *Frame,
                ? failure(NEVERC_STATUS_VERIFICATION_FAILED)
                : Status;
 
+#if defined(NEVERC_TEST_IR_OPTIMIZATION_PASSTHROUGH)
+  // Publish the input module without invoking NeverC's builtin optimizer. This
+  // fixture exercises invariants that must be sealed after a provider takes
+  // ownership of the complete optimization transition.
+  memset(&Descriptor, 0, sizeof(Descriptor));
+  Descriptor.Header = (NevercABITableHeader){
+      sizeof(Descriptor), NEVERC_IR_OPTIMIZATION_API_MAJOR,
+      NEVERC_IR_OPTIMIZATION_API_MINOR, 0};
+  Descriptor.Product =
+      (NevercInterfaceID){NEVERC_PHASE_IR_OPTIMIZE_OUTPUT_HIGH,
+                          NEVERC_PHASE_IR_OPTIMIZE_OUTPUT_LOW};
+  Descriptor.DependencyDigest = Input.InputDigest;
+  Status = OptimizationAPI->PublishModule(
+      OptimizationAPI->Context, Frame, &Descriptor, &Output);
+  if (Status.Code != NEVERC_STATUS_OK)
+    return Status;
+
+  memset(OutResult, 0, sizeof(*OutResult));
+  OutResult->Header = (NevercABITableHeader){
+      sizeof(*OutResult), NEVERC_PLUGIN_ABI_MAJOR, NEVERC_PLUGIN_ABI_MINOR, 0};
+  OutResult->Action = NEVERC_PHASE_REPLACE;
+  OutResult->Output = Output;
+  return neverc_status_ok();
+#endif
+
   Status = OptimizationAPI->CreateModule(
       OptimizationAPI->Context, Frame, STRING_VIEW("plugin-optimized-main"),
       &Core, &BuilderAPI);

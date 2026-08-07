@@ -3,8 +3,11 @@
 
 /* ---- internal typedefs & variables ---- */
 
-typedef int (*neverc_krt_binder_ioctl_fn)(void *filp, unsigned int cmd,
-					  unsigned long arg);
+struct file;
+
+typedef long (*neverc_krt_binder_ioctl_fn)(struct file *filp,
+					   unsigned int cmd,
+					   unsigned long arg);
 
 struct neverc_krt_binder_write_read {
 	long write_size;
@@ -119,8 +122,9 @@ static int _neverc_krt_binder_scan_commands(unsigned long buf, long size,
 	return filtered;
 }
 
-static int _neverc_krt_binder_ioctl_interpose(void *filp, unsigned int cmd,
-					 unsigned long arg)
+static long _neverc_krt_binder_ioctl_interpose(struct file *filp,
+					  unsigned int cmd,
+					  unsigned long arg)
 {
 	if (!_neverc_krt_orig_binder_ioctl)
 		return -1;
@@ -139,7 +143,7 @@ static int _neverc_krt_binder_ioctl_interpose(void *filp, unsigned int cmd,
 		}
 	}
 
-	int ret = _neverc_krt_orig_binder_ioctl(filp, cmd, arg);
+	long ret = _neverc_krt_orig_binder_ioctl(filp, cmd, arg);
 
 	if (ret == 0 && cmd == NEVERC_KRT_BINDER_WRITE_READ &&
 	    __atomic_load_n(&_neverc_krt_binder_filter_cnt, __ATOMIC_RELAXED) > 0) {
@@ -195,4 +199,3 @@ void neverc_krt_binder_get_stats(struct neverc_krt_binder_stats *out)
 	out->filter_count = __atomic_load_n(&_neverc_krt_binder_filter_cnt,
 					     __ATOMIC_ACQUIRE);
 }
-
