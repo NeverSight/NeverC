@@ -2709,6 +2709,26 @@ void renderDebugRecordingFlags(const ToolChain &TC, const Driver &D,
   }
 }
 
+// Profile syntax belongs to the C preprocessor.  The forced header emits
+// markers only when a command-line/config profile is already visible; it is
+// deliberately re-entrant so a source-local define followed by an SDK include
+// remains supported.  Call after AddPreprocessingOptions so -D is on CmdArgs.
+// A preprocessed assembly input carries the same pair in the native contract
+// section; already-preprocessed C, raw assembler, and IR inputs cannot receive
+// an implicit source contract.
+void addAndroidKernelProfileIncludes(types::ID InputType, const ArgList &Args,
+                                     ArgStringList &CmdArgs) {
+  if (!Args.hasArg(options::OPT_fandroid_kernel_driver_mode))
+    return;
+  if (InputType == types::TY_C) {
+    CmdArgs.push_back("-include");
+    CmdArgs.push_back("nvk_profile_marker.h");
+  } else if (InputType == types::TY_Asm) {
+    CmdArgs.push_back("-include");
+    CmdArgs.push_back("nvk_profile_contract_asm.h");
+  }
+}
+
 void addNeverCSpecificFlags(const ArgList &Args, ArgStringList &CmdArgs) {
   if (Args.hasArg(options::OPT_femit_android_kernel_kcfi_type_pairs))
     CmdArgs.push_back("-femit-android-kernel-kcfi-type-pairs");
@@ -3377,21 +3397,7 @@ void NeverC::ConstructJob(Compilation &C, const JobAction &JA,
   if (types::getPreprocessedType(InputType) != types::TY_INVALID)
     AddPreprocessingOptions(C, JA, D, Args, CmdArgs, Output, Inputs);
 
-  // Profile syntax belongs to the C preprocessor.  The generated forced header
-  // emits markers only when a command-line/config profile is already visible;
-  // it is deliberately re-entrant so a source-local define followed by an SDK
-  // include remains supported.  A preprocessed assembly input carries the
-  // same pair in the native contract section; already-preprocessed C, raw
-  // assembler, and IR inputs cannot receive an implicit source contract.
-  if (Args.hasArg(options::OPT_fandroid_kernel_driver_mode)) {
-    if (InputType == types::TY_C) {
-      CmdArgs.push_back("-include");
-      CmdArgs.push_back("nvk_profile_marker.h");
-    } else if (InputType == types::TY_Asm) {
-      CmdArgs.push_back("-include");
-      CmdArgs.push_back("nvk_profile_contract_asm.h");
-    }
-  }
+  addAndroidKernelProfileIncludes(InputType, Args, CmdArgs);
 
   Args.ClaimAllArgs(options::OPT_D);
 
