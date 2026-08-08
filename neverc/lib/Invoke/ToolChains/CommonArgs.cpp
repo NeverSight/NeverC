@@ -516,7 +516,7 @@ void tools::populateLinkerDriverConfig(const ToolChain &TC,
     Cfg.hashStyle = "gnu";
 
   if (Args.hasArg(options::OPT_s))
-    Cfg.stripLevel = 2;
+    Cfg.stripMode = ::linker::StripMode::All;
   if (TC.getDriver().isAutoLTO())
     Cfg.stripLocals = true;
   Cfg.traceFiles = Args.hasArg(options::OPT_t);
@@ -1126,4 +1126,3 @@ bool tools::getBundledMacOSSysroot(const Driver &D, const llvm::Triple &Triple,
   }
   return false;
 }
-

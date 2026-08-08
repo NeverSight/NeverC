@@ -47,6 +47,7 @@ C ist bereits die einfachste Systemsprache. NeverC macht sie noch einfacher:
 
 - **[DynCode-Compiler](../dyncode-compiler/README.de.md)** — mehrstufige IR/MIR-Pipeline, plattformübergreifende Extraktion, Import-/Syscall-Lowering, Kernelmodus, Bad-Byte-Audit, Plugin-Architektur
 - **Integrierter Linker** — COFF, ELF und Mach-O in einem Binary; kein externes `ld` oder `link.exe`
+- **[Release-Stripping](../release-builds/README.de.md)** — integriertes `--strip` / `-s` entfernt nicht zur Laufzeit nötige Symbole und Quelldebuginformationen aus finalen ELF-, Mach-O- und PE/COFF-Images
 - **Cross-Kompilierung** — Windows PE, Linux ELF, macOS Mach-O und Android ELF von jedem Host mit integrierten Plattform-SDKs
 - **[Integrierte Laufzeiten](../builtins/README.de.md)** — in den Compiler eingebettete LLVM-Bitcode-Laufzeiten: [`string`](../builtins/string/README.de.md) (Werttyp-String, automatische Speicherverwaltung), [`mimalloc`](../builtins/mimalloc/README.de.md) (transparenter Hochleistungs-Allokator-Override, außerhalb von Kernel- und Freestanding-Zielen standardmäßig aktiv), [`xorstr`](../builtins/xorstr/README.de.md) (Kompilierzeit-Stringverschlüsselung mit Anti-Signatur-Entschlüsselung) und [`strhash`](../builtins/strhash/README.de.md) (Kompilierzeit-Zeichenketten-Hashing mit übereinstimmender Laufzeit)
 - **[Plugin-API](../plugin-api/README.de.md)** — Reine C-ABI für Out-of-Tree-Plugins; Single-Header-SDK, null LLVM/CRT-Abhängigkeiten, über Treiber-, Präprozessor-, AST-, IR-, MIR-, MC-, Objekt-, Link-, LTO- und dyncode-Phasen hinweg

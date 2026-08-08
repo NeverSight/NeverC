@@ -101,6 +101,7 @@ Commandes utilisateur au-delà d'une simple compilation.
 | Document | Description |
 |----------|-------------|
 | [`neverc run`](run/README.fr.md) | Compiler, exécuter localement et supprimer un binaire temporaire (style `go run`) |
+| [Binaires de publication et `--strip`](release-builds/README.fr.md) | Retirer les symboles non requis à l'exécution et le débogage source des images ELF, Mach-O et PE/COFF finales |
 
 ---
 

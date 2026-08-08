@@ -101,6 +101,7 @@ User-facing commands beyond a single compile invocation.
 | Document | Description |
 |----------|-------------|
 | [`neverc run`](run/README.md) | Compile, execute locally, and discard a temporary binary (`go run`-style workflow) |
+| [Release binaries and `--strip`](release-builds/README.md) | Remove non-runtime symbols and source-level debug information from final ELF, Mach-O, and PE/COFF images |
 
 ---
 

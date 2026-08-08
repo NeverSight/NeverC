@@ -1123,6 +1123,16 @@ void LinkerDriver::run(ArrayRef<const char *> argsArr,
     }
   }
 
+  // Driver-level stripping wins over -g and backend --debug overrides.
+  if (driverCfg.stripsDebugInfo())
+    config->includeDwarfChunks = false;
+  if (driverCfg.stripsSymbols()) {
+    config->debug = false;
+    config->incremental = false;
+    config->writeSymtab = false;
+    doGC = true;
+  }
+
   config->demangle = driverCfg.demangle;
 
   config->driverUponly = args.hasArg(OPT_driver_uponly) ||

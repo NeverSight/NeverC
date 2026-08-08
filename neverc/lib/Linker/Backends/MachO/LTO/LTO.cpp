@@ -1,5 +1,6 @@
 #include "Linker/MachO/LTO.h"
 #include "Linker/MachO/Config.h"
+#include "Linker/MachO/Driver.h"
 #include "Linker/MachO/InputFiles.h"
 #include "Linker/MachO/Symbols.h"
 
@@ -140,14 +141,23 @@ std::vector<ObjFile *> BitcodeCompiler::compile() {
   for (unsigned i = 0; i < maxTasks; ++i) {
     if (buf[i].empty())
       continue;
+    if (!D.ltoNativeObjectPaths.empty() &&
+        i >= D.ltoNativeObjectPaths.size())
+      fatal("driver provided too few native LTO object paths");
 
-    if (D.saveTemps)
+    StringRef ObjectPath = "lto.tmp";
+    uint32_t ModTime = 0;
+    if (i < D.ltoNativeObjectPaths.size()) {
+      ObjectPath = D.ltoNativeObjectPaths[i];
+      saveBuffer(buf[i], ObjectPath);
+      ModTime = getModTime(ObjectPath);
+    } else if (D.saveTemps)
       saveBuffer(buf[i],
                  config->outputFile + ((i == 0) ? "" : Twine(i)) + ".lto.o");
 
     ret.push_back(make<ObjFile>(
-        MemoryBufferRef(buf[i], "lto.tmp"),
-        /*modTime=*/0, /*archiveName=*/"", /*lazy=*/false,
+        MemoryBufferRef(buf[i], ObjectPath), ModTime, /*archiveName=*/"",
+        /*lazy=*/false,
         /*forceHidden=*/false, /*compatArch=*/true, /*builtFromBitcode=*/true));
   }
 

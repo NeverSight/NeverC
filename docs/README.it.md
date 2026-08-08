@@ -101,6 +101,7 @@ Comandi utente oltre a una singola compilazione.
 | Documento | Descrizione |
 |-----------|-------------|
 | [`neverc run`](run/README.it.md) | Compila, esegue localmente ed elimina un binario temporaneo (stile `go run`) |
+| [Binari di rilascio e `--strip`](release-builds/README.it.md) | Rimuove simboli non necessari a runtime e debug sorgente dalle immagini ELF, Mach-O e PE/COFF finali |
 
 ---
 

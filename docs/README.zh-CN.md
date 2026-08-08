@@ -101,6 +101,7 @@ NeverC 项目的主要规划方向：标准库、EVM 智能合约后端和 Solan
 | 文档 | 说明 |
 |------|------|
 | [`neverc run`](run/README.zh-CN.md) | 编译、在本机运行并删除临时二进制（类似 `go run`） |
+| [发布二进制与 `--strip`](release-builds/README.zh-CN.md) | 从最终 ELF、Mach-O 与 PE/COFF 映像中删除非运行时符号和源码级调试信息 |
 
 ---
 

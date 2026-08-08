@@ -3109,12 +3109,11 @@ void Driver::FormUniversalActions(Compilation &C, const ToolChain &TC,
     if ((enablesDebugInfo || willEmitRemarks(Args)) &&
         containsCompileOrAssemble(Actions.back())) {
 
-      // Skip dsymutil when the integrated compiler+linker pipeline keeps LTO
-      // intermediates in memory.  dsymutil needs the original .o files on disk
-      // to build the .dSYM bundle; with in-memory bitcode they don't exist.
-      // Debug info is still embedded directly in the output binary's DWARF
-      // sections by the linker.
-      bool skipDsymutil = isUsingLTO() && !isSaveTempsEnabled();
+      // dsymutil needs native .o files on disk. The Darwin link job requests
+      // driver-owned temporary paths when LTO would otherwise keep those
+      // objects in memory. A strip-all link intentionally requests neither
+      // those intermediates nor a companion dSYM.
+      bool skipDsymutil = Args.hasArg(options::OPT_s);
       // A dyncode image is a raw position-independent blob, not a Mach-O
       // executable, so it never gets a .dSYM bundle.
       if (Act->getType() == types::TY_Image && !skipDsymutil &&
@@ -3265,6 +3264,18 @@ void Driver::handleArguments(Compilation &C, DerivedArgList &Args,
   // Claim it silently: Kbuild and many build systems pass -fuse-ld=lld,
   // and an unclaimed flag triggers -Wunused-command-line-argument / -Werror.
   Args.ClaimAllArgs(options::OPT_fuse_ld_EQ);
+
+  if (Arg *StripArg = Args.getLastArg(options::OPT_s)) {
+    const bool ProducesFinalLinkedImage =
+        FinalPhase == phases::Link && !Args.hasArg(options::OPT_r) &&
+        !DynCodeEnabled && !ShouldEmitStaticLibrary(Args);
+    if (!ProducesFinalLinkedImage) {
+      Diag(neverc::diag::err_drv_unsupported_opt_with_reason)
+          << StripArg->getAsString(Args)
+          << "it only applies to final linked ELF, Mach-O, or PE/COFF images";
+      return;
+    }
+  }
 
   if (DynCodeEnabled) {
     // Dyncode drives a single object through the compile pipeline and then a

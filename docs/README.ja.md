@@ -101,6 +101,7 @@ NeverC プロジェクトの主要な計画方向：標準ライブラリ、EVM 
 | ドキュメント | 説明 |
 |--------------|------|
 | [`neverc run`](run/README.ja.md) | 一時バイナリをコンパイル・ローカル実行・削除（`go run` 風） |
+| [リリースバイナリと `--strip`](release-builds/README.ja.md) | 最終 ELF、Mach-O、PE/COFF イメージから実行時不要のシンボルとソースデバッグ情報を削除 |
 
 ---
 

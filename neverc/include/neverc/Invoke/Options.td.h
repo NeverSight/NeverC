@@ -4138,6 +4138,9 @@ OPTION(prefix_1, "-std-default=", std_default_EQ, Joined, INVALID, INVALID,
 OPTION(prefix_2, "-std=", std_EQ, Joined, CompileOnly_Group, INVALID, nullptr,
        0, DefaultVis, 0, "Language standard to compile for", nullptr,
        std_EQ_Values)
+OPTION(prefix_3, "--strip", strip, Flag, INVALID, s, nullptr, 0, DefaultVis, 0,
+       "Strip non-runtime symbols and source-level debug information from the "
+       "final linked image", nullptr, nullptr)
 OPTION(prefix_1, "-sub_library", sub__library, JoinedOrSeparate, INVALID,
        INVALID, nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
 OPTION(prefix_1, "-sub_umbrella", sub__umbrella, JoinedOrSeparate, INVALID,
@@ -4161,7 +4164,8 @@ OPTION(prefix_1, "-S", S, Flag, Action_Group, INVALID, nullptr, NoXarchOption,
        DefaultVis, 0, "Only run preprocess and compilation steps", nullptr,
        nullptr)
 OPTION(prefix_1, "-s", s, Flag, Link_Group, INVALID, nullptr, 0, DefaultVis, 0,
-       nullptr, nullptr, nullptr)
+       "Strip non-runtime symbols and source-level debug information from the "
+       "final linked image", nullptr, nullptr)
 OPTION(prefix_1, "-target-abi", target_abi, Separate, INVALID, INVALID, nullptr,
        HelpHidden, DefaultVis, 0, "Target a particular ABI type", nullptr,
        nullptr)

@@ -21,6 +21,7 @@
 #include "llvm/Support/Error.h"
 #include "llvm/Support/MemoryBufferRef.h"
 #include "llvm/Support/raw_ostream.h"
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
@@ -40,6 +41,12 @@ enum class Flavor : unsigned {
   Gnu = 1,     // ELF
   WinLink = 2, // COFF
   Darwin = 3,  // Mach-O
+};
+
+enum class StripMode : uint8_t {
+  None,
+  DebugInfo,
+  All,
 };
 
 /// Driver-level settings forwarded to the embedded linker so that the
@@ -79,6 +86,13 @@ struct LinkerDriverConfig {
   // -1 means "not set"; backends fall back to their own defaults.
   int ltoOptLevel = -1;
   int ltoCGOLevel = -1; // codegen opt level; -1 = derive from ltoOptLevel
+
+  // Real native-object paths requested by the driver for consumers that
+  // cannot read the in-memory LTO buffers. Darwin uses these only when
+  // dsymutil needs the generated Mach-O objects to build a .dSYM bundle.
+  // The Compilation owns and removes the paths; an empty vector keeps LTO
+  // fully in memory.
+  std::vector<std::string> ltoNativeObjectPaths;
 
   // -fbasic-block-sections= forwarded to LTO codegen.
   std::string ltoBasicBlockSections;
@@ -128,9 +142,12 @@ struct LinkerDriverConfig {
   bool ehFrameHdr = true;  // --eh-frame-hdr (ELF only, default on)
   int icfLevel = 0;        // 0=none, 1=safe, 2=all
   std::string buildId;     // empty=none, "fast", "sha1", etc.
-  int stripLevel = 0;      // 0=none, 1=debug-only, 2=all
+  StripMode stripMode = StripMode::None;
   bool stripLocals =
       false; // strip local symbols (MachO: -x, ELF: --discard-all)
+
+  bool stripsDebugInfo() const { return stripMode != StripMode::None; }
+  bool stripsSymbols() const { return stripMode == StripMode::All; }
 
   // Output file path, set by the driver from neverc -o.
   std::string outputFile;

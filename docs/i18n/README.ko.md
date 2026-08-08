@@ -47,6 +47,7 @@ C는 이미 가장 단순한 시스템 프로그래밍 언어입니다. NeverC�
 
 - **[DynCode 컴파일러](../dyncode-compiler/README.ko.md)** — 다단계 IR/MIR 파이프라인, 크로스 플랫폼 추출, 임포트/시스템 콜 저하, 커널 모드, 배드 바이트 감사, 플러그인 아키텍처
 - **통합 링커** — 단일 바이너리에서 COFF, ELF, Mach-O; 외부 `ld` / `link.exe` 불필요
+- **[릴리스 스트립](../release-builds/README.ko.md)** — 내장 `--strip` / `-s`가 최종 ELF, Mach-O, PE/COFF 이미지에서 런타임에 필요 없는 심볼과 소스 디버그 정보를 제거
 - **크로스 컴파일** — 모든 호스트에서 Windows PE, Linux ELF, macOS Mach-O, Android ELF 빌드 (플랫폼 SDK 내장)
 - **[내장 런타임](../builtins/README.ko.md)** — 컴파일러 임베디드 LLVM bitcode 런타임: [`string`](../builtins/string/README.ko.md) (값 의미론 문자열, 자동 메모리 관리), [`mimalloc`](../builtins/mimalloc/README.ko.md) (투명 고성능 할당자 오버라이드, 커널 및 freestanding 타깃 외에는 기본 활성화), [`xorstr`](../builtins/xorstr/README.ko.md) (컴파일 타임 문자열 암호화, 시그니처 우회 복호화) 및 [`strhash`](../builtins/strhash/README.ko.md) (컴파일 타임 문자열 해시, 런타임과 동일 알고리즘)
 - **[플러그인 API](../plugin-api/README.ko.md)** — 아웃오브트리 플러그인용 순수 C ABI; 단일 헤더 SDK, LLVM/CRT 의존성 제로, 드라이버·전처리기·AST·IR·MIR·MC·오브젝트·링크·LTO·dyncode 페이즈 전반을 포괄

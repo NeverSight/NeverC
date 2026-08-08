@@ -1,6 +1,100 @@
 #include "NeverCTestFixture.h"
 
-class DriverTest : public NeverCTest {};
+#include "llvm/Object/ObjectFile.h"
+#include "llvm/Support/Error.h"
+
+namespace {
+
+struct ReleaseMetadata {
+  bool HasDebugSections = false;
+  bool HasPrivateSymbol = false;
+  bool HasPublicSymbol = false;
+  bool HasPrivateSymbolNameBytes = false;
+  bool HasPublicSymbolNameBytes = false;
+  bool HasReleaseSymbolNameBytes = false;
+};
+
+struct ReleaseTargetCase {
+  const char *Name;
+  const char *Triple;
+  const char *ObjectSuffix;
+  const char *ImageSuffix;
+  std::vector<std::string> ExecutableLinkerArgs;
+  const char *SharedImageSuffix;
+  std::vector<std::string> SharedLinkerArgs;
+};
+
+const std::vector<ReleaseTargetCase> &releaseTargets() {
+  static const std::vector<ReleaseTargetCase> Targets = {
+      {"elf",
+       "x86_64-linux-gnu",
+       ".o",
+       ".elf",
+       {"-Xlinker", "--entry=main"},
+       ".so",
+       {}},
+      {"macho", "arm64-apple-macos", ".o", ".macho", {}, ".dylib", {}},
+      {"coff",
+       "x86_64-pc-windows-msvc",
+       ".obj",
+       ".exe",
+       {"-Xlinker", "--entry=main", "-Xlinker", "--subsystem=console"},
+       ".dll",
+       {"-Xlinker", "--noentry"}},
+  };
+  return Targets;
+}
+
+llvm::Expected<ReleaseMetadata> inspectReleaseMetadata(llvm::StringRef Bytes) {
+  auto Object = llvm::object::ObjectFile::createObjectFile(
+      llvm::MemoryBufferRef(Bytes, "neverc-strip-test"));
+  if (!Object)
+    return Object.takeError();
+
+  ReleaseMetadata Metadata;
+  Metadata.HasPrivateSymbolNameBytes =
+      Bytes.contains("neverc_private_release_symbol");
+  Metadata.HasPublicSymbolNameBytes =
+      Bytes.contains("neverc_public_release_symbol") ||
+      Bytes.contains("neverc_public_release_api");
+  Metadata.HasReleaseSymbolNameBytes =
+      Metadata.HasPrivateSymbolNameBytes || Metadata.HasPublicSymbolNameBytes;
+  for (const llvm::object::SectionRef &Section : (*Object)->sections()) {
+    llvm::Expected<llvm::StringRef> Name = Section.getName();
+    if (!Name)
+      return Name.takeError();
+    Metadata.HasDebugSections |=
+        Name->starts_with(".debug") || Name->starts_with(".zdebug") ||
+        Name->starts_with("__debug") || Name->starts_with("__zdebug");
+  }
+
+  for (const llvm::object::SymbolRef &Symbol : (*Object)->symbols()) {
+    llvm::Expected<llvm::StringRef> Name = Symbol.getName();
+    if (!Name)
+      return Name.takeError();
+    Metadata.HasPrivateSymbol |=
+        Name->contains("neverc_private_release_symbol");
+    Metadata.HasPublicSymbol |=
+        Name->contains("neverc_public_release_symbol") ||
+        Name->contains("neverc_public_release_api");
+  }
+  return Metadata;
+}
+
+} // namespace
+
+class DriverTest : public NeverCTest {
+protected:
+  ReleaseMetadata inspectMetadata(const fs::path &Path) const {
+    auto Metadata = inspectReleaseMetadata(readFile(Path));
+    if (!Metadata) {
+      const auto Message = llvm::toString(Metadata.takeError());
+      ADD_FAILURE() << std::string(Message.begin(), Message.end());
+      return {};
+    }
+    return *Metadata;
+  }
+};
 
 TEST_F(DriverTest, PrintArgumentsEchoesTheDriverInvocation) {
   auto Result = ncc({"-fprint-arguments", "-fsyntax-only",
@@ -204,6 +298,254 @@ TEST_F(DriverTest, SingleDriverEntrypoint) {
   for (auto &name : forbidden)
     EXPECT_FALSE(fs::exists(buildDir / name))
         << "unexpected driver: " << name;
+}
+
+TEST_F(DriverTest, DebugInfoRequiresGAcrossObjectFormats) {
+  const auto Source = tmpFile("debug-policy.c");
+  writeFile(Source, "__attribute__((noinline, used)) static int "
+                    "neverc_private_release_symbol(void) { return 42; }\n"
+                    "__attribute__((noinline, used)) int "
+                    "neverc_public_release_symbol(void) {\n"
+                    "  return neverc_private_release_symbol();\n"
+                    "}\n");
+
+  for (const ReleaseTargetCase &Target : releaseTargets()) {
+    SCOPED_TRACE(Target.Name);
+    for (bool EmitDebugInfo : {false, true}) {
+      SCOPED_TRACE(EmitDebugInfo ? "-g" : "default");
+      const auto ObjectPath =
+          tmpFile(std::string("debug-policy-") + Target.Name +
+                  (EmitDebugInfo ? "-g" : "-default") + Target.ObjectSuffix);
+      std::vector<std::string> Args = {
+          std::string("--target=") + Target.Triple,
+          "-fno-lto",
+          "-fno-stack-protector",
+      };
+      if (EmitDebugInfo)
+        Args.push_back("-g");
+      Args.insert(Args.end(), {"-c", Source.string(), "-o",
+                               ObjectPath.string()});
+
+      auto Compile = ncc(Args);
+      ASSERT_EQ(Compile.exitCode, 0) << Compile.err;
+
+      const ReleaseMetadata Metadata = inspectMetadata(ObjectPath);
+      EXPECT_EQ(Metadata.HasDebugSections, EmitDebugInfo);
+      EXPECT_TRUE(Metadata.HasPrivateSymbol);
+      EXPECT_TRUE(Metadata.HasPublicSymbol);
+      EXPECT_TRUE(Metadata.HasReleaseSymbolNameBytes);
+    }
+  }
+}
+
+TEST_F(DriverTest, StripOptionRejectsNonFinalOutputs) {
+  const auto Source = tmpFile("strip-scope.c");
+  const auto Object = tmpFile("strip-scope.o");
+  writeFile(Source, "int neverc_strip_scope(void) { return 42; }\n");
+
+  expectCommandFail("strip_compile_only", "only applies to final linked",
+                    {"--target=x86_64-linux-gnu", "-c", "--strip",
+                     Source.string(), "-o", Object.string()});
+
+  auto Compile = ncc({"--target=x86_64-linux-gnu", "-fno-lto", "-c",
+                      Source.string(), "-o", Object.string()});
+  ASSERT_EQ(Compile.exitCode, 0) << Compile.err;
+
+  expectCommandFail("strip_relocatable", "only applies to final linked",
+                    {"--target=x86_64-linux-gnu", "-nostdlib", "-r", "-s",
+                     Object.string(), "-o",
+                     tmpFile("strip-scope-relocatable.o").string()});
+
+  expectCommandFail("strip_static_library", "only applies to final linked",
+                    {"--emit-static-lib", "--strip", Object.string(), "-o",
+                     tmpFile("strip-scope.a").string()});
+
+  expectCommandFail("strip_dyncode", "only applies to final linked",
+                    {"--target=x86_64-linux-gnu", "-fdyncode", "-s",
+                     Source.string(), "-o",
+                     tmpFile("strip-scope.bin").string()});
+}
+
+TEST_F(DriverTest, StripOptionRemovesNamesAndDwarfAcrossFormats) {
+  const auto Source = tmpFile("strip_release.c");
+  writeFile(Source,
+            "__attribute__((noinline, used)) static int "
+            "neverc_private_release_symbol(void) { return 42; }\n"
+            "__attribute__((noinline, used)) int "
+            "neverc_public_release_symbol(void) {\n"
+            "  return neverc_private_release_symbol();\n"
+            "}\n"
+            "int main(void) { return neverc_public_release_symbol(); }\n");
+
+  for (const ReleaseTargetCase &Target : releaseTargets()) {
+    SCOPED_TRACE(Target.Name);
+    const std::string TargetArg = std::string("--target=") + Target.Triple;
+    const auto ObjectPath = tmpFile(std::string("strip-input-") + Target.Name +
+                                    Target.ObjectSuffix);
+    auto Compile = ncc({TargetArg, "-fno-lto", "-nostdlib", "-g", "-c",
+                        Source.string(), "-o", ObjectPath.string()});
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.err;
+
+    const ReleaseMetadata InputMetadata = inspectMetadata(ObjectPath);
+    EXPECT_TRUE(InputMetadata.HasDebugSections)
+        << "test input must contain DWARF";
+    EXPECT_TRUE(InputMetadata.HasPrivateSymbol)
+        << "test input must contain a private symbol name";
+    EXPECT_TRUE(InputMetadata.HasReleaseSymbolNameBytes)
+        << "test input must contain release symbol strings";
+
+    for (const std::string StripOption : {"--strip", "-s"}) {
+      SCOPED_TRACE(StripOption);
+      const auto ImagePath = tmpFile(
+          std::string("strip-output-") + Target.Name +
+          (StripOption == "--strip" ? "-long" : "-short") + Target.ImageSuffix);
+      std::vector<std::string> LinkArgs = {
+          TargetArg,   "-fno-lto",          "-nostdlib", "-g",
+          StripOption, ObjectPath.string(), "-o",        ImagePath.string(),
+      };
+      LinkArgs.insert(LinkArgs.end(), Target.ExecutableLinkerArgs.begin(),
+                      Target.ExecutableLinkerArgs.end());
+      if (llvm::StringRef(Target.Name) == "coff")
+        LinkArgs.insert(LinkArgs.end(), {"-Xlinker", "--debug=dwarf"});
+      auto Link = ncc(LinkArgs);
+      ASSERT_EQ(Link.exitCode, 0) << Link.err;
+
+      const ReleaseMetadata OutputMetadata = inspectMetadata(ImagePath);
+      EXPECT_FALSE(OutputMetadata.HasDebugSections);
+      EXPECT_FALSE(OutputMetadata.HasPrivateSymbol);
+      EXPECT_FALSE(OutputMetadata.HasReleaseSymbolNameBytes);
+      EXPECT_FALSE(fs::exists(ImagePath.string() + ".dSYM"));
+    }
+  }
+}
+
+TEST_F(DriverTest, StripOptionRemovesMetadataWithDefaultLtoAcrossFormats) {
+  const auto Source = tmpFile("strip-lto-release.c");
+  writeFile(Source,
+            "__attribute__((noinline, used)) static int "
+            "neverc_private_release_symbol(void) { return 42; }\n"
+            "__attribute__((noinline, used)) int "
+            "neverc_public_release_symbol(void) {\n"
+            "  return neverc_private_release_symbol();\n"
+            "}\n"
+            "int main(void) { return neverc_public_release_symbol(); }\n");
+
+  for (const ReleaseTargetCase &Target : releaseTargets()) {
+    SCOPED_TRACE(Target.Name);
+    const auto Image =
+        tmpFile(std::string("strip-lto-") + Target.Name + Target.ImageSuffix);
+    std::vector<std::string> Args = {
+        std::string("--target=") + Target.Triple,
+        "-fno-stack-protector",
+        "-nostdlib",
+        "-g",
+        "--strip",
+        Source.string(),
+        "-o",
+        Image.string(),
+    };
+    Args.insert(Args.end(), Target.ExecutableLinkerArgs.begin(),
+                Target.ExecutableLinkerArgs.end());
+
+    auto Link = ncc(Args);
+    ASSERT_EQ(Link.exitCode, 0) << Link.err;
+
+    const ReleaseMetadata Metadata = inspectMetadata(Image);
+    EXPECT_FALSE(Metadata.HasDebugSections);
+    EXPECT_FALSE(Metadata.HasPrivateSymbol);
+    EXPECT_FALSE(Metadata.HasReleaseSymbolNameBytes);
+    EXPECT_FALSE(fs::exists(Image.string() + ".dSYM"));
+  }
+}
+
+TEST_F(DriverTest, StripOptionSuppressesDarwinDsymBundle) {
+  const auto Source = tmpFile("strip_dsym.c");
+  const auto Image = tmpFile("strip-dsym.macho");
+  writeFile(Source, "int main(void) { return 0; }\n");
+
+  auto Result = ncc({"--target=arm64-apple-macos", "-fno-lto", "-nostdlib",
+                     "-g", "--strip", Source.string(), "-o", Image.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.err;
+  EXPECT_TRUE(fs::exists(Image));
+  EXPECT_FALSE(fs::exists(Image.string() + ".dSYM"));
+}
+
+TEST_F(DriverTest, StripOptionPreservesDynamicAbiWithoutStaticSymbolLeak) {
+  const auto Source = tmpFile("strip_shared.c");
+  writeFile(Source, "__attribute__((noinline, used)) static int "
+                    "neverc_private_release_symbol(void) { return 42; }\n"
+                    "#if defined(_WIN32)\n"
+                    "__declspec(dllexport)\n"
+                    "#endif\n"
+                    "__attribute__((noinline, used)) int "
+                    "neverc_public_release_api(void) {\n"
+                    "  return neverc_private_release_symbol();\n"
+                    "}\n");
+
+  for (const ReleaseTargetCase &Target : releaseTargets()) {
+    SCOPED_TRACE(Target.Name);
+    const auto Image = tmpFile(std::string("strip-shared-") + Target.Name +
+                               Target.SharedImageSuffix);
+    std::vector<std::string> Args = {
+        std::string("--target=") + Target.Triple,
+        "-fno-lto",
+        "-fno-stack-protector",
+        "-nostdlib",
+        "-shared",
+        "--strip",
+        Source.string(),
+        "-o",
+        Image.string(),
+    };
+    Args.insert(Args.end(), Target.SharedLinkerArgs.begin(),
+                Target.SharedLinkerArgs.end());
+
+    auto Link = ncc(Args);
+    ASSERT_EQ(Link.exitCode, 0) << Link.err;
+
+    const ReleaseMetadata Metadata = inspectMetadata(Image);
+    EXPECT_TRUE(Metadata.HasPublicSymbolNameBytes)
+        << "the dynamic ABI still requires the exported name";
+    EXPECT_FALSE(Metadata.HasPrivateSymbolNameBytes);
+    EXPECT_FALSE(Metadata.HasPublicSymbol)
+        << "the export must not be duplicated in the static symbol table";
+    EXPECT_FALSE(Metadata.HasPrivateSymbol);
+  }
+}
+
+TEST_F(DriverTest, DarwinLtoDebugProducesDsymUnlessStripped) {
+  if (!isDarwin())
+    GTEST_SKIP() << "dsymutil is a Darwin-host packaging tool";
+
+  const auto Source = tmpFile("lto_dsym.c");
+  const auto DebugImage = tmpFile("lto-debug.macho");
+  const auto StrippedImage = tmpFile("lto-stripped.macho");
+  writeFile(Source,
+            "__attribute__((noinline)) int lto_debug_marker(void) { return "
+            "42; }\n"
+            "int main(void) { return lto_debug_marker(); }\n");
+
+  const std::vector<std::string> CommonArgs = {
+      "--target=arm64-apple-macos", "-nostdlib", "-fno-stack-protector", "-g",
+      Source.string()};
+
+  auto DebugArgs = CommonArgs;
+  DebugArgs.insert(DebugArgs.end(), {"-o", DebugImage.string()});
+  auto Debug = ncc(DebugArgs);
+  ASSERT_EQ(Debug.exitCode, 0) << Debug.err;
+  const auto DsymBundle = fs::path(DebugImage.string() + ".dSYM");
+  const auto DwarfImage =
+      DsymBundle / "Contents/Resources/DWARF" / DebugImage.filename();
+  ASSERT_TRUE(fs::is_directory(DsymBundle));
+  ASSERT_TRUE(fs::is_regular_file(DwarfImage));
+  EXPECT_TRUE(inspectMetadata(DwarfImage).HasDebugSections);
+
+  auto StrippedArgs = CommonArgs;
+  StrippedArgs.insert(StrippedArgs.end(),
+                      {"--strip", "-o", StrippedImage.string()});
+  auto Stripped = ncc(StrippedArgs);
+  ASSERT_EQ(Stripped.exitCode, 0) << Stripped.err;
+  EXPECT_FALSE(fs::exists(StrippedImage.string() + ".dSYM"));
 }
 
 // Reject C++ / ObjC / OpenMP flags

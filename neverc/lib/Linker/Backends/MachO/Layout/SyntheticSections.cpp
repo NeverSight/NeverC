@@ -892,6 +892,29 @@ uint32_t LazyBindingSection::encode(const Symbol &sym) {
   return opstreamOffset;
 }
 
+namespace {
+
+bool shouldEmitDefinedSymbolInExportTrie(const Defined &defined) {
+  if (!config->stripAllSymbols || config->outputType != MH_EXECUTE)
+    return true;
+
+  // These names are runtime ABI, not removable static metadata. Weak
+  // definitions must remain available for dynamic interposition as well.
+  if (config->exportDynamic || config->hasExplicitExports ||
+      config->namespaceKind == NamespaceKind::flat || defined.interposable)
+    return true;
+  return defined.referencedDynamically || defined.isExternalWeakDef();
+}
+
+bool shouldEmitDefinedSymbolInSymtab(const Defined &defined) {
+  // The export trie carries dynamic definitions. Under strip-all the regular
+  // symbol table only retains entries explicitly marked as required by tools
+  // or the runtime (for example __mh_execute_header).
+  return !config->stripAllSymbols || defined.referencedDynamically;
+}
+
+} // namespace
+
 ExportSection::ExportSection()
     : LinkEditSection(segment_names::linkEdit, section_names::export_) {}
 
@@ -899,7 +922,8 @@ void ExportSection::finalizeContents() {
   trieBuilder.setImageBase(in.header->addr);
   for (const Symbol *sym : symtab->getSymbols()) {
     if (const auto *defined = dyn_cast<Defined>(sym)) {
-      if (defined->privateExtern || !defined->isLive())
+      if (defined->privateExtern || !defined->isLive() ||
+          !shouldEmitDefinedSymbolInExportTrie(*defined))
         continue;
       trieBuilder.addSymbol(*defined);
       hasWeakSymbol = hasWeakSymbol || sym->isWeakDef();
@@ -1243,7 +1267,7 @@ void SymtabSection::finalizeContents() {
       assert(defined->isExternal());
       if (defined->privateExtern)
         localSymbolsHandler(defined);
-      else
+      else if (shouldEmitDefinedSymbolInSymtab(*defined))
         addSymbol(externalSymbols, defined);
     } else if (auto *dysym = dyn_cast<DylibSymbol>(sym)) {
       if (dysym->isReferenced())

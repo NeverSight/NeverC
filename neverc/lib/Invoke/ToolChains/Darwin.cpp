@@ -201,6 +201,7 @@ void darwin::Linker::ConstructJob(Compilation &C, const JobAction &JA,
                                   const ArgList &Args,
                                   const char *LinkingOutput) const {
   assert(Output.getType() == types::TY_Image && "Invalid linker output type.");
+  const Driver &D = getToolChain().getDriver();
 
   // If the number of arguments surpasses the system limits, we will encode the
   // input files in a separate file, shortening the command line. To this end,
@@ -223,7 +224,7 @@ void darwin::Linker::ConstructJob(Compilation &C, const JobAction &JA,
   // LinkerDriverConfig (populated by populateLinkerDriverConfig).
   // Darwin-specific mllvm opts are added below after LinkerCommand creation.
 
-  // -s (strip all) is now passed via LinkerDriverConfig.stripLevel.
+  // -s (strip all) is now passed via LinkerDriverConfig.stripMode.
   // -t (trace) is now passed via LinkerDriverConfig.traceFiles.
   // -r is now conveyed via LinkerDriverConfig.relocatable.
   Args.addAllArgs(CmdArgs, {options::OPT_d_Flag, options::OPT_Z_Flag,
@@ -336,6 +337,21 @@ void darwin::Linker::ConstructJob(Compilation &C, const JobAction &JA,
     DarwinTC.populatePlatformVersionConfig(Args, MacCfg);
   }
   MacCfg.pie = true;
+
+  const Arg *DebugArg = Args.getLastArg(options::OPT_g_Group);
+  const bool NeedsDebugObjects =
+      (DebugArg && !DebugArg->getOption().matches(options::OPT_g0)) ||
+      willEmitRemarks(Args);
+  if (NeedsDebugObjects && D.isUsingLTO() && !D.isSaveTempsEnabled() &&
+      !MacCfg.stripsDebugInfo()) {
+    for (unsigned I = 0; I < MacCfg.ltoPartitions; ++I) {
+      std::string Path = D.GetTemporaryPath("neverc-lto", "o");
+      if (Path.empty())
+        break;
+      C.addTempFile(Args.MakeArgString(Path));
+      MacCfg.ltoNativeObjectPaths.push_back(std::move(Path));
+    }
+  }
 
   // Darwin-specific mllvm opts that have no direct TargetOptions mapping.
   if (Args.hasArg(options::OPT_mkernel) ||

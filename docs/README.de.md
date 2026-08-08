@@ -101,6 +101,7 @@ Benutzerbefehle jenseits einer einzelnen Kompilierung.
 | Dokument | Beschreibung |
 |----------|--------------|
 | [`neverc run`](run/README.de.md) | Temporäres Binary kompilieren, lokal ausführen und löschen (`go run`-Stil) |
+| [Release-Binärdateien und `--strip`](release-builds/README.de.md) | Nicht zur Laufzeit nötige Symbole und Quelldebuginformationen aus finalen ELF-, Mach-O- und PE/COFF-Images entfernen |
 
 ---
 

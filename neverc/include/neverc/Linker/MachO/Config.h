@@ -125,6 +125,7 @@ struct Configuration {
   bool dedupStrings = true;
   bool deadStripDuplicates = false;
   bool omitDebugInfo = false;
+  bool stripAllSymbols = false;
   bool warnDylibInstallName = false;
   bool ignoreOptimizationHints = false;
   bool forceExactCpuSubtypeMatch = false;

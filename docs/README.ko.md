@@ -101,6 +101,7 @@ NeverC 프로젝트의 주요 계획 방향: 표준 라이브러리, EVM 스마�
 | 문서 | 설명 |
 |------|------|
 | [`neverc run`](run/README.ko.md) | 임시 바이너리 컴파일, 로컬 실행, 삭제 (`go run` 스타일) |
+| [릴리스 바이너리와 `--strip`](release-builds/README.ko.md) | 최종 ELF, Mach-O, PE/COFF 이미지에서 런타임에 필요 없는 심볼과 소스 디버그 정보 제거 |
 
 ---
 

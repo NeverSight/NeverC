@@ -692,9 +692,9 @@ namespace {
 StripPolicy getStripFromDriver(const LinkerDriverConfig &driverCfg) {
   if (driverCfg.relocatable)
     return StripPolicy::None;
-  if (driverCfg.stripLevel >= 2)
+  if (driverCfg.stripsSymbols())
     return StripPolicy::All;
-  if (driverCfg.stripLevel == 1)
+  if (driverCfg.stripsDebugInfo())
     return StripPolicy::Debug;
   return StripPolicy::None;
 }

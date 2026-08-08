@@ -1338,7 +1338,8 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
   config->printDylibSearch = driverCfg.verbose;
   config->printEachFile = driverCfg.traceFiles;
   config->printWhyLoad = args.hasArg(OPT_why_load);
-  config->omitDebugInfo = driverCfg.stripLevel >= 1;
+  config->omitDebugInfo = driverCfg.stripsDebugInfo();
+  config->stripAllSymbols = driverCfg.stripsSymbols();
   config->errorForArchMismatch = args.hasArg(OPT_arch_errors_fatal);
   if (const Arg *arg = args.getLastArg(OPT_bundle_loader)) {
     if (config->outputType != MH_BUNDLE)
@@ -1537,8 +1538,10 @@ bool link(ArrayRef<const char *> argsArr, llvm::raw_ostream &stdoutOS,
       }
     }
   }
-  if (driverCfg.stripLocals &&
-      config->localSymbolsPresence == SymtabPresence::All)
+  if (config->stripAllSymbols)
+    config->localSymbolsPresence = SymtabPresence::None;
+  else if (driverCfg.stripLocals &&
+           config->localSymbolsPresence == SymtabPresence::All)
     config->localSymbolsPresence = SymtabPresence::None;
   for (const CachedHashStringRef &cachedName : config->exportedSymbols.literals)
     symtab->addUndefined(cachedName.val(), /*file=*/nullptr,

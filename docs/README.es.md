@@ -101,6 +101,7 @@ Comandos orientados al usuario más allá de una compilación individual.
 | Documento | Descripción |
 |-----------|-------------|
 | [`neverc run`](run/README.es.md) | Compilar, ejecutar localmente y descartar un binario temporal (estilo `go run`) |
+| [Binarios de publicación y `--strip`](release-builds/README.es.md) | Eliminar símbolos no necesarios en ejecución y depuración fuente de imágenes ELF, Mach-O y PE/COFF finales |
 
 ---
 

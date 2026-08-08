@@ -101,6 +101,7 @@ NeverC 專案的主要規劃方向：標準函式庫、EVM 智慧合約後端和
 | 文件 | 說明 |
 |------|------|
 | [`neverc run`](run/README.zh-TW.md) | 編譯、在本機執行並刪除暫存二進位檔（類似 `go run`） |
+| [發布二進位檔與 `--strip`](release-builds/README.zh-TW.md) | 從最終 ELF、Mach-O 與 PE/COFF 映像移除非執行期符號及原始碼層級偵錯資訊 |
 
 ---
 
