@@ -4,11 +4,12 @@
 
 # `neverc runtime`
 
-Gère les paquets **runtime de cross-compilation** (sysroots / SDK) téléchargés
-depuis [GitHub Releases](https://github.com/NeverSight/NeverC/releases). Ils
-vivent sous `<NeverC-root>/runtime/` (souvent `~/.neverc/runtime/`).
+Gère les paquets de **runtime de compilation croisée** (sysroots / SDK) issus de
+[GitHub Releases](https://github.com/NeverSight/NeverC/releases). Ils vivent sous
+`<NeverC-root>/runtime/` à côté du compilateur (installation par défaut :
+`~/.neverc/runtime/`).
 
-Préférez `neverc runtime install …` à l'extraction manuelle des zip
+Préférez `neverc runtime install …` au déballage manuel de
 `neverc-runtime-<target>.zip`.
 
 ## Syntaxe
@@ -27,54 +28,96 @@ Alias : `upgrade` → `update` ; `uninstall` → `remove` ; `ls` → `list`.
 ## Cibles disponibles
 
 | Cible | Disposition sous `runtime/` |
-|--------|-------------------------|
-| `windows-x64` | `windows/x64` (+ shared `windows/shared`) |
-| `windows-arm64` | `windows/arm64` (+ shared `windows/shared`) |
+|-------|-----------------------------|
+| `windows-x64` | `windows/x64` (+ partagé `windows/shared`) |
+| `windows-arm64` | `windows/arm64` (+ partagé `windows/shared`) |
 | `linux-x64` | `linux/x64` |
 | `linux-arm64` | `linux/arm64` |
 | `macos-arm64` | `macos/arm64` |
 | `android-arm64` | `android/arm64` |
 | `android-kernel-arm64` | `android/kernel` |
 
-## Exemples
+## Sous-commandes
+
+### `install`
+
+Installe une cible avec le **tag de release du compilateur** par défaut (ou
+`--version <tag>`). Nom de l’actif : `neverc-runtime-<target>.zip`.
 
 ```bash
 neverc runtime install windows-x64
-neverc runtime install all
-neverc runtime update linux-arm64 --version v3389.1.2
-neverc runtime remove macos-arm64
-neverc runtime list
+neverc runtime install linux-arm64 --version v3389.1.2
 ```
 
-## Sous-commandes
+Si la cible est déjà installée :
 
-- **`install`** : installe une cible à la **balise du compilateur** par défaut (ou `--version`). Même balise → succès ; balise différente → confirmation `[Y/n]`.
-- **`install all`** : installe toutes les cibles **manquantes** ; les déjà installées sont ignorées.
-- **`update` / `upgrade`** : force le téléchargement sans invite. Défaut : **latest**.
-- **`remove` / `uninstall`** : supprime le répertoire et met à jour `manifest.json`.
-- **`list` / `ls`** : état d'installation et balise du compilateur.
+- Même tag → signaler et quitter avec succès.
+- Tag différent / inconnu → confirmer `[Y/n]` avant de réinstaller.
+
+### `install all`
+
+Installe **toutes les cibles manquantes** du catalogue à la version du
+compilateur (ou `--version`). Les cibles déjà installées sont ignorées ; pour
+changer le pin, relancez `install` sur une seule cible.
+
+```bash
+neverc runtime install all
+```
+
+### `update` / `upgrade`
+
+Force le téléchargement d’une cible sans invite interactive. La version par
+défaut est **latest** (contrairement à `install`, qui suit le tag du
+compilateur). Passez `--version` pour figer.
+
+```bash
+neverc runtime update windows-x64
+neverc runtime update android-arm64 --version v3389.1.2
+```
+
+### `remove` / `uninstall`
+
+Supprime le répertoire d’une cible installée et met à jour
+`runtime/manifest.json`.
+
+```bash
+neverc runtime remove linux-x64
+```
+
+### `list` / `ls`
+
+Affiche chaque cible du catalogue comme installée (avec tag enregistré) ou non,
+plus le tag vivant du compilateur.
+
+```bash
+neverc runtime list
+```
 
 ## Règles de version
 
 | Commande | Défaut sans `--version` |
 |----------|-------------------------|
-| `install` / `install all` | Balise release du compilateur |
-| `update` | Dernière release publiant cet asset runtime |
+| `install` / `install all` | Tag de release du compilateur |
+| `update` | Dernière release qui publie cet actif runtime |
 
-Balises `vMAJOR.MINOR.PATCH` ; vérification via `SHA256SUMS` avant extraction.
+Les tags ressemblent à `vMAJOR.MINOR.PATCH`. Les archives sont vérifiées contre
+`SHA256SUMS` de la release avant extraction.
 
-## Lien avec `neverc update`
+## Relation avec `neverc update`
 
-- `neverc runtime …` ne change que les **sysroots**.
-- [`neverc update`](../update/README.fr.md) aligne **compilateur + runtimes déjà installés**.
+- `neverc runtime …` ne modifie que les **sysroots**.
+- [`neverc update`](../update/README.fr.md) déplace le **compilateur et tous
+  les runtimes déjà installés** vers un tag en une seule transaction.
 
-Après `neverc update`, n'installez que les **nouvelles** cibles avec `runtime install`.
+Après une mise à niveau du compilateur avec `neverc update`, les runtimes
+installés sont déjà alignés ; n’utilisez `runtime install` que pour les cibles
+**nouvelles**.
 
 ## Commandes associées
 
-| Commande | Usage |
-|----------|-------|
-| [`neverc update`](../update/README.fr.md) | Compilateur + runtimes installés ensemble |
-| [`neverc build` / `make`](../build/README.fr.md) | Exemples de cross-compilation |
-| [Examples](../examples/README.fr.md) | Makefile avec `--target=…` |
-| `neverc runtime --help` | Aide intégrée |
+| Commande | Quand l’utiliser |
+|----------|------------------|
+| [`neverc update`](../update/README.fr.md) | Monter/descendre compilateur + runtimes installés ensemble |
+| [`neverc build` / `make`](../build/README.fr.md) | Construire les exemples de compilation croisée contre ces sysroots |
+| [Examples](../examples/README.fr.md) | `Makefile`s d’exemple avec `--target=…` |
+| `neverc runtime --help` | Résumé d’usage intégré |
