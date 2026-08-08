@@ -83,6 +83,15 @@ struct Options {
   /// therefore expects the unchanged input section name for those formats).
   bool mergeSections = false;
 
+  /// Emulate the small part of the Android kernel module linker script that
+  /// is a loader ABI rather than ordinary section folding.  The final ET_REL
+  /// object receives an allocated (possibly empty) `__versions` section and a
+  /// `.codetag.alloc_tags` range bounded by `__start_alloc_tags` /
+  /// `__stop_alloc_tags`.  Input `alloc_tags` contributions are collected into
+  /// that range.  Enable this only for the final Android `.ko` merge, never for
+  /// intermediate parallel-codegen objects.
+  bool androidKernelModule = false;
+
   /// Sections to preserve from merging (exact match).  Only consulted
   /// when mergeSections is true.
   llvm::SmallVector<llvm::StringRef, 8> preservedSections;
@@ -94,7 +103,9 @@ struct Options {
   /// — e.g. the historical "all symbol values collapse to 0" bug — makes
   /// the merge fail (return false) *before* writing, so callers fall back
   /// to the proven path (serial codegen / a real linker) or error loudly
-  /// instead of ever emitting a valid-looking but semantically wrong .o.
+  /// instead of ever emitting a valid-looking but semantically wrong .o. In
+  /// Android kernel-module mode it also validates the loader-facing section
+  /// and boundary-symbol contract synthesized by the merger.
   /// Cost is one extra O(output) pass; merge is a tiny fraction of link
   /// time, so this is on by default.  Enforced for all three formats
   /// (ELF/COFF/MachO) by the format-specific content anchors in

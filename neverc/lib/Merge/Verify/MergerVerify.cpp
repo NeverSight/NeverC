@@ -105,6 +105,7 @@ struct RawSec {
   uint64_t Size = 0;
   uint64_t FileSize = 0;
   uint64_t Offset = 0;
+  uint64_t Alignment = 0;
   uint32_t Link = 0;
   uint32_t Info = 0;
 };
@@ -132,6 +133,7 @@ struct RawRela {
 
 struct RawELF {
   ArrayRef<char> Buf;
+  uint16_t Type = 0;    // e_type
   uint16_t Machine = 0; // e_machine, for the independent arch-consistency check
   SmallVector<RawSec, 0> Secs;
   SmallVector<RawSym, 0> Syms;
@@ -203,6 +205,7 @@ bool parseRawELF(ArrayRef<char> Buf, RawELF &Out,
     return false;
   if (H.e_ident[EI_CLASS] != ELFCLASS64 || H.e_ident[EI_DATA] != ELFDATA2LSB)
     return false;
+  Out.Type = H.e_type;
   Out.Machine = H.e_machine;
 
   uint64_t ShOff = H.e_shoff;
@@ -237,6 +240,7 @@ bool parseRawELF(ArrayRef<char> Buf, RawELF &Out,
     RS.Size = SH[I].sh_size;
     RS.FileSize = SH[I].sh_size;
     RS.Offset = SH[I].sh_offset;
+    RS.Alignment = SH[I].sh_addralign;
     RS.Link = SH[I].sh_link;
     RS.Info = SH[I].sh_info;
 
@@ -336,7 +340,8 @@ bool parseRawELF(ArrayRef<char> Buf, RawELF &Out,
 // with no second copy to drift out of sync.
 StringRef mergedSectionName(const RawSec &Sec, const Options &Opts) {
   return detail::canonicalELFSectionName(
-      Sec.Name, Sec.Flags, Opts.mergeSections, Opts.preservedSections);
+      Sec.Name, Sec.Flags, Opts.mergeSections, Opts.androidKernelModule,
+      Opts.preservedSections);
 }
 
 // Sections the merger does not fold into the output as addressable content
@@ -372,6 +377,111 @@ bool fail(std::string *Err, const Twine &Msg) {
   if (Err)
     *Err = Msg.str();
   return false;
+}
+
+bool verifyAndroidKernelModuleContract(const RawELF &Out, std::string *Err) {
+  using namespace ELF;
+
+  if (Out.Type != ET_REL)
+    return fail(Err, "verify: Android kernel module output is not ET_REL");
+  if (Out.Machine != EM_AARCH64)
+    return fail(Err,
+                "verify: Android kernel module output does not target AArch64");
+
+  const RawSec *Versions = nullptr;
+  const RawSec *AllocTags = nullptr;
+  unsigned VersionsCount = 0;
+  unsigned AllocTagsCount = 0;
+  unsigned AllocTagsIndex = 0;
+  for (unsigned I = 0; I < Out.Secs.size(); ++I) {
+    const RawSec &S = Out.Secs[I];
+    if (S.Name == "__versions") {
+      Versions = &S;
+      ++VersionsCount;
+    } else if (S.Name == ".codetag.alloc_tags") {
+      AllocTags = &S;
+      AllocTagsIndex = I;
+      ++AllocTagsCount;
+    } else if (S.Name == "alloc_tags") {
+      return fail(Err, "verify: uncollected alloc_tags input section remains "
+                       "in Android kernel module output");
+    }
+  }
+
+  if (VersionsCount != 1)
+    return fail(Err, "verify: Android kernel module output must contain "
+                     "exactly one __versions section (found " +
+                         Twine(VersionsCount) + ")");
+  if (Versions->Type != SHT_PROGBITS || !(Versions->Flags & SHF_ALLOC) ||
+      (Versions->Flags & SHF_COMPRESSED))
+    return fail(Err, "verify: __versions must be an allocated, uncompressed "
+                     "SHT_PROGBITS section");
+  if (Versions->Alignment < 8 ||
+      (Versions->Alignment & (Versions->Alignment - 1)) != 0)
+    return fail(Err,
+                "verify: __versions alignment must be a power of two >= 8");
+  constexpr uint64_t ModVersionEntrySize = 64;
+  if (Versions->Size % ModVersionEntrySize != 0)
+    return fail(Err, "verify: __versions size must be a multiple of 64 bytes");
+
+  if (AllocTagsCount != 1)
+    return fail(Err, "verify: Android kernel module output must contain "
+                     "exactly one .codetag.alloc_tags section (found " +
+                         Twine(AllocTagsCount) + ")");
+  constexpr uint64_t RequiredAllocTagFlags = SHF_ALLOC | SHF_WRITE;
+  if (AllocTags->Type != SHT_PROGBITS ||
+      (AllocTags->Flags & RequiredAllocTagFlags) != RequiredAllocTagFlags ||
+      (AllocTags->Flags & SHF_COMPRESSED))
+    return fail(Err, "verify: .codetag.alloc_tags must be an uncompressed "
+                     "SHT_PROGBITS section with SHF_ALLOC | SHF_WRITE");
+  if (AllocTags->Alignment < 8 ||
+      (AllocTags->Alignment & (AllocTags->Alignment - 1)) != 0)
+    return fail(Err, "verify: .codetag.alloc_tags alignment must be a power "
+                     "of two >= 8");
+
+  if (!Out.HasSymtab)
+    return fail(Err,
+                "verify: Android kernel module output has no symbol table");
+
+  const RawSym *Start = nullptr;
+  const RawSym *Stop = nullptr;
+  unsigned StartCount = 0;
+  unsigned StopCount = 0;
+  for (const RawSym &S : Out.Syms) {
+    if (S.Name == "__start_alloc_tags") {
+      Start = &S;
+      ++StartCount;
+    } else if (S.Name == "__stop_alloc_tags") {
+      Stop = &S;
+      ++StopCount;
+    }
+  }
+  if (StartCount != 1)
+    return fail(Err, "verify: Android kernel module output must define exactly "
+                     "one __start_alloc_tags symbol (found " +
+                         Twine(StartCount) + ")");
+  if (StopCount != 1)
+    return fail(Err, "verify: Android kernel module output must define exactly "
+                     "one __stop_alloc_tags symbol (found " +
+                         Twine(StopCount) + ")");
+
+  auto CheckBoundary = [&](StringRef Name, const RawSym &S,
+                           uint64_t ExpectedValue) {
+    if (S.bind() != STB_GLOBAL)
+      return fail(Err, "verify: " + Name + " must have STB_GLOBAL binding");
+    if (S.type() != STT_NOTYPE)
+      return fail(Err, "verify: " + Name + " must have STT_NOTYPE type");
+    if (S.Shndx != AllocTagsIndex)
+      return fail(Err, "verify: " + Name +
+                           " must be defined in .codetag.alloc_tags");
+    if (S.Value != ExpectedValue)
+      return fail(Err, "verify: " + Name + " has value " + Twine(S.Value) +
+                           ", expected " + Twine(ExpectedValue));
+    return true;
+  };
+
+  return CheckBoundary("__start_alloc_tags", *Start, 0) &&
+         CheckBoundary("__stop_alloc_tags", *Stop, AllocTags->Size);
 }
 
 // ---------------------------------------------------------------------------
@@ -575,6 +685,13 @@ bool verifyMergeELFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
                            "' sh_info " + Twine(S.Info) +
                            " does not reference a valid target section");
   }
+
+  // Android's module loader consumes this small linker-script ABI before the
+  // module init function runs. Audit it independently of the merger's
+  // synthesis code so a future regression is refused before a broken .ko is
+  // written. Ordinary ELF merges deliberately remain unaffected.
+  if (Opts.androidKernelModule && !verifyAndroidKernelModuleContract(Out, Err))
+    return false;
 
   // Index output symbols by name; only names that resolve to a *single*
   // output symbol can be anchored unambiguously.

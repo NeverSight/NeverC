@@ -350,18 +350,6 @@ static void emitPLTSections(llvm::Module &M) {
   emitWeakPad(M, "__nvk_ftrace", ".text.ftrace_trampoline");
 }
 
-static void emitEmptyVersionsSection(llvm::Module &M) {
-  if (auto *GV = M.getGlobalVariable("__nvk_versions"))
-    return;
-  auto &Ctx = M.getContext();
-  auto *Arr = llvm::ArrayType::get(llvm::Type::getInt8Ty(Ctx), 0);
-  auto *GV = new llvm::GlobalVariable(
-      M, Arr, true, llvm::GlobalValue::WeakAnyLinkage,
-      llvm::ConstantAggregateZero::get(Arr), "__nvk_versions");
-  GV->setSection("__versions");
-  GV->setDSOLocal(true);
-}
-
 static void emitCFIStubFn(llvm::Module &M, llvm::StringRef Name,
                           llvm::GlobalValue::VisibilityTypes Vis,
                           unsigned Align) {
@@ -456,6 +444,5 @@ void AndroidKernel::emitFixups(llvm::Module &M, unsigned Arch, KCFIMode Mode) {
   M.addModuleFlag(llvm::Module::Error, ProfileModuleFlag, *Profile);
 
   emitPLTSections(M);
-  emitEmptyVersionsSection(M);
   emitCFICheckStubs(M);
 }

@@ -64,6 +64,20 @@ class CompilerPrefixTests(unittest.TestCase):
                 self.records(bytes.fromhex("01000000"), None), None, "little"
             )
 
+    def test_smoke_loader_check_requires_an_empty_tag_range(self):
+        class FakeVerifier:
+            def __init__(self):
+                self.calls = []
+
+            def verify_module(self, module, *, require_empty_alloc_tags=False):
+                self.calls.append((module, require_empty_alloc_tags))
+                return {"versions_entries": 0, "alloc_tags_size": 0}
+
+        verifier = FakeVerifier()
+        details = build.inspect_loader_contract(Path("smoke.ko"), verifier)
+        self.assertEqual(details, {"versions_entries": 0, "alloc_tags_size": 0})
+        self.assertEqual(verifier.calls, [(Path("smoke.ko"), True)])
+
 
 if __name__ == "__main__":
     unittest.main()

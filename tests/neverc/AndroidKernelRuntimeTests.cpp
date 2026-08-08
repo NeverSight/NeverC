@@ -1,5 +1,13 @@
 #include "NeverCTestFixture.h"
 
+#include "llvm/BinaryFormat/ELF.h"
+#include "llvm/Object/ELFObjectFile.h"
+#include "llvm/Object/ObjectFile.h"
+#include "llvm/Support/Error.h"
+
+#include <limits>
+#include <utility>
+
 namespace {
 
 // A minimal Android GKI kernel module.  `-fandroid-kernel-driver-mode` supplies
@@ -17,6 +25,135 @@ constexpr const char *kAndroidKernelModule =
 bool isElfImage(const std::string &Bytes) {
   return Bytes.size() > 4 && static_cast<unsigned char>(Bytes[0]) == 0x7f &&
          Bytes[1] == 'E' && Bytes[2] == 'L' && Bytes[3] == 'F';
+}
+
+std::string renderError(llvm::Error Error) {
+  return llvm::toString(std::move(Error)).str().str();
+}
+
+::testing::AssertionResult
+hasAndroidLoaderContract(const std::string &Bytes, bool RequireEmptyTags,
+                         bool RequirePopulatedTags = false) {
+  using namespace llvm;
+  using namespace llvm::object;
+
+  auto ObjectOrErr = ObjectFile::createObjectFile(
+      MemoryBufferRef(StringRef(Bytes.data(), Bytes.size()), "module.ko"));
+  if (!ObjectOrErr)
+    return ::testing::AssertionFailure()
+           << "cannot parse .ko: " << renderError(ObjectOrErr.takeError());
+  const auto *Object = dyn_cast<ELF64LEObjectFile>(ObjectOrErr->get());
+  if (!Object)
+    return ::testing::AssertionFailure() << ".ko is not ELF64 little-endian";
+  const auto *ELFObject = static_cast<const ELFObjectFileBase *>(Object);
+  if (ELFObject->getEMachine() != ELF::EM_AARCH64 ||
+      ELFObject->getEType() != ELF::ET_REL)
+    return ::testing::AssertionFailure()
+           << ".ko is not an AArch64 ET_REL object";
+
+  uint64_t VersionsCount = 0;
+  uint64_t AllocTagsCount = 0;
+  uint64_t RawAllocTagsCount = 0;
+  uint64_t AllocTagsIndex = std::numeric_limits<uint64_t>::max();
+  uint64_t AllocTagsSize = 0;
+  auto HasValidAlignment = [](uint64_t Alignment) {
+    return Alignment >= 8 && (Alignment & (Alignment - 1)) == 0;
+  };
+  for (SectionRef Section : Object->sections()) {
+    auto NameOrErr = Section.getName();
+    if (!NameOrErr)
+      return ::testing::AssertionFailure()
+             << "cannot read section name: "
+             << renderError(NameOrErr.takeError());
+    const ELFSectionRef ELFSection(Section);
+    const uint64_t Alignment = Section.getAlignment().value();
+    if (*NameOrErr == "__versions") {
+      ++VersionsCount;
+      if (ELFSection.getType() != ELF::SHT_PROGBITS ||
+          !(ELFSection.getFlags() & ELF::SHF_ALLOC) ||
+          (ELFSection.getFlags() & ELF::SHF_COMPRESSED) ||
+          !HasValidAlignment(Alignment) || Section.getSize() % 64 != 0)
+        return ::testing::AssertionFailure()
+               << "__versions has an invalid type/flags/alignment/size";
+    } else if (*NameOrErr == ".codetag.alloc_tags") {
+      ++AllocTagsCount;
+      AllocTagsIndex = Section.getIndex();
+      AllocTagsSize = Section.getSize();
+      const uint64_t RequiredFlags = ELF::SHF_ALLOC | ELF::SHF_WRITE;
+      if (ELFSection.getType() != ELF::SHT_PROGBITS ||
+          (ELFSection.getFlags() & RequiredFlags) != RequiredFlags ||
+          (ELFSection.getFlags() & ELF::SHF_COMPRESSED) ||
+          !HasValidAlignment(Alignment))
+        return ::testing::AssertionFailure()
+               << ".codetag.alloc_tags has invalid type/flags/alignment";
+    } else if (*NameOrErr == "alloc_tags") {
+      ++RawAllocTagsCount;
+    }
+  }
+  if (VersionsCount != 1 || AllocTagsCount != 1 || RawAllocTagsCount != 0)
+    return ::testing::AssertionFailure()
+           << "loader sections: __versions=" << VersionsCount
+           << " .codetag.alloc_tags=" << AllocTagsCount
+           << " raw alloc_tags=" << RawAllocTagsCount;
+  if (RequireEmptyTags && AllocTagsSize != 0)
+    return ::testing::AssertionFailure()
+           << "zero-import module unexpectedly contains alloc_tags";
+  if (RequirePopulatedTags && AllocTagsSize == 0)
+    return ::testing::AssertionFailure()
+           << "module's compiler alloc_tags input was not collected";
+
+  struct Boundary {
+    unsigned Count = 0;
+    uint8_t Binding = ELF::STB_LOCAL;
+    uint8_t Type = ELF::STT_NOTYPE;
+    uint64_t SectionIndex = std::numeric_limits<uint64_t>::max();
+    uint64_t Value = 0;
+  } Start, Stop;
+  for (SymbolRef Symbol : Object->symbols()) {
+    auto NameOrErr = Symbol.getName();
+    if (!NameOrErr)
+      return ::testing::AssertionFailure()
+             << "cannot read symbol name: "
+             << renderError(NameOrErr.takeError());
+    Boundary *Result = nullptr;
+    if (*NameOrErr == "__start_alloc_tags")
+      Result = &Start;
+    else if (*NameOrErr == "__stop_alloc_tags")
+      Result = &Stop;
+    if (!Result)
+      continue;
+
+    ++Result->Count;
+    const ELFSymbolRef ELFSymbol(Symbol);
+    Result->Binding = ELFSymbol.getBinding();
+    Result->Type = ELFSymbol.getELFType();
+    auto SectionOrErr = Symbol.getSection();
+    if (!SectionOrErr)
+      return ::testing::AssertionFailure()
+             << "cannot read boundary section: "
+             << renderError(SectionOrErr.takeError());
+    if (*SectionOrErr != Object->section_end())
+      Result->SectionIndex = (*SectionOrErr)->getIndex();
+    auto ValueOrErr = Symbol.getValue();
+    if (!ValueOrErr)
+      return ::testing::AssertionFailure()
+             << "cannot read boundary value: "
+             << renderError(ValueOrErr.takeError());
+    Result->Value = *ValueOrErr;
+  }
+  if (Start.Count != 1 || Stop.Count != 1 || Start.Binding != ELF::STB_GLOBAL ||
+      Stop.Binding != ELF::STB_GLOBAL || Start.Type != ELF::STT_NOTYPE ||
+      Stop.Type != ELF::STT_NOTYPE || Start.SectionIndex != AllocTagsIndex ||
+      Stop.SectionIndex != AllocTagsIndex || Start.Value != 0 ||
+      Stop.Value != AllocTagsSize)
+    return ::testing::AssertionFailure()
+           << "alloc_tags boundary contract is invalid: start(count="
+           << Start.Count << ", section=" << Start.SectionIndex
+           << ", value=" << Start.Value << ") stop(count=" << Stop.Count
+           << ", section=" << Stop.SectionIndex << ", value=" << Stop.Value
+           << ") expected section=" << AllocTagsIndex
+           << " size=" << AllocTagsSize;
+  return ::testing::AssertionSuccess();
 }
 
 } // namespace
@@ -97,6 +234,8 @@ TEST_F(AndroidKernelRuntimeTest, RelocatablePluginLinkDefersToNativeByteForByte)
   const std::string NativeBytes = readFile(NativeKo);
   const std::string PluginBytes = readFile(PluginKo);
   ASSERT_TRUE(isElfImage(NativeBytes)) << "native .ko is not an ELF image";
+  EXPECT_TRUE(hasAndroidLoaderContract(NativeBytes, /*RequireEmptyTags=*/true));
+  EXPECT_TRUE(hasAndroidLoaderContract(PluginBytes, /*RequireEmptyTags=*/true));
   EXPECT_EQ(NativeBytes, PluginBytes)
       << "a no-op plugin must not perturb the relocatable Android link";
 }
@@ -123,6 +262,8 @@ TEST_F(AndroidKernelRuntimeTest, RelocatablePluginLinkLowersLTOBitcodeAndMerges)
   const std::string NativeBytes = readFile(NativeKo);
   const std::string PluginBytes = readFile(PluginKo);
   ASSERT_TRUE(isElfImage(NativeBytes)) << "native .ko is not an ELF image";
+  EXPECT_TRUE(hasAndroidLoaderContract(NativeBytes, /*RequireEmptyTags=*/true));
+  EXPECT_TRUE(hasAndroidLoaderContract(PluginBytes, /*RequireEmptyTags=*/true));
   ASSERT_EQ(NativeBytes.size(), PluginBytes.size())
       << "plugin LTO merge changed the .ko size";
 
@@ -186,6 +327,8 @@ TEST_F(AndroidKernelRuntimeTest, RelocatablePluginLinkHandlesSeveralInputs) {
   const std::string NativeBytes = readFile(NativeKo);
   const std::string PluginBytes = readFile(PluginKo);
   ASSERT_TRUE(isElfImage(NativeBytes)) << "native .ko is not an ELF image";
+  EXPECT_TRUE(hasAndroidLoaderContract(NativeBytes, /*RequireEmptyTags=*/true));
+  EXPECT_TRUE(hasAndroidLoaderContract(PluginBytes, /*RequireEmptyTags=*/true));
   ASSERT_EQ(NativeBytes.size(), PluginBytes.size())
       << "plugin LTO merge changed the .ko size";
   size_t Differences = 0;
@@ -195,4 +338,34 @@ TEST_F(AndroidKernelRuntimeTest, RelocatablePluginLinkHandlesSeveralInputs) {
   EXPECT_EQ(Differences, 1U)
       << "plugin LTO-lower + merge over several inputs diverged from the "
          "native relocatable link";
+}
+
+TEST_F(AndroidKernelRuntimeTest, RelocatableLinkCollectsCompilerAllocTags) {
+  const fs::path Source = tmpFile("nvk_alloc_tags.c");
+  writeFile(Source,
+            "#include <nvkmod.h>\n"
+            "static unsigned long tag __attribute__((section(\"alloc_tags\"), "
+            "used, aligned(8))) = 0x1234;\n"
+            "static int m_init(void) { return tag == 0x1234 ? 0 : -1; }\n"
+            "static void m_exit(void) {}\n"
+            "module_init(m_init);\n"
+            "module_exit(m_exit);\n"
+            "MODULE_LICENSE(\"GPL v2\");\n"
+            "NEVERC_KRT_DEFINE_MODULE(\"neverc_test_tags\");\n");
+  const fs::path NativeKo = tmpFile("nvk_alloc_tags_native.ko");
+  const fs::path PluginKo = tmpFile("nvk_alloc_tags_plugin.ko");
+
+  const CmdResult Native =
+      linkKernelModule(/*PluginPath=*/"", Source, NativeKo);
+  ASSERT_EQ(Native.exitCode, 0) << Native.err;
+  const CmdResult Plugin =
+      linkKernelModule(NEVERC_TEST_OBJECT_POST_WRITE_PLUGIN, Source, PluginKo);
+  ASSERT_EQ(Plugin.exitCode, 0) << Plugin.err;
+
+  EXPECT_TRUE(hasAndroidLoaderContract(readFile(NativeKo),
+                                       /*RequireEmptyTags=*/false,
+                                       /*RequirePopulatedTags=*/true));
+  EXPECT_TRUE(hasAndroidLoaderContract(readFile(PluginKo),
+                                       /*RequireEmptyTags=*/false,
+                                       /*RequirePopulatedTags=*/true));
 }

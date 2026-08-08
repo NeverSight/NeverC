@@ -76,10 +76,12 @@
 /*
  * The embedded runtime bitcode consumes generated descriptors and named ABI
  * capabilities; it never compares these compatibility handles numerically.
- * Bootstrap activates layouts only after the pinned kernel release token,
- * Android/KMI identity, and runtime page size all match exactly.  Unknown, future,
- * malformed, or mismatched identities fail closed with no nearest-version,
- * maximum-size, or vermagic fallback.
+ * Bootstrap reports an exact match only when the pinned release token,
+ * Android/KMI identity, and runtime page size all match.  When the build has
+ * explicitly selected a profile, an observed OEM release in the same Linux
+ * major.minor series and with the same page size may activate that layout as
+ * NEVERC_KRT_VER_COMPAT.  Unobservable, cross-series, and page-size-mismatched
+ * identities fail closed; there is no nearest-profile or maximum-size guess.
  */
 
 #endif /* NVKMOD_VERSION_H */

@@ -24,9 +24,11 @@ Everything else (the kernel API the driver calls) is resolved **dynamically at
 runtime** via `kallsyms_lookup_name()` (bootstrapped with a kprobe). So the
 driver source stays version independent and the `.ko` imports almost no symbols
 (typically only `register_kprobe` / `unregister_kprobe`, which are stable GKI
-exports). Building without MODVERSIONS (no `__versions` section) makes the
-loader skip CRC checks, so those few imports load on any matching-vermagic
-kernel.
+exports). NeverC's final module link emits an allocated, possibly empty
+`__versions` section. On MODVERSIONS kernels this avoids the force-load path
+used when the section is absent, while missing per-symbol entries remain the
+kernel's accepted unversioned-import case. It also lets the loader compare the
+vermagic feature flags independently of an OEM patch/local-version token.
 
 Per-kernel data is one generated, atomic **profile contract** rather than a set
 of independently overridable macros:
@@ -99,6 +101,7 @@ runtime/android/kernel/
     gen_layout_offsets.c       # proc_ops / sk_buff / nf_hook_ops layout probe
     extract-btf-layouts.py     # extract authoritative layouts from GKI BTF
     verify-gki-release.py      # verify a pinned release archive + complete manifest
+    verify-android-module.py   # verify final .ko loader sections and symbols
     run-gki-qemu-smoke.sh      # boot Image and require module load + unload
     check-source-boundaries.py # enforce public/private source boundaries
     test-sdk-layouts.sh        # compile layout-sensitive headers for every GKI
@@ -126,6 +129,13 @@ runtime/android/kernel/
   self-contained with **zero** compiler-rt dependency,
 - emits the empty `.plt` / `.init.plt` / `.text.ftrace_trampoline` sections the
   arm64 loader requires (`CONFIG_ARM64_MODULE_PLTS`) — no external `module.lds`.
+- performs the module-script portion of the final `ET_REL` link once: it emits
+  allocated `__versions`, collects compiler `alloc_tags` inputs into aligned
+  `.codetag.alloc_tags`, and defines `__start_alloc_tags` / `__stop_alloc_tags`
+  around the real range. This supports `CONFIG_MEM_ALLOC_PROFILING` without
+  creating duplicate placeholders in every translation unit. An independent
+  post-merge reader checks this loader contract before the linker commits the
+  output.
 
 Public headers contain declarations, macros, compatibility types, and only
 small forced-inline helpers. Every header-defined function uses
@@ -165,6 +175,11 @@ while keeping the validation job within hosted-runner memory limits.
 
 For the loader proof, the workflow compiles a dedicated zero-import module from
 the exact same source SHA as the reused `linux-x64-neverc-compiler` artifact.
+Before boot, `tools/verify-android-module.py` independently requires AArch64
+`ET_REL`, a valid allocated `__versions`, and defined alloc-tag boundaries in
+the correct allocated/writable section; the zero-import fixture must have an
+empty range. A section-name-only artifact with undefined boundary symbols is
+rejected.
 For KCFI kernels, NeverC emits the independently release-derived
 `init_module` and `cleanup_module` type-id words as function prefix data during
 code generation. The build helper verifies those bytes without modifying the
@@ -178,9 +193,12 @@ compile/link suites.
 Automatic validation is a reusable job in the same Linux build run/check suite,
 so a result cannot be attached to a different default-branch SHA. For diagnosis,
 dispatch `validate-gki-runtime` with an exact matching compiler run ID and one
-profile (or `all`). These archives describe pinned stock GKI builds only: an OEM
-kernel with different config, KMI, layout, or local-version vermagic requires
-its own evidence and is not certified by this gate.
+profile (or `all`). These archives describe pinned stock GKI builds only. An
+exact identity is certified by this gate; an explicitly selected profile may
+also activate on an observed OEM kernel with the same Linux `major.minor` and
+page size, but it is reported as `NEVERC_KRT_VER_COMPAT`, not certified as
+exact. A missing/unparseable banner, a different series, or a different page
+size remains fail-closed.
 
 ## SDK headers
 
@@ -252,9 +270,11 @@ kernel's own prepared headers via `tools/gen_struct_module_offsets.c`:
 depend on the target kernel's `CONFIG_*` (CFI_CLANG, MODULE_UNLOAD, TRACEPOINTS,
 DEBUG_INFO_BTF_MODULES, ...). The values above match a stock GKI kernel built
 with `gki_defconfig` (BTF module debug info shifts `exit` and may grow
-`sizeof(struct module)`). An OEM kernel with a different config, patch release,
-page size, layout, or local-version string is a different atomic profile. To
-support it, collect evidence first:
+`sizeof(struct module)`). A different config or layout is a different certified
+atomic profile. A same-series/same-page OEM patch or local-version may use the
+explicitly selected layout in `COMPAT` mode, but that is an operator-selected
+compatibility path rather than evidence-backed exact certification. To certify
+it, collect evidence first:
 
 ```
 # On a prepared tree (Linux: make ARCH=arm64 LLVM=1 gki_defconfig modules_prepare):
@@ -294,9 +314,19 @@ docker run --rm -v <repo>/local_docs:/work -v <repo>/runtime/android/kernel/tool
 # NOTE: android16-6.12 needs libdw-dev (its gendwarfksyms host tool includes <dwarf.h>).
 ```
 
-At runtime, bootstrap also requires the exact release token, Android/KMI
-identity, and page size selected by the profile before exposing any layout.
-There is no nearest-version or maximum-layout fallback.
+At runtime, bootstrap first tries the full release token, Android/KMI identity,
+and page size. Without an explicitly selected profile, activation remains
+exact-only. With the build-selected profile, a full match reports `EXACT`; a
+same Linux `major.minor` plus same page size reports `COMPAT`. The observed OEM
+patch/Android/KMI fields remain visible and are never overwritten with pinned
+values. There is no cross-series, unknown-banner, nearest-version, or
+maximum-layout fallback.
+
+Inspect any generated module before deployment with:
+
+```bash
+python3 runtime/android/kernel/tools/verify-android-module.py path/to/module.ko
+```
 
 ## Linux 6.18 (android17-6.18) notes
 
@@ -328,10 +358,11 @@ Verified against GKI `6.18.24` (`gki_defconfig`, `CONFIG_COMPAT=y`):
   `get_task_cred` paths unless a matching release helper is available.
 
 OEM kernels with `CONFIG_LOCALVERSION` (for example `"-4k"`) may share a
-`struct module` layout with stock GKI, but their release identity and vermagic
-still require a separate evidence-backed profile. When explicitly requested,
-runtime vermagic patching is performed only after that exact profile identity
-has been accepted.
+`struct module` layout with stock GKI. Selecting the matching series/profile at
+build time permits the same-page OEM identity as `COMPAT`; exact certification
+still requires its own evidence-backed profile. Runtime vermagic patching is
+performed only after either the exact or explicitly selected compatible
+identity has been accepted.
 
 ## Source-level debugging
 

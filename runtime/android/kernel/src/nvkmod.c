@@ -125,11 +125,11 @@ static int _neverc_krt_log_bootstrap(void)
 	if (neverc_krt_printk)
 		return 0;
 	neverc_krt_printk = (neverc_krt_printk_fn)
-		_neverc_krt_kprobe_lookup(NC_XORSTR(
+		neverc_krt_lookup_name(NC_XORSTR(
 			_NEVERC_KRT_SYM_PRINTK_PRIMARY));
 	if (!neverc_krt_printk)
 		neverc_krt_printk = (neverc_krt_printk_fn)
-			_neverc_krt_kprobe_lookup(NC_XORSTR(
+			neverc_krt_lookup_name(NC_XORSTR(
 				_NEVERC_KRT_SYM_PRINTK_FALLBACK));
 	return neverc_krt_printk ? 0 : -1;
 }

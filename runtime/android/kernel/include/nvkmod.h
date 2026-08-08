@@ -27,7 +27,11 @@ int neverc_krt_bootstrap(int cfi, int kernel_profile);
 #define NEVERC_KRT_BOOTSTRAP_EX(cfi) \
 	neverc_krt_bootstrap((cfi), NEVERC_KRT_KERNEL)
 
-/* __versions section is handled by -fandroid-kernel-driver-mode. */
+/*
+ * The final Android ET_REL link owns loader-script metadata.  It emits an
+ * allocated `__versions` section and a bounded `.codetag.alloc_tags` output
+ * section, including an empty start/stop range when no allocation tags exist.
+ */
 
 #define NEVERC_KRT_DEFINE_MODULE(modname)                                            \
 	MODULE_INFO(name, modname);                                           \

@@ -7,6 +7,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
 NEVERC="${1:-$REPO_ROOT/build-neverc/bin/neverc}"
 USER_COPY_CHECKER="$SCRIPT_DIR/check-user-copy-backend.py"
+MODULE_CONTRACT_CHECKER="$SCRIPT_DIR/verify-android-module.py"
 TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
 
@@ -65,6 +66,13 @@ check_elf() {
       return 1
       ;;
   esac
+
+  local module_contract_check
+  if ! module_contract_check=$(python3 "$MODULE_CONTRACT_CHECKER" "$ko" 2>&1); then
+    echo "  FAIL: $name — Android module loader contract"
+    printf '%s\n' "$module_contract_check" | awk '{ print "    " $0 }'
+    return 1
+  fi
 
   case "$sections" in
     *"gnu.linkonce.this_module"*) ;;

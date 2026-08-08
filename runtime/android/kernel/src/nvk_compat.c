@@ -6,6 +6,7 @@
 static const struct neverc_krt_profile *_neverc_krt_selected_profile;
 static const struct neverc_krt_profile *_neverc_krt_active_profile;
 static const struct neverc_krt_layout_entry *_neverc_krt_active_layout;
+static int _neverc_krt_active_match = NEVERC_KRT_VER_UNKNOWN;
 
 static __always_inline const struct neverc_krt_layout_entry *
 _neverc_krt_find_layout(unsigned int profile_id)
@@ -126,35 +127,49 @@ static __always_inline unsigned int _neverc_krt_runtime_page_shift(void)
 static int
 _neverc_krt_activate_observed(
 	const struct neverc_krt_kernel_info *observed,
-	const char *release_token, unsigned long release_token_length)
+	const struct neverc_krt_observed_identity *identity)
 {
 	const struct neverc_krt_profile *profile;
 	const struct neverc_krt_profile *selected;
 	const struct neverc_krt_profile *active;
 	const struct neverc_krt_layout_entry *layout;
+	enum neverc_krt_profile_match profile_match;
+	int version_match;
 
-	profile = neverc_krt_find_profile_by_identity(
-		observed->major, observed->minor, observed->patch,
-		observed->android_version, observed->kmi_generation,
-		observed->page_shift, release_token, release_token_length);
-	if (!profile)
-		return -1;
 	selected = __atomic_load_n(&_neverc_krt_selected_profile,
 				   __ATOMIC_ACQUIRE);
-	if (selected && selected->legacy_id != profile->legacy_id)
-		return -2;
-	if (!selected &&
-	    !__atomic_compare_exchange_n(&_neverc_krt_selected_profile, &selected,
-					 profile, 0, __ATOMIC_RELEASE,
-					 __ATOMIC_ACQUIRE) &&
-	    selected->legacy_id != profile->legacy_id)
-		return -2;
+	if (selected) {
+		profile = selected;
+		profile_match = neverc_krt_match_profile(profile, identity);
+		if (profile_match == NEVERC_KRT_PROFILE_MATCH_NONE)
+			return -1;
+	} else {
+		/* Auto-selection is intentionally exact-only.  A major.minor
+		 * compatibility decision needs the profile pinned by the build. */
+		profile = neverc_krt_find_profile_by_identity(
+			identity->linux_major, identity->linux_minor,
+			identity->linux_patch, identity->android_release,
+			identity->kmi_generation, identity->page_shift,
+			identity->release_token, identity->release_token_length);
+		if (!profile)
+			return -1;
+		profile_match = NEVERC_KRT_PROFILE_MATCH_EXACT;
+		if (!__atomic_compare_exchange_n(
+				&_neverc_krt_selected_profile, &selected, profile, 0,
+				__ATOMIC_RELEASE, __ATOMIC_ACQUIRE) &&
+		    selected->legacy_id != profile->legacy_id)
+			return -2;
+	}
 	layout = _neverc_krt_find_layout(profile->legacy_id);
 	if (!layout)
 		return -1;
+	version_match = profile_match == NEVERC_KRT_PROFILE_MATCH_EXACT ?
+		NEVERC_KRT_VER_EXACT : NEVERC_KRT_VER_COMPAT;
 
 	_neverc_krt_kinfo = *observed;
 	__atomic_store_n(&_neverc_krt_active_layout, layout, __ATOMIC_RELEASE);
+	__atomic_store_n(&_neverc_krt_active_match, version_match,
+			 __ATOMIC_RELEASE);
 	active = (const struct neverc_krt_profile *)0;
 	if (!__atomic_compare_exchange_n(&_neverc_krt_active_profile, &active,
 					 profile, 0, __ATOMIC_RELEASE,
@@ -191,10 +206,9 @@ static int _neverc_krt_version_try_detect_from_banner(void)
 	observed.kmi_generation = identity.kmi_generation;
 	observed.page_shift = _neverc_krt_runtime_page_shift();
 	observed.detected = 1;
+	identity.page_shift = observed.page_shift;
 	_neverc_krt_kinfo = observed;
-	return _neverc_krt_activate_observed(
-		&observed, identity.release_token,
-		identity.release_token_length);
+	return _neverc_krt_activate_observed(&observed, &identity);
 }
 
 int neverc_krt_compat_init(void)
@@ -256,7 +270,8 @@ int neverc_krt_check_kernel_match(void)
 	int ret = neverc_krt_compat_init();
 
 	if (!ret && _neverc_krt_current_profile())
-		return NEVERC_KRT_VER_EXACT;
+		return __atomic_load_n(&_neverc_krt_active_match,
+				       __ATOMIC_ACQUIRE);
 	return _neverc_krt_kinfo.detected ? NEVERC_KRT_VER_MISMATCH :
 		NEVERC_KRT_VER_UNKNOWN;
 }
@@ -350,7 +365,7 @@ int neverc_krt_validate_runtime(struct neverc_krt_this_module *mod,
 	int ret;
 
 	ret = neverc_krt_check_kernel_match();
-	if (ret != NEVERC_KRT_VER_EXACT)
+	if (ret < 0)
 		return ret;
 	(void)init_fn;
 	(void)exit_fn;
@@ -362,7 +377,7 @@ int neverc_krt_patch_vermagic(struct neverc_krt_this_module *mod)
 	const char *banner;
 	int match = neverc_krt_check_kernel_match();
 
-	if (match != NEVERC_KRT_VER_EXACT)
+	if (match < 0)
 		return match;
 
 	banner = (const char *)NEVERC_KRT_LOOKUP("linux_banner");
@@ -428,7 +443,7 @@ int neverc_krt_fixup_runtime(struct neverc_krt_this_module *mod,
 	int ret;
 
 	ret = neverc_krt_check_kernel_match();
-	if (ret != NEVERC_KRT_VER_EXACT)
+	if (ret < 0)
 		return ret;
 	(void)init_fn;
 	(void)exit_fn;
@@ -511,7 +526,7 @@ int neverc_krt_kernel_lt(u32 maj, u32 min)
 int neverc_krt_should_abort_on_mismatch(void)
 {
 	int r = neverc_krt_check_kernel_match();
-	return r != NEVERC_KRT_VER_EXACT;
+	return r < 0;
 }
 
 unsigned long neverc_krt_rt_off_init(void)

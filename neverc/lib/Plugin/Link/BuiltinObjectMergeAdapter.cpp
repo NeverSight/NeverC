@@ -180,10 +180,16 @@ executeBuiltinObjectMergeAdapter(
   // divergence is Android kernel-module section folding.
   if (*Format == neverc::merge::Format::ELF64LE &&
       Config.AndroidKernelModule) {
+    MergeOptions.androidKernelModule = true;
     MergeOptions.mergeSections = true;
     MergeOptions.preservedSections = {
-        ".modinfo", "__versions", ".gnu.linkonce.this_module",
-        ".plt",     ".init.plt",  ".text.ftrace_trampoline",
+        ".modinfo",
+        "__versions",
+        ".codetag.alloc_tags",
+        ".gnu.linkonce.this_module",
+        ".plt",
+        ".init.plt",
+        ".text.ftrace_trampoline",
     };
   }
   (void)Flags;

@@ -211,6 +211,7 @@ jobs:
           python3 runtime/android/kernel/tools/test-user-copy-adapter.py
           python3 runtime/android/kernel/tools/test-extract-btf-layouts.py -v
           python3 runtime/android/kernel/tools/test-verify-gki-release.py -v
+          python3 runtime/android/kernel/tools/test-verify-android-module.py -v
           python3 runtime/android/kernel/tools/test-build-gki-smoke-modules.py -v
           python3 runtime/android/kernel/tools/test-gki-qemu-smoke.py -v
           python3 runtime/android/kernel/tools/generate-compat-table.py --check
@@ -225,7 +226,7 @@ jobs:
           bash runtime/android/kernel/tools/test-runtime-linkage.sh compiler-root/install/bin/neverc --full
           bash runtime/android/kernel/tools/test-all.sh compiler-root/install/bin/neverc
 
-      - name: Build six zero-import smoke modules
+      - name: Build and verify six loader-ready smoke modules
         run: |
           python3 runtime/android/kernel/tools/build-gki-smoke-modules.py \
             --compiler compiler-root/install/bin/neverc \
@@ -234,7 +235,7 @@ jobs:
             --readelf llvm-readelf \
             --profiles all
 
-      - name: Upload checked smoke modules
+      - name: Upload loader-contract-checked smoke modules
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -261,7 +262,7 @@ jobs:
           ref: ${{ needs.prepare.outputs.source_sha }}
           persist-credentials: false
 
-      - name: Download checked smoke modules
+      - name: Download loader-contract-checked smoke modules
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: gki-runtime-smoke-modules
@@ -315,6 +316,14 @@ jobs:
             --compiler clang \
             --readelf readelf \
             2>&1 | tee logs/release-verification.log
+
+      - name: Reverify downloaded module loader contract
+        env:
+          PROFILE: ${{ matrix.profile }}
+        run: |
+          python3 runtime/android/kernel/tools/verify-android-module.py \
+            --require-empty-alloc-tags \
+            "smoke-modules/neverc-gki-smoke-$PROFILE.ko"
 
       - name: Boot released Image and load/unload current smoke module
         env:

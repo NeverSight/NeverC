@@ -37,8 +37,15 @@ namespace neverc::merge::detail {
 /// duplicate output section names because those flag sets are incompatible.
 inline llvm::StringRef
 canonicalELFSectionName(llvm::StringRef Name, uint64_t Flags,
-                        bool MergeSections,
+                        bool MergeSections, bool AndroidKernelModule,
                         llvm::ArrayRef<llvm::StringRef> Preserved) {
+  // scripts/module.lds.S routes the compiler-facing `alloc_tags` input
+  // section into the loader-facing `.codetag.alloc_tags` output section.  The
+  // in-process `-r` merger is the final linker for NeverC modules, so it must
+  // perform the same mapping.  This is deliberately independent of generic
+  // per-symbol folding: it is an Android module ABI contract.
+  if (AndroidKernelModule && Name == "alloc_tags")
+    return ".codetag.alloc_tags";
   if (!MergeSections || Name.empty() || (Flags & llvm::ELF::SHF_MERGE))
     return Name;
   for (llvm::StringRef P : Preserved)

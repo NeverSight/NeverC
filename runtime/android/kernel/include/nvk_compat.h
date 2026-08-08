@@ -45,7 +45,9 @@ void *neverc_krt_lookup_module_free(void);
 int neverc_krt_has_cfi(void);
 
 enum neverc_krt_version_match {
+	/* Complete certified release identity and page size matched. */
 	NEVERC_KRT_VER_EXACT   =  0,
+	/* Explicitly selected profile; same Linux major.minor and page size. */
 	NEVERC_KRT_VER_COMPAT  =  1,
 	NEVERC_KRT_VER_MISMATCH = -1,
 	NEVERC_KRT_VER_UNKNOWN  = -2,

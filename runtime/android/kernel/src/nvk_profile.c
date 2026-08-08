@@ -8,37 +8,72 @@ neverc_krt_find_profile(unsigned int legacy_id) {
                                           NEVERC_KRT_PROFILE_COUNT, legacy_id);
 }
 
+static int neverc_krt_release_token_equal(
+    const char *expected, const char *observed,
+    unsigned long observed_length) {
+  unsigned long i;
+
+  if (!expected || !observed || !observed_length)
+    return 0;
+  for (i = 0; i < observed_length; i++) {
+    if (expected[i] == '\0' || expected[i] != observed[i])
+      return 0;
+  }
+  return expected[observed_length] == '\0';
+}
+
+enum neverc_krt_profile_match neverc_krt_match_profile(
+    const struct neverc_krt_profile *profile,
+    const struct neverc_krt_observed_identity *identity) {
+  if (!profile || !identity ||
+      profile->linux_major != identity->linux_major ||
+      profile->linux_minor != identity->linux_minor ||
+      !identity->page_shift || profile->page_shift != identity->page_shift)
+    return NEVERC_KRT_PROFILE_MATCH_NONE;
+
+  if (identity->has_android_identity &&
+      profile->linux_patch == identity->linux_patch &&
+      profile->android_release == identity->android_release &&
+      profile->kmi_generation == identity->kmi_generation &&
+      neverc_krt_release_token_equal(profile->release_token,
+                                     identity->release_token,
+                                     identity->release_token_length))
+    return NEVERC_KRT_PROFILE_MATCH_EXACT;
+
+  return NEVERC_KRT_PROFILE_MATCH_COMPATIBLE;
+}
+
 const struct neverc_krt_profile *neverc_krt_find_profile_by_identity(
     unsigned int linux_major, unsigned int linux_minor, unsigned int linux_patch,
     unsigned int android_release, unsigned int kmi_generation,
     unsigned int page_shift, const char *release_token,
     unsigned long release_token_length) {
   unsigned long i;
+  struct neverc_krt_observed_identity identity = {
+      .linux_major = linux_major,
+      .linux_minor = linux_minor,
+      .linux_patch = linux_patch,
+      .android_release = android_release,
+      .kmi_generation = kmi_generation,
+      .page_shift = page_shift,
+      .release_token = release_token,
+      .release_token_length = release_token_length,
+      .has_android_identity = 1,
+  };
 
   if (!release_token || !release_token_length)
     return (const struct neverc_krt_profile *)0;
   for (i = 0; i < NEVERC_KRT_PROFILE_COUNT; i++) {
     const struct neverc_krt_profile *profile = &_neverc_krt_profiles[i];
-    unsigned long release_index = 0;
 
-    if (profile->linux_major == linux_major &&
-        profile->linux_minor == linux_minor &&
-        profile->linux_patch == linux_patch &&
-        profile->android_release == android_release &&
-        profile->kmi_generation == kmi_generation &&
-        profile->page_shift == page_shift) {
-      while (release_index < release_token_length &&
-             profile->release_token[release_index] ==
-                 release_token[release_index])
-        release_index++;
-      if (release_index == release_token_length &&
-          profile->release_token[release_index] == '\0')
-        return profile;
-    }
+    if (neverc_krt_match_profile(profile, &identity) ==
+        NEVERC_KRT_PROFILE_MATCH_EXACT)
+      return profile;
   }
   return (const struct neverc_krt_profile *)0;
 }
 
+/* -1: no number, -2: overflow. */
 static int neverc_krt_parse_uint(const char **cursor, unsigned int *value) {
   const char *p = *cursor;
   unsigned int parsed = 0;
@@ -49,7 +84,7 @@ static int neverc_krt_parse_uint(const char **cursor, unsigned int *value) {
     unsigned int digit = (unsigned int)(*p - '0');
 
     if (parsed > (~0U - digit) / 10U)
-      return -1;
+      return -2;
     parsed = parsed * 10U + digit;
     p++;
   }
@@ -76,6 +111,7 @@ int neverc_krt_parse_banner_identity(
     const char *banner, struct neverc_krt_observed_identity *identity) {
   const char *p = banner;
   const char *release_token;
+  const char *release_end;
   struct neverc_krt_observed_identity parsed = {0};
 
   if (!banner || !identity)
@@ -87,17 +123,46 @@ int neverc_krt_parse_banner_identity(
       neverc_krt_parse_uint(&p, &parsed.linux_minor) || *p++ != '.' ||
       neverc_krt_parse_uint(&p, &parsed.linux_patch))
     return -1;
-  if (neverc_krt_consume_literal(&p, "-android"))
-    return -1;
-  if (neverc_krt_parse_uint(&p, &parsed.android_release) || *p++ != '-' ||
-      neverc_krt_parse_uint(&p, &parsed.kmi_generation))
-    return -1;
-  if (*p != '\0' && *p != '-' && *p != ' ')
-    return -1;
-  while (*p && *p != ' ')
-    p++;
+
+  release_end = p;
+  while (*release_end && *release_end != ' ' && *release_end != '\n' &&
+         *release_end != '\t')
+    release_end++;
   parsed.release_token = release_token;
-  parsed.release_token_length = (unsigned long)(p - release_token);
+  parsed.release_token_length = (unsigned long)(release_end - release_token);
+
+  /*
+   * OEM kernels are not required to retain the Android/KMI suffix.  Preserve
+   * a successfully parsed base Linux version for selected-profile
+   * compatibility, while marking the richer identity only when the complete
+   * `-androidN-KMI` prefix is well formed.  Numeric overflow is corruption,
+   * not a vendor spelling variation, and remains a hard parse failure.
+   */
+  {
+    const char *android = p;
+    unsigned int android_release;
+    unsigned int kmi_generation;
+    int status;
+
+    if (!neverc_krt_consume_literal(&android, "-android")) {
+      status = neverc_krt_parse_uint(&android, &android_release);
+      if (status == -2)
+        return -1;
+      if (!status && *android == '-') {
+        android++;
+        status = neverc_krt_parse_uint(&android, &kmi_generation);
+        if (status == -2)
+          return -1;
+        if (!status && (*android == '\0' || *android == '-' ||
+                        *android == ' ' || *android == '\n' ||
+                        *android == '\t')) {
+          parsed.android_release = android_release;
+          parsed.kmi_generation = kmi_generation;
+          parsed.has_android_identity = 1;
+        }
+      }
+    }
+  }
   *identity = parsed;
   return 0;
 }

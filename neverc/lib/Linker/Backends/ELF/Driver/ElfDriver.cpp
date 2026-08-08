@@ -2376,10 +2376,16 @@ void LinkerDriver::execute(opt::InputArgList &args) {
     mergeOpts.pureC = true;
     mergeOpts.dropDebugInfo = (config->strip != StripPolicy::None);
     if (config->androidKernelModule) {
+      mergeOpts.androidKernelModule = true;
       mergeOpts.mergeSections = true;
       mergeOpts.preservedSections = {
-          ".modinfo", "__versions", ".gnu.linkonce.this_module",
-          ".plt",     ".init.plt",  ".text.ftrace_trampoline",
+          ".modinfo",
+          "__versions",
+          ".codetag.alloc_tags",
+          ".gnu.linkonce.this_module",
+          ".plt",
+          ".init.plt",
+          ".text.ftrace_trampoline",
       };
     }
 

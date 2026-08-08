@@ -576,7 +576,8 @@ struct RelSpec {
 /// symbols (at known section-relative offsets), and relocations.
 SmallVector<char, 0> buildSectionedELF(ArrayRef<SecSpec> Secs,
                                        ArrayRef<SymSpec> Syms,
-                                       ArrayRef<RelSpec> Rels) {
+                                       ArrayRef<RelSpec> Rels,
+                                       uint16_t Machine = ELF::EM_X86_64) {
   using namespace ELF;
   using Ehdr = Elf64_Ehdr;
   using Shdr = Elf64_Shdr;
@@ -725,7 +726,7 @@ SmallVector<char, 0> buildSectionedELF(ArrayRef<SecSpec> Secs,
   H->e_ident[EI_DATA] = ELFDATA2LSB;
   H->e_ident[EI_VERSION] = EV_CURRENT;
   H->e_type = ET_REL;
-  H->e_machine = EM_X86_64;
+  H->e_machine = Machine;
   H->e_version = EV_CURRENT;
   H->e_ehsize = sizeof(Ehdr);
   H->e_shentsize = sizeof(Shdr);
@@ -815,6 +816,7 @@ struct ParsedSym {
   uint64_t Value = 0;
   uint16_t Shndx = 0;
   uint8_t Bind = 0;
+  uint8_t Type = 0;
 };
 struct ParsedRela {
   uint64_t Offset = 0;
@@ -913,6 +915,7 @@ ElfView parseELF(ArrayRef<char> Buf) {
       PSym.Value = S[k].st_value;
       PSym.Shndx = S[k].st_shndx;
       PSym.Bind = S[k].st_info >> 4;
+      PSym.Type = S[k].st_info & 0xf;
       V.Syms.push_back(std::move(PSym));
     }
   }
@@ -2977,6 +2980,194 @@ TEST(MergeELFSemantic, PreservedSectionsNotMerged) {
   EXPECT_GE(V.findSec(".text"), 0);
   EXPECT_GE(V.findSec(".modinfo"), 0);
   EXPECT_LT(V.findSec(".text.foo"), 0);
+}
+
+TEST(MergeELFSemantic, AndroidKernelModuleSynthesizesLoaderSections) {
+  SecSpec Text{".text", 0x20, 16};
+  auto Obj = buildSectionedELF({Text},
+                               {SymSpec{"__start_alloc_tags", -1, 0},
+                                SymSpec{"__stop_alloc_tags", -1, 0}},
+                               {}, ELF::EM_AARCH64);
+  SmallVector<SmallVector<char, 0>, 1> Bufs;
+  Bufs.push_back(std::move(Obj));
+
+  Options Opts;
+  Opts.mergeSections = true;
+  Opts.androidKernelModule = true;
+  auto [OK, Out] = mergeELF(Bufs, Opts);
+  ASSERT_TRUE(OK);
+
+  ElfView V = parseELF(Out);
+  ASSERT_TRUE(V.Ok);
+  const int VersionsIdx = V.findSec("__versions");
+  ASSERT_GE(VersionsIdx, 0);
+  EXPECT_EQ(V.Secs[VersionsIdx].Type, ELF::SHT_PROGBITS);
+  EXPECT_NE(V.Secs[VersionsIdx].Flags & ELF::SHF_ALLOC, 0u);
+  EXPECT_EQ(V.Secs[VersionsIdx].Size, 0u);
+  EXPECT_GE(V.Secs[VersionsIdx].Align, 8u);
+
+  const int AllocTagsIdx = V.findSec(".codetag.alloc_tags");
+  ASSERT_GE(AllocTagsIdx, 0);
+  EXPECT_EQ(V.Secs[AllocTagsIdx].Type, ELF::SHT_PROGBITS);
+  EXPECT_NE(V.Secs[AllocTagsIdx].Flags & ELF::SHF_ALLOC, 0u);
+  EXPECT_NE(V.Secs[AllocTagsIdx].Flags & ELF::SHF_WRITE, 0u);
+  EXPECT_EQ(V.Secs[AllocTagsIdx].Size, 0u);
+  EXPECT_GE(V.Secs[AllocTagsIdx].Align, 8u);
+
+  const ParsedSym *Start = V.findSym("__start_alloc_tags");
+  const ParsedSym *Stop = V.findSym("__stop_alloc_tags");
+  ASSERT_NE(Start, nullptr);
+  ASSERT_NE(Stop, nullptr);
+  EXPECT_EQ(Start->Bind, ELF::STB_GLOBAL);
+  EXPECT_EQ(Stop->Bind, ELF::STB_GLOBAL);
+  EXPECT_EQ(Start->Type, ELF::STT_NOTYPE);
+  EXPECT_EQ(Stop->Type, ELF::STT_NOTYPE);
+  EXPECT_EQ(Start->Shndx, static_cast<unsigned>(AllocTagsIdx));
+  EXPECT_EQ(Stop->Shndx, static_cast<unsigned>(AllocTagsIdx));
+  EXPECT_EQ(Start->Value, 0u);
+  EXPECT_EQ(Stop->Value, 0u);
+}
+
+TEST(MergeELFSemantic, AndroidKernelModuleCollectsAllocTags) {
+  SecSpec Tags{
+      "alloc_tags", 24, 8, ELF::SHT_PROGBITS, ELF::SHF_ALLOC | ELF::SHF_WRITE,
+      0x5a};
+  SecSpec Names{".rodata", 8, 8, ELF::SHT_PROGBITS, ELF::SHF_ALLOC, 0x6e};
+  RelSpec TagRel{0, 0, "tag_name", ELF::R_AARCH64_ABS64, 0};
+  auto Obj = buildSectionedELF(
+      {Tags, Names},
+      {SymSpec{"real_alloc_tag", 0, 8}, SymSpec{"tag_name", 1, 0}}, {TagRel},
+      ELF::EM_AARCH64);
+  SmallVector<SmallVector<char, 0>, 1> Bufs;
+  Bufs.push_back(std::move(Obj));
+
+  Options Opts;
+  Opts.mergeSections = true;
+  Opts.androidKernelModule = true;
+  auto [OK, Out] = mergeELF(Bufs, Opts);
+  ASSERT_TRUE(OK);
+
+  ElfView V = parseELF(Out);
+  ASSERT_TRUE(V.Ok);
+  EXPECT_LT(V.findSec("alloc_tags"), 0);
+  const int AllocTagsIdx = V.findSec(".codetag.alloc_tags");
+  ASSERT_GE(AllocTagsIdx, 0);
+  ASSERT_EQ(V.Secs[AllocTagsIdx].Size, 24u);
+  EXPECT_EQ(V.Secs[AllocTagsIdx].Data,
+            std::vector<uint8_t>(24, static_cast<uint8_t>(0x5a)));
+
+  const ParsedSym *Tag = V.findSym("real_alloc_tag");
+  const ParsedSym *Start = V.findSym("__start_alloc_tags");
+  const ParsedSym *Stop = V.findSym("__stop_alloc_tags");
+  ASSERT_NE(Tag, nullptr);
+  ASSERT_NE(Start, nullptr);
+  ASSERT_NE(Stop, nullptr);
+  EXPECT_EQ(Tag->Shndx, static_cast<unsigned>(AllocTagsIdx));
+  EXPECT_EQ(Tag->Value, 8u);
+  EXPECT_EQ(Start->Value, 0u);
+  EXPECT_EQ(Stop->Value, 24u);
+  EXPECT_EQ(Start->Type, ELF::STT_NOTYPE);
+  EXPECT_EQ(Stop->Type, ELF::STT_NOTYPE);
+  ASSERT_EQ(V.Relas.size(), 1u);
+  EXPECT_EQ(V.Relas[0].TargetSec, static_cast<unsigned>(AllocTagsIdx));
+  EXPECT_EQ(V.Relas[0].Type, ELF::R_AARCH64_ABS64);
+}
+
+TEST(MergeELFVerify, AndroidKernelModuleRejectsCorruptTagBoundary) {
+  SecSpec Text{".text", 0x20, 16};
+  auto Obj = buildSectionedELF({Text}, {}, {}, ELF::EM_AARCH64);
+  SmallVector<SmallVector<char, 0>, 1> Bufs;
+  Bufs.push_back(std::move(Obj));
+
+  Options Opts;
+  Opts.mergeSections = true;
+  Opts.androidKernelModule = true;
+  auto [OK, Out] = mergeELF(Bufs, Opts);
+  ASSERT_TRUE(OK);
+
+  std::string Err;
+  EXPECT_TRUE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs),
+                          ArrayRef<char>(Out), Format::ELF64LE, Opts, &Err))
+      << Err;
+
+  ASSERT_TRUE(patchSymValue(Out, "__stop_alloc_tags", 1));
+  Err.clear();
+  EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs),
+                           ArrayRef<char>(Out), Format::ELF64LE, Opts, &Err));
+  EXPECT_NE(Err.find("__stop_alloc_tags"), std::string::npos) << Err;
+}
+
+TEST(MergeELFSemantic, AndroidKernelModuleRejectsConflictingTagBoundaries) {
+  SecSpec Tags{".codetag.alloc_tags", 8, 8, ELF::SHT_PROGBITS,
+               ELF::SHF_ALLOC | ELF::SHF_WRITE};
+  auto Obj = buildSectionedELF(
+      {Tags},
+      {SymSpec{"__start_alloc_tags", 0, 4}, SymSpec{"__stop_alloc_tags", 0, 8}},
+      {}, ELF::EM_AARCH64);
+  SmallVector<SmallVector<char, 0>, 1> Bufs;
+  Bufs.push_back(std::move(Obj));
+
+  Options Opts;
+  Opts.mergeSections = true;
+  Opts.androidKernelModule = true;
+  EXPECT_FALSE(mergeELF(Bufs, Opts).first);
+}
+
+TEST(MergeELFSemantic, AndroidKernelModuleAcceptsMatchingTagBoundaries) {
+  SecSpec Tags{".codetag.alloc_tags", 8, 8, ELF::SHT_PROGBITS,
+               ELF::SHF_ALLOC | ELF::SHF_WRITE};
+  auto Obj = buildSectionedELF(
+      {Tags},
+      {SymSpec{"__start_alloc_tags", 0, 0}, SymSpec{"__stop_alloc_tags", 0, 8}},
+      {}, ELF::EM_AARCH64);
+  SmallVector<SmallVector<char, 0>, 1> Bufs;
+  Bufs.push_back(std::move(Obj));
+
+  Options Opts;
+  Opts.mergeSections = true;
+  Opts.androidKernelModule = true;
+  auto [OK, Out] = mergeELF(Bufs, Opts);
+  ASSERT_TRUE(OK);
+
+  ElfView V = parseELF(Out);
+  ASSERT_TRUE(V.Ok);
+  const ParsedSym *Start = V.findSym("__start_alloc_tags");
+  const ParsedSym *Stop = V.findSym("__stop_alloc_tags");
+  ASSERT_NE(Start, nullptr);
+  ASSERT_NE(Stop, nullptr);
+  EXPECT_EQ(Start->Type, ELF::STT_NOTYPE);
+  EXPECT_EQ(Stop->Type, ELF::STT_NOTYPE);
+}
+
+TEST(MergeELFSemantic, AndroidKernelModuleRejectsLocalTagBoundaries) {
+  SecSpec Tags{".codetag.alloc_tags", 8, 8, ELF::SHT_PROGBITS,
+               ELF::SHF_ALLOC | ELF::SHF_WRITE};
+  SymSpec LocalStart{"__start_alloc_tags", 0, 0};
+  LocalStart.Global = false;
+  auto Obj = buildSectionedELF({Tags}, {LocalStart}, {}, ELF::EM_AARCH64);
+  SmallVector<SmallVector<char, 0>, 1> Bufs;
+  Bufs.push_back(std::move(Obj));
+
+  Options Opts;
+  Opts.mergeSections = true;
+  Opts.androidKernelModule = true;
+  EXPECT_FALSE(mergeELF(Bufs, Opts).first);
+}
+
+TEST(MergeELFSemantic, NonAndroidMergeDoesNotSynthesizeLoaderSections) {
+  SecSpec Text{".text", 0x20, 16};
+  auto Obj = buildSectionedELF({Text}, {}, {});
+  SmallVector<SmallVector<char, 0>, 1> Bufs;
+  Bufs.push_back(std::move(Obj));
+
+  auto [OK, Out] = mergeELF(Bufs);
+  ASSERT_TRUE(OK);
+  ElfView V = parseELF(Out);
+  ASSERT_TRUE(V.Ok);
+  EXPECT_LT(V.findSec("__versions"), 0);
+  EXPECT_LT(V.findSec(".codetag.alloc_tags"), 0);
+  EXPECT_EQ(V.findSym("__start_alloc_tags"), nullptr);
+  EXPECT_EQ(V.findSym("__stop_alloc_tags"), nullptr);
 }
 
 TEST(MergeELFSemantic, GlobalSymbolDedupKeepsDefinition) {

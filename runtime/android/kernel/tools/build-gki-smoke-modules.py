@@ -25,6 +25,17 @@ def load_verifier():
     return module
 
 
+def load_module_verifier():
+    spec = importlib.util.spec_from_file_location(
+        "verify_android_module", TOOLS / "verify-android-module.py"
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError("cannot load verify-android-module.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def resolve_tool(value, label):
     result = shutil.which(value)
     if result is None:
@@ -92,10 +103,21 @@ def inspect_compiler_kcfi_typeids(module, expected, verify):
     return actual
 
 
+def inspect_loader_contract(module, verifier):
+    details = verifier.verify_module(module, require_empty_alloc_tags=True)
+    print(
+        "[smoke] loader ABI: "
+        f"versions_entries={details['versions_entries']} "
+        f"alloc_tags_size={details['alloc_tags_size']}"
+    )
+    return details
+
+
 def main(argv=None):
     args = parse_args(argv)
     try:
         verify = load_verifier()
+        module_verify = load_module_verifier()
         lock = verify.load_lock(args.lock)
         compiler = resolve_tool(args.compiler, "NeverC compiler")
         nm = resolve_tool(args.nm, "nm")
@@ -151,6 +173,7 @@ def main(argv=None):
             kcfi_typeids = inspect_compiler_kcfi_typeids(
                 output, entry["kcfi_typeids"], verify
             )
+            loader_contract = inspect_loader_contract(output, module_verify)
 
             undefined = subprocess.run(
                 [nm, "-u", str(output)],
@@ -177,6 +200,7 @@ def main(argv=None):
             index["modules"][profile] = {
                 "file": output.name,
                 "kcfi_typeids": kcfi_typeids,
+                "loader_contract": loader_contract,
                 "sha256": digest,
                 "size": output.stat().st_size,
                 "vermagic": details["vermagic"],

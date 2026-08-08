@@ -66,8 +66,22 @@ struct neverc_krt_observed_identity {
   unsigned int linux_patch;
   unsigned int android_release;
   unsigned int kmi_generation;
+  unsigned int page_shift;
   const char *release_token;
   unsigned long release_token_length;
+  unsigned char has_android_identity;
+};
+
+/*
+ * Exact means the certified GKI release token matches byte-for-byte.
+ * Compatible is available only to an explicitly selected build profile and
+ * requires the same Linux major.minor series and page size.  Callers without
+ * an explicit profile must continue to require an exact identity.
+ */
+enum neverc_krt_profile_match {
+  NEVERC_KRT_PROFILE_MATCH_NONE = 0,
+  NEVERC_KRT_PROFILE_MATCH_COMPATIBLE = 1,
+  NEVERC_KRT_PROFILE_MATCH_EXACT = 2,
 };
 
 static inline const struct neverc_krt_profile *neverc_krt_find_profile_in_table(
@@ -88,6 +102,9 @@ const struct neverc_krt_profile *neverc_krt_find_profile_by_identity(
     unsigned int android_release, unsigned int kmi_generation,
     unsigned int page_shift, const char *release_token,
     unsigned long release_token_length);
+enum neverc_krt_profile_match neverc_krt_match_profile(
+    const struct neverc_krt_profile *profile,
+    const struct neverc_krt_observed_identity *identity);
 int neverc_krt_parse_banner_identity(
     const char *banner, struct neverc_krt_observed_identity *identity);
 

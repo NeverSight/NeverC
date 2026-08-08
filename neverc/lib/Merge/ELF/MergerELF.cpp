@@ -36,6 +36,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <optional>
 
 using namespace llvm;
 
@@ -404,7 +405,7 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
           if (auto LN = EF.getSectionName(Secs[S.sh_link]))
             LinkTargetName = detail::canonicalELFSectionName(
                 *LN, Secs[S.sh_link].sh_flags, Opts.mergeSections,
-                Opts.preservedSections);
+                Opts.androidKernelModule, Opts.preservedSections);
           else
             consumeError(LN.takeError());
         }
@@ -412,9 +413,9 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
 
       // Canonicalize per-symbol sections (.text.foo -> .text, ...) via the
       // single shared helper the verifier also uses, so the two never drift.
-      SecName = detail::canonicalELFSectionName(SecName, S.sh_flags,
-                                                Opts.mergeSections,
-                                                Opts.preservedSections);
+      SecName = detail::canonicalELFSectionName(
+          SecName, S.sh_flags, Opts.mergeSections, Opts.androidKernelModule,
+          Opts.preservedSections);
 
       if (Opts.dropDebugInfo &&
           (SecName.starts_with(".debug_") || SecName == ".debug" ||
@@ -766,6 +767,95 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     };
     if (!AddIndex(".debug_cu_index", std::move(Indexes.CompileUnits)) ||
         !AddIndex(".debug_tu_index", std::move(Indexes.TypeUnits)))
+      return false;
+  }
+
+  // Android's module linker script supplies a small loader-facing ABI that a
+  // plain relocatable merge otherwise lacks.  Do this once, at the final `.ko`
+  // merge, instead of emitting one weak placeholder per translation unit.
+  if (Opts.androidKernelModule) {
+    auto EnsureSection =
+        [&](StringRef Name, uint64_t RequiredFlags,
+            uint64_t RequiredAlign) -> std::optional<unsigned> {
+      auto It = SectionIndex.find(Name);
+      if (It == SectionIndex.end()) {
+        Shdr Header{};
+        Header.sh_type = SHT_PROGBITS;
+        Header.sh_flags = RequiredFlags;
+        Header.sh_addralign = RequiredAlign;
+        return findOrCreateSection(Name, Header);
+      }
+      // One output name cannot describe incompatible section types/flags.
+      // findOrCreateSection intentionally keeps those as separate candidates;
+      // the kernel module ABI requires exactly one canonical range.
+      if (It->second.size() != 1)
+        return std::nullopt;
+      MergedSection &Section = MergedSections[It->second.front()];
+      if (Section.Template.sh_type != SHT_PROGBITS)
+        return std::nullopt;
+      Section.Template.sh_flags |= RequiredFlags;
+      Section.Template.sh_addralign =
+          std::max<uint64_t>(Section.Template.sh_addralign, RequiredAlign);
+      return It->second.front();
+    };
+
+    if (!EnsureSection("__versions", SHF_ALLOC, 8)) {
+      errs() << "neverc: Android module merge: incompatible __versions "
+                "section\n";
+      return false;
+    }
+    auto AllocTags =
+        EnsureSection(".codetag.alloc_tags", SHF_ALLOC | SHF_WRITE, 8);
+    if (!AllocTags) {
+      errs() << "neverc: Android module merge: incompatible "
+                ".codetag.alloc_tags section\n";
+      return false;
+    }
+
+    const uint64_t AllocTagsSize =
+        MergedSections[*AllocTags].Template.sh_type == SHT_NOBITS
+            ? MergedSections[*AllocTags].VirtualSize
+            : MergedSections[*AllocTags].Data.size();
+    auto DefineBoundary = [&](StringRef Name, uint64_t Value) {
+      for (const Sym &Local : LocalSyms) {
+        if (Local.st_name < SymStrTab.Data.size() &&
+            StringRef(SymStrTab.Data.data() + Local.st_name) == Name) {
+          errs() << "neverc: Android module merge: local symbol '" << Name
+                 << "' conflicts with the alloc_tags boundary\n";
+          return false;
+        }
+      }
+      auto Existing = GlobalMap.find(Name);
+      if (Existing != GlobalMap.end()) {
+        Sym &Symbol = GlobalSyms[Existing->second.SlotIdx];
+        if (Symbol.st_shndx != SHN_UNDEF &&
+            (Symbol.st_shndx != *AllocTags + 1 || Symbol.st_value != Value)) {
+          errs() << "neverc: Android module merge: symbol '" << Name
+                 << "' conflicts with the alloc_tags boundary\n";
+          return false;
+        }
+        Symbol.st_shndx = *AllocTags + 1;
+        Symbol.st_value = Value;
+        Symbol.st_size = 0;
+        Symbol.setBindingAndType(STB_GLOBAL, STT_NOTYPE);
+        Existing->second.Pri = PRI_GLOBAL_DEF;
+        Existing->second.Strong = true;
+        return true;
+      }
+
+      Sym Symbol{};
+      Symbol.st_name = SymStrTab.add(Name);
+      Symbol.st_shndx = *AllocTags + 1;
+      Symbol.st_value = Value;
+      Symbol.setBindingAndType(STB_GLOBAL, STT_NOTYPE);
+      const unsigned Slot = GlobalSyms.size();
+      GlobalSyms.push_back(Symbol);
+      GlobalMap.try_emplace(Name, GlobalDedup{Slot, PRI_GLOBAL_DEF, true});
+      return true;
+    };
+
+    if (!DefineBoundary("__start_alloc_tags", 0) ||
+        !DefineBoundary("__stop_alloc_tags", AllocTagsSize))
       return false;
   }
 
