@@ -3,3 +3,4 @@
 # *.ko* would otherwise swallow the Korean guide
 !README.ko.md
 *.o
+.nvk-build-flags

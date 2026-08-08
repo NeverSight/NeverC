@@ -8,8 +8,14 @@ MODULE  = nvk_driver.ko
 MODNAME = neverc_krt_driver
 SRCS    = main.c
 
-# -DNVK_KERNEL=510|515|601|606|612|618 selects the target kernel preset (default 510).
-KERNEL ?= 510
+# -DNVK_KERNEL=510|515|601|606|612|618 selects the target kernel preset.
+# Command-line KERNEL= wins; else last stamp (so `make push` keeps it); else 510.
+# Do not use ?= — an exported KERNEL in the environment would ignore the stamp.
+FLAGS_STAMP := .nvk-build-flags
+SAVED_KERNEL := $(patsubst KERNEL=%,%,$(filter KERNEL=%,$(file <$(FLAGS_STAMP))))
+ifneq ($(origin KERNEL),command line)
+KERNEL := $(if $(SAVED_KERNEL),$(SAVED_KERNEL),510)
+endif
 
 FLAGS = \
 	--target=$(TARGET) \
@@ -18,7 +24,6 @@ FLAGS = \
 	-Wall -Wno-unused
 
 # neverc make only rebuilds on prerequisite mtimes; KERNEL is not a dep.
-FLAGS_STAMP := .nvk-build-flags
 BUILD_ID := KERNEL=$(KERNEL)
 ifneq ($(strip $(file <$(FLAGS_STAMP))),$(BUILD_ID))
 _ := $(file >$(FLAGS_STAMP),$(BUILD_ID))

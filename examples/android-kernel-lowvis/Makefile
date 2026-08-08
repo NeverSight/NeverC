@@ -11,8 +11,18 @@ MODULE  = nvk_lowvis.ko
 MODNAME = neverc_krt_lowvis
 SRCS    = main.c
 
-KERNEL ?= 510
-EXTRA  ?=
+# Command-line KERNEL=/EXTRA= win; else last stamp (so `make push` keeps them).
+# Do not use ?= — an exported KERNEL/EXTRA in the environment would ignore the stamp.
+FLAGS_STAMP := .nvk-build-flags
+_STAMP := $(file <$(FLAGS_STAMP))
+SAVED_KERNEL := $(patsubst KERNEL=%,%,$(filter KERNEL=%,$(_STAMP)))
+SAVED_EXTRA := $(patsubst EXTRA=%,%,$(filter EXTRA=%,$(_STAMP)))
+ifneq ($(origin KERNEL),command line)
+KERNEL := $(if $(SAVED_KERNEL),$(SAVED_KERNEL),510)
+endif
+ifneq ($(origin EXTRA),command line)
+EXTRA := $(SAVED_EXTRA)
+endif
 
 FLAGS = \
 	--target=$(TARGET) \
@@ -22,7 +32,6 @@ FLAGS = \
 	-Wall -Wno-unused
 
 # neverc make only rebuilds on prerequisite mtimes; KERNEL/EXTRA are not deps.
-FLAGS_STAMP := .nvk-build-flags
 BUILD_ID := KERNEL=$(KERNEL) EXTRA=$(EXTRA)
 ifneq ($(strip $(file <$(FLAGS_STAMP))),$(BUILD_ID))
 _ := $(file >$(FLAGS_STAMP),$(BUILD_ID))
