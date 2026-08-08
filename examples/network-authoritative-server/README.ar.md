@@ -15,7 +15,7 @@
 - حماية من إعادة تشغيل الطابع الزمني/nonce للانضمام وأرقام تسلسل إدخال
   متزايدة لكل جلسة.
 
-البناء للمضيف، أو تعيين أي triple هدف NeverC مدعوم:
+الهدف الافتراضي هو `x86_64-linux-gnu`. يمكن استبداله بأي هدف NeverC مدعوم:
 
 ```bash
 neverc make          # debug: ‏-g (الافتراضي في أول بناء)
@@ -25,8 +25,8 @@ neverc make TARGET=aarch64-linux-gnu
 neverc make TARGET=x86_64-pc-windows-msvc OUTPUT=authoritative-server.exe
 ```
 
-يحفظ Makefile قيمة `PROFILE`، لذلك تبقي أوامر `neverc make` اللاحقة نفس
-اختيار debug/release. يستخدم الإصدار `--strip` المدمج في NeverC.
+يحفظ Makefile قيمتي `TARGET` و`PROFILE`، لذلك تبقي أوامر `neverc make`
+اللاحقة نفس اختيار المُخرَج. يستخدم الإصدار `--strip` المدمج في NeverC.
 انظر [بناء الإصدار](../../docs/release-builds/README.ar.md).
 
 

@@ -11,7 +11,7 @@
 - 60 Hz 权威模拟循环和有界输入队列；
 - 针对加入请求的时间戳/nonce 重放保护，以及每个会话的单调递增输入序列号。
 
-为本机构建，或设置任意受支持的 NeverC 目标三元组：
+默认目标为 `x86_64-linux-gnu`。可用任意受支持的 NeverC 目标覆盖：
 
 ```bash
 neverc make          # debug：-g（首次构建默认）
@@ -21,7 +21,7 @@ neverc make TARGET=aarch64-linux-gnu
 neverc make TARGET=x86_64-pc-windows-msvc OUTPUT=authoritative-server.exe
 ```
 
-Makefile 会持久化 `PROFILE`，之后的 `neverc make` 会保持同一 debug/release
+Makefile 会持久化 `TARGET` 和 `PROFILE`，之后的 `neverc make` 会保持同一产物
 选择。发布构建使用 NeverC 内置 `--strip`。
 参见 [发布构建](../../docs/release-builds/README.zh-CN.md)。
 

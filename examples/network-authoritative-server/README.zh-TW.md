@@ -11,7 +11,7 @@
 - 60 Hz 權威模擬迴圈和有界輸入佇列；
 - 針對加入請求的時間戳記/nonce 重放保護，以及每個工作階段的單調遞增輸入序號。
 
-為主機建置，或設定任何受支援的 NeverC 目標三元組：
+預設目標為 `x86_64-linux-gnu`。可用任意支援的 NeverC 目標覆寫：
 
 ```bash
 neverc make          # debug：-g（首次建置預設）
@@ -21,7 +21,7 @@ neverc make TARGET=aarch64-linux-gnu
 neverc make TARGET=x86_64-pc-windows-msvc OUTPUT=authoritative-server.exe
 ```
 
-Makefile 會持久化 `PROFILE`，之後的 `neverc make` 會保持同一 debug/release
+Makefile 會持久化 `TARGET` 和 `PROFILE`，之後的 `neverc make` 會保持同一產物
 選擇。發布建置使用 NeverC 內建 `--strip`。
 參見 [發布建置](../../docs/release-builds/README.zh-TW.md)。
 

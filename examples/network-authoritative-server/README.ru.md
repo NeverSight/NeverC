@@ -13,7 +13,7 @@
 - защиту от повторного воспроизведения timestamp/nonce для подключений и
   монотонные порядковые номера ввода для каждой сессии.
 
-Сборка для хоста или с любым поддерживаемым целевым triple NeverC:
+Цель по умолчанию: `x86_64-linux-gnu`. Можно заменить любым поддерживаемым целевым triple NeverC:
 
 ```bash
 neverc make          # debug: -g (по умолчанию при первой сборке)
@@ -23,8 +23,8 @@ neverc make TARGET=aarch64-linux-gnu
 neverc make TARGET=x86_64-pc-windows-msvc OUTPUT=authoritative-server.exe
 ```
 
-Makefile сохраняет `PROFILE`, поэтому последующие `neverc make` оставляют тот
-же выбор debug/release. Release использует встроенный `--strip` NeverC.
+Makefile сохраняет `TARGET` и `PROFILE`, поэтому последующие `neverc make`
+оставляют тот же выбор артефакта. Release использует встроенный `--strip` NeverC.
 См. [Release-сборки](../../docs/release-builds/README.ru.md).
 
 

@@ -13,7 +13,7 @@
 - 가입 요청용 타임스탬프/nonce 재생 방지 및 세션별 단조 증가 입력
   시퀀스 번호.
 
-호스트용으로 빌드하거나 지원되는 NeverC 대상 트리플을 설정:
+기본 대상은 `x86_64-linux-gnu`입니다. 지원되는 NeverC 대상으로 덮어쓸 수 있습니다:
 
 ```bash
 neverc make          # debug: -g(첫 빌드 기본값)
@@ -23,8 +23,8 @@ neverc make TARGET=aarch64-linux-gnu
 neverc make TARGET=x86_64-pc-windows-msvc OUTPUT=authoritative-server.exe
 ```
 
-Makefile이 `PROFILE`을 유지하므로 이후 `neverc make`는 같은
-debug/release 선택을 사용합니다. 릴리스는 NeverC 내장 `--strip`을 사용합니다.
+Makefile이 `TARGET`과 `PROFILE`을 유지하므로 이후 `neverc make`는 같은
+산출물 선택을 사용합니다. 릴리스는 NeverC 내장 `--strip`을 사용합니다.
 [릴리스 빌드](../../docs/release-builds/README.ko.md)를 참고하세요.
 
 

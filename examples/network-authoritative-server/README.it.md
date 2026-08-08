@@ -13,8 +13,7 @@ socket di piattaforma grezzi. Fornisce:
 - protezione da replay timestamp/nonce per le join e numeri di sequenza di
   input monotoni per sessione.
 
-Compilazione per l'host, o impostazione di qualsiasi tripletta di target
-NeverC supportata:
+Target predefinito: `x86_64-linux-gnu`. Sovrascrivibile con qualsiasi target NeverC supportato:
 
 ```bash
 neverc make          # debug: -g (predefinito alla prima build)
@@ -24,8 +23,8 @@ neverc make TARGET=aarch64-linux-gnu
 neverc make TARGET=x86_64-pc-windows-msvc OUTPUT=authoritative-server.exe
 ```
 
-Il Makefile conserva `PROFILE`, quindi i successivi `neverc make` mantengono la
-stessa scelta debug/release. Release usa il `--strip` integrato di NeverC.
+Il Makefile conserva `TARGET` e `PROFILE`, quindi i successivi `neverc make`
+mantengono la stessa scelta di artefatto. Release usa il `--strip` integrato di NeverC.
 Vedi [Build di release](../../docs/release-builds/README.it.md).
 
 

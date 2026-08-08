@@ -23,17 +23,18 @@ MAC の対象は `agent-id || first-32-header-bytes || body` です。NRPC
 コレクターが信頼できない本文の生バイトを監査ログへ直接書き込むことは
 ありません。
 
-ホストまたは任意の対応ターゲット向けにビルドします。
+既定ターゲットは `x86_64-linux-gnu` です。対応する任意の NeverC ターゲットで上書きできます：
 
 ```bash
 neverc make          # debug: -g（初回ビルドの既定）
 neverc make release  # release: -O2 --strip
 neverc make debug    # debug に戻す
-neverc make TARGET=aarch64-pc-windows-msvc OUTPUT=anticheat-collector.exe
+neverc make TARGET=aarch64-linux-gnu
+neverc make TARGET=x86_64-pc-windows-msvc OUTPUT=anticheat-collector.exe
 ```
 
-Makefile は `PROFILE` を保持するため、以降の `neverc make` は同じ
-debug/release 選択を使います。リリースは NeverC 組み込みの `--strip` を使います。
+Makefile は `TARGET` と `PROFILE` を保持するため、以降の `neverc make` は同じ
+成果物選択を使います。リリースは NeverC 組み込みの `--strip` を使います。
 [リリースビルド](../../docs/release-builds/README.ja.md) を参照。
 
 

@@ -13,8 +13,7 @@ des sockets bruts de la plateforme. Il fournit :
 - une protection contre le rejeu timestamp/nonce pour les jointures et des
   numéros de séquence d'entrée monotones par session.
 
-Compilation pour l'hôte, ou définition de n'importe quel triple cible NeverC
-pris en charge :
+Cible par défaut : `x86_64-linux-gnu`. Remplacez-la par toute cible NeverC prise en charge :
 
 ```bash
 neverc make          # debug : -g (par défaut au premier build)
@@ -24,8 +23,8 @@ neverc make TARGET=aarch64-linux-gnu
 neverc make TARGET=x86_64-pc-windows-msvc OUTPUT=authoritative-server.exe
 ```
 
-Le Makefile conserve `PROFILE`, donc les `neverc make` suivants gardent le
-même choix debug/release. La version release utilise le `--strip` intégré.
+Le Makefile conserve `TARGET` et `PROFILE`, donc les `neverc make` suivants
+gardent le même choix d'artefact. La version release utilise le `--strip` intégré.
 Voir [Builds de release](../../docs/release-builds/README.fr.md).
 
 

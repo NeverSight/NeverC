@@ -14,7 +14,7 @@ Plattform-Sockets. Es bietet:
 - Timestamp/Nonce-Replay-Schutz für Joins und monotone Eingabe-Sequenznummern
   pro Sitzung.
 
-Erstellung für den Host oder mit jedem unterstützten NeverC-Ziel-Triple:
+Standardziel: `x86_64-linux-gnu`. Mit jedem unterstützten NeverC-Ziel überschreibbar:
 
 ```bash
 neverc make          # debug: -g (Standard beim ersten Build)
@@ -24,8 +24,8 @@ neverc make TARGET=aarch64-linux-gnu
 neverc make TARGET=x86_64-pc-windows-msvc OUTPUT=authoritative-server.exe
 ```
 
-Das Makefile speichert `PROFILE`, sodass spätere `neverc make`-Aufrufe dieselbe
-debug/release-Auswahl behalten. Release nutzt NeverCs integriertes `--strip`.
+Das Makefile speichert `TARGET` und `PROFILE`, sodass spätere
+`neverc make`-Aufrufe dieselbe Artefaktauswahl behalten. Release nutzt NeverCs integriertes `--strip`.
 Siehe [Release-Builds](../../docs/release-builds/README.de.md).
 
 

@@ -24,17 +24,18 @@ HMAC-SHA256. MAC покрывает
 nonce, дайджестом тела, меткой времени и размером тела; сборщик никогда не
 записывает недоверенные сырые байты тела напрямую в журнал аудита.
 
-Сборка для хоста или любой поддерживаемой цели:
+Цель по умолчанию: `x86_64-linux-gnu`. Можно заменить любым поддерживаемым целевым triple NeverC:
 
 ```bash
 neverc make          # debug: -g (по умолчанию при первой сборке)
 neverc make release  # release: -O2 --strip
 neverc make debug    # вернуться к debug
-neverc make TARGET=aarch64-pc-windows-msvc OUTPUT=anticheat-collector.exe
+neverc make TARGET=aarch64-linux-gnu
+neverc make TARGET=x86_64-pc-windows-msvc OUTPUT=anticheat-collector.exe
 ```
 
-Makefile сохраняет `PROFILE`, поэтому последующие `neverc make` оставляют тот
-же выбор debug/release. Release использует встроенный `--strip` NeverC.
+Makefile сохраняет `TARGET` и `PROFILE`, поэтому последующие `neverc make`
+оставляют тот же выбор артефакта. Release использует встроенный `--strip` NeverC.
 См. [Release-сборки](../../docs/release-builds/README.ru.md).
 
 

@@ -25,17 +25,18 @@ Client-Zertifikat-Fingerabdruck, Nonce, Body-Digest, Zeitstempel und
 Body-Größe an; der Sammler schreibt niemals nicht vertrauenswürdige
 Body-Rohbytes direkt in das Audit-Log.
 
-Erstellung für den Host oder jedes unterstützte Ziel:
+Standardziel: `x86_64-linux-gnu`. Mit jedem unterstützten NeverC-Ziel überschreibbar:
 
 ```bash
 neverc make          # debug: -g (Standard beim ersten Build)
 neverc make release  # release: -O2 --strip
 neverc make debug    # zurück zu debug
-neverc make TARGET=aarch64-pc-windows-msvc OUTPUT=anticheat-collector.exe
+neverc make TARGET=aarch64-linux-gnu
+neverc make TARGET=x86_64-pc-windows-msvc OUTPUT=anticheat-collector.exe
 ```
 
-Das Makefile speichert `PROFILE`, sodass spätere `neverc make`-Aufrufe dieselbe
-debug/release-Auswahl behalten. Release nutzt NeverCs integriertes `--strip`.
+Das Makefile speichert `TARGET` und `PROFILE`, sodass spätere
+`neverc make`-Aufrufe dieselbe Artefaktauswahl behalten. Release nutzt NeverCs integriertes `--strip`.
 Siehe [Release-Builds](../../docs/release-builds/README.de.md).
 
 

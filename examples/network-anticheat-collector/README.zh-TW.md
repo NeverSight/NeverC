@@ -19,16 +19,17 @@ HMAC-SHA256。MAC 涵蓋 `agent-id || first-32-header-bytes || body`。
 其中包含用戶端憑證指紋、nonce、本文摘要、時間戳記和本文大小；收集器絕不會
 將不受信任的本文原始位元組直接寫入稽核日誌。
 
-為主機或任何受支援的目標建置：
+預設目標為 `x86_64-linux-gnu`。可用任意支援的 NeverC 目標覆寫：
 
 ```bash
 neverc make          # debug：-g（首次建置預設）
 neverc make release  # release：-O2 --strip
 neverc make debug    # 切回 debug
-neverc make TARGET=aarch64-pc-windows-msvc OUTPUT=anticheat-collector.exe
+neverc make TARGET=aarch64-linux-gnu
+neverc make TARGET=x86_64-pc-windows-msvc OUTPUT=anticheat-collector.exe
 ```
 
-Makefile 會持久化 `PROFILE`，之後的 `neverc make` 會保持同一 debug/release
+Makefile 會持久化 `TARGET` 和 `PROFILE`，之後的 `neverc make` 會保持同一產物
 選擇。發布建置使用 NeverC 內建 `--strip`。
 參見 [發布建置](../../docs/release-builds/README.zh-TW.md)。
 

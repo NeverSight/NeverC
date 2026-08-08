@@ -24,17 +24,18 @@ JSONL يتضمن بصمة شهادة العميل وnonce وملخص الجسم 
 الجسم؛ لا يكتب الجامع أبداً بايتات الجسم الخام غير الموثوقة مباشرة في
 سجل التدقيق.
 
-البناء للمضيف أو أي هدف مدعوم:
+الهدف الافتراضي هو `x86_64-linux-gnu`. يمكن استبداله بأي هدف NeverC مدعوم:
 
 ```bash
 neverc make          # debug: ‏-g (الافتراضي في أول بناء)
 neverc make release  # release: ‏-O2 --strip
 neverc make debug    # العودة إلى debug
-neverc make TARGET=aarch64-pc-windows-msvc OUTPUT=anticheat-collector.exe
+neverc make TARGET=aarch64-linux-gnu
+neverc make TARGET=x86_64-pc-windows-msvc OUTPUT=anticheat-collector.exe
 ```
 
-يحفظ Makefile قيمة `PROFILE`، لذلك تبقي أوامر `neverc make` اللاحقة نفس
-اختيار debug/release. يستخدم الإصدار `--strip` المدمج في NeverC.
+يحفظ Makefile قيمتي `TARGET` و`PROFILE`، لذلك تبقي أوامر `neverc make`
+اللاحقة نفس اختيار المُخرَج. يستخدم الإصدار `--strip` المدمج في NeverC.
 انظر [بناء الإصدار](../../docs/release-builds/README.ar.md).
 
 

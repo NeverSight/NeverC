@@ -13,8 +13,7 @@ sockets de plataforma en bruto. Proporciona:
 - protección contra reproducción de timestamp/nonce para uniones y números de
   secuencia de entrada monótonos por sesión.
 
-Compilación para el host, o establecimiento de cualquier triple objetivo NeverC
-compatible:
+Destino predeterminado: `x86_64-linux-gnu`. Sustitúyalo por cualquier objetivo NeverC compatible:
 
 ```bash
 neverc make          # debug: -g (predeterminado en la primera compilación)
@@ -24,8 +23,8 @@ neverc make TARGET=aarch64-linux-gnu
 neverc make TARGET=x86_64-pc-windows-msvc OUTPUT=authoritative-server.exe
 ```
 
-El Makefile guarda `PROFILE`, así que los siguientes `neverc make` mantienen la
-misma selección debug/release. Release usa el `--strip` integrado de NeverC.
+El Makefile guarda `TARGET` y `PROFILE`, así que los siguientes `neverc make`
+mantienen la misma selección de artefacto. Release usa el `--strip` integrado de NeverC.
 Véase [Builds de release](../../docs/release-builds/README.es.md).
 
 

@@ -21,17 +21,18 @@ JSONL audit event containing the client-certificate fingerprint, nonce, body
 digest, timestamp, and body size; the collector never writes untrusted body
 bytes directly to the audit log.
 
-Build for the host or any supported target:
+Defaults to `x86_64-linux-gnu`. Override with any supported NeverC target:
 
 ```bash
 neverc make          # debug: -g (default on the first build)
 neverc make release  # release: -O2 --strip
 neverc make debug    # switch back to debug
-neverc make TARGET=aarch64-pc-windows-msvc OUTPUT=anticheat-collector.exe
+neverc make TARGET=aarch64-linux-gnu
+neverc make TARGET=x86_64-pc-windows-msvc OUTPUT=anticheat-collector.exe
 ```
 
-The Makefile persists `PROFILE`, so later `neverc make` keeps the same
-debug/release selection. Release uses NeverC's integrated `--strip`.
+The Makefile persists `TARGET` and `PROFILE`, so later `neverc make` keeps
+the same artifact selection. Release uses NeverC's integrated `--strip`.
 See [Release builds](../../docs/release-builds/README.md).
 
 

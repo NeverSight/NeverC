@@ -22,17 +22,18 @@ HMAC-SHA256이 포함됩니다. MAC은
 포함하는 JSONL 감사 이벤트를 추가합니다. 수집기는 신뢰할 수 없는 본문
 원시 바이트를 감사 로그에 직접 쓰지 않습니다.
 
-호스트 또는 지원되는 모든 대상용으로 빌드:
+기본 대상은 `x86_64-linux-gnu`입니다. 지원되는 NeverC 대상으로 덮어쓸 수 있습니다:
 
 ```bash
 neverc make          # debug: -g(첫 빌드 기본값)
 neverc make release  # release: -O2 --strip
 neverc make debug    # debug로 되돌리기
-neverc make TARGET=aarch64-pc-windows-msvc OUTPUT=anticheat-collector.exe
+neverc make TARGET=aarch64-linux-gnu
+neverc make TARGET=x86_64-pc-windows-msvc OUTPUT=anticheat-collector.exe
 ```
 
-Makefile이 `PROFILE`을 유지하므로 이후 `neverc make`는 같은
-debug/release 선택을 사용합니다. 릴리스는 NeverC 내장 `--strip`을 사용합니다.
+Makefile이 `TARGET`과 `PROFILE`을 유지하므로 이후 `neverc make`는 같은
+산출물 선택을 사용합니다. 릴리스는 NeverC 내장 `--strip`을 사용합니다.
 [릴리스 빌드](../../docs/release-builds/README.ko.md)를 참고하세요.
 
 

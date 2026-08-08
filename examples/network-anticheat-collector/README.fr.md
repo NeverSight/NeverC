@@ -24,17 +24,18 @@ client, le nonce, le digest du corps, l'horodatage et la taille du corps ; le
 collecteur n'écrit jamais directement les octets bruts non fiables du corps
 dans le journal d'audit.
 
-Compilation pour l'hôte ou toute cible prise en charge :
+Cible par défaut : `x86_64-linux-gnu`. Remplacez-la par toute cible NeverC prise en charge :
 
 ```bash
 neverc make          # debug : -g (par défaut au premier build)
 neverc make release  # release : -O2 --strip
 neverc make debug    # revenir en debug
-neverc make TARGET=aarch64-pc-windows-msvc OUTPUT=anticheat-collector.exe
+neverc make TARGET=aarch64-linux-gnu
+neverc make TARGET=x86_64-pc-windows-msvc OUTPUT=anticheat-collector.exe
 ```
 
-Le Makefile conserve `PROFILE`, donc les `neverc make` suivants gardent le
-même choix debug/release. La version release utilise le `--strip` intégré.
+Le Makefile conserve `TARGET` et `PROFILE`, donc les `neverc make` suivants
+gardent le même choix d'artefact. La version release utilise le `--strip` intégré.
 Voir [Builds de release](../../docs/release-builds/README.fr.md).
 
 

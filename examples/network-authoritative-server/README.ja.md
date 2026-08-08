@@ -13,7 +13,7 @@
 - 参加要求向けのタイムスタンプ/nonce リプレイ保護と、セッションごとの
   単調増加入力シーケンス番号。
 
-ホスト向けにビルドするか、対応する NeverC ターゲットトリプルを指定します。
+既定ターゲットは `x86_64-linux-gnu` です。対応する任意の NeverC ターゲットで上書きできます：
 
 ```bash
 neverc make          # debug: -g（初回ビルドの既定）
@@ -23,8 +23,8 @@ neverc make TARGET=aarch64-linux-gnu
 neverc make TARGET=x86_64-pc-windows-msvc OUTPUT=authoritative-server.exe
 ```
 
-Makefile は `PROFILE` を保持するため、以降の `neverc make` は同じ
-debug/release 選択を使います。リリースは NeverC 組み込みの `--strip` を使います。
+Makefile は `TARGET` と `PROFILE` を保持するため、以降の `neverc make` は同じ
+成果物選択を使います。リリースは NeverC 組み込みの `--strip` を使います。
 [リリースビルド](../../docs/release-builds/README.ja.md) を参照。
 
 

@@ -23,17 +23,18 @@ il nonce, il digest del corpo, il timestamp e la dimensione del corpo; il
 collettore non scrive mai direttamente i byte grezzi non attendibili del corpo
 nel log di audit.
 
-Compilazione per l'host o qualsiasi target supportato:
+Target predefinito: `x86_64-linux-gnu`. Sovrascrivibile con qualsiasi target NeverC supportato:
 
 ```bash
 neverc make          # debug: -g (predefinito alla prima build)
 neverc make release  # release: -O2 --strip
 neverc make debug    # torna a debug
-neverc make TARGET=aarch64-pc-windows-msvc OUTPUT=anticheat-collector.exe
+neverc make TARGET=aarch64-linux-gnu
+neverc make TARGET=x86_64-pc-windows-msvc OUTPUT=anticheat-collector.exe
 ```
 
-Il Makefile conserva `PROFILE`, quindi i successivi `neverc make` mantengono la
-stessa scelta debug/release. Release usa il `--strip` integrato di NeverC.
+Il Makefile conserva `TARGET` e `PROFILE`, quindi i successivi `neverc make`
+mantengono la stessa scelta di artefatto. Release usa il `--strip` integrato di NeverC.
 Vedi [Build di release](../../docs/release-builds/README.it.md).
 
 
