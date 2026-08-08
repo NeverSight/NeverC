@@ -29,6 +29,28 @@ adb shell su -c 'insmod /data/local/tests/nvk_hello.ko'
 adb shell su -c 'dmesg | grep neverc_krt_hello'
 ```
 
+## Kernel log (live)
+
+On the device, `cat /proc/kmsg` streams the kernel ring buffer in real time — similar to **DbgView** on Windows. Use it when `insmod` fails with a vague error or you need the exact kernel rejection reason (vermagic, modversions, section size, and so on).
+
+Terminal 1 (leave running):
+
+```bash
+adb shell
+su
+cat /proc/kmsg
+```
+
+Terminal 2:
+
+```bash
+adb shell su -c 'insmod /data/local/tests/nvk_hello.ko'
+```
+
+New lines appear in terminal 1 as the kernel handles the load. Press Ctrl+C to stop.
+
+Note: stock `dmesg -w` is missing on some Android builds; `/proc/kmsg` needs root but follows live kernel output reliably.
+
 ## Unload
 
 ```bash

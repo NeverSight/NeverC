@@ -29,6 +29,28 @@ adb shell su -c 'insmod /data/local/tests/nvk_driver.ko'
 adb shell su -c 'dmesg | grep neverc_krt_driver'
 ```
 
+## カーネルログ（リアルタイム）
+
+デバイスで `cat /proc/kmsg` を実行すると、カーネル ring buffer をリアルタイムに追跡できます。Windows の **DbgView** に近い使い方です。`insmod` が曖昧なエラーだけを返すときや、vermagic・modversions・section サイズなど本当の拒否理由を確認するときに使います。
+
+端末 1（そのまま実行）：
+
+```bash
+adb shell
+su
+cat /proc/kmsg
+```
+
+端末 2：
+
+```bash
+adb shell su -c 'insmod /data/local/tests/nvk_driver.ko'
+```
+
+ロード直後の新しい行が端末 1 に流れます。Ctrl+C で停止します。
+
+補足：Android によっては `dmesg -w` が使えません。`/proc/kmsg` は root が必要ですが、モジュール読み込みのデバッグには安定しています。
+
 ## アンロード
 
 ```bash

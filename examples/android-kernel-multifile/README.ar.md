@@ -35,6 +35,28 @@ adb shell su -c 'insmod /data/local/tests/nvk_multi.ko'
 adb shell su -c 'dmesg | grep neverc_krt_multi'
 ```
 
+## سجل النواة (مباشر)
+
+على الجهاز، يبث `cat /proc/kmsg` مخزن حلقة النواة في الوقت الفعلي — شبيه بـ **DbgView** على Windows. استخدمه عندما يفشل `insmod` برسالة غامضة أو تحتاج سبب الرفض الحقيقي (vermagic وmodversions وحجم القسم، إلخ).
+
+الطرفية 1 (اتركها تعمل):
+
+```bash
+adb shell
+su
+cat /proc/kmsg
+```
+
+الطرفية 2:
+
+```bash
+adb shell su -c 'insmod /data/local/tests/nvk_multi.ko'
+```
+
+تظهر الأسطر الجديدة في الطرفية 1 لحظة التحميل. اضغط Ctrl+C للإيقاف.
+
+ملاحظة: `dmesg -w` غير متوفر على بعض إصدارات Android؛ `/proc/kmsg` يحتاج root لكنه أكثر موثوقية لتصحيح تحميل الوحدات.
+
 ## إلغاء التحميل
 
 ```bash

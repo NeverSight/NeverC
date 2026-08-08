@@ -37,6 +37,28 @@ adb shell su -c 'insmod /data/local/tests/nvk_syscall_interpose.ko'
 adb shell su -c 'dmesg | grep neverc_krt_syscall'
 ```
 
+## 查看内核日志（实时）
+
+在设备上执行 `cat /proc/kmsg` 可持续读取内核 ring buffer，效果类似 Windows 上的 **DbgView**。当 `insmod` 只返回含糊错误、或需要看清 vermagic、modversions、section 大小等真实拒绝原因时，应优先用这种方式。
+
+终端 1（保持运行）：
+
+```bash
+adb shell
+su
+cat /proc/kmsg
+```
+
+终端 2：
+
+```bash
+adb shell su -c 'insmod /data/local/tests/nvk_syscall_interpose.ko'
+```
+
+加载瞬间的新日志会出现在终端 1。按 Ctrl+C 停止。
+
+说明：部分 Android 自带的 `dmesg` 不支持 `-w`；`/proc/kmsg` 需要 root，但对模块加载调试更可靠。
+
 ## 卸载模块
 
 ```bash

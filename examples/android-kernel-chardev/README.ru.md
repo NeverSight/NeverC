@@ -29,6 +29,28 @@ adb shell su -c 'insmod /data/local/tests/nvk_chardev.ko'
 adb shell su -c 'dmesg | grep neverc_krt_chardev'
 ```
 
+## Журнал ядра (в реальном времени)
+
+На устройстве `cat /proc/kmsg` выводит ring buffer ядра в реальном времени — аналог **DbgView** в Windows. Используйте, когда `insmod` падает с неясной ошибкой или нужна точная причина отказа (vermagic, modversions, размер section и т. д.).
+
+Терминал 1 (оставить работать):
+
+```bash
+adb shell
+su
+cat /proc/kmsg
+```
+
+Терминал 2:
+
+```bash
+adb shell su -c 'insmod /data/local/tests/nvk_chardev.ko'
+```
+
+Новые строки появятся в терминале 1 в момент загрузки. Ctrl+C — остановка.
+
+Примечание: на некоторых сборках Android нет `dmesg -w`; для `/proc/kmsg` нужен root, но для отладки загрузки модулей это надёжнее.
+
 ## Выгрузка
 
 ```bash

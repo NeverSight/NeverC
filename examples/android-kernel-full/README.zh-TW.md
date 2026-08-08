@@ -29,6 +29,28 @@ adb shell su -c 'insmod /data/local/tests/nvk_full.ko'
 adb shell su -c 'dmesg | grep neverc_krt_full'
 ```
 
+## 查看核心日誌（即時）
+
+在裝置上執行 `cat /proc/kmsg` 可持續讀取核心 ring buffer，效果類似 Windows 上的 **DbgView**。當 `insmod` 只回傳含糊錯誤、或需要看清 vermagic、modversions、section 大小等真實拒絕原因時，應優先用這種方式。
+
+終端機 1（保持執行）：
+
+```bash
+adb shell
+su
+cat /proc/kmsg
+```
+
+終端機 2：
+
+```bash
+adb shell su -c 'insmod /data/local/tests/nvk_full.ko'
+```
+
+載入當下的新日誌會出現在終端機 1。按 Ctrl+C 停止。
+
+說明：部分 Android 內建的 `dmesg` 不支援 `-w`；`/proc/kmsg` 需要 root，但對模組載入除錯更可靠。
+
 ## 卸載模組
 
 ```bash

@@ -29,6 +29,28 @@ adb shell su -c 'insmod /data/local/tests/nvk_hello.ko'
 adb shell su -c 'dmesg | grep neverc_krt_hello'
 ```
 
+## Registro del kernel (en vivo)
+
+En el dispositivo, `cat /proc/kmsg` transmite el ring buffer del kernel en tiempo real — similar a **DbgView** en Windows. Úselo cuando `insmod` falle con un error vago o necesite ver el motivo real del rechazo (vermagic, modversions, tamaño de sección, etc.).
+
+Terminal 1 (dejar en ejecución):
+
+```bash
+adb shell
+su
+cat /proc/kmsg
+```
+
+Terminal 2:
+
+```bash
+adb shell su -c 'insmod /data/local/tests/nvk_hello.ko'
+```
+
+Las líneas nuevas aparecen en el terminal 1 al cargar. Ctrl+C para detener.
+
+Nota: en algunas builds de Android falta `dmesg -w`; `/proc/kmsg` requiere root pero sigue la salida del kernel en directo de forma fiable.
+
 ## Descarga
 
 ```bash

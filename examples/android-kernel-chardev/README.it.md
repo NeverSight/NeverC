@@ -29,6 +29,28 @@ adb shell su -c 'insmod /data/local/tests/nvk_chardev.ko'
 adb shell su -c 'dmesg | grep neverc_krt_chardev'
 ```
 
+## Log del kernel (live)
+
+Sul dispositivo, `cat /proc/kmsg` trasmette il ring buffer del kernel in tempo reale — simile a **DbgView** su Windows. Usarlo quando `insmod` fallisce con un errore generico o serve vedere il vero motivo del rifiuto (vermagic, modversions, dimensione section, ecc.).
+
+Terminale 1 (lasciare in esecuzione):
+
+```bash
+adb shell
+su
+cat /proc/kmsg
+```
+
+Terminale 2:
+
+```bash
+adb shell su -c 'insmod /data/local/tests/nvk_chardev.ko'
+```
+
+Le nuove righe compaiono nel terminale 1 al momento del caricamento. Ctrl+C per fermare.
+
+Nota: su alcune build Android manca `dmesg -w`; `/proc/kmsg` richiede root ma segue l'output kernel live in modo affidabile.
+
 ## Scaricamento
 
 ```bash

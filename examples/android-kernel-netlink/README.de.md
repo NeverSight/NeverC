@@ -29,6 +29,28 @@ adb shell su -c 'insmod /data/local/tests/nvk_netlink.ko'
 adb shell su -c 'dmesg | grep neverc_krt_netlink'
 ```
 
+## Kernel-Log (Live)
+
+Auf dem Gerät streamt `cat /proc/kmsg` den Kernel-Ringpuffer in Echtzeit — ähnlich wie **DbgView** unter Windows. Nutzen Sie es, wenn `insmod` nur mit einer vagen Meldung scheitert oder Sie den echten Ablehnungsgrund sehen müssen (vermagic, modversions, Section-Größe usw.).
+
+Terminal 1 (laufen lassen):
+
+```bash
+adb shell
+su
+cat /proc/kmsg
+```
+
+Terminal 2:
+
+```bash
+adb shell su -c 'insmod /data/local/tests/nvk_netlink.ko'
+```
+
+Neue Zeilen erscheinen in Terminal 1 beim Laden. Mit Ctrl+C beenden.
+
+Hinweis: `dmesg -w` fehlt auf manchen Android-Builds; `/proc/kmsg` braucht root, ist für Modul-Bring-up aber zuverlässig.
+
 ## Entladen
 
 ```bash

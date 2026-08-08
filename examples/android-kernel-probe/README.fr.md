@@ -48,6 +48,28 @@ adb shell su -c 'insmod /data/local/tests/nvk_probe.ko'
 adb shell su -c 'dmesg | grep neverc_krt_probe_demo'
 ```
 
+## Journal noyau (temps réel)
+
+Sur l'appareil, `cat /proc/kmsg` diffuse le ring buffer noyau en temps réel — un peu comme **DbgView** sous Windows. Utilisez-le quand `insmod` échoue avec une erreur vague ou quand vous devez voir le vrai motif de refus (vermagic, modversions, taille de section, etc.).
+
+Terminal 1 (laisser tourner) :
+
+```bash
+adb shell
+su
+cat /proc/kmsg
+```
+
+Terminal 2 :
+
+```bash
+adb shell su -c 'insmod /data/local/tests/nvk_probe.ko'
+```
+
+Les nouvelles lignes apparaissent dans le terminal 1 au moment du chargement. Ctrl+C pour arrêter.
+
+Note : `dmesg -w` manque sur certaines builds Android ; `/proc/kmsg` exige root mais suit la sortie noyau en direct de façon fiable.
+
 ## Déchargement
 
 ```bash
