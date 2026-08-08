@@ -346,7 +346,9 @@ jobs:
 
   aggregate:
     name: GKI runtime validation gate
-    if: always()
+    # Summarize real prepare/runtime/kernel outcomes, but do not convert a
+    # cancel-in-progress abort into an extra red gate failure.
+    if: ${{ !cancelled() }}
     needs:
       - prepare
       - runtime

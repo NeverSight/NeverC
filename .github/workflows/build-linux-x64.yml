@@ -234,10 +234,14 @@ jobs:
 
   validate-gki-runtime:
     name: GKI runtime validation
+    # Require a successful build artifact.  `always()` previously re-ran this
+    # after cancel-in-progress aborted the compiler job, then prepare failed
+    # with "expected one ... artifact, found 0" — a false GKI red X unrelated
+    # to loader/runtime checks.
     if: >-
-      always() &&
       github.event_name == 'push' &&
-      !startsWith(github.ref, 'refs/tags/')
+      !startsWith(github.ref, 'refs/tags/') &&
+      needs.build.result == 'success'
     needs: build
     permissions:
       contents: read
