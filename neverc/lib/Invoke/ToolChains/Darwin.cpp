@@ -346,8 +346,12 @@ void darwin::Linker::ConstructJob(Compilation &C, const JobAction &JA,
       !MacCfg.stripsDebugInfo()) {
     for (unsigned I = 0; I < MacCfg.ltoPartitions; ++I) {
       std::string Path = D.GetTemporaryPath("neverc-lto", "o");
-      if (Path.empty())
-        break;
+      if (Path.empty()) {
+        // GetTemporaryPath already diagnosed. Fail closed instead of
+        // continuing with a partial path list.
+        MacCfg.ltoNativeObjectPaths.clear();
+        return;
+      }
       C.addTempFile(Args.MakeArgString(Path));
       MacCfg.ltoNativeObjectPaths.push_back(std::move(Path));
     }
