@@ -21,9 +21,18 @@ FLAGS = \
 	-DNVK_KERNEL=$(KERNEL) \
 	-Wall -Wno-unused
 
+# neverc make (like GNU make) only rebuilds when a prerequisite's mtime is
+# newer than the target. KERNEL is expanded into FLAGS, not into the dep
+# graph — so track it in a stamp file and make $(MODULE) depend on that.
+FLAGS_STAMP := .nvk-build-flags
+BUILD_ID := KERNEL=$(KERNEL)
+ifneq ($(strip $(file <$(FLAGS_STAMP))),$(BUILD_ID))
+_ := $(file >$(FLAGS_STAMP),$(BUILD_ID))
+endif
+
 all: $(MODULE)
 
-$(MODULE): $(SRCS)
+$(MODULE): $(SRCS) $(FLAGS_STAMP)
 	$(NEVERC) $(FLAGS) -r -nostdlib -o $@ $(SRCS)
 
 push: $(MODULE)
@@ -39,6 +48,6 @@ run: insmod
 	adb shell su -c 'dmesg | tail -5'
 
 clean:
-	rm -f $(MODULE) *.o
+	rm -f $(MODULE) *.o $(FLAGS_STAMP)
 
 .PHONY: all push insmod rmmod run clean

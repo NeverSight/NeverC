@@ -21,9 +21,16 @@ FLAGS = \
 	$(EXTRA) \
 	-Wall -Wno-unused
 
+# neverc make only rebuilds on prerequisite mtimes; KERNEL/EXTRA are not deps.
+FLAGS_STAMP := .nvk-build-flags
+BUILD_ID := KERNEL=$(KERNEL) EXTRA=$(EXTRA)
+ifneq ($(strip $(file <$(FLAGS_STAMP))),$(BUILD_ID))
+_ := $(file >$(FLAGS_STAMP),$(BUILD_ID))
+endif
+
 all: $(MODULE)
 
-$(MODULE): $(SRCS)
+$(MODULE): $(SRCS) $(FLAGS_STAMP)
 	$(NEVERC) $(FLAGS) -r -nostdlib -o $@ $(SRCS)
 
 push: $(MODULE)
@@ -39,6 +46,6 @@ run: insmod
 	@echo "Module loaded. Check visibility: adb shell su -c 'lsmod | grep $(MODNAME)'"
 
 clean:
-	rm -f $(MODULE) *.o
+	rm -f $(MODULE) *.o $(FLAGS_STAMP)
 
 .PHONY: all push insmod rmmod run clean
