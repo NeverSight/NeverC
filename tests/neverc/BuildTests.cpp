@@ -2178,8 +2178,14 @@ TEST_F(BuildBuiltinCommandTest, SplitStringsAndLognameBasics) {
   EXPECT_EQ(Exit, 123);
 
 #ifndef _WIN32
-  ASSERT_TRUE(builtins::tryExecute("logname", Exit));
-  EXPECT_EQ(Exit, 0);
+  // POSIX logname(1) uses getlogin() only. That commonly fails in CI /
+  // non-login sessions; the builtin then falls back to the host tool.
+  if (::getlogin()) {
+    ASSERT_TRUE(builtins::tryExecute("logname", Exit));
+    EXPECT_EQ(Exit, 0);
+  } else {
+    EXPECT_FALSE(builtins::tryExecute("logname", Exit));
+  }
 #endif
 }
 
