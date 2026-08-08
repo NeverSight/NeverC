@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import zipfile
 from pathlib import Path
 from typing import Mapping
@@ -98,11 +99,45 @@ def sanitized_environment(source: Mapping[str, str]) -> dict[str, str]:
     return environment
 
 
-def run(command: list[str], *, environment: Mapping[str, str] | None = None) -> subprocess.CompletedProcess[str]:
-    result = subprocess.run(
-        command, capture_output=True, text=True,
-        env=dict(environment) if environment is not None else None,
+def environment_for_neverc(executable: Path) -> dict[str, str]:
+    environment = sanitized_environment(os.environ)
+    if os.name != "nt":
+        return environment
+    bin_dir = str(executable.parent.resolve())
+    existing = environment.get("PATH", "")
+    environment["PATH"] = (
+        bin_dir if not existing else bin_dir + os.pathsep + existing
     )
+    return environment
+
+
+def run(command: list[str], *, environment: Mapping[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    cwd: Path | None = None
+    if command and os.name == "nt":
+        executable = Path(command[0]).resolve()
+        if not executable.is_file():
+            raise FileNotFoundError(f"command executable is missing: {executable}")
+        command = [str(executable), *command[1:]]
+        cwd = executable.parent.resolve()
+    kwargs: dict[str, object] = {
+        "capture_output": True,
+        "text": True,
+        "env": dict(environment) if environment is not None else None,
+    }
+    if cwd is not None:
+        kwargs["cwd"] = str(cwd)
+    attempts = 3 if os.name == "nt" else 1
+    result: subprocess.CompletedProcess[str] | None = None
+    for attempt in range(attempts):
+        try:
+            result = subprocess.run(command, **kwargs)  # type: ignore[arg-type]
+            break
+        except OSError as error:
+            transient = os.name == "nt" and getattr(error, "winerror", None) == 267
+            if not transient or attempt + 1 == attempts:
+                raise
+            time.sleep(0.5 * (attempt + 1))
+    assert result is not None
     if result.returncode != 0:
         raise RuntimeError(
             f"command failed with exit {result.returncode} "
@@ -233,7 +268,7 @@ def safe_extract(archive: Path, destination: Path) -> None:
 
 
 def run_plugin_probe(prefix: Path, executable: Path) -> None:
-    environment = sanitized_environment(os.environ)
+    environment = environment_for_neverc(executable)
     with tempfile.TemporaryDirectory(prefix="neverc-python-package-probe-") as temporary:
         work = Path(temporary)
         plugin = work / "probe.py"
@@ -267,7 +302,7 @@ def check_ollvm_ir(output: str, target: str) -> None:
 def run_ollvm_probe(prefix: Path, executable: Path) -> None:
     sdk = check_python_sdk(prefix)
     plugin = sdk / "examples" / "ollvm" / "ollvm_plugin.py"
-    environment = sanitized_environment(os.environ)
+    environment = environment_for_neverc(executable)
     with tempfile.TemporaryDirectory(prefix="neverc-python-ollvm-probe-") as temporary:
         work = Path(temporary)
         source = work / "ollvm_probe.c"
@@ -305,7 +340,9 @@ def run_ollvm_probe(prefix: Path, executable: Path) -> None:
 
 def verify_prefix(prefix: Path) -> None:
     prefix = find_prefix(prefix)
-    executable = prefix / "bin" / ("neverc.exe" if os.name == "nt" else "neverc")
+    executable = (
+        prefix / "bin" / ("neverc.exe" if os.name == "nt" else "neverc")
+    ).resolve()
     check_loader(prefix, executable)
     run_plugin_probe(prefix, executable)
     run_ollvm_probe(prefix, executable)
