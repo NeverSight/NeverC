@@ -18,8 +18,15 @@ NeverC هو مترجم متكامل — استدعاء واحد يتولى ال�
 
 ```bash
 cd examples/windows-driver
-neverc make
+neverc make          # debug: ‏-g (الافتراضي في أول بناء)
+neverc make release  # release: ‏-O2 --strip
+neverc make debug    # العودة إلى debug
 ```
+
+يحفظ Makefile قيم `ARCH` و`PROFILE` و`TESTSIGN`. للإصدار استخدم
+`neverc make release` (`-O2 --strip`؛ تبقى واردات/صادرات PE وبيانات المحمّل).
+مع توقيع الاختبار: `neverc make release TESTSIGN=1` (التجريد ثم التوقيع في نفس الربط).
+انظر [ملفات الإصدار](../../docs/release-builds/README.ar.md).
 
 ينتج عن ذلك `ExampleDriver-x64.sys`. للبناء لـ ARM64 أو لكليهما:
 
@@ -35,8 +42,6 @@ neverc make NEVERC=/path/to/neverc
 ```
 
 الناتج هو `ExampleDriver-<المعمارية>.sys` (محسّن بـ auto-LTO).
-البناء الافتراضي يتضمن `-g` للتصحيح؛ **يجب إزالة `-g` في إصدارات الإنتاج**
-لإزالة رموز التصحيح وتقليل حجم الملف الثنائي (~38 كيلوبايت → ~3 كيلوبايت).
 
 ## البناء اليدوي (بدون Make)
 
@@ -61,7 +66,6 @@ neverc --target=x86_64-pc-windows-msvc \
 تحقق PE الذي يتحقق منه محمّل النواة.
 
 > `-g` يضمّن معلومات تصحيح DWARF في ملف PE؛ يمكن فحصها باستخدام `llvm-dwarfdump`.
-> احذف هذا الخيار في إصدارات الإنتاج لتقليل حجم الملف الثنائي.
 
 ## التوقيع التجريبي
 

@@ -12,8 +12,16 @@
 
 ```bash
 cd examples/macos-app
-neverc make
+neverc make          # debug：-g（首次构建默认）
+neverc make release  # release：-O2 --strip
+neverc make debug    # 切回 debug
 ```
+
+Makefile 会持久化 `PROFILE`，后续 `neverc make` 会保持同一 debug/release
+选择。release 使用 NeverC 内置 `--strip`：删除调试元数据与不需要的静态
+符号名，同时保留加载器/动态 ABI 仍需要的名称。详见
+[发行构建](../../docs/release-builds/README.zh-CN.md)。
+
 
 构建 Intel 版本：
 

@@ -17,10 +17,17 @@ Plattform-Sockets. Es bietet:
 Erstellung für den Host oder mit jedem unterstützten NeverC-Ziel-Triple:
 
 ```bash
-neverc make
+neverc make          # debug: -g (Standard beim ersten Build)
+neverc make release  # release: -O2 --strip
+neverc make debug    # zurück zu debug
 neverc make TARGET=aarch64-linux-gnu
 neverc make TARGET=x86_64-pc-windows-msvc OUTPUT=authoritative-server.exe
 ```
+
+Das Makefile speichert `PROFILE`, sodass spätere `neverc make`-Aufrufe dieselbe
+debug/release-Auswahl behalten. Release nutzt NeverCs integriertes `--strip`.
+Siehe [Release-Builds](../../docs/release-builds/README.de.md).
+
 
 Ausführung mit P-256-TLS-Zertifikat und -Schlüssel für den QUIC-Endpunkt:
 

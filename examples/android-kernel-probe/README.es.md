@@ -29,10 +29,24 @@ void my_probe(neverc_krt_reg_ctx *ctx);
 
 ```bash
 cd examples/android-kernel-probe
-neverc make
+neverc make          # debug: -g (predeterminado en la primera compilación)
+neverc make release  # release: -O2 --strip
+neverc make debug    # volver a debug
 ```
 
-Cambiar `KERNEL` a `515`, `601`, `606`, `612` o `618` para otras versiones del kernel.
+Seleccione otro preset, por ejemplo, con `neverc make KERNEL=612 release`.
+El Makefile guarda `KERNEL` y `PROFILE`, por lo que los siguientes
+`make push`/`run` conservan el artefacto elegido.
+
+El strip de release está integrado en NeverC y limitado para ser seguro en
+módulos del kernel. Elimina DWARF, `.comment` y nombres privados/indefinidos no
+necesarios por reubicaciones, pero conserva las tablas de símbolos/cadenas
+ET_REL, reubicaciones, importaciones, definiciones globales, `__versions`,
+`.codetag.alloc_tags` y el ABI del cargador. No es strip-all ni ofuscación; los
+nombres necesarios por reubicaciones pueden permanecer. Firme siempre después
+del strip. No haga strip en `clean`, no use `llvm-strip --strip-all` con un
+`.ko` ni elimine a ciegas `.codetag.alloc_tags` o `__codetag_*`.
+
 
 ## Despliegue y ejecucion
 

@@ -11,8 +11,15 @@ NeverC로 빌드한 최소한의 WDM 커널 드라이버로, Intel CET(제어 �
 
 ```bash
 cd examples/windows-driver-cet
-neverc make
+neverc make          # debug: -g(첫 빌드 기본값)
+neverc make release  # release: -O2 --strip
+neverc make debug    # debug로 전환
 ```
+
+Makefile이 `PROFILE`과 `TESTSIGN`을 유지합니다. 릴리스는
+`neverc make release`(`-O2 --strip`). 테스트 서명이 필요하면
+`neverc make release TESTSIGN=1`로 같은 링크에서 strip 후 서명하세요.
+자세한 내용: [릴리스 빌드](../../docs/release-builds/README.ko.md).
 
 독립 실행형 NeverC 릴리스에서:
 
@@ -21,8 +28,6 @@ neverc make NEVERC=/path/to/neverc
 ```
 
 출력은 `CetDriver.sys`(auto-LTO 최적화)입니다.
-기본 빌드에는 디버깅용 `-g`가 포함되어 있습니다. **릴리스 빌드에서는 `-g`를 제거**하여
-디버그 심볼을 제거하고 바이너리 크기를 줄이세요.
 
 x64 전용: CET은 x86 기능이며 다른 대상에서는 컴파일러가
 `-fcf-protection=return`을 거부합니다. ARM64는 포인터 인증과 분기 대상 식별로

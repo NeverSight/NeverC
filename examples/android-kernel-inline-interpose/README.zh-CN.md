@@ -29,10 +29,22 @@ long my_interpose(void *orig, void *a0, void *a1, void *a2, void *a3, void *a4, 
 
 ```bash
 cd examples/android-kernel-inline-interpose
-neverc make
+neverc make          # debug：-g（首次构建默认）
+neverc make release  # release：-O2 --strip
+neverc make debug    # 切回 debug
 ```
 
-将 `KERNEL` 改为 `515`、`601`、`606`、`612` 或 `618` 以适配其他内核版本。
+例如用 `neverc make KERNEL=612 release` 选择其他内核预设。Makefile 会同时
+持久化 `KERNEL` 与 `PROFILE`，因此后续 `make push`/`run` 会继续使用已选择的
+产物，不会静默切回另一种配置。
+
+release 剥离由 NeverC 内置完成，并专门遵守内核模块约束：删除 DWARF、
+`.comment` 以及未被重定位使用的私有/未定义符号名，同时保留 ET_REL 必需的
+符号表/字符串表、重定位、导入、全局定义、`__versions`、
+`.codetag.alloc_tags` 和其他加载 ABI 数据。它不是 strip-all，也不是混淆；
+重定位必需的名称仍可能保留。模块若要签名，必须先剥离，再对最终字节签名。
+不要在 `clean` 中剥离，不要对 `.ko` 使用 `llvm-strip --strip-all`，也不要
+盲目删除 `.codetag.alloc_tags` 或 `__codetag_*` 段。
 
 ## 部署和运行
 

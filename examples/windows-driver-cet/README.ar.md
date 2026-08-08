@@ -13,8 +13,15 @@
 
 ```bash
 cd examples/windows-driver-cet
-neverc make
+neverc make          # debug: ‏-g (الافتراضي في أول بناء)
+neverc make release  # release: ‏-O2 --strip
+neverc make debug    # العودة إلى debug
 ```
+
+يحفظ Makefile قيمتي `PROFILE` و`TESTSIGN`. للإصدار استخدم
+`neverc make release` (`-O2 --strip`). مع توقيع الاختبار:
+`neverc make release TESTSIGN=1` (التجريد ثم التوقيع في نفس الربط).
+انظر [ملفات الإصدار](../../docs/release-builds/README.ar.md).
 
 من إصدار NeverC مستقل:
 
@@ -23,8 +30,6 @@ neverc make NEVERC=/path/to/neverc
 ```
 
 الناتج هو `CetDriver.sys` (محسّن بـ auto-LTO).
-البناء الافتراضي يتضمن `-g` للتصحيح؛ **يجب إزالة `-g` في إصدارات الإنتاج**
-لإزالة رموز التصحيح وتقليل حجم الملف الثنائي.
 
 x64 فقط: CET ميزة خاصة بـ x86، والمترجم يرفض `-fcf-protection=return` على
 الأهداف الأخرى. تحمي ARM64 الحواف نفسها عبر مصادقة المؤشرات وتحديد أهداف التفرع.

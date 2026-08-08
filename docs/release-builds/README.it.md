@@ -4,14 +4,18 @@
 
 # Binari di rilascio e `--strip`
 
-Usa `--strip` per produrre un eseguibile o una libreria condivisa da distribuire.
-L'alias breve è `-s`; le due forme hanno lo stesso comportamento.
+Usa `--strip` per produrre un eseguibile, una libreria condivisa o un modulo
+kernel Android finale da distribuire. L'alias breve è `-s`; le due forme hanno
+lo stesso comportamento.
 
 ## Avvio rapido
 
 ```bash
 neverc -O2 --strip app.c -o app
 neverc -O2 -s app.c -o app
+
+cd examples/android-kernel-hello
+neverc make release
 ```
 
 NeverC esegue lo stripping nel linker integrato. Non avvia un `llvm-strip`
@@ -52,17 +56,36 @@ nomi e record richiesti dal loader o dall'ABI dinamica.
 | Formato | Rimosso | Conservato quando necessario |
 |---------|---------|------------------------------|
 | ELF | Dati `.debug*` e normali tabelle statiche di simboli/stringhe | Import/export dinamici, metadati di rilocazione e loader, informazioni di unwinding |
+| Kernel Android `.ko` (ELF ET_REL) | `.debug*`, `.comment` e simboli locali/non definiti non richiesti dalle rilocazioni conservate | Un `.symtab` collegato a `.strtab`, tutte le rilocazioni e i target, definizioni globali, import, `__versions`, `.codetag.alloc_tags`, ABI del modulo |
 | Mach-O | Mappe debug/STABS, voci locali/globali non necessarie a runtime e generazione del `.dSYM` associato | Dati di binding/import, nomi ABI esportati, export trie, simboli referenziati a runtime |
 | PE/COFF | Sezioni DWARF incorporate e tabella statica COFF di simboli/stringhe se presente | Import/export PE, tabelle di unwinding, configurazione di caricamento e altri metadati loader |
 
 ## Ambito e precedenza
 
-- `--strip` supporta eseguibili e librerie condivise collegati finali.
-- NeverC lo rifiuta con `-c`, `-r`, `--emit-static-lib` o `-fdyncode` invece di
-  produrre silenziosamente un artefatto intermedio non strippato.
+- `--strip` supporta eseguibili, librerie condivise e la stretta eccezione del
+  `.ko` Android finale descritta sotto.
+- NeverC lo rifiuta con `-c`, un normale `-r`, un `.o` Android intermedio,
+  `--emit-static-lib` o `-fdyncode`.
 - La policy di strip prevale su `-g` e sugli switch di debug backend.
 - Sono coperti sia Auto-LTO predefinito sia `-fno-lto`.
 - I nomi di import/export necessari all'ABI dinamica rimangono.
+
+## Moduli kernel Android
+
+Un `.ko` finale resta ELF `ET_REL`. Il loader dei moduli Linux richiede tabella
+simboli, relativa tabella stringhe, import non definiti e rilocazioni, quindi
+rifiuta strip-all. NeverC accetta `-r --strip` solo per un target Android con
+`-fandroid-kernel-driver-mode`, `-r` e un nome di output che termina in `.ko`.
+Il normale `-r` e gli `.o` intermedi restano rifiutati.
+
+Questo percorso implementa il confine sicuro di
+`llvm-strip --strip-unneeded`, non `--strip-all`: rimuove debug, `.comment` e
+simboli locali/non definiti inutili alle rilocazioni e ricostruisce `.strtab`.
+Conserva `.symtab`, tutte le rilocazioni e i target necessari, le definizioni
+non locali, import, `__versions`, `.codetag.alloc_tags` e
+`.gnu.linkonce.this_module`. Non usare `llvm-strip --strip-all` su un `.ko` e
+non eliminare alla cieca le sezioni codetag. Esegui strip prima di firmare i
+byte finali; `clean` deve solo cancellare file.
 
 ## Confine di sicurezza
 
@@ -71,6 +94,7 @@ ma **non è** offuscamento e non impedisce il reverse engineering del codice
 macchina. Un binario correttamente strippato può contenere ancora:
 
 - nomi dinamici di import/export richiesti dal loader;
+- nomi di simboli richiesti dalle rilocazioni conservate di un `.ko`;
 - stringhe letterali, tabelle di reflection o metadati applicativi;
 - record di unwinding, rilocazione, firma e configurazione di caricamento;
 - codice macchina e flusso di controllo osservabile.
@@ -93,6 +117,9 @@ llvm-readobj --sections --symbols --dyn-symbols app
 llvm-dwarfdump app
 strings app | grep neverc_private_release_symbol
 test ! -e app.dSYM
+
+llvm-readelf -h -S -s -r examples/android-kernel-hello/nvk_hello.ko
+llvm-dwarfdump examples/android-kernel-hello/nvk_hello.ko
 ```
 
 Un artefatto strippato non deve avere sezioni di debug sorgente o nomi di

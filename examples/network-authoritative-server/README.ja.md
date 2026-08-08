@@ -16,10 +16,17 @@
 ホスト向けにビルドするか、対応する NeverC ターゲットトリプルを指定します。
 
 ```bash
-neverc make
+neverc make          # debug: -g（初回ビルドの既定）
+neverc make release  # release: -O2 --strip
+neverc make debug    # debug に戻す
 neverc make TARGET=aarch64-linux-gnu
 neverc make TARGET=x86_64-pc-windows-msvc OUTPUT=authoritative-server.exe
 ```
+
+Makefile は `PROFILE` を保持するため、以降の `neverc make` は同じ
+debug/release 選択を使います。リリースは NeverC 組み込みの `--strip` を使います。
+[リリースビルド](../../docs/release-builds/README.ja.md) を参照。
+
 
 QUIC エンドポイント用に P-256 TLS 証明書と鍵を指定して実行します。
 

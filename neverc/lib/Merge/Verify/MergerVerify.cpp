@@ -35,6 +35,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/StringSet.h"
 #include "llvm/BinaryFormat/COFF.h"
 #include "llvm/BinaryFormat/Dwarf.h"
 #include "llvm/BinaryFormat/ELF.h"
@@ -366,9 +367,10 @@ bool isExcludedInputSection(const RawSec &S, const Options &Opts) {
   default:
     break;
   }
-  if (Opts.dropDebugInfo &&
-      (S.Name.starts_with(".debug_") || S.Name == ".debug" ||
-       S.Name.starts_with(".zdebug_")))
+  if (Opts.dropDebugInfo && detail::isELFDebugSection(S.Name))
+    return true;
+  if (Opts.stripUnneededSymbols && Opts.finalizeAndroidKernelModule &&
+      detail::isAndroidKernelReleaseDiscardableSection(S.Name))
     return true;
   // The final Android `.ko` merge drops this NeverC tooling section after the
   // caller has verified input contracts; the independent verifier must treat
@@ -377,6 +379,41 @@ bool isExcludedInputSection(const RawSec &S, const Options &Opts) {
       detail::isAndroidKernelProfileContractSection(S.Name))
     return true;
   return false;
+}
+
+/// Whether a defined input symbol is one the release-strip policy may
+/// intentionally omit.  This independently reconstructs the policy from raw
+/// input relocations; it does not trust the merger's old-to-new symbol map.
+/// Cross-partition PCG definitions need the extra name set because another
+/// partition references them through a separate undefined symbol-table entry.
+bool isIntentionallyStrippedInputSymbol(
+    const RawELF &Input, unsigned SymbolIndex, const Options &Opts,
+    const StringSet<> &RelocationRequiredGlobalNames) {
+  using namespace ELF;
+  if (!Opts.stripUnneededSymbols || SymbolIndex == 0 ||
+      SymbolIndex >= Input.Syms.size())
+    return false;
+
+  const RawSym &Symbol = Input.Syms[SymbolIndex];
+  const bool PCGGlobalDefinition =
+      Symbol.bind() != STB_LOCAL && Symbol.Shndx != SHN_UNDEF &&
+      Symbol.Shndx != SHN_COMMON && Symbol.Name.contains(PcgSymbolMarker);
+  if (Symbol.bind() != STB_LOCAL && Symbol.Shndx != SHN_UNDEF &&
+      !PCGGlobalDefinition)
+    return false;
+
+  for (const RawRela &Relocation : Input.Relas) {
+    if (Relocation.Sym != SymbolIndex ||
+        Relocation.TargetSec >= Input.Secs.size() ||
+        isExcludedInputSection(Input.Secs[Relocation.TargetSec], Opts))
+      continue;
+    return false;
+  }
+
+  if (PCGGlobalDefinition &&
+      RelocationRequiredGlobalNames.contains(Symbol.Name))
+    return false;
+  return true;
 }
 
 bool fail(std::string *Err, const Twine &Msg) {
@@ -398,11 +435,20 @@ bool verifyAndroidKernelModuleContract(const RawELF &Out,
 
   const RawSec *Versions = nullptr;
   const RawSec *AllocTags = nullptr;
+  const RawSec *SymbolTable = nullptr;
   unsigned VersionsCount = 0;
   unsigned AllocTagsCount = 0;
+  unsigned SymbolTableCount = 0;
+  unsigned SymbolStringTableCount = 0;
   unsigned AllocTagsIndex = 0;
   for (unsigned I = 0; I < Out.Secs.size(); ++I) {
     const RawSec &S = Out.Secs[I];
+    if (S.Type == SHT_SYMTAB) {
+      SymbolTable = &S;
+      ++SymbolTableCount;
+    }
+    if (S.Name == ".strtab" && S.Type == SHT_STRTAB)
+      ++SymbolStringTableCount;
     if (S.Name == "__versions") {
       Versions = &S;
       ++VersionsCount;
@@ -431,6 +477,23 @@ bool verifyAndroidKernelModuleContract(const RawELF &Out,
   constexpr uint64_t ModVersionEntrySize = 64;
   if (Versions->Size % ModVersionEntrySize != 0)
     return fail(Err, "verify: __versions size must be a multiple of 64 bytes");
+
+  // The Linux module loader rejects a fully stripped ET_REL module: it needs
+  // exactly one SHT_SYMTAB and that table's linked string table to resolve
+  // imports and apply relocations.  Audit this before any symbol-level checks.
+  if (SymbolTableCount != 1)
+    return fail(Err, "verify: Android kernel module output must contain "
+                     "exactly one symbol table (found " +
+                         Twine(SymbolTableCount) + ")");
+  if (SymbolStringTableCount != 1)
+    return fail(Err, "verify: Android kernel module output must contain "
+                     "exactly one .strtab (found " +
+                         Twine(SymbolStringTableCount) + ")");
+  if (!SymbolTable || SymbolTable->Link >= Out.Secs.size() ||
+      Out.Secs[SymbolTable->Link].Type != SHT_STRTAB ||
+      Out.Secs[SymbolTable->Link].Name != ".strtab")
+    return fail(Err, "verify: Android kernel module symbol table must link "
+                     "to .strtab");
 
   if (RequireFinalizedOutput) {
     for (const RawSec &S : Out.Secs) {
@@ -619,6 +682,11 @@ bool verifyMergeELFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
                         const Options &Opts, std::string *Err) {
   using namespace ELF;
 
+  if (Opts.stripUnneededSymbols &&
+      (!Opts.androidKernelModule || !Opts.finalizeAndroidKernelModule))
+    return fail(Err, "verify: unneeded-symbol stripping is only valid for a "
+                     "final Android kernel module");
+
   // A supported merge starts from uncompressed input sections and only adds
   // output-sized metadata such as package indexes. Bound materialized logical
   // bytes by all actual input and output bytes the caller supplied. This keeps
@@ -716,6 +784,35 @@ bool verifyMergeELFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
           Out, Opts.finalizeAndroidKernelModule, Err))
     return false;
 
+  if (Opts.stripUnneededSymbols) {
+    for (const RawSec &Section : Out.Secs) {
+      if (Opts.dropDebugInfo && detail::isELFDebugSection(Section.Name))
+        return fail(Err, "verify: release Android kernel module retains debug "
+                         "section '" +
+                             Section.Name + "'");
+      if (detail::isAndroidKernelReleaseDiscardableSection(Section.Name))
+        return fail(Err, "verify: release Android kernel module retains "
+                         "discardable section '" +
+                             Section.Name + "'");
+    }
+
+    DenseSet<unsigned> ReferencedSymbols;
+    for (const RawRela &Relocation : Out.Relas) {
+      if (Relocation.Sym >= Out.Syms.size())
+        return fail(Err, "verify: release Android kernel module relocation "
+                         "references an out-of-range symbol index");
+      ReferencedSymbols.insert(Relocation.Sym);
+    }
+    for (unsigned I = 1; I < Out.Syms.size(); ++I) {
+      const RawSym &Symbol = Out.Syms[I];
+      if ((Symbol.bind() == STB_LOCAL || Symbol.Shndx == SHN_UNDEF) &&
+          !ReferencedSymbols.contains(I))
+        return fail(Err, "verify: release Android kernel module retains "
+                         "relocation-unneeded symbol '" +
+                             Symbol.Name + "'");
+    }
+  }
+
   // Index output symbols by name; only names that resolve to a *single*
   // output symbol can be anchored unambiguously.
   StringMap<int> OutByName; // name -> sym index, or -1 if duplicated
@@ -767,6 +864,33 @@ bool verifyMergeELFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
         R.Sym < Out.Syms.size() ? Out.Syms[R.Sym].Name : StringRef();
     OutRelocs[(SecN + "\x01" + SymN + "\x01" + Twine(R.Type)).str()][R.Offset]
         .insert(R.Addend);
+  }
+
+  // Collect names reached by retained relocations before checking individual
+  // input definitions.  A PCG definition in partition A can be referenced by
+  // an undefined same-named entry in partition B, so looking only at A's
+  // numeric symbol indices would incorrectly permit the definition to vanish.
+  StringSet<> RelocationRequiredGlobalNames;
+  if (Opts.stripUnneededSymbols) {
+    for (unsigned P = 0; P < Inputs.size(); ++P) {
+      if (Inputs[P].empty())
+        continue;
+      RawELF Input;
+      if (!parseRawELF(
+              ArrayRef<char>(Inputs[P].data(), Inputs[P].size()), Input,
+              Inputs[P].size()))
+        return fail(Err, "verify: input partition " + Twine(P) +
+                             " is not a parseable ELF64LE object");
+      for (const RawRela &Relocation : Input.Relas) {
+        if (Relocation.TargetSec >= Input.Secs.size() ||
+            isExcludedInputSection(Input.Secs[Relocation.TargetSec], Opts) ||
+            Relocation.Sym >= Input.Syms.size())
+          continue;
+        const RawSym &Target = Input.Syms[Relocation.Sym];
+        if (Target.bind() != STB_LOCAL && !Target.Name.empty())
+          RelocationRequiredGlobalNames.insert(Target.Name);
+      }
+    }
   }
 
   // SHF_LINK_ORDER relocation accounting.  A section like ftrace's
@@ -838,7 +962,9 @@ bool verifyMergeELFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
       InLinkOrderRelCount[mergedSectionName(TS, Opts).str()]++;
     }
 
-    for (const RawSym &S : In.Syms) {
+    for (unsigned SymbolIndex = 0; SymbolIndex < In.Syms.size();
+         ++SymbolIndex) {
+      const RawSym &S = In.Syms[SymbolIndex];
       if (S.Name.empty() || S.type() == STT_SECTION)
         continue;
       // Defined-in-section only (skip UNDEF, COMMON, ABS, reserved).
@@ -853,9 +979,13 @@ bool verifyMergeELFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
         continue;
 
       auto It = OutByName.find(S.Name);
-      if (It == OutByName.end())
+      if (It == OutByName.end()) {
+        if (isIntentionallyStrippedInputSymbol(
+                In, SymbolIndex, Opts, RelocationRequiredGlobalNames))
+          continue;
         return fail(Err, "verify: defined input symbol '" + S.Name +
                              "' missing from merged output");
+      }
       if (isCoalescibleDefinition(S)) {
         // A weak/unique definition may legitimately resolve to a different
         // input's copy. It is therefore not an offset anchor for this input
@@ -2724,6 +2854,14 @@ bool getDWOName(DWARFDie UnitDIE, std::string &Name, std::string &Reason) {
 }
 
 } // anonymous namespace
+
+bool verifyAndroidKernelModuleImage(ArrayRef<char> Output,
+                                    const Options &Opts, std::string *Err) {
+  if (!Opts.androidKernelModule || !Opts.finalizeAndroidKernelModule)
+    return fail(Err, "verify: final Android kernel module audit requires "
+                     "Android module finalization semantics");
+  return verifyMergeELFImpl(ArrayRef<StringRef>{}, Output, Opts, Err);
+}
 
 bool verifyMerge(ArrayRef<StringRef> Inputs, ArrayRef<char> Output, Format Fmt,
                  const Options &Opts, std::string *Err) {

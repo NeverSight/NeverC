@@ -17,8 +17,16 @@ Depuis le dépôt :
 
 ```bash
 cd examples/windows-driver
-neverc make
+neverc make          # debug : -g (première construction par défaut)
+neverc make release  # release : -O2 --strip
+neverc make debug    # retour au profil debug
 ```
+
+Le Makefile mémorise `ARCH`, `PROFILE` et `TESTSIGN`. Pour la publication,
+utilisez `neverc make release` (`-O2 --strip` ; imports/exports PE et
+métadonnées du chargeur conservés). Avec signature de test :
+`neverc make release TESTSIGN=1` (strip puis signature dans le même lien).
+Voir [Builds de publication](../../docs/release-builds/README.fr.md).
 
 Cela produit `ExampleDriver-x64.sys`. Pour compiler pour ARM64, ou pour les deux :
 
@@ -34,9 +42,6 @@ neverc make NEVERC=/path/to/neverc
 ```
 
 Le résultat est `ExampleDriver-<arch>.sys` (optimisé auto-LTO).
-La compilation par défaut inclut `-g` pour le débogage ; **les versions de
-production doivent supprimer `-g`** pour retirer les symboles de débogage et
-réduire la taille du binaire (~38 Ko → ~3 Ko).
 
 ## Compilation manuelle (sans Make)
 

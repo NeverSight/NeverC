@@ -12,8 +12,17 @@ Aus dem Repository (Standard-Ziel: `arm64-apple-macos`):
 
 ```bash
 cd examples/macos-app
-neverc make
+neverc make          # debug: -g (Standard beim ersten Build)
+neverc make release  # release: -O2 --strip
+neverc make debug    # zurück zu debug
 ```
+
+Das Makefile speichert `PROFILE`, sodass spätere `neverc make`-Aufrufe
+dieselbe debug/release-Auswahl behalten. Release nutzt NeverCs integriertes
+`--strip`: Debug-Metadaten und unnötige statische Symbolnamen entfallen,
+benötigte Loader-/Dynamik-ABI-Namen bleiben. Siehe
+[Release-Builds](../../docs/release-builds/README.de.md).
+
 
 Für Intel kompilieren:
 

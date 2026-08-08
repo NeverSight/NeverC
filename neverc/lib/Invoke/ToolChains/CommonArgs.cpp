@@ -37,6 +37,15 @@ using namespace neverc::driver::tools;
 using namespace neverc;
 using namespace llvm::opt;
 
+bool neverc::driver::tools::isFinalAndroidKernelModule(
+    const llvm::Triple &Target, const llvm::opt::ArgList &Args,
+    llvm::StringRef OutputFile) {
+  return Target.isAndroid() &&
+         Args.hasArg(options::OPT_fandroid_kernel_driver_mode) &&
+         Args.hasArg(options::OPT_r) &&
+         llvm::sys::path::extension(OutputFile) == ".ko";
+}
+
 // ===----------------------------------------------------------------------===
 // Frame pointer configuration
 // ===----------------------------------------------------------------------===

@@ -16,8 +16,16 @@ NeverC はオールインワンコンパイラです——単一の呼び出し�
 
 ```bash
 cd examples/windows-driver
-neverc make
+neverc make          # debug: -g（初回ビルドの既定値）
+neverc make release  # release: -O2 --strip
+neverc make debug    # debug に戻す
 ```
+
+Makefile は `ARCH`、`PROFILE`、`TESTSIGN` を保持します。リリースは
+`neverc make release`（`-O2 --strip`。PE の import/export とローダー
+メタデータは残ります）。テスト署名が必要なら
+`neverc make release TESTSIGN=1` で、同一リンク内で strip の後に署名します。
+詳細は [リリースビルド](../../docs/release-builds/README.ja.md)。
 
 これで `ExampleDriver-x64.sys` が生成されます。ARM64 向け、または両方をビルドするには：
 
@@ -33,8 +41,6 @@ neverc make NEVERC=/path/to/neverc
 ```
 
 出力は `ExampleDriver-<アーキテクチャ>.sys`（auto-LTO 最適化済み）です。
-デフォルトビルドにはデバッグ用の `-g` が含まれています。**リリースビルドでは `-g` を
-削除**してデバッグシンボルを除去し、バイナリサイズを削減してください
 （~38 KB → ~3 KB）。
 
 ## 手動ビルド（Make なし）
@@ -60,7 +66,6 @@ WDK が要求するアーキテクチャマクロも定義するため、手動�
 検証する PE チェックサムが書き込まれます。
 
 > `-g` は DWARF デバッグ情報を PE に埋め込みます。`llvm-dwarfdump` で検査できます。
-> リリースビルドではバイナリサイズを削減するため省略してください。
 
 ## テスト署名
 

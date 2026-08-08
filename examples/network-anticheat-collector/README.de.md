@@ -28,9 +28,16 @@ Body-Rohbytes direkt in das Audit-Log.
 Erstellung für den Host oder jedes unterstützte Ziel:
 
 ```bash
-neverc make
+neverc make          # debug: -g (Standard beim ersten Build)
+neverc make release  # release: -O2 --strip
+neverc make debug    # zurück zu debug
 neverc make TARGET=aarch64-pc-windows-msvc OUTPUT=anticheat-collector.exe
 ```
+
+Das Makefile speichert `PROFILE`, sodass spätere `neverc make`-Aufrufe dieselbe
+debug/release-Auswahl behalten. Release nutzt NeverCs integriertes `--strip`.
+Siehe [Release-Builds](../../docs/release-builds/README.de.md).
+
 
 Ausführung mit Server-Zertifikat, Server-Schlüssel, vertrauenswürdiger
 Client-CA, gemeinsam genutztem 32-Byte-Signierschlüssel und Audit-Pfad:

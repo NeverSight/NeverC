@@ -16,10 +16,17 @@ platform sockets. It provides:
 Build for the host, or set any supported NeverC target triple:
 
 ```bash
-neverc make
+neverc make          # debug: -g (default on the first build)
+neverc make release  # release: -O2 --strip
+neverc make debug    # switch back to debug
 neverc make TARGET=aarch64-linux-gnu
 neverc make TARGET=x86_64-pc-windows-msvc OUTPUT=authoritative-server.exe
 ```
+
+The Makefile persists `PROFILE`, so later `neverc make` keeps the same
+debug/release selection. Release uses NeverC's integrated `--strip`.
+See [Release builds](../../docs/release-builds/README.md).
+
 
 Run with a P-256 TLS certificate and key for the QUIC endpoint:
 

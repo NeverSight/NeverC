@@ -3224,6 +3224,65 @@ TEST(MergeELFSemantic, AndroidKernelModuleDropsProfileContractFingerprint) {
 }
 
 TEST(MergeELFSemantic,
+     AndroidKernelModuleSafeStripKeepsRelocationRequiredSymbols) {
+  SecSpec Text{".text", 0x40, 16, ELF::SHT_PROGBITS,
+               ELF::SHF_ALLOC | ELF::SHF_EXECINSTR, 0x5a};
+  SecSpec Comment{".comment", 0x20, 1, ELF::SHT_PROGBITS, 0, 0x43};
+
+  SymSpec NeededLocal{"release_needed_local", 0, 0};
+  NeededLocal.Global = false;
+  SymSpec UnneededLocal{"release_unneeded_local", 0, 16};
+  UnneededLocal.Global = false;
+  SymSpec PublicDefinition{"release_public_definition", 0, 32};
+  SymSpec NeededImport{"release_needed_import", -1, 0};
+  SymSpec UnneededImport{"release_unneeded_import", -1, 0};
+
+  RelSpec LocalReference{0, 0, "release_needed_local",
+                         ELF::R_AARCH64_ABS64, 3};
+  RelSpec ImportReference{0, 8, "release_needed_import",
+                          ELF::R_AARCH64_ABS64, 7};
+  auto Obj = buildSectionedELF(
+      {Text, Comment},
+      {NeededLocal, UnneededLocal, PublicDefinition, NeededImport,
+       UnneededImport},
+      {LocalReference, ImportReference}, ELF::EM_AARCH64);
+  SmallVector<SmallVector<char, 0>, 1> Bufs;
+  Bufs.push_back(std::move(Obj));
+
+  Options Opts;
+  Opts.mergeSections = true;
+  Opts.androidKernelModule = true;
+  Opts.finalizeAndroidKernelModule = true;
+  Opts.stripUnneededSymbols = true;
+  auto [OK, Out] = mergeELF(Bufs, Opts);
+  ASSERT_TRUE(OK);
+
+  ElfView V = parseELF(Out);
+  ASSERT_TRUE(V.Ok);
+  EXPECT_GE(V.findSec(".symtab"), 0);
+  EXPECT_GE(V.findSec(".strtab"), 0);
+  EXPECT_LT(V.findSec(".comment"), 0);
+  EXPECT_NE(V.findSym("release_needed_local"), nullptr);
+  EXPECT_EQ(V.findSym("release_unneeded_local"), nullptr);
+  EXPECT_NE(V.findSym("release_public_definition"), nullptr);
+  EXPECT_NE(V.findSym("release_needed_import"), nullptr);
+  EXPECT_EQ(V.findSym("release_unneeded_import"), nullptr);
+  EXPECT_NE(V.findSym("__start_alloc_tags"), nullptr);
+  EXPECT_NE(V.findSym("__stop_alloc_tags"), nullptr);
+  ASSERT_EQ(V.Relas.size(), 2u);
+  for (const ParsedRela &Relocation : V.Relas) {
+    ASSERT_LT(Relocation.Sym, V.Syms.size());
+    const StringRef Target = V.Syms[Relocation.Sym].Name;
+    EXPECT_TRUE(Target == "release_needed_local" ||
+                Target == "release_needed_import");
+  }
+
+  const StringRef Bytes(Out.data(), Out.size());
+  EXPECT_FALSE(Bytes.contains("release_unneeded_local"));
+  EXPECT_FALSE(Bytes.contains("release_unneeded_import"));
+}
+
+TEST(MergeELFSemantic,
      AndroidKernelModuleRejectsRelocationToDroppedProfileContract) {
   SecSpec Data{".data", 8, 8, ELF::SHT_PROGBITS,
                ELF::SHF_ALLOC | ELF::SHF_WRITE};

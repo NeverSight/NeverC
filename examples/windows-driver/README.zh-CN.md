@@ -16,8 +16,15 @@ NeverC 是一体化编译器——单次调用即可完成预处理、编译、�
 
 ```bash
 cd examples/windows-driver
-neverc make
+neverc make          # debug：-g（首次构建默认）
+neverc make release  # release：-O2 --strip
+neverc make debug    # 切回 debug
 ```
+
+Makefile 会持久化 `ARCH`、`PROFILE` 与 `TESTSIGN`。发布请用
+`neverc make release`（`-O2 --strip`；PE 导入/导出与加载器元数据保留）。
+需要测试签名时用 `neverc make release TESTSIGN=1`，同一次链接里先 strip 再签名。
+详见 [发行构建](../../docs/release-builds/README.zh-CN.md)。
 
 这会生成 `ExampleDriver-x64.sys`。如需改为构建 ARM64，或两者都构建：
 
@@ -33,8 +40,6 @@ neverc make NEVERC=/path/to/neverc
 ```
 
 输出为 `ExampleDriver-<架构>.sys`（auto-LTO 优化）。
-默认构建包含 `-g` 用于调试；**发布版本应去掉 `-g`** 以剥离调试符号并减小二进制体积
-（~38 KB → ~3 KB）。
 
 ## 手动构建（不使用 Make）
 
@@ -58,7 +63,6 @@ neverc --target=x86_64-pc-windows-msvc \
 INIT 段，并写入内核加载器会校验的 PE 校验和。
 
 > `-g` 将 DWARF 调试信息嵌入 PE；可使用 `llvm-dwarfdump` 检查。
-> 发布版本应省略此选项以减小二进制体积。
 
 ## 测试签名
 

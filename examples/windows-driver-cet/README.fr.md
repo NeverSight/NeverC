@@ -11,8 +11,15 @@ Un pilote noyau WDM minimal construit avec NeverC, avec le Shadow Stack CET
 
 ```bash
 cd examples/windows-driver-cet
-neverc make
+neverc make          # debug : -g (première construction par défaut)
+neverc make release  # release : -O2 --strip
+neverc make debug    # retour au profil debug
 ```
+
+Le Makefile mémorise `PROFILE` et `TESTSIGN`. Pour la publication, utilisez
+`neverc make release` (`-O2 --strip`). Avec signature de test :
+`neverc make release TESTSIGN=1` (strip puis signature dans le même lien).
+Voir [Builds de publication](../../docs/release-builds/README.fr.md).
 
 Depuis une version autonome de NeverC :
 
@@ -21,9 +28,6 @@ neverc make NEVERC=/path/to/neverc
 ```
 
 Le résultat est `CetDriver.sys` (optimisé auto-LTO).
-La compilation par défaut inclut `-g` pour le débogage ; **les versions de
-production doivent supprimer `-g`** pour retirer les symboles de débogage et
-réduire la taille du binaire.
 
 x64 uniquement : CET est une fonctionnalité x86 et le compilateur refuse
 `-fcf-protection=return` sur les autres cibles. ARM64 protège les mêmes arêtes

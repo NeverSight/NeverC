@@ -16,10 +16,17 @@
 Сборка для хоста или с любым поддерживаемым целевым triple NeverC:
 
 ```bash
-neverc make
+neverc make          # debug: -g (по умолчанию при первой сборке)
+neverc make release  # release: -O2 --strip
+neverc make debug    # вернуться к debug
 neverc make TARGET=aarch64-linux-gnu
 neverc make TARGET=x86_64-pc-windows-msvc OUTPUT=authoritative-server.exe
 ```
+
+Makefile сохраняет `PROFILE`, поэтому последующие `neverc make` оставляют тот
+же выбор debug/release. Release использует встроенный `--strip` NeverC.
+См. [Release-сборки](../../docs/release-builds/README.ru.md).
+
 
 Запуск с TLS-сертификатом и ключом P-256 для QUIC-эндпоинта:
 

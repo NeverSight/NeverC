@@ -4,14 +4,18 @@
 
 # Binarios de publicación y `--strip`
 
-Usa `--strip` al producir un ejecutable o una biblioteca compartida para
-distribuir. Su alias corto es `-s`; ambas formas se comportan igual.
+Usa `--strip` al producir un ejecutable, una biblioteca compartida o un módulo
+de kernel Android final para distribuir. Su alias corto es `-s`; ambas formas
+se comportan igual.
 
 ## Inicio rápido
 
 ```bash
 neverc -O2 --strip app.c -o app
 neverc -O2 -s app.c -o app
+
+cd examples/android-kernel-hello
+neverc make release
 ```
 
 NeverC elimina los metadatos dentro de su enlazador integrado. No ejecuta un
@@ -52,17 +56,36 @@ conserva los nombres y registros que exige el cargador o la ABI dinámica.
 | Formato | Se elimina | Se conserva cuando es necesario |
 |---------|-------------|---------------------------------|
 | ELF | Datos `.debug*` y tablas ordinarias estáticas de símbolos/cadenas | Importaciones/exportaciones dinámicas, metadatos de reubicación y carga, información de unwinding |
+| Kernel Android `.ko` (ELF ET_REL) | `.debug*`, `.comment` y símbolos locales/indefinidos no requeridos por reubicaciones conservadas | Un `.symtab` enlazado a `.strtab`, todas las reubicaciones y objetivos, definiciones globales, importaciones, `__versions`, `.codetag.alloc_tags`, ABI del módulo |
 | Mach-O | Mapas de depuración/STABS, entradas locales/globales no necesarias en ejecución y generación del `.dSYM` asociado | Datos de binding/importación, nombres ABI exportados, export trie y símbolos referenciados en ejecución |
 | PE/COFF | Secciones DWARF integradas y tabla estática COFF de símbolos/cadenas si existe | Importaciones/exportaciones PE, tablas de unwinding, configuración de carga y otros metadatos del cargador |
 
 ## Alcance y precedencia
 
-- `--strip` admite ejecutables y bibliotecas compartidas enlazados finales.
-- NeverC lo rechaza con `-c`, `-r`, `--emit-static-lib` o `-fdyncode` en lugar
-  de producir silenciosamente un artefacto intermedio sin strip.
+- `--strip` admite ejecutables, bibliotecas compartidas y la excepción estricta
+  del `.ko` Android final descrita abajo.
+- NeverC lo rechaza con `-c`, un `-r` ordinario, un `.o` Android intermedio,
+  `--emit-static-lib` o `-fdyncode`.
 - La política strip prevalece sobre `-g` y los controles de depuración backend.
 - Se cubren tanto Auto-LTO predeterminado como `-fno-lto`.
 - Se mantienen los nombres de importación/exportación necesarios para la ABI.
+
+## Módulos de kernel Android
+
+Un `.ko` final sigue siendo ELF `ET_REL`. El cargador de módulos Linux requiere
+tabla de símbolos, su tabla de cadenas, importaciones indefinidas y
+reubicaciones, por lo que rechaza strip-all. NeverC solo admite `-r --strip`
+para un destino Android con `-fandroid-kernel-driver-mode`, `-r` y un nombre de
+salida terminado en `.ko`. El `-r` ordinario y los `.o` intermedios se rechazan.
+
+Esta ruta implementa el límite seguro de `llvm-strip --strip-unneeded`, no
+`--strip-all`: elimina debug, `.comment` y símbolos locales/indefinidos no
+necesarios por reubicaciones y reconstruye `.strtab`. Conserva `.symtab`, todas
+las reubicaciones y objetivos requeridos, definiciones no locales,
+importaciones, `__versions`, `.codetag.alloc_tags` y
+`.gnu.linkonce.this_module`. No uses `llvm-strip --strip-all` sobre un `.ko` ni
+elimines secciones codetag a ciegas. Haz strip antes de firmar los bytes finales;
+`clean` solo debe borrar archivos.
 
 ## Límite de seguridad
 
@@ -71,6 +94,7 @@ ofuscación ni impide aplicar ingeniería inversa al código máquina. Un binari
 correctamente tratado aún puede contener:
 
 - nombres dinámicos de importación/exportación requeridos por el cargador;
+- nombres de símbolos requeridos por reubicaciones conservadas de un `.ko`;
 - literales, tablas de reflexión o metadatos de la aplicación;
 - registros de unwinding, reubicación, firma y configuración de carga;
 - código máquina y su flujo de control observable.
@@ -93,6 +117,9 @@ llvm-readobj --sections --symbols --dyn-symbols app
 llvm-dwarfdump app
 strings app | grep neverc_private_release_symbol
 test ! -e app.dSYM
+
+llvm-readelf -h -S -s -r examples/android-kernel-hello/nvk_hello.ko
+llvm-dwarfdump examples/android-kernel-hello/nvk_hello.ko
 ```
 
 Un artefacto con strip no debe tener secciones de depuración fuente ni nombres

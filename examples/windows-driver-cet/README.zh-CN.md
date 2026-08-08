@@ -11,8 +11,15 @@
 
 ```bash
 cd examples/windows-driver-cet
-neverc make
+neverc make          # debug：-g（首次构建默认）
+neverc make release  # release：-O2 --strip
+neverc make debug    # 切回 debug
 ```
+
+Makefile 会持久化 `PROFILE` 与 `TESTSIGN`。发布请用 `neverc make release`
+（`-O2 --strip`）。需要测试签名时用 `neverc make release TESTSIGN=1`，
+同一次链接里先 strip 再签名。详见
+[发行构建](../../docs/release-builds/README.zh-CN.md)。
 
 使用独立的 NeverC 发行版：
 
@@ -21,7 +28,6 @@ neverc make NEVERC=/path/to/neverc
 ```
 
 输出为 `CetDriver.sys`（auto-LTO 优化）。
-默认构建包含 `-g` 用于调试；**发布版本应去掉 `-g`** 以剥离调试符号并减小二进制体积。
 
 仅支持 x64：CET 是 x86 特性，编译器在其他架构上会拒绝 `-fcf-protection=return`。
 ARM64 用指针认证和分支目标识别来保护同样的控制流边。

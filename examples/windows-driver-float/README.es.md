@@ -12,8 +12,16 @@ cruzada desde macOS / Linux.
 
 ```bash
 cd examples/windows-driver-float
-neverc make
+neverc make          # debug: -g (predeterminado en la primera compilación)
+neverc make release  # release: -O2 --strip
+neverc make debug    # volver a debug
 ```
+
+El Makefile guarda `ARCH`, `PROFILE` y `TESTSIGN`. Para publicación use
+`neverc make release` (`-O2 --strip`; se conservan imports/exports PE y
+metadatos del cargador). Con firma de prueba:
+`neverc make release TESTSIGN=1` (strip y luego firma en el mismo enlace).
+Véase [Compilaciones de publicación](../../docs/release-builds/README.es.md).
 
 Esto produce `FloatDriver-x64.sys`. Para ARM64, o para ambos:
 
@@ -29,8 +37,6 @@ neverc make NEVERC=/path/to/neverc
 ```
 
 La salida es `FloatDriver-<arquitectura>.sys` (optimizado con auto-LTO).
-La compilación por defecto incluye `-g` para depuración; elimine `-g` para
-versiones de producción.
 
 ---
 

@@ -29,10 +29,25 @@ long my_interpose(void *orig, void *a0, void *a1, void *a2, void *a3, void *a4, 
 
 ```bash
 cd examples/android-kernel-inline-interpose
-neverc make
+neverc make          # debug: -g (Standard beim ersten Build)
+neverc make release  # release: -O2 --strip
+neverc make debug    # zurück zu debug
 ```
 
-`KERNEL` auf `515`, `601`, `606`, `612` oder `618` ändern für andere Kernelversionen.
+Wählen Sie ein anderes Preset z. B. mit `neverc make KERNEL=612 release`.
+Das Makefile speichert `KERNEL` und `PROFILE`, sodass spätere
+`make push`/`run`-Aufrufe beim gewählten Artefakt bleiben.
+
+Release-Stripping ist in NeverC integriert und auf eine kernelmodulsichere
+Teilmenge begrenzt. DWARF, `.comment` und für Relokationen unnötige private bzw.
+undefinierte Symbolnamen werden entfernt; ET_REL-Symbol-/Stringtabellen,
+Relokationen, Importe, globale Definitionen, `__versions`,
+`.codetag.alloc_tags` und Loader-ABI-Daten bleiben erhalten. Das ist weder
+strip-all noch Obfuskation; für Relokationen benötigte Namen können verbleiben.
+Signieren Sie erst nach dem Stripping. Strippen Sie nie in `clean`, verwenden
+Sie für `.ko` kein `llvm-strip --strip-all` und entfernen Sie
+`.codetag.alloc_tags` oder `__codetag_*` nicht blind.
+
 
 ## Deployment und Ausführung
 

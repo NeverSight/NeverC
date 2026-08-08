@@ -34,6 +34,23 @@ inline bool isAndroidKernelProfileContractSymbol(llvm::StringRef Name) {
   return Name == neverc::AndroidKernelProfileContract::NativeSymbol;
 }
 
+/// Section-name predicates shared by the ELF merger and its independent
+/// verifier.  Keeping the discard policy here prevents the producer from
+/// silently growing a broader release policy than the verifier models.
+inline bool isELFDebugSection(llvm::StringRef Name) {
+  return Name == ".debug" || Name.starts_with(".debug_") ||
+         Name.starts_with(".zdebug_");
+}
+
+/// Non-loader metadata intentionally omitted from a release Android module.
+/// This list is deliberately narrow: module ABI sections such as
+/// `.codetag.alloc_tags`, `__versions`, and `.gnu.linkonce.this_module` are
+/// not cosmetic and must never be classified here.
+inline bool
+isAndroidKernelReleaseDiscardableSection(llvm::StringRef Name) {
+  return Name == ".comment";
+}
+
 /// Canonical output section name for the ELF `mergeSections` mode: per-symbol
 /// sections (`.text.foo`, `.bss.bar`, ...) collapse to their umbrella section
 /// so symbol names stop leaking through section names (Android kernel modules).

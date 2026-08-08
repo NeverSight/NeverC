@@ -14,10 +14,18 @@ NeverC는 `runtime/android/`에 Android sysroot(NDK r26c, API 21+)를 내장하�
 
 ```bash
 cd examples/android-elf
-neverc make
+neverc make          # debug: -g（첫 빌드 기본값）
+neverc make release  # release: -O2 --strip
+neverc make debug    # debug로 전환
 ```
 
-독립형 NeverC 릴리스 사용:
+Makefile이 `PROFILE`을 유지하므로 이후 `neverc make`도 같은
+debug/release 선택을 사용합니다. release는 NeverC 내장 `--strip`으로
+불필요한 정적 심볼 이름과 디버그 메타데이터를 제거하고, 로더/동적 ABI에
+필요한 이름은 유지합니다. 자세한 내용:
+[릴리스 빌드](../../docs/release-builds/README.ko.md).
+
+독립 NeverC 릴리스에서:
 
 ```bash
 neverc make NEVERC=/path/to/neverc

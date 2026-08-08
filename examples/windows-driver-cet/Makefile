@@ -2,13 +2,31 @@
 # Usage: neverc make               (x64, the only architecture here)
 #        neverc make all-arch      (same thing — x64 is the only one)
 #        neverc make TESTSIGN=1    (attach an Authenticode test signature)
+#        neverc make release       (-O2 --strip)
 #
 # -fcf-protection=return: CET Shadow Stack compatible code (KCET)
 # --cetcompat: mark PE as CET Shadow Stack compatible
 
 NEVERC ?= ../../build-neverc/bin/neverc
+.DEFAULT_GOAL := all
 
-ARCH   ?= x64
+# ARCH/PROFILE/TESTSIGN: command line wins; else last stamp; else defaults.
+# Do not use ?= — an exported env var would otherwise ignore the stamp.
+# Persist via $(file): no host shell, so `neverc make` works on Windows too.
+FLAGS_STAMP := .nvk-build-flags
+SAVED_BUILD_ID := $(file <$(FLAGS_STAMP))
+SAVED_ARCH := $(patsubst ARCH=%,%,$(filter ARCH=%,$(SAVED_BUILD_ID)))
+SAVED_PROFILE := $(patsubst PROFILE=%,%,$(filter PROFILE=%,$(SAVED_BUILD_ID)))
+SAVED_TESTSIGN := $(patsubst TESTSIGN=%,%,$(filter TESTSIGN=%,$(SAVED_BUILD_ID)))
+ifneq ($(origin ARCH),command line)
+ARCH := $(if $(SAVED_ARCH),$(SAVED_ARCH),x64)
+endif
+ifneq ($(origin PROFILE),command line)
+PROFILE := $(if $(SAVED_PROFILE),$(SAVED_PROFILE),debug)
+endif
+ifneq ($(origin TESTSIGN),command line)
+TESTSIGN := $(SAVED_TESTSIGN)
+endif
 
 # CET is an x86 feature and the compiler rejects -fcf-protection=return on other
 # targets, so this example is x64-only.  ARCH and all-arch still exist so the
@@ -19,6 +37,15 @@ TARGET = x86_64-pc-windows-msvc
 else
 $(error CET is x64-only, got ARCH='$(ARCH)'. ARM64 protects the same edges with pointer authentication and branch target identification, not CET)
 endif
+
+VALID_PROFILES := debug release
+ifeq ($(filter $(PROFILE),$(VALID_PROFILES)),)
+$(error unsupported PROFILE '$(PROFILE)'; expected one of: $(VALID_PROFILES))
+endif
+
+PROFILE_FLAGS_debug   := -g
+PROFILE_FLAGS_release := -O2 --strip
+PROFILE_FLAGS := $(PROFILE_FLAGS_$(PROFILE))
 
 DRIVER  = CetDriver.sys
 
@@ -34,7 +61,7 @@ HEADERS = config.h
 # the kernel loader verifies.
 FLAGS = \
 	--target=$(TARGET) \
-	-g \
+	$(PROFILE_FLAGS) \
 	-fcf-protection=return \
 	-fms-kernel \
 	-D_CRT_SECURE_NO_WARNINGS \
@@ -49,20 +76,32 @@ FLAGS = \
 	-lntoskrnl -lhal
 
 # TESTSIGN=1 signs the image with the compiler's built-in test identity, which
-# is what lets it load on a machine with test signing on.
+# is what lets it load on a machine with test signing on. Signing runs after
+# strip in the same link, so release + TESTSIGN=1 is the correct order.
 ifneq ($(TESTSIGN),)
 FLAGS += -ftest-sign
 endif
 
+BUILD_ID := ARCH=$(ARCH) PROFILE=$(PROFILE) TESTSIGN=$(TESTSIGN)
+ifneq ($(strip $(file <$(FLAGS_STAMP))),$(BUILD_ID))
+_ := $(file >$(FLAGS_STAMP),$(BUILD_ID))
+endif
+
 all: $(DRIVER)
 
-$(DRIVER): $(SRCS) $(HEADERS)
+debug:
+	$(MAKE) PROFILE=debug all
+
+release:
+	$(MAKE) PROFILE=release all
+
+$(DRIVER): $(SRCS) $(HEADERS) $(FLAGS_STAMP)
 	$(NEVERC) $(FLAGS) -o $@ $(SRCS)
 
 all-arch:
 	$(MAKE) ARCH=x64
 
 clean:
-	rm -f $(DRIVER)
+	rm -f $(DRIVER) $(FLAGS_STAMP)
 
-.PHONY: all all-arch clean
+.PHONY: all debug release all-arch clean

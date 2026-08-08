@@ -11,8 +11,15 @@
 
 ```bash
 cd examples/windows-driver-float
-neverc make
+neverc make          # debug：-g（首次构建默认）
+neverc make release  # release：-O2 --strip
+neverc make debug    # 切回 debug
 ```
+
+Makefile 会持久化 `ARCH`、`PROFILE` 与 `TESTSIGN`。发布请用
+`neverc make release`（`-O2 --strip`；PE 导入/导出与加载器元数据保留）。
+需要测试签名时用 `neverc make release TESTSIGN=1`，同一次链接里先 strip 再签名。
+详见 [发行构建](../../docs/release-builds/README.zh-CN.md)。
 
 这会生成 `FloatDriver-x64.sys`。如需改为构建 ARM64，或两者都构建：
 
@@ -28,7 +35,6 @@ neverc make NEVERC=/path/to/neverc
 ```
 
 输出为 `FloatDriver-<架构>.sys`（auto-LTO 优化）。
-默认构建包含 `-g` 用于调试；发布版本应去掉 `-g`。
 
 ---
 

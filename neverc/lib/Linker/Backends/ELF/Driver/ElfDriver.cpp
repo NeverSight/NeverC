@@ -2375,7 +2375,15 @@ void LinkerDriver::execute(opt::InputArgList &args) {
 
     neverc::merge::Options mergeOpts;
     mergeOpts.pureC = true;
-    mergeOpts.dropDebugInfo = (config->strip != StripPolicy::None);
+    // Generic ET_REL objects are not valid strip-all products.  The driver
+    // admits strip intent only for a delivered Android `.ko`, whose merger
+    // keeps the loader-required symbol table and relocations while applying a
+    // narrower --strip-unneeded-style policy.
+    mergeOpts.dropDebugInfo = config->finalizeAndroidKernelModule &&
+                              config->driverCfg->stripsDebugInfo();
+    mergeOpts.stripUnneededSymbols =
+        config->finalizeAndroidKernelModule &&
+        config->driverCfg->stripsSymbols();
     if (config->androidKernelModule) {
       mergeOpts.androidKernelModule = true;
       mergeOpts.finalizeAndroidKernelModule =

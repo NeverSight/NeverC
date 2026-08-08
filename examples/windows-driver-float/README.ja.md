@@ -11,8 +11,16 @@ NeverC で構築した WDM カーネルドライバーで、**カーネルモー
 
 ```bash
 cd examples/windows-driver-float
-neverc make
+neverc make          # debug: -g（初回ビルドの既定値）
+neverc make release  # release: -O2 --strip
+neverc make debug    # debug に戻す
 ```
+
+Makefile は `ARCH`、`PROFILE`、`TESTSIGN` を保持します。リリースは
+`neverc make release`（`-O2 --strip`。PE の import/export とローダー
+メタデータは残ります）。テスト署名が必要なら
+`neverc make release TESTSIGN=1` で、同一リンク内で strip の後に署名します。
+詳細は [リリースビルド](../../docs/release-builds/README.ja.md)。
 
 これで `FloatDriver-x64.sys` が生成されます。ARM64 向け、または両方をビルドするには:
 
@@ -28,7 +36,6 @@ neverc make NEVERC=/path/to/neverc
 ```
 
 出力は `FloatDriver-<アーキテクチャ>.sys`（auto-LTO 最適化済み）。
-デフォルトビルドにはデバッグ用の `-g` が含まれます。リリースビルドでは `-g` を削除してください。
 
 ---
 

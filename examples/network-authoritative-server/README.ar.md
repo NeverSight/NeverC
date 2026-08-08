@@ -18,10 +18,17 @@
 البناء للمضيف، أو تعيين أي triple هدف NeverC مدعوم:
 
 ```bash
-neverc make
+neverc make          # debug: ‏-g (الافتراضي في أول بناء)
+neverc make release  # release: ‏-O2 --strip
+neverc make debug    # العودة إلى debug
 neverc make TARGET=aarch64-linux-gnu
 neverc make TARGET=x86_64-pc-windows-msvc OUTPUT=authoritative-server.exe
 ```
+
+يحفظ Makefile قيمة `PROFILE`، لذلك تبقي أوامر `neverc make` اللاحقة نفس
+اختيار debug/release. يستخدم الإصدار `--strip` المدمج في NeverC.
+انظر [بناء الإصدار](../../docs/release-builds/README.ar.md).
+
 
 التشغيل بشهادة TLS P-256 ومفتاح لنقطة نهاية QUIC:
 

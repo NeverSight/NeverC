@@ -12,8 +12,15 @@ Intel CET (Control-flow Enforcement Technology) Kernel Shadow Stack.
 
 ```bash
 cd examples/windows-driver-cet
-neverc make
+neverc make          # debug: -g (по умолчанию при первой сборке)
+neverc make release  # release: -O2 --strip
+neverc make debug    # вернуться к debug
 ```
+
+Makefile сохраняет `PROFILE` и `TESTSIGN`. Для релиза:
+`neverc make release` (`-O2 --strip`). С тестовой подписью:
+`neverc make release TESTSIGN=1` (сначала strip, затем подпись в одной линковке).
+См. [Релизные сборки](../../docs/release-builds/README.ru.md).
 
 Из автономной сборки NeverC:
 
@@ -22,8 +29,6 @@ neverc make NEVERC=/path/to/neverc
 ```
 
 Результат — `CetDriver.sys` (оптимизирован auto-LTO).
-Сборка по умолчанию включает `-g` для отладки; **в релизных сборках следует убрать
-`-g`**, чтобы удалить отладочные символы и уменьшить размер бинарного файла.
 
 Только x64: CET — это функция x86, и компилятор отклоняет
 `-fcf-protection=return` на других целях. ARM64 защищает те же переходы

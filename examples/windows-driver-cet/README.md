@@ -12,8 +12,15 @@ macOS / Linux.
 
 ```bash
 cd examples/windows-driver-cet
-neverc make
+neverc make          # debug: -g (default on the first build)
+neverc make release  # release: -O2 --strip
+neverc make debug    # switch back to debug
 ```
+
+The Makefile persists `PROFILE` and `TESTSIGN`. Use `neverc make release`
+for `-O2 --strip`. Prefer `neverc make release TESTSIGN=1` so strip runs
+before the Authenticode test signature in the same link.
+See [Release builds](../../docs/release-builds/README.md).
 
 From a standalone NeverC release:
 
@@ -22,8 +29,6 @@ neverc make NEVERC=/path/to/neverc
 ```
 
 The output is `CetDriver.sys` (auto-LTO optimized).
-Default build includes `-g` for debugging; **release builds should remove `-g`**
-to strip debug symbols and reduce binary size.
 
 x64 only: CET is an x86 feature and the compiler rejects `-fcf-protection=return`
 elsewhere. ARM64 protects the same edges with pointer authentication and branch

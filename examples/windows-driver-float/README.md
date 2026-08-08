@@ -11,8 +11,16 @@ floating-point / SIMD in kernel mode**. Cross-compiles from macOS / Linux.
 
 ```bash
 cd examples/windows-driver-float
-neverc make
+neverc make          # debug: -g (default on the first build)
+neverc make release  # release: -O2 --strip
+neverc make debug    # switch back to debug
 ```
+
+The Makefile persists `ARCH`, `PROFILE`, and `TESTSIGN`. Use
+`neverc make release` for `-O2 --strip` (PE imports/exports and loader
+metadata remain). Prefer `neverc make release TESTSIGN=1` so strip runs
+before the Authenticode test signature in the same link.
+See [Release builds](../../docs/release-builds/README.md).
 
 That produces `FloatDriver-x64.sys`. For ARM64, or for both:
 
@@ -28,7 +36,6 @@ neverc make NEVERC=/path/to/neverc
 ```
 
 The output is `FloatDriver-<arch>.sys` (auto-LTO optimized).
-Default build includes `-g` for debugging; remove `-g` for release builds.
 
 ---
 

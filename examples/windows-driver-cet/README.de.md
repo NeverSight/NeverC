@@ -12,8 +12,15 @@ von macOS / Linux.
 
 ```bash
 cd examples/windows-driver-cet
-neverc make
+neverc make          # debug: -g (Standard beim ersten Build)
+neverc make release  # release: -O2 --strip
+neverc make debug    # zurück zu debug
 ```
+
+Das Makefile speichert `PROFILE` und `TESTSIGN`. Für Release:
+`neverc make release` (`-O2 --strip`). Mit Testsignatur:
+`neverc make release TESTSIGN=1` (Strip vor Signatur im selben Link).
+Siehe [Release-Builds](../../docs/release-builds/README.de.md).
 
 Mit einer eigenständigen NeverC-Version:
 
@@ -22,8 +29,6 @@ neverc make NEVERC=/path/to/neverc
 ```
 
 Die Ausgabe ist `CetDriver.sys` (auto-LTO-optimiert).
-Der Standard-Build enthält `-g` zum Debuggen; **Release-Builds sollten `-g`
-entfernen**, um Debug-Symbole zu entfernen und die Binärgröße zu reduzieren.
 
 Nur x64: CET ist ein x86-Feature, und der Compiler lehnt
 `-fcf-protection=return` auf anderen Zielen ab. ARM64 schützt dieselben Kanten

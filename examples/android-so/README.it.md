@@ -10,8 +10,16 @@ Una libreria condivisa `.so` nativa ARM64 cross-compilata per Android con NeverC
 
 ```bash
 cd examples/android-so
-neverc make
+neverc make          # debug: -g (predefinito alla prima build)
+neverc make release  # release: -O2 --strip
+neverc make debug    # torna a debug
 ```
+
+Il Makefile memorizza `PROFILE`, quindi i successivi `neverc make`
+mantengono la stessa scelta debug/release. Release usa `--strip` integrato
+in NeverC: rimuove metadati di debug e nomi di simboli statici non
+necessari, preservando i nomi ABI dinamici/del loader richiesti.
+Vedi [Build di rilascio](../../docs/release-builds/README.it.md).
 
 ## Compilazione manuale
 

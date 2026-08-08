@@ -14,8 +14,17 @@ Depuis le dépôt (cible par défaut : `x86_64-linux-gnu`) :
 
 ```bash
 cd examples/linux-hello
-neverc make
+neverc make          # debug : -g (première construction par défaut)
+neverc make release  # release : -O2 --strip
+neverc make debug    # retour au profil debug
 ```
+
+Le Makefile mémorise `PROFILE`, donc les `neverc make` suivants gardent
+le même choix debug/release. La version release utilise `--strip` intégré
+à NeverC : métadonnées de débogage et noms de symboles statiques inutiles
+sont retirés, les noms ABI dynamiques/chargeur nécessaires restent.
+Voir [Builds de publication](../../docs/release-builds/README.fr.md).
+
 
 Compilation pour AArch64 :
 

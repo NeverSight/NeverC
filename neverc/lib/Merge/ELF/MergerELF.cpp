@@ -133,6 +133,12 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
               "merge semantics\n";
     return false;
   }
+  if (Opts.stripUnneededSymbols &&
+      (!Opts.androidKernelModule || !Opts.finalizeAndroidKernelModule)) {
+    errs() << "neverc: unneeded-symbol stripping is only valid while "
+              "finalizing an Android kernel module\n";
+    return false;
+  }
 
   detail::DedupStrTab ShStrTab, SymStrTab;
 
@@ -424,10 +430,19 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
           SecName, S.sh_flags, Opts.mergeSections, Opts.androidKernelModule,
           Opts.preservedSections);
 
-      if (Opts.dropDebugInfo &&
-          (SecName.starts_with(".debug_") || SecName == ".debug" ||
-           SecName.starts_with(".zdebug_")))
+      if (Opts.dropDebugInfo && detail::isELFDebugSection(SecName)) {
+        PM.DroppedSecs.insert(i);
         continue;
+      }
+
+      // `--strip` on a delivered `.ko` intentionally models the narrow
+      // `llvm-strip --strip-unneeded` boundary, not strip-all.  `.comment` is
+      // producer metadata; loader-facing module sections are preserved.
+      if (Opts.stripUnneededSymbols && Opts.finalizeAndroidKernelModule &&
+          detail::isAndroidKernelReleaseDiscardableSection(SecName)) {
+        PM.DroppedSecs.insert(i);
+        continue;
+      }
 
       // Final Android `.ko` merge: drop the NeverC profile-contract fingerprint
       // after the native/plugin callers have already verified input equality.
@@ -990,6 +1005,100 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
             RE.Entry.setSymbolAndType(It->second, RE.Entry.getType());
         }
     }
+  }
+
+  // ----- Prune relocation-unneeded symbols for a delivered Android `.ko` -----
+  // A kernel module is ET_REL and the loader requires its symbol/string tables
+  // and relocations.  Consequently `--strip` here must never mean ELF
+  // strip-all.  Match llvm-strip's safe ET_REL boundary instead: after every
+  // merge, resolution, PCG demotion, and relocation remap is final, retain
+  // symbol zero, all relocation targets, and all defined non-local symbols;
+  // remove only other local/undefined symbols.  Rebuild `.strtab` so removed
+  // names cannot survive as unreachable bytes.
+  if (Opts.stripUnneededSymbols) {
+    const unsigned OldSymbolCount = FirstGlobal + GlobalSyms.size();
+    DenseSet<unsigned> ReferencedSymbols;
+    for (const MergedSection &MS : MergedSections) {
+      for (const RelocEntry &RE : MS.Relocs) {
+        const unsigned SymbolIndex = RE.Entry.getSymbol();
+        if (SymbolIndex >= OldSymbolCount) {
+          errs() << "neverc: Android module release strip: relocation "
+                    "references out-of-range symbol index "
+                 << SymbolIndex << "\n";
+          return false;
+        }
+        ReferencedSymbols.insert(SymbolIndex);
+      }
+    }
+
+    auto KeepSymbol = [&](const Sym &Symbol, unsigned Index) {
+      if (Index == 0 || ReferencedSymbols.contains(Index))
+        return true;
+      return Symbol.getBinding() != STB_LOCAL &&
+             Symbol.st_shndx != SHN_UNDEF;
+    };
+
+    detail::DedupStrTab PrunedStrTab;
+    SmallVector<Sym, 64> PrunedLocals, PrunedGlobals;
+    DenseMap<unsigned, unsigned> PrunedIndex;
+    auto CopyWithRebuiltName = [&](const Sym &Old) -> std::optional<Sym> {
+      if (Old.st_name >= SymStrTab.Data.size()) {
+        errs() << "neverc: Android module release strip: symbol name offset "
+                 "is outside .strtab\n";
+        return std::nullopt;
+      }
+      const char *Begin = SymStrTab.Data.data() + Old.st_name;
+      const size_t Available = SymStrTab.Data.size() - Old.st_name;
+      const size_t Length = strnlen(Begin, Available);
+      if (Length == Available) {
+        errs() << "neverc: Android module release strip: symbol name is not "
+                  "NUL-terminated in .strtab\n";
+        return std::nullopt;
+      }
+      Sym Copy = Old;
+      Copy.st_name = PrunedStrTab.add(StringRef(Begin, Length));
+      return Copy;
+    };
+
+    for (unsigned I = 0; I < LocalSyms.size(); ++I) {
+      if (!KeepSymbol(LocalSyms[I], I))
+        continue;
+      auto Copy = CopyWithRebuiltName(LocalSyms[I]);
+      if (!Copy)
+        return false;
+      PrunedIndex[I] = PrunedLocals.size();
+      PrunedLocals.push_back(*Copy);
+    }
+
+    const unsigned PrunedFirstGlobal = PrunedLocals.size();
+    for (unsigned I = 0; I < GlobalSyms.size(); ++I) {
+      const unsigned OldIndex = FirstGlobal + I;
+      if (!KeepSymbol(GlobalSyms[I], OldIndex))
+        continue;
+      auto Copy = CopyWithRebuiltName(GlobalSyms[I]);
+      if (!Copy)
+        return false;
+      PrunedIndex[OldIndex] = PrunedFirstGlobal + PrunedGlobals.size();
+      PrunedGlobals.push_back(*Copy);
+    }
+
+    for (MergedSection &MS : MergedSections) {
+      for (RelocEntry &RE : MS.Relocs) {
+        const unsigned OldIndex = RE.Entry.getSymbol();
+        auto It = PrunedIndex.find(OldIndex);
+        if (It == PrunedIndex.end()) {
+          errs() << "neverc: Android module release strip: refusing to "
+                    "remove a relocation-required symbol\n";
+          return false;
+        }
+        RE.Entry.setSymbolAndType(It->second, RE.Entry.getType());
+      }
+    }
+
+    LocalSyms = std::move(PrunedLocals);
+    GlobalSyms = std::move(PrunedGlobals);
+    FirstGlobal = PrunedFirstGlobal;
+    SymStrTab = std::move(PrunedStrTab);
   }
 
   // ----- Build output sections -----

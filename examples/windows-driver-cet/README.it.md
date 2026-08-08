@@ -12,8 +12,15 @@ Compilazione incrociata da macOS / Linux.
 
 ```bash
 cd examples/windows-driver-cet
-neverc make
+neverc make          # debug: -g (predefinito alla prima build)
+neverc make release  # release: -O2 --strip
+neverc make debug    # torna a debug
 ```
+
+Il Makefile memorizza `PROFILE` e `TESTSIGN`. Per il rilascio usare
+`neverc make release` (`-O2 --strip`). Con firma di test:
+`neverc make release TESTSIGN=1` (strip e poi firma nello stesso link).
+Vedi [Build di rilascio](../../docs/release-builds/README.it.md).
 
 Da una versione standalone di NeverC:
 
@@ -22,9 +29,6 @@ neverc make NEVERC=/path/to/neverc
 ```
 
 L'output è `CetDriver.sys` (ottimizzato auto-LTO).
-La compilazione predefinita include `-g` per il debug; **le versioni di rilascio
-dovrebbero rimuovere `-g`** per eliminare i simboli di debug e ridurre la
-dimensione del binario.
 
 Solo x64: CET è una funzionalità x86 e il compilatore rifiuta
 `-fcf-protection=return` su altri target. ARM64 protegge gli stessi archi con

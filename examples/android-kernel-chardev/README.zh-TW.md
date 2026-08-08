@@ -10,10 +10,22 @@
 
 ```bash
 cd examples/android-kernel-chardev
-neverc make
+neverc make          # debug：-g（首次建置預設）
+neverc make release  # release：-O2 --strip
+neverc make debug    # 切回 debug
 ```
 
-將 `KERNEL` 改為 `515`、`601`、`606`、`612` 或 `618` 以適配其他核心版本。
+例如使用 `neverc make KERNEL=612 release` 選擇其他核心預設。Makefile 會同時
+保存 `KERNEL` 與 `PROFILE`，因此後續 `make push`/`run` 會沿用已選擇的產物，
+不會默默切回另一種設定。
+
+release 剝離由 NeverC 內建完成，並遵守核心模組限制：移除 DWARF、
+`.comment` 與未被重定位使用的私有/未定義符號名稱，同時保留 ET_REL 必需的
+符號表/字串表、重定位、匯入、全域定義、`__versions`、
+`.codetag.alloc_tags` 及其他載入 ABI 資料。這不是 strip-all，也不是混淆；
+重定位必需的名稱仍可能保留。若模組需要簽章，請先剝離，再簽署最終位元組。
+不要在 `clean` 中剝離，不要對 `.ko` 使用 `llvm-strip --strip-all`，也不要
+任意移除 `.codetag.alloc_tags` 或 `__codetag_*` 區段。
 
 ## 部署與執行
 

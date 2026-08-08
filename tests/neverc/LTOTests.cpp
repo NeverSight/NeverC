@@ -121,6 +121,58 @@ readELFSymbolPrefix32(llvm::StringRef Bytes, llvm::StringRef SymbolName,
                                  "entry symbol not found");
 }
 
+struct AndroidKernelReleaseMetadata {
+  unsigned SymbolTableCount = 0;
+  unsigned SymbolStringTableCount = 0;
+  unsigned RelocationSectionCount = 0;
+  bool HasDebugSection = false;
+  bool HasCommentSection = false;
+  bool HasVersionsSection = false;
+  bool HasAllocTagsSection = false;
+  bool HasUnneededLocal = false;
+  bool HasNeededImport = false;
+  bool HasPublicDefinition = false;
+};
+
+static llvm::Expected<AndroidKernelReleaseMetadata>
+inspectAndroidKernelReleaseMetadata(llvm::StringRef Bytes) {
+  auto Object = llvm::object::ObjectFile::createObjectFile(
+      llvm::MemoryBufferRef(Bytes, "android-kernel-release-strip-test"));
+  if (!Object)
+    return Object.takeError();
+  if (!(*Object)->isELF() || !(*Object)->isRelocatableObject())
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   "expected a relocatable ELF module");
+
+  AndroidKernelReleaseMetadata Metadata;
+  for (const llvm::object::SectionRef &Section : (*Object)->sections()) {
+    llvm::Expected<llvm::StringRef> Name = Section.getName();
+    if (!Name)
+      return Name.takeError();
+    Metadata.SymbolTableCount += *Name == ".symtab";
+    Metadata.SymbolStringTableCount += *Name == ".strtab";
+    Metadata.RelocationSectionCount += Name->starts_with(".rela");
+    Metadata.HasDebugSection |= Name->starts_with(".debug") ||
+                                Name->starts_with(".zdebug");
+    Metadata.HasCommentSection |= *Name == ".comment";
+    Metadata.HasVersionsSection |= *Name == "__versions";
+    Metadata.HasAllocTagsSection |= *Name == ".codetag.alloc_tags";
+  }
+
+  for (const llvm::object::SymbolRef &Symbol : (*Object)->symbols()) {
+    llvm::Expected<llvm::StringRef> Name = Symbol.getName();
+    if (!Name)
+      return Name.takeError();
+    Metadata.HasUnneededLocal |=
+        Name->contains("neverc_release_unneeded_local");
+    Metadata.HasNeededImport |=
+        *Name == "neverc_release_needed_import";
+    Metadata.HasPublicDefinition |=
+        *Name == "neverc_release_public_definition";
+  }
+  return Metadata;
+}
+
 static llvm::Expected<uint64_t>
 readELFSymbolSectionOffset(llvm::StringRef Bytes, llvm::StringRef SymbolName,
                            bool MatchPCGSuffix = false) {
@@ -2574,6 +2626,85 @@ TEST_F(LTOTest, AndroidKernelFinalModuleDropsContractAcrossLtoModes) {
     const std::string Bytes = readFile(Output);
     EXPECT_EQ(Bytes.find(".neverc.android.kernel.profile"), std::string::npos);
     EXPECT_EQ(Bytes.find("__neverc_android_kernel_profile_contract"),
+              std::string::npos);
+  }
+}
+
+TEST_F(LTOTest, AndroidKernelReleaseStripIsRelocationSafeAcrossLtoModes) {
+  auto Source = tmpFile("android_kernel_release_strip.c");
+  writeFile(Source, R"c(
+extern int neverc_release_needed_import(int);
+
+static __attribute__((used, noinline))
+int neverc_release_unneeded_local(int value) {
+  return value + 17;
+}
+
+__attribute__((noinline))
+int neverc_release_public_definition(int value) {
+  return neverc_release_needed_import(value);
+}
+)c");
+
+  struct Mode {
+    const char *Name;
+    const char *Flag;
+  };
+  const Mode Modes[] = {
+      {"native", "-fno-lto"},
+      {"auto", nullptr},
+      {"full", "-flto=full"},
+  };
+
+  for (const Mode &M : Modes) {
+    SCOPED_TRACE(M.Name);
+    auto DebugModule =
+        tmpFile(std::string("android_kernel_debug_") + M.Name + ".ko");
+    auto ReleaseModule =
+        tmpFile(std::string("android_kernel_release_") + M.Name + ".ko");
+
+    auto Build = [&](const fs::path &Output, bool Strip) {
+      std::vector<std::string> Args = {
+          "--target=aarch64-linux-android",
+          "-std=c11",
+          "-fandroid-kernel-driver-mode",
+          "-DNVK_KERNEL=612",
+          "-g",
+      };
+      if (M.Flag)
+        Args.push_back(M.Flag);
+      if (Strip)
+        Args.push_back("--strip");
+      Args.insert(Args.end(), {"-r", "-nostdlib", "-o", Output.string(),
+                               Source.string()});
+      return ncc(Args);
+    };
+
+    auto DebugBuild = Build(DebugModule, false);
+    ASSERT_EQ(DebugBuild.exitCode, 0) << DebugBuild.err;
+    auto Debug = inspectAndroidKernelReleaseMetadata(readFile(DebugModule));
+    ASSERT_TRUE(static_cast<bool>(Debug))
+        << llvm::toString(Debug.takeError()).str().str();
+    EXPECT_TRUE(Debug->HasDebugSection);
+    EXPECT_TRUE(Debug->HasUnneededLocal);
+
+    auto ReleaseBuild = Build(ReleaseModule, true);
+    ASSERT_EQ(ReleaseBuild.exitCode, 0) << ReleaseBuild.err;
+    const std::string ReleaseBytes = readFile(ReleaseModule);
+    auto Release = inspectAndroidKernelReleaseMetadata(ReleaseBytes);
+    ASSERT_TRUE(static_cast<bool>(Release))
+        << llvm::toString(Release.takeError()).str().str();
+    EXPECT_EQ(Release->SymbolTableCount, 1u);
+    EXPECT_EQ(Release->SymbolStringTableCount, 1u);
+    EXPECT_GT(Release->RelocationSectionCount, 0u);
+    EXPECT_FALSE(Release->HasDebugSection);
+    EXPECT_FALSE(Release->HasCommentSection);
+    EXPECT_TRUE(Release->HasVersionsSection);
+    EXPECT_TRUE(Release->HasAllocTagsSection);
+    EXPECT_FALSE(Release->HasUnneededLocal);
+    EXPECT_TRUE(Release->HasNeededImport);
+    EXPECT_TRUE(Release->HasPublicDefinition);
+    EXPECT_EQ(ReleaseBytes.find("neverc_release_unneeded_local"),
               std::string::npos);
   }
 }

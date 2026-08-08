@@ -1,4 +1,5 @@
 #include "neverc/Plugin/Host/LinkExecutionHooksBridge.h"
+#include "AndroidKernelModuleFinalizer.h"
 #include "AndroidKernelProfileContractVerifier.h"
 #include "BuiltinObjectMergeAdapter.h"
 #include "LinkInputReader.h"
@@ -332,10 +333,18 @@ LinkExecutionHooksBridge::execute(const linker::LinkExecutionRequest &Request,
     }
 
     const auto &Provider = *Plan->objectMergeProvider();
+    AndroidKernelModuleFinalizationPolicy FinalizationPolicy;
+    FinalizationPolicy.DropDebugInfo =
+        Config.finalizeAndroidKernelModule && Config.stripsDebugInfo();
+    FinalizationPolicy.StripUnneededSymbols =
+        Config.finalizeAndroidKernelModule && Config.stripsSymbols();
     BuiltinObjectMergeConfig MergeConfig;
     MergeConfig.AndroidKernelModule = Config.androidKernelModule;
     MergeConfig.FinalizeAndroidKernelModule =
         Config.finalizeAndroidKernelModule;
+    MergeConfig.DropDebugInfo = FinalizationPolicy.DropDebugInfo;
+    MergeConfig.StripUnneededSymbols =
+        FinalizationPolicy.StripUnneededSymbols;
     Expected<ObjectMergeResult> Merged =
         Provider.Builtin
             ? executeBuiltinObjectMergeAdapter(
@@ -349,28 +358,31 @@ LinkExecutionHooksBridge::execute(const linker::LinkExecutionRequest &Request,
       return Merged.takeError();
 
     ObjectPhaseSemanticValidators Validators;
-    // Prefer the merger's concrete image for a lossless write.  Finalization may
-    // still rewrite from the stripped graph when the image and graph diverge
-    // (e.g. a typed ObjectMergeProvider left the contract in MergedImage).
+    // Prefer the merger's concrete image for a lossless write. Finalization may
+    // still invalidate it when a typed provider leaves profile/debug/unneeded
+    // data in the graph; the host then serializes the finalized graph instead
+    // of allowing stale MergedImage bytes to bypass `--strip`.
     ArrayRef<uint8_t> OutputImage(
         reinterpret_cast<const uint8_t *>(Merged->MergedImage.data()),
         Merged->MergedImage.size());
     if (Config.finalizeAndroidKernelModule) {
       const uint64_t GenerationBeforeStrip = Merged->Object->generation();
-      if (Error Err = stripAndroidKernelProfileContract(
-              *Merged->Object,
+      if (Error Err = finalizeAndroidKernelModuleObjectGraph(
+              *Merged->Object, FinalizationPolicy,
               "final Android kernel ObjectMergeProvider output"))
         return std::move(Err);
       if (Merged->Object->generation() != GenerationBeforeStrip)
         OutputImage = {};
-      Validators.Graph = [](const PluginObjectGraph &Object) {
-        return forbidAndroidKernelProfileContract(
-            Object, "final Android kernel pre-write output");
-      };
-      Validators.Image = [](ArrayRef<uint8_t> Image) {
-        return forbidAndroidKernelProfileContract(
-            Image, "final Android kernel post-write output");
-      };
+      Validators.Graph =
+          [Policy = FinalizationPolicy](const PluginObjectGraph &Object) {
+            return verifyFinalAndroidKernelModuleObjectGraph(
+                Object, Policy, "final Android kernel pre-write output");
+          };
+      Validators.Image =
+          [Policy = FinalizationPolicy](ArrayRef<uint8_t> Image) {
+            return verifyFinalAndroidKernelModuleImage(
+                Image, Policy, "final Android kernel post-write output");
+          };
     } else if (AndroidKernelContract) {
       if (Error Err = requireAndroidKernelProfileContract(
               *Merged->Object, *AndroidKernelContract,

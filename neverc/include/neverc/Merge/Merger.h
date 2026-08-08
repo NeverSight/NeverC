@@ -73,6 +73,14 @@ struct Options {
   /// when --strip-debug is active.
   bool dropDebugInfo = false;
 
+  /// Remove local and undefined ELF symbols that no retained relocation uses,
+  /// matching llvm-strip's `--strip-unneeded` safety boundary for ET_REL.
+  /// The ELF merger applies this only after all symbol resolution, parallel-
+  /// codegen demotion, and relocation remapping are complete; it then rebuilds
+  /// `.strtab` so removed names do not remain as stale bytes.  Other formats
+  /// currently ignore this option.
+  bool stripUnneededSymbols = false;
+
   /// Merge per-function/per-variable sections into canonical names:
   /// .text.* → .text, .bss.* → .bss, .data.* → .data, .rodata.* → .rodata.
   /// Used for Android kernel modules to fold per-symbol section names.
@@ -163,6 +171,16 @@ bool verifyMerge(llvm::ArrayRef<llvm::StringRef> Inputs,
 bool verifyMerge(llvm::ArrayRef<llvm::SmallVector<char, 0>> Inputs,
                  llvm::ArrayRef<char> Output, Format Fmt,
                  const Options &Opts = {}, std::string *Err = nullptr);
+
+/// Independently audit the loader-facing contract of a delivered Android
+/// kernel module without requiring its pre-merge inputs.  The caller must
+/// select both Android module semantics and finalization.  This exposes the
+/// native verified merger's canonical output checks to plugin paths: ET_REL
+/// structure, module ABI sections/boundaries, debug removal, and relocation-
+/// safe symbol pruning.
+bool verifyAndroidKernelModuleImage(llvm::ArrayRef<char> Output,
+                                    const Options &Opts,
+                                    std::string *Err = nullptr);
 
 /// Validate a completed DWARF 5 split-debug pair. Every skeleton CU in the
 /// main object must have exactly one split CU with the same DWO ID, and neither

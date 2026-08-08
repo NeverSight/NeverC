@@ -16,8 +16,16 @@ NeverC는 올인원 컴파일러입니다 — 단일 호출로 전처리, 컴파
 
 ```bash
 cd examples/windows-driver
-neverc make
+neverc make          # debug: -g(첫 빌드 기본값)
+neverc make release  # release: -O2 --strip
+neverc make debug    # debug로 전환
 ```
+
+Makefile이 `ARCH`, `PROFILE`, `TESTSIGN`을 유지합니다. 릴리스는
+`neverc make release`(`-O2 --strip`; PE import/export와 로더 메타데이터는
+유지). 테스트 서명이 필요하면 `neverc make release TESTSIGN=1`로
+같은 링크에서 strip 후 서명하세요. 자세한 내용:
+[릴리스 빌드](../../docs/release-builds/README.ko.md).
 
 이렇게 하면 `ExampleDriver-x64.sys`가 생성됩니다. ARM64용으로, 또는 둘 다 빌드하려면:
 
@@ -33,8 +41,6 @@ neverc make NEVERC=/path/to/neverc
 ```
 
 출력은 `ExampleDriver-<아키텍처>.sys`(auto-LTO 최적화)입니다.
-기본 빌드에는 디버깅용 `-g`가 포함되어 있습니다. **릴리스 빌드에서는 `-g`를 제거**하여
-디버그 심볼을 제거하고 바이너리 크기를 줄이세요 (~38 KB → ~3 KB).
 
 ## 수동 빌드 (Make 없이)
 
@@ -59,7 +65,6 @@ ARM64의 경우 target을 `aarch64-pc-windows-msvc`로 바꾸기만 하면 나�
 체크섬이 기록됩니다.
 
 > `-g`는 DWARF 디버그 정보를 PE에 포함합니다. `llvm-dwarfdump`로 검사할 수 있습니다.
-> 릴리스 빌드에서는 바이너리 크기를 줄이기 위해 생략하세요.
 
 ## 테스트 서명
 

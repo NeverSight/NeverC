@@ -103,6 +103,14 @@ void populateLinkerDriverConfig(const ToolChain &TC,
                                 const llvm::opt::ArgList &Args,
                                 ::linker::LinkerDriverConfig &Cfg);
 
+/// True only for the relocatable ELF image that is itself the delivered
+/// Android kernel module.  Ordinary `-r` outputs remain intermediate objects;
+/// the `.ko` suffix is part of the driver contract because it is what selects
+/// final module profile-contract removal in the embedded ELF linker.
+bool isFinalAndroidKernelModule(const llvm::Triple &Target,
+                                const llvm::opt::ArgList &Args,
+                                llvm::StringRef OutputFile);
+
 bool getBundledMsvcSdkRoot(const Driver &D, const llvm::Triple &Triple,
                            llvm::SmallVectorImpl<char> &SdkRoot);
 

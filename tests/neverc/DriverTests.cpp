@@ -356,6 +356,12 @@ TEST_F(DriverTest, StripOptionRejectsNonFinalOutputs) {
                      Object.string(), "-o",
                      tmpFile("strip-scope-relocatable.o").string()});
 
+  expectCommandFail(
+      "strip_android_kernel_intermediate", "only applies to final linked",
+      {"--target=aarch64-linux-android", "-fandroid-kernel-driver-mode",
+       "-DNVK_KERNEL=510", "-nostdlib", "-r", "--strip", Source.string(),
+       "-o", tmpFile("strip-scope-android-intermediate.o").string()});
+
   expectCommandFail("strip_static_library", "only applies to final linked",
                     {"--emit-static-lib", "--strip", Object.string(), "-o",
                      tmpFile("strip-scope.a").string()});
@@ -364,6 +370,24 @@ TEST_F(DriverTest, StripOptionRejectsNonFinalOutputs) {
                     {"--target=x86_64-linux-gnu", "-fdyncode", "-s",
                      Source.string(), "-o",
                      tmpFile("strip-scope.bin").string()});
+}
+
+TEST_F(DriverTest, StripOptionAcceptsFinalAndroidKernelModule) {
+  const auto Source = tmpFile("strip-android-module-scope.c");
+  const auto Module = tmpFile("strip-android-module-scope.ko");
+  writeFile(Source,
+            "__attribute__((used, noinline)) static int "
+            "neverc_android_module_private(void) { return 42; }\n"
+            "int neverc_android_module_public(void) {\n"
+            "  return neverc_android_module_private();\n"
+            "}\n");
+
+  auto Result = ncc({"--target=aarch64-linux-android",
+                     "-fandroid-kernel-driver-mode", "-DNVK_KERNEL=510",
+                     "-nostdlib", "-r", "--strip", Source.string(), "-o",
+                     Module.string()});
+  EXPECT_EQ(Result.exitCode, 0) << Result.err;
+  EXPECT_TRUE(fs::is_regular_file(Module));
 }
 
 TEST_F(DriverTest, StripOptionRemovesNamesAndDwarfAcrossFormats) {

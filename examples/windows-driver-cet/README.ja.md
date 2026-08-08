@@ -11,8 +11,15 @@ NeverC で構築した最小限の WDM カーネルドライバーで、Intel CE
 
 ```bash
 cd examples/windows-driver-cet
-neverc make
+neverc make          # debug: -g（初回ビルドの既定値）
+neverc make release  # release: -O2 --strip
+neverc make debug    # debug に戻す
 ```
+
+Makefile は `PROFILE` と `TESTSIGN` を保持します。リリースは
+`neverc make release`（`-O2 --strip`）。テスト署名が必要なら
+`neverc make release TESTSIGN=1` で、同一リンク内で strip の後に署名します。
+詳細は [リリースビルド](../../docs/release-builds/README.ja.md)。
 
 スタンドアロンの NeverC リリースから：
 
@@ -21,8 +28,6 @@ neverc make NEVERC=/path/to/neverc
 ```
 
 出力は `CetDriver.sys`（auto-LTO 最適化済み）。
-デフォルトビルドにはデバッグ用の `-g` が含まれます。**リリースビルドでは `-g` を削除**
-してデバッグシンボルを除去し、バイナリサイズを削減してください。
 
 x64 のみ: CET は x86 の機能で、他のターゲットでは `-fcf-protection=return` が
 コンパイラに拒否されます。ARM64 では同じ制御フローの境界をポインタ認証と

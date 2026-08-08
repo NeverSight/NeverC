@@ -14,10 +14,17 @@
 为本机构建，或设置任意受支持的 NeverC 目标三元组：
 
 ```bash
-neverc make
+neverc make          # debug：-g（首次构建默认）
+neverc make release  # release：-O2 --strip
+neverc make debug    # 切回 debug
 neverc make TARGET=aarch64-linux-gnu
 neverc make TARGET=x86_64-pc-windows-msvc OUTPUT=authoritative-server.exe
 ```
+
+Makefile 会持久化 `PROFILE`，之后的 `neverc make` 会保持同一 debug/release
+选择。发布构建使用 NeverC 内置 `--strip`。
+参见 [发布构建](../../docs/release-builds/README.zh-CN.md)。
+
 
 使用 P-256 TLS 证书和密钥运行 QUIC 端点：
 

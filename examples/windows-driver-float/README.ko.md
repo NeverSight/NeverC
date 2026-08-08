@@ -11,8 +11,16 @@ NeverC로 빌드한 WDM 커널 드라이버로, **커널 모드에서 부동소�
 
 ```bash
 cd examples/windows-driver-float
-neverc make
+neverc make          # debug: -g(첫 빌드 기본값)
+neverc make release  # release: -O2 --strip
+neverc make debug    # debug로 전환
 ```
+
+Makefile이 `ARCH`, `PROFILE`, `TESTSIGN`을 유지합니다. 릴리스는
+`neverc make release`(`-O2 --strip`; PE import/export와 로더 메타데이터는
+유지). 테스트 서명이 필요하면 `neverc make release TESTSIGN=1`로
+같은 링크에서 strip 후 서명하세요. 자세한 내용:
+[릴리스 빌드](../../docs/release-builds/README.ko.md).
 
 이렇게 하면 `FloatDriver-x64.sys`가 생성됩니다. ARM64용으로, 또는 둘 다 빌드하려면:
 
@@ -28,7 +36,6 @@ neverc make NEVERC=/path/to/neverc
 ```
 
 출력은 `FloatDriver-<아키텍처>.sys`(auto-LTO 최적화)입니다.
-기본 빌드에는 디버깅용 `-g`가 포함되어 있습니다. 릴리스 빌드에서는 `-g`를 제거하세요.
 
 ---
 

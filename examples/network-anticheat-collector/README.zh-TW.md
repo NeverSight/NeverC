@@ -22,9 +22,16 @@ HMAC-SHA256。MAC 涵蓋 `agent-id || first-32-header-bytes || body`。
 為主機或任何受支援的目標建置：
 
 ```bash
-neverc make
+neverc make          # debug：-g（首次建置預設）
+neverc make release  # release：-O2 --strip
+neverc make debug    # 切回 debug
 neverc make TARGET=aarch64-pc-windows-msvc OUTPUT=anticheat-collector.exe
 ```
+
+Makefile 會持久化 `PROFILE`，之後的 `neverc make` 會保持同一 debug/release
+選擇。發布建置使用 NeverC 內建 `--strip`。
+參見 [發布建置](../../docs/release-builds/README.zh-TW.md)。
+
 
 執行時需提供伺服器憑證、伺服器金鑰、受信任的用戶端 CA、共用的 32 位元組
 簽署金鑰和稽核路徑：

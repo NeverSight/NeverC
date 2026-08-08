@@ -12,8 +12,17 @@ NeverC include un sysroot Linux (Ubuntu 22.04, glibc 2.35) in `runtime/linux/`.
 
 ```bash
 cd examples/linux-math
-neverc make
+neverc make          # debug: -g (predefinito alla prima build)
+neverc make release  # release: -O2 --strip
+neverc make debug    # torna a debug
 ```
+
+Il Makefile memorizza `PROFILE`, quindi i successivi `neverc make`
+mantengono la stessa scelta debug/release. Release usa `--strip` integrato
+in NeverC: rimuove metadati di debug e nomi di simboli statici non
+necessari, preservando i nomi ABI dinamici/del loader richiesti.
+Vedi [Build di rilascio](../../docs/release-builds/README.it.md).
+
 
 AArch64:
 

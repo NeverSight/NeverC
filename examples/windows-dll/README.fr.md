@@ -10,8 +10,16 @@ Une DLL Windows mode utilisateur compilée en croisé avec NeverC.
 
 ```bash
 cd examples/windows-dll
-neverc make
+neverc make          # debug : -g (première construction par défaut)
+neverc make release  # release : -O2 --strip
+neverc make debug    # retour au profil debug
 ```
+
+Le Makefile mémorise `PROFILE`, donc les `neverc make` suivants gardent
+le même choix debug/release. La version release utilise `--strip` intégré
+à NeverC : métadonnées de débogage et noms de symboles statiques inutiles
+sont retirés, les noms ABI dynamiques/chargeur nécessaires restent.
+Voir [Builds de publication](../../docs/release-builds/README.fr.md).
 
 ## Compilation manuelle
 

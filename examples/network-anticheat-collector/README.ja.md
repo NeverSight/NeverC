@@ -26,9 +26,16 @@ MAC の対象は `agent-id || first-32-header-bytes || body` です。NRPC
 ホストまたは任意の対応ターゲット向けにビルドします。
 
 ```bash
-neverc make
+neverc make          # debug: -g（初回ビルドの既定）
+neverc make release  # release: -O2 --strip
+neverc make debug    # debug に戻す
 neverc make TARGET=aarch64-pc-windows-msvc OUTPUT=anticheat-collector.exe
 ```
+
+Makefile は `PROFILE` を保持するため、以降の `neverc make` は同じ
+debug/release 選択を使います。リリースは NeverC 組み込みの `--strip` を使います。
+[リリースビルド](../../docs/release-builds/README.ja.md) を参照。
+
 
 サーバー証明書、サーバー鍵、信頼するクライアント CA、共有 32 バイト
 署名鍵、および監査パスを指定して実行します。

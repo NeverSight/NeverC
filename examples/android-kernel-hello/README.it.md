@@ -10,10 +10,23 @@ Modulo kernel Android NeverC minimale (.ko). Avvia `kallsyms_lookup_name` tramit
 
 ```bash
 cd examples/android-kernel-hello
-neverc make
+neverc make          # debug: -g (predefinito alla prima build)
+neverc make release  # release: -O2 --strip
+neverc make debug    # torna a debug
 ```
 
-Cambiare `KERNEL` in `515`, `601`, `606`, `612` o `618` per altre versioni.
+Seleziona un altro preset, ad esempio, con `neverc make KERNEL=612 release`.
+Il Makefile salva `KERNEL` e `PROFILE`, quindi i successivi `make push`/`run`
+continuano a usare l'artefatto scelto.
+
+Lo strip release è integrato in NeverC e limitato a una policy sicura per i
+moduli kernel. Rimuove DWARF, `.comment` e i nomi privati/non definiti non
+necessari alle rilocazioni, ma conserva tabelle simboli/stringhe ET_REL,
+rilocazioni, import, definizioni globali, `__versions`, `.codetag.alloc_tags` e
+l'ABI del loader. Non è strip-all né offuscamento; i nomi richiesti dalle
+rilocazioni possono restare. Firma sempre dopo lo strip. Non eseguire strip in
+`clean`, non usare `llvm-strip --strip-all` su un `.ko` e non rimuovere alla
+cieca `.codetag.alloc_tags` o `__codetag_*`.
 
 ## Distribuzione ed esecuzione
 

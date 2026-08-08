@@ -1,4 +1,5 @@
 #include "Link/AndroidKernelProfileContractVerifier.h"
+#include "Link/AndroidKernelModuleFinalizer.h"
 #include "Link/BuiltinObjectMergeAdapter.h"
 #include "Link/LinkGraph.h"
 #include "Link/ObjectGraphImporter.h"
@@ -12,6 +13,8 @@
 #include "neverc/Plugin/Host/PluginSession.h"
 #include "neverc/Plugin/Host/PluginTaskContext.h"
 #include "neverc/Plugin/Host/PluginTargetRegistry.h"
+#include "llvm/Object/ELF.h"
+#include "llvm/Object/ELFTypes.h"
 #include "llvm/Config/llvm-config.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/TargetSelect.h"
@@ -19,6 +22,7 @@
 #include "gtest/gtest.h"
 #include <algorithm>
 #include <array>
+#include <cstring>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -389,6 +393,285 @@ TEST(AndroidKernelProfileContractVerifierTest,
   EXPECT_EQ(Graph->symbolCount(), 1u);
   EXPECT_EQ(Graph->relocationCount(), 2u);
   EXPECT_FALSE(verifyPluginObjectGraph(*Graph));
+}
+
+TEST(AndroidKernelModuleFinalizerTest,
+     ReleaseStripKeepsOnlyRelocationRequiredPrivateSymbols) {
+  auto Graph = makeObject(1);
+  ASSERT_NE(Graph, nullptr);
+  Graph->sections().front().Data = {0, 0, 0, 0};
+  const uint64_t TextSectionID = Graph->sections().front().ID;
+  addAndroidKernelProfileContract(*Graph);
+
+  PluginObjectSection Debug;
+  Debug.ID = Graph->allocateEntityID();
+  Debug.Name = ".debug_info";
+  Debug.Kind = NEVERC_OBJECT_SECTION_KIND_DEBUG;
+  Debug.Flags = NEVERC_OBJECT_SECTION_DEBUG;
+  Debug.Alignment = 1;
+  Debug.Data = {0};
+  const uint64_t DebugSectionID = Debug.ID;
+  Graph->sections().push_back(std::move(Debug));
+
+  PluginObjectSection Comment;
+  Comment.ID = Graph->allocateEntityID();
+  Comment.Name = ".comment";
+  Comment.Alignment = 1;
+  Comment.Data = {'N', 'e', 'v', 'e', 'r', 'C'};
+  Graph->sections().push_back(std::move(Comment));
+
+  auto AddSymbol = [&](StringRef Name, NevercObjectSymbolBinding Binding,
+                       NevercObjectSymbolDefinition Definition,
+                       uint64_t SectionID, uint64_t Value) {
+    PluginObjectSymbol Symbol;
+    Symbol.ID = Graph->allocateEntityID();
+    Symbol.Name = Name.str();
+    Symbol.Binding = Binding;
+    Symbol.Type = NEVERC_OBJECT_SYMBOL_TYPE_OBJECT;
+    Symbol.Definition = Definition;
+    Symbol.SectionID = SectionID;
+    Symbol.Value = Value;
+    Symbol.Size = Definition == NEVERC_OBJECT_SYMBOL_DEFINITION_DEFINED ? 1 : 0;
+    const uint64_t ID = Symbol.ID;
+    Graph->symbols().push_back(std::move(Symbol));
+    return ID;
+  };
+
+  const uint64_t NeededLocal = AddSymbol(
+      "release_needed_local", NEVERC_OBJECT_SYMBOL_BINDING_LOCAL,
+      NEVERC_OBJECT_SYMBOL_DEFINITION_DEFINED, TextSectionID, 0);
+  AddSymbol("release_unneeded_local", NEVERC_OBJECT_SYMBOL_BINDING_LOCAL,
+            NEVERC_OBJECT_SYMBOL_DEFINITION_DEFINED, TextSectionID, 1);
+  const uint64_t NeededImport = AddSymbol(
+      "release_needed_import", NEVERC_OBJECT_SYMBOL_BINDING_GLOBAL,
+      NEVERC_OBJECT_SYMBOL_DEFINITION_UNDEFINED, 0, 0);
+  AddSymbol("release_unneeded_import", NEVERC_OBJECT_SYMBOL_BINDING_GLOBAL,
+            NEVERC_OBJECT_SYMBOL_DEFINITION_UNDEFINED, 0, 0);
+  const uint64_t PublicDefinition = AddSymbol(
+      "release_public_definition", NEVERC_OBJECT_SYMBOL_BINDING_GLOBAL,
+      NEVERC_OBJECT_SYMBOL_DEFINITION_DEFINED, TextSectionID, 2);
+  AddSymbol("release_debug_only", NEVERC_OBJECT_SYMBOL_BINDING_LOCAL,
+            NEVERC_OBJECT_SYMBOL_DEFINITION_DEFINED, DebugSectionID, 0);
+
+  auto AddRelocation = [&](uint64_t SectionID, uint64_t Offset,
+                           uint64_t TargetSymbolID) {
+    PluginObjectRelocation Relocation;
+    Relocation.ID = Graph->allocateEntityID();
+    Relocation.SectionID = SectionID;
+    Relocation.Offset = Offset;
+    Relocation.Kind = NEVERC_OBJECT_RELOCATION_ABSOLUTE;
+    Relocation.TargetKind = NEVERC_OBJECT_RELOCATION_TARGET_SYMBOL;
+    Relocation.Width = 8;
+    Relocation.TargetSymbolID = TargetSymbolID;
+    Graph->relocations().push_back(std::move(Relocation));
+  };
+  AddRelocation(TextSectionID, 0, NeededLocal);
+  AddRelocation(TextSectionID, 1, NeededImport);
+  AddRelocation(DebugSectionID, 0, PublicDefinition);
+
+  ASSERT_FALSE(verifyPluginObjectGraph(*Graph));
+  const uint64_t Generation = Graph->generation();
+  AndroidKernelModuleFinalizationPolicy Policy;
+  Policy.DropDebugInfo = true;
+  Policy.StripUnneededSymbols = true;
+  Error Finalize = finalizeAndroidKernelModuleObjectGraph(
+      *Graph, Policy, "test release Android module");
+  ASSERT_FALSE(Finalize) << errorText(std::move(Finalize));
+  EXPECT_EQ(Graph->generation(), Generation + 1);
+  EXPECT_FALSE(verifyPluginObjectGraph(*Graph));
+
+  const auto HasSection = [&](StringRef Name) {
+    return std::any_of(Graph->sections().begin(), Graph->sections().end(),
+                       [&](const PluginObjectSection &S) {
+                         return S.Name == Name;
+                       });
+  };
+  const auto HasSymbol = [&](StringRef Name) {
+    return std::any_of(Graph->symbols().begin(), Graph->symbols().end(),
+                       [&](const PluginObjectSymbol &S) {
+                         return S.Name == Name;
+                       });
+  };
+  EXPECT_FALSE(HasSection(".neverc.android.kernel.profile"));
+  EXPECT_FALSE(HasSection(".debug_info"));
+  EXPECT_FALSE(HasSection(".comment"));
+  EXPECT_TRUE(HasSymbol("release_needed_local"));
+  EXPECT_FALSE(HasSymbol("release_unneeded_local"));
+  EXPECT_TRUE(HasSymbol("release_needed_import"));
+  EXPECT_FALSE(HasSymbol("release_unneeded_import"));
+  EXPECT_TRUE(HasSymbol("release_public_definition"));
+  EXPECT_FALSE(HasSymbol("release_debug_only"));
+  EXPECT_EQ(Graph->relocationCount(), 2u);
+  EXPECT_FALSE(verifyFinalAndroidKernelModuleObjectGraph(
+      *Graph, Policy, "test release Android module"));
+}
+
+TEST(AndroidKernelModuleFinalizerTest,
+     ReleaseStripRejectsRetainedRelocationToDroppedDebugEntity) {
+  auto Graph = makeObject(1);
+  ASSERT_NE(Graph, nullptr);
+  const uint64_t TextSectionID = Graph->sections().front().ID;
+
+  PluginObjectSection Debug;
+  Debug.ID = Graph->allocateEntityID();
+  Debug.Name = ".debug_info";
+  Debug.Kind = NEVERC_OBJECT_SECTION_KIND_DEBUG;
+  Debug.Flags = NEVERC_OBJECT_SECTION_DEBUG;
+  Debug.Alignment = 1;
+  Debug.Data = {0};
+  const uint64_t DebugSectionID = Debug.ID;
+  Graph->sections().push_back(std::move(Debug));
+
+  PluginObjectSymbol DebugSymbol;
+  DebugSymbol.ID = Graph->allocateEntityID();
+  DebugSymbol.Name = "release_debug_target";
+  DebugSymbol.Definition = NEVERC_OBJECT_SYMBOL_DEFINITION_DEFINED;
+  DebugSymbol.SectionID = DebugSectionID;
+  DebugSymbol.Size = 1;
+  const uint64_t DebugSymbolID = DebugSymbol.ID;
+  Graph->symbols().push_back(std::move(DebugSymbol));
+
+  PluginObjectRelocation Relocation;
+  Relocation.ID = Graph->allocateEntityID();
+  Relocation.SectionID = TextSectionID;
+  Relocation.Kind = NEVERC_OBJECT_RELOCATION_ABSOLUTE;
+  Relocation.TargetKind = NEVERC_OBJECT_RELOCATION_TARGET_SYMBOL;
+  Relocation.Width = 8;
+  Relocation.TargetSymbolID = DebugSymbolID;
+  Graph->relocations().push_back(std::move(Relocation));
+  ASSERT_FALSE(verifyPluginObjectGraph(*Graph));
+
+  const uint64_t Generation = Graph->generation();
+  const size_t Sections = Graph->sectionCount();
+  const size_t Symbols = Graph->symbolCount();
+  const size_t Relocations = Graph->relocationCount();
+  AndroidKernelModuleFinalizationPolicy Policy;
+  Policy.DropDebugInfo = true;
+  Policy.StripUnneededSymbols = true;
+  Error Finalize = finalizeAndroidKernelModuleObjectGraph(
+      *Graph, Policy, "test release Android module");
+  ASSERT_TRUE(static_cast<bool>(Finalize));
+  EXPECT_NE(errorText(std::move(Finalize)).find("retained section references"),
+            std::string::npos);
+  EXPECT_EQ(Graph->generation(), Generation);
+  EXPECT_EQ(Graph->sectionCount(), Sections);
+  EXPECT_EQ(Graph->symbolCount(), Symbols);
+  EXPECT_EQ(Graph->relocationCount(), Relocations);
+}
+
+TEST(AndroidKernelModuleFinalizerTest,
+     ImageVerifierRejectsSymtabLinkedToSectionNameTable) {
+  initializeBuiltinTargets();
+  LinkTaskScope Scope;
+  ASSERT_TRUE(Scope.initialize());
+
+  const BuiltinTargetRoute *ELFRoute = nullptr;
+  for (const BuiltinTargetRoute &Route : builtinTargetRoutes()) {
+    const Triple Parsed(Triple::normalize(Route.CanonicalTriple));
+    if (Route.SupportsObject &&
+        Route.ObjectFormat == BuiltinObjectFormat::ELF &&
+        Parsed.getArch() == Triple::aarch64) {
+      ELFRoute = &Route;
+      break;
+    }
+  }
+  ASSERT_NE(ELFRoute, nullptr);
+
+  auto Input = makeBuiltinObject(*ELFRoute, "release_public_definition");
+  auto Target = makeBuiltinTargetKey(*ELFRoute);
+  ASSERT_NE(Input, nullptr);
+  ASSERT_TRUE(static_cast<bool>(Target))
+      << errorText(Target.takeError());
+  addAndroidKernelProfileContract(*Input);
+
+  auto AddSection = [&](StringRef Name, NevercObjectSectionFlags Flags,
+                        uint64_t Alignment, size_t Size) {
+    PluginObjectSection Section;
+    Section.ID = Input->allocateEntityID();
+    Section.Name = Name.str();
+    Section.Kind = NEVERC_OBJECT_SECTION_KIND_DATA;
+    Section.Flags = Flags;
+    Section.Alignment = Alignment;
+    Section.Data.resize(Size);
+    Input->sections().push_back(std::move(Section));
+  };
+  AddSection("__versions", NEVERC_OBJECT_SECTION_ALLOCATED, 8, 0);
+  AddSection(".codetag.alloc_tags",
+             NEVERC_OBJECT_SECTION_ALLOCATED |
+                 NEVERC_OBJECT_SECTION_WRITABLE,
+             8, 0);
+  AddSection(".gnu.linkonce.this_module",
+             NEVERC_OBJECT_SECTION_ALLOCATED |
+                 NEVERC_OBJECT_SECTION_WRITABLE,
+             64, 1024);
+  Input->advanceGeneration();
+  Input->issueLayoutProof();
+  ASSERT_FALSE(verifyPluginObjectGraph(*Input));
+
+  auto Snapshot = PluginTargetRegistry::freeze(
+      ArrayRef<PluginTargetRegistrationView>(), PluginTargetRequest{});
+  ASSERT_TRUE(static_cast<bool>(Snapshot))
+      << errorText(Snapshot.takeError());
+  std::array<PluginObjectGraph *, 1> Inputs{Input.get()};
+  BuiltinObjectMergeConfig Config;
+  Config.AndroidKernelModule = true;
+  Config.FinalizeAndroidKernelModule = true;
+  Config.DropDebugInfo = true;
+  Config.StripUnneededSymbols = true;
+  auto Merged = executeBuiltinObjectMergeAdapter(
+      Scope.task(), *Snapshot, std::move(*Target), Inputs,
+      ArrayRef<ArrayRef<uint8_t>>{}, NEVERC_LINK_OPTION_NONE, Config);
+  ASSERT_TRUE(static_cast<bool>(Merged))
+      << errorText(Merged.takeError());
+
+  AndroidKernelModuleFinalizationPolicy Policy;
+  Policy.DropDebugInfo = true;
+  Policy.StripUnneededSymbols = true;
+  ArrayRef<uint8_t> ValidImage(
+      reinterpret_cast<const uint8_t *>(Merged->MergedImage.data()),
+      Merged->MergedImage.size());
+  EXPECT_FALSE(verifyFinalAndroidKernelModuleImage(
+      ValidImage, Policy, "valid final Android module"));
+
+  std::vector<uint8_t> Corrupted(ValidImage.begin(), ValidImage.end());
+  StringRef CorruptedBytes(reinterpret_cast<const char *>(Corrupted.data()),
+                           Corrupted.size());
+  auto Parsed = object::ELFFile<object::ELF64LE>::create(CorruptedBytes);
+  ASSERT_TRUE(static_cast<bool>(Parsed))
+      << errorText(Parsed.takeError());
+  auto Sections = Parsed->sections();
+  ASSERT_TRUE(static_cast<bool>(Sections))
+      << errorText(Sections.takeError());
+  std::optional<unsigned> SymtabIndex;
+  std::optional<unsigned> ShstrtabIndex;
+  for (unsigned I = 0; I < Sections->size(); ++I) {
+    auto Name = Parsed->getSectionName((*Sections)[I]);
+    ASSERT_TRUE(static_cast<bool>(Name))
+        << errorText(Name.takeError());
+    if (*Name == ".symtab")
+      SymtabIndex = I;
+    else if (*Name == ".shstrtab")
+      ShstrtabIndex = I;
+  }
+  ASSERT_TRUE(SymtabIndex.has_value());
+  ASSERT_TRUE(ShstrtabIndex.has_value());
+
+  object::ELF64LE::Shdr CorruptedSymtab = (*Sections)[*SymtabIndex];
+  CorruptedSymtab.sh_link = *ShstrtabIndex;
+  const auto *OriginalSymtabBytes = reinterpret_cast<const uint8_t *>(
+      &(*Sections)[*SymtabIndex]);
+  ASSERT_GE(OriginalSymtabBytes, Corrupted.data());
+  const size_t SymtabOffset = OriginalSymtabBytes - Corrupted.data();
+  ASSERT_LE(SymtabOffset + sizeof(CorruptedSymtab), Corrupted.size());
+  std::memcpy(Corrupted.data() + SymtabOffset, &CorruptedSymtab,
+              sizeof(CorruptedSymtab));
+
+  Error Verify = verifyFinalAndroidKernelModuleImage(
+      Corrupted, Policy, "corrupted final Android module");
+  ASSERT_TRUE(static_cast<bool>(Verify));
+  EXPECT_NE(errorText(std::move(Verify))
+                .find("symbol table must link to .strtab"),
+            std::string::npos);
 }
 
 TEST(PluginObjectGraphImportTest,

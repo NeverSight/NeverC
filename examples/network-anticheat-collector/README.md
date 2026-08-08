@@ -24,9 +24,16 @@ bytes directly to the audit log.
 Build for the host or any supported target:
 
 ```bash
-neverc make
+neverc make          # debug: -g (default on the first build)
+neverc make release  # release: -O2 --strip
+neverc make debug    # switch back to debug
 neverc make TARGET=aarch64-pc-windows-msvc OUTPUT=anticheat-collector.exe
 ```
+
+The Makefile persists `PROFILE`, so later `neverc make` keeps the same
+debug/release selection. Release uses NeverC's integrated `--strip`.
+See [Release builds](../../docs/release-builds/README.md).
+
 
 Run with a server certificate, server key, trusted client CA, shared 32-byte
 signing key, and audit path:

@@ -12,8 +12,17 @@ NeverC でクロスコンパイルしたネイティブ macOS `.dylib` ダイナ
 
 ```bash
 cd examples/macos-dylib
-neverc make
+neverc make          # debug: -g（初回ビルドの既定値）
+neverc make release  # release: -O2 --strip
+neverc make debug    # debug に戻す
 ```
+
+Makefile は `PROFILE` を保持するため、以降の `neverc make` でも同じ
+debug/release 選択が使われます。release は NeverC 組み込みの `--strip`
+で、不要な静的シンボル名とデバッグメタデータを削除しつつ、ローダー/
+動的 ABI に必要な名前は残します。詳細は
+[リリースビルド](../../docs/release-builds/README.ja.md)。
+
 
 Intel 向けビルド：
 

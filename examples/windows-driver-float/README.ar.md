@@ -13,8 +13,15 @@
 
 ```bash
 cd examples/windows-driver-float
-neverc make
+neverc make          # debug: ‏-g (الافتراضي في أول بناء)
+neverc make release  # release: ‏-O2 --strip
+neverc make debug    # العودة إلى debug
 ```
+
+يحفظ Makefile قيم `ARCH` و`PROFILE` و`TESTSIGN`. للإصدار استخدم
+`neverc make release` (`-O2 --strip`؛ تبقى واردات/صادرات PE وبيانات المحمّل).
+مع توقيع الاختبار: `neverc make release TESTSIGN=1` (التجريد ثم التوقيع في نفس الربط).
+انظر [ملفات الإصدار](../../docs/release-builds/README.ar.md).
 
 ينتج عن ذلك `FloatDriver-x64.sys`. لبناء ARM64، أو لبناء الاثنين معًا:
 
@@ -30,7 +37,6 @@ neverc make NEVERC=/path/to/neverc
 ```
 
 الناتج هو `FloatDriver-<المعمارية>.sys` (محسّن بـ auto-LTO).
-البناء الافتراضي يتضمن `-g` للتصحيح؛ احذف `-g` في إصدارات الإنتاج.
 
 ---
 

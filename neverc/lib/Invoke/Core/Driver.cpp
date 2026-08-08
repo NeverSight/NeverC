@@ -1,4 +1,5 @@
 #include "neverc/Invoke/Driver.h"
+#include "ToolChains/CommonArgs.h"
 #include "ToolChains/Darwin.h"
 #include "ToolChains/Gnu.h"
 #include "ToolChains/Linux.h"
@@ -3266,13 +3267,22 @@ void Driver::handleArguments(Compilation &C, DerivedArgList &Args,
   Args.ClaimAllArgs(options::OPT_fuse_ld_EQ);
 
   if (Arg *StripArg = Args.getLastArg(options::OPT_s)) {
+    llvm::StringRef OutputFile;
+    if (const Arg *OutputArg = Args.getLastArg(options::OPT_o))
+      OutputFile = OutputArg->getValue();
     const bool ProducesFinalLinkedImage =
         FinalPhase == phases::Link && !Args.hasArg(options::OPT_r) &&
         !DynCodeEnabled && !ShouldEmitStaticLibrary(Args);
-    if (!ProducesFinalLinkedImage) {
+    const bool ProducesFinalAndroidKernelModule =
+        FinalPhase == phases::Link && !DynCodeEnabled &&
+        !ShouldEmitStaticLibrary(Args) &&
+        tools::isFinalAndroidKernelModule(C.getDefaultToolChain().getTriple(),
+                                          Args, OutputFile);
+    if (!ProducesFinalLinkedImage && !ProducesFinalAndroidKernelModule) {
       Diag(neverc::diag::err_drv_unsupported_opt_with_reason)
           << StripArg->getAsString(Args)
-          << "it only applies to final linked ELF, Mach-O, or PE/COFF images";
+          << "it only applies to final linked ELF, Mach-O, or PE/COFF images, "
+             "or to a final Android kernel module (.ko)";
       return;
     }
   }

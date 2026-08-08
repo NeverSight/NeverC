@@ -12,8 +12,17 @@ Depuis le dépôt (cible par défaut : `arm64-apple-macos`) :
 
 ```bash
 cd examples/macos-dylib
-neverc make
+neverc make          # debug : -g (première construction par défaut)
+neverc make release  # release : -O2 --strip
+neverc make debug    # retour au profil debug
 ```
+
+Le Makefile mémorise `PROFILE`, donc les `neverc make` suivants gardent
+le même choix debug/release. La version release utilise `--strip` intégré
+à NeverC : métadonnées de débogage et noms de symboles statiques inutiles
+sont retirés, les noms ABI dynamiques/chargeur nécessaires restent.
+Voir [Builds de publication](../../docs/release-builds/README.fr.md).
+
 
 Compilation pour Intel :
 

@@ -95,6 +95,11 @@ executeBuiltinObjectMergeAdapter(
     return createStringError(
         errc::invalid_argument,
         "Android module finalization requires Android module merge semantics");
+  if ((Config.DropDebugInfo || Config.StripUnneededSymbols) &&
+      !Config.FinalizeAndroidKernelModule)
+    return createStringError(
+        errc::invalid_argument,
+        "Android module strip policy requires final module semantics");
   if (!Snapshot)
     return createStringError(
         errc::invalid_argument,
@@ -177,14 +182,16 @@ executeBuiltinObjectMergeAdapter(
   MergeOptions.pureC = true;
   MergeOptions.verify = true;
   // Mirror the native relocatable link's merge knobs so the plugin `-r` path is
-  // byte-identical.  For `-r` the native drivers force strip to None, so debug
-  // info is always kept (dropDebugInfo stays false); the only ELF-specific
-  // divergence is Android kernel-module section folding.
+  // byte-identical. Ordinary partial links keep strip disabled; the delivered
+  // Android `.ko` is the sole ET_REL exception and uses the same relocation-
+  // safe merger policy as the native backend.
   if (*Format == neverc::merge::Format::ELF64LE &&
       Config.AndroidKernelModule) {
     MergeOptions.androidKernelModule = true;
     MergeOptions.finalizeAndroidKernelModule =
         Config.FinalizeAndroidKernelModule;
+    MergeOptions.dropDebugInfo = Config.DropDebugInfo;
+    MergeOptions.stripUnneededSymbols = Config.StripUnneededSymbols;
     MergeOptions.mergeSections = true;
     MergeOptions.preservedSections = {
         ".modinfo",

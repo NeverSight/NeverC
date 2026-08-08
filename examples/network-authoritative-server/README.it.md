@@ -17,10 +17,17 @@ Compilazione per l'host, o impostazione di qualsiasi tripletta di target
 NeverC supportata:
 
 ```bash
-neverc make
+neverc make          # debug: -g (predefinito alla prima build)
+neverc make release  # release: -O2 --strip
+neverc make debug    # torna a debug
 neverc make TARGET=aarch64-linux-gnu
 neverc make TARGET=x86_64-pc-windows-msvc OUTPUT=authoritative-server.exe
 ```
+
+Il Makefile conserva `PROFILE`, quindi i successivi `neverc make` mantengono la
+stessa scelta debug/release. Release usa il `--strip` integrato di NeverC.
+Vedi [Build di release](../../docs/release-builds/README.it.md).
+
 
 Esecuzione con certificato e chiave TLS P-256 per l'endpoint QUIC:
 

@@ -14,8 +14,16 @@ NeverC включает Android sysroot (NDK r26c, API 21+) в `runtime/android/
 
 ```bash
 cd examples/android-elf
-neverc make
+neverc make          # debug: -g (по умолчанию при первой сборке)
+neverc make release  # release: -O2 --strip
+neverc make debug    # вернуться к debug
 ```
+
+Makefile сохраняет `PROFILE`, поэтому последующие `neverc make`
+оставляют тот же выбор debug/release. Release использует встроенный
+`--strip` NeverC: удаляет отладочные метаданные и ненужные статические
+имена символов, сохраняя нужные имена загрузчика/динамического ABI.
+См. [Релизные сборки](../../docs/release-builds/README.ru.md).
 
 С автономной версией NeverC:
 

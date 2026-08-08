@@ -10,10 +10,23 @@
 
 ```bash
 cd examples/android-kernel-hello
-neverc make
+neverc make          # debug: -g (по умолчанию при первой сборке)
+neverc make release  # release: -O2 --strip
+neverc make debug    # вернуться к debug
 ```
 
-Измените `KERNEL` на `515`, `601`, `606` или `612` для других версий.
+Другой профиль ядра можно выбрать, например, командой
+`neverc make KERNEL=612 release`. Makefile сохраняет `KERNEL` и `PROFILE`,
+поэтому последующие `make push`/`run` используют выбранный артефакт.
+
+Release-strip встроен в NeverC и ограничен безопасной для модуля ядра
+политикой. Он удаляет DWARF, `.comment` и ненужные релокациям приватные или
+неопределённые имена, но сохраняет таблицы символов/строк ET_REL, релокации,
+импорты, глобальные определения, `__versions`, `.codetag.alloc_tags` и ABI
+загрузчика. Это не strip-all и не обфускация; нужные релокациям имена могут
+остаться. Подписывайте модуль только после strip. Не выполняйте strip в
+`clean`, не применяйте `llvm-strip --strip-all` к `.ko` и не удаляйте вслепую
+`.codetag.alloc_tags` или `__codetag_*`.
 
 ## Развёртывание и запуск
 

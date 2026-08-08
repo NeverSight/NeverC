@@ -25,9 +25,16 @@ HMAC-SHA256이 포함됩니다. MAC은
 호스트 또는 지원되는 모든 대상용으로 빌드:
 
 ```bash
-neverc make
+neverc make          # debug: -g(첫 빌드 기본값)
+neverc make release  # release: -O2 --strip
+neverc make debug    # debug로 되돌리기
 neverc make TARGET=aarch64-pc-windows-msvc OUTPUT=anticheat-collector.exe
 ```
+
+Makefile이 `PROFILE`을 유지하므로 이후 `neverc make`는 같은
+debug/release 선택을 사용합니다. 릴리스는 NeverC 내장 `--strip`을 사용합니다.
+[릴리스 빌드](../../docs/release-builds/README.ko.md)를 참고하세요.
+
 
 서버 인증서, 서버 키, 신뢰하는 클라이언트 CA, 공유 32바이트 서명 키,
 감사 경로를 지정하여 실행:

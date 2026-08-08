@@ -4,14 +4,17 @@
 
 # リリースバイナリと `--strip`
 
-配布用の実行ファイルまたは共有ライブラリを作るときは `--strip` を使います。
-短い別名は `-s` で、両者の動作は同一です。
+配布用の実行ファイル、共有ライブラリ、または最終 Android カーネルモジュールを
+作るときは `--strip` を使います。短い別名は `-s` で、両者の動作は同一です。
 
 ## クイックスタート
 
 ```bash
 neverc -O2 --strip app.c -o app
 neverc -O2 -s app.c -o app
+
+cd examples/android-kernel-hello
+neverc make release
 ```
 
 NeverC は統合リンカー内部でストリップを行い、外部の `llvm-strip` を起動
@@ -52,17 +55,36 @@ Mach-O には通常のシンボル名が残り得ます。PE はデバッグ設�
 | 形式 | 削除するもの | 必要な場合に保持するもの |
 |------|--------------|--------------------------|
 | ELF | `.debug*` データと通常の静的シンボル表／文字列表 | 動的インポート／エクスポート、再配置とローダーメタデータ、アンワインド情報 |
+| Android カーネル `.ko`（ELF ET_REL） | `.debug*`、`.comment`、保持する再配置に不要なローカル／未定義シンボル | `.strtab` にリンクする 1 個の `.symtab`、全再配置と対象、定義済みグローバル、import、`__versions`、`.codetag.alloc_tags`、モジュール ABI |
 | Mach-O | デバッグマップ／STABS、実行時不要のローカル／グローバルシンボル、付随する `.dSYM` 生成 | バインド／インポート情報、公開 ABI 名、export trie、実行時参照シンボル |
 | PE/COFF | 埋め込み DWARF セクションと、存在する静的 COFF シンボル表／文字列表 | PE インポート／エクスポート、アンワインド表、ロード設定などのローダーメタデータ |
 
 ## 適用範囲と優先順位
 
-- `--strip` は最終リンク済みの実行ファイルと共有ライブラリを対象にします。
-- `-c`、`-r`、`--emit-static-lib`、`-fdyncode` との組み合わせは、未ストリップ
-  の中間成果物を黙って作らず、明示的にエラーにします。
+- `--strip` は最終リンク済み実行ファイル、共有ライブラリ、および下記の
+  厳密な最終 Android `.ko` 例外を対象にします。
+- `-c`、通常の `-r`、Android 中間 `.o`、`--emit-static-lib`、`-fdyncode`
+  との組み合わせは明示的にエラーにします。
 - ストリップ方針は `-g` とバックエンドのデバッグスイッチより優先されます。
 - NeverC 既定の Auto-LTO と `-fno-lto` の両方を対象にテストしています。
 - 共有ライブラリの動的 ABI を壊すインポート／エクスポート名は保持します。
+
+## Android カーネルモジュール
+
+最終 `.ko` も ELF `ET_REL` であり、Linux モジュールローダーはシンボル表、
+リンクされた文字列表、未定義 import、再配置を必要とするため strip-all を
+拒否します。NeverC が `-r --strip` を許可するのは、Android ターゲットで
+`-fandroid-kernel-driver-mode` と `-r` が有効、かつ出力名が `.ko` で終わる
+場合だけです。通常の `-r` と中間 `.o` は引き続き拒否されます。
+
+この経路は `llvm-strip --strip-unneeded` 相当の安全境界であり、
+`--strip-all` ではありません。デバッグ、`.comment`、再配置に不要な
+ローカル／未定義シンボルを削除し、`.strtab` を再構築します。一方、
+`.symtab`、再配置と必須対象、定義済み非ローカル、import、`__versions`、
+`.codetag.alloc_tags`、`.gnu.linkonce.this_module` は保持します。
+`.ko` に `llvm-strip --strip-all` を使わず、codetag セクションを安易に
+削除しないでください。署名はストリップ後の最終バイト列に行い、`clean`
+はファイル削除だけにしてください。
 
 ## セキュリティ上の境界
 
@@ -71,6 +93,7 @@ Mach-O には通常のシンボル名が残り得ます。PE はデバッグ設�
 不可能にはできません。正しくストリップしたバイナリにも次が残り得ます。
 
 - ローダーに必要な動的インポート／エクスポート名。
+- `.ko` の保持された再配置に必要なシンボル名。
 - 文字列リテラル、リフレクション表、アプリ固有メタデータ。
 - アンワインド、再配置、署名、ロード設定の記録。
 - 機械語と観測可能な制御フロー。
@@ -92,6 +115,9 @@ llvm-readobj --sections --symbols --dyn-symbols app
 llvm-dwarfdump app
 strings app | grep neverc_private_release_symbol
 test ! -e app.dSYM
+
+llvm-readelf -h -S -s -r examples/android-kernel-hello/nvk_hello.ko
+llvm-dwarfdump examples/android-kernel-hello/nvk_hello.ko
 ```
 
 ストリップ済み成果物にはソースレベルのデバッグセクションや非公開の静的

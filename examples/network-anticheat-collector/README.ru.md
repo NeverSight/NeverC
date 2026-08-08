@@ -27,9 +27,16 @@ nonce, дайджестом тела, меткой времени и разме�
 Сборка для хоста или любой поддерживаемой цели:
 
 ```bash
-neverc make
+neverc make          # debug: -g (по умолчанию при первой сборке)
+neverc make release  # release: -O2 --strip
+neverc make debug    # вернуться к debug
 neverc make TARGET=aarch64-pc-windows-msvc OUTPUT=anticheat-collector.exe
 ```
+
+Makefile сохраняет `PROFILE`, поэтому последующие `neverc make` оставляют тот
+же выбор debug/release. Release использует встроенный `--strip` NeverC.
+См. [Release-сборки](../../docs/release-builds/README.ru.md).
+
 
 Запуск с серверным сертификатом, серверным ключом, доверенным клиентским CA,
 общим 32-байтовым ключом подписи и путём аудита:

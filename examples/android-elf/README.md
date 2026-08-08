@@ -14,8 +14,16 @@ From the repo:
 
 ```bash
 cd examples/android-elf
-neverc make
+neverc make          # debug: -g (default on the first build)
+neverc make release  # release: -O2 --strip
+neverc make debug    # switch back to debug
 ```
+
+The Makefile persists `PROFILE`, so later `neverc make` keeps the same
+debug/release selection. Release uses NeverC's integrated `--strip`:
+debug metadata and unneeded static symbol names are removed while
+loader/dynamic ABI names that the binary still needs are preserved.
+See [Release builds](../../docs/release-builds/README.md).
 
 From a standalone NeverC release:
 

@@ -10,10 +10,24 @@ Misc character device with ioctl interface and `/proc` status page. Demonstrates
 
 ```bash
 cd examples/android-kernel-chardev
-neverc make
+neverc make          # debug: -g (default on the first build)
+neverc make release  # release: -O2 --strip
+neverc make debug    # switch back to debug
 ```
 
-Change `KERNEL` to `515`, `601`, `606`, `612`, or `618` for other kernel versions.
+Select another preset with, for example, `neverc make KERNEL=612 release`.
+The Makefile persists both `KERNEL` and `PROFILE`, so later `make push`/`run`
+commands use the artifact you selected instead of silently rebuilding another
+profile.
+
+Release stripping is integrated into NeverC and is module-safe: it removes
+DWARF, `.comment`, and relocation-unneeded private/undefined symbol names, but
+keeps the ET_REL symbol/string tables, relocations, imports, global definitions,
+`__versions`, `.codetag.alloc_tags`, and other loader ABI data. It is not
+strip-all or obfuscation; relocation-required names can remain. If the module
+will be signed, strip first and sign the final bytes. Never put stripping in
+`clean`, never run `llvm-strip --strip-all` on a `.ko`, and do not blindly
+remove `.codetag.alloc_tags` or `__codetag_*` sections.
 
 ## Deploy & Run
 

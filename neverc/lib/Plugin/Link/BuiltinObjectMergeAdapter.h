@@ -11,9 +11,8 @@
 namespace neverc::plugin {
 
 /// Driver-derived knobs that make the built-in merge byte-identical to the
-/// native relocatable link.  For `-r` the native drivers force strip to None,
-/// so debug info is never dropped; the only remaining divergence is the ELF
-/// Android-kernel-module section folding, mirrored here.
+/// native relocatable link.  Ordinary `-r` keeps all strip knobs disabled; a
+/// delivered Android `.ko` may request the narrower module-safe policy.
 struct BuiltinObjectMergeConfig {
   /// Fold per-symbol ELF sections and preserve `.ko` metadata sections, matching
   /// the native ELF driver's `-fandroid-kernel-driver-mode` `-r` behavior.
@@ -22,6 +21,13 @@ struct BuiltinObjectMergeConfig {
   /// Drop the intermediate profile contract for a delivered `.ko`.  Partial
   /// Android-kernel links keep it for the next checked link.
   bool FinalizeAndroidKernelModule = false;
+
+  /// Remove DWARF only while finalizing the delivered `.ko`.
+  bool DropDebugInfo = false;
+
+  /// Remove relocation-unneeded local/undefined symbols and `.comment` while
+  /// preserving the ET_REL symbol table, imports, and relocations.
+  bool StripUnneededSymbols = false;
 };
 
 /// Adapts the existing verified byte-oriented relocatable-object merger to the

@@ -10,10 +10,23 @@ ioctl 인터페이스와 `/proc` 상태 페이지를 갖춘 misc 캐릭터 디�
 
 ```bash
 cd examples/android-kernel-chardev
-neverc make
+neverc make          # debug: -g(첫 빌드 기본값)
+neverc make release  # release: -O2 --strip
+neverc make debug    # debug로 전환
 ```
 
-다른 커널 버전은 `KERNEL`을 `515`, `601`, `606`, `612`로 변경하세요.
+다른 커널 프리셋은 예를 들어 `neverc make KERNEL=612 release`로 선택합니다.
+Makefile은 `KERNEL`과 `PROFILE`을 모두 저장하므로 이후 `make push`/`run`이
+다른 프로필로 조용히 되돌아가지 않습니다.
+
+release 스트립은 NeverC에 내장되어 있으며 커널 모듈에 안전한 범위만
+적용합니다. DWARF, `.comment`, 재배치에 필요하지 않은 private/undefined
+심볼 이름은 제거하지만 ET_REL 심볼/문자열 테이블, 재배치, import, global
+정의, `__versions`, `.codetag.alloc_tags`와 로더 ABI 데이터는 유지합니다.
+strip-all이나 난독화가 아니므로 재배치에 필요한 이름은 남을 수 있습니다.
+서명할 경우 먼저 스트립한 뒤 최종 바이트에 서명하세요. `clean`에서
+스트립하거나 `.ko`에 `llvm-strip --strip-all`을 사용하거나
+`.codetag.alloc_tags`/`__codetag_*` 섹션을 무작정 제거하면 안 됩니다.
 
 ## 배포 및 실행
 

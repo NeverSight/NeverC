@@ -4,14 +4,18 @@
 
 # Binaires de publication et `--strip`
 
-Utilisez `--strip` pour produire un exécutable ou une bibliothèque partagée à
-distribuer. Son alias court est `-s` ; les deux formes sont identiques.
+Utilisez `--strip` pour produire un exécutable, une bibliothèque partagée ou un
+module noyau Android final à distribuer. Son alias court est `-s` ; les deux
+formes sont identiques.
 
 ## Démarrage rapide
 
 ```bash
 neverc -O2 --strip app.c -o app
 neverc -O2 -s app.c -o app
+
+cd examples/android-kernel-hello
+neverc make release
 ```
 
 NeverC effectue le dépouillement dans son éditeur de liens intégré. Il ne lance
@@ -52,17 +56,37 @@ préserve les noms et enregistrements nécessaires au chargeur ou à l'ABI dynam
 | Format | Supprimé | Conservé si nécessaire |
 |--------|----------|------------------------|
 | ELF | Données `.debug*` et tables ordinaires de symboles/chaînes statiques | Imports/exports dynamiques, relocalisations et métadonnées du chargeur, déroulage |
+| Noyau Android `.ko` (ELF ET_REL) | `.debug*`, `.comment` et symboles locaux/non définis inutiles aux relocalisations conservées | Un `.symtab` lié à `.strtab`, toutes les relocalisations et leurs cibles, définitions globales, imports, `__versions`, `.codetag.alloc_tags`, ABI du module |
 | Mach-O | Cartes de débogage/STABS, entrées locales/globales non requises à l'exécution et génération du `.dSYM` associé | Données de liaison/import, noms d'ABI exportés, export trie, symboles référencés à l'exécution |
 | PE/COFF | Sections DWARF intégrées et table statique COFF de symboles/chaînes si présente | Imports/exports PE, tables de déroulage, configuration de chargement et métadonnées du chargeur |
 
 ## Portée et priorité
 
-- `--strip` prend en charge les exécutables et bibliothèques partagées liés.
-- NeverC le rejette avec `-c`, `-r`, `--emit-static-lib` ou `-fdyncode`, au lieu
-  de produire silencieusement un artefact intermédiaire non dépouillé.
+- `--strip` prend en charge les exécutables, bibliothèques partagées et
+  l'exception stricte du `.ko` Android final décrite ci-dessous.
+- NeverC le rejette avec `-c`, un `-r` ordinaire, un `.o` Android intermédiaire,
+  `--emit-static-lib` ou `-fdyncode`.
 - La politique de dépouillement prévaut sur `-g` et les options de débogage backend.
 - Le pipeline Auto-LTO par défaut et `-fno-lto` sont tous deux couverts.
 - Les noms d'import/export indispensables à l'ABI dynamique restent présents.
+
+## Modules noyau Android
+
+Un `.ko` final reste un ELF `ET_REL`. Le chargeur de modules Linux exige une
+table de symboles, sa table de chaînes, les imports non définis et les
+relocalisations ; il rejette donc strip-all. NeverC n'accepte `-r --strip` que
+pour une cible Android avec `-fandroid-kernel-driver-mode`, `-r` et un nom de
+sortie finissant par `.ko`. Les liens `-r` ordinaires et les `.o` intermédiaires
+restent refusés.
+
+Cette voie suit la limite sûre de `llvm-strip --strip-unneeded`, pas
+`--strip-all` : elle retire le débogage, `.comment` et les symboles locaux/non
+définis inutiles aux relocalisations, puis reconstruit `.strtab`. Elle conserve
+`.symtab`, toutes les relocalisations et cibles requises, les définitions non
+locales, imports, `__versions`, `.codetag.alloc_tags` et
+`.gnu.linkonce.this_module`. N'utilisez pas `llvm-strip --strip-all` sur un
+`.ko` et ne supprimez pas aveuglément les sections codetag. Dépouillez avant de
+signer les octets finaux ; `clean` doit seulement supprimer des fichiers.
 
 ## Limite de sécurité
 
@@ -71,6 +95,7 @@ l'analyse, mais ce n'est **pas** de l'obscurcissement et il ne rend pas le code
 machine impossible à désassembler. Un binaire correctement dépouillé peut garder :
 
 - les noms dynamiques d'import et d'export requis par le chargeur ;
+- les noms de symboles requis par les relocalisations conservées d'un `.ko` ;
 - les littéraux, tables de réflexion ou métadonnées de l'application ;
 - les enregistrements de déroulage, relocalisation, signature et chargement ;
 - le code machine et son flot de contrôle observable.
@@ -93,6 +118,9 @@ llvm-readobj --sections --symbols --dyn-symbols app
 llvm-dwarfdump app
 strings app | grep neverc_private_release_symbol
 test ! -e app.dSYM
+
+llvm-readelf -h -S -s -r examples/android-kernel-hello/nvk_hello.ko
+llvm-dwarfdump examples/android-kernel-hello/nvk_hello.ko
 ```
 
 Un artefact dépouillé ne doit contenir ni section de débogage source ni nom de

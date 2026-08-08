@@ -12,8 +12,16 @@
 
 ```bash
 cd examples/windows-driver-float
-neverc make
+neverc make          # debug: -g (по умолчанию при первой сборке)
+neverc make release  # release: -O2 --strip
+neverc make debug    # вернуться к debug
 ```
+
+Makefile сохраняет `ARCH`, `PROFILE` и `TESTSIGN`. Для релиза:
+`neverc make release` (`-O2 --strip`; импорты/экспорты PE и метаданные
+загрузчика сохраняются). С тестовой подписью:
+`neverc make release TESTSIGN=1` (сначала strip, затем подпись в одной линковке).
+См. [Релизные сборки](../../docs/release-builds/README.ru.md).
 
 Это создаёт `FloatDriver-x64.sys`. Для ARM64 или для обеих архитектур:
 
@@ -29,7 +37,6 @@ neverc make NEVERC=/path/to/neverc
 ```
 
 Результат — `FloatDriver-<архитектура>.sys` (оптимизирован auto-LTO).
-Сборка по умолчанию включает `-g` для отладки; удалите `-g` для релизных сборок.
 
 ---
 

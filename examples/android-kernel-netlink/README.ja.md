@@ -10,10 +10,23 @@
 
 ```bash
 cd examples/android-kernel-netlink
-neverc make
+neverc make          # debug: -g（初回ビルドの既定値）
+neverc make release  # release: -O2 --strip
+neverc make debug    # debug に戻す
 ```
 
-他のカーネルバージョンには `KERNEL` を `515`、`601`、`606`、`612` に変更してください。
+別のカーネルプリセットは、たとえば `neverc make KERNEL=612 release` で選択
+します。Makefile は `KERNEL` と `PROFILE` の両方を保存するため、その後の
+`make push`/`run` が別プロファイルへ暗黙に戻ることはありません。
+
+release のストリップは NeverC 内蔵で、カーネルモジュール向けに制限されて
+います。DWARF、`.comment`、再配置から不要な private/未定義シンボル名を
+削除しつつ、ET_REL のシンボル表／文字列表、再配置、import、global 定義、
+`__versions`、`.codetag.alloc_tags` などのローダー ABI は保持します。
+strip-all や難読化ではないため、再配置に必要な名前は残り得ます。署名する
+場合は先にストリップし、最終バイト列へ署名してください。`clean` で
+ストリップしたり、`.ko` に `llvm-strip --strip-all` を使ったり、
+`.codetag.alloc_tags` / `__codetag_*` を安易に削除してはいけません。
 
 ## デプロイと実行
 

@@ -16,10 +16,17 @@
 호스트용으로 빌드하거나 지원되는 NeverC 대상 트리플을 설정:
 
 ```bash
-neverc make
+neverc make          # debug: -g(첫 빌드 기본값)
+neverc make release  # release: -O2 --strip
+neverc make debug    # debug로 되돌리기
 neverc make TARGET=aarch64-linux-gnu
 neverc make TARGET=x86_64-pc-windows-msvc OUTPUT=authoritative-server.exe
 ```
+
+Makefile이 `PROFILE`을 유지하므로 이후 `neverc make`는 같은
+debug/release 선택을 사용합니다. 릴리스는 NeverC 내장 `--strip`을 사용합니다.
+[릴리스 빌드](../../docs/release-builds/README.ko.md)를 참고하세요.
+
 
 QUIC 엔드포인트용 P-256 TLS 인증서와 키로 실행:
 

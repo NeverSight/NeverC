@@ -12,8 +12,16 @@
 
 ```bash
 cd examples/windows-exe
-neverc make
+neverc make          # debug: ‏-g (الافتراضي في أول بناء)
+neverc make release  # release: ‏-O2 --strip
+neverc make debug    # العودة إلى debug
 ```
+
+يحفظ Makefile قيمة `PROFILE`، لذا تُبقي أوامر `neverc make` اللاحقة
+نفس اختيار debug/release. يستخدم الإصدار `--strip` المدمج في NeverC:
+يزيل بيانات التصحيح وأسماء الرموز الساكنة غير اللازمة ويُبقي أسماء
+ABI الديناميكية/المحمّل المطلوبة. انظر
+[ملفات الإصدار](../../docs/release-builds/README.ar.md).
 
 ## البناء اليدوي
 

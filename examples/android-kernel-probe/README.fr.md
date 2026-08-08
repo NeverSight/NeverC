@@ -29,10 +29,25 @@ void my_probe(neverc_krt_reg_ctx *ctx);
 
 ```bash
 cd examples/android-kernel-probe
-neverc make
+neverc make          # debug : -g (première construction par défaut)
+neverc make release  # release : -O2 --strip
+neverc make debug    # retour au profil debug
 ```
 
-Changer `KERNEL` en `515`, `601`, `606`, `612` ou `618` pour d'autres versions du noyau.
+Sélectionnez un autre préréglage avec, par exemple,
+`neverc make KERNEL=612 release`. Le Makefile mémorise `KERNEL` et `PROFILE` :
+les commandes `make push`/`run` suivantes conservent donc l'artefact choisi.
+
+Le dépouillement release est intégré à NeverC et limité pour rester compatible
+avec les modules noyau. Il retire DWARF, `.comment` et les noms privés/non
+définis inutiles aux relocalisations, mais conserve les tables de symboles et
+de chaînes ET_REL, les relocalisations, imports, définitions globales,
+`__versions`, `.codetag.alloc_tags` et l'ABI du chargeur. Ce n'est ni strip-all
+ni une obfuscation ; les noms requis par les relocalisations peuvent rester.
+Signez toujours après le dépouillement. Ne dépouillez jamais dans `clean`,
+n'utilisez pas `llvm-strip --strip-all` sur un `.ko` et ne supprimez pas
+aveuglément `.codetag.alloc_tags` ou `__codetag_*`.
+
 
 ## Déploiement et exécution
 

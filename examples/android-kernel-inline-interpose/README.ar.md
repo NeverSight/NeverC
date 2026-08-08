@@ -31,10 +31,23 @@ long my_interpose(void *orig, void *a0, void *a1, void *a2, void *a3, void *a4, 
 
 ```bash
 cd examples/android-kernel-inline-interpose
-neverc make
+neverc make          # debug: ‏-g (الافتراضي في أول بناء)
+neverc make release  # release: ‏-O2 --strip
+neverc make debug    # العودة إلى debug
 ```
 
-غيّر `KERNEL` إلى `515` أو `601` أو `606` أو `612` لإصدارات نواة أخرى.
+اختر إعداد نواة آخر، مثلاً، بواسطة `neverc make KERNEL=612 release`. يحفظ
+Makefile كلاً من `KERNEL` و`PROFILE`، لذلك تستخدم أوامر `make push`/`run`
+اللاحقة الأثر الذي اخترته ولا تعود بصمت إلى ملف تعريف آخر.
+
+التجريد في وضع release مدمج داخل NeverC ومقيد بسياسة آمنة لوحدات النواة. فهو
+يحذف DWARF و`.comment` وأسماء الرموز الخاصة/غير المعرّفة التي لا تحتاجها
+عمليات النقل، لكنه يبقي جداول الرموز/السلاسل ET_REL وعمليات النقل والواردات
+والتعريفات العامة و`__versions` و`.codetag.alloc_tags` وبيانات ABI الخاصة
+بالمحمّل. هذا ليس strip-all ولا تمويهاً؛ قد تبقى الأسماء اللازمة لعمليات
+النقل. نفّذ التجريد قبل توقيع البايتات النهائية. لا تجرّد داخل `clean`، ولا
+تستخدم `llvm-strip --strip-all` مع ملف `.ko`، ولا تحذف
+`.codetag.alloc_tags` أو `__codetag_*` عشوائياً.
 
 ## النشر والتشغيل
 

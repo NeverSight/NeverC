@@ -27,9 +27,16 @@ JSONL يتضمن بصمة شهادة العميل وnonce وملخص الجسم 
 البناء للمضيف أو أي هدف مدعوم:
 
 ```bash
-neverc make
+neverc make          # debug: ‏-g (الافتراضي في أول بناء)
+neverc make release  # release: ‏-O2 --strip
+neverc make debug    # العودة إلى debug
 neverc make TARGET=aarch64-pc-windows-msvc OUTPUT=anticheat-collector.exe
 ```
+
+يحفظ Makefile قيمة `PROFILE`، لذلك تبقي أوامر `neverc make` اللاحقة نفس
+اختيار debug/release. يستخدم الإصدار `--strip` المدمج في NeverC.
+انظر [بناء الإصدار](../../docs/release-builds/README.ar.md).
+
 
 التشغيل مع شهادة خادم ومفتاح خادم وCA عميل موثوق ومفتاح توقيع مشترك
 32 بايت ومسار تدقيق:

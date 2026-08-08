@@ -4,3 +4,4 @@
 *.lib
 *.exp
 *.pdb
+.nvk-build-flags
