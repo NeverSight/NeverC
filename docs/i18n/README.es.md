@@ -180,6 +180,8 @@ los archivos necesarios. Un fallo de preparación o verificación deja intacta l
 y un fallo de commit provoca un rollback automático. Si una release de runtime tiene problemas,
 `neverc update <versión anterior>` revierte juntos el compilador y todos los runtimes instalados.
 
+Referencia completa: [`neverc runtime` →](../runtime/README.es.md) · [`neverc update` →](../update/README.es.md) · [`neverc build` / `make` →](../build/README.es.md).
+
 ## Compilación desde el código fuente
 
 Requisitos, comandos de compilación, compilación cruzada a Windows, configuración de PATH y cambio entre release instalada y build in-tree — consulte **[Desarrollo local](../local-dev/README.es.md)**.

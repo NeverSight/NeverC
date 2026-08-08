@@ -179,6 +179,8 @@ neverc update v3389.1.2       # 切換到指定版本，也支援降級
 目前的安裝，提交失敗則會自動回復。若某個 runtime release 有問題，執行
 `neverc update <較舊版本>` 即可讓編譯器與所有已安裝的 runtime 一起回退。
 
+完整命令說明見 [`neverc runtime` →](../runtime/README.zh-TW.md) · [`neverc update` →](../update/README.zh-TW.md) · [`neverc build` / `make` →](../build/README.zh-TW.md)。
+
 ## 從原始碼建置
 
 建置需求、建置命令、Windows 交叉編譯、PATH 設定，以及在 release 安裝與本地原始碼建置之間切換，詳見 **[本地開發](../local-dev/README.zh-TW.md)**。

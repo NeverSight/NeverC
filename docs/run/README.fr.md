@@ -82,5 +82,5 @@ neverc run app.c extra.o -lm -- --config prod.json
 | Commande | Quand l'utiliser |
 |----------|------------------|
 | `neverc file.c -o out` | Conserver le binaire, cross-compiler, scripts de build |
-| `neverc build` / `neverc make` | Builds de projet avec `neverc.toml` |
+| [`neverc build` / `neverc make`](../build/README.fr.md) | Builds compatibles GNU Make pilotés par un Makefile |
 | `neverc run --help` | Résumé intégré |

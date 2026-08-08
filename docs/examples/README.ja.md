@@ -79,6 +79,8 @@ cd examples/example-name
 neverc make
 ```
 
+Makefile ドライバ本体は [`neverc build` / `make` →](../build/README.ja.md)。
+
 必要に応じてコンパイラパスを上書きします：
 
 ```bash

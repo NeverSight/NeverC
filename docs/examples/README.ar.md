@@ -81,6 +81,8 @@ cd examples/اسم-المثال
 neverc make
 ```
 
+لمشغّل Makefile نفسه، انظر [`neverc build` / `make` →](../build/README.ar.md).
+
 تجاوز مسار المترجم عند الحاجة:
 
 ```bash

@@ -181,6 +181,8 @@ neverc update v3389.1.2       # إصدار محدد، بما في ذلك الر�
 التثبيت الحالي، وفشل الالتزام يؤدي إلى تراجع تلقائي. إذا كان release لإحدى بيئات runtime معيبًا،
 فاستخدم `neverc update <إصدار أقدم>` لإرجاع المترجم وكل بيئات runtime المثبّتة معًا.
 
+المرجع الكامل: [`neverc runtime` →](../runtime/README.ar.md) · [`neverc update` →](../update/README.ar.md) · [`neverc build` / `make` →](../build/README.ar.md).
+
 ## البناء من المصدر
 
 المتطلبات وأوامر البناء والتجميع المتقاطع إلى Windows وإعداد PATH والتبديل بين release والبناء داخل الشجرة — راجع **[التطوير المحلي](../local-dev/README.ar.md)**.

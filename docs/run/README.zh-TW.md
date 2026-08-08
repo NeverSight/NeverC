@@ -112,5 +112,5 @@ neverc run app.c extra.o -lm -- --config prod.json
 | 命令 | 適用場景 |
 |------|----------|
 | `neverc file.c -o out` | 保留二進位檔、交叉編譯或整合到建置腳本 |
-| `neverc build` / `neverc make` | 基於 `neverc.toml` 的專案式建置 |
+| [`neverc build` / `neverc make`](../build/README.zh-TW.md) | 由 Makefile 驅動的 GNU Make 相容建置 |
 | `neverc run --help` | 內建用法摘要 |

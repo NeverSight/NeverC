@@ -79,6 +79,8 @@ cd examples/範例名
 neverc make
 ```
 
+關於 Makefile 驅動本身，見 [`neverc build` / `make` →](../build/README.zh-TW.md)。
+
 如需指定編譯器路徑：
 
 ```bash

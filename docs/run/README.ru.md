@@ -82,5 +82,5 @@ neverc run app.c extra.o -lm -- --config prod.json
 | Команда | Когда использовать |
 |---------|-------------------|
 | `neverc file.c -o out` | Сохранить бинарник, кросс-компиляция, скрипты сборки |
-| `neverc build` / `neverc make` | Проектная сборка с `neverc.toml` |
+| [`neverc build` / `neverc make`](../build/README.ru.md) | Сборка в стиле GNU Make через Makefile |
 | `neverc run --help` | Встроенная сводка |

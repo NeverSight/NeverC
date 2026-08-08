@@ -79,6 +79,8 @@ cd examples/example-name
 neverc make
 ```
 
+Pour le pilote Makefile lui-même, voir [`neverc build` / `make` →](../build/README.fr.md).
+
 Remplacez le chemin du compilateur si nécessaire :
 
 ```bash

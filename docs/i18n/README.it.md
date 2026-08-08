@@ -180,6 +180,8 @@ estratti e validati. Un errore di preparazione o verifica lascia invariata l’i
 mentre un errore di commit avvia il rollback automatico. Se una release del runtime è difettosa,
 `neverc update <versione precedente>` riporta indietro insieme compilatore e runtime installati.
 
+Riferimento completo: [`neverc runtime` →](../runtime/README.it.md) · [`neverc update` →](../update/README.it.md) · [`neverc build` / `make` →](../build/README.it.md).
+
 ## Compilazione dal sorgente
 
 Requisiti, comandi di compilazione, cross-compilazione verso Windows, configurazione PATH e passaggio tra release installata e build in-tree — consultate **[Sviluppo locale](../local-dev/README.it.md)**.

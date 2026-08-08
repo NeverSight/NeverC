@@ -186,6 +186,8 @@ checksum failure leaves the current installation untouched, and commit
 failures are rolled back. If a runtime release is bad, run `neverc update`
 with an earlier tag to roll the compiler and installed runtimes back together.
 
+Full command reference: [`neverc runtime` →](docs/runtime/README.md) · [`neverc update` →](docs/update/README.md) · [`neverc build` / `make` →](docs/build/README.md).
+
 ## Building from Source
 
 See **[Local Development](docs/local-dev/README.md)** for build requirements, build commands, cross-compiling to Windows, PATH setup, and switching between a release install and an in-tree build.

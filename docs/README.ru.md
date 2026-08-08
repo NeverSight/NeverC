@@ -101,6 +101,9 @@ NeverC открывает всю свою цепочку инструменто�
 | Документ | Описание |
 |----------|----------|
 | [`neverc run`](run/README.ru.md) | Скомпилировать, запустить локально и удалить временный бинарник (как `go run`) |
+| [`neverc update`](update/README.ru.md) | Апгрейд или откат release-установки (компилятор + установленные runtime на один тег) |
+| [`neverc runtime`](runtime/README.ru.md) | Установка, список, обновление или удаление sysroot кросс-компиляции |
+| [`neverc build` / `neverc make`](build/README.ru.md) | GNU Make–совместимый драйвер для Makefile примеров и проектов |
 | [Релизные бинарные файлы и `--strip`](release-builds/README.ru.md) | Удалить ненужные во время выполнения символы и исходную отладку из итоговых ELF, Mach-O и PE/COFF |
 
 ---

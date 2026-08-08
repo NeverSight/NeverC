@@ -79,6 +79,8 @@ cd examples/beispiel-name
 neverc make
 ```
 
+Zum Makefile-Treiber selbst siehe [`neverc build` / `make` →](../build/README.de.md).
+
 Bei Bedarf den Compilerpfad überschreiben:
 
 ```bash

@@ -179,6 +179,8 @@ neverc update v3389.1.2       # 切换到精确版本，也支持降级
 提交失败则自动回滚。如果某个 runtime release 有问题，执行
 `neverc update <较早版本>` 即可让编译器和所有已安装 runtime 一起回退。
 
+完整命令说明见 [`neverc runtime` →](../runtime/README.zh-CN.md) · [`neverc update` →](../update/README.zh-CN.md) · [`neverc build` / `make` →](../build/README.zh-CN.md)。
+
 ## 从源码构建
 
 构建依赖、构建命令、Windows 交叉编译、PATH 设置，以及在 release 安装与本地源码构建之间切换，详见 **[本地开发](../local-dev/README.zh-CN.md)**。

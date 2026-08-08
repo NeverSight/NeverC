@@ -101,6 +101,9 @@ Commandes utilisateur au-delà d'une simple compilation.
 | Document | Description |
 |----------|-------------|
 | [`neverc run`](run/README.fr.md) | Compiler, exécuter localement et supprimer un binaire temporaire (style `go run`) |
+| [`neverc update`](update/README.fr.md) | Mettre à niveau ou rétrograder une install release (compilateur + runtimes installés, une balise) |
+| [`neverc runtime`](runtime/README.fr.md) | Installer, lister, mettre à jour ou retirer les sysroots de cross-compilation |
+| [`neverc build` / `neverc make`](build/README.fr.md) | Pilote compatible GNU Make pour les Makefile d'exemples et de projets |
 | [Binaires de publication et `--strip`](release-builds/README.fr.md) | Retirer les symboles non requis à l'exécution et le débogage source des images ELF, Mach-O et PE/COFF finales |
 
 ---

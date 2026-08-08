@@ -82,5 +82,5 @@ neverc run app.c extra.o -lm -- --config prod.json
 | 명령 | 용도 |
 |------|------|
 | `neverc file.c -o out` | 바이너리 보관, 크로스 컴파일, 빌드 스크립트 통합 |
-| `neverc build` / `neverc make` | `neverc.toml` 기반 프로젝트 빌드 |
+| [`neverc build` / `neverc make`](../build/README.ko.md) | Makefile 기반 GNU Make 호환 빌드 |
 | `neverc run --help` | 내장 사용법 요약 |

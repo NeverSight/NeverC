@@ -79,6 +79,8 @@ cd examples/<example-name>
 neverc make
 ```
 
+For the Makefile driver itself, see [`neverc build` / `make` →](../build/README.md).
+
 Override the compiler path if needed:
 
 ```bash

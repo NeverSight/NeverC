@@ -79,6 +79,8 @@ cd examples/example-name
 neverc make
 ```
 
+О самом драйвере Makefile см. [`neverc build` / `make` →](../build/README.ru.md).
+
 При необходимости переопределите путь к компилятору:
 
 ```bash

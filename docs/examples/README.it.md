@@ -79,6 +79,8 @@ cd examples/example-name
 neverc make
 ```
 
+Per il driver Makefile vero e proprio, vedi [`neverc build` / `make` →](../build/README.it.md).
+
 Sovrascrivi il percorso del compilatore se necessario:
 
 ```bash

@@ -82,5 +82,5 @@ neverc run app.c extra.o -lm -- --config prod.json
 | コマンド | 用途 |
 |---------|------|
 | `neverc file.c -o out` | バイナリ保持、交叉コンパイル、ビルドスクリプト連携 |
-| `neverc build` / `neverc make` | `neverc.toml` ベースのプロジェクトビルド |
+| [`neverc build` / `neverc make`](../build/README.ja.md) | Makefile 駆動の GNU Make 互換ビルド |
 | `neverc run --help` | 組み込み用法サマリー |

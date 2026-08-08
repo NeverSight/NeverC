@@ -180,6 +180,8 @@ geprüft, entpackt und inhaltlich validiert. Fehler beim Vorbereiten oder Prüfe
 Installation unverändert, bei Commit-Fehlern erfolgt ein automatisches Rollback. Ist ein Runtime-
 Release fehlerhaft, setzt `neverc update <ältere Version>` Compiler und installierte Runtimes gemeinsam zurück.
 
+Vollständige Befehlsreferenz: [`neverc runtime` →](../runtime/README.de.md) · [`neverc update` →](../update/README.de.md) · [`neverc build` / `make` →](../build/README.de.md).
+
 ## Aus den Quellen bauen
 
 Voraussetzungen, Build-Befehle, Cross-Kompilierung nach Windows, PATH-Einrichtung und Wechsel zwischen Release-Installation und In-Tree-Build — siehe **[Lokale Entwicklung](../local-dev/README.de.md)**.

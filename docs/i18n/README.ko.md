@@ -180,6 +180,8 @@ neverc update v3389.1.2       # 지정한 버전으로 전환(다운그레이드
 runtime release에 문제가 있으면 `neverc update <이전 버전>`을 실행해 컴파일러와
 설치된 모든 runtime을 함께 되돌릴 수 있습니다.
 
+전체 명령 설명: [`neverc runtime` →](../runtime/README.ko.md) · [`neverc update` →](../update/README.ko.md) · [`neverc build` / `make` →](../build/README.ko.md).
+
 ## 소스에서 빌드
 
 빌드 요구 사항, 빌드 명령, Windows 크로스 컴파일, PATH 설정, release 설치와 트리 내 빌드 전환은 **[로컬 개발](../local-dev/README.ko.md)**을 참조하세요.

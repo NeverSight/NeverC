@@ -180,6 +180,8 @@ neverc update v3389.1.2       # 指定したバージョンへ切り替え（ダ
 runtime release に問題がある場合は `neverc update <古いバージョン>` を実行すると、
 コンパイラとインストール済み runtime をまとめて戻せます。
 
+コマンドの詳細は [`neverc runtime` →](../runtime/README.ja.md) · [`neverc update` →](../update/README.ja.md) · [`neverc build` / `make` →](../build/README.ja.md)。
+
 ## ソースからビルド
 
 ビルド要件、ビルドコマンド、Windows クロスコンパイル、PATH 設定、release インストールとツリー内ビルドの切り替えについては **[ローカル開発](../local-dev/README.ja.md)** を参照してください。

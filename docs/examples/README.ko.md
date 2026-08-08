@@ -79,6 +79,8 @@ cd examples/example-name
 neverc make
 ```
 
+Makefile 드라이버 자체는 [`neverc build` / `make` →](../build/README.ko.md).
+
 필요하면 컴파일러 경로를 재정의합니다:
 
 ```bash

@@ -79,6 +79,8 @@ cd examples/example-name
 neverc make
 ```
 
+Sobre el controlador Makefile en sí, véase [`neverc build` / `make` →](../build/README.es.md).
+
 Sobrescribe la ruta del compilador si es necesario:
 
 ```bash

@@ -84,7 +84,7 @@ neverc run app.c extra.o -lm -- --config prod.json
 | الأمر | متى تستخدمه |
 |-------|-------------|
 | `neverc file.c -o out` | الاحتفاظ بالملف الثنائي، الترجمة المتقاطعة، سكربتات البناء |
-| `neverc build` / `neverc make` | بناء مشروع بـ `neverc.toml` |
+| [`neverc build` / `neverc make`](../build/README.ar.md) | بناء متوافق مع GNU Make عبر Makefile |
 | `neverc run --help` | ملخص مدمج |
 
 </div>

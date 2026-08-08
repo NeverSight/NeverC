@@ -180,6 +180,8 @@ extraites et validées. Un échec de préparation ou de vérification laisse l�
 et un échec de commit déclenche un retour automatique. Si une release de runtime pose problème,
 `neverc update <version antérieure>` ramène ensemble le compilateur et tous les runtimes installés.
 
+Référence complète : [`neverc runtime` →](../runtime/README.fr.md) · [`neverc update` →](../update/README.fr.md) · [`neverc build` / `make` →](../build/README.fr.md).
+
 ## Compilation depuis les sources
 
 Prérequis, commandes de compilation, compilation croisée Windows, configuration PATH et bascule entre release installée et build in-tree — voir **[Développement local](../local-dev/README.fr.md)**.

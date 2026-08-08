@@ -180,6 +180,8 @@ neverc update v3389.1.2       # точная версия, включая отк
 а ошибка commit запускает автоматический откат. Если release runtime оказался неисправен,
 `neverc update <предыдущая версия>` вместе откатит компилятор и все установленные runtime.
 
+Полный справочник: [`neverc runtime` →](../runtime/README.ru.md) · [`neverc update` →](../update/README.ru.md) · [`neverc build` / `make` →](../build/README.ru.md).
+
 ## Сборка из исходников
 
 Требования, команды сборки, кросс-компиляция под Windows, настройка PATH и переключение между release и in-tree сборкой — см. **[Локальная разработка](../local-dev/README.ru.md)**.
