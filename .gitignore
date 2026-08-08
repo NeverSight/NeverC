@@ -23,6 +23,8 @@
 .sw?
 #OS X specific files.
 .DS_store
+# Darwin DWARF companion bundles produced beside debug-linked images.
+*.dSYM/
 # windows executable files
 *.exe
 *.bin
