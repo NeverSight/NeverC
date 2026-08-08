@@ -1,5 +1,6 @@
 #include "neverc/Build/JobScheduler.h"
 #include "neverc/Build/BuildConstants.h"
+#include "neverc/Build/BuiltinCommands.h"
 #include "neverc/Build/Platform.h"
 
 #include "llvm/Support/raw_ostream.h"
@@ -219,12 +220,17 @@ int JobScheduler::runJob(Job &J, VariableEnv &Env, const RuleDB *Rules) {
         continue;
       }
 
-      if (!Silent) {
-        std::lock_guard<std::mutex> Lock(OutputMutex);
-        llvm::outs() << Cmd << "\n";
+      int Rc = 0;
+      // Echo under the builtin I/O lock when the command name is a known
+      // builtin so `-j` recipe lines cannot interleave with builtin I/O.
+      bool Echoed = false;
+      if (!builtins::tryExecute(Cmd, Rc, /*EchoCommand=*/!Silent, &Echoed)) {
+        if (!Silent && !Echoed) {
+          std::lock_guard<std::mutex> Lock(OutputMutex);
+          llvm::outs() << Cmd << "\n";
+        }
+        Rc = platform::shellExecuteNoCapture(Cmd, Opts.Shell, false);
       }
-
-      int Rc = platform::shellExecuteNoCapture(Cmd, Opts.Shell, false);
       if (Rc != 0 && !IgnoreErr) {
         std::lock_guard<std::mutex> Lock(OutputMutex);
         llvm::errs() << constants::ErrorPrefix << "[" << J.Target

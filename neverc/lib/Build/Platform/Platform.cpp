@@ -1,12 +1,14 @@
 #include "neverc/Build/Platform.h"
 #include "neverc/Build/BuildConstants.h"
 
+#include "llvm/ADT/StringRef.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/thread.h"
 
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 #ifdef _WIN32
 #include <direct.h>
@@ -100,8 +102,17 @@ std::vector<std::string> globFiles(const std::string &Pattern) {
 
   llvm::SmallString<256> Dir(Pattern);
   llvm::sys::path::remove_filename(Dir);
+  // Match POSIX glob(3): a leading '.' in a filename is not matched by '*'/ '?'
+  // unless the pattern's final component itself begins with '.'.
+  const bool PatternWantsDots =
+      llvm::StringRef(llvm::sys::path::filename(Pattern)).starts_with(".");
   do {
-    if (FindData.cFileName[0] == '.')
+    // Skip only the directory entries themselves so patterns can still match
+    // explicit dotfiles such as `.nvk-build-flags`.
+    if (strcmp(FindData.cFileName, ".") == 0 ||
+        strcmp(FindData.cFileName, "..") == 0)
+      continue;
+    if (!PatternWantsDots && FindData.cFileName[0] == '.')
       continue;
     llvm::SmallString<256> Full(Dir);
     llvm::sys::path::append(Full, FindData.cFileName);
@@ -110,12 +121,11 @@ std::vector<std::string> globFiles(const std::string &Pattern) {
   FindClose(H);
 #else
   glob_t G;
-  if (glob(Pattern.c_str(), GLOB_NOSORT | GLOB_MARK, nullptr, &G) == 0) {
-    for (size_t I = 0; I < G.gl_pathc; ++I) {
-      std::string P = G.gl_pathv[I];
-      if (!P.empty() && P.back() != '/')
-        Results.push_back(P);
-    }
+  // Avoid GLOB_MARK: trailing slashes would make directory matches look like
+  // distinct paths and complicate portable builtins such as `rm -rf dir*`.
+  if (glob(Pattern.c_str(), GLOB_NOSORT, nullptr, &G) == 0) {
+    for (size_t I = 0; I < G.gl_pathc; ++I)
+      Results.push_back(G.gl_pathv[I]);
     globfree(&G);
   }
 #endif
