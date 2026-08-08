@@ -116,10 +116,12 @@ runtime/android/kernel/
 - enables auto-LTO by default for multi-file modules; explicit `-flto=full` and
   `-fno-lto` builds are both supported and covered by the runtime matrix,
 - carries the selected profile and KCFI mode as one opaque compiler contract:
-  LLVM module flags enforce equality before every LTO merge, while native
-  objects carry the same pair in `.neverc.android.kernel.profile`; native,
-  plugin-mediated, and repeated relocatable links reject missing, malformed,
-  or mixed contracts,
+  LLVM module flags enforce equality before every LTO merge, while compiler-
+  produced native objects carry the same pair in
+  `.neverc.android.kernel.profile`. Native and plugin-mediated links reject
+  missing, malformed, or mixed contracts on those inputs, then the final
+  Android `.ko` merge drops the section so delivered modules keep no NeverC
+  tooling fingerprint,
 - adds `-D__KERNEL__ -DMODULE -ffreestanding`, direct external-data access
   (the arm64 module loader has no GOT), reserved `x18`, and disables outline
   atomics and CFI checks,
@@ -148,7 +150,12 @@ Preprocessed assembly (`.S`) receives the generated native contract
 automatically. Raw `.s` and third-party/prebuilt objects cannot infer a source
 profile and are rejected unless their producer emits the same documented
 `.neverc.android.kernel.profile` record; this is an intentional fail-closed
-boundary, not a one-profile-per-command assumption.
+boundary, not a one-profile-per-command assumption. A finished `.ko` no longer
+carries that record and therefore cannot be fed back into another
+contract-checked Android module link — re-link from compiler-produced objects
+instead. The lowercase `.ko` output suffix is the explicit finalization
+boundary: keep partial links named `.o`, and do not link a deliverable under a
+temporary suffix and merely rename it afterward.
 
 ## GKI build producer vs runtime validation gate
 

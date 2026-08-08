@@ -18,6 +18,10 @@ struct BuiltinObjectMergeConfig {
   /// Fold per-symbol ELF sections and preserve `.ko` metadata sections, matching
   /// the native ELF driver's `-fandroid-kernel-driver-mode` `-r` behavior.
   bool AndroidKernelModule = false;
+
+  /// Drop the intermediate profile contract for a delivered `.ko`.  Partial
+  /// Android-kernel links keep it for the next checked link.
+  bool FinalizeAndroidKernelModule = false;
 };
 
 /// Adapts the existing verified byte-oriented relocatable-object merger to the

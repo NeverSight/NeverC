@@ -1100,6 +1100,7 @@ void readConfigs(opt::InputArgList &args, const LinkerDriverConfig &driverCfg) {
   config->rpath = getRpath(args);
   config->relocatable = driverCfg.relocatable;
   config->androidKernelModule = driverCfg.androidKernelModule;
+  config->finalizeAndroidKernelModule = driverCfg.finalizeAndroidKernelModule;
 
   config->searchPaths = args::getStrings(args, OPT_library_path);
   config->sectionStartMap = getSectionStartMap(args);
@@ -2377,6 +2378,8 @@ void LinkerDriver::execute(opt::InputArgList &args) {
     mergeOpts.dropDebugInfo = (config->strip != StripPolicy::None);
     if (config->androidKernelModule) {
       mergeOpts.androidKernelModule = true;
+      mergeOpts.finalizeAndroidKernelModule =
+          config->finalizeAndroidKernelModule;
       mergeOpts.mergeSections = true;
       mergeOpts.preservedSections = {
           ".modinfo",

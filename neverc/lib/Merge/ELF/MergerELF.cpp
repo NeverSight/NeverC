@@ -128,6 +128,12 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
   using Sym = typename ELFT::Sym;
   using Rela = typename ELFT::Rela;
 
+  if (Opts.finalizeAndroidKernelModule && !Opts.androidKernelModule) {
+    errs() << "neverc: Android module finalization requires Android module "
+              "merge semantics\n";
+    return false;
+  }
+
   detail::DedupStrTab ShStrTab, SymStrTab;
 
   struct RelocEntry {
@@ -200,6 +206,7 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     DenseMap<unsigned, unsigned> SecMap;
     DenseMap<unsigned, unsigned> SymMap;
     DenseMap<unsigned, uint64_t> SecOff;
+    DenseSet<unsigned> DroppedSecs;
   };
   SmallVector<PerPartition, 8> Maps;
   SmallVector<PartitionDwarf, 8> PartDwarfs(Buffers.size());
@@ -422,6 +429,14 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
            SecName.starts_with(".zdebug_")))
         continue;
 
+      // Final Android `.ko` merge: drop the NeverC profile-contract fingerprint
+      // after the native/plugin callers have already verified input equality.
+      if (Opts.finalizeAndroidKernelModule &&
+          detail::isAndroidKernelProfileContractSection(SecName)) {
+        PM.DroppedSecs.insert(i);
+        continue;
+      }
+
       // The merger lays out and concatenates on-disk section bytes. For an
       // SHF_COMPRESSED input those bytes are a compression header plus an
       // independent frame, while symbol values and relocations address the
@@ -599,8 +614,22 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
       for (unsigned i = 1; i < Syms.size(); ++i) {
         Sym OutS = Syms[i];
 
+        // strnlen-bound the name to the string table extent.  llvm's
+        // getStringTableForSymtab guarantees a trailing NUL (it errors
+        // otherwise), so for well-formed input this is identical to the
+        // implicit strlen; the explicit bound keeps every merger's symbol-name
+        // read uniformly safe (matching the MachO merger and the verifier) and
+        // immune to any future reader that stops validating the terminator.
+        StringRef Name;
+        if (OutS.st_name < SymStr.size())
+          Name = StringRef(SymStr.data() + OutS.st_name,
+                           strnlen(SymStr.data() + OutS.st_name,
+                                   SymStr.size() - OutS.st_name));
+
         // Remap section index and adjust value.
         if (OutS.st_shndx < SHN_LORESERVE) {
+          if (PM.DroppedSecs.contains(OutS.st_shndx))
+            continue;
           auto It = PM.SecMap.find(OutS.st_shndx);
           if (It != PM.SecMap.end()) {
             unsigned origShndx = OutS.st_shndx;
@@ -616,17 +645,11 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
         }
         // SHN_COMMON: preserved as-is in -r mode (LLD behavior).
 
-        // strnlen-bound the name to the string table extent.  llvm's
-        // getStringTableForSymtab guarantees a trailing NUL (it errors
-        // otherwise), so for well-formed input this is identical to the
-        // implicit strlen; the explicit bound keeps every merger's symbol-name
-        // read uniformly safe (matching the MachO merger and the verifier) and
-        // immune to any future reader that stops validating the terminator.
-        StringRef Name;
-        if (OutS.st_name < SymStr.size())
-          Name = StringRef(SymStr.data() + OutS.st_name,
-                           strnlen(SymStr.data() + OutS.st_name,
-                                   SymStr.size() - OutS.st_name));
+        // Belt-and-suspenders: never re-emit the tooling contract symbol even
+        // if a malformed input placed it outside the dedicated section.
+        if (Opts.finalizeAndroidKernelModule &&
+            detail::isAndroidKernelProfileContractSymbol(Name))
+          continue;
         OutS.st_name = SymStrTab.add(Name);
 
         if (Syms[i].getBinding() == STB_LOCAL) {
@@ -683,6 +706,29 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     // In -r mode LLD skips scanRelocations() entirely
     // (ElfImageEmitter.cpp:1773) and just copies relocs with remapped
     // indices (copyRelocs path).
+    ArrayRef<Sym> RelocSyms;
+    if (SymTabHdr) {
+      auto SymsOrErr = EF.symbols(SymTabHdr);
+      if (!SymsOrErr) {
+        consumeError(SymsOrErr.takeError());
+        return false;
+      }
+      RelocSyms = *SymsOrErr;
+    }
+    auto ReferencesDroppedSymbol = [&](unsigned SymIdx) {
+      if (SymIdx >= RelocSyms.size())
+        return false;
+      const Sym &Target = RelocSyms[SymIdx];
+      if (Target.st_shndx < SHN_LORESERVE &&
+          PM.DroppedSecs.contains(Target.st_shndx))
+        return true;
+      if (!Opts.finalizeAndroidKernelModule || Target.st_name >= SymStr.size())
+        return false;
+      StringRef Name(SymStr.data() + Target.st_name,
+                     strnlen(SymStr.data() + Target.st_name,
+                             SymStr.size() - Target.st_name));
+      return detail::isAndroidKernelProfileContractSymbol(Name);
+    };
     for (unsigned i = 1; i < Secs.size(); ++i) {
       if (Secs[i].sh_type != SHT_RELA && Secs[i].sh_type != SHT_REL)
         continue;
@@ -710,6 +756,11 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
           return false;
         }
         for (const Rela &Re : *R) {
+          if (ReferencesDroppedSymbol(Re.getSymbol())) {
+            errs() << "neverc: Android module finalization: retained section "
+                      "has a relocation to the dropped profile contract\n";
+            return false;
+          }
           Rela Adjusted = Re;
           Adjusted.r_offset += dataOff;
           MergedSections[targetMIdx].Relocs.push_back({Adjusted, p});
@@ -771,8 +822,8 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
   }
 
   // Android's module linker script supplies a small loader-facing ABI that a
-  // plain relocatable merge otherwise lacks.  Do this once, at the final `.ko`
-  // merge, instead of emitting one weak placeholder per translation unit.
+  // plain relocatable merge otherwise lacks.  Synthesize one canonical set per
+  // output; partial `.o` links keep it valid for a later final `.ko` merge.
   if (Opts.androidKernelModule) {
     auto EnsureSection =
         [&](StringRef Name, uint64_t RequiredFlags,

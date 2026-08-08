@@ -203,6 +203,7 @@ struct Config {
   bool relax;
   bool relocatable;
   bool androidKernelModule = false;
+  bool finalizeAndroidKernelModule = false;
   bool relrGlibc = false;
   bool relrPackDynRelocs = false;
   llvm::SmallVector<std::pair<llvm::GlobPattern, uint32_t>, 0> shuffleSections;

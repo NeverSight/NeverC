@@ -2541,6 +2541,43 @@ TEST_F(LTOTest, AndroidKernelFullLtoAcceptsMatchingOpaqueProfiles) {
   EXPECT_EQ(Link.exitCode, 0) << Link.err;
 }
 
+TEST_F(LTOTest, AndroidKernelFinalModuleDropsContractAcrossLtoModes) {
+  auto Source = tmpFile("android_kernel_final_contract.c");
+  writeFile(Source, "int android_kernel_final_contract(void) { return 1; }\n");
+
+  struct Mode {
+    const char *Name;
+    const char *Flag;
+  };
+  const Mode Modes[] = {
+      {"native", "-fno-lto"},
+      {"auto", nullptr},
+      {"full", "-flto=full"},
+  };
+  for (const Mode &M : Modes) {
+    SCOPED_TRACE(M.Name);
+    auto Output =
+        tmpFile(std::string("android_kernel_final_contract_") + M.Name + ".ko");
+    std::vector<std::string> Args = {
+        "--target=aarch64-linux-android",
+        "-std=c11",
+        "-fandroid-kernel-driver-mode",
+        "-DNVK_KERNEL=612",
+    };
+    if (M.Flag)
+      Args.push_back(M.Flag);
+    Args.insert(Args.end(),
+                {"-r", "-nostdlib", "-o", Output.string(), Source.string()});
+
+    auto Link = ncc(Args);
+    ASSERT_EQ(Link.exitCode, 0) << Link.err;
+    const std::string Bytes = readFile(Output);
+    EXPECT_EQ(Bytes.find(".neverc.android.kernel.profile"), std::string::npos);
+    EXPECT_EQ(Bytes.find("__neverc_android_kernel_profile_contract"),
+              std::string::npos);
+  }
+}
+
 TEST_F(LTOTest, AndroidKernelNativeProfileContractIsAtomicAcrossLinks) {
   auto SourceA = tmpFile("android_kernel_native_profile_a.c");
   auto SourceB = tmpFile("android_kernel_native_profile_b.c");
@@ -2710,11 +2747,24 @@ android_native_profile_asm_source_local:
       Link({ObjectB618, SourceLocalAssemblyObject}, SourceLocalAssemblyOutput);
   EXPECT_EQ(SourceLocalAssemblyLink.exitCode, 0) << SourceLocalAssemblyLink.err;
 
-  // A relocatable output remains a checked input to a subsequent module link;
-  // the dedicated contract section must not be folded into ordinary rodata.
+  // A partial Android-kernel link keeps the contract so build systems can
+  // aggregate compiler-produced objects before the final `.ko` link.
+  auto PartialOutput = tmpFile("android_kernel_native_partial.o");
+  auto Partial = Link({ObjectA612, ObjectB612}, PartialOutput);
+  ASSERT_EQ(Partial.exitCode, 0) << Partial.err;
   auto RelinkedOutput = tmpFile("android_kernel_native_relinked.ko");
-  auto Relinked = Link({MatchingOutput, ObjectC612}, RelinkedOutput);
+  auto Relinked = Link({PartialOutput, ObjectC612}, RelinkedOutput);
   EXPECT_EQ(Relinked.exitCode, 0) << Relinked.err;
+
+  // A delivered `.ko` has deliberately discarded the intermediate contract
+  // and remains invalid as an input to another contract-checked link.
+  auto FromDeliveredKo = Link({MatchingOutput, ObjectC612},
+                              tmpFile("android_kernel_from_delivered_ko.ko"));
+  EXPECT_NE(FromDeliveredKo.exitCode, 0);
+  EXPECT_NE(FromDeliveredKo.err.find(
+                "missing native Android kernel profile contract"),
+            std::string::npos)
+      << FromDeliveredKo.err;
 
   auto LinkMixed = [&](const fs::path &Native, const fs::path &Bitcode,
                        const fs::path &Output) {
@@ -2766,16 +2816,19 @@ android_native_profile_asm_source_local:
                              NEVERC_TEST_OBJECT_POST_WRITE_PLUGIN);
   EXPECT_EQ(PluginMatching.exitCode, 0) << PluginMatching.err;
 
+  // Final-output invariants are host-owned: a plugin must not reintroduce the
+  // profile-contract fingerprint after the merger has removed it.
   auto PluginCorruptOutput = tmpFile("android_kernel_native_plugin_corrupt.ko");
   auto PluginCorrupt = Link({ObjectA612, ObjectB612}, PluginCorruptOutput,
                             NEVERC_TEST_OBJECT_CONTRACT_CORRUPT_PLUGIN);
   EXPECT_NE(PluginCorrupt.exitCode, 0);
   EXPECT_NE(
-      PluginCorrupt.err.find("incompatible Android kernel profile contracts"),
+      PluginCorrupt.err.find(
+                "must not retain native Android kernel profile contract"),
       std::string::npos)
       << PluginCorrupt.err;
   EXPECT_FALSE(fs::exists(PluginCorruptOutput))
-      << "a rejected contract mutation must not publish a .ko";
+      << "a plugin must not publish a re-fingerprinted .ko";
 
   auto PluginMismatchOutput =
       tmpFile("android_kernel_native_plugin_mismatched.ko");

@@ -1,3 +1,4 @@
+#include "Link/AndroidKernelProfileContractVerifier.h"
 #include "Link/BuiltinObjectMergeAdapter.h"
 #include "Link/LinkGraph.h"
 #include "Link/ObjectGraphImporter.h"
@@ -81,6 +82,37 @@ std::unique_ptr<PluginObjectGraph> makeObject(unsigned SectionCount) {
     Graph->sections().push_back(std::move(Section));
   }
   return Graph;
+}
+
+struct AndroidKernelContractEntities {
+  uint64_t SectionID;
+  uint64_t SymbolID;
+};
+
+AndroidKernelContractEntities
+addAndroidKernelProfileContract(PluginObjectGraph &Graph) {
+  PluginObjectSection Section;
+  Section.ID = Graph.allocateEntityID();
+  Section.Name = ".neverc.android.kernel.profile";
+  Section.Flags = NEVERC_OBJECT_SECTION_ALLOCATED;
+  Section.Alignment = 8;
+  // Native contract for profile 612 with normalized KCFI.
+  Section.Data = {UINT8_C(0x02), UINT8_C(0x00), UINT8_C(0x00), UINT8_C(0x00),
+                  UINT8_C(0x64), UINT8_C(0x02), UINT8_C(0x00), UINT8_C(0x00)};
+  const uint64_t SectionID = Section.ID;
+  Graph.sections().push_back(std::move(Section));
+
+  PluginObjectSymbol Symbol;
+  Symbol.ID = Graph.allocateEntityID();
+  Symbol.Name = "__neverc_android_kernel_profile_contract";
+  Symbol.Type = NEVERC_OBJECT_SYMBOL_TYPE_OBJECT;
+  Symbol.Definition = NEVERC_OBJECT_SYMBOL_DEFINITION_DEFINED;
+  Symbol.SectionID = SectionID;
+  Symbol.Size = 8;
+  Symbol.Alignment = 8;
+  const uint64_t SymbolID = Symbol.ID;
+  Graph.symbols().push_back(std::move(Symbol));
+  return {SectionID, SymbolID};
 }
 
 void initializeBuiltinTargets() {
@@ -286,6 +318,77 @@ NevercStatus NEVERC_CALL mergeObjects(
   Candidate->ProductID = TestProductID;
   Candidate->ProducerRouteDigest[0] = 0x42;
   return neverc_status_ok();
+}
+
+TEST(AndroidKernelProfileContractVerifierTest,
+     FinalizationStripsContractEntitiesFromObjectGraph) {
+  auto Graph = makeObject(1);
+  ASSERT_NE(Graph, nullptr);
+  const uint64_t Generation = Graph->generation();
+  const uint64_t RetainedSectionID = Graph->sections().front().ID;
+  const AndroidKernelContractEntities Contract =
+      addAndroidKernelProfileContract(*Graph);
+  PluginObjectRelocation Relocation;
+  Relocation.ID = Graph->allocateEntityID();
+  Relocation.SectionID = Contract.SectionID;
+  Relocation.Kind = NEVERC_OBJECT_RELOCATION_ABSOLUTE;
+  Relocation.TargetKind = NEVERC_OBJECT_RELOCATION_TARGET_SECTION;
+  Relocation.Width = 64;
+  Relocation.TargetSectionID = RetainedSectionID;
+  Graph->relocations().push_back(std::move(Relocation));
+  ASSERT_FALSE(verifyPluginObjectGraph(*Graph));
+  ASSERT_EQ(Graph->sectionCount(), 2u);
+  ASSERT_EQ(Graph->symbolCount(), 1u);
+  ASSERT_EQ(Graph->relocationCount(), 1u);
+
+  Error StripError =
+      stripAndroidKernelProfileContract(*Graph, "test final output");
+  ASSERT_FALSE(StripError) << errorText(std::move(StripError));
+  EXPECT_EQ(Graph->sectionCount(), 1u);
+  EXPECT_EQ(Graph->symbolCount(), 0u);
+  EXPECT_EQ(Graph->relocationCount(), 0u);
+  EXPECT_EQ(Graph->generation(), Generation + 1);
+  EXPECT_FALSE(forbidAndroidKernelProfileContract(*Graph, "test final output"));
+  EXPECT_FALSE(verifyPluginObjectGraph(*Graph));
+}
+
+TEST(AndroidKernelProfileContractVerifierTest,
+     FinalizationRejectsRetainedRelocationToContract) {
+  auto Graph = makeObject(1);
+  ASSERT_NE(Graph, nullptr);
+  const AndroidKernelContractEntities Contract =
+      addAndroidKernelProfileContract(*Graph);
+
+  PluginObjectRelocation ContractRelocation;
+  ContractRelocation.ID = Graph->allocateEntityID();
+  ContractRelocation.SectionID = Contract.SectionID;
+  ContractRelocation.Kind = NEVERC_OBJECT_RELOCATION_ABSOLUTE;
+  ContractRelocation.TargetKind = NEVERC_OBJECT_RELOCATION_TARGET_SECTION;
+  ContractRelocation.Width = 64;
+  ContractRelocation.TargetSectionID = Graph->sections().front().ID;
+  Graph->relocations().push_back(std::move(ContractRelocation));
+
+  PluginObjectRelocation Relocation;
+  Relocation.ID = Graph->allocateEntityID();
+  Relocation.SectionID = Graph->sections().front().ID;
+  Relocation.Kind = NEVERC_OBJECT_RELOCATION_ABSOLUTE;
+  Relocation.TargetKind = NEVERC_OBJECT_RELOCATION_TARGET_SYMBOL;
+  Relocation.Width = 8;
+  Relocation.TargetSymbolID = Contract.SymbolID;
+  Graph->relocations().push_back(std::move(Relocation));
+  ASSERT_FALSE(verifyPluginObjectGraph(*Graph));
+
+  Error StripError =
+      stripAndroidKernelProfileContract(*Graph, "test final output");
+  ASSERT_TRUE(static_cast<bool>(StripError));
+  EXPECT_NE(errorText(std::move(StripError))
+                .find("retained section references the native Android kernel "
+                      "profile contract"),
+            std::string::npos);
+  EXPECT_EQ(Graph->sectionCount(), 2u);
+  EXPECT_EQ(Graph->symbolCount(), 1u);
+  EXPECT_EQ(Graph->relocationCount(), 2u);
+  EXPECT_FALSE(verifyPluginObjectGraph(*Graph));
 }
 
 TEST(PluginObjectGraphImportTest,

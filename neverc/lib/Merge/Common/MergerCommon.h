@@ -9,6 +9,8 @@
 #ifndef NEVERC_LIB_MERGE_COMMON_MERGERCOMMON_H
 #define NEVERC_LIB_MERGE_COMMON_MERGERCOMMON_H
 
+#include "neverc/Foundation/AndroidKernelProfileContract.h"
+
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringMap.h"
@@ -20,6 +22,17 @@
 #include <csetjmp>
 
 namespace neverc::merge::detail {
+
+/// NeverC intermediate-object tooling metadata.  Present on compiler-produced
+/// `.o` files for profile/KCFI equality checks; the final Android `.ko` merge
+/// must drop it so the delivered module has no NeverC-branded section.
+inline bool isAndroidKernelProfileContractSection(llvm::StringRef Name) {
+  return Name == neverc::AndroidKernelProfileContract::NativeSection;
+}
+
+inline bool isAndroidKernelProfileContractSymbol(llvm::StringRef Name) {
+  return Name == neverc::AndroidKernelProfileContract::NativeSymbol;
+}
 
 /// Canonical output section name for the ELF `mergeSections` mode: per-symbol
 /// sections (`.text.foo`, `.bss.bar`, ...) collapse to their umbrella section

@@ -88,9 +88,16 @@ struct Options {
   /// object receives an allocated (possibly empty) `__versions` section and a
   /// `.codetag.alloc_tags` range bounded by `__start_alloc_tags` /
   /// `__stop_alloc_tags`.  Input `alloc_tags` contributions are collected into
-  /// that range.  Enable this only for the final Android `.ko` merge, never for
-  /// intermediate parallel-codegen objects.
+  /// that range.  Enable this for Android-kernel relocatable links, including
+  /// intermediate partial links.
   bool androidKernelModule = false;
+
+  /// Finalize an Android-kernel relocatable link for delivery.  The inputs'
+  /// NeverC-only profile contract must already have been checked by the caller;
+  /// finalization drops its section and symbol so the `.ko` retains no tooling
+  /// fingerprint.  Intermediate partial links leave this false and preserve
+  /// the contract for a later checked link.
+  bool finalizeAndroidKernelModule = false;
 
   /// Sections to preserve from merging (exact match).  Only consulted
   /// when mergeSections is true.

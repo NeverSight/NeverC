@@ -91,6 +91,10 @@ executeBuiltinObjectMergeAdapter(
     OwnedTargetKey Target, ArrayRef<PluginObjectGraph *> Objects,
     ArrayRef<ArrayRef<uint8_t>> InputImages,
     NevercLinkOptionFlags Flags, BuiltinObjectMergeConfig Config) {
+  if (Config.FinalizeAndroidKernelModule && !Config.AndroidKernelModule)
+    return createStringError(
+        errc::invalid_argument,
+        "Android module finalization requires Android module merge semantics");
   if (!Snapshot)
     return createStringError(
         errc::invalid_argument,
@@ -160,13 +164,11 @@ executeBuiltinObjectMergeAdapter(
         reinterpret_cast<const char *>(Input.Bytes.data()),
         Input.Bytes.size());
 
-  std::optional<uint64_t> AndroidKernelContract;
   if (*Format == neverc::merge::Format::ELF64LE && Config.AndroidKernelModule) {
     auto Contract = requireMatchingAndroidKernelProfileContracts(
         InputBytes, "built-in Android kernel object merge");
     if (!Contract)
       return Contract.takeError();
-    AndroidKernelContract = *Contract;
   }
 
   SmallVector<char, 0> MergedBytes;
@@ -181,6 +183,8 @@ executeBuiltinObjectMergeAdapter(
   if (*Format == neverc::merge::Format::ELF64LE &&
       Config.AndroidKernelModule) {
     MergeOptions.androidKernelModule = true;
+    MergeOptions.finalizeAndroidKernelModule =
+        Config.FinalizeAndroidKernelModule;
     MergeOptions.mergeSections = true;
     MergeOptions.preservedSections = {
         ".modinfo",
@@ -201,15 +205,6 @@ executeBuiltinObjectMergeAdapter(
   if (MergedBytes.empty())
     return createStringError(errc::invalid_argument,
                              "built-in object merge produced an empty image");
-  if (AndroidKernelContract) {
-    if (Error E = requireAndroidKernelProfileContract(
-            ArrayRef<uint8_t>(
-                reinterpret_cast<const uint8_t *>(MergedBytes.data()),
-                MergedBytes.size()),
-            *AndroidKernelContract, "built-in Android kernel merge output"))
-      return std::move(E);
-  }
-
   auto Reader = ObjectReaderProvider::create(Snapshot);
   if (!Reader)
     return Reader.takeError();

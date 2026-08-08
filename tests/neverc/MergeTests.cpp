@@ -2994,6 +2994,7 @@ TEST(MergeELFSemantic, AndroidKernelModuleSynthesizesLoaderSections) {
   Options Opts;
   Opts.mergeSections = true;
   Opts.androidKernelModule = true;
+  Opts.finalizeAndroidKernelModule = true;
   auto [OK, Out] = mergeELF(Bufs, Opts);
   ASSERT_TRUE(OK);
 
@@ -3044,6 +3045,7 @@ TEST(MergeELFSemantic, AndroidKernelModuleCollectsAllocTags) {
   Options Opts;
   Opts.mergeSections = true;
   Opts.androidKernelModule = true;
+  Opts.finalizeAndroidKernelModule = true;
   auto [OK, Out] = mergeELF(Bufs, Opts);
   ASSERT_TRUE(OK);
 
@@ -3168,6 +3170,80 @@ TEST(MergeELFSemantic, NonAndroidMergeDoesNotSynthesizeLoaderSections) {
   EXPECT_LT(V.findSec(".codetag.alloc_tags"), 0);
   EXPECT_EQ(V.findSym("__start_alloc_tags"), nullptr);
   EXPECT_EQ(V.findSym("__stop_alloc_tags"), nullptr);
+}
+
+TEST(MergeELFSemantic, AndroidKernelPartialLinkPreservesProfileContract) {
+  SecSpec Text{".text", 0x20, 16, ELF::SHT_PROGBITS,
+               ELF::SHF_ALLOC | ELF::SHF_EXECINSTR};
+  SecSpec Contract{".neverc.android.kernel.profile", 8, 8,
+                   ELF::SHT_PROGBITS, ELF::SHF_ALLOC, 0xab};
+  SymSpec ContractSym{"__neverc_android_kernel_profile_contract", 1, 0};
+  ContractSym.Global = false;
+  auto Obj =
+      buildSectionedELF({Text, Contract}, {ContractSym}, {}, ELF::EM_AARCH64);
+  SmallVector<SmallVector<char, 0>, 1> Bufs;
+  Bufs.push_back(std::move(Obj));
+
+  Options Opts;
+  Opts.mergeSections = true;
+  Opts.androidKernelModule = true;
+  auto [OK, Out] = mergeELF(Bufs, Opts);
+  ASSERT_TRUE(OK);
+
+  ElfView V = parseELF(Out);
+  ASSERT_TRUE(V.Ok);
+  EXPECT_GE(V.findSec(".neverc.android.kernel.profile"), 0);
+  EXPECT_NE(V.findSym("__neverc_android_kernel_profile_contract"), nullptr);
+}
+
+TEST(MergeELFSemantic, AndroidKernelModuleDropsProfileContractFingerprint) {
+  SecSpec Text{".text", 0x20, 16, ELF::SHT_PROGBITS,
+               ELF::SHF_ALLOC | ELF::SHF_EXECINSTR};
+  SecSpec Contract{".neverc.android.kernel.profile", 8, 8,
+                   ELF::SHT_PROGBITS, ELF::SHF_ALLOC, 0xab};
+  SymSpec ContractSym{"__neverc_android_kernel_profile_contract", 1, 0};
+  ContractSym.Global = false;
+  auto Obj =
+      buildSectionedELF({Text, Contract}, {ContractSym}, {}, ELF::EM_AARCH64);
+  SmallVector<SmallVector<char, 0>, 1> Bufs;
+  Bufs.push_back(std::move(Obj));
+
+  Options Opts;
+  Opts.mergeSections = true;
+  Opts.androidKernelModule = true;
+  Opts.finalizeAndroidKernelModule = true;
+  auto [OK, Out] = mergeELF(Bufs, Opts);
+  ASSERT_TRUE(OK);
+
+  ElfView V = parseELF(Out);
+  ASSERT_TRUE(V.Ok);
+  EXPECT_LT(V.findSec(".neverc.android.kernel.profile"), 0);
+  EXPECT_EQ(V.findSym("__neverc_android_kernel_profile_contract"), nullptr);
+  EXPECT_GE(V.findSec("__versions"), 0);
+  EXPECT_GE(V.findSec(".codetag.alloc_tags"), 0);
+}
+
+TEST(MergeELFSemantic,
+     AndroidKernelModuleRejectsRelocationToDroppedProfileContract) {
+  SecSpec Data{".data", 8, 8, ELF::SHT_PROGBITS,
+               ELF::SHF_ALLOC | ELF::SHF_WRITE};
+  SecSpec Contract{".neverc.android.kernel.profile", 8, 8,
+                   ELF::SHT_PROGBITS, ELF::SHF_ALLOC, 0xab};
+  SymSpec Anchor{"data_anchor", 0, 0};
+  RelSpec ContractReference{0, 0, "", ELF::R_AARCH64_ABS64, 0,
+                            /*TargetSecSym=*/1};
+  auto Obj = buildSectionedELF({Data, Contract}, {Anchor}, {ContractReference},
+                               ELF::EM_AARCH64);
+  SmallVector<SmallVector<char, 0>, 1> Bufs;
+  Bufs.push_back(std::move(Obj));
+
+  Options Opts;
+  Opts.mergeSections = true;
+  Opts.androidKernelModule = true;
+  Opts.finalizeAndroidKernelModule = true;
+  auto [OK, Out] = mergeELF(Bufs, Opts);
+  EXPECT_FALSE(OK);
+  (void)Out;
 }
 
 TEST(MergeELFSemantic, GlobalSymbolDedupKeepsDefinition) {

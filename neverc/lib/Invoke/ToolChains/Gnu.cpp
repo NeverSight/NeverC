@@ -284,6 +284,9 @@ void tools::gnutools::Linker::ConstructJob(Compilation &C, const JobAction &JA,
   GnuCfg.relocatable = Args.hasArg(options::OPT_r);
   GnuCfg.androidKernelModule =
       Args.hasArg(options::OPT_fandroid_kernel_driver_mode);
+  GnuCfg.finalizeAndroidKernelModule =
+      GnuCfg.androidKernelModule && GnuCfg.relocatable &&
+      llvm::sys::path::extension(GnuCfg.outputFile) == ".ko";
   GnuCfg.staticLink = IsStatic || IsStaticPIE;
   GnuCfg.noDynamicLinker = NoDynLinker;
   GnuCfg.exportDynamic = ExportDynamic;

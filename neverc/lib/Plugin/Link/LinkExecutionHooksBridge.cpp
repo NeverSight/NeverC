@@ -24,6 +24,7 @@
 #include "llvm/TargetParser/Triple.h"
 #include <limits>
 #include <memory>
+#include <optional>
 #include <vector>
 
 using namespace llvm;
@@ -97,6 +98,9 @@ Expected<linker::LinkHookResult>
 LinkExecutionHooksBridge::execute(const linker::LinkExecutionRequest &Request,
                                   const linker::LinkerDriverConfig &Config,
                                   raw_ostream &, raw_ostream &) {
+  if (Config.finalizeAndroidKernelModule && !Config.androidKernelModule)
+    return bridgeError(
+        "Android module finalization requires Android module merge semantics");
   if (Active || Completed)
     return bridgeError("Link execution hooks cannot be re-entered");
   Active = true;
@@ -330,6 +334,8 @@ LinkExecutionHooksBridge::execute(const linker::LinkExecutionRequest &Request,
     const auto &Provider = *Plan->objectMergeProvider();
     BuiltinObjectMergeConfig MergeConfig;
     MergeConfig.AndroidKernelModule = Config.androidKernelModule;
+    MergeConfig.FinalizeAndroidKernelModule =
+        Config.finalizeAndroidKernelModule;
     Expected<ObjectMergeResult> Merged =
         Provider.Builtin
             ? executeBuiltinObjectMergeAdapter(
@@ -341,48 +347,67 @@ LinkExecutionHooksBridge::execute(const linker::LinkExecutionRequest &Request,
                   Objects, (*FrozenRequest)->options().Flags);
     if (!Merged)
       return Merged.takeError();
-    if (AndroidKernelContract) {
-      if (Error E = requireAndroidKernelProfileContract(
+
+    ObjectPhaseSemanticValidators Validators;
+    // Prefer the merger's concrete image for a lossless write.  Finalization may
+    // still rewrite from the stripped graph when the image and graph diverge
+    // (e.g. a typed ObjectMergeProvider left the contract in MergedImage).
+    ArrayRef<uint8_t> OutputImage(
+        reinterpret_cast<const uint8_t *>(Merged->MergedImage.data()),
+        Merged->MergedImage.size());
+    if (Config.finalizeAndroidKernelModule) {
+      const uint64_t GenerationBeforeStrip = Merged->Object->generation();
+      if (Error Err = stripAndroidKernelProfileContract(
+              *Merged->Object,
+              "final Android kernel ObjectMergeProvider output"))
+        return std::move(Err);
+      if (Merged->Object->generation() != GenerationBeforeStrip)
+        OutputImage = {};
+      Validators.Graph = [](const PluginObjectGraph &Object) {
+        return forbidAndroidKernelProfileContract(
+            Object, "final Android kernel pre-write output");
+      };
+      Validators.Image = [](ArrayRef<uint8_t> Image) {
+        return forbidAndroidKernelProfileContract(
+            Image, "final Android kernel post-write output");
+      };
+    } else if (AndroidKernelContract) {
+      if (Error Err = requireAndroidKernelProfileContract(
               *Merged->Object, *AndroidKernelContract,
-              "Android kernel ObjectMergeProvider output"))
-        return std::move(E);
+              "partial Android kernel ObjectMergeProvider output"))
+        return std::move(Err);
       if (Provider.Builtin && !Merged->MergedImage.empty()) {
-        if (Error E = requireAndroidKernelProfileContract(
+        if (Error Err = requireAndroidKernelProfileContract(
                 ArrayRef<uint8_t>(reinterpret_cast<const uint8_t *>(
                                       Merged->MergedImage.data()),
                                   Merged->MergedImage.size()),
                 *AndroidKernelContract,
-                "Android kernel ObjectMergeProvider output image"))
-          return std::move(E);
+                "partial Android kernel ObjectMergeProvider output image"))
+          return std::move(Err);
       }
+      Validators.Graph =
+          [Expected = *AndroidKernelContract](const PluginObjectGraph &Object) {
+            return requireAndroidKernelProfileContract(
+                Object, Expected, "partial Android kernel object phase graph");
+          };
+      Validators.Image =
+          [Expected = *AndroidKernelContract](ArrayRef<uint8_t> Image) {
+            return requireAndroidKernelProfileContract(
+                Image, Expected, "partial Android kernel object phase image");
+          };
     }
 
     auto OutputPipeline =
         ObjectPhasePipeline::create(*Config.pluginTask, TargetSnapshot);
     if (!OutputPipeline)
       return OutputPipeline.takeError();
-    ObjectPhaseSemanticValidators Validators;
-    if (AndroidKernelContract) {
-      Validators.Graph =
-          [Expected = *AndroidKernelContract](const PluginObjectGraph &Object) {
-            return requireAndroidKernelProfileContract(
-                Object, Expected, "Android kernel object phase graph");
-          };
-      Validators.Image = [Expected =
-                              *AndroidKernelContract](ArrayRef<uint8_t> Image) {
-        return requireAndroidKernelProfileContract(
-            Image, Expected, "Android kernel object phase image");
-      };
-    }
     // Write the merged object through the native-image passthrough: the merged
     // graph was just parsed from these exact bytes, so unless a plugin output
-    // phase mutates it, the file is written verbatim (byte-identical to the
-    // native `-r` link) instead of via the lossy graph->assembly->object Writer.
-    const ArrayRef<uint8_t> MergedImage(
-        reinterpret_cast<const uint8_t *>(Merged->MergedImage.data()),
-        Merged->MergedImage.size());
+    // phase mutates it (or finalization had to strip a divergent graph), the
+    // file is written verbatim (byte-identical to the native `-r` link) instead
+    // of via the lossy graph->assembly->object Writer.
     auto Output = (*OutputPipeline)
-                      ->executeNative(*Merged->Object, MergedImage,
+                      ->executeNative(*Merged->Object, OutputImage,
                                       ObjectOutputDestination::file(
                                           (*FrozenRequest)->outputURI(),
                                           std::numeric_limits<uint64_t>::max()),

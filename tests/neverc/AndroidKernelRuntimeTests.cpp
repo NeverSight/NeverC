@@ -88,6 +88,9 @@ hasAndroidLoaderContract(const std::string &Bytes, bool RequireEmptyTags,
                << ".codetag.alloc_tags has invalid type/flags/alignment";
     } else if (*NameOrErr == "alloc_tags") {
       ++RawAllocTagsCount;
+    } else if (*NameOrErr == ".neverc.android.kernel.profile") {
+      return ::testing::AssertionFailure()
+             << "delivered .ko retained NeverC profile-contract section";
     }
   }
   if (VersionsCount != 1 || AllocTagsCount != 1 || RawAllocTagsCount != 0)
@@ -115,6 +118,9 @@ hasAndroidLoaderContract(const std::string &Bytes, bool RequireEmptyTags,
       return ::testing::AssertionFailure()
              << "cannot read symbol name: "
              << renderError(NameOrErr.takeError());
+    if (*NameOrErr == "__neverc_android_kernel_profile_contract")
+      return ::testing::AssertionFailure()
+             << "delivered .ko retained NeverC profile-contract symbol";
     Boundary *Result = nullptr;
     if (*NameOrErr == "__start_alloc_tags")
       Result = &Start;

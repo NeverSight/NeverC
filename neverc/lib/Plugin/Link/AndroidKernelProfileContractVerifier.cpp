@@ -1,5 +1,6 @@
 #include "AndroidKernelProfileContractVerifier.h"
 #include "neverc/Foundation/AndroidKernelProfileContract.h"
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/Object/ObjectFile.h"
 #include "llvm/Support/Endian.h"
 #include "llvm/Support/Errc.h"
@@ -171,6 +172,99 @@ Error requireAndroidKernelProfileContract(ArrayRef<uint8_t> Image,
     return Actual.takeError();
   if (*Actual != Expected)
     return mismatch(Boundary, Expected, *Actual);
+  return Error::success();
+}
+
+Error stripAndroidKernelProfileContract(PluginObjectGraph &Object,
+                                        StringRef Boundary) {
+  DenseSet<uint64_t> DroppedSections;
+  DenseSet<uint64_t> DroppedSymbols;
+  for (const PluginObjectSection &Section : Object.sections())
+    if (Section.Name == AndroidKernelProfileContract::NativeSection)
+      DroppedSections.insert(Section.ID);
+  for (const PluginObjectSymbol &Symbol : Object.symbols())
+    if (Symbol.Name == AndroidKernelProfileContract::NativeSymbol ||
+        DroppedSections.contains(Symbol.SectionID))
+      DroppedSymbols.insert(Symbol.ID);
+
+  if (DroppedSections.empty() && DroppedSymbols.empty())
+    return Error::success();
+
+  for (const PluginObjectRelocation &Relocation : Object.relocations()) {
+    const bool AppliedInDroppedSection =
+        DroppedSections.contains(Relocation.SectionID);
+    const bool TargetsDroppedEntity =
+        DroppedSections.contains(Relocation.TargetSectionID) ||
+        DroppedSymbols.contains(Relocation.TargetSymbolID);
+    if (!AppliedInDroppedSection && TargetsDroppedEntity)
+      return createStringError(
+          errc::invalid_argument,
+          Boundary + ": retained section references the native Android kernel "
+                     "profile contract being removed");
+  }
+
+  Object.relocations().remove_if([&](const PluginObjectRelocation &Relocation) {
+    return DroppedSections.contains(Relocation.SectionID);
+  });
+  Object.symbols().remove_if([&](const PluginObjectSymbol &Symbol) {
+    return DroppedSymbols.contains(Symbol.ID);
+  });
+  Object.sections().remove_if([&](const PluginObjectSection &Section) {
+    return DroppedSections.contains(Section.ID);
+  });
+  Object.advanceGeneration();
+  return Error::success();
+}
+
+Error forbidAndroidKernelProfileContract(const PluginObjectGraph &Object,
+                                         StringRef Boundary) {
+  for (const PluginObjectSection &Section : Object.sections())
+    if (Section.Name == AndroidKernelProfileContract::NativeSection)
+      return createStringError(
+          errc::invalid_argument,
+          Boundary + ": must not retain native Android kernel profile contract "
+                     "section");
+  for (const PluginObjectSymbol &Symbol : Object.symbols())
+    if (Symbol.Name == AndroidKernelProfileContract::NativeSymbol)
+      return createStringError(
+          errc::invalid_argument,
+          Boundary + ": must not retain native Android kernel profile contract "
+                     "symbol");
+  return Error::success();
+}
+
+Error forbidAndroidKernelProfileContract(ArrayRef<uint8_t> Image,
+                                         StringRef Boundary) {
+  auto Object = object::ObjectFile::createObjectFile(MemoryBufferRef(
+      StringRef(reinterpret_cast<const char *>(Image.data()), Image.size()),
+      Boundary));
+  if (!Object)
+    return Object.takeError();
+  if (!(*Object)->isELF() || !(*Object)->isLittleEndian())
+    return createStringError(errc::invalid_argument,
+                             Boundary +
+                                 ": expected a little-endian ELF object");
+
+  for (const object::SectionRef &Section : (*Object)->sections()) {
+    auto Name = Section.getName();
+    if (!Name)
+      return Name.takeError();
+    if (*Name == AndroidKernelProfileContract::NativeSection)
+      return createStringError(
+          errc::invalid_argument,
+          Boundary + ": must not retain native Android kernel profile contract "
+                     "section");
+  }
+  for (const object::SymbolRef &Symbol : (*Object)->symbols()) {
+    auto Name = Symbol.getName();
+    if (!Name)
+      return Name.takeError();
+    if (*Name == AndroidKernelProfileContract::NativeSymbol)
+      return createStringError(
+          errc::invalid_argument,
+          Boundary + ": must not retain native Android kernel profile contract "
+                     "symbol");
+  }
   return Error::success();
 }
 

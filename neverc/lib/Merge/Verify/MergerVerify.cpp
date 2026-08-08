@@ -370,6 +370,12 @@ bool isExcludedInputSection(const RawSec &S, const Options &Opts) {
       (S.Name.starts_with(".debug_") || S.Name == ".debug" ||
        S.Name.starts_with(".zdebug_")))
     return true;
+  // The final Android `.ko` merge drops this NeverC tooling section after the
+  // caller has verified input contracts; the independent verifier must treat
+  // it as absent from the output for the same reason.
+  if (Opts.finalizeAndroidKernelModule &&
+      detail::isAndroidKernelProfileContractSection(S.Name))
+    return true;
   return false;
 }
 
@@ -379,7 +385,9 @@ bool fail(std::string *Err, const Twine &Msg) {
   return false;
 }
 
-bool verifyAndroidKernelModuleContract(const RawELF &Out, std::string *Err) {
+bool verifyAndroidKernelModuleContract(const RawELF &Out,
+                                       bool RequireFinalizedOutput,
+                                       std::string *Err) {
   using namespace ELF;
 
   if (Out.Type != ET_REL)
@@ -423,6 +431,19 @@ bool verifyAndroidKernelModuleContract(const RawELF &Out, std::string *Err) {
   constexpr uint64_t ModVersionEntrySize = 64;
   if (Versions->Size % ModVersionEntrySize != 0)
     return fail(Err, "verify: __versions size must be a multiple of 64 bytes");
+
+  if (RequireFinalizedOutput) {
+    for (const RawSec &S : Out.Secs) {
+      if (detail::isAndroidKernelProfileContractSection(S.Name))
+        return fail(Err, "verify: finalized Android kernel module must not "
+                         "retain the NeverC profile-contract section");
+    }
+    for (const RawSym &S : Out.Syms) {
+      if (detail::isAndroidKernelProfileContractSymbol(S.Name))
+        return fail(Err, "verify: finalized Android kernel module must not "
+                         "retain the NeverC profile-contract symbol");
+    }
+  }
 
   if (AllocTagsCount != 1)
     return fail(Err, "verify: Android kernel module output must contain "
@@ -690,7 +711,9 @@ bool verifyMergeELFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
   // module init function runs. Audit it independently of the merger's
   // synthesis code so a future regression is refused before a broken .ko is
   // written. Ordinary ELF merges deliberately remain unaffected.
-  if (Opts.androidKernelModule && !verifyAndroidKernelModuleContract(Out, Err))
+  if (Opts.androidKernelModule &&
+      !verifyAndroidKernelModuleContract(
+          Out, Opts.finalizeAndroidKernelModule, Err))
     return false;
 
   // Index output symbols by name; only names that resolve to a *single*

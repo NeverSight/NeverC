@@ -5,10 +5,13 @@
 
 namespace neverc::AndroidKernelProfileContract {
 
-// Native Android-kernel objects carry the same opaque profile/KCFI pair as
-// their LLVM IR.  The section intentionally does not use a conventional
+// Compiler-produced Android-kernel objects carry the same opaque profile/KCFI
+// pair as their LLVM IR.  The section intentionally does not use a conventional
 // `.rodata.*` prefix: relocatable Android links fold those implementation
-// sections, while this link contract must survive unchanged for later links.
+// sections, while this intermediate-object contract must survive until the
+// final `.ko` merge.  That final Android-module merge verifies the inputs and
+// then drops the section so delivered modules do not retain a NeverC
+// fingerprint.
 inline constexpr char NativeSection[] = ".neverc.android.kernel.profile";
 inline constexpr char NativeSymbol[] =
     "__neverc_android_kernel_profile_contract";

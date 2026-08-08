@@ -168,6 +168,32 @@ class ContractTests(unittest.TestCase):
                 valid_record(8), require_empty_alloc_tags=True
             )
 
+    def test_rejects_neverc_profile_contract_fingerprint(self):
+        record = valid_record()
+        record["sections"][".neverc.android.kernel.profile"] = [
+            {
+                "index": 99,
+                "type": "SHT_PROGBITS",
+                "flags": verify.SHF_ALLOC,
+                "alignment": 8,
+                "size": 8,
+            }
+        ]
+        with self.assertRaisesRegex(verify.ValidationError, "profile-contract section"):
+            verify.validate_module_contract(record)
+
+        record = valid_record()
+        record["symbols"]["__neverc_android_kernel_profile_contract"] = [
+            {
+                "binding": "STB_LOCAL",
+                "type": "STT_OBJECT",
+                "section_index": 1,
+                "value": 0,
+            }
+        ]
+        with self.assertRaisesRegex(verify.ValidationError, "profile-contract symbol"):
+            verify.validate_module_contract(record)
+
 
 if __name__ == "__main__":
     unittest.main()

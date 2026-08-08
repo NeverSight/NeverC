@@ -66,6 +66,10 @@ def validate_module_contract(record, *, require_empty_alloc_tags=False):
 
     if sections.get("alloc_tags"):
         raise ValidationError("uncollected alloc_tags input section remains in module")
+    if sections.get(".neverc.android.kernel.profile"):
+        raise ValidationError(
+            "delivered module must not retain NeverC profile-contract section"
+        )
     alloc_tags = _one(
         sections.get(".codetag.alloc_tags", []), ".codetag.alloc_tags section"
     )
@@ -85,6 +89,10 @@ def validate_module_contract(record, *, require_empty_alloc_tags=False):
         raise ValidationError(".codetag.alloc_tags has an invalid size")
 
     symbols = record.get("symbols", {})
+    if symbols.get("__neverc_android_kernel_profile_contract"):
+        raise ValidationError(
+            "delivered module must not retain NeverC profile-contract symbol"
+        )
     start = _one(symbols.get("__start_alloc_tags", []), "__start_alloc_tags symbol")
     stop = _one(symbols.get("__stop_alloc_tags", []), "__stop_alloc_tags symbol")
     for name, symbol in (
