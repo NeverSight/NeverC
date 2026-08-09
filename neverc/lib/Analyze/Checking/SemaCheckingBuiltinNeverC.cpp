@@ -1,5 +1,6 @@
 #include "Checking/SemaCheckingUtils.h"
 #include "neverc/Analyze/SemaInternal.h"
+#include "neverc/Foundation/Builtin/XorStrCipher.h"
 #include "neverc/Foundation/Builtin/XorStrNames.h"
 #include "neverc/Foundation/Diagnostic/DiagnosticSema.h"
 #include "neverc/Foundation/LangOpts/LangOptions.h"
@@ -51,20 +52,26 @@ ExprResult semaBuiltinNeverCXorstr(Sema &S, CallExpr *TheCall) {
   }
   QualType SizeTy = S.Context.getSizeType();
   unsigned SizeBits = S.Context.getTypeSize(SizeTy);
-  unsigned KeyBytes = SizeBits / 8;
 
-  uint64_t Key = BaseKey ^ (++Counter * 0x517CC1B727220A95ULL);
-  Key &= llvm::maskTrailingOnes<uint64_t>(SizeBits);
-
-  auto encryptByte = [KeyBytes](unsigned char byte, uint64_t key,
-                                unsigned idx) -> char {
-    auto k = static_cast<unsigned char>(key >> (8 * (idx % KeyBytes)));
-    return static_cast<char>(byte ^ k);
-  };
+  const uint64_t Nonce = ++Counter;
+  std::seed_seq KeySeed{
+      static_cast<unsigned>(BaseKey), static_cast<unsigned>(BaseKey >> 32),
+      static_cast<unsigned>(Nonce), static_cast<unsigned>(Nonce >> 32)};
+  std::mt19937_64 KeyGenerator(KeySeed);
+  uint64_t Key =
+      (KeyGenerator() & llvm::maskTrailingOnes<uint64_t>(SizeBits)) | 1U;
 
   llvm::SmallVector<char, 256> EncBytes(Len);
-  for (unsigned i = 0; i < Len; ++i)
-    EncBytes[i] = encryptByte(static_cast<unsigned char>(Bytes[i]), Key, i);
+  xorstr::CipherSchedule Schedule = xorstr::makeSchedule(Key, Len, SizeBits);
+  uint64_t State = Schedule.InitialState;
+  for (unsigned i = 0; i < Len; ++i) {
+    State = xorstr::advanceState(State, i, Schedule, SizeBits);
+    EncBytes[i] =
+        static_cast<char>(static_cast<unsigned char>(Bytes[i]) ^
+                          xorstr::streamByte(State, Schedule, SizeBits));
+  }
+
+  uint64_t LengthToken = xorstr::sealLength(Len, Key, SizeBits);
 
   SourceLocation Loc = TheCall->getBeginLoc();
   SourceLocation EndLoc = TheCall->getEndLoc();
@@ -78,7 +85,7 @@ ExprResult semaBuiltinNeverCXorstr(Sema &S, CallExpr *TheCall) {
       StringLiteralKind::Ordinary, EncStrTy, SLLocs.data(), SLLocs.size());
 
   IntegerLiteral *LenLit = IntegerLiteral::Create(
-      S.Context, llvm::APInt(SizeBits, Len), SizeTy, Loc);
+      S.Context, llvm::APInt(SizeBits, LengthToken), SizeTy, Loc);
   IntegerLiteral *KeyLit = IntegerLiteral::Create(
       S.Context, llvm::APInt(SizeBits, Key), SizeTy, Loc);
 

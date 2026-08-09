@@ -863,18 +863,10 @@ Error GenAssemblyHelper::runBuiltinOptimizationPipeline(
     }
 
     if (PluginPasses)
-      PluginPasses->addPasses(
-          MPM,
-          {NEVERC_PHASE_IR_PASS_POST_OPT_HIGH,
-           NEVERC_PHASE_IR_PASS_POST_OPT_LOW},
-          PluginOptimizationLevel);
-
-    if (CodeGenOpts.AutoGenerateIR)
-      MPM.addPass(IRAutoGeneratorPostPass(true, "IRAutoGeneratorPost"));
-
-    if (CodeGenOpts.AutoGenerateBitcode)
-      MPM.addPass(
-          BitcodeAutoGeneratorPostPass(true, "BitcodeAutoGeneratorPost"));
+      PluginPasses->addPasses(MPM,
+                              {NEVERC_PHASE_IR_PASS_POST_OPT_HIGH,
+                               NEVERC_PHASE_IR_PASS_POST_OPT_LOW},
+                              PluginOptimizationLevel);
   }
 
   if (PluginPasses)
@@ -883,6 +875,19 @@ Error GenAssemblyHelper::runBuiltinOptimizationPipeline(
         {NEVERC_PHASE_IR_PASS_PRE_CODEGEN_HIGH,
          NEVERC_PHASE_IR_PASS_PRE_CODEGEN_LOW},
         PluginOptimizationLevel);
+
+  // Keep the opaque decoder through every ordinary and plugin-provided IR
+  // optimization.  At a real machine-code boundary the final pass rekeys and
+  // expands it directly into each call site; intermediate LLVM IR/bitcode
+  // keeps the call intact so a later LTO link can still rekey it.
+  if (!CodeGenOpts.PrepareForLTO && actionRequiresCodeGen(Action))
+    MPM.addPass(neverc::xorstr::FinalizeXorStrPass(LangOpts.StringEncryptKey));
+
+  if (CodeGenOpts.AutoGenerateIR)
+    MPM.addPass(IRAutoGeneratorPostPass(true, "IRAutoGeneratorPost"));
+
+  if (CodeGenOpts.AutoGenerateBitcode)
+    MPM.addPass(BitcodeAutoGeneratorPostPass(true, "BitcodeAutoGeneratorPost"));
 
   if (PluginTask)
     MPM.addPass(VerifierPass());

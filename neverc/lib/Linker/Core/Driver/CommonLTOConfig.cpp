@@ -12,6 +12,7 @@
 #include "neverc/Plugin/Host/PluginLLVMOptionSnapshot.h"
 #include "neverc/Plugin/Host/PluginSession.h"
 #include "neverc/Plugin/Host/PluginTaskContext.h"
+#include "neverc/Transforms/XorStr/EncryptCallStringsPass.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/CodeGen/CommandFlags.h"
 #include "llvm/Support/CommandLine.h"
@@ -129,6 +130,13 @@ lto::Config linker::createLTOConfig(const LinkerDriverConfig &Cfg,
   c.DiagHandler = std::move(DiagHandler);
   c.OptLevel = OptLevel;
   c.CPU = Cfg.cpu;
+  if (Cfg.androidKernelModule) {
+    // Embedded runtime bitcode is deliberately stripped of build-host target
+    // attributes before it is linked into the consumer module.  Restore the
+    // AArch64 kernel code-generation contract at the final LTO boundary: SIMD
+    // state is unavailable in ordinary kernel C paths and x18 is reserved.
+    c.MAttrs = {"-fp-armv8", "-crypto", "-neon", "+reserve-x18"};
+  }
 
   // An Android kernel link may consume precompiled full-LTO inputs.  If none
   // of them were compiled in Android kernel mode, the merged module has no
@@ -191,8 +199,8 @@ lto::Config linker::createLTOConfig(const LinkerDriverConfig &Cfg,
       }
       c.HostContext = PluginContext;
       c.ModuleOptimizeHook =
-          [PluginContext, OptLevel](std::unique_ptr<Module> &ModuleValue,
-                                    bool &SkipBuiltin) {
+          [PluginContext, OptLevel, XorStrKeySeed = Cfg.xorStrKeySeed](
+              std::unique_ptr<Module> &ModuleValue, bool &SkipBuiltin) {
             const std::optional<neverc::Emit::AndroidKernel::Contract>
                 RequiredAndroidContract =
                     neverc::Emit::AndroidKernel::getContract(*ModuleValue);
@@ -232,8 +240,12 @@ lto::Config linker::createLTOConfig(const LinkerDriverConfig &Cfg,
             // LTO to bypass opt(), which also bypasses PostOptPassHook.  KCFI
             // prefix materialization is a code-generation invariant, so seal
             // the provider's final module here on that path.
-            if (SkipBuiltin)
+            if (SkipBuiltin) {
+              ModuleAnalysisManager MAM;
+              (void)neverc::xorstr::FinalizeXorStrPass(XorStrKeySeed)
+                  .run(*ModuleValue, MAM);
               neverc::Emit::AndroidKernel::finalizeKCFIPrefixes(*ModuleValue);
+            }
             return true;
           };
       c.BackendDoneHook = [PluginContext] { PluginContext->finish(); };
@@ -243,13 +255,15 @@ lto::Config linker::createLTOConfig(const LinkerDriverConfig &Cfg,
 
   NevercIROptimizationLevel PluginLevel =
       pluginOptimizationLevel(OptLevel);
-  auto AddAndroidKCFIFinalizer = [](ModulePassManager &MPM) {
+  auto AddFinalModulePasses = [XorStrKeySeed =
+                                   Cfg.xorStrKeySeed](ModulePassManager &MPM) {
+    MPM.addPass(neverc::xorstr::FinalizeXorStrPass(XorStrKeySeed));
     MPM.addPass(neverc::Emit::AndroidKernel::FinalizeKCFIPrefixesPass());
   };
-  c.PostOptPassHook = AddAndroidKCFIFinalizer;
+  c.PostOptPassHook = AddFinalModulePasses;
 
   auto ParallelHooks = std::make_shared<neverc::ParallelOptimizationHooks>();
-  ParallelHooks->PostOpt = AddAndroidKCFIFinalizer;
+  ParallelHooks->PostOpt = AddFinalModulePasses;
   if (PluginContext && PluginContext->IRPasses &&
       !PluginContext->IRPasses->empty()) {
     neverc::plugin::IRPassPlan *IRPasses =
@@ -292,17 +306,17 @@ lto::Config linker::createLTOConfig(const LinkerDriverConfig &Cfg,
         };
     c.PreOptPassHook = AddPreOpt;
     c.PostOptPassHook = [AddPostOpt,
-                         AddAndroidKCFIFinalizer](ModulePassManager &MPM) {
+                         AddFinalModulePasses](ModulePassManager &MPM) {
       AddPostOpt(MPM);
-      AddAndroidKCFIFinalizer(MPM);
+      AddFinalModulePasses(MPM);
     };
     c.PassBuilderHook = ConfigurePassBuilder;
     ParallelHooks->ConfigurePassBuilder = ConfigurePassBuilder;
     ParallelHooks->PreOpt = AddPreOpt;
     ParallelHooks->PostOpt = [AddPostOpt,
-                              AddAndroidKCFIFinalizer](ModulePassManager &MPM) {
+                              AddFinalModulePasses](ModulePassManager &MPM) {
       AddPostOpt(MPM);
-      AddAndroidKCFIFinalizer(MPM);
+      AddFinalModulePasses(MPM);
     };
     PluginContext->ParallelHooks = ParallelHooks;
   }

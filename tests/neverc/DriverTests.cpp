@@ -390,6 +390,25 @@ TEST_F(DriverTest, StripOptionAcceptsFinalAndroidKernelModule) {
   EXPECT_TRUE(fs::is_regular_file(Module));
 }
 
+TEST_F(DriverTest, AndroidKernelModeUsesGeneralRegistersOnly) {
+  const auto Source = tmpFile("android-kernel-general-registers.c");
+  writeFile(Source, "int neverc_kernel_scalar_only(void) { return 0; }\n");
+
+  const auto Result = ncc(
+      {"-###", "--target=aarch64-linux-android", "-fandroid-kernel-driver-mode",
+       "-DNVK_KERNEL=510", "-c", Source.string(), "-o",
+       tmpFile("android-kernel-general-registers.o").string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.err;
+  EXPECT_NE(Result.err.find("\"-target-feature\" \"-fp-armv8\""),
+            std::string::npos)
+      << Result.err;
+  EXPECT_NE(Result.err.find("\"-target-feature\" \"-neon\""), std::string::npos)
+      << Result.err;
+  EXPECT_NE(Result.err.find("\"-target-feature\" \"+reserve-x18\""),
+            std::string::npos)
+      << Result.err;
+}
+
 TEST_F(DriverTest, StripOptionRemovesNamesAndDwarfAcrossFormats) {
   const auto Source = tmpFile("strip_release.c");
   writeFile(Source,

@@ -86,6 +86,7 @@ struct LinkerDriverConfig {
   // -1 means "not set"; backends fall back to their own defaults.
   int ltoOptLevel = -1;
   int ltoCGOLevel = -1; // codegen opt level; -1 = derive from ltoOptLevel
+  uint32_t xorStrKeySeed = 0;
 
   // Real native-object paths requested by the driver for consumers that
   // cannot read the in-memory LTO buffers. Darwin uses these only when

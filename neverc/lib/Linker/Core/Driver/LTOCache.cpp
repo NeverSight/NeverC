@@ -82,6 +82,7 @@ void linker::LTOCacheKey::appendConfig(const LinkerDriverConfig &cfg) {
   appendStr(material, cfg.cpu);
   appendU64(material, uint64_t(int64_t(cfg.ltoOptLevel)));
   appendU64(material, uint64_t(int64_t(cfg.ltoCGOLevel)));
+  appendU64(material, cfg.xorStrKeySeed);
   appendStr(material, cfg.ltoBasicBlockSections);
   appendU64(material, cfg.ltoUniqueBasicBlockSectionNames);
   appendU64(material, uint64_t(int64_t(cfg.debuggerTuning)));
@@ -145,6 +146,8 @@ bool linker::ltoCacheUsable(const LinkerDriverConfig &cfg) {
   if (!cfg.nevercPluginPaths.empty())
     return false;
   if (cfg.pluginSession)
+    return false;
+  if (cfg.androidKernelModule && cfg.xorStrKeySeed == 0)
     return false;
   // A basic-block-sections list file is read by createLTOConfig; its
   // contents are not covered by the key.

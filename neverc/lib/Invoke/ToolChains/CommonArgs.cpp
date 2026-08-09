@@ -353,6 +353,12 @@ void tools::populateLinkerDriverConfig(const ToolChain &TC,
   // allocation in compile() — only 2 SmallVector<char,0> instead of N.
   Cfg.ltoPartitions = 2;
 
+  if (const Arg *A = Args.getLastArg(options::OPT_fstring_encrypt_key_EQ)) {
+    uint64_t Value = 0;
+    if (!llvm::StringRef(A->getValue()).getAsInteger(0, Value))
+      Cfg.xorStrKeySeed = static_cast<uint32_t>(Value);
+  }
+
   // Optimization levels derived from -O.
   if (Arg *A = Args.getLastArg(options::OPT_O_Group)) {
     int Level = 2;

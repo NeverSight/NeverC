@@ -289,7 +289,12 @@ void aarch64::getAArch64TargetFeatures(const Driver &D,
       Diag << A->getSpelling() << A->getValue();
   }
 
-  if (Args.getLastArg(options::OPT_mgeneral_regs_only)) {
+  // Android kernel mode injects -mgeneral-regs-only into the cc1 command
+  // after target features are resolved.  Treat the mode itself as the driver
+  // feature request too, otherwise cc1 receives the spelling but retains the
+  // default +fp-armv8/+neon feature set in LTO bitcode.
+  if (Args.getLastArg(options::OPT_mgeneral_regs_only) ||
+      Args.hasArg(options::OPT_fandroid_kernel_driver_mode)) {
     Features.push_back("-fp-armv8");
     Features.push_back("-crypto");
     Features.push_back("-neon");

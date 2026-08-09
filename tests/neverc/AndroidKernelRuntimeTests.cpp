@@ -22,6 +22,19 @@ constexpr const char *kAndroidKernelModule =
     "MODULE_LICENSE(\"GPL v2\");\n"
     "NEVERC_KRT_DEFINE_MODULE(\"neverc_test_hello\");\n";
 
+// Keep the embedded formatting runtime live so the final LTO stage has actual
+// runtime-owned ciphertext to re-key.  The minimal fixture above intentionally
+// dead-strips this path.
+constexpr const char *kAndroidKernelXorStrModule =
+    "#include <nvkmod.h>\n"
+    "int neverc_krt_fmt_init(void);\n"
+    "static int m_init(void) { return neverc_krt_fmt_init(); }\n"
+    "static void m_exit(void) {}\n"
+    "module_init(m_init);\n"
+    "module_exit(m_exit);\n"
+    "MODULE_LICENSE(\"GPL v2\");\n"
+    "NEVERC_KRT_DEFINE_MODULE(\"neverc_test_xorstr\");\n";
+
 bool isElfImage(const std::string &Bytes) {
   return Bytes.size() > 4 && static_cast<unsigned char>(Bytes[0]) == 0x7f &&
          Bytes[1] == 'E' && Bytes[2] == 'L' && Bytes[3] == 'F';
@@ -29,6 +42,31 @@ bool isElfImage(const std::string &Bytes) {
 
 std::string renderError(llvm::Error Error) {
   return llvm::toString(std::move(Error)).str().str();
+}
+
+::testing::AssertionResult hasNoSymbolContaining(const std::string &Bytes,
+                                                 llvm::StringRef Marker) {
+  using namespace llvm;
+  using namespace llvm::object;
+
+  auto ObjectOrErr = ObjectFile::createObjectFile(
+      MemoryBufferRef(StringRef(Bytes.data(), Bytes.size()), "module.ko"));
+  if (!ObjectOrErr)
+    return ::testing::AssertionFailure()
+           << "cannot parse .ko: " << renderError(ObjectOrErr.takeError());
+
+  for (const SymbolRef &Symbol : (*ObjectOrErr)->symbols()) {
+    Expected<StringRef> NameOrErr = Symbol.getName();
+    if (!NameOrErr)
+      return ::testing::AssertionFailure()
+             << "cannot read symbol name: "
+             << renderError(NameOrErr.takeError());
+    if (NameOrErr->contains(Marker))
+      return ::testing::AssertionFailure()
+             << "final artifact still contains shared xorstr symbol '"
+             << NameOrErr->str() << "'";
+  }
+  return ::testing::AssertionSuccess();
 }
 
 ::testing::AssertionResult
@@ -170,19 +208,28 @@ protected:
   // native driver directly; otherwise the plugin is loaded with -fplugin, which
   // routes the relocatable link through the plugin object-merge bridge.
   CmdResult linkKernelModule(const std::string &PluginPath,
-                             const fs::path &Source, const fs::path &Output) {
-    return linkKernelModule(PluginPath, std::vector<fs::path>{Source}, Output);
+                             const fs::path &Source, const fs::path &Output,
+                             bool UseDeterministicXorStrKey = true,
+                             bool EmitDebugInfo = false) {
+    return linkKernelModule(PluginPath, std::vector<fs::path>{Source}, Output,
+                            UseDeterministicXorStrKey, EmitDebugInfo);
   }
 
   CmdResult linkKernelModule(const std::string &PluginPath,
                              const std::vector<fs::path> &Sources,
-                             const fs::path &Output) {
+                             const fs::path &Output,
+                             bool UseDeterministicXorStrKey = true,
+                             bool EmitDebugInfo = false) {
     std::vector<std::string> Args;
     if (!PluginPath.empty())
       Args.push_back("-fplugin=" + PluginPath);
     Args.push_back("--target=aarch64-linux-android");
     Args.push_back("-fandroid-kernel-driver-mode");
     Args.push_back("-DNVK_KERNEL=510");
+    if (UseDeterministicXorStrKey)
+      Args.push_back("-fstring-encrypt-key=1");
+    if (EmitDebugInfo)
+      Args.push_back("-g");
     Args.push_back("-nostdlib");
     Args.push_back("-r");
     for (const fs::path &Source : Sources)
@@ -192,6 +239,77 @@ protected:
     return ncc(Args);
   }
 };
+
+TEST_F(AndroidKernelRuntimeTest, EmbeddedRuntimeXorStrRekeysFinalArtifact) {
+  const fs::path Source = tmpFile("nvk_xorstr_rekey.c");
+  writeFile(Source, kAndroidKernelXorStrModule);
+  const fs::path FirstKo = tmpFile("nvk_xorstr_rekey_first.ko");
+  const fs::path SecondKo = tmpFile("nvk_xorstr_rekey_second.ko");
+
+  const CmdResult First = linkKernelModule(
+      /*PluginPath=*/"", Source, FirstKo,
+      /*UseDeterministicXorStrKey=*/false);
+  ASSERT_EQ(First.exitCode, 0) << First.err;
+  const CmdResult Second = linkKernelModule(
+      /*PluginPath=*/"", Source, SecondKo,
+      /*UseDeterministicXorStrKey=*/false);
+  ASSERT_EQ(Second.exitCode, 0) << Second.err;
+
+  const std::string FirstBytes = readFile(FirstKo);
+  const std::string SecondBytes = readFile(SecondKo);
+  const std::string Vsnprintf("vsnprintf\0", sizeof("vsnprintf"));
+  const std::string Vsscanf("vsscanf\0", sizeof("vsscanf"));
+  ASSERT_TRUE(isElfImage(FirstBytes));
+  ASSERT_TRUE(isElfImage(SecondBytes));
+  EXPECT_EQ(FirstBytes.find(Vsnprintf), std::string::npos);
+  EXPECT_EQ(FirstBytes.find(Vsscanf), std::string::npos);
+  EXPECT_EQ(SecondBytes.find(Vsnprintf), std::string::npos);
+  EXPECT_EQ(SecondBytes.find(Vsscanf), std::string::npos);
+  EXPECT_FALSE(FirstBytes == SecondBytes)
+      << "embedded runtime xorstr must receive a fresh final-link key"
+      << "\nfirst compiler stderr:\n"
+      << First.err << "\nsecond compiler stderr:\n"
+      << Second.err;
+}
+
+TEST_F(AndroidKernelRuntimeTest, EmbeddedRuntimeXorStrHasNoSharedDecoder) {
+  const fs::path Source =
+      testDir() / "../../examples/android-kernel-hello/main.c";
+  ASSERT_TRUE(fs::exists(Source)) << Source;
+  const fs::path Output = tmpFile("nvk_xorstr_no_decoder.ko");
+
+  const CmdResult Result =
+      linkKernelModule("", Source, Output, /*UseDeterministicXorStrKey=*/false,
+                       /*EmitDebugInfo=*/true);
+  ASSERT_EQ(Result.exitCode, 0) << Result.err;
+
+  const std::string Bytes = readFile(Output);
+  ASSERT_TRUE(isElfImage(Bytes));
+  EXPECT_TRUE(hasNoSymbolContaining(Bytes, "__neverc_xorstr_decrypt"));
+  EXPECT_EQ(Bytes.find("__neverc_xorstr_"), std::string::npos)
+      << "debug/string tables must not retain xorstr helper identities";
+  EXPECT_EQ(Bytes.find(".rekey"), std::string::npos)
+      << "per-call ciphertext must not expose a semantic symbol name";
+}
+
+TEST_F(AndroidKernelRuntimeTest, EmbeddedRuntimeXorStrHonorsDeterministicSeed) {
+  const fs::path Source = tmpFile("nvk_xorstr_deterministic.c");
+  writeFile(Source, kAndroidKernelXorStrModule);
+  const fs::path FirstKo = tmpFile("nvk_xorstr_deterministic_first.ko");
+  const fs::path SecondKo = tmpFile("nvk_xorstr_deterministic_second.ko");
+
+  const CmdResult First = linkKernelModule("", Source, FirstKo);
+  ASSERT_EQ(First.exitCode, 0) << First.err;
+  const CmdResult Second = linkKernelModule("", Source, SecondKo);
+  ASSERT_EQ(Second.exitCode, 0) << Second.err;
+
+  const std::string FirstBytes = readFile(FirstKo);
+  const std::string SecondBytes = readFile(SecondKo);
+  ASSERT_TRUE(isElfImage(FirstBytes));
+  ASSERT_TRUE(isElfImage(SecondBytes));
+  EXPECT_EQ(FirstBytes, SecondBytes)
+      << "an explicit xorstr key must keep builds reproducible";
+}
 
 TEST_F(AndroidKernelRuntimeTest, EmbeddedRuntimeLinkage) {
   if (isWindows())
