@@ -16,9 +16,9 @@ jobs:
     runs-on: macos-15
     env:
       BUILD_TYPE: Release
-      # Runner is pinned to macos-15 (above) for a stable Apple toolchain; this
-      # low deployment target makes the shipped binary run on macOS 13+ instead
-      # of defaulting to the runner OS (minos 15.0).
+      # Runner is pinned to macos-15 (above) for a stable arm64 host and SDK;
+      # this low deployment target makes the shipped binary run on macOS 13+
+      # instead of defaulting to the runner OS (minos 15.0).
       # CMake initializes CMAKE_OSX_DEPLOYMENT_TARGET from this env var.
       MACOSX_DEPLOYMENT_TARGET: "13.0"
     steps:
@@ -33,18 +33,31 @@ jobs:
         with:
           python-version: "3.12.10"
 
-      - name: Select latest stable Xcode (Apple Clang)
+      - name: Select latest stable Xcode SDK
         uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
         with:
           xcode-version: latest-stable
 
-      - name: Show Apple toolchain
+      - name: Show Apple SDK
         run: |
           xcodebuild -version
-          clang --version
+          xcrun --show-sdk-path
 
       - name: Install deps
-        run: brew install ninja cmake p7zip
+        # Keep clang and the ThinLTO linker on the same upstream LLVM release;
+        # Apple Clang 17's LTO linker can crash on otherwise valid debug IR.
+        run: brew install ninja cmake p7zip llvm lld
+
+      - name: Select matching Homebrew LLVM toolchain
+        run: |
+          LLVM_PREFIX="$(brew --prefix llvm)"
+          LLD_PREFIX="$(brew --prefix lld)"
+          echo "CC=${LLVM_PREFIX}/bin/clang" >> "$GITHUB_ENV"
+          echo "CXX=${LLVM_PREFIX}/bin/clang++" >> "$GITHUB_ENV"
+          echo "${LLVM_PREFIX}/bin" >> "$GITHUB_PATH"
+          echo "${LLD_PREFIX}/bin" >> "$GITHUB_PATH"
+          "${LLVM_PREFIX}/bin/clang" --version
+          "${LLD_PREFIX}/bin/ld64.lld" --version
 
       # ── Apple Developer ID signing + notarization ───────────
       # Imported before the build, not after it: the credentials do not depend
@@ -159,6 +172,8 @@ jobs:
         run: |
           cmake -GNinja -Bbuild \
           -DCMAKE_INSTALL_PREFIX=install \
+          -DCMAKE_C_COMPILER="$CC" \
+          -DCMAKE_CXX_COMPILER="$CXX" \
           -DLLVM_ENABLE_ASSERTIONS=OFF \
           -DLLVM_TOOL_LLVM_SHLIB_BUILD=off \
           -DHAVE_STD_IS_TRIVIALLY_COPYABLE=0 \

@@ -76,6 +76,10 @@ set(LLVM_BUILD_LLVM_C_DYLIB OFF CACHE BOOL "")
 # or ld64 on bare Xcode clang).
 if(NOT CMAKE_CROSSCOMPILING)
   set(_NEVERC_USE_LLD FALSE)
+  # find_program() caches its result by default.  Re-resolve the linker on
+  # every configure so switching compilers cannot retain an incompatible lld.
+  unset(_NEVERC_LLD)
+  unset(_NEVERC_LLD CACHE)
   if(_NEVERC_HOST_MSVC)
     # On MSVC, LLD is the separate lld-link.exe, which ships with LLVM/clang
     # rather than the MSVC toolset.  Only opt in when it is on PATH; otherwise
@@ -88,15 +92,43 @@ if(NOT CMAKE_CROSSCOMPILING)
     get_filename_component(_NEVERC_CXX_DIR "${CMAKE_CXX_COMPILER}" DIRECTORY)
     find_program(_NEVERC_LLD NAMES ld64.lld ld.lld lld
       HINTS "${_NEVERC_CXX_DIR}" NO_DEFAULT_PATH)
-    if(NOT _NEVERC_LLD)
+
+    # Never mix Apple Clang bitcode with a Homebrew LLD found elsewhere on
+    # PATH.  Their LLVM implementations are versioned independently, and the
+    # mismatch can crash ThinLTO instead of producing a normal linker error.
+    # A non-Apple Clang may use the separately packaged Homebrew lld formula;
+    # Homebrew keeps that formula on the same LLVM release as its clang.
+    set(_NEVERC_APPLE_CLANG FALSE)
+    if(CMAKE_HOST_APPLE)
+      if(CMAKE_CXX_COMPILER)
+        execute_process(
+          COMMAND "${CMAKE_CXX_COMPILER}" --version
+          OUTPUT_VARIABLE _NEVERC_CXX_VERSION
+          ERROR_VARIABLE _NEVERC_CXX_VERSION
+          OUTPUT_STRIP_TRAILING_WHITESPACE
+        )
+        if(_NEVERC_CXX_VERSION MATCHES "Apple clang")
+          set(_NEVERC_APPLE_CLANG TRUE)
+        endif()
+      else()
+        # With no override, CMake will select Xcode's Apple Clang later in
+        # project().  Do not pair that implicit compiler with a PATH lld.
+        set(_NEVERC_APPLE_CLANG TRUE)
+      endif()
+    endif()
+
+    if(NOT _NEVERC_LLD AND NOT _NEVERC_APPLE_CLANG)
       find_program(_NEVERC_LLD NAMES ld64.lld ld.lld lld)
     endif()
-    if(_NEVERC_LLD OR NOT APPLE)
+    if(_NEVERC_LLD OR NOT CMAKE_HOST_APPLE)
       set(_NEVERC_USE_LLD TRUE)
     endif()
   endif()
   if(_NEVERC_USE_LLD)
     set(LLVM_ENABLE_LLD ON CACHE BOOL "" FORCE)
+  elseif(CMAKE_HOST_APPLE)
+    # Clear a stale value when a build directory switches back to Apple Clang.
+    set(LLVM_ENABLE_LLD OFF CACHE BOOL "" FORCE)
   endif()
 endif()
 

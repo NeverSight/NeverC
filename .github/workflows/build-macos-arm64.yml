@@ -35,11 +35,11 @@ jobs:
       # because the fallback kept builds green — trips this.  Covers both the
       # example builds and the test suite below.
       NEVERC_PCG_STRICT: "1"
-      # Runner is pinned to macos-15 (above) for a stable Apple toolchain; this
-      # low deployment target makes the produced binary run on macOS 13+ instead
-      # of defaulting to minos 15.0.  CMake initializes CMAKE_OSX_DEPLOYMENT_TARGET
-      # from this env var; it also keeps neverc's own test-program links on a
-      # consistent target.
+      # Runner is pinned to macos-15 (above) for a stable arm64 host and SDK;
+      # this low deployment target makes the produced binary run on macOS 13+
+      # instead of defaulting to minos 15.0.  CMake initializes
+      # CMAKE_OSX_DEPLOYMENT_TARGET from this env var; it also keeps neverc's
+      # own test-program links on a consistent target.
       MACOSX_DEPLOYMENT_TARGET: "13.0"
     steps:
       - name: Checkout Repo
@@ -53,26 +53,40 @@ jobs:
         with:
           python-version: "3.12.10"
 
-      - name: Select latest stable Xcode (Apple Clang)
+      - name: Select latest stable Xcode SDK
         uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: latest-stable
 
-      - name: Show Apple toolchain
+      - name: Show Apple SDK
         run: |
           xcodebuild -version
-          clang --version
-          which clang
+          xcrun --show-sdk-path
 
       - name: Setup build deps
         # openssl@3 is required for StdLibTest.TlsOpenSslBidirectionalInterop;
         # macOS system LibreSSL rejects host:port -accept and lacks -ciphersuites.
-        run: brew install ninja cmake p7zip openssl@3
+        # Keep clang and the ThinLTO linker on the same upstream LLVM release;
+        # Apple Clang 17's LTO linker can crash on otherwise valid debug IR.
+        run: brew install ninja cmake p7zip openssl@3 llvm lld
+
+      - name: Select matching Homebrew LLVM toolchain
+        run: |
+          LLVM_PREFIX="$(brew --prefix llvm)"
+          LLD_PREFIX="$(brew --prefix lld)"
+          echo "CC=${LLVM_PREFIX}/bin/clang" >> "$GITHUB_ENV"
+          echo "CXX=${LLVM_PREFIX}/bin/clang++" >> "$GITHUB_ENV"
+          echo "${LLVM_PREFIX}/bin" >> "$GITHUB_PATH"
+          echo "${LLD_PREFIX}/bin" >> "$GITHUB_PATH"
+          "${LLVM_PREFIX}/bin/clang" --version
+          "${LLD_PREFIX}/bin/ld64.lld" --version
 
       - name: Build neverc
         run: |
           cmake -GNinja -Bbuild \
             -DCMAKE_INSTALL_PREFIX=install \
+            -DCMAKE_C_COMPILER="$CC" \
+            -DCMAKE_CXX_COMPILER="$CXX" \
             -DLLVM_ENABLE_ASSERTIONS=OFF \
             -DLLVM_TOOL_LLVM_SHLIB_BUILD=off \
             -DHAVE_STD_IS_TRIVIALLY_COPYABLE=0 \
@@ -147,8 +161,8 @@ jobs:
         run: |
           set -e
           make -C build/pluginsdk/examples \
-            NEVERC=$PWD/build/bin/neverc \
-            INCLUDE_DIR=$PWD/build/pluginsdk/include
+            NEVERC="$PWD/build/bin/neverc" \
+            INCLUDE_DIR="$PWD/build/pluginsdk/include"
           printf 'int main(void) { return 0; }\n' > /tmp/plugin_test.c
           for plugin in ExamplePlugin CrtShimPlugin BenchPlugin; do
             echo "--- Testing $plugin ---"
