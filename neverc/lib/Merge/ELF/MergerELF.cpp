@@ -30,6 +30,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/StringSet.h"
 #include "llvm/Object/ELFObjectFile.h"
 #include "llvm/Support/Compression.h"
 #include "llvm/Support/Error.h"
@@ -156,7 +157,7 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     // SHF_LINK_ORDER bookkeeping.  Such a section (e.g. ftrace's
     // __patchable_function_entries, sh_link → its code section) requires a
     // valid sh_link in the output.  After -r merge every same-named input
-    // collapses into one output section, so we record the *canonical* name of
+    // collapses into one output section, so we record the *folded* name of
     // each contributor's sh_link target and, after layout, remap sh_link to the
     // merged target section.  A single sh_link cannot name two targets, so when
     // contributors disagree (e.g. per-function .text.foo/.text.bar that are
@@ -173,6 +174,16 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
   uint32_t EFlags = 0;
   unsigned char OSABI = 0, ABIVer = 0;
   bool HaveArch = false;
+
+  // Single fold entry-point for this merge: every header property the policy
+  // may rewrite travels together so producer and verifier cannot drift.
+  auto foldSection = [&](StringRef Name,
+                         const Shdr &Header) -> detail::ELFSectionFold {
+    return detail::foldELFSection(
+        {Name, Header.sh_type, Header.sh_flags, Header.sh_entsize,
+         Header.sh_addralign},
+        Opts.mergeSections, Opts.androidKernelModule, Opts.preservedSections);
+  };
 
   // Section merge: group by (name, compatible_type, flags).
   // Ported from LLD LinkerScript::addSection + OutputSections.cpp.
@@ -405,30 +416,29 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
 
       // SHF_LINK_ORDER sections (e.g. __patchable_function_entries emitted by
       // -fpatchable-function-entry for ftrace) carry an sh_link to an
-      // associated code section.  The link target's *canonical* name is read
-      // here, before SecName itself is canonicalized, and remapped to the
-      // merged target section after layout (see the LinkTargetName handling
-      // below and the sh_link remap pass before output).  Folding several such
-      // inputs whose targets canonicalize to one section (the ftrace .ko case:
-      // every .text.foo → .text) is correct; contributors that disagree are
-      // refused at output time because one sh_link cannot name two targets.
+      // associated code section.  The link target's folded name is read here,
+      // before SecName itself is folded, and remapped to the merged target
+      // section after layout (see the LinkTargetName handling below and the
+      // sh_link remap pass before output).  Folding several such inputs whose
+      // targets collapse to one section (the ftrace .ko case: every .text.foo
+      // → .text) is correct; contributors that disagree are refused at output
+      // time because one sh_link cannot name two targets.
       StringRef LinkTargetName;
       if (S.sh_flags & SHF_LINK_ORDER) {
         if (S.sh_link != 0 && S.sh_link < Secs.size()) {
-          if (auto LN = EF.getSectionName(Secs[S.sh_link]))
-            LinkTargetName = detail::canonicalELFSectionName(
-                *LN, Secs[S.sh_link].sh_flags, Opts.mergeSections,
-                Opts.androidKernelModule, Opts.preservedSections);
-          else
+          if (auto LN = EF.getSectionName(Secs[S.sh_link])) {
+            LinkTargetName = foldSection(*LN, Secs[S.sh_link]).Name;
+          } else {
             consumeError(LN.takeError());
+          }
         }
       }
 
-      // Canonicalize per-symbol sections (.text.foo -> .text, ...) via the
-      // single shared helper the verifier also uses, so the two never drift.
-      SecName = detail::canonicalELFSectionName(
-          SecName, S.sh_flags, Opts.mergeSections, Opts.androidKernelModule,
-          Opts.preservedSections);
+      // Decide name and header semantics together.  In particular, an exact
+      // preserved pool must retain SHF_MERGE, SHF_STRINGS, and sh_entsize as a
+      // unit rather than keeping only its name.
+      const detail::ELFSectionFold Fold = foldSection(SecName, S);
+      SecName = Fold.Name;
 
       if (Opts.dropDebugInfo && detail::isELFDebugSection(SecName)) {
         PM.DroppedSecs.insert(i);
@@ -503,14 +513,30 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
         }
       }
 
+      // Fold is authoritative for the output header shape.  Content layout
+      // below still reads size/bytes from the original input header `S`.
       Shdr SCopy = S;
-      SCopy.sh_flags &= ~(uint64_t)SHF_GROUP;
+      SCopy.sh_type = Fold.Type;
+      SCopy.sh_flags = Fold.Flags & ~(uint64_t)SHF_GROUP;
+      SCopy.sh_entsize = Fold.Entsize;
+      SCopy.sh_addralign = Fold.Alignment;
       unsigned MIdx = findOrCreateSection(SecName, SCopy);
       auto &MS = MergedSections[MIdx];
 
-      // Record each SHF_LINK_ORDER contributor's (canonical) link target.  All
+      // Grouping keys are only (name, type, flags), so sh_entsize is sticky
+      // across later contributors.  Umbrella `.rodata` is a concatenated byte
+      // range (Fold clears entsize for both ordinary and demoted landings);
+      // re-apply that invariant on join so a stale first contribution cannot
+      // survive when verify=false skips the independent audit.  Type/flags
+      // need no post-join rewrite: demotion reshapes SCopy before grouping,
+      // so incompatible MERGE/STRINGS shapes never join the umbrella.
+      if (Fold.Name == ".rodata")
+        MS.Template.sh_entsize = Fold.Entsize;
+
+      // Record each SHF_LINK_ORDER contributor's folded link target.  All
       // contributors to one merged section must agree, or a single output
       // sh_link cannot represent them; the disagreement is caught at output.
+      // LINK_ORDER is an input property, so consult the original header.
       if (S.sh_flags & SHF_LINK_ORDER) {
         if (!MS.HasLinkOrder) {
           MS.HasLinkOrder = true;
@@ -522,16 +548,16 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
 
       // Track max alignment (LLD: OutputSection::commitSection).
       {
-        uint64_t SafeAlign = clampAlign(S.sh_addralign);
+        uint64_t SafeAlign = clampAlign(SCopy.sh_addralign);
         if (SafeAlign > MS.Template.sh_addralign)
           MS.Template.sh_addralign = SafeAlign;
       }
 
       // When types differ but are compatible (canMergeToProgbits),
       // promote to SHT_PROGBITS (LLD behavior).
-      if (MS.Template.sh_type != S.sh_type &&
+      if (MS.Template.sh_type != SCopy.sh_type &&
           canMergeToProgbits(MS.Template.sh_type, Machine) &&
-          canMergeToProgbits(S.sh_type, Machine))
+          canMergeToProgbits(SCopy.sh_type, Machine))
         MS.Template.sh_type = SHT_PROGBITS;
 
       uint64_t Align = MS.Template.sh_addralign;
@@ -923,6 +949,23 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     if (!DefineBoundary("__start_alloc_tags", 0) ||
         !DefineBoundary("__stop_alloc_tags", AllocTagsSize))
       return false;
+
+    // Linux exports every !sect_empty() module section under
+    // /sys/module/<name>/sections/<section-name>.  Since 6.12, a duplicate name
+    // there aborts loading, so refuse even when the optional full verifier is
+    // off.  The size here is the laid-out virtual size (covers SHT_NOBITS).
+    StringSet<> LoadedSectionNames;
+    for (const MergedSection &Section : MergedSections) {
+      if (!detail::isLoadedELFModuleSection(Section.Template.sh_flags,
+                                            Section.VirtualSize))
+        continue;
+      if (!LoadedSectionNames.insert(Section.Name).second) {
+        errs()
+            << "neverc: Android module merge: duplicate loaded section name '"
+            << Section.Name << "'\n";
+        return false;
+      }
+    }
   }
 
   // ----- Finalize global symbol indices -----

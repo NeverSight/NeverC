@@ -82,13 +82,15 @@ struct Options {
   bool stripUnneededSymbols = false;
 
   /// Merge per-function/per-variable sections into canonical names:
-  /// .text.* → .text, .bss.* → .bss, .data.* → .data, .rodata.* → .rodata.
-  /// Used for Android kernel modules to fold per-symbol section names.
-  /// ELF-only: Mach-O keeps one __text section keyed by (segment, section) and
-  /// slices it via MH_SUBSECTIONS_VIA_SYMBOLS, so there are no per-function
-  /// sections to fold; COFF has no consumer today.  Both still merge
-  /// same-named input sections, but ignore this canonicalization (the verifier
-  /// therefore expects the unchanged input section name for those formats).
+  /// `.text.*` → `.text`, `.bss.*` → `.bss`, `.data.*` → `.data`,
+  /// `.rodata.*` → `.rodata`.  With `androidKernelModule`, well-formed
+  /// compiler `.rodata.strN.M` / `.rodata.cstN` pools are additionally demoted
+  /// into ordinary `.rodata` (clear SHF_MERGE|SHF_STRINGS and `sh_entsize`)
+  /// only when the name grammar matches the section's flags, entry size, and
+  /// — for strings — alignment.  Generic ET_REL keeps SHF_MERGE semantics.
+  /// ELF-only: Mach-O keeps one `__text` keyed by (segment, section) and
+  /// slices via MH_SUBSECTIONS_VIA_SYMBOLS; COFF has no consumer today.  Both
+  /// still merge same-named inputs but ignore this canonicalization.
   bool mergeSections = false;
 
   /// Emulate the small part of the Android kernel module linker script that

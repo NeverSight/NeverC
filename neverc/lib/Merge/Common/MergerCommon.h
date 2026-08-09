@@ -20,6 +20,7 @@
 #include "llvm/Support/ErrorHandling.h"
 
 #include <csetjmp>
+#include <cstdint>
 
 namespace neverc::merge::detail {
 
@@ -51,45 +52,134 @@ isAndroidKernelReleaseDiscardableSection(llvm::StringRef Name) {
   return Name == ".comment";
 }
 
-/// Canonical output section name for the ELF `mergeSections` mode: per-symbol
-/// sections (`.text.foo`, `.bss.bar`, ...) collapse to their umbrella section
-/// so symbol names stop leaking through section names (Android kernel modules).
+/// Distinguishes ordinary name canonicalization from Android pool demotion.
+/// Only \c AndroidMergeableRodata changes ELF header semantics; the verifier
+/// audits that case against the raw output.
+enum class ELFSectionFoldKind {
+  None,
+  AndroidMergeableRodata,
+};
+
+/// One value carries every ELF header property that section folding may
+/// transform.  Producer and verifier both consume this result so a preserved
+/// name can never be paired with accidentally demoted flags or entry size.
+struct ELFSectionFold {
+  llvm::StringRef Name;
+  uint32_t Type = 0;
+  uint64_t Flags = 0;
+  uint64_t Entsize = 0;
+  uint64_t Alignment = 0;
+  ELFSectionFoldKind Kind = ELFSectionFoldKind::None;
+};
+
+/// Linux `sect_empty()` inverted: a non-empty SHF_ALLOC section is exported as
+/// `/sys/module/<mod>/sections/<name>`.  Producer and verifier share this so the
+/// 6.12+ uniqueness guard cannot drift.
+inline bool isLoadedELFModuleSection(uint64_t Flags, uint64_t Size) {
+  return (Flags & llvm::ELF::SHF_ALLOC) && Size != 0;
+}
+
+inline bool parsePositiveELFSectionDecimal(llvm::StringRef Text,
+                                           uint64_t &Value) {
+  // Plain unsigned decimal only: reject signs, spaces, and trailing junk so
+  // names like `.rodata.str+1.1` / `.rodata.cst8trailing` never match.
+  if (Text.empty())
+    return false;
+  for (char C : Text)
+    if (C < '0' || C > '9')
+      return false;
+  return !Text.getAsInteger(10, Value) && Value != 0;
+}
+
+/// Whether \p Section is a well-formed compiler-generated mergeable rodata
+/// pool.  Match the complete name grammar and the ELF properties encoded in
+/// it; accepting a prefix alone could launder an unusual or malformed section
+/// into ordinary allocated rodata.
+inline bool isELFMergeableRodataPool(const ELFSectionFold &Section) {
+  using namespace llvm::ELF;
+  if (Section.Type != SHT_PROGBITS || Section.Entsize == 0)
+    return false;
+
+  llvm::StringRef Suffix = Section.Name;
+  if (Suffix.consume_front(".rodata.str")) {
+    const auto [EntryText, AlignText] = Suffix.split('.');
+    uint64_t NamedEntrySize = 0;
+    uint64_t NamedAlignment = 0;
+    return Section.Flags == (SHF_ALLOC | SHF_MERGE | SHF_STRINGS) &&
+           parsePositiveELFSectionDecimal(EntryText, NamedEntrySize) &&
+           parsePositiveELFSectionDecimal(AlignText, NamedAlignment) &&
+           NamedEntrySize == Section.Entsize &&
+           NamedAlignment == Section.Alignment;
+  }
+
+  Suffix = Section.Name;
+  if (Suffix.consume_front(".rodata.cst")) {
+    uint64_t NamedEntrySize = 0;
+    return Section.Flags == (SHF_ALLOC | SHF_MERGE) &&
+           parsePositiveELFSectionDecimal(Suffix, NamedEntrySize) &&
+           NamedEntrySize == Section.Entsize;
+  }
+  return false;
+}
+
+/// Apply the complete ELF section-fold policy as one value transform.
 ///
-/// This is the *single* source of truth for that renaming.  The merger applies
-/// it while laying out sections (ELF/MergerELF.cpp) and the independent verifier
-/// applies it to predict where a symbol should land (Verify/MergerVerify.cpp); keeping
-/// them as two hand-synced copies risked one drifting from the other and either
-/// false-rejecting a good merge or masking a real offset bug.  When
-/// \p MergeSections is false, the name is empty, it is in \p Preserved, or the
-/// section has SHF_MERGE semantics, the name is returned unchanged.  Mergeable
-/// constant/string sections (for example `.rodata.str1.1`) must retain their
-/// distinct names and flags; folding them onto ordinary `.rodata` would create
-/// duplicate output section names because those flag sets are incompatible.
-inline llvm::StringRef
-canonicalELFSectionName(llvm::StringRef Name, uint64_t Flags,
-                        bool MergeSections, bool AndroidKernelModule,
-                        llvm::ArrayRef<llvm::StringRef> Preserved) {
+/// Exact preserved names bypass every generic transform.  Keeping that decision
+/// in the same function as flag/entry-size demotion fixes the former
+/// split-phase bug where a pool kept its name but silently lost SHF_MERGE
+/// semantics.
+inline ELFSectionFold
+foldELFSection(ELFSectionFold Section, bool MergeSections,
+               bool AndroidKernelModule,
+               llvm::ArrayRef<llvm::StringRef> Preserved) {
   // scripts/module.lds.S routes the compiler-facing `alloc_tags` input
   // section into the loader-facing `.codetag.alloc_tags` output section.  The
   // in-process `-r` merger is the final linker for NeverC modules, so it must
   // perform the same mapping.  This is deliberately independent of generic
   // per-symbol folding: it is an Android module ABI contract.
-  if (AndroidKernelModule && Name == "alloc_tags")
-    return ".codetag.alloc_tags";
-  if (!MergeSections || Name.empty() || (Flags & llvm::ELF::SHF_MERGE))
-    return Name;
+  if (AndroidKernelModule && Section.Name == "alloc_tags") {
+    Section.Name = ".codetag.alloc_tags";
+    return Section;
+  }
+  if (!MergeSections || Section.Name.empty())
+    return Section;
   for (llvm::StringRef P : Preserved)
-    if (Name == P)
-      return Name;
-  if (Name.starts_with(".text."))
-    return ".text";
-  if (Name.starts_with(".bss."))
-    return ".bss";
-  if (Name.starts_with(".data."))
-    return ".data";
-  if (Name.starts_with(".rodata."))
-    return ".rodata";
-  return Name;
+    if (Section.Name == P)
+      return Section;
+
+  // SHF_MERGE pools are not ordinary per-symbol sections.  Only Android
+  // final-module folding may demote a well-formed compiler pool; everything
+  // else keeps its merge identity so generic ET_REL semantics stay intact.
+  if (Section.Flags & llvm::ELF::SHF_MERGE) {
+    if (!AndroidKernelModule || !isELFMergeableRodataPool(Section))
+      return Section;
+    // Eligibility already requires PROGBITS + ALLOC|MERGE(|STRINGS).  Assign
+    // the full ordinary rodata shape explicitly so a future looser matcher
+    // cannot leave residual merge metadata.  Alignment is kept so the producer
+    // can raise the umbrella `.rodata` maximum as usual.
+    Section.Name = ".rodata";
+    Section.Type = llvm::ELF::SHT_PROGBITS;
+    Section.Flags = llvm::ELF::SHF_ALLOC;
+    Section.Entsize = 0;
+    Section.Kind = ELFSectionFoldKind::AndroidMergeableRodata;
+    return Section;
+  }
+
+  if (Section.Name.starts_with(".text."))
+    Section.Name = ".text";
+  else if (Section.Name.starts_with(".bss."))
+    Section.Name = ".bss";
+  else if (Section.Name.starts_with(".data."))
+    Section.Name = ".data";
+  else if (Section.Name == ".rodata" || Section.Name.starts_with(".rodata.")) {
+    // Umbrella `.rodata` is a concatenated byte range, not a mergeable entity
+    // array.  Clear sh_entsize for both exact `.rodata` and `.rodata.*` so a
+    // stale input header cannot poison the output (grouping keys ignore
+    // entsize, so the first contribution would otherwise stick).
+    Section.Name = ".rodata";
+    Section.Entsize = 0;
+  }
+  return Section;
 }
 
 /// Whether a section holds the call graph profile, which no merge can carry

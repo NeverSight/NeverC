@@ -549,6 +549,7 @@ struct SecSpec {
   uint64_t Flags = ELF::SHF_ALLOC | ELF::SHF_EXECINSTR;
   uint8_t Fill = 0; // non-zero => fill PROGBITS content with this byte
   int Link = -1;    // >=0: sh_link to that 0-based user section (SHF_LINK_ORDER)
+  uint64_t Entsize = 0;
 };
 
 struct SymSpec {
@@ -743,6 +744,7 @@ SmallVector<char, 0> buildSectionedELF(ArrayRef<SecSpec> Secs,
     S.sh_offset = SecOff[i];
     S.sh_size = Secs[i].Size;
     S.sh_addralign = Secs[i].Align;
+    S.sh_entsize = Secs[i].Entsize;
     if (Secs[i].Link >= 0 && (unsigned)Secs[i].Link < K)
       S.sh_link = 1 + Secs[i].Link; // +1 for the leading null section
   }
@@ -808,6 +810,7 @@ struct ParsedSec {
   uint64_t Flags = 0;
   uint64_t Size = 0;
   uint64_t Align = 0;
+  uint64_t Entsize = 0;
   uint32_t Link = 0;
   std::vector<uint8_t> Data; // on-disk bytes (empty for NOBITS)
 };
@@ -885,6 +888,7 @@ ElfView parseELF(ArrayRef<char> Buf) {
     PS.Flags = Secs[i].sh_flags;
     PS.Size = Secs[i].sh_size;
     PS.Align = Secs[i].sh_addralign;
+    PS.Entsize = Secs[i].sh_entsize;
     PS.Link = Secs[i].sh_link;
     if (Secs[i].sh_type != SHT_NOBITS && Secs[i].sh_size > 0 &&
         Secs[i].sh_offset + Secs[i].sh_size <= Buf.size()) {
@@ -1001,6 +1005,53 @@ bool patchSymValue(SmallVectorImpl<char> &Buf, StringRef Name,
       }
   }
   return false;
+}
+
+ELF::Elf64_Shdr *findELFSectionHeader(SmallVectorImpl<char> &Buf,
+                                      StringRef Name, unsigned Occurrence = 0) {
+  using namespace ELF;
+  if (Buf.size() < sizeof(Elf64_Ehdr))
+    return nullptr;
+  auto *H = reinterpret_cast<Elf64_Ehdr *>(Buf.data());
+  if (H->e_shoff > Buf.size() ||
+      (uint64_t)H->e_shnum * sizeof(Elf64_Shdr) > Buf.size() - H->e_shoff ||
+      H->e_shstrndx >= H->e_shnum)
+    return nullptr;
+  auto *Secs = reinterpret_cast<Elf64_Shdr *>(Buf.data() + H->e_shoff);
+  const Elf64_Shdr &ShStr = Secs[H->e_shstrndx];
+  if (ShStr.sh_offset > Buf.size() ||
+      ShStr.sh_size > Buf.size() - ShStr.sh_offset)
+    return nullptr;
+  StringRef Names(Buf.data() + ShStr.sh_offset, ShStr.sh_size);
+  for (unsigned I = 0; I < H->e_shnum; ++I) {
+    if (Secs[I].sh_name >= Names.size() ||
+        Names.drop_front(Secs[I].sh_name).split('\0').first != Name)
+      continue;
+    if (Occurrence == 0)
+      return &Secs[I];
+    --Occurrence;
+  }
+  return nullptr;
+}
+
+bool patchELFSectionMergeMetadata(SmallVectorImpl<char> &Buf, StringRef Name,
+                                  uint64_t Flags, uint64_t Entsize) {
+  if (ELF::Elf64_Shdr *Section = findELFSectionHeader(Buf, Name)) {
+    Section->sh_flags = Flags;
+    Section->sh_entsize = Entsize;
+    return true;
+  }
+  return false;
+}
+
+bool patchELFSectionName(SmallVectorImpl<char> &Buf, StringRef From,
+                         StringRef To) {
+  ELF::Elf64_Shdr *Source = findELFSectionHeader(Buf, From);
+  ELF::Elf64_Shdr *Target = findELFSectionHeader(Buf, To);
+  if (!Source || !Target)
+    return false;
+  Source->sh_name = Target->sh_name;
+  return true;
 }
 
 bool patchELFCompressedSize(SmallVectorImpl<char> &Buf, StringRef Name,
@@ -2718,19 +2769,49 @@ TEST(MergeELFSemantic, KernelModuleAllFamiliesFoldOffsets) {
   EXPECT_EQ(V.Syms[V.Relas[0].Sym].Name, std::string("g0"));
 }
 
-TEST(MergeELFSemantic, KernelModuleKeepsMergeableRodataDistinct) {
+TEST(MergeELFSemantic,
+     AndroidKernelModulePreservesExplicitMergeableRodataPool) {
   using namespace ELF;
-  // Clang emits string literals into SHF_MERGE|SHF_STRINGS sections such as
-  // .rodata.str1.1.  Kernel-module folding must not rename such a section to
-  // .rodata: its flags are intentionally incompatible with ordinary rodata,
-  // so doing so creates two output sections with the same name.  Linux exposes
-  // module sections in sysfs by name and reports EEXIST for that malformed
-  // shape during insmod.
-  SecSpec Regular{".rodata.value", 0x20, 8, SHT_PROGBITS, SHF_ALLOC, 0xAA};
-  SecSpec String{".rodata.str1.1", 0x18, 1, SHT_PROGBITS,
-                 SHF_ALLOC | SHF_MERGE | SHF_STRINGS, 0xBB};
-  SymSpec Value{"value", 0, 0, true};
-  auto Obj = buildSectionedELF({Regular, String}, {Value}, {});
+  SecSpec String{".rodata.str1.1",
+                 0x18,
+                 1,
+                 SHT_PROGBITS,
+                 SHF_ALLOC | SHF_MERGE | SHF_STRINGS,
+                 0xBB};
+  String.Entsize = 1;
+  auto Obj =
+      buildSectionedELF({String}, {SymSpec{"lit", 0, 0}}, {}, EM_AARCH64);
+
+  SmallVector<SmallVector<char, 0>, 1> Bufs;
+  Bufs.push_back(std::move(Obj));
+  Options Opts;
+  Opts.mergeSections = true;
+  Opts.androidKernelModule = true;
+  Opts.preservedSections = {".rodata.str1.1"};
+  auto [OK, Out] = mergeELF(Bufs, Opts);
+  ASSERT_TRUE(OK);
+
+  ElfView V = parseELF(Out);
+  ASSERT_TRUE(V.Ok);
+  const int StringIdx = V.findSec(".rodata.str1.1");
+  ASSERT_GE(StringIdx, 0);
+  EXPECT_EQ(V.Secs[StringIdx].Type, (uint32_t)SHT_PROGBITS);
+  EXPECT_EQ(V.Secs[StringIdx].Flags,
+            (uint64_t)(SHF_ALLOC | SHF_MERGE | SHF_STRINGS));
+  EXPECT_EQ(V.Secs[StringIdx].Entsize, 1u);
+  EXPECT_EQ(V.Secs[StringIdx].Align, 1u);
+}
+
+TEST(MergeELFSemantic, NonAndroidMergeKeepsMergeableRodataPool) {
+  using namespace ELF;
+  SecSpec String{".rodata.str1.1",
+                 0x18,
+                 1,
+                 SHT_PROGBITS,
+                 SHF_ALLOC | SHF_MERGE | SHF_STRINGS,
+                 0xBB};
+  String.Entsize = 1;
+  auto Obj = buildSectionedELF({String}, {SymSpec{"lit", 0, 0}}, {});
 
   SmallVector<SmallVector<char, 0>, 1> Bufs;
   Bufs.push_back(std::move(Obj));
@@ -2741,16 +2822,333 @@ TEST(MergeELFSemantic, KernelModuleKeepsMergeableRodataDistinct) {
 
   ElfView V = parseELF(Out);
   ASSERT_TRUE(V.Ok);
-  unsigned PlainRodata = 0;
-  unsigned MergeableRodata = 0;
-  for (const ParsedSec &S : V.Secs) {
+  const int StringIdx = V.findSec(".rodata.str1.1");
+  ASSERT_GE(StringIdx, 0);
+  EXPECT_EQ(V.Secs[StringIdx].Type, (uint32_t)SHT_PROGBITS);
+  EXPECT_EQ(V.Secs[StringIdx].Flags,
+            (uint64_t)(SHF_ALLOC | SHF_MERGE | SHF_STRINGS));
+  EXPECT_EQ(V.Secs[StringIdx].Entsize, 1u);
+  EXPECT_EQ(V.Secs[StringIdx].Align, 1u);
+}
+
+TEST(MergeELFSemantic, AndroidKernelModuleFoldsMergeableRodataPools) {
+  using namespace ELF;
+  // Clang emits string literals into SHF_MERGE|SHF_STRINGS sections such as
+  // .rodata.str1.1.  For Android .ko folding the merger demotes those pools
+  // (clears MERGE|STRINGS, entsize) and concatenates them into ordinary
+  // .rodata — one section name, one flag set.  Renaming without demoting
+  // would produce two incompatible `.rodata` outputs and break 6.12+ sysfs
+  // section export; keeping the `str1.1` name leaks compiler pool metadata.
+  SecSpec Regular{".rodata.value", 0x20, 8, SHT_PROGBITS, SHF_ALLOC, 0xAA};
+  SecSpec String{".rodata.str1.1",
+                 0x18,
+                 1,
+                 SHT_PROGBITS,
+                 SHF_ALLOC | SHF_MERGE | SHF_STRINGS,
+                 0xBB};
+  String.Entsize = 1;
+  SecSpec Constant{".rodata.cst8",        0x10, 8, SHT_PROGBITS,
+                   SHF_ALLOC | SHF_MERGE, 0xCC};
+  Constant.Entsize = 8;
+  SymSpec Value{"value", 0, 0, true};
+  SymSpec Lit{"lit", 1, 0, true};
+  SymSpec Number{"number", 2, 0, true};
+  auto Obj = buildSectionedELF({Regular, String, Constant},
+                               {Value, Lit, Number}, {}, EM_AARCH64);
+
+  SmallVector<SmallVector<char, 0>, 1> Bufs;
+  Bufs.push_back(std::move(Obj));
+  Options Opts;
+  Opts.mergeSections = true;
+  Opts.androidKernelModule = true;
+  auto [OK, Out] = mergeELF(Bufs, Opts);
+  ASSERT_TRUE(OK);
+
+  ElfView V = parseELF(Out);
+  ASSERT_TRUE(V.Ok);
+  EXPECT_EQ(V.findSec(".rodata.str1.1"), -1);
+  EXPECT_EQ(V.findSec(".rodata.cst8"), -1);
+  int RodataIdx = V.findSec(".rodata");
+  ASSERT_GE(RodataIdx, 0);
+  unsigned RodataCount = 0;
+  for (const ParsedSec &S : V.Secs)
     if (S.Name == ".rodata")
-      ++PlainRodata;
-    if (S.Name == ".rodata.str1.1")
-      ++MergeableRodata;
+      ++RodataCount;
+  EXPECT_EQ(RodataCount, 1u);
+  EXPECT_EQ(V.Secs[RodataIdx].Type, (uint32_t)SHT_PROGBITS);
+  EXPECT_EQ(V.Secs[RodataIdx].Flags, (uint64_t)SHF_ALLOC);
+  EXPECT_EQ(V.Secs[RodataIdx].Entsize, 0u);
+  EXPECT_EQ(V.Secs[RodataIdx].Align, 8u);
+  EXPECT_EQ(V.Secs[RodataIdx].Size, 0x48u);
+  const ParsedSym *PV = V.findSym("value");
+  const ParsedSym *PL = V.findSym("lit");
+  const ParsedSym *PN = V.findSym("number");
+  ASSERT_NE(PV, nullptr);
+  ASSERT_NE(PL, nullptr);
+  ASSERT_NE(PN, nullptr);
+  EXPECT_EQ(PV->Shndx, (uint16_t)RodataIdx);
+  EXPECT_EQ(PL->Shndx, (uint16_t)RodataIdx);
+  EXPECT_EQ(PN->Shndx, (uint16_t)RodataIdx);
+  EXPECT_EQ(PV->Value, 0u);
+  EXPECT_EQ(PL->Value, 0x20u);
+  EXPECT_EQ(PN->Value, 0x38u);
+  ASSERT_EQ(V.Secs[RodataIdx].Data.size(), 0x48u);
+  EXPECT_EQ(V.Secs[RodataIdx].Data[0], 0xAA);
+  EXPECT_EQ(V.Secs[RodataIdx].Data[0x20], 0xBB);
+  EXPECT_EQ(V.Secs[RodataIdx].Data[0x38], 0xCC);
+}
+
+TEST(MergeELFSemantic,
+     AndroidKernelModuleFoldClearsStaleOrdinaryRodataEntsize) {
+  using namespace ELF;
+  // Section grouping ignores sh_entsize.  The fold policy must clear it for
+  // both exact `.rodata` and `.rodata.*` so a stale first contribution cannot
+  // stick — with or without a later demoted pool joining the umbrella.
+  for (const char *RegularName : {".rodata.value", ".rodata"}) {
+    SCOPED_TRACE(RegularName);
+    SecSpec Regular{RegularName, 0x10, 8, SHT_PROGBITS, SHF_ALLOC, 0xAA};
+    Regular.Entsize = 8;
+
+    {
+      auto Obj =
+          buildSectionedELF({Regular}, {SymSpec{"value", 0, 0}}, {}, EM_AARCH64);
+      SmallVector<SmallVector<char, 0>, 1> Bufs;
+      Bufs.push_back(std::move(Obj));
+      Options Opts;
+      Opts.mergeSections = true;
+      Opts.androidKernelModule = true;
+      auto [OK, Out] = mergeELF(Bufs, Opts);
+      ASSERT_TRUE(OK);
+      ElfView V = parseELF(Out);
+      ASSERT_TRUE(V.Ok);
+      const int RodataIdx = V.findSec(".rodata");
+      ASSERT_GE(RodataIdx, 0);
+      EXPECT_EQ(V.Secs[RodataIdx].Entsize, 0u);
+      EXPECT_EQ(V.Secs[RodataIdx].Flags, (uint64_t)SHF_ALLOC);
+    }
+
+    SecSpec String{".rodata.str1.1",
+                   0x10,
+                   1,
+                   SHT_PROGBITS,
+                   SHF_ALLOC | SHF_MERGE | SHF_STRINGS,
+                   0xBB};
+    String.Entsize = 1;
+    auto Obj = buildSectionedELF({Regular, String},
+                                 {SymSpec{"value", 0, 0}, SymSpec{"lit", 1, 0}},
+                                 {}, EM_AARCH64);
+
+    SmallVector<SmallVector<char, 0>, 1> Bufs;
+    Bufs.push_back(std::move(Obj));
+    Options Opts;
+    Opts.mergeSections = true;
+    Opts.androidKernelModule = true;
+    auto [OK, Out] = mergeELF(Bufs, Opts);
+    ASSERT_TRUE(OK);
+
+    ElfView V = parseELF(Out);
+    ASSERT_TRUE(V.Ok);
+    const int RodataIdx = V.findSec(".rodata");
+    ASSERT_GE(RodataIdx, 0);
+    EXPECT_EQ(V.findSec(".rodata.str1.1"), -1);
+    EXPECT_EQ(V.Secs[RodataIdx].Type, (uint32_t)SHT_PROGBITS);
+    EXPECT_EQ(V.Secs[RodataIdx].Flags, (uint64_t)SHF_ALLOC);
+    EXPECT_EQ(V.Secs[RodataIdx].Entsize, 0u);
+    EXPECT_EQ(V.Secs[RodataIdx].Align, 8u);
+    EXPECT_EQ(V.Secs[RodataIdx].Size, 0x20u);
   }
-  EXPECT_EQ(PlainRodata, 1u);
-  EXPECT_EQ(MergeableRodata, 1u);
+}
+
+TEST(MergeELFSemantic,
+     AndroidKernelModuleKeepsUnrecognizedMergeableRodataSections) {
+  using namespace ELF;
+  struct PoolCase {
+    const char *Name;
+    uint32_t Type;
+    uint64_t Flags;
+    uint64_t Entsize;
+    uint32_t Align;
+  };
+  const PoolCase Cases[] = {
+      // Only allocated read-only SHT_PROGBITS pools are eligible.
+      {".rodata.str1.1", SHT_NOTE, SHF_ALLOC | SHF_MERGE | SHF_STRINGS, 1, 1},
+      {".rodata.str1.1", SHT_PROGBITS, SHF_ALLOC | SHF_MERGE | SHF_STRINGS, 0,
+       1},
+      // String and constant pools have different exact flag shapes.
+      {".rodata.str1.1", SHT_PROGBITS, SHF_ALLOC | SHF_MERGE, 1, 1},
+      {".rodata.cst8", SHT_PROGBITS, SHF_ALLOC | SHF_MERGE | SHF_STRINGS, 8, 8},
+      // strN.M encodes both sh_entsize and sh_addralign.
+      {".rodata.str2.2", SHT_PROGBITS, SHF_ALLOC | SHF_MERGE | SHF_STRINGS, 1,
+       2},
+      {".rodata.str1.1", SHT_PROGBITS, SHF_ALLOC | SHF_MERGE | SHF_STRINGS, 1,
+       2},
+      // Prefix matches are insufficient: the numeric grammar consumes all.
+      {".rodata.str1.1.trailing", SHT_PROGBITS,
+       SHF_ALLOC | SHF_MERGE | SHF_STRINGS, 1, 1},
+      {".rodata.str+1.1", SHT_PROGBITS,
+       SHF_ALLOC | SHF_MERGE | SHF_STRINGS, 1, 1},
+      {".rodata.str1.+1", SHT_PROGBITS,
+       SHF_ALLOC | SHF_MERGE | SHF_STRINGS, 1, 1},
+      {".rodata.cst8trailing", SHT_PROGBITS, SHF_ALLOC | SHF_MERGE, 8, 8},
+      {".rodata.cst+8", SHT_PROGBITS, SHF_ALLOC | SHF_MERGE, 8, 8},
+      // Unusual flags must not be silently laundered into ordinary rodata.
+      {".rodata.str1.1", SHT_PROGBITS,
+       SHF_ALLOC | SHF_WRITE | SHF_MERGE | SHF_STRINGS, 1, 1},
+  };
+
+  unsigned CaseIndex = 0;
+  for (const PoolCase &C : Cases) {
+    // Several cases reuse the compiler pool name; include the row index so a
+    // failure names the exact malformed shape under test.
+    SCOPED_TRACE(testing::Message()
+                 << CaseIndex++ << ": " << C.Name << " type=" << C.Type
+                 << " flags=" << C.Flags << " entsize=" << C.Entsize
+                 << " align=" << C.Align);
+    SecSpec Pool{C.Name, 0x10, C.Align, C.Type, C.Flags, 0xD1};
+    Pool.Entsize = C.Entsize;
+    auto Obj =
+        buildSectionedELF({Pool}, {SymSpec{"pool", 0, 0}}, {}, EM_AARCH64);
+    SmallVector<SmallVector<char, 0>, 1> Bufs;
+    Bufs.push_back(std::move(Obj));
+    Options Opts;
+    Opts.mergeSections = true;
+    Opts.androidKernelModule = true;
+    auto [OK, Out] = mergeELF(Bufs, Opts);
+    ASSERT_TRUE(OK);
+
+    ElfView V = parseELF(Out);
+    ASSERT_TRUE(V.Ok);
+    const int PoolIdx = V.findSec(C.Name);
+    ASSERT_GE(PoolIdx, 0);
+    EXPECT_EQ(V.Secs[PoolIdx].Type, C.Type);
+    EXPECT_EQ(V.Secs[PoolIdx].Flags, C.Flags);
+    EXPECT_EQ(V.Secs[PoolIdx].Entsize, C.Entsize);
+    EXPECT_EQ(V.Secs[PoolIdx].Align, C.Align);
+  }
+}
+
+TEST(MergeELFSemantic,
+     AndroidKernelModuleFoldsEligiblePoolBesideMalformedSameName) {
+  using namespace ELF;
+  SecSpec Eligible{".rodata.str1.1",
+                   0x10,
+                   1,
+                   SHT_PROGBITS,
+                   SHF_ALLOC | SHF_MERGE | SHF_STRINGS,
+                   0xE1};
+  Eligible.Entsize = 1;
+  SecSpec Malformed{".rodata.str1.1",
+                    0x10,
+                    2,
+                    SHT_PROGBITS,
+                    SHF_ALLOC | SHF_MERGE | SHF_STRINGS,
+                    0xE2};
+  Malformed.Entsize = 1; // name says alignment 1, header says 2
+  auto Obj = buildSectionedELF(
+      {Eligible, Malformed},
+      {SymSpec{"eligible", 0, 0}, SymSpec{"malformed", 1, 0}}, {}, EM_AARCH64);
+
+  SmallVector<SmallVector<char, 0>, 1> Bufs;
+  Bufs.push_back(std::move(Obj));
+  Options Opts;
+  Opts.mergeSections = true;
+  Opts.androidKernelModule = true;
+  auto [OK, Out] = mergeELF(Bufs, Opts);
+  ASSERT_TRUE(OK);
+
+  ElfView V = parseELF(Out);
+  ASSERT_TRUE(V.Ok);
+  const int FoldedIdx = V.findSec(".rodata");
+  const int RetainedIdx = V.findSec(".rodata.str1.1");
+  ASSERT_GE(FoldedIdx, 0);
+  ASSERT_GE(RetainedIdx, 0);
+  EXPECT_EQ(V.Secs[FoldedIdx].Flags, (uint64_t)SHF_ALLOC);
+  EXPECT_EQ(V.Secs[FoldedIdx].Entsize, 0u);
+  EXPECT_EQ(V.Secs[FoldedIdx].Align, 1u);
+  EXPECT_EQ(V.Secs[RetainedIdx].Flags,
+            (uint64_t)(SHF_ALLOC | SHF_MERGE | SHF_STRINGS));
+  EXPECT_EQ(V.Secs[RetainedIdx].Entsize, 1u);
+  EXPECT_EQ(V.Secs[RetainedIdx].Align, 2u);
+  ASSERT_EQ(V.Secs[FoldedIdx].Data.size(), 0x10u);
+  ASSERT_EQ(V.Secs[RetainedIdx].Data.size(), 0x10u);
+  EXPECT_EQ(V.Secs[FoldedIdx].Data.front(), 0xE1);
+  EXPECT_EQ(V.Secs[RetainedIdx].Data.front(), 0xE2);
+
+  const ParsedSym *FoldedSym = V.findSym("eligible");
+  const ParsedSym *RetainedSym = V.findSym("malformed");
+  ASSERT_NE(FoldedSym, nullptr);
+  ASSERT_NE(RetainedSym, nullptr);
+  EXPECT_EQ(FoldedSym->Shndx, (uint16_t)FoldedIdx);
+  EXPECT_EQ(RetainedSym->Shndx, (uint16_t)RetainedIdx);
+}
+
+TEST(MergeELFSemantic,
+     AndroidKernelModuleFoldedRodataRebasesCrossPartitionRelocation) {
+  using namespace ELF;
+  SecSpec Base{".rodata.base", 0x10, 8, SHT_PROGBITS, SHF_ALLOC, 0xA1};
+  SecSpec String0{".rodata.str1.1",
+                  0x10,
+                  1,
+                  SHT_PROGBITS,
+                  SHF_ALLOC | SHF_MERGE | SHF_STRINGS,
+                  0xB1};
+  String0.Entsize = 1;
+  auto Obj0 = buildSectionedELF({Base, String0},
+                                {SymSpec{"base", 0, 0}, SymSpec{"lit0", 1, 0}},
+                                {}, EM_AARCH64);
+
+  SecSpec Constant{".rodata.cst8",        0x10, 8, SHT_PROGBITS,
+                   SHF_ALLOC | SHF_MERGE, 0xC1};
+  Constant.Entsize = 8;
+  SecSpec String1{".rodata.str1.1",
+                  0x10,
+                  1,
+                  SHT_PROGBITS,
+                  SHF_ALLOC | SHF_MERGE | SHF_STRINGS,
+                  0xD1};
+  String1.Entsize = 1;
+  RelSpec Reference{1, 8, "base", R_AARCH64_ABS64, 4};
+  auto Obj1 = buildSectionedELF(
+      {Constant, String1},
+      {SymSpec{"number", 0, 0}, SymSpec{"lit1", 1, 0}, SymSpec{"base", -1, 0}},
+      {Reference}, EM_AARCH64);
+
+  SmallVector<SmallVector<char, 0>, 2> Bufs;
+  Bufs.push_back(std::move(Obj0));
+  Bufs.push_back(std::move(Obj1));
+  Options Opts;
+  Opts.mergeSections = true;
+  Opts.androidKernelModule = true;
+  auto [OK, Out] = mergeELF(Bufs, Opts);
+  ASSERT_TRUE(OK);
+
+  ElfView V = parseELF(Out);
+  ASSERT_TRUE(V.Ok);
+  const int RodataIdx = V.findSec(".rodata");
+  ASSERT_GE(RodataIdx, 0);
+  EXPECT_EQ(V.Secs[RodataIdx].Size, 0x40u);
+  const ParsedSym *BaseSym = V.findSym("base");
+  const ParsedSym *Lit0 = V.findSym("lit0");
+  const ParsedSym *Number = V.findSym("number");
+  const ParsedSym *Lit1 = V.findSym("lit1");
+  ASSERT_NE(BaseSym, nullptr);
+  ASSERT_NE(Lit0, nullptr);
+  ASSERT_NE(Number, nullptr);
+  ASSERT_NE(Lit1, nullptr);
+  EXPECT_EQ(BaseSym->Value, 0u);
+  EXPECT_EQ(Lit0->Value, 0x10u);
+  EXPECT_EQ(Number->Value, 0x20u);
+  EXPECT_EQ(Lit1->Value, 0x30u);
+  EXPECT_EQ(BaseSym->Shndx, (uint16_t)RodataIdx);
+  EXPECT_EQ(Lit1->Shndx, (uint16_t)RodataIdx);
+
+  ASSERT_EQ(V.Relas.size(), 1u);
+  EXPECT_EQ(V.Relas[0].TargetSec, (uint32_t)RodataIdx);
+  EXPECT_EQ(V.Relas[0].Offset, 0x38u);
+  EXPECT_EQ(V.Relas[0].Type, (uint32_t)R_AARCH64_ABS64);
+  EXPECT_EQ(V.Relas[0].Addend, 4);
+  ASSERT_LT(V.Relas[0].Sym, V.Syms.size());
+  EXPECT_EQ(V.Syms[V.Relas[0].Sym].Name, std::string("base"));
 }
 
 TEST(MergeELFSemantic, DistinctNotesConcatenatedIdenticalDeduped) {
@@ -3097,6 +3495,95 @@ TEST(MergeELFVerify, AndroidKernelModuleRejectsCorruptTagBoundary) {
   EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs),
                            ArrayRef<char>(Out), Format::ELF64LE, Opts, &Err));
   EXPECT_NE(Err.find("__stop_alloc_tags"), std::string::npos) << Err;
+}
+
+TEST(MergeELFVerify, AndroidKernelModuleRejectsMalformedFoldedRodataHeader) {
+  using namespace ELF;
+  SecSpec Regular{".rodata.value", 0x10, 8, SHT_PROGBITS, SHF_ALLOC, 0xA5};
+  SecSpec String{".rodata.str1.1",
+                 0x10,
+                 1,
+                 SHT_PROGBITS,
+                 SHF_ALLOC | SHF_MERGE | SHF_STRINGS,
+                 0xB5};
+  String.Entsize = 1;
+  auto Obj = buildSectionedELF({Regular, String},
+                               {SymSpec{"value", 0, 0}, SymSpec{"lit", 1, 0}},
+                               {}, EM_AARCH64);
+  SmallVector<SmallVector<char, 0>, 1> Bufs;
+  Bufs.push_back(std::move(Obj));
+
+  Options Opts;
+  Opts.mergeSections = true;
+  Opts.androidKernelModule = true;
+  auto [OK, Out] = mergeELF(Bufs, Opts);
+  ASSERT_TRUE(OK);
+  ASSERT_TRUE(patchELFSectionMergeMetadata(
+      Out, ".rodata", SHF_ALLOC | SHF_MERGE | SHF_STRINGS, 1));
+
+  std::string Err;
+  EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs),
+                           ArrayRef<char>(Out), Format::ELF64LE, Opts, &Err));
+  EXPECT_NE(Err.find("folded Android mergeable rodata '.rodata' must be "
+                     "SHT_PROGBITS with SHF_ALLOC and sh_entsize 0"),
+            std::string::npos)
+      << Err;
+}
+
+TEST(MergeELFVerify, AndroidKernelModuleRejectsDuplicateLoadedSectionNames) {
+  using namespace ELF;
+  SecSpec Text{".text", 0x10, 16, SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR,
+               0xA7};
+  SecSpec Data{".data", 0x10, 8, SHT_PROGBITS, SHF_ALLOC | SHF_WRITE, 0xB7};
+  auto Obj = buildSectionedELF({Text, Data}, {}, {}, EM_AARCH64);
+  SmallVector<SmallVector<char, 0>, 1> Bufs;
+  Bufs.push_back(std::move(Obj));
+
+  Options Opts;
+  Opts.mergeSections = true;
+  Opts.androidKernelModule = true;
+  auto [OK, Out] = mergeELF(Bufs, Opts);
+  ASSERT_TRUE(OK);
+  ASSERT_TRUE(patchELFSectionName(Out, ".data", ".text"));
+
+  std::string Err;
+  EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs),
+                           ArrayRef<char>(Out), Format::ELF64LE, Opts, &Err));
+  EXPECT_NE(Err.find("duplicate loaded section name '.text'"),
+            std::string::npos)
+      << Err;
+}
+
+TEST(MergeELFSemantic,
+     AndroidKernelModuleRejectsDuplicateLoadedSectionNamesWithVerifyDisabled) {
+  using namespace ELF;
+  SecSpec ReadOnly{".duplicate", 0x10, 8, SHT_PROGBITS, SHF_ALLOC, 0xA6};
+  SecSpec Writable{".duplicate",          0x10, 8, SHT_PROGBITS,
+                   SHF_ALLOC | SHF_WRITE, 0xB6};
+  auto Obj = buildSectionedELF({ReadOnly, Writable}, {}, {}, EM_AARCH64);
+  SmallVector<SmallVector<char, 0>, 1> Bufs;
+  Bufs.push_back(std::move(Obj));
+
+  Options Opts;
+  Opts.mergeSections = true;
+  Opts.androidKernelModule = true;
+  Opts.verify = false;
+  EXPECT_FALSE(mergeELF(Bufs, Opts).first);
+}
+
+TEST(MergeELFSemantic, AndroidKernelModuleAllowsDuplicateEmptySectionNames) {
+  using namespace ELF;
+  SecSpec ReadOnly{".duplicate", 0, 8, SHT_PROGBITS, SHF_ALLOC};
+  SecSpec Writable{".duplicate", 0, 8, SHT_PROGBITS, SHF_ALLOC | SHF_WRITE};
+  auto Obj = buildSectionedELF({ReadOnly, Writable}, {}, {}, EM_AARCH64);
+  SmallVector<SmallVector<char, 0>, 1> Bufs;
+  Bufs.push_back(std::move(Obj));
+
+  Options Opts;
+  Opts.mergeSections = true;
+  Opts.androidKernelModule = true;
+  Opts.verify = false;
+  EXPECT_TRUE(mergeELF(Bufs, Opts).first);
 }
 
 TEST(MergeELFSemantic, AndroidKernelModuleRejectsConflictingTagBoundaries) {

@@ -107,6 +107,7 @@ struct RawSec {
   uint64_t FileSize = 0;
   uint64_t Offset = 0;
   uint64_t Alignment = 0;
+  uint64_t Entsize = 0;
   uint32_t Link = 0;
   uint32_t Info = 0;
 };
@@ -242,6 +243,7 @@ bool parseRawELF(ArrayRef<char> Buf, RawELF &Out,
     RS.FileSize = SH[I].sh_size;
     RS.Offset = SH[I].sh_offset;
     RS.Alignment = SH[I].sh_addralign;
+    RS.Entsize = SH[I].sh_entsize;
     RS.Link = SH[I].sh_link;
     RS.Info = SH[I].sh_info;
 
@@ -335,14 +337,18 @@ bool parseRawELF(ArrayRef<char> Buf, RawELF &Out,
   return true;
 }
 
-// The merger's section-name canonicalization, via the single shared helper in
-// Common/MergerCommon.h that ELF/MergerELF.cpp's Phase-1 renaming also calls —
-// so the verifier predicts exactly the output section name the merger produced,
-// with no second copy to drift out of sync.
+// The merger's complete section-fold policy, via the single shared helper in
+// Common/MergerCommon.h that ELF/MergerELF.cpp's Phase-1 transform also calls.
+// The verifier therefore predicts the output name and header properties with no
+// second policy copy to drift out of sync.
+detail::ELFSectionFold foldedSection(const RawSec &Sec, const Options &Opts) {
+  return detail::foldELFSection(
+      {Sec.Name, Sec.Type, Sec.Flags, Sec.Entsize, Sec.Alignment},
+      Opts.mergeSections, Opts.androidKernelModule, Opts.preservedSections);
+}
+
 StringRef mergedSectionName(const RawSec &Sec, const Options &Opts) {
-  return detail::canonicalELFSectionName(
-      Sec.Name, Sec.Flags, Opts.mergeSections, Opts.androidKernelModule,
-      Opts.preservedSections);
+  return foldedSection(Sec, Opts).Name;
 }
 
 // Sections the merger does not fold into the output as addressable content
@@ -441,8 +447,14 @@ bool verifyAndroidKernelModuleContract(const RawELF &Out,
   unsigned SymbolTableCount = 0;
   unsigned SymbolStringTableCount = 0;
   unsigned AllocTagsIndex = 0;
+  StringSet<> LoadedSectionNames;
   for (unsigned I = 0; I < Out.Secs.size(); ++I) {
     const RawSec &S = Out.Secs[I];
+    // Same !sect_empty() uniqueness contract as the producer guard.
+    if (detail::isLoadedELFModuleSection(S.Flags, S.Size) &&
+        !LoadedSectionNames.insert(S.Name).second)
+      return fail(Err, "verify: duplicate loaded section name '" + S.Name +
+                           "' in Android kernel module output");
     if (S.Type == SHT_SYMTAB) {
       SymbolTable = &S;
       ++SymbolTableCount;
@@ -929,6 +941,9 @@ bool verifyMergeELFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
   DenseMap<unsigned, SmallVector<OutSecRange, 0>> SecRanges;
   std::set<std::string> CoalescibleDecidable;
   std::set<std::string> CoalescibleMatched;
+  StringMap<SmallVector<unsigned, 2>> OutSectionsByName;
+  for (unsigned I = 0; I < Out.Secs.size(); ++I)
+    OutSectionsByName[Out.Secs[I].Name].push_back(I);
 
   for (unsigned p = 0; p < Inputs.size(); ++p) {
     if (Inputs[p].empty())
@@ -950,6 +965,31 @@ bool verifyMergeELFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
                            " does not match input partition " + Twine(p) +
                            " e_machine " + Twine(In.Machine) +
                            " (mixed architectures or wrong output header)");
+
+    // Name routing alone cannot prove that an Android mergeable pool was
+    // actually demoted.  Audit the independently parsed output header for each
+    // eligible input contribution; a malformed same-named input is classified
+    // as Kind::None and remains free to occupy its own original section.
+    for (const RawSec &InputSection : In.Secs) {
+      const detail::ELFSectionFold Expected = foldedSection(InputSection, Opts);
+      if (Expected.Kind != detail::ELFSectionFoldKind::AndroidMergeableRodata)
+        continue;
+      unsigned MatchingHeaders = 0;
+      auto It = OutSectionsByName.find(Expected.Name);
+      if (It != OutSectionsByName.end())
+        for (unsigned OutputIndex : It->second) {
+          const RawSec &OutputSection = Out.Secs[OutputIndex];
+          if (OutputSection.Type == Expected.Type &&
+              OutputSection.Flags == Expected.Flags &&
+              OutputSection.Entsize == Expected.Entsize)
+            ++MatchingHeaders;
+        }
+      if (MatchingHeaders != 1)
+        return fail(Err, "verify: folded Android mergeable rodata '" +
+                             Expected.Name +
+                             "' must be SHT_PROGBITS with SHF_ALLOC and "
+                             "sh_entsize 0");
+    }
 
     // Accumulate this input's SHF_LINK_ORDER relocation counts per merged
     // section name (the count half of the conservation check above).
