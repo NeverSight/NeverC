@@ -109,7 +109,8 @@ static inline void nc_evloop_destroy(nc_evloop_t *loop) {
     free(loop);
 }
 
-static inline int nc_evloop_wakeup(nc_evloop_t *loop) {
+/* The pending lock serializes wakeup delivery with the terminal drain. */
+static inline int nc_evloop_wakeup_locked(nc_evloop_t *loop) {
     if (!loop || !loop->poller) return -1;
     if (!nc_atomic_cas(&loop->wakeup_pending, 0, 1))
         return 0;
@@ -142,10 +143,13 @@ static inline int nc_evloop_wakeup(nc_evloop_t *loop) {
 
 static inline int nc_evloop_stop(nc_evloop_t *loop) {
     if (!loop) return -1;
+    int result = 0;
     nc_mutex_lock(&loop->pending_lock);
     nc_atomic_store(&loop->stop_requested, 1);
+    if (nc_atomic_load(&loop->running))
+        result = nc_evloop_wakeup_locked(loop);
     nc_mutex_unlock(&loop->pending_lock);
-    return nc_evloop_wakeup(loop);
+    return result;
 }
 
 static inline int nc_evloop_post(nc_evloop_t *loop, nc_task_func_t func,
@@ -175,13 +179,15 @@ static inline int nc_evloop_post(nc_evloop_t *loop, nc_task_func_t func,
     loop->pending[loop->pending_count].func = func;
     loop->pending[loop->pending_count].arg = arg;
     loop->pending_count++;
-    nc_mutex_unlock(&loop->pending_lock);
 
     /*
      * Ownership transfers when the task is enqueued. Wakeup failure cannot
      * safely roll that transfer back because the loop may already dispatch it.
+     * Keep the lock through delivery so loop shutdown cannot drain first and
+     * then leave a late wakeup behind.
      */
-    (void)nc_evloop_wakeup(loop);
+    (void)nc_evloop_wakeup_locked(loop);
+    nc_mutex_unlock(&loop->pending_lock);
     return 0;
 }
 
@@ -215,6 +221,41 @@ static inline void nc_evloop_drain_wakeup(nc_evloop_t *loop) {
     (void)loop;
 #endif
     nc_atomic_store(&loop->wakeup_pending, 0);
+}
+
+static inline void nc_evloop_finish_run(nc_evloop_t *loop) {
+    /*
+     * A task accepted before stop owns its callback and must be dispatched.
+     * Once stop_requested is visible, post rejects new work, so draining the
+     * queue outside the lock is safe and cannot race another accepted post.
+     */
+    for (;;) {
+        nc_mutex_lock(&loop->pending_lock);
+        if (nc_atomic_load(&loop->stop_requested) &&
+            loop->pending_count > 0) {
+            nc_mutex_unlock(&loop->pending_lock);
+            nc_evloop_dispatch_pending(loop);
+            continue;
+        }
+
+        /*
+         * Stop/post hold pending_lock while delivering wakeups. Clear the
+         * signal and publish running=0 together, so no producer can write
+         * after the final drain and an inactive stop remains quiescent.
+         */
+        nc_evloop_drain_wakeup(loop);
+        nc_atomic_store(&loop->running, 0);
+
+        /*
+         * A deadline/error exit may race a successful post. Preserve its wake
+         * for a later run instead of draining the signal and stranding work.
+         */
+        if (!nc_atomic_load(&loop->stop_requested) &&
+            loop->pending_count > 0)
+            (void)nc_evloop_wakeup_locked(loop);
+        nc_mutex_unlock(&loop->pending_lock);
+        return;
+    }
 }
 
 typedef void (*nc_evloop_event_handler_t)(nc_evloop_t *loop,
@@ -291,13 +332,7 @@ static inline int nc_evloop_run_until(
         }
     }
 
-#ifndef _WIN32
-    if (nc_atomic_load(&loop->wakeup_pending))
-        nc_evloop_drain_wakeup(loop);
-#else
-    nc_atomic_store(&loop->wakeup_pending, 0);
-#endif
-    nc_atomic_store(&loop->running, 0);
+    nc_evloop_finish_run(loop);
     return result;
 }
 

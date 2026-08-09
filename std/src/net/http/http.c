@@ -3057,13 +3057,7 @@ static void *worker_thread_func(void *arg) {
             last_sweep = now;
         }
     }
-#ifndef _WIN32
-    if (nc_atomic_load(&loop->wakeup_pending))
-        nc_evloop_drain_wakeup(loop);
-#else
-    nc_atomic_store(&loop->wakeup_pending, 0);
-#endif
-    nc_atomic_store(&loop->running, 0);
+    nc_evloop_finish_run(loop);
     return NULL;
 }
 

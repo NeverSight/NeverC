@@ -511,6 +511,13 @@ static void evloop_count_task(void *arg) {
     evloop_task_count++;
 }
 
+static void evloop_post_then_stop_task(void *arg) {
+    nc_evloop_t *loop = (nc_evloop_t *)arg;
+    if (nc_evloop_post(loop, evloop_count_task, NULL) != 0)
+        nc_atomic_store(&evloop_post_failed, 1);
+    nc_evloop_stop(loop);
+}
+
 typedef struct {
     nc_evloop_t *loop;
     int count;
@@ -565,6 +572,10 @@ static void test_evloop(void) {
     check_int("evloop cancellation result", evloop_run_result,
               NC_EVLOOP_CANCELLED);
 
+    check_int("inactive evloop stop succeeds", nc_evloop_stop(loop), 0);
+    check_int("inactive evloop stop stays quiescent",
+              nc_atomic_load(&loop->wakeup_pending), 0);
+
 #ifndef _WIN32
     char byte;
     errno = 0;
@@ -574,6 +585,40 @@ static void test_evloop(void) {
                (errno == EAGAIN || errno == EWOULDBLOCK));
 #endif
     nc_evloop_destroy(loop);
+
+    loop = nc_evloop_create();
+    check_true("evloop post-before-stop created", loop != NULL);
+    if (loop) {
+        evloop_task_count = 0;
+        evloop_post_failed = 0;
+        evloop_run_result = NC_EVLOOP_ERROR;
+        check_int("evloop post-before-stop thread started",
+                  nc_thread_create(&loop_thread, evloop_thread, loop), 0);
+        check_int("post-before-stop task accepted",
+                  nc_evloop_post(loop, evloop_post_then_stop_task, loop), 0);
+        nc_thread_join(loop_thread);
+        check_int("nested task accepted before stop", evloop_post_failed, 0);
+        check_int("nested task drained before stop", evloop_task_count, 1);
+        check_int("post-before-stop cancellation result", evloop_run_result,
+                  NC_EVLOOP_CANCELLED);
+        nc_evloop_destroy(loop);
+    }
+
+    loop = nc_evloop_create();
+    check_true("evloop terminal-post created", loop != NULL);
+    if (loop) {
+        evloop_task_count = 0;
+        nc_atomic_store(&loop->running, 1);
+        check_int("terminal post accepted",
+                  nc_evloop_post(loop, evloop_count_task, NULL), 0);
+        nc_evloop_finish_run(loop);
+        check_int("terminal post keeps wakeup armed",
+                  nc_atomic_load(&loop->wakeup_pending), 1);
+        check_int("terminal post rerun reaches deadline",
+                  nc_evloop_run_for(loop, NULL, 20), NC_EVLOOP_DEADLINE);
+        check_int("terminal post executes on rerun", evloop_task_count, 1);
+        nc_evloop_destroy(loop);
+    }
 
     loop = nc_evloop_create();
     check_true("deadline evloop created", loop != NULL);
