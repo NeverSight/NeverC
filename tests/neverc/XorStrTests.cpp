@@ -103,7 +103,10 @@ TEST_F(XorStrTest, Codegen_IntermediateKeepsOpaqueDecoder) {
   const size_t DecoderEnd = ir.find("\n}", DecoderName);
   ASSERT_NE(DecoderEnd, std::string::npos);
   const std::string Decoder = ir.substr(DecoderName, DecoderEnd - DecoderName);
-  EXPECT_NE(Decoder.find("load volatile"), std::string::npos)
+  const bool HasVolatileLoad =
+      Decoder.find("load volatile") != std::string::npos ||
+      Decoder.find("load atomic volatile") != std::string::npos;
+  EXPECT_TRUE(HasVolatileLoad)
       << "ordinary optimization must not specialize decoder inputs\n"
       << Decoder;
 }
