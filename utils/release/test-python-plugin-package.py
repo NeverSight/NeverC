@@ -14,6 +14,8 @@ import sys
 import tempfile
 import time
 import zipfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Mapping
 
@@ -58,6 +60,11 @@ HIDDEN_ENVIRONMENT = {
     "DYLD_FRAMEWORK_PATH", "DYLD_FALLBACK_FRAMEWORK_PATH", "pythonLocation",
     "Python_ROOT_DIR",
 }
+# ERROR_ACCESS_DENIED and ERROR_SHARING_VIOLATION. Both are emitted by
+# shutil.rmtree while a scanner or another process temporarily holds a file.
+WINDOWS_TRANSIENT_DELETE_ERRORS = frozenset((5, 32))
+WINDOWS_DELETE_RETRY_ATTEMPTS = 12
+WINDOWS_DELETE_RETRY_DELAY_SECONDS = 0.25
 
 
 def fail(message: str) -> None:
@@ -269,8 +276,10 @@ def safe_extract(archive: Path, destination: Path) -> None:
 
 def run_plugin_probe(prefix: Path, executable: Path) -> None:
     environment = environment_for_neverc(executable)
-    with tempfile.TemporaryDirectory(prefix="neverc-python-package-probe-") as temporary:
-        work = Path(temporary)
+    with managed_temporary_directory(
+        prefix="neverc-python-package-probe-",
+        ignore_transient_cleanup_errors=True,
+    ) as work:
         plugin = work / "probe.py"
         source = work / "probe.c"
         plugin.write_text(PROBE_PLUGIN, encoding="utf-8")
@@ -303,8 +312,10 @@ def run_ollvm_probe(prefix: Path, executable: Path) -> None:
     sdk = check_python_sdk(prefix)
     plugin = sdk / "examples" / "ollvm" / "ollvm_plugin.py"
     environment = environment_for_neverc(executable)
-    with tempfile.TemporaryDirectory(prefix="neverc-python-ollvm-probe-") as temporary:
-        work = Path(temporary)
+    with managed_temporary_directory(
+        prefix="neverc-python-ollvm-probe-",
+        ignore_transient_cleanup_errors=True,
+    ) as work:
         source = work / "ollvm_probe.c"
         source.write_text(OLLVM_PROBE_SOURCE, encoding="utf-8")
 
@@ -348,6 +359,73 @@ def verify_prefix(prefix: Path) -> None:
     run_ollvm_probe(prefix, executable)
 
 
+def remove_tree_with_retries(
+    path: Path, attempts: int = WINDOWS_DELETE_RETRY_ATTEMPTS
+) -> None:
+    """Remove a tree, retrying transient Windows access and sharing failures."""
+    if attempts < 1:
+        raise ValueError("attempts must be positive")
+    for attempt in range(attempts):
+        try:
+            shutil.rmtree(path)
+            return
+        except OSError as error:
+            winerror = getattr(error, "winerror", None)
+            final_attempt = attempt + 1 == attempts
+            if (
+                os.name != "nt"
+                or winerror not in WINDOWS_TRANSIENT_DELETE_ERRORS
+                or final_attempt
+            ):
+                raise
+            time.sleep(WINDOWS_DELETE_RETRY_DELAY_SECONDS * (attempt + 1))
+
+
+@contextmanager
+def managed_temporary_directory(
+    *, prefix: str, ignore_transient_cleanup_errors: bool = False
+) -> Iterator[Path]:
+    """Create a temporary tree with explicit cleanup-failure semantics.
+
+    Cleanup never masks an exception raised by the body.  Callers may also
+    downgrade an exhausted Windows sharing/access violation to a warning when
+    cleanup is ancillary to their successful result.
+    """
+    path = Path(tempfile.mkdtemp(prefix=prefix))
+    body_error: BaseException | None = None
+    try:
+        yield path
+    except BaseException as error:
+        body_error = error
+        raise
+    finally:
+        try:
+            remove_tree_with_retries(path)
+        except OSError as cleanup_error:
+            transient_windows_lock = (
+                os.name == "nt"
+                and getattr(cleanup_error, "winerror", None)
+                in WINDOWS_TRANSIENT_DELETE_ERRORS
+            )
+            if body_error is not None:
+                detail = (
+                    "temporary-directory cleanup also failed; preserving the "
+                    f"original error: {path} ({cleanup_error})"
+                )
+                if hasattr(body_error, "add_note"):
+                    body_error.add_note(detail)
+                fail(f"warning: {detail}")
+            elif ignore_transient_cleanup_errors and transient_windows_lock:
+                fail(
+                    "warning: operation succeeded, but Windows kept the "
+                    "temporary directory locked; leaving it for runner/OS cleanup: "
+                    f"{path} after {WINDOWS_DELETE_RETRY_ATTEMPTS} attempts "
+                    f"({cleanup_error})"
+                )
+            else:
+                raise
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     source = parser.add_mutually_exclusive_group(required=True)
@@ -359,8 +437,10 @@ def main() -> int:
             verify_prefix(arguments.prefix.resolve())
         else:
             archive = arguments.archive.resolve()
-            with tempfile.TemporaryDirectory(prefix="neverc-python-package-") as temporary:
-                root = Path(temporary)
+            with managed_temporary_directory(
+                prefix="neverc-python-package-",
+                ignore_transient_cleanup_errors=True,
+            ) as root:
                 safe_extract(archive, root)
                 verify_prefix(root)
     except (OSError, RuntimeError, ValueError, zipfile.BadZipFile) as error:

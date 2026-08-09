@@ -1911,6 +1911,12 @@ gtest_discover_tests(neverc-plugin-io-tests
 
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 add_test(
+  NAME PythonPluginPackageVerifierUnitTests
+  COMMAND ${Python3_EXECUTABLE}
+          ${CMAKE_CURRENT_SOURCE_DIR}/../../utils/release/test-python-plugin-package-unit.py
+          -v
+)
+add_test(
   NAME PluginPhaseSchemaGeneratorTests
   COMMAND ${Python3_EXECUTABLE}
           ${CMAKE_CURRENT_SOURCE_DIR}/PluginPhaseSchemaGeneratorTests.py
@@ -2039,6 +2045,7 @@ add_test(
           ${CMAKE_CURRENT_SOURCE_DIR}/../../utils/plugin-api/check-docs-facts.py
 )
 set_tests_properties(
+  PythonPluginPackageVerifierUnitTests
   PluginPhaseSchemaGeneratorTests
   PluginPrepSchemaGeneratorTests
   PluginPythonPhaseBindings
