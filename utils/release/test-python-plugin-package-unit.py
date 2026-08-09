@@ -78,7 +78,8 @@ class PythonPluginPackageTest(unittest.TestCase):
             install = root / "install"
             (install / "bin").mkdir(parents=True)
             (install / "pluginsdk" / "python").mkdir(parents=True)
-            (install / "bin" / "neverc").write_bytes(b"")
+            executable = "neverc.exe" if os.name == "nt" else "neverc"
+            (install / "bin" / executable).write_bytes(b"")
             self.assertEqual(self.module.find_prefix(root), install.resolve())
             self.assertEqual(self.module.find_prefix(install), install.resolve())
 

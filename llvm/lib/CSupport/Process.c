@@ -545,7 +545,6 @@ int csupport_fd_open(const char *filename, size_t filename_len,
                      csupport_creation_disposition_t create_disp,
                      csupport_file_access_t access,
                      csupport_open_flags_t flags, int *err_out) {
-  (void)filename_len;
   int oflags = 0;
   if ((access & CSUPPORT_FA_READ) && (access & CSUPPORT_FA_WRITE))
     oflags = _O_RDWR;
@@ -589,9 +588,47 @@ int csupport_fd_open(const char *filename, size_t filename_len,
   if (!(flags & CSUPPORT_OF_CHILD_INHERIT))
     oflags |= _O_NOINHERIT;
 
-  int fd = _open(filename, oflags, _S_IREAD | _S_IWRITE);
+  /* LLVM paths are UTF-8. The narrow CRT _open() interprets its argument in
+     the active Windows code page, which can silently create a mojibake file
+     instead of the requested non-ASCII path. Convert the complete byte span
+     explicitly and use the wide CRT entry point. */
+  if (filename_len > INT_MAX ||
+      memchr(filename, '\0', filename_len) != NULL) {
+    if (err_out) *err_out = EINVAL;
+    return -1;
+  }
+
+  int wide_len = 0;
+  if (filename_len != 0) {
+    wide_len = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, filename,
+                                   (int)filename_len, NULL, 0);
+    if (wide_len == 0) {
+      if (err_out) *err_out = EINVAL;
+      return -1;
+    }
+  }
+
+  wchar_t *wide_filename =
+      (wchar_t *)malloc(((size_t)wide_len + 1) * sizeof(wchar_t));
+  if (!wide_filename) {
+    if (err_out) *err_out = ENOMEM;
+    return -1;
+  }
+  if (wide_len != 0 &&
+      MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, filename,
+                          (int)filename_len, wide_filename, wide_len) !=
+          wide_len) {
+    free(wide_filename);
+    if (err_out) *err_out = EINVAL;
+    return -1;
+  }
+  wide_filename[wide_len] = L'\0';
+
+  int fd = _wopen(wide_filename, oflags, _S_IREAD | _S_IWRITE);
+  int open_error = errno;
+  free(wide_filename);
   if (fd < 0) {
-    if (err_out) *err_out = errno;
+    if (err_out) *err_out = open_error;
     return -1;
   }
   if (err_out) *err_out = 0;
