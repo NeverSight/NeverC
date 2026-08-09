@@ -11,7 +11,9 @@
 #include "neverc/Build/VariableEnv.h"
 
 #include "llvm/Support/FileSystem.h"
+#include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <fstream>
 #ifndef _WIN32
@@ -1370,9 +1372,22 @@ protected:
   }
 
   void writeFile(llvm::StringRef Name, llvm::StringRef Contents = "x") const {
-    std::ofstream Out(pathInDir(Name));
-    ASSERT_TRUE(Out.good());
-    Out << Contents.str();
+    // LLVM's file APIs widen UTF-8 paths on Windows. The binary flag also
+    // preserves fixtures that intentionally embed CRLF or bare LF bytes.
+    std::error_code EC;
+    llvm::raw_fd_ostream Out(pathInDir(Name), EC, llvm::sys::fs::OF_None);
+    ASSERT_FALSE(EC) << EC.message();
+    Out.write(Contents.data(), Contents.size());
+    Out.close();
+    ASSERT_FALSE(Out.has_error());
+  }
+
+  static std::string readFileBinary(llvm::StringRef Path) {
+    auto Buffer = llvm::MemoryBuffer::getFile(Path, /*IsText=*/false);
+    EXPECT_TRUE(Buffer) << Buffer.getError().message();
+    if (!Buffer)
+      return {};
+    return Buffer.get()->getBuffer().str();
   }
 
   llvm::SmallString<256> Dir;
@@ -1565,6 +1580,60 @@ TEST_F(BuildBuiltinCommandTest, TouchCreatesAndUpdates) {
   EXPECT_TRUE(platform::fileExists(Path));
   ASSERT_TRUE(builtins::tryExecute("touch " + Path, Exit));
   EXPECT_EQ(Exit, 0);
+}
+
+TEST_F(BuildBuiltinCommandTest, FileBuiltinsSupportMultilingualUtf8Paths) {
+  struct LocaleCase {
+    const char *Locale;
+    const char *Stem;
+    const char *Contents;
+  };
+  // Cover every locale maintained under docs; the non-BMP emoji case also
+  // exercises UTF-8/UTF-16 surrogate conversion on Windows.
+  const LocaleCase Cases[] = {
+      {"en", u8"english", u8"Hello, world\n"},
+      {"zh-CN", u8"\u7B80\u4F53\u4E2D\u6587",
+       u8"\u4F60\u597D\uFF0C\u4E16\u754C\n"},
+      {"zh-TW", u8"\u7E41\u9AD4\u4E2D\u6587",
+       u8"\u4F60\u597D\uFF0C\u4E16\u754C\n"},
+      {"ja", u8"\u65E5\u672C\u8A9E",
+       u8"\u3053\u3093\u306B\u3061\u306F\u4E16\u754C\n"},
+      {"ko", u8"\uD55C\uAD6D\uC5B4",
+       u8"\uC548\uB155\uD558\uC138\uC694, \uC138\uACC4\n"},
+      {"fr", u8"fran\u00E7ais", u8"Bonjour le monde\n"},
+      {"de", u8"gr\u00F6\u00DFe", u8"Hallo Welt\n"},
+      {"es", u8"espa\u00F1ol", u8"Hola, mundo\n"},
+      {"it", u8"citt\u00E0-italiana", u8"Ciao, mondo\n"},
+      {"ru", u8"\u0440\u0443\u0441\u0441\u043A\u0438\u0439",
+       u8"\u041F\u0440\u0438\u0432\u0435\u0442, \u043C\u0438\u0440\n"},
+      {"ar", u8"\u0627\u0644\u0639\u0631\u0628\u064A\u0629",
+       u8"\u0645\u0631\u062D\u0628\u064B\u0627 "
+       u8"\u0628\u0627\u0644\u0639\u0627\u0644\u0645\n"},
+      {"emoji", u8"\u5168\u7403-\U0001F30D", u8"\U0001F30D\U0001F600\n"},
+  };
+
+  for (const LocaleCase &Case : Cases) {
+    SCOPED_TRACE(Case.Locale);
+    const std::string SourceName = std::string(Case.Stem) + "-source.txt";
+    const std::string CopyName = std::string(Case.Stem) + "-copy.txt";
+    const std::string Source = pathInDir(SourceName);
+    const std::string Copy = pathInDir(CopyName);
+    writeFile(SourceName, Case.Contents);
+
+    int Exit = -1;
+    ASSERT_TRUE(builtins::tryExecute("touch '" + Source + "'", Exit));
+    ASSERT_EQ(Exit, 0);
+    ASSERT_TRUE(
+        builtins::tryExecute("cp -p '" + Source + "' '" + Copy + "'", Exit));
+    ASSERT_EQ(Exit, 0);
+    EXPECT_EQ(readFileBinary(Copy), Case.Contents);
+
+    ASSERT_TRUE(
+        builtins::tryExecute("rm -f '" + Source + "' '" + Copy + "'", Exit));
+    ASSERT_EQ(Exit, 0);
+    EXPECT_FALSE(platform::fileExists(Source));
+    EXPECT_FALSE(platform::fileExists(Copy));
+  }
 }
 
 TEST_F(BuildBuiltinCommandTest, RmRecursiveGlobRemovesDirectories) {
@@ -2326,20 +2395,10 @@ TEST_F(BuildBuiltinCommandTest, Dos2UnixUnix2DosAndShuf) {
   int Exit = -1;
   ASSERT_TRUE(builtins::tryExecute("dos2unix " + Crlf, Exit));
   EXPECT_EQ(Exit, 0);
-  {
-    std::ifstream In(Crlf);
-    std::string Body((std::istreambuf_iterator<char>(In)),
-                     std::istreambuf_iterator<char>());
-    EXPECT_EQ(Body, "a\nb\n");
-  }
+  EXPECT_EQ(readFileBinary(Crlf), "a\nb\n");
   ASSERT_TRUE(builtins::tryExecute("unix2dos " + Crlf, Exit));
   EXPECT_EQ(Exit, 0);
-  {
-    std::ifstream In(Crlf);
-    std::string Body((std::istreambuf_iterator<char>(In)),
-                     std::istreambuf_iterator<char>());
-    EXPECT_EQ(Body, "a\r\nb\r\n");
-  }
+  EXPECT_EQ(readFileBinary(Crlf), "a\r\nb\r\n");
   ASSERT_TRUE(builtins::tryExecute("shuf " + Shuf, Exit));
   EXPECT_EQ(Exit, 0);
 }
@@ -2728,11 +2787,7 @@ TEST_F(BuildBuiltinCommandTest, SedSubstituteAndInPlace) {
 
   ASSERT_TRUE(builtins::tryExecute("sed -i 's/world/earth/' " + Path, Exit));
   EXPECT_EQ(Exit, 0);
-  {
-    std::ifstream In(Path);
-    std::string Body((std::istreambuf_iterator<char>(In)), {});
-    EXPECT_EQ(Body, "hello earth\nhello neverc\n");
-  }
+  EXPECT_EQ(readFileBinary(Path), "hello earth\nhello neverc\n");
 
   // Backrefs are intentionally left to the host sed.
   EXPECT_FALSE(builtins::tryExecute("sed 's/h\\(e\\)llo/H\\1/' " + Path, Exit));

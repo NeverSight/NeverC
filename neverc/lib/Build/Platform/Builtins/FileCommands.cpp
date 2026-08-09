@@ -10,11 +10,18 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/raw_ostream.h"
+#ifdef _WIN32
+#ifndef NOGDI
+#define NOGDI
+#endif
+#include "llvm/Support/Windows/WindowsSupport.h"
+#endif
 
 #include <cerrno>
 #include <chrono>
-#include <cstring>
+#include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <limits>
 #include <string>
 #include <vector>
@@ -209,6 +216,49 @@ bool isDotOrDotDotOperand(llvm::StringRef Path) {
   return Name == "." || Name == "..";
 }
 
+bool forceIgnoresStatusError(llvm::StringRef Path, std::error_code EC) {
+  if (EC == llvm::errc::no_such_file_or_directory)
+    return true;
+#ifdef _WIN32
+  // A quoted wildcard is a literal operand. Windows rejects names such as
+  // "*.o" before lookup, which is equivalent to "not found" for `rm -f`.
+  return EC == llvm::errc::invalid_argument && hasGlobMeta(Path);
+#else
+  (void)Path;
+  return false;
+#endif
+}
+
+/// Open \p Path so SetFileTime / futimens can update stamps.  On Windows a
+/// read-only handle is not enough (permission denied), and directories need
+/// FILE_FLAG_BACKUP_SEMANTICS.
+std::error_code openPathForTimestampUpdate(llvm::StringRef Path, int &FD) {
+  FD = -1;
+#ifndef _WIN32
+  const std::string PathStr = Path.str();
+  FD = ::open(PathStr.c_str(), O_RDONLY);
+  if (FD < 0)
+    return std::error_code(errno, std::generic_category());
+  return {};
+#else
+  llvm::SmallVector<wchar_t, 256> Wide;
+  if (std::error_code EC = llvm::sys::windows::widenPath(Path, Wide))
+    return EC;
+  const DWORD Access = FILE_WRITE_ATTRIBUTES;
+  const DWORD Share = FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE;
+  const DWORD Flags = FILE_FLAG_BACKUP_SEMANTICS;
+  HANDLE Handle = ::CreateFileW(Wide.data(), Access, Share, nullptr,
+                                OPEN_EXISTING, Flags, nullptr);
+  if (Handle == INVALID_HANDLE_VALUE)
+    return llvm::mapWindowsError(::GetLastError());
+  FD = ::_open_osfhandle(reinterpret_cast<intptr_t>(Handle), 0);
+  if (FD < 0) {
+    ::CloseHandle(Handle);
+    return std::error_code(errno, std::generic_category());
+  }
+  return {};
+#endif
+}
 
 bool removePath(llvm::StringRef Path, bool Force, bool Recursive,
                 std::string &Error) {
@@ -237,7 +287,7 @@ bool removePath(llvm::StringRef Path, bool Force, bool Recursive,
   std::error_code EC =
       llvm::sys::fs::status(Path, Status, /*follow=*/false);
   if (EC) {
-    if (Force && EC == llvm::errc::no_such_file_or_directory)
+    if (Force && forceIgnoresStatusError(Path, EC))
       return true;
     Error = (Path + ": " + EC.message()).str();
     return false;
@@ -500,16 +550,11 @@ bool tryExecuteTouch(llvm::ArrayRef<Token> Argv, int &ExitCode) {
     int FD = -1;
     std::error_code EC;
     bool Existed = llvm::sys::fs::exists(Path);
-    // Existing directories cannot be opened for write; POSIX touch still updates
-    // their timestamps. Prefer a read-only fd when the path already exists.
+    // Existing paths (files or directories) cannot always be opened for content
+    // write; POSIX touch still updates their timestamps.  Open with the
+    // attributes needed for SetFileTime/futimens.
     if (Existed) {
-#ifndef _WIN32
-      FD = ::open(Path.c_str(), O_RDONLY);
-      if (FD < 0)
-        EC = std::error_code(errno, std::generic_category());
-#else
-      EC = llvm::sys::fs::openFileForRead(Path, FD);
-#endif
+      EC = openPathForTimestampUpdate(Path, FD);
     } else if (NoCreate) {
       continue; // POSIX touch -c: missing files are a successful no-op
     } else {
@@ -560,7 +605,7 @@ std::error_code preserveTimestamps(llvm::StringRef From, llvm::StringRef To) {
           llvm::sys::fs::status(From, Status, /*follow=*/true))
     return EC;
   int FD = -1;
-  std::error_code EC = llvm::sys::fs::openFileForRead(To, FD);
+  std::error_code EC = openPathForTimestampUpdate(To, FD);
   if (EC)
     return EC;
   EC = llvm::sys::fs::setLastAccessAndModificationTime(
