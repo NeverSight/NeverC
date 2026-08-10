@@ -47,7 +47,7 @@ C is already the simplest systems language. NeverC makes it even simpler:
 
 - **[DynCode compiler](docs/dyncode-compiler/README.md)** — multi-stage IR/MIR pipeline, cross-platform extraction, import/syscall lowering, kernel-mode support, bad-byte auditing, and a plugin architecture
 - **Integrated linker** — COFF, ELF, and Mach-O in one binary; no external `ld` or `link.exe`
-- **[Release stripping](docs/release-builds/README.md)** — built-in `--strip` / `-s` removes non-runtime symbols and source-level debug information from final ELF, Mach-O, and PE/COFF images
+- **[Release stripping](docs/release-builds/README.md)** — built-in `--strip` / `-s` removes non-runtime symbols and source-level debug information, including kernel-aware `.ko` symbol pseudonymization
 - **Cross-compilation** — build Windows PE, Linux ELF, macOS Mach-O, and Android ELF from any host with bundled platform SDKs
 - **[Built-in runtimes](docs/builtins/README.md)** — LLVM bitcode runtimes embedded in the compiler: [`string`](docs/builtins/string/README.md) (value-semantic string with dot-call methods and automatic memory management), [`mimalloc`](docs/builtins/mimalloc/README.md) (transparent high-performance allocator override, on by default outside kernel and freestanding targets), [`xorstr`](docs/builtins/xorstr/README.md) (per-instance compile-time encryption with mandatory late sealing and per-call native expansion), and [`strhash`](docs/builtins/strhash/README.md) (compile-time string hashing with matching runtime)
 - **[Plugin API](docs/plugin-api/README.md)** — pure C ABI for out-of-tree plugins; single-header SDK with zero LLVM/CRT dependencies, spanning driver, preprocessor, AST, IR, MIR, MC, object, link, LTO, and dyncode phases

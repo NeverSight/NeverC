@@ -104,7 +104,7 @@ Comandos orientados al usuario más allá de una compilación individual.
 | [`neverc update`](update/README.es.md) | Subir o bajar una instalación release (compilador + runtimes instalados en una etiqueta) |
 | [`neverc runtime`](runtime/README.es.md) | Instalar, listar, actualizar o quitar sysroots de cross-compilación |
 | [`neverc build` / `neverc make`](build/README.es.md) | Controlador compatible con GNU Make para Makefiles de ejemplos y proyectos |
-| [Binarios de publicación y `--strip`](release-builds/README.es.md) | Eliminar símbolos no necesarios en ejecución y depuración fuente de imágenes ELF, Mach-O y PE/COFF finales |
+| [Binarios de publicación y `--strip`](release-builds/README.es.md) | Eliminar símbolos no necesarios y debug fuente, con seudonimización `.ko` consciente del kernel |
 
 ---
 

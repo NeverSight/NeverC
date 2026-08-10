@@ -5,7 +5,7 @@
 # Binari di rilascio e `--strip`
 
 Usa `--strip` per produrre un eseguibile, una libreria condivisa o un modulo
-kernel Android finale da distribuire. L'alias breve è `-s`; le due forme hanno
+kernel Android finale da distribuire. La forma breve è `-s`; le due forme hanno
 lo stesso comportamento.
 
 ## Avvio rapido
@@ -56,7 +56,7 @@ nomi e record richiesti dal loader o dall'ABI dinamica.
 | Formato | Rimosso | Conservato quando necessario |
 |---------|---------|------------------------------|
 | ELF | Dati `.debug*` e normali tabelle statiche di simboli/stringhe | Import/export dinamici, metadati di rilocazione e loader, informazioni di unwinding |
-| Kernel Android `.ko` (ELF ET_REL) | `.debug*`, `.comment` e simboli locali/non definiti non richiesti dalle rilocazioni conservate | Un `.symtab` collegato a `.strtab`, tutte le rilocazioni e i target, definizioni globali, import, `__versions`, `.codetag.alloc_tags`, ABI del modulo |
+| Kernel Android `.ko` (ELF ET_REL) | `.debug*`, `.comment`, voci locali/non definite inutili alle rilocazioni e nomi leggibili delle normali definizioni conservate | Un `.symtab` collegato a `.strtab`, tutte le rilocazioni e i target, nomi esatti di loader/CFI, import esatti, nomi nelle sezioni protette e metadati ABI del modulo |
 | Mach-O | Mappe debug/STABS, voci locali/globali non necessarie a runtime e generazione del `.dSYM` associato | Dati di binding/import, nomi ABI esportati, export trie, simboli referenziati a runtime |
 | PE/COFF | Sezioni DWARF incorporate e tabella statica COFF di simboli/stringhe se presente | Import/export PE, tabelle di unwinding, configurazione di caricamento e altri metadati loader |
 
@@ -78,23 +78,122 @@ rifiuta strip-all. NeverC accetta `-r --strip` solo per un target Android con
 `-fandroid-kernel-driver-mode`, `-r` e un nome di output che termina in `.ko`.
 Il normale `-r` e gli `.o` intermedi restano rifiutati.
 
-Questo percorso implementa il confine sicuro di
-`llvm-strip --strip-unneeded`, non `--strip-all`: rimuove debug, `.comment` e
-simboli locali/non definiti inutili alle rilocazioni e ricostruisce `.strtab`.
-Conserva `.symtab`, tutte le rilocazioni e i target necessari, le definizioni
-non locali, import, `__versions`, `.codetag.alloc_tags` e
-`.gnu.linkonce.this_module`. Non usare `llvm-strip --strip-all` su un `.ko` e
-non eliminare alla cieca le sezioni codetag. Esegui strip prima di firmare i
-byte finali; `clean` deve solo cancellare file.
+`neverc make release` resta il comando consigliato e si espande in
+`-O2 --strip`. Senza `.nvk-build-flags`, `make` usa debug per impostazione
+predefinita e non sceglie release da solo. I Makefile di esempio salvano un
+profilo scelto esplicitamente affinché i successivi `make push`, `make run` e
+`make` senza target usino lo stesso artefatto. `make debug` o un
+`PROFILE=...` esplicito sostituisce la scelta; `make clean` cancella lo stato e
+riporta la build successiva a debug. In questo percorso finale NeverC rimuove
+sezioni di debug, `.comment` e voci locali/non definite inutili alle
+rilocazioni, quindi ricostruisce `.strtab`.
+
+Le definizioni conservate idonee ricevono nomi strutturali deterministici
+ispirati a IDA, senza usare i suoi prefissi riservati:
+
+- `STT_FUNC` diventa `fn_HEX`;
+- `STT_OBJECT` diventa `obj_HEX`;
+- `STT_NOTYPE` eseguibile diventa `code_HEX`;
+- altro `STT_NOTYPE` allocato diventa `sym_HEX`;
+- `SHN_ABS` diventa `abs_HEX`;
+- una definizione fuori da `SHF_ALLOC` diventa
+  `sym_S<FINAL_SECTION_ORDINAL_HEX>_<OFFSET_HEX>`.
+
+Ogni campo `HEX`, compresi entrambi i campi della forma non allocata, usa cifre
+esadecimali maiuscole senza zeri iniziali superflui. Se più simboli richiedono
+la stessa grafia, vengono aggiunte varianti decimali deterministiche `_1`,
+`_2` e così via.
+
+Queste grafie si ispirano a IDA senza occupare il suo spazio dei nomi fittizi.
+In un nuovo database IDA 9.4, i simboli utente ELF `sub_0`, `sub_4` e `loc_8`
+appaiono come `_sub_0`, `_sub_4` e `_loc_8`, mentre `fn_0`, `code_8` e `obj_10`
+restano invariati. La documentazione Hex-Rays di
+[`SN_NODUMMY`](https://python.docs.hex-rays.com/ida_name/index.html) conferma
+che un nome utente che inizia con un prefisso fittizio come `sub_` riceve un
+trattino basso iniziale. NeverC non svuota intenzionalmente lo `st_name` di una
+definizione ordinaria per far sintetizzare `sub_` a IDA: kallsyms dei moduli
+Android/Linux ha storicamente ignorato le voci senza nome, e un nome vuoto
+eliminerebbe il contratto serializzato verificabile. Le voci che devono già
+essere vuote e i simboli di sezione restano esatti.
+
+ELF consente a più simboli di condividere la stessa canonical analysis EA.
+NeverC conserva o genera in `.symtab` l'insieme completo degli alias; tuttavia,
+il modello di nomi per indirizzo di IDA 9.4 può materializzare un solo nome
+principale tra i simboli allo stesso indirizzo. Un alias non mostrato da IDA
+non è quindi necessariamente scomparso dall'ELF; l'insieme completo va
+verificato con `llvm-readelf` o `llvm-nm`.
+
+Per un simbolo allocato, `HEX` è la canonical analysis EA di NeverC, cioè
+l'indirizzo effettivo canonico usato solo per l'analisi statica. Partendo da un
+cursore zero, NeverC visita le sezioni `SHF_ALLOC` finali conservate nell'ordine
+finale della tabella sezioni, allinea il cursore a `max(sh_addralign, 1)`,
+registra la base e avanza di `max(sh_size, 1)`; la EA è tale base più lo
+`st_value` finale. `abs_HEX` usa lo `st_value` assoluto finale. Nella forma non
+allocata, `FINAL_SECTION_ORDINAL_HEX` è l'ordinale finale di sezione e
+`OFFSET_HEX` è lo `st_value` finale al suo interno. Queste coordinate non sono
+un'impronta crittografica, cifratura, offset di file, indirizzo virtuale ELF o
+indirizzo runtime del kernel. Loader e KASLR possono collocare il modulo altrove
+durante l'esecuzione.
+
+Restano esatti:
+
+- ogni import `SHN_UNDEF`, perché il loader lo risolve per nome;
+- i simboli definiti in `.modinfo`, `.text.ftrace_trampoline`,
+  `.gnu.linkonce.this_module`, `__versions` o `.codetag.alloc_tags`;
+- `init_module`, `cleanup_module`, `__cfi_check`, `__cfi_check_fail`,
+  `__cfi_jt_init_module` e `__cfi_jt_cleanup_module`;
+- i nomi che iniziano con `__typeid__` o `__kcfi_typeid_`.
+
+L'area `extern` mostrata da IDA è una vista di analisi sintetica, non una sezione
+ELF reale. In un `.ko` `ET_REL` finale, i target di rilocazione esterni sono voci
+`SHN_UNDEF` di `.symtab`, i cui nomi esatti servono al loader. La policy segue
+quindi la classe ELF effettiva del simbolo e la sua sezione di definizione: gli
+import non definiti restano esatti, mentre le definizioni idonee vengono
+rinominate indipendentemente da come lo strumento di analisi le raggruppa.
+
+Tutti i nomi vengono pianificati globalmente prima della modifica. Le definizioni
+con lo stesso candidato base ricevono, in ordine deterministico, il nome senza
+suffisso, poi `_1`, `_2` e così via; questo caso normale non è un
+errore. La finalizzazione si interrompe se un nome generato collide con lo
+spazio riservato ai nomi da conservare invariati oppure se il calcolo delle
+coordinate o della numerazione supera l'intervallo numerico. Inoltre rifiuta il
+risultato per sicurezza, senza tentare di indovinare, davanti a
+`SHN_COMMON`, `SHN_LIVEPATCH` o un indice di sezione ELF riservato sconosciuto.
+`SHN_COMMON` non è valido in un modulo finale caricabile: compila con
+`-fno-common`. I moduli livepatch richiedono ordine e indici originali della
+tabella simboli e metadati di rilocazione aggiuntivi, che questa policy non
+pretende di conservare.
+
+Il rilevamento usa segnali ridondanti: qualunque simbolo `SHN_LIVEPATCH`, sezione
+`.klp.*`, flag `SHF_RELA_LIVEPATCH` o campo `.modinfo` separato da NUL e
+iniziante con `livepatch=` identifica un modulo livepatch e ne provoca il rifiuto
+per sicurezza. Il solo marcatore `.modinfo` è sufficiente anche senza sezioni
+`.klp.*` o flag di rilocazione livepatch.
+
+Vengono sostituiti solo i nomi idonei in `.symtab`. Un `.ko` caricabile
+richiede ancora `.symtab`, la `.strtab` collegata e le rilocazioni, quindi gli
+strumenti generici possono legittimamente indicarlo come `not stripped`.
+Archivi e interfacce indipendenti come BTF, export del modulo, `.modinfo`,
+`__versions`, metadati di tracing, `__ksymtab_strings`, `.rodata` e stringhe
+letterali possono ancora rivelare nomi originali o testo identificativo. I
+normali nomi kernel cambiano anche in kallsyms e nella diagnostica, riducendo
+l'utilità di ftrace per simbolo, attach kprobe/BPF e rapporti di crash. Per
+diagnosticare usa una build debug non strippata e non dipendere dal nome
+originale di un simbolo privato nel modulo release.
+
+Non post-processare un `.ko` con `llvm-strip --strip-all` o `objcopy` e non
+rimuovere alla cieca sezioni codetag/BTF/ABI. Se il modulo va firmato, esegui
+prima lo strip e firma i byte finali: ogni modifica successiva invalida la firma.
+`clean` deve solo cancellare file, mai strippare o firmare un modulo esistente.
 
 ## Confine di sicurezza
 
 Lo stripping rimuove nomi e metadati preziosi e aumenta il costo dell'analisi,
-ma **non è** offuscamento e non impedisce il reverse engineering del codice
-macchina. Un binario correttamente strippato può contenere ancora:
+ma non impedisce il reverse engineering del codice macchina. Un binario
+correttamente strippato può contenere ancora:
 
 - nomi dinamici di import/export richiesti dal loader;
-- nomi di simboli richiesti dalle rilocazioni conservate di un `.ko`;
+- nomi richiesti dal loader e nomi memorizzati fuori da `.symtab` in un `.ko`;
 - stringhe letterali, tabelle di reflection o metadati applicativi;
 - record di unwinding, rilocazione, firma e configurazione di caricamento;
 - codice macchina e flusso di controllo osservabile.
@@ -111,16 +210,28 @@ separati quando opportuno e non incorporare segreti che devono restare riservati
 
 Controlla gli artefatti di rilascio in CI con gli strumenti oggetto LLVM.
 Adatta i comandi al formato e consenti esplicitamente i nomi ABI necessari.
+Il controllo `strings` negato qui sotto non deve trovare corrispondenze e ha
+successo solo in quel caso.
 
 ```bash
 llvm-readobj --sections --symbols --dyn-symbols app
 llvm-dwarfdump app
-strings app | grep neverc_private_release_symbol
+! strings app | grep -Fq -- neverc_private_release_symbol
 test ! -e app.dSYM
 
+file examples/android-kernel-hello/nvk_hello.ko
 llvm-readelf -h -S -s -r examples/android-kernel-hello/nvk_hello.ko
 llvm-dwarfdump examples/android-kernel-hello/nvk_hello.ko
 ```
+
+Per un `.ko` ELF `ET_REL` caricabile, l'utility generica `file` può ancora
+mostrare `not stripped` perché `.symtab` viene conservata intenzionalmente. Non
+usare tale etichetta per decidere l'esito della release. Verifica invece che
+DWARF e `.comment` siano assenti, che le definizioni idonee usino le forme
+esadecimali maiuscole canoniche `fn_`/`obj_`/`code_`/`sym_`/`abs_`, che
+gli import `SHN_UNDEF` e i nomi necessari a loader/CFI restino esatti e che le
+rilocazioni siano valide. Controlla separatamente BTF, export, modinfo, versions,
+metadati di tracing e stringhe se conta la divulgazione dei nomi.
 
 Un artefatto strippato non deve avere sezioni di debug sorgente o nomi di
 simboli statici privati. Nomi dinamici e metadati runtime necessari sono

@@ -106,7 +106,7 @@
 | [`neverc update`](update/README.ar.md) | ترقية أو تخفيض تثبيت release (المترجم وبيئات runtime المثبّتة بوسم واحد) |
 | [`neverc runtime`](runtime/README.ar.md) | تثبيت أو سرد أو تحديث أو إزالة sysroot للترجمة المتقاطعة |
 | [`neverc build` / `neverc make`](build/README.ar.md) | مشغّل متوافق مع GNU Make لملفات Makefile للأمثلة والمشاريع |
-| [ملفات الإصدار الثنائية و`--strip`](release-builds/README.ar.md) | إزالة الرموز غير المطلوبة وقت التشغيل وتصحيح المصدر من صور ELF وMach-O وPE/COFF النهائية |
+| [ملفات الإصدار الثنائية و`--strip`](release-builds/README.ar.md) | إزالة الرموز غير اللازمة وتصحيح المصدر، مع استبدال أسماء `.ko` المدرك للنواة |
 
 ---
 

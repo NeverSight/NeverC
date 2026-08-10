@@ -421,6 +421,18 @@ while (!neverc_handle_is_null(Symbol)) {
 이것입니다——그 바이트들은 엔티티와 함께 이동했다가 쓰기 시점에 되돌아오므로, 왕복
 과정에서 버려지지 않습니다.
 
+내장 ELF 어댑터는 정확한 네이티브 사실을 태그가 붙은 extension에 기록합니다.
+`NCSE v2`는 섹션 인덱스, 주소, 타입, flags, 파일 오프셋과 entry size를 담고,
+`NCSY v2`는 `st_info`, 전체 `st_other`, `st_size`와 네이티브 이름의 빈 값/비어 있지
+않은 값을 나타내는 명시적 상태를 담으며, `NCRL v1`은 네이티브 재배치 타입과 공식
+이름을 담습니다. 따라서 일반적인 빈 이름 ELF 심볼은 그대로 비어 있고 합성 이름
+`$symbol.N`으로 바뀌지 않습니다. 소스에서 실제로 `$symbol.N`이라고 이름 붙인 심볼은
+일반적인 비어 있지 않은 이름으로 유지됩니다. 변경되지 않은 네이티브 이미지 passthrough는
+익명 심볼을 정확히 보존할 수 있습니다. 그래프를 권위 원본으로 삼는 내장 쓰기는 portable
+MC 표기가 같은 익명 심볼 테이블 엔트리를 재구성할 수 없으므로 출력 sink를 열기 전에
+거부합니다. Android canonical release 감사는 현재 버전의 정확한 태그 payload 전체를
+요구하고, 그 네이티브 사실에서 안정 그래프 투영을 재생합니다.
+
 ### 형식 등록하기
 
 ```c
@@ -449,6 +461,44 @@ ObjectFormat->RegisterFormat(ObjectFormat->Context, RegistrarContext,
 
 `Reader`에는 그래프와 열린 변경이 전달되어 그것을 채웁니다. `Writer`에는 그래프,
 그 레이아웃 증명, 그리고 경계가 있는 바이너리 빌더가 전달됩니다.
+
+### Object Format 1.1 writer 정책
+
+`NevercObjectFormatDescriptor.Header.Minor`는 provider의 기능을 광고하며 호스트 전체의
+모드 스위치가 아닙니다. 1.0 descriptor는 probe, read, 일반 default write에 대해 완전히
+호환됩니다. 해당 writer는 `NevercObjectWriteRequest.Header.Minor == 0`과
+`Header.Flags == 0`을 받습니다. writer가 1.1 request flags를 이해할 때만 minor 1을
+광고해야 합니다. 일반 write는 계속 flags가 0이며 1.1 이전 출력 동작을 유지합니다.
+
+Object Format 1.1은 `NevercObjectWriteRequest.Header.Flags`에 다음 비트를 정의합니다.
+
+- `NEVERC_OBJECT_WRITE_CANONICAL_ELF_TABLES`는 서로 분리된 canonical `.strtab`과
+  `.shstrtab`, 그리고 모든 종속 인덱스의 재매핑을 요구합니다. 이는 ELF 테이블
+  canonicalization이지 relocatable link가 아닙니다. 섹션 순서, COMDAT 그룹, linker
+  메타데이터, 중복 심볼과 alias, relocation 레코드, 이름 테이블이 아닌 모든 payload는
+  그대로 보존됩니다. 추가로 존재하는 형식 고유의 유효한 `SHT_STRTAB` 섹션도 보존되며, 선택된
+  `SHT_SYMTAB`의 문자열 테이블과 `e_shstrndx`가 가리키는 테이블만 다시 빌드합니다.
+  `DROP_DEBUG_INFO`와 함께 사용할 때는 debug 섹션과 제거된 해당 섹션 인덱스를 참조하는
+  메타데이터만 필터링합니다.
+- `NEVERC_OBJECT_WRITE_ANDROID_KERNEL_RELEASE`는 최종 직렬화 ELF를 권위 있는 경계로
+  삼아 writer가 합성한 mapping symbols를 제거하고 실제 직렬화 섹션 좌표에서 release
+  이름을 다시 생성합니다.
+- `NEVERC_OBJECT_WRITE_DROP_DEBUG_INFO`는 위 ELF 정책 중 하나의 일부로 debug 섹션
+  제거를 요청합니다.
+
+`NEVERC_OBJECT_WRITE_REQUEST_KNOWN_FLAGS`는 알려진 비트의 전체 마스크입니다. 합법적인
+조합은 `0`, `CANONICAL_ELF_TABLES`, `CANONICAL_ELF_TABLES | DROP_DEBUG_INFO`,
+`CANONICAL_ELF_TABLES | ANDROID_KERNEL_RELEASE`, 그리고 세 비트를 모두 설정한 경우뿐입니다.
+release 또는 debug 비트는 canonical 비트 없이 사용할 수 없습니다.
+
+호스트는 알 수 없거나 잘못된 조합 및 minor-0 provider에 대한 특수 요청을 출력 sink를
+열기 전에 거부합니다. 1.1 writer도 받은 알 수 없거나 잘못된 flags를 무시하지 말고
+거부해야 합니다. writer와 모든 `object.post_write` 인터셉터가 실행된 뒤에는 호스트의
+의미 검증과 sealed `object.final_verify`가 직렬화 바이트를 다시 감사하며 그 결과가
+권위적입니다. 이 flags는 모든 제3자 형식에 대한 일반 보장이 아닙니다. minor 1은 writer가
+flags 프로토콜을 이해한다는 뜻입니다. 적용 가능한 ELF 정책을 구현하거나, 정책이 적용되지
+않거나 지원되지 않으면 `NEVERC_STATUS_CAPABILITY_UNAVAILABLE`을 명시적으로 반환할 수
+있지만 요청을 조용히 무시해서는 안 됩니다.
 
 ### 쓰기 파이프라인
 

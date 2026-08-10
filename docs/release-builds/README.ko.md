@@ -52,7 +52,7 @@ PE의 `.pdata`/`.xdata`는 런타임 메타데이터이지 소스 수준 DWARF�
 | 형식 | 제거 | 필요할 때 보존 |
 |------|------|----------------|
 | ELF | `.debug*` 데이터와 일반 정적 심볼/문자열 테이블 | 동적 가져오기/내보내기, 재배치와 로더 메타데이터, 언와인드 정보 |
-| Android 커널 `.ko`(ELF ET_REL) | `.debug*`, `.comment`, 보존된 재배치에 필요 없는 로컬/undefined 심볼 | `.strtab`에 연결된 하나의 `.symtab`, 모든 재배치와 대상, 정의된 전역 심볼, import, `__versions`, `.codetag.alloc_tags`, 모듈 ABI |
+| Android 커널 `.ko`(ELF ET_REL) | `.debug*`, `.comment`, 재배치에 필요 없는 로컬/undefined 항목, 보존된 일반 정의의 읽을 수 있는 이름 | `.strtab`에 연결된 하나의 `.symtab`, 모든 재배치와 대상, 정확한 로더/CFI 이름, 정확한 import, 보호 섹션 내 이름, 모듈 ABI 메타데이터 |
 | Mach-O | 디버그 맵/STABS, 런타임에 필요 없는 로컬/전역 심볼 항목, 동반 `.dSYM` 생성 | 바인딩/가져오기 데이터, 내보낸 ABI 이름, export trie 항목, 런타임 참조 심볼 |
 | PE/COFF | 내장 DWARF 섹션과 존재하는 정적 COFF 심볼/문자열 테이블 | PE 가져오기/내보내기, 언와인드 테이블, 로드 구성과 기타 로더 메타데이터 |
 
@@ -74,22 +74,111 @@ NeverC는 Android 대상에서 `-fandroid-kernel-driver-mode`와 `-r`이 켜지�
 출력 이름이 `.ko`로 끝날 때만 `-r --strip`을 허용합니다. 일반 `-r`과 중간
 `.o`는 계속 거부됩니다.
 
-이 경로는 `--strip-all`이 아니라 `llvm-strip --strip-unneeded`의 안전 경계를
-구현합니다. 디버그, `.comment`, 재배치에 필요 없는 로컬/undefined 심볼을
-제거하고 `.strtab`을 다시 만듭니다. `.symtab`, 모든 재배치와 필수 대상,
-정의된 비로컬 심볼, import, `__versions`, `.codetag.alloc_tags`,
-`.gnu.linkonce.this_module`은 보존합니다. `.ko`에
-`llvm-strip --strip-all`을 사용하거나 codetag 섹션을 무작정 제거하지
-마십시오. 스트립 후 최종 바이트에 서명하고 `clean`은 파일만 삭제해야 합니다.
+`neverc make release`는 권장 릴리스 명령이며 `-O2 --strip`으로 확장됩니다.
+`.nvk-build-flags`가 없으면 `make`는 debug를 기본값으로 사용하고 스스로
+release를 선택하지 않습니다. 예제 Makefile은 명시적인 프로필 선택을 저장하므로
+이후 `make push`, `make run`, 대상 없는 `make`가 같은 산출물을 사용합니다.
+`make debug` 또는 명시적인 `PROFILE=...`는 저장된 선택을 갱신하고,
+`make clean`은 저장 상태를 삭제하여 다음 빌드를 debug로 되돌립니다. 이 최종
+경로에서 NeverC는 디버그 섹션, `.comment`, 재배치에 불필요한 로컬/미정의
+항목을 제거한 뒤 `.strtab`을 다시 구성합니다.
+
+대상인 보존 정의에는 IDA에서 착안하되 예약 접두사를 사용하지 않는 결정적인 구조
+이름을 부여합니다.
+
+- `STT_FUNC`는 `fn_HEX`;
+- `STT_OBJECT`는 `obj_HEX`;
+- 실행 가능한 `STT_NOTYPE`는 `code_HEX`;
+- 그 밖의 할당된 `STT_NOTYPE`는 `sym_HEX`;
+- `SHN_ABS`는 `abs_HEX`;
+- `SHF_ALLOC` 밖의 정의는
+  `sym_S<FINAL_SECTION_ORDINAL_HEX>_<OFFSET_HEX>`가 됩니다.
+
+비할당 형식의 두 필드를 포함한 모든 `HEX` 필드는 불필요한 선행 0 없는
+대문자 16진수입니다. 여러 심볼이 같은 표기를 필요로 하면 결정적인 10진 별칭
+`_1`, `_2` 등을 덧붙입니다.
+
+이 표기는 IDA에서 착안했지만 dummy-name 이름 공간을 차지하지 않습니다. 새 IDA
+9.4 데이터베이스에서 ELF 사용자 심볼 `sub_0`, `sub_4`, `loc_8`은 각각
+`_sub_0`, `_sub_4`, `_loc_8`로 표시되는 반면 `fn_0`, `code_8`, `obj_10`은
+그대로 표시됩니다. Hex-Rays의
+[`SN_NODUMMY`](https://python.docs.hex-rays.com/ida_name/index.html) 문서도
+`sub_` 같은 dummy 접두사로 시작하는 사용자 이름 앞에 `_`를 붙인다고 설명합니다.
+NeverC는 IDA가 `sub_`를 합성하게 하려고 일반 정의의 `st_name`을 비우지 않습니다.
+Android/Linux 모듈 kallsyms는 역사적으로 이름이 빈 항목을 무시했고, 빈 이름은
+감사 가능한 직렬화 이름 계약도 없애기 때문입니다. 원래 비어 있어야 하는 항목과
+섹션 심볼은 정확히 보존합니다.
+
+ELF에서는 여러 심볼이 같은 canonical analysis EA를 공유할 수 있습니다.
+NeverC는 `.symtab`에 전체 alias 집합을 보존하거나 생성하지만, IDA 9.4의 주소
+이름 모델은 같은 주소의 심볼 중 하나의 주 이름만 구체화할 수 있습니다. 따라서
+IDA에 표시되지 않은 alias가 ELF에서 사라졌다는 뜻은 아닙니다. 전체 집합은
+`llvm-readelf` 또는 `llvm-nm`으로 감사해야 합니다.
+
+할당된 심볼에서 `HEX`는 NeverC canonical analysis EA, 즉 정적 분석에만 쓰는
+정규 유효 주소입니다. 커서 0에서 시작해 최종 섹션 헤더 순서대로 최종 보존
+`SHF_ALLOC` 섹션을 방문하고, 커서를 `max(sh_addralign, 1)`에 맞춘 값을 섹션
+기준으로 기록한 뒤 `max(sh_size, 1)`만큼 전진합니다. EA는 이 기준과 최종
+`st_value`의 합입니다. `abs_HEX`는 최종 절대 `st_value`를 사용합니다.
+비할당 형식에서 `FINAL_SECTION_ORDINAL_HEX`는 최종 섹션 순번이고
+`OFFSET_HEX`는 해당 섹션의 최종 `st_value`입니다. 이 좌표는 해시값이나 암호화
+결과가 아니며 파일 오프셋, ELF 가상 주소, 커널 런타임 주소도 아닙니다. 로더와
+KASLR은 런타임에 모듈을 다른 위치에 배치할 수 있습니다.
+
+다음 이름은 정확히 보존합니다.
+
+- 모듈 로더가 이름으로 해석하는 모든 `SHN_UNDEF` import.
+- `.modinfo`, `.text.ftrace_trampoline`, `.gnu.linkonce.this_module`,
+  `__versions`, `.codetag.alloc_tags` 안에 정의된 심볼.
+- `init_module`, `cleanup_module`, `__cfi_check`, `__cfi_check_fail`,
+  `__cfi_jt_init_module`, `__cfi_jt_cleanup_module`.
+- `__typeid__` 또는 `__kcfi_typeid_`로 시작하는 이름.
+
+IDA의 `extern` 영역은 분석기가 합성한 보기일 뿐 실제 ELF 섹션이 아닙니다. 최종
+`ET_REL` `.ko`에서 외부 재배치 대상은 `.symtab`의 `SHN_UNDEF` 항목이며, 로더는
+그 정확한 이름을 필요로 합니다. 따라서 정책은 실제 ELF 심볼 클래스와 정의 섹션을
+따릅니다. 미정의 가져오기는 원래 이름을 보존하고, 대상 정의는 분석 도구의 분류와
+관계없이 이름을 바꿉니다.
+
+모든 이름은 변경 전에 전역으로 계획합니다. 같은 기본 후보를 공유하는 정의에는
+결정적인 순서로 번호 없는 형식, `_1`, `_2` 등을 부여합니다. 이처럼 정상적으로
+이름을 배정하는 경우는 오류가 아닙니다. 생성 이름이 그대로 보존할 이름의 예약
+영역과 충돌하거나 좌표 또는 접미 번호 계산이 수치 범위를 넘으면 확정 처리를
+중단합니다.
+`SHN_COMMON`, `SHN_LIVEPATCH` 또는 알 수 없는 ELF 예약 섹션 인덱스를 만나도
+추측하지 않고 안전하게 거부합니다. 로드 가능한 최종 모듈에는
+`SHN_COMMON`이 유효하지 않으므로 `-fno-common`으로 컴파일하십시오.
+Livepatch 모듈에는 원래 심볼 테이블 순서와 인덱스 및 추가 재배치 메타데이터가
+필요하며, 이 릴리스 정책은 이를 보존한다고 주장하지 않습니다.
+
+탐지는 여러 신호를 사용합니다. `SHN_LIVEPATCH` 심볼, `.klp.*` 섹션,
+`SHF_RELA_LIVEPATCH` 플래그 또는 NUL로 구분된 `.modinfo`의 `livepatch=`로
+시작하는 필드 중 하나라도 있으면 livepatch 모듈로 판단해 안전하게
+거부합니다. `.klp.*` 섹션이나 livepatch 재배치 플래그가 없어도 이 `.modinfo`
+마커만으로 거부하기에 충분합니다.
+
+대상인 `.symtab` 이름만 바뀝니다. 로드 가능한 `.ko`에는 여전히 `.symtab`,
+연결된 `.strtab`, 재배치가 필요하므로 일반 도구가 `not stripped`라고 표시해도
+정상입니다. BTF, 모듈 export, `.modinfo`, `__versions`, trace metadata,
+`__ksymtab_strings`, `.rodata`, 문자열 리터럴 같은 독립 저장소와 인터페이스는
+원래 이름이나 식별 텍스트를 계속 노출할 수 있습니다. 일반 커널 심볼 이름은
+kallsyms와 진단에서도 바뀌므로 심볼 기반 ftrace, kprobe/BPF attach, 크래시
+보고서의 유용성이 낮아집니다. 진단에는 스트립하지 않은 debug 빌드를 사용하고
+release 모듈에서 private 심볼의 원래 이름에 의존하지 마십시오.
+
+`.ko`를 `llvm-strip --strip-all`이나 `objcopy`로 후처리하거나 codetag/BTF/ABI
+섹션을 무작정 제거하지 마십시오. 서명할 경우 먼저 스트립한 뒤 최종 바이트에
+서명하십시오. 서명 뒤의 변경은 서명을 무효화합니다. `clean`은 파일만 삭제해야
+하며 기존 모듈을 스트립하거나 서명해서는 안 됩니다.
 
 ## 보안 경계
 
 스트립은 가치가 높은 이름과 디버그 메타데이터를 제거해 분석 비용을 높이지만
-**난독화가 아니며**, 네이티브 기계어의 리버스 엔지니어링을 불가능하게 만들지
-못합니다. 올바르게 스트립한 바이너리에도 다음이 남을 수 있습니다.
+네이티브 기계어의 리버스 엔지니어링을 불가능하게 만들지는 못합니다. 올바르게
+스트립한 바이너리에도 다음이 남을 수 있습니다.
 
 - 로더가 요구하는 동적 가져오기 및 내보내기 이름.
-- `.ko`의 보존된 재배치에 필요한 심볼 이름.
+- `.ko`의 로더 필수 이름과 `.symtab` 밖에 저장된 이름.
 - 문자열 리터럴, 리플렉션 테이블, 애플리케이션 정의 메타데이터.
 - 언와인드, 재배치, 서명, 로드 구성 레코드.
 - 기계어와 관찰 가능한 제어 흐름.
@@ -105,16 +194,26 @@ NeverC는 Android 대상에서 `-fandroid-kernel-driver-mode`와 `-r`이 켜지�
 
 CI에서 LLVM 오브젝트 도구로 릴리스 산출물을 검사할 수 있습니다. 대상 형식에
 맞게 명령을 조정하고 프로그램에 필요한 ABI 이름을 명시적으로 허용하십시오.
+아래의 부정 `strings` 검사는 일치 항목이 없어야 하며 그때만 성공으로 종료됩니다.
 
 ```bash
 llvm-readobj --sections --symbols --dyn-symbols app
 llvm-dwarfdump app
-strings app | grep neverc_private_release_symbol
+! strings app | grep -Fq -- neverc_private_release_symbol
 test ! -e app.dSYM
 
+file examples/android-kernel-hello/nvk_hello.ko
 llvm-readelf -h -S -s -r examples/android-kernel-hello/nvk_hello.ko
 llvm-dwarfdump examples/android-kernel-hello/nvk_hello.ko
 ```
+
+로드 가능한 ELF `ET_REL` `.ko`는 `.symtab`을 의도적으로 보존하므로 일반
+`file` 도구가 `not stripped`라고 표시할 수 있습니다. 이 표시로 release 성공
+여부를 판단하지 마십시오. 대신 DWARF와 `.comment`가 없고, 대상 정의가 정규
+대문자 16진 형식 `fn_`/`obj_`/`code_`/`sym_`/`abs_`를 사용하며,
+`SHN_UNDEF` import와 필수 로더/CFI 이름이 정확히 유지되고 재배치가 유효한지
+확인하십시오. 이름 노출이 중요하면 BTF, export, modinfo, versions, trace
+metadata, 문자열도 별도로 점검하십시오.
 
 스트립된 산출물에는 소스 수준 디버그 섹션이나 비공개 정적 심볼 이름이 없어야
 합니다. 필요한 동적 이름과 런타임 메타데이터는 정상적인 결과입니다.

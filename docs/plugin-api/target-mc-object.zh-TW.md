@@ -403,6 +403,15 @@ Section 旗標有 `ALLOCATED`、`EXECUTABLE`、`WRITABLE`、`MERGEABLE`、`STRIN
 靠這個來保留正規化圖沒有欄位可放的資料——那些位元組會跟著實體走，並在寫出時回來，
 而不是在來回轉換中被丟掉。
 
+內建 ELF 轉接器用帶標籤的 extension 保存精確原生事實：`NCSE v2` 保存節區索引、
+位址、類型、flags、檔案偏移與 entry size；`NCSY v2` 保存 `st_info`、完整
+`st_other`、`st_size`，以及明確的原生名稱空／非空狀態；`NCRL v1` 保存原生重定位
+類型及其官方名稱。因此，普通的 ELF 空名符號會繼續保持空名，絕不會被改寫成合成的
+`$symbol.N`；原始碼中真的叫 `$symbol.N` 的符號仍是普通非空名稱。未修改的原生映像
+直通可以精確保留匿名符號；一旦改為以圖為權威的內建寫回，因為可攜式 MC 拼寫無法
+重建相同的匿名符號表項，宿主會在開啟輸出 sink 前拒絕。Android canonical release
+稽核要求目前版本的完整標籤 payload，並由這些原生事實重播穩定圖投影。
+
 ### 註冊一種格式
 
 ```c
@@ -430,6 +439,39 @@ ObjectFormat->RegisterFormat(ObjectFormat->Context, RegistrarContext,
 
 `Reader` 會拿到一張圖與一次開啟的變更，由它把內容填進去。`Writer` 則拿到那張圖、
 它的版面配置證明，以及有界的二進位建構器。
+
+### Object Format 1.1 寫出策略
+
+`NevercObjectFormatDescriptor.Header.Minor` 表示 provider 的能力，而不是整個宿主的
+模式開關。1.0 descriptor 的 probe、read 與一般預設 write 仍完全相容；其 writer
+收到 `NevercObjectWriteRequest.Header.Minor == 0` 與 `Header.Flags == 0`。只有 writer
+理解 1.1 request flags 時才應宣告 minor 1；一般 write 仍攜帶零 flags，維持 1.1
+以前的輸出行為。
+
+Object Format 1.1 為 `NevercObjectWriteRequest.Header.Flags` 定義下列位元：
+
+- `NEVERC_OBJECT_WRITE_CANONICAL_ELF_TABLES` 要求彼此獨立且規範的 `.strtab` 與
+  `.shstrtab`，並重新映射所有相依索引。這只是 ELF 表格規範化，而非可重新定位連結：區段
+  順序、COMDAT 群組、linker 中繼資料、重複符號與別名、重新定位記錄，以及所有非名稱表格
+  payload 都保持不變。由格式本身定義的其他合法 `SHT_STRTAB` 區段也會保留；只重建所選
+  `SHT_SYMTAB` 使用的字串表格及 `e_shstrndx` 指定的表格。與 `DROP_DEBUG_INFO` 組合時，
+  只會篩除除錯區段及參照這些區段已移除索引的中繼資料。
+- `NEVERC_OBJECT_WRITE_ANDROID_KERNEL_RELEASE` 還把最終序列化 ELF 視為權威邊界：
+  移除 writer 合成的 mapping symbols，並依實際序列化區段座標重播 release 名稱。
+- `NEVERC_OBJECT_WRITE_DROP_DEBUG_INFO` 要求在上述其中一種 ELF 策略中移除除錯區段。
+
+`NEVERC_OBJECT_WRITE_REQUEST_KNOWN_FLAGS` 是完整的已知位元遮罩。合法組合只有 `0`、
+`CANONICAL_ELF_TABLES`、`CANONICAL_ELF_TABLES | DROP_DEBUG_INFO`、
+`CANONICAL_ELF_TABLES | ANDROID_KERNEL_RELEASE`，以及三個位元全部設定。release 或
+debug 位元不可脫離 canonical 位元單獨使用。
+
+宿主會在開啟輸出 sink 之前拒絕未知或非法組合，也會拒絕送往 minor-0 provider 的
+任何特殊要求。1.1 writer 同樣必須拒絕而非忽略收到的未知或非法 flags。writer 與
+任何 `object.post_write` 攔截器執行後，宿主語意驗證及密封
+的 `object.final_verify` 會重新稽核序列化位元組，並以其結果為準。這些 flags 並非對
+所有第三方格式的通用承諾。minor 1 表示 writer 理解 flags 協定：它可以實作適用的
+ELF 策略；策略不適用或不受支援時，也可以明確回傳
+`NEVERC_STATUS_CAPABILITY_UNAVAILABLE`，但絕不可默默忽略要求。
 
 ### 寫出流水線
 

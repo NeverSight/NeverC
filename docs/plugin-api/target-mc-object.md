@@ -430,6 +430,19 @@ triple. That is how a format keeps data the normalized graph has no field
 for — the bytes travel with the entity and come back on write, instead of
 being dropped by the round trip.
 
+The built-in ELF adapter records exact native facts in tagged extensions:
+`NCSE v2` carries the section index, address, type, flags, file offset, and
+entry size; `NCSY v2` carries `st_info`, the full `st_other`, `st_size`, and an
+explicit empty/non-empty native-name state; `NCRL v1` carries the native
+relocation type and its official name. An ordinary empty ELF symbol therefore
+stays empty—it is never rewritten as a synthetic `$symbol.N` name—while a
+literal source symbol named `$symbol.N` remains an ordinary non-empty name.
+Unchanged native-image passthrough can preserve anonymous symbols exactly. A
+graph-authoritative built-in write rejects them before opening the output sink,
+because the portable MC spelling cannot reconstruct the same anonymous symbol
+table entry. Canonical Android release audits require the exact current tagged
+payloads and replay the stable graph projection from those native facts.
+
 ### Registering a format
 
 ```c
@@ -457,6 +470,48 @@ ObjectFormat->RegisterFormat(ObjectFormat->Context, RegistrarContext,
 
 `Reader` is handed a graph and an open mutation and fills them in. `Writer`
 is handed the graph, its layout proof, and the bounded binary builder.
+
+### Object-format 1.1 writer policies
+
+`NevercObjectFormatDescriptor.Header.Minor` advertises the provider's
+capability; it is not a host-wide mode switch. A 1.0 descriptor remains fully
+compatible for probe, read, and ordinary default writes. Its writer receives
+`NevercObjectWriteRequest.Header.Minor == 0` and `Header.Flags == 0`. Advertise
+minor 1 only when the writer understands the 1.1 request flags; an ordinary
+write still carries zero flags and keeps the pre-1.1 output behavior.
+
+Object-format 1.1 defines these `NevercObjectWriteRequest.Header.Flags` bits:
+
+- `NEVERC_OBJECT_WRITE_CANONICAL_ELF_TABLES` requires distinct canonical
+  `.strtab` and `.shstrtab` sections and remapped dependent indices. This is a
+  table canonicalization, not a relocatable link: section order, COMDAT groups,
+  linker metadata, duplicate/alias symbols, relocation records, and every
+  non-name-table payload remain intact. Additional format-owned `SHT_STRTAB`
+  sections are preserved; only the selected `SHT_SYMTAB` string table and the
+  table named by `e_shstrndx` are rebuilt. With `DROP_DEBUG_INFO`, only debug
+  sections and metadata made dependent on their removed indices are filtered.
+- `NEVERC_OBJECT_WRITE_ANDROID_KERNEL_RELEASE` additionally treats the final
+  serialized ELF as authoritative: remove writer-synthesized mapping symbols
+  and replay release names from the actual serialized section coordinates.
+- `NEVERC_OBJECT_WRITE_DROP_DEBUG_INFO` requests debug-section removal as part
+  of one of those ELF policies.
+
+`NEVERC_OBJECT_WRITE_REQUEST_KNOWN_FLAGS` is the complete known mask. The only
+legal combinations are `0`, `CANONICAL_ELF_TABLES`,
+`CANONICAL_ELF_TABLES | DROP_DEBUG_INFO`,
+`CANONICAL_ELF_TABLES | ANDROID_KERNEL_RELEASE`, and all three bits together.
+The release or debug bit without the canonical bit is invalid.
+
+The host rejects an unknown or illegal combination, or any special request to
+a minor-0 provider, before opening the output sink. A 1.1 writer must likewise
+reject, rather than ignore, any unknown or illegal flags it receives. After the
+writer and any `object.post_write` interceptor, host semantic validation and the
+sealed `object.final_verify` audit the serialized bytes and remain authoritative.
+These flags are not a general promise for every third-party format. Minor 1
+means that the writer understands the flags protocol: it may implement an
+applicable ELF policy or explicitly return
+`NEVERC_STATUS_CAPABILITY_UNAVAILABLE` when that policy is unsupported or does
+not apply; it must never silently ignore the request.
 
 ### The write pipeline
 

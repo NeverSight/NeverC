@@ -104,7 +104,7 @@ NeverC プロジェクトの主要な計画方向：標準ライブラリ、EVM 
 | [`neverc update`](update/README.ja.md) | リリースインストールのアップ／ダウングレード（コンパイラと導入済み runtime を同一タグへ） |
 | [`neverc runtime`](runtime/README.ja.md) | クロスコンパイル sysroot の導入・一覧・更新・削除 |
 | [`neverc build` / `neverc make`](build/README.ja.md) | サンプル／プロジェクト Makefile 向け GNU Make 互換ドライバ |
-| [リリースバイナリと `--strip`](release-builds/README.ja.md) | 最終 ELF、Mach-O、PE/COFF イメージから実行時不要のシンボルとソースデバッグ情報を削除 |
+| [リリースバイナリと `--strip`](release-builds/README.ja.md) | 実行時不要シンボルとソースデバッグを削除し、カーネル対応の `.ko` シンボル仮名化も実施 |
 
 ---
 

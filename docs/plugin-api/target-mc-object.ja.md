@@ -427,6 +427,18 @@ while (!neverc_handle_is_null(Symbol)) {
 のはこの仕組みによってです——そのバイト列はエンティティとともに運ばれ、書き出し時
 に戻ってくるので、往復で失われることがありません。
 
+組み込み ELF アダプターは、正確なネイティブ情報をタグ付き extension に記録します。
+`NCSE v2` はセクションのインデックス、アドレス、型、flags、ファイルオフセット、
+entry size を、`NCSY v2` は `st_info`、完全な `st_other`、`st_size` とネイティブ名
+が空か否かを示す明示的な状態を、`NCRL v1` はネイティブのリロケーション型と公式名
+を保持します。そのため通常の空名 ELF シンボルは空のままで、合成名 `$symbol.N` に
+書き換えられることはありません。一方、ソースで実際に `$symbol.N` と名付けた
+シンボルは通常の非空名のままです。未変更のネイティブイメージのパススルーなら匿名
+シンボルを正確に保持できます。グラフを正とする組み込み書き出しでは、portable MC
+表記が同じ匿名シンボルテーブルエントリーを再構築できないため、出力 sink を開く前に
+拒否します。Android canonical release の監査は現行バージョンのタグ付き payload
+全体を要求し、そこから安定グラフへの投影を再現します。
+
 ### 形式の登録
 
 ```c
@@ -455,6 +467,47 @@ ObjectFormat->RegisterFormat(ObjectFormat->Context, RegistrarContext,
 
 `Reader` にはグラフと開いた変更が渡され、それを埋めます。`Writer` にはグラフ、そ
 のレイアウト証明、そして境界付きバイナリビルダーが渡されます。
+
+### Object Format 1.1 のライターポリシー
+
+`NevercObjectFormatDescriptor.Header.Minor` は provider の能力を示すものであり、
+ホスト全体のモード切り替えではありません。1.0 descriptor は probe、read、通常の
+default write について完全な互換性を保ち、その writer は
+`NevercObjectWriteRequest.Header.Minor == 0` と `Header.Flags == 0` を受け取ります。
+writer が 1.1 request flags を理解する場合にだけ minor 1 を宣言してください。通常の
+write は引き続き flags がゼロで、1.1 より前の出力動作を変えません。
+
+Object Format 1.1 は `NevercObjectWriteRequest.Header.Flags` に次のビットを定義します。
+
+- `NEVERC_OBJECT_WRITE_CANONICAL_ELF_TABLES` は、独立した正規の `.strtab` と
+  `.shstrtab`、およびそれらに依存するインデックスの再マッピングを要求します。これは
+  ELF テーブルの正規化であり、再配置可能リンクではありません。セクション順序、COMDAT
+  グループ、linker メタデータ、重複シンボルとエイリアス、リロケーションレコード、および
+  名前テーブル以外のすべての payload はそのまま保持されます。追加の正当なフォーマット固有
+  `SHT_STRTAB` セクションも保持され、再構築されるのは選択された `SHT_SYMTAB` の文字列
+  テーブルと `e_shstrndx` が指すテーブルだけです。`DROP_DEBUG_INFO` を併用した場合、debug
+  セクションと、それらの削除されたインデックスを参照するメタデータだけが除去されます。
+- `NEVERC_OBJECT_WRITE_ANDROID_KERNEL_RELEASE` はさらに、最終的にシリアライズされた
+  ELF を権威ある境界とし、writer が合成した mapping symbols を削除して、実際の
+  シリアライズ済みセクション座標から release 名を再生成します。
+- `NEVERC_OBJECT_WRITE_DROP_DEBUG_INFO` は、上記いずれかの ELF ポリシーの一部として
+  debug セクションの削除を要求します。
+
+`NEVERC_OBJECT_WRITE_REQUEST_KNOWN_FLAGS` が既知ビットの完全なマスクです。正当な
+組み合わせは `0`、`CANONICAL_ELF_TABLES`、
+`CANONICAL_ELF_TABLES | DROP_DEBUG_INFO`、
+`CANONICAL_ELF_TABLES | ANDROID_KERNEL_RELEASE`、および 3 ビットすべてだけです。
+release または debug ビットを canonical ビットなしで使うことはできません。
+
+ホストは未知または不正な組み合わせ、および minor-0 provider への特別な要求を、
+出力 sink を開く前に拒否します。1.1 writer も、受け取った未知または不正な flags を
+無視せず拒否しなければなりません。writer と任意の `object.post_write` インターセプター
+の後で、ホストの意味検証と封印された `object.final_verify` がシリアライズ済みバイト
+を再監査し、その結果が権威を持ちます。これらの flags はすべての第三者形式に対する
+一般的な保証ではありません。minor 1 は writer が flags プロトコルを理解することを
+意味します。適用可能な ELF ポリシーを実装するか、そのポリシーが適用不能または未対応
+なら `NEVERC_STATUS_CAPABILITY_UNAVAILABLE` を明示的に返すことができますが、要求を
+黙って無視してはなりません。
 
 ### 書き出しパイプライン
 

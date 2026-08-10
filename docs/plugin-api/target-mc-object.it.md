@@ -445,6 +445,20 @@ Ogni descrittore ha una terna `ExtensionOwner` / `ExtensionVersion` /
 normalizzato non ha alcun campo: i byte viaggiano con l'entità e ritornano in
 scrittura, invece di essere persi nell'andata e ritorno.
 
+L'adattatore ELF integrato registra i fatti nativi esatti in extension con tag:
+`NCSE v2` contiene indice, indirizzo, tipo, flag, offset nel file e dimensione
+delle entry della sezione; `NCSY v2` contiene `st_info`, l'intero `st_other`,
+`st_size` e uno stato esplicito del nome nativo vuoto/non vuoto; `NCRL v1`
+contiene il tipo di rilocazione nativo e il suo nome ufficiale. Un normale
+simbolo ELF con nome vuoto rimane quindi vuoto e non viene mai riscritto come
+nome sintetico `$symbol.N`; un simbolo sorgente chiamato davvero `$symbol.N`
+rimane un normale nome non vuoto. Il passthrough di un'immagine nativa invariata
+può preservare esattamente i simboli anonimi. Una scrittura integrata in cui il
+grafo è autoritativo li rifiuta prima di aprire il sink di output, perché la
+sintassi MC portabile non può ricostruire la stessa voce anonima della tabella
+dei simboli. Gli audit canonici delle release Android richiedono i payload con
+tag correnti esatti e da questi riproducono la proiezione stabile del grafo.
+
 ### Registrare un formato
 
 ```c
@@ -474,6 +488,53 @@ Vince la confidenza più alta.
 A `Reader` vengono consegnati un grafo e una mutazione aperta, che riempie. A
 `Writer` vengono consegnati il grafo, la sua prova di layout e il costruttore
 binario limitato.
+
+### Politiche di scrittura di Object Format 1.1
+
+`NevercObjectFormatDescriptor.Header.Minor` dichiara la capacità del provider;
+non è un selettore di modalità globale dell'host. Un descriptor 1.0 resta
+pienamente compatibile per probe, read e le normali scritture predefinite. Il
+suo writer riceve `NevercObjectWriteRequest.Header.Minor == 0` e
+`Header.Flags == 0`. Dichiarate minor 1 solo se il writer comprende i request
+flags 1.1; una scrittura ordinaria continua ad avere flags zero e conserva il
+comportamento di output precedente alla 1.1.
+
+Object Format 1.1 definisce questi bit in
+`NevercObjectWriteRequest.Header.Flags`:
+
+- `NEVERC_OBJECT_WRITE_CANONICAL_ELF_TABLES` richiede sezioni `.strtab` e
+  `.shstrtab` canoniche e distinte, e rimappa tutti gli indici dipendenti. Questa
+  è una canonicalizzazione delle tabelle ELF, non un link rilocabile: restano
+  intatti l'ordine delle sezioni, i gruppi COMDAT, i metadati del linker, i
+  simboli duplicati e gli alias, i record di rilocazione e ogni payload esterno
+  alle tabelle dei nomi. Le ulteriori sezioni `SHT_STRTAB` valide e specifiche
+  del formato vengono conservate; vengono ricostruite solo la tabella delle
+  stringhe del `SHT_SYMTAB` selezionato e la tabella indicata da `e_shstrndx`.
+  Con `DROP_DEBUG_INFO` vengono filtrate soltanto le sezioni di debug e i
+  metadati che fanno riferimento agli indici rimossi di tali sezioni.
+- `NEVERC_OBJECT_WRITE_ANDROID_KERNEL_RELEASE` rende inoltre autorevole l'ELF
+  serializzato finale: rimuove i mapping symbols sintetizzati dal writer e
+  rigenera i nomi release dalle coordinate effettive delle sezioni serializzate.
+- `NEVERC_OBJECT_WRITE_DROP_DEBUG_INFO` richiede la rimozione delle sezioni di
+  debug come parte di una di queste politiche ELF.
+
+`NEVERC_OBJECT_WRITE_REQUEST_KNOWN_FLAGS` è la maschera completa dei bit noti.
+Le sole combinazioni valide sono `0`, `CANONICAL_ELF_TABLES`,
+`CANONICAL_ELF_TABLES | DROP_DEBUG_INFO`,
+`CANONICAL_ELF_TABLES | ANDROID_KERNEL_RELEASE` e tutti e tre i bit insieme. Un
+bit release o debug senza il bit canonical non è valido.
+
+L'host rifiuta una combinazione sconosciuta o non valida, o qualsiasi richiesta
+speciale a un provider minor-0, prima di aprire il sink di output. Anche un
+writer 1.1 deve rifiutare, anziché ignorare, qualsiasi flag sconosciuto o non
+valido che riceve. Dopo il writer e ogni intercettore `object.post_write`, la
+convalida semantica dell'host e il
+`object.final_verify` sigillato riesaminano i byte serializzati e fanno testo.
+Questi flags non sono una promessa generale per ogni formato di terze parti.
+Minor 1 significa che il writer comprende il protocollo dei flags: può
+implementare una politica ELF applicabile oppure restituire esplicitamente
+`NEVERC_STATUS_CAPABILITY_UNAVAILABLE` se non è applicabile o supportata; non
+deve mai ignorare silenziosamente la richiesta.
 
 ### La pipeline di scrittura
 

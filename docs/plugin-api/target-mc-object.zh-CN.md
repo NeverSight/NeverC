@@ -403,6 +403,15 @@ while (!neverc_handle_is_null(Symbol)) {
 借此保留归一化图里没有字段可放的数据——这些字节跟着实体走，写回时原样带回，而
 不是在往返过程中被丢掉。
 
+内建 ELF 适配器用带标签的 extension 保存精确原生事实：`NCSE v2` 保存段索引、
+地址、类型、flags、文件偏移和 entry size；`NCSY v2` 保存 `st_info`、完整
+`st_other`、`st_size`，以及明确的原生名称空／非空状态；`NCRL v1` 保存原生重定位
+类型及其官方名称。因此，普通的 ELF 空名符号会继续保持空名，绝不会被改写为合成的
+`$symbol.N`；源码中真的叫 `$symbol.N` 的符号仍是普通非空名称。未改动的原生镜像
+直通可以精确保留匿名符号；一旦改为以图为权威的内建写回，因为可移植 MC 拼写无法
+重建同一个匿名符号表项，宿主会在打开输出 sink 前拒绝。Android canonical release
+审计要求当前版本的完整标签 payload，并由这些原生事实重放稳定图投影。
+
 ### 注册一种格式
 
 ```c
@@ -430,6 +439,39 @@ ObjectFormat->RegisterFormat(ObjectFormat->Context, RegistrarContext,
 
 `Reader` 会拿到一张图和一个已打开的 mutation，负责填充它们。`Writer` 会拿到
 图、它的布局证明，以及受界的二进制 builder。
+
+### Object Format 1.1 写入策略
+
+`NevercObjectFormatDescriptor.Header.Minor` 表示 provider 的能力，而不是宿主范围
+内的模式开关。1.0 descriptor 的 probe、read 和普通默认 write 仍完全兼容；它的
+writer 收到 `NevercObjectWriteRequest.Header.Minor == 0` 和 `Header.Flags == 0`。
+只有 writer 理解 1.1 request flags 时才应声明 minor 1；普通 write 仍携带零 flags，
+保持 1.1 之前的输出行为不变。
+
+Object Format 1.1 为 `NevercObjectWriteRequest.Header.Flags` 定义了以下位：
+
+- `NEVERC_OBJECT_WRITE_CANONICAL_ELF_TABLES` 要求独立且规范的 `.strtab` 与
+  `.shstrtab`，并重映射所有依赖索引。这只是 ELF 表规范化，而不是可重定位链接：节区顺序、
+  COMDAT 组、linker 元数据、重复符号与别名、重定位记录，以及所有非名称表 payload 都保持
+  不变。由格式自身定义的其他合法 `SHT_STRTAB` 节区也会保留；仅重建所选 `SHT_SYMTAB` 使用的
+  字符串表和 `e_shstrndx` 指定的表。与 `DROP_DEBUG_INFO` 组合时，只过滤调试节区以及引用
+  这些节区已删除索引的元数据。
+- `NEVERC_OBJECT_WRITE_ANDROID_KERNEL_RELEASE` 还把最终序列化 ELF 作为权威边界：
+  删除 writer 合成的 mapping symbols，并依据实际序列化节区坐标重放 release 名称。
+- `NEVERC_OBJECT_WRITE_DROP_DEBUG_INFO` 请求在上述某一种 ELF 策略中删除调试节区。
+
+`NEVERC_OBJECT_WRITE_REQUEST_KNOWN_FLAGS` 是完整的已知位掩码。合法组合仅有 `0`、
+`CANONICAL_ELF_TABLES`、`CANONICAL_ELF_TABLES | DROP_DEBUG_INFO`、
+`CANONICAL_ELF_TABLES | ANDROID_KERNEL_RELEASE`，以及三个位全部置位。release 或
+debug 位不能脱离 canonical 位单独使用。
+
+宿主会在打开输出 sink 之前拒绝未知或非法组合，也会拒绝发给 minor-0 provider 的
+任何特殊请求。1.1 writer 同样必须拒绝、而不是忽略收到的未知或非法 flags。writer
+以及任何 `object.post_write` 拦截器运行后，宿主语义校验和
+sealed 的 `object.final_verify` 会再次审计序列化字节，并且它们才是权威结果。这些
+flags 不是对所有第三方格式的通用承诺。minor 1 表示 writer 理解 flags 协议：它可以
+实现适用的 ELF 策略；策略不适用或不受支持时，也可以明确返回
+`NEVERC_STATUS_CAPABILITY_UNAVAILABLE`，但绝不能静默忽略请求。
 
 ### 写出流水线
 
