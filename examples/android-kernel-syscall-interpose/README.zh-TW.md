@@ -23,17 +23,23 @@ neverc make release  # release：-O2 --strip
 neverc make debug    # 切回 debug
 ```
 
-例如使用 `neverc make KERNEL=612 release` 選擇其他核心預設。Makefile 會同時
-保存 `KERNEL` 與 `PROFILE`，因此後續 `make push`/`run` 會沿用已選擇的產物，
-不會默默切回另一種設定。
+例如使用 `neverc make KERNEL=612 release` 選擇其他核心預設。
+`neverc make release` 選擇 `-O2 --strip`。Makefile 會把所選 `KERNEL` 與
+`PROFILE` 記錄在 `.nvk-build-flags` 中，因此後續 `make push`、`make run` 與
+不帶目標的 `make` 會繼續使用該產物。沒有此狀態檔時，`make` 預設使用 debug。
+`make debug` 或明確的 `PROFILE=...` 會取代已保存的設定；`make clean` 刪除狀態
+檔，使下一次建置恢復為 debug。
 
-release 剝離由 NeverC 內建完成，並遵守核心模組限制：移除 DWARF、
-`.comment` 與未被重定位使用的私有/未定義符號名稱，同時保留 ET_REL 必需的
-符號表/字串表、重定位、匯入、全域定義、`__versions`、
-`.codetag.alloc_tags` 及其他載入 ABI 資料。這不是 strip-all，也不是混淆；
-重定位必需的名稱仍可能保留。若模組需要簽章，請先剝離，再簽署最終位元組。
-不要在 `clean` 中剝離，不要對 `.ko` 使用 `llvm-strip --strip-all`，也不要
-任意移除 `.codetag.alloc_tags` 或 `__codetag_*` 區段。
+NeverC 會寫入五類受 IDA 啟發但不占用保留前綴的發布名稱：函式
+`fn_HEX`、可執行無類型標籤 `code_HEX`、物件 `obj_HEX`、其他無類型標籤
+`sym_HEX`，以及絕對符號 `abs_HEX`。對一般已配置定義而言，`HEX` 是依最終
+`SHF_ALLOC` 節區布局確定性計算的 `analysis EA`（`abs_HEX` 改用絕對
+`st_value`）；它不是 hash（雜湊）、encryption（加密）、file offset（檔案偏移）、
+ELF virtual address（ELF 虛擬位址）或 runtime kernel address（核心執行期位址）。
+NeverC 既不儲存保留的 `sub_`/`loc_` 形式，也不刻意清空一般名稱。
+
+必須原樣保留的名稱、IDA 合成的 `extern` 檢視、安全邊界，以及發布收尾與簽署的
+先後順序，統一參見[發布與剝離策略](../../docs/release-builds/README.zh-TW.md)。
 
 ## 部署和執行
 

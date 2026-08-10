@@ -19,20 +19,29 @@ neverc make release  # release: -O2 --strip
 neverc make debug    # zurück zu debug
 ```
 
-Wählen Sie ein anderes Preset z. B. mit `neverc make KERNEL=612 release`.
-Das Makefile speichert `KERNEL` und `PROFILE`, sodass spätere
-`make push`/`run`-Aufrufe beim gewählten Artefakt bleiben.
+Wählen Sie ein anderes Kernel-Preset z. B. mit
+`neverc make KERNEL=612 release`. `neverc make release` wählt
+`-O2 --strip`. Das Makefile schreibt die gewählten Werte für `KERNEL` und
+`PROFILE` in `.nvk-build-flags`, sodass spätere Aufrufe von `make push`,
+`make run` und `make` ohne Ziel dasselbe Artefakt verwenden. Ohne diese
+Statusdatei verwendet `make` standardmäßig debug. `make debug` oder ein
+ausdrückliches `PROFILE=...` ersetzt das gespeicherte Profil; `make clean`
+löscht die Statusdatei, sodass der nächste Build wieder debug verwendet.
 
-Release-Stripping ist in NeverC integriert und auf eine kernelmodulsichere
-Teilmenge begrenzt. DWARF, `.comment` und für Relokationen unnötige private bzw.
-undefinierte Symbolnamen werden entfernt; ET_REL-Symbol-/Stringtabellen,
-Relokationen, Importe, globale Definitionen, `__versions`,
-`.codetag.alloc_tags` und Loader-ABI-Daten bleiben erhalten. Das ist weder
-strip-all noch Obfuskation; für Relokationen benötigte Namen können verbleiben.
-Signieren Sie erst nach dem Stripping. Strippen Sie nie in `clean`, verwenden
-Sie für `.ko` kein `llvm-strip --strip-all` und entfernen Sie
-`.codetag.alloc_tags` oder `__codetag_*` nicht blind.
+NeverC schreibt fünf Klassen von IDA inspirierten, nicht reservierten Release-Namen:
+Funktionen `fn_HEX`, ausführbare typfreie Labels `code_HEX`, Objekte `obj_HEX`,
+andere typfreie Labels `sym_HEX` und absolute Symbole `abs_HEX`. Für gewöhnliche
+allozierte Definitionen ist `HEX` eine deterministische `analysis EA`, die aus
+dem endgültigen Layout der `SHF_ALLOC`-Sektionen abgeleitet wird (`abs_HEX`
+verwendet stattdessen den absoluten `st_value`); sie ist weder hash (Hashwert)
+noch encryption (Verschlüsselung), file offset (Datei-Offset), ELF virtual
+address (virtuelle ELF-Adresse) oder runtime kernel address
+(Kernel-Laufzeitadresse). NeverC speichert weder reservierte `sub_`/`loc_`-Formen
+noch absichtlich leere gewöhnliche Namen.
 
+Die [Release- und Strip-Richtlinie](../../docs/release-builds/README.de.md)
+beschreibt die exakt zu erhaltenden Namen, IDAs synthetische `extern`-Ansicht,
+die Sicherheitsgrenzen sowie die Reihenfolge von Finalisierung und Signatur.
 
 ## Deployment und Ausfuehrung
 

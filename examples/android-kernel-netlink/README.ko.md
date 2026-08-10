@@ -16,17 +16,24 @@ neverc make debug    # debug로 전환
 ```
 
 다른 커널 프리셋은 예를 들어 `neverc make KERNEL=612 release`로 선택합니다.
-Makefile은 `KERNEL`과 `PROFILE`을 모두 저장하므로 이후 `make push`/`run`이
-다른 프로필로 조용히 되돌아가지 않습니다.
+`neverc make release`는 `-O2 --strip`을 선택합니다. Makefile은 선택한
+`KERNEL`과 `PROFILE`을 `.nvk-build-flags`에 기록하므로 이후 `make push`,
+`make run`, 대상 없는 `make`가 같은 산출물을 사용합니다. 이 상태 파일이 없으면
+`make`는 debug를 기본값으로 사용합니다. `make debug` 또는 명시적인
+`PROFILE=...`는 저장된 프로필을 갱신하고, `make clean`은 상태 파일을 삭제하여
+다음 빌드를 debug로 되돌립니다.
 
-release 스트립은 NeverC에 내장되어 있으며 커널 모듈에 안전한 범위만
-적용합니다. DWARF, `.comment`, 재배치에 필요하지 않은 private/undefined
-심볼 이름은 제거하지만 ET_REL 심볼/문자열 테이블, 재배치, import, global
-정의, `__versions`, `.codetag.alloc_tags`와 로더 ABI 데이터는 유지합니다.
-strip-all이나 난독화가 아니므로 재배치에 필요한 이름은 남을 수 있습니다.
-서명할 경우 먼저 스트립한 뒤 최종 바이트에 서명하세요. `clean`에서
-스트립하거나 `.ko`에 `llvm-strip --strip-all`을 사용하거나
-`.codetag.alloc_tags`/`__codetag_*` 섹션을 무작정 제거하면 안 됩니다.
+NeverC는 IDA에서 착안하되 예약 접두사를 쓰지 않는 릴리스 이름을 다섯 종류로
+기록합니다. 함수는 `fn_HEX`, 실행 가능한 무형식 레이블은 `code_HEX`, 객체는
+`obj_HEX`, 그 밖의 무형식 레이블은 `sym_HEX`, 절대 심볼은 `abs_HEX`입니다.
+일반 할당 정의에서 `HEX`는 최종 `SHF_ALLOC` 섹션 배치로부터 결정적으로 계산한
+`analysis EA`입니다(`abs_HEX`는 대신 절대 `st_value`를 사용합니다). 이는 hash
+(해시), encryption(암호화), file offset(파일 오프셋), ELF virtual address
+(ELF 가상 주소), runtime kernel address(런타임 커널 주소)가 아닙니다. NeverC는
+예약된 `sub_`/`loc_` 형식이나 의도적으로 빈 일반 이름도 저장하지 않습니다.
+
+정확히 보존할 이름, IDA의 합성 `extern` 보기, 보안 경계, 확정 처리와 서명의 순서는
+[릴리스 및 스트립 정책](../../docs/release-builds/README.ko.md)을 참조하십시오.
 
 ## 배포 및 실행
 

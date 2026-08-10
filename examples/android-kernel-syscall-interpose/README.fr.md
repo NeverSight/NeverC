@@ -23,20 +23,29 @@ neverc make release  # release : -O2 --strip
 neverc make debug    # retour au profil debug
 ```
 
-Sélectionnez un autre préréglage avec, par exemple,
-`neverc make KERNEL=612 release`. Le Makefile mémorise `KERNEL` et `PROFILE` :
-les commandes `make push`/`run` suivantes conservent donc l'artefact choisi.
+Sélectionnez un autre profil du noyau avec, par exemple,
+`neverc make KERNEL=612 release`. `neverc make release` sélectionne
+`-O2 --strip`. Le Makefile inscrit les valeurs `KERNEL` et `PROFILE` choisies
+dans `.nvk-build-flags` ; les commandes ultérieures `make push`, `make run` et
+`make` sans cible réutilisent donc le même artefact. Sans ce fichier d'état,
+`make` utilise debug par défaut. `make debug` ou un `PROFILE=...` explicite
+remplace le profil enregistré ; `make clean` supprime le fichier et ramène la
+construction suivante à debug.
 
-Le dépouillement release est intégré à NeverC et limité pour rester compatible
-avec les modules noyau. Il retire DWARF, `.comment` et les noms privés/non
-définis inutiles aux relocalisations, mais conserve les tables de symboles et
-de chaînes ET_REL, les relocalisations, imports, définitions globales,
-`__versions`, `.codetag.alloc_tags` et l'ABI du chargeur. Ce n'est ni strip-all
-ni une obfuscation ; les noms requis par les relocalisations peuvent rester.
-Signez toujours après le dépouillement. Ne dépouillez jamais dans `clean`,
-n'utilisez pas `llvm-strip --strip-all` sur un `.ko` et ne supprimez pas
-aveuglément `.codetag.alloc_tags` ou `__codetag_*`.
+NeverC écrit cinq classes de noms de publication inspirés d'IDA mais non réservés :
+les fonctions `fn_HEX`, les étiquettes sans type exécutables `code_HEX`, les
+objets `obj_HEX`, les autres étiquettes sans type `sym_HEX` et les symboles
+absolus `abs_HEX`. Pour une définition ordinaire allouée, `HEX` est une
+`analysis EA` déterministe dérivée de la disposition finale des sections
+`SHF_ALLOC` (`abs_HEX` utilise plutôt la valeur `st_value` absolue) ; ce n'est ni
+un hash (hachage), ni une encryption (chiffrement), ni un file offset (décalage
+de fichier), ni une ELF virtual address (adresse virtuelle ELF), ni une runtime
+kernel address (adresse noyau à l'exécution). NeverC ne stocke ni les formes
+réservées `sub_`/`loc_`, ni des noms ordinaires volontairement vides.
 
+Pour les noms à conserver exactement, la vue `extern` synthétique d'IDA, les
+limites de sécurité et l'ordre entre finalisation et signature, consultez la
+[politique de publication et de dépouillement](../../docs/release-builds/README.fr.md).
 
 ## Déploiement et exécution
 

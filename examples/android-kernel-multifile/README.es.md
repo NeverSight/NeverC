@@ -19,19 +19,29 @@ neverc make release  # release: -O2 --strip
 neverc make debug    # volver a debug
 ```
 
-Seleccione otro preset, por ejemplo, con `neverc make KERNEL=612 release`.
-El Makefile guarda `KERNEL` y `PROFILE`, por lo que los siguientes
-`make push`/`run` conservan el artefacto elegido.
+Selecciona otro perfil del kernel, por ejemplo, con
+`neverc make KERNEL=612 release`. `neverc make release` selecciona
+`-O2 --strip`. El Makefile registra los valores elegidos de `KERNEL` y
+`PROFILE` en `.nvk-build-flags`, por lo que `make push`, `make run` y
+`make` sin objetivo siguen usando el mismo artefacto. Sin ese archivo de estado,
+`make` usa debug por defecto. `make debug` o un `PROFILE=...` explícito sustituye
+el perfil guardado; `make clean` elimina el archivo y devuelve la siguiente
+compilación a debug.
 
-El strip de release está integrado en NeverC y limitado para ser seguro en
-módulos del kernel. Elimina DWARF, `.comment` y nombres privados/indefinidos no
-necesarios por reubicaciones, pero conserva las tablas de símbolos/cadenas
-ET_REL, reubicaciones, importaciones, definiciones globales, `__versions`,
-`.codetag.alloc_tags` y el ABI del cargador. No es strip-all ni ofuscación; los
-nombres necesarios por reubicaciones pueden permanecer. Firme siempre después
-del strip. No haga strip en `clean`, no use `llvm-strip --strip-all` con un
-`.ko` ni elimine a ciegas `.codetag.alloc_tags` o `__codetag_*`.
+NeverC escribe cinco clases de nombres de publicación inspirados en IDA pero no
+reservados: funciones `fn_HEX`, etiquetas ejecutables sin tipo `code_HEX`,
+objetos `obj_HEX`, otras etiquetas sin tipo `sym_HEX` y símbolos absolutos
+`abs_HEX`. Para una definición asignada ordinaria, `HEX` es una `analysis EA`
+determinista derivada de la disposición final de las secciones `SHF_ALLOC`
+(`abs_HEX` usa en cambio el `st_value` absoluto); no es un hash, una encryption
+(codificación), un file offset (desplazamiento de archivo), una ELF virtual
+address (dirección virtual ELF) ni una runtime kernel address (dirección del
+kernel en ejecución). NeverC no almacena las formas reservadas `sub_`/`loc_` ni
+nombres ordinarios vaciados deliberadamente.
 
+Para los nombres que deben conservarse exactos, la vista `extern` sintética de
+IDA, los límites de seguridad y el orden entre finalización y firma, consulta la
+[política de publicación y strip](../../docs/release-builds/README.es.md).
 
 ## Despliegue y ejecucion
 

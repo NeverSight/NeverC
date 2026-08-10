@@ -23,19 +23,26 @@ neverc make release  # release: -O2 --strip
 neverc make debug    # switch back to debug
 ```
 
-Select another preset with, for example, `neverc make KERNEL=612 release`.
-The Makefile persists both `KERNEL` and `PROFILE`, so later `make push`/`run`
-commands use the artifact you selected instead of silently rebuilding another
-profile.
+Select another kernel preset with, for example,
+`neverc make KERNEL=612 release`. `neverc make release` selects
+`-O2 --strip`. The Makefile records the selected `KERNEL` and `PROFILE` in
+`.nvk-build-flags`, so later `make push`, `make run`, and bare `make` calls keep
+using that artifact. Without the stamp, `make` defaults to debug. `make debug`
+or an explicit `PROFILE=...` replaces the saved profile; `make clean` removes
+the stamp, so the next build defaults to debug.
 
-Release stripping is integrated into NeverC and is module-safe: it removes
-DWARF, `.comment`, and relocation-unneeded private/undefined symbol names, but
-keeps the ET_REL symbol/string tables, relocations, imports, global definitions,
-`__versions`, `.codetag.alloc_tags`, and other loader ABI data. It is not
-strip-all or obfuscation; relocation-required names can remain. If the module
-will be signed, strip first and sign the final bytes. Never put stripping in
-`clean`, never run `llvm-strip --strip-all` on a `.ko`, and do not blindly
-remove `.codetag.alloc_tags` or `__codetag_*` sections.
+NeverC writes IDA-inspired, non-reserved release names in five classes:
+functions `fn_HEX`, executable no-type labels `code_HEX`, objects `obj_HEX`,
+other no-type labels `sym_HEX`, and absolute symbols `abs_HEX`. For ordinary
+allocated definitions, `HEX` is a deterministic `analysis EA` derived from the
+final `SHF_ALLOC` section layout (`abs_HEX` instead uses the absolute
+`st_value`); it is not a hash, encryption, file offset, ELF virtual address, or
+runtime kernel address. NeverC stores neither reserved `sub_`/`loc_` forms nor
+deliberately empty ordinary names.
+
+For exact-name preservation, IDA's synthetic `extern` view, security boundaries,
+and finalization-before-signing order, see the
+[release and strip policy](../../docs/release-builds/README.md).
 
 ## Deploy & Run
 

@@ -15,18 +15,28 @@ neverc make release  # release: -O2 --strip
 neverc make debug    # debug に戻す
 ```
 
-別のカーネルプリセットは、たとえば `neverc make KERNEL=612 release` で選択
-します。Makefile は `KERNEL` と `PROFILE` の両方を保存するため、その後の
-`make push`/`run` が別プロファイルへ暗黙に戻ることはありません。
+別のカーネルプリセットは、たとえば
+`neverc make KERNEL=612 release` で選択します。`neverc make release` は
+`-O2 --strip` を選びます。Makefile は選択した `KERNEL` と `PROFILE` を
+`.nvk-build-flags` に記録するため、以後の `make push`、`make run`、
+ターゲットなしの `make` は同じ成果物を使います。この状態ファイルがなければ、
+`make` の既定値は debug です。`make debug` または明示的な `PROFILE=...` は
+保存済みのプロファイルを更新し、`make clean` は状態ファイルを削除して次の
+ビルドを debug に戻します。
 
-release のストリップは NeverC 内蔵で、カーネルモジュール向けに制限されて
-います。DWARF、`.comment`、再配置から不要な private/未定義シンボル名を
-削除しつつ、ET_REL のシンボル表／文字列表、再配置、import、global 定義、
-`__versions`、`.codetag.alloc_tags` などのローダー ABI は保持します。
-strip-all や難読化ではないため、再配置に必要な名前は残り得ます。署名する
-場合は先にストリップし、最終バイト列へ署名してください。`clean` で
-ストリップしたり、`.ko` に `llvm-strip --strip-all` を使ったり、
-`.codetag.alloc_tags` / `__codetag_*` を安易に削除してはいけません。
+NeverC は、IDA に着想を得つつ予約接頭辞を使わないリリース名を 5 種類
+書き込みます。関数は `fn_HEX`、実行可能な無型ラベルは `code_HEX`、オブジェクトは
+`obj_HEX`、その他の無型ラベルは `sym_HEX`、絶対シンボルは `abs_HEX` です。
+通常の割り当て済み定義では、`HEX` は最終的な `SHF_ALLOC` セクション配置から
+決定的に算出した `analysis EA` です（`abs_HEX` は代わりに絶対 `st_value` を
+使います）。これは hash（ハッシュ）、encryption（暗号化）、file offset
+（ファイルオフセット）、ELF virtual address（ELF 仮想アドレス）、runtime kernel
+address（実行時カーネルアドレス）のいずれでもありません。NeverC は予約済みの
+`sub_`/`loc_` 形式も、意図的に空にした通常名も保存しません。
+
+正確に保持する名前、IDA の合成 `extern` 表示、セキュリティ境界、最終処理と署名の
+順序については、
+[リリースとストリップ方針](../../docs/release-builds/README.ja.md)を参照してください。
 
 ## デプロイと実行
 

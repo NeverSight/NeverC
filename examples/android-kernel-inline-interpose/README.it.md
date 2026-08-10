@@ -34,18 +34,28 @@ neverc make release  # release: -O2 --strip
 neverc make debug    # torna a debug
 ```
 
-Seleziona un altro preset, ad esempio, con `neverc make KERNEL=612 release`.
-Il Makefile salva `KERNEL` e `PROFILE`, quindi i successivi `make push`/`run`
-continuano a usare l'artefatto scelto.
+Seleziona un altro profilo del kernel, ad esempio, con
+`neverc make KERNEL=612 release`. `neverc make release` seleziona
+`-O2 --strip`. Il Makefile registra i valori `KERNEL` e `PROFILE` scelti in
+`.nvk-build-flags`, quindi `make push`, `make run` e `make` senza target
+continuano a usare lo stesso artefatto. Senza questo file di stato, `make` usa
+debug per impostazione predefinita. `make debug` o un `PROFILE=...` esplicito
+sostituisce il profilo salvato; `make clean` elimina il file e riporta la
+compilazione successiva a debug.
 
-Lo strip release è integrato in NeverC e limitato a una policy sicura per i
-moduli kernel. Rimuove DWARF, `.comment` e i nomi privati/non definiti non
-necessari alle rilocazioni, ma conserva tabelle simboli/stringhe ET_REL,
-rilocazioni, import, definizioni globali, `__versions`, `.codetag.alloc_tags` e
-l'ABI del loader. Non è strip-all né offuscamento; i nomi richiesti dalle
-rilocazioni possono restare. Firma sempre dopo lo strip. Non eseguire strip in
-`clean`, non usare `llvm-strip --strip-all` su un `.ko` e non rimuovere alla
-cieca `.codetag.alloc_tags` o `__codetag_*`.
+NeverC scrive cinque classi di nomi di rilascio ispirati a IDA ma non riservati:
+funzioni `fn_HEX`, etichette eseguibili senza tipo `code_HEX`, oggetti `obj_HEX`,
+altre etichette senza tipo `sym_HEX` e simboli assoluti `abs_HEX`. Per una
+definizione allocata ordinaria, `HEX` è una `analysis EA` deterministica derivata
+dal layout finale delle sezioni `SHF_ALLOC` (`abs_HEX` usa invece lo `st_value`
+assoluto); non è un hash, una encryption (crittografia), un file offset (offset
+del file), una ELF virtual address (indirizzo virtuale ELF) né una runtime kernel
+address (indirizzo del kernel a runtime). NeverC non memorizza le forme riservate
+`sub_`/`loc_` né nomi ordinari svuotati intenzionalmente.
+
+Per i nomi da conservare esattamente, la vista `extern` sintetica di IDA, i limiti
+di sicurezza e l'ordine tra finalizzazione e firma, consulta la
+[policy di rilascio e strip](../../docs/release-builds/README.it.md).
 
 ## Deploy ed esecuzione
 
