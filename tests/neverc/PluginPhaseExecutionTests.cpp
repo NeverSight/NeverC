@@ -9,7 +9,9 @@
 #include "llvm/Support/Error.h"
 #include <array>
 #include <cstring>
+#include <limits>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
@@ -17,9 +19,24 @@
 using namespace llvm;
 using namespace neverc::plugin;
 
+namespace neverc::plugin {
+
+class PluginProcessServicesTestPeer {
+public:
+  static void setCallbackScopeSetupHook(PluginProcessServices &Services,
+                                        void (*Hook)(void *),
+                                        void *Context = nullptr) {
+    Services.CallbackScopeSetupHookForTesting = Hook;
+    Services.CallbackScopeSetupHookContextForTesting = Context;
+  }
+};
+
+} // namespace neverc::plugin
+
 namespace {
 
 constexpr NevercInterfaceID TestPhaseID{0xabcddcba, 0x101};
+constexpr NevercInterfaceID NestedReadOnlyPhaseID{0xabcddcba, 0x102};
 constexpr NevercInterfaceID TestArtifactID{0xabcddcba, 0x202};
 constexpr const char *TestPluginID = "org.neverc.test.scope.session";
 constexpr const char *SecondPluginID = "org.neverc.test.other";
@@ -84,12 +101,17 @@ registerArtifact(PluginArtifactRegistry &Registry, int &Destroyed) {
 }
 
 struct ActiveScopes {
-  PluginProcessServices Services{"neverc-plugin-phase-tests",
-                                 LLVM_VERSION_MAJOR};
+  explicit ActiveScopes(uint64_t FirstArtifactMutationToken = 1)
+      : Services("neverc-plugin-phase-tests", LLVM_VERSION_MAJOR, {},
+                 FirstArtifactMutationToken) {
+    initialize();
+  }
+
+  PluginProcessServices Services;
   std::unique_ptr<PluginSession> Session;
   std::unique_ptr<PluginTaskContext> Task;
 
-  ActiveScopes() {
+  void initialize() {
     if (Error E = Services.interfaces().freeze())
       ADD_FAILURE() << takeErrorMessage(std::move(E));
     auto Loaded =
@@ -435,13 +457,417 @@ NevercProviderDescriptor providerDescriptor(const char *ID,
                        NEVERC_PLUGIN_ABI_MINOR, 0};
   Descriptor.Phase = TestPhaseID;
   Descriptor.ProviderID = view(ID);
-  Descriptor.Route.Header = {sizeof(Descriptor.Route),
-                             NEVERC_PLUGIN_ABI_MAJOR,
+  Descriptor.Route.Header = {sizeof(Descriptor.Route), NEVERC_PLUGIN_ABI_MAJOR,
                              NEVERC_PLUGIN_ABI_MINOR, 0};
   Descriptor.Deterministic = NEVERC_TRUE;
   Descriptor.Callback = provider;
   Descriptor.UserData = &Data;
   return Descriptor;
+}
+
+struct NestedCapabilityObserverData {
+  PluginPhaseExecutor *OuterExecutor = nullptr;
+  PluginTaskContext *Task = nullptr;
+  uint64_t OuterCapability = 0;
+  bool OuterCapabilityAccepted = false;
+};
+
+NevercStatus NEVERC_CALL nestedCapabilityObserver(const NevercPhaseFrame *,
+                                                  NevercObserverPoint,
+                                                  void *UserData) {
+  auto *Data = static_cast<NestedCapabilityObserverData *>(UserData);
+  Data->OuterCapabilityAccepted =
+      Data->OuterExecutor->validatesArtifactMutationCapability(
+          *Data->Task, Data->OuterCapability);
+  return neverc_status_ok();
+}
+
+struct NestedCapabilityInterceptorData {
+  PluginPhaseExecutor *OuterExecutor = nullptr;
+  PluginPhaseExecutor *InnerExecutor = nullptr;
+  PluginSession *Session = nullptr;
+  PluginTaskContext *Task = nullptr;
+  NevercArtifactHandle Artifact{};
+  NestedCapabilityObserverData *Observer = nullptr;
+  bool AcceptedBeforeNestedCallback = false;
+  bool AcceptedAfterNestedCallback = false;
+  std::string NestedFailure;
+};
+
+NevercStatus NEVERC_CALL nestedCapabilityInterceptor(
+    const NevercPhaseFrame *Frame, NevercPhaseContinuation *Continuation,
+    NevercPhaseResult *OutResult, void *UserData) {
+  auto *Data = static_cast<NestedCapabilityInterceptorData *>(UserData);
+  auto Capability =
+      Data->OuterExecutor->currentArtifactMutationCapability(*Data->Task);
+  if (!Capability)
+    return failedStatus();
+  Data->Observer->OuterCapability = *Capability;
+  Data->AcceptedBeforeNestedCallback =
+      Data->OuterExecutor->validatesArtifactMutationCapability(*Data->Task,
+                                                               *Capability);
+  Error Nested = Data->InnerExecutor->notify(*Data->Session, *Data->Task,
+                                             NestedReadOnlyPhaseID, route(),
+                                             Data->Artifact);
+  if (Nested) {
+    Data->NestedFailure = takeErrorMessage(std::move(Nested));
+    return failedStatus();
+  }
+  Data->AcceptedAfterNestedCallback =
+      Data->OuterExecutor->validatesArtifactMutationCapability(*Data->Task,
+                                                               *Capability);
+  NevercStatus Status =
+      Continuation->InvokeNext(Continuation, Frame, OutResult);
+  if (Status.Code == NEVERC_STATUS_OK)
+    setContinue(OutResult);
+  return Status;
+}
+
+TEST(PluginPhaseExecutionTest,
+     NestedReadOnlyCallbackShadowsOuterArtifactMutationCapability) {
+  ActiveScopes Scopes;
+  ASSERT_NE(Scopes.Task, nullptr);
+
+  PluginPhaseGraph OuterGraph = makeGraph();
+  PluginPhaseGraph InnerGraph;
+  PluginPhaseDefinition InnerPhase;
+  InnerPhase.ID = NestedReadOnlyPhaseID;
+  InnerPhase.CanonicalName = "test.phase.nested-read-only";
+  InnerPhase.Domain = "test";
+  InnerPhase.Verifier = "test.verify";
+  InnerPhase.InputArtifact = TestArtifactID;
+  InnerPhase.OutputArtifact = TestArtifactID;
+  InnerPhase.Policy = NEVERC_PHASE_OBSERVABLE;
+  InnerPhase.ObserverPoints = NEVERC_OBSERVER_BEFORE;
+  ASSERT_FALSE(InnerGraph.addPhase(std::move(InnerPhase)));
+  ASSERT_FALSE(InnerGraph.finalize());
+
+  PluginArtifactRegistry Artifacts;
+  int Destroyed = 0;
+  auto Type = registerArtifact(Artifacts, Destroyed);
+  ASSERT_NE(Type, nullptr);
+  PluginPhaseExecutor OuterExecutor(OuterGraph, Artifacts);
+  PluginPhaseExecutor InnerExecutor(InnerGraph, Artifacts);
+
+  int InputPayload = 1;
+  auto Input = OuterExecutor.createArtifactView(*Scopes.Task, TestArtifactID,
+                                                &InputPayload, 1);
+  ASSERT_TRUE(static_cast<bool>(Input));
+
+  NestedCapabilityObserverData ObserverData{&OuterExecutor, Scopes.Task.get()};
+  NevercObserverDescriptor Observer{};
+  Observer.Header = {sizeof(Observer), NEVERC_PLUGIN_ABI_MAJOR,
+                     NEVERC_PLUGIN_ABI_MINOR, 0};
+  Observer.Phase = NestedReadOnlyPhaseID;
+  Observer.Points = NEVERC_OBSERVER_BEFORE;
+  Observer.Callback = nestedCapabilityObserver;
+  Observer.UserData = &ObserverData;
+  ASSERT_FALSE(InnerExecutor.addObserver(SecondPluginID, Observer));
+
+  NestedCapabilityInterceptorData InterceptorData{
+      &OuterExecutor,    &InnerExecutor, Scopes.Session.get(),
+      Scopes.Task.get(), *Input,         &ObserverData};
+  NevercInterceptorDescriptor Interceptor{};
+  Interceptor.Header = {sizeof(Interceptor), NEVERC_PLUGIN_ABI_MAJOR,
+                        NEVERC_PLUGIN_ABI_MINOR, 0};
+  Interceptor.Phase = TestPhaseID;
+  Interceptor.Callback = nestedCapabilityInterceptor;
+  Interceptor.UserData = &InterceptorData;
+  ASSERT_FALSE(OuterExecutor.addInterceptor(TestPluginID, Interceptor));
+
+  int OutputPayload = 2;
+  ASSERT_FALSE(OuterExecutor.setBuiltinProvider(
+      TestPhaseID, [&](const NevercPhaseFrame *, NevercPhaseResult *Result) {
+        auto Candidate = OuterExecutor.createCandidate(
+            *Scopes.Task, TestArtifactID, &OutputPayload);
+        if (!Candidate) {
+          consumeError(Candidate.takeError());
+          return failedStatus();
+        }
+        Result->Action = NEVERC_PHASE_REPLACE;
+        Result->Output = *Candidate;
+        return neverc_status_ok();
+      }));
+  PluginArtifactSlot Slot(Type);
+
+  EXPECT_FALSE(OuterExecutor.execute(*Scopes.Session, *Scopes.Task, TestPhaseID,
+                                     route(), *Input, Slot));
+  EXPECT_TRUE(InterceptorData.NestedFailure.empty());
+  EXPECT_TRUE(InterceptorData.AcceptedBeforeNestedCallback);
+  EXPECT_FALSE(ObserverData.OuterCapabilityAccepted);
+  EXPECT_TRUE(InterceptorData.AcceptedAfterNestedCallback);
+}
+
+TEST(PluginPhaseExecutionTest,
+     CapabilityTokenExhaustionIsProcessLocalAndRestoresOuterCallback) {
+  constexpr uint64_t LastToken = std::numeric_limits<uint64_t>::max();
+  int OuterDomain = 0;
+  int NestedDomain = 0;
+
+  {
+    ActiveScopes Scopes(LastToken);
+    ASSERT_NE(Scopes.Task, nullptr);
+    bool NestedBodyRan = false;
+    bool OuterRestored = false;
+    auto Outer = Scopes.Task->invokeCallback(
+        TestPluginID, "capability-exhaustion/outer",
+        [&] {
+          auto Token =
+              Scopes.Task->currentArtifactMutationCapability(&OuterDomain);
+          EXPECT_EQ(Token, std::optional<uint64_t>(LastToken));
+          auto Nested = Scopes.Task->invokeCallback(
+              SecondPluginID, "capability-exhaustion/nested",
+              [&] {
+                NestedBodyRan = true;
+                return neverc_status_ok();
+              },
+              true, nullptr, false, &NestedDomain);
+          EXPECT_TRUE(static_cast<bool>(Nested));
+          if (Nested)
+            EXPECT_EQ(Nested->Code, NEVERC_STATUS_RESOURCE_EXHAUSTED);
+          OuterRestored = Scopes.Task->validatesArtifactMutationCapability(
+              &OuterDomain, LastToken);
+          return neverc_status_ok();
+        },
+        true, nullptr, false, &OuterDomain);
+    ASSERT_TRUE(static_cast<bool>(Outer))
+        << takeErrorMessage(Outer.takeError());
+    EXPECT_EQ(Outer->Code, NEVERC_STATUS_OK);
+    EXPECT_FALSE(NestedBodyRan);
+    EXPECT_TRUE(OuterRestored);
+
+    bool PlainBodyRan = false;
+    auto Plain = Scopes.Task->invokeCallback(
+        SecondPluginID, "capability-exhaustion/plain", [&] {
+          PlainBodyRan = true;
+          EXPECT_FALSE(
+              Scopes.Task->currentArtifactMutationCapability(&OuterDomain));
+          return neverc_status_ok();
+        });
+    ASSERT_TRUE(static_cast<bool>(Plain))
+        << takeErrorMessage(Plain.takeError());
+    EXPECT_EQ(Plain->Code, NEVERC_STATUS_OK);
+    EXPECT_TRUE(PlainBodyRan);
+  }
+
+  // Capability generations belong to one PluginProcessServices instance. An
+  // exhausted compiler/service must not consume another instance's namespace.
+  {
+    ActiveScopes IndependentScopes(LastToken);
+    ASSERT_NE(IndependentScopes.Task, nullptr);
+    uint64_t SeenToken = 0;
+    auto Independent = IndependentScopes.Task->invokeCallback(
+        TestPluginID, "capability-exhaustion/independent-process-services",
+        [&] {
+          auto Token =
+              IndependentScopes.Task->currentArtifactMutationCapability(
+                  &OuterDomain);
+          if (Token)
+            SeenToken = *Token;
+          return neverc_status_ok();
+        },
+        true, nullptr, false, &OuterDomain);
+    ASSERT_TRUE(static_cast<bool>(Independent))
+        << takeErrorMessage(Independent.takeError());
+    EXPECT_EQ(Independent->Code, NEVERC_STATUS_OK);
+    EXPECT_EQ(SeenToken, LastToken);
+  }
+}
+
+TEST(PluginPhaseExecutionTest,
+     NestedProcessServicesCallbackShadowsAuthorityAndRejectsForgery) {
+  ActiveScopes OuterScopes;
+  ActiveScopes InnerScopes;
+  ASSERT_NE(OuterScopes.Task, nullptr);
+  ASSERT_NE(InnerScopes.Task, nullptr);
+  auto OtherInnerTask =
+      InnerScopes.Session->createTask(NEVERC_TASK_TRANSLATION_UNIT);
+  ASSERT_TRUE(static_cast<bool>(OtherInnerTask))
+      << takeErrorMessage(OtherInnerTask.takeError());
+
+  int OuterDomain = 0;
+  int InnerDomain = 0;
+  int WrongDomain = 0;
+  bool OuterShadowed = false;
+  bool OuterRestored = false;
+  bool ExactAccepted = false;
+  bool WrongTokenRejected = false;
+  bool WrongDomainRejected = false;
+  bool WrongTaskRejected = false;
+  NevercStatusCode ShadowedOuterCoreState = NEVERC_STATUS_OK;
+
+  auto Outer = OuterScopes.Task->invokeCallback(
+      TestPluginID, "cross-services/outer",
+      [&] {
+        auto OuterToken =
+            OuterScopes.Task->currentArtifactMutationCapability(&OuterDomain);
+        EXPECT_TRUE(OuterToken.has_value());
+        auto Inner = InnerScopes.Task->invokeCallback(
+            SecondPluginID, "cross-services/inner",
+            [&] {
+              auto InnerToken =
+                  InnerScopes.Task->currentArtifactMutationCapability(
+                      &InnerDomain);
+              EXPECT_TRUE(InnerToken.has_value());
+              OuterShadowed =
+                  OuterToken &&
+                  !OuterScopes.Task->validatesArtifactMutationCapability(
+                      &OuterDomain, *OuterToken);
+              ShadowedOuterCoreState =
+                  OuterScopes.Services.coreAPI()
+                      .CheckCancelled(OuterScopes.Services.coreAPI().Context,
+                                      OuterScopes.Task->handle())
+                      .Code;
+              if (InnerToken) {
+                ExactAccepted =
+                    InnerScopes.Task->validatesArtifactMutationCapability(
+                        &InnerDomain, *InnerToken);
+                WrongTokenRejected =
+                    !InnerScopes.Task->validatesArtifactMutationCapability(
+                        &InnerDomain, *InnerToken - 1) &&
+                    !InnerScopes.Task->validatesArtifactMutationCapability(
+                        &InnerDomain, *InnerToken + 1);
+                WrongDomainRejected =
+                    !InnerScopes.Task->validatesArtifactMutationCapability(
+                        &WrongDomain, *InnerToken);
+                WrongTaskRejected = !(*OtherInnerTask)
+                                         ->validatesArtifactMutationCapability(
+                                             &InnerDomain, *InnerToken);
+              }
+              return neverc_status_ok();
+            },
+            true, nullptr, false, &InnerDomain);
+        EXPECT_TRUE(static_cast<bool>(Inner));
+        if (Inner)
+          EXPECT_EQ(Inner->Code, NEVERC_STATUS_OK);
+        OuterRestored =
+            OuterToken && OuterScopes.Task->validatesArtifactMutationCapability(
+                              &OuterDomain, *OuterToken);
+        return neverc_status_ok();
+      },
+      true, nullptr, false, &OuterDomain);
+
+  ASSERT_TRUE(static_cast<bool>(Outer)) << takeErrorMessage(Outer.takeError());
+  EXPECT_EQ(Outer->Code, NEVERC_STATUS_OK);
+  EXPECT_TRUE(OuterShadowed);
+  EXPECT_TRUE(OuterRestored);
+  EXPECT_TRUE(ExactAccepted);
+  EXPECT_TRUE(WrongTokenRejected);
+  EXPECT_TRUE(WrongDomainRejected);
+  EXPECT_TRUE(WrongTaskRejected);
+  EXPECT_EQ(ShadowedOuterCoreState, NEVERC_STATUS_INVALID_STATE);
+  EXPECT_FALSE((*OtherInnerTask)->end());
+}
+
+TEST(PluginPhaseExecutionTest,
+     CallbackSetupExceptionRollsBackNestedAuthorityAndPluginFrame) {
+  ActiveScopes Scopes;
+  ASSERT_NE(Scopes.Task, nullptr);
+  int OuterDomain = 0;
+  int NestedDomain = 0;
+  bool NestedBodyRan = false;
+  bool OuterAuthorityRestored = false;
+
+  auto Outer = Scopes.Task->invokeCallback(
+      TestPluginID, "setup-exception/outer",
+      [&] {
+        auto OuterToken =
+            Scopes.Task->currentArtifactMutationCapability(&OuterDomain);
+        EXPECT_TRUE(OuterToken.has_value());
+
+        PluginProcessServicesTestPeer::setCallbackScopeSetupHook(
+            Scopes.Services, +[](void *) { throw std::bad_alloc(); });
+        auto Nested = Scopes.Task->invokeCallback(
+            SecondPluginID, "setup-exception/nested",
+            [&] {
+              NestedBodyRan = true;
+              return neverc_status_ok();
+            },
+            true, nullptr, false, &NestedDomain);
+        PluginProcessServicesTestPeer::setCallbackScopeSetupHook(
+            Scopes.Services, nullptr);
+
+        EXPECT_TRUE(static_cast<bool>(Nested));
+        if (Nested)
+          EXPECT_EQ(Nested->Code, NEVERC_STATUS_RESOURCE_EXHAUSTED);
+        OuterAuthorityRestored =
+            OuterToken && Scopes.Task->validatesArtifactMutationCapability(
+                              &OuterDomain, *OuterToken);
+        return neverc_status_ok();
+      },
+      true, nullptr, false, &OuterDomain);
+
+  ASSERT_TRUE(static_cast<bool>(Outer)) << takeErrorMessage(Outer.takeError());
+  EXPECT_EQ(Outer->Code, NEVERC_STATUS_OK);
+  EXPECT_FALSE(NestedBodyRan);
+  EXPECT_TRUE(OuterAuthorityRestored);
+
+  bool LaterCallbackRan = false;
+  auto Later =
+      Scopes.Task->invokeCallback(SecondPluginID, "setup-exception/later", [&] {
+        LaterCallbackRan = true;
+        EXPECT_TRUE(
+            Scopes.Session->currentCallbackPluginID().equals(SecondPluginID));
+        EXPECT_FALSE(
+            Scopes.Task->currentArtifactMutationCapability(&OuterDomain));
+        return neverc_status_ok();
+      });
+  ASSERT_TRUE(static_cast<bool>(Later)) << takeErrorMessage(Later.takeError());
+  EXPECT_EQ(Later->Code, NEVERC_STATUS_OK);
+  EXPECT_TRUE(LaterCallbackRan);
+}
+
+TEST(PluginPhaseExecutionTest,
+     PluginExceptionRollsBackNestedAuthorityAndPluginFrame) {
+  ActiveScopes Scopes;
+  ASSERT_NE(Scopes.Task, nullptr);
+  int OuterDomain = 0;
+  int NestedDomain = 0;
+  bool OuterAuthorityRestored = false;
+
+  auto Outer = Scopes.Task->invokeCallback(
+      TestPluginID, "plugin-exception/outer",
+      [&] {
+        auto OuterToken =
+            Scopes.Task->currentArtifactMutationCapability(&OuterDomain);
+        EXPECT_TRUE(OuterToken.has_value());
+        auto Nested = Scopes.Task->invokeCallback(
+            SecondPluginID, "plugin-exception/nested",
+            []() -> NevercStatus {
+              throw std::runtime_error("injected plugin callback failure");
+            },
+            true, nullptr, false, &NestedDomain);
+        EXPECT_TRUE(static_cast<bool>(Nested));
+        if (Nested)
+          EXPECT_EQ(Nested->Code, NEVERC_STATUS_PLUGIN_EXCEPTION);
+        OuterAuthorityRestored =
+            OuterToken &&
+            Scopes.Task->validatesArtifactMutationCapability(&OuterDomain,
+                                                             *OuterToken) &&
+            Scopes.Session->currentCallbackPluginID().equals(TestPluginID);
+        return neverc_status_ok();
+      },
+      true, nullptr, false, &OuterDomain);
+
+  ASSERT_TRUE(static_cast<bool>(Outer)) << takeErrorMessage(Outer.takeError());
+  EXPECT_EQ(Outer->Code, NEVERC_STATUS_OK);
+  EXPECT_TRUE(OuterAuthorityRestored);
+
+  bool LaterCallbackRan = false;
+  auto Later = Scopes.Task->invokeCallback(
+      SecondPluginID, "plugin-exception/later",
+      [&] {
+        LaterCallbackRan = true;
+        EXPECT_TRUE(
+            Scopes.Session->currentCallbackPluginID().equals(SecondPluginID));
+        EXPECT_FALSE(
+            Scopes.Task->currentArtifactMutationCapability(&OuterDomain));
+        return neverc_status_ok();
+      },
+      /*CheckCancellation=*/false);
+  ASSERT_TRUE(static_cast<bool>(Later)) << takeErrorMessage(Later.takeError());
+  EXPECT_EQ(Later->Code, NEVERC_STATUS_OK);
+  EXPECT_TRUE(LaterCallbackRan);
 }
 
 TEST(PluginPhaseExecutionTest,

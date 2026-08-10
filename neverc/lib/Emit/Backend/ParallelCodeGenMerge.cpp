@@ -40,7 +40,6 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/thread.h"
-#include "llvm/Support/xxhash.h"
 
 #include <atomic>
 #include <cstdlib>

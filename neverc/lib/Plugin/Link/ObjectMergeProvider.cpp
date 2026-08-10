@@ -110,7 +110,8 @@ executeObjectMergeProvider(
   Request.Objects = {InputViews.data(), InputViews.size(),
                      sizeof(NevercObjectMergeInput)};
   Request.Flags = Flags;
-  Request.OutputObject = &OutputBridge.api();
+  Request.OutputObject =
+      Provider.Builtin ? &OutputBridge.api() : &OutputBridge.readOnlyAPI();
   Request.OutputGraph = *OutputHandle;
   Request.OutputMutation = *Mutation;
 
@@ -122,13 +123,25 @@ executeObjectMergeProvider(
     return Provider.Merge(Provider.UserData, Task.handle(), &Request,
                           &Candidate);
   };
-  Expected<NevercStatus> Invoked = Provider.Builtin
-                                       ? Expected<NevercStatus>(Invoke())
-                                       : Task.session().invokeCallback(
-                                             Provider.PluginID,
-                                             "object-merge:" +
-                                                 Provider.ProviderID,
-                                             Invoke, true, &Task);
+  Expected<NevercStatus> Invoked = neverc_status_ok();
+  if (Provider.Builtin) {
+    Invoked = Invoke();
+  } else {
+    Invoked = Task.invokeCallback(
+        Provider.PluginID, "object-merge:" + Provider.ProviderID,
+        [&] {
+          auto Capability = Task.currentArtifactMutationCapability(&Provider);
+          if (!Capability) {
+            NevercStatus Failure = neverc_status_ok();
+            Failure.Code = NEVERC_STATUS_CAPABILITY_UNAVAILABLE;
+            return Failure;
+          }
+          Request.OutputObject =
+              &OutputBridge.capabilityAPI(&Provider, *Capability);
+          return Invoke();
+        },
+        true, nullptr, false, &Provider);
+  }
   if (!Invoked) {
     if (OutputBridge.hasActiveMutation())
       (void)OutputBridge.abandonMutation(*Mutation);

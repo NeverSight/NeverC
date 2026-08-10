@@ -6,29 +6,43 @@
 #include "neverc/Plugin/Host/PluginTaskContext.h"
 #include "llvm/Support/Error.h"
 #include <memory>
+#include <mutex>
 #include <utility>
 #include <vector>
 
 namespace neverc::plugin {
 
+class PluginPhaseExecutor;
+
 class ObjectPluginBridge {
 public:
   ObjectPluginBridge(PluginTaskContext &Task, PluginObjectGraph &Graph,
                      bool AllowMutation = true);
+  ObjectPluginBridge(PluginTaskContext &Task, PluginObjectGraph &Graph,
+                     const PluginPhaseExecutor &Executor, uint64_t Token);
+  ObjectPluginBridge(PluginTaskContext &Task, PluginObjectGraph &Graph,
+                     const void *MutationDomain, uint64_t Token);
   ~ObjectPluginBridge();
 
   ObjectPluginBridge(const ObjectPluginBridge &) = delete;
   ObjectPluginBridge &operator=(const ObjectPluginBridge &) = delete;
 
-  const NevercObjectAPI &api() const { return API; }
+  const NevercObjectAPI &api() const { return Facade->API; }
+  const NevercObjectAPI &readOnlyAPI() const { return ReadOnlyFacade->API; }
+  const NevercObjectAPI &capabilityAPI(const void *MutationDomain,
+                                       uint64_t Token);
   NevercTaskHandle taskHandle() const { return Task.handle(); }
   PluginObjectGraph &graphValue() const { return Graph; }
   PluginObjectGraph &activeGraph() const;
   uint64_t bridgeGeneration() const { return BridgeGeneration; }
-  bool mutationAllowed() const { return MutationAllowed; }
+  bool mutationAllowed() const;
   bool hasActiveMutation() const {
     return !neverc_handle_is_null(MutationHandle);
   }
+
+  class OwnerLease;
+  static OwnerLease acquire(void *Context, NevercTaskHandle Task,
+                            bool RequireMutation, NevercStatus &Status);
 
   llvm::Expected<NevercObjectGraphHandle> graph();
   llvm::Expected<NevercObjectLayoutProofHandle> layoutProof();
@@ -124,6 +138,41 @@ public:
   };
 
 private:
+  struct OwnerControl {
+    std::recursive_mutex Mutex;
+    ObjectPluginBridge *Owner = nullptr;
+  };
+
+  struct APIFacade {
+    NevercObjectAPI API{};
+    PluginTaskContext *Task = nullptr;
+    NevercTaskHandle TaskHandle{};
+    std::shared_ptr<OwnerControl> Control;
+    const void *MutationDomain = nullptr;
+    uint64_t Token = 0;
+    bool MutationAllowed = false;
+  };
+
+public:
+  class OwnerLease {
+  public:
+    OwnerLease() = default;
+    OwnerLease(std::shared_ptr<OwnerControl> ControlValue,
+               std::unique_lock<std::recursive_mutex> LockValue,
+               ObjectPluginBridge *OwnerValue)
+        : Control(std::move(ControlValue)), Lock(std::move(LockValue)),
+          Owner(OwnerValue) {}
+    explicit operator bool() const { return Owner != nullptr; }
+    ObjectPluginBridge &operator*() const { return *Owner; }
+    ObjectPluginBridge *operator->() const { return Owner; }
+
+  private:
+    std::shared_ptr<OwnerControl> Control;
+    std::unique_lock<std::recursive_mutex> Lock;
+    ObjectPluginBridge *Owner = nullptr;
+  };
+
+private:
   struct EntityReference {
     ObjectPluginBridge *Bridge = nullptr;
     EntityKind Kind = EntityKind::Section;
@@ -131,18 +180,25 @@ private:
     uint64_t Generation = 0;
   };
 
-  llvm::Expected<NevercHandle>
-  wrapEntity(EntityKind Kind, uint64_t ID);
+  llvm::Expected<NevercHandle> wrapEntity(EntityKind Kind, uint64_t ID);
   NevercStatus resolveEntity(NevercHandle Handle, EntityKind Kind,
                              uint64_t *OutID) const;
   void finishHandles();
   void finishMutation();
+  std::shared_ptr<APIFacade> createFacade(bool AllowMutation,
+                                          const void *MutationDomain = nullptr,
+                                          uint64_t Token = 0);
 
   PluginTaskContext &Task;
   PluginObjectGraph &Graph;
   bool MutationAllowed = true;
+  const void *MutationDomain = nullptr;
+  uint64_t MutationCapabilityToken = 0;
   uint64_t BridgeGeneration = 1;
-  NevercObjectAPI API{};
+  std::shared_ptr<OwnerControl> Control;
+  std::shared_ptr<APIFacade> Facade;
+  std::shared_ptr<APIFacade> ReadOnlyFacade;
+  std::vector<std::shared_ptr<APIFacade>> CapabilityFacades;
   NevercObjectGraphHandle GraphHandle{};
   NevercObjectMutationHandle MutationHandle{};
   NevercObjectLayoutProofHandle LayoutProofHandle{};

@@ -1,4 +1,7 @@
 #include "neverc/Plugin/Host/ObjectWriterProvider.h"
+#include "AndroidKernelReleaseWriterPreflight.h"
+#include "BuiltinLLVMObjectWriter.h"
+#include "BuiltinObjectWriterPreflight.h"
 #include "neverc/Plugin/Host/MutableBinaryBuilder.h"
 #include "neverc/Plugin/Host/ObjectPluginBridge.h"
 #include "neverc/Plugin/Host/PluginProcessServices.h"
@@ -16,14 +19,13 @@ bool sameID(NevercInterfaceID Left, NevercInterfaceID Right) {
   return Left.High == Right.High && Left.Low == Right.Low;
 }
 
-Error statusError(
-    StringRef Operation, NevercStatus Status,
-    const PluginTargetSnapshot::ObjectFormatRecord &Format) {
-  return createStringError(
-      errc::invalid_argument,
-      Operation + " for plugin '" + Format.PluginID + "', format '" +
-          Format.CanonicalName + "' failed with status " +
-          Twine(Status.Code) + " (detail " + Twine(Status.Detail) + ")");
+Error statusError(StringRef Operation, NevercStatus Status,
+                  const PluginTargetSnapshot::ObjectFormatRecord &Format) {
+  return createStringError(errc::invalid_argument,
+                           Operation + " for plugin '" + Format.PluginID +
+                               "', format '" + Format.CanonicalName +
+                               "' failed with status " + Twine(Status.Code) +
+                               " (detail " + Twine(Status.Detail) + ")");
 }
 
 Expected<const NevercIOAPI *> getOutputAPI(PluginTaskContext &Task) {
@@ -51,20 +53,19 @@ makeLayoutReport(const PluginObjectLayoutProof &Proof) {
 
 } // namespace
 
-ObjectOutputDestination
-ObjectOutputDestination::memory(StringRef LogicalName,
-                                uint64_t SizeBudget) {
-  return {ObjectOutputDestinationKind::Memory, LogicalName.str(),
-          SizeBudget};
+ObjectOutputDestination ObjectOutputDestination::memory(StringRef LogicalName,
+                                                        uint64_t SizeBudget) {
+  return {ObjectOutputDestinationKind::Memory, LogicalName.str(), SizeBudget,
+          ObjectWritePolicy::Default, false};
 }
 
-ObjectOutputDestination
-ObjectOutputDestination::file(StringRef FinalPath, uint64_t SizeBudget) {
-  return {ObjectOutputDestinationKind::File, FinalPath.str(), SizeBudget};
+ObjectOutputDestination ObjectOutputDestination::file(StringRef FinalPath,
+                                                      uint64_t SizeBudget) {
+  return {ObjectOutputDestinationKind::File, FinalPath.str(), SizeBudget,
+          ObjectWritePolicy::Default, false};
 }
 
-Expected<std::unique_ptr<ObjectWriterProvider>>
-ObjectWriterProvider::create(
+Expected<std::unique_ptr<ObjectWriterProvider>> ObjectWriterProvider::create(
     std::shared_ptr<const PluginTargetSnapshot> Snapshot) {
   auto Registry = ObjectFormatRegistry::create(std::move(Snapshot));
   if (!Registry)
@@ -73,16 +74,37 @@ ObjectWriterProvider::create(
       new ObjectWriterProvider(std::move(*Registry)));
 }
 
-Expected<std::unique_ptr<PluginObjectImage>>
-ObjectWriterProvider::beginWrite(
+Expected<std::unique_ptr<PluginObjectImage>> ObjectWriterProvider::beginWrite(
     PluginTaskContext &Task, PluginObjectGraph &Graph,
     const ObjectOutputDestination &Destination) const {
-  if (Destination.Name.empty() || Destination.Name.find('\0') !=
-                                      std::string::npos ||
+  if (Destination.Name.empty() ||
+      Destination.Name.find('\0') != std::string::npos ||
       Destination.SizeBudget == 0)
     return createStringError(
         errc::invalid_argument,
         "object output destination requires a name and nonzero budget");
+  uint64_t RequestFlags = 0;
+  switch (Destination.WritePolicy) {
+  case ObjectWritePolicy::Default:
+    if (Destination.DropDebugInfo)
+      return createStringError(
+          errc::invalid_argument,
+          "debug stripping requires an explicit ELF object write policy");
+    break;
+  case ObjectWritePolicy::CanonicalELFTables:
+    RequestFlags = NEVERC_OBJECT_WRITE_CANONICAL_ELF_TABLES;
+    break;
+  case ObjectWritePolicy::AndroidKernelRelease:
+    RequestFlags = NEVERC_OBJECT_WRITE_CANONICAL_ELF_TABLES |
+                   NEVERC_OBJECT_WRITE_ANDROID_KERNEL_RELEASE;
+    break;
+  default:
+    return createStringError(errc::invalid_argument,
+                             "object output destination has an unknown write "
+                             "policy");
+  }
+  if (Destination.DropDebugInfo)
+    RequestFlags |= NEVERC_OBJECT_WRITE_DROP_DEBUG_INFO;
   if (Error E = verifyPluginObjectGraph(Graph))
     return joinErrors(
         createStringError(errc::invalid_argument,
@@ -94,15 +116,32 @@ ObjectWriterProvider::beginWrite(
       (Format->Flags & NEVERC_OBJECT_FORMAT_CAN_WRITE) == 0)
     return createStringError(errc::not_supported,
                              "selected object Format has no Writer capability");
+  if (RequestFlags != 0 &&
+      Format->APIMinor < NEVERC_OBJECT_WRITE_REQUEST_FLAGS_API_MINOR)
+    return createStringError(
+        errc::not_supported,
+        "explicit writer policies require object Format API minor " +
+            Twine(NEVERC_OBJECT_WRITE_REQUEST_FLAGS_API_MINOR) + " or newer");
+
+  if (Format->Writer == &writeBuiltinLLVMObject)
+    if (Error E = verifyBuiltinObjectWriterGraphRepresentability(
+            Graph, "built-in object Writer preflight"))
+      return std::move(E);
 
   const PluginObjectLayoutProof *Proof = Graph.layoutProof();
   const NevercTargetKey Target = Graph.targetKey();
   if (!Proof || Proof->GraphGeneration != Graph.generation() ||
       !sameID(Proof->TargetID, Target.TargetID) ||
       !sameID(Proof->FormatID, Graph.formatID()))
-    return createStringError(
-        errc::operation_not_permitted,
-        "object Writer requires a current layout proof for the selected target");
+    return createStringError(errc::operation_not_permitted,
+                             "object Writer requires a current layout proof "
+                             "for the selected target");
+
+  if ((RequestFlags & NEVERC_OBJECT_WRITE_ANDROID_KERNEL_RELEASE) != 0 &&
+      Format->Writer == &writeBuiltinLLVMObject)
+    if (Error E = verifyPortableAndroidKernelReleaseWriterGraph(
+            Graph, "built-in Android release object Writer preflight"))
+      return std::move(E);
 
   auto OutputAPI = getOutputAPI(Task);
   if (!OutputAPI)
@@ -113,25 +152,23 @@ ObjectWriterProvider::beginWrite(
   NevercStatus Status{};
   switch (Destination.Kind) {
   case ObjectOutputDestinationKind::Memory:
-    Status = (*OutputAPI)->BeginMemoryOutput(
-        (*OutputAPI)->Context, Task.handle(), Name,
-        Destination.SizeBudget, &Sink);
+    Status = (*OutputAPI)
+                 ->BeginMemoryOutput((*OutputAPI)->Context, Task.handle(), Name,
+                                     Destination.SizeBudget, &Sink);
     break;
   case ObjectOutputDestinationKind::File:
-    Status = (*OutputAPI)->BeginFileOutput(
-        (*OutputAPI)->Context, Task.handle(), Name,
-        Destination.SizeBudget, &Sink);
+    Status = (*OutputAPI)
+                 ->BeginFileOutput((*OutputAPI)->Context, Task.handle(), Name,
+                                   Destination.SizeBudget, &Sink);
     break;
   }
   if (!neverc_status_is_ok(Status))
     return statusError("object output begin", Status, *Format);
 
   auto AbortOutput = make_scope_exit([&] {
-    (void)(*OutputAPI)->OutputAbort((*OutputAPI)->Context, Task.handle(),
-                                   Sink);
+    (void)(*OutputAPI)->OutputAbort((*OutputAPI)->Context, Task.handle(), Sink);
   });
-  auto Binary =
-      MutableBinaryBuilder::create(Task, **OutputAPI, Sink);
+  auto Binary = MutableBinaryBuilder::create(Task, **OutputAPI, Sink);
   if (!Binary)
     return Binary.takeError();
 
@@ -145,29 +182,58 @@ ObjectWriterProvider::beginWrite(
 
   NevercObjectWriteRequest Request{};
   Request.Header = {sizeof(Request), NEVERC_OBJECT_FORMAT_API_MAJOR,
-                    NEVERC_OBJECT_FORMAT_API_MINOR, 0};
+                    Format->APIMinor, RequestFlags};
   Request.Task = Task.handle();
   Request.Target = Target;
   Request.FormatID = Format->ID;
   Request.Object = &Bridge.api();
   Request.Graph = *GraphHandle;
   Request.LayoutProof = *ProofHandle;
-  Request.Binary = &(*Binary)->api();
+  Request.Binary =
+      Format->Owner ? &(*Binary)->readOnlyAPI() : &(*Binary)->api();
   Request.Builder = (*Binary)->handle();
 
+  bool CallbackThrew = false;
+  auto InvokeWriter = [&]() -> NevercStatus {
 #if defined(__cpp_exceptions)
-  try {
-    Status = Format->Writer(Format->CallbackUserData, &Request);
-  } catch (...) {
+    try {
+      return Format->Writer(Format->CallbackUserData, &Request);
+    } catch (...) {
+      CallbackThrew = true;
+      NevercStatus Failure = neverc_status_ok();
+      Failure.Code = NEVERC_STATUS_PLUGIN_FAILURE;
+      return Failure;
+    }
+#else
+    return Format->Writer(Format->CallbackUserData, &Request);
+#endif
+  };
+  Expected<NevercStatus> Invoked = neverc_status_ok();
+  if (Format->Owner) {
+    Invoked = Task.invokeCallback(
+        Format->PluginID, "object-writer:" + Format->CanonicalName,
+        [&] {
+          auto Capability = Task.currentArtifactMutationCapability(Format);
+          if (!Capability) {
+            NevercStatus Failure = neverc_status_ok();
+            Failure.Code = NEVERC_STATUS_CAPABILITY_UNAVAILABLE;
+            return Failure;
+          }
+          Request.Binary = &(*Binary)->capabilityAPI(Format, *Capability);
+          return InvokeWriter();
+        },
+        true, nullptr, false, Format);
+  } else {
+    Invoked = InvokeWriter();
+  }
+  if (!Invoked)
+    return Invoked.takeError();
+  Status = *Invoked;
+  if (CallbackThrew)
     return createStringError(
         errc::invalid_argument,
         "object Writer callback for plugin '" + Format->PluginID +
-            "', format '" + Format->CanonicalName +
-            "' threw an exception");
-  }
-#else
-  Status = Format->Writer(Format->CallbackUserData, &Request);
-#endif
+            "', format '" + Format->CanonicalName + "' threw an exception");
   if (!neverc_status_is_ok(Status))
     return statusError("object Writer callback", Status, *Format);
   if (Graph.generation() != Proof->GraphGeneration ||
@@ -179,19 +245,17 @@ ObjectWriterProvider::beginWrite(
   const std::string Provenance =
       "writer:" + Format->PluginID + ":" + Format->CanonicalName;
   auto Image = PluginObjectImage::createPending(
-      Task, Format->ID, Target.TargetID, Graph.generation(),
-      std::move(*Binary), Provenance, makeLayoutReport(*Proof));
+      Task, Format->ID, Target.TargetID, Graph.generation(), std::move(*Binary),
+      Provenance, makeLayoutReport(*Proof));
   if (!Image)
     return Image.takeError();
   AbortOutput.release();
   return Image;
 }
 
-Expected<std::unique_ptr<PluginObjectImage>>
-ObjectWriterProvider::beginImage(
+Expected<std::unique_ptr<PluginObjectImage>> ObjectWriterProvider::beginImage(
     PluginTaskContext &Task, NevercObjectFormatID FormatID,
-    NevercTargetID TargetID, uint64_t GraphGeneration,
-    ArrayRef<uint8_t> Bytes,
+    NevercTargetID TargetID, uint64_t GraphGeneration, ArrayRef<uint8_t> Bytes,
     const ObjectOutputDestination &Destination) const {
   if (Bytes.empty() || Destination.Name.empty() ||
       Destination.Name.find('\0') != std::string::npos ||
@@ -212,29 +276,27 @@ ObjectWriterProvider::beginImage(
   NevercStatus Status{};
   switch (Destination.Kind) {
   case ObjectOutputDestinationKind::Memory:
-    Status = (*OutputAPI)->BeginMemoryOutput(
-        (*OutputAPI)->Context, Task.handle(), Name,
-        Destination.SizeBudget, &Sink);
+    Status = (*OutputAPI)
+                 ->BeginMemoryOutput((*OutputAPI)->Context, Task.handle(), Name,
+                                     Destination.SizeBudget, &Sink);
     break;
   case ObjectOutputDestinationKind::File:
-    Status = (*OutputAPI)->BeginFileOutput(
-        (*OutputAPI)->Context, Task.handle(), Name,
-        Destination.SizeBudget, &Sink);
+    Status = (*OutputAPI)
+                 ->BeginFileOutput((*OutputAPI)->Context, Task.handle(), Name,
+                                   Destination.SizeBudget, &Sink);
     break;
   }
   if (!neverc_status_is_ok(Status))
     return statusError("native object output begin", Status, *Format);
   auto AbortOutput = make_scope_exit([&] {
-    (void)(*OutputAPI)->OutputAbort(
-        (*OutputAPI)->Context, Task.handle(), Sink);
+    (void)(*OutputAPI)->OutputAbort((*OutputAPI)->Context, Task.handle(), Sink);
   });
-  auto Binary =
-      MutableBinaryBuilder::create(Task, **OutputAPI, Sink);
+  auto Binary = MutableBinaryBuilder::create(Task, **OutputAPI, Sink);
   if (!Binary)
     return Binary.takeError();
-  Status = (*Binary)->api().Write(
-      (*Binary)->api().Context, Task.handle(),
-      (*Binary)->handle(), {Bytes.data(), Bytes.size()});
+  Status =
+      (*Binary)->api().Write((*Binary)->api().Context, Task.handle(),
+                             (*Binary)->handle(), {Bytes.data(), Bytes.size()});
   if (!neverc_status_is_ok(Status))
     return statusError("native object staging", Status, *Format);
 
@@ -247,8 +309,8 @@ ObjectWriterProvider::beginImage(
   const std::string Provenance =
       "native:" + Format->PluginID + ":" + Format->CanonicalName;
   auto Image = PluginObjectImage::createPending(
-      Task, FormatID, TargetID, GraphGeneration,
-      std::move(*Binary), Provenance, Report);
+      Task, FormatID, TargetID, GraphGeneration, std::move(*Binary), Provenance,
+      Report);
   if (!Image)
     return Image.takeError();
   AbortOutput.release();
@@ -256,9 +318,8 @@ ObjectWriterProvider::beginImage(
 }
 
 Expected<std::unique_ptr<PluginObjectImage>>
-ObjectWriterProvider::write(
-    PluginTaskContext &Task, PluginObjectGraph &Graph,
-    const ObjectOutputDestination &Destination) const {
+ObjectWriterProvider::write(PluginTaskContext &Task, PluginObjectGraph &Graph,
+                            const ObjectOutputDestination &Destination) const {
   auto Image = beginWrite(Task, Graph, Destination);
   if (!Image)
     return Image.takeError();

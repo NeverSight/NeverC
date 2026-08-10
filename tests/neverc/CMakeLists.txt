@@ -427,6 +427,123 @@ set_target_properties(
   neverc-test-plugin-object-contract-corrupt PROPERTIES PREFIX ""
 )
 
+add_library(neverc-test-plugin-object-phase-observer MODULE
+  Inputs/Plugin/ObjectPhaseObserverPlugin.c
+)
+target_include_directories(neverc-test-plugin-object-phase-observer PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(
+  neverc-test-plugin-object-phase-observer PRIVATE c_std_11
+)
+set_target_properties(
+  neverc-test-plugin-object-phase-observer PROPERTIES PREFIX ""
+)
+
+add_library(neverc-test-plugin-object-phase-observer-interceptor MODULE
+  Inputs/Plugin/ObjectPhaseObserverPlugin.c
+)
+target_include_directories(
+  neverc-test-plugin-object-phase-observer-interceptor PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(
+  neverc-test-plugin-object-phase-observer-interceptor PRIVATE c_std_11
+)
+target_compile_definitions(
+  neverc-test-plugin-object-phase-observer-interceptor PRIVATE
+  NEVERC_TEST_WITH_INTERCEPTOR=1
+)
+set_target_properties(
+  neverc-test-plugin-object-phase-observer-interceptor PROPERTIES PREFIX ""
+)
+
+add_library(neverc-test-plugin-object-phase-observer-provider MODULE
+  Inputs/Plugin/ObjectPhaseObserverPlugin.c
+)
+target_include_directories(
+  neverc-test-plugin-object-phase-observer-provider PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(
+  neverc-test-plugin-object-phase-observer-provider PRIVATE c_std_11
+)
+target_compile_definitions(
+  neverc-test-plugin-object-phase-observer-provider PRIVATE
+  NEVERC_TEST_WITH_PROVIDER=1
+)
+set_target_properties(
+  neverc-test-plugin-object-phase-observer-provider PROPERTIES PREFIX ""
+)
+
+add_library(neverc-test-plugin-object-capability-after-observer MODULE
+  Inputs/Plugin/ObjectPhaseCapabilityCachePlugin.cpp
+)
+target_include_directories(
+  neverc-test-plugin-object-capability-after-observer PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(
+  neverc-test-plugin-object-capability-after-observer PRIVATE cxx_std_17
+)
+set_target_properties(
+  neverc-test-plugin-object-capability-after-observer PROPERTIES PREFIX ""
+)
+
+add_library(neverc-test-plugin-object-capability-cross-thread MODULE
+  Inputs/Plugin/ObjectPhaseCapabilityCachePlugin.cpp
+)
+target_include_directories(
+  neverc-test-plugin-object-capability-cross-thread PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(
+  neverc-test-plugin-object-capability-cross-thread PRIVATE cxx_std_17
+)
+target_compile_definitions(
+  neverc-test-plugin-object-capability-cross-thread PRIVATE
+  NEVERC_TEST_CROSS_THREAD=1
+)
+set_target_properties(
+  neverc-test-plugin-object-capability-cross-thread PROPERTIES PREFIX ""
+)
+
+add_library(neverc-test-plugin-object-capability-graph-cross-phase MODULE
+  Inputs/Plugin/ObjectPhaseCapabilityCachePlugin.cpp
+)
+target_include_directories(
+  neverc-test-plugin-object-capability-graph-cross-phase PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(
+  neverc-test-plugin-object-capability-graph-cross-phase PRIVATE cxx_std_17
+)
+target_compile_definitions(
+  neverc-test-plugin-object-capability-graph-cross-phase PRIVATE
+  NEVERC_TEST_GRAPH_CROSS_PHASE=1
+)
+set_target_properties(
+  neverc-test-plugin-object-capability-graph-cross-phase PROPERTIES PREFIX ""
+)
+
+add_library(neverc-test-plugin-object-capability-binary-cross-phase MODULE
+  Inputs/Plugin/ObjectPhaseCapabilityCachePlugin.cpp
+)
+target_include_directories(
+  neverc-test-plugin-object-capability-binary-cross-phase PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(
+  neverc-test-plugin-object-capability-binary-cross-phase PRIVATE cxx_std_17
+)
+target_compile_definitions(
+  neverc-test-plugin-object-capability-binary-cross-phase PRIVATE
+  NEVERC_TEST_BINARY_CROSS_PHASE=1
+)
+set_target_properties(
+  neverc-test-plugin-object-capability-binary-cross-phase PROPERTIES PREFIX ""
+)
+
 add_neverc_registry_fixture(neverc-test-plugin-target-indirect)
 target_compile_definitions(neverc-test-plugin-target-indirect PRIVATE
   NEVERC_TEST_PLUGIN_ID="org.neverc.test.target-indirect"
@@ -1416,6 +1533,17 @@ add_executable(neverc-plugin-core-tests
   PluginRegistryTests.cpp
   PluginSessionTests.cpp
 )
+if(MSVC)
+  set_source_files_properties(
+    PluginPhaseExecutionTests.cpp
+    PROPERTIES COMPILE_OPTIONS "/EHsc"
+  )
+else()
+  set_source_files_properties(
+    PluginPhaseExecutionTests.cpp
+    PROPERTIES COMPILE_OPTIONS "-fexceptions;-funwind-tables"
+  )
+endif()
 if(NEVERC_ENABLE_PYTHON_PLUGINS)
   target_sources(neverc-plugin-core-tests PRIVATE PythonPluginTests.cpp)
   add_dependencies(neverc-plugin-core-tests neverc-pluginsdk-stage)
@@ -1859,9 +1987,27 @@ target_compile_features(
 )
 target_compile_definitions(neverc-plugin-object-merge-tests PRIVATE
   NEVERC_TEST_OBJECT_MERGE_PLUGIN="$<TARGET_FILE:neverc-test-plugin-object-merge>"
+  NEVERC_TEST_OBJECT_POST_WRITE_PLUGIN="$<TARGET_FILE:neverc-test-plugin-object-post-write>"
+  NEVERC_TEST_OBJECT_CONTRACT_CORRUPT_PLUGIN="$<TARGET_FILE:neverc-test-plugin-object-contract-corrupt>"
+  NEVERC_TEST_OBJECT_PHASE_OBSERVER_PLUGIN="$<TARGET_FILE:neverc-test-plugin-object-phase-observer>"
+  NEVERC_TEST_OBJECT_PHASE_OBSERVER_INTERCEPTOR_PLUGIN="$<TARGET_FILE:neverc-test-plugin-object-phase-observer-interceptor>"
+  NEVERC_TEST_OBJECT_PHASE_OBSERVER_PROVIDER_PLUGIN="$<TARGET_FILE:neverc-test-plugin-object-phase-observer-provider>"
+  NEVERC_TEST_OBJECT_CAPABILITY_AFTER_OBSERVER_PLUGIN="$<TARGET_FILE:neverc-test-plugin-object-capability-after-observer>"
+  NEVERC_TEST_OBJECT_CAPABILITY_CROSS_THREAD_PLUGIN="$<TARGET_FILE:neverc-test-plugin-object-capability-cross-thread>"
+  NEVERC_TEST_OBJECT_CAPABILITY_GRAPH_CROSS_PHASE_PLUGIN="$<TARGET_FILE:neverc-test-plugin-object-capability-graph-cross-phase>"
+  NEVERC_TEST_OBJECT_CAPABILITY_BINARY_CROSS_PHASE_PLUGIN="$<TARGET_FILE:neverc-test-plugin-object-capability-binary-cross-phase>"
 )
 add_dependencies(neverc-plugin-object-merge-tests
   neverc-test-plugin-object-merge
+  neverc-test-plugin-object-post-write
+  neverc-test-plugin-object-contract-corrupt
+  neverc-test-plugin-object-phase-observer
+  neverc-test-plugin-object-phase-observer-interceptor
+  neverc-test-plugin-object-phase-observer-provider
+  neverc-test-plugin-object-capability-after-observer
+  neverc-test-plugin-object-capability-cross-thread
+  neverc-test-plugin-object-capability-graph-cross-phase
+  neverc-test-plugin-object-capability-binary-cross-phase
 )
 gtest_discover_tests(neverc-plugin-object-merge-tests
   PROPERTIES
@@ -2456,6 +2602,7 @@ add_executable(neverc-merge-tests MergeTests.cpp)
 
 target_link_libraries(neverc-merge-tests PRIVATE
   GTest::gtest GTest::gtest_main
+  nevercFoundation
   nevercMerge
   ${NEVERC_COMPILER_RT_BUILTINS}
 )

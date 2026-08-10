@@ -48,6 +48,11 @@ The SDK ships two equivalent forms of the same pure-C ABI:
 - **Modular headers** `neverc/Plugin/Plugin*.h` — include only the domains a
   plugin uses to minimize its compile surface.
 
+Object-format API 1.1 adds opt-in ELF writer-policy requests. Providers that
+advertise 1.0 remain compatible for probe, read, and default writes and receive
+minor-0, zero-flag requests; see the
+[writer-policy contract](../docs/plugin-api/target-mc-object.md#object-format-11-writer-policies).
+
 [`manifest/plugin.json`](manifest/plugin.json)
 ([`utils/plugin-api/gen-sdk-manifest.py`](../utils/plugin-api/gen-sdk-manifest.py))
 records the ABI version, every public interface ID/version/stability, schema

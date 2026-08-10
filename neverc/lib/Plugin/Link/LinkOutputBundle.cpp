@@ -474,7 +474,11 @@ struct LinkOutputPipeline::Impl final : LinkPhaseRuntimeAccess {
     NevercLinkPhaseImageInfo Value{};
     Value.Header = {sizeof(Value), NEVERC_LINK_PHASE_API_MAJOR,
                     NEVERC_LINK_PHASE_API_MINOR, 0};
-    Value.Link = &(*Payload)->Image->linkAPI();
+    auto Capability = Executor->currentArtifactMutationCapability(Task);
+    Value.Link =
+        Capability
+            ? &(*Payload)->Image->capabilityLinkAPI(*Executor, *Capability)
+            : &(*Payload)->Image->readOnlyLinkAPI();
     Value.Image = (*Payload)->Image->handle();
     Value.Outputs =
         (*Payload)->Bundle ? (*Payload)->Bundle->handle()

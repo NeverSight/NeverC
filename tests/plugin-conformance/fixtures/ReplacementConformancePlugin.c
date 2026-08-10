@@ -483,6 +483,8 @@ static NevercStatus NEVERC_CALL write_fixture_nobj(
   if (Request == NULL || Request->Object == NULL ||
       Request->Binary == NULL)
     return failed_status();
+  if (Request->Header.Minor != UINT16_C(0) || Request->Header.Flags != 0)
+    return (NevercStatus){NEVERC_STATUS_ABI_MISMATCH, 0, 0};
   Status = Request->Object->GetFirstSection(
       Request->Object->Context, Request->Task, Request->Graph, &Section);
   if (Status.Code != NEVERC_STATUS_OK)
@@ -602,8 +604,7 @@ static NevercStatus register_fixture_nobj_backend(
       Core->Context,
       (NevercInterfaceID){NEVERC_INTERFACE_OBJECT_FORMAT_HIGH,
                           NEVERC_INTERFACE_OBJECT_FORMAT_LOW},
-      NEVERC_OBJECT_FORMAT_API_MAJOR, NEVERC_OBJECT_FORMAT_API_MINOR,
-      &Table, &Minor, &StructSize);
+      NEVERC_OBJECT_FORMAT_API_MAJOR, UINT16_C(0), &Table, &Minor, &StructSize);
   if (Status.Code != NEVERC_STATUS_OK || Table == NULL ||
       StructSize < sizeof(NevercObjectFormatAPI))
     return failed_status();
@@ -611,7 +612,8 @@ static NevercStatus register_fixture_nobj_backend(
   memset(&Format, 0, sizeof(Format));
   Format.Header.StructSize = sizeof(Format);
   Format.Header.Major = NEVERC_OBJECT_FORMAT_API_MAJOR;
-  Format.Header.Minor = NEVERC_OBJECT_FORMAT_API_MINOR;
+  /* This fixture implements only the baseline request contract. */
+  Format.Header.Minor = UINT16_C(0);
   Format.FormatID = FixtureNObjFormatID;
   Format.CanonicalName =
       (NevercStringView)NEVERC_TEST_STRING_VIEW("nobj");

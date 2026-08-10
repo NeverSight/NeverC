@@ -9,6 +9,7 @@
 #ifndef NEVERC_LIB_MERGE_COMMON_MERGERCOMMON_H
 #define NEVERC_LIB_MERGE_COMMON_MERGERCOMMON_H
 
+#include "neverc/Foundation/AndroidKernelModuleSymbolPolicy.h"
 #include "neverc/Foundation/AndroidKernelProfileContract.h"
 
 #include "llvm/ADT/ArrayRef.h"
@@ -43,12 +44,18 @@ inline bool isELFDebugSection(llvm::StringRef Name) {
          Name.starts_with(".zdebug_");
 }
 
+/// GNU's legacy compressed-DWARF spelling predates SHF_COMPRESSED and cannot
+/// be losslessly replayed by the release merger. It may only disappear through
+/// an explicit drop-debug operation; retaining it is fail-closed.
+inline bool isLegacyELFCompressedDebugSection(llvm::StringRef Name) {
+  return Name.starts_with(".zdebug_");
+}
+
 /// Non-loader metadata intentionally omitted from a release Android module.
 /// This list is deliberately narrow: module ABI sections such as
 /// `.codetag.alloc_tags`, `__versions`, and `.gnu.linkonce.this_module` are
 /// not cosmetic and must never be classified here.
-inline bool
-isAndroidKernelReleaseDiscardableSection(llvm::StringRef Name) {
+inline bool isAndroidKernelReleaseDiscardableSection(llvm::StringRef Name) {
   return Name == ".comment";
 }
 
@@ -73,8 +80,8 @@ struct ELFSectionFold {
 };
 
 /// Linux `sect_empty()` inverted: a non-empty SHF_ALLOC section is exported as
-/// `/sys/module/<mod>/sections/<name>`.  Producer and verifier share this so the
-/// 6.12+ uniqueness guard cannot drift.
+/// `/sys/module/<mod>/sections/<name>`.  Producer and verifier share this so
+/// the 6.12+ uniqueness guard cannot drift.
 inline bool isLoadedELFModuleSection(uint64_t Flags, uint64_t Size) {
   return (Flags & llvm::ELF::SHF_ALLOC) && Size != 0;
 }
@@ -142,6 +149,13 @@ foldELFSection(ELFSectionFold Section, bool MergeSections,
     return Section;
   }
   if (!MergeSections || Section.Name.empty())
+    return Section;
+  // Android loader/architecture sections are intrinsic to the profile, not an
+  // optional caller customization. Keep them distinct even when a low-level
+  // merger client does not repeat the standard preserved list.
+  if (AndroidKernelModule &&
+      AndroidKernelModuleSymbolPolicy::preservesSectionFromMerging(
+          Section.Name))
     return Section;
   for (llvm::StringRef P : Preserved)
     if (Section.Name == P)
@@ -254,8 +268,8 @@ inline bool machOFieldIsWholeWord(uint32_t CpuType, uint8_t Type) {
 /// malformed object can be exactly these, and calling \c DenseMap::find() /
 /// \c lookup() with a reserved key is undefined behavior: it can alias an empty
 /// bucket and hand back an uninitialized "value", which the caller then uses as
-/// an array index -- an out-of-bounds read (the merge fuzzer hit this as a BUS in
-/// the COFF verifier's symbol-by-index lookup).  Every lookup whose key
+/// an array index -- an out-of-bounds read (the merge fuzzer hit this as a BUS
+/// in the COFF verifier's symbol-by-index lookup).  Every lookup whose key
 /// originates in untrusted file bytes must treat a reserved key as "absent".
 template <typename T> inline bool isReservedDenseKey(T Key) {
   return Key == ~T(0) || Key == T(~T(0) - 1);
@@ -304,15 +318,13 @@ struct DedupStrTab {
 /// destructed), which is acceptable because (a) report_fatal_error's default
 /// alternative -- abort() -- is strictly worse, and (b) malformed-input paths
 /// that trigger this are rare.
-template <typename F>
-inline bool runMergeSafely(F &&Fn) {
+template <typename F> inline bool runMergeSafely(F &&Fn) {
   if (ErrorHandler != nullptr)
     return Fn();
 
   static thread_local std::jmp_buf FatalBuf;
   llvm::install_fatal_error_handler(
-      +[](void *, const char *, bool) { std::longjmp(FatalBuf, 1); },
-      nullptr);
+      +[](void *, const char *, bool) { std::longjmp(FatalBuf, 1); }, nullptr);
   if (setjmp(FatalBuf) != 0) {
     llvm::remove_fatal_error_handler();
     return false;

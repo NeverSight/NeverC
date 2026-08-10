@@ -46,10 +46,12 @@ public:
                  bool CheckCancellation = true,
                  PluginTaskContext *CurrentTask = nullptr,
                  uint64_t *OutDiagnosticTransactionID = nullptr,
-                 bool DeferRecoverableDisposition = false);
-  llvm::Error registerDeferredCallback(
-      llvm::StringRef Domain, llvm::StringRef CallbackID,
-      llvm::StringRef PluginID, DeferredCallback Callback);
+                 bool DeferRecoverableDisposition = false,
+                 const void *ArtifactMutationDomain = nullptr);
+  llvm::Error registerDeferredCallback(llvm::StringRef Domain,
+                                       llvm::StringRef CallbackID,
+                                       llvm::StringRef PluginID,
+                                       DeferredCallback Callback);
   void unregisterDeferredCallback(llvm::StringRef Domain,
                                   llvm::StringRef CallbackID);
   llvm::Expected<NevercStatus> invokeDeferredCallback(

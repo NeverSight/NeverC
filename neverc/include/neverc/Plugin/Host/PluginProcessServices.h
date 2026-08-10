@@ -12,6 +12,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <shared_mutex>
 #include <string>
 #include <unordered_map>
@@ -20,6 +21,7 @@ namespace neverc::plugin {
 
 class PluginSession;
 class PluginTaskContext;
+class PluginProcessServicesTestPeer;
 
 class PluginHostService {
 public:
@@ -53,7 +55,8 @@ class PluginProcessServices {
 public:
   PluginProcessServices(
       std::string HostBuildID, uint32_t LLVMMajor,
-      llvm::ArrayRef<llvm::StringRef> StaticOptionSpellings = {});
+      llvm::ArrayRef<llvm::StringRef> StaticOptionSpellings = {},
+      uint64_t FirstArtifactMutationToken = 1);
 
   PluginProcessServices(const PluginProcessServices &) = delete;
   PluginProcessServices &operator=(const PluginProcessServices &) = delete;
@@ -109,16 +112,20 @@ public:
                                   std::shared_ptr<PluginHostService> Service);
   std::shared_ptr<PluginHostService>
   findHostService(NevercInterfaceID Interface) const;
-  bool currentCallbackHasSuffix(
-      const PluginTaskContext &Task,
-      llvm::StringRef Suffix) const;
-  void enterCallbackScope(PluginSession &Session,
-                          PluginTaskContext *Task,
-                          llvm::StringRef PluginID,
-                          llvm::StringRef CallbackName,
-                          uint64_t DiagnosticTransactionID);
-  void leaveCallbackScope(PluginSession &Session,
-                          PluginTaskContext *Task);
+  bool currentCallbackHasSuffix(const PluginTaskContext &Task,
+                                llvm::StringRef Suffix) const;
+  llvm::Expected<uint64_t>
+  enterCallbackScope(PluginSession &Session, PluginTaskContext *Task,
+                     llvm::StringRef PluginID, llvm::StringRef CallbackName,
+                     uint64_t DiagnosticTransactionID,
+                     const void *ArtifactMutationDomain = nullptr);
+  void leaveCallbackScope(PluginSession &Session, PluginTaskContext *Task);
+  std::optional<uint64_t>
+  currentArtifactMutationCapability(const PluginTaskContext &Task,
+                                    const void *Domain) const;
+  bool validatesArtifactMutationCapability(const PluginTaskContext &Task,
+                                           const void *Domain,
+                                           uint64_t Token) const;
 
   llvm::Error shutdown();
 
@@ -128,6 +135,9 @@ private:
   OutputCoordinator Outputs;
   NevercCoreAPI CoreAPI{};
   OwnerTokenAllocator OwnerTokens;
+  OwnerTokenAllocator ArtifactMutationTokens;
+  void (*CallbackScopeSetupHookForTesting)(void *) = nullptr;
+  void *CallbackScopeSetupHookContextForTesting = nullptr;
   std::recursive_mutex ProcessSerialGate;
   std::mutex ScopeMutex;
   std::unordered_map<uint64_t, PluginSession *> Sessions;
@@ -137,6 +147,8 @@ private:
            std::shared_ptr<PluginHostService>>
       HostServices;
   PluginRegistry Registry;
+
+  friend class PluginProcessServicesTestPeer;
 };
 
 } // namespace neverc::plugin

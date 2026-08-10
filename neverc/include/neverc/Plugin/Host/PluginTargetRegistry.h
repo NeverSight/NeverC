@@ -120,6 +120,8 @@ public:
     std::vector<std::string> Aliases;
     std::vector<NevercTargetID> SupportedTargets;
     std::string DefaultExtension;
+    // Negotiated from NevercObjectFormatDescriptor::Header.Minor.
+    uint16_t APIMinor = 0;
     uint64_t Flags = 0;
     NevercObjectProbeFn Probe = nullptr;
     NevercObjectReaderFn Reader = nullptr;

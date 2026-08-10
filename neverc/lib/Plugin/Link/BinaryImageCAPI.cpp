@@ -1,6 +1,9 @@
 #include "BinaryImage.h"
+#include "neverc/Plugin/Host/PluginHandleArena.h"
+#include "neverc/Plugin/Host/PluginTaskContext.h"
 #include <algorithm>
 #include <cstring>
+#include <mutex>
 
 namespace neverc::plugin {
 namespace {
@@ -15,14 +18,50 @@ bool sameHandle(NevercHandle Left, NevercHandle Right) {
   return Left.Owner == Right.Owner && Left.Value == Right.Value;
 }
 
-NevercStatus validate(PluginBinaryImage *Image,
-                      NevercTaskHandle Task,
-                      NevercBinaryImageHandle Handle) {
-  if (!Image || !sameHandle(Task, Image->taskHandle()))
-    return imageStatus(NEVERC_STATUS_WRONG_SCOPE);
-  if (!sameHandle(Handle, Image->handle()))
-    return imageStatus(NEVERC_STATUS_STALE_HANDLE);
-  return neverc_status_ok();
+class ImageLease {
+public:
+  ImageLease() = default;
+  ImageLease(std::shared_ptr<detail::BinaryImageAPIControl> ControlValue,
+             std::unique_lock<std::recursive_mutex> LockValue,
+             PluginBinaryImage *OwnerValue)
+      : Control(std::move(ControlValue)), Lock(std::move(LockValue)),
+        Owner(OwnerValue) {}
+  explicit operator bool() const { return Owner != nullptr; }
+  PluginBinaryImage &operator*() const { return *Owner; }
+  PluginBinaryImage *operator->() const { return Owner; }
+
+private:
+  std::shared_ptr<detail::BinaryImageAPIControl> Control;
+  std::unique_lock<std::recursive_mutex> Lock;
+  PluginBinaryImage *Owner = nullptr;
+};
+
+ImageLease acquire(detail::BinaryImageAPIFacade &Facade,
+                   NevercTaskHandle Task,
+                   NevercBinaryImageHandle Handle,
+                   NevercStatus &Status) {
+  if (!sameHandle(Task, Facade.TaskHandle)) {
+    Status = imageStatus(NEVERC_STATUS_WRONG_SCOPE);
+    return {};
+  }
+  auto Control = Facade.Control;
+  std::unique_lock<std::recursive_mutex> Lock(Control->Mutex);
+  PluginBinaryImage *Owner = Control->Owner;
+  if (!Owner) {
+    Status = imageStatus(NEVERC_STATUS_STALE_HANDLE);
+    return {};
+  }
+  void *Payload = nullptr;
+  Status = Facade.Task->handles().resolve(
+      Handle, PluginBinaryImageHandleKind, &Payload);
+  if (!neverc_status_is_ok(Status))
+    return {};
+  if (Payload != Owner || !sameHandle(Handle, Owner->handle())) {
+    Status = imageStatus(NEVERC_STATUS_STALE_HANDLE);
+    return {};
+  }
+  Status = neverc_status_ok();
+  return ImageLease(std::move(Control), std::move(Lock), Owner);
 }
 
 template <typename T>
@@ -43,9 +82,12 @@ NevercStatus writeRecord(T *OutValue, const T &Value) {
 NevercStatus NEVERC_CALL getImageInfo(
     void *Context, NevercTaskHandle Task,
     NevercBinaryImageHandle Handle, NevercBinaryImageInfo *OutInfo) {
-  auto *Image = static_cast<PluginBinaryImage *>(Context);
-  NevercStatus Status = validate(Image, Task, Handle);
-  if (!neverc_status_is_ok(Status))
+  if (!Context)
+    return imageStatus(NEVERC_STATUS_INVALID_ARGUMENT);
+  auto &Facade = *static_cast<detail::BinaryImageAPIFacade *>(Context);
+  NevercStatus Status;
+  ImageLease Image = acquire(Facade, Task, Handle, Status);
+  if (!Image)
     return Status;
   NevercBinaryImageInfo Value{};
   Value.Header = {sizeof(Value), NEVERC_LINK_API_MAJOR,
@@ -65,7 +107,18 @@ NevercStatus NEVERC_CALL getImageInfo(
   Value.DynamicRelocationCount = Image->dynamicRelocationCount();
   const auto Digest = Image->contentDigest();
   std::copy(Digest.begin(), Digest.end(), Value.ContentDigest);
-  Value.Binary = &Image->binaryAPI();
+  switch (Facade.Access) {
+  case detail::BinaryImageAPIAccess::Unrestricted:
+    Value.Binary = &Image->binaryAPI();
+    break;
+  case detail::BinaryImageAPIAccess::ReadOnly:
+    Value.Binary = &Image->readOnlyBinaryAPI();
+    break;
+  case detail::BinaryImageAPIAccess::Capability:
+    Value.Binary =
+        &Image->capabilityBinaryAPI(Facade.MutationDomain, Facade.Token);
+    break;
+  }
   Value.Builder = Image->builderHandle();
   return writeRecord(OutInfo, Value);
 }
@@ -86,9 +139,12 @@ NevercStatus NEVERC_CALL getSegmentPage(
     void *Context, NevercTaskHandle Task,
     NevercBinaryImageHandle Handle, uint64_t Cursor,
     NevercLinkEntityPage *Page) {
-  auto *Image = static_cast<PluginBinaryImage *>(Context);
-  NevercStatus Status = validate(Image, Task, Handle);
-  if (!neverc_status_is_ok(Status))
+  if (!Context)
+    return imageStatus(NEVERC_STATUS_INVALID_ARGUMENT);
+  auto &Facade = *static_cast<detail::BinaryImageAPIFacade *>(Context);
+  NevercStatus Status;
+  ImageLease Image = acquire(Facade, Task, Handle, Status);
+  if (!Image)
     return Status;
   Status = validatePage(Page, sizeof(NevercBinarySegmentInfo));
   if (!neverc_status_is_ok(Status))
@@ -126,9 +182,12 @@ NevercStatus NEVERC_CALL getSectionPage(
     void *Context, NevercTaskHandle Task,
     NevercBinaryImageHandle Handle, uint64_t Cursor,
     NevercLinkEntityPage *Page) {
-  auto *Image = static_cast<PluginBinaryImage *>(Context);
-  NevercStatus Status = validate(Image, Task, Handle);
-  if (!neverc_status_is_ok(Status))
+  if (!Context)
+    return imageStatus(NEVERC_STATUS_INVALID_ARGUMENT);
+  auto &Facade = *static_cast<detail::BinaryImageAPIFacade *>(Context);
+  NevercStatus Status;
+  ImageLease Image = acquire(Facade, Task, Handle, Status);
+  if (!Image)
     return Status;
   Status = validatePage(Page, sizeof(NevercBinarySectionInfo));
   if (!neverc_status_is_ok(Status))
@@ -166,15 +225,14 @@ NevercStatus NEVERC_CALL getSectionPage(
 
 } // namespace
 
-void initializeBinaryImageAPI(NevercLinkAPI &API,
-                              PluginBinaryImage &Image) {
-  API = {};
-  API.Header = {sizeof(API), NEVERC_LINK_API_MAJOR,
-                NEVERC_LINK_API_MINOR, 0};
-  API.Context = &Image;
-  API.GetBinaryImageInfo = getImageInfo;
-  API.GetBinarySegmentPage = getSegmentPage;
-  API.GetBinarySectionPage = getSectionPage;
+void initializeBinaryImageAPI(detail::BinaryImageAPIFacade &Facade) {
+  Facade.API = {};
+  Facade.API.Header = {sizeof(Facade.API), NEVERC_LINK_API_MAJOR,
+                       NEVERC_LINK_API_MINOR, 0};
+  Facade.API.Context = &Facade;
+  Facade.API.GetBinaryImageInfo = getImageInfo;
+  Facade.API.GetBinarySegmentPage = getSegmentPage;
+  Facade.API.GetBinarySectionPage = getSectionPage;
 }
 
 } // namespace neverc::plugin

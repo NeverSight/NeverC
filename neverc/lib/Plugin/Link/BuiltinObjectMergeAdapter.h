@@ -25,8 +25,10 @@ struct BuiltinObjectMergeConfig {
   /// Remove DWARF only while finalizing the delivered `.ko`.
   bool DropDebugInfo = false;
 
-  /// Remove relocation-unneeded local/undefined symbols and `.comment` while
-  /// preserving the ET_REL symbol table, imports, and relocations.
+  /// Remove relocation-unneeded local/undefined symbols and `.comment`, then
+  /// replay deterministic IDA-style structural names from the shared release
+  /// planner while preserving the ET_REL symbol table, imports, loader ABI
+  /// names, and relocations.
   bool StripUnneededSymbols = false;
 };
 

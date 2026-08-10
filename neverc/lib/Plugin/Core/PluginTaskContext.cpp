@@ -5,6 +5,8 @@
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Twine.h"
+#include "llvm/Support/ErrorHandling.h"
+#include <cassert>
 #include <utility>
 
 using namespace llvm;
@@ -69,8 +71,21 @@ PluginTaskContext::PluginTaskContext(PluginSession &SessionValue,
 }
 
 PluginTaskContext::~PluginTaskContext() {
-  if (Error E = end())
-    consumeError(std::move(E));
+  Error E = end();
+  if (!isEnded()) {
+    if (E) {
+      auto Message = toString(std::move(E));
+      report_fatal_error(
+          Twine("PluginTaskContext destroyed before successful end: ") +
+              Message.str(),
+          /*gen_crash_diag=*/false);
+    }
+    report_fatal_error(
+        "PluginTaskContext end returned success without reaching the ended "
+        "state",
+        /*gen_crash_diag=*/false);
+  }
+  consumeError(std::move(E));
 }
 
 Expected<std::unique_ptr<PluginTaskContext>>
@@ -261,27 +276,40 @@ Error PluginTaskContext::end() {
   return CleanupErrors;
 }
 
-Expected<NevercStatus>
-PluginTaskContext::invokeCallback(StringRef PluginID,
-                                  StringRef CallbackName,
-                                  std::function<NevercStatus()> Callback,
-                                  bool CheckCancellation,
-                                  uint64_t *OutDiagnosticTransactionID,
-                                  bool DeferRecoverableDisposition) {
+Expected<NevercStatus> PluginTaskContext::invokeCallback(
+    StringRef PluginID, StringRef CallbackName,
+    std::function<NevercStatus()> Callback, bool CheckCancellation,
+    uint64_t *OutDiagnosticTransactionID, bool DeferRecoverableDisposition,
+    const void *ArtifactMutationDomain) {
   {
     std::lock_guard<std::mutex> Lock(LifecycleMutex);
     if (Ending || Ended)
-      return taskError(
-          "cannot invoke a callback on an ending plugin task");
+      return taskError("cannot invoke a callback on an ending plugin task");
     ActiveCallbacks.fetch_add(1, std::memory_order_acq_rel);
   }
-  auto ReleaseActiveCallback = make_scope_exit([&] {
-    ActiveCallbacks.fetch_sub(1, std::memory_order_acq_rel);
-  });
-  return Session.invokeCallback(PluginID, CallbackName,
-                                std::move(Callback), CheckCancellation,
-                                this, OutDiagnosticTransactionID,
-                                DeferRecoverableDisposition);
+  auto ReleaseActiveCallback = make_scope_exit(
+      [&] { ActiveCallbacks.fetch_sub(1, std::memory_order_acq_rel); });
+  return Session.invokeCallback(
+      PluginID, CallbackName, std::move(Callback), CheckCancellation, this,
+      OutDiagnosticTransactionID, DeferRecoverableDisposition,
+      ArtifactMutationDomain);
+}
+
+std::optional<uint64_t>
+PluginTaskContext::currentArtifactMutationCapability(const void *Domain) const {
+  return ProcessServices.currentArtifactMutationCapability(*this, Domain);
+}
+
+bool PluginTaskContext::validatesArtifactMutationCapability(
+    const void *Domain, uint64_t Token) const {
+  return ProcessServices.validatesArtifactMutationCapability(*this, Domain,
+                                                             Token);
+}
+
+void PluginTaskContext::retainCallbackContext(std::shared_ptr<void> Context) {
+  assert(Context && "cannot retain a null plugin callback context");
+  std::lock_guard<std::mutex> Lock(LifecycleMutex);
+  RetainedCallbackContexts.push_back(std::move(Context));
 }
 
 bool PluginTaskContext::isEnding() const {

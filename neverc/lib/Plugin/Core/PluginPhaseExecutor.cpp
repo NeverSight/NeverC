@@ -284,10 +284,11 @@ NevercStatus
 invokePluginCallback(PluginPhaseExecutor::ChainContext &Context,
                      StringRef PluginID, StringRef Name,
                      std::function<NevercStatus()> Callback,
-                     uint64_t *OutDiagnosticTransactionID = nullptr) {
-  auto Result =
-      Context.Task.invokeCallback(PluginID, Name, std::move(Callback), true,
-                                  OutDiagnosticTransactionID, true);
+                     uint64_t *OutDiagnosticTransactionID = nullptr,
+                     bool MayReplaceArtifact = false) {
+  auto Result = Context.Task.invokeCallback(
+      PluginID, Name, std::move(Callback), true, OutDiagnosticTransactionID,
+      true, MayReplaceArtifact ? &Context.Executor : nullptr);
   if (!Result) {
     failChain(Context, NEVERC_STATUS_PLUGIN_FAILURE,
               toString(Result.takeError()));
@@ -541,11 +542,28 @@ bool PluginPhaseExecutor::hasBindings(NevercInterfaceID Phase) const {
          });
 }
 
+bool PluginPhaseExecutor::hasInterceptors(NevercInterfaceID Phase) const {
+  std::lock_guard<std::mutex> ConfigurationLock(ConfigurationMutex);
+  return llvm::any_of(Interceptors, [&](const InterceptorBinding &Binding) {
+    return samePluginInterfaceID(Binding.Descriptor.Phase, Phase);
+  });
+}
+
 bool PluginPhaseExecutor::hasProvider(NevercInterfaceID Phase) const {
   std::lock_guard<std::mutex> ConfigurationLock(ConfigurationMutex);
   return llvm::any_of(Providers, [&](const ProviderBinding &Binding) {
     return samePluginInterfaceID(Binding.Descriptor.Phase, Phase);
   });
+}
+
+std::optional<uint64_t> PluginPhaseExecutor::currentArtifactMutationCapability(
+    const PluginTaskContext &Task) const {
+  return Task.currentArtifactMutationCapability(this);
+}
+
+bool PluginPhaseExecutor::validatesArtifactMutationCapability(
+    const PluginTaskContext &Task, uint64_t Token) const {
+  return Task.validatesArtifactMutationCapability(this, Token);
 }
 
 std::vector<std::string> PluginPhaseExecutor::fallbackProvenance() const {
@@ -790,7 +808,7 @@ NevercStatus PluginPhaseExecutor::invokeProvider(ChainContext &Context,
           return Context.Provider->Descriptor.Callback(
               &Context.Frame, &Result, Context.Provider->Descriptor.UserData);
         },
-        &DiagnosticTransactionID);
+        &DiagnosticTransactionID, true);
     bool Recoverable = Status.Code != NEVERC_STATUS_OK &&
                        Status.Code != NEVERC_STATUS_CANCELLED &&
                        Status.Flags == NEVERC_STATUS_FLAG_RECOVERABLE;
@@ -909,13 +927,14 @@ NevercStatus PluginPhaseExecutor::invokeChain(ChainContext &Context,
     if (!KeepCallbackResult)
       discardCandidate(Context.Task, Result.Output);
   });
-  NevercStatus Status =
-      invokePluginCallback(Context, Binding.PluginID,
-                           Context.Phase.CanonicalName + "/interceptor", [&] {
-                             return Binding.Descriptor.Callback(
-                                 &Context.Frame, &Continuation, &Result,
-                                 Binding.Descriptor.UserData);
-                           });
+  NevercStatus Status = invokePluginCallback(
+      Context, Binding.PluginID, Context.Phase.CanonicalName + "/interceptor",
+      [&] {
+        return Binding.Descriptor.Callback(&Context.Frame, &Continuation,
+                                           &Result,
+                                           Binding.Descriptor.UserData);
+      },
+      nullptr, true);
   RawContinuation->Active.store(false, std::memory_order_release);
   bool KeepDownstreamResult = false;
   auto DiscardDownstreamResult = make_scope_exit([&] {

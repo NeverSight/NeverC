@@ -1107,7 +1107,9 @@ PluginTargetRegistry::freeze(
       constexpr size_t Required =
           offsetof(NevercObjectFormatDescriptor, DestroyUserData) +
           sizeof(NevercObjectFormatDescriptor::DestroyUserData);
-      if (!validHeader(Descriptor.Header, Required) ||
+      if (!validHeader(Descriptor.Header, Required,
+                       NEVERC_OBJECT_FORMAT_API_MAJOR,
+                       NEVERC_OBJECT_FORMAT_API_MINOR) ||
           !nonzero(Descriptor.FormatID))
         return createStringError(
             inconvertibleErrorCode(),
@@ -1159,6 +1161,7 @@ PluginTargetRegistry::freeze(
       Format.Aliases = std::move(*Aliases);
       Format.SupportedTargets.assign(Targets->begin(), Targets->end());
       Format.DefaultExtension = std::move(*Extension);
+      Format.APIMinor = Descriptor.Header.Minor;
       Format.Flags = Descriptor.Flags;
       Format.Probe = Descriptor.Probe;
       Format.Reader = Descriptor.Reader;

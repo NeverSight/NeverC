@@ -1,6 +1,7 @@
 #include "neverc/Plugin/Host/LinkExecutionHooksBridge.h"
 #include "AndroidKernelModuleFinalizer.h"
 #include "AndroidKernelProfileContractVerifier.h"
+#include "AndroidKernelReleaseInputVerifier.h"
 #include "BuiltinObjectMergeAdapter.h"
 #include "LinkInputReader.h"
 #include "LinkRequest.h"
@@ -206,8 +207,7 @@ LinkExecutionHooksBridge::execute(const linker::LinkExecutionRequest &Request,
     // always carries the built-in ELF/COFF/Mach-O readers and writers, which
     // is all the merge path needs.
     std::shared_ptr<const PluginTargetSnapshot> TargetSnapshot =
-        findPluginTargetSnapshot(Session->processServices(),
-                                 Session->handle());
+        findPluginTargetSnapshot(Session->processServices(), Session->handle());
     if (!TargetSnapshot)
       return bridgeError("object-merge route has no frozen target snapshot");
     auto ObjectReader = ObjectReaderProvider::create(TargetSnapshot);
@@ -302,11 +302,11 @@ LinkExecutionHooksBridge::execute(const linker::LinkExecutionRequest &Request,
         const ArrayRef<uint8_t> Bytes(
             reinterpret_cast<const uint8_t *>(LTOObjectImages[Index].data()),
             LTOObjectImages[Index].size());
-        auto Graph = (*ObjectReader)
-                         ->read(*Config.pluginTask, Bytes,
-                                ("<lto>/relocatable-" + Twine(Index)).str(),
-                                (*FrozenRequest)->ownedTarget(),
-                                FrozenInputFormat);
+        auto Graph =
+            (*ObjectReader)
+                ->read(*Config.pluginTask, Bytes,
+                       ("<lto>/relocatable-" + Twine(Index)).str(),
+                       (*FrozenRequest)->ownedTarget(), FrozenInputFormat);
         if (!Graph)
           return Graph.takeError();
         LTOObjectGraphs.push_back(std::move(*Graph));
@@ -323,6 +323,47 @@ LinkExecutionHooksBridge::execute(const linker::LinkExecutionRequest &Request,
       return bridgeError(
           "ObjectMergeProvider received no materialized ObjectGraph inputs");
 
+    const auto &Provider = *Plan->objectMergeProvider();
+    AndroidKernelModuleFinalizationPolicy FinalizationPolicy;
+    FinalizationPolicy.DropDebugInfo =
+        Config.finalizeAndroidKernelModule && Config.stripsDebugInfo();
+    FinalizationPolicy.StripUnneededSymbols =
+        Config.finalizeAndroidKernelModule && Config.stripsSymbols();
+    if (Provider.Builtin && FinalizationPolicy.StripUnneededSymbols)
+      FinalizationPolicy.SymbolNameState =
+          AndroidKernelSymbolNameState::CanonicalRelease;
+
+    // ObjectGraph normalizes several ELF-only facts (reserved section indices,
+    // relocation-section flags and ELF ABI headers). Audit every immutable
+    // source image before choosing built-in versus third-party execution so no
+    // provider can observe a release input that the host cannot later recover
+    // from the graph. LTO-lowered objects are appended to both parallel arrays
+    // above and are covered by the same exact-count/non-empty contract.
+    std::optional<AndroidKernelReleaseInputContract> ReleaseInputContract;
+    if (Config.finalizeAndroidKernelModule) {
+      auto Contract = verifyAndroidKernelReleaseObjectMergeInputs(
+          Objects, InputImages, FrozenTarget,
+          "Android kernel ObjectMergeProvider boundary");
+      if (!Contract)
+        return Contract.takeError();
+      ReleaseInputContract = *Contract;
+      if (!Provider.Builtin && Contract->requiresNativeImagePassthrough())
+        return bridgeError(
+            "third-party ObjectMergeProvider cannot preserve native-only "
+            "Android release ABI or anonymous symbol/section provenance");
+      if (Provider.Builtin && Contract->requiresNativeImagePassthrough()) {
+        auto NativeOnlyPipeline =
+            ObjectPhasePipeline::create(*Config.pluginTask, TargetSnapshot);
+        if (!NativeOnlyPipeline)
+          return NativeOnlyPipeline.takeError();
+        if ((*NativeOnlyPipeline)->mayReplaceArtifact())
+          return bridgeError(
+              "Android release input requires native-image passthrough, "
+              "which is incompatible with registered ObjectGraph/output "
+              "phase bindings");
+      }
+    }
+
     std::optional<uint64_t> AndroidKernelContract;
     if (Config.androidKernelModule) {
       auto Contract = requireMatchingAndroidKernelProfileContracts(
@@ -332,19 +373,12 @@ LinkExecutionHooksBridge::execute(const linker::LinkExecutionRequest &Request,
       AndroidKernelContract = *Contract;
     }
 
-    const auto &Provider = *Plan->objectMergeProvider();
-    AndroidKernelModuleFinalizationPolicy FinalizationPolicy;
-    FinalizationPolicy.DropDebugInfo =
-        Config.finalizeAndroidKernelModule && Config.stripsDebugInfo();
-    FinalizationPolicy.StripUnneededSymbols =
-        Config.finalizeAndroidKernelModule && Config.stripsSymbols();
     BuiltinObjectMergeConfig MergeConfig;
     MergeConfig.AndroidKernelModule = Config.androidKernelModule;
     MergeConfig.FinalizeAndroidKernelModule =
         Config.finalizeAndroidKernelModule;
     MergeConfig.DropDebugInfo = FinalizationPolicy.DropDebugInfo;
-    MergeConfig.StripUnneededSymbols =
-        FinalizationPolicy.StripUnneededSymbols;
+    MergeConfig.StripUnneededSymbols = FinalizationPolicy.StripUnneededSymbols;
     Expected<ObjectMergeResult> Merged =
         Provider.Builtin
             ? executeBuiltinObjectMergeAdapter(
@@ -357,6 +391,23 @@ LinkExecutionHooksBridge::execute(const linker::LinkExecutionRequest &Request,
     if (!Merged)
       return Merged.takeError();
 
+    // Only the direct built-in adapter may attest its trusted native merger
+    // bytes. Keep the exact shared token it returned; this bridge consumes the
+    // attestation but never manufactures one from an arbitrary MergedImage.
+    std::shared_ptr<const AndroidKernelReleaseBoundOutputContract>
+        BoundReleaseOutput;
+    if (Provider.Builtin && Config.finalizeAndroidKernelModule) {
+      if (!ReleaseInputContract)
+        return bridgeError("built-in Android final merge has no audited "
+                           "release input contract");
+      auto Consumed = consumeAndroidKernelReleaseBoundOutput(
+          *Merged, *ReleaseInputContract,
+          "Android kernel ObjectMergeProvider boundary");
+      if (!Consumed)
+        return Consumed.takeError();
+      BoundReleaseOutput = std::move(*Consumed);
+    }
+
     ObjectPhaseSemanticValidators Validators;
     // Prefer the merger's concrete image for a lossless write. Finalization may
     // still invalidate it when a typed provider leaves profile/debug/unneeded
@@ -366,23 +417,48 @@ LinkExecutionHooksBridge::execute(const linker::LinkExecutionRequest &Request,
         reinterpret_cast<const uint8_t *>(Merged->MergedImage.data()),
         Merged->MergedImage.size());
     if (Config.finalizeAndroidKernelModule) {
+      if (!ReleaseInputContract)
+        return bridgeError("final Android kernel ObjectMergeProvider output "
+                           "has no audited release input contract");
+      const AndroidKernelReleaseInputContract &FinalReleaseContract =
+          *ReleaseInputContract;
       const uint64_t GenerationBeforeStrip = Merged->Object->generation();
       if (Error Err = finalizeAndroidKernelModuleObjectGraph(
               *Merged->Object, FinalizationPolicy,
               "final Android kernel ObjectMergeProvider output"))
         return std::move(Err);
-      if (Merged->Object->generation() != GenerationBeforeStrip)
+      if (Merged->Object->generation() != GenerationBeforeStrip) {
         OutputImage = {};
+        BoundReleaseOutput.reset();
+      }
+      if (FinalReleaseContract.requiresNativeImagePassthrough() &&
+          OutputImage.empty())
+        return bridgeError(
+            "Android release finalization made a native-only input contract "
+            "graph-authoritative");
       Validators.Graph =
           [Policy = FinalizationPolicy](const PluginObjectGraph &Object) {
             return verifyFinalAndroidKernelModuleObjectGraph(
                 Object, Policy, "final Android kernel pre-write output");
           };
-      Validators.Image =
-          [Policy = FinalizationPolicy](ArrayRef<uint8_t> Image) {
-            return verifyFinalAndroidKernelModuleImage(
-                Image, Policy, "final Android kernel post-write output");
-          };
+      Validators.Image = [Policy = FinalizationPolicy,
+                          Contract = FinalReleaseContract,
+                          BoundContract = BoundReleaseOutput](
+                             ArrayRef<uint8_t> Image) -> Error {
+        if (Error E = verifyFinalAndroidKernelModuleImage(
+                Image, Policy, "final Android kernel post-write output"))
+          return E;
+        // A bound image digest is authoritative only when native-only ELF facts
+        // make the merger image itself the release contract.  Ordinary release
+        // contracts deliberately allow authorized output phases to mutate bytes
+        // outside the structurally verified ABI surface.
+        if (BoundContract && BoundContract->requiresNativeImagePassthrough())
+          return verifyAndroidKernelReleaseOutputContract(
+              Image, *BoundContract,
+              "final Android kernel bound native output contract");
+        return verifyAndroidKernelReleaseOutputContract(
+            Image, Contract, "final Android kernel release input contract");
+      };
     } else if (AndroidKernelContract) {
       if (Error Err = requireAndroidKernelProfileContract(
               *Merged->Object, *AndroidKernelContract,
@@ -402,27 +478,44 @@ LinkExecutionHooksBridge::execute(const linker::LinkExecutionRequest &Request,
             return requireAndroidKernelProfileContract(
                 Object, Expected, "partial Android kernel object phase graph");
           };
-      Validators.Image =
-          [Expected = *AndroidKernelContract](ArrayRef<uint8_t> Image) {
-            return requireAndroidKernelProfileContract(
-                Image, Expected, "partial Android kernel object phase image");
-          };
+      Validators.Image = [Expected =
+                              *AndroidKernelContract](ArrayRef<uint8_t> Image) {
+        return requireAndroidKernelProfileContract(
+            Image, Expected, "partial Android kernel object phase image");
+      };
     }
 
     auto OutputPipeline =
         ObjectPhasePipeline::create(*Config.pluginTask, TargetSnapshot);
     if (!OutputPipeline)
       return OutputPipeline.takeError();
+    if (ReleaseInputContract &&
+        ReleaseInputContract->requiresNativeImagePassthrough() &&
+        (*OutputPipeline)->mayReplaceArtifact())
+      return bridgeError(
+          "Android release output requires native-image passthrough, which "
+          "is incompatible with registered object phase bindings");
     // Write the merged object through the native-image passthrough: the merged
     // graph was just parsed from these exact bytes, so unless a plugin output
     // phase mutates it (or finalization had to strip a divergent graph), the
     // file is written verbatim (byte-identical to the native `-r` link) instead
     // of via the lossy graph->assembly->object Writer.
+    ObjectOutputDestination Destination = ObjectOutputDestination::file(
+        (*FrozenRequest)->outputURI(), std::numeric_limits<uint64_t>::max());
+    // A native merger image already owns final ELF semantics and bypasses the
+    // graph Writer. If finalization or an output plugin makes the graph
+    // authoritative instead, tag only that Writer request: canonical-only
+    // output repairs table ownership, while release output also removes
+    // Writer-synthesized symbols and replays names at the serialized boundary.
+    if (Config.finalizeAndroidKernelModule &&
+        Triple(Request.TargetTriple).isOSBinFormatELF()) {
+      Destination.WritePolicy = FinalizationPolicy.StripUnneededSymbols
+                                    ? ObjectWritePolicy::AndroidKernelRelease
+                                    : ObjectWritePolicy::CanonicalELFTables;
+      Destination.DropDebugInfo = FinalizationPolicy.DropDebugInfo;
+    }
     auto Output = (*OutputPipeline)
-                      ->executeNative(*Merged->Object, OutputImage,
-                                      ObjectOutputDestination::file(
-                                          (*FrozenRequest)->outputURI(),
-                                          std::numeric_limits<uint64_t>::max()),
+                      ->executeNative(*Merged->Object, OutputImage, Destination,
                                       std::move(Validators));
     if (!Output)
       return Output.takeError();

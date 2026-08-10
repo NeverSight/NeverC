@@ -85,14 +85,18 @@ PluginObjectImage::~PluginObjectImage() {
     (void)Task.handles().release(Handle, PluginObjectImageHandleKind);
 }
 
-const NevercMutableBinaryAPI *PluginObjectImage::binaryAPI() const {
-  return Builder ? &Builder->api() : nullptr;
+const NevercMutableBinaryAPI *PluginObjectImage::readOnlyBinaryAPI() const {
+  return Builder ? &Builder->readOnlyAPI() : nullptr;
 }
 
-NevercMutableBinaryBuilderHandle
-PluginObjectImage::binaryBuilder() const {
-  return Builder ? Builder->handle()
-                 : NevercMutableBinaryBuilderHandle{};
+const NevercMutableBinaryAPI *
+PluginObjectImage::capabilityBinaryAPI(const PluginPhaseExecutor &Executor,
+                                       uint64_t Token) {
+  return Builder ? &Builder->capabilityAPI(Executor, Token) : nullptr;
+}
+
+NevercMutableBinaryBuilderHandle PluginObjectImage::binaryBuilder() const {
+  return Builder ? Builder->handle() : NevercMutableBinaryBuilderHandle{};
 }
 
 Expected<NevercOutputSummary>

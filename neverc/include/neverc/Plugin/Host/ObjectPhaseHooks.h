@@ -39,6 +39,8 @@ public:
       llvm::StringRef PluginID,
       const NevercInterceptorDescriptor &Descriptor);
   bool hasPluginBindings() const;
+  bool hasInterceptors() const;
+  bool mayReplaceArtifact() const;
   llvm::Error freeze();
 
   llvm::Expected<std::shared_ptr<PluginObjectImage>>

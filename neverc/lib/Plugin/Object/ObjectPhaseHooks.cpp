@@ -13,6 +13,7 @@
 #include "llvm/Support/Errc.h"
 #include <algorithm>
 #include <cstring>
+#include <iterator>
 #include <utility>
 
 using namespace llvm;
@@ -141,6 +142,12 @@ imageState(PluginObjectImageState State) {
 } // namespace
 
 struct ObjectPhasePipeline::Impl final : ObjectPhaseRuntimeAccess {
+  struct GraphBridgeEntry {
+    PluginObjectGraph *Graph = nullptr;
+    uint64_t CapabilityToken = 0;
+    std::unique_ptr<ObjectPluginBridge> Bridge;
+  };
+
   PluginTaskContext &Task;
   std::shared_ptr<const PluginTargetSnapshot> Snapshot;
   std::shared_ptr<ObjectPhaseProcessService> Service;
@@ -153,9 +160,7 @@ struct ObjectPhasePipeline::Impl final : ObjectPhaseRuntimeAccess {
   const ObjectOutputDestination *ActiveDestination = nullptr;
   ArrayRef<uint8_t> ActiveNativeImage;
   uint64_t NativeGraphGeneration = 0;
-  std::unique_ptr<ObjectPluginBridge> ActiveGraphBridge;
-  const ObjectGraphArtifact *ActiveGraphArtifact = nullptr;
-  bool ActiveGraphMutationAllowed = false;
+  std::vector<GraphBridgeEntry> ActiveGraphBridges;
 
   std::string TargetTriple;
   std::string CPU;
@@ -301,9 +306,7 @@ struct ObjectPhasePipeline::Impl final : ObjectPhaseRuntimeAccess {
   }
 
   void endPhase() {
-    ActiveGraphBridge.reset();
-    ActiveGraphArtifact = nullptr;
-    ActiveGraphMutationAllowed = false;
+    ActiveGraphBridges.clear();
     Service->detach(Task.handle());
     ActivePhase = {};
   }
@@ -521,19 +524,29 @@ struct ObjectPhasePipeline::Impl final : ObjectPhaseRuntimeAccess {
       consumeError(Payload.takeError());
       return objectPhaseStatus(NEVERC_STATUS_WRONG_SCOPE);
     }
-    const bool MutationAllowed =
-        Task.processServices().currentCallbackHasSuffix(
-            Task, "/interceptor") ||
-        Task.processServices().currentCallbackHasSuffix(
-            Task, "/provider");
-    if (ActiveGraphArtifact != *Payload ||
-        ActiveGraphMutationAllowed != MutationAllowed) {
-      ActiveGraphBridge = std::make_unique<ObjectPluginBridge>(
-          Task, *(*Payload)->Graph, MutationAllowed);
-      ActiveGraphArtifact = *Payload;
-      ActiveGraphMutationAllowed = MutationAllowed;
+    auto Capability = Executor->currentArtifactMutationCapability(Task);
+    const uint64_t CapabilityToken = Capability.value_or(0);
+    PluginObjectGraph *Graph = (*Payload)->Graph.get();
+    auto Entry =
+        std::find_if(ActiveGraphBridges.begin(), ActiveGraphBridges.end(),
+                     [&](const GraphBridgeEntry &Candidate) {
+                       return Candidate.Graph == Graph &&
+                              Candidate.CapabilityToken == CapabilityToken;
+                     });
+    if (Entry == ActiveGraphBridges.end()) {
+      GraphBridgeEntry NewEntry;
+      NewEntry.Graph = Graph;
+      NewEntry.CapabilityToken = CapabilityToken;
+      NewEntry.Bridge =
+          Capability
+              ? std::make_unique<ObjectPluginBridge>(Task, *Graph, *Executor,
+                                                     *Capability)
+              : std::make_unique<ObjectPluginBridge>(Task, *Graph, false);
+      ActiveGraphBridges.push_back(std::move(NewEntry));
+      Entry = std::prev(ActiveGraphBridges.end());
     }
-    auto GraphHandle = ActiveGraphBridge->graph();
+    ObjectPluginBridge &Bridge = *Entry->Bridge;
+    auto GraphHandle = Bridge.graph();
     if (!GraphHandle) {
       consumeError(GraphHandle.takeError());
       return objectPhaseStatus(NEVERC_STATUS_RESOURCE_EXHAUSTED);
@@ -541,10 +554,10 @@ struct ObjectPhasePipeline::Impl final : ObjectPhaseRuntimeAccess {
     NevercObjectPhaseGraphInfo Value{};
     Value.Header = {sizeof(Value), NEVERC_OBJECT_PHASE_API_MAJOR,
                     NEVERC_OBJECT_PHASE_API_MINOR, 0};
-    Value.Object = &ActiveGraphBridge->api();
+    Value.Object = &Bridge.api();
     Value.Graph = *GraphHandle;
     if ((*Payload)->Graph->hasLayoutProof()) {
-      auto Proof = ActiveGraphBridge->layoutProof();
+      auto Proof = Bridge.layoutProof();
       if (!Proof) {
         consumeError(Proof.takeError());
         return objectPhaseStatus(NEVERC_STATUS_RESOURCE_EXHAUSTED);
@@ -584,7 +597,6 @@ struct ObjectPhasePipeline::Impl final : ObjectPhaseRuntimeAccess {
     Value.PublicationGeneration = Summary->PublicationGeneration;
     std::copy(std::begin(Summary->Digest), std::end(Summary->Digest),
               Value.Digest);
-    Value.Binary = (*Payload)->Image->binaryAPI();
     Value.Builder = (*Payload)->Image->binaryBuilder();
     const StringRef Provenance = (*Payload)->Image->provenance();
     Value.Provenance = {Provenance.data(), Provenance.size()};
@@ -592,6 +604,11 @@ struct ObjectPhasePipeline::Impl final : ObjectPhaseRuntimeAccess {
       Value.HasLayoutReport = NEVERC_TRUE;
       Value.LayoutReport = *(*Payload)->Image->layoutReport();
     }
+    auto Capability = Executor->currentArtifactMutationCapability(Task);
+    Value.Binary =
+        Capability
+            ? (*Payload)->Image->capabilityBinaryAPI(*Executor, *Capability)
+            : (*Payload)->Image->readOnlyBinaryAPI();
     return writeRecord(OutInfo, Value);
   }
 };
@@ -650,12 +667,29 @@ bool ObjectPhasePipeline::hasPluginBindings() const {
          State->Executor->hasBindings(commitPhaseID());
 }
 
+bool ObjectPhasePipeline::hasInterceptors() const {
+  return State->Executor->hasInterceptors(preWritePhaseID()) ||
+         State->Executor->hasInterceptors(postLayoutPhaseID()) ||
+         State->Executor->hasInterceptors(writePhaseID()) ||
+         State->Executor->hasInterceptors(postWritePhaseID()) ||
+         State->Executor->hasInterceptors(finalVerifyPhaseID()) ||
+         State->Executor->hasInterceptors(commitPhaseID());
+}
+
+bool ObjectPhasePipeline::mayReplaceArtifact() const {
+  return hasInterceptors() || State->Executor->hasProvider(preWritePhaseID()) ||
+         State->Executor->hasProvider(postLayoutPhaseID()) ||
+         State->Executor->hasProvider(writePhaseID()) ||
+         State->Executor->hasProvider(postWritePhaseID()) ||
+         State->Executor->hasProvider(finalVerifyPhaseID()) ||
+         State->Executor->hasProvider(commitPhaseID());
+}
+
 Error ObjectPhasePipeline::freeze() { return State->freeze(); }
 
 Expected<std::shared_ptr<PluginObjectImage>>
-ObjectPhasePipeline::execute(
-    const PluginObjectGraph &InputGraph,
-    const ObjectOutputDestination &Destination) {
+ObjectPhasePipeline::execute(const PluginObjectGraph &InputGraph,
+                             const ObjectOutputDestination &Destination) {
   return executeNative(InputGraph, {}, Destination);
 }
 

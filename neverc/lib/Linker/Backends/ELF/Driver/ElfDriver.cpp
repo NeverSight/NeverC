@@ -2389,15 +2389,6 @@ void LinkerDriver::execute(opt::InputArgList &args) {
       mergeOpts.finalizeAndroidKernelModule =
           config->finalizeAndroidKernelModule;
       mergeOpts.mergeSections = true;
-      mergeOpts.preservedSections = {
-          ".modinfo",
-          "__versions",
-          ".codetag.alloc_tags",
-          ".gnu.linkonce.this_module",
-          ".plt",
-          ".init.plt",
-          ".text.ftrace_trampoline",
-      };
     }
 
     std::error_code ec;

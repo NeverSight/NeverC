@@ -723,8 +723,8 @@ TEST(PluginTargetRegistryTest, FreezesSelectedTargetAndProviderRoute) {
   Schema.Opcodes = {&Opcode, 1, sizeof(Opcode)};
   const NevercTargetID SupportedTargets[] = {TargetID};
   NevercObjectFormatDescriptor Format{};
-  Format.Header = {sizeof(Format), NEVERC_OBJECT_FORMAT_API_MAJOR,
-                   NEVERC_OBJECT_FORMAT_API_MINOR, 0};
+  Format.Header = {sizeof(Format), NEVERC_OBJECT_FORMAT_API_MAJOR, UINT16_C(0),
+                   0};
   Format.FormatID = FormatID;
   Format.CanonicalName = view("test.object");
   Format.SupportedTargets = {SupportedTargets, 1,

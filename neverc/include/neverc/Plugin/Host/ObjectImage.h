@@ -13,6 +13,7 @@
 namespace neverc::plugin {
 
 class MutableBinaryBuilder;
+class PluginPhaseExecutor;
 class PluginTaskContext;
 
 enum class PluginObjectImageState : uint8_t {
@@ -56,7 +57,9 @@ public:
   const std::optional<NevercObjectLayoutProofInfo> &layoutReport() const {
     return LayoutReport;
   }
-  const NevercMutableBinaryAPI *binaryAPI() const;
+  const NevercMutableBinaryAPI *readOnlyBinaryAPI() const;
+  const NevercMutableBinaryAPI *
+  capabilityBinaryAPI(const PluginPhaseExecutor &Executor, uint64_t Token);
   NevercMutableBinaryBuilderHandle binaryBuilder() const;
 
   llvm::Expected<NevercOutputSummary> outputSummary() const;

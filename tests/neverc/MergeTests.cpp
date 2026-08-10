@@ -8,9 +8,11 @@
 //
 //===--------------------------------------------------------------------===//
 
-#include "neverc/Merge/Merger.h"
 #include "Common/DwarfRebase.h"
 #include "Common/MergerCommon.h"
+#include "neverc/Foundation/AndroidKernelModuleReleaseNames.h"
+#include "neverc/Foundation/AndroidKernelModuleSymbolPolicy.h"
+#include "neverc/Merge/Merger.h"
 #include "neverc/Plugin/Host/NativeRelocationFacts.h"
 
 #include "llvm/ADT/SmallVector.h"
@@ -49,6 +51,788 @@
 
 using namespace llvm;
 using namespace neverc::merge;
+
+TEST(AndroidKernelModuleReleaseNames, FormatsCanonicalSpelling) {
+  using NameKind = neverc::ReleaseNameKind;
+
+  EXPECT_EQ(neverc::formatReleaseName(NameKind::Function, 0xC000, 0),
+            "fn_C000");
+  EXPECT_EQ(neverc::formatReleaseName(NameKind::Object, 0x28680, 8),
+            "obj_28680");
+  EXPECT_EQ(neverc::formatReleaseName(NameKind::Absolute, 0x2A, 0), "abs_2A");
+  EXPECT_EQ(neverc::formatReleaseName(NameKind::Function, 0, 0), "fn_0");
+  EXPECT_EQ(neverc::formatReleaseName(NameKind::ExecutableLabel, 8, 0),
+            "code_8");
+}
+
+TEST(AndroidKernelModuleReleaseNames, RecognizesOnlyCanonicalSpellingShape) {
+  for (StringRef Name :
+       {"fn_0", "fn_C000", "fn_C000_1", "obj_28680", "code_F", "sym_50",
+        "sym_S0_20", "sym_SA_20_1", "abs_2A"})
+    EXPECT_TRUE(neverc::hasCanonicalReleaseNameShape(Name)) << Name.str();
+
+  for (StringRef Name :
+       {"sub_0", "loc_F", "fn_", "fn_00", "fn_c000", "fn_C000_0",
+        "fn_C000_01", "fn_C000_1_2", "sym_S_20", "sym_SA_020",
+        "0123456789abcdef"})
+    EXPECT_FALSE(neverc::hasCanonicalReleaseNameShape(Name)) << Name.str();
+}
+
+TEST(AndroidKernelModuleReleaseNames, DerivesNoTypeNameFromFinalSectionFlags) {
+  using SymbolClass = neverc::AndroidKernelModuleSymbolPolicy::SymbolClass;
+  using SymbolType = neverc::ReleaseSymbolType;
+  const neverc::ReleaseSectionDescriptor Sections[] = {
+      {1, 1, 1, 0x10, true, true},
+      {2, 2, 1, 0x10, true, false},
+      {3, 3, 1, 0x10, false, true},
+  };
+  const neverc::ReleaseSymbolDescriptor Symbols[] = {
+      {1, "exec_label", SymbolClass::Defined, SymbolType::NoType, 1, 0, 0, 0, 0,
+       false},
+      {2, "data_label", SymbolClass::Defined, SymbolType::NoType, 2, 0, 0, 0, 0,
+       false},
+      {3, "metadata_label", SymbolClass::Defined, SymbolType::NoType, 3, 0, 0,
+       0, 0, false},
+  };
+
+  auto Plan = neverc::planAndroidKernelReleaseNames(Sections, Symbols);
+  if (!Plan)
+    FAIL() << toString(Plan.takeError()).str().str();
+  ASSERT_EQ(Plan->size(), 3U);
+  EXPECT_EQ((*Plan)[0].OutputName, "code_0");
+  EXPECT_EQ((*Plan)[1].OutputName, "sym_10");
+  EXPECT_EQ((*Plan)[2].OutputName, "sym_S3_0");
+}
+
+TEST(AndroidKernelModuleReleaseNames, ComputesCanonicalSampleLayout) {
+  const neverc::ReleaseSectionDescriptor Sections[] = {
+      {1, 1, 0x1000, 0x22048, true, true}, {2, 2, 1, 0xC4, true, false},
+      {3, 3, 8, 0xEE8, true, false},       {4, 4, 1, 1, true, false},
+      {5, 5, 1, 1, true, false},           {6, 6, 1, 1, true, false},
+      {7, 7, 8, 0x54C0, true, false},      {8, 8, 8, 0x278, true, false},
+  };
+
+  auto Layout = neverc::computeAndroidKernelReleaseSectionLayout(Sections);
+  if (!Layout)
+    FAIL() << toString(Layout.takeError()).str().str();
+  ASSERT_EQ(Layout->size(), std::size(Sections));
+  EXPECT_EQ((*Layout)[0].Base, 0U);
+  EXPECT_EQ((*Layout)[1].Base, 0x22048U);
+  EXPECT_EQ((*Layout)[2].Base, 0x22110U);
+  EXPECT_EQ((*Layout)[6].Base, 0x23000U);
+  EXPECT_EQ((*Layout)[7].Base, 0x284C0U);
+}
+
+TEST(AndroidKernelModuleReleaseNames, EmptyAllocatedSectionReservesOneByte) {
+  const neverc::ReleaseSectionDescriptor Sections[] = {
+      {10, 10, 1, 0, true, false},
+      {11, 11, 8, 4, true, false},
+  };
+
+  auto Layout = neverc::computeAndroidKernelReleaseSectionLayout(Sections);
+  if (!Layout)
+    FAIL() << toString(Layout.takeError()).str().str();
+  ASSERT_EQ(Layout->size(), 2U);
+  EXPECT_EQ((*Layout)[0].Base, 0U);
+  EXPECT_EQ((*Layout)[1].Base, 8U);
+}
+
+TEST(AndroidKernelModuleReleaseNames, RejectsCanonicalLayoutOverflow) {
+  const uint64_t Max = std::numeric_limits<uint64_t>::max();
+  const neverc::ReleaseSectionDescriptor SizeOverflow[] = {
+      {1, 1, 1, 1, true, false},
+      {2, 2, 1, Max, true, false},
+  };
+  auto SizeLayout =
+      neverc::computeAndroidKernelReleaseSectionLayout(SizeOverflow);
+  if (SizeLayout)
+    ADD_FAILURE() << "accepted section-size addition overflow";
+  else
+    consumeError(SizeLayout.takeError());
+
+  const neverc::ReleaseSectionDescriptor AlignmentOverflow[] = {
+      {1, 1, 1, Max - 1, true, false},
+      {2, 2, 4, 1, true, false},
+  };
+  auto AlignmentLayout =
+      neverc::computeAndroidKernelReleaseSectionLayout(AlignmentOverflow);
+  if (AlignmentLayout)
+    ADD_FAILURE() << "accepted section-alignment overflow";
+  else
+    consumeError(AlignmentLayout.takeError());
+
+  const neverc::ReleaseSectionDescriptor EmptyAdvanceOverflow[] = {
+      {1, 1, 1, Max, true, false},
+      {2, 2, 1, 0, true, false},
+  };
+  auto EmptyLayout =
+      neverc::computeAndroidKernelReleaseSectionLayout(EmptyAdvanceOverflow);
+  if (EmptyLayout)
+    ADD_FAILURE() << "accepted empty-section reservation overflow";
+  else
+    consumeError(EmptyLayout.takeError());
+}
+
+TEST(AndroidKernelModuleReleaseNames, RejectsDuplicateSectionIdentity) {
+  auto ExpectExchangeClassError = [](ArrayRef<neverc::ReleaseSectionDescriptor>
+                                         Sections,
+                                     StringRef Description) {
+    auto Classes = neverc::computeAndroidKernelReleaseNameExchangeClasses(
+        Sections, {});
+    if (Classes)
+      ADD_FAILURE() << "exchange-class API accepted " << Description.str();
+    else
+      consumeError(Classes.takeError());
+  };
+
+  const neverc::ReleaseSectionDescriptor DuplicateID[] = {
+      {7, 1, 1, 1, true, false},
+      {7, 2, 1, 1, true, false},
+  };
+  auto IDLayout = neverc::computeAndroidKernelReleaseSectionLayout(DuplicateID);
+  if (IDLayout)
+    ADD_FAILURE() << "accepted duplicate section IDs";
+  else
+    consumeError(IDLayout.takeError());
+  ExpectExchangeClassError(DuplicateID, "duplicate section IDs");
+
+  const neverc::ReleaseSectionDescriptor DuplicateOrdinal[] = {
+      {7, 3, 1, 1, true, false},
+      {8, 3, 1, 1, false, false},
+  };
+  auto OrdinalLayout =
+      neverc::computeAndroidKernelReleaseSectionLayout(DuplicateOrdinal);
+  if (OrdinalLayout)
+    ADD_FAILURE() << "accepted duplicate final section ordinals";
+  else
+    consumeError(OrdinalLayout.takeError());
+  ExpectExchangeClassError(DuplicateOrdinal,
+                           "duplicate final section ordinals");
+}
+
+TEST(AndroidKernelModuleReleaseNames,
+     RejectsNonPowerOfTwoAlignmentAtEveryPublicEntryPoint) {
+  const neverc::ReleaseSectionDescriptor Invalid[] = {
+      {1, 1, 3, 1, true, false},
+  };
+  auto Layout = neverc::computeAndroidKernelReleaseSectionLayout(Invalid);
+  if (Layout)
+    ADD_FAILURE() << "layout API accepted non-power-of-two alignment";
+  else
+    consumeError(Layout.takeError());
+
+  auto Plan = neverc::planAndroidKernelReleaseNames(Invalid, {});
+  if (Plan)
+    ADD_FAILURE() << "planner API accepted non-power-of-two alignment";
+  else
+    consumeError(Plan.takeError());
+
+  auto Classes =
+      neverc::computeAndroidKernelReleaseNameExchangeClasses(Invalid, {});
+  if (Classes)
+    ADD_FAILURE() << "exchange-class API accepted non-power-of-two alignment";
+  else
+    consumeError(Classes.takeError());
+
+  const neverc::ReleaseSectionDescriptor ZeroMeansOne[] = {
+      {1, 1, 0, 1, true, false},
+  };
+  auto ZeroLayout =
+      neverc::computeAndroidKernelReleaseSectionLayout(ZeroMeansOne);
+  if (!ZeroLayout)
+    FAIL() << toString(ZeroLayout.takeError()).str().str();
+  ASSERT_EQ(ZeroLayout->size(), 1U);
+  EXPECT_EQ((*ZeroLayout)[0].Base, 0U);
+}
+
+TEST(AndroidKernelModuleReleaseNames, PlansNamesFromFinalCoordinates) {
+  using SymbolClass = neverc::AndroidKernelModuleSymbolPolicy::SymbolClass;
+  using SymbolKind = neverc::ReleaseSymbolType;
+  const neverc::ReleaseSectionDescriptor Sections[] = {
+      {10, 1, 1, 0x20, true, true},
+      {20, 2, 0x10, 0x30, true, false},
+  };
+  const neverc::ReleaseSymbolDescriptor Symbols[] = {
+      {100, "function", SymbolClass::Defined, SymbolKind::Function, 10, 0xC, 0,
+       1, 0, false},
+      {101, "object", SymbolClass::Defined, SymbolKind::Object, 20, 8, 8, 1, 0,
+       false},
+      {102, "label", SymbolClass::Defined, SymbolKind::NoType, 10, 4, 0, 0, 0,
+       false},
+      {103, "other", SymbolClass::Defined, SymbolKind::NoType, 20, 0x10, 0, 0,
+       0, false},
+      {104, "constant", SymbolClass::Absolute, SymbolKind::NoType, 0, 0x2A, 0,
+       1, 0, false},
+      {105, "required_import", SymbolClass::Undefined, SymbolKind::NoType, 0, 0,
+       0, 1, 0, false},
+  };
+
+  auto Plan = neverc::planAndroidKernelReleaseNames(Sections, Symbols);
+  if (!Plan)
+    FAIL() << toString(Plan.takeError()).str().str();
+  ASSERT_EQ(Plan->size(), std::size(Symbols));
+  auto OutputFor = [&](uint64_t ID) -> StringRef {
+    for (const neverc::ReleaseSymbolRename &Rename : *Plan)
+      if (Rename.SymbolID == ID)
+        return Rename.OutputName;
+    return {};
+  };
+  EXPECT_EQ(OutputFor(100), "fn_C");
+  EXPECT_EQ(OutputFor(101), "obj_28");
+  EXPECT_EQ(OutputFor(102), "code_4");
+  EXPECT_EQ(OutputFor(103), "sym_30");
+  EXPECT_EQ(OutputFor(104), "abs_2A");
+  EXPECT_EQ(OutputFor(105), "required_import");
+}
+
+TEST(AndroidKernelModuleReleaseNames, UsesNonAllocatedSectionFallback) {
+  using SymbolClass = neverc::AndroidKernelModuleSymbolPolicy::SymbolClass;
+  const neverc::ReleaseSectionDescriptor Sections[] = {
+      {70, 0xA, 4, 0x40, false, false},
+  };
+  const neverc::ReleaseSymbolDescriptor Symbols[] = {
+      {700, "metadata", SymbolClass::Defined, neverc::ReleaseSymbolType::Object,
+       70, 0x20, 8, 1, 0, false},
+  };
+
+  auto Plan = neverc::planAndroidKernelReleaseNames(Sections, Symbols);
+  if (!Plan)
+    FAIL() << toString(Plan.takeError()).str().str();
+  ASSERT_EQ(Plan->size(), 1U);
+  EXPECT_EQ((*Plan)[0].OutputName, "sym_SA_20");
+}
+
+TEST(AndroidKernelModuleReleaseNames, RejectsMalformedDefinitionCoordinates) {
+  using SymbolClass = neverc::AndroidKernelModuleSymbolPolicy::SymbolClass;
+  const neverc::ReleaseSectionDescriptor Allocated[] = {
+      {1, 1, 1, 0x10, true, false},
+  };
+  const neverc::ReleaseSymbolDescriptor PastEnd[] = {
+      {1, "past_end", SymbolClass::Defined, neverc::ReleaseSymbolType::Object,
+       1, 0x11, 1, 1, 0, false},
+  };
+  auto PastEndPlan = neverc::planAndroidKernelReleaseNames(Allocated, PastEnd);
+  if (PastEndPlan)
+    ADD_FAILURE() << "accepted st_value greater than section size";
+  else
+    consumeError(PastEndPlan.takeError());
+
+  const neverc::ReleaseSymbolDescriptor ExtendsPastEnd[] = {
+      {2, "extent_past_end", SymbolClass::Defined,
+       neverc::ReleaseSymbolType::Object, 1, 0xF, 2, 1, 0, false},
+  };
+  auto ExtentPlan =
+      neverc::planAndroidKernelReleaseNames(Allocated, ExtendsPastEnd);
+  if (ExtentPlan)
+    ADD_FAILURE() << "accepted st_size extending past section end";
+  else
+    consumeError(ExtentPlan.takeError());
+
+  const neverc::ReleaseSymbolDescriptor EndMarker[] = {
+      {3, "end_marker", SymbolClass::Defined,
+       neverc::ReleaseSymbolType::Function, 1, 0x10, 0, 1, 0, false},
+  };
+  auto EndMarkerPlan =
+      neverc::planAndroidKernelReleaseNames(Allocated, EndMarker);
+  if (!EndMarkerPlan)
+    FAIL() << toString(EndMarkerPlan.takeError()).str().str();
+  ASSERT_EQ(EndMarkerPlan->size(), 1U);
+  EXPECT_EQ((*EndMarkerPlan)[0].OutputName, "fn_10");
+
+  const neverc::ReleaseSectionDescriptor NonAllocated[] = {
+      {2, 2, 1, 0x10, false, true},
+  };
+  const neverc::ReleaseSymbolDescriptor Function[] = {
+      {2, "malformed_function", SymbolClass::Defined,
+       neverc::ReleaseSymbolType::Function, 2, 0, 4, 1, 0, false},
+  };
+  auto FunctionPlan =
+      neverc::planAndroidKernelReleaseNames(NonAllocated, Function);
+  if (FunctionPlan)
+    ADD_FAILURE() << "accepted a function in a non-allocated section";
+  else
+    consumeError(FunctionPlan.takeError());
+}
+
+TEST(AndroidKernelModuleReleaseNames,
+     PreservedNamesDoNotBypassDefinitionValidation) {
+  using SymbolClass = neverc::AndroidKernelModuleSymbolPolicy::SymbolClass;
+  using SymbolType = neverc::ReleaseSymbolType;
+  auto ExpectError = [](ArrayRef<neverc::ReleaseSectionDescriptor> Sections,
+                        ArrayRef<neverc::ReleaseSymbolDescriptor> Symbols,
+                        StringRef Description) {
+    auto Plan = neverc::planAndroidKernelReleaseNames(Sections, Symbols);
+    if (Plan)
+      ADD_FAILURE() << "accepted malformed preserved " << Description.str();
+    else
+      consumeError(Plan.takeError());
+
+    auto Classes = neverc::computeAndroidKernelReleaseNameExchangeClasses(
+        Sections, Symbols);
+    if (Classes)
+      ADD_FAILURE() << "exchange-class API accepted malformed preserved "
+                    << Description.str();
+    else
+      consumeError(Classes.takeError());
+  };
+
+  const neverc::ReleaseSymbolDescriptor MissingLoaderSection[] = {
+      {1, "init_module", SymbolClass::Defined, SymbolType::Function, 99, 0, 0,
+       1, 0, false},
+  };
+  ExpectError({}, MissingLoaderSection, "loader symbol with no section");
+
+  const neverc::ReleaseSectionDescriptor Allocated[] = {
+      {1, 1, 1, 4, true, false},
+  };
+  const neverc::ReleaseSymbolDescriptor ProtectedExtentPastEnd[] = {
+      {2, "protected_section_symbol", SymbolClass::Defined, SymbolType::Object,
+       1, 3, 2, 1, 0, true},
+  };
+  ExpectError(Allocated, ProtectedExtentPastEnd,
+              "protected symbol extent past its section end");
+
+  const neverc::ReleaseSectionDescriptor NonAllocated[] = {
+      {2, 2, 1, 4, false, true},
+  };
+  const neverc::ReleaseSymbolDescriptor EmptyFunction[] = {
+      {3, "", SymbolClass::Defined, SymbolType::Function, 2, 0, 1, 0, 0, false},
+  };
+  ExpectError(NonAllocated, EmptyFunction,
+              "empty-name function in a non-allocated section");
+}
+
+TEST(AndroidKernelModuleReleaseNames, GroupsCandidateCollisionsGlobally) {
+  using SymbolClass = neverc::AndroidKernelModuleSymbolPolicy::SymbolClass;
+  const neverc::ReleaseSectionDescriptor Sections[] = {
+      {10, 1, 1, 0x10, true, true},
+      {20, 2, 1, 0x10, true, true},
+  };
+  const neverc::ReleaseSymbolDescriptor Symbols[] = {
+      {100, "next_start", SymbolClass::Defined,
+       neverc::ReleaseSymbolType::Function, 20, 0, 0, 1, 0, false},
+      {900, "previous_end", SymbolClass::Defined,
+       neverc::ReleaseSymbolType::Function, 10, 0x10, 0, 1, 0, false},
+  };
+
+  auto Plan = neverc::planAndroidKernelReleaseNames(Sections, Symbols);
+  if (!Plan)
+    FAIL() << toString(Plan.takeError()).str().str();
+  ASSERT_EQ(Plan->size(), 2U);
+  auto OutputFor = [&](uint64_t ID) -> StringRef {
+    for (const neverc::ReleaseSymbolRename &Rename : *Plan)
+      if (Rename.SymbolID == ID)
+        return Rename.OutputName;
+    return {};
+  };
+  EXPECT_EQ(OutputFor(900), "fn_10");
+  EXPECT_EQ(OutputFor(100), "fn_10_1");
+}
+
+TEST(AndroidKernelModuleReleaseNames, EnforcesReservedNameNamespace) {
+  using SymbolClass = neverc::AndroidKernelModuleSymbolPolicy::SymbolClass;
+  using SymbolKind = neverc::ReleaseSymbolType;
+  const neverc::ReleaseSectionDescriptor Sections[] = {
+      {1, 1, 1, 1, true, true},
+  };
+  const neverc::ReleaseSymbolDescriptor BaseCollision[] = {
+      {1, "fn_0", SymbolClass::Undefined, SymbolKind::NoType, 0, 0, 0, 1, 0,
+       false},
+      {2, "function", SymbolClass::Defined, SymbolKind::Function, 1, 0, 0, 1, 0,
+       false},
+  };
+  auto BasePlan =
+      neverc::planAndroidKernelReleaseNames(Sections, BaseCollision);
+  if (BasePlan)
+    ADD_FAILURE() << "accepted a generated/import base-name collision";
+  else
+    consumeError(BasePlan.takeError());
+
+  const neverc::ReleaseSymbolDescriptor SuffixCollision[] = {
+      {1, "first", SymbolClass::Defined, SymbolKind::Function, 1, 0, 0, 0, 0,
+       false},
+      {2, "second", SymbolClass::Defined, SymbolKind::Function, 1, 0, 0, 1, 0,
+       false},
+      {3, "fn_0_1", SymbolClass::Undefined, SymbolKind::NoType, 0, 0, 0, 1, 0,
+       false},
+  };
+  auto SuffixPlan =
+      neverc::planAndroidKernelReleaseNames(Sections, SuffixCollision);
+  if (SuffixPlan)
+    ADD_FAILURE() << "accepted a generated/import alias-suffix collision";
+  else
+    consumeError(SuffixPlan.takeError());
+
+  const neverc::ReleaseSymbolDescriptor DuplicateImports[] = {
+      {1, "same_import", SymbolClass::Undefined, SymbolKind::NoType, 0, 0, 0, 1,
+       0, false},
+      {2, "same_import", SymbolClass::Undefined, SymbolKind::NoType, 0, 0, 0, 2,
+       0, false},
+  };
+  auto DuplicatePlan =
+      neverc::planAndroidKernelReleaseNames({}, DuplicateImports);
+  if (!DuplicatePlan)
+    FAIL() << toString(DuplicatePlan.takeError()).str().str();
+  ASSERT_EQ(DuplicatePlan->size(), 2U);
+  EXPECT_EQ((*DuplicatePlan)[0].OutputName, "same_import");
+  EXPECT_EQ((*DuplicatePlan)[1].OutputName, "same_import");
+}
+
+TEST(AndroidKernelModuleReleaseNames, RejectsDuplicateProducerSymbolIDs) {
+  using SymbolClass = neverc::AndroidKernelModuleSymbolPolicy::SymbolClass;
+  const neverc::ReleaseSymbolDescriptor Symbols[] = {
+      {42, "first_import", SymbolClass::Undefined,
+       neverc::ReleaseSymbolType::NoType, 0, 0, 0, 1, 0, false},
+      {42, "second_import", SymbolClass::Undefined,
+       neverc::ReleaseSymbolType::NoType, 0, 0, 0, 1, 0, false},
+  };
+
+  auto Plan = neverc::planAndroidKernelReleaseNames({}, Symbols);
+  if (Plan)
+    ADD_FAILURE() << "accepted duplicate producer-local SymbolIDs";
+  else
+    consumeError(Plan.takeError());
+}
+
+TEST(AndroidKernelModuleReleaseNames, ExactStructuralTiesOwnNameMultiset) {
+  using SymbolClass = neverc::AndroidKernelModuleSymbolPolicy::SymbolClass;
+  using SymbolKind = neverc::ReleaseSymbolType;
+  const neverc::ReleaseSectionDescriptor Sections[] = {
+      {1, 1, 1, 1, true, true},
+  };
+  const neverc::ReleaseSymbolDescriptor Symbols[] = {
+      {30, "third_local_name", SymbolClass::Defined, SymbolKind::Function, 1, 0,
+       0, 1, 0, false},
+      {10, "first_local_name", SymbolClass::Defined, SymbolKind::Function, 1, 0,
+       0, 1, 0, false},
+      {20, "second_local_name", SymbolClass::Defined, SymbolKind::Function, 1,
+       0, 0, 1, 0, false},
+      {40, "distinguishable", SymbolClass::Defined, SymbolKind::Function, 1, 0,
+       0, 0, 0, false},
+  };
+  auto Plan = neverc::planAndroidKernelReleaseNames(Sections, Symbols);
+  if (!Plan)
+    FAIL() << toString(Plan.takeError()).str().str();
+  std::vector<std::string> NameMultiset;
+  for (const neverc::ReleaseSymbolRename &Rename : *Plan)
+    NameMultiset.push_back(Rename.OutputName);
+  llvm::sort(NameMultiset);
+  EXPECT_EQ(NameMultiset, (std::vector<std::string>{"fn_0", "fn_0_1",
+                                                    "fn_0_2", "fn_0_3"}));
+
+  auto ExchangeClasses =
+      neverc::computeAndroidKernelReleaseNameExchangeClasses(Sections, Symbols);
+  if (!ExchangeClasses)
+    FAIL() << toString(ExchangeClasses.takeError()).str().str();
+  std::vector<size_t> ClassSizes;
+  for (const neverc::ReleaseSymbolExchangeClass &Class : *ExchangeClasses)
+    ClassSizes.push_back(Class.SymbolIDs.size());
+  llvm::sort(ClassSizes);
+  EXPECT_EQ(ClassSizes, (std::vector<size_t>{1, 3}));
+
+  const neverc::ReleaseSymbolDescriptor ShuffledIDs[] = {
+      {202, "second_local_name", SymbolClass::Defined, SymbolKind::Function, 1,
+       0, 0, 1, 0, false},
+      {303, "third_local_name", SymbolClass::Defined, SymbolKind::Function, 1,
+       0, 0, 1, 0, false},
+      {101, "first_local_name", SymbolClass::Defined, SymbolKind::Function, 1,
+       0, 0, 1, 0, false},
+      {404, "distinguishable", SymbolClass::Defined, SymbolKind::Function, 1, 0,
+       0, 0, 0, false},
+  };
+  auto ShuffledPlan =
+      neverc::planAndroidKernelReleaseNames(Sections, ShuffledIDs);
+  if (!ShuffledPlan)
+    FAIL() << toString(ShuffledPlan.takeError()).str().str();
+  std::vector<std::string> ShuffledMultiset;
+  for (const neverc::ReleaseSymbolRename &Rename : *ShuffledPlan)
+    ShuffledMultiset.push_back(Rename.OutputName);
+  llvm::sort(ShuffledMultiset);
+  EXPECT_EQ(ShuffledMultiset, NameMultiset);
+
+  const neverc::ReleaseSymbolRename EquivalentOwnership[] = {
+      {10, "fn_0_3"},
+      {20, "fn_0_1"},
+      {30, "fn_0_2"},
+      {40, "fn_0"},
+  };
+  if (Error Err = neverc::auditAndroidKernelReleaseNames(Sections, Symbols,
+                                                         EquivalentOwnership))
+    FAIL() << toString(std::move(Err)).str().str();
+
+  const neverc::ReleaseSymbolRename WrongMultiset[] = {
+      {10, "fn_0_1"},
+      {20, "fn_0_1"},
+      {30, "fn_0_3"},
+      {40, "fn_0"},
+  };
+  if (Error Err = neverc::auditAndroidKernelReleaseNames(Sections, Symbols,
+                                                         WrongMultiset))
+    consumeError(std::move(Err));
+  else
+    ADD_FAILURE() << "accepted the wrong exact-tie name multiset";
+}
+
+TEST(AndroidKernelModuleReleaseNames,
+     AbsoluteAliasSuffixOwnershipIncludesSerializedType) {
+  using SymbolClass = neverc::AndroidKernelModuleSymbolPolicy::SymbolClass;
+  using SymbolType = neverc::ReleaseSymbolType;
+  const neverc::ReleaseSymbolDescriptor Symbols[] = {
+      {10, "function_alias", SymbolClass::Absolute, SymbolType::Function, 0,
+       0x2A, 0, 1, 0, false},
+      {90, "object_alias", SymbolClass::Absolute, SymbolType::Object, 0, 0x2A,
+       0, 1, 0, false},
+  };
+
+  auto Plan = neverc::planAndroidKernelReleaseNames({}, Symbols);
+  if (!Plan)
+    FAIL() << toString(Plan.takeError()).str().str();
+  ASSERT_EQ(Plan->size(), 2U);
+  auto OutputFor = [&](uint64_t ID) -> StringRef {
+    for (const neverc::ReleaseSymbolRename &Rename : *Plan)
+      if (Rename.SymbolID == ID)
+        return Rename.OutputName;
+    return {};
+  };
+  EXPECT_EQ(OutputFor(90), "abs_2A");
+  EXPECT_EQ(OutputFor(10), "abs_2A_1");
+
+  const neverc::ReleaseSymbolRename CrossTypeSwap[] = {
+      {10, "abs_2A"},
+      {90, "abs_2A_1"},
+  };
+  if (Error Err =
+          neverc::auditAndroidKernelReleaseNames({}, Symbols, CrossTypeSwap))
+    consumeError(std::move(Err));
+  else
+    ADD_FAILURE() << "allowed absolute suffixes to cross serialized types";
+}
+
+TEST(AndroidKernelModuleReleaseNames,
+     RejectsUnsupportedAndIncoherentSerializedTypes) {
+  using SymbolClass = neverc::AndroidKernelModuleSymbolPolicy::SymbolClass;
+  using SymbolType = neverc::ReleaseSymbolType;
+  const neverc::ReleaseSectionDescriptor Sections[] = {
+      {1, 1, 1, 0x10, true, false},
+  };
+  auto ExpectError = [&](ArrayRef<neverc::ReleaseSymbolDescriptor> Symbols,
+                         StringRef Description) {
+    auto Plan = neverc::planAndroidKernelReleaseNames(Sections, Symbols);
+    if (Plan)
+      ADD_FAILURE() << "accepted " << Description.str();
+    else
+      consumeError(Plan.takeError());
+
+    auto Classes = neverc::computeAndroidKernelReleaseNameExchangeClasses(
+        Sections, Symbols);
+    if (Classes)
+      ADD_FAILURE() << "exchange-class API accepted " << Description.str();
+    else
+      consumeError(Classes.takeError());
+  };
+
+  const neverc::ReleaseSymbolDescriptor InvalidEnum[] = {
+      {1, "preserved_invalid", SymbolClass::Absolute,
+       static_cast<SymbolType>(0xFF), 0, 0, 0, 1, 0, true},
+  };
+  ExpectError(InvalidEnum, "an invalid serialized symbol type enum value");
+
+  const neverc::ReleaseSymbolDescriptor TLS[] = {
+      {2, "tls_definition", SymbolClass::Defined, SymbolType::TLS, 1, 0, 8, 1,
+       0, false},
+  };
+  ExpectError(TLS, "a retained TLS definition");
+
+  const neverc::ReleaseSymbolDescriptor GNUIndirectFunction[] = {
+      {3, "ifunc_alias", SymbolClass::Absolute, SymbolType::GNUIFunc, 0, 7, 0,
+       1, 0, false},
+  };
+  ExpectError(GNUIndirectFunction, "a retained GNU IFUNC");
+
+  const neverc::ReleaseSymbolDescriptor NonEmptyFile[] = {
+      {4, "source.c", SymbolClass::Absolute, SymbolType::File, 0, 0, 0, 0, 0,
+       false},
+  };
+  ExpectError(NonEmptyFile, "a retained non-empty FILE symbol");
+
+  const neverc::ReleaseSymbolDescriptor FormatExtension[] = {
+      {5, "extension_import", SymbolClass::Undefined,
+       SymbolType::FormatExtension, 0, 0, 0, 1, 0, false},
+  };
+  ExpectError(FormatExtension, "a retained format-extension symbol");
+
+  const neverc::ReleaseSymbolDescriptor UndefinedSection[] = {
+      {6, "section_import", SymbolClass::Undefined, SymbolType::Section, 0, 0,
+       0, 0, 0, false},
+  };
+  ExpectError(UndefinedSection, "an undefined SECTION symbol");
+
+  const neverc::ReleaseSymbolDescriptor DefinedSection[] = {
+      {7, "named_section", SymbolClass::Defined, SymbolType::Section, 1, 0, 0,
+       0, 0, false},
+  };
+  auto SectionPlan =
+      neverc::planAndroidKernelReleaseNames(Sections, DefinedSection);
+  if (!SectionPlan)
+    FAIL() << toString(SectionPlan.takeError()).str().str();
+  ASSERT_EQ(SectionPlan->size(), 1U);
+  EXPECT_EQ((*SectionPlan)[0].OutputName, "named_section");
+
+  const neverc::ReleaseSymbolDescriptor Common[] = {
+      {8, "", SymbolClass::Common, SymbolType::NoType, 0, 0, 0, 1, 0, false},
+  };
+  ExpectError(Common, "an unsupported common symbol class");
+}
+
+TEST(AndroidKernelModuleReleaseNames,
+     IsDeterministicAcrossShuffledHashMapInsertion) {
+  using SymbolClass = neverc::AndroidKernelModuleSymbolPolicy::SymbolClass;
+  using SymbolKind = neverc::ReleaseSymbolType;
+  StringMap<neverc::ReleaseSectionDescriptor> FirstInsertion;
+  FirstInsertion.try_emplace(
+      "text_a", neverc::ReleaseSectionDescriptor{10, 1, 1, 0x10, true, true});
+  FirstInsertion.try_emplace(
+      "text_b", neverc::ReleaseSectionDescriptor{20, 2, 1, 0x10, true, true});
+  FirstInsertion.try_emplace("metadata", neverc::ReleaseSectionDescriptor{
+                                             30, 3, 1, 0x10, false, false});
+
+  StringMap<neverc::ReleaseSectionDescriptor> SecondInsertion;
+  SecondInsertion.try_emplace("metadata", neverc::ReleaseSectionDescriptor{
+                                              30, 3, 1, 0x10, false, false});
+  SecondInsertion.try_emplace(
+      "text_b", neverc::ReleaseSectionDescriptor{20, 2, 1, 0x10, true, true});
+  SecondInsertion.try_emplace(
+      "text_a", neverc::ReleaseSectionDescriptor{10, 1, 1, 0x10, true, true});
+
+  SmallVector<neverc::ReleaseSectionDescriptor, 3> FirstSections;
+  SmallVector<neverc::ReleaseSectionDescriptor, 3> SecondSections;
+  for (const auto &Entry : FirstInsertion)
+    FirstSections.push_back(Entry.getValue());
+  for (const auto &Entry : SecondInsertion)
+    SecondSections.push_back(Entry.getValue());
+  std::reverse(SecondSections.begin(), SecondSections.end());
+
+  const neverc::ReleaseSymbolDescriptor FirstSymbols[] = {
+      {1, "same_relative_a", SymbolClass::Defined, SymbolKind::Function, 10, 4,
+       0, 1, 0, false},
+      {2, "same_relative_b", SymbolClass::Defined, SymbolKind::Function, 20, 4,
+       0, 1, 0, false},
+      {3, "end_a", SymbolClass::Defined, SymbolKind::Function, 10, 0x10, 0, 1,
+       0, false},
+      {4, "start_b", SymbolClass::Defined, SymbolKind::Function, 20, 0, 0, 1, 0,
+       false},
+      {5, "metadata", SymbolClass::Defined, SymbolKind::NoType, 30, 2, 0, 0, 0,
+       false},
+  };
+  const neverc::ReleaseSymbolDescriptor SecondSymbols[] = {
+      FirstSymbols[4], FirstSymbols[2], FirstSymbols[0],
+      FirstSymbols[3], FirstSymbols[1],
+  };
+
+  auto FirstPlan =
+      neverc::planAndroidKernelReleaseNames(FirstSections, FirstSymbols);
+  if (!FirstPlan)
+    FAIL() << toString(FirstPlan.takeError()).str().str();
+  auto SecondPlan =
+      neverc::planAndroidKernelReleaseNames(SecondSections, SecondSymbols);
+  if (!SecondPlan)
+    FAIL() << toString(SecondPlan.takeError()).str().str();
+  ASSERT_EQ(FirstPlan->size(), SecondPlan->size());
+  for (size_t I = 0; I != FirstPlan->size(); ++I) {
+    EXPECT_EQ((*FirstPlan)[I].SymbolID, (*SecondPlan)[I].SymbolID);
+    EXPECT_EQ((*FirstPlan)[I].OutputName, (*SecondPlan)[I].OutputName);
+  }
+  EXPECT_EQ((*FirstPlan)[0].OutputName, "fn_4");
+  EXPECT_EQ((*FirstPlan)[1].OutputName, "fn_14");
+  EXPECT_EQ((*FirstPlan)[2].OutputName, "fn_10");
+  EXPECT_EQ((*FirstPlan)[3].OutputName, "fn_10_1");
+  EXPECT_EQ((*FirstPlan)[4].OutputName, "sym_S3_2");
+}
+
+TEST(AndroidKernelModuleReleaseNames,
+     OrdersAliasClassesByObservableStructuralKey) {
+  using SymbolClass = neverc::AndroidKernelModuleSymbolPolicy::SymbolClass;
+  using SymbolKind = neverc::ReleaseSymbolType;
+  const neverc::ReleaseSectionDescriptor Sections[] = {
+      {1, 1, 1, 8, true, true},
+      {2, 2, 1, 1, false, false},
+  };
+  const neverc::ReleaseSymbolDescriptor Symbols[] = {
+      {1000, "later_binding", SymbolClass::Defined, SymbolKind::Function, 1, 0,
+       0, 2, 0, false},
+      {10, "later_other", SymbolClass::Defined, SymbolKind::Function, 1, 0,
+       8, 1, 1, false},
+      {900, "larger_size", SymbolClass::Defined, SymbolKind::Function, 1, 0, 8,
+       1, 0, false},
+      {800, "smaller_size", SymbolClass::Defined, SymbolKind::Function, 1, 0, 4,
+       1, 0, false},
+      {600, "nonalloc_other", SymbolClass::Defined, SymbolKind::NoType, 2, 0, 0,
+       1, 0, false},
+      {700, "nonalloc_object", SymbolClass::Defined, SymbolKind::Object, 2, 0,
+       0, 1, 0, false},
+  };
+  auto Plan = neverc::planAndroidKernelReleaseNames(Sections, Symbols);
+  if (!Plan)
+    FAIL() << toString(Plan.takeError()).str().str();
+  auto OutputFor = [&](uint64_t ID) -> StringRef {
+    for (const neverc::ReleaseSymbolRename &Rename : *Plan)
+      if (Rename.SymbolID == ID)
+        return Rename.OutputName;
+    return {};
+  };
+  EXPECT_EQ(OutputFor(800), "fn_0");
+  EXPECT_EQ(OutputFor(900), "fn_0_1");
+  EXPECT_EQ(OutputFor(10), "fn_0_2");
+  EXPECT_EQ(OutputFor(1000), "fn_0_3");
+  EXPECT_EQ(OutputFor(600), "sym_S2_0");
+  EXPECT_EQ(OutputFor(700), "sym_S2_0_1");
+
+  const neverc::ReleaseSymbolRename WrongClassOwnership[] = {
+      {10, "fn_0_2"},   {800, "fn_0_1"},    {900, "fn_0"},
+      {1000, "fn_0_3"}, {600, "sym_S2_0_1"}, {700, "sym_S2_0"},
+  };
+  if (Error Err = neverc::auditAndroidKernelReleaseNames(Sections, Symbols,
+                                                         WrongClassOwnership))
+    consumeError(std::move(Err));
+  else
+    ADD_FAILURE() << "allowed names to cross structural alias classes";
+}
+
+TEST(AndroidKernelModuleReleaseNames, KeepsEveryExactNameClassByteExact) {
+  using SymbolClass = neverc::AndroidKernelModuleSymbolPolicy::SymbolClass;
+  using SymbolKind = neverc::ReleaseSymbolType;
+  const neverc::ReleaseSectionDescriptor Sections[] = {
+      {1, 1, 1, 0x20, true, true},
+  };
+  const neverc::ReleaseSymbolDescriptor Symbols[] = {
+      {1, "weak_import", SymbolClass::Undefined, SymbolKind::NoType, 0, 0, 0, 2,
+       0, false},
+      {2, "init_module", SymbolClass::Defined, SymbolKind::Function, 1, 0, 0, 1,
+       0, false},
+      {3, "__typeid__sample_global_addr", SymbolClass::Absolute,
+       SymbolKind::NoType, 0, 7, 0, 1, 0, false},
+      {4, "__kcfi_typeid_sample", SymbolClass::Defined, SymbolKind::Object, 1,
+       8, 4, 1, 0, false},
+      {5, "protected_section_symbol", SymbolClass::Defined, SymbolKind::Object,
+       1, 0x10, 4, 1, 0, true},
+      {6, "", SymbolClass::Defined, SymbolKind::NoType, 1, 0x18, 0, 0, 0,
+       false},
+  };
+  auto Plan = neverc::planAndroidKernelReleaseNames(Sections, Symbols);
+  if (!Plan)
+    FAIL() << toString(Plan.takeError()).str().str();
+  ASSERT_EQ(Plan->size(), std::size(Symbols));
+  const StringRef Expected[] = {
+      "weak_import",
+      "init_module",
+      "__typeid__sample_global_addr",
+      "__kcfi_typeid_sample",
+      "protected_section_symbol",
+      "",
+  };
+  for (size_t I = 0; I != Plan->size(); ++I)
+    EXPECT_EQ((*Plan)[I].OutputName, Expected[I]);
+}
 
 TEST(DwarfRebaseTest, RecognizesSupportedMachOAndELFSectionNames) {
   EXPECT_EQ(classifyDwarfSection("__debug_aranges"), DwarfSection::Aranges);
@@ -91,9 +875,9 @@ TEST(DwarfRebaseTest, MissingAbbreviationsStillEnterValidation) {
   const PartitionDwarf Parts[] = {Part};
   char InvalidInfo = 0;
   EXPECT_FALSE(rebaseMergedDwarf(
-      ArrayRef<PartitionDwarf>(Parts), [&](unsigned) {
-        return MutableArrayRef<char>(&InvalidInfo, 1);
-      }, /*IsLittleEndian=*/true));
+      ArrayRef<PartitionDwarf>(Parts),
+      [&](unsigned) { return MutableArrayRef<char>(&InvalidInfo, 1); },
+      /*IsLittleEndian=*/true));
 }
 
 TEST(DwarfRebaseTest, TypeUnitsWithoutAbbreviationsEnterValidation) {
@@ -111,9 +895,9 @@ TEST(DwarfRebaseTest, RejectsOverflowingContributionBounds) {
   char Data = 0;
 
   EXPECT_FALSE(rebaseMergedDwarf(
-      ArrayRef<PartitionDwarf>(Parts), [&](unsigned) {
-        return MutableArrayRef<char>(&Data, 1);
-      }, /*IsLittleEndian=*/true));
+      ArrayRef<PartitionDwarf>(Parts),
+      [&](unsigned) { return MutableArrayRef<char>(&Data, 1); },
+      /*IsLittleEndian=*/true));
 }
 
 TEST(DwarfRebaseTest, RewritesOffsetsEncodedThroughIndirectForms) {
@@ -127,10 +911,10 @@ TEST(DwarfRebaseTest, RewritesOffsetsEncodedThroughIndirectForms) {
       0,    0, 0, 0, // string offset
   };
   std::array<char, 8> Abbrev = {
-      1,    0x11, 0, // code, DW_TAG_compile_unit, no children
-      3,    0x16,    // DW_AT_name, DW_FORM_indirect
-      0,    0,       // end of attributes
-      0,             // end of declarations
+      1, 0x11, 0, // code, DW_TAG_compile_unit, no children
+      3, 0x16,    // DW_AT_name, DW_FORM_indirect
+      0, 0,       // end of attributes
+      0,          // end of declarations
   };
 
   PartitionDwarf Part;
@@ -176,13 +960,13 @@ TEST(DwarfRebaseTest, RewritesPreDwarf4DataFormSectionOffsets) {
 
 TEST(DwarfRebaseTest, RewritesDwarf4TypeUnitAbbreviationOffsets) {
   std::array<char, 24> Types = {
-      0x14, 0, 0, 0, // unit_length
-      4,    0,       // version
-      0,    0, 0, 0, // abbreviation offset
-      8,             // address size
+      0x14, 0, 0, 0,             // unit_length
+      4,    0,                   // version
+      0,    0, 0, 0,             // abbreviation offset
+      8,                         // address size
       1,    2, 3, 4, 5, 6, 7, 8, // type signature
-      0x17, 0, 0, 0, // type DIE offset
-      1,             // abbreviation code
+      0x17, 0, 0, 0,             // type DIE offset
+      1,                         // abbreviation code
   };
   std::array<char, 6> Abbrev = {
       1, 0x41, 0, // code, DW_TAG_type_unit, no children
@@ -210,10 +994,10 @@ TEST(DwarfRebaseTest, RewritesPublicNameAndFrameReferences) {
       0,    0, 0, 0, // end of entries
   };
   std::array<char, 16> Frame = {
-      4, 0, 0, 0,             // CIE length
+      4,          0,          0,          0,          // CIE length
       char(0xff), char(0xff), char(0xff), char(0xff), // CIE marker
-      4, 0, 0, 0,             // FDE length
-      0, 0, 0, 0,             // FDE's CIE section offset
+      4,          0,          0,          0,          // FDE length
+      0,          0,          0,          0, // FDE's CIE section offset
   };
 
   PartitionDwarf Part;
@@ -231,11 +1015,11 @@ TEST(DwarfRebaseTest, RewritesPublicNameAndFrameReferences) {
 
 TEST(DwarfRebaseTest, RejectsTruncatedLebWithoutLosingParserProgress) {
   std::array<char, 12> Info = {
-      8,    0, 0, 0, // unit_length
-      4,    0,       // version
-      0,    0, 0, 0, // abbreviation offset
-      8,             // address size
-      char(0x80),    // unterminated abbreviation-code ULEB128
+      8,          0, 0, 0, // unit_length
+      4,          0,       // version
+      0,          0, 0, 0, // abbreviation offset
+      8,                   // address size
+      char(0x80),          // unterminated abbreviation-code ULEB128
   };
   std::array<char, 1> Abbrev = {0};
 
@@ -333,15 +1117,23 @@ TEST(DwarfRebaseTest, RewritesLengthlessDwarf5MacroUnits) {
 
 namespace {
 
+Options androidKernelReleaseOptions() {
+  Options Opts;
+  Opts.mergeSections = true;
+  Opts.androidKernelModule = true;
+  Opts.finalizeAndroidKernelModule = true;
+  Opts.stripUnneededSymbols = true;
+  return Opts;
+}
+
 /// Build a minimal valid ELF64LE relocatable object with:
 ///   - 1 .text section (SHT_PROGBITS, SHF_ALLOC|SHF_EXECINSTR)
 ///   - N defined symbols + M undefined symbols
 ///   - 1 relocation per undefined symbol (R_X86_64_64 → addend 0)
-SmallVector<char, 0>
-buildMinimalELF(ArrayRef<std::string> DefinedSyms,
-                ArrayRef<std::string> UndefinedSyms,
-                ArrayRef<uint8_t> TextContent = {0xcc},
-                bool DefinedAsGlobal = false) {
+SmallVector<char, 0> buildMinimalELF(ArrayRef<std::string> DefinedSyms,
+                                     ArrayRef<std::string> UndefinedSyms,
+                                     ArrayRef<uint8_t> TextContent = {0xcc},
+                                     bool DefinedAsGlobal = false) {
   using namespace ELF;
   using Ehdr = Elf64_Ehdr;
   using Shdr = Elf64_Shdr;
@@ -514,8 +1306,7 @@ bool isValidELF64LE(ArrayRef<char> Buf) {
   return memcmp(H->e_ident, ELF::ElfMagic, 4) == 0 &&
          H->e_ident[ELF::EI_CLASS] == ELF::ELFCLASS64 &&
          H->e_ident[ELF::EI_DATA] == ELF::ELFDATA2LSB &&
-         H->e_type == ELF::ET_REL &&
-         H->e_shoff > 0 && H->e_shoff < Buf.size();
+         H->e_type == ELF::ET_REL && H->e_shoff > 0 && H->e_shoff < Buf.size();
 }
 
 /// Merge helper: returns (success, output_buffer).
@@ -548,7 +1339,7 @@ struct SecSpec {
   uint32_t Type = ELF::SHT_PROGBITS;
   uint64_t Flags = ELF::SHF_ALLOC | ELF::SHF_EXECINSTR;
   uint8_t Fill = 0; // non-zero => fill PROGBITS content with this byte
-  int Link = -1;    // >=0: sh_link to that 0-based user section (SHF_LINK_ORDER)
+  int Link = -1; // >=0: sh_link to that 0-based user section (SHF_LINK_ORDER)
   uint64_t Entsize = 0;
 };
 
@@ -558,12 +1349,17 @@ struct SymSpec {
   uint64_t Value; // section-relative value for defined symbols
   bool Global = true;
   bool Weak = false;
+  std::optional<uint16_t> RawSectionIndex;
+  uint8_t Type = ELF::STT_FUNC;
+  uint64_t Size = 0;
+  uint8_t Other = 0;
 };
 
 struct RelSpec {
-  int SecIdx;          // 0-based user section the relocation applies to
-  uint64_t Offset;     // section-relative offset of the relocation site
-  std::string SymName; // symbol referenced (by name); ignored if TargetSecSym>=0
+  int SecIdx;      // 0-based user section the relocation applies to
+  uint64_t Offset; // section-relative offset of the relocation site
+  std::string
+      SymName; // symbol referenced (by name); ignored if TargetSecSym>=0
   uint32_t Type = ELF::R_X86_64_64;
   int64_t Addend = 0;
   // When >= 0, the relocation targets the STT_SECTION symbol of that 0-based
@@ -624,7 +1420,10 @@ SmallVector<char, 0> buildSectionedELF(ArrayRef<SecSpec> Secs,
     Sym E;
     memset(&E, 0, sizeof(E));
     E.st_name = addStr(SymStr, S.Name);
-    if (S.SecIdx < 0) {
+    if (S.RawSectionIndex) {
+      E.st_shndx = *S.RawSectionIndex;
+      E.st_value = S.Value;
+    } else if (S.SecIdx < 0) {
       E.st_shndx = SHN_UNDEF;
       E.st_value = 0;
     } else {
@@ -632,7 +1431,9 @@ SmallVector<char, 0> buildSectionedELF(ArrayRef<SecSpec> Secs,
       E.st_value = S.Value;
     }
     uint8_t Binding = S.Weak ? STB_WEAK : (S.Global ? STB_GLOBAL : STB_LOCAL);
-    E.st_info = (Binding << 4) | STT_FUNC;
+    E.st_info = (Binding << 4) | S.Type;
+    E.st_other = S.Other;
+    E.st_size = S.Size;
     SymIndex[S.Name] = OutSyms.size();
     OutSyms.push_back(E);
   };
@@ -820,6 +1621,8 @@ struct ParsedSym {
   uint16_t Shndx = 0;
   uint8_t Bind = 0;
   uint8_t Type = 0;
+  uint8_t Other = 0;
+  uint64_t Size = 0;
 };
 struct ParsedRela {
   uint64_t Offset = 0;
@@ -875,7 +1678,8 @@ ElfView parseELF(ArrayRef<char> Buf) {
     return V;
   const char *ShStrData = Buf.data() + ShStr.sh_offset;
 
-  auto nameAt = [](const char *Base, uint64_t Size, uint32_t Off) -> std::string {
+  auto nameAt = [](const char *Base, uint64_t Size,
+                   uint32_t Off) -> std::string {
     if (Off >= Size)
       return "";
     return std::string(Base + Off);
@@ -911,7 +1715,8 @@ ElfView parseELF(ArrayRef<char> Buf) {
     if (Secs[i].sh_offset + Secs[i].sh_size > Buf.size())
       continue;
     const char *StrData = Buf.data() + Str.sh_offset;
-    const Sym *S = reinterpret_cast<const Sym *>(Buf.data() + Secs[i].sh_offset);
+    const Sym *S =
+        reinterpret_cast<const Sym *>(Buf.data() + Secs[i].sh_offset);
     unsigned N = Secs[i].sh_size / sizeof(Sym);
     for (unsigned k = 0; k < N; ++k) {
       ParsedSym PSym;
@@ -920,6 +1725,8 @@ ElfView parseELF(ArrayRef<char> Buf) {
       PSym.Shndx = S[k].st_shndx;
       PSym.Bind = S[k].st_info >> 4;
       PSym.Type = S[k].st_info & 0xf;
+      PSym.Other = S[k].st_other;
+      PSym.Size = S[k].st_size;
       V.Syms.push_back(std::move(PSym));
     }
   }
@@ -1034,6 +1841,180 @@ ELF::Elf64_Shdr *findELFSectionHeader(SmallVectorImpl<char> &Buf,
   return nullptr;
 }
 
+bool overwriteELFSectionContents(SmallVectorImpl<char> &Buf, StringRef Name,
+                                 StringRef Contents) {
+  ELF::Elf64_Shdr *Section = findELFSectionHeader(Buf, Name);
+  if (!Section || Section->sh_type == ELF::SHT_NOBITS ||
+      Section->sh_offset > Buf.size() ||
+      Section->sh_size > Buf.size() - Section->sh_offset ||
+      Contents.size() > Section->sh_size)
+    return false;
+  memset(Buf.data() + Section->sh_offset, 0, Section->sh_size);
+  memcpy(Buf.data() + Section->sh_offset, Contents.data(), Contents.size());
+  return true;
+}
+
+bool patchELFSymbolNameSameLength(SmallVectorImpl<char> &Buf, StringRef From,
+                                  StringRef To) {
+  using namespace ELF;
+  if (From.size() != To.size() || Buf.size() < sizeof(Elf64_Ehdr))
+    return false;
+  auto *Header = reinterpret_cast<Elf64_Ehdr *>(Buf.data());
+  if (Header->e_shoff > Buf.size() ||
+      (uint64_t)Header->e_shnum * sizeof(Elf64_Shdr) >
+          Buf.size() - Header->e_shoff)
+    return false;
+  auto *Sections = reinterpret_cast<Elf64_Shdr *>(Buf.data() + Header->e_shoff);
+  for (unsigned I = 0; I < Header->e_shnum; ++I) {
+    Elf64_Shdr &Symtab = Sections[I];
+    if (Symtab.sh_type != SHT_SYMTAB || Symtab.sh_link >= Header->e_shnum ||
+        Symtab.sh_offset > Buf.size() ||
+        Symtab.sh_size > Buf.size() - Symtab.sh_offset)
+      continue;
+    Elf64_Shdr &Strtab = Sections[Symtab.sh_link];
+    if (Strtab.sh_offset > Buf.size() ||
+        Strtab.sh_size > Buf.size() - Strtab.sh_offset)
+      return false;
+    auto *Symbols =
+        reinterpret_cast<Elf64_Sym *>(Buf.data() + Symtab.sh_offset);
+    const unsigned Count = Symtab.sh_size / sizeof(Elf64_Sym);
+    for (unsigned K = 0; K < Count; ++K) {
+      if (Symbols[K].st_name >= Strtab.sh_size)
+        continue;
+      char *Name = Buf.data() + Strtab.sh_offset + Symbols[K].st_name;
+      const size_t Available = Strtab.sh_size - Symbols[K].st_name;
+      if (strnlen(Name, Available) != From.size() ||
+          StringRef(Name, From.size()) != From)
+        continue;
+      memcpy(Name, To.data(), To.size());
+      return true;
+    }
+  }
+  return false;
+}
+
+bool swapELFSymbolNameOffsets(SmallVectorImpl<char> &Buf, StringRef First,
+                              StringRef Second) {
+  using namespace ELF;
+  if (Buf.size() < sizeof(Elf64_Ehdr))
+    return false;
+  auto *Header = reinterpret_cast<Elf64_Ehdr *>(Buf.data());
+  if (Header->e_shoff > Buf.size() ||
+      (uint64_t)Header->e_shnum * sizeof(Elf64_Shdr) >
+          Buf.size() - Header->e_shoff)
+    return false;
+  auto *Sections = reinterpret_cast<Elf64_Shdr *>(Buf.data() + Header->e_shoff);
+  for (unsigned I = 0; I < Header->e_shnum; ++I) {
+    Elf64_Shdr &Symtab = Sections[I];
+    if (Symtab.sh_type != SHT_SYMTAB || Symtab.sh_link >= Header->e_shnum ||
+        Symtab.sh_offset > Buf.size() ||
+        Symtab.sh_size > Buf.size() - Symtab.sh_offset)
+      continue;
+    Elf64_Shdr &Strtab = Sections[Symtab.sh_link];
+    if (Strtab.sh_offset > Buf.size() ||
+        Strtab.sh_size > Buf.size() - Strtab.sh_offset)
+      return false;
+    auto *Symbols =
+        reinterpret_cast<Elf64_Sym *>(Buf.data() + Symtab.sh_offset);
+    const unsigned Count = Symtab.sh_size / sizeof(Elf64_Sym);
+    Elf64_Sym *FirstSymbol = nullptr;
+    Elf64_Sym *SecondSymbol = nullptr;
+    for (unsigned K = 0; K < Count; ++K) {
+      if (Symbols[K].st_name >= Strtab.sh_size)
+        continue;
+      StringRef Name(Buf.data() + Strtab.sh_offset + Symbols[K].st_name);
+      if (Name == First)
+        FirstSymbol = &Symbols[K];
+      else if (Name == Second)
+        SecondSymbol = &Symbols[K];
+    }
+    if (!FirstSymbol || !SecondSymbol)
+      return false;
+    std::swap(FirstSymbol->st_name, SecondSymbol->st_name);
+    return true;
+  }
+  return false;
+}
+
+/// Point one symbol at an already-serialized string owned by another symbol.
+/// This mutates only st_name, so corruption tests can exercise non-canonical
+/// spellings of a different length without rebuilding the string table.
+bool retargetELFSymbolNameOffset(SmallVectorImpl<char> &Buf, StringRef From,
+                                 StringRef Existing) {
+  using namespace ELF;
+  if (Buf.size() < sizeof(Elf64_Ehdr))
+    return false;
+  auto *Header = reinterpret_cast<Elf64_Ehdr *>(Buf.data());
+  if (Header->e_shoff > Buf.size() ||
+      (uint64_t)Header->e_shnum * sizeof(Elf64_Shdr) >
+          Buf.size() - Header->e_shoff)
+    return false;
+  auto *Sections = reinterpret_cast<Elf64_Shdr *>(Buf.data() + Header->e_shoff);
+  for (unsigned I = 0; I < Header->e_shnum; ++I) {
+    Elf64_Shdr &Symtab = Sections[I];
+    if (Symtab.sh_type != SHT_SYMTAB || Symtab.sh_link >= Header->e_shnum ||
+        Symtab.sh_offset > Buf.size() ||
+        Symtab.sh_size > Buf.size() - Symtab.sh_offset)
+      continue;
+    Elf64_Shdr &Strtab = Sections[Symtab.sh_link];
+    if (Strtab.sh_offset > Buf.size() ||
+        Strtab.sh_size > Buf.size() - Strtab.sh_offset)
+      return false;
+    auto *Symbols =
+        reinterpret_cast<Elf64_Sym *>(Buf.data() + Symtab.sh_offset);
+    const unsigned Count = Symtab.sh_size / sizeof(Elf64_Sym);
+    Elf64_Sym *Source = nullptr;
+    std::optional<uint32_t> ExistingOffset;
+    for (unsigned K = 0; K < Count; ++K) {
+      if (Symbols[K].st_name >= Strtab.sh_size)
+        continue;
+      const char *Begin = Buf.data() + Strtab.sh_offset + Symbols[K].st_name;
+      const size_t Available = Strtab.sh_size - Symbols[K].st_name;
+      const size_t Length = strnlen(Begin, Available);
+      if (Length == Available)
+        continue;
+      StringRef Name(Begin, Length);
+      if (Name == From)
+        Source = &Symbols[K];
+      if (Name == Existing)
+        ExistingOffset = Symbols[K].st_name;
+    }
+    if (!Source || !ExistingOffset)
+      return false;
+    Source->st_name = *ExistingOffset;
+    return true;
+  }
+  return false;
+}
+
+bool convertFirstELFRelaSectionToRel(SmallVectorImpl<char> &Buf) {
+  using namespace ELF;
+  if (Buf.size() < sizeof(Elf64_Ehdr))
+    return false;
+  auto *Header = reinterpret_cast<Elf64_Ehdr *>(Buf.data());
+  if (Header->e_shoff > Buf.size() ||
+      (uint64_t)Header->e_shnum * sizeof(Elf64_Shdr) >
+          Buf.size() - Header->e_shoff)
+    return false;
+  auto *Sections = reinterpret_cast<Elf64_Shdr *>(Buf.data() + Header->e_shoff);
+  for (unsigned I = 0; I < Header->e_shnum; ++I) {
+    Elf64_Shdr &Section = Sections[I];
+    if (Section.sh_type != SHT_RELA || Section.sh_size < sizeof(Elf64_Rela) ||
+        Section.sh_offset > Buf.size() ||
+        sizeof(Elf64_Rela) > Buf.size() - Section.sh_offset)
+      continue;
+    Elf64_Rela WithAddend;
+    memcpy(&WithAddend, Buf.data() + Section.sh_offset, sizeof(WithAddend));
+    Elf64_Rel Implicit{WithAddend.r_offset, WithAddend.r_info};
+    memcpy(Buf.data() + Section.sh_offset, &Implicit, sizeof(Implicit));
+    Section.sh_type = SHT_REL;
+    Section.sh_size = sizeof(Implicit);
+    Section.sh_entsize = sizeof(Implicit);
+    return true;
+  }
+  return false;
+}
+
 bool patchELFSectionMergeMetadata(SmallVectorImpl<char> &Buf, StringRef Name,
                                   uint64_t Flags, uint64_t Entsize) {
   if (ELF::Elf64_Shdr *Section = findELFSectionHeader(Buf, Name)) {
@@ -1095,8 +2076,7 @@ bool corruptSymbolContentByte(SmallVectorImpl<char> &Buf, StringRef Name) {
     return false;
   auto *Secs = reinterpret_cast<Elf64_Shdr *>(Buf.data() + H->e_shoff);
   for (unsigned I = 0; I < H->e_shnum; ++I) {
-    if (Secs[I].sh_type != SHT_SYMTAB ||
-        Secs[I].sh_link >= H->e_shnum ||
+    if (Secs[I].sh_type != SHT_SYMTAB || Secs[I].sh_link >= H->e_shnum ||
         Secs[I].sh_offset + Secs[I].sh_size > Buf.size())
       continue;
     const Elf64_Shdr &StrSec = Secs[Secs[I].sh_link];
@@ -1109,8 +2089,7 @@ bool corruptSymbolContentByte(SmallVectorImpl<char> &Buf, StringRef Name) {
     for (unsigned K = 0; K < Count; ++K) {
       if (Symbols[K].st_name >= StrSec.sh_size ||
           Name != StrData + Symbols[K].st_name ||
-          Symbols[K].st_shndx == SHN_UNDEF ||
-          Symbols[K].st_shndx >= H->e_shnum)
+          Symbols[K].st_shndx == SHN_UNDEF || Symbols[K].st_shndx >= H->e_shnum)
         continue;
       const Elf64_Shdr &DataSec = Secs[Symbols[K].st_shndx];
       if (DataSec.sh_type == SHT_NOBITS ||
@@ -1205,6 +2184,149 @@ bool patchAllRelaAddends(SmallVectorImpl<char> &Buf, int64_t NewVal) {
     }
   }
   return Any;
+}
+
+bool patchFirstRelaSymbolIndex(SmallVectorImpl<char> &Buf,
+                               uint32_t NewSymbolIndex) {
+  using namespace ELF;
+  if (Buf.size() < sizeof(Elf64_Ehdr))
+    return false;
+  auto *Header = reinterpret_cast<Elf64_Ehdr *>(Buf.data());
+  if (Header->e_shoff > Buf.size() ||
+      (uint64_t)Header->e_shnum * sizeof(Elf64_Shdr) >
+          Buf.size() - Header->e_shoff)
+    return false;
+  auto *Sections = reinterpret_cast<Elf64_Shdr *>(Buf.data() + Header->e_shoff);
+  for (unsigned I = 0; I < Header->e_shnum; ++I) {
+    Elf64_Shdr &Section = Sections[I];
+    if (Section.sh_type != SHT_RELA || Section.sh_offset > Buf.size() ||
+        sizeof(Elf64_Rela) > Buf.size() - Section.sh_offset ||
+        Section.sh_size < sizeof(Elf64_Rela))
+      continue;
+    auto *Relocation =
+        reinterpret_cast<Elf64_Rela *>(Buf.data() + Section.sh_offset);
+    Relocation->r_info =
+        (uint64_t(NewSymbolIndex) << 32) | uint32_t(Relocation->r_info);
+    return true;
+  }
+  return false;
+}
+
+bool patchELFSymbolInfo(SmallVectorImpl<char> &Buf, StringRef Name,
+                        uint8_t NewInfo) {
+  using namespace ELF;
+  if (Buf.size() < sizeof(Elf64_Ehdr))
+    return false;
+  auto *Header = reinterpret_cast<Elf64_Ehdr *>(Buf.data());
+  if (Header->e_shoff > Buf.size() ||
+      (uint64_t)Header->e_shnum * sizeof(Elf64_Shdr) >
+          Buf.size() - Header->e_shoff)
+    return false;
+  auto *Sections = reinterpret_cast<Elf64_Shdr *>(Buf.data() + Header->e_shoff);
+  for (unsigned I = 0; I < Header->e_shnum; ++I) {
+    Elf64_Shdr &Symtab = Sections[I];
+    if (Symtab.sh_type != SHT_SYMTAB || Symtab.sh_link >= Header->e_shnum ||
+        Symtab.sh_offset > Buf.size() ||
+        Symtab.sh_size > Buf.size() - Symtab.sh_offset)
+      continue;
+    Elf64_Shdr &Strtab = Sections[Symtab.sh_link];
+    if (Strtab.sh_offset > Buf.size() ||
+        Strtab.sh_size > Buf.size() - Strtab.sh_offset)
+      return false;
+    auto *Symbols =
+        reinterpret_cast<Elf64_Sym *>(Buf.data() + Symtab.sh_offset);
+    const unsigned Count = Symtab.sh_size / sizeof(Elf64_Sym);
+    for (unsigned K = 0; K < Count; ++K) {
+      if (Symbols[K].st_name >= Strtab.sh_size)
+        continue;
+      const char *Begin = Buf.data() + Strtab.sh_offset + Symbols[K].st_name;
+      const size_t Available = Strtab.sh_size - Symbols[K].st_name;
+      const size_t Length = strnlen(Begin, Available);
+      if (Length != Available && StringRef(Begin, Length) == Name) {
+        Symbols[K].st_info = NewInfo;
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+bool patchELFSymbolSectionIndex(SmallVectorImpl<char> &Buf, StringRef Name,
+                                uint16_t NewSectionIndex) {
+  using namespace ELF;
+  if (Buf.size() < sizeof(Elf64_Ehdr))
+    return false;
+  auto *Header = reinterpret_cast<Elf64_Ehdr *>(Buf.data());
+  if (Header->e_shoff > Buf.size() ||
+      (uint64_t)Header->e_shnum * sizeof(Elf64_Shdr) >
+          Buf.size() - Header->e_shoff)
+    return false;
+  auto *Sections = reinterpret_cast<Elf64_Shdr *>(Buf.data() + Header->e_shoff);
+  for (unsigned I = 0; I < Header->e_shnum; ++I) {
+    Elf64_Shdr &Symtab = Sections[I];
+    if (Symtab.sh_type != SHT_SYMTAB || Symtab.sh_link >= Header->e_shnum)
+      continue;
+    Elf64_Shdr &Strtab = Sections[Symtab.sh_link];
+    if (Symtab.sh_offset > Buf.size() ||
+        Symtab.sh_size > Buf.size() - Symtab.sh_offset ||
+        Strtab.sh_offset > Buf.size() ||
+        Strtab.sh_size > Buf.size() - Strtab.sh_offset)
+      return false;
+    auto *Symbols =
+        reinterpret_cast<Elf64_Sym *>(Buf.data() + Symtab.sh_offset);
+    const unsigned Count = Symtab.sh_size / sizeof(Elf64_Sym);
+    for (unsigned K = 0; K < Count; ++K) {
+      if (Symbols[K].st_name >= Strtab.sh_size)
+        continue;
+      const char *Begin = Buf.data() + Strtab.sh_offset + Symbols[K].st_name;
+      const size_t Available = Strtab.sh_size - Symbols[K].st_name;
+      const size_t Length = strnlen(Begin, Available);
+      if (Length != Available && StringRef(Begin, Length) == Name) {
+        Symbols[K].st_shndx = NewSectionIndex;
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+bool patchELFSymbolNameOffset(SmallVectorImpl<char> &Buf, StringRef Name,
+                              uint32_t NewNameOffset) {
+  using namespace ELF;
+  if (Buf.size() < sizeof(Elf64_Ehdr))
+    return false;
+  auto *Header = reinterpret_cast<Elf64_Ehdr *>(Buf.data());
+  if (Header->e_shoff > Buf.size() ||
+      (uint64_t)Header->e_shnum * sizeof(Elf64_Shdr) >
+          Buf.size() - Header->e_shoff)
+    return false;
+  auto *Sections = reinterpret_cast<Elf64_Shdr *>(Buf.data() + Header->e_shoff);
+  for (unsigned I = 0; I < Header->e_shnum; ++I) {
+    Elf64_Shdr &Symtab = Sections[I];
+    if (Symtab.sh_type != SHT_SYMTAB || Symtab.sh_link >= Header->e_shnum)
+      continue;
+    Elf64_Shdr &Strtab = Sections[Symtab.sh_link];
+    if (Symtab.sh_offset > Buf.size() ||
+        Symtab.sh_size > Buf.size() - Symtab.sh_offset ||
+        Strtab.sh_offset > Buf.size() ||
+        Strtab.sh_size > Buf.size() - Strtab.sh_offset)
+      return false;
+    auto *Symbols =
+        reinterpret_cast<Elf64_Sym *>(Buf.data() + Symtab.sh_offset);
+    const unsigned Count = Symtab.sh_size / sizeof(Elf64_Sym);
+    for (unsigned K = 0; K < Count; ++K) {
+      if (Symbols[K].st_name >= Strtab.sh_size)
+        continue;
+      const char *Begin = Buf.data() + Strtab.sh_offset + Symbols[K].st_name;
+      const size_t Available = Strtab.sh_size - Symbols[K].st_name;
+      const size_t Length = strnlen(Begin, Available);
+      if (Length != Available && StringRef(Begin, Length) == Name) {
+        Symbols[K].st_name = NewNameOffset;
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 // Rewrite the sh_info (first-global boundary) of the first SHT_SYMTAB section
@@ -1325,11 +2447,11 @@ SmallVector<char, 0> buildCOFF(uint16_t Machine, ArrayRef<CoffSecSpec> Secs,
   SmallVector<char, 0> Buf;
   putU16(Buf, Machine);
   putU16(Buf, (uint16_t)N);
-  putU32(Buf, 0);      // TimeDateStamp
+  putU32(Buf, 0);          // TimeDateStamp
   putU32(Buf, SymPtr);     // PointerToSymbolTable
   putU32(Buf, TotalSlots); // NumberOfSymbols (includes aux records)
-  putU16(Buf, 0);      // SizeOfOptionalHeader
-  putU16(Buf, 0);      // Characteristics
+  putU16(Buf, 0);          // SizeOfOptionalHeader
+  putU16(Buf, 0);          // Characteristics
 
   for (unsigned i = 0; i < N; ++i) {
     char Name[8] = {0};
@@ -1337,14 +2459,14 @@ SmallVector<char, 0> buildCOFF(uint16_t Machine, ArrayRef<CoffSecSpec> Secs,
     Buf.append(Name, Name + 8);
     bool IsBSS =
         (Secs[i].Characteristics & IMAGE_SCN_CNT_UNINITIALIZED_DATA) != 0;
-    putU32(Buf, 0);              // VirtualSize
-    putU32(Buf, 0);              // VirtualAddress
-    putU32(Buf, Secs[i].Size);   // SizeOfRawData
-    putU32(Buf, IsBSS ? 0 : DataPtr[i]);          // PointerToRawData
-    putU32(Buf, RelPtr[i]);                        // PointerToRelocations
-    putU32(Buf, 0);                                // PointerToLinenumbers
-    putU16(Buf, (uint16_t)RelTab[i].size());       // NumberOfRelocations
-    putU16(Buf, 0);                                // NumberOfLinenumbers
+    putU32(Buf, 0);                          // VirtualSize
+    putU32(Buf, 0);                          // VirtualAddress
+    putU32(Buf, Secs[i].Size);               // SizeOfRawData
+    putU32(Buf, IsBSS ? 0 : DataPtr[i]);     // PointerToRawData
+    putU32(Buf, RelPtr[i]);                  // PointerToRelocations
+    putU32(Buf, 0);                          // PointerToLinenumbers
+    putU16(Buf, (uint16_t)RelTab[i].size()); // NumberOfRelocations
+    putU16(Buf, 0);                          // NumberOfLinenumbers
     putU32(Buf, Secs[i].Characteristics);
   }
 
@@ -1370,7 +2492,7 @@ SmallVector<char, 0> buildCOFF(uint16_t Machine, ArrayRef<CoffSecSpec> Secs,
     Buf.append(Name, Name + 8);
     putU32(Buf, S.Value);
     putU16(Buf, (uint16_t)S.SectionNumber);
-    putU16(Buf, 0);               // Type
+    putU16(Buf, 0); // Type
     Buf.push_back((char)S.StorageClass);
     bool IsWeak = S.WeakDefTag >= 0;
     Buf.push_back(IsWeak ? 1 : 0); // NumberOfAuxSymbols
@@ -1507,7 +2629,8 @@ bool patchCoffSymValue(SmallVectorImpl<char> &Buf, StringRef Name,
   if (SymOff == 0 || SymOff + (uint64_t)NSym * 18 > Buf.size())
     return false;
   uint32_t StrOff = SymOff + NSym * 18;
-  const char *StrTab = (StrOff + 4 <= Buf.size()) ? Buf.data() + StrOff : nullptr;
+  const char *StrTab =
+      (StrOff + 4 <= Buf.size()) ? Buf.data() + StrOff : nullptr;
   uint32_t StrSize = StrTab ? getU32(StrTab) : 0;
   unsigned k = 0;
   while (k < NSym) {
@@ -1546,7 +2669,8 @@ bool patchAllCoffSymValues(SmallVectorImpl<char> &Buf, StringRef Name,
   if (SymOff == 0 || SymOff + (uint64_t)NSym * 18 > Buf.size())
     return false;
   uint32_t StrOff = SymOff + NSym * 18;
-  const char *StrTab = (StrOff + 4 <= Buf.size()) ? Buf.data() + StrOff : nullptr;
+  const char *StrTab =
+      (StrOff + 4 <= Buf.size()) ? Buf.data() + StrOff : nullptr;
   uint32_t StrSize = StrTab ? getU32(StrTab) : 0;
   unsigned k = 0;
   bool Any = false;
@@ -1632,9 +2756,9 @@ struct MachoRelSpec {
   uint32_t Address;    // section-relative offset of the relocation site
   std::string SymName; // target symbol (extern relocation); ignored if !Extern
   uint8_t Type;
-  uint8_t Length;      // log2 byte size (2 => 4 bytes, 3 => 8 bytes)
-  bool Extern = true;  // false => section-relative (non-extern) relocation
-  int TargetSec = -1;  // 0-based target section when !Extern (r_symbolnum=sec+1)
+  uint8_t Length;     // log2 byte size (2 => 4 bytes, 3 => 8 bytes)
+  bool Extern = true; // false => section-relative (non-extern) relocation
+  int TargetSec = -1; // 0-based target section when !Extern (r_symbolnum=sec+1)
 };
 
 SmallVector<char, 0> buildMachO(uint32_t CpuType, uint32_t CpuSubType,
@@ -1729,8 +2853,8 @@ SmallVector<char, 0> buildMachO(uint32_t CpuType, uint32_t CpuSubType,
   Seg->nsects = N;
   Seg->flags = 0;
 
-  auto *SH = reinterpret_cast<MO::section_64 *>(Cmd +
-                                               sizeof(MO::segment_command_64));
+  auto *SH =
+      reinterpret_cast<MO::section_64 *>(Cmd + sizeof(MO::segment_command_64));
   for (unsigned i = 0; i < N; ++i) {
     memset(&SH[i], 0, sizeof(MO::section_64));
     memcpy(SH[i].sectname, Secs[i].Sect.data(),
@@ -1902,8 +3026,8 @@ bool patchMachoSymValue(SmallVectorImpl<char> &Buf, StringRef Name,
       auto *SC = reinterpret_cast<MO::symtab_command *>(Buf.data() + Cmd);
       const char *Str = Buf.data() + SC->stroff;
       for (unsigned i = 0; i < SC->nsyms; ++i) {
-        auto *NL = reinterpret_cast<MO::nlist_64 *>(
-            Buf.data() + SC->symoff + i * sizeof(MO::nlist_64));
+        auto *NL = reinterpret_cast<MO::nlist_64 *>(Buf.data() + SC->symoff +
+                                                    i * sizeof(MO::nlist_64));
         if (NL->n_strx < SC->strsize && Name == (Str + NL->n_strx)) {
           NL->n_value = NewVal;
           return true;
@@ -1935,8 +3059,8 @@ bool patchAllMachoSymValues(SmallVectorImpl<char> &Buf, StringRef Name,
       auto *SC = reinterpret_cast<MO::symtab_command *>(Buf.data() + Cmd);
       const char *Str = Buf.data() + SC->stroff;
       for (unsigned i = 0; i < SC->nsyms; ++i) {
-        auto *NL = reinterpret_cast<MO::nlist_64 *>(
-            Buf.data() + SC->symoff + i * sizeof(MO::nlist_64));
+        auto *NL = reinterpret_cast<MO::nlist_64 *>(Buf.data() + SC->symoff +
+                                                    i * sizeof(MO::nlist_64));
         if (NL->n_strx < SC->strsize && Name == (Str + NL->n_strx)) {
           NL->n_value = NewVal;
           Any = true;
@@ -1950,8 +3074,7 @@ bool patchAllMachoSymValues(SmallVectorImpl<char> &Buf, StringRef Name,
   return Any;
 }
 
-bool corruptMachoSymbolContentByte(SmallVectorImpl<char> &Buf,
-                                   StringRef Name) {
+bool corruptMachoSymbolContentByte(SmallVectorImpl<char> &Buf, StringRef Name) {
   namespace MO = llvm::MachO;
   if (Buf.size() < sizeof(MO::mach_header_64))
     return false;
@@ -1982,8 +3105,8 @@ bool corruptMachoSymbolContentByte(SmallVectorImpl<char> &Buf,
   auto *Sections = reinterpret_cast<MO::section_64 *>(
       reinterpret_cast<char *>(Seg) + sizeof(MO::segment_command_64));
   for (unsigned I = 0; I < Symtab->nsyms; ++I) {
-    auto *NL = reinterpret_cast<MO::nlist_64 *>(
-        Buf.data() + Symtab->symoff + I * sizeof(MO::nlist_64));
+    auto *NL = reinterpret_cast<MO::nlist_64 *>(Buf.data() + Symtab->symoff +
+                                                I * sizeof(MO::nlist_64));
     if (NL->n_strx >= Symtab->strsize ||
         Name != StringRef(Strings + NL->n_strx,
                           strnlen(Strings + NL->n_strx,
@@ -2115,9 +3238,8 @@ std::optional<uint64_t> machoSecFileOffset(ArrayRef<char> Buf, StringRef Seg,
 /// in-place-rewritten pointer so the verifier's value check is exercised.
 bool patchMachoSecQword(SmallVectorImpl<char> &Buf, StringRef Seg,
                         StringRef Sect, uint32_t SecRelOff, uint64_t NewVal) {
-  std::optional<uint64_t> Fo =
-      machoSecFileOffset(ArrayRef<char>(Buf.data(), Buf.size()), Seg, Sect,
-                         SecRelOff, 8);
+  std::optional<uint64_t> Fo = machoSecFileOffset(
+      ArrayRef<char>(Buf.data(), Buf.size()), Seg, Sect, SecRelOff, 8);
   if (!Fo)
     return false;
   memcpy(Buf.data() + *Fo, &NewVal, 8);
@@ -2128,8 +3250,7 @@ bool patchMachoSecQword(SmallVectorImpl<char> &Buf, StringRef Seg,
 /// section data.
 std::optional<uint32_t> readMachoSecWord(ArrayRef<char> Buf, StringRef Seg,
                                          StringRef Sect, uint32_t SecRelOff) {
-  std::optional<uint64_t> Fo =
-      machoSecFileOffset(Buf, Seg, Sect, SecRelOff, 4);
+  std::optional<uint64_t> Fo = machoSecFileOffset(Buf, Seg, Sect, SecRelOff, 4);
   if (!Fo)
     return std::nullopt;
   uint32_t Value = 0;
@@ -2483,8 +3604,8 @@ TEST(MergeELF, OnlyUndefinedSymbols) {
 TEST(MergeELF, PcgSymbolDemotion) {
   // Symbols with .__pcg marker should be demoted to local.
   // PCG symbols are always GLOBAL in real parallel codegen output.
-  auto P0 = buildMinimalELF({"helper.__pcg12345678"}, {},
-                             {0xcc}, /*DefinedAsGlobal=*/true);
+  auto P0 = buildMinimalELF({"helper.__pcg12345678"}, {}, {0xcc},
+                            /*DefinedAsGlobal=*/true);
   auto P1 = buildMinimalELF({}, {"helper.__pcg12345678"});
 
   SmallVector<SmallVector<char, 0>, 2> Bufs;
@@ -2541,7 +3662,7 @@ TEST(MergeELFSemantic, SectionMergeSymbolOffsets) {
   // .text.a at [0, 0x34); .text.b padded to align 16 → starts at 0x40.
   EXPECT_EQ(PA->Value, 0x0u);
   EXPECT_EQ(PAMid->Value, 0x10u);
-  EXPECT_EQ(PB->Value, 0x40u);   // the bug made this 0
+  EXPECT_EQ(PB->Value, 0x40u);    // the bug made this 0
   EXPECT_EQ(PBMid->Value, 0x48u); // the bug made this 0x8
 
   // All four resolve into the same merged section.
@@ -2656,8 +3777,8 @@ TEST(MergeELFSemantic, KernelModuleAllFamiliesFoldOffsets) {
   //      while its sibling .text.* still collapse into .text;
   //   3) a cross-partition symbol reference re-lands at the shifted offset.
   // Every offset below was 0 under the historical SecOff collapse.
-  SecSpec TInit{".text.init", 0x30, 16, SHT_PROGBITS,
-                SHF_ALLOC | SHF_EXECINSTR, 0xA0};
+  SecSpec TInit{".text.init", 0x30, 16, SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR,
+                0xA0};
   SecSpec Ftrace{".text.ftrace_trampoline", 0x10, 16, SHT_PROGBITS,
                  SHF_ALLOC | SHF_EXECINSTR, 0xE0}; // preserved → must NOT fold
   SecSpec Rk0{".rodata.k0", 0x20, 16, SHT_PROGBITS, SHF_ALLOC, 0xB0};
@@ -2671,8 +3792,8 @@ TEST(MergeELFSemantic, KernelModuleAllFamiliesFoldOffsets) {
   auto Obj0 = buildSectionedELF({TInit, Ftrace, Rk0, Dg0, Bb0},
                                 {Init, Ftr, K0, G0, B0}, {});
 
-  SecSpec TExit{".text.exit", 0x20, 16, SHT_PROGBITS,
-                SHF_ALLOC | SHF_EXECINSTR, 0xA1};
+  SecSpec TExit{".text.exit", 0x20, 16, SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR,
+                0xA1};
   SecSpec Rk1{".rodata.k1", 0x18, 16, SHT_PROGBITS, SHF_ALLOC, 0xB1};
   SecSpec Dg1{".data.g1", 0x8, 16, SHT_PROGBITS, SHF_ALLOC | SHF_WRITE, 0xC1};
   SecSpec Bb1{".bss.b1", 0x20, 16, SHT_NOBITS, SHF_ALLOC | SHF_WRITE};
@@ -2910,8 +4031,8 @@ TEST(MergeELFSemantic,
     Regular.Entsize = 8;
 
     {
-      auto Obj =
-          buildSectionedELF({Regular}, {SymSpec{"value", 0, 0}}, {}, EM_AARCH64);
+      auto Obj = buildSectionedELF({Regular}, {SymSpec{"value", 0, 0}}, {},
+                                   EM_AARCH64);
       SmallVector<SmallVector<char, 0>, 1> Bufs;
       Bufs.push_back(std::move(Obj));
       Options Opts;
@@ -2985,10 +4106,10 @@ TEST(MergeELFSemantic,
       // Prefix matches are insufficient: the numeric grammar consumes all.
       {".rodata.str1.1.trailing", SHT_PROGBITS,
        SHF_ALLOC | SHF_MERGE | SHF_STRINGS, 1, 1},
-      {".rodata.str+1.1", SHT_PROGBITS,
-       SHF_ALLOC | SHF_MERGE | SHF_STRINGS, 1, 1},
-      {".rodata.str1.+1", SHT_PROGBITS,
-       SHF_ALLOC | SHF_MERGE | SHF_STRINGS, 1, 1},
+      {".rodata.str+1.1", SHT_PROGBITS, SHF_ALLOC | SHF_MERGE | SHF_STRINGS, 1,
+       1},
+      {".rodata.str1.+1", SHT_PROGBITS, SHF_ALLOC | SHF_MERGE | SHF_STRINGS, 1,
+       1},
       {".rodata.cst8trailing", SHT_PROGBITS, SHF_ALLOC | SHF_MERGE, 8, 8},
       {".rodata.cst+8", SHT_PROGBITS, SHF_ALLOC | SHF_MERGE, 8, 8},
       // Unusual flags must not be silently laundered into ordinary rodata.
@@ -3223,10 +4344,10 @@ TEST(MergeELFSemantic, NobitsAndProgbitsSameNameFoldWithoutOverlap) {
   // Both orderings are exercised because the promotion path differs
   // (NOBITS-first vs PROGBITS-first).
   auto check = [](bool NobitsFirst) {
-    SecSpec Nb{"X", 0x40, 16, ELF::SHT_NOBITS,
-               ELF::SHF_ALLOC | ELF::SHF_WRITE};
-    SecSpec Pb{"X", 0x40, 16, ELF::SHT_PROGBITS,
-               ELF::SHF_ALLOC | ELF::SHF_WRITE, 0xBB};
+    SecSpec Nb{"X", 0x40, 16, ELF::SHT_NOBITS, ELF::SHF_ALLOC | ELF::SHF_WRITE};
+    SecSpec Pb{
+        "X", 0x40, 16, ELF::SHT_PROGBITS, ELF::SHF_ALLOC | ELF::SHF_WRITE,
+        0xBB};
     SymSpec A{"a", 0, 0}; // defined in the NOBITS partition
     SymSpec B{"b", 0, 0}; // defined in the PROGBITS partition
     auto ObjNb = buildSectionedELF({Nb}, {A}, {});
@@ -3285,7 +4406,10 @@ TEST(MergeELFSemantic, RandomizedNobitsProgbitsMixNoCollapse) {
       if (!Nobits)
         AnyProgbits = true;
       uint64_t Size = 0x10 + (Rng() % 0x40);
-      SecSpec S{"X", Size, 16, Nobits ? ELF::SHT_NOBITS : ELF::SHT_PROGBITS,
+      SecSpec S{"X",
+                Size,
+                16,
+                Nobits ? ELF::SHT_NOBITS : ELF::SHT_PROGBITS,
                 ELF::SHF_ALLOC | ELF::SHF_WRITE,
                 Nobits ? (uint8_t)0 : (uint8_t)(0x10 + p)};
       std::string Nm = "s" + std::to_string(p);
@@ -3662,8 +4786,12 @@ TEST(MergeELFSemantic, NonAndroidMergeDoesNotSynthesizeLoaderSections) {
 TEST(MergeELFSemantic, AndroidKernelPartialLinkPreservesProfileContract) {
   SecSpec Text{".text", 0x20, 16, ELF::SHT_PROGBITS,
                ELF::SHF_ALLOC | ELF::SHF_EXECINSTR};
-  SecSpec Contract{".neverc.android.kernel.profile", 8, 8,
-                   ELF::SHT_PROGBITS, ELF::SHF_ALLOC, 0xab};
+  SecSpec Contract{".neverc.android.kernel.profile",
+                   8,
+                   8,
+                   ELF::SHT_PROGBITS,
+                   ELF::SHF_ALLOC,
+                   0xab};
   SymSpec ContractSym{"__neverc_android_kernel_profile_contract", 1, 0};
   ContractSym.Global = false;
   auto Obj =
@@ -3686,8 +4814,12 @@ TEST(MergeELFSemantic, AndroidKernelPartialLinkPreservesProfileContract) {
 TEST(MergeELFSemantic, AndroidKernelModuleDropsProfileContractFingerprint) {
   SecSpec Text{".text", 0x20, 16, ELF::SHT_PROGBITS,
                ELF::SHF_ALLOC | ELF::SHF_EXECINSTR};
-  SecSpec Contract{".neverc.android.kernel.profile", 8, 8,
-                   ELF::SHT_PROGBITS, ELF::SHF_ALLOC, 0xab};
+  SecSpec Contract{".neverc.android.kernel.profile",
+                   8,
+                   8,
+                   ELF::SHT_PROGBITS,
+                   ELF::SHF_ALLOC,
+                   0xab};
   SymSpec ContractSym{"__neverc_android_kernel_profile_contract", 1, 0};
   ContractSym.Global = false;
   auto Obj =
@@ -3712,9 +4844,30 @@ TEST(MergeELFSemantic, AndroidKernelModuleDropsProfileContractFingerprint) {
 
 TEST(MergeELFSemantic,
      AndroidKernelModuleSafeStripKeepsRelocationRequiredSymbols) {
-  SecSpec Text{".text", 0x40, 16, ELF::SHT_PROGBITS,
-               ELF::SHF_ALLOC | ELF::SHF_EXECINSTR, 0x5a};
+  SecSpec Text{".text",
+               0x100,
+               16,
+               ELF::SHT_PROGBITS,
+               ELF::SHF_ALLOC | ELF::SHF_EXECINSTR,
+               0x5a};
   SecSpec Comment{".comment", 0x20, 1, ELF::SHT_PROGBITS, 0, 0x43};
+  SecSpec ModInfo{".modinfo", 0x20, 1, ELF::SHT_PROGBITS, ELF::SHF_ALLOC};
+  SecSpec Ftrace{".text.ftrace_trampoline", 0x20, 16, ELF::SHT_PROGBITS,
+                 ELF::SHF_ALLOC | ELF::SHF_EXECINSTR};
+  SecSpec ThisModule{".gnu.linkonce.this_module", 0x40, 64, ELF::SHT_PROGBITS,
+                     ELF::SHF_ALLOC | ELF::SHF_WRITE};
+  SecSpec Versions{"__versions", 0x40, 8, ELF::SHT_PROGBITS, ELF::SHF_ALLOC};
+  SecSpec AllocTags{".codetag.alloc_tags", 8, 8, ELF::SHT_PROGBITS,
+                    ELF::SHF_ALLOC | ELF::SHF_WRITE};
+  SecSpec Rodata{".rodata", 0x20, 8, ELF::SHT_PROGBITS, ELF::SHF_ALLOC};
+  SecSpec Data{".data", 0x20, 8, ELF::SHT_PROGBITS,
+               ELF::SHF_ALLOC | ELF::SHF_WRITE};
+  SecSpec Bss{".bss", 0x20, 8, ELF::SHT_NOBITS,
+              ELF::SHF_ALLOC | ELF::SHF_WRITE};
+  SecSpec Plt{".plt", 0x20, 4, ELF::SHT_PROGBITS,
+              ELF::SHF_ALLOC | ELF::SHF_EXECINSTR};
+  SecSpec InitPlt{".init.plt", 0x20, 4, ELF::SHT_PROGBITS,
+                  ELF::SHF_ALLOC | ELF::SHF_EXECINSTR};
 
   SymSpec NeededLocal{"release_needed_local", 0, 0};
   NeededLocal.Global = false;
@@ -3723,24 +4876,50 @@ TEST(MergeELFSemantic,
   SymSpec PublicDefinition{"release_public_definition", 0, 32};
   SymSpec NeededImport{"release_needed_import", -1, 0};
   SymSpec UnneededImport{"release_unneeded_import", -1, 0};
+  SymSpec ModInfoSymbol{"release_modinfo_name", 2, 0};
+  SymSpec FtraceSymbol{"release_ftrace_name", 3, 0};
+  SymSpec ThisModuleSymbol{"__this_module", 4, 0};
+  SymSpec VersionsSymbol{"release_versions_name", 5, 0};
+  SymSpec AllocTagsSymbol{"release_alloc_tags_name", 6, 0};
+  SymSpec InitModule{"init_module", 0, 48};
+  SymSpec CleanupModule{"cleanup_module", 0, 64};
+  SymSpec CFICheck{"__cfi_check", 0, 80};
+  SymSpec CFICheckFail{"__cfi_check_fail", 0, 96};
+  SymSpec CFIInitJumpTable{"__cfi_jt_init_module", 0, 112};
+  SymSpec CFIExitJumpTable{"__cfi_jt_cleanup_module", 0, 128};
+  SymSpec RodataSymbol{"release_rodata_name", 7, 0};
+  RodataSymbol.Type = ELF::STT_OBJECT;
+  SymSpec DataSymbol{"release_data_name", 8, 0};
+  DataSymbol.Type = ELF::STT_OBJECT;
+  SymSpec BssSymbol{"release_bss_name", 9, 0};
+  BssSymbol.Type = ELF::STT_OBJECT;
+  SymSpec PltSymbol{"release_plt_name", 10, 0};
+  SymSpec InitPltSymbol{"release_init_plt_name", 11, 0};
+  SymSpec TypeID{"__typeid__sample_global_addr", -1, 0x2a};
+  TypeID.RawSectionIndex = ELF::SHN_ABS;
+  TypeID.Type = ELF::STT_NOTYPE;
+  SymSpec KCFITypeID{"__kcfi_typeid_sample", 0, 144};
+  KCFITypeID.Type = ELF::STT_NOTYPE;
 
-  RelSpec LocalReference{0, 0, "release_needed_local",
-                         ELF::R_AARCH64_ABS64, 3};
-  RelSpec ImportReference{0, 8, "release_needed_import",
-                          ELF::R_AARCH64_ABS64, 7};
+  RelSpec LocalReference{0, 0, "release_needed_local", ELF::R_AARCH64_ABS64, 3};
+  RelSpec ImportReference{0, 8, "release_needed_import", ELF::R_AARCH64_ABS64,
+                          7};
+  RelSpec KCFIReference{0, 16, "__kcfi_typeid_sample", ELF::R_AARCH64_ABS64,
+                        11};
   auto Obj = buildSectionedELF(
-      {Text, Comment},
-      {NeededLocal, UnneededLocal, PublicDefinition, NeededImport,
-       UnneededImport},
-      {LocalReference, ImportReference}, ELF::EM_AARCH64);
+      {Text, Comment, ModInfo, Ftrace, ThisModule, Versions, AllocTags, Rodata,
+       Data, Bss, Plt, InitPlt},
+      {NeededLocal,    UnneededLocal,   PublicDefinition, NeededImport,
+       UnneededImport, ModInfoSymbol,   FtraceSymbol,     ThisModuleSymbol,
+       VersionsSymbol, AllocTagsSymbol, InitModule,       CleanupModule,
+       CFICheck,       CFICheckFail,    CFIInitJumpTable, CFIExitJumpTable,
+       RodataSymbol,   DataSymbol,      BssSymbol,        PltSymbol,
+       InitPltSymbol,  TypeID,          KCFITypeID},
+      {LocalReference, ImportReference, KCFIReference}, ELF::EM_AARCH64);
   SmallVector<SmallVector<char, 0>, 1> Bufs;
   Bufs.push_back(std::move(Obj));
 
-  Options Opts;
-  Opts.mergeSections = true;
-  Opts.androidKernelModule = true;
-  Opts.finalizeAndroidKernelModule = true;
-  Opts.stripUnneededSymbols = true;
+  Options Opts = androidKernelReleaseOptions();
   auto [OK, Out] = mergeELF(Bufs, Opts);
   ASSERT_TRUE(OK);
 
@@ -3749,34 +4928,3245 @@ TEST(MergeELFSemantic,
   EXPECT_GE(V.findSec(".symtab"), 0);
   EXPECT_GE(V.findSec(".strtab"), 0);
   EXPECT_LT(V.findSec(".comment"), 0);
-  EXPECT_NE(V.findSym("release_needed_local"), nullptr);
+  EXPECT_EQ(V.findSym("release_needed_local"), nullptr);
+  EXPECT_NE(V.findSym("fn_0"), nullptr);
   EXPECT_EQ(V.findSym("release_unneeded_local"), nullptr);
-  EXPECT_NE(V.findSym("release_public_definition"), nullptr);
+  EXPECT_EQ(V.findSym("release_public_definition"), nullptr);
+  EXPECT_NE(V.findSym("fn_20"), nullptr);
   EXPECT_NE(V.findSym("release_needed_import"), nullptr);
   EXPECT_EQ(V.findSym("release_unneeded_import"), nullptr);
+  EXPECT_NE(V.findSym("release_modinfo_name"), nullptr);
+  EXPECT_NE(V.findSym("release_ftrace_name"), nullptr);
+  EXPECT_NE(V.findSym("__this_module"), nullptr);
+  EXPECT_NE(V.findSym("release_versions_name"), nullptr);
+  EXPECT_NE(V.findSym("release_alloc_tags_name"), nullptr);
+  EXPECT_NE(V.findSym("init_module"), nullptr);
+  EXPECT_NE(V.findSym("cleanup_module"), nullptr);
+  EXPECT_NE(V.findSym("__cfi_check"), nullptr);
+  EXPECT_NE(V.findSym("__cfi_check_fail"), nullptr);
+  EXPECT_NE(V.findSym("__cfi_jt_init_module"), nullptr);
+  EXPECT_NE(V.findSym("__cfi_jt_cleanup_module"), nullptr);
+  EXPECT_NE(V.findSym("__typeid__sample_global_addr"), nullptr);
+  EXPECT_NE(V.findSym("__kcfi_typeid_sample"), nullptr);
+  EXPECT_NE(V.findSym("obj_1C8"), nullptr);
+  EXPECT_NE(V.findSym("obj_1E8"), nullptr);
+  EXPECT_NE(V.findSym("obj_208"), nullptr);
+  EXPECT_NE(V.findSym("fn_228"), nullptr);
+  EXPECT_NE(V.findSym("fn_248"), nullptr);
   EXPECT_NE(V.findSym("__start_alloc_tags"), nullptr);
   EXPECT_NE(V.findSym("__stop_alloc_tags"), nullptr);
-  ASSERT_EQ(V.Relas.size(), 2u);
+  ASSERT_EQ(V.Relas.size(), 3u);
   for (const ParsedRela &Relocation : V.Relas) {
     ASSERT_LT(Relocation.Sym, V.Syms.size());
     const StringRef Target = V.Syms[Relocation.Sym].Name;
-    EXPECT_TRUE(Target == "release_needed_local" ||
-                Target == "release_needed_import");
+    EXPECT_TRUE(Target == "fn_0" || Target == "release_needed_import" ||
+                Target == "__kcfi_typeid_sample");
   }
 
   const StringRef Bytes(Out.data(), Out.size());
   EXPECT_FALSE(Bytes.contains("release_unneeded_local"));
   EXPECT_FALSE(Bytes.contains("release_unneeded_import"));
+  EXPECT_FALSE(Bytes.contains("release_public_definition"));
+  for (StringRef Original :
+       {"release_rodata_name", "release_data_name", "release_bss_name",
+        "release_plt_name", "release_init_plt_name"})
+    EXPECT_FALSE(Bytes.contains(Original));
+}
+
+TEST(MergeELFSemantic,
+     AndroidKernelReleaseNamesPartitionFunctionsFromFinalLayout) {
+  SecSpec FirstText{".text.first",
+                    0x10,
+                    16,
+                    ELF::SHT_PROGBITS,
+                    ELF::SHF_ALLOC | ELF::SHF_EXECINSTR,
+                    0x11};
+  SecSpec SecondText{".text.second",
+                     0x10,
+                     16,
+                     ELF::SHT_PROGBITS,
+                     ELF::SHF_ALLOC | ELF::SHF_EXECINSTR,
+                     0x22};
+  SymSpec FirstFunction{"first_partition_function", 0, 0};
+  SymSpec SecondFunction{"second_partition_function", 0, 0};
+
+  SmallVector<SmallVector<char, 0>, 2> Inputs;
+  Inputs.push_back(
+      buildSectionedELF({FirstText}, {FirstFunction}, {}, ELF::EM_AARCH64));
+  Inputs.push_back(
+      buildSectionedELF({SecondText}, {SecondFunction}, {}, ELF::EM_AARCH64));
+
+  Options Opts = androidKernelReleaseOptions();
+  ASSERT_TRUE(Opts.verify);
+  auto [OK, Output] = mergeELF(Inputs, Opts);
+  ASSERT_TRUE(OK);
+
+  ElfView View = parseELF(Output);
+  ASSERT_TRUE(View.Ok);
+  const ParsedSym *First = View.findSym("fn_0");
+  const ParsedSym *Second = View.findSym("fn_10");
+  ASSERT_NE(First, nullptr);
+  ASSERT_NE(Second, nullptr);
+  EXPECT_EQ(First->Value, 0u);
+  EXPECT_EQ(Second->Value, 0x10u);
+  EXPECT_EQ(View.findSym("first_partition_function"), nullptr);
+  EXPECT_EQ(View.findSym("second_partition_function"), nullptr);
+}
+
+TEST(MergeELFSemantic, AndroidKernelReleaseUsesTypeAwareFinalCoordinates) {
+  SecSpec Text{
+      ".text", 0x20, 16, ELF::SHT_PROGBITS, ELF::SHF_ALLOC | ELF::SHF_EXECINSTR,
+      0x11};
+  SecSpec Rodata{".rodata", 0x20, 16, ELF::SHT_PROGBITS, ELF::SHF_ALLOC, 0x22};
+  SecSpec Data{
+      ".data", 0x20, 16, ELF::SHT_PROGBITS, ELF::SHF_ALLOC | ELF::SHF_WRITE,
+      0x33};
+  SecSpec Bss{".bss", 0x20, 16, ELF::SHT_NOBITS,
+              ELF::SHF_ALLOC | ELF::SHF_WRITE};
+  SecSpec Metadata{".meta", 0x20, 1, ELF::SHT_PROGBITS, 0, 0x44};
+
+  SymSpec Function{"release_function", 0, 0};
+  SymSpec ExecutableLabel{"release_exec_label", 0, 8};
+  ExecutableLabel.Type = ELF::STT_NOTYPE;
+  SymSpec RodataObject{"release_rodata_object", 1, 0x10};
+  RodataObject.Type = ELF::STT_OBJECT;
+  SymSpec DataLabel{"release_data_label", 2, 0x10};
+  DataLabel.Type = ELF::STT_NOTYPE;
+  SymSpec DataObject{"release_data_object", 2, 0x10};
+  DataObject.Type = ELF::STT_OBJECT;
+  SymSpec BssObject{"release_bss_object", 3, 0x10};
+  BssObject.Type = ELF::STT_OBJECT;
+  SymSpec NonAllocatedLabel{"release_metadata_label", 4, 0x10};
+  NonAllocatedLabel.Type = ELF::STT_NOTYPE;
+
+  auto Input =
+      buildSectionedELF({Text, Rodata, Data, Bss, Metadata},
+                        {Function, ExecutableLabel, RodataObject, DataLabel,
+                         DataObject, BssObject, NonAllocatedLabel},
+                        {}, ELF::EM_AARCH64);
+  SmallVector<SmallVector<char, 0>, 1> Inputs;
+  Inputs.push_back(std::move(Input));
+
+  Options Opts = androidKernelReleaseOptions();
+  ASSERT_TRUE(Opts.verify);
+  auto [OK, Output] = mergeELF(Inputs, Opts);
+  ASSERT_TRUE(OK);
+  ElfView View = parseELF(Output);
+  ASSERT_TRUE(View.Ok);
+
+  for (StringRef Expected :
+       {"fn_0", "code_8", "obj_30", "sym_50", "obj_50", "obj_70",
+        "sym_S5_10"})
+    EXPECT_NE(View.findSym(Expected), nullptr) << Expected.str();
+  const StringRef OutputBytes(Output.data(), Output.size());
+  for (StringRef Original :
+       {"release_function", "release_exec_label", "release_rodata_object",
+        "release_data_label", "release_data_object", "release_bss_object",
+        "release_metadata_label"}) {
+    EXPECT_EQ(View.findSym(Original), nullptr) << Original.str();
+    EXPECT_FALSE(OutputBytes.contains(Original)) << Original.str();
+  }
+}
+
+TEST(MergeELFSemantic,
+     AndroidKernelReleasePlansBoundaryAliasesWithoutReorderingRelocations) {
+  SecSpec Text{
+      ".text", 0x10, 16, ELF::SHT_PROGBITS, ELF::SHF_ALLOC | ELF::SHF_EXECINSTR,
+      0x11};
+  SecSpec InitText{".init.text",
+                   0x10,
+                   16,
+                   ELF::SHT_PROGBITS,
+                   ELF::SHF_ALLOC | ELF::SHF_EXECINSTR,
+                   0x22};
+  SecSpec Data{
+      ".data", 0x10, 8, ELF::SHT_PROGBITS, ELF::SHF_ALLOC | ELF::SHF_WRITE,
+      0x33};
+  SymSpec EndMarker{"release_text_end", 0, 0x10};
+  EndMarker.Other = ELF::STV_HIDDEN;
+  SymSpec StartMarker{"release_init_start", 1, 0};
+  StartMarker.Other = ELF::STV_PROTECTED;
+  RelSpec EndReference{2, 0, "release_text_end", ELF::R_AARCH64_ABS64, 3};
+  RelSpec StartReference{2, 8, "release_init_start", ELF::R_AARCH64_ABS64, 7};
+
+  auto Input =
+      buildSectionedELF({Text, InitText, Data}, {EndMarker, StartMarker},
+                        {EndReference, StartReference}, ELF::EM_AARCH64);
+  SmallVector<SmallVector<char, 0>, 1> Inputs;
+  Inputs.push_back(std::move(Input));
+
+  auto [OK, Output] = mergeELF(Inputs, androidKernelReleaseOptions());
+  ASSERT_TRUE(OK);
+  ElfView View = parseELF(Output);
+  ASSERT_TRUE(View.Ok);
+  const ParsedSym *End = View.findSym("fn_10");
+  const ParsedSym *Start = View.findSym("fn_10_1");
+  ASSERT_NE(End, nullptr);
+  ASSERT_NE(Start, nullptr);
+  EXPECT_EQ(End->Value, 0x10u);
+  EXPECT_EQ(Start->Value, 0u);
+  EXPECT_EQ(End->Bind, ELF::STB_GLOBAL);
+  EXPECT_EQ(Start->Bind, ELF::STB_GLOBAL);
+  EXPECT_EQ(End->Type, ELF::STT_FUNC);
+  EXPECT_EQ(Start->Type, ELF::STT_FUNC);
+  EXPECT_EQ(End->Other, ELF::STV_HIDDEN);
+  EXPECT_EQ(Start->Other, ELF::STV_PROTECTED);
+
+  ASSERT_EQ(View.Relas.size(), 2u);
+  EXPECT_EQ(View.Relas[0].Offset, 0u);
+  EXPECT_EQ(View.Relas[1].Offset, 8u);
+  EXPECT_NE(View.Relas[0].Sym, View.Relas[1].Sym);
+  ASSERT_LT(View.Relas[0].Sym, View.Syms.size());
+  ASSERT_LT(View.Relas[1].Sym, View.Syms.size());
+  EXPECT_EQ(View.Syms[View.Relas[0].Sym].Name, "fn_10");
+  EXPECT_EQ(View.Syms[View.Relas[1].Sym].Name, "fn_10_1");
+  EXPECT_FALSE(
+      StringRef(Output.data(), Output.size()).contains("release_text_end"));
+  EXPECT_FALSE(
+      StringRef(Output.data(), Output.size()).contains("release_init_start"));
+}
+
+TEST(MergeELFSemantic,
+     AndroidKernelReleaseAcceptsNameExchangeWithinExactObservableTie) {
+  SecSpec Text{
+      ".text", 0x20, 16, ELF::SHT_PROGBITS, ELF::SHF_ALLOC | ELF::SHF_EXECINSTR,
+      0x41};
+  SecSpec Data{
+      ".data", 0x10, 8, ELF::SHT_PROGBITS, ELF::SHF_ALLOC | ELF::SHF_WRITE,
+      0x52};
+  SymSpec First{"release_tied_first", 0, 0};
+  First.Size = 8;
+  First.Other = 0x80 | ELF::STV_HIDDEN;
+  SymSpec Second{"release_tied_second", 0, 0};
+  Second.Size = First.Size;
+  Second.Other = First.Other;
+  RelSpec FirstReference{1, 0, First.Name, ELF::R_AARCH64_ABS64, 3};
+  RelSpec SecondReference{1, 8, Second.Name, ELF::R_AARCH64_ABS64, 7};
+  auto Input =
+      buildSectionedELF({Text, Data}, {First, Second},
+                        {FirstReference, SecondReference}, ELF::EM_AARCH64);
+  SmallVector<SmallVector<char, 0>, 1> Inputs;
+  Inputs.push_back(std::move(Input));
+  Options Opts = androidKernelReleaseOptions();
+
+  auto [OK, Output] = mergeELF(Inputs, Opts);
+  ASSERT_TRUE(OK);
+  ElfView View = parseELF(Output);
+  ASSERT_TRUE(View.Ok);
+  const ParsedSym *Base = View.findSym("fn_0");
+  const ParsedSym *Alias = View.findSym("fn_0_1");
+  ASSERT_NE(Base, nullptr);
+  ASSERT_NE(Alias, nullptr);
+  EXPECT_EQ(Base->Value, 0u);
+  EXPECT_EQ(Alias->Value, 0u);
+  EXPECT_EQ(Base->Size, 8u);
+  EXPECT_EQ(Alias->Size, 8u);
+  EXPECT_EQ(Base->Other, First.Other);
+  EXPECT_EQ(Alias->Other, Second.Other);
+  ASSERT_EQ(View.Relas.size(), 2u);
+  ASSERT_LT(View.Relas[0].Sym, View.Syms.size());
+  ASSERT_LT(View.Relas[1].Sym, View.Syms.size());
+  EXPECT_EQ(View.Syms[View.Relas[0].Sym].Name, "fn_0");
+  EXPECT_EQ(View.Syms[View.Relas[1].Sym].Name, "fn_0_1");
+
+  // The final image cannot observe which source spelling owned which suffix:
+  // all raw symbol fields are equal.  Both verifier entry points therefore
+  // validate the canonical multiset and relocation targets existentially.
+  SmallVector<char, 0> Exchanged(Output.begin(), Output.end());
+  ASSERT_TRUE(swapELFSymbolNameOffsets(Exchanged, "fn_0", "fn_0_1"));
+  std::string Error;
+  EXPECT_TRUE(verifyAndroidKernelModuleImage(Exchanged, Opts, &Error)) << Error;
+  EXPECT_TRUE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Inputs), Exchanged,
+                          Format::ELF64LE, Opts, &Error))
+      << Error;
+}
+
+TEST(MergeELFSemantic,
+     AndroidKernelReleaseRejectsNameExchangeAcrossDistinctStOther) {
+  SecSpec Text{
+      ".text", 0x20, 16, ELF::SHT_PROGBITS, ELF::SHF_ALLOC | ELF::SHF_EXECINSTR,
+      0x43};
+  SecSpec Data{
+      ".data", 0x10, 8, ELF::SHT_PROGBITS, ELF::SHF_ALLOC | ELF::SHF_WRITE,
+      0x54};
+  SymSpec Ordinary{"release_other_ordinary", 0, 0};
+  Ordinary.Size = 8;
+  Ordinary.Other = ELF::STV_HIDDEN;
+  SymSpec VariantPCS{"release_other_variant_pcs", 0, 0};
+  VariantPCS.Size = Ordinary.Size;
+  VariantPCS.Other = ELF::STO_AARCH64_VARIANT_PCS | ELF::STV_HIDDEN;
+  RelSpec OrdinaryReference{1, 0, Ordinary.Name, ELF::R_AARCH64_ABS64, 3};
+  RelSpec VariantReference{1, 8, VariantPCS.Name, ELF::R_AARCH64_ABS64, 7};
+  SmallVector<SmallVector<char, 0>, 1> Inputs;
+  Inputs.push_back(buildSectionedELF({Text, Data}, {Ordinary, VariantPCS},
+                                     {OrdinaryReference, VariantReference},
+                                     ELF::EM_AARCH64));
+  Options Opts = androidKernelReleaseOptions();
+
+  auto [OK, Output] = mergeELF(Inputs, Opts);
+  ASSERT_TRUE(OK);
+  ElfView View = parseELF(Output);
+  ASSERT_TRUE(View.Ok);
+  const ParsedSym *Base = View.findSym("fn_0");
+  const ParsedSym *Alias = View.findSym("fn_0_1");
+  ASSERT_NE(Base, nullptr);
+  ASSERT_NE(Alias, nullptr);
+  EXPECT_EQ(Base->Other & 3, Alias->Other & 3);
+  EXPECT_NE(Base->Other, Alias->Other);
+
+  SmallVector<char, 0> Exchanged(Output.begin(), Output.end());
+  ASSERT_TRUE(swapELFSymbolNameOffsets(Exchanged, "fn_0", "fn_0_1"));
+  std::string Error;
+  EXPECT_FALSE(verifyAndroidKernelModuleImage(Exchanged, Opts, &Error));
+  Error.clear();
+  EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Inputs), Exchanged,
+                           Format::ELF64LE, Opts, &Error));
+}
+
+TEST(MergeELFSemantic,
+     AndroidKernelReleaseKeepsExactImportOwnershipOutsideGeneratedTies) {
+  SecSpec Data{
+      ".data", 0x10, 8, ELF::SHT_PROGBITS, ELF::SHF_ALLOC | ELF::SHF_WRITE,
+      0x61};
+  SymSpec FirstImport{"release_import_alpha", -1, 0};
+  FirstImport.Type = ELF::STT_NOTYPE;
+  SymSpec SecondImport{"release_import_bravo", -1, 0};
+  SecondImport.Type = ELF::STT_NOTYPE;
+  RelSpec FirstReference{0, 0, FirstImport.Name, ELF::R_AARCH64_ABS64, 3};
+  RelSpec SecondReference{0, 8, SecondImport.Name, ELF::R_AARCH64_ABS64, 7};
+  auto Input =
+      buildSectionedELF({Data}, {FirstImport, SecondImport},
+                        {FirstReference, SecondReference}, ELF::EM_AARCH64);
+  SmallVector<SmallVector<char, 0>, 1> Inputs;
+  Inputs.push_back(std::move(Input));
+  Options Opts = androidKernelReleaseOptions();
+  auto [OK, Output] = mergeELF(Inputs, Opts);
+  ASSERT_TRUE(OK);
+
+  SmallVector<char, 0> Exchanged(Output.begin(), Output.end());
+  ASSERT_TRUE(swapELFSymbolNameOffsets(Exchanged, "release_import_alpha",
+                                       "release_import_bravo"));
+  std::string Error;
+  // An output-only audit can prove that both exact imports exist but has no
+  // source provenance with which to assign them to otherwise-identical slots.
+  EXPECT_TRUE(verifyAndroidKernelModuleImage(Exchanged, Opts, &Error)) << Error;
+  // Input-aware replay keeps every exact-name entry singleton and rejects the
+  // ownership swap (including the corresponding relocation-target change).
+  EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Inputs), Exchanged,
+                           Format::ELF64LE, Opts, &Error));
+}
+
+TEST(MergeELFSemantic,
+     AndroidKernelReleaseReplayTracksExactRelocationSymbolIndex) {
+  SecSpec Text{
+      ".text", 0x10, 8, ELF::SHT_PROGBITS, ELF::SHF_ALLOC | ELF::SHF_EXECINSTR,
+      0x71};
+  SecSpec Data{
+      ".data", 0x10, 8, ELF::SHT_PROGBITS, ELF::SHF_ALLOC | ELF::SHF_WRITE,
+      0x72};
+  SymSpec First{"__typeid__same_protected_name", 0, 0};
+  First.Global = false;
+  SymSpec Second = First;
+  Second.Value = 8;
+  RelSpec FirstReference{1, 0, First.Name, ELF::R_AARCH64_ABS64, 5};
+  RelSpec SecondReference{1, 8, First.Name, ELF::R_AARCH64_ABS64, 6};
+
+  SmallVector<SmallVector<char, 0>, 2> Inputs;
+  Inputs.push_back(buildSectionedELF({Text, Data}, {First},
+                                     {FirstReference, SecondReference},
+                                     ELF::EM_AARCH64));
+  Inputs.push_back(buildSectionedELF({Text, Data}, {Second}, {FirstReference},
+                                     ELF::EM_AARCH64));
+  Options Opts = androidKernelReleaseOptions();
+  auto [OK, Output] = mergeELF(Inputs, Opts);
+  ASSERT_TRUE(OK);
+  ElfView View = parseELF(Output);
+  ASSERT_TRUE(View.Ok);
+  ASSERT_EQ(View.Relas.size(), 3u);
+  ASSERT_NE(View.Relas[0].Sym, View.Relas[2].Sym);
+
+  SmallVector<char, 0> Retargeted(Output.begin(), Output.end());
+  ASSERT_TRUE(patchFirstRelaSymbolIndex(Retargeted, View.Relas[2].Sym));
+  std::string Error;
+  // The spelling is unchanged because both local targets intentionally have
+  // the same exact protected name. Only provenance-aware final-index replay
+  // can observe the retarget.
+  EXPECT_TRUE(verifyAndroidKernelModuleImage(Retargeted, Opts, &Error))
+      << Error;
+  EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Inputs), Retargeted,
+                           Format::ELF64LE, Opts, &Error))
+      << Error;
+}
+
+TEST(MergeELFSemantic,
+     AndroidKernelReleaseReplayTracksEmptyNonSectionRelocationTarget) {
+  SecSpec Text{
+      ".text", 8, 8, ELF::SHT_PROGBITS, ELF::SHF_ALLOC | ELF::SHF_EXECINSTR,
+      0x73};
+  SecSpec Data{
+      ".data", 8, 8, ELF::SHT_PROGBITS, ELF::SHF_ALLOC | ELF::SHF_WRITE, 0x74};
+  SymSpec EmptyTarget{"", 0, 0};
+  EmptyTarget.Global = true;
+  EmptyTarget.Type = ELF::STT_NOTYPE;
+  RelSpec Reference{1, 0, "", ELF::R_AARCH64_ABS64, 9};
+  SmallVector<SmallVector<char, 0>, 1> Inputs;
+  Inputs.push_back(buildSectionedELF({Text, Data}, {EmptyTarget}, {Reference},
+                                     ELF::EM_AARCH64));
+  Options Opts = androidKernelReleaseOptions();
+  auto [OK, Output] = mergeELF(Inputs, Opts);
+  ASSERT_TRUE(OK);
+  ElfView View = parseELF(Output);
+  ASSERT_TRUE(View.Ok);
+  ASSERT_EQ(View.Relas.size(), 1u);
+  ASSERT_NE(View.Relas[0].Sym, 0u);
+
+  SmallVector<char, 0> Retargeted(Output.begin(), Output.end());
+  ASSERT_TRUE(patchFirstRelaSymbolIndex(Retargeted, 0));
+  std::string Error;
+  EXPECT_TRUE(verifyAndroidKernelModuleImage(Retargeted, Opts, &Error))
+      << Error;
+  EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Inputs), Retargeted,
+                           Format::ELF64LE, Opts, &Error))
+      << Error;
+}
+
+TEST(MergeELFSemantic, AndroidKernelReleaseScalesOneLargeExactTieClass) {
+  constexpr unsigned AliasCount = 2048;
+  SecSpec Text{
+      ".text", 0x10, 16, ELF::SHT_PROGBITS, ELF::SHF_ALLOC | ELF::SHF_EXECINSTR,
+      0x63};
+  SecSpec Data{".data",
+               AliasCount * 8,
+               8,
+               ELF::SHT_PROGBITS,
+               ELF::SHF_ALLOC | ELF::SHF_WRITE,
+               0x64};
+  std::vector<SymSpec> Aliases;
+  std::vector<RelSpec> References;
+  Aliases.reserve(AliasCount);
+  References.reserve(AliasCount);
+  for (unsigned I = 0; I < AliasCount; ++I) {
+    Aliases.push_back({"release_stress_alias_" + std::to_string(I), 0, 0});
+    References.push_back(
+        {1, I * 8, Aliases.back().Name, ELF::R_AARCH64_ABS64, I});
+  }
+  SmallVector<SmallVector<char, 0>, 1> Inputs;
+  Inputs.push_back(
+      buildSectionedELF({Text, Data}, Aliases, References, ELF::EM_AARCH64));
+  Options Opts = androidKernelReleaseOptions();
+  auto [OK, Output] = mergeELF(Inputs, Opts);
+  ASSERT_TRUE(OK);
+  ElfView View = parseELF(Output);
+  ASSERT_TRUE(View.Ok);
+  EXPECT_NE(View.findSym("fn_0"), nullptr);
+  EXPECT_NE(View.findSym("fn_0_2047"), nullptr);
+  ASSERT_EQ(View.Relas.size(), AliasCount);
+  std::string Error;
+  EXPECT_TRUE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Inputs), Output,
+                          Format::ELF64LE, Opts, &Error))
+      << Error;
+  // This large single-class shape exercises shared class storage and direct
+  // final-index relocation replay without making correctness depend on a
+  // machine-specific wall-clock threshold. The verifier implementation keeps
+  // one sorted name vector per class, never one copy per member.
+}
+
+TEST(MergeELFSemantic, AndroidKernelReleaseNamesAbsoluteSymbolsFromValue) {
+  SecSpec Text{
+      ".text", 0x20, 16, ELF::SHT_PROGBITS, ELF::SHF_ALLOC | ELF::SHF_EXECINSTR,
+      0x90};
+  SymSpec Absolute{"release_absolute_name", -1, 0x1234};
+  Absolute.RawSectionIndex = ELF::SHN_ABS;
+  auto Obj = buildSectionedELF({Text}, {Absolute}, {}, ELF::EM_AARCH64);
+  SmallVector<SmallVector<char, 0>, 1> Bufs;
+  Bufs.push_back(std::move(Obj));
+
+  Options Opts = androidKernelReleaseOptions();
+  auto [OK, Out] = mergeELF(Bufs, Opts);
+  ASSERT_TRUE(OK);
+  ElfView View = parseELF(Out);
+  ASSERT_TRUE(View.Ok);
+  EXPECT_EQ(View.findSym("release_absolute_name"), nullptr);
+  const ParsedSym *Symbol = View.findSym("abs_1234");
+  ASSERT_NE(Symbol, nullptr);
+  EXPECT_EQ(Symbol->Shndx, ELF::SHN_ABS);
+  EXPECT_EQ(Symbol->Value, 0x1234u);
+}
+
+TEST(MergeELFSemantic,
+     AndroidKernelReleaseInputReplayRejectsSynchronizedAbsoluteTamper) {
+  SecSpec Text{
+      ".text", 0x20, 16, ELF::SHT_PROGBITS, ELF::SHF_ALLOC | ELF::SHF_EXECINSTR,
+      0x72};
+  SymSpec Absolute{"release_absolute_tamper", -1, 0x1234};
+  Absolute.RawSectionIndex = ELF::SHN_ABS;
+  auto Input = buildSectionedELF({Text}, {Absolute}, {}, ELF::EM_AARCH64);
+  SmallVector<SmallVector<char, 0>, 1> Inputs;
+  Inputs.push_back(std::move(Input));
+  Options Opts = androidKernelReleaseOptions();
+  auto [OK, Output] = mergeELF(Inputs, Opts);
+  ASSERT_TRUE(OK);
+
+  SmallVector<char, 0> Tampered(Output.begin(), Output.end());
+  ASSERT_TRUE(patchSymValue(Tampered, "abs_1234", 0x5678));
+  ASSERT_TRUE(patchELFSymbolNameSameLength(Tampered, "abs_1234", "abs_5678"));
+  std::string Error;
+  // The serialized image is internally self-consistent: its exact structural
+  // name follows its (tampered) absolute value.
+  EXPECT_TRUE(verifyAndroidKernelModuleImage(Tampered, Opts, &Error)) << Error;
+  // Independent input replay must additionally preserve the source value.
+  EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Inputs), Tampered,
+                           Format::ELF64LE, Opts, &Error));
+}
+
+TEST(MergeELFSemantic, AndroidKernelReleaseRejectsUnsupportedSymbolIndices) {
+  struct Case {
+    const char *Name;
+    uint16_t Index;
+  };
+  constexpr Case Cases[] = {
+      {"release_common", ELF::SHN_COMMON},
+      {"release_livepatch",
+       neverc::AndroidKernelModuleSymbolPolicy::LivePatchSectionIndex},
+      {"release_xindex", ELF::SHN_XINDEX},
+      {"release_unknown_reserved", UINT16_C(0xff30)},
+  };
+
+  for (const Case &Entry : Cases) {
+    SCOPED_TRACE(Entry.Name);
+    SecSpec Text{".text", 0x20, 16, ELF::SHT_PROGBITS,
+                 ELF::SHF_ALLOC | ELF::SHF_EXECINSTR};
+    SymSpec Special{Entry.Name, -1, 0};
+    Special.RawSectionIndex = Entry.Index;
+    auto Obj = buildSectionedELF({Text}, {Special}, {}, ELF::EM_AARCH64);
+    for (bool Verify : {false, true}) {
+      SCOPED_TRACE(Verify ? "verify-on" : "verify-off");
+      SmallVector<SmallVector<char, 0>, 1> Bufs;
+      Bufs.push_back(Obj);
+      Options Opts = androidKernelReleaseOptions();
+      Opts.verify = Verify;
+      auto [OK, Output] = mergeELF(Bufs, Opts);
+      EXPECT_FALSE(OK);
+      EXPECT_TRUE(Output.empty());
+    }
+  }
+
+  SecSpec Text{".text", 0x20, 16, ELF::SHT_PROGBITS,
+               ELF::SHF_ALLOC | ELF::SHF_EXECINSTR};
+  SymSpec Function{"release_output_xindex", 0, 0};
+  SmallVector<SmallVector<char, 0>, 1> Inputs;
+  Inputs.push_back(buildSectionedELF({Text}, {Function}, {}, ELF::EM_AARCH64));
+  Options Opts = androidKernelReleaseOptions();
+  auto [OK, Output] = mergeELF(Inputs, Opts);
+  ASSERT_TRUE(OK);
+  ASSERT_TRUE(patchELFSymbolSectionIndex(Output, "fn_0", ELF::SHN_XINDEX));
+  std::string Error;
+  EXPECT_FALSE(verifyAndroidKernelModuleImage(Output, Opts, &Error));
+  EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Inputs), Output,
+                           Format::ELF64LE, Opts, &Error));
+}
+
+TEST(MergeELFSemantic, AndroidKernelReleaseRejectsLivepatchSections) {
+  SecSpec Text{".text", 0x20, 16, ELF::SHT_PROGBITS,
+               ELF::SHF_ALLOC | ELF::SHF_EXECINSTR};
+  SecSpec NamedLivepatch{".klp.rela.vmlinux.text.target", 0, 8, ELF::SHT_RELA,
+                         0};
+  SecSpec FlaggedLivepatch{
+      ".rela.livepatch", 0, 8, ELF::SHT_RELA,
+      neverc::AndroidKernelModuleSymbolPolicy::LivePatchRelocationSectionFlag};
+
+  for (const SecSpec &Livepatch : {NamedLivepatch, FlaggedLivepatch}) {
+    SCOPED_TRACE(Livepatch.Name);
+    auto Obj = buildSectionedELF({Text, Livepatch}, {}, {}, ELF::EM_AARCH64);
+    SmallVector<SmallVector<char, 0>, 1> Bufs;
+    Bufs.push_back(std::move(Obj));
+    Options Opts = androidKernelReleaseOptions();
+    Opts.verify = false;
+    EXPECT_FALSE(mergeELF(Bufs, Opts).first);
+  }
+
+  // `.modinfo` is the authoritative module-class marker. A livepatch module
+  // may legitimately have no `.klp.*` relocation section yet, so the marker
+  // alone must still make release structural renaming fail closed.
+  SecSpec ModInfo{".modinfo", 0x20, 1, ELF::SHT_PROGBITS, ELF::SHF_ALLOC};
+  auto Marked = buildSectionedELF({Text, ModInfo}, {}, {}, ELF::EM_AARCH64);
+  ASSERT_TRUE(overwriteELFSectionContents(Marked, ".modinfo", "livepatch=Y"));
+  SmallVector<SmallVector<char, 0>, 1> MarkedBuffers;
+  MarkedBuffers.push_back(std::move(Marked));
+  Options MarkedOptions = androidKernelReleaseOptions();
+  MarkedOptions.verify = false;
+  std::string AuditError;
+  EXPECT_FALSE(verifyAndroidKernelModuleImage(MarkedBuffers.front(),
+                                              MarkedOptions, &AuditError));
+  EXPECT_NE(AuditError.find(".modinfo"), std::string::npos) << AuditError;
+  EXPECT_NE(AuditError.find("livepatch"), std::string::npos) << AuditError;
+  EXPECT_FALSE(mergeELF(MarkedBuffers, MarkedOptions).first);
+}
+
+TEST(MergeELFSemantic, AndroidKernelReleasePreservesIndependentMetadataNames) {
+  SecSpec Text{".text", 0x20, 16, ELF::SHT_PROGBITS,
+               ELF::SHF_ALLOC | ELF::SHF_EXECINSTR};
+  SecSpec BTF{".BTF", 0x40, 1, ELF::SHT_PROGBITS, 0};
+  SecSpec Versions{"__versions", 0x40, 8, ELF::SHT_PROGBITS, ELF::SHF_ALLOC};
+  SecSpec ExportNames{"__ksymtab_strings", 0x40, 1, ELF::SHT_PROGBITS,
+                      ELF::SHF_ALLOC};
+  SecSpec ModInfo{".modinfo", 0x40, 1, ELF::SHT_PROGBITS, ELF::SHF_ALLOC};
+  SymSpec Definition{"release_metadata_anchor", 0, 0};
+  auto Obj = buildSectionedELF({Text, BTF, Versions, ExportNames, ModInfo},
+                               {Definition}, {}, ELF::EM_AARCH64);
+
+  struct Payload {
+    const char *Section;
+    const char *Bytes;
+  };
+  constexpr Payload Payloads[] = {
+      {".BTF", "btf_original_function_name"},
+      {"__versions", "versioned_original_import"},
+      {"__ksymtab_strings", "exported_original_symbol"},
+      {".modinfo", "description=original module name"},
+  };
+  for (const Payload &Entry : Payloads)
+    ASSERT_TRUE(overwriteELFSectionContents(Obj, Entry.Section, Entry.Bytes));
+
+  SmallVector<SmallVector<char, 0>, 1> Bufs;
+  Bufs.push_back(std::move(Obj));
+  auto [OK, Out] = mergeELF(Bufs, androidKernelReleaseOptions());
+  ASSERT_TRUE(OK);
+  ElfView View = parseELF(Out);
+  ASSERT_TRUE(View.Ok);
+  for (const Payload &Entry : Payloads) {
+    SCOPED_TRACE(Entry.Section);
+    const int Index = View.findSec(Entry.Section);
+    ASSERT_GE(Index, 0);
+    const ParsedSec &Section = View.Secs[(unsigned)Index];
+    StringRef Bytes(reinterpret_cast<const char *>(Section.Data.data()),
+                    Section.Data.size());
+    EXPECT_TRUE(Bytes.starts_with(Entry.Bytes));
+  }
+}
+
+TEST(MergeELFSemantic,
+     AndroidKernelReleaseVerifiersRejectStructuralNameTamper) {
+  SecSpec Padding{".release.padding", 0xC000,         1,
+                  ELF::SHT_PROGBITS,  ELF::SHF_ALLOC, 0x81};
+  SecSpec Text{
+      ".text", 0x20, 16, ELF::SHT_PROGBITS, ELF::SHF_ALLOC | ELF::SHF_EXECINSTR,
+      0x82};
+  SecSpec Data{
+      ".data", 0x10, 8, ELF::SHT_PROGBITS, ELF::SHF_ALLOC | ELF::SHF_WRITE,
+      0x83};
+  SymSpec FirstDefinition{"release_tamper_first", 1, 0};
+  SymSpec AliasDefinition{"release_tamper_alias", 1, 0};
+  SymSpec LeadingZeroSpelling{"fn_0C000", -1, 0};
+  LeadingZeroSpelling.Type = ELF::STT_NOTYPE;
+  SymSpec RawValueSpelling{"fn_0", -1, 0};
+  RawValueSpelling.Type = ELF::STT_NOTYPE;
+  RelSpec KeepLeadingZero{2, 0, LeadingZeroSpelling.Name, ELF::R_AARCH64_ABS64,
+                          3};
+  RelSpec KeepRawValue{2, 8, RawValueSpelling.Name, ELF::R_AARCH64_ABS64, 7};
+  auto Obj = buildSectionedELF(
+      {Padding, Text, Data},
+      {FirstDefinition, AliasDefinition, LeadingZeroSpelling, RawValueSpelling},
+      {KeepLeadingZero, KeepRawValue}, ELF::EM_AARCH64);
+  SmallVector<SmallVector<char, 0>, 1> Bufs;
+  Bufs.push_back(std::move(Obj));
+  Options Opts = androidKernelReleaseOptions();
+  auto [OK, Out] = mergeELF(Bufs, Opts);
+  ASSERT_TRUE(OK);
+
+  std::string Error;
+  ASSERT_TRUE(verifyAndroidKernelModuleImage(Out, Opts, &Error)) << Error;
+  ASSERT_TRUE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs), Out,
+                          Format::ELF64LE, Opts, &Error))
+      << Error;
+
+  auto ExpectBothReject = [&](ArrayRef<char> Corrupt, StringRef Case) {
+    SCOPED_TRACE(Case.str());
+    Error.clear();
+    EXPECT_FALSE(verifyAndroidKernelModuleImage(Corrupt, Opts, &Error));
+    Error.clear();
+    EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs), Corrupt,
+                             Format::ELF64LE, Opts, &Error));
+  };
+
+  SmallVector<char, 0> WrongAddress(Out.begin(), Out.end());
+  ASSERT_TRUE(
+      patchELFSymbolNameSameLength(WrongAddress, "fn_C000", "fn_C001"));
+  ExpectBothReject(WrongAddress, "wrong canonical EA");
+
+  SmallVector<char, 0> Lowercase(Out.begin(), Out.end());
+  ASSERT_TRUE(patchELFSymbolNameSameLength(Lowercase, "fn_C000", "fn_c000"));
+  ExpectBothReject(Lowercase, "lowercase hexadecimal");
+
+  SmallVector<char, 0> LeadingZero(Out.begin(), Out.end());
+  ASSERT_TRUE(
+      retargetELFSymbolNameOffset(LeadingZero, "fn_C000", "fn_0C000"));
+  ExpectBothReject(LeadingZero, "redundant leading zero");
+
+  SmallVector<char, 0> RawValueName(Out.begin(), Out.end());
+  ASSERT_TRUE(retargetELFSymbolNameOffset(RawValueName, "fn_C000", "fn_0"));
+  ExpectBothReject(RawValueName, "raw st_value instead of canonical EA");
+
+  SmallVector<char, 0> SkippedAlias(Out.begin(), Out.end());
+  ASSERT_TRUE(
+      patchELFSymbolNameSameLength(SkippedAlias, "fn_C000_1", "fn_C000_2"));
+  ExpectBothReject(SkippedAlias, "skipped alias suffix");
+
+  SmallVector<char, 0> DuplicateAlias(Out.begin(), Out.end());
+  ASSERT_TRUE(
+      retargetELFSymbolNameOffset(DuplicateAlias, "fn_C000_1", "fn_C000"));
+  ExpectBothReject(DuplicateAlias, "duplicate alias suffix");
+}
+
+TEST(MergeELFSemantic,
+     AndroidKernelReleaseInputReplayRejectsWritableFlagRemoval) {
+  SecSpec Text{
+      ".text", 0x10, 16, ELF::SHT_PROGBITS, ELF::SHF_ALLOC | ELF::SHF_EXECINSTR,
+      0x84};
+  SecSpec Data{
+      ".data", 8, 8, ELF::SHT_PROGBITS, ELF::SHF_ALLOC | ELF::SHF_WRITE, 0x85};
+  SymSpec Function{"release_flag_anchor", 0, 0};
+  SymSpec Object{"release_writable_object", 1, 0};
+  Object.Type = ELF::STT_OBJECT;
+  SmallVector<SmallVector<char, 0>, 1> Inputs;
+  Inputs.push_back(
+      buildSectionedELF({Text, Data}, {Function, Object}, {}, ELF::EM_AARCH64));
+  Options Opts = androidKernelReleaseOptions();
+  auto [OK, Output] = mergeELF(Inputs, Opts);
+  ASSERT_TRUE(OK);
+
+  SmallVector<char, 0> Tampered(Output.begin(), Output.end());
+  ELF::Elf64_Shdr *DataHeader = findELFSectionHeader(Tampered, ".data");
+  ASSERT_NE(DataHeader, nullptr);
+  DataHeader->sh_flags &= ~uint64_t(ELF::SHF_WRITE);
+  std::string Error;
+  // Output-only verification has no source section contract from which to
+  // infer writability. Input-aware replay must compare the complete folded
+  // header flags and reject this ABI-changing mutation.
+  EXPECT_TRUE(verifyAndroidKernelModuleImage(Tampered, Opts, &Error)) << Error;
+  EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Inputs), Tampered,
+                           Format::ELF64LE, Opts, &Error));
+}
+
+TEST(MergeELFSemantic,
+     AndroidKernelReleaseVerifiersRejectUnsupportedSerializedSymbolTypes) {
+  SecSpec Text{
+      ".text", 0x10, 16, ELF::SHT_PROGBITS, ELF::SHF_ALLOC | ELF::SHF_EXECINSTR,
+      0x86};
+  SymSpec Function{"release_serialized_type", 0, 0};
+  SmallVector<SmallVector<char, 0>, 1> Inputs;
+  Inputs.push_back(buildSectionedELF({Text}, {Function}, {}, ELF::EM_AARCH64));
+  Options Opts = androidKernelReleaseOptions();
+  auto [OK, Output] = mergeELF(Inputs, Opts);
+  ASSERT_TRUE(OK);
+
+  struct TypeCase {
+    const char *Name;
+    uint8_t Type;
+  };
+  constexpr TypeCase Cases[] = {
+      {"TLS", ELF::STT_TLS},
+      {"GNU IFUNC", ELF::STT_GNU_IFUNC},
+      {"nonempty FILE", ELF::STT_FILE},
+      {"format extension", UINT8_C(0x0f)},
+  };
+  for (const TypeCase &Entry : Cases) {
+    SCOPED_TRACE(Entry.Name);
+    SmallVector<char, 0> Tampered(Output.begin(), Output.end());
+    ASSERT_TRUE(patchELFSymbolInfo(
+        Tampered, "fn_0", uint8_t((ELF::STB_GLOBAL << 4) | Entry.Type)));
+    std::string Error;
+    EXPECT_FALSE(verifyAndroidKernelModuleImage(Tampered, Opts, &Error));
+    EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Inputs), Tampered,
+                             Format::ELF64LE, Opts, &Error));
+  }
+}
+
+TEST(MergeELFSemantic, AndroidKernelReleasePlanningFailuresCommitNoOutput) {
+  auto ExpectAtomicFailure = [&](SmallVector<char, 0> Input, StringRef Case) {
+    SCOPED_TRACE(Case.str());
+    for (bool Verify : {false, true}) {
+      SCOPED_TRACE(Verify ? "verify-on" : "verify-off");
+      SmallVector<SmallVector<char, 0>, 1> Inputs;
+      Inputs.push_back(Input);
+      Options Opts = androidKernelReleaseOptions();
+      Opts.verify = Verify;
+      auto [OK, Output] = mergeELF(Inputs, Opts);
+      EXPECT_FALSE(OK);
+      EXPECT_TRUE(Output.empty());
+    }
+  };
+
+  SecSpec Text{
+      ".text", 0x10, 16, ELF::SHT_PROGBITS, ELF::SHF_ALLOC | ELF::SHF_EXECINSTR,
+      0x91};
+  SecSpec Data{
+      ".data", 8, 8, ELF::SHT_PROGBITS, ELF::SHF_ALLOC | ELF::SHF_WRITE, 0x92};
+
+  SymSpec PastEnd{"release_past_end", 0, 0x11};
+  ExpectAtomicFailure(buildSectionedELF({Text}, {PastEnd}, {}, ELF::EM_AARCH64),
+                      "invalid section-relative value");
+
+  SymSpec ExtendsPastEnd{"release_extent_past_end", 0, 0xF};
+  ExtendsPastEnd.Size = 2;
+  ExpectAtomicFailure(
+      buildSectionedELF({Text}, {ExtendsPastEnd}, {}, ELF::EM_AARCH64),
+      "invalid section-relative extent");
+
+  SymSpec BaseDefinition{"release_base_collision", 0, 0};
+  SymSpec BaseImport{"fn_0", -1, 0};
+  BaseImport.Type = ELF::STT_NOTYPE;
+  RelSpec KeepBaseImport{1, 0, BaseImport.Name, ELF::R_AARCH64_ABS64, 0};
+  ExpectAtomicFailure(buildSectionedELF({Text, Data},
+                                        {BaseDefinition, BaseImport},
+                                        {KeepBaseImport}, ELF::EM_AARCH64),
+                      "reserved generated base collision");
+
+  SymSpec FirstAlias{"release_alias_first", 0, 0};
+  SymSpec SecondAlias{"release_alias_second", 0, 0};
+  SymSpec AliasImport{"fn_0_1", -1, 0};
+  AliasImport.Type = ELF::STT_NOTYPE;
+  RelSpec KeepAliasImport{1, 0, AliasImport.Name, ELF::R_AARCH64_ABS64, 0};
+  ExpectAtomicFailure(buildSectionedELF({Text, Data},
+                                        {FirstAlias, SecondAlias, AliasImport},
+                                        {KeepAliasImport}, ELF::EM_AARCH64),
+                      "reserved generated alias collision");
+
+  struct UnsupportedType {
+    const char *Name;
+    uint8_t Type;
+  };
+  constexpr UnsupportedType Unsupported[] = {
+      {"TLS", ELF::STT_TLS},
+      {"GNU_IFUNC", ELF::STT_GNU_IFUNC},
+      {"FILE", ELF::STT_FILE},
+      {"format extension", UINT8_C(0x0f)},
+  };
+  for (const UnsupportedType &Entry : Unsupported) {
+    SymSpec Symbol{"release_unsupported_type", 0, 0};
+    Symbol.Type = Entry.Type;
+    ExpectAtomicFailure(
+        buildSectionedELF({Text}, {Symbol}, {}, ELF::EM_AARCH64), Entry.Name);
+  }
+
+  SecSpec HugeBss{".bss.huge", std::numeric_limits<uint64_t>::max(), 1,
+                  ELF::SHT_NOBITS, ELF::SHF_ALLOC | ELF::SHF_WRITE};
+  SymSpec FollowingFunction{"release_after_layout_overflow", 1, 0};
+  ExpectAtomicFailure(buildSectionedELF({HugeBss, Text}, {FollowingFunction},
+                                        {}, ELF::EM_AARCH64),
+                      "canonical section-layout overflow");
+}
+
+TEST(MergeELFSemantic,
+     AndroidKernelReleaseRejectsUnrecognizedInputStringTablesAtomically) {
+  using namespace ELF;
+
+  auto ExpectAtomicFailure = [](SmallVector<char, 0> Input, StringRef Case) {
+    SCOPED_TRACE(Case.str());
+    for (bool Verify : {false, true}) {
+      SCOPED_TRACE(Verify ? "verify-on" : "verify-off");
+      SmallVector<SmallVector<char, 0>, 1> Inputs;
+      Inputs.push_back(Input);
+      Options Opts = androidKernelReleaseOptions();
+      Opts.verify = Verify;
+      testing::internal::CaptureStderr();
+      auto [OK, Output] = mergeELF(Inputs, Opts);
+      const std::string Diagnostic = testing::internal::GetCapturedStderr();
+      EXPECT_FALSE(OK);
+      EXPECT_TRUE(Output.empty());
+      EXPECT_NE(Diagnostic.find("additional string table"), std::string::npos)
+          << Diagnostic;
+    }
+  };
+
+  auto ExpectValidAllZeroStringTable = [](ArrayRef<char> Input,
+                                           StringRef Name) {
+    ElfView View = parseELF(Input);
+    ASSERT_TRUE(View.Ok);
+    const int Index = View.findSec(Name);
+    ASSERT_GE(Index, 0);
+    const ParsedSec &Section = View.Secs[Index];
+    ASSERT_EQ(Section.Type, ELF::SHT_STRTAB);
+    ASSERT_FALSE(Section.Data.empty());
+    EXPECT_EQ(Section.Data.front(), 0u);
+    EXPECT_EQ(Section.Data.back(), 0u);
+    EXPECT_TRUE(llvm::all_of(Section.Data,
+                             [](uint8_t Byte) { return Byte == 0; }));
+  };
+
+  // A third string table is not one of the two metadata tables identified by
+  // e_shstrndx and the selected symtab's sh_link. The canonical release format
+  // cannot serialize it, so even an otherwise unreferenced table must fail
+  // closed instead of disappearing from the output.
+  SecSpec Text{
+      ".text", 8, 4, SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR, 0x93};
+  SecSpec ExtraStrings{".custom_strings", 8, 1, SHT_STRTAB, 0, 0};
+  SymSpec Function{"release_extra_strtab", 0, 0};
+  const auto ExtraInput = buildSectionedELF({Text, ExtraStrings}, {Function},
+                                             {}, EM_AARCH64);
+  ExpectValidAllZeroStringTable(ExtraInput, ExtraStrings.Name);
+  ExpectAtomicFailure(ExtraInput,
+                      "unreferenced third SHT_STRTAB");
+
+  SmallVector<SmallVector<char, 0>, 1> ReferenceInputs;
+  ReferenceInputs.push_back(
+      buildSectionedELF({Text}, {Function}, {}, EM_AARCH64));
+  Options AuditOptions = androidKernelReleaseOptions();
+  auto [ReferenceOK, ReferenceOutput] = mergeELF(ReferenceInputs, AuditOptions);
+  ASSERT_TRUE(ReferenceOK);
+  SmallVector<SmallVector<char, 0>, 1> ExtraAuditInputs;
+  ExtraAuditInputs.push_back(ExtraInput);
+  std::string Error;
+  EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(ExtraAuditInputs),
+                           ReferenceOutput, Format::ELF64LE, AuditOptions,
+                           &Error));
+
+  // This is the dangerous form of the same schema violation: a defined object
+  // lives in an allocated custom string-table section and a retained .data
+  // relocation targets it. Treating every SHT_STRTAB as regenerated used to
+  // drop the section and silently re-home the definition to SHN_UNDEF.
+  SecSpec AllocatedStrings{
+      ".allocated_strings", 8, 1, SHT_STRTAB, SHF_ALLOC, 0};
+  SecSpec Data{
+      ".data", 8, 8, SHT_PROGBITS, SHF_ALLOC | SHF_WRITE, 0x96};
+  SymSpec Object{"release_allocated_strtab_object", 0, 0};
+  Object.Type = STT_OBJECT;
+  Object.Size = 8;
+  RelSpec Reference{1, 0, Object.Name, R_AARCH64_ABS64, 0};
+  const auto AllocatedInput = buildSectionedELF(
+      {AllocatedStrings, Data}, {Object}, {Reference}, EM_AARCH64);
+  ExpectValidAllZeroStringTable(AllocatedInput, AllocatedStrings.Name);
+  const ElfView AllocatedView = parseELF(AllocatedInput);
+  ASSERT_TRUE(AllocatedView.Ok);
+  const int AllocatedSection = AllocatedView.findSec(AllocatedStrings.Name);
+  const int DataSection = AllocatedView.findSec(Data.Name);
+  ASSERT_GE(AllocatedSection, 0);
+  ASSERT_GE(DataSection, 0);
+  const ParsedSym *AllocatedObject = AllocatedView.findSym(Object.Name);
+  ASSERT_NE(AllocatedObject, nullptr);
+  EXPECT_EQ(AllocatedObject->Shndx,
+            static_cast<uint16_t>(AllocatedSection));
+  EXPECT_EQ(AllocatedObject->Type, STT_OBJECT);
+  ASSERT_EQ(AllocatedView.Relas.size(), 1u);
+  EXPECT_EQ(AllocatedView.Relas[0].TargetSec,
+            static_cast<uint32_t>(DataSection));
+  EXPECT_EQ(AllocatedView.Relas[0].Type, R_AARCH64_ABS64);
+  ASSERT_LT(AllocatedView.Relas[0].Sym, AllocatedView.Syms.size());
+  EXPECT_EQ(AllocatedView.Syms[AllocatedView.Relas[0].Sym].Name, Object.Name);
+  ExpectAtomicFailure(AllocatedInput,
+      "allocated third SHT_STRTAB with a referenced definition");
+
+  SymSpec UndefinedObject = Object;
+  UndefinedObject.SecIdx = -1;
+  RelSpec UndefinedReference = Reference;
+  UndefinedReference.SecIdx = 0;
+  SmallVector<SmallVector<char, 0>, 1> UndefinedInputs;
+  UndefinedInputs.push_back(buildSectionedELF(
+      {Data}, {UndefinedObject}, {UndefinedReference}, EM_AARCH64));
+  auto [UndefinedOK, UndefinedOutput] = mergeELF(UndefinedInputs, AuditOptions);
+  ASSERT_TRUE(UndefinedOK);
+  SmallVector<SmallVector<char, 0>, 1> AllocatedAuditInputs;
+  AllocatedAuditInputs.push_back(AllocatedInput);
+  Error.clear();
+  EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(AllocatedAuditInputs),
+                           UndefinedOutput, Format::ELF64LE, AuditOptions,
+                           &Error));
+}
+
+TEST(MergeELFSemantic,
+     AndroidKernelReleaseCanonicalizesOneSharedInputStringTable) {
+  using namespace ELF;
+  SecSpec Text{
+      ".text", 8, 4, SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR, 0x9e};
+  SmallVector<char, 0> SharedInput =
+      buildSectionedELF({Text}, {}, {}, EM_AARCH64);
+
+  auto *InputHeader = reinterpret_cast<Elf64_Ehdr *>(SharedInput.data());
+  auto *InputSections = reinterpret_cast<Elf64_Shdr *>(
+      SharedInput.data() + InputHeader->e_shoff);
+  Elf64_Shdr *InputSymtab = findELFSectionHeader(SharedInput, ".symtab");
+  Elf64_Shdr *OldSymbolStrings =
+      findELFSectionHeader(SharedInput, ".strtab");
+  ASSERT_NE(InputSymtab, nullptr);
+  ASSERT_NE(OldSymbolStrings, nullptr);
+  ASSERT_LT(InputHeader->e_shstrndx, InputHeader->e_shnum);
+  ASSERT_EQ(InputSections[InputHeader->e_shstrndx].sh_type, SHT_STRTAB);
+
+  // With only symbol[0], the section-name pool is also a valid symbol-name
+  // pool. Retire the builder's otherwise-extra .strtab slot and point the sole
+  // symtab at e_shstrndx, yielding one input SHT_STRTAB with both identities.
+  OldSymbolStrings->sh_type = SHT_NULL;
+  InputSymtab->sh_link = InputHeader->e_shstrndx;
+  ASSERT_EQ(InputSymtab->sh_link, InputHeader->e_shstrndx);
+  ASSERT_EQ(InputSymtab->sh_entsize, sizeof(Elf64_Sym));
+  ASSERT_EQ(InputSymtab->sh_size, sizeof(Elf64_Sym));
+  ASSERT_LE(InputSymtab->sh_offset, SharedInput.size() - sizeof(Elf64_Sym));
+  const auto *NullSymbol = reinterpret_cast<const Elf64_Sym *>(
+      SharedInput.data() + InputSymtab->sh_offset);
+  EXPECT_EQ(NullSymbol->st_name, 0u);
+  const Elf64_Shdr &SharedStrings = InputSections[InputHeader->e_shstrndx];
+  ASSERT_GT(SharedStrings.sh_size, 0u);
+  ASSERT_LE(SharedStrings.sh_offset,
+            SharedInput.size() - SharedStrings.sh_size);
+  EXPECT_EQ(SharedInput[SharedStrings.sh_offset], '\0');
+  EXPECT_EQ(SharedInput[SharedStrings.sh_offset + SharedStrings.sh_size - 1],
+            '\0');
+  EXPECT_EQ(
+      llvm::count_if(ArrayRef<Elf64_Shdr>(InputSections, InputHeader->e_shnum),
+                     [](const Elf64_Shdr &Section) {
+                       return Section.sh_type == SHT_STRTAB;
+                     }),
+      1u);
+
+  SmallVector<SmallVector<char, 0>, 1> Inputs;
+  Inputs.push_back(SharedInput);
+  for (bool Verify : {false, true}) {
+    SCOPED_TRACE(Verify ? "verify-on" : "verify-off");
+    Options Opts = androidKernelReleaseOptions();
+    Opts.verify = Verify;
+    auto [OK, Output] = mergeELF(Inputs, Opts);
+    ASSERT_TRUE(OK);
+
+    auto *OutputHeader = reinterpret_cast<Elf64_Ehdr *>(Output.data());
+    auto *OutputSections =
+        reinterpret_cast<Elf64_Shdr *>(Output.data() + OutputHeader->e_shoff);
+    Elf64_Shdr *OutputSymtab = findELFSectionHeader(Output, ".symtab");
+    Elf64_Shdr *OutputStrtab = findELFSectionHeader(Output, ".strtab");
+    Elf64_Shdr *OutputShstrtab = findELFSectionHeader(Output, ".shstrtab");
+    ASSERT_NE(OutputSymtab, nullptr);
+    ASSERT_NE(OutputStrtab, nullptr);
+    ASSERT_NE(OutputShstrtab, nullptr);
+    const unsigned OutputStrtabIndex = OutputStrtab - OutputSections;
+    const unsigned OutputShstrtabIndex = OutputShstrtab - OutputSections;
+    EXPECT_NE(OutputStrtabIndex, OutputShstrtabIndex);
+    EXPECT_EQ(OutputSymtab->sh_link, OutputStrtabIndex);
+    EXPECT_EQ(OutputHeader->e_shstrndx, OutputShstrtabIndex);
+    EXPECT_EQ(llvm::count_if(
+                  ArrayRef<Elf64_Shdr>(OutputSections, OutputHeader->e_shnum),
+                  [](const Elf64_Shdr &Section) {
+                    return Section.sh_type == SHT_STRTAB;
+                  }),
+              2u);
+
+    std::string Error;
+    EXPECT_TRUE(verifyAndroidKernelModuleImage(Output, Opts, &Error)) << Error;
+    Error.clear();
+    EXPECT_TRUE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Inputs), Output,
+                            Format::ELF64LE, Opts, &Error))
+        << Error;
+  }
+}
+
+TEST(MergeELFSemantic,
+     AndroidKernelReleaseRejectsMalformedVersionsInputShapesAtomically) {
+  using namespace ELF;
+  SecSpec Text{".text", 8, 4, SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR, 0xa0};
+  SymSpec Function{"release_bad_versions_shape", 0, 0};
+
+  auto BuildCanonicalOutput = [&](uint64_t Size) {
+    SecSpec Versions{"__versions", Size, 8, SHT_PROGBITS, SHF_ALLOC, 0xa1};
+    SmallVector<SmallVector<char, 0>, 1> Inputs;
+    Inputs.push_back(
+        buildSectionedELF({Text, Versions}, {Function}, {}, EM_AARCH64));
+    return mergeELF(Inputs, androidKernelReleaseOptions());
+  };
+  auto [CanonicalZeroOK, CanonicalZeroOutput] = BuildCanonicalOutput(0);
+  auto [Canonical64OK, Canonical64Output] = BuildCanonicalOutput(64);
+  ASSERT_TRUE(CanonicalZeroOK);
+  ASSERT_TRUE(Canonical64OK);
+  Options AuditOptions = androidKernelReleaseOptions();
+  std::string Error;
+  ASSERT_TRUE(
+      verifyAndroidKernelModuleImage(CanonicalZeroOutput, AuditOptions, &Error))
+      << Error;
+  Error.clear();
+  ASSERT_TRUE(
+      verifyAndroidKernelModuleImage(Canonical64Output, AuditOptions, &Error))
+      << Error;
+
+  auto ExpectRejected = [&](SecSpec Versions, ArrayRef<char> CanonicalOutput,
+                            StringRef Case, StringRef ProducerDiagnostic,
+                            StringRef VerifierDiagnostic) {
+    SCOPED_TRACE(Case.str());
+    SmallVector<char, 0> Input =
+        buildSectionedELF({Text, Versions}, {Function}, {}, EM_AARCH64);
+    for (bool Verify : {false, true}) {
+      SCOPED_TRACE(Verify ? "verify-on" : "verify-off");
+      SmallVector<SmallVector<char, 0>, 1> Inputs;
+      Inputs.push_back(Input);
+      Options Opts = androidKernelReleaseOptions();
+      Opts.verify = Verify;
+      testing::internal::CaptureStderr();
+      auto [OK, Output] = mergeELF(Inputs, Opts);
+      const std::string Diagnostic = testing::internal::GetCapturedStderr();
+      EXPECT_FALSE(OK);
+      EXPECT_TRUE(Output.empty());
+      EXPECT_NE(Diagnostic.find(ProducerDiagnostic.str()), std::string::npos)
+          << Diagnostic;
+    }
+
+    SmallVector<SmallVector<char, 0>, 1> AuditInputs;
+    AuditInputs.push_back(std::move(Input));
+    Error.clear();
+    EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(AuditInputs),
+                             CanonicalOutput, Format::ELF64LE, AuditOptions,
+                             &Error));
+    EXPECT_NE(Error.find(VerifierDiagnostic.str()), std::string::npos) << Error;
+  };
+
+  constexpr StringLiteral ShapeDiagnostic =
+      "input __versions must be an allocated, uncompressed SHT_PROGBITS "
+      "section";
+  constexpr StringLiteral AlignmentDiagnostic =
+      "input __versions alignment must be a power of two >= 8";
+
+  // A named inactive slot used to disappear with regenerated SHT_NULL
+  // metadata, after which finalization synthesized a valid empty table. All
+  // non-type attributes are canonical so this isolates the type contract.
+  ExpectRejected(SecSpec{"__versions", 0, 8, SHT_NULL, SHF_ALLOC, 0},
+                 CanonicalZeroOutput, "wrong type", ShapeDiagnostic,
+                 ShapeDiagnostic);
+
+  // EnsureSection historically ORed SHF_ALLOC into this contribution and
+  // raised each underspecified alignment to 8, hiding malformed input.
+  ExpectRejected(SecSpec{"__versions", 64, 8, SHT_PROGBITS, 0, 0xa1},
+                 Canonical64Output, "missing SHF_ALLOC", ShapeDiagnostic,
+                 ShapeDiagnostic);
+  for (uint32_t Alignment : {0u, 1u, 4u}) {
+    SCOPED_TRACE(Alignment);
+    ExpectRejected(
+        SecSpec{"__versions", 64, Alignment, SHT_PROGBITS, SHF_ALLOC, 0xa1},
+        Canonical64Output, "alignment below 8", AlignmentDiagnostic,
+        AlignmentDiagnostic);
+  }
+
+  // Non-power-of-two sh_addralign is not a legal ELF input shape and is
+  // already covered at the generic strict-parser boundary by
+  // AndroidKernelReleaseRejectsInvalidSectionAlignmentAtomically. Do not make
+  // this named-contract matrix pass for the wrong (unparseable-input) reason.
+}
+
+TEST(MergeELFSemantic,
+     AndroidKernelReleaseRejectsCompressedVersionsInputAtomically) {
+  using namespace ELF;
+  const compression::Format CompressionFormat = compression::Format::Zlib;
+  if (const char *Reason =
+          compression::getReasonIfUnsupported(CompressionFormat))
+    GTEST_SKIP() << Reason;
+
+  constexpr uint64_t VersionsSize = 64;
+  constexpr uint8_t VersionsFill = 0xa2;
+  SecSpec Text{".text", 8, 4, SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR, 0xa3};
+  SymSpec Function{"release_compressed_versions", 0, 0};
+  SmallVector<uint8_t, 0> LogicalVersions(VersionsSize, VersionsFill);
+  SmallVector<uint8_t, 0> Compressed;
+  compression::compress(compression::Params(CompressionFormat), LogicalVersions,
+                        Compressed);
+  ASSERT_LE(sizeof(Elf64_Chdr) + Compressed.size(), VersionsSize);
+
+  SecSpec CompressedVersions{"__versions",
+                             VersionsSize,
+                             8,
+                             SHT_PROGBITS,
+                             SHF_ALLOC | SHF_COMPRESSED,
+                             0};
+  SmallVector<char, 0> Input =
+      buildSectionedELF({Text, CompressedVersions}, {Function}, {}, EM_AARCH64);
+  Elf64_Shdr *VersionsHeader = findELFSectionHeader(Input, "__versions");
+  ASSERT_NE(VersionsHeader, nullptr);
+  ASSERT_LE(VersionsHeader->sh_offset, Input.size() - VersionsHeader->sh_size);
+  char *Encoded = Input.data() + VersionsHeader->sh_offset;
+  memset(Encoded, 0, VersionsHeader->sh_size);
+  Elf64_Chdr CompressionHeader{};
+  CompressionHeader.ch_type = ELFCOMPRESS_ZLIB;
+  CompressionHeader.ch_size = VersionsSize;
+  CompressionHeader.ch_addralign = 8;
+  memcpy(Encoded, &CompressionHeader, sizeof(CompressionHeader));
+  memcpy(Encoded + sizeof(CompressionHeader), Compressed.data(),
+         Compressed.size());
+
+  // Prove the padded 64-byte on-disk payload is a valid ELF compression frame
+  // whose logical contribution is also exactly one 64-byte version record.
+  SmallVector<uint8_t, 0> Decoded;
+  ArrayRef<uint8_t> EncodedPayload(
+      reinterpret_cast<const uint8_t *>(Encoded) + sizeof(CompressionHeader),
+      VersionsHeader->sh_size - sizeof(CompressionHeader));
+  if (Error E = compression::decompress(CompressionFormat, EncodedPayload,
+                                        Decoded, VersionsSize)) {
+    ADD_FAILURE() << toString(std::move(E)).str().str();
+    return;
+  }
+  ASSERT_EQ(Decoded.size(), LogicalVersions.size());
+  EXPECT_TRUE(
+      std::equal(Decoded.begin(), Decoded.end(), LogicalVersions.begin()));
+
+  SecSpec CanonicalVersions{"__versions", VersionsSize, 8,
+                            SHT_PROGBITS, SHF_ALLOC,    VersionsFill};
+  SmallVector<SmallVector<char, 0>, 1> CanonicalInputs;
+  CanonicalInputs.push_back(
+      buildSectionedELF({Text, CanonicalVersions}, {Function}, {}, EM_AARCH64));
+  Options AuditOptions = androidKernelReleaseOptions();
+  auto [CanonicalOK, CanonicalOutput] = mergeELF(CanonicalInputs, AuditOptions);
+  ASSERT_TRUE(CanonicalOK);
+  std::string Error;
+  ASSERT_TRUE(
+      verifyAndroidKernelModuleImage(CanonicalOutput, AuditOptions, &Error))
+      << Error;
+
+  constexpr StringLiteral ShapeDiagnostic =
+      "input __versions must be an allocated, uncompressed SHT_PROGBITS "
+      "section";
+  for (bool Verify : {false, true}) {
+    SCOPED_TRACE(Verify ? "verify-on" : "verify-off");
+    SmallVector<SmallVector<char, 0>, 1> Inputs;
+    Inputs.push_back(Input);
+    Options Opts = androidKernelReleaseOptions();
+    Opts.verify = Verify;
+    testing::internal::CaptureStderr();
+    auto [OK, Output] = mergeELF(Inputs, Opts);
+    const std::string Diagnostic = testing::internal::GetCapturedStderr();
+    EXPECT_FALSE(OK);
+    EXPECT_TRUE(Output.empty());
+    EXPECT_NE(Diagnostic.find(ShapeDiagnostic.str()), std::string::npos)
+        << Diagnostic;
+  }
+
+  SmallVector<SmallVector<char, 0>, 1> AuditInputs;
+  AuditInputs.push_back(std::move(Input));
+  Error.clear();
+  EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(AuditInputs),
+                           CanonicalOutput, Format::ELF64LE, AuditOptions,
+                           &Error));
+  EXPECT_NE(Error.find(ShapeDiagnostic.str()), std::string::npos) << Error;
+}
+
+TEST(MergeELFSemantic,
+     AndroidKernelReleaseRejectsMalformedVersionsEntryWidthsAtomically) {
+  using namespace ELF;
+  SecSpec Text{".text", 8, 4, SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR, 0x97};
+  SymSpec Function{"release_bad_versions_size", 0, 0};
+
+  for (uint64_t Size : {uint64_t(1), uint64_t(63), uint64_t(65)}) {
+    SCOPED_TRACE(Size);
+    SecSpec Versions{"__versions", Size, 8, SHT_PROGBITS, SHF_ALLOC, 0x98};
+    const auto Input =
+        buildSectionedELF({Text, Versions}, {Function}, {}, EM_AARCH64);
+    for (bool Verify : {false, true}) {
+      SCOPED_TRACE(Verify ? "verify-on" : "verify-off");
+      SmallVector<SmallVector<char, 0>, 1> Inputs;
+      Inputs.push_back(Input);
+      Options Opts = androidKernelReleaseOptions();
+      Opts.verify = Verify;
+      auto [OK, Output] = mergeELF(Inputs, Opts);
+      EXPECT_FALSE(OK);
+      EXPECT_TRUE(Output.empty());
+    }
+  }
+
+  // The final byte count alone is insufficient: two malformed contributions
+  // can become one apparent 64-byte record after canonical alignment. Both
+  // inputs otherwise have the required shape; 1 byte + 7 bytes of alignment
+  // padding + 56 bytes reaches 64. Preserve each input's record boundary by
+  // rejecting both partitions before merge.
+  SecSpec OneByteVersions{"__versions", 1, 8, SHT_PROGBITS, SHF_ALLOC, 0x9b};
+  SecSpec FiftySixByteVersions{"__versions", 56,        8,
+                               SHT_PROGBITS, SHF_ALLOC, 0x9c};
+  SmallVector<SmallVector<char, 0>, 2> SplitInputs;
+  SplitInputs.push_back(
+      buildSectionedELF({OneByteVersions}, {}, {}, EM_AARCH64));
+  SplitInputs.push_back(
+      buildSectionedELF({FiftySixByteVersions}, {}, {}, EM_AARCH64));
+  for (bool Verify : {false, true}) {
+    SCOPED_TRACE(Verify ? "split verify-on" : "split verify-off");
+    Options Opts = androidKernelReleaseOptions();
+    Opts.verify = Verify;
+    auto [OK, Output] = mergeELF(SplitInputs, Opts);
+    EXPECT_FALSE(OK);
+    EXPECT_TRUE(Output.empty());
+  }
+
+  SecSpec CanonicalVersions{"__versions", 64, 8, SHT_PROGBITS, SHF_ALLOC, 0x9d};
+  SmallVector<SmallVector<char, 0>, 1> CanonicalInputs;
+  CanonicalInputs.push_back(
+      buildSectionedELF({CanonicalVersions}, {}, {}, EM_AARCH64));
+  Options AuditOptions = androidKernelReleaseOptions();
+  auto [CanonicalOK, CanonicalOutput] = mergeELF(CanonicalInputs, AuditOptions);
+  ASSERT_TRUE(CanonicalOK);
+  std::string Error;
+  EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(SplitInputs),
+                           CanonicalOutput, Format::ELF64LE, AuditOptions,
+                           &Error));
+}
+
+TEST(MergeELFSemantic,
+     AndroidKernelReleaseAcceptsCanonicalVersionsEntryWidthsAndAuditsThem) {
+  using namespace ELF;
+  SecSpec Text{".text", 8, 4, SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR, 0x99};
+  SymSpec Function{"release_good_versions_size", 0, 0};
+
+  for (uint64_t Size : {uint64_t(0), uint64_t(64)}) {
+    SCOPED_TRACE(Size);
+    SecSpec Versions{"__versions", Size, 8, SHT_PROGBITS, SHF_ALLOC, 0x9a};
+    SmallVector<SmallVector<char, 0>, 1> Inputs;
+    Inputs.push_back(
+        buildSectionedELF({Text, Versions}, {Function}, {}, EM_AARCH64));
+    for (bool Verify : {false, true}) {
+      SCOPED_TRACE(Verify ? "verify-on" : "verify-off");
+      Options Opts = androidKernelReleaseOptions();
+      Opts.verify = Verify;
+      auto [OK, Output] = mergeELF(Inputs, Opts);
+      ASSERT_TRUE(OK);
+      ElfView View = parseELF(Output);
+      ASSERT_TRUE(View.Ok);
+      const int VersionsIndex = View.findSec("__versions");
+      ASSERT_GE(VersionsIndex, 0);
+      const ParsedSec &OutputVersions = View.Secs[VersionsIndex];
+      EXPECT_EQ(OutputVersions.Type, SHT_PROGBITS);
+      EXPECT_NE(OutputVersions.Flags & SHF_ALLOC, 0u);
+      EXPECT_EQ(OutputVersions.Flags & SHF_COMPRESSED, 0u);
+      EXPECT_GE(OutputVersions.Align, 8u);
+      EXPECT_EQ(OutputVersions.Align & (OutputVersions.Align - 1), 0u);
+      EXPECT_EQ(OutputVersions.Size, Size);
+
+      std::string Error;
+      EXPECT_TRUE(verifyAndroidKernelModuleImage(Output, Opts, &Error))
+          << Error;
+      Error.clear();
+      EXPECT_TRUE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Inputs), Output,
+                              Format::ELF64LE, Opts, &Error))
+          << Error;
+
+      if (Size == 64) {
+        SmallVector<char, 0> Truncated(Output.begin(), Output.end());
+        Elf64_Shdr *VersionsHeader =
+            findELFSectionHeader(Truncated, "__versions");
+        ASSERT_NE(VersionsHeader, nullptr);
+        VersionsHeader->sh_size = 63;
+        Error.clear();
+        EXPECT_FALSE(verifyAndroidKernelModuleImage(Truncated, Opts, &Error));
+        Error.clear();
+        EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Inputs),
+                                 Truncated, Format::ELF64LE, Opts, &Error));
+      }
+    }
+  }
+}
+
+TEST(MergeELFSemantic,
+     AndroidKernelReleaseRejectsSameSectionNobitsContributionOverflow) {
+  SecSpec FirstBss{".bss.wrap", std::numeric_limits<uint64_t>::max() - 7, 1,
+                   ELF::SHT_NOBITS, ELF::SHF_ALLOC | ELF::SHF_WRITE};
+  SecSpec SecondBss{".bss.wrap", 8, 16, ELF::SHT_NOBITS,
+                    ELF::SHF_ALLOC | ELF::SHF_WRITE};
+  SymSpec FirstObject{"release_before_nobits_wrap", 0, 0};
+  FirstObject.Type = ELF::STT_OBJECT;
+  SymSpec SecondObject{"release_after_nobits_wrap", 0, 0};
+  SecondObject.Type = ELF::STT_OBJECT;
+
+  SmallVector<SmallVector<char, 0>, 2> Inputs;
+  Inputs.push_back(
+      buildSectionedELF({FirstBss}, {FirstObject}, {}, ELF::EM_AARCH64));
+  Inputs.push_back(
+      buildSectionedELF({SecondBss}, {SecondObject}, {}, ELF::EM_AARCH64));
+  for (bool Verify : {false, true}) {
+    SCOPED_TRACE(Verify ? "verify-on" : "verify-off");
+    Options Opts = androidKernelReleaseOptions();
+    Opts.verify = Verify;
+    auto [OK, Output] = mergeELF(Inputs, Opts);
+    EXPECT_FALSE(OK);
+    EXPECT_TRUE(Output.empty());
+  }
+}
+
+TEST(MergeELFSemantic,
+     AndroidKernelReleaseRejectsSplitDwarfWithVerificationOnOrOff) {
+  SecSpec Text{
+      ".text", 0x10, 16, ELF::SHT_PROGBITS, ELF::SHF_ALLOC | ELF::SHF_EXECINSTR,
+      0xa1};
+  SymSpec Function{"release_split_dwarf", 0, 0};
+  auto Input = buildSectionedELF({Text}, {Function}, {}, ELF::EM_AARCH64);
+  SmallVector<SmallVector<char, 0>, 1> Inputs;
+  Inputs.push_back(std::move(Input));
+
+  Options ValidOptions = androidKernelReleaseOptions();
+  auto [Valid, Output] = mergeELF(Inputs, ValidOptions);
+  ASSERT_TRUE(Valid);
+
+  for (bool Verify : {false, true}) {
+    SCOPED_TRACE(Verify ? "verify-on" : "verify-off");
+    Options SplitOptions = androidKernelReleaseOptions();
+    SplitOptions.artifact = ArtifactKind::SplitDwarf;
+    SplitOptions.verify = Verify;
+    auto [OK, RejectedOutput] = mergeELF(Inputs, SplitOptions);
+    EXPECT_FALSE(OK);
+    EXPECT_TRUE(RejectedOutput.empty());
+
+    std::string Error;
+    EXPECT_FALSE(verifyAndroidKernelModuleImage(Output, SplitOptions, &Error));
+    EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Inputs), Output,
+                             Format::ELF64LE, SplitOptions, &Error));
+  }
+}
+
+TEST(MergeELFSemantic,
+     AndroidKernelReleaseRejectsRetainedImplicitAddendRelocations) {
+  SecSpec Text{
+      ".text", 0x10, 16, ELF::SHT_PROGBITS, ELF::SHF_ALLOC | ELF::SHF_EXECINSTR,
+      0xb1};
+  SecSpec Data{
+      ".data", 8, 8, ELF::SHT_PROGBITS, ELF::SHF_ALLOC | ELF::SHF_WRITE, 0xb2};
+  SymSpec Function{"release_rela_target", 0, 0};
+  RelSpec Reference{1, 0, Function.Name, ELF::R_AARCH64_ABS64, 7};
+  auto RelaInput =
+      buildSectionedELF({Text, Data}, {Function}, {Reference}, ELF::EM_AARCH64);
+  SmallVector<SmallVector<char, 0>, 1> RelaInputs;
+  RelaInputs.push_back(RelaInput);
+  Options Opts = androidKernelReleaseOptions();
+  auto [Valid, ValidOutput] = mergeELF(RelaInputs, Opts);
+  ASSERT_TRUE(Valid);
+
+  SmallVector<char, 0> RelInput(RelaInput.begin(), RelaInput.end());
+  ASSERT_TRUE(convertFirstELFRelaSectionToRel(RelInput));
+  SmallVector<SmallVector<char, 0>, 1> RelInputs;
+  RelInputs.push_back(std::move(RelInput));
+  for (bool Verify : {false, true}) {
+    SCOPED_TRACE(Verify ? "verify-on" : "verify-off");
+    Options ProducerOptions = androidKernelReleaseOptions();
+    ProducerOptions.verify = Verify;
+    auto [OK, Output] = mergeELF(RelInputs, ProducerOptions);
+    EXPECT_FALSE(OK);
+    EXPECT_TRUE(Output.empty());
+  }
+
+  std::string Error;
+  EXPECT_TRUE(verifyAndroidKernelModuleImage(ValidOutput, Opts, &Error))
+      << Error;
+  SmallVector<char, 0> RelOutput(ValidOutput.begin(), ValidOutput.end());
+  ASSERT_TRUE(convertFirstELFRelaSectionToRel(RelOutput));
+  EXPECT_FALSE(verifyAndroidKernelModuleImage(RelOutput, Opts, &Error));
+  EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(RelaInputs),
+                           RelOutput, Format::ELF64LE, Opts, &Error));
+  EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(RelInputs),
+                           ValidOutput, Format::ELF64LE, Opts, &Error));
+}
+
+TEST(MergeELFSemantic,
+     AndroidKernelReleaseRejectsMalformedRetainedRelocationsAtomically) {
+  SecSpec Data{
+      ".data", 8, 8, ELF::SHT_PROGBITS, ELF::SHF_ALLOC | ELF::SHF_WRITE, 0xd1};
+  SymSpec Import{"release_malformed_relocation_import", -1, 0};
+  Import.Type = ELF::STT_NOTYPE;
+  RelSpec Reference{0, 0, Import.Name, ELF::R_AARCH64_ABS64, 3};
+  const auto Valid =
+      buildSectionedELF({Data}, {Import}, {Reference}, ELF::EM_AARCH64);
+
+  auto ExpectAtomicFailure = [&](SmallVector<char, 0> Input, StringRef Case) {
+    SCOPED_TRACE(Case.str());
+    for (bool Verify : {false, true}) {
+      SCOPED_TRACE(Verify ? "verify-on" : "verify-off");
+      SmallVector<SmallVector<char, 0>, 1> Inputs;
+      Inputs.push_back(Input);
+      Options Opts = androidKernelReleaseOptions();
+      Opts.verify = Verify;
+      auto [OK, Output] = mergeELF(Inputs, Opts);
+      EXPECT_FALSE(OK);
+      EXPECT_TRUE(Output.empty());
+    }
+  };
+
+  SmallVector<char, 0> BadSymbol(Valid.begin(), Valid.end());
+  ASSERT_TRUE(patchFirstRelaSymbolIndex(BadSymbol, UINT32_C(0xffffff00)));
+  ExpectAtomicFailure(std::move(BadSymbol), "out-of-range r_sym");
+
+  SmallVector<char, 0> BadSite(Valid.begin(), Valid.end());
+  ASSERT_TRUE(patchAllRelaOffsets(BadSite, Data.Size));
+  ExpectAtomicFailure(std::move(BadSite), "out-of-range r_offset");
+
+  SmallVector<char, 0> BadLink(Valid.begin(), Valid.end());
+  ELF::Elf64_Shdr *Relocations = findELFSectionHeader(BadLink, ".rela.data");
+  ASSERT_NE(Relocations, nullptr);
+  Relocations->sh_link = 1; // .data, not SHT_SYMTAB
+  ExpectAtomicFailure(std::move(BadLink), "relocation sh_link type");
+}
+
+TEST(MergeELFSemantic,
+     AndroidKernelReleaseRejectsMalformedSymbolsAndTablesAtomically) {
+  SecSpec Text{
+      ".text", 0x10, 16, ELF::SHT_PROGBITS, ELF::SHF_ALLOC | ELF::SHF_EXECINSTR,
+      0xd2};
+  SymSpec Function{"release_malformed_symbol", 0, 0};
+  const auto Valid = buildSectionedELF({Text}, {Function}, {}, ELF::EM_AARCH64);
+
+  auto ExpectAtomicFailure = [&](SmallVector<char, 0> Input, StringRef Case) {
+    SCOPED_TRACE(Case.str());
+    for (bool Verify : {false, true}) {
+      SCOPED_TRACE(Verify ? "verify-on" : "verify-off");
+      SmallVector<SmallVector<char, 0>, 1> Inputs;
+      Inputs.push_back(Input);
+      Options Opts = androidKernelReleaseOptions();
+      Opts.verify = Verify;
+      auto [OK, Output] = mergeELF(Inputs, Opts);
+      EXPECT_FALSE(OK);
+      EXPECT_TRUE(Output.empty());
+    }
+  };
+
+  SmallVector<char, 0> BadSectionIndex(Valid.begin(), Valid.end());
+  auto *BadIndexHeader =
+      reinterpret_cast<ELF::Elf64_Ehdr *>(BadSectionIndex.data());
+  ASSERT_TRUE(patchELFSymbolSectionIndex(BadSectionIndex, Function.Name,
+                                         BadIndexHeader->e_shnum));
+  ExpectAtomicFailure(std::move(BadSectionIndex), "out-of-range st_shndx");
+
+  SmallVector<char, 0> BadSymtabLink(Valid.begin(), Valid.end());
+  ELF::Elf64_Shdr *Symtab = findELFSectionHeader(BadSymtabLink, ".symtab");
+  ASSERT_NE(Symtab, nullptr);
+  Symtab->sh_link = 1; // .text, not SHT_STRTAB
+  ExpectAtomicFailure(std::move(BadSymtabLink), "symtab sh_link type");
+
+  SmallVector<char, 0> BadNameOffset(Valid.begin(), Valid.end());
+  Symtab = findELFSectionHeader(BadNameOffset, ".symtab");
+  ELF::Elf64_Shdr *Strtab = findELFSectionHeader(BadNameOffset, ".strtab");
+  ASSERT_NE(Symtab, nullptr);
+  ASSERT_NE(Strtab, nullptr);
+  ASSERT_TRUE(
+      patchELFSymbolNameOffset(BadNameOffset, Function.Name, Strtab->sh_size));
+  ExpectAtomicFailure(std::move(BadNameOffset), "out-of-range st_name");
+
+  SmallVector<char, 0> UnterminatedName(Valid.begin(), Valid.end());
+  Strtab = findELFSectionHeader(UnterminatedName, ".strtab");
+  ASSERT_NE(Strtab, nullptr);
+  ASSERT_GT(Strtab->sh_size, 0u);
+  ASSERT_TRUE(patchELFSymbolNameOffset(UnterminatedName, Function.Name,
+                                       Strtab->sh_size - 1));
+  UnterminatedName[Strtab->sh_offset + Strtab->sh_size - 1] = 'X';
+  ExpectAtomicFailure(std::move(UnterminatedName), "unterminated st_name");
+
+  SmallVector<char, 0> BadSymtabShape(Valid.begin(), Valid.end());
+  Symtab = findELFSectionHeader(BadSymtabShape, ".symtab");
+  ASSERT_NE(Symtab, nullptr);
+  Symtab->sh_entsize = 1;
+  ExpectAtomicFailure(std::move(BadSymtabShape), "symtab sh_entsize");
+
+  SmallVector<char, 0> BadSymtabSize(Valid.begin(), Valid.end());
+  Symtab = findELFSectionHeader(BadSymtabSize, ".symtab");
+  ASSERT_NE(Symtab, nullptr);
+  --Symtab->sh_size;
+  ExpectAtomicFailure(std::move(BadSymtabSize), "partial symtab record");
+
+  SmallVector<char, 0> TruncatedPayload(Valid.begin(), Valid.end());
+  ELF::Elf64_Shdr *TextHeader = findELFSectionHeader(TruncatedPayload, ".text");
+  ASSERT_NE(TextHeader, nullptr);
+  TextHeader->sh_offset = TruncatedPayload.size() - 4;
+  TextHeader->sh_size = 0x10;
+  ExpectAtomicFailure(std::move(TruncatedPayload),
+                      "truncated ordinary section payload");
+
+  SmallVector<char, 0> BadSectionHeaderSize(Valid.begin(), Valid.end());
+  auto *Header =
+      reinterpret_cast<ELF::Elf64_Ehdr *>(BadSectionHeaderSize.data());
+  Header->e_shentsize = 1;
+  ExpectAtomicFailure(std::move(BadSectionHeaderSize), "e_shentsize");
+}
+
+TEST(MergeELFSemantic,
+     AndroidKernelReleaseRejectsUnsupportedIndexMetadataInputsAtomically) {
+  using namespace ELF;
+  struct Case {
+    const char *Name;
+    uint32_t Type;
+  };
+  constexpr Case Cases[] = {
+      {".group", SHT_GROUP},
+      {".symtab_shndx", SHT_SYMTAB_SHNDX},
+  };
+
+  SecSpec Text{".text", 0x10, 16, SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR,
+               0xd3};
+  SymSpec Function{"release_unsupported_index_metadata", 0, 0};
+  SmallVector<SmallVector<char, 0>, 1> ValidInputs;
+  ValidInputs.push_back(buildSectionedELF({Text}, {Function}, {}, EM_AARCH64));
+  Options AuditOptions = androidKernelReleaseOptions();
+  auto [Valid, CanonicalOutput] = mergeELF(ValidInputs, AuditOptions);
+  ASSERT_TRUE(Valid);
+
+  for (const Case &Entry : Cases) {
+    SCOPED_TRACE(Entry.Name);
+    SecSpec Unsupported{Entry.Name, 4, 4, Entry.Type, 0, 0xa7};
+    Unsupported.Entsize = 4;
+    SmallVector<SmallVector<char, 0>, 1> Inputs;
+    Inputs.push_back(
+        buildSectionedELF({Text, Unsupported}, {Function}, {}, EM_AARCH64));
+    for (bool Verify : {false, true}) {
+      SCOPED_TRACE(Verify ? "verify-on" : "verify-off");
+      Options Opts = androidKernelReleaseOptions();
+      Opts.verify = Verify;
+      auto [OK, Output] = mergeELF(Inputs, Opts);
+      EXPECT_FALSE(OK);
+      EXPECT_TRUE(Output.empty());
+    }
+
+    std::string Error;
+    EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Inputs),
+                             CanonicalOutput, Format::ELF64LE, AuditOptions,
+                             &Error));
+  }
+}
+
+TEST(MergeELFSemantic,
+     AndroidKernelReleaseAcceptsAndDropsRegeneratedMetadataInputs) {
+  using namespace ELF;
+  struct Case {
+    const char *Name;
+    uint32_t Type;
+    uint64_t Size;
+  };
+  constexpr Case Cases[] = {
+      {".inactive", SHT_NULL, 0},
+      {".llvm_addrsig", SHT_LLVM_ADDRSIG, 4},
+      {".llvm.call-graph-profile", SHT_LLVM_CALL_GRAPH_PROFILE, 8},
+  };
+
+  SecSpec Text{".text", 0x10, 16, SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR,
+               0xd4};
+  SymSpec Function{"release_regenerated_metadata", 0, 0};
+  for (const Case &Entry : Cases) {
+    SCOPED_TRACE(Entry.Name);
+    SecSpec Metadata{Entry.Name, Entry.Size, 1, Entry.Type, 0, 0xa8};
+    SmallVector<SmallVector<char, 0>, 1> Inputs;
+    Inputs.push_back(
+        buildSectionedELF({Text, Metadata}, {Function}, {}, EM_AARCH64));
+    for (bool Verify : {false, true}) {
+      SCOPED_TRACE(Verify ? "verify-on" : "verify-off");
+      Options Opts = androidKernelReleaseOptions();
+      Opts.verify = Verify;
+      auto [OK, Output] = mergeELF(Inputs, Opts);
+      ASSERT_TRUE(OK);
+      ElfView View = parseELF(Output);
+      ASSERT_TRUE(View.Ok);
+      EXPECT_LT(View.findSec(Entry.Name), 0);
+
+      std::string Error;
+      EXPECT_TRUE(verifyAndroidKernelModuleImage(Output, Opts, &Error))
+          << Error;
+      EXPECT_TRUE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Inputs), Output,
+                              Format::ELF64LE, Opts, &Error))
+          << Error;
+    }
+  }
+}
+
+TEST(MergeELFSemantic,
+     AndroidKernelReleaseVerifiersRejectForbiddenOutputMetadataTypes) {
+  using namespace ELF;
+  struct Case {
+    const char *Name;
+    uint32_t Type;
+  };
+  constexpr Case Cases[] = {
+      {"SHT_NULL outside section zero", SHT_NULL},
+      {"SHT_GROUP", SHT_GROUP},
+      {"SHT_SYMTAB_SHNDX", SHT_SYMTAB_SHNDX},
+      {"SHT_LLVM_ADDRSIG", SHT_LLVM_ADDRSIG},
+      {"SHT_LLVM_CALL_GRAPH_PROFILE", SHT_LLVM_CALL_GRAPH_PROFILE},
+  };
+
+  SecSpec Text{".text", 0x10, 16, SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR,
+               0xd5};
+  SecSpec Data{".data", 8, 8, SHT_PROGBITS, SHF_ALLOC | SHF_WRITE, 0xd6};
+  SymSpec Function{"release_forbidden_output_metadata", 0, 0};
+  SmallVector<SmallVector<char, 0>, 1> Inputs;
+  Inputs.push_back(buildSectionedELF({Text, Data}, {Function}, {}, EM_AARCH64));
+  Options Opts = androidKernelReleaseOptions();
+  auto [OK, CanonicalOutput] = mergeELF(Inputs, Opts);
+  ASSERT_TRUE(OK);
+
+  for (const Case &Entry : Cases) {
+    SCOPED_TRACE(Entry.Name);
+    SmallVector<char, 0> Mutated(CanonicalOutput.begin(),
+                                 CanonicalOutput.end());
+    Elf64_Shdr *DataHeader = findELFSectionHeader(Mutated, ".data");
+    ASSERT_NE(DataHeader, nullptr);
+    DataHeader->sh_type = Entry.Type;
+    DataHeader->sh_link = 0;
+    DataHeader->sh_info = 0;
+
+    std::string Error;
+    EXPECT_FALSE(verifyAndroidKernelModuleImage(Mutated, Opts, &Error));
+    EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Inputs), Mutated,
+                             Format::ELF64LE, Opts, &Error));
+  }
+}
+
+TEST(MergeELFSemantic,
+     AndroidKernelReleaseRejectsNonRelocatableInputHeadersAtomically) {
+  SecSpec Text{
+      ".text", 0x10, 16, ELF::SHT_PROGBITS, ELF::SHF_ALLOC | ELF::SHF_EXECINSTR,
+      0xd6};
+  SymSpec Function{"release_nonrelocatable_header", 0, 0};
+  const auto Relocatable =
+      buildSectionedELF({Text}, {Function}, {}, ELF::EM_AARCH64);
+
+  for (uint16_t Type : {uint16_t(ELF::ET_EXEC), uint16_t(ELF::ET_DYN)}) {
+    SCOPED_TRACE(Type == ELF::ET_EXEC ? "ET_EXEC" : "ET_DYN");
+    SmallVector<char, 0> Input(Relocatable.begin(), Relocatable.end());
+    auto *Header = reinterpret_cast<ELF::Elf64_Ehdr *>(Input.data());
+    Header->e_type = Type;
+    for (bool Verify : {false, true}) {
+      SCOPED_TRACE(Verify ? "verify-on" : "verify-off");
+      SmallVector<SmallVector<char, 0>, 1> Inputs;
+      Inputs.push_back(Input);
+      Options Opts = androidKernelReleaseOptions();
+      Opts.verify = Verify;
+      auto [OK, Output] = mergeELF(Inputs, Opts);
+      EXPECT_FALSE(OK);
+      EXPECT_TRUE(Output.empty());
+    }
+  }
+
+  SmallVector<char, 0> BadVersion(Relocatable.begin(), Relocatable.end());
+  reinterpret_cast<ELF::Elf64_Ehdr *>(BadVersion.data())->e_version = 0;
+  for (bool Verify : {false, true}) {
+    SCOPED_TRACE(Verify ? "bad-version verify-on" : "bad-version verify-off");
+    SmallVector<SmallVector<char, 0>, 1> Inputs;
+    Inputs.push_back(BadVersion);
+    Options Opts = androidKernelReleaseOptions();
+    Opts.verify = Verify;
+    auto [OK, Output] = mergeELF(Inputs, Opts);
+    EXPECT_FALSE(OK);
+    EXPECT_TRUE(Output.empty());
+  }
+
+  SmallVector<char, 0> ExtendedCount(Relocatable.begin(), Relocatable.end());
+  auto *ExtendedCountHeader =
+      reinterpret_cast<ELF::Elf64_Ehdr *>(ExtendedCount.data());
+  auto *ExtendedCountSections = reinterpret_cast<ELF::Elf64_Shdr *>(
+      ExtendedCount.data() + ExtendedCountHeader->e_shoff);
+  ExtendedCountSections[0].sh_size = ExtendedCountHeader->e_shnum;
+  ExtendedCountHeader->e_shnum = 0;
+
+  SmallVector<char, 0> ExtendedShstrndx(Relocatable.begin(), Relocatable.end());
+  auto *ExtendedShstrndxHeader =
+      reinterpret_cast<ELF::Elf64_Ehdr *>(ExtendedShstrndx.data());
+  auto *ExtendedShstrndxSections = reinterpret_cast<ELF::Elf64_Shdr *>(
+      ExtendedShstrndx.data() + ExtendedShstrndxHeader->e_shoff);
+  ExtendedShstrndxSections[0].sh_link = ExtendedShstrndxHeader->e_shstrndx;
+  ExtendedShstrndxHeader->e_shstrndx = ELF::SHN_XINDEX;
+
+  for (const auto &Input : {ExtendedCount, ExtendedShstrndx}) {
+    for (bool Verify : {false, true}) {
+      SCOPED_TRACE(Verify ? "extended-numbering verify-on"
+                          : "extended-numbering verify-off");
+      SmallVector<SmallVector<char, 0>, 1> Inputs;
+      Inputs.push_back(Input);
+      Options Opts = androidKernelReleaseOptions();
+      Opts.verify = Verify;
+      auto [OK, Output] = mergeELF(Inputs, Opts);
+      EXPECT_FALSE(OK);
+      EXPECT_TRUE(Output.empty());
+    }
+  }
+}
+
+TEST(MergeELFSemantic,
+     AndroidKernelReleaseRejectsNonzeroInputSectionAddressAtomically) {
+  SecSpec Text{
+      ".text", 0x10, 16, ELF::SHT_PROGBITS, ELF::SHF_ALLOC | ELF::SHF_EXECINSTR,
+      0xd7};
+  SymSpec Function{"release_nonzero_section_address", 0, 0};
+  SmallVector<char, 0> Input =
+      buildSectionedELF({Text}, {Function}, {}, ELF::EM_AARCH64);
+  ELF::Elf64_Shdr *TextHeader = findELFSectionHeader(Input, ".text");
+  ASSERT_NE(TextHeader, nullptr);
+  TextHeader->sh_addr = 0x1000;
+
+  for (bool Verify : {false, true}) {
+    SCOPED_TRACE(Verify ? "verify-on" : "verify-off");
+    SmallVector<SmallVector<char, 0>, 1> Inputs;
+    Inputs.push_back(Input);
+    Options Opts = androidKernelReleaseOptions();
+    Opts.verify = Verify;
+    auto [OK, Output] = mergeELF(Inputs, Opts);
+    EXPECT_FALSE(OK);
+    EXPECT_TRUE(Output.empty());
+  }
+}
+
+TEST(MergeELFSemantic,
+     AndroidKernelReleaseRejectsMismatchedInputAbiHeadersAtomically) {
+  SecSpec Text{
+      ".text", 0x10, 16, ELF::SHT_PROGBITS, ELF::SHF_ALLOC | ELF::SHF_EXECINSTR,
+      0xd9};
+  SymSpec First{"release_abi_first", 0, 0};
+  SymSpec Second{"release_abi_second", 0, 0};
+  const auto FirstInput =
+      buildSectionedELF({Text}, {First}, {}, ELF::EM_AARCH64);
+  const auto BaseSecond =
+      buildSectionedELF({Text}, {Second}, {}, ELF::EM_AARCH64);
+
+  enum class Mutation { Flags, OSABI, ABIVersion };
+  for (Mutation Kind :
+       {Mutation::Flags, Mutation::OSABI, Mutation::ABIVersion}) {
+    SmallVector<char, 0> SecondInput(BaseSecond.begin(), BaseSecond.end());
+    auto *Header = reinterpret_cast<ELF::Elf64_Ehdr *>(SecondInput.data());
+    switch (Kind) {
+    case Mutation::Flags:
+      Header->e_flags = 1;
+      break;
+    case Mutation::OSABI:
+      Header->e_ident[ELF::EI_OSABI] = ELF::ELFOSABI_LINUX;
+      break;
+    case Mutation::ABIVersion:
+      Header->e_ident[ELF::EI_ABIVERSION] = 1;
+      break;
+    }
+    for (bool Verify : {false, true}) {
+      SCOPED_TRACE(Verify ? "verify-on" : "verify-off");
+      SmallVector<SmallVector<char, 0>, 2> Inputs;
+      Inputs.push_back(FirstInput);
+      Inputs.push_back(SecondInput);
+      Options Opts = androidKernelReleaseOptions();
+      Opts.verify = Verify;
+      auto [OK, Output] = mergeELF(Inputs, Opts);
+      EXPECT_FALSE(OK);
+      EXPECT_TRUE(Output.empty());
+    }
+  }
+}
+
+TEST(MergeELFSemantic,
+     AndroidKernelReleaseInputAwareVerifierChecksOutputAbiHeaderIdentity) {
+  SecSpec Text{
+      ".text", 0x10, 16, ELF::SHT_PROGBITS, ELF::SHF_ALLOC | ELF::SHF_EXECINSTR,
+      0xd9};
+  SymSpec First{"release_output_abi_first", 0, 0};
+  SymSpec Second{"release_output_abi_second", 0, 0};
+  SmallVector<SmallVector<char, 0>, 2> Inputs;
+  Inputs.push_back(buildSectionedELF({Text}, {First}, {}, ELF::EM_AARCH64));
+  Inputs.push_back(buildSectionedELF({Text}, {Second}, {}, ELF::EM_AARCH64));
+  Options Opts = androidKernelReleaseOptions();
+  auto [OK, Output] = mergeELF(Inputs, Opts);
+  ASSERT_TRUE(OK);
+
+  enum class Mutation { Flags, OSABI, ABIVersion };
+  for (Mutation Kind :
+       {Mutation::Flags, Mutation::OSABI, Mutation::ABIVersion}) {
+    SmallVector<char, 0> Mutated(Output.begin(), Output.end());
+    auto *Header = reinterpret_cast<ELF::Elf64_Ehdr *>(Mutated.data());
+    switch (Kind) {
+    case Mutation::Flags:
+      Header->e_flags = 1;
+      break;
+    case Mutation::OSABI:
+      Header->e_ident[ELF::EI_OSABI] = ELF::ELFOSABI_LINUX;
+      break;
+    case Mutation::ABIVersion:
+      Header->e_ident[ELF::EI_ABIVERSION] = 1;
+      break;
+    }
+    std::string Error;
+    EXPECT_TRUE(verifyAndroidKernelModuleImage(Mutated, Opts, &Error)) << Error;
+    EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Inputs), Mutated,
+                             Format::ELF64LE, Opts, &Error));
+  }
+}
+
+TEST(MergeELFSemantic,
+     AndroidKernelReleaseRejectsInvalidSectionAlignmentAtomically) {
+  SecSpec Text{
+      ".text", 0x10, 16, ELF::SHT_PROGBITS, ELF::SHF_ALLOC | ELF::SHF_EXECINSTR,
+      0xda};
+  SymSpec Function{"release_invalid_alignment", 0, 0};
+  SmallVector<char, 0> Input =
+      buildSectionedELF({Text}, {Function}, {}, ELF::EM_AARCH64);
+  ELF::Elf64_Shdr *TextHeader = findELFSectionHeader(Input, ".text");
+  ASSERT_NE(TextHeader, nullptr);
+  TextHeader->sh_addralign = 3;
+
+  for (bool Verify : {false, true}) {
+    SCOPED_TRACE(Verify ? "verify-on" : "verify-off");
+    SmallVector<SmallVector<char, 0>, 1> Inputs;
+    Inputs.push_back(Input);
+    Options Opts = androidKernelReleaseOptions();
+    Opts.verify = Verify;
+    auto [OK, Output] = mergeELF(Inputs, Opts);
+    EXPECT_FALSE(OK);
+    EXPECT_TRUE(Output.empty());
+  }
+}
+
+TEST(MergeELFSemantic,
+     AndroidKernelReleaseProducerRejectsWrongInputELFHeaderSizeVerifyOff) {
+  using namespace ELF;
+  SecSpec Text{".text", 8, 4, SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR, 0xda};
+  SymSpec Function{"release_bad_ehsize", 0, 0};
+  const auto GoodInput = buildSectionedELF({Text}, {Function}, {}, EM_AARCH64);
+  SmallVector<char, 0> BadInput(GoodInput.begin(), GoodInput.end());
+  auto *Header = reinterpret_cast<Elf64_Ehdr *>(BadInput.data());
+  Header->e_ehsize = sizeof(Elf64_Ehdr) - 1;
+
+  for (bool Verify : {false, true}) {
+    SCOPED_TRACE(Verify ? "verify-on" : "verify-off");
+    SmallVector<SmallVector<char, 0>, 1> Inputs;
+    Inputs.push_back(BadInput);
+    Options Opts = androidKernelReleaseOptions();
+    Opts.verify = Verify;
+    auto [OK, Output] = mergeELF(Inputs, Opts);
+    EXPECT_FALSE(OK);
+    EXPECT_TRUE(Output.empty());
+  }
+
+  SmallVector<SmallVector<char, 0>, 1> GoodInputs;
+  GoodInputs.push_back(GoodInput);
+  Options Opts = androidKernelReleaseOptions();
+  auto [OK, Output] = mergeELF(GoodInputs, Opts);
+  ASSERT_TRUE(OK);
+  SmallVector<SmallVector<char, 0>, 1> BadInputs;
+  BadInputs.push_back(BadInput);
+  std::string Error;
+  EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(BadInputs), Output,
+                           Format::ELF64LE, Opts, &Error));
+  Error.clear();
+  EXPECT_TRUE(verifyAndroidKernelModuleImage(Output, Opts, &Error)) << Error;
+}
+
+TEST(MergeELFSemantic,
+     AndroidKernelReleasePreservesLargeSectionAlignmentInEitherOrder) {
+  constexpr uint32_t LargeAlignment = uint32_t(2) << 20;
+  for (uint32_t Type :
+       {uint32_t(ELF::SHT_PROGBITS), uint32_t(ELF::SHT_NOBITS)}) {
+    const std::string Name = Type == ELF::SHT_NOBITS ? ".bss" : ".data";
+    const uint64_t Flags = ELF::SHF_ALLOC | ELF::SHF_WRITE;
+    SecSpec Small{Name, 1, 16, Type, Flags, 0xdb};
+    SecSpec Large{Name, 1, LargeAlignment, Type, Flags, 0xdc};
+    SymSpec SmallSymbol{"release_small_alignment",
+                        0,
+                        0,
+                        true,
+                        false,
+                        std::nullopt,
+                        ELF::STT_OBJECT};
+    SymSpec LargeSymbol{"release_large_alignment",
+                        0,
+                        0,
+                        true,
+                        false,
+                        std::nullopt,
+                        ELF::STT_OBJECT};
+    const auto SmallInput =
+        buildSectionedELF({Small}, {SmallSymbol}, {}, ELF::EM_AARCH64);
+    const auto LargeInput =
+        buildSectionedELF({Large}, {LargeSymbol}, {}, ELF::EM_AARCH64);
+
+    for (bool LargeFirst : {false, true}) {
+      for (bool Verify : {false, true}) {
+        SCOPED_TRACE((Twine(Type) +
+                      (LargeFirst ? " large-first" : " large-last") +
+                      (Verify ? " verify-on" : " verify-off"))
+                         .str());
+        SmallVector<SmallVector<char, 0>, 2> Inputs;
+        if (LargeFirst) {
+          Inputs.push_back(LargeInput);
+          Inputs.push_back(SmallInput);
+        } else {
+          Inputs.push_back(SmallInput);
+          Inputs.push_back(LargeInput);
+        }
+        Options Opts = androidKernelReleaseOptions();
+        Opts.verify = Verify;
+        auto [OK, Output] = mergeELF(Inputs, Opts);
+        ASSERT_TRUE(OK);
+        const ELF::Elf64_Shdr *Header = findELFSectionHeader(Output, Name);
+        ASSERT_NE(Header, nullptr);
+        EXPECT_EQ(Header->sh_addralign, LargeAlignment);
+        EXPECT_EQ(Header->sh_size, uint64_t(LargeAlignment) + 1);
+
+        std::string Error;
+        EXPECT_TRUE(verifyAndroidKernelModuleImage(Output, Opts, &Error))
+            << Error;
+        EXPECT_TRUE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Inputs), Output,
+                                Format::ELF64LE, Opts, &Error))
+            << Error;
+      }
+    }
+  }
+}
+
+TEST(MergeELFSemantic,
+     AndroidKernelReleaseUsesOneGlobalMaterializationLedgerAcrossSections) {
+  const compression::Format Format =
+      compression::formatFor(DebugCompressionType::Zlib);
+  if (const char *Reason = compression::getReasonIfUnsupported(Format))
+    GTEST_SKIP() << Reason;
+
+  using namespace ELF;
+  constexpr uint64_t LargeAlignment = uint64_t(1) << 26;
+  SecSpec DebugA0{".debug_budget_a", 1, 1, SHT_PROGBITS, 0, 0x31};
+  SecSpec DebugA1{".debug_budget_a", 1, 1, SHT_PROGBITS, 0, 0x32};
+  SecSpec DebugB0{".debug_budget_b", 1, 1, SHT_PROGBITS, 0, 0x33};
+  SecSpec DebugB1{".debug_budget_b", 1, 1, SHT_PROGBITS, 0, 0x34};
+  SmallVector<char, 0> Input = buildSectionedELF(
+      {DebugA0, DebugA1, DebugB0, DebugB1}, {}, {}, EM_AARCH64);
+  auto *Header = reinterpret_cast<Elf64_Ehdr *>(Input.data());
+  auto *Sections =
+      reinterpret_cast<Elf64_Shdr *>(Input.data() + Header->e_shoff);
+  ASSERT_GT(Header->e_shnum, 4u);
+  Sections[2].sh_addralign = LargeAlignment;
+  Sections[4].sh_addralign = LargeAlignment;
+
+  // Each individual merged debug section stays within input-bytes + 64 MiB,
+  // and compression would make the final file tiny. Only a single operation-
+  // wide ledger notices that the two simultaneous materializations cumulatively
+  // exceed the allowance before allocating both.
+  SmallVector<SmallVector<char, 0>, 1> Inputs;
+  Inputs.push_back(Input);
+  for (bool Verify : {false, true}) {
+    SCOPED_TRACE(Verify ? "verify-on" : "verify-off");
+    Options Opts = androidKernelReleaseOptions();
+    Opts.debugCompression = DebugCompressionType::Zlib;
+    Opts.verify = Verify;
+    auto [OK, Output] = mergeELF(Inputs, Opts);
+    EXPECT_FALSE(OK);
+    EXPECT_TRUE(Output.empty());
+  }
+}
+
+TEST(MergeELFSemantic,
+     AndroidKernelReleaseVerifierBoundsAllReconstructionPaddingGlobally) {
+  using namespace ELF;
+  constexpr uint64_t LargeAlignment = uint64_t(1) << 26;
+  for (uint32_t Type : {uint32_t(SHT_NOTE), uint32_t(SHT_PROGBITS)}) {
+    SCOPED_TRACE(Type == SHT_NOTE ? "NOTE reconstruction"
+                                  : "debug reconstruction");
+    const std::string Prefix =
+        Type == SHT_NOTE ? ".note.budget_" : ".debug_budget_";
+    SecSpec A0{Prefix + "a", 1, 1, Type, 0, 0x35};
+    SecSpec A1{Prefix + "a", 1, 1, Type, 0, 0x36};
+    SecSpec B0{Prefix + "b", 1, 1, Type, 0, 0x37};
+    SecSpec B1{Prefix + "b", 1, 1, Type, 0, 0x38};
+    const auto GoodInput =
+        buildSectionedELF({A0, A1, B0, B1}, {}, {}, EM_AARCH64);
+    SmallVector<SmallVector<char, 0>, 1> GoodInputs;
+    GoodInputs.push_back(GoodInput);
+    Options Opts = androidKernelReleaseOptions();
+    auto [OK, Output] = mergeELF(GoodInputs, Opts);
+    ASSERT_TRUE(OK);
+
+    SmallVector<char, 0> BadInput(GoodInput.begin(), GoodInput.end());
+    auto *Header = reinterpret_cast<Elf64_Ehdr *>(BadInput.data());
+    auto *Sections =
+        reinterpret_cast<Elf64_Shdr *>(BadInput.data() + Header->e_shoff);
+    ASSERT_GT(Header->e_shnum, 4u);
+    Sections[2].sh_addralign = LargeAlignment;
+    Sections[4].sh_addralign = LargeAlignment;
+    SmallVector<SmallVector<char, 0>, 1> BadInputs;
+    BadInputs.push_back(std::move(BadInput));
+    std::string Error;
+    EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(BadInputs), Output,
+                             Format::ELF64LE, Opts, &Error));
+    EXPECT_NE(Error.find("budget"), std::string::npos) << Error;
+  }
+}
+
+TEST(MergeELFSemantic,
+     AndroidKernelReleaseRejectsMergedLinkOrderWithDistinctTargetIdentities) {
+  using namespace ELF;
+  // Both target names fold to `.rodata`, but their flags keep them as two
+  // distinct (non-loaded) output candidates. Name-only remapping would choose
+  // the first candidate for both PFE contributions.
+  SecSpec ExecutableText{".rodata.first", 0x10, 16, SHT_PROGBITS, 0, 0xdd};
+  SecSpec WritableText{".rodata.second", 0x10,      16,
+                       SHT_PROGBITS,     SHF_WRITE, 0xde};
+  SecSpec FirstPFE{
+      "__patchable_function_entries", 8,    8,         SHT_PROGBITS,
+      SHF_ALLOC | SHF_LINK_ORDER,     0xdf, /*Link=*/0};
+  SecSpec SecondPFE{
+      "__patchable_function_entries", 8,    8,         SHT_PROGBITS,
+      SHF_ALLOC | SHF_LINK_ORDER,     0xe0, /*Link=*/0};
+  SymSpec First{"release_link_identity_first",
+                1,
+                0,
+                true,
+                false,
+                std::nullopt,
+                STT_OBJECT};
+  SymSpec Second{"release_link_identity_second",
+                 1,
+                 0,
+                 true,
+                 false,
+                 std::nullopt,
+                 STT_OBJECT};
+  const auto FirstInput =
+      buildSectionedELF({ExecutableText, FirstPFE}, {First}, {}, EM_AARCH64);
+  const auto SecondInput =
+      buildSectionedELF({WritableText, SecondPFE}, {Second}, {}, EM_AARCH64);
+
+  for (bool Reverse : {false, true}) {
+    for (bool Verify : {false, true}) {
+      SCOPED_TRACE(std::string(Reverse ? "reverse" : "forward") +
+                   (Verify ? " verify-on" : " verify-off"));
+      SmallVector<SmallVector<char, 0>, 2> Inputs;
+      if (Reverse) {
+        Inputs.push_back(SecondInput);
+        Inputs.push_back(FirstInput);
+      } else {
+        Inputs.push_back(FirstInput);
+        Inputs.push_back(SecondInput);
+      }
+      Options Opts = androidKernelReleaseOptions();
+      Opts.verify = Verify;
+      auto [OK, Output] = mergeELF(Inputs, Opts);
+      EXPECT_FALSE(OK);
+      EXPECT_TRUE(Output.empty());
+    }
+  }
+}
+
+TEST(MergeELFSemantic,
+     AndroidKernelReleaseOrdersLinkOrderContributionsByTargetPlacement) {
+  using namespace ELF;
+  // The first metadata contribution describes the *second* text contribution,
+  // while the later metadata contribution describes the first. Input section
+  // order therefore disagrees with the final linked-target offset order.
+  SecSpec FirstText{
+      ".text.first", 8, 4, SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR, 0x41};
+  SecSpec MetadataForSecond{
+      ".target_order", 4, 4, SHT_PROGBITS, SHF_ALLOC | SHF_LINK_ORDER, 0x22,
+      /*Link=*/2};
+  SecSpec SecondText{
+      ".text.second", 8, 4, SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR, 0x42};
+  SecSpec MetadataForFirst{
+      ".target_order", 4, 4, SHT_PROGBITS, SHF_ALLOC | SHF_LINK_ORDER, 0x11,
+      /*Link=*/0};
+  // Undefined import names survive release pruning verbatim, so relocation
+  // identity remains independently observable after contribution reordering.
+  SymSpec FirstImport{"release_link_order_import_first", -1, 0};
+  FirstImport.Type = STT_NOTYPE;
+  SymSpec SecondImport{"release_link_order_import_second", -1, 0};
+  SecondImport.Type = STT_NOTYPE;
+  RelSpec MetadataForSecondRelocation{1, 0, SecondImport.Name, R_AARCH64_ABS32,
+                                      0};
+  RelSpec MetadataForFirstRelocation{3, 0, FirstImport.Name, R_AARCH64_ABS32,
+                                     0};
+  SmallVector<SmallVector<char, 0>, 1> Inputs;
+  Inputs.push_back(buildSectionedELF(
+      {FirstText, MetadataForSecond, SecondText, MetadataForFirst},
+      {FirstImport, SecondImport},
+      {MetadataForSecondRelocation, MetadataForFirstRelocation}, EM_AARCH64));
+
+  for (bool Verify : {false, true}) {
+    SCOPED_TRACE(Verify ? "verify-on" : "verify-off");
+    Options Opts = androidKernelReleaseOptions();
+    Opts.verify = Verify;
+    auto [OK, Output] = mergeELF(Inputs, Opts);
+    ASSERT_TRUE(OK);
+    ElfView View = parseELF(Output);
+    ASSERT_TRUE(View.Ok);
+    const int MetadataIndex = View.findSec(".target_order");
+    ASSERT_GE(MetadataIndex, 0);
+    const ParsedSec &Metadata = View.Secs[(unsigned)MetadataIndex];
+    ASSERT_EQ(Metadata.Data.size(), 8u);
+    EXPECT_TRUE(llvm::all_of(ArrayRef<uint8_t>(Metadata.Data).take_front(4),
+                             [](uint8_t Byte) { return Byte == 0x11; }));
+    EXPECT_TRUE(llvm::all_of(ArrayRef<uint8_t>(Metadata.Data).drop_front(4),
+                             [](uint8_t Byte) { return Byte == 0x22; }));
+
+    unsigned CheckedRelocations = 0;
+    for (const ParsedRela &Relocation : View.Relas) {
+      if (Relocation.TargetSec != (unsigned)MetadataIndex)
+        continue;
+      ASSERT_LT(Relocation.Sym, View.Syms.size());
+      const ParsedSym &Target = View.Syms[Relocation.Sym];
+      if (Target.Name == "release_link_order_import_first") {
+        EXPECT_EQ(Relocation.Offset, 0u);
+        ++CheckedRelocations;
+      } else if (Target.Name == "release_link_order_import_second") {
+        EXPECT_EQ(Relocation.Offset, 4u);
+        ++CheckedRelocations;
+      }
+    }
+    EXPECT_EQ(CheckedRelocations, 2u);
+
+    std::string Error;
+    EXPECT_TRUE(verifyAndroidKernelModuleImage(Output, Opts, &Error)) << Error;
+    EXPECT_TRUE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Inputs), Output,
+                            Format::ELF64LE, Opts, &Error))
+        << Error;
+  }
+}
+
+TEST(MergeELFSemantic,
+     AndroidKernelReleaseRejectsUnsupportedOrdinarySectionLinkMetadata) {
+  using namespace ELF;
+  SecSpec Text{".text", 0x10, 16, SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR,
+               0xe1};
+  SecSpec Data{".data", 8, 8, SHT_PROGBITS, SHF_ALLOC | SHF_WRITE, 0xe2};
+  SymSpec Function{"release_ordinary_link_metadata", 0, 0};
+  const auto Base = buildSectionedELF({Text, Data}, {Function}, {}, EM_AARCH64);
+
+  enum class Mutation { Link, Info, InfoLink };
+  for (Mutation Kind : {Mutation::Link, Mutation::Info, Mutation::InfoLink}) {
+    SmallVector<char, 0> Input(Base.begin(), Base.end());
+    ELF::Elf64_Shdr *DataHeader = findELFSectionHeader(Input, ".data");
+    ASSERT_NE(DataHeader, nullptr);
+    switch (Kind) {
+    case Mutation::Link:
+      DataHeader->sh_link = 1;
+      break;
+    case Mutation::Info:
+      DataHeader->sh_info = 1;
+      break;
+    case Mutation::InfoLink:
+      DataHeader->sh_flags |= SHF_INFO_LINK;
+      DataHeader->sh_info = 1;
+      break;
+    }
+    for (bool Verify : {false, true}) {
+      SCOPED_TRACE(Verify ? "verify-on" : "verify-off");
+      SmallVector<SmallVector<char, 0>, 1> Inputs;
+      Inputs.push_back(Input);
+      Options Opts = androidKernelReleaseOptions();
+      Opts.verify = Verify;
+      auto [OK, Output] = mergeELF(Inputs, Opts);
+      EXPECT_FALSE(OK);
+      EXPECT_TRUE(Output.empty());
+    }
+  }
+}
+
+TEST(MergeELFSemantic,
+     AndroidKernelReleaseInputAwareVerifierChecksExactLinkOrderTarget) {
+  using namespace ELF;
+  SecSpec Text{".text", 0x10, 16, SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR,
+               0xe3};
+  SecSpec Data{".data", 8, 8, SHT_PROGBITS, SHF_ALLOC | SHF_WRITE, 0xe4};
+  SecSpec PFE{"__patchable_function_entries", 8,    8,         SHT_PROGBITS,
+              SHF_ALLOC | SHF_LINK_ORDER,     0xe5, /*Link=*/0};
+  SymSpec Function{"release_exact_link_order", 0, 0};
+  SmallVector<SmallVector<char, 0>, 1> Inputs;
+  Inputs.push_back(
+      buildSectionedELF({Text, Data, PFE}, {Function}, {}, EM_AARCH64));
+  Options Opts = androidKernelReleaseOptions();
+  auto [OK, Output] = mergeELF(Inputs, Opts);
+  ASSERT_TRUE(OK);
+
+  ElfView View = parseELF(Output);
+  ASSERT_TRUE(View.Ok);
+  const int DataIndex = View.findSec(".data");
+  ASSERT_GT(DataIndex, 0);
+  ELF::Elf64_Shdr *PFEHeader =
+      findELFSectionHeader(Output, "__patchable_function_entries");
+  ASSERT_NE(PFEHeader, nullptr);
+  ASSERT_NE(PFEHeader->sh_link, static_cast<uint32_t>(DataIndex));
+  PFEHeader->sh_link = DataIndex;
+
+  std::string Error;
+  EXPECT_TRUE(verifyAndroidKernelModuleImage(Output, Opts, &Error)) << Error;
+  EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Inputs), Output,
+                           Format::ELF64LE, Opts, &Error));
+}
+
+TEST(MergeELFSemantic,
+     AndroidKernelReleaseRejectsIncompatibleSectionEntrySizesInEitherOrder) {
+  using namespace ELF;
+  struct Case {
+    const char *Name;
+    uint32_t Type;
+    uint64_t Flags;
+    uint64_t FirstEntsize;
+    uint64_t SecondEntsize;
+  };
+  const Case Cases[] = {
+      {".data.entsize", SHT_PROGBITS, SHF_ALLOC | SHF_WRITE, 4, 8},
+      {".init_array", SHT_INIT_ARRAY, SHF_ALLOC | SHF_WRITE, 8, 16},
+      {".literal_pool", SHT_PROGBITS, SHF_ALLOC | SHF_MERGE | SHF_STRINGS, 1,
+       2},
+  };
+
+  for (const Case &C : Cases) {
+    SecSpec FirstSection{C.Name,      16,
+                         8,           C.Type,
+                         C.Flags,     0xe6,
+                         /*Link=*/-1, C.FirstEntsize};
+    SecSpec SecondSection{C.Name,      16,
+                          8,           C.Type,
+                          C.Flags,     0xe7,
+                          /*Link=*/-1, C.SecondEntsize};
+    SymSpec First{
+        "release_entsize_first", 0, 0, true, false, std::nullopt, STT_OBJECT};
+    SymSpec Second{
+        "release_entsize_second", 0, 0, true, false, std::nullopt, STT_OBJECT};
+    const auto FirstInput =
+        buildSectionedELF({FirstSection}, {First}, {}, EM_AARCH64);
+    const auto SecondInput =
+        buildSectionedELF({SecondSection}, {Second}, {}, EM_AARCH64);
+
+    for (bool Reverse : {false, true}) {
+      for (bool Verify : {false, true}) {
+        SCOPED_TRACE(std::string(C.Name) + (Reverse ? " reverse" : " forward") +
+                     (Verify ? " verify-on" : " verify-off"));
+        SmallVector<SmallVector<char, 0>, 2> Inputs;
+        if (Reverse) {
+          Inputs.push_back(SecondInput);
+          Inputs.push_back(FirstInput);
+        } else {
+          Inputs.push_back(FirstInput);
+          Inputs.push_back(SecondInput);
+        }
+        Options Opts = androidKernelReleaseOptions();
+        Opts.verify = Verify;
+        auto [OK, Output] = mergeELF(Inputs, Opts);
+        EXPECT_FALSE(OK);
+        EXPECT_TRUE(Output.empty());
+      }
+    }
+  }
+}
+
+static void expectAndroidKernelReleaseDebugCompression(
+    DebugCompressionType CompressionType) {
+  using namespace ELF;
+  SecSpec Debug0{".debug_str", 4096, 32, SHT_PROGBITS, 0, 0x41};
+  SecSpec Small0{".debug_abbrev", 1, 1, SHT_PROGBITS, 0, 0x31};
+  SecSpec Text0{".text", 16, 16, SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR, 0xe8};
+  SecSpec Debug1{".debug_str", 4096, 32, SHT_PROGBITS, 0, 0x42};
+  SecSpec Small1{".debug_abbrev", 1, 1, SHT_PROGBITS, 0, 0x32};
+  SecSpec Text1{".text", 16, 16, SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR, 0xe9};
+  SymSpec First{"release_compressed_debug_first", 2, 0};
+  SymSpec Second{"release_compressed_debug_second", 2, 0};
+  SmallVector<SmallVector<char, 0>, 2> Inputs;
+  Inputs.push_back(
+      buildSectionedELF({Debug0, Small0, Text0}, {First}, {}, EM_AARCH64));
+  Inputs.push_back(
+      buildSectionedELF({Debug1, Small1, Text1}, {Second}, {}, EM_AARCH64));
+
+  for (bool Verify : {false, true}) {
+    SCOPED_TRACE(Verify ? "verify-on" : "verify-off");
+    Options Opts = androidKernelReleaseOptions();
+    Opts.debugCompression = CompressionType;
+    Opts.verify = Verify;
+    auto [OK, Output] = mergeELF(Inputs, Opts);
+    ASSERT_TRUE(OK);
+
+    ElfView View = parseELF(Output);
+    ASSERT_TRUE(View.Ok);
+    const int DebugIndex = View.findSec(".debug_str");
+    const int SmallIndex = View.findSec(".debug_abbrev");
+    ASSERT_GE(DebugIndex, 0);
+    ASSERT_GE(SmallIndex, 0);
+    const ParsedSec &Debug = View.Secs[DebugIndex];
+    const ParsedSec &Small = View.Secs[SmallIndex];
+    EXPECT_NE(Debug.Flags & SHF_COMPRESSED, 0u);
+    EXPECT_EQ(Debug.Align, alignof(Elf64_Chdr));
+    EXPECT_EQ(Small.Flags & SHF_COMPRESSED, 0u)
+        << "compression must be skipped when its header would make the "
+           "section larger";
+
+    ASSERT_GE(Debug.Data.size(), sizeof(Elf64_Chdr));
+    Elf64_Chdr Header{};
+    memcpy(&Header, Debug.Data.data(), sizeof(Header));
+    EXPECT_EQ(Header.ch_type, CompressionType == DebugCompressionType::Zlib
+                                  ? uint32_t(ELFCOMPRESS_ZLIB)
+                                  : uint32_t(ELFCOMPRESS_ZSTD));
+    EXPECT_EQ(Header.ch_reserved, 0u);
+    EXPECT_EQ(Header.ch_size, 8192u);
+    EXPECT_EQ(Header.ch_addralign, 32u);
+
+    std::string Error;
+    EXPECT_TRUE(verifyAndroidKernelModuleImage(Output, Opts, &Error)) << Error;
+    EXPECT_TRUE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Inputs), Output,
+                            Format::ELF64LE, Opts, &Error))
+        << Error;
+  }
+
+  Options DropOpts = androidKernelReleaseOptions();
+  DropOpts.debugCompression = CompressionType;
+  DropOpts.dropDebugInfo = true;
+  for (bool Verify : {false, true}) {
+    DropOpts.verify = Verify;
+    auto [OK, Output] = mergeELF(Inputs, DropOpts);
+    ASSERT_TRUE(OK);
+    ElfView View = parseELF(Output);
+    ASSERT_TRUE(View.Ok);
+    EXPECT_LT(View.findSec(".debug_str"), 0);
+    EXPECT_LT(View.findSec(".debug_abbrev"), 0);
+    std::string Error;
+    EXPECT_TRUE(verifyAndroidKernelModuleImage(Output, DropOpts, &Error))
+        << Error;
+    EXPECT_TRUE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Inputs), Output,
+                            Format::ELF64LE, DropOpts, &Error))
+        << Error;
+  }
+}
+
+TEST(MergeELFSemantic,
+     AndroidKernelReleaseRejectsLegacyZdebugUnlessDebugIsDropped) {
+  using namespace ELF;
+  SecSpec Text{".text", 8, 4, SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR, 0xe8};
+  SecSpec LegacyDebug{".zdebug_info", 16, 1, SHT_PROGBITS, 0, 0xe9};
+  SymSpec Function{"release_legacy_zdebug", 0, 0};
+  const auto LegacyInput =
+      buildSectionedELF({Text, LegacyDebug}, {Function}, {}, EM_AARCH64);
+
+  for (bool Verify : {false, true}) {
+    SCOPED_TRACE(Verify ? "retain verify-on" : "retain verify-off");
+    SmallVector<SmallVector<char, 0>, 1> Inputs;
+    Inputs.push_back(LegacyInput);
+    Options Opts = androidKernelReleaseOptions();
+    Opts.verify = Verify;
+    auto [OK, Output] = mergeELF(Inputs, Opts);
+    EXPECT_FALSE(OK);
+    EXPECT_TRUE(Output.empty());
+  }
+
+  Options DropOpts = androidKernelReleaseOptions();
+  DropOpts.dropDebugInfo = true;
+  SmallVector<SmallVector<char, 0>, 1> LegacyInputs;
+  LegacyInputs.push_back(LegacyInput);
+  auto [DropOK, DroppedOutput] = mergeELF(LegacyInputs, DropOpts);
+  ASSERT_TRUE(DropOK);
+  ASSERT_LT(parseELF(DroppedOutput).findSec(".zdebug_info"), 0);
+
+  Options RetainOpts = androidKernelReleaseOptions();
+  std::string Error;
+  EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(LegacyInputs),
+                           DroppedOutput, Format::ELF64LE, RetainOpts, &Error));
+  EXPECT_NE(Error.find(".zdebug"), std::string::npos) << Error;
+
+  // Exercise the standalone audit independently of the producer/input replay:
+  // rename an otherwise canonical retained section in place to the same-length
+  // legacy spelling, keeping every other byte and header field valid.
+  SecSpec Retained{".release_pad", 16, 1, SHT_PROGBITS, 0, 0xea};
+  SmallVector<SmallVector<char, 0>, 1> RetainedInputs;
+  RetainedInputs.push_back(
+      buildSectionedELF({Text, Retained}, {Function}, {}, EM_AARCH64));
+  auto [RetainedOK, Tampered] = mergeELF(RetainedInputs, RetainOpts);
+  ASSERT_TRUE(RetainedOK);
+  Elf64_Shdr *RetainedHeader = findELFSectionHeader(Tampered, ".release_pad");
+  ASSERT_NE(RetainedHeader, nullptr);
+  auto *Header = reinterpret_cast<Elf64_Ehdr *>(Tampered.data());
+  auto *Sections =
+      reinterpret_cast<Elf64_Shdr *>(Tampered.data() + Header->e_shoff);
+  ASSERT_LT(Header->e_shstrndx, Header->e_shnum);
+  const Elf64_Shdr &Shstrtab = Sections[Header->e_shstrndx];
+  ASSERT_LE(Shstrtab.sh_offset + RetainedHeader->sh_name +
+                StringRef(".zdebug_info").size(),
+            Tampered.size());
+  ASSERT_EQ(StringRef(".release_pad").size(), StringRef(".zdebug_info").size());
+  memcpy(Tampered.data() + Shstrtab.sh_offset + RetainedHeader->sh_name,
+         ".zdebug_info", StringRef(".zdebug_info").size());
+  Error.clear();
+  EXPECT_FALSE(verifyAndroidKernelModuleImage(Tampered, RetainOpts, &Error));
+  EXPECT_NE(Error.find(".zdebug"), std::string::npos) << Error;
+
+  for (bool Verify : {false, true}) {
+    SCOPED_TRACE(Verify ? "drop verify-on" : "drop verify-off");
+    Options Opts = DropOpts;
+    Opts.verify = Verify;
+    auto [OK, Output] = mergeELF(LegacyInputs, Opts);
+    ASSERT_TRUE(OK);
+    EXPECT_LT(parseELF(Output).findSec(".zdebug_info"), 0);
+    Error.clear();
+    EXPECT_TRUE(verifyAndroidKernelModuleImage(Output, Opts, &Error)) << Error;
+    EXPECT_TRUE(verifyMerge(ArrayRef<SmallVector<char, 0>>(LegacyInputs),
+                            Output, Format::ELF64LE, Opts, &Error))
+        << Error;
+  }
+}
+
+TEST(MergeELFSemantic, AndroidKernelReleaseZlibDebugCompressionIsAuditable) {
+  const compression::Format Format =
+      compression::formatFor(DebugCompressionType::Zlib);
+  if (const char *Reason = compression::getReasonIfUnsupported(Format))
+    GTEST_SKIP() << Reason;
+  expectAndroidKernelReleaseDebugCompression(DebugCompressionType::Zlib);
+}
+
+TEST(MergeELFSemantic, AndroidKernelReleaseZstdDebugCompressionIsAuditable) {
+  const compression::Format Format =
+      compression::formatFor(DebugCompressionType::Zstd);
+  if (const char *Reason = compression::getReasonIfUnsupported(Format))
+    GTEST_SKIP() << Reason;
+  expectAndroidKernelReleaseDebugCompression(DebugCompressionType::Zstd);
+}
+
+TEST(MergeELFSemantic,
+     AndroidKernelReleaseAcceptsLoaderRelocationWidthsAtExactBoundary) {
+  using namespace ELF;
+  SecSpec Text{".text", 8, 4, SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR, 0xea};
+  SecSpec Data{".data", 8, 8, SHT_PROGBITS, SHF_ALLOC | SHF_WRITE, 0xeb};
+  SymSpec Function{"release_relocation_boundary", 0, 0};
+  const RelSpec Relocations[] = {
+      {1, 8, Function.Name, R_AARCH64_NONE, 0},
+      {1, 6, Function.Name, R_AARCH64_ABS16, 0},
+      {1, 4, Function.Name, R_AARCH64_ABS32, 0},
+      {1, 0, Function.Name, R_AARCH64_ABS64, 0},
+      {0, 4, Function.Name, R_AARCH64_CALL26, 0},
+  };
+  SmallVector<SmallVector<char, 0>, 1> Inputs;
+  Inputs.push_back(
+      buildSectionedELF({Text, Data}, {Function}, Relocations, EM_AARCH64));
+  for (bool Verify : {false, true}) {
+    Options Opts = androidKernelReleaseOptions();
+    Opts.verify = Verify;
+    auto [OK, Output] = mergeELF(Inputs, Opts);
+    ASSERT_TRUE(OK);
+    std::string Error;
+    EXPECT_TRUE(verifyAndroidKernelModuleImage(Output, Opts, &Error)) << Error;
+    EXPECT_TRUE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Inputs), Output,
+                            Format::ELF64LE, Opts, &Error))
+        << Error;
+  }
+}
+
+TEST(MergeELFSemantic,
+     AndroidKernelReleaseRejectsUnsupportedOrOverrunningRelocations) {
+  using namespace ELF;
+  SecSpec Text{".text", 8, 4, SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR, 0xec};
+  SecSpec Data{".data", 8, 8, SHT_PROGBITS, SHF_ALLOC | SHF_WRITE, 0xed};
+  SymSpec Function{"release_bad_relocation_width", 0, 0};
+  const RelSpec Invalid[] = {
+      {1, 7, Function.Name, R_AARCH64_ABS16, 0},
+      {1, 5, Function.Name, R_AARCH64_ABS32, 0},
+      {1, 1, Function.Name, R_AARCH64_ABS64, 0},
+      {0, 5, Function.Name, R_AARCH64_CALL26, 0},
+      {1, 0, Function.Name, UINT32_C(0x7fffffff), 0},
+      {1, 9, Function.Name, R_AARCH64_NONE, 0},
+  };
+  for (const RelSpec &Relocation : Invalid) {
+    const auto Input =
+        buildSectionedELF({Text, Data}, {Function}, {Relocation}, EM_AARCH64);
+    for (bool Verify : {false, true}) {
+      SCOPED_TRACE(
+          (Twine(Relocation.Type) + (Verify ? " verify-on" : " verify-off"))
+              .str());
+      SmallVector<SmallVector<char, 0>, 1> Inputs;
+      Inputs.push_back(Input);
+      Options Opts = androidKernelReleaseOptions();
+      Opts.verify = Verify;
+      auto [OK, Output] = mergeELF(Inputs, Opts);
+      EXPECT_FALSE(OK);
+      EXPECT_TRUE(Output.empty());
+    }
+  }
+}
+
+TEST(MergeELFSemantic,
+     AndroidKernelReleaseStandaloneAuditChecksRelocationWidthAndType) {
+  using namespace ELF;
+  SecSpec Text{".text", 8, 4, SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR, 0xee};
+  SecSpec Data{".data", 8, 8, SHT_PROGBITS, SHF_ALLOC | SHF_WRITE, 0xef};
+  SymSpec Function{"release_relocation_audit", 0, 0};
+  RelSpec Reference{1, 0, Function.Name, R_AARCH64_ABS64, 0};
+  SmallVector<SmallVector<char, 0>, 1> Inputs;
+  Inputs.push_back(
+      buildSectionedELF({Text, Data}, {Function}, {Reference}, EM_AARCH64));
+  Options Opts = androidKernelReleaseOptions();
+  auto [OK, Output] = mergeELF(Inputs, Opts);
+  ASSERT_TRUE(OK);
+
+  auto ExpectBothReject = [&](SmallVector<char, 0> Image, StringRef Case) {
+    SCOPED_TRACE(Case.str());
+    std::string Error;
+    EXPECT_FALSE(verifyAndroidKernelModuleImage(Image, Opts, &Error));
+    EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Inputs), Image,
+                             Format::ELF64LE, Opts, &Error));
+  };
+
+  SmallVector<char, 0> Overrun(Output.begin(), Output.end());
+  ELF::Elf64_Shdr *RelaHeader = findELFSectionHeader(Overrun, ".rela.data");
+  ASSERT_NE(RelaHeader, nullptr);
+  auto *Relocation = reinterpret_cast<ELF::Elf64_Rela *>(Overrun.data() +
+                                                         RelaHeader->sh_offset);
+  Relocation->r_offset = 1;
+  ExpectBothReject(std::move(Overrun), "ABS64 overruns target");
+
+  SmallVector<char, 0> Unknown(Output.begin(), Output.end());
+  RelaHeader = findELFSectionHeader(Unknown, ".rela.data");
+  ASSERT_NE(RelaHeader, nullptr);
+  Relocation = reinterpret_cast<ELF::Elf64_Rela *>(Unknown.data() +
+                                                   RelaHeader->sh_offset);
+  Relocation->setSymbolAndType(Relocation->getSymbol(), UINT32_C(0x7fffffff));
+  ExpectBothReject(std::move(Unknown), "unsupported relocation type");
+}
+
+TEST(MergeELFSemantic,
+     AndroidKernelReleaseChecksAllLoaderRelocationBoundariesIndependently) {
+  using namespace ELF;
+  struct RelocationExpectation {
+    const char *Name;
+    uint32_t Type;
+    uint8_t Width;
+  };
+  // Authoritative test oracle copied from the Linux AArch64 module loader's
+  // static RELA cases. Deliberately do not call writeWidth() here: a missing,
+  // extra, or wrongly-sized production policy entry must disagree with this
+  // table instead of teaching the test the same bug.
+  constexpr RelocationExpectation Cases[] = {
+      {"NONE", R_AARCH64_NONE, 0},
+      {"ABS16", R_AARCH64_ABS16, 2},
+      {"PREL16", R_AARCH64_PREL16, 2},
+      {"ABS32", R_AARCH64_ABS32, 4},
+      {"PREL32", R_AARCH64_PREL32, 4},
+      {"ABS64", R_AARCH64_ABS64, 8},
+      {"PREL64", R_AARCH64_PREL64, 8},
+      {"MOVW_UABS_G0", R_AARCH64_MOVW_UABS_G0, 4},
+      {"MOVW_UABS_G0_NC", R_AARCH64_MOVW_UABS_G0_NC, 4},
+      {"MOVW_UABS_G1", R_AARCH64_MOVW_UABS_G1, 4},
+      {"MOVW_UABS_G1_NC", R_AARCH64_MOVW_UABS_G1_NC, 4},
+      {"MOVW_UABS_G2", R_AARCH64_MOVW_UABS_G2, 4},
+      {"MOVW_UABS_G2_NC", R_AARCH64_MOVW_UABS_G2_NC, 4},
+      {"MOVW_UABS_G3", R_AARCH64_MOVW_UABS_G3, 4},
+      {"MOVW_SABS_G0", R_AARCH64_MOVW_SABS_G0, 4},
+      {"MOVW_SABS_G1", R_AARCH64_MOVW_SABS_G1, 4},
+      {"MOVW_SABS_G2", R_AARCH64_MOVW_SABS_G2, 4},
+      {"MOVW_PREL_G0", R_AARCH64_MOVW_PREL_G0, 4},
+      {"MOVW_PREL_G0_NC", R_AARCH64_MOVW_PREL_G0_NC, 4},
+      {"MOVW_PREL_G1", R_AARCH64_MOVW_PREL_G1, 4},
+      {"MOVW_PREL_G1_NC", R_AARCH64_MOVW_PREL_G1_NC, 4},
+      {"MOVW_PREL_G2", R_AARCH64_MOVW_PREL_G2, 4},
+      {"MOVW_PREL_G2_NC", R_AARCH64_MOVW_PREL_G2_NC, 4},
+      {"MOVW_PREL_G3", R_AARCH64_MOVW_PREL_G3, 4},
+      {"LD_PREL_LO19", R_AARCH64_LD_PREL_LO19, 4},
+      {"ADR_PREL_LO21", R_AARCH64_ADR_PREL_LO21, 4},
+      {"ADR_PREL_PG_HI21", R_AARCH64_ADR_PREL_PG_HI21, 4},
+      {"ADR_PREL_PG_HI21_NC", R_AARCH64_ADR_PREL_PG_HI21_NC, 4},
+      {"ADD_ABS_LO12_NC", R_AARCH64_ADD_ABS_LO12_NC, 4},
+      {"LDST8_ABS_LO12_NC", R_AARCH64_LDST8_ABS_LO12_NC, 4},
+      {"LDST16_ABS_LO12_NC", R_AARCH64_LDST16_ABS_LO12_NC, 4},
+      {"LDST32_ABS_LO12_NC", R_AARCH64_LDST32_ABS_LO12_NC, 4},
+      {"LDST64_ABS_LO12_NC", R_AARCH64_LDST64_ABS_LO12_NC, 4},
+      {"LDST128_ABS_LO12_NC", R_AARCH64_LDST128_ABS_LO12_NC, 4},
+      {"TSTBR14", R_AARCH64_TSTBR14, 4},
+      {"CONDBR19", R_AARCH64_CONDBR19, 4},
+      {"JUMP26", R_AARCH64_JUMP26, 4},
+      {"CALL26", R_AARCH64_CALL26, 4},
+  };
+  static_assert(sizeof(Cases) / sizeof(Cases[0]) == 38,
+                "keep the loader relocation oracle exhaustive");
+
+  constexpr uint64_t TargetSize = 16;
+  SecSpec Text{".text", TargetSize, 4, SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR,
+               0xf8};
+  SymSpec Function{"release_all_relocation_widths", 0, 0};
+  for (const RelocationExpectation &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    const uint64_t ExactBoundary = TargetSize - Case.Width;
+    RelSpec Good{0, ExactBoundary, Function.Name, Case.Type, 0};
+    const auto GoodInput =
+        buildSectionedELF({Text}, {Function}, {Good}, EM_AARCH64);
+    SmallVector<char, 0> CanonicalOutput;
+    for (bool Verify : {false, true}) {
+      SCOPED_TRACE(Verify ? "exact verify-on" : "exact verify-off");
+      SmallVector<SmallVector<char, 0>, 1> Inputs;
+      Inputs.push_back(GoodInput);
+      Options Opts = androidKernelReleaseOptions();
+      Opts.verify = Verify;
+      auto [OK, Output] = mergeELF(Inputs, Opts);
+      ASSERT_TRUE(OK);
+      if (!Verify)
+        CanonicalOutput = Output;
+      std::string Error;
+      EXPECT_TRUE(verifyAndroidKernelModuleImage(Output, Opts, &Error))
+          << Error;
+      EXPECT_TRUE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Inputs), Output,
+                              Format::ELF64LE, Opts, &Error))
+          << Error;
+    }
+
+    RelSpec Overrun = Good;
+    ++Overrun.Offset;
+    const auto BadInput =
+        buildSectionedELF({Text}, {Function}, {Overrun}, EM_AARCH64);
+    for (bool Verify : {false, true}) {
+      SCOPED_TRACE(Verify ? "overrun verify-on" : "overrun verify-off");
+      SmallVector<SmallVector<char, 0>, 1> Inputs;
+      Inputs.push_back(BadInput);
+      Options Opts = androidKernelReleaseOptions();
+      Opts.verify = Verify;
+      auto [OK, Output] = mergeELF(Inputs, Opts);
+      EXPECT_FALSE(OK);
+      EXPECT_TRUE(Output.empty());
+    }
+
+    ASSERT_FALSE(CanonicalOutput.empty());
+    Elf64_Shdr *Rela = findELFSectionHeader(CanonicalOutput, ".rela.text");
+    ASSERT_NE(Rela, nullptr);
+    ASSERT_GE(Rela->sh_size, sizeof(Elf64_Rela));
+    auto *Entry = reinterpret_cast<Elf64_Rela *>(CanonicalOutput.data() +
+                                                 Rela->sh_offset);
+    ++Entry->r_offset;
+    Options Opts = androidKernelReleaseOptions();
+    std::string Error;
+    EXPECT_FALSE(verifyAndroidKernelModuleImage(CanonicalOutput, Opts, &Error));
+    SmallVector<SmallVector<char, 0>, 1> Inputs;
+    Inputs.push_back(GoodInput);
+    Error.clear();
+    EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Inputs),
+                             CanonicalOutput, Format::ELF64LE, Opts, &Error));
+  }
+}
+
+TEST(MergeELFSemantic,
+     AndroidKernelReleaseStandaloneAuditRejectsUnreachableStrtabPrefix) {
+  using namespace ELF;
+  SecSpec Text{".text", 8, 4, SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR, 0xf0};
+  SecSpec Data{".data", 8, 8, SHT_PROGBITS, SHF_ALLOC | SHF_WRITE, 0xf1};
+  SymSpec Import{"release_exact_import_name", -1, 0};
+  RelSpec Reference{1, 0, Import.Name, R_AARCH64_ABS64, 0};
+  SmallVector<SmallVector<char, 0>, 1> Inputs;
+  Inputs.push_back(
+      buildSectionedELF({Text, Data}, {Import}, {Reference}, EM_AARCH64));
+  Options Opts = androidKernelReleaseOptions();
+  auto [OK, Output] = mergeELF(Inputs, Opts);
+  ASSERT_TRUE(OK);
+
+  ELF::Elf64_Shdr *Symtab = findELFSectionHeader(Output, ".symtab");
+  ASSERT_NE(Symtab, nullptr);
+  auto *Header = reinterpret_cast<Elf64_Ehdr *>(Output.data());
+  auto *Sections =
+      reinterpret_cast<Elf64_Shdr *>(Output.data() + Header->e_shoff);
+  ASSERT_LT(Symtab->sh_link, Header->e_shnum);
+  Elf64_Shdr &Strtab = Sections[Symtab->sh_link];
+  auto *Symbols =
+      reinterpret_cast<Elf64_Sym *>(Output.data() + Symtab->sh_offset);
+  const unsigned Count = Symtab->sh_size / sizeof(Elf64_Sym);
+  Elf64_Sym *ImportSymbol = nullptr;
+  for (unsigned I = 0; I < Count; ++I) {
+    ASSERT_LT(Symbols[I].st_name, Strtab.sh_size);
+    if (StringRef(Output.data() + Strtab.sh_offset + Symbols[I].st_name) ==
+        Import.Name)
+      ImportSymbol = &Symbols[I];
+  }
+  ASSERT_NE(ImportSymbol, nullptr);
+  ++ImportSymbol->st_name;
+
+  std::string Error;
+  EXPECT_FALSE(verifyAndroidKernelModuleImage(Output, Opts, &Error));
+  EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Inputs), Output,
+                           Format::ELF64LE, Opts, &Error));
+}
+
+TEST(MergeELFSemantic,
+     AndroidKernelReleaseStandaloneAuditAllowsReferencedSuffixSharing) {
+  using namespace ELF;
+  constexpr StringLiteral LongImport("prefix_suffix_import");
+  constexpr StringLiteral SuffixImport("suffix_import");
+  SecSpec Text{".text", 8, 4, SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR, 0xf2};
+  SecSpec Data{".data", 16, 8, SHT_PROGBITS, SHF_ALLOC | SHF_WRITE, 0xf3};
+  SymSpec Long{LongImport.str(), -1, 0};
+  SymSpec Suffix{SuffixImport.str(), -1, 0};
+  RelSpec LongReference{1, 0, Long.Name, R_AARCH64_ABS64, 0};
+  RelSpec SuffixReference{1, 8, Suffix.Name, R_AARCH64_ABS64, 0};
+  SmallVector<SmallVector<char, 0>, 1> Inputs;
+  Inputs.push_back(buildSectionedELF({Text, Data}, {Long, Suffix},
+                                     {LongReference, SuffixReference},
+                                     EM_AARCH64));
+  Options Opts = androidKernelReleaseOptions();
+  auto [OK, Output] = mergeELF(Inputs, Opts);
+  ASSERT_TRUE(OK);
+
+  ELF::Elf64_Shdr *Symtab = findELFSectionHeader(Output, ".symtab");
+  ASSERT_NE(Symtab, nullptr);
+  auto *Header = reinterpret_cast<Elf64_Ehdr *>(Output.data());
+  auto *Sections =
+      reinterpret_cast<Elf64_Shdr *>(Output.data() + Header->e_shoff);
+  ASSERT_LT(Symtab->sh_link, Header->e_shnum);
+  Elf64_Shdr &Strtab = Sections[Symtab->sh_link];
+  auto *Symbols =
+      reinterpret_cast<Elf64_Sym *>(Output.data() + Symtab->sh_offset);
+  const unsigned Count = Symtab->sh_size / sizeof(Elf64_Sym);
+  Elf64_Sym *SuffixSymbol = nullptr;
+  uint32_t LongOffset = 0;
+  uint32_t OldSuffixOffset = 0;
+  for (unsigned I = 0; I < Count; ++I) {
+    ASSERT_LT(Symbols[I].st_name, Strtab.sh_size);
+    StringRef Name(Output.data() + Strtab.sh_offset + Symbols[I].st_name);
+    if (Name == LongImport)
+      LongOffset = Symbols[I].st_name;
+    if (Name == SuffixImport) {
+      SuffixSymbol = &Symbols[I];
+      OldSuffixOffset = Symbols[I].st_name;
+    }
+  }
+  ASSERT_NE(LongOffset, 0u);
+  ASSERT_NE(SuffixSymbol, nullptr);
+  constexpr uint32_t PrefixLength = LongImport.size() - SuffixImport.size();
+  SuffixSymbol->st_name = LongOffset + PrefixLength;
+  memset(Output.data() + Strtab.sh_offset + OldSuffixOffset, 0,
+         SuffixImport.size());
+
+  std::string Error;
+  EXPECT_TRUE(verifyAndroidKernelModuleImage(Output, Opts, &Error)) << Error;
+  EXPECT_TRUE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Inputs), Output,
+                          Format::ELF64LE, Opts, &Error))
+      << Error;
+}
+
+TEST(MergeELFSemantic, AndroidKernelReleaseRequiresCanonicalTwoStringTables) {
+  using namespace ELF;
+  SecSpec Text{".text", 8, 4, SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR, 0xf4};
+  SecSpec Debug{".debug_extra", 4, 1, SHT_PROGBITS, 0, 0xf5};
+  SymSpec Function{"release_canonical_strtabs", 0, 0};
+  SmallVector<SmallVector<char, 0>, 1> Inputs;
+  Inputs.push_back(
+      buildSectionedELF({Text, Debug}, {Function}, {}, EM_AARCH64));
+  Options Opts = androidKernelReleaseOptions();
+  auto [OK, Output] = mergeELF(Inputs, Opts);
+  ASSERT_TRUE(OK);
+
+  auto ExpectBothReject = [&](SmallVector<char, 0> Image, StringRef Case) {
+    SCOPED_TRACE(Case.str());
+    std::string Error;
+    EXPECT_FALSE(verifyAndroidKernelModuleImage(Image, Opts, &Error));
+    EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Inputs), Image,
+                             Format::ELF64LE, Opts, &Error));
+  };
+
+  SmallVector<char, 0> Extra(Output.begin(), Output.end());
+  Elf64_Shdr *DebugHeader = findELFSectionHeader(Extra, ".debug_extra");
+  ASSERT_NE(DebugHeader, nullptr);
+  DebugHeader->sh_type = SHT_STRTAB;
+  ExpectBothReject(std::move(Extra), "extra SHT_STRTAB");
+
+  SmallVector<char, 0> BadShstrtab(Output.begin(), Output.end());
+  auto *BadHeader = reinterpret_cast<Elf64_Ehdr *>(BadShstrtab.data());
+  auto *BadSections =
+      reinterpret_cast<Elf64_Shdr *>(BadShstrtab.data() + BadHeader->e_shoff);
+  ASSERT_LT(BadHeader->e_shstrndx, BadHeader->e_shnum);
+  BadSections[BadHeader->e_shstrndx].sh_name = 0;
+  ExpectBothReject(std::move(BadShstrtab), "noncanonical .shstrtab name");
+
+  SmallVector<char, 0> BadStrtabFlags(Output.begin(), Output.end());
+  Elf64_Shdr *StrtabHeader = findELFSectionHeader(BadStrtabFlags, ".strtab");
+  ASSERT_NE(StrtabHeader, nullptr);
+  StrtabHeader->sh_flags = SHF_ALLOC;
+  ExpectBothReject(std::move(BadStrtabFlags), "noncanonical .strtab flags");
+
+  SmallVector<char, 0> BadShstrtabShape(Output.begin(), Output.end());
+  BadHeader = reinterpret_cast<Elf64_Ehdr *>(BadShstrtabShape.data());
+  BadSections = reinterpret_cast<Elf64_Shdr *>(BadShstrtabShape.data() +
+                                               BadHeader->e_shoff);
+  ASSERT_LT(BadHeader->e_shstrndx, BadHeader->e_shnum);
+  BadSections[BadHeader->e_shstrndx].sh_entsize = 1;
+  BadSections[BadHeader->e_shstrndx].sh_addralign = 2;
+  ExpectBothReject(std::move(BadShstrtabShape),
+                   "noncanonical .shstrtab header shape");
+}
+
+TEST(MergeELFSemantic,
+     AndroidKernelReleaseRequiresOneOrderedCanonicalMetadataSuffix) {
+  using namespace ELF;
+  SecSpec Text{".text", 8, 4, SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR, 0xf6};
+  SecSpec Data{".data", 8, 8, SHT_PROGBITS, SHF_ALLOC | SHF_WRITE, 0xf7};
+  SymSpec Function{"release_metadata_schema", 0, 0};
+  const RelSpec Relocations[] = {
+      {0, 4, Function.Name, R_AARCH64_CALL26, 0},
+      {1, 0, Function.Name, R_AARCH64_ABS64, 0},
+  };
+  SmallVector<SmallVector<char, 0>, 1> Inputs;
+  Inputs.push_back(
+      buildSectionedELF({Text, Data}, {Function}, Relocations, EM_AARCH64));
+  Options Opts = androidKernelReleaseOptions();
+  auto [OK, Output] = mergeELF(Inputs, Opts);
+  ASSERT_TRUE(OK);
+
+  auto HeaderAndSections = [](SmallVectorImpl<char> &Image) {
+    auto *Header = reinterpret_cast<Elf64_Ehdr *>(Image.data());
+    auto *Sections =
+        reinterpret_cast<Elf64_Shdr *>(Image.data() + Header->e_shoff);
+    return std::pair{Header, Sections};
+  };
+  auto SectionIndex = [&](SmallVectorImpl<char> &Image,
+                          StringRef Name) -> unsigned {
+    auto [Header, Sections] = HeaderAndSections(Image);
+    Elf64_Shdr *Section = findELFSectionHeader(Image, Name);
+    EXPECT_NE(Section, nullptr) << Name.str();
+    return Section ? static_cast<unsigned>(Section - Sections)
+                   : Header->e_shnum;
+  };
+  auto ExpectBothReject = [&](SmallVector<char, 0> Image, StringRef Case) {
+    SCOPED_TRACE(Case.str());
+    std::string Error;
+    EXPECT_FALSE(verifyAndroidKernelModuleImage(Image, Opts, &Error));
+    Error.clear();
+    EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Inputs), Image,
+                             Format::ELF64LE, Opts, &Error));
+  };
+
+  {
+    SmallVector<char, 0> Image(Output.begin(), Output.end());
+    auto [Header, Sections] = HeaderAndSections(Image);
+    ASSERT_GT(Header->e_shnum, 0u);
+    Sections[0].sh_offset = 1;
+    ExpectBothReject(std::move(Image), "section zero is not entirely zero");
+  }
+
+  {
+    SmallVector<char, 0> Image(Output.begin(), Output.end());
+    auto [Header, Sections] = HeaderAndSections(Image);
+    const unsigned Symtab = SectionIndex(Image, ".symtab");
+    const unsigned Strtab = SectionIndex(Image, ".strtab");
+    ASSERT_LT(Symtab, Header->e_shnum);
+    ASSERT_LT(Strtab, Header->e_shnum);
+    ASSERT_EQ(Strtab, Symtab + 1);
+    std::swap(Sections[Symtab], Sections[Strtab]);
+    Sections[Strtab].sh_link = Symtab;
+    for (unsigned I = 0; I < Header->e_shnum; ++I)
+      if (Sections[I].sh_type == SHT_RELA)
+        Sections[I].sh_link = Strtab;
+    ExpectBothReject(std::move(Image), ".strtab precedes .symtab");
+  }
+
+  {
+    SmallVector<char, 0> Image(Output.begin(), Output.end());
+    auto [Header, Sections] = HeaderAndSections(Image);
+    const unsigned TextRela = SectionIndex(Image, ".rela.text");
+    const unsigned DataRela = SectionIndex(Image, ".rela.data");
+    ASSERT_LT(TextRela, Header->e_shnum);
+    ASSERT_LT(DataRela, Header->e_shnum);
+    ASSERT_LT(TextRela, DataRela);
+    std::swap(Sections[TextRela], Sections[DataRela]);
+    ExpectBothReject(std::move(Image),
+                     "relocation metadata is not target-ordinal ordered");
+  }
+
+  {
+    SmallVector<char, 0> Image(Output.begin(), Output.end());
+    Elf64_Shdr *Rela = findELFSectionHeader(Image, ".rela.data");
+    ASSERT_NE(Rela, nullptr);
+    Rela->sh_flags = SHF_ALLOC;
+    ExpectBothReject(std::move(Image), "relocation metadata has flags");
+  }
+
+  {
+    SmallVector<char, 0> Image(Output.begin(), Output.end());
+    Elf64_Shdr *Rela = findELFSectionHeader(Image, ".rela.data");
+    ASSERT_NE(Rela, nullptr);
+    Rela->sh_size = 0;
+    ExpectBothReject(std::move(Image), "empty relocation metadata");
+  }
+
+  {
+    SmallVector<char, 0> Image(Output.begin(), Output.end());
+    auto [Header, Sections] = HeaderAndSections(Image);
+    const unsigned Rela = SectionIndex(Image, ".rela.data");
+    const unsigned Shstrtab = SectionIndex(Image, ".shstrtab");
+    ASSERT_LT(Rela, Header->e_shnum);
+    ASSERT_EQ(Shstrtab + 1, Header->e_shnum);
+    std::swap(Sections[Rela], Sections[Shstrtab]);
+    Header->e_shstrndx = Rela;
+    ExpectBothReject(std::move(Image), ".shstrtab is not the last section");
+  }
+}
+
+TEST(MergeELFSemantic,
+     AndroidKernelReleaseRequiresAnEntirelyZeroNullSymbolRecord) {
+  using namespace ELF;
+  SecSpec Text{".text", 8, 4, SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR, 0xf9};
+  SymSpec Function{"release_zero_null_symbol", 0, 0};
+  SmallVector<SmallVector<char, 0>, 1> Inputs;
+  Inputs.push_back(buildSectionedELF({Text}, {Function}, {}, EM_AARCH64));
+  Options Opts = androidKernelReleaseOptions();
+  auto [OK, Output] = mergeELF(Inputs, Opts);
+  ASSERT_TRUE(OK);
+
+  enum class Field { Name, Value, Size, Section, Info, Other };
+  for (Field Mutated : {Field::Name, Field::Value, Field::Size, Field::Section,
+                        Field::Info, Field::Other}) {
+    SmallVector<char, 0> Image(Output.begin(), Output.end());
+    Elf64_Shdr *Symtab = findELFSectionHeader(Image, ".symtab");
+    ASSERT_NE(Symtab, nullptr);
+    ASSERT_GE(Symtab->sh_size, sizeof(Elf64_Sym));
+    auto *Null =
+        reinterpret_cast<Elf64_Sym *>(Image.data() + Symtab->sh_offset);
+    switch (Mutated) {
+    case Field::Name:
+      Null->st_name = 1;
+      break;
+    case Field::Value:
+      Null->st_value = 1;
+      break;
+    case Field::Size:
+      Null->st_size = 1;
+      break;
+    case Field::Section:
+      Null->st_shndx = 1;
+      break;
+    case Field::Info:
+      Null->st_info = 1;
+      break;
+    case Field::Other:
+      Null->st_other = 1;
+      break;
+    }
+    std::string Error;
+    EXPECT_FALSE(verifyAndroidKernelModuleImage(Image, Opts, &Error));
+    Error.clear();
+    EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Inputs), Image,
+                             Format::ELF64LE, Opts, &Error));
+  }
+}
+
+TEST(MergeELFSemantic,
+     AndroidKernelReleaseRebuildsAndAuditsReachableSectionNames) {
+  using namespace ELF;
+  SecSpec Text{".text", 8, 4, SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR, 0xfa};
+  SecSpec Padding{".release_pad", 8, 1, SHT_PROGBITS, 0, 0xfb};
+  SymSpec Function{"release_reachable_shstrtab", 0, 0};
+  const auto CanonicalInput =
+      buildSectionedELF({Text, Padding}, {Function}, {}, EM_AARCH64);
+
+  // The apparent input name starts one byte into an older string. A canonical
+  // producer must serialize only the referenced suffix, not copy the stale
+  // leading byte from the input section-name table.
+  SmallVector<char, 0> PrefixInput(CanonicalInput.begin(),
+                                   CanonicalInput.end());
+  Elf64_Shdr *PrefixHeader = findELFSectionHeader(PrefixInput, ".release_pad");
+  ASSERT_NE(PrefixHeader, nullptr);
+  ++PrefixHeader->sh_name;
+  SmallVector<SmallVector<char, 0>, 1> PrefixInputs;
+  PrefixInputs.push_back(PrefixInput);
+  for (bool Verify : {false, true}) {
+    SCOPED_TRACE(Verify ? "producer verify-on" : "producer verify-off");
+    Options Opts = androidKernelReleaseOptions();
+    Opts.verify = Verify;
+    auto [OK, Output] = mergeELF(PrefixInputs, Opts);
+    ASSERT_TRUE(OK);
+    EXPECT_NE(findELFSectionHeader(Output, "release_pad"), nullptr);
+    EXPECT_EQ(findELFSectionHeader(Output, ".release_pad"), nullptr);
+    auto *Header = reinterpret_cast<Elf64_Ehdr *>(Output.data());
+    auto *Sections =
+        reinterpret_cast<Elf64_Shdr *>(Output.data() + Header->e_shoff);
+    ASSERT_LT(Header->e_shstrndx, Header->e_shnum);
+    const Elf64_Shdr &Shstrtab = Sections[Header->e_shstrndx];
+    StringRef Names(Output.data() + Shstrtab.sh_offset, Shstrtab.sh_size);
+    EXPECT_EQ(Names.find(".release_pad"), StringRef::npos);
+    std::string Error;
+    EXPECT_TRUE(verifyAndroidKernelModuleImage(Output, Opts, &Error)) << Error;
+    EXPECT_TRUE(verifyMerge(ArrayRef<SmallVector<char, 0>>(PrefixInputs),
+                            Output, Format::ELF64LE, Opts, &Error))
+        << Error;
+  }
+
+  SmallVector<SmallVector<char, 0>, 1> Inputs;
+  Inputs.push_back(CanonicalInput);
+  Options Opts = androidKernelReleaseOptions();
+  auto [OK, Output] = mergeELF(Inputs, Opts);
+  ASSERT_TRUE(OK);
+  auto ExpectBothRejectAsShstrtab = [&](SmallVector<char, 0> Image,
+                                        StringRef Case) {
+    SCOPED_TRACE(Case.str());
+    std::string Error;
+    EXPECT_FALSE(verifyAndroidKernelModuleImage(Image, Opts, &Error));
+    EXPECT_NE(Error.find(".shstrtab"), std::string::npos) << Error;
+    Error.clear();
+    EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Inputs), Image,
+                             Format::ELF64LE, Opts, &Error));
+    EXPECT_NE(Error.find(".shstrtab"), std::string::npos) << Error;
+  };
+
+  {
+    SmallVector<char, 0> Image(Output.begin(), Output.end());
+    Elf64_Shdr *Section = findELFSectionHeader(Image, ".release_pad");
+    ASSERT_NE(Section, nullptr);
+    ++Section->sh_name;
+    ExpectBothRejectAsShstrtab(
+        std::move(Image),
+        "stale section-name prefix is unreachable from every sh_name");
+  }
+  {
+    SmallVector<char, 0> Image(Output.begin(), Output.end());
+    auto *Header = reinterpret_cast<Elf64_Ehdr *>(Image.data());
+    auto *Sections =
+        reinterpret_cast<Elf64_Shdr *>(Image.data() + Header->e_shoff);
+    ASSERT_LT(Header->e_shstrndx, Header->e_shnum);
+    const Elf64_Shdr &Shstrtab = Sections[Header->e_shstrndx];
+    ASSERT_LT(Shstrtab.sh_offset, Image.size());
+    Image[Shstrtab.sh_offset] = 'X';
+    ExpectBothRejectAsShstrtab(std::move(Image),
+                               ".shstrtab does not start with NUL");
+  }
+}
+
+TEST(MergeELFSemantic,
+     AndroidKernelReleaseVerifiersRejectTruncatedPayloadAndRelocationSite) {
+  SecSpec Text{
+      ".text", 0x10, 16, ELF::SHT_PROGBITS, ELF::SHF_ALLOC | ELF::SHF_EXECINSTR,
+      0xd3};
+  SecSpec Data{
+      ".data", 8, 8, ELF::SHT_PROGBITS, ELF::SHF_ALLOC | ELF::SHF_WRITE, 0xd4};
+  SymSpec Function{"release_output_range", 0, 0};
+  RelSpec Reference{1, 0, Function.Name, ELF::R_AARCH64_ABS64, 4};
+  SmallVector<SmallVector<char, 0>, 1> Inputs;
+  Inputs.push_back(buildSectionedELF({Text, Data}, {Function}, {Reference},
+                                     ELF::EM_AARCH64));
+  Options Opts = androidKernelReleaseOptions();
+  auto [OK, Output] = mergeELF(Inputs, Opts);
+  ASSERT_TRUE(OK);
+  auto ExpectBothReject = [&](ArrayRef<char> Image, StringRef Case) {
+    SCOPED_TRACE(Case.str());
+    std::string Error;
+    EXPECT_FALSE(verifyAndroidKernelModuleImage(Image, Opts, &Error));
+    EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Inputs), Image,
+                             Format::ELF64LE, Opts, &Error));
+  };
+
+  SmallVector<char, 0> Truncated(Output.begin(), Output.end());
+  ELF::Elf64_Shdr *DataHeader = findELFSectionHeader(Truncated, ".data");
+  ASSERT_NE(DataHeader, nullptr);
+  DataHeader->sh_offset = Truncated.size() - 4;
+  DataHeader->sh_size = 8;
+  ExpectBothReject(Truncated, "truncated section payload");
+
+  SmallVector<char, 0> BadSite(Output.begin(), Output.end());
+  ElfView View = parseELF(BadSite);
+  ASSERT_TRUE(View.Ok);
+  ASSERT_EQ(View.Relas.size(), 1u);
+  ASSERT_LT(View.Relas[0].TargetSec, View.Secs.size());
+  ASSERT_TRUE(
+      patchAllRelaOffsets(BadSite, View.Secs[View.Relas[0].TargetSec].Size));
+  ExpectBothReject(BadSite, "output relocation site past target section");
+
+  SmallVector<char, 0> BadName(Output.begin(), Output.end());
+  ELF::Elf64_Shdr *OutputStrtab = findELFSectionHeader(BadName, ".strtab");
+  ASSERT_NE(OutputStrtab, nullptr);
+  ASSERT_TRUE(
+      patchELFSymbolNameOffset(BadName, "fn_0", OutputStrtab->sh_size));
+  ExpectBothReject(BadName, "output st_name past string table");
+
+  SmallVector<char, 0> BadSymtabLink(Output.begin(), Output.end());
+  ELF::Elf64_Shdr *OutputSymtab =
+      findELFSectionHeader(BadSymtabLink, ".symtab");
+  ASSERT_NE(OutputSymtab, nullptr);
+  OutputSymtab->sh_link = 1;
+  ExpectBothReject(BadSymtabLink, "output symtab links a non-string section");
+
+  SmallVector<char, 0> BadHeaderSize(Output.begin(), Output.end());
+  auto *OutputHeader =
+      reinterpret_cast<ELF::Elf64_Ehdr *>(BadHeaderSize.data());
+  OutputHeader->e_shentsize = 1;
+  ExpectBothReject(BadHeaderSize, "output e_shentsize");
+
+  SmallVector<char, 0> ExtendedCount(Output.begin(), Output.end());
+  OutputHeader = reinterpret_cast<ELF::Elf64_Ehdr *>(ExtendedCount.data());
+  auto *OutputSections = reinterpret_cast<ELF::Elf64_Shdr *>(
+      ExtendedCount.data() + OutputHeader->e_shoff);
+  OutputSections[0].sh_size = OutputHeader->e_shnum;
+  OutputHeader->e_shnum = 0;
+  ExpectBothReject(ExtendedCount, "output extended e_shnum");
+
+  SmallVector<char, 0> ExtendedShstrndx(Output.begin(), Output.end());
+  OutputHeader = reinterpret_cast<ELF::Elf64_Ehdr *>(ExtendedShstrndx.data());
+  OutputSections = reinterpret_cast<ELF::Elf64_Shdr *>(ExtendedShstrndx.data() +
+                                                       OutputHeader->e_shoff);
+  OutputSections[0].sh_link = OutputHeader->e_shstrndx;
+  OutputHeader->e_shstrndx = ELF::SHN_XINDEX;
+  ExpectBothReject(ExtendedShstrndx, "output extended e_shstrndx");
+}
+
+TEST(MergeELFSemantic,
+     AndroidKernelReleaseVerifiersRejectNonzeroOutputSectionAddress) {
+  SecSpec Text{
+      ".text", 0x10, 16, ELF::SHT_PROGBITS, ELF::SHF_ALLOC | ELF::SHF_EXECINSTR,
+      0xd8};
+  SymSpec Function{"release_output_section_address", 0, 0};
+  SmallVector<SmallVector<char, 0>, 1> Inputs;
+  Inputs.push_back(buildSectionedELF({Text}, {Function}, {}, ELF::EM_AARCH64));
+  Options Opts = androidKernelReleaseOptions();
+  auto [OK, Output] = mergeELF(Inputs, Opts);
+  ASSERT_TRUE(OK);
+
+  SmallVector<char, 0> Tampered(Output.begin(), Output.end());
+  ELF::Elf64_Shdr *TextHeader = findELFSectionHeader(Tampered, ".text");
+  ASSERT_NE(TextHeader, nullptr);
+  TextHeader->sh_addr = 0x1000;
+  std::string Error;
+  EXPECT_FALSE(verifyAndroidKernelModuleImage(Tampered, Opts, &Error));
+  EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Inputs), Tampered,
+                           Format::ELF64LE, Opts, &Error));
+}
+
+TEST(MergeELFSemantic,
+     AndroidKernelReleasePrefersGlobalUndefinedOverWeakUndefined) {
+  SecSpec Data{
+      ".data", 8, 8, ELF::SHT_PROGBITS, ELF::SHF_ALLOC | ELF::SHF_WRITE, 0xd5};
+  SymSpec Weak{"release_binding_import", -1, 0};
+  Weak.Type = ELF::STT_NOTYPE;
+  Weak.Weak = true;
+  SymSpec Global = Weak;
+  Global.Weak = false;
+  RelSpec Reference{0, 0, Weak.Name, ELF::R_AARCH64_ABS64, 0};
+  const auto WeakInput =
+      buildSectionedELF({Data}, {Weak}, {Reference}, ELF::EM_AARCH64);
+  const auto GlobalInput =
+      buildSectionedELF({Data}, {Global}, {Reference}, ELF::EM_AARCH64);
+
+  for (bool WeakFirst : {false, true}) {
+    SCOPED_TRACE(WeakFirst ? "weak-first" : "global-first");
+    SmallVector<SmallVector<char, 0>, 2> Inputs;
+    Inputs.push_back(WeakFirst ? WeakInput : GlobalInput);
+    Inputs.push_back(WeakFirst ? GlobalInput : WeakInput);
+    auto [OK, Output] = mergeELF(Inputs, androidKernelReleaseOptions());
+    ASSERT_TRUE(OK);
+    ElfView View = parseELF(Output);
+    ASSERT_TRUE(View.Ok);
+    const ParsedSym *Import = View.findSym(Weak.Name);
+    ASSERT_NE(Import, nullptr);
+    EXPECT_EQ(Import->Bind, ELF::STB_GLOBAL);
+  }
+}
+
+TEST(MergeELFSemantic, AndroidKernelReleaseRejectsAllEmptyPartitions) {
+  SmallVector<SmallVector<char, 0>, 2> Inputs(2);
+  for (bool Verify : {false, true}) {
+    SCOPED_TRACE(Verify ? "verify-on" : "verify-off");
+    Options Opts = androidKernelReleaseOptions();
+    Opts.verify = Verify;
+    auto [OK, Output] = mergeELF(Inputs, Opts);
+    EXPECT_FALSE(OK);
+    EXPECT_TRUE(Output.empty());
+  }
+}
+
+TEST(MergeELFSemantic, AndroidKernelReleaseReplaysMixedEmptyAndRealPartitions) {
+  SecSpec Text{
+      ".text", 0x10, 16, ELF::SHT_PROGBITS, ELF::SHF_ALLOC | ELF::SHF_EXECINSTR,
+      0xc1};
+  SymSpec Function{"release_after_empty_partition", 0, 0};
+  SmallVector<SmallVector<char, 0>, 2> Inputs;
+  Inputs.emplace_back();
+  Inputs.push_back(buildSectionedELF({Text}, {Function}, {}, ELF::EM_AARCH64));
+  Options Opts = androidKernelReleaseOptions();
+  ASSERT_TRUE(Opts.verify);
+  auto [OK, Output] = mergeELF(Inputs, Opts);
+  ASSERT_TRUE(OK);
+  ElfView View = parseELF(Output);
+  ASSERT_TRUE(View.Ok);
+  EXPECT_NE(View.findSym("fn_0"), nullptr);
+  std::string Error;
+  EXPECT_TRUE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Inputs), Output,
+                          Format::ELF64LE, Opts, &Error))
+      << Error;
 }
 
 TEST(MergeELFSemantic,
      AndroidKernelModuleRejectsRelocationToDroppedProfileContract) {
   SecSpec Data{".data", 8, 8, ELF::SHT_PROGBITS,
                ELF::SHF_ALLOC | ELF::SHF_WRITE};
-  SecSpec Contract{".neverc.android.kernel.profile", 8, 8,
-                   ELF::SHT_PROGBITS, ELF::SHF_ALLOC, 0xab};
+  SecSpec Contract{".neverc.android.kernel.profile",
+                   8,
+                   8,
+                   ELF::SHT_PROGBITS,
+                   ELF::SHF_ALLOC,
+                   0xab};
   SymSpec Anchor{"data_anchor", 0, 0};
-  RelSpec ContractReference{0, 0, "", ELF::R_AARCH64_ABS64, 0,
+  RelSpec ContractReference{0,
+                            0,
+                            "",
+                            ELF::R_AARCH64_ABS64,
+                            0,
                             /*TargetSecSym=*/1};
   auto Obj = buildSectionedELF({Data, Contract}, {Anchor}, {ContractReference},
                                ELF::EM_AARCH64);
@@ -3798,8 +8188,8 @@ TEST(MergeELFSemantic, GlobalSymbolDedupKeepsDefinition) {
   // "shared" and the relocation must resolve onto that defined slot.
   SecSpec S0{".text", 0x20, 16};
   SecSpec S1{".text", 0x20, 16};
-  SymSpec Def{"shared", 0, 0};      // defined in partition 0
-  SymSpec Undef{"shared", -1, 0};   // undefined in partition 1
+  SymSpec Def{"shared", 0, 0};    // defined in partition 0
+  SymSpec Undef{"shared", -1, 0}; // undefined in partition 1
   RelSpec R1{0, 0, "shared", ELF::R_X86_64_PLT32, 0};
 
   auto Obj0 = buildSectionedELF({S0}, {Def}, {});
@@ -3839,8 +8229,8 @@ TEST(MergeELFSemantic, PcgSymbolResolvesToLocalDefinition) {
   const char *PcgName = "helper.__pcg12345678";
   SecSpec S0{".text", 0x40, 16};
   SecSpec S1{".text", 0x20, 16};
-  SymSpec Def{PcgName, 0, 0x10, true};  // defined GLOBAL in partition 0
-  SymSpec Ref{PcgName, -1, 0, true};    // undefined reference in partition 1
+  SymSpec Def{PcgName, 0, 0x10, true}; // defined GLOBAL in partition 0
+  SymSpec Ref{PcgName, -1, 0, true};   // undefined reference in partition 1
   RelSpec R1{0, 0, PcgName, ELF::R_X86_64_PLT32, 0};
 
   auto Obj0 = buildSectionedELF({S0}, {Def}, {});
@@ -3862,11 +8252,11 @@ TEST(MergeELFSemantic, PcgSymbolResolvesToLocalDefinition) {
       NPcg++;
       Pcg = &S;
     }
-  ASSERT_EQ(NPcg, 1u);                       // deduped to one entry
+  ASSERT_EQ(NPcg, 1u); // deduped to one entry
   ASSERT_NE(Pcg, nullptr);
   EXPECT_EQ(Pcg->Bind, (uint8_t)ELF::STB_LOCAL); // demoted from GLOBAL
-  EXPECT_NE(Pcg->Shndx, ELF::SHN_UNDEF);     // it is the definition
-  EXPECT_EQ(Pcg->Value, 0x10u);              // partition 0 base 0 + 0x10
+  EXPECT_NE(Pcg->Shndx, ELF::SHN_UNDEF);         // it is the definition
+  EXPECT_EQ(Pcg->Value, 0x10u);                  // partition 0 base 0 + 0x10
 
   ASSERT_EQ(V.Relas.size(), 1u);
   ASSERT_LT(V.Relas[0].Sym, V.Syms.size());
@@ -3878,14 +8268,26 @@ TEST(MergeELFSemantic, SectionContentBytesPlacedCorrectly) {
   // Symbol offsets can be right while the *content* bytes are copied to the
   // wrong place (or dropped).  Fill each input section with a distinct byte
   // pattern and verify it lands at the expected offset in the merged section.
-  SecSpec SA{".text.a", 0x20, 16, ELF::SHT_PROGBITS,
-             ELF::SHF_ALLOC | ELF::SHF_EXECINSTR, 0xAA};
-  SecSpec SB{".text.b", 0x20, 16, ELF::SHT_PROGBITS,
-             ELF::SHF_ALLOC | ELF::SHF_EXECINSTR, 0xBB};
+  SecSpec SA{".text.a",
+             0x20,
+             16,
+             ELF::SHT_PROGBITS,
+             ELF::SHF_ALLOC | ELF::SHF_EXECINSTR,
+             0xAA};
+  SecSpec SB{".text.b",
+             0x20,
+             16,
+             ELF::SHT_PROGBITS,
+             ELF::SHF_ALLOC | ELF::SHF_EXECINSTR,
+             0xBB};
   auto Obj0 = buildSectionedELF({SA, SB}, {}, {});
 
-  SecSpec SC{".text.c", 0x10, 16, ELF::SHT_PROGBITS,
-             ELF::SHF_ALLOC | ELF::SHF_EXECINSTR, 0xCC};
+  SecSpec SC{".text.c",
+             0x10,
+             16,
+             ELF::SHT_PROGBITS,
+             ELF::SHF_ALLOC | ELF::SHF_EXECINSTR,
+             0xCC};
   auto Obj1 = buildSectionedELF({SC}, {}, {});
 
   SmallVector<SmallVector<char, 0>, 2> Bufs;
@@ -3947,8 +8349,8 @@ TEST(MergeELFSemantic, RandomizedLayoutOracle) {
         unsigned g = Rng() % 4;
         uint32_t Align = 1u << (Rng() % 7); // 1..64, power of two
         uint64_t Size = 1 + (Rng() % 0x200);
-        std::string Nm = std::string(Groups[g].Name) + "." +
-                         std::to_string(p) + "_" + std::to_string(s);
+        std::string Nm = std::string(Groups[g].Name) + "." + std::to_string(p) +
+                         "_" + std::to_string(s);
         unsigned SecIdx = Secs.size();
         // Distinct non-zero fill per content section so the verifier's
         // content anchor is meaningful (a mis-shifted symbol would read a
@@ -3956,8 +8358,8 @@ TEST(MergeELFSemantic, RandomizedLayoutOracle) {
         uint8_t Fill = Groups[g].Type == ELF::SHT_NOBITS
                            ? 0
                            : (uint8_t)(1 + ((p * 7 + s * 3 + g) & 0x7e));
-        Secs.push_back(SecSpec{Nm, Size, Align, Groups[g].Type,
-                               Groups[g].Flags, Fill});
+        Secs.push_back(
+            SecSpec{Nm, Size, Align, Groups[g].Type, Groups[g].Flags, Fill});
 
         // Oracle: mirror the merger's running-max-align + pad + append.
         if (Align > CurAlign[g])
@@ -3969,8 +8371,8 @@ TEST(MergeELFSemantic, RandomizedLayoutOracle) {
         unsigned NSym = 1 + (Rng() % 3);
         for (unsigned k = 0; k < NSym; ++k) {
           uint64_t SOff = Rng() % Size;
-          std::string SN = "s_" + std::to_string(p) + "_" +
-                           std::to_string(s) + "_" + std::to_string(k);
+          std::string SN = "s_" + std::to_string(p) + "_" + std::to_string(s) +
+                           "_" + std::to_string(k);
           Syms.push_back(SymSpec{SN, (int)SecIdx, SOff, true});
           Expected.push_back({SN, Base + SOff});
         }
@@ -3997,8 +8399,7 @@ TEST(MergeELFSemantic, RandomizedLayoutOracle) {
     for (auto &E : Expected) {
       const ParsedSym *PS = V.findSym(E.first);
       ASSERT_NE(PS, nullptr) << "trial " << Trial << " sym " << E.first;
-      EXPECT_EQ(PS->Value, E.second)
-          << "trial " << Trial << " sym " << E.first;
+      EXPECT_EQ(PS->Value, E.second) << "trial " << Trial << " sym " << E.first;
     }
 
     // Every relocation's merged offset must equal its independently predicted
@@ -4008,7 +8409,8 @@ TEST(MergeELFSemantic, RandomizedLayoutOracle) {
       ActualRelOffs.push_back(R.Offset);
     std::sort(ExpectedRelOffs.begin(), ExpectedRelOffs.end());
     std::sort(ActualRelOffs.begin(), ActualRelOffs.end());
-    ASSERT_EQ(ActualRelOffs.size(), ExpectedRelOffs.size()) << "trial " << Trial;
+    ASSERT_EQ(ActualRelOffs.size(), ExpectedRelOffs.size())
+        << "trial " << Trial;
     for (size_t i = 0; i < ExpectedRelOffs.size(); ++i)
       EXPECT_EQ(ActualRelOffs[i], ExpectedRelOffs[i])
           << "trial " << Trial << " reloc " << i;
@@ -4095,7 +8497,8 @@ TEST(MergeELFVerify, AcceptsGoodMergeRejectsCollapse) {
   ASSERT_TRUE(patchSymValue(Collapsed, "fb", 0x0));
   Err.clear();
   EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs),
-                           ArrayRef<char>(Collapsed), Format::ELF64LE, {}, &Err))
+                           ArrayRef<char>(Collapsed), Format::ELF64LE, {},
+                           &Err))
       << "verifier accepted a collapsed symbol offset";
 
   // Out-of-bounds value → the other rejection path.
@@ -4187,7 +8590,8 @@ TEST(MergeELFVerify, CatchesCollapsedDuplicateNamedSymbol) {
   ASSERT_TRUE(patchAllSymValues(Collapsed, "dup", 0x0));
   Err.clear();
   EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs),
-                           ArrayRef<char>(Collapsed), Format::ELF64LE, {}, &Err))
+                           ArrayRef<char>(Collapsed), Format::ELF64LE, {},
+                           &Err))
       << "verifier accepted a collapsed duplicate-named symbol offset";
 }
 
@@ -4286,7 +8690,8 @@ TEST(MergeELFVerify, CatchesCollapsedBssSymbolOffset) {
   ASSERT_TRUE(patchSymValue(Collapsed, "bss_b", 0x0));
   Err.clear();
   EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs),
-                           ArrayRef<char>(Collapsed), Format::ELF64LE, {}, &Err))
+                           ArrayRef<char>(Collapsed), Format::ELF64LE, {},
+                           &Err))
       << "verifier accepted a collapsed .bss symbol offset (NOBITS blind spot)";
 }
 
@@ -4364,7 +8769,8 @@ TEST(MergeELFVerify, CatchesCollapsedSingletonBssMergeSections) {
 
   SmallVector<SmallVector<char, 0>, 1> Bufs;
   Bufs.push_back(Obj);
-  auto [OK, Out] = mergeELF(Bufs, Opts); // internal verify (mergeSections) accepts
+  auto [OK, Out] =
+      mergeELF(Bufs, Opts); // internal verify (mergeSections) accepts
   ASSERT_TRUE(OK);
 
   // Both .bss.* folded into one .bss; var_a at 0, var_b after it.
@@ -4443,9 +8849,9 @@ TEST(MergeELFVerify, CatchesCorruptedRelocAddend) {
   // cannot accidentally still match.
   SecSpec S0{".text", 0x40, 16, SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR, 0xAA};
   SecSpec S1{".text", 0x40, 16, SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR, 0xBB};
-  SymSpec F0{"f0", 0, 0, true}; // anchors p0's .text at offset 0
-  SymSpec F1{"f1", 0, 0, true}; // anchors p1's .text (shifts to 0x40)
-  SymSpec Ext{"ext", -1, 0, true};            // shared undefined named target
+  SymSpec F0{"f0", 0, 0, true};    // anchors p0's .text at offset 0
+  SymSpec F1{"f1", 0, 0, true};    // anchors p1's .text (shifts to 0x40)
+  SymSpec Ext{"ext", -1, 0, true}; // shared undefined named target
   RelSpec R0{0, 0x10, "ext", R_X86_64_64, 0x1234};
   RelSpec R1{0, 0x10, "ext", R_X86_64_64, 0x5678};
   auto O0 = buildSectionedELF({S0}, {F0, Ext}, {R0});
@@ -4686,16 +9092,16 @@ TEST(MergeELFLinkOrder, MergeSectionsFoldsTargetsConsistently) {
   // .text.foo/.text.bar into one .text, so both PFE link targets canonicalize
   // to ".text" — consistent — and the merged PFE sh_link points at the single
   // merged .text.
-  SecSpec TextFoo{".text.foo", 0x40, 16, SHT_PROGBITS,
-                  SHF_ALLOC | SHF_EXECINSTR, 0xAA};
-  SecSpec Pfe0{"__patchable_function_entries", 0x10, 8, SHT_PROGBITS,
-               SHF_ALLOC | SHF_LINK_ORDER, 0xBB, /*Link=*/0};
+  SecSpec TextFoo{
+      ".text.foo", 0x40, 16, SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR, 0xAA};
+  SecSpec Pfe0{"__patchable_function_entries", 0x10, 8,         SHT_PROGBITS,
+               SHF_ALLOC | SHF_LINK_ORDER,     0xBB, /*Link=*/0};
   SymSpec F{"f", 0, 0, true};
   auto O0 = buildSectionedELF({TextFoo, Pfe0}, {F}, {});
-  SecSpec TextBar{".text.bar", 0x40, 16, SHT_PROGBITS,
-                  SHF_ALLOC | SHF_EXECINSTR, 0xCC};
-  SecSpec Pfe1{"__patchable_function_entries", 0x10, 8, SHT_PROGBITS,
-               SHF_ALLOC | SHF_LINK_ORDER, 0xDD, /*Link=*/0};
+  SecSpec TextBar{
+      ".text.bar", 0x40, 16, SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR, 0xCC};
+  SecSpec Pfe1{"__patchable_function_entries", 0x10, 8,         SHT_PROGBITS,
+               SHF_ALLOC | SHF_LINK_ORDER,     0xDD, /*Link=*/0};
   SymSpec G{"g", 0, 0, true};
   auto O1 = buildSectionedELF({TextBar, Pfe1}, {G}, {});
 
@@ -4726,16 +9132,16 @@ TEST(MergeELFLinkOrder, InconsistentTargetsRefused) {
   // two PFE inputs pointing at different code sections would need one output
   // sh_link to name two targets — impossible.  The merger must refuse rather
   // than silently pick one (which would drop the other's ordering dependency).
-  SecSpec TextFoo{".text.foo", 0x40, 16, SHT_PROGBITS,
-                  SHF_ALLOC | SHF_EXECINSTR, 0xAA};
-  SecSpec Pfe0{"__patchable_function_entries", 0x10, 8, SHT_PROGBITS,
-               SHF_ALLOC | SHF_LINK_ORDER, 0xBB, /*Link=*/0};
+  SecSpec TextFoo{
+      ".text.foo", 0x40, 16, SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR, 0xAA};
+  SecSpec Pfe0{"__patchable_function_entries", 0x10, 8,         SHT_PROGBITS,
+               SHF_ALLOC | SHF_LINK_ORDER,     0xBB, /*Link=*/0};
   SymSpec F{"f", 0, 0, true};
   auto O0 = buildSectionedELF({TextFoo, Pfe0}, {F}, {});
-  SecSpec TextBar{".text.bar", 0x40, 16, SHT_PROGBITS,
-                  SHF_ALLOC | SHF_EXECINSTR, 0xCC};
-  SecSpec Pfe1{"__patchable_function_entries", 0x10, 8, SHT_PROGBITS,
-               SHF_ALLOC | SHF_LINK_ORDER, 0xDD, /*Link=*/0};
+  SecSpec TextBar{
+      ".text.bar", 0x40, 16, SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR, 0xCC};
+  SecSpec Pfe1{"__patchable_function_entries", 0x10, 8,         SHT_PROGBITS,
+               SHF_ALLOC | SHF_LINK_ORDER,     0xDD, /*Link=*/0};
   SymSpec G{"g", 0, 0, true};
   auto O1 = buildSectionedELF({TextBar, Pfe1}, {G}, {});
 
@@ -4756,8 +9162,8 @@ TEST(MergeELFLinkOrder, VerifyCatchesCollapsedPfeRelocOffset) {
   // (the PFE half of the historical offset-collapse bug) and confirm the
   // independent verifier rejects it.
   SecSpec T0{".text", 0x40, 16, SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR, 0xAA};
-  SecSpec P0{"__patchable_function_entries", 0x10, 8, SHT_PROGBITS,
-             SHF_ALLOC | SHF_LINK_ORDER, 0, /*Link=*/0};
+  SecSpec P0{"__patchable_function_entries", 0x10, 8,         SHT_PROGBITS,
+             SHF_ALLOC | SHF_LINK_ORDER,     0,    /*Link=*/0};
   SymSpec F0{"f0", 0, 0, true};
   SymSpec G0{"g0", 0, 0x20, true};
   RelSpec R0a{1, 0, "f0", R_X86_64_64, 0};
@@ -4765,8 +9171,8 @@ TEST(MergeELFLinkOrder, VerifyCatchesCollapsedPfeRelocOffset) {
   auto O0 = buildSectionedELF({T0, P0}, {F0, G0}, {R0a, R0b});
 
   SecSpec T1{".text", 0x40, 16, SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR, 0xCC};
-  SecSpec P1{"__patchable_function_entries", 0x10, 8, SHT_PROGBITS,
-             SHF_ALLOC | SHF_LINK_ORDER, 0, /*Link=*/0};
+  SecSpec P1{"__patchable_function_entries", 0x10, 8,         SHT_PROGBITS,
+             SHF_ALLOC | SHF_LINK_ORDER,     0,    /*Link=*/0};
   SymSpec F1{"f1", 0, 0, true};
   SymSpec G1{"g1", 0, 0x20, true};
   RelSpec R1a{1, 0, "f1", R_X86_64_64, 0};
@@ -4833,9 +9239,10 @@ TEST(MergeELFVerify, CatchesLinkOrderSectionWithZeroShLink) {
   // only with a real sh_link; the sh_link=0 shape (which the merger's own
   // sh_link remap never produces) must be rejected by the independent audit
   // too, so a wrong object can never slip through whatever produced it.
-  SecSpec Text{".text", 0x40, 16, SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR, 0xAA};
+  SecSpec Text{".text", 0x40, 16, SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR,
+               0xAA};
   SecSpec Pfe{"__patchable_function_entries", 0x10, 8, SHT_PROGBITS,
-              SHF_ALLOC | SHF_LINK_ORDER, 0xBB};
+              SHF_ALLOC | SHF_LINK_ORDER,     0xBB};
   SymSpec F{"f", 0, 0, true};
   // buildSectionedELF leaves content-section sh_link at 0.
   auto Obj = buildSectionedELF({Text, Pfe}, {F}, {});
@@ -5016,7 +9423,8 @@ TEST(MergeCOFFSemantic, RandomizedLayoutOracle) {
       {".text", IMAGE_SCN_CNT_CODE | IMAGE_SCN_MEM_EXECUTE | IMAGE_SCN_MEM_READ,
        false},
       {".data",
-       IMAGE_SCN_CNT_INITIALIZED_DATA | IMAGE_SCN_MEM_READ | IMAGE_SCN_MEM_WRITE,
+       IMAGE_SCN_CNT_INITIALIZED_DATA | IMAGE_SCN_MEM_READ |
+           IMAGE_SCN_MEM_WRITE,
        false},
       {".rdata", IMAGE_SCN_CNT_INITIALIZED_DATA | IMAGE_SCN_MEM_READ, false},
       {".bss",
@@ -5038,7 +9446,7 @@ TEST(MergeCOFFSemantic, RandomizedLayoutOracle) {
       std::vector<CoffSymSpec> Syms;
       for (unsigned g = 0; g < 4; ++g) {
         if (Rng() % 3 == 0)
-          continue; // a partition may lack a group
+          continue;                    // a partition may lack a group
         unsigned AlignExp = Rng() % 7; // 1..64
         uint32_t Align = 1u << AlignExp;
         uint64_t Size = 1 + (Rng() % 0x200);
@@ -5046,7 +9454,8 @@ TEST(MergeCOFFSemantic, RandomizedLayoutOracle) {
         unsigned SecIdx = Secs.size();
         uint8_t Fill =
             Groups[g].IsBSS ? 0 : (uint8_t)(1 + ((p * 7 + g * 3) & 0x7e));
-        Secs.push_back(CoffSecSpec{Groups[g].Name, (uint32_t)Size, Chars, Fill});
+        Secs.push_back(
+            CoffSecSpec{Groups[g].Name, (uint32_t)Size, Chars, Fill});
 
         if (Align > CurAlign[g])
           CurAlign[g] = Align;
@@ -5565,7 +9974,8 @@ TEST(MergeCOFF, RefusesNonZeroVirtualAddressGracefully) {
                        IMAGE_SCN_MEM_READ | IMAGE_SCN_ALIGN_16BYTES;
   CoffSecSpec S0{".text", 0x20, TextChars, 0x90};
   CoffSymSpec P0{"p0", 0, 1, IMAGE_SYM_CLASS_EXTERNAL};
-  CoffSymSpec U0{"ext", 0, 0, IMAGE_SYM_CLASS_EXTERNAL}; // undefined reloc target
+  CoffSymSpec U0{"ext", 0, 0,
+                 IMAGE_SYM_CLASS_EXTERNAL}; // undefined reloc target
   CoffRelSpec R0{0, 0x8, "ext", (uint16_t)IMAGE_REL_AMD64_ADDR64};
   auto Obj = buildCOFF(IMAGE_FILE_MACHINE_AMD64, {S0}, {P0, U0}, {R0});
 
@@ -5648,7 +10058,8 @@ TEST(MergeCOFF, RefusesOutOfBoundsAuxRecordGracefully) {
 
 TEST(MergeMachOSemantic, CrossPartitionSymbolOffsets) {
   namespace MO = llvm::MachO;
-  uint32_t TextFlags = MO::S_ATTR_PURE_INSTRUCTIONS | MO::S_ATTR_SOME_INSTRUCTIONS;
+  uint32_t TextFlags =
+      MO::S_ATTR_PURE_INSTRUCTIONS | MO::S_ATTR_SOME_INSTRUCTIONS;
   MachoSecSpec S0{"__TEXT", "__text", 0x40, 4, TextFlags};
   MachoSecSpec S1{"__TEXT", "__text", 0x20, 4, TextFlags};
   uint8_t DefExt = MO::N_SECT | MO::N_EXT;
@@ -5744,8 +10155,8 @@ TEST(MergeMachO, RefusesMixedCpuType) {
     EXPECT_TRUE(mergeObjects(Bufs, OS, Format::MachO64));
   }
 
-  auto Obj1 = buildMachO(MO::CPU_TYPE_X86_64, MO::CPU_SUBTYPE_X86_64_ALL, {S1},
-                         {P1});
+  auto Obj1 =
+      buildMachO(MO::CPU_TYPE_X86_64, MO::CPU_SUBTYPE_X86_64_ALL, {S1}, {P1});
   SmallVector<SmallVector<char, 0>, 2> Bufs;
   Bufs.push_back(std::move(Obj0));
   Bufs.push_back(std::move(Obj1));
@@ -5887,13 +10298,13 @@ TEST(MergeMachO, HandlesHugeZerofillSectionWithoutOOM) {
   Seg->initprot = 7;
   Seg->nsects = 1;
 
-  auto *SH = reinterpret_cast<MO::section_64 *>(Cmd +
-                                               sizeof(MO::segment_command_64));
+  auto *SH =
+      reinterpret_cast<MO::section_64 *>(Cmd + sizeof(MO::segment_command_64));
   memcpy(SH->sectname, "__bss", 5);
   memcpy(SH->segname, "__DATA", 6);
   SH->addr = 0;
-  SH->size = Huge;  // attacker-controlled, backed by no file bytes
-  SH->offset = 0;   // zerofill: no file offset
+  SH->size = Huge; // attacker-controlled, backed by no file bytes
+  SH->offset = 0;  // zerofill: no file offset
   SH->align = 4;
   SH->flags = MO::S_ZEROFILL;
 
@@ -5960,8 +10371,13 @@ TEST(MergeMachO, HandlesHugeRelocAddressGracefully) {
   MachoSymSpec P0{"_p0", DefExt, 1, 0, 0};
   // Non-extern reloc (x86_64 so the ARM64_RELOC_ADDEND pseudo-reloc path is not
   // taken), targeting section 0, length 3 (8 bytes), r_address near UINT32_MAX.
-  MachoRelSpec R{0, 0xFFFFFFF8u, "", (uint8_t)MO::X86_64_RELOC_UNSIGNED, 3,
-                 /*Extern=*/false, /*TargetSec=*/0};
+  MachoRelSpec R{0,
+                 0xFFFFFFF8u,
+                 "",
+                 (uint8_t)MO::X86_64_RELOC_UNSIGNED,
+                 3,
+                 /*Extern=*/false,
+                 /*TargetSec=*/0};
   auto Obj = buildMachO(MO::CPU_TYPE_X86_64, MO::CPU_SUBTYPE_X86_64_ALL, {S0},
                         {P0}, {R});
 
@@ -6030,8 +10446,8 @@ TEST(MergeMachOSemantic, RandomizedLayoutOracle) {
         unsigned NSym = 1 + (Rng() % 3);
         for (unsigned k = 0; k < NSym; ++k) {
           uint64_t SOff = Rng() % Size;
-          std::string SN = "_s_" + std::to_string(p) + "_" +
-                           std::to_string(g) + "_" + std::to_string(k);
+          std::string SN = "_s_" + std::to_string(p) + "_" + std::to_string(g) +
+                           "_" + std::to_string(k);
           Syms.push_back(MachoSymSpec{SN, (uint8_t)(MO::N_SECT | MO::N_EXT),
                                       (uint8_t)(1 + SecIdx), SOff, 0});
           Expected.push_back({SN, g, Base + SOff});
@@ -6078,7 +10494,8 @@ TEST(MergeMachOSemantic, MergeIsDeterministic) {
   MachoSymSpec F1{"_f1", DefExt, 1, 0, 0};
   auto O0 = buildMachO(MO::CPU_TYPE_ARM64, MO::CPU_SUBTYPE_ARM64_ALL,
                        {S0, C0, B0}, {F0, G0, V0});
-  auto O1 = buildMachO(MO::CPU_TYPE_ARM64, MO::CPU_SUBTYPE_ARM64_ALL, {S1}, {F1});
+  auto O1 =
+      buildMachO(MO::CPU_TYPE_ARM64, MO::CPU_SUBTYPE_ARM64_ALL, {S1}, {F1});
   SmallVector<SmallVector<char, 0>, 2> Bufs;
   Bufs.push_back(O0);
   Bufs.push_back(O1);
@@ -6115,7 +10532,8 @@ TEST(MergeMachOVerify, AcceptsGoodMergeRejectsCollapse) {
   Bufs.push_back(O1);
   SmallVector<char, 0> Out;
   raw_svector_ostream OS(Out);
-  ASSERT_TRUE(mergeObjects(Bufs, OS, Format::MachO64)); // internal verify passes
+  ASSERT_TRUE(
+      mergeObjects(Bufs, OS, Format::MachO64)); // internal verify passes
 
   std::string Err;
   EXPECT_TRUE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs),
@@ -6135,7 +10553,8 @@ TEST(MergeMachOVerify, AcceptsGoodMergeRejectsCollapse) {
   ASSERT_TRUE(patchMachoSymValue(Collapsed, "_fb", PFA->Value));
   Err.clear();
   EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs),
-                           ArrayRef<char>(Collapsed), Format::MachO64, {}, &Err))
+                           ArrayRef<char>(Collapsed), Format::MachO64, {},
+                           &Err))
       << "Mach-O verifier accepted a collapsed symbol offset";
 
   // Past the end of the merged section.
@@ -6162,10 +10581,10 @@ TEST(MergeMachOVerify, AcceptsIndependentlyCoalescedWeakDefinitions) {
   MachoSymSpec B0{"_weak_b", DefWeak, 1, 0x20, WeakDesc};
   MachoSymSpec A1{"_weak_a", DefWeak, 1, 0x10, WeakDesc};
   MachoSymSpec B1{"_weak_b", DefWeak, 1, 0x20, WeakDesc};
-  auto O0 = buildMachO(MO::CPU_TYPE_ARM64, MO::CPU_SUBTYPE_ARM64_ALL, {S0},
-                       {A0, B0});
-  auto O1 = buildMachO(MO::CPU_TYPE_ARM64, MO::CPU_SUBTYPE_ARM64_ALL, {S1},
-                       {A1, B1});
+  auto O0 =
+      buildMachO(MO::CPU_TYPE_ARM64, MO::CPU_SUBTYPE_ARM64_ALL, {S0}, {A0, B0});
+  auto O1 =
+      buildMachO(MO::CPU_TYPE_ARM64, MO::CPU_SUBTYPE_ARM64_ALL, {S1}, {A1, B1});
 
   SmallVector<SmallVector<char, 0>, 2> Bufs;
   Bufs.push_back(std::move(O0));
@@ -6228,7 +10647,8 @@ TEST(MergeMachOVerify, CatchesCollapsedDuplicateNamedSymbol) {
   ASSERT_TRUE(patchAllMachoSymValues(Collapsed, "_dup", PD->Value));
   Err.clear();
   EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs),
-                           ArrayRef<char>(Collapsed), Format::MachO64, {}, &Err))
+                           ArrayRef<char>(Collapsed), Format::MachO64, {},
+                           &Err))
       << "Mach-O verifier accepted a collapsed duplicate-named symbol offset";
 }
 
@@ -6269,7 +10689,8 @@ TEST(MergeMachOVerify, CatchesCorruptedDysymtabRanges) {
   ASSERT_TRUE(patchMachoDysymtab(BadContig, 0, 1, 0, 2, 2, 0));
   Err.clear();
   EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs),
-                           ArrayRef<char>(BadContig), Format::MachO64, {}, &Err))
+                           ArrayRef<char>(BadContig), Format::MachO64, {},
+                           &Err))
       << "verifier accepted non-contiguous LC_DYSYMTAB ranges";
 
   // (b) Contiguous but mis-classified: an external-defined symbol parked in the
@@ -6300,7 +10721,8 @@ TEST(MergeMachOVerify, CatchesCollapsedZerofillSymbolOffset) {
   Bufs.push_back(Obj);
   SmallVector<char, 0> Out;
   raw_svector_ostream OS(Out);
-  ASSERT_TRUE(mergeObjects(Bufs, OS, Format::MachO64)); // internal verify accepts
+  ASSERT_TRUE(
+      mergeObjects(Bufs, OS, Format::MachO64)); // internal verify accepts
 
   uint64_t BaseVal = 0;
   {
@@ -6322,7 +10744,8 @@ TEST(MergeMachOVerify, CatchesCollapsedZerofillSymbolOffset) {
   ASSERT_TRUE(patchMachoSymValue(Collapsed, "_bss_b", BaseVal));
   Err.clear();
   EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Bufs),
-                           ArrayRef<char>(Collapsed), Format::MachO64, {}, &Err))
+                           ArrayRef<char>(Collapsed), Format::MachO64, {},
+                           &Err))
       << "verifier accepted a collapsed Mach-O zerofill symbol offset";
 }
 
@@ -6338,15 +10761,18 @@ TEST(MergeMachOVerify, CatchesCollapsedSingletonZerofillDistinctSections) {
   uint8_t DefExt = MO::N_SECT | MO::N_EXT;
   MachoSymSpec V0{"_g0", DefExt, 1, 0x0, 0};
   MachoSymSpec V1{"_g1", DefExt, 1, 0x0, 0};
-  auto O0 = buildMachO(MO::CPU_TYPE_ARM64, MO::CPU_SUBTYPE_ARM64_ALL, {B0}, {V0});
-  auto O1 = buildMachO(MO::CPU_TYPE_ARM64, MO::CPU_SUBTYPE_ARM64_ALL, {B1}, {V1});
+  auto O0 =
+      buildMachO(MO::CPU_TYPE_ARM64, MO::CPU_SUBTYPE_ARM64_ALL, {B0}, {V0});
+  auto O1 =
+      buildMachO(MO::CPU_TYPE_ARM64, MO::CPU_SUBTYPE_ARM64_ALL, {B1}, {V1});
 
   SmallVector<SmallVector<char, 0>, 2> Bufs;
   Bufs.push_back(O0);
   Bufs.push_back(O1);
   SmallVector<char, 0> Out;
   raw_svector_ostream OS(Out);
-  ASSERT_TRUE(mergeObjects(Bufs, OS, Format::MachO64)); // internal verify accepts
+  ASSERT_TRUE(
+      mergeObjects(Bufs, OS, Format::MachO64)); // internal verify accepts
 
   uint64_t BaseVal = 0;
   {
@@ -6480,10 +10906,20 @@ TEST(MergeMachOVerify, CatchesCollapsedSectionRelativeReloc) {
   MachoSymSpec F0{"_f0", DefExt, 1, 0, 0};
   MachoSymSpec F1{"_f1", DefExt, 1, 0, 0};
   // Non-extern UNSIGNED pointer in __text (sec 0) → __const (sec 1), 8 bytes.
-  MachoRelSpec R0{0, 0x10, "", (uint8_t)MO::ARM64_RELOC_UNSIGNED, 3,
-                  /*Extern=*/false, /*TargetSec=*/1};
-  MachoRelSpec R1{0, 0x10, "", (uint8_t)MO::ARM64_RELOC_UNSIGNED, 3,
-                  /*Extern=*/false, /*TargetSec=*/1};
+  MachoRelSpec R0{0,
+                  0x10,
+                  "",
+                  (uint8_t)MO::ARM64_RELOC_UNSIGNED,
+                  3,
+                  /*Extern=*/false,
+                  /*TargetSec=*/1};
+  MachoRelSpec R1{0,
+                  0x10,
+                  "",
+                  (uint8_t)MO::ARM64_RELOC_UNSIGNED,
+                  3,
+                  /*Extern=*/false,
+                  /*TargetSec=*/1};
   auto O0 = buildMachO(MO::CPU_TYPE_ARM64, MO::CPU_SUBTYPE_ARM64_ALL, {S0, C0},
                        {F0}, {R0});
   auto O1 = buildMachO(MO::CPU_TYPE_ARM64, MO::CPU_SUBTYPE_ARM64_ALL, {S1, C1},
@@ -6520,10 +10956,20 @@ TEST(MergeMachOVerify, CatchesWrongInPlacePointerDelta) {
   MachoSymSpec F0{"_f0", DefExt, 1, 0, 0};
   MachoSymSpec F1{"_f1", DefExt, 1, 0, 0};
   // 8-byte absolute (UNSIGNED) non-extern pointer in __text → __const.
-  MachoRelSpec R0{0, 0x10, "", (uint8_t)MO::ARM64_RELOC_UNSIGNED, 3,
-                  /*Extern=*/false, /*TargetSec=*/1};
-  MachoRelSpec R1{0, 0x10, "", (uint8_t)MO::ARM64_RELOC_UNSIGNED, 3,
-                  /*Extern=*/false, /*TargetSec=*/1};
+  MachoRelSpec R0{0,
+                  0x10,
+                  "",
+                  (uint8_t)MO::ARM64_RELOC_UNSIGNED,
+                  3,
+                  /*Extern=*/false,
+                  /*TargetSec=*/1};
+  MachoRelSpec R1{0,
+                  0x10,
+                  "",
+                  (uint8_t)MO::ARM64_RELOC_UNSIGNED,
+                  3,
+                  /*Extern=*/false,
+                  /*TargetSec=*/1};
   auto O0 = buildMachO(MO::CPU_TYPE_ARM64, MO::CPU_SUBTYPE_ARM64_ALL, {S0, C0},
                        {F0}, {R0});
   auto O1 = buildMachO(MO::CPU_TYPE_ARM64, MO::CPU_SUBTYPE_ARM64_ALL, {S1, C1},
@@ -6588,10 +11034,20 @@ TEST(MergeMachO, DoesNotRewriteAnInstructionAsIfItWereAWord) {
   uint8_t DefExt = MO::N_SECT | MO::N_EXT;
   MachoSymSpec F0{"_f0", DefExt, 1, 0, 0};
   MachoSymSpec F1{"_f1", DefExt, 1, 0, 0};
-  MachoRelSpec R0{0, 0x10, "", (uint8_t)MO::ARM64_RELOC_PAGEOFF12, 2,
-                  /*Extern=*/false, /*TargetSec=*/1};
-  MachoRelSpec R1{0, 0x10, "", (uint8_t)MO::ARM64_RELOC_PAGEOFF12, 2,
-                  /*Extern=*/false, /*TargetSec=*/1};
+  MachoRelSpec R0{0,
+                  0x10,
+                  "",
+                  (uint8_t)MO::ARM64_RELOC_PAGEOFF12,
+                  2,
+                  /*Extern=*/false,
+                  /*TargetSec=*/1};
+  MachoRelSpec R1{0,
+                  0x10,
+                  "",
+                  (uint8_t)MO::ARM64_RELOC_PAGEOFF12,
+                  2,
+                  /*Extern=*/false,
+                  /*TargetSec=*/1};
   auto O0 = buildMachO(MO::CPU_TYPE_ARM64, MO::CPU_SUBTYPE_ARM64_ALL, {S0, C0},
                        {F0}, {R0});
   auto O1 = buildMachO(MO::CPU_TYPE_ARM64, MO::CPU_SUBTYPE_ARM64_ALL, {S1, C1},
@@ -6751,7 +11207,8 @@ TEST(MergeELF, FuzzRelocSectionReservedShInfo) {
       Opts.verify = Verify;
       SmallVector<char, 0> Out;
       raw_svector_ostream OS(Out);
-      (void)mergeELF64LEObjects(Bufs, OS, Opts); // must not crash (was an abort)
+      (void)mergeELF64LEObjects(Bufs, OS,
+                                Opts); // must not crash (was an abort)
     }
   }
 }
@@ -6999,7 +11456,8 @@ int runNeverc(const ScratchDir &Dir, ArrayRef<StringRef> Args) {
   Argv.append(Args.begin(), Args.end());
   std::string LogPath = Dir.file("spawn.log");
   // {stdin, stdout, stderr}: null StringRef = inherit, real path = redirect.
-  StringRef Redirects[3] = {StringRef(), StringRef(LogPath), StringRef(LogPath)};
+  StringRef Redirects[3] = {StringRef(), StringRef(LogPath),
+                            StringRef(LogPath)};
   bool Failed = false;
   int RC = sys::ExecuteAndWait(StringRef(NEVERC_BINARY), Argv, /*Env=*/{},
                                Redirects, /*SecondsToWait=*/120,
@@ -7164,9 +11622,9 @@ void runLldDifferential(StringRef Target, Format Fmt) {
   bool Patched = (Fmt == Format::ELF64LE)
                      ? patchAllRelaOffsets(Collapsed, 0)
                      : patchAllMachoRelocAddrs(Collapsed, 0);
-  bool ReallyChanged = Patched && Collapsed.size() == LldOut.size() &&
-                       std::memcmp(Collapsed.data(), LldOut.data(),
-                                   LldOut.size()) != 0;
+  bool ReallyChanged =
+      Patched && Collapsed.size() == LldOut.size() &&
+      std::memcmp(Collapsed.data(), LldOut.data(), LldOut.size()) != 0;
   if (ReallyChanged) {
     std::string CErr;
     EXPECT_FALSE(verifyMerge(ArrayRef<SmallVector<char, 0>>(Inputs),
@@ -7262,7 +11720,8 @@ void runMergedExecutionEquivalence(Format Fmt) {
   SmallVector<char, 0> Merged;
   {
     raw_svector_ostream OS(Merged);
-    ASSERT_TRUE(mergeObjects(Inputs, OS, Fmt)) << "merger failed on real objects";
+    ASSERT_TRUE(mergeObjects(Inputs, OS, Fmt))
+        << "merger failed on real objects";
   }
   // The merge must still self-verify, then prove itself at runtime.
   std::string VErr;
@@ -7340,7 +11799,8 @@ std::string genDupStaticObj(unsigned Idx, unsigned NumFns) {
   // Unique exported entries; each touches only its own module's statics.
   for (unsigned f = 0; f < NumFns; ++f)
     OS << "uint64_t dent_" << Idx << "_" << f << "(uint64_t x){\n"
-       << "  return s_mix(x + " << f << ") ^ s_tab[x & 3] ^ s_bss[(x >> 2) & 3];"
+       << "  return s_mix(x + " << f
+       << ") ^ s_tab[x & 3] ^ s_bss[(x >> 2) & 3];"
        << "\n}\n";
   return S;
 }
@@ -7372,7 +11832,8 @@ void runDupStaticRMergeEquivalence(Format Fmt) {
   for (unsigned m = 0; m < NumMods; ++m) {
     std::string P;
     SmallVector<char, 0> O;
-    if (!compileRealObj(Dir, ("ds" + Twine(m)).str(), genDupStaticObj(m, NumFns),
+    if (!compileRealObj(Dir, ("ds" + Twine(m)).str(),
+                        genDupStaticObj(m, NumFns),
                         /*Target=*/"", P, O))
       GTEST_SKIP() << "native frontend unavailable in this environment";
     ObjPaths.push_back(P);
@@ -7562,8 +12023,9 @@ void runMergeFuzzExecution(Format Fmt, unsigned Seed) {
   int RCm = runExeCapture(Dir, ExeMerged, OutMerged);
   int RCp = runExeCapture(Dir, ExePlain, OutPlain);
   ASSERT_EQ(RCp, 0) << "seed " << Seed << ": plain-link executable crashed";
-  ASSERT_EQ(RCm, 0) << "seed " << Seed
-                    << ": merged-object executable crashed (loadable but wrong)";
+  ASSERT_EQ(RCm, 0)
+      << "seed " << Seed
+      << ": merged-object executable crashed (loadable but wrong)";
   EXPECT_FALSE(OutMerged.empty());
   EXPECT_EQ(OutMerged, OutPlain)
       << "seed " << Seed
@@ -7918,8 +12380,8 @@ std::string genRealisticModule(unsigned Idx, unsigned NumFns) {
   // cross-partition reference, alongside the duplicate-named statics above.
   OS << "uint64_t gx_" << Idx << "[4] = {";
   for (unsigned j = 0; j < 4; ++j)
-    OS << (j ? "," : "") << ((uint64_t)(Idx * 4u + j) * 0xff51afd7ed558ccdULL + 5u)
-       << "ULL";
+    OS << (j ? "," : "")
+       << ((uint64_t)(Idx * 4u + j) * 0xff51afd7ed558ccdULL + 5u) << "ULL";
   OS << "};\n";
   // Exported entries: each owns a loop (weight to engage the partitioner) and
   // exercises the duplicate-named statics + VM + cross-module global.

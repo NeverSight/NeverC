@@ -11,12 +11,40 @@
 #include <functional>
 #include <limits>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 
 namespace neverc::plugin {
 
 class PluginTaskContext;
+class PluginPhaseExecutor;
+class PluginBinaryImage;
+
+namespace detail {
+
+enum class BinaryImageAPIAccess : uint8_t {
+  Unrestricted,
+  ReadOnly,
+  Capability,
+};
+
+struct BinaryImageAPIControl {
+  std::recursive_mutex Mutex;
+  PluginBinaryImage *Owner = nullptr;
+};
+
+struct BinaryImageAPIFacade {
+  NevercLinkAPI API{};
+  PluginTaskContext *Task = nullptr;
+  NevercTaskHandle TaskHandle{};
+  std::shared_ptr<BinaryImageAPIControl> Control;
+  const void *MutationDomain = nullptr;
+  uint64_t Token = 0;
+  BinaryImageAPIAccess Access = BinaryImageAPIAccess::ReadOnly;
+};
+
+} // namespace detail
 
 struct PluginBinarySegment {
   NevercBinarySegmentHandle Handle{};
@@ -108,7 +136,21 @@ public:
   const NevercMutableBinaryAPI &binaryAPI() const {
     return Builder->api();
   }
-  const NevercLinkAPI &linkAPI() const { return API; }
+  const NevercMutableBinaryAPI &readOnlyBinaryAPI() const {
+    return Builder->readOnlyAPI();
+  }
+  const NevercMutableBinaryAPI &
+  capabilityBinaryAPI(const void *Domain, uint64_t Token) {
+    return Builder->capabilityAPI(Domain, Token);
+  }
+  const NevercLinkAPI &linkAPI() const {
+    return UnrestrictedLinkFacade->API;
+  }
+  const NevercLinkAPI &readOnlyLinkAPI() const {
+    return ReadOnlyLinkFacade->API;
+  }
+  const NevercLinkAPI &
+  capabilityLinkAPI(const PluginPhaseExecutor &Executor, uint64_t Token);
   NevercMutableBinaryBuilderHandle builderHandle() const {
     return Builder->handle();
   }
@@ -134,6 +176,10 @@ private:
                         llvm::ArrayRef<uint8_t>)> FormatVerifier,
                     std::unique_ptr<MutableBinaryBuilder> Builder);
   llvm::Error initializeHandles();
+  std::shared_ptr<detail::BinaryImageAPIFacade>
+  createLinkAPIFacade(detail::BinaryImageAPIAccess Access,
+                      const void *MutationDomain = nullptr,
+                      uint64_t Token = 0);
 
   PluginTaskContext &Task;
   NevercLinkOutputKind OutputKind;
@@ -150,13 +196,16 @@ private:
   std::function<llvm::Error(llvm::ArrayRef<uint8_t>)> FormatVerifier;
   std::unique_ptr<MutableBinaryBuilder> Builder;
   NevercBinaryImageHandle Handle{};
-  NevercLinkAPI API{};
   NevercBinaryImageState State = NEVERC_BINARY_IMAGE_CANDIDATE;
+  std::shared_ptr<detail::BinaryImageAPIControl> LinkAPIControl;
+  std::shared_ptr<detail::BinaryImageAPIFacade> UnrestrictedLinkFacade;
+  std::shared_ptr<detail::BinaryImageAPIFacade> ReadOnlyLinkFacade;
+  std::vector<std::shared_ptr<detail::BinaryImageAPIFacade>>
+      CapabilityLinkFacades;
 };
 
 llvm::Error verifyBinaryImage(const PluginBinaryImage &Image);
-void initializeBinaryImageAPI(NevercLinkAPI &API,
-                              PluginBinaryImage &Image);
+void initializeBinaryImageAPI(detail::BinaryImageAPIFacade &Facade);
 
 } // namespace neverc::plugin
 

@@ -5,21 +5,41 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
+#include <cstdint>
 
 namespace neverc::plugin {
+
+/// Host provenance for the symbol names entering final graph processing.
+/// Plugins cannot select CanonicalRelease: only the built-in merger may assert
+/// it after its byte-level release transform and independent verifier succeed.
+enum class AndroidKernelSymbolNameState : uint8_t {
+  Original,
+  CanonicalRelease,
+};
 
 /// Host-owned policy applied after an ObjectMergeProvider has produced the
 /// delivered Android kernel module.  `StripUnneededSymbols` is intentionally
 /// narrower than strip-all: relocations, their symbol targets, defined public
-/// symbols, and loader-facing sections remain mandatory.
+/// symbols, and loader-facing sections remain mandatory. Surviving ordinary
+/// defined/absolute names use deterministic IDA-style structural spellings
+/// such as `fn_<EA>`, `code_<EA>`, and `obj_<EA>`; loader ABI names, imports,
+/// and section
+/// symbols remain exact. `EA` is the canonical final relocatable-section
+/// coordinate, not a runtime load address and not encryption.
 struct AndroidKernelModuleFinalizationPolicy {
   bool DropDebugInfo = false;
   bool StripUnneededSymbols = false;
+  AndroidKernelSymbolNameState SymbolNameState =
+      AndroidKernelSymbolNameState::Original;
 };
 
-/// Atomically remove final-output tooling/debug metadata and symbols that no
-/// retained relocation needs.  A retained relocation targeting anything that
-/// would be removed is an error and leaves the graph unchanged.
+/// Atomically remove final-output tooling/debug metadata, prune symbols that no
+/// retained relocation needs, and structurally rename loader-safe definitions.
+/// A retained relocation targeting anything selected for removal, an
+/// unsupported symbol class, a name-plan collision, or output-name ownership
+/// that the ELF writer cannot preserve leaves the graph unchanged. Same-name
+/// undefined entries may share one writer symbol only when every observable
+/// attribute is equivalent.
 llvm::Error finalizeAndroidKernelModuleObjectGraph(
     PluginObjectGraph &Object,
     AndroidKernelModuleFinalizationPolicy Policy,

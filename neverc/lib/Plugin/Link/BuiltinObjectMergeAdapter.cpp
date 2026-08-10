@@ -1,5 +1,6 @@
 #include "BuiltinObjectMergeAdapter.h"
 #include "AndroidKernelProfileContractVerifier.h"
+#include "AndroidKernelReleaseInputVerifier.h"
 #include "neverc/Merge/Merger.h"
 #include "neverc/Plugin/Host/BuiltinTargetProvider.h"
 #include "neverc/Plugin/Host/ObjectPhaseHooks.h"
@@ -12,6 +13,7 @@
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/SHA256.h"
 #include "llvm/Support/raw_ostream.h"
+#include <algorithm>
 #include <limits>
 #include <optional>
 #include <utility>
@@ -29,8 +31,7 @@ bool sameID(NevercInterfaceID Left, NevercInterfaceID Right) {
   return Left.High == Right.High && Left.Low == Right.Low;
 }
 
-Expected<neverc::merge::Format>
-getMergeFormat(NevercObjectFormatID FormatID) {
+Expected<neverc::merge::Format> getMergeFormat(NevercObjectFormatID FormatID) {
   std::optional<BuiltinObjectFormat> Selected;
   for (const BuiltinTargetRoute &Route : builtinTargetRoutes()) {
     if (!sameID(Route.ObjectFormatID, FormatID))
@@ -84,13 +85,45 @@ Error verifyInputTargets(ArrayRef<PluginObjectGraph *> Objects,
 
 } // namespace
 
-Expected<ObjectMergeResult>
-executeBuiltinObjectMergeAdapter(
+class BuiltinAndroidKernelReleaseNativeOutputAttestor final {
+public:
+  static Expected<
+      std::shared_ptr<const AndroidKernelReleaseBoundOutputContract>>
+  bind(ArrayRef<uint8_t> Image,
+       const AndroidKernelReleaseInputContract &Contract, StringRef Boundary) {
+    const AndroidKernelReleaseNativeOutputBindingAuthority Authority;
+    return bindAndroidKernelReleaseNativeOutput(Image, Contract, Authority,
+                                                Boundary);
+  }
+};
+
+Expected<std::shared_ptr<const AndroidKernelReleaseBoundOutputContract>>
+consumeAndroidKernelReleaseBoundOutput(
+    const ObjectMergeResult &Result,
+    const AndroidKernelReleaseInputContract &InputContract,
+    StringRef Boundary) {
+  const auto &Bound = Result.boundAndroidKernelReleaseOutput();
+  if (!Bound)
+    return createStringError(
+        errc::invalid_argument,
+        Twine(Boundary) +
+            ": built-in Android final merge returned no bound native output "
+            "contract");
+  if (!Bound->matchesInputContract(InputContract))
+    return createStringError(
+        errc::invalid_argument,
+        Twine(Boundary) +
+            ": built-in Android final merge returned a bound native output "
+            "contract for different inputs");
+  return Bound;
+}
+
+Expected<ObjectMergeResult> executeBuiltinObjectMergeAdapter(
     PluginTaskContext &Task,
-    std::shared_ptr<const PluginTargetSnapshot> Snapshot,
-    OwnedTargetKey Target, ArrayRef<PluginObjectGraph *> Objects,
-    ArrayRef<ArrayRef<uint8_t>> InputImages,
-    NevercLinkOptionFlags Flags, BuiltinObjectMergeConfig Config) {
+    std::shared_ptr<const PluginTargetSnapshot> Snapshot, OwnedTargetKey Target,
+    ArrayRef<PluginObjectGraph *> Objects,
+    ArrayRef<ArrayRef<uint8_t>> InputImages, NevercLinkOptionFlags Flags,
+    BuiltinObjectMergeConfig Config) {
   if (Config.FinalizeAndroidKernelModule && !Config.AndroidKernelModule)
     return createStringError(
         errc::invalid_argument,
@@ -111,13 +144,28 @@ executeBuiltinObjectMergeAdapter(
   if (!Format)
     return Format.takeError();
 
-  auto SerializationToken = Task.handles().create(
-      PluginObjectMergeSerializationHandleKind, &Task);
+  // A delivered Android module can contain loader-visible ELF facts that the
+  // stable ObjectGraph deliberately does not model.  The public bridge audits
+  // these bytes before provider selection; repeat the invariant at this direct
+  // built-in boundary so callers cannot enter graph serialization without one
+  // immutable native image for every graph.
+  std::optional<AndroidKernelReleaseInputContract> ReleaseInputContract;
+  if (Config.FinalizeAndroidKernelModule) {
+    auto Contract = verifyAndroidKernelReleaseObjectMergeInputs(
+        Objects, InputImages, TargetView,
+        "built-in Android release ObjectMergeProvider boundary");
+    if (!Contract)
+      return Contract.takeError();
+    ReleaseInputContract = *Contract;
+  }
+
+  auto SerializationToken =
+      Task.handles().create(PluginObjectMergeSerializationHandleKind, &Task);
   if (!SerializationToken)
     return SerializationToken.takeError();
   auto ReleaseToken = make_scope_exit([&] {
-    (void)Task.handles().release(
-        *SerializationToken, PluginObjectMergeSerializationHandleKind);
+    (void)Task.handles().release(*SerializationToken,
+                                 PluginObjectMergeSerializationHandleKind);
   });
   const std::string Prefix =
       formatv("__neverc.object-merge.{0:x16}.{1:x16}",
@@ -127,26 +175,32 @@ executeBuiltinObjectMergeAdapter(
   auto Pipeline = ObjectPhasePipeline::create(Task, Snapshot);
   if (!Pipeline)
     return Pipeline.takeError();
+  if (ReleaseInputContract &&
+      ReleaseInputContract->requiresNativeImagePassthrough() &&
+      (*Pipeline)->mayReplaceArtifact())
+    return createStringError(
+        errc::invalid_argument,
+        "built-in Android release input requires native-image passthrough, "
+        "which is incompatible with a replaceable ObjectGraph/output phase");
 
   std::vector<PluginMemoryOutputSnapshot> Serialized;
   Serialized.reserve(Objects.size());
   for (size_t Index = 0; Index != Objects.size(); ++Index) {
-    const std::string Name =
-        (Twine(Prefix) + ".input." + Twine(Index)).str();
+    const std::string Name = (Twine(Prefix) + ".input." + Twine(Index)).str();
     // Serialize the (possibly plugin-transformed) input graph back to bytes for
     // the byte merger.  When the caller supplied the original on-disk image and
-    // no plugin phase mutated the graph, executeNative streams those exact bytes
-    // through (beginImage), so the merge input matches the native link; only a
-    // genuinely mutated graph falls back to the graph->assembly->object Writer.
+    // no plugin phase mutated the graph, executeNative streams those exact
+    // bytes through (beginImage), so the merge input matches the native link;
+    // only a genuinely mutated graph falls back to the graph->assembly->object
+    // Writer.
     const ArrayRef<uint8_t> NativeBytes =
-        Index < InputImages.size() ? InputImages[Index]
-                                   : ArrayRef<uint8_t>{};
+        Index < InputImages.size() ? InputImages[Index] : ArrayRef<uint8_t>{};
     auto Destination = ObjectOutputDestination::memory(
         Name, std::numeric_limits<uint64_t>::max());
     auto Image = NativeBytes.empty()
                      ? (*Pipeline)->execute(*Objects[Index], Destination)
-                     : (*Pipeline)->executeNative(*Objects[Index],
-                                                  NativeBytes, Destination);
+                     : (*Pipeline)->executeNative(*Objects[Index], NativeBytes,
+                                                  Destination);
     if (!Image)
       return joinErrors(
           createStringError(errc::invalid_argument,
@@ -165,9 +219,8 @@ executeBuiltinObjectMergeAdapter(
   SmallVector<StringRef, 8> InputBytes;
   InputBytes.reserve(Serialized.size());
   for (const PluginMemoryOutputSnapshot &Input : Serialized)
-    InputBytes.emplace_back(
-        reinterpret_cast<const char *>(Input.Bytes.data()),
-        Input.Bytes.size());
+    InputBytes.emplace_back(reinterpret_cast<const char *>(Input.Bytes.data()),
+                            Input.Bytes.size());
 
   if (*Format == neverc::merge::Format::ELF64LE && Config.AndroidKernelModule) {
     auto Contract = requireMatchingAndroidKernelProfileContracts(
@@ -185,41 +238,48 @@ executeBuiltinObjectMergeAdapter(
   // byte-identical. Ordinary partial links keep strip disabled; the delivered
   // Android `.ko` is the sole ET_REL exception and uses the same relocation-
   // safe merger policy as the native backend.
-  if (*Format == neverc::merge::Format::ELF64LE &&
-      Config.AndroidKernelModule) {
+  if (*Format == neverc::merge::Format::ELF64LE && Config.AndroidKernelModule) {
     MergeOptions.androidKernelModule = true;
     MergeOptions.finalizeAndroidKernelModule =
         Config.FinalizeAndroidKernelModule;
     MergeOptions.dropDebugInfo = Config.DropDebugInfo;
     MergeOptions.stripUnneededSymbols = Config.StripUnneededSymbols;
     MergeOptions.mergeSections = true;
-    MergeOptions.preservedSections = {
-        ".modinfo",
-        "__versions",
-        ".codetag.alloc_tags",
-        ".gnu.linkonce.this_module",
-        ".plt",
-        ".init.plt",
-        ".text.ftrace_trampoline",
-    };
   }
   (void)Flags;
-  if (!neverc::merge::mergeObjects(
-          InputBytes, Output, *Format, MergeOptions))
+  if (!neverc::merge::mergeObjects(InputBytes, Output, *Format, MergeOptions))
     return createStringError(
         errc::invalid_argument,
         "built-in relocatable object merge or self-verification failed");
   if (MergedBytes.empty())
     return createStringError(errc::invalid_argument,
                              "built-in object merge produced an empty image");
+
+  std::shared_ptr<const AndroidKernelReleaseBoundOutputContract>
+      BoundReleaseOutput;
+  if (ReleaseInputContract) {
+    const ArrayRef<uint8_t> TrustedMergedImage(
+        reinterpret_cast<const uint8_t *>(MergedBytes.data()),
+        MergedBytes.size());
+    auto Bound = BuiltinAndroidKernelReleaseNativeOutputAttestor::bind(
+        TrustedMergedImage, *ReleaseInputContract,
+        "built-in Android final native merger output");
+    if (!Bound)
+      return Bound.takeError();
+    if (Error E = verifyAndroidKernelReleaseOutputContract(
+            TrustedMergedImage, **Bound,
+            "built-in Android final native merger output self-verification"))
+      return std::move(E);
+    BoundReleaseOutput = std::move(*Bound);
+  }
+
   auto Reader = ObjectReaderProvider::create(Snapshot);
   if (!Reader)
     return Reader.takeError();
   auto MergedGraph = (*Reader)->read(
       Task,
-      ArrayRef<uint8_t>(
-          reinterpret_cast<const uint8_t *>(MergedBytes.data()),
-          MergedBytes.size()),
+      ArrayRef<uint8_t>(reinterpret_cast<const uint8_t *>(MergedBytes.data()),
+                        MergedBytes.size()),
       Prefix + ".merged", Target, TargetView.ObjectFormatID);
   if (!MergedGraph)
     return joinErrors(
@@ -237,11 +297,12 @@ executeBuiltinObjectMergeAdapter(
   ObjectMergeResult Result;
   Result.Object = std::move(*MergedGraph);
   Result.ProductID = BuiltinObjectMergeProductID;
-  Result.ProducerRouteDigest = SHA256::hash(ArrayRef<uint8_t>(
-      reinterpret_cast<const uint8_t *>(MergedBytes.data()),
-      MergedBytes.size()));
+  Result.ProducerRouteDigest = SHA256::hash(
+      ArrayRef<uint8_t>(reinterpret_cast<const uint8_t *>(MergedBytes.data()),
+                        MergedBytes.size()));
   Result.PluginID = "neverc.builtin";
   Result.ProviderID = "neverc.builtin.object-merge";
+  Result.BoundAndroidKernelReleaseOutput = std::move(BoundReleaseOutput);
   Result.MergedImage = std::move(MergedBytes);
   return Result;
 }

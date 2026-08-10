@@ -73,12 +73,22 @@ struct Options {
   /// when --strip-debug is active.
   bool dropDebugInfo = false;
 
-  /// Remove local and undefined ELF symbols that no retained relocation uses,
-  /// matching llvm-strip's `--strip-unneeded` safety boundary for ET_REL.
-  /// The ELF merger applies this only after all symbol resolution, parallel-
-  /// codegen demotion, and relocation remapping are complete; it then rebuilds
-  /// `.strtab` so removed names do not remain as stale bytes.  Other formats
-  /// currently ignore this option.
+  /// Harden a delivered Android ELF module at llvm-strip's
+  /// `--strip-unneeded` safety boundary for ET_REL: remove local and undefined
+  /// symbols that no retained relocation uses, then rename other retained
+  /// ordinary definitions from their type and final structural coordinate
+  /// (for example `fn_C000`, with deterministic `_1`, `_2`, ... aliases).
+  /// The IDA-inspired `fn_` and `code_` spellings intentionally avoid IDA's
+  /// reserved `sub_`/`loc_` dummy-name prefixes. These coordinates are synthetic
+  /// analysis EAs: they are not hashes, encryption, file offsets, ELF virtual
+  /// addresses, or runtime kernel addresses. Undefined imports and
+  /// loader/CFI/protected-section ABI names remain exact. The ELF merger applies
+  /// this only after symbol resolution,
+  /// parallel-codegen demotion, relocation remapping, and survivor pruning are
+  /// complete; it builds one collision-checked plan before atomically replacing
+  /// `.symtab`/`.strtab`, so removed/original names do not remain as stale
+  /// bytes.  Split-DWARF packages are rejected because they are not final
+  /// kernel modules.  Other formats currently ignore this option.
   bool stripUnneededSymbols = false;
 
   /// Merge per-function/per-variable sections into canonical names:
@@ -109,8 +119,10 @@ struct Options {
   /// the contract for a later checked link.
   bool finalizeAndroidKernelModule = false;
 
-  /// Sections to preserve from merging (exact match).  Only consulted
-  /// when mergeSections is true.
+  /// Additional sections to preserve from merging (exact match). Only
+  /// consulted when mergeSections is true. Android module loader/architecture
+  /// sections are protected intrinsically by that profile and need not be
+  /// repeated here.
   llvm::SmallVector<llvm::StringRef, 8> preservedSections;
 
   /// Self-verify the produced object before returning success.  When on,

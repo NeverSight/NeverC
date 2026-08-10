@@ -9,6 +9,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <vector>
 
 namespace neverc::plugin {
@@ -16,6 +17,7 @@ namespace neverc::plugin {
 class PluginProcessServices;
 class PluginSession;
 class PluginHandleArena;
+class PluginTaskContextTestPeer;
 
 class PluginTaskContext {
 public:
@@ -30,7 +32,13 @@ public:
                  std::function<NevercStatus()> Callback,
                  bool CheckCancellation = true,
                  uint64_t *OutDiagnosticTransactionID = nullptr,
-                 bool DeferRecoverableDisposition = false);
+                 bool DeferRecoverableDisposition = false,
+                 const void *ArtifactMutationDomain = nullptr);
+  std::optional<uint64_t>
+  currentArtifactMutationCapability(const void *Domain) const;
+  bool validatesArtifactMutationCapability(const void *Domain,
+                                           uint64_t Token) const;
+  void retainCallbackContext(std::shared_ptr<void> Context);
   NevercTaskHandle handle() const { return Handle; }
   NevercTaskKind kind() const { return Kind; }
   PluginTaskContext *parent() const { return Parent; }
@@ -58,7 +66,6 @@ private:
          PluginTaskContext *Parent);
   llvm::Error initialize();
   llvm::Error rollbackBegunPlugins();
-
   PluginSession &Session;
   PluginProcessServices &ProcessServices;
   NevercTaskKind Kind;
@@ -66,6 +73,7 @@ private:
   NevercTaskHandle Handle{};
   std::unique_ptr<PluginHandleArena> HandleArena;
   std::vector<std::unique_ptr<PluginState>> PluginStates;
+  std::vector<std::shared_ptr<void>> RetainedCallbackContexts;
   std::atomic<uint64_t> ActiveChildren{0};
   std::atomic<uint64_t> ActiveCallbacks{0};
   mutable std::mutex LifecycleMutex;
@@ -76,6 +84,7 @@ private:
 
   friend class PluginProcessServices;
   friend class PluginSession;
+  friend class PluginTaskContextTestPeer;
 };
 
 } // namespace neverc::plugin

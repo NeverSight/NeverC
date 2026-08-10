@@ -4,7 +4,7 @@
 // from the LLD ELF backend's `-r` (partial link) code paths:
 //
 //   Section merging   ← Layout/OutputSections.cpp  (canMergeToProgbits,
-//                        commitSection, section (name,type,flags) grouping)
+//                        commitSection, header-compatible grouping)
 //   Symbol resolution ← Symbols/Symbols.cpp        (GLOBAL>WEAK>UNDEF,
 //                        SHN_COMMON preserved, binding kept as-is in -r)
 //   Relocation remap  ← Emit/ElfImageEmitter.cpp   (copyRelocs path,
@@ -23,6 +23,10 @@
 
 #include "Common/DwarfRebase.h"
 #include "Common/MergerCommon.h"
+#include "neverc/Foundation/AndroidKernelModuleReleaseNames.h"
+#include "neverc/Foundation/AndroidKernelModuleRelocationPolicy.h"
+#include "neverc/Foundation/AndroidKernelModuleSectionPolicy.h"
+#include "neverc/Foundation/AndroidKernelModuleSymbolPolicy.h"
 #include "neverc/Merge/Merger.h"
 
 #include "llvm/ADT/DenseMap.h"
@@ -35,15 +39,21 @@
 #include "llvm/Support/Compression.h"
 #include "llvm/Support/Error.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <cstring>
+#include <functional>
+#include <limits>
 #include <optional>
+#include <tuple>
 
 using namespace llvm;
 
 namespace neverc::merge {
 
 namespace {
+
+constexpr uint64_t AndroidModuleVersionEntrySize = 64;
 
 // ---------------------------------------------------------------------------
 // Section merge compatibility — ported from LLD OutputSections.cpp
@@ -67,8 +77,26 @@ bool canMergeToProgbits(uint32_t type, uint16_t machine) {
 //
 // Ported from the section matching logic in LLD's LinkerScript.cpp
 // (addSection / getOutputSectionName) and OutputSections.cpp.
-bool sectionsCompatible(uint32_t typeA, uint64_t flagsA, uint32_t typeB,
-                        uint64_t flagsB, uint16_t machine) {
+bool sectionEntsizesCompatible(uint32_t TypeA, uint64_t FlagsA,
+                               uint64_t EntsizeA, uint32_t TypeB,
+                               uint64_t FlagsB, uint64_t EntsizeB) {
+  using namespace llvm::ELF;
+  const auto IsArray = [](uint32_t Type) {
+    return Type == SHT_INIT_ARRAY || Type == SHT_PREINIT_ARRAY ||
+           Type == SHT_FINI_ARRAY;
+  };
+  const bool MustMatch = EntsizeA != 0 || EntsizeB != 0 ||
+                         ((FlagsA | FlagsB) & (SHF_MERGE | SHF_STRINGS)) != 0 ||
+                         IsArray(TypeA) || IsArray(TypeB);
+  return !MustMatch || EntsizeA == EntsizeB;
+}
+
+bool sectionsCompatible(uint32_t typeA, uint64_t flagsA, uint64_t entsizeA,
+                        uint32_t typeB, uint64_t flagsB, uint64_t entsizeB,
+                        uint16_t machine) {
+  if (!sectionEntsizesCompatible(typeA, flagsA, entsizeA, typeB, flagsB,
+                                 entsizeB))
+    return false;
   if (typeA == typeB)
     return flagsA == flagsB;
   if (canMergeToProgbits(typeA, machine) && canMergeToProgbits(typeB, machine))
@@ -85,6 +113,25 @@ uint64_t clampAlign(uint64_t A) {
   return std::min(A, MaxAlign);
 }
 
+bool isValidReleaseAlignment(uint64_t Alignment) {
+  return Alignment <= 1 || (Alignment & (Alignment - 1)) == 0;
+}
+
+uint64_t normalizeReleaseAlignment(uint64_t Alignment) {
+  return std::max<uint64_t>(Alignment, 1);
+}
+
+bool checkedAlignOffset(uint64_t Offset, uint64_t Alignment,
+                        uint64_t &Aligned) {
+  Alignment = std::max<uint64_t>(Alignment, 1);
+  const uint64_t Remainder = Offset % Alignment;
+  const uint64_t Padding = Remainder == 0 ? 0 : Alignment - Remainder;
+  if (Padding > std::numeric_limits<uint64_t>::max() - Offset)
+    return false;
+  Aligned = Offset + Padding;
+  return true;
+}
+
 // ---------------------------------------------------------------------------
 // Symbol resolution priority — ported from LLD Symbols/Symbols.cpp
 // ---------------------------------------------------------------------------
@@ -93,10 +140,11 @@ uint64_t clampAlign(uint64_t A) {
 // duplicates: a defined GLOBAL beats a WEAK which beats an UNDEF.
 // This priority mirrors Symbol::resolve() for the relocatable case.
 enum SymPriority : uint8_t {
-  PRI_UNDEF = 0,
-  PRI_COMMON = 1,
-  PRI_WEAK_DEF = 2,
-  PRI_GLOBAL_DEF = 3,
+  PRI_WEAK_UNDEF = 0,
+  PRI_GLOBAL_UNDEF = 1,
+  PRI_COMMON = 2,
+  PRI_WEAK_DEF = 3,
+  PRI_GLOBAL_DEF = 4,
 };
 
 template <typename SymT> SymPriority getSymPriority(const SymT &S) {
@@ -106,7 +154,7 @@ template <typename SymT> SymPriority getSymPriority(const SymT &S) {
   bool isWeak = S.getBinding() == STB_WEAK;
 
   if (!isDefined && !isCommon)
-    return PRI_UNDEF;
+    return isWeak ? PRI_WEAK_UNDEF : PRI_GLOBAL_UNDEF;
   if (isCommon)
     return PRI_COMMON;
   if (isWeak)
@@ -128,6 +176,7 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
   using Shdr = typename ELFT::Shdr;
   using Sym = typename ELFT::Sym;
   using Rela = typename ELFT::Rela;
+  using Rel = typename ELFT::Rel;
 
   if (Opts.finalizeAndroidKernelModule && !Opts.androidKernelModule) {
     errs() << "neverc: Android module finalization requires Android module "
@@ -140,12 +189,29 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
               "finalizing an Android kernel module\n";
     return false;
   }
+  if (Opts.stripUnneededSymbols && Opts.artifact == ArtifactKind::SplitDwarf) {
+    errs() << "neverc: Android module release stripping cannot produce a "
+              "Split-DWARF package\n";
+    return false;
+  }
 
   detail::DedupStrTab ShStrTab, SymStrTab;
 
   struct RelocEntry {
     Rela Entry;
     unsigned PartIdx;
+    unsigned InputTargetSection;
+    uint64_t InputOffset;
+  };
+
+  struct LinkOrderContribution {
+    unsigned Partition;
+    unsigned InputSection;
+    unsigned LinkedInputSection;
+    uint32_t InputType;
+    uint64_t Alignment;
+    uint64_t Size;
+    uint64_t OriginalOffset;
   };
 
   struct MergedSection {
@@ -154,18 +220,10 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     SmallVector<char, 0> Data;
     SmallVector<RelocEntry, 0> Relocs;
     uint64_t VirtualSize = 0;
-    // SHF_LINK_ORDER bookkeeping.  Such a section (e.g. ftrace's
-    // __patchable_function_entries, sh_link → its code section) requires a
-    // valid sh_link in the output.  After -r merge every same-named input
-    // collapses into one output section, so we record the *folded* name of
-    // each contributor's sh_link target and, after layout, remap sh_link to the
-    // merged target section.  A single sh_link cannot name two targets, so when
-    // contributors disagree (e.g. per-function .text.foo/.text.bar that are
-    // NOT folded because mergeSections is off) we refuse rather than emit a
-    // section whose ordering/dependency points at only one of them.
-    bool HasLinkOrder = false;
-    bool LinkTargetConsistent = true;
-    std::string LinkTargetName;
+    // Preserve contribution identity until every referenced target has its
+    // final output section/offset. SHF_LINK_ORDER then requires these bytes to
+    // be re-laid out in that target placement order, not input metadata order.
+    SmallVector<LinkOrderContribution, 2> LinkOrderContributions;
   };
   SmallVector<MergedSection, 32> MergedSections;
   StringMap<SmallVector<unsigned, 2>> SectionIndex;
@@ -179,10 +237,10 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
   // may rewrite travels together so producer and verifier cannot drift.
   auto foldSection = [&](StringRef Name,
                          const Shdr &Header) -> detail::ELFSectionFold {
-    return detail::foldELFSection(
-        {Name, Header.sh_type, Header.sh_flags, Header.sh_entsize,
-         Header.sh_addralign},
-        Opts.mergeSections, Opts.androidKernelModule, Opts.preservedSections);
+    return detail::foldELFSection({Name, Header.sh_type, Header.sh_flags,
+                                   Header.sh_entsize, Header.sh_addralign},
+                                  Opts.mergeSections, Opts.androidKernelModule,
+                                  Opts.preservedSections);
   };
 
   // Section merge: group by (name, compatible_type, flags).
@@ -192,25 +250,21 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     uint64_t Flags = S.sh_flags & ~(uint64_t)SHF_GROUP;
     for (unsigned idx : Candidates)
       if (sectionsCompatible(MergedSections[idx].Template.sh_type,
-                             MergedSections[idx].Template.sh_flags, S.sh_type,
-                             Flags, Machine))
+                             MergedSections[idx].Template.sh_flags,
+                             MergedSections[idx].Template.sh_entsize, S.sh_type,
+                             Flags, S.sh_entsize, Machine))
         return idx;
     MergedSection MS;
     MS.Name = Name.str();
     MS.Template = S;
     MS.Template.sh_flags = Flags;
-    MS.Template.sh_addralign = clampAlign(MS.Template.sh_addralign);
-    // sh_link/sh_info are regenerated for the metadata sections that use them
-    // (.symtab→.strtab, .rela.*→.symtab/target) during output, so a merged
-    // content section starts at 0.  SHF_LINK_ORDER sections (e.g.
-    // __patchable_function_entries, .ARM.exidx) carry an sh_link to their
-    // associated code section; after -r merge every such input collapses into
-    // one output section, so the per-input link is meaningless and sh_link=0
-    // (SHN_UNDEF) is the spec-legal "ordered, no required predecessor" value —
-    // harmless for a single merged section.  neverc's kernel modules don't emit
-    // these today (no default -fpatchable-function-entry; verified on the
-    // sample .ko), so link remapping is intentionally omitted until a real
-    // consumer exists to exercise it.
+    MS.Template.sh_addralign =
+        Opts.stripUnneededSymbols
+            ? normalizeReleaseAlignment(MS.Template.sh_addralign)
+            : clampAlign(MS.Template.sh_addralign);
+    // Metadata links are regenerated below. Ordinary links are either remapped
+    // precisely through LinkOrderContributions or rejected by release
+    // preflight.
     MS.Template.sh_link = 0;
     MS.Template.sh_info = 0;
     unsigned NewIdx = MergedSections.size();
@@ -224,6 +278,8 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     DenseMap<unsigned, unsigned> SymMap;
     DenseMap<unsigned, uint64_t> SecOff;
     DenseSet<unsigned> DroppedSecs;
+    unsigned ReleaseSymbolStringTable = std::numeric_limits<unsigned>::max();
+    unsigned ReleaseSectionStringTable = std::numeric_limits<unsigned>::max();
   };
   SmallVector<PerPartition, 8> Maps;
   SmallVector<PartitionDwarf, 8> PartDwarfs(Buffers.size());
@@ -233,6 +289,14 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
   SmallVector<Sym, 64> LocalSyms, GlobalSyms;
   LocalSyms.push_back({});
   memset(&LocalSyms[0], 0, sizeof(Sym));
+  struct SymbolPlacementOrigin {
+    unsigned Partition;
+    unsigned InputSection;
+    uint64_t InputValue;
+  };
+  SmallVector<std::optional<SymbolPlacementOrigin>, 64> LocalSymbolOrigins,
+      GlobalSymbolOrigins;
+  LocalSymbolOrigins.push_back(std::nullopt);
 
   // Global symbol dedup: ported from LLD SymbolTable::insert +
   // Symbol::resolve.  In -r mode, GLOBAL>WEAK>UNDEF priority, and
@@ -260,9 +324,39 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
   // beyond it: the parallel-codegen path never promotes NOBITS->PROGBITS so it
   // never trips, and the general -r path safely falls back to a real linker.
   uint64_t TotalInputBytes = 0;
-  for (const auto &B : Buffers)
+  for (const auto &B : Buffers) {
+    if (B.size() > std::numeric_limits<uint64_t>::max() - TotalInputBytes)
+      return false;
     TotalInputBytes += B.size();
+  }
+  // Release alignment is preserved exactly, so a tiny object can legitimately
+  // request a multi-megabyte gap. Keep that behavior without allowing an
+  // attacker-controlled power-of-two sh_addralign to request an unbounded
+  // SmallVector allocation. This is an allocation budget, not an alignment
+  // clamp: alignments above the budget are rejected rather than rewritten.
+  constexpr uint64_t ReleasePaddingBudget = uint64_t(64) << 20;
+  const uint64_t ReleaseMaterializedBudget =
+      TotalInputBytes >
+              std::numeric_limits<uint64_t>::max() - ReleasePaddingBudget
+          ? std::numeric_limits<uint64_t>::max()
+          : TotalInputBytes + ReleasePaddingBudget;
   uint64_t MaterializedZeroFill = 0;
+  uint64_t ReleaseMaterializedBytes = 0;
+
+  auto checkedMaterializedSize = [&](uint64_t Current, uint64_t Growth,
+                                     uint64_t &NewSize) {
+    if (Growth > std::numeric_limits<uint64_t>::max() - Current)
+      return false;
+    NewSize = Current + Growth;
+    if (NewSize > std::numeric_limits<size_t>::max())
+      return false;
+    if (!Opts.stripUnneededSymbols)
+      return true;
+    if (Growth > ReleaseMaterializedBudget - ReleaseMaterializedBytes)
+      return false;
+    ReleaseMaterializedBytes += Growth;
+    return true;
+  };
 
   for (unsigned p = 0; p < Buffers.size(); ++p) {
     if (Buffers[p].empty())
@@ -318,6 +412,12 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
              << Hdr.e_machine << " but an earlier input had " << Machine
              << " (mixed architectures); refusing to merge\n";
       return false;
+    } else if (Opts.stripUnneededSymbols &&
+               (Hdr.e_flags != EFlags || Hdr.e_ident[EI_OSABI] != OSABI ||
+                Hdr.e_ident[EI_ABIVERSION] != ABIVer)) {
+      errs() << "neverc: Android kernel release: input ELF ABI header does "
+                "not match the earlier partitions; refusing to merge\n";
+      return false;
     }
 
     auto SecsOrErr = EF.sections();
@@ -326,6 +426,245 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
       return false;
     }
     ArrayRef<Shdr> Secs = *SecsOrErr;
+
+    // Release finalization is fail-closed even when the optional post-merge
+    // verifier is disabled. The generic -r merger historically tolerated a
+    // handful of malformed ELF shapes by treating missing names/symbol maps as
+    // empty/zero; that is unsuitable for an artifact whose symbol table and
+    // relocations are consumed directly by the kernel module loader.
+    if (Opts.stripUnneededSymbols) {
+      if (Hdr.e_type != ET_REL || Hdr.e_version != EV_CURRENT ||
+          Hdr.e_machine != EM_AARCH64 || Hdr.e_ehsize != sizeof(Ehdr) ||
+          Hdr.e_shentsize != sizeof(Shdr)) {
+        errs() << "neverc: Android module release input has an unsupported "
+                  "ELF header\n";
+        return false;
+      }
+      if (Hdr.e_shnum == 0 || Hdr.e_shnum >= SHN_LORESERVE ||
+          Hdr.e_shstrndx >= SHN_LORESERVE) {
+        errs() << "neverc: Android module release input uses unsupported "
+                  "extended section numbering\n";
+        return false;
+      }
+      if (Hdr.e_shstrndx >= Secs.size() ||
+          Secs[Hdr.e_shstrndx].sh_type != SHT_STRTAB) {
+        errs() << "neverc: Android module release input has an invalid "
+                  "section-name string table\n";
+        return false;
+      }
+
+      std::optional<unsigned> SelectedSymtab;
+      ArrayRef<Sym> SelectedSymbols;
+      StringRef SelectedStrings;
+      // Discover the sole symbol table before classifying any SHT_STRTAB.
+      // String-table type alone is not metadata provenance: only e_shstrndx
+      // and this selected symtab's sh_link are regenerated by the canonical
+      // writer. A third table is content the canonical schema cannot express.
+      for (unsigned I = 0; I < Secs.size(); ++I) {
+        const Shdr &Section = Secs[I];
+        if (Section.sh_type != SHT_SYMTAB)
+          continue;
+        if (SelectedSymtab || Section.sh_entsize != sizeof(Sym) ||
+            Section.sh_size % sizeof(Sym) != 0 ||
+            Section.sh_link >= Secs.size() ||
+            Secs[Section.sh_link].sh_type != SHT_STRTAB) {
+          errs() << "neverc: Android module release input has an invalid or "
+                    "ambiguous symbol table\n";
+          return false;
+        }
+        auto Symbols = EF.symbols(&Section);
+        auto Strings = EF.getStringTableForSymtab(Section);
+        if (!Symbols || !Strings) {
+          if (!Symbols)
+            consumeError(Symbols.takeError());
+          if (!Strings)
+            consumeError(Strings.takeError());
+          errs() << "neverc: Android module release input has an invalid "
+                    "symbol/string table\n";
+          return false;
+        }
+        SelectedSymtab = I;
+        SelectedSymbols = *Symbols;
+        SelectedStrings = *Strings;
+      }
+      PM.ReleaseSectionStringTable = Hdr.e_shstrndx;
+      if (SelectedSymtab)
+        PM.ReleaseSymbolStringTable = Secs[*SelectedSymtab].sh_link;
+
+      for (unsigned I = 0; I < Secs.size(); ++I) {
+        const Shdr &Section = Secs[I];
+        auto SectionName = EF.getSectionName(Section);
+        if (!SectionName) {
+          consumeError(SectionName.takeError());
+          errs() << "neverc: Android module release input has an invalid "
+                    "section name\n";
+          return false;
+        }
+        // Each contribution must already have the loader-facing
+        // modversion_info table shape. Checking before metadata routing and
+        // folding prevents SHT_NULL from disappearing, SHF_ALLOC from being
+        // ORed in, or a weak alignment from being raised by EnsureSection.
+        if (*SectionName == "__versions") {
+          if (Section.sh_type != SHT_PROGBITS ||
+              !(Section.sh_flags & SHF_ALLOC) ||
+              (Section.sh_flags & SHF_COMPRESSED)) {
+            errs() << "neverc: Android module release input __versions must "
+                      "be an allocated, uncompressed SHT_PROGBITS section\n";
+            return false;
+          }
+          if (Section.sh_addralign < 8 ||
+              (Section.sh_addralign & (Section.sh_addralign - 1)) != 0) {
+            errs() << "neverc: Android module release input __versions "
+                      "alignment must be a power of two >= 8\n";
+            return false;
+          }
+          if (Section.sh_size % AndroidModuleVersionEntrySize != 0) {
+            errs() << "neverc: Android module release input __versions size "
+                      "must be a multiple of 64 bytes\n";
+            return false;
+          }
+        }
+        if (AndroidKernelModuleSectionPolicy::rejectsReleaseInputType(
+                Section.sh_type)) {
+          errs() << "neverc: Android module release input has an unsupported "
+                    "section type\n";
+          return false;
+        }
+        if (Section.sh_addr != 0) {
+          errs() << "neverc: Android module release ET_REL input section has "
+                    "a non-zero sh_addr\n";
+          return false;
+        }
+        if (!isValidReleaseAlignment(Section.sh_addralign)) {
+          errs() << "neverc: Android module release input section has an "
+                    "invalid sh_addralign\n";
+          return false;
+        }
+        const bool IsSelectedStringTable = Section.sh_type == SHT_STRTAB &&
+                                           (I == PM.ReleaseSectionStringTable ||
+                                            I == PM.ReleaseSymbolStringTable);
+        if (Section.sh_type == SHT_STRTAB && !IsSelectedStringTable) {
+          errs() << "neverc: Android module release input has an additional "
+                    "string table that the canonical output cannot represent\n";
+          return false;
+        }
+        const bool IsRegeneratedMetadata =
+            IsSelectedStringTable ||
+            AndroidKernelModuleSectionPolicy::regeneratesReleaseInputType(
+                Section.sh_type);
+        if (!IsRegeneratedMetadata) {
+          if (Section.sh_flags & SHF_INFO_LINK) {
+            errs() << "neverc: Android module release does not support "
+                      "ordinary SHF_INFO_LINK sections\n";
+            return false;
+          }
+          if (Section.sh_flags & SHF_LINK_ORDER) {
+            if (Section.sh_link == 0 || Section.sh_link >= Secs.size() ||
+                Section.sh_info != 0) {
+              errs() << "neverc: Android module release input has malformed "
+                        "SHF_LINK_ORDER metadata\n";
+              return false;
+            }
+          } else if (Section.sh_link != 0 || Section.sh_info != 0) {
+            errs() << "neverc: Android module release input ordinary section "
+                      "has unsupported sh_link/sh_info metadata\n";
+            return false;
+          }
+        }
+        if (Section.sh_type != SHT_NOBITS &&
+            (Section.sh_offset > Input.size() ||
+             Section.sh_size > Input.size() - Section.sh_offset)) {
+          errs() << "neverc: Android module release input section payload is "
+                    "outside the file\n";
+          return false;
+        }
+        if (!Opts.dropDebugInfo &&
+            detail::isLegacyELFCompressedDebugSection(*SectionName)) {
+          errs() << "neverc: Android module release cannot retain legacy "
+                    "GNU compressed debug section '"
+                 << *SectionName
+                 << "'; use dropDebugInfo or regenerate standard DWARF\n";
+          return false;
+        }
+      }
+
+      if (SelectedSymtab) {
+        for (const Sym &Symbol : SelectedSymbols) {
+          if (Symbol.st_name >= SelectedStrings.size()) {
+            errs() << "neverc: Android module release input symbol name "
+                      "offset is outside its string table\n";
+            return false;
+          }
+          const char *Begin = SelectedStrings.data() + Symbol.st_name;
+          const size_t Available = SelectedStrings.size() - Symbol.st_name;
+          if (strnlen(Begin, Available) == Available) {
+            errs() << "neverc: Android module release input symbol name is "
+                      "not NUL-terminated\n";
+            return false;
+          }
+          if (Symbol.st_shndx != SHN_UNDEF && Symbol.st_shndx < SHN_LORESERVE &&
+              Symbol.st_shndx >= Secs.size()) {
+            errs() << "neverc: Android module release input symbol has an "
+                      "out-of-range section index\n";
+            return false;
+          }
+        }
+      }
+
+      for (const Shdr &Section : Secs) {
+        if (Section.sh_type != SHT_RELA && Section.sh_type != SHT_REL)
+          continue;
+        const uint64_t ExpectedEntsize =
+            Section.sh_type == SHT_RELA ? sizeof(Rela) : sizeof(Rel);
+        if (!SelectedSymtab || Section.sh_link != *SelectedSymtab ||
+            Section.sh_info == 0 || Section.sh_info >= Secs.size() ||
+            Section.sh_entsize != ExpectedEntsize ||
+            Section.sh_size % ExpectedEntsize != 0) {
+          errs() << "neverc: Android module release input has malformed "
+                    "relocation metadata\n";
+          return false;
+        }
+        if (Section.sh_type == SHT_RELA) {
+          auto Relocations = EF.relas(Section);
+          if (!Relocations) {
+            consumeError(Relocations.takeError());
+            return false;
+          }
+          for (const Rela &Relocation : *Relocations) {
+            const auto Width = AndroidKernelModuleRelocationPolicy::writeWidth(
+                Relocation.getType());
+            const uint64_t TargetSize = Secs[Section.sh_info].sh_size;
+            if (Relocation.getSymbol() >= SelectedSymbols.size() || !Width ||
+                Relocation.r_offset > TargetSize ||
+                *Width > TargetSize - Relocation.r_offset) {
+              errs() << "neverc: Android module release input relocation has "
+                        "an unsupported type, out-of-range symbol, or "
+                        "overrunning site\n";
+              return false;
+            }
+          }
+        } else {
+          auto Relocations = EF.rels(Section);
+          if (!Relocations) {
+            consumeError(Relocations.takeError());
+            return false;
+          }
+          for (const Rel &Relocation : *Relocations) {
+            const auto Width = AndroidKernelModuleRelocationPolicy::writeWidth(
+                Relocation.getType());
+            const uint64_t TargetSize = Secs[Section.sh_info].sh_size;
+            if (Relocation.getSymbol() >= SelectedSymbols.size() || !Width ||
+                Relocation.r_offset > TargetSize ||
+                *Width > TargetSize - Relocation.r_offset) {
+              errs() << "neverc: Android module release input relocation has "
+                        "an unsupported type, out-of-range symbol, or "
+                        "overrunning site\n";
+              return false;
+            }
+          }
+        }
+      }
+    }
 
     const Shdr *SymTabHdr = nullptr;
     StringRef SymStr;
@@ -391,12 +730,6 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
                   "(COMDAT) sections; refusing to merge\n";
         return false;
       }
-      if (S.sh_type == SHT_SYMTAB || S.sh_type == SHT_STRTAB ||
-          S.sh_type == SHT_RELA || S.sh_type == SHT_REL ||
-          S.sh_type == SHT_LLVM_ADDRSIG ||
-          S.sh_type == SHT_LLVM_CALL_GRAPH_PROFILE)
-        continue;
-
       // A malformed sh_name (offset outside the section-header string table)
       // makes getSectionName return an Expected error.  The prior
       // `NameOrErr ? *NameOrErr : ""` consulted the value but never *consumed*
@@ -414,25 +747,52 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
       }
       StringRef SecName = *NameOrErr;
 
-      // SHF_LINK_ORDER sections (e.g. __patchable_function_entries emitted by
-      // -fpatchable-function-entry for ftrace) carry an sh_link to an
-      // associated code section.  The link target's folded name is read here,
-      // before SecName itself is folded, and remapped to the merged target
-      // section after layout (see the LinkTargetName handling below and the
-      // sh_link remap pass before output).  Folding several such inputs whose
-      // targets collapse to one section (the ftrace .ko case: every .text.foo
-      // → .text) is correct; contributors that disagree are refused at output
-      // time because one sh_link cannot name two targets.
-      StringRef LinkTargetName;
-      if (S.sh_flags & SHF_LINK_ORDER) {
-        if (S.sh_link != 0 && S.sh_link < Secs.size()) {
-          if (auto LN = EF.getSectionName(Secs[S.sh_link])) {
-            LinkTargetName = foldSection(*LN, Secs[S.sh_link]).Name;
-          } else {
-            consumeError(LN.takeError());
-          }
+      if (Opts.stripUnneededSymbols && SecName == ".modinfo") {
+        auto Contents = EF.getSectionContents(S);
+        if (!Contents) {
+          consumeError(Contents.takeError());
+          return false;
+        }
+        if (AndroidKernelModuleSymbolPolicy::containsLivePatchModInfo(
+                *Contents)) {
+          errs() << "neverc: Android module release strip does not support a "
+                    "module marked livepatch in .modinfo\n";
+          return false;
         }
       }
+
+      // Livepatch modules require their original symbol indices/order and
+      // SHF_RELA_LIVEPATCH records to survive byte-for-byte. Release pruning
+      // and structural renaming intentionally change both, and the typed plugin
+      // graph cannot represent SHN_LIVEPATCH losslessly.  Refuse this distinct
+      // artifact class instead of producing a valid-looking broken module.
+      if (Opts.stripUnneededSymbols &&
+          (AndroidKernelModuleSymbolPolicy::isLivePatchSectionName(SecName) ||
+           (S.sh_flags &
+            AndroidKernelModuleSymbolPolicy::LivePatchRelocationSectionFlag))) {
+        errs() << "neverc: Android module release strip does not support "
+                  "livepatch section '"
+               << SecName << "'\n";
+        return false;
+      }
+
+      // Metadata sections are regenerated below, but release-policy checks
+      // must run first: livepatch's canonical `.klp.rela.*` sections are
+      // themselves SHT_RELA and would otherwise disappear through this early
+      // continue even when verification is disabled.
+      const bool IsRegeneratedMetadata =
+          Opts.stripUnneededSymbols
+              ? ((S.sh_type == SHT_STRTAB &&
+                  (i == PM.ReleaseSymbolStringTable ||
+                   i == PM.ReleaseSectionStringTable)) ||
+                 AndroidKernelModuleSectionPolicy::regeneratesReleaseInputType(
+                     S.sh_type))
+              : S.sh_type == SHT_SYMTAB || S.sh_type == SHT_STRTAB ||
+                    S.sh_type == SHT_RELA || S.sh_type == SHT_REL ||
+                    S.sh_type == SHT_LLVM_ADDRSIG ||
+                    S.sh_type == SHT_LLVM_CALL_GRAPH_PROFILE;
+      if (IsRegeneratedMetadata)
+        continue;
 
       // Decide name and header semantics together.  In particular, an exact
       // preserved pool must retain SHF_MERGE, SHF_STRINGS, and sh_entsize as a
@@ -491,7 +851,8 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
       // symbols into it need no offset shift.  A note that is itself a
       // relocation target is never deduped (SectionHasRelocTarget guard): see
       // its definition above for why double-applied relocations would result.
-      if (S.sh_type == SHT_NOTE && p > 0 && !SectionHasRelocTarget.count(i)) {
+      if (S.sh_type == SHT_NOTE && p > 0 && !SectionHasRelocTarget.count(i) &&
+          !(S.sh_flags & SHF_LINK_ORDER)) {
         auto CIt = SectionIndex.find(SecName);
         if (CIt != SectionIndex.end() && !CIt->second.empty()) {
           unsigned FrontIdx = CIt->second.front();
@@ -507,6 +868,7 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
                 (NB.empty() ||
                  memcmp(NB.data(), Front.Data.data(), NB.size()) == 0)) {
               PM.SecMap[i] = FrontIdx + 1;
+              PM.SecOff[i] = 0;
               continue;
             }
           }
@@ -523,32 +885,20 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
       unsigned MIdx = findOrCreateSection(SecName, SCopy);
       auto &MS = MergedSections[MIdx];
 
-      // Grouping keys are only (name, type, flags), so sh_entsize is sticky
-      // across later contributors.  Umbrella `.rodata` is a concatenated byte
-      // range (Fold clears entsize for both ordinary and demoted landings);
-      // re-apply that invariant on join so a stale first contribution cannot
-      // survive when verify=false skips the independent audit.  Type/flags
-      // need no post-join rewrite: demotion reshapes SCopy before grouping,
-      // so incompatible MERGE/STRINGS shapes never join the umbrella.
+      // sh_entsize participates in compatibility whenever either contributor
+      // has a nonzero value, carries MERGE/STRINGS semantics, or is an array
+      // section. Umbrella `.rodata` is a concatenated byte range (Fold clears
+      // entsize for both ordinary and demoted landings), so re-apply that
+      // canonical zero on join. Type/flags need no post-join rewrite:
+      // demotion reshapes SCopy before grouping.
       if (Fold.Name == ".rodata")
         MS.Template.sh_entsize = Fold.Entsize;
 
-      // Record each SHF_LINK_ORDER contributor's folded link target.  All
-      // contributors to one merged section must agree, or a single output
-      // sh_link cannot represent them; the disagreement is caught at output.
-      // LINK_ORDER is an input property, so consult the original header.
-      if (S.sh_flags & SHF_LINK_ORDER) {
-        if (!MS.HasLinkOrder) {
-          MS.HasLinkOrder = true;
-          MS.LinkTargetName = LinkTargetName.str();
-        } else if (MS.LinkTargetName != LinkTargetName) {
-          MS.LinkTargetConsistent = false;
-        }
-      }
-
       // Track max alignment (LLD: OutputSection::commitSection).
       {
-        uint64_t SafeAlign = clampAlign(SCopy.sh_addralign);
+        uint64_t SafeAlign = Opts.stripUnneededSymbols
+                                 ? normalizeReleaseAlignment(SCopy.sh_addralign)
+                                 : clampAlign(SCopy.sh_addralign);
         if (SafeAlign > MS.Template.sh_addralign)
           MS.Template.sh_addralign = SafeAlign;
       }
@@ -572,8 +922,20 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
       if (MS.Template.sh_type == SHT_NOBITS) {
         // Pure NOBITS so far (this input is NOBITS too): no on-disk bytes.
         PartOffset = MS.VirtualSize;
-        if (Align > 1)
-          PartOffset += (Align - (PartOffset % Align)) % Align;
+        if (Align > 1) {
+          const uint64_t Padding = (Align - (PartOffset % Align)) % Align;
+          if (Padding > std::numeric_limits<uint64_t>::max() - PartOffset) {
+            errs() << "neverc: relocatable merge: NOBITS section alignment "
+                      "overflows its merged size; refusing to merge\n";
+            return false;
+          }
+          PartOffset += Padding;
+        }
+        if (S.sh_size > std::numeric_limits<uint64_t>::max() - PartOffset) {
+          errs() << "neverc: relocatable merge: NOBITS contribution size "
+                    "overflows its merged section; refusing to merge\n";
+          return false;
+        }
         MS.VirtualSize = PartOffset + S.sh_size;
       } else {
         // Merged section is (or just became) PROGBITS.  Materialize any
@@ -592,13 +954,25 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
                       "merge\n";
             return false;
           }
+          uint64_t NewSize = 0;
+          if (!checkedMaterializedSize(MS.Data.size(), Fill, NewSize)) {
+            errs() << "neverc: relocatable merge: materialized section "
+                      "exceeds the release allocation budget\n";
+            return false;
+          }
           MaterializedZeroFill += Fill;
-          MS.Data.resize(MS.VirtualSize, 0);
+          MS.Data.resize(NewSize, 0);
         }
         PartOffset = MS.Data.size();
         if (Align > 1) {
           uint64_t Padding = (Align - (PartOffset % Align)) % Align;
-          MS.Data.resize(MS.Data.size() + Padding, 0);
+          uint64_t NewSize = 0;
+          if (!checkedMaterializedSize(MS.Data.size(), Padding, NewSize)) {
+            errs() << "neverc: relocatable merge: aligned section padding "
+                      "exceeds the release allocation budget\n";
+            return false;
+          }
+          MS.Data.resize(NewSize, 0);
           PartOffset = MS.Data.size();
         }
         if (S.sh_type == SHT_NOBITS) {
@@ -615,8 +989,14 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
                       "merge\n";
             return false;
           }
+          uint64_t NewSize = 0;
+          if (!checkedMaterializedSize(MS.Data.size(), S.sh_size, NewSize)) {
+            errs() << "neverc: relocatable merge: materialized NOBITS "
+                      "section exceeds the release allocation budget\n";
+            return false;
+          }
           MaterializedZeroFill += S.sh_size;
-          MS.Data.resize(MS.Data.size() + S.sh_size, 0);
+          MS.Data.resize(NewSize, 0);
         } else {
           auto D = EF.getSectionContents(S);
           if (!D) {
@@ -627,11 +1007,22 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
             consumeError(D.takeError());
             return false;
           }
+          uint64_t NewSize = 0;
+          if (!checkedMaterializedSize(MS.Data.size(), D->size(), NewSize)) {
+            errs() << "neverc: relocatable merge: section contents exceed "
+                      "the release allocation budget\n";
+            return false;
+          }
           MS.Data.append(D->begin(), D->end());
         }
         MS.VirtualSize = MS.Data.size();
       }
 
+      if (S.sh_flags & SHF_LINK_ORDER)
+        MS.LinkOrderContributions.push_back(
+            {p, i, static_cast<unsigned>(S.sh_link), S.sh_type,
+             normalizeReleaseAlignment(SCopy.sh_addralign), S.sh_size,
+             PartOffset});
       PM.SecMap[i] = MIdx + 1;
       PM.SecOff[i] = PartOffset;
       if (Opts.artifact == ArtifactKind::SplitDwarf)
@@ -642,8 +1033,10 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     // Ported from LLD finalizeSections → addSymbol.
     // Locals are concatenated; globals are deduped by name with
     // GLOBAL>WEAK>UNDEF priority (Symbol::resolve for -r).
-    // SHN_COMMON symbols are preserved (LLD: getCommonSec returns
-    // nullptr for non-relocated common symbols).
+    // Ordinary partial links preserve SHN_COMMON (LLD: getCommonSec returns
+    // nullptr for non-relocated common symbols). Final Android release
+    // hardening rejects it below because the module loader requires
+    // -fno-common semantics.
     if (SymTabHdr) {
       auto SymsOrErr = EF.symbols(SymTabHdr);
       if (!SymsOrErr) {
@@ -654,6 +1047,7 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
 
       for (unsigned i = 1; i < Syms.size(); ++i) {
         Sym OutS = Syms[i];
+        std::optional<SymbolPlacementOrigin> PlacementOrigin;
 
         // strnlen-bound the name to the string table extent.  llvm's
         // getStringTableForSymtab guarantees a trailing NUL (it errors
@@ -667,6 +1061,28 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
                            strnlen(SymStr.data() + OutS.st_name,
                                    SymStr.size() - OutS.st_name));
 
+        if (Opts.stripUnneededSymbols) {
+          if (OutS.st_shndx == SHN_COMMON) {
+            errs() << "neverc: Android module release strip refuses COMMON "
+                      "symbol '"
+                   << Name << "'; compile final modules with -fno-common\n";
+            return false;
+          }
+          if (OutS.st_shndx ==
+              AndroidKernelModuleSymbolPolicy::LivePatchSectionIndex) {
+            errs() << "neverc: Android module release strip does not support "
+                      "livepatch symbol '"
+                   << Name << "'\n";
+            return false;
+          }
+          if (OutS.st_shndx >= SHN_LORESERVE && OutS.st_shndx != SHN_ABS) {
+            errs() << "neverc: Android module release strip refuses symbol '"
+                   << Name << "' with unsupported reserved section index "
+                   << OutS.st_shndx << "\n";
+            return false;
+          }
+        }
+
         // Remap section index and adjust value.
         if (OutS.st_shndx < SHN_LORESERVE) {
           if (PM.DroppedSecs.contains(OutS.st_shndx))
@@ -677,8 +1093,17 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
             OutS.st_shndx = It->second;
             if (It->second != 0) {
               auto OffIt = PM.SecOff.find(origShndx);
-              if (OffIt != PM.SecOff.end())
+              if (OffIt != PM.SecOff.end()) {
+                PlacementOrigin =
+                    SymbolPlacementOrigin{p, origShndx, OutS.st_value};
+                if (OutS.st_value >
+                    std::numeric_limits<uint64_t>::max() - OffIt->second) {
+                  errs() << "neverc: Android module release strip: symbol '"
+                         << Name << "' value overflows its merged section\n";
+                  return false;
+                }
                 OutS.st_value += OffIt->second;
+              }
             }
           } else {
             OutS.st_shndx = 0;
@@ -696,6 +1121,7 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
         if (Syms[i].getBinding() == STB_LOCAL) {
           PM.SymMap[i] = LocalSyms.size();
           LocalSyms.push_back(OutS);
+          LocalSymbolOrigins.push_back(PlacementOrigin);
         } else {
           // Global symbol dedup: same-name globals are resolved by
           // priority (defined GLOBAL > WEAK > COMMON > UNDEF).
@@ -713,6 +1139,7 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
           if (Inserted) {
             unsigned Slot = GlobalSyms.size();
             GlobalSyms.push_back(OutS);
+            GlobalSymbolOrigins.push_back(PlacementOrigin);
             // Record slot; will add FirstGlobal offset after the loop.
             PM.SymMap[i] = Slot | 0x80000000u;
           } else {
@@ -726,14 +1153,16 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
               // produce it (each global is defined in exactly one partition;
               // .__pcg locals carry unique names), so only a malformed -r input
               // reaches here; refuse rather than silently pick one.
-              errs() << "neverc: relocatable merge: multiple strong definitions "
-                        "of symbol '"
-                     << Name << "'; refusing to merge\n";
+              errs()
+                  << "neverc: relocatable merge: multiple strong definitions "
+                     "of symbol '"
+                  << Name << "'; refusing to merge\n";
               return false;
             }
             unsigned Slot = It->second.SlotIdx;
             if (Pri > It->second.Pri) {
               GlobalSyms[Slot] = OutS;
+              GlobalSymbolOrigins[Slot] = PlacementOrigin;
               It->second.Pri = Pri;
               It->second.Strong = Strong;
             }
@@ -803,8 +1232,16 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
             return false;
           }
           Rela Adjusted = Re;
+          if (Adjusted.r_offset >
+              std::numeric_limits<uint64_t>::max() - dataOff) {
+            errs() << "neverc: Android module release relocation offset "
+                      "overflows during section placement\n";
+            return false;
+          }
           Adjusted.r_offset += dataOff;
-          MergedSections[targetMIdx].Relocs.push_back({Adjusted, p});
+          MergedSections[targetMIdx].Relocs.push_back(
+              {Adjusted, p, static_cast<unsigned>(Secs[i].sh_info),
+               Re.r_offset});
         }
       } else {
         // SHT_REL (implicit-addend form).  A faithful REL->RELA conversion must
@@ -819,6 +1256,175 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
         return false;
       }
     }
+  }
+
+  if (Opts.stripUnneededSymbols) {
+    // gABI SHF_LINK_ORDER: metadata contributions follow the relative order of
+    // the referenced contributions after those targets have their final output
+    // placement. Resolve dependencies first (a linked target may itself be a
+    // link-order section), then rebuild each affected byte stream. Completely
+    // tied target placements retain deterministic original input order.
+    SmallVector<uint8_t, 32> SortState(MergedSections.size(), 0);
+    std::function<bool(unsigned)> SortLinkOrder = [&](unsigned MIdx) {
+      if (SortState[MIdx] == 2)
+        return true;
+      if (SortState[MIdx] == 1) {
+        errs() << "neverc: Android module release has cyclic SHF_LINK_ORDER "
+                  "dependencies\n";
+        return false;
+      }
+      SortState[MIdx] = 1;
+      MergedSection &MS = MergedSections[MIdx];
+      std::optional<unsigned> FinalTargetSection;
+      for (const LinkOrderContribution &Contribution :
+           MS.LinkOrderContributions) {
+        if (Contribution.Partition >= Maps.size())
+          return false;
+        auto Target = Maps[Contribution.Partition].SecMap.find(
+            Contribution.LinkedInputSection);
+        if (Target == Maps[Contribution.Partition].SecMap.end() ||
+            Target->second == 0) {
+          errs() << "neverc: Android module release SHF_LINK_ORDER section '"
+                 << MS.Name << "' targets a section absent from output\n";
+          return false;
+        }
+        if (Maps[Contribution.Partition].SecOff.find(
+                Contribution.LinkedInputSection) ==
+            Maps[Contribution.Partition].SecOff.end())
+          return false;
+        if (!FinalTargetSection)
+          FinalTargetSection = Target->second;
+        else if (*FinalTargetSection != Target->second) {
+          errs() << "neverc: Android module release SHF_LINK_ORDER section '"
+                 << MS.Name
+                 << "' has contributors with distinct final targets\n";
+          return false;
+        }
+        const unsigned TargetMIdx = Target->second - 1;
+        if (!MergedSections[TargetMIdx].LinkOrderContributions.empty() &&
+            !SortLinkOrder(TargetMIdx))
+          return false;
+      }
+
+      if (!MS.LinkOrderContributions.empty()) {
+        auto PlacementKey = [&](const LinkOrderContribution &Contribution) {
+          const auto Target = Maps[Contribution.Partition].SecMap.find(
+              Contribution.LinkedInputSection);
+          const auto Offset = Maps[Contribution.Partition].SecOff.find(
+              Contribution.LinkedInputSection);
+          return std::tuple<unsigned, uint64_t, unsigned, unsigned>(
+              Target->second, Offset->second, Contribution.Partition,
+              Contribution.InputSection);
+        };
+        std::stable_sort(MS.LinkOrderContributions.begin(),
+                         MS.LinkOrderContributions.end(),
+                         [&](const LinkOrderContribution &Left,
+                             const LinkOrderContribution &Right) {
+                           return PlacementKey(Left) < PlacementKey(Right);
+                         });
+
+        SmallVector<char, 0> OriginalData = std::move(MS.Data);
+        if (OriginalData.size() > ReleaseMaterializedBytes)
+          return false;
+        ReleaseMaterializedBytes -= OriginalData.size();
+        SmallVector<char, 0> ReorderedData;
+        uint64_t NewVirtualSize = 0;
+        for (LinkOrderContribution &Contribution : MS.LinkOrderContributions) {
+          const uint64_t Alignment =
+              normalizeReleaseAlignment(Contribution.Alignment);
+          const uint64_t Remainder = NewVirtualSize % Alignment;
+          const uint64_t Padding = Remainder == 0 ? 0 : Alignment - Remainder;
+          if (Padding > std::numeric_limits<uint64_t>::max() - NewVirtualSize)
+            return false;
+          NewVirtualSize += Padding;
+          Maps[Contribution.Partition].SecOff[Contribution.InputSection] =
+              NewVirtualSize;
+
+          if (Contribution.Size >
+              std::numeric_limits<uint64_t>::max() - NewVirtualSize)
+            return false;
+          if (MS.Template.sh_type != SHT_NOBITS) {
+            uint64_t NewSize = 0;
+            if (!checkedMaterializedSize(ReorderedData.size(), Padding,
+                                         NewSize))
+              return false;
+            ReorderedData.resize(NewSize, 0);
+            if (Contribution.InputType == SHT_NOBITS) {
+              if (!checkedMaterializedSize(ReorderedData.size(),
+                                           Contribution.Size, NewSize))
+                return false;
+              ReorderedData.resize(NewSize, 0);
+            } else {
+              if (Contribution.OriginalOffset > OriginalData.size() ||
+                  Contribution.Size >
+                      OriginalData.size() - Contribution.OriginalOffset)
+                return false;
+              if (!checkedMaterializedSize(ReorderedData.size(),
+                                           Contribution.Size, NewSize))
+                return false;
+              ReorderedData.append(
+                  OriginalData.begin() + Contribution.OriginalOffset,
+                  OriginalData.begin() + Contribution.OriginalOffset +
+                      Contribution.Size);
+            }
+          }
+          NewVirtualSize += Contribution.Size;
+        }
+        MS.Data = std::move(ReorderedData);
+        MS.VirtualSize = NewVirtualSize;
+      }
+      SortState[MIdx] = 2;
+      return true;
+    };
+
+    for (unsigned MIdx = 0; MIdx < MergedSections.size(); ++MIdx)
+      if (!MergedSections[MIdx].LinkOrderContributions.empty() &&
+          !SortLinkOrder(MIdx))
+        return false;
+
+    auto RebaseSymbols =
+        [&](MutableArrayRef<Sym> Symbols,
+            ArrayRef<std::optional<SymbolPlacementOrigin>> Origins) {
+          if (Symbols.size() != Origins.size())
+            return false;
+          for (unsigned I = 0; I < Symbols.size(); ++I) {
+            if (!Origins[I])
+              continue;
+            const SymbolPlacementOrigin &Origin = *Origins[I];
+            if (Origin.Partition >= Maps.size())
+              return false;
+            auto Offset =
+                Maps[Origin.Partition].SecOff.find(Origin.InputSection);
+            if (Offset == Maps[Origin.Partition].SecOff.end() ||
+                Origin.InputValue >
+                    std::numeric_limits<uint64_t>::max() - Offset->second)
+              return false;
+            Symbols[I].st_value = Origin.InputValue + Offset->second;
+          }
+          return true;
+        };
+    if (!RebaseSymbols(LocalSyms, LocalSymbolOrigins) ||
+        !RebaseSymbols(GlobalSyms, GlobalSymbolOrigins))
+      return false;
+
+    for (MergedSection &MS : MergedSections)
+      for (RelocEntry &Relocation : MS.Relocs) {
+        if (Relocation.PartIdx >= Maps.size())
+          return false;
+        auto Offset =
+            Maps[Relocation.PartIdx].SecOff.find(Relocation.InputTargetSection);
+        if (Offset == Maps[Relocation.PartIdx].SecOff.end() ||
+            Relocation.InputOffset >
+                std::numeric_limits<uint64_t>::max() - Offset->second)
+          return false;
+        Relocation.Entry.r_offset = Relocation.InputOffset + Offset->second;
+      }
+  }
+
+  if (Opts.stripUnneededSymbols && (!HaveArch || Machine != EM_AARCH64)) {
+    errs() << "neverc: Android module release requires at least one valid "
+              "AArch64 input object\n";
+    return false;
   }
 
   // Multiple standalone DWO files form a DWARF package, not a plain
@@ -891,9 +1497,20 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
       return It->second.front();
     };
 
-    if (!EnsureSection("__versions", SHF_ALLOC, 8)) {
+    auto Versions = EnsureSection("__versions", SHF_ALLOC, 8);
+    if (!Versions) {
       errs() << "neverc: Android module merge: incompatible __versions "
                 "section\n";
+      return false;
+    }
+    // struct modversion_info is a fixed 64-byte loader ABI record. Enforce the
+    // final concatenated table shape at the producer's non-optional
+    // finalization boundary so Options::verify=false cannot commit a module the
+    // independent verifier (and kernel-side consumers) reject.
+    const uint64_t VersionsSize = MergedSections[*Versions].Data.size();
+    if (VersionsSize % AndroidModuleVersionEntrySize != 0) {
+      errs() << "neverc: Android module merge: __versions size must be a "
+                "multiple of 64 bytes\n";
       return false;
     }
     auto AllocTags =
@@ -991,6 +1608,15 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
         auto It = Maps[RE.PartIdx].SymMap.find(origSym);
         if (It != Maps[RE.PartIdx].SymMap.end())
           newSym = It->second;
+        else if (Opts.stripUnneededSymbols && origSym != 0) {
+          errs() << "neverc: Android module release relocation symbol has no "
+                    "surviving symbol-table mapping\n";
+          return false;
+        }
+      } else if (Opts.stripUnneededSymbols) {
+        errs() << "neverc: Android module release relocation uses a reserved "
+                  "symbol-table map key\n";
+        return false;
       }
       RE.Entry.setSymbolAndType(newSym, RE.Entry.getType());
     }
@@ -1050,14 +1676,16 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     }
   }
 
-  // ----- Prune relocation-unneeded symbols for a delivered Android `.ko` -----
+  // ----- Harden symbols for a delivered Android `.ko` -----
   // A kernel module is ET_REL and the loader requires its symbol/string tables
   // and relocations.  Consequently `--strip` here must never mean ELF
-  // strip-all.  Match llvm-strip's safe ET_REL boundary instead: after every
-  // merge, resolution, PCG demotion, and relocation remap is final, retain
-  // symbol zero, all relocation targets, and all defined non-local symbols;
-  // remove only other local/undefined symbols.  Rebuild `.strtab` so removed
-  // names cannot survive as unreachable bytes.
+  // strip-all.  Match llvm-strip's safe ET_REL boundary, then structurally name
+  // retained ordinary definitions: after every merge, resolution, PCG
+  // demotion, and relocation remap is final, retain symbol zero, all relocation
+  // targets, and all defined non-local symbols; remove only other
+  // local/undefined symbols.  Undefined imports and loader/CFI ABI names stay
+  // exact.  Rebuild `.strtab` so removed and replaced names cannot survive as
+  // unreachable bytes.
   if (Opts.stripUnneededSymbols) {
     const unsigned OldSymbolCount = FirstGlobal + GlobalSyms.size();
     DenseSet<unsigned> ReferencedSymbols;
@@ -1077,52 +1705,174 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     auto KeepSymbol = [&](const Sym &Symbol, unsigned Index) {
       if (Index == 0 || ReferencedSymbols.contains(Index))
         return true;
-      return Symbol.getBinding() != STB_LOCAL &&
-             Symbol.st_shndx != SHN_UNDEF;
+      return Symbol.getBinding() != STB_LOCAL && Symbol.st_shndx != SHN_UNDEF;
     };
 
-    detail::DedupStrTab PrunedStrTab;
-    SmallVector<Sym, 64> PrunedLocals, PrunedGlobals;
-    DenseMap<unsigned, unsigned> PrunedIndex;
-    auto CopyWithRebuiltName = [&](const Sym &Old) -> std::optional<Sym> {
-      if (Old.st_name >= SymStrTab.Data.size()) {
+    auto SymbolClass = [](const Sym &Symbol) {
+      using Policy = AndroidKernelModuleSymbolPolicy::SymbolClass;
+      if (Symbol.st_shndx == SHN_UNDEF)
+        return Policy::Undefined;
+      if (Symbol.st_shndx == SHN_COMMON)
+        return Policy::Common;
+      if (Symbol.st_shndx ==
+          AndroidKernelModuleSymbolPolicy::LivePatchSectionIndex)
+        return Policy::LivePatch;
+      if (Symbol.st_shndx == SHN_ABS)
+        return Policy::Absolute;
+      return Policy::Defined;
+    };
+
+    auto SymbolType = [](const Sym &Symbol) {
+      switch (Symbol.getType()) {
+      case STT_NOTYPE:
+        return ReleaseSymbolType::NoType;
+      case STT_OBJECT:
+        return ReleaseSymbolType::Object;
+      case STT_FUNC:
+        return ReleaseSymbolType::Function;
+      case STT_SECTION:
+        return ReleaseSymbolType::Section;
+      case STT_FILE:
+        return ReleaseSymbolType::File;
+      case STT_TLS:
+        return ReleaseSymbolType::TLS;
+      case STT_GNU_IFUNC:
+        return ReleaseSymbolType::GNUIFunc;
+      default:
+        return ReleaseSymbolType::FormatExtension;
+      }
+    };
+
+    auto BindingRank = [](const Sym &Symbol) -> uint32_t {
+      switch (Symbol.getBinding()) {
+      case STB_GLOBAL:
+        return 0;
+      case STB_WEAK:
+        return 1;
+      case STB_LOCAL:
+        return 2;
+      default:
+        return 3 + Symbol.getBinding();
+      }
+    };
+
+    auto OriginalName = [&](const Sym &Symbol) -> std::optional<StringRef> {
+      if (Symbol.st_name >= SymStrTab.Data.size()) {
         errs() << "neverc: Android module release strip: symbol name offset "
-                 "is outside .strtab\n";
+                  "is outside .strtab\n";
         return std::nullopt;
       }
-      const char *Begin = SymStrTab.Data.data() + Old.st_name;
-      const size_t Available = SymStrTab.Data.size() - Old.st_name;
+      const char *Begin = SymStrTab.Data.data() + Symbol.st_name;
+      const size_t Available = SymStrTab.Data.size() - Symbol.st_name;
       const size_t Length = strnlen(Begin, Available);
       if (Length == Available) {
         errs() << "neverc: Android module release strip: symbol name is not "
                   "NUL-terminated in .strtab\n";
         return std::nullopt;
       }
-      Sym Copy = Old;
-      Copy.st_name = PrunedStrTab.add(StringRef(Begin, Length));
-      return Copy;
+      return StringRef(Begin, Length);
     };
 
+    struct RetainedSymbol {
+      const Sym *Symbol;
+      unsigned OldIndex;
+      unsigned FinalIndex;
+      bool IsLocal;
+    };
+    SmallVector<RetainedSymbol, 64> Retained;
+    Retained.reserve(OldSymbolCount);
     for (unsigned I = 0; I < LocalSyms.size(); ++I) {
       if (!KeepSymbol(LocalSyms[I], I))
         continue;
-      auto Copy = CopyWithRebuiltName(LocalSyms[I]);
-      if (!Copy)
-        return false;
-      PrunedIndex[I] = PrunedLocals.size();
-      PrunedLocals.push_back(*Copy);
+      Retained.push_back(
+          {&LocalSyms[I], I, static_cast<unsigned>(Retained.size()), true});
     }
 
-    const unsigned PrunedFirstGlobal = PrunedLocals.size();
+    const unsigned PrunedFirstGlobal = Retained.size();
     for (unsigned I = 0; I < GlobalSyms.size(); ++I) {
       const unsigned OldIndex = FirstGlobal + I;
       if (!KeepSymbol(GlobalSyms[I], OldIndex))
         continue;
-      auto Copy = CopyWithRebuiltName(GlobalSyms[I]);
-      if (!Copy)
+      Retained.push_back({&GlobalSyms[I], OldIndex,
+                          static_cast<unsigned>(Retained.size()), false});
+    }
+
+    SmallVector<ReleaseSectionDescriptor, 32> ReleaseSections;
+    ReleaseSections.reserve(MergedSections.size());
+    for (unsigned I = 0; I < MergedSections.size(); ++I) {
+      const MergedSection &Section = MergedSections[I];
+      const uint64_t FinalSize = Section.Template.sh_type == SHT_NOBITS
+                                     ? Section.VirtualSize
+                                     : Section.Data.size();
+      ReleaseSections.push_back(
+          {I + 1, I + 1, Section.Template.sh_addralign, FinalSize,
+           (Section.Template.sh_flags & SHF_ALLOC) != 0,
+           (Section.Template.sh_flags & SHF_EXECINSTR) != 0});
+    }
+
+    SmallVector<ReleaseSymbolDescriptor, 64> ReleaseSymbols;
+    ReleaseSymbols.reserve(Retained.size());
+    for (const RetainedSymbol &Entry : Retained) {
+      const Sym &Symbol = *Entry.Symbol;
+      auto Name = OriginalName(Symbol);
+      if (!Name)
         return false;
-      PrunedIndex[OldIndex] = PrunedFirstGlobal + PrunedGlobals.size();
-      PrunedGlobals.push_back(*Copy);
+      const auto Class = SymbolClass(Symbol);
+      bool PreserveName = false;
+      if (Class == AndroidKernelModuleSymbolPolicy::SymbolClass::Defined &&
+          Symbol.st_shndx > 0 && Symbol.st_shndx <= MergedSections.size())
+        PreserveName =
+            AndroidKernelModuleSymbolPolicy::preservesSymbolNamesInSection(
+                MergedSections[Symbol.st_shndx - 1].Name);
+      ReleaseSymbols.push_back(
+          {Entry.FinalIndex, *Name, Class, SymbolType(Symbol),
+           static_cast<uint64_t>(
+               Class == AndroidKernelModuleSymbolPolicy::SymbolClass::Defined
+                   ? Symbol.st_shndx
+                   : 0),
+           Symbol.st_value, Symbol.st_size, BindingRank(Symbol),
+           static_cast<uint32_t>(Symbol.st_other), PreserveName});
+    }
+
+    auto RenamePlan =
+        planAndroidKernelReleaseNames(ReleaseSections, ReleaseSymbols);
+    if (!RenamePlan) {
+      errs() << "neverc: Android module release strip: "
+             << toString(RenamePlan.takeError()) << "\n";
+      return false;
+    }
+
+    SmallVector<StringRef, 64> PlannedNames(Retained.size());
+    SmallVector<bool, 64> HasPlannedName(Retained.size(), false);
+    for (const ReleaseSymbolRename &Rename : *RenamePlan) {
+      if (Rename.SymbolID >= PlannedNames.size() ||
+          HasPlannedName[Rename.SymbolID]) {
+        errs() << "neverc: Android module release strip: invalid rename plan "
+                  "symbol identity\n";
+        return false;
+      }
+      PlannedNames[Rename.SymbolID] = Rename.OutputName;
+      HasPlannedName[Rename.SymbolID] = true;
+    }
+    if (llvm::any_of(HasPlannedName, [](bool Present) { return !Present; })) {
+      errs()
+          << "neverc: Android module release strip: incomplete rename plan\n";
+      return false;
+    }
+
+    // The complete plan is now immutable.  Only at this point build replacement
+    // symbol/string tables and then commit the relocation-index remap.
+    detail::DedupStrTab PrunedStrTab;
+    SmallVector<Sym, 64> PrunedLocals, PrunedGlobals;
+    DenseMap<unsigned, unsigned> PrunedIndex;
+    for (const RetainedSymbol &Entry : Retained) {
+      Sym Copy = *Entry.Symbol;
+      Copy.st_name = PrunedStrTab.add(PlannedNames[Entry.FinalIndex]);
+      PrunedIndex[Entry.OldIndex] = Entry.FinalIndex;
+      if (Entry.IsLocal)
+        PrunedLocals.push_back(Copy);
+      else
+        PrunedGlobals.push_back(Copy);
     }
 
     for (MergedSection &MS : MergedSections) {
@@ -1156,7 +1906,9 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
   };
   SmallVector<OutSection, 32> OutSections;
   OutSections.push_back({});
-  memset(&OutSections[0].Hdr, 0, sizeof(Shdr));
+  AndroidKernelModuleSectionPolicy::initializeCanonicalMetadataHeader(
+      OutSections[0].Hdr,
+      AndroidKernelModuleSectionPolicy::CanonicalMetadataKind::Null);
 
   for (auto &MS : MergedSections) {
     OutSection Out;
@@ -1216,7 +1968,9 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
       Header.ch_type = ChType;
       Header.ch_reserved = 0;
       Header.ch_size = Uncompressed.size();
-      Header.ch_addralign = clampAlign(S.Hdr.sh_addralign);
+      Header.ch_addralign = Opts.stripUnneededSymbols
+                                ? normalizeReleaseAlignment(S.Hdr.sh_addralign)
+                                : clampAlign(S.Hdr.sh_addralign);
       SmallVector<char, 0> Encoded;
       Encoded.append(reinterpret_cast<const char *>(&Header),
                      reinterpret_cast<const char *>(&Header) + sizeof(Header));
@@ -1233,41 +1987,47 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     }
   }
 
-  // Remap SHF_LINK_ORDER sh_link to the merged target section now that every
-  // content section exists.  Output section index == merged section index + 1
-  // (slot 0 is the null section).  A consistent, present target yields a valid
-  // sh_link (the very invariant verifyMerge audits); anything else is refused
-  // so the caller falls back rather than emitting a section whose ordering
-  // dependency is dropped or points at the wrong code.
+  // Remap SHF_LINK_ORDER sh_link through exact input-section identity now that
+  // every partition's SecMap is complete. Output section index == SecMap value
+  // (slot 0 is the null section). All contributors must resolve to one ID.
   for (unsigned m = 0; m < MergedSections.size(); ++m) {
     const auto &MS = MergedSections[m];
-    if (!MS.HasLinkOrder)
+    if (MS.LinkOrderContributions.empty())
       continue;
-    if (!MS.LinkTargetConsistent) {
-      errs() << "neverc: relocatable merge: SHF_LINK_ORDER section '" << MS.Name
-             << "' has contributors with differing link targets; refusing\n";
-      return false;
+    std::optional<unsigned> FinalTarget;
+    for (const LinkOrderContribution &Contribution :
+         MS.LinkOrderContributions) {
+      const unsigned Partition = Contribution.Partition;
+      const unsigned InputSection = Contribution.LinkedInputSection;
+      if (Partition >= Maps.size())
+        return false;
+      auto Target = Maps[Partition].SecMap.find(InputSection);
+      if (Target == Maps[Partition].SecMap.end() || Target->second == 0) {
+        errs() << "neverc: relocatable merge: SHF_LINK_ORDER section '"
+               << MS.Name
+               << "' targets a section absent from the merged output; "
+                  "refusing\n";
+        return false;
+      }
+      if (!FinalTarget)
+        FinalTarget = Target->second;
+      else if (*FinalTarget != Target->second) {
+        errs() << "neverc: relocatable merge: SHF_LINK_ORDER section '"
+               << MS.Name
+               << "' has contributors with differing final target sections; "
+                  "refusing\n";
+        return false;
+      }
     }
-    auto It = SectionIndex.find(MS.LinkTargetName);
-    if (MS.LinkTargetName.empty() || It == SectionIndex.end() ||
-        It->second.empty()) {
-      errs() << "neverc: relocatable merge: SHF_LINK_ORDER section '" << MS.Name
-             << "' link target '" << MS.LinkTargetName
-             << "' is absent from the merged output; refusing\n";
-      return false;
-    }
-    OutSections[m + 1].Hdr.sh_link = It->second.front() + 1;
+    OutSections[m + 1].Hdr.sh_link = *FinalTarget;
   }
 
   unsigned SymTabIdx = OutSections.size();
   {
     OutSection S;
-    memset(&S.Hdr, 0, sizeof(Shdr));
-    S.Hdr.sh_type = SHT_SYMTAB;
-    S.Hdr.sh_entsize = sizeof(Sym);
-    S.Hdr.sh_addralign = 8;
-    S.Hdr.sh_info = FirstGlobal;
-    S.Hdr.sh_name = ShStrTab.add(".symtab");
+    AndroidKernelModuleSectionPolicy::initializeCanonicalMetadataHeader(
+        S.Hdr, AndroidKernelModuleSectionPolicy::CanonicalMetadataKind::Symtab,
+        ShStrTab.add(".symtab"), /*Link=*/0, FirstGlobal);
     S.Data.assign(reinterpret_cast<const char *>(FinalSyms.data()),
                   reinterpret_cast<const char *>(FinalSyms.data()) +
                       FinalSyms.size() * sizeof(Sym));
@@ -1277,10 +2037,9 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
   unsigned StrTabIdx = OutSections.size();
   {
     OutSection S;
-    memset(&S.Hdr, 0, sizeof(Shdr));
-    S.Hdr.sh_type = SHT_STRTAB;
-    S.Hdr.sh_addralign = 1;
-    S.Hdr.sh_name = ShStrTab.add(".strtab");
+    AndroidKernelModuleSectionPolicy::initializeCanonicalMetadataHeader(
+        S.Hdr, AndroidKernelModuleSectionPolicy::CanonicalMetadataKind::Strtab,
+        ShStrTab.add(".strtab"));
     S.Data.assign(SymStrTab.Data.begin(), SymStrTab.Data.end());
     OutSections.push_back(std::move(S));
   }
@@ -1292,13 +2051,9 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     if (MS.Relocs.empty())
       continue;
     OutSection S;
-    memset(&S.Hdr, 0, sizeof(Shdr));
-    S.Hdr.sh_type = SHT_RELA;
-    S.Hdr.sh_entsize = sizeof(Rela);
-    S.Hdr.sh_addralign = 8;
-    S.Hdr.sh_link = SymTabIdx;
-    S.Hdr.sh_info = m + 1;
-    S.Hdr.sh_name = ShStrTab.add((".rela" + MS.Name).c_str());
+    AndroidKernelModuleSectionPolicy::initializeCanonicalMetadataHeader(
+        S.Hdr, AndroidKernelModuleSectionPolicy::CanonicalMetadataKind::Rela,
+        ShStrTab.add((".rela" + MS.Name).c_str()), SymTabIdx, m + 1);
     SmallVector<Rela, 0> FlatRelas;
     for (auto &RE : MS.Relocs)
       FlatRelas.push_back(RE.Entry);
@@ -1312,10 +2067,10 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
   {
     uint32_t nameOff = ShStrTab.add(".shstrtab");
     OutSection S;
-    memset(&S.Hdr, 0, sizeof(Shdr));
-    S.Hdr.sh_type = SHT_STRTAB;
-    S.Hdr.sh_addralign = 1;
-    S.Hdr.sh_name = nameOff;
+    AndroidKernelModuleSectionPolicy::initializeCanonicalMetadataHeader(
+        S.Hdr,
+        AndroidKernelModuleSectionPolicy::CanonicalMetadataKind::Shstrtab,
+        nameOff);
     S.Data.assign(ShStrTab.Data.begin(), ShStrTab.Data.end());
     OutSections.push_back(std::move(S));
   }
@@ -1341,23 +2096,40 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
   // All section addresses are 0 in -r mode (ElfImageEmitter.cpp:1552).
   uint64_t Off = sizeof(Ehdr);
   for (unsigned i = 1; i < OutSections.size(); ++i) {
-    uint64_t Align = clampAlign(OutSections[i].Hdr.sh_addralign);
-    Off = (Off + Align - 1) & ~(Align - 1);
+    uint64_t Align =
+        Opts.stripUnneededSymbols
+            ? normalizeReleaseAlignment(OutSections[i].Hdr.sh_addralign)
+            : clampAlign(OutSections[i].Hdr.sh_addralign);
+    if (!checkedAlignOffset(Off, Align, Off))
+      return false;
     OutSections[i].Hdr.sh_offset = Off;
     if (OutSections[i].Hdr.sh_type == SHT_NOBITS) {
       OutSections[i].Hdr.sh_size = OutSections[i].VirtualSize;
     } else {
       OutSections[i].Hdr.sh_size = OutSections[i].Data.size();
+      if (OutSections[i].Data.size() >
+          std::numeric_limits<uint64_t>::max() - Off)
+        return false;
       Off += OutSections[i].Data.size();
     }
   }
-  Off = (Off + 7) & ~(uint64_t)7;
+  if (!checkedAlignOffset(Off, 8, Off))
+    return false;
   uint64_t ShOff = Off;
 
   // ----- Write output -----
   // Ported from LLD ElfImageEmitter::writeHeader / writeResult.
   SmallVector<char, 0> OutBuf;
-  OutBuf.resize(ShOff + OutSections.size() * sizeof(Shdr), 0);
+  if (OutSections.size() > std::numeric_limits<uint64_t>::max() / sizeof(Shdr))
+    return false;
+  const uint64_t SectionTableBytes = OutSections.size() * sizeof(Shdr);
+  if (SectionTableBytes > std::numeric_limits<uint64_t>::max() - ShOff)
+    return false;
+  const uint64_t OutputSize = ShOff + SectionTableBytes;
+  if (OutputSize > std::numeric_limits<size_t>::max() ||
+      (Opts.stripUnneededSymbols && OutputSize > ReleaseMaterializedBudget))
+    return false;
+  OutBuf.resize(OutputSize, 0);
 
   Ehdr *H = reinterpret_cast<Ehdr *>(OutBuf.data());
   memset(H, 0, sizeof(Ehdr));

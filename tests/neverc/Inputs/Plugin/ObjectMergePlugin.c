@@ -1,6 +1,7 @@
 #include "neverc/Plugin/PluginCore.h"
 #include "neverc/Plugin/PluginLink.h"
 #include <stddef.h>
+#include <stdint.h>
 #include <string.h>
 
 #define STRING_VIEW(Value)                                                     \
@@ -24,7 +25,6 @@ merge_objects(void *UserData, NevercTaskHandle Task,
   uint8_t SectionCount = 0;
   uint64_t I;
   static const char Name[] = ".plugin-merged";
-  (void)UserData;
 
   if (Request == NULL || OutCandidate == NULL ||
       Request->Header.StructSize < sizeof(*Request) ||
@@ -65,7 +65,7 @@ merge_objects(void *UserData, NevercTaskHandle Task,
 
   OutCandidate->Object = Request->OutputGraph;
   OutCandidate->ProductID.High = UINT64_C(0x4e43504d45524750);
-  OutCandidate->ProductID.Low = UINT64_C(1);
+  OutCandidate->ProductID.Low = (uint64_t)(uintptr_t)UserData;
   OutCandidate->ProducerRouteDigest[0] = 0x63;
   return neverc_status_ok();
 }
@@ -109,6 +109,28 @@ register_plugin(const NevercCoreAPI *Core,
   Descriptor.ProductID.High = UINT64_C(0x4e43504d45524750);
   Descriptor.ProductID.Low = UINT64_C(1);
   Descriptor.Merge = merge_objects;
+  Descriptor.UserData = (void *)(uintptr_t)UINT64_C(1);
+  Status = LinkRegistrar->RegisterObjectMergeProvider(
+      LinkRegistrar->Context, RegistrarContext, &Descriptor);
+  if (!neverc_status_is_ok(Status))
+    return Status;
+
+  memset(&Descriptor, 0, sizeof(Descriptor));
+  Descriptor.Header.StructSize = sizeof(Descriptor);
+  Descriptor.Header.Major = NEVERC_LINK_API_MAJOR;
+  Descriptor.Header.Minor = NEVERC_LINK_API_MINOR;
+  Descriptor.ProviderID =
+      STRING_VIEW("org.neverc.test.object-merge.android-aarch64");
+  Descriptor.TargetID.High = UINT64_C(0x4e43544255494c54);
+  Descriptor.TargetID.Low = UINT64_C(6);
+  Descriptor.FormatID.High = UINT64_C(0x4e434f424a464d54);
+  Descriptor.FormatID.Low = UINT64_C(1);
+  Descriptor.Flags =
+      NEVERC_LINK_PROVIDER_DETERMINISTIC | NEVERC_LINK_PROVIDER_CACHEABLE;
+  Descriptor.ProductID.High = UINT64_C(0x4e43504d45524750);
+  Descriptor.ProductID.Low = UINT64_C(2);
+  Descriptor.Merge = merge_objects;
+  Descriptor.UserData = (void *)(uintptr_t)UINT64_C(2);
   return LinkRegistrar->RegisterObjectMergeProvider(
       LinkRegistrar->Context, RegistrarContext, &Descriptor);
 }

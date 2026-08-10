@@ -11,6 +11,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -48,7 +49,12 @@ public:
   llvm::Error freeze();
   bool isFrozen() const;
   bool hasBindings(NevercInterfaceID Phase) const;
+  bool hasInterceptors(NevercInterfaceID Phase) const;
   bool hasProvider(NevercInterfaceID Phase) const;
+  std::optional<uint64_t>
+  currentArtifactMutationCapability(const PluginTaskContext &Task) const;
+  bool validatesArtifactMutationCapability(const PluginTaskContext &Task,
+                                           uint64_t Token) const;
   std::vector<std::string> fallbackProvenance() const;
   llvm::Error setProofVerifier(ProofVerifier Verifier);
 

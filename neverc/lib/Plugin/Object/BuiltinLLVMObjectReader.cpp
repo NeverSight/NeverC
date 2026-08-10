@@ -1,6 +1,7 @@
 #include "BuiltinLLVMObjectWriter.h"
 #include "neverc/Plugin/Host/BuiltinObjectExtension.h"
 #include "neverc/Plugin/Host/BuiltinTargetProvider.h"
+#include "neverc/Plugin/Host/NativeELFSectionFacts.h"
 #include "neverc/Plugin/Host/NativeRelocationFacts.h"
 #include "neverc/Plugin/Host/ObjectReaderProvider.h"
 #include "neverc/Plugin/Host/ObjectSectionRole.h"
@@ -74,6 +75,7 @@ enum DetailSite : uint64_t {
   DetailObjectParse,
   DetailObjectFormatMismatch,
   DetailObjectArchMismatch,
+  DetailELFRelocationAddendUnsupported,
 };
 
 constexpr uint64_t DetailIndexScale = 1000000;
@@ -165,8 +167,7 @@ void nativeSectionExtension(const ObjectFile &Object, SectionRef Section,
       Flags = Native->Characteristics;
       Offset = Native->PointerToRawData;
     }
-  } else if (const auto *MachObject =
-                 dyn_cast<MachOObjectFile>(&Object)) {
+  } else if (const auto *MachObject = dyn_cast<MachOObjectFile>(&Object)) {
     if (MachObject->is64Bit()) {
       MachO::section_64 Native =
           MachObject->getSection64(Section.getRawDataRefImpl());
@@ -188,6 +189,7 @@ void nativeSectionExtension(const ObjectFile &Object, SectionRef Section,
 }
 
 void nativeSymbolExtension(const ObjectFile &Object, SymbolRef Symbol,
+                           bool OriginalNameEmpty,
                            SmallVectorImpl<uint8_t> &Bytes) {
   using namespace builtinext;
   appendHeader(Bytes, SymbolTag, SymbolVersion);
@@ -207,8 +209,7 @@ void nativeSymbolExtension(const ObjectFile &Object, SymbolRef Symbol,
     Binding = COFFSymbol.getStorageClass();
     Other = static_cast<uint32_t>(COFFSymbol.getSectionNumber());
     Auxiliary = COFFSymbol.getNumberOfAuxSymbols();
-  } else if (const auto *MachObject =
-                 dyn_cast<MachOObjectFile>(&Object)) {
+  } else if (const auto *MachObject = dyn_cast<MachOObjectFile>(&Object)) {
     if (MachObject->is64Bit()) {
       MachO::nlist_64 Native =
           MachObject->getSymbol64TableEntry(Symbol.getRawDataRefImpl());
@@ -229,11 +230,11 @@ void nativeSymbolExtension(const ObjectFile &Object, SymbolRef Symbol,
   appendU64(Bytes, Binding);
   appendU64(Bytes, Other);
   appendU64(Bytes, Auxiliary);
+  appendU64(Bytes, OriginalNameEmpty ? SymbolNameEmpty : SymbolNameNonEmpty);
 }
 
-void nativeRelocationExtension(
-    RelocationRef Relocation, StringRef TypeName,
-    SmallVectorImpl<uint8_t> &Bytes) {
+void nativeRelocationExtension(RelocationRef Relocation, StringRef TypeName,
+                               SmallVectorImpl<uint8_t> &Bytes) {
   using namespace builtinext;
   appendHeader(Bytes, RelocationTag, RelocationVersion);
   appendU64(Bytes, Relocation.getType());
@@ -241,9 +242,10 @@ void nativeRelocationExtension(
   appendBytes(Bytes, TypeName);
 }
 
-NevercObjectSectionKind
-sectionKind(BuiltinObjectFormat Format, const ObjectFile &Object,
-            SectionRef Section, StringRef Name, bool IsTLS) {
+NevercObjectSectionKind sectionKind(BuiltinObjectFormat Format,
+                                    const ObjectFile &Object,
+                                    SectionRef Section, StringRef Name,
+                                    bool IsTLS) {
   if (Section.isDebugSection() || isDebugSectionName(Format, Name))
     return NEVERC_OBJECT_SECTION_KIND_DEBUG;
   if (isUnwindSectionName(Format, Name))
@@ -304,9 +306,9 @@ bool nativeSectionFlags(const ObjectFile &Object, SectionRef Section,
   return false;
 }
 
-NevercObjectSectionFlags
-sectionFlags(const ObjectFile &Object, SectionRef Section,
-             NevercObjectSectionKind Kind) {
+NevercObjectSectionFlags sectionFlags(const ObjectFile &Object,
+                                      SectionRef Section,
+                                      NevercObjectSectionKind Kind) {
   NevercObjectSectionFlags Flags = 0;
   if (!nativeSectionFlags(Object, Section, Flags)) {
     if (Section.isBerkeleyText() || Section.isBerkeleyData() ||
@@ -407,15 +409,14 @@ std::optional<Triple> relocationTableTriple(const ObjectFile &Object) {
     Result.setObjectFormat(Triple::ELF);
   } else
     return std::nullopt;
-  if (Object.getArch() != Triple::x86_64 &&
-      Object.getArch() != Triple::aarch64)
+  if (Object.getArch() != Triple::x86_64 && Object.getArch() != Triple::aarch64)
     return std::nullopt;
   Result.setArch(Object.getArch());
   return Result;
 }
 
-std::optional<RelocationFacts>
-relocationFacts(const ObjectFile &Object, RelocationRef Relocation) {
+std::optional<RelocationFacts> relocationFacts(const ObjectFile &Object,
+                                               RelocationRef Relocation) {
   const std::optional<Triple> Table = relocationTableTriple(Object);
   if (!Table)
     return std::nullopt;
@@ -454,8 +455,7 @@ struct ComdatMapEntry {
   NevercObjectComdatHandle Handle{};
 };
 
-NevercObjectComdatSelection
-coffComdatSelection(uint8_t Selection) {
+NevercObjectComdatSelection coffComdatSelection(uint8_t Selection) {
   switch (Selection) {
   case COFF::IMAGE_COMDAT_SELECT_NODUPLICATES:
     return NEVERC_OBJECT_COMDAT_NO_DUPLICATES;
@@ -475,10 +475,9 @@ coffComdatSelection(uint8_t Selection) {
 }
 
 template <class ELFT>
-NevercStatus createELFComdats(
-    const ELFObjectFile<ELFT> &Object,
-    const NevercObjectReadRequest &Request,
-    std::vector<ComdatMapEntry> &Comdats) {
+NevercStatus createELFComdats(const ELFObjectFile<ELFT> &Object,
+                              const NevercObjectReadRequest &Request,
+                              std::vector<ComdatMapEntry> &Comdats) {
   const ELFFile<ELFT> &File = Object.getELFFile();
   auto Sections = File.sections();
   if (!Sections) {
@@ -490,8 +489,7 @@ NevercStatus createELFComdats(
     if (Section.sh_type != ELF::SHT_GROUP)
       continue;
     auto Words =
-        File.template getSectionContentsAsArray<typename ELFT::Word>(
-            Section);
+        File.template getSectionContentsAsArray<typename ELFT::Word>(Section);
     if (!Words) {
       consumeError(Words.takeError());
       return status(NEVERC_STATUS_VERIFICATION_FAILED,
@@ -508,8 +506,7 @@ NevercStatus createELFComdats(
     }
     auto Symbols = File.symbols(*SymbolTable);
     auto StringTable = File.getStringTableForSymtab(**SymbolTable);
-    if (!Symbols || !StringTable ||
-        Section.sh_info >= Symbols->size()) {
+    if (!Symbols || !StringTable || Section.sh_info >= Symbols->size()) {
       if (!Symbols)
         consumeError(Symbols.takeError());
       if (!StringTable)
@@ -531,14 +528,13 @@ NevercStatus createELFComdats(
     Descriptor.Name = stringView(*Name);
     Descriptor.Selection = NEVERC_OBJECT_COMDAT_ANY;
     NevercObjectComdatHandle Handle{};
-    NevercStatus Result = Request.Object->CreateComdat(
-        Request.Object->Context, Request.Task, Request.Mutation,
-        &Descriptor, &Handle);
+    NevercStatus Result =
+        Request.Object->CreateComdat(Request.Object->Context, Request.Task,
+                                     Request.Mutation, &Descriptor, &Handle);
     if (!neverc_status_is_ok(Result))
       return Result;
     for (typename ELFT::Word Member : Words->drop_front())
-      Comdats.push_back(
-          {static_cast<uint64_t>(Member), Handle});
+      Comdats.push_back({static_cast<uint64_t>(Member), Handle});
   }
   return neverc_status_ok();
 }
@@ -551,18 +547,15 @@ struct COFFComdatPlan {
   int32_t AssociatedSectionNumber = 0;
 };
 
-NevercStatus createCOFFComdats(
-    const COFFObjectFile &Object,
-    const NevercObjectReadRequest &Request,
-    std::vector<ComdatMapEntry> &Comdats) {
+NevercStatus createCOFFComdats(const COFFObjectFile &Object,
+                               const NevercObjectReadRequest &Request,
+                               std::vector<ComdatMapEntry> &Comdats) {
   std::vector<COFFComdatPlan> Plans;
   for (SectionRef Section : Object.sections()) {
     const coff_section *Native = Object.getCOFFSection(Section);
-    if (!Native ||
-        (Native->Characteristics & COFF::IMAGE_SCN_LNK_COMDAT) == 0)
+    if (!Native || (Native->Characteristics & COFF::IMAGE_SCN_LNK_COMDAT) == 0)
       continue;
-    const int32_t SectionNumber =
-        static_cast<int32_t>(Section.getIndex() + 1);
+    const int32_t SectionNumber = static_cast<int32_t>(Section.getIndex() + 1);
     COFFComdatPlan Plan;
     Plan.SectionIndex = Section.getIndex();
     for (SymbolRef Symbol : Object.symbols()) {
@@ -627,10 +620,9 @@ NevercStatus createCOFFComdats(
         if (ParentIndex == Plan.SectionIndex)
           return status(NEVERC_STATUS_VERIFICATION_FAILED,
                         detail(DetailCOFFComdatSelfAssociative));
-        auto Parent = llvm::find_if(
-            Comdats, [&](const ComdatMapEntry &Entry) {
-              return Entry.SectionIndex == ParentIndex;
-            });
+        auto Parent = llvm::find_if(Comdats, [&](const ComdatMapEntry &Entry) {
+          return Entry.SectionIndex == ParentIndex;
+        });
         if (Parent == Comdats.end())
           continue; // Parent not created yet; try again next round.
         Associated = Parent->Handle;
@@ -642,9 +634,9 @@ NevercStatus createCOFFComdats(
       Descriptor.Selection = Plan.Selection;
       Descriptor.AssociatedComdat = Associated;
       NevercObjectComdatHandle Handle{};
-      NevercStatus Result = Request.Object->CreateComdat(
-          Request.Object->Context, Request.Task, Request.Mutation,
-          &Descriptor, &Handle);
+      NevercStatus Result =
+          Request.Object->CreateComdat(Request.Object->Context, Request.Task,
+                                       Request.Mutation, &Descriptor, &Handle);
       if (!neverc_status_is_ok(Result))
         return Result;
       Comdats.push_back({Plan.SectionIndex, Handle});
@@ -661,9 +653,9 @@ NevercStatus createCOFFComdats(
   return neverc_status_ok();
 }
 
-NevercStatus createComdats(
-    const ObjectFile &Object, const NevercObjectReadRequest &Request,
-    std::vector<ComdatMapEntry> &Comdats) {
+NevercStatus createComdats(const ObjectFile &Object,
+                           const NevercObjectReadRequest &Request,
+                           std::vector<ComdatMapEntry> &Comdats) {
   if (const auto *ELF = dyn_cast<ELF32LEObjectFile>(&Object))
     return createELFComdats(*ELF, Request, Comdats);
   if (const auto *ELF = dyn_cast<ELF64LEObjectFile>(&Object))
@@ -677,8 +669,7 @@ NevercStatus createComdats(
   return neverc_status_ok();
 }
 
-bool isLogicalObjectSection(const ObjectFile &Object,
-                            SectionRef Section) {
+bool isLogicalObjectSection(const ObjectFile &Object, SectionRef Section) {
   if (!isa<ELFObjectFileBase>(Object))
     return true;
   switch (ELFSectionRef(Section).getType()) {
@@ -709,24 +700,49 @@ SectionIndexMap indexSections(std::vector<SectionMapEntry> &Sections) {
   return Index;
 }
 
-SectionMapEntry *findSection(const SectionIndexMap &Index,
-                             SectionRef Section) {
+SectionMapEntry *findSection(const SectionIndexMap &Index, SectionRef Section) {
   const auto It = Index.find(Section.getIndex());
   return It == Index.end() ? nullptr : It->second;
 }
 
+std::optional<uint64_t>
+sectionRelativeSymbolValue(const ObjectFile &Object,
+                           const SectionMapEntry &Section, uint64_t NativeValue,
+                           uint64_t SymbolSize) {
+  // ELF ET_REL st_value is already section-relative even when a malformed or
+  // synthetic input gives the section a nonzero sh_addr. COFF and Mach-O
+  // expose absolute section coordinates through the generic object API and
+  // still need the address removed here.
+  const uint64_t Value =
+      isa<ELFObjectFileBase>(Object)
+          ? NativeValue
+          : (NativeValue >= Section.Address ? NativeValue - Section.Address
+                                            : NativeValue);
+  if (Value > Section.Size || SymbolSize > Section.Size - Value)
+    return std::nullopt;
+  return Value;
+}
+
+struct DroppedSymbolTarget {
+  SectionMapEntry *Section = nullptr;
+  uint64_t Value = 0;
+};
+
 // A relocation may name a symbol that createSymbols() dropped as a container
-// artifact.  Those symbols label the start of a section, so the reference is
-// really section-relative and the graph can say so directly.
+// artifact. Those symbols still identify a section-relative coordinate: ELF
+// mapping symbols can occur anywhere in a section, while section symbols and
+// Mach-O's assembler temporaries commonly label its start. Preserve that
+// coordinate in TargetValue rather than silently folding every such target to
+// offset zero.
 //
 // The test is the same predicate createSymbols() drops by, not a subset of it:
 // anything dropped there has to be recoverable here, or a relocation naming it
 // has nowhere left to point.  Mach-O's "ltmp<n>" section labels are the case
 // that matters -- they are dropped without being SF_FormatSpecific, and any
 // object with more than a handful of sections has relocations against them.
-SectionMapEntry *sectionForDroppedSymbol(const ObjectFile &Object,
-                                         SymbolRef Symbol,
-                                         const SectionIndexMap &Sections) {
+std::optional<DroppedSymbolTarget>
+targetForDroppedSymbol(const ObjectFile &Object, SymbolRef Symbol,
+                       const SectionIndexMap &Sections) {
   Expected<uint32_t> Flags = Symbol.getFlags();
   Expected<StringRef> Name = Symbol.getName();
   if (!Flags || !Name) {
@@ -734,24 +750,36 @@ SectionMapEntry *sectionForDroppedSymbol(const ObjectFile &Object,
       consumeError(Flags.takeError());
     if (!Name)
       consumeError(Name.takeError());
-    return nullptr;
+    return std::nullopt;
   }
   if (!isSyntheticAssemblerSymbol(Object, *Name, *Flags))
-    return nullptr;
+    return std::nullopt;
   Expected<section_iterator> Section = Symbol.getSection();
   if (!Section) {
     consumeError(Section.takeError());
-    return nullptr;
+    return std::nullopt;
   }
   if (*Section == Object.section_end())
-    return nullptr;
-  return findSection(Sections, **Section);
+    return std::nullopt;
+  SectionMapEntry *MappedSection = findSection(Sections, **Section);
+  if (!MappedSection)
+    return std::nullopt;
+  Expected<uint64_t> NativeValue = Symbol.getValue();
+  if (!NativeValue) {
+    consumeError(NativeValue.takeError());
+    return std::nullopt;
+  }
+  const std::optional<uint64_t> Value =
+      sectionRelativeSymbolValue(Object, *MappedSection, *NativeValue, 0);
+  if (!Value)
+    return std::nullopt;
+  return DroppedSymbolTarget{MappedSection, *Value};
 }
 
 // A symbol has no stable index the way a section does, so its DataRefImpl --
 // the opaque cursor llvm::object hands out -- is the key.
-using SymbolIndexMap = DenseMap<std::pair<uint64_t, uint64_t>,
-                                const SymbolMapEntry *>;
+using SymbolIndexMap =
+    DenseMap<std::pair<uint64_t, uint64_t>, const SymbolMapEntry *>;
 
 // Which member of DataRefImpl's union is live depends on the format, so the
 // key is its bytes -- the same thing llvm::object itself compares when asked
@@ -803,8 +831,16 @@ NevercStatus createSections(BuiltinObjectFormat Format,
     }
 
     const bool IsTLS = isTLSSection(Object, Section, Name);
-    const NevercObjectSectionKind Kind =
+    NevercObjectSectionKind Kind =
         sectionKind(Format, Object, Section, Name, IsTLS);
+    NevercObjectSectionFlags StableFlags = sectionFlags(Object, Section, Kind);
+    if (isa<ELFObjectFileBase>(Object)) {
+      const ELFSectionRef NativeSection(Section);
+      const NativeELFSectionProjection Projection = projectNativeELFSection(
+          Name, NativeSection.getType(), NativeSection.getFlags());
+      Kind = Projection.Kind;
+      StableFlags = Projection.Flags;
+    }
     SmallVector<uint8_t, 48> Extension;
     nativeSectionExtension(Object, Section, Extension);
 
@@ -813,7 +849,7 @@ NevercStatus createSections(BuiltinObjectFormat Format,
                          NEVERC_OBJECT_API_MINOR, 0};
     Descriptor.Name = stringView(Name);
     Descriptor.Kind = Kind;
-    Descriptor.Flags = sectionFlags(Object, Section, Kind);
+    Descriptor.Flags = StableFlags;
     Descriptor.Alignment =
         std::max<uint64_t>(UINT64_C(1), Section.getAlignment().value());
     const uint64_t Size = Section.getSize();
@@ -842,16 +878,16 @@ NevercStatus createSections(BuiltinObjectFormat Format,
       Descriptor.Comdat = Comdat->second;
 
     NevercObjectSectionHandle Handle{};
-    NevercStatus Result = Request.Object->CreateSection(
-        Request.Object->Context, Request.Task, Request.Mutation,
-        &Descriptor, &Handle);
+    NevercStatus Result =
+        Request.Object->CreateSection(Request.Object->Context, Request.Task,
+                                      Request.Mutation, &Descriptor, &Handle);
     if (!neverc_status_is_ok(Result)) {
       if (Result.Detail == 0)
         Result.Detail = detailAt(DetailSectionCreate, Sections.size());
       return Result;
     }
-    Sections.push_back({Section, Handle, Kind, Size,
-                        Section.getAddress(), Descriptor.Comdat});
+    Sections.push_back(
+        {Section, Handle, Kind, Size, Section.getAddress(), Descriptor.Comdat});
   }
   return neverc_status_ok();
 }
@@ -860,7 +896,6 @@ NevercStatus createSymbols(const ObjectFile &Object,
                            const NevercObjectReadRequest &Request,
                            const SectionIndexMap &Sections,
                            std::vector<SymbolMapEntry> &Symbols) {
-  uint64_t AnonymousIndex = 0;
   for (SymbolRef Symbol : Object.symbols()) {
     Expected<StringRef> NameOrError = Symbol.getName();
     Expected<uint32_t> FlagsOrError = Symbol.getFlags();
@@ -884,12 +919,7 @@ NevercStatus createSymbols(const ObjectFile &Object,
     }
 
     const uint32_t NativeFlags = *FlagsOrError;
-    std::string GeneratedName;
     StringRef Name = *NameOrError;
-    if (Name.empty()) {
-      GeneratedName = "$symbol." + std::to_string(++AnonymousIndex);
-      Name = GeneratedName;
-    }
     if (isSyntheticAssemblerSymbol(Object, Name, NativeFlags))
       continue;
 
@@ -897,16 +927,14 @@ NevercStatus createSymbols(const ObjectFile &Object,
     Descriptor.Header = {sizeof(Descriptor), NEVERC_OBJECT_API_MAJOR,
                          NEVERC_OBJECT_API_MINOR, 0};
     Descriptor.Name = stringView(Name);
-    Descriptor.Binding =
-        (NativeFlags & SymbolRef::SF_Weak)
-            ? NEVERC_OBJECT_SYMBOL_BINDING_WEAK
-            : ((NativeFlags & SymbolRef::SF_Global)
-                   ? NEVERC_OBJECT_SYMBOL_BINDING_GLOBAL
-                   : NEVERC_OBJECT_SYMBOL_BINDING_LOCAL);
-    Descriptor.Visibility =
-        (NativeFlags & SymbolRef::SF_Hidden)
-            ? NEVERC_OBJECT_SYMBOL_VISIBILITY_HIDDEN
-            : NEVERC_OBJECT_SYMBOL_VISIBILITY_DEFAULT;
+    Descriptor.Binding = (NativeFlags & SymbolRef::SF_Weak)
+                             ? NEVERC_OBJECT_SYMBOL_BINDING_WEAK
+                             : ((NativeFlags & SymbolRef::SF_Global)
+                                    ? NEVERC_OBJECT_SYMBOL_BINDING_GLOBAL
+                                    : NEVERC_OBJECT_SYMBOL_BINDING_LOCAL);
+    Descriptor.Visibility = (NativeFlags & SymbolRef::SF_Hidden)
+                                ? NEVERC_OBJECT_SYMBOL_VISIBILITY_HIDDEN
+                                : NEVERC_OBJECT_SYMBOL_VISIBILITY_DEFAULT;
     Descriptor.Type = symbolType(*TypeOrError);
     Descriptor.Alignment =
         std::max<uint64_t>(UINT64_C(1), Symbol.getAlignment());
@@ -920,27 +948,23 @@ NevercStatus createSymbols(const ObjectFile &Object,
     } else if ((NativeFlags & SymbolRef::SF_Common) != 0) {
       Descriptor.Definition = NEVERC_OBJECT_SYMBOL_DEFINITION_COMMON;
       Descriptor.Size = Symbol.getCommonSize();
-    } else if ((NativeFlags & SymbolRef::SF_Absolute) != 0 ||
-               !MappedSection) {
+    } else if ((NativeFlags & SymbolRef::SF_Absolute) != 0 || !MappedSection) {
       Descriptor.Definition = NEVERC_OBJECT_SYMBOL_DEFINITION_ABSOLUTE;
       Descriptor.Value = *ValueOrError;
     } else {
       Descriptor.Definition = NEVERC_OBJECT_SYMBOL_DEFINITION_DEFINED;
       Descriptor.Section = MappedSection->Handle;
       Descriptor.Comdat = MappedSection->Comdat;
-      Descriptor.Value =
-          *ValueOrError >= MappedSection->Address
-              ? *ValueOrError - MappedSection->Address
-              : *ValueOrError;
       if (isa<ELFObjectFileBase>(Object))
         Descriptor.Size = ELFSymbolRef(Symbol).getSize();
-      if (Descriptor.Value > MappedSection->Size ||
-          Descriptor.Size > MappedSection->Size - Descriptor.Value)
+      const std::optional<uint64_t> Value = sectionRelativeSymbolValue(
+          Object, *MappedSection, *ValueOrError, Descriptor.Size);
+      if (!Value)
         return status(NEVERC_STATUS_VERIFICATION_FAILED,
                       detailAt(DetailSymbolOutsideSection, Symbols.size()));
+      Descriptor.Value = *Value;
       if (MappedSection->Kind == NEVERC_OBJECT_SECTION_KIND_TLS_DATA ||
-          MappedSection->Kind ==
-              NEVERC_OBJECT_SECTION_KIND_TLS_ZERO_FILL)
+          MappedSection->Kind == NEVERC_OBJECT_SECTION_KIND_TLS_ZERO_FILL)
         Descriptor.Type = NEVERC_OBJECT_SYMBOL_TYPE_TLS;
     }
     if ((NativeFlags & SymbolRef::SF_Exported) != 0 &&
@@ -948,15 +972,15 @@ NevercStatus createSymbols(const ObjectFile &Object,
       Descriptor.Flags |= NEVERC_OBJECT_SYMBOL_EXPORTED;
 
     SmallVector<uint8_t, 48> Extension;
-    nativeSymbolExtension(Object, Symbol, Extension);
+    nativeSymbolExtension(Object, Symbol, Name.empty(), Extension);
     Descriptor.ExtensionOwner = Request.Target.ObjectFormatID;
     Descriptor.ExtensionVersion = builtinext::SymbolVersion;
     Descriptor.Extension = byteView(Extension);
 
     NevercObjectSymbolHandle Handle{};
-    NevercStatus Result = Request.Object->CreateSymbol(
-        Request.Object->Context, Request.Task, Request.Mutation,
-        &Descriptor, &Handle);
+    NevercStatus Result =
+        Request.Object->CreateSymbol(Request.Object->Context, Request.Task,
+                                     Request.Mutation, &Descriptor, &Handle);
     if (!neverc_status_is_ok(Result)) {
       if (Result.Detail == 0)
         Result.Detail = detailAt(DetailSymbolCreate, Symbols.size());
@@ -997,8 +1021,7 @@ NevercStatus createRelocations(const ObjectFile &Object,
                                const SymbolIndexMap &Symbols) {
   const bool ELFAddends = isa<ELFObjectFileBase>(Object);
   for (SectionRef RelocationSection : Object.sections()) {
-    SectionMapEntry *MappedSection =
-        findSection(Sections, RelocationSection);
+    SectionMapEntry *MappedSection = findSection(Sections, RelocationSection);
     Expected<section_iterator> RelocatedSection =
         RelocationSection.getRelocatedSection();
     if (!RelocatedSection) {
@@ -1063,12 +1086,13 @@ NevercStatus createRelocations(const ObjectFile &Object,
           Facts->IsPCRelative ? NEVERC_TRUE : NEVERC_FALSE;
       Descriptor.IsSigned = Facts->IsSigned ? NEVERC_TRUE : NEVERC_FALSE;
       if (ELFAddends) {
-        Expected<int64_t> Addend =
-            ELFRelocationRef(Relocation).getAddend();
-        if (Addend)
-          Descriptor.Addend = *Addend;
-        else
+        Expected<int64_t> Addend = ELFRelocationRef(Relocation).getAddend();
+        if (!Addend) {
           consumeError(Addend.takeError());
+          return status(NEVERC_STATUS_VERIFICATION_FAILED,
+                        detail(DetailELFRelocationAddendUnsupported));
+        }
+        Descriptor.Addend = *Addend;
       } else if (!Facts->IsInstructionField &&
                  Relocation.getOffset() + Width / 8 <= Contents.size()) {
         Descriptor.Addend =
@@ -1083,32 +1107,26 @@ NevercStatus createRelocations(const ObjectFile &Object,
 
       symbol_iterator Symbol = Relocation.getSymbol();
       if (Symbol != Object.symbol_end()) {
-        const SymbolMapEntry *MappedSymbol =
-            findSymbol(Symbols, *Symbol);
+        const SymbolMapEntry *MappedSymbol = findSymbol(Symbols, *Symbol);
         if (MappedSymbol) {
-          Descriptor.TargetKind =
-              NEVERC_OBJECT_RELOCATION_TARGET_SYMBOL;
+          Descriptor.TargetKind = NEVERC_OBJECT_RELOCATION_TARGET_SYMBOL;
           Descriptor.TargetSymbol = MappedSymbol->Handle;
-        } else if (const SectionMapEntry *DroppedTarget =
-                       sectionForDroppedSymbol(Object, *Symbol, Sections)) {
-          Descriptor.TargetKind =
-              NEVERC_OBJECT_RELOCATION_TARGET_SECTION;
-          Descriptor.TargetSection = DroppedTarget->Handle;
+        } else if (const std::optional<DroppedSymbolTarget> DroppedTarget =
+                       targetForDroppedSymbol(Object, *Symbol, Sections)) {
+          Descriptor.TargetKind = NEVERC_OBJECT_RELOCATION_TARGET_SECTION;
+          Descriptor.TargetSection = DroppedTarget->Section->Handle;
+          Descriptor.TargetValue = DroppedTarget->Value;
         } else {
           return status(NEVERC_STATUS_VERIFICATION_FAILED,
                         detail(DetailRelocationTargetUnmapped));
         }
-      } else if (const auto *MachObject =
-                     dyn_cast<MachOObjectFile>(&Object)) {
+      } else if (const auto *MachObject = dyn_cast<MachOObjectFile>(&Object)) {
         MachO::any_relocation_info Native =
             MachObject->getRelocation(Relocation.getRawDataRefImpl());
-        SectionRef TargetSection =
-            MachObject->getAnyRelocationSection(Native);
-        SectionMapEntry *MappedTarget =
-            findSection(Sections, TargetSection);
+        SectionRef TargetSection = MachObject->getAnyRelocationSection(Native);
+        SectionMapEntry *MappedTarget = findSection(Sections, TargetSection);
         if (MappedTarget) {
-          Descriptor.TargetKind =
-              NEVERC_OBJECT_RELOCATION_TARGET_SECTION;
+          Descriptor.TargetKind = NEVERC_OBJECT_RELOCATION_TARGET_SECTION;
           Descriptor.TargetSection = MappedTarget->Handle;
         } else {
           Descriptor.TargetKind =
@@ -1125,8 +1143,8 @@ NevercStatus createRelocations(const ObjectFile &Object,
 
       NevercObjectRelocationHandle Handle{};
       NevercStatus Result = Request.Object->CreateRelocation(
-          Request.Object->Context, Request.Task, Request.Mutation,
-          &Descriptor, &Handle);
+          Request.Object->Context, Request.Task, Request.Mutation, &Descriptor,
+          &Handle);
       if (!neverc_status_is_ok(Result)) {
         if (Result.Detail == 0)
           Result.Detail = detail(DetailRelocationCreate);
@@ -1137,20 +1155,18 @@ NevercStatus createRelocations(const ObjectFile &Object,
   return neverc_status_ok();
 }
 
-NevercStatus NEVERC_CALL probeBuiltinObject(
-    void *UserData, const NevercObjectProbeRequest *Request,
-    NevercObjectProbeResult *Result) {
+NevercStatus NEVERC_CALL
+probeBuiltinObject(void *UserData, const NevercObjectProbeRequest *Request,
+                   NevercObjectProbeResult *Result) {
   if (!UserData || !Request || !Result ||
       Request->Input.Length >
           static_cast<uint64_t>(std::numeric_limits<size_t>::max()) ||
       (!Request->Input.Data && Request->Input.Length != 0))
     return status(NEVERC_STATUS_INVALID_ARGUMENT);
 
-  const auto *Context =
-      static_cast<const BuiltinFormatContext *>(UserData);
-  StringRef Bytes(
-      reinterpret_cast<const char *>(Request->Input.Data),
-      static_cast<size_t>(Request->Input.Length));
+  const auto *Context = static_cast<const BuiltinFormatContext *>(UserData);
+  StringRef Bytes(reinterpret_cast<const char *>(Request->Input.Data),
+                  static_cast<size_t>(Request->Input.Length));
   const file_magic Magic = identify_magic(Bytes);
   Result->ConsumedMinimum =
       Context->Format == BuiltinObjectFormat::COFF ? 20 : 16;
@@ -1211,38 +1227,33 @@ NevercStatus NEVERC_CALL probeBuiltinObject(
   return neverc_status_ok();
 }
 
-NevercStatus NEVERC_CALL readBuiltinObject(
-    void *UserData, const NevercObjectReadRequest *Request) {
+NevercStatus NEVERC_CALL
+readBuiltinObject(void *UserData, const NevercObjectReadRequest *Request) {
   if (!UserData || !Request || !Request->Object ||
       Request->Input.Length >
           static_cast<uint64_t>(std::numeric_limits<size_t>::max()) ||
       (!Request->Input.Data && Request->Input.Length != 0))
     return status(NEVERC_STATUS_INVALID_ARGUMENT);
 
-  const auto *Context =
-      static_cast<const BuiltinFormatContext *>(UserData);
-  StringRef Bytes(
-      reinterpret_cast<const char *>(Request->Input.Data),
-      static_cast<size_t>(Request->Input.Length));
-  MemoryBufferRef Buffer(Bytes, StringRef(
-                                    Request->LogicalPath.Data
-                                        ? Request->LogicalPath.Data
-                                        : "",
-                                    static_cast<size_t>(
-                                        Request->LogicalPath.Length)));
+  const auto *Context = static_cast<const BuiltinFormatContext *>(UserData);
+  StringRef Bytes(reinterpret_cast<const char *>(Request->Input.Data),
+                  static_cast<size_t>(Request->Input.Length));
+  MemoryBufferRef Buffer(
+      Bytes,
+      StringRef(Request->LogicalPath.Data ? Request->LogicalPath.Data : "",
+                static_cast<size_t>(Request->LogicalPath.Length)));
   auto ObjectOrError = ObjectFile::createObjectFile(Buffer);
   if (!ObjectOrError) {
     consumeError(ObjectOrError.takeError());
     return status(NEVERC_STATUS_VERIFICATION_FAILED, detail(DetailObjectParse));
   }
   ObjectFile &Object = **ObjectOrError;
-  const bool CorrectFormat =
-      (Context->Format == BuiltinObjectFormat::ELF &&
-       isa<ELFObjectFileBase>(Object)) ||
-      (Context->Format == BuiltinObjectFormat::COFF &&
-       isa<COFFObjectFile>(Object)) ||
-      (Context->Format == BuiltinObjectFormat::MachO &&
-       isa<MachOObjectFile>(Object));
+  const bool CorrectFormat = (Context->Format == BuiltinObjectFormat::ELF &&
+                              isa<ELFObjectFileBase>(Object)) ||
+                             (Context->Format == BuiltinObjectFormat::COFF &&
+                              isa<COFFObjectFile>(Object)) ||
+                             (Context->Format == BuiltinObjectFormat::MachO &&
+                              isa<MachOObjectFile>(Object));
   if (!CorrectFormat)
     return status(NEVERC_STATUS_VERIFICATION_FAILED,
                   detail(DetailObjectFormatMismatch));
@@ -1257,10 +1268,9 @@ NevercStatus NEVERC_CALL readBuiltinObject(
   // reads it out of the wrong table and gets an answer that is wrong without
   // looking wrong. Refusing here is what keeps that pair consistent for
   // everyone downstream, rather than each consumer having to notice it.
-  StringRef TripleText(Request->Target.RawTriple.Data
-                           ? Request->Target.RawTriple.Data
-                           : "",
-                       static_cast<size_t>(Request->Target.RawTriple.Length));
+  StringRef TripleText(
+      Request->Target.RawTriple.Data ? Request->Target.RawTriple.Data : "",
+      static_cast<size_t>(Request->Target.RawTriple.Length));
   const Triple TargetTriple(Triple::normalize(TripleText));
   if (Object.getArch() != TargetTriple.getArch())
     return status(NEVERC_STATUS_VERIFICATION_FAILED,
@@ -1272,8 +1282,7 @@ NevercStatus NEVERC_CALL readBuiltinObject(
     return Result;
   std::vector<SectionMapEntry> Sections;
   std::vector<SymbolMapEntry> Symbols;
-  Result = createSections(Context->Format, Object, *Request, Comdats,
-                          Sections);
+  Result = createSections(Context->Format, Object, *Request, Comdats, Sections);
   if (!neverc_status_is_ok(Result))
     return Result;
   const SectionIndexMap SectionIndex = indexSections(Sections);
@@ -1287,8 +1296,7 @@ NevercStatus NEVERC_CALL readBuiltinObject(
   return createRelocations(Object, *Request, SectionIndex, SymbolIndex);
 }
 
-const BuiltinFormatContext *
-contextFor(BuiltinObjectFormat Format) {
+const BuiltinFormatContext *contextFor(BuiltinObjectFormat Format) {
   switch (Format) {
   case BuiltinObjectFormat::ELF:
     return &ELFContext;
@@ -1328,6 +1336,7 @@ void appendBuiltinLLVMObjectFormats(
     Format.PluginID = "neverc.builtin.llvm-object";
     Format.CanonicalName = canonicalName(Kind).str();
     Format.DefaultExtension = defaultExtension(Kind).str();
+    Format.APIMinor = NEVERC_OBJECT_FORMAT_API_MINOR;
     Format.Flags = NEVERC_OBJECT_FORMAT_CAN_PROBE |
                    NEVERC_OBJECT_FORMAT_CAN_READ |
                    NEVERC_OBJECT_FORMAT_CAN_WRITE;

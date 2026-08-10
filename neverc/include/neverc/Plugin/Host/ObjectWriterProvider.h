@@ -19,10 +19,22 @@ enum class ObjectOutputDestinationKind : uint8_t {
   File,
 };
 
+enum class ObjectWritePolicy : uint8_t {
+  Default,
+  // Preserve graph symbols while canonicalizing ELF table ownership/indices.
+  CanonicalELFTables,
+  // Finalize serialized Android ELF symbols and replay structural names.
+  AndroidKernelRelease,
+};
+
 struct ObjectOutputDestination {
   ObjectOutputDestinationKind Kind = ObjectOutputDestinationKind::Memory;
   std::string Name;
   uint64_t SizeBudget = 0;
+  // Graph-writer policy only. beginImage stages authoritative native bytes
+  // verbatim; semantic validators remain responsible for auditing that image.
+  ObjectWritePolicy WritePolicy = ObjectWritePolicy::Default;
+  bool DropDebugInfo = false;
 
   static ObjectOutputDestination memory(llvm::StringRef LogicalName,
                                         uint64_t SizeBudget);

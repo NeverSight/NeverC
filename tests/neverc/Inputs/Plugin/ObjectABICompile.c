@@ -11,6 +11,10 @@ _Static_assert(NEVERC_OBJECT_API_MAJOR == 1,
                "Object ABI must start at major one");
 _Static_assert(NEVERC_OBJECT_FORMAT_API_MAJOR == 1,
                "object-format ABI must start at major one");
+_Static_assert(NEVERC_OBJECT_FORMAT_API_MINOR == 1,
+               "object-format ABI minor must advertise writer policies");
+_Static_assert(NEVERC_OBJECT_WRITE_REQUEST_FLAGS_API_MINOR == 1,
+               "object writer flags require object-format ABI 1.1");
 _Static_assert(NEVERC_OBJECT_PHASE_API_MAJOR == 1,
                "object-phase ABI must start at major one");
 _Static_assert(sizeof(NevercObjectGraphHandle) == sizeof(NevercHandle),
@@ -29,6 +33,17 @@ _Static_assert(offsetof(NevercObjectPhaseAPI, Header) == 0,
                "object-phase table must begin with ABI header");
 _Static_assert(offsetof(NevercObjectWriteRequest, Header) == 0,
                "object writer request must begin with ABI header");
+_Static_assert(NEVERC_OBJECT_WRITE_REQUEST_KNOWN_FLAGS ==
+                   (NEVERC_OBJECT_WRITE_CANONICAL_ELF_TABLES |
+                    NEVERC_OBJECT_WRITE_ANDROID_KERNEL_RELEASE |
+                    NEVERC_OBJECT_WRITE_DROP_DEBUG_INFO),
+               "object writer request flag mask must be exhaustive");
+_Static_assert(NEVERC_OBJECT_WRITE_CANONICAL_ELF_TABLES == UINT64_C(1),
+               "canonical ELF table request flag ABI changed");
+_Static_assert(NEVERC_OBJECT_WRITE_ANDROID_KERNEL_RELEASE == UINT64_C(2),
+               "Android release writer request flag ABI changed");
+_Static_assert(NEVERC_OBJECT_WRITE_DROP_DEBUG_INFO == UINT64_C(4),
+               "debug-strip writer request flag ABI changed");
 _Static_assert(offsetof(NevercObjectCallerPackProbe, Value) == 1,
                "Object header did not restore caller packing");
 

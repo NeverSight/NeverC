@@ -1,111 +1,22 @@
-#!/bin/bash
-# Strip NeverC kernel module (.ko) for production deployment.
-# Removes debug sections, local symbols, and non-essential metadata
-# while preserving the sections the kernel module loader requires.
-#
-# Usage: ./strip-ko.sh module.ko [output.ko]
+#!/usr/bin/env bash
+# Retired compatibility entry point. Release hardening belongs in the source build.
 
 set -euo pipefail
 
-if [ $# -lt 1 ]; then
-  echo "Usage: $0 <input.ko> [output.ko]"
-  exit 1
-fi
+cat >&2 <<'EOF'
+error: strip-ko.sh is deprecated and intentionally does not modify files.
 
-INPUT="$1"
-OUTPUT="${2:-$INPUT}"
+NeverC cannot safely apply release hardening as a second pass over an
+already-linked .ko. Rebuild the module from source so stripping and symbol
+policy are applied while NeverC still owns the final link:
 
-find_llvm_tool() {
-  local tool="$1"
-  local paths=(
-    "/opt/homebrew/opt/llvm/bin/$tool"
-    "/opt/homebrew/opt/llvm@20/bin/$tool"
-    "/opt/homebrew/Cellar/llvm@20/20.1.8/bin/$tool"
-    "/opt/homebrew/Cellar/llvm/22.1.5/bin/$tool"
-    "/usr/local/opt/llvm/bin/$tool"
-  )
-  if command -v "$tool" >/dev/null 2>&1; then
-    echo "$tool"
-    return
-  fi
-  for p in "${paths[@]}"; do
-    if [ -x "$p" ]; then
-      echo "$p"
-      return
-    fi
-  done
-  echo ""
-}
+  neverc make release
 
-STRIP="$(find_llvm_tool llvm-strip)"
-OBJCOPY="$(find_llvm_tool llvm-objcopy)"
+or add the integrated option to the original source compile/link command:
 
-if [ -z "$STRIP" ] && [ -z "$OBJCOPY" ]; then
-  echo "error: neither llvm-strip nor llvm-objcopy found"
-  echo "  install LLVM or set STRIP=/path/to/llvm-strip"
-  exit 1
-fi
+  neverc -O2 --strip <source-and-link-options> -o module.ko
 
-TMP=$(mktemp)
-trap "rm -f $TMP" EXIT
+No input or output file was changed.
+EOF
 
-cp "$INPUT" "$TMP"
-
-READELF="$(find_llvm_tool llvm-readelf)"
-if [ -z "$READELF" ]; then
-  READELF="$(find_llvm_tool readelf)"
-fi
-
-if [ -n "$OBJCOPY" ]; then
-  "$OBJCOPY" \
-    --strip-debug \
-    --strip-unneeded \
-    --remove-section=.comment \
-    --remove-section=.note.GNU-stack \
-    --remove-section=.note.gnu.property \
-    --remove-section=.eh_frame \
-    --remove-section=.eh_frame_hdr \
-    --remove-section=.BTF \
-    --remove-section=.BTF_ext \
-    --remove-section=.llvm_addrsig \
-    --remove-section=.debug_* \
-    "$TMP" 2>/dev/null || true
-fi
-
-if [ -n "$STRIP" ]; then
-  "$STRIP" \
-    --strip-unneeded \
-    --keep-symbol=init_module \
-    --keep-symbol=cleanup_module \
-    --keep-symbol=__this_module \
-    "$TMP" 2>/dev/null || true
-fi
-
-scrub_modinfo() {
-  local file="$1"
-  [ -z "$OBJCOPY" ] && return
-
-  local sensitive_keys="srcversion= retpoline= depends= staging= intree="
-  for key in $sensitive_keys; do
-    "$OBJCOPY" --update-section .modinfo=/dev/null "$file" 2>/dev/null || true
-  done
-}
-
-cp "$TMP" "$OUTPUT"
-
-BEFORE=$(wc -c < "$INPUT" | tr -d ' ')
-AFTER=$(wc -c < "$OUTPUT" | tr -d ' ')
-SAVED=$((BEFORE - AFTER))
-if [ $BEFORE -gt 0 ]; then
-  PCT=$((SAVED * 100 / BEFORE))
-else
-  PCT=0
-fi
-
-echo "stripped: $BEFORE -> $AFTER bytes (-${SAVED}B / -${PCT}%)"
-
-if [ -n "$READELF" ]; then
-  sections=$("$READELF" -S "$OUTPUT" 2>/dev/null | wc -l)
-  syms=$("$READELF" -s "$OUTPUT" 2>/dev/null | grep -c "FUNC\|OBJECT" || true)
-  echo "  sections: $sections, symbols: $syms"
-fi
+exit 1

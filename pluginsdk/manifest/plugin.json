@@ -286,7 +286,7 @@
           "id_high": "0x4e4350464d540001",
           "id_low": "0x0000000000000001",
           "major": 1,
-          "minor": 0,
+          "minor": 1,
           "name": "OBJECT_FORMAT",
           "stability": "NEVERC_INTERFACE_STABLE"
         },
@@ -417,7 +417,7 @@
   ],
   "single_header": {
     "path": "pluginsdk/include/neverc/Plugin/NevercPluginAPI.h",
-    "source_digest": "06cdabff5fe670c61eccb00367de7fb91d1dfe4f049d7d5babe7a24f58305f36"
+    "source_digest": "bb555918c5a1d946d3b2c6401fd9932c066abc3e143992a8e73095b2b8bab80b"
   },
   "targets": [
     "aarch64",

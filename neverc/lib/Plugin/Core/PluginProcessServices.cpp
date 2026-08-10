@@ -3,6 +3,7 @@
 #include "neverc/Plugin/Host/PluginLLVMOptionSnapshot.h"
 #include "neverc/Plugin/Host/PluginSession.h"
 #include "neverc/Plugin/Host/PluginTaskContext.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/Support/Errc.h"
 #include <limits>
 #include <system_error>
@@ -31,16 +32,18 @@ struct CallbackScope {
   std::string PluginID;
   std::string CallbackName;
   uint64_t DiagnosticTransactionID = 0;
+  const void *ArtifactMutationDomain = nullptr;
+  uint64_t ArtifactMutationToken = 0;
 };
 
 thread_local std::vector<CallbackScope> CallbackScopes;
 
 const CallbackScope *
 currentCallbackScope(const PluginProcessServices &ProcessServices) {
-  for (auto It = CallbackScopes.rbegin(); It != CallbackScopes.rend(); ++It)
-    if (It->ProcessServices == &ProcessServices)
-      return &*It;
-  return nullptr;
+  if (CallbackScopes.empty() ||
+      CallbackScopes.back().ProcessServices != &ProcessServices)
+    return nullptr;
+  return &CallbackScopes.back();
 }
 
 } // namespace
@@ -66,8 +69,10 @@ Expected<uint64_t> OwnerTokenAllocator::allocate() {
 
 PluginProcessServices::PluginProcessServices(
     std::string HostBuildID, uint32_t LLVMMajor,
-    ArrayRef<StringRef> StaticOptionSpellings)
+    ArrayRef<StringRef> StaticOptionSpellings,
+    uint64_t FirstArtifactMutationToken)
     : Options(StaticOptionSpellings),
+      ArtifactMutationTokens(FirstArtifactMutationToken),
       Registry(std::move(HostBuildID), LLVMMajor, &Interfaces, &CoreAPI,
                &Options) {
   initializeCoreAPI(CoreAPI, *this);
@@ -380,14 +385,33 @@ bool PluginProcessServices::currentCallbackHasSuffix(
          StringRef(Scope->CallbackName).ends_with(Suffix);
 }
 
-void PluginProcessServices::enterCallbackScope(PluginSession &Session,
-                                               PluginTaskContext *Task,
-                                               StringRef PluginID,
-                                               StringRef CallbackName,
-                                               uint64_t DiagnosticTransactionID) {
+Expected<uint64_t> PluginProcessServices::enterCallbackScope(
+    PluginSession &Session, PluginTaskContext *Task, StringRef PluginID,
+    StringRef CallbackName, uint64_t DiagnosticTransactionID,
+    const void *ArtifactMutationDomain) {
+  uint64_t ArtifactMutationToken = 0;
+  if (ArtifactMutationDomain) {
+    if (!Task)
+      return scopeError(
+          "artifact mutation authority requires a plugin task scope");
+    auto Allocated = ArtifactMutationTokens.allocate();
+    if (!Allocated)
+      return Allocated.takeError();
+    ArtifactMutationToken = *Allocated;
+  }
   CallbackScopes.push_back({this, &Session, Task, PluginID.str(),
-                            CallbackName.str(),
-                            DiagnosticTransactionID});
+                            CallbackName.str(), DiagnosticTransactionID,
+                            ArtifactMutationDomain, ArtifactMutationToken});
+  auto RollbackScope = make_scope_exit([&] { CallbackScopes.pop_back(); });
+  if (CallbackScopeSetupHookForTesting) {
+    try {
+      CallbackScopeSetupHookForTesting(CallbackScopeSetupHookContextForTesting);
+    } catch (...) {
+      return scopeError("plugin callback scope setup raised an exception");
+    }
+  }
+  RollbackScope.release();
+  return ArtifactMutationToken;
 }
 
 void PluginProcessServices::leaveCallbackScope(PluginSession &Session,
@@ -398,6 +422,27 @@ void PluginProcessServices::leaveCallbackScope(PluginSession &Session,
   if (Scope.ProcessServices == this && Scope.Session == &Session &&
       Scope.Task == Task)
     CallbackScopes.pop_back();
+}
+
+std::optional<uint64_t>
+PluginProcessServices::currentArtifactMutationCapability(
+    const PluginTaskContext &Task, const void *Domain) const {
+  if (!Domain)
+    return std::nullopt;
+  const CallbackScope *Scope = currentCallbackScope(*this);
+  if (!Scope || Scope->Task != &Task ||
+      Scope->ArtifactMutationDomain != Domain ||
+      Scope->ArtifactMutationToken == 0)
+    return std::nullopt;
+  return Scope->ArtifactMutationToken;
+}
+
+bool PluginProcessServices::validatesArtifactMutationCapability(
+    const PluginTaskContext &Task, const void *Domain, uint64_t Token) const {
+  if (Token == 0)
+    return false;
+  auto Active = currentArtifactMutationCapability(Task, Domain);
+  return Active && *Active == Token;
 }
 
 Error PluginProcessServices::shutdown() { return Registry.shutdown(); }

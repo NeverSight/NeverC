@@ -18,7 +18,9 @@ namespace neverc::plugin::builtinext {
 // A blob is a four-byte tag, a four-byte little-endian version, then a run of
 // little-endian u64 fields. Fields are fixed-width and never reordered, so a
 // consumer that knows an older version still finds the fields it knows and
-// stops where its knowledge ends.
+// stops where its knowledge ends. Security-sensitive canonical-release
+// consumers intentionally require the exact current version and payload size:
+// they use these blobs as reader provenance, not merely optional hints.
 
 inline constexpr char SectionTag[] = "NCSE";
 inline constexpr char SymbolTag[] = "NCSY";
@@ -31,7 +33,13 @@ inline constexpr char ComdatTag[] = "NCCO";
 // survive a read/rewrite/write round trip; version 1 still parses, it just
 // carries no entry size.
 inline constexpr uint32_t SectionVersion = 2;
-inline constexpr uint32_t SymbolVersion = 1;
+// Version 2 records whether the native symbol name resolved to an empty
+// string (for ELF, a nonzero st_name may also point at the table's NUL byte).
+// The graph permits an empty ordinary symbol name, but the portable MC writer
+// cannot reconstruct such an entry; release code therefore preserves it only
+// through unchanged native-image passthrough and fails closed before a
+// graph-authoritative rewrite.
+inline constexpr uint32_t SymbolVersion = 2;
 inline constexpr uint32_t RelocationVersion = 1;
 inline constexpr uint32_t ComdatVersion = 1;
 
@@ -54,6 +62,13 @@ enum SymbolField : size_t {
   SymbolBinding = 1,
   SymbolOther = 2,
   SymbolAuxiliary = 3,
+  // Present from SymbolVersion 2 on.
+  SymbolNameState = 4,
+};
+
+enum SymbolNameStateValue : uint64_t {
+  SymbolNameNonEmpty = 0,
+  SymbolNameEmpty = 1,
 };
 
 enum RelocationField : size_t {
@@ -141,8 +156,8 @@ inline llvm::StringRef relocationName(llvm::ArrayRef<uint8_t> Bytes) {
   const size_t Offset = RelocationNameLengthOffset + 4;
   if (Length == 0 || Bytes.size() - Offset < Length)
     return llvm::StringRef();
-  return llvm::StringRef(
-      reinterpret_cast<const char *>(Bytes.data() + Offset), Length);
+  return llvm::StringRef(reinterpret_cast<const char *>(Bytes.data() + Offset),
+                         Length);
 }
 
 } // namespace neverc::plugin::builtinext

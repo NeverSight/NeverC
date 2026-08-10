@@ -20,31 +20,19 @@ bool sameHandle(NevercHandle Left, NevercHandle Right) {
   return Left.Owner == Right.Owner && Left.Value == Right.Value;
 }
 
-ObjectPluginBridge *bridge(void *Context, NevercTaskHandle Task,
-                           NevercStatus &Status) {
-  if (!Context) {
-    Status = objectStatus(NEVERC_STATUS_INVALID_ARGUMENT);
-    return nullptr;
-  }
-  auto *Bridge = static_cast<ObjectPluginBridge *>(Context);
-  if (!sameHandle(Bridge->taskHandle(), Task)) {
-    Status = objectStatus(NEVERC_STATUS_WRONG_SCOPE);
-    return nullptr;
-  }
-  Status = neverc_status_ok();
-  return Bridge;
+ObjectPluginBridge::OwnerLease bridge(void *Context, NevercTaskHandle Task,
+                                      NevercStatus &Status) {
+  return ObjectPluginBridge::acquire(Context, Task, true, Status);
 }
 
 NevercStatus NEVERC_CALL BeginMutation(
     void *Context, NevercTaskHandle Task, NevercObjectGraphHandle Graph,
     NevercObjectMutationHandle *OutMutation) {
   NevercStatus Status;
-  ObjectPluginBridge *Bridge = bridge(Context, Task, Status);
+  auto Bridge = bridge(Context, Task, Status);
   if (!Bridge || !OutMutation)
     return Bridge ? objectStatus(NEVERC_STATUS_INVALID_ARGUMENT) : Status;
   *OutMutation = {};
-  if (!Bridge->mutationAllowed())
-    return objectStatus(NEVERC_STATUS_POLICY_VIOLATION);
   PluginObjectGraph *Resolved = nullptr;
   Status = Bridge->resolveGraph(Graph, &Resolved);
   if (Status.Code != NEVERC_STATUS_OK)
@@ -62,7 +50,7 @@ NevercStatus NEVERC_CALL CommitMutation(
     void *Context, NevercTaskHandle Task,
     NevercObjectMutationHandle Mutation) {
   NevercStatus Status;
-  ObjectPluginBridge *Bridge = bridge(Context, Task, Status);
+  auto Bridge = bridge(Context, Task, Status);
   return Bridge ? Bridge->commitMutation(Mutation) : Status;
 }
 
@@ -70,15 +58,14 @@ NevercStatus NEVERC_CALL AbandonMutation(
     void *Context, NevercTaskHandle Task,
     NevercObjectMutationHandle Mutation) {
   NevercStatus Status;
-  ObjectPluginBridge *Bridge = bridge(Context, Task, Status);
+  auto Bridge = bridge(Context, Task, Status);
   return Bridge ? Bridge->abandonMutation(Mutation) : Status;
 }
 
 } // namespace
 
-Expected<NevercObjectMutationHandle>
-ObjectPluginBridge::beginMutation() {
-  if (!MutationAllowed)
+Expected<NevercObjectMutationHandle> ObjectPluginBridge::beginMutation() {
+  if (!mutationAllowed())
     return createStringError(inconvertibleErrorCode(),
                              "ObjectGraph mutation is not allowed");
   if (hasActiveMutation())
@@ -96,8 +83,10 @@ ObjectPluginBridge::beginMutation() {
   return MutationHandle;
 }
 
-NevercStatus ObjectPluginBridge::checkMutation(
-    NevercObjectMutationHandle Mutation) const {
+NevercStatus
+ObjectPluginBridge::checkMutation(NevercObjectMutationHandle Mutation) const {
+  if (!mutationAllowed())
+    return objectStatus(NEVERC_STATUS_POLICY_VIOLATION);
   if (!hasActiveMutation() || !Working)
     return objectStatus(NEVERC_STATUS_INVALID_STATE);
   void *Payload = nullptr;

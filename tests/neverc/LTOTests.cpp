@@ -1,7 +1,11 @@
 #include "NeverCTestFixture.h"
 
+#include "neverc/Foundation/AndroidKernelModuleReleaseNames.h"
+#include "neverc/Foundation/AndroidKernelModuleSymbolPolicy.h"
 #include "neverc/Linker/Core/Driver/LTOCacheContract.h"
 
+#include "llvm/ADT/StringExtras.h"
+#include "llvm/BinaryFormat/ELF.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/CallingConv.h"
@@ -9,6 +13,7 @@
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
+#include "llvm/Object/ELF.h"
 #include "llvm/Object/ObjectFile.h"
 #include "llvm/Support/Endian.h"
 #include "llvm/Support/Error.h"
@@ -19,7 +24,11 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
+#include <limits>
+#include <map>
 #include <optional>
+#include <set>
 #include <sstream>
 #include <tuple>
 #include <utility>
@@ -121,56 +130,660 @@ readELFSymbolPrefix32(llvm::StringRef Bytes, llvm::StringRef SymbolName,
                                  "entry symbol not found");
 }
 
+using AndroidKernelReleaseSymbolClass =
+    neverc::AndroidKernelModuleSymbolPolicy::SymbolClass;
+
+struct AndroidKernelReleaseSectionIdentity {
+  // Keep the logical ELF header and raw contents stable across physical file
+  // rewrites: textual section identities replace sh_name/sh_link/sh_info
+  // indices, while sh_offset is deliberately excluded. Occurrence separates
+  // otherwise byte-identical same-name sections without using raw shndx.
+  std::string Name;
+  uint32_t Type = 0;
+  uint64_t Flags = 0;
+  uint64_t Address = 0;
+  uint64_t Size = 0;
+  uint64_t Alignment = 0;
+  uint64_t EntrySize = 0;
+  std::string LinkedSection;
+  std::string InfoSection;
+  uint32_t OtherInfo = 0;
+  std::string Contents;
+  unsigned Occurrence = 0;
+
+  bool operator<(const AndroidKernelReleaseSectionIdentity &Other) const {
+    return std::tie(Name, Type, Flags, Address, Size, Alignment, EntrySize,
+                    LinkedSection, InfoSection, OtherInfo, Contents,
+                    Occurrence) <
+           std::tie(Other.Name, Other.Type, Other.Flags, Other.Address,
+                    Other.Size, Other.Alignment, Other.EntrySize,
+                    Other.LinkedSection, Other.InfoSection, Other.OtherInfo,
+                    Other.Contents, Other.Occurrence);
+  }
+
+  bool operator==(const AndroidKernelReleaseSectionIdentity &Other) const {
+    return std::tie(Name, Type, Flags, Address, Size, Alignment, EntrySize,
+                    LinkedSection, InfoSection, OtherInfo, Contents,
+                    Occurrence) ==
+           std::tie(Other.Name, Other.Type, Other.Flags, Other.Address,
+                    Other.Size, Other.Alignment, Other.EntrySize,
+                    Other.LinkedSection, Other.InfoSection, Other.OtherInfo,
+                    Other.Contents, Other.Occurrence);
+  }
+};
+
+struct AndroidKernelReleaseSection {
+  unsigned Index = 0;
+  std::string Name;
+  AndroidKernelReleaseSectionIdentity Identity;
+  uint64_t Size = 0;
+  uint64_t Alignment = 0;
+  uint64_t AnalysisBase = 0;
+  bool Allocated = false;
+  bool Executable = false;
+};
+
+struct AndroidKernelReleaseSymbolSemantics {
+  AndroidKernelReleaseSymbolClass Class =
+      AndroidKernelReleaseSymbolClass::Undefined;
+  AndroidKernelReleaseSectionIdentity Section;
+  uint64_t Value = 0;
+  uint64_t Size = 0;
+  uint8_t Type = 0;
+  uint8_t Binding = 0;
+  uint8_t Other = 0;
+
+  bool operator<(const AndroidKernelReleaseSymbolSemantics &OtherValue) const {
+    return std::tie(Class, Section, Value, Size, Type, Binding, Other) <
+           std::tie(OtherValue.Class, OtherValue.Section, OtherValue.Value,
+                    OtherValue.Size, OtherValue.Type, OtherValue.Binding,
+                    OtherValue.Other);
+  }
+
+  bool operator==(const AndroidKernelReleaseSymbolSemantics &OtherValue) const {
+    return std::tie(Class, Section, Value, Size, Type, Binding, Other) ==
+           std::tie(OtherValue.Class, OtherValue.Section, OtherValue.Value,
+                    OtherValue.Size, OtherValue.Type, OtherValue.Binding,
+                    OtherValue.Other);
+  }
+};
+
+struct AndroidKernelReleaseSymbol {
+  unsigned Index = 0;
+  uint16_t SectionIndex = llvm::ELF::SHN_UNDEF;
+  std::string Name;
+  AndroidKernelReleaseSymbolSemantics Semantics;
+  bool IsSectionSymbol = false;
+  bool PreserveName = false;
+};
+
 struct AndroidKernelReleaseMetadata {
   unsigned SymbolTableCount = 0;
   unsigned SymbolStringTableCount = 0;
+  unsigned SymtabInfo = 0;
   unsigned RelocationSectionCount = 0;
   bool HasDebugSection = false;
   bool HasCommentSection = false;
   bool HasVersionsSection = false;
   bool HasAllocTagsSection = false;
-  bool HasUnneededLocal = false;
-  bool HasNeededImport = false;
-  bool HasPublicDefinition = false;
+  bool SymtabLinksSymbolStringTable = false;
+  std::string SymbolStringTable;
+  std::vector<AndroidKernelReleaseSection> Sections;
+  std::vector<AndroidKernelReleaseSymbol> Symbols;
+  std::multiset<std::string> RelocationTargets;
 };
 
-static llvm::Expected<AndroidKernelReleaseMetadata>
-inspectAndroidKernelReleaseMetadata(llvm::StringRef Bytes) {
-  auto Object = llvm::object::ObjectFile::createObjectFile(
-      llvm::MemoryBufferRef(Bytes, "android-kernel-release-strip-test"));
-  if (!Object)
-    return Object.takeError();
-  if (!(*Object)->isELF() || !(*Object)->isRelocatableObject())
-    return llvm::createStringError(llvm::inconvertibleErrorCode(),
-                                   "expected a relocatable ELF module");
+struct ELF64LERawSymbolLocation {
+  uint16_t SectionIndex = 0;
+  uint64_t Value = 0;
+  uint64_t Size = 0;
+};
 
-  AndroidKernelReleaseMetadata Metadata;
-  for (const llvm::object::SectionRef &Section : (*Object)->sections()) {
-    llvm::Expected<llvm::StringRef> Name = Section.getName();
+struct ELF64LESymtabFacts {
+  uint32_t Info = 0;
+  uint32_t SymbolCount = 0;
+};
+
+static llvm::Expected<std::string>
+retargetELF64LESectionName(llvm::StringRef Bytes, llvm::StringRef From,
+                           llvm::StringRef Existing) {
+  auto Parsed = llvm::object::ELFFile<llvm::object::ELF64LE>::create(Bytes);
+  if (!Parsed)
+    return Parsed.takeError();
+  auto Sections = Parsed->sections();
+  if (!Sections)
+    return Sections.takeError();
+
+  std::optional<unsigned> SourceIndex;
+  std::optional<uint32_t> ExistingNameOffset;
+  for (unsigned I = 0; I < Sections->size(); ++I) {
+    const llvm::object::ELF64LE::Shdr &Section = (*Sections)[I];
+    auto Name = Parsed->getSectionName(Section);
     if (!Name)
       return Name.takeError();
-    Metadata.SymbolTableCount += *Name == ".symtab";
-    Metadata.SymbolStringTableCount += *Name == ".strtab";
-    Metadata.RelocationSectionCount += Name->starts_with(".rela");
-    Metadata.HasDebugSection |= Name->starts_with(".debug") ||
-                                Name->starts_with(".zdebug");
+    if (*Name == From)
+      SourceIndex = I;
+    if (*Name == Existing)
+      ExistingNameOffset = Section.sh_name;
+  }
+  if (!SourceIndex || !ExistingNameOffset)
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   "section-name mutation target is absent");
+
+  const llvm::object::ELF64LE::Ehdr &Header = Parsed->getHeader();
+  if (Header.e_shentsize != sizeof(llvm::object::ELF64LE::Shdr))
+    return llvm::createStringError(
+        llvm::inconvertibleErrorCode(),
+        "section-name mutation requires native ELF64 section headers");
+  const uint64_t HeaderOffset =
+      Header.e_shoff + static_cast<uint64_t>(*SourceIndex) * Header.e_shentsize;
+  if (HeaderOffset > Bytes.size() ||
+      sizeof(llvm::object::ELF64LE::Shdr) > Bytes.size() - HeaderOffset)
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   "section-name mutation is out of range");
+
+  llvm::object::ELF64LE::Shdr Mutated = (*Sections)[*SourceIndex];
+  Mutated.sh_name = *ExistingNameOffset;
+  std::string Result = Bytes.str();
+  std::memcpy(Result.data() + HeaderOffset, &Mutated, sizeof(Mutated));
+  return Result;
+}
+
+static llvm::Expected<ELF64LERawSymbolLocation>
+readELF64LERawSymbolLocation(llvm::StringRef Bytes, llvm::StringRef Name) {
+  auto Parsed = llvm::object::ELFFile<llvm::object::ELF64LE>::create(Bytes);
+  if (!Parsed)
+    return Parsed.takeError();
+  auto Sections = Parsed->sections();
+  if (!Sections)
+    return Sections.takeError();
+
+  const llvm::object::ELF64LE::Shdr *Symtab = nullptr;
+  for (const llvm::object::ELF64LE::Shdr &Section : *Sections) {
+    if (Section.sh_type != llvm::ELF::SHT_SYMTAB)
+      continue;
+    if (Symtab)
+      return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                     "raw symbol oracle found two symtabs");
+    Symtab = &Section;
+  }
+  if (!Symtab)
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   "raw symbol oracle found no symtab");
+
+  auto Symbols = Parsed->symbols(Symtab);
+  if (!Symbols)
+    return Symbols.takeError();
+  auto StringTable = Parsed->getStringTableForSymtab(*Symtab);
+  if (!StringTable)
+    return StringTable.takeError();
+
+  std::optional<ELF64LERawSymbolLocation> Match;
+  for (const llvm::object::ELF64LE::Sym &Symbol : *Symbols) {
+    auto Candidate = Symbol.getName(*StringTable);
+    if (!Candidate)
+      return Candidate.takeError();
+    if (*Candidate != Name)
+      continue;
+    if (Match)
+      return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                     "raw symbol oracle found duplicates");
+    Match = ELF64LERawSymbolLocation{Symbol.st_shndx, Symbol.st_value,
+                                     Symbol.st_size};
+  }
+  if (!Match)
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   "raw symbol oracle found no match");
+  return *Match;
+}
+
+static llvm::Expected<ELF64LESymtabFacts>
+readELF64LESymtabFacts(llvm::StringRef Bytes) {
+  auto Parsed = llvm::object::ELFFile<llvm::object::ELF64LE>::create(Bytes);
+  if (!Parsed)
+    return Parsed.takeError();
+  auto Sections = Parsed->sections();
+  if (!Sections)
+    return Sections.takeError();
+
+  std::optional<ELF64LESymtabFacts> Facts;
+  for (const llvm::object::ELF64LE::Shdr &Section : *Sections) {
+    if (Section.sh_type != llvm::ELF::SHT_SYMTAB)
+      continue;
+    if (Facts)
+      return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                     "symtab oracle found two symtabs");
+    auto Symbols = Parsed->symbols(&Section);
+    if (!Symbols)
+      return Symbols.takeError();
+    if (Symbols->size() > std::numeric_limits<uint32_t>::max())
+      return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                     "symtab oracle count overflows");
+    Facts = ELF64LESymtabFacts{Section.sh_info,
+                               static_cast<uint32_t>(Symbols->size())};
+  }
+  if (!Facts)
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   "symtab oracle found no symtab");
+  return *Facts;
+}
+
+static llvm::Expected<std::string>
+rewriteELF64LESymtabInfo(llvm::StringRef Bytes, uint32_t NewInfo) {
+  auto Parsed = llvm::object::ELFFile<llvm::object::ELF64LE>::create(Bytes);
+  if (!Parsed)
+    return Parsed.takeError();
+  auto Sections = Parsed->sections();
+  if (!Sections)
+    return Sections.takeError();
+
+  std::optional<unsigned> SymtabIndex;
+  for (unsigned I = 0; I < Sections->size(); ++I) {
+    if ((*Sections)[I].sh_type != llvm::ELF::SHT_SYMTAB)
+      continue;
+    if (SymtabIndex)
+      return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                     "symtab mutation found two symtabs");
+    SymtabIndex = I;
+  }
+  if (!SymtabIndex)
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   "symtab mutation found no symtab");
+
+  const llvm::object::ELF64LE::Ehdr &Header = Parsed->getHeader();
+  if (Header.e_shentsize != sizeof(llvm::object::ELF64LE::Shdr))
+    return llvm::createStringError(
+        llvm::inconvertibleErrorCode(),
+        "symtab mutation requires native ELF64 section headers");
+  const uint64_t HeaderOffset =
+      Header.e_shoff + static_cast<uint64_t>(*SymtabIndex) * Header.e_shentsize;
+  if (HeaderOffset > Bytes.size() ||
+      sizeof(llvm::object::ELF64LE::Shdr) > Bytes.size() - HeaderOffset)
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   "symtab mutation is out of range");
+
+  llvm::object::ELF64LE::Shdr Mutated = (*Sections)[*SymtabIndex];
+  Mutated.sh_info = NewInfo;
+  std::string Result = Bytes.str();
+  std::memcpy(Result.data() + HeaderOffset, &Mutated, sizeof(Mutated));
+  return Result;
+}
+
+static neverc::ReleaseSymbolType androidKernelReleaseSymbolType(uint8_t Type) {
+  switch (Type) {
+  case llvm::ELF::STT_NOTYPE:
+    return neverc::ReleaseSymbolType::NoType;
+  case llvm::ELF::STT_OBJECT:
+    return neverc::ReleaseSymbolType::Object;
+  case llvm::ELF::STT_FUNC:
+    return neverc::ReleaseSymbolType::Function;
+  case llvm::ELF::STT_SECTION:
+    return neverc::ReleaseSymbolType::Section;
+  case llvm::ELF::STT_FILE:
+    return neverc::ReleaseSymbolType::File;
+  case llvm::ELF::STT_TLS:
+    return neverc::ReleaseSymbolType::TLS;
+  case llvm::ELF::STT_GNU_IFUNC:
+    return neverc::ReleaseSymbolType::GNUIFunc;
+  default:
+    return neverc::ReleaseSymbolType::FormatExtension;
+  }
+}
+
+static uint32_t androidKernelReleaseBindingRank(uint8_t Binding) {
+  switch (Binding) {
+  case llvm::ELF::STB_GLOBAL:
+    return 0;
+  case llvm::ELF::STB_WEAK:
+    return 1;
+  case llvm::ELF::STB_LOCAL:
+    return 2;
+  default:
+    return 3 + Binding;
+  }
+}
+
+static AndroidKernelReleaseSymbolClass
+androidKernelReleaseSymbolClass(uint16_t SectionIndex) {
+  using SymbolClass = AndroidKernelReleaseSymbolClass;
+  if (SectionIndex == llvm::ELF::SHN_UNDEF)
+    return SymbolClass::Undefined;
+  if (SectionIndex == llvm::ELF::SHN_COMMON)
+    return SymbolClass::Common;
+  if (SectionIndex == llvm::ELF::SHN_ABS)
+    return SymbolClass::Absolute;
+  if (SectionIndex ==
+          neverc::AndroidKernelModuleSymbolPolicy::LivePatchSectionIndex ||
+      SectionIndex >= llvm::ELF::SHN_LORESERVE)
+    return SymbolClass::LivePatch;
+  return SymbolClass::Defined;
+}
+
+static llvm::Expected<AndroidKernelReleaseMetadata>
+inspectAndroidKernelReleaseMetadata(llvm::StringRef Bytes,
+                                    bool AuditCanonicalNames = false) {
+  auto Parsed = llvm::object::ELFFile<llvm::object::ELF64LE>::create(Bytes);
+  if (!Parsed)
+    return Parsed.takeError();
+  if (Parsed->getHeader().e_type != llvm::ELF::ET_REL ||
+      Parsed->getHeader().e_machine != llvm::ELF::EM_AARCH64)
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   "expected an AArch64 ELF64LE ET_REL module");
+
+  auto Sections = Parsed->sections();
+  if (!Sections)
+    return Sections.takeError();
+
+  AndroidKernelReleaseMetadata Metadata;
+  const llvm::object::ELF64LE::Shdr *Symtab = nullptr;
+  unsigned SymtabIndex = 0;
+  llvm::SmallVector<neverc::ReleaseSectionDescriptor, 32> ReleaseSections;
+  std::map<AndroidKernelReleaseSectionIdentity, unsigned>
+      SectionIdentityOccurrences;
+  ReleaseSections.reserve(Sections->size());
+  Metadata.Sections.reserve(Sections->size());
+  for (unsigned I = 0; I < Sections->size(); ++I) {
+    const llvm::object::ELF64LE::Shdr &Section = (*Sections)[I];
+    llvm::Expected<llvm::StringRef> Name = Parsed->getSectionName(Section);
+    if (!Name)
+      return Name.takeError();
+    Metadata.SymbolTableCount +=
+        *Name == ".symtab" && Section.sh_type == llvm::ELF::SHT_SYMTAB;
+    Metadata.SymbolStringTableCount +=
+        *Name == ".strtab" && Section.sh_type == llvm::ELF::SHT_STRTAB;
+    Metadata.RelocationSectionCount += Section.sh_type == llvm::ELF::SHT_RELA ||
+                                       Section.sh_type == llvm::ELF::SHT_REL;
+    Metadata.HasDebugSection |=
+        Name->starts_with(".debug") || Name->starts_with(".zdebug");
     Metadata.HasCommentSection |= *Name == ".comment";
     Metadata.HasVersionsSection |= *Name == "__versions";
     Metadata.HasAllocTagsSection |= *Name == ".codetag.alloc_tags";
+
+    if (Section.sh_type == llvm::ELF::SHT_SYMTAB) {
+      if (Symtab)
+        return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                       "module has multiple symbol tables");
+      Symtab = &Section;
+      SymtabIndex = I;
+    }
+    if (I == 0)
+      continue;
+
+    AndroidKernelReleaseSectionIdentity Identity;
+    Identity.Name = Name->str();
+    Identity.Type = Section.sh_type;
+    Identity.Flags = Section.sh_flags;
+    Identity.Address = Section.sh_addr;
+    Identity.Size = Section.sh_size;
+    Identity.Alignment = Section.sh_addralign;
+    Identity.EntrySize = Section.sh_entsize;
+    if (Section.sh_link != 0) {
+      if (Section.sh_link >= Sections->size())
+        return llvm::createStringError(
+            llvm::inconvertibleErrorCode(),
+            "section identity has an out-of-range sh_link");
+      auto LinkedName = Parsed->getSectionName((*Sections)[Section.sh_link]);
+      if (!LinkedName)
+        return LinkedName.takeError();
+      Identity.LinkedSection = LinkedName->str();
+    }
+    if ((Section.sh_type == llvm::ELF::SHT_REL ||
+         Section.sh_type == llvm::ELF::SHT_RELA) &&
+        Section.sh_info != 0) {
+      if (Section.sh_info >= Sections->size())
+        return llvm::createStringError(
+            llvm::inconvertibleErrorCode(),
+            "relocation section identity has an out-of-range sh_info");
+      auto InfoName = Parsed->getSectionName((*Sections)[Section.sh_info]);
+      if (!InfoName)
+        return InfoName.takeError();
+      Identity.InfoSection = InfoName->str();
+    } else {
+      Identity.OtherInfo = Section.sh_info;
+    }
+    auto Contents = Parsed->getSectionContents(Section);
+    if (!Contents)
+      return Contents.takeError();
+    Identity.Contents.assign(reinterpret_cast<const char *>(Contents->data()),
+                             Contents->size());
+    Identity.Occurrence = SectionIdentityOccurrences[Identity]++;
+
+    AndroidKernelReleaseSection ReleaseSection;
+    ReleaseSection.Index = I;
+    ReleaseSection.Name = Name->str();
+    ReleaseSection.Identity = std::move(Identity);
+    ReleaseSection.Size = Section.sh_size;
+    ReleaseSection.Alignment = Section.sh_addralign;
+    ReleaseSection.Allocated = (Section.sh_flags & llvm::ELF::SHF_ALLOC) != 0;
+    ReleaseSection.Executable =
+        (Section.sh_flags & llvm::ELF::SHF_EXECINSTR) != 0;
+    Metadata.Sections.push_back(std::move(ReleaseSection));
+    ReleaseSections.push_back(
+        {I, I, Section.sh_addralign, Section.sh_size,
+         (Section.sh_flags & llvm::ELF::SHF_ALLOC) != 0,
+         (Section.sh_flags & llvm::ELF::SHF_EXECINSTR) != 0});
+  }
+  if (!Symtab)
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   "module has no symbol table");
+  if (Symtab->sh_link >= Sections->size())
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   "symbol table has an out-of-range sh_link");
+  const llvm::object::ELF64LE::Shdr &LinkedStringTable =
+      (*Sections)[Symtab->sh_link];
+  auto LinkedStringTableName = Parsed->getSectionName(LinkedStringTable);
+  if (!LinkedStringTableName)
+    return LinkedStringTableName.takeError();
+  Metadata.SymtabLinksSymbolStringTable =
+      LinkedStringTable.sh_type == llvm::ELF::SHT_STRTAB &&
+      *LinkedStringTableName == ".strtab";
+  auto SymbolStringTableContents =
+      Parsed->getSectionContents(LinkedStringTable);
+  if (!SymbolStringTableContents)
+    return SymbolStringTableContents.takeError();
+  Metadata.SymbolStringTable.assign(
+      reinterpret_cast<const char *>(SymbolStringTableContents->data()),
+      SymbolStringTableContents->size());
+
+  auto Layout =
+      neverc::computeAndroidKernelReleaseSectionLayout(ReleaseSections);
+  if (!Layout)
+    return Layout.takeError();
+  for (const neverc::ReleaseSectionLayout &Entry : *Layout) {
+    auto It = llvm::find_if(Metadata.Sections,
+                            [&](const AndroidKernelReleaseSection &Section) {
+                              return Section.Index == Entry.SectionID;
+                            });
+    if (It == Metadata.Sections.end())
+      return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                     "release layout lost a section");
+    It->AnalysisBase = Entry.Base;
   }
 
-  for (const llvm::object::SymbolRef &Symbol : (*Object)->symbols()) {
-    llvm::Expected<llvm::StringRef> Name = Symbol.getName();
+  auto Symbols = Parsed->symbols(Symtab);
+  if (!Symbols)
+    return Symbols.takeError();
+  if (Symtab->sh_info > Symbols->size())
+    return llvm::createStringError(
+        llvm::inconvertibleErrorCode(),
+        "symbol table sh_info exceeds the symbol count");
+  Metadata.SymtabInfo = Symtab->sh_info;
+  auto StringTable = Parsed->getStringTableForSymtab(*Symtab);
+  if (!StringTable)
+    return StringTable.takeError();
+
+  llvm::SmallVector<neverc::ReleaseSymbolDescriptor, 64> ReleaseSymbols;
+  llvm::SmallVector<neverc::ReleaseSymbolRename, 64> ActualNames;
+  ReleaseSymbols.reserve(Symbols->size());
+  ActualNames.reserve(Symbols->size());
+  Metadata.Symbols.reserve(Symbols->size());
+  std::vector<std::string> SymbolNames(Symbols->size());
+  for (unsigned I = 0; I < Symbols->size(); ++I) {
+    const llvm::object::ELF64LE::Sym &Symbol = (*Symbols)[I];
+    if (I < Metadata.SymtabInfo && Symbol.getBinding() != llvm::ELF::STB_LOCAL)
+      return llvm::createStringError(
+          llvm::inconvertibleErrorCode(),
+          "non-local symbol precedes the symtab sh_info boundary");
+    if (I >= Metadata.SymtabInfo && Symbol.getBinding() == llvm::ELF::STB_LOCAL)
+      return llvm::createStringError(
+          llvm::inconvertibleErrorCode(),
+          "local symbol follows the symtab sh_info boundary");
+    auto Name = Symbol.getName(*StringTable);
     if (!Name)
       return Name.takeError();
-    Metadata.HasUnneededLocal |=
-        Name->contains("neverc_release_unneeded_local");
-    Metadata.HasNeededImport |=
-        *Name == "neverc_release_needed_import";
-    Metadata.HasPublicDefinition |=
-        *Name == "neverc_release_public_definition";
+    SymbolNames[I] = Name->str();
+
+    const AndroidKernelReleaseSymbolClass Class =
+        androidKernelReleaseSymbolClass(Symbol.st_shndx);
+    AndroidKernelReleaseSectionIdentity SectionIdentity;
+    bool PreserveName = false;
+    if (Class == AndroidKernelReleaseSymbolClass::Defined) {
+      if (Symbol.st_shndx == 0 || Symbol.st_shndx >= Sections->size())
+        return llvm::createStringError(
+            llvm::inconvertibleErrorCode(),
+            "defined symbol has an out-of-range section index");
+      auto NameOrError = Parsed->getSectionName((*Sections)[Symbol.st_shndx]);
+      if (!NameOrError)
+        return NameOrError.takeError();
+      auto SectionRecord = llvm::find_if(
+          Metadata.Sections, [&](const AndroidKernelReleaseSection &Candidate) {
+            return Candidate.Index == Symbol.st_shndx;
+          });
+      if (SectionRecord == Metadata.Sections.end())
+        return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                       "symbol section identity is absent");
+      SectionIdentity = SectionRecord->Identity;
+      PreserveName = neverc::AndroidKernelModuleSymbolPolicy::
+          preservesSymbolNamesInSection(*NameOrError);
+    }
+
+    AndroidKernelReleaseSymbol Record;
+    Record.Index = I;
+    Record.SectionIndex = Symbol.st_shndx;
+    Record.Name = Name->str();
+    Record.Semantics = {
+        Class,          std::move(SectionIdentity), Symbol.st_value,
+        Symbol.st_size, Symbol.getType(),           Symbol.getBinding(),
+        Symbol.st_other};
+    Record.IsSectionSymbol = Symbol.getType() == llvm::ELF::STT_SECTION;
+    Record.PreserveName = PreserveName;
+    Metadata.Symbols.push_back(std::move(Record));
+
+    ReleaseSymbols.push_back(
+        {I, *Name, Class, androidKernelReleaseSymbolType(Symbol.getType()),
+         Class == AndroidKernelReleaseSymbolClass::Defined
+             ? static_cast<uint64_t>(Symbol.st_shndx)
+             : 0,
+         Symbol.st_value, Symbol.st_size,
+         androidKernelReleaseBindingRank(Symbol.getBinding()),
+         static_cast<uint32_t>(Symbol.st_other), PreserveName});
+    ActualNames.push_back({I, Name->str()});
+  }
+
+  for (unsigned I = 0; I < Sections->size(); ++I) {
+    const llvm::object::ELF64LE::Shdr &Section = (*Sections)[I];
+    if (Section.sh_type != llvm::ELF::SHT_RELA &&
+        Section.sh_type != llvm::ELF::SHT_REL)
+      continue;
+    if (Section.sh_link != SymtabIndex || Section.sh_info == 0 ||
+        Section.sh_info >= Sections->size())
+      return llvm::createStringError(
+          llvm::inconvertibleErrorCode(),
+          "relocation section has invalid symbol/target section links");
+
+    auto RecordTarget = [&](uint32_t SymbolIndex) -> llvm::Error {
+      if (SymbolIndex >= SymbolNames.size())
+        return llvm::createStringError(
+            llvm::inconvertibleErrorCode(),
+            "relocation references an out-of-range symbol index");
+      Metadata.RelocationTargets.insert(SymbolNames[SymbolIndex]);
+      return llvm::Error::success();
+    };
+    if (Section.sh_type == llvm::ELF::SHT_RELA) {
+      auto Relocations = Parsed->relas(Section);
+      if (!Relocations)
+        return Relocations.takeError();
+      for (const llvm::object::ELF64LE::Rela &Relocation : *Relocations)
+        if (llvm::Error Error = RecordTarget(Relocation.getSymbol()))
+          return std::move(Error);
+    } else {
+      auto Relocations = Parsed->rels(Section);
+      if (!Relocations)
+        return Relocations.takeError();
+      for (const llvm::object::ELF64LE::Rel &Relocation : *Relocations)
+        if (llvm::Error Error = RecordTarget(Relocation.getSymbol()))
+          return std::move(Error);
+    }
+  }
+
+  if (AuditCanonicalNames) {
+    if (llvm::Error Audit = neverc::auditAndroidKernelReleaseNames(
+            ReleaseSections, ReleaseSymbols, ActualNames))
+      return std::move(Audit);
   }
   return Metadata;
+}
+
+static bool
+symbolStringTableContains(const AndroidKernelReleaseMetadata &Metadata,
+                          llvm::StringRef Name) {
+  llvm::StringRef Remaining(Metadata.SymbolStringTable);
+  while (!Remaining.empty()) {
+    const auto [Entry, Tail] = Remaining.split('\0');
+    if (Entry == Name)
+      return true;
+    if (Tail.data() == Remaining.data())
+      break;
+    Remaining = Tail;
+  }
+  return false;
+}
+
+static llvm::Expected<std::string>
+canonicalReleaseBaseName(const AndroidKernelReleaseMetadata &Metadata,
+                         const AndroidKernelReleaseSymbol &Symbol) {
+  if (Symbol.Semantics.Class == AndroidKernelReleaseSymbolClass::Absolute)
+    return neverc::formatReleaseName(neverc::ReleaseNameKind::Absolute,
+                                     Symbol.Semantics.Value,
+                                     Symbol.Semantics.Size);
+  if (Symbol.Semantics.Class != AndroidKernelReleaseSymbolClass::Defined)
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   "symbol has no generated-name coordinate");
+
+  auto Section = llvm::find_if(
+      Metadata.Sections, [&](const AndroidKernelReleaseSection &Candidate) {
+        return Candidate.Index == Symbol.SectionIndex;
+      });
+  if (Section == Metadata.Sections.end())
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   "symbol section is absent from layout");
+  if (!Section->Allocated)
+    return ("sym_S" + llvm::utohexstr(Section->Index) + "_" +
+            llvm::utohexstr(Symbol.Semantics.Value));
+  if (Symbol.Semantics.Value >
+      std::numeric_limits<uint64_t>::max() - Section->AnalysisBase)
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   "analysis EA overflows");
+
+  neverc::ReleaseNameKind Kind;
+  switch (Symbol.Semantics.Type) {
+  case llvm::ELF::STT_FUNC:
+    Kind = neverc::ReleaseNameKind::Function;
+    break;
+  case llvm::ELF::STT_OBJECT:
+    Kind = neverc::ReleaseNameKind::Object;
+    break;
+  case llvm::ELF::STT_NOTYPE:
+    Kind = Section->Executable ? neverc::ReleaseNameKind::ExecutableLabel
+                               : neverc::ReleaseNameKind::Other;
+    break;
+  default:
+    return llvm::createStringError(llvm::inconvertibleErrorCode(),
+                                   "symbol type has no generated-name kind");
+  }
+  return neverc::formatReleaseName(
+      Kind, Section->AnalysisBase + Symbol.Semantics.Value,
+      Symbol.Semantics.Size);
 }
 
 static llvm::Expected<uint64_t>
@@ -218,8 +831,8 @@ readELFSymbolSectionOffset(llvm::StringRef Bytes, llvm::StringRef SymbolName,
 
 class LTOTest : public NeverCTest {
 protected:
-  std::vector<std::string>
-  writeAutoLtoLoopDenseProject(const std::string &Stem, bool RuntimeSeed) {
+  std::vector<std::string> writeAutoLtoLoopDenseProject(const std::string &Stem,
+                                                        bool RuntimeSeed) {
     constexpr int NFiles = 12;
     constexpr int NFuncsPerFile = 12;
     auto SrcDir = tmpFile(Stem);
@@ -233,17 +846,13 @@ protected:
         std::string Name =
             "fn_" + std::to_string(FI) + "_" + std::to_string(FJ);
         Names.push_back(Name);
-        unsigned C1 =
-            (2654435761u * unsigned(FI * 131 + FJ + 1)) | 1u;
+        unsigned C1 = (2654435761u * unsigned(FI * 131 + FJ + 1)) | 1u;
         unsigned C2 =
-            (40503u * unsigned(FI + 7) +
-             2246822519u * unsigned(FJ + 3)) |
-            1u;
-        unsigned C3 =
-            (2166136261u ^ (16777619u * unsigned(FI * 17 + FJ))) | 1u;
+            (40503u * unsigned(FI + 7) + 2246822519u * unsigned(FJ + 3)) | 1u;
+        unsigned C3 = (2166136261u ^ (16777619u * unsigned(FI * 17 + FJ))) | 1u;
         Src += "uint64_t " + Name + "(uint64_t x){ uint64_t a=x^" +
-               std::to_string(C1) +
-               "ULL; for(int i=0;i<7;i++){ a=a*" + std::to_string(C2) +
+               std::to_string(C1) + "ULL; for(int i=0;i<7;i++){ a=a*" +
+               std::to_string(C2) +
                "ULL+(a>>13)+i; if(a&1) a^=" + std::to_string(C3) +
                "ULL; } return a; }\n";
       }
@@ -279,8 +888,10 @@ TEST_F(LTOTest, HelloLTO) {
   auto exe = tmpFile("hello_lto");
 
   std::vector<std::string> base = {"-std=c11"};
-  for (auto &f : sysrootFlags()) base.push_back(f);
-  for (auto &f : archFlags()) base.push_back(f);
+  for (auto &f : sysrootFlags())
+    base.push_back(f);
+  for (auto &f : archFlags())
+    base.push_back(f);
 
   auto c = base;
   c.insert(c.end(), {"-flto", "-c", src, "-o", obj.string()});
@@ -312,8 +923,7 @@ TEST_F(LTOTest, AArch64UnalignedCrossCcTailCallFallsBack) {
       llvm::FunctionType::get(llvm::Type::getVoidTy(context), storeArgs, false),
       llvm::Function::ExternalLinkage, "store", module);
   store->setCallingConv(llvm::CallingConv::Fast);
-  llvm::IRBuilder<> builder(
-      llvm::BasicBlock::Create(context, "entry", store));
+  llvm::IRBuilder<> builder(llvm::BasicBlock::Create(context, "entry", store));
   llvm::CallInst *call = builder.CreateCall(unlock, {store->getArg(0)});
   call->setTailCallKind(llvm::CallInst::TCK_Tail);
   builder.CreateRetVoid();
@@ -326,9 +936,9 @@ TEST_F(LTOTest, AArch64UnalignedCrossCcTailCallFallsBack) {
   auto result = ncc({"--target=aarch64-unknown-linux-gnu", "-fno-lto", "-c",
                      src.string(), "-o", obj.string()});
   EXPECT_TRUE(result.ok()) << "AArch64 codegen rejected a valid tail-call "
-                             "candidate instead of lowering it as a normal "
-                             "call:\n"
-                          << result.err;
+                              "candidate instead of lowering it as a normal "
+                              "call:\n"
+                           << result.err;
 }
 
 TEST_F(LTOTest, MultiTU_AB) {
@@ -338,24 +948,26 @@ TEST_F(LTOTest, MultiTU_AB) {
   auto exe = tmpFile("lto_ab");
 
   std::vector<std::string> base = {"-std=c11"};
-  for (auto &f : sysrootFlags()) base.push_back(f);
-  for (auto &f : archFlags()) base.push_back(f);
+  for (auto &f : sysrootFlags())
+    base.push_back(f);
+  for (auto &f : archFlags())
+    base.push_back(f);
 
   auto a1 = base;
-  a1.insert(a1.end(),
-            {"-flto", "-c", (ltoDir / "test_lto_a.c").string(), "-o",
-             objA.string()});
+  a1.insert(a1.end(), {"-flto", "-c", (ltoDir / "test_lto_a.c").string(), "-o",
+                       objA.string()});
   ASSERT_EQ(ncc(a1).exitCode, 0);
 
   auto a2 = base;
-  a2.insert(a2.end(),
-            {"-flto", "-c", (ltoDir / "test_lto_b.c").string(), "-o",
-             objB.string()});
+  a2.insert(a2.end(), {"-flto", "-c", (ltoDir / "test_lto_b.c").string(), "-o",
+                       objB.string()});
   ASSERT_EQ(ncc(a2).exitCode, 0);
 
   std::vector<std::string> link;
-  for (auto &f : sysrootFlags()) link.push_back(f);
-  for (auto &f : archFlags()) link.push_back(f);
+  for (auto &f : sysrootFlags())
+    link.push_back(f);
+  for (auto &f : archFlags())
+    link.push_back(f);
   link.insert(link.end(),
               {"-flto", objA.string(), objB.string(), "-o", exe.string()});
   ASSERT_EQ(ncc(link).exitCode, 0);
@@ -376,32 +988,34 @@ TEST_F(LTOTest, MllvmReachesLinkJob) {
   auto objB = tmpFile("mllvm_b.o");
 
   std::vector<std::string> base = {"-std=c11"};
-  for (auto &f : sysrootFlags()) base.push_back(f);
-  for (auto &f : archFlags()) base.push_back(f);
+  for (auto &f : sysrootFlags())
+    base.push_back(f);
+  for (auto &f : archFlags())
+    base.push_back(f);
 
   auto a1 = base;
-  a1.insert(a1.end(),
-            {"-flto", "-c", (ltoDir / "test_lto_a.c").string(), "-o",
-             objA.string()});
+  a1.insert(a1.end(), {"-flto", "-c", (ltoDir / "test_lto_a.c").string(), "-o",
+                       objA.string()});
   ASSERT_EQ(ncc(a1).exitCode, 0);
 
   auto a2 = base;
-  a2.insert(a2.end(),
-            {"-flto", "-c", (ltoDir / "test_lto_b.c").string(), "-o",
-             objB.string()});
+  a2.insert(a2.end(), {"-flto", "-c", (ltoDir / "test_lto_b.c").string(), "-o",
+                       objB.string()});
   ASSERT_EQ(ncc(a2).exitCode, 0);
 
   std::vector<std::string> link;
-  for (auto &f : sysrootFlags()) link.push_back(f);
-  for (auto &f : archFlags()) link.push_back(f);
+  for (auto &f : sysrootFlags())
+    link.push_back(f);
+  for (auto &f : archFlags())
+    link.push_back(f);
   link.insert(link.end(), {"-flto", objA.string(), objB.string()});
 
   // A valid link-stage LLVM option must be accepted and produce a working
   // binary.
   auto good = link;
   auto exeGood = tmpFile("mllvm_good");
-  good.insert(good.end(), {"-mllvm", "-neverc-module-inliner-threshold=0",
-                           "-o", exeGood.string()});
+  good.insert(good.end(), {"-mllvm", "-neverc-module-inliner-threshold=0", "-o",
+                           exeGood.string()});
   ASSERT_EQ(ncc(good).exitCode, 0);
   auto r = exec(exeGood.string(), {});
   EXPECT_EQ(r.exitCode, 0);
@@ -412,8 +1026,8 @@ TEST_F(LTOTest, MllvmReachesLinkJob) {
   // (the pre-fix behavior).
   auto bad = link;
   auto exeBad = tmpFile("mllvm_bad");
-  bad.insert(bad.end(), {"-mllvm", "-neverc-no-such-option-guard", "-o",
-                         exeBad.string()});
+  bad.insert(bad.end(),
+             {"-mllvm", "-neverc-no-such-option-guard", "-o", exeBad.string()});
   auto br = ncc(bad);
   EXPECT_NE(br.exitCode, 0)
       << "link must fail on unknown -mllvm option; succeeding means the "
@@ -429,12 +1043,13 @@ TEST_F(LTOTest, MllvmReachesLinkJob) {
 TEST_F(LTOTest, LtoLinkCache) {
   auto ltoDir = testDir() / "lto";
   auto cacheDir = tmpFile("ltocache_dir");
-  ScopedEnvVar CacheDir(linker::ltoCacheDirEnvVar,
-                        cacheDir.string().c_str());
+  ScopedEnvVar CacheDir(linker::ltoCacheDirEnvVar, cacheDir.string().c_str());
 
   std::vector<std::string> base = {"-std=c11"};
-  for (auto &f : sysrootFlags()) base.push_back(f);
-  for (auto &f : archFlags()) base.push_back(f);
+  for (auto &f : sysrootFlags())
+    base.push_back(f);
+  for (auto &f : archFlags())
+    base.push_back(f);
 
   auto objA = tmpFile("ltocache_a.o");
   auto objB = tmpFile("ltocache_b.o");
@@ -448,8 +1063,10 @@ TEST_F(LTOTest, LtoLinkCache) {
   ASSERT_EQ(ncc(a2).exitCode, 0);
 
   std::vector<std::string> link;
-  for (auto &f : sysrootFlags()) link.push_back(f);
-  for (auto &f : archFlags()) link.push_back(f);
+  for (auto &f : sysrootFlags())
+    link.push_back(f);
+  for (auto &f : archFlags())
+    link.push_back(f);
   link.insert(link.end(), {"-flto", objA.string(), objB.string()});
   // COFF stamps the PE header with the wall-clock second by default
   // (incremental-linker compatibility); two otherwise identical links
@@ -474,8 +1091,7 @@ TEST_F(LTOTest, LtoLinkCache) {
   // Disabled: no entries may be written.
   auto exeOff = tmpFile("ltocache_off");
   {
-    ScopedEnvVar Disabled(linker::ltoCacheEnvVar,
-                          linker::ltoCacheDisableValue);
+    ScopedEnvVar Disabled(linker::ltoCacheEnvVar, linker::ltoCacheDisableValue);
     auto off = link;
     off.insert(off.end(), {"-o", exeOff.string()});
     ASSERT_EQ(ncc(off).exitCode, 0);
@@ -515,8 +1131,7 @@ TEST_F(LTOTest, LtoLinkCache) {
 // must be byte-identical to a cache-disabled clean relink.
 TEST_F(LTOTest, LtoPartitionCache) {
   auto cacheDir = tmpFile("pcache_dir");
-  ScopedEnvVar CacheDir(linker::ltoCacheDirEnvVar,
-                        cacheDir.string().c_str());
+  ScopedEnvVar CacheDir(linker::ltoCacheDirEnvVar, cacheDir.string().c_str());
 
   // Generate a project that crosses the partitioned-codegen thresholds
   // (>= 8 surviving functions, >= 10000 merged IR instructions) and
@@ -535,8 +1150,8 @@ TEST_F(LTOTest, LtoPartitionCache) {
       unsigned mul = (2654435761u + 2654435761u * unsigned(s) +
                       97u * unsigned(fi) + 31u * unsigned(fj)) |
                      1u;
-      b += "  x ^= x >> " + std::to_string(5 + (s % 11)) + "; x *= " +
-           std::to_string(mul) + "u; x ^= x << " +
+      b += "  x ^= x >> " + std::to_string(5 + (s % 11)) +
+           "; x *= " + std::to_string(mul) + "u; x ^= x << " +
            std::to_string(3 + (s % 7)) + ";\n";
     }
     if (emitCodegenError)
@@ -571,8 +1186,10 @@ TEST_F(LTOTest, LtoPartitionCache) {
   }
 
   std::vector<std::string> base = {"-std=c11"};
-  for (auto &f : sysrootFlags()) base.push_back(f);
-  for (auto &f : archFlags()) base.push_back(f);
+  for (auto &f : sysrootFlags())
+    base.push_back(f);
+  for (auto &f : archFlags())
+    base.push_back(f);
 
   // Default driver mode = auto-LTO: objects carry bitcode, the link runs
   // the partitioned LTO pipeline this test exercises.
@@ -587,8 +1204,10 @@ TEST_F(LTOTest, LtoPartitionCache) {
   compileUnit("main");
 
   std::vector<std::string> link;
-  for (auto &f : sysrootFlags()) link.push_back(f);
-  for (auto &f : archFlags()) link.push_back(f);
+  for (auto &f : sysrootFlags())
+    link.push_back(f);
+  for (auto &f : archFlags())
+    link.push_back(f);
   for (int fi = 0; fi < NFiles; ++fi)
     link.push_back((srcDir / ("u" + std::to_string(fi) + ".o")).string());
   link.push_back((srcDir / "main.o").string());
@@ -630,8 +1249,7 @@ TEST_F(LTOTest, LtoPartitionCache) {
 
   // The mixed cached/fresh link must equal a cache-disabled clean link.
   {
-    ScopedEnvVar Disabled(linker::ltoCacheEnvVar,
-                          linker::ltoCacheDisableValue);
+    ScopedEnvVar Disabled(linker::ltoCacheEnvVar, linker::ltoCacheDisableValue);
     ASSERT_EQ(ncc(link).exitCode, 0);
   }
   std::string clean = readFile(exe);
@@ -670,32 +1288,28 @@ TEST_F(LTOTest, LtoPartitionCache) {
 
 TEST_F(LTOTest, ParallelCodegenPreservesAliasUsers) {
   auto cacheDir = tmpFile("pcg_alias_cache");
-  ScopedEnvVar CacheDir(linker::ltoCacheDirEnvVar,
-                        cacheDir.string().c_str());
+  ScopedEnvVar CacheDir(linker::ltoCacheDirEnvVar, cacheDir.string().c_str());
   ScopedEnvVar Strict("NEVERC_PCG_STRICT", "1");
   ScopedEnvVar Debug("NEVERC_PCG_DEBUG", "1");
 
-  auto buildAndRun = [&](const std::string &Tag,
-                         bool DisablePartitionCache) {
+  auto buildAndRun = [&](const std::string &Tag, bool DisablePartitionCache) {
     auto src = tmpFile("pcg_alias_" + Tag + ".c");
     auto obj = tmpFile("pcg_alias_" + Tag + ".o");
-    std::string code =
-        "typedef unsigned long long u64;\n"
-        "__attribute__((noinline)) u64 alias_target(u64 x) {\n"
-        "  return x * 3ULL + 1ULL;\n"
-        "}\n"
-        "extern u64 public_alias(u64) "
-        "__attribute__((alias(\"alias_target\")));\n";
+    std::string code = "typedef unsigned long long u64;\n"
+                       "__attribute__((noinline)) u64 alias_target(u64 x) {\n"
+                       "  return x * 3ULL + 1ULL;\n"
+                       "}\n"
+                       "extern u64 public_alias(u64) "
+                       "__attribute__((alias(\"alias_target\")));\n";
     for (unsigned I = 0; I < 32; ++I)
-      code += "__attribute__((noinline)) u64 alias_user_" +
-              std::to_string(I) +
+      code += "__attribute__((noinline)) u64 alias_user_" + std::to_string(I) +
               "(u64 x) { return public_alias(x + " + std::to_string(I) +
               "ULL); }\n";
     code += "int main(void) {\n";
     for (unsigned I = 0; I < 32; ++I)
-      code += "  if (alias_user_" + std::to_string(I) +
-              "(1) != ((1ULL + " + std::to_string(I) +
-              "ULL) * 3ULL + 1ULL)) return " + std::to_string(I + 1) + ";\n";
+      code += "  if (alias_user_" + std::to_string(I) + "(1) != ((1ULL + " +
+              std::to_string(I) + "ULL) * 3ULL + 1ULL)) return " +
+              std::to_string(I + 1) + ";\n";
     code += "  return 0;\n}\n";
     writeFile(src, code);
 
@@ -773,8 +1387,7 @@ TEST_F(LTOTest, ParallelCodegenPreservesLinkerOptionsExactlyOnce) {
   const std::string bytes = readFile(obj);
   auto count = [&](const std::string &needle) {
     size_t result = 0;
-    for (size_t pos = 0;
-         (pos = bytes.find(needle, pos)) != std::string::npos;
+    for (size_t pos = 0; (pos = bytes.find(needle, pos)) != std::string::npos;
          pos += needle.size())
       ++result;
     return result;
@@ -807,8 +1420,7 @@ TEST_F(LTOTest, ParallelCodegenPreservesLinkerOptionsExactlyOnce) {
 TEST_F(LTOTest, AutoLtoLoopDenseNoCompileCliff) {
   // Cold, comparable links: disable both cache layers so neither timing is a
   // cache hit of the other.
-  ScopedEnvVar NoLtoCache(linker::ltoCacheEnvVar,
-                          linker::ltoCacheDisableValue);
+  ScopedEnvVar NoLtoCache(linker::ltoCacheEnvVar, linker::ltoCacheDisableValue);
   ScopedEnvVar NoPartitionCache(linker::ltoPartitionCacheEnvVar,
                                 linker::ltoCacheDisableValue);
 
@@ -825,13 +1437,14 @@ TEST_F(LTOTest, AutoLtoLoopDenseNoCompileCliff) {
       // Distinct odd constants per function so nothing folds them together;
       // a constant-trip (7) loop makes each a full-unroll candidate.
       unsigned c1 = (2654435761u * unsigned(fi * 131 + fj + 1)) | 1u;
-      unsigned c2 = (40503u * unsigned(fi + 7) +
-                     2246822519u * unsigned(fj + 3)) | 1u;
+      unsigned c2 =
+          (40503u * unsigned(fi + 7) + 2246822519u * unsigned(fj + 3)) | 1u;
       unsigned c3 = (2166136261u ^ (16777619u * unsigned(fi * 17 + fj))) | 1u;
       src += "uint64_t " + nm + "(uint64_t x){ uint64_t a=x^" +
              std::to_string(c1) + "ULL; for(int i=0;i<7;i++){ a=a*" +
-             std::to_string(c2) + "ULL+(a>>13)+i; if(a&1) a^=" +
-             std::to_string(c3) + "ULL; } return a; }\n";
+             std::to_string(c2) +
+             "ULL+(a>>13)+i; if(a&1) a^=" + std::to_string(c3) +
+             "ULL; } return a; }\n";
     }
     writeFile(srcDir / ("m" + std::to_string(fi) + ".c"), src);
   }
@@ -847,8 +1460,10 @@ TEST_F(LTOTest, AutoLtoLoopDenseNoCompileCliff) {
   }
 
   std::vector<std::string> base = {"-std=c11"};
-  for (auto &f : sysrootFlags()) base.push_back(f);
-  for (auto &f : archFlags()) base.push_back(f);
+  for (auto &f : sysrootFlags())
+    base.push_back(f);
+  for (auto &f : archFlags())
+    base.push_back(f);
 
   // Default driver mode = auto-LTO: objects carry bitcode and the whole-program
   // optimizer (inliner + unroller) runs at link time, which is where the cliff
@@ -857,8 +1472,7 @@ TEST_F(LTOTest, AutoLtoLoopDenseNoCompileCliff) {
   auto compileUnit = [&](const std::string &stem) {
     auto c = base;
     auto o = (srcDir / (stem + ".o")).string();
-    c.insert(c.end(),
-             {"-c", (srcDir / (stem + ".c")).string(), "-o", o});
+    c.insert(c.end(), {"-c", (srcDir / (stem + ".c")).string(), "-o", o});
     ASSERT_EQ(ncc(c).exitCode, 0) << stem;
     objs.push_back(o);
   };
@@ -868,9 +1482,12 @@ TEST_F(LTOTest, AutoLtoLoopDenseNoCompileCliff) {
 
   auto linkArgs = [&](const std::string &exe, bool capsOff) {
     std::vector<std::string> l;
-    for (auto &f : sysrootFlags()) l.push_back(f);
-    for (auto &f : archFlags()) l.push_back(f);
-    for (auto &o : objs) l.push_back(o);
+    for (auto &f : sysrootFlags())
+      l.push_back(f);
+    for (auto &f : archFlags())
+      l.push_back(f);
+    for (auto &o : objs)
+      l.push_back(o);
     if (capsOff) {
       // Reproduce the pre-fix pathology *in full*.  Both caps must be off:
       // disabling only the unroll cap leaves the inline cap holding main at
@@ -918,7 +1535,8 @@ TEST_F(LTOTest, AutoLtoLoopDenseNoCompileCliff) {
   // collapse/unroll fires in the "on" arm too and the times converge).
   EXPECT_LT(tOn, tOff * 0.5)
       << "loop-density caps gave no link-time benefit (tOn=" << tOn
-      << "s tOff=" << tOff << "s): NevercInlineMaxCallerLoops or "
+      << "s tOff=" << tOff
+      << "s): NevercInlineMaxCallerLoops or "
          "NevercFullUnrollMaxLoopsPerFunc may have regressed";
 }
 
@@ -927,8 +1545,7 @@ TEST_F(LTOTest, AutoLtoLoopDenseNoCompileCliff) {
 // wall-clock assertions: timing acceptance is covered by the explicitly
 // enabled benchmark below.
 TEST_F(LTOTest, AutoLtoBoundedIndVarWideningSemanticsPreserved) {
-  ScopedEnvVar NoLtoCache(linker::ltoCacheEnvVar,
-                          linker::ltoCacheDisableValue);
+  ScopedEnvVar NoLtoCache(linker::ltoCacheEnvVar, linker::ltoCacheDisableValue);
   ScopedEnvVar NoPartitionCache(linker::ltoPartitionCacheEnvVar,
                                 linker::ltoCacheDisableValue);
 
@@ -942,15 +1559,12 @@ TEST_F(LTOTest, AutoLtoBoundedIndVarWideningSemanticsPreserved) {
   const std::vector<BuildArm> Arms = {
       {"default", {}},
       {"bounded_widening",
-       {"-mllvm",
-        "-neverc-auto-lto-indvars-widen-max-function-loops=31"}},
+       {"-mllvm", "-neverc-auto-lto-indvars-widen-max-function-loops=31"}},
       {"former_behavior",
        {"-mllvm", "-neverc-auto-lto-scev-huge-expr-threshold=512"}},
       {"bounded_old_scev",
-       {"-mllvm",
-        "-neverc-auto-lto-indvars-widen-max-function-loops=31",
-        "-mllvm",
-        "-neverc-auto-lto-scev-huge-expr-threshold=512"}},
+       {"-mllvm", "-neverc-auto-lto-indvars-widen-max-function-loops=31",
+        "-mllvm", "-neverc-auto-lto-scev-huge-expr-threshold=512"}},
   };
 
   auto build = [&](const std::string &Tag,
@@ -1010,8 +1624,7 @@ TEST_F(LTOTest, AutoLtoBoundedIndVarWideningCompileBenchmark) {
   if (!RunBenchmarks || std::string(RunBenchmarks) == "0")
     GTEST_SKIP() << "set NEVERC_RUN_PERF_BENCHMARKS=1 to run timing acceptance";
 
-  ScopedEnvVar NoLtoCache(linker::ltoCacheEnvVar,
-                          linker::ltoCacheDisableValue);
+  ScopedEnvVar NoLtoCache(linker::ltoCacheEnvVar, linker::ltoCacheDisableValue);
   ScopedEnvVar NoPartitionCache(linker::ltoPartitionCacheEnvVar,
                                 linker::ltoCacheDisableValue);
 
@@ -1040,19 +1653,16 @@ TEST_F(LTOTest, AutoLtoBoundedIndVarWideningCompileBenchmark) {
 
     auto Start = std::chrono::steady_clock::now();
     CmdResult Result = ncc(Args);
-    double Seconds = std::chrono::duration<double>(
-                         std::chrono::steady_clock::now() - Start)
-                         .count();
+    double Seconds =
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - Start)
+            .count();
     return TimedBuild{std::move(Result), Seconds, std::move(Output)};
   };
 
   const std::vector<std::string> BoundedBehavior = {
-      "-mllvm",
-      "-neverc-auto-lto-indvars-widen-max-function-loops=31"};
+      "-mllvm", "-neverc-auto-lto-indvars-widen-max-function-loops=31"};
   const std::vector<std::string> OldBehavior = {
-      "-mllvm",
-      "-neverc-auto-lto-indvars-widen-max-function-loops=0",
-      "-mllvm",
+      "-mllvm", "-neverc-auto-lto-indvars-widen-max-function-loops=0", "-mllvm",
       "-neverc-auto-lto-scev-huge-expr-threshold=512"};
 
   std::vector<double> BoundedTimes;
@@ -1108,17 +1718,17 @@ TEST_F(LTOTest, AutoLtoBoundedIndVarWideningCompileBenchmark) {
             static_cast<size_t>(fileSize(FormerOutput) * 1.01) + 1);
 }
 
-// Auto-LTO determinism contract: the parallel-codegen + merge pipeline must be a
-// pure function of its inputs, independent of how many worker threads happen to
-// run it.  The partition count is derived only from the module (instruction /
-// loop / function counts), never from hardware_concurrency(), and partition
-// results are collected by index, not completion order -- so a 1-thread build, a
-// 4-thread build and a 16-thread build of the same sources must emit a
-// byte-identical object.  Pinning this guards two things at once: that execution
-// parallelism never leaks into the output (e.g. a future change collecting
-// results in finish order), and that the object is reproducible across machines
-// with different core counts (the same property, since NEVERC_PCG_THREADS here
-// stands in for a different host's core count).
+// Auto-LTO determinism contract: the parallel-codegen + merge pipeline must be
+// a pure function of its inputs, independent of how many worker threads happen
+// to run it.  The partition count is derived only from the module (instruction
+// / loop / function counts), never from hardware_concurrency(), and partition
+// results are collected by index, not completion order -- so a 1-thread build,
+// a 4-thread build and a 16-thread build of the same sources must emit a
+// byte-identical object.  Pinning this guards two things at once: that
+// execution parallelism never leaks into the output (e.g. a future change
+// collecting results in finish order), and that the object is reproducible
+// across machines with different core counts (the same property, since
+// NEVERC_PCG_THREADS here stands in for a different host's core count).
 //
 // The artifact compared is the relocatable (`-r`) merge -- the merger's direct
 // output and exactly the shape a kernel module (.ko) ships -- not a final
@@ -1128,8 +1738,7 @@ TEST_F(LTOTest, AutoLtoMergeIsThreadCountIndependent) {
   // Disable both cache layers so every link genuinely re-runs parallel codegen
   // rather than restoring a previous link's stored object (which would make the
   // comparison trivially pass without exercising codegen at all).
-  ScopedEnvVar NoLtoCache(linker::ltoCacheEnvVar,
-                          linker::ltoCacheDisableValue);
+  ScopedEnvVar NoLtoCache(linker::ltoCacheEnvVar, linker::ltoCacheDisableValue);
   ScopedEnvVar NoPartitionCache(linker::ltoPartitionCacheEnvVar,
                                 linker::ltoCacheDisableValue);
 
@@ -1148,8 +1757,8 @@ TEST_F(LTOTest, AutoLtoMergeIsThreadCountIndependent) {
       std::string nm = "fn_" + std::to_string(fi) + "_" + std::to_string(fj);
       names.push_back(nm);
       unsigned c1 = (2654435761u * unsigned(fi * 131 + fj + 1)) | 1u;
-      unsigned c2 = (40503u * unsigned(fi + 7) +
-                     2246822519u * unsigned(fj + 3)) | 1u;
+      unsigned c2 =
+          (40503u * unsigned(fi + 7) + 2246822519u * unsigned(fj + 3)) | 1u;
       src += "uint64_t " + nm + "(uint64_t x){ uint64_t a=x^" +
              std::to_string(c1) + "ULL; for(int i=0;i<7;i++){ a=a*" +
              std::to_string(c2) + "ULL+(a>>13)+i; } return a; }\n";
@@ -1168,8 +1777,10 @@ TEST_F(LTOTest, AutoLtoMergeIsThreadCountIndependent) {
   }
 
   std::vector<std::string> base = {"-std=c11"};
-  for (auto &f : sysrootFlags()) base.push_back(f);
-  for (auto &f : archFlags()) base.push_back(f);
+  for (auto &f : sysrootFlags())
+    base.push_back(f);
+  for (auto &f : archFlags())
+    base.push_back(f);
 
   std::vector<std::string> objs;
   auto compileUnit = [&](const std::string &stem) {
@@ -1187,8 +1798,10 @@ TEST_F(LTOTest, AutoLtoMergeIsThreadCountIndependent) {
   auto mergeWithThreads = [&](const char *threads) -> std::string {
     ScopedEnvVar WorkerThreads("NEVERC_PCG_THREADS", threads);
     std::vector<std::string> l;
-    for (auto &f : sysrootFlags()) l.push_back(f);
-    for (auto &f : archFlags()) l.push_back(f);
+    for (auto &f : sysrootFlags())
+      l.push_back(f);
+    for (auto &f : archFlags())
+      l.push_back(f);
     // COFF stamps the PE header with the wall-clock second by default
     // (incremental-linker compatibility); the 1-, 4- and 16-thread merges run
     // seconds apart, so that timestamp byte alone differs and masquerades as a
@@ -1198,7 +1811,8 @@ TEST_F(LTOTest, AutoLtoMergeIsThreadCountIndependent) {
     if (isWindows())
       l.push_back("-mno-incremental-linker-compatible");
     l.push_back("-r");
-    for (auto &o : objs) l.push_back(o);
+    for (auto &o : objs)
+      l.push_back(o);
     auto out = tmpFile(std::string("det_merge_") + threads + ".o");
     l.insert(l.end(), {"-o", out.string()});
     auto r = ncc(l);
@@ -1214,8 +1828,9 @@ TEST_F(LTOTest, AutoLtoMergeIsThreadCountIndependent) {
   EXPECT_EQ(o1, o4) << "auto-LTO object differs between 1 and 4 worker threads "
                        "-- execution parallelism leaked into the emitted bytes "
                        "(non-reproducible build)";
-  EXPECT_EQ(o1, o16) << "auto-LTO object differs between 1 and 16 worker threads "
-                        "-- execution parallelism leaked into the emitted bytes";
+  EXPECT_EQ(o1, o16)
+      << "auto-LTO object differs between 1 and 16 worker threads "
+         "-- execution parallelism leaked into the emitted bytes";
 }
 
 // The auto-LTO loop-density inline cap (Inliner.cpp's
@@ -1228,8 +1843,7 @@ TEST_F(LTOTest, AutoLtoMergeIsThreadCountIndependent) {
 // program *output*: the cap may only trade code shape / compile time, never
 // results.
 TEST_F(LTOTest, AutoLtoInlineCapSemanticsPreserved) {
-  ScopedEnvVar NoLtoCache(linker::ltoCacheEnvVar,
-                          linker::ltoCacheDisableValue);
+  ScopedEnvVar NoLtoCache(linker::ltoCacheEnvVar, linker::ltoCacheDisableValue);
   ScopedEnvVar NoPartitionCache(linker::ltoPartitionCacheEnvVar,
                                 linker::ltoCacheDisableValue);
 
@@ -1244,14 +1858,15 @@ TEST_F(LTOTest, AutoLtoInlineCapSemanticsPreserved) {
       std::string nm = "lf_" + std::to_string(fi) + "_" + std::to_string(fj);
       names.push_back(nm);
       unsigned c1 = (2246822519u * unsigned(fi * 71 + fj + 1)) | 1u;
-      unsigned c2 = (3266489917u * unsigned(fi + 5) +
-                     668265263u * unsigned(fj + 2)) | 1u;
+      unsigned c2 =
+          (3266489917u * unsigned(fi + 5) + 668265263u * unsigned(fj + 2)) | 1u;
       // A constant-trip loop with a data-dependent branch: a loop-bearing leaf
       // the cap can choose to hold back from main.
       src += "uint64_t " + nm + "(uint64_t x){ uint64_t a=x^" +
              std::to_string(c1) + "ULL; for(int i=0;i<9;i++){ a=a*" +
-             std::to_string(c2) + "ULL+(a>>11)+i; if(a&2) a+=" +
-             std::to_string(c1) + "ULL; } return a; }\n";
+             std::to_string(c2) +
+             "ULL+(a>>11)+i; if(a&2) a+=" + std::to_string(c1) +
+             "ULL; } return a; }\n";
     }
     writeFile(srcDir / ("m" + std::to_string(fi) + ".c"), src);
   }
@@ -1267,8 +1882,10 @@ TEST_F(LTOTest, AutoLtoInlineCapSemanticsPreserved) {
   }
 
   std::vector<std::string> base = {"-std=c11"};
-  for (auto &f : sysrootFlags()) base.push_back(f);
-  for (auto &f : archFlags()) base.push_back(f);
+  for (auto &f : sysrootFlags())
+    base.push_back(f);
+  for (auto &f : archFlags())
+    base.push_back(f);
 
   std::vector<std::string> objs;
   auto compileUnit = [&](const std::string &stem) {
@@ -1284,9 +1901,12 @@ TEST_F(LTOTest, AutoLtoInlineCapSemanticsPreserved) {
 
   auto linkExe = [&](const std::string &exe, int capValue) {
     std::vector<std::string> l;
-    for (auto &f : sysrootFlags()) l.push_back(f);
-    for (auto &f : archFlags()) l.push_back(f);
-    for (auto &o : objs) l.push_back(o);
+    for (auto &f : sysrootFlags())
+      l.push_back(f);
+    for (auto &f : archFlags())
+      l.push_back(f);
+    for (auto &o : objs)
+      l.push_back(o);
     l.push_back("-mllvm");
     l.push_back("-neverc-inline-max-caller-loops=" + std::to_string(capValue));
     if (isWindows())
@@ -1311,18 +1931,17 @@ TEST_F(LTOTest, AutoLtoInlineCapSemanticsPreserved) {
 }
 
 // The auto-LTO SCEV huge-expression bound (ParallelCodeGenMerge's
-// PcgScevHugeExprThreshold, which lowers ScalarEvolution's HugeExprThreshold for
-// the per-partition optimization) must be a pure compile-cost knob: making SCEV
-// fall back to its conservative *unsimplified* form on oversized expressions --
-// exactly what the MaxArithDepth check beside it already does -- can change code
-// shape and compile time, never the computed result.  Build the same program
-// with the bound set deliberately tiny (so it fires on essentially every
-// expression the whole-program functions produce) and with it disabled (stock
-// ScalarEvolution), and require byte-identical program output.  This is a timing
-// -free invariant, so it can never flake.
+// PcgScevHugeExprThreshold, which lowers ScalarEvolution's HugeExprThreshold
+// for the per-partition optimization) must be a pure compile-cost knob: making
+// SCEV fall back to its conservative *unsimplified* form on oversized
+// expressions -- exactly what the MaxArithDepth check beside it already does --
+// can change code shape and compile time, never the computed result.  Build the
+// same program with the bound set deliberately tiny (so it fires on essentially
+// every expression the whole-program functions produce) and with it disabled
+// (stock ScalarEvolution), and require byte-identical program output.  This is
+// a timing -free invariant, so it can never flake.
 TEST_F(LTOTest, AutoLtoScevHugeThresholdSemanticsPreserved) {
-  ScopedEnvVar NoLtoCache(linker::ltoCacheEnvVar,
-                          linker::ltoCacheDisableValue);
+  ScopedEnvVar NoLtoCache(linker::ltoCacheEnvVar, linker::ltoCacheDisableValue);
   ScopedEnvVar NoPartitionCache(linker::ltoPartitionCacheEnvVar,
                                 linker::ltoCacheDisableValue);
 
@@ -1337,14 +1956,15 @@ TEST_F(LTOTest, AutoLtoScevHugeThresholdSemanticsPreserved) {
       std::string nm = "sf_" + std::to_string(fi) + "_" + std::to_string(fj);
       names.push_back(nm);
       unsigned c1 = (2246822519u * unsigned(fi * 71 + fj + 1)) | 1u;
-      unsigned c2 = (3266489917u * unsigned(fi + 5) +
-                     668265263u * unsigned(fj + 2)) | 1u;
+      unsigned c2 =
+          (3266489917u * unsigned(fi + 5) + 668265263u * unsigned(fj + 2)) | 1u;
       // A constant-trip loop with a data-dependent branch: inlined into main it
       // helps build the large SCEV expressions the bound targets.
       src += "uint64_t " + nm + "(uint64_t x){ uint64_t a=x^" +
              std::to_string(c1) + "ULL; for(int i=0;i<9;i++){ a=a*" +
-             std::to_string(c2) + "ULL+(a>>11)+i; if(a&2) a+=" +
-             std::to_string(c1) + "ULL; } return a; }\n";
+             std::to_string(c2) +
+             "ULL+(a>>11)+i; if(a&2) a+=" + std::to_string(c1) +
+             "ULL; } return a; }\n";
     }
     writeFile(srcDir / ("m" + std::to_string(fi) + ".c"), src);
   }
@@ -1360,8 +1980,10 @@ TEST_F(LTOTest, AutoLtoScevHugeThresholdSemanticsPreserved) {
   }
 
   std::vector<std::string> base = {"-std=c11"};
-  for (auto &f : sysrootFlags()) base.push_back(f);
-  for (auto &f : archFlags()) base.push_back(f);
+  for (auto &f : sysrootFlags())
+    base.push_back(f);
+  for (auto &f : archFlags())
+    base.push_back(f);
 
   std::vector<std::string> objs;
   auto compileUnit = [&](const std::string &stem) {
@@ -1377,9 +1999,12 @@ TEST_F(LTOTest, AutoLtoScevHugeThresholdSemanticsPreserved) {
 
   auto linkExe = [&](const std::string &exe, unsigned scevThreshold) {
     std::vector<std::string> l;
-    for (auto &f : sysrootFlags()) l.push_back(f);
-    for (auto &f : archFlags()) l.push_back(f);
-    for (auto &o : objs) l.push_back(o);
+    for (auto &f : sysrootFlags())
+      l.push_back(f);
+    for (auto &f : archFlags())
+      l.push_back(f);
+    for (auto &o : objs)
+      l.push_back(o);
     l.push_back("-mllvm");
     l.push_back("-neverc-auto-lto-scev-huge-expr-threshold=" +
                 std::to_string(scevThreshold));
@@ -1406,14 +2031,16 @@ TEST_F(LTOTest, AutoLtoScevHugeThresholdSemanticsPreserved) {
          "must only withdraw simplification, never change a result";
 }
 
-// Real auto-LTO + mergeSections E2E: compile the in-tree Android kernel multifile
-// example (per-function .text.* sections folded into .text) and assert every
-// exported function lands at a distinct, non-zero offset.  This is the exact
-// shape that bit us when PartOffsets lookup collapsed every symbol to 0 —
-// syntactic mergeTests cover the math, but only a neverc-emitted .ko exercises
-// the full IPO → parallel-codegen → mergeSections → verify chain on real codegen.
+// Real auto-LTO + mergeSections E2E: compile the in-tree Android kernel
+// multifile example (per-function .text.* sections folded into .text) and
+// assert every exported function lands at a distinct, non-zero offset.  This is
+// the exact shape that bit us when PartOffsets lookup collapsed every symbol to
+// 0 — syntactic mergeTests cover the math, but only a neverc-emitted .ko
+// exercises the full IPO → parallel-codegen → mergeSections → verify chain on
+// real codegen.
 TEST_F(LTOTest, AndroidKernelMultifileMergeSectionOffsets) {
-  auto exDir = fs::canonical(testDir() / "../../examples/android-kernel-multifile");
+  auto exDir =
+      fs::canonical(testDir() / "../../examples/android-kernel-multifile");
   if (!fs::exists(exDir / "main.c"))
     GTEST_SKIP() << "android-kernel-multifile example not found";
 
@@ -1466,7 +2093,8 @@ TEST_F(LTOTest, AndroidKernelMultifileMergeSectionOffsets) {
   uint64_t interposesCleanup = parseOffset("interposes_cleanup");
   uint64_t initMod = parseOffset("init_module");
   uint64_t cleanupMod = parseOffset("cleanup_module");
-  ASSERT_NE(interposesInit, 0u) << "interposes_init collapsed to .text+0 (SecOff regression)";
+  ASSERT_NE(interposesInit, 0u)
+      << "interposes_init collapsed to .text+0 (SecOff regression)";
   ASSERT_NE(interposesCleanup, 0u);
   ASSERT_NE(initMod, 0u);
   ASSERT_NE(cleanupMod, 0u);
@@ -1480,9 +2108,8 @@ TEST_F(LTOTest, AndroidKernelMultifileMergeSectionOffsets) {
 // before each exported entry symbol; a zero prefix reproduces the load-time
 // KCFI failure this test guards against.
 TEST_F(LTOTest, AndroidKernelProfilesEmitKcfiEntryTypeIds) {
-  auto Source =
-      fs::canonical(testDir() /
-                    "../../runtime/android/kernel/tools/gki-qemu-smoke-module.c");
+  auto Source = fs::canonical(
+      testDir() / "../../runtime/android/kernel/tools/gki-qemu-smoke-module.c");
 
   struct Profile {
     const char *Name;
@@ -1490,12 +2117,9 @@ TEST_F(LTOTest, AndroidKernelProfilesEmitKcfiEntryTypeIds) {
     uint32_t ExitTypeId;
   };
   const Profile Profiles[] = {
-      {"510", 0x00000000, 0x00000000},
-      {"515", 0x00000000, 0x00000000},
-      {"601", 0x36b1c5a6, 0xa540670c},
-      {"606", 0x36b1c5a6, 0xa540670c},
-      {"612", 0x6fbb3035, 0xe5c47d60},
-      {"618", 0x6fbb3035, 0xe5c47d60},
+      {"510", 0x00000000, 0x00000000}, {"515", 0x00000000, 0x00000000},
+      {"601", 0x36b1c5a6, 0xa540670c}, {"606", 0x36b1c5a6, 0xa540670c},
+      {"612", 0x6fbb3035, 0xe5c47d60}, {"618", 0x6fbb3035, 0xe5c47d60},
   };
 
   for (const Profile &P : Profiles) {
@@ -1791,6 +2415,128 @@ KCFI_PCG_HELPER(7)
     ASSERT_TRUE(static_cast<bool>(DirectOffset))
         << llvm::toString(DirectOffset.takeError()).str().str();
     EXPECT_EQ(*DirectOffset, 0u);
+  }
+}
+
+// Release finalization runs after PCG's temporary hidden externals have been
+// merged and demoted back to local symbols. Reuse the proven KCFI/PCG workload
+// above so this test audits that exact boundary instead of relying on a
+// heuristic single-function fixture that may legitimately decline PCG.
+TEST_F(LTOTest, AndroidKernelReleaseStripPreservesPcgDemotionAcrossLtoModes) {
+  auto Source = tmpFile("android_kernel_release_pcg_demotion.c");
+  writeFile(Source, R"c(
+volatile int kcfi_pcg_seed;
+
+static __attribute__((noinline, section(".kcfi_test.pcg_taken")))
+int kcfi_pcg_taken(void) { return kcfi_pcg_seed + 1; }
+int (*kcfi_pcg_slot)(void) = kcfi_pcg_taken;
+
+static __attribute__((noinline, section(".kcfi_test.pcg_direct")))
+int kcfi_pcg_direct(void) { return kcfi_pcg_seed + 2; }
+int kcfi_pcg_call_direct(void) { return kcfi_pcg_direct(); }
+
+#define KCFI_PCG_HELPER(N)                                                    \
+  __attribute__((noinline)) int kcfi_pcg_helper_##N(int value) {             \
+    return value + N + kcfi_pcg_seed;                                        \
+  }
+KCFI_PCG_HELPER(0)
+KCFI_PCG_HELPER(1)
+KCFI_PCG_HELPER(2)
+KCFI_PCG_HELPER(3)
+KCFI_PCG_HELPER(4)
+KCFI_PCG_HELPER(5)
+KCFI_PCG_HELPER(6)
+KCFI_PCG_HELPER(7)
+)c");
+
+  ScopedEnvVar NoLtoCache(linker::ltoCacheEnvVar, linker::ltoCacheDisableValue);
+  ScopedEnvVar NoPartitionCache(linker::ltoPartitionCacheEnvVar,
+                                linker::ltoCacheDisableValue);
+  ScopedEnvVar Strict("NEVERC_PCG_STRICT", "1");
+  ScopedEnvVar DebugLog("NEVERC_PCG_DEBUG", "1");
+
+  struct Pipeline {
+    const char *Name;
+    const char *LTOFlag;
+  };
+  const Pipeline Pipelines[] = {
+      {"auto", nullptr},
+      {"explicit_full", "-flto=full"},
+  };
+
+  for (const Pipeline &P : Pipelines) {
+    SCOPED_TRACE(P.Name);
+    auto DebugObject = tmpFile(
+        std::string("android_kernel_release_pcg_debug_") + P.Name + ".ko");
+    auto ReleaseObject = tmpFile(
+        std::string("android_kernel_release_pcg_stripped_") + P.Name + ".ko");
+    auto Build = [&](const fs::path &Output, bool Strip) {
+      std::vector<std::string> Args = {
+          "--target=aarch64-linux-android", "-std=c11",         "-O2",
+          "-fandroid-kernel-driver-mode",   "-DNVK_KERNEL=612",
+      };
+      if (P.LTOFlag)
+        Args.push_back(P.LTOFlag);
+      if (Strip)
+        Args.push_back("--strip");
+      Args.insert(Args.end(), {
+                                  "-mllvm",
+                                  "-neverc-pcg-min-funcs=2",
+                                  "-mllvm",
+                                  "-neverc-pcg-weight-floor=0",
+                                  "-mllvm",
+                                  "-neverc-pcg-opt-weight-div=1",
+                                  "-r",
+                                  "-nostdlib",
+                                  "-o",
+                                  Output.string(),
+                                  Source.string(),
+                              });
+      return ncc(Args);
+    };
+
+    auto DebugBuild = Build(DebugObject, false);
+    ASSERT_EQ(DebugBuild.exitCode, 0) << DebugBuild.err;
+    ASSERT_TRUE(DebugBuild.stderrContains("[pcg] SUCCESS")) << DebugBuild.err;
+    auto Debug = inspectAndroidKernelReleaseMetadata(readFile(DebugObject));
+    ASSERT_TRUE(static_cast<bool>(Debug))
+        << llvm::toString(Debug.takeError()).str().str();
+
+    std::vector<const AndroidKernelReleaseSymbol *> DemotedInputs;
+    for (const AndroidKernelReleaseSymbol &Symbol : Debug->Symbols)
+      if (llvm::StringRef(Symbol.Name).starts_with("kcfi_pcg_taken.__pcg"))
+        DemotedInputs.push_back(&Symbol);
+    ASSERT_EQ(DemotedInputs.size(), 1u);
+    EXPECT_EQ(DemotedInputs.front()->Semantics.Binding, llvm::ELF::STB_LOCAL);
+    EXPECT_GT(Debug->RelocationTargets.count(DemotedInputs.front()->Name), 0u);
+
+    auto ReleaseBuild = Build(ReleaseObject, true);
+    ASSERT_EQ(ReleaseBuild.exitCode, 0) << ReleaseBuild.err;
+    ASSERT_TRUE(ReleaseBuild.stderrContains("[pcg] SUCCESS"))
+        << ReleaseBuild.err;
+    auto Release = inspectAndroidKernelReleaseMetadata(
+        readFile(ReleaseObject), /*AuditCanonicalNames=*/true);
+    ASSERT_TRUE(static_cast<bool>(Release))
+        << llvm::toString(Release.takeError()).str().str();
+
+    std::vector<const AndroidKernelReleaseSymbol *> FinalSymbols;
+    for (const AndroidKernelReleaseSymbol &Symbol : Release->Symbols)
+      if (Symbol.Semantics == DemotedInputs.front()->Semantics)
+        FinalSymbols.push_back(&Symbol);
+    ASSERT_EQ(FinalSymbols.size(), 1u);
+    EXPECT_EQ(FinalSymbols.front()->Semantics.Binding, llvm::ELF::STB_LOCAL);
+    EXPECT_LT(FinalSymbols.front()->Index, Release->SymtabInfo);
+    auto ExpectedName =
+        canonicalReleaseBaseName(*Release, *FinalSymbols.front());
+    ASSERT_TRUE(static_cast<bool>(ExpectedName))
+        << llvm::toString(ExpectedName.takeError()).str().str();
+    EXPECT_EQ(FinalSymbols.front()->Name, *ExpectedName);
+    EXPECT_TRUE(llvm::StringRef(FinalSymbols.front()->Name).starts_with("fn_"));
+    EXPECT_FALSE(
+        llvm::StringRef(FinalSymbols.front()->Name).contains(".__pcg"));
+    EXPECT_GT(Release->RelocationTargets.count(FinalSymbols.front()->Name), 0u);
+    EXPECT_FALSE(
+        symbolStringTableContains(*Release, DemotedInputs.front()->Name));
   }
 }
 
@@ -2630,6 +3376,156 @@ TEST_F(LTOTest, AndroidKernelFinalModuleDropsContractAcrossLtoModes) {
   }
 }
 
+TEST_F(LTOTest,
+       AndroidKernelReleaseInspectorDistinguishesDuplicateSectionNames) {
+  auto Source = tmpFile("android_kernel_release_duplicate_sections.c");
+  auto Module = tmpFile("android_kernel_release_duplicate_sections.ko");
+  writeFile(Source, R"c(
+__asm__(
+    ".pushsection .neverc.release.dup.first,\"a\",@progbits\n"
+    ".p2align 3\n"
+    ".globl neverc_release_dup_first\n"
+    ".type neverc_release_dup_first,@notype\n"
+    "neverc_release_dup_first:\n"
+    ".quad 0\n"
+    ".size neverc_release_dup_first, .-neverc_release_dup_first\n"
+    ".popsection\n"
+    ".pushsection .neverc.release.dup.second,\"a\",@progbits\n"
+    ".p2align 3\n"
+    ".globl neverc_release_dup_second\n"
+    ".type neverc_release_dup_second,@notype\n"
+    "neverc_release_dup_second:\n"
+    ".quad 0\n"
+    ".size neverc_release_dup_second, .-neverc_release_dup_second\n"
+    ".popsection\n");
+)c");
+
+  auto Build = ncc({
+      "--target=aarch64-linux-android",
+      "-std=c11",
+      "-fandroid-kernel-driver-mode",
+      "-DNVK_KERNEL=612",
+      "-fno-lto",
+      "-r",
+      "-nostdlib",
+      "-o",
+      Module.string(),
+      Source.string(),
+  });
+  ASSERT_EQ(Build.exitCode, 0) << Build.err;
+
+  auto Mutated =
+      retargetELF64LESectionName(readFile(Module), ".neverc.release.dup.second",
+                                 ".neverc.release.dup.first");
+  ASSERT_TRUE(static_cast<bool>(Mutated))
+      << llvm::toString(Mutated.takeError()).str().str();
+
+  auto FirstRaw =
+      readELF64LERawSymbolLocation(*Mutated, "neverc_release_dup_first");
+  ASSERT_TRUE(static_cast<bool>(FirstRaw))
+      << llvm::toString(FirstRaw.takeError()).str().str();
+  auto SecondRaw =
+      readELF64LERawSymbolLocation(*Mutated, "neverc_release_dup_second");
+  ASSERT_TRUE(static_cast<bool>(SecondRaw))
+      << llvm::toString(SecondRaw.takeError()).str().str();
+  ASSERT_LT(FirstRaw->SectionIndex, SecondRaw->SectionIndex)
+      << "fixture must place the retargeted section after the original";
+
+  auto Inspected = inspectAndroidKernelReleaseMetadata(*Mutated);
+  ASSERT_TRUE(static_cast<bool>(Inspected))
+      << llvm::toString(Inspected.takeError()).str().str();
+
+  auto FindSymbol = [&](llvm::StringRef Name) {
+    return llvm::find_if(Inspected->Symbols,
+                         [&](const AndroidKernelReleaseSymbol &Symbol) {
+                           return Symbol.Name == Name;
+                         });
+  };
+  auto FirstSymbol = FindSymbol("neverc_release_dup_first");
+  auto SecondSymbol = FindSymbol("neverc_release_dup_second");
+  ASSERT_NE(FirstSymbol, Inspected->Symbols.end());
+  ASSERT_NE(SecondSymbol, Inspected->Symbols.end());
+
+  auto FindSection = [&](uint16_t RawIndex) {
+    return llvm::find_if(Inspected->Sections,
+                         [&](const AndroidKernelReleaseSection &Section) {
+                           return Section.Index == RawIndex;
+                         });
+  };
+  auto FirstSection = FindSection(FirstRaw->SectionIndex);
+  auto SecondSection = FindSection(SecondRaw->SectionIndex);
+  ASSERT_NE(FirstSection, Inspected->Sections.end());
+  ASSERT_NE(SecondSection, Inspected->Sections.end());
+  ASSERT_EQ(FirstSection->Name, ".neverc.release.dup.first");
+  ASSERT_EQ(SecondSection->Name, ".neverc.release.dup.first");
+  ASSERT_NE(FirstSection->AnalysisBase, SecondSection->AnalysisBase);
+
+  // The two serialized symbols have identical tuples except for their raw
+  // st_shndx. A name-only section identity therefore makes the old inspector
+  // report a false semantic match after the one-field sh_name mutation.
+  EXPECT_FALSE(FirstSymbol->Semantics == SecondSymbol->Semantics);
+
+  const std::string ExpectedSecondName = neverc::formatReleaseName(
+      neverc::ReleaseNameKind::Other,
+      SecondSection->AnalysisBase + SecondRaw->Value, SecondRaw->Size);
+  auto ActualSecondName = canonicalReleaseBaseName(*Inspected, *SecondSymbol);
+  ASSERT_TRUE(static_cast<bool>(ActualSecondName))
+      << llvm::toString(ActualSecondName.takeError()).str().str();
+  EXPECT_EQ(*ActualSecondName, ExpectedSecondName)
+      << "canonical coordinates must use the symbol's raw section index";
+}
+
+TEST_F(LTOTest,
+       AndroidKernelReleaseInspectorRejectsInvalidSymtabLocalBoundary) {
+  auto Source = tmpFile("android_kernel_release_symtab_boundary.c");
+  auto Module = tmpFile("android_kernel_release_symtab_boundary.ko");
+  writeFile(Source, R"c(
+static __attribute__((used)) int neverc_release_local_object = 7;
+
+__attribute__((used, noinline))
+int neverc_release_global_function(void) {
+  return neverc_release_local_object;
+}
+)c");
+
+  auto Build = ncc({
+      "--target=aarch64-linux-android",
+      "-std=c11",
+      "-fandroid-kernel-driver-mode",
+      "-DNVK_KERNEL=612",
+      "-fno-lto",
+      "-r",
+      "-nostdlib",
+      "-o",
+      Module.string(),
+      Source.string(),
+  });
+  ASSERT_EQ(Build.exitCode, 0) << Build.err;
+
+  const std::string Bytes = readFile(Module);
+  auto Facts = readELF64LESymtabFacts(Bytes);
+  ASSERT_TRUE(static_cast<bool>(Facts))
+      << llvm::toString(Facts.takeError()).str().str();
+  ASSERT_GT(Facts->Info, 0u);
+  ASSERT_LT(Facts->Info, Facts->SymbolCount);
+  ASSERT_LT(Facts->SymbolCount, std::numeric_limits<uint32_t>::max());
+
+  const uint32_t InvalidInfos[] = {0, Facts->SymbolCount,
+                                   Facts->SymbolCount + 1};
+  for (uint32_t InvalidInfo : InvalidInfos) {
+    SCOPED_TRACE(InvalidInfo);
+    auto Mutated = rewriteELF64LESymtabInfo(Bytes, InvalidInfo);
+    ASSERT_TRUE(static_cast<bool>(Mutated))
+        << llvm::toString(Mutated.takeError()).str().str();
+
+    auto Inspected = inspectAndroidKernelReleaseMetadata(*Mutated);
+    EXPECT_FALSE(static_cast<bool>(Inspected))
+        << "inspector accepted a corrupted .symtab sh_info boundary";
+    if (!Inspected)
+      llvm::consumeError(Inspected.takeError());
+  }
+}
+
 TEST_F(LTOTest, AndroidKernelReleaseStripIsRelocationSafeAcrossLtoModes) {
   auto Source = tmpFile("android_kernel_release_strip.c");
   writeFile(Source, R"c(
@@ -2640,10 +3536,71 @@ int neverc_release_unneeded_local(int value) {
   return value + 17;
 }
 
+static __attribute__((noinline))
+int neverc_release_pcg_local(int value) {
+  return value * 3 + 1;
+}
+
+__attribute__((used))
+int (*neverc_release_pcg_slot)(int) = neverc_release_pcg_local;
+
 __attribute__((noinline))
 int neverc_release_public_definition(int value) {
   return neverc_release_needed_import(value);
 }
+
+__attribute__((used, noinline))
+int init_module(void) {
+  return neverc_release_public_definition(0);
+}
+
+__attribute__((used, noinline))
+void cleanup_module(void) {
+  __asm__ volatile("" ::: "memory");
+}
+
+__attribute__((noinline))
+int neverc_release_alias_target(int value) {
+  return value + 29;
+}
+
+extern __typeof(neverc_release_alias_target) neverc_release_alias
+    __attribute__((alias("neverc_release_alias_target")));
+
+int neverc_release_object_definition = 23;
+
+// Android's scripts/kallsyms.c treats CFI type-ID prefixes specially, and
+// include/linux/cfi_types.h emits `.4byte __kcfi_typeid_<function>` for
+// assembly entry annotations. These are ABI/tooling names, not cosmetic debug
+// labels:
+// https://android.googlesource.com/kernel/common/+/47d26684185d09e083669bbbd0c465ab3493a51f/scripts/kallsyms.c
+// https://android.googlesource.com/kernel/common/+/refs/tags/android14-6.1-2025-05_r5/include/linux/cfi_types.h
+const unsigned int __kcfi_typeid_sample = 0x6fbb3035u;
+__attribute__((used))
+const void *neverc_release_kcfi_reference = &__kcfi_typeid_sample;
+
+__asm__(
+    ".pushsection .text.neverc_release_code_label,\"ax\",@progbits\n"
+    ".globl neverc_release_code_label\n"
+    ".type neverc_release_code_label,@notype\n"
+    "neverc_release_code_label:\n"
+    ".byte 0\n"
+    ".size neverc_release_code_label, .-neverc_release_code_label\n"
+    ".popsection\n"
+    ".pushsection .rodata.neverc_release_notype,\"a\",@progbits\n"
+    ".globl neverc_release_notype_definition\n"
+    ".type neverc_release_notype_definition,@notype\n"
+    "neverc_release_notype_definition:\n"
+    ".quad 0\n"
+    ".size neverc_release_notype_definition, "
+    ".-neverc_release_notype_definition\n"
+    ".popsection\n"
+    ".globl neverc_release_absolute_definition\n"
+    ".type neverc_release_absolute_definition,@notype\n"
+    ".set neverc_release_absolute_definition, 0x2b\n"
+    ".globl __typeid__sample_global_addr\n"
+    ".type __typeid__sample_global_addr,@notype\n"
+    ".set __typeid__sample_global_addr, 0x2a\n");
 )c");
 
   struct Mode {
@@ -2656,27 +3613,30 @@ int neverc_release_public_definition(int value) {
       {"full", "-flto=full"},
   };
 
+  ScopedEnvVar NoLtoCache(linker::ltoCacheEnvVar, linker::ltoCacheDisableValue);
+  ScopedEnvVar NoPartitionCache(linker::ltoPartitionCacheEnvVar,
+                                linker::ltoCacheDisableValue);
+
   for (const Mode &M : Modes) {
     SCOPED_TRACE(M.Name);
     auto DebugModule =
         tmpFile(std::string("android_kernel_debug_") + M.Name + ".ko");
     auto ReleaseModule =
         tmpFile(std::string("android_kernel_release_") + M.Name + ".ko");
+    auto RepeatReleaseModule =
+        tmpFile(std::string("android_kernel_release_repeat_") + M.Name + ".ko");
 
     auto Build = [&](const fs::path &Output, bool Strip) {
       std::vector<std::string> Args = {
-          "--target=aarch64-linux-android",
-          "-std=c11",
-          "-fandroid-kernel-driver-mode",
-          "-DNVK_KERNEL=612",
-          "-g",
+          "--target=aarch64-linux-android", "-std=c11",         "-O2",
+          "-fandroid-kernel-driver-mode",   "-DNVK_KERNEL=612", "-g",
       };
       if (M.Flag)
         Args.push_back(M.Flag);
       if (Strip)
         Args.push_back("--strip");
-      Args.insert(Args.end(), {"-r", "-nostdlib", "-o", Output.string(),
-                               Source.string()});
+      Args.insert(Args.end(),
+                  {"-r", "-nostdlib", "-o", Output.string(), Source.string()});
       return ncc(Args);
     };
 
@@ -2686,26 +3646,157 @@ int neverc_release_public_definition(int value) {
     ASSERT_TRUE(static_cast<bool>(Debug))
         << llvm::toString(Debug.takeError()).str().str();
     EXPECT_TRUE(Debug->HasDebugSection);
-    EXPECT_TRUE(Debug->HasUnneededLocal);
+    EXPECT_TRUE(
+        symbolStringTableContains(*Debug, "neverc_release_unneeded_local"));
 
     auto ReleaseBuild = Build(ReleaseModule, true);
     ASSERT_EQ(ReleaseBuild.exitCode, 0) << ReleaseBuild.err;
     const std::string ReleaseBytes = readFile(ReleaseModule);
-    auto Release = inspectAndroidKernelReleaseMetadata(ReleaseBytes);
+    auto Release =
+        inspectAndroidKernelReleaseMetadata(ReleaseBytes,
+                                            /*AuditCanonicalNames=*/true);
     ASSERT_TRUE(static_cast<bool>(Release))
         << llvm::toString(Release.takeError()).str().str();
+
     EXPECT_EQ(Release->SymbolTableCount, 1u);
     EXPECT_EQ(Release->SymbolStringTableCount, 1u);
+    EXPECT_TRUE(Release->SymtabLinksSymbolStringTable);
     EXPECT_GT(Release->RelocationSectionCount, 0u);
     EXPECT_FALSE(Release->HasDebugSection);
     EXPECT_FALSE(Release->HasCommentSection);
     EXPECT_TRUE(Release->HasVersionsSection);
     EXPECT_TRUE(Release->HasAllocTagsSection);
-    EXPECT_FALSE(Release->HasUnneededLocal);
-    EXPECT_TRUE(Release->HasNeededImport);
-    EXPECT_TRUE(Release->HasPublicDefinition);
-    EXPECT_EQ(ReleaseBytes.find("neverc_release_unneeded_local"),
-              std::string::npos);
+
+    auto NamedSymbols = [](const AndroidKernelReleaseMetadata &Image,
+                           llvm::StringRef Name) {
+      std::vector<const AndroidKernelReleaseSymbol *> Matches;
+      for (const AndroidKernelReleaseSymbol &Symbol : Image.Symbols)
+        if (Symbol.Name == Name)
+          Matches.push_back(&Symbol);
+      return Matches;
+    };
+    auto SemanticallyEquivalent =
+        [](const AndroidKernelReleaseMetadata &Image,
+           const AndroidKernelReleaseSymbolSemantics &Semantics) {
+          std::vector<const AndroidKernelReleaseSymbol *> Matches;
+          for (const AndroidKernelReleaseSymbol &Symbol : Image.Symbols)
+            if (Symbol.Semantics == Semantics)
+              Matches.push_back(&Symbol);
+          return Matches;
+        };
+
+    // Stripping may prune relocation-unneeded locals, but it must not mutate
+    // any serialized field of a surviving symbol. Compare complete structural
+    // tuples as a multiset so aliases remain order-independent.
+    std::map<AndroidKernelReleaseSymbolSemantics, unsigned> DebugSemantics;
+    std::map<AndroidKernelReleaseSymbolSemantics, unsigned> ReleaseSemantics;
+    for (const AndroidKernelReleaseSymbol &Symbol : Debug->Symbols)
+      ++DebugSemantics[Symbol.Semantics];
+    for (const AndroidKernelReleaseSymbol &Symbol : Release->Symbols)
+      ++ReleaseSemantics[Symbol.Semantics];
+    for (const auto &[Semantics, Count] : ReleaseSemantics)
+      EXPECT_GE(DebugSemantics[Semantics], Count)
+          << "release changed a surviving symbol's "
+             "value/type/binding/st_other/size";
+
+    // Exact loader/import/CFI spellings must retain both their bytes and their
+    // complete ELF semantics. The two type-ID fixtures cover SHN_ABS and a
+    // relocation-targeted allocated definition respectively.
+    std::set<std::string> ExactNames = {
+        "neverc_release_needed_import",
+        "init_module",
+        "cleanup_module",
+        "__cfi_check",
+        "__cfi_check_fail",
+        "__typeid__sample_global_addr",
+        "__kcfi_typeid_sample",
+    };
+    for (llvm::StringRef OptionalJumpTable :
+         {llvm::StringRef("__cfi_jt_init_module"),
+          llvm::StringRef("__cfi_jt_cleanup_module")})
+      if (!NamedSymbols(*Debug, OptionalJumpTable).empty())
+        ExactNames.insert(OptionalJumpTable.str());
+    for (const std::string &ExactNameStorage : ExactNames) {
+      const llvm::StringRef ExactName(ExactNameStorage);
+      const auto DebugMatches = NamedSymbols(*Debug, ExactName);
+      const auto ReleaseMatches = NamedSymbols(*Release, ExactName);
+      ASSERT_FALSE(DebugMatches.empty()) << ExactName.str();
+      ASSERT_EQ(ReleaseMatches.size(), DebugMatches.size()) << ExactName.str();
+      std::multiset<AndroidKernelReleaseSymbolSemantics> DebugValues;
+      std::multiset<AndroidKernelReleaseSymbolSemantics> ReleaseValues;
+      for (const AndroidKernelReleaseSymbol *Symbol : DebugMatches)
+        DebugValues.insert(Symbol->Semantics);
+      for (const AndroidKernelReleaseSymbol *Symbol : ReleaseMatches)
+        ReleaseValues.insert(Symbol->Semantics);
+      EXPECT_EQ(ReleaseValues, DebugValues) << ExactName.str();
+    }
+    EXPECT_GT(Release->RelocationTargets.count("__kcfi_typeid_sample"), 0u);
+    EXPECT_GT(Release->RelocationTargets.count("neverc_release_needed_import"),
+              0u);
+
+    // Exercise every generated coordinate class against an independently
+    // reconstructed final section layout, not merely a prefix/regex shape.
+    const std::pair<llvm::StringRef, llvm::StringRef> GeneratedNames[] = {
+        {"neverc_release_public_definition", "fn_"},
+        {"neverc_release_object_definition", "obj_"},
+        {"neverc_release_code_label", "code_"},
+        {"neverc_release_notype_definition", "sym_"},
+        {"neverc_release_absolute_definition", "abs_"},
+    };
+    for (const auto &[OriginalName, Prefix] : GeneratedNames) {
+      const auto Original = NamedSymbols(*Debug, OriginalName);
+      ASSERT_EQ(Original.size(), 1u) << OriginalName.str();
+      const auto Renamed =
+          SemanticallyEquivalent(*Release, Original.front()->Semantics);
+      ASSERT_EQ(Renamed.size(), 1u) << OriginalName.str();
+      auto ExpectedBase = canonicalReleaseBaseName(*Release, *Renamed.front());
+      ASSERT_TRUE(static_cast<bool>(ExpectedBase))
+          << llvm::toString(ExpectedBase.takeError()).str().str();
+      EXPECT_EQ(Renamed.front()->Name, *ExpectedBase) << OriginalName.str();
+      EXPECT_TRUE(llvm::StringRef(Renamed.front()->Name).starts_with(Prefix))
+          << OriginalName.str();
+    }
+
+    // A same-address function alias owns one exact canonical name multiset;
+    // which indistinguishable ELF entry owns the unsuffixed spelling is not a
+    // contract. The standalone audit above verifies that no suffix can be
+    // skipped, duplicated, or exchanged across structural classes.
+    const auto AliasTarget =
+        NamedSymbols(*Debug, "neverc_release_alias_target");
+    const auto Alias = NamedSymbols(*Debug, "neverc_release_alias");
+    ASSERT_EQ(AliasTarget.size(), 1u);
+    ASSERT_EQ(Alias.size(), 1u);
+    auto AliasBase = canonicalReleaseBaseName(*Release, *AliasTarget.front());
+    ASSERT_TRUE(static_cast<bool>(AliasBase))
+        << llvm::toString(AliasBase.takeError()).str().str();
+    std::set<std::string> AliasNames;
+    for (const AndroidKernelReleaseSymbol &Symbol : Release->Symbols)
+      if (Symbol.Name == *AliasBase ||
+          llvm::StringRef(Symbol.Name).starts_with(*AliasBase + "_"))
+        AliasNames.insert(Symbol.Name);
+    EXPECT_EQ(AliasNames,
+              (std::set<std::string>{*AliasBase, *AliasBase + "_1"}));
+
+    // The rebuilt .strtab must not retain unreachable source/runtime names.
+    // Determine this from the exact-name policy, never from the legacy
+    // name-eligibility/hash-shape helper.
+    for (const AndroidKernelReleaseSymbol &Symbol : Debug->Symbols) {
+      const bool Exact =
+          neverc::AndroidKernelModuleSymbolPolicy::hasExactReleaseName(
+              Symbol.Name, Symbol.Semantics.Class, Symbol.IsSectionSymbol,
+              Symbol.PreserveName);
+      if (!Exact && !Symbol.Name.empty())
+        EXPECT_FALSE(symbolStringTableContains(*Release, Symbol.Name))
+            << Symbol.Name;
+    }
+    EXPECT_FALSE(
+        symbolStringTableContains(*Release, "neverc_release_unneeded_local"));
+
+    auto RepeatReleaseBuild = Build(RepeatReleaseModule, true);
+    ASSERT_EQ(RepeatReleaseBuild.exitCode, 0) << RepeatReleaseBuild.err;
+    const std::string RepeatReleaseBytes = readFile(RepeatReleaseModule);
+    EXPECT_EQ(RepeatReleaseBytes, ReleaseBytes)
+        << "identical input under one toolchain was not byte-identical";
   }
 }
 
@@ -2953,10 +4044,9 @@ android_native_profile_asm_source_local:
   auto PluginCorrupt = Link({ObjectA612, ObjectB612}, PluginCorruptOutput,
                             NEVERC_TEST_OBJECT_CONTRACT_CORRUPT_PLUGIN);
   EXPECT_NE(PluginCorrupt.exitCode, 0);
-  EXPECT_NE(
-      PluginCorrupt.err.find(
+  EXPECT_NE(PluginCorrupt.err.find(
                 "must not retain native Android kernel profile contract"),
-      std::string::npos)
+            std::string::npos)
       << PluginCorrupt.err;
   EXPECT_FALSE(fs::exists(PluginCorruptOutput))
       << "a plugin must not publish a re-fingerprinted .ko";
@@ -2972,9 +4062,11 @@ android_native_profile_asm_source_local:
       << PluginMismatch.err;
 }
 
-// NVK_KERNEL=618 must select the 6.18 preset (vermagic + file_operations layout).
+// NVK_KERNEL=618 must select the 6.18 preset (vermagic + file_operations
+// layout).
 TEST_F(LTOTest, AndroidKernel618PresetFromNvkKernel) {
-  auto exDir = fs::canonical(testDir() / "../../examples/android-kernel-chardev");
+  auto exDir =
+      fs::canonical(testDir() / "../../examples/android-kernel-chardev");
   if (!fs::exists(exDir / "main.c"))
     GTEST_SKIP() << "android-kernel-chardev example not found";
 
@@ -2996,7 +4088,8 @@ TEST_F(LTOTest, AndroidKernel618PresetFromNvkKernel) {
   ASSERT_EQ(stringsOut.exitCode, 0) << stringsOut.err;
   EXPECT_NE(stringsOut.out.find("vermagic=6.18.24-android17-5"),
             std::string::npos)
-      << "618 preset vermagic missing; NVK_KERNEL may not map to NEVERC_KRT_KERNEL";
+      << "618 preset vermagic missing; NVK_KERNEL may not map to "
+         "NEVERC_KRT_KERNEL";
 }
 
 // Compare complete cold builds from matching C sources. This benchmark is
@@ -3015,8 +4108,7 @@ TEST_F(LTOTest, AutoLtoCompleteBuildBeatsClang22FullLTO) {
   if (VersionText.find("clang version 22") == std::string::npos)
     GTEST_SKIP() << "comparison compiler is not clang-22: " << VersionText;
 
-  ScopedEnvVar NoLtoCache(linker::ltoCacheEnvVar,
-                          linker::ltoCacheDisableValue);
+  ScopedEnvVar NoLtoCache(linker::ltoCacheEnvVar, linker::ltoCacheDisableValue);
   ScopedEnvVar NoPartitionCache(linker::ltoPartitionCacheEnvVar,
                                 linker::ltoCacheDisableValue);
 
@@ -3045,9 +4137,9 @@ TEST_F(LTOTest, AutoLtoCompleteBuildBeatsClang22FullLTO) {
 
     auto Start = std::chrono::steady_clock::now();
     CmdResult Result = UseNeverc ? ncc(Args) : exec(Clang, Args);
-    double Seconds = std::chrono::duration<double>(
-                         std::chrono::steady_clock::now() - Start)
-                         .count();
+    double Seconds =
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - Start)
+            .count();
     return TimedBuild{std::move(Result), Seconds, std::move(Output)};
   };
 
@@ -3114,8 +4206,10 @@ TEST_F(LTOTest, InlineAsmLTO) {
   auto exe = tmpFile("asm_lto");
 
   std::vector<std::string> base = {"-std=gnu11"};
-  for (auto &f : sysrootFlags()) base.push_back(f);
-  for (auto &f : archFlags()) base.push_back(f);
+  for (auto &f : sysrootFlags())
+    base.push_back(f);
+  for (auto &f : archFlags())
+    base.push_back(f);
 
   auto a1 = base;
   a1.insert(a1.end(),
@@ -3130,8 +4224,10 @@ TEST_F(LTOTest, InlineAsmLTO) {
   ASSERT_EQ(ncc(a2).exitCode, 0);
 
   std::vector<std::string> link;
-  for (auto &f : sysrootFlags()) link.push_back(f);
-  for (auto &f : archFlags()) link.push_back(f);
+  for (auto &f : sysrootFlags())
+    link.push_back(f);
+  for (auto &f : archFlags())
+    link.push_back(f);
   link.insert(link.end(), {"-flto", objMain.string(), objHelper.string(), "-o",
                            exe.string()});
   ASSERT_EQ(ncc(link).exitCode, 0);
@@ -3147,16 +4243,20 @@ TEST_F(LTOTest, InlineAsmGCCWithLTO) {
   auto exe = tmpFile("inline_asm_gcc_lto");
 
   std::vector<std::string> base = {"-std=gnu11"};
-  for (auto &f : sysrootFlags()) base.push_back(f);
-  for (auto &f : archFlags()) base.push_back(f);
+  for (auto &f : sysrootFlags())
+    base.push_back(f);
+  for (auto &f : archFlags())
+    base.push_back(f);
 
   auto c = base;
   c.insert(c.end(), {"-flto", "-c", src, "-o", obj.string()});
   ASSERT_EQ(ncc(c).exitCode, 0);
 
   std::vector<std::string> link;
-  for (auto &f : sysrootFlags()) link.push_back(f);
-  for (auto &f : archFlags()) link.push_back(f);
+  for (auto &f : sysrootFlags())
+    link.push_back(f);
+  for (auto &f : archFlags())
+    link.push_back(f);
   link.insert(link.end(), {"-flto", obj.string(), "-o", exe.string()});
   ASSERT_EQ(ncc(link).exitCode, 0);
 

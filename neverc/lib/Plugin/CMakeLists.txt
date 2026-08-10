@@ -245,6 +245,7 @@ if(MSVC)
     Core/PluginArtifactRegistry.cpp
     Core/PluginHandleArena.cpp
     Core/PluginPhaseExecutor.cpp
+    Core/PluginProcessServices.cpp
     Core/PluginSession.cpp
     Core/PluginTaskContext.cpp
     Python/PythonPluginFFI.cpp
@@ -258,6 +259,7 @@ else()
     Core/PluginArtifactRegistry.cpp
     Core/PluginHandleArena.cpp
     Core/PluginPhaseExecutor.cpp
+    Core/PluginProcessServices.cpp
     Core/PluginSession.cpp
     Core/PluginTaskContext.cpp
     Python/PythonPluginFFI.cpp
@@ -471,6 +473,9 @@ add_neverc_library(nevercPluginMCObject
   MCObject/MCBridge.cpp
   MCObject/MCMutation.cpp
   MCObject/MCObjectPluginInterfaces.cpp
+  Object/AndroidKernelReleaseWriterPreflight.cpp
+  Object/BuiltinELFTableCanonicalizer.cpp
+  Object/BuiltinObjectWriterPreflight.cpp
   Object/BuiltinLLVMObjectReader.cpp
   Object/BuiltinLLVMObjectWriter.cpp
   Object/MutableBinaryBuilder.cpp
@@ -493,6 +498,7 @@ add_neverc_library(nevercPluginMCObject
   nevercPluginIR
   nevercPluginTarget
   nevercFoundation
+  nevercMerge
   )
 add_dependencies(nevercPluginMCObject
   nevercPluginMCSchema
@@ -520,6 +526,7 @@ set(LLVM_LINK_COMPONENTS
 add_neverc_library(nevercPluginLink
   Link/AndroidKernelModuleFinalizer.cpp
   Link/AndroidKernelProfileContractVerifier.cpp
+  Link/AndroidKernelReleaseInputVerifier.cpp
   Link/ArchiveGraph.cpp
   Link/BinaryImage.cpp
   Link/BinaryImageCAPI.cpp

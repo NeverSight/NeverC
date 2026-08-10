@@ -1,7 +1,7 @@
 /*===---- neverc/xorstr/xorstr.h - compile-time string encryption for C ---===*\
  *
  * Wraps the __builtin_neverc_xorstr compiler builtin so that plain C
- * (and C++) source can encrypt string literals without relying on the
+ * source can encrypt string literals without relying on the
  * NeverC `.encrypt()` syntax extension.
  *
  * Usage:

@@ -127,8 +127,7 @@ Expected<ObjectProbeMatch> ObjectFormatRegistry::probe(
   Buffer.NullTerminated = NEVERC_FALSE;
 
   NevercObjectProbeRequest Request{};
-  Request.Header = {sizeof(Request), NEVERC_OBJECT_FORMAT_API_MAJOR,
-                    NEVERC_OBJECT_FORMAT_API_MINOR, 0};
+  Request.Header = {sizeof(Request), NEVERC_OBJECT_FORMAT_API_MAJOR, 0, 0};
   Request.Task = Task.handle();
   Request.Input = Buffer;
   Request.LogicalPath = {LogicalPath.data(), LogicalPath.size()};
@@ -145,31 +144,46 @@ Expected<ObjectProbeMatch> ObjectFormatRegistry::probe(
     if (!Format.Probe || !supportsTarget(Format, Target.TargetID))
       continue;
 
+    Request.Header.Minor = Format.APIMinor;
     NevercObjectProbeResult Result{};
     Result.Header = {sizeof(Result), NEVERC_OBJECT_FORMAT_API_MAJOR,
-                     NEVERC_OBJECT_FORMAT_API_MINOR, 0};
-    NevercStatus Status{};
+                     Format.APIMinor, 0};
+    bool CallbackThrew = false;
+    auto InvokeProbe = [&]() -> NevercStatus {
 #if defined(__cpp_exceptions)
-    try {
-      Status = Format.Probe(Format.CallbackUserData, &Request, &Result);
-    } catch (...) {
+      try {
+        return Format.Probe(Format.CallbackUserData, &Request, &Result);
+      } catch (...) {
+        CallbackThrew = true;
+        NevercStatus Failure = neverc_status_ok();
+        Failure.Code = NEVERC_STATUS_PLUGIN_FAILURE;
+        return Failure;
+      }
+#else
+      return Format.Probe(Format.CallbackUserData, &Request, &Result);
+#endif
+    };
+    Expected<NevercStatus> Invoked =
+        Format.Owner
+            ? Task.invokeCallback(Format.PluginID,
+                                  "object-probe:" + Format.CanonicalName,
+                                  InvokeProbe)
+            : Expected<NevercStatus>(InvokeProbe());
+    if (!Invoked)
+      return Invoked.takeError();
+    if (CallbackThrew)
       return createStringError(
           errc::invalid_argument,
           "object probe callback for plugin '" + Format.PluginID +
               "', format '" + Format.CanonicalName + "' threw an exception");
-    }
-#else
-    Status = Format.Probe(Format.CallbackUserData, &Request, &Result);
-#endif
+    NevercStatus Status = *Invoked;
     if (!neverc_status_is_ok(Status))
       return callbackFailure(Format, Status);
     if (Result.Header.StructSize < sizeof(Result) ||
         Result.Header.Major != NEVERC_OBJECT_FORMAT_API_MAJOR ||
-        Result.Header.Minor > NEVERC_OBJECT_FORMAT_API_MINOR ||
-        Result.Header.Flags != 0 ||
+        Result.Header.Minor > Format.APIMinor || Result.Header.Flags != 0 ||
         Result.Confidence > NEVERC_OBJECT_PROBE_MAX_CONFIDENCE ||
-        Result.ConsumedMinimum >
-            NEVERC_OBJECT_PROBE_MAX_CONSUMED_MINIMUM)
+        Result.ConsumedMinimum > NEVERC_OBJECT_PROBE_MAX_CONSUMED_MINIMUM)
       return createStringError(
           errc::invalid_argument,
           "object probe callback for plugin '" + Format.PluginID +

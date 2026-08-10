@@ -5,6 +5,7 @@
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Twine.h"
+#include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/TimeProfiler.h"
 #include <algorithm>
 #include <chrono>
@@ -72,8 +73,20 @@ PluginSession::PluginSession(
 }
 
 PluginSession::~PluginSession() {
-  if (Error E = end())
-    consumeError(std::move(E));
+  Error E = end();
+  if (!isEnded()) {
+    if (E) {
+      auto Message = toString(std::move(E));
+      report_fatal_error(
+          Twine("PluginSession destroyed before successful end: ") +
+              Message.str(),
+          /*gen_crash_diag=*/false);
+    }
+    report_fatal_error(
+        "PluginSession end returned success without reaching the ended state",
+        /*gen_crash_diag=*/false);
+  }
+  consumeError(std::move(E));
 }
 
 Expected<std::unique_ptr<PluginSession>>
@@ -257,13 +270,11 @@ PluginSession::createTask(NevercTaskKind Kind, PluginTaskContext *Parent) {
   return PluginTaskContext::create(*this, Kind, Parent);
 }
 
-Expected<NevercStatus>
-PluginSession::invokeCallback(StringRef PluginID, StringRef CallbackName,
-                              std::function<NevercStatus()> Callback,
-                              bool CheckCancellation,
-                              PluginTaskContext *CurrentTask,
-                              uint64_t *OutDiagnosticTransactionID,
-                              bool DeferRecoverableDisposition) {
+Expected<NevercStatus> PluginSession::invokeCallback(
+    StringRef PluginID, StringRef CallbackName,
+    std::function<NevercStatus()> Callback, bool CheckCancellation,
+    PluginTaskContext *CurrentTask, uint64_t *OutDiagnosticTransactionID,
+    bool DeferRecoverableDisposition, const void *ArtifactMutationDomain) {
   if (OutDiagnosticTransactionID)
     *OutDiagnosticTransactionID = 0;
   if (!Callback)
@@ -273,8 +284,7 @@ PluginSession::invokeCallback(StringRef PluginID, StringRef CallbackName,
     return sessionError("plugin '" + PluginID +
                         "' is not selected in this session");
   if (CurrentTask && &CurrentTask->session() != this)
-    return sessionError(
-        "plugin callback task belongs to a different session");
+    return sessionError("plugin callback task belongs to a different session");
   if (CheckCancellation && isCancelled())
     return sessionStatus(NEVERC_STATUS_CANCELLED);
   {
@@ -284,9 +294,8 @@ PluginSession::invokeCallback(StringRef PluginID, StringRef CallbackName,
                           "' on an ending plugin session");
     ActiveCallbacks.fetch_add(1, std::memory_order_acq_rel);
   }
-  auto ReleaseActiveCallback = make_scope_exit([&] {
-    ActiveCallbacks.fetch_sub(1, std::memory_order_acq_rel);
-  });
+  auto ReleaseActiveCallback = make_scope_exit(
+      [&] { ActiveCallbacks.fetch_sub(1, std::memory_order_acq_rel); });
 
   RegistryActivityLease CallbackLease =
       ProcessServices.registry().acquireCallbackLease();
@@ -297,14 +306,12 @@ PluginSession::invokeCallback(StringRef PluginID, StringRef CallbackName,
   const PluginDescriptorRecord &Descriptor = State->Module->descriptor();
   bool IsReentrant =
       llvm::is_contained(ActivePluginCallbacks, State->Module.get());
-  if (IsReentrant &&
-      Descriptor.Reentrancy != NEVERC_REENTRANCY_ALLOWED)
+  if (IsReentrant && Descriptor.Reentrancy != NEVERC_REENTRANCY_ALLOWED)
     return sessionStatus(NEVERC_STATUS_REENTRANCY_DENIED);
 
   std::unique_lock<std::recursive_mutex> CallbackLock;
   if (Descriptor.Concurrency == NEVERC_CONCURRENCY_SESSION_SERIAL)
-    CallbackLock = std::unique_lock<std::recursive_mutex>(
-        State->CallbackMutex);
+    CallbackLock = std::unique_lock<std::recursive_mutex>(State->CallbackMutex);
   else if (Descriptor.Concurrency == NEVERC_CONCURRENCY_PROCESS_SERIAL)
     CallbackLock = std::unique_lock<std::recursive_mutex>(
         ProcessServices.processSerialGate());
@@ -312,30 +319,51 @@ PluginSession::invokeCallback(StringRef PluginID, StringRef CallbackName,
   if (CheckCancellation && isCancelled())
     return sessionStatus(NEVERC_STATUS_CANCELLED);
 
-  ActivePluginCallbacks.push_back(State->Module.get());
-  uint64_t DiagnosticTransactionID = Diagnostics.beginTransaction();
-  if (OutDiagnosticTransactionID)
-    *OutDiagnosticTransactionID = DiagnosticTransactionID;
-  ProcessServices.enterCallbackScope(*this, CurrentTask, PluginID,
-                                     CallbackName,
-                                     DiagnosticTransactionID);
-  auto PopCallback = make_scope_exit([&] {
-    ProcessServices.leaveCallbackScope(*this, CurrentTask);
-    ActivePluginCallbacks.pop_back();
-  });
-  std::string TraceName =
-      (Twine("plugin:") + PluginID + "/" + CallbackName).str();
-  TimeTraceScope TimeScope(TraceName);
-  const auto CallbackStart = std::chrono::steady_clock::now();
-  auto RecordStats = [&](bool IsError) {
-    const auto Elapsed = std::chrono::steady_clock::now() - CallbackStart;
-    auto Nanos =
-        std::chrono::duration_cast<std::chrono::nanoseconds>(Elapsed).count();
-    CallbackStats.record(PluginID, CallbackName,
-                         Nanos < 0 ? 0 : static_cast<uint64_t>(Nanos), IsError);
-  };
   try {
-    NevercStatus Result = Callback();
+    uint64_t DiagnosticTransactionID = Diagnostics.beginTransaction();
+
+    ActivePluginCallbacks.push_back(State->Module.get());
+    auto PopActivePluginCallback =
+        make_scope_exit([&] { ActivePluginCallbacks.pop_back(); });
+
+    auto EnteredScope = ProcessServices.enterCallbackScope(
+        *this, CurrentTask, PluginID, CallbackName, DiagnosticTransactionID,
+        ArtifactMutationDomain);
+    if (!EnteredScope) {
+      consumeError(EnteredScope.takeError());
+      return sessionStatus(NEVERC_STATUS_RESOURCE_EXHAUSTED);
+    }
+    auto PopCallbackScope = make_scope_exit(
+        [&] { ProcessServices.leaveCallbackScope(*this, CurrentTask); });
+
+    if (OutDiagnosticTransactionID)
+      *OutDiagnosticTransactionID = DiagnosticTransactionID;
+    std::string TraceName =
+        (Twine("plugin:") + PluginID + "/" + CallbackName).str();
+    TimeTraceScope TimeScope(TraceName);
+    const auto CallbackStart = std::chrono::steady_clock::now();
+    auto RecordStats = [&](bool IsError) {
+      const auto Elapsed = std::chrono::steady_clock::now() - CallbackStart;
+      auto Nanos =
+          std::chrono::duration_cast<std::chrono::nanoseconds>(Elapsed).count();
+      CallbackStats.record(PluginID, CallbackName,
+                           Nanos < 0 ? 0 : static_cast<uint64_t>(Nanos),
+                           IsError);
+    };
+
+    NevercStatus Result;
+    try {
+      Result = Callback();
+    } catch (...) {
+      RecordStats(/*IsError=*/true);
+      Diagnostics.emitImplicit(*this, CurrentTask, PluginID, CallbackName,
+                               (Twine("plugin callback '") + CallbackName +
+                                "' raised an exception across the C ABI")
+                                   .str(),
+                               DiagnosticTransactionID);
+      cancel();
+      return sessionStatus(NEVERC_STATUS_PLUGIN_EXCEPTION);
+    }
     RecordStats(Result.Code != NEVERC_STATUS_OK &&
                 Result.Code != NEVERC_STATUS_CANCELLED);
     if (Result.Code != NEVERC_STATUS_OK &&
@@ -359,15 +387,7 @@ PluginSession::invokeCallback(StringRef PluginID, StringRef CallbackName,
     }
     return Result;
   } catch (...) {
-    RecordStats(/*IsError=*/true);
-    Diagnostics.emitImplicit(
-        *this, CurrentTask, PluginID, CallbackName,
-        (Twine("plugin callback '") + CallbackName +
-         "' raised an exception across the C ABI")
-            .str(),
-        DiagnosticTransactionID);
-    cancel();
-    return sessionStatus(NEVERC_STATUS_PLUGIN_EXCEPTION);
+    return sessionStatus(NEVERC_STATUS_RESOURCE_EXHAUSTED);
   }
 }
 

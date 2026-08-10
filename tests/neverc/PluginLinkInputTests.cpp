@@ -263,7 +263,7 @@ protected:
 
     NevercObjectFormatDescriptor Format{};
     Format.Header = {sizeof(Format), NEVERC_OBJECT_FORMAT_API_MAJOR,
-                     NEVERC_OBJECT_FORMAT_API_MINOR, 0};
+                     UINT16_C(0), 0};
     Format.FormatID = TestFormatID;
     Format.CanonicalName = view("nobj");
     Format.DefaultExtension = view(".nobj");

@@ -187,8 +187,7 @@ Error verifyPluginObjectGraph(const PluginObjectGraph &Graph) {
   for (const PluginObjectSymbol &Symbol : Graph.symbols()) {
     if (Error E = VerifyID(Symbol.ID, "symbol"))
       return E;
-    if (Symbol.Name.empty() ||
-        !knownSymbolBinding(Symbol.Binding) ||
+    if (!knownSymbolBinding(Symbol.Binding) ||
         !knownSymbolVisibility(Symbol.Visibility) ||
         !knownSymbolType(Symbol.Type) ||
         !knownSymbolDefinition(Symbol.Definition))
@@ -243,7 +242,12 @@ Error verifyPluginObjectGraph(const PluginObjectGraph &Graph) {
         Symbol.Definition != NEVERC_OBJECT_SYMBOL_DEFINITION_COMMON &&
         Symbol.Binding != NEVERC_OBJECT_SYMBOL_BINDING_LOCAL &&
         Symbol.Binding != NEVERC_OBJECT_SYMBOL_BINDING_WEAK;
-    if (Strong && !StrongDefinitions.insert(Symbol.Name).second)
+    // Native object formats may carry ordinary anonymous symbol entries. An
+    // empty name does not claim the global symbol namespace, so multiple such
+    // entries are not duplicate strong definitions. Reader provenance decides
+    // whether lossless passthrough is possible; portable writers fail closed.
+    if (Strong && !Symbol.Name.empty() &&
+        !StrongDefinitions.insert(Symbol.Name).second)
       return invalid("ObjectGraph has duplicate strong symbol definitions");
   }
 

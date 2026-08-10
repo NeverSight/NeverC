@@ -97,33 +97,66 @@ ObjectReaderProvider::read(
 
   NevercObjectReadRequest Request{};
   Request.Header = {sizeof(Request), NEVERC_OBJECT_FORMAT_API_MAJOR,
-                    NEVERC_OBJECT_FORMAT_API_MINOR, 0};
+                    Match->Format->APIMinor, 0};
   Request.Task = Task.handle();
   Request.Input = Buffer;
   Request.LogicalPath = {LogicalPath.data(), LogicalPath.size()};
   Request.Target = TargetView;
-  Request.Object = &Bridge.api();
+  Request.Object = Match->Format->Owner ? &Bridge.readOnlyAPI() : &Bridge.api();
   Request.Graph = *GraphHandle;
   Request.Mutation = *Mutation;
 
-  NevercStatus Status{};
+  bool CallbackThrew = false;
+  auto InvokeReader = [&]() -> NevercStatus {
 #if defined(__cpp_exceptions)
-  try {
-    Status = Match->Format->Reader(Match->Format->CallbackUserData,
-                                   &Request);
-  } catch (...) {
+    try {
+      return Match->Format->Reader(Match->Format->CallbackUserData, &Request);
+    } catch (...) {
+      CallbackThrew = true;
+      NevercStatus Failure = neverc_status_ok();
+      Failure.Code = NEVERC_STATUS_PLUGIN_FAILURE;
+      return Failure;
+    }
+#else
+    return Match->Format->Reader(Match->Format->CallbackUserData, &Request);
+#endif
+  };
+
+  Expected<NevercStatus> Invoked = neverc_status_ok();
+  if (Match->Format->Owner) {
+    Invoked = Task.invokeCallback(
+        Match->Format->PluginID,
+        "object-reader:" + Match->Format->CanonicalName,
+        [&] {
+          auto Capability =
+              Task.currentArtifactMutationCapability(Match->Format);
+          if (!Capability) {
+            NevercStatus Failure = neverc_status_ok();
+            Failure.Code = NEVERC_STATUS_CAPABILITY_UNAVAILABLE;
+            return Failure;
+          }
+          Request.Object = &Bridge.capabilityAPI(Match->Format, *Capability);
+          return InvokeReader();
+        },
+        true, nullptr, false, Match->Format);
+  } else {
+    Invoked = InvokeReader();
+  }
+  if (!Invoked) {
     if (Bridge.hasActiveMutation())
       (void)Bridge.abandonMutation(*Mutation);
-    return createStringError(
-        errc::invalid_argument,
-        "object Reader callback for plugin '" + Match->Format->PluginID +
-            "', format '" + Match->Format->CanonicalName +
-            "' threw an exception");
+    return Invoked.takeError();
   }
-#else
-  Status =
-      Match->Format->Reader(Match->Format->CallbackUserData, &Request);
-#endif
+  NevercStatus Status = *Invoked;
+  if (CallbackThrew) {
+    if (Bridge.hasActiveMutation())
+      (void)Bridge.abandonMutation(*Mutation);
+    return createStringError(errc::invalid_argument,
+                             "object Reader callback for plugin '" +
+                                 Match->Format->PluginID + "', format '" +
+                                 Match->Format->CanonicalName +
+                                 "' threw an exception");
+  }
   if (!neverc_status_is_ok(Status)) {
     if (Bridge.hasActiveMutation())
       (void)Bridge.abandonMutation(*Mutation);
@@ -138,14 +171,12 @@ ObjectReaderProvider::read(
   if (!neverc_status_is_ok(Status)) {
     if (Bridge.hasActiveMutation())
       (void)Bridge.abandonMutation(*Mutation);
-    return statusError("object Reader transaction", Status,
-                       *Match->Format);
+    return statusError("object Reader transaction", Status, *Match->Format);
   }
   if (Error E = verifyPluginObjectGraph(*Graph))
     return joinErrors(
-        createStringError(
-            errc::invalid_argument,
-            "object Reader produced an invalid ObjectGraph"),
+        createStringError(errc::invalid_argument,
+                          "object Reader produced an invalid ObjectGraph"),
         std::move(E));
   return Graph;
 }

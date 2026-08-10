@@ -1,4 +1,5 @@
 #include "neverc/Plugin/Host/ObjectPluginBridge.h"
+#include "neverc/Plugin/Host/PluginPhaseExecutor.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/Error.h"
 #include <cstring>
@@ -33,19 +34,9 @@ PluginHandleKind handleKind(ObjectPluginBridge::EntityKind Kind) {
   return 0;
 }
 
-ObjectPluginBridge *bridge(void *Context, NevercTaskHandle Task,
-                           NevercStatus &Status) {
-  if (!Context) {
-    Status = objectStatus(NEVERC_STATUS_INVALID_ARGUMENT);
-    return nullptr;
-  }
-  auto *Bridge = static_cast<ObjectPluginBridge *>(Context);
-  if (!sameHandle(Bridge->taskHandle(), Task)) {
-    Status = objectStatus(NEVERC_STATUS_WRONG_SCOPE);
-    return nullptr;
-  }
-  Status = neverc_status_ok();
-  return Bridge;
+ObjectPluginBridge::OwnerLease bridge(void *Context, NevercTaskHandle Task,
+                                      NevercStatus &Status) {
+  return ObjectPluginBridge::acquire(Context, Task, false, Status);
 }
 
 template <typename T> bool validRecord(const T *Value) {
@@ -54,8 +45,7 @@ template <typename T> bool validRecord(const T *Value) {
          Value->Header.Minor <= NEVERC_OBJECT_API_MINOR;
 }
 
-template <typename T>
-NevercStatus writeHandle(Expected<T> Handle, T *Output) {
+template <typename T> NevercStatus writeHandle(Expected<T> Handle, T *Output) {
   if (!Output) {
     if (!Handle)
       consumeError(Handle.takeError());
@@ -85,7 +75,7 @@ NevercStatus NEVERC_CALL GetGraphInfo(
     void *Context, NevercTaskHandle Task, NevercObjectGraphHandle Graph,
     NevercObjectGraphInfo *OutInfo) {
   NevercStatus Status;
-  ObjectPluginBridge *Bridge = bridge(Context, Task, Status);
+  auto Bridge = bridge(Context, Task, Status);
   if (!Bridge)
     return Status;
   if (!validRecord(OutInfo))
@@ -113,7 +103,7 @@ NevercStatus NEVERC_CALL GetFirstSection(
     void *Context, NevercTaskHandle Task, NevercObjectGraphHandle Graph,
     NevercObjectSectionHandle *OutSection) {
   NevercStatus Status;
-  ObjectPluginBridge *Bridge = bridge(Context, Task, Status);
+  auto Bridge = bridge(Context, Task, Status);
   if (!Bridge || !OutSection)
     return Bridge ? objectStatus(NEVERC_STATUS_INVALID_ARGUMENT) : Status;
   PluginObjectGraph *Resolved = nullptr;
@@ -122,8 +112,8 @@ NevercStatus NEVERC_CALL GetFirstSection(
     return Status;
   return firstEntity(
       Bridge->activeGraph().sections(),
-      [Bridge](PluginObjectSection &Value) {
-        return Bridge->wrapSection(Value);
+      [Owner = &*Bridge](PluginObjectSection &Value) {
+        return Owner->wrapSection(Value);
       },
       OutSection);
 }
@@ -133,7 +123,7 @@ NevercStatus NEVERC_CALL GetNextSection(
     NevercObjectSectionHandle Section,
     NevercObjectSectionHandle *OutSection) {
   NevercStatus Status;
-  ObjectPluginBridge *Bridge = bridge(Context, Task, Status);
+  auto Bridge = bridge(Context, Task, Status);
   if (!Bridge || !OutSection)
     return Bridge ? objectStatus(NEVERC_STATUS_INVALID_ARGUMENT) : Status;
   *OutSection = {};
@@ -154,7 +144,7 @@ NevercStatus NEVERC_CALL GetSectionInfo(
     NevercObjectSectionHandle Section,
     NevercObjectSectionInfo *OutInfo) {
   NevercStatus Status;
-  ObjectPluginBridge *Bridge = bridge(Context, Task, Status);
+  auto Bridge = bridge(Context, Task, Status);
   if (!Bridge)
     return Status;
   if (!validRecord(OutInfo))
@@ -195,7 +185,7 @@ NevercStatus NEVERC_CALL GetFirstSymbol(
     void *Context, NevercTaskHandle Task, NevercObjectGraphHandle Graph,
     NevercObjectSymbolHandle *OutSymbol) {
   NevercStatus Status;
-  ObjectPluginBridge *Bridge = bridge(Context, Task, Status);
+  auto Bridge = bridge(Context, Task, Status);
   if (!Bridge || !OutSymbol)
     return Bridge ? objectStatus(NEVERC_STATUS_INVALID_ARGUMENT) : Status;
   PluginObjectGraph *Resolved = nullptr;
@@ -204,8 +194,8 @@ NevercStatus NEVERC_CALL GetFirstSymbol(
     return Status;
   return firstEntity(
       Bridge->activeGraph().symbols(),
-      [Bridge](PluginObjectSymbol &Value) {
-        return Bridge->wrapSymbol(Value);
+      [Owner = &*Bridge](PluginObjectSymbol &Value) {
+        return Owner->wrapSymbol(Value);
       },
       OutSymbol);
 }
@@ -214,7 +204,7 @@ NevercStatus NEVERC_CALL GetNextSymbol(
     void *Context, NevercTaskHandle Task, NevercObjectSymbolHandle Symbol,
     NevercObjectSymbolHandle *OutSymbol) {
   NevercStatus Status;
-  ObjectPluginBridge *Bridge = bridge(Context, Task, Status);
+  auto Bridge = bridge(Context, Task, Status);
   if (!Bridge || !OutSymbol)
     return Bridge ? objectStatus(NEVERC_STATUS_INVALID_ARGUMENT) : Status;
   *OutSymbol = {};
@@ -234,7 +224,7 @@ NevercStatus NEVERC_CALL GetSymbolInfo(
     void *Context, NevercTaskHandle Task, NevercObjectSymbolHandle Symbol,
     NevercObjectSymbolInfo *OutInfo) {
   NevercStatus Status;
-  ObjectPluginBridge *Bridge = bridge(Context, Task, Status);
+  auto Bridge = bridge(Context, Task, Status);
   if (!Bridge)
     return Status;
   if (!validRecord(OutInfo))
@@ -290,7 +280,7 @@ NevercStatus NEVERC_CALL GetFirstRelocation(
     void *Context, NevercTaskHandle Task, NevercObjectGraphHandle Graph,
     NevercObjectRelocationHandle *OutRelocation) {
   NevercStatus Status;
-  ObjectPluginBridge *Bridge = bridge(Context, Task, Status);
+  auto Bridge = bridge(Context, Task, Status);
   if (!Bridge || !OutRelocation)
     return Bridge ? objectStatus(NEVERC_STATUS_INVALID_ARGUMENT) : Status;
   PluginObjectGraph *Resolved = nullptr;
@@ -299,8 +289,8 @@ NevercStatus NEVERC_CALL GetFirstRelocation(
     return Status;
   return firstEntity(
       Bridge->activeGraph().relocations(),
-      [Bridge](PluginObjectRelocation &Value) {
-        return Bridge->wrapRelocation(Value);
+      [Owner = &*Bridge](PluginObjectRelocation &Value) {
+        return Owner->wrapRelocation(Value);
       },
       OutRelocation);
 }
@@ -310,7 +300,7 @@ NevercStatus NEVERC_CALL GetNextRelocation(
     NevercObjectRelocationHandle Relocation,
     NevercObjectRelocationHandle *OutRelocation) {
   NevercStatus Status;
-  ObjectPluginBridge *Bridge = bridge(Context, Task, Status);
+  auto Bridge = bridge(Context, Task, Status);
   if (!Bridge || !OutRelocation)
     return Bridge ? objectStatus(NEVERC_STATUS_INVALID_ARGUMENT) : Status;
   *OutRelocation = {};
@@ -331,7 +321,7 @@ NevercStatus NEVERC_CALL GetRelocationInfo(
     NevercObjectRelocationHandle Relocation,
     NevercObjectRelocationInfo *OutInfo) {
   NevercStatus Status;
-  ObjectPluginBridge *Bridge = bridge(Context, Task, Status);
+  auto Bridge = bridge(Context, Task, Status);
   if (!Bridge)
     return Status;
   if (!validRecord(OutInfo))
@@ -400,7 +390,7 @@ NevercStatus NEVERC_CALL GetFirstComdat(
     void *Context, NevercTaskHandle Task, NevercObjectGraphHandle Graph,
     NevercObjectComdatHandle *OutComdat) {
   NevercStatus Status;
-  ObjectPluginBridge *Bridge = bridge(Context, Task, Status);
+  auto Bridge = bridge(Context, Task, Status);
   if (!Bridge || !OutComdat)
     return Bridge ? objectStatus(NEVERC_STATUS_INVALID_ARGUMENT) : Status;
   PluginObjectGraph *Resolved = nullptr;
@@ -409,8 +399,8 @@ NevercStatus NEVERC_CALL GetFirstComdat(
     return Status;
   return firstEntity(
       Bridge->activeGraph().comdats(),
-      [Bridge](PluginObjectComdat &Value) {
-        return Bridge->wrapComdat(Value);
+      [Owner = &*Bridge](PluginObjectComdat &Value) {
+        return Owner->wrapComdat(Value);
       },
       OutComdat);
 }
@@ -419,7 +409,7 @@ NevercStatus NEVERC_CALL GetNextComdat(
     void *Context, NevercTaskHandle Task, NevercObjectComdatHandle Comdat,
     NevercObjectComdatHandle *OutComdat) {
   NevercStatus Status;
-  ObjectPluginBridge *Bridge = bridge(Context, Task, Status);
+  auto Bridge = bridge(Context, Task, Status);
   if (!Bridge || !OutComdat)
     return Bridge ? objectStatus(NEVERC_STATUS_INVALID_ARGUMENT) : Status;
   *OutComdat = {};
@@ -439,7 +429,7 @@ NevercStatus NEVERC_CALL GetComdatInfo(
     void *Context, NevercTaskHandle Task, NevercObjectComdatHandle Comdat,
     NevercObjectComdatInfo *OutInfo) {
   NevercStatus Status;
-  ObjectPluginBridge *Bridge = bridge(Context, Task, Status);
+  auto Bridge = bridge(Context, Task, Status);
   if (!Bridge)
     return Status;
   if (!validRecord(OutInfo))
@@ -476,7 +466,7 @@ NevercStatus NEVERC_CALL GetLayoutProof(
     void *Context, NevercTaskHandle Task, NevercObjectGraphHandle Graph,
     NevercObjectLayoutProofHandle *OutProof) {
   NevercStatus Status;
-  ObjectPluginBridge *Bridge = bridge(Context, Task, Status);
+  auto Bridge = bridge(Context, Task, Status);
   if (!Bridge || !OutProof)
     return Bridge ? objectStatus(NEVERC_STATUS_INVALID_ARGUMENT) : Status;
   PluginObjectGraph *Resolved = nullptr;
@@ -495,7 +485,7 @@ NevercStatus NEVERC_CALL GetLayoutProofInfo(
     NevercObjectLayoutProofHandle Proof,
     NevercObjectLayoutProofInfo *OutInfo) {
   NevercStatus Status;
-  ObjectPluginBridge *Bridge = bridge(Context, Task, Status);
+  auto Bridge = bridge(Context, Task, Status);
   if (!Bridge)
     return Status;
   if (!validRecord(OutInfo))
@@ -515,25 +505,114 @@ NevercStatus NEVERC_CALL GetLayoutProofInfo(
 ObjectPluginBridge::ObjectPluginBridge(PluginTaskContext &TaskValue,
                                        PluginObjectGraph &GraphValue,
                                        bool AllowMutation)
-    : Task(TaskValue), Graph(GraphValue),
-      MutationAllowed(AllowMutation) {
-  API.Header = {sizeof(API), NEVERC_OBJECT_API_MAJOR,
-                NEVERC_OBJECT_API_MINOR, 0};
-  API.Context = this;
-  initializeObjectQueryAPI(API, *this);
-  initializeObjectMutationAPI(API, *this);
-  initializeObjectBuilderAPI(API, *this);
+    : Task(TaskValue), Graph(GraphValue), MutationAllowed(AllowMutation) {
+  Control = std::make_shared<OwnerControl>();
+  Control->Owner = this;
+  Facade = createFacade(AllowMutation);
+  ReadOnlyFacade = AllowMutation ? createFacade(false) : Facade;
+}
+
+std::shared_ptr<ObjectPluginBridge::APIFacade>
+ObjectPluginBridge::createFacade(bool AllowMutation, const void *Domain,
+                                 uint64_t Token) {
+  auto Result = std::make_shared<APIFacade>();
+  Result->Task = &Task;
+  Result->TaskHandle = Task.handle();
+  Result->Control = Control;
+  Result->MutationDomain = Domain;
+  Result->Token = Token;
+  Result->MutationAllowed = AllowMutation;
+  Result->API.Header = {sizeof(Result->API), NEVERC_OBJECT_API_MAJOR,
+                        NEVERC_OBJECT_API_MINOR, 0};
+  initializeObjectQueryAPI(Result->API, *this);
+  initializeObjectMutationAPI(Result->API, *this);
+  initializeObjectBuilderAPI(Result->API, *this);
+  Result->API.Context = Result.get();
+  Task.retainCallbackContext(Result);
+  return Result;
+}
+
+ObjectPluginBridge::ObjectPluginBridge(PluginTaskContext &TaskValue,
+                                       PluginObjectGraph &GraphValue,
+                                       const PluginPhaseExecutor &Executor,
+                                       uint64_t Token)
+    : ObjectPluginBridge(TaskValue, GraphValue, &Executor, Token) {}
+
+ObjectPluginBridge::ObjectPluginBridge(PluginTaskContext &TaskValue,
+                                       PluginObjectGraph &GraphValue,
+                                       const void *Domain, uint64_t Token)
+    : Task(TaskValue), Graph(GraphValue), MutationAllowed(Domain && Token != 0),
+      MutationDomain(Domain), MutationCapabilityToken(Token) {
+  Control = std::make_shared<OwnerControl>();
+  Control->Owner = this;
+  ReadOnlyFacade = createFacade(false);
+  Facade = MutationAllowed ? createFacade(true, Domain, Token) : ReadOnlyFacade;
+}
+
+const NevercObjectAPI &ObjectPluginBridge::capabilityAPI(const void *Domain,
+                                                         uint64_t Token) {
+  if (!Domain || Token == 0)
+    return ReadOnlyFacade->API;
+  std::lock_guard<std::recursive_mutex> Lock(Control->Mutex);
+  auto Existing = llvm::find_if(
+      CapabilityFacades, [&](const std::shared_ptr<APIFacade> &Candidate) {
+        return Candidate->MutationDomain == Domain && Candidate->Token == Token;
+      });
+  if (Existing != CapabilityFacades.end())
+    return (*Existing)->API;
+  auto Result = createFacade(true, Domain, Token);
+  const NevercObjectAPI &API = Result->API;
+  CapabilityFacades.push_back(std::move(Result));
+  return API;
+}
+
+bool ObjectPluginBridge::mutationAllowed() const {
+  if (!MutationAllowed)
+    return false;
+  return !MutationDomain || Task.validatesArtifactMutationCapability(
+                                MutationDomain, MutationCapabilityToken);
+}
+
+ObjectPluginBridge::OwnerLease
+ObjectPluginBridge::acquire(void *Context, NevercTaskHandle TaskHandle,
+                            bool RequireMutation, NevercStatus &Status) {
+  if (!Context) {
+    Status = objectStatus(NEVERC_STATUS_INVALID_ARGUMENT);
+    return {};
+  }
+  auto &Facade = *static_cast<APIFacade *>(Context);
+  if (!sameHandle(Facade.TaskHandle, TaskHandle)) {
+    Status = objectStatus(NEVERC_STATUS_WRONG_SCOPE);
+    return {};
+  }
+  if (RequireMutation && (!Facade.MutationAllowed ||
+                          (Facade.MutationDomain &&
+                           !Facade.Task->validatesArtifactMutationCapability(
+                               Facade.MutationDomain, Facade.Token)))) {
+    Status = objectStatus(NEVERC_STATUS_POLICY_VIOLATION);
+    return {};
+  }
+  auto Control = Facade.Control;
+  std::unique_lock<std::recursive_mutex> Lock(Control->Mutex);
+  ObjectPluginBridge *Owner = Control->Owner;
+  if (!Owner) {
+    Status = objectStatus(NEVERC_STATUS_STALE_HANDLE);
+    return {};
+  }
+  Status = neverc_status_ok();
+  return OwnerLease(std::move(Control), std::move(Lock), Owner);
 }
 
 ObjectPluginBridge::~ObjectPluginBridge() {
+  std::unique_lock<std::recursive_mutex> Lock(Control->Mutex);
   Working.reset();
   if (!neverc_handle_is_null(MutationHandle))
     (void)Task.handles().release(MutationHandle,
                                  PluginObjectMutationHandleKind);
   finishHandles();
   if (!neverc_handle_is_null(GraphHandle))
-    (void)Task.handles().release(GraphHandle,
-                                 PluginObjectGraphHandleKind);
+    (void)Task.handles().release(GraphHandle, PluginObjectGraphHandleKind);
+  Control->Owner = nullptr;
 }
 
 PluginObjectGraph &ObjectPluginBridge::activeGraph() const {

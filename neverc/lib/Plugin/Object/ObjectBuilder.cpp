@@ -20,19 +20,9 @@ bool sameHandle(NevercHandle Left, NevercHandle Right) {
   return Left.Owner == Right.Owner && Left.Value == Right.Value;
 }
 
-ObjectPluginBridge *bridge(void *Context, NevercTaskHandle Task,
-                           NevercStatus &Status) {
-  if (!Context) {
-    Status = objectStatus(NEVERC_STATUS_INVALID_ARGUMENT);
-    return nullptr;
-  }
-  auto *Bridge = static_cast<ObjectPluginBridge *>(Context);
-  if (!sameHandle(Bridge->taskHandle(), Task)) {
-    Status = objectStatus(NEVERC_STATUS_WRONG_SCOPE);
-    return nullptr;
-  }
-  Status = neverc_status_ok();
-  return Bridge;
+ObjectPluginBridge::OwnerLease bridge(void *Context, NevercTaskHandle Task,
+                                      NevercStatus &Status) {
+  return ObjectPluginBridge::acquire(Context, Task, true, Status);
 }
 
 template <typename T> bool validRecord(const T *Value) {
@@ -125,7 +115,7 @@ NevercStatus NEVERC_CALL CreateSection(
     const NevercObjectSectionDescriptor *Descriptor,
     NevercObjectSectionHandle *OutSection) {
   NevercStatus Status;
-  ObjectPluginBridge *Bridge = bridge(Context, Task, Status);
+  auto Bridge = bridge(Context, Task, Status);
   if (!Bridge)
     return Status;
   if (!validRecord(Descriptor) || !validString(Descriptor->Name) ||
@@ -141,7 +131,7 @@ NevercStatus NEVERC_CALL ReplaceSection(
     NevercObjectMutationHandle Mutation, NevercObjectSectionHandle Section,
     const NevercObjectSectionDescriptor *Descriptor) {
   NevercStatus Status;
-  ObjectPluginBridge *Bridge = bridge(Context, Task, Status);
+  auto Bridge = bridge(Context, Task, Status);
   if (!Bridge)
     return Status;
   if (!validRecord(Descriptor) || !validString(Descriptor->Name) ||
@@ -156,7 +146,7 @@ NevercStatus NEVERC_CALL MoveSectionBefore(
     NevercObjectMutationHandle Mutation, NevercObjectSectionHandle Section,
     NevercObjectSectionHandle Position) {
   NevercStatus Status;
-  ObjectPluginBridge *Bridge = bridge(Context, Task, Status);
+  auto Bridge = bridge(Context, Task, Status);
   return Bridge ? Bridge->moveSectionBefore(Mutation, Section, Position)
                 : Status;
 }
@@ -166,7 +156,7 @@ NevercStatus NEVERC_CALL EraseSection(
     NevercObjectMutationHandle Mutation,
     NevercObjectSectionHandle Section) {
   NevercStatus Status;
-  ObjectPluginBridge *Bridge = bridge(Context, Task, Status);
+  auto Bridge = bridge(Context, Task, Status);
   return Bridge ? Bridge->eraseSection(Mutation, Section) : Status;
 }
 
@@ -176,7 +166,7 @@ NevercStatus NEVERC_CALL CreateSymbol(
     const NevercObjectSymbolDescriptor *Descriptor,
     NevercObjectSymbolHandle *OutSymbol) {
   NevercStatus Status;
-  ObjectPluginBridge *Bridge = bridge(Context, Task, Status);
+  auto Bridge = bridge(Context, Task, Status);
   if (!Bridge)
     return Status;
   if (!validRecord(Descriptor) || !validString(Descriptor->Name) ||
@@ -191,7 +181,7 @@ NevercStatus NEVERC_CALL ReplaceSymbol(
     NevercObjectMutationHandle Mutation, NevercObjectSymbolHandle Symbol,
     const NevercObjectSymbolDescriptor *Descriptor) {
   NevercStatus Status;
-  ObjectPluginBridge *Bridge = bridge(Context, Task, Status);
+  auto Bridge = bridge(Context, Task, Status);
   if (!Bridge)
     return Status;
   if (!validRecord(Descriptor) || !validString(Descriptor->Name) ||
@@ -205,7 +195,7 @@ NevercStatus NEVERC_CALL MoveSymbolBefore(
     NevercObjectMutationHandle Mutation, NevercObjectSymbolHandle Symbol,
     NevercObjectSymbolHandle Position) {
   NevercStatus Status;
-  ObjectPluginBridge *Bridge = bridge(Context, Task, Status);
+  auto Bridge = bridge(Context, Task, Status);
   return Bridge ? Bridge->moveSymbolBefore(Mutation, Symbol, Position)
                 : Status;
 }
@@ -214,7 +204,7 @@ NevercStatus NEVERC_CALL EraseSymbol(
     void *Context, NevercTaskHandle Task,
     NevercObjectMutationHandle Mutation, NevercObjectSymbolHandle Symbol) {
   NevercStatus Status;
-  ObjectPluginBridge *Bridge = bridge(Context, Task, Status);
+  auto Bridge = bridge(Context, Task, Status);
   return Bridge ? Bridge->eraseSymbol(Mutation, Symbol) : Status;
 }
 
@@ -224,7 +214,7 @@ NevercStatus NEVERC_CALL CreateRelocation(
     const NevercObjectRelocationDescriptor *Descriptor,
     NevercObjectRelocationHandle *OutRelocation) {
   NevercStatus Status;
-  ObjectPluginBridge *Bridge = bridge(Context, Task, Status);
+  auto Bridge = bridge(Context, Task, Status);
   if (!Bridge)
     return Status;
   if (!validRecord(Descriptor) ||
@@ -240,7 +230,7 @@ NevercStatus NEVERC_CALL ReplaceRelocation(
     NevercObjectRelocationHandle Relocation,
     const NevercObjectRelocationDescriptor *Descriptor) {
   NevercStatus Status;
-  ObjectPluginBridge *Bridge = bridge(Context, Task, Status);
+  auto Bridge = bridge(Context, Task, Status);
   if (!Bridge)
     return Status;
   if (!validRecord(Descriptor) ||
@@ -255,7 +245,7 @@ NevercStatus NEVERC_CALL MoveRelocationBefore(
     NevercObjectRelocationHandle Relocation,
     NevercObjectRelocationHandle Position) {
   NevercStatus Status;
-  ObjectPluginBridge *Bridge = bridge(Context, Task, Status);
+  auto Bridge = bridge(Context, Task, Status);
   return Bridge ? Bridge->moveRelocationBefore(Mutation, Relocation,
                                                Position)
                 : Status;
@@ -266,7 +256,7 @@ NevercStatus NEVERC_CALL EraseRelocation(
     NevercObjectMutationHandle Mutation,
     NevercObjectRelocationHandle Relocation) {
   NevercStatus Status;
-  ObjectPluginBridge *Bridge = bridge(Context, Task, Status);
+  auto Bridge = bridge(Context, Task, Status);
   return Bridge ? Bridge->eraseRelocation(Mutation, Relocation) : Status;
 }
 
@@ -276,7 +266,7 @@ NevercStatus NEVERC_CALL CreateComdat(
     const NevercObjectComdatDescriptor *Descriptor,
     NevercObjectComdatHandle *OutComdat) {
   NevercStatus Status;
-  ObjectPluginBridge *Bridge = bridge(Context, Task, Status);
+  auto Bridge = bridge(Context, Task, Status);
   if (!Bridge)
     return Status;
   if (!validRecord(Descriptor) || !validString(Descriptor->Name) ||
@@ -291,7 +281,7 @@ NevercStatus NEVERC_CALL ReplaceComdat(
     NevercObjectMutationHandle Mutation, NevercObjectComdatHandle Comdat,
     const NevercObjectComdatDescriptor *Descriptor) {
   NevercStatus Status;
-  ObjectPluginBridge *Bridge = bridge(Context, Task, Status);
+  auto Bridge = bridge(Context, Task, Status);
   if (!Bridge)
     return Status;
   if (!validRecord(Descriptor) || !validString(Descriptor->Name) ||
@@ -305,7 +295,7 @@ NevercStatus NEVERC_CALL MoveComdatBefore(
     NevercObjectMutationHandle Mutation, NevercObjectComdatHandle Comdat,
     NevercObjectComdatHandle Position) {
   NevercStatus Status;
-  ObjectPluginBridge *Bridge = bridge(Context, Task, Status);
+  auto Bridge = bridge(Context, Task, Status);
   return Bridge ? Bridge->moveComdatBefore(Mutation, Comdat, Position)
                 : Status;
 }
@@ -314,7 +304,7 @@ NevercStatus NEVERC_CALL EraseComdat(
     void *Context, NevercTaskHandle Task,
     NevercObjectMutationHandle Mutation, NevercObjectComdatHandle Comdat) {
   NevercStatus Status;
-  ObjectPluginBridge *Bridge = bridge(Context, Task, Status);
+  auto Bridge = bridge(Context, Task, Status);
   return Bridge ? Bridge->eraseComdat(Mutation, Comdat) : Status;
 }
 

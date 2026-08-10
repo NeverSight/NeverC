@@ -1,5 +1,6 @@
 #include "BinaryImage.h"
 #include "neverc/Plugin/Host/PluginHandleArena.h"
+#include "neverc/Plugin/Host/PluginPhaseExecutor.h"
 #include "neverc/Plugin/Host/PluginTaskContext.h"
 #include "llvm/Support/Errc.h"
 #include "llvm/Support/MathExtras.h"
@@ -64,7 +65,47 @@ PluginBinaryImage::PluginBinaryImage(
       Directories(std::move(DirectoriesValue)),
       FormatVerifier(std::move(FormatVerifierValue)),
       Builder(std::move(BuilderValue)) {
-  initializeBinaryImageAPI(API, *this);
+  LinkAPIControl = std::make_shared<detail::BinaryImageAPIControl>();
+  LinkAPIControl->Owner = this;
+  UnrestrictedLinkFacade =
+      createLinkAPIFacade(detail::BinaryImageAPIAccess::Unrestricted);
+  ReadOnlyLinkFacade =
+      createLinkAPIFacade(detail::BinaryImageAPIAccess::ReadOnly);
+}
+
+std::shared_ptr<detail::BinaryImageAPIFacade>
+PluginBinaryImage::createLinkAPIFacade(
+    detail::BinaryImageAPIAccess Access, const void *MutationDomain,
+    uint64_t Token) {
+  auto Facade = std::make_shared<detail::BinaryImageAPIFacade>();
+  Facade->Task = &Task;
+  Facade->TaskHandle = Task.handle();
+  Facade->Control = LinkAPIControl;
+  Facade->MutationDomain = MutationDomain;
+  Facade->Token = Token;
+  Facade->Access = Access;
+  initializeBinaryImageAPI(*Facade);
+  Task.retainCallbackContext(Facade);
+  return Facade;
+}
+
+const NevercLinkAPI &PluginBinaryImage::capabilityLinkAPI(
+    const PluginPhaseExecutor &Executor, uint64_t Token) {
+  if (Token == 0)
+    return ReadOnlyLinkFacade->API;
+  std::lock_guard<std::recursive_mutex> Lock(LinkAPIControl->Mutex);
+  auto Existing = std::find_if(
+      CapabilityLinkFacades.begin(), CapabilityLinkFacades.end(),
+      [&](const std::shared_ptr<detail::BinaryImageAPIFacade> &Facade) {
+        return Facade->MutationDomain == &Executor && Facade->Token == Token;
+      });
+  if (Existing != CapabilityLinkFacades.end())
+    return (*Existing)->API;
+  auto Facade = createLinkAPIFacade(
+      detail::BinaryImageAPIAccess::Capability, &Executor, Token);
+  const NevercLinkAPI &Result = Facade->API;
+  CapabilityLinkFacades.push_back(std::move(Facade));
+  return Result;
 }
 
 Expected<std::shared_ptr<PluginBinaryImage>>
@@ -240,6 +281,7 @@ Error PluginBinaryImage::initializeHandles() {
 }
 
 PluginBinaryImage::~PluginBinaryImage() {
+  std::unique_lock<std::recursive_mutex> Lock(LinkAPIControl->Mutex);
   if (State == NEVERC_BINARY_IMAGE_CANDIDATE && Builder)
     (void)Builder->abort();
   for (PluginBinarySection &Section : Sections)
@@ -253,6 +295,7 @@ PluginBinaryImage::~PluginBinaryImage() {
   if (!neverc_handle_is_null(Handle))
     (void)Task.handles().release(
         Handle, PluginBinaryImageHandleKind);
+  LinkAPIControl->Owner = nullptr;
 }
 
 NevercTaskHandle PluginBinaryImage::taskHandle() const {

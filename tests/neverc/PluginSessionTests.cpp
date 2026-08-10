@@ -7,6 +7,7 @@
 #include "llvm/Config/llvm-config.h"
 #include "llvm/Support/Error.h"
 #include <array>
+#include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <string>
@@ -30,6 +31,17 @@ void loadPlugin(PluginProcessServices &Services, StringRef Path) {
   if (!Loaded)
     ADD_FAILURE() << takeErrorMessage(Loaded.takeError());
 }
+
+class FailingTaskEndHostService final : public PluginHostService {
+public:
+  Error taskScopeEnding(NevercTaskHandle) override {
+    ++Calls;
+    return createStringError(inconvertibleErrorCode(),
+                             "injected task cleanup failure");
+  }
+
+  unsigned Calls = 0;
+};
 
 TEST(PluginSessionTest, IsolatesTopLevelChildAndTaskState) {
   PluginProcessServices Services("neverc-plugin-session-tests",
@@ -231,6 +243,106 @@ TEST(PluginSessionTest, RefusesSessionEndWhileTasksAreActive) {
     EXPECT_FALSE((*Session)->end());
   }
 
+  EXPECT_FALSE(Services.shutdown());
+}
+
+TEST(PluginSessionTest, SessionDestructorFailsFastWithLiveTask) {
+  EXPECT_DEATH_IF_SUPPORTED(
+      ([] {
+        PluginProcessServices Services("neverc-plugin-session-death-test",
+                                       LLVM_VERSION_MAJOR);
+        cantFail(Services.interfaces().freeze());
+        auto Loaded = cantFail(
+            Services.registry().load(NEVERC_TEST_SCOPE_SESSION_PLUGIN));
+        (void)Loaded;
+        const std::array<StringRef, 1> Selected = {
+            "org.neverc.test.scope.session"};
+        auto Plan =
+            cantFail(makePluginActivationPlan(Services.registry(), Selected));
+        auto Session = cantFail(PluginSession::create(Services, Plan));
+        auto Task = cantFail(Session->createTask(NEVERC_TASK_INVOCATION));
+        (void)Task;
+        Session.reset();
+        std::_Exit(0);
+      }()),
+      "PluginSession.*active task");
+}
+
+TEST(PluginSessionTest, ParentTaskDestructorFailsFastWithLiveChild) {
+  EXPECT_DEATH_IF_SUPPORTED(
+      ([] {
+        PluginProcessServices Services("neverc-plugin-task-death-test",
+                                       LLVM_VERSION_MAJOR);
+        cantFail(Services.interfaces().freeze());
+        auto Loaded = cantFail(
+            Services.registry().load(NEVERC_TEST_SCOPE_SESSION_PLUGIN));
+        (void)Loaded;
+        const std::array<StringRef, 1> Selected = {
+            "org.neverc.test.scope.session"};
+        auto Plan =
+            cantFail(makePluginActivationPlan(Services.registry(), Selected));
+        auto Session = cantFail(PluginSession::create(Services, Plan));
+        auto Parent = cantFail(Session->createTask(NEVERC_TASK_INVOCATION));
+        auto Child = cantFail(
+            Session->createTask(NEVERC_TASK_TRANSLATION_UNIT, Parent.get()));
+        (void)Child;
+        Parent.reset();
+        std::_Exit(0);
+      }()),
+      "PluginTaskContext.*child task");
+}
+
+TEST(PluginSessionTest, TaskDestructorFailsFastInsideActiveCallback) {
+  EXPECT_DEATH_IF_SUPPORTED(
+      ([] {
+        PluginProcessServices Services("neverc-plugin-callback-death-test",
+                                       LLVM_VERSION_MAJOR);
+        cantFail(Services.interfaces().freeze());
+        auto Loaded = cantFail(
+            Services.registry().load(NEVERC_TEST_SCOPE_SESSION_PLUGIN));
+        (void)Loaded;
+        const std::array<StringRef, 1> Selected = {
+            "org.neverc.test.scope.session"};
+        auto Plan =
+            cantFail(makePluginActivationPlan(Services.registry(), Selected));
+        auto Session = cantFail(PluginSession::create(Services, Plan));
+        auto Task = cantFail(Session->createTask(NEVERC_TASK_INVOCATION));
+        auto Result = Task->invokeCallback("org.neverc.test.scope.session",
+                                           "destroy-active-task", [&] {
+                                             Task.reset();
+                                             std::_Exit(0);
+                                             return neverc_status_ok();
+                                           });
+        if (!Result)
+          consumeError(Result.takeError());
+        std::_Exit(0);
+      }()),
+      "PluginTaskContext.*callback");
+}
+
+TEST(PluginSessionTest, TaskDestructorConsumesCleanupErrorAfterCompletingEnd) {
+  PluginProcessServices Services("neverc-plugin-task-cleanup-test",
+                                 LLVM_VERSION_MAJOR);
+  ASSERT_FALSE(Services.interfaces().freeze());
+  loadPlugin(Services, NEVERC_TEST_SCOPE_SESSION_PLUGIN);
+  auto FailingEnd = std::make_shared<FailingTaskEndHostService>();
+  ASSERT_FALSE(Services.registerHostService({0xdecafbad, 0x51}, FailingEnd));
+
+  {
+    const std::array<StringRef, 1> Selected = {"org.neverc.test.scope.session"};
+    auto Plan = makePluginActivationPlan(Services.registry(), Selected);
+    ASSERT_TRUE(static_cast<bool>(Plan));
+    auto Session = PluginSession::create(Services, *Plan);
+    ASSERT_TRUE(static_cast<bool>(Session));
+    {
+      auto Task = (*Session)->createTask(NEVERC_TASK_INVOCATION);
+      ASSERT_TRUE(static_cast<bool>(Task));
+    }
+
+    EXPECT_EQ(FailingEnd->Calls, 1U);
+    EXPECT_EQ((*Session)->activeTaskCount(), 0U);
+    EXPECT_FALSE((*Session)->end());
+  }
   EXPECT_FALSE(Services.shutdown());
 }
 
