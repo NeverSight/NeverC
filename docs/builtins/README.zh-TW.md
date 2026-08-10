@@ -12,7 +12,7 @@ NeverC 透過可選的內建執行時擴展標準 C，這些執行時以 LLVM bi
 |---------|------|------|------|
 | [**`string`**](string/README.zh-TW.md) | `-fbuiltin-string` | 關閉 | 值語義字串型別，支援點呼叫方法、自動記憶體管理和原生 UTF-8 |
 | [**`mimalloc`**](mimalloc/README.zh-TW.md) | `-fbuiltin-mimalloc` | **開啟** | 高效能記憶體配置器，透明替換 `malloc`/`free`/`calloc`/`realloc` |
-| [**`xorstr`**](xorstr/README.zh-TW.md) | `-fencrypt-call-strings` | 關閉 | 編譯期字串加密，堆疊分配 XOR 解密，反簽名偵測演算法 |
+| [**`xorstr`**](xorstr/README.zh-TW.md) | `-fencrypt-call-strings` | 關閉 | 逐實例編譯期加密、強制 late 封口、逐呼叫點最終展開與 volatile 堆疊清零 |
 | [**`strhash`**](strhash/README.zh-TW.md) | `-fstrhash-algo` / `-fstrhash-fold` | 關閉 | 編譯期字串雜湊，執行時演算法一致，可選 IR 常數摺疊 |
 
 `string` 內建需要明確啟用；`mimalloc` 對所有 hosted 建置預設開啟（核心、dyncode 和 freestanding 模式下自動抑制）。可以組合使用：
@@ -73,7 +73,7 @@ VALUE_LANGOPT(EncryptCallStringsMaxLen, 32, 1024,
 
 每個內建功能在 `neverc/Foundation/Builtin/` 中有一對標頭檔和實作檔。API 提供 `getEmbeddedBitcode()` 和 `isSupported()`。
 
-> **說明：** `xorstr` 不走嵌入式 bitcode 模型。顯式巨集 [`NC_XORSTR(s)` / `NEVERC_XORSTR(s)`](xorstr/README.zh-TW.md) 由 Sema 層降級（處理函式 `semaBuiltinNeverCXorstr` 位於 `SemaChecking.cpp`），可選的 `-fencrypt-call-strings` 自動加密由 IR 變換 Pass `EncryptCallStringsPass` 完成（配套 `XorStrCleanupPass` 負責清零堆疊上明文）。完整分層設計見 [xorstr 文件](xorstr/README.zh-TW.md)。
+> **說明：** `xorstr` 不走嵌入式 bitcode 模型。顯式巨集 [`NC_XORSTR(s)` / `NEVERC_XORSTR(s)`](xorstr/README.zh-TW.md) 由 `SemaCheckingBuiltinNeverC.cpp` 中的 `semaBuiltinNeverCXorstr` 降級。`EncryptCallStringsPass` 與 `XorStrCleanupPass` 會在 IPO 前及每個一般或 plugin late IR 階段後封口自動字面值並清除明文堆疊槽；`FinalizeXorStrPass` 僅在真正的原生機器碼邊界重新加密並逐呼叫點展開顯式解碼器，隨後移除共享輔助圖。完整設計與可重現性約定見 [xorstr 文件](xorstr/README.zh-TW.md)。
 
 > **說明：** `strhash` 同樣不走嵌入式 bitcode 模型。[`NC_STRHASH(s)`](strhash/README.zh-TW.md) 在 Sema 摺疊為整數常數；`-fstrhash-fold` 啟用 `StrHashFoldPass`。詳見 [strhash 文件](strhash/README.zh-TW.md)。
 
@@ -90,15 +90,19 @@ ninja neverc                         # 階段 2：嵌入真實 bitcode
 
 每個內建功能在 `BackendUtil.cpp` 的 `PipelineStartEP` 註冊一個 `ModulePass`，解析嵌入的 bitcode 並透過 `llvm::Linker::linkModules()` 合併。
 
-`xorstr` 的混淆 Pass 註冊在**後置位置**（所有最佳化之後），確保最佳化器不會常數折疊或還原加密：
+`xorstr` 會在 IPO 前執行前置封口、一般最佳化後執行冪等封口，並在每個一般或 plugin late IR callback 後執行強制 tail。顯式解碼器在中間 LTO bitcode 保持不透明，僅於原生邊界 Finalize：
 
 ```cpp
 if (LangOpts.EncryptCallStrings) {
     MPM.addPass(neverc::xorstr::EncryptCallStringsPass(
-                    LangOpts.EncryptCallStringsMaxLen));
+                    LangOpts.EncryptCallStringsMaxLen,
+                    LangOpts.StringEncryptKey));
     MPM.addPass(createModuleToFunctionPassAdaptor(
                     neverc::xorstr::XorStrCleanupPass()));
 }
+if (!CodeGenOpts.PrepareForLTO && actionRequiresCodeGen(Action))
+    MPM.addPass(neverc::xorstr::FinalizeXorStrPass(
+                    LangOpts.StringEncryptKey));
 ```
 
 ---
@@ -187,11 +191,11 @@ neverc/
 │       └── gen_mimalloc_source.py        # mimalloc 原始碼產生器
 │
 ├── lib/Headers/neverc/
-│   ├── xorstr.h / xorstr_impl.inc        # NC_XORSTR / NEVERC_XORSTR
+│   ├── xorstr/xorstr.h / xorstr/xorstr_impl.inc # NC_XORSTR / NEVERC_XORSTR
 │   └── strhash.h / strhash_impl.inc      # NC_STRHASH / NC_STRHASH_AUTO
 │
 ├── lib/Analyze/Checking/
-│   └── SemaChecking.cpp                  # xorstr / strhash Sema 處理
+│   └── SemaCheckingBuiltinNeverC.cpp     # xorstr / strhash Sema 處理
 │
 ├── lib/Transforms/XorStr/                # xorstr IR 變換 Pass
 │   ├── EncryptCallStringsPass.cpp        # 自動加密 call 參數中的字串字面量
@@ -201,7 +205,7 @@ neverc/
 │   └── StrHashFoldPass.cpp
 │
 ├── lib/Emit/Backend/
-│   ├── BackendUtil.cpp                   # PipelineStartEP + 後置 Pass 註冊
+│   ├── BackendUtil.cpp                   # 前後封口 + 原生 finalization
 │   ├── StringRuntimeLinker.{h,cpp}       # string IR 合併 Pass
 │   └── MimallocRuntimeLinker.{h,cpp}     # mimalloc IR 合併 Pass
 │

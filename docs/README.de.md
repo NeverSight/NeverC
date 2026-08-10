@@ -49,7 +49,7 @@ NeverC erweitert Standard-C mit integrierten Laufzeiten als LLVM-Bitcode. Jede w
 |------------|------|-------------|
 | [Integrierter String](builtins/string/README.de.md) | `-fbuiltin-string` | `string`-Werttyp mit Punkt-Aufruf-Methoden, automatischer Speicherverwaltung, nativem UTF-8 |
 | [Integriertes mimalloc](builtins/mimalloc/README.de.md) | `-fbuiltin-mimalloc` | Transparenter `mimalloc` Hochleistungs-Allokator-Override für `malloc`/`free`/`calloc`/`realloc` |
-| [Zeichenkettenverschlüsselung (xorstr)](builtins/xorstr/README.de.md) | `-fencrypt-call-strings` | Kompilierzeit-Zeichenkettenverschlüsselung, Stack-XOR-Entschlüsselung, Anti-Signatur |
+| [Zeichenkettenverschlüsselung (xorstr)](builtins/xorstr/README.de.md) | `-fencrypt-call-strings` | Instanzbezogene Verschlüsselung, verpflichtende späte Versiegelung, Expansion pro Aufrufstelle und volatile Stack-Bereinigung |
 | [Zeichenketten-Hashing (strhash)](builtins/strhash/README.de.md) | `-fstrhash-algo` / `-fstrhash-fold` | Kompilierzeit-Zeichenketten-Hashing, übereinstimmende Laufzeit, optionaler IR-Fold |
 
 ---

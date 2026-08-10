@@ -519,8 +519,8 @@ printf("%s\n", secret.c_str());  // gibt "API_KEY_12345" zur Laufzeit aus
 
 ### Schlüsselgenerierung
 
-- **Standard**: Jede Kompilierung leitet einen Basisschlüssel aus `std::time()` ab und mischt ihn mit einem Per-Literal-Zähler, um für jedes String-Literal einen einzigartigen Schlüssel zu erzeugen. Jeder Build erzeugt unterschiedlichen Chiffretext.
-- **CLI-Überschreibung**: Verwenden Sie `-fstring-encrypt-key=0xDEADBEEF` um den Basisschlüssel festzulegen (nützlich für reproduzierbare Builds oder Tests).
+- **Standard**: Seed `0` bezieht für jedes verschlüsselte Literal frische Betriebssystem-Entropie im Compiler und schlägt sicher fehl, wenn keine Entropie verfügbar ist. Unabhängige Builds erzeugen unterschiedlichen Ciphertext.
+- **CLI-Überschreibung**: Ein Seed ungleich null, etwa `-fstring-encrypt-key=0xDEADBEEF`, wählt einen deterministischen vollständigen 64-Bit-Seed. Ein übersetzungseinheitslokaler Nonce trennt die Literale; dies eignet sich für reproduzierbare Builds und Tests.
 
 ### Alle Literal-Typen unterstützt
 
@@ -617,7 +617,7 @@ Für einen Nicht-XOR-Algorithmus definieren Sie **beide** Makros (sie müssen ma
 
 | Flag | Beschreibung |
 |------|-------------|
-| `-fstring-encrypt-key=<hex>` | XOR-Basisschlüssel überschreiben (z.B. `-fstring-encrypt-key=0xDEADBEEF`) |
+| `-fstring-encrypt-key=<hex>` | Vollständigen 64-Bit-Schutz-Seed festlegen; `0` nutzt frische OS-Entropie |
 
 ### Konfigurierbare Parameter
 

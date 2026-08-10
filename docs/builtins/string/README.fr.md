@@ -519,8 +519,8 @@ printf("%s\n", secret.c_str());  // affiche "API_KEY_12345" à l'exécution
 
 ### Génération de clé
 
-- **Par défaut** : chaque compilation dérive une clé de base à partir de `std::time()`, puis la mixe avec un compteur per-literal pour produire une clé unique par littéral. Chaque build produit un texte chiffré différent.
-- **Remplacement CLI** : utilisez `-fstring-encrypt-key=0xDEADBEEF` pour fixer la clé de base (utile pour les builds reproductibles ou les tests).
+- **Par défaut** : la graine `0` obtient dans le compilateur une nouvelle entropie du système d'exploitation pour chaque littéral chiffré et échoue de façon sûre si elle est indisponible. Des builds indépendants produisent des ciphertext différents.
+- **Remplacement CLI** : une graine non nulle telle que `-fstring-encrypt-key=0xDEADBEEF` sélectionne une graine complète et déterministe sur 64 bits. Un nonce local à l'unité de traduction sépare les littéraux, ce qui convient aux builds reproductibles et aux tests.
 
 ### Tous les types de littéraux supportés
 
@@ -617,7 +617,7 @@ Pour un algorithme non-XOR, définissez **les deux** macros (elles doivent être
 
 | Drapeau | Description |
 |---------|-------------|
-| `-fstring-encrypt-key=<hex>` | Remplacer la clé de base XOR (ex. `-fstring-encrypt-key=0xDEADBEEF`) |
+| `-fstring-encrypt-key=<hex>` | Définir la graine de protection complète sur 64 bits ; `0` utilise une nouvelle entropie de l'OS |
 
 ### Paramètres configurables
 

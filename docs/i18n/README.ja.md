@@ -49,7 +49,7 @@ C は既に最もシンプルなシステムプログラミング言語です。
 - **統合リンカ** — 単一バイナリで COFF・ELF・Mach-O；外部 `ld` / `link.exe` 不要
 - **[リリース時のストリップ](../release-builds/README.ja.md)** — 組み込みの `--strip` / `-s` が最終 ELF、Mach-O、PE/COFF から実行時不要のシンボルとソースデバッグ情報を削除
 - **クロスコンパイル** — 任意のホストから Windows PE、Linux ELF、macOS Mach-O、Android ELF をビルド（各プラットフォーム SDK 内蔵）
-- **[組み込みランタイム](../builtins/README.ja.md)** — コンパイラ埋め込みの LLVM bitcode ランタイム：[`string`](../builtins/string/README.ja.md)（値セマンティクス文字列、自動メモリ管理）、[`mimalloc`](../builtins/mimalloc/README.ja.md)（透過的高性能アロケータオーバーライド、カーネルと freestanding を除きデフォルト有効）、[`xorstr`](../builtins/xorstr/README.ja.md)（コンパイル時文字列暗号化、シグネチャ対策の復号）、[`strhash`](../builtins/strhash/README.ja.md)（コンパイル時文字列ハッシュ、実行時と同一アルゴリズム）
+- **[組み込みランタイム](../builtins/README.ja.md)** — コンパイラ埋め込みの LLVM bitcode ランタイム：[`string`](../builtins/string/README.ja.md)（値セマンティクス文字列、自動メモリ管理）、[`mimalloc`](../builtins/mimalloc/README.ja.md)（透過的高性能アロケータオーバーライド、カーネルと freestanding を除きデフォルト有効）、[`xorstr`](../builtins/xorstr/README.ja.md)（インスタンス別コンパイル時暗号化、必須 late seal、呼び出し箇所別のネイティブ展開）、[`strhash`](../builtins/strhash/README.ja.md)（コンパイル時文字列ハッシュ、実行時と同一アルゴリズム）
 - **[プラグイン API](../plugin-api/README.ja.md)** — アウトオブツリープラグイン用純粋 C ABI；単一ヘッダー SDK、LLVM/CRT 依存ゼロ、ドライバー・プリプロセッサー・AST・IR・MIR・MC・オブジェクト・リンク・LTO・dyncode の各フェーズを網羅
 - **[`.nc` 拡張子](../nc-extension/README.ja.md)** — `.nc` ファイル拡張子ですべての NeverC 機能（`string`、Rust スタイル整数型）を自動有効化、追加フラグ不要
 - **スリム LLVM ビルド** — x86_64 / AArch64 バックエンドのみ；C++/ObjC/OpenMP 経路を除去

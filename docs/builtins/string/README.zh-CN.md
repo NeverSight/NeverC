@@ -534,8 +534,8 @@ printf("%s\n", secret.c_str());  // 运行时输出 "API_KEY_12345"
 
 ### 密钥生成
 
-- **默认**：每次编译从 `std::time()` 派生基础密钥，再与 per-literal 计数器混合，为每个字符串字面量生成唯一密钥。每次构建产生不同的密文。
-- **CLI 覆盖**：使用 `-fstring-encrypt-key=0xDEADBEEF` 固定基础密钥（适用于可重现构建或测试）。
+- **默认**：seed `0` 会让编译器为每个加密字面量获取新的操作系统随机熵；熵不可用时安全失败。独立构建会产生不同密文。
+- **CLI 覆盖**：使用非零 `-fstring-encrypt-key=0xDEADBEEF` 指定具确定性的完整 64 位 seed；翻译单元本地 nonce 会分离各字面量，适用于可重现构建和测试。
 
 ### 支持所有字面量类型
 
@@ -672,7 +672,7 @@ int main(int a, int b) {
 
 | 标志 | 说明 |
 |------|------|
-| `-fstring-encrypt-key=<hex>` | 覆盖 XOR 基础密钥（如 `-fstring-encrypt-key=0xDEADBEEF`） |
+| `-fstring-encrypt-key=<hex>` | 覆盖完整 64 位保护 seed；`0` 使用新的操作系统随机熵 |
 
 ### 可配置旋钮
 

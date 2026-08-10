@@ -12,7 +12,7 @@ NeverC はオプトイン方式の組み込みランタイムで標準 C を拡�
 |---------|--------|----------|------|
 | [**`string`**](string/README.ja.md) | `-fbuiltin-string` | オフ | 値セマンティクスの文字列型。ドットコールメソッド、自動メモリ管理、ネイティブ UTF-8 対応 |
 | [**`mimalloc`**](mimalloc/README.ja.md) | `-fbuiltin-mimalloc` | **オン** | 高性能メモリアロケータ。`malloc`/`free`/`calloc`/`realloc` を透過的に置換 |
-| [**`xorstr`**](xorstr/README.ja.md) | `-fencrypt-call-strings` | オフ | コンパイル時文字列暗号化、スタック割り当て XOR 復号、アンチシグネチャアルゴリズム |
+| [**`xorstr`**](xorstr/README.ja.md) | `-fencrypt-call-strings` | オフ | インスタンスごとの暗号化、必須 late seal、呼び出し箇所ごとの最終展開、volatile スタッククリア |
 | [**`strhash`**](strhash/README.ja.md) | `-fstrhash-algo` / `-fstrhash-fold` | オフ | コンパイル時文字列ハッシュ、実行時と同一アルゴリズム、任意 IR 畳み込み |
 
 両方の組み込み機能はデフォルトでオフであり、明示的なオプトインが必要です。組み合わせて使用可能：
@@ -42,7 +42,7 @@ VALUE_LANGOPT(EncryptCallStringsMaxLen, 32, 1024,
               "maximum string length for auto-encryption (0 = no limit)")
 ```
 
-> **注：** `xorstr` は埋め込み bitcode モデルを使用しません。明示マクロ [`NC_XORSTR(s)` / `NEVERC_XORSTR(s)`](xorstr/README.ja.md) は Sema 層（`SemaChecking.cpp` の `semaBuiltinNeverCXorstr` ハンドラ）でローダリングされ、オプションの `-fencrypt-call-strings` 自動暗号化は IR 変換パス `EncryptCallStringsPass` が **OptimizerLast** 位置で実行します（`XorStrCleanupPass` がスタック上の平文を memset でゼロクリア）。詳細は [xorstr ドキュメント](xorstr/README.ja.md) を参照。
+> **注：** `xorstr` は埋め込み bitcode モデルを使用しません。`SemaCheckingBuiltinNeverC.cpp` の `semaBuiltinNeverCXorstr` が明示マクロを lower します。`EncryptCallStringsPass` と `XorStrCleanupPass` は IPO 前および通常・plugin の各 late IR フェーズ後に自動リテラルと平文スタック領域を seal します。`FinalizeXorStrPass` は実際のネイティブ機械語境界でのみ明示デコーダを再暗号化・展開し、共有補助グラフを削除します。設計と再現性契約は [xorstr ドキュメント](xorstr/README.ja.md) を参照してください。
 
 > **注:** `strhash` も埋め込み bitcode モデルを使いません。[`NC_STRHASH(s)`](strhash/README.ja.md) は Sema で整数定数に畳み込まれ、`-fstrhash-fold` は `StrHashFoldPass` を有効にします。[strhash ドキュメント](strhash/README.ja.md) を参照。
 
@@ -132,11 +132,11 @@ neverc/
 │       └── gen_mimalloc_source.py        # mimalloc ソースジェネレータ
 │
 ├── lib/Headers/neverc/
-│   ├── xorstr.h / xorstr_impl.inc        # NC_XORSTR / NEVERC_XORSTR
+│   ├── xorstr/xorstr.h / xorstr/xorstr_impl.inc # NC_XORSTR / NEVERC_XORSTR
 │   └── strhash.h / strhash_impl.inc      # NC_STRHASH / NC_STRHASH_AUTO
 │
 ├── lib/Analyze/Checking/
-│   └── SemaChecking.cpp                  # xorstr / strhash Sema ハンドラ
+│   └── SemaCheckingBuiltinNeverC.cpp     # xorstr / strhash Sema ハンドラ
 │
 ├── lib/Transforms/XorStr/                # xorstr IR 変換パス
 │   ├── EncryptCallStringsPass.cpp        # 呼び出し引数の文字列リテラルを自動暗号化
@@ -146,7 +146,7 @@ neverc/
 │   └── StrHashFoldPass.cpp
 │
 ├── lib/Emit/Backend/
-│   ├── BackendUtil.cpp                   # PipelineStartEP + 後置パス登録
+│   ├── BackendUtil.cpp                   # early/late seal + native finalization
 │   ├── StringRuntimeLinker.{h,cpp}       # string IR マージパス
 │   └── MimallocRuntimeLinker.{h,cpp}     # mimalloc IR マージパス
 │

@@ -519,8 +519,8 @@ printf("%s\n", secret.c_str());  // 런타임에 "API_KEY_12345" 출력
 
 ### 키 생성
 
-- **기본**: 각 컴파일에서 `std::time()`으로 기본 키를 파생하고, per-literal 카운터와 혼합하여 각 문자열 리터럴에 고유 키를 생성합니다. 매 빌드마다 다른 암호문이 생성됩니다.
-- **CLI 재정의**: `-fstring-encrypt-key=0xDEADBEEF`로 기본 키를 고정(재현 가능 빌드 또는 테스트용).
+- **기본**: seed `0`은 암호화 리터럴마다 운영체제에서 새 엔트로피를 얻으며, 엔트로피를 얻지 못하면 안전하게 실패합니다. 독립 빌드는 서로 다른 ciphertext를 생성합니다.
+- **CLI 재정의**: 0이 아닌 `-fstring-encrypt-key=0xDEADBEEF`로 결정적인 전체 64비트 seed를 지정합니다. 번역 단위 로컬 nonce가 리터럴을 분리하므로 재현 가능 빌드와 테스트에 적합합니다.
 
 ### 모든 리터럴 타입 지원
 
@@ -617,7 +617,7 @@ NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)  // 런타임: 암호문 → 평문
 
 | 플래그 | 설명 |
 |--------|------|
-| `-fstring-encrypt-key=<hex>` | XOR 기본 키 재정의 (예: `-fstring-encrypt-key=0xDEADBEEF`) |
+| `-fstring-encrypt-key=<hex>` | 전체 64비트 보호 seed 지정. `0`은 새 OS 엔트로피 사용 |
 
 ### 설정 가능 노브
 

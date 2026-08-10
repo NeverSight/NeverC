@@ -519,8 +519,8 @@ printf("%s\n", secret.c_str());  // imprime "API_KEY_12345" en tiempo de ejecuci
 
 ### Generación de clave
 
-- **Por defecto**: cada compilación deriva una clave base de `std::time()`, luego la mezcla con un contador per-literal para producir una clave única por literal. Cada build produce texto cifrado diferente.
-- **Sobreescritura CLI**: use `-fstring-encrypt-key=0xDEADBEEF` para fijar la clave base (útil para builds reproducibles o pruebas).
+- **Por defecto**: la semilla `0` obtiene entropía nueva del sistema operativo en el compilador para cada literal cifrado y falla de forma segura si no está disponible. Builds independientes producen ciphertext diferente.
+- **Sobreescritura CLI**: una semilla distinta de cero, como `-fstring-encrypt-key=0xDEADBEEF`, selecciona una semilla completa y determinista de 64 bits. Un nonce local a la unidad de traducción separa los literales, lo que sirve para builds reproducibles y pruebas.
 
 ### Todos los tipos de literal soportados
 
@@ -617,7 +617,7 @@ Para un algoritmo no-XOR, defina **ambas** macros (deben ser inversas matemátic
 
 | Flag | Descripción |
 |------|-------------|
-| `-fstring-encrypt-key=<hex>` | Sobreescribir la clave base XOR (ej. `-fstring-encrypt-key=0xDEADBEEF`) |
+| `-fstring-encrypt-key=<hex>` | Definir la semilla de protección completa de 64 bits; `0` usa entropía nueva del SO |
 
 ### Parámetros configurables
 

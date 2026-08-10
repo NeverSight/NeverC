@@ -533,8 +533,8 @@ printf("%s\n", secret.c_str());  // prints "API_KEY_12345" at runtime
 
 ### Key Generation
 
-- **Default**: Each compilation derives a base key from `std::time()`, then mixes it with a per-literal counter to produce a unique key per string literal. Every build produces different ciphertext.
-- **CLI override**: Use `-fstring-encrypt-key=0xDEADBEEF` to fix the base key (useful for reproducible builds or testing).
+- **Default**: Seed `0` obtains fresh operating-system entropy in the compiler for each encrypted literal and fails closed if entropy is unavailable. Independent builds produce different ciphertext.
+- **CLI override**: Use a nonzero `-fstring-encrypt-key=0xDEADBEEF` to select a deterministic full 64-bit seed; a translation-unit-local nonce separates literals, making this suitable for reproducible builds and tests.
 
 ### All Literal Types Supported
 
@@ -673,7 +673,7 @@ In dyncode mode, the encrypted string decryption uses the dyncode-local arena al
 
 | Flag | Description |
 |------|-------------|
-| `-fstring-encrypt-key=<hex>` | Override the XOR base key (e.g. `-fstring-encrypt-key=0xDEADBEEF`) |
+| `-fstring-encrypt-key=<hex>` | Override the full 64-bit protection seed; `0` uses fresh OS entropy |
 
 ### Configurable Knobs
 

@@ -519,8 +519,8 @@ printf("%s\n", secret.c_str());  // 実行時に "API_KEY_12345" を出力
 
 ### 鍵生成
 
-- **デフォルト**: 各コンパイルで `std::time()` からベース鍵を導出し、per-literal カウンタと混合して各リテラルに一意の鍵を生成。ビルドごとに異なる暗号文が生成されます。
-- **CLI 上書き**: `-fstring-encrypt-key=0xDEADBEEF` でベース鍵を固定（再現可能ビルドやテスト用）。
+- **デフォルト**: seed `0` は暗号化リテラルごとに OS から新しいエントロピーを取得し、取得できない場合は安全側に失敗します。独立したビルドは異なる ciphertext を生成します。
+- **CLI 上書き**: 非ゼロの `-fstring-encrypt-key=0xDEADBEEF` で決定的な完全 64 ビット seed を指定します。翻訳単位ローカル nonce がリテラルを分離するため、再現可能ビルドやテストに使用できます。
 
 ### すべてのリテラル型をサポート
 
@@ -617,7 +617,7 @@ NEVERC_STRING_DECRYPT_BYTE(byte, key, idx)  // 実行時：暗号文 → 平文
 
 | フラグ | 説明 |
 |--------|------|
-| `-fstring-encrypt-key=<hex>` | XOR ベース鍵を上書き（例: `-fstring-encrypt-key=0xDEADBEEF`） |
+| `-fstring-encrypt-key=<hex>` | 完全な 64 ビット保護 seed を指定。`0` は新しい OS エントロピーを使用 |
 
 ### 設定可能ノブ
 

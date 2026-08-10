@@ -12,7 +12,7 @@ NeverC extiende el C estándar con runtimes integrados opcionales, incrustados d
 |-----------|------|---------------|-------------|
 | [**`string`**](string/README.es.md) | `-fbuiltin-string` | Desactivado | Tipo string con semántica de valor, métodos con sintaxis de punto, gestión automática de memoria y UTF-8 nativo |
 | [**`mimalloc`**](mimalloc/README.es.md) | `-fbuiltin-mimalloc` | **Activado** | Asignador de memoria de alto rendimiento que reemplaza transparentemente `malloc`/`free`/`calloc`/`realloc` |
-| [**`xorstr`**](xorstr/README.es.md) | `-fencrypt-call-strings` | Desactivado | Cifrado de cadenas en tiempo de compilación, descifrado XOR en pila, algoritmo anti-firma |
+| [**`xorstr`**](xorstr/README.es.md) | `-fencrypt-call-strings` | Desactivado | Cifrado por instancia, sellado tardío obligatorio, expansión por punto de llamada y limpieza volátil de pila |
 | [**`strhash`**](strhash/README.es.md) | `-fstrhash-algo` / `-fstrhash-fold` | Desactivado | Hash de cadenas en tiempo de compilación, mismo algoritmo en runtime, pliegue IR opcional |
 
 ```bash
@@ -40,7 +40,7 @@ VALUE_LANGOPT(EncryptCallStringsMaxLen, 32, 1024,
               "maximum string length for auto-encryption (0 = no limit)")
 ```
 
-> **Nota:** `xorstr` no usa el modelo de bitcode embebido. La macro explícita [`NC_XORSTR(s)` / `NEVERC_XORSTR(s)`](xorstr/README.es.md) se baja en la capa Sema (gestor `semaBuiltinNeverCXorstr` en `SemaChecking.cpp`), y el cifrado automático opcional `-fencrypt-call-strings` es realizado por el pase de transformación IR `EncryptCallStringsPass` registrado en **OptimizerLast** (con `XorStrCleanupPass` que pone a cero los búferes de texto plano en pila mediante `volatile memset`). Ver [documentación de xorstr](xorstr/README.es.md) para detalles.
+> **Nota:** `xorstr` no usa el modelo de bitcode embebido. `semaBuiltinNeverCXorstr` en `SemaCheckingBuiltinNeverC.cpp` baja la macro explícita. `EncryptCallStringsPass` y `XorStrCleanupPass` sellan literales automáticos y almacenamiento de texto plano antes de IPO y después de cada fase IR tardía ordinaria o de plugin. `FinalizeXorStrPass` recifra y expande los descodificadores explícitos solo en un límite real de código máquina nativo, y luego elimina el grafo auxiliar compartido. Consulta la [documentación de xorstr](xorstr/README.es.md) para el diseño y el contrato de reproducibilidad.
 
 > **Nota:** `strhash` tampoco usa el modelo de bitcode incrustado. [`NC_STRHASH(s)`](strhash/README.es.md) se reduce a una constante en Sema; `-fstrhash-fold` activa `StrHashFoldPass`. Ver la [documentación strhash](strhash/README.es.md).
 
@@ -116,9 +116,9 @@ neverc/
 │   ├── BuiltinString.cpp / BuiltinMimalloc.cpp
 │   └── bin2c.py / gen_string_runtime.py / gen_mimalloc_source.py
 ├── lib/Headers/neverc/
-│   ├── xorstr.h / xorstr_impl.inc        # macros NC_XORSTR / NEVERC_XORSTR
+│   ├── xorstr/xorstr.h / xorstr/xorstr_impl.inc # macros NC_XORSTR / NEVERC_XORSTR
 │   └── strhash.h / strhash_impl.inc        # macros NC_STRHASH / NC_STRHASH_AUTO
-├── lib/Analyze/Checking/SemaChecking.cpp # semaBuiltinNeverCXorstr
+├── lib/Analyze/Checking/SemaCheckingBuiltinNeverC.cpp # semaBuiltinNeverCXorstr
 ├── lib/Transforms/XorStr/
 │   └── EncryptCallStringsPass.cpp / XorStrCleanupPass.cpp
 ├── lib/Emit/Backend/

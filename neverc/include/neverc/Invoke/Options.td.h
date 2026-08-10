@@ -875,7 +875,7 @@ OPTION(prefix_1, "-fencrypt-call-strings-max-len=",
 OPTION(prefix_1, "-fencrypt-call-strings", fencrypt_call_strings, Flag,
        f_Group, INVALID, nullptr, NoXarchOption, DefaultVis, 0,
        "Automatically encrypt string literal arguments in function calls "
-       "using stack-allocated XOR decryption at runtime",
+       "using per-instance key streams and volatile stack cleanup",
        nullptr, nullptr)
 OPTION(prefix_1, "-ferror-limit=", ferror_limit_EQ, Joined, f_Group, INVALID,
        nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
@@ -4899,7 +4899,7 @@ LANG_OPTION_WITH_MARSHALLING(
     prefix_1, "-fencrypt-call-strings", fencrypt_call_strings, Flag, f_Group,
     INVALID, nullptr, NoXarchOption, DefaultVis, 0,
     "Automatically encrypt string literal arguments in function calls "
-    "using stack-allocated XOR decryption at runtime",
+    "using per-instance key streams and volatile stack cleanup",
     nullptr, nullptr, true, 0, LangOpts->EncryptCallStrings, false, false,
     false, makeBooleanOptionNormalizer(true, false, OPT_fno_encrypt_call_strings),
     makeBooleanOptionDenormalizer(true), mergeForwardValue,

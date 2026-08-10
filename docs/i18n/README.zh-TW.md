@@ -49,7 +49,7 @@ C 已經是最簡單的系統程式語言。NeverC 讓它更簡單：
 - **整合連結器** — 單一二進位內完成 COFF、ELF、Mach-O 連結，無需外部 `ld` 或 `link.exe`
 - **[發布剝離](../release-builds/README.zh-TW.md)** — 內建 `--strip` / `-s`，從最終 ELF、Mach-O 與 PE/COFF 映像移除非執行期符號及原始碼層級偵錯資訊
 - **交叉編譯** — 從任意宿主建置 Windows PE、Linux ELF、macOS Mach-O 和 Android ELF，內建各平台 SDK
-- **[內建執行時](../builtins/README.zh-TW.md)** — 嵌入編譯器的 LLVM bitcode 執行時：[`string`](../builtins/string/README.zh-TW.md)（值語意字串，自動記憶體管理）、[`mimalloc`](../builtins/mimalloc/README.zh-TW.md)（透明高效能配置器覆蓋，核心與 freestanding 目標之外預設開啟）、[`xorstr`](../builtins/xorstr/README.zh-TW.md)（編譯期字串加密，反特徵碼解密）和 [`strhash`](../builtins/strhash/README.zh-TW.md)（編譯期字串雜湊，與執行時演算法一致）
+- **[內建執行時](../builtins/README.zh-TW.md)** — 嵌入編譯器的 LLVM bitcode 執行時：[`string`](../builtins/string/README.zh-TW.md)（值語意字串，自動記憶體管理）、[`mimalloc`](../builtins/mimalloc/README.zh-TW.md)（透明高效能配置器覆蓋，核心與 freestanding 目標之外預設開啟）、[`xorstr`](../builtins/xorstr/README.zh-TW.md)（逐實例編譯期加密、強制 late 封口與逐呼叫點原生展開）和 [`strhash`](../builtins/strhash/README.zh-TW.md)（編譯期字串雜湊，與執行時演算法一致）
 - **[外掛 API](../plugin-api/README.zh-TW.md)** — 純 C ABI 的樹外外掛介面；單一標頭檔 SDK，零 LLVM/CRT 相依性，涵蓋驅動、預處理、AST、IR、MIR、MC、目的檔、連結、LTO、dyncode 各階段
 - **[`.nc` 副檔名](../nc-extension/README.zh-TW.md)** — 使用 `.nc` 檔案副檔名自動啟用所有 NeverC 功能（`string`、Rust 風格整數型別），無需額外旗標
 - **精簡 LLVM 建置** — 僅 x86_64 / AArch64 後端；剝離 C++/ObjC/OpenMP 等路徑

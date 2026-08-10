@@ -14,7 +14,7 @@
 |--------|-------|-----------|-------|
 | [**`string`**](string/README.ar.md) | `-fbuiltin-string` | معطل | نوع سلسلة نصية بدلالة القيمة مع أساليب النقطة، إدارة تلقائية للذاكرة ودعم UTF-8 أصلي |
 | [**`mimalloc`**](mimalloc/README.ar.md) | `-fbuiltin-mimalloc` | **مفعّل** | مخصص ذاكرة عالي الأداء يستبدل بشفافية `malloc`/`free`/`calloc`/`realloc` |
-| [**`xorstr`**](xorstr/README.ar.md) | `-fencrypt-call-strings` | معطّل | تشفير السلاسل في وقت التجميع، فك تشفير XOR على المكدس، خوارزمية مضادة للتوقيع |
+| [**`xorstr`**](xorstr/README.ar.md) | `-fencrypt-call-strings` | معطّل | تشفير مستقل لكل مثيل، ختم متأخر إلزامي، توسيع عند كل موضع استدعاء وتنظيف متطاير للمكدس |
 | [**`strhash`**](strhash/README.ar.md) | `-fstrhash-algo` / `-fstrhash-fold` | معطّل | تجزئة السلاسل وقت الترجمة بنفس الخوارزمية وقت التشغيل، طي IR اختياري |
 
 ```bash
@@ -42,7 +42,7 @@ VALUE_LANGOPT(EncryptCallStringsMaxLen, 32, 1024,
               "maximum string length for auto-encryption (0 = no limit)")
 ```
 
-> **ملاحظة:** لا يستخدم `xorstr` نموذج bitcode المُضمّن. الماكرو الصريح [`NC_XORSTR(s)` / `NEVERC_XORSTR(s)`](xorstr/README.ar.md) يُخفض في طبقة Sema (المعالج `semaBuiltinNeverCXorstr` في `SemaChecking.cpp`)، والتشفير التلقائي الاختياري `-fencrypt-call-strings` يُنفذ بواسطة تمرير تحويل IR `EncryptCallStringsPass` المسجل في **OptimizerLast** (مع `XorStrCleanupPass` الذي يصفر مخازن النص الواضح في المكدس عبر `volatile memset`). انظر [وثائق xorstr](xorstr/README.ar.md) للتفاصيل.
+> **ملاحظة:** لا يستخدم `xorstr` نموذج bitcode المضمّن. يخفض `semaBuiltinNeverCXorstr` في `SemaCheckingBuiltinNeverC.cpp` الماكرو الصريح. يختم `EncryptCallStringsPass` و`XorStrCleanupPass` الـ literals التلقائية ومخازن النص الصريح قبل IPO وبعد كل مرحلة IR متأخرة عادية أو خاصة بـ plugin. لا يعيد `FinalizeXorStrPass` تشفير المفككات الصريحة ويوسعها إلا عند حد حقيقي للشيفرة الآلية الأصلية، ثم يحذف رسم المساعدات المشترك. تصف [وثائق xorstr](xorstr/README.ar.md) التصميم وعقد قابلية إعادة البناء.
 
 > **ملاحظة:** `strhash` لا يستخدم أيضاً نموذج bitcode المضمّن. [`NC_STRHASH(s)`](strhash/README.ar.md) يُطوى إلى ثابت في Sema؛ `-fstrhash-fold` يفعّل `StrHashFoldPass`. انظر [وثائق strhash](strhash/README.ar.md).
 
@@ -118,9 +118,9 @@ neverc/
 │   ├── BuiltinString.cpp / BuiltinMimalloc.cpp
 │   └── bin2c.py / gen_string_runtime.py / gen_mimalloc_source.py
 ├── lib/Headers/neverc/
-│   ├── xorstr.h / xorstr_impl.inc        # ماكرو NC_XORSTR / NEVERC_XORSTR
+│   ├── xorstr/xorstr.h / xorstr/xorstr_impl.inc # ماكرو NC_XORSTR / NEVERC_XORSTR
 │   └── strhash.h / strhash_impl.inc        # ماكرو NC_STRHASH / NC_STRHASH_AUTO
-├── lib/Analyze/Checking/SemaChecking.cpp # semaBuiltinNeverCXorstr
+├── lib/Analyze/Checking/SemaCheckingBuiltinNeverC.cpp # semaBuiltinNeverCXorstr
 ├── lib/Transforms/XorStr/
 │   └── EncryptCallStringsPass.cpp / XorStrCleanupPass.cpp
 ├── lib/Emit/Backend/

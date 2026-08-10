@@ -13,7 +13,7 @@ NeverC extends standard C with opt-in built-in runtimes that are embedded direct
 | ------------------------------------------- | -------------------- | ------- | ------------------------------------------------------------------------------------------------- |
 | [**`string`**](string/README.md) | `-fbuiltin-string`   | Off     | Value-semantic string type with dot-call methods, automatic memory management, and native UTF-8   |
 | [**`mimalloc`**](mimalloc/README.md) | `-fbuiltin-mimalloc` | **On**  | High-performance memory allocator that transparently overrides `malloc`/`free`/`calloc`/`realloc` |
-| [**`xorstr`**](xorstr/README.md) | `-fencrypt-call-strings` | Off  | Compile-time string encryption with stack-allocated XOR decryption and anti-signature algorithm   |
+| [**`xorstr`**](xorstr/README.md) | `-fencrypt-call-strings` | Off  | Per-instance compile-time encryption, mandatory late sealing, per-call final expansion, and volatile stack cleanup |
 | [**`strhash`**](strhash/README.md) | `-fstrhash-algo` / `-fstrhash-fold` | Off | Compile-time string hashing with matching runtime and optional IR constant folding |
 
 The `string` built-in requires explicit opt-in; `mimalloc` is enabled by default for all hosted builds (automatically suppressed in kernel, dyncode, and freestanding modes). They can be combined:
@@ -85,7 +85,7 @@ Each built-in has a header + implementation pair in `neverc/Foundation/Builtin/`
 
 The API provides `getEmbeddedBitcode()` to retrieve the precompiled LLVM bitcode blob, and `isSupported()` to check platform availability.
 
-> **Note:** `xorstr` does not use the embedded-bitcode model. The explicit macro [`NC_XORSTR(s)` / `NEVERC_XORSTR(s)`](xorstr/README.md) is lowered by the Sema layer (handler `semaBuiltinNeverCXorstr` in `SemaChecking.cpp`), and the optional `-fencrypt-call-strings` auto-encryption is performed by the IR transform pass `EncryptCallStringsPass` (with a `XorStrCleanupPass` companion that zeroes plaintext stack buffers). See [xorstr documentation](xorstr/README.md) for the full layered design.
+> **Note:** `xorstr` does not use the embedded-bitcode model. The explicit macro [`NC_XORSTR(s)` / `NEVERC_XORSTR(s)`](xorstr/README.md) is lowered by `semaBuiltinNeverCXorstr` in `SemaCheckingBuiltinNeverC.cpp`. `EncryptCallStringsPass` and `XorStrCleanupPass` seal automatic literals and plaintext stack storage before IPO and after every late ordinary or plugin IR phase. `FinalizeXorStrPass` rekeys and expands explicit decoders only at a real native machine-code boundary, then removes the shared support graph. See [xorstr documentation](xorstr/README.md) for the full design and reproducibility contract.
 
 > **Note:** `strhash` likewise does not use the embedded-bitcode model. [`NC_STRHASH(s)` / `NEVERC_STRHASH(s)`](strhash/README.md) folds to an integer constant in Sema (`semaBuiltinNeverCStrHash`); runtime hashing uses NeverC std (`neverc_fnv_sum*` / `neverc_xxhash64`) via `neverc_strhash_rt`. Optional `-fstrhash-fold` enables `StrHashFoldPass` to constant-fold runtime hash calls with literal arguments. See [strhash documentation](strhash/README.md).
 
@@ -121,7 +121,7 @@ if (LangOpts.BuiltinMimalloc) {
 
 The pass parses the embedded bitcode, merges it into the user module via `llvm::Linker::linkModules()`, internalizes helper symbols (keeping only the public API external), and cleans up `llvm.used` / `llvm.compiler.used`.
 
-`xorstr`'s obfuscation passes and optional `strhash` folding register at the **post-pass** position (after all optimizations) — so encryption is not undone by the optimizer, and constant-arg hash calls can still be folded:
+`xorstr` uses an early seal before IPO, an idempotent post-optimization seal, and a mandatory tail after every late ordinary or plugin IR callback. Explicit decoders remain opaque in intermediate LTO bitcode and are finalized only at a native boundary. Optional `strhash` folding remains post-optimization:
 
 ```cpp
 if (LangOpts.StrHashFold) {
@@ -129,10 +129,14 @@ if (LangOpts.StrHashFold) {
 }
 if (LangOpts.EncryptCallStrings) {
     MPM.addPass(neverc::xorstr::EncryptCallStringsPass(
-                    LangOpts.EncryptCallStringsMaxLen));
+                    LangOpts.EncryptCallStringsMaxLen,
+                    LangOpts.StringEncryptKey));
     MPM.addPass(createModuleToFunctionPassAdaptor(
                     neverc::xorstr::XorStrCleanupPass()));
 }
+if (!CodeGenOpts.PrepareForLTO && actionRequiresCodeGen(Action))
+    MPM.addPass(neverc::xorstr::FinalizeXorStrPass(
+                    LangOpts.StringEncryptKey));
 ```
 
 ---
@@ -236,14 +240,14 @@ neverc/
 ├── lib/Headers/neverc/
 │   ├── xorstr/
 │   │   ├── xorstr.h                      # NC_XORSTR / NEVERC_XORSTR macros
-│   │   └── xorstr_impl.inc               # __neverc_xorstr_decrypt helper
+│   │   └── xorstr_impl.inc               # opaque intermediate decoder
 │   └── strhash/
 │       ├── strhash.h                     # NC_STRHASH / NC_STRHASH_AUTO macros
 │       └── strhash_impl.inc              # neverc_strhash_rt inline dispatch
 │
 ├── lib/Analyze/Checking/
 │   ├── SemaChecking.cpp                  # builtin dispatch
-│   └── SemaCheckingBuiltinNeverC.cpp  # semaBuiltinNeverCXorstr / StrHash
+│   └── SemaCheckingBuiltinNeverC.cpp     # semaBuiltinNeverCXorstr / StrHash
 │
 ├── lib/Transforms/XorStr/                # xorstr IR transform passes
 │   ├── EncryptCallStringsPass.cpp        # auto-encrypts call-string literals
@@ -253,7 +257,7 @@ neverc/
 │   └── StrHashFoldPass.cpp               # folds constant-arg runtime hash calls
 │
 ├── lib/Emit/Backend/
-│   ├── BackendUtil.cpp                   # PipelineStartEP + post-pass registration
+│   ├── BackendUtil.cpp                   # early/late seals + native finalization
 │   ├── StringRuntimeLinker.{h,cpp}       # string IR merge pass
 │   └── MimallocRuntimeLinker.{h,cpp}     # mimalloc IR merge pass
 │
@@ -280,4 +284,3 @@ To add a new built-in runtime (e.g., a custom allocator, crypto library, or plat
 8. **Safety**: Add suppression logic in `addNeverCFeatureFlags()` for incompatible modes
 9. **Tests**: Add GTest cases + C test source files
 10. **Documentation**: Add `docs/builtins/foo/README.md` with i18n translations
-
