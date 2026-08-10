@@ -129,6 +129,13 @@ class Sema final {
 
   SemaPluginHooks *PluginHooks = nullptr;
 
+  // These nonces belong to one translation unit. NeverC can run several Sema
+  // instances concurrently during an in-process parallel build, so compiler
+  // generated values must never depend on process-global mutable counters.
+  uint64_t NeverCXorStrNonce = 0;
+  uint64_t NeverCRandomNonce = 0;
+  uint64_t NeverCStringEncryptNonce = 0;
+
   static bool mightHaveNonExternalLinkage(const DeclaratorDecl *FD);
 
   bool shouldLinkPossiblyHiddenDecl(const NamedDecl *Old,
@@ -152,6 +159,10 @@ public:
 
   static const unsigned MaxAlignmentExponent = 32;
   static const uint64_t MaximumAlignment = 1ull << MaxAlignmentExponent;
+
+  uint64_t nextNeverCXorStrNonce() { return ++NeverCXorStrNonce; }
+  uint64_t nextNeverCRandomNonce() { return ++NeverCRandomNonce; }
+  uint64_t nextNeverCStringEncryptNonce() { return ++NeverCStringEncryptNonce; }
 
   typedef OpaquePtr<DeclGroupRef> DeclGroupPtrTy;
 

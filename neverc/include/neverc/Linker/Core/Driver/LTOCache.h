@@ -49,6 +49,12 @@ public:
   std::string finalize(const LinkerDriverConfig &cfg, unsigned maxTasks,
                        llvm::StringRef backendTag, bool emitAddrsig);
 
+  /// True when the final link can reach xorstr finalization with fresh entropy.
+  /// This includes an existing opaque decoder and automatic encryption that
+  /// may create its first decoder only after LTO exposes a literal argument.
+  /// Replaying a cached object would otherwise replay the prior key stream.
+  bool requiresFreshXorStrSeed(const LinkerDriverConfig &cfg) const;
+
 private:
   void appendConfig(const LinkerDriverConfig &cfg);
 
@@ -56,6 +62,7 @@ private:
                                            bool emitAddrsig);
 
   llvm::SmallString<512> material;
+  bool hasXorStrSupportInput = false;
 };
 
 /// Salt for per-partition object cache keys: compiler identity plus the

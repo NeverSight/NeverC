@@ -8,6 +8,9 @@
 static const NevercIRPassAPI *PassAPI;
 static const NevercIRAnalysisAPI *AnalysisAPI;
 static int ProcessState;
+#if defined(NEVERC_TEST_IR_PASS_LTO_LATE_NVK_REFERENCE)
+static uint64_t LateNvkPassInvocationCount;
+#endif
 
 typedef struct AnalysisResult {
   uint64_t ComputeCount;
@@ -134,6 +137,198 @@ static NevercBool string_equals(NevercStringView Value, const char *Text,
              ? NEVERC_TRUE
              : NEVERC_FALSE;
 }
+
+#if defined(NEVERC_TEST_IR_PASS_LATE_LITERAL)
+static NevercStatus inject_late_literal_argument(
+    const NevercIRPassInvocation *Invocation) {
+  NevercIRValueHandle Functions[32];
+  NevercIRValueHandle SourceFunction = {0, 0};
+  NevercIRValueHandle TargetFunction = {0, 0};
+  NevercIRValueHandle SourceReturn = {0, 0};
+  NevercIRValueHandle LiteralPointer = {0, 0};
+  NevercIRValueHandle TargetCall = {0, 0};
+  uint64_t FunctionCount = 0;
+  uint64_t I;
+  NevercStatus Status = collect_values(
+      Invocation, Invocation->Module, NEVERC_IR_COLLECTION_MODULE_FUNCTIONS,
+      Functions, 32, &FunctionCount);
+  if (Status.Code != NEVERC_STATUS_OK)
+    return Status;
+
+  for (I = 0; I != FunctionCount; ++I) {
+    NevercStringView Name = {0, 0};
+    Status = Invocation->Core->GetValueName(
+        Invocation->Core->Context, Invocation->Task, Functions[I], &Name);
+    if (Status.Code != NEVERC_STATUS_OK)
+      return Status;
+    if (string_equals(Name, "plugin_tail_source",
+                      sizeof("plugin_tail_source") - 1) == NEVERC_TRUE)
+      SourceFunction = Functions[I];
+    else if (string_equals(Name, "plugin_tail_target",
+                           sizeof("plugin_tail_target") - 1) == NEVERC_TRUE)
+      TargetFunction = Functions[I];
+  }
+  if (neverc_handle_is_null(SourceFunction) ||
+      neverc_handle_is_null(TargetFunction))
+    return failure(NEVERC_STATUS_NOT_FOUND);
+
+  {
+    NevercIRValueHandle Blocks[16];
+    uint64_t BlockCount = 0;
+    uint64_t B;
+    Status = collect_values(Invocation, SourceFunction,
+                            NEVERC_IR_COLLECTION_FUNCTION_BLOCKS, Blocks, 16,
+                            &BlockCount);
+    if (Status.Code != NEVERC_STATUS_OK)
+      return Status;
+    for (B = 0; B != BlockCount && neverc_handle_is_null(LiteralPointer); ++B) {
+      NevercIRValueHandle Instructions[64];
+      uint64_t InstructionCount = 0;
+      uint64_t J;
+      Status = collect_values(Invocation, Blocks[B],
+                              NEVERC_IR_COLLECTION_BLOCK_INSTRUCTIONS,
+                              Instructions, 64, &InstructionCount);
+      if (Status.Code != NEVERC_STATUS_OK)
+        return Status;
+      for (J = 0; J != InstructionCount; ++J) {
+        NevercIROpcode Opcode = 0;
+        uint64_t OperandCount = 0;
+        Status = Invocation->Core->GetInstructionOpcode(
+            Invocation->Core->Context, Invocation->Task, Instructions[J],
+            &Opcode);
+        if (Status.Code != NEVERC_STATUS_OK)
+          return Status;
+        if (Opcode != NEVERC_IR_OPCODE_RET)
+          continue;
+        Status = Invocation->Core->GetOperandCount(
+            Invocation->Core->Context, Invocation->Task, Instructions[J],
+            &OperandCount);
+        if (Status.Code != NEVERC_STATUS_OK)
+          return Status;
+        if (OperandCount == 1) {
+          Status = Invocation->Core->GetOperand(
+              Invocation->Core->Context, Invocation->Task, Instructions[J], 0,
+              &LiteralPointer);
+          SourceReturn = Instructions[J];
+        }
+        if (Status.Code != NEVERC_STATUS_OK)
+          return Status;
+      }
+    }
+  }
+
+  {
+    NevercIRValueHandle Blocks[16];
+    uint64_t BlockCount = 0;
+    uint64_t B;
+    Status = collect_values(Invocation, TargetFunction,
+                            NEVERC_IR_COLLECTION_FUNCTION_BLOCKS, Blocks, 16,
+                            &BlockCount);
+    if (Status.Code != NEVERC_STATUS_OK)
+      return Status;
+    for (B = 0; B != BlockCount && neverc_handle_is_null(TargetCall); ++B) {
+      NevercIRValueHandle Instructions[128];
+      uint64_t InstructionCount = 0;
+      uint64_t J;
+      Status = collect_values(Invocation, Blocks[B],
+                              NEVERC_IR_COLLECTION_BLOCK_INSTRUCTIONS,
+                              Instructions, 128, &InstructionCount);
+      if (Status.Code != NEVERC_STATUS_OK)
+        return Status;
+      for (J = 0; J != InstructionCount; ++J) {
+        NevercIROpcode Opcode = 0;
+        uint64_t OperandCount = 0;
+        NevercIRValueHandle Callee = {0, 0};
+        NevercStringView CalleeName = {0, 0};
+        Status = Invocation->Core->GetInstructionOpcode(
+            Invocation->Core->Context, Invocation->Task, Instructions[J],
+            &Opcode);
+        if (Status.Code != NEVERC_STATUS_OK)
+          return Status;
+        if (Opcode != NEVERC_IR_OPCODE_CALL)
+          continue;
+        Status = Invocation->Core->GetOperandCount(
+            Invocation->Core->Context, Invocation->Task, Instructions[J],
+            &OperandCount);
+        if (Status.Code != NEVERC_STATUS_OK)
+          return Status;
+        if (OperandCount != 2)
+          continue;
+        Status = Invocation->Core->GetOperand(
+            Invocation->Core->Context, Invocation->Task, Instructions[J], 1,
+            &Callee);
+        if (Status.Code != NEVERC_STATUS_OK)
+          return Status;
+        Status = Invocation->Core->GetValueName(
+            Invocation->Core->Context, Invocation->Task, Callee, &CalleeName);
+        if (Status.Code != NEVERC_STATUS_OK)
+          return Status;
+        if (string_equals(CalleeName, "consume", sizeof("consume") - 1) !=
+            NEVERC_TRUE)
+          continue;
+        Status = Invocation->Core->SetOperand(
+            Invocation->Core->Context, Invocation->Task, Instructions[J], 0,
+            LiteralPointer);
+        if (Status.Code != NEVERC_STATUS_OK)
+          return Status;
+        TargetCall = Instructions[J];
+      }
+    }
+  }
+
+  if (neverc_handle_is_null(LiteralPointer) || neverc_handle_is_null(TargetCall))
+    return failure(NEVERC_STATUS_NOT_FOUND);
+  {
+    NevercIRTypeHandle PointerType = {0, 0};
+    NevercIRValueHandle NullPointer = {0, 0};
+    Status = Invocation->Core->GetValueType(
+        Invocation->Core->Context, Invocation->Task, LiteralPointer,
+        &PointerType);
+    if (Status.Code == NEVERC_STATUS_OK)
+      Status = Invocation->Core->GetNullConstant(
+          Invocation->Core->Context, Invocation->Task, PointerType,
+          &NullPointer);
+    if (Status.Code == NEVERC_STATUS_OK)
+      Status = Invocation->Core->SetOperand(
+          Invocation->Core->Context, Invocation->Task, SourceReturn, 0,
+          NullPointer);
+    return Status;
+  }
+}
+#endif
+
+#if defined(NEVERC_TEST_IR_PASS_LATE_NVK_REFERENCE) ||                        \
+    defined(NEVERC_TEST_IR_PASS_LTO_LATE_NVK_REFERENCE)
+static NevercStatus inject_late_nvk_runtime_reference(
+    const NevercIRPassInvocation *Invocation) {
+  NevercIRValueHandle Functions[128];
+  uint64_t FunctionCount = 0;
+  uint64_t I;
+  NevercStatus Status = collect_values(
+      Invocation, Invocation->Module, NEVERC_IR_COLLECTION_MODULE_FUNCTIONS,
+      Functions, 128, &FunctionCount);
+  if (Status.Code != NEVERC_STATUS_OK)
+    return Status;
+
+  for (I = 0; I != FunctionCount; ++I) {
+    NevercStringView Name = {0, 0};
+    Status = Invocation->Core->GetValueName(
+        Invocation->Core->Context, Invocation->Task, Functions[I], &Name);
+    if (Status.Code != NEVERC_STATUS_OK)
+      return Status;
+    if (string_equals(Name, "neverc_krt_fmt_init",
+                      sizeof("neverc_krt_fmt_init") - 1) == NEVERC_TRUE)
+      return neverc_status_ok();
+    if (string_equals(Name, "plugin_late_nvk_runtime",
+                      sizeof("plugin_late_nvk_runtime") - 1) != NEVERC_TRUE)
+      continue;
+    return Invocation->Core->SetValueName(
+        Invocation->Core->Context, Invocation->Task, Functions[I],
+        STRING_VIEW("neverc_krt_fmt_init"));
+  }
+  return failure(NEVERC_STATUS_NOT_FOUND);
+}
+#endif
 
 static NevercStatus check_call_graph(
     const NevercIRPassInvocation *Invocation) {
@@ -322,6 +517,34 @@ run_pass(const NevercIRPassInvocation *Invocation,
   if (!Invocation->Analyses)
     return failure(NEVERC_STATUS_MISSING_INTERFACE);
 
+#if defined(NEVERC_TEST_IR_PASS_LATE_LITERAL) ||                              \
+    defined(NEVERC_TEST_IR_PASS_LATE_NVK_REFERENCE) ||                        \
+    defined(NEVERC_TEST_IR_PASS_LTO_LATE_NVK_REFERENCE)
+  if (Invocation->Level == NEVERC_IR_PASS_LEVEL_MODULE &&
+      string_equals(Invocation->PassID, "neverc.test.pre_codegen",
+                    sizeof("neverc.test.pre_codegen") - 1) == NEVERC_TRUE) {
+#if defined(NEVERC_TEST_IR_PASS_LATE_LITERAL)
+    Status = inject_late_literal_argument(Invocation);
+#elif defined(NEVERC_TEST_IR_PASS_LATE_NVK_REFERENCE)
+    Status = inject_late_nvk_runtime_reference(Invocation);
+#else
+    ++LateNvkPassInvocationCount;
+    Status = LateNvkPassInvocationCount >= 2
+                 ? inject_late_nvk_runtime_reference(Invocation)
+                 : neverc_status_ok();
+#endif
+    if (Status.Code != NEVERC_STATUS_OK)
+      return Status;
+    memset(OutPreserved, 0, sizeof(*OutPreserved));
+    OutPreserved->Header =
+        (NevercABITableHeader){sizeof(*OutPreserved),
+                              NEVERC_IR_PASS_API_MAJOR,
+                              NEVERC_IR_PASS_API_MINOR, 0};
+    OutPreserved->Flags = NEVERC_IR_PRESERVE_NONE;
+    return neverc_status_ok();
+  }
+#endif
+
 #if defined(NEVERC_TEST_IR_ANALYSIS_DESTROY_ORDER)
   if (string_equals(Invocation->PassID, "neverc.test.cgscc",
                     sizeof("neverc.test.cgscc") - 1) == NEVERC_TRUE &&
@@ -453,6 +676,9 @@ static NevercStatus NEVERC_CALL process_begin(const NevercCoreAPI *Core,
   (void)Core;
   if (!OutProcessState)
     return failure(NEVERC_STATUS_INVALID_ARGUMENT);
+#if defined(NEVERC_TEST_IR_PASS_LTO_LATE_NVK_REFERENCE)
+  LateNvkPassInvocationCount = 0;
+#endif
   *OutProcessState = &ProcessState;
   return neverc_status_ok();
 }
@@ -536,6 +762,18 @@ register_plugin(const NevercCoreAPI *Core, const NevercRegistrarAPI *Registrar,
   (void)Registrar;
   (void)PluginProcessState;
   Status = register_analysis(RegistrarContext);
+#if defined(NEVERC_TEST_IR_PASS_LATE_LITERAL) ||                              \
+    defined(NEVERC_TEST_IR_PASS_LATE_NVK_REFERENCE) ||                        \
+    defined(NEVERC_TEST_IR_PASS_LTO_LATE_NVK_REFERENCE)
+  if (Status.Code == NEVERC_STATUS_OK)
+    Status = register_one(
+        RegistrarContext, STRING_VIEW("neverc.test.pre_codegen"),
+        NEVERC_IR_PASS_LEVEL_MODULE,
+        (NevercInterfaceID){NEVERC_PHASE_IR_PASS_PRE_CODEGEN_HIGH,
+                            NEVERC_PHASE_IR_PASS_PRE_CODEGEN_LOW},
+        NEVERC_FALSE);
+  return Status;
+#else
   if (Status.Code == NEVERC_STATUS_OK)
     Status = register_one(
       RegistrarContext, STRING_VIEW("neverc.test.module"),
@@ -593,6 +831,7 @@ register_plugin(const NevercCoreAPI *Core, const NevercRegistrarAPI *Registrar,
                             NEVERC_PHASE_IR_PASS_PRE_CODEGEN_LOW},
         NEVERC_FALSE);
   return Status;
+#endif
 }
 
 static NevercStatus NEVERC_CALL destroy_plugin(const NevercCoreAPI *Core,

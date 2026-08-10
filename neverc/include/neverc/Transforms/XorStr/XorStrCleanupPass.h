@@ -10,6 +10,7 @@ struct XorStrCleanupPass : public llvm::PassInfoMixin<XorStrCleanupPass> {
   llvm::PreservedAnalyses run(llvm::Function &F,
                               llvm::FunctionAnalysisManager &FAM);
   static llvm::StringRef name() { return "XorStrCleanupPass"; }
+  static bool isRequired() { return true; }
 };
 
 } // namespace xorstr

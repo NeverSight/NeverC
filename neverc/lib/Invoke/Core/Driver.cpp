@@ -4237,9 +4237,13 @@ const char *Driver::GetNamedOutputPath(Compilation &C, const JobAction &JA,
   // Determine what the derived output name should be.
   const char *NamedOutput;
 
-  if ((JA.getType() == types::TY_Object || JA.getType() == types::TY_LTO_BC) &&
+  if ((JA.getType() == types::TY_Object ||
+       (JA.getType() == types::TY_LTO_BC && AtTopLevel)) &&
       C.getArgs().hasArg(options::OPT_msvc_obj_output, options::OPT_o)) {
-    // The /Fo or /o flag decides the object filename.
+    // The /Fo or /o flag decides a final object filename.  A non-top-level
+    // LTO object is an input to a following linker job; under -save-temps it
+    // needs its own derived .o path so the linker remains the sole producer of
+    // the requested final output.
     llvm::StringRef Val =
         C.getArgs()
             .getLastArg(options::OPT_msvc_obj_output, options::OPT_o)

@@ -1,4 +1,5 @@
 #include "neverc/Emit/Backend/ParallelCodeGenMerge.h"
+#include "neverc/Foundation/Builtin/XorStrNames.h"
 #include "neverc/Merge/Merger.h"
 
 #include "llvm/ADT/DenseMap.h"
@@ -7,26 +8,26 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/StringSet.h"
 #include "llvm/Analysis/CFG.h"
 #include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/Analysis/TargetTransformInfo.h"
 #include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
-#include "llvm/ADT/StringSet.h"
 #include "llvm/IR/Comdat.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DiagnosticHandler.h"
 #include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/DiagnosticPrinter.h"
 #include "llvm/IR/GlobalAlias.h"
-#include "llvm/IR/Verifier.h"
 #include "llvm/IR/GlobalIFunc.h"
 #include "llvm/IR/GlobalObject.h"
 #include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Module.h"
+#include "llvm/IR/Verifier.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Object/ModuleSymbolTable.h"
 #include "llvm/Object/SymbolicFile.h"
@@ -56,6 +57,12 @@ using namespace llvm;
 namespace neverc {
 
 namespace {
+
+bool containsXorStrSupport(const Module &M) {
+  return llvm::any_of(M, [](const Function &F) {
+    return XorStrNames::isSupportFunctionName(F.getName());
+  });
+}
 
 // ===----------------------------------------------------------------------===
 // Parallel-codegen engagement / partitioning tunables
@@ -1420,6 +1427,9 @@ bool runParallelCodeGen(Module &Mod, TargetMachine &TM,
   // The partition cache stores only one object image. A cache hit in fission
   // mode would omit its matching DWO payload.
   Ctx.Cache = Ctx.EmitSplitDwarf ? nullptr : Cache;
+  if (Ctx.Cache && Ctx.Cache->BypassForUnseededXorStr &&
+      (Ctx.Cache->AutomaticXorStrEnabled || containsXorStrSupport(Mod)))
+    Ctx.Cache = nullptr;
   Ctx.PipeTag = "p-cg";
 
   if (!Ctx.resolvePartitions(/*WeightDiv=*/PcgCgWeightDiv,
@@ -1506,6 +1516,9 @@ bool runParallelOptAndCodeGen(Module &Mod, TargetMachine &TM,
     return false;
   }
   Ctx.Cache = Ctx.EmitSplitDwarf ? nullptr : Cache;
+  if (Ctx.Cache && Ctx.Cache->BypassForUnseededXorStr &&
+      (Ctx.Cache->AutomaticXorStrEnabled || containsXorStrSupport(Mod)))
+    Ctx.Cache = nullptr;
   Ctx.PipeTag = "p-opt";
 
   if (!Ctx.resolvePartitions(/*WeightDiv=*/PcgOptWeightDiv,

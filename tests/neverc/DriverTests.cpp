@@ -107,6 +107,68 @@ TEST_F(DriverTest, PrintArgumentsEchoesTheDriverInvocation) {
       << Result.out;
 }
 
+TEST_F(DriverTest, PreprocessedOutputRoundTripsAcrossIncludeCallbacks) {
+  const auto FirstHeader = tmpFile("deferred-first.h");
+  const auto SecondHeader = tmpFile("deferred-second.h");
+  const auto ThirdHeader = tmpFile("deferred-third.h");
+  const auto Source = tmpFile("deferred-main.c");
+  const auto Preprocessed = tmpFile("deferred-main.i");
+  const auto Object = tmpFile("deferred-main.o");
+
+  // Builtin macro expansions interrupt the raw-token fast path.  The tokens
+  // that resume afterwards used to remain buffered while Lex() synchronously
+  // emitted ExitFile/EnterFile line markers, moving declaration suffixes into
+  // the following include and making -save-temps output unparsable.
+  writeFile(FirstHeader,
+            "#ifndef DEFERRED_FIRST_H\n"
+            "#define DEFERRED_FIRST_H\n"
+            "typedef __SIZE_TYPE__ deferred_size_t;\n"
+            "#endif\n");
+  writeFile(SecondHeader,
+            "#ifndef DEFERRED_SECOND_H\n"
+            "#define DEFERRED_SECOND_H\n"
+            "typedef typeof(nullptr) deferred_null_t;\n"
+            "#endif\n");
+  writeFile(ThirdHeader,
+            "#ifndef DEFERRED_THIRD_H\n"
+            "#define DEFERRED_THIRD_H\n"
+            "extern int deferred_external;\n"
+            "#endif\n");
+  writeFile(Source,
+            "#include \"deferred-first.h\"\n"
+            "#include \"deferred-second.h\"\n"
+            "#include \"deferred-third.h\"\n"
+            "deferred_size_t deferred_value;\n"
+            "deferred_null_t deferred_pointer;\n"
+            "int main(void) { return 0; }\n");
+
+  auto Preprocess =
+      ncc({"-std=c23", "-E", "-I", tmp().string(), Source.string(), "-o",
+           Preprocessed.string()});
+  ASSERT_EQ(Preprocess.exitCode, 0) << Preprocess.err;
+
+  const std::string Text = readFile(Preprocessed);
+  EXPECT_EQ(Text.find(";#"), std::string::npos) << Text;
+
+  auto Reparse = ncc({"-std=c23", "-fsyntax-only", "-x", "cpp-output",
+                      Preprocessed.string()});
+  ASSERT_EQ(Reparse.exitCode, 0) << Reparse.err;
+
+  auto SaveTemps = ncc({"-std=c23", "-fno-lto", "-save-temps=obj", "-I",
+                        tmp().string(), "-c", Source.string(), "-o",
+                        Object.string()});
+  ASSERT_EQ(SaveTemps.exitCode, 0) << SaveTemps.err;
+  EXPECT_TRUE(fs::is_regular_file(Object));
+
+  const auto Image = tmpFile(isWindows() ? "deferred-main.exe"
+                                         : "deferred-main");
+  auto AutoLTOSaveTemps =
+      ncc({"-std=c23", "-save-temps=obj", "-I", tmp().string(),
+           Source.string(), "-o", Image.string()});
+  ASSERT_EQ(AutoLTOSaveTemps.exitCode, 0) << AutoLTOSaveTemps.err;
+  EXPECT_TRUE(fs::is_regular_file(Image));
+}
+
 TEST_F(DriverTest, PluginCapabilityQueryPrintsJsonWithoutCompiling) {
   for (const char *Option : {"--print-plugin-capabilities",
                              "--print-plugin-capabilities=json"}) {

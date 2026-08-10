@@ -34,6 +34,13 @@ struct PartitionCacheHooks {
       Lookup;
   /// Stores one produced partition object under a key from Lookup.
   std::function<void(llvm::StringRef key, llvm::ArrayRef<char> obj)> Store;
+  // Parallel opt computes its key before post-opt hooks run. When that module
+  // can reach xorstr finalization and the link uses fresh entropy, the key
+  // cannot safely replay a previously finalized object.
+  bool BypassForUnseededXorStr = false;
+  // Automatic encryption may create the first decoder only in a post-opt hook,
+  // so pre-hook marker scanning alone is not sufficient.
+  bool AutomaticXorStrEnabled = false;
 
   bool enabled() const { return Lookup && Store; }
 };

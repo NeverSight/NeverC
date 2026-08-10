@@ -2,6 +2,7 @@
 #include "Linker/Core/Driver/CommonLTOConfig.h"
 #include "Linker/Core/Driver/Dispatcher.h"
 #include "Linker/Core/Runtime/Diagnostic.h"
+#include "neverc/Foundation/Builtin/XorStrNames.h"
 #include "neverc/Foundation/Core/Version.h"
 #include "llvm/Support/CachePruning.h"
 #include "llvm/Support/Caching.h"
@@ -53,11 +54,19 @@ void linker::LTOCacheKey::addInput(MemoryBufferRef mb,
   // (single-command auto-LTO) and must not influence the key.
   appendU64(material, mb.getBufferSize());
   appendU64(material, xxh3_64bits(mb.getBuffer()));
+  hasXorStrSupportInput |=
+      mb.getBuffer().contains(neverc::XorStrNames::SupportFunctionPrefix);
   appendU64(material, resols.size());
   for (const lto::SymbolResolution &r : resols)
     material.push_back(char(r.Prevailing | r.FinalDefinitionInLinkageUnit << 1 |
                             r.VisibleToRegularObj << 2 | r.ExportDynamic << 3 |
                             r.LinkerRedefined << 4));
+}
+
+bool linker::LTOCacheKey::requiresFreshXorStrSeed(
+    const LinkerDriverConfig &cfg) const {
+  return cfg.xorStrKeySeed == 0 &&
+         (cfg.encryptCallStrings || hasXorStrSupportInput);
 }
 
 // Two independently salted 64-bit lanes give a 128-bit key.  Consumes the
@@ -83,6 +92,8 @@ void linker::LTOCacheKey::appendConfig(const LinkerDriverConfig &cfg) {
   appendU64(material, uint64_t(int64_t(cfg.ltoOptLevel)));
   appendU64(material, uint64_t(int64_t(cfg.ltoCGOLevel)));
   appendU64(material, cfg.xorStrKeySeed);
+  appendU64(material, cfg.encryptCallStrings);
+  appendU64(material, cfg.encryptCallStringsMaxLen);
   appendStr(material, cfg.ltoBasicBlockSections);
   appendU64(material, cfg.ltoUniqueBasicBlockSectionNames);
   appendU64(material, uint64_t(int64_t(cfg.debuggerTuning)));
@@ -392,6 +403,11 @@ void linker::runLTOWithCache(lto::LTO &ltoObj, LTOCacheKey &cacheKey,
                              bool usable, const LinkerDriverConfig &cfg,
                              StringRef backendTag, bool emitAddrsig,
                              MutableArrayRef<SmallString<0>> bufs) {
+  // A default-seed finalizer intentionally produces a new key stream at each
+  // real link boundary. A full-link cache hit would skip that boundary and
+  // replay the old object verbatim. Fixed-seed builds remain cacheable.
+  if (usable && cacheKey.requiresFreshXorStrSeed(cfg))
+    usable = false;
   std::string key;
   if (usable) {
     key = cacheKey.finalize(cfg, bufs.size(), backendTag, emitAddrsig);

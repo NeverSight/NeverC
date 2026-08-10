@@ -15,7 +15,7 @@
 #include "neverc/Tree/Expr/Expr.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
-#include <ctime>
+#include "llvm/Support/RandomNumberGenerator.h"
 
 using namespace neverc;
 
@@ -128,19 +128,25 @@ ExprResult neverc::buildNeverCStringEncryptedLiteral(Sema &S, Scope *Sc,
   llvm::StringRef Bytes = SL->getBytes();
   unsigned Len = Bytes.size();
 
-  static uint64_t Counter = 0;
   uint64_t BaseKey = S.getLangOpts().StringEncryptKey;
   if (BaseKey == 0) {
-    static uint64_t TimeKey =
-        static_cast<uint64_t>(std::time(nullptr)) * 0x9E3779B97F4A7C15ULL;
-    TimeKey |= 1;
-    BaseKey = TimeKey;
+    if (llvm::getRandomBytes(&BaseKey, sizeof(BaseKey)) != 0) {
+      unsigned DiagID = S.Diags.getCustomDiagID(
+          DiagnosticsEngine::Error,
+          "NeverC could not obtain operating-system entropy for compile-time "
+          "string protection");
+      S.Diag(LParenLoc, DiagID);
+      return ExprError();
+    }
+    BaseKey |= 1U;
   }
   QualType SizeTy = S.Context.getSizeType();
   unsigned SizeBits = S.Context.getTypeSize(SizeTy);
   unsigned KeyBytes = SizeBits / 8;
 
-  uint64_t Key = BaseKey ^ (++Counter * 0x517CC1B727220A95ULL);
+  uint64_t Key =
+      BaseKey ^
+      (S.nextNeverCStringEncryptNonce() * 0x517CC1B727220A95ULL);
   Key &= llvm::maskTrailingOnes<uint64_t>(SizeBits);
 
   // Mirrors the default NEVERC_STRING_ENCRYPT_BYTE(byte, key, idx) macro.

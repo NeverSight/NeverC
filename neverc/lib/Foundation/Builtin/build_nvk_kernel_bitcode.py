@@ -61,6 +61,59 @@ OPTIMIZABLE_RUNTIME_SYMBOLS = frozenset({
 })
 
 
+def extract_function_body(ir_text, function_name):
+    """Return one textual LLVM function body, or None when it is absent."""
+    body = []
+    collecting = False
+    for line in ir_text.splitlines():
+        if not collecting:
+            match = FUNCTION_DEFINITION_RE.match(line)
+            if (match is not None and
+                    match.group(1).strip('"') == function_name):
+                collecting = True
+            continue
+        if line.strip() == "}":
+            return "\n".join(body)
+        body.append(line)
+    return None
+
+
+def validate_format_slot_atomics(ir_text):
+    """Keep one-time format-symbol publication race-free in embedded IR."""
+    errors = []
+    fmt_init = extract_function_body(ir_text, "neverc_krt_fmt_init")
+    snprintf = extract_function_body(ir_text, "neverc_krt_snprintf")
+    sscanf = extract_function_body(ir_text, "neverc_krt_sscanf")
+    for name, body in (("neverc_krt_fmt_init", fmt_init),
+                       ("neverc_krt_snprintf", snprintf),
+                       ("neverc_krt_sscanf", sscanf)):
+        if body is None:
+            errors.append(f"{name} is missing from embedded runtime IR")
+
+    if fmt_init is not None:
+        for slot in (0, 1):
+            symbol = rf"@_neverc_krt_fmt_slot_{slot}"
+            if not re.search(
+                    rf"load atomic i64, ptr {symbol} acquire", fmt_init):
+                errors.append(
+                    f"neverc_krt_fmt_init does not acquire-load format "
+                    f"slot {slot}"
+                )
+            if not re.search(
+                    rf"cmpxchg ptr {symbol},.* acq_rel acquire", fmt_init):
+                errors.append(
+                    f"neverc_krt_fmt_init does not atomically publish "
+                    f"format slot {slot}"
+                )
+    for name, body, slot in (("neverc_krt_snprintf", snprintf, 0),
+                             ("neverc_krt_sscanf", sscanf, 1)):
+        if body is not None and not re.search(
+                rf"load atomic i64, ptr @_neverc_krt_fmt_slot_{slot} "
+                rf"acquire", body):
+            errors.append(f"{name} does not acquire-load its format slot")
+    return errors
+
+
 def extract_runtime_symbols(ir_path):
     symbols = set()
     aliases = set()
@@ -87,7 +140,8 @@ def validate_runtime_ir(ir_path):
     unresolved_runtime_symbols = set()
 
     with open(ir_path, encoding="utf-8") as ir_file:
-        for line in ir_file:
+        ir_text = ir_file.read()
+        for line in ir_text.splitlines():
             if re.search(r"\boptnone\b", line):
                 has_optnone = True
 
@@ -123,6 +177,7 @@ def validate_runtime_ir(ir_path):
             "embedded runtime IR has undefined runtime symbols: "
             + ", ".join(sorted(unresolved_runtime_symbols))
         )
+    errors.extend(validate_format_slot_atomics(ir_text))
 
     for symbol in sorted(OPTIMIZABLE_RUNTIME_SYMBOLS):
         group = function_groups.get(symbol)

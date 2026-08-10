@@ -70,6 +70,15 @@ public:
   llvm::PreservedAnalyses run(llvm::Module &M, llvm::ModuleAnalysisManager &);
 };
 
+/// Apply the mandatory Android-kernel function attributes and prepare KCFI
+/// type metadata for every definition currently present in the module.  This
+/// must be rerun after a provider or late runtime linker adds definitions.
+class KernelFunctionAttrsPass
+    : public llvm::PassInfoMixin<KernelFunctionAttrsPass> {
+public:
+  llvm::PreservedAnalyses run(llvm::Module &M, llvm::ModuleAnalysisManager &);
+};
+
 } // namespace neverc::Emit::AndroidKernel
 
 #endif // NEVERC_EMIT_ANDROIDKERNELKCFI_H

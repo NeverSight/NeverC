@@ -1,14 +1,57 @@
 #include "NeverCTestFixture.h"
 
+#include "neverc/Linker/Core/Driver/LTOCacheContract.h"
+
 #include "llvm/BinaryFormat/ELF.h"
 #include "llvm/Object/ELFObjectFile.h"
 #include "llvm/Object/ObjectFile.h"
 #include "llvm/Support/Error.h"
 
+#include <cstdlib>
 #include <limits>
+#include <optional>
 #include <utility>
 
 namespace {
+
+void setEnvironmentVariable(const char *Name, const char *Value) {
+#ifdef _WIN32
+  _putenv_s(Name, Value);
+#else
+  setenv(Name, Value, 1);
+#endif
+}
+
+void unsetEnvironmentVariable(const char *Name) {
+#ifdef _WIN32
+  _putenv_s(Name, "");
+#else
+  unsetenv(Name);
+#endif
+}
+
+class ScopedEnvironmentVariable {
+  std::string Name;
+  std::optional<std::string> OldValue;
+
+public:
+  ScopedEnvironmentVariable(const char *Name, const char *Value) : Name(Name) {
+    if (const char *Old = std::getenv(Name))
+      OldValue = Old;
+    setEnvironmentVariable(Name, Value);
+  }
+
+  ScopedEnvironmentVariable(const ScopedEnvironmentVariable &) = delete;
+  ScopedEnvironmentVariable &
+  operator=(const ScopedEnvironmentVariable &) = delete;
+
+  ~ScopedEnvironmentVariable() {
+    if (OldValue)
+      setEnvironmentVariable(Name.c_str(), OldValue->c_str());
+    else
+      unsetEnvironmentVariable(Name.c_str());
+  }
+};
 
 // A minimal Android GKI kernel module.  `-fandroid-kernel-driver-mode` supplies
 // <nvkmod.h> and the module scaffolding macros, so this compiles with no kernel
@@ -65,6 +108,39 @@ std::string renderError(llvm::Error Error) {
       return ::testing::AssertionFailure()
              << "final artifact still contains shared xorstr symbol '"
              << NameOrErr->str() << "'";
+  }
+  return ::testing::AssertionSuccess();
+}
+
+::testing::AssertionResult
+hasNoUndefinedSymbolNamed(const std::string &Bytes,
+                          llvm::StringRef SymbolName) {
+  using namespace llvm;
+  using namespace llvm::object;
+
+  auto ObjectOrErr = ObjectFile::createObjectFile(
+      MemoryBufferRef(StringRef(Bytes.data(), Bytes.size()), "module.ko"));
+  if (!ObjectOrErr)
+    return ::testing::AssertionFailure()
+           << "cannot parse .ko: " << renderError(ObjectOrErr.takeError());
+
+  for (const SymbolRef &Symbol : (*ObjectOrErr)->symbols()) {
+    llvm::Expected<StringRef> NameOrErr = Symbol.getName();
+    if (!NameOrErr)
+      return ::testing::AssertionFailure()
+             << "cannot read symbol name: "
+             << renderError(NameOrErr.takeError());
+    if (*NameOrErr != SymbolName)
+      continue;
+    llvm::Expected<uint32_t> FlagsOrErr = Symbol.getFlags();
+    if (!FlagsOrErr)
+      return ::testing::AssertionFailure()
+             << "cannot read symbol flags: "
+             << renderError(FlagsOrErr.takeError());
+    if (*FlagsOrErr & SymbolRef::SF_Undefined)
+      return ::testing::AssertionFailure()
+             << "embedded runtime symbol '" << SymbolName.str()
+             << "' is still undefined";
   }
   return ::testing::AssertionSuccess();
 }
@@ -204,9 +280,9 @@ hasAndroidLoaderContract(const std::string &Bytes, bool RequireEmptyTags,
 
 class AndroidKernelRuntimeTest : public NeverCTest {
 protected:
-  // Relocatable (`-r`) Android kernel-module link.  An empty PluginPath uses the
-  // native driver directly; otherwise the plugin is loaded with -fplugin, which
-  // routes the relocatable link through the plugin object-merge bridge.
+  // Relocatable (`-r`) Android kernel-module link.  An empty PluginPath uses
+  // the native driver directly; otherwise the plugin is loaded with -fplugin,
+  // which routes the relocatable link through the plugin object-merge bridge.
   CmdResult linkKernelModule(const std::string &PluginPath,
                              const fs::path &Source, const fs::path &Output,
                              bool UseDeterministicXorStrKey = true,
@@ -286,13 +362,323 @@ TEST_F(AndroidKernelRuntimeTest, EmbeddedRuntimeXorStrHasNoSharedDecoder) {
   const std::string Bytes = readFile(Output);
   ASSERT_TRUE(isElfImage(Bytes));
   EXPECT_TRUE(hasNoSymbolContaining(Bytes, "__neverc_xorstr_decrypt"));
+  EXPECT_TRUE(hasNoSymbolContaining(Bytes, "__atomic"))
+      << "format-slot atomics must lower to native AArch64 instructions";
+  EXPECT_TRUE(hasNoSymbolContaining(Bytes, "__aarch64_"))
+      << "the freestanding kernel module must not depend on outlined atomic "
+         "helpers";
   EXPECT_EQ(Bytes.find("__neverc_xorstr_"), std::string::npos)
       << "debug/string tables must not retain xorstr helper identities";
   EXPECT_EQ(Bytes.find(".rekey"), std::string::npos)
       << "per-call ciphertext must not expose a semantic symbol name";
+  EXPECT_EQ(Bytes.find("vsnprintf"), std::string::npos)
+      << "debug symbols must not reveal the protected lookup target";
+  EXPECT_EQ(Bytes.find("vsscanf"), std::string::npos)
+      << "debug symbols must not reveal the protected lookup target";
+}
+
+TEST_F(AndroidKernelRuntimeTest,
+       EmbeddedRuntimeMaterializesWhenLLVMPassesAreDisabled) {
+  const fs::path Source = tmpFile("nvk_runtime_disabled_passes.c");
+  const fs::path Output = tmpFile("nvk_runtime_disabled_passes.ko");
+  writeFile(Source, kAndroidKernelXorStrModule);
+
+  const CmdResult Build = ncc({
+      "--target=aarch64-linux-android",
+      "-fandroid-kernel-driver-mode",
+      "-DNVK_KERNEL=510",
+      "-O0",
+      "-disable-llvm-passes",
+      "-fno-lto",
+      "-fstring-encrypt-key=1",
+      "-r",
+      "-nostdlib",
+      Source.string(),
+      "-o",
+      Output.string(),
+  });
+  ASSERT_EQ(Build.exitCode, 0) << Build.err;
+
+  const std::string Bytes = readFile(Output);
+  ASSERT_TRUE(isElfImage(Bytes));
+  EXPECT_TRUE(hasNoUndefinedSymbolNamed(Bytes, "neverc_krt_fmt_init"));
+  EXPECT_TRUE(hasNoSymbolContaining(Bytes, "__neverc_xorstr_"));
+  EXPECT_EQ(Bytes.find("vsnprintf"), std::string::npos);
+  EXPECT_EQ(Bytes.find("vsscanf"), std::string::npos);
+}
+
+TEST_F(AndroidKernelRuntimeTest,
+       EmbeddedRuntimeXorStrProviderBypassIsSealedAcrossModes) {
+  ScopedEnvironmentVariable DisableLTOCache(linker::ltoCacheEnvVar,
+                                            linker::ltoCacheDisableValue);
+  const fs::path Source = tmpFile("nvk_xorstr_provider.c");
+  writeFile(Source, kAndroidKernelXorStrModule);
+
+  for (const char *Mode : {"", "-flto=full", "-fno-lto"}) {
+    SCOPED_TRACE(Mode[0] ? Mode : "auto-lto");
+    const std::string ModeName =
+        Mode[0] ? (std::string(Mode) == "-fno-lto" ? "no_lto" : "full_lto")
+                : "auto_lto";
+    auto Build = [&](const fs::path &Output, bool UseDeterministicKey) {
+      std::vector<std::string> Args = {
+          std::string("-fplugin=") +
+              NEVERC_TEST_IR_OPTIMIZATION_PASSTHROUGH_PLUGIN,
+          "--target=aarch64-linux-android",
+          "-fandroid-kernel-driver-mode",
+          "-DNVK_KERNEL=510",
+          "-O2",
+          "-g",
+      };
+      if (UseDeterministicKey)
+        Args.push_back("-fstring-encrypt-key=0x12345678DEADBEEF");
+      if (Mode[0])
+        Args.push_back(Mode);
+      Args.insert(Args.end(),
+                  {"-r", "-nostdlib", Source.string(), "-o", Output.string()});
+      return ncc(Args);
+    };
+
+    const fs::path FirstOutput =
+        tmpFile("nvk_xorstr_provider_first_" + ModeName + ".ko");
+    const fs::path SecondOutput =
+        tmpFile("nvk_xorstr_provider_second_" + ModeName + ".ko");
+    const fs::path FixedFirstOutput =
+        tmpFile("nvk_xorstr_provider_fixed_first_" + ModeName + ".ko");
+    const fs::path FixedSecondOutput =
+        tmpFile("nvk_xorstr_provider_fixed_second_" + ModeName + ".ko");
+    const CmdResult FirstBuild = Build(FirstOutput, false);
+    ASSERT_EQ(FirstBuild.exitCode, 0) << FirstBuild.err;
+    const CmdResult SecondBuild = Build(SecondOutput, false);
+    ASSERT_EQ(SecondBuild.exitCode, 0) << SecondBuild.err;
+    const CmdResult FixedFirstBuild = Build(FixedFirstOutput, true);
+    ASSERT_EQ(FixedFirstBuild.exitCode, 0) << FixedFirstBuild.err;
+    const CmdResult FixedSecondBuild = Build(FixedSecondOutput, true);
+    ASSERT_EQ(FixedSecondBuild.exitCode, 0) << FixedSecondBuild.err;
+
+    const std::string FirstBytes = readFile(FirstOutput);
+    const std::string SecondBytes = readFile(SecondOutput);
+    const std::string FixedFirstBytes = readFile(FixedFirstOutput);
+    const std::string FixedSecondBytes = readFile(FixedSecondOutput);
+    ASSERT_TRUE(isElfImage(FirstBytes));
+    ASSERT_TRUE(isElfImage(SecondBytes));
+    ASSERT_TRUE(isElfImage(FixedFirstBytes));
+    ASSERT_TRUE(isElfImage(FixedSecondBytes));
+    EXPECT_FALSE(FirstBytes == SecondBytes)
+        << "a provider-owned pipeline must not make the default xorstr seed "
+           "deterministic";
+    EXPECT_TRUE(FixedFirstBytes == FixedSecondBytes)
+        << "a provider-owned pipeline must preserve fixed-seed "
+           "reproducibility";
+    for (const std::string *Bytes :
+         {&FirstBytes, &SecondBytes, &FixedFirstBytes, &FixedSecondBytes}) {
+      EXPECT_TRUE(hasNoUndefinedSymbolNamed(*Bytes, "neverc_krt_fmt_init"));
+      EXPECT_TRUE(hasNoSymbolContaining(*Bytes, "__neverc_xorstr_"));
+      EXPECT_EQ(Bytes->find("__neverc_xorstr_"), std::string::npos)
+          << "provider output must not retain dead helper identities";
+      EXPECT_EQ(Bytes->find(std::string("vsnprintf\0", sizeof("vsnprintf"))),
+                std::string::npos);
+      EXPECT_EQ(Bytes->find(std::string("vsscanf\0", sizeof("vsscanf"))),
+                std::string::npos);
+    }
+  }
+}
+
+TEST_F(AndroidKernelRuntimeTest,
+       EmbeddedRuntimeXorStrProviderSurvivesFullLTOSaveTemps) {
+  ScopedEnvironmentVariable DisableLTOCache(linker::ltoCacheEnvVar,
+                                            linker::ltoCacheDisableValue);
+  const fs::path Source = tmpFile("nvk_xorstr_provider_save_temps.c");
+  const fs::path Output = tmpFile("nvk_xorstr_provider_save_temps.ko");
+  writeFile(Source, kAndroidKernelXorStrModule);
+
+  const CmdResult Build = ncc({
+      std::string("-fplugin=") +
+          NEVERC_TEST_IR_OPTIMIZATION_PASSTHROUGH_PLUGIN,
+      "--target=aarch64-linux-android",
+      "-fandroid-kernel-driver-mode",
+      "-DNVK_KERNEL=510",
+      "-O2",
+      "-flto=full",
+      "-save-temps=obj",
+      "-fstring-encrypt-key=0x12345678DEADBEEF",
+      "-r",
+      "-nostdlib",
+      Source.string(),
+      "-o",
+      Output.string(),
+  });
+  ASSERT_EQ(Build.exitCode, 0) << Build.err;
+
+  const std::string Bytes = readFile(Output);
+  ASSERT_TRUE(isElfImage(Bytes));
+  EXPECT_TRUE(hasNoUndefinedSymbolNamed(Bytes, "neverc_krt_fmt_init"));
+  EXPECT_TRUE(hasNoSymbolContaining(Bytes, "__neverc_xorstr_"));
+  EXPECT_EQ(Bytes.find("vsnprintf"), std::string::npos);
+  EXPECT_EQ(Bytes.find("vsscanf"), std::string::npos);
+}
+
+TEST_F(AndroidKernelRuntimeTest,
+       LateIRPassRuntimeReferenceIsMaterializedAcrossModes) {
+  const fs::path Source = testDir() / "Inputs/nvk_late_runtime_reference.c";
+  ASSERT_TRUE(fs::exists(Source)) << Source;
+
+  const fs::path LTOInput = tmpFile("nvk_late_runtime_input.bc");
+  const CmdResult Compile = ncc({
+      "--target=aarch64-linux-android",
+      "-fandroid-kernel-driver-mode",
+      "-DNVK_KERNEL=510",
+      "-O2",
+      "-g",
+      "-flto=full",
+      "-fstring-encrypt-key=1",
+      "-c",
+      Source.string(),
+      "-o",
+      LTOInput.string(),
+  });
+  ASSERT_EQ(Compile.exitCode, 0) << Compile.err;
+
+  auto CheckOutput = [&](const fs::path &Output) {
+    const std::string Bytes = readFile(Output);
+    ASSERT_TRUE(isElfImage(Bytes));
+    EXPECT_TRUE(hasNoUndefinedSymbolNamed(Bytes, "neverc_krt_fmt_init"));
+    EXPECT_TRUE(hasNoSymbolContaining(Bytes, "__neverc_xorstr_"));
+    EXPECT_EQ(Bytes.find("vsnprintf"), std::string::npos);
+    EXPECT_EQ(Bytes.find("vsscanf"), std::string::npos);
+  };
+
+  // Feed pre-existing IR back through the driver.  This covers the frontend's
+  // IR-input path as well as the final LTO boundary; the dedicated
+  // optimization-provider test below isolates a reference introduced from
+  // inside the LTO replacement hook itself.
+  for (const char *Mode : {"", "-flto=full"}) {
+    SCOPED_TRACE(Mode[0] ? Mode : "auto-lto");
+    const fs::path Output = tmpFile(
+        Mode[0] ? "nvk_late_runtime_full_lto.ko"
+                : "nvk_late_runtime_auto_lto.ko");
+    std::vector<std::string> Args = {
+        std::string("-fplugin=") +
+            NEVERC_TEST_IR_PASS_LATE_NVK_REFERENCE_PLUGIN,
+        "--target=aarch64-linux-android",
+        "-fandroid-kernel-driver-mode",
+        "-DNVK_KERNEL=510",
+        "-O2",
+        "-g",
+        "-fstring-encrypt-key=1",
+    };
+    if (Mode[0])
+      Args.push_back(Mode);
+    Args.insert(Args.end(),
+                {"-r", "-nostdlib", LTOInput.string(), "-o", Output.string()});
+
+    const CmdResult Build = ncc(Args);
+    ASSERT_EQ(Build.exitCode, 0) << Build.err;
+    CheckOutput(Output);
+  }
+
+  // A no-LTO frontend still has the same late-pass requirement at its native
+  // code-generation boundary.
+  const fs::path NativeOutput = tmpFile("nvk_late_runtime_no_lto.ko");
+  const CmdResult NativeBuild = ncc({
+      std::string("-fplugin=") +
+          NEVERC_TEST_IR_PASS_LATE_NVK_REFERENCE_PLUGIN,
+      "--target=aarch64-linux-android",
+      "-fandroid-kernel-driver-mode",
+      "-DNVK_KERNEL=510",
+      "-O2",
+      "-g",
+      "-fno-lto",
+      "-fstring-encrypt-key=1",
+      "-r",
+      "-nostdlib",
+      Source.string(),
+      "-o",
+      NativeOutput.string(),
+  });
+  ASSERT_EQ(NativeBuild.exitCode, 0) << NativeBuild.err;
+  CheckOutput(NativeOutput);
+}
+
+TEST_F(AndroidKernelRuntimeTest,
+       LateLTOOptimizationProviderRuntimeReferenceIsMaterialized) {
+  const fs::path Source = testDir() / "Inputs/nvk_late_runtime_reference.c";
+  const fs::path Output = tmpFile("nvk_late_provider_runtime_full_lto.ko");
+  ASSERT_TRUE(fs::exists(Source)) << Source;
+
+  // This provider deliberately passes the frontend module through unchanged,
+  // then renames the placeholder declaration only from its second invocation:
+  // the CommonLTO optimization-replacement hook.  Runtime materialization
+  // must therefore happen after the provider publishes its final module.
+  const CmdResult Build = ncc({
+      std::string("-fplugin=") +
+          NEVERC_TEST_IR_OPTIMIZATION_LATE_NVK_REFERENCE_PLUGIN,
+      "--target=aarch64-linux-android",
+      "-fandroid-kernel-driver-mode",
+      "-DNVK_KERNEL=510",
+      "-O2",
+      "-g",
+      "-flto=full",
+      "-fstring-encrypt-key=1",
+      "-r",
+      "-nostdlib",
+      Source.string(),
+      "-o",
+      Output.string(),
+  });
+  ASSERT_EQ(Build.exitCode, 0) << Build.err;
+
+  const std::string Bytes = readFile(Output);
+  ASSERT_TRUE(isElfImage(Bytes));
+  EXPECT_TRUE(
+      hasNoUndefinedSymbolNamed(Bytes, "plugin_late_nvk_runtime"))
+      << "the provider did not introduce the LTO-only runtime reference";
+  EXPECT_TRUE(hasNoUndefinedSymbolNamed(Bytes, "neverc_krt_fmt_init"));
+  EXPECT_TRUE(hasNoSymbolContaining(Bytes, "__neverc_xorstr_"));
+  EXPECT_EQ(Bytes.find("vsnprintf"), std::string::npos);
+  EXPECT_EQ(Bytes.find("vsscanf"), std::string::npos);
+}
+
+TEST_F(AndroidKernelRuntimeTest,
+       LateLTOIRPassRuntimeReferenceIsMaterialized) {
+  const fs::path Source = testDir() / "Inputs/nvk_late_runtime_reference.c";
+  const fs::path Output = tmpFile("nvk_late_ir_pass_runtime_full_lto.ko");
+  ASSERT_TRUE(fs::exists(Source)) << Source;
+
+  // The pass is a no-op in the frontend task and introduces the NVK symbol
+  // only from the CommonLTO pre-codegen callback.  This exercises the
+  // mandatory tail after ordinary plugin passes, independently of the
+  // replacement-provider hook above.
+  const CmdResult Build = ncc({
+      std::string("-fplugin=") +
+          NEVERC_TEST_IR_PASS_LTO_LATE_NVK_REFERENCE_PLUGIN,
+      "--target=aarch64-linux-android",
+      "-fandroid-kernel-driver-mode",
+      "-DNVK_KERNEL=510",
+      "-O2",
+      "-g",
+      "-flto=full",
+      "-fstring-encrypt-key=1",
+      "-r",
+      "-nostdlib",
+      Source.string(),
+      "-o",
+      Output.string(),
+  });
+  ASSERT_EQ(Build.exitCode, 0) << Build.err;
+
+  const std::string Bytes = readFile(Output);
+  ASSERT_TRUE(isElfImage(Bytes));
+  EXPECT_TRUE(
+      hasNoUndefinedSymbolNamed(Bytes, "plugin_late_nvk_runtime"));
+  EXPECT_TRUE(hasNoUndefinedSymbolNamed(Bytes, "neverc_krt_fmt_init"));
+  EXPECT_TRUE(hasNoSymbolContaining(Bytes, "__neverc_xorstr_"));
+  EXPECT_EQ(Bytes.find("vsnprintf"), std::string::npos);
+  EXPECT_EQ(Bytes.find("vsscanf"), std::string::npos);
 }
 
 TEST_F(AndroidKernelRuntimeTest, EmbeddedRuntimeXorStrHonorsDeterministicSeed) {
+  ScopedEnvironmentVariable DisableLTOCache(linker::ltoCacheEnvVar,
+                                            linker::ltoCacheDisableValue);
   const fs::path Source = tmpFile("nvk_xorstr_deterministic.c");
   writeFile(Source, kAndroidKernelXorStrModule);
   const fs::path FirstKo = tmpFile("nvk_xorstr_deterministic_first.ko");
@@ -341,8 +727,8 @@ TEST_F(AndroidKernelRuntimeTest, PublicSdkLayouts) {
 // the relocatable link is routed through the plugin object-merge bridge, which
 // must first lower the bitcode to native objects before merging.  A plugin that
 // binds no object phase has nothing to contribute to a built-in target's merge,
-// so the bridge must transparently defer the whole link to the native driver and
-// produce a byte-identical .ko.
+// so the bridge must transparently defer the whole link to the native driver
+// and produce a byte-identical .ko.
 TEST_F(AndroidKernelRuntimeTest, RelocatablePluginLinkDefersToNativeByteForByte) {
   const fs::path Source = tmpFile("nvk_defer.c");
   writeFile(Source, kAndroidKernelModule);

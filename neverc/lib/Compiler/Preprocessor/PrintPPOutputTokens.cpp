@@ -148,6 +148,13 @@ void printPreprocessedTokens(PrepEngine &PP, Token &Tok,
                                   TokStart[0] == '/' && TokStart[1] == '/'))
                   Callbacks->setEmittedDirectiveOnThisLine();
                 IsStartOfLine = false;
+
+                // Lexing the next token can synchronously invoke observers
+                // (most importantly ExitFile/EnterFile), which may emit line
+                // markers immediately.  Commit bytes from the current file
+                // first so those callback writes cannot overtake a deferred
+                // declaration suffix such as a semicolon.
+                flushDeferred();
                 PP.Lex(Tok);
                 continue;
               }

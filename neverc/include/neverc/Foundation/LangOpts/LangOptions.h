@@ -9,6 +9,7 @@
 #include "llvm/Support/HashBuilder.h"
 #include "llvm/Support/VersionTuple.h"
 #include "llvm/TargetParser/Triple.h"
+#include <cstdint>
 #include <map>
 #include <string>
 #include <vector>
@@ -226,6 +227,10 @@ public:
 
 public:
   LangStandard::Kind LangStd;
+
+  // Kept out of LangOptions.def because its LANGOPT storage is an unsigned
+  // bit-field and therefore cannot represent the full target-sized key space.
+  uint64_t StringEncryptKey = 0;
 
   std::string OverflowHandler;
 

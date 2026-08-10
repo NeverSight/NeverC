@@ -9,10 +9,28 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/MathExtras.h"
+#include "llvm/Support/RandomNumberGenerator.h"
 #include <random>
 
 using namespace neverc;
 using namespace sema;
+
+namespace {
+
+bool getNeverCRandomSeed(Sema &S, SourceLocation Loc, uint64_t &Seed) {
+  if (llvm::getRandomBytes(&Seed, sizeof(Seed)) == 0) {
+    Seed |= 1U;
+    return true;
+  }
+  unsigned DiagID = S.Diags.getCustomDiagID(
+      DiagnosticsEngine::Error,
+      "NeverC could not obtain operating-system entropy for compile-time "
+      "string protection");
+  S.Diag(Loc, DiagID);
+  return false;
+}
+
+} // namespace
 
 // ===----------------------------------------------------------------------===
 // NeverC-specific builtin semantic checks (xorstr / strhash / random)
@@ -40,20 +58,14 @@ ExprResult semaBuiltinNeverCXorstr(Sema &S, CallExpr *TheCall) {
   llvm::StringRef Bytes = SL->getBytes();
   unsigned Len = Bytes.size();
 
-  static uint64_t Counter = 0;
   uint64_t BaseKey = S.getLangOpts().StringEncryptKey;
-  if (BaseKey == 0) {
-    static uint64_t SeedKey = [] {
-      std::random_device rd;
-      uint64_t h = (static_cast<uint64_t>(rd()) << 32) | rd();
-      return h | 1;
-    }();
-    BaseKey = SeedKey;
-  }
+  if (BaseKey == 0 &&
+      !getNeverCRandomSeed(S, TheCall->getBeginLoc(), BaseKey))
+    return ExprError();
   QualType SizeTy = S.Context.getSizeType();
   unsigned SizeBits = S.Context.getTypeSize(SizeTy);
 
-  const uint64_t Nonce = ++Counter;
+  const uint64_t Nonce = S.nextNeverCXorStrNonce();
   std::seed_seq KeySeed{
       static_cast<unsigned>(BaseKey), static_cast<unsigned>(BaseKey >> 32),
       static_cast<unsigned>(Nonce), static_cast<unsigned>(Nonce >> 32)};
@@ -94,7 +106,8 @@ ExprResult semaBuiltinNeverCXorstr(Sema &S, CallExpr *TheCall) {
   if (!FD) {
     unsigned DiagID = S.Diags.getCustomDiagID(
         DiagnosticsEngine::Error,
-        "'__builtin_neverc_xorstr' requires '#include <neverc/xorstr/xorstr.h>'");
+        "'__builtin_neverc_xorstr' requires "
+        "'#include <neverc/xorstr/xorstr.h>'");
     S.Diag(Loc, DiagID);
     return ExprError();
   }
@@ -162,17 +175,11 @@ ExprResult semaBuiltinNeverCRandomU64(Sema &S, CallExpr *TheCall) {
   if (checkArgCount(S, TheCall, 0))
     return ExprError();
 
-  static uint64_t Counter = 0;
   uint64_t BaseKey = S.getLangOpts().StringEncryptKey;
-  if (BaseKey == 0) {
-    static uint64_t Seed = [] {
-      std::random_device rd;
-      uint64_t h = (static_cast<uint64_t>(rd()) << 32) | rd();
-      return h | 1;
-    }();
-    BaseKey = Seed;
-  }
-  uint64_t Value = BaseKey ^ (++Counter * 0x6C62272E07BB0142ULL);
+  if (BaseKey == 0 &&
+      !getNeverCRandomSeed(S, TheCall->getBeginLoc(), BaseKey))
+    return ExprError();
+  uint64_t Value = BaseKey ^ (S.nextNeverCRandomNonce() * 0x6C62272E07BB0142ULL);
 
   SourceLocation Loc = TheCall->getBeginLoc();
   QualType Ty = S.Context.UnsignedLongLongTy;

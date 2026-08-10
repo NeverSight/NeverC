@@ -6,6 +6,7 @@
 #include "Linker/Core/Runtime/Diagnostic.h"
 #include "neverc/Emit/AndroidKernelKCFI.h"
 #include "neverc/Emit/Backend/ParallelCodeGenMerge.h"
+#include "neverc/Emit/NvkKernelRuntimeLinker.h"
 #include "neverc/Plugin/Host/IROptimizationProvider.h"
 #include "neverc/Plugin/Host/IRPassPlugin.h"
 #include "neverc/Plugin/Host/MIRPassPlugin.h"
@@ -13,6 +14,7 @@
 #include "neverc/Plugin/Host/PluginSession.h"
 #include "neverc/Plugin/Host/PluginTaskContext.h"
 #include "neverc/Transforms/XorStr/EncryptCallStringsPass.h"
+#include "neverc/Transforms/XorStr/XorStrCleanupPass.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/CodeGen/CommandFlags.h"
 #include "llvm/Support/CommandLine.h"
@@ -199,8 +201,27 @@ lto::Config linker::createLTOConfig(const LinkerDriverConfig &Cfg,
       }
       c.HostContext = PluginContext;
       c.ModuleOptimizeHook =
-          [PluginContext, OptLevel, XorStrKeySeed = Cfg.xorStrKeySeed](
+          [PluginContext, OptLevel,
+           AndroidKernelModule = Cfg.androidKernelModule,
+           XorStrKeySeed = Cfg.xorStrKeySeed,
+           EncryptCallStrings = Cfg.encryptCallStrings,
+           EncryptCallStringsMaxLen = Cfg.encryptCallStringsMaxLen](
               std::unique_ptr<Module> &ModuleValue, bool &SkipBuiltin) {
+            // Seal inputs before a replacement provider can erase literal
+            // provenance, and materialize volatile wipes before it can discard
+            // the buffer metadata used to discover them.  The mandatory tail
+            // below remains necessary for literals introduced by the provider.
+            if (EncryptCallStrings) {
+              ModuleAnalysisManager MAM;
+              (void)neverc::xorstr::EncryptCallStringsPass(
+                  EncryptCallStringsMaxLen, XorStrKeySeed)
+                  .run(*ModuleValue, MAM);
+            }
+            FunctionAnalysisManager FAM;
+            for (Function &F : *ModuleValue)
+              if (!F.isDeclaration())
+                (void)neverc::xorstr::XorStrCleanupPass().run(F, FAM);
+
             const std::optional<neverc::Emit::AndroidKernel::Contract>
                 RequiredAndroidContract =
                     neverc::Emit::AndroidKernel::getContract(*ModuleValue);
@@ -236,12 +257,32 @@ lto::Config linker::createLTOConfig(const LinkerDriverConfig &Cfg,
                 return false;
               }
             }
+            // A replacement provider can introduce a fresh NVK declaration
+            // after the frontend and the ordinary LTO pipeline have already
+            // linked runtimes.  Materialize it from the module the provider
+            // actually published, before either builtin optimization or the
+            // provider-owned native boundary proceeds.
+            if (AndroidKernelModule) {
+              ModuleAnalysisManager MAM;
+              (void)neverc::NvkKernelRuntimeLinkerPass(/*PreLink=*/false)
+                  .run(*ModuleValue, MAM);
+              (void)neverc::Emit::AndroidKernel::KernelFunctionAttrsPass().run(
+                  *ModuleValue, MAM);
+            }
             // A provider that owns the complete optimization transition asks
             // LTO to bypass opt(), which also bypasses PostOptPassHook.  KCFI
             // prefix materialization is a code-generation invariant, so seal
             // the provider's final module here on that path.
             if (SkipBuiltin) {
               ModuleAnalysisManager MAM;
+              if (EncryptCallStrings)
+                (void)neverc::xorstr::EncryptCallStringsPass(
+                    EncryptCallStringsMaxLen, XorStrKeySeed)
+                    .run(*ModuleValue, MAM);
+              FunctionAnalysisManager FAM;
+              for (Function &F : *ModuleValue)
+                if (!F.isDeclaration())
+                  (void)neverc::xorstr::XorStrCleanupPass().run(F, FAM);
               (void)neverc::xorstr::FinalizeXorStrPass(XorStrKeySeed)
                   .run(*ModuleValue, MAM);
               neverc::Emit::AndroidKernel::finalizeKCFIPrefixes(*ModuleValue);
@@ -255,8 +296,25 @@ lto::Config linker::createLTOConfig(const LinkerDriverConfig &Cfg,
 
   NevercIROptimizationLevel PluginLevel =
       pluginOptimizationLevel(OptLevel);
-  auto AddFinalModulePasses = [XorStrKeySeed =
-                                   Cfg.xorStrKeySeed](ModulePassManager &MPM) {
+  auto AddFinalModulePasses =
+      [AndroidKernelModule = Cfg.androidKernelModule,
+       XorStrKeySeed = Cfg.xorStrKeySeed,
+       EncryptCallStrings = Cfg.encryptCallStrings,
+       EncryptCallStringsMaxLen = Cfg.encryptCallStringsMaxLen](
+          ModulePassManager &MPM) {
+    // This tail runs after every LTO IR-pass callback.  Runtime lowering and
+    // kernel attributes are semantic code-generation invariants, so a plugin
+    // cannot evade them by introducing a declaration at pre-codegen time.
+    if (AndroidKernelModule) {
+      MPM.addPass(neverc::NvkKernelRuntimeLinkerPass(/*PreLink=*/false));
+      MPM.addPass(
+          neverc::Emit::AndroidKernel::KernelFunctionAttrsPass());
+    }
+    if (EncryptCallStrings)
+      MPM.addPass(neverc::xorstr::EncryptCallStringsPass(
+          EncryptCallStringsMaxLen, XorStrKeySeed));
+    MPM.addPass(createModuleToFunctionPassAdaptor(
+        neverc::xorstr::XorStrCleanupPass()));
     MPM.addPass(neverc::xorstr::FinalizeXorStrPass(XorStrKeySeed));
     MPM.addPass(neverc::Emit::AndroidKernel::FinalizeKCFIPrefixesPass());
   };
@@ -333,6 +391,8 @@ lto::Config linker::createLTOConfig(const LinkerDriverConfig &Cfg,
        (PluginContext->MIRPasses && !PluginContext->MIRPasses->empty()));
   if (!HasMutatingPluginPasses && ltoPartitionCacheUsable(Cfg)) {
     pcgCache = std::make_shared<neverc::PartitionCacheHooks>();
+    pcgCache->BypassForUnseededXorStr = Cfg.xorStrKeySeed == 0;
+    pcgCache->AutomaticXorStrEnabled = Cfg.encryptCallStrings;
     pcgCache->Lookup = [salt = ltoPartitionCacheSalt(Cfg, EmitAddrsig)](
                            StringRef pipeTag, StringRef bitcode,
                            std::string &keyOut, SmallVectorImpl<char> &obj) {

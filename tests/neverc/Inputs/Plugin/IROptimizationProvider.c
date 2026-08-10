@@ -8,12 +8,66 @@
 static const NevercIROptimizationAPI *OptimizationAPI;
 static const NevercIRPassAPI *PassAPI;
 static int ProcessState;
+#if defined(NEVERC_TEST_IR_OPTIMIZATION_LATE_NVK_REFERENCE)
+static uint64_t OptimizationInvocationCount;
+#endif
 
 static NevercStatus failure(NevercStatusCode Code) {
   NevercStatus Status = neverc_status_ok();
   Status.Code = Code;
   return Status;
 }
+
+#if defined(NEVERC_TEST_IR_OPTIMIZATION_LATE_NVK_REFERENCE)
+static NevercBool string_equals(NevercStringView Value, const char *Text,
+                                size_t Length) {
+  return Value.Length == (uint64_t)Length && Value.Data &&
+                 memcmp(Value.Data, Text, Length) == 0
+             ? NEVERC_TRUE
+             : NEVERC_FALSE;
+}
+
+static NevercStatus inject_late_nvk_runtime_reference(
+    const NevercPhaseFrame *Frame, const NevercIRCoreAPI *Core) {
+  NevercIRModuleHandle Module = {0, 0};
+  NevercIRValueCursor Cursor;
+  NevercIRValueHandle Functions[128];
+  uint64_t FunctionCount = 0;
+  uint64_t I;
+  NevercStatus Status =
+      Core->GetModule(Core->Context, Frame->Task, &Module);
+  if (Status.Code != NEVERC_STATUS_OK)
+    return Status;
+
+  memset(&Cursor, 0, sizeof(Cursor));
+  Status = Core->BeginValueCursor(
+      Core->Context, Frame->Task, Module,
+      NEVERC_IR_COLLECTION_MODULE_FUNCTIONS, &Cursor);
+  if (Status.Code != NEVERC_STATUS_OK)
+    return Status;
+  Status = Core->CollectValueCursor(Core->Context, Frame->Task, &Cursor,
+                                    Functions, 128, &FunctionCount);
+  if (Status.Code != NEVERC_STATUS_OK)
+    return Status;
+
+  for (I = 0; I != FunctionCount; ++I) {
+    NevercStringView Name = {0, 0};
+    Status = Core->GetValueName(Core->Context, Frame->Task, Functions[I],
+                                &Name);
+    if (Status.Code != NEVERC_STATUS_OK)
+      return Status;
+    if (string_equals(Name, "neverc_krt_fmt_init",
+                      sizeof("neverc_krt_fmt_init") - 1) == NEVERC_TRUE)
+      return neverc_status_ok();
+    if (string_equals(Name, "plugin_late_nvk_runtime",
+                      sizeof("plugin_late_nvk_runtime") - 1) != NEVERC_TRUE)
+      continue;
+    return Core->SetValueName(Core->Context, Frame->Task, Functions[I],
+                              STRING_VIEW("neverc_krt_fmt_init"));
+  }
+  return failure(NEVERC_STATUS_NOT_FOUND);
+}
+#endif
 
 static NevercStatus NEVERC_CALL fail_if_builtin_pipeline_runs(
     const NevercIRPassInvocation *Invocation,
@@ -58,10 +112,22 @@ provide_optimized_module(const NevercPhaseFrame *Frame,
                ? failure(NEVERC_STATUS_VERIFICATION_FAILED)
                : Status;
 
-#if defined(NEVERC_TEST_IR_OPTIMIZATION_PASSTHROUGH)
+#if defined(NEVERC_TEST_IR_OPTIMIZATION_PASSTHROUGH) ||                       \
+    defined(NEVERC_TEST_IR_OPTIMIZATION_LATE_NVK_REFERENCE)
   // Publish the input module without invoking NeverC's builtin optimizer. This
   // fixture exercises invariants that must be sealed after a provider takes
   // ownership of the complete optimization transition.
+#if defined(NEVERC_TEST_IR_OPTIMIZATION_LATE_NVK_REFERENCE)
+  ++OptimizationInvocationCount;
+  if (OptimizationInvocationCount >= 2) {
+    Status = OptimizationAPI->GetInputModule(
+        OptimizationAPI->Context, Frame, Frame->Input, &Core, &BuilderAPI);
+    if (Status.Code == NEVERC_STATUS_OK)
+      Status = inject_late_nvk_runtime_reference(Frame, Core);
+    if (Status.Code != NEVERC_STATUS_OK)
+      return Status;
+  }
+#endif
   memset(&Descriptor, 0, sizeof(Descriptor));
   Descriptor.Header = (NevercABITableHeader){
       sizeof(Descriptor), NEVERC_IR_OPTIMIZATION_API_MAJOR,
@@ -162,6 +228,9 @@ static NevercStatus NEVERC_CALL process_begin(const NevercCoreAPI *Core,
   (void)Core;
   if (!OutProcessState)
     return failure(NEVERC_STATUS_INVALID_ARGUMENT);
+#if defined(NEVERC_TEST_IR_OPTIMIZATION_LATE_NVK_REFERENCE)
+  OptimizationInvocationCount = 0;
+#endif
   *OutProcessState = &ProcessState;
   return neverc_status_ok();
 }

@@ -2089,9 +2089,9 @@ OPTION(prefix_1, "-fstrict-overflow", fstrict_overflow, Flag, f_Group, INVALID,
        nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
 OPTION(prefix_1, "-fstring-encrypt-key=", fstring_encrypt_key_EQ, Joined,
        f_Group, INVALID, nullptr, 0, DefaultVis, 0,
-       "Override the compile-time XOR key used by .encrypt() on string "
-       "literals (hex value, e.g. -fstring-encrypt-key=0xDEADBEEF). "
-       "Default: auto-derived from compilation time.",
+       "Override the 64-bit seed used by NeverC string protection "
+       "(hex value, e.g. -fstring-encrypt-key=0xDEADBEEF). "
+       "Default: fresh random entropy.",
        "<hex>", nullptr)
 OPTION(prefix_1, "-fstruct-path-tbaa", fstruct_path_tbaa, Flag, f_Group,
        INVALID, nullptr, 0, DefaultVis, 0, nullptr, nullptr, nullptr)
@@ -5849,11 +5849,11 @@ LANG_OPTION_WITH_MARSHALLING(
 LANG_OPTION_WITH_MARSHALLING(
     prefix_1, "-fstring-encrypt-key=", fstring_encrypt_key_EQ, Joined,
     f_Group, INVALID, nullptr, 0, DefaultVis, 0,
-    "Override the compile-time XOR key used by .encrypt() on string "
-    "literals (hex value, e.g. -fstring-encrypt-key=0xDEADBEEF). "
-    "Default: auto-derived from compilation time.",
-    "<hex>", nullptr, true, 0, LangOpts->StringEncryptKey, 0u, false,
-    0u, normalizeStringIntegral<unsigned>, denormalizeString<unsigned>,
+    "Override the 64-bit seed used by NeverC string protection "
+    "(hex value, e.g. -fstring-encrypt-key=0xDEADBEEF). "
+    "Default: fresh random entropy.",
+    "<hex>", nullptr, true, 0, LangOpts->StringEncryptKey, 0ULL, false,
+    0ULL, normalizeStringIntegral<uint64_t>, denormalizeString<uint64_t>,
     mergeForwardValue, extractForwardValue, -1)
 #endif // LANG_OPTION_WITH_MARSHALLING
 #ifdef LANG_OPTION_WITH_MARSHALLING

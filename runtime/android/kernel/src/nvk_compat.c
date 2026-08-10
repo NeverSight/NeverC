@@ -97,12 +97,12 @@ unsigned long _neverc_krt_get_file_dentry_off(void)
 
 static struct neverc_krt_kernel_info _neverc_krt_kinfo;
 
-typedef int (*neverc_krt_vsnprintf_fn)(char *buf, size_t size, const char *fmt,
+typedef int (*neverc_krt_fmt_write_fn)(char *buf, size_t size,
+				       const char *fmt, __builtin_va_list ap);
+typedef int (*neverc_krt_fmt_read_fn)(const char *buf, const char *fmt,
 				      __builtin_va_list ap);
-typedef int (*neverc_krt_vsscanf_fn)(const char *buf, const char *fmt,
-				     __builtin_va_list ap);
-static neverc_krt_vsnprintf_fn _neverc_krt_vsnprintf_ptr;
-static neverc_krt_vsscanf_fn   _neverc_krt_vsscanf_ptr;
+static neverc_krt_fmt_write_fn _neverc_krt_fmt_slot_0;
+static neverc_krt_fmt_read_fn  _neverc_krt_fmt_slot_1;
 
 static unsigned long _neverc_krt_rt_off_init;
 static unsigned long _neverc_krt_rt_off_exit;
@@ -229,33 +229,54 @@ int neverc_krt_compat_init(void)
 
 int neverc_krt_fmt_init(void)
 {
-	if (!_neverc_krt_vsnprintf_ptr) {
-		_neverc_krt_vsnprintf_ptr =
-			(neverc_krt_vsnprintf_fn)NEVERC_KRT_LOOKUP("vsnprintf");
+	neverc_krt_fmt_write_fn write;
+	neverc_krt_fmt_read_fn read;
+
+	write = __atomic_load_n(&_neverc_krt_fmt_slot_0, __ATOMIC_ACQUIRE);
+	if (!write) {
+		neverc_krt_fmt_write_fn resolved =
+			(neverc_krt_fmt_write_fn)NEVERC_KRT_LOOKUP("vsnprintf");
+		if (resolved && !__atomic_compare_exchange_n(
+				&_neverc_krt_fmt_slot_0, &write, resolved, 0,
+				__ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE))
+			resolved = write;
+		write = resolved ? resolved :
+			__atomic_load_n(&_neverc_krt_fmt_slot_0,
+					__ATOMIC_ACQUIRE);
 	}
-	if (!_neverc_krt_vsscanf_ptr) {
-		_neverc_krt_vsscanf_ptr =
-			(neverc_krt_vsscanf_fn)NEVERC_KRT_LOOKUP("vsscanf");
+	read = __atomic_load_n(&_neverc_krt_fmt_slot_1, __ATOMIC_ACQUIRE);
+	if (!read) {
+		neverc_krt_fmt_read_fn resolved =
+			(neverc_krt_fmt_read_fn)NEVERC_KRT_LOOKUP("vsscanf");
+		if (resolved && !__atomic_compare_exchange_n(
+				&_neverc_krt_fmt_slot_1, &read, resolved, 0,
+				__ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE))
+			resolved = read;
+		read = resolved;
 	}
-	return _neverc_krt_vsnprintf_ptr ? 0 : -1;
+	return write ? 0 : -1;
 }
 
 int neverc_krt_snprintf(char *buf, size_t size, const char *fmt, ...)
 {
-	if (!_neverc_krt_vsnprintf_ptr) return -1;
+	neverc_krt_fmt_write_fn write =
+		__atomic_load_n(&_neverc_krt_fmt_slot_0, __ATOMIC_ACQUIRE);
+	if (!write) return -1;
 	__builtin_va_list ap;
 	__builtin_va_start(ap, fmt);
-	int ret = _neverc_krt_vsnprintf_ptr(buf, size, fmt, ap);
+	int ret = write(buf, size, fmt, ap);
 	__builtin_va_end(ap);
 	return ret;
 }
 
 int neverc_krt_sscanf(const char *buf, const char *fmt, ...)
 {
-	if (!_neverc_krt_vsscanf_ptr) return -1;
+	neverc_krt_fmt_read_fn read =
+		__atomic_load_n(&_neverc_krt_fmt_slot_1, __ATOMIC_ACQUIRE);
+	if (!read) return -1;
 	__builtin_va_list ap;
 	__builtin_va_start(ap, fmt);
-	int ret = _neverc_krt_vsscanf_ptr(buf, fmt, ap);
+	int ret = read(buf, fmt, ap);
 	__builtin_va_end(ap);
 	return ret;
 }

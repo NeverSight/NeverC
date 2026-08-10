@@ -96,9 +96,11 @@ __neverc_xorstr_stream_byte(__SIZE_TYPE__ state,
                             const struct __neverc_xorstr_schedule *schedule) {
   state ^= state >> schedule->stream_shift_a;
   state ^= state << schedule->stream_shift_b;
-  state ^= state >> 8;
-  state ^= state >> 16;
-  if (sizeof(__SIZE_TYPE__) > 4)
+  if (sizeof(__SIZE_TYPE__) * 8 > 8)
+    state ^= state >> 8;
+  if (sizeof(__SIZE_TYPE__) * 8 > 16)
+    state ^= state >> 16;
+  if (sizeof(__SIZE_TYPE__) * 8 > 32)
     state ^= state >> 32;
   return (unsigned char)state;
 }

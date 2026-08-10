@@ -355,8 +355,25 @@ void tools::populateLinkerDriverConfig(const ToolChain &TC,
 
   if (const Arg *A = Args.getLastArg(options::OPT_fstring_encrypt_key_EQ)) {
     uint64_t Value = 0;
-    if (!llvm::StringRef(A->getValue()).getAsInteger(0, Value))
-      Cfg.xorStrKeySeed = static_cast<uint32_t>(Value);
+    if (!llvm::StringRef(A->getValue()).getAsInteger(0, Value)) {
+      Cfg.xorStrKeySeed = Value;
+    } else {
+      D.Diag(diag::err_drv_invalid_value) << A->getAsString(Args)
+                                          << A->getValue();
+    }
+  }
+  Cfg.encryptCallStrings =
+      Args.hasFlag(options::OPT_fencrypt_call_strings,
+                   options::OPT_fno_encrypt_call_strings, false);
+  if (const Arg *A =
+          Args.getLastArg(options::OPT_fencrypt_call_strings_max_len_EQ)) {
+    uint32_t Value = 0;
+    if (!llvm::StringRef(A->getValue()).getAsInteger(10, Value)) {
+      Cfg.encryptCallStringsMaxLen = Value;
+    } else {
+      D.Diag(diag::err_drv_invalid_value) << A->getAsString(Args)
+                                          << A->getValue();
+    }
   }
 
   // Optimization levels derived from -O.

@@ -229,8 +229,11 @@ llvm::StringRef getInputKindName(InputKind IK) {
 // the rest of the language options would fall back to the declared defaults
 // and, for instance, inject a hosted allocator into a kernel module.
 //
-// The pair below is therefore the one part of the language options that
-// survives an IR input, and the two halves must stay in step.
+// The backend-only subset below is therefore the one part of the language
+// options that survives an IR input.  Parsing and regeneration must stay in
+// step: dropping the xorstr seed here would silently turn a reproducible final
+// re-key into a random one, while dropping the automatic-encryption switch
+// would leave direct call literals in imported bitcode untouched.
 
 void parseBuiltinRuntimeArgs(LangOptions &Opts, const ArgList &Args) {
   Opts.BuiltinString = Args.hasFlag(OPT_fbuiltin_string,
@@ -252,6 +255,47 @@ void generateBuiltinRuntimeArgs(const LangOptions &Opts,
                                          : OPT_fno_builtin_mimalloc);
   emitArg(Consumer, Opts.BuiltinStd ? OPT_fbuiltin_std : OPT_fno_builtin_std);
 }
+
+void parseIRBackendLangArgs(LangOptions &Opts, const ArgList &Args,
+                            DiagnosticsEngine &Diags) {
+  parseBuiltinRuntimeArgs(Opts, Args);
+  Opts.EncryptCallStrings = Args.hasFlag(
+      OPT_fencrypt_call_strings, OPT_fno_encrypt_call_strings,
+      Opts.EncryptCallStrings);
+  Opts.StrHashFold = Args.hasFlag(OPT_fstrhash_fold, OPT_fno_strhash_fold,
+                                 Opts.StrHashFold);
+
+  if (const Arg *A = Args.getLastArg(OPT_fencrypt_call_strings_max_len_EQ)) {
+    uint32_t Value = 0;
+    if (llvm::StringRef(A->getValue()).getAsInteger(10, Value))
+      Diags.Report(diag::err_drv_invalid_value)
+          << A->getAsString(Args) << A->getValue();
+    else
+      Opts.EncryptCallStringsMaxLen = Value;
+  }
+  if (const Arg *A = Args.getLastArg(OPT_fstring_encrypt_key_EQ)) {
+    uint64_t Value = 0;
+    if (llvm::StringRef(A->getValue()).getAsInteger(0, Value))
+      Diags.Report(diag::err_drv_invalid_value)
+          << A->getAsString(Args) << A->getValue();
+    else
+      Opts.StringEncryptKey = Value;
+  }
+}
+
+void generateIRBackendLangArgs(const LangOptions &Opts,
+                               ArgumentConsumer Consumer) {
+  generateBuiltinRuntimeArgs(Opts, Consumer);
+  emitArg(Consumer, Opts.EncryptCallStrings ? OPT_fencrypt_call_strings
+                                            : OPT_fno_encrypt_call_strings);
+  emitArg(Consumer, OPT_fencrypt_call_strings_max_len_EQ,
+          llvm::Twine(Opts.EncryptCallStringsMaxLen));
+  emitArg(Consumer,
+          Opts.StrHashFold ? OPT_fstrhash_fold : OPT_fno_strhash_fold);
+  if (Opts.StringEncryptKey != 0)
+    emitArg(Consumer, OPT_fstring_encrypt_key_EQ,
+            llvm::Twine(Opts.StringEncryptKey));
+}
 } // namespace
 
 void CompilerInvocationBase::GenerateLangArgs(const LangOptions &Opts,
@@ -259,7 +303,7 @@ void CompilerInvocationBase::GenerateLangArgs(const LangOptions &Opts,
                                               const llvm::Triple &T,
                                               InputKind IK) {
   if (IK.getLanguage() == Language::LLVM_IR) {
-    generateBuiltinRuntimeArgs(Opts, Consumer);
+    generateIRBackendLangArgs(Opts, Consumer);
     return;
   }
 
@@ -361,7 +405,7 @@ bool CompilerInvocation::ParseLangArgs(LangOptions &Opts, ArgList &Args,
   Opts.PIE = T.isOSLinux();
 
   if (IK.getLanguage() == Language::LLVM_IR) {
-    parseBuiltinRuntimeArgs(Opts, Args);
+    parseIRBackendLangArgs(Opts, Args, Diags);
     return Diags.getNumErrors() == NumErrorsBefore;
   }
 

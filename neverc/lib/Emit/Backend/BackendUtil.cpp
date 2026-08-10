@@ -2,13 +2,13 @@
 #include "Backend/BackendConsumer.h"
 #include "Backend/LinkInModulesPass.h"
 #include "Backend/Runtime/MimallocRuntimeLinker.h"
-#include "Backend/Runtime/NvkKernelRuntimeLinker.h"
 #include "Backend/Runtime/StdRuntimeLinker.h"
 #include "Backend/Runtime/StringRuntimeLinker.h"
 #include "Core/AndroidKernelEmitter.h"
 #include "neverc/Compiler/Utils.h"
 #include "neverc/DynCode/Pipeline/Pipeline.h"
 #include "neverc/Emit/Backend/ParallelCodeGenMerge.h"
+#include "neverc/Emit/NvkKernelRuntimeLinker.h"
 #include "neverc/Foundation/Diagnostic/Diagnostic.h"
 #include "neverc/Foundation/Diagnostic/DiagnosticFrontend.h"
 #include "neverc/Foundation/LangOpts/CodeGenOptions.h"
@@ -762,7 +762,8 @@ Error GenAssemblyHelper::runBuiltinOptimizationPipeline(
           CodeGenOpts.DIBugsReportFilePath);
     Debugify.registerCallbacks(PIC, MAM);
   }
-  // Set plugin arguments before loading so they're available during registration.
+  // Set plugin arguments before loading so they're available during
+  // registration.
   for (const auto &PassCallback : CodeGenOpts.PassBuilderCallbacks)
     PassCallback(PB);
   dyncode::DynCodeOptions DisabledDynCode;
@@ -804,6 +805,22 @@ Error GenAssemblyHelper::runBuiltinOptimizationPipeline(
 
     if (CodeGenOpts.AutoGenerateIR)
       MPM.addPassToFront(IRAutoGeneratorPrePass(true, "IRAutoGeneratorPre"));
+
+    // Protect direct call-site literals before IPSCCP, argument promotion, or
+    // inlining can move their pointers into stores and erase the call-argument
+    // provenance.  The post-optimization pass below is intentionally retained
+    // to catch literals exposed or introduced later; the transform is
+    // idempotent.
+    if (LangOpts.EncryptCallStrings)
+      MPM.addPass(neverc::xorstr::EncryptCallStringsPass(
+          LangOpts.EncryptCallStringsMaxLen, LangOpts.StringEncryptKey));
+    // Materialize the volatile wipe before any optimizer or provider can
+    // rewrite the decoder result and discard the semantic alloca metadata.
+    // The later cleanup passes are idempotent and repair placement after CFG
+    // changes, but this early copy is the fail-safe that survives metadata
+    // loss.
+    MPM.addPass(
+        createModuleToFunctionPassAdaptor(neverc::xorstr::XorStrCleanupPass()));
 
     if (PluginPasses)
       PluginPasses->addPasses(
@@ -856,12 +873,11 @@ Error GenAssemblyHelper::runBuiltinOptimizationPipeline(
     }
 
     if (LangOpts.EncryptCallStrings) {
-      MPM.addPass(
-          neverc::xorstr::EncryptCallStringsPass(LangOpts.EncryptCallStringsMaxLen));
-      MPM.addPass(createModuleToFunctionPassAdaptor(
-          neverc::xorstr::XorStrCleanupPass()));
+      MPM.addPass(neverc::xorstr::EncryptCallStringsPass(
+          LangOpts.EncryptCallStringsMaxLen, LangOpts.StringEncryptKey));
     }
-
+    MPM.addPass(createModuleToFunctionPassAdaptor(
+        neverc::xorstr::XorStrCleanupPass()));
     if (PluginPasses)
       PluginPasses->addPasses(MPM,
                               {NEVERC_PHASE_IR_PASS_POST_OPT_HIGH,
@@ -875,6 +891,18 @@ Error GenAssemblyHelper::runBuiltinOptimizationPipeline(
         {NEVERC_PHASE_IR_PASS_PRE_CODEGEN_HIGH,
          NEVERC_PHASE_IR_PASS_PRE_CODEGEN_LOW},
         PluginOptimizationLevel);
+
+  // No arbitrary or plugin-provided IR rewrite is allowed after the final
+  // automatic-string seal.  In particular, ordinary pass plugins may
+  // introduce new call-site literals in post-opt or pre-codegen callbacks.
+  // Run the idempotent pass once more after every such callback, and retain
+  // cleanup in both native output and pre-link LTO bitcode.
+  if (LangOpts.EncryptCallStrings) {
+    MPM.addPass(neverc::xorstr::EncryptCallStringsPass(
+        LangOpts.EncryptCallStringsMaxLen, LangOpts.StringEncryptKey));
+    MPM.addPass(
+        createModuleToFunctionPassAdaptor(neverc::xorstr::XorStrCleanupPass()));
+  }
 
   // Keep the opaque decoder through every ordinary and plugin-provided IR
   // optimization.  At a real machine-code boundary the final pass rekeys and
@@ -933,7 +961,33 @@ bool GenAssemblyHelper::runOptimizationPipeline(
     }
   }
 
+  // Android-kernel runtime materialization is semantic lowering, not an
+  // optional optimization.  Do it before choosing the built-in/provider
+  // route: a replacement provider may skip the built-in pipeline, while
+  // -disable-llvm-passes (including save-temps flows) suppresses the
+  // PipelineStartEP that ordinarily repeats these idempotent passes.
+  if (CodeGenOpts.AndroidKernelDriverMode) {
+    ModuleAnalysisManager RuntimeMAM;
+    NvkKernelRuntimeLinkerPass(CodeGenOpts.PrepareForLTO)
+        .run(*TheModule, RuntimeMAM);
+    neverc::Emit::AndroidKernel::KernelFunctionAttrsPass().run(*TheModule,
+                                                               RuntimeMAM);
+  }
+
   if (PluginTask) {
+    // A replacement provider can bypass the built-in pre-optimization
+    // pipeline entirely.  Seal direct call literals before handing it the
+    // module so it cannot erase their provenance through IPO first.
+    if (LangOpts.EncryptCallStrings) {
+      ModuleAnalysisManager MAM;
+      neverc::xorstr::EncryptCallStringsPass(LangOpts.EncryptCallStringsMaxLen,
+                                             LangOpts.StringEncryptKey)
+          .run(*TheModule, MAM);
+    }
+    FunctionAnalysisManager FAM;
+    for (Function &F : *TheModule)
+      if (!F.isDeclaration())
+        neverc::xorstr::XorStrCleanupPass().run(F, FAM);
     auto Created = plugin::PluginIROptimizationProviderRuntime::create(
         *PluginTask, *TheModule,
         toPluginOptimizationLevel(mapToLevel(CodeGenOpts)),
@@ -969,6 +1023,49 @@ bool GenAssemblyHelper::runOptimizationPipeline(
   } else if (Error E = RunBuiltin(*TheModule)) {
     Diags.Report(diag::err_fe_error_backend) << toString(std::move(E));
     return false;
+  }
+
+  // A provider can suppress the built-in post-optimization pipeline or add
+  // new call-site literals after it ran.  Apply automatic string encryption
+  // to the provider's published module as a mandatory, idempotent tail.  This
+  // also runs while preparing LTO input so later whole-program optimization
+  // never receives the plaintext literal.
+  if (PluginTask) {
+    // The provider may publish a replacement module or introduce fresh NVK
+    // runtime references.  Materialize those references before the mandatory
+    // xorstr tail, then cover every provider-created definition with the
+    // Android-kernel function attributes.  Both passes are idempotent when
+    // the provider kept the already-complete input module.
+    if (CodeGenOpts.AndroidKernelDriverMode) {
+      ModuleAnalysisManager RuntimeMAM;
+      NvkKernelRuntimeLinkerPass(CodeGenOpts.PrepareForLTO)
+          .run(*TheModule, RuntimeMAM);
+      neverc::Emit::AndroidKernel::KernelFunctionAttrsPass().run(*TheModule,
+                                                                 RuntimeMAM);
+    }
+
+    if (LangOpts.EncryptCallStrings) {
+      ModuleAnalysisManager MAM;
+      neverc::xorstr::EncryptCallStringsPass(LangOpts.EncryptCallStringsMaxLen,
+                                             LangOpts.StringEncryptKey)
+          .run(*TheModule, MAM);
+    }
+    FunctionAnalysisManager FAM;
+    for (Function &F : *TheModule)
+      if (!F.isDeclaration())
+        neverc::xorstr::XorStrCleanupPass().run(F, FAM);
+  }
+
+  // An optimization provider is allowed to replace the module and is not
+  // required to run the built-in pipeline.  Seal the module it actually
+  // published at every real machine-code boundary.  The pass is deliberately
+  // idempotent, so keeping it in the built-in pipeline above also preserves
+  // the generated-IR/generated-bitcode view without weakening this boundary.
+  if (PluginTask && !CodeGenOpts.PrepareForLTO &&
+      actionRequiresCodeGen(Action)) {
+    ModuleAnalysisManager MAM;
+    neverc::xorstr::FinalizeXorStrPass(LangOpts.StringEncryptKey)
+        .run(*TheModule, MAM);
   }
 
   if (TM)

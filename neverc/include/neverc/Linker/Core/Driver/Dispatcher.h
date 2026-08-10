@@ -30,7 +30,7 @@
 namespace neverc::plugin {
 class PluginSession;
 class PluginTaskContext;
-}
+} // namespace neverc::plugin
 
 namespace linker {
 
@@ -86,7 +86,9 @@ struct LinkerDriverConfig {
   // -1 means "not set"; backends fall back to their own defaults.
   int ltoOptLevel = -1;
   int ltoCGOLevel = -1; // codegen opt level; -1 = derive from ltoOptLevel
-  uint32_t xorStrKeySeed = 0;
+  uint64_t xorStrKeySeed = 0;
+  bool encryptCallStrings = false;
+  uint32_t encryptCallStringsMaxLen = 1024;
 
   // Real native-object paths requested by the driver for consumers that
   // cannot read the in-memory LTO buffers. Darwin uses these only when
@@ -237,8 +239,8 @@ int dispatchLink(llvm::ArrayRef<DriverDef> Drivers, Flavor RequestedFlavor,
 /// symbol resolutions (every symbol is visible to regular objects; exactly one
 /// prevailing definition per name), and runs the shared LTO pipeline to emit
 /// native relocatable object images -- the same bitcode->object step the native
-/// `-r` link performs before merging.  \p BackendTag / \p EmitAddrsig select the
-/// object format specifics ("elf"/"coff"/"macho").
+/// `-r` link performs before merging.  \p BackendTag / \p EmitAddrsig select
+/// the object format specifics ("elf"/"coff"/"macho").
 llvm::Expected<std::vector<llvm::SmallString<0>>>
 runPluginRelocatableLTO(const LinkerDriverConfig &Config,
                         llvm::ArrayRef<llvm::MemoryBufferRef> BitcodeBuffers,

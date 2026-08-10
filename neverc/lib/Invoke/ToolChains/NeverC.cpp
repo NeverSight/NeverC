@@ -4114,8 +4114,13 @@ void NeverC::ConstructJob(Compilation &C, const JobAction &JA,
                                                FrontendInputs, CmdArgs,
                                                TripleStr, CPU);
 
-    if (IsUsingLTO && !Args.hasArg(options::OPT_c, options::OPT_S,
-                                   options::OPT_E, options::OPT_fsyntax_only))
+    // Saved intermediates are part of the user-visible result.  They must be
+    // materialized on disk, and a save-temps action graph may feed the emitted
+    // bitcode into another frontend job rather than directly into the linker.
+    // Such a frontend cannot consume an InMemoryFileStore-only path.
+    if (IsUsingLTO && !C.getDriver().isSaveTempsEnabled() &&
+        !Args.hasArg(options::OPT_c, options::OPT_S, options::OPT_E,
+                     options::OPT_fsyntax_only))
       Cmd->getDirectOpts().InMemoryLTOOutput = true;
 
     C.addCommand(std::move(Cmd));

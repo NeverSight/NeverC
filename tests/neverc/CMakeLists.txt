@@ -98,8 +98,10 @@ add_executable(neverc-tests ${NEVERC_TEST_SOURCES})
 target_link_libraries(neverc-tests PRIVATE
   GTest::gtest
   GTest::gtest_main
+  nevercXorStr
   LLVMBitWriter
   LLVMObject
+  LLVMTransformUtils
 )
 if(NEVERC_ENABLE_PYTHON_PLUGINS)
   target_compile_definitions(neverc-tests PRIVATE
@@ -803,6 +805,23 @@ target_compile_definitions(
 set_target_properties(
   neverc-test-plugin-ir-optimization-passthrough PROPERTIES PREFIX ""
 )
+add_library(neverc-test-plugin-ir-optimization-late-nvk-reference MODULE
+  Inputs/Plugin/IROptimizationProvider.c
+)
+target_include_directories(
+  neverc-test-plugin-ir-optimization-late-nvk-reference PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(
+  neverc-test-plugin-ir-optimization-late-nvk-reference PRIVATE c_std_11
+)
+target_compile_definitions(
+  neverc-test-plugin-ir-optimization-late-nvk-reference PRIVATE
+  NEVERC_TEST_IR_OPTIMIZATION_LATE_NVK_REFERENCE=1
+)
+set_target_properties(
+  neverc-test-plugin-ir-optimization-late-nvk-reference PROPERTIES PREFIX ""
+)
 add_library(neverc-test-plugin-ir-optimization-invalid MODULE
   Inputs/Plugin/IROptimizationProvider.c
 )
@@ -829,6 +848,56 @@ target_include_directories(neverc-test-plugin-ir-pass PRIVATE
 target_compile_features(neverc-test-plugin-ir-pass PRIVATE c_std_11)
 set_target_properties(
   neverc-test-plugin-ir-pass PROPERTIES PREFIX ""
+)
+add_library(neverc-test-plugin-ir-pass-late-literal MODULE
+  Inputs/Plugin/IRPassPlugin.c
+)
+target_include_directories(neverc-test-plugin-ir-pass-late-literal PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(
+  neverc-test-plugin-ir-pass-late-literal PRIVATE c_std_11
+)
+target_compile_definitions(
+  neverc-test-plugin-ir-pass-late-literal PRIVATE
+  NEVERC_TEST_IR_PASS_LATE_LITERAL=1
+)
+set_target_properties(
+  neverc-test-plugin-ir-pass-late-literal PROPERTIES PREFIX ""
+)
+add_library(neverc-test-plugin-ir-pass-late-nvk-reference MODULE
+  Inputs/Plugin/IRPassPlugin.c
+)
+target_include_directories(
+  neverc-test-plugin-ir-pass-late-nvk-reference PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(
+  neverc-test-plugin-ir-pass-late-nvk-reference PRIVATE c_std_11
+)
+target_compile_definitions(
+  neverc-test-plugin-ir-pass-late-nvk-reference PRIVATE
+  NEVERC_TEST_IR_PASS_LATE_NVK_REFERENCE=1
+)
+set_target_properties(
+  neverc-test-plugin-ir-pass-late-nvk-reference PROPERTIES PREFIX ""
+)
+add_library(neverc-test-plugin-ir-pass-lto-late-nvk-reference MODULE
+  Inputs/Plugin/IRPassPlugin.c
+)
+target_include_directories(
+  neverc-test-plugin-ir-pass-lto-late-nvk-reference PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(
+  neverc-test-plugin-ir-pass-lto-late-nvk-reference PRIVATE c_std_11
+)
+target_compile_definitions(
+  neverc-test-plugin-ir-pass-lto-late-nvk-reference PRIVATE
+  NEVERC_TEST_IR_PASS_LTO_LATE_NVK_REFERENCE=1
+)
+set_target_properties(
+  neverc-test-plugin-ir-pass-lto-late-nvk-reference PROPERTIES PREFIX ""
 )
 add_library(neverc-test-plugin-ir-pass-invalid MODULE
   Inputs/Plugin/IRPassPlugin.c
@@ -2145,8 +2214,12 @@ target_compile_definitions(neverc-tests PRIVATE
   NEVERC_TEST_IRGEN_PROVIDER_PLUGIN="$<TARGET_FILE:neverc-test-plugin-irgen-provider>"
   NEVERC_TEST_IR_OPTIMIZATION_PROVIDER_PLUGIN="$<TARGET_FILE:neverc-test-plugin-ir-optimization-provider>"
   NEVERC_TEST_IR_OPTIMIZATION_PASSTHROUGH_PLUGIN="$<TARGET_FILE:neverc-test-plugin-ir-optimization-passthrough>"
+  NEVERC_TEST_IR_OPTIMIZATION_LATE_NVK_REFERENCE_PLUGIN="$<TARGET_FILE:neverc-test-plugin-ir-optimization-late-nvk-reference>"
   NEVERC_TEST_IR_OPTIMIZATION_INVALID_PLUGIN="$<TARGET_FILE:neverc-test-plugin-ir-optimization-invalid>"
   NEVERC_TEST_IR_PASS_PLUGIN="$<TARGET_FILE:neverc-test-plugin-ir-pass>"
+  NEVERC_TEST_IR_PASS_LATE_LITERAL_PLUGIN="$<TARGET_FILE:neverc-test-plugin-ir-pass-late-literal>"
+  NEVERC_TEST_IR_PASS_LATE_NVK_REFERENCE_PLUGIN="$<TARGET_FILE:neverc-test-plugin-ir-pass-late-nvk-reference>"
+  NEVERC_TEST_IR_PASS_LTO_LATE_NVK_REFERENCE_PLUGIN="$<TARGET_FILE:neverc-test-plugin-ir-pass-lto-late-nvk-reference>"
   NEVERC_TEST_IR_PASS_INVALID_PLUGIN="$<TARGET_FILE:neverc-test-plugin-ir-pass-invalid>"
   NEVERC_TEST_IR_ANALYSIS_CYCLE_PLUGIN="$<TARGET_FILE:neverc-test-plugin-ir-analysis-cycle>"
   NEVERC_TEST_IR_ANALYSIS_RECURSIVE_PLUGIN="$<TARGET_FILE:neverc-test-plugin-ir-analysis-recursive>"
@@ -2226,8 +2299,12 @@ add_dependencies(neverc-tests
   neverc-test-plugin-irgen-provider
   neverc-test-plugin-ir-optimization-provider
   neverc-test-plugin-ir-optimization-passthrough
+  neverc-test-plugin-ir-optimization-late-nvk-reference
   neverc-test-plugin-ir-optimization-invalid
   neverc-test-plugin-ir-pass
+  neverc-test-plugin-ir-pass-late-literal
+  neverc-test-plugin-ir-pass-late-nvk-reference
+  neverc-test-plugin-ir-pass-lto-late-nvk-reference
   neverc-test-plugin-ir-pass-invalid
   neverc-test-plugin-ir-analysis-cycle
   neverc-test-plugin-ir-analysis-recursive

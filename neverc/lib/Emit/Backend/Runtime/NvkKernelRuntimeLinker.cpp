@@ -1,4 +1,4 @@
-#include "Backend/Runtime/NvkKernelRuntimeLinker.h"
+#include "neverc/Emit/NvkKernelRuntimeLinker.h"
 #include "Backend/Runtime/RuntimeLinkerUtils.h"
 #include "neverc/Foundation/Builtin/BuiltinNvkKernel.h"
 #include "neverc/Foundation/Builtin/BuiltinNvkKernelNames.h"
