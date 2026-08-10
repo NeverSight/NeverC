@@ -2648,6 +2648,7 @@ option(NEVERC_ENABLE_MERGE_FUZZER
 if(NEVERC_ENABLE_MERGE_FUZZER)
   add_executable(neverc-merge-fuzzer MergeFuzzer.cpp)
   target_link_libraries(neverc-merge-fuzzer PRIVATE
+    nevercFoundation
     nevercMerge
     ${NEVERC_COMPILER_RT_BUILTINS}
   )
@@ -2659,8 +2660,9 @@ if(NEVERC_ENABLE_MERGE_FUZZER)
   target_link_options(neverc-merge-fuzzer PRIVATE -fsanitize=fuzzer)
   # Deliberately NO add_dependencies(... neverc): unlike neverc-merge-tests, the
   # fuzzer calls neverc::merge::mergeObjects in-process and never spawns the
-  # NEVERC_BINARY, so it only needs libnevercMerge (+ its LLVM Object/Support
-  # deps).  Forcing a dependency on the full compiler would make every
+  # NEVERC_BINARY, so it only needs libnevercMerge, its direct Foundation
+  # support, and their LLVM deps.  Forcing a dependency on the full compiler
+  # would make every
   # `ninja neverc-merge-fuzzer` (and the CI fuzz job) build all of clang/codegen/
   # the linker for nothing, turning a ~minutes instrumented build into a ~hour
   # one.  Keeping the fuzzer standalone is what lets the merge-fuzz CI workflow

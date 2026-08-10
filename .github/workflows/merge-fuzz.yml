@@ -11,9 +11,10 @@ name: merge-fuzz
 # the merger or its verifier crash, alter the verify-gated output, or merge
 # non-deterministically" (the three invariants asserted in MergeFuzzer.cpp).
 #
-# It builds ONLY the standalone `neverc-merge-fuzzer` target (libnevercMerge +
-# its LLVM Object/Support deps) with ASan + UBSan + libFuzzer coverage — not the
-# whole compiler — so an instrumented build stays in the minutes, not the hour.
+# It builds ONLY the standalone `neverc-merge-fuzzer` target (libnevercMerge,
+# its direct Foundation support, and their LLVM deps) with ASan + UBSan +
+# libFuzzer coverage — not the whole compiler — so an instrumented build stays
+# in the minutes, not the hour.
 #
 # Triggers:
 #   * pull_request / push touching the merger  -> short smoke fuzz (120s)
