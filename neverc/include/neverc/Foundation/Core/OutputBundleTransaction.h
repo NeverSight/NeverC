@@ -36,6 +36,9 @@ enum class OutputBundleOperation : uint8_t {
   SyncDirectory,
   CompleteJournal,
   CleanupJournal,
+  DiscardStaging,
+  SyncRecoveryState,
+  SyncCompletedJournal,
 };
 
 enum class OutputBundleFileAction : uint8_t {
@@ -50,6 +53,8 @@ struct OutputBundleFile {
   bool Main = false;
   bool Executable = false;
   OutputBundleFileAction Action = OutputBundleFileAction::Publish;
+  /// Restrict published files to their owner (0600 or an owner-only ACL).
+  bool OwnerOnly = false;
 };
 
 struct OutputBundleSummary {
@@ -65,21 +70,18 @@ struct OutputBundleSummary {
 class OutputBundleTransaction {
 public:
   using FaultInjector =
-      std::function<std::error_code(OutputBundleOperation,
-                                    llvm::StringRef)>;
+      std::function<std::error_code(OutputBundleOperation, llvm::StringRef)>;
 
   static llvm::Expected<std::unique_ptr<OutputBundleTransaction>>
   create(OutputCoordinator &Coordinator,
          llvm::ArrayRef<OutputBundleFile> Outputs,
          OutputCoordinator::CancellationCheck IsCancelled = {},
-         FaultInjector InjectFault = {},
-         OutputLeaseOwner LeaseOwner = {});
+         FaultInjector InjectFault = {}, OutputLeaseOwner LeaseOwner = {});
 
   ~OutputBundleTransaction();
 
   OutputBundleTransaction(const OutputBundleTransaction &) = delete;
-  OutputBundleTransaction &
-  operator=(const OutputBundleTransaction &) = delete;
+  OutputBundleTransaction &operator=(const OutputBundleTransaction &) = delete;
 
   llvm::Error prepare();
   llvm::Expected<OutputBundleSummary> commit();
@@ -88,21 +90,31 @@ public:
 
 private:
   struct Entry;
+  struct PublicationLock;
 
   OutputBundleTransaction(OutputCoordinator &Coordinator,
                           std::vector<Entry> Entries,
                           std::vector<OutputPathLease> Leases,
+                          OutputCoordinator::CancellationCheck IsCancelled,
                           FaultInjector InjectFault);
 
   std::error_code fault(OutputBundleOperation Operation,
                         llvm::StringRef Path) const;
+  llvm::Error acquirePublicationLocks();
+  llvm::Error discardStaging(Entry &EntryValue);
   llvm::Error createJournal();
+  llvm::Error appendAndSyncJournal(llvm::StringRef Text,
+                                   OutputBundleOperation SyncOperation);
   llvm::Error rollback();
   void releaseLeases();
 
   OutputCoordinator &Coordinator;
   std::vector<Entry> Entries;
   std::vector<OutputPathLease> Leases;
+  OutputCoordinator::CancellationCheck IsCancelled;
+  std::vector<std::string> PublicationLockPaths;
+  std::vector<OutputPathLease> PublicationLeases;
+  std::vector<std::unique_ptr<PublicationLock>> PublicationLocks;
   FaultInjector InjectFault;
   OutputBundleState State = OutputBundleState::Open;
   uint64_t Flags = 0;

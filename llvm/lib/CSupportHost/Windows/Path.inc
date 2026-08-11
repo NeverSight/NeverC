@@ -1171,10 +1171,10 @@ static DWORD nativeAccess(FileAccess Access, OpenFlags Flags) {
   return Result;
 }
 
-static std::error_code openNativeFileInternal(const Twine &Name,
-                                              file_t &ResultFile, DWORD Disp,
-                                              DWORD Access, DWORD Flags,
-                                              bool Inherit = false) {
+static std::error_code openNativeFileInternal(
+    const Twine &Name, file_t &ResultFile, DWORD Disp, DWORD Access,
+    DWORD Flags, bool Inherit = false,
+    DWORD ShareMode = FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE) {
   SmallVector<wchar_t, 128> PathUTF16;
   if (std::error_code EC = widenPath(Name, PathUTF16))
     return EC;
@@ -1184,10 +1184,8 @@ static std::error_code openNativeFileInternal(const Twine &Name,
   SA.lpSecurityDescriptor = nullptr;
   SA.bInheritHandle = Inherit;
 
-  HANDLE H =
-      ::CreateFileW(PathUTF16.begin(), Access,
-                    FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, &SA,
-                    Disp, Flags, NULL);
+  HANDLE H = ::CreateFileW(PathUTF16.begin(), Access, ShareMode, &SA, Disp,
+                           Flags, NULL);
   if (H == INVALID_HANDLE_VALUE) {
     DWORD LastError = ::GetLastError();
     std::error_code EC = mapWindowsError(LastError);
@@ -1213,14 +1211,21 @@ Expected<file_t> openNativeFile(const Twine &Name, CreationDisposition Disp,
 
   DWORD NativeDisp = nativeDisposition(Disp, Flags);
   DWORD NativeAccess = nativeAccess(Access, Flags);
+  if (Flags & OF_Exclusive)
+    NativeAccess |= READ_CONTROL | WRITE_DAC | WRITE_OWNER;
 
   bool Inherit = false;
   if (Flags & OF_ChildInherit)
     Inherit = true;
 
   file_t Result;
-  std::error_code EC = openNativeFileInternal(
-      Name, Result, NativeDisp, NativeAccess, FILE_ATTRIBUTE_NORMAL, Inherit);
+  const DWORD ShareMode =
+      (Flags & OF_Exclusive)
+          ? 0
+          : FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE;
+  std::error_code EC =
+      openNativeFileInternal(Name, Result, NativeDisp, NativeAccess,
+                             FILE_ATTRIBUTE_NORMAL, Inherit, ShareMode);
   if (EC)
     return errorCodeToError(EC);
 

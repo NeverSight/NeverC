@@ -82,19 +82,28 @@ salida terminado en `.ko`. El `-r` ordinario y los `.o` intermedios se rechazan.
 `-O2 --strip`. Sin `.nvk-build-flags`, `make` usa debug por defecto y no elige
 release por sí solo. Los Makefile de ejemplo guardan una selección explícita
 para que posteriores `make push`, `make run` y `make` sin objetivo usen el mismo
-artefacto. `make debug` o un `PROFILE=...` explícito sustituye la selección;
-`make clean` borra el estado y devuelve la build siguiente a debug. En esta ruta
-final NeverC elimina las secciones de depuración, `.comment` y las entradas
-locales/indefinidas innecesarias para reubicaciones, y reconstruye `.strtab`.
+artefacto. Los ejemplos que aceptan `EXTRA` conservan su valor completo de
+varias palabras en las builds recursivas y posteriores. `make debug` o un
+`PROFILE=...` explícito sustituye la selección;
+`make clean` borra el estado y devuelve la build siguiente a debug. Un
+`make release` explícito reconstruye una vez y sin condiciones el paquete
+módulo/mapa; repetirlo corrige un mapa ausente o un paquete cuyo resumen ya no
+coincide. En esta ruta final NeverC elimina las secciones de depuración,
+`.comment` y las entradas locales/indefinidas innecesarias para reubicaciones,
+y reconstruye `.strtab`.
 
 Tras una release correcta, NeverC publica de forma transaccional el módulo y
 `<module>.ko.symbols.json` junto a él. Los archivos existentes permanecen
-visibles hasta cada sustitución atómica. Los errores anteriores a la
-publicación revierten todo el paquete; los errores tardíos de durabilidad
-conservan un diario de recuperación. Como dos entradas de directorio no pueden
-sustituirse mediante una sola operación del sistema de archivos, verifica
-siempre `image_sha256` después de un cierre anómalo. El mapa registra los nombres
-`original` y `release` de cada símbolo conservado cuyo nombre cambió:
+visibles hasta cada sustitución atómica. Las publicaciones concurrentes que
+apuntan al mismo directorio de salida se serializan mediante
+`.neverc-output.lock`; los objetivos `make clean` de los ejemplos conservan
+intencionadamente este archivo de bloqueo interno para no eliminar un bloqueo
+activo. Los errores anteriores a la publicación revierten todo el paquete; los
+errores tardíos de durabilidad conservan un diario de
+recuperación. Como dos entradas de directorio no pueden sustituirse mediante
+una sola operación del sistema de archivos, verifica siempre `image_sha256`
+después de un cierre anómalo. El mapa registra los nombres `original` y
+`release` de cada símbolo conservado cuyo nombre cambió:
 
 ```json
 {
@@ -113,14 +122,19 @@ traducción. Si una build debug u otra build sin strip sobrescribe la misma ruta
 de salida, NeverC elimina el mapa obsoleto. ELF permite bytes que no son UTF-8
 en los nombres de símbolos; esos originales poco frecuentes se guardan en
 Base64 en `original` con `"original_encoding": "base64"`. Los demás nombres
-originales siguen siendo legibles. Archiva el mapa como artefacto privado de
-depuración; no lo distribuyas con el `.ko` ni lo envíes al dispositivo. Antes
-de traducir un nombre de release de un informe de fallos, verifica que el mapa
-corresponda al `.ko` actual:
+originales siguen siendo legibles. NeverC publica el archivo auxiliar con modo
+`0600` en POSIX y con una `Windows ACL` protegida y exclusiva del propietario
+en Windows; la publicación falla si no puede aplicar esa restricción. Archiva
+el mapa como artefacto privado de depuración; no lo distribuyas con el `.ko` ni
+lo envíes al dispositivo. Antes de traducir un nombre de release de un informe
+de fallos, verifica que el mapa corresponda al `.ko` actual:
 
 ```bash
-test "$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' \
-  nvk_hello.ko)" = "$(jq -r '.image_sha256' nvk_hello.ko.symbols.json)"
+actual="$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' \
+  nvk_hello.ko)" &&
+expected="$(jq -er '.image_sha256 | strings | select(test("^[0-9a-f]{64}$"))' \
+  nvk_hello.ko.symbols.json)" &&
+test "$actual" = "$expected" &&
 
 python3 - nvk_hello.ko.symbols.json fn_C000 <<'PY'
 import base64, json, sys

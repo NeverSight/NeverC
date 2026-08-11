@@ -48,13 +48,15 @@ serializeAndroidKernelReleaseSymbolMap(
 /// Stream output is rejected because it cannot own a colocated sidecar.
 /// When provided, \p FinalSummary receives the transaction's terminal state
 /// even if publication returns a late durability or recovery error.
+/// \p IsCancelled makes waits for an overlapping publisher interruptible.
 llvm::Expected<OutputBundleSummary>
 publishAndroidKernelReleaseOutput(
     OutputCoordinator &Coordinator, llvm::StringRef ImagePath,
     llvm::ArrayRef<uint8_t> Image,
     const AndroidKernelReleaseSymbolMap *Map,
     OutputLeaseOwner LeaseOwner = {},
-    OutputBundleSummary *FinalSummary = nullptr);
+    OutputBundleSummary *FinalSummary = nullptr,
+    OutputCoordinator::CancellationCheck IsCancelled = {});
 
 } // namespace neverc
 

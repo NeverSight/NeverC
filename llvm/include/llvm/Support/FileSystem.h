@@ -807,6 +807,14 @@ enum OpenFlags : unsigned {
   /// Force files Atime to be updated on access. Only makes a difference on
   /// Windows.
   OF_UpdateAtime = CSUPPORT_OF_UPDATE_ATIME,
+
+  /// Prevent other handles from opening the file while this handle remains
+  /// open. Only makes a difference on Windows.
+  OF_Exclusive = CSUPPORT_OF_EXCLUSIVE,
+
+  /// Prevent a newly created file from inheriting an extended ACL. Only makes
+  /// a difference on Darwin.
+  OF_NoInherit = CSUPPORT_OF_NO_INHERIT,
 };
 
 /// Create a potentially unique file name but does not create it.

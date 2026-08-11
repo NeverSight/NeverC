@@ -78,17 +78,24 @@ NeverC는 Android 대상에서 `-fandroid-kernel-driver-mode`와 `-r`이 켜지�
 `.nvk-build-flags`가 없으면 `make`는 debug를 기본값으로 사용하고 스스로
 release를 선택하지 않습니다. 예제 Makefile은 명시적인 프로필 선택을 저장하므로
 이후 `make push`, `make run`, 대상 없는 `make`가 같은 산출물을 사용합니다.
+`EXTRA`를 받는 예제는 여러 단어로 된 전체 값을 재귀 빌드와 이후 빌드에서도
+보존합니다.
 `make debug` 또는 명시적인 `PROFILE=...`는 저장된 선택을 갱신하고,
-`make clean`은 저장 상태를 삭제하여 다음 빌드를 debug로 되돌립니다. 이 최종
+`make clean`은 저장 상태를 삭제하여 다음 빌드를 debug로 되돌립니다. 명시적으로
+`make release`를 실행하면 모듈/맵 번들을 한 번 무조건 다시 빌드하므로, 다시
+실행해 누락된 맵이나 다이제스트가 맞지 않는 번들을 복구할 수 있습니다. 이 최종
 경로에서 NeverC는 디버그 섹션, `.comment`, 재배치에 불필요한 로컬/미정의
 항목을 제거한 뒤 `.strtab`을 다시 구성합니다.
 
 release가 성공하면 NeverC는 모듈과 그 옆의
 `<module>.ko.symbols.json`을 트랜잭션 방식으로 게시합니다. 기존 파일은 각각의
-원자적 교체가 일어날 때까지 계속 보입니다. 게시 전 오류는 전체 번들을 롤백하고,
-뒤늦은 내구성 오류는 복구 저널을 남깁니다. 두 디렉터리 항목을 하나의 파일 시스템
-연산으로 교체할 수는 없으므로 비정상 종료 후에는 항상 `image_sha256`을
-검증하십시오. 맵은 이름이 변경된 보존 심볼마다 `original`(원래 이름)과
+원자적 교체가 일어날 때까지 계속 보입니다. 동일한 출력 디렉터리를 대상으로 하는
+동시 게시는 `.neverc-output.lock`을 통해 직렬화되며, 예제의 `make clean`은 이
+내부 잠금 파일을 의도적으로 유지하여 사용 중인 잠금이 해제되지 않게 합니다. 게시
+전 오류는 전체 번들을 롤백하고, 뒤늦은 내구성 오류는 복구 저널을 남깁니다. 두
+디렉터리 항목을 하나의 파일 시스템 연산으로
+교체할 수는 없으므로 비정상 종료 후에는 항상 `image_sha256`을 검증하십시오.
+맵은 이름이 변경된 보존 심볼마다 `original`(원래 이름)과
 `release`(`.ko` 안의 이름)를 기록합니다.
 
 ```json
@@ -107,14 +114,18 @@ release가 성공하면 NeverC는 모듈과 그 옆의
 기타 비-strip 빌드가 같은 출력 경로를 덮어쓰면 NeverC는 오래된 맵을 제거합니다.
 ELF 심볼 이름에는 UTF-8이 아닌 바이트도 올 수 있습니다. 이런 드문 원래 이름은
 `original`에 Base64로 저장되고 `"original_encoding": "base64"`가 함께
-기록됩니다. 그 밖의 원래 이름은 계속 읽을 수 있습니다. 맵은 비공개 디버깅
-산출물로 보관하고 `.ko`와 함께 배포하거나 장치에 push하지 마십시오. 크래시
-로그의 release 이름을 변환하기 전에 먼저 현재 `.ko`와 맵의 바인딩을
-확인하십시오.
+기록됩니다. 그 밖의 원래 이름은 계속 읽을 수 있습니다. NeverC는 POSIX에서 모드
+`0600`, Windows에서 보호된 소유자 전용 `Windows ACL`로 사이드카를 게시하며,
+이 제한을 적용할 수 없으면 게시를 실패시킵니다. 맵은 비공개 디버깅 산출물로
+보관하고 `.ko`와 함께 배포하거나 장치에 push하지 마십시오. 크래시 로그의
+release 이름을 변환하기 전에 먼저 현재 `.ko`와 맵의 바인딩을 확인하십시오.
 
 ```bash
-test "$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' \
-  nvk_hello.ko)" = "$(jq -r '.image_sha256' nvk_hello.ko.symbols.json)"
+actual="$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' \
+  nvk_hello.ko)" &&
+expected="$(jq -er '.image_sha256 | strings | select(test("^[0-9a-f]{64}$"))' \
+  nvk_hello.ko.symbols.json)" &&
+test "$actual" = "$expected" &&
 
 python3 - nvk_hello.ko.symbols.json fn_C000 <<'PY'
 import base64, json, sys

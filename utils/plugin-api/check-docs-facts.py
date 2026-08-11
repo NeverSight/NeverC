@@ -15,11 +15,14 @@ Checks, without a build:
    README match the schema, in every locale.
 5. The example CMake targets README advertises are defined by the SDK.
 6. Every release guide carries the same user-visible ``--strip`` contract,
-   including the two-stage Android release identity boundary.
+   including the two-stage Android release identity boundary, private
+   symbol-map permissions, and fail-closed digest verification.
 7. Every object-pipeline guide documents the narrower Android release rules
    for ``object.write`` and ``object.post_write``.
-8. Android example Makefiles keep debug/release selection and ``clean`` as a
-   delete-only operation.
+8. Android example Makefiles keep debug/release, compiler, and multi-word
+   ``EXTRA`` selection, force portable profile rebuilds, record configuration
+   only after successful builds, preserve the publication lock, and keep
+   ``clean`` as a delete-only operation.
 9. Repository and documentation indexes describe the ``.ko`` behavior as
    structural renaming, never as hashing, encryption, or pseudonymization.
 
@@ -80,6 +83,15 @@ RELEASE_FACT_SOURCES = {
         'return "code_"',
         'return "sym_"',
         'return "abs_"',
+    ),
+    ROOT / "neverc/lib/Foundation/Core/AndroidKernelReleaseSymbolMap.cpp": (
+        'return ImagePath.str() + ".symbols.json"',
+        "MapOutput.OwnerOnly = true",
+    ),
+    ROOT / "neverc/lib/Foundation/Core/OutputBundleTransaction.cpp": (
+        'sys::path::append(LockPath, ".neverc-output.lock")',
+        "publicationLockCoordinator().acquireAll(Paths, IsCancelled)",
+        "sys::fs::tryLockFile(FileDescriptor",
     ),
     ROOT / "neverc/lib/Plugin/Link/LinkExecutionHooksBridge.cpp": (
         "Android module finalization requires Android module merge semantics",
@@ -260,6 +272,15 @@ def check_release_guides(report: Report) -> None:
         "sym_HEX",
         "abs_HEX",
         "analysis EA",
+        "<module>.ko.symbols.json",
+        "image_sha256",
+        "0600",
+        "Windows ACL",
+        "EXTRA",
+        ".neverc-output.lock",
+        'actual="$(python3 -c',
+        'expected="$(jq -er',
+        'test "$actual" = "$expected" &&',
     )
     identity_boundary = (
         "ObjectGraph",
@@ -340,6 +361,18 @@ def check_object_pipeline_release_guides(report: Report) -> None:
         require_literals(page("target-mc-object", locale), required, report)
 
 
+def make_target_recipes(contents: str, target: str) -> list[list[str]]:
+    """Return every recipe block for one literal make target."""
+    rule = re.compile(
+        rf"(?m)^{re.escape(target)}\s*:[^\n]*\n"
+        r"(?P<body>(?:\t[^\n]*(?:\n|$))*)"
+    )
+    return [
+        [line[1:] for line in match.group("body").splitlines()]
+        for match in rule.finditer(contents)
+    ]
+
+
 def check_android_example_makefiles(report: Report) -> None:
     makefiles = sorted((ROOT / "examples").glob("android-kernel-*/Makefile"))
     if not makefiles:
@@ -349,20 +382,85 @@ def check_android_example_makefiles(report: Report) -> None:
         "PROFILE := $(if $(SAVED_PROFILE),$(SAVED_PROFILE),debug)",
         "PROFILE_FLAGS_debug   := -g",
         "PROFILE_FLAGS_release := -O2 --strip",
-        "$(MAKE) PROFILE=release all",
+        "all: $(MODULE)",
+        "NEVERC=$(NEVERC)",
+        "MAKE_MODE_FLAGS := $(firstword -$(MAKEFLAGS))",
+        "SKIP_BUILD_RECORD := $(or $(findstring n,$(MAKE_MODE_FLAGS)),$(findstring q,$(MAKE_MODE_FLAGS)),$(findstring t,$(MAKE_MODE_FLAGS)))",
+        "REBUILD_CONFIG := force-config-rebuild",
+        "$(MODULE): $(SRCS) $(REBUILD_CONFIG)",
+        "force-config-rebuild:",
     )
-    clean_rule = re.compile(r"(?ms)^clean:\n(?P<body>(?:\t[^\n]*\n?)+)")
-    forbidden_clean_actions = re.compile(
-        r"(?i)(?:llvm-)?strip|objcopy|sign-file|apksigner"
+    forbidden_bundle_workarounds = (
+        "&:",
+        "RELEASE_BUNDLE_STAMP",
+        "release-bundle-output",
+        "if test",
     )
     for path in makefiles:
         require_literals(path, required, report)
         contents = path.read_text(encoding="utf-8")
-        match = clean_rule.search(contents)
-        if not match:
-            report.fail(path, "has no recipe-backed clean target")
-        elif forbidden_clean_actions.search(match.group("body")):
-            report.fail(path, "clean must delete only; it must not strip or sign")
+        uses_extra = "SAVED_EXTRA :=" in contents
+        if uses_extra:
+            require_literals(
+                path,
+                (
+                    "EXTRA_STAMP := .nvk-build-extra",
+                    "SAVED_EXTRA := $(file <$(EXTRA_STAMP))",
+                    "$(file >$(EXTRA_STAMP),$(EXTRA))",
+                ),
+                report,
+            )
+        if re.search(r"(?m)^_ := \$\(file >", contents):
+            report.fail(path, "must not update build stamps while parsing")
+        for token in forbidden_bundle_workarounds:
+            if token in contents:
+                report.fail(
+                    path,
+                    f"uses unsupported or non-portable release bundle workaround {token!r}",
+                )
+        build_ids = re.findall(r"(?m)^BUILD_ID\s*:=\s*(.+)$", contents)
+        if len(build_ids) != 1:
+            report.fail(path, "must define exactly one BUILD_ID")
+            continue
+        if "NEVERC=$(NEVERC)" not in build_ids[0].split():
+            report.fail(path, "BUILD_ID must track the selected compiler path")
+        if uses_extra and "EXTRA=$(EXTRA)" in build_ids[0].split():
+            report.fail(path, "multi-word EXTRA must use its lossless side stamp")
+        propagated_extra = ' EXTRA="$(EXTRA)"' if uses_extra else ""
+        expected_debug = [
+            f'$(MAKE) -B PROFILE=debug NEVERC="$(NEVERC)"{propagated_extra} all'
+        ]
+        expected_release = [
+            f'$(MAKE) -B PROFILE=release NEVERC="$(NEVERC)"{propagated_extra} all'
+        ]
+        expected_compile = [
+            '"$(NEVERC)" $(FLAGS) -r -nostdlib -o $@ $(SRCS)',
+            "$(if $(SKIP_BUILD_RECORD),,$(file >$(FLAGS_STAMP),$(BUILD_ID)))",
+        ]
+        if uses_extra:
+            expected_compile.append(
+                "$(if $(SKIP_BUILD_RECORD),,$(file >$(EXTRA_STAMP),$(EXTRA)))"
+            )
+        expected_clean = [
+            "rm -f $(MODULE) $(MODULE).symbols.json *.o "
+            + (
+                "$(FLAGS_STAMP) $(EXTRA_STAMP) .nvk-release-bundle"
+                if uses_extra
+                else "$(FLAGS_STAMP) .nvk-release-bundle"
+            )
+        ]
+        if make_target_recipes(contents, "debug") != [expected_debug]:
+            report.fail(path, "debug must run exactly one explicit-profile build")
+        if make_target_recipes(contents, "release") != [expected_release]:
+            report.fail(path, "release must run exactly one forced bundle rebuild")
+        if make_target_recipes(contents, "$(MODULE)") != [expected_compile]:
+            report.fail(
+                path,
+                "module recipe must invoke one quoted compiler path and then "
+                "record the successful configuration",
+            )
+        if make_target_recipes(contents, "clean") != [expected_clean]:
+            report.fail(path, "clean must contain exactly the supported delete command")
 
 
 def release_summary_line(path: Path, report: Report) -> str:

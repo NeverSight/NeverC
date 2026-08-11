@@ -87,18 +87,25 @@ accepts `--strip` with `-r` only when all of these final-module conditions hold:
 `-O2 --strip`. With no `.nvk-build-flags` stamp, `make` defaults to debug and
 does not select release on its own. The example Makefiles save an explicit
 profile so later `make push`, `make run`, and bare `make` calls keep using the
-same artifact. `make debug` or an explicit `PROFILE=...` replaces the saved
+same artifact. Examples that accept `EXTRA` preserve its complete multi-word
+value across recursive and later builds. `make debug` or an explicit
+`PROFILE=...` replaces the saved
 selection; `make clean` removes the stamp, so the next build defaults to debug.
-On this final-module path, NeverC removes debug sections, `.comment`, and
-relocation-unneeded local/undefined entries, then rebuilds `.strtab`.
+An explicit `make release` unconditionally rebuilds the module/map bundle once,
+so rerunning it repairs a missing map or a bundle whose digest no longer
+matches. On this final-module path, NeverC removes debug sections, `.comment`,
+and relocation-unneeded local/undefined entries, then rebuilds `.strtab`.
 
 After a successful release, NeverC transactionally publishes the module and
 `<module>.ko.symbols.json` beside it. Existing files remain visible until each
-atomic replacement. Failures before publication roll the bundle back; late
-durability failures retain a recovery journal. Because two directory entries
-cannot be replaced in one filesystem operation, always validate `image_sha256`
-after an unclean shutdown. The map records `original` and `release` names for
-every retained symbol whose name changed:
+atomic replacement. Overlapping publishers targeting the same output directory
+are serialized through `.neverc-output.lock`; the example `make clean` targets
+intentionally retain this internal lock file so they cannot unlink an active
+lock. Failures before publication roll the bundle back; late durability
+failures retain a recovery journal. Because two directory
+entries cannot be replaced in one filesystem operation, always validate
+`image_sha256` after an unclean shutdown. The map records `original` and
+`release` names for every retained symbol whose name changed:
 
 ```json
 {
@@ -116,13 +123,18 @@ CFI names are omitted because they need no translation. If a debug or other
 non-strip build overwrites the same output path, NeverC removes the stale map.
 ELF permits non-UTF-8 symbol bytes; those rare originals are stored as Base64
 in `original` with `"original_encoding": "base64"`. The map otherwise contains
-readable original names: archive it as a private debugging artifact; do not
-distribute it with the `.ko` or push it to the device. To verify the binding
-before translating a release name from a crash log:
+readable original names. NeverC publishes the sidecar with mode `0600` on POSIX
+and a protected, owner-only `Windows ACL` on Windows; publication fails if that
+restriction cannot be applied. Archive it as a private debugging artifact; do
+not distribute it with the `.ko` or push it to the device. To verify the
+binding before translating a release name from a crash log:
 
 ```bash
-test "$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' \
-  nvk_hello.ko)" = "$(jq -r '.image_sha256' nvk_hello.ko.symbols.json)"
+actual="$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' \
+  nvk_hello.ko)" &&
+expected="$(jq -er '.image_sha256 | strings | select(test("^[0-9a-f]{64}$"))' \
+  nvk_hello.ko.symbols.json)" &&
+test "$actual" = "$expected" &&
 
 python3 - nvk_hello.ko.symbols.json fn_C000 <<'PY'
 import base64, json, sys

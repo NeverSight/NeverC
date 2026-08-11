@@ -25,6 +25,9 @@
 #if HAVE_FCNTL_H
 #include <fcntl.h>
 #endif
+#if defined(__APPLE__)
+#include <sys/acl.h>
+#endif
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
@@ -430,7 +433,37 @@ std::error_code openFile(const Twine &Name, int &ResultFD,
 
   SmallString<128> Storage;
   StringRef P = Name.toNullTerminatedStringRef(Storage);
+#if defined(__APPLE__)
+  if (Flags & OF_NoInherit) {
+    filesec_t Security = ::filesec_init();
+    acl_t Acl = ::acl_init(0);
+    acl_flagset_t FlagSet = nullptr;
+    mode_t RequestedMode = static_cast<mode_t>(Mode);
+    if (!Security || !Acl || ::acl_get_flagset_np(Acl, &FlagSet) != 0 ||
+        ::acl_add_flag_np(FlagSet, ACL_FLAG_NO_INHERIT) != 0 ||
+        ::filesec_set_property(Security, FILESEC_MODE, &RequestedMode) != 0 ||
+        ::filesec_set_property(Security, FILESEC_ACL, &Acl) != 0) {
+      const int SetupError = errno ? errno : EINVAL;
+      if (Acl)
+        ::acl_free(Acl);
+      if (Security)
+        ::filesec_free(Security);
+      return std::error_code(SetupError, std::generic_category());
+    }
+    do {
+      ResultFD = ::openx_np(P.begin(), OpenFlags, Security);
+    } while (ResultFD < 0 && errno == EINTR);
+    const int OpenError = errno;
+    ::acl_free(Acl);
+    ::filesec_free(Security);
+    if (ResultFD < 0)
+      return std::error_code(OpenError, std::generic_category());
+  } else {
+    ResultFD = csupport_open_file_retry(P.begin(), OpenFlags, Mode);
+  }
+#else
   ResultFD = csupport_open_file_retry(P.begin(), OpenFlags, Mode);
+#endif
   if (ResultFD < 0)
     return std::error_code(errno, std::generic_category());
 

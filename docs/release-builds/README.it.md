@@ -82,20 +82,27 @@ Il normale `-r` e gli `.o` intermedi restano rifiutati.
 `-O2 --strip`. Senza `.nvk-build-flags`, `make` usa debug per impostazione
 predefinita e non sceglie release da solo. I Makefile di esempio salvano un
 profilo scelto esplicitamente affinché i successivi `make push`, `make run` e
-`make` senza target usino lo stesso artefatto. `make debug` o un
+`make` senza target usino lo stesso artefatto. Gli esempi che accettano
+`EXTRA` ne conservano il valore completo composto da più parole nelle build
+ricorsive e successive. `make debug` o un
 `PROFILE=...` esplicito sostituisce la scelta; `make clean` cancella lo stato e
-riporta la build successiva a debug. In questo percorso finale NeverC rimuove
-sezioni di debug, `.comment` e voci locali/non definite inutili alle
-rilocazioni, quindi ricostruisce `.strtab`.
+riporta la build successiva a debug. Un `make release` esplicito ricostruisce
+una volta e senza condizioni il bundle modulo/mappa; rieseguirlo ripara quindi
+una mappa mancante o un bundle con digest non corrispondente. In questo percorso
+finale NeverC rimuove sezioni di debug, `.comment` e voci locali/non definite
+inutili alle rilocazioni, quindi ricostruisce `.strtab`.
 
 Dopo una release riuscita, NeverC pubblica in modo transazionale il modulo e
 `<module>.ko.symbols.json` accanto ad esso. I file esistenti restano visibili
-fino a ogni sostituzione atomica. Gli errori prima della pubblicazione annullano
-l'intero bundle; gli errori tardivi di durabilità conservano un journal di
-ripristino. Poiché due voci di directory non possono essere sostituite con una
-sola operazione del filesystem, verifica sempre `image_sha256` dopo un arresto
-anomalo. La mappa registra i nomi `original` e `release` per ogni simbolo
-conservato il cui nome è cambiato:
+fino a ogni sostituzione atomica. Le pubblicazioni concorrenti dirette alla
+stessa directory di output vengono serializzate tramite `.neverc-output.lock`;
+i target `make clean` degli esempi conservano intenzionalmente questo file di
+blocco interno per non rimuovere un blocco attivo. Gli errori prima della
+pubblicazione annullano l'intero bundle; gli errori tardivi
+di durabilità conservano un journal di ripristino. Poiché due voci di directory
+non possono essere sostituite con una sola operazione del filesystem, verifica
+sempre `image_sha256` dopo un arresto anomalo. La mappa registra i nomi
+`original` e `release` per ogni simbolo conservato il cui nome è cambiato:
 
 ```json
 {
@@ -114,13 +121,19 @@ debug o un'altra build senza strip sovrascrive lo stesso percorso di output,
 NeverC elimina la mappa obsoleta. ELF consente byte non UTF-8 nei nomi dei
 simboli; questi rari nomi originali sono memorizzati in Base64 in `original`
 con `"original_encoding": "base64"`. Gli altri nomi originali restano
-leggibili. Archivia la mappa come artefatto di debug privato; non distribuirla
-con il `.ko` e non inviarla al dispositivo. Prima di tradurre un nome release
-da un rapporto di crash, verifica che la mappa appartenga al `.ko` corrente:
+leggibili. NeverC pubblica il file complementare con modalità `0600` su POSIX e
+con una `Windows ACL` protetta e riservata al proprietario su Windows; la
+pubblicazione fallisce se non può applicare questa restrizione. Archivia la
+mappa come artefatto di debug privato; non distribuirla con il `.ko` e non
+inviarla al dispositivo. Prima di tradurre un nome release da un rapporto di
+crash, verifica che la mappa appartenga al `.ko` corrente:
 
 ```bash
-test "$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' \
-  nvk_hello.ko)" = "$(jq -r '.image_sha256' nvk_hello.ko.symbols.json)"
+actual="$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' \
+  nvk_hello.ko)" &&
+expected="$(jq -er '.image_sha256 | strings | select(test("^[0-9a-f]{64}$"))' \
+  nvk_hello.ko.symbols.json)" &&
+test "$actual" = "$expected" &&
 
 python3 - nvk_hello.ko.symbols.json fn_C000 <<'PY'
 import base64, json, sys

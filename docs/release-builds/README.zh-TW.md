@@ -76,17 +76,21 @@ NeverC 僅在目標為 Android、同時啟用 `-fandroid-kernel-driver-mode` 與
 `neverc make release` 仍是建議的發布命令，並展開為 `-O2 --strip`。沒有
 `.nvk-build-flags` 時，`make` 預設使用 debug，不會自行選擇 release。範例
 Makefile 會保存明確選取的 profile，因此後續 `make push`、`make run` 與不帶
-目標的 `make` 會繼續使用同一產物。`make debug` 或明確的 `PROFILE=...` 會取代
-保存的選擇；`make clean` 會刪除狀態，使下一次建置恢復為 debug。在最終路徑中，
-NeverC 會移除偵錯區段、`.comment` 與重定位不需要的區域/未定義項目，然後重建
-`.strtab`。
+目標的 `make` 會繼續使用同一產物。接受 `EXTRA` 的範例會在遞迴建置和後續
+建置中完整保留其多詞值。`make debug` 或明確的 `PROFILE=...` 會取代
+保存的選擇；`make clean` 會刪除狀態，使下一次建置恢復為 debug。明確執行
+`make release` 會無條件重建一次模組/映射輸出包，因此再次執行即可修復映射遺失
+或摘要不相符的輸出包。在最終路徑中，NeverC 會移除偵錯區段、`.comment` 與
+重定位不需要的區域/未定義項目，然後重建 `.strtab`。
 
 發布成功後，NeverC 會以交易方式發布模組及其旁邊的
 `<module>.ko.symbols.json`。舊檔案會一直保留到各自發生原子替換，普通程序錯誤
+指向同一輸出目錄的並行發布會透過 `.neverc-output.lock` 依序執行；範例的
+`make clean` 會刻意保留這個內部鎖定檔案，以免解除使用中的鎖定。普通程序錯誤
 在發布前會回復整個輸出包；較晚發生的持久性錯誤會保留復原日誌。由於兩個目錄
-項目無法透過一次檔案系統操作同時替換，異常關機後仍應驗證 `image_sha256`。
-映射記錄每個仍保留但已重新命名之符號的 `original`（原名）與 `release`
-（`.ko` 中的名稱）：
+項目無法透過一次檔案系統
+操作同時替換，異常關機後仍應驗證 `image_sha256`。映射記錄每個仍保留但已
+重新命名之符號的 `original`（原名）與 `release`（`.ko` 中的名稱）：
 
 ```json
 {
@@ -103,13 +107,18 @@ NeverC 會移除偵錯區段、`.comment` 與重定位不需要的區域/未定�
 名稱不會寫入，因為它們不需要轉換。若 debug 或其他非 strip 建置覆寫同一路徑，
 NeverC 會移除舊映射，避免將過期的副產物用於新模組。ELF 允許符號名稱包含非
 UTF-8 位元組；這類少見的原名會以 Base64 寫入 `original`，並帶有
-`"original_encoding": "base64"`。其餘原名維持可讀。映射應作為私有偵錯產物
-封存；不要隨 `.ko` 發布或推送至裝置。定位當機記錄前，請先確認映射確實屬於
-目前的 `.ko`，再查詢發布名稱：
+`"original_encoding": "base64"`。其餘原名維持可讀。NeverC 在 POSIX 上以
+`0600` 模式發布副產物，在 Windows 上套用受保護且僅允許擁有者存取的
+`Windows ACL`；若無法套用該限制，發布會失敗。映射應作為私有偵錯產物封存；
+不要隨 `.ko` 發布或推送至裝置。定位當機記錄前，請先確認映射確實屬於目前的
+`.ko`，再查詢發布名稱：
 
 ```bash
-test "$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' \
-  nvk_hello.ko)" = "$(jq -r '.image_sha256' nvk_hello.ko.symbols.json)"
+actual="$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' \
+  nvk_hello.ko)" &&
+expected="$(jq -er '.image_sha256 | strings | select(test("^[0-9a-f]{64}$"))' \
+  nvk_hello.ko.symbols.json)" &&
+test "$actual" = "$expected" &&
 
 python3 - nvk_hello.ko.symbols.json fn_C000 <<'PY'
 import base64, json, sys

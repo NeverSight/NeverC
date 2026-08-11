@@ -82,20 +82,29 @@ der auf `.ko` endet. Gewöhnliches `-r` und Zwischen-`.o` bleiben abgelehnt.
 `-O2 --strip`. Ohne `.nvk-build-flags` verwendet `make` standardmäßig debug und
 wählt release nicht von selbst. Die Beispiel-Makefiles speichern eine
 ausdrückliche Profilwahl, damit spätere `make push`-, `make run`- und
-`make`-Aufrufe dasselbe Artefakt verwenden. `make debug` oder ein ausdrückliches
+`make`-Aufrufe dasselbe Artefakt verwenden. Beispiele mit `EXTRA` bewahren
+dessen vollständigen Wert mit mehreren Wörtern über rekursive und spätere Builds
+hinweg. `make debug` oder ein ausdrückliches
 `PROFILE=...` ersetzt die gespeicherte Wahl; `make clean` löscht den Status,
-sodass der nächste Build wieder debug verwendet. Auf diesem finalen Modulpfad
-entfernt NeverC Debugabschnitte, `.comment` und für Relokationen unnötige
-lokale/undefinierte Einträge und baut `.strtab` neu auf.
+sodass der nächste Build wieder debug verwendet. Ein ausdrückliches
+`make release` baut das Modul/Map-Bundle einmal bedingungslos neu; ein erneuter
+Aufruf repariert daher eine fehlende Map oder ein Bundle mit abweichendem
+Digest. Auf diesem finalen Modulpfad entfernt NeverC Debugabschnitte,
+`.comment` und für Relokationen unnötige lokale/undefinierte Einträge und baut
+`.strtab` neu auf.
 
 Nach einem erfolgreichen Release veröffentlicht NeverC das Modul und
 `<module>.ko.symbols.json` daneben transaktional. Vorhandene Dateien bleiben
-bis zu ihrer jeweiligen atomaren Ersetzung sichtbar. Fehler vor der
-Veröffentlichung rollen das gesamte Bundle zurück; späte Dauerhaftigkeitsfehler
-behalten ein Wiederherstellungsjournal. Da zwei Verzeichniseinträge nicht mit
-einer einzigen Dateisystemoperation ersetzt werden können, prüfen Sie nach
-einem unsauberen Abbruch stets `image_sha256`. Die Zuordnung enthält für jedes
-erhaltene Symbol mit geändertem Namen dessen `original`- und `release`-Namen:
+bis zu ihrer jeweiligen atomaren Ersetzung sichtbar. Parallele
+Veröffentlichungen in dasselbe Ausgabeverzeichnis werden über
+`.neverc-output.lock` serialisiert; die `make clean`-Ziele der Beispiele
+bewahren diese interne Sperrdatei absichtlich auf, damit eine aktive Sperre
+nicht aufgehoben wird. Fehler vor der Veröffentlichung rollen das gesamte
+Bundle zurück; späte Dauerhaftigkeitsfehler behalten ein
+Wiederherstellungsjournal. Da zwei Verzeichniseinträge nicht mit einer einzigen
+Dateisystemoperation ersetzt werden können, prüfen Sie nach einem unsauberen
+Abbruch stets `image_sha256`. Die Zuordnung enthält für jedes erhaltene Symbol
+mit geändertem Namen dessen `original`- und `release`-Namen:
 
 ```json
 {
@@ -114,13 +123,20 @@ Loader-, Import- oder CFI-Namen fehlen, da sie keine Übersetzung benötigen.
 entfernt NeverC die veraltete Zuordnung. ELF erlaubt Nicht-UTF-8-Bytes in
 Symbolnamen; solche seltenen Originalnamen werden in `original` als Base64
 mit `"original_encoding": "base64"` gespeichert. Alle übrigen Originalnamen
-bleiben lesbar. Archivieren Sie die Zuordnung als privates Debug-Artefakt und
-verteilen Sie sie weder mit dem `.ko` noch auf das Gerät. Prüfen Sie vor der
-Übersetzung eines Release-Namens aus einem Absturzbericht zunächst die Bindung:
+bleiben lesbar. NeverC veröffentlicht die Sidecar-Datei unter POSIX mit Modus
+`0600` und unter Windows mit einer geschützten, ausschließlich dem Eigentümer
+gewährten `Windows ACL`; kann diese Einschränkung nicht gesetzt werden, schlägt
+die Veröffentlichung fehl. Archivieren Sie die Zuordnung als privates
+Debug-Artefakt und verteilen Sie sie weder mit dem `.ko` noch auf das Gerät.
+Prüfen Sie vor der Übersetzung eines Release-Namens aus einem Absturzbericht
+zunächst die Bindung:
 
 ```bash
-test "$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' \
-  nvk_hello.ko)" = "$(jq -r '.image_sha256' nvk_hello.ko.symbols.json)"
+actual="$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' \
+  nvk_hello.ko)" &&
+expected="$(jq -er '.image_sha256 | strings | select(test("^[0-9a-f]{64}$"))' \
+  nvk_hello.ko.symbols.json)" &&
+test "$actual" = "$expected" &&
 
 python3 - nvk_hello.ko.symbols.json fn_C000 <<'PY'
 import base64, json, sys

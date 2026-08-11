@@ -594,9 +594,18 @@ LinkExecutionHooksBridge::execute(const linker::LinkExecutionRequest &Request,
       const std::string OutputPath = (*FrozenRequest)->outputURI().str();
       const bool PublishesReleaseMap =
           FinalizationPolicy.StripUnneededSymbols;
+      OutputLeaseOwner LeaseOwner;
+      if (Config.pluginTask) {
+        const NevercTaskHandle TaskHandle = Config.pluginTask->handle();
+        LeaseOwner = {TaskHandle.Owner, TaskHandle.Value};
+      }
+      auto IsCancelled = [Session = Session] {
+        return Session->isCancelled();
+      };
       Validators.Commit =
           [this, OutputPath, PublishesReleaseMap,
-           Map = std::move(ReleaseSymbolMap)](
+           Map = std::move(ReleaseSymbolMap), LeaseOwner,
+           IsCancelled = std::move(IsCancelled)](
               ArrayRef<uint8_t> Image) mutable
           -> PluginObjectImageCommitResult {
         const auto makeSummary =
@@ -641,7 +650,8 @@ LinkExecutionHooksBridge::execute(const linker::LinkExecutionRequest &Request,
         }
 
         auto Published = publishAndroidKernelReleaseOutput(
-            Outputs, OutputPath, Image, PublishedMap, {}, &BundleSummary);
+            Outputs, OutputPath, Image, PublishedMap, LeaseOwner, &BundleSummary,
+            IsCancelled);
         if (!Published)
           return {makeSummary(BundleSummary), Published.takeError()};
         return {makeSummary(*Published), Error::success()};

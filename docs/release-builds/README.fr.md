@@ -83,20 +83,28 @@ restent refusés.
 `-O2 --strip`. Sans `.nvk-build-flags`, `make` utilise debug par défaut et ne
 choisit pas release de lui-même. Les Makefile d'exemple conservent un profil
 choisi explicitement afin que `make push`, `make run` et un `make` sans cible
-réutilisent le même artefact. `make debug` ou un `PROFILE=...` explicite
+réutilisent le même artefact. Les exemples acceptant `EXTRA` conservent sa
+valeur complète de plusieurs mots dans les builds récursifs et ultérieurs.
+`make debug` ou un `PROFILE=...` explicite
 remplace ce choix ; `make clean` efface l'état et ramène la build suivante à
-debug. Sur cette voie finale, NeverC retire les sections de débogage,
-`.comment` et les entrées locales/non définies inutiles aux relocalisations,
-puis reconstruit `.strtab`.
+debug. Un `make release` explicite reconstruit une fois, sans condition, le lot
+module/table ; le relancer répare donc une table absente ou un lot dont
+l'empreinte ne correspond plus. Sur cette voie finale, NeverC retire les
+sections de débogage, `.comment` et les entrées locales/non définies inutiles
+aux relocalisations, puis reconstruit `.strtab`.
 
 Après une release réussie, NeverC publie de façon transactionnelle le module
 et `<module>.ko.symbols.json` à côté de celui-ci. Les fichiers existants
-restent visibles jusqu'à chaque remplacement atomique. Les erreurs antérieures
-à la publication annulent l'ensemble du lot ; les erreurs tardives de
-durabilité conservent un journal de récupération. Deux entrées de répertoire ne
-pouvant pas être remplacées par une seule opération du système de fichiers,
-vérifiez toujours `image_sha256` après un arrêt anormal. La table enregistre
-les noms `original` et `release` de chaque symbole conservé dont le nom a changé :
+restent visibles jusqu'à chaque remplacement atomique. Les publications
+concurrentes visant le même répertoire de sortie sont sérialisées via
+`.neverc-output.lock` ; les cibles `make clean` des exemples conservent
+intentionnellement ce fichier de verrouillage interne afin de ne pas supprimer
+un verrou actif. Les erreurs antérieures à la publication annulent l'ensemble
+du lot ; les erreurs tardives de durabilité conservent un
+journal de récupération. Deux entrées de répertoire ne pouvant pas être
+remplacées par une seule opération du système de fichiers, vérifiez toujours
+`image_sha256` après un arrêt anormal. La table enregistre les noms `original`
+et `release` de chaque symbole conservé dont le nom a changé :
 
 ```json
 {
@@ -116,13 +124,19 @@ le même chemin de sortie, NeverC supprime l'ancienne table. ELF autorise des
 octets non UTF-8 dans les noms de symboles ; ces rares noms d'origine sont
 stockés en Base64 dans `original` avec
 `"original_encoding": "base64"`. Les autres noms d'origine restent lisibles.
-Archivez la table comme artefact de débogage privé, ne la distribuez pas avec
-le `.ko` et ne l'envoyez pas sur l'appareil. Avant de traduire un nom de release
-issu d'un rapport de plantage, vérifiez la liaison :
+NeverC publie ce fichier annexe avec le mode `0600` sur POSIX et une
+`Windows ACL` protégée réservée au propriétaire sous Windows ; la publication
+échoue si cette restriction ne peut pas être appliquée. Archivez la table comme
+artefact de débogage privé, ne la distribuez pas avec le `.ko` et ne l'envoyez
+pas sur l'appareil. Avant de traduire un nom de release issu d'un rapport de
+plantage, vérifiez la liaison :
 
 ```bash
-test "$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' \
-  nvk_hello.ko)" = "$(jq -r '.image_sha256' nvk_hello.ko.symbols.json)"
+actual="$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' \
+  nvk_hello.ko)" &&
+expected="$(jq -er '.image_sha256 | strings | select(test("^[0-9a-f]{64}$"))' \
+  nvk_hello.ko.symbols.json)" &&
+test "$actual" = "$expected" &&
 
 python3 - nvk_hello.ko.symbols.json fn_C000 <<'PY'
 import base64, json, sys

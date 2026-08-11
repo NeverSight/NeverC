@@ -10,7 +10,6 @@
 #include "llvm/Support/Errc.h"
 #include <algorithm>
 #include <cstring>
-#include <map>
 #include <set>
 
 using namespace llvm;
@@ -77,7 +76,11 @@ Expected<std::shared_ptr<LinkOutputBundle>> LinkOutputBundle::create(
   }
   NevercTaskHandle TaskHandle = Task.handle();
   auto Transaction = neverc::OutputBundleTransaction::create(
-      Coordinator, Outputs, {}, std::move(InjectFault),
+      Coordinator, Outputs,
+      [&Task] {
+        return Task.checkCancelled().Code == NEVERC_STATUS_CANCELLED;
+      },
+      std::move(InjectFault),
       {TaskHandle.Owner, TaskHandle.Value});
   if (!Transaction)
     return Transaction.takeError();

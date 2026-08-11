@@ -81,16 +81,23 @@ Mach-O には通常のシンボル名が残り得ます。PE はデバッグ設�
 `.nvk-build-flags` がなければ `make` の既定値は debug で、自動的に release を
 選びません。サンプル Makefile は明示的なプロファイル選択を保存するため、以後の
 `make push`、`make run`、ターゲットなしの `make` は同じ成果物を使います。
+`EXTRA` を受け付けるサンプルは、複数語からなる完全な値を再帰ビルドと以後の
+ビルドでも保持します。
 `make debug` または明示的な `PROFILE=...` は保存した選択を更新し、
-`make clean` は保存状態を削除して次のビルドを debug に戻します。この最終経路
-では NeverC はデバッグセクション、`.comment`、再配置に不要なローカル／未定義
+`make clean` は保存状態を削除して次のビルドを debug に戻します。明示的な
+`make release` はモジュール／マップのバンドルを 1 回無条件に再ビルドするため、
+再実行すればマップの欠落やダイジェスト不一致を修復できます。この最終経路では
+NeverC はデバッグセクション、`.comment`、再配置に不要なローカル／未定義
 エントリを除去し、`.strtab` を再構築します。
 
 release が成功すると、NeverC はモジュールとその隣の
 `<module>.ko.symbols.json` をトランザクションとして公開します。既存ファイル
-はそれぞれがアトミックに置換されるまで表示されたままです。公開前のエラーでは
-バンドル全体がロールバックされ、遅い段階の永続性エラーでは復旧ジャーナルが
-残ります。2 つのディレクトリエントリを 1 回のファイルシステム操作で置換する
+はそれぞれがアトミックに置換されるまで表示されたままです。同じ出力
+ディレクトリを対象とする並行公開は `.neverc-output.lock` により直列化され、
+サンプルの `make clean` は使用中のロックを解除しないよう、この内部ロック
+ファイルを意図的に残します。公開前のエラーではバンドル全体がロールバックされ、
+遅い段階の永続性エラーでは復旧ジャーナル
+が残ります。2 つのディレクトリエントリを 1 回のファイルシステム操作で置換する
 ことはできないため、異常終了後は必ず `image_sha256` を検証してください。
 マップには、保持されたシンボルのうち名前が変わったものについて、`original`
 （元の名前）と `release`（`.ko` 内の名前）が記録されます。
@@ -112,13 +119,18 @@ debug またはその他の非 strip ビルドが上書きすると、NeverC は
 削除します。ELF のシンボル名には UTF-8 でないバイトも使用できます。このような
 まれな元名は `original` に Base64 で格納され、
 `"original_encoding": "base64"` が付加されます。それ以外の元名は可読なまま
-です。マップは非公開のデバッグ成果物として保管し、`.ko` と一緒に配布したり
+です。NeverC は POSIX ではモード `0600`、Windows では保護された所有者専用の
+`Windows ACL` でサイドカーを公開し、この制限を適用できなければ公開を失敗
+させます。マップは非公開のデバッグ成果物として保管し、`.ko` と一緒に配布したり
 デバイスへ push したりしないでください。クラッシュログの release 名を変換する
 前に、まず現在の `.ko` に対応するマップであることを確認します。
 
 ```bash
-test "$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' \
-  nvk_hello.ko)" = "$(jq -r '.image_sha256' nvk_hello.ko.symbols.json)"
+actual="$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' \
+  nvk_hello.ko)" &&
+expected="$(jq -er '.image_sha256 | strings | select(test("^[0-9a-f]{64}$"))' \
+  nvk_hello.ko.symbols.json)" &&
+test "$actual" = "$expected" &&
 
 python3 - nvk_hello.ko.symbols.json fn_C000 <<'PY'
 import base64, json, sys

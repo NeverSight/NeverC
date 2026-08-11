@@ -418,6 +418,14 @@ TEST_F(AndroidKernelRuntimeTest,
   ASSERT_EQ(Release.exitCode, 0) << Release.err;
   const std::string ReleaseBytes = readFile(Output);
   EXPECT_TRUE(hasMatchingReleaseSymbolMap(Output, ReleaseBytes));
+#ifndef _WIN32
+  llvm::sys::fs::file_status MapStatus;
+  ASSERT_FALSE(llvm::sys::fs::status(
+      Output.string() + ".symbols.json", MapStatus));
+  EXPECT_EQ(MapStatus.permissions() &
+                (llvm::sys::fs::group_all | llvm::sys::fs::others_all),
+            llvm::sys::fs::no_perms);
+#endif
 
   const fs::path PluginOutput =
       tmpFile("nvk_release_symbol_map_plugin.ko");

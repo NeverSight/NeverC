@@ -20,10 +20,10 @@ SRCS    = main.c
 # bypass the persisted selection. Persist via $(file): no host shell, so
 # `neverc make` works on Windows too.
 FLAGS_STAMP := .nvk-build-flags
-RELEASE_BUNDLE_STAMP := .nvk-release-bundle
+EXTRA_STAMP := .nvk-build-extra
 SAVED_BUILD_ID := $(file <$(FLAGS_STAMP))
 SAVED_KERNEL := $(patsubst KERNEL=%,%,$(filter KERNEL=%,$(SAVED_BUILD_ID)))
-SAVED_EXTRA := $(patsubst EXTRA=%,%,$(filter EXTRA=%,$(SAVED_BUILD_ID)))
+SAVED_EXTRA := $(file <$(EXTRA_STAMP))
 SAVED_PROFILE := $(patsubst PROFILE=%,%,$(filter PROFILE=%,$(SAVED_BUILD_ID)))
 ifneq ($(origin KERNEL),command line)
 KERNEL := $(if $(SAVED_KERNEL),$(SAVED_KERNEL),510)
@@ -52,46 +52,37 @@ FLAGS = \
 	$(EXTRA) \
 	-Wall -Wno-unused
 
-# neverc make only rebuilds on prerequisite mtimes; KERNEL/EXTRA/PROFILE are not
-# ordinary files, so persist them in one generated prerequisite.
-BUILD_ID := KERNEL=$(KERNEL) EXTRA=$(EXTRA) PROFILE=$(PROFILE)
+# neverc make only rebuilds on prerequisite mtimes. Persist EXTRA separately
+# so a multi-word flag list can be restored without whitespace tokenization.
+BUILD_ID := KERNEL=$(KERNEL) PROFILE=$(PROFILE) NEVERC=$(NEVERC)
+MAKE_MODE_FLAGS := $(firstword -$(MAKEFLAGS))
+SKIP_BUILD_RECORD := $(or $(findstring n,$(MAKE_MODE_FLAGS)),$(findstring q,$(MAKE_MODE_FLAGS)),$(findstring t,$(MAKE_MODE_FLAGS)))
+REBUILD_CONFIG :=
 ifneq ($(strip $(file <$(FLAGS_STAMP))),$(BUILD_ID))
-_ := $(file >$(FLAGS_STAMP),$(BUILD_ID))
+REBUILD_CONFIG := force-config-rebuild
+endif
+ifneq ($(file <$(EXTRA_STAMP)),$(EXTRA))
+REBUILD_CONFIG := force-config-rebuild
 endif
 
-ifeq ($(PROFILE),release)
-all:
-	$(MAKE) PROFILE=release $(MODULE)
-	$(MAKE) PROFILE=release $(MODULE).symbols.json
-else
 all: $(MODULE)
-endif
 
 # Re-enter with an explicit PROFILE so later bare `make push`/`run` keep using
-# the same artifact instead of falling back to the default profile.
+# the same artifact instead of falling back to the default profile. Explicit
+# profile targets always rebuild once so coarse timestamps cannot preserve the
+# wrong profile and a release can repair a missing or mismatched sidecar.
 debug:
-	$(MAKE) PROFILE=debug all
+	$(MAKE) -B PROFILE=debug NEVERC="$(NEVERC)" EXTRA="$(EXTRA)" all
 
 release:
-	$(MAKE) PROFILE=release all
+	$(MAKE) -B PROFILE=release NEVERC="$(NEVERC)" EXTRA="$(EXTRA)" all
 
-ifeq ($(PROFILE),release)
-.PHONY: release-bundle-output
+$(MODULE): $(SRCS) $(REBUILD_CONFIG)
+	"$(NEVERC)" $(FLAGS) -r -nostdlib -o $@ $(SRCS)
+	$(if $(SKIP_BUILD_RECORD),,$(file >$(FLAGS_STAMP),$(BUILD_ID)))
+	$(if $(SKIP_BUILD_RECORD),,$(file >$(EXTRA_STAMP),$(EXTRA)))
 
-$(RELEASE_BUNDLE_STAMP): $(SRCS) $(FLAGS_STAMP)
-	$(NEVERC) $(FLAGS) -r -nostdlib -o $(MODULE) $(SRCS) && echo $(BUILD_ID) > $@
-
-release-bundle-output: $(RELEASE_BUNDLE_STAMP)
-	@if test -f $(MODULE) && test -f $(MODULE).symbols.json; then :; else \
-		$(NEVERC) $(FLAGS) -r -nostdlib -o $(MODULE) $(SRCS) && \
-		echo $(BUILD_ID) > $(RELEASE_BUNDLE_STAMP); \
-	fi
-
-$(MODULE) $(MODULE).symbols.json: release-bundle-output
-else
-$(MODULE): $(SRCS) $(FLAGS_STAMP)
-	$(NEVERC) $(FLAGS) -r -nostdlib -o $@ $(SRCS)
-endif
+force-config-rebuild:
 
 push: $(MODULE)
 	adb push $(MODULE) /data/local/tests/
@@ -110,6 +101,6 @@ run: insmod
 	@$(MAKE) log
 
 clean:
-	rm -f $(MODULE) $(MODULE).symbols.json *.o $(FLAGS_STAMP) $(RELEASE_BUNDLE_STAMP)
+	rm -f $(MODULE) $(MODULE).symbols.json *.o $(FLAGS_STAMP) $(EXTRA_STAMP) .nvk-release-bundle
 
-.PHONY: all debug release push insmod rmmod log run clean
+.PHONY: all debug release push insmod rmmod log run clean force-config-rebuild

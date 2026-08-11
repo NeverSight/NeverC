@@ -89,7 +89,8 @@ Expected<std::string> serializeAndroidKernelReleaseSymbolMap(
 Expected<OutputBundleSummary> publishAndroidKernelReleaseOutput(
     OutputCoordinator &Coordinator, StringRef ImagePath,
     ArrayRef<uint8_t> Image, const AndroidKernelReleaseSymbolMap *Map,
-    OutputLeaseOwner LeaseOwner, OutputBundleSummary *FinalSummary) {
+    OutputLeaseOwner LeaseOwner, OutputBundleSummary *FinalSummary,
+    OutputCoordinator::CancellationCheck IsCancelled) {
   if (FinalSummary) {
     *FinalSummary = {};
     FinalSummary->State = OutputBundleState::Aborted;
@@ -116,9 +117,12 @@ Expected<OutputBundleSummary> publishAndroidKernelReleaseOutput(
     auto Serialized = serializeAndroidKernelReleaseSymbolMap(*Map);
     if (!Serialized)
       return Serialized.takeError();
-    Outputs.push_back(
-        {"symbol-map", MapPath,
-         std::vector<uint8_t>(Serialized->begin(), Serialized->end())});
+    OutputBundleFile MapOutput;
+    MapOutput.Name = "symbol-map";
+    MapOutput.Path = MapPath;
+    MapOutput.Bytes.assign(Serialized->begin(), Serialized->end());
+    MapOutput.OwnerOnly = true;
+    Outputs.push_back(std::move(MapOutput));
   } else {
     Outputs.push_back({"symbol-map", MapPath, {},
                        /*Main=*/false, /*Executable=*/false,
@@ -126,7 +130,7 @@ Expected<OutputBundleSummary> publishAndroidKernelReleaseOutput(
   }
 
   auto Transaction = OutputBundleTransaction::create(
-      Coordinator, Outputs, {}, {}, LeaseOwner);
+      Coordinator, Outputs, std::move(IsCancelled), {}, LeaseOwner);
   if (!Transaction)
     return joinErrors(
         mapError("cannot create image and symbol-map transaction"),

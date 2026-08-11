@@ -522,3 +522,7 @@ target_link_libraries(nevercFoundation
   PRIVATE
   ${LLVM_ATOMIC_LIB}
 )
+
+if(WIN32)
+  target_link_libraries(nevercFoundation PRIVATE advapi32)
+endif()
