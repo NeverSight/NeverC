@@ -14,6 +14,7 @@
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
+#include "llvm/Support/SHA256.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/TargetParser/Triple.h"
@@ -903,6 +904,81 @@ TEST(PluginObjectWriterTest, ProducesVerifiedCandidateBeforeAtomicHostCommit) {
       {'N', 'O', 'B', 'J', UINT8_C(0x2a), UINT8_C(0xc3)}};
   EXPECT_EQ(Published->Bytes,
             (std::vector<uint8_t>(Expected.begin(), Expected.end())));
+}
+
+TEST(PluginObjectWriterTest,
+     CustomCommitterKeepsPublishedStateAfterLateDurabilityFailure) {
+  ObjectWriterTaskScope Scope;
+  ASSERT_TRUE(Scope.initialize());
+
+  NevercObjectFormatDescriptor Format{};
+  Format.Header = {sizeof(Format), NEVERC_OBJECT_FORMAT_API_MAJOR, UINT16_C(0),
+                   0};
+  Format.FormatID = TestFormatID;
+  Format.CanonicalName = view("nobj");
+  Format.DefaultExtension = view(".nobj");
+  Format.Flags = NEVERC_OBJECT_FORMAT_CAN_WRITE;
+  Format.Writer = writeTestObject;
+
+  PluginTargetRegistrationView Registration;
+  Registration.PluginID = "org.neverc.test.object-writer";
+  Registration.ObjectFormats = ArrayRef<NevercObjectFormatDescriptor>(Format);
+  auto Snapshot = PluginTargetRegistry::freeze(ArrayRef(Registration),
+                                               PluginTargetRequest{});
+  ASSERT_TRUE(static_cast<bool>(Snapshot)) << errorText(Snapshot.takeError());
+  auto Provider = ObjectWriterProvider::create(*Snapshot);
+  ASSERT_TRUE(static_cast<bool>(Provider)) << errorText(Provider.takeError());
+
+  auto Target = makeTargetKey();
+  ASSERT_TRUE(static_cast<bool>(Target)) << errorText(Target.takeError());
+  PluginObjectGraph Graph(std::move(*Target));
+  PluginObjectSection Section;
+  Section.ID = Graph.allocateEntityID();
+  Section.Name = ".text";
+  Section.Kind = NEVERC_OBJECT_SECTION_KIND_TEXT;
+  Section.Flags =
+      NEVERC_OBJECT_SECTION_ALLOCATED | NEVERC_OBJECT_SECTION_EXECUTABLE;
+  Section.Alignment = 1;
+  Section.Data = {UINT8_C(0x2a), UINT8_C(0xc3)};
+  Graph.sections().push_back(std::move(Section));
+  Graph.issueLayoutProof();
+
+  auto Image = (*Provider)->beginWrite(
+      Scope.task(), Graph,
+      ObjectOutputDestination::memory("late-failure.nobj", UINT64_C(1024)));
+  ASSERT_TRUE(static_cast<bool>(Image)) << errorText(Image.takeError());
+  ASSERT_FALSE((*Image)->setCommitter([](ArrayRef<uint8_t> Bytes) {
+    NevercOutputSummary Summary{};
+    Summary.Header = {sizeof(Summary), NEVERC_IO_API_MAJOR,
+                      NEVERC_IO_API_MINOR, 0};
+    Summary.State = NEVERC_OUTPUT_COMMITTED;
+    Summary.Kind = NEVERC_OUTPUT_FILE;
+    Summary.Size = Bytes.size();
+    Summary.PublicationGeneration = 1;
+    const std::array<uint8_t, 32> Digest = SHA256::hash(Bytes);
+    std::copy(Digest.begin(), Digest.end(), Summary.Digest);
+    return PluginObjectImageCommitResult{
+        Summary,
+        createStringError(errc::io_error, "late durability failure")};
+  }));
+  ASSERT_FALSE((*Image)->finish());
+  ASSERT_FALSE((*Image)->verify());
+
+  auto Committed = (*Image)->commit();
+  ASSERT_FALSE(static_cast<bool>(Committed));
+  EXPECT_NE(errorText(Committed.takeError()).find("late durability failure"),
+            std::string::npos);
+  EXPECT_EQ((*Image)->state(), PluginObjectImageState::Committed);
+
+  auto Summary = (*Image)->outputSummary();
+  ASSERT_TRUE(static_cast<bool>(Summary)) << errorText(Summary.takeError());
+  EXPECT_EQ(Summary->State, NEVERC_OUTPUT_COMMITTED);
+  EXPECT_EQ(Summary->PublicationGeneration, 1U);
+
+  auto RepeatedCommit = (*Image)->commit();
+  ASSERT_TRUE(static_cast<bool>(RepeatedCommit))
+      << errorText(RepeatedCommit.takeError());
+  EXPECT_EQ(RepeatedCommit->State, NEVERC_OUTPUT_COMMITTED);
 }
 
 TEST(PluginObjectWriterTest,

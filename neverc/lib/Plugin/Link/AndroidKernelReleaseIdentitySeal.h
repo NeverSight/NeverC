@@ -17,8 +17,9 @@ enum class AndroidKernelSymbolNameState : uint8_t;
 /// Immutable graph-owner identities captured after release finalization and
 /// before any replaceable ObjectGraph phase. This is also the graph half of
 /// the ReleaseLayoutIdentitySeal: every retained logical section is bound to
-/// its stable entity ID, final ordinal, and exact name. Symbol and section
-/// owners therefore cannot be exchanged while preserving a sorted multiset.
+/// its stable entity ID, final ordinal, and exact name. Exact-name and mapped
+/// canonical symbols are bound to their owners so a plugin cannot invalidate
+/// the release symbol map while preserving a sorted multiset.
 class AndroidKernelReleaseGraphIdentitySeal {
 public:
   AndroidKernelReleaseGraphIdentitySeal(
@@ -51,10 +52,10 @@ private:
 
 /// Immutable serialized-owner identities bound immediately after the trusted
 /// write boundary and before the entire replaceable post-write phase. Exact
-/// names are tied to raw symbol-table slots, while the image half of the
-/// ReleaseLayoutIdentitySeal ties every retained logical section ordinal to
-/// its exact name. Canonical generated metadata remains governed by the full
-/// final-image verifier rather than being duplicated here.
+/// names and mapped canonical names are tied to raw symbol-table slots, while
+/// the image half of the ReleaseLayoutIdentitySeal ties every retained logical
+/// section ordinal to its exact name. This prevents later phases from silently
+/// invalidating the release symbol map.
 class AndroidKernelReleaseImageIdentitySeal {
 public:
   AndroidKernelReleaseImageIdentitySeal(

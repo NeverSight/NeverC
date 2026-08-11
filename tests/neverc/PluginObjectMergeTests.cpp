@@ -1937,6 +1937,65 @@ TEST(AndroidKernelReleaseIdentitySealTest,
 }
 
 TEST(AndroidKernelReleaseIdentitySealTest,
+     GraphRejectsOtherwiseValidMappedSymbolRelayout) {
+  auto Graph = makeAndroidObject(1);
+  ASSERT_NE(Graph, nullptr);
+  PluginObjectSection &Text = Graph->sections().front();
+  Text.Name = ".text";
+  Text.Kind = NEVERC_OBJECT_SECTION_KIND_TEXT;
+  Text.Flags =
+      NEVERC_OBJECT_SECTION_ALLOCATED | NEVERC_OBJECT_SECTION_EXECUTABLE;
+  Text.Data.resize(32);
+
+  PluginObjectSymbol Function;
+  Function.ID = Graph->allocateEntityID();
+  Function.Name = "ordinary_worker";
+  Function.Binding = NEVERC_OBJECT_SYMBOL_BINDING_GLOBAL;
+  Function.Type = NEVERC_OBJECT_SYMBOL_TYPE_FUNCTION;
+  Function.Definition = NEVERC_OBJECT_SYMBOL_DEFINITION_DEFINED;
+  Function.SectionID = Text.ID;
+  Function.Size = 4;
+  const uint64_t FunctionID = Function.ID;
+  Graph->symbols().push_back(std::move(Function));
+  ASSERT_FALSE(verifyPluginObjectGraph(*Graph));
+
+  AndroidKernelModuleFinalizationPolicy Policy;
+  Policy.StripUnneededSymbols = true;
+  neverc::AndroidKernelReleaseSymbolMap SymbolMap;
+  Error Finalize = finalizeAndroidKernelModuleObjectGraph(
+      *Graph, Policy, "test mapped graph identity baseline", &SymbolMap);
+  ASSERT_FALSE(Finalize) << errorText(std::move(Finalize));
+  ASSERT_EQ(SymbolMap.Symbols.size(), 1u);
+  EXPECT_EQ(SymbolMap.Symbols.front().OriginalName, "ordinary_worker");
+  EXPECT_EQ(SymbolMap.Symbols.front().ReleaseName, "fn_0");
+
+  auto Seal = captureAndroidKernelReleaseGraphIdentitySeal(
+      *Graph, Policy.SymbolNameState, "test mapped graph identity baseline");
+  ASSERT_TRUE(static_cast<bool>(Seal)) << errorText(Seal.takeError());
+
+  PluginObjectGraph Mutated(*Graph);
+  PluginObjectSymbol *MutatedFunction = Mutated.findSymbol(FunctionID);
+  ASSERT_NE(MutatedFunction, nullptr);
+  MutatedFunction->Value = 8;
+  MutatedFunction->Name = "fn_8";
+  Mutated.advanceGeneration();
+
+  Error Standalone = verifyFinalAndroidKernelModuleObjectGraph(
+      Mutated, Policy, "test structurally valid mapped symbol relayout");
+  ASSERT_FALSE(Standalone) << errorText(std::move(Standalone));
+
+  Error ImmutableIdentity = verifyAndroidKernelReleaseGraphIdentitySeal(
+      Mutated, Policy.SymbolNameState, *Seal,
+      "test immutable mapped graph identity contract");
+  ASSERT_TRUE(static_cast<bool>(ImmutableIdentity));
+  const std::string Message = errorText(std::move(ImmutableIdentity));
+  EXPECT_NE(Message.find("immutable release identity seal"), std::string::npos)
+      << Message;
+  EXPECT_NE(Message.find("fn_0"), std::string::npos) << Message;
+  EXPECT_NE(Message.find("fn_8"), std::string::npos) << Message;
+}
+
+TEST(AndroidKernelReleaseIdentitySealTest,
      GraphBindsExactUndefinedNamesToTheirRelocationOwners) {
   auto Graph = makeAndroidObject(1);
   ASSERT_NE(Graph, nullptr);
@@ -3034,12 +3093,34 @@ TEST(AndroidKernelModuleFinalizerTest,
   ASSERT_FALSE(verifyPluginObjectGraph(*Graph));
   AndroidKernelModuleFinalizationPolicy Policy;
   Policy.StripUnneededSymbols = true;
+  neverc::AndroidKernelReleaseSymbolMap SymbolMap;
   Error Finalize = finalizeAndroidKernelModuleObjectGraph(
-      *Graph, Policy, "test release Android module structural names");
+      *Graph, Policy, "test release Android module structural names",
+      &SymbolMap);
   ASSERT_FALSE(Finalize) << errorText(std::move(Finalize));
 
   ASSERT_NE(Graph->findSymbol(Ordinary), nullptr);
   ASSERT_NE(Graph->findSymbol(HexSpelledOriginal), nullptr);
+  const auto MappedName = [&](StringRef Original) -> StringRef {
+    auto It = llvm::find_if(
+        SymbolMap.Symbols,
+        [&](const neverc::AndroidKernelReleaseSymbolMapEntry &Entry) {
+          return Entry.OriginalName == Original;
+        });
+    return It == SymbolMap.Symbols.end() ? StringRef() : It->ReleaseName;
+  };
+  EXPECT_EQ(SymbolMap.Symbols.size(), 5u);
+  EXPECT_EQ(MappedName("ordinary_defined"),
+            Graph->findSymbol(Ordinary)->Name);
+  EXPECT_EQ(MappedName("0123456789abcdef"),
+            Graph->findSymbol(HexSpelledOriginal)->Name);
+  EXPECT_EQ(MappedName("ordinary_absolute"),
+            Graph->findSymbol(Absolute)->Name);
+  EXPECT_EQ(MappedName("needed_local_label"),
+            Graph->findSymbol(NeededLocalLabel)->Name);
+  EXPECT_EQ(MappedName("ordinary_plt_symbol"),
+            Graph->findSymbol(PLTSymbol)->Name);
+  EXPECT_TRUE(MappedName("external_import").empty());
   std::vector<std::string> OrdinaryAliasNames{
       Graph->findSymbol(Ordinary)->Name,
       Graph->findSymbol(HexSpelledOriginal)->Name};
@@ -5185,8 +5266,10 @@ TEST(AndroidKernelModuleFinalizerTest,
   Policy.DropDebugInfo = true;
   Policy.StripUnneededSymbols = true;
   Policy.SymbolNameState = AndroidKernelSymbolNameState::Original;
+  neverc::AndroidKernelReleaseSymbolMap ReleaseSymbolMap;
   Error Finalize = finalizeAndroidKernelModuleObjectGraph(
-      *Partial->Object, Policy, "test custom-provider release graph");
+      *Partial->Object, Policy, "test custom-provider release graph",
+      &ReleaseSymbolMap);
   ASSERT_FALSE(Finalize) << errorText(std::move(Finalize));
   Error GraphAudit = verifyFinalAndroidKernelModuleObjectGraph(
       *Partial->Object, Policy,
@@ -5256,6 +5339,28 @@ TEST(AndroidKernelModuleFinalizerTest,
   auto SerializedSemantics = readELFSemantics(Serialized);
   ASSERT_TRUE(static_cast<bool>(SerializedSemantics))
       << errorText(SerializedSemantics.takeError());
+  Error BoundMap = bindAndroidKernelReleaseSymbolMapToImage(
+      ReleaseSymbolMap, Serialized,
+      "test custom-provider final release symbol map");
+  ASSERT_FALSE(BoundMap) << errorText(std::move(BoundMap));
+  for (const neverc::AndroidKernelReleaseSymbolMapEntry &Entry :
+       ReleaseSymbolMap.Symbols)
+    EXPECT_TRUE(llvm::any_of(
+        SerializedSemantics->Symbols, [&](const ELFSymbolSemantics &Symbol) {
+          return Symbol.Name == Entry.ReleaseName;
+        }))
+        << Entry.OriginalName << " -> " << Entry.ReleaseName;
+  EXPECT_TRUE(llvm::none_of(
+      ReleaseSymbolMap.Symbols,
+      [](const neverc::AndroidKernelReleaseSymbolMapEntry &Entry) {
+        return Entry.OriginalName == "custom_local_a" ||
+               Entry.OriginalName == "custom_local_b";
+      }));
+  EXPECT_TRUE(llvm::any_of(
+      ReleaseSymbolMap.Symbols,
+      [](const neverc::AndroidKernelReleaseSymbolMapEntry &Entry) {
+        return Entry.OriginalName == "ordinary_hidden_weak";
+      }));
 
   EXPECT_EQ(SerializedReferenceSemantics->Machine,
             SerializedSemantics->Machine);

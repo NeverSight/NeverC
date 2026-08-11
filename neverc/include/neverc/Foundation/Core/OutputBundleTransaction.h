@@ -2,7 +2,6 @@
 #define NEVERC_FOUNDATION_CORE_OUTPUTBUNDLETRANSACTION_H
 
 #include "neverc/Foundation/Core/OutputCoordinator.h"
-#include "neverc/Foundation/Core/OutputTransaction.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
@@ -39,12 +38,18 @@ enum class OutputBundleOperation : uint8_t {
   CleanupJournal,
 };
 
+enum class OutputBundleFileAction : uint8_t {
+  Publish,
+  Remove,
+};
+
 struct OutputBundleFile {
   std::string Name;
   std::string Path;
   std::vector<uint8_t> Bytes;
   bool Main = false;
   bool Executable = false;
+  OutputBundleFileAction Action = OutputBundleFileAction::Publish;
 };
 
 struct OutputBundleSummary {

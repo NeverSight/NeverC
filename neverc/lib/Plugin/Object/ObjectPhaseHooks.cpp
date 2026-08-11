@@ -831,6 +831,10 @@ ObjectPhasePipeline::executeNative(const PluginObjectGraph &InputGraph,
   }
   if (Error E = ValidateImage(*CurrentImage))
     return std::move(E);
+  if (Validators.Commit)
+    if (Error E =
+            CurrentImage->setCommitter(std::move(Validators.Commit)))
+      return std::move(E);
   if (Error E = CurrentImage->finish())
     return std::move(E);
 

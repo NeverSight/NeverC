@@ -1,6 +1,7 @@
 #ifndef NEVERC_PLUGIN_LINK_ANDROIDKERNELMODULEFINALIZER_H
 #define NEVERC_PLUGIN_LINK_ANDROIDKERNELMODULEFINALIZER_H
 
+#include "neverc/Foundation/AndroidKernelReleaseSymbolMap.h"
 #include "neverc/Plugin/Host/ObjectGraph.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"
@@ -43,7 +44,8 @@ struct AndroidKernelModuleFinalizationPolicy {
 llvm::Error finalizeAndroidKernelModuleObjectGraph(
     PluginObjectGraph &Object,
     AndroidKernelModuleFinalizationPolicy Policy,
-    llvm::StringRef Boundary);
+    llvm::StringRef Boundary,
+    AndroidKernelReleaseSymbolMap *ReleaseSymbolMap = nullptr);
 
 /// Host-owned invariants run after every mutable output phase.  Plugins may
 /// preserve these invariants but cannot weaken or reintroduce stripped data.
@@ -54,6 +56,14 @@ llvm::Error verifyFinalAndroidKernelModuleObjectGraph(
 llvm::Error verifyFinalAndroidKernelModuleImage(
     llvm::ArrayRef<uint8_t> Image,
     AndroidKernelModuleFinalizationPolicy Policy,
+    llvm::StringRef Boundary);
+
+/// Binds a pre-serialization rename map to the authoritative final ELF image.
+/// Writer lowering may replace symbol-target relocations with section targets,
+/// making formerly required local symbols disappear. Such entries are removed;
+/// every remaining release name must identify exactly one final symbol.
+llvm::Error bindAndroidKernelReleaseSymbolMapToImage(
+    AndroidKernelReleaseSymbolMap &Map, llvm::ArrayRef<uint8_t> Image,
     llvm::StringRef Boundary);
 
 } // namespace neverc::plugin

@@ -8,6 +8,7 @@
 #include "LinkRequest.h"
 #include "ObjectMergeProvider.h"
 #include "PluginLinkRegistry.h"
+#include "neverc/Foundation/AndroidKernelReleaseSymbolMap.h"
 #include "neverc/Foundation/Core/OutputCoordinator.h"
 #include "neverc/Linker/Core/Driver/Dispatcher.h"
 #include "neverc/Plugin/Host/BuiltinTargetProvider.h"
@@ -25,6 +26,7 @@
 #include "llvm/Support/MemoryBufferRef.h"
 #include "llvm/Support/VirtualFileSystem.h"
 #include "llvm/TargetParser/Triple.h"
+#include <algorithm>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -426,6 +428,9 @@ LinkExecutionHooksBridge::execute(const linker::LinkExecutionRequest &Request,
                   Objects, (*FrozenRequest)->options().Flags);
     if (!Merged)
       return Merged.takeError();
+    std::optional<AndroidKernelReleaseSymbolMap> ReleaseSymbolMap;
+    if (Merged->androidKernelReleaseSymbolMap())
+      ReleaseSymbolMap = *Merged->androidKernelReleaseSymbolMap();
 
     // Only the direct built-in adapter may attest its trusted native merger
     // bytes. Keep the exact shared token it returned; this bridge consumes the
@@ -459,10 +464,16 @@ LinkExecutionHooksBridge::execute(const linker::LinkExecutionRequest &Request,
       const AndroidKernelReleaseInputContract &FinalReleaseContract =
           *ReleaseInputContract;
       const uint64_t GenerationBeforeStrip = Merged->Object->generation();
+      AndroidKernelReleaseSymbolMap GraphReleaseSymbolMap;
       if (Error Err = finalizeAndroidKernelModuleObjectGraph(
               *Merged->Object, FinalizationPolicy,
-              "final Android kernel ObjectMergeProvider output"))
+              "final Android kernel ObjectMergeProvider output",
+              FinalizationPolicy.StripUnneededSymbols
+                  ? &GraphReleaseSymbolMap
+                  : nullptr))
         return std::move(Err);
+      if (!GraphReleaseSymbolMap.Symbols.empty())
+        ReleaseSymbolMap = std::move(GraphReleaseSymbolMap);
       if (Merged->Object->generation() != GenerationBeforeStrip) {
         OutputImage = {};
         BoundReleaseOutput.reset();
@@ -578,6 +589,63 @@ LinkExecutionHooksBridge::execute(const linker::LinkExecutionRequest &Request,
                                     ? ObjectWritePolicy::AndroidKernelRelease
                                     : ObjectWritePolicy::CanonicalELFTables;
       Destination.DropDebugInfo = FinalizationPolicy.DropDebugInfo;
+    }
+    if (Config.finalizeAndroidKernelModule) {
+      const std::string OutputPath = (*FrozenRequest)->outputURI().str();
+      const bool PublishesReleaseMap =
+          FinalizationPolicy.StripUnneededSymbols;
+      Validators.Commit =
+          [this, OutputPath, PublishesReleaseMap,
+           Map = std::move(ReleaseSymbolMap)](
+              ArrayRef<uint8_t> Image) mutable
+          -> PluginObjectImageCommitResult {
+        const auto makeSummary =
+            [Image](const OutputBundleSummary &Bundle) {
+              NevercOutputSummary Summary{};
+              Summary.Header = {sizeof(Summary), NEVERC_IO_API_MAJOR,
+                                NEVERC_IO_API_MINOR, 0};
+              switch (Bundle.State) {
+              case OutputBundleState::Committed:
+                Summary.State = NEVERC_OUTPUT_COMMITTED;
+                break;
+              case OutputBundleState::Aborted:
+                Summary.State = NEVERC_OUTPUT_ABORTED;
+                break;
+              case OutputBundleState::FailedPartial:
+              case OutputBundleState::Open:
+              case OutputBundleState::Prepared:
+                Summary.State = NEVERC_OUTPUT_FAILED_PARTIAL;
+                break;
+              }
+              Summary.Kind = NEVERC_OUTPUT_FILE;
+              Summary.Flags = Bundle.Flags;
+              Summary.Size = Image.size();
+              Summary.PublicationGeneration =
+                  Bundle.PublicationGeneration;
+              std::copy(Bundle.MainDigest.begin(),
+                        Bundle.MainDigest.end(), Summary.Digest);
+              return Summary;
+            };
+
+        OutputBundleSummary BundleSummary;
+        BundleSummary.State = OutputBundleState::Aborted;
+        const AndroidKernelReleaseSymbolMap *PublishedMap = nullptr;
+        if (PublishesReleaseMap) {
+          if (!Map)
+            Map.emplace();
+          if (Error E = bindAndroidKernelReleaseSymbolMapToImage(
+                  *Map, Image,
+                  "final Android kernel release symbol map"))
+            return {makeSummary(BundleSummary), std::move(E)};
+          PublishedMap = &*Map;
+        }
+
+        auto Published = publishAndroidKernelReleaseOutput(
+            Outputs, OutputPath, Image, PublishedMap, {}, &BundleSummary);
+        if (!Published)
+          return {makeSummary(BundleSummary), Published.takeError()};
+        return {makeSummary(*Published), Error::success()};
+      };
     }
     auto Output = (*OutputPipeline)
                       ->executeNative(*Merged->Object, OutputImage, Destination,

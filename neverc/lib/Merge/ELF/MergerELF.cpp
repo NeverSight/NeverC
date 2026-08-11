@@ -27,6 +27,7 @@
 #include "neverc/Foundation/AndroidKernelModuleRelocationPolicy.h"
 #include "neverc/Foundation/AndroidKernelModuleSectionPolicy.h"
 #include "neverc/Foundation/AndroidKernelModuleSymbolPolicy.h"
+#include "neverc/Foundation/AndroidKernelReleaseSymbolMap.h"
 #include "neverc/Foundation/ELFDebugSectionPolicy.h"
 #include "neverc/Merge/Merger.h"
 
@@ -39,6 +40,7 @@
 #include "llvm/Object/ELFObjectFile.h"
 #include "llvm/Support/Compression.h"
 #include "llvm/Support/Error.h"
+#include "llvm/Support/SHA256.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -178,6 +180,10 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
   using Sym = typename ELFT::Sym;
   using Rela = typename ELFT::Rela;
   using Rel = typename ELFT::Rel;
+
+  if (Opts.releaseSymbolMap)
+    Opts.releaseSymbolMap->clear();
+  AndroidKernelReleaseSymbolMap PendingReleaseSymbolMap;
 
   if (Opts.finalizeAndroidKernelModule && !Opts.androidKernelModule) {
     errs() << "neverc: Android module finalization requires Android module "
@@ -1882,6 +1888,15 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
       return false;
     }
 
+    for (const RetainedSymbol &Entry : Retained) {
+      const StringRef Original =
+          ReleaseSymbols[Entry.FinalIndex].OriginalName;
+      const StringRef Release = PlannedNames[Entry.FinalIndex];
+      if (!Original.empty() && Original != Release)
+        PendingReleaseSymbolMap.Symbols.push_back(
+            {Original.str(), Release.str()});
+    }
+
     // The complete plan is now immutable.  Only at this point build replacement
     // symbol/string tables and then commit the relocation-index remap.
     detail::DedupStrTab PrunedStrTab;
@@ -2201,6 +2216,11 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
   }
 
   OS.write(OutBuf.data(), OutBuf.size());
+  if (Opts.stripUnneededSymbols && Opts.releaseSymbolMap) {
+    PendingReleaseSymbolMap.ImageSHA256 = SHA256::hash(ArrayRef<uint8_t>(
+        reinterpret_cast<const uint8_t *>(OutBuf.data()), OutBuf.size()));
+    *Opts.releaseSymbolMap = std::move(PendingReleaseSymbolMap);
+  }
   return true;
 }
 

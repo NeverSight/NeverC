@@ -75,6 +75,6 @@ run: insmod
 	adb shell su -c 'cat /proc/$(MODNAME)'
 
 clean:
-	rm -f $(MODULE) *.o $(FLAGS_STAMP)
+	rm -f $(MODULE) $(MODULE).symbols.json *.o $(FLAGS_STAMP)
 
 .PHONY: all debug release push insmod rmmod run clean

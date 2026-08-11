@@ -16,6 +16,7 @@
 #include "llvm/Object/ObjectFile.h"
 #include "llvm/Support/Errc.h"
 #include "llvm/Support/MemoryBufferRef.h"
+#include "llvm/Support/SHA256.h"
 #include "llvm/TargetParser/Triple.h"
 
 #include <limits>
@@ -545,7 +546,11 @@ buildReleaseModel(const PluginObjectGraph &Object,
 
 Error finalizeAndroidKernelModuleObjectGraph(
     PluginObjectGraph &Object, AndroidKernelModuleFinalizationPolicy Policy,
-    StringRef Boundary) {
+    StringRef Boundary, AndroidKernelReleaseSymbolMap *ReleaseSymbolMap) {
+  if (ReleaseSymbolMap)
+    ReleaseSymbolMap->clear();
+  AndroidKernelReleaseSymbolMap PendingReleaseSymbolMap;
+
   if (Error E = verifyPluginObjectGraph(Object))
     return joinErrors(
         invalid(Boundary, "invalid ObjectGraph before finalization"),
@@ -751,6 +756,16 @@ Error finalizeAndroidKernelModuleObjectGraph(
       return invalid(Boundary,
                      "Android release symbol planner omitted a PCG symbol "
                      "binding mutation");
+
+    for (const PluginObjectSymbol &Symbol : Object.symbols()) {
+      if (DroppedSymbols.contains(Symbol.ID))
+        continue;
+      const auto Renamed = RenamedSymbols.find(Symbol.ID);
+      if (Renamed != RenamedSymbols.end() && !Symbol.Name.empty() &&
+          Renamed->second != Symbol.Name)
+        PendingReleaseSymbolMap.Symbols.push_back(
+            {Symbol.Name, Renamed->second});
+    }
   }
 
   bool Changed = !DroppedSections.empty() || !DroppedSymbols.empty() ||
@@ -781,6 +796,8 @@ Error finalizeAndroidKernelModuleObjectGraph(
     return DroppedSections.contains(Section.ID);
   });
   Object.advanceGeneration();
+  if (ReleaseSymbolMap)
+    *ReleaseSymbolMap = std::move(PendingReleaseSymbolMap);
   return Error::success();
 }
 
@@ -928,6 +945,43 @@ Error verifyFinalAndroidKernelModuleImage(
       return invalid(Boundary, "retains a globally visible PCG symbol '" +
                                    Twine(*Name) + "'");
   }
+  return Error::success();
+}
+
+Error bindAndroidKernelReleaseSymbolMapToImage(
+    AndroidKernelReleaseSymbolMap &Map, ArrayRef<uint8_t> Image,
+    StringRef Boundary) {
+  auto Object = object::ObjectFile::createObjectFile(MemoryBufferRef(
+      StringRef(reinterpret_cast<const char *>(Image.data()), Image.size()),
+      Boundary));
+  if (!Object)
+    return joinErrors(invalid(Boundary, "cannot parse final symbol map image"),
+                      Object.takeError());
+
+  StringMap<unsigned> SymbolNameCounts;
+  for (const object::SymbolRef &Symbol : (*Object)->symbols()) {
+    auto Name = Symbol.getName();
+    if (!Name)
+      return joinErrors(
+          invalid(Boundary, "cannot read a final symbol name"),
+          Name.takeError());
+    if (!Name->empty())
+      ++SymbolNameCounts[*Name];
+  }
+
+  for (const AndroidKernelReleaseSymbolMapEntry &Entry : Map.Symbols)
+    if (SymbolNameCounts.lookup(Entry.ReleaseName) > 1)
+      return invalid(Boundary, "release symbol map name '" +
+                                   Twine(Entry.ReleaseName) +
+                                   "' is ambiguous in the final image");
+
+  Map.Symbols.erase(
+      llvm::remove_if(Map.Symbols,
+                      [&](const AndroidKernelReleaseSymbolMapEntry &Entry) {
+                        return SymbolNameCounts.lookup(Entry.ReleaseName) == 0;
+                      }),
+      Map.Symbols.end());
+  Map.ImageSHA256 = SHA256::hash(Image);
   return Error::success();
 }
 

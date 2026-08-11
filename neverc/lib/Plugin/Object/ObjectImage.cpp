@@ -101,6 +101,8 @@ NevercMutableBinaryBuilderHandle PluginObjectImage::binaryBuilder() const {
 
 Expected<NevercOutputSummary>
 PluginObjectImage::outputSummary() const {
+  if (CommittedSummary)
+    return *CommittedSummary;
   if (Builder)
     return Builder->summary();
   if (neverc_handle_is_null(Seal.Handle))
@@ -131,6 +133,20 @@ Expected<ArrayRef<uint8_t>> PluginObjectImage::pendingBytes() const {
   return Builder->bytes();
 }
 
+Error
+PluginObjectImage::setCommitter(PluginObjectImageCommitter NewCommitter) {
+  if (!NewCommitter)
+    return createStringError(errc::invalid_argument,
+                             "object image committer is empty");
+  if (State != PluginObjectImageState::Candidate || !Builder ||
+      Committer)
+    return createStringError(
+        errc::invalid_argument,
+        "object image committer requires one pending candidate");
+  Committer = std::move(NewCommitter);
+  return Error::success();
+}
+
 Error PluginObjectImage::finish() {
   if (!Builder)
     return neverc_handle_is_null(Seal.Handle)
@@ -140,10 +156,15 @@ Error PluginObjectImage::finish() {
   if (State != PluginObjectImageState::Candidate)
     return createStringError(errc::invalid_argument,
                              "only a candidate object image can finish");
+  std::vector<uint8_t> PendingCommitBytes;
+  if (Committer)
+    PendingCommitBytes.assign(Builder->bytes().begin(),
+                              Builder->bytes().end());
   auto Finished = Builder->finish();
   if (!Finished)
     return Finished.takeError();
   Seal = *Finished;
+  CommitBytes = std::move(PendingCommitBytes);
   Builder.reset();
   return Error::success();
 }
@@ -197,6 +218,8 @@ Error PluginObjectImage::verify() {
 }
 
 Expected<NevercOutputSummary> PluginObjectImage::commit() {
+  if (State == PluginObjectImageState::Committed && CommittedSummary)
+    return *CommittedSummary;
   if (State == PluginObjectImageState::Candidate)
     return createStringError(
         errc::operation_not_permitted,
@@ -207,6 +230,69 @@ Expected<NevercOutputSummary> PluginObjectImage::commit() {
   if (State == PluginObjectImageState::FailedPartial)
     return createStringError(errc::invalid_argument,
                              "partial object image cannot be committed");
+
+  if (Committer) {
+    auto Aborted = hostAbortPluginOutput(Task, Seal.Handle);
+    if (!Aborted)
+      return Aborted.takeError();
+    if (Aborted->State == NEVERC_OUTPUT_FAILED_PARTIAL) {
+      State = PluginObjectImageState::FailedPartial;
+      return createStringError(
+          errc::io_error,
+          "object image staging abort left partial output");
+    }
+    if (Aborted->State != NEVERC_OUTPUT_ABORTED) {
+      State = PluginObjectImageState::Aborted;
+      return createStringError(
+          errc::invalid_argument,
+          "object image staging was not aborted before bundled commit");
+    }
+    State = PluginObjectImageState::Aborted;
+
+    PluginObjectImageCommitResult Result = Committer(CommitBytes);
+    Error CommitError = std::move(Result.Failure);
+    const NevercOutputSummary &Published = Result.Summary;
+    CommitBytes.clear();
+    Committer = {};
+
+    if (Published.State == NEVERC_OUTPUT_COMMITTED) {
+      State = PluginObjectImageState::Committed;
+    } else if (Published.State == NEVERC_OUTPUT_ABORTED) {
+      State = PluginObjectImageState::Aborted;
+    } else if (Published.State == NEVERC_OUTPUT_FAILED_PARTIAL) {
+      State = PluginObjectImageState::FailedPartial;
+    } else {
+      State = PluginObjectImageState::FailedPartial;
+      CommitError = joinErrors(
+          std::move(CommitError),
+          createStringError(
+              errc::io_error,
+              "bundled object image commit returned a non-terminal state"));
+    }
+
+    if (State == PluginObjectImageState::Committed &&
+        (Published.Size != Seal.Size ||
+         !std::equal(std::begin(Published.Digest),
+                     std::end(Published.Digest),
+                     std::begin(Seal.Digest)))) {
+      State = PluginObjectImageState::FailedPartial;
+      CommitError = joinErrors(
+          std::move(CommitError),
+          createStringError(
+              errc::io_error,
+              "bundled object image commit returned inconsistent metadata"));
+    } else if (State == PluginObjectImageState::Committed) {
+      CommittedSummary = Published;
+    }
+
+    if (CommitError)
+      return std::move(CommitError);
+    if (State != PluginObjectImageState::Committed)
+      return createStringError(errc::io_error,
+                               "bundled object image commit did not publish "
+                               "the output");
+    return *CommittedSummary;
+  }
 
   auto Result = hostCommitPluginOutput(Task, Seal.Handle);
   if (!Result) {
@@ -246,10 +332,14 @@ Error PluginObjectImage::abort() {
       return createStringError(
           errc::io_error,
           "pending object image output could not be aborted");
+    Committer = {};
+    CommitBytes.clear();
     State = PluginObjectImageState::Aborted;
     return Error::success();
   }
   if (neverc_handle_is_null(Seal.Handle)) {
+    Committer = {};
+    CommitBytes.clear();
     State = PluginObjectImageState::Aborted;
     return Error::success();
   }
@@ -264,6 +354,8 @@ Error PluginObjectImage::abort() {
   if (Result->State != NEVERC_OUTPUT_ABORTED)
     return createStringError(errc::invalid_argument,
                              "object image output was not aborted");
+  Committer = {};
+  CommitBytes.clear();
   State = PluginObjectImageState::Aborted;
   return Error::success();
 }

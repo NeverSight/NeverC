@@ -2,6 +2,7 @@
 
 #include "AndroidKernelModuleFinalizer.h"
 #include "Object/AndroidKernelReleaseWriterPreflight.h"
+#include "neverc/Foundation/AndroidKernelModuleReleaseNames.h"
 #include "neverc/Foundation/AndroidKernelModuleSectionPolicy.h"
 #include "neverc/Foundation/AndroidKernelModuleSymbolPolicy.h"
 #include "neverc/Plugin/Host/BuiltinObjectExtension.h"
@@ -145,8 +146,9 @@ Expected<SymbolClass> nativeSymbolClass(uint16_t SectionIndex,
 
 bool hasSealedIdentity(StringRef Name, SymbolClass Class, uint8_t Type,
                        bool PreserveName) {
-  return AndroidKernelModuleSymbolPolicy::hasExactReleaseName(
-      Name, Class, Type == ELF::STT_SECTION, PreserveName);
+  return hasCanonicalReleaseNameShape(Name) ||
+         AndroidKernelModuleSymbolPolicy::hasExactReleaseName(
+             Name, Class, Type == ELF::STT_SECTION, PreserveName);
 }
 
 Expected<NativeSymbolIdentityFacts>
@@ -447,7 +449,7 @@ Error compareGraphIdentities(const GraphIdentitySnapshot &Expected,
 
   if (Expected.Symbols.size() != Actual.Symbols.size())
     return invalid(Boundary,
-                   "immutable release identity seal exact symbol count "
+                   "immutable release identity seal protected symbol count "
                    "changed from " +
                        Twine(Expected.Symbols.size()) + " to " +
                        Twine(Actual.Symbols.size()));
@@ -491,7 +493,7 @@ Error compareImageIdentities(const ImageIdentitySnapshot &Expected,
                        Twine(Actual.SymbolCount));
   if (Expected.Symbols.size() != Actual.Symbols.size())
     return invalid(Boundary,
-                   "immutable release identity seal exact symbol count "
+                   "immutable release identity seal protected symbol count "
                    "changed from " +
                        Twine(Expected.Symbols.size()) + " to " +
                        Twine(Actual.Symbols.size()));

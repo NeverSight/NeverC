@@ -83,6 +83,37 @@ release를 선택하지 않습니다. 예제 Makefile은 명시적인 프로필 
 경로에서 NeverC는 디버그 섹션, `.comment`, 재배치에 불필요한 로컬/미정의
 항목을 제거한 뒤 `.strtab`을 다시 구성합니다.
 
+release가 성공하면 NeverC는 모듈 옆에 `<module>.ko.symbols.json`을 원자적으로
+생성합니다. 이 파일은 이름이 변경된 보존 심볼마다 `original`(원래 이름)과
+`release`(`.ko` 안의 이름)를 기록하며, `image_sha256`으로 최종 모듈 바이트에
+바인딩하여 다른 버전의 맵을 잘못 사용하는 일을 방지합니다.
+
+```json
+{
+  "format": "neverc.android-kernel-symbol-map",
+  "version": 1,
+  "image_sha256": "…",
+  "symbols": [
+    {"original": "worker_dispatch", "release": "fn_C000"}
+  ]
+}
+```
+
+항목은 `release` 순으로 정렬됩니다. 제거된 심볼과 정확한 이름을 유지해야 하는
+로더, import, CFI 이름은 변환이 필요 없으므로 기록하지 않습니다. debug 또는
+기타 비-strip 빌드가 같은 출력 경로를 덮어쓰면 NeverC는 오래된 맵을 제거합니다.
+맵에는 읽을 수 있는 원래 이름이 포함되므로 비공개 디버깅 산출물로 보관하고,
+`.ko`와 함께 배포하거나 장치에 push하지 마십시오. 크래시 로그의 release 이름을
+변환하기 전에 먼저 현재 `.ko`와 맵의 바인딩을 확인하십시오.
+
+```bash
+test "$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' \
+  nvk_hello.ko)" = "$(jq -r '.image_sha256' nvk_hello.ko.symbols.json)"
+
+jq -r '.symbols[] | select(.release == "fn_C000") | .original' \
+  nvk_hello.ko.symbols.json
+```
+
 대상인 보존 정의에는 IDA에서 착안하되 예약 접두사를 사용하지 않는 결정적인 구조
 이름을 부여합니다.
 

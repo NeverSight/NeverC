@@ -92,6 +92,37 @@ selection; `make clean` removes the stamp, so the next build defaults to debug.
 On this final-module path, NeverC removes debug sections, `.comment`, and
 relocation-unneeded local/undefined entries, then rebuilds `.strtab`.
 
+After a successful release, NeverC atomically writes
+`<module>.ko.symbols.json` beside the module. It records `original` and
+`release` names for every retained symbol whose name changed, and binds the map
+to the final module bytes with `image_sha256`:
+
+```json
+{
+  "format": "neverc.android-kernel-symbol-map",
+  "version": 1,
+  "image_sha256": "…",
+  "symbols": [
+    {"original": "worker_dispatch", "release": "fn_C000"}
+  ]
+}
+```
+
+Entries are sorted by `release`. Removed symbols and exact loader, import, or
+CFI names are omitted because they need no translation. If a debug or other
+non-strip build overwrites the same output path, NeverC removes the stale map.
+The map contains readable original names: archive it as a private debugging
+artifact; do not distribute it with the `.ko` or push it to the device. To
+verify the binding before translating a release name from a crash log:
+
+```bash
+test "$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' \
+  nvk_hello.ko)" = "$(jq -r '.image_sha256' nvk_hello.ko.symbols.json)"
+
+jq -r '.symbols[] | select(.release == "fn_C000") | .original' \
+  nvk_hello.ko.symbols.json
+```
+
 Eligible retained definitions receive deterministic IDA-inspired,
 non-reserved structural names:
 

@@ -477,6 +477,7 @@ add_custom_target(neverc-bootstrap-nvk-kernel-bc
 
 add_neverc_library(nevercFoundation
   Core/AndroidKernelModuleReleaseNames.cpp
+  Core/AndroidKernelReleaseSymbolMap.cpp
   Core/Diagnostic.cpp
   Core/FileManager.cpp
   Core/IdentifierTable.cpp

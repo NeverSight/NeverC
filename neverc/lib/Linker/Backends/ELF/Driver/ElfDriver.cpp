@@ -28,6 +28,8 @@
 #include "Linker/ELF/Symbols.h"
 #include "Linker/ELF/SyntheticSections.h"
 #include "Linker/ELF/Target.h"
+#include "neverc/Foundation/AndroidKernelReleaseSymbolMap.h"
+#include "neverc/Foundation/Core/OutputCoordinator.h"
 #include "neverc/Merge/Merger.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
@@ -2374,6 +2376,7 @@ void LinkerDriver::execute(opt::InputArgList &args) {
       buffers.push_back(f->mb.getBuffer());
 
     neverc::merge::Options mergeOpts;
+    neverc::AndroidKernelReleaseSymbolMap releaseSymbolMap;
     mergeOpts.pureC = true;
     // Generic ET_REL objects are not valid strip-all products.  The driver
     // admits strip intent only for a delivered Android `.ko`, whose merger
@@ -2384,11 +2387,37 @@ void LinkerDriver::execute(opt::InputArgList &args) {
     mergeOpts.stripUnneededSymbols =
         config->finalizeAndroidKernelModule &&
         config->driverCfg->stripsSymbols();
+    if (mergeOpts.stripUnneededSymbols)
+      mergeOpts.releaseSymbolMap = &releaseSymbolMap;
     if (config->androidKernelModule) {
       mergeOpts.androidKernelModule = true;
       mergeOpts.finalizeAndroidKernelModule =
           config->finalizeAndroidKernelModule;
       mergeOpts.mergeSections = true;
+    }
+
+    if (config->finalizeAndroidKernelModule && config->outputFile != "-") {
+      SmallVector<char, 0> image;
+      raw_svector_ostream staged(image);
+      if (!neverc::merge::mergeObjects(
+              buffers, staged, neverc::merge::Format::ELF64LE, mergeOpts)) {
+        error("relocatable merge failed");
+        return;
+      }
+      const ArrayRef<uint8_t> imageBytes(
+          reinterpret_cast<const uint8_t *>(image.data()), image.size());
+      neverc::OutputCoordinator releaseOutputs;
+      const neverc::AndroidKernelReleaseSymbolMap *publishedMap =
+          mergeOpts.stripUnneededSymbols ? &releaseSymbolMap : nullptr;
+      auto published = neverc::publishAndroidKernelReleaseOutput(
+          releaseOutputs, config->outputFile, imageBytes, publishedMap);
+      if (!published)
+        error(toString(published.takeError()));
+      return;
+    }
+    if (mergeOpts.stripUnneededSymbols && config->outputFile == "-") {
+      error("Android kernel release symbol maps require a file output");
+      return;
     }
 
     std::error_code ec;
@@ -2397,10 +2426,26 @@ void LinkerDriver::execute(opt::InputArgList &args) {
       error("cannot open " + config->outputFile + ": " + ec.message());
       return;
     }
-
-    if (!neverc::merge::mergeObjects(buffers, out,
-                                     neverc::merge::Format::ELF64LE, mergeOpts))
-      error("relocatable merge failed");
+    if (!neverc::merge::mergeObjects(
+            buffers, out, neverc::merge::Format::ELF64LE, mergeOpts)) {
+      if (out.has_error()) {
+        const std::string message = out.error().message();
+        out.clear_error();
+        error("cannot write " + config->outputFile + ": " + message);
+      } else {
+        error("relocatable merge failed");
+      }
+      return;
+    }
+    if (config->outputFile == "-")
+      out.flush();
+    else
+      out.close();
+    if (out.has_error()) {
+      const std::string message = out.error().message();
+      out.clear_error();
+      error("cannot write " + config->outputFile + ": " + message);
+    }
     return;
   }
 

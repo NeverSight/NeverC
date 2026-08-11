@@ -81,6 +81,35 @@ Makefile 会保存显式选择的 profile，因此后续 `make push`、`make run
 NeverC 会删除调试段、`.comment` 以及重定位不需要的局部/未定义项，然后重建
 `.strtab`。
 
+发布成功后，NeverC 会在模块旁原子生成 `<module>.ko.symbols.json`。它记录每个
+仍保留但已改名的符号的 `original`（原名）与 `release`（`.ko` 中的名称），并用
+`image_sha256` 绑定最终模块字节，避免拿错版本：
+
+```json
+{
+  "format": "neverc.android-kernel-symbol-map",
+  "version": 1,
+  "image_sha256": "…",
+  "symbols": [
+    {"original": "worker_dispatch", "release": "fn_C000"}
+  ]
+}
+```
+
+条目按 `release` 排序。被删除的符号和必须原样保留的加载器、导入、CFI 名称不会
+写入，因为它们不需要翻译。若 debug 或其他非 strip 构建覆盖同一路径，NeverC
+会删除旧映射，防止把旧副产物误用于新模块。映射包含可读原名，应作为私有调试
+产物归档，不要随 `.ko` 发布或推送到设备。定位崩溃日志前，应先校验映射确实属于
+当前 `.ko`，再查询发布名称：
+
+```bash
+test "$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' \
+  nvk_hello.ko)" = "$(jq -r '.image_sha256' nvk_hello.ko.symbols.json)"
+
+jq -r '.symbols[] | select(.release == "fn_C000") | .original' \
+  nvk_hello.ko.symbols.json
+```
+
 符合条件且被保留的定义会获得确定性的、受 IDA 启发但不占用保留前缀的结构名：
 
 - `STT_FUNC` 使用 `fn_HEX`；

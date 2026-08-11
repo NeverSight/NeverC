@@ -1,11 +1,16 @@
 #include "NeverCTestFixture.h"
 
+#include "neverc/Foundation/AndroidKernelModuleReleaseNames.h"
 #include "neverc/Linker/Core/Driver/LTOCacheContract.h"
 
+#include "llvm/ADT/StringMap.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/BinaryFormat/ELF.h"
 #include "llvm/Object/ELFObjectFile.h"
 #include "llvm/Object/ObjectFile.h"
 #include "llvm/Support/Error.h"
+#include "llvm/Support/JSON.h"
+#include "llvm/Support/SHA256.h"
 
 #include <cstdlib>
 #include <limits>
@@ -286,16 +291,19 @@ protected:
   CmdResult linkKernelModule(const std::string &PluginPath,
                              const fs::path &Source, const fs::path &Output,
                              bool UseDeterministicXorStrKey = true,
-                             bool EmitDebugInfo = false) {
+                             bool EmitDebugInfo = false,
+                             bool StripSymbols = false) {
     return linkKernelModule(PluginPath, std::vector<fs::path>{Source}, Output,
-                            UseDeterministicXorStrKey, EmitDebugInfo);
+                            UseDeterministicXorStrKey, EmitDebugInfo,
+                            StripSymbols);
   }
 
   CmdResult linkKernelModule(const std::string &PluginPath,
                              const std::vector<fs::path> &Sources,
                              const fs::path &Output,
                              bool UseDeterministicXorStrKey = true,
-                             bool EmitDebugInfo = false) {
+                             bool EmitDebugInfo = false,
+                             bool StripSymbols = false) {
     std::vector<std::string> Args;
     if (!PluginPath.empty())
       Args.push_back("-fplugin=" + PluginPath);
@@ -306,6 +314,10 @@ protected:
       Args.push_back("-fstring-encrypt-key=1");
     if (EmitDebugInfo)
       Args.push_back("-g");
+    if (StripSymbols) {
+      Args.push_back("-O2");
+      Args.push_back("--strip");
+    }
     Args.push_back("-nostdlib");
     Args.push_back("-r");
     for (const fs::path &Source : Sources)
@@ -314,7 +326,137 @@ protected:
     Args.push_back(Output.string());
     return ncc(Args);
   }
+
+  ::testing::AssertionResult
+  hasMatchingReleaseSymbolMap(const fs::path &Output,
+                              const std::string &ImageBytes) const {
+    const fs::path Sidecar(Output.string() + ".symbols.json");
+    if (!fs::exists(Sidecar))
+      return ::testing::AssertionFailure()
+             << "missing release symbol map " << Sidecar;
+
+    const std::string MapBytes = readFile(Sidecar);
+    auto Parsed = llvm::json::parse(MapBytes);
+    if (!Parsed)
+      return ::testing::AssertionFailure()
+             << "invalid release symbol map JSON: "
+             << renderError(Parsed.takeError());
+    const llvm::json::Object *Root = Parsed->getAsObject();
+    if (!Root)
+      return ::testing::AssertionFailure()
+             << "release symbol map root is not an object";
+    int64_t Version = 0;
+    if (Root->getString("format") != "neverc.android-kernel-symbol-map" ||
+        !Root->getInteger("version", Version) || Version != 1)
+      return ::testing::AssertionFailure()
+             << "release symbol map has the wrong format or version";
+
+    const auto Digest = llvm::SHA256::hash(llvm::ArrayRef<uint8_t>(
+        reinterpret_cast<const uint8_t *>(ImageBytes.data()),
+        ImageBytes.size()));
+    const llvm::StringRef ImageDigest = Root->getString("image_sha256");
+    if (ImageDigest.empty() ||
+        ImageDigest != llvm::toHex(Digest, /*LowerCase=*/true))
+      return ::testing::AssertionFailure()
+             << "release symbol map digest does not match the .ko";
+
+    const llvm::json::Array *Symbols = Root->getArray("symbols");
+    if (!Symbols || Symbols->empty())
+      return ::testing::AssertionFailure()
+             << "release symbol map contains no renamed symbols";
+
+    auto ObjectOrErr = llvm::object::ObjectFile::createObjectFile(
+        llvm::MemoryBufferRef(
+            llvm::StringRef(ImageBytes.data(), ImageBytes.size()),
+            "module.ko"));
+    if (!ObjectOrErr)
+      return ::testing::AssertionFailure()
+             << "cannot parse mapped .ko: "
+             << renderError(ObjectOrErr.takeError());
+    llvm::StringMap<unsigned> ImageSymbolCounts;
+    for (const llvm::object::SymbolRef &Symbol : (*ObjectOrErr)->symbols()) {
+      auto NameOrErr = Symbol.getName();
+      if (!NameOrErr)
+        return ::testing::AssertionFailure()
+               << "cannot read mapped .ko symbol name: "
+               << renderError(NameOrErr.takeError());
+      ++ImageSymbolCounts[*NameOrErr];
+    }
+
+    for (const llvm::json::Value &Value : *Symbols) {
+      const llvm::json::Object *Entry = Value.getAsObject();
+      if (!Entry)
+        return ::testing::AssertionFailure()
+               << "release symbol map entry is not an object";
+      const llvm::StringRef Original = Entry->getString("original");
+      const llvm::StringRef Release = Entry->getString("release");
+      if (Original.empty() || Release.empty() || Original == Release ||
+          !neverc::hasCanonicalReleaseNameShape(Release))
+        return ::testing::AssertionFailure()
+               << "release symbol map contains an invalid rename";
+      const auto Count = ImageSymbolCounts.find(Release);
+      if (Count == ImageSymbolCounts.end() || Count->second != 1)
+        return ::testing::AssertionFailure()
+               << "mapped release symbol '" << Release.str()
+               << "' does not identify exactly one final .ko symbol";
+    }
+    return ::testing::AssertionSuccess();
+  }
 };
+
+TEST_F(AndroidKernelRuntimeTest,
+       ReleasePublishesMatchingSymbolMapAndDebugRemovesIt) {
+  const fs::path Source = tmpFile("nvk_release_symbol_map.c");
+  writeFile(Source, kAndroidKernelModule);
+  const fs::path Output = tmpFile("nvk_release_symbol_map.ko");
+
+  const CmdResult Release =
+      linkKernelModule("", Source, Output,
+                       /*UseDeterministicXorStrKey=*/true,
+                       /*EmitDebugInfo=*/false,
+                       /*StripSymbols=*/true);
+  ASSERT_EQ(Release.exitCode, 0) << Release.err;
+  const std::string ReleaseBytes = readFile(Output);
+  EXPECT_TRUE(hasMatchingReleaseSymbolMap(Output, ReleaseBytes));
+
+  const fs::path PluginOutput =
+      tmpFile("nvk_release_symbol_map_plugin.ko");
+  const CmdResult PluginRelease = linkKernelModule(
+      NEVERC_TEST_OBJECT_POST_WRITE_PLUGIN, Source, PluginOutput,
+      /*UseDeterministicXorStrKey=*/true,
+      /*EmitDebugInfo=*/false,
+      /*StripSymbols=*/true);
+  ASSERT_EQ(PluginRelease.exitCode, 0) << PluginRelease.err;
+  const std::string PluginReleaseBytes = readFile(PluginOutput);
+  EXPECT_TRUE(
+      hasMatchingReleaseSymbolMap(PluginOutput, PluginReleaseBytes));
+
+  const CmdResult Debug = linkKernelModule("", Source, Output);
+  ASSERT_EQ(Debug.exitCode, 0) << Debug.err;
+  EXPECT_FALSE(fs::exists(Output.string() + ".symbols.json"));
+
+  const CmdResult PluginDebug =
+      linkKernelModule(NEVERC_TEST_OBJECT_POST_WRITE_PLUGIN, Source,
+                       PluginOutput);
+  ASSERT_EQ(PluginDebug.exitCode, 0) << PluginDebug.err;
+  EXPECT_FALSE(fs::exists(PluginOutput.string() + ".symbols.json"));
+}
+
+TEST_F(AndroidKernelRuntimeTest,
+       ReleaseRejectsStreamOutputWithoutSymbolMapPath) {
+  const fs::path Source = tmpFile("nvk_release_stdout.c");
+  writeFile(Source, kAndroidKernelModule);
+  const CmdResult Release =
+      linkKernelModule("", Source, fs::path("-"),
+                       /*UseDeterministicXorStrKey=*/true,
+                       /*EmitDebugInfo=*/false,
+                       /*StripSymbols=*/true);
+  EXPECT_NE(Release.exitCode, 0);
+  EXPECT_NE(Release.err.find(
+                "Android kernel release symbol maps require a file output"),
+            std::string::npos)
+      << Release.err;
+}
 
 TEST_F(AndroidKernelRuntimeTest, EmbeddedRuntimeXorStrRekeysFinalArtifact) {
   const fs::path Source = tmpFile("nvk_xorstr_rekey.c");

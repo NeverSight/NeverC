@@ -3279,6 +3279,15 @@ void Driver::handleArguments(Compilation &C, DerivedArgList &Args,
         tools::isFinalAndroidKernelModule(C.getDefaultToolChain().getTriple(),
                                           Args, OutputFile);
     if (!ProducesFinalLinkedImage && !ProducesFinalAndroidKernelModule) {
+      if (OutputFile == "-" &&
+          C.getDefaultToolChain().getTriple().isAndroid() &&
+          Args.hasArg(options::OPT_fandroid_kernel_driver_mode) &&
+          Args.hasArg(options::OPT_r)) {
+        Diag(neverc::diag::err_drv_unsupported_opt_with_reason)
+            << StripArg->getAsString(Args)
+            << "Android kernel release symbol maps require a file output";
+        return;
+      }
       Diag(neverc::diag::err_drv_unsupported_opt_with_reason)
           << StripArg->getAsString(Args)
           << "it only applies to final linked ELF, Mach-O, or PE/COFF images, "

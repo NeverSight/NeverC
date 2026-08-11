@@ -3,6 +3,7 @@
 
 #include "AndroidKernelReleaseInputVerifier.h"
 #include "PluginLinkRegistry.h"
+#include "neverc/Foundation/AndroidKernelReleaseSymbolMap.h"
 #include "neverc/Plugin/Host/ObjectGraph.h"
 #include "neverc/Plugin/Host/PluginTaskContext.h"
 #include "llvm/ADT/ArrayRef.h"
@@ -11,6 +12,7 @@
 #include <array>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 
 namespace neverc::plugin {
@@ -37,6 +39,10 @@ struct ObjectMergeResult {
   boundAndroidKernelReleaseOutput() const {
     return BoundAndroidKernelReleaseOutput;
   }
+  const std::optional<AndroidKernelReleaseSymbolMap> &
+  androidKernelReleaseSymbolMap() const {
+    return AndroidKernelReleaseSymbols;
+  }
 
 private:
   friend llvm::Expected<ObjectMergeResult> executeBuiltinObjectMergeAdapter(
@@ -48,6 +54,7 @@ private:
 
   std::shared_ptr<const AndroidKernelReleaseBoundOutputContract>
       BoundAndroidKernelReleaseOutput;
+  std::optional<AndroidKernelReleaseSymbolMap> AndroidKernelReleaseSymbols;
 };
 
 /// Consumes the direct built-in adapter's immutable native-output

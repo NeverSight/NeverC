@@ -243,6 +243,7 @@ Expected<ObjectMergeResult> executeBuiltinObjectMergeAdapter(
   SmallVector<char, 0> MergedBytes;
   raw_svector_ostream Output(MergedBytes);
   neverc::merge::Options MergeOptions;
+  AndroidKernelReleaseSymbolMap ReleaseSymbolMap;
   MergeOptions.pureC = true;
   MergeOptions.verify = true;
   // Mirror the native relocatable link's merge knobs so the plugin `-r` path is
@@ -256,6 +257,8 @@ Expected<ObjectMergeResult> executeBuiltinObjectMergeAdapter(
     MergeOptions.dropDebugInfo = Config.DropDebugInfo;
     MergeOptions.stripUnneededSymbols = Config.StripUnneededSymbols;
     MergeOptions.mergeSections = true;
+    if (Config.StripUnneededSymbols)
+      MergeOptions.releaseSymbolMap = &ReleaseSymbolMap;
   }
   (void)Flags;
   if (!neverc::merge::mergeObjects(InputBytes, Output, *Format, MergeOptions))
@@ -314,6 +317,8 @@ Expected<ObjectMergeResult> executeBuiltinObjectMergeAdapter(
   Result.PluginID = "neverc.builtin";
   Result.ProviderID = "neverc.builtin.object-merge";
   Result.BoundAndroidKernelReleaseOutput = std::move(BoundReleaseOutput);
+  if (Config.StripUnneededSymbols)
+    Result.AndroidKernelReleaseSymbols = std::move(ReleaseSymbolMap);
   Result.MergedImage = std::move(MergedBytes);
   return Result;
 }

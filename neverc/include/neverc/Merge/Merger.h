@@ -31,6 +31,10 @@
 
 #include <string>
 
+namespace neverc {
+struct AndroidKernelReleaseSymbolMap;
+}
+
 namespace neverc::merge {
 
 /// Marker that parallel codegen appends (followed by a per-module hash, e.g.
@@ -118,6 +122,13 @@ struct Options {
   /// fingerprint.  Intermediate partial links leave this false and preserve
   /// the contract for a later checked link.
   bool finalizeAndroidKernelModule = false;
+
+  /// Optional successful-final-merge result. When release stripping is active,
+  /// the ELF merger clears this object on entry and fills it only after the
+  /// merge succeeds and any enabled verifier passes. It contains every
+  /// retained original name that changed, its serialized release name, and the
+  /// final image digest. Other merge modes leave it empty.
+  neverc::AndroidKernelReleaseSymbolMap *releaseSymbolMap = nullptr;
 
   /// Additional sections to preserve from merging (exact match). Only
   /// consulted when mergeSections is true. Android module loader/architecture

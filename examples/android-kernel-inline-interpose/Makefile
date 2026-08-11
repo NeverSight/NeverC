@@ -88,6 +88,6 @@ run: insmod
 	@$(MAKE) log
 
 clean:
-	rm -f $(MODULE) *.o $(FLAGS_STAMP)
+	rm -f $(MODULE) $(MODULE).symbols.json *.o $(FLAGS_STAMP)
 
 .PHONY: all debug release push insmod rmmod log run clean

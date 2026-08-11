@@ -12,6 +12,7 @@
 #include "Common/MergerCommon.h"
 #include "neverc/Foundation/AndroidKernelModuleReleaseNames.h"
 #include "neverc/Foundation/AndroidKernelModuleSymbolPolicy.h"
+#include "neverc/Foundation/AndroidKernelReleaseSymbolMap.h"
 #include "neverc/Merge/Merger.h"
 #include "neverc/Plugin/Host/NativeRelocationFacts.h"
 
@@ -29,9 +30,11 @@
 #include "llvm/Object/ObjectFile.h"
 #include "llvm/Support/Compression.h"
 #include "llvm/Support/FileSystem.h"
+#include "llvm/Support/JSON.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/Program.h"
+#include "llvm/Support/SHA256.h"
 #include "llvm/TargetParser/Host.h"
 #include "llvm/TargetParser/Triple.h"
 
@@ -63,6 +66,92 @@ TEST(AndroidKernelModuleReleaseNames, FormatsCanonicalSpelling) {
   EXPECT_EQ(neverc::formatReleaseName(NameKind::Function, 0, 0), "fn_0");
   EXPECT_EQ(neverc::formatReleaseName(NameKind::ExecutableLabel, 8, 0),
             "code_8");
+}
+
+TEST(AndroidKernelReleaseSymbolMap, SerializesVersionedSortedMap) {
+  neverc::AndroidKernelReleaseSymbolMap Map;
+  for (size_t I = 0; I != Map.ImageSHA256.size(); ++I)
+    Map.ImageSHA256[I] = static_cast<uint8_t>(I);
+  Map.Symbols.push_back({"second_original", "fn_20"});
+  Map.Symbols.push_back({"first_original", "fn_10"});
+
+  auto Serialized = neverc::serializeAndroidKernelReleaseSymbolMap(Map);
+  ASSERT_TRUE(static_cast<bool>(Serialized));
+  EXPECT_TRUE(StringRef(*Serialized).ends_with("\n"));
+
+  auto Parsed = json::parse(*Serialized);
+  ASSERT_TRUE(static_cast<bool>(Parsed));
+  const json::Object *Root = Parsed->getAsObject();
+  ASSERT_NE(Root, nullptr);
+  EXPECT_EQ(Root->getString("format"), "neverc.android-kernel-symbol-map");
+  int64_t Version = 0;
+  ASSERT_TRUE(Root->getInteger("version", Version));
+  EXPECT_EQ(Version, 2);
+  EXPECT_EQ(Root->getString("image_sha256"),
+            "000102030405060708090a0b0c0d0e0f"
+            "101112131415161718191a1b1c1d1e1f");
+
+  const json::Array *Symbols = Root->getArray("symbols");
+  ASSERT_NE(Symbols, nullptr);
+  ASSERT_EQ(Symbols->size(), 2u);
+  const json::Object *First = (*Symbols)[0].getAsObject();
+  const json::Object *Second = (*Symbols)[1].getAsObject();
+  ASSERT_NE(First, nullptr);
+  ASSERT_NE(Second, nullptr);
+  EXPECT_EQ(First->getString("original"), "first_original");
+  EXPECT_EQ(First->getString("release"), "fn_10");
+  EXPECT_EQ(Second->getString("original"), "second_original");
+  EXPECT_EQ(Second->getString("release"), "fn_20");
+}
+
+TEST(AndroidKernelReleaseSymbolMap, RejectsAmbiguousReleaseNames) {
+  neverc::AndroidKernelReleaseSymbolMap Map;
+  Map.Symbols.push_back({"first_original", "fn_10"});
+  Map.Symbols.push_back({"second_original", "fn_10"});
+  auto Serialized = neverc::serializeAndroidKernelReleaseSymbolMap(Map);
+  ASSERT_FALSE(static_cast<bool>(Serialized));
+  consumeError(Serialized.takeError());
+}
+
+TEST(AndroidKernelReleaseSymbolMap, EncodesNonUTF8OriginalNamesLosslessly) {
+  neverc::AndroidKernelReleaseSymbolMap Map;
+  Map.Symbols.push_back({std::string("invalid_\xff", 9), "fn_10"});
+  auto Serialized = neverc::serializeAndroidKernelReleaseSymbolMap(Map);
+  ASSERT_TRUE(static_cast<bool>(Serialized))
+      << toString(Serialized.takeError()).str().str();
+  auto Parsed = json::parse(*Serialized);
+  ASSERT_TRUE(static_cast<bool>(Parsed));
+  const json::Object *Root = Parsed->getAsObject();
+  ASSERT_NE(Root, nullptr);
+  const json::Array *Symbols = Root->getArray("symbols");
+  ASSERT_NE(Symbols, nullptr);
+  ASSERT_EQ(Symbols->size(), 1u);
+  const json::Object *Symbol = Symbols->front().getAsObject();
+  ASSERT_NE(Symbol, nullptr);
+  EXPECT_EQ(Symbol->getString("original"), "aW52YWxpZF//");
+  EXPECT_EQ(Symbol->getString("original_encoding"), "base64");
+  EXPECT_EQ(Symbol->getString("release"), "fn_10");
+}
+
+TEST(AndroidKernelReleaseSymbolMap, ClearsStateBeforeNonELFMerge) {
+  neverc::AndroidKernelReleaseSymbolMap Map;
+  Map.ImageSHA256[0] = 1;
+  Map.Symbols.push_back({"stale_original", "fn_10"});
+  Options Opts;
+  Opts.releaseSymbolMap = &Map;
+  SmallVector<SmallVector<char, 0>, 1> Buffers;
+  SmallVector<char, 0> Output;
+  raw_svector_ostream OS(Output);
+  (void)mergeObjects(Buffers, OS, Format::COFF, Opts);
+  const std::array<uint8_t, 32> EmptyDigest{};
+  EXPECT_EQ(Map.ImageSHA256, EmptyDigest);
+  EXPECT_TRUE(Map.Symbols.empty());
+
+  Map.ImageSHA256[0] = 1;
+  Map.Symbols.push_back({"stale_original", "fn_10"});
+  (void)mergeObjects(Buffers, OS, Format::MachO64, Opts);
+  EXPECT_EQ(Map.ImageSHA256, EmptyDigest);
+  EXPECT_TRUE(Map.Symbols.empty());
 }
 
 TEST(AndroidKernelModuleReleaseNames, RecognizesOnlyCanonicalSpellingShape) {
@@ -4918,8 +5007,25 @@ TEST(MergeELFSemantic,
   Bufs.push_back(std::move(Obj));
 
   Options Opts = androidKernelReleaseOptions();
+  neverc::AndroidKernelReleaseSymbolMap SymbolMap;
+  Opts.releaseSymbolMap = &SymbolMap;
   auto [OK, Out] = mergeELF(Bufs, Opts);
   ASSERT_TRUE(OK);
+  EXPECT_EQ(SymbolMap.ImageSHA256,
+            SHA256::hash(ArrayRef<uint8_t>(
+                reinterpret_cast<const uint8_t *>(Out.data()), Out.size())));
+  const auto HasMapEntry = [&](StringRef Original, StringRef Release) {
+    return std::any_of(
+        SymbolMap.Symbols.begin(), SymbolMap.Symbols.end(),
+        [&](const neverc::AndroidKernelReleaseSymbolMapEntry &Entry) {
+          return Entry.OriginalName == Original &&
+                 Entry.ReleaseName == Release;
+        });
+  };
+  EXPECT_TRUE(HasMapEntry("release_needed_local", "fn_0"));
+  EXPECT_TRUE(HasMapEntry("release_public_definition", "fn_20"));
+  EXPECT_FALSE(HasMapEntry("release_unneeded_local", "fn_10"));
+  EXPECT_FALSE(HasMapEntry("release_needed_import", "release_needed_import"));
 
   ElfView V = parseELF(Out);
   ASSERT_TRUE(V.Ok);

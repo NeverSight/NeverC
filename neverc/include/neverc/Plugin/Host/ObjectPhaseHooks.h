@@ -24,11 +24,13 @@ using ObjectImageSemanticValidatorFactory =
 /// Graph validation runs after every mutable graph phase. A pre/post-write
 /// factory binds one immutable baseline after the complete write phase and its
 /// returned validator runs after the complete post-write phase. Final image
-/// validation then runs before the output is sealed.
+/// validation then runs before the output is sealed. A custom committer may
+/// replace publication while preserving the ordinary commit phase contract.
 struct ObjectPhaseSemanticValidators {
   std::function<llvm::Error(const PluginObjectGraph &)> Graph;
   ObjectImageSemanticValidatorFactory BindPrePostWriteImage;
   ObjectImageSemanticValidator Image;
+  PluginObjectImageCommitter Commit;
 };
 
 class ObjectPhasePipeline {

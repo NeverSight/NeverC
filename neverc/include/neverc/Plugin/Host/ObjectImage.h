@@ -6,9 +6,11 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace neverc::plugin {
 
@@ -23,6 +25,18 @@ enum class PluginObjectImageState : uint8_t {
   Aborted,
   FailedPartial,
 };
+
+/// A custom committer must report the terminal output state even when a late
+/// durability or journal operation fails after publication. Failure is
+/// returned to the caller, while Summary keeps the object-image state aligned
+/// with the files that are actually visible.
+struct PluginObjectImageCommitResult {
+  NevercOutputSummary Summary{};
+  llvm::Error Failure = llvm::Error::success();
+};
+
+using PluginObjectImageCommitter =
+    std::function<PluginObjectImageCommitResult(llvm::ArrayRef<uint8_t>)>;
 
 class PluginObjectImage {
 public:
@@ -64,6 +78,7 @@ public:
 
   llvm::Expected<NevercOutputSummary> outputSummary() const;
   llvm::Expected<llvm::ArrayRef<uint8_t>> pendingBytes() const;
+  llvm::Error setCommitter(PluginObjectImageCommitter Committer);
   llvm::Error finish();
   llvm::Error verify();
   llvm::Expected<NevercOutputSummary> commit();
@@ -91,6 +106,9 @@ private:
   std::string Provenance;
   std::optional<NevercObjectLayoutProofInfo> LayoutReport;
   std::unique_ptr<MutableBinaryBuilder> Builder;
+  PluginObjectImageCommitter Committer;
+  std::vector<uint8_t> CommitBytes;
+  std::optional<NevercOutputSummary> CommittedSummary;
   NevercObjectImageHandle Handle{};
   PluginObjectImageState State = PluginObjectImageState::Candidate;
 };

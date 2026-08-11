@@ -88,6 +88,38 @@ riporta la build successiva a debug. In questo percorso finale NeverC rimuove
 sezioni di debug, `.comment` e voci locali/non definite inutili alle
 rilocazioni, quindi ricostruisce `.strtab`.
 
+Dopo una release riuscita, NeverC crea atomicamente
+`<module>.ko.symbols.json` accanto al modulo. Il file registra i nomi
+`original` e `release` per ogni simbolo conservato il cui nome è cambiato e
+lega la mappa ai byte del modulo finale tramite `image_sha256`:
+
+```json
+{
+  "format": "neverc.android-kernel-symbol-map",
+  "version": 1,
+  "image_sha256": "…",
+  "symbols": [
+    {"original": "worker_dispatch", "release": "fn_C000"}
+  ]
+}
+```
+
+Le voci sono ordinate per `release`. I simboli rimossi e i nomi esatti di
+loader, import o CFI sono omessi perché non richiedono traduzione. Se una build
+debug o un'altra build senza strip sovrascrive lo stesso percorso di output,
+NeverC elimina la mappa obsoleta. La mappa contiene nomi originali leggibili:
+archiviala come artefatto di debug privato; non distribuirla con il `.ko` e non
+inviarla al dispositivo. Prima di tradurre un nome release da un rapporto di
+crash, verifica che la mappa appartenga al `.ko` corrente:
+
+```bash
+test "$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' \
+  nvk_hello.ko)" = "$(jq -r '.image_sha256' nvk_hello.ko.symbols.json)"
+
+jq -r '.symbols[] | select(.release == "fn_C000") | .original' \
+  nvk_hello.ko.symbols.json
+```
+
 Le definizioni conservate idonee ricevono nomi strutturali deterministici
 ispirati a IDA, senza usare i suoi prefissi riservati:
 
