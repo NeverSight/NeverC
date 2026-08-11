@@ -347,7 +347,7 @@ protected:
              << "release symbol map root is not an object";
     int64_t Version = 0;
     if (Root->getString("format") != "neverc.android-kernel-symbol-map" ||
-        !Root->getInteger("version", Version) || Version != 1)
+        !Root->getInteger("version", Version) || Version != 2)
       return ::testing::AssertionFailure()
              << "release symbol map has the wrong format or version";
 

@@ -1,6 +1,7 @@
 #include "neverc/Foundation/AndroidKernelReleaseSymbolMap.h"
 
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/Support/Base64.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/JSON.h"
 #include "llvm/Support/SHA256.h"
@@ -44,9 +45,8 @@ Expected<std::string> serializeAndroidKernelReleaseSymbolMap(
   for (const AndroidKernelReleaseSymbolMapEntry &Entry : Map.Symbols) {
     if (Entry.OriginalName.empty() || Entry.ReleaseName.empty())
       return mapError("entries require non-empty original and release names");
-    if (!json::isUTF8(Entry.OriginalName) ||
-        !json::isUTF8(Entry.ReleaseName))
-      return mapError("entry names require valid UTF-8");
+    if (!json::isUTF8(Entry.ReleaseName))
+      return mapError("release names require valid UTF-8");
     if (Entry.OriginalName == Entry.ReleaseName)
       return mapError("unchanged symbols must not be serialized");
     if (!ReleaseNames.insert(Entry.ReleaseName).second)
@@ -62,14 +62,21 @@ Expected<std::string> serializeAndroidKernelReleaseSymbolMap(
 
   json::Array Symbols;
   Symbols.reserve(Ordered.size());
-  for (const AndroidKernelReleaseSymbolMapEntry *Entry : Ordered)
-    Symbols.push_back(json::Object{{"original", Entry->OriginalName},
-                                   {"release", Entry->ReleaseName}});
+  for (const AndroidKernelReleaseSymbolMapEntry *Entry : Ordered) {
+    json::Object Symbol{{"release", Entry->ReleaseName}};
+    if (json::isUTF8(Entry->OriginalName)) {
+      Symbol["original"] = Entry->OriginalName;
+    } else {
+      Symbol["original"] = encodeBase64(Entry->OriginalName);
+      Symbol["original_encoding"] = "base64";
+    }
+    Symbols.push_back(std::move(Symbol));
+  }
 
   const std::string ImageDigest = digestText(Map.ImageSHA256);
   json::Object Root{
       {"format", "neverc.android-kernel-symbol-map"},
-      {"version", 1},
+      {"version", 2},
       {"image_sha256", ImageDigest},
       {"symbols", std::move(Symbols)},
   };

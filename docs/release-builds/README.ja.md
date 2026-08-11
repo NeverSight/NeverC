@@ -86,16 +86,19 @@ Mach-O には通常のシンボル名が残り得ます。PE はデバッグ設�
 では NeverC はデバッグセクション、`.comment`、再配置に不要なローカル／未定義
 エントリを除去し、`.strtab` を再構築します。
 
-release が成功すると、NeverC はモジュールの隣に
-`<module>.ko.symbols.json` をアトミックに生成します。このファイルには、保持
-されたシンボルのうち名前が変わったものについて、`original`（元の名前）と
-`release`（`.ko` 内の名前）が記録されます。また `image_sha256` により最終
-モジュールのバイト列へ結び付けられるため、異なる版のマップを取り違えません。
+release が成功すると、NeverC はモジュールとその隣の
+`<module>.ko.symbols.json` をトランザクションとして公開します。既存ファイル
+はそれぞれがアトミックに置換されるまで表示されたままです。公開前のエラーでは
+バンドル全体がロールバックされ、遅い段階の永続性エラーでは復旧ジャーナルが
+残ります。2 つのディレクトリエントリを 1 回のファイルシステム操作で置換する
+ことはできないため、異常終了後は必ず `image_sha256` を検証してください。
+マップには、保持されたシンボルのうち名前が変わったものについて、`original`
+（元の名前）と `release`（`.ko` 内の名前）が記録されます。
 
 ```json
 {
   "format": "neverc.android-kernel-symbol-map",
-  "version": 1,
+  "version": 2,
   "image_sha256": "…",
   "symbols": [
     {"original": "worker_dispatch", "release": "fn_C000"}
@@ -106,17 +109,26 @@ release が成功すると、NeverC はモジュールの隣に
 エントリは `release` 順です。削除されたシンボルと、正確な名前を保持する必要が
 あるローダー、import、CFI の名前は変換不要のため記録されません。同じ出力先を
 debug またはその他の非 strip ビルドが上書きすると、NeverC は古いマップを
-削除します。マップには可読な元名が含まれるため、非公開のデバッグ成果物として
-保管し、`.ko` と一緒に配布したりデバイスへ push したりしないでください。
-クラッシュログの release 名を変換する前に、まず現在の `.ko` に対応するマップ
-であることを確認します。
+削除します。ELF のシンボル名には UTF-8 でないバイトも使用できます。このような
+まれな元名は `original` に Base64 で格納され、
+`"original_encoding": "base64"` が付加されます。それ以外の元名は可読なまま
+です。マップは非公開のデバッグ成果物として保管し、`.ko` と一緒に配布したり
+デバイスへ push したりしないでください。クラッシュログの release 名を変換する
+前に、まず現在の `.ko` に対応するマップであることを確認します。
 
 ```bash
 test "$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' \
   nvk_hello.ko)" = "$(jq -r '.image_sha256' nvk_hello.ko.symbols.json)"
 
-jq -r '.symbols[] | select(.release == "fn_C000") | .original' \
-  nvk_hello.ko.symbols.json
+python3 - nvk_hello.ko.symbols.json fn_C000 <<'PY'
+import base64, json, sys
+with open(sys.argv[1], encoding="utf-8") as stream:
+    entry = next(item for item in json.load(stream)["symbols"]
+                 if item["release"] == sys.argv[2])
+original = entry["original"]
+print(repr(base64.b64decode(original))
+      if entry.get("original_encoding") == "base64" else original)
+PY
 ```
 
 対象となる保持済み定義には、IDA に着想を得つつ予約接頭辞を使わない決定的な

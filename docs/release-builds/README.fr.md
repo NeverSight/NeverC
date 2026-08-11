@@ -89,15 +89,19 @@ debug. Sur cette voie finale, NeverC retire les sections de débogage,
 `.comment` et les entrées locales/non définies inutiles aux relocalisations,
 puis reconstruit `.strtab`.
 
-Après une release réussie, NeverC crée atomiquement
-`<module>.ko.symbols.json` à côté du module. Ce fichier enregistre les noms
-`original` et `release` de chaque symbole conservé dont le nom a changé, et
-lie la table aux octets du module final avec `image_sha256` :
+Après une release réussie, NeverC publie de façon transactionnelle le module
+et `<module>.ko.symbols.json` à côté de celui-ci. Les fichiers existants
+restent visibles jusqu'à chaque remplacement atomique. Les erreurs antérieures
+à la publication annulent l'ensemble du lot ; les erreurs tardives de
+durabilité conservent un journal de récupération. Deux entrées de répertoire ne
+pouvant pas être remplacées par une seule opération du système de fichiers,
+vérifiez toujours `image_sha256` après un arrêt anormal. La table enregistre
+les noms `original` et `release` de chaque symbole conservé dont le nom a changé :
 
 ```json
 {
   "format": "neverc.android-kernel-symbol-map",
-  "version": 1,
+  "version": 2,
   "image_sha256": "…",
   "symbols": [
     {"original": "worker_dispatch", "release": "fn_C000"}
@@ -108,17 +112,27 @@ lie la table aux octets du module final avec `image_sha256` :
 Les entrées sont triées par `release`. Les symboles supprimés et les noms
 exacts du chargeur, des imports ou du CFI sont omis puisqu'ils ne nécessitent
 aucune traduction. Si une build debug ou toute autre build sans strip écrase
-le même chemin de sortie, NeverC supprime l'ancienne table. Celle-ci contient
-les noms d'origine lisibles : archivez-la comme artefact de débogage privé, ne
-la distribuez pas avec le `.ko` et ne l'envoyez pas sur l'appareil. Avant de
-traduire un nom de release issu d'un rapport de plantage, vérifiez la liaison :
+le même chemin de sortie, NeverC supprime l'ancienne table. ELF autorise des
+octets non UTF-8 dans les noms de symboles ; ces rares noms d'origine sont
+stockés en Base64 dans `original` avec
+`"original_encoding": "base64"`. Les autres noms d'origine restent lisibles.
+Archivez la table comme artefact de débogage privé, ne la distribuez pas avec
+le `.ko` et ne l'envoyez pas sur l'appareil. Avant de traduire un nom de release
+issu d'un rapport de plantage, vérifiez la liaison :
 
 ```bash
 test "$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' \
   nvk_hello.ko)" = "$(jq -r '.image_sha256' nvk_hello.ko.symbols.json)"
 
-jq -r '.symbols[] | select(.release == "fn_C000") | .original' \
-  nvk_hello.ko.symbols.json
+python3 - nvk_hello.ko.symbols.json fn_C000 <<'PY'
+import base64, json, sys
+with open(sys.argv[1], encoding="utf-8") as stream:
+    entry = next(item for item in json.load(stream)["symbols"]
+                 if item["release"] == sys.argv[2])
+original = entry["original"]
+print(repr(base64.b64decode(original))
+      if entry.get("original_encoding") == "base64" else original)
+PY
 ```
 
 Les définitions conservées éligibles reçoivent des noms structurels

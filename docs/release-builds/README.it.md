@@ -88,15 +88,19 @@ riporta la build successiva a debug. In questo percorso finale NeverC rimuove
 sezioni di debug, `.comment` e voci locali/non definite inutili alle
 rilocazioni, quindi ricostruisce `.strtab`.
 
-Dopo una release riuscita, NeverC crea atomicamente
-`<module>.ko.symbols.json` accanto al modulo. Il file registra i nomi
-`original` e `release` per ogni simbolo conservato il cui nome è cambiato e
-lega la mappa ai byte del modulo finale tramite `image_sha256`:
+Dopo una release riuscita, NeverC pubblica in modo transazionale il modulo e
+`<module>.ko.symbols.json` accanto ad esso. I file esistenti restano visibili
+fino a ogni sostituzione atomica. Gli errori prima della pubblicazione annullano
+l'intero bundle; gli errori tardivi di durabilità conservano un journal di
+ripristino. Poiché due voci di directory non possono essere sostituite con una
+sola operazione del filesystem, verifica sempre `image_sha256` dopo un arresto
+anomalo. La mappa registra i nomi `original` e `release` per ogni simbolo
+conservato il cui nome è cambiato:
 
 ```json
 {
   "format": "neverc.android-kernel-symbol-map",
-  "version": 1,
+  "version": 2,
   "image_sha256": "…",
   "symbols": [
     {"original": "worker_dispatch", "release": "fn_C000"}
@@ -107,17 +111,26 @@ lega la mappa ai byte del modulo finale tramite `image_sha256`:
 Le voci sono ordinate per `release`. I simboli rimossi e i nomi esatti di
 loader, import o CFI sono omessi perché non richiedono traduzione. Se una build
 debug o un'altra build senza strip sovrascrive lo stesso percorso di output,
-NeverC elimina la mappa obsoleta. La mappa contiene nomi originali leggibili:
-archiviala come artefatto di debug privato; non distribuirla con il `.ko` e non
-inviarla al dispositivo. Prima di tradurre un nome release da un rapporto di
-crash, verifica che la mappa appartenga al `.ko` corrente:
+NeverC elimina la mappa obsoleta. ELF consente byte non UTF-8 nei nomi dei
+simboli; questi rari nomi originali sono memorizzati in Base64 in `original`
+con `"original_encoding": "base64"`. Gli altri nomi originali restano
+leggibili. Archivia la mappa come artefatto di debug privato; non distribuirla
+con il `.ko` e non inviarla al dispositivo. Prima di tradurre un nome release
+da un rapporto di crash, verifica che la mappa appartenga al `.ko` corrente:
 
 ```bash
 test "$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' \
   nvk_hello.ko)" = "$(jq -r '.image_sha256' nvk_hello.ko.symbols.json)"
 
-jq -r '.symbols[] | select(.release == "fn_C000") | .original' \
-  nvk_hello.ko.symbols.json
+python3 - nvk_hello.ko.symbols.json fn_C000 <<'PY'
+import base64, json, sys
+with open(sys.argv[1], encoding="utf-8") as stream:
+    entry = next(item for item in json.load(stream)["symbols"]
+                 if item["release"] == sys.argv[2])
+original = entry["original"]
+print(repr(base64.b64decode(original))
+      if entry.get("original_encoding") == "base64" else original)
+PY
 ```
 
 Le definizioni conservate idonee ricevono nomi strutturali deterministici

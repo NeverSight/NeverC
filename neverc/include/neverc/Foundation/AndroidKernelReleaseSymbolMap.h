@@ -37,7 +37,8 @@ struct AndroidKernelReleaseSymbolMap {
 std::string androidKernelReleaseSymbolMapPath(llvm::StringRef ImagePath);
 
 /// Serializes a deterministic, versioned JSON sidecar. Entries are ordered by
-/// release name so a crash-log spelling can be searched directly.
+/// release name so a crash-log spelling can be searched directly. Original
+/// ELF names that are not UTF-8 are represented losslessly as Base64.
 llvm::Expected<std::string>
 serializeAndroidKernelReleaseSymbolMap(
     const AndroidKernelReleaseSymbolMap &Map);

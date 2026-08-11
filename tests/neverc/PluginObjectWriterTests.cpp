@@ -943,11 +943,7 @@ TEST(PluginObjectWriterTest,
   Graph.sections().push_back(std::move(Section));
   Graph.issueLayoutProof();
 
-  auto Image = (*Provider)->beginWrite(
-      Scope.task(), Graph,
-      ObjectOutputDestination::memory("late-failure.nobj", UINT64_C(1024)));
-  ASSERT_TRUE(static_cast<bool>(Image)) << errorText(Image.takeError());
-  ASSERT_FALSE((*Image)->setCommitter([](ArrayRef<uint8_t> Bytes) {
+  const auto LateCommitter = [](ArrayRef<uint8_t> Bytes) {
     NevercOutputSummary Summary{};
     Summary.Header = {sizeof(Summary), NEVERC_IO_API_MAJOR,
                       NEVERC_IO_API_MINOR, 0};
@@ -960,7 +956,12 @@ TEST(PluginObjectWriterTest,
     return PluginObjectImageCommitResult{
         Summary,
         createStringError(errc::io_error, "late durability failure")};
-  }));
+  };
+  auto Image = (*Provider)->beginWrite(
+      Scope.task(), Graph,
+      ObjectOutputDestination::memory("late-failure.nobj", UINT64_C(1024)));
+  ASSERT_TRUE(static_cast<bool>(Image)) << errorText(Image.takeError());
+  ASSERT_FALSE((*Image)->setCommitter(LateCommitter));
   ASSERT_FALSE((*Image)->finish());
   ASSERT_FALSE((*Image)->verify());
 
@@ -979,6 +980,30 @@ TEST(PluginObjectWriterTest,
   ASSERT_TRUE(static_cast<bool>(RepeatedCommit))
       << errorText(RepeatedCommit.takeError());
   EXPECT_EQ(RepeatedCommit->State, NEVERC_OUTPUT_COMMITTED);
+
+  auto Pipeline = ObjectPhasePipeline::create(Scope.task(), *Snapshot);
+  ASSERT_TRUE(static_cast<bool>(Pipeline)) << errorText(Pipeline.takeError());
+  auto PipelineImage = (*Provider)->beginWrite(
+      Scope.task(), Graph,
+      ObjectOutputDestination::memory("pipeline-late-failure.nobj",
+                                      UINT64_C(1024)));
+  ASSERT_TRUE(static_cast<bool>(PipelineImage))
+      << errorText(PipelineImage.takeError());
+  ASSERT_FALSE((*PipelineImage)->setCommitter(LateCommitter));
+  ASSERT_FALSE((*PipelineImage)->finish());
+  std::shared_ptr<PluginObjectImage> RetainedImage(std::move(*PipelineImage));
+  auto PipelineTarget = makeTargetKey();
+  ASSERT_TRUE(static_cast<bool>(PipelineTarget))
+      << errorText(PipelineTarget.takeError());
+  auto PipelineCommit = (*Pipeline)->verifyAndCommitFinished(
+      PipelineTarget->view(), RetainedImage);
+  ASSERT_FALSE(static_cast<bool>(PipelineCommit));
+  const std::string PipelineError = errorText(PipelineCommit.takeError());
+  EXPECT_NE(PipelineError.find("late durability failure"), std::string::npos)
+      << PipelineError;
+  EXPECT_NE(PipelineError.find("commit completed"), std::string::npos)
+      << PipelineError;
+  EXPECT_EQ(RetainedImage->state(), PluginObjectImageState::Committed);
 }
 
 TEST(PluginObjectWriterTest,

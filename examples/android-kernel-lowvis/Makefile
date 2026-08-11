@@ -18,6 +18,7 @@ SRCS    = main.c
 # bypass the persisted selection. Persist via $(file): no host shell, so
 # `neverc make` works on Windows too.
 FLAGS_STAMP := .nvk-build-flags
+RELEASE_BUNDLE_STAMP := .nvk-release-bundle
 SAVED_BUILD_ID := $(file <$(FLAGS_STAMP))
 SAVED_KERNEL := $(patsubst KERNEL=%,%,$(filter KERNEL=%,$(SAVED_BUILD_ID)))
 SAVED_EXTRA := $(patsubst EXTRA=%,%,$(filter EXTRA=%,$(SAVED_BUILD_ID)))
@@ -56,7 +57,13 @@ ifneq ($(strip $(file <$(FLAGS_STAMP))),$(BUILD_ID))
 _ := $(file >$(FLAGS_STAMP),$(BUILD_ID))
 endif
 
+ifeq ($(PROFILE),release)
+all:
+	$(MAKE) PROFILE=release $(MODULE)
+	$(MAKE) PROFILE=release $(MODULE).symbols.json
+else
 all: $(MODULE)
+endif
 
 # Re-enter with an explicit PROFILE so later bare `make push`/`run` keep using
 # the same artifact instead of falling back to the default profile.
@@ -66,8 +73,23 @@ debug:
 release:
 	$(MAKE) PROFILE=release all
 
+ifeq ($(PROFILE),release)
+.PHONY: release-bundle-output
+
+$(RELEASE_BUNDLE_STAMP): $(SRCS) $(FLAGS_STAMP)
+	$(NEVERC) $(FLAGS) -r -nostdlib -o $(MODULE) $(SRCS) && echo $(BUILD_ID) > $@
+
+release-bundle-output: $(RELEASE_BUNDLE_STAMP)
+	@if test -f $(MODULE) && test -f $(MODULE).symbols.json; then :; else \
+		$(NEVERC) $(FLAGS) -r -nostdlib -o $(MODULE) $(SRCS) && \
+		echo $(BUILD_ID) > $(RELEASE_BUNDLE_STAMP); \
+	fi
+
+$(MODULE) $(MODULE).symbols.json: release-bundle-output
+else
 $(MODULE): $(SRCS) $(FLAGS_STAMP)
 	$(NEVERC) $(FLAGS) -r -nostdlib -o $@ $(SRCS)
+endif
 
 push: $(MODULE)
 	adb push $(MODULE) /data/local/tests/
@@ -82,6 +104,6 @@ run: insmod
 	@echo "Module loaded. Check visibility: adb shell su -c 'lsmod | grep $(MODNAME)'"
 
 clean:
-	rm -f $(MODULE) $(MODULE).symbols.json *.o $(FLAGS_STAMP)
+	rm -f $(MODULE) $(MODULE).symbols.json *.o $(FLAGS_STAMP) $(RELEASE_BUNDLE_STAMP)
 
 .PHONY: all debug release push insmod rmmod run clean

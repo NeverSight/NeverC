@@ -228,7 +228,12 @@ Error OutputBundleTransaction::rollback() {
     if (It->BackupPath.empty())
       continue;
     if (!It->Published) {
-      if (std::error_code EC = sys::fs::remove(It->BackupPath))
+      std::error_code EC = sys::fs::remove(It->BackupPath);
+      if (EC == std::make_error_code(std::errc::no_such_file_or_directory)) {
+        It->BackupPath.clear();
+        continue;
+      }
+      if (EC)
         Failures =
             joinErrors(std::move(Failures), errorCodeToError(EC));
       else
@@ -259,6 +264,12 @@ Error OutputBundleTransaction::rollback() {
         Failures =
             joinErrors(std::move(Failures), std::move(Discard));
     }
+  if (!Failures && !JournalPath.empty()) {
+    if (std::error_code EC = sys::fs::remove(JournalPath))
+      Failures = joinErrors(std::move(Failures), errorCodeToError(EC));
+    else
+      JournalPath.clear();
+  }
   if (Failures) {
     State = OutputBundleState::FailedPartial;
     Flags |= OutputMayBePartial | OutputRecoveryRequired;
@@ -266,10 +277,6 @@ Error OutputBundleTransaction::rollback() {
     return Failures;
   }
   State = OutputBundleState::Aborted;
-  if (!JournalPath.empty()) {
-    (void)sys::fs::remove(JournalPath);
-    JournalPath.clear();
-  }
   releaseLeases();
   return Error::success();
 }
@@ -327,6 +334,13 @@ Expected<OutputBundleSummary> OutputBundleTransaction::commit() {
     } else if (!EC) {
       EC = sys::fs::create_hard_link(
           EntryValue.CanonicalPath, EntryValue.BackupPath);
+      if (EC) {
+        EC =
+            sys::fs::copy_file(EntryValue.CanonicalPath, EntryValue.BackupPath);
+        if (!EC)
+          EC = sys::fs::setPermissions(EntryValue.BackupPath,
+                                       ExistingStatus.permissions());
+      }
     }
     if (EC) {
       Error Original = errorCodeToError(EC);
@@ -351,6 +365,10 @@ Expected<OutputBundleSummary> OutputBundleTransaction::commit() {
     return Error::success();
   };
 
+  // Publish side outputs first and the main output last as the bundle's commit
+  // marker. A hard crash can leave a side output ahead of the old main, but it
+  // cannot expose a new main without its matching side output; consumers must
+  // still validate side-output digests after an unclean shutdown.
   for (size_t Index = 0; Index != Entries.size(); ++Index) {
     if (Index == MainIndex)
       continue;
@@ -439,11 +457,20 @@ Expected<OutputBundleSummary> OutputBundleTransaction::commit() {
     Journal << "completed\n";
     Journal.flush();
   }
+  Error BackupCleanupFailures = Error::success();
   for (Entry &EntryValue : Entries)
     if (!EntryValue.BackupPath.empty()) {
-      (void)sys::fs::remove(EntryValue.BackupPath);
-      EntryValue.BackupPath.clear();
+      if (std::error_code EC = sys::fs::remove(EntryValue.BackupPath))
+        BackupCleanupFailures =
+            joinErrors(std::move(BackupCleanupFailures), errorCodeToError(EC));
+      else
+        EntryValue.BackupPath.clear();
     }
+  if (BackupCleanupFailures) {
+    Flags |= OutputRecoveryRequired;
+    releaseLeases();
+    return std::move(BackupCleanupFailures);
+  }
   if (std::error_code Injected =
           fault(OutputBundleOperation::CleanupJournal,
                 JournalPath)) {
@@ -475,7 +502,11 @@ Error OutputBundleTransaction::abort() {
     }
   State = OutputBundleState::Aborted;
   if (!JournalPath.empty()) {
-    (void)sys::fs::remove(JournalPath);
+    if (std::error_code EC = sys::fs::remove(JournalPath)) {
+      Flags |= OutputRecoveryRequired;
+      releaseLeases();
+      return errorCodeToError(EC);
+    }
     JournalPath.clear();
   }
   releaseLeases();

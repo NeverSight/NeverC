@@ -483,6 +483,28 @@ TEST(PluginBinaryImageTest,
   EXPECT_EQ(readFile(Map), "old-map");
 }
 
+TEST(PluginBinaryImageTest,
+     BackupMaterializationFailureAbortsWithoutRecoveryState) {
+  TemporaryDirectory Directory;
+  const std::string Main = Directory.file("occupied-output");
+  ASSERT_FALSE(sys::fs::create_directory(Main));
+  neverc::OutputCoordinator Coordinator;
+  std::vector<neverc::OutputBundleFile> Outputs = {
+      {"main", Main, {'n', 'e', 'w'}, true},
+  };
+  auto Bundle = neverc::OutputBundleTransaction::create(Coordinator, Outputs);
+  ASSERT_TRUE(static_cast<bool>(Bundle)) << errorText(Bundle.takeError());
+  auto Committed = (*Bundle)->commit();
+  ASSERT_FALSE(static_cast<bool>(Committed));
+  consumeError(Committed.takeError());
+  const neverc::OutputBundleSummary Summary = (*Bundle)->summary();
+  EXPECT_EQ(Summary.State, neverc::OutputBundleState::Aborted);
+  EXPECT_EQ(Summary.Flags & neverc::OutputRecoveryRequired, 0U);
+  sys::fs::file_status Status;
+  ASSERT_FALSE(sys::fs::status(Main, Status, /*follow=*/false));
+  EXPECT_EQ(Status.type(), sys::fs::file_type::directory_file);
+}
+
 TEST(PluginBinaryImageTest, BundleCanRemoveAStaleSideOutput) {
   TemporaryDirectory Directory;
   const std::string Main = Directory.file("module.ko");

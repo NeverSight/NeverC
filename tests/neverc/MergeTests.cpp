@@ -4961,6 +4961,9 @@ TEST(MergeELFSemantic,
   SymSpec UnneededLocal{"release_unneeded_local", 0, 16};
   UnneededLocal.Global = false;
   SymSpec PublicDefinition{"release_public_definition", 0, 32};
+  const std::string InvalidOriginal =
+      std::string("release_invalid_") + static_cast<char>(0xff);
+  SymSpec InvalidUTF8Definition{InvalidOriginal, 0, 40};
   SymSpec NeededImport{"release_needed_import", -1, 0};
   SymSpec UnneededImport{"release_unneeded_import", -1, 0};
   SymSpec ModInfoSymbol{"release_modinfo_name", 2, 0};
@@ -4996,12 +4999,18 @@ TEST(MergeELFSemantic,
   auto Obj = buildSectionedELF(
       {Text, Comment, ModInfo, Ftrace, ThisModule, Versions, AllocTags, Rodata,
        Data, Bss, Plt, InitPlt},
-      {NeededLocal,    UnneededLocal,   PublicDefinition, NeededImport,
-       UnneededImport, ModInfoSymbol,   FtraceSymbol,     ThisModuleSymbol,
-       VersionsSymbol, AllocTagsSymbol, InitModule,       CleanupModule,
-       CFICheck,       CFICheckFail,    CFIInitJumpTable, CFIExitJumpTable,
-       RodataSymbol,   DataSymbol,      BssSymbol,        PltSymbol,
-       InitPltSymbol,  TypeID,          KCFITypeID},
+      {NeededLocal,      UnneededLocal,
+       PublicDefinition, InvalidUTF8Definition,
+       NeededImport,     UnneededImport,
+       ModInfoSymbol,    FtraceSymbol,
+       ThisModuleSymbol, VersionsSymbol,
+       AllocTagsSymbol,  InitModule,
+       CleanupModule,    CFICheck,
+       CFICheckFail,     CFIInitJumpTable,
+       CFIExitJumpTable, RodataSymbol,
+       DataSymbol,       BssSymbol,
+       PltSymbol,        InitPltSymbol,
+       TypeID,           KCFITypeID},
       {LocalReference, ImportReference, KCFIReference}, ELF::EM_AARCH64);
   SmallVector<SmallVector<char, 0>, 1> Bufs;
   Bufs.push_back(std::move(Obj));
@@ -5024,8 +5033,13 @@ TEST(MergeELFSemantic,
   };
   EXPECT_TRUE(HasMapEntry("release_needed_local", "fn_0"));
   EXPECT_TRUE(HasMapEntry("release_public_definition", "fn_20"));
+  EXPECT_TRUE(HasMapEntry(InvalidOriginal, "fn_28"));
   EXPECT_FALSE(HasMapEntry("release_unneeded_local", "fn_10"));
   EXPECT_FALSE(HasMapEntry("release_needed_import", "release_needed_import"));
+  auto SerializedMap =
+      neverc::serializeAndroidKernelReleaseSymbolMap(SymbolMap);
+  ASSERT_TRUE(static_cast<bool>(SerializedMap))
+      << toString(SerializedMap.takeError()).str().str();
 
   ElfView V = parseELF(Out);
   ASSERT_TRUE(V.Ok);

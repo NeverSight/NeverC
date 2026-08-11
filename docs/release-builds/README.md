@@ -92,15 +92,18 @@ selection; `make clean` removes the stamp, so the next build defaults to debug.
 On this final-module path, NeverC removes debug sections, `.comment`, and
 relocation-unneeded local/undefined entries, then rebuilds `.strtab`.
 
-After a successful release, NeverC atomically writes
-`<module>.ko.symbols.json` beside the module. It records `original` and
-`release` names for every retained symbol whose name changed, and binds the map
-to the final module bytes with `image_sha256`:
+After a successful release, NeverC transactionally publishes the module and
+`<module>.ko.symbols.json` beside it. Existing files remain visible until each
+atomic replacement. Failures before publication roll the bundle back; late
+durability failures retain a recovery journal. Because two directory entries
+cannot be replaced in one filesystem operation, always validate `image_sha256`
+after an unclean shutdown. The map records `original` and `release` names for
+every retained symbol whose name changed:
 
 ```json
 {
   "format": "neverc.android-kernel-symbol-map",
-  "version": 1,
+  "version": 2,
   "image_sha256": "…",
   "symbols": [
     {"original": "worker_dispatch", "release": "fn_C000"}
@@ -111,16 +114,25 @@ to the final module bytes with `image_sha256`:
 Entries are sorted by `release`. Removed symbols and exact loader, import, or
 CFI names are omitted because they need no translation. If a debug or other
 non-strip build overwrites the same output path, NeverC removes the stale map.
-The map contains readable original names: archive it as a private debugging
-artifact; do not distribute it with the `.ko` or push it to the device. To
-verify the binding before translating a release name from a crash log:
+ELF permits non-UTF-8 symbol bytes; those rare originals are stored as Base64
+in `original` with `"original_encoding": "base64"`. The map otherwise contains
+readable original names: archive it as a private debugging artifact; do not
+distribute it with the `.ko` or push it to the device. To verify the binding
+before translating a release name from a crash log:
 
 ```bash
 test "$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' \
   nvk_hello.ko)" = "$(jq -r '.image_sha256' nvk_hello.ko.symbols.json)"
 
-jq -r '.symbols[] | select(.release == "fn_C000") | .original' \
-  nvk_hello.ko.symbols.json
+python3 - nvk_hello.ko.symbols.json fn_C000 <<'PY'
+import base64, json, sys
+with open(sys.argv[1], encoding="utf-8") as stream:
+    entry = next(item for item in json.load(stream)["symbols"]
+                 if item["release"] == sys.argv[2])
+original = entry["original"]
+print(repr(base64.b64decode(original))
+      if entry.get("original_encoding") == "base64" else original)
+PY
 ```
 
 Eligible retained definitions receive deterministic IDA-inspired,

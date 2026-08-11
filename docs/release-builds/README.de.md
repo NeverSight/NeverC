@@ -88,16 +88,19 @@ sodass der nächste Build wieder debug verwendet. Auf diesem finalen Modulpfad
 entfernt NeverC Debugabschnitte, `.comment` und für Relokationen unnötige
 lokale/undefinierte Einträge und baut `.strtab` neu auf.
 
-Nach einem erfolgreichen Release erzeugt NeverC atomar
-`<module>.ko.symbols.json` neben dem Modul. Die Datei enthält für jedes
-erhaltene Symbol mit geändertem Namen dessen `original`- und `release`-Namen
-und bindet die Zuordnung mit `image_sha256` an die Bytes des endgültigen
-Moduls:
+Nach einem erfolgreichen Release veröffentlicht NeverC das Modul und
+`<module>.ko.symbols.json` daneben transaktional. Vorhandene Dateien bleiben
+bis zu ihrer jeweiligen atomaren Ersetzung sichtbar. Fehler vor der
+Veröffentlichung rollen das gesamte Bundle zurück; späte Dauerhaftigkeitsfehler
+behalten ein Wiederherstellungsjournal. Da zwei Verzeichniseinträge nicht mit
+einer einzigen Dateisystemoperation ersetzt werden können, prüfen Sie nach
+einem unsauberen Abbruch stets `image_sha256`. Die Zuordnung enthält für jedes
+erhaltene Symbol mit geändertem Namen dessen `original`- und `release`-Namen:
 
 ```json
 {
   "format": "neverc.android-kernel-symbol-map",
-  "version": 1,
+  "version": 2,
   "image_sha256": "…",
   "symbols": [
     {"original": "worker_dispatch", "release": "fn_C000"}
@@ -108,17 +111,26 @@ Moduls:
 Die Einträge sind nach `release` sortiert. Entfernte Symbole sowie exakte
 Loader-, Import- oder CFI-Namen fehlen, da sie keine Übersetzung benötigen.
 Überschreibt ein Debug- oder anderer Nicht-Strip-Build denselben Ausgabepfad,
-entfernt NeverC die veraltete Zuordnung. Sie enthält lesbare Originalnamen:
-Archivieren Sie sie als privates Debug-Artefakt und verteilen Sie sie weder
-mit dem `.ko` noch auf das Gerät. Prüfen Sie vor der Übersetzung eines
-Release-Namens aus einem Absturzbericht zunächst die Bindung:
+entfernt NeverC die veraltete Zuordnung. ELF erlaubt Nicht-UTF-8-Bytes in
+Symbolnamen; solche seltenen Originalnamen werden in `original` als Base64
+mit `"original_encoding": "base64"` gespeichert. Alle übrigen Originalnamen
+bleiben lesbar. Archivieren Sie die Zuordnung als privates Debug-Artefakt und
+verteilen Sie sie weder mit dem `.ko` noch auf das Gerät. Prüfen Sie vor der
+Übersetzung eines Release-Namens aus einem Absturzbericht zunächst die Bindung:
 
 ```bash
 test "$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' \
   nvk_hello.ko)" = "$(jq -r '.image_sha256' nvk_hello.ko.symbols.json)"
 
-jq -r '.symbols[] | select(.release == "fn_C000") | .original' \
-  nvk_hello.ko.symbols.json
+python3 - nvk_hello.ko.symbols.json fn_C000 <<'PY'
+import base64, json, sys
+with open(sys.argv[1], encoding="utf-8") as stream:
+    entry = next(item for item in json.load(stream)["symbols"]
+                 if item["release"] == sys.argv[2])
+original = entry["original"]
+print(repr(base64.b64decode(original))
+      if entry.get("original_encoding") == "base64" else original)
+PY
 ```
 
 Geeignete erhaltene Definitionen bekommen deterministische, von IDA inspirierte

@@ -172,6 +172,7 @@ struct ObjectPhasePipeline::Impl final : ObjectPhaseRuntimeAccess {
   ArrayRef<uint8_t> ActiveNativeImage;
   uint64_t NativeGraphGeneration = 0;
   std::vector<GraphBridgeEntry> ActiveGraphBridges;
+  std::string LateCommitFailure;
 
   OwnedRoute ActiveRoute;
   bool Frozen = false;
@@ -447,8 +448,12 @@ struct ObjectPhasePipeline::Impl final : ObjectPhaseRuntimeAccess {
     }
     auto Committed = (*Input)->Image->commit();
     if (!Committed) {
-      consumeError(Committed.takeError());
-      return objectPhaseStatus(NEVERC_STATUS_PLUGIN_FAILURE);
+      Error Failure = Committed.takeError();
+      if ((*Input)->Image->state() != PluginObjectImageState::Committed) {
+        consumeError(std::move(Failure));
+        return objectPhaseStatus(NEVERC_STATUS_PLUGIN_FAILURE);
+      }
+      LateCommitFailure = toString(std::move(Failure)).str().str();
     }
     return publishImage((*Input)->Image, Result);
   }
@@ -711,6 +716,7 @@ ObjectPhasePipeline::executeNative(const PluginObjectGraph &InputGraph,
                                    ArrayRef<uint8_t> NativeImage,
                                    const ObjectOutputDestination &Destination,
                                    ObjectPhaseSemanticValidators Validators) {
+  State->LateCommitFailure.clear();
   auto ValidateGraph = [&Validators](const PluginObjectGraph &Object) -> Error {
     if (!Validators.Graph)
       return Error::success();
@@ -847,6 +853,12 @@ ObjectPhasePipeline::executeNative(const PluginObjectGraph &InputGraph,
   if (CurrentImage->state() != PluginObjectImageState::Committed)
     return createStringError(errc::io_error,
                              "object phase pipeline did not commit output");
+  if (!State->LateCommitFailure.empty())
+    return createStringError(
+        errc::io_error,
+        "object image commit completed with a late durability failure; "
+        "recovery may be required: " +
+            State->LateCommitFailure);
   return CurrentImage;
 }
 
@@ -856,6 +868,7 @@ ObjectPhasePipeline::verifyAndCommitFinished(
   if (!Image)
     return createStringError(errc::invalid_argument,
                              "object image candidate is null");
+  State->LateCommitFailure.clear();
   if (Error E = State->freeze())
     return std::move(E);
   State->setRoute(Target, Image->formatID());
@@ -869,6 +882,12 @@ ObjectPhasePipeline::verifyAndCommitFinished(
   if (CurrentImage->state() != PluginObjectImageState::Committed)
     return createStringError(errc::io_error,
                              "object image candidate was not committed");
+  if (!State->LateCommitFailure.empty())
+    return createStringError(
+        errc::io_error,
+        "object image commit completed with a late durability failure; "
+        "recovery may be required: " +
+            State->LateCommitFailure);
   return CurrentImage;
 }
 

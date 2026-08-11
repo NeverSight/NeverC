@@ -28,6 +28,8 @@
 # windows executable files
 *.exe
 *.bin
+# NeverC example release bundle state.
+.nvk-release-bundle
 
 # Ignore the user specified CMake presets in subproject directories.
 /*/CMakeUserPresets.json

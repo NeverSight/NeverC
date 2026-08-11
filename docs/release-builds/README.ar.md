@@ -84,14 +84,17 @@ neverc make release
 و`.comment` والمدخلات المحلية/غير المعرّفة التي لا تحتاجها عمليات النقل، ثم
 تعيد بناء `.strtab`.
 
-بعد إصدار ناجح، تنشئ NeverC ذريًا الملف `<module>.ko.symbols.json` بجوار
-الوحدة. يسجل الملف الاسمين `original` و`release` لكل رمز محفوظ تغير اسمه،
-ويربط الخريطة ببايتات الوحدة النهائية باستخدام `image_sha256`:
+بعد إصدار ناجح، تنشر NeverC الوحدة والملف `<module>.ko.symbols.json` بجوارها
+ضمن معاملة. تبقى الملفات الحالية مرئية حتى الاستبدال الذري لكل منها، وتؤدي
+الأخطاء قبل النشر إلى التراجع عن الحزمة كاملة، بينما تحتفظ أخطاء المتانة
+المتأخرة بسجل استرداد. ولأنه لا يمكن استبدال مدخلَي دليل بعملية واحدة في نظام
+الملفات، تحقّق دائمًا من `image_sha256` بعد توقف غير سليم. تسجل الخريطة
+الاسمين `original` و`release` لكل رمز محفوظ تغير اسمه:
 
 ```json
 {
   "format": "neverc.android-kernel-symbol-map",
-  "version": 1,
+  "version": 2,
   "image_sha256": "…",
   "symbols": [
     {"original": "worker_dispatch", "release": "fn_C000"}
@@ -102,16 +105,25 @@ neverc make release
 تُرتب المدخلات حسب `release`. تُحذف من الخريطة الرموز المحذوفة وأسماء المحمّل
 أو الواردات أو CFI الدقيقة لأنها لا تحتاج إلى ترجمة. إذا استبدل بناء debug أو
 أي بناء آخر غير مجرد الملف في مسار الإخراج نفسه، تزيل NeverC الخريطة القديمة.
-تحتوي الخريطة على الأسماء الأصلية المقروءة؛ لذا احفظها كأثر تصحيح خاص، ولا
-توزعها مع `.ko` أو تدفعها إلى الجهاز. قبل ترجمة اسم release من تقرير عطل،
-تحقق أولًا من ارتباط الخريطة بملف `.ko` الحالي:
+يسمح ELF ببايتات غير UTF-8 في أسماء الرموز؛ وتُخزّن هذه الأسماء الأصلية
+النادرة بصيغة Base64 في `original` مع
+`"original_encoding": "base64"`. تبقى بقية الأسماء الأصلية مقروءة. احفظ
+الخريطة كأثر تصحيح خاص، ولا توزعها مع `.ko` أو تدفعها إلى الجهاز. قبل ترجمة
+اسم release من تقرير عطل، تحقق أولًا من ارتباط الخريطة بملف `.ko` الحالي:
 
 ```bash
 test "$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' \
   nvk_hello.ko)" = "$(jq -r '.image_sha256' nvk_hello.ko.symbols.json)"
 
-jq -r '.symbols[] | select(.release == "fn_C000") | .original' \
-  nvk_hello.ko.symbols.json
+python3 - nvk_hello.ko.symbols.json fn_C000 <<'PY'
+import base64, json, sys
+with open(sys.argv[1], encoding="utf-8") as stream:
+    entry = next(item for item in json.load(stream)["symbols"]
+                 if item["release"] == sys.argv[2])
+original = entry["original"]
+print(repr(base64.b64decode(original))
+      if entry.get("original_encoding") == "base64" else original)
+PY
 ```
 
 تحصل التعريفات المحفوظة المؤهلة على أسماء بنيوية حتمية مستوحاة من IDA من دون
