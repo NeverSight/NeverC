@@ -47,8 +47,8 @@ llvm::Error verifyCanonicalAndroidKernelReleaseReaderSection(
 /// Audits the exact NCRL v1 payload and its native-to-stable AArch64
 /// projection for a canonical native-image graph.
 llvm::Error verifyCanonicalAndroidKernelReleaseReaderRelocation(
-    const PluginObjectGraph &Object,
-    const PluginObjectRelocation &Relocation, llvm::StringRef Boundary);
+    const PluginObjectGraph &Object, const PluginObjectRelocation &Relocation,
+    llvm::StringRef Boundary);
 
 /// Applies the same read-only proof to a graph that will be sent directly to
 /// the built-in LLVM ELF writer with the Android release policy. This boundary

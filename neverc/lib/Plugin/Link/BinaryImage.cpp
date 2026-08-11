@@ -14,8 +14,7 @@ namespace neverc::plugin {
 namespace {
 
 Error imageError(const Twine &Message) {
-  return createStringError(errc::invalid_argument,
-                           "binary image: " + Message);
+  return createStringError(errc::invalid_argument, "binary image: " + Message);
 }
 
 bool checkedEnd(uint64_t Start, uint64_t Size, uint64_t &End) {
@@ -25,8 +24,7 @@ bool checkedEnd(uint64_t Start, uint64_t Size, uint64_t &End) {
   return true;
 }
 
-NevercBinarySegmentFlags
-segmentFlags(NevercObjectSectionFlags Flags) {
+NevercBinarySegmentFlags segmentFlags(NevercObjectSectionFlags Flags) {
   NevercBinarySegmentFlags Result = NEVERC_BINARY_SEGMENT_READ;
   if ((Flags & NEVERC_OBJECT_SECTION_WRITABLE) != 0)
     Result |= NEVERC_BINARY_SEGMENT_WRITE;
@@ -44,24 +42,22 @@ bool isDynamicRelocation(NevercObjectRelocationKind Kind) {
 } // namespace
 
 PluginBinaryImage::PluginBinaryImage(
-    PluginTaskContext &TaskValue,
-    NevercLinkOutputKind OutputKindValue,
-    NevercTargetID TargetIDValue,
-    NevercObjectFormatID FormatIDValue, uint64_t EntryAddressValue,
-    uint64_t ImageBaseValue, uint64_t ImportCountValue,
-    uint64_t ExportCountValue, uint64_t DynamicRelocationCountValue,
+    PluginTaskContext &TaskValue, NevercLinkOutputKind OutputKindValue,
+    NevercTargetID TargetIDValue, NevercObjectFormatID FormatIDValue,
+    uint64_t EntryAddressValue, uint64_t ImageBaseValue,
+    uint64_t ImportCountValue, uint64_t ExportCountValue,
+    uint64_t DynamicRelocationCountValue,
     std::vector<PluginBinarySegment> SegmentsValue,
     std::vector<PluginBinarySection> SectionsValue,
     std::vector<PluginBinaryDirectory> DirectoriesValue,
     std::function<Error(ArrayRef<uint8_t>)> FormatVerifierValue,
     std::unique_ptr<MutableBinaryBuilder> BuilderValue)
-    : Task(TaskValue), OutputKind(OutputKindValue),
-      TargetID(TargetIDValue), FormatID(FormatIDValue),
-      EntryAddress(EntryAddressValue), ImageBase(ImageBaseValue),
-      ImportCount(ImportCountValue), ExportCount(ExportCountValue),
+    : Task(TaskValue), OutputKind(OutputKindValue), TargetID(TargetIDValue),
+      FormatID(FormatIDValue), EntryAddress(EntryAddressValue),
+      ImageBase(ImageBaseValue), ImportCount(ImportCountValue),
+      ExportCount(ExportCountValue),
       DynamicRelocationCount(DynamicRelocationCountValue),
-      Segments(std::move(SegmentsValue)),
-      Sections(std::move(SectionsValue)),
+      Segments(std::move(SegmentsValue)), Sections(std::move(SectionsValue)),
       Directories(std::move(DirectoriesValue)),
       FormatVerifier(std::move(FormatVerifierValue)),
       Builder(std::move(BuilderValue)) {
@@ -74,9 +70,9 @@ PluginBinaryImage::PluginBinaryImage(
 }
 
 std::shared_ptr<detail::BinaryImageAPIFacade>
-PluginBinaryImage::createLinkAPIFacade(
-    detail::BinaryImageAPIAccess Access, const void *MutationDomain,
-    uint64_t Token) {
+PluginBinaryImage::createLinkAPIFacade(detail::BinaryImageAPIAccess Access,
+                                       const void *MutationDomain,
+                                       uint64_t Token) {
   auto Facade = std::make_shared<detail::BinaryImageAPIFacade>();
   Facade->Task = &Task;
   Facade->TaskHandle = Task.handle();
@@ -89,8 +85,9 @@ PluginBinaryImage::createLinkAPIFacade(
   return Facade;
 }
 
-const NevercLinkAPI &PluginBinaryImage::capabilityLinkAPI(
-    const PluginPhaseExecutor &Executor, uint64_t Token) {
+const NevercLinkAPI &
+PluginBinaryImage::capabilityLinkAPI(const PluginPhaseExecutor &Executor,
+                                     uint64_t Token) {
   if (Token == 0)
     return ReadOnlyLinkFacade->API;
   std::lock_guard<std::recursive_mutex> Lock(LinkAPIControl->Mutex);
@@ -101,8 +98,8 @@ const NevercLinkAPI &PluginBinaryImage::capabilityLinkAPI(
       });
   if (Existing != CapabilityLinkFacades.end())
     return (*Existing)->API;
-  auto Facade = createLinkAPIFacade(
-      detail::BinaryImageAPIAccess::Capability, &Executor, Token);
+  auto Facade = createLinkAPIFacade(detail::BinaryImageAPIAccess::Capability,
+                                    &Executor, Token);
   const NevercLinkAPI &Result = Facade->API;
   CapabilityLinkFacades.push_back(std::move(Facade));
   return Result;
@@ -128,24 +125,20 @@ PluginBinaryImage::import(PluginTaskContext &Task, const NevercIOAPI &IO,
       return imageError("output budget rejected imported image");
     }
   }
-  auto Image = std::shared_ptr<PluginBinaryImage>(
-      new PluginBinaryImage(
-          Task, Data.OutputKind, Data.TargetID, Data.FormatID,
-          Data.EntryAddress, Data.ImageBase, Data.ImportCount,
-          Data.ExportCount, Data.DynamicRelocationCount,
-          std::move(Data.Segments), std::move(Data.Sections),
-          std::move(Data.Directories), std::move(Data.FormatVerifier),
-          std::move(*Builder)));
+  auto Image = std::shared_ptr<PluginBinaryImage>(new PluginBinaryImage(
+      Task, Data.OutputKind, Data.TargetID, Data.FormatID, Data.EntryAddress,
+      Data.ImageBase, Data.ImportCount, Data.ExportCount,
+      Data.DynamicRelocationCount, std::move(Data.Segments),
+      std::move(Data.Sections), std::move(Data.Directories),
+      std::move(Data.FormatVerifier), std::move(*Builder)));
   if (Error E = Image->initializeHandles())
     return std::move(E);
   return Image;
 }
 
-Expected<std::shared_ptr<PluginBinaryImage>>
-PluginBinaryImage::emit(PluginTaskContext &Task, const NevercIOAPI &IO,
-                        NevercOutputSinkHandle Sink,
-                        const PluginLinkGraph &Graph,
-                        NevercLinkOutputKind OutputKind) {
+Expected<std::shared_ptr<PluginBinaryImage>> PluginBinaryImage::emit(
+    PluginTaskContext &Task, const NevercIOAPI &IO, NevercOutputSinkHandle Sink,
+    const PluginLinkGraph &Graph, NevercLinkOutputKind OutputKind) {
   if (Graph.state() < NEVERC_LINK_STATE_RELOCATIONS_APPLIED)
     return imageError("relocations have not been applied");
   if (OutputKind != NEVERC_LINK_OUTPUT_EXECUTABLE &&
@@ -242,28 +235,24 @@ PluginBinaryImage::emit(PluginTaskContext &Task, const NevercIOAPI &IO,
     }
   }
   NevercTargetKey Target = Graph.targetKey();
-  auto Image = std::shared_ptr<PluginBinaryImage>(
-      new PluginBinaryImage(
-          Task, OutputKind, Target.TargetID, Graph.formatID(),
-          EntryAddress, ImageBase, Graph.imports().size(),
-          Graph.exports().size(), DynamicRelocations,
-          std::move(Segments), std::move(Sections), {},
-          {},
-          std::move(*Builder)));
+  auto Image = std::shared_ptr<PluginBinaryImage>(new PluginBinaryImage(
+      Task, OutputKind, Target.TargetID, Graph.formatID(), EntryAddress,
+      ImageBase, Graph.imports().size(), Graph.exports().size(),
+      DynamicRelocations, std::move(Segments), std::move(Sections), {}, {},
+      std::move(*Builder)));
   if (Error E = Image->initializeHandles())
     return std::move(E);
   return Image;
 }
 
 Error PluginBinaryImage::initializeHandles() {
-  auto ImageHandle =
-      Task.handles().create(PluginBinaryImageHandleKind, this);
+  auto ImageHandle = Task.handles().create(PluginBinaryImageHandleKind, this);
   if (!ImageHandle)
     return ImageHandle.takeError();
   Handle = *ImageHandle;
   for (size_t Index = 0; Index != Segments.size(); ++Index) {
-    auto SegmentHandle = Task.handles().create(
-        PluginBinarySegmentHandleKind, &Segments[Index]);
+    auto SegmentHandle =
+        Task.handles().create(PluginBinarySegmentHandleKind, &Segments[Index]);
     if (!SegmentHandle)
       return SegmentHandle.takeError();
     Segments[Index].Handle = *SegmentHandle;
@@ -271,8 +260,8 @@ Error PluginBinaryImage::initializeHandles() {
   for (PluginBinarySection &Section : Sections) {
     if (Section.SegmentIndex < Segments.size())
       Section.Segment = Segments[Section.SegmentIndex].Handle;
-    auto SectionHandle = Task.handles().create(
-        PluginBinarySectionHandleKind, &Section);
+    auto SectionHandle =
+        Task.handles().create(PluginBinarySectionHandleKind, &Section);
     if (!SectionHandle)
       return SectionHandle.takeError();
     Section.Handle = *SectionHandle;
@@ -286,21 +275,18 @@ PluginBinaryImage::~PluginBinaryImage() {
     (void)Builder->abort();
   for (PluginBinarySection &Section : Sections)
     if (!neverc_handle_is_null(Section.Handle))
-      (void)Task.handles().release(
-          Section.Handle, PluginBinarySectionHandleKind);
+      (void)Task.handles().release(Section.Handle,
+                                   PluginBinarySectionHandleKind);
   for (PluginBinarySegment &Segment : Segments)
     if (!neverc_handle_is_null(Segment.Handle))
-      (void)Task.handles().release(
-          Segment.Handle, PluginBinarySegmentHandleKind);
+      (void)Task.handles().release(Segment.Handle,
+                                   PluginBinarySegmentHandleKind);
   if (!neverc_handle_is_null(Handle))
-    (void)Task.handles().release(
-        Handle, PluginBinaryImageHandleKind);
+    (void)Task.handles().release(Handle, PluginBinaryImageHandleKind);
   LinkAPIControl->Owner = nullptr;
 }
 
-NevercTaskHandle PluginBinaryImage::taskHandle() const {
-  return Task.handle();
-}
+NevercTaskHandle PluginBinaryImage::taskHandle() const { return Task.handle(); }
 
 std::array<uint8_t, 32> PluginBinaryImage::contentDigest() const {
   return SHA256::hash(Builder->bytes());
@@ -315,11 +301,11 @@ Error verifyBinaryImage(const PluginBinaryImage &Image) {
   Ordered.reserve(Image.segments().size());
   for (const PluginBinarySegment &Segment : Image.segments())
     Ordered.push_back(&Segment);
-  std::sort(Ordered.begin(), Ordered.end(),
-            [](const PluginBinarySegment *Left,
-               const PluginBinarySegment *Right) {
-              return Left->Address < Right->Address;
-            });
+  std::sort(
+      Ordered.begin(), Ordered.end(),
+      [](const PluginBinarySegment *Left, const PluginBinarySegment *Right) {
+        return Left->Address < Right->Address;
+      });
   bool EntryCovered = Image.entryAddress() == 0;
   for (const PluginBinarySegment *Segment : Ordered) {
     if (!isPowerOf2_64(Segment->Alignment))
@@ -330,11 +316,9 @@ Error verifyBinaryImage(const PluginBinaryImage &Image) {
         !checkedEnd(Segment->Address, Segment->MemorySize, AddressEnd) ||
         FileEnd > Bytes.size())
       return imageError("segment range is outside the image");
-    if (Segment->FileSize != 0 &&
-        Segment->FileOffset < PreviousFileEnd)
+    if (Segment->FileSize != 0 && Segment->FileOffset < PreviousFileEnd)
       return imageError("segment file ranges overlap");
-    if (Segment->MemorySize != 0 &&
-        Segment->Address < PreviousAddressEnd)
+    if (Segment->MemorySize != 0 && Segment->Address < PreviousAddressEnd)
       return imageError("segment address ranges overlap");
     if ((Segment->Flags & NEVERC_BINARY_SEGMENT_WRITE) != 0 &&
         (Segment->Flags & NEVERC_BINARY_SEGMENT_EXECUTE) != 0)

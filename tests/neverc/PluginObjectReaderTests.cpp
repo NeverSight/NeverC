@@ -510,9 +510,9 @@ probeTestObject(void *UserData, const NevercObjectProbeRequest *Request,
   return neverc_status_ok();
 }
 
-NevercStatus NEVERC_CALL probeTestObjectIgnoringUserData(
-    void *, const NevercObjectProbeRequest *Request,
-    NevercObjectProbeResult *Result) {
+NevercStatus NEVERC_CALL
+probeTestObjectIgnoringUserData(void *, const NevercObjectProbeRequest *Request,
+                                NevercObjectProbeResult *Result) {
   return probeTestObject(nullptr, Request, Result);
 }
 
@@ -564,7 +564,8 @@ NevercStatus NEVERC_CALL readAndAttemptMutationFromNestedObserver(
   State.CachedMutation = Request->Mutation;
 
   auto Nested = State.Task->invokeCallback(
-      State.ObserverPluginID, "object_reader_nested_read_only_observer", [&] {
+      State.ObserverPluginID, "object_reader_nested_read_only_observer",
+      [&] {
         static const std::array<uint8_t, 1> Byte{{UINT8_C(0x7f)}};
         NevercObjectSectionDescriptor Section{};
         Section.Header = {sizeof(Section), NEVERC_OBJECT_API_MAJOR,

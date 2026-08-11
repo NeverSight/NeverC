@@ -53,9 +53,10 @@ NevercInterfaceID imageArtifactID() {
           NEVERC_PHASE_OBJECT_WRITE_OUTPUT_LOW};
 }
 
-#define NEVERC_OBJECT_PHASE_ID(Symbol)                                     \
-  NevercInterfaceID{NEVERC_PHASE_OBJECT_##Symbol##_HIGH,                   \
-                    NEVERC_PHASE_OBJECT_##Symbol##_LOW}
+#define NEVERC_OBJECT_PHASE_ID(Symbol)                                         \
+  NevercInterfaceID {                                                          \
+    NEVERC_PHASE_OBJECT_##Symbol##_HIGH, NEVERC_PHASE_OBJECT_##Symbol##_LOW    \
+  }
 
 NevercInterfaceID preWritePhaseID() {
   return NEVERC_OBJECT_PHASE_ID(PRE_WRITE);
@@ -65,9 +66,7 @@ NevercInterfaceID postLayoutPhaseID() {
   return NEVERC_OBJECT_PHASE_ID(POST_LAYOUT);
 }
 
-NevercInterfaceID writePhaseID() {
-  return NEVERC_OBJECT_PHASE_ID(WRITE);
-}
+NevercInterfaceID writePhaseID() { return NEVERC_OBJECT_PHASE_ID(WRITE); }
 
 NevercInterfaceID postWritePhaseID() {
   return NEVERC_OBJECT_PHASE_ID(POST_WRITE);
@@ -77,14 +76,11 @@ NevercInterfaceID finalVerifyPhaseID() {
   return NEVERC_OBJECT_PHASE_ID(FINAL_VERIFY);
 }
 
-NevercInterfaceID commitPhaseID() {
-  return NEVERC_OBJECT_PHASE_ID(COMMIT);
-}
+NevercInterfaceID commitPhaseID() { return NEVERC_OBJECT_PHASE_ID(COMMIT); }
 
 #undef NEVERC_OBJECT_PHASE_ID
 
-template <typename T>
-NevercStatus writeRecord(T *OutValue, const T &Value) {
+template <typename T> NevercStatus writeRecord(T *OutValue, const T &Value) {
   if (!OutValue)
     return objectPhaseStatus(NEVERC_STATUS_INVALID_ARGUMENT);
   const uint32_t Capacity = OutValue->Header.StructSize;
@@ -99,8 +95,7 @@ NevercStatus writeRecord(T *OutValue, const T &Value) {
 }
 
 Error verifyGraphArtifact(const void *Payload) {
-  const auto *Artifact =
-      static_cast<const ObjectGraphArtifact *>(Payload);
+  const auto *Artifact = static_cast<const ObjectGraphArtifact *>(Payload);
   if (!Artifact || !Artifact->Graph)
     return createStringError(errc::invalid_argument,
                              "object graph artifact is null");
@@ -108,22 +103,18 @@ Error verifyGraphArtifact(const void *Payload) {
 }
 
 Error verifyImageArtifact(const void *Payload) {
-  const auto *Artifact =
-      static_cast<const ObjectImageArtifact *>(Payload);
+  const auto *Artifact = static_cast<const ObjectImageArtifact *>(Payload);
   if (!Artifact || !Artifact->Image)
     return createStringError(errc::invalid_argument,
                              "object image artifact is null");
-  if (Artifact->Image->state() ==
-          PluginObjectImageState::Aborted ||
-      Artifact->Image->state() ==
-          PluginObjectImageState::FailedPartial)
+  if (Artifact->Image->state() == PluginObjectImageState::Aborted ||
+      Artifact->Image->state() == PluginObjectImageState::FailedPartial)
     return createStringError(errc::invalid_argument,
                              "object image artifact is not publishable");
   return Error::success();
 }
 
-NevercObjectImageState
-imageState(PluginObjectImageState State) {
+NevercObjectImageState imageState(PluginObjectImageState State) {
   switch (State) {
   case PluginObjectImageState::Candidate:
     return NEVERC_OBJECT_IMAGE_CANDIDATE;
@@ -148,6 +139,26 @@ struct ObjectPhasePipeline::Impl final : ObjectPhaseRuntimeAccess {
     std::unique_ptr<ObjectPluginBridge> Bridge;
   };
 
+  struct OwnedRoute {
+    std::string TargetTriple;
+    std::string CPU;
+    std::string Features;
+    std::string ObjectFormat;
+    uint32_t ExecutionLevel = 0;
+
+    NevercPhaseRoute view() const {
+      NevercPhaseRoute Route{};
+      Route.Header = {sizeof(Route), NEVERC_PLUGIN_ABI_MAJOR,
+                      NEVERC_PLUGIN_ABI_MINOR, 0};
+      Route.TargetTriple = {TargetTriple.data(), TargetTriple.size()};
+      Route.CPU = {CPU.data(), CPU.size()};
+      Route.Features = {Features.data(), Features.size()};
+      Route.ObjectFormat = {ObjectFormat.data(), ObjectFormat.size()};
+      Route.ExecutionLevel = ExecutionLevel;
+      return Route;
+    }
+  };
+
   PluginTaskContext &Task;
   std::shared_ptr<const PluginTargetSnapshot> Snapshot;
   std::shared_ptr<ObjectPhaseProcessService> Service;
@@ -162,10 +173,7 @@ struct ObjectPhasePipeline::Impl final : ObjectPhaseRuntimeAccess {
   uint64_t NativeGraphGeneration = 0;
   std::vector<GraphBridgeEntry> ActiveGraphBridges;
 
-  std::string TargetTriple;
-  std::string CPU;
-  std::string Features;
-  std::string ObjectFormat;
+  OwnedRoute ActiveRoute;
   bool Frozen = false;
 
   Impl(PluginTaskContext &TaskValue,
@@ -179,7 +187,9 @@ struct ObjectPhasePipeline::Impl final : ObjectPhaseRuntimeAccess {
 
   Error initialize() {
     auto GraphType = Artifacts.registerType(
-        {graphArtifactID(), "object.graph", PluginArtifactOwnership::Owned,
+        {graphArtifactID(),
+         "object.graph",
+         PluginArtifactOwnership::Owned,
          {},
          [](void *Payload) {
            delete static_cast<ObjectGraphArtifact *>(Payload);
@@ -188,7 +198,9 @@ struct ObjectPhasePipeline::Impl final : ObjectPhaseRuntimeAccess {
     if (!GraphType)
       return GraphType.takeError();
     auto ImageType = Artifacts.registerType(
-        {imageArtifactID(), "object.image", PluginArtifactOwnership::Owned,
+        {imageArtifactID(),
+         "object.image",
+         PluginArtifactOwnership::Owned,
          {},
          [](void *Payload) {
            delete static_cast<ObjectImageArtifact *>(Payload);
@@ -209,43 +221,37 @@ struct ObjectPhasePipeline::Impl final : ObjectPhaseRuntimeAccess {
       return E;
     if (Error E = Executor->setBuiltinProvider(
             preWritePhaseID(),
-            [this](const NevercPhaseFrame *Frame,
-                   NevercPhaseResult *Result) {
+            [this](const NevercPhaseFrame *Frame, NevercPhaseResult *Result) {
               return copyGraph(Frame, Result, true);
             }))
       return E;
     if (Error E = Executor->setBuiltinProvider(
             postLayoutPhaseID(),
-            [this](const NevercPhaseFrame *Frame,
-                   NevercPhaseResult *Result) {
+            [this](const NevercPhaseFrame *Frame, NevercPhaseResult *Result) {
               return copyGraph(Frame, Result, false);
             }))
       return E;
     if (Error E = Executor->setBuiltinProvider(
             writePhaseID(),
-            [this](const NevercPhaseFrame *Frame,
-                   NevercPhaseResult *Result) {
+            [this](const NevercPhaseFrame *Frame, NevercPhaseResult *Result) {
               return writeObject(Frame, Result);
             }))
       return E;
     if (Error E = Executor->setBuiltinProvider(
             postWritePhaseID(),
-            [this](const NevercPhaseFrame *Frame,
-                   NevercPhaseResult *Result) {
+            [this](const NevercPhaseFrame *Frame, NevercPhaseResult *Result) {
               return copyImage(Frame, Result);
             }))
       return E;
     if (Error E = Executor->setBuiltinProvider(
             finalVerifyPhaseID(),
-            [this](const NevercPhaseFrame *Frame,
-                   NevercPhaseResult *Result) {
+            [this](const NevercPhaseFrame *Frame, NevercPhaseResult *Result) {
               return verifyImage(Frame, Result);
             }))
       return E;
     return Executor->setBuiltinProvider(
         commitPhaseID(),
-        [this](const NevercPhaseFrame *Frame,
-               NevercPhaseResult *Result) {
+        [this](const NevercPhaseFrame *Frame, NevercPhaseResult *Result) {
           return commitImage(Frame, Result);
         });
   }
@@ -259,37 +265,31 @@ struct ObjectPhasePipeline::Impl final : ObjectPhaseRuntimeAccess {
     return Error::success();
   }
 
-  NevercPhaseRoute route() const {
-    NevercPhaseRoute Route{};
-    Route.Header = {sizeof(Route), NEVERC_PLUGIN_ABI_MAJOR,
-                    NEVERC_PLUGIN_ABI_MINOR, 0};
-    Route.TargetTriple = {TargetTriple.data(), TargetTriple.size()};
-    Route.CPU = {CPU.data(), CPU.size()};
-    Route.Features = {Features.data(), Features.size()};
-    Route.ObjectFormat = {ObjectFormat.data(), ObjectFormat.size()};
-    return Route;
-  }
+  NevercPhaseRoute route() const { return ActiveRoute.view(); }
 
-  void setRoute(NevercTargetKey Target,
-                NevercObjectFormatID FormatID) {
-    TargetTriple.assign(Target.RawTriple.Data,
-                        static_cast<size_t>(Target.RawTriple.Length));
-    CPU.assign(Target.CPU.Data, static_cast<size_t>(Target.CPU.Length));
-    Features.clear();
-    const auto *Data =
-        reinterpret_cast<const uint8_t *>(Target.Features.Data);
-    for (uint64_t Index = 0; Data && Index != Target.Features.Count;
-         ++Index) {
-      const auto *Feature =
-          reinterpret_cast<const NevercStringView *>(
-              Data + Index * Target.Features.ElementStride);
-      if (!Features.empty())
-        Features.push_back(',');
-      Features.append(Feature->Data,
-                      static_cast<size_t>(Feature->Length));
+  OwnedRoute makeRoute(NevercTargetKey Target,
+                       NevercObjectFormatID FormatID) const {
+    OwnedRoute Result;
+    Result.TargetTriple.assign(Target.RawTriple.Data,
+                               static_cast<size_t>(Target.RawTriple.Length));
+    Result.CPU.assign(Target.CPU.Data, static_cast<size_t>(Target.CPU.Length));
+    const auto *Data = reinterpret_cast<const uint8_t *>(Target.Features.Data);
+    for (uint64_t Index = 0; Data && Index != Target.Features.Count; ++Index) {
+      const auto *Feature = reinterpret_cast<const NevercStringView *>(
+          Data + Index * Target.Features.ElementStride);
+      if (!Result.Features.empty())
+        Result.Features.push_back(',');
+      Result.Features.append(Feature->Data,
+                             static_cast<size_t>(Feature->Length));
     }
     if (const auto *Format = Writer->registry().find(FormatID))
-      ObjectFormat = Format->CanonicalName;
+      Result.ObjectFormat = Format->CanonicalName;
+    Result.ExecutionLevel = static_cast<uint32_t>(Target.ExecutionLevel);
+    return Result;
+  }
+
+  void setRoute(NevercTargetKey Target, NevercObjectFormatID FormatID) {
+    ActiveRoute = makeRoute(Target, FormatID);
   }
 
   void setRoute(const PluginObjectGraph &ObjectGraph) {
@@ -317,12 +317,11 @@ struct ObjectPhasePipeline::Impl final : ObjectPhaseRuntimeAccess {
   }
 
   template <typename ArtifactT>
-  Expected<const ArtifactT *>
-  resolve(const NevercPhaseFrame *Frame, NevercArtifactHandle Handle,
-          NevercInterfaceID Type) {
-    if (!validFrame(Frame) ||
-        (!sameHandle(Handle, Frame->Input) &&
-         !sameHandle(Handle, Frame->CurrentOutput)))
+  Expected<const ArtifactT *> resolve(const NevercPhaseFrame *Frame,
+                                      NevercArtifactHandle Handle,
+                                      NevercInterfaceID Type) {
+    if (!validFrame(Frame) || (!sameHandle(Handle, Frame->Input) &&
+                               !sameHandle(Handle, Frame->CurrentOutput)))
       return createStringError(errc::invalid_argument,
                                "object phase artifact is out of scope");
     const void *Payload = nullptr;
@@ -369,8 +368,7 @@ struct ObjectPhasePipeline::Impl final : ObjectPhaseRuntimeAccess {
   }
 
   NevercStatus copyGraph(const NevercPhaseFrame *Frame,
-                         NevercPhaseResult *Result,
-                         bool ClearLayoutProof) {
+                         NevercPhaseResult *Result, bool ClearLayoutProof) {
     auto Input = resolve<ObjectGraphArtifact>(
         Frame, Frame ? Frame->Input : NevercArtifactHandle{},
         graphArtifactID());
@@ -378,8 +376,7 @@ struct ObjectPhasePipeline::Impl final : ObjectPhaseRuntimeAccess {
       consumeError(Input.takeError());
       return objectPhaseStatus(NEVERC_STATUS_WRONG_SCOPE);
     }
-    auto Copy =
-        std::make_shared<PluginObjectGraph>(*(*Input)->Graph);
+    auto Copy = std::make_shared<PluginObjectGraph>(*(*Input)->Graph);
     if (ClearLayoutProof)
       Copy->clearLayoutProof();
     return publishGraph(std::move(Copy), Result);
@@ -409,21 +406,18 @@ struct ObjectPhasePipeline::Impl final : ObjectPhaseRuntimeAccess {
     }
     Expected<std::unique_ptr<PluginObjectImage>> Image =
         !ActiveNativeImage.empty() &&
-                (*Input)->Graph->generation() ==
-                    NativeGraphGeneration
-            ? Writer->beginImage(
-                  Task, (*Input)->Graph->formatID(),
-                  (*Input)->Graph->targetKey().TargetID,
-                  (*Input)->Graph->generation(), ActiveNativeImage,
-                  *ActiveDestination)
-            : Writer->beginWrite(Task, *(*Input)->Graph,
-                                 *ActiveDestination);
+                (*Input)->Graph->generation() == NativeGraphGeneration
+            ? Writer->beginImage(Task, (*Input)->Graph->formatID(),
+                                 (*Input)->Graph->targetKey().TargetID,
+                                 (*Input)->Graph->generation(),
+                                 ActiveNativeImage, *ActiveDestination)
+            : Writer->beginWrite(Task, *(*Input)->Graph, *ActiveDestination);
     if (!Image) {
       consumeError(Image.takeError());
       return objectPhaseStatus(NEVERC_STATUS_PLUGIN_FAILURE);
     }
-    return publishImage(
-        std::shared_ptr<PluginObjectImage>(std::move(*Image)), Result);
+    return publishImage(std::shared_ptr<PluginObjectImage>(std::move(*Image)),
+                        Result);
   }
 
   NevercStatus verifyImage(const NevercPhaseFrame *Frame,
@@ -463,14 +457,13 @@ struct ObjectPhasePipeline::Impl final : ObjectPhaseRuntimeAccess {
   executeGraphPhase(NevercInterfaceID Phase,
                     const std::shared_ptr<PluginObjectGraph> &Input) {
     ObjectGraphArtifact View{Input};
-    auto InputHandle = Executor->createArtifactView(
-        Task, graphArtifactID(), &View, Input->generation());
+    auto InputHandle = Executor->createArtifactView(Task, graphArtifactID(),
+                                                    &View, Input->generation());
     if (!InputHandle)
       return InputHandle.takeError();
     NevercArtifactHandle Handle = *InputHandle;
     auto Release = make_scope_exit([&] {
-      (void)Task.handles().release(Handle,
-                                   PluginArtifactHandleKind);
+      (void)Task.handles().release(Handle, PluginArtifactHandleKind);
     });
     PluginArtifactSlot Output(Artifacts.find(graphArtifactID()));
     if (Error E = beginPhase(Phase))
@@ -497,8 +490,7 @@ struct ObjectPhasePipeline::Impl final : ObjectPhaseRuntimeAccess {
       return InputHandle.takeError();
     NevercArtifactHandle Handle = *InputHandle;
     auto Release = make_scope_exit([&] {
-      (void)Task.handles().release(Handle,
-                                   PluginArtifactHandleKind);
+      (void)Task.handles().release(Handle, PluginArtifactHandleKind);
     });
     PluginArtifactSlot Output(Artifacts.find(imageArtifactID()));
     if (Error E = beginPhase(Phase))
@@ -515,11 +507,11 @@ struct ObjectPhasePipeline::Impl final : ObjectPhaseRuntimeAccess {
     return Published->Image;
   }
 
-  NevercStatus getGraph(
-      const NevercPhaseFrame *Frame, NevercArtifactHandle Artifact,
-      NevercObjectPhaseGraphInfo *OutInfo) override {
-    auto Payload = resolve<ObjectGraphArtifact>(
-        Frame, Artifact, graphArtifactID());
+  NevercStatus getGraph(const NevercPhaseFrame *Frame,
+                        NevercArtifactHandle Artifact,
+                        NevercObjectPhaseGraphInfo *OutInfo) override {
+    auto Payload =
+        resolve<ObjectGraphArtifact>(Frame, Artifact, graphArtifactID());
     if (!Payload) {
       consumeError(Payload.takeError());
       return objectPhaseStatus(NEVERC_STATUS_WRONG_SCOPE);
@@ -568,11 +560,11 @@ struct ObjectPhasePipeline::Impl final : ObjectPhaseRuntimeAccess {
     return writeRecord(OutInfo, Value);
   }
 
-  NevercStatus getImage(
-      const NevercPhaseFrame *Frame, NevercArtifactHandle Artifact,
-      NevercObjectImageInfo *OutInfo) override {
-    auto Payload = resolve<ObjectImageArtifact>(
-        Frame, Artifact, imageArtifactID());
+  NevercStatus getImage(const NevercPhaseFrame *Frame,
+                        NevercArtifactHandle Artifact,
+                        NevercObjectImageInfo *OutInfo) override {
+    auto Payload =
+        resolve<ObjectImageArtifact>(Frame, Artifact, imageArtifactID());
     if (!Payload) {
       consumeError(Payload.takeError());
       return objectPhaseStatus(NEVERC_STATUS_WRONG_SCOPE);
@@ -618,24 +610,21 @@ ObjectPhasePipeline::ObjectPhasePipeline(std::unique_ptr<Impl> StateValue)
 
 ObjectPhasePipeline::~ObjectPhasePipeline() = default;
 
-Expected<std::unique_ptr<ObjectPhasePipeline>>
-ObjectPhasePipeline::create(
+Expected<std::unique_ptr<ObjectPhasePipeline>> ObjectPhasePipeline::create(
     PluginTaskContext &Task,
     std::shared_ptr<const PluginTargetSnapshot> Snapshot) {
   if (!Snapshot)
     return createStringError(errc::invalid_argument,
                              "object phase pipeline has no target snapshot");
-  auto Service =
-      findObjectPhaseProcessService(Task.processServices());
+  auto Service = findObjectPhaseProcessService(Task.processServices());
   if (!Service)
-    return createStringError(
-        errc::not_supported,
-        "object phase interface is not registered");
+    return createStringError(errc::not_supported,
+                             "object phase interface is not registered");
   auto Graph = PluginPhaseGraph::createBuiltinObjectGraph();
   if (!Graph)
     return Graph.takeError();
-  auto State = std::make_unique<Impl>(
-      Task, std::move(Snapshot), std::move(Service), std::move(*Graph));
+  auto State = std::make_unique<Impl>(Task, std::move(Snapshot),
+                                      std::move(Service), std::move(*Graph));
   if (Error E = State->initialize())
     return std::move(E);
   return std::unique_ptr<ObjectPhasePipeline>(
@@ -676,13 +665,30 @@ bool ObjectPhasePipeline::hasInterceptors() const {
          State->Executor->hasInterceptors(commitPhaseID());
 }
 
-bool ObjectPhasePipeline::mayReplaceArtifact() const {
-  return hasInterceptors() || State->Executor->hasProvider(preWritePhaseID()) ||
-         State->Executor->hasProvider(postLayoutPhaseID()) ||
-         State->Executor->hasProvider(writePhaseID()) ||
-         State->Executor->hasProvider(postWritePhaseID()) ||
-         State->Executor->hasProvider(finalVerifyPhaseID()) ||
-         State->Executor->hasProvider(commitPhaseID());
+bool ObjectPhasePipeline::mayReplaceArtifact(
+    NevercTargetKey Target, NevercObjectFormatID FormatID) const {
+  if (hasInterceptors())
+    return true;
+  const Impl::OwnedRoute Route = State->makeRoute(Target, FormatID);
+  const NevercPhaseRoute RouteView = Route.view();
+  return State->Executor->hasProvider(preWritePhaseID(), RouteView) ||
+         State->Executor->hasProvider(postLayoutPhaseID(), RouteView) ||
+         State->Executor->hasProvider(writePhaseID(), RouteView) ||
+         State->Executor->hasProvider(postWritePhaseID(), RouteView) ||
+         State->Executor->hasProvider(finalVerifyPhaseID(), RouteView) ||
+         State->Executor->hasProvider(commitPhaseID(), RouteView);
+}
+
+bool ObjectPhasePipeline::mayReplaceWriteArtifact(
+    NevercTargetKey Target, NevercObjectFormatID FormatID) const {
+  const Impl::OwnedRoute Route = State->makeRoute(Target, FormatID);
+  return State->Executor->hasInterceptors(writePhaseID()) ||
+         State->Executor->hasProvider(writePhaseID(), Route.view());
+}
+
+bool ObjectPhasePipeline::hasPluginOwnedGraphWriter(
+    NevercObjectFormatID FormatID) const {
+  return State->Writer->hasPluginOwnedGraphWriter(FormatID);
 }
 
 Error ObjectPhasePipeline::freeze() { return State->freeze(); }
@@ -694,10 +700,9 @@ ObjectPhasePipeline::execute(const PluginObjectGraph &InputGraph,
 }
 
 Expected<std::shared_ptr<PluginObjectImage>>
-ObjectPhasePipeline::executeNative(
-    const PluginObjectGraph &InputGraph,
-    ArrayRef<uint8_t> NativeImage,
-    const ObjectOutputDestination &Destination) {
+ObjectPhasePipeline::executeNative(const PluginObjectGraph &InputGraph,
+                                   ArrayRef<uint8_t> NativeImage,
+                                   const ObjectOutputDestination &Destination) {
   return executeNative(InputGraph, NativeImage, Destination, {});
 }
 
@@ -734,11 +739,9 @@ ObjectPhasePipeline::executeNative(const PluginObjectGraph &InputGraph,
     State->NativeGraphGeneration = 0;
   });
 
-  auto CurrentGraph =
-      std::make_shared<PluginObjectGraph>(InputGraph);
+  auto CurrentGraph = std::make_shared<PluginObjectGraph>(InputGraph);
   CurrentGraph->clearLayoutProof();
-  auto PreWrite =
-      State->executeGraphPhase(preWritePhaseID(), CurrentGraph);
+  auto PreWrite = State->executeGraphPhase(preWritePhaseID(), CurrentGraph);
   if (!PreWrite)
     return PreWrite.takeError();
   CurrentGraph = std::move(*PreWrite);
@@ -760,10 +763,8 @@ ObjectPhasePipeline::executeNative(const PluginObjectGraph &InputGraph,
       return std::move(E);
     if (Error E = ValidateGraph(*CurrentGraph))
       return std::move(E);
-    const PluginObjectLayoutProof *Proof =
-        CurrentGraph->layoutProof();
-    if (Proof &&
-        Proof->GraphGeneration == CurrentGraph->generation()) {
+    const PluginObjectLayoutProof *Proof = CurrentGraph->layoutProof();
+    if (Proof && Proof->GraphGeneration == CurrentGraph->generation()) {
       LayoutAccepted = true;
       break;
     }
@@ -778,23 +779,20 @@ ObjectPhasePipeline::executeNative(const PluginObjectGraph &InputGraph,
       make_scope_exit([&] { State->ActiveDestination = nullptr; });
   ObjectGraphArtifact GraphView{CurrentGraph};
   auto GraphHandle = State->Executor->createArtifactView(
-      State->Task, graphArtifactID(), &GraphView,
-      CurrentGraph->generation());
+      State->Task, graphArtifactID(), &GraphView, CurrentGraph->generation());
   if (!GraphHandle)
     return GraphHandle.takeError();
   NevercArtifactHandle InputHandle = *GraphHandle;
   auto ReleaseGraph = make_scope_exit([&] {
-    (void)State->Task.handles().release(
-        InputHandle, PluginArtifactHandleKind);
+    (void)State->Task.handles().release(InputHandle, PluginArtifactHandleKind);
   });
-  PluginArtifactSlot WriteOutput(
-      State->Artifacts.find(imageArtifactID()));
+  PluginArtifactSlot WriteOutput(State->Artifacts.find(imageArtifactID()));
   if (Error E = State->beginPhase(writePhaseID()))
     return std::move(E);
   auto EndWrite = make_scope_exit([&] { State->endPhase(); });
-  if (Error E = State->Executor->execute(
-          State->Task.session(), State->Task, writePhaseID(),
-          State->route(), InputHandle, WriteOutput))
+  if (Error E = State->Executor->execute(State->Task.session(), State->Task,
+                                         writePhaseID(), State->route(),
+                                         InputHandle, WriteOutput))
     return std::move(E);
   const auto *Written =
       static_cast<const ObjectImageArtifact *>(WriteOutput.payload());
@@ -805,18 +803,38 @@ ObjectPhasePipeline::executeNative(const PluginObjectGraph &InputGraph,
   EndWrite.release();
   State->endPhase();
 
-  auto PostWrite =
-      State->executeImagePhase(postWritePhaseID(), CurrentImage);
+  ObjectImageSemanticValidator BoundPostWriteImage;
+  if (Validators.BindPrePostWriteImage) {
+    auto BaselineBytes = CurrentImage->pendingBytes();
+    if (!BaselineBytes)
+      return BaselineBytes.takeError();
+    auto Bound = Validators.BindPrePostWriteImage(*BaselineBytes);
+    if (!Bound)
+      return Bound.takeError();
+    BoundPostWriteImage = std::move(*Bound);
+    if (!BoundPostWriteImage)
+      return createStringError(
+          errc::invalid_argument,
+          "pre/post-write image validator factory returned no validator");
+  }
+
+  auto PostWrite = State->executeImagePhase(postWritePhaseID(), CurrentImage);
   if (!PostWrite)
     return PostWrite.takeError();
   CurrentImage = std::move(*PostWrite);
+  if (BoundPostWriteImage) {
+    auto PostWriteBytes = CurrentImage->pendingBytes();
+    if (!PostWriteBytes)
+      return PostWriteBytes.takeError();
+    if (Error E = BoundPostWriteImage(*PostWriteBytes))
+      return std::move(E);
+  }
   if (Error E = ValidateImage(*CurrentImage))
     return std::move(E);
   if (Error E = CurrentImage->finish())
     return std::move(E);
 
-  for (NevercInterfaceID Phase :
-       {finalVerifyPhaseID(), commitPhaseID()}) {
+  for (NevercInterfaceID Phase : {finalVerifyPhaseID(), commitPhaseID()}) {
     auto Next = State->executeImagePhase(Phase, CurrentImage);
     if (!Next)
       return Next.takeError();
@@ -830,27 +848,23 @@ ObjectPhasePipeline::executeNative(const PluginObjectGraph &InputGraph,
 
 Expected<std::shared_ptr<PluginObjectImage>>
 ObjectPhasePipeline::verifyAndCommitFinished(
-    NevercTargetKey Target,
-    std::shared_ptr<PluginObjectImage> Image) {
+    NevercTargetKey Target, std::shared_ptr<PluginObjectImage> Image) {
   if (!Image)
     return createStringError(errc::invalid_argument,
                              "object image candidate is null");
   if (Error E = State->freeze())
     return std::move(E);
   State->setRoute(Target, Image->formatID());
-  std::shared_ptr<PluginObjectImage> CurrentImage =
-      std::move(Image);
-  for (NevercInterfaceID Phase :
-       {finalVerifyPhaseID(), commitPhaseID()}) {
+  std::shared_ptr<PluginObjectImage> CurrentImage = std::move(Image);
+  for (NevercInterfaceID Phase : {finalVerifyPhaseID(), commitPhaseID()}) {
     auto Next = State->executeImagePhase(Phase, CurrentImage);
     if (!Next)
       return Next.takeError();
     CurrentImage = std::move(*Next);
   }
   if (CurrentImage->state() != PluginObjectImageState::Committed)
-    return createStringError(
-        errc::io_error,
-        "object image candidate was not committed");
+    return createStringError(errc::io_error,
+                             "object image candidate was not committed");
   return CurrentImage;
 }
 

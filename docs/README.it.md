@@ -104,7 +104,7 @@ Comandi utente oltre a una singola compilazione.
 | [`neverc update`](update/README.it.md) | Aggiornare o declassare un'installazione release (compilatore + runtime installati a un tag) |
 | [`neverc runtime`](runtime/README.it.md) | Installare, elencare, aggiornare o rimuovere sysroot di cross-compilazione |
 | [`neverc build` / `neverc make`](build/README.it.md) | Driver compatibile GNU Make per Makefile di esempi e progetti |
-| [Binari di rilascio e `--strip`](release-builds/README.it.md) | Rimuove simboli non necessari e debug sorgente, con pseudonimizzazione `.ko` consapevole del kernel |
+| [Binari di rilascio e `--strip`](release-builds/README.it.md) | Rimuove simboli non necessari e debug sorgente, con rinomina strutturale dei simboli `.ko` consapevole del kernel (non è hash né encryption) |
 
 ---
 

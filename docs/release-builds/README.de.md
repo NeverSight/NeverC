@@ -182,6 +182,64 @@ namensbasiertes ftrace, kprobe/BPF-Attachments und Absturzberichte weniger
 nützlich. Verwenden Sie zur Diagnose einen ungestrippten Debug-Build und
 verlassen Sie sich im Release-Modul nicht auf private Originalnamen.
 
+### Plugin-Grenze eines finalisierten Android-Releases
+
+Die Finalisierung errichtet um die Plugin-Ausgabephasen zwei unabhängige,
+fail-closed Identitätsgrenzen:
+
+- Vor jeder ersetzbaren `ObjectGraph`-Phase bindet das Graph-Siegel für jeden
+  beibehaltenen logischen Abschnitt `section ID`, `final ordinal` und exakten
+  Namen. Außerdem bindet es die `symbol ID` jedes Symbols mit exaktem Namen an
+  Name, Klasse, Abschnitt, Wert, Größe, Binding, Typ und das vollständige
+  `st_other`. Der Release-Verifizierer berechnet gewöhnliche Strukturnamen
+  unabhängig neu.
+- Nachdem der Host eine vertrauenswürdige Schreib-Baseline erstellt hat und vor
+  `neverc.object.post_write` bindet das Image-Siegel Ordinal und Namen jedes
+  beibehaltenen logischen Abschnitts, die Gesamtzahl der `.symtab`-Einträge und
+  Namen sowie Attribute jedes Exact-Name-Symbols an seinen rohen `.symtab`
+  `slot`.
+
+Die Capability-Matrix ist daher absichtlich eng:
+
+| Phasen-Binding | Verhalten im finalisierten Android-Release |
+|----------------|---------------------------------------------|
+| `neverc.object.write` `provider` / `interceptor` | `REJECTED`, bevor die vom Host errichtete vertrauenswürdige Schreib-Baseline ersetzt werden kann |
+| `plugin-owned ObjectFormat graph writer` | `REJECTED`; das finalisierte Android-Release benötigt den host-eigenen Graph Writer, der die vertrauenswürdige Baseline errichtet |
+| `observer` | `READ_ONLY`; Beobachtung bleibt erlaubt, Mutation des Artefakts nicht |
+| `neverc.object.post_write` `interceptor` | `VALIDATED`; nur Payload-Bytes außerhalb der Identitätsfläche dürfen sich ändern, und das Ergebnis muss Release-Verifizierer, Eingabe-ABI-Vertrag und beide Identitätssiegel weiterhin erfüllen |
+
+Auch die Eigentümerschaft des finalisierten Merges wird vom Host versiegelt.
+Ein `MergedImage` oder unabhängige Bytes eines `third-party ObjectMergeProvider`
+werden verworfen; der `host-owned graph writer` serialisiert dessen verifizierten,
+finalisierten Graphen. Umgekehrt umgeht `built-in finalized input serialization`
+die `external object phases` und übergibt dem Host-Merger exakt die
+`audited native bytes`; dieser interne Eingabeschritt umgeht die obige
+Ausgabegrenze nicht.
+
+Finalisierung wird nur mit `Android module merge semantics` akzeptiert; sie
+erfordert außerdem sowohl eine `relocatable output request` als auch eine
+`relocatable driver configuration`, andernfalls schlägt sie `before routing`
+fehl. Für ein finalisiertes Android-Relocatable-Release müssen
+`frozen input format`,
+`TargetKey.ObjectFormatID` und `frozen output format` dieselbe
+`one format identity` teilen. Eine Abweichung wird `before provider dispatch`
+abgelehnt, also auch vor Route Planning oder Sink-Erstellung; Capability
+Preflight und tatsächlicher Graph-Writer-Dispatch können dadurch keine
+unterschiedlichen Formate sehen.
+
+Bei gewöhnlicher graph-repräsentierbarer Eingabe dürfen frühere
+Graph-Interceptors nur laufen, solange sie Graph-Siegel und alle
+Release-Semantiken bewahren. Benötigt die Eingabe Native-Image-Passthrough für
+Fakten, die der `ObjectGraph` nicht darstellen kann, werden jeder ersetzbare
+`route-matching provider` und alle Interceptors abgelehnt. Ein Provider mit
+nicht passender target/CPU/features/object-format/execution-level Route wird
+weder ausgeführt noch blockiert er das Release; nur Read-only-Observers sind
+erlaubt. Nur eine
+Ablehnung oder fehlgeschlagene Validierung `before sealed commit` bricht das
+Staging ab und veröffentlicht keine Datei. Ein Fehler eines `AFTER_COMMIT`-
+Observers wird nach der Veröffentlichung gemeldet und kann die veröffentlichte
+Datei nicht zurückrollen.
+
 Bearbeiten Sie ein `.ko` nicht nachträglich mit `llvm-strip --strip-all` oder
 `objcopy`, und entfernen Sie codetag/BTF/ABI-Abschnitte nicht blind. Strippen Sie
 vor dem Signieren der endgültigen Bytes; jede spätere Änderung macht die Signatur

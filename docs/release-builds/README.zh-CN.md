@@ -153,6 +153,51 @@ trace 元数据、`__ksymtab_strings`、`.rodata` 与字符串字面量等独立
 变化，因此按符号使用 ftrace、kprobe/BPF，以及阅读崩溃报告都会变得不便。
 诊断时请使用未剥离的 debug 构建，发布模块也不得依赖私有符号的原始名称。
 
+### 最终 Android 发布的插件边界
+
+发布收尾会在插件输出阶段两侧建立两个相互独立、失败即关闭的身份边界：
+
+- 在任何可替换的 `ObjectGraph` 阶段之前，图身份封印会绑定每个保留逻辑段的
+  `section ID`、`final ordinal` 与精确名称；还会把每个必须保持原名的符号的
+  `symbol ID` 绑定到其名称、类别、定义段、值、大小、绑定、类型与完整
+  `st_other`。发布验证器会另外重新计算普通结构名。
+- 宿主建立可信写出基线之后、`neverc.object.post_write` 之前，映像身份封印会
+  绑定每个保留逻辑段的序号/名称、`.symtab` 总项数，并把每个精确名称符号的
+  名称及属性绑定到原始 `.symtab` `slot`。
+
+因此能力矩阵被刻意限制为：
+
+| 阶段绑定 | 最终 Android 发布行为 |
+|----------|-----------------------|
+| `neverc.object.write` `provider` / `interceptor` | `REJECTED`；在它能够替换宿主建立的可信写出基线之前拒绝 |
+| `plugin-owned ObjectFormat graph writer` | `REJECTED`；最终 Android 发布必须使用负责建立可信基线的宿主自有 graph writer |
+| `observer` | `READ_ONLY`；允许观察，但不能修改产物 |
+| `neverc.object.post_write` `interceptor` | `VALIDATED`；只能修改不属于身份面的 payload 字节，而且结果必须继续通过发布验证器、输入 ABI 合约与两层身份封印 |
+
+最终合并的所有权同样由宿主封闭。来自 `third-party ObjectMergeProvider` 的
+`MergedImage` 或独立字节会被丢弃，由 `host-owned graph writer` 序列化该 provider
+已验证并完成收尾的图。反向一侧，`built-in finalized input serialization` 会绕过
+`external object phases`，把完全一致的 `audited native bytes` 交给宿主 merger；
+这一内部输入步骤不会绕过上述输出边界。
+
+Finalization 只在 `Android module merge semantics` 下接受；
+`relocatable output request` 与 `relocatable driver configuration` 也必须同时成立，
+否则会在 `before routing` 失败。对于最终 Android relocatable 发布，
+`frozen input format`、
+`TargetKey.ObjectFormatID` 与 `frozen output format` 必须共享
+`one format identity`。不一致会在 `before provider dispatch` 被拒绝——这也早于
+route planning 与 sink creation——因此能力预检和实际 graph-writer dispatch
+不可能看到不同格式。
+
+对于 ObjectGraph 能完整表达的普通输入，较早的图 interceptor 只有在同时保持
+图封印与全部发布语义时才能运行。如果输入包含 `ObjectGraph` 无法表达、必须靠
+原生映像透传的事实，则所有可替换的 `route-matching provider` 与所有 interceptor
+都会被拒绝；target/CPU/features/object-format/execution-level route 不匹配的 provider
+既不运行，也不阻止发布。只允许只读 observer。只有发生在
+`before sealed commit` 的拒绝或验证失败才会中止 staging
+且不发布文件；`AFTER_COMMIT` observer 的失败发生在发布之后，只会被报告，
+不能回滚已经发布的文件。
+
 不要再用 `llvm-strip --strip-all` 或 `objcopy` 后处理 `.ko`，也不要盲目删除
 codetag/BTF/ABI 段。如需模块签名，必须先剥离，再对最终字节签名，因为签名后
 的任何修改都会使签名失效。`clean` 只能删除文件，绝不能剥离或签名现有模块。

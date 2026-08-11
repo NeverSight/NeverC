@@ -32,6 +32,7 @@
 #include "neverc/Foundation/AndroidKernelModuleRelocationPolicy.h"
 #include "neverc/Foundation/AndroidKernelModuleSectionPolicy.h"
 #include "neverc/Foundation/AndroidKernelModuleSymbolPolicy.h"
+#include "neverc/Foundation/ELFDebugSectionPolicy.h"
 #include "neverc/Merge/Merger.h"
 
 #include "llvm/ADT/ArrayRef.h"
@@ -578,7 +579,7 @@ bool isExcludedInputSection(const RawSec &S, const Options &Opts) {
   default:
     break;
   }
-  if (Opts.dropDebugInfo && detail::isELFDebugSection(S.Name))
+  if (Opts.dropDebugInfo && ELFDebugSectionPolicy::isDebugSectionName(S.Name))
     return true;
   if (Opts.stripUnneededSymbols && Opts.finalizeAndroidKernelModule &&
       detail::isAndroidKernelReleaseDiscardableSection(S.Name))
@@ -596,6 +597,19 @@ bool fail(std::string *Err, const Twine &Msg) {
   if (Err)
     *Err = Msg.str();
   return false;
+}
+
+bool verifyDroppableELFDebugSections(const RawELF &Input, const Options &Opts,
+                                     unsigned Partition, std::string *Err) {
+  if (!Opts.dropDebugInfo)
+    return true;
+  for (const RawSec &Section : Input.Secs)
+    if ((Section.Flags & ELF::SHF_ALLOC) &&
+        ELFDebugSectionPolicy::isDebugSectionName(Section.Name))
+      return fail(Err, "verify: input partition " + Twine(Partition) +
+                           " contains allocated debug section '" +
+                           Section.Name + "' that dropDebugInfo cannot remove");
+  return true;
 }
 
 ReleaseSymbolType releaseSymbolType(uint8_t Type) {
@@ -894,7 +908,8 @@ Expected<ReleaseInputNamePlan> reconstructAndroidKernelReleaseInputNames(
       }
 
       const detail::ELFSectionFold Fold = foldedSection(Section, Opts);
-      if ((Opts.dropDebugInfo && detail::isELFDebugSection(Fold.Name)) ||
+      if ((Opts.dropDebugInfo &&
+           ELFDebugSectionPolicy::isDebugSectionName(Fold.Name)) ||
           (Opts.stripUnneededSymbols && Opts.finalizeAndroidKernelModule &&
            detail::isAndroidKernelReleaseDiscardableSection(Fold.Name)) ||
           (Opts.finalizeAndroidKernelModule &&
@@ -1669,15 +1684,11 @@ bool auditAndroidKernelReleaseDebugCompression(const RawELF &Out,
 
   for (unsigned I = 0; I < Out.Secs.size(); ++I) {
     const RawSec &Section = Out.Secs[I];
-    const bool IsDebug = detail::isELFDebugSection(Section.Name);
     if (!Opts.dropDebugInfo &&
         detail::isLegacyELFCompressedDebugSection(Section.Name))
       return fail(Err, "verify: Android release cannot retain legacy GNU "
                        "compressed debug section '" +
                            Section.Name + "'");
-    if (Opts.dropDebugInfo && IsDebug)
-      return fail(Err, "verify: Android release retained debug section '" +
-                           Section.Name + "' despite dropDebugInfo");
 
     const bool Eligible = Section.Name.starts_with(".debug_") &&
                           !(Section.Flags & SHF_ALLOC) &&
@@ -2184,6 +2195,11 @@ bool verifyMergeELFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
   if (!parseRawELF(Output, Out, MaxDecompressedBytes,
                    /*StrictRelease=*/Opts.stripUnneededSymbols, GlobalLedger))
     return fail(Err, "verify: merged output is not a parseable ELF64LE object");
+  if (Opts.dropDebugInfo)
+    for (const RawSec &Section : Out.Secs)
+      if (ELFDebugSectionPolicy::isDebugSectionName(Section.Name))
+        return fail(Err, "verify: merged output retains debug section '" +
+                             Section.Name + "' despite dropDebugInfo");
   if (Opts.stripUnneededSymbols &&
       !auditAndroidKernelReleaseDebugCompression(Out, Opts, Err))
     return false;
@@ -2201,6 +2217,8 @@ bool verifyMergeELFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
                        /*StrictRelease=*/true, GlobalLedger))
         return fail(Err, "verify: input partition " + Twine(P) +
                              " is not a parseable ELF64LE object");
+      if (!verifyDroppableELFDebugSections(Input, Opts, P, Err))
+        return false;
 
       const auto ABI = std::make_tuple(Input.Machine, Input.Flags, Input.OSABI,
                                        Input.ABIVersion);
@@ -2407,10 +2425,6 @@ bool verifyMergeELFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
 
   if (Opts.stripUnneededSymbols) {
     for (const RawSec &Section : Out.Secs) {
-      if (Opts.dropDebugInfo && detail::isELFDebugSection(Section.Name))
-        return fail(Err, "verify: release Android kernel module retains debug "
-                         "section '" +
-                             Section.Name + "'");
       if (detail::isAndroidKernelReleaseDiscardableSection(Section.Name))
         return fail(Err, "verify: release Android kernel module retains "
                          "discardable section '" +
@@ -2566,6 +2580,9 @@ bool verifyMergeELFImpl(ArrayRef<StringRef> Inputs, ArrayRef<char> Output,
                      Inputs[p].size(), /*StrictRelease=*/false, GlobalLedger))
       return fail(Err, "verify: input partition " + Twine(p) +
                            " is not a parseable ELF64LE object");
+    if (!Opts.stripUnneededSymbols &&
+        !verifyDroppableELFDebugSections(In, Opts, p, Err))
+      return false;
     if (Opts.stripUnneededSymbols)
       for (const RawSym &Symbol : In.Syms) {
         const ReleaseInputNamePlan::Entry *Projection =

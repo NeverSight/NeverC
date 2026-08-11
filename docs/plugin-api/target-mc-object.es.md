@@ -539,6 +539,55 @@ protocolo de flags: puede implementar una política ELF aplicable o devolver
 explícitamente `NEVERC_STATUS_CAPABILITY_UNAVAILABLE` cuando no sea aplicable o
 no esté admitida; nunca debe ignorar silenciosamente la solicitud.
 
+### Autoridad de escritura de una release Android finalizada
+
+Cuando `--strip` finaliza un `.ko` de Android, la API genérica de objetos
+mutables anterior se restringe a la ruta de escritura fiable establecida por
+el host. Este límite tiene dos sellos de identidad independientes:
+
+- antes de cualquier fase `ObjectGraph` reemplazable, el sello del grafo
+  vincula el `section ID`, el `final ordinal` y el nombre exacto de cada sección
+  lógica conservada, además del `symbol ID`, owner, clase, sección, valor,
+  tamaño, binding, tipo y `st_other` completo de cada símbolo de nombre exacto;
+- después de que el writer propiedad del host cree la baseline fiable de la
+  imagen, el sello de imagen vincula el ordinal y nombre exacto de cada sección
+  conservada, el total de entradas de `.symtab`, y el `slot` `.symtab` crudo y
+  los atributos de cada símbolo de nombre exacto. El verificador completo de
+  release recalcula de forma independiente cada nombre estructural de release.
+
+| Binding | Comportamiento de la release Android finalizada |
+|---|---|
+| `neverc.object.write` `provider` / `interceptor` | `REJECTED` antes del callback; no puede reemplazar la ruta de escritura fiable |
+| `plugin-owned ObjectFormat graph writer` | `REJECTED`; esta ruta exige el graph writer propiedad del host que establece la baseline fiable |
+| `observer` | `READ_ONLY`; puede inspeccionar, pero no mutar ni reemplazar la salida |
+| `neverc.object.post_write` `interceptor` | `VALIDATED`; su API mutable acotada solo puede cambiar payload fuera de la superficie ABI y de identidad verificada estructuralmente, y el resultado debe pasar las comprobaciones ABI de entrada, ambos sellos y el verificador completo de release |
+
+La propiedad del merge finalizado también queda sellada por el host. Se
+descarta cualquier `MergedImage` o byte independiente de un
+`third-party ObjectMergeProvider`; el `host-owned graph writer` serializa el
+grafo verificado y finalizado de ese provider. En sentido inverso,
+`built-in finalized input serialization` omite las `external object phases` y
+entrega al merger del host exactamente los `audited native bytes`; este paso
+interno de entrada no elude la frontera de salida anterior.
+
+La finalización solo se acepta con `Android module merge semantics`; también
+exige tanto una `relocatable output request` como una
+`relocatable driver configuration`, o falla `before routing`. En una release
+Android relocatable finalizada, `frozen input format`,
+`TargetKey.ObjectFormatID` y `frozen output format` deben compartir
+`one format identity`. Una discrepancia se rechaza `before provider dispatch`,
+por tanto también antes del route planning o de crear el sink; así, el
+capability preflight y el graph-writer dispatch real no pueden observar
+formatos diferentes.
+
+El native-image passthrough rechaza todo `route-matching provider` reemplazable
+y todos los interceptors. Un provider cuya ruta
+target/CPU/features/object-format/execution-level no coincida no se ejecuta ni
+bloquea la release; solo admite observers. Solo un rechazo o fallo de validación
+`before sealed commit` cancela el staging y no publica ningún archivo. Un fallo
+de observer `AFTER_COMMIT` se informa después de la publicación y no puede
+revertir el archivo ya publicado.
+
 ### La tubería de escritura
 
 1. sondear y leer los bytes en un ObjectGraph;

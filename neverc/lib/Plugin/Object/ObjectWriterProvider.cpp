@@ -328,4 +328,11 @@ ObjectWriterProvider::write(PluginTaskContext &Task, PluginObjectGraph &Graph,
   return Image;
 }
 
+bool ObjectWriterProvider::hasPluginOwnedGraphWriter(
+    NevercObjectFormatID FormatID) const {
+  const PluginTargetSnapshot::ObjectFormatRecord *Format =
+      Registry->find(FormatID);
+  return Format && Format->Owner && Format->Writer;
+}
+
 } // namespace neverc::plugin

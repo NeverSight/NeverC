@@ -537,6 +537,58 @@ oder ausdrücklich `NEVERC_STATUS_CAPABILITY_UNAVAILABLE` zurückgeben, wenn sie
 nicht anwendbar oder nicht unterstützt ist; die Anforderung darf nie
 stillschweigend ignoriert werden.
 
+### Schreibhoheit eines finalisierten Android-Releases
+
+Wenn `--strip` ein Android-`.ko` finalisiert, wird die oben beschriebene
+generische Mutable-Object-API auf den vom Host errichteten vertrauenswürdigen
+Schreibpfad eingeschränkt. Diese Grenze besitzt zwei unabhängige
+Identitätssiegel:
+
+- vor jeder ersetzbaren `ObjectGraph`-Phase bindet das Graph-Siegel die
+  `section ID`, den `final ordinal` und den exakten Namen jeder erhaltenen
+  logischen Section sowie `symbol ID`, Owner, Klasse, Section, Wert, Größe,
+  Binding, Typ und vollständiges `st_other` jedes Symbols mit exaktem Namen;
+- nachdem der host-eigene Writer die vertrauenswürdige Image-Baseline erzeugt
+  hat, bindet das Image-Siegel Ordinal und exakten Namen jeder erhaltenen
+  Section, die Gesamtzahl der `.symtab`-Einträge sowie den rohen `.symtab`-
+  `slot` und die Attribute jedes Symbols mit exaktem Namen. Der vollständige
+  Release-Verifier berechnet zusätzlich jeden strukturellen Release-Namen neu.
+
+| Binding | Verhalten beim finalisierten Android-Release |
+|---|---|
+| `neverc.object.write` `provider` / `interceptor` | vor dem Callback `REJECTED`; der vertrauenswürdige Schreibpfad kann nicht ersetzt werden |
+| `plugin-owned ObjectFormat graph writer` | `REJECTED`; dieser Pfad erfordert den host-eigenen Graph Writer, der die vertrauenswürdige Baseline errichtet |
+| `observer` | `READ_ONLY`; darf prüfen, aber die Ausgabe weder ändern noch ersetzen |
+| `neverc.object.post_write` `interceptor` | `VALIDATED`; seine begrenzte Mutable API darf nur Payload außerhalb der strukturell verifizierten ABI- und Identitätsoberfläche ändern, und das Ergebnis muss Input-ABI-Prüfungen, beide Siegel und den vollständigen Release-Verifier bestehen |
+
+Auch die Eigentümerschaft des finalisierten Merges wird vom Host versiegelt.
+Ein `MergedImage` oder unabhängige Bytes eines `third-party ObjectMergeProvider`
+werden verworfen; der `host-owned graph writer` serialisiert dessen verifizierten,
+finalisierten Graphen. Umgekehrt umgeht `built-in finalized input serialization`
+die `external object phases` und übergibt dem Host-Merger exakt die
+`audited native bytes`; dieser interne Eingabeschritt umgeht die obige
+Ausgabegrenze nicht.
+
+Finalisierung wird nur mit `Android module merge semantics` akzeptiert; sie
+erfordert außerdem sowohl eine `relocatable output request` als auch eine
+`relocatable driver configuration`, andernfalls schlägt sie `before routing`
+fehl. Für ein finalisiertes Android-Relocatable-Release müssen
+`frozen input format`,
+`TargetKey.ObjectFormatID` und `frozen output format` dieselbe
+`one format identity` teilen. Eine Abweichung wird `before provider dispatch`
+abgelehnt, also auch vor Route Planning oder Sink-Erstellung; Capability
+Preflight und tatsächlicher Graph-Writer-Dispatch können dadurch keine
+unterschiedlichen Formate sehen.
+
+Native-Image-Passthrough lehnt jeden ersetzbaren `route-matching provider` und
+alle Interceptors ab. Ein Provider mit nicht passender
+target/CPU/features/object-format/execution-level Route wird weder ausgeführt
+noch blockiert er das Release; nur Observer sind zugelassen. Nur eine
+Ablehnung oder fehlgeschlagene Validierung
+`before sealed commit` bricht das Staging ab und veröffentlicht keine Datei.
+Ein Fehler eines `AFTER_COMMIT`-Observers wird nach der Veröffentlichung gemeldet
+und kann die veröffentlichte Datei nicht zurückrollen.
+
 ### Die Schreib-Pipeline
 
 1. sondieren und Bytes in einen ObjectGraph einlesen;

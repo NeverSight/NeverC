@@ -2,8 +2,8 @@
 #include "neverc/Plugin/Host/PluginHandleArena.h"
 #include "neverc/Plugin/Host/PluginProcessServices.h"
 #include "neverc/Plugin/Host/PluginTaskContext.h"
-#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/TimeProfiler.h"
@@ -43,8 +43,8 @@ Error validateCallbackStatus(const PluginModule &Module, StringRef Callback,
                         "' callback '" + Callback +
                         "' returned an unknown status code");
   return sessionError("plugin '" + Module.descriptor().PluginID +
-                      "' callback '" + Callback +
-                      "' failed with status code " + Twine(Status.Code));
+                      "' callback '" + Callback + "' failed with status code " +
+                      Twine(Status.Code));
 }
 
 } // namespace
@@ -95,22 +95,20 @@ PluginSession::create(PluginProcessServices &ProcessServices,
                       PluginOptionParseResult Options) {
   if (Error E = activatePluginPlan(ProcessServices, Plan))
     return std::move(E);
-  return createFromModules(ProcessServices, Plan.plugins(),
-                           std::move(Options), {});
+  return createFromModules(ProcessServices, Plan.plugins(), std::move(Options),
+                           {});
 }
 
-Expected<std::unique_ptr<PluginSession>>
-PluginSession::createFromModules(
+Expected<std::unique_ptr<PluginSession>> PluginSession::createFromModules(
     PluginProcessServices &ProcessServices,
     ArrayRef<std::shared_ptr<const PluginModule>> Modules,
     PluginOptionParseResult Options,
     std::vector<uint64_t> AncestorSessionOwners) {
-  std::vector<std::shared_ptr<const PluginModule>> OwnedModules(
-      Modules.begin(), Modules.end());
+  std::vector<std::shared_ptr<const PluginModule>> OwnedModules(Modules.begin(),
+                                                                Modules.end());
   auto Session = std::unique_ptr<PluginSession>(
       new PluginSession(ProcessServices, std::move(OwnedModules),
-                        std::move(Options),
-                        std::move(AncestorSessionOwners)));
+                        std::move(Options), std::move(AncestorSessionOwners)));
   if (Error E = Session->initialize()) {
     std::lock_guard<std::mutex> Lock(Session->LifecycleMutex);
     Session->Ended = true;
@@ -122,8 +120,7 @@ PluginSession::createFromModules(
 Error PluginSession::initialize() {
   SessionLease = ProcessServices.registry().acquireSessionLease();
   if (!SessionLease)
-    return sessionError(
-        "plugin registry refused a new session activity lease");
+    return sessionError("plugin registry refused a new session activity lease");
   Snapshot = ProcessServices.registry().acquireSnapshot();
   if (!Snapshot) {
     SessionLease.reset();
@@ -150,16 +147,15 @@ Error PluginSession::initialize() {
     return Owner.takeError();
   }
   Handle.Owner = *Owner;
-  Handle.Value =
-      (UINT64_C(2) << 48) | (UINT64_C(1) << 32) | UINT64_C(1);
+  Handle.Value = (UINT64_C(2) << 48) | (UINT64_C(1) << 32) | UINT64_C(1);
   if (Error E = ProcessServices.registerSessionScope(Handle, *this)) {
     Snapshot.reset();
     SessionLease.reset();
     return std::move(E);
   }
   RegisteredScope = true;
-  HandleArena = std::make_unique<PluginHandleArena>(
-      ProcessServices, Handle.Owner, Handle.Owner);
+  HandleArena = std::make_unique<PluginHandleArena>(ProcessServices,
+                                                    Handle.Owner, Handle.Owner);
   if (Error E = ProcessServices.prepareSessionScope(Handle, *this)) {
     HandleArena->invalidateAll();
     ProcessServices.unregisterSessionScope(Handle);
@@ -178,8 +174,8 @@ Error PluginSession::initialize() {
         Descriptor.PluginID, "SessionBegin",
         [&] {
           return State->Module->invokeSessionBegin(
-              &ProcessServices.coreAPI(), Handle,
-              State->Module->processState(), &OutState);
+              &ProcessServices.coreAPI(), Handle, State->Module->processState(),
+              &OutState);
         },
         false);
     if (!Result) {
@@ -240,10 +236,8 @@ Error PluginSession::rollbackBegunPlugins() {
         CleanupErrors =
             joinErrors(std::move(CleanupErrors), Result.takeError());
       else if (Error E =
-                   validateCallbackStatus(*State.Module, "SessionEnd",
-                                          *Result))
-        CleanupErrors =
-            joinErrors(std::move(CleanupErrors), std::move(E));
+                   validateCallbackStatus(*State.Module, "SessionEnd", *Result))
+        CleanupErrors = joinErrors(std::move(CleanupErrors), std::move(E));
     }
     State.State = nullptr;
     State.Begun = false;
@@ -251,8 +245,7 @@ Error PluginSession::rollbackBegunPlugins() {
   return CleanupErrors;
 }
 
-Expected<std::unique_ptr<PluginSession>>
-PluginSession::createChild() const {
+Expected<std::unique_ptr<PluginSession>> PluginSession::createChild() const {
   {
     std::lock_guard<std::mutex> Lock(LifecycleMutex);
     if (Ending || Ended)
@@ -391,16 +384,16 @@ Expected<NevercStatus> PluginSession::invokeCallback(
   }
 }
 
-Error PluginSession::registerDeferredCallback(
-    StringRef Domain, StringRef CallbackID, StringRef PluginID,
-    DeferredCallback Callback) {
+Error PluginSession::registerDeferredCallback(StringRef Domain,
+                                              StringRef CallbackID,
+                                              StringRef PluginID,
+                                              DeferredCallback Callback) {
   if (Domain.empty() || Domain.contains('\0') || CallbackID.empty() ||
       CallbackID.contains('\0') || PluginID.empty() || !Callback)
     return sessionError("deferred callback registration is invalid");
   if (!findPluginState(PluginID))
     return sessionError("deferred callback plugin is not selected");
-  std::string Key =
-      (Twine(Domain) + Twine("\x1f") + CallbackID).str();
+  std::string Key = (Twine(Domain) + Twine("\x1f") + CallbackID).str();
   std::lock_guard<std::mutex> Lock(DeferredCallbackMutex);
   if (DeferredCallbacks.contains(Key))
     return sessionError("deferred callback ID is already registered");
@@ -408,21 +401,20 @@ Error PluginSession::registerDeferredCallback(
   return Error::success();
 }
 
-void PluginSession::unregisterDeferredCallback(
-    StringRef Domain, StringRef CallbackID) {
-  std::string Key =
-      (Twine(Domain) + Twine("\x1f") + CallbackID).str();
+void PluginSession::unregisterDeferredCallback(StringRef Domain,
+                                               StringRef CallbackID) {
+  std::string Key = (Twine(Domain) + Twine("\x1f") + CallbackID).str();
   std::lock_guard<std::mutex> Lock(DeferredCallbackMutex);
   DeferredCallbacks.erase(Key);
 }
 
-Expected<NevercStatus> PluginSession::invokeDeferredCallback(
-    StringRef Domain, StringRef CallbackID, const void *Context,
-    int32_t *OutExitCode) {
+Expected<NevercStatus>
+PluginSession::invokeDeferredCallback(StringRef Domain, StringRef CallbackID,
+                                      const void *Context,
+                                      int32_t *OutExitCode) {
   if (Domain.empty() || CallbackID.empty() || !OutExitCode)
     return sessionError("deferred callback invocation is invalid");
-  std::string Key =
-      (Twine(Domain) + Twine("\x1f") + CallbackID).str();
+  std::string Key = (Twine(Domain) + Twine("\x1f") + CallbackID).str();
   DeferredCallbackRecord Record;
   {
     std::lock_guard<std::mutex> Lock(DeferredCallbackMutex);
@@ -431,10 +423,9 @@ Expected<NevercStatus> PluginSession::invokeDeferredCallback(
       return sessionError("deferred callback is not registered");
     Record = It->second;
   }
-  return invokeCallback(
-      Record.PluginID,
-      (Twine("deferred/") + Domain + "/" + CallbackID).str(),
-      [&] { return Record.Callback(Context, OutExitCode); });
+  return invokeCallback(Record.PluginID,
+                        (Twine("deferred/") + Domain + "/" + CallbackID).str(),
+                        [&] { return Record.Callback(Context, OutExitCode); });
 }
 
 StringRef PluginSession::currentCallbackPluginID() const {
@@ -456,20 +447,17 @@ Error PluginSession::end() {
       return sessionError("plugin session end is already in progress");
     uint64_t Tasks = ActiveTasks.load(std::memory_order_acquire);
     if (Tasks != 0) {
-      std::string Message =
-          (Twine("cannot end plugin session while ") + Twine(Tasks) +
-           " active task(s) remain")
-              .str();
+      std::string Message = (Twine("cannot end plugin session while ") +
+                             Twine(Tasks) + " active task(s) remain")
+                                .str();
       for (uint64_t Owner : ActiveTaskOwners)
         Message += " " + std::to_string(Owner);
       return sessionError(Message);
     }
-    uint64_t Callbacks =
-        ActiveCallbacks.load(std::memory_order_acquire);
+    uint64_t Callbacks = ActiveCallbacks.load(std::memory_order_acquire);
     if (Callbacks != 0)
       return sessionError("cannot end plugin session while " +
-                          Twine(Callbacks) +
-                          " callback(s) are active");
+                          Twine(Callbacks) + " callback(s) are active");
     Ending = true;
   }
 
@@ -512,8 +500,7 @@ NevercStatus PluginSession::queryState(StringRef PluginID,
   return neverc_status_ok();
 }
 
-PluginSession::PluginState *
-PluginSession::findPluginState(StringRef PluginID) {
+PluginSession::PluginState *PluginSession::findPluginState(StringRef PluginID) {
   auto It = llvm::find_if(PluginStates, [&](const auto &State) {
     return State->Module->descriptor().PluginID == PluginID;
   });
@@ -531,11 +518,9 @@ PluginSession::findPluginState(StringRef PluginID) const {
 Error PluginSession::registerTask(PluginTaskContext &Task) {
   std::lock_guard<std::mutex> Lock(LifecycleMutex);
   if (Ending || Ended)
-    return sessionError(
-        "cannot create a task in an ending plugin session");
+    return sessionError("cannot create a task in an ending plugin session");
   if (Cancelled.load(std::memory_order_acquire))
-    return sessionError(
-        "cannot create a task in a cancelled plugin session");
+    return sessionError("cannot create a task in a cancelled plugin session");
   ActiveTaskOwners.push_back(Task.handle().Owner);
   ActiveTasks.fetch_add(1, std::memory_order_acq_rel);
   return Error::success();
@@ -543,10 +528,10 @@ Error PluginSession::registerTask(PluginTaskContext &Task) {
 
 void PluginSession::unregisterTask(PluginTaskContext &Task) {
   std::lock_guard<std::mutex> Lock(LifecycleMutex);
-  ActiveTaskOwners.erase(
-      std::remove(ActiveTaskOwners.begin(), ActiveTaskOwners.end(),
-                  Task.handle().Owner),
-      ActiveTaskOwners.end());
+  ActiveTaskOwners.erase(std::remove(ActiveTaskOwners.begin(),
+                                     ActiveTaskOwners.end(),
+                                     Task.handle().Owner),
+                         ActiveTaskOwners.end());
   ActiveTasks.fetch_sub(1, std::memory_order_acq_rel);
 }
 

@@ -243,7 +243,8 @@ NevercStatus NEVERC_CALL writeAndAttemptMutationFromNestedObserver(
   State.CachedBuilder = Request->Builder;
 
   auto Nested = State.Task->invokeCallback(
-      State.ObserverPluginID, "object_writer_nested_read_only_observer", [&] {
+      State.ObserverPluginID, "object_writer_nested_read_only_observer",
+      [&] {
         static const std::array<uint8_t, 1> Byte{{UINT8_C(0xa5)}};
         State.MutationAttempt = State.CachedBinary->Append(
             State.CachedBinary->Context, State.CachedTask, State.CachedBuilder,
@@ -737,6 +738,54 @@ TEST(PluginObjectWriterTest,
       {'A', 'B', 'x', 'y', 'C', 'D', 'Z', '!'}};
   EXPECT_EQ(Published->Bytes,
             (std::vector<uint8_t>(Expected.begin(), Expected.end())));
+}
+
+TEST(PluginObjectWriterTest,
+     PipelineClassifiesPluginOwnedGraphWriterWithoutBlockingNonRelease) {
+  ObjectWriterTaskScope Scope;
+  ASSERT_TRUE(Scope.initialize());
+
+  NevercObjectFormatDescriptor Format{};
+  Format.Header = {sizeof(Format), NEVERC_OBJECT_FORMAT_API_MAJOR,
+                   NEVERC_OBJECT_FORMAT_API_MINOR, 0};
+  Format.FormatID = TestFormatID;
+  Format.CanonicalName = view("plugin-owned-writer");
+  Format.DefaultExtension = view(".nobj");
+  Format.Flags = NEVERC_OBJECT_FORMAT_CAN_WRITE;
+  Format.Writer = writeEditedBinary;
+
+  PluginTargetRegistrationView Registration;
+  Registration.PluginID = Scope.plugin(0)->descriptor().PluginID;
+  Registration.Owner = Scope.plugin(0);
+  Registration.ObjectFormats = ArrayRef<NevercObjectFormatDescriptor>(Format);
+  auto Snapshot = PluginTargetRegistry::freeze(ArrayRef(Registration),
+                                               PluginTargetRequest{});
+  ASSERT_TRUE(static_cast<bool>(Snapshot)) << errorText(Snapshot.takeError());
+  auto Pipeline = ObjectPhasePipeline::create(Scope.task(), *Snapshot);
+  ASSERT_TRUE(static_cast<bool>(Pipeline)) << errorText(Pipeline.takeError());
+  EXPECT_TRUE((*Pipeline)->hasPluginOwnedGraphWriter(TestFormatID));
+
+  auto Target = makeTargetKey();
+  ASSERT_TRUE(static_cast<bool>(Target)) << errorText(Target.takeError());
+  PluginObjectGraph Graph(std::move(*Target));
+  PluginObjectSection Section;
+  Section.ID = Graph.allocateEntityID();
+  Section.Name = ".text";
+  Section.Kind = NEVERC_OBJECT_SECTION_KIND_TEXT;
+  Section.Flags =
+      NEVERC_OBJECT_SECTION_ALLOCATED | NEVERC_OBJECT_SECTION_EXECUTABLE;
+  Section.Alignment = 1;
+  Section.Data = {UINT8_C(0x2a), UINT8_C(0xc3)};
+  Graph.sections().push_back(std::move(Section));
+
+  auto Image = (*Pipeline)->execute(
+      Graph, ObjectOutputDestination::memory("plugin-owned-nonrelease.nobj",
+                                             UINT64_C(1024)));
+  ASSERT_TRUE(static_cast<bool>(Image)) << errorText(Image.takeError());
+  auto Published =
+      findPluginMemoryOutput(Scope.task(), "plugin-owned-nonrelease.nobj");
+  ASSERT_TRUE(Published.has_value());
+  EXPECT_FALSE(Published->Bytes.empty());
 }
 
 TEST(PluginObjectWriterTest,

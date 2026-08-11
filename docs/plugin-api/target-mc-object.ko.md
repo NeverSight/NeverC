@@ -500,6 +500,49 @@ flags 프로토콜을 이해한다는 뜻입니다. 적용 가능한 ELF 정책�
 않거나 지원되지 않으면 `NEVERC_STATUS_CAPABILITY_UNAVAILABLE`을 명시적으로 반환할 수
 있지만 요청을 조용히 무시해서는 안 됩니다.
 
+### 최종 Android release 쓰기 권한
+
+`--strip`이 Android `.ko`를 최종화하면 위의 일반 mutable object API는 host가 설정한
+신뢰 write path로 제한됩니다. 이 경계에는 서로 독립적인 두 identity seal이 있습니다.
+
+- 교체 가능한 `ObjectGraph` 단계 전에 graph seal은 유지되는 각 logical section의
+  `section ID`, `final ordinal`, 정확한 이름과 각 exact-name symbol의 `symbol ID`,
+  owner, class, section, value, size, binding, type, 전체 `st_other`를 묶습니다.
+- host-owned writer가 신뢰 image baseline을 만든 뒤 image seal은 유지되는 각 section의
+  ordinal과 정확한 이름, 전체 `.symtab` entry 수, 각 exact-name symbol의 원시
+  `.symtab` `slot` 및 속성을 묶습니다. 전체 release verifier는 모든 구조적 release
+  name도 독립적으로 다시 계산합니다.
+
+| Binding | 최종 Android release 동작 |
+|---|---|
+| `neverc.object.write` `provider` / `interceptor` | callback 전에 `REJECTED`; 신뢰 write path를 교체할 수 없습니다 |
+| `plugin-owned ObjectFormat graph writer` | `REJECTED`; 이 path에는 신뢰 baseline을 설정하는 host-owned graph writer가 필요합니다 |
+| `observer` | `READ_ONLY`; 검사만 가능하며 출력을 변경하거나 교체할 수 없습니다 |
+| `neverc.object.post_write` `interceptor` | `VALIDATED`; bounded mutable API는 구조적으로 검증되는 ABI/identity surface 밖의 payload만 변경할 수 있고, 결과는 input ABI checks, 두 seal 및 전체 release verifier를 통과해야 합니다 |
+
+최종 merge의 소유권도 host가 봉인합니다. `third-party ObjectMergeProvider`가 반환한
+`MergedImage` 또는 독립 byte는 폐기하고, 검증 및 finalize된 graph를
+`host-owned graph writer`가 직렬화합니다. 반대로
+`built-in finalized input serialization`은 `external object phases`를 우회하여 정확한
+`audited native bytes`를 host merger에 전달합니다. 이 내부 입력 단계는 위의 출력
+경계를 우회하지 않습니다.
+
+Finalization은 `Android module merge semantics`에서만 허용됩니다.
+`relocatable output request`와 `relocatable driver configuration`도 모두 필요하며,
+그렇지 않으면 `before routing`에 실패합니다. 최종 Android relocatable release에서는
+`frozen input format`,
+`TargetKey.ObjectFormatID`, `frozen output format`이 `one format identity`를
+공유해야 합니다. 불일치는 `before provider dispatch`, 즉 route planning과 sink
+creation보다도 먼저 거부되므로 capability preflight와 실제 graph-writer dispatch가
+서로 다른 format을 볼 수 없습니다.
+
+native-image passthrough는 교체 가능한 모든 `route-matching provider`와 모든
+interceptor를 거부합니다. target/CPU/features/object-format/execution-level route가
+일치하지 않는 provider는 실행되지 않고 release도 막지 않으며 observer만 허용합니다.
+`before sealed commit` 시점의 거부 또는 검증 실패만 staging을 중단하고
+파일을 게시하지 않습니다. `AFTER_COMMIT` observer 실패는 게시 후 보고되며 이미 게시된
+파일을 되돌릴 수 없습니다.
+
 ### 쓰기 파이프라인
 
 1. 탐지해서 바이트를 ObjectGraph로 읽어 들인다;

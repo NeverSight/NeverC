@@ -1,6 +1,7 @@
 #ifndef NEVERC_PLUGIN_HOST_NATIVEELFSECTIONFACTS_H
 #define NEVERC_PLUGIN_HOST_NATIVEELFSECTIONFACTS_H
 
+#include "neverc/Foundation/ELFDebugSectionPolicy.h"
 #include "neverc/Plugin/Host/ObjectSectionRole.h"
 #include "neverc/Plugin/PluginObject.h"
 #include "llvm/ADT/StringRef.h"
@@ -19,13 +20,6 @@ struct NativeELFSectionProjection {
   NevercObjectSectionFlags Flags = 0;
 };
 
-inline bool isELFDebugSectionName(llvm::StringRef Name) {
-  // ELFObjectFile::isDebugSection recognizes .gdb_index in addition to the
-  // portable name families shared by the other object adapters.
-  return isDebugSectionName(BuiltinObjectFormat::ELF, Name) ||
-         Name == ".gdb_index";
-}
-
 inline NativeELFSectionProjection
 projectNativeELFSection(llvm::StringRef Name, uint64_t Type, uint64_t Flags) {
   const bool Allocated = (Flags & llvm::ELF::SHF_ALLOC) != 0;
@@ -35,7 +29,7 @@ projectNativeELFSection(llvm::StringRef Name, uint64_t Type, uint64_t Flags) {
   const bool ZeroFill = Type == llvm::ELF::SHT_NOBITS;
 
   NativeELFSectionProjection Result;
-  if (isELFDebugSectionName(Name))
+  if (ELFDebugSectionPolicy::isDebugSectionName(Name))
     Result.Kind = NEVERC_OBJECT_SECTION_KIND_DEBUG;
   else if (isUnwindSectionName(BuiltinObjectFormat::ELF, Name))
     Result.Kind = NEVERC_OBJECT_SECTION_KIND_UNWIND;

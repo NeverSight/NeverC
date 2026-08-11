@@ -182,6 +182,62 @@ diagnostics, ce qui réduit l'utilité de ftrace par symbole, des attaches
 kprobe/BPF et des rapports de plantage. Diagnostiquez avec une build debug non
 dépouillée et ne dépendez pas du nom d'origine d'un symbole privé en release.
 
+### Frontière plugin d'une release Android finalisée
+
+La finalisation établit deux frontières d'identité indépendantes et fermées en
+cas d'échec autour des phases de sortie plugin :
+
+- Avant toute phase `ObjectGraph` remplaçable, le sceau du graphe lie le
+  `section ID`, le `final ordinal` et le nom exact de chaque section logique
+  conservée. Il lie aussi le `symbol ID` de chaque symbole à nom exact à son
+  nom, sa classe, sa section, sa valeur, sa taille, son binding, son type et son
+  `st_other` complet. Le vérificateur release recalcule séparément les noms
+  structurels ordinaires.
+- Après que l'hôte a établi une base d'écriture fiable et avant
+  `neverc.object.post_write`, le sceau de l'image lie l'ordinal et le nom de
+  chaque section logique conservée, le nombre total d'entrées `.symtab`, ainsi
+  que le nom et les attributs de chaque symbole à nom exact à son `slot`
+  `.symtab` brut.
+
+La matrice de capacités est donc volontairement étroite :
+
+| Binding de phase | Comportement d'une release Android finalisée |
+|------------------|----------------------------------------------|
+| `neverc.object.write` `provider` / `interceptor` | `REJECTED` avant de pouvoir remplacer la base d'écriture fiable établie par l'hôte |
+| `plugin-owned ObjectFormat graph writer` | `REJECTED` ; une release Android finalisée exige le graph writer appartenant à l'hôte qui établit la base fiable |
+| `observer` | `READ_ONLY` ; l'observation reste permise, sans mutation de l'artefact |
+| `neverc.object.post_write` `interceptor` | `VALIDATED` ; seuls des octets payload hors de la surface d'identité peuvent changer, et le résultat doit encore satisfaire le vérificateur release, le contrat ABI d'entrée et les deux sceaux d'identité |
+
+La propriété du merge finalisé est elle aussi scellée par l'hôte. Tout
+`MergedImage` ou octet indépendant d'un `third-party ObjectMergeProvider` est
+écarté ; le `host-owned graph writer` sérialise le graphe vérifié et finalisé
+de ce provider. Inversement, `built-in finalized input serialization` contourne
+les `external object phases` et fournit au merger de l'hôte les exacts
+`audited native bytes` ; cette étape d'entrée interne ne contourne pas la
+frontière de sortie ci-dessus.
+
+La finalisation n'est acceptée qu'avec `Android module merge semantics` ; elle
+exige aussi à la fois une `relocatable output request` et une
+`relocatable driver configuration`, sinon elle échoue `before routing`. Pour
+une release Android relocatable finalisée, `frozen input format`,
+`TargetKey.ObjectFormatID` et `frozen output format` doivent partager
+`one format identity`. Une divergence est refusée `before provider dispatch`,
+donc également avant le route planning ou la création du sink ; le capability
+preflight et le graph-writer dispatch réel ne peuvent ainsi observer des
+formats différents.
+
+Pour une entrée représentable intégralement par le graphe, les interceptors de
+graphe antérieurs ne peuvent s'exécuter qu'en préservant le sceau et toute la
+sémantique release. Si l'entrée exige un passthrough de l'image native pour des
+faits non représentables par l'`ObjectGraph`, chaque
+`route-matching provider` remplaçable et chaque interceptor sont refusés. Un
+provider dont la route target/CPU/features/object-format/execution-level ne
+correspond pas ne s'exécute pas et ne bloque pas la release ; seuls les
+observers en lecture seule sont admis. Seul
+un refus ou un échec de validation `before sealed commit` annule le staging et
+ne publie aucun fichier. L'échec d'un observer `AFTER_COMMIT` est signalé après
+publication et ne peut pas annuler le fichier déjà publié.
+
 Ne post-traitez pas un `.ko` avec `llvm-strip --strip-all` ou `objcopy` et ne
 supprimez pas aveuglément les sections codetag/BTF/ABI. Dépouillez avant de signer
 les octets finaux : toute mutation ultérieure invalide la signature. `clean` ne

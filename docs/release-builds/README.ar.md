@@ -166,6 +166,55 @@ Android/Linux تاريخيًا المدخلات عديمة الاسم، كما �
 فتقل فائدة ftrace المعتمد على الاسم وربط kprobe/BPF وتقارير الأعطال. استخدم بناء
 debug غير مجرد للتشخيص، ولا تعتمد على الاسم الأصلي لرمز خاص في وحدة release.
 
+### حدّ plugin في إصدار Android النهائي
+
+تُنشئ مرحلة الإنهاء حدَّي هوية مستقلين يعملان بمبدأ الإخفاق المغلق حول مراحل
+خرج plugin:
+
+- قبل أي مرحلة `ObjectGraph` قابلة للاستبدال، يربط ختم الرسم `section ID`
+  و`final ordinal` والاسم الدقيق لكل قسم منطقي محتفَظ به. ويربط أيضًا
+  `symbol ID` لكل رمز ذي اسم دقيق باسمه وفئته وقسمه وقيمته وحجمه وbinding
+  ونوعه وقيمة `st_other` الكاملة. ويعيد release verifier حساب الأسماء
+  البنيوية العادية بصورة مستقلة.
+- بعد أن ينشئ host خط أساس كتابة موثوقًا وقبل `neverc.object.post_write`،
+  يربط ختم الصورة ordinal/اسم كل قسم منطقي محتفَظ به، والعدد الإجمالي لمدخلات
+  `.symtab`، واسم وسمات كل رمز ذي اسم دقيق بموضع `.symtab` `slot` الخام.
+
+لذلك تكون مصفوفة الصلاحيات ضيقة عمدًا:
+
+| ربط المرحلة | سلوك إصدار Android النهائي |
+|-------------|-----------------------------|
+| `neverc.object.write` `provider` / `interceptor` | `REJECTED` قبل أن يتمكن من استبدال خط أساس الكتابة الموثوق الذي أنشأه host |
+| `plugin-owned ObjectFormat graph writer` | `REJECTED`؛ يتطلب إصدار Android النهائي graph writer مملوكًا لـ host لإنشاء خط الأساس الموثوق |
+| `observer` | `READ_ONLY`؛ تبقى المراقبة مسموحة ولا يُسمح بتعديل الناتج |
+| `neverc.object.post_write` `interceptor` | `VALIDATED`؛ لا يجوز له تغيير سوى بايتات payload خارج سطح الهوية، ويجب أن تظل النتيجة ناجحة في release verifier وعقد ABI للمدخل وختمي الهوية |
+
+تُختم ملكية الدمج النهائي بواسطة host أيضًا. يُطرح أي `MergedImage` أو بايتات
+مستقلة من `third-party ObjectMergeProvider`، ويتولى `host-owned graph writer`
+تسلسل الرسم المتحقق منه والنهائي لذلك provider. وفي الاتجاه المقابل، تتجاوز
+`built-in finalized input serialization` مراحل `external object phases` وتمرر
+إلى merger الخاص بالمضيف بايتات `audited native bytes` المطابقة تمامًا؛ ولا
+تتجاوز خطوة الإدخال الداخلية هذه حد الإخراج أعلاه.
+
+لا يُقبل finalization إلا مع `Android module merge semantics`، كما يتطلب
+`relocatable output request` و`relocatable driver configuration` معًا، وإلا
+يفشل `before routing`. في إصدار Android relocatable نهائي، يجب أن تشترك
+`frozen input format` و
+`TargetKey.ObjectFormatID` و`frozen output format` في `one format identity`.
+يُرفض أي اختلاف `before provider dispatch`، أي قبل route planning أو إنشاء sink
+أيضًا، وبذلك لا يمكن لـ capability preflight وgraph-writer dispatch الفعلي رؤية
+تنسيقين مختلفين.
+
+في المدخل العادي القابل للتمثيل كاملًا بالرسم، لا تعمل graph interceptor الأسبق
+إلا مع الحفاظ على graph seal وكل دلالات release. وإذا احتاج المدخل إلى
+native-image passthrough لحقائق لا يستطيع `ObjectGraph` تمثيلها، تُرفض كل
+`route-matching provider` قابلة للاستبدال وكل interceptor. أما provider الذي
+لا يطابق مساره target/CPU/features/object-format/execution-level فلا يُنفذ ولا
+يمنع release، ولا يُسمح إلا بـ read-only observer.
+ولا يلغي staging ويمنع نشر الملف إلا رفض أو فشل تحقق `before sealed commit`.
+أما فشل observer عند `AFTER_COMMIT` فيُبلّغ بعد النشر ولا يمكنه التراجع عن
+الملف المنشور.
+
 لا تعالج `.ko` لاحقًا بواسطة `llvm-strip --strip-all` أو `objcopy`، ولا تحذف
 أقسام codetag/BTF/ABI عشوائيًا. نفّذ التجريد أولًا ثم وقّع البايتات النهائية،
 لأن أي تعديل لاحق يبطل التوقيع. يجب أن يقتصر `clean` على حذف الملفات، ولا يجوز

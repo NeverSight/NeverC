@@ -104,7 +104,7 @@ NeverC 專案的主要規劃方向：標準函式庫、EVM 智慧合約後端和
 | [`neverc update`](update/README.zh-TW.md) | 升級或降級 release 安裝（編譯器與已裝 runtime 同步到同一標籤） |
 | [`neverc runtime`](runtime/README.zh-TW.md) | 安裝、列出、更新或移除交叉編譯 sysroot |
 | [`neverc build` / `neverc make`](build/README.zh-TW.md) | 面向範例與專案 Makefile 的 GNU Make 相容驅動 |
-| [發布二進位檔與 `--strip`](release-builds/README.zh-TW.md) | 移除非執行期符號與原始碼偵錯資訊，包括核心感知的 `.ko` 符號假名化 |
+| [發布二進位檔與 `--strip`](release-builds/README.zh-TW.md) | 移除非執行期符號與原始碼偵錯資訊，並對 `.ko` 進行核心感知的結構化符號重新命名（不是 hash，也不是 encryption） |
 
 ---
 

@@ -2,10 +2,10 @@
 #include "neverc/Plugin/Host/PluginRegistration.h"
 #include "neverc/Plugin/Host/PluginSession.h"
 #include "neverc/Plugin/Host/PluginTaskContext.h"
-#include "gtest/gtest.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/Config/llvm-config.h"
 #include "llvm/Support/Error.h"
+#include "gtest/gtest.h"
 #include <array>
 #include <cstdlib>
 #include <cstring>
@@ -50,11 +50,9 @@ TEST(PluginSessionTest, IsolatesTopLevelChildAndTaskState) {
   loadPlugin(Services, NEVERC_TEST_SCOPE_SESSION_PLUGIN);
 
   {
-    const std::array<StringRef, 1> Selected = {
-        "org.neverc.test.scope.session"};
+    const std::array<StringRef, 1> Selected = {"org.neverc.test.scope.session"};
     auto Plan = makePluginActivationPlan(Services.registry(), Selected);
-    ASSERT_TRUE(static_cast<bool>(Plan))
-        << takeErrorMessage(Plan.takeError());
+    ASSERT_TRUE(static_cast<bool>(Plan)) << takeErrorMessage(Plan.takeError());
 
     auto First = PluginSession::create(Services, *Plan);
     ASSERT_TRUE(static_cast<bool>(First))
@@ -68,112 +66,105 @@ TEST(PluginSessionTest, IsolatesTopLevelChildAndTaskState) {
 
     EXPECT_NE((*First)->handle().Owner, (*Second)->handle().Owner);
     EXPECT_NE((*First)->handle().Owner, (*Child)->handle().Owner);
-    EXPECT_EQ((*First)->registryGeneration(),
-              (*Child)->registryGeneration());
+    EXPECT_EQ((*First)->registryGeneration(), (*Child)->registryGeneration());
     EXPECT_EQ(Services.registry().activeSessions(), 3U);
 
     void *FirstState = nullptr;
     void *SecondState = nullptr;
     void *ChildState = nullptr;
-    ASSERT_EQ((*First)
-                  ->queryState("org.neverc.test.scope.session", &FirstState)
-                  .Code,
-              NEVERC_STATUS_OK);
+    ASSERT_EQ(
+        (*First)->queryState("org.neverc.test.scope.session", &FirstState).Code,
+        NEVERC_STATUS_OK);
     ASSERT_EQ((*Second)
                   ->queryState("org.neverc.test.scope.session", &SecondState)
                   .Code,
               NEVERC_STATUS_OK);
-    ASSERT_EQ((*Child)
-                  ->queryState("org.neverc.test.scope.session", &ChildState)
-                  .Code,
-              NEVERC_STATUS_OK);
+    ASSERT_EQ(
+        (*Child)->queryState("org.neverc.test.scope.session", &ChildState).Code,
+        NEVERC_STATUS_OK);
     EXPECT_NE(FirstState, nullptr);
     EXPECT_NE(SecondState, nullptr);
     EXPECT_NE(ChildState, nullptr);
     EXPECT_NE(FirstState, SecondState);
     EXPECT_NE(FirstState, ChildState);
 
-    auto FirstTask =
-        (*First)->createTask(NEVERC_TASK_TRANSLATION_UNIT);
+    auto FirstTask = (*First)->createTask(NEVERC_TASK_TRANSLATION_UNIT);
     ASSERT_TRUE(static_cast<bool>(FirstTask))
         << takeErrorMessage(FirstTask.takeError());
-    auto SecondTask =
-        (*Second)->createTask(NEVERC_TASK_TRANSLATION_UNIT);
+    auto SecondTask = (*Second)->createTask(NEVERC_TASK_TRANSLATION_UNIT);
     ASSERT_TRUE(static_cast<bool>(SecondTask))
         << takeErrorMessage(SecondTask.takeError());
 
     void *FirstTaskState = nullptr;
     void *SecondTaskState = nullptr;
     ASSERT_EQ((*FirstTask)
-                  ->queryState("org.neverc.test.scope.session",
-                               &FirstTaskState)
+                  ->queryState("org.neverc.test.scope.session", &FirstTaskState)
                   .Code,
               NEVERC_STATUS_OK);
-    ASSERT_EQ((*SecondTask)
-                  ->queryState("org.neverc.test.scope.session",
-                               &SecondTaskState)
-                  .Code,
-              NEVERC_STATUS_OK);
+    ASSERT_EQ(
+        (*SecondTask)
+            ->queryState("org.neverc.test.scope.session", &SecondTaskState)
+            .Code,
+        NEVERC_STATUS_OK);
     EXPECT_NE(FirstTaskState, nullptr);
     EXPECT_NE(SecondTaskState, nullptr);
     EXPECT_NE(FirstTaskState, SecondTaskState);
 
     void *OutsideState = nullptr;
-    EXPECT_EQ(Services.coreAPI()
-                  .GetTaskState(Services.coreAPI().Context,
-                                (*FirstTask)->handle(),
-                                view("org.neverc.test.scope.session"),
-                                &OutsideState)
-                  .Code,
-              NEVERC_STATUS_INVALID_STATE);
+    EXPECT_EQ(
+        Services.coreAPI()
+            .GetTaskState(Services.coreAPI().Context, (*FirstTask)->handle(),
+                          view("org.neverc.test.scope.session"), &OutsideState)
+            .Code,
+        NEVERC_STATUS_INVALID_STATE);
     NevercStatusCode SessionLookup = NEVERC_STATUS_INVALID_STATE;
     NevercStatusCode TaskLookup = NEVERC_STATUS_INVALID_STATE;
     NevercStatusCode CancelLookup = NEVERC_STATUS_INVALID_STATE;
     NevercStatusCode WrongSessionLookup = NEVERC_STATUS_OK;
     NevercStatusCode WrongTaskLookup = NEVERC_STATUS_OK;
-    auto Lookup = (*FirstTask)->invokeCallback(
-        "org.neverc.test.scope.session", "state-lookup",
-        [&] {
-          void *CallbackSessionState = nullptr;
-          void *CallbackTaskState = nullptr;
-          void *WrongState = nullptr;
-          SessionLookup =
-              Services.coreAPI()
-                  .GetSessionState(Services.coreAPI().Context,
-                                   (*First)->handle(),
-                                   view("org.neverc.test.scope.session"),
-                                   &CallbackSessionState)
-                  .Code;
-          TaskLookup =
-              Services.coreAPI()
-                  .GetTaskState(Services.coreAPI().Context,
-                                (*FirstTask)->handle(),
-                                view("org.neverc.test.scope.session"),
-                                &CallbackTaskState)
-                  .Code;
-          CancelLookup =
-              Services.coreAPI()
-                  .CheckCancelled(Services.coreAPI().Context,
-                                  (*FirstTask)->handle())
-                  .Code;
-          WrongSessionLookup =
-              Services.coreAPI()
-                  .GetSessionState(Services.coreAPI().Context,
-                                   (*Second)->handle(),
-                                   view("org.neverc.test.scope.session"),
-                                   &WrongState)
-                  .Code;
-          WrongTaskLookup =
-              Services.coreAPI()
-                  .GetTaskState(Services.coreAPI().Context,
-                                (*SecondTask)->handle(),
-                                view("org.neverc.test.scope.session"),
-                                &WrongState)
-                  .Code;
-          EXPECT_EQ(CallbackSessionState, FirstState);
-          EXPECT_EQ(CallbackTaskState, FirstTaskState);
-          return neverc_status_ok();
-        });
+    auto Lookup =
+        (*FirstTask)
+            ->invokeCallback(
+                "org.neverc.test.scope.session", "state-lookup", [&] {
+                  void *CallbackSessionState = nullptr;
+                  void *CallbackTaskState = nullptr;
+                  void *WrongState = nullptr;
+                  SessionLookup =
+                      Services.coreAPI()
+                          .GetSessionState(
+                              Services.coreAPI().Context, (*First)->handle(),
+                              view("org.neverc.test.scope.session"),
+                              &CallbackSessionState)
+                          .Code;
+                  TaskLookup =
+                      Services.coreAPI()
+                          .GetTaskState(Services.coreAPI().Context,
+                                        (*FirstTask)->handle(),
+                                        view("org.neverc.test.scope.session"),
+                                        &CallbackTaskState)
+                          .Code;
+                  CancelLookup = Services.coreAPI()
+                                     .CheckCancelled(Services.coreAPI().Context,
+                                                     (*FirstTask)->handle())
+                                     .Code;
+                  WrongSessionLookup =
+                      Services.coreAPI()
+                          .GetSessionState(
+                              Services.coreAPI().Context, (*Second)->handle(),
+                              view("org.neverc.test.scope.session"),
+                              &WrongState)
+                          .Code;
+                  WrongTaskLookup =
+                      Services.coreAPI()
+                          .GetTaskState(Services.coreAPI().Context,
+                                        (*SecondTask)->handle(),
+                                        view("org.neverc.test.scope.session"),
+                                        &WrongState)
+                          .Code;
+                  EXPECT_EQ(CallbackSessionState, FirstState);
+                  EXPECT_EQ(CallbackTaskState, FirstTaskState);
+                  return neverc_status_ok();
+                });
     ASSERT_TRUE(static_cast<bool>(Lookup));
     EXPECT_EQ(Lookup->Code, NEVERC_STATUS_OK);
     EXPECT_EQ(SessionLookup, NEVERC_STATUS_OK);
@@ -217,16 +208,15 @@ TEST(PluginSessionTest, RefusesSessionEndWhileTasksAreActive) {
   loadPlugin(Services, NEVERC_TEST_SCOPE_SESSION_PLUGIN);
 
   {
-    const std::array<StringRef, 1> Selected = {
-        "org.neverc.test.scope.session"};
+    const std::array<StringRef, 1> Selected = {"org.neverc.test.scope.session"};
     auto Plan = makePluginActivationPlan(Services.registry(), Selected);
     ASSERT_TRUE(static_cast<bool>(Plan));
     auto Session = PluginSession::create(Services, *Plan);
     ASSERT_TRUE(static_cast<bool>(Session));
     auto Task = (*Session)->createTask(NEVERC_TASK_INVOCATION);
     ASSERT_TRUE(static_cast<bool>(Task));
-    auto ChildTask = (*Session)->createTask(
-        NEVERC_TASK_TRANSLATION_UNIT, Task->get());
+    auto ChildTask =
+        (*Session)->createTask(NEVERC_TASK_TRANSLATION_UNIT, Task->get());
     ASSERT_TRUE(static_cast<bool>(ChildTask));
     EXPECT_EQ((*Task)->activeChildCount(), 1U);
 
@@ -376,10 +366,8 @@ TEST(PluginSessionTest, RollsBackSuccessfulSessionAndTaskBeginPrefixes) {
 
   {
     const std::array<StringRef, 2> Selected = {
-        "org.neverc.test.scope.task-failure",
-        "org.neverc.test.scope.session"};
-    auto Plan =
-        makePluginActivationPlan(TaskServices.registry(), Selected);
+        "org.neverc.test.scope.task-failure", "org.neverc.test.scope.session"};
+    auto Plan = makePluginActivationPlan(TaskServices.registry(), Selected);
     ASSERT_TRUE(static_cast<bool>(Plan));
     auto Session = PluginSession::create(TaskServices, *Plan);
     ASSERT_TRUE(static_cast<bool>(Session));

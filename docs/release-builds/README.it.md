@@ -181,6 +181,60 @@ l'utilità di ftrace per simbolo, attach kprobe/BPF e rapporti di crash. Per
 diagnosticare usa una build debug non strippata e non dipendere dal nome
 originale di un simbolo privato nel modulo release.
 
+### Confine plugin di una release Android finalizzata
+
+La finalizzazione stabilisce due confini d'identità indipendenti e fail-closed
+attorno alle fasi di output dei plugin:
+
+- Prima di qualsiasi fase `ObjectGraph` sostituibile, il sigillo del grafo lega
+  `section ID`, `final ordinal` e nome esatto di ogni sezione logica conservata.
+  Lega inoltre il `symbol ID` di ogni simbolo a nome esatto al suo nome, classe,
+  sezione, valore, dimensione, binding, tipo e `st_other` completo. Il verifier
+  release ricalcola separatamente i normali nomi strutturali.
+- Dopo che l'host ha stabilito una baseline di scrittura attendibile e prima di
+  `neverc.object.post_write`, il sigillo dell'immagine lega ordinal e nome di
+  ogni sezione logica conservata, il numero totale di entry `.symtab`, e nome e
+  attributi di ogni simbolo a nome esatto al suo `slot` `.symtab` grezzo.
+
+La matrice delle capacità è quindi volutamente ristretta:
+
+| Binding di fase | Comportamento della release Android finalizzata |
+|-----------------|------------------------------------------------|
+| `neverc.object.write` `provider` / `interceptor` | `REJECTED` prima che possa sostituire la baseline di scrittura attendibile stabilita dall'host |
+| `plugin-owned ObjectFormat graph writer` | `REJECTED`; una release Android finalizzata richiede il graph writer dell'host che stabilisce la baseline attendibile |
+| `observer` | `READ_ONLY`; l'osservazione resta consentita, la mutazione dell'artefatto no |
+| `neverc.object.post_write` `interceptor` | `VALIDATED`; può modificare solo byte di payload fuori dalla superficie d'identità e il risultato deve continuare a superare verifier release, contratto ABI d'ingresso ed entrambi i sigilli d'identità |
+
+Anche la proprietà del merge finalizzato è sigillata dall'host. Qualsiasi
+`MergedImage` o byte indipendente di un `third-party ObjectMergeProvider` viene
+scartato; il `host-owned graph writer` serializza il grafo verificato e
+finalizzato di quel provider. Viceversa, `built-in finalized input serialization`
+aggira le `external object phases` e passa al merger dell'host gli esatti
+`audited native bytes`; questo passo di input interno non aggira il confine di
+output precedente.
+
+La finalizzazione è accettata solo con `Android module merge semantics`; richiede
+anche sia una `relocatable output request` sia una
+`relocatable driver configuration`, altrimenti fallisce `before routing`. Per
+una release Android relocatable finalizzata, `frozen input format`,
+`TargetKey.ObjectFormatID` e `frozen output format` devono condividere
+`one format identity`. Una discrepanza viene rifiutata
+`before provider dispatch`, quindi anche prima del route planning o della
+creazione del sink; capability preflight e graph-writer dispatch effettivo non
+possono così osservare formati diversi.
+
+Per un input ordinario rappresentabile dal grafo, i precedenti graph interceptor
+possono operare solo preservando il sigillo e tutta la semantica release. Se
+l'input richiede native-image passthrough per fatti non rappresentabili
+dall'`ObjectGraph`, ogni `route-matching provider` sostituibile e ogni
+interceptor vengono rifiutati. Un provider la cui route
+target/CPU/features/object-format/execution-level non corrisponde non viene
+eseguito e non blocca la release; sono ammessi solo observer in sola lettura.
+Solo un rifiuto o una validazione
+fallita `before sealed commit` interrompe lo staging senza pubblicare file. Un
+errore di observer `AFTER_COMMIT` viene segnalato dopo la pubblicazione e non può
+ripristinare il file già pubblicato.
+
 Non post-processare un `.ko` con `llvm-strip --strip-all` o `objcopy` e non
 rimuovere alla cieca sezioni codetag/BTF/ABI. Se il modulo va firmato, esegui
 prima lo strip e firma i byte finali: ogni modifica successiva invalida la firma.

@@ -33,8 +33,7 @@ bool sameHandle(NevercHandle Left, NevercHandle Right) {
   return Left.Owner == Right.Owner && Left.Value == Right.Value;
 }
 
-template <typename T>
-NevercStatus writeRecord(T *OutValue, const T &Value) {
+template <typename T> NevercStatus writeRecord(T *OutValue, const T &Value) {
   if (!OutValue)
     return outputStatus(NEVERC_STATUS_INVALID_ARGUMENT);
   const uint32_t Capacity = OutValue->Header.StructSize;
@@ -43,22 +42,19 @@ NevercStatus writeRecord(T *OutValue, const T &Value) {
   const size_t Writable = std::min<size_t>(Capacity, sizeof(Value));
   std::memset(OutValue, 0, Writable);
   std::memcpy(OutValue, &Value, Writable);
-  return Capacity < sizeof(Value)
-             ? outputStatus(NEVERC_STATUS_ABI_MISMATCH)
-             : neverc_status_ok();
+  return Capacity < sizeof(Value) ? outputStatus(NEVERC_STATUS_ABI_MISMATCH)
+                                  : neverc_status_ok();
 }
 
 } // namespace
 
 LinkOutputBundle::LinkOutputBundle(
-    PluginTaskContext &TaskValue,
-    std::shared_ptr<PluginBinaryImage> ImageValue,
+    PluginTaskContext &TaskValue, std::shared_ptr<PluginBinaryImage> ImageValue,
     std::unique_ptr<neverc::OutputBundleTransaction> TransactionValue)
     : Task(TaskValue), Image(std::move(ImageValue)),
       Transaction(std::move(TransactionValue)) {}
 
-Expected<std::shared_ptr<LinkOutputBundle>>
-LinkOutputBundle::create(
+Expected<std::shared_ptr<LinkOutputBundle>> LinkOutputBundle::create(
     PluginTaskContext &Task, neverc::OutputCoordinator &Coordinator,
     std::shared_ptr<PluginBinaryImage> Image, StringRef MainPath,
     ArrayRef<PluginLinkSideOutput> SideOutputs,
@@ -70,9 +66,8 @@ LinkOutputBundle::create(
   std::vector<neverc::OutputBundleFile> Outputs;
   Outputs.push_back(
       {"main", MainPath.str(),
-       std::vector<uint8_t>(Image->bytes().begin(),
-                            Image->bytes().end()),
-         true, true});
+       std::vector<uint8_t>(Image->bytes().begin(), Image->bytes().end()), true,
+       true});
   Names.insert("main");
   for (const PluginLinkSideOutput &Side : SideOutputs) {
     if (Side.Name.empty() || Side.Path.empty() ||
@@ -82,22 +77,19 @@ LinkOutputBundle::create(
   }
   NevercTaskHandle TaskHandle = Task.handle();
   auto Transaction = neverc::OutputBundleTransaction::create(
-      Coordinator, Outputs, {},
-      std::move(InjectFault),
+      Coordinator, Outputs, {}, std::move(InjectFault),
       {TaskHandle.Owner, TaskHandle.Value});
   if (!Transaction)
     return Transaction.takeError();
   auto Bundle = std::shared_ptr<LinkOutputBundle>(
-      new LinkOutputBundle(Task, std::move(Image),
-                           std::move(*Transaction)));
+      new LinkOutputBundle(Task, std::move(Image), std::move(*Transaction)));
   if (Error E = Bundle->initializeHandle())
     return std::move(E);
   return Bundle;
 }
 
 Error LinkOutputBundle::initializeHandle() {
-  auto Created =
-      Task.handles().create(PluginOutputBundleHandleKind, this);
+  auto Created = Task.handles().create(PluginOutputBundleHandleKind, this);
   if (!Created)
     return Created.takeError();
   Handle = *Created;
@@ -106,8 +98,7 @@ Error LinkOutputBundle::initializeHandle() {
 
 LinkOutputBundle::~LinkOutputBundle() {
   if (!neverc_handle_is_null(Handle))
-    (void)Task.handles().release(
-        Handle, PluginOutputBundleHandleKind);
+    (void)Task.handles().release(Handle, PluginOutputBundleHandleKind);
 }
 
 Error LinkOutputBundle::verifyAndPrepare() {
@@ -153,8 +144,7 @@ struct LinkOutputArtifact {
 };
 
 Error verifyOutputArtifact(const void *Payload) {
-  const auto *Artifact =
-      static_cast<const LinkOutputArtifact *>(Payload);
+  const auto *Artifact = static_cast<const LinkOutputArtifact *>(Payload);
   if (!Artifact || !Artifact->Image)
     return outputError("phase artifact has no BinaryImage");
   switch (Artifact->Image->state()) {
@@ -163,9 +153,8 @@ Error verifyOutputArtifact(const void *Payload) {
   case NEVERC_BINARY_IMAGE_VERIFIED:
     return Error::success();
   case NEVERC_BINARY_IMAGE_COMMITTED:
-    if (!Artifact->Bundle ||
-        Artifact->Bundle->summary().State !=
-            neverc::OutputBundleState::Committed)
+    if (!Artifact->Bundle || Artifact->Bundle->summary().State !=
+                                 neverc::OutputBundleState::Committed)
       return outputError("committed image has no committed bundle");
     return Error::success();
   default:
@@ -199,23 +188,18 @@ struct LinkOutputPipeline::Impl final : LinkPhaseRuntimeAccess {
        std::shared_ptr<LinkPhaseProcessService> ServiceValue,
        PluginPhaseGraph GraphValue)
       : Task(TaskValue), Coordinator(CoordinatorValue),
-        Service(std::move(ServiceValue)),
-        Graph(std::move(GraphValue)) {}
+        Service(std::move(ServiceValue)), Graph(std::move(GraphValue)) {}
 
-  NevercTaskHandle taskHandle() const override {
-    return Task.handle();
-  }
+  NevercTaskHandle taskHandle() const override { return Task.handle(); }
 
   Error initialize() {
     const NevercInterfaceID Phases[] = {
-        {NEVERC_PHASE_LINK_POST_EMIT_HIGH,
-         NEVERC_PHASE_LINK_POST_EMIT_LOW},
+        {NEVERC_PHASE_LINK_POST_EMIT_HIGH, NEVERC_PHASE_LINK_POST_EMIT_LOW},
         {NEVERC_PHASE_LINK_IMAGE_VERIFY_HIGH,
          NEVERC_PHASE_LINK_IMAGE_VERIFY_LOW},
         {NEVERC_PHASE_LINK_SIDE_OUTPUTS_VERIFY_HIGH,
          NEVERC_PHASE_LINK_SIDE_OUTPUTS_VERIFY_LOW},
-        {NEVERC_PHASE_LINK_COMMIT_HIGH,
-         NEVERC_PHASE_LINK_COMMIT_LOW},
+        {NEVERC_PHASE_LINK_COMMIT_HIGH, NEVERC_PHASE_LINK_COMMIT_LOW},
     };
     std::set<std::pair<uint64_t, uint64_t>> Registered;
     for (NevercInterfaceID PhaseID : Phases) {
@@ -228,8 +212,7 @@ struct LinkOutputPipeline::Impl final : LinkPhaseRuntimeAccess {
           continue;
         PluginArtifactTypeDescriptor Descriptor;
         Descriptor.ID = Type;
-        Descriptor.Name =
-            "link.output." + std::to_string(Type.Low);
+        Descriptor.Name = "link.output." + std::to_string(Type.Low);
         Descriptor.Ownership = PluginArtifactOwnership::Owned;
         Descriptor.Destroy = [](void *Payload) {
           delete static_cast<LinkOutputArtifact *>(Payload);
@@ -242,15 +225,13 @@ struct LinkOutputPipeline::Impl final : LinkPhaseRuntimeAccess {
     }
     if (Error E = Artifacts.freeze())
       return E;
-    Executor = std::make_unique<PluginPhaseExecutor>(
-        Graph, Artifacts);
+    Executor = std::make_unique<PluginPhaseExecutor>(Graph, Artifacts);
     if (Error E = Executor->importSessionRegistrations(Task.session()))
       return E;
     for (NevercInterfaceID PhaseID : Phases)
       if (Error E = Executor->setBuiltinProvider(
-              PhaseID,
-              [this, PhaseID](const NevercPhaseFrame *Frame,
-                              NevercPhaseResult *Result) {
+              PhaseID, [this, PhaseID](const NevercPhaseFrame *Frame,
+                                       NevercPhaseResult *Result) {
                 return runBuiltin(PhaseID, Frame, Result);
               }))
         return E;
@@ -278,13 +259,11 @@ struct LinkOutputPipeline::Impl final : LinkPhaseRuntimeAccess {
            samePluginInterfaceID(Frame->Phase, ActivePhase);
   }
 
-  Expected<const LinkOutputArtifact *>
-  resolve(const NevercPhaseFrame *Frame,
-          NevercArtifactHandle Handle) {
+  Expected<const LinkOutputArtifact *> resolve(const NevercPhaseFrame *Frame,
+                                               NevercArtifactHandle Handle) {
     if (!validFrame(Frame))
       return outputError("phase frame is out of scope");
-    const PluginPhaseDefinition *Phase =
-        Graph.find(Frame->Phase);
+    const PluginPhaseDefinition *Phase = Graph.find(Frame->Phase);
     if (!Phase)
       return outputError("output phase is not registered");
     NevercInterfaceID Type{};
@@ -295,22 +274,19 @@ struct LinkOutputPipeline::Impl final : LinkPhaseRuntimeAccess {
     else
       return outputError("image artifact is out of scope");
     const void *Payload = nullptr;
-    NevercStatus Status = Executor->resolveArtifactPayload(
-        Task, Handle, Type, &Payload);
+    NevercStatus Status =
+        Executor->resolveArtifactPayload(Task, Handle, Type, &Payload);
     if (!neverc_status_is_ok(Status) || !Payload)
       return outputError("image artifact handle is invalid");
     return static_cast<const LinkOutputArtifact *>(Payload);
   }
 
-  NevercStatus publish(LinkOutputArtifact Artifact,
-                       NevercInterfaceID Type,
+  NevercStatus publish(LinkOutputArtifact Artifact, NevercInterfaceID Type,
                        NevercPhaseResult *Result) {
     if (!Artifact.Image || !Result)
       return outputStatus(NEVERC_STATUS_INVALID_ARGUMENT);
-    auto *Payload =
-        new LinkOutputArtifact(std::move(Artifact));
-    auto Candidate =
-        Executor->createCandidate(Task, Type, Payload);
+    auto *Payload = new LinkOutputArtifact(std::move(Artifact));
+    auto Candidate = Executor->createCandidate(Task, Type, Payload);
     if (!Candidate) {
       delete Payload;
       consumeError(Candidate.takeError());
@@ -324,8 +300,7 @@ struct LinkOutputPipeline::Impl final : LinkPhaseRuntimeAccess {
   NevercStatus runBuiltin(NevercInterfaceID PhaseID,
                           const NevercPhaseFrame *Frame,
                           NevercPhaseResult *Result) {
-    auto Input =
-        resolve(Frame, Frame ? Frame->Input : NevercArtifactHandle{});
+    auto Input = resolve(Frame, Frame ? Frame->Input : NevercArtifactHandle{});
     const PluginPhaseDefinition *Definition = Graph.find(PhaseID);
     if (!Input || !Definition) {
       if (!Input)
@@ -334,13 +309,10 @@ struct LinkOutputPipeline::Impl final : LinkPhaseRuntimeAccess {
     }
     LinkOutputArtifact Output = **Input;
     ++Output.Generation;
-    if (samePluginInterfaceID(
-            PhaseID,
-            {NEVERC_PHASE_LINK_IMAGE_VERIFY_HIGH,
-             NEVERC_PHASE_LINK_IMAGE_VERIFY_LOW})) {
+    if (samePluginInterfaceID(PhaseID, {NEVERC_PHASE_LINK_IMAGE_VERIFY_HIGH,
+                                        NEVERC_PHASE_LINK_IMAGE_VERIFY_LOW})) {
       auto Bundle = LinkOutputBundle::create(
-          Task, Coordinator, Output.Image, MainPath, SideOutputs,
-          InjectFault);
+          Task, Coordinator, Output.Image, MainPath, SideOutputs, InjectFault);
       if (!Bundle) {
         consumeError(Bundle.takeError());
         return outputStatus(NEVERC_STATUS_VERIFICATION_FAILED);
@@ -351,9 +323,8 @@ struct LinkOutputPipeline::Impl final : LinkPhaseRuntimeAccess {
         return outputStatus(NEVERC_STATUS_VERIFICATION_FAILED);
       }
     } else if (samePluginInterfaceID(
-                   PhaseID,
-                   {NEVERC_PHASE_LINK_SIDE_OUTPUTS_VERIFY_HIGH,
-                    NEVERC_PHASE_LINK_SIDE_OUTPUTS_VERIFY_LOW})) {
+                   PhaseID, {NEVERC_PHASE_LINK_SIDE_OUTPUTS_VERIFY_HIGH,
+                             NEVERC_PHASE_LINK_SIDE_OUTPUTS_VERIFY_LOW})) {
       if (!Output.Bundle) {
         return outputStatus(NEVERC_STATUS_INVALID_STATE);
       }
@@ -361,40 +332,34 @@ struct LinkOutputPipeline::Impl final : LinkPhaseRuntimeAccess {
         consumeError(std::move(E));
         return outputStatus(NEVERC_STATUS_VERIFICATION_FAILED);
       }
-    } else if (samePluginInterfaceID(
-                   PhaseID,
-                   {NEVERC_PHASE_LINK_COMMIT_HIGH,
-                    NEVERC_PHASE_LINK_COMMIT_LOW})) {
+    } else if (samePluginInterfaceID(PhaseID, {NEVERC_PHASE_LINK_COMMIT_HIGH,
+                                               NEVERC_PHASE_LINK_COMMIT_LOW})) {
       if (!Output.Bundle)
         return outputStatus(NEVERC_STATUS_INVALID_STATE);
       auto Committed = Output.Bundle->commit();
       if (!Committed) {
-        std::string Failure =
-            toString(Committed.takeError()).str().str();
+        std::string Failure = toString(Committed.takeError()).str().str();
         if (Output.Bundle->summary().State !=
             neverc::OutputBundleState::Committed)
           return outputStatus(NEVERC_STATUS_PLUGIN_FAILURE);
         LateCommitFailure = std::move(Failure);
       }
     }
-    return publish(std::move(Output), Definition->OutputArtifact,
-                   Result);
+    return publish(std::move(Output), Definition->OutputArtifact, Result);
   }
 
-  Expected<LinkOutputArtifact>
-  executePhase(NevercInterfaceID PhaseID,
-               const LinkOutputArtifact &Input) {
+  Expected<LinkOutputArtifact> executePhase(NevercInterfaceID PhaseID,
+                                            const LinkOutputArtifact &Input) {
     const PluginPhaseDefinition *Phase = Graph.find(PhaseID);
     if (!Phase)
       return outputError("output phase is not registered");
-    auto InputHandle = Executor->createArtifactView(
-        Task, Phase->InputArtifact, &Input, Input.Generation);
+    auto InputHandle = Executor->createArtifactView(Task, Phase->InputArtifact,
+                                                    &Input, Input.Generation);
     if (!InputHandle)
       return InputHandle.takeError();
     NevercArtifactHandle Handle = *InputHandle;
     auto Release = make_scope_exit([&] {
-      (void)Task.handles().release(
-          Handle, PluginArtifactHandleKind);
+      (void)Task.handles().release(Handle, PluginArtifactHandleKind);
     });
     PluginArtifactSlot Output(Artifacts.find(Phase->OutputArtifact));
     ActivePhase = PhaseID;
@@ -409,8 +374,8 @@ struct LinkOutputPipeline::Impl final : LinkPhaseRuntimeAccess {
       ActivePhase = {};
       ActiveArtifact = nullptr;
     });
-    if (Error E = Executor->execute(
-            Task.session(), Task, PhaseID, route(), Handle, Output))
+    if (Error E = Executor->execute(Task.session(), Task, PhaseID, route(),
+                                    Handle, Output))
       return std::move(E);
     const auto *Published =
         static_cast<const LinkOutputArtifact *>(Output.payload());
@@ -420,20 +385,17 @@ struct LinkOutputPipeline::Impl final : LinkPhaseRuntimeAccess {
   }
 
   Error notifyAfterCommit(const LinkOutputArtifact &Artifact) {
-    NevercInterfaceID PhaseID{
-        NEVERC_PHASE_LINK_AFTER_COMMIT_HIGH,
-        NEVERC_PHASE_LINK_AFTER_COMMIT_LOW};
+    NevercInterfaceID PhaseID{NEVERC_PHASE_LINK_AFTER_COMMIT_HIGH,
+                              NEVERC_PHASE_LINK_AFTER_COMMIT_LOW};
     const PluginPhaseDefinition *Phase = Graph.find(PhaseID);
     if (!Phase)
       return outputError("after-commit event is not registered");
-    auto Handle = Executor->createArtifactView(
-        Task, Phase->InputArtifact, &Artifact,
-        Artifact.Generation);
+    auto Handle = Executor->createArtifactView(Task, Phase->InputArtifact,
+                                               &Artifact, Artifact.Generation);
     if (!Handle)
       return Handle.takeError();
     auto Release = make_scope_exit([&] {
-      (void)Task.handles().release(
-          *Handle, PluginArtifactHandleKind);
+      (void)Task.handles().release(*Handle, PluginArtifactHandleKind);
     });
     ActivePhase = PhaseID;
     ActiveArtifact = &Artifact;
@@ -447,25 +409,22 @@ struct LinkOutputPipeline::Impl final : LinkPhaseRuntimeAccess {
       ActivePhase = {};
       ActiveArtifact = nullptr;
     });
-    return Executor->notify(Task.session(), Task, PhaseID, route(),
-                            *Handle);
+    return Executor->notify(Task.session(), Task, PhaseID, route(), *Handle);
   }
 
-  NevercStatus getGraph(
-      const NevercPhaseFrame *, NevercArtifactHandle,
-      NevercLinkPhaseGraphInfo *) override {
+  NevercStatus getGraph(const NevercPhaseFrame *, NevercArtifactHandle,
+                        NevercLinkPhaseGraphInfo *) override {
     return outputStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE);
   }
 
-  NevercStatus publishGraph(
-      const NevercPhaseFrame *, NevercLinkGraphHandle,
-      NevercArtifactHandle *) override {
+  NevercStatus publishGraph(const NevercPhaseFrame *, NevercLinkGraphHandle,
+                            NevercArtifactHandle *) override {
     return outputStatus(NEVERC_STATUS_CAPABILITY_UNAVAILABLE);
   }
 
-  NevercStatus getImage(
-      const NevercPhaseFrame *Frame, NevercArtifactHandle Artifact,
-      NevercLinkPhaseImageInfo *OutInfo) override {
+  NevercStatus getImage(const NevercPhaseFrame *Frame,
+                        NevercArtifactHandle Artifact,
+                        NevercLinkPhaseImageInfo *OutInfo) override {
     auto Payload = resolve(Frame, Artifact);
     if (!Payload) {
       consumeError(Payload.takeError());
@@ -475,14 +434,12 @@ struct LinkOutputPipeline::Impl final : LinkPhaseRuntimeAccess {
     Value.Header = {sizeof(Value), NEVERC_LINK_PHASE_API_MAJOR,
                     NEVERC_LINK_PHASE_API_MINOR, 0};
     auto Capability = Executor->currentArtifactMutationCapability(Task);
-    Value.Link =
-        Capability
-            ? &(*Payload)->Image->capabilityLinkAPI(*Executor, *Capability)
-            : &(*Payload)->Image->readOnlyLinkAPI();
+    Value.Link = Capability ? &(*Payload)->Image->capabilityLinkAPI(*Executor,
+                                                                    *Capability)
+                            : &(*Payload)->Image->readOnlyLinkAPI();
     Value.Image = (*Payload)->Image->handle();
-    Value.Outputs =
-        (*Payload)->Bundle ? (*Payload)->Bundle->handle()
-                           : NevercOutputBundleHandle{};
+    Value.Outputs = (*Payload)->Bundle ? (*Payload)->Bundle->handle()
+                                       : NevercOutputBundleHandle{};
     Value.State = (*Payload)->Image->state();
     Value.Generation = (*Payload)->Generation;
     return writeRecord(OutInfo, Value);
@@ -503,8 +460,8 @@ LinkOutputPipeline::create(PluginTaskContext &Task,
   auto Graph = PluginPhaseGraph::createBuiltinLinkGraph();
   if (!Graph)
     return Graph.takeError();
-  auto State = std::make_unique<Impl>(
-      Task, Coordinator, std::move(Service), std::move(*Graph));
+  auto State = std::make_unique<Impl>(Task, Coordinator, std::move(Service),
+                                      std::move(*Graph));
   if (Error E = State->initialize())
     return std::move(E);
   return std::unique_ptr<LinkOutputPipeline>(
@@ -512,14 +469,12 @@ LinkOutputPipeline::create(PluginTaskContext &Task,
 }
 
 Error LinkOutputPipeline::addObserver(
-    StringRef PluginID,
-    const NevercObserverDescriptor &Descriptor) {
+    StringRef PluginID, const NevercObserverDescriptor &Descriptor) {
   return State->Executor->addObserver(PluginID, Descriptor);
 }
 
 Error LinkOutputPipeline::addInterceptor(
-    StringRef PluginID,
-    const NevercInterceptorDescriptor &Descriptor) {
+    StringRef PluginID, const NevercInterceptorDescriptor &Descriptor) {
   return State->Executor->addInterceptor(PluginID, Descriptor);
 }
 
@@ -529,8 +484,7 @@ Expected<LinkOutputResult> LinkOutputPipeline::execute(
     std::shared_ptr<PluginBinaryImage> Image, StringRef MainPath,
     ArrayRef<PluginLinkSideOutput> SideOutputs,
     neverc::OutputBundleTransaction::FaultInjector InjectFault) {
-  if (!Image ||
-      Image->state() != NEVERC_BINARY_IMAGE_CANDIDATE ||
+  if (!Image || Image->state() != NEVERC_BINARY_IMAGE_CANDIDATE ||
       MainPath.empty())
     return outputError("candidate image and main path are required");
   if (Error E = State->freeze())
@@ -547,25 +501,20 @@ Expected<LinkOutputResult> LinkOutputPipeline::execute(
 
   LinkOutputArtifact Current{std::move(Image), {}, 1};
   const NevercInterfaceID Phases[] = {
-      {NEVERC_PHASE_LINK_POST_EMIT_HIGH,
-       NEVERC_PHASE_LINK_POST_EMIT_LOW},
-      {NEVERC_PHASE_LINK_IMAGE_VERIFY_HIGH,
-       NEVERC_PHASE_LINK_IMAGE_VERIFY_LOW},
+      {NEVERC_PHASE_LINK_POST_EMIT_HIGH, NEVERC_PHASE_LINK_POST_EMIT_LOW},
+      {NEVERC_PHASE_LINK_IMAGE_VERIFY_HIGH, NEVERC_PHASE_LINK_IMAGE_VERIFY_LOW},
       {NEVERC_PHASE_LINK_SIDE_OUTPUTS_VERIFY_HIGH,
        NEVERC_PHASE_LINK_SIDE_OUTPUTS_VERIFY_LOW},
-      {NEVERC_PHASE_LINK_COMMIT_HIGH,
-       NEVERC_PHASE_LINK_COMMIT_LOW},
+      {NEVERC_PHASE_LINK_COMMIT_HIGH, NEVERC_PHASE_LINK_COMMIT_LOW},
   };
   for (NevercInterfaceID PhaseID : Phases) {
     auto Next = State->executePhase(PhaseID, Current);
     if (!Next) {
       Error Failure = Next.takeError();
-      if (Current.Bundle &&
-          Current.Bundle->summary().State ==
-              neverc::OutputBundleState::Committed) {
+      if (Current.Bundle && Current.Bundle->summary().State ==
+                                neverc::OutputBundleState::Committed) {
         if (Error E = State->notifyAfterCommit(Current))
-          Failure =
-              joinErrors(std::move(Failure), std::move(E));
+          Failure = joinErrors(std::move(Failure), std::move(E));
       } else if (Current.Bundle) {
         consumeError(Current.Bundle->abort());
       } else {
@@ -577,12 +526,11 @@ Expected<LinkOutputResult> LinkOutputPipeline::execute(
   }
   Error NotifyFailure = State->notifyAfterCommit(Current);
   if (!State->LateCommitFailure.empty()) {
-    Error CommitFailure = outputError(
-        "commit completed with a late durability failure: " +
-        State->LateCommitFailure);
+    Error CommitFailure =
+        outputError("commit completed with a late durability failure: " +
+                    State->LateCommitFailure);
     if (NotifyFailure)
-      return joinErrors(std::move(CommitFailure),
-                        std::move(NotifyFailure));
+      return joinErrors(std::move(CommitFailure), std::move(NotifyFailure));
     return std::move(CommitFailure);
   }
   if (NotifyFailure)

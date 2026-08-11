@@ -556,6 +556,15 @@ bool PluginPhaseExecutor::hasProvider(NevercInterfaceID Phase) const {
   });
 }
 
+bool PluginPhaseExecutor::hasProvider(NevercInterfaceID Phase,
+                                      const NevercPhaseRoute &Route) const {
+  std::lock_guard<std::mutex> ConfigurationLock(ConfigurationMutex);
+  return llvm::any_of(Providers, [&](const ProviderBinding &Binding) {
+    return samePluginInterfaceID(Binding.Descriptor.Phase, Phase) &&
+           providerMatches(Binding, Route);
+  });
+}
+
 std::optional<uint64_t> PluginPhaseExecutor::currentArtifactMutationCapability(
     const PluginTaskContext &Task) const {
   return Task.currentArtifactMutationCapability(this);

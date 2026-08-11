@@ -68,9 +68,9 @@ struct Options {
   /// .gnu.linkonce.*).  Always safe for neverc's pipeline.
   bool pureC = true;
 
-  /// Drop DWARF debug sections (.debug_*, .zdebug_*) instead of
-  /// trying to re-link cross-section refs.  Matches LLD -r behavior
-  /// when --strip-debug is active.
+  /// Drop ELF debug metadata (`.debug*`, `.zdebug*`, and `.gdb_index`) instead
+  /// of trying to re-link cross-section references. An allocated debug-named
+  /// section is rejected because it may carry runtime semantics.
   bool dropDebugInfo = false;
 
   /// Harden a delivered Android ELF module at llvm-strip's
@@ -79,13 +79,13 @@ struct Options {
   /// ordinary definitions from their type and final structural coordinate
   /// (for example `fn_C000`, with deterministic `_1`, `_2`, ... aliases).
   /// The IDA-inspired `fn_` and `code_` spellings intentionally avoid IDA's
-  /// reserved `sub_`/`loc_` dummy-name prefixes. These coordinates are synthetic
-  /// analysis EAs: they are not hashes, encryption, file offsets, ELF virtual
-  /// addresses, or runtime kernel addresses. Undefined imports and
-  /// loader/CFI/protected-section ABI names remain exact. The ELF merger applies
-  /// this only after symbol resolution,
-  /// parallel-codegen demotion, relocation remapping, and survivor pruning are
-  /// complete; it builds one collision-checked plan before atomically replacing
+  /// reserved `sub_`/`loc_` dummy-name prefixes. These coordinates are
+  /// synthetic analysis EAs: they are not hashes, encryption, file offsets, ELF
+  /// virtual addresses, or runtime kernel addresses. Undefined imports and
+  /// loader/CFI/protected-section ABI names remain exact. The ELF merger
+  /// applies this only after symbol resolution, parallel-codegen demotion,
+  /// relocation remapping, and survivor pruning are complete; it builds one
+  /// collision-checked plan before atomically replacing
   /// `.symtab`/`.strtab`, so removed/original names do not remain as stale
   /// bytes.  Split-DWARF packages are rejected because they are not final
   /// kernel modules.  Other formats currently ignore this option.

@@ -410,6 +410,166 @@ set_target_properties(
   neverc-test-plugin-object-post-write PROPERTIES PREFIX ""
 )
 
+add_library(neverc-test-plugin-object-text-payload-post-write MODULE
+  Inputs/Plugin/ObjectPostWritePlugin.c
+)
+target_include_directories(
+  neverc-test-plugin-object-text-payload-post-write PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(
+  neverc-test-plugin-object-text-payload-post-write PRIVATE c_std_11
+)
+target_compile_definitions(
+  neverc-test-plugin-object-text-payload-post-write PRIVATE
+  NEVERC_TEST_MUTATE_ANDROID_TEXT_PAYLOAD=1
+)
+set_target_properties(
+  neverc-test-plugin-object-text-payload-post-write PROPERTIES PREFIX ""
+)
+
+add_library(neverc-test-plugin-object-exact-name-corrupt MODULE
+  Inputs/Plugin/ObjectPostWritePlugin.c
+)
+target_include_directories(
+  neverc-test-plugin-object-exact-name-corrupt PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(
+  neverc-test-plugin-object-exact-name-corrupt PRIVATE c_std_11
+)
+target_compile_definitions(
+  neverc-test-plugin-object-exact-name-corrupt PRIVATE
+  NEVERC_TEST_RENAME_ANDROID_EXACT_SYMBOL=1
+)
+set_target_properties(
+  neverc-test-plugin-object-exact-name-corrupt PROPERTIES PREFIX ""
+)
+
+add_library(neverc-test-plugin-object-protected-section-name-corrupt MODULE
+  Inputs/Plugin/ObjectPostWritePlugin.c
+)
+target_include_directories(
+  neverc-test-plugin-object-protected-section-name-corrupt PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(
+  neverc-test-plugin-object-protected-section-name-corrupt PRIVATE c_std_11
+)
+target_compile_definitions(
+  neverc-test-plugin-object-protected-section-name-corrupt PRIVATE
+  NEVERC_TEST_RENAME_ANDROID_PROTECTED_SECTION_SYMBOL=1
+)
+set_target_properties(
+  neverc-test-plugin-object-protected-section-name-corrupt
+  PROPERTIES PREFIX ""
+)
+
+add_library(neverc-test-plugin-object-section-name-corrupt MODULE
+  Inputs/Plugin/ObjectPostWritePlugin.c
+)
+target_include_directories(
+  neverc-test-plugin-object-section-name-corrupt PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(
+  neverc-test-plugin-object-section-name-corrupt PRIVATE c_std_11
+)
+target_compile_definitions(
+  neverc-test-plugin-object-section-name-corrupt PRIVATE
+  NEVERC_TEST_RENAME_ANDROID_SECTION_NAME=1
+)
+set_target_properties(
+  neverc-test-plugin-object-section-name-corrupt PROPERTIES PREFIX ""
+)
+
+add_library(neverc-test-plugin-object-section-symbol-corrupt MODULE
+  Inputs/Plugin/ObjectPostWritePlugin.c
+)
+target_include_directories(
+  neverc-test-plugin-object-section-symbol-corrupt PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(
+  neverc-test-plugin-object-section-symbol-corrupt PRIVATE c_std_11
+)
+target_compile_definitions(
+  neverc-test-plugin-object-section-symbol-corrupt PRIVATE
+  NEVERC_TEST_RENAME_ANDROID_SECTION_SYMBOL=1
+)
+set_target_properties(
+  neverc-test-plugin-object-section-symbol-corrupt PROPERTIES PREFIX ""
+)
+
+add_library(neverc-test-plugin-object-write-interceptor MODULE
+  Inputs/Plugin/ObjectWriteReplacementPlugin.c
+)
+target_include_directories(
+  neverc-test-plugin-object-write-interceptor PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(
+  neverc-test-plugin-object-write-interceptor PRIVATE c_std_11
+)
+target_compile_definitions(
+  neverc-test-plugin-object-write-interceptor PRIVATE
+  NEVERC_TEST_OBJECT_WRITE_INTERCEPTOR=1
+)
+set_target_properties(
+  neverc-test-plugin-object-write-interceptor PROPERTIES PREFIX ""
+)
+
+add_library(neverc-test-plugin-object-write-provider MODULE
+  Inputs/Plugin/ObjectWriteReplacementPlugin.c
+)
+target_include_directories(
+  neverc-test-plugin-object-write-provider PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(
+  neverc-test-plugin-object-write-provider PRIVATE c_std_11
+)
+set_target_properties(
+  neverc-test-plugin-object-write-provider PROPERTIES PREFIX ""
+)
+
+add_library(neverc-test-plugin-object-write-provider-mismatched-route MODULE
+  Inputs/Plugin/ObjectWriteReplacementPlugin.c
+)
+target_include_directories(
+  neverc-test-plugin-object-write-provider-mismatched-route PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(
+  neverc-test-plugin-object-write-provider-mismatched-route PRIVATE c_std_11
+)
+target_compile_definitions(
+  neverc-test-plugin-object-write-provider-mismatched-route PRIVATE
+  NEVERC_TEST_OBJECT_WRITE_MISMATCHED_ROUTE=1
+)
+set_target_properties(
+  neverc-test-plugin-object-write-provider-mismatched-route
+  PROPERTIES PREFIX ""
+)
+
+add_library(neverc-test-plugin-object-write-provider-elf-route MODULE
+  Inputs/Plugin/ObjectWriteReplacementPlugin.c
+)
+target_include_directories(
+  neverc-test-plugin-object-write-provider-elf-route PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../neverc/include
+)
+target_compile_features(
+  neverc-test-plugin-object-write-provider-elf-route PRIVATE c_std_11
+)
+target_compile_definitions(
+  neverc-test-plugin-object-write-provider-elf-route PRIVATE
+  NEVERC_TEST_OBJECT_WRITE_ELF_ROUTE=1
+)
+set_target_properties(
+  neverc-test-plugin-object-write-provider-elf-route PROPERTIES PREFIX ""
+)
+
 add_library(neverc-test-plugin-object-contract-corrupt MODULE
   Inputs/Plugin/ObjectPostWritePlugin.c
 )
@@ -1988,6 +2148,15 @@ target_compile_features(
 target_compile_definitions(neverc-plugin-object-merge-tests PRIVATE
   NEVERC_TEST_OBJECT_MERGE_PLUGIN="$<TARGET_FILE:neverc-test-plugin-object-merge>"
   NEVERC_TEST_OBJECT_POST_WRITE_PLUGIN="$<TARGET_FILE:neverc-test-plugin-object-post-write>"
+  NEVERC_TEST_OBJECT_TEXT_PAYLOAD_POST_WRITE_PLUGIN="$<TARGET_FILE:neverc-test-plugin-object-text-payload-post-write>"
+  NEVERC_TEST_OBJECT_EXACT_NAME_CORRUPT_PLUGIN="$<TARGET_FILE:neverc-test-plugin-object-exact-name-corrupt>"
+  NEVERC_TEST_OBJECT_PROTECTED_SECTION_NAME_CORRUPT_PLUGIN="$<TARGET_FILE:neverc-test-plugin-object-protected-section-name-corrupt>"
+  NEVERC_TEST_OBJECT_SECTION_NAME_CORRUPT_PLUGIN="$<TARGET_FILE:neverc-test-plugin-object-section-name-corrupt>"
+  NEVERC_TEST_OBJECT_SECTION_SYMBOL_CORRUPT_PLUGIN="$<TARGET_FILE:neverc-test-plugin-object-section-symbol-corrupt>"
+  NEVERC_TEST_OBJECT_WRITE_INTERCEPTOR_PLUGIN="$<TARGET_FILE:neverc-test-plugin-object-write-interceptor>"
+  NEVERC_TEST_OBJECT_WRITE_PROVIDER_PLUGIN="$<TARGET_FILE:neverc-test-plugin-object-write-provider>"
+  NEVERC_TEST_OBJECT_WRITE_MISMATCHED_ROUTE_PROVIDER_PLUGIN="$<TARGET_FILE:neverc-test-plugin-object-write-provider-mismatched-route>"
+  NEVERC_TEST_OBJECT_WRITE_ELF_ROUTE_PROVIDER_PLUGIN="$<TARGET_FILE:neverc-test-plugin-object-write-provider-elf-route>"
   NEVERC_TEST_OBJECT_CONTRACT_CORRUPT_PLUGIN="$<TARGET_FILE:neverc-test-plugin-object-contract-corrupt>"
   NEVERC_TEST_OBJECT_PHASE_OBSERVER_PLUGIN="$<TARGET_FILE:neverc-test-plugin-object-phase-observer>"
   NEVERC_TEST_OBJECT_PHASE_OBSERVER_INTERCEPTOR_PLUGIN="$<TARGET_FILE:neverc-test-plugin-object-phase-observer-interceptor>"
@@ -2000,6 +2169,15 @@ target_compile_definitions(neverc-plugin-object-merge-tests PRIVATE
 add_dependencies(neverc-plugin-object-merge-tests
   neverc-test-plugin-object-merge
   neverc-test-plugin-object-post-write
+  neverc-test-plugin-object-text-payload-post-write
+  neverc-test-plugin-object-exact-name-corrupt
+  neverc-test-plugin-object-protected-section-name-corrupt
+  neverc-test-plugin-object-section-name-corrupt
+  neverc-test-plugin-object-section-symbol-corrupt
+  neverc-test-plugin-object-write-interceptor
+  neverc-test-plugin-object-write-provider
+  neverc-test-plugin-object-write-provider-mismatched-route
+  neverc-test-plugin-object-write-provider-elf-route
   neverc-test-plugin-object-contract-corrupt
   neverc-test-plugin-object-phase-observer
   neverc-test-plugin-object-phase-observer-interceptor

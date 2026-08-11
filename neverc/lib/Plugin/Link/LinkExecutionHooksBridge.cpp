@@ -1,6 +1,7 @@
 #include "neverc/Plugin/Host/LinkExecutionHooksBridge.h"
 #include "AndroidKernelModuleFinalizer.h"
 #include "AndroidKernelProfileContractVerifier.h"
+#include "AndroidKernelReleaseIdentitySeal.h"
 #include "AndroidKernelReleaseInputVerifier.h"
 #include "BuiltinObjectMergeAdapter.h"
 #include "LinkInputReader.h"
@@ -35,6 +36,10 @@ namespace neverc::plugin {
 namespace {
 
 bool nonzero(linker::LinkExecutionID ID) { return ID.High != 0 || ID.Low != 0; }
+
+bool sameID(NevercInterfaceID Left, NevercInterfaceID Right) {
+  return Left.High == Right.High && Left.Low == Right.Low;
+}
 
 NevercInterfaceID interfaceID(linker::LinkExecutionID ID) {
   return {ID.High, ID.Low};
@@ -103,6 +108,12 @@ LinkExecutionHooksBridge::execute(const linker::LinkExecutionRequest &Request,
   if (Config.finalizeAndroidKernelModule && !Config.androidKernelModule)
     return bridgeError(
         "Android module finalization requires Android module merge semantics");
+  if (Config.finalizeAndroidKernelModule &&
+      (!Config.relocatable ||
+       Request.OutputKind != linker::LinkExecutionOutputKind::Relocatable))
+    return bridgeError(
+        "finalized Android module release requires a relocatable output "
+        "request and driver configuration");
   if (Active || Completed)
     return bridgeError("Link execution hooks cannot be re-entered");
   Active = true;
@@ -157,6 +168,19 @@ LinkExecutionHooksBridge::execute(const linker::LinkExecutionRequest &Request,
   const NevercObjectFormatID FrozenOutputFormat =
       (*FrozenRequest)->outputFormat();
   const NevercLinkOutputKind FrozenOutputKind = (*FrozenRequest)->outputKind();
+
+  // The release gate and the eventual ObjectPhasePipeline must reason about
+  // one format identity. The pipeline dispatches from the authoritative
+  // ObjectGraph target, so accepting a different request output format here
+  // would let a provider hide from the pre-write gate and match during write.
+  // Keep this restriction release-specific: non-release plugin routes may
+  // intentionally model format conversion.
+  if (Config.finalizeAndroidKernelModule &&
+      (!sameID(FrozenInputFormat, FrozenTarget.ObjectFormatID) ||
+       !sameID(FrozenOutputFormat, FrozenTarget.ObjectFormatID)))
+    return bridgeError(
+        "finalized Android relocatable release requires frozen input, target, "
+        "and output object formats to share one identity");
 
   std::vector<PluginLinkSnapshot::LinkerProviderRecord> Linkers(
       Snapshot->linkerProviders().begin(), Snapshot->linkerProviders().end());
@@ -351,17 +375,6 @@ LinkExecutionHooksBridge::execute(const linker::LinkExecutionRequest &Request,
         return bridgeError(
             "third-party ObjectMergeProvider cannot preserve native-only "
             "Android release ABI or anonymous symbol/section provenance");
-      if (Provider.Builtin && Contract->requiresNativeImagePassthrough()) {
-        auto NativeOnlyPipeline =
-            ObjectPhasePipeline::create(*Config.pluginTask, TargetSnapshot);
-        if (!NativeOnlyPipeline)
-          return NativeOnlyPipeline.takeError();
-        if ((*NativeOnlyPipeline)->mayReplaceArtifact())
-          return bridgeError(
-              "Android release input requires native-image passthrough, "
-              "which is incompatible with registered ObjectGraph/output "
-              "phase bindings");
-      }
     }
 
     std::optional<uint64_t> AndroidKernelContract;
@@ -372,6 +385,29 @@ LinkExecutionHooksBridge::execute(const linker::LinkExecutionRequest &Request,
         return Contract.takeError();
       AndroidKernelContract = *Contract;
     }
+
+    auto OutputPipeline =
+        ObjectPhasePipeline::create(*Config.pluginTask, TargetSnapshot);
+    if (!OutputPipeline)
+      return OutputPipeline.takeError();
+    if (Config.finalizeAndroidKernelModule &&
+        (*OutputPipeline)
+            ->mayReplaceWriteArtifact(FrozenTarget, FrozenOutputFormat))
+      return bridgeError(
+          "finalized Android release forbids replaceable object write phase "
+          "providers or interceptors before the trusted image baseline");
+    if (Config.finalizeAndroidKernelModule &&
+        (*OutputPipeline)->hasPluginOwnedGraphWriter(FrozenOutputFormat))
+      return bridgeError(
+          "finalized Android release requires a host-owned graph writer "
+          "before the trusted image baseline");
+    if (ReleaseInputContract &&
+        ReleaseInputContract->requiresNativeImagePassthrough() &&
+        (*OutputPipeline)->mayReplaceArtifact(FrozenTarget, FrozenOutputFormat))
+      return bridgeError(
+          "Android release input requires native-image passthrough, which "
+          "is incompatible with registered ObjectGraph/output phase "
+          "bindings");
 
     BuiltinObjectMergeConfig MergeConfig;
     MergeConfig.AndroidKernelModule = Config.androidKernelModule;
@@ -431,23 +467,62 @@ LinkExecutionHooksBridge::execute(const linker::LinkExecutionRequest &Request,
         OutputImage = {};
         BoundReleaseOutput.reset();
       }
+      // A third-party merge provider cannot attest that its independently
+      // supplied bytes are the serialization of the finalized graph. Make the
+      // audited graph authoritative and let the host-owned writer establish
+      // the only baseline that post-write identity validation may trust.
+      if (!Provider.Builtin)
+        OutputImage = {};
       if (FinalReleaseContract.requiresNativeImagePassthrough() &&
           OutputImage.empty())
         return bridgeError(
             "Android release finalization made a native-only input contract "
             "graph-authoritative");
-      Validators.Graph =
-          [Policy = FinalizationPolicy](const PluginObjectGraph &Object) {
-            return verifyFinalAndroidKernelModuleObjectGraph(
-                Object, Policy, "final Android kernel pre-write output");
-          };
-      Validators.Image = [Policy = FinalizationPolicy,
-                          Contract = FinalReleaseContract,
+      if (Error E = verifyFinalAndroidKernelModuleObjectGraph(
+              *Merged->Object, FinalizationPolicy,
+              "final Android kernel authoritative pre-hook graph"))
+        return std::move(E);
+      auto GraphIdentitySeal = captureAndroidKernelReleaseGraphIdentitySeal(
+          *Merged->Object, FinalizationPolicy.SymbolNameState,
+          "final Android kernel authoritative pre-hook graph");
+      if (!GraphIdentitySeal)
+        return GraphIdentitySeal.takeError();
+      Validators.Graph = [Policy = FinalizationPolicy,
+                          Seal = std::move(*GraphIdentitySeal)](
+                             const PluginObjectGraph &Object) {
+        if (Error E = verifyFinalAndroidKernelModuleObjectGraph(
+                Object, Policy, "final Android kernel pre-write output"))
+          return E;
+        return verifyAndroidKernelReleaseGraphIdentitySeal(
+            Object, Policy.SymbolNameState, Seal,
+            "final Android kernel graph immutable identity contract");
+      };
+      Validators.BindPrePostWriteImage =
+          [Policy = FinalizationPolicy](ArrayRef<uint8_t> Image)
+          -> Expected<ObjectImageSemanticValidator> {
+        if (Error E = verifyFinalAndroidKernelModuleImage(
+                Image, Policy,
+                "final Android kernel trusted pre-post-write image"))
+          return std::move(E);
+        auto Seal = captureAndroidKernelReleaseImageIdentitySeal(
+            Image, "final Android kernel trusted pre-post-write image");
+        if (!Seal)
+          return Seal.takeError();
+        return ObjectImageSemanticValidator(
+            [Policy, Seal = std::move(*Seal)](
+                ArrayRef<uint8_t> PostWriteImage) -> Error {
+              if (Error E = verifyFinalAndroidKernelModuleImage(
+                      PostWriteImage, Policy,
+                      "final Android kernel post-write output"))
+                return E;
+              return verifyAndroidKernelReleaseImageIdentitySeal(
+                  PostWriteImage, Seal,
+                  "final Android kernel image immutable identity contract");
+            });
+      };
+      Validators.Image = [Contract = FinalReleaseContract,
                           BoundContract = BoundReleaseOutput](
                              ArrayRef<uint8_t> Image) -> Error {
-        if (Error E = verifyFinalAndroidKernelModuleImage(
-                Image, Policy, "final Android kernel post-write output"))
-          return E;
         // A bound image digest is authoritative only when native-only ELF facts
         // make the merger image itself the release contract.  Ordinary release
         // contracts deliberately allow authorized output phases to mutate bytes
@@ -485,16 +560,6 @@ LinkExecutionHooksBridge::execute(const linker::LinkExecutionRequest &Request,
       };
     }
 
-    auto OutputPipeline =
-        ObjectPhasePipeline::create(*Config.pluginTask, TargetSnapshot);
-    if (!OutputPipeline)
-      return OutputPipeline.takeError();
-    if (ReleaseInputContract &&
-        ReleaseInputContract->requiresNativeImagePassthrough() &&
-        (*OutputPipeline)->mayReplaceArtifact())
-      return bridgeError(
-          "Android release output requires native-image passthrough, which "
-          "is incompatible with registered object phase bindings");
     // Write the merged object through the native-image passthrough: the merged
     // graph was just parsed from these exact bytes, so unless a plugin output
     // phase mutates it (or finalization had to strip a divergent graph), the

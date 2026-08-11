@@ -509,6 +509,51 @@ release または debug ビットを canonical ビットなしで使うことは
 なら `NEVERC_STATUS_CAPABILITY_UNAVAILABLE` を明示的に返すことができますが、要求を
 黙って無視してはなりません。
 
+### 最終 Android release の書き出し権限
+
+`--strip` が Android `.ko` を最終化すると、上記の汎用 mutable object API は
+host が確立した信頼済み write path に制限されます。この境界には独立した 2 段階の
+identity seal があります。
+
+- 置換可能な `ObjectGraph` フェーズより前に、graph seal は保持される各 logical
+  section の `section ID`、`final ordinal`、正確な名前と、各 exact-name symbol の
+  `symbol ID`、owner、class、section、value、size、binding、type、完全な `st_other` を束縛します。
+- host-owned writer が信頼済み image baseline を作った後、image seal は保持される
+  各 section の ordinal と正確な名前、`.symtab` の総 entry 数、および各 exact-name
+  symbol の生の `.symtab` `slot` と属性を束縛します。完全な release verifier は
+  すべての構造的 release name も独立に再計算します。
+
+| Binding | 最終 Android release での動作 |
+|---|---|
+| `neverc.object.write` `provider` / `interceptor` | callback 前に `REJECTED`。信頼済み write path を置換できません |
+| `plugin-owned ObjectFormat graph writer` | `REJECTED`。この path には信頼済み baseline を確立する host-owned graph writer が必要です |
+| `observer` | `READ_ONLY`。検査のみ可能で、出力の変更や置換はできません |
+| `neverc.object.post_write` `interceptor` | `VALIDATED`。bounded mutable API が変更できるのは構造的に検証される ABI/identity surface 外の payload だけで、結果は input ABI checks、両 seal、完全な release verifier を通過する必要があります |
+
+最終 merge の所有権も host によって封印されます。`third-party ObjectMergeProvider`
+が返した `MergedImage` または独立した byte 列は破棄され、検証・finalize 済みの
+graph を `host-owned graph writer` が直列化します。一方、
+`built-in finalized input serialization` は `external object phases` を迂回して、
+完全一致する `audited native bytes` を host merger に渡します。この内部入力処理が
+上記の出力境界を迂回することはありません。
+
+Finalization は `Android module merge semantics` の場合にだけ受け入れられます。
+`relocatable output request` と `relocatable driver configuration` の両方も必須で、
+満たさなければ `before routing` に失敗します。最終 Android relocatable release
+では、`frozen input format`、
+`TargetKey.ObjectFormatID`、`frozen output format` が
+`one format identity` を共有しなければなりません。不一致は
+`before provider dispatch`、つまり route planning や sink creation よりも前に
+拒否されるため、capability preflight と実際の graph-writer dispatch が異なる
+format を観測することはありません。
+
+native-image passthrough は置換可能な `route-matching provider` とすべての
+interceptor を拒否します。target/CPU/features/object-format/execution-level route が
+一致しない provider は実行も release の阻止もせず、observer だけを許可します。
+`before sealed commit` の拒否または検証失敗だけが staging を
+中止し、ファイルを公開しません。`AFTER_COMMIT` observer の失敗は公開後に報告され、
+公開済みファイルをロールバックできません。
+
 ### 書き出しパイプライン
 
 1. 探査してバイト列を ObjectGraph に読み込む;

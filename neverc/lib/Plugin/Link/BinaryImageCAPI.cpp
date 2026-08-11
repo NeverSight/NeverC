@@ -36,10 +36,8 @@ private:
   PluginBinaryImage *Owner = nullptr;
 };
 
-ImageLease acquire(detail::BinaryImageAPIFacade &Facade,
-                   NevercTaskHandle Task,
-                   NevercBinaryImageHandle Handle,
-                   NevercStatus &Status) {
+ImageLease acquire(detail::BinaryImageAPIFacade &Facade, NevercTaskHandle Task,
+                   NevercBinaryImageHandle Handle, NevercStatus &Status) {
   if (!sameHandle(Task, Facade.TaskHandle)) {
     Status = imageStatus(NEVERC_STATUS_WRONG_SCOPE);
     return {};
@@ -52,8 +50,8 @@ ImageLease acquire(detail::BinaryImageAPIFacade &Facade,
     return {};
   }
   void *Payload = nullptr;
-  Status = Facade.Task->handles().resolve(
-      Handle, PluginBinaryImageHandleKind, &Payload);
+  Status = Facade.Task->handles().resolve(Handle, PluginBinaryImageHandleKind,
+                                          &Payload);
   if (!neverc_status_is_ok(Status))
     return {};
   if (Payload != Owner || !sameHandle(Handle, Owner->handle())) {
@@ -64,8 +62,7 @@ ImageLease acquire(detail::BinaryImageAPIFacade &Facade,
   return ImageLease(std::move(Control), std::move(Lock), Owner);
 }
 
-template <typename T>
-NevercStatus writeRecord(T *OutValue, const T &Value) {
+template <typename T> NevercStatus writeRecord(T *OutValue, const T &Value) {
   if (!OutValue)
     return imageStatus(NEVERC_STATUS_INVALID_ARGUMENT);
   const uint32_t Capacity = OutValue->Header.StructSize;
@@ -74,14 +71,13 @@ NevercStatus writeRecord(T *OutValue, const T &Value) {
   const size_t Writable = std::min<size_t>(Capacity, sizeof(Value));
   std::memset(OutValue, 0, Writable);
   std::memcpy(OutValue, &Value, Writable);
-  return Capacity < sizeof(Value)
-             ? imageStatus(NEVERC_STATUS_ABI_MISMATCH)
-             : neverc_status_ok();
+  return Capacity < sizeof(Value) ? imageStatus(NEVERC_STATUS_ABI_MISMATCH)
+                                  : neverc_status_ok();
 }
 
-NevercStatus NEVERC_CALL getImageInfo(
-    void *Context, NevercTaskHandle Task,
-    NevercBinaryImageHandle Handle, NevercBinaryImageInfo *OutInfo) {
+NevercStatus NEVERC_CALL getImageInfo(void *Context, NevercTaskHandle Task,
+                                      NevercBinaryImageHandle Handle,
+                                      NevercBinaryImageInfo *OutInfo) {
   if (!Context)
     return imageStatus(NEVERC_STATUS_INVALID_ARGUMENT);
   auto &Facade = *static_cast<detail::BinaryImageAPIFacade *>(Context);
@@ -90,8 +86,8 @@ NevercStatus NEVERC_CALL getImageInfo(
   if (!Image)
     return Status;
   NevercBinaryImageInfo Value{};
-  Value.Header = {sizeof(Value), NEVERC_LINK_API_MAJOR,
-                  NEVERC_LINK_API_MINOR, 0};
+  Value.Header = {sizeof(Value), NEVERC_LINK_API_MAJOR, NEVERC_LINK_API_MINOR,
+                  0};
   Value.Image = Image->handle();
   Value.State = Image->state();
   Value.OutputKind = Image->outputKind();
@@ -123,8 +119,7 @@ NevercStatus NEVERC_CALL getImageInfo(
   return writeRecord(OutInfo, Value);
 }
 
-NevercStatus validatePage(NevercLinkEntityPage *Page,
-                          uint64_t RequiredStride) {
+NevercStatus validatePage(NevercLinkEntityPage *Page, uint64_t RequiredStride) {
   if (!Page || Page->Header.StructSize < sizeof(*Page) ||
       (Page->ElementCapacity != 0 && !Page->Data) ||
       Page->ElementStride < RequiredStride)
@@ -135,10 +130,10 @@ NevercStatus validatePage(NevercLinkEntityPage *Page,
   return neverc_status_ok();
 }
 
-NevercStatus NEVERC_CALL getSegmentPage(
-    void *Context, NevercTaskHandle Task,
-    NevercBinaryImageHandle Handle, uint64_t Cursor,
-    NevercLinkEntityPage *Page) {
+NevercStatus NEVERC_CALL getSegmentPage(void *Context, NevercTaskHandle Task,
+                                        NevercBinaryImageHandle Handle,
+                                        uint64_t Cursor,
+                                        NevercLinkEntityPage *Page) {
   if (!Context)
     return imageStatus(NEVERC_STATUS_INVALID_ARGUMENT);
   auto &Facade = *static_cast<detail::BinaryImageAPIFacade *>(Context);
@@ -157,8 +152,8 @@ NevercStatus NEVERC_CALL getSegmentPage(
          Page->OutCount != Page->ElementCapacity) {
     const PluginBinarySegment &Segment = Image->segments()[Index];
     NevercBinarySegmentInfo Value{};
-    Value.Header = {sizeof(Value), NEVERC_LINK_API_MAJOR,
-                    NEVERC_LINK_API_MINOR, 0};
+    Value.Header = {sizeof(Value), NEVERC_LINK_API_MAJOR, NEVERC_LINK_API_MINOR,
+                    0};
     Value.Segment = Segment.Handle;
     Value.Name = {Segment.Name.data(), Segment.Name.size()};
     Value.Flags = Segment.Flags;
@@ -167,8 +162,8 @@ NevercStatus NEVERC_CALL getSegmentPage(
     Value.FileOffset = Segment.FileOffset;
     Value.FileSize = Segment.FileSize;
     Value.Alignment = Segment.Alignment;
-    std::memcpy(Bytes + Page->OutCount * Page->ElementStride,
-                &Value, sizeof(Value));
+    std::memcpy(Bytes + Page->OutCount * Page->ElementStride, &Value,
+                sizeof(Value));
     ++Page->OutCount;
     ++Index;
   }
@@ -178,10 +173,10 @@ NevercStatus NEVERC_CALL getSegmentPage(
   return neverc_status_ok();
 }
 
-NevercStatus NEVERC_CALL getSectionPage(
-    void *Context, NevercTaskHandle Task,
-    NevercBinaryImageHandle Handle, uint64_t Cursor,
-    NevercLinkEntityPage *Page) {
+NevercStatus NEVERC_CALL getSectionPage(void *Context, NevercTaskHandle Task,
+                                        NevercBinaryImageHandle Handle,
+                                        uint64_t Cursor,
+                                        NevercLinkEntityPage *Page) {
   if (!Context)
     return imageStatus(NEVERC_STATUS_INVALID_ARGUMENT);
   auto &Facade = *static_cast<detail::BinaryImageAPIFacade *>(Context);
@@ -200,8 +195,8 @@ NevercStatus NEVERC_CALL getSectionPage(
          Page->OutCount != Page->ElementCapacity) {
     const PluginBinarySection &Section = Image->sections()[Index];
     NevercBinarySectionInfo Value{};
-    Value.Header = {sizeof(Value), NEVERC_LINK_API_MAJOR,
-                    NEVERC_LINK_API_MINOR, 0};
+    Value.Header = {sizeof(Value), NEVERC_LINK_API_MAJOR, NEVERC_LINK_API_MINOR,
+                    0};
     Value.Section = Section.Handle;
     Value.Segment = Section.Segment;
     Value.Name = {Section.Name.data(), Section.Name.size()};
@@ -212,8 +207,8 @@ NevercStatus NEVERC_CALL getSectionPage(
     Value.FileOffset = Section.FileOffset;
     Value.FileSize = Section.FileSize;
     Value.Alignment = Section.Alignment;
-    std::memcpy(Bytes + Page->OutCount * Page->ElementStride,
-                &Value, sizeof(Value));
+    std::memcpy(Bytes + Page->OutCount * Page->ElementStride, &Value,
+                sizeof(Value));
     ++Page->OutCount;
     ++Index;
   }

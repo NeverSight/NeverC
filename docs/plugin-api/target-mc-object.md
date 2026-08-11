@@ -513,6 +513,54 @@ applicable ELF policy or explicitly return
 `NEVERC_STATUS_CAPABILITY_UNAVAILABLE` when that policy is unsupported or does
 not apply; it must never silently ignore the request.
 
+### Finalized Android release authority
+
+When `--strip` finalizes an Android `.ko`, the generic mutable object API above
+narrows to a trusted, host-established write path. The boundary has two
+independent identity seals:
+
+- before any replaceable `ObjectGraph` phase, the graph seal binds each
+  retained logical section's `section ID`, `final ordinal`, and exact name,
+  plus each exact-name symbol's `symbol ID`, owner, class, section, value,
+  size, binding, type, and complete `st_other`;
+- after the host-owned writer creates the trusted image baseline, the image
+  seal binds each retained section's ordinal and exact name, the total
+  `.symtab` entry count, and each exact-name symbol's raw `.symtab` `slot` and
+  attributes. The full release verifier independently recomputes every
+  structural release name.
+
+| Binding | Finalized Android release behavior |
+|---|---|
+| `neverc.object.write` `provider` / `interceptor` | `REJECTED` before the callback; it cannot replace the trusted write path |
+| `plugin-owned ObjectFormat graph writer` | `REJECTED`; this path requires the host-owned graph writer that establishes the trusted baseline |
+| `observer` | `READ_ONLY`; it may inspect but cannot mutate or replace output |
+| `neverc.object.post_write` `interceptor` | `VALIDATED`; its bounded mutable API may change only payload outside the structurally verified ABI and identity surface, and the result must pass the input-ABI checks, both seals, and the full release verifier |
+
+Finalized merge ownership is host-sealed too. Any `MergedImage` or independent
+bytes from a `third-party ObjectMergeProvider` are discarded; the
+`host-owned graph writer` serializes that provider's verified, finalized
+graph. Conversely, `built-in finalized input serialization` bypasses
+`external object phases` and feeds the host merger the exact
+`audited native bytes`; this internal input step does not bypass the output
+boundary above.
+
+Finalization is accepted only with `Android module merge semantics`; it also
+requires both a `relocatable output request` and
+`relocatable driver configuration`, otherwise it fails `before routing`.
+For a finalized Android relocatable release, the `frozen input format`,
+`TargetKey.ObjectFormatID`, and `frozen output format` must share
+`one format identity`. A mismatch is rejected `before provider dispatch`—also
+before route planning or sink creation—so capability preflight and actual
+graph-writer dispatch cannot observe different formats.
+
+Native-image passthrough rejects every replaceable `route-matching provider`
+and every interceptor. A provider whose
+target/CPU/features/object-format/execution-level route differs from the active
+route neither runs nor blocks the release; observers alone remain admitted. A
+rejection or validation failure `before sealed commit` aborts staging and
+publishes no file. An `AFTER_COMMIT` observer failure is reported after
+publication and cannot roll the published file back.
+
 ### The write pipeline
 
 1. probe and read bytes into an ObjectGraph;

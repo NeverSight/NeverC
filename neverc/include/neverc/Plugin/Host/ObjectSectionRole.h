@@ -1,6 +1,7 @@
 #ifndef NEVERC_PLUGIN_HOST_OBJECTSECTIONROLE_H
 #define NEVERC_PLUGIN_HOST_OBJECTSECTIONROLE_H
 
+#include "neverc/Foundation/ELFDebugSectionPolicy.h"
 #include "neverc/Plugin/Host/BuiltinTargetProvider.h"
 #include "llvm/ADT/StringRef.h"
 
@@ -36,8 +37,7 @@ inline bool isUnwindSectionName(BuiltinObjectFormat Format,
     // dotted prefix are matched separately so that ".eh_frame_hdr" is reached
     // by its own test rather than by a prefix that would also swallow it.
     return Name == ".eh_frame" || Name.starts_with(".eh_frame.") ||
-           Name == ".eh_frame_hdr" ||
-           Name.starts_with(".gcc_except_table") ||
+           Name == ".eh_frame_hdr" || Name.starts_with(".gcc_except_table") ||
            Name.starts_with(".ARM.exidx") || Name.starts_with(".ARM.extab");
   case BuiltinObjectFormat::COFF: {
     // The GNU toolchains targeting COFF emit DWARF unwind data into
@@ -56,7 +56,7 @@ inline bool isDebugSectionName(BuiltinObjectFormat Format,
                                llvm::StringRef Name) {
   switch (Format) {
   case BuiltinObjectFormat::ELF:
-    return Name.starts_with(".debug") || Name.starts_with(".zdebug");
+    return ELFDebugSectionPolicy::isDebugSectionName(Name);
   case BuiltinObjectFormat::COFF:
     return coffSectionStem(Name).starts_with(".debug");
   case BuiltinObjectFormat::MachO:
@@ -135,8 +135,8 @@ inline bool isThreadLocalSectionName(BuiltinObjectFormat Format,
                                      llvm::StringRef Name) {
   switch (Format) {
   case BuiltinObjectFormat::ELF:
-    return Name == ".tdata" || Name == ".tbss" ||
-           Name.starts_with(".tdata.") || Name.starts_with(".tbss.");
+    return Name == ".tdata" || Name == ".tbss" || Name.starts_with(".tdata.") ||
+           Name.starts_with(".tbss.");
   case BuiltinObjectFormat::COFF:
     // MSVC and LLVM emit thread-local data into ".tls$<key>", which the linker
     // merges into ".tls".

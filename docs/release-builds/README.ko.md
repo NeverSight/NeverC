@@ -166,6 +166,55 @@ kallsyms와 진단에서도 바뀌므로 심볼 기반 ftrace, kprobe/BPF attach
 보고서의 유용성이 낮아집니다. 진단에는 스트립하지 않은 debug 빌드를 사용하고
 release 모듈에서 private 심볼의 원래 이름에 의존하지 마십시오.
 
+### 최종 Android release의 plugin 경계
+
+finalization은 plugin 출력 단계 양쪽에 서로 독립적인 fail-closed identity 경계를
+두 단계로 설정합니다.
+
+- 교체 가능한 `ObjectGraph` 단계 전에 graph identity seal은 유지되는 각 logical
+  section의 `section ID`, `final ordinal`, 정확한 이름을 고정합니다. 또한 정확한
+  이름을 유지해야 하는 각 심볼의 `symbol ID`를 이름, class, section, value, size,
+  binding, type, 전체 `st_other`에 연결합니다. 일반 구조 이름은 release verifier가
+  별도로 다시 계산합니다.
+- host가 신뢰할 수 있는 write baseline을 설정한 뒤
+  `neverc.object.post_write` 전에 image identity seal은 유지되는 각 logical
+  section의 ordinal/name, 전체 `.symtab` entry 수, 각 exact-name symbol의 이름과
+  속성을 raw `.symtab` `slot`에 고정합니다.
+
+따라서 capability matrix는 의도적으로 좁습니다.
+
+| 단계 binding | 최종 Android release 동작 |
+|--------------|---------------------------|
+| `neverc.object.write` `provider` / `interceptor` | `REJECTED`; host가 설정한 신뢰 write baseline을 교체하기 전에 거부 |
+| `plugin-owned ObjectFormat graph writer` | `REJECTED`; 최종 Android release에는 신뢰 baseline을 설정하는 host-owned graph writer가 필요 |
+| `observer` | `READ_ONLY`; 관찰은 허용되지만 artifact 수정은 불가 |
+| `neverc.object.post_write` `interceptor` | `VALIDATED`; identity 영역 밖의 payload byte만 변경할 수 있고 release verifier, 입력 ABI contract, 두 identity seal을 모두 계속 통과해야 함 |
+
+최종 merge의 소유권도 host가 봉인합니다. `third-party ObjectMergeProvider`가 반환한
+`MergedImage` 또는 독립 byte는 폐기하고, 검증 및 finalize된 graph를
+`host-owned graph writer`가 직렬화합니다. 반대로
+`built-in finalized input serialization`은 `external object phases`를 우회하여 정확한
+`audited native bytes`를 host merger에 전달합니다. 이 내부 입력 단계는 위의 출력
+경계를 우회하지 않습니다.
+
+Finalization은 `Android module merge semantics`에서만 허용됩니다.
+`relocatable output request`와 `relocatable driver configuration`도 모두 필요하며,
+그렇지 않으면 `before routing`에 실패합니다. 최종 Android relocatable release에서는
+`frozen input format`,
+`TargetKey.ObjectFormatID`, `frozen output format`이 `one format identity`를
+공유해야 합니다. 불일치는 `before provider dispatch`, 즉 route planning과 sink
+creation보다도 먼저 거부되므로 capability preflight와 실제 graph-writer dispatch가
+서로 다른 format을 볼 수 없습니다.
+
+일반적인 graph-representable input에서는 앞선 graph interceptor가 graph seal과 모든
+release semantics를 유지할 때만 실행될 수 있습니다. `ObjectGraph`가 표현할 수 없는
+사실 때문에 native-image passthrough가 필요한 input에서는 교체 가능한 모든
+`route-matching provider`와 모든 interceptor가 거부됩니다.
+target/CPU/features/object-format/execution-level route가 일치하지 않는 provider는 실행되지
+않고 release도 막지 않으며, read-only observer만 허용됩니다. `before sealed commit`
+시점의 거부 또는 검증 실패만 staging을 중단하고 파일을 게시하지 않습니다.
+`AFTER_COMMIT` observer 실패는 게시 후 보고되며 이미 게시된 파일을 되돌릴 수 없습니다.
+
 `.ko`를 `llvm-strip --strip-all`이나 `objcopy`로 후처리하거나 codetag/BTF/ABI
 섹션을 무작정 제거하지 마십시오. 서명할 경우 먼저 스트립한 뒤 최종 바이트에
 서명하십시오. 서명 뒤의 변경은 서명을 무효화합니다. `clean`은 파일만 삭제해야

@@ -49,7 +49,7 @@
 
 - **[مُجمِّع dyncode](../dyncode-compiler/README.ar.md)** — مسار IR/MIR متعدد المراحل، استخراج متعدد المنصات، حل الاستيراد/استدعاءات النظام، وضع النواة، تدقيق البايتات المحظورة، بنية إضافات
 - **مُرابط مدمج** — COFF وELF وMach-O في ثنائي واحد؛ دون `ld` أو `link.exe` خارجي
-- **[تجريد ملفات الإصدار](../release-builds/README.ar.md)** — يزيل `--strip` / `-s` المدمج الرموز غير المطلوبة وقت التشغيل وتصحيح المصدر من صور ELF وMach-O وPE/COFF النهائية
+- **[تجريد ملفات الإصدار](../release-builds/README.ar.md)** — يزيل `--strip` / `-s` المدمج الرموز غير المطلوبة وقت التشغيل وتصحيح المصدر من صور ELF وMach-O وPE/COFF النهائية، ويعيد تسمية رموز `.ko` بنيويًا مع مراعاة النواة (ليس hash ولا encryption)
 - **تجميع متقاطع** — Windows PE و Linux ELF و macOS Mach-O و Android ELF من أي مضيف مع SDK مدمجة لكل منصة
 - **[أوقات التشغيل المدمجة](../builtins/README.ar.md)** — أوقات تشغيل LLVM bitcode مدمجة في المترجم: [`string`](../builtins/string/README.ar.md) (سلسلة بدلالة القيمة، إدارة ذاكرة تلقائية) و[`mimalloc`](../builtins/mimalloc/README.ar.md) (تجاوز مخصص ذاكرة عالي الأداء شفاف، مُفعَّل افتراضيًا خارج أهداف النواة وfreestanding) و[`xorstr`](../builtins/xorstr/README.ar.md) (تشفير مستقل لكل مثيل، ختم متأخر إلزامي وتوسيع أصلي لكل موضع استدعاء) و[`strhash`](../builtins/strhash/README.ar.md) (تجزئة السلاسل وقت الترجمة بنفس الخوارزمية وقت التشغيل)
 - **[واجهة الإضافات API](../plugin-api/README.ar.md)** — واجهة C ABI خالصة للإضافات خارج الشجرة؛ SDK بملف رأس واحد، صفر تبعيات LLVM/CRT، تغطي مراحل المُشغِّل والمعالج المسبق والشجرة النحوية وIR وMIR وMC والكائنات والربط وLTO وdyncode

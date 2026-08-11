@@ -31,21 +31,17 @@ typedef struct NevercTestPostEmitTrace {
 } NevercTestPostEmitTrace;
 
 NevercStatus NEVERC_CALL neverc_test_post_emit_interceptor(
-    const NevercPhaseFrame *Frame,
-    NevercPhaseContinuation *Continuation,
+    const NevercPhaseFrame *Frame, NevercPhaseContinuation *Continuation,
     NevercPhaseResult *OutResult, void *UserData);
 
 NevercStatus NEVERC_CALL neverc_test_after_commit_observer(
-    const NevercPhaseFrame *Frame, NevercObserverPoint Point,
-    void *UserData);
+    const NevercPhaseFrame *Frame, NevercObserverPoint Point, void *UserData);
 
 NevercStatus NEVERC_CALL neverc_test_post_emit_observer(
-    const NevercPhaseFrame *Frame, NevercObserverPoint Point,
-    void *UserData);
+    const NevercPhaseFrame *Frame, NevercObserverPoint Point, void *UserData);
 
 NevercStatus NEVERC_CALL neverc_test_cached_post_emit_capability_observer(
-    const NevercPhaseFrame *Frame, NevercObserverPoint Point,
-    void *UserData);
+    const NevercPhaseFrame *Frame, NevercObserverPoint Point, void *UserData);
 
 #ifdef __cplusplus
 }

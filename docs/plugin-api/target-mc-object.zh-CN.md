@@ -473,6 +473,46 @@ flags 不是对所有第三方格式的通用承诺。minor 1 表示 writer 理�
 实现适用的 ELF 策略；策略不适用或不受支持时，也可以明确返回
 `NEVERC_STATUS_CAPABILITY_UNAVAILABLE`，但绝不能静默忽略请求。
 
+### 最终 Android 发布的写出权限
+
+当 `--strip` 最终生成 Android `.ko` 时，上述通用可变对象 API 会收窄为由宿主建立
+并受信任的写出路径。该边界包含两个相互独立的身份封印：
+
+- 在任何可替换的 `ObjectGraph` 阶段之前，图封印会绑定每个保留逻辑段的
+  `section ID`、`final ordinal` 与精确名称，以及每个精确名称符号的
+  `symbol ID`、owner、class、section、value、size、binding、type 和完整 `st_other`；
+- 宿主自有 writer 建立可信映像基线后，映像封印会绑定每个保留段的 ordinal 与
+  精确名称、`.symtab` 条目总数，以及每个精确名称符号的原始 `.symtab` `slot`
+  与属性。完整发布验证器还会独立重算每个结构化发布名称。
+
+| 绑定 | 最终 Android 发布行为 |
+|---|---|
+| `neverc.object.write` `provider` / `interceptor` | 回调前即为 `REJECTED`；它不能替换可信写出路径 |
+| `plugin-owned ObjectFormat graph writer` | `REJECTED`；此路径必须使用负责建立可信基线的宿主自有 graph writer |
+| `observer` | `READ_ONLY`；只能检查，不能修改或替换输出 |
+| `neverc.object.post_write` `interceptor` | `VALIDATED`；其有界可变 API 只能修改结构化验证 ABI 与身份表面之外的 payload，结果仍须通过输入 ABI 检查、两道封印和完整发布验证器 |
+
+最终合并的所有权同样由宿主封闭。来自 `third-party ObjectMergeProvider` 的
+`MergedImage` 或独立字节会被丢弃，由 `host-owned graph writer` 序列化该 provider
+已验证并完成收尾的图。反向一侧，`built-in finalized input serialization` 会绕过
+`external object phases`，把完全一致的 `audited native bytes` 交给宿主 merger；
+这一内部输入步骤不会绕过上述输出边界。
+
+Finalization 只在 `Android module merge semantics` 下接受；
+`relocatable output request` 与 `relocatable driver configuration` 也必须同时成立，
+否则会在 `before routing` 失败。对于最终 Android relocatable 发布，
+`frozen input format`、
+`TargetKey.ObjectFormatID` 与 `frozen output format` 必须共享
+`one format identity`。不一致会在 `before provider dispatch` 被拒绝——这也早于
+route planning 与 sink creation——因此能力预检和实际 graph-writer dispatch
+不可能看到不同格式。
+
+native-image passthrough 会拒绝所有可替换的 `route-matching provider` 与所有
+interceptor；target/CPU/features/object-format/execution-level route 不匹配的 provider
+既不运行，也不阻止发布，只允许 observer。只有发生在 `before sealed commit` 的
+拒绝或验证失败才会中止 staging 且不发布文件；
+`AFTER_COMMIT` observer 的失败发生在发布之后，只会被报告，不能回滚已经发布的文件。
+
 ### 写出流水线
 
 1. 探测并把字节读入 ObjectGraph；

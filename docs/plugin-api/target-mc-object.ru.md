@@ -530,6 +530,56 @@ flags. После writer и любого
 `NEVERC_STATUS_CAPABILITY_UNAVAILABLE`, если она неприменима либо не
 поддерживается; молча игнорировать запрос нельзя.
 
+### Полномочия записи финального Android-релиза
+
+Когда `--strip` финализирует Android-`.ko`, описанный выше общий mutable object
+API сужается до доверенного пути записи, установленного хостом. Эта граница
+имеет две независимые печати идентичности:
+
+- перед любой заменяемой фазой `ObjectGraph` печать графа связывает
+  `section ID`, `final ordinal` и точное имя каждой сохранённой логической
+  секции, а также `symbol ID`, owner, класс, секцию, значение, размер, binding,
+  тип и полный `st_other` каждого символа с точным именем;
+- после того как принадлежащий хосту writer создаёт доверенную baseline образа,
+  печать образа связывает ordinal и точное имя каждой сохранённой секции, общее
+  число записей `.symtab`, а также исходный `.symtab` `slot` и атрибуты каждого
+  символа с точным именем. Полный release verifier независимо пересчитывает
+  каждое структурное release-имя.
+
+| Binding | Поведение финального Android-релиза |
+|---|---|
+| `neverc.object.write` `provider` / `interceptor` | `REJECTED` до callback; он не может заменить доверенный путь записи |
+| `plugin-owned ObjectFormat graph writer` | `REJECTED`; этот путь требует принадлежащий хосту graph writer, который устанавливает доверенную baseline |
+| `observer` | `READ_ONLY`; может инспектировать, но не изменять и не заменять вывод |
+| `neverc.object.post_write` `interceptor` | `VALIDATED`; его ограниченный mutable API может менять только payload вне структурно проверяемой поверхности ABI и identity, а результат должен пройти input ABI checks, обе печати и полный release verifier |
+
+Владение финализированным merge также запечатывается host. Любой `MergedImage`
+или независимые байты от `third-party ObjectMergeProvider` отбрасываются;
+`host-owned graph writer` сериализует проверенный и финализированный граф этого
+provider. В обратном направлении `built-in finalized input serialization`
+обходит `external object phases` и передаёт host-merger точные
+`audited native bytes`; этот внутренний входной шаг не обходит описанную выше
+границу вывода.
+
+Finalization принимается только с `Android module merge semantics`; также
+необходимы одновременно `relocatable output request` и
+`relocatable driver configuration`, иначе запрос завершается ошибкой
+`before routing`. Для финализированного Android relocatable release значения
+`frozen input format`, `TargetKey.ObjectFormatID` и `frozen output format`
+должны разделять `one format identity`. Несовпадение отклоняется
+`before provider dispatch`, то есть ещё до route planning или создания sink;
+поэтому capability preflight и фактический graph-writer dispatch не могут
+видеть разные форматы.
+
+Native-image passthrough отклоняет каждый заменяемый `route-matching provider`
+и все interceptor. Provider, у которого route по
+target/CPU/features/object-format/execution-level не совпадает, не запускается
+и не блокирует release; допускаются только observers. Только отказ или ошибка
+проверки
+`before sealed commit` отменяет staging и не публикует файл. Ошибка observer
+`AFTER_COMMIT` сообщается после публикации и не может откатить уже
+опубликованный файл.
+
 ### Конвейер записи
 
 1. прозондировать и прочитать байты в ObjectGraph;

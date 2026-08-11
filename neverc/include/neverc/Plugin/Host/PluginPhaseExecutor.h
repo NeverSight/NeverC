@@ -50,7 +50,11 @@ public:
   bool isFrozen() const;
   bool hasBindings(NevercInterfaceID Phase) const;
   bool hasInterceptors(NevercInterfaceID Phase) const;
+  /// Inventory query; use the route overload when reasoning about dispatch.
   bool hasProvider(NevercInterfaceID Phase) const;
+  /// Uses the same target/CPU/features/format constraints as execution.
+  bool hasProvider(NevercInterfaceID Phase,
+                   const NevercPhaseRoute &Route) const;
   std::optional<uint64_t>
   currentArtifactMutationCapability(const PluginTaskContext &Task) const;
   bool validatesArtifactMutationCapability(const PluginTaskContext &Task,

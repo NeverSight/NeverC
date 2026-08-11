@@ -4,6 +4,7 @@
 #include "neverc/Foundation/AndroidKernelModuleReleaseNames.h"
 #include "neverc/Foundation/AndroidKernelModuleSymbolPolicy.h"
 #include "neverc/Foundation/AndroidKernelProfileContract.h"
+#include "neverc/Foundation/ELFDebugSectionPolicy.h"
 #include "neverc/Merge/Merger.h"
 #include "neverc/Plugin/Host/BuiltinObjectExtension.h"
 #include "llvm/ADT/DenseMap.h"
@@ -25,15 +26,15 @@ using namespace llvm;
 namespace neverc::plugin {
 namespace {
 
-bool isDebugSectionName(StringRef Name) {
-  return Name == ".debug" || Name.starts_with(".debug_") ||
-         Name.starts_with(".zdebug_");
-}
-
 bool isDebugSection(const PluginObjectSection &Section) {
   return Section.Kind == NEVERC_OBJECT_SECTION_KIND_DEBUG ||
          (Section.Flags & NEVERC_OBJECT_SECTION_DEBUG) != 0 ||
-         isDebugSectionName(Section.Name);
+         ELFDebugSectionPolicy::isDebugSectionName(Section.Name);
+}
+
+bool isAllocatedDebugSection(const PluginObjectSection &Section) {
+  return isDebugSection(Section) &&
+         (Section.Flags & NEVERC_OBJECT_SECTION_ALLOCATED) != 0;
 }
 
 bool isUnsupportedLivePatchSection(const PluginObjectSection &Section) {
@@ -565,6 +566,9 @@ Error finalizeAndroidKernelModuleObjectGraph(
   }
 
   for (const PluginObjectSection &Section : Object.sections()) {
+    if (Policy.DropDebugInfo && isAllocatedDebugSection(Section))
+      return invalid(Boundary, "cannot drop allocated debug section '" +
+                                   Twine(Section.Name) + "'");
     if (Policy.StripUnneededSymbols && marksLivePatchModule(Section))
       return invalid(Boundary,
                      "Android module release strip does not support a module "
@@ -816,9 +820,13 @@ Error verifyFinalAndroidKernelModuleObjectGraph(
       return invalid(Boundary,
                      "must not retain native Android kernel profile contract "
                      "section");
-    if (Policy.DropDebugInfo && isDebugSection(Section))
+    if (Policy.DropDebugInfo && isDebugSection(Section)) {
+      if (isAllocatedDebugSection(Section))
+        return invalid(Boundary, "retains allocated debug section '" +
+                                     Twine(Section.Name) + "'");
       return invalid(Boundary,
                      "retains debug section '" + Twine(Section.Name) + "'");
+    }
     if (Policy.StripUnneededSymbols && Section.Name == ".comment")
       return invalid(Boundary, "retains producer .comment metadata");
     if (Policy.StripUnneededSymbols && marksLivePatchModule(Section))

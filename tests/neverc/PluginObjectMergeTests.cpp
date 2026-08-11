@@ -1,5 +1,6 @@
 #include "Link/AndroidKernelModuleFinalizer.h"
 #include "Link/AndroidKernelProfileContractVerifier.h"
+#include "Link/AndroidKernelReleaseIdentitySeal.h"
 #include "Link/AndroidKernelReleaseInputVerifier.h"
 #include "Link/BuiltinObjectMergeAdapter.h"
 #include "Link/LinkGraph.h"
@@ -265,9 +266,9 @@ assembleBuiltinObject(const BuiltinTargetRoute &Route, StringRef Assembly) {
   return std::vector<uint8_t>(Bytes.begin(), Bytes.end());
 }
 
-Error patchELF64SymbolSectionIndex(std::vector<uint8_t> &Bytes,
-                                   StringRef SymbolName,
-                                   uint16_t SectionIndex) {
+template <typename Mutator>
+Error patchELF64Symbol(std::vector<uint8_t> &Bytes, StringRef SymbolName,
+                       Mutator &&Apply) {
   StringRef Image(reinterpret_cast<const char *>(Bytes.data()), Bytes.size());
   auto Parsed = object::ELFFile<object::ELF64LE>::create(Image);
   if (!Parsed)
@@ -291,7 +292,7 @@ Error patchELF64SymbolSectionIndex(std::vector<uint8_t> &Bytes,
       if (*Name != SymbolName)
         continue;
       object::ELF64LE::Sym Replacement = Symbol;
-      Replacement.st_shndx = SectionIndex;
+      Apply(Replacement);
       const auto *SymbolBytes = reinterpret_cast<const uint8_t *>(&Symbol);
       if (SymbolBytes < Bytes.data())
         return createStringError(inconvertibleErrorCode(),
@@ -306,6 +307,199 @@ Error patchELF64SymbolSectionIndex(std::vector<uint8_t> &Bytes,
   }
   return createStringError(inconvertibleErrorCode(),
                            "test ELF symbol was not found");
+}
+
+Error patchELF64SymbolSectionIndex(std::vector<uint8_t> &Bytes,
+                                   StringRef SymbolName,
+                                   uint16_t SectionIndex) {
+  return patchELF64Symbol(Bytes, SymbolName,
+                          [SectionIndex](object::ELF64LE::Sym &Symbol) {
+                            Symbol.st_shndx = SectionIndex;
+                          });
+}
+
+Expected<uint16_t> findELF64SectionIndex(ArrayRef<uint8_t> Bytes,
+                                         StringRef SectionName) {
+  StringRef Image(reinterpret_cast<const char *>(Bytes.data()), Bytes.size());
+  auto Parsed = object::ELFFile<object::ELF64LE>::create(Image);
+  if (!Parsed)
+    return Parsed.takeError();
+  auto Sections = Parsed->sections();
+  if (!Sections)
+    return Sections.takeError();
+  for (size_t Index = 0; Index != Sections->size(); ++Index) {
+    auto Name = Parsed->getSectionName((*Sections)[Index]);
+    if (!Name)
+      return Name.takeError();
+    if (*Name != SectionName)
+      continue;
+    if (Index > std::numeric_limits<uint16_t>::max())
+      return createStringError(inconvertibleErrorCode(),
+                               "test ELF section index exceeds ELF64 st_shndx");
+    return static_cast<uint16_t>(Index);
+  }
+  return createStringError(inconvertibleErrorCode(),
+                           "test ELF section was not found");
+}
+
+Expected<std::pair<uint64_t, uint64_t>>
+findELF64SectionFileRange(ArrayRef<uint8_t> Bytes, StringRef SectionName) {
+  StringRef Image(reinterpret_cast<const char *>(Bytes.data()), Bytes.size());
+  auto Parsed = object::ELFFile<object::ELF64LE>::create(Image);
+  if (!Parsed)
+    return Parsed.takeError();
+  auto Sections = Parsed->sections();
+  if (!Sections)
+    return Sections.takeError();
+  for (const object::ELF64LE::Shdr &Section : *Sections) {
+    auto Name = Parsed->getSectionName(Section);
+    if (!Name)
+      return Name.takeError();
+    if (*Name != SectionName)
+      continue;
+    if (Section.sh_type == ELF::SHT_NOBITS || Section.sh_size == 0 ||
+        Section.sh_offset > Bytes.size() ||
+        Section.sh_size > Bytes.size() - Section.sh_offset)
+      return createStringError(inconvertibleErrorCode(),
+                               "test ELF section has no file payload");
+    return std::make_pair(static_cast<uint64_t>(Section.sh_offset),
+                          static_cast<uint64_t>(Section.sh_size));
+  }
+  return createStringError(inconvertibleErrorCode(),
+                           "test ELF section was not found");
+}
+
+Error replaceELF64SymbolNameBytes(std::vector<uint8_t> &Bytes,
+                                  StringRef Original, StringRef Replacement) {
+  if (Original.size() != Replacement.size() || Original.empty())
+    return createStringError(inconvertibleErrorCode(),
+                             "test symbol names have different widths");
+  StringRef Image(reinterpret_cast<const char *>(Bytes.data()), Bytes.size());
+  auto Parsed = object::ELFFile<object::ELF64LE>::create(Image);
+  if (!Parsed)
+    return Parsed.takeError();
+  auto Sections = Parsed->sections();
+  if (!Sections)
+    return Sections.takeError();
+  for (const object::ELF64LE::Shdr &Section : *Sections) {
+    if (Section.sh_type != ELF::SHT_SYMTAB)
+      continue;
+    auto Symbols = Parsed->symbols(&Section);
+    auto Strings = Parsed->getStringTableForSymtab(Section);
+    if (!Symbols)
+      return Symbols.takeError();
+    if (!Strings)
+      return Strings.takeError();
+    for (const object::ELF64LE::Sym &Symbol : *Symbols) {
+      auto Name = Symbol.getName(*Strings);
+      if (!Name)
+        return Name.takeError();
+      if (*Name != Original)
+        continue;
+      const auto *NameBytes = reinterpret_cast<const uint8_t *>(Name->data());
+      if (NameBytes < Bytes.data())
+        return createStringError(inconvertibleErrorCode(),
+                                 "test symbol name precedes ELF image");
+      const size_t Offset = static_cast<size_t>(NameBytes - Bytes.data());
+      if (Offset > Bytes.size() || Name->size() > Bytes.size() - Offset)
+        return createStringError(inconvertibleErrorCode(),
+                                 "test symbol name exceeds ELF image");
+      std::memcpy(Bytes.data() + Offset, Replacement.data(),
+                  Replacement.size());
+      return Error::success();
+    }
+  }
+  return createStringError(inconvertibleErrorCode(),
+                           "test ELF symbol-name string was not found");
+}
+
+Error swapELF64SymbolNameBytes(std::vector<uint8_t> &Bytes, StringRef First,
+                               StringRef Second) {
+  if (First.size() != Second.size() || First.empty() || First == Second)
+    return createStringError(inconvertibleErrorCode(),
+                             "test symbol names cannot be exchanged");
+  StringRef Image(reinterpret_cast<const char *>(Bytes.data()), Bytes.size());
+  auto Parsed = object::ELFFile<object::ELF64LE>::create(Image);
+  if (!Parsed)
+    return Parsed.takeError();
+  auto Sections = Parsed->sections();
+  if (!Sections)
+    return Sections.takeError();
+
+  std::optional<size_t> FirstOffset;
+  std::optional<size_t> SecondOffset;
+  for (const object::ELF64LE::Shdr &Section : *Sections) {
+    if (Section.sh_type != ELF::SHT_SYMTAB)
+      continue;
+    auto Symbols = Parsed->symbols(&Section);
+    auto Strings = Parsed->getStringTableForSymtab(Section);
+    if (!Symbols)
+      return Symbols.takeError();
+    if (!Strings)
+      return Strings.takeError();
+    for (const object::ELF64LE::Sym &Symbol : *Symbols) {
+      auto Name = Symbol.getName(*Strings);
+      if (!Name)
+        return Name.takeError();
+      if (*Name != First && *Name != Second)
+        continue;
+      const auto *NameBytes = reinterpret_cast<const uint8_t *>(Name->data());
+      if (NameBytes < Bytes.data())
+        return createStringError(inconvertibleErrorCode(),
+                                 "test symbol name precedes ELF image");
+      const size_t Offset = static_cast<size_t>(NameBytes - Bytes.data());
+      if (Offset > Bytes.size() || Name->size() > Bytes.size() - Offset)
+        return createStringError(inconvertibleErrorCode(),
+                                 "test symbol name exceeds ELF image");
+      std::optional<size_t> &Destination =
+          *Name == First ? FirstOffset : SecondOffset;
+      if (Destination && *Destination != Offset)
+        return createStringError(inconvertibleErrorCode(),
+                                 "test ELF has duplicate symbol-name strings");
+      Destination = Offset;
+    }
+  }
+  if (!FirstOffset || !SecondOffset)
+    return createStringError(inconvertibleErrorCode(),
+                             "test ELF symbol-name string was not found");
+  std::memcpy(Bytes.data() + *FirstOffset, Second.data(), Second.size());
+  std::memcpy(Bytes.data() + *SecondOffset, First.data(), First.size());
+  return Error::success();
+}
+
+Error replaceELF64SectionNameBytes(std::vector<uint8_t> &Bytes,
+                                   StringRef Original, StringRef Replacement,
+                                   unsigned Occurrence = 0) {
+  if (Original.size() != Replacement.size() || Original.empty())
+    return createStringError(inconvertibleErrorCode(),
+                             "test section names have different widths");
+  StringRef Image(reinterpret_cast<const char *>(Bytes.data()), Bytes.size());
+  auto Parsed = object::ELFFile<object::ELF64LE>::create(Image);
+  if (!Parsed)
+    return Parsed.takeError();
+  auto Sections = Parsed->sections();
+  if (!Sections)
+    return Sections.takeError();
+  unsigned Seen = 0;
+  for (const object::ELF64LE::Shdr &Section : *Sections) {
+    auto Name = Parsed->getSectionName(Section);
+    if (!Name)
+      return Name.takeError();
+    if (*Name != Original || Seen++ != Occurrence)
+      continue;
+    const auto *NameBytes = reinterpret_cast<const uint8_t *>(Name->data());
+    if (NameBytes < Bytes.data())
+      return createStringError(inconvertibleErrorCode(),
+                               "test section name precedes ELF image");
+    const size_t Offset = static_cast<size_t>(NameBytes - Bytes.data());
+    if (Offset > Bytes.size() || Name->size() > Bytes.size() - Offset)
+      return createStringError(inconvertibleErrorCode(),
+                               "test section name exceeds ELF image");
+    std::memcpy(Bytes.data() + Offset, Replacement.data(), Replacement.size());
+    return Error::success();
+  }
+  return createStringError(inconvertibleErrorCode(),
+                           "test ELF section-name string was not found");
 }
 
 template <typename Mutator>
@@ -414,6 +608,165 @@ init_module:
     .section .native_extra,"a",%progbits
     .balign 8
     .xword 0x8877665544332211
+
+    .section .neverc.android.kernel.profile,"a",%progbits
+    .balign 8
+    .globl __neverc_android_kernel_profile_contract
+    .type __neverc_android_kernel_profile_contract, %object
+__neverc_android_kernel_profile_contract:
+    .byte 2, 0, 0, 0, 100, 2, 0, 0
+    .size __neverc_android_kernel_profile_contract, 8
+)";
+  return assembleBuiltinObject(Route, Assembly);
+}
+
+Expected<std::vector<uint8_t>>
+assembleAndroidReleaseInputWithProtectedSectionSymbol(
+    const BuiltinTargetRoute &Route) {
+  constexpr StringLiteral Assembly = R"(
+    .text
+    .globl init_module
+    .type init_module, %function
+init_module:
+    nop
+    .size init_module, .-init_module
+
+    .section .modinfo,"a",%progbits
+    .globl modinfo_key
+    .type modinfo_key, %object
+modinfo_key:
+    .asciz "license=GPL"
+    .size modinfo_key, .-modinfo_key
+
+    .section __versions,"a",%progbits
+    .balign 8
+    .space 64
+
+    .section .codetag.alloc_tags,"aw",%progbits
+    .balign 8
+    .xword 0
+
+    .section .gnu.linkonce.this_module,"aw",%progbits
+    .balign 64
+    .space 1024
+
+    .section .neverc.android.kernel.profile,"a",%progbits
+    .balign 8
+    .globl __neverc_android_kernel_profile_contract
+    .type __neverc_android_kernel_profile_contract, %object
+__neverc_android_kernel_profile_contract:
+    .byte 2, 0, 0, 0, 100, 2, 0, 0
+    .size __neverc_android_kernel_profile_contract, 8
+)";
+  return assembleBuiltinObject(Route, Assembly);
+}
+
+Expected<std::vector<uint8_t>>
+assembleAndroidReleaseInputWithTwoImports(const BuiltinTargetRoute &Route) {
+  constexpr StringLiteral Assembly = R"(
+    .text
+    .globl init_module
+    .type init_module, %function
+init_module:
+    .xword kernel_one
+    .xword kernel_two
+    ret
+    .size init_module, .-init_module
+
+    .section .modinfo,"a",%progbits
+    .asciz "license=GPL"
+
+    .section __versions,"a",%progbits
+    .balign 8
+    .space 64
+
+    .section .codetag.alloc_tags,"aw",%progbits
+    .balign 8
+    .xword 0
+
+    .section .gnu.linkonce.this_module,"aw",%progbits
+    .balign 64
+    .space 1024
+
+    .section .neverc.android.kernel.profile,"a",%progbits
+    .balign 8
+    .globl __neverc_android_kernel_profile_contract
+    .type __neverc_android_kernel_profile_contract, %object
+__neverc_android_kernel_profile_contract:
+    .byte 2, 0, 0, 0, 100, 2, 0, 0
+    .size __neverc_android_kernel_profile_contract, 8
+)";
+  return assembleBuiltinObject(Route, Assembly);
+}
+
+Expected<std::vector<uint8_t>>
+assembleAndroidReleaseInputWithInitPLT(const BuiltinTargetRoute &Route) {
+  constexpr StringLiteral Assembly = R"(
+    .text
+    .globl init_module
+    .type init_module, %function
+init_module:
+    ret
+    .size init_module, .-init_module
+
+    .section .init.plt,"ax",%progbits
+    .balign 16
+    .space 16
+
+    .section .modinfo,"a",%progbits
+    .asciz "license=GPL"
+
+    .section __versions,"a",%progbits
+    .balign 8
+    .space 64
+
+    .section .codetag.alloc_tags,"aw",%progbits
+    .balign 8
+    .xword 0
+
+    .section .gnu.linkonce.this_module,"aw",%progbits
+    .balign 64
+    .space 1024
+
+    .section .neverc.android.kernel.profile,"a",%progbits
+    .balign 8
+    .globl __neverc_android_kernel_profile_contract
+    .type __neverc_android_kernel_profile_contract, %object
+__neverc_android_kernel_profile_contract:
+    .byte 2, 0, 0, 0, 100, 2, 0, 0
+    .size __neverc_android_kernel_profile_contract, 8
+)";
+  return assembleBuiltinObject(Route, Assembly);
+}
+
+Expected<std::vector<uint8_t>>
+assembleAndroidReleaseInputWithNamedSection(const BuiltinTargetRoute &Route) {
+  constexpr StringLiteral Assembly = R"(
+    .text
+    .globl init_module
+    .type init_module, %function
+init_module:
+    .xword section_key
+    ret
+    .size init_module, .-init_module
+
+    .section .rodata,"a",%progbits
+    .xword 0x8877665544332211
+
+    .section .modinfo,"a",%progbits
+    .asciz "license=GPL"
+
+    .section __versions,"a",%progbits
+    .balign 8
+    .space 64
+
+    .section .codetag.alloc_tags,"aw",%progbits
+    .balign 8
+    .xword 0
+
+    .section .gnu.linkonce.this_module,"aw",%progbits
+    .balign 64
+    .space 1024
 
     .section .neverc.android.kernel.profile,"a",%progbits
     .balign 8
@@ -863,6 +1216,122 @@ private:
   std::vector<std::shared_ptr<const PluginModule>> Plugins;
 };
 
+Expected<std::vector<uint8_t>>
+mergeFinalAndroidReleaseImage(LinkTaskScope &Scope,
+                              const BuiltinTargetRoute &Route,
+                              ArrayRef<uint8_t> Input, StringRef LogicalURI) {
+  auto Snapshot = PluginTargetRegistry::freeze(
+      ArrayRef<PluginTargetRegistrationView>(), PluginTargetRequest{});
+  if (!Snapshot)
+    return Snapshot.takeError();
+  auto Reader = ObjectReaderProvider::create(*Snapshot);
+  if (!Reader)
+    return Reader.takeError();
+  auto ReadTarget = makeBuiltinTargetKey(Route);
+  if (!ReadTarget)
+    return ReadTarget.takeError();
+  auto Graph = (*Reader)->read(Scope.task(), Input, LogicalURI, *ReadTarget,
+                               Route.ObjectFormatID);
+  if (!Graph)
+    return Graph.takeError();
+
+  std::array<PluginObjectGraph *, 1> Objects{Graph->get()};
+  std::array<ArrayRef<uint8_t>, 1> Images{Input};
+  auto MergeTarget = makeBuiltinTargetKey(Route);
+  if (!MergeTarget)
+    return MergeTarget.takeError();
+  BuiltinObjectMergeConfig Config;
+  Config.AndroidKernelModule = true;
+  Config.FinalizeAndroidKernelModule = true;
+  Config.DropDebugInfo = true;
+  Config.StripUnneededSymbols = true;
+  auto Merged = executeBuiltinObjectMergeAdapter(
+      Scope.task(), *Snapshot, std::move(*MergeTarget), Objects, Images,
+      NEVERC_LINK_OPTION_NONE, Config);
+  if (!Merged)
+    return Merged.takeError();
+  return std::vector<uint8_t>(Merged->MergedImage.begin(),
+                              Merged->MergedImage.end());
+}
+
+struct AndroidObjectLinkOutcome {
+  bool Completed = false;
+  bool Published = false;
+  std::string Error;
+  std::vector<uint8_t> Output;
+};
+
+AndroidObjectLinkOutcome runAndroidObjectLink(
+    LinkTaskScope &Scope, const BuiltinTargetRoute &Route,
+    std::vector<uint8_t> Input, StringRef OutputStem, bool FinalizeRelease,
+    std::optional<NevercObjectFormatID> RequestedOutputFormat = std::nullopt,
+    linker::LinkExecutionOutputKind RequestedOutputKind =
+        linker::LinkExecutionOutputKind::Relocatable,
+    std::optional<bool> ConfigRelocatable = std::nullopt) {
+  AndroidObjectLinkOutcome Outcome;
+  SmallString<128> Directory;
+  if (std::error_code EC =
+          sys::fs::createUniqueDirectory(OutputStem, Directory)) {
+    Outcome.Error = EC.message();
+    return Outcome;
+  }
+  auto RemoveDirectory =
+      make_scope_exit([&] { (void)sys::fs::remove_directories(Directory); });
+  SmallString<160> OutputPath(Directory);
+  sys::path::append(OutputPath, "android-object-output.ko");
+
+  linker::LinkExecutionRequest Request;
+  Request.TargetTriple = Route.CanonicalTriple.str();
+  if (RequestedOutputFormat)
+    Request.OutputFormat = {RequestedOutputFormat->High,
+                            RequestedOutputFormat->Low};
+  Request.OutputKind = RequestedOutputKind;
+  Request.OutputURI = OutputPath.str().str();
+  linker::LinkExecutionInput LinkInput;
+  LinkInput.Kind = linker::LinkExecutionInputKind::Object;
+  LinkInput.LogicalURI = "memory://android-object-link-input.o";
+  LinkInput.AuthorizedBlob = std::move(Input);
+  Request.Inputs.push_back(std::move(LinkInput));
+
+  linker::LinkerDriverConfig Config;
+  Config.pluginTask = &Scope.task();
+  Config.relocatable = ConfigRelocatable.value_or(
+      RequestedOutputKind == linker::LinkExecutionOutputKind::Relocatable);
+  Config.androidKernelModule = true;
+  Config.finalizeAndroidKernelModule = FinalizeRelease;
+  Config.stripMode =
+      FinalizeRelease ? linker::StripMode::All : linker::StripMode::None;
+
+  neverc::OutputCoordinator Outputs;
+  auto SessionAlias =
+      std::shared_ptr<PluginSession>(&Scope.session(), [](PluginSession *) {});
+  LinkExecutionHooksBridge Bridge(std::move(SessionAlias), Outputs);
+  raw_null_ostream NullOutput;
+  auto Result = Bridge.execute(Request, Config, NullOutput, NullOutput);
+  if (!Result) {
+    Outcome.Error = errorText(Result.takeError());
+    Outcome.Published = sys::fs::exists(OutputPath);
+    return Outcome;
+  }
+  if (Result->Disposition != linker::LinkHookDisposition::Completed) {
+    Outcome.Error = "Android object link did not complete";
+    Bridge.complete(false);
+    Outcome.Published = sys::fs::exists(OutputPath);
+    return Outcome;
+  }
+  Bridge.complete(true);
+  Outcome.Completed = true;
+  Outcome.Published = sys::fs::exists(OutputPath);
+  auto Output = MemoryBuffer::getFile(OutputPath);
+  if (!Output) {
+    Outcome.Error = Output.getError().message();
+    return Outcome;
+  }
+  StringRef Bytes = (*Output)->getBuffer();
+  Outcome.Output.assign(Bytes.bytes_begin(), Bytes.bytes_end());
+  return Outcome;
+}
+
 struct MergeCallbackState {
   unsigned Calls = 0;
   bool ReturnForeignObject = false;
@@ -946,7 +1415,8 @@ NevercStatus NEVERC_CALL mergeAndAttemptMutationFromNestedObserver(
   State.CachedOutputMutation = Request->OutputMutation;
 
   auto Nested = State.Task->invokeCallback(
-      State.ObserverPluginID, "object_merge_nested_read_only_observer", [&] {
+      State.ObserverPluginID, "object_merge_nested_read_only_observer",
+      [&] {
         static const std::array<uint8_t, 1> Byte{{UINT8_C(0x5a)}};
         static const char Name[] = ".nested-observer-write";
         NevercObjectSectionDescriptor Section{};
@@ -1196,6 +1666,70 @@ TEST(AndroidKernelModuleFinalizerTest,
 }
 
 TEST(AndroidKernelModuleFinalizerTest,
+     DropDebugRemovesReclassifiedGDBIndexByName) {
+  auto Graph = makeObject(0);
+  ASSERT_NE(Graph, nullptr);
+
+  PluginObjectSection DebugIndex;
+  DebugIndex.ID = Graph->allocateEntityID();
+  DebugIndex.Name = ".gdb_index";
+  DebugIndex.Kind = NEVERC_OBJECT_SECTION_KIND_DATA;
+  DebugIndex.Alignment = 4;
+  DebugIndex.Data = {UINT8_C(1), UINT8_C(2), UINT8_C(3), UINT8_C(4)};
+  Graph->sections().push_back(std::move(DebugIndex));
+  ASSERT_FALSE(verifyPluginObjectGraph(*Graph));
+
+  const uint64_t Generation = Graph->generation();
+  AndroidKernelModuleFinalizationPolicy Policy;
+  Policy.DropDebugInfo = true;
+  Error Finalize = finalizeAndroidKernelModuleObjectGraph(
+      *Graph, Policy, "test release Android module");
+  ASSERT_FALSE(Finalize) << errorText(std::move(Finalize));
+  EXPECT_EQ(Graph->generation(), Generation + 1);
+  EXPECT_TRUE(Graph->sections().empty());
+  EXPECT_FALSE(verifyPluginObjectGraph(*Graph));
+}
+
+TEST(AndroidKernelModuleFinalizerTest,
+     DropDebugRejectsAllocatedGDBIndexAtomically) {
+  auto Graph = makeObject(0);
+  ASSERT_NE(Graph, nullptr);
+
+  PluginObjectSection DebugIndex;
+  DebugIndex.ID = Graph->allocateEntityID();
+  DebugIndex.Name = ".gdb_index";
+  DebugIndex.Kind = NEVERC_OBJECT_SECTION_KIND_DATA;
+  DebugIndex.Flags = NEVERC_OBJECT_SECTION_ALLOCATED;
+  DebugIndex.Alignment = 4;
+  DebugIndex.Data = {UINT8_C(1), UINT8_C(2), UINT8_C(3), UINT8_C(4)};
+  const uint64_t DebugIndexID = DebugIndex.ID;
+  Graph->sections().push_back(std::move(DebugIndex));
+  ASSERT_FALSE(verifyPluginObjectGraph(*Graph));
+
+  const uint64_t Generation = Graph->generation();
+  AndroidKernelModuleFinalizationPolicy Policy;
+  Policy.DropDebugInfo = true;
+  Error Verify = verifyFinalAndroidKernelModuleObjectGraph(
+      *Graph, Policy, "test release Android module");
+  ASSERT_TRUE(static_cast<bool>(Verify));
+  const std::string VerifyMessage = errorText(std::move(Verify));
+  EXPECT_NE(VerifyMessage.find("allocated"), std::string::npos)
+      << VerifyMessage;
+  EXPECT_NE(VerifyMessage.find(".gdb_index"), std::string::npos)
+      << VerifyMessage;
+
+  Error Finalize = finalizeAndroidKernelModuleObjectGraph(
+      *Graph, Policy, "test release Android module");
+  ASSERT_TRUE(static_cast<bool>(Finalize));
+  const std::string Message = errorText(std::move(Finalize));
+  EXPECT_NE(Message.find("allocated"), std::string::npos) << Message;
+  EXPECT_NE(Message.find(".gdb_index"), std::string::npos) << Message;
+  EXPECT_EQ(Graph->generation(), Generation);
+  ASSERT_EQ(Graph->sectionCount(), 1U);
+  EXPECT_EQ(Graph->sections().front().ID, DebugIndexID);
+}
+
+TEST(AndroidKernelModuleFinalizerTest,
      PlansIDAStyleNamesFromFinalRetainedSectionOrder) {
   auto Graph = makeObject(0);
   ASSERT_NE(Graph, nullptr);
@@ -1346,6 +1880,492 @@ TEST(AndroidKernelModuleFinalizerTest,
   EXPECT_NE(
       errorText(std::move(WrongAliasMultiset)).find("release symbol plan"),
       std::string::npos);
+}
+
+TEST(AndroidKernelReleaseIdentitySealTest,
+     GraphRejectsOtherwiseValidExactABINameReplacement) {
+  auto Graph = makeAndroidObject(1);
+  ASSERT_NE(Graph, nullptr);
+  PluginObjectSection &Text = Graph->sections().front();
+  Text.Name = ".text";
+  Text.Kind = NEVERC_OBJECT_SECTION_KIND_TEXT;
+  Text.Flags =
+      NEVERC_OBJECT_SECTION_ALLOCATED | NEVERC_OBJECT_SECTION_EXECUTABLE;
+  Text.Data = {UINT8_C(0)};
+
+  PluginObjectSymbol Entry;
+  Entry.ID = Graph->allocateEntityID();
+  Entry.Name = "init_module";
+  Entry.Binding = NEVERC_OBJECT_SYMBOL_BINDING_GLOBAL;
+  Entry.Type = NEVERC_OBJECT_SYMBOL_TYPE_FUNCTION;
+  Entry.Definition = NEVERC_OBJECT_SYMBOL_DEFINITION_DEFINED;
+  Entry.SectionID = Text.ID;
+  Entry.Size = 1;
+  const uint64_t EntryID = Entry.ID;
+  Graph->symbols().push_back(std::move(Entry));
+  ASSERT_FALSE(verifyPluginObjectGraph(*Graph));
+
+  AndroidKernelModuleFinalizationPolicy Policy;
+  Policy.StripUnneededSymbols = true;
+  Error Finalize = finalizeAndroidKernelModuleObjectGraph(
+      *Graph, Policy, "test graph exact-name manifest");
+  ASSERT_FALSE(Finalize) << errorText(std::move(Finalize));
+
+  auto Seal = captureAndroidKernelReleaseGraphIdentitySeal(
+      *Graph, Policy.SymbolNameState, "test finalized authoritative graph");
+  ASSERT_TRUE(static_cast<bool>(Seal)) << errorText(Seal.takeError());
+
+  PluginObjectGraph Mutated(*Graph);
+  PluginObjectSymbol *MutatedEntry = Mutated.findSymbol(EntryID);
+  ASSERT_NE(MutatedEntry, nullptr);
+  MutatedEntry->Name = "__cfi_check";
+  Mutated.advanceGeneration();
+
+  Error Standalone = verifyFinalAndroidKernelModuleObjectGraph(
+      Mutated, Policy, "test structurally valid exact-name replacement");
+  EXPECT_FALSE(Standalone) << errorText(std::move(Standalone));
+
+  Error ExactName = verifyAndroidKernelReleaseGraphIdentitySeal(
+      Mutated, Policy.SymbolNameState, *Seal,
+      "test immutable graph exact-name contract");
+  ASSERT_TRUE(static_cast<bool>(ExactName));
+  const std::string Message = errorText(std::move(ExactName));
+  EXPECT_NE(Message.find("immutable release identity seal"), std::string::npos)
+      << Message;
+  EXPECT_NE(Message.find("init_module"), std::string::npos) << Message;
+  EXPECT_NE(Message.find("__cfi_check"), std::string::npos) << Message;
+}
+
+TEST(AndroidKernelReleaseIdentitySealTest,
+     GraphBindsExactUndefinedNamesToTheirRelocationOwners) {
+  auto Graph = makeAndroidObject(1);
+  ASSERT_NE(Graph, nullptr);
+  PluginObjectSection &Text = Graph->sections().front();
+  Text.Name = ".text";
+  Text.Kind = NEVERC_OBJECT_SECTION_KIND_TEXT;
+  Text.Flags =
+      NEVERC_OBJECT_SECTION_ALLOCATED | NEVERC_OBJECT_SECTION_EXECUTABLE;
+  Text.Data.resize(16);
+
+  const auto AddImport = [&](StringRef Name) {
+    PluginObjectSymbol Symbol;
+    Symbol.ID = Graph->allocateEntityID();
+    Symbol.Name = Name.str();
+    Symbol.Binding = NEVERC_OBJECT_SYMBOL_BINDING_GLOBAL;
+    Symbol.Type = NEVERC_OBJECT_SYMBOL_TYPE_NO_TYPE;
+    Symbol.Definition = NEVERC_OBJECT_SYMBOL_DEFINITION_UNDEFINED;
+    const uint64_t ID = Symbol.ID;
+    Graph->symbols().push_back(std::move(Symbol));
+    return ID;
+  };
+  const uint64_t FirstImport = AddImport("kernel_one");
+  const uint64_t SecondImport = AddImport("kernel_two");
+
+  const auto AddRelocation = [&](uint64_t Offset, uint64_t TargetSymbolID) {
+    PluginObjectRelocation Relocation;
+    Relocation.ID = Graph->allocateEntityID();
+    Relocation.SectionID = Text.ID;
+    Relocation.Offset = Offset;
+    Relocation.Kind = NEVERC_OBJECT_RELOCATION_ABSOLUTE;
+    Relocation.TargetKind = NEVERC_OBJECT_RELOCATION_TARGET_SYMBOL;
+    Relocation.TargetSymbolID = TargetSymbolID;
+    Relocation.Width = 64;
+    Relocation.Extension.Owner = TestFormatID;
+    Relocation.Extension.Version =
+        neverc::plugin::builtinext::RelocationVersion;
+    const SmallVector<uint8_t, 80> NativeFacts = makeELFRelocationExtension(
+        neverc::plugin::builtinext::RelocationVersion, ELF::R_AARCH64_ABS64,
+        "R_AARCH64_ABS64");
+    Relocation.Extension.Bytes.assign(NativeFacts.begin(), NativeFacts.end());
+    Graph->relocations().push_back(std::move(Relocation));
+  };
+  AddRelocation(0, FirstImport);
+  AddRelocation(8, SecondImport);
+  ASSERT_FALSE(verifyPluginObjectGraph(*Graph));
+
+  AndroidKernelModuleFinalizationPolicy Policy;
+  Policy.StripUnneededSymbols = true;
+  Error Finalize = finalizeAndroidKernelModuleObjectGraph(
+      *Graph, Policy, "test exact undefined owner identities");
+  ASSERT_FALSE(Finalize) << errorText(std::move(Finalize));
+
+  auto Seal = captureAndroidKernelReleaseGraphIdentitySeal(
+      *Graph, Policy.SymbolNameState,
+      "test exact undefined owner identity baseline");
+  ASSERT_TRUE(static_cast<bool>(Seal)) << errorText(Seal.takeError());
+
+  PluginObjectGraph Mutated(*Graph);
+  std::swap(Mutated.findSymbol(FirstImport)->Name,
+            Mutated.findSymbol(SecondImport)->Name);
+  Mutated.advanceGeneration();
+
+  Error Standalone = verifyFinalAndroidKernelModuleObjectGraph(
+      Mutated, Policy, "test structurally valid undefined-name exchange");
+  ASSERT_FALSE(Standalone) << errorText(std::move(Standalone));
+
+  Error ImmutableIdentity = verifyAndroidKernelReleaseGraphIdentitySeal(
+      Mutated, Policy.SymbolNameState, *Seal,
+      "test immutable graph owner identity contract");
+  ASSERT_TRUE(static_cast<bool>(ImmutableIdentity));
+  const std::string Message = errorText(std::move(ImmutableIdentity));
+  EXPECT_NE(Message.find("immutable release identity seal"), std::string::npos)
+      << Message;
+  EXPECT_NE(Message.find("kernel_one"), std::string::npos) << Message;
+  EXPECT_NE(Message.find("kernel_two"), std::string::npos) << Message;
+}
+
+TEST(AndroidKernelReleaseIdentitySealTest,
+     GraphBindsEveryRetainedSectionOwnerNameAndFinalOrdinal) {
+  auto Graph = makeAndroidObject(2);
+  ASSERT_NE(Graph, nullptr);
+  auto Section = Graph->sections().begin();
+  Section->Name = ".text";
+  Section->Kind = NEVERC_OBJECT_SECTION_KIND_TEXT;
+  Section->Flags =
+      NEVERC_OBJECT_SECTION_ALLOCATED | NEVERC_OBJECT_SECTION_EXECUTABLE;
+  ++Section;
+  Section->Name = ".rodata";
+  Section->Kind = NEVERC_OBJECT_SECTION_KIND_READ_ONLY_DATA;
+  Section->Flags = NEVERC_OBJECT_SECTION_ALLOCATED;
+
+  AndroidKernelModuleFinalizationPolicy Policy;
+  Policy.StripUnneededSymbols = true;
+  Error Finalize = finalizeAndroidKernelModuleObjectGraph(
+      *Graph, Policy, "test retained section identity baseline");
+  ASSERT_FALSE(Finalize) << errorText(std::move(Finalize));
+  auto Seal = captureAndroidKernelReleaseGraphIdentitySeal(
+      *Graph, Policy.SymbolNameState,
+      "test retained section identity baseline");
+  ASSERT_TRUE(static_cast<bool>(Seal)) << errorText(Seal.takeError());
+
+  PluginObjectGraph Renamed(*Graph);
+  Renamed.sections().front().Name = ".code";
+  Renamed.advanceGeneration();
+  Error StandaloneRename = verifyFinalAndroidKernelModuleObjectGraph(
+      Renamed, Policy, "test structurally valid section rename");
+  ASSERT_FALSE(StandaloneRename) << errorText(std::move(StandaloneRename));
+  Error Rename = verifyAndroidKernelReleaseGraphIdentitySeal(
+      Renamed, Policy.SymbolNameState, *Seal,
+      "test immutable graph section-name contract");
+  ASSERT_TRUE(static_cast<bool>(Rename));
+  const std::string RenameMessage = errorText(std::move(Rename));
+  EXPECT_NE(RenameMessage.find("release layout identity seal"),
+            std::string::npos)
+      << RenameMessage;
+  EXPECT_NE(RenameMessage.find(".text"), std::string::npos) << RenameMessage;
+  EXPECT_NE(RenameMessage.find(".code"), std::string::npos) << RenameMessage;
+
+  PluginObjectGraph Reordered(*Graph);
+  auto Second = std::next(Reordered.sections().begin());
+  Reordered.sections().splice(Reordered.sections().begin(),
+                              Reordered.sections(), Second);
+  Reordered.advanceGeneration();
+  Error StandaloneOrder = verifyFinalAndroidKernelModuleObjectGraph(
+      Reordered, Policy, "test structurally valid section reorder");
+  ASSERT_FALSE(StandaloneOrder) << errorText(std::move(StandaloneOrder));
+  Error Order = verifyAndroidKernelReleaseGraphIdentitySeal(
+      Reordered, Policy.SymbolNameState, *Seal,
+      "test immutable graph section-order contract");
+  ASSERT_TRUE(static_cast<bool>(Order));
+  EXPECT_NE(errorText(std::move(Order)).find("final ordinal"),
+            std::string::npos);
+}
+
+TEST(AndroidKernelReleaseIdentitySealTest,
+     GraphAuthorityRejectsNamedSectionSymbolItCannotSerialize) {
+  auto Graph = makeAndroidObject(1);
+  ASSERT_NE(Graph, nullptr);
+  PluginObjectSection &Text = Graph->sections().front();
+  Text.Name = ".text";
+  Text.Kind = NEVERC_OBJECT_SECTION_KIND_TEXT;
+  Text.Flags =
+      NEVERC_OBJECT_SECTION_ALLOCATED | NEVERC_OBJECT_SECTION_EXECUTABLE;
+  Text.Data.resize(8);
+
+  PluginObjectSymbol SectionSymbol;
+  SectionSymbol.ID = Graph->allocateEntityID();
+  SectionSymbol.Name = "section_key";
+  SectionSymbol.Binding = NEVERC_OBJECT_SYMBOL_BINDING_LOCAL;
+  SectionSymbol.Type = NEVERC_OBJECT_SYMBOL_TYPE_SECTION;
+  SectionSymbol.Definition = NEVERC_OBJECT_SYMBOL_DEFINITION_DEFINED;
+  SectionSymbol.SectionID = Text.ID;
+  const uint64_t SectionSymbolID = SectionSymbol.ID;
+  Graph->symbols().push_back(std::move(SectionSymbol));
+
+  PluginObjectRelocation Relocation;
+  Relocation.ID = Graph->allocateEntityID();
+  Relocation.SectionID = Text.ID;
+  Relocation.Kind = NEVERC_OBJECT_RELOCATION_ABSOLUTE;
+  Relocation.TargetKind = NEVERC_OBJECT_RELOCATION_TARGET_SYMBOL;
+  Relocation.TargetSymbolID = SectionSymbolID;
+  Relocation.Width = 64;
+  Graph->relocations().push_back(std::move(Relocation));
+  ASSERT_FALSE(verifyPluginObjectGraph(*Graph));
+
+  AndroidKernelModuleFinalizationPolicy Policy;
+  Policy.StripUnneededSymbols = true;
+  Error Standalone = verifyFinalAndroidKernelModuleObjectGraph(
+      *Graph, Policy, "test named SECTION structural graph");
+  ASSERT_FALSE(Standalone) << errorText(std::move(Standalone));
+
+  auto Seal = captureAndroidKernelReleaseGraphIdentitySeal(
+      *Graph, Policy.SymbolNameState,
+      "test portable named SECTION authority boundary");
+  ASSERT_FALSE(static_cast<bool>(Seal));
+  const std::string Message = errorText(Seal.takeError());
+  EXPECT_NE(Message.find("section_key"), std::string::npos) << Message;
+  EXPECT_NE(Message.find("SECTION type"), std::string::npos) << Message;
+  EXPECT_NE(Message.find("cannot round-trip"), std::string::npos) << Message;
+}
+
+TEST(AndroidKernelReleaseIdentitySealTest,
+     ImageBindsExactUndefinedNamesToRawSymbolTableSlots) {
+  initializeBuiltinTargets();
+  LinkTaskScope Scope;
+  ASSERT_TRUE(Scope.initialize());
+  const BuiltinTargetRoute *AndroidRoute = findAndroidAArch64ObjectRoute();
+  ASSERT_NE(AndroidRoute, nullptr);
+  auto Input = assembleAndroidReleaseInputWithTwoImports(*AndroidRoute);
+  ASSERT_TRUE(static_cast<bool>(Input)) << errorText(Input.takeError());
+  auto Image = mergeFinalAndroidReleaseImage(
+      Scope, *AndroidRoute, *Input, "memory://identity-slot-imports.o");
+  ASSERT_TRUE(static_cast<bool>(Image)) << errorText(Image.takeError());
+
+  AndroidKernelModuleFinalizationPolicy Policy;
+  Policy.DropDebugInfo = true;
+  Policy.StripUnneededSymbols = true;
+  Policy.SymbolNameState = AndroidKernelSymbolNameState::CanonicalRelease;
+  ASSERT_FALSE(verifyFinalAndroidKernelModuleImage(
+      *Image, Policy, "test exact import-slot baseline"));
+  auto Seal = captureAndroidKernelReleaseImageIdentitySeal(
+      *Image, "test exact import-slot baseline");
+  ASSERT_TRUE(static_cast<bool>(Seal)) << errorText(Seal.takeError());
+
+  auto Before = readELFSemantics(*Image);
+  ASSERT_TRUE(static_cast<bool>(Before)) << errorText(Before.takeError());
+  Error Swap = swapELF64SymbolNameBytes(*Image, "kernel_one", "kernel_two");
+  ASSERT_FALSE(Swap) << errorText(std::move(Swap));
+  auto After = readELFSemantics(*Image);
+  ASSERT_TRUE(static_cast<bool>(After)) << errorText(After.takeError());
+  const auto RelocationTarget = [](const ELFSemantics &Semantics,
+                                   uint64_t Offset) -> StringRef {
+    const auto Found = llvm::find_if(
+        Semantics.Relocations,
+        [Offset](const ELFRelocationSemantics &Relocation) {
+          return Relocation.Section == ".text" && Relocation.Offset == Offset;
+        });
+    return Found == Semantics.Relocations.end() ? StringRef() : Found->Target;
+  };
+  EXPECT_EQ(RelocationTarget(*Before, 0), "kernel_one");
+  EXPECT_EQ(RelocationTarget(*Before, 8), "kernel_two");
+  EXPECT_EQ(RelocationTarget(*After, 0), "kernel_two");
+  EXPECT_EQ(RelocationTarget(*After, 8), "kernel_one");
+
+  Error Standalone = verifyFinalAndroidKernelModuleImage(
+      *Image, Policy, "test structurally valid exact import-slot exchange");
+  ASSERT_FALSE(Standalone) << errorText(std::move(Standalone));
+  Error ImmutableIdentity = verifyAndroidKernelReleaseImageIdentitySeal(
+      *Image, *Seal, "test immutable image symbol-slot contract");
+  ASSERT_TRUE(static_cast<bool>(ImmutableIdentity));
+  const std::string Message = errorText(std::move(ImmutableIdentity));
+  EXPECT_NE(Message.find("symbol-table slot"), std::string::npos) << Message;
+  EXPECT_NE(Message.find("kernel_one"), std::string::npos) << Message;
+  EXPECT_NE(Message.find("kernel_two"), std::string::npos) << Message;
+}
+
+TEST(AndroidKernelReleaseIdentitySealTest,
+     ImageBindsNamedSectionSymbolsToRawSymbolTableSlots) {
+  initializeBuiltinTargets();
+  LinkTaskScope Scope;
+  ASSERT_TRUE(Scope.initialize());
+  const BuiltinTargetRoute *AndroidRoute = findAndroidAArch64ObjectRoute();
+  ASSERT_NE(AndroidRoute, nullptr);
+  auto Input = assembleAndroidReleaseInputWithNamedSection(*AndroidRoute);
+  ASSERT_TRUE(static_cast<bool>(Input)) << errorText(Input.takeError());
+  auto Image = mergeFinalAndroidReleaseImage(
+      Scope, *AndroidRoute, *Input, "memory://identity-named-section.o");
+  ASSERT_TRUE(static_cast<bool>(Image)) << errorText(Image.takeError());
+  auto ReadOnlySection = findELF64SectionIndex(*Image, ".rodata");
+  ASSERT_TRUE(static_cast<bool>(ReadOnlySection))
+      << errorText(ReadOnlySection.takeError());
+  Error MakeNamedSection = patchELF64Symbol(
+      *Image, "section_key",
+      [SectionIndex = *ReadOnlySection](object::ELF64LE::Sym &Symbol) {
+        Symbol.setBindingAndType(Symbol.getBinding(), ELF::STT_SECTION);
+        Symbol.st_shndx = SectionIndex;
+        Symbol.st_value = 0;
+        Symbol.st_size = 0;
+      });
+  ASSERT_FALSE(MakeNamedSection) << errorText(std::move(MakeNamedSection));
+
+  AndroidKernelModuleFinalizationPolicy Policy;
+  Policy.DropDebugInfo = true;
+  Policy.StripUnneededSymbols = true;
+  Policy.SymbolNameState = AndroidKernelSymbolNameState::CanonicalRelease;
+  ASSERT_FALSE(verifyFinalAndroidKernelModuleImage(
+      *Image, Policy, "test named SECTION baseline"));
+  auto Before = readELFSemantics(*Image);
+  ASSERT_TRUE(static_cast<bool>(Before)) << errorText(Before.takeError());
+  const auto NamedSection =
+      llvm::find_if(Before->Symbols, [](const ELFSymbolSemantics &Symbol) {
+        return Symbol.Name == "section_key";
+      });
+  ASSERT_NE(NamedSection, Before->Symbols.end());
+  EXPECT_EQ(NamedSection->Type, ELF::STT_SECTION);
+  auto Seal = captureAndroidKernelReleaseImageIdentitySeal(
+      *Image, "test named SECTION baseline");
+  ASSERT_TRUE(static_cast<bool>(Seal)) << errorText(Seal.takeError());
+
+  Error Rename =
+      replaceELF64SymbolNameBytes(*Image, "section_key", "segment_key");
+  ASSERT_FALSE(Rename) << errorText(std::move(Rename));
+  Error Standalone = verifyFinalAndroidKernelModuleImage(
+      *Image, Policy, "test structurally valid named SECTION replacement");
+  ASSERT_FALSE(Standalone) << errorText(std::move(Standalone));
+  Error ImmutableIdentity = verifyAndroidKernelReleaseImageIdentitySeal(
+      *Image, *Seal, "test immutable named SECTION slot contract");
+  ASSERT_TRUE(static_cast<bool>(ImmutableIdentity));
+  const std::string Message = errorText(std::move(ImmutableIdentity));
+  EXPECT_NE(Message.find("symbol-table slot"), std::string::npos) << Message;
+  EXPECT_NE(Message.find("section_key"), std::string::npos) << Message;
+  EXPECT_NE(Message.find("segment_key"), std::string::npos) << Message;
+}
+
+TEST(AndroidKernelReleaseIdentitySealTest,
+     PrePostWritePipelineAcceptsStableNamedSectionAndRejectsItsRename) {
+  initializeBuiltinTargets();
+  const BuiltinTargetRoute *AndroidRoute = findAndroidAArch64ObjectRoute();
+  ASSERT_NE(AndroidRoute, nullptr);
+  LinkTaskScope BuildScope;
+  ASSERT_TRUE(BuildScope.initialize());
+  auto Input = assembleAndroidReleaseInputWithNamedSection(*AndroidRoute);
+  ASSERT_TRUE(static_cast<bool>(Input)) << errorText(Input.takeError());
+  auto Image = mergeFinalAndroidReleaseImage(
+      BuildScope, *AndroidRoute, *Input,
+      "memory://pipeline-named-section-baseline.o");
+  ASSERT_TRUE(static_cast<bool>(Image)) << errorText(Image.takeError());
+  auto ReadOnlySection = findELF64SectionIndex(*Image, ".rodata");
+  ASSERT_TRUE(static_cast<bool>(ReadOnlySection))
+      << errorText(ReadOnlySection.takeError());
+  Error MakeNamedSection = patchELF64Symbol(
+      *Image, "section_key",
+      [SectionIndex = *ReadOnlySection](object::ELF64LE::Sym &Symbol) {
+        Symbol.setBindingAndType(Symbol.getBinding(), ELF::STT_SECTION);
+        Symbol.st_shndx = SectionIndex;
+        Symbol.st_value = 0;
+        Symbol.st_size = 0;
+      });
+  ASSERT_FALSE(MakeNamedSection) << errorText(std::move(MakeNamedSection));
+
+  AndroidKernelModuleFinalizationPolicy Policy;
+  Policy.DropDebugInfo = true;
+  Policy.StripUnneededSymbols = true;
+  Policy.SymbolNameState = AndroidKernelSymbolNameState::CanonicalRelease;
+  ASSERT_FALSE(verifyFinalAndroidKernelModuleImage(
+      *Image, Policy, "test stable named SECTION pipeline baseline"));
+
+  const auto Run = [&](LinkTaskScope &Scope, StringRef OutputName)
+      -> Expected<std::shared_ptr<PluginObjectImage>> {
+    auto Snapshot = PluginTargetRegistry::freeze(
+        ArrayRef<PluginTargetRegistrationView>(), PluginTargetRequest{});
+    if (!Snapshot)
+      return Snapshot.takeError();
+    auto Reader = ObjectReaderProvider::create(*Snapshot);
+    if (!Reader)
+      return Reader.takeError();
+    auto Target = makeBuiltinTargetKey(*AndroidRoute);
+    if (!Target)
+      return Target.takeError();
+    auto Graph = (*Reader)->read(Scope.task(), *Image,
+                                 "memory://named-section-pipeline-input.ko",
+                                 *Target, AndroidRoute->ObjectFormatID);
+    if (!Graph)
+      return Graph.takeError();
+    auto Pipeline = ObjectPhasePipeline::create(Scope.task(), *Snapshot);
+    if (!Pipeline)
+      return Pipeline.takeError();
+    ObjectPhaseSemanticValidators Validators;
+    Validators.BindPrePostWriteImage = [Policy](ArrayRef<uint8_t> Baseline)
+        -> Expected<ObjectImageSemanticValidator> {
+      if (Error E = verifyFinalAndroidKernelModuleImage(
+              Baseline, Policy, "test trusted named SECTION baseline"))
+        return std::move(E);
+      auto Seal = captureAndroidKernelReleaseImageIdentitySeal(
+          Baseline, "test trusted named SECTION baseline");
+      if (!Seal)
+        return Seal.takeError();
+      return ObjectImageSemanticValidator([Policy, Seal = std::move(*Seal)](
+                                              ArrayRef<uint8_t> Candidate) {
+        if (Error E = verifyFinalAndroidKernelModuleImage(
+                Candidate, Policy, "test named SECTION post-write candidate"))
+          return E;
+        return verifyAndroidKernelReleaseImageIdentitySeal(
+            Candidate, Seal, "test immutable named SECTION pipeline contract");
+      });
+    };
+    return (*Pipeline)->executeNative(
+        **Graph, *Image,
+        ObjectOutputDestination::memory(OutputName, UINT64_C(1) << 20),
+        std::move(Validators));
+  };
+
+  LinkTaskScope StableScope;
+  ASSERT_TRUE(StableScope.initialize());
+  auto Stable = Run(StableScope, "stable-named-section.ko");
+  ASSERT_TRUE(static_cast<bool>(Stable)) << errorText(Stable.takeError());
+  EXPECT_TRUE(
+      findPluginMemoryOutput(StableScope.task(), "stable-named-section.ko")
+          .has_value());
+
+  LinkTaskScope MutatingScope;
+  ASSERT_TRUE(MutatingScope.initialize(
+      NEVERC_TEST_OBJECT_SECTION_SYMBOL_CORRUPT_PLUGIN));
+  auto Mutated = Run(MutatingScope, "mutated-named-section.ko");
+  ASSERT_FALSE(static_cast<bool>(Mutated));
+  const std::string Message = errorText(Mutated.takeError());
+  EXPECT_NE(Message.find("immutable release identity seal"), std::string::npos)
+      << Message;
+  EXPECT_FALSE(
+      findPluginMemoryOutput(MutatingScope.task(), "mutated-named-section.ko")
+          .has_value());
+}
+
+TEST(AndroidKernelReleaseIdentitySealTest,
+     ImageBindsEveryRetainedLogicalSectionNameToItsOrdinal) {
+  initializeBuiltinTargets();
+  LinkTaskScope Scope;
+  ASSERT_TRUE(Scope.initialize());
+  const BuiltinTargetRoute *AndroidRoute = findAndroidAArch64ObjectRoute();
+  ASSERT_NE(AndroidRoute, nullptr);
+  auto Input = assembleAndroidReleaseInputWithInitPLT(*AndroidRoute);
+  ASSERT_TRUE(static_cast<bool>(Input)) << errorText(Input.takeError());
+  auto Image = mergeFinalAndroidReleaseImage(Scope, *AndroidRoute, *Input,
+                                             "memory://identity-init-plt.o");
+  ASSERT_TRUE(static_cast<bool>(Image)) << errorText(Image.takeError());
+
+  AndroidKernelModuleFinalizationPolicy Policy;
+  Policy.DropDebugInfo = true;
+  Policy.StripUnneededSymbols = true;
+  Policy.SymbolNameState = AndroidKernelSymbolNameState::CanonicalRelease;
+  ASSERT_FALSE(verifyFinalAndroidKernelModuleImage(
+      *Image, Policy, "test retained image section baseline"));
+  auto Seal = captureAndroidKernelReleaseImageIdentitySeal(
+      *Image, "test retained image section baseline");
+  ASSERT_TRUE(static_cast<bool>(Seal)) << errorText(Seal.takeError());
+
+  Error Rename = replaceELF64SectionNameBytes(*Image, ".init.plt", ".hide.plt");
+  ASSERT_FALSE(Rename) << errorText(std::move(Rename));
+  Error Standalone = verifyFinalAndroidKernelModuleImage(
+      *Image, Policy, "test structurally valid image section rename");
+  ASSERT_FALSE(Standalone) << errorText(std::move(Standalone));
+  Error ImmutableIdentity = verifyAndroidKernelReleaseImageIdentitySeal(
+      *Image, *Seal, "test immutable image section-name contract");
+  ASSERT_TRUE(static_cast<bool>(ImmutableIdentity));
+  const std::string Message = errorText(std::move(ImmutableIdentity));
+  EXPECT_NE(Message.find("release layout identity seal"), std::string::npos)
+      << Message;
+  EXPECT_NE(Message.find(".init.plt"), std::string::npos) << Message;
+  EXPECT_NE(Message.find(".hide.plt"), std::string::npos) << Message;
 }
 
 TEST(AndroidKernelModuleFinalizerTest,
@@ -4961,12 +5981,15 @@ TEST(PluginObjectMergeProviderTest,
 
   auto Baseline = Run({}, "neverc-ordinary-release-baseline");
   ASSERT_TRUE(Baseline.has_value());
-  auto Mutated = Run(NEVERC_TEST_OBJECT_POST_WRITE_PLUGIN,
+  auto Mutated = Run(NEVERC_TEST_OBJECT_TEXT_PAYLOAD_POST_WRITE_PLUGIN,
                      "neverc-ordinary-release-post-write");
   ASSERT_TRUE(Mutated.has_value());
-  ASSERT_GT(Baseline->size(), 9U);
-  ASSERT_NE((*Baseline)[9], UINT8_C(0x42));
   ASSERT_EQ(Mutated->size(), Baseline->size());
+
+  auto TextRange = findELF64SectionFileRange(*Baseline, ".text");
+  ASSERT_TRUE(static_cast<bool>(TextRange)) << errorText(TextRange.takeError());
+  const uint64_t TextOffset = TextRange->first;
+  const uint64_t TextSize = TextRange->second;
 
   size_t Differences = 0;
   size_t FirstDifference = 0;
@@ -4978,8 +6001,293 @@ TEST(PluginObjectMergeProviderTest,
     ++Differences;
   }
   EXPECT_EQ(Differences, 1U);
-  EXPECT_EQ(FirstDifference, 9U);
-  EXPECT_EQ((*Mutated)[9], UINT8_C(0x42));
+  EXPECT_GE(FirstDifference, TextOffset);
+  EXPECT_LT(FirstDifference, TextOffset + TextSize);
+  EXPECT_EQ((*Mutated)[FirstDifference],
+            static_cast<uint8_t>((*Baseline)[FirstDifference] ^ UINT8_C(1)));
+}
+
+TEST(PluginObjectMergeProviderTest,
+     OrdinaryAndroidReleaseRejectsAuthorizedExactNameReplacement) {
+  initializeBuiltinTargets();
+  const BuiltinTargetRoute *AndroidRoute = findAndroidAArch64ObjectRoute();
+  ASSERT_NE(AndroidRoute, nullptr);
+  LinkTaskScope Scope;
+  ASSERT_TRUE(Scope.initialize(NEVERC_TEST_OBJECT_EXACT_NAME_CORRUPT_PLUGIN));
+  auto Input = assembleValidAndroidReleaseInput(*AndroidRoute);
+  ASSERT_TRUE(static_cast<bool>(Input)) << errorText(Input.takeError());
+  AndroidObjectLinkOutcome Outcome =
+      runAndroidObjectLink(Scope, *AndroidRoute, std::move(*Input),
+                           "neverc-ordinary-release-exact-name-corrupt", true);
+  EXPECT_FALSE(Outcome.Completed);
+  EXPECT_FALSE(Outcome.Published);
+  EXPECT_NE(Outcome.Error.find("immutable release identity seal"),
+            std::string::npos)
+      << Outcome.Error;
+}
+
+TEST(PluginObjectMergeProviderTest,
+     OrdinaryAndroidReleaseRejectsProtectedSectionNameReplacement) {
+  initializeBuiltinTargets();
+  const BuiltinTargetRoute *AndroidRoute = findAndroidAArch64ObjectRoute();
+  ASSERT_NE(AndroidRoute, nullptr);
+
+  LinkTaskScope Scope;
+  ASSERT_TRUE(Scope.initialize(
+      NEVERC_TEST_OBJECT_PROTECTED_SECTION_NAME_CORRUPT_PLUGIN));
+  auto Input =
+      assembleAndroidReleaseInputWithProtectedSectionSymbol(*AndroidRoute);
+  ASSERT_TRUE(static_cast<bool>(Input)) << errorText(Input.takeError());
+  AndroidObjectLinkOutcome Outcome = runAndroidObjectLink(
+      Scope, *AndroidRoute, std::move(*Input),
+      "neverc-ordinary-release-protected-symbol-corrupt", true);
+  EXPECT_FALSE(Outcome.Completed);
+  EXPECT_FALSE(Outcome.Published);
+  EXPECT_NE(Outcome.Error.find("immutable release identity seal"),
+            std::string::npos)
+      << Outcome.Error;
+}
+
+TEST(PluginObjectMergeProviderTest,
+     OrdinaryAndroidReleaseRejectsRawSectionNameReplacement) {
+  initializeBuiltinTargets();
+  const BuiltinTargetRoute *AndroidRoute = findAndroidAArch64ObjectRoute();
+  ASSERT_NE(AndroidRoute, nullptr);
+  LinkTaskScope Scope;
+  ASSERT_TRUE(Scope.initialize(NEVERC_TEST_OBJECT_SECTION_NAME_CORRUPT_PLUGIN));
+  auto Input = assembleAndroidReleaseInputWithInitPLT(*AndroidRoute);
+  ASSERT_TRUE(static_cast<bool>(Input)) << errorText(Input.takeError());
+  AndroidObjectLinkOutcome Outcome = runAndroidObjectLink(
+      Scope, *AndroidRoute, std::move(*Input),
+      "neverc-ordinary-release-section-name-corrupt", true);
+  EXPECT_FALSE(Outcome.Completed);
+  EXPECT_FALSE(Outcome.Published);
+  EXPECT_NE(Outcome.Error.find("release layout identity seal"),
+            std::string::npos)
+      << Outcome.Error;
+  EXPECT_NE(Outcome.Error.find(".init.plt"), std::string::npos)
+      << Outcome.Error;
+  EXPECT_NE(Outcome.Error.find(".hide.plt"), std::string::npos)
+      << Outcome.Error;
+}
+
+TEST(PluginObjectMergeProviderTest,
+     OrdinaryAndroidReleaseRejectsSectionTargetNameReplacement) {
+  initializeBuiltinTargets();
+  const BuiltinTargetRoute *AndroidRoute = findAndroidAArch64ObjectRoute();
+  ASSERT_NE(AndroidRoute, nullptr);
+  LinkTaskScope Scope;
+  ASSERT_TRUE(
+      Scope.initialize(NEVERC_TEST_OBJECT_SECTION_SYMBOL_CORRUPT_PLUGIN));
+  auto Input = assembleAndroidReleaseInputWithNamedSection(*AndroidRoute);
+  ASSERT_TRUE(static_cast<bool>(Input)) << errorText(Input.takeError());
+  AndroidObjectLinkOutcome Outcome = runAndroidObjectLink(
+      Scope, *AndroidRoute, std::move(*Input),
+      "neverc-ordinary-release-section-symbol-corrupt", true);
+  EXPECT_FALSE(Outcome.Completed);
+  EXPECT_FALSE(Outcome.Published);
+  EXPECT_NE(Outcome.Error.find("immutable release identity seal"),
+            std::string::npos)
+      << Outcome.Error;
+}
+
+TEST(PluginObjectMergeProviderTest,
+     FinalizedAndroidReleaseRejectsReplaceableWritePhaseBeforeOpeningSink) {
+  initializeBuiltinTargets();
+  const BuiltinTargetRoute *AndroidRoute = findAndroidAArch64ObjectRoute();
+  ASSERT_NE(AndroidRoute, nullptr);
+  for (const auto &[PluginPath, Stem] :
+       std::array<std::pair<StringRef, StringRef>, 2>{
+           std::pair<StringRef, StringRef>{
+               NEVERC_TEST_OBJECT_WRITE_INTERCEPTOR_PLUGIN,
+               "neverc-release-write-interceptor"},
+           std::pair<StringRef, StringRef>{
+               NEVERC_TEST_OBJECT_WRITE_PROVIDER_PLUGIN,
+               "neverc-release-write-provider"}}) {
+    SCOPED_TRACE(Stem.str());
+    LinkTaskScope Scope;
+    ASSERT_TRUE(Scope.initialize(PluginPath));
+    auto Input = assembleValidAndroidReleaseInput(*AndroidRoute);
+    ASSERT_TRUE(static_cast<bool>(Input)) << errorText(Input.takeError());
+    AndroidObjectLinkOutcome Outcome = runAndroidObjectLink(
+        Scope, *AndroidRoute, std::move(*Input), Stem, true);
+    EXPECT_FALSE(Outcome.Completed);
+    EXPECT_FALSE(Outcome.Published);
+    EXPECT_NE(Outcome.Error.find("replaceable object write phase"),
+              std::string::npos)
+        << Outcome.Error;
+    EXPECT_NE(Outcome.Error.find("before the trusted image baseline"),
+              std::string::npos)
+        << Outcome.Error;
+  }
+}
+
+TEST(PluginObjectMergeProviderTest,
+     FinalizedAndroidReleaseIgnoresMismatchedWriteProviderRoute) {
+  initializeBuiltinTargets();
+  const BuiltinTargetRoute *AndroidRoute = findAndroidAArch64ObjectRoute();
+  ASSERT_NE(AndroidRoute, nullptr);
+
+  for (const bool NativeOnly : {false, true}) {
+    SCOPED_TRACE(NativeOnly ? "native-only" : "ordinary");
+    LinkTaskScope Scope;
+    ASSERT_TRUE(Scope.initialize(
+        NEVERC_TEST_OBJECT_WRITE_MISMATCHED_ROUTE_PROVIDER_PLUGIN));
+    auto Input = assembleValidAndroidReleaseInput(*AndroidRoute);
+    ASSERT_TRUE(static_cast<bool>(Input)) << errorText(Input.takeError());
+    if (NativeOnly) {
+      Error HeaderPatch =
+          patchELF64Header(*Input, [](object::ELF64LE::Ehdr &Header) {
+            Header.e_flags = UINT32_C(0x6a31);
+            Header.e_ident[ELF::EI_OSABI] = ELF::ELFOSABI_GNU;
+          });
+      ASSERT_FALSE(HeaderPatch) << errorText(std::move(HeaderPatch));
+      Error AnonymousPatch = patchELF64SectionHeader(
+          *Input, ".native_extra", 0,
+          [](object::ELF64LE::Shdr &Section) { Section.sh_name = 0; });
+      ASSERT_FALSE(AnonymousPatch) << errorText(std::move(AnonymousPatch));
+    }
+
+    AndroidObjectLinkOutcome Outcome = runAndroidObjectLink(
+        Scope, *AndroidRoute, std::move(*Input),
+        NativeOnly ? "neverc-native-only-mismatched-write-provider"
+                   : "neverc-release-mismatched-write-provider",
+        true);
+    EXPECT_TRUE(Outcome.Completed) << Outcome.Error;
+    EXPECT_TRUE(Outcome.Published);
+    EXPECT_FALSE(Outcome.Output.empty());
+  }
+}
+
+TEST(PluginObjectMergeProviderTest,
+     FinalizedAndroidReleaseRejectsFrozenOutputFormatConfusionBeforeProvider) {
+  initializeBuiltinTargets();
+  const BuiltinTargetRoute *AndroidRoute = findAndroidAArch64ObjectRoute();
+  ASSERT_NE(AndroidRoute, nullptr);
+  LinkTaskScope Scope;
+  ASSERT_TRUE(
+      Scope.initialize(NEVERC_TEST_OBJECT_WRITE_ELF_ROUTE_PROVIDER_PLUGIN));
+  auto Input = assembleValidAndroidReleaseInput(*AndroidRoute);
+  ASSERT_TRUE(static_cast<bool>(Input)) << errorText(Input.takeError());
+  constexpr NevercObjectFormatID FakeOutputFormat{UINT64_C(0x4e43524f55544542),
+                                                  UINT64_C(0xdec0de)};
+
+  AndroidObjectLinkOutcome Outcome = runAndroidObjectLink(
+      Scope, *AndroidRoute, std::move(*Input),
+      "neverc-release-output-format-confusion", true, FakeOutputFormat);
+  EXPECT_FALSE(Outcome.Completed);
+  EXPECT_FALSE(Outcome.Published);
+  EXPECT_NE(Outcome.Error.find("input, target, and output object formats"),
+            std::string::npos)
+      << Outcome.Error;
+  EXPECT_EQ(Outcome.Error.find("Provider callback"), std::string::npos)
+      << Outcome.Error;
+}
+
+TEST(PluginObjectMergeProviderTest,
+     FinalizedAndroidReleaseRejectsNonRelocatableRequestBeforeRouting) {
+  initializeBuiltinTargets();
+  const BuiltinTargetRoute *AndroidRoute = findAndroidAArch64ObjectRoute();
+  ASSERT_NE(AndroidRoute, nullptr);
+  LinkTaskScope Scope;
+  ASSERT_TRUE(
+      Scope.initialize(NEVERC_TEST_OBJECT_WRITE_ELF_ROUTE_PROVIDER_PLUGIN));
+  struct InvalidRelocatableState {
+    const char *Name;
+    linker::LinkExecutionOutputKind RequestKind;
+    bool ConfigRelocatable;
+  };
+  constexpr std::array<InvalidRelocatableState, 3> Cases{{
+      {"request-only", linker::LinkExecutionOutputKind::Executable, true},
+      {"config-only", linker::LinkExecutionOutputKind::Relocatable, false},
+      {"request-and-config", linker::LinkExecutionOutputKind::Executable,
+       false},
+  }};
+
+  for (const InvalidRelocatableState &Case : Cases) {
+    SCOPED_TRACE(Case.Name);
+    auto Input = assembleValidAndroidReleaseInput(*AndroidRoute);
+    ASSERT_TRUE(static_cast<bool>(Input)) << errorText(Input.takeError());
+
+    AndroidObjectLinkOutcome Outcome = runAndroidObjectLink(
+        Scope, *AndroidRoute, std::move(*Input),
+        (Twine("neverc-release-nonrelocatable-") + Case.Name).str(), true,
+        std::nullopt, Case.RequestKind, Case.ConfigRelocatable);
+    EXPECT_FALSE(Outcome.Completed);
+    EXPECT_FALSE(Outcome.Published);
+    EXPECT_NE(Outcome.Error.find("requires a relocatable output request"),
+              std::string::npos)
+        << Outcome.Error;
+    EXPECT_EQ(Outcome.Error.find("Provider callback"), std::string::npos)
+        << Outcome.Error;
+  }
+}
+
+TEST(PluginObjectMergeProviderTest,
+     NonReleaseWriteBindingsRetainTheirExistingExecutionSemantics) {
+  initializeBuiltinTargets();
+  const BuiltinTargetRoute *AndroidRoute = findAndroidAArch64ObjectRoute();
+  ASSERT_NE(AndroidRoute, nullptr);
+
+  LinkTaskScope InterceptorScope;
+  ASSERT_TRUE(
+      InterceptorScope.initialize(NEVERC_TEST_OBJECT_WRITE_INTERCEPTOR_PLUGIN));
+  auto InterceptorInput = assembleValidAndroidReleaseInput(*AndroidRoute);
+  ASSERT_TRUE(static_cast<bool>(InterceptorInput))
+      << errorText(InterceptorInput.takeError());
+  AndroidObjectLinkOutcome Interceptor = runAndroidObjectLink(
+      InterceptorScope, *AndroidRoute, std::move(*InterceptorInput),
+      "neverc-nonrelease-write-interceptor", false);
+  EXPECT_TRUE(Interceptor.Completed) << Interceptor.Error;
+  EXPECT_TRUE(Interceptor.Published);
+  EXPECT_FALSE(Interceptor.Output.empty());
+
+  LinkTaskScope ProviderScope;
+  ASSERT_TRUE(
+      ProviderScope.initialize(NEVERC_TEST_OBJECT_WRITE_PROVIDER_PLUGIN));
+  auto ProviderInput = assembleValidAndroidReleaseInput(*AndroidRoute);
+  ASSERT_TRUE(static_cast<bool>(ProviderInput))
+      << errorText(ProviderInput.takeError());
+  AndroidObjectLinkOutcome Provider = runAndroidObjectLink(
+      ProviderScope, *AndroidRoute, std::move(*ProviderInput),
+      "neverc-nonrelease-write-provider", false);
+  EXPECT_FALSE(Provider.Completed);
+  EXPECT_FALSE(Provider.Published);
+  EXPECT_EQ(Provider.Error.find("finalized Android release"), std::string::npos)
+      << Provider.Error;
+  EXPECT_NE(Provider.Error.find("Provider"), std::string::npos)
+      << Provider.Error;
+}
+
+TEST(PluginObjectMergeProviderTest,
+     FinalizedThirdPartyMergeUsesItsGraphAndTheHostReleaseWriter) {
+  initializeBuiltinTargets();
+  const BuiltinTargetRoute *AndroidRoute = findAndroidAArch64ObjectRoute();
+  ASSERT_NE(AndroidRoute, nullptr);
+  LinkTaskScope Scope;
+  ASSERT_TRUE(Scope.initialize(NEVERC_TEST_OBJECT_MERGE_PLUGIN));
+  auto Input = assembleValidAndroidReleaseInput(*AndroidRoute);
+  ASSERT_TRUE(static_cast<bool>(Input)) << errorText(Input.takeError());
+
+  AndroidObjectLinkOutcome Outcome =
+      runAndroidObjectLink(Scope, *AndroidRoute, std::move(*Input),
+                           "neverc-third-party-release-host-writer", true);
+  ASSERT_TRUE(Outcome.Completed) << Outcome.Error;
+  ASSERT_TRUE(Outcome.Published);
+  auto Semantics = readELFSemantics(Outcome.Output);
+  ASSERT_TRUE(static_cast<bool>(Semantics)) << errorText(Semantics.takeError());
+  EXPECT_NE(Semantics->SectionNames.find(".plugin-merged"),
+            Semantics->SectionNames.end());
+  EXPECT_TRUE(Semantics->HasSymbolStringTable);
+  EXPECT_TRUE(Semantics->HasSectionStringTable);
+  EXPECT_TRUE(Semantics->SymtabLinksSymbolStringTable);
+
+  AndroidKernelModuleFinalizationPolicy Policy;
+  Policy.DropDebugInfo = true;
+  Policy.StripUnneededSymbols = true;
+  EXPECT_FALSE(verifyFinalAndroidKernelModuleImage(
+      Outcome.Output, Policy,
+      "test third-party graph serialized by host release writer"));
 }
 
 TEST(PluginObjectMergeProviderTest,
@@ -5000,7 +6308,7 @@ TEST(PluginObjectMergeProviderTest,
      DirectBuiltinBindsCompleteMultiInputImageAndBridgeConsumesSameToken) {
   initializeBuiltinTargets();
   LinkTaskScope Scope;
-  ASSERT_TRUE(Scope.initialize(NEVERC_TEST_OBJECT_PHASE_OBSERVER_PLUGIN));
+  ASSERT_TRUE(Scope.initialize());
   const BuiltinTargetRoute *AndroidRoute = findAndroidAArch64ObjectRoute();
   ASSERT_NE(AndroidRoute, nullptr);
 
@@ -5588,10 +6896,11 @@ __neverc_android_kernel_profile_contract:
 
 TEST(
     PluginObjectMergeProviderTest,
-    DirectBuiltinAndroidReleaseAllowsReadOnlyObserversAndFoldsAnonymousInputs) {
+    DirectBuiltinAndroidReleaseBypassesInternalProvidersAndFoldsAnonymousInputs) {
   initializeBuiltinTargets();
   LinkTaskScope Scope;
-  ASSERT_TRUE(Scope.initialize(NEVERC_TEST_OBJECT_PHASE_OBSERVER_PLUGIN));
+  ASSERT_TRUE(
+      Scope.initialize(NEVERC_TEST_OBJECT_PHASE_OBSERVER_PROVIDER_PLUGIN));
   const BuiltinTargetRoute *AndroidRoute = findAndroidAArch64ObjectRoute();
   ASSERT_NE(AndroidRoute, nullptr);
 
@@ -5713,7 +7022,7 @@ __neverc_android_kernel_profile_contract:
 }
 
 TEST(PluginObjectMergeProviderTest,
-     DirectBuiltinAndroidReleaseRejectsReplaceableAnonymousSectionPhase) {
+     DirectBuiltinAndroidReleaseBypassesInternalInterceptors) {
   initializeBuiltinTargets();
   LinkTaskScope Scope;
   ASSERT_TRUE(
@@ -5751,11 +7060,19 @@ TEST(PluginObjectMergeProviderTest,
   auto Merged = executeBuiltinObjectMergeAdapter(
       Scope.task(), *Snapshot, std::move(*Target), Objects, Images,
       NEVERC_LINK_OPTION_NONE, Config);
-  ASSERT_FALSE(Merged);
-  const std::string Message = errorText(Merged.takeError());
-  EXPECT_NE(Message.find("native-image passthrough"), std::string::npos)
-      << Message;
-  EXPECT_NE(Message.find("replaceable"), std::string::npos) << Message;
+  ASSERT_TRUE(static_cast<bool>(Merged)) << errorText(Merged.takeError());
+  ASSERT_NE(Merged->Object, nullptr);
+  ASSERT_FALSE(Merged->MergedImage.empty());
+  ASSERT_NE(Merged->boundAndroidKernelReleaseOutput(), nullptr);
+
+  AndroidKernelModuleFinalizationPolicy Policy;
+  Policy.DropDebugInfo = true;
+  Policy.StripUnneededSymbols = true;
+  EXPECT_FALSE(verifyFinalAndroidKernelModuleImage(
+      ArrayRef<uint8_t>(
+          reinterpret_cast<const uint8_t *>(Merged->MergedImage.data()),
+          Merged->MergedImage.size()),
+      Policy, "test direct release bypass of internal interceptors"));
 }
 
 TEST(PluginObjectMergeProviderTest,
@@ -6260,8 +7577,8 @@ runObjectCapabilityCachePipeline(StringRef PluginPath, StringRef OutputName) {
     ADD_FAILURE() << errorText(Pipeline.takeError());
     return std::nullopt;
   }
-  ObjectOutputDestination Destination = ObjectOutputDestination::memory(
-      OutputName, UINT64_C(1) << 20);
+  ObjectOutputDestination Destination =
+      ObjectOutputDestination::memory(OutputName, UINT64_C(1) << 20);
   auto Image = (*Pipeline)->execute(*Graph, Destination);
   if (!Image) {
     ADD_FAILURE() << errorText(Image.takeError());

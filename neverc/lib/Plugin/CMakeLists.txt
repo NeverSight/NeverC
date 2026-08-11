@@ -526,6 +526,7 @@ set(LLVM_LINK_COMPONENTS
 add_neverc_library(nevercPluginLink
   Link/AndroidKernelModuleFinalizer.cpp
   Link/AndroidKernelProfileContractVerifier.cpp
+  Link/AndroidKernelReleaseIdentitySeal.cpp
   Link/AndroidKernelReleaseInputVerifier.cpp
   Link/ArchiveGraph.cpp
   Link/BinaryImage.cpp

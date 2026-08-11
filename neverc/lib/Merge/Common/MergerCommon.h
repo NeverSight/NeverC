@@ -36,14 +36,6 @@ inline bool isAndroidKernelProfileContractSymbol(llvm::StringRef Name) {
   return Name == neverc::AndroidKernelProfileContract::NativeSymbol;
 }
 
-/// Section-name predicates shared by the ELF merger and its independent
-/// verifier.  Keeping the discard policy here prevents the producer from
-/// silently growing a broader release policy than the verifier models.
-inline bool isELFDebugSection(llvm::StringRef Name) {
-  return Name == ".debug" || Name.starts_with(".debug_") ||
-         Name.starts_with(".zdebug_");
-}
-
 /// GNU's legacy compressed-DWARF spelling predates SHF_COMPRESSED and cannot
 /// be losslessly replayed by the release merger. It may only disappear through
 /// an explicit drop-debug operation; retaining it is fail-closed.

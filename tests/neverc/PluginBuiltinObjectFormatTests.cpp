@@ -1815,6 +1815,113 @@ debug_group_signature:
 }
 
 TEST(PluginBuiltinObjectFormatTest,
+     CanonicalELFTablesDropDebugRemovesGDBIndexThroughWriter) {
+  initializeBuiltinTargets();
+  BuiltinObjectTaskScope Scope;
+  ASSERT_TRUE(Scope.initialize());
+
+  const BuiltinTargetRoute *Route =
+      routeFor(BuiltinObjectFormat::ELF, Triple::aarch64);
+  ASSERT_NE(Route, nullptr);
+  auto Target = makeBuiltinTargetKey(*Route);
+  ASSERT_TRUE(static_cast<bool>(Target)) << errorText(Target.takeError());
+  OwnedTargetKey ReadTarget = *Target;
+  PluginObjectGraph Graph(std::move(*Target));
+
+  PluginObjectSection DebugIndex;
+  DebugIndex.ID = Graph.allocateEntityID();
+  DebugIndex.Name = ".gdb_index";
+  DebugIndex.Kind = NEVERC_OBJECT_SECTION_KIND_DEBUG;
+  DebugIndex.Flags = NEVERC_OBJECT_SECTION_DEBUG;
+  DebugIndex.Alignment = 4;
+  DebugIndex.Data = {UINT8_C(1), UINT8_C(2), UINT8_C(3), UINT8_C(4)};
+  const uint64_t DebugIndexID = DebugIndex.ID;
+  Graph.sections().push_back(std::move(DebugIndex));
+
+  PluginObjectSymbol DebugSymbol;
+  DebugSymbol.ID = Graph.allocateEntityID();
+  DebugSymbol.Name = "gdb_index_payload";
+  DebugSymbol.Binding = NEVERC_OBJECT_SYMBOL_BINDING_LOCAL;
+  DebugSymbol.Type = NEVERC_OBJECT_SYMBOL_TYPE_OBJECT;
+  DebugSymbol.Definition = NEVERC_OBJECT_SYMBOL_DEFINITION_DEFINED;
+  DebugSymbol.SectionID = DebugIndexID;
+  DebugSymbol.Size = 4;
+  Graph.symbols().push_back(std::move(DebugSymbol));
+  Graph.issueLayoutProof();
+
+  auto Snapshot = PluginTargetRegistry::freeze(
+      ArrayRef<PluginTargetRegistrationView>(), PluginTargetRequest{});
+  ASSERT_TRUE(static_cast<bool>(Snapshot)) << errorText(Snapshot.takeError());
+  auto Writer = ObjectWriterProvider::create(*Snapshot);
+  ASSERT_TRUE(static_cast<bool>(Writer)) << errorText(Writer.takeError());
+  ObjectOutputDestination Destination = ObjectOutputDestination::memory(
+      "canonical-drop-gdb-index.o", UINT64_C(1) << 20);
+  Destination.WritePolicy = ObjectWritePolicy::CanonicalELFTables;
+  Destination.DropDebugInfo = true;
+  auto Image = (*Writer)->beginWrite(Scope.task(), Graph, Destination);
+  ASSERT_TRUE(static_cast<bool>(Image)) << errorText(Image.takeError());
+  auto Bytes = (*Image)->pendingBytes();
+  ASSERT_TRUE(static_cast<bool>(Bytes)) << errorText(Bytes.takeError());
+
+  auto Reader = ObjectReaderProvider::create(*Snapshot);
+  ASSERT_TRUE(static_cast<bool>(Reader)) << errorText(Reader.takeError());
+  auto Restored = (*Reader)->read(Scope.task(), *Bytes,
+                                  "canonical-drop-gdb-index.o", ReadTarget);
+  ASSERT_TRUE(static_cast<bool>(Restored)) << errorText(Restored.takeError());
+  EXPECT_EQ(llvm::find_if((*Restored)->sections(),
+                          [](const PluginObjectSection &Section) {
+                            return Section.Name == ".gdb_index";
+                          }),
+            (*Restored)->sections().end());
+  EXPECT_EQ(llvm::find_if((*Restored)->symbols(),
+                          [](const PluginObjectSymbol &Symbol) {
+                            return Symbol.Name == "gdb_index_payload";
+                          }),
+            (*Restored)->symbols().end());
+  EXPECT_FALSE((*Image)->abort());
+}
+
+TEST(PluginBuiltinObjectFormatTest,
+     CanonicalELFTablesDropDebugRejectsAllocatedGDBIndexThroughWriter) {
+  initializeBuiltinTargets();
+  BuiltinObjectTaskScope Scope;
+  ASSERT_TRUE(Scope.initialize());
+
+  const BuiltinTargetRoute *Route =
+      routeFor(BuiltinObjectFormat::ELF, Triple::aarch64);
+  ASSERT_NE(Route, nullptr);
+  auto Target = makeBuiltinTargetKey(*Route);
+  ASSERT_TRUE(static_cast<bool>(Target)) << errorText(Target.takeError());
+  PluginObjectGraph Graph(std::move(*Target));
+
+  PluginObjectSection DebugIndex;
+  DebugIndex.ID = Graph.allocateEntityID();
+  DebugIndex.Name = ".gdb_index";
+  DebugIndex.Kind = NEVERC_OBJECT_SECTION_KIND_DATA;
+  DebugIndex.Flags = NEVERC_OBJECT_SECTION_ALLOCATED;
+  DebugIndex.Alignment = 4;
+  DebugIndex.Data = {UINT8_C(1), UINT8_C(2), UINT8_C(3), UINT8_C(4)};
+  Graph.sections().push_back(std::move(DebugIndex));
+  Graph.issueLayoutProof();
+
+  auto Snapshot = PluginTargetRegistry::freeze(
+      ArrayRef<PluginTargetRegistrationView>(), PluginTargetRequest{});
+  ASSERT_TRUE(static_cast<bool>(Snapshot)) << errorText(Snapshot.takeError());
+  auto Writer = ObjectWriterProvider::create(*Snapshot);
+  ASSERT_TRUE(static_cast<bool>(Writer)) << errorText(Writer.takeError());
+  ObjectOutputDestination Destination = ObjectOutputDestination::memory(
+      "canonical-reject-allocated-gdb-index.o", UINT64_C(1) << 20);
+  Destination.WritePolicy = ObjectWritePolicy::CanonicalELFTables;
+  Destination.DropDebugInfo = true;
+  auto Image = (*Writer)->beginWrite(Scope.task(), Graph, Destination);
+  ASSERT_FALSE(static_cast<bool>(Image));
+  consumeError(Image.takeError());
+  EXPECT_FALSE(findPluginMemoryOutput(Scope.task(),
+                                      "canonical-reject-allocated-gdb-index.o")
+                   .has_value());
+}
+
+TEST(PluginBuiltinObjectFormatTest,
      CanonicalELFTablesDropDebugWithoutApplyingLinkSemantics) {
   initializeBuiltinTargets();
   BuiltinObjectTaskScope Scope;
@@ -3935,7 +4042,7 @@ TEST(PluginBuiltinObjectFormatTest, SectionRolePredicatesAgreeOnRealSpellings) {
     bool Debug;
     bool ThreadLocal;
   };
-  const std::array<Case, 22> Cases = {{
+  const std::array<Case, 23> Cases = {{
       // Code that merely mentions unwinding is still code.
       {BuiltinObjectFormat::ELF, ".text._Unwind_Resume", false, false, false},
       {BuiltinObjectFormat::ELF, ".eh_frame", true, false, false},
@@ -3945,6 +4052,7 @@ TEST(PluginBuiltinObjectFormatTest, SectionRolePredicatesAgreeOnRealSpellings) {
       {BuiltinObjectFormat::ELF, ".ARM.exidx", true, false, false},
       {BuiltinObjectFormat::ELF, ".debug_info", false, true, false},
       {BuiltinObjectFormat::ELF, ".zdebug_info", false, true, false},
+      {BuiltinObjectFormat::ELF, ".gdb_index", false, true, false},
       {BuiltinObjectFormat::ELF, ".tdata", false, false, true},
       {BuiltinObjectFormat::ELF, ".tbss.f", false, false, true},
       // ".tdatafoo" is a different section, not thread-local data.

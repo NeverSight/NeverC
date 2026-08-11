@@ -180,6 +180,58 @@ ftrace, kprobe/BPF attachment, and crash reports. Use an unstripped debug build
 for diagnosis and do not rely on a private symbol's original name in a release
 module.
 
+### Finalized Android release plugin boundary
+
+Finalization establishes two independent, fail-closed identity boundaries
+around plugin output phases:
+
+- Before any replaceable `ObjectGraph` phase, the graph seal binds every
+  retained logical section's `section ID`, `final ordinal`, and exact name. It
+  also binds each exact-name symbol's `symbol ID` to its name, class, section,
+  value, size, binding, type, and complete `st_other`. The release verifier
+  independently recomputes the ordinary structural names.
+- After the host establishes a trusted write baseline and before
+  `neverc.object.post_write`, the image seal binds every retained logical
+  section ordinal/name, the total `.symtab` entry count, and each exact-name
+  symbol's name and attributes to its raw `.symtab` `slot`.
+
+The resulting capability matrix is deliberately narrow:
+
+| Phase binding | Finalized Android release behavior |
+|---------------|------------------------------------|
+| `neverc.object.write` `provider` / `interceptor` | `REJECTED` before it can replace the host-established trusted write baseline |
+| `plugin-owned ObjectFormat graph writer` | `REJECTED`; finalized Android release requires the host-owned graph writer that establishes the trusted baseline |
+| `observer` | `READ_ONLY`; observers remain permitted and cannot mutate the artifact |
+| `neverc.object.post_write` `interceptor` | `VALIDATED`; it may change only non-identity payload bytes that still pass the release verifier, input ABI contract, and both identity seals |
+
+Finalized merge ownership is host-sealed too. Any `MergedImage` or independent
+bytes from a `third-party ObjectMergeProvider` are discarded; the
+`host-owned graph writer` serializes that provider's verified, finalized
+graph. Conversely, `built-in finalized input serialization` bypasses
+`external object phases` and feeds the host merger the exact
+`audited native bytes`; this internal input step does not bypass the output
+boundary above.
+
+Finalization is accepted only with `Android module merge semantics`; it also
+requires both a `relocatable output request` and
+`relocatable driver configuration`, otherwise it fails `before routing`.
+For a finalized Android relocatable release, the `frozen input format`,
+`TargetKey.ObjectFormatID`, and `frozen output format` must share
+`one format identity`. A mismatch is rejected `before provider dispatch`—also
+before route planning or sink creation—so capability preflight and actual
+graph-writer dispatch cannot observe different formats.
+
+For ordinary graph-representable input, earlier graph interceptors may run only
+while preserving the graph seal and all release semantics. If the input needs
+native-image passthrough for facts the `ObjectGraph` cannot represent, every
+replaceable `route-matching provider` and every interceptor are rejected. A
+provider whose target/CPU/features/object-format/execution-level route differs
+from the active route neither runs nor blocks the release; only read-only
+observers are allowed. A rejection or validation failure
+`before sealed commit` aborts staging and publishes no file. An `AFTER_COMMIT`
+observer failure is reported after publication and cannot roll the published
+file back.
+
 Do not post-process a `.ko` with `llvm-strip --strip-all` or `objcopy`, and do
 not blindly remove codetag/BTF/ABI sections. If module signing is used, strip
 first and sign the final bytes because any post-signing mutation invalidates the

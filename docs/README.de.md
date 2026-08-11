@@ -104,7 +104,7 @@ Benutzerbefehle jenseits einer einzelnen Kompilierung.
 | [`neverc update`](update/README.de.md) | Release-Installation up-/downgraden (Compiler + installierte Runtimes auf einen Tag) |
 | [`neverc runtime`](runtime/README.de.md) | Cross-Compile-Sysroots installieren, auflisten, aktualisieren oder entfernen |
 | [`neverc build` / `neverc make`](build/README.de.md) | GNU-Make-kompatibler Treiber für Beispiel- und Projekt-Makefiles |
-| [Release-Binärdateien und `--strip`](release-builds/README.de.md) | Laufzeitunnötige Symbole und Quelldebug entfernen, einschließlich kernelgerechter `.ko`-Pseudonymisierung |
+| [Release-Binärdateien und `--strip`](release-builds/README.de.md) | Laufzeitunnötige Symbole und Quelldebug entfernen und `.ko`-Symbole kernelgerecht strukturell umbenennen (kein hash und keine encryption) |
 
 ---
 

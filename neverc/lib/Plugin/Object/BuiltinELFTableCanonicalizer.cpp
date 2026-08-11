@@ -1,5 +1,6 @@
 #include "BuiltinELFTableCanonicalizer.h"
 
+#include "neverc/Foundation/ELFDebugSectionPolicy.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
@@ -97,11 +98,6 @@ Expected<StringRef> checkedStringAt(StringRef Table, uint32_t Offset,
   if (End == StringRef::npos)
     return invalidELF(Kind + " name is not NUL-terminated");
   return Tail.take_front(End);
-}
-
-bool isDebugSectionName(StringRef Name) {
-  return Name == ".debug" || Name.starts_with(".debug_") ||
-         Name.starts_with(".zdebug_");
 }
 
 enum class DebugNameDisposition {
@@ -422,7 +418,8 @@ canonicalizeBuiltinELFTables(StringRef Input, bool DropDebugInfo) {
   std::vector<bool> DebugNameSelected(InputSections.size(), false);
   if (DropDebugInfo) {
     for (size_t Index = 1; Index != InputSections.size(); ++Index) {
-      DebugNameSelected[Index] = isDebugSectionName(InputSectionNames[Index]);
+      DebugNameSelected[Index] =
+          ELFDebugSectionPolicy::isDebugSectionName(InputSectionNames[Index]);
       if (!DebugNameSelected[Index])
         continue;
       switch (debugNameDisposition(InputSections[Index])) {

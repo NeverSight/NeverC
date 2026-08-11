@@ -176,6 +176,59 @@ Livepatch-модулям необходимы исходные порядок и
 kprobe/BPF и отчётов о сбоях. Для диагностики используйте неочищенную
 debug-сборку и не полагайтесь на исходное имя приватного символа в release-модуле.
 
+### Граница плагинов финального Android release
+
+Финализация устанавливает вокруг фаз вывода плагинов две независимые границы
+идентичности с отказом при любом несоответствии:
+
+- До любой заменяемой фазы `ObjectGraph` graph seal связывает `section ID`,
+  `final ordinal` и точное имя каждого сохранённого логического раздела. Он
+  также связывает `symbol ID` каждого символа с точным именем с его именем,
+  классом, разделом, значением, размером, binding, типом и полным `st_other`.
+  Обычные структурные имена независимо пересчитывает release verifier.
+- После того как host установил доверенную baseline записи, но до
+  `neverc.object.post_write`, image seal связывает ordinal/имя каждого
+  сохранённого логического раздела, общее число записей `.symtab`, а также имя
+  и атрибуты каждого символа с точным именем с его исходным `.symtab` `slot`.
+
+Поэтому матрица возможностей намеренно узкая:
+
+| Binding фазы | Поведение финального Android release |
+|--------------|--------------------------------------|
+| `neverc.object.write` `provider` / `interceptor` | `REJECTED` до того, как он сможет заменить установленную host доверенную baseline записи |
+| `plugin-owned ObjectFormat graph writer` | `REJECTED`; финальный Android release требует host-owned graph writer, который устанавливает доверенную baseline |
+| `observer` | `READ_ONLY`; наблюдение разрешено, изменение артефакта — нет |
+| `neverc.object.post_write` `interceptor` | `VALIDATED`; можно менять только payload-байты вне поверхности идентичности, а результат должен по-прежнему проходить release verifier, входной ABI-контракт и обе identity seal |
+
+Владение финализированным merge также запечатывается host. Любой `MergedImage`
+или независимые байты от `third-party ObjectMergeProvider` отбрасываются;
+`host-owned graph writer` сериализует проверенный и финализированный граф этого
+provider. В обратном направлении `built-in finalized input serialization`
+обходит `external object phases` и передаёт host-merger точные
+`audited native bytes`; этот внутренний входной шаг не обходит описанную выше
+границу вывода.
+
+Finalization принимается только с `Android module merge semantics`; также
+необходимы одновременно `relocatable output request` и
+`relocatable driver configuration`, иначе запрос завершается ошибкой
+`before routing`. Для финализированного Android relocatable release значения
+`frozen input format`, `TargetKey.ObjectFormatID` и `frozen output format`
+должны разделять `one format identity`. Несовпадение отклоняется
+`before provider dispatch`, то есть ещё до route planning или создания sink;
+поэтому capability preflight и фактический graph-writer dispatch не могут
+видеть разные форматы.
+
+Для обычного входа, полностью представимого графом, ранние graph interceptor
+могут работать только при сохранении graph seal и всей release-семантики. Если
+вход требует native-image passthrough для фактов, которые `ObjectGraph` не
+представляет, отклоняются каждый заменяемый `route-matching provider` и все
+interceptor. Provider, у которого route по
+target/CPU/features/object-format/execution-level не совпадает, не запускается
+и не блокирует release; разрешены лишь read-only observer. Только отказ или
+ошибка проверки `before sealed commit`
+отменяет staging и не публикует файл. Ошибка observer `AFTER_COMMIT` сообщается
+после публикации и не может откатить уже опубликованный файл.
+
 Не обрабатывайте `.ko` после сборки через `llvm-strip --strip-all` или `objcopy`
 и не удаляйте вслепую секции codetag/BTF/ABI. Сначала выполняйте strip, затем
 подписывайте итоговые байты: любое последующее изменение аннулирует подпись.

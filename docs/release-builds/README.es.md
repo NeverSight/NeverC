@@ -178,6 +178,61 @@ la utilidad de ftrace por símbolo, enlaces kprobe/BPF e informes de fallos.
 Diagnostica con una build debug sin strip y no dependas del nombre original de
 un símbolo privado en el módulo release.
 
+### Límite plugin de una release Android finalizada
+
+La finalización establece dos límites de identidad independientes y fail-closed
+alrededor de las fases de salida de plugins:
+
+- Antes de cualquier fase `ObjectGraph` reemplazable, el sello del grafo vincula
+  el `section ID`, el `final ordinal` y el nombre exacto de cada sección lógica
+  conservada. También vincula el `symbol ID` de cada símbolo de nombre exacto
+  con su nombre, clase, sección, valor, tamaño, binding, tipo y `st_other`
+  completo. El verificador release vuelve a calcular por separado los nombres
+  estructurales ordinarios.
+- Después de que el host establece una baseline de escritura de confianza y
+  antes de `neverc.object.post_write`, el sello de imagen vincula ordinal y
+  nombre de cada sección lógica conservada, el número total de entradas
+  `.symtab`, y el nombre y los atributos de cada símbolo de nombre exacto con su
+  `slot` `.symtab` sin procesar.
+
+Por eso la matriz de capacidades es deliberadamente estrecha:
+
+| Binding de fase | Comportamiento de la release Android finalizada |
+|-----------------|------------------------------------------------|
+| `neverc.object.write` `provider` / `interceptor` | `REJECTED` antes de que pueda sustituir la baseline de escritura de confianza establecida por el host |
+| `plugin-owned ObjectFormat graph writer` | `REJECTED`; una release Android finalizada exige el graph writer propiedad del host que establece la baseline de confianza |
+| `observer` | `READ_ONLY`; se permite observar, pero no mutar el artefacto |
+| `neverc.object.post_write` `interceptor` | `VALIDATED`; solo puede cambiar bytes de payload fuera de la superficie de identidad, y el resultado debe seguir pasando el verificador release, el contrato ABI de entrada y ambos sellos de identidad |
+
+La propiedad del merge finalizado también queda sellada por el host. Se
+descarta cualquier `MergedImage` o byte independiente de un
+`third-party ObjectMergeProvider`; el `host-owned graph writer` serializa el
+grafo verificado y finalizado de ese provider. En sentido inverso,
+`built-in finalized input serialization` omite las `external object phases` y
+entrega al merger del host exactamente los `audited native bytes`; este paso
+interno de entrada no elude la frontera de salida anterior.
+
+La finalización solo se acepta con `Android module merge semantics`; también
+exige tanto una `relocatable output request` como una
+`relocatable driver configuration`, o falla `before routing`. En una release
+Android relocatable finalizada, `frozen input format`,
+`TargetKey.ObjectFormatID` y `frozen output format` deben compartir
+`one format identity`. Una discrepancia se rechaza `before provider dispatch`,
+por tanto también antes del route planning o de crear el sink; así, el
+capability preflight y el graph-writer dispatch real no pueden observar
+formatos diferentes.
+
+Con una entrada ordinaria representable por el grafo, los interceptors de grafo
+anteriores solo pueden ejecutarse si conservan el sello y toda la semántica
+release. Si la entrada requiere passthrough de imagen nativa para hechos que el
+`ObjectGraph` no puede representar, se rechazan todos los
+`route-matching provider` reemplazables y todos los interceptors. Un provider
+cuya ruta target/CPU/features/object-format/execution-level no coincida no se
+ejecuta ni bloquea la release; solo se permiten observers de solo lectura. Solo
+un rechazo o fallo de validación `before sealed commit` cancela el staging y no
+publica ningún archivo. Un fallo de observer `AFTER_COMMIT` se informa después
+de la publicación y no puede revertir el archivo ya publicado.
+
 No postproceses un `.ko` con `llvm-strip --strip-all` ni `objcopy`, ni elimines a
 ciegas secciones codetag/BTF/ABI. Haz strip antes de firmar los bytes finales;
 cualquier cambio posterior invalida la firma. `clean` solo debe borrar archivos,

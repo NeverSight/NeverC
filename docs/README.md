@@ -104,7 +104,7 @@ User-facing commands beyond a single compile invocation.
 | [`neverc update`](update/README.md) | Upgrade or downgrade a release install (compiler + installed runtimes as one tag) |
 | [`neverc runtime`](runtime/README.md) | Install, list, update, or remove cross-compilation sysroots |
 | [`neverc build` / `neverc make`](build/README.md) | GNU Make–compatible driver for example and project Makefiles |
-| [Release binaries and `--strip`](release-builds/README.md) | Remove non-runtime symbols and source debug, including kernel-aware `.ko` symbol pseudonymization |
+| [Release binaries and `--strip`](release-builds/README.md) | Remove non-runtime symbols and source debug, including kernel-aware `.ko` structural symbol renaming (not a hash or encryption) |
 
 ---
 

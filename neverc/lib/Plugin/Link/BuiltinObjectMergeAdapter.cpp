@@ -172,35 +172,46 @@ Expected<ObjectMergeResult> executeBuiltinObjectMergeAdapter(
               SerializationToken->Owner, SerializationToken->Value)
           .str();
 
-  auto Pipeline = ObjectPhasePipeline::create(Task, Snapshot);
-  if (!Pipeline)
-    return Pipeline.takeError();
-  if (ReleaseInputContract &&
-      ReleaseInputContract->requiresNativeImagePassthrough() &&
-      (*Pipeline)->mayReplaceArtifact())
-    return createStringError(
-        errc::invalid_argument,
-        "built-in Android release input requires native-image passthrough, "
-        "which is incompatible with a replaceable ObjectGraph/output phase");
+  std::unique_ptr<ObjectPhasePipeline> Pipeline;
+  if (!Config.FinalizeAndroidKernelModule) {
+    auto CreatedPipeline = ObjectPhasePipeline::create(Task, Snapshot);
+    if (!CreatedPipeline)
+      return CreatedPipeline.takeError();
+    Pipeline = std::move(*CreatedPipeline);
+  }
 
   std::vector<PluginMemoryOutputSnapshot> Serialized;
   Serialized.reserve(Objects.size());
   for (size_t Index = 0; Index != Objects.size(); ++Index) {
     const std::string Name = (Twine(Prefix) + ".input." + Twine(Index)).str();
-    // Serialize the (possibly plugin-transformed) input graph back to bytes for
-    // the byte merger.  When the caller supplied the original on-disk image and
-    // no plugin phase mutated the graph, executeNative streams those exact
-    // bytes through (beginImage), so the merge input matches the native link;
-    // only a genuinely mutated graph falls back to the graph->assembly->object
-    // Writer.
     const ArrayRef<uint8_t> NativeBytes =
         Index < InputImages.size() ? InputImages[Index] : ArrayRef<uint8_t>{};
+    // Final release inputs were already audited together with their immutable
+    // native bytes above. Feed those exact bytes to the host merger: this
+    // serialization step is an implementation detail, not a replaceable
+    // object phase. Running external graph/write/post-write hooks here would
+    // let them mutate the artifact before finalization captures its graph and
+    // image identity seals.
+    if (Config.FinalizeAndroidKernelModule) {
+      if (NativeBytes.empty())
+        return createStringError(
+            errc::invalid_argument,
+            "built-in Android release input has no audited native image");
+      Serialized.push_back(PluginMemoryOutputSnapshot{
+          0, std::vector<uint8_t>(NativeBytes.begin(), NativeBytes.end())});
+      continue;
+    }
+    // Outside finalized release mode, serialize the possibly plugin-transformed
+    // input graph back to bytes for the byte merger. When the caller supplied
+    // the original on-disk image and no plugin phase mutated the graph,
+    // executeNative streams those exact bytes through beginImage; only a
+    // genuinely mutated graph falls back to the graph-to-object Writer.
     auto Destination = ObjectOutputDestination::memory(
         Name, std::numeric_limits<uint64_t>::max());
     auto Image = NativeBytes.empty()
-                     ? (*Pipeline)->execute(*Objects[Index], Destination)
-                     : (*Pipeline)->executeNative(*Objects[Index], NativeBytes,
-                                                  Destination);
+                     ? Pipeline->execute(*Objects[Index], Destination)
+                     : Pipeline->executeNative(*Objects[Index], NativeBytes,
+                                               Destination);
     if (!Image)
       return joinErrors(
           createStringError(errc::invalid_argument,

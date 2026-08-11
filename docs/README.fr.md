@@ -104,7 +104,7 @@ Commandes utilisateur au-delà d'une simple compilation.
 | [`neverc update`](update/README.fr.md) | Mettre à niveau ou rétrograder une install release (compilateur + runtimes installés, une balise) |
 | [`neverc runtime`](runtime/README.fr.md) | Installer, lister, mettre à jour ou retirer les sysroots de cross-compilation |
 | [`neverc build` / `neverc make`](build/README.fr.md) | Pilote compatible GNU Make pour les Makefile d'exemples et de projets |
-| [Binaires de publication et `--strip`](release-builds/README.fr.md) | Retirer symboles non requis et débogage source, avec pseudonymisation `.ko` adaptée au noyau |
+| [Binaires de publication et `--strip`](release-builds/README.fr.md) | Retirer symboles non requis et débogage source, avec renommage structurel des symboles `.ko` adapté au noyau (ni hash ni encryption) |
 
 ---
 

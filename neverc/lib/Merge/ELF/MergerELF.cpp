@@ -27,6 +27,7 @@
 #include "neverc/Foundation/AndroidKernelModuleRelocationPolicy.h"
 #include "neverc/Foundation/AndroidKernelModuleSectionPolicy.h"
 #include "neverc/Foundation/AndroidKernelModuleSymbolPolicy.h"
+#include "neverc/Foundation/ELFDebugSectionPolicy.h"
 #include "neverc/Merge/Merger.h"
 
 #include "llvm/ADT/DenseMap.h"
@@ -427,6 +428,26 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
     }
     ArrayRef<Shdr> Secs = *SecsOrErr;
 
+    // Drop-debug is a metadata filter, not permission to remove memory-backed
+    // content. A debug spelling carrying SHF_ALLOC may participate in runtime
+    // layout despite its name, so reject it before planning any output.
+    if (Opts.dropDebugInfo) {
+      for (unsigned I = 1; I < Secs.size(); ++I) {
+        auto SectionName = EF.getSectionName(Secs[I]);
+        if (!SectionName) {
+          consumeError(SectionName.takeError());
+          return false;
+        }
+        if (ELFDebugSectionPolicy::isDebugSectionName(*SectionName) &&
+            (Secs[I].sh_flags & SHF_ALLOC)) {
+          errs() << "neverc: relocatable merge cannot drop allocated debug "
+                    "section '"
+                 << *SectionName << "'\n";
+          return false;
+        }
+      }
+    }
+
     // Release finalization is fail-closed even when the optional post-merge
     // verifier is disabled. The generic -r merger historically tolerated a
     // handful of malformed ELF shapes by treating missing names/symbol maps as
@@ -800,7 +821,8 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
       const detail::ELFSectionFold Fold = foldSection(SecName, S);
       SecName = Fold.Name;
 
-      if (Opts.dropDebugInfo && detail::isELFDebugSection(SecName)) {
+      if (Opts.dropDebugInfo &&
+          ELFDebugSectionPolicy::isDebugSectionName(SecName)) {
         PM.DroppedSecs.insert(i);
         continue;
       }

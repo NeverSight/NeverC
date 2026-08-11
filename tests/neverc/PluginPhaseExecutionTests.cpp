@@ -1,12 +1,12 @@
-#include "neverc/Plugin/Host/PluginPhaseExecutor.h"
 #include "neverc/Plugin/Host/PluginHandleArena.h"
+#include "neverc/Plugin/Host/PluginPhaseExecutor.h"
 #include "neverc/Plugin/Host/PluginProcessServices.h"
 #include "neverc/Plugin/Host/PluginRegistration.h"
 #include "neverc/Plugin/Host/PluginSession.h"
 #include "neverc/Plugin/Host/PluginTaskContext.h"
-#include "gtest/gtest.h"
 #include "llvm/Config/llvm-config.h"
 #include "llvm/Support/Error.h"
+#include "gtest/gtest.h"
 #include <array>
 #include <cstring>
 #include <limits>
@@ -57,10 +57,10 @@ NevercStatus failedStatus() {
   return Status;
 }
 
-PluginPhaseGraph makeGraph(NevercPhasePolicy Policy =
-                               NEVERC_PHASE_OBSERVABLE |
-                               NEVERC_PHASE_INTERCEPTABLE |
-                               NEVERC_PHASE_REPLACEABLE) {
+PluginPhaseGraph
+makeGraph(NevercPhasePolicy Policy = NEVERC_PHASE_OBSERVABLE |
+                                     NEVERC_PHASE_INTERCEPTABLE |
+                                     NEVERC_PHASE_REPLACEABLE) {
   PluginPhaseGraph Graph;
   PluginPhaseDefinition Phase;
   Phase.ID = TestPhaseID;
@@ -114,8 +114,7 @@ struct ActiveScopes {
   void initialize() {
     if (Error E = Services.interfaces().freeze())
       ADD_FAILURE() << takeErrorMessage(std::move(E));
-    auto Loaded =
-        Services.registry().load(NEVERC_TEST_SCOPE_SESSION_PLUGIN);
+    auto Loaded = Services.registry().load(NEVERC_TEST_SCOPE_SESSION_PLUGIN);
     if (!Loaded) {
       ADD_FAILURE() << takeErrorMessage(Loaded.takeError());
       return;
@@ -130,8 +129,8 @@ struct ActiveScopes {
       ADD_FAILURE() << takeErrorMessage(LoadedThird.takeError());
       return;
     }
-    const std::array<StringRef, 3> Selected = {
-        TestPluginID, SecondPluginID, ThirdPluginID};
+    const std::array<StringRef, 3> Selected = {TestPluginID, SecondPluginID,
+                                               ThirdPluginID};
     auto Plan = makePluginActivationPlan(Services.registry(), Selected);
     if (!Plan) {
       ADD_FAILURE() << takeErrorMessage(Plan.takeError());
@@ -189,18 +188,16 @@ struct ObserverData {
 };
 
 NevercStatus NEVERC_CALL observer(const NevercPhaseFrame *Frame,
-                                  NevercObserverPoint Point,
-                                  void *UserData) {
+                                  NevercObserverPoint Point, void *UserData) {
   auto *Data = static_cast<ObserverData *>(UserData);
-  Data->Trace->push_back(std::string(Data->Name) +
-                         (Point == NEVERC_OBSERVER_BEFORE ? ":before"
-                                                         : ":after"));
+  Data->Trace->push_back(
+      std::string(Data->Name) +
+      (Point == NEVERC_OBSERVER_BEFORE ? ":before" : ":after"));
   if (Point == NEVERC_OBSERVER_AFTER && Data->CheckCandidate) {
     void *Candidate = nullptr;
     Data->CandidateLookup =
         Data->Task->handles()
-            .resolve(Frame->CurrentOutput, PluginArtifactHandleKind,
-                     &Candidate)
+            .resolve(Frame->CurrentOutput, PluginArtifactHandleKind, &Candidate)
             .Code;
   }
   if (Data->FailAfter && Point == NEVERC_OBSERVER_AFTER)
@@ -224,10 +221,10 @@ struct InterceptorData {
   NevercPhaseContinuation Saved{};
 };
 
-NevercStatus NEVERC_CALL
-interceptor(const NevercPhaseFrame *Frame,
-            NevercPhaseContinuation *Continuation,
-            NevercPhaseResult *OutResult, void *UserData) {
+NevercStatus NEVERC_CALL interceptor(const NevercPhaseFrame *Frame,
+                                     NevercPhaseContinuation *Continuation,
+                                     NevercPhaseResult *OutResult,
+                                     void *UserData) {
   auto *Data = static_cast<InterceptorData *>(UserData);
   if (Data->Trace)
     Data->Trace->push_back(Data->Name);
@@ -251,8 +248,7 @@ interceptor(const NevercPhaseFrame *Frame,
   }
   if (Data->SkipNext)
     return neverc_status_ok();
-  NevercStatus First =
-      Continuation->InvokeNext(Continuation, Frame, OutResult);
+  NevercStatus First = Continuation->InvokeNext(Continuation, Frame, OutResult);
   if (First.Code != NEVERC_STATUS_OK)
     return First;
   if (!Data->CallTwice) {
@@ -280,8 +276,7 @@ enum class InvalidInterceptorMode {
 };
 
 struct InvalidInterceptorData {
-  InvalidInterceptorMode Mode =
-      InvalidInterceptorMode::ContinueWithOutput;
+  InvalidInterceptorMode Mode = InvalidInterceptorMode::ContinueWithOutput;
   PluginPhaseExecutor *Executor = nullptr;
   PluginTaskContext *Task = nullptr;
   int *Payload = nullptr;
@@ -289,19 +284,16 @@ struct InvalidInterceptorData {
 };
 
 NevercStatus NEVERC_CALL invalidInterceptor(
-    const NevercPhaseFrame *Frame,
-    NevercPhaseContinuation *Continuation,
+    const NevercPhaseFrame *Frame, NevercPhaseContinuation *Continuation,
     NevercPhaseResult *OutResult, void *UserData) {
   auto *Data = static_cast<InvalidInterceptorData *>(UserData);
-  if (Data->Mode ==
-      InvalidInterceptorMode::CallNextFromAnotherThread) {
+  if (Data->Mode == InvalidInterceptorMode::CallNextFromAnotherThread) {
     std::thread Worker([&] {
       NevercPhaseResult ThreadResult{};
-      ThreadResult.Header = {sizeof(ThreadResult),
-                             NEVERC_PLUGIN_ABI_MAJOR,
+      ThreadResult.Header = {sizeof(ThreadResult), NEVERC_PLUGIN_ABI_MAJOR,
                              NEVERC_PLUGIN_ABI_MINOR, 0};
-      Data->ThreadStatus = Continuation->InvokeNext(
-          Continuation, Frame, &ThreadResult);
+      Data->ThreadStatus =
+          Continuation->InvokeNext(Continuation, Frame, &ThreadResult);
     });
     Worker.join();
     return Data->ThreadStatus;
@@ -316,8 +308,8 @@ NevercStatus NEVERC_CALL invalidInterceptor(
   if (Data->Mode == InvalidInterceptorMode::ReplaceAfterNext)
     return Continuation->InvokeNext(Continuation, Frame, OutResult);
 
-  auto Candidate = Data->Executor->createCandidate(
-      *Data->Task, TestArtifactID, Data->Payload);
+  auto Candidate = Data->Executor->createCandidate(*Data->Task, TestArtifactID,
+                                                   Data->Payload);
   if (!Candidate) {
     consumeError(Candidate.takeError());
     return failedStatus();
@@ -351,15 +343,14 @@ NevercStatus NEVERC_CALL provider(const NevercPhaseFrame *,
     Data->Trace->push_back("provider");
   if (Data->Calls)
     ++*Data->Calls;
-  auto Candidate = Data->Executor->createCandidate(
-      *Data->Task, TestArtifactID, Data->Payload);
+  auto Candidate = Data->Executor->createCandidate(*Data->Task, TestArtifactID,
+                                                   Data->Payload);
   if (!Candidate) {
     consumeError(Candidate.takeError());
     return failedStatus();
   }
-  OutResult->Action = Data->ReturnContinue
-                          ? NEVERC_PHASE_CONTINUE
-                          : NEVERC_PHASE_REPLACE;
+  OutResult->Action =
+      Data->ReturnContinue ? NEVERC_PHASE_CONTINUE : NEVERC_PHASE_REPLACE;
   OutResult->Output = *Candidate;
   return neverc_status_ok();
 }
@@ -374,9 +365,9 @@ struct RecoverableProviderData {
   const char *DiagnosticMessage = nullptr;
 };
 
-NevercStatus NEVERC_CALL recoverableProvider(
-    const NevercPhaseFrame *, NevercPhaseResult *OutResult,
-    void *UserData) {
+NevercStatus NEVERC_CALL recoverableProvider(const NevercPhaseFrame *,
+                                             NevercPhaseResult *OutResult,
+                                             void *UserData) {
   auto *Data = static_cast<RecoverableProviderData *>(UserData);
   if (Data->Calls)
     ++*Data->Calls;
@@ -400,8 +391,8 @@ NevercStatus NEVERC_CALL recoverableProvider(
     Diagnostic.PhaseID = view("test.phase.execute");
     Diagnostic.Message = view(Data->DiagnosticMessage);
     NevercDiagnosticHandle Handle{};
-    NevercStatus Emitted = Data->Core->EmitDiagnostic(
-        Data->Core->Context, &Diagnostic, &Handle);
+    NevercStatus Emitted =
+        Data->Core->EmitDiagnostic(Data->Core->Context, &Diagnostic, &Handle);
     if (Emitted.Code != NEVERC_STATUS_OK)
       return Emitted;
   }
@@ -418,8 +409,7 @@ recoverableProviderDescriptor(RecoverableProviderData &Data,
                        NEVERC_PLUGIN_ABI_MINOR, 0};
   Descriptor.Phase = TestPhaseID;
   Descriptor.ProviderID = view("recoverable-provider");
-  Descriptor.Route.Header = {sizeof(Descriptor.Route),
-                             NEVERC_PLUGIN_ABI_MAJOR,
+  Descriptor.Route.Header = {sizeof(Descriptor.Route), NEVERC_PLUGIN_ABI_MAJOR,
                              NEVERC_PLUGIN_ABI_MINOR, 0};
   Descriptor.Deterministic = NEVERC_TRUE;
   Descriptor.FallbackSafe = FallbackSafe;
@@ -439,8 +429,7 @@ NevercObserverDescriptor observerDescriptor(ObserverData &Data) {
   return Descriptor;
 }
 
-NevercInterceptorDescriptor
-interceptorDescriptor(InterceptorData &Data) {
+NevercInterceptorDescriptor interceptorDescriptor(InterceptorData &Data) {
   NevercInterceptorDescriptor Descriptor{};
   Descriptor.Header = {sizeof(Descriptor), NEVERC_PLUGIN_ABI_MAJOR,
                        NEVERC_PLUGIN_ABI_MINOR, 0};
@@ -451,7 +440,7 @@ interceptorDescriptor(InterceptorData &Data) {
 }
 
 NevercProviderDescriptor providerDescriptor(const char *ID,
-                                             ProviderData &Data) {
+                                            ProviderData &Data) {
   NevercProviderDescriptor Descriptor{};
   Descriptor.Header = {sizeof(Descriptor), NEVERC_PLUGIN_ABI_MAJOR,
                        NEVERC_PLUGIN_ABI_MINOR, 0};
@@ -884,18 +873,18 @@ TEST(PluginPhaseExecutionTest,
 
   std::vector<std::string> Trace;
   ObserverData FirstObserver{&Trace, "observer-one", false};
-  ObserverData SecondObserver{&Trace, "observer-two", false,
-                              Scopes.Task.get(), true};
+  ObserverData SecondObserver{&Trace, "observer-two", false, Scopes.Task.get(),
+                              true};
   InterceptorData FirstInterceptor{&Trace, "interceptor-one"};
   InterceptorData SecondInterceptor{&Trace, "interceptor-two"};
   int Payload = 42;
   int ProviderCalls = 0;
   ProviderData Provider{&Executor, Scopes.Task.get(), &Trace, &Payload,
                         &ProviderCalls};
-  ASSERT_FALSE(Executor.addObserver(
-      TestPluginID, observerDescriptor(FirstObserver)));
-  ASSERT_FALSE(Executor.addObserver(
-      TestPluginID, observerDescriptor(SecondObserver)));
+  ASSERT_FALSE(
+      Executor.addObserver(TestPluginID, observerDescriptor(FirstObserver)));
+  ASSERT_FALSE(
+      Executor.addObserver(TestPluginID, observerDescriptor(SecondObserver)));
   ASSERT_FALSE(Executor.addInterceptor(
       TestPluginID, interceptorDescriptor(FirstInterceptor)));
   ASSERT_FALSE(Executor.addInterceptor(
@@ -903,19 +892,18 @@ TEST(PluginPhaseExecutionTest,
   ASSERT_FALSE(Executor.addProvider(
       ThirdPluginID, providerDescriptor("test-provider", Provider)));
   int InputPayload = 0;
-  auto Input = Executor.createArtifactView(
-      *Scopes.Task, TestArtifactID, &InputPayload, 1);
+  auto Input = Executor.createArtifactView(*Scopes.Task, TestArtifactID,
+                                           &InputPayload, 1);
   ASSERT_TRUE(static_cast<bool>(Input));
 
   EXPECT_FALSE(Executor.execute(*Scopes.Session, *Scopes.Task, TestPhaseID,
                                 route(), *Input, Slot));
   EXPECT_EQ(ProviderCalls, 1);
   EXPECT_EQ(Slot.payload(), &Payload);
-  EXPECT_EQ(Trace,
-            (std::vector<std::string>{
-                "observer-one:before", "observer-two:before",
-                "interceptor-one", "interceptor-two", "provider",
-                "observer-two:after", "observer-one:after"}));
+  EXPECT_EQ(Trace, (std::vector<std::string>{
+                       "observer-one:before", "observer-two:before",
+                       "interceptor-one", "interceptor-two", "provider",
+                       "observer-two:after", "observer-one:after"}));
   EXPECT_EQ(Destroyed, 0);
   EXPECT_EQ(SecondObserver.CandidateLookup, NEVERC_STATUS_OK);
 }
@@ -940,14 +928,13 @@ TEST(PluginPhaseExecutionTest,
   Replacer.Task = Scopes.Task.get();
   Replacer.Replacement = &Replacement;
   Replacer.Replace = true;
-  ASSERT_FALSE(Executor.addInterceptor(
-      TestPluginID, interceptorDescriptor(Replacer)));
+  ASSERT_FALSE(
+      Executor.addInterceptor(TestPluginID, interceptorDescriptor(Replacer)));
   ASSERT_FALSE(Executor.setBuiltinProvider(
-      TestPhaseID,
-      [&](const NevercPhaseFrame *, NevercPhaseResult *Result) {
+      TestPhaseID, [&](const NevercPhaseFrame *, NevercPhaseResult *Result) {
         ++BuiltinCalls;
-        auto Candidate = Executor.createCandidate(
-            *Scopes.Task, TestArtifactID, &BuiltinPayload);
+        auto Candidate = Executor.createCandidate(*Scopes.Task, TestArtifactID,
+                                                  &BuiltinPayload);
         if (!Candidate) {
           consumeError(Candidate.takeError());
           return failedStatus();
@@ -957,8 +944,8 @@ TEST(PluginPhaseExecutionTest,
         return neverc_status_ok();
       }));
   int InputPayload = 0;
-  auto Input = Executor.createArtifactView(
-      *Scopes.Task, TestArtifactID, &InputPayload, 1);
+  auto Input = Executor.createArtifactView(*Scopes.Task, TestArtifactID,
+                                           &InputPayload, 1);
   ASSERT_TRUE(static_cast<bool>(Input));
   EXPECT_FALSE(Executor.execute(*Scopes.Session, *Scopes.Task, TestPhaseID,
                                 route(), *Input, Slot));
@@ -971,13 +958,12 @@ TEST(PluginPhaseExecutionTest,
   NevercPhaseResult DummyResult{};
   DummyResult.Header = {sizeof(DummyResult), NEVERC_PLUGIN_ABI_MAJOR,
                         NEVERC_PLUGIN_ABI_MINOR, 0};
-  NevercStatus Escaped = Replacer.Saved.InvokeNext(
-      &Replacer.Saved, &DummyFrame, &DummyResult);
+  NevercStatus Escaped =
+      Replacer.Saved.InvokeNext(&Replacer.Saved, &DummyFrame, &DummyResult);
   EXPECT_EQ(Escaped.Code, NEVERC_STATUS_INVALID_STATE);
 }
 
-TEST(PluginPhaseExecutionTest,
-     RejectsMissingAndRepeatedNextWithoutPublishing) {
+TEST(PluginPhaseExecutionTest, RejectsMissingAndRepeatedNextWithoutPublishing) {
   ActiveScopes Scopes;
   ASSERT_NE(Scopes.Task, nullptr);
   PluginPhaseGraph Graph = makeGraph();
@@ -992,13 +978,12 @@ TEST(PluginPhaseExecutionTest,
     PluginPhaseExecutor Executor(Graph, Artifacts);
     InterceptorData Missing;
     Missing.SkipNext = true;
-    ASSERT_FALSE(Executor.addInterceptor(
-        TestPluginID, interceptorDescriptor(Missing)));
+    ASSERT_FALSE(
+        Executor.addInterceptor(TestPluginID, interceptorDescriptor(Missing)));
     ASSERT_FALSE(Executor.setBuiltinProvider(
-        TestPhaseID,
-        [&](const NevercPhaseFrame *, NevercPhaseResult *Result) {
-          auto Candidate = Executor.createCandidate(
-              *Scopes.Task, TestArtifactID, &Payload);
+        TestPhaseID, [&](const NevercPhaseFrame *, NevercPhaseResult *Result) {
+          auto Candidate =
+              Executor.createCandidate(*Scopes.Task, TestArtifactID, &Payload);
           if (!Candidate) {
             consumeError(Candidate.takeError());
             return failedStatus();
@@ -1008,11 +993,11 @@ TEST(PluginPhaseExecutionTest,
           return neverc_status_ok();
         }));
     int InputPayload = 0;
-    auto Input = Executor.createArtifactView(
-        *Scopes.Task, TestArtifactID, &InputPayload, 1);
+    auto Input = Executor.createArtifactView(*Scopes.Task, TestArtifactID,
+                                             &InputPayload, 1);
     ASSERT_TRUE(static_cast<bool>(Input));
-    Error MissingNext = Executor.execute(
-        *Scopes.Session, *Scopes.Task, TestPhaseID, route(), *Input, Slot);
+    Error MissingNext = Executor.execute(*Scopes.Session, *Scopes.Task,
+                                         TestPhaseID, route(), *Input, Slot);
     ASSERT_TRUE(static_cast<bool>(MissingNext));
     EXPECT_NE(takeErrorMessage(std::move(MissingNext)).find("InvokeNext"),
               std::string::npos);
@@ -1026,13 +1011,12 @@ TEST(PluginPhaseExecutionTest,
     PluginPhaseExecutor Executor(Graph, Artifacts);
     InterceptorData Repeated;
     Repeated.CallTwice = true;
-    ASSERT_FALSE(Executor.addInterceptor(
-        TestPluginID, interceptorDescriptor(Repeated)));
+    ASSERT_FALSE(
+        Executor.addInterceptor(TestPluginID, interceptorDescriptor(Repeated)));
     ASSERT_FALSE(Executor.setBuiltinProvider(
-        TestPhaseID,
-        [&](const NevercPhaseFrame *, NevercPhaseResult *Result) {
-          auto Candidate = Executor.createCandidate(
-              *RepeatedScopes.Task, TestArtifactID, &Payload);
+        TestPhaseID, [&](const NevercPhaseFrame *, NevercPhaseResult *Result) {
+          auto Candidate = Executor.createCandidate(*RepeatedScopes.Task,
+                                                    TestArtifactID, &Payload);
           if (!Candidate) {
             consumeError(Candidate.takeError());
             return failedStatus();
@@ -1042,12 +1026,12 @@ TEST(PluginPhaseExecutionTest,
           return neverc_status_ok();
         }));
     int InputPayload = 0;
-    auto Input = Executor.createArtifactView(
-        *RepeatedScopes.Task, TestArtifactID, &InputPayload, 1);
+    auto Input = Executor.createArtifactView(*RepeatedScopes.Task,
+                                             TestArtifactID, &InputPayload, 1);
     ASSERT_TRUE(static_cast<bool>(Input));
-    Error RepeatedNext = Executor.execute(
-        *RepeatedScopes.Session, *RepeatedScopes.Task, TestPhaseID, route(),
-        *Input, RepeatedSlot);
+    Error RepeatedNext =
+        Executor.execute(*RepeatedScopes.Session, *RepeatedScopes.Task,
+                         TestPhaseID, route(), *Input, RepeatedSlot);
     ASSERT_TRUE(static_cast<bool>(RepeatedNext));
     EXPECT_NE(takeErrorMessage(std::move(RepeatedNext)).find("InvokeNext"),
               std::string::npos);
@@ -1077,16 +1061,15 @@ TEST(PluginPhaseExecutionTest,
   ObserverData Failing{&Trace, "failing", true};
   ProviderData Candidate{&Executor, Scopes.Task.get(), nullptr,
                          &CandidatePayload, nullptr};
-  ASSERT_FALSE(Executor.addObserver(TestPluginID,
-                                    observerDescriptor(Failing)));
+  ASSERT_FALSE(Executor.addObserver(TestPluginID, observerDescriptor(Failing)));
   ASSERT_FALSE(Executor.addProvider(
       TestPluginID, providerDescriptor("provider-one", Candidate)));
   int InputPayload = 0;
-  auto Input = Executor.createArtifactView(
-      *Scopes.Task, TestArtifactID, &InputPayload, 1);
+  auto Input = Executor.createArtifactView(*Scopes.Task, TestArtifactID,
+                                           &InputPayload, 1);
   ASSERT_TRUE(static_cast<bool>(Input));
-  Error FailedAfter = Executor.execute(
-      *Scopes.Session, *Scopes.Task, TestPhaseID, route(), *Input, Slot);
+  Error FailedAfter = Executor.execute(*Scopes.Session, *Scopes.Task,
+                                       TestPhaseID, route(), *Input, Slot);
   ASSERT_TRUE(static_cast<bool>(FailedAfter));
   EXPECT_NE(takeErrorMessage(std::move(FailedAfter)).find("Observer"),
             std::string::npos);
@@ -1100,17 +1083,17 @@ TEST(PluginPhaseExecutionTest,
   ProviderData First{&Conflict, ConflictScopes.Task.get(), nullptr,
                      &CandidatePayload, nullptr};
   ProviderData Second = First;
-  ASSERT_FALSE(Conflict.addProvider(
-      TestPluginID, providerDescriptor("provider-one", First)));
+  ASSERT_FALSE(Conflict.addProvider(TestPluginID,
+                                    providerDescriptor("provider-one", First)));
   ASSERT_FALSE(Conflict.addProvider(
       TestPluginID, providerDescriptor("provider-two", Second)));
   int ConflictInputPayload = 0;
   auto ConflictInput = Conflict.createArtifactView(
       *ConflictScopes.Task, TestArtifactID, &ConflictInputPayload, 1);
   ASSERT_TRUE(static_cast<bool>(ConflictInput));
-  Error Ambiguous = Conflict.execute(
-      *ConflictScopes.Session, *ConflictScopes.Task, TestPhaseID, route(),
-      *ConflictInput, Slot);
+  Error Ambiguous =
+      Conflict.execute(*ConflictScopes.Session, *ConflictScopes.Task,
+                       TestPhaseID, route(), *ConflictInput, Slot);
   ASSERT_TRUE(static_cast<bool>(Ambiguous));
   EXPECT_NE(takeErrorMessage(std::move(Ambiguous)).find("multiple"),
             std::string::npos);
@@ -1165,11 +1148,10 @@ TEST(PluginPhaseExecutionTest,
     Data.Executor = &Executor;
     Data.Task = Scopes.Task.get();
     Data.Payload = &CandidatePayload;
-    ASSERT_FALSE(Executor.addInterceptor(
-        TestPluginID, invalidInterceptorDescriptor(Data)));
+    ASSERT_FALSE(Executor.addInterceptor(TestPluginID,
+                                         invalidInterceptorDescriptor(Data)));
     ASSERT_FALSE(Executor.setBuiltinProvider(
-        TestPhaseID,
-        [&](const NevercPhaseFrame *, NevercPhaseResult *Result) {
+        TestPhaseID, [&](const NevercPhaseFrame *, NevercPhaseResult *Result) {
           auto Candidate = Executor.createCandidate(
               *Scopes.Task, TestArtifactID, &CandidatePayload);
           if (!Candidate) {
@@ -1181,25 +1163,21 @@ TEST(PluginPhaseExecutionTest,
           return neverc_status_ok();
         }));
     int InputPayload = 1;
-    auto Input = Executor.createArtifactView(
-        *Scopes.Task, TestArtifactID, &InputPayload, 1);
+    auto Input = Executor.createArtifactView(*Scopes.Task, TestArtifactID,
+                                             &InputPayload, 1);
     ASSERT_TRUE(static_cast<bool>(Input));
     int DestroyedBefore = Destroyed;
 
-    Error Rejected = Executor.execute(
-        *Scopes.Session, *Scopes.Task, TestPhaseID, route(), *Input,
-        Slot);
+    Error Rejected = Executor.execute(*Scopes.Session, *Scopes.Task,
+                                      TestPhaseID, route(), *Input, Slot);
     ASSERT_TRUE(static_cast<bool>(Rejected));
-    EXPECT_NE(takeErrorMessage(std::move(Rejected))
-                  .find(Current.Message),
+    EXPECT_NE(takeErrorMessage(std::move(Rejected)).find(Current.Message),
               std::string::npos);
     EXPECT_EQ(Slot.payload(), nullptr);
     EXPECT_EQ(Scopes.Task->handles().liveCount(), 1U);
-    EXPECT_EQ(Destroyed, DestroyedBefore +
-                             (Current.CreatesCandidate ? 1 : 0));
+    EXPECT_EQ(Destroyed, DestroyedBefore + (Current.CreatesCandidate ? 1 : 0));
     EXPECT_TRUE(Scopes.Session->isCancelled());
-    if (Current.Mode ==
-        InvalidInterceptorMode::CallNextFromAnotherThread)
+    if (Current.Mode == InvalidInterceptorMode::CallNextFromAnotherThread)
       EXPECT_EQ(Data.ThreadStatus.Code, NEVERC_STATUS_WRONG_SCOPE);
   }
 
@@ -1210,19 +1188,18 @@ TEST(PluginPhaseExecutionTest,
     PluginArtifactSlot Slot(Type);
     PluginPhaseExecutor Executor(Graph, Artifacts);
     int CandidatePayload = 62;
-    ProviderData Data{&Executor, Scopes.Task.get(), nullptr,
-                      &CandidatePayload, nullptr, true};
+    ProviderData Data{&Executor,         Scopes.Task.get(), nullptr,
+                      &CandidatePayload, nullptr,           true};
     ASSERT_FALSE(Executor.addProvider(
         TestPluginID, providerDescriptor("bad-provider", Data)));
     int InputPayload = 2;
-    auto Input = Executor.createArtifactView(
-        *Scopes.Task, TestArtifactID, &InputPayload, 1);
+    auto Input = Executor.createArtifactView(*Scopes.Task, TestArtifactID,
+                                             &InputPayload, 1);
     ASSERT_TRUE(static_cast<bool>(Input));
     int DestroyedBefore = Destroyed;
 
-    Error Rejected = Executor.execute(
-        *Scopes.Session, *Scopes.Task, TestPhaseID, route(), *Input,
-        Slot);
+    Error Rejected = Executor.execute(*Scopes.Session, *Scopes.Task,
+                                      TestPhaseID, route(), *Input, Slot);
     ASSERT_TRUE(static_cast<bool>(Rejected));
     EXPECT_NE(takeErrorMessage(std::move(Rejected)).find("Provider"),
               std::string::npos);
@@ -1233,9 +1210,9 @@ TEST(PluginPhaseExecutionTest,
 
 TEST(PluginPhaseExecutionTest,
      ValidatesLiveStaleAndCrossTaskEquivalenceProofs) {
-  PluginPhaseGraph Graph = makeGraph(
-      NEVERC_PHASE_OBSERVABLE | NEVERC_PHASE_INTERCEPTABLE |
-      NEVERC_PHASE_SKIPPABLE_WITH_PROOF);
+  PluginPhaseGraph Graph =
+      makeGraph(NEVERC_PHASE_OBSERVABLE | NEVERC_PHASE_INTERCEPTABLE |
+                NEVERC_PHASE_SKIPPABLE_WITH_PROOF);
   PluginArtifactRegistry Artifacts;
   int Destroyed = 0;
   auto Type = registerArtifact(Artifacts, Destroyed);
@@ -1246,27 +1223,27 @@ TEST(PluginPhaseExecutionTest,
     ASSERT_NE(Scopes.Task, nullptr);
     PluginArtifactSlot Slot(Type);
     int Published = 10;
-    auto Initial = PluginArtifactTransaction::create(
-        Artifacts, TestArtifactID, &Published);
+    auto Initial = PluginArtifactTransaction::create(Artifacts, TestArtifactID,
+                                                     &Published);
     ASSERT_TRUE(static_cast<bool>(Initial));
     ASSERT_FALSE((*Initial)->commit(Slot));
 
     PluginPhaseExecutor Executor(Graph, Artifacts);
     int InputPayload = 1;
-    auto Input = Executor.createArtifactView(
-        *Scopes.Task, TestArtifactID, &InputPayload, 7);
+    auto Input = Executor.createArtifactView(*Scopes.Task, TestArtifactID,
+                                             &InputPayload, 7);
     ASSERT_TRUE(static_cast<bool>(Input));
-    auto Proof = Executor.createEquivalenceProof(
-        *Scopes.Task, TestPhaseID, *Input, Slot, route());
+    auto Proof = Executor.createEquivalenceProof(*Scopes.Task, TestPhaseID,
+                                                 *Input, Slot, route());
     ASSERT_TRUE(static_cast<bool>(Proof));
     InterceptorData Skipper;
     Skipper.Skip = true;
     Skipper.Proof = *Proof;
-    ASSERT_FALSE(Executor.addInterceptor(
-        TestPluginID, interceptorDescriptor(Skipper)));
+    ASSERT_FALSE(
+        Executor.addInterceptor(TestPluginID, interceptorDescriptor(Skipper)));
 
-    EXPECT_FALSE(Executor.execute(*Scopes.Session, *Scopes.Task,
-                                  TestPhaseID, route(), *Input, Slot));
+    EXPECT_FALSE(Executor.execute(*Scopes.Session, *Scopes.Task, TestPhaseID,
+                                  route(), *Input, Slot));
     EXPECT_EQ(Slot.payload(), &Published);
     EXPECT_EQ(Slot.generation(), 1U);
     EXPECT_FALSE(Scopes.Session->isCancelled());
@@ -1277,18 +1254,18 @@ TEST(PluginPhaseExecutionTest,
     ASSERT_NE(Scopes.Task, nullptr);
     PluginArtifactSlot Slot(Type);
     int OldOutput = 20;
-    auto Initial = PluginArtifactTransaction::create(
-        Artifacts, TestArtifactID, &OldOutput);
+    auto Initial = PluginArtifactTransaction::create(Artifacts, TestArtifactID,
+                                                     &OldOutput);
     ASSERT_TRUE(static_cast<bool>(Initial));
     ASSERT_FALSE((*Initial)->commit(Slot));
 
     PluginPhaseExecutor Executor(Graph, Artifacts);
     int InputPayload = 2;
-    auto Input = Executor.createArtifactView(
-        *Scopes.Task, TestArtifactID, &InputPayload, 8);
+    auto Input = Executor.createArtifactView(*Scopes.Task, TestArtifactID,
+                                             &InputPayload, 8);
     ASSERT_TRUE(static_cast<bool>(Input));
-    auto Proof = Executor.createEquivalenceProof(
-        *Scopes.Task, TestPhaseID, *Input, Slot, route());
+    auto Proof = Executor.createEquivalenceProof(*Scopes.Task, TestPhaseID,
+                                                 *Input, Slot, route());
     ASSERT_TRUE(static_cast<bool>(Proof));
 
     int NewOutput = 21;
@@ -1299,11 +1276,11 @@ TEST(PluginPhaseExecutionTest,
     InterceptorData Skipper;
     Skipper.Skip = true;
     Skipper.Proof = *Proof;
-    ASSERT_FALSE(Executor.addInterceptor(
-        TestPluginID, interceptorDescriptor(Skipper)));
+    ASSERT_FALSE(
+        Executor.addInterceptor(TestPluginID, interceptorDescriptor(Skipper)));
 
-    Error Stale = Executor.execute(*Scopes.Session, *Scopes.Task,
-                                   TestPhaseID, route(), *Input, Slot);
+    Error Stale = Executor.execute(*Scopes.Session, *Scopes.Task, TestPhaseID,
+                                   route(), *Input, Slot);
     ASSERT_TRUE(static_cast<bool>(Stale));
     EXPECT_NE(takeErrorMessage(std::move(Stale)).find("proof"),
               std::string::npos);
@@ -1319,8 +1296,8 @@ TEST(PluginPhaseExecutionTest,
     ASSERT_NE(ExecutionScopes.Task, nullptr);
     PluginArtifactSlot Slot(Type);
     int Published = 30;
-    auto Initial = PluginArtifactTransaction::create(
-        Artifacts, TestArtifactID, &Published);
+    auto Initial = PluginArtifactTransaction::create(Artifacts, TestArtifactID,
+                                                     &Published);
     ASSERT_TRUE(static_cast<bool>(Initial));
     ASSERT_FALSE((*Initial)->commit(Slot));
 
@@ -1339,12 +1316,12 @@ TEST(PluginPhaseExecutionTest,
     InterceptorData Skipper;
     Skipper.Skip = true;
     Skipper.Proof = *ForeignProof;
-    ASSERT_FALSE(Executor.addInterceptor(
-        TestPluginID, interceptorDescriptor(Skipper)));
+    ASSERT_FALSE(
+        Executor.addInterceptor(TestPluginID, interceptorDescriptor(Skipper)));
 
-    Error CrossTask = Executor.execute(
-        *ExecutionScopes.Session, *ExecutionScopes.Task, TestPhaseID,
-        route(), *ExecutionInput, Slot);
+    Error CrossTask =
+        Executor.execute(*ExecutionScopes.Session, *ExecutionScopes.Task,
+                         TestPhaseID, route(), *ExecutionInput, Slot);
     ASSERT_TRUE(static_cast<bool>(CrossTask));
     EXPECT_NE(takeErrorMessage(std::move(CrossTask)).find("proof"),
               std::string::npos);
@@ -1370,10 +1347,10 @@ TEST(PluginPhaseExecutionTest,
     int SecondPayload = 42;
     int FirstCalls = 0;
     int SecondCalls = 0;
-    ProviderData First{&Executor, Scopes.Task.get(), nullptr,
-                       &FirstPayload, &FirstCalls};
-    ProviderData Second{&Executor, Scopes.Task.get(), nullptr,
-                        &SecondPayload, &SecondCalls};
+    ProviderData First{&Executor, Scopes.Task.get(), nullptr, &FirstPayload,
+                       &FirstCalls};
+    ProviderData Second{&Executor, Scopes.Task.get(), nullptr, &SecondPayload,
+                        &SecondCalls};
     NevercProviderDescriptor FirstDescriptor =
         providerDescriptor("first", First);
     FirstDescriptor.Route.TargetTriple = view("aarch64-test-none");
@@ -1384,16 +1361,14 @@ TEST(PluginPhaseExecutionTest,
     SecondDescriptor.Route.ExecutionLevel = 2;
     ASSERT_FALSE(Executor.addProvider(TestPluginID, FirstDescriptor));
     ASSERT_FALSE(Executor.addProvider(SecondPluginID, SecondDescriptor));
-    ASSERT_FALSE(
-        Executor.selectProvider(TestPhaseID, SecondPluginID));
+    ASSERT_FALSE(Executor.selectProvider(TestPhaseID, SecondPluginID));
     int InputPayload = 1;
-    auto Input = Executor.createArtifactView(
-        *Scopes.Task, TestArtifactID, &InputPayload, 1);
+    auto Input = Executor.createArtifactView(*Scopes.Task, TestArtifactID,
+                                             &InputPayload, 1);
     ASSERT_TRUE(static_cast<bool>(Input));
 
-    EXPECT_FALSE(Executor.execute(
-        *Scopes.Session, *Scopes.Task, TestPhaseID,
-        route("aarch64-test-none", 2), *Input, Slot));
+    EXPECT_FALSE(Executor.execute(*Scopes.Session, *Scopes.Task, TestPhaseID,
+                                  route("aarch64-test-none", 2), *Input, Slot));
     EXPECT_EQ(FirstCalls, 0);
     EXPECT_EQ(SecondCalls, 1);
     EXPECT_EQ(Slot.payload(), &SecondPayload);
@@ -1414,15 +1389,14 @@ TEST(PluginPhaseExecutionTest,
     int BuiltinPayload = 52;
     int PluginCalls = 0;
     int BuiltinCalls = 0;
-    ProviderData Plugin{&Executor, Scopes.Task.get(), nullptr,
-                        &PluginPayload, &PluginCalls};
+    ProviderData Plugin{&Executor, Scopes.Task.get(), nullptr, &PluginPayload,
+                        &PluginCalls};
     NevercProviderDescriptor Descriptor =
         providerDescriptor("route-specific", Plugin);
     Descriptor.Route.TargetTriple = view("x86_64-other-none");
     ASSERT_FALSE(Executor.addProvider(TestPluginID, Descriptor));
     ASSERT_FALSE(Executor.setBuiltinProvider(
-        TestPhaseID,
-        [&](const NevercPhaseFrame *, NevercPhaseResult *Result) {
+        TestPhaseID, [&](const NevercPhaseFrame *, NevercPhaseResult *Result) {
           ++BuiltinCalls;
           auto Candidate = Executor.createCandidate(
               *Scopes.Task, TestArtifactID, &BuiltinPayload);
@@ -1435,13 +1409,12 @@ TEST(PluginPhaseExecutionTest,
           return neverc_status_ok();
         }));
     int InputPayload = 2;
-    auto Input = Executor.createArtifactView(
-        *Scopes.Task, TestArtifactID, &InputPayload, 1);
+    auto Input = Executor.createArtifactView(*Scopes.Task, TestArtifactID,
+                                             &InputPayload, 1);
     ASSERT_TRUE(static_cast<bool>(Input));
 
-    EXPECT_FALSE(Executor.execute(
-        *Scopes.Session, *Scopes.Task, TestPhaseID,
-        route("aarch64-test-none", 2), *Input, Slot));
+    EXPECT_FALSE(Executor.execute(*Scopes.Session, *Scopes.Task, TestPhaseID,
+                                  route("aarch64-test-none", 2), *Input, Slot));
     EXPECT_EQ(PluginCalls, 0);
     EXPECT_EQ(BuiltinCalls, 1);
     EXPECT_EQ(Slot.payload(), &BuiltinPayload);
@@ -1465,16 +1438,14 @@ TEST(PluginPhaseExecutionTest,
     int BuiltinPayload = 82;
     int PluginCalls = 0;
     int BuiltinCalls = 0;
-    RecoverableProviderData Data{&Executor, Scopes.Task.get(),
-                                 &FailedCandidate, &PluginCalls};
+    RecoverableProviderData Data{&Executor, Scopes.Task.get(), &FailedCandidate,
+                                 &PluginCalls};
     Data.Core = &Scopes.Services.coreAPI();
     Data.DiagnosticMessage = "discarded fallback diagnostic";
     ASSERT_FALSE(Executor.addProvider(
-        TestPluginID,
-        recoverableProviderDescriptor(Data, NEVERC_TRUE)));
+        TestPluginID, recoverableProviderDescriptor(Data, NEVERC_TRUE)));
     ASSERT_FALSE(Executor.setBuiltinProvider(
-        TestPhaseID,
-        [&](const NevercPhaseFrame *, NevercPhaseResult *Result) {
+        TestPhaseID, [&](const NevercPhaseFrame *, NevercPhaseResult *Result) {
           ++BuiltinCalls;
           auto Candidate = Executor.createCandidate(
               *Scopes.Task, TestArtifactID, &BuiltinPayload);
@@ -1486,16 +1457,15 @@ TEST(PluginPhaseExecutionTest,
           Result->Output = *Candidate;
           return neverc_status_ok();
         }));
-    ASSERT_FALSE(
-        Executor.enableRecoverableBuiltinFallback(TestPhaseID));
+    ASSERT_FALSE(Executor.enableRecoverableBuiltinFallback(TestPhaseID));
     int InputPayload = 1;
-    auto Input = Executor.createArtifactView(
-        *Scopes.Task, TestArtifactID, &InputPayload, 1);
+    auto Input = Executor.createArtifactView(*Scopes.Task, TestArtifactID,
+                                             &InputPayload, 1);
     ASSERT_TRUE(static_cast<bool>(Input));
     int DestroyedBefore = Destroyed;
 
-    EXPECT_FALSE(Executor.execute(*Scopes.Session, *Scopes.Task,
-                                  TestPhaseID, route(), *Input, Slot));
+    EXPECT_FALSE(Executor.execute(*Scopes.Session, *Scopes.Task, TestPhaseID,
+                                  route(), *Input, Slot));
     EXPECT_EQ(PluginCalls, 1);
     EXPECT_EQ(BuiltinCalls, 1);
     EXPECT_EQ(Slot.payload(), &BuiltinPayload);
@@ -1504,8 +1474,7 @@ TEST(PluginPhaseExecutionTest,
     EXPECT_TRUE(Scopes.Session->diagnostics().takeSorted().empty());
     auto Provenance = Executor.fallbackProvenance();
     ASSERT_EQ(Provenance.size(), 1U);
-    EXPECT_NE(Provenance.front().find(TestPluginID),
-              std::string::npos);
+    EXPECT_NE(Provenance.front().find(TestPluginID), std::string::npos);
   }
 
   {
@@ -1521,11 +1490,9 @@ TEST(PluginPhaseExecutionTest,
     Data.Core = &Scopes.Services.coreAPI();
     Data.DiagnosticMessage = "retained terminal diagnostic";
     ASSERT_FALSE(Executor.addProvider(
-        TestPluginID,
-        recoverableProviderDescriptor(Data, NEVERC_TRUE)));
+        TestPluginID, recoverableProviderDescriptor(Data, NEVERC_TRUE)));
     ASSERT_FALSE(Executor.setBuiltinProvider(
-        TestPhaseID,
-        [&](const NevercPhaseFrame *, NevercPhaseResult *Result) {
+        TestPhaseID, [&](const NevercPhaseFrame *, NevercPhaseResult *Result) {
           ++BuiltinCalls;
           auto Candidate = Executor.createCandidate(
               *Scopes.Task, TestArtifactID, &BuiltinPayload);
@@ -1538,24 +1505,21 @@ TEST(PluginPhaseExecutionTest,
           return neverc_status_ok();
         }));
     int InputPayload = 2;
-    auto Input = Executor.createArtifactView(
-        *Scopes.Task, TestArtifactID, &InputPayload, 1);
+    auto Input = Executor.createArtifactView(*Scopes.Task, TestArtifactID,
+                                             &InputPayload, 1);
     ASSERT_TRUE(static_cast<bool>(Input));
 
-    Error NoOptIn = Executor.execute(
-        *Scopes.Session, *Scopes.Task, TestPhaseID, route(), *Input,
-        Slot);
+    Error NoOptIn = Executor.execute(*Scopes.Session, *Scopes.Task, TestPhaseID,
+                                     route(), *Input, Slot);
     ASSERT_TRUE(static_cast<bool>(NoOptIn));
     consumeError(std::move(NoOptIn));
     EXPECT_EQ(PluginCalls, 1);
     EXPECT_EQ(BuiltinCalls, 0);
     EXPECT_EQ(Slot.payload(), nullptr);
     EXPECT_TRUE(Scopes.Session->isCancelled());
-    auto Diagnostics =
-        Scopes.Session->diagnostics().takeSorted();
+    auto Diagnostics = Scopes.Session->diagnostics().takeSorted();
     ASSERT_EQ(Diagnostics.size(), 1U);
-    EXPECT_EQ(Diagnostics[0].Message,
-              "retained terminal diagnostic");
+    EXPECT_EQ(Diagnostics[0].Message, "retained terminal diagnostic");
     EXPECT_TRUE(Executor.fallbackProvenance().empty());
   }
 
@@ -1571,24 +1535,20 @@ TEST(PluginPhaseExecutionTest,
     Data.Flags = NEVERC_STATUS_FLAG_RECOVERABLE |
                  NEVERC_STATUS_FLAG_OUTPUT_ALREADY_COMMITTED;
     ASSERT_FALSE(Executor.addProvider(
-        TestPluginID,
-        recoverableProviderDescriptor(Data, NEVERC_TRUE)));
+        TestPluginID, recoverableProviderDescriptor(Data, NEVERC_TRUE)));
     ASSERT_FALSE(Executor.setBuiltinProvider(
-        TestPhaseID,
-        [&](const NevercPhaseFrame *, NevercPhaseResult *) {
+        TestPhaseID, [&](const NevercPhaseFrame *, NevercPhaseResult *) {
           ++BuiltinCalls;
           return failedStatus();
         }));
-    ASSERT_FALSE(
-        Executor.enableRecoverableBuiltinFallback(TestPhaseID));
+    ASSERT_FALSE(Executor.enableRecoverableBuiltinFallback(TestPhaseID));
     int InputPayload = 3;
-    auto Input = Executor.createArtifactView(
-        *Scopes.Task, TestArtifactID, &InputPayload, 1);
+    auto Input = Executor.createArtifactView(*Scopes.Task, TestArtifactID,
+                                             &InputPayload, 1);
     ASSERT_TRUE(static_cast<bool>(Input));
 
     Error CommittedEffect = Executor.execute(
-        *Scopes.Session, *Scopes.Task, TestPhaseID, route(), *Input,
-        Slot);
+        *Scopes.Session, *Scopes.Task, TestPhaseID, route(), *Input, Slot);
     ASSERT_TRUE(static_cast<bool>(CommittedEffect));
     consumeError(std::move(CommittedEffect));
     EXPECT_EQ(BuiltinCalls, 0);
@@ -1609,24 +1569,21 @@ TEST(PluginPhaseExecutionTest,
   PluginArtifactSlot Slot(Type);
   PluginPhaseExecutor Executor(Graph, Artifacts);
   int InputPayload = 1;
-  auto Input = Executor.createArtifactView(
-      *Scopes.Task, TestArtifactID, &InputPayload, 1);
+  auto Input = Executor.createArtifactView(*Scopes.Task, TestArtifactID,
+                                           &InputPayload, 1);
   ASSERT_TRUE(static_cast<bool>(Input));
   std::string RecursiveFailure;
   ASSERT_FALSE(Executor.setBuiltinProvider(
-      TestPhaseID,
-      [&](const NevercPhaseFrame *, NevercPhaseResult *) {
-        Error Recursive = Executor.execute(
-            *Scopes.Session, *Scopes.Task, TestPhaseID, route(), *Input,
-            Slot);
+      TestPhaseID, [&](const NevercPhaseFrame *, NevercPhaseResult *) {
+        Error Recursive = Executor.execute(*Scopes.Session, *Scopes.Task,
+                                           TestPhaseID, route(), *Input, Slot);
         if (Recursive)
-          RecursiveFailure =
-              takeErrorMessage(std::move(Recursive));
+          RecursiveFailure = takeErrorMessage(std::move(Recursive));
         return failedStatus();
       }));
 
-  Error Failed = Executor.execute(
-      *Scopes.Session, *Scopes.Task, TestPhaseID, route(), *Input, Slot);
+  Error Failed = Executor.execute(*Scopes.Session, *Scopes.Task, TestPhaseID,
+                                  route(), *Input, Slot);
   ASSERT_TRUE(static_cast<bool>(Failed));
   consumeError(std::move(Failed));
   EXPECT_NE(RecursiveFailure.find("recursively"), std::string::npos);
@@ -1634,8 +1591,7 @@ TEST(PluginPhaseExecutionTest,
   EXPECT_TRUE(Scopes.Session->isCancelled());
 }
 
-TEST(PluginPhaseExecutionTest,
-     SealedCommitPublishesBeforeAfterCommitFailure) {
+TEST(PluginPhaseExecutionTest, SealedCommitPublishesBeforeAfterCommitFailure) {
   ActiveScopes Scopes;
   ASSERT_NE(Scopes.Task, nullptr);
   PluginPhaseGraph Graph;
@@ -1646,10 +1602,8 @@ TEST(PluginPhaseExecutionTest,
   Phase.Verifier = "test.verify";
   Phase.InputArtifact = TestArtifactID;
   Phase.OutputArtifact = TestArtifactID;
-  Phase.Policy = NEVERC_PHASE_OBSERVABLE |
-                 NEVERC_PHASE_SEALED_HOST_GATE;
-  Phase.ObserverPoints = NEVERC_OBSERVER_BEFORE |
-                         NEVERC_OBSERVER_AFTER |
+  Phase.Policy = NEVERC_PHASE_OBSERVABLE | NEVERC_PHASE_SEALED_HOST_GATE;
+  Phase.ObserverPoints = NEVERC_OBSERVER_BEFORE | NEVERC_OBSERVER_AFTER |
                          NEVERC_OBSERVER_AFTER_COMMIT;
   Phase.Gate = PluginPhaseGateKind::SealedCommit;
   Phase.HasBuiltinFallback = true;
@@ -1666,16 +1620,14 @@ TEST(PluginPhaseExecutionTest,
   LateObserver.Trace = &Trace;
   LateObserver.Name = "late";
   LateObserver.FailPoint = NEVERC_OBSERVER_AFTER_COMMIT;
-  NevercObserverDescriptor Descriptor =
-      observerDescriptor(LateObserver);
+  NevercObserverDescriptor Descriptor = observerDescriptor(LateObserver);
   Descriptor.Points = NEVERC_OBSERVER_AFTER_COMMIT;
   ASSERT_FALSE(Executor.addObserver(TestPluginID, Descriptor));
   int Published = 71;
   ASSERT_FALSE(Executor.setBuiltinProvider(
-      TestPhaseID,
-      [&](const NevercPhaseFrame *, NevercPhaseResult *Result) {
-        auto Candidate = Executor.createCandidate(
-            *Scopes.Task, TestArtifactID, &Published);
+      TestPhaseID, [&](const NevercPhaseFrame *, NevercPhaseResult *Result) {
+        auto Candidate =
+            Executor.createCandidate(*Scopes.Task, TestArtifactID, &Published);
         if (!Candidate) {
           consumeError(Candidate.takeError());
           return failedStatus();
@@ -1685,19 +1637,18 @@ TEST(PluginPhaseExecutionTest,
         return neverc_status_ok();
       }));
   int InputPayload = 1;
-  auto Input = Executor.createArtifactView(
-      *Scopes.Task, TestArtifactID, &InputPayload, 1);
+  auto Input = Executor.createArtifactView(*Scopes.Task, TestArtifactID,
+                                           &InputPayload, 1);
   ASSERT_TRUE(static_cast<bool>(Input));
 
-  Error LateFailure = Executor.execute(
-      *Scopes.Session, *Scopes.Task, TestPhaseID, route(), *Input, Slot);
+  Error LateFailure = Executor.execute(*Scopes.Session, *Scopes.Task,
+                                       TestPhaseID, route(), *Input, Slot);
   ASSERT_TRUE(static_cast<bool>(LateFailure));
   EXPECT_NE(takeErrorMessage(std::move(LateFailure)).find("Observer"),
             std::string::npos);
   EXPECT_EQ(Slot.payload(), &Published);
   EXPECT_EQ(Slot.generation(), 1U);
-  EXPECT_EQ(Trace,
-            (std::vector<std::string>{"late:after"}));
+  EXPECT_EQ(Trace, (std::vector<std::string>{"late:after"}));
   EXPECT_TRUE(Scopes.Session->isCancelled());
 }
 
@@ -1710,8 +1661,7 @@ TEST(PluginPhaseExecutionTest, SealedGateRejectsInterceptorRegistration) {
   Phase.Verifier = "test.verify";
   Phase.InputArtifact = TestArtifactID;
   Phase.OutputArtifact = TestArtifactID;
-  Phase.Policy = NEVERC_PHASE_OBSERVABLE |
-                 NEVERC_PHASE_SEALED_HOST_GATE;
+  Phase.Policy = NEVERC_PHASE_OBSERVABLE | NEVERC_PHASE_SEALED_HOST_GATE;
   Phase.ObserverPoints = NEVERC_OBSERVER_BEFORE | NEVERC_OBSERVER_AFTER;
   Phase.Gate = PluginPhaseGateKind::SealedVerifier;
   Phase.HasBuiltinFallback = true;
@@ -1722,8 +1672,8 @@ TEST(PluginPhaseExecutionTest, SealedGateRejectsInterceptorRegistration) {
   ASSERT_NE(registerArtifact(Artifacts, Destroyed), nullptr);
   PluginPhaseExecutor Executor(Graph, Artifacts);
   InterceptorData Data;
-  Error Rejected = Executor.addInterceptor(
-      TestPluginID, interceptorDescriptor(Data));
+  Error Rejected =
+      Executor.addInterceptor(TestPluginID, interceptorDescriptor(Data));
   ASSERT_TRUE(static_cast<bool>(Rejected));
   EXPECT_NE(takeErrorMessage(std::move(Rejected)).find("sealed"),
             std::string::npos);

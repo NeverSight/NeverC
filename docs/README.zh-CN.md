@@ -104,7 +104,7 @@ NeverC 项目的主要规划方向：标准库、EVM 智能合约后端和 Solan
 | [`neverc update`](update/README.zh-CN.md) | 升级或降级 release 安装（编译器与已装 runtime 同步到同一标签） |
 | [`neverc runtime`](runtime/README.zh-CN.md) | 安装、列出、更新或移除交叉编译 sysroot |
 | [`neverc build` / `neverc make`](build/README.zh-CN.md) | 面向示例与项目 Makefile 的 GNU Make 兼容驱动 |
-| [发布二进制与 `--strip`](release-builds/README.zh-CN.md) | 删除非运行时符号与源码调试信息，包括内核感知的 `.ko` 符号假名化 |
+| [发布二进制与 `--strip`](release-builds/README.zh-CN.md) | 删除非运行时符号与源码调试信息，并对 `.ko` 进行内核感知的结构化符号重命名（不是 hash，也不是 encryption） |
 
 ---
 

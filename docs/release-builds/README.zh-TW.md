@@ -153,6 +153,51 @@ trace 中繼資料、`__ksymtab_strings`、`.rodata` 與字串常值等獨立儲
 變更，因此依符號使用 ftrace、kprobe/BPF，以及閱讀當機報告都會較不方便。
 診斷時請使用未剝離的 debug 建置，發布模組也不得依賴私有符號的原始名稱。
 
+### 最終 Android 發布的 plugin 邊界
+
+發布收尾會在 plugin 輸出階段兩側建立兩個彼此獨立、失敗即關閉的身分邊界：
+
+- 在任何可替換的 `ObjectGraph` 階段之前，圖身分封印會綁定每個保留邏輯區段的
+  `section ID`、`final ordinal` 與精確名稱；也會把每個必須保持原名之符號的
+  `symbol ID` 綁定至其名稱、類別、定義區段、值、大小、binding、type 與完整
+  `st_other`。發布驗證器會另外重新計算一般結構名。
+- 宿主建立可信寫出基線之後、`neverc.object.post_write` 之前，映像身分封印會
+  綁定每個保留邏輯區段的序號/名稱、`.symtab` 總項目數，並把每個精確名稱
+  符號的名稱與屬性綁定至原始 `.symtab` `slot`。
+
+因此能力矩陣刻意限制為：
+
+| 階段綁定 | 最終 Android 發布行為 |
+|----------|-----------------------|
+| `neverc.object.write` `provider` / `interceptor` | `REJECTED`；在它能替換宿主建立的可信寫出基線之前拒絕 |
+| `plugin-owned ObjectFormat graph writer` | `REJECTED`；最終 Android 發布必須使用負責建立可信基線的宿主自有 graph writer |
+| `observer` | `READ_ONLY`；允許觀察，但不能修改產物 |
+| `neverc.object.post_write` `interceptor` | `VALIDATED`；只能修改不屬於身分面的 payload 位元組，而且結果必須繼續通過發布驗證器、輸入 ABI 合約與兩層身分封印 |
+
+最終合併的所有權同樣由宿主封閉。來自 `third-party ObjectMergeProvider` 的
+`MergedImage` 或獨立位元組會被丟棄，由 `host-owned graph writer` 序列化該 provider
+已驗證並完成收尾的圖。反向一側，`built-in finalized input serialization` 會繞過
+`external object phases`，把完全一致的 `audited native bytes` 交給宿主 merger；
+這個內部輸入步驟不會繞過上述輸出邊界。
+
+Finalization 只在 `Android module merge semantics` 下接受；
+`relocatable output request` 與 `relocatable driver configuration` 也必須同時成立，
+否則會在 `before routing` 失敗。對於最終 Android relocatable 發布，
+`frozen input format`、
+`TargetKey.ObjectFormatID` 與 `frozen output format` 必須共享
+`one format identity`。不一致會在 `before provider dispatch` 被拒絕——這也早於
+route planning 與 sink creation——因此能力預檢和實際 graph-writer dispatch
+不可能看到不同格式。
+
+對於 ObjectGraph 能完整表達的一般輸入，較早的圖 interceptor 只有在同時保持
+圖封印與全部發布語意時才能執行。若輸入包含 `ObjectGraph` 無法表達、必須靠
+原生映像透傳的事實，所有可替換的 `route-matching provider` 與所有 interceptor
+都會被拒絕；target/CPU/features/object-format/execution-level route 不相符的 provider
+既不執行，也不阻止發布。只允許唯讀 observer。只有發生在
+`before sealed commit` 的拒絕或驗證失敗才會中止 staging
+且不發布檔案；`AFTER_COMMIT` observer 的失敗發生在發布之後，只會被回報，
+無法回滾已發布的檔案。
+
 不要再用 `llvm-strip --strip-all` 或 `objcopy` 後處理 `.ko`，也不要任意移除
 codetag/BTF/ABI 區段。若需簽署模組，必須先剝離，再簽署最終位元組；簽署後
 的任何變更都會使簽章失效。`clean` 只能刪除檔案，絕不能剝離或簽署現有模組。

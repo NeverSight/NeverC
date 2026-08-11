@@ -125,9 +125,9 @@ Error validateReleaseSymbolType(const ReleaseSymbolDescriptor &Symbol) {
 using ReleaseSectionsByID =
     std::map<uint64_t, const ReleaseSectionDescriptor *>;
 
-Expected<const ReleaseSectionDescriptor *> validateReleaseSymbol(
-    const ReleaseSymbolDescriptor &Symbol,
-    const ReleaseSectionsByID &SectionsByID) {
+Expected<const ReleaseSectionDescriptor *>
+validateReleaseSymbol(const ReleaseSymbolDescriptor &Symbol,
+                      const ReleaseSectionsByID &SectionsByID) {
   using SymbolClass = AndroidKernelModuleSymbolPolicy::SymbolClass;
   if (Symbol.Class != SymbolClass::Defined &&
       Symbol.Class != SymbolClass::Absolute &&
@@ -149,8 +149,9 @@ Expected<const ReleaseSectionDescriptor *> validateReleaseSymbol(
     return createStringError(inconvertibleErrorCode(),
                              "Android release symbol is past section end");
   if (Symbol.Size > DefinedSection->Size - Symbol.Value)
-    return createStringError(inconvertibleErrorCode(),
-                             "Android release symbol extent is past section end");
+    return createStringError(
+        inconvertibleErrorCode(),
+        "Android release symbol extent is past section end");
   if (!DefinedSection->Allocated && Symbol.Type == ReleaseSymbolType::Function)
     return createStringError(
         inconvertibleErrorCode(),

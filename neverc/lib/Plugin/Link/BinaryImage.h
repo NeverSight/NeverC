@@ -102,8 +102,7 @@ public:
   static llvm::Expected<std::shared_ptr<PluginBinaryImage>>
   emit(PluginTaskContext &Task, const NevercIOAPI &IO,
        NevercOutputSinkHandle Sink, const PluginLinkGraph &Graph,
-       NevercLinkOutputKind OutputKind =
-           NEVERC_LINK_OUTPUT_EXECUTABLE);
+       NevercLinkOutputKind OutputKind = NEVERC_LINK_OUTPUT_EXECUTABLE);
 
   ~PluginBinaryImage();
 
@@ -120,37 +119,27 @@ public:
   uint64_t imageBase() const { return ImageBase; }
   uint64_t importCount() const { return ImportCount; }
   uint64_t exportCount() const { return ExportCount; }
-  uint64_t dynamicRelocationCount() const {
-    return DynamicRelocationCount;
-  }
-  llvm::ArrayRef<PluginBinarySegment> segments() const {
-    return Segments;
-  }
-  llvm::ArrayRef<PluginBinarySection> sections() const {
-    return Sections;
-  }
+  uint64_t dynamicRelocationCount() const { return DynamicRelocationCount; }
+  llvm::ArrayRef<PluginBinarySegment> segments() const { return Segments; }
+  llvm::ArrayRef<PluginBinarySection> sections() const { return Sections; }
   llvm::ArrayRef<PluginBinaryDirectory> directories() const {
     return Directories;
   }
   llvm::ArrayRef<uint8_t> bytes() const { return Builder->bytes(); }
-  const NevercMutableBinaryAPI &binaryAPI() const {
-    return Builder->api();
-  }
+  const NevercMutableBinaryAPI &binaryAPI() const { return Builder->api(); }
   const NevercMutableBinaryAPI &readOnlyBinaryAPI() const {
     return Builder->readOnlyAPI();
   }
-  const NevercMutableBinaryAPI &
-  capabilityBinaryAPI(const void *Domain, uint64_t Token) {
+  const NevercMutableBinaryAPI &capabilityBinaryAPI(const void *Domain,
+                                                    uint64_t Token) {
     return Builder->capabilityAPI(Domain, Token);
   }
-  const NevercLinkAPI &linkAPI() const {
-    return UnrestrictedLinkFacade->API;
-  }
+  const NevercLinkAPI &linkAPI() const { return UnrestrictedLinkFacade->API; }
   const NevercLinkAPI &readOnlyLinkAPI() const {
     return ReadOnlyLinkFacade->API;
   }
-  const NevercLinkAPI &
-  capabilityLinkAPI(const PluginPhaseExecutor &Executor, uint64_t Token);
+  const NevercLinkAPI &capabilityLinkAPI(const PluginPhaseExecutor &Executor,
+                                         uint64_t Token);
   NevercMutableBinaryBuilderHandle builderHandle() const {
     return Builder->handle();
   }
@@ -162,24 +151,20 @@ public:
   llvm::Error abort();
 
 private:
-  PluginBinaryImage(PluginTaskContext &Task,
-                    NevercLinkOutputKind OutputKind,
-                    NevercTargetID TargetID,
-                    NevercObjectFormatID FormatID,
-                    uint64_t EntryAddress, uint64_t ImageBase,
-                    uint64_t ImportCount, uint64_t ExportCount,
-                    uint64_t DynamicRelocationCount,
-                    std::vector<PluginBinarySegment> Segments,
-                    std::vector<PluginBinarySection> Sections,
-                    std::vector<PluginBinaryDirectory> Directories,
-                    std::function<llvm::Error(
-                        llvm::ArrayRef<uint8_t>)> FormatVerifier,
-                    std::unique_ptr<MutableBinaryBuilder> Builder);
+  PluginBinaryImage(
+      PluginTaskContext &Task, NevercLinkOutputKind OutputKind,
+      NevercTargetID TargetID, NevercObjectFormatID FormatID,
+      uint64_t EntryAddress, uint64_t ImageBase, uint64_t ImportCount,
+      uint64_t ExportCount, uint64_t DynamicRelocationCount,
+      std::vector<PluginBinarySegment> Segments,
+      std::vector<PluginBinarySection> Sections,
+      std::vector<PluginBinaryDirectory> Directories,
+      std::function<llvm::Error(llvm::ArrayRef<uint8_t>)> FormatVerifier,
+      std::unique_ptr<MutableBinaryBuilder> Builder);
   llvm::Error initializeHandles();
   std::shared_ptr<detail::BinaryImageAPIFacade>
   createLinkAPIFacade(detail::BinaryImageAPIAccess Access,
-                      const void *MutationDomain = nullptr,
-                      uint64_t Token = 0);
+                      const void *MutationDomain = nullptr, uint64_t Token = 0);
 
   PluginTaskContext &Task;
   NevercLinkOutputKind OutputKind;

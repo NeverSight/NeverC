@@ -59,6 +59,10 @@ public:
   write(PluginTaskContext &Task, PluginObjectGraph &Graph,
         const ObjectOutputDestination &Destination) const;
 
+  /// True when graph serialization for this format would execute a plugin
+  /// callback rather than the host-owned built-in writer.
+  bool hasPluginOwnedGraphWriter(NevercObjectFormatID FormatID) const;
+
   const ObjectFormatRegistry &registry() const { return *Registry; }
 
 private:

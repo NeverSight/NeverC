@@ -2,8 +2,8 @@
 #include "neverc/Plugin/Host/PluginHandleArena.h"
 #include "neverc/Plugin/Host/PluginProcessServices.h"
 #include "neverc/Plugin/Host/PluginSession.h"
-#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/ErrorHandling.h"
 #include <cassert>
@@ -28,8 +28,7 @@ bool validTaskKind(NevercTaskKind Kind) {
   return Kind >= NEVERC_TASK_INVOCATION && Kind <= NEVERC_TASK_DYNCODE;
 }
 
-Error validateTaskCallbackStatus(const PluginModule &Module,
-                                 StringRef Callback,
+Error validateTaskCallbackStatus(const PluginModule &Module, StringRef Callback,
                                  NevercStatus Status) {
   if (Status.Code == NEVERC_STATUS_OK) {
     if (Status.Flags == 0 && Status.Detail == 0)
@@ -43,9 +42,9 @@ Error validateTaskCallbackStatus(const PluginModule &Module,
     return taskError("plugin '" + Module.descriptor().PluginID +
                      "' callback '" + Callback +
                      "' returned an unknown status code");
-  return taskError("plugin '" + Module.descriptor().PluginID +
-                   "' callback '" + Callback +
-                   "' failed with status code " + Twine(Status.Code));
+  return taskError("plugin '" + Module.descriptor().PluginID + "' callback '" +
+                   Callback + "' failed with status code " +
+                   Twine(Status.Code));
 }
 
 } // namespace
@@ -62,9 +61,8 @@ struct PluginTaskContext::PluginState {
 PluginTaskContext::PluginTaskContext(PluginSession &SessionValue,
                                      NevercTaskKind KindValue,
                                      PluginTaskContext *ParentValue)
-    : Session(SessionValue),
-      ProcessServices(SessionValue.ProcessServices), Kind(KindValue),
-      Parent(ParentValue) {
+    : Session(SessionValue), ProcessServices(SessionValue.ProcessServices),
+      Kind(KindValue), Parent(ParentValue) {
   PluginStates.reserve(Session.Modules.size());
   for (const auto &Module : Session.Modules)
     PluginStates.push_back(std::make_unique<PluginState>(Module));
@@ -106,12 +104,10 @@ Error PluginTaskContext::initialize() {
     return taskError("plugin task has an invalid task kind");
   if (Parent) {
     if (&Parent->Session != &Session)
-      return taskError(
-          "plugin child task belongs to a different session");
+      return taskError("plugin child task belongs to a different session");
     std::lock_guard<std::mutex> ParentLock(Parent->LifecycleMutex);
     if (Parent->Ending || Parent->Ended)
-      return taskError(
-          "cannot create a child task from an ending parent");
+      return taskError("cannot create a child task from an ending parent");
     Parent->ActiveChildren.fetch_add(1, std::memory_order_acq_rel);
   }
 
@@ -122,8 +118,7 @@ Error PluginTaskContext::initialize() {
     return Owner.takeError();
   }
   Handle.Owner = *Owner;
-  Handle.Value =
-      (UINT64_C(3) << 48) | (UINT64_C(1) << 32) | UINT64_C(1);
+  Handle.Value = (UINT64_C(3) << 48) | (UINT64_C(1) << 32) | UINT64_C(1);
 
   if (Error E = Session.registerTask(*this)) {
     if (Parent)
@@ -180,12 +175,11 @@ Error PluginTaskContext::initialize() {
         false, this);
     if (!Result)
       return failInitialization(Result.takeError());
-    if (Error E = validateTaskCallbackStatus(*State->Module, "TaskBegin",
-                                             *Result)) {
+    if (Error E =
+            validateTaskCallbackStatus(*State->Module, "TaskBegin", *Result)) {
       if (Result->Code != NEVERC_STATUS_OK && OutState != nullptr)
-        E = joinErrors(
-            std::move(E),
-            taskError("failed TaskBegin returned a non-null state"));
+        E = joinErrors(std::move(E),
+                       taskError("failed TaskBegin returned a non-null state"));
       return failInitialization(std::move(E));
     }
     State->State = OutState;
@@ -220,10 +214,9 @@ Error PluginTaskContext::rollbackBegunPlugins() {
       if (!Result)
         CleanupErrors =
             joinErrors(std::move(CleanupErrors), Result.takeError());
-      else if (Error E = validateTaskCallbackStatus(
-                   *State.Module, "TaskEnd", *Result))
-        CleanupErrors =
-            joinErrors(std::move(CleanupErrors), std::move(E));
+      else if (Error E = validateTaskCallbackStatus(*State.Module, "TaskEnd",
+                                                    *Result))
+        CleanupErrors = joinErrors(std::move(CleanupErrors), std::move(E));
     }
     State.State = nullptr;
     State.Begun = false;
@@ -242,19 +235,17 @@ Error PluginTaskContext::end() {
     if (Children != 0)
       return taskError("cannot end plugin task while " + Twine(Children) +
                        " child task(s) remain");
-    uint64_t Callbacks =
-        ActiveCallbacks.load(std::memory_order_acquire);
+    uint64_t Callbacks = ActiveCallbacks.load(std::memory_order_acquire);
     if (Callbacks != 0)
       return taskError("cannot end plugin task while " + Twine(Callbacks) +
                        " callback(s) are active");
     Ending = true;
   }
 
-  Error CleanupErrors =
-      RegisteredScope ? ProcessServices.prepareTaskScopeEnd(Handle)
-                      : Error::success();
-  CleanupErrors =
-      joinErrors(std::move(CleanupErrors), rollbackBegunPlugins());
+  Error CleanupErrors = RegisteredScope
+                            ? ProcessServices.prepareTaskScopeEnd(Handle)
+                            : Error::success();
+  CleanupErrors = joinErrors(std::move(CleanupErrors), rollbackBegunPlugins());
   if (HandleArena)
     HandleArena->invalidateAll();
   if (RegisteredScope) {

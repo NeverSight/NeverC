@@ -2,7 +2,8 @@
 #
 # check-docs-links covers docs/ and examples/ in every locale, plus the
 # English-only pages a reader still follows links out of; check-docs-facts
-# pins the plugin API guides to the phase schema and the public headers.  The
+# pins the plugin API guides to the phase schema and public headers, and pins
+# the release guides to the Android release implementation and examples.  The
 # paths below have to list everything the checkers read, or a page can be
 # broken by a commit that never triggers this workflow -- so check-docs-links
 # holds the list to the tree, and a file that grows a link without appearing
@@ -19,6 +20,7 @@ on:
     paths:
       - 'docs/**'
       - 'examples/**/README*.md'
+      - 'examples/android-kernel-*/Makefile'
       - 'README.md'
       - 'SECURITY.md'
       - 'development.md'
@@ -27,7 +29,19 @@ on:
       - 'neverc/include/neverc/Plugin/**'
       - 'neverc/include/neverc/DynCode/**'
       - 'neverc/include/neverc/Invoke/**'
+      - 'neverc/include/neverc/Foundation/AndroidKernelModuleSymbolPolicy.h'
+      - 'neverc/include/neverc/Linker/Core/Driver/Dispatcher.h'
       - 'neverc/lib/Emit/**'
+      - 'neverc/lib/Foundation/Core/AndroidKernelModuleReleaseNames.cpp'
+      - 'neverc/lib/Invoke/Core/Driver.cpp'
+      - 'neverc/lib/Invoke/ToolChains/CommonArgs.cpp'
+      - 'neverc/lib/Invoke/ToolChains/NeverC.cpp'
+      - 'neverc/lib/Plugin/Link/AndroidKernelReleaseIdentitySeal.cpp'
+      - 'neverc/lib/Plugin/Link/BuiltinObjectMergeAdapter.cpp'
+      - 'neverc/lib/Plugin/Link/LinkExecutionHooksBridge.cpp'
+      - 'neverc/lib/Plugin/Core/PluginPhaseExecutor.cpp'
+      - 'neverc/lib/Plugin/Object/ObjectPhaseHooks.cpp'
+      - 'neverc/lib/Plugin/Object/ObjectWriterProvider.cpp'
       - 'llvm/LICENSE.TXT'
       - 'llvm/include/llvm/CodeGen/NeverCCallConv.h'
       - 'llvm/include/llvm/IR/Intrinsic*'
@@ -39,6 +53,7 @@ on:
     paths:
       - 'docs/**'
       - 'examples/**/README*.md'
+      - 'examples/android-kernel-*/Makefile'
       - 'README.md'
       - 'SECURITY.md'
       - 'development.md'
@@ -47,7 +62,19 @@ on:
       - 'neverc/include/neverc/Plugin/**'
       - 'neverc/include/neverc/DynCode/**'
       - 'neverc/include/neverc/Invoke/**'
+      - 'neverc/include/neverc/Foundation/AndroidKernelModuleSymbolPolicy.h'
+      - 'neverc/include/neverc/Linker/Core/Driver/Dispatcher.h'
       - 'neverc/lib/Emit/**'
+      - 'neverc/lib/Foundation/Core/AndroidKernelModuleReleaseNames.cpp'
+      - 'neverc/lib/Invoke/Core/Driver.cpp'
+      - 'neverc/lib/Invoke/ToolChains/CommonArgs.cpp'
+      - 'neverc/lib/Invoke/ToolChains/NeverC.cpp'
+      - 'neverc/lib/Plugin/Link/AndroidKernelReleaseIdentitySeal.cpp'
+      - 'neverc/lib/Plugin/Link/BuiltinObjectMergeAdapter.cpp'
+      - 'neverc/lib/Plugin/Link/LinkExecutionHooksBridge.cpp'
+      - 'neverc/lib/Plugin/Core/PluginPhaseExecutor.cpp'
+      - 'neverc/lib/Plugin/Object/ObjectPhaseHooks.cpp'
+      - 'neverc/lib/Plugin/Object/ObjectWriterProvider.cpp'
       - 'llvm/LICENSE.TXT'
       - 'llvm/include/llvm/CodeGen/NeverCCallConv.h'
       - 'llvm/include/llvm/IR/Intrinsic*'
@@ -92,10 +119,9 @@ jobs:
         with:
           python-version: '3.x'
 
-      - name: Verify the guides agree with the schema and the public headers
+      - name: Verify the guides agree with the schema, headers and release implementation
         run: |
           python3 utils/plugin-api/check-docs-facts.py
           echo ""
-          echo "If this step fails, the guides name a phase, symbol, count or"
-          echo "example target that PhaseSchema.json, the public headers or the"
-          echo "SDK no longer define."
+          echo "If this step fails, a guide disagrees with the schema, public"
+          echo "headers, SDK, Android release implementation, or example profiles."

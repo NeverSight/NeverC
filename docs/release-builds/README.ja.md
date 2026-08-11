@@ -172,6 +172,57 @@ Livepatch モジュールには元のシンボル表の順序とインデック�
 が下がります。診断には未ストリップの debug ビルドを使い、release モジュール
 で private シンボルの元名に依存しないでください。
 
+### 最終 Android release の plugin 境界
+
+finalize 処理は plugin 出力フェーズの両側に、独立した fail-closed の identity
+境界を 2 段階で確立します。
+
+- 置換可能な `ObjectGraph` フェーズより前に、graph identity seal は保持される
+  各 logical section の `section ID`、`final ordinal`、正確な名前を固定します。
+  また、正確な名前を維持する各シンボルの `symbol ID` を、名前、class、section、
+  value、size、binding、type、完全な `st_other` に結び付けます。通常の構造名は
+  release verifier が別途再計算します。
+- host が信頼済み write baseline を確立した後、`neverc.object.post_write` より
+  前に、image identity seal は保持される各 logical section の ordinal/name、
+  `.symtab` の総 entry 数、および各 exact-name symbol の名前と属性を raw
+  `.symtab` `slot` に固定します。
+
+このため capability matrix は意図的に狭くなっています。
+
+| フェーズ binding | 最終 Android release での動作 |
+|------------------|-------------------------------|
+| `neverc.object.write` `provider` / `interceptor` | `REJECTED`。host が確立した信頼済み write baseline を置換できる前に拒否 |
+| `plugin-owned ObjectFormat graph writer` | `REJECTED`。最終 Android release には信頼済み baseline を確立する host-owned graph writer が必要 |
+| `observer` | `READ_ONLY`。観察は許可されるが artifact は変更不可 |
+| `neverc.object.post_write` `interceptor` | `VALIDATED`。identity 面に属さない payload byte だけを変更でき、release verifier、入力 ABI contract、両方の identity seal を通過し続ける必要がある |
+
+最終 merge の所有権も host によって封印されます。`third-party ObjectMergeProvider`
+が返した `MergedImage` または独立した byte 列は破棄され、検証・finalize 済みの
+graph を `host-owned graph writer` が直列化します。一方、
+`built-in finalized input serialization` は `external object phases` を迂回して、
+完全一致する `audited native bytes` を host merger に渡します。この内部入力処理が
+上記の出力境界を迂回することはありません。
+
+Finalization は `Android module merge semantics` の場合にだけ受け入れられます。
+`relocatable output request` と `relocatable driver configuration` の両方も必須で、
+満たさなければ `before routing` に失敗します。最終 Android relocatable release
+では、`frozen input format`、
+`TargetKey.ObjectFormatID`、`frozen output format` が
+`one format identity` を共有しなければなりません。不一致は
+`before provider dispatch`、つまり route planning や sink creation よりも前に
+拒否されるため、capability preflight と実際の graph-writer dispatch が異なる
+format を観測することはありません。
+
+通常の graph-representable input では、前段の graph interceptor は graph seal と
+すべての release semantics を保つ場合だけ実行できます。`ObjectGraph` で表現
+できない事実のため native-image passthrough が必要な input では、置換可能な
+`route-matching provider` とすべての interceptor が拒否されます。
+target/CPU/features/object-format/execution-level route が一致しない provider は実行も
+release の阻止もしません。read-only observer だけが許可されます。
+`before sealed commit` の拒否または検証失敗だけが staging を中止し、ファイルを
+公開しません。`AFTER_COMMIT` observer の失敗は公開後に報告され、公開済み
+ファイルをロールバックできません。
+
 `.ko` を `llvm-strip --strip-all` や `objcopy` で後処理せず、codetag/BTF/ABI
 セクションを安易に削除しないでください。署名はストリップ後の最終バイト列に
 行ってください。署名後の変更は署名を無効にします。`clean` はファイル削除
