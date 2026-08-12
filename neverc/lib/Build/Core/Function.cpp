@@ -555,8 +555,9 @@ void FunctionRegistry::registerBuiltins() {
                      << ".  Stop.\n";
         std::exit(2);
       };
-      std::ofstream Out(Filename,
-                        Append ? (std::ios::app | std::ios::out) : std::ios::out);
+      std::ofstream Out(
+          Filename, Append ? (std::ios::app | std::ios::out | std::ios::binary)
+                           : (std::ios::out | std::ios::binary));
       if (!Out.is_open())
         Fail("open", errno);
       if (HasText)

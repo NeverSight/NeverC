@@ -4,8 +4,9 @@
 # conformance suite and the fuzz smoke corpus under ASan+UBSan.  The thread job
 # builds the plugin unit tests and conformance suite under TSan to catch data
 # races in the multi-Session frontend / LTO / link / dyncode paths and in the
-# shared/exclusive LLVMOption lease.  Intentional LLVM leaks use a small,
-# commented suppression file rather than a blanket suppression.
+# shared/exclusive LLVMOption lease.  Intentional process-lifetime allocations
+# in third-party runtimes use a small, commented suppression file rather than a
+# blanket suppression.
 name: plugin-sanitizers
 
 permissions:
@@ -23,6 +24,7 @@ on:
       - "neverc/include/neverc/Plugin/**"
       - "tests/plugin-conformance/**"
       - ".github/workflows/plugin-sanitizers.yml"
+      - ".github/plugin-sanitizers.lsan"
 
 # Cancel stale runs on the same ref when a newer commit is pushed. Set repo
 # variable CI_CANCEL_IN_PROGRESS=false to keep overlapping runs (legacy mode).
@@ -90,6 +92,8 @@ jobs:
             neverc-plugin-conformance
 
       - name: Run plugin tests under ${{ matrix.label }}
+        env:
+          LSAN_OPTIONS: suppressions=${{ github.workspace }}/neverc/.github/plugin-sanitizers.lsan
         run: |
           # This job builds only the plugin unit-test / conformance targets, not
           # the full neverc-tests binary.  Exclude the "plugin-meta" label so the

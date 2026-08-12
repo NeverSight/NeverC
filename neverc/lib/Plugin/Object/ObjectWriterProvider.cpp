@@ -208,9 +208,10 @@ Expected<std::unique_ptr<PluginObjectImage>> ObjectWriterProvider::beginWrite(
     return Format->Writer(Format->CallbackUserData, &Request);
 #endif
   };
-  Expected<NevercStatus> Invoked = neverc_status_ok();
-  if (Format->Owner) {
-    Invoked = Task.invokeCallback(
+  Expected<NevercStatus> Invoked = [&]() -> Expected<NevercStatus> {
+    if (!Format->Owner)
+      return InvokeWriter();
+    return Task.invokeCallback(
         Format->PluginID, "object-writer:" + Format->CanonicalName,
         [&] {
           auto Capability = Task.currentArtifactMutationCapability(Format);
@@ -223,9 +224,7 @@ Expected<std::unique_ptr<PluginObjectImage>> ObjectWriterProvider::beginWrite(
           return InvokeWriter();
         },
         true, nullptr, false, Format);
-  } else {
-    Invoked = InvokeWriter();
-  }
+  }();
   if (!Invoked)
     return Invoked.takeError();
   Status = *Invoked;

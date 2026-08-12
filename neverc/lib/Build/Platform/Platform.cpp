@@ -23,6 +23,27 @@ namespace neverc {
 namespace build {
 namespace platform {
 
+#ifdef _WIN32
+namespace {
+
+std::string commandForWindowsCRT(llvm::StringRef Command) {
+  if (Command.empty() || Command.front() != '"')
+    return Command.str();
+
+  // The CRT invokes cmd.exe /c.  When a command contains multiple quoted
+  // segments, cmd.exe otherwise consumes the leading and trailing quotes as
+  // its command wrapper and leaves the executable-path quote unbalanced.
+  std::string Result;
+  Result.reserve(Command.size() + 2);
+  Result.push_back('"');
+  Result.append(Command.begin(), Command.end());
+  Result.push_back('"');
+  return Result;
+}
+
+} // namespace
+#endif
+
 ProcessResult shellExecute(const std::string &Command,
                            const std::string &Shell) {
   ProcessResult R;
@@ -31,7 +52,8 @@ ProcessResult shellExecute(const std::string &Command,
   // /bin/sh -c <command>.  We match that behavior.
   (void)Shell;
 #ifdef _WIN32
-  FILE *Pipe = _popen(Command.c_str(), "r");
+  const std::string CRTCommand = commandForWindowsCRT(Command);
+  FILE *Pipe = _popen(CRTCommand.c_str(), "r");
 #else
   FILE *Pipe = popen(Command.c_str(), "r");
 #endif
@@ -72,6 +94,9 @@ int shellExecuteNoCapture(const std::string &Command,
     Cmd += " >/dev/null 2>&1";
 #endif
   }
+#ifdef _WIN32
+  Cmd = commandForWindowsCRT(Cmd);
+#endif
   int Status = std::system(Cmd.c_str());
 #ifdef _WIN32
   return Status;
