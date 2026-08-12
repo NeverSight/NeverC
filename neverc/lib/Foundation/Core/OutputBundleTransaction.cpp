@@ -174,7 +174,8 @@ Error OutputBundleTransaction::acquirePublicationLocks() {
   for (const std::string &Path : PublicationLockPaths) {
     int FileDescriptor = -1;
     if (std::error_code EC = sys::fs::openFileForReadWrite(
-            Path, FileDescriptor, sys::fs::CD_OpenAlways, sys::fs::OF_None,
+            Path, FileDescriptor, sys::fs::CD_OpenAlways,
+            sys::fs::OF_AccessControl,
             static_cast<unsigned>(sys::fs::owner_read | sys::fs::owner_write)))
       return joinErrors(
           bundleError(Twine("could not open publication lock '") + Path + "'"),
