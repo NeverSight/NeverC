@@ -1,5 +1,5 @@
 #include "AndroidKernelModuleFinalizer.h"
-#include "Object/AndroidKernelReleaseWriterPreflight.h"
+#include "../AndroidKernelReleaseWriterPolicy.h"
 #include "Object/BuiltinObjectWriterPreflight.h"
 #include "neverc/Foundation/AndroidKernelModuleReleaseNames.h"
 #include "neverc/Foundation/AndroidKernelModuleSymbolPolicy.h"

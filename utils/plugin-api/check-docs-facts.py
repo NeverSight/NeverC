@@ -70,12 +70,12 @@ RELEASE_FACT_SOURCES = {
     ROOT / "neverc/include/neverc/Build/BuildConstants.h": (
         '"NEVERC_MAKE_EXECUTABLE"',
     ),
-    ROOT / "neverc/lib/Build/Core/BuildDriver.cpp": (
+    ROOT / "neverc/lib/Build/Core/RecursiveMakeEnvironment.cpp": (
         "VarNeverCMakeExecutable",
-        "PrependArg && *PrependArg",
+        "!Config.PrependArg.empty()",
         'quoteRecipeArgument(Variable.first + "=" + Variable.second)',
     ),
-    ROOT / "neverc/Driver/SubcommandHandlers.cpp": (
+    ROOT / "neverc/lib/Build/Core/AndroidKernelBuildCommands.cpp": (
         '"__neverc_android_kernel_output_integrity"',
         '"__neverc_clean_android_kernel_output"',
     ),
@@ -98,19 +98,28 @@ RELEASE_FACT_SOURCES = {
     ),
     ROOT / "neverc/lib/Foundation/Core/AndroidKernelReleaseSymbolMap.cpp": (
         'return ImagePath.str() + ".symbols.json"',
-        "MapOutput.OwnerOnly = true",
-        '"NEVERC_ANDROID_KERNEL_BUILD_ID"',
-        '"NEVERC_ANDROID_KERNEL_BUILD_EXTRA"',
-        '".nvk-build-flags"',
-        '".nvk-build-extra"',
-        '".nvk-build-integrity"',
-        '"IMAGE_SHA256="',
-        '" BUILD_ID_SHA256="',
-        '" BUILD_EXTRA_SHA256="',
-        "cleanAndroidKernelReleaseOutput",
         '"neverc.android-kernel-symbol-map"',
         '{"version", 2}',
         '"original_encoding"',
+    ),
+    ROOT / "neverc/lib/Foundation/Core/AndroidKernelBuildState.cpp": (
+        '"NEVERC_ANDROID_KERNEL_BUILD_ID"',
+        '"NEVERC_ANDROID_KERNEL_BUILD_EXTRA"',
+    ),
+    ROOT / "neverc/include/neverc/Foundation/AndroidKernelReleasePaths.h": (
+        '".nvk-build-flags"',
+        '".nvk-build-extra"',
+        '".nvk-build-integrity"',
+        '".nvk-release-bundle"',
+    ),
+    ROOT / "neverc/lib/Foundation/Core/AndroidKernelReleasePaths.cpp": (
+        '"IMAGE_SHA256="',
+        '" BUILD_ID_SHA256="',
+        '" BUILD_EXTRA_SHA256="',
+    ),
+    ROOT / "neverc/lib/Foundation/Core/AndroidKernelReleasePublisher.cpp": (
+        "MapOutput.OwnerOnly = true",
+        "cleanAndroidKernelReleaseOutput",
     ),
     ROOT / "neverc/lib/Foundation/Core/OutputBundleTransaction.cpp": (
         'sys::path::append(LockPath, ".neverc-output.lock")',
@@ -137,15 +146,21 @@ RELEASE_FACT_SOURCES = {
         "sameID(FrozenInputFormat, FrozenTarget.ObjectFormatID)",
         "sameID(FrozenOutputFormat, FrozenTarget.ObjectFormatID)",
         "and output object formats to share one identity",
-        "captureAndroidKernelReleaseGraphIdentitySeal",
-        "captureAndroidKernelReleaseImageIdentitySeal",
         "mayReplaceWriteArtifact(FrozenTarget,",
         "hasPluginOwnedGraphWriter(FrozenOutputFormat)",
         "requires a host-owned graph writer",
-        "if (!Provider.Builtin)",
-        "audited graph authoritative",
-        "host-owned writer establish",
-        "outside the structurally verified ABI surface",
+        "finalizeAndroidKernelReleasePipeline(",
+        "createAndroidKernelReleasePublicationHooks(",
+    ),
+    ROOT / "neverc/lib/Plugin/Link/AndroidKernelReleasePipeline.cpp": (
+        "AndroidKernelReleaseAuthority::NativeAttested",
+        "AndroidKernelReleaseAuthority::GraphAuthoritative",
+        "AndroidKernelReleaseSymbolMapSource::NativeMerger",
+        "AndroidKernelReleaseSymbolMapSource::GraphFinalizer",
+        "Merged.MergedImage.clear()",
+        "Result.BoundNativeOutput.reset()",
+        "captureAndroidKernelReleaseGraphIdentitySeal",
+        "captureAndroidKernelReleaseImageIdentitySeal",
     ),
     ROOT / "neverc/lib/Plugin/Link/BuiltinObjectMergeAdapter.cpp": (
         "if (!Config.FinalizeAndroidKernelModule) {",
@@ -442,6 +457,7 @@ def check_android_example_makefiles(report: Report) -> None:
     if not makefiles:
         report.fail(ROOT / "examples", "no Android kernel example Makefiles found")
         return
+    common = ROOT / "examples" / "android-kernel-common.mk"
     required = (
         "PROFILE := $(if $(SAVED_PROFILE),$(SAVED_PROFILE),debug)",
         "PROFILE_FLAGS_debug   := -g",
@@ -524,111 +540,137 @@ REBUILD_CONFIG := force-config-rebuild
 endif
 endif
 """
-    for path in makefiles:
-        require_literals(path, required, report)
-        contents = path.read_text(encoding="utf-8")
-        uses_extra = (
-            "export NEVERC_ANDROID_KERNEL_BUILD_EXTRA := $(EXTRA)" in contents
+    require_literals(
+        common,
+        required
+        + (
+            "NVK_ENABLE_EXTRA",
+            "EXTRA := $(NVK_RECURSIVE_EXTRA)",
+            "export NVK_RECURSIVE_EXTRA := $(EXTRA)",
+            "export NEVERC_ANDROID_KERNEL_BUILD_EXTRA := $(EXTRA)",
+            "export NEVERC_ANDROID_KERNEL_BUILD_EXTRA :=",
+        ),
+        report,
+    )
+    if not common.is_file():
+        return
+    common_contents = common.read_text(encoding="utf-8")
+
+    if "export NVK_RECURSIVE_BUILD" in common_contents:
+        report.fail(
+            common, "the recursion marker must be passed explicitly, not exported"
         )
-        if uses_extra:
-            require_literals(
-                path,
-                (
-                    "SAVED_EXTRA := $(SAVED_EXTRA_CANDIDATE)",
-                    "EXTRA := $(NVK_RECURSIVE_EXTRA)",
-                    "export NVK_RECURSIVE_EXTRA := $(EXTRA)",
-                    "export NEVERC_ANDROID_KERNEL_BUILD_EXTRA := $(EXTRA)",
-                ),
-                report,
-            )
-        elif not re.search(
-            r"(?m)^export NEVERC_ANDROID_KERNEL_BUILD_EXTRA :=\s*$", contents
-        ):
+    if "$(file >" in common_contents or "record-build-config" in common_contents:
+        report.fail(
+            common, "build stamps must be published by the compiler output bundle"
+        )
+    for token in forbidden_bundle_workarounds:
+        if token in common_contents:
             report.fail(
-                path,
-                "examples without EXTRA must clear inherited build-extra state",
+                common,
+                f"uses unsupported or non-portable release bundle workaround {token!r}",
             )
-        if "export NVK_RECURSIVE_BUILD" in contents:
-            report.fail(
-                path,
-                "the recursion marker must be passed explicitly, not exported",
-            )
-        if "$(file >" in contents or "record-build-config" in contents:
-            report.fail(
-                path,
-                "build stamps must be published by the compiler output bundle",
-            )
-        for token in forbidden_bundle_workarounds:
+
+    required_blocks = (
+        (
+            required_goal_guard,
+            "must reject profile-changing or destructive goals combined "
+            "with another goal",
+        ),
+        (
+            required_neverc_make_guard,
+            "must reject external make because lock-aware helpers are required",
+        ),
+        (
+            required_verified_state,
+            "must restore state only from a stable, non-empty integrity snapshot",
+        ),
+        (
+            required_profile_validation,
+            "must allow clean to recover from an invalid saved profile",
+        ),
+        (
+            required_sidecar_rebuild,
+            "must rebuild when sidecar presence disagrees with PROFILE",
+        ),
+    )
+    for block, message in required_blocks:
+        if block not in common_contents:
+            report.fail(common, message)
+
+    build_ids = re.findall(r"(?m)^BUILD_ID\s*:=\s*(.+)$", common_contents)
+    if len(build_ids) != 1:
+        report.fail(common, "must define exactly one BUILD_ID")
+    elif "NEVERC=$(NEVERC)" not in build_ids[0].split():
+        report.fail(common, "BUILD_ID must track the selected compiler path")
+    elif "EXTRA=$(EXTRA)" in build_ids[0].split():
+        report.fail(common, "multi-word EXTRA must use its lossless side stamp")
+
+    expected_debug = [
+        '+$(MAKE) $(RECURSIVE_MAKE_FLAGS) -f "$(NVK_ROOT_MAKEFILE)" '
+        "-B NVK_RECURSIVE_BUILD=1 PROFILE=debug all"
+    ]
+    expected_release = [
+        '+$(MAKE) $(RECURSIVE_MAKE_FLAGS) -f "$(NVK_ROOT_MAKEFILE)" '
+        "-B NVK_RECURSIVE_BUILD=1 PROFILE=release all"
+    ]
+    expected_compile = ['"$(NEVERC)" $(FLAGS) -r -nostdlib -o $@ $(SRCS)']
+    expected_clean = [
+        "$(NEVERC_MAKE_EXECUTABLE) "
+        '__neverc_clean_android_kernel_output "$(MODULE)"',
+        "rm -f *.o",
+    ]
+    if make_target_recipes(common_contents, "debug") != [expected_debug]:
+        report.fail(common, "debug must run exactly one explicit-profile build")
+    if make_target_recipes(common_contents, "release") != [expected_release]:
+        report.fail(common, "release must run exactly one forced bundle rebuild")
+    if make_target_recipes(common_contents, "$(MODULE)") != [expected_compile]:
+        report.fail(
+            common,
+            "module recipe must invoke exactly one quoted compiler path; "
+            "the compiler transaction publishes its build state",
+        )
+    if make_target_recipes(common_contents, "clean") != [expected_clean]:
+        report.fail(
+            common,
+            "clean must use the serialized bundle remover before deleting objects",
+        )
+
+    leaf_required = (
+        "NVK_ROOT_MAKEFILE := $(MAKEFILE_LIST)",
+        "NVK_COMMON_MAKEFILE ?=",
+        "include $(NVK_COMMON_MAKEFILE)",
+    )
+    shared_contract_tokens = (
+        "PROFILE_FLAGS_debug",
+        "FLAGS_STAMP :=",
+        "BUILD_ID :=",
+        "\ndebug:",
+        "\nrelease:",
+        "\nclean:",
+        "$(MODULE): $(SRCS)",
+    )
+    for path in makefiles:
+        require_literals(path, leaf_required, report)
+        contents = path.read_text(encoding="utf-8")
+        for name in ("MODULE", "MODNAME", "SRCS"):
+            assignments = re.findall(rf"(?m)^{name}\s*=\s*(\S.*)$", contents)
+            if len(assignments) != 1:
+                report.fail(path, f"must declare exactly one non-empty {name}")
+        if contents.count("NVK_ENABLE_EXTRA := 1") > 1:
+            report.fail(path, "must declare optional EXTRA support at most once")
+        for token in shared_contract_tokens:
             if token in contents:
                 report.fail(
                     path,
-                    f"uses unsupported or non-portable release bundle workaround {token!r}",
+                    f"duplicates shared Android kernel Makefile contract {token!r}",
                 )
-        required_blocks = (
-            (
-                required_goal_guard,
-                "must reject profile-changing or destructive goals combined "
-                "with another goal",
-            ),
-            (
-                required_neverc_make_guard,
-                "must reject external make because lock-aware helpers are required",
-            ),
-            (
-                required_verified_state,
-                "must restore state only from a stable, non-empty integrity snapshot",
-            ),
-            (
-                required_profile_validation,
-                "must allow clean to recover from an invalid saved profile",
-            ),
-            (
-                required_sidecar_rebuild,
-                "must rebuild when sidecar presence disagrees with PROFILE",
-            ),
-        )
-        for block, message in required_blocks:
-            if block not in contents:
-                report.fail(path, message)
-        build_ids = re.findall(r"(?m)^BUILD_ID\s*:=\s*(.+)$", contents)
-        if len(build_ids) != 1:
-            report.fail(path, "must define exactly one BUILD_ID")
-            continue
-        if "NEVERC=$(NEVERC)" not in build_ids[0].split():
-            report.fail(path, "BUILD_ID must track the selected compiler path")
-        if uses_extra and "EXTRA=$(EXTRA)" in build_ids[0].split():
-            report.fail(path, "multi-word EXTRA must use its lossless side stamp")
-        expected_debug = [
-            '+$(MAKE) $(RECURSIVE_MAKE_FLAGS) -f "$(MAKEFILE_LIST)" '
-            "-B NVK_RECURSIVE_BUILD=1 PROFILE=debug all"
-        ]
-        expected_release = [
-            '+$(MAKE) $(RECURSIVE_MAKE_FLAGS) -f "$(MAKEFILE_LIST)" '
-            "-B NVK_RECURSIVE_BUILD=1 PROFILE=release all"
-        ]
-        expected_compile = [
-            '"$(NEVERC)" $(FLAGS) -r -nostdlib -o $@ $(SRCS)',
-        ]
-        expected_clean = [
-            '$(NEVERC_MAKE_EXECUTABLE) '
-            '__neverc_clean_android_kernel_output "$(MODULE)"',
-            "rm -f *.o",
-        ]
-        if make_target_recipes(contents, "debug") != [expected_debug]:
-            report.fail(path, "debug must run exactly one explicit-profile build")
-        if make_target_recipes(contents, "release") != [expected_release]:
-            report.fail(path, "release must run exactly one forced bundle rebuild")
-        if make_target_recipes(contents, "$(MODULE)") != [expected_compile]:
-            report.fail(
-                path,
-                "module recipe must invoke exactly one quoted compiler path; "
-                "the compiler transaction publishes its build state",
-            )
-        if make_target_recipes(contents, "clean") != [expected_clean]:
-            report.fail(
-                path,
-                "clean must use the serialized bundle remover before deleting objects",
-            )
+        if contents.find("NVK_ROOT_MAKEFILE :=") > contents.find(
+            "include $(NVK_COMMON_MAKEFILE)"
+        ):
+            report.fail(path, "must freeze the root Makefile before including common")
+        if not make_target_recipes(contents, "run"):
+            report.fail(path, "must retain a demo-specific run target")
 
 
 def release_summary_line(path: Path, report: Report) -> str:

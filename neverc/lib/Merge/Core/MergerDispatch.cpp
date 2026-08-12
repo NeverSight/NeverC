@@ -8,13 +8,23 @@
 
 #include "neverc/Merge/Merger.h"
 
+#include "neverc/Foundation/AndroidKernelReleaseSymbolMap.h"
 #include "llvm/ADT/ArrayRef.h"
 
 namespace neverc::merge {
+namespace {
+
+void clearReleaseSymbolMap(const Options &Opts) {
+  if (Opts.releaseSymbolMap)
+    Opts.releaseSymbolMap->clear();
+}
+
+} // namespace
 
 bool mergeObjects(llvm::ArrayRef<llvm::SmallVector<char, 0>> Buffers,
                   llvm::raw_pwrite_stream &OS, Format Fmt,
                   const Options &Opts) {
+  clearReleaseSymbolMap(Opts);
   switch (Fmt) {
   case Format::ELF64LE:
     return mergeELF64LEObjects(Buffers, OS, Opts);
@@ -29,6 +39,7 @@ bool mergeObjects(llvm::ArrayRef<llvm::SmallVector<char, 0>> Buffers,
 bool mergeObjects(llvm::ArrayRef<llvm::StringRef> Buffers,
                   llvm::raw_pwrite_stream &OS, Format Fmt,
                   const Options &Opts) {
+  clearReleaseSymbolMap(Opts);
   switch (Fmt) {
   case Format::ELF64LE:
     return mergeELF64LEObjects(Buffers, OS, Opts);

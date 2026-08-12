@@ -25,7 +25,6 @@
 
 #include "Common/DwarfRebase.h"
 #include "Common/MergerCommon.h"
-#include "neverc/Foundation/AndroidKernelReleaseSymbolMap.h"
 #include "neverc/Merge/Merger.h"
 
 #include "llvm/ADT/DenseMap.h"
@@ -48,11 +47,6 @@ namespace {
 
 constexpr StringLiteral MachODwarfSegment = "__DWARF";
 constexpr StringLiteral MachOAppleAcceleratorPrefix = "__apple_";
-
-void clearReleaseSymbolMap(const Options &Opts) {
-  if (Opts.releaseSymbolMap)
-    Opts.releaseSymbolMap->clear();
-}
 
 bool isPartitionLocalAppleAccelerator(StringRef SegmentName,
                                       StringRef SectionName) {
@@ -853,14 +847,12 @@ bool mergeMachO64Impl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
 
 bool mergeMachO64Objects(ArrayRef<SmallVector<char, 0>> Buffers,
                          raw_pwrite_stream &OS, const Options &Opts) {
-  clearReleaseSymbolMap(Opts);
   return detail::runMergeSafely(
       [&]() { return mergeMachO64Impl(Buffers, OS, Opts); });
 }
 
 bool mergeMachO64Objects(ArrayRef<StringRef> Buffers, raw_pwrite_stream &OS,
                          const Options &Opts) {
-  clearReleaseSymbolMap(Opts);
   return detail::runMergeSafely(
       [&]() { return mergeMachO64Impl(Buffers, OS, Opts); });
 }

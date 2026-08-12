@@ -181,8 +181,6 @@ bool mergeELF64LEImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
   using Rela = typename ELFT::Rela;
   using Rel = typename ELFT::Rel;
 
-  if (Opts.releaseSymbolMap)
-    Opts.releaseSymbolMap->clear();
   AndroidKernelReleaseSymbolMap PendingReleaseSymbolMap;
 
   if (Opts.finalizeAndroidKernelModule && !Opts.androidKernelModule) {

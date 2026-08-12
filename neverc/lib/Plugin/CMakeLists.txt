@@ -528,6 +528,7 @@ add_neverc_library(nevercPluginLink
   Link/AndroidKernelProfileContractVerifier.cpp
   Link/AndroidKernelReleaseIdentitySeal.cpp
   Link/AndroidKernelReleaseInputVerifier.cpp
+  Link/AndroidKernelReleasePipeline.cpp
   Link/ArchiveGraph.cpp
   Link/BinaryImage.cpp
   Link/BinaryImageCAPI.cpp

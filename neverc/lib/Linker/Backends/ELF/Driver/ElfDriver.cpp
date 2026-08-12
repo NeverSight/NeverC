@@ -28,7 +28,7 @@
 #include "Linker/ELF/Symbols.h"
 #include "Linker/ELF/SyntheticSections.h"
 #include "Linker/ELF/Target.h"
-#include "neverc/Foundation/AndroidKernelReleaseSymbolMap.h"
+#include "neverc/Foundation/AndroidKernelReleasePublisher.h"
 #include "neverc/Foundation/Core/OutputCoordinator.h"
 #include "neverc/Foundation/Core/OutputTransaction.h"
 #include "neverc/Merge/Merger.h"
@@ -2411,9 +2411,11 @@ void LinkerDriver::execute(opt::InputArgList &args) {
       const neverc::AndroidKernelReleaseSymbolMap *publishedMap =
           mergeOpts.stripUnneededSymbols ? &releaseSymbolMap : nullptr;
       neverc::OutputBundleSummary finalSummary;
+      const neverc::AndroidKernelBuildState buildState =
+          neverc::androidKernelBuildStateFromEnvironment();
       auto published = neverc::publishAndroidKernelReleaseOutput(
           releaseOutputs, config->outputFile, imageBytes, publishedMap,
-          /*LeaseOwner=*/{}, &finalSummary);
+          buildState, /*LeaseOwner=*/{}, &finalSummary);
       if (!published) {
         std::string message = toString(published.takeError()).str().str();
         if (finalSummary.Flags & neverc::OutputPublished)

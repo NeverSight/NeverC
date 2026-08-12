@@ -3,7 +3,10 @@ set(LLVM_LINK_COMPONENTS
   )
 
 add_neverc_library(nevercBuild
+  Core/AndroidKernelBuildCommands.cpp
   Core/BuildDriver.cpp
+  Core/MakefileInterpreter.cpp
+  Core/RecursiveMakeEnvironment.cpp
   Core/VariableEnv.cpp
   Core/Function.cpp
   Core/StringUtils.cpp

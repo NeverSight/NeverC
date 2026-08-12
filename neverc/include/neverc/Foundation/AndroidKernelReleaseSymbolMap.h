@@ -1,9 +1,6 @@
 #ifndef NEVERC_FOUNDATION_ANDROIDKERNELRELEASESYMBOLMAP_H
 #define NEVERC_FOUNDATION_ANDROIDKERNELRELEASESYMBOLMAP_H
 
-#include "neverc/Foundation/Core/OutputBundleTransaction.h"
-#include "neverc/Foundation/Core/OutputCoordinator.h"
-#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
@@ -48,33 +45,6 @@ currentAndroidKernelBuildIntegrity(llvm::StringRef ImagePath);
 llvm::Expected<std::string>
 serializeAndroidKernelReleaseSymbolMap(
     const AndroidKernelReleaseSymbolMap &Map);
-
-/// Publishes one final image together with its release map. When \p Map is
-/// null, the same transaction publishes the image and removes any stale map.
-/// Android-kernel example builds may export `NEVERC_ANDROID_KERNEL_BUILD_ID`
-/// and `NEVERC_ANDROID_KERNEL_BUILD_EXTRA`; their adjacent state files then
-/// participate in this transaction instead of being written by make recipes.
-/// Stream output is rejected because it cannot own a colocated sidecar.
-/// When provided, \p FinalSummary receives the transaction's terminal state
-/// even if publication returns a late durability or recovery error.
-/// \p IsCancelled makes waits for an overlapping publisher interruptible.
-llvm::Expected<OutputBundleSummary>
-publishAndroidKernelReleaseOutput(
-    OutputCoordinator &Coordinator, llvm::StringRef ImagePath,
-    llvm::ArrayRef<uint8_t> Image,
-    const AndroidKernelReleaseSymbolMap *Map,
-    OutputLeaseOwner LeaseOwner = {},
-    OutputBundleSummary *FinalSummary = nullptr,
-    OutputCoordinator::CancellationCheck IsCancelled = {});
-
-/// Removes an Android-kernel image and every adjacent release/build-state
-/// sidecar under the same cross-process publication lock used by publish.
-llvm::Expected<OutputBundleSummary>
-cleanAndroidKernelReleaseOutput(
-    OutputCoordinator &Coordinator, llvm::StringRef ImagePath,
-    OutputLeaseOwner LeaseOwner = {},
-    OutputBundleSummary *FinalSummary = nullptr,
-    OutputCoordinator::CancellationCheck IsCancelled = {});
 
 } // namespace neverc
 

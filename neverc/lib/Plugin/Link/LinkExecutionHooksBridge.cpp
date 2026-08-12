@@ -1,14 +1,13 @@
 #include "neverc/Plugin/Host/LinkExecutionHooksBridge.h"
 #include "AndroidKernelModuleFinalizer.h"
 #include "AndroidKernelProfileContractVerifier.h"
-#include "AndroidKernelReleaseIdentitySeal.h"
 #include "AndroidKernelReleaseInputVerifier.h"
+#include "AndroidKernelReleasePipeline.h"
 #include "BuiltinObjectMergeAdapter.h"
 #include "LinkInputReader.h"
 #include "LinkRequest.h"
 #include "ObjectMergeProvider.h"
 #include "PluginLinkRegistry.h"
-#include "neverc/Foundation/AndroidKernelReleaseSymbolMap.h"
 #include "neverc/Foundation/Core/OutputCoordinator.h"
 #include "neverc/Linker/Core/Driver/Dispatcher.h"
 #include "neverc/Plugin/Host/BuiltinTargetProvider.h"
@@ -26,7 +25,6 @@
 #include "llvm/Support/MemoryBufferRef.h"
 #include "llvm/Support/VirtualFileSystem.h"
 #include "llvm/TargetParser/Triple.h"
-#include <algorithm>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -428,123 +426,19 @@ LinkExecutionHooksBridge::execute(const linker::LinkExecutionRequest &Request,
                   Objects, (*FrozenRequest)->options().Flags);
     if (!Merged)
       return Merged.takeError();
-    std::optional<AndroidKernelReleaseSymbolMap> ReleaseSymbolMap;
-    if (Merged->androidKernelReleaseSymbolMap())
-      ReleaseSymbolMap = *Merged->androidKernelReleaseSymbolMap();
-
-    // Only the direct built-in adapter may attest its trusted native merger
-    // bytes. Keep the exact shared token it returned; this bridge consumes the
-    // attestation but never manufactures one from an arbitrary MergedImage.
-    std::shared_ptr<const AndroidKernelReleaseBoundOutputContract>
-        BoundReleaseOutput;
-    if (Provider.Builtin && Config.finalizeAndroidKernelModule) {
-      if (!ReleaseInputContract)
-        return bridgeError("built-in Android final merge has no audited "
-                           "release input contract");
-      auto Consumed = consumeAndroidKernelReleaseBoundOutput(
-          *Merged, *ReleaseInputContract,
-          "Android kernel ObjectMergeProvider boundary");
-      if (!Consumed)
-        return Consumed.takeError();
-      BoundReleaseOutput = std::move(*Consumed);
-    }
-
     ObjectPhaseSemanticValidators Validators;
-    // Prefer the merger's concrete image for a lossless write. Finalization may
-    // still invalidate it when a typed provider leaves profile/debug/unneeded
-    // data in the graph; the host then serializes the finalized graph instead
-    // of allowing stale MergedImage bytes to bypass `--strip`.
-    ArrayRef<uint8_t> OutputImage(
-        reinterpret_cast<const uint8_t *>(Merged->MergedImage.data()),
-        Merged->MergedImage.size());
+    ObjectPublicationHooks Publication;
+    std::optional<AndroidKernelReleaseSymbolMap> ReleaseSymbolMap;
     if (Config.finalizeAndroidKernelModule) {
       if (!ReleaseInputContract)
         return bridgeError("final Android kernel ObjectMergeProvider output "
                            "has no audited release input contract");
-      const AndroidKernelReleaseInputContract &FinalReleaseContract =
-          *ReleaseInputContract;
-      const uint64_t GenerationBeforeStrip = Merged->Object->generation();
-      AndroidKernelReleaseSymbolMap GraphReleaseSymbolMap;
-      if (Error Err = finalizeAndroidKernelModuleObjectGraph(
-              *Merged->Object, FinalizationPolicy,
-              "final Android kernel ObjectMergeProvider output",
-              FinalizationPolicy.StripUnneededSymbols
-                  ? &GraphReleaseSymbolMap
-                  : nullptr))
-        return std::move(Err);
-      if (!GraphReleaseSymbolMap.Symbols.empty())
-        ReleaseSymbolMap = std::move(GraphReleaseSymbolMap);
-      if (Merged->Object->generation() != GenerationBeforeStrip) {
-        OutputImage = {};
-        BoundReleaseOutput.reset();
-      }
-      // A third-party merge provider cannot attest that its independently
-      // supplied bytes are the serialization of the finalized graph. Make the
-      // audited graph authoritative and let the host-owned writer establish
-      // the only baseline that post-write identity validation may trust.
-      if (!Provider.Builtin)
-        OutputImage = {};
-      if (FinalReleaseContract.requiresNativeImagePassthrough() &&
-          OutputImage.empty())
-        return bridgeError(
-            "Android release finalization made a native-only input contract "
-            "graph-authoritative");
-      if (Error E = verifyFinalAndroidKernelModuleObjectGraph(
-              *Merged->Object, FinalizationPolicy,
-              "final Android kernel authoritative pre-hook graph"))
-        return std::move(E);
-      auto GraphIdentitySeal = captureAndroidKernelReleaseGraphIdentitySeal(
-          *Merged->Object, FinalizationPolicy.SymbolNameState,
-          "final Android kernel authoritative pre-hook graph");
-      if (!GraphIdentitySeal)
-        return GraphIdentitySeal.takeError();
-      Validators.Graph = [Policy = FinalizationPolicy,
-                          Seal = std::move(*GraphIdentitySeal)](
-                             const PluginObjectGraph &Object) {
-        if (Error E = verifyFinalAndroidKernelModuleObjectGraph(
-                Object, Policy, "final Android kernel pre-write output"))
-          return E;
-        return verifyAndroidKernelReleaseGraphIdentitySeal(
-            Object, Policy.SymbolNameState, Seal,
-            "final Android kernel graph immutable identity contract");
-      };
-      Validators.BindPrePostWriteImage =
-          [Policy = FinalizationPolicy](ArrayRef<uint8_t> Image)
-          -> Expected<ObjectImageSemanticValidator> {
-        if (Error E = verifyFinalAndroidKernelModuleImage(
-                Image, Policy,
-                "final Android kernel trusted pre-post-write image"))
-          return std::move(E);
-        auto Seal = captureAndroidKernelReleaseImageIdentitySeal(
-            Image, "final Android kernel trusted pre-post-write image");
-        if (!Seal)
-          return Seal.takeError();
-        return ObjectImageSemanticValidator(
-            [Policy, Seal = std::move(*Seal)](
-                ArrayRef<uint8_t> PostWriteImage) -> Error {
-              if (Error E = verifyFinalAndroidKernelModuleImage(
-                      PostWriteImage, Policy,
-                      "final Android kernel post-write output"))
-                return E;
-              return verifyAndroidKernelReleaseImageIdentitySeal(
-                  PostWriteImage, Seal,
-                  "final Android kernel image immutable identity contract");
-            });
-      };
-      Validators.Image = [Contract = FinalReleaseContract,
-                          BoundContract = BoundReleaseOutput](
-                             ArrayRef<uint8_t> Image) -> Error {
-        // A bound image digest is authoritative only when native-only ELF facts
-        // make the merger image itself the release contract.  Ordinary release
-        // contracts deliberately allow authorized output phases to mutate bytes
-        // outside the structurally verified ABI surface.
-        if (BoundContract && BoundContract->requiresNativeImagePassthrough())
-          return verifyAndroidKernelReleaseOutputContract(
-              Image, *BoundContract,
-              "final Android kernel bound native output contract");
-        return verifyAndroidKernelReleaseOutputContract(
-            Image, Contract, "final Android kernel release input contract");
-      };
+      auto Release = finalizeAndroidKernelReleasePipeline(
+          *Merged, Provider.Builtin, *ReleaseInputContract, FinalizationPolicy);
+      if (!Release)
+        return Release.takeError();
+      ReleaseSymbolMap = std::move(Release->SymbolMap);
+      Validators = std::move(Release->Validators);
     } else if (AndroidKernelContract) {
       if (Error Err = requireAndroidKernelProfileContract(
               *Merged->Object, *AndroidKernelContract,
@@ -571,6 +465,12 @@ LinkExecutionHooksBridge::execute(const linker::LinkExecutionRequest &Request,
       };
     }
 
+    // A native-attested route keeps MergedImage; a graph-authoritative release
+    // pipeline clears it so the host writer becomes the sole byte producer.
+    ArrayRef<uint8_t> OutputImage(
+        reinterpret_cast<const uint8_t *>(Merged->MergedImage.data()),
+        Merged->MergedImage.size());
+
     // Write the merged object through the native-image passthrough: the merged
     // graph was just parsed from these exact bytes, so unless a plugin output
     // phase mutates it (or finalization had to strip a divergent graph), the
@@ -592,74 +492,21 @@ LinkExecutionHooksBridge::execute(const linker::LinkExecutionRequest &Request,
     }
     if (Config.finalizeAndroidKernelModule) {
       const std::string OutputPath = (*FrozenRequest)->outputURI().str();
-      const bool PublishesReleaseMap =
-          FinalizationPolicy.StripUnneededSymbols;
+      const bool PublishesReleaseMap = FinalizationPolicy.StripUnneededSymbols;
       OutputLeaseOwner LeaseOwner;
       if (Config.pluginTask) {
         const NevercTaskHandle TaskHandle = Config.pluginTask->handle();
         LeaseOwner = {TaskHandle.Owner, TaskHandle.Value};
       }
-      auto IsCancelled = [Session = Session] {
-        return Session->isCancelled();
-      };
-      Validators.Commit =
-          [this, OutputPath, PublishesReleaseMap,
-           Map = std::move(ReleaseSymbolMap), LeaseOwner,
-           IsCancelled = std::move(IsCancelled)](
-              ArrayRef<uint8_t> Image) mutable
-          -> PluginObjectImageCommitResult {
-        const auto makeSummary =
-            [Image](const OutputBundleSummary &Bundle) {
-              NevercOutputSummary Summary{};
-              Summary.Header = {sizeof(Summary), NEVERC_IO_API_MAJOR,
-                                NEVERC_IO_API_MINOR, 0};
-              switch (Bundle.State) {
-              case OutputBundleState::Committed:
-                Summary.State = NEVERC_OUTPUT_COMMITTED;
-                break;
-              case OutputBundleState::Aborted:
-                Summary.State = NEVERC_OUTPUT_ABORTED;
-                break;
-              case OutputBundleState::FailedPartial:
-              case OutputBundleState::Open:
-              case OutputBundleState::Prepared:
-                Summary.State = NEVERC_OUTPUT_FAILED_PARTIAL;
-                break;
-              }
-              Summary.Kind = NEVERC_OUTPUT_FILE;
-              Summary.Flags = Bundle.Flags;
-              Summary.Size = Image.size();
-              Summary.PublicationGeneration =
-                  Bundle.PublicationGeneration;
-              std::copy(Bundle.MainDigest.begin(),
-                        Bundle.MainDigest.end(), Summary.Digest);
-              return Summary;
-            };
-
-        OutputBundleSummary BundleSummary;
-        BundleSummary.State = OutputBundleState::Aborted;
-        const AndroidKernelReleaseSymbolMap *PublishedMap = nullptr;
-        if (PublishesReleaseMap) {
-          if (!Map)
-            Map.emplace();
-          if (Error E = bindAndroidKernelReleaseSymbolMapToImage(
-                  *Map, Image,
-                  "final Android kernel release symbol map"))
-            return {makeSummary(BundleSummary), std::move(E)};
-          PublishedMap = &*Map;
-        }
-
-        auto Published = publishAndroidKernelReleaseOutput(
-            Outputs, OutputPath, Image, PublishedMap, LeaseOwner, &BundleSummary,
-            IsCancelled);
-        if (!Published)
-          return {makeSummary(BundleSummary), Published.takeError()};
-        return {makeSummary(*Published), Error::success()};
-      };
+      auto IsCancelled = [Session = Session] { return Session->isCancelled(); };
+      Publication = createAndroidKernelReleasePublicationHooks(
+          Outputs, OutputPath, PublishesReleaseMap, std::move(ReleaseSymbolMap),
+          std::move(LeaseOwner), std::move(IsCancelled));
     }
-    auto Output = (*OutputPipeline)
-                      ->executeNative(*Merged->Object, OutputImage, Destination,
-                                      std::move(Validators));
+    auto Output =
+        (*OutputPipeline)
+            ->executeNative(*Merged->Object, OutputImage, Destination,
+                            std::move(Validators), std::move(Publication));
     if (!Output)
       return Output.takeError();
     return linker::LinkHookResult{linker::LinkHookDisposition::Completed, 0};

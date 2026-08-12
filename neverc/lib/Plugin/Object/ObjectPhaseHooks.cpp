@@ -721,7 +721,8 @@ Expected<std::shared_ptr<PluginObjectImage>>
 ObjectPhasePipeline::executeNative(const PluginObjectGraph &InputGraph,
                                    ArrayRef<uint8_t> NativeImage,
                                    const ObjectOutputDestination &Destination,
-                                   ObjectPhaseSemanticValidators Validators) {
+                                   ObjectPhaseSemanticValidators Validators,
+                                   ObjectPublicationHooks Publication) {
   State->BuiltinFailure.clear();
   State->LateCommitFailure.clear();
   auto ValidateGraph = [&Validators](const PluginObjectGraph &Object) -> Error {
@@ -809,8 +810,7 @@ ObjectPhasePipeline::executeNative(const PluginObjectGraph &InputGraph,
     if (!State->BuiltinFailure.empty())
       return joinErrors(
           std::move(E),
-          createStringError(inconvertibleErrorCode(),
-                            State->BuiltinFailure));
+          createStringError(inconvertibleErrorCode(), State->BuiltinFailure));
     return std::move(E);
   }
   const auto *Written =
@@ -850,9 +850,8 @@ ObjectPhasePipeline::executeNative(const PluginObjectGraph &InputGraph,
   }
   if (Error E = ValidateImage(*CurrentImage))
     return std::move(E);
-  if (Validators.Commit)
-    if (Error E =
-            CurrentImage->setCommitter(std::move(Validators.Commit)))
+  if (Publication.Commit)
+    if (Error E = CurrentImage->setCommitter(std::move(Publication.Commit)))
       return std::move(E);
   if (Error E = CurrentImage->finish())
     return std::move(E);

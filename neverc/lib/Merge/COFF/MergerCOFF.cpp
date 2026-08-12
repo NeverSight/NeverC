@@ -23,7 +23,6 @@
 
 #include "Common/DwarfRebase.h"
 #include "Common/MergerCommon.h"
-#include "neverc/Foundation/AndroidKernelReleaseSymbolMap.h"
 #include "neverc/Merge/Merger.h"
 
 #include "llvm/ADT/DenseMap.h"
@@ -43,11 +42,6 @@ using namespace llvm;
 namespace neverc::merge {
 
 namespace {
-
-void clearReleaseSymbolMap(const Options &Opts) {
-  if (Opts.releaseSymbolMap)
-    Opts.releaseSymbolMap->clear();
-}
 
 template <typename BufT>
 bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
@@ -808,14 +802,12 @@ bool mergeCOFFImpl(ArrayRef<BufT> Buffers, raw_pwrite_stream &OS,
 
 bool mergeCOFFObjects(ArrayRef<SmallVector<char, 0>> Buffers,
                       raw_pwrite_stream &OS, const Options &Opts) {
-  clearReleaseSymbolMap(Opts);
   return detail::runMergeSafely(
       [&]() { return mergeCOFFImpl(Buffers, OS, Opts); });
 }
 
 bool mergeCOFFObjects(ArrayRef<StringRef> Buffers, raw_pwrite_stream &OS,
                       const Options &Opts) {
-  clearReleaseSymbolMap(Opts);
   return detail::runMergeSafely(
       [&]() { return mergeCOFFImpl(Buffers, OS, Opts); });
 }

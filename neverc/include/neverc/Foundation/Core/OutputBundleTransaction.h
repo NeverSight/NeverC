@@ -102,9 +102,19 @@ private:
                         llvm::StringRef Path) const;
   llvm::Error acquirePublicationLocks();
   llvm::Error discardStaging(Entry &EntryValue);
+  /// Writes durable recovery evidence for operators and future recovery tools;
+  /// transactions do not automatically replay this journal.
   llvm::Error createJournal();
   llvm::Error appendAndSyncJournal(llvm::StringRef Text,
                                    OutputBundleOperation SyncOperation);
+  llvm::Error backupExistingOutputs();
+  llvm::Error recordBackupRecoveryEvidence(bool &AllDirectoriesSynced);
+  llvm::Error publishStagedOutput(Entry &EntryValue,
+                                  OutputBundleOperation Operation);
+  llvm::Error publishSideOutputs(bool &AllDirectoriesSynced);
+  llvm::Error publishMainAndRemovals(bool &AllDirectoriesSynced);
+  llvm::Error finalizePublication(bool &AllDirectoriesSynced);
+  llvm::Error rollbackAfter(llvm::Error Failure);
   llvm::Error rollback();
   void releaseLeases();
 

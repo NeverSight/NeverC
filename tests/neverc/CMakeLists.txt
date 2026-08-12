@@ -2073,6 +2073,7 @@ add_executable(neverc-plugin-link-tests
   PluginLinkSynthesisTests.cpp
   PluginLinkVerifierTests.cpp
   PluginSymbolResolutionTests.cpp
+  OutputBundleTransactionTests.cpp
 )
 target_link_libraries(neverc-plugin-link-tests PRIVATE
   GTest::gtest
@@ -2112,7 +2113,9 @@ gtest_discover_tests(neverc-plugin-link-tests
 )
 
 add_executable(neverc-plugin-object-merge-tests
-  PluginObjectMergeTests.cpp
+  AndroidKernelModuleFinalizerTests.cpp
+  AndroidKernelReleaseIdentitySealTests.cpp
+  PluginObjectMergeProviderTests.cpp
 )
 target_link_libraries(neverc-plugin-object-merge-tests PRIVATE
   GTest::gtest
@@ -2685,6 +2688,7 @@ target_link_libraries(neverc-build-tests PRIVATE
 target_compile_definitions(neverc-build-tests PRIVATE
   NEVERC_BINARY="${_NEVERC_BINARY}"
   NEVERC_ANDROID_KERNEL_HELLO_MAKEFILE="${CMAKE_CURRENT_SOURCE_DIR}/../../examples/android-kernel-hello/Makefile"
+  NEVERC_ANDROID_KERNEL_COMMON_MAKEFILE="${CMAKE_CURRENT_SOURCE_DIR}/../../examples/android-kernel-common.mk"
 )
 
 target_compile_features(neverc-build-tests PRIVATE cxx_std_17)

@@ -5,6 +5,7 @@
 #include "neverc/Build/DepGraph.h"
 #include "neverc/Build/Function.h"
 #include "neverc/Build/Lexer.h"
+#include "neverc/Build/MakefileInterpreter.h"
 #include "neverc/Build/Parser.h"
 #include "neverc/Build/Platform.h"
 #include "neverc/Build/RuleDB.h"
@@ -24,167 +25,16 @@
 
 using namespace neverc::build;
 
-// ---------------------------------------------------------------------------
-// Helper: lex + parse a Makefile string and process the AST into Env/Rules.
-// Mirrors the processAST logic in Core/BuildDriver.cpp.
-// ---------------------------------------------------------------------------
 namespace {
-
-void processStatements(const std::vector<std::unique_ptr<Statement>> &Stmts,
-                       VariableEnv &Env, RuleDB &Rules,
-                       FunctionRegistry &FuncReg);
-
-void processAST(MakefileAST &AST, VariableEnv &Env, RuleDB &Rules,
-                FunctionRegistry &FuncReg) {
-  processStatements(AST.Stmts, Env, Rules, FuncReg);
-}
-
-void processStatements(const std::vector<std::unique_ptr<Statement>> &Stmts,
-                       VariableEnv &Env, RuleDB &Rules,
-                       FunctionRegistry &FuncReg) {
-  for (auto &S : Stmts) {
-    switch (S->Kind) {
-    case StmtKind::VarAssign: {
-      auto *VA = static_cast<VarAssign *>(S.get());
-      std::string Name = Env.expand(VA->Name);
-      std::string Value = VA->RawValue;
-      VariableEnv::Origin Orig = VA->Override ? VariableEnv::Origin::Override
-                                              : VariableEnv::Origin::File;
-      switch (VA->Mode) {
-      case AssignMode::Recursive:
-        Env.set(Name, Value, AssignMode::Recursive, Orig);
-        break;
-      case AssignMode::Simple:
-        Env.set(Name, Env.expand(Value), AssignMode::Simple, Orig);
-        break;
-      case AssignMode::Conditional:
-        Env.conditionalSet(Name, Value);
-        break;
-      case AssignMode::Append: {
-        auto ExistingIt = Env.vars().find(Name);
-        if (ExistingIt != Env.vars().end() &&
-            ExistingIt->second.Orig == VariableEnv::Origin::CommandLine &&
-            Orig != VariableEnv::Origin::Override)
-          break;
-        if (ExistingIt != Env.vars().end() &&
-            ExistingIt->second.Mode == AssignMode::Simple)
-          Env.append(Name, Env.expand(Value));
-        else
-          Env.append(Name, Value);
-        break;
-      }
-      case AssignMode::Shell:
-        break;
-      }
-      if (VA->Export)
-        Env.setExport(Name);
-      break;
-    }
-    case StmtKind::Rule: {
-      auto *R = static_cast<Rule *>(S.get());
-      Rules.addRule(*R, Env);
-      break;
-    }
-    case StmtKind::Conditional: {
-      auto *C = static_cast<Conditional *>(S.get());
-      bool Result = false;
-      switch (C->CondKind) {
-      case Conditional::IfEq:
-        Result = Env.expand(C->Arg1) == Env.expand(C->Arg2);
-        break;
-      case Conditional::IfNeq:
-        Result = Env.expand(C->Arg1) != Env.expand(C->Arg2);
-        break;
-      case Conditional::IfDef: {
-        std::string Name = Env.expand(C->Arg1);
-        Result = Env.isDefined(Name) && !Env.rawValue(Name).empty();
-        break;
-      }
-      case Conditional::IfNDef: {
-        std::string Name = Env.expand(C->Arg1);
-        Result = !Env.isDefined(Name) || Env.rawValue(Name).empty();
-        break;
-      }
-      }
-      if (Result)
-        processStatements(C->ThenBranch, Env, Rules, FuncReg);
-      else
-        processStatements(C->ElseBranch, Env, Rules, FuncReg);
-      break;
-    }
-    case StmtKind::DefineBlock: {
-      auto *D = static_cast<DefineBlock *>(S.get());
-      VariableEnv::Origin Orig = D->Override ? VariableEnv::Origin::Override
-                                             : VariableEnv::Origin::File;
-      switch (D->Mode) {
-      case AssignMode::Simple:
-        Env.set(D->Name, Env.expand(D->Body), AssignMode::Simple, Orig);
-        break;
-      case AssignMode::Append:
-        Env.append(D->Name, D->Body);
-        break;
-      case AssignMode::Conditional:
-        Env.conditionalSet(D->Name, D->Body);
-        break;
-      default:
-        Env.set(D->Name, D->Body, AssignMode::Recursive, Orig);
-        break;
-      }
-      break;
-    }
-    case StmtKind::ExportDirective: {
-      auto *E = static_cast<ExportDirective *>(S.get());
-      if (E->IsUnexport) {
-        for (auto &Name : E->Names)
-          Env.setExport(Env.expand(Name), false);
-      } else if (E->ExportAll) {
-        Env.setExportAll(true);
-        for (auto &Entry : Env.vars())
-          Env.setExport(Entry.first().str());
-      } else {
-        for (auto &Name : E->Names)
-          Env.setExport(Env.expand(Name));
-      }
-      break;
-    }
-    case StmtKind::UndefineDirective: {
-      auto *U = static_cast<UndefineDirective *>(S.get());
-      std::string Name = Env.expand(U->Name);
-      if (U->Override)
-        Env.undefine(Name);
-      else {
-        auto It = Env.vars().find(Name);
-        if (It == Env.vars().end() ||
-            It->second.Orig != VariableEnv::Origin::CommandLine)
-          Env.undefine(Name);
-      }
-      break;
-    }
-    case StmtKind::TargetVarAssign: {
-      auto *TV = static_cast<TargetVarAssign *>(S.get());
-      for (auto &RawTarget : TV->Targets) {
-        std::string Target = Env.expand(RawTarget);
-        TargetVarOverride Ov;
-        Ov.VarName = TV->VarName;
-        Ov.RawValue = TV->RawValue;
-        Ov.Mode = TV->Mode;
-        Rules.addTargetVar(Target, Ov);
-      }
-      break;
-    }
-    case StmtKind::Expression: {
-      auto *E = static_cast<Expression *>(S.get());
-      Env.expand(E->Text);
-      break;
-    }
-    }
-  }
-}
 
 struct ParsedMakefile {
   VariableEnv Env;
   FunctionRegistry FuncReg;
   RuleDB Rules;
+
+  void process(MakefileAST &AST) {
+    MakefileInterpreter(Env, Rules, FuncReg).process(AST);
+  }
 
   bool parse(const std::string &Content) {
     Env.setFunctionRegistry(&FuncReg);
@@ -194,7 +44,7 @@ struct ParsedMakefile {
       Parser EvalP("<eval>", std::move(EvalLines));
       auto EvalAST = EvalP.parse();
       if (EvalAST)
-        processAST(*EvalAST, Env, Rules, FuncReg);
+        process(*EvalAST);
     });
 
     Lexer L("<test>", Content);
@@ -205,7 +55,7 @@ struct ParsedMakefile {
     auto AST = P.parse();
     if (!AST || P.hadError())
       return false;
-    processAST(*AST, Env, Rules, FuncReg);
+    process(*AST);
     return true;
   }
 };
@@ -216,15 +66,29 @@ class BuildDriverTest : public ::testing::Test {
 protected:
   void SetUp() override {
     std::error_code EC =
-        llvm::sys::fs::createUniqueDirectory("neverc-build-recursive", Dir);
+        llvm::sys::fs::createUniqueDirectory("neverc-build-recursive", RootDir);
+    ASSERT_FALSE(EC) << EC.message();
+    Dir = RootDir;
+    llvm::sys::path::append(Dir, "work");
+    EC = llvm::sys::fs::create_directory(Dir);
+    ASSERT_FALSE(EC) << EC.message();
+    EC = llvm::sys::fs::copy_file(
+        NEVERC_ANDROID_KERNEL_COMMON_MAKEFILE,
+        pathInRoot("android-kernel-common.mk"));
     ASSERT_FALSE(EC) << EC.message();
   }
 
   void TearDown() override {
-    if (!Dir.empty()) {
-      const std::error_code EC = llvm::sys::fs::remove_directories(Dir);
+    if (!RootDir.empty()) {
+      const std::error_code EC = llvm::sys::fs::remove_directories(RootDir);
       EXPECT_FALSE(EC) << EC.message();
     }
+  }
+
+  std::string pathInRoot(llvm::StringRef Name) const {
+    llvm::SmallString<256> Path(RootDir);
+    llvm::sys::path::append(Path, Name);
+    return std::string(Path);
   }
 
   std::string pathInDir(llvm::StringRef Name) const {
@@ -233,6 +97,7 @@ protected:
     return std::string(Path);
   }
 
+  llvm::SmallString<256> RootDir;
   llvm::SmallString<256> Dir;
 };
 
@@ -298,6 +163,76 @@ TEST_F(BuildDriverTest, UnknownOptionDoesNotExecuteTargets) {
       "relative/neverc", "make", "-C", Dir, "-q", "all"};
   EXPECT_EQ(llvm::sys::ExecuteAndWait(NEVERC_BINARY, Arguments), 2);
   EXPECT_FALSE(llvm::sys::fs::exists(pathInDir("unexpected-result.txt")));
+}
+
+TEST_F(BuildDriverTest, BuildAndMakeAliasesDispatchToBuildDriver) {
+  for (llvm::StringRef Command : {"build", "make"}) {
+    SCOPED_TRACE(Command.str());
+    const std::string OutputPath =
+        pathInDir((Command + "-help-output.txt").str());
+    llvm::StringRef Redirects[3] = {llvm::StringRef(), OutputPath,
+                                    llvm::StringRef()};
+    llvm::SmallVector<llvm::StringRef, 3> Arguments = {
+        "relative/neverc", Command, "--help"};
+
+    EXPECT_EQ(llvm::sys::ExecuteAndWait(NEVERC_BINARY, Arguments, /*Env=*/{},
+                                        Redirects),
+              0);
+    auto Output = llvm::MemoryBuffer::getFile(OutputPath);
+    ASSERT_TRUE(Output) << Output.getError().message();
+    EXPECT_NE((*Output)->getBuffer().find("Usage: neverc build"),
+              llvm::StringRef::npos);
+  }
+}
+
+TEST_F(BuildDriverTest, AndroidKernelPrivateCommandsRejectWrongArity) {
+  struct CommandCase {
+    llvm::StringRef Command;
+    llvm::StringRef Operand;
+  };
+  constexpr CommandCase Cases[] = {
+      {"__neverc_clean_android_kernel_output", "<module.ko>"},
+      {"__neverc_android_kernel_output_integrity", "<module.ko>"},
+  };
+
+  for (const CommandCase &Case : Cases) {
+    SCOPED_TRACE(Case.Command.str());
+    const std::string ErrorPath =
+        pathInDir((Case.Command + "-error.txt").str());
+    llvm::StringRef Redirects[3] = {llvm::StringRef(), llvm::StringRef(),
+                                    ErrorPath};
+    llvm::SmallVector<llvm::StringRef, 2> Arguments = {
+        "relative/neverc", Case.Command};
+
+    EXPECT_EQ(llvm::sys::ExecuteAndWait(NEVERC_BINARY, Arguments, /*Env=*/{},
+                                        Redirects),
+              1);
+    auto Error = llvm::MemoryBuffer::getFile(ErrorPath);
+    ASSERT_TRUE(Error) << Error.getError().message();
+    const std::string ExpectedUsage =
+        "usage: relative/neverc " + Case.Command.str() + " " +
+        Case.Operand.str();
+    EXPECT_NE((*Error)->getBuffer().find(ExpectedUsage),
+              llvm::StringRef::npos);
+  }
+}
+
+TEST_F(BuildDriverTest, UnknownSubcommandContinuesIntoCompilerDriver) {
+  const std::string ErrorPath = pathInDir("unknown-subcommand-error.txt");
+  llvm::StringRef Redirects[3] = {llvm::StringRef(), llvm::StringRef(),
+                                  ErrorPath};
+  llvm::SmallVector<llvm::StringRef, 2> Arguments = {
+      "relative/neverc", "__neverc_unknown_subcommand"};
+
+  EXPECT_EQ(llvm::sys::ExecuteAndWait(NEVERC_BINARY, Arguments, /*Env=*/{},
+                                      Redirects),
+            1);
+  auto Error = llvm::MemoryBuffer::getFile(ErrorPath);
+  ASSERT_TRUE(Error) << Error.getError().message();
+  EXPECT_NE((*Error)->getBuffer().find(
+                "no such file or directory: '__neverc_unknown_subcommand'"),
+            llvm::StringRef::npos);
+  EXPECT_EQ((*Error)->getBuffer().find("usage:"), llvm::StringRef::npos);
 }
 
 TEST_F(BuildDriverTest, KeepGoingBuildsIndependentTargetsAfterMissingInput) {
@@ -731,14 +666,18 @@ TEST_F(BuildDriverTest,
   auto Source =
       llvm::MemoryBuffer::getFile(NEVERC_ANDROID_KERNEL_HELLO_MAKEFILE);
   ASSERT_TRUE(Source) << Source.getError().message();
+  auto CommonSource =
+      llvm::MemoryBuffer::getFile(NEVERC_ANDROID_KERNEL_COMMON_MAKEFILE);
+  ASSERT_TRUE(CommonSource) << CommonSource.getError().message();
 
   std::string MakefileContents = (*Source)->getBuffer().str();
+  std::string CommonContents = (*CommonSource)->getBuffer().str();
   const std::string IntegrityCommand =
       "CURRENT_BUILD_INTEGRITY := $(shell $(NEVERC_MAKE_EXECUTABLE) "
       "__neverc_android_kernel_output_integrity \"$(MODULE)\")";
-  const size_t IntegrityCommandOffset = MakefileContents.find(IntegrityCommand);
+  const size_t IntegrityCommandOffset = CommonContents.find(IntegrityCommand);
   ASSERT_NE(IntegrityCommandOffset, std::string::npos);
-  MakefileContents.replace(
+  CommonContents.replace(
       IntegrityCommandOffset, IntegrityCommand.size(),
       "CURRENT_BUILD_INTEGRITY := $(shell $(NEVERC_MAKE_EXECUTABLE) "
       "__neverc_android_kernel_output_integrity -)");
@@ -755,6 +694,13 @@ TEST_F(BuildDriverTest,
   };
 
   WriteFile("Makefile", MakefileContents);
+  {
+    std::error_code EC;
+    llvm::raw_fd_ostream Common(pathInRoot("android-kernel-common.mk"), EC,
+                                llvm::sys::fs::OF_None);
+    ASSERT_FALSE(EC) << EC.message();
+    Common << CommonContents;
+  }
   WriteFile("main.c", "int unused;\n");
   WriteFile("nvk_hello.ko", "existing module\n");
   WriteFile("nvk_hello.ko.symbols.json", "{}\n");

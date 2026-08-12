@@ -476,7 +476,10 @@ add_custom_target(neverc-bootstrap-nvk-kernel-bc
 )
 
 add_neverc_library(nevercFoundation
+  Core/AndroidKernelBuildState.cpp
   Core/AndroidKernelModuleReleaseNames.cpp
+  Core/AndroidKernelReleasePaths.cpp
+  Core/AndroidKernelReleasePublisher.cpp
   Core/AndroidKernelReleaseSymbolMap.cpp
   Core/Diagnostic.cpp
   Core/FileManager.cpp
@@ -484,6 +487,7 @@ add_neverc_library(nevercFoundation
   Core/LangOptions.cpp
   Core/OutputBundleTransaction.cpp
   Core/OutputCoordinator.cpp
+  Core/OutputDigest.cpp
   Core/OutputPathLease.cpp
   Core/OutputPlatform.cpp
   Core/OutputTransaction.cpp

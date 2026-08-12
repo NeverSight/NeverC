@@ -2,6 +2,7 @@
 #define NEVERC_FOUNDATION_CORE_OUTPUTTRANSACTION_H
 
 #include "neverc/Foundation/Core/OutputCoordinator.h"
+#include "neverc/Foundation/Core/OutputPublicationFlags.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
@@ -48,14 +49,6 @@ enum class OutputFileOperation : uint8_t {
   Publish,
   SyncDirectory,
   DiscardStaging,
-};
-
-enum OutputPublicationFlag : uint64_t {
-  OutputPublished = UINT64_C(1),
-  OutputDurable = UINT64_C(2),
-  OutputMayBePartial = UINT64_C(4),
-  OutputRecoveryRequired = UINT64_C(8),
-  OutputDurabilityUnconfirmed = UINT64_C(16),
 };
 
 struct OutputTransactionSummary {

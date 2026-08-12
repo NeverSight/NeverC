@@ -1,7 +1,7 @@
 #include "AndroidKernelReleaseIdentitySeal.h"
 
 #include "AndroidKernelModuleFinalizer.h"
-#include "Object/AndroidKernelReleaseWriterPreflight.h"
+#include "../AndroidKernelReleaseWriterPolicy.h"
 #include "neverc/Foundation/AndroidKernelModuleReleaseNames.h"
 #include "neverc/Foundation/AndroidKernelModuleSectionPolicy.h"
 #include "neverc/Foundation/AndroidKernelModuleSymbolPolicy.h"
