@@ -25,15 +25,25 @@ SAVED_BUILD_ID := $(file <$(FLAGS_STAMP))
 SAVED_KERNEL := $(patsubst KERNEL=%,%,$(filter KERNEL=%,$(SAVED_BUILD_ID)))
 SAVED_EXTRA := $(file <$(EXTRA_STAMP))
 SAVED_PROFILE := $(patsubst PROFILE=%,%,$(filter PROFILE=%,$(SAVED_BUILD_ID)))
+ifeq ($(NVK_RECURSIVE_BUILD),1)
+KERNEL := $(NVK_RECURSIVE_KERNEL)
+EXTRA := $(NVK_RECURSIVE_EXTRA)
+NEVERC := $(NVK_RECURSIVE_NEVERC)
+else
 ifneq ($(origin KERNEL),command line)
 KERNEL := $(if $(SAVED_KERNEL),$(SAVED_KERNEL),510)
 endif
 ifneq ($(origin EXTRA),command line)
 EXTRA := $(SAVED_EXTRA)
 endif
+endif
 ifneq ($(origin PROFILE),command line)
 PROFILE := $(if $(SAVED_PROFILE),$(SAVED_PROFILE),debug)
 endif
+export NVK_RECURSIVE_BUILD := 1
+export NVK_RECURSIVE_KERNEL := $(KERNEL)
+export NVK_RECURSIVE_EXTRA := $(EXTRA)
+export NVK_RECURSIVE_NEVERC := $(NEVERC)
 
 VALID_PROFILES := debug release
 ifeq ($(filter $(PROFILE),$(VALID_PROFILES)),)
@@ -72,10 +82,10 @@ all: $(MODULE)
 # profile targets always rebuild once so coarse timestamps cannot preserve the
 # wrong profile and a release can repair a missing or mismatched sidecar.
 debug:
-	$(MAKE) -B PROFILE=debug NEVERC="$(NEVERC)" EXTRA="$(EXTRA)" all
+	"$(NEVERC)" make -B PROFILE=debug all
 
 release:
-	$(MAKE) -B PROFILE=release NEVERC="$(NEVERC)" EXTRA="$(EXTRA)" all
+	"$(NEVERC)" make -B PROFILE=release all
 
 $(MODULE): $(SRCS) $(REBUILD_CONFIG)
 	"$(NEVERC)" $(FLAGS) -r -nostdlib -o $@ $(SRCS)

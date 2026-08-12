@@ -907,7 +907,7 @@ TEST(PluginObjectWriterTest, ProducesVerifiedCandidateBeforeAtomicHostCommit) {
 }
 
 TEST(PluginObjectWriterTest,
-     CustomCommitterKeepsPublishedStateAfterLateDurabilityFailure) {
+     CustomCommitterPreservesTerminalStateAndDetailedFailures) {
   ObjectWriterTaskScope Scope;
   ASSERT_TRUE(Scope.initialize());
 
@@ -1004,6 +1004,43 @@ TEST(PluginObjectWriterTest,
   EXPECT_NE(PipelineError.find("commit completed"), std::string::npos)
       << PipelineError;
   EXPECT_EQ(RetainedImage->state(), PluginObjectImageState::Committed);
+
+  const auto FailedCommitter = [](ArrayRef<uint8_t>) {
+    NevercOutputSummary Summary{};
+    Summary.Header = {sizeof(Summary), NEVERC_IO_API_MAJOR,
+                      NEVERC_IO_API_MINOR, 0};
+    Summary.State = NEVERC_OUTPUT_FAILED_PARTIAL;
+    Summary.Kind = NEVERC_OUTPUT_FILE;
+    return PluginObjectImageCommitResult{
+        Summary,
+        createStringError(errc::permission_denied,
+                          "detailed publication failure")};
+  };
+  auto FailedPipeline = ObjectPhasePipeline::create(Scope.task(), *Snapshot);
+  ASSERT_TRUE(static_cast<bool>(FailedPipeline))
+      << errorText(FailedPipeline.takeError());
+  auto FailedImage = (*Provider)->beginWrite(
+      Scope.task(), Graph,
+      ObjectOutputDestination::memory("pipeline-publication-failure.nobj",
+                                      UINT64_C(1024)));
+  ASSERT_TRUE(static_cast<bool>(FailedImage))
+      << errorText(FailedImage.takeError());
+  ASSERT_FALSE((*FailedImage)->setCommitter(FailedCommitter));
+  ASSERT_FALSE((*FailedImage)->finish());
+  std::shared_ptr<PluginObjectImage> RetainedFailedImage(
+      std::move(*FailedImage));
+  auto FailedTarget = makeTargetKey();
+  ASSERT_TRUE(static_cast<bool>(FailedTarget))
+      << errorText(FailedTarget.takeError());
+  auto FailedCommit = (*FailedPipeline)->verifyAndCommitFinished(
+      FailedTarget->view(), RetainedFailedImage);
+  ASSERT_FALSE(static_cast<bool>(FailedCommit));
+  const std::string FailedError = errorText(FailedCommit.takeError());
+  EXPECT_NE(FailedError.find("detailed publication failure"),
+            std::string::npos)
+      << FailedError;
+  EXPECT_EQ(RetainedFailedImage->state(),
+            PluginObjectImageState::FailedPartial);
 }
 
 TEST(PluginObjectWriterTest,
@@ -1263,6 +1300,27 @@ TEST(
               std::string::npos)
         << Message;
     EXPECT_FALSE(findPluginMemoryOutput(Scope.task(), OutputName).has_value());
+
+    const std::string PipelineOutputName =
+        "anonymous-pipeline-preflight-" + std::to_string(FormatIndex) + ".o";
+    ObjectWriterTaskScope PipelineScope;
+    ASSERT_TRUE(PipelineScope.initialize());
+    auto Pipeline =
+        ObjectPhasePipeline::create(PipelineScope.task(), *Snapshot);
+    ASSERT_TRUE(static_cast<bool>(Pipeline))
+        << errorText(Pipeline.takeError());
+    auto PipelineRejected = (*Pipeline)->execute(
+        Graph, ObjectOutputDestination::memory(PipelineOutputName,
+                                               UINT64_C(1) << 20));
+    ASSERT_FALSE(static_cast<bool>(PipelineRejected));
+    const std::string PipelineMessage =
+        errorText(PipelineRejected.takeError());
+    EXPECT_NE(PipelineMessage.find("symbol name cannot be represented"),
+              std::string::npos)
+        << PipelineMessage;
+    EXPECT_FALSE(
+        findPluginMemoryOutput(PipelineScope.task(), PipelineOutputName)
+            .has_value());
 
     Graph.symbols().front().Name =
         Route.ObjectFormat == BuiltinObjectFormat::MachO ? "_repaired_symbol"

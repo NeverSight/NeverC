@@ -815,6 +815,10 @@ enum OpenFlags : unsigned {
   /// Prevent a newly created file from inheriting an extended ACL. Only makes
   /// a difference on Darwin.
   OF_NoInherit = CSUPPORT_OF_NO_INHERIT,
+
+  /// Request the access rights needed to read or replace a file's owner and
+  /// discretionary ACL. Only makes a difference on Windows.
+  OF_AccessControl = CSUPPORT_OF_ACCESS_CONTROL,
 };
 
 /// Create a potentially unique file name but does not create it.

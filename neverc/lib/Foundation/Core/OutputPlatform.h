@@ -8,6 +8,7 @@ namespace neverc::output_platform {
 
 std::error_code syncFileDescriptor(int FileDescriptor);
 std::error_code syncParentDirectory(llvm::StringRef Path);
+std::error_code seekFileToEnd(int FileDescriptor);
 std::error_code closeFileDescriptor(int FileDescriptor);
 std::error_code isLinkLikePath(llvm::StringRef Path, bool &Result);
 std::error_code renameLinkLikePath(llvm::StringRef From, llvm::StringRef To);

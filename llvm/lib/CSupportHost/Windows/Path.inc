@@ -1211,7 +1211,7 @@ Expected<file_t> openNativeFile(const Twine &Name, CreationDisposition Disp,
 
   DWORD NativeDisp = nativeDisposition(Disp, Flags);
   DWORD NativeAccess = nativeAccess(Access, Flags);
-  if (Flags & OF_Exclusive)
+  if (Flags & OF_AccessControl)
     NativeAccess |= READ_CONTROL | WRITE_DAC | WRITE_OWNER;
 
   bool Inherit = false;

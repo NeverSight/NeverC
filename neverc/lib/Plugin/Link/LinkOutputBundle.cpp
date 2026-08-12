@@ -116,14 +116,15 @@ Expected<neverc::OutputBundleSummary> LinkOutputBundle::commit() {
     Image->markCommitted();
     return std::move(*Result);
   }
+  Error Failure = Result.takeError();
   const neverc::OutputBundleSummary Current = Transaction->summary();
   if (Current.State == neverc::OutputBundleState::Committed)
     Image->markCommitted();
   else if (Current.State == neverc::OutputBundleState::FailedPartial)
     Image->markFailedPartial();
   else
-    consumeError(Image->abort());
-  return Result.takeError();
+    Failure = joinErrors(std::move(Failure), Image->abort());
+  return std::move(Failure);
 }
 
 Error LinkOutputBundle::abort() {
@@ -184,6 +185,7 @@ struct LinkOutputPipeline::Impl final : LinkPhaseRuntimeAccess {
   std::string MainPath;
   std::vector<PluginLinkSideOutput> SideOutputs;
   neverc::OutputBundleTransaction::FaultInjector InjectFault;
+  std::string BuiltinFailure;
   std::string LateCommitFailure;
 
   Impl(PluginTaskContext &TaskValue,
@@ -317,12 +319,12 @@ struct LinkOutputPipeline::Impl final : LinkPhaseRuntimeAccess {
       auto Bundle = LinkOutputBundle::create(
           Task, Coordinator, Output.Image, MainPath, SideOutputs, InjectFault);
       if (!Bundle) {
-        consumeError(Bundle.takeError());
+        BuiltinFailure = toString(Bundle.takeError()).str().str();
         return outputStatus(NEVERC_STATUS_VERIFICATION_FAILED);
       }
       Output.Bundle = std::move(*Bundle);
       if (Error E = Output.Image->verify()) {
-        consumeError(std::move(E));
+        BuiltinFailure = toString(std::move(E)).str().str();
         return outputStatus(NEVERC_STATUS_VERIFICATION_FAILED);
       }
     } else if (samePluginInterfaceID(
@@ -332,7 +334,7 @@ struct LinkOutputPipeline::Impl final : LinkPhaseRuntimeAccess {
         return outputStatus(NEVERC_STATUS_INVALID_STATE);
       }
       if (Error E = Output.Bundle->verifyAndPrepare()) {
-        consumeError(std::move(E));
+        BuiltinFailure = toString(std::move(E)).str().str();
         return outputStatus(NEVERC_STATUS_VERIFICATION_FAILED);
       }
     } else if (samePluginInterfaceID(PhaseID, {NEVERC_PHASE_LINK_COMMIT_HIGH,
@@ -343,8 +345,10 @@ struct LinkOutputPipeline::Impl final : LinkPhaseRuntimeAccess {
       if (!Committed) {
         std::string Failure = toString(Committed.takeError()).str().str();
         if (Output.Bundle->summary().State !=
-            neverc::OutputBundleState::Committed)
+            neverc::OutputBundleState::Committed) {
+          BuiltinFailure = std::move(Failure);
           return outputStatus(NEVERC_STATUS_PLUGIN_FAILURE);
+        }
         LateCommitFailure = std::move(Failure);
       }
     }
@@ -378,8 +382,11 @@ struct LinkOutputPipeline::Impl final : LinkPhaseRuntimeAccess {
       ActiveArtifact = nullptr;
     });
     if (Error E = Executor->execute(Task.session(), Task, PhaseID, route(),
-                                    Handle, Output))
+                                    Handle, Output)) {
+      if (!BuiltinFailure.empty())
+        return joinErrors(std::move(E), outputError(BuiltinFailure));
       return std::move(E);
+    }
     const auto *Published =
         static_cast<const LinkOutputArtifact *>(Output.payload());
     if (!Published || !Published->Image)
@@ -495,6 +502,7 @@ Expected<LinkOutputResult> LinkOutputPipeline::execute(
   State->MainPath = MainPath.str();
   State->SideOutputs.assign(SideOutputs.begin(), SideOutputs.end());
   State->InjectFault = std::move(InjectFault);
+  State->BuiltinFailure.clear();
   State->LateCommitFailure.clear();
   auto Clear = make_scope_exit([&] {
     State->MainPath.clear();
@@ -519,9 +527,11 @@ Expected<LinkOutputResult> LinkOutputPipeline::execute(
         if (Error E = State->notifyAfterCommit(Current))
           Failure = joinErrors(std::move(Failure), std::move(E));
       } else if (Current.Bundle) {
-        consumeError(Current.Bundle->abort());
+        if (Error E = Current.Bundle->abort())
+          Failure = joinErrors(std::move(Failure), std::move(E));
       } else {
-        consumeError(Current.Image->abort());
+        if (Error E = Current.Image->abort())
+          Failure = joinErrors(std::move(Failure), std::move(E));
       }
       return std::move(Failure);
     }

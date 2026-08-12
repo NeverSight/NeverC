@@ -6,6 +6,7 @@
 #include "llvm/Support/Path.h"
 #include "llvm/Support/SHA256.h"
 #include "llvm/Support/raw_ostream.h"
+#include <algorithm>
 #include <chrono>
 #include <set>
 #include <utility>
@@ -116,6 +117,11 @@ OutputBundleTransaction::create(
     auto Canonical = Coordinator.canonicalize(Output.Path);
     if (!Canonical)
       return Canonical.takeError();
+    if (sys::path::filename(*Canonical)
+            .equals_insensitive(".neverc-output.lock"))
+      return bundleError(Twine("output path is reserved for publication "
+                               "coordination: ") +
+                         *Canonical);
     Entries.push_back(
         {Output, std::move(*Canonical), std::nullopt, {}, false, false, false});
   }
@@ -286,8 +292,13 @@ Error OutputBundleTransaction::appendAndSyncJournal(
     StringRef Text, OutputBundleOperation SyncOperation) {
   int FD = -1;
   if (std::error_code EC = sys::fs::openFileForWrite(
-          JournalPath, FD, sys::fs::CD_OpenExisting, sys::fs::OF_Append))
+          JournalPath, FD, sys::fs::CD_OpenExisting, sys::fs::OF_None))
     return errorCodeToError(EC);
+  if (std::error_code EC = output_platform::seekFileToEnd(FD)) {
+    const std::error_code CloseError =
+        output_platform::closeFileDescriptor(FD);
+    return joinErrors(errorCodeToError(EC), errorCodeToError(CloseError));
+  }
 
   std::error_code WriteError;
   {
@@ -340,7 +351,8 @@ Error OutputBundleTransaction::prepare() {
     const sys::fs::OpenFlags CreateFlags =
         EntryValue.Output.OwnerOnly
             ? static_cast<sys::fs::OpenFlags>(sys::fs::OF_Exclusive |
-                                              sys::fs::OF_NoInherit)
+                                              sys::fs::OF_NoInherit |
+                                              sys::fs::OF_AccessControl)
             : sys::fs::OF_None;
     auto Temporary = sys::fs::TempFile::create(Model, CreateMode, CreateFlags);
     if (!Temporary)
@@ -367,8 +379,12 @@ Error OutputBundleTransaction::prepare() {
           reinterpret_cast<const char *>(EntryValue.Output.Bytes.data()),
           EntryValue.Output.Bytes.size());
       Stream.flush();
-      if (Stream.has_error())
-        WriteFailure = bundleError("could not write staged output");
+      if (Stream.has_error()) {
+        WriteFailure =
+            joinErrors(bundleError("could not write staged output"),
+                       errorCodeToError(Stream.error()));
+        Stream.clear_error();
+      }
     }
     if (WriteFailure)
       return Fail(std::move(WriteFailure));
@@ -463,7 +479,10 @@ Error OutputBundleTransaction::rollback() {
     }
   }
   if (!Failures && !JournalPath.empty()) {
-    if (std::error_code EC = sys::fs::remove(JournalPath))
+    std::error_code EC = sys::fs::remove(JournalPath);
+    if (EC == std::make_error_code(std::errc::no_such_file_or_directory))
+      EC.clear();
+    if (EC)
       Failures = joinErrors(std::move(Failures), errorCodeToError(EC));
     else
       JournalPath.clear();
@@ -558,7 +577,8 @@ Expected<OutputBundleSummary> OutputBundleTransaction::commit() {
         EC = sys::fs::createUniqueFile(
             Model, BackupFD, CopiedBackup,
             static_cast<sys::fs::OpenFlags>(sys::fs::OF_Exclusive |
-                                            sys::fs::OF_NoInherit),
+                                            sys::fs::OF_NoInherit |
+                                            sys::fs::OF_AccessControl),
             static_cast<unsigned>(sys::fs::owner_read | sys::fs::owner_write));
         if (!EC) {
           EntryValue.BackupPath = CopiedBackup.str().str();
@@ -671,40 +691,16 @@ Expected<OutputBundleSummary> OutputBundleTransaction::commit() {
     return Finalize;
   };
 
-  // Publish side outputs first and the main output last as the bundle's commit
-  // marker. A hard crash can leave a side output ahead of the old main, but it
-  // cannot durably expose a new main without its matching side output on file
-  // systems that support directory syncing. Consumers must still validate
-  // side-output digests after an unclean or durability-unconfirmed shutdown.
+  // Publish replacement side outputs before the main output. A removed side
+  // output follows the main instead: after a crash, a stale digest-mismatched
+  // map is safer than losing the map while the old release image is still
+  // durable. Consumers must still validate side-output digests after an
+  // unclean or durability-unconfirmed shutdown.
   for (size_t Index = 0; Index != Entries.size(); ++Index) {
     if (Index == MainIndex)
       continue;
-    if (Entries[Index].Output.Action == OutputBundleFileAction::Remove) {
-      if (!Entries[Index].HadExisting)
-        continue;
-      if (std::error_code Injected = fault(OutputBundleOperation::PublishSide,
-                                           Entries[Index].CanonicalPath)) {
-        Error E = errorCodeToError(Injected);
-        if (Error Rollback = rollback())
-          return joinErrors(std::move(E), std::move(Rollback));
-        return std::move(E);
-      }
-      std::error_code EC =
-          Entries[Index].ExistingLinkLike
-              ? output_platform::renameLinkLikePath(
-                    Entries[Index].CanonicalPath, Entries[Index].BackupPath)
-              : sys::fs::remove(Entries[Index].CanonicalPath);
-      if (EC == std::make_error_code(std::errc::no_such_file_or_directory))
-        EC.clear();
-      if (EC) {
-        Error E = errorCodeToError(EC);
-        if (Error Rollback = rollback())
-          return joinErrors(std::move(E), std::move(Rollback));
-        return std::move(E);
-      }
-      Entries[Index].Published = true;
+    if (Entries[Index].Output.Action == OutputBundleFileAction::Remove)
       continue;
-    }
     if (Error E = Publish(Entries[Index], OutputBundleOperation::PublishSide)) {
       if (Error Rollback = rollback())
         return joinErrors(std::move(E), std::move(Rollback));
@@ -738,6 +734,55 @@ Expected<OutputBundleSummary> OutputBundleTransaction::commit() {
     if (Error Rollback = rollback())
       return joinErrors(std::move(E), std::move(Rollback));
     return std::move(E);
+  }
+
+  const bool HasRemovedSideOutput =
+      std::any_of(Entries.begin(), Entries.end(), [](const Entry &EntryValue) {
+        return EntryValue.Output.Action == OutputBundleFileAction::Remove &&
+               EntryValue.HadExisting;
+      });
+  if (HasRemovedSideOutput) {
+    std::error_code EC =
+        fault(OutputBundleOperation::SyncDirectory,
+              Entries[MainIndex].CanonicalPath);
+    if (!EC)
+      EC = output_platform::syncParentDirectory(
+          Entries[MainIndex].CanonicalPath);
+    if (EC == std::make_error_code(std::errc::operation_not_supported)) {
+      AllDirectoriesSynced = false;
+    } else if (EC) {
+      Error Original = errorCodeToError(EC);
+      if (Error Rollback = rollback())
+        return joinErrors(std::move(Original), std::move(Rollback));
+      return std::move(Original);
+    }
+  }
+
+  for (size_t Index = 0; Index != Entries.size(); ++Index) {
+    if (Entries[Index].Output.Action != OutputBundleFileAction::Remove ||
+        !Entries[Index].HadExisting)
+      continue;
+    if (std::error_code Injected = fault(OutputBundleOperation::PublishSide,
+                                         Entries[Index].CanonicalPath)) {
+      Error E = errorCodeToError(Injected);
+      if (Error Rollback = rollback())
+        return joinErrors(std::move(E), std::move(Rollback));
+      return std::move(E);
+    }
+    std::error_code EC =
+        Entries[Index].ExistingLinkLike
+            ? output_platform::renameLinkLikePath(
+                  Entries[Index].CanonicalPath, Entries[Index].BackupPath)
+            : sys::fs::remove(Entries[Index].CanonicalPath);
+    if (EC == std::make_error_code(std::errc::no_such_file_or_directory))
+      EC.clear();
+    if (EC) {
+      Error E = errorCodeToError(EC);
+      if (Error Rollback = rollback())
+        return joinErrors(std::move(E), std::move(Rollback));
+      return std::move(E);
+    }
+    Entries[Index].Published = true;
   }
 
   State = OutputBundleState::Committed;
@@ -817,7 +862,10 @@ Error OutputBundleTransaction::abort() {
       Failures = joinErrors(std::move(Failures), std::move(Discard));
   State = OutputBundleState::Aborted;
   if (!JournalPath.empty()) {
-    if (std::error_code EC = sys::fs::remove(JournalPath)) {
+    std::error_code EC = sys::fs::remove(JournalPath);
+    if (EC == std::make_error_code(std::errc::no_such_file_or_directory))
+      EC.clear();
+    if (EC) {
       Flags |= OutputRecoveryRequired;
       Failures = joinErrors(std::move(Failures), errorCodeToError(EC));
     } else

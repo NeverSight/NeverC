@@ -557,8 +557,11 @@ TEST(PluginBinaryImageTest, MainPublishFailureRestoresTheOldBundle) {
                    : std::error_code();
       });
   EXPECT_FALSE(static_cast<bool>(Output));
-  if (!Output)
-    consumeError(Output.takeError());
+  const std::string Failure =
+      Output ? std::string() : errorText(Output.takeError());
+  EXPECT_NE(Failure.find(std::make_error_code(std::errc::io_error).message()),
+            std::string::npos)
+      << Failure;
   EXPECT_EQ(readFile(Main), "old-main");
   EXPECT_EQ(readFile(Map), "old-map");
 }
@@ -721,7 +724,9 @@ TEST(PluginBinaryImageTest, PublicationLockWaitHonorsCancellation) {
   };
 
   std::atomic<bool> CancelSecond = false;
+  std::atomic<bool> SawCancellationPoll = false;
   std::string ConcurrentFailure;
+  std::thread ConcurrentCommit;
   std::unique_ptr<neverc::OutputBundleTransaction> SecondTransaction;
   auto FirstTransaction = neverc::OutputBundleTransaction::create(
       FirstCoordinator, FirstOutputs,
@@ -729,21 +734,29 @@ TEST(PluginBinaryImageTest, PublicationLockWaitHonorsCancellation) {
       [&](neverc::OutputBundleOperation Operation, StringRef) {
         if (Operation != neverc::OutputBundleOperation::PublishMain)
           return std::error_code();
-        std::thread ConcurrentCommit([&] {
+        ConcurrentCommit = std::thread([&] {
           auto Committed = SecondTransaction->commit();
           if (!Committed)
             ConcurrentFailure = errorText(Committed.takeError());
         });
-        std::this_thread::sleep_for(std::chrono::milliseconds(25));
+        const auto Deadline =
+            std::chrono::steady_clock::now() + std::chrono::seconds(1);
+        while (!SawCancellationPoll &&
+               std::chrono::steady_clock::now() < Deadline)
+          std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        EXPECT_TRUE(SawCancellationPoll)
+            << "the competing publisher never entered the lock wait loop";
         CancelSecond = true;
-        ConcurrentCommit.join();
         return std::error_code();
       });
   ASSERT_TRUE(static_cast<bool>(FirstTransaction))
       << errorText(FirstTransaction.takeError());
   auto Second = neverc::OutputBundleTransaction::create(
       SecondCoordinator, SecondOutputs,
-      [&] { return CancelSecond.load(); });
+      [&] {
+        SawCancellationPoll = true;
+        return CancelSecond.load();
+      });
   ASSERT_TRUE(static_cast<bool>(Second)) << errorText(Second.takeError());
   SecondTransaction = std::move(*Second);
   ASSERT_FALSE(FirstTransaction->get()->prepare());
@@ -752,6 +765,12 @@ TEST(PluginBinaryImageTest, PublicationLockWaitHonorsCancellation) {
   auto FirstCommitted = FirstTransaction->get()->commit();
   EXPECT_TRUE(static_cast<bool>(FirstCommitted))
       << errorText(FirstCommitted.takeError());
+  ASSERT_TRUE(ConcurrentCommit.joinable());
+  ConcurrentCommit.join();
+  EXPECT_NE(ConcurrentFailure.find(
+                std::make_error_code(std::errc::operation_canceled).message()),
+            std::string::npos)
+      << ConcurrentFailure;
   EXPECT_FALSE(ConcurrentFailure.empty());
   EXPECT_EQ(SecondTransaction->summary().State,
             neverc::OutputBundleState::Prepared);
@@ -1005,6 +1024,80 @@ TEST(PluginBinaryImageTest, BundleCanRemoveAStaleSideOutput) {
   EXPECT_FALSE(sys::fs::exists(Map));
 }
 
+TEST(PluginBinaryImageTest,
+     RemovedSideOutputRemainsVisibleUntilMainPublication) {
+  TemporaryDirectory Directory;
+  const std::string Main = Directory.file("module.ko");
+  const std::string Map = Directory.file("module.ko.symbols.json");
+  writeFile(Main, "old-main");
+  writeFile(Map, "old-map");
+  neverc::OutputCoordinator Coordinator;
+  std::vector<neverc::OutputBundleFile> Outputs = {
+      {"main", Main, {'n', 'e', 'w'}, true},
+      {"map", Map, {}, false, false, neverc::OutputBundleFileAction::Remove},
+  };
+  bool MapWasStillVisible = false;
+  auto Bundle = neverc::OutputBundleTransaction::create(
+      Coordinator, Outputs,
+      /*IsCancelled=*/{},
+      [&](neverc::OutputBundleOperation Operation, StringRef) {
+        if (Operation != neverc::OutputBundleOperation::PublishMain)
+          return std::error_code();
+        MapWasStillVisible = sys::fs::exists(Map);
+        return std::make_error_code(std::errc::io_error);
+      });
+  ASSERT_TRUE(static_cast<bool>(Bundle)) << errorText(Bundle.takeError());
+  auto Committed = (*Bundle)->commit();
+  ASSERT_FALSE(static_cast<bool>(Committed));
+  consumeError(Committed.takeError());
+
+  EXPECT_TRUE(MapWasStillVisible);
+  EXPECT_EQ(readFile(Main), "old-main");
+  EXPECT_EQ(readFile(Map), "old-map");
+}
+
+TEST(PluginBinaryImageTest,
+     RemovedSideOutputWaitsForMainDirectorySynchronization) {
+  TemporaryDirectory Directory;
+  const std::string Main = Directory.file("module.ko");
+  const std::string Map = Directory.file("module.ko.symbols.json");
+  writeFile(Main, "old-main");
+  writeFile(Map, "old-map");
+  neverc::OutputCoordinator Coordinator;
+  std::vector<neverc::OutputBundleFile> Outputs = {
+      {"main", Main, {'n', 'e', 'w'}, true},
+      {"map", Map, {}, false, false, neverc::OutputBundleFileAction::Remove},
+  };
+  auto CanonicalMain = Coordinator.canonicalize(Main);
+  ASSERT_TRUE(static_cast<bool>(CanonicalMain))
+      << errorText(CanonicalMain.takeError());
+  auto CanonicalMap = Coordinator.canonicalize(Map);
+  ASSERT_TRUE(static_cast<bool>(CanonicalMap))
+      << errorText(CanonicalMap.takeError());
+  bool MainDirectorySynced = false;
+  bool RemovalObservedMainSync = false;
+  auto Bundle = neverc::OutputBundleTransaction::create(
+      Coordinator, Outputs,
+      /*IsCancelled=*/{},
+      [&](neverc::OutputBundleOperation Operation, StringRef Path) {
+        if (Operation == neverc::OutputBundleOperation::SyncDirectory &&
+            Path == *CanonicalMain)
+          MainDirectorySynced = true;
+        if (Operation == neverc::OutputBundleOperation::PublishSide &&
+            Path == *CanonicalMap)
+          RemovalObservedMainSync = MainDirectorySynced;
+        return std::error_code();
+      });
+  ASSERT_TRUE(static_cast<bool>(Bundle)) << errorText(Bundle.takeError());
+  auto Committed = (*Bundle)->commit();
+  ASSERT_TRUE(static_cast<bool>(Committed))
+      << errorText(Committed.takeError());
+
+  EXPECT_TRUE(RemovalObservedMainSync);
+  EXPECT_EQ(readFile(Main), "new");
+  EXPECT_FALSE(sys::fs::exists(Map));
+}
+
 TEST(PluginBinaryImageTest, BundleRemovesADanglingSideOutputSymlink) {
   TemporaryDirectory Directory;
   const std::string Main = Directory.file("module.ko");
@@ -1229,6 +1322,42 @@ TEST(PluginBinaryImageTest,
   EXPECT_EQ(readFile(Main), "new");
 }
 
+TEST(PluginBinaryImageTest, MissingJournalIsNotSilentlyRecreated) {
+  TemporaryDirectory Directory;
+  const std::string Main = Directory.file("module.ko");
+  writeFile(Main, "old-main");
+  neverc::OutputCoordinator Coordinator;
+  std::vector<neverc::OutputBundleFile> Outputs = {
+      {"main", Main, {'n', 'e', 'w'}, true},
+  };
+  std::string Journal;
+  bool RemovedJournal = false;
+  auto Bundle = neverc::OutputBundleTransaction::create(
+      Coordinator, Outputs,
+      /*IsCancelled=*/{},
+      [&](neverc::OutputBundleOperation Operation, StringRef) {
+        if (Operation != neverc::OutputBundleOperation::BackupExisting ||
+            RemovedJournal)
+          return std::error_code();
+        const std::error_code EC = sys::fs::remove(Journal);
+        RemovedJournal = !EC;
+        return EC;
+      });
+  ASSERT_TRUE(static_cast<bool>(Bundle)) << errorText(Bundle.takeError());
+  ASSERT_FALSE((*Bundle)->prepare());
+  Journal = (*Bundle)->summary().JournalPath;
+  ASSERT_FALSE(Journal.empty());
+
+  auto Committed = (*Bundle)->commit();
+  ASSERT_FALSE(static_cast<bool>(Committed));
+  consumeError(Committed.takeError());
+  EXPECT_TRUE(RemovedJournal);
+  EXPECT_EQ(readFile(Main), "old-main");
+  EXPECT_FALSE(sys::fs::exists(Journal));
+  EXPECT_EQ((*Bundle)->summary().State, neverc::OutputBundleState::Aborted);
+  EXPECT_EQ((*Bundle)->summary().Flags & neverc::OutputRecoveryRequired, 0U);
+}
+
 TEST(PluginBinaryImageTest,
      BundleRemovalRollbackRestoresTheOldMainAndSideOutput) {
   TemporaryDirectory Directory;
@@ -1309,6 +1438,24 @@ TEST(PluginBinaryImageTest,
   if (!Bundle)
     consumeError(Bundle.takeError());
   EXPECT_FALSE(sys::fs::exists(Main));
+}
+
+TEST(PluginBinaryImageTest, BundleRejectsPublicationLockAsAnOutput) {
+  TemporaryDirectory Directory;
+  neverc::OutputCoordinator Coordinator;
+  for (StringRef Name :
+       {StringRef(".neverc-output.lock"), StringRef(".NEVERC-OUTPUT.LOCK")}) {
+    const std::string Lock = Directory.file(Name);
+    std::vector<neverc::OutputBundleFile> Outputs = {
+        {"main", Lock, {'n', 'e', 'w'}, true},
+    };
+    auto Bundle =
+        neverc::OutputBundleTransaction::create(Coordinator, Outputs);
+    EXPECT_FALSE(static_cast<bool>(Bundle)) << Name.str();
+    if (!Bundle)
+      consumeError(Bundle.takeError());
+    EXPECT_FALSE(sys::fs::exists(Lock)) << Name.str();
+  }
 }
 
 } // namespace

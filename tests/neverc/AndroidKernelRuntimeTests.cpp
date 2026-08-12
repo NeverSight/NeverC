@@ -451,6 +451,30 @@ TEST_F(AndroidKernelRuntimeTest,
 }
 
 TEST_F(AndroidKernelRuntimeTest,
+       ReleaseLinkFailurePreservesPreexistingTransactionalBundle) {
+  const fs::path FirstSource = tmpFile("nvk_release_duplicate_first.c");
+  const fs::path SecondSource = tmpFile("nvk_release_duplicate_second.c");
+  writeFile(FirstSource,
+            std::string(kAndroidKernelModule) +
+                "int duplicate_release_symbol(void) { return 1; }\n");
+  writeFile(SecondSource,
+            "int duplicate_release_symbol(void) { return 2; }\n");
+  const fs::path Output = tmpFile("nvk_release_duplicate.ko");
+  const fs::path Sidecar(Output.string() + ".symbols.json");
+  writeFile(Output, "preexisting-main");
+  writeFile(Sidecar, "preexisting-map");
+
+  const CmdResult Release = linkKernelModule(
+      "", std::vector<fs::path>{FirstSource, SecondSource}, Output,
+      /*UseDeterministicXorStrKey=*/true,
+      /*EmitDebugInfo=*/false,
+      /*StripSymbols=*/true);
+  EXPECT_NE(Release.exitCode, 0) << Release.err;
+  EXPECT_EQ(readFile(Output), "preexisting-main");
+  EXPECT_EQ(readFile(Sidecar), "preexisting-map");
+}
+
+TEST_F(AndroidKernelRuntimeTest,
        ReleaseRejectsStreamOutputWithoutSymbolMapPath) {
   const fs::path Source = tmpFile("nvk_release_stdout.c");
   writeFile(Source, kAndroidKernelModule);

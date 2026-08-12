@@ -273,6 +273,9 @@ int Compilation::ExecuteCommand(const Command &C,
   if (C.getKind() == Command::CK_LinkerCommand) {
     const auto &LinkerCfg =
         static_cast<const LinkerCommand &>(C).getDriverConfig();
+    if (LinkerCfg.finalizeAndroidKernelModule)
+      PluginTransactionProtectedResultActions.insert(
+          llvm::cast<JobAction>(&C.getSource()));
     if (LinkerCfg.executionHooks && LinkerCfg.executionRequest) {
       auto Request = std::const_pointer_cast<::linker::LinkExecutionRequest>(
           LinkerCfg.executionRequest);

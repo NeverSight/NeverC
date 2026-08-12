@@ -92,6 +92,12 @@ RELEASE_FACT_SOURCES = {
         'sys::path::append(LockPath, ".neverc-output.lock")',
         "publicationLockCoordinator().acquireAll(Paths, IsCancelled)",
         "sys::fs::tryLockFile(FileDescriptor",
+        "sys::fs::OF_AccessControl",
+    ),
+    ROOT / "neverc/lib/Foundation/Core/OutputPlatform.cpp": (
+        "clearExtendedAcl",
+        "PROTECTED_DACL_SECURITY_INFORMATION",
+        "restrictFileToOwner",
     ),
     ROOT / "neverc/lib/Plugin/Link/LinkExecutionHooksBridge.cpp": (
         "Android module finalization requires Android module merge semantics",
@@ -382,6 +388,12 @@ def check_android_example_makefiles(report: Report) -> None:
         "PROFILE := $(if $(SAVED_PROFILE),$(SAVED_PROFILE),debug)",
         "PROFILE_FLAGS_debug   := -g",
         "PROFILE_FLAGS_release := -O2 --strip",
+        "ifeq ($(NVK_RECURSIVE_BUILD),1)",
+        "KERNEL := $(NVK_RECURSIVE_KERNEL)",
+        "NEVERC := $(NVK_RECURSIVE_NEVERC)",
+        "export NVK_RECURSIVE_BUILD := 1",
+        "export NVK_RECURSIVE_KERNEL := $(KERNEL)",
+        "export NVK_RECURSIVE_NEVERC := $(NEVERC)",
         "all: $(MODULE)",
         "NEVERC=$(NEVERC)",
         "MAKE_MODE_FLAGS := $(firstword -$(MAKEFLAGS))",
@@ -406,6 +418,8 @@ def check_android_example_makefiles(report: Report) -> None:
                 (
                     "EXTRA_STAMP := .nvk-build-extra",
                     "SAVED_EXTRA := $(file <$(EXTRA_STAMP))",
+                    "EXTRA := $(NVK_RECURSIVE_EXTRA)",
+                    "export NVK_RECURSIVE_EXTRA := $(EXTRA)",
                     "$(file >$(EXTRA_STAMP),$(EXTRA))",
                 ),
                 report,
@@ -426,12 +440,11 @@ def check_android_example_makefiles(report: Report) -> None:
             report.fail(path, "BUILD_ID must track the selected compiler path")
         if uses_extra and "EXTRA=$(EXTRA)" in build_ids[0].split():
             report.fail(path, "multi-word EXTRA must use its lossless side stamp")
-        propagated_extra = ' EXTRA="$(EXTRA)"' if uses_extra else ""
         expected_debug = [
-            f'$(MAKE) -B PROFILE=debug NEVERC="$(NEVERC)"{propagated_extra} all'
+            '"$(NEVERC)" make -B PROFILE=debug all'
         ]
         expected_release = [
-            f'$(MAKE) -B PROFILE=release NEVERC="$(NEVERC)"{propagated_extra} all'
+            '"$(NEVERC)" make -B PROFILE=release all'
         ]
         expected_compile = [
             '"$(NEVERC)" $(FLAGS) -r -nostdlib -o $@ $(SRCS)',

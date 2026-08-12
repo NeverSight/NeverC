@@ -172,6 +172,7 @@ struct ObjectPhasePipeline::Impl final : ObjectPhaseRuntimeAccess {
   ArrayRef<uint8_t> ActiveNativeImage;
   uint64_t NativeGraphGeneration = 0;
   std::vector<GraphBridgeEntry> ActiveGraphBridges;
+  std::string BuiltinFailure;
   std::string LateCommitFailure;
 
   OwnedRoute ActiveRoute;
@@ -414,7 +415,7 @@ struct ObjectPhasePipeline::Impl final : ObjectPhaseRuntimeAccess {
                                  ActiveNativeImage, *ActiveDestination)
             : Writer->beginWrite(Task, *(*Input)->Graph, *ActiveDestination);
     if (!Image) {
-      consumeError(Image.takeError());
+      BuiltinFailure = toString(Image.takeError()).str().str();
       return objectPhaseStatus(NEVERC_STATUS_PLUGIN_FAILURE);
     }
     return publishImage(std::shared_ptr<PluginObjectImage>(std::move(*Image)),
@@ -431,7 +432,7 @@ struct ObjectPhasePipeline::Impl final : ObjectPhaseRuntimeAccess {
       return objectPhaseStatus(NEVERC_STATUS_WRONG_SCOPE);
     }
     if (Error E = (*Input)->Image->verify()) {
-      consumeError(std::move(E));
+      BuiltinFailure = toString(std::move(E)).str().str();
       return objectPhaseStatus(NEVERC_STATUS_VERIFICATION_FAILED);
     }
     return publishImage((*Input)->Image, Result);
@@ -450,7 +451,7 @@ struct ObjectPhasePipeline::Impl final : ObjectPhaseRuntimeAccess {
     if (!Committed) {
       Error Failure = Committed.takeError();
       if ((*Input)->Image->state() != PluginObjectImageState::Committed) {
-        consumeError(std::move(Failure));
+        BuiltinFailure = toString(std::move(Failure)).str().str();
         return objectPhaseStatus(NEVERC_STATUS_PLUGIN_FAILURE);
       }
       LateCommitFailure = toString(std::move(Failure)).str().str();
@@ -502,8 +503,13 @@ struct ObjectPhasePipeline::Impl final : ObjectPhaseRuntimeAccess {
       return std::move(E);
     auto End = make_scope_exit([&] { endPhase(); });
     if (Error E = Executor->execute(Task.session(), Task, Phase, route(),
-                                    Handle, Output))
+                                    Handle, Output)) {
+      if (!BuiltinFailure.empty())
+        return joinErrors(
+            std::move(E),
+            createStringError(inconvertibleErrorCode(), BuiltinFailure));
       return std::move(E);
+    }
     const auto *Published =
         static_cast<const ObjectImageArtifact *>(Output.payload());
     if (!Published || !Published->Image)
@@ -716,6 +722,7 @@ ObjectPhasePipeline::executeNative(const PluginObjectGraph &InputGraph,
                                    ArrayRef<uint8_t> NativeImage,
                                    const ObjectOutputDestination &Destination,
                                    ObjectPhaseSemanticValidators Validators) {
+  State->BuiltinFailure.clear();
   State->LateCommitFailure.clear();
   auto ValidateGraph = [&Validators](const PluginObjectGraph &Object) -> Error {
     if (!Validators.Graph)
@@ -798,8 +805,14 @@ ObjectPhasePipeline::executeNative(const PluginObjectGraph &InputGraph,
   auto EndWrite = make_scope_exit([&] { State->endPhase(); });
   if (Error E = State->Executor->execute(State->Task.session(), State->Task,
                                          writePhaseID(), State->route(),
-                                         InputHandle, WriteOutput))
+                                         InputHandle, WriteOutput)) {
+    if (!State->BuiltinFailure.empty())
+      return joinErrors(
+          std::move(E),
+          createStringError(inconvertibleErrorCode(),
+                            State->BuiltinFailure));
     return std::move(E);
+  }
   const auto *Written =
       static_cast<const ObjectImageArtifact *>(WriteOutput.payload());
   if (!Written || !Written->Image)
@@ -868,6 +881,7 @@ ObjectPhasePipeline::verifyAndCommitFinished(
   if (!Image)
     return createStringError(errc::invalid_argument,
                              "object image candidate is null");
+  State->BuiltinFailure.clear();
   State->LateCommitFailure.clear();
   if (Error E = State->freeze())
     return std::move(E);

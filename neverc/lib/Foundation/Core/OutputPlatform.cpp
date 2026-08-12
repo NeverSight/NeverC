@@ -1,6 +1,7 @@
 #include "OutputPlatform.h"
 #include "llvm/Support/FileSystem.h"
 #include <cerrno>
+#include <cstdio>
 #include <string>
 
 #if defined(_WIN32)
@@ -50,6 +51,17 @@ std::error_code syncFileDescriptor(int FileDescriptor) {
     return {};
 #else
   if (::fsync(FileDescriptor) == 0)
+    return {};
+#endif
+  return std::error_code(errno, std::generic_category());
+}
+
+std::error_code seekFileToEnd(int FileDescriptor) {
+#if defined(_WIN32)
+  if (::_lseeki64(FileDescriptor, 0, SEEK_END) != -1)
+    return {};
+#else
+  if (::lseek(FileDescriptor, 0, SEEK_END) != static_cast<off_t>(-1))
     return {};
 #endif
   return std::error_code(errno, std::generic_category());
