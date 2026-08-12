@@ -75,7 +75,7 @@ RELEASE_FACT_SOURCES = {
         "PrependArg && *PrependArg",
         'quoteRecipeArgument(Variable.first + "=" + Variable.second)',
     ),
-    ROOT / "neverc/main.cpp": (
+    ROOT / "neverc/Driver/SubcommandHandlers.cpp": (
         '"__neverc_android_kernel_output_integrity"',
         '"__neverc_clean_android_kernel_output"',
     ),

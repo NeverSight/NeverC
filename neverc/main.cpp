@@ -1,7 +1,7 @@
 #include "Driver/ArgumentHandlers.h"
+#include "Driver/SubcommandHandlers.h"
 #include "Linker/Core/Driver/Dispatcher.h"
 #include "Linker/Core/Runtime/LinkerExecutionContext.h"
-#include "neverc/Build/BuildDriver.h"
 #include "neverc/Compiler/CompilerInvocation.h"
 #include "neverc/Compiler/FrontendTool.h"
 #include "neverc/Compiler/TextDiagnosticPrinter.h"
@@ -10,9 +10,7 @@
 #include "neverc/DynCode/Extractor/DynCodeExtractor.h"
 #include "neverc/DynCode/Pipeline/DriverIntegration.h"
 #include "neverc/DynCode/Pipeline/DynCodeExecutionContext.h"
-#include "neverc/Foundation/AndroidKernelReleaseSymbolMap.h"
 #include "neverc/Foundation/Core/Stack.h"
-#include "neverc/Foundation/Core/OutputTransaction.h"
 #include "neverc/Foundation/Diagnostic/DiagnosticOptions.h"
 #include "neverc/Invoke/Compilation.h"
 #include "neverc/Invoke/DirectInvocationOpts.h"
@@ -22,9 +20,6 @@
 #include "neverc/Invoke/ToolChain.h"
 #include "neverc/Plugin/Host/PluginSession.h"
 #include "neverc/Plugin/Host/PluginTaskContext.h"
-#include "neverc/Run/RunDriver.h"
-#include "neverc/Runtime/RuntimeManager.h"
-#include "neverc/Update/UpdateManager.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/IntrusiveRefCntPtr.h"
 #include "llvm/ADT/SmallString.h"
@@ -312,85 +307,14 @@ int neverc_main(int Argc, char **Argv, const llvm::ToolContext &ToolContext) {
   if (llvm::sys::Process::FixupStandardFileDescriptors())
     return 1;
 
-  if (Argc > 1 && StringRef(Argv[1]) == "__neverc_apply_update") {
-    return neverc::update::runUpdateHelper(
-        Argc - 1, const_cast<const char **>(Argv) + 1, Argv[0]);
-  }
-
-  if (Argc > 1 &&
-      (StringRef(Argv[1]) == "update" || StringRef(Argv[1]) == "upgrade")) {
-    return neverc::update::runUpdate(
-        Argc - 1, const_cast<const char **>(Argv) + 1, Argv[0]);
-  }
-
-  if (Argc > 1 &&
-      StringRef(Argv[1]) == "__neverc_clean_android_kernel_output") {
-    if (Argc != 3) {
-      llvm::errs() << "usage: " << Argv[0]
-                   << " __neverc_clean_android_kernel_output <module.ko>\n";
-      return 1;
-    }
-    OutputCoordinator Coordinator;
-    OutputBundleSummary FinalSummary;
-    auto Cleaned = cleanAndroidKernelReleaseOutput(
-        Coordinator, StringRef(Argv[2]), /*LeaseOwner=*/{}, &FinalSummary);
-    if (!Cleaned) {
-      std::string Message =
-          llvm::toString(Cleaned.takeError()).str().str();
-      if (FinalSummary.Flags & OutputPublished)
-        Message += "; output cleanup completed before this failure";
-      if (FinalSummary.Flags & OutputDurabilityUnconfirmed)
-        Message += "; output-directory durability is unconfirmed";
-      if (FinalSummary.Flags & OutputRecoveryRequired) {
-        Message += "; output recovery is required";
-        if (!FinalSummary.JournalPath.empty())
-          Message += " (journal: " + FinalSummary.JournalPath + ")";
-      }
-      llvm::errs() << Message << '\n';
-      return 1;
-    }
-    if (Cleaned->Flags & OutputDurabilityUnconfirmed)
-      llvm::errs() << "warning: Android kernel output cleanup completed, but "
-                      "output-directory durability could not be confirmed\n";
-    return 0;
-  }
-
-  if (Argc > 1 &&
-      StringRef(Argv[1]) == "__neverc_android_kernel_output_integrity") {
-    if (Argc != 3) {
-      llvm::errs() << "usage: " << Argv[0]
-                   << " __neverc_android_kernel_output_integrity <module.ko>\n";
-      return 1;
-    }
-    auto Integrity =
-        currentAndroidKernelBuildIntegrity(StringRef(Argv[2]));
-    if (!Integrity) {
-      llvm::errs() << toString(Integrity.takeError()) << '\n';
-      return 1;
-    }
-    llvm::outs() << *Integrity << '\n';
-    return 0;
-  }
-
-  if (Argc > 1 && StringRef(Argv[1]) == "run") {
-    return neverc::run::runCommand(
-        Argc - 1, const_cast<const char **>(Argv) + 1, ToolContext.Path,
-        ToolContext.NeedsPrependArg ? ToolContext.PrependArg : nullptr);
-  }
+  driver::SubcommandContext SubcommandCtx{
+      ToolContext.Path,
+      ToolContext.NeedsPrependArg ? ToolContext.PrependArg : nullptr};
+  if (std::optional<int> ExitCode =
+          driver::dispatchSubcommand(Args, SubcommandCtx))
+    return *ExitCode;
 
   initializeLLVMTargets();
-
-  if (Argc > 1 &&
-      (StringRef(Argv[1]) == "build" || StringRef(Argv[1]) == "make")) {
-    return neverc::build::runBuild(
-        Argc - 1, const_cast<const char **>(Argv) + 1, Argv[0],
-        ToolContext.NeedsPrependArg ? ToolContext.PrependArg : nullptr);
-  }
-
-  if (Argc > 1 && StringRef(Argv[1]) == "runtime") {
-    return neverc::runtime::runRuntime(
-        Argc - 1, const_cast<const char **>(Argv) + 1, Argv[0]);
-  }
 
   llvm::BumpPtrAllocator A;
   llvm::StringSaver Saver(A);

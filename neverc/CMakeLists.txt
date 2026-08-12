@@ -446,6 +446,7 @@ endif()
 
 add_neverc_tool(neverc
   Driver/ArgumentHandlers.cpp
+  Driver/SubcommandHandlers.cpp
   main.cpp
 
   DEPENDS
