@@ -209,11 +209,14 @@ TEST_F(BuildDriverTest, AndroidKernelPrivateCommandsRejectWrongArity) {
               1);
     auto Error = llvm::MemoryBuffer::getFile(ErrorPath);
     ASSERT_TRUE(Error) << Error.getError().message();
-    const std::string ExpectedUsage =
-        "usage: relative/neverc " + Case.Command.str() + " " +
-        Case.Operand.str();
-    EXPECT_NE((*Error)->getBuffer().find(ExpectedUsage),
-              llvm::StringRef::npos);
+    const llvm::StringRef ErrorText = (*Error)->getBuffer();
+    const std::string ExpectedUsageSuffix =
+        " " + Case.Command.str() + " " + Case.Operand.str();
+    EXPECT_TRUE(ErrorText.starts_with("usage: "));
+    // InitLLVM normalizes argv[0] to the real executable name on Windows, so
+    // validate the private command contract without assuming POSIX argv[0]
+    // preservation.
+    EXPECT_TRUE(ErrorText.trim().ends_with(ExpectedUsageSuffix));
   }
 }
 
