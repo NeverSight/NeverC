@@ -10,7 +10,9 @@
 #include "neverc/DynCode/Extractor/DynCodeExtractor.h"
 #include "neverc/DynCode/Pipeline/DriverIntegration.h"
 #include "neverc/DynCode/Pipeline/DynCodeExecutionContext.h"
+#include "neverc/Foundation/AndroidKernelReleaseSymbolMap.h"
 #include "neverc/Foundation/Core/Stack.h"
+#include "neverc/Foundation/Core/OutputTransaction.h"
 #include "neverc/Foundation/Diagnostic/DiagnosticOptions.h"
 #include "neverc/Invoke/Compilation.h"
 #include "neverc/Invoke/DirectInvocationOpts.h"
@@ -321,6 +323,55 @@ int neverc_main(int Argc, char **Argv, const llvm::ToolContext &ToolContext) {
         Argc - 1, const_cast<const char **>(Argv) + 1, Argv[0]);
   }
 
+  if (Argc > 1 &&
+      StringRef(Argv[1]) == "__neverc_clean_android_kernel_output") {
+    if (Argc != 3) {
+      llvm::errs() << "usage: " << Argv[0]
+                   << " __neverc_clean_android_kernel_output <module.ko>\n";
+      return 1;
+    }
+    OutputCoordinator Coordinator;
+    OutputBundleSummary FinalSummary;
+    auto Cleaned = cleanAndroidKernelReleaseOutput(
+        Coordinator, StringRef(Argv[2]), /*LeaseOwner=*/{}, &FinalSummary);
+    if (!Cleaned) {
+      std::string Message =
+          llvm::toString(Cleaned.takeError()).str().str();
+      if (FinalSummary.Flags & OutputPublished)
+        Message += "; output cleanup completed before this failure";
+      if (FinalSummary.Flags & OutputDurabilityUnconfirmed)
+        Message += "; output-directory durability is unconfirmed";
+      if (FinalSummary.Flags & OutputRecoveryRequired) {
+        Message += "; output recovery is required";
+        if (!FinalSummary.JournalPath.empty())
+          Message += " (journal: " + FinalSummary.JournalPath + ")";
+      }
+      llvm::errs() << Message << '\n';
+      return 1;
+    }
+    if (Cleaned->Flags & OutputDurabilityUnconfirmed)
+      llvm::errs() << "warning: Android kernel output cleanup completed, but "
+                      "output-directory durability could not be confirmed\n";
+    return 0;
+  }
+
+  if (Argc > 1 &&
+      StringRef(Argv[1]) == "__neverc_android_kernel_output_integrity") {
+    if (Argc != 3) {
+      llvm::errs() << "usage: " << Argv[0]
+                   << " __neverc_android_kernel_output_integrity <module.ko>\n";
+      return 1;
+    }
+    auto Integrity =
+        currentAndroidKernelBuildIntegrity(StringRef(Argv[2]));
+    if (!Integrity) {
+      llvm::errs() << toString(Integrity.takeError()) << '\n';
+      return 1;
+    }
+    llvm::outs() << *Integrity << '\n';
+    return 0;
+  }
+
   if (Argc > 1 && StringRef(Argv[1]) == "run") {
     return neverc::run::runCommand(
         Argc - 1, const_cast<const char **>(Argv) + 1, ToolContext.Path,
@@ -332,7 +383,8 @@ int neverc_main(int Argc, char **Argv, const llvm::ToolContext &ToolContext) {
   if (Argc > 1 &&
       (StringRef(Argv[1]) == "build" || StringRef(Argv[1]) == "make")) {
     return neverc::build::runBuild(
-        Argc - 1, const_cast<const char **>(Argv) + 1, Argv[0]);
+        Argc - 1, const_cast<const char **>(Argv) + 1, Argv[0],
+        ToolContext.NeedsPrependArg ? ToolContext.PrependArg : nullptr);
   }
 
   if (Argc > 1 && StringRef(Argv[1]) == "runtime") {

@@ -99,6 +99,8 @@ OutputBundleTransaction::create(
   if (Outputs.empty())
     return bundleError("at least one output is required");
   size_t MainCount = 0;
+  bool MainIsRemoval = false;
+  bool HasPublishedOutput = false;
   std::set<std::string> Names;
   std::vector<Entry> Entries;
   std::vector<StringRef> Paths;
@@ -108,15 +110,32 @@ OutputBundleTransaction::create(
     if (Output.Name.empty() || Output.Path.empty() ||
         !Names.insert(Output.Name).second)
       return bundleError("output names and paths must be unique");
-    if (Output.Main && Output.Action != OutputBundleFileAction::Publish)
-      return bundleError("the main output must be published");
     if (Output.Action == OutputBundleFileAction::Remove &&
         (!Output.Bytes.empty() || Output.Executable || Output.OwnerOnly))
       return bundleError("removed outputs cannot contain bytes or permissions");
+    if (Output.Main)
+      MainIsRemoval = Output.Action == OutputBundleFileAction::Remove;
+    HasPublishedOutput |= Output.Action == OutputBundleFileAction::Publish;
     MainCount += Output.Main ? 1 : 0;
     auto Canonical = Coordinator.canonicalize(Output.Path);
     if (!Canonical)
       return Canonical.takeError();
+#if defined(_WIN32)
+    const StringRef Filename = sys::path::filename(*Canonical);
+    if (Filename.ends_with(".") || Filename.ends_with(" "))
+      return bundleError(
+          "Windows output paths cannot have a trailing dot or space");
+#endif
+    for (const Entry &Existing : Entries) {
+      bool SameLocation = false;
+      if (std::error_code EC = output_platform::pathsReferToSameLocation(
+              Existing.CanonicalPath, *Canonical, SameLocation))
+        return joinErrors(
+            bundleError("could not compare output paths for aliasing"),
+            errorCodeToError(EC));
+      if (SameLocation)
+        return bundleError("output names and paths must be unique");
+    }
     if (sys::path::filename(*Canonical)
             .equals_insensitive(".neverc-output.lock"))
       return bundleError(Twine("output path is reserved for publication "
@@ -127,6 +146,9 @@ OutputBundleTransaction::create(
   }
   if (MainCount != 1)
     return bundleError("exactly one main output is required");
+  if (MainIsRemoval && HasPublishedOutput)
+    return bundleError(
+        "a removed main output requires a removal-only transaction");
   for (const Entry &EntryValue : Entries)
     Paths.push_back(EntryValue.CanonicalPath);
   auto Leases =
@@ -493,6 +515,11 @@ Error OutputBundleTransaction::rollback() {
     releaseLeases();
     return Failures;
   }
+  Flags &= ~(OutputPublished | OutputDurable | OutputMayBePartial |
+             OutputRecoveryRequired);
+  if (!FilesystemChanged)
+    Flags &= ~OutputDurabilityUnconfirmed;
+  PublicationGeneration = 0;
   State = OutputBundleState::Aborted;
   releaseLeases();
   return Error::success();
@@ -729,19 +756,22 @@ Expected<OutputBundleSummary> OutputBundleTransaction::commit() {
     }
   }
 
-  if (Error E =
-          Publish(Entries[MainIndex], OutputBundleOperation::PublishMain)) {
-    if (Error Rollback = rollback())
-      return joinErrors(std::move(E), std::move(Rollback));
-    return std::move(E);
+  if (Entries[MainIndex].Output.Action == OutputBundleFileAction::Publish) {
+    if (Error E =
+            Publish(Entries[MainIndex], OutputBundleOperation::PublishMain)) {
+      if (Error Rollback = rollback())
+        return joinErrors(std::move(E), std::move(Rollback));
+      return std::move(E);
+    }
   }
 
-  const bool HasRemovedSideOutput =
+  const bool HasRemovedOutput =
       std::any_of(Entries.begin(), Entries.end(), [](const Entry &EntryValue) {
         return EntryValue.Output.Action == OutputBundleFileAction::Remove &&
                EntryValue.HadExisting;
       });
-  if (HasRemovedSideOutput) {
+  if (Entries[MainIndex].Output.Action == OutputBundleFileAction::Publish &&
+      HasRemovedOutput) {
     std::error_code EC =
         fault(OutputBundleOperation::SyncDirectory,
               Entries[MainIndex].CanonicalPath);

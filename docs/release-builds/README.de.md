@@ -79,31 +79,46 @@ Android-Ziel mit `-fandroid-kernel-driver-mode`, `-r` und einem Ausgabenamen,
 der auf `.ko` endet. Gewöhnliches `-r` und Zwischen-`.o` bleiben abgelehnt.
 
 `neverc make release` bleibt der empfohlene Release-Befehl und wird zu
-`-O2 --strip`. Ohne `.nvk-build-flags` verwendet `make` standardmäßig debug und
-wählt release nicht von selbst. Die Beispiel-Makefiles speichern eine
-ausdrückliche Profilwahl, damit spätere `make push`-, `make run`- und
-`make`-Aufrufe dasselbe Artefakt verwenden. Beispiele mit `EXTRA` bewahren
+`-O2 --strip`. Diese Beispiele erfordern `neverc make`; ein externes `make`
+wird abgewiesen, weil rekursive Weitergabe von Kommandozeilenvariablen,
+Statusprüfung und sperrbewusste Bereinigung zum Build-Vertrag gehören. Ohne ein
+geprüftes Paar aus `.nvk-build-flags` und `.nvk-build-integrity` verwendet
+`neverc make` standardmäßig debug und wählt release nicht von selbst. Die Statusdateien
+liegen neben `MODULE`, auch wenn es ein Unterverzeichnis bezeichnet. Die
+Beispiel-Makefiles speichern eine
+ausdrückliche Profilwahl, damit spätere `neverc make push`-, `neverc make run`-
+und `neverc make`-Aufrufe dasselbe Artefakt verwenden. Beispiele mit `EXTRA` bewahren
 dessen vollständigen Wert mit mehreren Wörtern über rekursive und spätere Builds
-hinweg. `make debug` oder ein ausdrückliches
-`PROFILE=...` ersetzt die gespeicherte Wahl; `make clean` löscht den Status,
-sodass der nächste Build wieder debug verwendet. Ein ausdrückliches
-`make release` baut das Modul/Map-Bundle einmal bedingungslos neu; ein erneuter
-Aufruf repariert daher eine fehlende Map oder ein Bundle mit abweichendem
-Digest. Auf diesem finalen Modulpfad entfernt NeverC Debugabschnitte,
-`.comment` und für Relokationen unnötige lokale/undefinierte Einträge und baut
-`.strtab` neu auf.
+hinweg; rekursive Profilziele behalten auch andere Kommandozeilenüberschreibungen.
+`neverc make debug`, `neverc make release` und `neverc make clean` müssen jeweils als einziges
+Ziel aufgerufen werden; die Kombination mit einem weiteren Ziel wird zum Schutz
+der gemeinsamen Ausgaben vor Wettläufen abgelehnt. `neverc make debug` oder ein
+ausdrückliches `neverc make PROFILE=...` ersetzt die gespeicherte Wahl nur, wenn das
+Modul/Map/Status-Bundle veröffentlicht wird; ein Fehler vor der Veröffentlichung lässt
+das vorherige Artefakt und den vorherigen Status unverändert.
+`.nvk-build-integrity` bindet die SHA-256-Werte des Moduls, der Build-Kennung
+und des optionalen `EXTRA`-Status. Fehlender oder abweichender Status nach einer
+unterbrochenen Veröffentlichung wird ignoriert und erzwingt einen Neuaufbau.
+`neverc make clean` löscht den Status unter der Veröffentlichungssperre, sodass der
+nächste Build wieder debug verwendet. Bei einem geprüften release-Profil baut ein
+zielloses `neverc make` neu, wenn die Map fehlt. Ein ausdrückliches
+`neverc make release` baut das
+Modul/Map/Status-Bundle einmal bedingungslos neu; ein erneuter Aufruf repariert daher
+auch ein Bundle mit abweichendem Digest. Auf diesem finalen Modulpfad entfernt
+NeverC Debugabschnitte, `.comment` und für Relokationen unnötige
+lokale/undefinierte Einträge und baut `.strtab` neu auf.
 
 Nach einem erfolgreichen Release veröffentlicht NeverC das Modul und
 `<module>.ko.symbols.json` daneben transaktional. Vorhandene Dateien bleiben
 bis zu ihrer jeweiligen atomaren Ersetzung sichtbar. Parallele
-Veröffentlichungen in dasselbe Ausgabeverzeichnis werden über
-`.neverc-output.lock` serialisiert; die `make clean`-Ziele der Beispiele
-bewahren diese interne Sperrdatei absichtlich auf, damit eine aktive Sperre
-nicht aufgehoben wird. Fehler vor der Veröffentlichung rollen das gesamte
+Veröffentlichungen in dasselbe Ausgabeverzeichnis und `neverc make clean` werden über
+`.neverc-output.lock` serialisiert. Die Bereinigung entfernt das Bundle
+transaktional, bewahrt diese interne Sperrdatei aber absichtlich auf. Fehler vor der Veröffentlichung rollen das gesamte
 Bundle zurück; späte Dauerhaftigkeitsfehler behalten ein
 Wiederherstellungsjournal. Da zwei Verzeichniseinträge nicht mit einer einzigen
-Dateisystemoperation ersetzt werden können, prüfen Sie nach einem unsauberen
-Abbruch stets `image_sha256`. Die Zuordnung enthält für jedes erhaltene Symbol
+Dateisystemoperation ersetzt werden können, wird die Build-Statusintegrität
+automatisch geprüft; prüfen Sie nach einem unsauberen Abbruch dennoch stets
+`image_sha256` der Map. Die Zuordnung enthält für jedes erhaltene Symbol
 mit geändertem Namen dessen `original`- und `release`-Namen:
 
 ```json

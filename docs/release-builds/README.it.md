@@ -79,29 +79,45 @@ rifiuta strip-all. NeverC accetta `-r --strip` solo per un target Android con
 Il normale `-r` e gli `.o` intermedi restano rifiutati.
 
 `neverc make release` resta il comando consigliato e si espande in
-`-O2 --strip`. Senza `.nvk-build-flags`, `make` usa debug per impostazione
-predefinita e non sceglie release da solo. I Makefile di esempio salvano un
-profilo scelto esplicitamente affinché i successivi `make push`, `make run` e
-`make` senza target usino lo stesso artefatto. Gli esempi che accettano
+`-O2 --strip`. Questi esempi richiedono `neverc make` e rifiutano un `make`
+esterno, perché la propagazione ricorsiva delle variabili da riga di comando, la
+verifica dello stato e la pulizia sotto lock fanno parte del contratto di build.
+Senza una coppia verificata `.nvk-build-flags` e `.nvk-build-integrity`, `neverc make`
+usa debug per impostazione predefinita e non sceglie release da solo. I file di
+stato restano accanto a `MODULE`, anche se indica una sottodirectory. I Makefile di esempio salvano un
+profilo scelto esplicitamente affinché i successivi `neverc make push`,
+`neverc make run` e `neverc make` senza target usino lo stesso artefatto. Gli esempi che accettano
 `EXTRA` ne conservano il valore completo composto da più parole nelle build
-ricorsive e successive. `make debug` o un
-`PROFILE=...` esplicito sostituisce la scelta; `make clean` cancella lo stato e
-riporta la build successiva a debug. Un `make release` esplicito ricostruisce
-una volta e senza condizioni il bundle modulo/mappa; rieseguirlo ripara quindi
-una mappa mancante o un bundle con digest non corrispondente. In questo percorso
-finale NeverC rimuove sezioni di debug, `.comment` e voci locali/non definite
-inutili alle rilocazioni, quindi ricostruisce `.strtab`.
+ricorsive e successive; i target profile ricorsivi conservano anche le altre
+sovrascritture da riga di comando. `neverc make debug`, `neverc make release` e
+`neverc make clean` devono
+essere eseguiti ciascuno come unico target; combinarli con un altro target viene
+rifiutato per evitare corse sugli output condivisi. `neverc make debug` o un
+`neverc make PROFILE=...` esplicito sostituisce la scelta solo quando viene pubblicato il
+bundle modulo/mappa/stato; un errore precedente alla pubblicazione lascia intatti
+l'artefatto e lo stato precedenti.
+`.nvk-build-integrity` lega gli SHA-256 del modulo, dell'identificatore di build
+e dello stato `EXTRA` facoltativo. Uno stato assente o diverso dopo una
+pubblicazione interrotta viene ignorato e forza la ricostruzione. `neverc make clean`
+cancella lo stato sotto il lock di pubblicazione e riporta la build successiva a debug. Con un
+profilo release verificato, un `neverc make` senza target ricostruisce se manca
+la mappa. Un `neverc make release` esplicito ricostruisce una volta e senza condizioni il bundle
+modulo/mappa/stato; rieseguirlo ripara quindi anche un bundle con digest non
+corrispondente. In questo percorso finale NeverC rimuove sezioni di debug,
+`.comment` e voci locali/non definite inutili alle rilocazioni, quindi
+ricostruisce `.strtab`.
 
 Dopo una release riuscita, NeverC pubblica in modo transazionale il modulo e
 `<module>.ko.symbols.json` accanto ad esso. I file esistenti restano visibili
 fino a ogni sostituzione atomica. Le pubblicazioni concorrenti dirette alla
-stessa directory di output vengono serializzate tramite `.neverc-output.lock`;
-i target `make clean` degli esempi conservano intenzionalmente questo file di
-blocco interno per non rimuovere un blocco attivo. Gli errori prima della
+stessa directory di output e `neverc make clean` vengono serializzati tramite
+`.neverc-output.lock`. La pulizia elimina il bundle in modo transazionale, ma
+conserva intenzionalmente questo file di blocco interno. Gli errori prima della
 pubblicazione annullano l'intero bundle; gli errori tardivi
 di durabilità conservano un journal di ripristino. Poiché due voci di directory
-non possono essere sostituite con una sola operazione del filesystem, verifica
-sempre `image_sha256` dopo un arresto anomalo. La mappa registra i nomi
+non possono essere sostituite con una sola operazione del filesystem,
+l'integrità dello stato di build viene verificata automaticamente; verifica
+comunque sempre l'`image_sha256` della mappa dopo un arresto anomalo. La mappa registra i nomi
 `original` e `release` per ogni simbolo conservato il cui nome è cambiato:
 
 ```json

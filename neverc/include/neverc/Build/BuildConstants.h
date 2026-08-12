@@ -22,6 +22,8 @@ constexpr llvm::StringLiteral VarMakefileList = "MAKEFILE_LIST";
 constexpr llvm::StringLiteral VarMakeVersion = "MAKE_VERSION";
 constexpr llvm::StringLiteral VarMakeFlags = "MAKEFLAGS";
 constexpr llvm::StringLiteral VarMakeCmdGoals = "MAKECMDGOALS";
+constexpr llvm::StringLiteral VarNeverCMakeExecutable =
+    "NEVERC_MAKE_EXECUTABLE";
 
 constexpr llvm::StringLiteral MakeVersionValue = "4.3";
 constexpr llvm::StringLiteral ShellFlagsDefault = "-c";

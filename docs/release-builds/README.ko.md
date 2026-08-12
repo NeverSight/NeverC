@@ -75,26 +75,39 @@ NeverC는 Android 대상에서 `-fandroid-kernel-driver-mode`와 `-r`이 켜지�
 `.o`는 계속 거부됩니다.
 
 `neverc make release`는 권장 릴리스 명령이며 `-O2 --strip`으로 확장됩니다.
-`.nvk-build-flags`가 없으면 `make`는 debug를 기본값으로 사용하고 스스로
-release를 선택하지 않습니다. 예제 Makefile은 명시적인 프로필 선택을 저장하므로
-이후 `make push`, `make run`, 대상 없는 `make`가 같은 산출물을 사용합니다.
+이 예제는 `neverc make`를 요구하며 외부 `make`는 거부합니다. 재귀 명령줄 변수
+전달, 상태 검증, 잠금 인식 정리가 빌드 계약의 일부이기 때문입니다. 검증된
+`.nvk-build-flags`와 `.nvk-build-integrity` 쌍이 없으면 `neverc make`는 debug를
+기본값으로 사용하고 스스로 release를 선택하지 않습니다. 상태 파일은 `MODULE`이
+하위 디렉터리를 가리켜도 항상 그 옆에 놓입니다. 예제 Makefile은 명시적인 프로필 선택을 저장하므로
+이후 `neverc make push`, `neverc make run`, 대상 없는 `neverc make`가 같은 산출물을 사용합니다.
 `EXTRA`를 받는 예제는 여러 단어로 된 전체 값을 재귀 빌드와 이후 빌드에서도
-보존합니다.
-`make debug` 또는 명시적인 `PROFILE=...`는 저장된 선택을 갱신하고,
-`make clean`은 저장 상태를 삭제하여 다음 빌드를 debug로 되돌립니다. 명시적으로
-`make release`를 실행하면 모듈/맵 번들을 한 번 무조건 다시 빌드하므로, 다시
-실행해 누락된 맵이나 다이제스트가 맞지 않는 번들을 복구할 수 있습니다. 이 최종
-경로에서 NeverC는 디버그 섹션, `.comment`, 재배치에 불필요한 로컬/미정의
-항목을 제거한 뒤 `.strtab`을 다시 구성합니다.
+보존하며 재귀 profile 대상은 다른 명령줄 재정의도 유지합니다.
+`neverc make debug`, `neverc make release`, `neverc make clean`은 각각 단독 대상으로
+실행해야 하며, 이들 중 하나를 다른 대상과 결합하면 공유 산출물의 경합을 막기 위해
+거부됩니다.
+`neverc make debug` 또는 명시적인 `neverc make PROFILE=...`는 모듈/맵/상태 번들이 게시된 경우에만 저장된
+선택을 갱신하며, 게시 전 실패는 이전 산출물과 상태를 그대로 둡니다.
+`.nvk-build-integrity`는 모듈, 빌드 식별자, 선택적 `EXTRA` 상태의 SHA-256을
+결합합니다. 게시가 중단된 뒤 상태가 없거나 일치하지 않으면 이를 무시하고 재빌드를
+강제합니다. `neverc make clean`은 게시 잠금을 통해 저장 상태를 삭제하여 다음 빌드를 debug로
+되돌립니다. 검증된 프로필이 release이면 대상
+없는 `neverc make`는 맵이 누락되었을 때 다시 빌드합니다. 명시적으로
+`neverc make release`를
+실행하면 모듈/맵/상태 번들을 한 번 무조건 다시 빌드하므로, 다시 실행해 다이제스트가
+맞지 않는 번들도 복구할 수 있습니다. 이 최종 경로에서 NeverC는 디버그 섹션,
+`.comment`, 재배치에 불필요한 로컬/미정의 항목을 제거한 뒤 `.strtab`을 다시
+구성합니다.
 
 release가 성공하면 NeverC는 모듈과 그 옆의
 `<module>.ko.symbols.json`을 트랜잭션 방식으로 게시합니다. 기존 파일은 각각의
 원자적 교체가 일어날 때까지 계속 보입니다. 동일한 출력 디렉터리를 대상으로 하는
-동시 게시는 `.neverc-output.lock`을 통해 직렬화되며, 예제의 `make clean`은 이
-내부 잠금 파일을 의도적으로 유지하여 사용 중인 잠금이 해제되지 않게 합니다. 게시
+동시 게시와 `neverc make clean`은 `.neverc-output.lock`을 통해 직렬화됩니다. 정리는
+번들을 트랜잭션으로 삭제하지만 이 내부 잠금 파일은 의도적으로 유지합니다. 게시
 전 오류는 전체 번들을 롤백하고, 뒤늦은 내구성 오류는 복구 저널을 남깁니다. 두
 디렉터리 항목을 하나의 파일 시스템 연산으로
-교체할 수는 없으므로 비정상 종료 후에는 항상 `image_sha256`을 검증하십시오.
+교체할 수는 없습니다. 빌드 상태 무결성은 자동 검증되지만 비정상 종료 후에는 항상
+맵의 `image_sha256`을 검증하십시오.
 맵은 이름이 변경된 보존 심볼마다 `original`(원래 이름)과
 `release`(`.ko` 안의 이름)를 기록합니다.
 

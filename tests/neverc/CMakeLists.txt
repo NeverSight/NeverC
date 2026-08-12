@@ -2682,7 +2682,13 @@ target_link_libraries(neverc-build-tests PRIVATE
   nevercBuild
 )
 
+target_compile_definitions(neverc-build-tests PRIVATE
+  NEVERC_BINARY="${_NEVERC_BINARY}"
+  NEVERC_ANDROID_KERNEL_HELLO_MAKEFILE="${CMAKE_CURRENT_SOURCE_DIR}/../../examples/android-kernel-hello/Makefile"
+)
+
 target_compile_features(neverc-build-tests PRIVATE cxx_std_17)
+neverc_tests_link_neverc(neverc-build-tests)
 
 gtest_discover_tests(neverc-build-tests
   PROPERTIES

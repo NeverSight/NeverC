@@ -1,5 +1,7 @@
 #include "OutputPlatform.h"
+#include "llvm/ADT/SmallString.h"
 #include "llvm/Support/FileSystem.h"
+#include "llvm/Support/Path.h"
 #include <cerrno>
 #include <cstdio>
 #include <string>
@@ -76,6 +78,61 @@ std::error_code closeFileDescriptor(int FileDescriptor) {
     return {};
 #endif
   return std::error_code(errno, std::generic_category());
+}
+
+static std::error_code probeMissingPathAlias(StringRef Left, StringRef Right,
+                                             bool &Result) {
+  SmallString<256> Model(Left);
+  Model += ".neverc-alias-%%%%%%%%";
+  SmallString<256> ProbePath;
+  int ProbeFile = -1;
+  if (std::error_code EC =
+          sys::fs::createUniqueFile(Model, ProbeFile, ProbePath))
+    return EC;
+
+  const std::error_code CloseError = closeFileDescriptor(ProbeFile);
+  std::error_code CompareError;
+  Result = false;
+  if (!StringRef(ProbePath).starts_with(Left)) {
+    CompareError = std::make_error_code(std::errc::invalid_argument);
+  } else {
+    SmallString<256> RightProbe(Right);
+    RightProbe += StringRef(ProbePath).drop_front(Left.size());
+    CompareError = sys::fs::equivalent(ProbePath, RightProbe, Result);
+    if (CompareError ==
+            std::make_error_code(std::errc::no_such_file_or_directory) ||
+        CompareError == std::make_error_code(std::errc::not_a_directory))
+      CompareError.clear();
+  }
+  const std::error_code CleanupError = sys::fs::remove(ProbePath);
+  if (CloseError)
+    return CloseError;
+  if (CompareError)
+    return CompareError;
+  return CleanupError;
+}
+
+std::error_code pathsReferToSameLocation(StringRef Left, StringRef Right,
+                                         bool &Result) {
+  Result = Left == Right;
+  if (Result)
+    return {};
+
+  bool Equivalent = false;
+  const std::error_code EquivalentError =
+      sys::fs::equivalent(Left, Right, Equivalent);
+  if (!EquivalentError) {
+    Result = Equivalent;
+    return {};
+  }
+  if (EquivalentError !=
+          std::make_error_code(std::errc::no_such_file_or_directory) &&
+      EquivalentError != std::make_error_code(std::errc::not_a_directory))
+    return EquivalentError;
+
+  // Ask the actual filesystem: case-folding and Unicode normalization vary by
+  // volume and cannot be inferred safely from path spelling alone.
+  return probeMissingPathAlias(Left, Right, Result);
 }
 
 std::error_code syncParentDirectory(StringRef Path) {

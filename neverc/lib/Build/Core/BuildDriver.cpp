@@ -12,6 +12,7 @@
 #include "neverc/Build/VariableEnv.h"
 
 #include "llvm/ADT/StringSet.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -26,6 +27,26 @@ namespace build {
 
 namespace {
 
+std::string quoteRecipeArgument(llvm::StringRef Argument) {
+  std::string Result;
+  Result.reserve(Argument.size() + 2);
+#if defined(_WIN32)
+  Result.push_back('"');
+  Result.append(Argument.begin(), Argument.end());
+  Result.push_back('"');
+#else
+  Result.push_back('\'');
+  for (char Character : Argument) {
+    if (Character == '\'')
+      Result += "'\\''";
+    else
+      Result.push_back(Character);
+  }
+  Result.push_back('\'');
+#endif
+  return Result;
+}
+
 struct BuildOptions {
   std::string MakefilePath;
   std::vector<std::string> ChangeDirs;
@@ -39,7 +60,14 @@ struct BuildOptions {
   std::vector<std::pair<std::string, std::string>> CmdVars;
 };
 
-bool parseOptions(int Argc, const char **Argv, BuildOptions &Opts) {
+enum class ParseOptionsResult {
+  Continue,
+  ExitSuccess,
+  ExitFailure,
+};
+
+ParseOptionsResult parseOptions(int Argc, const char **Argv,
+                                BuildOptions &Opts) {
   int I = 1;
   while (I < Argc) {
     std::string Arg = Argv[I];
@@ -89,7 +117,7 @@ bool parseOptions(int Argc, const char **Argv, BuildOptions &Opts) {
           << "  -p               Print rule database\n"
           << "  VAR=VALUE        Set variable\n"
           << "  -h, --help       Show this help\n";
-      return false;
+      return ParseOptionsResult::ExitSuccess;
     } else if (Arg.find('=') != std::string::npos) {
       size_t Eq = Arg.find('=');
       Opts.CmdVars.emplace_back(Arg.substr(0, Eq), Arg.substr(Eq + 1));
@@ -98,12 +126,13 @@ bool parseOptions(int Argc, const char **Argv, BuildOptions &Opts) {
     } else {
       llvm::errs() << constants::ToolName << ": Unknown option: "
                    << Arg << "\n";
+      return ParseOptionsResult::ExitFailure;
     }
     ++I;
   }
   if (Opts.Jobs == 0)
     Opts.Jobs = 1;
-  return true;
+  return ParseOptionsResult::Continue;
 }
 
 std::string findMakefile(const std::string &Specified) {
@@ -359,10 +388,20 @@ void printDatabase(const RuleDB &Rules, const VariableEnv &Env) {
 
 } // namespace
 
-int runBuild(int Argc, const char **Argv, const char *Argv0) {
+int runBuild(int Argc, const char **Argv, const char *Argv0,
+             const char *PrependArg) {
   BuildOptions Opts;
-  if (!parseOptions(Argc, Argv, Opts))
+  const ParseOptionsResult ParseResult = parseOptions(Argc, Argv, Opts);
+  if (ParseResult == ParseOptionsResult::ExitSuccess)
     return 0;
+  if (ParseResult == ParseOptionsResult::ExitFailure)
+    return 2;
+
+  static int ExecutableAnchor;
+  std::string MakeExecutable = llvm::sys::fs::getMainExecutable(
+      Argv0, static_cast<void *>(&ExecutableAnchor));
+  if (MakeExecutable.empty())
+    MakeExecutable = platform::absolutePath(Argv0);
 
   for (auto &Dir : Opts.ChangeDirs) {
     if (!platform::changeCwd(Dir)) {
@@ -408,8 +447,27 @@ int runBuild(int Argc, const char **Argv, const char *Argv0) {
            VariableEnv::Origin::Default);
   Env.set(constants::VarCurdir.str(), platform::getCwd(), AssignMode::Simple,
            VariableEnv::Origin::Default);
-  Env.set(constants::VarMake.str(), std::string(Argv0) + " make",
-           AssignMode::Simple, VariableEnv::Origin::Default);
+  std::string NeverCCommand = quoteRecipeArgument(MakeExecutable);
+  if (PrependArg && *PrependArg) {
+    NeverCCommand += " ";
+    NeverCCommand += quoteRecipeArgument(PrependArg);
+  }
+  Env.set(constants::VarNeverCMakeExecutable.str(), NeverCCommand,
+          AssignMode::Simple, VariableEnv::Origin::Default);
+  std::string RecursiveMake = NeverCCommand + " make";
+  for (size_t Index = 0; Index != Opts.CmdVars.size(); ++Index) {
+    const auto &Variable = Opts.CmdVars[Index];
+    const bool Superseded = std::any_of(
+        Opts.CmdVars.begin() + Index + 1, Opts.CmdVars.end(),
+        [&](const auto &Later) { return Later.first == Variable.first; });
+    if (Superseded)
+      continue;
+    RecursiveMake += " ";
+    RecursiveMake +=
+        quoteRecipeArgument(Variable.first + "=" + Variable.second);
+  }
+  Env.set(constants::VarMake.str(), std::move(RecursiveMake), AssignMode::Simple,
+          VariableEnv::Origin::Default);
   Env.set(constants::VarMakeVersion.str(), constants::MakeVersionValue.str(),
            AssignMode::Simple, VariableEnv::Origin::Default);
 
@@ -478,30 +536,32 @@ int runBuild(int Argc, const char **Argv, const char *Argv0) {
     }
   }
 
-  for (auto &T : Targets) {
-    auto *N = Graph.getNode(T);
-    if (N && !N->Rule && !N->IsPhony && !platform::fileExists(T)) {
-      llvm::errs() << constants::ErrorPrefix << "No rule to make target '"
-                   << T << "'.  Stop.\n";
-      return 2;
-    }
-  }
-
+  bool HasMissingInput = false;
   {
     llvm::StringSet<> AllPrereqs;
-    for (auto &Entry : Graph.nodes())
+    for (auto &Entry : Graph.nodes()) {
       for (auto &Dep : Entry.second.Dependencies)
         AllPrereqs.insert(Dep);
+      for (auto &Dep : Entry.second.OrderOnlyDeps)
+        AllPrereqs.insert(Dep);
+    }
+    llvm::StringSet<> RequestedTargets;
+    for (const std::string &Target : Targets)
+      RequestedTargets.insert(Target);
 
     for (auto &Entry : Graph.nodes()) {
       if (Entry.second.Rule || Entry.second.IsPhony)
         continue;
       if (platform::fileExists(Entry.first().str()))
         continue;
-      if (AllPrereqs.count(Entry.first())) {
+      if (AllPrereqs.count(Entry.first()) ||
+          RequestedTargets.count(Entry.first())) {
         llvm::errs() << constants::ErrorPrefix << "No rule to make target '"
                      << Entry.first() << "'.  Stop.\n";
-        return 2;
+        Entry.second.Failed = true;
+        HasMissingInput = true;
+        if (!Opts.KeepGoing)
+          return 2;
       }
     }
   }
@@ -511,6 +571,10 @@ int runBuild(int Argc, const char **Argv, const char *Argv0) {
     auto *N = Graph.getNode(T);
     if (!N)
       continue;
+    if (N->Failed) {
+      NothingToDo = false;
+      break;
+    }
     if (N->IsPhony) {
       bool HasRecipes = N->Rule && !N->Rule->Recipes.empty();
       if (HasRecipes) {
@@ -530,7 +594,7 @@ int runBuild(int Argc, const char **Argv, const char *Argv0) {
     if (!NothingToDo)
       break;
   }
-  if (NothingToDo && !Opts.AlwaysMake) {
+  if (NothingToDo && !Opts.AlwaysMake && !HasMissingInput) {
     for (auto &T : Targets) {
       auto *N = Graph.getNode(T);
       if (N && N->IsPhony)

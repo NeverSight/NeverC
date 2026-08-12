@@ -46,6 +46,12 @@ public:
     setEnvironmentVariable(Name, Value);
   }
 
+  explicit ScopedEnvironmentVariable(const char *Name) : Name(Name) {
+    if (const char *Old = std::getenv(Name))
+      OldValue = Old;
+    unsetEnvironmentVariable(Name);
+  }
+
   ScopedEnvironmentVariable(const ScopedEnvironmentVariable &) = delete;
   ScopedEnvironmentVariable &
   operator=(const ScopedEnvironmentVariable &) = delete;
@@ -86,6 +92,12 @@ constexpr const char *kAndroidKernelXorStrModule =
 bool isElfImage(const std::string &Bytes) {
   return Bytes.size() > 4 && static_cast<unsigned char>(Bytes[0]) == 0x7f &&
          Bytes[1] == 'E' && Bytes[2] == 'L' && Bytes[3] == 'F';
+}
+
+std::string sha256Text(llvm::StringRef Bytes) {
+  const auto Digest = llvm::SHA256::hash(llvm::ArrayRef<uint8_t>(
+      reinterpret_cast<const uint8_t *>(Bytes.data()), Bytes.size()));
+  return llvm::toHex(Digest, /*LowerCase=*/true);
 }
 
 std::string renderError(llvm::Error Error) {
@@ -448,6 +460,113 @@ TEST_F(AndroidKernelRuntimeTest,
                        PluginOutput);
   ASSERT_EQ(PluginDebug.exitCode, 0) << PluginDebug.err;
   EXPECT_FALSE(fs::exists(PluginOutput.string() + ".symbols.json"));
+}
+
+TEST_F(AndroidKernelRuntimeTest,
+       ReleasePublishesRequestedBuildStateInTheOutputBundle) {
+  ScopedEnvironmentVariable BuildID(
+      "NEVERC_ANDROID_KERNEL_BUILD_ID",
+      "KERNEL=510 PROFILE=release NEVERC=/opt/neverc");
+  ScopedEnvironmentVariable BuildExtra(
+      "NEVERC_ANDROID_KERNEL_BUILD_EXTRA",
+      "-DTEST_FIRST=1 -DTEST_SECOND=two");
+  const fs::path Source = tmpFile("nvk_release_build_state.c");
+  const fs::path Output = tmpFile("nvk_release_build_state.ko");
+  writeFile(Source, kAndroidKernelModule);
+
+  const CmdResult Release =
+      linkKernelModule("", Source, Output,
+                       /*UseDeterministicXorStrKey=*/true,
+                       /*EmitDebugInfo=*/false,
+                       /*StripSymbols=*/true);
+  ASSERT_EQ(Release.exitCode, 0) << Release.err;
+  const std::string BuildState =
+      "KERNEL=510 PROFILE=release NEVERC=/opt/neverc\n";
+  const std::string BuildExtraState = "-DTEST_FIRST=1 -DTEST_SECOND=two\n";
+  const std::string Image = readFile(Output);
+  EXPECT_EQ(readFile(tmp() / ".nvk-build-flags"), BuildState);
+  EXPECT_EQ(readFile(tmp() / ".nvk-build-extra"), BuildExtraState);
+  EXPECT_EQ(readFile(tmp() / ".nvk-build-integrity"),
+            "IMAGE_SHA256=" + sha256Text(Image) +
+                " BUILD_ID_SHA256=" + sha256Text(BuildState) +
+                " BUILD_EXTRA_SHA256=" + sha256Text(BuildExtraState) + "\n");
+}
+
+TEST_F(AndroidKernelRuntimeTest,
+       ReleaseClearsStaleBuildExtraWhenRequestedExtraIsEmpty) {
+  ScopedEnvironmentVariable BuildID(
+      "NEVERC_ANDROID_KERNEL_BUILD_ID",
+      "KERNEL=510 PROFILE=release NEVERC=/opt/neverc");
+  ScopedEnvironmentVariable BuildExtra("NEVERC_ANDROID_KERNEL_BUILD_EXTRA", "");
+  const fs::path Source = tmpFile("nvk_release_empty_build_extra.c");
+  const fs::path Output = tmpFile("nvk_release_empty_build_extra.ko");
+  const fs::path ExtraState = tmp() / ".nvk-build-extra";
+  writeFile(Source, kAndroidKernelModule);
+  writeFile(ExtraState, "-DSTALE_EXTRA=1\n");
+
+  const CmdResult Release =
+      linkKernelModule("", Source, Output,
+                       /*UseDeterministicXorStrKey=*/true,
+                       /*EmitDebugInfo=*/false,
+                       /*StripSymbols=*/true);
+  ASSERT_EQ(Release.exitCode, 0) << Release.err;
+  EXPECT_FALSE(fs::exists(ExtraState));
+  const std::string BuildState =
+      "KERNEL=510 PROFILE=release NEVERC=/opt/neverc\n";
+  EXPECT_EQ(readFile(tmp() / ".nvk-build-integrity"),
+            "IMAGE_SHA256=" + sha256Text(readFile(Output)) +
+                " BUILD_ID_SHA256=" + sha256Text(BuildState) +
+                " BUILD_EXTRA_SHA256=-\n");
+}
+
+TEST_F(AndroidKernelRuntimeTest,
+       ReleaseClearsStaleBuildExtraWhenBuildExtraIsAbsent) {
+  ScopedEnvironmentVariable BuildID(
+      "NEVERC_ANDROID_KERNEL_BUILD_ID",
+      "KERNEL=510 PROFILE=release NEVERC=/opt/neverc");
+  ScopedEnvironmentVariable BuildExtra("NEVERC_ANDROID_KERNEL_BUILD_EXTRA");
+  const fs::path Source = tmpFile("nvk_release_absent_build_extra.c");
+  const fs::path Output = tmpFile("nvk_release_absent_build_extra.ko");
+  const fs::path ExtraState = tmp() / ".nvk-build-extra";
+  writeFile(Source, kAndroidKernelModule);
+  writeFile(ExtraState, "-DSTALE_EXTRA=1\n");
+
+  const CmdResult Release =
+      linkKernelModule("", Source, Output,
+                       /*UseDeterministicXorStrKey=*/true,
+                       /*EmitDebugInfo=*/false,
+                       /*StripSymbols=*/true);
+  ASSERT_EQ(Release.exitCode, 0) << Release.err;
+  EXPECT_FALSE(fs::exists(ExtraState));
+  const std::string BuildState =
+      "KERNEL=510 PROFILE=release NEVERC=/opt/neverc\n";
+  EXPECT_EQ(readFile(tmp() / ".nvk-build-integrity"),
+            "IMAGE_SHA256=" + sha256Text(readFile(Output)) +
+                " BUILD_ID_SHA256=" + sha256Text(BuildState) +
+                " BUILD_EXTRA_SHA256=-\n");
+}
+
+TEST_F(AndroidKernelRuntimeTest,
+       BuildStatePublicationFailurePreservesTheExistingBundle) {
+  ScopedEnvironmentVariable BuildID(
+      "NEVERC_ANDROID_KERNEL_BUILD_ID",
+      "KERNEL=510 PROFILE=release NEVERC=/opt/neverc");
+  const fs::path Source = tmpFile("nvk_release_build_state_failure.c");
+  const fs::path Output = tmpFile("nvk_release_build_state_failure.ko");
+  const fs::path Sidecar(Output.string() + ".symbols.json");
+  writeFile(Source, kAndroidKernelModule);
+  writeFile(Output, "preexisting-main");
+  writeFile(Sidecar, "preexisting-map");
+  ASSERT_TRUE(fs::create_directory(tmp() / ".nvk-build-flags"));
+
+  const CmdResult Release =
+      linkKernelModule("", Source, Output,
+                       /*UseDeterministicXorStrKey=*/true,
+                       /*EmitDebugInfo=*/false,
+                       /*StripSymbols=*/true);
+  EXPECT_NE(Release.exitCode, 0) << Release.err;
+  EXPECT_EQ(readFile(Output), "preexisting-main");
+  EXPECT_EQ(readFile(Sidecar), "preexisting-map");
 }
 
 TEST_F(AndroidKernelRuntimeTest,

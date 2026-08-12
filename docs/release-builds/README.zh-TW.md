@@ -73,22 +73,33 @@ Android 模組雖是最終交付物，但仍是 ELF `ET_REL`。Linux 模組載�
 NeverC 僅在目標為 Android、同時啟用 `-fandroid-kernel-driver-mode` 與
 `-r`，且輸出名稱以 `.ko` 結尾時允許 `-r --strip`。
 
-`neverc make release` 仍是建議的發布命令，並展開為 `-O2 --strip`。沒有
-`.nvk-build-flags` 時，`make` 預設使用 debug，不會自行選擇 release。範例
-Makefile 會保存明確選取的 profile，因此後續 `make push`、`make run` 與不帶
-目標的 `make` 會繼續使用同一產物。接受 `EXTRA` 的範例會在遞迴建置和後續
-建置中完整保留其多詞值。`make debug` 或明確的 `PROFILE=...` 會取代
-保存的選擇；`make clean` 會刪除狀態，使下一次建置恢復為 debug。明確執行
-`make release` 會無條件重建一次模組/映射輸出包，因此再次執行即可修復映射遺失
-或摘要不相符的輸出包。在最終路徑中，NeverC 會移除偵錯區段、`.comment` 與
-重定位不需要的區域/未定義項目，然後重建 `.strtab`。
+`neverc make release` 仍是建議的發布命令，並展開為 `-O2 --strip`。這些範例要求
+使用 `neverc make`；外部 `make` 會被拒絕，因為遞迴命令列變數傳遞、狀態驗證與
+鎖定感知清理都屬於建置契約。沒有通過驗證的 `.nvk-build-flags` 與
+`.nvk-build-integrity` 時，`neverc make` 預設使用 debug，不會自行選擇 release。狀態檔
+永遠位於 `MODULE` 旁邊，即使 `MODULE` 指向子目錄亦然。範例 Makefile 會保存明確
+選取的 profile，因此後續 `neverc make push`、`neverc make run` 與不帶目標的
+`neverc make` 會繼續
+使用同一產物。接受 `EXTRA` 的範例會在遞迴與後續建置中完整保留其多詞值，遞迴
+profile 目標也會保留其他命令列覆寫。請將 `neverc make debug`、
+`neverc make release` 和 `neverc make clean` 分別作為唯一目標執行；組合呼叫會被
+拒絕，以免共享產物與狀態競爭。`neverc make debug` 或明確的
+`neverc make PROFILE=...` 僅會在模組/映射/狀態輸出包實際發布時取代
+保存的選擇；發布前失敗會讓先前產物與狀態保持不變。`.nvk-build-integrity`
+綁定模組、建置識別碼與選用 `EXTRA` 狀態的 SHA-256。發布中斷後缺少或不相符的
+狀態會被忽略並強制重建。`neverc make clean` 透過發布鎖刪除狀態，使下一次建置
+恢復為 debug。已驗證的 release profile 會讓不帶目標的 `neverc make` 在映射遺失
+時重建。明確執行 `neverc make release` 會無條件重建一次模組/映射/狀態輸出包，因此也可修復摘要不
+相符的輸出包。在最終路徑中，NeverC 會移除偵錯區段、`.comment` 與重定位不需要
+的區域/未定義項目，然後重建 `.strtab`。
 
 發布成功後，NeverC 會以交易方式發布模組及其旁邊的
 `<module>.ko.symbols.json`。舊檔案會一直保留到各自發生原子替換。
-指向同一輸出目錄的並行發布會透過 `.neverc-output.lock` 依序執行；範例的
-`make clean` 會刻意保留這個內部鎖定檔案，以免解除使用中的鎖定。普通程序錯誤
-在發布前會回復整個輸出包；較晚發生的持久性錯誤會保留復原日誌。由於兩個目錄
-項目無法透過一次檔案系統操作同時替換，異常關機後仍應驗證 `image_sha256`。
+指向同一輸出目錄的並行發布與 `neverc make clean` 會透過 `.neverc-output.lock` 依序
+執行；清理會以交易方式刪除輸出包，但刻意保留這個內部鎖定檔案。普通程序錯誤
+在發布前會回復整個輸出包；較晚發生的持久性錯誤會保留復原日誌。建置狀態完整性
+會自動驗證；但由於兩個目錄項目無法透過一次檔案系統操作同時替換，異常關機後仍
+應驗證映射中的 `image_sha256`。
 映射記錄每個仍保留但已重新命名之符號的 `original`（原名）與 `release`
 （`.ko` 中的名稱）：
 

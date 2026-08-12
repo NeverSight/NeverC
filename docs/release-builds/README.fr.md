@@ -80,30 +80,48 @@ sortie finissant par `.ko`. Les liens `-r` ordinaires et les `.o` intermédiaire
 restent refusés.
 
 `neverc make release` reste la commande recommandée et se développe en
-`-O2 --strip`. Sans `.nvk-build-flags`, `make` utilise debug par défaut et ne
-choisit pas release de lui-même. Les Makefile d'exemple conservent un profil
-choisi explicitement afin que `make push`, `make run` et un `make` sans cible
+`-O2 --strip`. Ces exemples exigent `neverc make` et refusent un `make` externe,
+car la propagation récursive des variables de ligne de commande, la
+vérification d'état et le nettoyage sous verrou font partie du contrat de
+build. Sans paire `.nvk-build-flags` et `.nvk-build-integrity` vérifiée, `neverc make`
+utilise debug par défaut et ne choisit pas release de lui-même. Les fichiers
+d'état restent à côté de `MODULE`, même si celui-ci désigne un sous-répertoire.
+Les Makefile d'exemple conservent un profil
+choisi explicitement afin que `neverc make push`, `neverc make run` et un
+`neverc make` sans cible
 réutilisent le même artefact. Les exemples acceptant `EXTRA` conservent sa
-valeur complète de plusieurs mots dans les builds récursifs et ultérieurs.
-`make debug` ou un `PROFILE=...` explicite
-remplace ce choix ; `make clean` efface l'état et ramène la build suivante à
-debug. Un `make release` explicite reconstruit une fois, sans condition, le lot
-module/table ; le relancer répare donc une table absente ou un lot dont
-l'empreinte ne correspond plus. Sur cette voie finale, NeverC retire les
+valeur complète de plusieurs mots dans les builds récursifs et ultérieurs, et
+les cibles profile récursives conservent les autres substitutions de ligne de
+commande.
+`neverc make debug`, `neverc make release` et `neverc make clean` doivent chacun être lancés comme
+seule cible ; les combiner avec une autre cible est refusé afin d'éviter les
+courses sur les sorties partagées. `neverc make debug` ou un
+`neverc make PROFILE=...` explicite ne
+remplace ce choix que lorsque le lot module/table/état est publié ; un échec
+antérieur à la publication laisse l'artefact et l'état précédents intacts.
+`.nvk-build-integrity` lie les SHA-256 du module, de l'identifiant de build et
+de l'état `EXTRA` facultatif. Après une publication interrompue, un état absent
+ou incohérent est ignoré et force une reconstruction. `neverc make clean` efface
+l'état sous le verrou de publication et ramène la build suivante à debug. Avec
+un profil release vérifié, un `neverc make` sans cible
+reconstruit si la table est absente. Un `neverc make release` explicite reconstruit une
+fois, sans condition, le lot module/table/état ; le relancer répare donc aussi un lot
+dont l'empreinte ne correspond plus. Sur cette voie finale, NeverC retire les
 sections de débogage, `.comment` et les entrées locales/non définies inutiles
 aux relocalisations, puis reconstruit `.strtab`.
 
 Après une release réussie, NeverC publie de façon transactionnelle le module
 et `<module>.ko.symbols.json` à côté de celui-ci. Les fichiers existants
 restent visibles jusqu'à chaque remplacement atomique. Les publications
-concurrentes visant le même répertoire de sortie sont sérialisées via
-`.neverc-output.lock` ; les cibles `make clean` des exemples conservent
-intentionnellement ce fichier de verrouillage interne afin de ne pas supprimer
-un verrou actif. Les erreurs antérieures à la publication annulent l'ensemble
+concurrentes visant le même répertoire de sortie et `neverc make clean` sont sérialisés
+via `.neverc-output.lock`. Le nettoyage supprime le lot transactionnellement,
+mais conserve intentionnellement ce fichier de verrouillage interne. Les
+erreurs antérieures à la publication annulent l'ensemble
 du lot ; les erreurs tardives de durabilité conservent un
 journal de récupération. Deux entrées de répertoire ne pouvant pas être
-remplacées par une seule opération du système de fichiers, vérifiez toujours
-`image_sha256` après un arrêt anormal. La table enregistre les noms `original`
+remplacées par une seule opération du système de fichiers, l'intégrité de l'état
+de build est vérifiée automatiquement ; vérifiez néanmoins toujours
+`image_sha256` de la table après un arrêt anormal. La table enregistre les noms `original`
 et `release` de chaque symbole conservé dont le nom a changé :
 
 ```json

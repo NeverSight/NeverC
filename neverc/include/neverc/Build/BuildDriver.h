@@ -4,7 +4,8 @@
 namespace neverc {
 namespace build {
 
-int runBuild(int Argc, const char **Argv, const char *Argv0);
+int runBuild(int Argc, const char **Argv, const char *Argv0,
+             const char *PrependArg = nullptr);
 
 } // namespace build
 } // namespace neverc

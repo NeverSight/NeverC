@@ -30,6 +30,7 @@
 #include "Linker/ELF/Target.h"
 #include "neverc/Foundation/AndroidKernelReleaseSymbolMap.h"
 #include "neverc/Foundation/Core/OutputCoordinator.h"
+#include "neverc/Foundation/Core/OutputTransaction.h"
 #include "neverc/Merge/Merger.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
@@ -2409,10 +2410,29 @@ void LinkerDriver::execute(opt::InputArgList &args) {
       neverc::OutputCoordinator releaseOutputs;
       const neverc::AndroidKernelReleaseSymbolMap *publishedMap =
           mergeOpts.stripUnneededSymbols ? &releaseSymbolMap : nullptr;
+      neverc::OutputBundleSummary finalSummary;
       auto published = neverc::publishAndroidKernelReleaseOutput(
-          releaseOutputs, config->outputFile, imageBytes, publishedMap);
-      if (!published)
-        error(toString(published.takeError()));
+          releaseOutputs, config->outputFile, imageBytes, publishedMap,
+          /*LeaseOwner=*/{}, &finalSummary);
+      if (!published) {
+        std::string message = toString(published.takeError()).str().str();
+        if (finalSummary.Flags & neverc::OutputPublished)
+          message +=
+              "; the new output bundle was published before this failure";
+        if (finalSummary.Flags & neverc::OutputDurabilityUnconfirmed)
+          message += "; output-directory durability is unconfirmed";
+        if (finalSummary.Flags & neverc::OutputRecoveryRequired) {
+          message += "; output recovery is required";
+          if (!finalSummary.JournalPath.empty())
+            message += " (journal: " + finalSummary.JournalPath + ")";
+        }
+        error(message);
+      } else if (published->Flags &
+                 neverc::OutputDurabilityUnconfirmed) {
+        warn("Android kernel output was published, but output-directory "
+             "durability could not be confirmed; verify image_sha256 after an "
+             "unexpected shutdown");
+      }
       return;
     }
     if (mergeOpts.stripUnneededSymbols && config->outputFile == "-") {

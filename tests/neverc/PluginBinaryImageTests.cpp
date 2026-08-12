@@ -3,6 +3,7 @@
 #include "Link/LinkOutputBundle.h"
 #include "Link/LinkPhaseExecutor.h"
 #include "PluginLinkTestSupport.h"
+#include "neverc/Foundation/AndroidKernelReleaseSymbolMap.h"
 #include "neverc/Foundation/Core/OutputBundleTransaction.h"
 #include "neverc/Foundation/Core/OutputCoordinator.h"
 #include "neverc/Foundation/Core/OutputTransaction.h"
@@ -603,6 +604,85 @@ TEST(PluginBinaryImageTest,
   EXPECT_EQ(readFile(Map), "old-map");
 }
 
+TEST(PluginBinaryImageTest,
+     BundleRejectsMissingCaseAliasedOutputPathsBeforePublication) {
+  TemporaryDirectory Directory;
+  const std::string Main = Directory.file("MODULE.KO");
+  const std::string Map = Directory.file("module.ko");
+  writeFile(Main, "old-output");
+
+  bool Equivalent = false;
+  if (std::error_code EC = sys::fs::equivalent(Main, Map, Equivalent))
+    GTEST_SKIP() << "cannot query case aliasing: " << EC.message();
+  if (!Equivalent)
+    GTEST_SKIP() << "test filesystem is case-sensitive";
+  ASSERT_FALSE(sys::fs::remove(Main));
+  ASSERT_FALSE(sys::fs::exists(Main));
+  ASSERT_FALSE(sys::fs::exists(Map));
+
+  neverc::OutputCoordinator Coordinator;
+  std::vector<neverc::OutputBundleFile> Outputs = {
+      {"main", Main, {'n', 'e', 'w', '-', 'm', 'a', 'i', 'n'}, true},
+      {"map", Map, {'n', 'e', 'w', '-', 'm', 'a', 'p'}},
+  };
+  auto Bundle = neverc::OutputBundleTransaction::create(Coordinator, Outputs);
+  ASSERT_FALSE(static_cast<bool>(Bundle));
+  const std::string Failure = errorText(Bundle.takeError());
+  EXPECT_NE(Failure.find("paths must be unique"), std::string::npos) << Failure;
+  EXPECT_FALSE(sys::fs::exists(Main));
+  EXPECT_FALSE(sys::fs::exists(Map));
+}
+
+#if defined(_WIN32)
+TEST(PluginBinaryImageTest, BundleRejectsWindowsTrailingDotOrSpaceOutputs) {
+  TemporaryDirectory Directory;
+  for (StringRef Name :
+       {"module.ko.", "module.ko ", ".neverc-output.lock."}) {
+    SCOPED_TRACE(Name.str());
+    neverc::OutputCoordinator Coordinator;
+    std::vector<neverc::OutputBundleFile> Outputs = {
+        {"main", Directory.file(Name), {'n', 'e', 'w'}, true},
+    };
+    auto Bundle = neverc::OutputBundleTransaction::create(Coordinator, Outputs);
+    ASSERT_FALSE(static_cast<bool>(Bundle));
+    const std::string Failure = errorText(Bundle.takeError());
+    EXPECT_NE(Failure.find("trailing dot or space"), std::string::npos)
+        << Failure;
+  }
+}
+#endif
+
+#if defined(__APPLE__)
+TEST(PluginBinaryImageTest,
+     BundleRejectsMissingUnicodeNormalizationAliasesBeforePublication) {
+  TemporaryDirectory Directory;
+  const std::string Main = Directory.file("caf\xc3\xa9.ko");
+  const std::string Map = Directory.file("cafe\xcc\x81.ko");
+  writeFile(Main, "probe");
+
+  bool Equivalent = false;
+  if (std::error_code EC = sys::fs::equivalent(Main, Map, Equivalent))
+    GTEST_SKIP() << "cannot query Unicode path aliasing: " << EC.message();
+  if (!Equivalent)
+    GTEST_SKIP() << "test filesystem preserves Unicode normalization";
+  ASSERT_FALSE(sys::fs::remove(Main));
+  ASSERT_FALSE(sys::fs::exists(Main));
+  ASSERT_FALSE(sys::fs::exists(Map));
+
+  neverc::OutputCoordinator Coordinator;
+  std::vector<neverc::OutputBundleFile> Outputs = {
+      {"main", Main, {'n', 'e', 'w', '-', 'm', 'a', 'i', 'n'}, true},
+      {"map", Map, {'n', 'e', 'w', '-', 'm', 'a', 'p'}},
+  };
+  auto Bundle = neverc::OutputBundleTransaction::create(Coordinator, Outputs);
+  ASSERT_FALSE(static_cast<bool>(Bundle));
+  const std::string Failure = errorText(Bundle.takeError());
+  EXPECT_NE(Failure.find("paths must be unique"), std::string::npos) << Failure;
+  EXPECT_FALSE(sys::fs::exists(Main));
+  EXPECT_FALSE(sys::fs::exists(Map));
+}
+#endif
+
 TEST(PluginBinaryImageTest, SideDirectoryIsSyncedBeforeMainPublication) {
   TemporaryDirectory Directory;
   const std::string Main = Directory.file("module.ko");
@@ -707,6 +787,72 @@ TEST(PluginBinaryImageTest,
   EXPECT_TRUE(ConcurrentFailure.empty()) << ConcurrentFailure;
   EXPECT_EQ(readFile(Main), "second-main");
   EXPECT_EQ(readFile(Map), "second-map");
+}
+
+TEST(PluginBinaryImageTest,
+     RemovalOnlyBundleSerializesWithOverlappingPublication) {
+  TemporaryDirectory Directory;
+  const std::string Main = Directory.file("module.ko");
+  const std::string Map = Directory.file("module.ko.symbols.json");
+  writeFile(Main, "old-main");
+  writeFile(Map, "old-map");
+
+  neverc::OutputCoordinator PublisherCoordinator;
+  neverc::OutputCoordinator CleanerCoordinator;
+  std::vector<neverc::OutputBundleFile> PublishOutputs = {
+      {"main", Main, {'n', 'e', 'w', '-', 'm', 'a', 'i', 'n'}, true},
+      {"map", Map, {'n', 'e', 'w', '-', 'm', 'a', 'p'}},
+  };
+  std::vector<neverc::OutputBundleFile> RemoveOutputs = {
+      {"main", Main, {}, true, false,
+       neverc::OutputBundleFileAction::Remove},
+      {"map", Map, {}, false, false,
+       neverc::OutputBundleFileAction::Remove},
+  };
+
+  std::atomic<bool> CleanerFinished = false;
+  std::string CleanerFailure;
+  std::thread CleanerThread;
+  std::unique_ptr<neverc::OutputBundleTransaction> Cleaner;
+  auto Publisher = neverc::OutputBundleTransaction::create(
+      PublisherCoordinator, PublishOutputs,
+      /*IsCancelled=*/{},
+      [&](neverc::OutputBundleOperation Operation, StringRef) {
+        if (Operation != neverc::OutputBundleOperation::PublishMain)
+          return std::error_code();
+        CleanerThread = std::thread([&] {
+          auto Cleaned = Cleaner->commit();
+          if (!Cleaned)
+            CleanerFailure = errorText(Cleaned.takeError());
+          CleanerFinished = true;
+        });
+        const auto Deadline =
+            std::chrono::steady_clock::now() + std::chrono::milliseconds(250);
+        while (!CleanerFinished &&
+               std::chrono::steady_clock::now() < Deadline)
+          std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        EXPECT_FALSE(CleanerFinished)
+            << "cleanup bypassed the active publication lock";
+        return std::error_code();
+      });
+  ASSERT_TRUE(static_cast<bool>(Publisher)) << errorText(Publisher.takeError());
+  auto CleanerOrErr = neverc::OutputBundleTransaction::create(
+      CleanerCoordinator, RemoveOutputs);
+  ASSERT_TRUE(static_cast<bool>(CleanerOrErr))
+      << errorText(CleanerOrErr.takeError());
+  Cleaner = std::move(*CleanerOrErr);
+  ASSERT_FALSE((*Publisher)->prepare());
+  ASSERT_FALSE(Cleaner->prepare());
+
+  auto Published = (*Publisher)->commit();
+  EXPECT_TRUE(static_cast<bool>(Published)) << errorText(Published.takeError());
+  ASSERT_TRUE(CleanerThread.joinable());
+  CleanerThread.join();
+
+  EXPECT_TRUE(CleanerFinished);
+  EXPECT_TRUE(CleanerFailure.empty()) << CleanerFailure;
+  EXPECT_FALSE(sys::fs::exists(Main));
+  EXPECT_FALSE(sys::fs::exists(Map));
 }
 
 TEST(PluginBinaryImageTest, PublicationLockWaitHonorsCancellation) {
@@ -1022,6 +1168,75 @@ TEST(PluginBinaryImageTest, BundleCanRemoveAStaleSideOutput) {
   ASSERT_TRUE(static_cast<bool>(Committed)) << errorText(Committed.takeError());
   EXPECT_EQ(readFile(Main), "new");
   EXPECT_FALSE(sys::fs::exists(Map));
+}
+
+TEST(PluginBinaryImageTest, RemovalOnlyBundleRemovesEveryOutput) {
+  TemporaryDirectory Directory;
+  const std::string Main = Directory.file("module.ko");
+  const std::string Map = Directory.file("module.ko.symbols.json");
+  const std::string State = Directory.file(".nvk-build-flags");
+  writeFile(Main, "old-main");
+  writeFile(Map, "old-map");
+  writeFile(State, "old-state");
+
+  neverc::OutputCoordinator Coordinator;
+  std::vector<neverc::OutputBundleFile> Outputs = {
+      {"main", Main, {}, true, false,
+       neverc::OutputBundleFileAction::Remove},
+      {"map", Map, {}, false, false,
+       neverc::OutputBundleFileAction::Remove},
+      {"state", State, {}, false, false,
+       neverc::OutputBundleFileAction::Remove},
+  };
+  auto Bundle = neverc::OutputBundleTransaction::create(Coordinator, Outputs);
+  ASSERT_TRUE(static_cast<bool>(Bundle)) << errorText(Bundle.takeError());
+  auto Committed = (*Bundle)->commit();
+  ASSERT_TRUE(static_cast<bool>(Committed)) << errorText(Committed.takeError());
+  EXPECT_FALSE(sys::fs::exists(Main));
+  EXPECT_FALSE(sys::fs::exists(Map));
+  EXPECT_FALSE(sys::fs::exists(State));
+}
+
+TEST(PluginBinaryImageTest, RemovedMainRejectsPublishedSideOutputs) {
+  TemporaryDirectory Directory;
+  const std::string Main = Directory.file("module.ko");
+  const std::string Map = Directory.file("module.ko.symbols.json");
+  neverc::OutputCoordinator Coordinator;
+  std::vector<neverc::OutputBundleFile> Outputs = {
+      {"main", Main, {}, true, false,
+       neverc::OutputBundleFileAction::Remove},
+      {"map", Map, {'n', 'e', 'w'}},
+  };
+  auto Bundle = neverc::OutputBundleTransaction::create(Coordinator, Outputs);
+  ASSERT_FALSE(static_cast<bool>(Bundle));
+  const std::string Failure = errorText(Bundle.takeError());
+  EXPECT_NE(Failure.find("removal-only"), std::string::npos) << Failure;
+}
+
+TEST(PluginBinaryImageTest,
+     AndroidKernelCleanRemovesOnlyTheTransactionalOutputBundle) {
+  TemporaryDirectory Directory;
+  const std::string Main = Directory.file("module.ko");
+  const std::vector<std::string> BundlePaths = {
+      Main,
+      Main + ".symbols.json",
+      Directory.file(".nvk-build-flags"),
+      Directory.file(".nvk-build-extra"),
+      Directory.file(".nvk-build-integrity"),
+      Directory.file(".nvk-release-bundle"),
+  };
+  for (const std::string &Path : BundlePaths)
+    writeFile(Path, "old");
+  const std::string Unrelated = Directory.file("unrelated.o");
+  writeFile(Unrelated, "keep");
+
+  neverc::OutputCoordinator Coordinator;
+  auto Cleaned =
+      neverc::cleanAndroidKernelReleaseOutput(Coordinator, Main);
+  ASSERT_TRUE(static_cast<bool>(Cleaned)) << errorText(Cleaned.takeError());
+  for (const std::string &Path : BundlePaths)
+    EXPECT_FALSE(sys::fs::exists(Path)) << Path;
+  EXPECT_EQ(readFile(Unrelated), "keep");
 }
 
 TEST(PluginBinaryImageTest,
@@ -1356,6 +1571,38 @@ TEST(PluginBinaryImageTest, MissingJournalIsNotSilentlyRecreated) {
   EXPECT_FALSE(sys::fs::exists(Journal));
   EXPECT_EQ((*Bundle)->summary().State, neverc::OutputBundleState::Aborted);
   EXPECT_EQ((*Bundle)->summary().Flags & neverc::OutputRecoveryRequired, 0U);
+}
+
+TEST(PluginBinaryImageTest,
+     RollbackBeforePublicationClearsDurabilityWarning) {
+  TemporaryDirectory Directory;
+  const std::string Main = Directory.file("module.ko");
+  const std::string Map = Directory.file("module.ko.symbols.json");
+  neverc::OutputCoordinator Coordinator;
+  std::vector<neverc::OutputBundleFile> Outputs = {
+      {"main", Main, {'n', 'e', 'w'}, true},
+      {"map", Map, {'m', 'a', 'p'}},
+  };
+  auto Bundle = neverc::OutputBundleTransaction::create(
+      Coordinator, Outputs,
+      /*IsCancelled=*/{},
+      [](neverc::OutputBundleOperation Operation, StringRef) {
+        if (Operation == neverc::OutputBundleOperation::SyncRecoveryState)
+          return std::make_error_code(std::errc::operation_not_supported);
+        if (Operation == neverc::OutputBundleOperation::PublishSide)
+          return std::make_error_code(std::errc::io_error);
+        return std::error_code();
+      });
+  ASSERT_TRUE(static_cast<bool>(Bundle)) << errorText(Bundle.takeError());
+  auto Committed = (*Bundle)->commit();
+  ASSERT_FALSE(static_cast<bool>(Committed));
+  consumeError(Committed.takeError());
+
+  const neverc::OutputBundleSummary Summary = (*Bundle)->summary();
+  EXPECT_EQ(Summary.State, neverc::OutputBundleState::Aborted);
+  EXPECT_EQ(Summary.Flags & neverc::OutputDurabilityUnconfirmed, 0U);
+  EXPECT_FALSE(sys::fs::exists(Main));
+  EXPECT_FALSE(sys::fs::exists(Map));
 }
 
 TEST(PluginBinaryImageTest,

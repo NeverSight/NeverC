@@ -73,22 +73,33 @@ Android 模块虽是最终交付物，但仍是 ELF `ET_REL`。Linux 模块加�
 NeverC 只在以下条件全部满足时允许 `-r --strip`：目标平台是 Android；
 启用了 `-fandroid-kernel-driver-mode` 与 `-r`；输出名以 `.ko` 结尾。
 
-`neverc make release` 仍是推荐的发布命令，并展开为 `-O2 --strip`。没有
-`.nvk-build-flags` 时，`make` 默认使用 debug，不会自行选择 release。示例
-Makefile 会保存显式选择的 profile，因此后续 `make push`、`make run` 与不带
-目标的 `make` 会继续使用同一产物。接受 `EXTRA` 的示例会在递归构建和后续
-构建中完整保留其多词值。`make debug` 或显式 `PROFILE=...` 会替换
-保存的选择；`make clean` 会删除状态，使下一次构建恢复为 debug。显式执行
-`make release` 会无条件重建一次模块/映射输出包，因此再次执行即可修复映射缺失
-或摘要不匹配的输出包。在最终路径中，NeverC 会删除调试段、`.comment` 以及
-重定位不需要的局部/未定义项，然后重建 `.strtab`。
+`neverc make release` 仍是推荐的发布命令，并展开为 `-O2 --strip`。这些示例要求
+使用 `neverc make`；外部 `make` 会被拒绝，因为递归命令行变量透传、状态校验与
+锁感知清理都属于构建契约。没有通过校验的 `.nvk-build-flags` 与
+`.nvk-build-integrity` 时，`neverc make` 默认使用 debug，不会自行选择 release。状态文件
+始终位于 `MODULE` 旁边，即使 `MODULE` 指向子目录也是如此。示例 Makefile 会保存
+显式选择的 profile，因此后续 `neverc make push`、`neverc make run` 与不带目标的
+`neverc make` 会继续
+使用同一产物。接受 `EXTRA` 的示例会在递归构建和后续构建中完整保留其多词值，
+递归 profile 目标也会保留其他命令行变量覆盖。请将 `neverc make debug`、
+`neverc make release` 和 `neverc make clean` 分别作为唯一目标执行；组合调用会被
+拒绝，以免共享产物与状态发生竞争。`neverc make debug` 或显式
+`neverc make PROFILE=...` 仅会在模块/映射/状态输出包实际发布时
+替换保存的选择；发布前失败会让先前产物和状态保持不变。
+`.nvk-build-integrity` 绑定模块、构建标识和可选 `EXTRA` 状态的 SHA-256。发布中断
+后缺失或不匹配的状态会被忽略并强制重建。`neverc make clean` 通过发布锁删除状态，
+使下一次构建恢复为 debug。保存并校验通过的 profile 为 release 时，不带目标的
+`neverc make` 会在映射缺失时重建。显式执行 `neverc make release` 会无条件重建一次模块/映射/状态
+输出包，因此再次执行还可修复摘要不匹配的输出包。在最终路径中，NeverC 会删除
+调试段、`.comment` 以及重定位不需要的局部/未定义项，然后重建 `.strtab`。
 
 发布成功后，NeverC 会以事务方式发布模块及其旁边的
 `<module>.ko.symbols.json`。旧文件会一直保留到各自发生原子替换。
-指向同一输出目录的并发发布会通过 `.neverc-output.lock` 串行执行；示例的
-`make clean` 会有意保留这个内部锁文件，以免解除正在使用的锁。普通进程错误
-在发布前会回滚整个输出包；较晚发生的持久性错误会保留恢复日志。由于两个目录项
-无法通过一次文件系统操作同时替换，异常关机后仍应校验 `image_sha256`。映射记录
+指向同一输出目录的并发发布与 `neverc make clean` 会通过 `.neverc-output.lock` 串行
+执行；清理会以事务方式删除输出包，但有意保留这个内部锁文件。普通进程错误在
+发布前会回滚整个输出包；较晚发生的持久性错误会保留恢复日志。构建状态完整性会
+自动校验；但由于两个目录项无法通过一次文件系统操作同时替换，异常关机后仍应
+校验映射中的 `image_sha256`。映射记录
 每个仍保留但已改名符号的 `original`（原名）与 `release`（`.ko` 中的名称）：
 
 ```json

@@ -7,6 +7,18 @@
 NEVERC ?= ../../build-neverc/bin/neverc
 .DEFAULT_GOAL := all
 
+ifneq ($(origin NEVERC_MAKE_EXECUTABLE),default)
+$(error this Makefile requires 'neverc make'; external make is unsupported)
+endif
+
+# Profile-changing and destructive goals cannot safely share one invocation:
+# their recipes re-enter make with different state or remove shared outputs.
+ifneq ($(filter debug release clean,$(MAKECMDGOALS)),)
+ifneq ($(word 2,$(MAKECMDGOALS)),)
+$(error debug/release/clean must each be invoked as the sole goal)
+endif
+endif
+
 TARGET  = aarch64-linux-android
 MODULE  = nvk_netlink.ko
 MODNAME = neverc_krt_netlink
@@ -15,15 +27,36 @@ SRCS    = main.c
 # PROFILE=debug|release selects debuggable or distribution output.
 # Command-line KERNEL=/EXTRA=/PROFILE= win; else last stamp (so `make push`
 # keeps them). Do not use ?= — exported environment variables would otherwise
-# bypass the persisted selection. Persist via $(file): no host shell, so
-# `neverc make` works on Windows too.
-FLAGS_STAMP := .nvk-build-flags
-EXTRA_STAMP := .nvk-build-extra
-SAVED_BUILD_ID := $(file <$(FLAGS_STAMP))
+# bypass the persisted selection. The compiler publishes this state in the
+# module/map output transaction, so a failed build cannot replace it. The
+# integrity stamp binds that selection to the exact module bytes after a crash.
+FLAGS_STAMP := $(dir $(MODULE)).nvk-build-flags
+EXTRA_STAMP := $(dir $(MODULE)).nvk-build-extra
+INTEGRITY_STAMP := $(dir $(MODULE)).nvk-build-integrity
+RECORDED_BUILD_INTEGRITY_BEFORE := $(file <$(INTEGRITY_STAMP))
+SAVED_BUILD_ID_CANDIDATE := $(file <$(FLAGS_STAMP))
+SAVED_EXTRA_CANDIDATE := $(file <$(EXTRA_STAMP))
+CURRENT_BUILD_INTEGRITY := $(shell $(NEVERC_MAKE_EXECUTABLE) __neverc_android_kernel_output_integrity "$(MODULE)")
+BUILD_ID_AFTER := $(file <$(FLAGS_STAMP))
+EXTRA_AFTER := $(file <$(EXTRA_STAMP))
+RECORDED_BUILD_INTEGRITY_AFTER := $(file <$(INTEGRITY_STAMP))
+SAVED_BUILD_ID :=
+SAVED_EXTRA :=
+ifneq ($(CURRENT_BUILD_INTEGRITY),)
+ifeq ($(RECORDED_BUILD_INTEGRITY_BEFORE),$(CURRENT_BUILD_INTEGRITY))
+ifeq ($(RECORDED_BUILD_INTEGRITY_AFTER),$(CURRENT_BUILD_INTEGRITY))
+ifeq ($(SAVED_BUILD_ID_CANDIDATE),$(BUILD_ID_AFTER))
+ifeq ($(SAVED_EXTRA_CANDIDATE),$(EXTRA_AFTER))
+SAVED_BUILD_ID := $(SAVED_BUILD_ID_CANDIDATE)
+SAVED_EXTRA := $(SAVED_EXTRA_CANDIDATE)
+endif
+endif
+endif
+endif
+endif
 SAVED_KERNEL := $(patsubst KERNEL=%,%,$(filter KERNEL=%,$(SAVED_BUILD_ID)))
-SAVED_EXTRA := $(file <$(EXTRA_STAMP))
 SAVED_PROFILE := $(patsubst PROFILE=%,%,$(filter PROFILE=%,$(SAVED_BUILD_ID)))
-ifeq ($(NVK_RECURSIVE_BUILD),1)
+ifeq ($(origin NVK_RECURSIVE_BUILD):$(NVK_RECURSIVE_BUILD),command line:1)
 KERNEL := $(NVK_RECURSIVE_KERNEL)
 EXTRA := $(NVK_RECURSIVE_EXTRA)
 NEVERC := $(NVK_RECURSIVE_NEVERC)
@@ -38,14 +71,17 @@ endif
 ifneq ($(origin PROFILE),command line)
 PROFILE := $(if $(SAVED_PROFILE),$(SAVED_PROFILE),debug)
 endif
-export NVK_RECURSIVE_BUILD := 1
 export NVK_RECURSIVE_KERNEL := $(KERNEL)
 export NVK_RECURSIVE_EXTRA := $(EXTRA)
 export NVK_RECURSIVE_NEVERC := $(NEVERC)
 
+ifneq ($(MAKECMDGOALS),clean)
 VALID_PROFILES := debug release
-ifeq ($(filter $(PROFILE),$(VALID_PROFILES)),)
+ifneq ($(PROFILE),debug)
+ifneq ($(PROFILE),release)
 $(error unsupported PROFILE '$(PROFILE)'; expected one of: $(VALID_PROFILES))
+endif
+endif
 endif
 
 PROFILE_FLAGS_debug   := -g
@@ -63,14 +99,25 @@ FLAGS = \
 # neverc make only rebuilds on prerequisite mtimes. Persist EXTRA separately
 # so a multi-word flag list can be restored without whitespace tokenization.
 BUILD_ID := KERNEL=$(KERNEL) PROFILE=$(PROFILE) NEVERC=$(NEVERC)
+export NEVERC_ANDROID_KERNEL_BUILD_ID := $(BUILD_ID)
+export NEVERC_ANDROID_KERNEL_BUILD_EXTRA := $(EXTRA)
 MAKE_MODE_FLAGS := $(firstword -$(MAKEFLAGS))
-SKIP_BUILD_RECORD := $(or $(findstring n,$(MAKE_MODE_FLAGS)),$(findstring q,$(MAKE_MODE_FLAGS)),$(findstring t,$(MAKE_MODE_FLAGS)))
+RECURSIVE_MAKE_FLAGS := $(if $(findstring n,$(MAKE_MODE_FLAGS)),-n,) $(if $(findstring k,$(MAKE_MODE_FLAGS)),-k,) $(if $(findstring s,$(MAKE_MODE_FLAGS)),-s,)
 REBUILD_CONFIG :=
-ifneq ($(strip $(file <$(FLAGS_STAMP))),$(BUILD_ID))
+ifneq ($(SAVED_BUILD_ID),$(BUILD_ID))
 REBUILD_CONFIG := force-config-rebuild
 endif
-ifneq ($(file <$(EXTRA_STAMP)),$(EXTRA))
+ifneq ($(SAVED_EXTRA),$(EXTRA))
 REBUILD_CONFIG := force-config-rebuild
+endif
+ifeq ($(PROFILE),release)
+ifeq ($(wildcard $(MODULE).symbols.json),)
+REBUILD_CONFIG := force-config-rebuild
+endif
+else
+ifneq ($(wildcard $(MODULE).symbols.json),)
+REBUILD_CONFIG := force-config-rebuild
+endif
 endif
 
 all: $(MODULE)
@@ -80,15 +127,13 @@ all: $(MODULE)
 # profile targets always rebuild once so coarse timestamps cannot preserve the
 # wrong profile and a release can repair a missing or mismatched sidecar.
 debug:
-	"$(NEVERC)" make -B PROFILE=debug all
+	+$(MAKE) $(RECURSIVE_MAKE_FLAGS) -f "$(MAKEFILE_LIST)" -B NVK_RECURSIVE_BUILD=1 PROFILE=debug all
 
 release:
-	"$(NEVERC)" make -B PROFILE=release all
+	+$(MAKE) $(RECURSIVE_MAKE_FLAGS) -f "$(MAKEFILE_LIST)" -B NVK_RECURSIVE_BUILD=1 PROFILE=release all
 
 $(MODULE): $(SRCS) $(REBUILD_CONFIG)
 	"$(NEVERC)" $(FLAGS) -r -nostdlib -o $@ $(SRCS)
-	$(if $(SKIP_BUILD_RECORD),,$(file >$(FLAGS_STAMP),$(BUILD_ID)))
-	$(if $(SKIP_BUILD_RECORD),,$(file >$(EXTRA_STAMP),$(EXTRA)))
 
 force-config-rebuild:
 
@@ -105,6 +150,7 @@ run: insmod
 	adb shell su -c 'dmesg | tail -5'
 
 clean:
-	rm -f $(MODULE) $(MODULE).symbols.json *.o $(FLAGS_STAMP) $(EXTRA_STAMP) .nvk-release-bundle
+	$(NEVERC_MAKE_EXECUTABLE) __neverc_clean_android_kernel_output "$(MODULE)"
+	rm -f *.o
 
 .PHONY: all debug release push insmod rmmod run clean force-config-rebuild

@@ -81,16 +81,16 @@ bool JobScheduler::allDepsBuilt(const DepGraph::Node &N,
                                  const DepGraph &Graph) const {
   for (auto &Dep : N.Dependencies) {
     auto *DepNode = Graph.getNode(Dep);
-    if (DepNode && DepNode->NeedsBuild && !DepNode->Built)
-      return false;
     if (DepNode && DepNode->Failed)
+      continue;
+    if (DepNode && DepNode->NeedsBuild && !DepNode->Built)
       return false;
   }
   for (auto &Dep : N.OrderOnlyDeps) {
     auto *DepNode = Graph.getNode(Dep);
-    if (DepNode && DepNode->NeedsBuild && !DepNode->Built)
-      return false;
     if (DepNode && DepNode->Failed)
+      continue;
+    if (DepNode && DepNode->NeedsBuild && !DepNode->Built)
       return false;
   }
   return true;
@@ -113,6 +113,15 @@ bool JobScheduler::collectReadyJobs(DepGraph &Graph,
       if (DepNode && DepNode->Failed) {
         HasFailedDep = true;
         break;
+      }
+    }
+    if (!HasFailedDep) {
+      for (auto &Dep : N.OrderOnlyDeps) {
+        auto *DepNode = Graph.getNode(Dep);
+        if (DepNode && DepNode->Failed) {
+          HasFailedDep = true;
+          break;
+        }
       }
     }
     if (HasFailedDep) {
@@ -258,7 +267,9 @@ int JobScheduler::runJob(Job &J, VariableEnv &Env, const RuleDB *Rules) {
 int JobScheduler::execute(DepGraph &Graph, VariableEnv &Env,
                            const std::vector<std::string> &Targets,
                            const RuleDB *Rules) {
-  bool AnyFailed = false;
+  bool AnyFailed =
+      std::any_of(Graph.nodes().begin(), Graph.nodes().end(),
+                  [](const auto &Entry) { return Entry.second.Failed; });
 
   while (true) {
     std::vector<Job> Ready;

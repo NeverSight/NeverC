@@ -10,9 +10,11 @@
 #include "neverc/Build/RuleDB.h"
 #include "neverc/Build/VariableEnv.h"
 
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
+#include "llvm/Support/Program.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <fstream>
@@ -209,6 +211,576 @@ struct ParsedMakefile {
 };
 
 } // namespace
+
+class BuildDriverTest : public ::testing::Test {
+protected:
+  void SetUp() override {
+    std::error_code EC =
+        llvm::sys::fs::createUniqueDirectory("neverc-build-recursive", Dir);
+    ASSERT_FALSE(EC) << EC.message();
+  }
+
+  void TearDown() override {
+    if (!Dir.empty()) {
+      const std::error_code EC = llvm::sys::fs::remove_directories(Dir);
+      EXPECT_FALSE(EC) << EC.message();
+    }
+  }
+
+  std::string pathInDir(llvm::StringRef Name) const {
+    llvm::SmallString<256> Path(Dir);
+    llvm::sys::path::append(Path, Name);
+    return std::string(Path);
+  }
+
+  llvm::SmallString<256> Dir;
+};
+
+TEST_F(BuildDriverTest, RecursiveMakeSurvivesChangeDirectory) {
+  std::error_code EC;
+  llvm::raw_fd_ostream Makefile(pathInDir("Makefile"), EC,
+                                llvm::sys::fs::OF_None);
+  ASSERT_FALSE(EC) << EC.message();
+  Makefile << ".DEFAULT_GOAL := outer\n"
+              "outer:\n"
+              "\t$(MAKE) -f Makefile child\n"
+              "child:\n"
+              "\t$(file >recursive-result.txt,ok)\n"
+              ".PHONY: outer child\n";
+  Makefile.close();
+  ASSERT_FALSE(Makefile.has_error());
+
+  llvm::SmallVector<llvm::StringRef, 5> Arguments = {
+      "relative/neverc", "make", "-C", Dir, "outer"};
+  EXPECT_EQ(llvm::sys::ExecuteAndWait(NEVERC_BINARY, Arguments), 0);
+
+  auto Result = llvm::MemoryBuffer::getFile(pathInDir("recursive-result.txt"));
+  ASSERT_TRUE(Result) << Result.getError().message();
+  EXPECT_EQ((*Result)->getBuffer(), "ok\n");
+}
+
+TEST_F(BuildDriverTest, RecursiveMakePropagatesCommandLineVariables) {
+  std::error_code EC;
+  llvm::raw_fd_ostream Makefile(pathInDir("Makefile"), EC,
+                                llvm::sys::fs::OF_None);
+  ASSERT_FALSE(EC) << EC.message();
+  Makefile << ".DEFAULT_GOAL := outer\n"
+              "outer:\n"
+              "\t$(MAKE) -f Makefile child\n"
+              "child:\n"
+              "\t$(file >recursive-result.txt,$(OVERRIDE))\n"
+              ".PHONY: outer child\n";
+  Makefile.close();
+  ASSERT_FALSE(Makefile.has_error());
+
+  llvm::SmallVector<llvm::StringRef, 6> Arguments = {
+      "relative/neverc", "make", "-C", Dir, "OVERRIDE=two words", "outer"};
+  EXPECT_EQ(llvm::sys::ExecuteAndWait(NEVERC_BINARY, Arguments), 0);
+
+  auto Result = llvm::MemoryBuffer::getFile(pathInDir("recursive-result.txt"));
+  ASSERT_TRUE(Result) << Result.getError().message();
+  EXPECT_EQ((*Result)->getBuffer(), "two words\n");
+}
+
+TEST_F(BuildDriverTest, UnknownOptionDoesNotExecuteTargets) {
+  std::error_code EC;
+  llvm::raw_fd_ostream Makefile(pathInDir("Makefile"), EC,
+                                llvm::sys::fs::OF_None);
+  ASSERT_FALSE(EC) << EC.message();
+  Makefile << ".DEFAULT_GOAL := all\n"
+              "all:\n"
+              "\t$(file >unexpected-result.txt,executed)\n"
+              ".PHONY: all\n";
+  Makefile.close();
+  ASSERT_FALSE(Makefile.has_error());
+
+  llvm::SmallVector<llvm::StringRef, 6> Arguments = {
+      "relative/neverc", "make", "-C", Dir, "-q", "all"};
+  EXPECT_EQ(llvm::sys::ExecuteAndWait(NEVERC_BINARY, Arguments), 2);
+  EXPECT_FALSE(llvm::sys::fs::exists(pathInDir("unexpected-result.txt")));
+}
+
+TEST_F(BuildDriverTest, KeepGoingBuildsIndependentTargetsAfterMissingInput) {
+  std::error_code EC;
+  llvm::raw_fd_ostream Makefile(pathInDir("Makefile"), EC,
+                                llvm::sys::fs::OF_None);
+  ASSERT_FALSE(EC) << EC.message();
+  Makefile << "bad: missing-input\n"
+              "ordered: | missing-order-only\n"
+              "\t$(file >unexpected-order-only-result.txt,built)\n"
+              "good:\n"
+              "\t$(file >good-result.txt,built)\n"
+              ".PHONY: bad ordered good\n";
+  Makefile.close();
+  ASSERT_FALSE(Makefile.has_error());
+
+  llvm::SmallVector<llvm::StringRef, 9> Arguments = {
+      "relative/neverc", "make", "-C", Dir, "-k", "bad", "ordered", "good"};
+  EXPECT_EQ(llvm::sys::ExecuteAndWait(NEVERC_BINARY, Arguments), 2);
+  EXPECT_TRUE(llvm::sys::fs::exists(pathInDir("good-result.txt")));
+  EXPECT_FALSE(
+      llvm::sys::fs::exists(pathInDir("unexpected-order-only-result.txt")));
+}
+
+TEST_F(BuildDriverTest, AndroidKernelCleanHelperRemovesAdjacentBundle) {
+  const std::string Module = pathInDir("module.ko");
+  const std::vector<std::string> Outputs = {
+      Module,
+      Module + ".symbols.json",
+      pathInDir(".nvk-build-flags"),
+      pathInDir(".nvk-build-extra"),
+      pathInDir(".nvk-build-integrity"),
+      pathInDir(".nvk-release-bundle"),
+  };
+  for (const std::string &Path : Outputs) {
+    std::error_code EC;
+    llvm::raw_fd_ostream File(Path, EC, llvm::sys::fs::OF_None);
+    ASSERT_FALSE(EC) << EC.message();
+    File << "old";
+  }
+
+  llvm::SmallVector<llvm::StringRef, 3> Arguments = {
+      "relative/neverc", "__neverc_clean_android_kernel_output", Module};
+  EXPECT_EQ(llvm::sys::ExecuteAndWait(NEVERC_BINARY, Arguments), 0);
+  for (const std::string &Path : Outputs)
+    EXPECT_FALSE(llvm::sys::fs::exists(Path)) << Path;
+}
+
+TEST_F(BuildDriverTest,
+       AndroidKernelMakeCleanDoesNotDependOnSelectedCompilerPath) {
+  auto Source =
+      llvm::MemoryBuffer::getFile(NEVERC_ANDROID_KERNEL_HELLO_MAKEFILE);
+  ASSERT_TRUE(Source) << Source.getError().message();
+
+  auto WriteFile = [this](llvm::StringRef Name, llvm::StringRef Contents) {
+    std::error_code EC;
+    llvm::raw_fd_ostream Out(pathInDir(Name), EC, llvm::sys::fs::OF_None);
+    EXPECT_FALSE(EC) << EC.message();
+    if (EC)
+      return;
+    Out << Contents;
+    Out.close();
+    EXPECT_FALSE(Out.has_error());
+  };
+
+  WriteFile("Makefile", (*Source)->getBuffer());
+  WriteFile("nvk_hello.ko", "module");
+  WriteFile("nvk_hello.ko.symbols.json", "{}");
+  WriteFile(".nvk-build-flags", "state");
+  WriteFile(".nvk-build-extra", "extra");
+  WriteFile(".nvk-build-integrity", "integrity");
+
+  llvm::SmallVector<llvm::StringRef, 7> Arguments = {
+      "relative/neverc",
+      "make",
+      "-C",
+      Dir,
+      "NEVERC=/definitely/not/available/neverc",
+      "clean"};
+  EXPECT_EQ(llvm::sys::ExecuteAndWait(NEVERC_BINARY, Arguments), 0);
+  EXPECT_FALSE(llvm::sys::fs::exists(pathInDir("nvk_hello.ko")));
+  EXPECT_FALSE(
+      llvm::sys::fs::exists(pathInDir("nvk_hello.ko.symbols.json")));
+  EXPECT_FALSE(llvm::sys::fs::exists(pathInDir(".nvk-build-flags")));
+  EXPECT_FALSE(llvm::sys::fs::exists(pathInDir(".nvk-build-extra")));
+  EXPECT_FALSE(llvm::sys::fs::exists(pathInDir(".nvk-build-integrity")));
+}
+
+TEST_F(BuildDriverTest, AndroidKernelMakeCleanAllowsMissingModuleDirectory) {
+  auto Source =
+      llvm::MemoryBuffer::getFile(NEVERC_ANDROID_KERNEL_HELLO_MAKEFILE);
+  ASSERT_TRUE(Source) << Source.getError().message();
+
+  std::error_code EC;
+  llvm::raw_fd_ostream Makefile(pathInDir("Makefile"), EC,
+                                llvm::sys::fs::OF_None);
+  ASSERT_FALSE(EC) << EC.message();
+  Makefile << (*Source)->getBuffer();
+  Makefile.close();
+  ASSERT_FALSE(Makefile.has_error());
+
+  llvm::SmallVector<llvm::StringRef, 7> Arguments = {
+      "relative/neverc", "make", "-C", Dir,
+      "MODULE=missing/nvk_hello.ko", "clean"};
+  EXPECT_EQ(llvm::sys::ExecuteAndWait(NEVERC_BINARY, Arguments), 0);
+  EXPECT_FALSE(llvm::sys::fs::exists(pathInDir("missing")));
+}
+
+TEST_F(BuildDriverTest, AndroidKernelExampleRejectsExternalMake) {
+  const auto SystemMake = llvm::sys::findProgramByName("make");
+  if (!SystemMake)
+    GTEST_SKIP() << "system make is unavailable";
+
+  auto Source =
+      llvm::MemoryBuffer::getFile(NEVERC_ANDROID_KERNEL_HELLO_MAKEFILE);
+  ASSERT_TRUE(Source) << Source.getError().message();
+
+  std::error_code EC;
+  llvm::raw_fd_ostream Makefile(pathInDir("Makefile"), EC,
+                                llvm::sys::fs::OF_None);
+  ASSERT_FALSE(EC) << EC.message();
+  Makefile << (*Source)->getBuffer();
+  Makefile.close();
+  ASSERT_FALSE(Makefile.has_error());
+
+  llvm::SmallVector<llvm::StringRef, 5> Arguments = {
+      *SystemMake, "-C", Dir, "-n"};
+  EXPECT_NE(llvm::sys::ExecuteAndWait(*SystemMake, Arguments), 0);
+
+  llvm::SmallVector<llvm::StringRef, 7> SpoofedArguments = {
+      *SystemMake, "-C", Dir, "-n", "NEVERC_MAKE_EXECUTABLE=true", "clean"};
+  EXPECT_NE(llvm::sys::ExecuteAndWait(*SystemMake, SpoofedArguments), 0);
+}
+
+TEST_F(BuildDriverTest, AndroidKernelProfileTargetSupportsSpacedMakefilePath) {
+  const auto TrueProgram = llvm::sys::findProgramByName("true");
+  if (!TrueProgram)
+    GTEST_SKIP() << "requires a no-op executable";
+
+  auto Source =
+      llvm::MemoryBuffer::getFile(NEVERC_ANDROID_KERNEL_HELLO_MAKEFILE);
+  ASSERT_TRUE(Source) << Source.getError().message();
+
+  std::error_code EC;
+  llvm::raw_fd_ostream Makefile(pathInDir("Kernel Build.mk"), EC,
+                                llvm::sys::fs::OF_None);
+  ASSERT_FALSE(EC) << EC.message();
+  Makefile << (*Source)->getBuffer();
+  Makefile.close();
+  ASSERT_FALSE(Makefile.has_error());
+
+  llvm::raw_fd_ostream Input(pathInDir("main.c"), EC, llvm::sys::fs::OF_None);
+  ASSERT_FALSE(EC) << EC.message();
+  Input << "int unused;\n";
+  Input.close();
+  ASSERT_FALSE(Input.has_error());
+
+  std::string NevercOverride = "NEVERC=";
+  NevercOverride.append(TrueProgram->begin(), TrueProgram->end());
+  llvm::SmallVector<llvm::StringRef, 9> Arguments = {
+      "relative/neverc", "make",   "-C",
+      Dir,                "-f",     "Kernel Build.mk",
+      NevercOverride,     "release"};
+  EXPECT_EQ(llvm::sys::ExecuteAndWait(NEVERC_BINARY, Arguments), 0);
+}
+
+TEST_F(BuildDriverTest, AndroidKernelMakefileRejectsUnboundCrashState) {
+  const auto TrueProgram = llvm::sys::findProgramByName("true");
+  if (!TrueProgram)
+    GTEST_SKIP() << "requires a no-op executable";
+
+  auto Source =
+      llvm::MemoryBuffer::getFile(NEVERC_ANDROID_KERNEL_HELLO_MAKEFILE);
+  ASSERT_TRUE(Source) << Source.getError().message();
+
+  std::error_code EC;
+  llvm::raw_fd_ostream Makefile(pathInDir("Makefile"), EC,
+                                llvm::sys::fs::OF_None);
+  ASSERT_FALSE(EC) << EC.message();
+  Makefile << (*Source)->getBuffer()
+           << "\ninspect-state:\n"
+              "\t$(file >selected-state.txt,$(PROFILE):$(REBUILD_CONFIG))\n";
+  Makefile.close();
+  ASSERT_FALSE(Makefile.has_error());
+
+  llvm::raw_fd_ostream Module(pathInDir("nvk_hello.ko"), EC,
+                              llvm::sys::fs::OF_None);
+  ASSERT_FALSE(EC) << EC.message();
+  Module << "old-debug-module";
+  Module.close();
+  ASSERT_FALSE(Module.has_error());
+  llvm::raw_fd_ostream State(pathInDir(".nvk-build-flags"), EC,
+                             llvm::sys::fs::OF_None);
+  ASSERT_FALSE(EC) << EC.message();
+  State << "KERNEL=510 PROFILE=release NEVERC=/usr/bin/true\n";
+  State.close();
+  ASSERT_FALSE(State.has_error());
+
+  std::string NevercOverride = "NEVERC=";
+  NevercOverride.append(TrueProgram->begin(), TrueProgram->end());
+  llvm::SmallVector<llvm::StringRef, 6> Arguments = {
+      "relative/neverc", "make", "-C", Dir, NevercOverride, "inspect-state"};
+  EXPECT_EQ(llvm::sys::ExecuteAndWait(NEVERC_BINARY, Arguments), 0);
+
+  auto Selected =
+      llvm::MemoryBuffer::getFile(pathInDir("selected-state.txt"));
+  ASSERT_TRUE(Selected) << Selected.getError().message();
+  EXPECT_EQ((*Selected)->getBuffer(), "debug:force-config-rebuild\n");
+}
+
+TEST_F(BuildDriverTest, AndroidKernelProfileDryRunPrintsCompileCommand) {
+  auto Source =
+      llvm::MemoryBuffer::getFile(NEVERC_ANDROID_KERNEL_HELLO_MAKEFILE);
+  ASSERT_TRUE(Source) << Source.getError().message();
+
+  std::error_code EC;
+  llvm::raw_fd_ostream Makefile(pathInDir("Kernel Build.mk"), EC,
+                                llvm::sys::fs::OF_None);
+  ASSERT_FALSE(EC) << EC.message();
+  Makefile << (*Source)->getBuffer();
+  Makefile.close();
+  ASSERT_FALSE(Makefile.has_error());
+
+  llvm::raw_fd_ostream Input(pathInDir("main.c"), EC, llvm::sys::fs::OF_None);
+  ASSERT_FALSE(EC) << EC.message();
+  Input << "int unused;\n";
+  Input.close();
+  ASSERT_FALSE(Input.has_error());
+
+  const std::string OutputPath = pathInDir("dry-run-output.txt");
+  llvm::StringRef Redirects[3] = {llvm::StringRef(), OutputPath,
+                                  llvm::StringRef()};
+  llvm::SmallVector<llvm::StringRef, 10> Arguments = {
+      "relative/neverc",
+      "make",
+      "-C",
+      Dir,
+      "-f",
+      "Kernel Build.mk",
+      "NEVERC=/definitely/not/executed/neverc-dry-run",
+      "-n",
+      "release"};
+  EXPECT_EQ(llvm::sys::ExecuteAndWait(NEVERC_BINARY, Arguments, /*Env=*/{},
+                                      Redirects),
+            0);
+
+  auto Output = llvm::MemoryBuffer::getFile(OutputPath);
+  ASSERT_TRUE(Output) << Output.getError().message();
+  EXPECT_NE((*Output)->getBuffer().find("neverc-dry-run"),
+            llvm::StringRef::npos);
+  EXPECT_NE((*Output)->getBuffer().find("--strip"), llvm::StringRef::npos);
+}
+
+TEST_F(BuildDriverTest,
+       AndroidKernelBuildStatePreservesConsecutiveCompilerPathSpaces) {
+  const auto TrueProgram = llvm::sys::findProgramByName("true");
+  if (!TrueProgram)
+    GTEST_SKIP() << "requires a no-op executable";
+
+  auto Source =
+      llvm::MemoryBuffer::getFile(NEVERC_ANDROID_KERNEL_HELLO_MAKEFILE);
+  ASSERT_TRUE(Source) << Source.getError().message();
+
+  auto WriteFile = [this](llvm::StringRef Name, llvm::StringRef Contents) {
+    std::error_code EC;
+    llvm::raw_fd_ostream Out(pathInDir(Name), EC, llvm::sys::fs::OF_None);
+    EXPECT_FALSE(EC) << EC.message();
+    if (EC)
+      return;
+    Out << Contents;
+    Out.close();
+    EXPECT_FALSE(Out.has_error());
+  };
+
+  WriteFile("Makefile", (*Source)->getBuffer());
+  WriteFile("main.c", "int unused;\n");
+  WriteFile("nvk_hello.ko", "existing module\n");
+  WriteFile("nvk_hello.ko.symbols.json", "{}\n");
+
+  const std::string NoopCompiler = pathInDir("noop  compiler");
+  if (const std::error_code EC =
+          llvm::sys::fs::create_link(*TrueProgram, NoopCompiler))
+    GTEST_SKIP() << "cannot create no-op compiler link: " << EC.message();
+  WriteFile(".nvk-build-flags",
+            "KERNEL=510 PROFILE=release NEVERC=" + NoopCompiler + "\n");
+  const std::string IntegrityPath = pathInDir(".nvk-build-integrity");
+  llvm::StringRef IntegrityRedirects[3] = {
+      llvm::StringRef(), IntegrityPath, llvm::StringRef()};
+  const std::string ModulePath = pathInDir("nvk_hello.ko");
+  llvm::SmallVector<llvm::StringRef, 3> IntegrityArguments = {
+      "relative/neverc", "__neverc_android_kernel_output_integrity",
+      ModulePath};
+  ASSERT_EQ(llvm::sys::ExecuteAndWait(NEVERC_BINARY, IntegrityArguments,
+                                      /*Env=*/{}, IntegrityRedirects),
+            0);
+
+  const std::string OutputPath = pathInDir("build-output.txt");
+  llvm::StringRef Redirects[3] = {llvm::StringRef(), OutputPath,
+                                  llvm::StringRef()};
+  const std::string NevercOverride = "NEVERC=" + NoopCompiler;
+  llvm::SmallVector<llvm::StringRef, 7> Arguments = {
+      "relative/neverc", "make", "-C", Dir, NevercOverride};
+  EXPECT_EQ(llvm::sys::ExecuteAndWait(NEVERC_BINARY, Arguments, /*Env=*/{},
+                                      Redirects),
+            0);
+
+  auto Output = llvm::MemoryBuffer::getFile(OutputPath);
+  ASSERT_TRUE(Output) << Output.getError().message();
+  EXPECT_EQ((*Output)->getBuffer().find("--target"), llvm::StringRef::npos)
+      << (*Output)->getBuffer().str();
+}
+
+TEST_F(BuildDriverTest, AndroidKernelBuildStateRejectsMismatchedIntegrity) {
+  const auto TrueProgram = llvm::sys::findProgramByName("true");
+  if (!TrueProgram)
+    GTEST_SKIP() << "requires a no-op executable";
+
+  auto Source =
+      llvm::MemoryBuffer::getFile(NEVERC_ANDROID_KERNEL_HELLO_MAKEFILE);
+  ASSERT_TRUE(Source) << Source.getError().message();
+
+  auto WriteFile = [this](llvm::StringRef Name, llvm::StringRef Contents) {
+    std::error_code EC;
+    llvm::raw_fd_ostream Out(pathInDir(Name), EC, llvm::sys::fs::OF_None);
+    EXPECT_FALSE(EC) << EC.message();
+    if (EC)
+      return;
+    Out << Contents;
+    Out.close();
+    EXPECT_FALSE(Out.has_error());
+  };
+
+  WriteFile("Makefile", (*Source)->getBuffer());
+  WriteFile("main.c", "int unused;\n");
+  WriteFile("nvk_hello.ko", "existing module\n");
+  WriteFile("nvk_hello.ko.symbols.json", "{}\n");
+  std::string BuildID = "KERNEL=510 PROFILE=release NEVERC=";
+  BuildID.append(TrueProgram->begin(), TrueProgram->end());
+  BuildID += '\n';
+  WriteFile(".nvk-build-flags", BuildID);
+
+  WriteFile(".nvk-build-integrity",
+            "IMAGE_SHA256=" + std::string(64, '0') +
+                " BUILD_ID_SHA256=" + std::string(64, '0') +
+                " BUILD_EXTRA_SHA256=-\n");
+
+  const std::string OutputPath = pathInDir("build-output.txt");
+  llvm::StringRef Redirects[3] = {llvm::StringRef(), OutputPath,
+                                  llvm::StringRef()};
+  std::string NevercOverride = "NEVERC=";
+  NevercOverride.append(TrueProgram->begin(), TrueProgram->end());
+  llvm::SmallVector<llvm::StringRef, 7> Arguments = {
+      "relative/neverc", "make", "-C", Dir, NevercOverride};
+  EXPECT_EQ(llvm::sys::ExecuteAndWait(NEVERC_BINARY, Arguments, /*Env=*/{},
+                                      Redirects),
+            0);
+
+  auto Output = llvm::MemoryBuffer::getFile(OutputPath);
+  ASSERT_TRUE(Output) << Output.getError().message();
+  EXPECT_NE((*Output)->getBuffer().find("--target"), llvm::StringRef::npos)
+      << (*Output)->getBuffer().str();
+}
+
+TEST_F(BuildDriverTest,
+       AndroidKernelMissingMapKeepsVerifiedReleaseSelection) {
+  const auto TrueProgram = llvm::sys::findProgramByName("true");
+  if (!TrueProgram)
+    GTEST_SKIP() << "requires a no-op executable";
+
+  auto Source =
+      llvm::MemoryBuffer::getFile(NEVERC_ANDROID_KERNEL_HELLO_MAKEFILE);
+  ASSERT_TRUE(Source) << Source.getError().message();
+
+  auto WriteFile = [this](llvm::StringRef Name, llvm::StringRef Contents) {
+    std::error_code EC;
+    llvm::raw_fd_ostream Out(pathInDir(Name), EC, llvm::sys::fs::OF_None);
+    EXPECT_FALSE(EC) << EC.message();
+    if (EC)
+      return;
+    Out << Contents;
+    Out.close();
+    EXPECT_FALSE(Out.has_error());
+  };
+
+  WriteFile("Makefile", (*Source)->getBuffer());
+  WriteFile("main.c", "int unused;\n");
+  WriteFile("nvk_hello.ko", "existing release module\n");
+  WriteFile("nvk_hello.ko.symbols.json", "{}\n");
+  std::string BuildID = "KERNEL=510 PROFILE=release NEVERC=";
+  BuildID.append(TrueProgram->begin(), TrueProgram->end());
+  BuildID += '\n';
+  WriteFile(".nvk-build-flags", BuildID);
+  const std::string IntegrityPath = pathInDir(".nvk-build-integrity");
+  llvm::StringRef IntegrityRedirects[3] = {
+      llvm::StringRef(), IntegrityPath, llvm::StringRef()};
+  const std::string ModulePath = pathInDir("nvk_hello.ko");
+  llvm::SmallVector<llvm::StringRef, 3> IntegrityArguments = {
+      "relative/neverc", "__neverc_android_kernel_output_integrity",
+      ModulePath};
+  ASSERT_EQ(llvm::sys::ExecuteAndWait(NEVERC_BINARY, IntegrityArguments,
+                                      /*Env=*/{}, IntegrityRedirects),
+            0);
+  ASSERT_FALSE(
+      llvm::sys::fs::remove(pathInDir("nvk_hello.ko.symbols.json")));
+
+  const std::string OutputPath = pathInDir("build-output.txt");
+  llvm::StringRef Redirects[3] = {llvm::StringRef(), OutputPath,
+                                  llvm::StringRef()};
+  std::string NevercOverride = "NEVERC=";
+  NevercOverride.append(TrueProgram->begin(), TrueProgram->end());
+  llvm::SmallVector<llvm::StringRef, 7> Arguments = {
+      "relative/neverc", "make", "-C", Dir, NevercOverride};
+  EXPECT_EQ(llvm::sys::ExecuteAndWait(NEVERC_BINARY, Arguments, /*Env=*/{},
+                                      Redirects),
+            0);
+
+  auto Output = llvm::MemoryBuffer::getFile(OutputPath);
+  ASSERT_TRUE(Output) << Output.getError().message();
+  EXPECT_NE((*Output)->getBuffer().find("--strip"), llvm::StringRef::npos)
+      << (*Output)->getBuffer().str();
+  EXPECT_EQ((*Output)->getBuffer().find(" -g "), llvm::StringRef::npos)
+      << (*Output)->getBuffer().str();
+}
+
+TEST_F(BuildDriverTest,
+       AndroidKernelIntegrityHelperFailureRejectsSavedReleaseState) {
+  const auto TrueProgram = llvm::sys::findProgramByName("true");
+  if (!TrueProgram)
+    GTEST_SKIP() << "requires a no-op executable";
+
+  auto Source =
+      llvm::MemoryBuffer::getFile(NEVERC_ANDROID_KERNEL_HELLO_MAKEFILE);
+  ASSERT_TRUE(Source) << Source.getError().message();
+
+  std::string MakefileContents = (*Source)->getBuffer().str();
+  const std::string IntegrityCommand =
+      "CURRENT_BUILD_INTEGRITY := $(shell $(NEVERC_MAKE_EXECUTABLE) "
+      "__neverc_android_kernel_output_integrity \"$(MODULE)\")";
+  const size_t IntegrityCommandOffset = MakefileContents.find(IntegrityCommand);
+  ASSERT_NE(IntegrityCommandOffset, std::string::npos);
+  MakefileContents.replace(
+      IntegrityCommandOffset, IntegrityCommand.size(),
+      "CURRENT_BUILD_INTEGRITY := $(shell $(NEVERC_MAKE_EXECUTABLE) "
+      "__neverc_android_kernel_output_integrity -)");
+
+  auto WriteFile = [this](llvm::StringRef Name, llvm::StringRef Contents) {
+    std::error_code EC;
+    llvm::raw_fd_ostream Out(pathInDir(Name), EC, llvm::sys::fs::OF_None);
+    EXPECT_FALSE(EC) << EC.message();
+    if (EC)
+      return;
+    Out << Contents;
+    Out.close();
+    EXPECT_FALSE(Out.has_error());
+  };
+
+  WriteFile("Makefile", MakefileContents);
+  WriteFile("main.c", "int unused;\n");
+  WriteFile("nvk_hello.ko", "existing module\n");
+  WriteFile("nvk_hello.ko.symbols.json", "{}\n");
+  std::string BuildID = "KERNEL=510 PROFILE=release NEVERC=";
+  BuildID.append(TrueProgram->begin(), TrueProgram->end());
+  BuildID += '\n';
+  WriteFile(".nvk-build-flags", BuildID);
+
+  const std::string OutputPath = pathInDir("build-output.txt");
+  llvm::StringRef Redirects[3] = {llvm::StringRef(), OutputPath,
+                                  llvm::StringRef()};
+  std::string NevercOverride = "NEVERC=";
+  NevercOverride.append(TrueProgram->begin(), TrueProgram->end());
+  llvm::SmallVector<llvm::StringRef, 7> Arguments = {
+      "relative/neverc", "make", "-C", Dir, NevercOverride};
+  EXPECT_EQ(llvm::sys::ExecuteAndWait(NEVERC_BINARY, Arguments, /*Env=*/{},
+                                      Redirects),
+            0);
+
+  auto Output = llvm::MemoryBuffer::getFile(OutputPath);
+  ASSERT_TRUE(Output) << Output.getError().message();
+  EXPECT_NE((*Output)->getBuffer().find(" -g "), llvm::StringRef::npos)
+      << (*Output)->getBuffer().str();
+  EXPECT_EQ((*Output)->getBuffer().find("--strip"), llvm::StringRef::npos)
+      << (*Output)->getBuffer().str();
+}
 
 // ===== Lexer Tests =====
 
@@ -801,6 +1373,18 @@ TEST_F(BuildFunctionTest, Strip) {
   ParsedMakefile M;
   ASSERT_TRUE(M.parse("VAR := $(strip   a   b   c   )\n"));
   EXPECT_EQ(M.Env.get("VAR"), "a b c");
+}
+
+TEST_F(BuildFunctionTest, FileWriteFailureStopsExpansion) {
+  EXPECT_EXIT(
+      {
+        VariableEnv Env;
+        FunctionRegistry Functions;
+        Env.setFunctionRegistry(&Functions);
+        Env.expand("$(file >.,state)");
+        std::exit(0);
+      },
+      ::testing::ExitedWithCode(2), "open: \\.:");
 }
 
 TEST_F(BuildFunctionTest, Findstring) {

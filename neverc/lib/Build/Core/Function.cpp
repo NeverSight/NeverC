@@ -7,9 +7,12 @@
 #include "llvm/Support/raw_ostream.h"
 
 #include <algorithm>
+#include <cerrno>
 #include <cctype>
+#include <cstdlib>
 #include <fstream>
 #include <set>
+#include <system_error>
 
 namespace neverc {
 namespace build {
@@ -542,15 +545,28 @@ void FunctionRegistry::registerBuiltins() {
     if (Mode == '>') {
       bool HasText = Args.size() > 1;
       std::string Text = HasText ? Args[1] : "";
+      auto Fail = [&](const char *Operation, int ErrorNumber) -> void {
+        if (ErrorNumber == 0)
+          ErrorNumber = EIO;
+        llvm::errs() << constants::ErrorPrefix << Operation << ": " << Filename
+                     << ": "
+                     << std::error_code(ErrorNumber, std::generic_category())
+                            .message()
+                     << ".  Stop.\n";
+        std::exit(2);
+      };
       std::ofstream Out(Filename,
                         Append ? (std::ios::app | std::ios::out) : std::ios::out);
-      if (!Out.is_open()) {
-        llvm::errs() << constants::ErrorPrefix << "open: " << Filename
-                     << ": No such file or directory\n";
-        return "";
-      }
+      if (!Out.is_open())
+        Fail("open", errno);
       if (HasText)
         Out << Text << "\n";
+      Out.flush();
+      if (!Out)
+        Fail("write", errno);
+      Out.close();
+      if (!Out)
+        Fail("close", errno);
       return "";
     }
 

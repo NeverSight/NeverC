@@ -10,6 +10,8 @@ std::error_code syncFileDescriptor(int FileDescriptor);
 std::error_code syncParentDirectory(llvm::StringRef Path);
 std::error_code seekFileToEnd(int FileDescriptor);
 std::error_code closeFileDescriptor(int FileDescriptor);
+std::error_code pathsReferToSameLocation(llvm::StringRef Left,
+                                         llvm::StringRef Right, bool &Result);
 std::error_code isLinkLikePath(llvm::StringRef Path, bool &Result);
 std::error_code renameLinkLikePath(llvm::StringRef From, llvm::StringRef To);
 std::error_code renameStagingFile(llvm::StringRef From, int FileDescriptor,

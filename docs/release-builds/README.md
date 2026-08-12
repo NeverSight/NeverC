@@ -84,28 +84,43 @@ accepts `--strip` with `-r` only when all of these final-module conditions hold:
 - the output name ends in `.ko`.
 
 `neverc make release` remains the recommended release command and expands to
-`-O2 --strip`. With no `.nvk-build-flags` stamp, `make` defaults to debug and
-does not select release on its own. The example Makefiles save an explicit
-profile so later `make push`, `make run`, and bare `make` calls keep using the
-same artifact. Examples that accept `EXTRA` preserve its complete multi-word
-value across recursive and later builds. `make debug` or an explicit
-`PROFILE=...` replaces the saved
-selection; `make clean` removes the stamp, so the next build defaults to debug.
-An explicit `make release` unconditionally rebuilds the module/map bundle once,
-so rerunning it repairs a missing map or a bundle whose digest no longer
-matches. On this final-module path, NeverC removes debug sections, `.comment`,
-and relocation-unneeded local/undefined entries, then rebuilds `.strtab`.
+`-O2 --strip`. These examples require `neverc make`; external `make` is
+rejected because recursive command-line propagation, state verification, and
+lock-aware cleanup are part of the build contract. Without a verified
+`.nvk-build-flags` plus `.nvk-build-integrity` pair, `neverc make` defaults to debug
+and does not select release on its own. The state files live beside `MODULE`,
+including when it names a subdirectory. The example Makefiles save an explicit
+profile so later `neverc make push`, `neverc make run`, and targetless
+`neverc make` calls keep using the same artifact. Examples that accept `EXTRA`
+preserve its complete multi-word value across recursive and later builds, and
+recursive profile targets retain other command-line variable overrides. Invoke
+`neverc make debug`, `neverc make release`, and `neverc make clean` as sole
+goals; combining any of them with another goal is rejected to prevent
+shared-output races. `neverc make debug` or an explicit
+`neverc make PROFILE=...` replaces the saved selection only when the
+module/map/state bundle is published; a failure before publication leaves the
+prior artifact and state intact. `.nvk-build-integrity` binds SHA-256 digests of the module,
+build identifier, and optional `EXTRA` state. Missing or mismatched state after
+an interrupted publication is ignored and forces a rebuild. `neverc make clean`
+removes the state through the publication lock, so the next build defaults to
+debug. A targetless `neverc make` with a verified release profile rebuilds when
+the map is missing. An explicit `neverc make release` unconditionally rebuilds the
+module/map/state bundle once, so rerunning it also repairs a bundle whose digest
+no longer matches. On this final-module path, NeverC removes debug sections,
+`.comment`, and relocation-unneeded local/undefined entries, then rebuilds
+`.strtab`.
 
 After a successful release, NeverC transactionally publishes the module and
 `<module>.ko.symbols.json` beside it. Existing files remain visible until each
 atomic replacement. Overlapping publishers targeting the same output directory
-are serialized through `.neverc-output.lock`; the example `make clean` targets
-intentionally retain this internal lock file so they cannot unlink an active
-lock. Failures before publication roll the bundle back; late durability
-failures retain a recovery journal. Because two directory
-entries cannot be replaced in one filesystem operation, always validate
-`image_sha256` after an unclean shutdown. The map records `original` and
-`release` names for every retained symbol whose name changed:
+and `neverc make clean` are serialized through `.neverc-output.lock`; cleanup removes
+the bundle transactionally but intentionally retains this internal lock file.
+Failures before publication roll the bundle back; late durability failures
+retain a recovery journal. Build-state integrity is checked automatically, but
+because two directory entries cannot be replaced in one filesystem operation,
+always validate the map's `image_sha256` after an unclean shutdown. The map
+records `original` and `release` names for every retained symbol whose name
+changed:
 
 ```json
 {
