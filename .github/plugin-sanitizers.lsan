@@ -1,0 +1,4 @@
+# NeverC intentionally keeps its process-wide embedded CPython 3.12 interpreter
+# alive until process exit.  Suppress only allocations rooted in that runtime;
+# LeakSanitizer remains enabled for NeverC and every other dependency.
+leak:libpython3.12.so

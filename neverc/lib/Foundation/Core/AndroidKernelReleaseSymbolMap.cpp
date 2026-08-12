@@ -135,7 +135,8 @@ Expected<std::string> serializeAndroidKernelReleaseSymbolMap(
     if (json::isUTF8(Entry->OriginalName)) {
       Symbol["original"] = Entry->OriginalName;
     } else {
-      Symbol["original"] = encodeBase64(Entry->OriginalName);
+      SmallString<32> EncodedOriginal(encodeBase64(Entry->OriginalName));
+      Symbol["original"] = json::Value(EncodedOriginal);
       Symbol["original_encoding"] = "base64";
     }
     Symbols.push_back(std::move(Symbol));
