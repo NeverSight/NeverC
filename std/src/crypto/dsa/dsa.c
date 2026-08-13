@@ -7,6 +7,14 @@
 #define NCI_DSA_RANDOM neverc_platform_random
 #endif
 
+static void dsa_bigint_secure_free(neverc_bigint_t *value) {
+    if (!value) return;
+    if (value->digits)
+        neverc_platform_secure_zero(
+            value->digits, value->cap * sizeof(*value->digits));
+    neverc_bigint_free(value);
+}
+
 static int random_mod(neverc_bigint_t *r, const neverc_bigint_t *n) {
     int bits = neverc_bigint_bit_len(n);
     if (bits <= 1) return -1;
@@ -56,25 +64,31 @@ static void mod_inv_dsa(neverc_bigint_t *r, const neverc_bigint_t *a, const neve
 }
 
 void neverc_dsa_public_key_init(neverc_dsa_public_key_t *k) {
+    if (!k) return;
     neverc_bigint_init(&k->p); neverc_bigint_init(&k->q);
     neverc_bigint_init(&k->g); neverc_bigint_init(&k->y);
 }
 void neverc_dsa_public_key_free(neverc_dsa_public_key_t *k) {
+    if (!k) return;
     neverc_bigint_free(&k->p); neverc_bigint_free(&k->q);
     neverc_bigint_free(&k->g); neverc_bigint_free(&k->y);
 }
 void neverc_dsa_private_key_init(neverc_dsa_private_key_t *k) {
+    if (!k) return;
     neverc_dsa_public_key_init(&k->pub);
     neverc_bigint_init(&k->x);
 }
 void neverc_dsa_private_key_free(neverc_dsa_private_key_t *k) {
+    if (!k) return;
     neverc_dsa_public_key_free(&k->pub);
-    neverc_bigint_free(&k->x);
+    dsa_bigint_secure_free(&k->x);
 }
 void neverc_dsa_signature_init(neverc_dsa_signature_t *sig) {
+    if (!sig) return;
     neverc_bigint_init(&sig->r); neverc_bigint_init(&sig->s);
 }
 void neverc_dsa_signature_free(neverc_dsa_signature_t *sig) {
+    if (!sig) return;
     neverc_bigint_free(&sig->r); neverc_bigint_free(&sig->s);
 }
 

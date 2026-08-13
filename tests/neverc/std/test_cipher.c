@@ -62,6 +62,14 @@ static void test_cbc_128(void) {
     ret = neverc_cipher_cbc_decrypt(key, 16, iv, dec, expected_ct, 64);
     check_int("CBC-128 decrypt return", ret, 0);
     check_bytes("CBC-128 plaintext", dec, pt, 64);
+
+    uint8_t in_place[64];
+    memcpy(in_place, expected_ct, sizeof(in_place));
+    hex_to_bytes("000102030405060708090a0b0c0d0e0f", iv, 16);
+    ret = neverc_cipher_cbc_decrypt(
+        key, 16, iv, in_place, in_place, sizeof(in_place));
+    check_int("CBC-128 in-place decrypt return", ret, 0);
+    check_bytes("CBC-128 in-place plaintext", in_place, pt, 64);
 }
 
 /* NIST SP 800-38A F.2.3: AES-192 CBC */
@@ -154,6 +162,32 @@ static void test_cbc_invalid(void) {
               neverc_cipher_cbc_encrypt(key, 16, iv, buf, buf, 0), 0);
 }
 
+static void test_invalid_key_and_spans(void) {
+    printf("[invalid key and spans]\n");
+    uint8_t key[16] = {0}, iv[16] = {0}, src[16] = {0}, dst[16];
+    memset(dst, 0xa5, sizeof(dst));
+
+    check_int("CTR invalid key rejected",
+              neverc_cipher_ctr_checked(
+                  key, 15, iv, dst, src, sizeof(src)), -1);
+    uint8_t unchanged[16];
+    memset(unchanged, 0xa5, sizeof(unchanged));
+    check_bytes("CTR invalid key leaves output", dst, unchanged, sizeof(dst));
+    check_int("CTR invalid source span rejected",
+              neverc_cipher_ctr_checked(key, 16, iv, dst, NULL, 1), -1);
+    check_int("CBC invalid destination span rejected",
+              neverc_cipher_cbc_encrypt(
+                  key, 16, iv, NULL, src, sizeof(src)),
+              -1);
+    check_int("CTR empty null spans accepted",
+              neverc_cipher_ctr_checked(
+                  key, 16, iv, NULL, NULL, 0), 0);
+
+    neverc_cipher_ctr(key, 15, iv, dst, src, sizeof(src));
+    check_bytes("legacy CTR invalid key is a no-op",
+                dst, unchanged, sizeof(dst));
+}
+
 int main(void) {
     printf("=== NeverC Cipher Mode Tests ===\n");
     test_cbc_128();
@@ -161,6 +195,7 @@ int main(void) {
     test_ctr_128();
     test_ctr_partial();
     test_cbc_invalid();
+    test_invalid_key_and_spans();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");

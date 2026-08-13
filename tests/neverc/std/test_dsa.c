@@ -45,6 +45,13 @@ static void setup_go_dsa_key(neverc_dsa_private_key_t *key) {
 
 static void test_init_free(void) {
     printf("[init_free]\n");
+    neverc_dsa_public_key_init(NULL);
+    neverc_dsa_public_key_free(NULL);
+    neverc_dsa_private_key_init(NULL);
+    neverc_dsa_private_key_free(NULL);
+    neverc_dsa_signature_init(NULL);
+    neverc_dsa_signature_free(NULL);
+
     neverc_dsa_public_key_t pub;
     neverc_dsa_public_key_init(&pub);
     ASSERT_TRUE(neverc_bigint_is_zero(&pub.p));
