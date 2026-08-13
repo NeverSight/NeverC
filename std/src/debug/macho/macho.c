@@ -7,6 +7,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <limits.h>
 
 static uint32_t rd32le(const uint8_t *p) {
     return (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
@@ -26,8 +27,22 @@ static uint64_t rd64be(const uint8_t *p) {
 typedef uint32_t (*rd32_fn)(const uint8_t *);
 typedef uint64_t (*rd64_fn)(const uint8_t *);
 
+static int macho_open_fail(neverc_macho_file_t *f) {
+    neverc_macho_close(f);
+    return -1;
+}
+
+static int macho_range_in_file(uint64_t offset, uint64_t size, size_t len) {
+    return offset <= len && size <= (uint64_t)len - offset;
+}
+
+static int macho_section_has_file_data(uint32_t flags) {
+    uint32_t type = flags & 0xffU;
+    return type != 0x01U && type != 0x0cU && type != 0x12U;
+}
+
 int neverc_macho_is_valid(const uint8_t *data, size_t len) {
-    if (len < 4) return 0;
+    if (!data || len < 4) return 0;
     uint32_t magic = rd32le(data);
     return magic == NEVERC_MH_MAGIC || magic == NEVERC_MH_MAGIC_64 ||
            magic == NEVERC_MH_CIGAM || magic == NEVERC_MH_CIGAM_64;
@@ -42,6 +57,7 @@ static void copy_name(char *dst, size_t dstsz, const uint8_t *src, size_t srcsz)
 }
 
 int neverc_macho_open(neverc_macho_file_t *f, const uint8_t *data, size_t len) {
+    if (!f) return -1;
     memset(f, 0, sizeof(*f));
     if (!neverc_macho_is_valid(data, len)) return -1;
 
@@ -59,7 +75,7 @@ int neverc_macho_open(neverc_macho_file_t *f, const uint8_t *data, size_t len) {
     /* is_valid only checked the 4-byte magic; confirm the whole header fits
      * before reading its fields, or a truncated buffer is read past its end. */
     uint32_t hdr_size = f->is_64bit ? 32 : 28;
-    if (len < hdr_size) return -1;
+    if (len < hdr_size) return macho_open_fail(f);
 
     f->header.magic = r32(data);
     f->header.cpu = (int32_t)r32(data + 4);
@@ -69,7 +85,10 @@ int neverc_macho_open(neverc_macho_file_t *f, const uint8_t *data, size_t len) {
     f->header.sizeofcmds = r32(data + 20);
     f->header.flags = r32(data + 24);
 
-    if ((uint64_t)hdr_size + f->header.sizeofcmds > len) return -1;
+    if ((uint64_t)hdr_size + f->header.sizeofcmds > len ||
+        f->header.ncmds > f->header.sizeofcmds / 8U)
+        return macho_open_fail(f);
+    size_t commands_end = (size_t)hdr_size + f->header.sizeofcmds;
 
     /* First pass: count segments, sections, dylibs. Every field is bounded to
      * the declared command and the file: cmd_size < 8 (no forward progress) or a
@@ -77,40 +96,72 @@ int neverc_macho_open(neverc_macho_file_t *f, const uint8_t *data, size_t len) {
      * full segment header, and the section count mirrors the populate pass below
      * exactly so the allocations are always sufficient. */
     uint32_t seg_count = 0, sec_count = 0, dylib_count = 0;
+    uint32_t symtab_count = 0;
     const uint8_t *cmd = data + hdr_size;
     for (uint32_t i = 0; i < f->header.ncmds; i++) {
-        if ((size_t)(cmd - data) + 8 > len) break;
+        size_t cmd_offset = (size_t)(cmd - data);
+        if (cmd_offset > commands_end || commands_end - cmd_offset < 8)
+            return macho_open_fail(f);
         uint32_t cmd_type = r32(cmd);
         uint32_t cmd_size = r32(cmd + 4);
-        if (cmd_size < 8 || (size_t)(cmd - data) + cmd_size > len) break;
-        size_t cmd_end = (size_t)(cmd - data) + cmd_size;
-        if (cmd_type == NEVERC_LC_SEGMENT && cmd_size >= 56) {
-            seg_count++;
+        if (cmd_size < 8 || cmd_size > commands_end - cmd_offset ||
+            cmd_size % (f->is_64bit ? 8U : 4U) != 0)
+            return macho_open_fail(f);
+        if (cmd_type == NEVERC_LC_SEGMENT) {
+            if (f->is_64bit || cmd_size < 56)
+                return macho_open_fail(f);
             uint32_t ns = r32(cmd + 48);
-            const uint8_t *sec = cmd + 56;
-            for (uint32_t j = 0; j < ns && (size_t)(sec - data) + 68 <= cmd_end; j++) {
-                sec_count++; sec += 68;
-            }
-        } else if (cmd_type == NEVERC_LC_SEGMENT_64 && cmd_size >= 72) {
+            if ((uint64_t)ns * 68U != cmd_size - 56U ||
+                sec_count > UINT32_MAX - ns)
+                return macho_open_fail(f);
             seg_count++;
+            sec_count += ns;
+        } else if (cmd_type == NEVERC_LC_SEGMENT_64) {
+            if (!f->is_64bit || cmd_size < 72)
+                return macho_open_fail(f);
             uint32_t ns = r32(cmd + 64);
-            const uint8_t *sec = cmd + 72;
-            for (uint32_t j = 0; j < ns && (size_t)(sec - data) + 80 <= cmd_end; j++) {
-                sec_count++; sec += 80;
-            }
+            if ((uint64_t)ns * 80U != cmd_size - 72U ||
+                sec_count > UINT32_MAX - ns)
+                return macho_open_fail(f);
+            seg_count++;
+            sec_count += ns;
         } else if (cmd_type == NEVERC_LC_LOAD_DYLIB) {
+            if (cmd_size < 24)
+                return macho_open_fail(f);
+            uint32_t name_off = r32(cmd + 8);
+            if (name_off < 24 || name_off >= cmd_size ||
+                !memchr(cmd + name_off, 0, cmd_size - name_off))
+                return macho_open_fail(f);
             dylib_count++;
+        } else if (cmd_type == NEVERC_LC_SYMTAB) {
+            if (cmd_size != 24 || ++symtab_count > 1)
+                return macho_open_fail(f);
         }
         cmd += cmd_size;
     }
+    if ((size_t)(cmd - data) != commands_end)
+        return macho_open_fail(f);
 
-    f->segments = (neverc_macho_segment_t *)calloc(seg_count ? seg_count : 1,
-                                                    sizeof(neverc_macho_segment_t));
-    f->sections = (neverc_macho_section_t *)calloc(sec_count ? sec_count : 1,
-                                                    sizeof(neverc_macho_section_t));
-    f->dylibs = (neverc_macho_dylib_t *)calloc(dylib_count ? dylib_count : 1,
-                                                sizeof(neverc_macho_dylib_t));
-    if (!f->segments || !f->sections || !f->dylibs) goto fail;
+    if ((seg_count != 0 &&
+         SIZE_MAX / sizeof(neverc_macho_segment_t) < seg_count) ||
+        (sec_count != 0 &&
+         SIZE_MAX / sizeof(neverc_macho_section_t) < sec_count) ||
+        (dylib_count != 0 &&
+         SIZE_MAX / sizeof(neverc_macho_dylib_t) < dylib_count))
+        return macho_open_fail(f);
+
+    if (seg_count)
+        f->segments = (neverc_macho_segment_t *)calloc(
+            seg_count, sizeof(neverc_macho_segment_t));
+    if (sec_count)
+        f->sections = (neverc_macho_section_t *)calloc(
+            sec_count, sizeof(neverc_macho_section_t));
+    if (dylib_count)
+        f->dylibs = (neverc_macho_dylib_t *)calloc(
+            dylib_count, sizeof(neverc_macho_dylib_t));
+    if ((seg_count && !f->segments) || (sec_count && !f->sections) ||
+        (dylib_count && !f->dylibs))
+        return macho_open_fail(f);
 
     /* Second pass: populate. Bounds mirror the counting pass exactly: the same
      * whole-command and per-section guards, so sci/si/di never exceed the
@@ -134,8 +185,11 @@ int neverc_macho_open(neverc_macho_file_t *f, const uint8_t *data, size_t len) {
             seg->filesz  = r32(cmd + 36);
             seg->maxprot = r32(cmd + 40);
             seg->prot    = r32(cmd + 44);
+            if (!macho_range_in_file(seg->offset, seg->filesz, len))
+                goto fail;
             uint32_t nsects = r32(cmd + 48);
             seg->nsects = nsects;
+            seg->flag = r32(cmd + 52);
             const uint8_t *sec = cmd + 56;
             for (uint32_t j = 0; j < nsects && sci < sec_count &&
                                 (size_t)(sec - data) + 68 <= cmd_end; j++) {
@@ -149,6 +203,12 @@ int neverc_macho_open(neverc_macho_file_t *f, const uint8_t *data, size_t len) {
                 s->reloff = r32(sec + 48);
                 s->nreloc = r32(sec + 52);
                 s->flags  = r32(sec + 56);
+                if ((macho_section_has_file_data(s->flags) &&
+                     !macho_range_in_file(s->offset, s->size, len)) ||
+                    (s->nreloc != 0 &&
+                     !macho_range_in_file(
+                         s->reloff, (uint64_t)s->nreloc * 8U, len)))
+                    goto fail;
                 sec += 68;
             }
         } else if (cmd_type == NEVERC_LC_SEGMENT_64 && cmd_size >= 72 && si < seg_count) {
@@ -160,8 +220,11 @@ int neverc_macho_open(neverc_macho_file_t *f, const uint8_t *data, size_t len) {
             seg->filesz  = r64(cmd + 48);
             seg->maxprot = r32(cmd + 56);
             seg->prot    = r32(cmd + 60);
+            if (!macho_range_in_file(seg->offset, seg->filesz, len))
+                goto fail;
             uint32_t nsects = r32(cmd + 64);
             seg->nsects = nsects;
+            seg->flag = r32(cmd + 68);
             const uint8_t *sec = cmd + 72;
             for (uint32_t j = 0; j < nsects && sci < sec_count &&
                                 (size_t)(sec - data) + 80 <= cmd_end; j++) {
@@ -175,6 +238,12 @@ int neverc_macho_open(neverc_macho_file_t *f, const uint8_t *data, size_t len) {
                 s->reloff = r32(sec + 56);
                 s->nreloc = r32(sec + 60);
                 s->flags  = r32(sec + 64);
+                if ((macho_section_has_file_data(s->flags) &&
+                     !macho_range_in_file(s->offset, s->size, len)) ||
+                    (s->nreloc != 0 &&
+                     !macho_range_in_file(
+                         s->reloff, (uint64_t)s->nreloc * 8U, len)))
+                    goto fail;
                 sec += 80;
             }
         } else if (cmd_type == NEVERC_LC_SYMTAB && cmd_size >= 24) {
@@ -182,6 +251,12 @@ int neverc_macho_open(neverc_macho_file_t *f, const uint8_t *data, size_t len) {
             f->nsyms   = r32(cmd + 12);
             f->stroff  = r32(cmd + 16);
             f->strsize = r32(cmd + 20);
+            size_t entry_size = f->is_64bit ? 16U : 12U;
+            if (!macho_range_in_file(
+                    f->symoff, (uint64_t)f->nsyms * entry_size, len) ||
+                !macho_range_in_file(f->stroff, f->strsize, len) ||
+                (f->nsyms != 0 && f->strsize == 0))
+                goto fail;
         } else if (cmd_type == NEVERC_LC_LOAD_DYLIB && cmd_size >= 24 && di < dylib_count) {
             uint32_t name_off = r32(cmd + 8);
             if (name_off < cmd_size) {
@@ -207,6 +282,7 @@ fail:
 }
 
 void neverc_macho_close(neverc_macho_file_t *f) {
+    if (!f) return;
     free(f->segments);
     free(f->sections);
     free(f->dylibs);
@@ -215,12 +291,21 @@ void neverc_macho_close(neverc_macho_file_t *f) {
 }
 
 int neverc_macho_open_file(neverc_macho_file_t *f, const char *path) {
+    if (!f) return -1;
+    memset(f, 0, sizeof(*f));
+    if (!path) return -1;
     FILE *fp = fopen(path, "rb");
     if (!fp) return -1;
-    fseek(fp, 0, SEEK_END);
+    if (fseek(fp, 0, SEEK_END) != 0) {
+        fclose(fp);
+        return -1;
+    }
     long sz = ftell(fp);
     if (sz <= 0) { fclose(fp); return -1; }
-    fseek(fp, 0, SEEK_SET);
+    if (fseek(fp, 0, SEEK_SET) != 0) {
+        fclose(fp);
+        return -1;
+    }
     uint8_t *buf = (uint8_t *)malloc((size_t)sz);
     if (!buf) { fclose(fp); return -1; }
     if (fread(buf, 1, (size_t)sz, fp) != (size_t)sz) {
@@ -235,6 +320,8 @@ int neverc_macho_open_file(neverc_macho_file_t *f, const char *path) {
 
 const neverc_macho_section_t *neverc_macho_section(const neverc_macho_file_t *f,
                                                      const char *name) {
+    if (!f || !name || (f->section_count != 0 && !f->sections))
+        return NULL;
     for (uint32_t i = 0; i < f->section_count; i++) {
         if (strcmp(f->sections[i].name, name) == 0)
             return &f->sections[i];
@@ -244,6 +331,8 @@ const neverc_macho_section_t *neverc_macho_section(const neverc_macho_file_t *f,
 
 const neverc_macho_segment_t *neverc_macho_segment(const neverc_macho_file_t *f,
                                                      const char *name) {
+    if (!f || !name || (f->segment_count != 0 && !f->segments))
+        return NULL;
     for (uint32_t i = 0; i < f->segment_count; i++) {
         if (strcmp(f->segments[i].name, name) == 0)
             return &f->segments[i];
@@ -254,10 +343,19 @@ const neverc_macho_segment_t *neverc_macho_segment(const neverc_macho_file_t *f,
 int neverc_macho_section_data(const neverc_macho_file_t *f,
                                const neverc_macho_section_t *s,
                                uint8_t **out, size_t *out_len) {
-    if (!s || s->size == 0) {
-        *out = NULL; *out_len = 0; return 0;
+    if (!out || !out_len) return -1;
+    *out = NULL;
+    *out_len = 0;
+    if (!f || (!f->data && f->data_len != 0) || !s)
+        return -1;
+    if (s->size == 0) {
+        return 0;
     }
-    if (s->offset > f->data_len || s->size > f->data_len - s->offset) return -1;
+    if (!macho_section_has_file_data(s->flags))
+        return 0;
+    if (!macho_range_in_file(s->offset, s->size, f->data_len) ||
+        s->size > SIZE_MAX)
+        return -1;
     *out = (uint8_t *)malloc((size_t)s->size);
     if (!*out) return -1;
     memcpy(*out, f->data + s->offset, (size_t)s->size);
@@ -267,39 +365,45 @@ int neverc_macho_section_data(const neverc_macho_file_t *f,
 
 int neverc_macho_symbols(const neverc_macho_file_t *f,
                           neverc_macho_symbol_t **syms, int *count) {
-    *syms = NULL; *count = 0;
-    if (f->nsyms == 0 || f->symoff == 0) return 0;
+    if (!syms || !count) return -1;
+    *syms = NULL;
+    *count = 0;
+    if (!f || (!f->data && f->data_len != 0)) return -1;
+    if (f->nsyms == 0) return 0;
+    if (f->symoff == 0 || f->strsize == 0 || f->nsyms > INT_MAX)
+        return -1;
 
     rd32_fn r32 = f->is_swap ? rd32be : rd32le;
     rd64_fn r64 = f->is_swap ? rd64be : rd64le;
 
-    int entry_size = f->is_64bit ? 16 : 12;
-    if ((uint64_t)f->symoff + (uint64_t)f->nsyms * entry_size > f->data_len) return -1;
-    if ((uint64_t)f->stroff + f->strsize > f->data_len) return -1;
+    size_t entry_size = f->is_64bit ? 16U : 12U;
+    if (!macho_range_in_file(f->symoff,
+                             (uint64_t)f->nsyms * entry_size,
+                             f->data_len) ||
+        !macho_range_in_file(f->stroff, f->strsize, f->data_len))
+        return -1;
 
     const uint8_t *sym_data = f->data + f->symoff;
     const uint8_t *str_data = f->data + f->stroff;
 
     *syms = (neverc_macho_symbol_t *)calloc(f->nsyms, sizeof(neverc_macho_symbol_t));
     if (!*syms) return -1;
-    *count = (int)f->nsyms;
-
     for (uint32_t i = 0; i < f->nsyms; i++) {
         const uint8_t *e = sym_data + i * entry_size;
         neverc_macho_symbol_t *s = &(*syms)[i];
 
         uint32_t strx = r32(e);
-        if (strx < f->strsize) {
-            const char *name = (const char *)(str_data + strx);
-            /* The string table may not be NUL-terminated before its end; bound
-             * the scan to the table so strlen can't read past it (and the file). */
-            size_t maxn = (size_t)(f->strsize - strx);
-            size_t nlen = 0;
-            while (nlen < maxn && name[nlen]) nlen++;
-            if (nlen >= sizeof(s->name)) nlen = sizeof(s->name) - 1;
-            memcpy(s->name, name, nlen);
-            s->name[nlen] = '\0';
-        }
+        if (strx >= f->strsize)
+            goto fail;
+        const char *name = (const char *)(str_data + strx);
+        size_t maxn = (size_t)(f->strsize - strx);
+        const char *nul = (const char *)memchr(name, 0, maxn);
+        if (!nul)
+            goto fail;
+        size_t nlen = (size_t)(nul - name);
+        if (nlen >= sizeof(s->name)) nlen = sizeof(s->name) - 1;
+        memcpy(s->name, name, nlen);
+        s->name[nlen] = '\0';
 
         s->type = e[4];
         s->sect = e[5];
@@ -312,7 +416,14 @@ int neverc_macho_symbols(const neverc_macho_file_t *f,
             s->value = r32(e + 8);
         }
     }
+    *count = (int)f->nsyms;
     return 0;
+
+fail:
+    free(*syms);
+    *syms = NULL;
+    *count = 0;
+    return -1;
 }
 
 const char *neverc_macho_cpu_string(int32_t cpu) {

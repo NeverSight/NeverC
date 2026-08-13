@@ -3,7 +3,7 @@
 
 /*
  * Mach-O (macOS/iOS executable) format parser.
- * Supports 32-bit and 64-bit Mach-O, and fat (universal) binaries.
+ * Supports thin 32-bit and 64-bit Mach-O binaries.
  * API modeled after Go's debug/macho package.
  */
 

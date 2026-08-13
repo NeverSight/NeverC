@@ -23,6 +23,10 @@ static void put64(uint8_t *p, uint64_t v) {
     put32(p, (uint32_t)v);
     put32(p+4, (uint32_t)(v>>32));
 }
+static void put32be(uint8_t *p, uint32_t v) {
+    p[0]=(uint8_t)(v>>24); p[1]=(uint8_t)(v>>16);
+    p[2]=(uint8_t)(v>>8); p[3]=(uint8_t)v;
+}
 
 /*
  * Build a minimal Mach-O 64-bit binary:
@@ -74,6 +78,38 @@ static uint8_t *build_minimal_macho64(size_t *out_len) {
     buf[512] = 0xC0; buf[513] = 0x03; buf[514] = 0x5F; buf[515] = 0xD6; /* ret (ARM64) */
 
     *out_len = total;
+    return buf;
+}
+
+static uint8_t *build_macho64_with_metadata(size_t *out_len) {
+    uint8_t *buf = build_minimal_macho64(out_len);
+    if (!buf) return NULL;
+
+    put32(buf + 16, 3);
+    put32(buf + 20, 224);
+
+    uint8_t *symtab = buf + 184;
+    put32(symtab, NEVERC_LC_SYMTAB);
+    put32(symtab + 4, 24);
+    put32(symtab + 8, 600);
+    put32(symtab + 12, 1);
+    put32(symtab + 16, 616);
+    put32(symtab + 20, 7);
+
+    uint8_t *dylib = buf + 208;
+    put32(dylib, NEVERC_LC_LOAD_DYLIB);
+    put32(dylib + 4, 48);
+    put32(dylib + 8, 24);
+    put32(dylib + 12, 2);
+    put32(dylib + 16, 0x10000);
+    put32(dylib + 20, 0x10000);
+    memcpy(dylib + 24, "libSystem.B.dylib", 18);
+
+    put32(buf + 600, 1);
+    buf[604] = NEVERC_N_SECT | NEVERC_N_EXT;
+    buf[605] = 1;
+    put64(buf + 608, 0x100000200ULL);
+    memcpy(buf + 616, "\0_main\0", 7);
     return buf;
 }
 
@@ -129,12 +165,140 @@ static void test_macho64_parse(void) {
     free(data);
 }
 
+static void test_metadata(void) {
+    size_t len = 0;
+    uint8_t *data = build_macho64_with_metadata(&len);
+    CHECK("build metadata Mach-O", data != NULL);
+    if (!data) return;
+
+    neverc_macho_file_t f;
+    CHECK("open metadata Mach-O", neverc_macho_open(&f, data, len) == 0);
+    CHECK("one dylib", f.dylib_count == 1);
+    CHECK("dylib name",
+          f.dylib_count == 1 &&
+              strcmp(f.dylibs[0].name, "libSystem.B.dylib") == 0);
+
+    neverc_macho_symbol_t *symbols = NULL;
+    int count = 0;
+    CHECK("read symbols", neverc_macho_symbols(&f, &symbols, &count) == 0);
+    CHECK("symbol name and value",
+          count == 1 && symbols != NULL &&
+              strcmp(symbols[0].name, "_main") == 0 &&
+              symbols[0].value == 0x100000200ULL);
+    free(symbols);
+
+    put32(data + 600, 7);
+    symbols = (neverc_macho_symbol_t *)1;
+    count = 99;
+    CHECK("reject symbol string offset at end",
+          neverc_macho_symbols(&f, &symbols, &count) == -1);
+    CHECK("symbol error clears outputs", symbols == NULL && count == 0);
+    put32(data + 600, 1);
+    data[622] = 'x';
+    CHECK("reject unterminated symbol name",
+          neverc_macho_symbols(&f, &symbols, &count) == -1);
+    data[622] = '\0';
+    neverc_macho_close(&f);
+
+    memset(data + 208 + 24, 'x', 24);
+    CHECK("reject unterminated dylib name",
+          neverc_macho_open(&f, data, len) == -1);
+    free(data);
+}
+
+static void test_header_variants(void) {
+    uint8_t macho32[28] = {0};
+    put32(macho32, NEVERC_MH_MAGIC);
+    put32(macho32 + 4, NEVERC_CPU_TYPE_X86);
+    put32(macho32 + 12, NEVERC_MH_OBJECT);
+    neverc_macho_file_t f;
+    CHECK("open thin 32-bit header",
+          neverc_macho_open(&f, macho32, sizeof(macho32)) == 0);
+    CHECK("identify 32-bit header", !f.is_64bit && !f.is_swap);
+    neverc_macho_close(&f);
+
+    uint8_t macho64be[32] = {0};
+    put32be(macho64be, NEVERC_MH_MAGIC_64);
+    put32be(macho64be + 4, NEVERC_CPU_TYPE_ARM64);
+    put32be(macho64be + 12, NEVERC_MH_OBJECT);
+    CHECK("open thin big-endian header",
+          neverc_macho_open(&f, macho64be, sizeof(macho64be)) == 0);
+    CHECK("identify swapped 64-bit header",
+          f.is_64bit && f.is_swap &&
+              f.header.cpu == NEVERC_CPU_TYPE_ARM64);
+    neverc_macho_close(&f);
+}
+
 static void test_macho_invalid(void) {
     uint8_t garbage[] = {0x00, 0x01, 0x02, 0x03};
     CHECK("invalid_too_short", !neverc_macho_is_valid(garbage, sizeof(garbage)));
 
     neverc_macho_file_t f;
     CHECK("open_fails_garbage", neverc_macho_open(&f, garbage, sizeof(garbage)) < 0);
+    CHECK("null data invalid", !neverc_macho_is_valid(NULL, 4));
+    CHECK("null output rejected",
+          neverc_macho_open(NULL, garbage, sizeof(garbage)) == -1);
+
+    size_t len = 0;
+    uint8_t *data = build_minimal_macho64(&len);
+    CHECK("build malformed Mach-O fixtures", data != NULL);
+    if (!data) return;
+
+    put32(data + 20, 144);
+    CHECK("reject command beyond declared region",
+          neverc_macho_open(&f, data, len) == -1);
+    put32(data + 20, 152);
+
+    put32(data + 16, 2);
+    CHECK("reject missing declared command",
+          neverc_macho_open(&f, data, len) == -1);
+    put32(data + 16, 1);
+
+    put32(data + 32 + 64, 2);
+    CHECK("reject truncated section array",
+          neverc_macho_open(&f, data, len) == -1);
+    put32(data + 32 + 64, 1);
+
+    put32(data + 32 + 72 + 48, (uint32_t)(len - 2));
+    CHECK("reject section outside file",
+          neverc_macho_open(&f, data, len) == -1);
+    put32(data + 32 + 72 + 48, 512);
+
+    put32(data + 32 + 72 + 60, 1);
+    put32(data + 32 + 72 + 56, (uint32_t)(len - 4));
+    CHECK("reject relocation table outside file",
+          neverc_macho_open(&f, data, len) == -1);
+    put32(data + 32 + 72 + 60, 0);
+    put32(data + 32 + 72 + 56, 0);
+
+    CHECK("open fixture for argument checks",
+          neverc_macho_open(&f, data, len) == 0);
+    uint8_t *section_data = (uint8_t *)1;
+    size_t section_len = 99;
+    CHECK("reject null section", neverc_macho_section_data(
+              &f, NULL, &section_data, &section_len) == -1);
+    CHECK("null section clears outputs",
+          section_data == NULL && section_len == 0);
+    int symbol_count = 0;
+    CHECK("reject null symbol output",
+          neverc_macho_symbols(&f, NULL, &symbol_count) == -1);
+    neverc_macho_close(&f);
+
+    put64(data + 32 + 72 + 40, UINT64_C(0x100000000));
+    put32(data + 32 + 72 + 64, 1);
+    CHECK("accept zero-fill section without file bytes",
+          neverc_macho_open(&f, data, len) == 0);
+    const neverc_macho_section_t *zero =
+        neverc_macho_section(&f, "__text");
+    section_data = (uint8_t *)1;
+    section_len = 99;
+    CHECK("zero-fill section has no copied data",
+          zero != NULL &&
+              neverc_macho_section_data(
+                  &f, zero, &section_data, &section_len) == 0 &&
+              section_data == NULL && section_len == 0);
+    neverc_macho_close(&f);
+    free(data);
 }
 
 #ifdef __APPLE__
@@ -160,6 +324,8 @@ int main(void) {
     printf("=== NeverC debug/macho Tests ===\n\n");
 
     test_macho64_parse();
+    test_metadata();
+    test_header_variants();
     test_macho_invalid();
 #ifdef __APPLE__
     test_macho_self_binary();
