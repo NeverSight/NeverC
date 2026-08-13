@@ -655,6 +655,10 @@ TEST_F(StdLibTest, HpackAllocationFailure) {
   EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
 }
 
+// ===== Native RPC / gRPC =====
+STD_TEST(rpc)
+STD_TEST(grpc)
+
 // ===== QUIC / HTTP/3 experimental components =====
 STD_TEST(quic_frame)
 STD_TEST(quic_loss)
