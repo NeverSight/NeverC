@@ -89,9 +89,6 @@ neverc_ascii85_result_t neverc_ascii85_decode(unsigned char *dst, size_t dst_len
     for (size_t i = 0; i < src_len; i++) {
         unsigned char b = src[i];
 
-        if (dst_len - result.ndst < 4)
-            return result;
-
         if (b <= ' ')
             continue;
 
@@ -107,11 +104,13 @@ neverc_ascii85_result_t neverc_ascii85_decode(unsigned char *dst, size_t dst_len
         }
 
         if (nb == 5) {
-            result.nsrc = i + 1;
             if (v > UINT32_MAX) {
                 result.error = 1;
                 return result;
             }
+            if (dst_len - result.ndst < 4)
+                return result;
+            result.nsrc = i + 1;
             dst[result.ndst]     = (unsigned char)(v >> 24);
             dst[result.ndst + 1] = (unsigned char)(v >> 16);
             dst[result.ndst + 2] = (unsigned char)(v >> 8);
@@ -123,24 +122,28 @@ neverc_ascii85_result_t neverc_ascii85_decode(unsigned char *dst, size_t dst_len
     }
 
     if (flush) {
-        result.nsrc = src_len;
         if (nb > 0) {
             if (nb == 1) {
+                result.nsrc = src_len;
                 result.error = 1;
                 return result;
             }
             for (int i = nb; i < 5; i++)
                 v = v * 85 + 84;
             if (v > UINT32_MAX) {
+                result.nsrc = src_len;
                 result.error = 1;
                 return result;
             }
+            if (dst_len - result.ndst < (size_t)(nb - 1))
+                return result;
             for (int i = 0; i < nb - 1; i++) {
                 dst[result.ndst] = (unsigned char)(v >> 24);
                 v <<= 8;
                 result.ndst++;
             }
         }
+        result.nsrc = src_len;
     }
 
     return result;

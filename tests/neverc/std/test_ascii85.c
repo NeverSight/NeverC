@@ -195,6 +195,26 @@ static void test_partial_decode(void) {
         check_true("flush partial ndst=3", r.ndst == 3);
         check_true("flush partial no error", r.error == 0);
     }
+
+    /* A flushed tail only needs its exact decoded length, not four bytes. */
+    {
+        const unsigned char partial[] = "9jqo";
+        unsigned char exact[3] = {0};
+        neverc_ascii85_result_t r =
+            neverc_ascii85_decode(exact, sizeof(exact), partial, 4, 1);
+        check_true("exact tail buffer consumed",
+                   r.error == 0 && r.nsrc == 4 && r.ndst == 3);
+        check_true("exact tail buffer content",
+                   memcmp(exact, "Man", 3) == 0);
+
+        unsigned char short_buf[2] = {0xaa, 0xbb};
+        r = neverc_ascii85_decode(
+            short_buf, sizeof(short_buf), partial, 4, 1);
+        check_true("short tail buffer reports no progress",
+                   r.error == 0 && r.nsrc == 0 && r.ndst == 0);
+        check_true("short tail buffer remains unchanged",
+                   short_buf[0] == 0xaa && short_buf[1] == 0xbb);
+    }
 }
 
 static void test_binary_data(void) {

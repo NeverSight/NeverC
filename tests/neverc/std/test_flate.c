@@ -124,6 +124,100 @@ static void test_stored_blocks(void) {
     else { tests_failed++; printf("  FAIL: stored blocks large roundtrip\n"); }
 }
 
+static void put_bits(uint8_t *buffer, size_t *bit_offset,
+                     unsigned value, unsigned count) {
+    for (unsigned bit = 0; bit < count; bit++) {
+        if ((value >> bit) & 1U)
+            buffer[*bit_offset / 8U] |=
+                (uint8_t)(1U << (*bit_offset % 8U));
+        (*bit_offset)++;
+    }
+}
+
+static void test_invalid_streams(void) {
+    printf("[invalid_streams]\n");
+
+    /* Dynamic block whose four code-length symbols all have one-bit codes.
+     * Four codes cannot fit in a one-bit code space and must be rejected. */
+    uint8_t oversubscribed[8] = {0};
+    size_t bit_offset = 0;
+    put_bits(oversubscribed, &bit_offset, 1U, 1U); /* BFINAL */
+    put_bits(oversubscribed, &bit_offset, 2U, 2U); /* dynamic block */
+    put_bits(oversubscribed, &bit_offset, 0U, 5U); /* HLIT = 257 */
+    put_bits(oversubscribed, &bit_offset, 0U, 5U); /* HDIST = 1 */
+    put_bits(oversubscribed, &bit_offset, 0U, 4U); /* HCLEN = 4 */
+    for (int i = 0; i < 4; i++)
+        put_bits(oversubscribed, &bit_offset, 1U, 3U);
+    uint8_t output[16] = {0};
+    size_t output_len = sizeof(output);
+    ASSERT_INT_EQ(neverc_flate_decompress(
+                      oversubscribed, (bit_offset + 7U) / 8U,
+                      output, &output_len),
+                  -1);
+
+    uint8_t incomplete[8] = {0};
+    bit_offset = 0;
+    put_bits(incomplete, &bit_offset, 1U, 1U);
+    put_bits(incomplete, &bit_offset, 2U, 2U);
+    put_bits(incomplete, &bit_offset, 0U, 5U);
+    put_bits(incomplete, &bit_offset, 0U, 5U);
+    put_bits(incomplete, &bit_offset, 0U, 4U);
+    put_bits(incomplete, &bit_offset, 1U, 3U);
+    put_bits(incomplete, &bit_offset, 0U, 3U);
+    put_bits(incomplete, &bit_offset, 0U, 3U);
+    put_bits(incomplete, &bit_offset, 0U, 3U);
+    output_len = sizeof(output);
+    ASSERT_INT_EQ(neverc_flate_decompress(
+                      incomplete, (bit_offset + 7U) / 8U,
+                      output, &output_len),
+                  -1);
+
+    uint8_t reserved_counts[4] = {0};
+    bit_offset = 0;
+    put_bits(reserved_counts, &bit_offset, 1U, 1U);
+    put_bits(reserved_counts, &bit_offset, 2U, 2U);
+    put_bits(reserved_counts, &bit_offset, 31U, 5U); /* HLIT = 288 */
+    put_bits(reserved_counts, &bit_offset, 0U, 5U);
+    put_bits(reserved_counts, &bit_offset, 0U, 4U);
+    output_len = sizeof(output);
+    ASSERT_INT_EQ(neverc_flate_decompress(
+                      reserved_counts, (bit_offset + 7U) / 8U,
+                      output, &output_len),
+                  -1);
+
+    uint8_t stored[64];
+    size_t stored_len = sizeof(stored);
+    ASSERT_INT_EQ(neverc_flate_compress(
+                      (const uint8_t *)"abc", 3U,
+                      stored, &stored_len, 0),
+                  0);
+    uint8_t short_output[2] = {0xaa, 0xbb};
+    output_len = sizeof(short_output);
+    ASSERT_INT_EQ(neverc_flate_decompress(
+                      stored, stored_len, short_output, &output_len),
+                  -1);
+    ASSERT_TRUE(short_output[0] == 0xaa && short_output[1] == 0xbb);
+
+    ASSERT_INT_EQ(neverc_flate_decompress(
+                      stored, stored_len, output, NULL),
+                  -1);
+    output_len = sizeof(output);
+    ASSERT_INT_EQ(neverc_flate_decompress(
+                      NULL, 1U, output, &output_len),
+                  -1);
+
+    size_t empty_len = sizeof(stored);
+    ASSERT_INT_EQ(neverc_flate_compress(
+                      (const uint8_t *)"", 0U,
+                      stored, &empty_len, 0),
+                  0);
+    output_len = 0;
+    ASSERT_INT_EQ(neverc_flate_decompress(
+                      stored, empty_len, NULL, &output_len),
+                  0);
+    ASSERT_TRUE(output_len == 0);
+}
+
 int main(void) {
     printf("=== NeverC compress/flate Tests ===\n");
     test_empty();
@@ -133,6 +227,7 @@ int main(void) {
     test_large();
     test_overlap_copy();
     test_stored_blocks();
+    test_invalid_streams();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

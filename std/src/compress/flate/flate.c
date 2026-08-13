@@ -792,6 +792,12 @@ typedef struct {
     unsigned root_mask;
 } huff_table_t;
 
+typedef enum {
+    HUFF_CODES,
+    HUFF_LENS,
+    HUFF_DISTS
+} huff_kind_t;
+
 /* Reverse the low `len` bits of `c` (DEFLATE packs codes LSB-first). */
 static unsigned huff_rev(unsigned c, unsigned len) {
     unsigned rev = 0;
@@ -799,23 +805,33 @@ static unsigned huff_rev(unsigned c, unsigned len) {
     return rev;
 }
 
-static int build_huffman(huff_table_t *ht, const uint8_t *lens, int count) {
+static int build_huffman(huff_table_t *ht, const uint8_t *lens, int count,
+                         huff_kind_t kind) {
     unsigned bl_count[16] = {0};
     unsigned next_code[16] = {0};
     int max_bl = 0;
 
     for (int i = 0; i < count; i++) {
+        if (lens[i] > 15) return -1;
         if (lens[i] > 0) {
             bl_count[lens[i]]++;
             if ((int)lens[i] > max_bl) max_bl = lens[i];
         }
     }
-    if (max_bl > 15) return -1;
 
     memset(ht->table, 0, sizeof(ht->table));
     ht->root_bits = 0;
     ht->root_mask = 0;
-    if (max_bl == 0) return 0;        /* no codes: every decode errors */
+    if (max_bl == 0)
+        return kind == HUFF_DISTS ? 0 : -1;
+
+    int codes_left = 1;
+    for (int bits = 1; bits <= max_bl; bits++) {
+        codes_left = (codes_left << 1) - (int)bl_count[bits];
+        if (codes_left < 0) return -1; /* over-subscribed code lengths */
+    }
+    if (codes_left > 0 && (kind == HUFF_CODES || max_bl != 1))
+        return -1;                    /* invalid incomplete code space */
 
     unsigned code = 0;
     for (int bits = 1; bits <= max_bl; bits++) {
@@ -954,6 +970,8 @@ static int huff_decode(huff_table_t *ht, flate_br_t *r, uint16_t *sym) {
 
 int neverc_flate_decompress(const uint8_t *src, size_t src_len,
                             uint8_t *dst, size_t *dst_len) {
+    if (!dst_len || (!src && src_len > 0) || (!dst && *dst_len > 0))
+        return -1;
     flate_br_t br = { .buf = src, .len = src_len, .pos = 0, .bits = 0, .nbits = 0 };
     size_t out_pos = 0;
     size_t out_cap = *dst_len;
@@ -973,14 +991,15 @@ int neverc_flate_decompress(const uint8_t *src, size_t src_len,
         if (btype == 0) {
             /* Stored block */
             fbr_align(&br);
-            if (br.pos + 4 > br.len) goto err;
+            if (br.pos > br.len || br.len - br.pos < 4) goto err;
             uint16_t len16 = (uint16_t)br.buf[br.pos] | ((uint16_t)br.buf[br.pos+1] << 8);
             uint16_t nlen = (uint16_t)br.buf[br.pos+2] | ((uint16_t)br.buf[br.pos+3] << 8);
             br.pos += 4;
             if ((uint16_t)(len16 ^ nlen) != 0xFFFF) goto err;
-            if (br.pos + len16 > br.len) goto err;
-            if (out_pos + len16 > out_cap) goto err;
-            memcpy(dst + out_pos, br.buf + br.pos, len16);
+            if ((size_t)len16 > br.len - br.pos) goto err;
+            if ((size_t)len16 > out_cap - out_pos) goto err;
+            if (len16 > 0)
+                memcpy(dst + out_pos, br.buf + br.pos, len16);
             br.pos += len16;
             out_pos += len16;
         } else if (btype == 1 || btype == 2) {
@@ -992,8 +1011,12 @@ int neverc_flate_decompress(const uint8_t *src, size_t src_len,
                 for (int i = 256; i <= 279; i++) lit_lens[i] = 7;
                 for (int i = 280; i <= 287; i++) lit_lens[i] = 8;
                 for (int i = 0; i < 32; i++) dist_lens[i] = 5;
-                if (build_huffman(lit_ht, lit_lens, 288) < 0) goto err;
-                if (build_huffman(dist_ht, dist_lens, 32) < 0) goto err;
+                if (build_huffman(
+                        lit_ht, lit_lens, 288, HUFF_LENS) < 0)
+                    goto err;
+                if (build_huffman(
+                        dist_ht, dist_lens, 32, HUFF_DISTS) < 0)
+                    goto err;
             } else {
                 /* Dynamic Huffman codes */
                 uint32_t hlit, hdist, hclen;
@@ -1003,6 +1026,7 @@ int neverc_flate_decompress(const uint8_t *src, size_t src_len,
                 hdist += 1;
                 if (fbr_bits(&br, 4, &hclen) < 0) goto err;
                 hclen += 4;
+                if (hlit > 286 || hdist > 30) goto err;
 
                 static const int cl_order[19] = {
                     16,17,18,0,8,7,9,6,10,5,11,4,12,3,13,2,14,1,15
@@ -1016,7 +1040,9 @@ int neverc_flate_decompress(const uint8_t *src, size_t src_len,
                 }
 
                 huff_table_t cl_ht;
-                if (build_huffman(&cl_ht, cl_lens, 19) < 0) goto err;
+                if (build_huffman(
+                        &cl_ht, cl_lens, 19, HUFF_CODES) < 0)
+                    goto err;
 
                 unsigned total = (unsigned)(hlit + hdist);
                 uint8_t all_lens[288 + 32];
@@ -1032,28 +1058,37 @@ int neverc_flate_decompress(const uint8_t *src, size_t src_len,
                         uint32_t rep;
                         if (fbr_bits(&br, 2, &rep) < 0) goto err;
                         rep += 3;
+                        if (rep > total - idx) goto err;
                         uint8_t prev_len = all_lens[idx - 1];
-                        for (uint32_t r = 0; r < rep && idx < total; r++)
+                        for (uint32_t r = 0; r < rep; r++)
                             all_lens[idx++] = prev_len;
                     } else if (sym == 17) {
                         uint32_t rep;
                         if (fbr_bits(&br, 3, &rep) < 0) goto err;
                         rep += 3;
-                        for (uint32_t r = 0; r < rep && idx < total; r++)
+                        if (rep > total - idx) goto err;
+                        for (uint32_t r = 0; r < rep; r++)
                             all_lens[idx++] = 0;
                     } else if (sym == 18) {
                         uint32_t rep;
                         if (fbr_bits(&br, 7, &rep) < 0) goto err;
                         rep += 11;
-                        for (uint32_t r = 0; r < rep && idx < total; r++)
+                        if (rep > total - idx) goto err;
+                        for (uint32_t r = 0; r < rep; r++)
                             all_lens[idx++] = 0;
                     } else {
                         goto err;
                     }
                 }
 
-                if (build_huffman(lit_ht, all_lens, (int)hlit) < 0) goto err;
-                if (build_huffman(dist_ht, all_lens + hlit, (int)hdist) < 0) goto err;
+                if (all_lens[256] == 0) goto err;
+                if (build_huffman(
+                        lit_ht, all_lens, (int)hlit, HUFF_LENS) < 0)
+                    goto err;
+                if (build_huffman(
+                        dist_ht, all_lens + hlit, (int)hdist,
+                        HUFF_DISTS) < 0)
+                    goto err;
             }
 
             /* Decode block data */
@@ -1088,7 +1123,9 @@ int neverc_flate_decompress(const uint8_t *src, size_t src_len,
                         distance += extra;
                     }
 
-                    if (distance > out_pos || out_pos + length > out_cap) goto err;
+                    if (distance > out_pos ||
+                        (size_t)length > out_cap - out_pos)
+                        goto err;
                     copy_match(dst, out_pos, distance, length);
                     out_pos += length;
                 }
