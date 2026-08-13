@@ -24,6 +24,11 @@ static uint64_t rd64be(const uint8_t *p) {
     return ((uint64_t)rd32be(p) << 32) | (uint64_t)rd32be(p+4);
 }
 
+static int macho_allocation_fits(uint32_t count, size_t element_size) {
+    return element_size == 0 ||
+           (size_t)count <= SIZE_MAX / element_size;
+}
+
 typedef uint32_t (*rd32_fn)(const uint8_t *);
 typedef uint64_t (*rd64_fn)(const uint8_t *);
 
@@ -142,12 +147,12 @@ int neverc_macho_open(neverc_macho_file_t *f, const uint8_t *data, size_t len) {
     if ((size_t)(cmd - data) != commands_end)
         return macho_open_fail(f);
 
-    if ((seg_count != 0 &&
-         SIZE_MAX / sizeof(neverc_macho_segment_t) < seg_count) ||
-        (sec_count != 0 &&
-         SIZE_MAX / sizeof(neverc_macho_section_t) < sec_count) ||
-        (dylib_count != 0 &&
-         SIZE_MAX / sizeof(neverc_macho_dylib_t) < dylib_count))
+    if (!macho_allocation_fits(
+            seg_count, sizeof(neverc_macho_segment_t)) ||
+        !macho_allocation_fits(
+            sec_count, sizeof(neverc_macho_section_t)) ||
+        !macho_allocation_fits(
+            dylib_count, sizeof(neverc_macho_dylib_t)))
         return macho_open_fail(f);
 
     if (seg_count)

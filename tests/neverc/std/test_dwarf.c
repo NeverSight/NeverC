@@ -325,6 +325,45 @@ static void test_dwarf_implicit_const(void) {
           neverc_dwarf_walk_entries(&d, ignore_entry_cb, NULL) < 0);
 }
 
+static void test_dwarf_line_string(void) {
+    printf("[line_string]\n");
+    static const uint8_t abbrev[] = {
+        1, NEVERC_DW_TAG_compile_unit, 0,
+        NEVERC_DW_AT_name, NEVERC_DW_FORM_line_strp,
+        0, 0, 0
+    };
+    uint8_t info[17] = {0};
+    build_v5_compile_header(info, 13);
+    info[12] = 1;
+    put32(info + 13, 0);
+
+    neverc_dwarf_data_t d;
+    walk_ctx_t ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    CHECK("line string init",
+          neverc_dwarf_init(&d, info, sizeof(info),
+                            abbrev, sizeof(abbrev), NULL, 0) == 0);
+    CHECK("missing optional line string is consumed",
+          neverc_dwarf_walk_entries(&d, walk_cb, &ctx) == 0);
+    CHECK("missing optional line string is empty",
+          ctx.cu_name && ctx.cu_name[0] == '\0');
+
+    static const uint8_t line_str[] = "line.c";
+    d.debug_line_str = line_str;
+    d.debug_line_str_len = sizeof(line_str);
+    memset(&ctx, 0, sizeof(ctx));
+    CHECK("attached line string resolves",
+          neverc_dwarf_walk_entries(&d, walk_cb, &ctx) == 0);
+    CHECK("attached line string value",
+          ctx.cu_name && strcmp(ctx.cu_name, "line.c") == 0);
+
+    static const uint8_t bad_line_str[] = {'x'};
+    d.debug_line_str = bad_line_str;
+    d.debug_line_str_len = sizeof(bad_line_str);
+    CHECK("unterminated line string rejected",
+          neverc_dwarf_walk_entries(&d, ignore_entry_cb, NULL) < 0);
+}
+
 static void test_dwarf_malformed(void) {
     printf("[malformed]\n");
     neverc_dwarf_data_t d;
@@ -519,6 +558,7 @@ int main(void) {
     test_dwarf_parse();
     test_dwarf_empty();
     test_dwarf_implicit_const();
+    test_dwarf_line_string();
     test_dwarf_malformed();
     test_dwarf_v5_type_header();
 

@@ -353,6 +353,8 @@ char *neverc_fmt_vsprintf(const char *format, va_list args) {
         int body_offset =
             is_signed_verb && formatted_has_sign ? 1 : 0;
         char sign_prefix = body_offset ? tmp[0] : '\0';
+        if (sign_prefix == '+' && flag_space && !flag_plus)
+            sign_prefix = ' ';
         if (!sign_prefix && is_signed_verb) {
             if (flag_plus)
                 sign_prefix = '+';
@@ -814,7 +816,12 @@ int neverc_fmt_sscan_ints(const char *str, int *outputs,
     return matched > (size_t)INT_MAX ? INT_MAX : (int)matched;
 }
 
-int neverc_fmt_sscan(const char *str, int *out_int) {
+int neverc_fmt_sscan(const char *str, ...) {
+    if (!str) return 0;
+    va_list args;
+    va_start(args, str);
+    int *out_int = va_arg(args, int *);
+    va_end(args);
     return neverc_fmt_sscan_ints(str, out_int, out_int ? 1U : 0U);
 }
 

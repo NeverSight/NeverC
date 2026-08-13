@@ -567,12 +567,19 @@ static int read_form_string_depth(uint16_t form,
                 return -1;
             *value = (const char *)(d->debug_str + (size_t)off);
         } else if (resolved_form == NEVERC_DW_FORM_line_strp) {
-            if (d->debug_line_str && off < d->debug_line_str_len &&
-                memchr(d->debug_line_str + (size_t)off, 0,
-                       d->debug_line_str_len - (size_t)off) != NULL)
+            if (!d->debug_line_str && d->debug_line_str_len == 0) {
+                /* The ABI-compatible initializer predates .debug_line_str.
+                 * Consume the form safely even when that optional section was
+                 * not attached by the caller. */
+                *value = "";
+            } else if (d->debug_line_str &&
+                       off < d->debug_line_str_len &&
+                       memchr(d->debug_line_str + (size_t)off, 0,
+                              d->debug_line_str_len - (size_t)off) != NULL) {
                 *value = (const char *)(d->debug_line_str + (size_t)off);
-            else
+            } else {
                 return -1;
+            }
         } else {
             /* Supplementary and indexed strings need sections that are not
              * part of this compact API. Consume them safely and leave empty. */

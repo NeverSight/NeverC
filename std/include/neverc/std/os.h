@@ -64,7 +64,9 @@ int  neverc_os_write_file(const char *name, const unsigned char *data, size_t le
 int  neverc_os_mkdir(const char *name, uint32_t perm);
 int  neverc_os_mkdir_all(const char *path, uint32_t perm);
 int  neverc_os_remove(const char *name);
-/* Removes a tree without traversing symbolic links or reparse points. */
+/* Removes a tree without following links encountered at or below path.
+ * Ancestor components must be trusted, and callers must prevent concurrent
+ * namespace replacement while removal is in progress. */
 int  neverc_os_remove_all(const char *path);
 int  neverc_os_rename(const char *oldpath, const char *newpath);
 

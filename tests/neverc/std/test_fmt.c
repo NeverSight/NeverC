@@ -171,6 +171,9 @@ static void test_special_floats(void) {
     r = neverc_fmt_sprintf("%+08f", inf_val);
     check_str("zero flag ignored for Inf", r, "    +Inf"); free(r);
 
+    r = neverc_fmt_sprintf("% f", inf_val);
+    check_str("space flag replaces positive Inf sign", r, " Inf"); free(r);
+
     r = neverc_fmt_sprintf("%08.2f", -1.5);
     check_str("negative float sign before zeros", r, "-0001.50"); free(r);
 
@@ -314,6 +317,12 @@ static void test_sscanf(void) {
     check_int("sscan one value",
               neverc_fmt_sscan("9 10", &one), 1);
     check_int("sscan one result", one, 9);
+    int ignored = 77;
+    one = 0;
+    check_int("sscan legacy trailing args are safe",
+              neverc_fmt_sscan("9 10", &one, &ignored), 1);
+    check_int("sscan legacy first result", one, 9);
+    check_int("sscan legacy trailing output ignored", ignored, 77);
     int values[2] = {0, 0};
     check_int("sscan counted values",
               neverc_fmt_sscan_ints("11 12 13", values, 2), 2);

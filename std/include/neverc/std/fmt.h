@@ -35,10 +35,11 @@ char *neverc_fmt_errorf(const char *format, ...);
 /* Scan functions — parse formatted input (mirrors Go fmt.Scan/Sscan/Fscan).
  * String conversions must include a positive maximum width (for example,
  * "%31s" for a 32-byte destination) so the terminating NUL always fits.
- * neverc_fmt_sscan reads one integer; use neverc_fmt_sscan_ints for an
- * explicitly bounded number of integer outputs. */
+ * neverc_fmt_sscan reads only its first integer destination; trailing
+ * arguments are accepted for source compatibility but intentionally ignored.
+ * Use neverc_fmt_sscan_ints for an explicitly bounded output array. */
 int neverc_fmt_sscanf(const char *str, const char *format, ...);
-int neverc_fmt_sscan(const char *str, int *out_int);
+int neverc_fmt_sscan(const char *str, ...);
 int neverc_fmt_sscan_ints(const char *str, int *outputs,
                           size_t output_count);
 int neverc_fmt_scanf(const char *format, ...);
