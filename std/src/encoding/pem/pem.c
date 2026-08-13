@@ -86,7 +86,9 @@ static const char *pem_find_bounded(
     if (!begin || !end || !needle || needle_len == 0 ||
         begin > end || (size_t)(end - begin) < needle_len)
         return NULL;
-    for (const char *p = begin; p + needle_len <= end; ++p) {
+    size_t last = (size_t)(end - begin) - needle_len;
+    for (size_t offset = 0; offset <= last; ++offset) {
+        const char *p = begin + offset;
         if (*p == *needle && memcmp(p, needle, needle_len) == 0)
             return p;
     }

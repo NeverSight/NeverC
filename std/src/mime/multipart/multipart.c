@@ -1,6 +1,7 @@
 #include "neverc/std/mime/multipart.h"
 #include "neverc/std/_platform.h"
 #include "../../bytes/strsearch.h"
+#include <limits.h>
 #include <string.h>
 #include <stdio.h>
 
@@ -30,57 +31,132 @@ static const unsigned char *find_boundary_f(const nci_ss_finder_t *f,
     return (off == SIZE_MAX) ? NULL : data + off;
 }
 
+static size_t multipart_boundary_length(const char *boundary) {
+    if (!boundary) return 0;
+    size_t length = 0;
+    while (boundary[length] != '\0') {
+        unsigned char c = (unsigned char)boundary[length];
+        int valid = (c >= 'A' && c <= 'Z') ||
+                    (c >= 'a' && c <= 'z') ||
+                    (c >= '0' && c <= '9') ||
+                    c == '\'' || c == '(' || c == ')' || c == '+' ||
+                    c == '_' || c == ',' || c == '-' || c == '.' ||
+                    c == '/' || c == ':' || c == '=' || c == '?' ||
+                    c == ' ';
+        if (!valid || length == 70) return 0;
+        length++;
+    }
+    if (length == 0 || boundary[length - 1] == ' ') return 0;
+    return length;
+}
+
+static int multipart_header_name_valid(const char *name) {
+    if (!name || *name == '\0') return 0;
+    for (const unsigned char *p = (const unsigned char *)name; *p; p++) {
+        unsigned char c = *p;
+        if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+            (c >= '0' && c <= '9') || c == '!' || c == '#' || c == '$' ||
+            c == '%' || c == '&' || c == '\'' || c == '*' || c == '+' ||
+            c == '-' || c == '.' || c == '^' || c == '_' || c == '`' ||
+            c == '|' || c == '~')
+            continue;
+        return 0;
+    }
+    return 1;
+}
+
+static const unsigned char *find_boundary_line(
+    const nci_ss_finder_t *finder, const unsigned char *data, size_t length,
+    size_t marker_length, int *closing, const unsigned char **after) {
+    size_t search_offset = 0;
+    while (search_offset <= length) {
+        const unsigned char *candidate = find_boundary_f(
+            finder, data + search_offset, length - search_offset);
+        if (!candidate) return NULL;
+        size_t offset = (size_t)(candidate - data);
+        size_t suffix_offset = offset + marker_length;
+        int line_start = offset == 0 || data[offset - 1] == '\n';
+        if (line_start) {
+            size_t remaining = length - suffix_offset;
+            if (remaining >= 2 && data[suffix_offset] == '-' &&
+                data[suffix_offset + 1] == '-') {
+                size_t end = suffix_offset + 2;
+                if (end == length) {
+                    *closing = 1;
+                    *after = data + end;
+                    return candidate;
+                }
+                if (length - end >= 2 && data[end] == '\r' &&
+                    data[end + 1] == '\n') {
+                    *closing = 1;
+                    *after = data + end + 2;
+                    return candidate;
+                }
+                if (data[end] == '\n') {
+                    *closing = 1;
+                    *after = data + end + 1;
+                    return candidate;
+                }
+            } else if (remaining >= 2 && data[suffix_offset] == '\r' &&
+                       data[suffix_offset + 1] == '\n') {
+                *closing = 0;
+                *after = data + suffix_offset + 2;
+                return candidate;
+            } else if (remaining >= 1 && data[suffix_offset] == '\n') {
+                *closing = 0;
+                *after = data + suffix_offset + 1;
+                return candidate;
+            }
+        }
+        search_offset = offset + 1;
+    }
+    return NULL;
+}
+
 static int parse_headers(const unsigned char *data, size_t len,
                          neverc_multipart_part_t *part, size_t *body_offset) {
     part->header_count = 0;
     size_t i = 0;
 
     while (i < len) {
-        /* Empty line = end of headers */
-        if (data[i] == '\r' && i + 1 < len && data[i+1] == '\n') {
-            *body_offset = i + 2;
-            return 0;
-        }
-        if (data[i] == '\n') {
-            *body_offset = i + 1;
+        size_t line_feed = i;
+        while (line_feed < len && data[line_feed] != '\n') line_feed++;
+        if (line_feed == len) return -1;
+        size_t line_end = line_feed;
+        if (line_end > i && data[line_end - 1] == '\r') line_end--;
+        if (line_end == i) {
+            *body_offset = line_feed + 1;
             return 0;
         }
 
-        /* Find colon */
         size_t colon = i;
-        while (colon < len && data[colon] != ':' && data[colon] != '\n') colon++;
-        if (colon >= len || data[colon] != ':') break;
-
-        if (part->header_count >= NEVERC_MULTIPART_MAX_HEADERS) break;
-
+        while (colon < line_end && data[colon] != ':') colon++;
+        if (colon == i || colon == line_end ||
+            part->header_count >= NEVERC_MULTIPART_MAX_HEADERS)
+            return -1;
         neverc_multipart_header_t *h = &part->headers[part->header_count];
         size_t klen = colon - i;
-        if (klen >= sizeof(h->key)) klen = sizeof(h->key) - 1;
+        if (klen >= sizeof(h->key)) return -1;
+        for (size_t k = i; k < colon; k++) {
+            unsigned char c = data[k];
+            if (c <= 0x20 || c >= 0x7f) return -1;
+        }
         memcpy(h->key, data + i, klen);
         h->key[klen] = '\0';
+        if (!multipart_header_name_valid(h->key)) return -1;
 
-        /* Skip colon and optional whitespace */
         size_t vstart = colon + 1;
-        while (vstart < len && (data[vstart] == ' ' || data[vstart] == '\t')) vstart++;
-
-        /* Find end of value */
-        size_t vend = vstart;
-        while (vend < len && data[vend] != '\r' && data[vend] != '\n') vend++;
-
-        size_t vlen = vend - vstart;
-        if (vlen >= sizeof(h->value)) vlen = sizeof(h->value) - 1;
+        while (vstart < line_end &&
+               (data[vstart] == ' ' || data[vstart] == '\t'))
+            vstart++;
+        size_t vlen = line_end - vstart;
+        if (vlen >= sizeof(h->value)) return -1;
         memcpy(h->value, data + vstart, vlen);
         h->value[vlen] = '\0';
-
         part->header_count++;
-
-        /* Skip line ending */
-        if (vend < len && data[vend] == '\r') vend++;
-        if (vend < len && data[vend] == '\n') vend++;
-        i = vend;
+        i = line_feed + 1;
     }
-    *body_offset = i;
-    return 0;
+    return -1;
 }
 
 int neverc_multipart_parse(const unsigned char *data, size_t data_len,
@@ -89,29 +165,32 @@ int neverc_multipart_parse(const unsigned char *data, size_t data_len,
     if (!data || !boundary || !out) return -1;
     memset(out, 0, sizeof(*out));
 
-    char delim[256], end_delim[256];
-    int dlen = snprintf(delim, sizeof(delim), "--%s", boundary);
-    int edlen = snprintf(end_delim, sizeof(end_delim), "--%s--", boundary);
-    if (dlen <= 0) return -1;
+    size_t boundary_length = multipart_boundary_length(boundary);
+    if (boundary_length == 0) return -1;
+    unsigned char delim[72];
+    delim[0] = '-';
+    delim[1] = '-';
+    memcpy(delim + 2, boundary, boundary_length);
+    size_t dlen = boundary_length + 2;
 
     /* Preprocess the boundary delimiter once; reused for every part. */
     nci_ss_finder_t df;
-    nci_ss_finder_init(&df, (const uint8_t *)delim, (size_t)dlen);
+    nci_ss_finder_init(&df, delim, dlen);
 
-    /* Find first boundary */
-    const unsigned char *pos = find_boundary_f(&df, data, data_len);
-    if (!pos) return -1;
+    int closing = 0;
+    const unsigned char *pos = NULL;
+    const unsigned char *first = find_boundary_line(
+        &df, data, data_len, dlen, &closing, &pos);
+    if (!first) return -1;
+    if (closing) return 0;
 
-    /* Skip past first boundary line */
-    pos += (size_t)dlen;
-    size_t remaining = data_len - (size_t)(pos - data);
-    if (remaining >= 2 && pos[0] == '\r' && pos[1] == '\n') { pos += 2; remaining -= 2; }
-    else if (remaining >= 1 && pos[0] == '\n') { pos += 1; remaining -= 1; }
-
-    while (remaining > 0 && out->part_count < NEVERC_MULTIPART_MAX_PARTS) {
-        /* Find next boundary */
-        const unsigned char *next = find_boundary_f(&df, pos, remaining);
-        if (!next) break;
+    while (pos < data + data_len) {
+        if (out->part_count >= NEVERC_MULTIPART_MAX_PARTS) goto fail;
+        const unsigned char *after = NULL;
+        size_t remaining = data_len - (size_t)(pos - data);
+        const unsigned char *next = find_boundary_line(
+            &df, pos, remaining, dlen, &closing, &after);
+        if (!next) goto fail;
 
         /* Part data is between pos and next (minus preceding \r\n) */
         size_t part_len = (size_t)(next - pos);
@@ -121,22 +200,19 @@ int neverc_multipart_parse(const unsigned char *data, size_t data_len,
         /* Parse headers and body */
         neverc_multipart_part_t *part = &out->parts[out->part_count];
         size_t body_offset = 0;
-        parse_headers(pos, part_len, part, &body_offset);
+        if (parse_headers(pos, part_len, part, &body_offset) != 0)
+            goto fail;
         part->body = pos + body_offset;
         part->body_len = part_len - body_offset;
         out->part_count++;
 
-        /* Check if this is the closing boundary */
-        if (memcmp(next, end_delim, (size_t)edlen) == 0) break;
-
-        /* Move past boundary */
-        pos = next + (size_t)dlen;
-        remaining = data_len - (size_t)(pos - data);
-        if (remaining >= 2 && pos[0] == '\r' && pos[1] == '\n') { pos += 2; remaining -= 2; }
-        else if (remaining >= 1 && pos[0] == '\n') { pos += 1; remaining -= 1; }
+        if (closing) return 0;
+        pos = after;
     }
 
-    return 0;
+fail:
+    memset(out, 0, sizeof(*out));
+    return -1;
 }
 
 const char *neverc_multipart_part_header(const neverc_multipart_part_t *part,
@@ -154,6 +230,7 @@ int neverc_multipart_generate_boundary(char *buf, size_t cap) {
     if (!buf || cap < 40) return -1;
     unsigned char rnd[16];
     if (NCI_MULTIPART_RANDOM(rnd, sizeof(rnd)) != 0) {
+        neverc_platform_secure_zero(rnd, sizeof(rnd));
         buf[0] = '\0';
         return -1;
     }
@@ -164,47 +241,64 @@ int neverc_multipart_generate_boundary(char *buf, size_t cap) {
         buf[pos++] = hex[rnd[i] & 0x0f];
     }
     buf[pos] = '\0';
+    neverc_platform_secure_zero(rnd, sizeof(rnd));
     return pos;
 }
 
 int neverc_multipart_write(const neverc_multipart_part_t *parts, int count,
                            const char *boundary,
                            unsigned char *out, size_t out_cap) {
-    if (!parts || !boundary || !out || count <= 0) return -1;
+    if (!parts || !boundary || !out || count <= 0 ||
+        count > NEVERC_MULTIPART_MAX_PARTS ||
+        multipart_boundary_length(boundary) == 0)
+        return -1;
     size_t pos = 0;
 
     for (int p = 0; p < count; p++) {
         /* Write boundary */
         int n = snprintf((char*)out + pos, out_cap - pos, "--%s\r\n", boundary);
-        if (n < 0 || pos + (size_t)n >= out_cap) return -1;
+        if (n < 0 || (size_t)n >= out_cap - pos) return -1;
         pos += (size_t)n;
 
         /* Write headers */
         const neverc_multipart_part_t *part = &parts[p];
+        if (part->header_count < 0 ||
+            part->header_count > NEVERC_MULTIPART_MAX_HEADERS ||
+            (part->body_len > 0 && !part->body))
+            return -1;
         for (int h = 0; h < part->header_count; h++) {
+            const char *key = part->headers[h].key;
+            const char *value = part->headers[h].value;
+            if (!memchr(key, '\0', sizeof(part->headers[h].key)) ||
+                !memchr(value, '\0', sizeof(part->headers[h].value)) ||
+                !multipart_header_name_valid(key) || strchr(value, '\r') ||
+                strchr(value, '\n'))
+                return -1;
             n = snprintf((char*)out + pos, out_cap - pos, "%s: %s\r\n",
-                         part->headers[h].key, part->headers[h].value);
-            if (n < 0 || pos + (size_t)n >= out_cap) return -1;
+                         key, value);
+            if (n < 0 || (size_t)n >= out_cap - pos) return -1;
             pos += (size_t)n;
         }
 
         /* Empty line before body */
-        if (pos + 2 >= out_cap) return -1;
+        if (out_cap - pos <= 2) return -1;
         out[pos++] = '\r'; out[pos++] = '\n';
 
         /* Write body */
-        if (part->body && part->body_len > 0) {
-            if (pos + part->body_len >= out_cap) return -1;
+        if (part->body_len > 0) {
+            if (part->body_len >= out_cap - pos) return -1;
             memcpy(out + pos, part->body, part->body_len);
             pos += part->body_len;
         }
-        if (pos + 2 >= out_cap) return -1;
+        if (out_cap - pos <= 2) return -1;
         out[pos++] = '\r'; out[pos++] = '\n';
     }
 
     /* Closing boundary */
     int n = snprintf((char*)out + pos, out_cap - pos, "--%s--\r\n", boundary);
-    if (n < 0 || pos + (size_t)n >= out_cap) return -1;
+    if (n < 0 || (size_t)n >= out_cap - pos || pos > (size_t)INT_MAX ||
+        (size_t)n > (size_t)INT_MAX - pos)
+        return -1;
     pos += (size_t)n;
 
     return (int)pos;

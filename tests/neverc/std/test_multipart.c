@@ -108,12 +108,71 @@ static void test_generate_boundary(void) {
     ASSERT_TRUE(strcmp(b1, b2) != 0);
 }
 
+static void test_rejects_malformed_input(void) {
+    printf("[rejects malformed input]\n");
+    neverc_multipart_reader_t reader;
+
+    const char *truncated =
+        "--b\r\n"
+        "\r\n"
+        "body\r\n";
+    memset(&reader, 0xa5, sizeof(reader));
+    ASSERT_EQ(neverc_multipart_parse(
+                  (const unsigned char *)truncated, strlen(truncated),
+                  "b", &reader),
+              -1);
+    ASSERT_EQ(reader.part_count, 0);
+
+    const char *boundary_prefix =
+        "--b\r\n"
+        "\r\n"
+        "alpha\r\n--bX\r\nomega\r\n"
+        "--b--\r\n";
+    ASSERT_EQ(neverc_multipart_parse(
+                  (const unsigned char *)boundary_prefix,
+                  strlen(boundary_prefix), "b", &reader),
+              0);
+    ASSERT_EQ(reader.part_count, 1);
+    ASSERT_TRUE(reader.parts[0].body_len ==
+                strlen("alpha\r\n--bX\r\nomega"));
+    ASSERT_TRUE(memcmp(reader.parts[0].body, "alpha\r\n--bX\r\nomega",
+                       reader.parts[0].body_len) == 0);
+
+    char long_boundary[72];
+    memset(long_boundary, 'a', sizeof(long_boundary) - 1);
+    long_boundary[sizeof(long_boundary) - 1] = '\0';
+    ASSERT_EQ(neverc_multipart_parse(
+                  (const unsigned char *)boundary_prefix,
+                  strlen(boundary_prefix), long_boundary, &reader),
+              -1);
+
+    neverc_multipart_part_t part;
+    unsigned char output[256];
+    memset(&part, 0, sizeof(part));
+    part.body_len = 1;
+    ASSERT_EQ(neverc_multipart_write(
+                  &part, 1, "b", output, sizeof(output)),
+              -1);
+
+    part.body_len = 0;
+    part.header_count = 1;
+    strcpy(part.headers[0].key, "X-Bad\nInjected");
+    strcpy(part.headers[0].value, "value");
+    ASSERT_EQ(neverc_multipart_write(
+                  &part, 1, "b", output, sizeof(output)),
+              -1);
+    ASSERT_EQ(neverc_multipart_write(
+                  &part, 1, long_boundary, output, sizeof(output)),
+              -1);
+}
+
 int main(void) {
     printf("=== NeverC mime/multipart Tests ===\n");
     test_parse_basic();
     test_parse_multiple_headers();
     test_write_roundtrip();
     test_generate_boundary();
+    test_rejects_malformed_input();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

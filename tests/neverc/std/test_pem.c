@@ -134,6 +134,17 @@ static void test_invalid_pem(void) {
                                 &bytes_written, NULL);
     check_int("no PEM block", rc, -1);
 
+    /* The bounded marker search must not form or inspect pointers beyond a
+     * non-NUL-terminated input object when the only candidate is rejected. */
+    const char bounded_no_marker[11] = {
+        '-', '-', '-', '-', '-', 'B', 'E', 'G', 'I', 'N', 'X'
+    };
+    rc = neverc_pem_decode(bounded_no_marker, sizeof(bounded_no_marker),
+                            type_buf, sizeof(type_buf),
+                            out_buf, sizeof(out_buf),
+                            &bytes_written, NULL);
+    check_int("bounded input without marker", rc, -1);
+
     /* Missing END */
     const char *no_end = "-----BEGIN FOO-----\nYWJj\n";
     rc = neverc_pem_decode(no_end, strlen(no_end),

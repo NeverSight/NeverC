@@ -2243,8 +2243,83 @@ static size_t boundary_len(const char *boundary) {
     return len;
 }
 
-static void parse_part_headers(const char *hdr, size_t hdrlen,
-                                neverc_http_multipart_part_t *part) {
+static char *multipart_quoted_parameter(const char *begin, const char *end,
+                                        const char *wanted,
+                                        size_t wanted_length,
+                                        int *allocation_failed) {
+    const char *cursor = begin;
+    while (cursor < end) {
+        const char *semicolon =
+            (const char *)memchr(cursor, ';', (size_t)(end - cursor));
+        if (!semicolon) return NULL;
+        cursor = semicolon + 1;
+        while (cursor < end && (*cursor == ' ' || *cursor == '\t'))
+            cursor++;
+
+        const char *name = cursor;
+        while (cursor < end &&
+               ((*cursor >= 'A' && *cursor <= 'Z') ||
+                (*cursor >= 'a' && *cursor <= 'z') ||
+                (*cursor >= '0' && *cursor <= '9') ||
+                *cursor == '-' || *cursor == '_'))
+            cursor++;
+        size_t name_length = (size_t)(cursor - name);
+        while (cursor < end && (*cursor == ' ' || *cursor == '\t'))
+            cursor++;
+        if (cursor >= end || *cursor != '=') continue;
+        cursor++;
+        while (cursor < end && (*cursor == ' ' || *cursor == '\t'))
+            cursor++;
+        int matches = name_length == wanted_length &&
+                      strncasecmp(name, wanted, wanted_length) == 0;
+        if (cursor >= end) return NULL;
+        if (*cursor != '"') {
+            const char *value = cursor;
+            while (cursor < end && *cursor != ';') cursor++;
+            const char *value_end = cursor;
+            while (value_end > value &&
+                   (value_end[-1] == ' ' || value_end[-1] == '\t'))
+                value_end--;
+            if (!matches) continue;
+            char *result =
+                strndup_safe(value, (size_t)(value_end - value));
+            if (!result) *allocation_failed = 1;
+            return result;
+        }
+        cursor++;
+        const char *value = cursor;
+        while (cursor < end) {
+            if (*cursor == '\\' && (size_t)(end - cursor) >= 2) {
+                cursor += 2;
+                continue;
+            }
+            if (*cursor == '"') break;
+            cursor++;
+        }
+        if (cursor == end) return NULL;
+        const char *quote = cursor;
+        if (!matches) {
+            cursor = quote + 1;
+            continue;
+        }
+
+        size_t raw_length = (size_t)(quote - value);
+        char *result = (char *)malloc(raw_length + 1);
+        if (!result) *allocation_failed = 1;
+        if (!result) return NULL;
+        size_t written = 0;
+        for (size_t i = 0; i < raw_length; i++) {
+            if (value[i] == '\\' && i + 1 < raw_length) i++;
+            result[written++] = value[i];
+        }
+        result[written] = '\0';
+        return result;
+    }
+    return NULL;
+}
+
+static int parse_part_headers(const char *hdr, size_t hdrlen,
+                              neverc_http_multipart_part_t *part) {
     const char *end = hdr + hdrlen;
     const char *p = hdr;
     while (p < end) {
@@ -2259,34 +2334,96 @@ static void parse_part_headers(const char *hdr, size_t hdrlen,
         if (llen > 20 && strncasecmp(p, "Content-Disposition:", 20) == 0) {
             const char *cd = p + 20;
             while (cd < line_end && *cd == ' ') cd++;
-
-            const char *nm = strstr(cd, "name=\"");
-            if (nm && nm < line_end) {
-                nm += 6;
-                const char *ne = strchr(nm, '"');
-                if (ne && ne <= line_end) {
-                    char *s = strndup_safe(nm, (size_t)(ne - nm));
-                    part->name = s;
-                }
+            int failed = 0;
+            char *name = multipart_quoted_parameter(
+                cd, line_end, "name", 4, &failed);
+            if (failed) return -1;
+            char *filename = multipart_quoted_parameter(
+                cd, line_end, "filename", 8, &failed);
+            if (failed) {
+                free(name);
+                return -1;
             }
-            const char *fn = strstr(cd, "filename=\"");
-            if (fn && fn < line_end) {
-                fn += 10;
-                const char *fe = strchr(fn, '"');
-                if (fe && fe <= line_end) {
-                    char *s = strndup_safe(fn, (size_t)(fe - fn));
-                    part->filename = s;
-                }
-            }
+            free((void *)part->name);
+            free((void *)part->filename);
+            part->name = name;
+            part->filename = filename;
         }
         if (llen > 13 && strncasecmp(p, "Content-Type:", 13) == 0) {
             const char *ct = p + 13;
             while (ct < line_end && *ct == ' ') ct++;
             char *s = strndup_safe(ct, (size_t)(line_end - ct));
+            if (!s) return -1;
+            free((void *)part->content_type);
             part->content_type = s;
         }
         p = line_end + 2;
     }
+    return 0;
+}
+
+static int multipart_boundary_tail(const char *after, const char *end,
+                                   int *closing, const char **next) {
+    size_t remaining = (size_t)(end - after);
+    if (remaining >= 2 && after[0] == '-' && after[1] == '-') {
+        const char *cursor = after + 2;
+        *closing = 1;
+        if (cursor == end) {
+            *next = cursor;
+            return 1;
+        }
+        if ((size_t)(end - cursor) >= 2 &&
+            cursor[0] == '\r' && cursor[1] == '\n') {
+            *next = cursor + 2;
+            return 1;
+        }
+        return 0;
+    }
+    if (remaining >= 2 && after[0] == '\r' && after[1] == '\n') {
+        *closing = 0;
+        *next = after + 2;
+        return 1;
+    }
+    return 0;
+}
+
+static const char *multipart_find_first_boundary(
+    const char *body, const char *end, const char *delimiter,
+    size_t delimiter_length, int *closing, const char **next) {
+    size_t body_length = (size_t)(end - body);
+    if (body_length < delimiter_length) return NULL;
+    size_t last = body_length - delimiter_length;
+    for (size_t offset = 0; offset <= last; offset++) {
+        if (offset != 0 &&
+            (offset < 2 || body[offset - 2] != '\r' ||
+             body[offset - 1] != '\n'))
+            continue;
+        const char *candidate = body + offset;
+        if (memcmp(candidate, delimiter, delimiter_length) == 0 &&
+            multipart_boundary_tail(candidate + delimiter_length, end,
+                                    closing, next))
+            return candidate;
+    }
+    return NULL;
+}
+
+static const char *multipart_find_next_boundary(
+    const char *begin, const char *end, const char *delimiter,
+    size_t delimiter_length, int *closing, const char **next) {
+    size_t available = (size_t)(end - begin);
+    if (delimiter_length > SIZE_MAX - 2) return NULL;
+    size_t marker_length = delimiter_length + 2;
+    if (available < marker_length) return NULL;
+    size_t last = available - marker_length;
+    for (size_t offset = 0; offset <= last; offset++) {
+        const char *candidate = begin + offset;
+        if (candidate[0] == '\r' && candidate[1] == '\n' &&
+            memcmp(candidate + 2, delimiter, delimiter_length) == 0 &&
+            multipart_boundary_tail(candidate + marker_length, end,
+                                    closing, next))
+            return candidate;
+    }
+    return NULL;
 }
 
 neverc_http_multipart_t *neverc_http_multipart_parse(
@@ -2311,35 +2448,19 @@ neverc_http_multipart_t *neverc_http_multipart_parse(
     if (!mp->parts) { free(mp); return NULL; }
 
     const char *end = body + body_len;
-    const char *pos = body;
+    const char *pos = NULL;
+    int closing = 0;
+    const char *first = multipart_find_first_boundary(
+        body, end, delim, dlen, &closing, &pos);
+    if (!first) goto fail;
+    if (closing) return mp;
 
-    /* Skip preamble: find first boundary */
-    const char *first = NULL;
-    for (const char *s = pos; s + dlen <= end; s++) {
-        if (memcmp(s, delim, dlen) == 0) { first = s; break; }
-    }
-    if (!first) { free(mp->parts); free(mp); return NULL; }
-
-    pos = first + dlen;
-    if (pos + 2 <= end && pos[0] == '-' && pos[1] == '-') {
-        /* No parts, just closing delimiter */
-        free(mp->parts);
-        free(mp);
-        return NULL;
-    }
-    while (pos < end && (*pos == '\r' || *pos == '\n')) pos++;
-
+    int closed = 0;
     while (pos < end && mp->nparts < MULTIPART_MAX_PARTS) {
-        /* Find next boundary */
-        const char *next_bound = NULL;
-        for (const char *s = pos; s + dlen <= end; s++) {
-            if (s[0] == '\r' && s[1] == '\n' &&
-                memcmp(s + 2, delim, dlen) == 0) {
-                next_bound = s;
-                break;
-            }
-        }
-        if (!next_bound) break;
+        const char *after_boundary = NULL;
+        const char *next_bound = multipart_find_next_boundary(
+            pos, end, delim, dlen, &closing, &after_boundary);
+        if (!next_bound) goto fail;
 
         /* Part content is from pos to next_bound */
         const char *part_data = pos;
@@ -2356,24 +2477,35 @@ neverc_http_multipart_t *neverc_http_multipart_parse(
         }
 
         neverc_http_multipart_part_t *p = &mp->parts[mp->nparts];
+        mp->nparts++;
         if (hdr_end) {
-            parse_part_headers(part_data, (size_t)(hdr_end + 2 - part_data), p);
+            if (parse_part_headers(
+                    part_data, (size_t)(hdr_end + 2 - part_data), p) != 0)
+                goto fail;
             p->data = hdr_end + 4;
             p->data_len = part_len - (size_t)(hdr_end + 4 - part_data);
+        } else if (part_len >= 2 &&
+                   part_data[0] == '\r' && part_data[1] == '\n') {
+            p->data = part_data + 2;
+            p->data_len = part_len - 2;
         } else {
             p->data = part_data;
             p->data_len = part_len;
         }
-        mp->nparts++;
 
-        /* Move past boundary */
-        pos = next_bound + 2 + dlen;
-        if (pos + 2 <= end && pos[0] == '-' && pos[1] == '-')
-            break; /* closing delimiter */
-        while (pos < end && (*pos == '\r' || *pos == '\n')) pos++;
+        pos = after_boundary;
+        if (closing) {
+            closed = 1;
+            break;
+        }
     }
 
+    if (!closed) goto fail;
     return mp;
+
+fail:
+    neverc_http_multipart_free(mp);
+    return NULL;
 }
 
 int neverc_http_multipart_count(const neverc_http_multipart_t *mp) {

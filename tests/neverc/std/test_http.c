@@ -2239,6 +2239,68 @@ static void test_multipart_parsing(void) {
     check_int("null content_type", neverc_http_multipart_parse(NULL, body, strlen(body)) == NULL, 1);
     check_int("null body", neverc_http_multipart_parse(ct, NULL, 0) == NULL, 1);
     check_int("no boundary", neverc_http_multipart_parse("text/plain", body, strlen(body)) == NULL, 1);
+
+    const char *short_ct = "multipart/form-data; boundary=b";
+    const char *boundary_like_data =
+        "--b\r\n"
+        "Content-Disposition: form-data; name=\"value\"\r\n"
+        "\r\n"
+        "alpha\r\n--bX\r\nomega\r\n"
+        "--b--\r\n";
+    mp = neverc_http_multipart_parse(
+        short_ct, boundary_like_data, strlen(boundary_like_data));
+    check_not_null("boundary prefix in payload is not a delimiter", mp);
+    if (mp) {
+        const neverc_http_multipart_part_t *part =
+            neverc_http_multipart_get(mp, 0);
+        const char *expected = "alpha\r\n--bX\r\nomega";
+        check_int("boundary-prefix body preserved",
+                  part && part->data_len == strlen(expected) &&
+                      memcmp(part->data, expected, strlen(expected)) == 0,
+                  1);
+        neverc_http_multipart_free(mp);
+    }
+
+    const char *filename_only =
+        "--b\r\n"
+        "Content-Disposition: form-data; filename=\"file.txt\"\r\n"
+        "\r\n"
+        "x\r\n"
+        "--b--\r\n";
+    mp = neverc_http_multipart_parse(
+        short_ct, filename_only, strlen(filename_only));
+    check_not_null("filename-only part parses", mp);
+    if (mp) {
+        const neverc_http_multipart_part_t *part =
+            neverc_http_multipart_get(mp, 0);
+        check_int("filename is not mistaken for field name",
+                  part && part->name == NULL, 1);
+        check_str("filename-only value", part ? part->filename : NULL,
+                  "file.txt");
+        neverc_http_multipart_free(mp);
+    }
+
+    const char *unterminated = "--b\r\nx\r\n--";
+    check_int("truncated delimiter rejected",
+              neverc_http_multipart_parse(
+                  short_ct, unterminated, strlen(unterminated)) == NULL,
+              1);
+
+    const char *no_parameters =
+        "--b\r\n"
+        "Content-Disposition: form-data\r\n"
+        "\r\n"
+        "x\r\n"
+        "--b--\r\n";
+    size_t no_parameters_len = strlen(no_parameters);
+    char *bounded_body = (char *)malloc(no_parameters_len);
+    if (bounded_body) memcpy(bounded_body, no_parameters, no_parameters_len);
+    mp = bounded_body ? neverc_http_multipart_parse(
+                            short_ct, bounded_body, no_parameters_len)
+                      : NULL;
+    check_not_null("non-NUL-terminated multipart body", mp);
+    neverc_http_multipart_free(mp);
+    free(bounded_body);
 }
 
 /* ===== SSE (Server-Sent Events) ===== */
