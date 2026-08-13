@@ -19,6 +19,10 @@ static void put32be(uint8_t *p, uint32_t v) {
     p[0] = (uint8_t)(v >> 24); p[1] = (uint8_t)(v >> 16);
     p[2] = (uint8_t)(v >> 8);  p[3] = (uint8_t)v;
 }
+static void put64be(uint8_t *p, uint64_t v) {
+    put32be(p, (uint32_t)(v >> 32));
+    put32be(p + 4, (uint32_t)v);
+}
 
 /*
  * Build a minimal Plan 9 386 a.out binary:
@@ -59,6 +63,34 @@ static uint8_t *build_plan9_386(size_t *out_len) {
     return buf;
 }
 
+static uint8_t *build_plan9_paths(size_t *out_len) {
+    const uint32_t syms_len = 30;
+    size_t total = 32 + syms_len;
+    uint8_t *buf = (uint8_t *)calloc(total, 1);
+    if (!buf) return NULL;
+    put32be(buf, NEVERC_PLAN9_MAGIC386);
+    put32be(buf + 16, syms_len);
+
+    uint8_t *p = buf + 32;
+    put32be(p, 1);
+    p[4] = 'f';
+    memcpy(p + 5, "usr", 4);
+    p += 9;
+    put32be(p, 2);
+    p[4] = 'f';
+    memcpy(p + 5, "lib", 4);
+    p += 9;
+    put32be(p, 0);
+    p[4] = 'z';
+    p[5] = 0;
+    p[6] = 0; p[7] = 1;
+    p[8] = 0; p[9] = 2;
+    p[10] = 0; p[11] = 0;
+
+    *out_len = total;
+    return buf;
+}
+
 static void test_magic(void) {
     CHECK("magic_386_valid",
           neverc_plan9_valid_magic(NEVERC_PLAN9_MAGIC386) == 1);
@@ -70,6 +102,12 @@ static void test_magic(void) {
           neverc_plan9_valid_magic(0xDEADBEEF) == 0);
     CHECK("magic_zero",
           neverc_plan9_valid_magic(0) == 0);
+    CHECK("reject fake 64-bit 386 magic",
+          neverc_plan9_valid_magic(
+              NEVERC_PLAN9_MAGIC386 | NEVERC_PLAN9_MAGIC64) == 0);
+    CHECK("reject fake 64-bit ARM magic",
+          neverc_plan9_valid_magic(
+              NEVERC_PLAN9_MAGICARM | NEVERC_PLAN9_MAGIC64) == 0);
 }
 
 static void test_parse_386(void) {
@@ -132,6 +170,51 @@ static void test_parse_386(void) {
     free(buf);
 }
 
+static void test_parse_amd64(void) {
+    uint8_t buf[40] = {0};
+    put32be(buf, NEVERC_PLAN9_MAGICAMD64);
+    put32be(buf + 20, 0x1234);
+    put64be(buf + 32, UINT64_C(0x123456789abcdef0));
+
+    neverc_plan9_file_t f;
+    CHECK("parse AMD64", neverc_plan9_parse(&f, buf, sizeof(buf)) == 0);
+    CHECK("AMD64 pointer size", f.ptr_size == 8);
+    CHECK("AMD64 entry", f.entry == UINT64_C(0x123456789abcdef0));
+    CHECK("AMD64 load address", f.load_address == UINT64_C(0x200000));
+    CHECK("AMD64 header size", f.hdr_size == 40);
+    CHECK("empty symbol table succeeds", neverc_plan9_symbols(&f) == 0);
+    CHECK("empty symbol count", f.num_symbols == 0);
+    neverc_plan9_close(&f);
+}
+
+static void test_path_symbols(void) {
+    size_t len = 0;
+    uint8_t *buf = build_plan9_paths(&len);
+    CHECK("build path symbols", buf != NULL);
+    if (!buf) return;
+
+    neverc_plan9_file_t f;
+    CHECK("parse path symbols", neverc_plan9_parse(&f, buf, len) == 0);
+    CHECK("decode path symbols", neverc_plan9_symbols(&f) == 0);
+    CHECK("decoded path symbol count", f.num_symbols == 3);
+    CHECK("decoded z path",
+          f.num_symbols == 3 &&
+              strcmp(f.symbols[2].name, "usr/lib") == 0);
+
+    neverc_plan9_section_t *syms = neverc_plan9_section(&f, "syms");
+    CHECK("path symbol section exists", syms != NULL);
+    if (syms) {
+        f.data[syms->offset + 27] = 3;
+        CHECK("reject unknown filename code",
+              neverc_plan9_symbols(&f) == -1);
+        CHECK("failed replacement is atomic",
+              f.num_symbols == 3 &&
+                  strcmp(f.symbols[2].name, "usr/lib") == 0);
+    }
+    neverc_plan9_close(&f);
+    free(buf);
+}
+
 static void test_parse_invalid(void) {
     neverc_plan9_file_t f;
 
@@ -144,6 +227,24 @@ static void test_parse_invalid(void) {
     memset(bad, 0, 32);
     put32be(bad, 0xDEADBEEF);
     CHECK("parse_bad_magic", neverc_plan9_parse(&f, bad, 32) != 0);
+    CHECK("parse null buffer", neverc_plan9_parse(&f, NULL, 32) == -1);
+    CHECK("parse null destination",
+          neverc_plan9_parse(NULL, bad, sizeof(bad)) == -1);
+
+    size_t len = 0;
+    uint8_t *buf = build_plan9_386(&len);
+    CHECK("build malformed symbol fixture", buf != NULL);
+    if (!buf) return;
+    put32be(buf + 16, 9);
+    CHECK("parse structurally bounded symbol section",
+          neverc_plan9_parse(&f, buf, len) == 0);
+    CHECK("reject unterminated symbol name", neverc_plan9_symbols(&f) == -1);
+    neverc_plan9_close(&f);
+
+    put32be(buf + 4, UINT32_MAX);
+    CHECK("reject section sizes beyond file",
+          neverc_plan9_parse(&f, buf, len) == -1);
+    free(buf);
 }
 
 static void test_section_data_bounds(void) {
@@ -158,6 +259,8 @@ static void test_section_data_bounds(void) {
     if (text) {
         uint8_t small[4];
         CHECK("read_too_small", neverc_plan9_section_data(&f, text, small, 4) != 0);
+        CHECK("read null destination",
+              neverc_plan9_section_data(&f, text, NULL, 16) == -1);
     }
 
     neverc_plan9_close(&f);
@@ -167,6 +270,8 @@ static void test_section_data_bounds(void) {
 int main(void) {
     test_magic();
     test_parse_386();
+    test_parse_amd64();
+    test_path_symbols();
     test_parse_invalid();
     test_section_data_bounds();
 

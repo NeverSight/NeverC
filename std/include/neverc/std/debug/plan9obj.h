@@ -35,7 +35,7 @@ typedef struct {
 typedef struct {
     char    *name;
     uint32_t size;
-    uint32_t offset;
+    uint64_t offset;
 } neverc_plan9_section_t;
 
 typedef struct {
@@ -80,8 +80,8 @@ int  neverc_plan9_section_data(neverc_plan9_file_t *f,
                                 neverc_plan9_section_t *sect,
                                 uint8_t *buf, size_t cap);
 
-/* Parse symbol table. Populates f->symbols / f->num_symbols.
- * Returns 0 on success. */
+/* Parse symbol table, including Plan 9 z/Z file-path references.
+ * Populates f->symbols / f->num_symbols and returns 0 on success. */
 int  neverc_plan9_symbols(neverc_plan9_file_t *f);
 
 /* Check if a magic number is valid Plan 9 a.out. */
