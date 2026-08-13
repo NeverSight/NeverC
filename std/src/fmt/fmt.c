@@ -164,18 +164,17 @@ static int f64_isnan(double x) { return x != x; }
  * (Ryu shortest + exact decimal), shared so fmt and strconv stay consistent. */
 static int fmt_float_f(char *buf, size_t cap, double val, int prec) {
     if (prec < 0) prec = 6;
-    int n = neverc_strconv_format_float(val, 'f', prec, buf, cap);
-    return n < 0 ? 0 : n;
+    return neverc_strconv_format_float(val, 'f', prec, buf, cap);
 }
 static int fmt_float_e(char *buf, size_t cap, double val, int prec, int uppercase) {
     if (prec < 0) prec = 6;
-    int n = neverc_strconv_format_float(val, uppercase ? 'E' : 'e', prec, buf, cap);
-    return n < 0 ? 0 : n;
+    return neverc_strconv_format_float(
+        val, uppercase ? 'E' : 'e', prec, buf, cap);
 }
 /* prec < 0 => shortest round-trippable form (Go's %v / %g default). */
 static int fmt_float_g(char *buf, size_t cap, double val, int prec, int uppercase) {
-    int n = neverc_strconv_format_float(val, uppercase ? 'G' : 'g', prec, buf, cap);
-    return n < 0 ? 0 : n;
+    return neverc_strconv_format_float(
+        val, uppercase ? 'G' : 'g', prec, buf, cap);
 }
 
 /* Core formatting engine */
@@ -353,6 +352,7 @@ char *neverc_fmt_vsprintf(const char *format, va_list args) {
             buf_putc(&buf, verb);
             continue;
         }
+        if (tlen < 0) goto format_fail;
 
         /* Apply width/padding */
         int prefix_len = 0;
@@ -482,26 +482,47 @@ static int skip_ws(const char **p) {
 
 static int scan_int(const char **p, int64_t *out) {
     skip_ws(p);
+    const char *start = *p;
     if (**p == '\0') return 0;
     int neg = 0;
     if (**p == '-') { neg = 1; (*p)++; }
     else if (**p == '+') { (*p)++; }
-    if (**p < '0' || **p > '9') return 0;
-    int64_t val = 0;
+    if (**p < '0' || **p > '9') { *p = start; return 0; }
+
+    uint64_t val = 0;
+    const uint64_t limit = neg
+        ? (uint64_t)INT64_MAX + 1U
+        : (uint64_t)INT64_MAX;
     while (**p >= '0' && **p <= '9') {
-        val = val * 10 + (**p - '0');
+        unsigned digit = (unsigned)(**p - '0');
+        if (val > (limit - digit) / 10U) {
+            *p = start;
+            return 0;
+        }
+        val = val * 10U + digit;
         (*p)++;
     }
-    *out = neg ? -val : val;
+    if (neg)
+        *out = val == (uint64_t)INT64_MAX + 1U
+            ? INT64_MIN
+            : -(int64_t)val;
+    else
+        *out = (int64_t)val;
     return 1;
 }
 
 static int scan_uint(const char **p, uint64_t *out) {
     skip_ws(p);
+    const char *start = *p;
     if (**p < '0' || **p > '9') return 0;
     uint64_t val = 0;
     while (**p >= '0' && **p <= '9') {
-        val = val * 10 + (**p - '0');
+        unsigned digit = (unsigned)(**p - '0');
+        if (val > (UINT64_MAX - digit) / 10U) {
+            *p = start;
+            return 0;
+        }
+        val = val * 10U + digit;
         (*p)++;
     }
     *out = val;
@@ -552,19 +573,39 @@ static int scan_string(const char **p, char *buf, size_t cap) {
 
 static int scan_hex(const char **p, uint64_t *out) {
     skip_ws(p);
+    const char *start = *p;
     if (**p == '0' && ((*p)[1] == 'x' || (*p)[1] == 'X')) (*p) += 2;
     uint64_t val = 0;
     int found = 0;
     while (1) {
         char c = **p;
-        if (c >= '0' && c <= '9') { val = val * 16 + (c - '0'); found = 1; }
-        else if (c >= 'a' && c <= 'f') { val = val * 16 + (c - 'a' + 10); found = 1; }
-        else if (c >= 'A' && c <= 'F') { val = val * 16 + (c - 'A' + 10); found = 1; }
+        unsigned digit;
+        if (c >= '0' && c <= '9') digit = (unsigned)(c - '0');
+        else if (c >= 'a' && c <= 'f') digit = (unsigned)(c - 'a' + 10);
+        else if (c >= 'A' && c <= 'F') digit = (unsigned)(c - 'A' + 10);
         else break;
+        if (val > (UINT64_MAX - digit) / 16U) {
+            *p = start;
+            return 0;
+        }
+        val = val * 16U + digit;
+        found = 1;
         (*p)++;
     }
+    if (!found) {
+        *p = start;
+        return 0;
+    }
     *out = val;
-    return found;
+    return 1;
+}
+
+static int scan_value_fits_int(int64_t value) {
+    return value >= INT_MIN && value <= INT_MAX;
+}
+
+static int scan_value_fits_uint(uint64_t value) {
+    return value <= UINT_MAX;
 }
 
 int neverc_fmt_sscanf(const char *str, const char *format, ...) {
@@ -589,7 +630,10 @@ int neverc_fmt_sscanf(const char *str, const char *format, ...) {
                 int64_t val;
                 if (!scan_int(&sp, &val)) goto done;
                 if (is_long) *va_arg(args, long long *) = (long long)val;
-                else *va_arg(args, int *) = (int)val;
+                else {
+                    if (!scan_value_fits_int(val)) goto done;
+                    *va_arg(args, int *) = (int)val;
+                }
                 matched++;
                 break;
             }
@@ -597,14 +641,23 @@ int neverc_fmt_sscanf(const char *str, const char *format, ...) {
                 uint64_t val;
                 if (!scan_uint(&sp, &val)) goto done;
                 if (is_long) *va_arg(args, unsigned long long *) = (unsigned long long)val;
-                else *va_arg(args, unsigned int *) = (unsigned int)val;
+                else {
+                    if (!scan_value_fits_uint(val)) goto done;
+                    *va_arg(args, unsigned int *) = (unsigned int)val;
+                }
                 matched++;
                 break;
             }
             case 'x': case 'X': {
                 uint64_t val;
                 if (!scan_hex(&sp, &val)) goto done;
-                *va_arg(args, unsigned int *) = (unsigned int)val;
+                if (is_long)
+                    *va_arg(args, unsigned long long *) =
+                        (unsigned long long)val;
+                else {
+                    if (!scan_value_fits_uint(val)) goto done;
+                    *va_arg(args, unsigned int *) = (unsigned int)val;
+                }
                 matched++;
                 break;
             }
@@ -655,6 +708,7 @@ int neverc_fmt_sscan(const char *str, ...) {
         if (*sp == '\0') break;
         int64_t ival;
         if (scan_int(&sp, &ival)) {
+            if (!scan_value_fits_int(ival)) break;
             int *p = va_arg(args, int *);
             if (!p) break;
             *p = (int)ival;
@@ -689,7 +743,10 @@ int neverc_fmt_scanf(const char *format, ...) {
                 int64_t val;
                 if (!scan_int(&sp, &val)) goto sdone;
                 if (is_long) *va_arg(args, long long *) = (long long)val;
-                else *va_arg(args, int *) = (int)val;
+                else {
+                    if (!scan_value_fits_int(val)) goto sdone;
+                    *va_arg(args, int *) = (int)val;
+                }
                 matched++;
                 break;
             }
@@ -727,7 +784,10 @@ int neverc_fmt_scan(int *out_int) {
     if (!fgets(line, sizeof(line), stdin)) return 0;
     const char *p = line;
     int64_t val;
-    if (scan_int(&p, &val)) { *out_int = (int)val; return 1; }
+    if (scan_int(&p, &val) && scan_value_fits_int(val)) {
+        *out_int = (int)val;
+        return 1;
+    }
     return 0;
 }
 
@@ -753,7 +813,10 @@ int neverc_fmt_fscanf(FILE *f, const char *format, ...) {
                 int64_t val;
                 if (!scan_int(&sp, &val)) goto fdone;
                 if (is_long) *va_arg(args, long long *) = (long long)val;
-                else *va_arg(args, int *) = (int)val;
+                else {
+                    if (!scan_value_fits_int(val)) goto fdone;
+                    *va_arg(args, int *) = (int)val;
+                }
                 matched++;
                 break;
             }
@@ -849,7 +912,10 @@ int neverc_fmt_fscan(FILE *f, int *out_int) {
     if (!fgets(line, sizeof(line), f)) return 0;
     const char *p = line;
     int64_t val;
-    if (scan_int(&p, &val)) { *out_int = (int)val; return 1; }
+    if (scan_int(&p, &val) && scan_value_fits_int(val)) {
+        *out_int = (int)val;
+        return 1;
+    }
     return 0;
 }
 
@@ -875,7 +941,10 @@ int neverc_fmt_scanln(const char *format, ...) {
                 int64_t val;
                 if (!scan_int(&sp, &val)) goto sldone;
                 if (is_long) *va_arg(args, long long *) = (long long)val;
-                else *va_arg(args, int *) = (int)val;
+                else {
+                    if (!scan_value_fits_int(val)) goto sldone;
+                    *va_arg(args, int *) = (int)val;
+                }
                 matched++;
                 break;
             }
@@ -932,7 +1001,10 @@ int neverc_fmt_sscanln(const char *str, const char *format, ...) {
                 int64_t val;
                 if (!scan_int(&sp, &val)) goto ssldone;
                 if (is_long) *va_arg(args, long long *) = (long long)val;
-                else *va_arg(args, int *) = (int)val;
+                else {
+                    if (!scan_value_fits_int(val)) goto ssldone;
+                    *va_arg(args, int *) = (int)val;
+                }
                 matched++;
                 break;
             }
@@ -985,7 +1057,10 @@ int neverc_fmt_fscanln(FILE *f, const char *format, ...) {
                 int64_t val;
                 if (!scan_int(&sp, &val)) goto fldone;
                 if (is_long) *va_arg(args, long long *) = (long long)val;
-                else *va_arg(args, int *) = (int)val;
+                else {
+                    if (!scan_value_fits_int(val)) goto fldone;
+                    *va_arg(args, int *) = (int)val;
+                }
                 matched++;
                 break;
             }

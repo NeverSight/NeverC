@@ -157,7 +157,10 @@ int neverc_strconv_parse_int(const char *s, int base, long long *result) {
     unsigned long long uval;
     int rc = neverc_strconv_parse_uint(p, base, &uval);
     if (rc != NEVERC_STRCONV_OK) {
-        *result = 0;
+        if (rc == NEVERC_STRCONV_ERR_RANGE)
+            *result = neg ? NC_LLONG_MIN : NC_LLONG_MAX;
+        else
+            *result = 0;
         return rc;
     }
 
@@ -184,7 +187,12 @@ int neverc_strconv_atoi(const char *s, int *result) {
     long long val;
     int rc = neverc_strconv_parse_int(s, 10, &val);
     if (rc != NEVERC_STRCONV_OK) {
-        if (result) *result = 0;
+        if (result) {
+            if (rc == NEVERC_STRCONV_ERR_RANGE)
+                *result = val < 0 ? NC_INT_MIN : NC_INT_MAX;
+            else
+                *result = 0;
+        }
         return rc;
     }
     if (val < NC_INT_MIN || val > NC_INT_MAX) {

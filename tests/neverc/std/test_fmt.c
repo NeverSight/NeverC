@@ -1,4 +1,5 @@
 #include "neverc/std/fmt.h"
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -203,6 +204,43 @@ static void test_sscanf(void) {
 
     n = neverc_fmt_sscanf("abc", "%d", &a);
     check_int("sscanf no match", n, 0);
+
+    a = 77;
+    n = neverc_fmt_sscanf("2147483648", "%d", &a);
+    check_int("sscanf int overflow rejected", n, 0);
+    check_int("sscanf int overflow leaves output", a, 77);
+    n = neverc_fmt_sscanf("-2147483649", "%d", &a);
+    check_int("sscanf int underflow rejected", n, 0);
+    check_int("sscanf int underflow leaves output", a, 77);
+
+    long long ll = 0;
+    n = neverc_fmt_sscanf("9223372036854775807", "%lld", &ll);
+    check_int("sscanf int64 max", n, 1);
+    check_true("sscanf int64 max value", ll == LLONG_MAX);
+    ll = 77;
+    n = neverc_fmt_sscanf("9223372036854775808", "%lld", &ll);
+    check_int("sscanf int64 overflow rejected", n, 0);
+    check_true("sscanf int64 overflow leaves output", ll == 77);
+    n = neverc_fmt_sscanf("-9223372036854775809", "%lld", &ll);
+    check_int("sscanf int64 underflow rejected", n, 0);
+    check_true("sscanf int64 underflow leaves output", ll == 77);
+
+    unsigned int u = 77;
+    n = neverc_fmt_sscanf("4294967296", "%u", &u);
+    check_int("sscanf uint overflow rejected", n, 0);
+    check_true("sscanf uint overflow leaves output", u == 77);
+
+    unsigned long long ull = 0;
+    n = neverc_fmt_sscanf("18446744073709551615", "%llu", &ull);
+    check_int("sscanf uint64 max", n, 1);
+    check_true("sscanf uint64 max value", ull == ULLONG_MAX);
+    ull = 77;
+    n = neverc_fmt_sscanf("18446744073709551616", "%llu", &ull);
+    check_int("sscanf uint64 overflow rejected", n, 0);
+    check_true("sscanf uint64 overflow leaves output", ull == 77);
+    n = neverc_fmt_sscanf("10000000000000000", "%llx", &ull);
+    check_int("sscanf hex64 overflow rejected", n, 0);
+    check_true("sscanf hex64 overflow leaves output", ull == 77);
 }
 
 static void test_appendf(void) {
@@ -286,6 +324,14 @@ static void test_invalid_formats(void) {
 
     result = neverc_fmt_sprintf("%.999999999999999999999999d", 42);
     check_true("overflowing precision rejected", result == NULL);
+    free(result);
+
+    result = neverc_fmt_sprintf("%.1000f", 1.0);
+    check_true("unsupported float precision rejected", result == NULL);
+    free(result);
+
+    result = neverc_fmt_sprintf("%.*e", INT_MAX, 1.0);
+    check_true("dynamic float precision rejected", result == NULL);
     free(result);
 }
 

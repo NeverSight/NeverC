@@ -249,6 +249,7 @@ int neverc_strconv_unquote_char(const char *s, size_t slen, char quote,
     if (c >= NEVERC_UTF8_RUNE_SELF) {
         int width;
         neverc_utf8_decode_rune((const uint8_t *)s, slen, r, &width);
+        if (width == 1 && *r == NEVERC_UTF8_RUNE_ERROR) return -1;
         *multibyte = 1;
         return width;
     }
@@ -324,15 +325,41 @@ int neverc_strconv_unquote(const char *s, char *buf, size_t bufsize) {
 
     if (quote == '`') {
         size_t inner = slen - 2;
-        if (inner + 1 > bufsize) return -1;
-        memcpy(buf, s + 1, inner);
-        buf[inner] = '\0';
-        return (int)inner;
+        size_t out = 0;
+        for (size_t i = 0; i < inner; i++) {
+            char c = s[i + 1];
+            if (c == '`') return -1;
+            /* Go raw-string literals discard carriage returns. */
+            if (c == '\r') continue;
+            if (out + 1 >= bufsize) return -1;
+            buf[out++] = c;
+        }
+        buf[out] = '\0';
+        return (int)out;
     }
 
     const char *src = s + 1;
     size_t src_len = slen - 2;
     size_t out = 0;
+
+    if (quote == '\'') {
+        uint32_t r;
+        int multibyte;
+        int consumed = neverc_strconv_unquote_char(
+            src, src_len, quote, &r, &multibyte);
+        if (consumed < 0 || (size_t)consumed != src_len) return -1;
+
+        /* A rune literal denotes a Unicode code point even when it was written
+         * with a byte escape such as '\xff'.  String literals keep \xNN and
+         * octal escapes as raw bytes, but rune literals must encode the
+         * resulting code point as UTF-8. */
+        uint8_t enc[4];
+        int n = neverc_utf8_encode_rune(enc, r);
+        if ((size_t)n >= bufsize) return -1;
+        memcpy(buf, enc, (size_t)n);
+        buf[n] = '\0';
+        return n;
+    }
 
     while (src_len > 0) {
         /* Fast path: bulk-copy a run of plain ASCII characters that decode to
@@ -360,7 +387,13 @@ int neverc_strconv_unquote(const char *s, char *buf, size_t bufsize) {
         if (consumed < 0) return -1;
 
         uint8_t enc[4];
-        int n = neverc_utf8_encode_rune(enc, r);
+        int n;
+        if (mb) {
+            n = neverc_utf8_encode_rune(enc, r);
+        } else {
+            enc[0] = (uint8_t)r;
+            n = 1;
+        }
         if (out + (size_t)n >= bufsize) return -1;
         memcpy(buf + out, enc, (size_t)n);
         out += (size_t)n;
@@ -478,13 +511,15 @@ int neverc_strconv_format_complex(double re, double im, char fmt, int prec,
     int im_len = neverc_strconv_format_float(im, fmt, prec, im_buf, sizeof(im_buf));
     if (re_len < 0 || im_len < 0) return -1;
 
-    size_t total = 1 + (size_t)re_len + (size_t)im_len + 2;
+    int needs_separator = im_buf[0] != '+' && im_buf[0] != '-';
+    size_t total = 1 + (size_t)re_len + (size_t)needs_separator +
+                   (size_t)im_len + 2;
     if (total + 1 > bufsize) return -1;
 
     size_t pos = 0;
     buf[pos++] = '(';
     memcpy(buf + pos, re_buf, (size_t)re_len); pos += (size_t)re_len;
-    if (im >= 0 || (im != im)) buf[pos++] = '+';
+    if (needs_separator) buf[pos++] = '+';
     memcpy(buf + pos, im_buf, (size_t)im_len); pos += (size_t)im_len;
     buf[pos++] = 'i';
     buf[pos++] = ')';

@@ -5,15 +5,17 @@
 
 int neverc_asn1_decode_element(const uint8_t *data, size_t len,
                                neverc_asn1_element_t *elem) {
-    if (!data || !elem || len < 2) return -1;
+    if (!elem) return -1;
+    memset(elem, 0, sizeof(*elem));
+    if (!data || len < 2) return -1;
     size_t pos = 0;
 
     uint8_t tag_byte = data[pos++];
-    elem->tag_class = tag_byte & 0xC0;
-    elem->constructed = (tag_byte & 0x20) ? 1 : 0;
-    elem->tag_number = tag_byte & 0x1F;
+    int tag_class = tag_byte & 0xC0;
+    int constructed = (tag_byte & 0x20) ? 1 : 0;
+    int tag_number = tag_byte & 0x1F;
 
-    if (elem->tag_number == 0x1F) {
+    if (tag_number == 0x1F) {
         /* High-tag-number form. Accumulate in a 64-bit unsigned (the shift is
          * well-defined there — int overflowed its sign bit, which is UB, and
          * `long` is only 32-bit on Windows/LLP64) and reject tags that exceed
@@ -33,8 +35,12 @@ int neverc_asn1_decode_element(const uint8_t *data, size_t len,
             }
         }
         if (!got || !terminated || tn < 0x1F) return -1;
-        elem->tag_number = (int)tn;
+        tag_number = (int)tn;
     }
+    /* Tag zero is reserved for BER's end-of-contents marker. DER forbids
+     * indefinite lengths, so an EOC element can never be valid DER input. */
+    if (tag_class == NEVERC_ASN1_UNIVERSAL && tag_number == 0)
+        return -1;
 
     if (pos >= len) return -1;
     uint8_t len_byte = data[pos++];
@@ -55,6 +61,9 @@ int neverc_asn1_decode_element(const uint8_t *data, size_t len,
 
     if (value_len > len - pos || value_len > (size_t)INT_MAX - pos)
         return -1;
+    elem->tag_class = tag_class;
+    elem->tag_number = tag_number;
+    elem->constructed = constructed;
     elem->value = data + pos;
     elem->value_len = value_len;
     elem->full = data;
@@ -177,6 +186,7 @@ char *neverc_asn1_decode_oid(const neverc_asn1_element_t *elem) {
 int neverc_asn1_encode_tag(uint8_t *buf, size_t cap, int tag_class,
                            int constructed, int tag_number) {
     if (!buf || cap < 1 || tag_number < 0 ||
+        (tag_class == NEVERC_ASN1_UNIVERSAL && tag_number == 0) ||
         (tag_class != NEVERC_ASN1_UNIVERSAL &&
          tag_class != NEVERC_ASN1_APPLICATION &&
          tag_class != NEVERC_ASN1_CONTEXT &&
@@ -218,28 +228,17 @@ int neverc_asn1_encode_length(uint8_t *buf, size_t cap, size_t length) {
 
 int neverc_asn1_encode_int64(uint8_t *buf, size_t cap, int64_t val) {
     if (!buf) return -1;
-    uint8_t bytes[9];
-    int n = 0;
+    uint8_t bytes[8];
+    uint64_t bits = (uint64_t)val;
+    for (int i = 0; i < 8; i++)
+        bytes[i] = (uint8_t)(bits >> (56 - i * 8));
 
-    if (val == 0) {
-        bytes[0] = 0; n = 1;
-    } else if (val > 0) {
-        uint64_t v = (uint64_t)val;
-        uint8_t tmp[8]; int tn = 0;
-        while (v > 0) { tmp[tn++] = v & 0xFF; v >>= 8; }
-        if (tmp[tn-1] & 0x80) bytes[n++] = 0;
-        for (int i = tn - 1; i >= 0; i--) bytes[n++] = tmp[i];
-    } else {
-        int64_t v = val;
-        uint8_t tmp[8]; int tn = 0;
-        while (v != -1 || tn == 0) {
-            tmp[tn++] = (uint8_t)(v & 0xFF);
-            v >>= 8;
-            if (tn >= 8) break;
-        }
-        if (!(tmp[tn-1] & 0x80)) bytes[n++] = 0xFF;
-        for (int i = tn - 1; i >= 0; i--) bytes[n++] = tmp[i];
-    }
+    int start = 0;
+    while (start < 7 &&
+           ((bytes[start] == 0x00 && (bytes[start + 1] & 0x80U) == 0) ||
+            (bytes[start] == 0xff && (bytes[start + 1] & 0x80U) != 0)))
+        start++;
+    int n = 8 - start;
 
     int tlen = neverc_asn1_encode_tag(buf, cap, NEVERC_ASN1_UNIVERSAL, 0,
                                        NEVERC_ASN1_INTEGER);
@@ -247,7 +246,7 @@ int neverc_asn1_encode_int64(uint8_t *buf, size_t cap, int64_t val) {
     int llen = neverc_asn1_encode_length(buf + tlen, cap - tlen, n);
     if (llen < 0) return -1;
     if ((size_t)(tlen + llen + n) > cap) return -1;
-    memcpy(buf + tlen + llen, bytes, n);
+    memcpy(buf + tlen + llen, bytes + start, (size_t)n);
     return tlen + llen + n;
 }
 

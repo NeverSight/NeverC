@@ -1,6 +1,7 @@
 #include "neverc/std/strconv.h"
 #include "decimal.h"
 #include "ryu_table.h"
+#include <limits.h>
 #include <string.h>
 #include <stdint.h>
 
@@ -254,9 +255,10 @@ static void fmt_e(nc_w *w, int neg, const nc_decimal *d, int prec, char ech) {
     if (prec > 0) {
         w_ch(w, '.');
         int i = 1;
-        int m = nc_min_i(d->nd, prec + 1);
+        int64_t wanted = (int64_t)prec + 1;
+        int m = wanted < d->nd ? (int)wanted : d->nd;
         if (i < m) { w_digs(w, d->d, i, m); i = m; }
-        for (; i <= prec; i++) w_ch(w, '0');
+        if (i <= prec) w_pad(w, '0', prec - i + 1);
     }
     w_ch(w, ech);
     int exp = d->dp - 1;
@@ -280,8 +282,8 @@ static void fmt_f(nc_w *w, int neg, const nc_decimal *d, int prec) {
     if (prec > 0) {
         w_ch(w, '.');
         for (int i = 0; i < prec; i++) {
-            int j = d->dp + i;
-            w_ch(w, (j >= 0 && j < d->nd) ? (char)d->d[j] : '0');
+            int64_t j = (int64_t)d->dp + i;
+            w_ch(w, (j >= 0 && j < d->nd) ? (char)d->d[(int)j] : '0');
         }
     }
 }
@@ -317,7 +319,8 @@ static int format_digits(char *buf, size_t bufsize, int shortest, int neg,
     }
     if (w.of) return -1;
     *w.p = '\0';
-    return (int)(w.p - buf);
+    ptrdiff_t written = w.p - buf;
+    return written <= INT_MAX ? (int)written : -1;
 }
 
 int neverc_strconv_format_float(double f, char fmt, int prec, char *buf, size_t bufsize) {
@@ -325,6 +328,9 @@ int neverc_strconv_format_float(double f, char fmt, int prec, char *buf, size_t 
 
     int sp = write_special(f, buf, bufsize);
     if (sp != 0) return sp > 0 ? sp : -1;
+    if (prec >= 0 && (fmt == 'e' || fmt == 'E' || fmt == 'f') &&
+        (size_t)prec >= bufsize)
+        return -1;
 
     uint64_t bits; memcpy(&bits, &f, 8);
     int neg = (int)(bits >> (NC_EXP_BITS + NC_MANT_BITS));
@@ -361,13 +367,21 @@ int neverc_strconv_format_float(double f, char fmt, int prec, char *buf, size_t 
         d.neg = neg;
         nc_dec_shift(&d, exp - NC_MANT_BITS);
         switch (fmt) {
-        case 'e': case 'E': dec_round(&d, prec + 1); break;
-        case 'f':           dec_round(&d, d.dp + prec); break;
+        case 'e': case 'E':
+            dec_round(&d, prec == INT_MAX ? INT_MAX : prec + 1);
+            break;
+        case 'f': {
+            int64_t round_at = (int64_t)d.dp + prec;
+            dec_round(&d, round_at > INT_MAX ? INT_MAX : (int)round_at);
+            break;
+        }
         case 'g': case 'G':
             if (prec == 0) prec = 1;
             dec_round(&d, prec);
             break;
-        default:            dec_round(&d, prec + 1); break;
+        default:
+            dec_round(&d, prec == INT_MAX ? INT_MAX : prec + 1);
+            break;
         }
     }
 

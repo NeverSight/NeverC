@@ -70,6 +70,14 @@ static void test_atoi(void) {
     check_int("atoi +123",    neverc_strconv_atoi("+123", &v), 0);   check_int("val", v, 123);
     check_int("atoi bad",     neverc_strconv_atoi("abc", &v), NEVERC_STRCONV_ERR_SYNTAX);
     check_int("atoi empty",   neverc_strconv_atoi("", &v), NEVERC_STRCONV_ERR_SYNTAX);
+    check_int("atoi positive overflow",
+              neverc_strconv_atoi("18446744073709551616", &v),
+              NEVERC_STRCONV_ERR_RANGE);
+    check_int("atoi positive overflow clamp", v, INT_MAX);
+    check_int("atoi negative overflow",
+              neverc_strconv_atoi("-18446744073709551616", &v),
+              NEVERC_STRCONV_ERR_RANGE);
+    check_int("atoi negative overflow clamp", v, INT_MIN);
 }
 
 /* ===== ParseInt ===== */
@@ -88,6 +96,14 @@ static void test_parse_int(void) {
               neverc_strconv_parse_int("-0x_ff", 0, &v), 0);
     check_ll("negative auto underscore val", v, -255);
     check_int("bad base", neverc_strconv_parse_int("42", 1, &v), NEVERC_STRCONV_ERR_BASE);
+    check_int("positive magnitude overflow",
+              neverc_strconv_parse_int("18446744073709551616", 10, &v),
+              NEVERC_STRCONV_ERR_RANGE);
+    check_ll("positive magnitude overflow clamp", v, LLONG_MAX);
+    check_int("negative magnitude overflow",
+              neverc_strconv_parse_int("-18446744073709551616", 10, &v),
+              NEVERC_STRCONV_ERR_RANGE);
+    check_ll("negative magnitude overflow clamp", v, LLONG_MIN);
 }
 
 /* ===== ParseUint ===== */
@@ -218,6 +234,13 @@ static void test_format_float(void) {
     neverc_strconv_format_float(1.23456789e15, 'f', 0, buf, sizeof(buf));
     check_true("f 1.23e15 starts with 1", buf[0] == '1');
     check_true("f 1.23e15 length >= 16", strlen(buf) >= 16);
+
+    check_int("huge fixed precision rejected",
+              neverc_strconv_format_float(
+                  1.0, 'f', INT_MAX, buf, sizeof(buf)), -1);
+    check_int("huge exponent precision rejected",
+              neverc_strconv_format_float(
+                  1.0, 'e', INT_MAX, buf, sizeof(buf)), -1);
 }
 
 /* ===== FormatBool ===== */
@@ -343,8 +366,35 @@ static void test_unquote(void) {
     check_int("unquote hex len", n, 1);
     check_str("unquote hex val", buf, "A");
 
+    n = neverc_strconv_unquote("\"\\xff\"", buf, sizeof(buf));
+    check_int("unquote byte escape len", n, 1);
+    check_int("unquote byte escape value", (unsigned char)buf[0], 0xff);
+    check_int("unquote byte escape terminator", buf[1], '\0');
+
     n = neverc_strconv_unquote("\"\\u4e16\"", buf, sizeof(buf));
     check_int("unquote unicode len", n, 3);
+
+    n = neverc_strconv_unquote("'a'", buf, sizeof(buf));
+    check_int("unquote rune len", n, 1);
+    check_str("unquote rune value", buf, "a");
+    n = neverc_strconv_unquote("'\\xff'", buf, sizeof(buf));
+    check_int("unquote escaped rune len", n, 2);
+    check_str("unquote escaped rune value", buf, "\xc3\xbf");
+    check_int("reject empty rune",
+              neverc_strconv_unquote("''", buf, sizeof(buf)), -1);
+    check_int("reject multiple runes",
+              neverc_strconv_unquote("'ab'", buf, sizeof(buf)), -1);
+
+    char invalid_utf8[] = {'"', (char)0xff, '"', '\0'};
+    check_int("reject invalid UTF-8",
+              neverc_strconv_unquote(
+                  invalid_utf8, buf, sizeof(buf)), -1);
+
+    n = neverc_strconv_unquote("`a\rb`", buf, sizeof(buf));
+    check_int("raw string discards carriage return len", n, 2);
+    check_str("raw string discards carriage return", buf, "ab");
+    check_int("reject interior raw delimiter",
+              neverc_strconv_unquote("`a`b`", buf, sizeof(buf)), -1);
 
     n = neverc_strconv_unquote("bad", buf, sizeof(buf));
     check_int("unquote bad", n, -1);
@@ -451,9 +501,28 @@ static void test_complex(void) {
     char buf[128];
 
     int n = neverc_strconv_format_complex(1.0, 2.0, 'f', 1, buf, sizeof(buf));
-    check_true("format_complex len", n > 0);
-    check_true("format_complex has paren", buf[0] == '(');
-    check_true("format_complex has i", buf[n-2] == 'i');
+    check_int("format_complex len", n, 10);
+    check_str("format_complex value", buf, "(1.0+2.0i)");
+
+    char short_buf[10];
+    check_int("format_complex exact short buffer",
+              neverc_strconv_format_complex(
+                  1.0, 2.0, 'f', 1, short_buf, sizeof(short_buf)), -1);
+    char exact_buf[11];
+    check_int("format_complex exact buffer",
+              neverc_strconv_format_complex(
+                  1.0, 2.0, 'f', 1, exact_buf, sizeof(exact_buf)), 10);
+    check_str("format_complex exact value", exact_buf, "(1.0+2.0i)");
+
+    double inf = 1.0 / 0.0;
+    check_int("format_complex infinity",
+              neverc_strconv_format_complex(
+                  1.0, inf, 'f', 1, buf, sizeof(buf)), 10);
+    check_str("format_complex infinity value", buf, "(1.0+Infi)");
+    check_int("format_complex negative zero",
+              neverc_strconv_format_complex(
+                  1.0, -0.0, 'f', 1, buf, sizeof(buf)), 10);
+    check_str("format_complex negative zero value", buf, "(1.0-0.0i)");
 
     double re, im;
     check_int("parse_complex basic",

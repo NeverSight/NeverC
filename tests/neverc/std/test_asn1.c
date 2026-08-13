@@ -113,9 +113,18 @@ static void test_decode_rejects_malformed_lengths(void) {
               neverc_asn1_decode_element(bytes, sizeof(bytes), NULL), -1);
 
     uint8_t indefinite[] = {0x04, 0x80};
+    memset(&elem, 0xa5, sizeof(elem));
     check_int("reject indefinite length",
               neverc_asn1_decode_element(
                   indefinite, sizeof(indefinite), &elem), -1);
+    neverc_asn1_element_t empty_elem = {0};
+    check_int("failed decode clears element",
+              memcmp(&elem, &empty_elem, sizeof(elem)) == 0, 1);
+
+    uint8_t end_of_contents[] = {0x00, 0x00};
+    check_int("reject BER end-of-contents marker",
+              neverc_asn1_decode_element(
+                  end_of_contents, sizeof(end_of_contents), &elem), -1);
 
     uint8_t noncanonical[] = {0x04, 0x81, 0x01, 0x00};
     check_int("reject noncanonical long length",
@@ -176,6 +185,42 @@ static void test_encode_integer(void) {
     neverc_asn1_decode_element(buf, n, &elem);
     neverc_asn1_decode_int64(&elem, &val);
     check_int64("roundtrip 0", val, 0);
+
+    static const struct {
+        int64_t value;
+        int encoded_len;
+    } boundaries[] = {
+        {INT64_MIN, 10},
+        {-129, 4},
+        {-128, 3},
+        {-1, 3},
+        {0, 3},
+        {127, 3},
+        {128, 4},
+        {INT64_MAX, 10},
+    };
+    for (size_t i = 0; i < sizeof(boundaries) / sizeof(boundaries[0]); i++) {
+        char name[64];
+        n = neverc_asn1_encode_int64(
+            buf, sizeof(buf), boundaries[i].value);
+        snprintf(name, sizeof(name), "boundary %zu minimal length", i);
+        check_int(name, n, boundaries[i].encoded_len);
+        if (n > 0) {
+            int consumed = neverc_asn1_decode_element(
+                buf, (size_t)n, &elem);
+            snprintf(name, sizeof(name), "boundary %zu wrapper", i);
+            check_int(name, consumed, n);
+            if (consumed == n) {
+                int decode_status = neverc_asn1_decode_int64(&elem, &val);
+                snprintf(name, sizeof(name), "boundary %zu decode", i);
+                check_int(name, decode_status, 0);
+                if (decode_status != 0)
+                    continue;
+                snprintf(name, sizeof(name), "boundary %zu roundtrip", i);
+                check_int64(name, val, boundaries[i].value);
+            }
+        }
+    }
 }
 
 static void test_encode_bool(void) {
@@ -229,6 +274,9 @@ static void test_helpers_and_invalid_api(void) {
     check_int("reject negative tag",
               neverc_asn1_encode_tag(
                   buf, sizeof(buf), NEVERC_ASN1_UNIVERSAL, 0, -1), -1);
+    check_int("reject DER end-of-contents tag",
+              neverc_asn1_encode_tag(
+                  buf, sizeof(buf), NEVERC_ASN1_UNIVERSAL, 0, 0), -1);
     check_int("reject NULL tag buffer",
               neverc_asn1_encode_tag(
                   NULL, sizeof(buf), NEVERC_ASN1_UNIVERSAL, 0, 1), -1);
