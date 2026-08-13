@@ -651,10 +651,22 @@ int nci_tls_client_handshake(neverc_tls_conn_t *conn,
 
     uint8_t client_hs_traffic_secret[32];
     uint8_t server_hs_traffic_secret[32];
-    nci_tls_derive_secret(handshake_secret, "c hs traffic", 12,
-                   transcript_hash_sh, client_hs_traffic_secret);
-    nci_tls_derive_secret(handshake_secret, "s hs traffic", 12,
-                   transcript_hash_sh, server_hs_traffic_secret);
+    if (nci_tls_derive_secret_checked(
+            handshake_secret, "c hs traffic", 12,
+            transcript_hash_sh, client_hs_traffic_secret) != 0 ||
+        nci_tls_derive_secret_checked(
+            handshake_secret, "s hs traffic", 12,
+            transcript_hash_sh, server_hs_traffic_secret) != 0) {
+        neverc_platform_secure_zero(
+            client_hs_traffic_secret, sizeof(client_hs_traffic_secret));
+        neverc_platform_secure_zero(
+            server_hs_traffic_secret, sizeof(server_hs_traffic_secret));
+        neverc_platform_secure_zero(
+            handshake_secret, sizeof(handshake_secret));
+        neverc_platform_secure_zero(shared_secret, sizeof(shared_secret));
+        neverc_platform_secure_zero(&ecdh_key, sizeof(ecdh_key));
+        return nci_tls_fail(conn, TLS_ALERT_INTERNAL_ERROR);
+    }
 
 #if defined(NEVERC_TLS_DEBUG_KEYS)
     tls_debug_hex("CLIENT_RANDOM", client_random, sizeof(client_random));
@@ -677,8 +689,24 @@ int nci_tls_client_handshake(neverc_tls_conn_t *conn,
 #endif
 
     /* Set handshake traffic keys */
-    nci_tls_derive_traffic_keys(server_hs_traffic_secret, &conn->read_keys, cipher_id);
-    nci_tls_derive_traffic_keys(client_hs_traffic_secret, &conn->write_keys, cipher_id);
+    if (nci_tls_derive_traffic_keys_checked(
+            server_hs_traffic_secret, &conn->read_keys, cipher_id) != 0 ||
+        nci_tls_derive_traffic_keys_checked(
+            client_hs_traffic_secret, &conn->write_keys, cipher_id) != 0) {
+        neverc_platform_secure_zero(
+            &conn->read_keys, sizeof(conn->read_keys));
+        neverc_platform_secure_zero(
+            &conn->write_keys, sizeof(conn->write_keys));
+        neverc_platform_secure_zero(
+            client_hs_traffic_secret, sizeof(client_hs_traffic_secret));
+        neverc_platform_secure_zero(
+            server_hs_traffic_secret, sizeof(server_hs_traffic_secret));
+        neverc_platform_secure_zero(
+            handshake_secret, sizeof(handshake_secret));
+        neverc_platform_secure_zero(shared_secret, sizeof(shared_secret));
+        neverc_platform_secure_zero(&ecdh_key, sizeof(ecdh_key));
+        return nci_tls_fail(conn, TLS_ALERT_INTERNAL_ERROR);
+    }
     conn->write_keys_active = 1;
 
     /* Read encrypted handshake messages (EncryptedExtensions, Certificate,
@@ -914,35 +942,43 @@ int nci_tls_client_handshake(neverc_tls_conn_t *conn,
     uint8_t empty_hash[32];
     neverc_sha256_sum(NULL, 0, empty_hash);
     uint8_t master_derived[32];
-    nci_tls_derive_secret(handshake_secret, "derived", 7, empty_hash, master_derived);
-
     uint8_t master_secret[32];
-    if (nci_tls_hkdf_extract_zero_ikm(
-            master_secret, master_derived, 32) != 0)
-        return -1;
-
     uint8_t client_app_secret[32];
     uint8_t server_app_secret[32];
-    nci_tls_derive_secret(master_secret, "c ap traffic", 12,
-                   transcript_hash_server_finished, client_app_secret);
-    nci_tls_derive_secret(master_secret, "s ap traffic", 12,
-                   transcript_hash_server_finished, server_app_secret);
-
     uint8_t transcript_hash_client_finished[32];
+    int key_schedule_result = -1;
+    if (nci_tls_derive_secret_checked(
+            handshake_secret, "derived", 7,
+            empty_hash, master_derived) != 0 ||
+        nci_tls_hkdf_extract_zero_ikm(
+            master_secret, master_derived, 32) != 0 ||
+        nci_tls_derive_secret_checked(
+            master_secret, "c ap traffic", 12,
+            transcript_hash_server_finished, client_app_secret) != 0 ||
+        nci_tls_derive_secret_checked(
+            master_secret, "s ap traffic", 12,
+            transcript_hash_server_finished, server_app_secret) != 0)
+        goto client_key_schedule_cleanup;
+
     {
         neverc_sha256_ctx copy = transcript;
         neverc_sha256_final(
             &copy, transcript_hash_client_finished);
     }
-    nci_tls_derive_secret(master_secret, "res master", 10,
-                  transcript_hash_client_finished,
-                  conn->resumption_master_secret);
-
-    nci_tls_set_application_keys(
-        conn, cipher_id, server_app_secret, client_app_secret);
+    if (nci_tls_derive_secret_checked(
+            master_secret, "res master", 10,
+            transcript_hash_client_finished,
+            conn->resumption_master_secret) != 0 ||
+        nci_tls_set_application_keys(
+            conn, cipher_id,
+            server_app_secret, client_app_secret) != 0)
+        goto client_key_schedule_cleanup;
 
     nci_tls_clear_handshake_buffer(conn);
     conn->handshake_done = 1;
+    key_schedule_result = 0;
+
+client_key_schedule_cleanup:
     neverc_platform_secure_zero(
         client_app_secret, sizeof(client_app_secret));
     neverc_platform_secure_zero(
@@ -957,7 +993,11 @@ int nci_tls_client_handshake(neverc_tls_conn_t *conn,
         handshake_secret, sizeof(handshake_secret));
     neverc_platform_secure_zero(shared_secret, sizeof(shared_secret));
     neverc_platform_secure_zero(&ecdh_key, sizeof(ecdh_key));
-    return 0;
+    neverc_platform_secure_zero(empty_hash, sizeof(empty_hash));
+    neverc_platform_secure_zero(
+        transcript_hash_client_finished,
+        sizeof(transcript_hash_client_finished));
+    return key_schedule_result;
 }
 
 /* ======================================================================
@@ -1984,13 +2024,30 @@ int nci_tls_server_handshake(neverc_tls_conn_t *conn,
 
     uint8_t client_hs_traffic_secret[32];
     uint8_t server_hs_traffic_secret[32];
-    nci_tls_derive_secret(handshake_secret, "c hs traffic", 12,
-                   transcript_hash_sh, client_hs_traffic_secret);
-    nci_tls_derive_secret(handshake_secret, "s hs traffic", 12,
-                   transcript_hash_sh, server_hs_traffic_secret);
-
-    nci_tls_derive_traffic_keys(server_hs_traffic_secret, &conn->write_keys, cipher_id);
-    nci_tls_derive_traffic_keys(client_hs_traffic_secret, &conn->read_keys, cipher_id);
+    if (nci_tls_derive_secret_checked(
+            handshake_secret, "c hs traffic", 12,
+            transcript_hash_sh, client_hs_traffic_secret) != 0 ||
+        nci_tls_derive_secret_checked(
+            handshake_secret, "s hs traffic", 12,
+            transcript_hash_sh, server_hs_traffic_secret) != 0 ||
+        nci_tls_derive_traffic_keys_checked(
+            server_hs_traffic_secret, &conn->write_keys, cipher_id) != 0 ||
+        nci_tls_derive_traffic_keys_checked(
+            client_hs_traffic_secret, &conn->read_keys, cipher_id) != 0) {
+        neverc_platform_secure_zero(
+            &conn->read_keys, sizeof(conn->read_keys));
+        neverc_platform_secure_zero(
+            &conn->write_keys, sizeof(conn->write_keys));
+        neverc_platform_secure_zero(
+            client_hs_traffic_secret, sizeof(client_hs_traffic_secret));
+        neverc_platform_secure_zero(
+            server_hs_traffic_secret, sizeof(server_hs_traffic_secret));
+        neverc_platform_secure_zero(
+            handshake_secret, sizeof(handshake_secret));
+        neverc_platform_secure_zero(shared_secret, sizeof(shared_secret));
+        neverc_platform_secure_zero(&ecdh_key, sizeof(ecdh_key));
+        return nci_tls_fail(conn, TLS_ALERT_INTERNAL_ERROR);
+    }
     conn->write_keys_active = 1;
 
     /* Send encrypted handshake messages */
@@ -2238,39 +2295,49 @@ int nci_tls_server_handshake(neverc_tls_conn_t *conn,
     uint8_t empty_hash[32];
     neverc_sha256_sum(NULL, 0, empty_hash);
     uint8_t master_derived[32];
-    nci_tls_derive_secret(handshake_secret, "derived", 7, empty_hash, master_derived);
-
     uint8_t master_secret[32];
-    if (nci_tls_hkdf_extract_zero_ikm(
-            master_secret, master_derived, 32) != 0)
-        return -1;
-
     uint8_t client_app_secret[32];
     uint8_t server_app_secret[32];
-    nci_tls_derive_secret(master_secret, "c ap traffic", 12,
-                   transcript_hash_server_finished, client_app_secret);
-    nci_tls_derive_secret(master_secret, "s ap traffic", 12,
-                   transcript_hash_server_finished, server_app_secret);
-
     uint8_t transcript_hash_client_finished[32];
+    int key_schedule_result = -1;
+    if (nci_tls_derive_secret_checked(
+            handshake_secret, "derived", 7,
+            empty_hash, master_derived) != 0 ||
+        nci_tls_hkdf_extract_zero_ikm(
+            master_secret, master_derived, 32) != 0 ||
+        nci_tls_derive_secret_checked(
+            master_secret, "c ap traffic", 12,
+            transcript_hash_server_finished, client_app_secret) != 0 ||
+        nci_tls_derive_secret_checked(
+            master_secret, "s ap traffic", 12,
+            transcript_hash_server_finished, server_app_secret) != 0)
+        goto server_key_schedule_cleanup;
+
     {
         neverc_sha256_ctx copy = transcript;
         neverc_sha256_final(
             &copy, transcript_hash_client_finished);
     }
-    nci_tls_derive_secret(master_secret, "res master", 10,
-                  transcript_hash_client_finished,
-                  conn->resumption_master_secret);
-
-    nci_tls_set_application_keys(
-        conn, cipher_id, client_app_secret, server_app_secret);
+    if (nci_tls_derive_secret_checked(
+            master_secret, "res master", 10,
+            transcript_hash_client_finished,
+            conn->resumption_master_secret) != 0 ||
+        nci_tls_set_application_keys(
+            conn, cipher_id,
+            client_app_secret, server_app_secret) != 0)
+        goto server_key_schedule_cleanup;
 
     nci_tls_clear_handshake_buffer(conn);
     conn->handshake_done = 1;
     if (cfg->client_auth == NEVERC_TLS_CLIENT_AUTH_NONE &&
-        nci_tls_send_new_session_ticket(conn) != 0)
-        return nci_tls_error(
+        nci_tls_send_new_session_ticket(conn) != 0) {
+        (void)nci_tls_error(
             conn, "failed to send TLS NewSessionTicket");
+        goto server_key_schedule_cleanup;
+    }
+    key_schedule_result = 0;
+
+server_key_schedule_cleanup:
     neverc_platform_secure_zero(
         client_app_secret, sizeof(client_app_secret));
     neverc_platform_secure_zero(
@@ -2285,7 +2352,11 @@ int nci_tls_server_handshake(neverc_tls_conn_t *conn,
         handshake_secret, sizeof(handshake_secret));
     neverc_platform_secure_zero(shared_secret, sizeof(shared_secret));
     neverc_platform_secure_zero(&ecdh_key, sizeof(ecdh_key));
-    return 0;
+    neverc_platform_secure_zero(empty_hash, sizeof(empty_hash));
+    neverc_platform_secure_zero(
+        transcript_hash_client_finished,
+        sizeof(transcript_hash_client_finished));
+    return key_schedule_result;
 }
 
 typedef enum {
@@ -2498,20 +2569,27 @@ static int tls_async_prepare_server_flight(
     neverc_sha256_ctx transcript_copy = async->transcript;
     neverc_sha256_final(
         &transcript_copy, transcript_hash_server_hello);
-    nci_tls_derive_secret(
-        async->handshake_secret, "c hs traffic", 12,
-        transcript_hash_server_hello,
-        async->client_hs_traffic_secret);
-    nci_tls_derive_secret(
-        async->handshake_secret, "s hs traffic", 12,
-        transcript_hash_server_hello,
-        async->server_hs_traffic_secret);
-    nci_tls_derive_traffic_keys(
-        async->server_hs_traffic_secret,
-        &conn->write_keys, async->cipher_id);
-    nci_tls_derive_traffic_keys(
-        async->client_hs_traffic_secret,
-        &conn->read_keys, async->cipher_id);
+    if (nci_tls_derive_secret_checked(
+            async->handshake_secret, "c hs traffic", 12,
+            transcript_hash_server_hello,
+            async->client_hs_traffic_secret) != 0 ||
+        nci_tls_derive_secret_checked(
+            async->handshake_secret, "s hs traffic", 12,
+            transcript_hash_server_hello,
+            async->server_hs_traffic_secret) != 0 ||
+        nci_tls_derive_traffic_keys_checked(
+            async->server_hs_traffic_secret,
+            &conn->write_keys, async->cipher_id) != 0 ||
+        nci_tls_derive_traffic_keys_checked(
+            async->client_hs_traffic_secret,
+            &conn->read_keys, async->cipher_id) != 0) {
+        neverc_platform_secure_zero(
+            &conn->read_keys, sizeof(conn->read_keys));
+        neverc_platform_secure_zero(
+            &conn->write_keys, sizeof(conn->write_keys));
+        (void)nci_tls_fail(conn, TLS_ALERT_INTERNAL_ERROR);
+        goto cleanup;
+    }
     conn->write_keys_active = 1;
 
     uint8_t encrypted_extensions[4 + 2 + 2 + 2 + 2 + 1 + 255];
@@ -2617,50 +2695,63 @@ static int tls_async_finish_server_handshake(
     uint8_t empty_hash[32];
     neverc_sha256_sum(NULL, 0, empty_hash);
     uint8_t master_derived[32];
-    nci_tls_derive_secret(
-        async->handshake_secret, "derived", 7,
-        empty_hash, master_derived);
     uint8_t master_secret[32];
-    if (nci_tls_hkdf_extract_zero_ikm(
-            master_secret, master_derived, 32) != 0)
-        return -1;
     uint8_t client_app_secret[32];
     uint8_t server_app_secret[32];
-    nci_tls_derive_secret(
-        master_secret, "c ap traffic", 12,
-        async->transcript_hash_server_finished,
-        client_app_secret);
-    nci_tls_derive_secret(
-        master_secret, "s ap traffic", 12,
-        async->transcript_hash_server_finished,
-        server_app_secret);
     uint8_t transcript_hash_client_finished[32];
-    neverc_sha256_ctx transcript_copy = async->transcript;
+    neverc_sha256_ctx transcript_copy;
+    int result = -1;
+    if (nci_tls_derive_secret_checked(
+            async->handshake_secret, "derived", 7,
+            empty_hash, master_derived) != 0 ||
+        nci_tls_hkdf_extract_zero_ikm(
+            master_secret, master_derived, 32) != 0 ||
+        nci_tls_derive_secret_checked(
+            master_secret, "c ap traffic", 12,
+            async->transcript_hash_server_finished,
+            client_app_secret) != 0 ||
+        nci_tls_derive_secret_checked(
+            master_secret, "s ap traffic", 12,
+            async->transcript_hash_server_finished,
+            server_app_secret) != 0)
+        goto cleanup;
+
+    transcript_copy = async->transcript;
     neverc_sha256_final(
         &transcript_copy, transcript_hash_client_finished);
-    nci_tls_derive_secret(
-        master_secret, "res master", 10,
-        transcript_hash_client_finished,
-        conn->resumption_master_secret);
-    nci_tls_set_application_keys(
-        conn, async->cipher_id,
-        client_app_secret, server_app_secret);
+    if (nci_tls_derive_secret_checked(
+            master_secret, "res master", 10,
+            transcript_hash_client_finished,
+            conn->resumption_master_secret) != 0 ||
+        nci_tls_set_application_keys(
+            conn, async->cipher_id,
+            client_app_secret, server_app_secret) != 0)
+        goto cleanup;
+
     nci_tls_clear_handshake_buffer(conn);
     conn->handshake_done = 1;
-    int ticket_result = 0;
-    if (cfg->client_auth == NEVERC_TLS_CLIENT_AUTH_NONE)
-        ticket_result = nci_tls_send_new_session_ticket(conn);
+    if (cfg->client_auth == NEVERC_TLS_CLIENT_AUTH_NONE &&
+        nci_tls_send_new_session_ticket(conn) != 0) {
+        (void)nci_tls_error(
+            conn, "failed to queue TLS NewSessionTicket");
+        goto cleanup;
+    }
+    async->phase = TLS_ASYNC_SERVER_FLUSH_FINAL;
+    result = 0;
+
+cleanup:
     neverc_platform_secure_zero(
         client_app_secret, sizeof(client_app_secret));
     neverc_platform_secure_zero(
         server_app_secret, sizeof(server_app_secret));
     neverc_platform_secure_zero(master_secret, sizeof(master_secret));
     neverc_platform_secure_zero(master_derived, sizeof(master_derived));
-    if (ticket_result != 0)
-        return nci_tls_error(
-            conn, "failed to queue TLS NewSessionTicket");
-    async->phase = TLS_ASYNC_SERVER_FLUSH_FINAL;
-    return 0;
+    neverc_platform_secure_zero(empty_hash, sizeof(empty_hash));
+    neverc_platform_secure_zero(
+        transcript_hash_client_finished,
+        sizeof(transcript_hash_client_finished));
+    neverc_platform_secure_zero(&transcript_copy, sizeof(transcript_copy));
+    return result;
 }
 
 static int tls_async_process_client_flight(

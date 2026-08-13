@@ -316,12 +316,18 @@ static int qt_derive_handshake_keys(quic_tls_t *tls,
     }
     uint8_t transcript_hash[32];
     qt_transcript_hash(tls, transcript_hash);
-    nci_tls_derive_secret(tls->handshake_secret, "c hs traffic", 12,
-                          transcript_hash, tls->client_hs_secret);
-    nci_tls_derive_secret(tls->handshake_secret, "s hs traffic", 12,
-                          transcript_hash, tls->server_hs_secret);
+    int derivation_result = 0;
+    if (nci_tls_derive_secret_checked(
+            tls->handshake_secret, "c hs traffic", 12,
+            transcript_hash, tls->client_hs_secret) != 0 ||
+        nci_tls_derive_secret_checked(
+            tls->handshake_secret, "s hs traffic", 12,
+            transcript_hash, tls->server_hs_secret) != 0)
+        derivation_result = -1;
     neverc_platform_secure_zero(shared_secret, sizeof(shared_secret));
     neverc_platform_secure_zero(transcript_hash, sizeof(transcript_hash));
+    if (derivation_result != 0)
+        return qt_fail(tls, "TLS traffic secret derivation failed");
     return qt_install_secret_pair(tls, QUIC_ENC_HANDSHAKE,
                                   tls->client_hs_secret,
                                   tls->server_hs_secret);
@@ -334,17 +340,24 @@ static int qt_derive_application_keys(quic_tls_t *tls,
     uint8_t master_derived[32];
     uint8_t master_secret[32];
     neverc_sha256_sum(NULL, 0, empty_hash);
-    nci_tls_derive_secret(tls->handshake_secret, "derived", 7,
-                          empty_hash, master_derived);
-    if (nci_tls_hkdf_extract_zero_ikm(master_secret, master_derived, 32) != 0)
-        return qt_fail(tls, "TLS master secret derivation failed");
-    nci_tls_derive_secret(master_secret, "c ap traffic", 12,
-                          server_finished_hash, tls->client_app_secret);
-    nci_tls_derive_secret(master_secret, "s ap traffic", 12,
-                          server_finished_hash, tls->server_app_secret);
+    int derivation_result = 0;
+    if (nci_tls_derive_secret_checked(
+            tls->handshake_secret, "derived", 7,
+            empty_hash, master_derived) != 0 ||
+        nci_tls_hkdf_extract_zero_ikm(
+            master_secret, master_derived, 32) != 0 ||
+        nci_tls_derive_secret_checked(
+            master_secret, "c ap traffic", 12,
+            server_finished_hash, tls->client_app_secret) != 0 ||
+        nci_tls_derive_secret_checked(
+            master_secret, "s ap traffic", 12,
+            server_finished_hash, tls->server_app_secret) != 0)
+        derivation_result = -1;
     neverc_platform_secure_zero(empty_hash, sizeof(empty_hash));
     neverc_platform_secure_zero(master_derived, sizeof(master_derived));
     neverc_platform_secure_zero(master_secret, sizeof(master_secret));
+    if (derivation_result != 0)
+        return qt_fail(tls, "TLS application secret derivation failed");
     if (qt_install_secret_pair(tls, QUIC_ENC_APPLICATION,
                                tls->client_app_secret,
                                tls->server_app_secret) != 0)

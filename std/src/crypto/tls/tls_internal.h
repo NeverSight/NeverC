@@ -333,7 +333,7 @@ int nci_tls_send_plain_record(
     neverc_tls_conn_t *conn, uint8_t content_type,
     const uint8_t *data, size_t len);
 int nci_tls_flush_pending_write(neverc_tls_conn_t *conn);
-void nci_tls_set_application_keys(
+int nci_tls_set_application_keys(
     neverc_tls_conn_t *conn, tls_cipher_id_t cipher,
     const uint8_t read_secret[TLS_HASH_SIZE_SHA256],
     const uint8_t write_secret[TLS_HASH_SIZE_SHA256]);

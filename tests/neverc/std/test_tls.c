@@ -29,6 +29,8 @@ static const char *TEST_CLIENT_KEY_PEM;
 int neverc_tls_test_config_set_handshake_fragment_size(
     neverc_tls_config_t *cfg, size_t fragment_size);
 int neverc_tls_test_handshake_reassembly(void);
+int neverc_tls_test_key_schedule_failures(void);
+int neverc_tls_test_record_write_failure(void);
 int neverc_tls_test_did_resume(neverc_tls_conn_t *conn);
 int neverc_tls_test_corrupt_client_session(
     neverc_tls_config_t *cfg);
@@ -98,6 +100,10 @@ static void test_config(void) {
 #if defined(NEVERC_TLS_TESTING)
     check_int("handshake_fragment_and_coalescing_reassembly",
               neverc_tls_test_handshake_reassembly(), 0);
+    check_int("key_schedule_failure_paths_are_atomic",
+              neverc_tls_test_key_schedule_failures(), 0);
+    check_int("record_write_failure_closes_without_advancing_sequence",
+              neverc_tls_test_record_write_failure(), 0);
     check_int("reject_oversized_test_fragment",
               neverc_tls_test_config_set_handshake_fragment_size(
                   cfg, 16385) != 0,

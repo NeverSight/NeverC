@@ -16,7 +16,7 @@ int nci_tls_hkdf_expand_label(
     const uint8_t *context, size_t context_len,
     uint8_t *out, size_t out_len);
 
-void nci_tls_derive_secret(
+int nci_tls_derive_secret_checked(
     const uint8_t *secret,
     const char *label, size_t label_len,
     const uint8_t *transcript_hash,
@@ -42,7 +42,7 @@ int nci_tls_derive_handshake_secret(
     const uint8_t *psk,
     uint8_t handshake_secret[32]);
 
-void nci_tls_derive_traffic_keys(
+int nci_tls_derive_traffic_keys_checked(
     const uint8_t *traffic_secret,
     tls_traffic_keys_t *keys,
     tls_cipher_id_t cipher);

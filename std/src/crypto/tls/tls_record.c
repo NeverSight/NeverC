@@ -18,18 +18,42 @@
 
 #define TLS_RECORD_WOULD_BLOCK (-2)
 
-void nci_tls_set_application_keys(
+static void nci_tls_secure_free(void *buffer, size_t length) {
+    if (!buffer) return;
+    neverc_platform_secure_zero(buffer, length);
+    free(buffer);
+}
+
+int nci_tls_set_application_keys(
     neverc_tls_conn_t *conn, tls_cipher_id_t cipher,
     const uint8_t read_secret[TLS_HASH_SIZE_SHA256],
     const uint8_t write_secret[TLS_HASH_SIZE_SHA256]) {
+    if (!conn || !read_secret || !write_secret)
+        return -1;
+    tls_traffic_keys_t read_keys;
+    tls_traffic_keys_t write_keys;
+    memset(&read_keys, 0, sizeof(read_keys));
+    memset(&write_keys, 0, sizeof(write_keys));
+    if (nci_tls_derive_traffic_keys_checked(
+            read_secret, &read_keys, cipher) != 0 ||
+        nci_tls_derive_traffic_keys_checked(
+            write_secret, &write_keys, cipher) != 0) {
+        neverc_platform_secure_zero(&read_keys, sizeof(read_keys));
+        neverc_platform_secure_zero(&write_keys, sizeof(write_keys));
+        return -1;
+    }
+
     memcpy(conn->read_traffic_secret, read_secret, TLS_HASH_SIZE_SHA256);
     memcpy(conn->write_traffic_secret, write_secret, TLS_HASH_SIZE_SHA256);
-    nci_tls_derive_traffic_keys(
-        conn->read_traffic_secret, &conn->read_keys, cipher);
-    nci_tls_derive_traffic_keys(
-        conn->write_traffic_secret, &conn->write_keys, cipher);
+    neverc_platform_secure_zero(&conn->read_keys, sizeof(conn->read_keys));
+    neverc_platform_secure_zero(&conn->write_keys, sizeof(conn->write_keys));
+    memcpy(&conn->read_keys, &read_keys, sizeof(read_keys));
+    memcpy(&conn->write_keys, &write_keys, sizeof(write_keys));
+    neverc_platform_secure_zero(&read_keys, sizeof(read_keys));
+    neverc_platform_secure_zero(&write_keys, sizeof(write_keys));
     conn->application_keys_active = 1;
     conn->non_advancing_records = 0;
+    return 0;
 }
 
 /* ======================================================================
@@ -141,8 +165,10 @@ int nci_tls_send_encrypted_unlocked(
         len > TLS_MAX_PLAINTEXT || conn->write_closed)
         return -1;
     tls_traffic_keys_t *keys = &conn->write_keys;
-    if (keys->seq == UINT64_MAX)
+    if (keys->seq == UINT64_MAX) {
+        conn->write_closed = 1;
         return -1;
+    }
 
     /* Build nonce: IV XOR sequence number (big-endian in last 8 bytes) */
     uint8_t nonce[12];
@@ -153,39 +179,66 @@ int nci_tls_send_encrypted_unlocked(
     /* Build plaintext with inner content type appended */
     size_t pt_len = len + 1; /* data + inner content type */
     uint8_t *plaintext = (uint8_t *)malloc(pt_len);
-    if (!plaintext) return -1;
+    if (!plaintext) {
+        neverc_platform_secure_zero(nonce, sizeof(nonce));
+        return -1;
+    }
     if (len > 0) memcpy(plaintext, data, len);
     plaintext[len] = inner_type;
 
     /* Record header (sent as APPLICATION_DATA for encrypted records) */
     size_t ct_len = pt_len + TLS_AEAD_TAG_SIZE;
-    uint8_t hdr[5];
+    uint8_t *record = (uint8_t *)malloc(TLS_RECORD_HEADER_SIZE + ct_len);
+    if (!record) {
+        neverc_platform_secure_zero(plaintext, pt_len);
+        free(plaintext);
+        neverc_platform_secure_zero(nonce, sizeof(nonce));
+        return -1;
+    }
+    uint8_t *hdr = record;
+    uint8_t *ciphertext = record + TLS_RECORD_HEADER_SIZE;
     hdr[0] = TLS_CT_APPLICATION_DATA;
     tls_put_u16(hdr + 1, TLS_LEGACY_VERSION);
     tls_put_u16(hdr + 3, (uint16_t)ct_len);
 
-    uint8_t *ciphertext = (uint8_t *)malloc(ct_len);
-    if (!ciphertext) { free(plaintext); return -1; }
-
+    int encrypt_result = -1;
     if (keys->id == TLS_CIPHER_AES_128_GCM_SHA256) {
         uint8_t tag[16];
-        neverc_gcm_seal(&keys->gcm, nonce, plaintext, pt_len,
-                         hdr, 5, ciphertext, tag);
-        memcpy(ciphertext + pt_len, tag, 16);
-    } else {
-        neverc_chacha20poly1305_seal(ciphertext, keys->key, nonce,
-                                      plaintext, pt_len, hdr, 5);
+        encrypt_result = neverc_gcm_seal(
+            &keys->gcm, nonce, plaintext, pt_len,
+            hdr, TLS_RECORD_HEADER_SIZE, ciphertext, tag);
+        if (encrypt_result == 0)
+            memcpy(ciphertext + pt_len, tag, sizeof(tag));
+        neverc_platform_secure_zero(tag, sizeof(tag));
+    } else if (keys->id == TLS_CIPHER_CHACHA20_POLY1305_SHA256) {
+        size_t sealed_len = neverc_chacha20poly1305_seal(
+            ciphertext, keys->key, nonce, plaintext, pt_len,
+            hdr, TLS_RECORD_HEADER_SIZE);
+        encrypt_result = sealed_len == ct_len ? 0 : -1;
     }
 
+    neverc_platform_secure_zero(plaintext, pt_len);
     free(plaintext);
-    keys->seq++;
+    neverc_platform_secure_zero(nonce, sizeof(nonce));
+    if (encrypt_result != 0) {
+        neverc_platform_secure_zero(
+            record, TLS_RECORD_HEADER_SIZE + ct_len);
+        free(record);
+        return -1;
+    }
 
-    int rc = 0;
-    if (nci_tls_conn_raw_write(conn, hdr, 5) != 0) rc = -1;
-    if (rc == 0 &&
-        nci_tls_conn_raw_write(conn, ciphertext, ct_len) != 0)
-        rc = -1;
-    free(ciphertext);
+    int rc = nci_tls_conn_raw_write(
+        conn, record, TLS_RECORD_HEADER_SIZE + ct_len);
+    neverc_platform_secure_zero(
+        record, TLS_RECORD_HEADER_SIZE + ct_len);
+    free(record);
+    if (rc == 0) {
+        keys->seq++;
+    } else {
+        /* A blocking transport may have written a prefix. The connection is
+         * no longer retryable, and closing it prevents nonce reuse. */
+        conn->write_closed = 1;
+    }
     return rc;
 }
 
@@ -283,6 +336,69 @@ void nci_tls_clear_handshake_buffer(neverc_tls_conn_t *conn) {
 }
 
 #if defined(NEVERC_TLS_TESTING)
+int neverc_tls_test_record_write_failure(void) {
+    static const tls_cipher_id_t ciphers[] = {
+        TLS_CIPHER_AES_128_GCM_SHA256,
+        TLS_CIPHER_CHACHA20_POLY1305_SHA256
+    };
+    uint8_t traffic_secret[TLS_HASH_SIZE_SHA256] = {0};
+    for (size_t i = 0; i < sizeof(ciphers) / sizeof(ciphers[0]); i++) {
+        neverc_tls_conn_t conn;
+        memset(&conn, 0, sizeof(conn));
+        conn.tcp = (neverc_tcp_conn_t *)(uintptr_t)1;
+        conn.nonblocking_io = 1;
+        conn.pending_write_len = TLS_MAX_PENDING_WRITE;
+        if (nci_tls_derive_traffic_keys_checked(
+                traffic_secret, &conn.write_keys, ciphers[i]) != 0) {
+            neverc_platform_secure_zero(&conn, sizeof(conn));
+            return -1;
+        }
+        conn.write_keys.seq = 7;
+
+        if (nci_tls_send_encrypted_unlocked(
+                &conn, TLS_CT_APPLICATION_DATA,
+                (const uint8_t *)"x", 1) != -1 ||
+            conn.write_keys.seq != 7 || !conn.write_closed) {
+            neverc_platform_secure_zero(&conn, sizeof(conn));
+            return -1;
+        }
+
+        memset(&conn, 0, sizeof(conn));
+        conn.tcp = (neverc_tcp_conn_t *)(uintptr_t)1;
+        if (nci_tls_derive_traffic_keys_checked(
+                traffic_secret, &conn.write_keys, ciphers[i]) != 0) {
+            neverc_platform_secure_zero(&conn, sizeof(conn));
+            return -1;
+        }
+        conn.write_keys.seq = UINT64_MAX;
+        if (nci_tls_send_encrypted_unlocked(
+                &conn, TLS_CT_APPLICATION_DATA,
+                (const uint8_t *)"x", 1) != -1 ||
+            !conn.write_closed) {
+            neverc_platform_secure_zero(&conn, sizeof(conn));
+            return -1;
+        }
+        neverc_platform_secure_zero(&conn, sizeof(conn));
+    }
+
+    neverc_tls_conn_t invalid;
+    memset(&invalid, 0, sizeof(invalid));
+    invalid.tcp = (neverc_tcp_conn_t *)(uintptr_t)1;
+    invalid.nonblocking_io = 1;
+    invalid.write_keys.id = (tls_cipher_id_t)99;
+    invalid.write_keys.seq = 9;
+    if (nci_tls_send_encrypted_unlocked(
+            &invalid, TLS_CT_APPLICATION_DATA,
+            (const uint8_t *)"x", 1) != -1 ||
+        invalid.write_keys.seq != 9 || invalid.write_closed ||
+        invalid.pending_write_len != 0) {
+        neverc_platform_secure_zero(&invalid, sizeof(invalid));
+        return -1;
+    }
+    neverc_platform_secure_zero(&invalid, sizeof(invalid));
+    return 0;
+}
+
 int neverc_tls_test_fuzz_handshake_reassembly(
     const uint8_t *data, size_t data_len) {
     neverc_tls_conn_t conn;
@@ -607,17 +723,23 @@ int nci_tls_recv_decrypt(neverc_tls_conn_t *conn,
     tls_put_u16(aad + 1, TLS_LEGACY_VERSION);
     tls_put_u16(aad + 3, (uint16_t)rec_len);
 
-    if (rec_len <= TLS_AEAD_TAG_SIZE)
+    if (rec_len <= TLS_AEAD_TAG_SIZE) {
+        neverc_platform_secure_zero(nonce, sizeof(nonce));
+        neverc_platform_secure_zero(aad, sizeof(aad));
         return nci_tls_protocol_error(
             conn, TLS_ALERT_BAD_RECORD_MAC,
             "TLS ciphertext is too short");
+    }
 
     size_t ct_body_len = rec_len - TLS_AEAD_TAG_SIZE;
     uint8_t *plaintext = (uint8_t *)malloc(ct_body_len);
-    if (!plaintext)
+    if (!plaintext) {
+        neverc_platform_secure_zero(nonce, sizeof(nonce));
+        neverc_platform_secure_zero(aad, sizeof(aad));
         return nci_tls_protocol_error(
             conn, TLS_ALERT_INTERNAL_ERROR,
             "TLS record allocation failed");
+    }
 
     int decrypt_ok = -1;
     if (keys->id == TLS_CIPHER_AES_128_GCM_SHA256) {
@@ -625,16 +747,18 @@ int nci_tls_recv_decrypt(neverc_tls_conn_t *conn,
         decrypt_ok = neverc_gcm_open(&keys->gcm, nonce,
                                        rec_data, ct_body_len,
                                        aad, 5, tag, plaintext);
-    } else {
+    } else if (keys->id == TLS_CIPHER_CHACHA20_POLY1305_SHA256) {
         int ptlen = neverc_chacha20poly1305_open(plaintext, keys->key, nonce,
                                                    rec_data, rec_len,
                                                    aad, 5);
         decrypt_ok = (ptlen >= 0) ? 0 : -1;
         if (decrypt_ok == 0) ct_body_len = (size_t)ptlen;
     }
+    neverc_platform_secure_zero(nonce, sizeof(nonce));
+    neverc_platform_secure_zero(aad, sizeof(aad));
 
     if (decrypt_ok != 0) {
-        free(plaintext);
+        nci_tls_secure_free(plaintext, ct_body_len);
         return nci_tls_protocol_error(
             conn, TLS_ALERT_BAD_RECORD_MAC,
             "TLS record authentication failed");
@@ -646,7 +770,7 @@ int nci_tls_recv_decrypt(neverc_tls_conn_t *conn,
     while (ct_body_len > 0 && plaintext[ct_body_len - 1] == 0)
         ct_body_len--;
     if (ct_body_len == 0) {
-        free(plaintext);
+        nci_tls_secure_free(plaintext, rec_len - TLS_AEAD_TAG_SIZE);
         return nci_tls_protocol_error(
             conn, TLS_ALERT_UNEXPECTED_MESSAGE,
             "TLS inner plaintext has no content type");
@@ -655,7 +779,7 @@ int nci_tls_recv_decrypt(neverc_tls_conn_t *conn,
     *out_inner_type = plaintext[ct_body_len - 1];
     ct_body_len--;
     if (ct_body_len > TLS_MAX_PLAINTEXT) {
-        free(plaintext);
+        nci_tls_secure_free(plaintext, rec_len - TLS_AEAD_TAG_SIZE);
         return nci_tls_protocol_error(
             conn, TLS_ALERT_RECORD_OVERFLOW,
             "TLS inner plaintext exceeds the configured limit");
@@ -663,7 +787,7 @@ int nci_tls_recv_decrypt(neverc_tls_conn_t *conn,
     if (*out_inner_type != TLS_CT_ALERT &&
         *out_inner_type != TLS_CT_HANDSHAKE &&
         *out_inner_type != TLS_CT_APPLICATION_DATA) {
-        free(plaintext);
+        nci_tls_secure_free(plaintext, rec_len - TLS_AEAD_TAG_SIZE);
         return nci_tls_protocol_error(
             conn, TLS_ALERT_UNEXPECTED_MESSAGE,
             "TLS inner plaintext has an invalid content type");
@@ -671,7 +795,7 @@ int nci_tls_recv_decrypt(neverc_tls_conn_t *conn,
     memcpy(out_data, plaintext, ct_body_len);
     *out_len = ct_body_len;
 
-    free(plaintext);
+    nci_tls_secure_free(plaintext, rec_len - TLS_AEAD_TAG_SIZE);
     return 0;
 }
 
