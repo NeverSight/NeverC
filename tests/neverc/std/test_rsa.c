@@ -47,6 +47,7 @@ static void test_keygen(void) {
     ASSERT_TRUE(!neverc_bigint_is_zero(&key.pub.n));
     ASSERT_TRUE(!neverc_bigint_is_zero(&key.d));
     ASSERT_TRUE(neverc_bigint_int64(&key.pub.e) == 65537);
+    ASSERT_TRUE(neverc_bigint_bit_len(&key.pub.n) == 512);
 
     int ks = neverc_rsa_key_size(&key.pub);
     ASSERT_TRUE(ks == 64);
@@ -74,6 +75,14 @@ static void test_encrypt_decrypt(void) {
     ASSERT_TRUE(pt_len == msg_len);
     ASSERT_TRUE(memcmp(pt, msg, msg_len) == 0);
 
+    memset(ct, 0, ct_len);
+    memset(pt, 0x5a, sizeof(pt));
+    pt_len = 99;
+    ASSERT_INT_EQ(neverc_rsa_decrypt_pkcs1v15(&key,
+        ct, ct_len, pt, sizeof(pt), &pt_len), -1);
+    ASSERT_TRUE(pt_len == 0);
+    ASSERT_TRUE(pt[0] == 0x5a);
+
     neverc_rsa_private_key_free(&key);
 }
 
@@ -99,6 +108,17 @@ static void test_sign_verify(void) {
     hash[0] ^= 0xFF;
     ASSERT_TRUE(neverc_rsa_verify_pkcs1v15_sha256(&key.pub, hash, 32,
         sig, sig_len) != 0);
+
+    neverc_bigint_t saved_dp;
+    neverc_bigint_init(&saved_dp);
+    neverc_bigint_set(&saved_dp, &key.dp);
+    neverc_bigint_set_int64(&key.dp, 0);
+    sig_len = 99;
+    ASSERT_INT_EQ(neverc_rsa_sign_pkcs1v15_sha256(&key, hash, 32,
+        sig, sizeof(sig), &sig_len), -1);
+    ASSERT_TRUE(sig_len == 0);
+    neverc_bigint_set(&key.dp, &saved_dp);
+    neverc_bigint_free(&saved_dp);
 
     neverc_rsa_private_key_free(&key);
 }

@@ -40,6 +40,9 @@ int  neverc_rsa_encrypt_pkcs1v15(const neverc_rsa_public_key_t *pub,
                                  const unsigned char *msg, size_t msg_len,
                                  unsigned char *out, size_t out_cap, size_t *out_len);
 
+/* Private operations use fresh multiplicative blinding and therefore can fail
+ * when the platform entropy source is unavailable. Output lengths are zeroed
+ * on every failure. */
 int  neverc_rsa_decrypt_pkcs1v15(const neverc_rsa_private_key_t *priv,
                                   const unsigned char *ct, size_t ct_len,
                                   unsigned char *out, size_t out_cap, size_t *out_len);

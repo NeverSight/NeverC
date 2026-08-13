@@ -1,7 +1,6 @@
 #include "neverc/std/math/rand.h"
 #include "neverc/std/math.h"
 #include "neverc/std/_platform.h"
-#include <string.h>
 
 /*
  * xoshiro256** PRNG — fast, high quality, period 2^256-1.
@@ -129,15 +128,18 @@ int64_t neverc_rand_int63n(int64_t n) {
 }
 
 void neverc_rand_read(void *buf, size_t len) {
+    if (!buf && len != 0) return;
     uint8_t *p = (uint8_t *)buf;
     while (len >= 8) {
         uint64_t v = next();
-        memcpy(p, &v, 8);
+        for (int i = 0; i < 8; i++)
+            p[i] = (uint8_t)(v >> (8 * i));
         p += 8; len -= 8;
     }
     if (len > 0) {
         uint64_t v = next();
-        memcpy(p, &v, len);
+        for (size_t i = 0; i < len; i++)
+            p[i] = (uint8_t)(v >> (8 * i));
     }
 }
 
@@ -465,6 +467,7 @@ double neverc_rand_exp_float64(void) {
 }
 
 void neverc_rand_perm(int n, int *out) {
+    if (n <= 0 || !out) return;
     for (int i = 0; i < n; i++) out[i] = i;
     for (int i = n - 1; i > 0; i--) {
         int j = (int)neverc_rand_intn((int64_t)(i + 1));
@@ -473,6 +476,7 @@ void neverc_rand_perm(int n, int *out) {
 }
 
 void neverc_rand_shuffle(int n, void (*swap)(int i, int j)) {
+    if (n <= 1 || !swap) return;
     for (int i = n - 1; i > 0; i--) {
         int j = (int)neverc_rand_intn((int64_t)(i + 1));
         swap(i, j);
@@ -515,7 +519,7 @@ static double zipf_hinv(const neverc_rand_zipf_t *z, double x) {
 }
 
 int neverc_rand_zipf_init(neverc_rand_zipf_t *z, double s, double v, uint64_t imax) {
-    if (s <= 1.0 || v < 1.0) return 0;
+    if (!z || s <= 1.0 || v < 1.0) return 0;
     z->imax = (double)imax;
     z->v = v;
     z->q = s;
@@ -528,6 +532,7 @@ int neverc_rand_zipf_init(neverc_rand_zipf_t *z, double s, double v, uint64_t im
 }
 
 uint64_t neverc_rand_zipf_uint64(neverc_rand_zipf_t *z) {
+    if (!z) return 0;
     double k = 0.0;
     for (;;) {
         double r = neverc_rand_float64();

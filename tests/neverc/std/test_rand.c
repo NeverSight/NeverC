@@ -450,6 +450,27 @@ static void test_read(void) {
 
     neverc_rand_read(small, 0);
     check_true("read handles zero length", 1);
+
+    neverc_rand_seed(55555);
+    uint64_t word = neverc_rand_uint64();
+    neverc_rand_seed(55555);
+    unsigned char encoded[8];
+    neverc_rand_read(encoded, sizeof(encoded));
+    int little_endian = 1;
+    for (int i = 0; i < 8; i++) {
+        if (encoded[i] != (unsigned char)(word >> (8 * i))) {
+            little_endian = 0;
+            break;
+        }
+    }
+    check_true("read byte stream is platform independent", little_endian);
+
+    neverc_rand_seed(66666);
+    uint64_t expected_next = neverc_rand_uint64();
+    neverc_rand_seed(66666);
+    neverc_rand_read(NULL, 1);
+    check_true("null read is ignored without consuming state",
+               neverc_rand_uint64() == expected_next);
 }
 
 static void test_perm(void) {
@@ -470,6 +491,10 @@ static void test_perm(void) {
     check_true("perm preserves elements (sum)", sum == 45);
     check_true("perm all elements present", all_seen);
     check_true("perm reorders", !identity);
+
+    neverc_rand_perm(1, NULL);
+    neverc_rand_shuffle(2, NULL);
+    check_true("null permutation callbacks are ignored", 1);
 }
 
 static void test_zipf(void) {
@@ -479,6 +504,10 @@ static void test_zipf(void) {
 
     check_true("zipf init fails for s<=1", neverc_rand_zipf_init(&z, 0.5, 1.0, 100) == 0);
     check_true("zipf init fails for v<1", neverc_rand_zipf_init(&z, 2.0, 0.5, 100) == 0);
+    check_true("zipf init rejects null output",
+               neverc_rand_zipf_init(NULL, 2.0, 1.0, 100) == 0);
+    check_true("zipf null generator is harmless",
+               neverc_rand_zipf_uint64(NULL) == 0);
     check_true("zipf init succeeds", neverc_rand_zipf_init(&z, 2.0, 1.0, 100) == 1);
 
     int all_in_range = 1;

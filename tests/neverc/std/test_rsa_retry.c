@@ -54,6 +54,7 @@ static void test_keygen_rejects_unusable_primes(void) {
         neverc_rsa_private_key_t key;
         neverc_rsa_private_key_init(&key);
         ASSERT_TRUE(neverc_rsa_generate_key(&key, KEY_BITS) == 0);
+        ASSERT_TRUE(neverc_bigint_bit_len(&key.pub.n) == KEY_BITS);
 
         neverc_bigint_t one, pm1, qm1, phi, t;
         neverc_bigint_init(&one); neverc_bigint_init(&pm1);

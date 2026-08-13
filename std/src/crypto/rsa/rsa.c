@@ -28,16 +28,19 @@ static void rsa_bigint_secure_reset(neverc_bigint_t *value) {
 }
 
 void neverc_rsa_public_key_init(neverc_rsa_public_key_t *k) {
+    if (!k) return;
     neverc_bigint_init(&k->n);
     neverc_bigint_init(&k->e);
 }
 
 void neverc_rsa_public_key_free(neverc_rsa_public_key_t *k) {
+    if (!k) return;
     neverc_bigint_free(&k->n);
     neverc_bigint_free(&k->e);
 }
 
 void neverc_rsa_private_key_init(neverc_rsa_private_key_t *k) {
+    if (!k) return;
     neverc_rsa_public_key_init(&k->pub);
     neverc_bigint_init(&k->d);
     neverc_bigint_init(&k->p);
@@ -79,7 +82,14 @@ static int random_bigint(neverc_bigint_t *r, int bits) {
     }
     unsigned excess_bits = (unsigned)(bytes * 8 - bits);
     buf[0] &= (unsigned char)(0xffU >> excess_bits);
+    /* Keep both top bits set. Besides avoiding undersized RSA moduli when two
+     * independently generated factors multiply below the requested boundary,
+     * this satisfies the usual probable-prime lower-bound requirement. */
     buf[0] |= (unsigned char)(0x80U >> excess_bits);
+    if (excess_bits == 7)
+        buf[1] |= 0x80U;
+    else
+        buf[0] |= (unsigned char)(0x40U >> excess_bits);
     buf[bytes - 1] |= 0x01;
 
     int pos = 0;
@@ -221,10 +231,10 @@ static int mod_inverse(neverc_bigint_t *r, const neverc_bigint_t *a, const never
     if (invertible)
         neverc_bigint_mod(r, &old_s, m);
 
-    neverc_bigint_free(&old_r); neverc_bigint_free(&rr);
-    neverc_bigint_free(&old_s); neverc_bigint_free(&s);
-    neverc_bigint_free(&q); neverc_bigint_free(&tmp);
-    neverc_bigint_free(&prod);
+    rsa_bigint_secure_free(&old_r); rsa_bigint_secure_free(&rr);
+    rsa_bigint_secure_free(&old_s); rsa_bigint_secure_free(&s);
+    rsa_bigint_secure_free(&q); rsa_bigint_secure_free(&tmp);
+    rsa_bigint_secure_free(&prod);
     return invertible ? 0 : -1;
 }
 
@@ -268,6 +278,8 @@ int neverc_rsa_generate_key(neverc_rsa_private_key_t *key, int bits) {
             break;
         if (neverc_bigint_cmp(&key->p, &key->q) == 0) continue;
 
+        neverc_bigint_mul(&key->pub.n, &key->p, &key->q);
+        if (neverc_bigint_bit_len(&key->pub.n) != bits) continue;
         neverc_bigint_sub(&pm1, &key->p, &one);
         neverc_bigint_sub(&qm1, &key->q, &one);
         neverc_bigint_mul(&phi, &pm1, &qm1);
@@ -278,7 +290,6 @@ int neverc_rsa_generate_key(neverc_rsa_private_key_t *key, int bits) {
     }
 
     if (ok) {
-        neverc_bigint_mul(&key->pub.n, &key->p, &key->q);
         neverc_bigint_mod(&key->dp, &key->d, &pm1);
         neverc_bigint_mod(&key->dq, &key->d, &qm1);
     } else {
@@ -423,29 +434,101 @@ fail_em:
  * ~3-4x faster RSA private operation. dp/dq/qinv are precomputed at key gen.
  * Falls back to the plain full-width exponent if the CRT factors are absent.
  */
-static void rsa_private_exp(neverc_bigint_t *out, const neverc_bigint_t *base,
-                            const neverc_rsa_private_key_t *priv) {
+static void rsa_private_exp_raw(neverc_bigint_t *out,
+                                const neverc_bigint_t *base,
+                                const neverc_rsa_private_key_t *priv) {
     if (priv->p.len == 0 || priv->q.len == 0) {
         neverc_bigint_exp(out, base, &priv->d, &priv->pub.n);
-        return;
+    } else {
+        neverc_bigint_t m1, m2, h, t;
+        neverc_bigint_init(&m1); neverc_bigint_init(&m2);
+        neverc_bigint_init(&h);  neverc_bigint_init(&t);
+
+        neverc_bigint_exp(&m1, base, &priv->dp, &priv->p);
+        neverc_bigint_exp(&m2, base, &priv->dq, &priv->q);
+        neverc_bigint_sub(&h, &m1, &m2);
+        neverc_bigint_mod(&h, &h, &priv->p);
+        neverc_bigint_mul(&h, &h, &priv->qinv);
+        neverc_bigint_mod(&h, &h, &priv->p);
+        neverc_bigint_mul(&t, &h, &priv->q);
+        neverc_bigint_add(out, &m2, &t);
+
+        rsa_bigint_secure_free(&m1); rsa_bigint_secure_free(&m2);
+        rsa_bigint_secure_free(&h);  rsa_bigint_secure_free(&t);
     }
-    neverc_bigint_t m1, m2, h, t;
-    neverc_bigint_init(&m1); neverc_bigint_init(&m2);
-    neverc_bigint_init(&h);  neverc_bigint_init(&t);
+}
 
-    neverc_bigint_exp(&m1, base, &priv->dp, &priv->p);   /* c^dp mod p */
-    neverc_bigint_exp(&m2, base, &priv->dq, &priv->q);   /* c^dq mod q */
+static int rsa_private_exp(neverc_bigint_t *out, const neverc_bigint_t *base,
+                           const neverc_rsa_private_key_t *priv) {
+    int key_bytes = neverc_rsa_key_size(&priv->pub);
+    if (key_bytes <= 0 || neverc_bigint_sign(&priv->pub.e) <= 0)
+        return -1;
 
-    neverc_bigint_sub(&h, &m1, &m2);                      /* m1 - m2 (may be < 0) */
-    neverc_bigint_mod(&h, &h, &priv->p);                 /* normalize into [0,p) */
-    neverc_bigint_mul(&h, &h, &priv->qinv);
-    neverc_bigint_mod(&h, &h, &priv->p);                 /* h = qinv*(m1-m2) mod p */
+    unsigned char *random_bytes =
+        (unsigned char *)malloc((size_t)key_bytes);
+    if (!random_bytes)
+        return -1;
 
-    neverc_bigint_mul(&t, &h, &priv->q);
-    neverc_bigint_add(out, &m2, &t);                     /* m = m2 + h*q, in [0,n) */
+    neverc_bigint_t factor, inverse, factor_to_e, blinded_base;
+    neverc_bigint_t blinded_result, checked, expected;
+    neverc_bigint_init(&factor);
+    neverc_bigint_init(&inverse);
+    neverc_bigint_init(&factor_to_e);
+    neverc_bigint_init(&blinded_base);
+    neverc_bigint_init(&blinded_result);
+    neverc_bigint_init(&checked);
+    neverc_bigint_init(&expected);
 
-    rsa_bigint_secure_free(&m1); rsa_bigint_secure_free(&m2);
-    rsa_bigint_secure_free(&h);  rsa_bigint_secure_free(&t);
+    int result = -1;
+    int have_factor = 0;
+    for (int attempt = 0; attempt < 32; attempt++) {
+        if (NCI_RSA_RANDOM(random_bytes, (size_t)key_bytes) != 0)
+            goto cleanup;
+        if (bytes_to_bigint(
+                &factor, random_bytes, (size_t)key_bytes) != 0)
+            goto cleanup;
+        neverc_bigint_mod(&factor, &factor, &priv->pub.n);
+        if (neverc_bigint_sign(&factor) > 0 &&
+            mod_inverse(&inverse, &factor, &priv->pub.n) == 0) {
+            have_factor = 1;
+            break;
+        }
+    }
+    if (!have_factor)
+        goto cleanup;
+
+    /* Multiplicative blinding keeps the private exponentiation independent of
+     * attacker-controlled ciphertext or encoded-message values. */
+    neverc_bigint_exp(
+        &factor_to_e, &factor, &priv->pub.e, &priv->pub.n);
+    neverc_bigint_mul(&blinded_base, base, &factor_to_e);
+    neverc_bigint_mod(
+        &blinded_base, &blinded_base, &priv->pub.n);
+    rsa_private_exp_raw(&blinded_result, &blinded_base, priv);
+    neverc_bigint_mul(out, &blinded_result, &inverse);
+    neverc_bigint_mod(out, out, &priv->pub.n);
+
+    /* A transient private-operation fault can reveal a factor of n from one
+     * faulty CRT signature. Verify every result with the public exponent before
+     * releasing it to callers. */
+    neverc_bigint_exp(&checked, out, &priv->pub.e, &priv->pub.n);
+    neverc_bigint_mod(&expected, base, &priv->pub.n);
+    if (neverc_bigint_cmp(&checked, &expected) == 0)
+        result = 0;
+
+cleanup:
+    neverc_platform_secure_zero(random_bytes, (size_t)key_bytes);
+    free(random_bytes);
+    rsa_bigint_secure_free(&factor);
+    rsa_bigint_secure_free(&inverse);
+    rsa_bigint_secure_free(&factor_to_e);
+    rsa_bigint_secure_free(&blinded_base);
+    rsa_bigint_secure_free(&blinded_result);
+    rsa_bigint_secure_free(&checked);
+    rsa_bigint_secure_free(&expected);
+    if (result != 0)
+        rsa_bigint_secure_reset(out);
+    return result;
 }
 
 int neverc_rsa_decrypt_pkcs1v15(const neverc_rsa_private_key_t *priv,
@@ -465,7 +548,8 @@ int neverc_rsa_decrypt_pkcs1v15(const neverc_rsa_private_key_t *priv,
         goto fail_bigints;
     if (neverc_bigint_cmp(&c, &priv->pub.n) >= 0)
         goto fail_bigints;
-    rsa_private_exp(&m, &c, priv);
+    if (rsa_private_exp(&m, &c, priv) != 0)
+        goto fail_bigints;
 
     unsigned char *em = (unsigned char *)malloc((size_t)k);
     if (!em)
@@ -473,21 +557,29 @@ int neverc_rsa_decrypt_pkcs1v15(const neverc_rsa_private_key_t *priv,
     if (bigint_to_bytes(&m, em, k) != 0)
         goto fail_em;
 
-    if (em[0] != 0x00 || em[1] != 0x02)
-        goto fail_em;
+    /* Scan the complete encoding before deciding whether it is valid. Stopping
+     * at the first malformed byte turns this API into a PKCS#1 v1.5 padding
+     * oracle even though every failure returns the same error code. */
+    unsigned int invalid = em[0] | (unsigned int)(em[1] ^ 0x02U);
+    size_t separator = 0;
+    unsigned int looking = 1;
+    for (size_t i = 2; i < (size_t)k; i++) {
+        unsigned int is_zero = (em[i] == 0);
+        unsigned int select = looking & is_zero;
+        size_t mask = (size_t)0 - (size_t)select;
+        separator = (separator & ~mask) | (i & mask);
+        looking &= is_zero ^ 1U;
+    }
+    invalid |= looking;
+    invalid |= (separator < 10);
 
-    int i = 2;
-    while (i < k && em[i] != 0) i++;
-    if (i < 10 || i >= k)
-        goto fail_em;
-    i++;
-
-    size_t msg_len = (size_t)(k - i);
-    if (msg_len > out_cap)
+    size_t message_start = separator + 1U;
+    size_t msg_len = (size_t)k - message_start;
+    if (invalid != 0 || msg_len > out_cap)
         goto fail_em;
 
     if (msg_len > 0)
-        memcpy(out, em + i, msg_len);
+        memcpy(out, em + message_start, msg_len);
     *out_len = msg_len;
 
     neverc_bigint_free(&c);
@@ -558,7 +650,13 @@ int neverc_rsa_sign_pkcs1v15_sha256(const neverc_rsa_private_key_t *priv,
         free(em);
         return -1;
     }
-    rsa_private_exp(&s, &m, priv);
+    if (rsa_private_exp(&s, &m, priv) != 0) {
+        rsa_bigint_secure_free(&m);
+        rsa_bigint_secure_free(&s);
+        neverc_platform_secure_zero(em, (size_t)k);
+        free(em);
+        return -1;
+    }
     if (bigint_to_bytes(&s, sig, k) != 0) {
         rsa_bigint_secure_free(&m);
         rsa_bigint_secure_free(&s);

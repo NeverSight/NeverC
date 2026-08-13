@@ -27,6 +27,7 @@ double   neverc_rand_float64(void);
 float    neverc_rand_float32(void);
 double   neverc_rand_norm_float64(void);
 double   neverc_rand_exp_float64(void);
+/* Writes a deterministic little-endian byte stream. A NULL buffer is ignored. */
 void     neverc_rand_read(void *buf, size_t len);
 void     neverc_rand_perm(int n, int *out);
 void     neverc_rand_shuffle(int n, void (*swap)(int i, int j));
