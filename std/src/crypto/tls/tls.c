@@ -41,7 +41,8 @@ static const char k_tls_allocation_failed[] =
 
 neverc_tls_conn_t *nci_tls_start_handshake(
     neverc_tcp_conn_t *tcp, neverc_tls_config_t *cfg,
-    int from_server, int owns_tcp, const char **errp) {
+    int from_server, int owns_tcp, neverc_context_t *ctx,
+    const char **errp) {
     if (errp)
         *errp = NULL;
     if (!tcp || !cfg ||
@@ -52,9 +53,11 @@ neverc_tls_conn_t *nci_tls_start_handshake(
              NEVERC_TLS_CLIENT_AUTH_REQUIRE_AND_VERIFY &&
          !cfg->root_certificates) ||
         (!from_server && !cfg->skip_verify &&
-         (!cfg->server_name || cfg->server_name[0] == '\0'))) {
+         (!cfg->server_name || cfg->server_name[0] == '\0')) ||
+        (ctx && neverc_context_done(ctx))) {
         if (errp)
-            *errp = k_tls_invalid_argument;
+            *errp = ctx && neverc_context_done(ctx)
+                ? neverc_context_err(ctx) : k_tls_invalid_argument;
         return NULL;
     }
 
@@ -71,9 +74,13 @@ neverc_tls_conn_t *nci_tls_start_handshake(
     conn->test_handshake_fragment_size =
         cfg->test_handshake_fragment_size;
 #endif
+    conn->read_context = ctx;
+    conn->write_context = ctx;
     int result = from_server ?
         nci_tls_server_handshake(conn, cfg) :
         nci_tls_client_handshake(conn, cfg);
+    conn->read_context = NULL;
+    conn->write_context = NULL;
     if (result != 0) {
         const char *failure_reason = conn->failure_reason;
         conn->owns_tcp = 0;
@@ -104,7 +111,7 @@ neverc_tls_conn_t *neverc_tls_dial(const char *addr,
         return NULL;
     }
     neverc_tls_conn_t *conn =
-        nci_tls_start_handshake(tcp, cfg, 0, 1, errp);
+        nci_tls_start_handshake(tcp, cfg, 0, 1, NULL, errp);
     if (!conn)
         neverc_tcp_close(tcp);
     return conn;
@@ -120,7 +127,7 @@ neverc_tls_conn_t *neverc_tls_server(neverc_tcp_conn_t *tcp,
                                       neverc_tls_config_t *cfg,
                                       const char **errp) {
 #if defined(NEVERC_TLS_ENABLE_EXPERIMENTAL_TRANSPORT)
-    return nci_tls_start_handshake(tcp, cfg, 1, 0, errp);
+    return nci_tls_start_handshake(tcp, cfg, 1, 0, NULL, errp);
 #else
     (void)tcp;
     (void)cfg;
@@ -133,10 +140,28 @@ neverc_tls_conn_t *neverc_tls_client(neverc_tcp_conn_t *tcp,
                                       neverc_tls_config_t *cfg,
                                       const char **errp) {
 #if defined(NEVERC_TLS_ENABLE_EXPERIMENTAL_TRANSPORT)
-    return nci_tls_start_handshake(tcp, cfg, 0, 0, errp);
+    return nci_tls_start_handshake(tcp, cfg, 0, 0, NULL, errp);
 #else
     (void)tcp;
     (void)cfg;
+    tls_set_unavailable(errp);
+    return NULL;
+#endif
+}
+
+neverc_tls_conn_t *neverc_tls_client_context(
+    neverc_tcp_conn_t *tcp, neverc_tls_config_t *cfg,
+    neverc_context_t *ctx, const char **errp) {
+#if defined(NEVERC_TLS_ENABLE_EXPERIMENTAL_TRANSPORT)
+    if (!ctx) {
+        if (errp) *errp = k_tls_invalid_argument;
+        return NULL;
+    }
+    return nci_tls_start_handshake(tcp, cfg, 0, 0, ctx, errp);
+#else
+    (void)tcp;
+    (void)cfg;
+    (void)ctx;
     tls_set_unavailable(errp);
     return NULL;
 #endif
@@ -667,7 +692,7 @@ neverc_tls_conn_t *neverc_tls_accept(neverc_tls_listener_t *ln,
     if (!tcp)
         return NULL;
     neverc_tls_conn_t *conn =
-        nci_tls_start_handshake(tcp, ln->cfg, 1, 1, errp);
+        nci_tls_start_handshake(tcp, ln->cfg, 1, 1, NULL, errp);
     if (!conn)
         neverc_tcp_close(tcp);
     return conn;

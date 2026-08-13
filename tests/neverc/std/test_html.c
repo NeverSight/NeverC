@@ -88,6 +88,25 @@ static void test_unescape(void) {
     check_str("quot entity", r6, "\"hi\"");
     free(r6);
 
+    char *r7 = neverc_html_unescape_string("a&#;b", &outlen);
+    check_str("empty numeric entity stays literal", r7, "a&#;b");
+    check_true("empty numeric entity has no hidden NUL", outlen == 5);
+    free(r7);
+
+    char *r8 = neverc_html_unescape_string("a&#x;b", &outlen);
+    check_str("empty hex entity stays literal", r8, "a&#x;b");
+    free(r8);
+
+    char *r9 = neverc_html_unescape_string("a&#0;b", &outlen);
+    check_str("numeric NUL becomes replacement", r9, "a?b");
+    check_true("numeric NUL length stays visible", outlen == 3);
+    free(r9);
+
+    char *r10 = neverc_html_unescape_string(
+        "a&#184467440737095516160;b", &outlen);
+    check_str("overflowing numeric entity becomes replacement", r10, "a?b");
+    free(r10);
+
     outlen = 123;
     check_true("unescape rejects NULL input",
                neverc_html_unescape_string(NULL, &outlen) == NULL);

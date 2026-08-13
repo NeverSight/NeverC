@@ -9,10 +9,13 @@
 #else
 #include <errno.h>
 #include <poll.h>
+#include <pthread.h>
 #include <time.h>
 #endif
 
 #include <stdio.h>
+#include <stdatomic.h>
+#include <stdlib.h>
 #include <string.h>
 
 static neverc_net_result_t tcp_context_result(neverc_net_status_t status,
@@ -84,6 +87,89 @@ static int tcp_connect_in_progress(int error) {
 #endif
 }
 
+#define TCP_RESOLVER_MAX_WORKERS 32
+
+typedef struct {
+    char host[256];
+    char service[8];
+    struct addrinfo *result;
+    int resolve_error;
+    atomic_int done;
+    atomic_int references;
+} tcp_resolver_job_t;
+
+static atomic_int tcp_resolver_workers = ATOMIC_VAR_INIT(0);
+
+static void tcp_resolver_job_release(tcp_resolver_job_t *job) {
+    if (!job) return;
+    if (atomic_fetch_sub_explicit(
+            &job->references, 1, memory_order_acq_rel) == 1) {
+        if (job->result) freeaddrinfo(job->result);
+        free(job);
+    }
+}
+
+#ifdef _WIN32
+static DWORD WINAPI tcp_resolver_worker(LPVOID argument) {
+#else
+static void *tcp_resolver_worker(void *argument) {
+#endif
+    tcp_resolver_job_t *job = (tcp_resolver_job_t *)argument;
+    struct addrinfo hints;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+#ifdef AI_NUMERICSERV
+    hints.ai_flags = AI_NUMERICSERV;
+#endif
+    job->resolve_error = getaddrinfo(
+        job->host, job->service, &hints, &job->result);
+    atomic_store_explicit(&job->done, 1, memory_order_release);
+    atomic_fetch_sub_explicit(
+        &tcp_resolver_workers, 1, memory_order_acq_rel);
+    tcp_resolver_job_release(job);
+#ifdef _WIN32
+    return 0;
+#else
+    return NULL;
+#endif
+}
+
+static int tcp_resolver_start(tcp_resolver_job_t *job) {
+    int workers = atomic_fetch_add_explicit(
+        &tcp_resolver_workers, 1, memory_order_acq_rel);
+    if (workers >= TCP_RESOLVER_MAX_WORKERS) {
+        atomic_fetch_sub_explicit(
+            &tcp_resolver_workers, 1, memory_order_acq_rel);
+        return -1;
+    }
+
+    atomic_fetch_add_explicit(
+        &job->references, 1, memory_order_relaxed);
+#ifdef _WIN32
+    HANDLE thread = CreateThread(
+        NULL, 0, tcp_resolver_worker, job, 0, NULL);
+    if (!thread) {
+        atomic_fetch_sub_explicit(
+            &tcp_resolver_workers, 1, memory_order_acq_rel);
+        tcp_resolver_job_release(job);
+        return -1;
+    }
+    (void)CloseHandle(thread);
+#else
+    pthread_t thread;
+    if (pthread_create(
+            &thread, NULL, tcp_resolver_worker, job) != 0) {
+        atomic_fetch_sub_explicit(
+            &tcp_resolver_workers, 1, memory_order_acq_rel);
+        tcp_resolver_job_release(job);
+        return -1;
+    }
+    (void)pthread_detach(thread);
+#endif
+    return 0;
+}
+
 neverc_net_result_t neverc_tcp_dial_context(const char *addr,
                                              neverc_context_t *ctx,
                                              neverc_tcp_conn_t **conn_out) {
@@ -111,10 +197,59 @@ neverc_net_result_t neverc_tcp_dial_context(const char *addr,
     hints.ai_socktype = SOCK_STREAM;
     char port_text[8];
     snprintf(port_text, sizeof(port_text), "%u", port);
+    hints.ai_flags = AI_NUMERICHOST;
+#ifdef AI_NUMERICSERV
+    hints.ai_flags |= AI_NUMERICSERV;
+#endif
     int resolve_error = getaddrinfo(host, port_text, &hints, &result);
-    if (resolve_error != 0)
+    if (resolve_error != 0 && ctx) {
+        tcp_resolver_job_t *job =
+            (tcp_resolver_job_t *)calloc(1, sizeof(*job));
+        if (!job)
+            return tcp_context_result(
+                NEVERC_NET_NOMEM, 0, "dial", 0);
+        memcpy(job->host, host, strlen(host) + 1U);
+        memcpy(job->service, port_text, strlen(port_text) + 1U);
+        atomic_init(&job->done, 0);
+        atomic_init(&job->references, 1);
+        if (tcp_resolver_start(job) != 0) {
+            tcp_resolver_job_release(job);
+            return tcp_context_result(
+                NEVERC_NET_SYSTEM, 0, "dial", 0);
+        }
+        while (!atomic_load_explicit(
+                   &job->done, memory_order_acquire)) {
+            context_status = tcp_context_status(ctx);
+            if (context_status != NEVERC_NET_OK) {
+                tcp_resolver_job_release(job);
+                return tcp_context_result(
+                    context_status, 0, "dial", 0);
+            }
+            tcp_context_pause();
+        }
+        context_status = tcp_context_status(ctx);
+        if (context_status != NEVERC_NET_OK) {
+            tcp_resolver_job_release(job);
+            return tcp_context_result(
+                context_status, 0, "dial", 0);
+        }
+        result = job->result;
+        job->result = NULL;
+        resolve_error = job->resolve_error;
+        tcp_resolver_job_release(job);
+    } else if (resolve_error != 0) {
+        hints.ai_flags = 0;
+#ifdef AI_NUMERICSERV
+        hints.ai_flags = AI_NUMERICSERV;
+#endif
+        resolve_error =
+            getaddrinfo(host, port_text, &hints, &result);
+    }
+    if (resolve_error != 0) {
+        if (result) freeaddrinfo(result);
         return tcp_context_result(NEVERC_NET_RESOLVE, resolve_error,
                                   "dial", 0);
+    }
 
     int last_error = 0;
     for (struct addrinfo *candidate = result; candidate;
@@ -173,6 +308,11 @@ neverc_net_result_t neverc_tcp_dial_context(const char *addr,
         }
 
         if (connected) {
+            context_status = tcp_context_status(ctx);
+            if (context_status != NEVERC_NET_OK) {
+                nc_sock_close(fd);
+                break;
+            }
             const char *adopt_error = NULL;
             neverc_tcp_conn_t *conn = neverc_tcp_adopt_handle(
                 (uintptr_t)fd, NULL, 0, &adopt_error);

@@ -65,6 +65,7 @@ struct neverc_http_response_writer {
     int         ntrailers;
     nc_buf_t    body;
     int         keep_alive;
+    int         initial_keep_alive;
     int         hijacked;
     http_conn_t *owner;
     size_t      request_consumed;
@@ -118,6 +119,7 @@ static neverc_http_response_writer_t *rw_new(nc_sock_t fd, int keep_alive,
     w->fd = fd;
     w->status = 200;
     w->keep_alive = keep_alive;
+    w->initial_keep_alive = keep_alive;
     w->owner = owner;
     w->request_consumed = request_consumed;
     nc_buf_init(&w->body);
@@ -287,7 +289,9 @@ static int rw_flush(neverc_http_response_writer_t *w) {
     rw_apply_gzip(w);
     int status_forbids_body = w->status < 200 || w->status == 204 ||
                               w->status == 304;
-    int forbids_content_length = w->status < 200 || w->status == 204;
+    int emit_content_length =
+        w->status >= 200 && w->status != 204 &&
+        (w->has_content_length_override || w->status != 304);
 
     nc_buf_t hdr;
     nc_buf_init(&hdr);
@@ -330,7 +334,7 @@ static int rw_flush(neverc_http_response_writer_t *w) {
         const char *ct = "Content-Type: text/plain; charset=utf-8\r\n";
         if (nc_buf_append(&hdr, ct, strlen(ct)) != 0) goto fail;
     }
-    if (!forbids_content_length) {
+    if (emit_content_length) {
         size_t content_length = w->has_content_length_override
             ? w->content_length_override : w->body.len;
         n = snprintf(line, sizeof(line), "Content-Length: %zu\r\n",
@@ -426,13 +430,14 @@ void neverc_http_set_status(neverc_http_response_writer_t *w, int code) {
     if (w && code >= 100 && code <= 999) w->status = code;
 }
 
-int nc_http_writer_add_header(neverc_http_response_writer_t *w,
-                              const char *name, const char *value) {
+int neverc_http_add_header(neverc_http_response_writer_t *w,
+                            const char *name, const char *value) {
     if (!w || !name || !value || !http_valid_token(name, strlen(name)) ||
         !http_valid_field_value(value, strlen(value)) ||
         strcasecmp(name, "Connection") == 0 ||
         strcasecmp(name, "Content-Length") == 0 ||
         strcasecmp(name, "Transfer-Encoding") == 0 ||
+        w->headers_sent || w->aborted || w->hijacked ||
         w->nheaders >= HTTP_MAX_HEADERS)
         return -1;
 
@@ -447,6 +452,11 @@ int nc_http_writer_add_header(neverc_http_response_writer_t *w,
     w->header_values[w->nheaders] = value_copy;
     w->nheaders++;
     return 0;
+}
+
+int nc_http_writer_add_header(neverc_http_response_writer_t *w,
+                              const char *name, const char *value) {
+    return neverc_http_add_header(w, name, value);
 }
 
 void neverc_http_set_header(neverc_http_response_writer_t *w,
@@ -471,6 +481,43 @@ void neverc_http_set_header(neverc_http_response_writer_t *w,
         }
     }
     (void)nc_http_writer_add_header(w, name, value);
+}
+
+int neverc_http_set_content_length(neverc_http_response_writer_t *w,
+                                    size_t content_length) {
+    if (!w || w->headers_sent || w->aborted || w->hijacked ||
+        w->chunked)
+        return -1;
+    w->has_content_length_override = 1;
+    w->content_length_override = content_length;
+    return 0;
+}
+
+int neverc_http_reset_response(neverc_http_response_writer_t *w) {
+    if (!w || w->headers_sent || w->aborted || w->hijacked)
+        return -1;
+    for (int i = 0; i < w->nheaders; i++) {
+        free(w->header_names[i]);
+        free(w->header_values[i]);
+        w->header_names[i] = NULL;
+        w->header_values[i] = NULL;
+    }
+    for (int i = 0; i < w->ntrailers; i++) {
+        free(w->trailer_names[i]);
+        free(w->trailer_values[i]);
+        w->trailer_names[i] = NULL;
+        w->trailer_values[i] = NULL;
+    }
+    w->nheaders = 0;
+    w->ntrailers = 0;
+    nc_buf_reset(&w->body);
+    w->status = 200;
+    w->chunked = 0;
+    w->chunked_ended = 0;
+    w->has_content_length_override = 0;
+    w->content_length_override = 0;
+    w->keep_alive = w->initial_keep_alive;
+    return 0;
 }
 
 void neverc_http_set_trailer(neverc_http_response_writer_t *w,

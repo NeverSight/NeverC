@@ -124,6 +124,13 @@ neverc_tls_conn_t *neverc_tls_client(neverc_tcp_conn_t *tcp,
                                       neverc_tls_config_t *cfg,
                                       const char **errp);
 
+/* As above, but interrupt the verified handshake when ctx is cancelled or its
+ * deadline expires. The returned TLS connection borrows tcp; whether the
+ * handshake succeeds or fails, the caller remains responsible for tcp. */
+neverc_tls_conn_t *neverc_tls_client_context(
+    neverc_tcp_conn_t *tcp, neverc_tls_config_t *cfg,
+    neverc_context_t *ctx, const char **errp);
+
 /* Reactor-driven server handshake. server_begin validates configuration and
  * creates a TLS connection without waiting for network I/O. Repeatedly call
  * handshake_step when the socket is readable/writable, updating poller

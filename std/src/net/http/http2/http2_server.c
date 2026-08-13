@@ -1358,6 +1358,7 @@ static int h2_response_flush(void *context,
         !nc_atomic_load(&connection->running))
         return adapter->ended ? 0 : -1;
 
+    size_t representation_length = writer->body.len;
     int body_allowed = !writer->head_request && writer->status >= 200 &&
                        writer->status != 204 && writer->status != 304;
     if (!body_allowed)
@@ -1370,8 +1371,9 @@ static int h2_response_flush(void *context,
         char status[4];
         if (snprintf(status, sizeof(status), "%d", writer->status) != 3)
             return -1;
-        neverc_hpack_header_t headers[HTTP_MAX_HEADERS + 1];
+        neverc_hpack_header_t headers[HTTP_MAX_HEADERS + 2];
         char *lower_names[HTTP_MAX_HEADERS];
+        char content_length[32];
         memset(lower_names, 0, sizeof(lower_names));
         int count = 0;
         headers[count++] = (neverc_hpack_header_t){
@@ -1389,6 +1391,32 @@ static int h2_response_flush(void *context,
             headers[count++] = (neverc_hpack_header_t){
                 .name = lower_names[i], .value = writer->header_values[i],
                 .sensitive = 0};
+        }
+        if (result == 0 && writer->status >= 200 &&
+            writer->status != 204) {
+            size_t content_length_value = 0;
+            int emit_content_length = 0;
+            if (writer->has_content_length_override) {
+                content_length_value = writer->content_length_override;
+                emit_content_length = 1;
+            } else if (writer->head_request && writer->status != 304) {
+                content_length_value = representation_length;
+                emit_content_length = 1;
+            }
+            if (emit_content_length) {
+                int length = snprintf(
+                    content_length, sizeof(content_length), "%zu",
+                    content_length_value);
+                if (length < 0 ||
+                    (size_t)length >= sizeof(content_length)) {
+                    result = -1;
+                } else {
+                    headers[count++] = (neverc_hpack_header_t){
+                        .name = "content-length",
+                        .value = content_length,
+                        .sensitive = 0};
+                }
+            }
         }
         if (result == 0)
             result = h2_send_header_block(

@@ -232,6 +232,14 @@ char *neverc_html_css_escape(const char *s) {
         r[wi++] = '\\';
         r[wi++] = nc_uphex[c >> 4];
         r[wi++] = nc_uphex[c & 0x0f];
+        /* Terminate a short CSS hex escape before a following hex digit.
+         * The following digit passes through as one byte, so the existing
+         * three-bytes-per-input allocation bound still covers this space. */
+        if (i < slen &&
+            ((s[i] >= '0' && s[i] <= '9') ||
+             (s[i] >= 'A' && s[i] <= 'F') ||
+             (s[i] >= 'a' && s[i] <= 'f')))
+            r[wi++] = ' ';
     }
     r[wi] = '\0';
     return r;

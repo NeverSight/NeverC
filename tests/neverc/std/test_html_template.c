@@ -47,6 +47,21 @@ static void test_js_escape(void) {
     free(e);
 }
 
+static void test_css_escape(void) {
+    printf("[css_escape]\n");
+    char *e = neverc_html_css_escape("!B");
+    check_str("terminate before hex digit", e, "\\21 B");
+    free(e);
+
+    e = neverc_html_css_escape("#fff");
+    check_str("selector escape does not absorb hex", e, "\\23 fff");
+    free(e);
+
+    e = neverc_html_css_escape("!G");
+    check_str("non-hex continuation needs no separator", e, "\\21G");
+    free(e);
+}
+
 static void test_url_escape(void) {
     printf("[url_escape]\n");
     char *e = neverc_html_url_query_escape("hello world&foo=bar");
@@ -179,6 +194,7 @@ static void test_data_operations(void) {
 int main(void) {
     test_html_escape();
     test_js_escape();
+    test_css_escape();
     test_url_escape();
     test_template_basic();
     test_template_auto_escape();

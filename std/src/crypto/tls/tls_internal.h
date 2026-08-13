@@ -400,7 +400,8 @@ int nci_tls_handle_peer_alert(
 #if defined(NEVERC_TLS_ENABLE_EXPERIMENTAL_TRANSPORT)
 neverc_tls_conn_t *nci_tls_start_handshake(
     neverc_tcp_conn_t *tcp, neverc_tls_config_t *cfg,
-    int from_server, int owns_tcp, const char **errp);
+    int from_server, int owns_tcp, neverc_context_t *ctx,
+    const char **errp);
 #endif
 
 #endif /* NEVERC_STD_CRYPTO_TLS_INTERNAL_H */

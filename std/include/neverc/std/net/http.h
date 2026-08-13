@@ -83,6 +83,24 @@ void neverc_http_set_status(neverc_http_response_writer_t *w, int code);
 void neverc_http_set_header(neverc_http_response_writer_t *w,
                              const char *name, const char *value);
 
+/* Append a response header without replacing existing values. Connection,
+ * Content-Length, and Transfer-Encoding remain writer-managed. Returns 0 on
+ * success and -1 for invalid input, allocation/capacity failure, or a writer
+ * whose headers have already been sent. */
+int neverc_http_add_header(neverc_http_response_writer_t *w,
+                            const char *name, const char *value);
+
+/* Set representation-length metadata. HTTP/1 emits it for ordinary responses
+ * and HEAD, and for 304 when explicitly set; 1xx and 204 always omit it.
+ * Returns 0 on success and -1 once headers are sent or chunking is enabled. */
+int neverc_http_set_content_length(neverc_http_response_writer_t *w,
+                                    size_t content_length);
+
+/* Discard an unsent buffered response and restore clean response defaults
+ * while preserving transport, request, timeout, and server configuration.
+ * Returns -1 if output may already have reached the client. */
+int neverc_http_reset_response(neverc_http_response_writer_t *w);
+
 /* Set a response trailer. HTTP/1 sends trailers for chunked responses;
  * HTTP/2 transports send a trailing HEADERS block. */
 void neverc_http_set_trailer(neverc_http_response_writer_t *w,

@@ -65,7 +65,8 @@ uintptr_t neverc_tcp_listener_handle(neverc_tcp_listener_t *ln);
  * Returns NULL on error. */
 neverc_tcp_conn_t *neverc_tcp_dial(const char *addr, const char **errp);
 
-/* Connect with cancellation/deadline and a structured result. */
+/* Connect with cancellation/deadline and a structured result. Hostname
+ * resolution, address attempts, and socket connection all observe ctx. */
 neverc_net_result_t neverc_tcp_dial_context(const char *addr,
                                              neverc_context_t *ctx,
                                              neverc_tcp_conn_t **conn_out);

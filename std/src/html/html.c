@@ -106,27 +106,42 @@ char *neverc_html_unescape_string(const char *s, size_t *outlen) {
             if (starts_with(s + i, "&apos;")) { r[wi++] = '\''; i += 6; continue; }
 
             if (starts_with(s + i, "&#")) {
+                size_t entity_start = i;
                 i += 2;
                 int base = 10;
                 if (i < slen && (s[i] == 'x' || s[i] == 'X')) {
                     base = 16; i++;
                 }
                 unsigned long val = 0;
+                int saw_digit = 0;
+                int overflow = 0;
                 while (i < slen && s[i] != ';') {
                     char c = s[i];
+                    unsigned long digit;
                     if (base == 16) {
-                        if (c >= '0' && c <= '9') val = val * 16 + (c - '0');
-                        else if (c >= 'a' && c <= 'f') val = val * 16 + (c - 'a' + 10);
-                        else if (c >= 'A' && c <= 'F') val = val * 16 + (c - 'A' + 10);
+                        if (c >= '0' && c <= '9') digit = (unsigned long)(c - '0');
+                        else if (c >= 'a' && c <= 'f') digit = (unsigned long)(c - 'a' + 10);
+                        else if (c >= 'A' && c <= 'F') digit = (unsigned long)(c - 'A' + 10);
                         else break;
                     } else {
-                        if (c >= '0' && c <= '9') val = val * 10 + (c - '0');
+                        if (c >= '0' && c <= '9') digit = (unsigned long)(c - '0');
                         else break;
                     }
+                    saw_digit = 1;
+                    if (val > (0x10FFFFUL - digit) / (unsigned long)base)
+                        overflow = 1;
+                    else if (!overflow)
+                        val = val * (unsigned long)base + digit;
                     i++;
                 }
+                if (!saw_digit) {
+                    r[wi++] = '&';
+                    i = entity_start + 1;
+                    continue;
+                }
                 if (i < slen && s[i] == ';') i++;
-                if (val < 128) r[wi++] = (char)val;
+                if (!overflow && val > 0 && val < 128)
+                    r[wi++] = (char)val;
                 else r[wi++] = '?';
                 continue;
             }
