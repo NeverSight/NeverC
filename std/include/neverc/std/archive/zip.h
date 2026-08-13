@@ -4,8 +4,9 @@
 /*
  * NeverC archive/zip — ZIP archive format (mirrors Go archive/zip).
  *
- * Supports reading and writing ZIP archives (stored / no-compression mode).
- * Uses CRC32 for integrity checks.
+ * Supports reading and writing single-disk ZIP archives in stored
+ * (no-compression) mode. Readers validate the central directory, local
+ * headers, bounds, and CRC32 before exposing file data.
  */
 
 #include <stddef.h>
@@ -37,6 +38,7 @@ typedef struct {
     const uint8_t **file_data;
 } neverc_zip_reader_t;
 
+/* Returns 0 on success or -1 for malformed/unsupported archives. */
 int  neverc_zip_reader_init(neverc_zip_reader_t *r, const uint8_t *data, size_t len);
 int  neverc_zip_reader_count(const neverc_zip_reader_t *r);
 const neverc_zip_file_header_t *neverc_zip_reader_file(const neverc_zip_reader_t *r, int idx);
@@ -52,6 +54,8 @@ typedef struct {
     neverc_zip_file_header_t *entries;
     int      nentries;
     int      entries_cap;
+    int      closed;
+    int      failed;
 } neverc_zip_writer_t;
 
 void neverc_zip_writer_init(neverc_zip_writer_t *w);

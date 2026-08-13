@@ -27,18 +27,38 @@ static void test_roundtrip(void) {
     neverc_zip_writer_t w;
     neverc_zip_writer_init(&w);
 
-    neverc_zip_writer_add(&w, "hello.txt", (const uint8_t *)"Hello!", 6);
-    neverc_zip_writer_add(&w, "data.bin", (const uint8_t *)"\x01\x02\x03", 3);
-    neverc_zip_writer_add(&w, "empty.txt", (const uint8_t *)"", 0);
-    neverc_zip_writer_close(&w);
+    int ok =
+        neverc_zip_writer_add(
+            &w, "hello.txt", (const uint8_t *)"Hello!", 6) == 0 &&
+        neverc_zip_writer_add(
+            &w, "data.bin", (const uint8_t *)"\x01\x02\x03", 3) == 0 &&
+        neverc_zip_writer_add(
+            &w, "empty.txt", (const uint8_t *)"", 0) == 0 &&
+        neverc_zip_writer_close(&w) == 0;
+    check_int("writer succeeds", ok, 1);
+    if (!ok) {
+        neverc_zip_writer_free(&w);
+        return;
+    }
 
     /* Read back */
     neverc_zip_reader_t r;
-    neverc_zip_reader_init(&r, w.data, w.len);
+    int init_result = neverc_zip_reader_init(&r, w.data, w.len);
+    check_int("reader init", init_result, 0);
+    if (init_result != 0) {
+        neverc_zip_writer_free(&w);
+        return;
+    }
 
     check_int("count", neverc_zip_reader_count(&r), 3);
 
     const neverc_zip_file_header_t *f0 = neverc_zip_reader_file(&r, 0);
+    if (!f0) {
+        check_int("file 0 exists", 0, 1);
+        neverc_zip_reader_free(&r);
+        neverc_zip_writer_free(&w);
+        return;
+    }
     check_str("name 0", f0->name, "hello.txt");
     check_size("size 0", (size_t)f0->uncompressed_size, 6);
 
@@ -46,17 +66,32 @@ static void test_roundtrip(void) {
     const uint8_t *d0 = neverc_zip_reader_file_data(&r, 0, &dlen);
     check_size("data len 0", dlen, 6);
     tests_run++;
-    if (dlen == 6 && memcmp(d0, "Hello!", 6) == 0) tests_passed++;
+    if (d0 && dlen == 6 && memcmp(d0, "Hello!", 6) == 0) tests_passed++;
     else { tests_failed++; printf("  FAIL: data 0 content\n"); }
 
     const neverc_zip_file_header_t *f1 = neverc_zip_reader_file(&r, 1);
+    if (!f1) {
+        check_int("file 1 exists", 0, 1);
+        neverc_zip_reader_free(&r);
+        neverc_zip_writer_free(&w);
+        return;
+    }
     check_str("name 1", f1->name, "data.bin");
     const uint8_t *d1 = neverc_zip_reader_file_data(&r, 1, &dlen);
     check_size("data len 1", dlen, 3);
-    check_int("byte 0", d1[0], 1);
-    check_int("byte 2", d1[2], 3);
+    check_int("data 1 exists", d1 != NULL, 1);
+    if (d1) {
+        check_int("byte 0", d1[0], 1);
+        check_int("byte 2", d1[2], 3);
+    }
 
     const neverc_zip_file_header_t *f2 = neverc_zip_reader_file(&r, 2);
+    if (!f2) {
+        check_int("file 2 exists", 0, 1);
+        neverc_zip_reader_free(&r);
+        neverc_zip_writer_free(&w);
+        return;
+    }
     check_str("name 2", f2->name, "empty.txt");
     check_size("size 2", (size_t)f2->uncompressed_size, 0);
 
@@ -68,16 +103,44 @@ static void test_crc_integrity(void) {
     printf("[crc integrity]\n");
     neverc_zip_writer_t w;
     neverc_zip_writer_init(&w);
-    neverc_zip_writer_add(&w, "test.txt", (const uint8_t *)"test data", 9);
-    neverc_zip_writer_close(&w);
+    int built =
+        neverc_zip_writer_add(
+            &w, "test.txt", (const uint8_t *)"test data", 9) == 0 &&
+        neverc_zip_writer_close(&w) == 0;
+    check_int("crc fixture built", built, 1);
+    if (!built) {
+        neverc_zip_writer_free(&w);
+        return;
+    }
 
     neverc_zip_reader_t r;
-    neverc_zip_reader_init(&r, w.data, w.len);
+    int init_result = neverc_zip_reader_init(&r, w.data, w.len);
+    check_int("crc reader init", init_result, 0);
+    if (init_result != 0) {
+        neverc_zip_writer_free(&w);
+        return;
+    }
     const neverc_zip_file_header_t *f = neverc_zip_reader_file(&r, 0);
-    check_int("crc nonzero", f->crc32 != 0, 1);
-    check_int("method stored", f->method, NEVERC_ZIP_STORED);
+    check_int("crc file exists", f != NULL, 1);
+    if (f) {
+        check_int("crc nonzero", f->crc32 != 0, 1);
+        check_int("method stored", f->method, NEVERC_ZIP_STORED);
+    }
 
     neverc_zip_reader_free(&r);
+
+    uint8_t *corrupt = (uint8_t *)malloc(w.len);
+    if (!corrupt) {
+        check_int("crc corruption allocation", 0, 1);
+        neverc_zip_writer_free(&w);
+        return;
+    }
+    memcpy(corrupt, w.data, w.len);
+    corrupt[30U + strlen("test.txt")] ^= 1U;
+    check_int("reject corrupt payload",
+              neverc_zip_reader_init(&r, corrupt, w.len), -1);
+    neverc_zip_reader_free(&r);
+    free(corrupt);
     neverc_zip_writer_free(&w);
 }
 
@@ -93,9 +156,64 @@ static void test_truncated_entry(void) {
     buf[18] = 0xFF; buf[19] = 0xFF; buf[20] = 0xFF; buf[21] = 0xFF; /* comp_size */
 
     neverc_zip_reader_t r;
-    check_int("init ok", neverc_zip_reader_init(&r, buf, sizeof(buf)), 0);
-    check_int("no files", neverc_zip_reader_count(&r), 0);
+    check_int("truncated archive rejected",
+              neverc_zip_reader_init(&r, buf, sizeof(buf)), -1);
     neverc_zip_reader_free(&r);
+}
+
+static void test_central_directory_and_writer_state(void) {
+    printf("[central directory and writer state]\n");
+    neverc_zip_writer_t writer;
+    neverc_zip_writer_init(&writer);
+    int add_result = neverc_zip_writer_add(
+        &writer, "a", (const uint8_t *)"x", 1);
+    check_int("state add", add_result, 0);
+    int close_result = neverc_zip_writer_close(&writer);
+    check_int("state close", close_result, 0);
+    if (add_result != 0 || close_result != 0 || writer.len < 22U) {
+        neverc_zip_writer_free(&writer);
+        return;
+    }
+    size_t closed_length = writer.len;
+    check_int("state close idempotent",
+              neverc_zip_writer_close(&writer), 0);
+    check_size("state close length stable", writer.len, closed_length);
+    check_int("state reject add after close",
+              neverc_zip_writer_add(
+                  &writer, "b", (const uint8_t *)"y", 1), -1);
+
+    uint8_t *mutated = (uint8_t *)malloc(writer.len);
+    if (!mutated) {
+        check_int("central mutation allocation", 0, 1);
+        neverc_zip_writer_free(&writer);
+        return;
+    }
+    memcpy(mutated, writer.data, writer.len);
+    size_t eocd = writer.len - 22U;
+    uint32_t central_offset =
+        (uint32_t)mutated[eocd + 16U] |
+        ((uint32_t)mutated[eocd + 17U] << 8U) |
+        ((uint32_t)mutated[eocd + 18U] << 16U) |
+        ((uint32_t)mutated[eocd + 19U] << 24U);
+    mutated[central_offset + 10U] = NEVERC_ZIP_DEFLATED;
+    mutated[central_offset + 11U] = 0;
+    neverc_zip_reader_t reader;
+    check_int("reject unsupported central method",
+              neverc_zip_reader_init(
+                  &reader, mutated, writer.len), -1);
+    neverc_zip_reader_free(&reader);
+    free(mutated);
+    neverc_zip_writer_free(&writer);
+
+    neverc_zip_writer_init(&writer);
+    check_int("empty writer close", neverc_zip_writer_close(&writer), 0);
+    check_int("empty archive read",
+              neverc_zip_reader_init(
+                  &reader, writer.data, writer.len), 0);
+    check_int("empty archive count",
+              neverc_zip_reader_count(&reader), 0);
+    neverc_zip_reader_free(&reader);
+    neverc_zip_writer_free(&writer);
 }
 
 static void test_invalid_args(void) {
@@ -121,6 +239,7 @@ int main(void) {
     test_roundtrip();
     test_crc_integrity();
     test_truncated_entry();
+    test_central_directory_and_writer_state();
     test_invalid_args();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
