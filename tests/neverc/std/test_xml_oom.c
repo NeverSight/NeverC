@@ -74,6 +74,11 @@ int main(void) {
     size_t outlen = 99;
     CHECK(neverc_xml_escape("value", &outlen) == NULL);
     CHECK(outlen == 0);
+
+    reset_allocator(1);
+    outlen = 99;
+    CHECK(neverc_xml_unescape("&amp;", 5, &outlen) == NULL);
+    CHECK(outlen == 0);
     puts("passed");
     return 0;
 }

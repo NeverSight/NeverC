@@ -73,6 +73,7 @@ neverc_xml_node_t *neverc_xml_node_child(const neverc_xml_node_t *node,
 
 /* Escape/unescape XML text */
 char *neverc_xml_escape(const char *s, size_t *outlen);
+char *neverc_xml_unescape(const char *s, size_t len, size_t *outlen);
 
 #ifdef __cplusplus
 }

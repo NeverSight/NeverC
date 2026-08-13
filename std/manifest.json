@@ -1509,7 +1509,8 @@
         "neverc_xml_node_free": "src/encoding/xml/xml.c",
         "neverc_xml_node_attr": "src/encoding/xml/xml.c",
         "neverc_xml_node_child": "src/encoding/xml/xml.c",
-        "neverc_xml_escape": "src/encoding/xml/xml.c"
+        "neverc_xml_escape": "src/encoding/xml/xml.c",
+        "neverc_xml_unescape": "src/encoding/xml/xml.c"
       },
       "dot_methods": {
         "decoder_init": "neverc_xml_decoder_init",
@@ -1519,7 +1520,8 @@
         "parse": "neverc_xml_parse",
         "node_attr": "neverc_xml_node_attr",
         "node_child": "neverc_xml_node_child",
-        "escape": "neverc_xml_escape"
+        "escape": "neverc_xml_escape",
+        "unescape": "neverc_xml_unescape"
       }
     },
     "encoding/asn1": {

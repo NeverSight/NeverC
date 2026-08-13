@@ -125,6 +125,16 @@ static void test_escape(void) {
     check_bool("escape rejects invalid XML characters",
                neverc_xml_escape("\x01", &outlen) == NULL, 1);
     check_int("invalid escape clears length", (int)outlen, 0);
+
+    const char *escaped = "&lt;tag&gt; &amp; &#x1f600;";
+    r = neverc_xml_unescape(escaped, strlen(escaped), &outlen);
+    check_str("unescape", r, "<tag> & \xf0\x9f\x98\x80");
+    check_int("unescape length", (int)outlen, 12);
+    free(r);
+    outlen = 99;
+    check_bool("unescape rejects unknown entity",
+               neverc_xml_unescape("&unknown;", 9, &outlen) == NULL, 1);
+    check_int("invalid unescape clears length", (int)outlen, 0);
 }
 
 static void test_entities_cdata_and_well_formedness(void) {
