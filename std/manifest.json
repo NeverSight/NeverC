@@ -1997,6 +1997,7 @@
       "description": "UUID v4 generation, parsing, formatting (mirrors Go uuid package)",
       "symbols": {
         "neverc_uuid_new": "src/uuid/uuid.c",
+        "neverc_uuid_generate": "src/uuid/uuid.c",
         "neverc_uuid_to_string": "src/uuid/uuid.c",
         "neverc_uuid_parse": "src/uuid/uuid.c",
         "neverc_uuid_equal": "src/uuid/uuid.c",
@@ -2007,6 +2008,7 @@
       },
       "dot_methods": {
         "new": "neverc_uuid_new",
+        "generate": "neverc_uuid_generate",
         "nil": "neverc_uuid_nil",
         "parse": "neverc_uuid_parse",
         "to_string": "neverc_uuid_to_string",
