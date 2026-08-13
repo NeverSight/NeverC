@@ -964,12 +964,14 @@
       "symbols": {
         "neverc_cipher_cbc_encrypt": "src/crypto/cipher/cipher.c",
         "neverc_cipher_cbc_decrypt": "src/crypto/cipher/cipher.c",
-        "neverc_cipher_ctr": "src/crypto/cipher/cipher.c"
+        "neverc_cipher_ctr": "src/crypto/cipher/cipher.c",
+        "neverc_cipher_ctr_checked": "src/crypto/cipher/cipher.c"
       },
       "dot_methods": {
         "cbc_encrypt": "neverc_cipher_cbc_encrypt",
         "cbc_decrypt": "neverc_cipher_cbc_decrypt",
-        "ctr": "neverc_cipher_ctr"
+        "ctr": "neverc_cipher_ctr",
+        "ctr_checked": "neverc_cipher_ctr_checked"
       }
     },
     "math/cmplx": {
