@@ -215,6 +215,23 @@ static void test_shake128(void) {
                      expected_32, 32);
         check_true("SHAKE128 first 32 of 64 match", memcmp(out, expected_32, 32) == 0);
     }
+
+    /* Incremental squeezing must be byte-for-byte identical across a rate
+     * boundary, including one-byte calls used by rejection samplers. */
+    {
+        uint8_t one_shot[200], incremental[200];
+        neverc_sha3_ctx ctx;
+        neverc_shake128_init(&ctx);
+        neverc_shake128_update(&ctx, (const uint8_t *)"abc", 3);
+        neverc_shake128_squeeze(&ctx, one_shot, sizeof(one_shot));
+
+        neverc_shake128_init(&ctx);
+        neverc_shake128_update(&ctx, (const uint8_t *)"abc", 3);
+        for (size_t i = 0; i < sizeof(incremental); i++)
+            neverc_shake128_squeeze(&ctx, incremental + i, 1);
+        check_true("SHAKE128 incremental squeeze",
+                   memcmp(one_shot, incremental, sizeof(one_shot)) == 0);
+    }
 }
 
 /* ===== SHAKE256 Tests ===== */
@@ -243,6 +260,22 @@ static void test_shake256(void) {
         check_digest("SHAKE256(\"abc\",64)", out,
             "483366601360a8771c6863080cc4114d8db44530f8f1e1ee4f94ea37e78b5739"
             "d5a15bef186a5386c75744c0527e1faa9f8726e462a12a4feb06bd8801e751e4", 64);
+    }
+
+    {
+        uint8_t one_shot[300], incremental[300];
+        neverc_sha3_ctx ctx;
+        neverc_shake256_init(&ctx);
+        neverc_shake256_update(&ctx, (const uint8_t *)"abc", 3);
+        neverc_shake256_squeeze(&ctx, one_shot, sizeof(one_shot));
+
+        neverc_shake256_init(&ctx);
+        neverc_shake256_update(&ctx, (const uint8_t *)"abc", 3);
+        neverc_shake256_squeeze(&ctx, incremental, 17);
+        neverc_shake256_squeeze(
+            &ctx, incremental + 17, sizeof(incremental) - 17);
+        check_true("SHAKE256 incremental squeeze",
+                   memcmp(one_shot, incremental, sizeof(one_shot)) == 0);
     }
 }
 

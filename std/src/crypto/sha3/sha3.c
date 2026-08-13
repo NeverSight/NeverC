@@ -23,6 +23,13 @@ static const uint64_t RC[24] = {
 
 #define ROT64(x, n) (((x) << (n)) | ((x) >> (64 - (n))))
 
+static uint64_t load64_le(const uint8_t bytes[8]) {
+    uint64_t value = 0;
+    for (int i = 0; i < 8; i++)
+        value |= (uint64_t)bytes[i] << (8 * i);
+    return value;
+}
+
 /*
  * Keccak-f[1600], fully unrolled. The previous compact form carried rho+pi as a
  * 24-deep serial chain (each lane rotation depended on the previous via a temp),
@@ -111,11 +118,8 @@ static void sha3_update(neverc_sha3_ctx *ctx, const uint8_t *data, size_t len) {
         i += chunk;
 
         if (ctx->buf_len == ctx->rate) {
-            for (size_t j = 0; j < ctx->rate / 8; j++) {
-                uint64_t w;
-                memcpy(&w, ctx->buf + j * 8, 8);
-                ctx->state[j] ^= w;
-            }
+            for (size_t j = 0; j < ctx->rate / 8; j++)
+                ctx->state[j] ^= load64_le(ctx->buf + j * 8);
             keccak_f1600(ctx->state);
             ctx->buf_len = 0;
         }
@@ -128,11 +132,8 @@ static void sha3_pad_and_squeeze(neverc_sha3_ctx *ctx, uint8_t *out, size_t outl
     memset(ctx->buf + ctx->buf_len + 1, 0, ctx->rate - ctx->buf_len - 1);
     ctx->buf[ctx->rate - 1] |= 0x80;
 
-    for (size_t j = 0; j < ctx->rate / 8; j++) {
-        uint64_t w;
-        memcpy(&w, ctx->buf + j * 8, 8);
-        ctx->state[j] ^= w;
-    }
+    for (size_t j = 0; j < ctx->rate / 8; j++)
+        ctx->state[j] ^= load64_le(ctx->buf + j * 8);
     keccak_f1600(ctx->state);
 
     /* Squeeze output */
@@ -140,13 +141,47 @@ static void sha3_pad_and_squeeze(neverc_sha3_ctx *ctx, uint8_t *out, size_t outl
     while (offset < outlen) {
         size_t block = ctx->rate;
         if (outlen - offset < block) block = outlen - offset;
-        uint8_t lane_bytes[200];
-        for (size_t j = 0; j < ctx->rate / 8; j++)
-            memcpy(lane_bytes + j * 8, &ctx->state[j], 8);
-        memcpy(out + offset, lane_bytes, block);
+        for (size_t i = 0; i < block; i++)
+            out[offset + i] =
+                (uint8_t)(ctx->state[i / 8] >> (8 * (i % 8)));
         offset += block;
         if (offset < outlen)
             keccak_f1600(ctx->state);
+    }
+}
+
+static void shake_squeeze(neverc_sha3_ctx *ctx, uint8_t *out, size_t outlen) {
+    if (!ctx || (!out && outlen != 0)) return;
+    if (!ctx->squeezed) {
+        ctx->buf[ctx->buf_len] = ctx->suffix;
+        memset(
+            ctx->buf + ctx->buf_len + 1, 0,
+            ctx->rate - ctx->buf_len - 1);
+        ctx->buf[ctx->rate - 1] |= 0x80;
+        for (size_t j = 0; j < ctx->rate / 8; j++)
+            ctx->state[j] ^= load64_le(ctx->buf + j * 8);
+        keccak_f1600(ctx->state);
+        ctx->squeezed = 1;
+        ctx->squeeze_pos = 0;
+        ctx->buf_len = 0;
+    }
+
+    size_t written = 0;
+    while (written < outlen) {
+        if (ctx->squeeze_pos == ctx->rate) {
+            keccak_f1600(ctx->state);
+            ctx->squeeze_pos = 0;
+        }
+        size_t available = ctx->rate - ctx->squeeze_pos;
+        size_t count = outlen - written;
+        if (count > available) count = available;
+        for (size_t i = 0; i < count; i++) {
+            size_t position = ctx->squeeze_pos + i;
+            out[written + i] = (uint8_t)(
+                ctx->state[position / 8] >> (8 * (position % 8)));
+        }
+        ctx->squeeze_pos += count;
+        written += count;
     }
 }
 
@@ -199,22 +234,7 @@ void neverc_sha3_512_sum(const uint8_t *data, size_t len, uint8_t digest[64]) {
 void neverc_shake128_init(neverc_sha3_ctx *ctx)   { sha3_init(ctx, 256, 0x1F); }
 void neverc_shake128_update(neverc_sha3_ctx *ctx, const uint8_t *data, size_t len) { sha3_update(ctx, data, len); }
 void neverc_shake128_squeeze(neverc_sha3_ctx *ctx, uint8_t *out, size_t outlen) {
-    if (!ctx->squeezed) {
-        sha3_pad_and_squeeze(ctx, out, outlen);
-        ctx->squeezed = 1;
-    } else {
-        size_t offset = 0;
-        while (offset < outlen) {
-            keccak_f1600(ctx->state);
-            size_t block = ctx->rate;
-            if (outlen - offset < block) block = outlen - offset;
-            uint8_t lane_bytes[200];
-            for (size_t j = 0; j < ctx->rate / 8; j++)
-                memcpy(lane_bytes + j * 8, &ctx->state[j], 8);
-            memcpy(out + offset, lane_bytes, block);
-            offset += block;
-        }
-    }
+    shake_squeeze(ctx, out, outlen);
 }
 
 /* ===== SHAKE256 ===== */
@@ -222,20 +242,5 @@ void neverc_shake128_squeeze(neverc_sha3_ctx *ctx, uint8_t *out, size_t outlen) 
 void neverc_shake256_init(neverc_sha3_ctx *ctx)   { sha3_init(ctx, 512, 0x1F); }
 void neverc_shake256_update(neverc_sha3_ctx *ctx, const uint8_t *data, size_t len) { sha3_update(ctx, data, len); }
 void neverc_shake256_squeeze(neverc_sha3_ctx *ctx, uint8_t *out, size_t outlen) {
-    if (!ctx->squeezed) {
-        sha3_pad_and_squeeze(ctx, out, outlen);
-        ctx->squeezed = 1;
-    } else {
-        size_t offset = 0;
-        while (offset < outlen) {
-            keccak_f1600(ctx->state);
-            size_t block = ctx->rate;
-            if (outlen - offset < block) block = outlen - offset;
-            uint8_t lane_bytes[200];
-            for (size_t j = 0; j < ctx->rate / 8; j++)
-                memcpy(lane_bytes + j * 8, &ctx->state[j], 8);
-            memcpy(out + offset, lane_bytes, block);
-            offset += block;
-        }
-    }
+    shake_squeeze(ctx, out, outlen);
 }

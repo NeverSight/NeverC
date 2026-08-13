@@ -2,6 +2,10 @@
 #include "neverc/std/_platform.h"
 #include <string.h>
 
+#ifndef NCI_UUID_RANDOM
+#define NCI_UUID_RANDOM neverc_platform_random
+#endif
+
 #if defined(__has_attribute)
 #  if __has_attribute(nonstring)
 #    define NEVERC_HEX_PAIR_ATTR __attribute__((nonstring))
@@ -12,18 +16,21 @@
 #  define NEVERC_HEX_PAIR_ATTR
 #endif
 
-static int fill_random(uint8_t *buf, size_t len) {
-    return neverc_platform_random(buf, len);
+int neverc_uuid_generate(neverc_uuid_t *out) {
+    if (!out) return -1;
+    memset(out, 0, sizeof(*out));
+    if (NCI_UUID_RANDOM(out->bytes, sizeof(out->bytes)) != 0) {
+        memset(out, 0, sizeof(*out));
+        return -1;
+    }
+    out->bytes[6] = (out->bytes[6] & 0x0F) | 0x40;
+    out->bytes[8] = (out->bytes[8] & 0x3F) | 0x80;
+    return 0;
 }
 
 neverc_uuid_t neverc_uuid_new(void) {
     neverc_uuid_t u = {{0}};
-    if (fill_random(u.bytes, sizeof(u.bytes)) != 0) {
-        memset(u.bytes, 0, sizeof(u.bytes));
-        return u;
-    }
-    u.bytes[6] = (u.bytes[6] & 0x0F) | 0x40;
-    u.bytes[8] = (u.bytes[8] & 0x3F) | 0x80;
+    (void)neverc_uuid_generate(&u);
     return u;
 }
 

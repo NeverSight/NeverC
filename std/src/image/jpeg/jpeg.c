@@ -155,7 +155,10 @@ static void bw_write_bits(bitwriter_t *bw, uint16_t code, int len) {
 
 static void bw_flush_bits(bitwriter_t *bw) {
     if (bw->bit_cnt > 0) {
-        bw_write_byte(bw, (uint8_t)(bw->bit_buf << (8 - bw->bit_cnt)));
+        int padding = 8 - bw->bit_cnt;
+        uint8_t fill = (uint8_t)((1U << padding) - 1U);
+        bw_write_byte(
+            bw, (uint8_t)((bw->bit_buf << padding) | fill));
         bw->bit_cnt = 0;
         bw->bit_buf = 0;
     }
@@ -519,15 +522,20 @@ typedef struct {
     size_t         pos;
     uint32_t       bit_buf;
     int            bit_cnt;
+    int            failed;
 } bitreader_t;
 
 static void br_init(bitreader_t *br, const uint8_t *data, size_t len) {
     br->data = data; br->len = len; br->pos = 0;
     br->bit_buf = 0; br->bit_cnt = 0;
+    br->failed = 0;
 }
 
 static uint8_t br_read_byte_raw(bitreader_t *br) {
-    if (br->pos >= br->len) return 0;
+    if (br->pos >= br->len) {
+        br->failed = 1;
+        return 0;
+    }
     return br->data[br->pos++];
 }
 
@@ -538,30 +546,26 @@ static uint16_t br_read_u16(bitreader_t *br) {
 }
 
 /* Refill the MSB-first bit buffer so the low `bit_cnt` bits are valid (up to 32
- * after the call, always >= 25 so a 16-bit peek is safe). Inside entropy data
+ * after the call). Inside entropy data
  * 0xFF is followed by a stuffed 0x00 (emit the 0xFF, drop the 0x00); 0xFF
  * followed by anything else is a marker (RST restart, EOI, ...), so we stop
- * consuming there, pad with zero bits, and leave pos parked on the 0xFF for the
- * restart handler / scan loop. Past end-of-data we likewise pad with zeros.
- * Several bytes are pulled per call so the hot entropy loop amortizes the work.
- * For marker-free interiors this is bit-for-bit identical to the old reader. */
+ * consuming and leave pos parked on the 0xFF for the restart handler / scan
+ * loop. We never synthesize zero bits: callers can therefore distinguish a
+ * truncated scan or an early marker from valid entropy data. */
 static void br_refill(bitreader_t *br) {
-    while (br->bit_cnt <= 24) {
-        uint8_t b = 0;
-        if (br->pos < br->len) {
-            if (br->data[br->pos] == 0xFF) {
-                uint8_t nx = (br->pos + 1 < br->len) ? br->data[br->pos + 1] : 0xFF;
-                if (nx == 0x00) {
-                    b = 0xFF;
-                    br->pos += 2;                 /* stuffed 0xFF 0x00 -> 0xFF */
-                } else {
-                    br->bit_buf <<= 8;            /* marker: pad, don't advance */
-                    br->bit_cnt += 8;
-                    continue;
-                }
+    while (br->bit_cnt <= 24 && br->pos < br->len) {
+        uint8_t b;
+        if (br->data[br->pos] == 0xFF) {
+            uint8_t nx =
+                (br->pos + 1 < br->len) ? br->data[br->pos + 1] : 0xFF;
+            if (nx == 0x00) {
+                b = 0xFF;
+                br->pos += 2;                 /* stuffed 0xFF 0x00 -> 0xFF */
             } else {
-                b = br->data[br->pos++];
+                break;
             }
+        } else {
+            b = br->data[br->pos++];
         }
         br->bit_buf = (br->bit_buf << 8) | b;
         br->bit_cnt += 8;
@@ -573,26 +577,44 @@ static void br_refill(bitreader_t *br) {
  * aligned on the next interval. refill leaves pos on the marker's 0xFF; any
  * 0xFF fill bytes that legally precede a marker are skipped. The caller resets
  * the per-component DC predictors. */
-static void br_restart(bitreader_t *br) {
+static int br_restart(bitreader_t *br, uint8_t expected_marker) {
     br->bit_buf = 0;
     br->bit_cnt = 0;
     while (br->pos + 1 < br->len && br->data[br->pos] == 0xFF) {
         uint8_t m = br->data[br->pos + 1];
         if (m == 0xFF) { br->pos++; continue; }       /* fill byte */
-        if (m >= 0xD0 && m <= 0xD7) br->pos += 2;      /* consume RST marker */
-        break;
+        if (m != expected_marker) {
+            br->failed = 1;
+            return -1;
+        }
+        br->pos += 2;
+        return 0;
     }
+    br->failed = 1;
+    return -1;
 }
 
 static int br_read_bits(bitreader_t *br, int n) {
     if (n == 0) return 0;
+    if (n < 0 || n > 16) {
+        br->failed = 1;
+        return 0;
+    }
     if (br->bit_cnt < n) br_refill(br);
+    if (br->bit_cnt < n) {
+        br->failed = 1;
+        return 0;
+    }
     br->bit_cnt -= n;
     return (int)((br->bit_buf >> br->bit_cnt) & (((uint32_t)1 << n) - 1));
 }
 
 static int br_read_bit(bitreader_t *br) {
     if (br->bit_cnt < 1) br_refill(br);
+    if (br->bit_cnt < 1) {
+        br->failed = 1;
+        return 0;
+    }
     br->bit_cnt -= 1;
     return (int)((br->bit_buf >> br->bit_cnt) & 1u);
 }
@@ -669,46 +691,50 @@ static int build_decode_table(huff_decode_table_t *t, const uint8_t *bits, const
 }
 
 static int huff_decode(bitreader_t *br, const huff_decode_table_t *t) {
-    if (br->bit_cnt < 16) br_refill(br);
+    if (!t || !t->vals || t->num_vals <= 0)
+        return -1;
+    if (br->bit_cnt < JPEG_HUFF_LOOKAHEAD) br_refill(br);
 
     /* Fast path: one table hit resolves any code <= LOOKAHEAD bits. */
-    int look = (int)((br->bit_buf >> (br->bit_cnt - JPEG_HUFF_LOOKAHEAD))
-                     & ((1 << JPEG_HUFF_LOOKAHEAD) - 1));
-    int nb = t->look_nbits[look];
-    if (nb) {
-        br->bit_cnt -= nb;
-        return t->look_sym[look];
+    if (br->bit_cnt >= JPEG_HUFF_LOOKAHEAD) {
+        int look =
+            (int)((br->bit_buf >> (br->bit_cnt - JPEG_HUFF_LOOKAHEAD))
+                  & ((1 << JPEG_HUFF_LOOKAHEAD) - 1));
+        int nb = t->look_nbits[look];
+        if (nb) {
+            br->bit_cnt -= nb;
+            return t->look_sym[look];
+        }
     }
 
-    /* Slow path: code is longer than LOOKAHEAD bits. Continue the canonical
-     * walk from where the lookahead left off (identical result to the old
-     * bit-by-bit decoder). */
-    int code = look;
-    br->bit_cnt -= JPEG_HUFF_LOOKAHEAD;
-    for (int len = JPEG_HUFF_LOOKAHEAD + 1; len <= 16; len++) {
+    /* Slow path: walk from the first bit. This also handles a valid short code
+     * immediately before a marker when fewer than LOOKAHEAD bits remain. */
+    int code = 0;
+    for (int len = 1; len <= 16; len++) {
         code = (code << 1) | br_read_bit(br);
-        if (t->maxcode[len] >= 0 && code <= t->maxcode[len]) {
+        if (br->failed) return -1;
+        if (t->maxcode[len] >= 0 &&
+            code >= t->mincode[len] && code <= t->maxcode[len]) {
             int idx = t->valptr[len] + code - t->mincode[len];
-            if (idx < t->num_vals) return t->vals[idx];
+            if (idx >= 0 && idx < t->num_vals) return t->vals[idx];
             return -1;
         }
     }
     return -1;
 }
 
-static int decode_value(bitreader_t *br, int bits) {
-    if (bits <= 0) return 0;
-    /* `bits` is a magnitude category. For DC it is the Huffman symbol itself,
-     * which a corrupt DHT can make any byte 0..255 (the AC path masks to 0..15,
-     * the DC path does not). A category above 16 makes br_read_bits subtract
-     * more than the refill guarantee, underflowing bit_cnt into a negative
-     * shift (UB), and overflows `1 << bits`. Valid 8-bit baseline categories are
-     * <= 11, so treat anything past 16 as a corrupt-stream zero. */
-    if (bits > 16) return 0;
+static int decode_value(bitreader_t *br, int bits, int *out) {
+    if (!out || bits < 0 || bits > 16) return -1;
+    if (bits == 0) {
+        *out = 0;
+        return 0;
+    }
     int val = br_read_bits(br, bits);
+    if (br->failed) return -1;
     if (val < (1 << (bits - 1)))
         val = val - (1 << bits) + 1;
-    return val;
+    *out = val;
+    return 0;
 }
 
 /*
@@ -821,6 +847,8 @@ int neverc_jpeg_decode(const uint8_t *data, size_t len, neverc_jpeg_image_t *img
     uint32_t restart_interval = 0;   /* MCUs between RST markers (0 = none) */
     uint8_t quant_tables[4][64];
     memset(quant_tables, 0, sizeof(quant_tables));
+    int quant_present[4] = {0};
+    int comp_id[4] = {0};
     int comp_quant[4] = {0};
     int comp_dc_table[4] = {0};
     int comp_ac_table[4] = {0};
@@ -835,58 +863,72 @@ int neverc_jpeg_decode(const uint8_t *data, size_t len, neverc_jpeg_image_t *img
 
     while (br.pos < br.len - 1) {
         if (br.data[br.pos] != 0xFF) { br.pos++; continue; }
-        uint8_t marker = br.data[br.pos + 1];
-        br.pos += 2;
+        while (br.pos < br.len && br.data[br.pos] == 0xFF) br.pos++;
+        if (br.pos >= br.len) goto fail;
+        uint8_t marker = br.data[br.pos++];
 
         if (marker == 0xD9) break; /* EOI */
         if (marker == 0x00 || marker == 0x01 || (marker >= 0xD0 && marker <= 0xD7)) continue;
 
         uint16_t seg_len = br_read_u16(&br);
-        if (seg_len < 2) goto fail;     /* length counts its own 2 bytes */
+        if (br.failed || seg_len < 2) goto fail; /* length counts itself */
         size_t seg_start = br.pos;
-        /* Clamp the segment to the available buffer. A crafted or truncated
-         * length must never let the per-segment loops below spin forever:
-         * br_read_byte_raw stops advancing at end-of-data, so an end past
-         * br.len would otherwise stay > br.pos and the `pos < end` loops would
-         * never terminate (DoS on malformed input). */
         size_t seg_end = seg_start + (size_t)(seg_len - 2);
-        if (seg_end > br.len) seg_end = br.len;
+        if (seg_end > br.len) goto fail;
 
         if (marker == 0xDB) { /* DQT */
             while (br.pos < seg_end) {
+                if (seg_end - br.pos < 65) goto fail;
                 uint8_t info = br_read_byte_raw(&br);
+                if ((info >> 4) != 0) goto fail; /* only 8-bit baseline DQT */
                 int table_id = info & 0x0F;
-                if (table_id >= 4) break;
-                for (int i = 0; i < 64; i++)
+                if (table_id >= 4) goto fail;
+                for (int i = 0; i < 64; i++) {
                     quant_tables[table_id][i] = br_read_byte_raw(&br);
+                    if (quant_tables[table_id][i] == 0) goto fail;
+                }
+                quant_present[table_id] = 1;
             }
         } else if (marker == 0xC0) { /* SOF0 */
-            br_read_byte_raw(&br); /* precision */
+            if (seg_end - br.pos < 6) goto fail;
+            if (br_read_byte_raw(&br) != 8) goto fail; /* precision */
             height = br_read_u16(&br);
             width = br_read_u16(&br);
             ncomp = br_read_byte_raw(&br);
             if (ncomp != 1 && ncomp != 3) goto fail;
+            if (seg_end - br.pos != (size_t)ncomp * 3U) goto fail;
+            int blocks_per_mcu = 0;
             for (int i = 0; i < ncomp; i++) {
-                br_read_byte_raw(&br); /* component id */
+                comp_id[i] = br_read_byte_raw(&br);
+                for (int j = 0; j < i; j++)
+                    if (comp_id[j] == comp_id[i]) goto fail;
                 uint8_t samp = br_read_byte_raw(&br);
                 comp_h[i] = (samp >> 4) & 0x0F;
                 comp_v[i] = samp & 0x0F;
                 if (comp_h[i] < 1 || comp_h[i] > 4 ||
                     comp_v[i] < 1 || comp_v[i] > 4) goto fail;
+                blocks_per_mcu += comp_h[i] * comp_v[i];
                 comp_quant[i] = br_read_byte_raw(&br);
+                if (comp_quant[i] >= 4) goto fail;
             }
+            if (blocks_per_mcu > 10) goto fail;
         } else if (marker == 0xC4) { /* DHT */
             while (br.pos < seg_end) {
+                if (seg_end - br.pos < 17) goto fail;
                 uint8_t info = br_read_byte_raw(&br);
+                if ((info & 0xE0) != 0) goto fail;
                 int cls = (info >> 4) & 1;
                 int table_id = info & 0x0F;
-                if (table_id >= 4) break;
+                if (table_id >= 4) goto fail;
                 uint8_t bits[17] = {0};
                 int total = 0;
                 for (int i = 1; i <= 16; i++) {
                     bits[i] = br_read_byte_raw(&br);
                     total += bits[i];
                 }
+                if (total <= 0 || total > 256 ||
+                    (size_t)total > seg_end - br.pos)
+                    goto fail;
                 uint8_t *vals = (uint8_t *)malloc(total ? (size_t)total : 1);
                 if (!vals) goto fail;
                 for (int i = 0; i < total; i++)
@@ -898,32 +940,47 @@ int neverc_jpeg_decode(const uint8_t *data, size_t len, neverc_jpeg_image_t *img
                 if (bdt != 0) goto fail;   /* reject malformed Huffman table */
             }
         } else if (marker == 0xDA) { /* SOS */
+            if (br.pos >= seg_end) goto fail;
             int ns = br_read_byte_raw(&br);
-            /* Ns is 1..4 per ITU T.81 B.2.3; the comp_*_table[] arrays hold 4.
-             * Bound it before indexing so a crafted scan header can't overflow
-             * the stack (the loop writes comp_dc_table[i]/comp_ac_table[i]). */
-            if (ns < 1 || ns > 4) goto fail;
+            if (ncomp == 0 || ns != ncomp ||
+                seg_end - br.pos != (size_t)ns * 2U + 3U)
+                goto fail;
+            int seen[4] = {0};
             for (int i = 0; i < ns; i++) {
-                br_read_byte_raw(&br); /* component selector */
+                int selector = br_read_byte_raw(&br);
                 uint8_t td_ta = br_read_byte_raw(&br);
-                comp_dc_table[i] = (td_ta >> 4) & 0x0F;
-                comp_ac_table[i] = td_ta & 0x0F;
-                /* Td/Ta each select one of 4 Huffman tables (ITU T.81 B.2.3),
-                 * but the nibble carries 0..15. The decode loop indexes
-                 * dc_tables[]/ac_tables[] (size 4) with these, so a crafted scan
-                 * header with a selector >= 4 reads out of bounds. Reject it,
-                 * matching the DHT table_id and sampling-factor validation. */
-                if (comp_dc_table[i] >= 4 || comp_ac_table[i] >= 4) goto fail;
+                int component = -1;
+                for (int c = 0; c < ncomp; c++)
+                    if (comp_id[c] == selector) component = c;
+                if (component < 0 || seen[component]) goto fail;
+                seen[component] = 1;
+                comp_dc_table[component] = (td_ta >> 4) & 0x0F;
+                comp_ac_table[component] = td_ta & 0x0F;
+                if (comp_dc_table[component] >= 4 ||
+                    comp_ac_table[component] >= 4)
+                    goto fail;
             }
-            br_read_byte_raw(&br); br_read_byte_raw(&br); br_read_byte_raw(&br);
+            int spectral_start = br_read_byte_raw(&br);
+            int spectral_end = br_read_byte_raw(&br);
+            int approximation = br_read_byte_raw(&br);
+            if (spectral_start != 0 || spectral_end != 63 ||
+                approximation != 0)
+                goto fail;
+            for (int c = 0; c < ncomp; c++) {
+                if (!quant_present[comp_quant[c]] ||
+                    !dc_tables[comp_dc_table[c]].vals ||
+                    !ac_tables[comp_ac_table[c]].vals)
+                    goto fail;
+            }
             scan_found = 1;
             break;
         } else if (marker == 0xDD) { /* DRI — define restart interval */
+            if (seg_end - br.pos != 2) goto fail;
             restart_interval = br_read_u16(&br);
-            br.pos = seg_end;
         } else {
             br.pos = seg_end;
         }
+        if (br.failed || br.pos != seg_end) goto fail;
     }
 
     if (!scan_found || width == 0 || height == 0) goto fail;
@@ -1006,7 +1063,10 @@ int neverc_jpeg_decode(const uint8_t *data, size_t len, neverc_jpeg_image_t *img
              * and emitted an RST marker, resetting the DC predictors. Mirror it
              * so cameras' / libjpeg's restart-enabled JPEGs decode correctly. */
             if (restart_interval && mcu_idx && mcu_idx % restart_interval == 0) {
-                br_restart(&br);
+                uint8_t expected_restart = (uint8_t)(
+                    0xD0U + ((mcu_idx / restart_interval - 1U) & 7U));
+                if (br_restart(&br, expected_restart) != 0)
+                    goto decode_fail;
                 prev_dc[0] = prev_dc[1] = prev_dc[2] = prev_dc[3] = 0;
             }
             mcu_idx++;
@@ -1020,21 +1080,37 @@ int neverc_jpeg_decode(const uint8_t *data, size_t len, neverc_jpeg_image_t *img
                         int quantized[64] = {0};
                         /* DC (differential within the component) */
                         int dc_sym = huff_decode(&br, &dc_tables[comp_dc_table[c]]);
-                        if (dc_sym < 0) dc_sym = 0;
-                        prev_dc[c] += decode_value(&br, dc_sym);
+                        if (dc_sym < 0 || dc_sym > 11)
+                            goto decode_fail;
+                        int dc_delta;
+                        if (decode_value(&br, dc_sym, &dc_delta) != 0)
+                            goto decode_fail;
+                        int next_dc = prev_dc[c] + dc_delta;
+                        if (next_dc < -2048 || next_dc > 2047)
+                            goto decode_fail;
+                        prev_dc[c] = next_dc;
                         quantized[0] = prev_dc[c];
 
                         /* AC */
                         int idx = 1;
                         while (idx < 64) {
                             int ac_sym = huff_decode(&br, &ac_tables[comp_ac_table[c]]);
-                            if (ac_sym < 0) break;
+                            if (ac_sym < 0) goto decode_fail;
                             if (ac_sym == 0x00) break;            /* EOB */
-                            if (ac_sym == 0xF0) { idx += 16; continue; }
+                            if (ac_sym == 0xF0) {
+                                idx += 16;
+                                if (idx > 64) goto decode_fail;
+                                continue;
+                            }
                             int run = (ac_sym >> 4) & 0x0F;
                             int size = ac_sym & 0x0F;
                             idx += run;
-                            if (idx < 64) { quantized[idx] = decode_value(&br, size); idx++; }
+                            if (size < 1 || size > 10 || idx >= 64)
+                                goto decode_fail;
+                            if (decode_value(
+                                    &br, size, &quantized[idx]) != 0)
+                                goto decode_fail;
+                            idx++;
                         }
 
                         /* Dequantize into AAN-scaled floats, then IDCT. The
@@ -1061,6 +1137,18 @@ int neverc_jpeg_decode(const uint8_t *data, size_t len, neverc_jpeg_image_t *img
             }
         }
     }
+
+    /* A complete baseline scan must end on a byte boundary followed by EOI.
+     * At most seven fill bits may remain in the bit buffer. Accept either fill
+     * bit value for compatibility, but never silently accept a truncated scan
+     * or unconsumed entropy bytes. */
+    if (br.failed || br.bit_cnt < 0 || br.bit_cnt > 7)
+        goto decode_fail;
+    size_t marker_pos = br.pos;
+    while (marker_pos < br.len && br.data[marker_pos] == 0xFF)
+        marker_pos++;
+    if (marker_pos >= br.len || br.data[marker_pos] != 0xD9)
+        goto decode_fail;
 
     /* Compose the output: box-upsample each component to full resolution (sample
      * c at px*comp_h[c]/Hmax, py*comp_v[c]/Vmax), then YCbCr->RGB. The row index
@@ -1095,6 +1183,8 @@ int neverc_jpeg_decode(const uint8_t *data, size_t len, neverc_jpeg_image_t *img
     for (int i = 0; i < 4; i++) { free(dc_tables[i].vals); free(ac_tables[i].vals); }
     return 0;
 
+decode_fail:
+    for (int c = 0; c < ncomp; c++) free(plane[c]);
 fail:
     for (int i = 0; i < 4; i++) { free(dc_tables[i].vals); free(ac_tables[i].vals); }
     free(img->pixels);

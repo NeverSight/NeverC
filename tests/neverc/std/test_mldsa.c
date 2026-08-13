@@ -87,6 +87,33 @@ static void test_seed_deterministic(void) {
     printf("ok\n");
 }
 
+static void test_nist_acvp_keygen_vector(void) {
+    printf("  NIST ACVP keygen vector ... ");
+    static const uint8_t seed[32] = {
+        0x71,0x94,0xB1,0x3C,0x95,0x23,0x10,0x10,
+        0xAF,0xD2,0xC9,0x09,0x99,0x2B,0xD2,0x00,
+        0x3B,0xA6,0xF4,0x37,0xC3,0x88,0x6B,0xDB,
+        0xE3,0xF6,0xB8,0x67,0xA1,0x4B,0xA1,0x61
+    };
+    static const uint8_t expected_pk_prefix[64] = {
+        0x0B,0x89,0x80,0x6F,0x0E,0xEC,0x39,0xF2,
+        0x89,0x11,0x16,0x15,0x2E,0xD4,0x31,0x9D,
+        0x42,0x60,0xDF,0xB8,0xAC,0x07,0x10,0x76,
+        0x5B,0xD4,0x97,0xE6,0xE1,0xDE,0x17,0x78,
+        0x3C,0xF8,0x1E,0x43,0x5A,0x41,0x2E,0xAB,
+        0xEF,0x5D,0xB3,0xAF,0x5D,0x15,0x86,0x7B,
+        0xBB,0x4C,0x60,0xF8,0xCF,0x98,0xBA,0x31,
+        0xBA,0xD6,0xD4,0x1A,0x5F,0x8E,0xB0,0xC1
+    };
+    neverc_mldsa44_sk_t sk;
+    neverc_mldsa44_pk_t pk;
+    ASSERT(neverc_mldsa44_new_sk(&sk, seed) == 0, "derive ACVP key");
+    neverc_mldsa44_sk_public_key(&sk, &pk);
+    ASSERT(memcmp(pk.pk, expected_pk_prefix, sizeof(expected_pk_prefix)) == 0,
+           "public key matches NIST ACVP tcId 1");
+    printf("ok\n");
+}
+
 static void test_pk_encode_decode(void) {
     printf("  pk encode/decode ... ");
     neverc_mldsa44_sk_t sk;
@@ -122,14 +149,38 @@ static void test_tampered_signature(void) {
     printf("ok\n");
 }
 
+static void test_noncanonical_hint_rejected(void) {
+    printf("  noncanonical hint rejection ... ");
+    neverc_mldsa44_sk_t sk;
+    neverc_mldsa44_pk_t pk;
+    ASSERT(neverc_mldsa44_generate_key(&sk) == 0, "keygen");
+    neverc_mldsa44_sk_public_key(&sk, &pk);
+
+    const uint8_t msg[] = "canonical encoding";
+    uint8_t sig[NEVERC_MLDSA44_SIG_SIZE];
+    ASSERT(neverc_mldsa44_sign(
+               &sk, msg, sizeof(msg) - 1, sig) == 0,
+           "sign");
+    uint8_t *hint = sig + 32 + 4 * 576;
+    int used = hint[80 + 3];
+    ASSERT(used >= 0 && used < 80, "signature has an unused hint byte");
+    hint[used] = 1;
+    ASSERT(neverc_mldsa44_verify(
+               &pk, msg, sizeof(msg) - 1, sig) != 0,
+           "nonzero unused hint byte must be rejected");
+    printf("ok\n");
+}
+
 int main(void) {
     printf("crypto/mldsa tests:\n");
     test_keygen_sign_verify();
     test_wrong_message();
     test_wrong_key();
     test_seed_deterministic();
+    test_nist_acvp_keygen_vector();
     test_pk_encode_decode();
     test_tampered_signature();
+    test_noncanonical_hint_rejected();
     printf("%d/%d passed\n", tests_passed, tests_run);
     return tests_passed == tests_run ? 0 : 1;
 }

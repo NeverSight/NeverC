@@ -29,6 +29,7 @@ extern "C" {
 /* ── ML-DSA-44 ───────────────────────────────────────────── */
 
 typedef struct {
+    /* Compact private-key representation: FIPS 204 seed plus derived pk. */
     uint8_t seed[32];
     uint8_t pk[NEVERC_MLDSA44_PK_SIZE];
 } neverc_mldsa44_sk_t;
@@ -51,6 +52,10 @@ void neverc_mldsa44_sk_public_key(const neverc_mldsa44_sk_t *sk,
 int neverc_mldsa44_new_pk(neverc_mldsa44_pk_t *pk,
                            const uint8_t *encoded, size_t len);
 
+/*
+ * Generate a deterministic pure ML-DSA signature with an empty context, as
+ * permitted by FIPS 204. The signature uses the standard 2420-byte encoding.
+ */
 int neverc_mldsa44_sign(const neverc_mldsa44_sk_t *sk,
                          const uint8_t *message, size_t msg_len,
                          uint8_t sig[NEVERC_MLDSA44_SIG_SIZE]);

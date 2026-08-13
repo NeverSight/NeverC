@@ -20,6 +20,7 @@ typedef struct {
     size_t   buf_len;
     uint8_t  suffix;
     int      squeezed;
+    size_t   squeeze_pos;
 } neverc_sha3_ctx;
 
 /* SHA3-224: 28-byte digest, 144-byte rate */
@@ -49,11 +50,13 @@ void neverc_sha3_512_sum(const uint8_t *data, size_t len, uint8_t digest[64]);
 /* SHAKE128: extendable-output function, 168-byte rate */
 void neverc_shake128_init(neverc_sha3_ctx *ctx);
 void neverc_shake128_update(neverc_sha3_ctx *ctx, const uint8_t *data, size_t len);
+/* May be called repeatedly; output continues from the previous squeeze. */
 void neverc_shake128_squeeze(neverc_sha3_ctx *ctx, uint8_t *out, size_t outlen);
 
 /* SHAKE256: extendable-output function, 136-byte rate */
 void neverc_shake256_init(neverc_sha3_ctx *ctx);
 void neverc_shake256_update(neverc_sha3_ctx *ctx, const uint8_t *data, size_t len);
+/* May be called repeatedly; output continues from the previous squeeze. */
 void neverc_shake256_squeeze(neverc_sha3_ctx *ctx, uint8_t *out, size_t outlen);
 
 #ifdef __cplusplus

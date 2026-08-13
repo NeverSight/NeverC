@@ -24,6 +24,7 @@
 #define OMEGA   80
 #define LAMBDA  128
 #define D_BITS  13  /* power2round decomposition bits */
+#define W1_POLY_SIZE (N * 6 / 8)
 
 /* ── Field arithmetic mod q ──────────────────────────────── */
 
@@ -146,33 +147,39 @@ static void expand_a_row(const uint8_t rho[32], int i, int j, poly_t out) {
             if (d < Q) out[c++] = d;
         }
     }
+    neverc_platform_secure_zero(buf, sizeof(buf));
+    neverc_platform_secure_zero(&xof, sizeof(xof));
 }
 
-static void sample_cbd_eta2(const uint8_t *sigma, size_t sigma_len,
-                             uint16_t counter, poly_t out) {
+static void sample_eta2(const uint8_t *sigma, size_t sigma_len,
+                        uint16_t counter, poly_t out) {
     neverc_sha3_ctx prf;
     neverc_shake256_init(&prf);
     neverc_shake256_update(&prf, sigma, sigma_len);
     uint8_t cnt[2] = {(uint8_t)(counter & 0xFF), (uint8_t)(counter >> 8)};
     neverc_shake256_update(&prf, cnt, 2);
-    uint8_t buf[N / 2]; /* eta=2: 4 bits per coefficient */
-    neverc_shake256_squeeze(&prf, buf, sizeof(buf));
 
-    for (int i = 0; i < N; i += 2) {
-        uint8_t b = buf[i / 2];
-        int a0 = (b & 1) + ((b >> 1) & 1);
-        int a1 = ((b >> 2) & 1) + ((b >> 3) & 1);
-        int b0 = ((b >> 4) & 1) + ((b >> 5) & 1);
-        int b1 = ((b >> 6) & 1) + ((b >> 7) & 1);
-        out[i]   = fe_mod(a0 - a1);
-        out[i+1] = fe_mod(b0 - b1);
+    int coefficient = 0;
+    while (coefficient < N) {
+        uint8_t byte;
+        neverc_shake256_squeeze(&prf, &byte, 1);
+        uint8_t candidates[2] = {
+            (uint8_t)(byte & 0x0F), (uint8_t)(byte >> 4)
+        };
+        for (int i = 0; i < 2 && coefficient < N; i++) {
+            if (candidates[i] < 15) {
+                int value = ETA - (candidates[i] % (2 * ETA + 1));
+                out[coefficient++] = fe_mod(value);
+            }
+        }
     }
+    neverc_platform_secure_zero(&prf, sizeof(prf));
 }
 
 /* ── Power2Round (FIPS 204, Algorithm 35) ────────────────── */
 
 static void power2round(fe_t r, fe_t *r1, fe_t *r0) {
-    *r1 = (r + (1 << (D_BITS - 1))) >> D_BITS;
+    *r1 = (r + (1 << (D_BITS - 1)) - 1) >> D_BITS;
     *r0 = r - (*r1 << D_BITS);
 }
 
@@ -230,6 +237,8 @@ static void sample_in_ball(const uint8_t *seed, size_t seed_len, poly_t c) {
         c[j] = (signs & 1) ? fe_mod(-1) : 1;
         signs >>= 1;
     }
+    neverc_platform_secure_zero(buf, sizeof(buf));
+    neverc_platform_secure_zero(&xof, sizeof(xof));
 }
 
 /* ── ExpandMask (FIPS 204, Algorithm 33) ─────────────────── */
@@ -260,6 +269,8 @@ static void expand_mask(const uint8_t *rho_prime, size_t rp_len,
         out[i] = fe_mod((int64_t)GAMMA1 - (int64_t)raw);
         bit_pos += 18;
     }
+    neverc_platform_secure_zero(buf, sizeof(buf));
+    neverc_platform_secure_zero(&xof, sizeof(xof));
 }
 
 /* ── Encoding / Decoding ─────────────────────────────────── */
@@ -323,6 +334,20 @@ static void unpack_z(poly_t z, const uint8_t *in) {
     }
 }
 
+/* ML-DSA-44 has 0 <= w1 <= 43, so SimpleBitPack uses six bits each. */
+static void pack_w1(uint8_t out[W1_POLY_SIZE], const poly_t w1) {
+    for (int i = 0; i < N; i += 4) {
+        uint32_t a0 = (uint32_t)w1[i];
+        uint32_t a1 = (uint32_t)w1[i + 1];
+        uint32_t a2 = (uint32_t)w1[i + 2];
+        uint32_t a3 = (uint32_t)w1[i + 3];
+        out[0] = (uint8_t)(a0 | (a1 << 6));
+        out[1] = (uint8_t)((a1 >> 2) | (a2 << 4));
+        out[2] = (uint8_t)((a2 >> 4) | (a3 << 2));
+        out += 3;
+    }
+}
+
 /* ── Infinity norm check ─────────────────────────────────── */
 
 static int check_norm(const poly_t p, int32_t bound) {
@@ -348,13 +373,13 @@ static void mldsa44_keygen_from_seed(const uint8_t seed[32],
                                       uint8_t *pk_out,
                                       poly_t s1_ntt[], poly_t s2_ntt[],
                                       poly_t t0_out[]) {
-    /* H(seed || k) → (ρ, ρ', K) */
+    /* H(seed || k || l) → (ρ, ρ', K), FIPS 204 Algorithm 6. */
     uint8_t expanded[128];
     neverc_sha3_ctx h;
     neverc_shake256_init(&h);
     neverc_shake256_update(&h, seed, 32);
-    uint8_t kb = K;
-    neverc_shake256_update(&h, &kb, 1);
+    uint8_t dimensions[2] = {K, L};
+    neverc_shake256_update(&h, dimensions, sizeof(dimensions));
     neverc_shake256_squeeze(&h, expanded, 128);
 
     const uint8_t *rho = expanded;        /* 32 bytes */
@@ -370,9 +395,9 @@ static void mldsa44_keygen_from_seed(const uint8_t seed[32],
     /* Generate s1, s2 from sigma */
     uint16_t counter = 0;
     for (int i = 0; i < L; i++)
-        sample_cbd_eta2(sigma, 64, counter++, g_dsa_s1[i]);
+        sample_eta2(sigma, 64, counter++, g_dsa_s1[i]);
     for (int i = 0; i < K; i++)
-        sample_cbd_eta2(sigma, 64, counter++, g_dsa_s2[i]);
+        sample_eta2(sigma, 64, counter++, g_dsa_s2[i]);
 
     /* NTT(s1) */
     poly_t s1_hat[L];
@@ -479,6 +504,9 @@ static int mldsa44_sign_internal(const uint8_t seed[32],
     uint8_t mu[64];
     neverc_shake256_init(&hctx);
     neverc_shake256_update(&hctx, tr, 64);
+    const uint8_t pure_mldsa_domain[2] = {0, 0}; /* mode, empty context */
+    neverc_shake256_update(
+        &hctx, pure_mldsa_domain, sizeof(pure_mldsa_domain));
     neverc_shake256_update(&hctx, msg, msg_len);
     neverc_shake256_squeeze(&hctx, mu, 64);
 
@@ -487,13 +515,16 @@ static int mldsa44_sign_internal(const uint8_t seed[32],
     uint8_t expanded[128];
     neverc_shake256_init(&hctx);
     neverc_shake256_update(&hctx, seed, 32);
-    uint8_t kb = K;
-    neverc_shake256_update(&hctx, &kb, 1);
+    uint8_t dimensions[2] = {K, L};
+    neverc_shake256_update(&hctx, dimensions, sizeof(dimensions));
     neverc_shake256_squeeze(&hctx, expanded, 128);
     const uint8_t *K_key = expanded + 96; /* last 32 bytes */
 
     neverc_shake256_init(&hctx);
     neverc_shake256_update(&hctx, K_key, 32);
+    const uint8_t deterministic_rnd[32] = {0};
+    neverc_shake256_update(
+        &hctx, deterministic_rnd, sizeof(deterministic_rnd));
     neverc_shake256_update(&hctx, mu, 64);
     neverc_shake256_squeeze(&hctx, rho_prime, 64);
 
@@ -509,6 +540,10 @@ static int mldsa44_sign_internal(const uint8_t seed[32],
         ntt_forward(g_sign_t0[i], t0_hat[i]);
 
     /* Rejection sampling loop */
+    poly_t y_hat[L], w1[K], c_poly, c_hat;
+    uint8_t c_tilde[32];
+    uint8_t encoded_w1[W1_POLY_SIZE];
+    int result = -1;
     uint16_t kappa = 0;
     for (int attempt = 0; attempt < 1000; attempt++, kappa += L) {
         /* y = ExpandMask(ρ', κ) */
@@ -516,7 +551,6 @@ static int mldsa44_sign_internal(const uint8_t seed[32],
             expand_mask(rho_prime, 64, kappa + (uint16_t)i, g_sign_y[i]);
 
         /* w = A * NTT(y) */
-        poly_t y_hat[L];
         for (int i = 0; i < L; i++)
             ntt_forward(g_sign_y[i], y_hat[i]);
 
@@ -530,30 +564,24 @@ static int mldsa44_sign_internal(const uint8_t seed[32],
         }
 
         /* w1 = HighBits(w) */
-        poly_t w1[K];
         for (int i = 0; i < K; i++)
             for (int j = 0; j < N; j++)
                 w1[i][j] = high_bits(g_sign_w[i][j]);
 
         /* Compute challenge hash: c_tilde = H(mu || w1_packed) */
-        uint8_t c_tilde[32];
         neverc_shake256_init(&hctx);
         neverc_shake256_update(&hctx, mu, 64);
-        /* Pack w1 simply */
         for (int i = 0; i < K; i++) {
-            for (int j = 0; j < N; j++) {
-                uint8_t b = (uint8_t)(w1[i][j] & 0xFF);
-                neverc_shake256_update(&hctx, &b, 1);
-            }
+            pack_w1(encoded_w1, w1[i]);
+            neverc_shake256_update(
+                &hctx, encoded_w1, sizeof(encoded_w1));
         }
         neverc_shake256_squeeze(&hctx, c_tilde, 32);
 
         /* c = SampleInBall(c_tilde) */
-        poly_t c_poly;
         sample_in_ball(c_tilde, 32, c_poly);
 
         /* c_hat = NTT(c) */
-        poly_t c_hat;
         ntt_forward(c_poly, c_hat);
 
         /* z = y + c * s1 */
@@ -628,10 +656,23 @@ static int mldsa44_sign_internal(const uint8_t seed[32],
             hp[OMEGA + i] = (uint8_t)idx;
         }
 
-        return 0; /* success */
+        result = 0;
+        break;
     }
 
-    return -1; /* should not happen for valid keys */
+    neverc_platform_secure_zero(tr, sizeof(tr));
+    neverc_platform_secure_zero(mu, sizeof(mu));
+    neverc_platform_secure_zero(rho_prime, sizeof(rho_prime));
+    neverc_platform_secure_zero(expanded, sizeof(expanded));
+    neverc_platform_secure_zero(&hctx, sizeof(hctx));
+    neverc_platform_secure_zero(t0_hat, sizeof(t0_hat));
+    neverc_platform_secure_zero(y_hat, sizeof(y_hat));
+    neverc_platform_secure_zero(w1, sizeof(w1));
+    neverc_platform_secure_zero(c_poly, sizeof(c_poly));
+    neverc_platform_secure_zero(c_hat, sizeof(c_hat));
+    neverc_platform_secure_zero(c_tilde, sizeof(c_tilde));
+    neverc_platform_secure_zero(encoded_w1, sizeof(encoded_w1));
+    return result;
 }
 
 /* ── Verify (FIPS 204, Algorithm 3) ──────────────────────── */
@@ -672,6 +713,8 @@ static int mldsa44_verify_internal(const uint8_t *pk, size_t pk_len,
         }
         prev = limit;
     }
+    for (int i = prev; i < OMEGA; i++)
+        if (h_bytes[i] != 0) return -1;
 
     /* tr = H(pk) */
     uint8_t tr[64];
@@ -684,6 +727,9 @@ static int mldsa44_verify_internal(const uint8_t *pk, size_t pk_len,
     uint8_t mu[64];
     neverc_shake256_init(&hctx);
     neverc_shake256_update(&hctx, tr, 64);
+    const uint8_t pure_mldsa_domain[2] = {0, 0}; /* mode, empty context */
+    neverc_shake256_update(
+        &hctx, pure_mldsa_domain, sizeof(pure_mldsa_domain));
     neverc_shake256_update(&hctx, msg, msg_len);
     neverc_shake256_squeeze(&hctx, mu, 64);
 
@@ -731,11 +777,11 @@ static int mldsa44_verify_internal(const uint8_t *pk, size_t pk_len,
     uint8_t c_tilde2[32];
     neverc_shake256_init(&hctx);
     neverc_shake256_update(&hctx, mu, 64);
+    uint8_t encoded_w1[W1_POLY_SIZE];
     for (int i = 0; i < K; i++) {
-        for (int j = 0; j < N; j++) {
-            uint8_t b = (uint8_t)(w1_prime[i][j] & 0xFF);
-            neverc_shake256_update(&hctx, &b, 1);
-        }
+        pack_w1(encoded_w1, w1_prime[i]);
+        neverc_shake256_update(
+            &hctx, encoded_w1, sizeof(encoded_w1));
     }
     neverc_shake256_squeeze(&hctx, c_tilde2, 32);
 
@@ -761,7 +807,7 @@ int neverc_mldsa44_generate_key(neverc_mldsa44_sk_t *sk) {
 
 int neverc_mldsa44_new_sk(neverc_mldsa44_sk_t *sk, const uint8_t seed[32]) {
     if (!sk || !seed) return -1;
-    memcpy(sk->seed, seed, 32);
+    memmove(sk->seed, seed, 32);
     mldsa_lock();
     mldsa44_keygen_from_seed(sk->seed, sk->pk, NULL, NULL, NULL);
     wipe_mldsa_scratch();

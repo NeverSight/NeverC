@@ -165,6 +165,78 @@ static void test_invalid_data(void) {
     ASSERT_EQ(neverc_jpeg_encode(&short_stride, 90, &output, &output_length), -1);
 }
 
+static size_t find_marker(const uint8_t *data, size_t length, uint8_t marker) {
+    for (size_t i = 0; i + 1 < length; i++)
+        if (data[i] == 0xFF && data[i + 1] == marker)
+            return i;
+    return SIZE_MAX;
+}
+
+static void test_rejects_malformed_streams(void) {
+    printf("[rejects_malformed_streams]\n");
+    uint8_t pixels[64];
+    memset(pixels, 128, sizeof(pixels));
+    neverc_jpeg_image_t source = {
+        .width = 8, .height = 8, .channels = 1,
+        .pixels = pixels, .stride = 8
+    };
+    uint8_t *encoded = NULL;
+    size_t encoded_length = 0;
+    int encode_result =
+        neverc_jpeg_encode(&source, 90, &encoded, &encoded_length);
+    ASSERT_EQ(encode_result, 0);
+    if (encode_result != 0) return;
+
+    size_t sos = find_marker(encoded, encoded_length, 0xDA);
+    ASSERT_TRUE(sos != SIZE_MAX && sos + 4 <= encoded_length);
+    if (sos != SIZE_MAX && sos + 4 <= encoded_length) {
+        size_t entropy_start =
+            sos + 2 + ((size_t)encoded[sos + 2] << 8) + encoded[sos + 3];
+        ASSERT_TRUE(entropy_start <= encoded_length);
+        if (entropy_start <= encoded_length) {
+            neverc_jpeg_image_t decoded;
+            ASSERT_EQ(neverc_jpeg_decode(
+                          encoded, entropy_start, &decoded), -1);
+            ASSERT_TRUE(decoded.pixels == NULL);
+        }
+    }
+    if (encoded_length >= 2) {
+        neverc_jpeg_image_t decoded;
+        ASSERT_EQ(neverc_jpeg_decode(
+                      encoded, encoded_length - 2, &decoded), -1);
+        ASSERT_TRUE(decoded.pixels == NULL);
+    }
+
+    uint8_t *malformed = (uint8_t *)malloc(encoded_length);
+    ASSERT_TRUE(malformed != NULL);
+    if (malformed) {
+        memcpy(malformed, encoded, encoded_length);
+        size_t dqt = find_marker(malformed, encoded_length, 0xDB);
+        ASSERT_TRUE(dqt != SIZE_MAX && dqt + 4 <= encoded_length);
+        if (dqt != SIZE_MAX && dqt + 4 <= encoded_length) {
+            malformed[dqt + 2] = 0xFF;
+            malformed[dqt + 3] = 0xFF;
+            neverc_jpeg_image_t decoded;
+            ASSERT_EQ(neverc_jpeg_decode(
+                          malformed, encoded_length, &decoded), -1);
+            ASSERT_TRUE(decoded.pixels == NULL);
+        }
+
+        memcpy(malformed, encoded, encoded_length);
+        size_t dht = find_marker(malformed, encoded_length, 0xC4);
+        ASSERT_TRUE(dht != SIZE_MAX && dht + 22 <= encoded_length);
+        if (dht != SIZE_MAX && dht + 22 <= encoded_length) {
+            malformed[dht + 21] = 12; /* invalid baseline DC category */
+            neverc_jpeg_image_t decoded;
+            ASSERT_EQ(neverc_jpeg_decode(
+                          malformed, encoded_length, &decoded), -1);
+            ASSERT_TRUE(decoded.pixels == NULL);
+        }
+        free(malformed);
+    }
+    free(encoded);
+}
+
 static void test_quality_levels(void) {
     printf("[quality_levels]\n");
     neverc_jpeg_image_t img;
@@ -235,6 +307,7 @@ int main(void) {
     test_encode_decode_grayscale();
     test_gradient();
     test_invalid_data();
+    test_rejects_malformed_streams();
     test_quality_levels();
     test_sof_chroma_420();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);

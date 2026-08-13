@@ -21,6 +21,9 @@ typedef struct {
 /* Generate a new UUID v4. Returns the nil UUID if the platform CSPRNG fails. */
 neverc_uuid_t neverc_uuid_new(void);
 
+/* Generate a UUID v4 with explicit error reporting. Clears out on failure. */
+int neverc_uuid_generate(neverc_uuid_t *out);
+
 /* Format UUID to string (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx).
    A NULL output pointer is ignored. */
 void neverc_uuid_to_string(neverc_uuid_t u, char out[37]);

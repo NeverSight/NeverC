@@ -24,6 +24,12 @@ static int tests_passed = 0;
     tests_passed++;                                           \
 } while(0)
 
+static int all_zero(const uint8_t *bytes, size_t length) {
+    uint8_t combined = 0;
+    for (size_t i = 0; i < length; i++) combined |= bytes[i];
+    return combined == 0;
+}
+
 static void test_768_roundtrip(void) {
     printf("  768 keygen+encaps+decaps ... ");
     neverc_mlkem768_dk_t dk;
@@ -87,6 +93,54 @@ static void test_768_ek_encode_decode(void) {
     uint8_t sk2[32];
     ASSERT(neverc_mlkem768_decapsulate(&dk, ct, sk2) == 0, "decaps");
     ASSERT(memcmp(sk, sk2, 32) == 0, "shared keys match");
+
+    encoded[0] = 0xFF;
+    encoded[1] = (uint8_t)((encoded[1] & 0xF0) | 0x0F);
+    memset(&ek2, 0x5A, sizeof(ek2));
+    ASSERT(neverc_mlkem768_new_ek(
+               &ek2, encoded, sizeof(encoded)) == -1,
+           "reject non-canonical coefficient");
+    ASSERT(all_zero(ek2.ek, sizeof(ek2.ek)),
+           "failed key parse clears output");
+    memset(sk, 0x5A, sizeof(sk));
+    memset(ct, 0x5A, sizeof(ct));
+    ASSERT(neverc_mlkem768_encapsulate(&ek2, sk, ct) == -1,
+           "reject malformed encapsulation key");
+    ASSERT(all_zero(sk, sizeof(sk)) && all_zero(ct, sizeof(ct)),
+           "malformed key clears encapsulation outputs");
+    printf("ok\n");
+}
+
+static void test_768_nist_acvp_keygen_vector(void) {
+    printf("  768 NIST ACVP keygen vector ... ");
+    static const uint8_t seed[NEVERC_MLKEM_SEED_SIZE] = {
+        /* d */
+        0xE5,0x82,0xB7,0xD7,0x5E,0x6C,0x80,0xB0,
+        0x5A,0xE3,0x92,0xA1,0xFC,0x9F,0x71,0x53,
+        0xB1,0x23,0x90,0xFD,0x99,0x93,0x03,0x68,
+        0xCC,0x67,0xA7,0x68,0xBA,0xEB,0xC8,0xA0,
+        /* z */
+        0x1C,0xDA,0xCB,0x87,0x40,0xC0,0xB8,0x7C,
+        0x4A,0x37,0x95,0x75,0xF1,0x87,0xB3,0x67,
+        0xCB,0xFA,0x3B,0x30,0x0B,0xF5,0x91,0xB1,
+        0x09,0xF7,0x98,0x16,0xE9,0xCB,0xE8,0xF0
+    };
+    static const uint8_t expected_ek_prefix[64] = {
+        0x28,0xC7,0x93,0x77,0x87,0x41,0xB8,0x0B,
+        0x02,0xB4,0x33,0x9F,0x2A,0xA4,0x34,0x72,
+        0x55,0xB0,0x99,0xF1,0x72,0x64,0xE1,0xB8,
+        0xCC,0x0A,0x2C,0x7C,0x2A,0x1A,0x79,0xF7,
+        0x99,0x7B,0x90,0x7F,0xD0,0x49,0x6C,0x6E,
+        0x6C,0x8A,0xD7,0x71,0x4F,0x5F,0x33,0x9D,
+        0x75,0xF1,0x1F,0x62,0x55,0x91,0xA8,0x69,
+        0xBE,0x11,0x75,0xAE,0x47,0xF0,0x5F,0xD4
+    };
+    neverc_mlkem768_dk_t dk;
+    neverc_mlkem768_ek_t ek;
+    ASSERT(neverc_mlkem768_new_dk(&dk, seed) == 0, "derive ACVP key");
+    neverc_mlkem768_dk_encapsulation_key(&dk, &ek);
+    ASSERT(memcmp(ek.ek, expected_ek_prefix, sizeof(expected_ek_prefix)) == 0,
+           "encapsulation key matches NIST ACVP tcId 26");
     printf("ok\n");
 }
 
@@ -199,6 +253,7 @@ int main(void) {
     test_768_roundtrip();
     test_768_seed_deterministic();
     test_768_ek_encode_decode();
+    test_768_nist_acvp_keygen_vector();
     test_768_wrong_key();
     test_768_implicit_rejection_value();
     test_768_multiple_encaps();

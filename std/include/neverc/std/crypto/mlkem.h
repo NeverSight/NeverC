@@ -51,7 +51,7 @@ int neverc_mlkem768_new_dk(neverc_mlkem768_dk_t *dk, const uint8_t seed[64]);
 void neverc_mlkem768_dk_encapsulation_key(const neverc_mlkem768_dk_t *dk,
                                           neverc_mlkem768_ek_t *ek);
 
-/* Parse an encapsulation key from encoded bytes. Returns 0 on success. */
+/* Parse a canonical encapsulation key. On failure, ek is cleared. */
 int neverc_mlkem768_new_ek(neverc_mlkem768_ek_t *ek,
                            const uint8_t *encoded, size_t len);
 
@@ -97,6 +97,7 @@ int neverc_mlkem1024_generate_key(neverc_mlkem1024_dk_t *dk);
 int neverc_mlkem1024_new_dk(neverc_mlkem1024_dk_t *dk, const uint8_t seed[64]);
 void neverc_mlkem1024_dk_encapsulation_key(const neverc_mlkem1024_dk_t *dk,
                                            neverc_mlkem1024_ek_t *ek);
+/* Parse a canonical encapsulation key. On failure, ek is cleared. */
 int neverc_mlkem1024_new_ek(neverc_mlkem1024_ek_t *ek,
                             const uint8_t *encoded, size_t len);
 /* Outputs are securely cleared if validation or entropy acquisition fails. */
