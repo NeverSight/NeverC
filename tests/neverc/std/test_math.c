@@ -377,6 +377,38 @@ static void test_inv_hyp_vectors(void) {
     }
 }
 
+static void test_hyperbolic_extreme_arguments(void) {
+    printf("[hyperbolic extreme arguments]\n");
+
+    const double tiny = 1e-300;
+    check_true("asinh(tiny) preserves tiny value",
+               neverc_math_asinh(tiny) == tiny);
+    check_true("asinh(-tiny) preserves tiny value",
+               neverc_math_asinh(-tiny) == -tiny);
+    check_true("atanh(tiny) preserves tiny value",
+               neverc_math_atanh(tiny) == tiny);
+    check_true("atanh(-tiny) preserves tiny value",
+               neverc_math_atanh(-tiny) == -tiny);
+
+    check_double("asinh(1e200) remains finite",
+                 neverc_math_asinh(1e200),
+                 4.612101657793691e+02);
+    check_double("asinh(-1e200) remains finite",
+                 neverc_math_asinh(-1e200),
+                 -4.612101657793691e+02);
+    check_double("acosh(1e300) remains finite",
+                 neverc_math_acosh(1e300),
+                 6.914686750787737e+02);
+
+    const double hyperbolic_710 = 1.1169973830808555e+308;
+    check_double("sinh(710) avoids intermediate overflow",
+                 neverc_math_sinh(710.0), hyperbolic_710);
+    check_double("sinh(-710) avoids intermediate overflow",
+                 neverc_math_sinh(-710.0), -hyperbolic_710);
+    check_double("cosh(710) avoids intermediate overflow",
+                 neverc_math_cosh(710.0), hyperbolic_710);
+}
+
 static void test_exp_vectors(void) {
     char buf[128];
     printf("[exp vectors - exp/exp2/expm1]\n");
@@ -1996,6 +2028,7 @@ int main(void) {
     test_inv_trig_vectors();
     test_hyp_vectors();
     test_inv_hyp_vectors();
+    test_hyperbolic_extreme_arguments();
     test_exp_vectors();
     test_log_vectors();
     test_pow_vectors();

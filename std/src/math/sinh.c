@@ -23,7 +23,13 @@ double neverc_math_sinh(double x) {
 
     double temp;
     if (x > 21.0) {
-        temp = neverc_math_exp(x) * 0.5;
+        const double max_log = 7.09782712893383973096e+02;
+        if (x > max_log) {
+            double half_exp = neverc_math_exp(0.5 * x);
+            temp = (0.5 * half_exp) * half_exp;
+        } else {
+            temp = neverc_math_exp(x) * 0.5;
+        }
     } else if (x > 0.5) {
         double ex = neverc_math_exp(x);
         temp = (ex - 1.0 / ex) * 0.5;
