@@ -154,6 +154,8 @@ static void test_response_free_null(void) {
 
 #ifndef _WIN32
 
+static char static_test_dir[4096];
+
 static void hello_handler(neverc_http_request_t *req,
                            neverc_http_response_writer_t *w) {
     (void)req;
@@ -347,6 +349,8 @@ static pid_t start_test_server(int port) {
         neverc_http_mux_handle(mux, "/redirect/307", redirect_307_handler);
         neverc_http_mux_handle(mux, "/redirect/inspect",
                                redirect_inspect_handler);
+        if (static_test_dir[0] != '\0')
+            neverc_http_serve_dir(mux, "/static/", static_test_dir);
 
         char addr[32];
         snprintf(addr, sizeof(addr), "127.0.0.1:%d", port);
@@ -819,6 +823,118 @@ static void test_http_methods(void) {
     }
 
     stop_test_server(server_pid);
+}
+
+static void test_large_static_head(void) {
+    printf("[large_static_head]\n");
+    static const size_t file_size = (1024U * 1024U) + 17U;
+    char directory_template[] = "/tmp/neverc_http_static_XXXXXX";
+    char *directory = mkdtemp(directory_template);
+    if (!directory) {
+        printf("  SKIP: cannot create static test directory\n");
+        return;
+    }
+    snprintf(static_test_dir, sizeof(static_test_dir), "%s", directory);
+    char path[4096];
+    int path_length = snprintf(
+        path, sizeof(path), "%s/large.bin", static_test_dir);
+    if (path_length < 0 || (size_t)path_length >= sizeof(path)) {
+        static_test_dir[0] = '\0';
+        rmdir(directory);
+        return;
+    }
+    FILE *file = fopen(path, "wb");
+    if (!file) {
+        printf("  SKIP: cannot create static test file\n");
+        static_test_dir[0] = '\0';
+        rmdir(directory);
+        return;
+    }
+    uint8_t block[4096];
+    memset(block, 0x5a, sizeof(block));
+    size_t remaining = file_size;
+    while (remaining > 0) {
+        size_t amount = remaining < sizeof(block) ? remaining : sizeof(block);
+        if (fwrite(block, 1U, amount, file) != amount) break;
+        remaining -= amount;
+    }
+    int close_result = fclose(file);
+    int file_ok = remaining == 0 && close_result == 0;
+    check_int("static test file", file_ok, 1);
+    if (!file_ok) {
+        unlink(path);
+        static_test_dir[0] = '\0';
+        rmdir(directory);
+        return;
+    }
+
+    int port = get_free_port();
+    if (port < 0) {
+        printf("  SKIP: cannot find free port\n");
+        unlink(path);
+        static_test_dir[0] = '\0';
+        rmdir(directory);
+        return;
+    }
+    pid_t server_pid = start_test_server(port);
+    const char *error = NULL;
+    char address[64];
+    snprintf(address, sizeof(address), "127.0.0.1:%d", port);
+    neverc_tcp_conn_t *connection = neverc_tcp_dial(address, &error);
+    check_not_null("static HEAD connection", connection);
+    if (connection) {
+        neverc_tcp_set_timeout(connection, 5000);
+        static const char head_request[] =
+            "HEAD /static/large.bin HTTP/1.1\r\n"
+            "Host: localhost\r\n\r\n";
+        check_int("static HEAD write",
+                  neverc_tcp_write(connection, head_request,
+                                   sizeof(head_request) - 1U) > 0,
+                  1);
+
+        char headers[4096];
+        size_t header_length = 0;
+        headers[0] = '\0';
+        while (header_length + 1U < sizeof(headers)) {
+            int received = neverc_tcp_read(
+                connection, headers + header_length, 1U);
+            if (received <= 0) break;
+            header_length += (size_t)received;
+            headers[header_length] = '\0';
+            if (strstr(headers, "\r\n\r\n")) break;
+        }
+        check_int("static HEAD status",
+                  strncmp(headers, "HTTP/1.1 200", 12U) == 0, 1);
+        check_int("static HEAD length",
+                  strstr(headers, "Content-Length: 1048593") != NULL, 1);
+
+        static const char get_request[] =
+            "GET /hello HTTP/1.1\r\n"
+            "Host: localhost\r\nConnection: close\r\n\r\n";
+        check_int("request after static HEAD",
+                  neverc_tcp_write(connection, get_request,
+                                   sizeof(get_request) - 1U) > 0,
+                  1);
+        char response[4096];
+        int total = 0;
+        while (total < (int)sizeof(response) - 1) {
+            int received = neverc_tcp_read(
+                connection, response + total,
+                sizeof(response) - 1U - (size_t)total);
+            if (received <= 0) break;
+            total += received;
+        }
+        response[total] = '\0';
+        check_int("no HEAD body before next response",
+                  strncmp(response, "HTTP/1.1 200", 12U) == 0, 1);
+        check_int("response after static HEAD",
+                  strstr(response, "Hello, World!") != NULL, 1);
+        neverc_tcp_close(connection);
+    }
+    stop_test_server(server_pid);
+    unlink(path);
+    static_test_dir[0] = '\0';
+    rmdir(directory);
 }
 
 /* ===== Keep-alive connections ===== */
@@ -2788,6 +2904,7 @@ int main(void) {
     test_stress();
     test_large_post();
     test_http_methods();
+    test_large_static_head();
     test_keep_alive();
     test_thread_stress();
     test_404();

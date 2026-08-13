@@ -9,10 +9,23 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef _WIN32
+#include <direct.h>
+#else
+#include <unistd.h>
+#endif
 
 static int tests_run;
 static int tests_failed;
 static atomic_int access_log_calls;
+
+#define HTTP_STAGE5_STATIC_FILE "large.bin"
+#define HTTP_STAGE5_STATIC_SIZE ((1024U * 1024U) + 17U)
+#define HTTP_STAGE5_GZIP_FILE "compressible.txt"
+
+static char http_stage5_static_dir[256];
+static char http_stage5_static_path[320];
+static char http_stage5_gzip_path[320];
 
 #define CHECK(condition)                                                     \
     do {                                                                     \
@@ -40,6 +53,10 @@ typedef struct {
     char data[256];
     size_t length;
 } http_stage5_sink_t;
+
+static int http_stage5_tcp_write_all(neverc_tcp_conn_t *connection,
+                                     const void *data, size_t length);
+static void http_stage5_remove_static_file(void);
 
 static void http_stage5_access_log(const char *method, const char *path,
                                    int status, double duration_ms,
@@ -145,6 +162,236 @@ static int http_stage5_sink(void *context, const void *data, size_t length) {
     return 0;
 }
 
+static int http_stage5_write_static_file(void) {
+    char directory_template[] = "neverc-http-stage5-static-XXXXXX";
+#ifdef _WIN32
+    if (_mktemp_s(directory_template, sizeof(directory_template)) != 0 ||
+        _mkdir(directory_template) != 0)
+        return -1;
+#else
+    if (!mkdtemp(directory_template)) return -1;
+#endif
+    if (snprintf(http_stage5_static_dir, sizeof(http_stage5_static_dir),
+                 "%s", directory_template) < 0 ||
+        snprintf(http_stage5_static_path, sizeof(http_stage5_static_path),
+                 "%s/%s", directory_template,
+                 HTTP_STAGE5_STATIC_FILE) < 0 ||
+        snprintf(http_stage5_gzip_path, sizeof(http_stage5_gzip_path),
+                 "%s/%s", directory_template,
+                 HTTP_STAGE5_GZIP_FILE) < 0) {
+        http_stage5_remove_static_file();
+        return -1;
+    }
+    FILE *file = fopen(http_stage5_static_path, "wb");
+    if (!file) {
+        http_stage5_remove_static_file();
+        return -1;
+    }
+    uint8_t block[4096];
+    for (size_t i = 0; i < sizeof(block); i++)
+        block[i] = (uint8_t)(i & 0xffU);
+    size_t remaining = HTTP_STAGE5_STATIC_SIZE;
+    int result = 0;
+    while (remaining > 0) {
+        size_t amount = remaining < sizeof(block) ? remaining : sizeof(block);
+        if (fwrite(block, 1U, amount, file) != amount) {
+            result = -1;
+            break;
+        }
+        remaining -= amount;
+    }
+    if (fclose(file) != 0) result = -1;
+    if (result == 0) {
+        file = fopen(http_stage5_gzip_path, "wb");
+        if (!file) {
+            result = -1;
+        } else {
+            uint8_t compressible[1024];
+            memset(compressible, 'A', sizeof(compressible));
+            size_t written = fwrite(
+                compressible, 1U, sizeof(compressible), file);
+            int close_result = fclose(file);
+            if (written != sizeof(compressible) || close_result != 0)
+                result = -1;
+        }
+    }
+    if (result != 0) {
+        http_stage5_remove_static_file();
+    }
+    return result;
+}
+
+static void http_stage5_remove_static_file(void) {
+    if (http_stage5_static_path[0] != '\0')
+        (void)remove(http_stage5_static_path);
+    if (http_stage5_gzip_path[0] != '\0')
+        (void)remove(http_stage5_gzip_path);
+#ifdef _WIN32
+    if (http_stage5_static_dir[0] != '\0')
+        (void)_rmdir(http_stage5_static_dir);
+#else
+    if (http_stage5_static_dir[0] != '\0')
+        (void)rmdir(http_stage5_static_dir);
+#endif
+    http_stage5_static_dir[0] = '\0';
+    http_stage5_static_path[0] = '\0';
+    http_stage5_gzip_path[0] = '\0';
+}
+
+static void http_stage5_check_static_head(neverc_http_client_t *client,
+                                          const char *scheme, int port) {
+    char url[160];
+    const char *host = strcmp(scheme, "https") == 0
+        ? "localhost" : "127.0.0.1";
+    (void)snprintf(url, sizeof(url), "%s://%s:%d/static/%s",
+                   scheme, host, port, HTTP_STAGE5_STATIC_FILE);
+    neverc_http_response_t *response = neverc_http_client_do(
+        client, "HEAD", url, NULL, NULL, 0U);
+    CHECK(response != NULL && response->error == NULL);
+    if (response) {
+        char expected[64];
+        (void)snprintf(expected, sizeof(expected), "Content-Length: %u",
+                       (unsigned)HTTP_STAGE5_STATIC_SIZE);
+        CHECK(response->status_code == 200);
+        CHECK(response->body == NULL && response->body_len == 0U);
+        CHECK(response->headers && strstr(response->headers, expected));
+        neverc_http_response_free(response);
+    }
+
+    (void)snprintf(url, sizeof(url), "%s://%s:%d/echo",
+                   scheme, host, port);
+    response = neverc_http_client_do(
+        client, "POST", url, "text/plain", "after-head", 10U);
+    CHECK(response != NULL && response->error == NULL);
+    if (response) {
+        CHECK(response->status_code == 200 && response->body_len == 10U &&
+              response->body &&
+              memcmp(response->body, "after-head", 10U) == 0);
+        neverc_http_response_free(response);
+    }
+}
+
+static int http_stage5_fetch_headers(int port, const char *request,
+                                     char *headers, size_t capacity) {
+    if (!headers || capacity == 0) return -1;
+    headers[0] = '\0';
+    char address[64];
+    (void)snprintf(address, sizeof(address), "127.0.0.1:%d", port);
+    const char *error = NULL;
+    neverc_tcp_conn_t *connection = neverc_tcp_dial(address, &error);
+    if (!connection) return -1;
+    neverc_tcp_set_timeout(connection, 5000);
+    if (http_stage5_tcp_write_all(
+            connection, request, strlen(request)) != 0) {
+        neverc_tcp_close(connection);
+        return -1;
+    }
+    size_t length = 0;
+    while (length + 1U < capacity) {
+        int received = neverc_tcp_read(connection, headers + length, 1U);
+        if (received <= 0) break;
+        length += (size_t)received;
+        headers[length] = '\0';
+        if (strstr(headers, "\r\n\r\n")) {
+            neverc_tcp_close(connection);
+            return 0;
+        }
+    }
+    neverc_tcp_close(connection);
+    return -1;
+}
+
+static size_t http_stage5_content_length(const char *headers) {
+    const char *value = strstr(headers, "Content-Length: ");
+    if (!value) return SIZE_MAX;
+    value += strlen("Content-Length: ");
+    char *end = NULL;
+    unsigned long long length = strtoull(value, &end, 10);
+    size_t result = (size_t)length;
+    if (end == value || (unsigned long long)result != length) return SIZE_MAX;
+    return result;
+}
+
+static void http_stage5_check_gzip_head(int port) {
+    static const char head_request[] =
+        "HEAD /static/" HTTP_STAGE5_GZIP_FILE " HTTP/1.1\r\n"
+        "Host: localhost\r\n"
+        "Accept-Encoding: gzip\r\n"
+        "Connection: close\r\n\r\n";
+    static const char get_request[] =
+        "GET /static/" HTTP_STAGE5_GZIP_FILE " HTTP/1.1\r\n"
+        "Host: localhost\r\n"
+        "Accept-Encoding: gzip\r\n"
+        "Connection: close\r\n\r\n";
+    char head_headers[4096];
+    char get_headers[4096];
+    int head_result = http_stage5_fetch_headers(
+        port, head_request, head_headers, sizeof(head_headers));
+    int get_result = http_stage5_fetch_headers(
+        port, get_request, get_headers, sizeof(get_headers));
+    CHECK(head_result == 0);
+    CHECK(get_result == 0);
+    if (head_result != 0 || get_result != 0) return;
+    CHECK(strstr(head_headers, "Content-Encoding: gzip\r\n") != NULL);
+    CHECK(strstr(get_headers, "Content-Encoding: gzip\r\n") != NULL);
+    size_t head_length = http_stage5_content_length(head_headers);
+    size_t get_length = http_stage5_content_length(get_headers);
+    CHECK(head_length != SIZE_MAX && head_length < 1024U);
+    CHECK(head_length == get_length);
+}
+
+static void http_stage5_check_plain_static_head_raw(int port) {
+    char address[64];
+    (void)snprintf(address, sizeof(address), "127.0.0.1:%d", port);
+    const char *error = NULL;
+    neverc_tcp_conn_t *connection = neverc_tcp_dial(address, &error);
+    CHECK(connection != NULL);
+    if (!connection) return;
+    neverc_tcp_set_timeout(connection, 5000);
+
+    static const char head_request[] =
+        "HEAD /static/" HTTP_STAGE5_STATIC_FILE " HTTP/1.1\r\n"
+        "Host: localhost\r\n\r\n";
+    CHECK(http_stage5_tcp_write_all(
+              connection, head_request, sizeof(head_request) - 1U) == 0);
+    char headers[4096];
+    size_t header_length = 0;
+    headers[0] = '\0';
+    while (header_length + 1U < sizeof(headers)) {
+        int received = neverc_tcp_read(
+            connection, headers + header_length, 1U);
+        if (received <= 0) break;
+        header_length += (size_t)received;
+        headers[header_length] = '\0';
+        if (strstr(headers, "\r\n\r\n")) break;
+    }
+    CHECK(strncmp(headers, "HTTP/1.1 200", 12U) == 0);
+    CHECK(strstr(headers, "Content-Length: 1048593") != NULL);
+
+    static const char post_request[] =
+        "POST /echo HTTP/1.1\r\n"
+        "Host: localhost\r\n"
+        "Content-Type: text/plain\r\n"
+        "Content-Length: 10\r\n"
+        "Connection: close\r\n\r\n"
+        "after-head";
+    CHECK(http_stage5_tcp_write_all(
+              connection, post_request, sizeof(post_request) - 1U) == 0);
+    char response[4096];
+    int total = 0;
+    while (total < (int)sizeof(response) - 1) {
+        int received = neverc_tcp_read(
+            connection, response + total,
+            sizeof(response) - 1U - (size_t)total);
+        if (received <= 0) break;
+        total += received;
+    }
+    response[total] = '\0';
+    CHECK(strncmp(response, "HTTP/1.1 200", 12U) == 0);
+    CHECK(strstr(response, "after-head") != NULL);
+    neverc_tcp_close(connection);
+}
+
 static neverc_thread_executor_t *http_stage5_start_server(
     http_stage5_server_t *test) {
     neverc_thread_executor_t *executor =
@@ -169,6 +416,8 @@ static neverc_http_mux_t *http_stage5_mux(void) {
     neverc_http_mux_handle(
         mux, "POST /request-framing", http_stage5_request_framing);
     neverc_http_mux_handle(mux, "GET /slow", http_stage5_slow);
+    if (http_stage5_static_dir[0] != '\0')
+        neverc_http_serve_dir(mux, "/static/", http_stage5_static_dir);
     return mux;
 }
 
@@ -180,6 +429,9 @@ static void http_stage5_plain_e2e(void) {
         neverc_http_server_config_default();
     server_config.workers = 2;
     server_config.max_connections = 8;
+    server_config.gzip_enabled = 1;
+    server_config.gzip_level = 6;
+    server_config.gzip_min_size = 1U;
     server_config.access_log_enabled = 1;
     server_config.access_log = http_stage5_access_log;
     http_stage5_server_t test;
@@ -202,6 +454,10 @@ static void http_stage5_plain_e2e(void) {
     neverc_http_client_t *client = neverc_http_client_new(&client_config);
     CHECK(client != NULL);
     char url[128];
+    http_stage5_check_plain_static_head_raw(port);
+    http_stage5_check_gzip_head(port);
+    if (client)
+        http_stage5_check_static_head(client, "http", port);
     (void)snprintf(url, sizeof(url), "http://127.0.0.1:%d/echo", port);
     static const char body[] = "buffered body";
     neverc_http_response_t *response = client
@@ -343,13 +599,28 @@ static int http_stage5_tcp_write_all(neverc_tcp_conn_t *connection,
     return 0;
 }
 
-static void http_stage5_invalid_304_task(void *context) {
+static void http_stage5_304_task(void *context) {
     http_stage5_raw_server_t *server =
         (http_stage5_raw_server_t *)context;
-    const char *error = NULL;
-    neverc_tcp_conn_t *connection =
-        neverc_tcp_accept(server->listener, &error);
+    neverc_context_cancel_handle_t *cancel = NULL;
+    neverc_context_t *background = neverc_context_background();
+    neverc_context_t *deadline = background
+        ? neverc_context_with_timeout_handle(background, 5000, &cancel)
+        : NULL;
+    neverc_tcp_conn_t *connection = NULL;
+    neverc_net_result_t accepted = deadline
+        ? neverc_tcp_accept_context(server->listener, deadline, &connection)
+        : (neverc_net_result_t){NEVERC_NET_NOMEM, 0, "accept", 0U};
+    if (cancel) {
+        neverc_context_cancel_handle_cancel(cancel);
+        neverc_context_cancel_handle_free(cancel);
+    }
+    neverc_context_free(deadline);
+    neverc_context_free(background);
+    if (accepted.status != NEVERC_NET_OK)
+        return;
     if (!connection) return;
+    neverc_tcp_set_timeout(connection, 5000);
     char request[1024];
     if (neverc_tcp_read(connection, request, sizeof(request)) <= 0) {
         neverc_tcp_close(connection);
@@ -364,7 +635,7 @@ static void http_stage5_invalid_304_task(void *context) {
     neverc_tcp_close(connection);
 }
 
-static void http_stage5_reject_invalid_304(int streaming) {
+static void http_stage5_accept_304_transfer_encoding(int streaming) {
     const char *error = NULL;
     neverc_tcp_listener_t *listener =
         neverc_tcp_listen("127.0.0.1:0", &error);
@@ -384,7 +655,7 @@ static void http_stage5_reject_invalid_304(int streaming) {
     CHECK(executor != NULL);
     if (!executor ||
         neverc_thread_executor_submit(
-            executor, http_stage5_invalid_304_task,
+            executor, http_stage5_304_task,
             &server) != NEVERC_THREAD_OK) {
         neverc_tcp_listener_close(listener);
         if (executor) neverc_thread_executor_free(executor);
@@ -398,7 +669,7 @@ static void http_stage5_reject_invalid_304(int streaming) {
     neverc_http_client_t *client = neverc_http_client_new(&config);
     CHECK(client != NULL);
     char url[128];
-    (void)snprintf(url, sizeof(url), "http://127.0.0.1:%d/invalid",
+    (void)snprintf(url, sizeof(url), "http://127.0.0.1:%d/not-modified",
                    address.port);
 
     neverc_context_t *background =
@@ -406,9 +677,9 @@ static void http_stage5_reject_invalid_304(int streaming) {
     if (!client || (streaming && !background)) {
         neverc_context_free(background);
         neverc_http_client_free(client);
-        neverc_tcp_listener_close(listener);
         (void)neverc_thread_executor_shutdown(executor);
         neverc_thread_executor_free(executor);
+        neverc_tcp_listener_close(listener);
         return;
     }
     http_stage5_sink_t sink;
@@ -420,7 +691,12 @@ static void http_stage5_reject_invalid_304(int streaming) {
                   NULL, NULL, http_stage5_sink, &sink)
             : neverc_http_client_do(
                   client, "GET", url, NULL, NULL, 0U);
-    CHECK(response != NULL && response->error != NULL);
+    CHECK(response != NULL && response->error == NULL);
+    if (response) {
+        CHECK(response->status_code == 304);
+        CHECK(response->body == NULL && response->body_len == 0U);
+    }
+    CHECK(!streaming || sink.length == 0U);
     neverc_http_response_free(response);
     neverc_context_free(background);
     neverc_http_client_free(client);
@@ -431,10 +707,10 @@ static void http_stage5_reject_invalid_304(int streaming) {
     neverc_tcp_listener_close(listener);
 }
 
-static void http_stage5_invalid_response_framing(void) {
-    puts("[invalid response framing]");
-    http_stage5_reject_invalid_304(0);
-    http_stage5_reject_invalid_304(1);
+static void http_stage5_response_framing(void) {
+    puts("[response framing]");
+    http_stage5_accept_304_transfer_encoding(0);
+    http_stage5_accept_304_transfer_encoding(1);
 }
 
 static void http_stage5_tls_e2e(void) {
@@ -472,6 +748,8 @@ static void http_stage5_tls_e2e(void) {
     trusted_config.client_key_file = files.client_key;
     neverc_http_client_t *trusted = neverc_http_client_new(&trusted_config);
     CHECK(trusted != NULL);
+    if (trusted)
+        http_stage5_check_static_head(trusted, "https", port);
     neverc_http_response_t *response = trusted
         ? neverc_http_client_do(trusted, "POST", url, "text/plain", "tls",
                                 3U) : NULL;
@@ -530,9 +808,18 @@ static void http_stage5_tls_e2e(void) {
 
 int main(void) {
     puts("HTTP stage 5 production API test suite:");
+    int fixture_result = http_stage5_write_static_file();
+    CHECK(fixture_result == 0);
+    if (fixture_result != 0) {
+        http_stage5_remove_static_file();
+        printf("http stage5: %d checks, %d failed\n",
+               tests_run, tests_failed);
+        return 1;
+    }
     http_stage5_plain_e2e();
-    http_stage5_invalid_response_framing();
+    http_stage5_response_framing();
     http_stage5_tls_e2e();
+    http_stage5_remove_static_file();
     printf("http stage5: %d checks, %d failed\n", tests_run, tests_failed);
     if (tests_failed == 0) puts("passed");
     return tests_failed == 0 ? 0 : 1;

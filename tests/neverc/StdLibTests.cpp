@@ -612,6 +612,12 @@ TEST_F(StdLibTest, NetBufferFailurePaths) {
     "src/encoding/pem/pem.c"
 
 STD_TEST(http, "src/net/http/http.c", "src/net/http/http_client.c", "src/net/http/http2/http2.c", "src/net/http/http2/http2_server.c", "src/net/http/http2/http2_client.c", TCP_DEPS, HTTP_TLS_DEPS)
+STD_TEST(http_stage5,
+         "src/net/http/http.c", "src/net/http/http_client.c",
+         "src/net/http/http2/http2.c",
+         "src/net/http/http2/http2_server.c",
+         "src/net/http/http2/http2_client.c",
+         "src/time/time.c", TCP_DEPS, HTTP_TLS_DEPS)
 TEST_F(StdLibTest, HttpRouteAllocationFailure) {
   auto r = compileAndRunStdTest(
       "http_route_oom",

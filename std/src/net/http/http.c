@@ -54,6 +54,7 @@ struct neverc_http_response_writer {
     nc_sock_t   fd;
     int         status;
     int         headers_sent;
+    int         aborted;
     int         chunked;
     int         chunked_ended;
     char       *header_names[HTTP_MAX_HEADERS];
@@ -270,18 +271,19 @@ static void rw_apply_gzip(neverc_http_response_writer_t *w) {
     free(compressed);
 }
 
-static void rw_flush(neverc_http_response_writer_t *w) {
-    if (!w || w->hijacked) return;
-    if (w->headers_sent) return;
+static int rw_flush(neverc_http_response_writer_t *w) {
+    if (!w || w->hijacked || w->aborted) return -1;
+    if (w->headers_sent) return 0;
     if (w->protocol_flush) {
         rw_apply_gzip(w);
-        if (w->protocol_flush(w->protocol_context, w, 1) == 0)
+        if (w->protocol_flush(w->protocol_context, w, 1) == 0) {
             w->headers_sent = 1;
-        else
-            w->keep_alive = 0;
-        return;
+            return 0;
+        }
+        w->keep_alive = 0;
+        w->aborted = 1;
+        return -1;
     }
-    w->headers_sent = 1;
     rw_apply_gzip(w);
     int status_forbids_body = w->status < 200 || w->status == 204 ||
                               w->status == 304;
@@ -293,12 +295,14 @@ static void rw_flush(neverc_http_response_writer_t *w) {
     size_t sl_len = 0;
     const char *sl = fast_status_line(w->status, &sl_len);
     if (sl) {
-        nc_buf_append(&hdr, sl, sl_len);
+        if (nc_buf_append(&hdr, sl, sl_len) != 0) goto fail;
     } else {
         char line[256];
         int n = snprintf(line, sizeof(line), "HTTP/1.1 %d %s\r\n",
                          w->status, neverc_http_status_text(w->status));
-        nc_buf_append(&hdr, line, (size_t)n);
+        if (n < 0 || (size_t)n >= sizeof(line) ||
+            nc_buf_append(&hdr, line, (size_t)n) != 0)
+            goto fail;
     }
 
     int has_content_type = 0;
@@ -310,10 +314,13 @@ static void rw_flush(neverc_http_response_writer_t *w) {
             strcasecmp(w->header_names[i], "Transfer-Encoding") == 0 ||
             strcasecmp(w->header_names[i], "Connection") == 0)
             continue;
-        nc_buf_append(&hdr, w->header_names[i], strlen(w->header_names[i]));
-        nc_buf_append(&hdr, ": ", 2);
-        nc_buf_append(&hdr, w->header_values[i], strlen(w->header_values[i]));
-        nc_buf_append(&hdr, "\r\n", 2);
+        if (nc_buf_append(&hdr, w->header_names[i],
+                          strlen(w->header_names[i])) != 0 ||
+            nc_buf_append(&hdr, ": ", 2) != 0 ||
+            nc_buf_append(&hdr, w->header_values[i],
+                          strlen(w->header_values[i])) != 0 ||
+            nc_buf_append(&hdr, "\r\n", 2) != 0)
+            goto fail;
 
         if (strcasecmp(w->header_names[i], "Content-Type") == 0)
             has_content_type = 1;
@@ -321,19 +328,21 @@ static void rw_flush(neverc_http_response_writer_t *w) {
 
     if (!has_content_type) {
         const char *ct = "Content-Type: text/plain; charset=utf-8\r\n";
-        nc_buf_append(&hdr, ct, strlen(ct));
+        if (nc_buf_append(&hdr, ct, strlen(ct)) != 0) goto fail;
     }
     if (!forbids_content_length) {
         size_t content_length = w->has_content_length_override
             ? w->content_length_override : w->body.len;
         n = snprintf(line, sizeof(line), "Content-Length: %zu\r\n",
                      content_length);
-        nc_buf_append(&hdr, line, (size_t)n);
+        if (n < 0 || (size_t)n >= sizeof(line) ||
+            nc_buf_append(&hdr, line, (size_t)n) != 0)
+            goto fail;
     }
     const char *conn_val = w->keep_alive
         ? "Connection: keep-alive\r\n"
         : "Connection: close\r\n";
-    nc_buf_append(&hdr, conn_val, strlen(conn_val));
+    if (nc_buf_append(&hdr, conn_val, strlen(conn_val)) != 0) goto fail;
 
     {
         /* Cache the Date header — update once per second.
@@ -371,22 +380,32 @@ static void rw_flush(neverc_http_response_writer_t *w) {
 #elif defined(_WIN32)
         MemoryBarrier();
 #endif
-        if (date_lens[ri] > 0)
-            nc_buf_append(&hdr, date_bufs[ri], (size_t)date_lens[ri]);
+        if (date_lens[ri] > 0 &&
+            nc_buf_append(&hdr, date_bufs[ri],
+                          (size_t)date_lens[ri]) != 0)
+            goto fail;
     }
 
-    nc_buf_append(&hdr, "\r\n", 2);
+    if (nc_buf_append(&hdr, "\r\n", 2) != 0) goto fail;
 
     if (w->fd != NC_INVALID_SOCK || w->transport_write) {
-        if (rw_write_all(w, hdr.data, hdr.len) != 0)
-            w->keep_alive = 0;
-        else if (!w->head_request && !status_forbids_body &&
-                 w->body.len > 0 &&
-                 rw_write_all(w, w->body.data, w->body.len) != 0)
-            w->keep_alive = 0;
+        if (rw_write_all(w, hdr.data, hdr.len) != 0) goto fail;
+        w->headers_sent = 1;
+        if (!w->head_request && !status_forbids_body && w->body.len > 0 &&
+            rw_write_all(w, w->body.data, w->body.len) != 0)
+            goto fail;
+    } else {
+        w->headers_sent = 1;
     }
 
     nc_buf_free(&hdr);
+    return 0;
+
+fail:
+    w->keep_alive = 0;
+    w->aborted = 1;
+    nc_buf_free(&hdr);
+    return -1;
 }
 
 void nc_http_writer_set_protocol(neverc_http_response_writer_t *writer,
@@ -398,10 +417,9 @@ void nc_http_writer_set_protocol(neverc_http_response_writer_t *writer,
 }
 
 int nc_http_writer_finish(neverc_http_response_writer_t *writer) {
-    if (!writer || writer->hijacked) return -1;
-    if (!writer->headers_sent)
-        rw_flush(writer);
-    return writer->headers_sent ? 0 : -1;
+    if (!writer || writer->hijacked || writer->aborted) return -1;
+    if (!writer->headers_sent) return rw_flush(writer);
+    return 0;
 }
 
 void neverc_http_set_status(neverc_http_response_writer_t *w, int code) {
@@ -532,9 +550,9 @@ void neverc_http_enable_chunked(neverc_http_response_writer_t *w) {
     if (w && !w->headers_sent) w->chunked = 1;
 }
 
-static void rw_send_chunked_headers(neverc_http_response_writer_t *w) {
-    if (w->headers_sent) return;
-    w->headers_sent = 1;
+static int rw_send_chunked_headers(neverc_http_response_writer_t *w) {
+    if (!w || w->aborted) return -1;
+    if (w->headers_sent) return 0;
 
     nc_buf_t hdr;
     nc_buf_init(&hdr);
@@ -542,7 +560,9 @@ static void rw_send_chunked_headers(neverc_http_response_writer_t *w) {
     char line[256];
     int n = snprintf(line, sizeof(line), "HTTP/1.1 %d %s\r\n",
                      w->status, neverc_http_status_text(w->status));
-    nc_buf_append(&hdr, line, (size_t)n);
+    if (n < 0 || (size_t)n >= sizeof(line) ||
+        nc_buf_append(&hdr, line, (size_t)n) != 0)
+        goto fail;
 
     int has_content_type = 0;
     for (int i = 0; i < w->nheaders; i++) {
@@ -550,10 +570,13 @@ static void rw_send_chunked_headers(neverc_http_response_writer_t *w) {
             strcasecmp(w->header_names[i], "Transfer-Encoding") == 0 ||
             strcasecmp(w->header_names[i], "Connection") == 0)
             continue;
-        nc_buf_append(&hdr, w->header_names[i], strlen(w->header_names[i]));
-        nc_buf_append(&hdr, ": ", 2);
-        nc_buf_append(&hdr, w->header_values[i], strlen(w->header_values[i]));
-        nc_buf_append(&hdr, "\r\n", 2);
+        if (nc_buf_append(&hdr, w->header_names[i],
+                          strlen(w->header_names[i])) != 0 ||
+            nc_buf_append(&hdr, ": ", 2) != 0 ||
+            nc_buf_append(&hdr, w->header_values[i],
+                          strlen(w->header_values[i])) != 0 ||
+            nc_buf_append(&hdr, "\r\n", 2) != 0)
+            goto fail;
 
         if (strcasecmp(w->header_names[i], "Content-Type") == 0)
             has_content_type = 1;
@@ -561,28 +584,37 @@ static void rw_send_chunked_headers(neverc_http_response_writer_t *w) {
 
     if (!has_content_type) {
         const char *ct = "Content-Type: text/plain; charset=utf-8\r\n";
-        nc_buf_append(&hdr, ct, strlen(ct));
+        if (nc_buf_append(&hdr, ct, strlen(ct)) != 0) goto fail;
     }
     const char *te = "Transfer-Encoding: chunked\r\n";
-    nc_buf_append(&hdr, te, strlen(te));
+    if (nc_buf_append(&hdr, te, strlen(te)) != 0) goto fail;
     if (w->ntrailers > 0) {
-        nc_buf_append(&hdr, "Trailer: ", 9);
+        if (nc_buf_append(&hdr, "Trailer: ", 9) != 0) goto fail;
         for (int i = 0; i < w->ntrailers; i++) {
-            if (i > 0) nc_buf_append(&hdr, ", ", 2);
-            nc_buf_append(&hdr, w->trailer_names[i],
-                          strlen(w->trailer_names[i]));
+            if ((i > 0 && nc_buf_append(&hdr, ", ", 2) != 0) ||
+                nc_buf_append(&hdr, w->trailer_names[i],
+                              strlen(w->trailer_names[i])) != 0)
+                goto fail;
         }
-        nc_buf_append(&hdr, "\r\n", 2);
+        if (nc_buf_append(&hdr, "\r\n", 2) != 0) goto fail;
     }
     const char *conn_val = w->keep_alive
         ? "Connection: keep-alive\r\n"
         : "Connection: close\r\n";
-    nc_buf_append(&hdr, conn_val, strlen(conn_val));
+    if (nc_buf_append(&hdr, conn_val, strlen(conn_val)) != 0) goto fail;
 
-    nc_buf_append(&hdr, "\r\n", 2);
-    if (rw_write_all(w, hdr.data, hdr.len) != 0)
-        w->keep_alive = 0;
+    if (nc_buf_append(&hdr, "\r\n", 2) != 0 ||
+        rw_write_all(w, hdr.data, hdr.len) != 0)
+        goto fail;
+    w->headers_sent = 1;
     nc_buf_free(&hdr);
+    return 0;
+
+fail:
+    w->keep_alive = 0;
+    w->aborted = 1;
+    nc_buf_free(&hdr);
+    return -1;
 }
 
 int neverc_http_flush_chunk(neverc_http_response_writer_t *w) {
@@ -591,13 +623,12 @@ int neverc_http_flush_chunk(neverc_http_response_writer_t *w) {
         return w->protocol_flush(w->protocol_context, w, 0);
     if (w->head_request || w->status < 200 ||
         w->status == 204 || w->status == 304) {
-        rw_flush(w);
+        if (rw_flush(w) != 0) return -1;
         nc_buf_reset(&w->body);
         return 0;
     }
 
-    if (!w->headers_sent)
-        rw_send_chunked_headers(w);
+    if (!w->headers_sent && rw_send_chunked_headers(w) != 0) return -1;
 
     if (w->body.len == 0) return 0;
 
@@ -621,7 +652,7 @@ int neverc_http_end_chunked(neverc_http_response_writer_t *w) {
     }
     if (w->head_request || w->status < 200 ||
         w->status == 204 || w->status == 304) {
-        rw_flush(w);
+        if (rw_flush(w) != 0) return -1;
         nc_buf_reset(&w->body);
         w->chunked_ended = 1;
         return 0;
@@ -630,8 +661,7 @@ int neverc_http_end_chunked(neverc_http_response_writer_t *w) {
     if (w->body.len > 0 && neverc_http_flush_chunk(w) != 0)
         return -1;
 
-    if (!w->headers_sent)
-        rw_send_chunked_headers(w);
+    if (!w->headers_sent && rw_send_chunked_headers(w) != 0) return -1;
 
     nc_buf_t ending;
     nc_buf_init(&ending);
@@ -2314,8 +2344,8 @@ static void http1_stream_handler_task(void *argument) {
     if (task->writer->chunked && !task->writer->chunked_ended) {
         if (neverc_http_end_chunked(task->writer) != 0)
             task->writer->keep_alive = 0;
-    } else {
-        rw_flush(task->writer);
+    } else if (rw_flush(task->writer) != 0) {
+        task->writer->keep_alive = 0;
     }
 
     if (nc_evloop_post(connection->loop,
@@ -2604,11 +2634,13 @@ static void http_conn_process(http_conn_t *hc) {
             return;
         }
 
-        if (w->chunked && !w->chunked_ended) {
+        if (w->aborted) {
+            w->keep_alive = 0;
+        } else if (w->chunked && !w->chunked_ended) {
             if (neverc_http_end_chunked(w) != 0)
                 w->keep_alive = 0;
         } else {
-            rw_flush(w);
+            if (rw_flush(w) != 0) w->keep_alive = 0;
         }
 
         if (hc->access_log_enabled) {
@@ -4253,7 +4285,20 @@ static void static_file_handler(neverc_http_request_t *req,
 
         neverc_http_set_header(w, "Content-Type", guess_content_type(filepath));
 
+        if (w->head_request &&
+            (fsize > 1024 * 1024 || !w->gzip_enabled ||
+             !w->accepts_gzip || (size_t)fsize < w->gzip_min_size)) {
+            w->has_content_length_override = 1;
+            w->content_length_override = (size_t)fsize;
+            fclose(f);
+            return;
+        }
+
         if (fsize <= 1024 * 1024) {
+            if (fsize == 0) {
+                fclose(f);
+                return;
+            }
             char *data = (char *)malloc((size_t)fsize);
             if (!data) {
                 fclose(f);
@@ -4263,7 +4308,13 @@ static void static_file_handler(neverc_http_request_t *req,
             }
             size_t nread = fread(data, 1, (size_t)fsize, f);
             fclose(f);
-            neverc_http_write(w, data, nread);
+            if (nread != (size_t)fsize ||
+                neverc_http_write(w, data, nread) < 0) {
+                nc_buf_reset(&w->body);
+                neverc_http_set_status(w, 500);
+                (void)neverc_http_write_string(
+                    w, "500 Internal Server Error\n");
+            }
             free(data);
         } else {
 #if NC_HAS_SENDFILE
@@ -4272,7 +4323,10 @@ static void static_file_handler(neverc_http_request_t *req,
             if (!w->transport_write && w->fd != NC_INVALID_SOCK) {
                 w->has_content_length_override = 1;
                 w->content_length_override = (size_t)fsize;
-                rw_flush(w);
+                if (rw_flush(w) != 0) {
+                    fclose(f);
+                    return;
+                }
 
                 int file_fd = fileno(f);
                 off_t offset = 0;
@@ -4304,6 +4358,7 @@ static void static_file_handler(neverc_http_request_t *req,
                 /* Suppress the normal response finalizer: a zero-size chunk
                  * would falsely authenticate a partial file as complete. */
                 w->chunked_ended = 1;
+                w->aborted = 1;
                 w->keep_alive = 0;
             } else if (neverc_http_end_chunked(w) != 0) {
                 w->keep_alive = 0;

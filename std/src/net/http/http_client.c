@@ -1063,8 +1063,7 @@ analyze_response:
                 if ((((framing.status_code >= 100 &&
                        framing.status_code < 200) ||
                       framing.status_code == 204) &&
-                     (framing.has_content_length || framing.is_chunked)) ||
-                    (framing.status_code == 304 && framing.is_chunked)) {
+                     (framing.has_content_length || framing.is_chunked))) {
                     client_connection_close(conn);
                     nc_buf_free(&resp_buf);
                     return make_error_response(
@@ -1512,8 +1511,7 @@ static neverc_http_response_t *do_stream_request(
                 connection, &wire, NULL, "invalid HTTP response framing");
         if ((((framing.status_code >= 100 && framing.status_code < 200) ||
               framing.status_code == 204) &&
-             (framing.has_content_length || framing.is_chunked)) ||
-            (framing.status_code == 304 && framing.is_chunked))
+             (framing.has_content_length || framing.is_chunked)))
             return stream_response_error(
                 connection, &wire, NULL,
                 "body framing is forbidden for this status");

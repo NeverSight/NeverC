@@ -33,6 +33,7 @@ struct neverc_http_response_writer {
     nc_sock_t   fd;
     int         status;
     int         headers_sent;
+    int         aborted;
     int         chunked;
     int         chunked_ended;
     char       *header_names[HTTP_MAX_HEADERS];
