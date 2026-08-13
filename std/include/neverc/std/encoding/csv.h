@@ -40,11 +40,12 @@ int neverc_csv_read_line(const char *line, size_t line_len,
 /*
  * Parse entire CSV data into a 2D array of strings.
  * Returns number of records, or -1 on error.
- * `records[i]` is an array of field pointers, `field_counts[i]` is the count.
- * All strings are stored in `work_buf`.
+ * The caller must initialize each `records[i]` to writable storage for
+ * NEVERC_CSV_MAX_FIELDS field pointers. `field_counts[i]` receives the count.
+ * All string bytes are stored in `work_buf`; no allocation is performed.
  */
 int neverc_csv_read_all(const char *data, size_t data_len,
-                        const char ***records, int **field_counts,
+                        const char ***records, int *field_counts,
                         int max_records,
                         char *work_buf, size_t work_buf_len,
                         const neverc_csv_reader_opts_t *opts);
