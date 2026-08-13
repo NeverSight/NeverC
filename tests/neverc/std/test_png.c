@@ -281,7 +281,7 @@ static void test_padded_stride_and_crc_rejection(void) {
     img.bit_depth = 8;
     img.color_type = NEVERC_PNG_COLOR_TRUECOLOR;
     img.channels = 3;
-    img.stride = sizeof(pixels);
+    img.stride = 8;
     img.pixels = pixels;
 
     uint8_t *png = NULL;
