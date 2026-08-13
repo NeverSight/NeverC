@@ -123,11 +123,23 @@ static void test_decode(void) {
     check_int("decode(Zm9vYmFy).len", n, 6);
     check_mem("decode(Zm9vYmFy).val", dst, (const uint8_t *)"foobar", 6);
 
+    n = neverc_base64_decode(dst, "Zm9v\r\nYmFy", 10);
+    check_int("decode ignores CRLF length", n, 6);
+    check_mem("decode ignores CRLF value",
+              dst, (const uint8_t *)"foobar", 6);
+
+    n = neverc_base64_decode(dst, "Zg=\n=", 5);
+    check_int("decode padding split by newline length", n, 1);
+    check_mem("decode padding split by newline value",
+              dst, (const uint8_t *)"f", 1);
+
     n = neverc_base64_decode(dst, "!!!", 3);
     check_int("decode(invalid)", n, -1);
 
     check_int("standard rejects URL alphabet",
               neverc_base64_decode(dst, "-__-", 4), -1);
+    check_int("reject non-newline whitespace",
+              neverc_base64_decode(dst, "Z g==", 5), -1);
     check_int("standard rejects comma",
               neverc_base64_decode(dst, "AAAA,AAA", 8), -1);
     check_int("reject excess padding",

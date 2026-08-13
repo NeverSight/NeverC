@@ -110,22 +110,54 @@ static int decode_impl(uint8_t *dst, const char *src, size_t src_len,
     if (src_len == 0)
         return 0;
 
+    size_t clean_len = 0;
+    for (size_t i = 0; i < src_len; i++) {
+        if (src[i] != '\r' && src[i] != '\n')
+            clean_len++;
+    }
+    if (clean_len == 0)
+        return 0;
+
     size_t padding = 0;
-    while (padding < src_len && src[src_len - 1 - padding] == '=')
-        ++padding;
-    if (padding > 2 || (padding != 0 && src_len % 4 != 0))
+    for (size_t i = src_len; i > 0; ) {
+        unsigned char c = (unsigned char)src[--i];
+        if (c == '\r' || c == '\n')
+            continue;
+        if (c != '=')
+            break;
+        padding++;
+    }
+    if (padding > 2 || (padding != 0 && clean_len % 4 != 0))
         return -1;
 
-    size_t encoded_len = src_len - padding;
+    size_t encoded_len = clean_len - padding;
     size_t remain = encoded_len % 4;
     if (remain == 1 ||
         (padding == 1 && remain != 3) ||
         (padding == 2 && remain != 2))
         return -1;
-    for (size_t i = 0; i < encoded_len; ++i) {
-        if (src[i] == '=')
+
+    size_t logical = 0;
+    int last_value = -1;
+    for (size_t i = 0; i < src_len; i++) {
+        unsigned char c = (unsigned char)src[i];
+        if (c == '\r' || c == '\n')
+            continue;
+        if (logical < encoded_len) {
+            int value = decode_value(c, url_safe);
+            if (value < 0)
+                return -1;
+            if (logical + 1 == encoded_len)
+                last_value = value;
+        } else if (c != '=') {
             return -1;
+        }
+        logical++;
     }
+    if (logical != clean_len ||
+        (remain == 2 && (last_value & 0x0f) != 0) ||
+        (remain == 3 && (last_value & 0x03) != 0))
+        return -1;
 
     size_t decoded_len = (encoded_len / 4) * 3 +
                          (remain == 2 ? 1 : remain == 3 ? 2 : 0);
@@ -133,43 +165,39 @@ static int decode_impl(uint8_t *dst, const char *src, size_t src_len,
         return -1;
 
     size_t di = 0;
-    size_t si = 0;
-
-    size_t n = (encoded_len / 4) * 4;
-    while (si < n) {
-        int a = decode_value((unsigned char)src[si], url_safe);
-        int b = decode_value((unsigned char)src[si + 1], url_safe);
-        int c = decode_value((unsigned char)src[si + 2], url_safe);
-        int d = decode_value((unsigned char)src[si + 3], url_safe);
-        if (a < 0 || b < 0 || c < 0 || d < 0)
-            return -1;
-        uint32_t val = ((uint32_t)a << 18) | ((uint32_t)b << 12) |
-                       ((uint32_t)c << 6) | (uint32_t)d;
-        dst[di]   = (uint8_t)(val >> 16);
-        dst[di+1] = (uint8_t)(val >> 8);
-        dst[di+2] = (uint8_t)val;
-        si += 4;
-        di += 3;
+    int values[4];
+    size_t value_count = 0;
+    size_t data_seen = 0;
+    for (size_t i = 0; i < src_len && data_seen < encoded_len; i++) {
+        unsigned char c = (unsigned char)src[i];
+        if (c == '\r' || c == '\n')
+            continue;
+        values[value_count++] = decode_value(c, url_safe);
+        data_seen++;
+        if (value_count == 4) {
+            uint32_t val = ((uint32_t)values[0] << 18) |
+                           ((uint32_t)values[1] << 12) |
+                           ((uint32_t)values[2] << 6) |
+                           (uint32_t)values[3];
+            dst[di] = (uint8_t)(val >> 16);
+            dst[di + 1] = (uint8_t)(val >> 8);
+            dst[di + 2] = (uint8_t)val;
+            di += 3;
+            value_count = 0;
+        }
     }
 
-    if (remain == 2) {
-        int a = decode_value((unsigned char)src[si], url_safe);
-        int b = decode_value((unsigned char)src[si + 1], url_safe);
-        if (a < 0 || b < 0 || (b & 0x0f) != 0)
-            return -1;
-        uint32_t val = ((uint32_t)a << 18) | ((uint32_t)b << 12);
+    if (value_count == 2) {
+        uint32_t val = ((uint32_t)values[0] << 18) |
+                       ((uint32_t)values[1] << 12);
         dst[di] = (uint8_t)(val >> 16);
         di += 1;
-    } else if (remain == 3) {
-        int a = decode_value((unsigned char)src[si], url_safe);
-        int b = decode_value((unsigned char)src[si + 1], url_safe);
-        int c = decode_value((unsigned char)src[si + 2], url_safe);
-        if (a < 0 || b < 0 || c < 0 || (c & 0x03) != 0)
-            return -1;
-        uint32_t val = ((uint32_t)a << 18) | ((uint32_t)b << 12) |
-                       ((uint32_t)c << 6);
-        dst[di]   = (uint8_t)(val >> 16);
-        dst[di+1] = (uint8_t)(val >> 8);
+    } else if (value_count == 3) {
+        uint32_t val = ((uint32_t)values[0] << 18) |
+                       ((uint32_t)values[1] << 12) |
+                       ((uint32_t)values[2] << 6);
+        dst[di] = (uint8_t)(val >> 16);
+        dst[di + 1] = (uint8_t)(val >> 8);
         di += 2;
     }
 
