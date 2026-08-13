@@ -188,6 +188,47 @@ static void test_mkdir(void) {
     ASSERT_TRUE(!neverc_os_exists(dir));
 }
 
+#if !defined(_WIN32)
+static void test_remove_all_does_not_follow_symlinks(void) {
+    printf("[remove all symlinks]\n");
+    char root[1024], outside[1024], link_path[1200];
+    char dangling_path[1200], missing_target[1024], sentinel[1200];
+    char direct_link[1024], direct_link_slash[1026];
+    make_test_path(root, sizeof(root), "neverc_test_remove_tree");
+    make_test_path(outside, sizeof(outside), "neverc_test_remove_outside");
+    make_test_path(missing_target, sizeof(missing_target),
+                   "neverc_test_remove_missing");
+    make_test_path(direct_link, sizeof(direct_link),
+                   "neverc_test_remove_direct_link");
+    snprintf(link_path, sizeof(link_path), "%s/link", root);
+    snprintf(dangling_path, sizeof(dangling_path), "%s/dangling", root);
+    snprintf(sentinel, sizeof(sentinel), "%s/sentinel", outside);
+
+    neverc_os_remove_all(root);
+    neverc_os_remove_all(outside);
+    neverc_os_remove(direct_link);
+    neverc_os_remove(missing_target);
+    ASSERT_EQ(neverc_os_mkdir(root, 0700), 0);
+    ASSERT_EQ(neverc_os_mkdir(outside, 0700), 0);
+    ASSERT_EQ(neverc_os_write_file(
+                  sentinel, (const unsigned char *)"keep", 4, 0600), 0);
+    ASSERT_EQ(neverc_os_symlink(outside, link_path), 0);
+    ASSERT_EQ(neverc_os_symlink(missing_target, dangling_path), 0);
+    ASSERT_EQ(neverc_os_symlink(outside, direct_link), 0);
+
+    snprintf(direct_link_slash, sizeof(direct_link_slash),
+             "%s/", direct_link);
+    ASSERT_EQ(neverc_os_remove_all(direct_link_slash), 0);
+    ASSERT_TRUE(neverc_os_exists(sentinel));
+
+    ASSERT_EQ(neverc_os_remove_all(root), 0);
+    ASSERT_TRUE(!neverc_os_exists(root));
+    ASSERT_TRUE(neverc_os_exists(sentinel));
+
+    ASSERT_EQ(neverc_os_remove_all(outside), 0);
+}
+#endif
+
 static void test_rename(void) {
     printf("[rename]\n");
     char oldbuf[1024], newbuf[1024];
@@ -394,6 +435,9 @@ int main(void) {
     test_read_write_file();
     test_stat();
     test_mkdir();
+#if !defined(_WIN32)
+    test_remove_all_does_not_follow_symlinks();
+#endif
     test_rename();
     test_process();
     test_temp();

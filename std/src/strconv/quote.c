@@ -481,8 +481,10 @@ int neverc_strconv_quoted_prefix(const char *s, size_t *prefix_len) {
     if (quote != '"' && quote != '\'') return -1;
 
     size_t i = 1;
+    size_t rune_count = 0;
     while (i < slen) {
         if (s[i] == quote) {
+            if (quote == '\'' && rune_count != 1) return -1;
             *prefix_len = i + 1;
             return 0;
         }
@@ -499,6 +501,7 @@ int neverc_strconv_quoted_prefix(const char *s, size_t *prefix_len) {
             if (width == 1 && r == NEVERC_UTF8_RUNE_ERROR) return -1;
             i += (size_t)width;
         }
+        rune_count++;
     }
     return -1;
 }

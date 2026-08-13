@@ -1092,6 +1092,11 @@ static int cmp_pair_keyidx(const void *a, const void *b) {
     return (x->idx > y->idx) - (x->idx < y->idx);
 }
 static bool pred_pair_even(const void *e) { return ((const vpair_t *)e)->key % 2 == 0; }
+static int stateful_predicate_calls;
+static bool pred_first_call_only(const void *e) {
+    (void)e;
+    return stateful_predicate_calls++ == 0;
+}
 static int cmp_big_key(const void *a, const void *b) {
     int x = ((const vbig_t *)a)->key, y = ((const vbig_t *)b)->key;
     return (x > y) - (x < y);
@@ -1261,6 +1266,21 @@ static void test_stable_partition(void) {
     vpair_t af[3] = {{1, 0}, {3, 1}, {5, 2}};
     v = neverc_vector_from_array(af, 3, sizeof(vpair_t));
     ASSERT(neverc_vector_stable_partition(v, pred_pair_even) == 0, "stable_partition all-false");
+    neverc_vector_free(v);
+
+    /* Predicate results must be consumed once, not recounted into a staging
+     * buffer whose capacity was computed from different calls. */
+    vpair_t stateful[3] = {{1, 0}, {2, 1}, {3, 2}};
+    v = neverc_vector_from_array(stateful, 3, sizeof(vpair_t));
+    stateful_predicate_calls = 0;
+    ASSERT(neverc_vector_stable_partition(v, pred_first_call_only) == 1,
+           "stable_partition accepts stateful predicate safely");
+    ASSERT(stateful_predicate_calls == 3,
+           "stable_partition evaluates each element once");
+    ASSERT(((vpair_t *)neverc_vector_at(v, 0))->idx == 0 &&
+           ((vpair_t *)neverc_vector_at(v, 1))->idx == 1 &&
+           ((vpair_t *)neverc_vector_at(v, 2))->idx == 2,
+           "stable_partition preserves stateful classification order");
     neverc_vector_free(v);
 
     /* large element size (308B) exercises the malloc buffer path */

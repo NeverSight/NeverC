@@ -49,6 +49,38 @@ static void test_reverse_proxy_creation(void) {
     if (rp) {
         neverc_http_handler_func_t h = neverc_httputil_proxy_handler(rp);
         check_not_null("proxy handler", (const void *)(uintptr_t)h);
+        char *long_query = (char *)malloc(70001U);
+        check_not_null("allocate oversized proxy query", long_query);
+        if (long_query && h) {
+            memset(long_query, 'q', 70000U);
+            long_query[70000] = '\0';
+            neverc_http_request_t request;
+            memset(&request, 0, sizeof(request));
+            request.method = "GET";
+            request.path = "/";
+            request.query = long_query;
+            h(&request, NULL);
+            check_true("oversized proxy query rejected safely", 1);
+        }
+        free(long_query);
+
+        char *long_header = (char *)malloc(70010U);
+        check_not_null("allocate oversized proxy header", long_header);
+        if (long_header && h) {
+            memcpy(long_header, "X-Large", 8U);
+            memset(long_header + 8U, 'h', 70000U);
+            long_header[70008] = '\0';
+            long_header[7] = '\0';
+            neverc_http_request_t request;
+            memset(&request, 0, sizeof(request));
+            request.method = "GET";
+            request.path = "/";
+            request.raw_headers = long_header;
+            request.nheaders = 1;
+            h(&request, NULL);
+            check_true("oversized proxy header rejected safely", 1);
+        }
+        free(long_header);
         neverc_httputil_proxy_free(rp);
     }
 
@@ -95,6 +127,28 @@ static void test_dump_request(void) {
         check_contains("body present", dump, "name=test&value=123");
         free(dump);
     }
+
+    char *long_path = (char *)malloc(8193);
+    check_not_null("allocate long request path", long_path);
+    if (long_path) {
+        long_path[0] = '/';
+        memset(long_path + 1, 'p', 8191);
+        long_path[8192] = '\0';
+        req.method = "GET";
+        req.path = long_path;
+        req.query = NULL;
+        req.host = "example.com";
+        req.body = NULL;
+        req.body_len = 0;
+        dump = neverc_httputil_dump_request(&req, 0);
+        check_not_null("dump grows for long path", dump);
+        if (dump) {
+            check_true("long path is not truncated",
+                       strstr(dump, long_path) != NULL);
+            free(dump);
+        }
+        free(long_path);
+    }
 }
 
 /* ===== Test: Dump request out ===== */
@@ -125,6 +179,28 @@ static void test_dump_request_out(void) {
                      strstr(dump, "Content-Length") == NULL);
         free(dump);
     }
+
+    char *long_headers = (char *)malloc(10032);
+    check_not_null("allocate long outbound headers", long_headers);
+    if (long_headers) {
+        memcpy(long_headers, "X-Long: ", 8);
+        memset(long_headers + 8, 'v', 10000);
+        memcpy(long_headers + 10008, "\r\nX-End: yes\r\n", 15);
+        long_headers[10023] = '\0';
+        dump = neverc_httputil_dump_request_out(
+            "GET", "/large", long_headers, NULL, 0);
+        check_not_null("dump out grows for long headers", dump);
+        if (dump) {
+            check_contains("long dump keeps final header",
+                           dump, "X-End: yes\r\n");
+            free(dump);
+        }
+        free(long_headers);
+    }
+
+    check_true("dump out rejects missing non-empty body",
+               neverc_httputil_dump_request_out(
+                   "POST", "/", NULL, NULL, 1) == NULL);
 }
 
 /* ===== Test: Reverse proxy with real backend ===== */

@@ -220,6 +220,21 @@ static void test_invalid_inputs(void) {
     ASSERT_INT_EQ(neverc_csv_read_line(
                       "a\"b,c", 5U, fields, 2, work, sizeof(work), NULL),
                   -1);
+    {
+        static const char embedded_nul[] = {'a', '\0', 'b', ',', 'c'};
+        ASSERT_INT_EQ(neverc_csv_read_line(
+                          embedded_nul, sizeof(embedded_nul), fields, 2,
+                          work, sizeof(work), NULL),
+                      -1);
+        const char *row[NEVERC_CSV_MAX_FIELDS];
+        const char **records[] = {row};
+        int field_count = 0;
+        ASSERT_INT_EQ(neverc_csv_read_all(
+                          embedded_nul, sizeof(embedded_nul),
+                          records, &field_count, 1,
+                          work, sizeof(work), NULL),
+                      -1);
+    }
 
     neverc_csv_reader_opts_t lazy = {.lazy_quotes = 1};
     ASSERT_INT_EQ(neverc_csv_read_line(

@@ -151,15 +151,6 @@ static int fmt_uint_base(char *buf, uint64_t val, int base, int uppercase) {
     return wi;
 }
 
-/* IEEE 754 double decomposition */
-static uint64_t f64_to_bits(double x) {
-    union { double d; uint64_t u; } u;
-    u.d = x;
-    return u.u;
-}
-
-static int f64_isnan(double x) { return x != x; }
-
 /* Float formatting delegates to strconv's correctly-rounded engine
  * (Ryu shortest + exact decimal), shared so fmt and strconv stay consistent. */
 static int fmt_float_f(char *buf, size_t cap, double val, int prec) {
@@ -265,7 +256,6 @@ char *neverc_fmt_vsprintf(const char *format, va_list args) {
         char verb = format[i];
         char tmp[512];   /* large enough for %f of values up to ~1e308 */
         int tlen = 0;
-        int is_negative = 0;
 
         switch (verb) {
         case '%':
@@ -275,7 +265,6 @@ char *neverc_fmt_vsprintf(const char *format, va_list args) {
             int64_t val = is_longlong ? va_arg(args, long long) :
                           is_long ? (int64_t)va_arg(args, long) :
                           (int64_t)va_arg(args, int);
-            is_negative = val < 0;
             tlen = fmt_int10(tmp, val);
             break;
         }
@@ -328,7 +317,6 @@ char *neverc_fmt_vsprintf(const char *format, va_list args) {
         case 'f': {
             double val = va_arg(args, double);
             tlen = fmt_float_f(tmp, sizeof tmp, val, prec);
-            is_negative = (f64_to_bits(val) >> 63) && !f64_isnan(val);
             break;
         }
         case 'e': case 'E': {
@@ -355,22 +343,37 @@ char *neverc_fmt_vsprintf(const char *format, va_list args) {
         if (tlen < 0) goto format_fail;
 
         /* Apply width/padding */
-        int prefix_len = 0;
-        if (flag_plus && !is_negative && (verb == 'd' || verb == 'i' || verb == 'f'))
-            prefix_len = 1;
-        else if (flag_space && !is_negative && (verb == 'd' || verb == 'i'))
-            prefix_len = 1;
-
-        int total = tlen + prefix_len;
+        int is_float_verb =
+            verb == 'f' || verb == 'e' || verb == 'E' ||
+            verb == 'g' || verb == 'G';
+        int is_signed_verb =
+            verb == 'd' || verb == 'i' || is_float_verb;
+        int formatted_has_sign =
+            tlen > 0 && (tmp[0] == '+' || tmp[0] == '-');
+        int body_offset =
+            is_signed_verb && formatted_has_sign ? 1 : 0;
+        char sign_prefix = body_offset ? tmp[0] : '\0';
+        if (!sign_prefix && is_signed_verb) {
+            if (flag_plus)
+                sign_prefix = '+';
+            else if (flag_space)
+                sign_prefix = ' ';
+        }
+        int body_len = tlen - body_offset;
+        int formatted_is_special =
+            is_float_verb &&
+            ((body_len == 3 &&
+              memcmp(tmp + body_offset, "Inf", 3) == 0) ||
+             (body_len == 3 &&
+              memcmp(tmp + body_offset, "NaN", 3) == 0));
+        int use_zero_padding = flag_zero && !formatted_is_special;
+        int total = body_len + (sign_prefix ? 1 : 0);
         int pad = (has_width && width > total) ? width - total : 0;
 
-        if (!flag_minus && !flag_zero) buf_pad(&buf, ' ', pad);
-        if (flag_plus && !is_negative && (verb == 'd' || verb == 'i' || verb == 'f'))
-            buf_putc(&buf, '+');
-        else if (flag_space && !is_negative && (verb == 'd' || verb == 'i'))
-            buf_putc(&buf, ' ');
-        if (!flag_minus && flag_zero) buf_pad(&buf, '0', pad);
-        buf_puts(&buf, tmp, tlen);
+        if (!flag_minus && !use_zero_padding) buf_pad(&buf, ' ', pad);
+        if (sign_prefix) buf_putc(&buf, sign_prefix);
+        if (!flag_minus && use_zero_padding) buf_pad(&buf, '0', pad);
+        buf_puts(&buf, tmp + body_offset, (size_t)body_len);
         if (flag_minus) buf_pad(&buf, ' ', pad);
     }
 
@@ -533,18 +536,33 @@ static int scan_float(const char **p, double *out) {
     skip_ws(p);
     const char *start = *p;
     if (**p == '-' || **p == '+') (*p)++;
-    if ((**p < '0' || **p > '9') && **p != '.') { *p = start; return 0; }
 
-    /* Delimit the numeric token, then hand it to strconv's correctly-rounded
-     * parser instead of accumulating in floating point. */
-    while (**p >= '0' && **p <= '9') (*p)++;
-    if (**p == '.') { (*p)++; while (**p >= '0' && **p <= '9') (*p)++; }
-    if (**p == 'e' || **p == 'E') {
-        const char *esave = *p;
-        (*p)++;
-        if (**p == '-' || **p == '+') (*p)++;
-        if (**p >= '0' && **p <= '9') { while (**p >= '0' && **p <= '9') (*p)++; }
-        else *p = esave;            /* lone 'e' is not part of the number */
+    if (**p == 'i' || **p == 'I' || **p == 'n' || **p == 'N') {
+        /* Keep the whole alphabetic token together so malformed near-matches
+         * such as "infix" are rejected by strconv rather than accepted as Inf. */
+        while ((**p >= 'a' && **p <= 'z') ||
+               (**p >= 'A' && **p <= 'Z'))
+            (*p)++;
+    } else {
+        if ((**p < '0' || **p > '9') && **p != '.') {
+            *p = start;
+            return 0;
+        }
+
+        /* Delimit the numeric token, then hand it to strconv's correctly-rounded
+         * parser instead of accumulating in floating point. */
+        while (**p >= '0' && **p <= '9') (*p)++;
+        if (**p == '.') { (*p)++; while (**p >= '0' && **p <= '9') (*p)++; }
+        if (**p == 'e' || **p == 'E') {
+            const char *esave = *p;
+            (*p)++;
+            if (**p == '-' || **p == '+') (*p)++;
+            if (**p >= '0' && **p <= '9') {
+                while (**p >= '0' && **p <= '9') (*p)++;
+            } else {
+                *p = esave;        /* lone 'e' is not part of the number */
+            }
+        }
     }
 
     size_t len = (size_t)(*p - start);
@@ -559,15 +577,16 @@ static int scan_float(const char **p, double *out) {
     return 1;
 }
 
-static int scan_string(const char **p, char *buf, size_t cap) {
+static int scan_string(const char **p, char *buf, size_t max_chars) {
     skip_ws(p);
-    if (**p == '\0') return 0;
+    if (!buf || max_chars == 0 || **p == '\0') return 0;
     size_t i = 0;
-    while (**p && **p != ' ' && **p != '\t' && **p != '\n' && **p != '\r') {
-        if (i + 1 < cap) buf[i++] = **p;
+    while (i < max_chars && **p && **p != ' ' && **p != '\t' &&
+           **p != '\n' && **p != '\r') {
+        buf[i++] = **p;
         (*p)++;
     }
-    if (i < cap) buf[i] = '\0';
+    buf[i] = '\0';
     return i > 0 ? 1 : 0;
 }
 
@@ -608,173 +627,204 @@ static int scan_value_fits_uint(uint64_t value) {
     return value <= UINT_MAX;
 }
 
-int neverc_fmt_sscanf(const char *str, const char *format, ...) {
-    if (!str || !format) return 0;
-    va_list args;
-    va_start(args, format);
+typedef enum {
+    SCAN_LENGTH_NONE = 0,
+    SCAN_LENGTH_LONG,
+    SCAN_LENGTH_LONG_LONG
+} scan_length_t;
 
+static int scan_parse_size(const char **format, size_t *width,
+                           int *has_width) {
+    *width = 0;
+    *has_width = 0;
+    while (**format >= '0' && **format <= '9') {
+        unsigned digit = (unsigned)(**format - '0');
+        if (*width > (SIZE_MAX - digit) / 10U)
+            return 0;
+        *width = *width * 10U + digit;
+        *has_width = 1;
+        (*format)++;
+    }
+    return !*has_width || *width != 0;
+}
+
+static int scan_formatted(const char *str, const char *format, va_list args) {
+    if (!str || !format) return 0;
+
+    va_list ap;
+    va_copy(ap, args);
     const char *sp = str;
     const char *fp = format;
     int matched = 0;
 
     while (*fp) {
-        if (*fp == '%') {
+        if (*fp != '%') {
+            if (*fp == ' ' || *fp == '\t' || *fp == '\n' || *fp == '\r') {
+                skip_ws(&sp);
+                fp++;
+                continue;
+            }
+            if (*sp != *fp)
+                break;
+            sp++;
             fp++;
-            if (*fp == '%') { fp++; if (*sp == '%') sp++; continue; }
-
-            int is_long = 0;
-            if (*fp == 'l') { is_long = 1; fp++; if (*fp == 'l') fp++; }
-
-            switch (*fp) {
-            case 'd': case 'i': {
-                int64_t val;
-                if (!scan_int(&sp, &val)) goto done;
-                if (is_long) *va_arg(args, long long *) = (long long)val;
-                else {
-                    if (!scan_value_fits_int(val)) goto done;
-                    *va_arg(args, int *) = (int)val;
-                }
-                matched++;
-                break;
-            }
-            case 'u': {
-                uint64_t val;
-                if (!scan_uint(&sp, &val)) goto done;
-                if (is_long) *va_arg(args, unsigned long long *) = (unsigned long long)val;
-                else {
-                    if (!scan_value_fits_uint(val)) goto done;
-                    *va_arg(args, unsigned int *) = (unsigned int)val;
-                }
-                matched++;
-                break;
-            }
-            case 'x': case 'X': {
-                uint64_t val;
-                if (!scan_hex(&sp, &val)) goto done;
-                if (is_long)
-                    *va_arg(args, unsigned long long *) =
-                        (unsigned long long)val;
-                else {
-                    if (!scan_value_fits_uint(val)) goto done;
-                    *va_arg(args, unsigned int *) = (unsigned int)val;
-                }
-                matched++;
-                break;
-            }
-            case 'f': case 'g': case 'e': {
-                double val;
-                if (!scan_float(&sp, &val)) goto done;
-                *va_arg(args, double *) = val;
-                matched++;
-                break;
-            }
-            case 's': {
-                char *buf = va_arg(args, char *);
-                if (!scan_string(&sp, buf, 256)) goto done;
-                matched++;
-                break;
-            }
-            case 'c': {
-                if (*sp == '\0') goto done;
-                *va_arg(args, char *) = *sp++;
-                matched++;
-                break;
-            }
-            default: goto done;
-            }
-            fp++;
-        } else if (*fp == ' ' || *fp == '\t' || *fp == '\n') {
-            skip_ws(&sp);
-            fp++;
-        } else {
-            if (*sp != *fp) goto done;
-            sp++; fp++;
+            continue;
         }
+
+        fp++;
+        if (*fp == '%') {
+            if (*sp != '%')
+                break;
+            sp++;
+            fp++;
+            continue;
+        }
+
+        size_t width;
+        int has_width;
+        if (!scan_parse_size(&fp, &width, &has_width))
+            break;
+
+        scan_length_t length = SCAN_LENGTH_NONE;
+        if (*fp == 'l') {
+            length = SCAN_LENGTH_LONG;
+            fp++;
+            if (*fp == 'l') {
+                length = SCAN_LENGTH_LONG_LONG;
+                fp++;
+            }
+        }
+
+        switch (*fp) {
+        case 'd':
+        case 'i': {
+            int64_t value;
+            if (has_width || !scan_int(&sp, &value))
+                goto done;
+            if (length == SCAN_LENGTH_LONG_LONG) {
+                long long *out = va_arg(ap, long long *);
+                if (!out) goto done;
+                *out = (long long)value;
+            } else if (length == SCAN_LENGTH_LONG) {
+                if (value < (int64_t)LONG_MIN || value > (int64_t)LONG_MAX)
+                    goto done;
+                long *out = va_arg(ap, long *);
+                if (!out) goto done;
+                *out = (long)value;
+            } else {
+                if (!scan_value_fits_int(value))
+                    goto done;
+                int *out = va_arg(ap, int *);
+                if (!out) goto done;
+                *out = (int)value;
+            }
+            matched++;
+            break;
+        }
+        case 'u':
+        case 'x':
+        case 'X': {
+            uint64_t value;
+            int ok = *fp == 'u' ? scan_uint(&sp, &value)
+                                : scan_hex(&sp, &value);
+            if (has_width || !ok)
+                goto done;
+            if (length == SCAN_LENGTH_LONG_LONG) {
+                unsigned long long *out =
+                    va_arg(ap, unsigned long long *);
+                if (!out) goto done;
+                *out = (unsigned long long)value;
+            } else if (length == SCAN_LENGTH_LONG) {
+                if (value > (uint64_t)ULONG_MAX)
+                    goto done;
+                unsigned long *out = va_arg(ap, unsigned long *);
+                if (!out) goto done;
+                *out = (unsigned long)value;
+            } else {
+                if (!scan_value_fits_uint(value))
+                    goto done;
+                unsigned int *out = va_arg(ap, unsigned int *);
+                if (!out) goto done;
+                *out = (unsigned int)value;
+            }
+            matched++;
+            break;
+        }
+        case 'f':
+        case 'g':
+        case 'e': {
+            double value;
+            if (has_width || length == SCAN_LENGTH_LONG_LONG ||
+                !scan_float(&sp, &value))
+                goto done;
+            double *out = va_arg(ap, double *);
+            if (!out) goto done;
+            *out = value;
+            matched++;
+            break;
+        }
+        case 's': {
+            if (!has_width || length != SCAN_LENGTH_NONE)
+                goto done;
+            char *out = va_arg(ap, char *);
+            if (!scan_string(&sp, out, width))
+                goto done;
+            matched++;
+            break;
+        }
+        case 'c': {
+            if (has_width || length != SCAN_LENGTH_NONE || *sp == '\0')
+                goto done;
+            char *out = va_arg(ap, char *);
+            if (!out) goto done;
+            *out = *sp++;
+            matched++;
+            break;
+        }
+        default:
+            goto done;
+        }
+        fp++;
     }
+
 done:
+    va_end(ap);
+    return matched;
+}
+
+int neverc_fmt_sscanf(const char *str, const char *format, ...) {
+    va_list args;
+    va_start(args, format);
+    int matched = scan_formatted(str, format, args);
     va_end(args);
     return matched;
 }
 
-int neverc_fmt_sscan(const char *str, ...) {
-    if (!str) return 0;
-    va_list args;
-    va_start(args, str);
+int neverc_fmt_sscan_ints(const char *str, int *outputs,
+                          size_t output_count) {
+    if (!str || (!outputs && output_count != 0)) return 0;
     const char *sp = str;
-    int matched = 0;
-
-    while (*sp) {
-        skip_ws(&sp);
-        if (*sp == '\0') break;
-        int64_t ival;
-        if (scan_int(&sp, &ival)) {
-            if (!scan_value_fits_int(ival)) break;
-            int *p = va_arg(args, int *);
-            if (!p) break;
-            *p = (int)ival;
-            matched++;
-        } else {
+    size_t matched = 0;
+    while (matched < output_count) {
+        int64_t value;
+        if (!scan_int(&sp, &value) || !scan_value_fits_int(value))
             break;
-        }
+        outputs[matched++] = (int)value;
     }
+    return matched > (size_t)INT_MAX ? INT_MAX : (int)matched;
+}
 
-    va_end(args);
-    return matched;
+int neverc_fmt_sscan(const char *str, int *out_int) {
+    return neverc_fmt_sscan_ints(str, out_int, out_int ? 1U : 0U);
 }
 
 int neverc_fmt_scanf(const char *format, ...) {
+    if (!format) return 0;
     char line[4096];
     if (!fgets(line, sizeof(line), stdin)) return 0;
     va_list args;
     va_start(args, format);
-
-    const char *sp = line;
-    const char *fp = format;
-    int matched = 0;
-
-    while (*fp) {
-        if (*fp == '%') {
-            fp++;
-            if (*fp == '%') { fp++; if (*sp == '%') sp++; continue; }
-            int is_long = 0;
-            if (*fp == 'l') { is_long = 1; fp++; if (*fp == 'l') fp++; }
-            switch (*fp) {
-            case 'd': case 'i': {
-                int64_t val;
-                if (!scan_int(&sp, &val)) goto sdone;
-                if (is_long) *va_arg(args, long long *) = (long long)val;
-                else {
-                    if (!scan_value_fits_int(val)) goto sdone;
-                    *va_arg(args, int *) = (int)val;
-                }
-                matched++;
-                break;
-            }
-            case 'f': case 'g': case 'e': {
-                double val;
-                if (!scan_float(&sp, &val)) goto sdone;
-                *va_arg(args, double *) = val;
-                matched++;
-                break;
-            }
-            case 's': {
-                char *buf = va_arg(args, char *);
-                if (!scan_string(&sp, buf, 256)) goto sdone;
-                matched++;
-                break;
-            }
-            default: goto sdone;
-            }
-            fp++;
-        } else if (*fp == ' ' || *fp == '\t' || *fp == '\n') {
-            skip_ws(&sp);
-            fp++;
-        } else {
-            if (*sp != *fp) goto sdone;
-            sp++; fp++;
-        }
-    }
-sdone:
+    int matched = scan_formatted(line, format, args);
     va_end(args);
     return matched;
 }
@@ -798,53 +848,7 @@ int neverc_fmt_fscanf(FILE *f, const char *format, ...) {
 
     va_list args;
     va_start(args, format);
-    const char *sp = line;
-    const char *fp = format;
-    int matched = 0;
-
-    while (*fp) {
-        if (*fp == '%') {
-            fp++;
-            if (*fp == '%') { fp++; if (*sp == '%') sp++; continue; }
-            int is_long = 0;
-            if (*fp == 'l') { is_long = 1; fp++; if (*fp == 'l') fp++; }
-            switch (*fp) {
-            case 'd': case 'i': {
-                int64_t val;
-                if (!scan_int(&sp, &val)) goto fdone;
-                if (is_long) *va_arg(args, long long *) = (long long)val;
-                else {
-                    if (!scan_value_fits_int(val)) goto fdone;
-                    *va_arg(args, int *) = (int)val;
-                }
-                matched++;
-                break;
-            }
-            case 'f': case 'g': case 'e': {
-                double val;
-                if (!scan_float(&sp, &val)) goto fdone;
-                *va_arg(args, double *) = val;
-                matched++;
-                break;
-            }
-            case 's': {
-                char *buf = va_arg(args, char *);
-                if (!scan_string(&sp, buf, 256)) goto fdone;
-                matched++;
-                break;
-            }
-            default: goto fdone;
-            }
-            fp++;
-        } else if (*fp == ' ' || *fp == '\t' || *fp == '\n') {
-            skip_ws(&sp);
-            fp++;
-        } else {
-            if (*sp != *fp) goto fdone;
-            sp++; fp++;
-        }
-    }
-fdone:
+    int matched = scan_formatted(line, format, args);
     va_end(args);
     return matched;
 }
@@ -920,6 +924,7 @@ int neverc_fmt_fscan(FILE *f, int *out_int) {
 }
 
 int neverc_fmt_scanln(const char *format, ...) {
+    if (!format) return 0;
     char line[4096];
     if (!fgets(line, sizeof(line), stdin)) return 0;
     size_t len = my_strlen(line);
@@ -927,49 +932,7 @@ int neverc_fmt_scanln(const char *format, ...) {
 
     va_list args;
     va_start(args, format);
-    const char *sp = line;
-    const char *fp = format;
-    int matched = 0;
-
-    while (*fp && *sp) {
-        if (*fp == '%') {
-            fp++;
-            int is_long = 0;
-            if (*fp == 'l') { is_long = 1; fp++; if (*fp == 'l') fp++; }
-            switch (*fp) {
-            case 'd': case 'i': {
-                int64_t val;
-                if (!scan_int(&sp, &val)) goto sldone;
-                if (is_long) *va_arg(args, long long *) = (long long)val;
-                else {
-                    if (!scan_value_fits_int(val)) goto sldone;
-                    *va_arg(args, int *) = (int)val;
-                }
-                matched++;
-                break;
-            }
-            case 'f': {
-                double val;
-                if (!scan_float(&sp, &val)) goto sldone;
-                *va_arg(args, double *) = val;
-                matched++;
-                break;
-            }
-            case 's': {
-                char *buf = va_arg(args, char *);
-                if (!scan_string(&sp, buf, 256)) goto sldone;
-                matched++;
-                break;
-            }
-            default: goto sldone;
-            }
-            fp++;
-        } else {
-            if (*sp != *fp) goto sldone;
-            sp++; fp++;
-        }
-    }
-sldone:
+    int matched = scan_formatted(line, format, args);
     va_end(args);
     return matched;
 }
@@ -987,49 +950,7 @@ int neverc_fmt_sscanln(const char *str, const char *format, ...) {
 
     va_list args;
     va_start(args, format);
-    const char *sp = line;
-    const char *fp = format;
-    int matched = 0;
-
-    while (*fp && *sp) {
-        if (*fp == '%') {
-            fp++;
-            int is_long = 0;
-            if (*fp == 'l') { is_long = 1; fp++; if (*fp == 'l') fp++; }
-            switch (*fp) {
-            case 'd': case 'i': {
-                int64_t val;
-                if (!scan_int(&sp, &val)) goto ssldone;
-                if (is_long) *va_arg(args, long long *) = (long long)val;
-                else {
-                    if (!scan_value_fits_int(val)) goto ssldone;
-                    *va_arg(args, int *) = (int)val;
-                }
-                matched++;
-                break;
-            }
-            case 'f': {
-                double val;
-                if (!scan_float(&sp, &val)) goto ssldone;
-                *va_arg(args, double *) = val;
-                matched++;
-                break;
-            }
-            case 's': {
-                char *buf = va_arg(args, char *);
-                if (!scan_string(&sp, buf, 256)) goto ssldone;
-                matched++;
-                break;
-            }
-            default: goto ssldone;
-            }
-            fp++;
-        } else {
-            if (*sp != *fp) goto ssldone;
-            sp++; fp++;
-        }
-    }
-ssldone:
+    int matched = scan_formatted(line, format, args);
     va_end(args);
     return matched;
 }
@@ -1043,49 +964,7 @@ int neverc_fmt_fscanln(FILE *f, const char *format, ...) {
 
     va_list args;
     va_start(args, format);
-    const char *sp = line;
-    const char *fp = format;
-    int matched = 0;
-
-    while (*fp && *sp) {
-        if (*fp == '%') {
-            fp++;
-            int is_long = 0;
-            if (*fp == 'l') { is_long = 1; fp++; if (*fp == 'l') fp++; }
-            switch (*fp) {
-            case 'd': case 'i': {
-                int64_t val;
-                if (!scan_int(&sp, &val)) goto fldone;
-                if (is_long) *va_arg(args, long long *) = (long long)val;
-                else {
-                    if (!scan_value_fits_int(val)) goto fldone;
-                    *va_arg(args, int *) = (int)val;
-                }
-                matched++;
-                break;
-            }
-            case 'f': {
-                double val;
-                if (!scan_float(&sp, &val)) goto fldone;
-                *va_arg(args, double *) = val;
-                matched++;
-                break;
-            }
-            case 's': {
-                char *buf = va_arg(args, char *);
-                if (!scan_string(&sp, buf, 256)) goto fldone;
-                matched++;
-                break;
-            }
-            default: goto fldone;
-            }
-            fp++;
-        } else {
-            if (*sp != *fp) goto fldone;
-            sp++; fp++;
-        }
-    }
-fldone:
+    int matched = scan_formatted(line, format, args);
     va_end(args);
     return matched;
 }

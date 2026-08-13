@@ -1,5 +1,6 @@
 #include "neverc/std/fmt.h"
 #include <limits.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -154,6 +155,30 @@ static void test_special_floats(void) {
 
     r = neverc_fmt_sprintf("%f", -inf_val);
     check_str("-Inf", r, "-Inf"); free(r);
+
+    r = neverc_fmt_sprintf("%+f", inf_val);
+    check_str("%+f +Inf has one sign", r, "+Inf"); free(r);
+
+    r = neverc_fmt_sprintf("%+f", nan_val);
+    check_str("%+f NaN", r, "+NaN"); free(r);
+
+    r = neverc_fmt_sprintf("%+f", 1.5);
+    check_str("%+f finite", r, "+1.500000"); free(r);
+
+    r = neverc_fmt_sprintf("%+e", 1.0);
+    check_str("%+e finite", r, "+1.000000e+00"); free(r);
+
+    r = neverc_fmt_sprintf("%+08f", inf_val);
+    check_str("zero flag ignored for Inf", r, "    +Inf"); free(r);
+
+    r = neverc_fmt_sprintf("%08.2f", -1.5);
+    check_str("negative float sign before zeros", r, "-0001.50"); free(r);
+
+    r = neverc_fmt_sprintf("%+08.2f", 1.5);
+    check_str("positive float sign before zeros", r, "+0001.50"); free(r);
+
+    r = neverc_fmt_sprintf("%05d", -12);
+    check_str("negative integer sign before zeros", r, "-0012"); free(r);
 }
 
 static void check_int(const char *name, int got, int expected) {
@@ -186,9 +211,24 @@ static void test_sscanf(void) {
     check_int("sscanf int val2", a, -17);
     check_int("sscanf float approx", (int)(f * 100), 314);
 
-    n = neverc_fmt_sscanf("hello world", "%s", s);
+    n = neverc_fmt_sscanf("hello world", "%63s", s);
     check_int("sscanf string count", n, 1);
     check_str("sscanf string val", s, "hello");
+
+    struct {
+        char text[4];
+        unsigned char canary;
+    } bounded = {{0}, 0xa5};
+    n = neverc_fmt_sscanf("abcdef", "%3s", bounded.text);
+    check_int("sscanf bounded string count", n, 1);
+    check_str("sscanf bounded string value", bounded.text, "abc");
+    check_int("sscanf bounded string preserves canary",
+              bounded.canary, 0xa5);
+    bounded.text[0] = 'Q';
+    n = neverc_fmt_sscanf("abcdef", "%s", bounded.text);
+    check_int("sscanf rejects unbounded string", n, 0);
+    check_int("sscanf unbounded string leaves output",
+              bounded.text[0], 'Q');
 
     n = neverc_fmt_sscanf("10 20 30", "%d %d", &a, &b);
     check_int("sscanf two ints", n, 2);
@@ -204,6 +244,24 @@ static void test_sscanf(void) {
 
     n = neverc_fmt_sscanf("abc", "%d", &a);
     check_int("sscanf no match", n, 0);
+
+    double special = 0.0;
+    n = neverc_fmt_sscanf("Inf", "%f", &special);
+    check_int("sscanf Inf", n, 1);
+    check_true("sscanf Inf value", isinf(special) && special > 0.0);
+
+    n = neverc_fmt_sscanf("-Infinity", "%f", &special);
+    check_int("sscanf -Infinity", n, 1);
+    check_true("sscanf -Infinity value", isinf(special) && special < 0.0);
+
+    n = neverc_fmt_sscanf("NaN", "%f", &special);
+    check_int("sscanf NaN", n, 1);
+    check_true("sscanf NaN value", special != special);
+
+    special = 7.0;
+    n = neverc_fmt_sscanf("infix", "%f", &special);
+    check_int("sscanf malformed Inf rejected", n, 0);
+    check_true("sscanf malformed Inf leaves output", special == 7.0);
 
     a = 77;
     n = neverc_fmt_sscanf("2147483648", "%d", &a);
@@ -241,6 +299,26 @@ static void test_sscanf(void) {
     n = neverc_fmt_sscanf("10000000000000000", "%llx", &ull);
     check_int("sscanf hex64 overflow rejected", n, 0);
     check_true("sscanf hex64 overflow leaves output", ull == 77);
+
+    struct {
+        long value;
+        unsigned int canary;
+    } long_target = {0, 0xa5a5a5a5U};
+    n = neverc_fmt_sscanf("-123", "%ld", &long_target.value);
+    check_int("sscanf long count", n, 1);
+    check_true("sscanf long value", long_target.value == -123L);
+    check_true("sscanf long preserves adjacent storage",
+               long_target.canary == 0xa5a5a5a5U);
+
+    int one = 0;
+    check_int("sscan one value",
+              neverc_fmt_sscan("9 10", &one), 1);
+    check_int("sscan one result", one, 9);
+    int values[2] = {0, 0};
+    check_int("sscan counted values",
+              neverc_fmt_sscan_ints("11 12 13", values, 2), 2);
+    check_true("sscan counted results",
+               values[0] == 11 && values[1] == 12);
 }
 
 static void test_appendf(void) {
@@ -356,7 +434,7 @@ static void test_stream_scan(void) {
     check_int("fscan value", value, 17);
     char word[256] = {0};
     check_int("fscanln matched",
-              neverc_fmt_fscanln(tmp, "%d %s", &value, word), 2);
+              neverc_fmt_fscanln(tmp, "%d %255s", &value, word), 2);
     check_int("fscanln value", value, -2);
     check_str("fscanln word", word, "word");
     fclose(tmp);

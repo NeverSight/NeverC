@@ -29,6 +29,10 @@ int neverc_csv_read_line(const char *line, size_t line_len,
         (!work_buf && line_len > 0) || delim == '"' ||
         delim == '\r' || delim == '\n')
         return -1;
+    /* Fields are exposed as NUL-terminated C strings with no parallel length
+     * array, so embedded NUL bytes cannot be represented without truncation. */
+    if (line_len > 0 && memchr(line, '\0', line_len) != NULL)
+        return -1;
 
     int nfields = 0;
     size_t wpos = 0;

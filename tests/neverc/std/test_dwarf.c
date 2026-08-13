@@ -333,8 +333,14 @@ static void test_dwarf_malformed(void) {
 
     CHECK("init rejects NULL destination",
           neverc_dwarf_init(NULL, NULL, 0, NULL, 0, NULL, 0) < 0);
+    memset(&d, 0xa5, sizeof(d));
     CHECK("init rejects missing nonempty section",
           neverc_dwarf_init(&d, NULL, 1, NULL, 0, NULL, 0) < 0);
+    CHECK("failed init leaves object freeable",
+          d.debug_info == NULL && d.debug_abbrev == NULL &&
+          d.debug_str == NULL && d.abbrevs == NULL &&
+          d.abbrev_count == 0);
+    neverc_dwarf_free(&d);
     CHECK("parse rejects NULL data",
           neverc_dwarf_parse_comp_unit(NULL, 0, &hdr) < 0);
     CHECK("parse rejects NULL output",
@@ -372,6 +378,30 @@ static void test_dwarf_malformed(void) {
                             NULL, 0) == 0 &&
           neverc_dwarf_walk_entries(&d, ignore_entry_cb, NULL) < 0);
 
+    uint8_t overflowing_uleb[10];
+    memset(overflowing_uleb, 0x80, sizeof(overflowing_uleb));
+    overflowing_uleb[9] = 0x02;
+    CHECK("overflowing tenth ULEB128 byte rejected",
+          neverc_dwarf_init(&d, info_buf, (size_t)info_len,
+                            overflowing_uleb, sizeof(overflowing_uleb),
+                            NULL, 0) == 0 &&
+          neverc_dwarf_walk_entries(&d, ignore_entry_cb, NULL) < 0);
+
+    uint8_t overlong_sleb_abbrev[16] = {
+        1, NEVERC_DW_TAG_compile_unit, 0,
+        NEVERC_DW_AT_byte_size, NEVERC_DW_FORM_implicit_const
+    };
+    memset(overlong_sleb_abbrev + 5, 0x80, 10);
+    uint8_t v5_sleb_info[13] = {0};
+    build_v5_compile_header(v5_sleb_info, 9);
+    v5_sleb_info[12] = 1;
+    CHECK("overlong abbreviation SLEB128 rejected",
+          neverc_dwarf_init(&d, v5_sleb_info, sizeof(v5_sleb_info),
+                            overlong_sleb_abbrev,
+                            sizeof(overlong_sleb_abbrev),
+                            NULL, 0) == 0 &&
+          neverc_dwarf_walk_entries(&d, ignore_entry_cb, NULL) < 0);
+
     static const uint8_t strp_abbrev[] = {
         1, NEVERC_DW_TAG_compile_unit, 0,
         NEVERC_DW_AT_name, NEVERC_DW_FORM_strp,
@@ -386,6 +416,18 @@ static void test_dwarf_malformed(void) {
           neverc_dwarf_init(&d, truncated_strp, sizeof(truncated_strp),
                             strp_abbrev, sizeof(strp_abbrev),
                             NULL, 0) == 0 &&
+          neverc_dwarf_walk_entries(&d, ignore_entry_cb, NULL) < 0);
+
+    uint8_t external_string_info[16] = {0};
+    static const uint8_t unterminated_debug_str[] = {'a', 'b'};
+    build_v4_header(external_string_info, 12);
+    external_string_info[11] = 1;
+    CHECK("unterminated external string rejected",
+          neverc_dwarf_init(&d, external_string_info,
+                            sizeof(external_string_info),
+                            strp_abbrev, sizeof(strp_abbrev),
+                            unterminated_debug_str,
+                            sizeof(unterminated_debug_str)) == 0 &&
           neverc_dwarf_walk_entries(&d, ignore_entry_cb, NULL) < 0);
 
     static const uint8_t exprloc_abbrev[] = {
@@ -445,17 +487,30 @@ static void test_dwarf_v5_type_header(void) {
     info[24] = 0;
 
     neverc_dwarf_data_t d;
-    neverc_dwarf_comp_unit_header_t hdr;
+    neverc_dwarf_comp_unit_header_ex_t hdr;
     CHECK("v5 type init",
           neverc_dwarf_init(&d, info, sizeof(info), NULL, 0, NULL, 0) == 0);
     CHECK("v5 type header parse",
-          neverc_dwarf_parse_comp_unit(&d, 0, &hdr) == 0);
+          neverc_dwarf_parse_comp_unit_ex(&d, 0, &hdr) == 0);
     CHECK("v5 unit type", hdr.unit_type == NEVERC_DW_UT_type);
     CHECK("v5 header size", hdr.header_size == 24);
     CHECK("v5 abbrev offset", hdr.abbrev_offset == 0x1234);
     CHECK("v5 type signature",
           hdr.type_signature == UINT64_C(0x1122334455667788));
     CHECK("v5 type offset", hdr.type_offset == 0x18);
+
+    struct {
+        neverc_dwarf_comp_unit_header_t header;
+        uint64_t canary;
+    } legacy = {{0}, UINT64_C(0xa5a5a5a5a5a5a5a5)};
+    CHECK("legacy header parse",
+          neverc_dwarf_parse_comp_unit(&d, 0, &legacy.header) == 0);
+    CHECK("legacy header fields",
+          legacy.header.version == 5 &&
+          legacy.header.abbrev_offset == 0x1234 &&
+          legacy.header.address_size == 8);
+    CHECK("legacy header size preserved",
+          legacy.canary == UINT64_C(0xa5a5a5a5a5a5a5a5));
 }
 
 int main(void) {

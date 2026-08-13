@@ -183,11 +183,13 @@ int neverc_dwarf_init(neverc_dwarf_data_t *d,
                        const uint8_t *debug_info, size_t info_len,
                        const uint8_t *debug_abbrev, size_t abbrev_len,
                        const uint8_t *debug_str, size_t str_len) {
-    if (!d || (!debug_info && info_len != 0) ||
+    if (!d)
+        return -1;
+    memset(d, 0, sizeof(*d));
+    if ((!debug_info && info_len != 0) ||
         (!debug_abbrev && abbrev_len != 0) ||
         (!debug_str && str_len != 0))
         return -1;
-    memset(d, 0, sizeof(*d));
     d->debug_info = debug_info;
     d->debug_info_len = info_len;
     d->debug_abbrev = debug_abbrev;
@@ -213,9 +215,9 @@ const char *neverc_dwarf_get_string(const neverc_dwarf_data_t *d,
     return (const char *)(d->debug_str + offset);
 }
 
-int neverc_dwarf_parse_comp_unit(const neverc_dwarf_data_t *d,
-                                  size_t offset,
-                                  neverc_dwarf_comp_unit_header_t *hdr) {
+int neverc_dwarf_parse_comp_unit_ex(
+    const neverc_dwarf_data_t *d, size_t offset,
+    neverc_dwarf_comp_unit_header_ex_t *hdr) {
     if (!d || !hdr || !d->debug_info ||
         offset > d->debug_info_len ||
         d->debug_info_len - offset < 4)
@@ -303,6 +305,22 @@ int neverc_dwarf_parse_comp_unit(const neverc_dwarf_data_t *d,
          hdr->type_offset >=
              (uint64_t)(hdr->is_64bit ? 12U : 4U) + hdr->unit_length))
         return -1;
+    return 0;
+}
+
+int neverc_dwarf_parse_comp_unit(const neverc_dwarf_data_t *d,
+                                  size_t offset,
+                                  neverc_dwarf_comp_unit_header_t *hdr) {
+    if (!hdr)
+        return -1;
+    neverc_dwarf_comp_unit_header_ex_t extended;
+    if (neverc_dwarf_parse_comp_unit_ex(d, offset, &extended) != 0)
+        return -1;
+    hdr->unit_length = extended.unit_length;
+    hdr->version = extended.version;
+    hdr->abbrev_offset = extended.abbrev_offset;
+    hdr->address_size = extended.address_size;
+    hdr->is_64bit = extended.is_64bit;
     return 0;
 }
 
@@ -543,14 +561,18 @@ static int read_form_string_depth(uint16_t form,
                                 &off, &resolved_form);
         if (rc <= 0) return rc;
         if (resolved_form == NEVERC_DW_FORM_strp) {
-            *value = neverc_dwarf_get_string(d, off);
+            if (!d->debug_str || off >= d->debug_str_len ||
+                memchr(d->debug_str + (size_t)off, 0,
+                       d->debug_str_len - (size_t)off) == NULL)
+                return -1;
+            *value = (const char *)(d->debug_str + (size_t)off);
         } else if (resolved_form == NEVERC_DW_FORM_line_strp) {
             if (d->debug_line_str && off < d->debug_line_str_len &&
                 memchr(d->debug_line_str + (size_t)off, 0,
                        d->debug_line_str_len - (size_t)off) != NULL)
                 *value = (const char *)(d->debug_line_str + (size_t)off);
             else
-                *value = "";
+                return -1;
         } else {
             /* Supplementary and indexed strings need sections that are not
              * part of this compact API. Consume them safely and leave empty. */
@@ -617,8 +639,8 @@ int neverc_dwarf_walk_entries(const neverc_dwarf_data_t *d,
 
     size_t cu_offset = 0;
     while (cu_offset < d->debug_info_len) {
-        neverc_dwarf_comp_unit_header_t hdr;
-        if (neverc_dwarf_parse_comp_unit(d, cu_offset, &hdr) < 0)
+        neverc_dwarf_comp_unit_header_ex_t hdr;
+        if (neverc_dwarf_parse_comp_unit_ex(d, cu_offset, &hdr) < 0)
             return -1;
 
         /* Parse abbreviation table for this CU */

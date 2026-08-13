@@ -487,6 +487,18 @@ static void test_quoted_prefix(void) {
 
     check_int("squote prefix", neverc_strconv_quoted_prefix("'A' rest", &plen), 0);
     check_int("squote plen", (int)plen, 3);
+    check_int("squote rejects empty rune",
+              neverc_strconv_quoted_prefix("''", &plen), -1);
+    check_int("squote rejects multiple runes",
+              neverc_strconv_quoted_prefix("'AB'", &plen), -1);
+    check_int("squote accepts UTF-8 rune",
+              neverc_strconv_quoted_prefix(
+                  "'\xC3\xA9' rest", &plen), 0);
+    check_int("squote UTF-8 prefix length", (int)plen, 4);
+    check_int("squote accepts escaped rune",
+              neverc_strconv_quoted_prefix("'\\n' rest", &plen), 0);
+    check_int("squote rejects escaped plus literal rune",
+              neverc_strconv_quoted_prefix("'\\nA'", &plen), -1);
 
     check_int("backtick prefix", neverc_strconv_quoted_prefix("`raw`+more", &plen), 0);
     check_int("backtick plen", (int)plen, 5);

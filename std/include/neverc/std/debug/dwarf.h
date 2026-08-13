@@ -151,13 +151,23 @@ typedef struct {
     uint16_t version;
     uint64_t abbrev_offset;
     uint8_t  address_size;
-    uint8_t  unit_type;
     int      is_64bit;
+} neverc_dwarf_comp_unit_header_t;
+
+/* Extended v5 unit metadata. Kept separate so the original public header
+ * layout and parse_comp_unit ABI remain stable. */
+typedef struct {
+    uint64_t unit_length;
+    uint16_t version;
+    uint64_t abbrev_offset;
+    uint8_t  address_size;
+    int      is_64bit;
+    uint8_t  unit_type;
     size_t   header_size;
     uint64_t type_signature;
     uint64_t type_offset;
     uint64_t dwo_id;
-} neverc_dwarf_comp_unit_header_t;
+} neverc_dwarf_comp_unit_header_ex_t;
 
 typedef struct {
     const uint8_t *debug_info;
@@ -187,6 +197,9 @@ void neverc_dwarf_free(neverc_dwarf_data_t *d);
 int neverc_dwarf_parse_comp_unit(const neverc_dwarf_data_t *d,
                                   size_t offset,
                                   neverc_dwarf_comp_unit_header_t *hdr);
+int neverc_dwarf_parse_comp_unit_ex(
+    const neverc_dwarf_data_t *d, size_t offset,
+    neverc_dwarf_comp_unit_header_ex_t *hdr);
 
 /* Iterate DIEs (Debug Information Entries) within a compilation unit.
    Calls callback for each entry. Return non-zero from callback to stop. */

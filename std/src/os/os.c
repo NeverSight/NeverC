@@ -298,37 +298,178 @@ int neverc_os_remove(const char *name) {
     return remove(name);
 }
 
+#if !defined(NEVERC_PLATFORM_WINDOWS)
+static int os_same_file(const struct stat *a, const struct stat *b) {
+    return a->st_dev == b->st_dev && a->st_ino == b->st_ino;
+}
+
+static int os_remove_dir_contents(int dir_fd) {
+    int scan_fd = dup(dir_fd);
+    if (scan_fd < 0) return -1;
+    DIR *dir = fdopendir(scan_fd);
+    if (!dir) {
+        close(scan_fd);
+        return -1;
+    }
+
+    int result = 0;
+    for (;;) {
+        errno = 0;
+        struct dirent *entry = readdir(dir);
+        if (!entry) {
+            if (errno != 0) result = -1;
+            break;
+        }
+        if (strcmp(entry->d_name, ".") == 0 ||
+            strcmp(entry->d_name, "..") == 0)
+            continue;
+
+        struct stat before;
+        if (fstatat(dir_fd, entry->d_name, &before,
+                    AT_SYMLINK_NOFOLLOW) != 0) {
+            if (errno != ENOENT) result = -1;
+            continue;
+        }
+        if (!S_ISDIR(before.st_mode)) {
+            if (unlinkat(dir_fd, entry->d_name, 0) != 0 &&
+                errno != ENOENT)
+                result = -1;
+            continue;
+        }
+
+        int open_flags = O_RDONLY | O_DIRECTORY | O_NOFOLLOW;
+#ifdef O_CLOEXEC
+        open_flags |= O_CLOEXEC;
+#endif
+        int child_fd = openat(dir_fd, entry->d_name, open_flags);
+        if (child_fd < 0) {
+            if (errno != ENOENT) result = -1;
+            continue;
+        }
+
+        struct stat opened;
+        int opened_ok =
+            fstat(child_fd, &opened) == 0 &&
+            os_same_file(&before, &opened);
+        if (!opened_ok ||
+            os_remove_dir_contents(child_fd) != 0)
+            result = -1;
+        if (close(child_fd) != 0)
+            result = -1;
+        if (!opened_ok)
+            continue;
+
+        struct stat current;
+        if (fstatat(dir_fd, entry->d_name, &current,
+                    AT_SYMLINK_NOFOLLOW) != 0) {
+            if (errno != ENOENT) result = -1;
+            continue;
+        }
+        if (!os_same_file(&opened, &current)) {
+            result = -1;
+            continue;
+        }
+        if (unlinkat(dir_fd, entry->d_name, AT_REMOVEDIR) != 0 &&
+            errno != ENOENT)
+            result = -1;
+    }
+
+    if (closedir(dir) != 0)
+        result = -1;
+    return result;
+}
+#endif
+
 int neverc_os_remove_all(const char *path) {
     if (!path) return -1;
-    if (!neverc_os_exists(path)) return 0;
-    if (!neverc_os_is_dir(path)) return remove(path);
 
 #if defined(NEVERC_PLATFORM_WINDOWS)
+    DWORD attrs = GetFileAttributesA(path);
+    if (attrs == INVALID_FILE_ATTRIBUTES) {
+        DWORD error = GetLastError();
+        return (error == ERROR_FILE_NOT_FOUND ||
+                error == ERROR_PATH_NOT_FOUND) ? 0 : -1;
+    }
+    if (attrs & FILE_ATTRIBUTE_REPARSE_POINT) {
+        BOOL removed = (attrs & FILE_ATTRIBUTE_DIRECTORY)
+            ? RemoveDirectoryA(path) : DeleteFileA(path);
+        return removed ? 0 : -1;
+    }
+    if ((attrs & FILE_ATTRIBUTE_DIRECTORY) == 0)
+        return DeleteFileA(path) ? 0 : -1;
+
     WIN32_FIND_DATAA fd;
     char pattern[4096];
-    snprintf(pattern, sizeof(pattern), "%s\\*", path);
+    int pattern_len = snprintf(pattern, sizeof(pattern), "%s\\*", path);
+    if (pattern_len < 0 || (size_t)pattern_len >= sizeof(pattern))
+        return -1;
     HANDLE h = FindFirstFileA(pattern, &fd);
     if (h == INVALID_HANDLE_VALUE) return -1;
+    int result = 0;
     do {
         if (strcmp(fd.cFileName, ".") == 0 || strcmp(fd.cFileName, "..") == 0) continue;
         char child[4096];
-        snprintf(child, sizeof(child), "%s\\%s", path, fd.cFileName);
-        neverc_os_remove_all(child);
+        int child_len = snprintf(
+            child, sizeof(child), "%s\\%s", path, fd.cFileName);
+        if (child_len < 0 || (size_t)child_len >= sizeof(child) ||
+            neverc_os_remove_all(child) != 0)
+            result = -1;
     } while (FindNextFileA(h, &fd));
+    if (GetLastError() != ERROR_NO_MORE_FILES)
+        result = -1;
     FindClose(h);
-    return _rmdir(path);
+    if (result != 0)
+        return -1;
+    return RemoveDirectoryA(path) ? 0 : -1;
 #else
-    DIR *d = opendir(path);
-    if (!d) return -1;
-    struct dirent *ent;
-    while ((ent = readdir(d)) != NULL) {
-        if (strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0) continue;
-        char child[4096];
-        snprintf(child, sizeof(child), "%s/%s", path, ent->d_name);
-        neverc_os_remove_all(child);
+    size_t path_len = strlen(path);
+    while (path_len > 1 && path[path_len - 1] == '/')
+        path_len--;
+    if (path_len == SIZE_MAX) return -1;
+    char *clean_path = (char *)malloc(path_len + 1);
+    if (!clean_path) return -1;
+    memcpy(clean_path, path, path_len);
+    clean_path[path_len] = '\0';
+
+    struct stat st;
+    if (lstat(clean_path, &st) != 0) {
+        int result = errno == ENOENT ? 0 : -1;
+        free(clean_path);
+        return result;
     }
-    closedir(d);
-    return rmdir(path);
+    if (!S_ISDIR(st.st_mode)) {
+        int result = unlink(clean_path);
+        free(clean_path);
+        return result;
+    }
+
+    int open_flags = O_RDONLY | O_DIRECTORY | O_NOFOLLOW;
+#ifdef O_CLOEXEC
+    open_flags |= O_CLOEXEC;
+#endif
+    int root_fd = open(clean_path, open_flags);
+    if (root_fd < 0) {
+        free(clean_path);
+        return -1;
+    }
+    struct stat opened;
+    int result =
+        fstat(root_fd, &opened) == 0 && os_same_file(&st, &opened)
+            ? os_remove_dir_contents(root_fd) : -1;
+    if (close(root_fd) != 0)
+        result = -1;
+
+    struct stat current;
+    if (result == 0 && lstat(clean_path, &current) != 0) {
+        if (errno != ENOENT)
+            result = -1;
+    } else if (result == 0 && !os_same_file(&opened, &current)) {
+        result = -1;
+    }
+    if (result == 0 && rmdir(clean_path) != 0 && errno != ENOENT)
+        result = -1;
+    free(clean_path);
+    return result;
 #endif
 }
 

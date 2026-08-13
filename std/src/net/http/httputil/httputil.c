@@ -4,6 +4,72 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdarg.h>
+#include <stdint.h>
+
+#ifndef _WIN32
+#include <strings.h>
+#else
+static int strcasecmp(const char *a, const char *b) {
+    while (*a && *b) {
+        int ca = (*a >= 'A' && *a <= 'Z') ? *a + 32 : *a;
+        int cb = (*b >= 'A' && *b <= 'Z') ? *b + 32 : *b;
+        if (ca != cb) return ca - cb;
+        a++;
+        b++;
+    }
+    return (unsigned char)*a - (unsigned char)*b;
+}
+#endif
+
+static int httputil_fixed_appendf(char *buf, size_t cap, size_t *length,
+                                  const char *format, ...) {
+    if (!buf || !length || !format || *length >= cap)
+        return -1;
+    va_list args;
+    va_start(args, format);
+    int written = vsnprintf(
+        buf + *length, cap - *length, format, args);
+    va_end(args);
+    if (written < 0 || (size_t)written >= cap - *length)
+        return -1;
+    *length += (size_t)written;
+    return 0;
+}
+
+static int httputil_dump_append(char **buf, size_t *length, size_t *capacity,
+                                const void *data, size_t data_len) {
+    if (!buf || !length || !capacity || (!data && data_len != 0) ||
+        data_len == SIZE_MAX || *length > SIZE_MAX - data_len - 1U)
+        return -1;
+    size_t required = *length + data_len + 1U;
+    if (required > *capacity) {
+        size_t next = *capacity < 256U ? 256U : *capacity;
+        while (next < required) {
+            if (next > SIZE_MAX / 2U) {
+                next = required;
+                break;
+            }
+            next *= 2U;
+        }
+        char *grown = (char *)realloc(*buf, next);
+        if (!grown)
+            return -1;
+        *buf = grown;
+        *capacity = next;
+    }
+    if (data_len != 0)
+        memcpy(*buf + *length, data, data_len);
+    *length += data_len;
+    (*buf)[*length] = '\0';
+    return 0;
+}
+
+static int httputil_dump_append_string(char **buf, size_t *length,
+                                       size_t *capacity, const char *value) {
+    return value ? httputil_dump_append(
+        buf, length, capacity, value, strlen(value)) : -1;
+}
 
 /* ======================================================================
  * Reverse Proxy
@@ -143,53 +209,43 @@ static void reverse_proxy_handler(neverc_http_request_t *req,
         return;
     }
 
-    char backend_addr[300];
-    snprintf(backend_addr, sizeof(backend_addr), "%s:%d",
-             rp->target_host, rp->target_port);
-
-    const char *err = NULL;
-    neverc_tcp_conn_t *backend = neverc_tcp_dial(backend_addr, &err);
-    if (!backend) {
-        if (rp->error_handler) {
-            rp->error_handler(w, req, err ? err : "connection failed",
-                              rp->error_data);
-        } else {
-            neverc_http_error(w, "502 Bad Gateway", 502);
-        }
-        return;
-    }
-
-    neverc_tcp_set_timeout(backend, 30000);
-
     /* Build the outbound request */
     char out_buf[65536];
-    int n = 0;
+    size_t n = 0;
 
     char full_path[4096];
+    int path_len;
     if (rp->target_path[0]) {
-        snprintf(full_path, sizeof(full_path), "%s%s",
-                 rp->target_path, req->path ? req->path : "/");
+        path_len = snprintf(full_path, sizeof(full_path), "%s%s",
+                            rp->target_path,
+                            req->path ? req->path : "/");
     } else {
-        snprintf(full_path, sizeof(full_path), "%s",
-                 req->path ? req->path : "/");
+        path_len = snprintf(full_path, sizeof(full_path), "%s",
+                            req->path ? req->path : "/");
     }
+    if (path_len < 0 || (size_t)path_len >= sizeof(full_path))
+        goto request_too_large;
 
     if (req->query && req->query[0]) {
-        n = snprintf(out_buf, sizeof(out_buf),
-                     "%s %s?%s HTTP/1.1\r\nHost: %s\r\n",
-                     req->method ? req->method : "GET",
-                     full_path, req->query, rp->target_host);
+        if (httputil_fixed_appendf(
+                out_buf, sizeof(out_buf), &n,
+                "%s %s?%s HTTP/1.1\r\nHost: %s\r\n",
+                req->method ? req->method : "GET",
+                full_path, req->query, rp->target_host) != 0)
+            goto request_too_large;
     } else {
-        n = snprintf(out_buf, sizeof(out_buf),
-                     "%s %s HTTP/1.1\r\nHost: %s\r\n",
-                     req->method ? req->method : "GET",
-                     full_path, rp->target_host);
+        if (httputil_fixed_appendf(
+                out_buf, sizeof(out_buf), &n,
+                "%s %s HTTP/1.1\r\nHost: %s\r\n",
+                req->method ? req->method : "GET",
+                full_path, rp->target_host) != 0)
+            goto request_too_large;
     }
 
     /* Forward original headers (skip hop-by-hop) */
     if (req->raw_headers) {
         const char *p = req->raw_headers;
-        for (int i = 0; i < req->nheaders && n < (int)sizeof(out_buf) - 256; i++) {
+        for (int i = 0; i < req->nheaders; i++) {
             const char *hname = p;
             while (*p) p++;
             p++;
@@ -208,41 +264,79 @@ static void reverse_proxy_handler(neverc_http_request_t *req,
                 strcasecmp(hname, "Host") == 0)
                 continue;
 
-            n += snprintf(out_buf + n, sizeof(out_buf) - (size_t)n,
-                          "%s: %s\r\n", hname, hval);
+            if (httputil_fixed_appendf(
+                    out_buf, sizeof(out_buf), &n,
+                    "%s: %s\r\n", hname, hval) != 0)
+                goto request_too_large;
         }
     }
 
     /* Add X-Forwarded headers */
     if (rp->set_forwarded) {
-        n += snprintf(out_buf + n, sizeof(out_buf) - (size_t)n,
-                      "X-Forwarded-Proto: %s\r\n",
-                      rp->use_tls ? "https" : "http");
-        if (req->host)
-            n += snprintf(out_buf + n, sizeof(out_buf) - (size_t)n,
-                          "X-Forwarded-Host: %s\r\n", req->host);
+        if (httputil_fixed_appendf(
+                out_buf, sizeof(out_buf), &n,
+                "X-Forwarded-Proto: %s\r\n",
+                rp->use_tls ? "https" : "http") != 0)
+            goto request_too_large;
+        if (req->host &&
+            httputil_fixed_appendf(
+                out_buf, sizeof(out_buf), &n,
+                "X-Forwarded-Host: %s\r\n", req->host) != 0)
+            goto request_too_large;
     }
 
-    n += snprintf(out_buf + n, sizeof(out_buf) - (size_t)n,
-                  "Connection: close\r\n");
+    if (httputil_fixed_appendf(
+            out_buf, sizeof(out_buf), &n,
+            "Connection: close\r\n") != 0)
+        goto request_too_large;
 
     /* Body */
-    if (req->body && req->body_len > 0) {
-        n += snprintf(out_buf + n, sizeof(out_buf) - (size_t)n,
-                      "Content-Length: %zu\r\n\r\n", req->body_len);
-        if (n + (int)req->body_len < (int)sizeof(out_buf)) {
-            memcpy(out_buf + n, req->body, req->body_len);
-            n += (int)req->body_len;
-        }
+    if (req->body_len > 0) {
+        if (!req->body ||
+            httputil_fixed_appendf(
+                out_buf, sizeof(out_buf), &n,
+                "Content-Length: %zu\r\n\r\n", req->body_len) != 0 ||
+            req->body_len > sizeof(out_buf) - n)
+            goto request_too_large;
+        memcpy(out_buf + n, req->body, req->body_len);
+        n += req->body_len;
     } else {
-        n += snprintf(out_buf + n, sizeof(out_buf) - (size_t)n, "\r\n");
+        if (httputil_fixed_appendf(
+                out_buf, sizeof(out_buf), &n, "\r\n") != 0)
+            goto request_too_large;
     }
 
-    /* Send to backend */
-    if (neverc_tcp_write(backend, out_buf, (size_t)n) <= 0) {
-        neverc_tcp_close(backend);
-        neverc_http_error(w, "502 Bad Gateway", 502);
+    char backend_addr[300];
+    int addr_len = snprintf(
+        backend_addr, sizeof(backend_addr), "%s:%u",
+        rp->target_host, (unsigned)rp->target_port);
+    if (addr_len < 0 || (size_t)addr_len >= sizeof(backend_addr))
+        goto request_too_large;
+
+    const char *err = NULL;
+    neverc_tcp_conn_t *backend = neverc_tcp_dial(backend_addr, &err);
+    if (!backend) {
+        if (rp->error_handler) {
+            rp->error_handler(w, req, err ? err : "connection failed",
+                              rp->error_data);
+        } else {
+            neverc_http_error(w, "502 Bad Gateway", 502);
+        }
         return;
+    }
+
+    neverc_tcp_set_timeout(backend, 30000);
+
+    /* Send to backend */
+    size_t sent = 0;
+    while (sent < n) {
+        int written = neverc_tcp_write(backend, out_buf + sent, n - sent);
+        if (written <= 0) {
+            neverc_tcp_close(backend);
+            neverc_http_error(w, "502 Bad Gateway", 502);
+            return;
+        }
+        sent += (size_t)written;
     }
 
     /* Read backend response */
@@ -342,6 +436,10 @@ static void reverse_proxy_handler(neverc_http_request_t *req,
     if (resp_total > header_size)
         neverc_http_write(w, resp_buf + header_size,
                            resp_total - header_size);
+    return;
+
+request_too_large:
+    neverc_http_error(w, "502 proxy request too large", 502);
 }
 
 neverc_http_handler_func_t neverc_httputil_proxy_handler(
@@ -367,40 +465,41 @@ void neverc_httputil_proxy_free(neverc_httputil_reverse_proxy_t *rp) {
  * Request Dumping
  * ====================================================================== */
 
-#ifndef _WIN32
-#include <strings.h>
-#else
-static int strcasecmp(const char *a, const char *b) {
-    while (*a && *b) {
-        int ca = (*a >= 'A' && *a <= 'Z') ? *a + 32 : *a;
-        int cb = (*b >= 'A' && *b <= 'Z') ? *b + 32 : *b;
-        if (ca != cb) return ca - cb;
-        a++; b++;
-    }
-    return (unsigned char)*a - (unsigned char)*b;
-}
-#endif
-
 char *neverc_httputil_dump_request(const neverc_http_request_t *req,
                                     int include_body) {
     if (!req) return NULL;
 
-    size_t cap = 4096;
+    size_t cap = 256;
+    size_t n = 0;
     char *buf = (char *)malloc(cap);
     if (!buf) return NULL;
+    buf[0] = '\0';
 
-    int n = snprintf(buf, cap, "%s %s",
-                     req->method ? req->method : "GET",
-                     req->path ? req->path : "/");
+    if (httputil_dump_append_string(
+            &buf, &n, &cap, req->method ? req->method : "GET") != 0 ||
+        httputil_dump_append_string(&buf, &n, &cap, " ") != 0 ||
+        httputil_dump_append_string(
+            &buf, &n, &cap, req->path ? req->path : "/") != 0)
+        goto fail;
 
-    if (req->query && req->query[0])
-        n += snprintf(buf + n, cap - (size_t)n, "?%s", req->query);
+    if (req->query && req->query[0] &&
+        (httputil_dump_append_string(&buf, &n, &cap, "?") != 0 ||
+         httputil_dump_append_string(&buf, &n, &cap, req->query) != 0))
+        goto fail;
 
-    n += snprintf(buf + n, cap - (size_t)n, " %s\r\n",
-                  req->http_version ? req->http_version : "HTTP/1.1");
+    if (httputil_dump_append_string(&buf, &n, &cap, " ") != 0 ||
+        httputil_dump_append_string(
+            &buf, &n, &cap,
+            req->http_version ? req->http_version : "HTTP/1.1") != 0 ||
+        httputil_dump_append_string(&buf, &n, &cap, "\r\n") != 0)
+        goto fail;
 
-    if (req->host)
-        n += snprintf(buf + n, cap - (size_t)n, "Host: %s\r\n", req->host);
+    if (req->host &&
+        (httputil_dump_append_string(
+             &buf, &n, &cap, "Host: ") != 0 ||
+         httputil_dump_append_string(&buf, &n, &cap, req->host) != 0 ||
+         httputil_dump_append_string(&buf, &n, &cap, "\r\n") != 0))
+        goto fail;
 
     if (req->raw_headers) {
         const char *p = req->raw_headers;
@@ -413,25 +512,32 @@ char *neverc_httputil_dump_request(const neverc_http_request_t *req,
             p++;
 
             if (strcasecmp(hname, "Host") == 0) continue;
-            n += snprintf(buf + n, cap - (size_t)n, "%s: %s\r\n", hname, hval);
+            if (httputil_dump_append_string(
+                    &buf, &n, &cap, hname) != 0 ||
+                httputil_dump_append_string(
+                    &buf, &n, &cap, ": ") != 0 ||
+                httputil_dump_append_string(
+                    &buf, &n, &cap, hval) != 0 ||
+                httputil_dump_append_string(
+                    &buf, &n, &cap, "\r\n") != 0)
+                goto fail;
         }
     }
 
-    n += snprintf(buf + n, cap - (size_t)n, "\r\n");
+    if (httputil_dump_append_string(&buf, &n, &cap, "\r\n") != 0)
+        goto fail;
 
     if (include_body && req->body && req->body_len > 0) {
-        if ((size_t)n + req->body_len + 1 > cap) {
-            cap = (size_t)n + req->body_len + 256;
-            char *nb = (char *)realloc(buf, cap);
-            if (!nb) { free(buf); return NULL; }
-            buf = nb;
-        }
-        memcpy(buf + n, req->body, req->body_len);
-        n += (int)req->body_len;
+        if (httputil_dump_append(
+                &buf, &n, &cap, req->body, req->body_len) != 0)
+            goto fail;
     }
 
-    buf[n] = '\0';
     return buf;
+
+fail:
+    free(buf);
+    return NULL;
 }
 
 char *neverc_httputil_dump_request_out(const char *method,
@@ -439,28 +545,51 @@ char *neverc_httputil_dump_request_out(const char *method,
                                         const char *headers,
                                         const char *body,
                                         size_t body_len) {
-    size_t cap = 4096 + body_len;
+    if (!body && body_len != 0)
+        return NULL;
+    size_t cap = 256;
+    size_t n = 0;
     char *buf = (char *)malloc(cap);
     if (!buf) return NULL;
+    buf[0] = '\0';
 
-    int n = snprintf(buf, cap, "%s %s HTTP/1.1\r\n",
-                     method ? method : "GET",
-                     url ? url : "/");
+    if (httputil_dump_append_string(
+            &buf, &n, &cap, method ? method : "GET") != 0 ||
+        httputil_dump_append_string(&buf, &n, &cap, " ") != 0 ||
+        httputil_dump_append_string(
+            &buf, &n, &cap, url ? url : "/") != 0 ||
+        httputil_dump_append_string(
+            &buf, &n, &cap, " HTTP/1.1\r\n") != 0)
+        goto fail;
 
-    if (headers)
-        n += snprintf(buf + n, cap - (size_t)n, "%s", headers);
+    if (headers &&
+        httputil_dump_append_string(&buf, &n, &cap, headers) != 0)
+        goto fail;
 
-    if (body && body_len > 0)
-        n += snprintf(buf + n, cap - (size_t)n,
-                      "Content-Length: %zu\r\n", body_len);
-
-    n += snprintf(buf + n, cap - (size_t)n, "\r\n");
-
-    if (body && body_len > 0) {
-        memcpy(buf + n, body, body_len);
-        n += (int)body_len;
+    if (body_len > 0) {
+        char content_length[64];
+        int content_length_size = snprintf(
+            content_length, sizeof(content_length),
+            "Content-Length: %zu\r\n", body_len);
+        if (content_length_size < 0 ||
+            (size_t)content_length_size >= sizeof(content_length) ||
+            httputil_dump_append(
+                &buf, &n, &cap, content_length,
+                (size_t)content_length_size) != 0)
+            goto fail;
     }
 
-    buf[n] = '\0';
+    if (httputil_dump_append_string(&buf, &n, &cap, "\r\n") != 0)
+        goto fail;
+
+    if (body_len > 0 &&
+        httputil_dump_append(
+            &buf, &n, &cap, body, body_len) != 0)
+        goto fail;
+
     return buf;
+
+fail:
+    free(buf);
+    return NULL;
 }

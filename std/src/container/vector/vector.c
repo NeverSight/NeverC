@@ -1045,37 +1045,39 @@ size_t neverc_vector_stable_partition(neverc_vector_t *v,
         return 0;
     size_t es = v->elem_size, n = v->size;
 
-    size_t ntrue = 0;
-    for (size_t i = 0; i < n; i++)
-        if (pred(vec_elem_ptr(v, i)))
-            ntrue++;
-    if (ntrue == 0 || ntrue == n)
-        return ntrue;
+    /* Cache predicate results and stage the complete output in one allocation.
+     * Besides evaluating stateful predicates once, this avoids sizing one
+     * group from a first pass and then trusting potentially different results
+     * during a second pass. */
+    if (es == SIZE_MAX || n > SIZE_MAX / (es + 1U))
+        return vec_stable_part_rotate(v, 0, n, pred);
+    unsigned char *scratch =
+        (unsigned char *)malloc(n * (es + 1U));
+    if (!scratch)
+        return vec_stable_part_rotate(v, 0, n, pred);
+    unsigned char *selected = scratch;
+    char *staged = (char *)scratch + n;
 
-    /* O(n) fast path: compact the true group to the front in place while
-     * staging the false group in a buffer, then append the buffer. Stable
-     * because both groups are visited left to right. */
-    size_t nfalse = n - ntrue;
-    char *buf = (char *)malloc(nfalse * es);
-    if (buf) {
-        size_t w = 0, f = 0;
-        for (size_t i = 0; i < n; i++) {
-            const void *e = vec_elem_ptr(v, i);
-            if (pred(e)) {
-                if (w != i)
-                    memcpy(vec_elem_ptr(v, w), e, es);
-                w++;
-            } else {
-                memcpy(buf + f * es, e, es);
-                f++;
-            }
-        }
-        memcpy(vec_elem_ptr(v, w), buf, nfalse * es);
-        free(buf);
+    size_t ntrue = 0;
+    for (size_t i = 0; i < n; i++) {
+        selected[i] = pred(vec_elem_ptr(v, i)) ? 1U : 0U;
+        if (selected[i])
+            ntrue++;
+    }
+    if (ntrue == 0 || ntrue == n) {
+        free(scratch);
         return ntrue;
     }
-    /* OOM: allocation-free stable rotation partition, O(n log n). */
-    return vec_stable_part_rotate(v, 0, n, pred);
+
+    size_t true_pos = 0;
+    size_t false_pos = ntrue;
+    for (size_t i = 0; i < n; i++) {
+        size_t output = selected[i] ? true_pos++ : false_pos++;
+        memcpy(staged + output * es, vec_elem_ptr(v, i), es);
+    }
+    memcpy(v->data, staged, n * es);
+    free(scratch);
+    return ntrue;
 }
 
 neverc_vector_t *neverc_vector_sample(const neverc_vector_t *v, size_t k,

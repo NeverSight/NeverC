@@ -529,17 +529,23 @@ int neverc_http_writef(neverc_http_response_writer_t *w,
     va_start(ap, fmt);
     int n = vsnprintf(buf, sizeof(buf), fmt, ap);
     va_end(ap);
+    if (n < 0)
+        return -1;
     if (n > 0) {
         if ((size_t)n >= sizeof(buf)) {
             char *big = (char *)malloc((size_t)n + 1);
-            if (big) {
-                va_start(ap, fmt);
-                n = vsnprintf(big, (size_t)n + 1, fmt, ap);
-                va_end(ap);
-                int ret = neverc_http_write(w, big, (size_t)n);
+            if (!big)
+                return -1;
+            va_start(ap, fmt);
+            int formatted = vsnprintf(big, (size_t)n + 1, fmt, ap);
+            va_end(ap);
+            if (formatted < 0 || formatted > n) {
                 free(big);
-                return ret;
+                return -1;
             }
+            int ret = neverc_http_write(w, big, (size_t)formatted);
+            free(big);
+            return ret;
         }
         return neverc_http_write(w, buf, (size_t)n);
     }
@@ -1714,9 +1720,9 @@ int neverc_http_test_fuzz_request_parser(const void *input,
 }
 #endif
 
-static void fill_request(const parsed_request_t *pr,
-                           neverc_http_request_t *req,
-                           nc_buf_t *raw_hdr_buf) {
+static int fill_request(const parsed_request_t *pr,
+                        neverc_http_request_t *req,
+                        nc_buf_t *raw_hdr_buf) {
     memset(req, 0, sizeof(*req));
     req->method = pr->method;
     req->path = pr->path;
@@ -1726,18 +1732,24 @@ static void fill_request(const parsed_request_t *pr,
     req->content_type = pr->content_type;
     req->body = pr->body;
     req->body_len = pr->body_len;
-    req->nheaders = pr->nheaders;
 
     nc_buf_reset(raw_hdr_buf);
     for (int i = 0; i < pr->nheaders; i++) {
         size_t nlen = strlen(pr->header_names[i]);
         size_t vlen = strlen(pr->header_values[i]);
-        nc_buf_append(raw_hdr_buf, pr->header_names[i], nlen);
-        nc_buf_append(raw_hdr_buf, "\0", 1);
-        nc_buf_append(raw_hdr_buf, pr->header_values[i], vlen);
-        nc_buf_append(raw_hdr_buf, "\0", 1);
+        if (nc_buf_append(raw_hdr_buf, pr->header_names[i], nlen) != 0 ||
+            nc_buf_append(raw_hdr_buf, "\0", 1) != 0 ||
+            nc_buf_append(raw_hdr_buf, pr->header_values[i], vlen) != 0 ||
+            nc_buf_append(raw_hdr_buf, "\0", 1) != 0) {
+            nc_buf_reset(raw_hdr_buf);
+            req->raw_headers = NULL;
+            req->nheaders = 0;
+            return -1;
+        }
     }
     req->raw_headers = raw_hdr_buf->data;
+    req->nheaders = pr->nheaders;
+    return 0;
 }
 
 /* ======================================================================
@@ -2377,8 +2389,9 @@ static int http_conn_start_streaming(http_conn_t *connection,
     }
     if (!task->context || !task->cancel) goto fail;
 
-    fill_request(&task->parsed, &task->request,
-                 &connection->raw_hdr_buf);
+    if (fill_request(&task->parsed, &task->request,
+                     &connection->raw_hdr_buf) != 0)
+        goto fail;
     task->request.body = NULL;
     task->request.body_len = 0;
     task->request.context = task->context;
@@ -2541,7 +2554,11 @@ static void http_conn_process(http_conn_t *hc) {
         }
 
         neverc_http_request_t req;
-        fill_request(&pr, &req, &hc->raw_hdr_buf);
+        if (fill_request(&pr, &req, &hc->raw_hdr_buf) != 0) {
+            parsed_request_free(&pr);
+            hc->state = HC_STATE_CLOSING;
+            return;
+        }
         neverc_context_cancel_handle_t *request_cancel = NULL;
         neverc_context_t *request_context = neverc_context_background();
         if (hc->handler_timeout_ms > 0) {
