@@ -20,6 +20,10 @@ static void put32(uint8_t *p, uint32_t v) {
     p[0]=(uint8_t)v; p[1]=(uint8_t)(v>>8);
     p[2]=(uint8_t)(v>>16); p[3]=(uint8_t)(v>>24);
 }
+static void put64(uint8_t *p, uint64_t v) {
+    put32(p, (uint32_t)v);
+    put32(p + 4, (uint32_t)(v >> 32));
+}
 
 /*
  * Build a minimal PE32+ binary:
@@ -92,6 +96,37 @@ static uint8_t *build_minimal_pe64(size_t *out_len) {
     return buf;
 }
 
+static uint8_t *build_pe64_with_imports(size_t *out_len) {
+    uint8_t *buf = build_minimal_pe64(out_len);
+    if (!buf) return NULL;
+
+    uint8_t *coff = buf + 68;
+    uint8_t *opt = buf + 88;
+    put16(coff + 2, 2);
+    put32(opt + 112 + 8, 0x2000);
+    put32(opt + 112 + 12, 40);
+
+    uint8_t *sec = buf + 368;
+    memcpy(sec, ".idata\0\0", 8);
+    put32(sec + 8, 256);
+    put32(sec + 12, 0x2000);
+    put32(sec + 16, 256);
+    put32(sec + 20, 768);
+    put32(sec + 36, NEVERC_IMAGE_SCN_CNT_INITIALIZED_DATA |
+                              NEVERC_IMAGE_SCN_MEM_READ);
+
+    uint8_t *descriptor = buf + 768;
+    put32(descriptor, 0x2030);
+    put32(descriptor + 12, 0x2040);
+    put32(descriptor + 16, 0x2030);
+    put64(buf + 816, 0x2060);
+    put64(buf + 824, 0);
+    memcpy(buf + 832, "kernel32.dll", 13);
+    put16(buf + 864, 7);
+    memcpy(buf + 866, "ExitProcess", 12);
+    return buf;
+}
+
 static void test_pe64_parse(void) {
     size_t len;
     uint8_t *data = build_minimal_pe64(&len);
@@ -138,6 +173,76 @@ static void test_pe64_parse(void) {
     free(data);
 }
 
+static void test_imports(void) {
+    size_t len = 0;
+    uint8_t *data = build_pe64_with_imports(&len);
+    CHECK("build imports PE", data != NULL);
+    if (!data) return;
+
+    neverc_pe_file_t f;
+    CHECK("open imports PE", neverc_pe_open(&f, data, len) == 0);
+    char *names[2] = {NULL, NULL};
+    int count = neverc_pe_imported_libraries(&f, names, 2);
+    CHECK("one imported library", count == 1);
+    CHECK("imported library name",
+          count == 1 && strcmp(names[0], "kernel32.dll") == 0);
+    names[0] = NULL;
+    count = neverc_pe_imported_symbols(&f, names, 2);
+    CHECK("one imported symbol", count == 1);
+    CHECK("imported symbol name",
+          count == 1 && strcmp(names[0], "ExitProcess") == 0);
+    neverc_pe_close(&f);
+
+    put32(data + 88 + 112 + 12, 20);
+    CHECK("open missing import terminator", neverc_pe_open(&f, data, len) == 0);
+    CHECK("reject missing import terminator",
+          neverc_pe_imported_libraries(&f, names, 2) == -1);
+    CHECK("reject symbols without import terminator",
+          neverc_pe_imported_symbols(&f, names, 2) == -1);
+    neverc_pe_close(&f);
+    free(data);
+}
+
+static void test_symbols(void) {
+    size_t len = 0;
+    uint8_t *data = build_minimal_pe64(&len);
+    CHECK("build symbols PE", data != NULL);
+    if (!data) return;
+
+    put32(data + 68 + 8, 600);
+    put32(data + 68 + 12, 1);
+    memcpy(data + 600, "main\0\0\0\0", 8);
+    put32(data + 608, 0x1234);
+    put16(data + 612, 1);
+    data[616] = NEVERC_IMAGE_SYM_CLASS_EXTERNAL;
+    put32(data + 618, 4);
+
+    neverc_pe_file_t f;
+    CHECK("open symbols PE", neverc_pe_open(&f, data, len) == 0);
+    neverc_pe_symbol_t *symbols = NULL;
+    int count = 0;
+    CHECK("read inline symbol", neverc_pe_symbols(&f, &symbols, &count) == 0);
+    CHECK("inline symbol count and name",
+          count == 1 && symbols != NULL &&
+              strcmp(symbols[0].name, "main") == 0);
+    free(symbols);
+
+    data[617] = 1;
+    symbols = (neverc_pe_symbol_t *)1;
+    count = 99;
+    CHECK("reject auxiliary record overrun",
+          neverc_pe_symbols(&f, &symbols, &count) == -1);
+    CHECK("symbol failure clears outputs", symbols == NULL && count == 0);
+    data[617] = 0;
+
+    memset(data + 600, 0, 4);
+    put32(data + 604, 4);
+    CHECK("reject string offset at table end",
+          neverc_pe_symbols(&f, &symbols, &count) == -1);
+    neverc_pe_close(&f);
+    free(data);
+}
+
 static void test_pe_invalid(void) {
     uint8_t garbage[] = {0x00, 0x01, 0x02, 0x03};
     CHECK("invalid_too_short", !neverc_pe_is_valid(garbage, sizeof(garbage)));
@@ -147,12 +252,51 @@ static void test_pe_invalid(void) {
 
     neverc_pe_file_t f;
     CHECK("open_fails_garbage", neverc_pe_open(&f, garbage, sizeof(garbage)) < 0);
+    CHECK("null data invalid", !neverc_pe_is_valid(NULL, 64));
+    CHECK("null output rejected",
+          neverc_pe_open(NULL, garbage, sizeof(garbage)) == -1);
+
+    size_t len = 0;
+    uint8_t *data = build_minimal_pe64(&len);
+    CHECK("build malformed fixtures", data != NULL);
+    if (!data) return;
+
+    put16(data + 88, 0x999);
+    CHECK("reject unknown optional-header magic",
+          neverc_pe_open(&f, data, len) == -1);
+    put16(data + 88, NEVERC_PE32P_MAGIC);
+
+    put32(data + 88 + 108, 17);
+    CHECK("reject truncated data-directory array",
+          neverc_pe_open(&f, data, len) == -1);
+    put32(data + 88 + 108, 16);
+
+    put32(data + 328 + 20, (uint32_t)(len - 8));
+    CHECK("reject section outside file", neverc_pe_open(&f, data, len) == -1);
+    put32(data + 328 + 20, 512);
+
+    CHECK("open valid fixture for argument checks",
+          neverc_pe_open(&f, data, len) == 0);
+    uint8_t *section_data = (uint8_t *)1;
+    size_t section_len = 99;
+    CHECK("reject null section", neverc_pe_section_data(
+              &f, NULL, &section_data, &section_len) == -1);
+    CHECK("null section clears outputs",
+          section_data == NULL && section_len == 0);
+    CHECK("reject null imported-library output",
+          neverc_pe_imported_libraries(&f, NULL, 1) == -1);
+    CHECK("reject null imported-symbol output",
+          neverc_pe_imported_symbols(&f, NULL, 1) == -1);
+    neverc_pe_close(&f);
+    free(data);
 }
 
 int main(void) {
     printf("=== NeverC debug/pe Tests ===\n\n");
 
     test_pe64_parse();
+    test_imports();
+    test_symbols();
     test_pe_invalid();
 
     printf("\n%d/%d tests passed", tests_passed, tests_run);

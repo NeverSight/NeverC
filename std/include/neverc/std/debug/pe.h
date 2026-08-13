@@ -133,6 +133,8 @@ int neverc_pe_section_data(const neverc_pe_file_t *f,
 
 int neverc_pe_symbols(const neverc_pe_file_t *f,
                        neverc_pe_symbol_t **syms, int *count);
+/* Import names are borrowed NUL-terminated strings backed by f->data.
+ * Returns the number written, or -1 for malformed input/invalid arguments. */
 int neverc_pe_imported_symbols(const neverc_pe_file_t *f,
                                 char **names, int max_names);
 int neverc_pe_imported_libraries(const neverc_pe_file_t *f,
