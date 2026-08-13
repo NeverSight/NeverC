@@ -595,7 +595,11 @@ static int build_http_request(nc_buf_t *req, const char *method,
          append_cstr(req, "\r\n") != 0))
         goto fail;
 
-    if (body_len > 0) {
+    int send_content_length =
+        body_len > 0 || body != NULL || content_type != NULL ||
+        strcmp(method, "POST") == 0 || strcmp(method, "PUT") == 0 ||
+        strcmp(method, "PATCH") == 0;
+    if (send_content_length) {
         char line[64];
         int n = snprintf(line, sizeof(line), "Content-Length: %zu\r\n",
                          body_len);
@@ -1056,10 +1060,11 @@ analyze_response:
                     nc_buf_free(&resp_buf);
                     return make_error_response("invalid HTTP response framing");
                 }
-                if (((framing.status_code >= 100 &&
-                      framing.status_code < 200) ||
-                     framing.status_code == 204) &&
-                    (framing.has_content_length || framing.is_chunked)) {
+                if ((((framing.status_code >= 100 &&
+                       framing.status_code < 200) ||
+                      framing.status_code == 204) &&
+                     (framing.has_content_length || framing.is_chunked)) ||
+                    (framing.status_code == 304 && framing.is_chunked)) {
                     client_connection_close(conn);
                     nc_buf_free(&resp_buf);
                     return make_error_response(
@@ -1505,9 +1510,10 @@ static neverc_http_response_t *do_stream_request(
                                    &framing) != 0)
             return stream_response_error(
                 connection, &wire, NULL, "invalid HTTP response framing");
-        if (((framing.status_code >= 100 && framing.status_code < 200) ||
-             framing.status_code == 204) &&
-            (framing.has_content_length || framing.is_chunked))
+        if ((((framing.status_code >= 100 && framing.status_code < 200) ||
+              framing.status_code == 204) &&
+             (framing.has_content_length || framing.is_chunked)) ||
+            (framing.status_code == 304 && framing.is_chunked))
             return stream_response_error(
                 connection, &wire, NULL,
                 "body framing is forbidden for this status");
@@ -2131,73 +2137,77 @@ const char *neverc_http_get_cookie(const neverc_http_request_t *req,
  * ====================================================================== */
 
 int neverc_http_sse_begin(neverc_http_response_writer_t *w) {
-    if (!w || w->fd == NC_INVALID_SOCK) return -1;
-    w->headers_sent = 1;
+    if (!w || w->headers_sent) return -1;
     w->keep_alive = 0;
-
-    const char *hdr =
-        "HTTP/1.1 200 OK\r\n"
-        "Content-Type: text/event-stream\r\n"
-        "Cache-Control: no-cache\r\n"
-        "Connection: close\r\n"
-        "X-Accel-Buffering: no\r\n"
-        "\r\n";
-    return nc_http_sock_write_all_timeout(w->fd, hdr, strlen(hdr),
-                                           w->write_timeout_ms);
+    neverc_http_set_status(w, 200);
+    neverc_http_set_header(w, "Content-Type", "text/event-stream");
+    neverc_http_set_header(w, "Cache-Control", "no-cache");
+    neverc_http_set_header(w, "X-Accel-Buffering", "no");
+    neverc_http_enable_chunked(w);
+    return neverc_http_flush_chunk(w);
 }
 
 int neverc_http_sse_event(neverc_http_response_writer_t *w,
                             const char *event, const char *data,
                             const char *id) {
-    if (!w || !data || w->fd == NC_INVALID_SOCK) return -1;
+    if (!w || !data || !w->chunked || w->chunked_ended ||
+        contains_crlf(event) || contains_crlf(id))
+        return -1;
 
     nc_buf_t buf;
     nc_buf_init(&buf);
 
     if (id) {
-        nc_buf_append(&buf, "id: ", 4);
-        nc_buf_append(&buf, id, strlen(id));
-        nc_buf_append(&buf, "\n", 1);
+        if (nc_buf_append(&buf, "id: ", 4) != 0 ||
+            nc_buf_append(&buf, id, strlen(id)) != 0 ||
+            nc_buf_append(&buf, "\n", 1) != 0)
+            goto fail;
     }
     if (event) {
-        nc_buf_append(&buf, "event: ", 7);
-        nc_buf_append(&buf, event, strlen(event));
-        nc_buf_append(&buf, "\n", 1);
+        if (nc_buf_append(&buf, "event: ", 7) != 0 ||
+            nc_buf_append(&buf, event, strlen(event)) != 0 ||
+            nc_buf_append(&buf, "\n", 1) != 0)
+            goto fail;
     }
 
     const char *p = data;
-    while (*p) {
-        const char *nl = strchr(p, '\n');
-        if (nl) {
-            nc_buf_append(&buf, "data: ", 6);
-            nc_buf_append(&buf, p, (size_t)(nl - p));
-            nc_buf_append(&buf, "\n", 1);
-            p = nl + 1;
-        } else {
-            nc_buf_append(&buf, "data: ", 6);
-            nc_buf_append(&buf, p, strlen(p));
-            nc_buf_append(&buf, "\n", 1);
-            break;
-        }
+    for (;;) {
+        const char *line_end = p;
+        while (*line_end && *line_end != '\r' && *line_end != '\n')
+            line_end++;
+        if (nc_buf_append(&buf, "data: ", 6) != 0 ||
+            nc_buf_append(&buf, p, (size_t)(line_end - p)) != 0 ||
+            nc_buf_append(&buf, "\n", 1) != 0)
+            goto fail;
+        if (*line_end == '\0') break;
+        if (*line_end == '\r' && line_end[1] == '\n') line_end++;
+        p = line_end + 1;
     }
-    nc_buf_append(&buf, "\n", 1);
+    if (nc_buf_append(&buf, "\n", 1) != 0)
+        goto fail;
 
-    int rc = nc_http_sock_write_all_timeout(
-        w->fd, buf.data, buf.len, w->write_timeout_ms);
+    int rc = neverc_http_write(w, buf.data, buf.len) < 0 ? -1 : 0;
     nc_buf_free(&buf);
     return rc;
+
+fail:
+    nc_buf_free(&buf);
+    return -1;
 }
 
 int neverc_http_sse_retry(neverc_http_response_writer_t *w, int ms) {
-    if (!w || w->fd == NC_INVALID_SOCK) return -1;
+    if (!w || !w->chunked || w->chunked_ended || ms < 0) return -1;
     char buf[64];
     int n = snprintf(buf, sizeof(buf), "retry: %d\n\n", ms);
-    return nc_http_sock_write_all_timeout(
-        w->fd, buf, (size_t)n, w->write_timeout_ms);
+    if (n < 0 || (size_t)n >= sizeof(buf)) return -1;
+    return neverc_http_write(w, buf, (size_t)n) < 0 ? -1 : 0;
 }
 
 void neverc_http_sse_end(neverc_http_response_writer_t *w) {
-    if (w) w->keep_alive = 0;
+    if (!w) return;
+    if (w->chunked && !w->chunked_ended)
+        (void)neverc_http_end_chunked(w);
+    w->keep_alive = 0;
 }
 
 /* ======================================================================
@@ -2835,21 +2845,42 @@ const char *neverc_http_response_header(const neverc_http_response_t *resp,
  * CORS — Cross-Origin Resource Sharing
  * ====================================================================== */
 
+static int cors_origin_in_list(const char *origins, const char *origin) {
+    if (!origins || !origin || origin[0] == '\0') return 0;
+    size_t origin_length = strlen(origin);
+    const char *entry = origins;
+    for (;;) {
+        const char *separator = strchr(entry, ',');
+        const char *end = separator ? separator : entry + strlen(entry);
+        while (entry < end && (*entry == ' ' || *entry == '\t')) entry++;
+        while (end > entry && (end[-1] == ' ' || end[-1] == '\t')) end--;
+        if ((size_t)(end - entry) == origin_length &&
+            memcmp(entry, origin, origin_length) == 0)
+            return 1;
+        if (!separator) return 0;
+        entry = separator + 1;
+    }
+}
+
 void neverc_http_cors_headers(neverc_http_response_writer_t *w,
                                 const neverc_http_cors_config_t *cfg,
                                 const char *origin) {
     if (!w || !cfg) return;
 
     const char *ao = cfg->allowed_origins ? cfg->allowed_origins : "*";
+    int allowed = 0;
 
-    if (strcmp(ao, "*") == 0) {
+    if (strcmp(ao, "*") == 0 && !cfg->allow_credentials) {
         neverc_http_set_header(w, "Access-Control-Allow-Origin", "*");
-    } else if (origin && strstr(ao, origin)) {
+        allowed = 1;
+    } else if (origin && (strcmp(ao, "*") == 0 ||
+                          cors_origin_in_list(ao, origin))) {
         neverc_http_set_header(w, "Access-Control-Allow-Origin", origin);
         neverc_http_set_header(w, "Vary", "Origin");
+        allowed = 1;
     }
 
-    if (cfg->allow_credentials)
+    if (allowed && cfg->allow_credentials)
         neverc_http_set_header(w, "Access-Control-Allow-Credentials", "true");
 
     if (cfg->exposed_headers)

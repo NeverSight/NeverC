@@ -1,5 +1,6 @@
 #include "neverc/std/context.h"
 #include "neverc/std/net/http.h"
+#include "neverc/std/net/tcp.h"
 #include "neverc/std/thread.h"
 #include "neverc/std/time.h"
 #include "network_test_support.h"
@@ -65,6 +66,36 @@ static void http_stage5_chunks(neverc_http_request_t *request,
     (void)neverc_http_write(writer, "alpha", 5U);
     (void)neverc_http_write(writer, "beta", 4U);
     (void)neverc_http_end_chunked(writer);
+}
+
+static void http_stage5_auto_chunks(neverc_http_request_t *request,
+                                    neverc_http_response_writer_t *writer) {
+    (void)request;
+    neverc_http_enable_chunked(writer);
+    (void)neverc_http_write(writer, "auto", 4U);
+    (void)neverc_http_write(writer, "matic", 5U);
+    /* The server finalizer must emit the terminating zero-size chunk. */
+}
+
+static void http_stage5_sse(neverc_http_request_t *request,
+                            neverc_http_response_writer_t *writer) {
+    (void)request;
+    if (neverc_http_sse_begin(writer) != 0) return;
+    (void)neverc_http_sse_event(
+        writer, "update", "first\r\nsecond\n", "7");
+    (void)neverc_http_sse_retry(writer, 1500);
+    neverc_http_sse_end(writer);
+}
+
+static void http_stage5_request_framing(
+    neverc_http_request_t *request,
+    neverc_http_response_writer_t *writer) {
+    const char *content_length =
+        neverc_http_request_header(request, "Content-Length");
+    if (content_length)
+        (void)neverc_http_write_string(writer, content_length);
+    else
+        (void)neverc_http_write_string(writer, "missing");
 }
 
 static void http_stage5_slow(neverc_http_request_t *request,
@@ -133,6 +164,10 @@ static neverc_http_mux_t *http_stage5_mux(void) {
     if (!mux) return NULL;
     neverc_http_mux_handle(mux, "POST /echo", http_stage5_echo);
     neverc_http_mux_handle(mux, "GET /chunks", http_stage5_chunks);
+    neverc_http_mux_handle(mux, "GET /auto-chunks", http_stage5_auto_chunks);
+    neverc_http_mux_handle(mux, "GET /events", http_stage5_sse);
+    neverc_http_mux_handle(
+        mux, "POST /request-framing", http_stage5_request_framing);
     neverc_http_mux_handle(mux, "GET /slow", http_stage5_slow);
     return mux;
 }
@@ -238,6 +273,28 @@ static void http_stage5_plain_e2e(void) {
     neverc_context_free(context);
     neverc_context_free(background);
 
+    (void)snprintf(
+        url, sizeof(url), "http://127.0.0.1:%d/auto-chunks", port);
+    response = client
+        ? neverc_http_client_do(client, "GET", url, NULL, NULL, 0U) : NULL;
+    CHECK(response != NULL && response->error == NULL);
+    if (response) {
+        CHECK(response->body_len == 9U && response->body &&
+              memcmp(response->body, "automatic", 9U) == 0);
+        neverc_http_response_free(response);
+    }
+
+    (void)snprintf(
+        url, sizeof(url), "http://127.0.0.1:%d/request-framing", port);
+    response = client
+        ? neverc_http_client_do(client, "POST", url, NULL, NULL, 0U) : NULL;
+    CHECK(response != NULL && response->error == NULL);
+    if (response) {
+        CHECK(response->body_len == 1U && response->body &&
+              response->body[0] == '0');
+        neverc_http_response_free(response);
+    }
+
     (void)snprintf(url, sizeof(url), "http://127.0.0.1:%d/slow", port);
     cancel = NULL;
     background = neverc_context_background();
@@ -266,6 +323,118 @@ static void http_stage5_plain_e2e(void) {
     neverc_thread_executor_free(executor);
     neverc_http_server_free(test.server);
     neverc_http_mux_free(mux);
+}
+
+typedef struct {
+    neverc_tcp_listener_t *listener;
+    int result;
+} http_stage5_raw_server_t;
+
+static int http_stage5_tcp_write_all(neverc_tcp_conn_t *connection,
+                                     const void *data, size_t length) {
+    const char *bytes = (const char *)data;
+    size_t offset = 0;
+    while (offset < length) {
+        int written =
+            neverc_tcp_write(connection, bytes + offset, length - offset);
+        if (written <= 0) return -1;
+        offset += (size_t)written;
+    }
+    return 0;
+}
+
+static void http_stage5_invalid_304_task(void *context) {
+    http_stage5_raw_server_t *server =
+        (http_stage5_raw_server_t *)context;
+    const char *error = NULL;
+    neverc_tcp_conn_t *connection =
+        neverc_tcp_accept(server->listener, &error);
+    if (!connection) return;
+    char request[1024];
+    if (neverc_tcp_read(connection, request, sizeof(request)) <= 0) {
+        neverc_tcp_close(connection);
+        return;
+    }
+    static const char response[] =
+        "HTTP/1.1 304 Not Modified\r\n"
+        "Transfer-Encoding: chunked\r\n"
+        "Connection: keep-alive\r\n\r\n";
+    server->result = http_stage5_tcp_write_all(
+        connection, response, sizeof(response) - 1U);
+    neverc_tcp_close(connection);
+}
+
+static void http_stage5_reject_invalid_304(int streaming) {
+    const char *error = NULL;
+    neverc_tcp_listener_t *listener =
+        neverc_tcp_listen("127.0.0.1:0", &error);
+    CHECK(listener != NULL);
+    if (!listener) return;
+    neverc_tcp_addr_t address;
+    int address_ok = neverc_tcp_listener_addr(listener, &address) == 0;
+    CHECK(address_ok);
+    if (!address_ok) {
+        neverc_tcp_listener_close(listener);
+        return;
+    }
+
+    http_stage5_raw_server_t server = {listener, -1};
+    neverc_thread_executor_t *executor =
+        neverc_thread_executor_create(1U, 1U);
+    CHECK(executor != NULL);
+    if (!executor ||
+        neverc_thread_executor_submit(
+            executor, http_stage5_invalid_304_task,
+            &server) != NEVERC_THREAD_OK) {
+        neverc_tcp_listener_close(listener);
+        if (executor) neverc_thread_executor_free(executor);
+        return;
+    }
+
+    neverc_http_client_config_t config =
+        neverc_http_client_config_default();
+    config.timeout_ms = 5000;
+    config.max_idle_per_host = 1;
+    neverc_http_client_t *client = neverc_http_client_new(&config);
+    CHECK(client != NULL);
+    char url[128];
+    (void)snprintf(url, sizeof(url), "http://127.0.0.1:%d/invalid",
+                   address.port);
+
+    neverc_context_t *background =
+        streaming ? neverc_context_background() : NULL;
+    if (!client || (streaming && !background)) {
+        neverc_context_free(background);
+        neverc_http_client_free(client);
+        neverc_tcp_listener_close(listener);
+        (void)neverc_thread_executor_shutdown(executor);
+        neverc_thread_executor_free(executor);
+        return;
+    }
+    http_stage5_sink_t sink;
+    memset(&sink, 0, sizeof(sink));
+    neverc_http_response_t *response =
+        streaming
+            ? neverc_http_client_do_stream_context(
+                  client, background, "GET", url, NULL, 0,
+                  NULL, NULL, http_stage5_sink, &sink)
+            : neverc_http_client_do(
+                  client, "GET", url, NULL, NULL, 0U);
+    CHECK(response != NULL && response->error != NULL);
+    neverc_http_response_free(response);
+    neverc_context_free(background);
+    neverc_http_client_free(client);
+
+    CHECK(neverc_thread_executor_shutdown(executor) == NEVERC_THREAD_OK);
+    CHECK(server.result == 0);
+    neverc_thread_executor_free(executor);
+    neverc_tcp_listener_close(listener);
+}
+
+static void http_stage5_invalid_response_framing(void) {
+    puts("[invalid response framing]");
+    http_stage5_reject_invalid_304(0);
+    http_stage5_reject_invalid_304(1);
 }
 
 static void http_stage5_tls_e2e(void) {
@@ -314,6 +483,25 @@ static void http_stage5_tls_e2e(void) {
               response->body && memcmp(response->body, "tls", 3U) == 0);
         neverc_http_response_free(response);
     }
+
+    (void)snprintf(url, sizeof(url), "https://localhost:%d/events", port);
+    response = trusted
+        ? neverc_http_client_do(trusted, "GET", url, NULL, NULL, 0U) : NULL;
+    CHECK(response != NULL && response->error == NULL);
+    if (response) {
+        static const char expected[] =
+            "id: 7\n"
+            "event: update\n"
+            "data: first\n"
+            "data: second\n"
+            "data: \n"
+            "\n"
+            "retry: 1500\n\n";
+        CHECK(response->body_len == sizeof(expected) - 1U &&
+              response->body &&
+              memcmp(response->body, expected, sizeof(expected) - 1U) == 0);
+        neverc_http_response_free(response);
+    }
     neverc_http_client_free(trusted);
 
     neverc_http_client_config_t rejected_config =
@@ -343,6 +531,7 @@ static void http_stage5_tls_e2e(void) {
 int main(void) {
     puts("HTTP stage 5 production API test suite:");
     http_stage5_plain_e2e();
+    http_stage5_invalid_response_framing();
     http_stage5_tls_e2e();
     printf("http stage5: %d checks, %d failed\n", tests_run, tests_failed);
     if (tests_failed == 0) puts("passed");

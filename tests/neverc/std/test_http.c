@@ -2603,9 +2603,11 @@ static void test_cors(void) {
 
         neverc_http_cors_config_t cfg;
         memset(&cfg, 0, sizeof(cfg));
-        cfg.allowed_origins = "*";
+        cfg.allowed_origins =
+            "http://example.com, https://admin.example.com";
         cfg.allowed_methods = "GET, POST";
         cfg.allowed_headers = "Content-Type";
+        cfg.allow_credentials = 1;
         cfg.max_age = 3600;
         neverc_http_enable_cors(mux, &cfg);
 
@@ -2625,7 +2627,11 @@ static void test_cors(void) {
         buf, sizeof(buf));
     check_int("cors preflight resp", n > 0, 1);
     check_int("cors allow-origin",
-               strstr(buf, "Access-Control-Allow-Origin") != NULL, 1);
+               strstr(buf, "Access-Control-Allow-Origin: "
+                           "http://example.com\r\n") != NULL, 1);
+    check_int("cors allow-credentials",
+               strstr(buf, "Access-Control-Allow-Credentials: true\r\n") !=
+                   NULL, 1);
     check_int("cors allow-methods",
                strstr(buf, "Access-Control-Allow-Methods") != NULL, 1);
 
@@ -2636,9 +2642,21 @@ static void test_cors(void) {
         buf, sizeof(buf));
     check_int("cors normal resp", n > 0, 1);
     check_int("cors normal allow-origin",
-               strstr(buf, "Access-Control-Allow-Origin") != NULL, 1);
+               strstr(buf, "Access-Control-Allow-Origin: "
+                           "http://example.com\r\n") != NULL, 1);
     check_int("cors normal body",
                strstr(buf, "cors_ok") != NULL, 1);
+
+    /* A textual prefix is not an allowed origin. */
+    n = do_http_request(port,
+        "GET /test HTTP/1.1\r\nHost: localhost\r\n"
+        "Origin: http://example\r\nConnection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("cors prefix resp", n > 0, 1);
+    check_int("cors reject prefix origin",
+               strstr(buf, "Access-Control-Allow-Origin") == NULL, 1);
+    check_int("cors omit credentials for rejected origin",
+               strstr(buf, "Access-Control-Allow-Credentials") == NULL, 1);
 
     stop_test_server(pid);
 }

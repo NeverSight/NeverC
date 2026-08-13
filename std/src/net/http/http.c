@@ -627,8 +627,8 @@ int neverc_http_end_chunked(neverc_http_response_writer_t *w) {
         return 0;
     }
 
-    if (w->body.len > 0)
-        neverc_http_flush_chunk(w);
+    if (w->body.len > 0 && neverc_http_flush_chunk(w) != 0)
+        return -1;
 
     if (!w->headers_sent)
         rw_send_chunked_headers(w);
@@ -1238,6 +1238,7 @@ typedef struct {
 
 static void parsed_request_free(parsed_request_t *pr) {
     if (!pr) return;
+    if (pr->is_chunked) free((void *)pr->body);
     free(pr->method);
     free(pr->path);
     free(pr->query);
@@ -1678,8 +1679,6 @@ int neverc_http_test_fuzz_request_parser(const void *input,
     parsed_request_t request;
     size_t consumed = 0;
     int result = parse_request(raw, input_length, &request, &consumed);
-    if (result == 0 && request.is_chunked && request.body)
-        free((void *)request.body);
     parsed_request_free(&request);
     return result;
 }
@@ -2312,10 +2311,12 @@ static void http1_stream_handler_task(void *argument) {
     }
     if (task->body_stream.state != HTTP1_BODY_DONE)
         task->writer->keep_alive = 0;
-    if (task->writer->chunked && !task->writer->chunked_ended)
-        (void)neverc_http_end_chunked(task->writer);
-    else
+    if (task->writer->chunked && !task->writer->chunked_ended) {
+        if (neverc_http_end_chunked(task->writer) != 0)
+            task->writer->keep_alive = 0;
+    } else {
         rw_flush(task->writer);
+    }
 
     if (nc_evloop_post(connection->loop,
                        http1_stream_resume_task, task) != 0) {
@@ -2603,7 +2604,12 @@ static void http_conn_process(http_conn_t *hc) {
             return;
         }
 
-        rw_flush(w);
+        if (w->chunked && !w->chunked_ended) {
+            if (neverc_http_end_chunked(w) != 0)
+                w->keep_alive = 0;
+        } else {
+            rw_flush(w);
+        }
 
         if (hc->access_log_enabled) {
             double duration =
@@ -4261,33 +4267,47 @@ static void static_file_handler(neverc_http_request_t *req,
             free(data);
         } else {
 #if NC_HAS_SENDFILE
-            /* Zero-copy sendfile path: send headers manually, then sendfile. */
-            w->has_content_length_override = 1;
-            w->content_length_override = (size_t)fsize;
+            /* Direct sendfile is only safe for a blocking plain socket. Reactor
+             * and TLS writers must use the configured transport abstraction. */
+            if (!w->transport_write && w->fd != NC_INVALID_SOCK) {
+                w->has_content_length_override = 1;
+                w->content_length_override = (size_t)fsize;
+                rw_flush(w);
 
-            /* Manually flush headers before sendfile */
-            rw_flush(w);
-
-            int file_fd = fileno(f);
-            off_t offset = 0;
-            size_t remaining = (size_t)fsize;
-            while (remaining > 0) {
-                ssize_t sent = nc_sendfile(w->fd, file_fd, &offset, remaining);
-                if (sent <= 0) break;
-                remaining -= (size_t)sent;
+                int file_fd = fileno(f);
+                off_t offset = 0;
+                size_t remaining = (size_t)fsize;
+                while (remaining > 0) {
+                    ssize_t sent =
+                        nc_sendfile(w->fd, file_fd, &offset, remaining);
+                    if (sent <= 0) break;
+                    remaining -= (size_t)sent;
+                }
+                if (remaining > 0) w->keep_alive = 0;
+                fclose(f);
+                return;
             }
-            fclose(f);
-#else
+#endif
             neverc_http_enable_chunked(w);
             char buf[65536];
             size_t nread;
+            int stream_failed = 0;
             while ((nread = fread(buf, 1, sizeof(buf), f)) > 0) {
-                neverc_http_write(w, buf, nread);
-                neverc_http_flush_chunk(w);
+                if (neverc_http_write(w, buf, nread) < 0) {
+                    stream_failed = 1;
+                    break;
+                }
             }
+            if (ferror(f)) stream_failed = 1;
             fclose(f);
-            neverc_http_end_chunked(w);
-#endif
+            if (stream_failed) {
+                /* Suppress the normal response finalizer: a zero-size chunk
+                 * would falsely authenticate a partial file as complete. */
+                w->chunked_ended = 1;
+                w->keep_alive = 0;
+            } else if (neverc_http_end_chunked(w) != 0) {
+                w->keep_alive = 0;
+            }
         }
         return;
     }
