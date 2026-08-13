@@ -94,6 +94,28 @@ static void test_parse_uint(void) {
     check_int("uint10",  neverc_strconv_parse_uint("1000", 10, &v), 0); check_ull("val", v, 1000);
     check_int("uint16",  neverc_strconv_parse_uint("DEAD", 16, &v), 0); check_ull("val", v, 0xDEAD);
     check_int("uint36",  neverc_strconv_parse_uint("zz", 36, &v), 0);  check_ull("val", v, 35*36+35);
+    check_int("auto underscore", neverc_strconv_parse_uint("1_000", 0, &v), 0);
+    check_ull("auto underscore val", v, 1000);
+    check_int("prefix underscore", neverc_strconv_parse_uint("0x_ff", 0, &v), 0);
+    check_ull("prefix underscore val", v, 255);
+    check_int("explicit base underscore rejected",
+              neverc_strconv_parse_uint("1_0", 10, &v),
+              NEVERC_STRCONV_ERR_SYNTAX);
+    check_int("leading underscore rejected",
+              neverc_strconv_parse_uint("_1", 0, &v),
+              NEVERC_STRCONV_ERR_SYNTAX);
+    check_int("trailing underscore rejected",
+              neverc_strconv_parse_uint("1_", 0, &v),
+              NEVERC_STRCONV_ERR_SYNTAX);
+    check_int("consecutive underscores rejected",
+              neverc_strconv_parse_uint("1__2", 0, &v),
+              NEVERC_STRCONV_ERR_SYNTAX);
+    check_int("prefix-only underscore rejected",
+              neverc_strconv_parse_uint("0x_", 0, &v),
+              NEVERC_STRCONV_ERR_SYNTAX);
+    check_int("invalid implicit octal rejected",
+              neverc_strconv_parse_uint("08", 0, &v),
+              NEVERC_STRCONV_ERR_SYNTAX);
 }
 
 /* ===== ParseFloat ===== */

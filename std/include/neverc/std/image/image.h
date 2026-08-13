@@ -30,6 +30,7 @@ neverc_point_t neverc_point_mul(neverc_point_t p, int k);
 neverc_point_t neverc_point_div(neverc_point_t p, int k);
 int            neverc_point_eq(neverc_point_t p, neverc_point_t q);
 int            neverc_point_in(neverc_point_t p, neverc_rect_t r);
+/* Returns r.min when r is empty or non-canonical. */
 neverc_point_t neverc_point_mod(neverc_point_t p, neverc_rect_t r);
 
 neverc_rect_t neverc_rect(int x0, int y0, int x1, int y1);

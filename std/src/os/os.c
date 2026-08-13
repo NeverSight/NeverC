@@ -237,13 +237,30 @@ int neverc_os_read_file(const char *name, unsigned char **out, size_t *out_len) 
 }
 
 int neverc_os_write_file(const char *name, const unsigned char *data, size_t len, uint32_t perm) {
-    if (!name || !data) return -1;
-    (void)perm;
-    FILE *fp = fopen(name, "wb");
-    if (!fp) return -1;
-    size_t n = fwrite(data, 1, len, fp);
-    fclose(fp);
-    return n == len ? 0 : -1;
+    if (!name || (!data && len != 0)) return -1;
+    neverc_os_file_t *file = neverc_os_open(
+        name, NEVERC_OS_O_WRONLY | NEVERC_OS_O_CREATE | NEVERC_OS_O_TRUNC,
+        perm);
+    if (!file) return -1;
+
+    size_t offset = 0;
+    int result = 0;
+    while (offset < len) {
+        size_t remaining = len - offset;
+        size_t chunk = remaining > (size_t)INT_MAX
+                           ? (size_t)INT_MAX
+                           : remaining;
+        int written = neverc_os_write(file, data + offset, chunk);
+        if (written <= 0) {
+            result = -1;
+            break;
+        }
+        offset += (size_t)written;
+    }
+    if (file->fp && fclose(file->fp) != 0) result = -1;
+    file->fp = NULL;
+    free(file);
+    return result;
 }
 
 /* ---- Directory Operations ---- */
@@ -560,12 +577,17 @@ void neverc_os_clearenv(void) {
     while (*p) {
         char *eq = strchr(p, '=');
         if (eq && eq != p) {
-            char name[256];
             size_t nlen = (size_t)(eq - p);
-            if (nlen < sizeof(name)) {
+            if (nlen == SIZE_MAX) break;
+            char stack_name[256];
+            char *name = nlen < sizeof(stack_name)
+                             ? stack_name
+                             : (char *)malloc(nlen + 1);
+            if (name) {
                 memcpy(name, p, nlen);
                 name[nlen] = '\0';
                 SetEnvironmentVariableA(name, NULL);
+                if (name != stack_name) free(name);
             }
         }
         p += strlen(p) + 1;

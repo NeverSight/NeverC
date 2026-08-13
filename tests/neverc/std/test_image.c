@@ -30,6 +30,11 @@ static void test_point(void) {
     check("in_edge", neverc_point_in(neverc_pt(0,0), neverc_rect(0,0,10,10)));
     neverc_point_t m = neverc_point_mod(neverc_pt(15, 7), neverc_rect(0,0,10,5));
     check("mod", m.x == 5 && m.y == 2);
+    m = neverc_point_mod(neverc_pt(15, 7), neverc_rect(5,5,5,9));
+    check("mod empty rectangle", m.x == 5 && m.y == 5);
+    neverc_rect_t huge = {{INT_MIN, INT_MIN}, {INT_MAX, INT_MAX}};
+    m = neverc_point_mod(neverc_pt(INT_MAX, INT_MAX), huge);
+    check("mod wide rectangle", m.x == INT_MIN && m.y == INT_MIN);
 }
 
 static void test_rect(void) {

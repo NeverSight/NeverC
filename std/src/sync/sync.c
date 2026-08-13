@@ -23,13 +23,29 @@ void neverc_waitgroup_init(neverc_waitgroup_t *wg) {
     InitializeCriticalSection(&wg->mu); InitializeConditionVariable(&wg->cond);
 }
 void neverc_waitgroup_destroy(neverc_waitgroup_t *wg) { DeleteCriticalSection(&wg->mu); }
-void neverc_waitgroup_add(neverc_waitgroup_t *wg, int delta) {
+int neverc_waitgroup_add_checked(neverc_waitgroup_t *wg, int delta) {
+    if (!wg) return -1;
     EnterCriticalSection(&wg->mu);
-    wg->counter += delta;
-    if (wg->counter <= 0) WakeAllConditionVariable(&wg->cond);
+    int64_t next = (int64_t)wg->counter + (int64_t)delta;
+    int result = 0;
+    if (next < 0 || next > INT32_MAX) {
+        result = -1;
+    } else {
+        wg->counter = (int32_t)next;
+        if (wg->counter == 0) WakeAllConditionVariable(&wg->cond);
+    }
     LeaveCriticalSection(&wg->mu);
+    return result;
 }
-void neverc_waitgroup_done(neverc_waitgroup_t *wg) { neverc_waitgroup_add(wg, -1); }
+void neverc_waitgroup_add(neverc_waitgroup_t *wg, int delta) {
+    (void)neverc_waitgroup_add_checked(wg, delta);
+}
+int neverc_waitgroup_done_checked(neverc_waitgroup_t *wg) {
+    return neverc_waitgroup_add_checked(wg, -1);
+}
+void neverc_waitgroup_done(neverc_waitgroup_t *wg) {
+    (void)neverc_waitgroup_done_checked(wg);
+}
 void neverc_waitgroup_wait(neverc_waitgroup_t *wg) {
     EnterCriticalSection(&wg->mu);
     while (wg->counter > 0) SleepConditionVariableCS(&wg->cond, &wg->mu, INFINITE);
@@ -106,15 +122,29 @@ void neverc_waitgroup_destroy(neverc_waitgroup_t *wg) {
     pthread_mutex_destroy(&wg->mu);
     pthread_cond_destroy(&wg->cond);
 }
-void neverc_waitgroup_add(neverc_waitgroup_t *wg, int delta) {
+int neverc_waitgroup_add_checked(neverc_waitgroup_t *wg, int delta) {
+    if (!wg) return -1;
     pthread_mutex_lock(&wg->mu);
-    wg->counter += delta;
-    if (wg->counter <= 0)
-        pthread_cond_broadcast(&wg->cond);
+    int64_t next = (int64_t)wg->counter + (int64_t)delta;
+    int result = 0;
+    if (next < 0 || next > INT32_MAX) {
+        result = -1;
+    } else {
+        wg->counter = (int32_t)next;
+        if (wg->counter == 0)
+            pthread_cond_broadcast(&wg->cond);
+    }
     pthread_mutex_unlock(&wg->mu);
+    return result;
+}
+void neverc_waitgroup_add(neverc_waitgroup_t *wg, int delta) {
+    (void)neverc_waitgroup_add_checked(wg, delta);
+}
+int neverc_waitgroup_done_checked(neverc_waitgroup_t *wg) {
+    return neverc_waitgroup_add_checked(wg, -1);
 }
 void neverc_waitgroup_done(neverc_waitgroup_t *wg) {
-    neverc_waitgroup_add(wg, -1);
+    (void)neverc_waitgroup_done_checked(wg);
 }
 void neverc_waitgroup_wait(neverc_waitgroup_t *wg) {
     pthread_mutex_lock(&wg->mu);

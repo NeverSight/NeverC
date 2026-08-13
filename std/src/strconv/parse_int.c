@@ -13,8 +13,7 @@
  * 36, or 0xFF for any non-alphanumeric byte. A single table lookup followed by
  * one unsigned compare ("d >= base") replaces the old three-way range branch
  * and the separate "digit >= base" test: 0xFF is rejected for every base 2-36,
- * and '_' (0xFF here) still falls through to the separator/syntax handling, so
- * results are identical to the previous classifier.
+ * and '_' (0xFF here) still falls through to the separator/syntax handling.
  */
 #define NC_X 0xFF
 static const uint8_t digit_val[256] = {
@@ -44,34 +43,40 @@ int neverc_strconv_parse_uint(const char *s, int base, unsigned long long *resul
         return NEVERC_STRCONV_ERR_BASE;
 
     const char *p = s;
+    int allow_underscores = base == 0;
+    int saw_digit = 0;
+    int previous_underscore = 0;
+    int after_prefix = 0;
 
     if (base == 0) {
         if (p[0] == '0') {
             if (p[1] == 'x' || p[1] == 'X') {
                 base = 16;
                 p += 2;
+                after_prefix = 1;
             } else if (p[1] == 'b' || p[1] == 'B') {
                 base = 2;
                 p += 2;
+                after_prefix = 1;
             } else if (p[1] == 'o' || p[1] == 'O') {
                 base = 8;
                 p += 2;
-            } else if (p[1] >= '0' && p[1] <= '7') {
+                after_prefix = 1;
+            } else {
                 base = 8;
                 p += 1;
-            } else {
-                base = 10;
+                saw_digit = 1; /* The leading zero is a digit and a prefix. */
+                after_prefix = 1;
             }
         } else {
             base = 10;
         }
     }
 
-    if (*p == '\0')
+    if (*p == '\0' && !saw_digit)
         return NEVERC_STRCONV_ERR_SYNTAX;
 
     unsigned long long val = 0;
-    int any = 0;
 
     if (base == 10) {
         /*
@@ -84,8 +89,12 @@ int neverc_strconv_parse_uint(const char *s, int base, unsigned long long *resul
         for (; *p; p++) {
             unsigned d = (unsigned)(unsigned char)*p - '0';
             if (d > 9) {
-                if (*p == '_' && any)
+                if (*p == '_' && allow_underscores &&
+                    !previous_underscore && (saw_digit || after_prefix)) {
+                    previous_underscore = 1;
+                    after_prefix = 0;
                     continue;
+                }
                 return NEVERC_STRCONV_ERR_SYNTAX;
             }
             if (val > cutoff || (val == cutoff && d > rem)) {
@@ -93,7 +102,9 @@ int neverc_strconv_parse_uint(const char *s, int base, unsigned long long *resul
                 return NEVERC_STRCONV_ERR_RANGE;
             }
             val = val * 10ULL + d;
-            any = 1;
+            saw_digit = 1;
+            previous_underscore = 0;
+            after_prefix = 0;
         }
     } else {
         const unsigned long long ubase = (unsigned long long)base;
@@ -101,8 +112,12 @@ int neverc_strconv_parse_uint(const char *s, int base, unsigned long long *resul
         const unsigned rem = (unsigned)(NC_ULLONG_MAX % ubase);
         for (; *p; p++) {
             unsigned char c = (unsigned char)*p;
-            if (c == '_' && any)
+            if (c == '_' && allow_underscores &&
+                !previous_underscore && (saw_digit || after_prefix)) {
+                previous_underscore = 1;
+                after_prefix = 0;
                 continue;
+            }
 
             unsigned d = digit_val[c];
             if (d >= (unsigned)base)
@@ -113,11 +128,13 @@ int neverc_strconv_parse_uint(const char *s, int base, unsigned long long *resul
                 return NEVERC_STRCONV_ERR_RANGE;
             }
             val = val * ubase + d;
-            any = 1;
+            saw_digit = 1;
+            previous_underscore = 0;
+            after_prefix = 0;
         }
     }
 
-    if (!any)
+    if (!saw_digit || previous_underscore)
         return NEVERC_STRCONV_ERR_SYNTAX;
 
     *result = val;

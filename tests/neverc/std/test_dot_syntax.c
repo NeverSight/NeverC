@@ -710,6 +710,12 @@ static void test_sync_dot_syntax(void) {
     sync_mod.waitgroup_init(&wg);
     sync_mod.waitgroup_add(&wg, 1);
     sync_mod.waitgroup_done(&wg);
+    CHECK("sync.waitgroup_checked_rejects_underflow",
+          sync_mod.waitgroup_done_checked(&wg) == -1);
+    CHECK("sync.waitgroup_checked_add",
+          sync_mod.waitgroup_add_checked(&wg, 1) == 0);
+    CHECK("sync.waitgroup_checked_done",
+          sync_mod.waitgroup_done_checked(&wg) == 0);
     sync_mod.waitgroup_wait(&wg);
     sync_mod.waitgroup_destroy(&wg);
     CHECK("sync.waitgroup_roundtrip", 1);

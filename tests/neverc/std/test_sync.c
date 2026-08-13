@@ -182,6 +182,27 @@ static void test_waitgroup(void) {
     neverc_waitgroup_destroy(&g_wg);
 }
 
+static void test_waitgroup_rejects_invalid_counter(void) {
+    printf("[waitgroup_invalid_counter]\n");
+    neverc_waitgroup_t wg;
+    neverc_waitgroup_init(&wg);
+
+    ASSERT_INT_EQ(neverc_waitgroup_done_checked(&wg), -1);
+    ASSERT_INT_EQ(wg.counter, 0);
+    ASSERT_INT_EQ(neverc_waitgroup_add_checked(&wg, 2), 0);
+    ASSERT_INT_EQ(neverc_waitgroup_add_checked(&wg, -3), -1);
+    ASSERT_INT_EQ(wg.counter, 2);
+    ASSERT_INT_EQ(neverc_waitgroup_done_checked(&wg), 0);
+    ASSERT_INT_EQ(neverc_waitgroup_done_checked(&wg), 0);
+    ASSERT_INT_EQ(wg.counter, 0);
+    ASSERT_INT_EQ(neverc_waitgroup_add_checked(NULL, 1), -1);
+    neverc_waitgroup_done(&wg);
+    ASSERT_INT_EQ(wg.counter, 0);
+
+    neverc_waitgroup_wait(&wg);
+    neverc_waitgroup_destroy(&wg);
+}
+
 static int once_counter = 0;
 static void once_func(void) { once_counter++; }
 
@@ -693,6 +714,7 @@ int main(void) {
     test_rwmutex();
     test_rwmutex_try();
     test_waitgroup();
+    test_waitgroup_rejects_invalid_counter();
     test_once();
     test_cond();
     test_pool_basic();

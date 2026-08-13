@@ -35,17 +35,19 @@ int neverc_point_in(neverc_point_t p, neverc_rect_t r) {
 }
 
 neverc_point_t neverc_point_mod(neverc_point_t p, neverc_rect_t r) {
-    int w = r.max.x - r.min.x;
-    int h = r.max.y - r.min.y;
-    p.x -= r.min.x;
-    p.y -= r.min.y;
-    p.x = p.x % w;
-    if (p.x < 0) p.x += w;
-    p.y = p.y % h;
-    if (p.y < 0) p.y += h;
-    p.x += r.min.x;
-    p.y += r.min.y;
-    return p;
+    int64_t w = (int64_t)r.max.x - (int64_t)r.min.x;
+    int64_t h = (int64_t)r.max.y - (int64_t)r.min.y;
+    if (w <= 0 || h <= 0) return r.min;
+    int64_t x = (int64_t)p.x - (int64_t)r.min.x;
+    int64_t y = (int64_t)p.y - (int64_t)r.min.y;
+    x %= w;
+    y %= h;
+    if (x < 0) x += w;
+    if (y < 0) y += h;
+    return (neverc_point_t){
+        (int)(x + r.min.x),
+        (int)(y + r.min.y)
+    };
 }
 
 /* --- Rectangle --- */

@@ -125,8 +125,14 @@ static void test_read_write_file(void) {
     const char *path = pathbuf;
     const unsigned char *data = (const unsigned char*)"test data 123";
 
-    ASSERT_EQ(neverc_os_write_file(path, data, 13, 0644), 0);
+    neverc_os_remove(path);
+    ASSERT_EQ(neverc_os_write_file(path, data, 13, 0600), 0);
     ASSERT_TRUE(neverc_os_exists(path));
+#if !defined(_WIN32)
+    neverc_os_fileinfo_t info;
+    ASSERT_EQ(neverc_os_stat(path, &info), 0);
+    ASSERT_TRUE((info.mode & 0077U) == 0);
+#endif
 
     unsigned char *out = NULL;
     size_t out_len = 0;
@@ -135,6 +141,9 @@ static void test_read_write_file(void) {
     ASSERT_TRUE(memcmp(out, data, 13) == 0);
     free(out);
 
+    neverc_os_remove(path);
+    ASSERT_EQ(neverc_os_write_file(path, NULL, 0, 0600), 0);
+    ASSERT_TRUE(neverc_os_exists(path));
     neverc_os_remove(path);
 }
 

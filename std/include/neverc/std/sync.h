@@ -73,15 +73,21 @@ typedef struct {
 
 void neverc_sync_waitgroup_init(neverc_waitgroup_t *wg);
 void neverc_sync_waitgroup_destroy(neverc_waitgroup_t *wg);
+/* Legacy Add/Done calls leave the counter unchanged on invalid input. */
 void neverc_sync_waitgroup_add(neverc_waitgroup_t *wg, int delta);
 void neverc_sync_waitgroup_done(neverc_waitgroup_t *wg);
+/* Checked variants return -1 if the counter would leave [0, INT32_MAX]. */
+int  neverc_sync_waitgroup_add_checked(neverc_waitgroup_t *wg, int delta);
+int  neverc_sync_waitgroup_done_checked(neverc_waitgroup_t *wg);
 void neverc_sync_waitgroup_wait(neverc_waitgroup_t *wg);
 
-#define neverc_waitgroup_init    neverc_sync_waitgroup_init
-#define neverc_waitgroup_destroy neverc_sync_waitgroup_destroy
-#define neverc_waitgroup_add     neverc_sync_waitgroup_add
-#define neverc_waitgroup_done    neverc_sync_waitgroup_done
-#define neverc_waitgroup_wait    neverc_sync_waitgroup_wait
+#define neverc_waitgroup_init         neverc_sync_waitgroup_init
+#define neverc_waitgroup_destroy      neverc_sync_waitgroup_destroy
+#define neverc_waitgroup_add          neverc_sync_waitgroup_add
+#define neverc_waitgroup_done         neverc_sync_waitgroup_done
+#define neverc_waitgroup_add_checked  neverc_sync_waitgroup_add_checked
+#define neverc_waitgroup_done_checked neverc_sync_waitgroup_done_checked
+#define neverc_waitgroup_wait         neverc_sync_waitgroup_wait
 
 #if defined(_WIN32)
 typedef struct { volatile int32_t done; CRITICAL_SECTION mu; } neverc_once_t;
