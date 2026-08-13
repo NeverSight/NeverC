@@ -295,6 +295,8 @@ STD_TEST(base64, "src/encoding/base64/base64.c")
 STD_TEST(base32, "src/encoding/base32/base32.c")
 STD_TEST(binary, "src/encoding/binary/binary.c")
 STD_TEST(ascii85, "src/encoding/ascii85/ascii85.c")
+STD_TEST(protobuf, "src/encoding/protobuf/protobuf.c",
+         "src/encoding/protobuf/protobuf_message.c")
 STD_TEST(pem, "src/encoding/pem/pem.c", "src/encoding/base64/base64.c")
 STD_TEST(json, "src/encoding/json/json.c", "src/strconv/format_float.c", "src/strconv/parse_float.c")
 STD_TEST(csv, "src/encoding/csv/csv.c")
@@ -310,6 +312,7 @@ STD_TEST(asn1, "src/encoding/asn1/asn1.c")
 STD_TEST(fnv, "src/hash/fnv/fnv.c")
 STD_TEST(crc32, "src/hash/crc32/crc32.c")
 STD_TEST(crc64, "src/hash/crc64/crc64.c")
+STD_TEST(xxhash, "src/hash/xxhash/xxhash.c")
 #ifndef _WIN32
 TEST_F(StdLibTest, crc_concurrency) {
   auto r = compileAndRunStdTest("crc_concurrency",

@@ -16,6 +16,8 @@ extern "C" {
  *
  * Callers are responsible for providing sufficiently sized dst buffers.
  * Use neverc_hex_encoded_len / neverc_hex_decoded_len to compute sizes.
+ * encoded_len returns SIZE_MAX when the result is not representable. Encode
+ * writes exactly the returned payload bytes and does not append a NUL byte.
  */
 
 size_t neverc_hex_encoded_len(size_t n);

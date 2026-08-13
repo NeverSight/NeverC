@@ -194,6 +194,21 @@ static void grpc_test_frame_and_timeout(void) {
                                 &error) == NULL && error != NULL);
 }
 
+static void grpc_test_metadata_limits(void) {
+    uint8_t byte = 0;
+    neverc_grpc_metadata_t metadata = {
+        "oversized-bin", &byte, SIZE_MAX};
+    neverc_grpc_message_t request = {NULL, 0};
+    unsigned char client_storage = 0;
+    neverc_grpc_result_t *result = neverc_grpc_client_call(
+        (neverc_h2_client_t *)(void *)&client_storage, NULL,
+        "/test.Echo/Unary", NEVERC_GRPC_UNARY, &metadata, 1U,
+        &request, 1U, 1024U);
+    CHECK(result != NULL);
+    CHECK(result && result->error != NULL);
+    neverc_grpc_result_free(result);
+}
+
 static void grpc_test_unary(neverc_h2_client_t *client) {
     neverc_context_cancel_handle_t *cancel = NULL;
     neverc_context_t *background = neverc_context_background();
@@ -406,6 +421,7 @@ static void grpc_test_tls_end_to_end(void) {
 int main(void) {
     printf("gRPC test suite:\n");
     grpc_test_frame_and_timeout();
+    grpc_test_metadata_limits();
     grpc_test_h2c_end_to_end();
     grpc_test_tls_end_to_end();
     printf("grpc: %d checks, %d failed\n", tests_run, tests_failed);

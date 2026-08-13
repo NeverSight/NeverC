@@ -11,6 +11,7 @@
 #define GRPC_DEFAULT_MAX_MESSAGE_SIZE (4U * 1024U * 1024U)
 #define GRPC_MAX_STATUS_MESSAGE_SIZE 1024U
 #define GRPC_MAX_CLIENT_METADATA 60U
+#define GRPC_MAX_METADATA_VALUE_SIZE 8192U
 
 struct neverc_grpc_server_stream {
     const neverc_grpc_method_t *method;
@@ -670,7 +671,7 @@ static int grpc_client_header_block_build(
     for (size_t i = 0; i < metadata_count; i++) {
         if (!grpc_metadata_key_valid(metadata[i].key) ||
             (metadata[i].value_length && !metadata[i].value) ||
-            metadata[i].value_length > 8192)
+            metadata[i].value_length > GRPC_MAX_METADATA_VALUE_SIZE)
             return -1;
         size_t capacity;
         size_t length;
@@ -1106,7 +1107,8 @@ neverc_grpc_result_t *neverc_grpc_client_call(
     int metadata_valid = 1;
     for (size_t i = 0; i < metadata_count; i++) {
         if (!grpc_metadata_key_valid(metadata[i].key) ||
-            (metadata[i].value_length > 0 && !metadata[i].value)) {
+            (metadata[i].value_length > 0 && !metadata[i].value) ||
+            metadata[i].value_length > GRPC_MAX_METADATA_VALUE_SIZE) {
             metadata_valid = 0;
             break;
         }

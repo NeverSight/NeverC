@@ -617,15 +617,17 @@ static void test_utf8_fast(void) {
 static void test_hex_encode(void) {
     char out[64];
     uint8_t data[] = {0x00, 0x01, 0x0F, 0x10, 0xFF, 0xAB, 0xCD, 0xEF};
-    neverc_hex_encode(out, data, 8);
-    CHECK(strcmp(out, "00010f10ffabcdef") == 0, "hex encode");
+    size_t n = neverc_hex_encode(out, data, 8);
+    CHECK(n == 16 && memcmp(out, "00010f10ffabcdef", 16) == 0,
+          "hex encode");
 
-    neverc_hex_encode(out, (const uint8_t *)"", 0);
-    CHECK(out[0] == '\0', "hex encode empty");
+    out[0] = 'X';
+    n = neverc_hex_encode(out, (const uint8_t *)"", 0);
+    CHECK(n == 0 && out[0] == 'X', "hex encode empty");
 
     uint8_t single[] = {0x42};
-    neverc_hex_encode(out, single, 1);
-    CHECK(strcmp(out, "42") == 0, "hex encode single");
+    n = neverc_hex_encode(out, single, 1);
+    CHECK(n == 2 && memcmp(out, "42", 2) == 0, "hex encode single");
 
     uint8_t all[256];
     char all_hex[513];
@@ -746,8 +748,9 @@ static void test_base64_roundtrip(void) {
     dlen = neverc_base64_decode(dec, enc, elen);
     CHECK(dlen == 12 && memcmp(dec, data12, 12) == 0, "b64 12-byte roundtrip");
 
+    enc[0] = 'X';
     elen = neverc_base64_encode(enc, (const uint8_t *)"", 0);
-    CHECK(elen == 0 && enc[0] == '\0', "b64 empty encode");
+    CHECK(elen == 0 && enc[0] == 'X', "b64 empty encode");
 
     elen = neverc_base64_encode(enc, (const uint8_t *)"A", 1);
     dlen = neverc_base64_decode(dec, enc, elen);

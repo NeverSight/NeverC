@@ -112,8 +112,9 @@ static void test_strconv_dot_syntax(void) {
 static void test_encoding_dot_syntax(void) {
     const uint8_t data[] = {0xDE, 0xAD, 0xBE, 0xEF};
     char hexbuf[16];
-    encoding.hex.encode(hexbuf, data, 4);
-    CHECK("encoding.hex.encode", strcmp(hexbuf, "deadbeef") == 0);
+    size_t hexlen = encoding.hex.encode(hexbuf, data, 4);
+    CHECK("encoding.hex.encode",
+          hexlen == 8 && memcmp(hexbuf, "deadbeef", 8) == 0);
 
     uint8_t decoded[4];
     int rc = encoding.hex.decode(decoded, hexbuf, 8);
@@ -398,8 +399,9 @@ static void test_encoding_base64_dot_syntax(void) {
     const uint8_t input[] = "Hello, World!";
     char encoded[64];
     size_t elen = encoding.base64.encode(encoded, input, 13);
-    CHECK("encoding.base64.encode_ok", elen > 0);
-    CHECK("encoding.base64.encode_val", strcmp(encoded, "SGVsbG8sIFdvcmxkIQ==") == 0);
+    CHECK("encoding.base64.encode_ok", elen == 20);
+    CHECK("encoding.base64.encode_val",
+          memcmp(encoded, "SGVsbG8sIFdvcmxkIQ==", 20) == 0);
 
     uint8_t decoded[64];
     int dlen = encoding.base64.decode(decoded, encoded, elen);

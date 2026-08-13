@@ -1,4 +1,6 @@
 #include "neverc/std/encoding/ascii85.h"
+#include <limits.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -26,6 +28,22 @@ static void test_max_encoded_len(void) {
     check_int("len(5)", neverc_ascii85_max_encoded_len(5), 10);
     check_int("len(8)", neverc_ascii85_max_encoded_len(8), 10);
     check_int("len(12)", neverc_ascii85_max_encoded_len(12), 15);
+    check_int("negative length rejected",
+              neverc_ascii85_max_encoded_len(-1), -1);
+    check_int("overflowing length rejected",
+              neverc_ascii85_max_encoded_len(INT_MAX), -1);
+    {
+        int max_safe = (INT_MAX / 5) * 4;
+        check_int("largest safe length",
+                  neverc_ascii85_max_encoded_len(max_safe),
+                  (INT_MAX / 5) * 5);
+    }
+
+    {
+        unsigned char byte = 0;
+        check_int("encode rejects result larger than int",
+                  neverc_ascii85_encode(&byte, &byte, SIZE_MAX), -1);
+    }
 }
 
 static void test_encode_decode(void) {
@@ -121,6 +139,29 @@ static void test_decode_errors(void) {
         unsigned char dec[32];
         neverc_ascii85_result_t r = neverc_ascii85_decode(dec, sizeof(dec), bad, 1, 1);
         check_true("single trailing byte error", r.error == 1);
+    }
+
+    /* Five base-85 digits must fit in one 32-bit output group. */
+    {
+        const unsigned char overflow[] = "uuuuu";
+        unsigned char dec[4] = {1, 2, 3, 4};
+        neverc_ascii85_result_t r =
+            neverc_ascii85_decode(dec, sizeof(dec), overflow, 5, 1);
+        check_true("overflowing group error", r.error == 1);
+        check_true("overflowing group writes nothing", r.ndst == 0);
+        check_true("overflowing group preserves output",
+                   dec[0] == 1 && dec[1] == 2 &&
+                   dec[2] == 3 && dec[3] == 4);
+    }
+
+    /* Flush padding can also push an incomplete group past UINT32_MAX. */
+    {
+        const unsigned char overflow[] = "uuuu";
+        unsigned char dec[4] = {1, 2, 3, 4};
+        neverc_ascii85_result_t r =
+            neverc_ascii85_decode(dec, sizeof(dec), overflow, 4, 1);
+        check_true("overflowing partial group error", r.error == 1);
+        check_true("overflowing partial group writes nothing", r.ndst == 0);
     }
 
     /* Whitespace skipped */

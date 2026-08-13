@@ -1,4 +1,5 @@
 #include "neverc/std/encoding/hex.h"
+#include <limits.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -52,6 +53,8 @@ static void test_encoded_len(void) {
     check_size("encoded_len(1)", neverc_hex_encoded_len(1), 2);
     check_size("encoded_len(5)", neverc_hex_encoded_len(5), 10);
     check_size("encoded_len(16)", neverc_hex_encoded_len(16), 32);
+    check_size("encoded_len overflow",
+               neverc_hex_encoded_len(SIZE_MAX / 2 + 1), SIZE_MAX);
 }
 
 static void test_decoded_len(void) {
@@ -64,25 +67,38 @@ static void test_decoded_len(void) {
 static void test_encode(void) {
     printf("[encode]\n");
     char dst[64];
-
-    uint8_t empty[] = {};
-    neverc_hex_encode(dst, empty, 0);
-    check_str("encode(empty)", dst, "");
+    size_t n;
 
     uint8_t one[] = {0xab};
-    neverc_hex_encode(dst, one, 1);
+    char exact[3] = {'?', '?', 'X'};
+    n = neverc_hex_encode(exact, one, 1);
+    check_size("encode exact length", n, 2);
+    check_mem("encode exact payload", (const uint8_t *)exact,
+              (const uint8_t *)"ab", 2);
+    check_int("encode does not append NUL", exact[2], 'X');
+
+    uint8_t empty[] = {};
+    n = neverc_hex_encode(dst, empty, 0);
+    dst[n] = '\0';
+    check_str("encode(empty)", dst, "");
+
+    n = neverc_hex_encode(dst, one, 1);
+    dst[n] = '\0';
     check_str("encode(0xab)", dst, "ab");
 
     uint8_t hello[] = "Hello";
-    neverc_hex_encode(dst, hello, 5);
+    n = neverc_hex_encode(dst, hello, 5);
+    dst[n] = '\0';
     check_str("encode(Hello)", dst, "48656c6c6f");
 
     uint8_t bytes[] = {0x00, 0x01, 0x02, 0xff, 0xfe};
-    neverc_hex_encode(dst, bytes, 5);
+    n = neverc_hex_encode(dst, bytes, 5);
+    dst[n] = '\0';
     check_str("encode(mixed)", dst, "000102fffe");
 
     uint8_t all_zeros[] = {0x00, 0x00, 0x00};
-    neverc_hex_encode(dst, all_zeros, 3);
+    n = neverc_hex_encode(dst, all_zeros, 3);
+    dst[n] = '\0';
     check_str("encode(zeros)", dst, "000000");
 }
 
@@ -117,6 +133,15 @@ static void test_decode(void) {
 
     n = neverc_hex_decode(dst, "0g", 2);
     check_int("decode(0g invalid)", n, -1);
+
+#if SIZE_MAX / 2 > INT_MAX
+    {
+        char byte = '0';
+        check_int("decode rejects result larger than int",
+                  neverc_hex_decode(dst, &byte,
+                      (size_t)INT_MAX * 2 + 2), -1);
+    }
+#endif
 }
 
 static void test_roundtrip(void) {
@@ -125,7 +150,8 @@ static void test_roundtrip(void) {
     char hex_buf[32];
     uint8_t out[16];
 
-    neverc_hex_encode(hex_buf, data, 8);
+    size_t encoded_len = neverc_hex_encode(hex_buf, data, 8);
+    hex_buf[encoded_len] = '\0';
     check_str("roundtrip.hex", hex_buf, "deadbeef01234567");
 
     int n = neverc_hex_decode(out, hex_buf, 16);

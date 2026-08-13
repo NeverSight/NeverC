@@ -1,4 +1,5 @@
 #include "neverc/std/encoding/base32.h"
+#include <limits.h>
 
 /*
  * Base32 encoding/decoding per RFC 4648.
@@ -63,7 +64,10 @@ static const uint8_t decode_hex[256] = {
 #undef X
 
 size_t neverc_base32_encoded_len(size_t n) {
-    return ((n + 4) / 5) * 8;
+    size_t groups = n / 5 + (n % 5 != 0);
+    if (groups > SIZE_MAX / 8)
+        return SIZE_MAX;
+    return groups * 8;
 }
 
 size_t neverc_base32_decoded_len(size_t n) {
@@ -128,14 +132,41 @@ static size_t encode_with_table(char *dst, const uint8_t *src, size_t src_len,
         di += 8;
     }
 
-    dst[di] = '\0';
     return di;
 }
 
 static int decode_impl(uint8_t *dst, const char *src, size_t src_len,
                        const uint8_t *dec_table) {
-    while (src_len > 0 && src[src_len - 1] == '=')
-        src_len--;
+    const size_t max_encoded_for_int =
+        ((size_t)INT_MAX / 5 + ((size_t)INT_MAX % 5 != 0)) * 8;
+    if (src_len > max_encoded_for_int ||
+        ((!dst || !src) && src_len != 0))
+        return -1;
+
+    size_t padded_len = src_len;
+    size_t padding = 0;
+    while (padding < src_len && src[src_len - 1 - padding] == '=')
+        padding++;
+    src_len -= padding;
+
+    size_t remain = src_len % 8;
+    size_t tail_bytes;
+    size_t expected_padding;
+    switch (remain) {
+    case 0: tail_bytes = 0; expected_padding = 0; break;
+    case 2: tail_bytes = 1; expected_padding = 6; break;
+    case 4: tail_bytes = 2; expected_padding = 4; break;
+    case 5: tail_bytes = 3; expected_padding = 3; break;
+    case 7: tail_bytes = 4; expected_padding = 1; break;
+    default: return -1;
+    }
+    if (padding != 0 &&
+        (padded_len % 8 != 0 || padding != expected_padding))
+        return -1;
+
+    size_t decoded_len = (src_len / 8) * 5 + tail_bytes;
+    if (decoded_len > INT_MAX)
+        return -1;
 
     size_t di = 0;
     size_t si = 0;
@@ -164,25 +195,28 @@ static int decode_impl(uint8_t *dst, const char *src, size_t src_len,
         di += 5;
     }
 
-    size_t remain = src_len - si;
     if (remain > 0) {
         uint64_t val = 0;
         uint8_t check = 0;
+        uint8_t last = 0;
         for (size_t k = 0; k < remain; k++) {
             uint8_t v = dec_table[(uint8_t)src[si + k]];
             check |= v;
+            last = v;
             val |= (uint64_t)v << (35 - k * 5);
         }
         if (check & B32_INV) return -1;
 
         int out_bytes;
+        uint8_t unused_mask;
         switch (remain) {
-        case 2: out_bytes = 1; break;
-        case 4: out_bytes = 2; break;
-        case 5: out_bytes = 3; break;
-        case 7: out_bytes = 4; break;
+        case 2: out_bytes = 1; unused_mask = 0x03; break;
+        case 4: out_bytes = 2; unused_mask = 0x0f; break;
+        case 5: out_bytes = 3; unused_mask = 0x01; break;
+        case 7: out_bytes = 4; unused_mask = 0x07; break;
         default: return -1;
         }
+        if ((last & unused_mask) != 0) return -1;
         if (out_bytes > 0) dst[di++] = (uint8_t)(val >> 32);
         if (out_bytes > 1) dst[di++] = (uint8_t)(val >> 24);
         if (out_bytes > 2) dst[di++] = (uint8_t)(val >> 16);

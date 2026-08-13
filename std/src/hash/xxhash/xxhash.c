@@ -45,22 +45,22 @@ static inline uint64_t xxh_merge_round(uint64_t acc, uint64_t val) {
 
 uint64_t neverc_xxhash64(const void *data, size_t len, uint64_t seed) {
     const uint8_t *p = (const uint8_t *)data;
-    const uint8_t *end = p + len;
+    size_t remaining = len;
     uint64_t h64;
 
-    if (len >= 32) {
+    if (remaining >= 32) {
         uint64_t v1 = seed + XXH_PRIME64_1 + XXH_PRIME64_2;
         uint64_t v2 = seed + XXH_PRIME64_2;
         uint64_t v3 = seed;
         uint64_t v4 = seed - XXH_PRIME64_1;
-        const uint8_t *limit = end - 32;
 
         do {
             v1 = xxh_round(v1, xxh_read64(p)); p += 8;
             v2 = xxh_round(v2, xxh_read64(p)); p += 8;
             v3 = xxh_round(v3, xxh_read64(p)); p += 8;
             v4 = xxh_round(v4, xxh_read64(p)); p += 8;
-        } while (p <= limit);
+            remaining -= 32;
+        } while (remaining >= 32);
 
         h64 = xxh_rotl64(v1, 1) + xxh_rotl64(v2, 7) +
               xxh_rotl64(v3, 12) + xxh_rotl64(v4, 18);
@@ -74,22 +74,25 @@ uint64_t neverc_xxhash64(const void *data, size_t len, uint64_t seed) {
 
     h64 += (uint64_t)len;
 
-    while (p + 8 <= end) {
+    while (remaining >= 8) {
         uint64_t k1 = xxh_round(0, xxh_read64(p));
         p += 8;
+        remaining -= 8;
         h64 ^= k1;
         h64 = xxh_rotl64(h64, 27) * XXH_PRIME64_1 + XXH_PRIME64_4;
     }
 
-    while (p + 4 <= end) {
+    if (remaining >= 4) {
         h64 ^= (uint64_t)xxh_read32(p) * XXH_PRIME64_1;
         p += 4;
+        remaining -= 4;
         h64 = xxh_rotl64(h64, 23) * XXH_PRIME64_2 + XXH_PRIME64_3;
     }
 
-    while (p < end) {
+    while (remaining != 0) {
         h64 ^= (uint64_t)(*p) * XXH_PRIME64_5;
         p++;
+        remaining--;
         h64 = xxh_rotl64(h64, 11) * XXH_PRIME64_1;
     }
 

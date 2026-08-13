@@ -13,7 +13,7 @@
 
 /*
  * 512-byte pair table: hex_pair[byte] = two-char hex string.
- * One 16-bit lookup per input byte instead of two 8-bit lookups.
+ * One pair lookup per input byte instead of two nibble lookups.
  */
 static const char hex_pair[256][2] NEVERC_HEX_PAIR_ATTR = {
     "00","01","02","03","04","05","06","07","08","09","0a","0b","0c","0d","0e","0f",
@@ -35,6 +35,8 @@ static const char hex_pair[256][2] NEVERC_HEX_PAIR_ATTR = {
 };
 
 size_t neverc_hex_encoded_len(size_t n) {
+    if (n > SIZE_MAX / 2)
+        return SIZE_MAX;
     return n * 2;
 }
 
@@ -42,14 +44,14 @@ size_t neverc_hex_encode(char *dst, const uint8_t *src, size_t src_len) {
     size_t i = 0, j = 0;
     size_t n4 = src_len & ~(size_t)3;
     while (i < n4) {
-        uint64_t w;
-        uint16_t a, b, c, d;
-        memcpy(&a, hex_pair[src[i  ]], 2);
-        memcpy(&b, hex_pair[src[i+1]], 2);
-        memcpy(&c, hex_pair[src[i+2]], 2);
-        memcpy(&d, hex_pair[src[i+3]], 2);
-        w = (uint64_t)a | ((uint64_t)b << 16) | ((uint64_t)c << 32) | ((uint64_t)d << 48);
-        memcpy(dst + j, &w, 8);
+        /*
+         * Keep the stores byte-order independent. Packing native uint16_t
+         * values into a uint64_t reverses the four pairs on big-endian hosts.
+         */
+        memcpy(dst + j,     hex_pair[src[i]],     2);
+        memcpy(dst + j + 2, hex_pair[src[i + 1]], 2);
+        memcpy(dst + j + 4, hex_pair[src[i + 2]], 2);
+        memcpy(dst + j + 6, hex_pair[src[i + 3]], 2);
         i += 4;
         j += 8;
     }
@@ -58,6 +60,5 @@ size_t neverc_hex_encode(char *dst, const uint8_t *src, size_t src_len) {
         i++;
         j += 2;
     }
-    dst[j] = '\0';
-    return src_len * 2;
+    return j;
 }

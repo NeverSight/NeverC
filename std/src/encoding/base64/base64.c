@@ -8,7 +8,10 @@ static const char url_table[] =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
 size_t neverc_base64_encoded_len(size_t n) {
-    return ((n + 2) / 3) * 4;
+    size_t groups = n / 3 + (n % 3 != 0);
+    if (groups > SIZE_MAX / 4)
+        return SIZE_MAX;
+    return groups * 4;
 }
 
 size_t neverc_base64_decoded_len(size_t n) {
@@ -80,7 +83,6 @@ static size_t encode_with_table(char *dst, const uint8_t *src, size_t src_len,
         di += 4;
     }
 
-    dst[di] = '\0';
     return di;
 }
 
@@ -95,7 +97,10 @@ static int decode_value(unsigned char c, int url_safe) {
 
 static int decode_impl(uint8_t *dst, const char *src, size_t src_len,
                        int url_safe) {
-    if ((!dst || !src) && src_len != 0)
+    const uintmax_t max_encoded_for_int =
+        ((uintmax_t)INT_MAX / 3 + ((uintmax_t)INT_MAX % 3 != 0)) * 4;
+    if ((uintmax_t)src_len > max_encoded_for_int ||
+        ((!dst || !src) && src_len != 0))
         return -1;
     if (src_len == 0)
         return 0;
@@ -119,7 +124,7 @@ static int decode_impl(uint8_t *dst, const char *src, size_t src_len,
 
     size_t decoded_len = (encoded_len / 4) * 3 +
                          (remain == 2 ? 1 : remain == 3 ? 2 : 0);
-    if (decoded_len > INT_MAX)
+    if ((uintmax_t)decoded_len > (uintmax_t)INT_MAX)
         return -1;
 
     size_t di = 0;

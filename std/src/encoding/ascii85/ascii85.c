@@ -1,7 +1,14 @@
 #include "neverc/std/encoding/ascii85.h"
+#include <limits.h>
+#include <stdint.h>
 
 int neverc_ascii85_max_encoded_len(int n) {
-    return (n + 3) / 4 * 5;
+    if (n < 0)
+        return -1;
+    int groups = n / 4 + (n % 4 != 0);
+    if (groups > INT_MAX / 5)
+        return -1;
+    return groups * 5;
 }
 
 /*
@@ -18,6 +25,9 @@ int neverc_ascii85_max_encoded_len(int n) {
 
 int neverc_ascii85_encode(unsigned char *dst, const unsigned char *src, size_t src_len) {
     if (src_len == 0) return 0;
+    size_t groups = src_len / 4 + (src_len % 4 != 0);
+    if (!dst || !src || groups > (size_t)INT_MAX / 5)
+        return -1;
 
     int n = 0;
     size_t off = 0;
@@ -68,8 +78,13 @@ neverc_ascii85_result_t neverc_ascii85_decode(unsigned char *dst, size_t dst_len
                                                const unsigned char *src, size_t src_len,
                                                int flush) {
     neverc_ascii85_result_t result = {0, 0, 0};
-    unsigned int v = 0;
+    uint64_t v = 0;
     int nb = 0;
+
+    if ((!src && src_len != 0) || (!dst && dst_len != 0)) {
+        result.error = 1;
+        return result;
+    }
 
     for (size_t i = 0; i < src_len; i++) {
         unsigned char b = src[i];
@@ -93,6 +108,10 @@ neverc_ascii85_result_t neverc_ascii85_decode(unsigned char *dst, size_t dst_len
 
         if (nb == 5) {
             result.nsrc = i + 1;
+            if (v > UINT32_MAX) {
+                result.error = 1;
+                return result;
+            }
             dst[result.ndst]     = (unsigned char)(v >> 24);
             dst[result.ndst + 1] = (unsigned char)(v >> 16);
             dst[result.ndst + 2] = (unsigned char)(v >> 8);
@@ -112,6 +131,10 @@ neverc_ascii85_result_t neverc_ascii85_decode(unsigned char *dst, size_t dst_len
             }
             for (int i = nb; i < 5; i++)
                 v = v * 85 + 84;
+            if (v > UINT32_MAX) {
+                result.error = 1;
+                return result;
+            }
             for (int i = 0; i < nb - 1; i++) {
                 dst[result.ndst] = (unsigned char)(v >> 24);
                 v <<= 8;

@@ -1,4 +1,5 @@
 #include "neverc/std/encoding/hex.h"
+#include <limits.h>
 
 /*
  * Combined lookup table: valid entries 0-15, invalid = 0xFF.
@@ -28,7 +29,9 @@ size_t neverc_hex_decoded_len(size_t n) {
 }
 
 int neverc_hex_decode(uint8_t *dst, const char *src, size_t src_len) {
-    if (src_len % 2 != 0)
+    if ((uintmax_t)src_len > (uintmax_t)INT_MAX * 2 ||
+        ((!dst || !src) && src_len != 0) ||
+        src_len % 2 != 0)
         return -1;
 
     const uint8_t *s = (const uint8_t *)src;

@@ -11,6 +11,9 @@ extern "C" {
 /*
  * Base32 encoding/decoding (RFC 4648).
  * Supports standard (A-Z2-7) and hex (0-9A-V) alphabets.
+ * encoded_len returns SIZE_MAX when the result is not representable. Encode
+ * writes exactly the returned payload bytes and does not append a NUL byte.
+ * Decoders accept padded and unpadded canonical encodings.
  */
 
 size_t neverc_base32_encoded_len(size_t n);
