@@ -152,6 +152,123 @@ static void test_simple_fold(void) {
     check_int("fold('0')==0", (int)neverc_unicode_simple_fold('0'), (int)'0');
 }
 
+static void test_unicode_conformance_edges(void) {
+    printf("[Unicode conformance edges]\n");
+
+    check_int("NBSP is not print", neverc_unicode_is_print(0x00A0), 0);
+    check_int("soft hyphen is not print",
+              neverc_unicode_is_print(0x00AD), 0);
+    check_int("NBSP is graphic", neverc_unicode_is_graphic(0x00A0), 1);
+    check_int("soft hyphen is not graphic",
+              neverc_unicode_is_graphic(0x00AD), 0);
+    check_int("feminine ordinal is letter",
+              neverc_unicode_is_letter(0x00AA), 1);
+    check_int("Devanagari sign is not letter",
+              neverc_unicode_is_letter(0x0900), 0);
+    check_int("Devanagari sign is mark",
+              neverc_unicode_is_mark(0x0900), 1);
+    check_int("Hiragana voiced mark is print",
+              neverc_unicode_is_print(0x3099), 1);
+    check_int("Katakana middle dot is print",
+              neverc_unicode_is_print(0x30FB), 1);
+    check_int("Thai character MAI HAN-AKAT is print",
+              neverc_unicode_is_print(0x0E31), 1);
+    check_int("Devanagari vocalic L mark is print",
+              neverc_unicode_is_print(0x0962), 1);
+    check_int("titlecase DZ is letter and print",
+              neverc_unicode_is_letter(0x01C5) &&
+              neverc_unicode_is_print(0x01C5), 1);
+
+    check_u32("micro sign uppercase",
+              neverc_unicode_to_upper(0x00B5), 0x039C);
+    check_u32("capital I with dot lowercase",
+              neverc_unicode_to_lower(0x0130), 0x0069);
+    check_u32("dotless i uppercase",
+              neverc_unicode_to_upper(0x0131), 0x0049);
+    check_u32("final sigma uppercase",
+              neverc_unicode_to_upper(0x03C2), 0x03A3);
+
+    check_int("kra is not uppercase",
+              neverc_unicode_is_upper(0x0138), 0);
+    check_int("kra is lowercase",
+              neverc_unicode_is_lower(0x0138), 1);
+    check_int("K cedilla capital is uppercase",
+              neverc_unicode_is_upper(0x0136), 1);
+    check_int("K cedilla small is lowercase",
+              neverc_unicode_is_lower(0x0137), 1);
+    check_int("L acute capital is uppercase",
+              neverc_unicode_is_upper(0x0139), 1);
+
+    check_int("NKo zero is digit",
+              neverc_unicode_is_digit(0x07C0), 1);
+    check_int("NKo zero is number",
+              neverc_unicode_is_number(0x07C0), 1);
+    check_int("Bengali zero is digit",
+              neverc_unicode_is_digit(0x09E6), 1);
+    check_int("Thai zero is digit",
+              neverc_unicode_is_digit(0x0E50), 1);
+    check_int("Tibetan zero is digit",
+              neverc_unicode_is_digit(0x0F20), 1);
+    check_int("supported digits are numbers",
+              neverc_unicode_is_digit(0x09E6) &&
+              neverc_unicode_is_number(0x09E6) &&
+              neverc_unicode_is_digit(0x0E50) &&
+              neverc_unicode_is_number(0x0E50), 1);
+    check_int("superscript i is not number",
+              neverc_unicode_is_number(0x2071), 0);
+
+    check_int("dollar is not punctuation",
+              neverc_unicode_is_punct('$'), 0);
+    check_int("dollar is symbol",
+              neverc_unicode_is_symbol('$'), 1);
+    check_int("section sign is punctuation",
+              neverc_unicode_is_punct(0x00A7), 1);
+    check_int("section sign is not symbol",
+              neverc_unicode_is_symbol(0x00A7), 0);
+    check_int("Devanagari avagraha is letter",
+              neverc_unicode_is_letter(0x093D), 1);
+    check_int("Devanagari avagraha is not mark",
+              neverc_unicode_is_mark(0x093D), 0);
+
+    check_u32("titlecase DZ capital",
+              neverc_unicode_to_title(0x01C4), 0x01C5);
+    check_u32("titlecase LJ capital",
+              neverc_unicode_to_title(0x01C7), 0x01C8);
+    check_u32("titlecase NJ capital",
+              neverc_unicode_to_title(0x01CA), 0x01CB);
+    check_u32("titlecase DZ acute capital",
+              neverc_unicode_to_title(0x01F1), 0x01F2);
+    check_int("BOM is not whitespace",
+              neverc_unicode_is_space(0xFEFF), 0);
+
+    check_u32("fold K to k", neverc_unicode_simple_fold('K'), 'k');
+    check_u32("fold k to Kelvin",
+              neverc_unicode_simple_fold('k'), 0x212A);
+    check_u32("fold Kelvin to K",
+              neverc_unicode_simple_fold(0x212A), 'K');
+    check_u32("fold S to s", neverc_unicode_simple_fold('S'), 's');
+    check_u32("fold s to long s",
+              neverc_unicode_simple_fold('s'), 0x017F);
+    check_u32("fold long s to S",
+              neverc_unicode_simple_fold(0x017F), 'S');
+    check_u32("fold micro sign to capital mu",
+              neverc_unicode_simple_fold(0x00B5), 0x039C);
+    check_u32("fold capital mu to small mu",
+              neverc_unicode_simple_fold(0x039C), 0x03BC);
+    check_u32("fold small mu to micro sign",
+              neverc_unicode_simple_fold(0x03BC), 0x00B5);
+    check_u32("fold capital sigma to final sigma",
+              neverc_unicode_simple_fold(0x03A3), 0x03C2);
+    check_u32("fold final sigma to small sigma",
+              neverc_unicode_simple_fold(0x03C2), 0x03C3);
+    check_u32("fold small sigma to capital sigma",
+              neverc_unicode_simple_fold(0x03C3), 0x03A3);
+    check_u32("fold capital I with dot to itself",
+              neverc_unicode_simple_fold(0x0130), 0x0130);
+    check_u32("fold dotless i to itself",
+              neverc_unicode_simple_fold(0x0131), 0x0131);
+}
+
 int main(void) {
     printf("=== NeverC Unicode Library Tests ===\n\n");
     test_ascii_classification();
@@ -162,6 +279,7 @@ int main(void) {
     test_unicode_beyond_ascii();
     test_new_classification();
     test_simple_fold();
+    test_unicode_conformance_edges();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");
