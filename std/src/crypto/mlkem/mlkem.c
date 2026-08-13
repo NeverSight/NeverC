@@ -589,8 +589,11 @@ static int mlkem_decaps(int k, const uint8_t *seed,
     neverc_shake256_update(&j, ct, ct_size);
     neverc_shake256_squeeze(&j, rejection_key, sizeof(rejection_key));
 
+    /* difference == 0 must select all bytes from K; any mismatch selects J.
+     * The shift already yields 0xff/0x00, so negating it would turn the
+     * successful 0xff mask into 0x01 and corrupt 31/32 bits of every byte. */
     uint8_t match_mask =
-        (uint8_t)(0U - (uint8_t)(((uint16_t)difference - 1U) >> 8));
+        (uint8_t)(((uint16_t)difference - 1U) >> 8);
     for (size_t i = 0; i < 32; i++) {
         shared_key[i] = (uint8_t)((kr[i] & match_mask) |
                                   (rejection_key[i] & (uint8_t)~match_mask));
