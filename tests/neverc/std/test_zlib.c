@@ -37,6 +37,38 @@ static void test_roundtrip(const char *label, const uint8_t *data, size_t len, i
     else { tests_failed++; printf("  FAIL: roundtrip mismatch\n"); }
 }
 
+static void test_invalid_headers_and_spans(void) {
+    printf("[zlib invalid headers and spans]\n");
+    uint8_t compressed[256], output[64];
+    size_t compressed_len = sizeof(compressed);
+    ASSERT_INT_EQ(neverc_zlib_compress(
+                      (const uint8_t *)"abc", 3, compressed,
+                      &compressed_len, 1),
+                  0);
+
+    uint8_t invalid[256];
+    memcpy(invalid, compressed, compressed_len);
+    invalid[0] = 0x88; /* CM=8 but CINFO=8 exceeds the 32 KiB window. */
+    for (unsigned flag = 0; flag < 32; flag++) {
+        if ((((unsigned)invalid[0] << 8) + flag) % 31 == 0) {
+            invalid[1] = (uint8_t)flag;
+            break;
+        }
+    }
+    size_t output_len = sizeof(output);
+    ASSERT_INT_EQ(neverc_zlib_decompress(
+                      invalid, compressed_len, output, &output_len),
+                  -1);
+
+    ASSERT_INT_EQ(neverc_zlib_decompress(
+                      compressed, compressed_len, output, NULL),
+                  -1);
+    compressed_len = sizeof(compressed);
+    ASSERT_INT_EQ(neverc_zlib_compress(
+                      NULL, 1, compressed, &compressed_len, 1),
+                  -1);
+}
+
 int main(void) {
     printf("=== NeverC compress/zlib Tests ===\n");
     test_roundtrip("empty", (uint8_t *)"", 0, 0);
@@ -49,6 +81,7 @@ int main(void) {
 
     for (int i = 0; i < 4096; i++) data[i] = (uint8_t)((i * 7) & 0xFF);
     test_roundtrip("mixed", data, sizeof(data), 1);
+    test_invalid_headers_and_spans();
 
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;

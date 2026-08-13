@@ -21,6 +21,7 @@ extern "C" {
 /*
  * DEFLATE compress `src` into `dst`.
  * `level`: 0 = no compression (stored), 1-9 = compression levels.
+ * Compressed levels reject inputs larger than UINT32_MAX bytes.
  * Returns 0 on success, -1 on error.
  */
 int neverc_flate_compress(const uint8_t *src, size_t src_len,

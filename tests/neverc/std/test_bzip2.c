@@ -82,6 +82,35 @@ static void test_empty_output(void) {
     ASSERT_TRUE(neverc_bzip2_decompress(bz2_hello, sizeof(bz2_hello), out, &out_len) != 0);
 }
 
+static void test_crc_mismatch(void) {
+    printf("[crc_mismatch]\n");
+    uint8_t corrupted[sizeof(bz2_hello)];
+    uint8_t out[256];
+    size_t out_len;
+
+    memcpy(corrupted, bz2_hello, sizeof(corrupted));
+    corrupted[10] ^= 1; /* Stored block CRC follows the six-byte block marker. */
+    out_len = sizeof(out);
+    ASSERT_TRUE(neverc_bzip2_decompress(
+                    corrupted, sizeof(corrupted), out, &out_len) != 0);
+
+    memcpy(corrupted, bz2_hello, sizeof(corrupted));
+    corrupted[49] ^= 1; /* Stored combined CRC follows the end marker. */
+    out_len = sizeof(out);
+    ASSERT_TRUE(neverc_bzip2_decompress(
+                    corrupted, sizeof(corrupted), out, &out_len) != 0);
+}
+
+static void test_invalid_spans(void) {
+    printf("[invalid_spans]\n");
+    uint8_t out[16];
+    size_t out_len = sizeof(out);
+    ASSERT_TRUE(neverc_bzip2_decompress(
+                    bz2_hello, sizeof(bz2_hello), out, NULL) != 0);
+    ASSERT_TRUE(neverc_bzip2_decompress(
+                    NULL, sizeof(bz2_hello), out, &out_len) != 0);
+}
+
 int main(void) {
     printf("=== NeverC bzip2 Tests ===\n");
     test_hello_decompress();
@@ -89,6 +118,8 @@ int main(void) {
     test_truncated();
     test_bad_block_size();
     test_empty_output();
+    test_crc_mismatch();
+    test_invalid_spans();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");

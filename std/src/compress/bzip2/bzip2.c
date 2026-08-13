@@ -33,6 +33,18 @@
 #define BZ_FAST_SIZE      (1u << BZ_FAST_BITS)
 #define BZ_FAST_MASK      (BZ_FAST_SIZE - 1u)
 
+static uint32_t bz_crc32(const uint8_t *data, size_t len) {
+    uint32_t crc = UINT32_MAX;
+    for (size_t i = 0; i < len; i++) {
+        crc ^= (uint32_t)data[i] << 24;
+        for (int bit = 0; bit < 8; bit++)
+            crc = (crc & UINT32_C(0x80000000))
+                      ? (crc << 1) ^ UINT32_C(0x04c11db7)
+                      : crc << 1;
+    }
+    return ~crc;
+}
+
 /* ---- Bit reader: MSB-first, 64-bit accumulator with bulk refill ---- */
 typedef struct {
     const uint8_t *buf;
@@ -205,6 +217,9 @@ static inline int huff_decode(bz_br_t *br, const huff_table_t *ht) {
 
 int neverc_bzip2_decompress(const uint8_t *src, size_t src_len,
                             uint8_t *dst, size_t *dst_len) {
+    if (!dst_len || (!src && src_len != 0) ||
+        (!dst && *dst_len != 0))
+        return -1;
     bz_br_t br;
     bz_br_init(&br, src, src_len);
 
@@ -218,6 +233,7 @@ int neverc_bzip2_decompress(const uint8_t *src, size_t src_len,
 
     size_t out_pos = 0;
     size_t out_cap = *dst_len;
+    uint32_t combined_crc = 0;
     int block_cap = block_size100k * 100000;
 
     /* One prefix table per group, reused across every block. */
@@ -236,10 +252,16 @@ int neverc_bzip2_decompress(const uint8_t *src, size_t src_len,
         uint32_t hdr_lo = bz_bits(&br, 24);
         if (br.eof) goto err;
 
-        if (hdr_hi == 0x177245 && hdr_lo == 0x385090) break;
+        if (hdr_hi == 0x177245 && hdr_lo == 0x385090) {
+            uint32_t expected_combined_crc = bz_bits(&br, 32);
+            if (br.eof || expected_combined_crc != combined_crc) goto err;
+            break;
+        }
         if (hdr_hi != 0x314159 || hdr_lo != 0x265359) goto err;
 
-        (void)bz_bits(&br, 32);          /* block CRC (unchecked) */
+        uint32_t expected_block_crc = bz_bits(&br, 32);
+        if (br.eof) goto err;
+        size_t block_out_start = out_pos;
 
         uint32_t randomized = bz_bits(&br, 1);
         if (br.eof || randomized) goto err;
@@ -449,6 +471,12 @@ int neverc_bzip2_decompress(const uint8_t *src, size_t src_len,
             if (out_pos >= out_cap) goto err;
             dst[out_pos++] = ch;
         }
+
+        uint32_t actual_block_crc =
+            bz_crc32(dst + block_out_start, out_pos - block_out_start);
+        if (actual_block_crc != expected_block_crc) goto err;
+        combined_crc = (combined_crc << 1) | (combined_crc >> 31);
+        combined_crc ^= actual_block_crc;
     }
 
     free(tt);

@@ -10,6 +10,9 @@
 
 int neverc_zlib_compress(const uint8_t *src, size_t src_len,
                          uint8_t *dst, size_t *dst_len, int level) {
+    if (!dst_len || (!src && src_len != 0) ||
+        (!dst && *dst_len != 0))
+        return -1;
     if (*dst_len < 6) return -1;
 
     /* zlib header: CMF + FLG */
@@ -48,11 +51,14 @@ int neverc_zlib_compress(const uint8_t *src, size_t src_len,
 
 int neverc_zlib_decompress(const uint8_t *src, size_t src_len,
                            uint8_t *dst, size_t *dst_len) {
+    if (!dst_len || (!src && src_len != 0) ||
+        (!dst && *dst_len != 0))
+        return -1;
     if (src_len < 6) return -1;
 
     /* validate header */
     uint8_t cmf = src[0], flg = src[1];
-    if ((cmf & 0x0F) != 8) return -1;
+    if ((cmf & 0x0F) != 8 || (cmf >> 4) > 7) return -1;
     if (((unsigned)cmf * 256 + (unsigned)flg) % 31 != 0) return -1;
     if (flg & 0x20) return -1; /* FDICT not supported */
 

@@ -13,6 +13,8 @@
 extern "C" {
 #endif
 
+/* Decompresses one bzip2 stream and verifies every block CRC and the combined
+ * stream CRC. Returns 0 on success and -1 for malformed or corrupt input. */
 int neverc_bzip2_decompress(const uint8_t *src, size_t src_len,
                             uint8_t *dst, size_t *dst_len);
 

@@ -578,8 +578,10 @@ typedef struct {
 
 static int enc_flush(flate_enc_t *e, int bfinal) {
     if (e->ntok == 0 && !bfinal) return 0;
+    const uint8_t *block_src =
+        e->src ? e->src + e->block_start : NULL;
     if (emit_block(e->bw, e->toks, e->ntok,
-                   e->src + e->block_start, e->block_bytes, bfinal) < 0)
+                   block_src, e->block_bytes, bfinal) < 0)
         return -1;
     e->block_start += e->block_bytes;
     e->block_bytes = 0;
@@ -642,7 +644,10 @@ static void find_match(const uint8_t *src, size_t src_len, size_t pos,
 
 int neverc_flate_compress(const uint8_t *src, size_t src_len,
                           uint8_t *dst, size_t *dst_len, int level) {
-    if (level < 0 || level > 9) return -1;
+    if (!dst_len || (!src && src_len != 0) ||
+        (!dst && *dst_len != 0) || level < 0 || level > 9 ||
+        (level > 0 && (uint64_t)src_len > UINT32_MAX))
+        return -1;
 
     flate_bw_t bw = { .buf = dst, .cap = *dst_len, .pos = 0, .bits = 0, .nbits = 0 };
 

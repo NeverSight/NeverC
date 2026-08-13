@@ -216,6 +216,25 @@ static void test_invalid_streams(void) {
                       stored, empty_len, NULL, &output_len),
                   0);
     ASSERT_TRUE(output_len == 0);
+
+    ASSERT_INT_EQ(neverc_flate_compress(
+                      (const uint8_t *)"abc", 3U, stored, NULL, 1),
+                  -1);
+    stored_len = sizeof(stored);
+    ASSERT_INT_EQ(neverc_flate_compress(
+                      NULL, 1U, stored, &stored_len, 1),
+                  -1);
+    stored_len = 1;
+    ASSERT_INT_EQ(neverc_flate_compress(
+                      (const uint8_t *)"abc", 3U, NULL, &stored_len, 1),
+                  -1);
+#if SIZE_MAX > UINT32_MAX
+    stored_len = sizeof(stored);
+    ASSERT_INT_EQ(neverc_flate_compress(
+                      (const uint8_t *)"x", (size_t)UINT32_MAX + 1U,
+                      stored, &stored_len, 1),
+                  -1);
+#endif
 }
 
 int main(void) {

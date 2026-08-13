@@ -2,6 +2,7 @@
  * NeverC compress/gzip tests.
  */
 #include "neverc/std/compress/gzip.h"
+#include "neverc/std/hash/crc32.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -38,6 +39,82 @@ static void test_roundtrip(const char *label, const uint8_t *data, size_t len, i
     else { tests_failed++; printf("  FAIL: roundtrip mismatch\n"); }
 }
 
+static void test_optional_headers_and_invalid_inputs(void) {
+    printf("[gzip optional headers and invalid inputs]\n");
+    uint8_t base[256], extended[320], output[64];
+    size_t base_len = sizeof(base);
+    ASSERT_INT_EQ(neverc_gzip_compress(
+                      (const uint8_t *)"abc", 3, base, &base_len, 1),
+                  0);
+
+    memcpy(extended, base, 10);
+    extended[3] = 0x1e; /* FEXTRA | FNAME | FCOMMENT | FHCRC */
+    size_t pos = 10;
+    extended[pos++] = 2;
+    extended[pos++] = 0;
+    extended[pos++] = 0xaa;
+    extended[pos++] = 0x55;
+    extended[pos++] = 'n';
+    extended[pos++] = '\0';
+    extended[pos++] = 'c';
+    extended[pos++] = '\0';
+    uint16_t header_crc =
+        (uint16_t)(neverc_crc32_ieee(extended, pos) & UINT32_C(0xffff));
+    size_t header_crc_pos = pos;
+    extended[pos++] = (uint8_t)header_crc;
+    extended[pos++] = (uint8_t)(header_crc >> 8);
+    memcpy(extended + pos, base + 10, base_len - 10);
+    size_t extended_len = pos + base_len - 10;
+
+    size_t output_len = sizeof(output);
+    ASSERT_INT_EQ(neverc_gzip_decompress(
+                      extended, extended_len, output, &output_len),
+                  0);
+    ASSERT_TRUE(output_len == 3 && memcmp(output, "abc", 3) == 0);
+
+    extended[header_crc_pos] ^= 1;
+    output_len = sizeof(output);
+    ASSERT_INT_EQ(neverc_gzip_decompress(
+                      extended, extended_len, output, &output_len),
+                  -1);
+    extended[header_crc_pos] ^= 1;
+
+    uint8_t malformed[256];
+    memcpy(malformed, base, base_len);
+    malformed[3] = 0x04;
+    malformed[10] = 0xff;
+    malformed[11] = 0xff;
+    output_len = sizeof(output);
+    ASSERT_INT_EQ(neverc_gzip_decompress(
+                      malformed, base_len, output, &output_len),
+                  -1);
+
+    memcpy(malformed, base, base_len);
+    malformed[3] = 0x20;
+    output_len = sizeof(output);
+    ASSERT_INT_EQ(neverc_gzip_decompress(
+                      malformed, base_len, output, &output_len),
+                  -1);
+
+    uint8_t missing_name_terminator[18] = {
+        0x1f, 0x8b, 0x08, 0x08, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1
+    };
+    output_len = sizeof(output);
+    ASSERT_INT_EQ(neverc_gzip_decompress(
+                      missing_name_terminator,
+                      sizeof(missing_name_terminator), output, &output_len),
+                  -1);
+
+    ASSERT_INT_EQ(neverc_gzip_decompress(
+                      base, base_len, output, NULL),
+                  -1);
+    base_len = sizeof(base);
+    ASSERT_INT_EQ(neverc_gzip_compress(
+                      NULL, 1, base, &base_len, 1),
+                  -1);
+}
+
 int main(void) {
     printf("=== NeverC compress/gzip Tests ===\n");
     test_roundtrip("empty", (uint8_t *)"", 0, 0);
@@ -50,6 +127,7 @@ int main(void) {
 
     for (int i = 0; i < 4096; i++) data[i] = (uint8_t)(i & 0xFF);
     test_roundtrip("mixed", data, sizeof(data), 1);
+    test_optional_headers_and_invalid_inputs();
 
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;

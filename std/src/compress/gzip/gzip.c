@@ -10,6 +10,9 @@
 
 int neverc_gzip_compress(const uint8_t *src, size_t src_len,
                          uint8_t *dst, size_t *dst_len, int level) {
+    if (!dst_len || (!src && src_len != 0) ||
+        (!dst && *dst_len != 0))
+        return -1;
     if (*dst_len < 18) return -1;
 
     /* gzip header (10 bytes, minimal) */
@@ -49,31 +52,46 @@ int neverc_gzip_compress(const uint8_t *src, size_t src_len,
 
 int neverc_gzip_decompress(const uint8_t *src, size_t src_len,
                            uint8_t *dst, size_t *dst_len) {
+    if (!dst_len || (!src && src_len != 0) ||
+        (!dst && *dst_len != 0))
+        return -1;
     if (src_len < 18) return -1;
     if (src[0] != 0x1F || src[1] != 0x8B) return -1;
     if (src[2] != 0x08) return -1;
 
     uint8_t flg = src[3];
+    if (flg & 0xE0) return -1; /* Reserved flags must be zero. */
     size_t pos = 10;
+    size_t header_limit = src_len - 8;
 
     /* skip optional header fields */
     if (flg & 0x04) { /* FEXTRA */
-        if (pos + 2 > src_len) return -1;
+        if (header_limit - pos < 2) return -1;
         uint16_t xlen = (uint16_t)src[pos] | ((uint16_t)src[pos+1] << 8);
-        pos += 2 + xlen;
+        pos += 2;
+        if ((size_t)xlen > header_limit - pos) return -1;
+        pos += xlen;
     }
     if (flg & 0x08) { /* FNAME */
-        while (pos < src_len && src[pos] != 0) pos++;
+        while (pos < header_limit && src[pos] != 0) pos++;
+        if (pos == header_limit) return -1;
         pos++;
     }
     if (flg & 0x10) { /* FCOMMENT */
-        while (pos < src_len && src[pos] != 0) pos++;
+        while (pos < header_limit && src[pos] != 0) pos++;
+        if (pos == header_limit) return -1;
         pos++;
     }
     if (flg & 0x02) { /* FHCRC */
+        if (header_limit - pos < 2) return -1;
+        uint16_t expected_header_crc =
+            (uint16_t)src[pos] | ((uint16_t)src[pos + 1] << 8);
+        uint16_t actual_header_crc =
+            (uint16_t)(neverc_crc32_ieee(src, pos) & UINT32_C(0xffff));
+        if (actual_header_crc != expected_header_crc) return -1;
         pos += 2;
     }
-    if (pos >= src_len || src_len - pos < 8) return -1;
+    if (pos >= header_limit) return -1;
 
     /* trailer at the end */
     uint32_t expected_crc = (uint32_t)src[src_len - 8]
