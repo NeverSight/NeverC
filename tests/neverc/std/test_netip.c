@@ -67,6 +67,10 @@ static void test_parse_ipv6(void) {
     ASSERT_EQ(neverc_netip_parse_addr("ff02::1", &addr), 0);
     neverc_netip_addr_string(&addr, buf, sizeof(buf));
     ASSERT_STREQ(buf, "ff02::1");
+
+    ASSERT_EQ(neverc_netip_parse_addr("::1:2:3:4:5:6:7:8", &addr), -1);
+    ASSERT_EQ(neverc_netip_parse_addr("1:2:3:4:5:6:7:8::", &addr), -1);
+    ASSERT_EQ(neverc_netip_parse_addr("1:2:3:4:5:6:7:8:", &addr), -1);
 }
 
 static void test_addr_from4(void) {
@@ -185,6 +189,8 @@ static void test_addrport(void) {
     ASSERT_EQ(ap.port, 443);
     neverc_netip_addrport_string(&ap, buf, sizeof(buf));
     ASSERT_STREQ(buf, "[::1]:443");
+
+    ASSERT_EQ(neverc_netip_parse_addrport("::1:8080", &ap), -1);
 }
 
 static void test_wellknown(void) {

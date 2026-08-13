@@ -208,15 +208,14 @@ int neverc_netip_parse_addr(const char *s, neverc_netip_addr_t *out) {
             pos++;
             if (pos >= (int)iplen) break;
         } else if (pos >= (int)iplen) {
-            /* Trailing single colon like "2001:db8::" — the :: was already handled */
-            break;
+            return -1;
         }
     }
 
 done_parse:
     if (dcolon_pos >= 0) {
         int missing = 8 - ngroups;
-        if (missing < 0) return -1;
+        if (missing <= 0) return -1;
         uint16_t expanded[8] = {0};
         for (int i = 0; i < dcolon_pos; i++) expanded[i] = groups[i];
         for (int i = dcolon_pos; i < ngroups; i++) expanded[i + missing] = groups[i];
@@ -290,6 +289,7 @@ int neverc_netip_parse_addrport(const char *s, neverc_netip_addrport_t *out) {
         memcpy(addrbuf, s, alen);
         addrbuf[alen] = '\0';
         if (neverc_netip_parse_addr(addrbuf, &out->addr) != 0) return -1;
+        if (!out->addr.is_v4) return -1;
     }
 
     const char *port_str = colon + 1;

@@ -170,6 +170,12 @@ static void test_match(void) {
     check_int("match complex", neverc_path_match("test_*.c", "test_math.c"), 1);
     check_int("match empty", neverc_path_match("", ""), 1);
     check_int("match star empty", neverc_path_match("*", "anything"), 1);
+    check_int("star does not cross slash",
+              neverc_path_match("a*b", "a/b"), 0);
+    check_int("trailing star does not cross slash",
+              neverc_path_match("foo*", "foo/bar"), 0);
+    check_int("star stops before literal slash",
+              neverc_path_match("*/bar", "foo/bar"), 1);
 }
 
 int main(void) {

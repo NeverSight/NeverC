@@ -36,13 +36,19 @@ int neverc_path_match(const char *pattern, const char *name) {
             if (*p != ']') return -1;
             p++;
             if (matched == negated) {
-                if (p_star) { p = p_star + 1; n = ++n_star; continue; }
+                if (p_star) {
+                    if (*n_star == '/') return 0;
+                    p = p_star + 1;
+                    n = ++n_star;
+                    continue;
+                }
                 return 0;
             }
             n++;
         } else if (*p == *n) {
             p++; n++;
         } else if (p_star) {
+            if (*n_star == '/') return 0;
             p = p_star + 1;
             n = ++n_star;
         } else {
