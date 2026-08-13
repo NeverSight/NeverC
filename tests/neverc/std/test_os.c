@@ -145,6 +145,8 @@ static void test_read_write_file(void) {
     ASSERT_EQ(neverc_os_write_file(path, NULL, 0, 0600), 0);
     ASSERT_TRUE(neverc_os_exists(path));
     neverc_os_remove(path);
+    ASSERT_EQ(neverc_os_write_file(path, NULL, 1, 0600), -1);
+    ASSERT_TRUE(!neverc_os_exists(path));
 }
 
 static void test_stat(void) {

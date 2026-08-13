@@ -84,6 +84,9 @@ static void test_parse_int(void) {
     check_int("auto bin", neverc_strconv_parse_int("0b11111111", 0, &v), 0); check_ll("val", v, 255);
     check_int("auto oct", neverc_strconv_parse_int("0377", 0, &v), 0);  check_ll("val", v, 255);
     check_int("negative", neverc_strconv_parse_int("-100", 10, &v), 0); check_ll("val", v, -100);
+    check_int("negative auto underscore",
+              neverc_strconv_parse_int("-0x_ff", 0, &v), 0);
+    check_ll("negative auto underscore val", v, -255);
     check_int("bad base", neverc_strconv_parse_int("42", 1, &v), NEVERC_STRCONV_ERR_BASE);
 }
 

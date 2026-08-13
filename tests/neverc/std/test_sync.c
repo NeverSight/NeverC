@@ -198,6 +198,10 @@ static void test_waitgroup_rejects_invalid_counter(void) {
     ASSERT_INT_EQ(neverc_waitgroup_add_checked(NULL, 1), -1);
     neverc_waitgroup_done(&wg);
     ASSERT_INT_EQ(wg.counter, 0);
+    ASSERT_INT_EQ(neverc_waitgroup_add_checked(&wg, INT32_MAX), 0);
+    ASSERT_INT_EQ(neverc_waitgroup_add_checked(&wg, 1), -1);
+    ASSERT_INT_EQ(wg.counter, INT32_MAX);
+    ASSERT_INT_EQ(neverc_waitgroup_add_checked(&wg, -INT32_MAX), 0);
 
     neverc_waitgroup_wait(&wg);
     neverc_waitgroup_destroy(&wg);
