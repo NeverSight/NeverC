@@ -13,6 +13,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "neverc/std/crypto/mlkem.h"
+#include "neverc/std/crypto/sha3.h"
 
 static int tests_run   = 0;
 static int tests_passed = 0;
@@ -109,6 +110,31 @@ static void test_768_wrong_key(void) {
     printf("ok\n");
 }
 
+static void test_768_implicit_rejection_value(void) {
+    printf("  768 implicit rejection value ... ");
+    uint8_t seed[NEVERC_MLKEM_SEED_SIZE];
+    for (int i = 0; i < NEVERC_MLKEM_SEED_SIZE; i++)
+        seed[i] = (uint8_t)(i * 19 + 1);
+    neverc_mlkem768_dk_t dk;
+    ASSERT(neverc_mlkem768_new_dk(&dk, seed) == 0, "new deterministic dk");
+
+    uint8_t ciphertext[NEVERC_MLKEM768_CT_SIZE] = {0};
+    uint8_t shared_key[NEVERC_MLKEM_SHARED_KEY_SIZE];
+    uint8_t expected[NEVERC_MLKEM_SHARED_KEY_SIZE];
+    neverc_sha3_ctx hash;
+    neverc_shake256_init(&hash);
+    neverc_shake256_update(&hash, seed + 32, 32);
+    neverc_shake256_update(&hash, ciphertext, sizeof(ciphertext));
+    neverc_shake256_squeeze(&hash, expected, sizeof(expected));
+
+    ASSERT(neverc_mlkem768_decapsulate(
+               &dk, ciphertext, shared_key) == 0,
+           "decapsulate malformed ciphertext");
+    ASSERT(memcmp(shared_key, expected, sizeof(expected)) == 0,
+           "implicit rejection derives J(z || ciphertext)");
+    printf("ok\n");
+}
+
 static void test_768_multiple_encaps(void) {
     printf("  768 multiple encapsulations differ ... ");
     neverc_mlkem768_dk_t dk;
@@ -174,6 +200,7 @@ int main(void) {
     test_768_seed_deterministic();
     test_768_ek_encode_decode();
     test_768_wrong_key();
+    test_768_implicit_rejection_value();
     test_768_multiple_encaps();
     test_1024_roundtrip();
     test_1024_seed_deterministic();

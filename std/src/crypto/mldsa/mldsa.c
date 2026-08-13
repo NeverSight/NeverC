@@ -7,6 +7,7 @@
 #include "neverc/std/crypto/mldsa.h"
 #include "neverc/std/crypto/sha3.h"
 #include "neverc/std/crypto/rand.h"
+#include "neverc/std/_platform.h"
 #include <string.h>
 #include <stdlib.h>
 
@@ -396,9 +397,11 @@ static void mldsa44_keygen_from_seed(const uint8_t seed[32],
     }
 
     /* Encode pk = rho || t1 */
-    memcpy(pk_out, rho, 32);
-    for (int i = 0; i < K; i++)
-        pack_t1(pk_out + 32 + i * (N * 10 / 8), g_dsa_t1[i]);
+    if (pk_out) {
+        memcpy(pk_out, rho, 32);
+        for (int i = 0; i < K; i++)
+            pack_t1(pk_out + 32 + i * (N * 10 / 8), g_dsa_t1[i]);
+    }
 
     /* Output NTT(s1), NTT(s2), t0 for signing */
     if (s1_ntt) {
@@ -413,6 +416,9 @@ static void mldsa44_keygen_from_seed(const uint8_t seed[32],
         for (int i = 0; i < K; i++)
             memcpy(t0_out[i], g_dsa_t0[i], sizeof(poly_t));
     }
+    neverc_platform_secure_zero(expanded, sizeof(expanded));
+    neverc_platform_secure_zero(&h, sizeof(h));
+    neverc_platform_secure_zero(s1_hat, sizeof(s1_hat));
 }
 
 /* ── Sign (FIPS 204, Algorithm 2) — rejection sampling ──── */
@@ -421,13 +427,45 @@ static poly_t g_sign_s1_hat[L], g_sign_s2_hat[K], g_sign_t0[K];
 static poly_t g_sign_y[L], g_sign_w[K], g_sign_cs1[L], g_sign_cs2[K];
 static poly_t g_sign_z[L], g_sign_r0[K];
 static poly_t g_sign_ct0[K], g_sign_hint[K];
+static int32_t g_mldsa_lock;
+
+static void mldsa_lock(void) {
+    while (!NEVERC_ATOMIC_CAS32(&g_mldsa_lock, 0, 1)) {
+    }
+}
+
+static void mldsa_unlock(void) {
+    NEVERC_ATOMIC_STORE32(&g_mldsa_lock, 0);
+}
+
+static void wipe_mldsa_scratch(void) {
+    neverc_platform_secure_zero(g_dsa_a, sizeof(g_dsa_a));
+    neverc_platform_secure_zero(g_dsa_s1, sizeof(g_dsa_s1));
+    neverc_platform_secure_zero(g_dsa_s2, sizeof(g_dsa_s2));
+    neverc_platform_secure_zero(g_dsa_t, sizeof(g_dsa_t));
+    neverc_platform_secure_zero(g_dsa_t1, sizeof(g_dsa_t1));
+    neverc_platform_secure_zero(g_dsa_t0, sizeof(g_dsa_t0));
+    neverc_platform_secure_zero(g_dsa_tmp, sizeof(g_dsa_tmp));
+    neverc_platform_secure_zero(g_dsa_tmp2, sizeof(g_dsa_tmp2));
+    neverc_platform_secure_zero(g_sign_s1_hat, sizeof(g_sign_s1_hat));
+    neverc_platform_secure_zero(g_sign_s2_hat, sizeof(g_sign_s2_hat));
+    neverc_platform_secure_zero(g_sign_t0, sizeof(g_sign_t0));
+    neverc_platform_secure_zero(g_sign_y, sizeof(g_sign_y));
+    neverc_platform_secure_zero(g_sign_w, sizeof(g_sign_w));
+    neverc_platform_secure_zero(g_sign_cs1, sizeof(g_sign_cs1));
+    neverc_platform_secure_zero(g_sign_cs2, sizeof(g_sign_cs2));
+    neverc_platform_secure_zero(g_sign_z, sizeof(g_sign_z));
+    neverc_platform_secure_zero(g_sign_r0, sizeof(g_sign_r0));
+    neverc_platform_secure_zero(g_sign_ct0, sizeof(g_sign_ct0));
+    neverc_platform_secure_zero(g_sign_hint, sizeof(g_sign_hint));
+}
 
 static int mldsa44_sign_internal(const uint8_t seed[32],
                                   const uint8_t *pk, size_t pk_len,
                                   const uint8_t *msg, size_t msg_len,
                                   uint8_t *sig_out) {
     /* Regenerate keys from seed */
-    mldsa44_keygen_from_seed(seed, (uint8_t *)pk /* won't modify, cast ok */,
+    mldsa44_keygen_from_seed(seed, NULL,
                               g_sign_s1_hat, g_sign_s2_hat, g_sign_t0);
 
     /* Compute tr = H(pk) */
@@ -708,25 +746,38 @@ static int mldsa44_verify_internal(const uint8_t *pk, size_t pk_len,
 /* ── Public API ──────────────────────────────────────────── */
 
 int neverc_mldsa44_generate_key(neverc_mldsa44_sk_t *sk) {
-    neverc_crypto_rand_read(sk->seed, 32);
+    if (!sk) return -1;
+    memset(sk, 0, sizeof(*sk));
+    if (neverc_crypto_rand_read(sk->seed, sizeof(sk->seed)) != 0) {
+        neverc_platform_secure_zero(sk, sizeof(*sk));
+        return -1;
+    }
+    mldsa_lock();
     mldsa44_keygen_from_seed(sk->seed, sk->pk, NULL, NULL, NULL);
+    wipe_mldsa_scratch();
+    mldsa_unlock();
     return 0;
 }
 
 int neverc_mldsa44_new_sk(neverc_mldsa44_sk_t *sk, const uint8_t seed[32]) {
+    if (!sk || !seed) return -1;
     memcpy(sk->seed, seed, 32);
+    mldsa_lock();
     mldsa44_keygen_from_seed(sk->seed, sk->pk, NULL, NULL, NULL);
+    wipe_mldsa_scratch();
+    mldsa_unlock();
     return 0;
 }
 
 void neverc_mldsa44_sk_public_key(const neverc_mldsa44_sk_t *sk,
                                    neverc_mldsa44_pk_t *pk) {
+    if (!sk || !pk) return;
     memcpy(pk->pk, sk->pk, NEVERC_MLDSA44_PK_SIZE);
 }
 
 int neverc_mldsa44_new_pk(neverc_mldsa44_pk_t *pk,
                            const uint8_t *encoded, size_t len) {
-    if (len != NEVERC_MLDSA44_PK_SIZE) return -1;
+    if (!pk || !encoded || len != NEVERC_MLDSA44_PK_SIZE) return -1;
     memcpy(pk->pk, encoded, len);
     return 0;
 }
@@ -734,23 +785,38 @@ int neverc_mldsa44_new_pk(neverc_mldsa44_pk_t *pk,
 int neverc_mldsa44_sign(const neverc_mldsa44_sk_t *sk,
                          const uint8_t *message, size_t msg_len,
                          uint8_t sig[NEVERC_MLDSA44_SIG_SIZE]) {
-    return mldsa44_sign_internal(sk->seed, sk->pk, NEVERC_MLDSA44_PK_SIZE,
-                                 message, msg_len, sig);
+    if (!sk || (!message && msg_len != 0) || !sig) return -1;
+    mldsa_lock();
+    int result = mldsa44_sign_internal(
+        sk->seed, sk->pk, NEVERC_MLDSA44_PK_SIZE, message, msg_len, sig);
+    wipe_mldsa_scratch();
+    mldsa_unlock();
+    if (result != 0)
+        neverc_platform_secure_zero(sig, NEVERC_MLDSA44_SIG_SIZE);
+    return result;
 }
 
 int neverc_mldsa44_verify(const neverc_mldsa44_pk_t *pk,
                            const uint8_t *message, size_t msg_len,
                            const uint8_t sig[NEVERC_MLDSA44_SIG_SIZE]) {
-    return mldsa44_verify_internal(pk->pk, NEVERC_MLDSA44_PK_SIZE,
-                                    message, msg_len, sig);
+    if (!pk || (!message && msg_len != 0) || !sig) return -1;
+    mldsa_lock();
+    int result = mldsa44_verify_internal(
+        pk->pk, NEVERC_MLDSA44_PK_SIZE, message, msg_len, sig);
+    wipe_mldsa_scratch();
+    mldsa_unlock();
+    return result;
 }
 
 void neverc_mldsa44_sk_bytes(const neverc_mldsa44_sk_t *sk, uint8_t seed[32]) {
+    if (!sk || !seed) return;
     memcpy(seed, sk->seed, 32);
 }
 
 void neverc_mldsa44_pk_bytes(const neverc_mldsa44_pk_t *pk,
                               uint8_t *out, size_t *out_len) {
+    if (out_len) *out_len = 0;
+    if (!pk || !out || !out_len) return;
     memcpy(out, pk->pk, NEVERC_MLDSA44_PK_SIZE);
     *out_len = NEVERC_MLDSA44_PK_SIZE;
 }

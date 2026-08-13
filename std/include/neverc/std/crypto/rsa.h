@@ -29,11 +29,16 @@ void neverc_rsa_public_key_free(neverc_rsa_public_key_t *k);
 void neverc_rsa_private_key_init(neverc_rsa_private_key_t *k);
 void neverc_rsa_private_key_free(neverc_rsa_private_key_t *k);
 
+/*
+ * Generate an RSA key. Returns -1 for invalid input, allocation failure, or
+ * entropy-source failure; private components are securely cleared on failure.
+ */
 int  neverc_rsa_generate_key(neverc_rsa_private_key_t *key, int bits);
 
+/* out_len is set to zero on error, including entropy-source failure. */
 int  neverc_rsa_encrypt_pkcs1v15(const neverc_rsa_public_key_t *pub,
-                                  const unsigned char *msg, size_t msg_len,
-                                  unsigned char *out, size_t out_cap, size_t *out_len);
+                                 const unsigned char *msg, size_t msg_len,
+                                 unsigned char *out, size_t out_cap, size_t *out_len);
 
 int  neverc_rsa_decrypt_pkcs1v15(const neverc_rsa_private_key_t *priv,
                                   const unsigned char *ct, size_t ct_len,

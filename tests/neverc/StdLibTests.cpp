@@ -353,6 +353,12 @@ STD_TEST(pbkdf2, "src/crypto/pbkdf2/pbkdf2.c", "src/crypto/hmac/hmac.c", "src/cr
 STD_TEST(crypto_rand, "src/crypto/rand/rand.c")
 STD_TEST(elliptic, "src/crypto/elliptic/elliptic.c", "src/math/big/big.c")
 STD_TEST(rsa, "src/crypto/rsa/rsa.c", "src/math/big/big.c", "src/crypto/rand/rand.c", "src/crypto/sha256/sha256.c", "src/crypto/sha384/sha384.c", "src/crypto/sha512/sha512.c")
+STD_TEST(rsa_entropy_failure, "src/math/big/big.c",
+    "src/crypto/sha256/sha256.c", "src/crypto/sha384/sha384.c",
+    "src/crypto/sha512/sha512.c")
+STD_TEST(rsa_padding, "src/math/big/big.c",
+    "src/crypto/sha256/sha256.c", "src/crypto/sha384/sha384.c",
+    "src/crypto/sha512/sha512.c")
 TEST_F(StdLibTest, EmbeddedRsaPssProfilesDotSyntax) {
   auto r = compileAndRunStdTest("rsa_builtin", {}, {"-fbuiltin-std"});
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
@@ -374,8 +380,27 @@ TEST_F(StdLibTest, rsa_retry) {
 }
 STD_TEST(ecdsa, "src/crypto/ecdsa/ecdsa.c", "src/crypto/elliptic/elliptic.c", "src/math/big/big.c", "src/crypto/rand/rand.c", "src/crypto/sha256/sha256.c")
 STD_TEST(dsa, "src/crypto/dsa/dsa.c", "src/math/big/big.c", "src/crypto/rand/rand.c", "src/crypto/sha256/sha256.c")
+STD_TEST(dsa_entropy_failure, "src/math/big/big.c")
 STD_TEST(ed25519, "src/crypto/ed25519/ed25519.c", "src/crypto/sha512/sha512.c", "src/crypto/rand/rand.c", "src/math/big/big.c")
+STD_TEST(ed25519_entropy_failure, "src/crypto/sha512/sha512.c",
+    "src/math/big/big.c")
 STD_TEST(ecdh, "src/crypto/ecdh/ecdh.c", "src/crypto/elliptic/elliptic.c", "src/math/big/big.c", "src/crypto/rand/rand.c", "src/crypto/sha256/sha256.c")
+TEST_F(StdLibTest, EcdhEntropyFailure) {
+  auto r = compileAndRunStdTest(
+      "ecdh_entropy_failure",
+      {"src/crypto/elliptic/elliptic.c", "src/math/big/big.c",
+       "src/crypto/rand/rand.c", "src/crypto/sha256/sha256.c"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
+TEST_F(StdLibTest, EcdhRejectionSampling) {
+  auto r = compileAndRunStdTest(
+      "ecdh_rejection_sampling",
+      {"src/crypto/elliptic/elliptic.c", "src/math/big/big.c",
+       "src/crypto/rand/rand.c", "src/crypto/sha256/sha256.c"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
 STD_TEST(hpke, "src/crypto/hpke/hpke.c", "src/crypto/ecdh/ecdh.c",
     "src/crypto/elliptic/elliptic.c", "src/math/big/big.c",
     "src/crypto/hkdf/hkdf.c", "src/crypto/hmac/hmac.c",
@@ -387,8 +412,10 @@ STD_TEST(hpke, "src/crypto/hpke/hpke.c", "src/crypto/ecdh/ecdh.c",
     "src/crypto/rand/rand.c", "src/crypto/subtle/subtle.c")
 STD_TEST(mlkem, "src/crypto/mlkem/mlkem.c", "src/crypto/sha3/sha3.c",
     "src/crypto/rand/rand.c")
+STD_TEST(mlkem_entropy_failure, "src/crypto/sha3/sha3.c")
 STD_TEST(mldsa, "src/crypto/mldsa/mldsa.c", "src/crypto/sha3/sha3.c",
     "src/crypto/rand/rand.c")
+STD_TEST(mldsa_entropy_failure, "src/crypto/sha3/sha3.c")
 
 // ===== Unicode =====
 STD_TEST(unicode, "src/unicode/unicode.c")
@@ -795,6 +822,7 @@ STD_TEST(palette, "src/image/color/palette/palette.c")
 
 // ===== OS =====
 STD_TEST(os, "src/os/os.c")
+STD_TEST(os_entropy_failure)
 TEST_F(StdLibTest, OsAllocationFailure) {
   auto r = compileAndRunStdTest("os_oom", {}, {"-fno-builtin-std"});
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
@@ -821,6 +849,7 @@ TEST_F(StdLibTest, HtmlTemplateAllocationFailure) {
 // ===== MIME =====
 STD_TEST(quotedprintable, "src/mime/quotedprintable/quotedprintable.c")
 STD_TEST(multipart, "src/mime/multipart/multipart.c")
+STD_TEST(multipart_entropy_failure)
 
 // ===== IO =====
 STD_TEST(fs, "src/io/fs/fs.c")

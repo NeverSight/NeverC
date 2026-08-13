@@ -12,10 +12,12 @@
 #define NC_UINT_IS_64 0
 #endif
 
+#ifndef NCI_HAS_BUILTINS
 #if defined(__GNUC__) || defined(__clang__)
 #define NCI_HAS_BUILTINS 1
 #else
 #define NCI_HAS_BUILTINS 0
+#endif
 #endif
 
 #if !NCI_HAS_BUILTINS
@@ -152,18 +154,24 @@ int neverc_bits_trailing_zeros64(uint64_t x) {
 #else
 
 int neverc_bits_trailing_zeros8(uint8_t x) {
-    return x == 0 ? 8 : neverc_bits_trailing_zeros32((uint32_t)x & -(int32_t)(uint32_t)x);
+    return x == 0 ? 8
+                  : neverc_bits_trailing_zeros32(
+                        (uint32_t)x & (UINT32_C(0) - (uint32_t)x));
 }
 int neverc_bits_trailing_zeros16(uint16_t x) {
-    return x == 0 ? 16 : neverc_bits_trailing_zeros32((uint32_t)x & -(int32_t)(uint32_t)x);
+    return x == 0 ? 16
+                  : neverc_bits_trailing_zeros32(
+                        (uint32_t)x & (UINT32_C(0) - (uint32_t)x));
 }
 int neverc_bits_trailing_zeros32(uint32_t x) {
     if (x == 0) return 32;
-    return (int)deBruijn32tab[((uint32_t)(x & -(int32_t)x)) * deBruijn32 >> 27];
+    return (int)deBruijn32tab[
+        ((x & (UINT32_C(0) - x)) * deBruijn32) >> 27];
 }
 int neverc_bits_trailing_zeros64(uint64_t x) {
     if (x == 0) return 64;
-    return (int)deBruijn64tab[((uint64_t)(x & -(int64_t)x)) * deBruijn64 >> 58];
+    return (int)deBruijn64tab[
+        ((x & (UINT64_C(0) - x)) * deBruijn64) >> 58];
 }
 
 #endif

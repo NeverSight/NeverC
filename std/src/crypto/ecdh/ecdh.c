@@ -178,6 +178,14 @@ static void x25519_scalar_mult(unsigned char out[32],
     gf_invert(c, c);
     gf_mul(a, a, c);
     gf_pack(out, a);
+    neverc_platform_secure_zero(z, sizeof(z));
+    neverc_platform_secure_zero(x, sizeof(x));
+    neverc_platform_secure_zero(a, sizeof(a));
+    neverc_platform_secure_zero(b, sizeof(b));
+    neverc_platform_secure_zero(c, sizeof(c));
+    neverc_platform_secure_zero(d, sizeof(d));
+    neverc_platform_secure_zero(e, sizeof(e));
+    neverc_platform_secure_zero(f, sizeof(f));
 }
 
 static int is_all_zero(const unsigned char *buf, size_t len) {
@@ -187,6 +195,12 @@ static int is_all_zero(const unsigned char *buf, size_t len) {
 }
 
 /* ---- NIST curve ECDH helpers ---- */
+
+static int ecdh_curve_valid(neverc_ecdh_curve_t curve) {
+    return curve == NEVERC_ECDH_CURVE_X25519 ||
+           curve == NEVERC_ECDH_CURVE_P256 ||
+           curve == NEVERC_ECDH_CURVE_P384;
+}
 
 static int nist_privkey_size(neverc_ecdh_curve_t curve) {
     return curve == NEVERC_ECDH_CURVE_P256 ? 32 : 48;
@@ -207,7 +221,11 @@ static const neverc_elliptic_curve_t *get_nist_curve(neverc_ecdh_curve_t curve) 
 static void bigint_to_bytes(const neverc_bigint_t *n, unsigned char *out, int len) {
     char hexbuf[200];
     int ret = neverc_bigint_string(n, 16, hexbuf, sizeof(hexbuf));
-    if (ret <= 0) { memset(out, 0, (size_t)len); return; }
+    if (ret <= 0) {
+        memset(out, 0, (size_t)len);
+        neverc_platform_secure_zero(hexbuf, sizeof(hexbuf));
+        return;
+    }
     size_t hlen = strlen(hexbuf);
     memset(out, 0, (size_t)len);
     for (size_t i = 0; i < hlen && i < (size_t)len * 2; i++) {
@@ -217,6 +235,7 @@ static void bigint_to_bytes(const neverc_bigint_t *n, unsigned char *out, int le
                 (c >= 'A' && c <= 'F') ? c - 'A' + 10 : 0;
         out[len - 1 - (int)(i / 2)] |= (unsigned char)(v << (4 * (i & 1)));
     }
+    neverc_platform_secure_zero(hexbuf, sizeof(hexbuf));
 }
 
 static void bytes_to_bigint(neverc_bigint_t *n, const unsigned char *data, int len) {
@@ -226,6 +245,14 @@ static void bytes_to_bigint(neverc_bigint_t *n, const unsigned char *data, int l
         pos += snprintf(hex + pos, (size_t)(200 - pos), "%02x", data[i]);
     hex[pos] = '\0';
     neverc_bigint_set_string(n, hex, 16);
+    neverc_platform_secure_zero(hex, sizeof(hex));
+}
+
+static void secure_bigint_free(neverc_bigint_t *value) {
+    if (value->digits)
+        neverc_platform_secure_zero(value->digits,
+                                    value->cap * sizeof(*value->digits));
+    neverc_bigint_free(value);
 }
 
 /* ---- Public API ---- */
@@ -233,12 +260,16 @@ static void bytes_to_bigint(neverc_bigint_t *n, const unsigned char *data, int l
 int neverc_ecdh_generate_key(neverc_ecdh_curve_t curve, neverc_ecdh_key_t *key) {
     if (!key) return -1;
     memset(key, 0, sizeof(*key));
+    if (!ecdh_curve_valid(curve)) return -1;
     key->curve = curve;
 
     if (curve == NEVERC_ECDH_CURVE_X25519) {
         key->privkey_len = 32;
         key->pubkey_len = 32;
-        neverc_crypto_rand_read(key->private_key, 32);
+        if (neverc_crypto_rand_read(key->private_key, 32) != 0) {
+            neverc_platform_secure_zero(key, sizeof(*key));
+            return -1;
+        }
         unsigned char basepoint[32] = {9};
         x25519_scalar_mult(key->public_key, key->private_key, basepoint);
         return 0;
@@ -252,12 +283,28 @@ int neverc_ecdh_generate_key(neverc_ecdh_curve_t curve, neverc_ecdh_key_t *key) 
     /* Generate random scalar in [1, n-1] */
     neverc_bigint_t scalar;
     neverc_bigint_init(&scalar);
-    do {
+    int generated = 0;
+    for (int attempt = 0; attempt < 128; attempt++) {
         unsigned char rbuf[48];
-        neverc_crypto_rand_read(rbuf, (size_t)psize);
+        if (neverc_crypto_rand_read(rbuf, (size_t)psize) != 0) {
+            neverc_platform_secure_zero(rbuf, sizeof(rbuf));
+            secure_bigint_free(&scalar);
+            neverc_platform_secure_zero(key, sizeof(*key));
+            return -1;
+        }
         bytes_to_bigint(&scalar, rbuf, psize);
-        neverc_bigint_mod(&scalar, &scalar, &ec->n);
-    } while (neverc_bigint_is_zero(&scalar));
+        neverc_platform_secure_zero(rbuf, sizeof(rbuf));
+        if (!neverc_bigint_is_zero(&scalar) &&
+            neverc_bigint_cmp(&scalar, &ec->n) < 0) {
+            generated = 1;
+            break;
+        }
+    }
+    if (!generated) {
+        secure_bigint_free(&scalar);
+        neverc_platform_secure_zero(key, sizeof(*key));
+        return -1;
+    }
 
     bigint_to_bytes(&scalar, key->private_key, psize);
 
@@ -265,10 +312,16 @@ int neverc_ecdh_generate_key(neverc_ecdh_curve_t curve, neverc_ecdh_key_t *key) 
     neverc_elliptic_point_init(&pub);
     neverc_elliptic_scalar_base_mult(ec, &pub, &scalar);
     size_t out_len = 0;
-    neverc_elliptic_marshal(ec, &pub, key->public_key, (size_t)key->pubkey_len, &out_len);
+    int marshal_result =
+        neverc_elliptic_marshal(ec, &pub, key->public_key,
+                                (size_t)key->pubkey_len, &out_len);
 
     neverc_elliptic_point_free(&pub);
-    neverc_bigint_free(&scalar);
+    secure_bigint_free(&scalar);
+    if (marshal_result != 0 || out_len != (size_t)key->pubkey_len) {
+        neverc_platform_secure_zero(key, sizeof(*key));
+        return -1;
+    }
     return 0;
 }
 
@@ -277,6 +330,7 @@ int neverc_ecdh_new_private_key(neverc_ecdh_curve_t curve,
                                 neverc_ecdh_key_t *key) {
     if (!key || !privkey) return -1;
     memset(key, 0, sizeof(*key));
+    if (!ecdh_curve_valid(curve)) return -1;
     key->curve = curve;
 
     if (curve == NEVERC_ECDH_CURVE_X25519) {
@@ -290,7 +344,7 @@ int neverc_ecdh_new_private_key(neverc_ecdh_curve_t curve,
     }
 
     int psize = nist_privkey_size(curve);
-    if ((int)len != psize) return -1;
+    if (len != (size_t)psize) return -1;
 
     const neverc_elliptic_curve_t *ec = get_nist_curve(curve);
     key->privkey_len = psize;
@@ -302,7 +356,8 @@ int neverc_ecdh_new_private_key(neverc_ecdh_curve_t curve,
     bytes_to_bigint(&scalar, privkey, psize);
 
     if (neverc_bigint_is_zero(&scalar) || neverc_bigint_cmp(&scalar, &ec->n) >= 0) {
-        neverc_bigint_free(&scalar);
+        secure_bigint_free(&scalar);
+        neverc_platform_secure_zero(key, sizeof(*key));
         return -1;
     }
 
@@ -310,10 +365,16 @@ int neverc_ecdh_new_private_key(neverc_ecdh_curve_t curve,
     neverc_elliptic_point_init(&pub);
     neverc_elliptic_scalar_base_mult(ec, &pub, &scalar);
     size_t out_len = 0;
-    neverc_elliptic_marshal(ec, &pub, key->public_key, (size_t)key->pubkey_len, &out_len);
+    int marshal_result =
+        neverc_elliptic_marshal(ec, &pub, key->public_key,
+                                (size_t)key->pubkey_len, &out_len);
 
     neverc_elliptic_point_free(&pub);
-    neverc_bigint_free(&scalar);
+    secure_bigint_free(&scalar);
+    if (marshal_result != 0 || out_len != (size_t)key->pubkey_len) {
+        neverc_platform_secure_zero(key, sizeof(*key));
+        return -1;
+    }
     return 0;
 }
 
@@ -322,6 +383,7 @@ int neverc_ecdh_new_public_key(neverc_ecdh_curve_t curve,
                                neverc_ecdh_key_t *key) {
     if (!key || !pubkey) return -1;
     memset(key, 0, sizeof(*key));
+    if (!ecdh_curve_valid(curve)) return -1;
     key->curve = curve;
 
     if (curve == NEVERC_ECDH_CURVE_X25519) {
@@ -332,7 +394,7 @@ int neverc_ecdh_new_public_key(neverc_ecdh_curve_t curve,
     }
 
     int expected = nist_pubkey_size(curve);
-    if ((int)len != expected || pubkey[0] != 0x04) return -1;
+    if (len != (size_t)expected || pubkey[0] != 0x04) return -1;
 
     const neverc_elliptic_curve_t *ec = get_nist_curve(curve);
     neverc_elliptic_point_t pt;
@@ -355,18 +417,30 @@ int neverc_ecdh_new_public_key(neverc_ecdh_curve_t curve,
 int neverc_ecdh_compute(const neverc_ecdh_key_t *local_private,
                         const unsigned char *remote_pubkey, size_t remote_len,
                         unsigned char *out, size_t out_cap) {
-    if (!local_private || !remote_pubkey || !out) return -1;
+    if (!local_private || !remote_pubkey || !out ||
+        !ecdh_curve_valid(local_private->curve))
+        return -1;
 
     if (local_private->curve == NEVERC_ECDH_CURVE_X25519) {
-        if (remote_len != 32 || out_cap < 32) return -1;
+        if (local_private->privkey_len != 32 ||
+            remote_len != 32 || out_cap < 32)
+            return -1;
         x25519_scalar_mult(out, local_private->private_key, remote_pubkey);
-        if (is_all_zero(out, 32)) return -1;
+        if (is_all_zero(out, 32)) {
+            neverc_platform_secure_zero(out, 32);
+            return -1;
+        }
         return 32;
     }
 
     neverc_ecdh_curve_t curve = local_private->curve;
     int shared_size = nist_shared_size(curve);
-    if ((int)out_cap < shared_size) return -1;
+    int private_size = nist_privkey_size(curve);
+    int public_size = nist_pubkey_size(curve);
+    if (local_private->privkey_len != private_size ||
+        remote_len != (size_t)public_size ||
+        out_cap < (size_t)shared_size)
+        return -1;
 
     const neverc_elliptic_curve_t *ec = get_nist_curve(curve);
 
@@ -376,10 +450,20 @@ int neverc_ecdh_compute(const neverc_ecdh_key_t *local_private,
         neverc_elliptic_point_free(&remote);
         return -1;
     }
+    if (!neverc_elliptic_is_on_curve(ec, &remote)) {
+        neverc_elliptic_point_free(&remote);
+        return -1;
+    }
 
     neverc_bigint_t scalar;
     neverc_bigint_init(&scalar);
     bytes_to_bigint(&scalar, local_private->private_key, local_private->privkey_len);
+    if (neverc_bigint_is_zero(&scalar) ||
+        neverc_bigint_cmp(&scalar, &ec->n) >= 0) {
+        neverc_elliptic_point_free(&remote);
+        secure_bigint_free(&scalar);
+        return -1;
+    }
 
     neverc_elliptic_point_t result;
     neverc_elliptic_point_init(&result);
@@ -389,20 +473,28 @@ int neverc_ecdh_compute(const neverc_ecdh_key_t *local_private,
 
     neverc_elliptic_point_free(&result);
     neverc_elliptic_point_free(&remote);
-    neverc_bigint_free(&scalar);
+    secure_bigint_free(&scalar);
     return shared_size;
 }
 
 int neverc_ecdh_public_key_bytes(const neverc_ecdh_key_t *key,
                                  unsigned char *out, size_t out_cap) {
-    if (!key || !out || (int)out_cap < key->pubkey_len) return -1;
+    if (!key || !out || !ecdh_curve_valid(key->curve) ||
+        key->pubkey_len != (key->curve == NEVERC_ECDH_CURVE_X25519
+                                ? 32 : nist_pubkey_size(key->curve)) ||
+        out_cap < (size_t)key->pubkey_len)
+        return -1;
     memcpy(out, key->public_key, (size_t)key->pubkey_len);
     return key->pubkey_len;
 }
 
 int neverc_ecdh_private_key_bytes(const neverc_ecdh_key_t *key,
                                   unsigned char *out, size_t out_cap) {
-    if (!key || !out || (int)out_cap < key->privkey_len) return -1;
+    if (!key || !out || !ecdh_curve_valid(key->curve) ||
+        key->privkey_len != (key->curve == NEVERC_ECDH_CURVE_X25519
+                                 ? 32 : nist_privkey_size(key->curve)) ||
+        out_cap < (size_t)key->privkey_len)
+        return -1;
     memcpy(out, key->private_key, (size_t)key->privkey_len);
     return key->privkey_len;
 }

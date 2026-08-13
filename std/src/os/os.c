@@ -6,6 +6,10 @@
 #include <errno.h>
 #include <limits.h>
 
+#ifndef NCI_OS_RANDOM
+#define NCI_OS_RANDOM neverc_platform_random
+#endif
+
 #if defined(NEVERC_PLATFORM_APPLE)
 #include <mach-o/dyld.h>
 #endif
@@ -433,12 +437,13 @@ int neverc_os_temp_dir(char *buf, size_t cap) {
     if (!buf || cap == 0) return -1;
 #if defined(NEVERC_PLATFORM_WINDOWS)
     DWORD n = GetTempPathA((DWORD)cap, buf);
-    return n > 0 ? 0 : -1;
+    return n > 0 && (size_t)n < cap ? 0 : -1;
 #else
     const char *tmp = getenv("TMPDIR");
-    if (!tmp) tmp = "/tmp";
-    strncpy(buf, tmp, cap - 1);
-    buf[cap-1] = '\0';
+    if (!tmp || tmp[0] == '\0') tmp = "/tmp";
+    size_t len = strlen(tmp);
+    if (len >= cap) return -1;
+    memcpy(buf, tmp, len + 1);
     return 0;
 #endif
 }
@@ -447,23 +452,35 @@ neverc_os_file_t *neverc_os_create_temp(const char *dir, const char *pattern) {
     char path[4096];
     char tmpdir[1024];
     if (!dir || dir[0] == '\0') {
-        neverc_os_temp_dir(tmpdir, sizeof(tmpdir));
+        if (neverc_os_temp_dir(tmpdir, sizeof(tmpdir)) != 0)
+            return NULL;
         dir = tmpdir;
     }
     if (!pattern) pattern = "neverc_tmp_";
 
-    unsigned char rnd[8];
-    neverc_platform_random(rnd, sizeof(rnd));
-    char hex[17];
-    for (int i = 0; i < 8; i++) {
-        static const char h[] = "0123456789abcdef";
-        hex[i*2] = h[rnd[i]>>4];
-        hex[i*2+1] = h[rnd[i]&0xf];
-    }
-    hex[16] = '\0';
+    for (int attempt = 0; attempt < 100; ++attempt) {
+        unsigned char rnd[8];
+        if (NCI_OS_RANDOM(rnd, sizeof(rnd)) != 0)
+            return NULL;
+        char hex[17];
+        for (int i = 0; i < 8; i++) {
+            static const char h[] = "0123456789abcdef";
+            hex[i*2] = h[rnd[i]>>4];
+            hex[i*2+1] = h[rnd[i]&0xf];
+        }
+        hex[16] = '\0';
 
-    snprintf(path, sizeof(path), "%s/%s%s", dir, pattern, hex);
-    return neverc_os_create(path);
+        int n = snprintf(path, sizeof(path), "%s/%s%s", dir, pattern, hex);
+        if (n < 0 || (size_t)n >= sizeof(path))
+            return NULL;
+        neverc_os_file_t *file = neverc_os_open(
+            path, NEVERC_OS_O_RDWR | NEVERC_OS_O_CREATE | NEVERC_OS_O_EXCL,
+            0600);
+        if (file) return file;
+        if (errno != EEXIST)
+            return NULL;
+    }
+    return NULL;
 }
 
 /* ---- Extended environment ---- */
@@ -782,25 +799,36 @@ int neverc_os_read_dir(const char *dirname, neverc_os_dir_entry_t **entries,
 
 int neverc_os_mkdir_temp(const char *dir, const char *pattern,
                          char *buf, size_t cap) {
+    if (!buf || cap == 0) return -1;
     char tmpdir[1024];
     if (!dir || dir[0] == '\0') {
-        neverc_os_temp_dir(tmpdir, sizeof(tmpdir));
+        if (neverc_os_temp_dir(tmpdir, sizeof(tmpdir)) != 0)
+            return -1;
         dir = tmpdir;
     }
     if (!pattern) pattern = "neverc_tmp_";
 
-    unsigned char rnd[8];
-    neverc_platform_random(rnd, sizeof(rnd));
-    char hex[17];
-    for (int i = 0; i < 8; i++) {
-        static const char h[] = "0123456789abcdef";
-        hex[i*2] = h[rnd[i]>>4];
-        hex[i*2+1] = h[rnd[i]&0xf];
-    }
-    hex[16] = '\0';
+    for (int attempt = 0; attempt < 100; ++attempt) {
+        unsigned char rnd[8];
+        if (NCI_OS_RANDOM(rnd, sizeof(rnd)) != 0)
+            return -1;
+        char hex[17];
+        for (int i = 0; i < 8; i++) {
+            static const char h[] = "0123456789abcdef";
+            hex[i*2] = h[rnd[i]>>4];
+            hex[i*2+1] = h[rnd[i]&0xf];
+        }
+        hex[16] = '\0';
 
-    snprintf(buf, cap, "%s/%s%s", dir, pattern, hex);
-    return neverc_os_mkdir(buf, 0700);
+        int n = snprintf(buf, cap, "%s/%s%s", dir, pattern, hex);
+        if (n < 0 || (size_t)n >= cap)
+            return -1;
+        if (neverc_os_mkdir(buf, 0700) == 0)
+            return 0;
+        if (errno != EEXIST)
+            return -1;
+    }
+    return -1;
 }
 
 int neverc_os_getegid(void) {

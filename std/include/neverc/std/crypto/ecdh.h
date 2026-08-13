@@ -34,15 +34,17 @@ typedef struct {
     int                 pubkey_len;
 } neverc_ecdh_key_t;
 
-/* Generate a new ECDH key pair. Returns 0 on success, -1 on error. */
+/* Generate a new ECDH key pair. Returns 0 on success, -1 on error.
+ * The output is cleared if the curve is invalid or entropy generation fails. */
 int neverc_ecdh_generate_key(neverc_ecdh_curve_t curve, neverc_ecdh_key_t *key);
 
-/* Import a private key from raw bytes. Returns 0 on success. */
+/* Import a private key from raw bytes. Returns 0 on success, -1 on error. */
 int neverc_ecdh_new_private_key(neverc_ecdh_curve_t curve,
                                 const unsigned char *privkey, size_t len,
                                 neverc_ecdh_key_t *key);
 
-/* Import a public key from raw bytes (uncompressed for NIST). Returns 0 on success. */
+/* Import a public key from raw bytes (uncompressed for NIST).
+ * Returns 0 on success, -1 on error. */
 int neverc_ecdh_new_public_key(neverc_ecdh_curve_t curve,
                                const unsigned char *pubkey, size_t len,
                                neverc_ecdh_key_t *key);

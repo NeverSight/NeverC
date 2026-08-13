@@ -11,6 +11,7 @@
 #include "neverc/std/crypto/mlkem.h"
 #include "neverc/std/crypto/sha3.h"
 #include "neverc/std/crypto/rand.h"
+#include "neverc/std/_platform.h"
 #include <string.h>
 
 /* ── Constants ────────────────────────────────────────────── */
@@ -324,6 +325,8 @@ static void kpke_keygen(int k, const uint8_t d[32],
     for (int i = 0; i < k; i++)
         poly_byte_encode12(ek_out + i * ENC12, g_t_hat[i]);
     memcpy(ek_out + k * ENC12, rho, 32);
+    neverc_platform_secure_zero(seeds, sizeof(seeds));
+    neverc_platform_secure_zero(&g, sizeof(g));
 }
 
 /* Static arrays for encrypt/decrypt to avoid stack overflow */
@@ -413,6 +416,7 @@ static void kpke_encrypt(int k,
             }
         }
     }
+    neverc_platform_secure_zero(m_poly, sizeof(m_poly));
 }
 
 /* Static arrays for decrypt */
@@ -489,7 +493,10 @@ static int mlkem_encaps(int k, const uint8_t *ek, size_t ek_size,
             return -1;
 
     uint8_t m[32];
-    neverc_crypto_rand_read(m, 32);
+    if (neverc_crypto_rand_read(m, sizeof(m)) != 0) {
+        neverc_platform_secure_zero(m, sizeof(m));
+        return -1;
+    }
 
     uint8_t ek_hash[32];
     neverc_sha3_256_sum(ek, ek_size, ek_hash);
@@ -503,11 +510,44 @@ static int mlkem_encaps(int k, const uint8_t *ek, size_t ek_size,
 
     memcpy(shared_key, kr, 32);
     kpke_encrypt(k, ek, ek_size, m, kr + 32, 32, ct_out);
+    neverc_platform_secure_zero(m, sizeof(m));
+    neverc_platform_secure_zero(kr, sizeof(kr));
+    neverc_platform_secure_zero(&g, sizeof(g));
     return 0;
 }
 
 static uint8_t g_ek_regen[1600];
 static uint8_t g_ct_prime[1600];
+static int32_t g_mlkem_lock;
+
+static void mlkem_lock(void) {
+    while (!NEVERC_ATOMIC_CAS32(&g_mlkem_lock, 0, 1)) {
+    }
+}
+
+static void mlkem_unlock(void) {
+    NEVERC_ATOMIC_STORE32(&g_mlkem_lock, 0);
+}
+
+static void wipe_mlkem_scratch(void) {
+    neverc_platform_secure_zero(g_a_hat, sizeof(g_a_hat));
+    neverc_platform_secure_zero(g_e_hat, sizeof(g_e_hat));
+    neverc_platform_secure_zero(g_t_hat, sizeof(g_t_hat));
+    neverc_platform_secure_zero(g_prod, sizeof(g_prod));
+    neverc_platform_secure_zero(g_acc, sizeof(g_acc));
+    neverc_platform_secure_zero(g_tmp_ring, sizeof(g_tmp_ring));
+    neverc_platform_secure_zero(g_enc_t_hat, sizeof(g_enc_t_hat));
+    neverc_platform_secure_zero(g_enc_r_hat, sizeof(g_enc_r_hat));
+    neverc_platform_secure_zero(g_enc_e1, sizeof(g_enc_e1));
+    neverc_platform_secure_zero(g_enc_e2, sizeof(g_enc_e2));
+    neverc_platform_secure_zero(g_enc_u, sizeof(g_enc_u));
+    neverc_platform_secure_zero(g_enc_v, sizeof(g_enc_v));
+    neverc_platform_secure_zero(g_dec_u, sizeof(g_dec_u));
+    neverc_platform_secure_zero(g_dec_v, sizeof(g_dec_v));
+    neverc_platform_secure_zero(g_s_hat, sizeof(g_s_hat));
+    neverc_platform_secure_zero(g_ek_regen, sizeof(g_ek_regen));
+    neverc_platform_secure_zero(g_ct_prime, sizeof(g_ct_prime));
+}
 
 /* ML-KEM.Decaps (Algorithm 18) */
 static int mlkem_decaps(int k, const uint8_t *seed,
@@ -534,44 +574,66 @@ static int mlkem_decaps(int k, const uint8_t *seed,
 
     kpke_encrypt(k, ek, ek_size, m_prime, kr + 32, 32, g_ct_prime);
 
-    int ct_match = 1;
+    uint8_t difference = 0;
     for (size_t i = 0; i < ct_size; i++)
-        ct_match &= (ct[i] == g_ct_prime[i]);
+        difference |= ct[i] ^ g_ct_prime[i];
 
-    if (ct_match) {
-        memcpy(shared_key, kr, 32);
-    } else {
-        neverc_sha3_ctx j;
-        neverc_shake256_init(&j);
-        neverc_shake256_update(&j, z, 32);
-        neverc_shake256_update(&j, ct, ct_size);
-        neverc_shake256_squeeze(&j, shared_key, 32);
+    uint8_t rejection_key[32];
+    neverc_sha3_ctx j;
+    neverc_shake256_init(&j);
+    neverc_shake256_update(&j, z, 32);
+    neverc_shake256_update(&j, ct, ct_size);
+    neverc_shake256_squeeze(&j, rejection_key, sizeof(rejection_key));
+
+    uint8_t match_mask =
+        (uint8_t)(0U - (uint8_t)(((uint16_t)difference - 1U) >> 8));
+    for (size_t i = 0; i < 32; i++) {
+        shared_key[i] = (uint8_t)((kr[i] & match_mask) |
+                                  (rejection_key[i] & (uint8_t)~match_mask));
     }
+    neverc_platform_secure_zero(m_prime, sizeof(m_prime));
+    neverc_platform_secure_zero(kr, sizeof(kr));
+    neverc_platform_secure_zero(rejection_key, sizeof(rejection_key));
+    neverc_platform_secure_zero(&g, sizeof(g));
+    neverc_platform_secure_zero(&j, sizeof(j));
     return 0;
 }
 
 /* ── Public API: ML-KEM-768 ──────────────────────────────── */
 
 int neverc_mlkem768_generate_key(neverc_mlkem768_dk_t *dk) {
-    neverc_crypto_rand_read(dk->seed, 64);
+    if (!dk) return -1;
+    memset(dk, 0, sizeof(*dk));
+    if (neverc_crypto_rand_read(dk->seed, sizeof(dk->seed)) != 0) {
+        neverc_platform_secure_zero(dk, sizeof(*dk));
+        return -1;
+    }
+    mlkem_lock();
     kpke_keygen(3, dk->seed, dk->ek, g_s_hat);
+    wipe_mlkem_scratch();
+    mlkem_unlock();
     return 0;
 }
 
 int neverc_mlkem768_new_dk(neverc_mlkem768_dk_t *dk, const uint8_t seed[64]) {
+    if (!dk || !seed) return -1;
     memcpy(dk->seed, seed, 64);
+    mlkem_lock();
     kpke_keygen(3, dk->seed, dk->ek, g_s_hat);
+    wipe_mlkem_scratch();
+    mlkem_unlock();
     return 0;
 }
 
 void neverc_mlkem768_dk_encapsulation_key(const neverc_mlkem768_dk_t *dk,
                                           neverc_mlkem768_ek_t *ek) {
+    if (!dk || !ek) return;
     memcpy(ek->ek, dk->ek, NEVERC_MLKEM768_EK_SIZE);
 }
 
 int neverc_mlkem768_new_ek(neverc_mlkem768_ek_t *ek,
                            const uint8_t *encoded, size_t len) {
-    if (len != NEVERC_MLKEM768_EK_SIZE) return -1;
+    if (!ek || !encoded || len != NEVERC_MLKEM768_EK_SIZE) return -1;
     ntt_elem t_hat[4];
     for (int i = 0; i < 3; i++)
         if (poly_byte_decode12(t_hat[i], encoded + i * ENC12) != 0)
@@ -583,23 +645,40 @@ int neverc_mlkem768_new_ek(neverc_mlkem768_ek_t *ek,
 int neverc_mlkem768_encapsulate(const neverc_mlkem768_ek_t *ek,
                                 uint8_t shared_key[32],
                                 uint8_t ciphertext[NEVERC_MLKEM768_CT_SIZE]) {
-    return mlkem_encaps(3, ek->ek, NEVERC_MLKEM768_EK_SIZE,
-                        shared_key, ciphertext);
+    if (!ek || !shared_key || !ciphertext) return -1;
+    mlkem_lock();
+    int result = mlkem_encaps(3, ek->ek, NEVERC_MLKEM768_EK_SIZE,
+                              shared_key, ciphertext);
+    wipe_mlkem_scratch();
+    mlkem_unlock();
+    if (result != 0) {
+        neverc_platform_secure_zero(shared_key, 32);
+        neverc_platform_secure_zero(ciphertext, NEVERC_MLKEM768_CT_SIZE);
+    }
+    return result;
 }
 
 int neverc_mlkem768_decapsulate(const neverc_mlkem768_dk_t *dk,
                                 const uint8_t ciphertext[NEVERC_MLKEM768_CT_SIZE],
                                 uint8_t shared_key[32]) {
-    return mlkem_decaps(3, dk->seed, dk->ek, NEVERC_MLKEM768_EK_SIZE,
-                        ciphertext, NEVERC_MLKEM768_CT_SIZE, shared_key);
+    if (!dk || !ciphertext || !shared_key) return -1;
+    mlkem_lock();
+    int result = mlkem_decaps(3, dk->seed, dk->ek, NEVERC_MLKEM768_EK_SIZE,
+                              ciphertext, NEVERC_MLKEM768_CT_SIZE, shared_key);
+    wipe_mlkem_scratch();
+    mlkem_unlock();
+    return result;
 }
 
 void neverc_mlkem768_dk_bytes(const neverc_mlkem768_dk_t *dk, uint8_t seed[64]) {
+    if (!dk || !seed) return;
     memcpy(seed, dk->seed, 64);
 }
 
 void neverc_mlkem768_ek_bytes(const neverc_mlkem768_ek_t *ek,
                               uint8_t *out, size_t *out_len) {
+    if (out_len) *out_len = 0;
+    if (!ek || !out || !out_len) return;
     memcpy(out, ek->ek, NEVERC_MLKEM768_EK_SIZE);
     *out_len = NEVERC_MLKEM768_EK_SIZE;
 }
@@ -607,25 +686,38 @@ void neverc_mlkem768_ek_bytes(const neverc_mlkem768_ek_t *ek,
 /* ── Public API: ML-KEM-1024 ─────────────────────────────── */
 
 int neverc_mlkem1024_generate_key(neverc_mlkem1024_dk_t *dk) {
-    neverc_crypto_rand_read(dk->seed, 64);
+    if (!dk) return -1;
+    memset(dk, 0, sizeof(*dk));
+    if (neverc_crypto_rand_read(dk->seed, sizeof(dk->seed)) != 0) {
+        neverc_platform_secure_zero(dk, sizeof(*dk));
+        return -1;
+    }
+    mlkem_lock();
     kpke_keygen(4, dk->seed, dk->ek, g_s_hat);
+    wipe_mlkem_scratch();
+    mlkem_unlock();
     return 0;
 }
 
 int neverc_mlkem1024_new_dk(neverc_mlkem1024_dk_t *dk, const uint8_t seed[64]) {
+    if (!dk || !seed) return -1;
     memcpy(dk->seed, seed, 64);
+    mlkem_lock();
     kpke_keygen(4, dk->seed, dk->ek, g_s_hat);
+    wipe_mlkem_scratch();
+    mlkem_unlock();
     return 0;
 }
 
 void neverc_mlkem1024_dk_encapsulation_key(const neverc_mlkem1024_dk_t *dk,
                                            neverc_mlkem1024_ek_t *ek) {
+    if (!dk || !ek) return;
     memcpy(ek->ek, dk->ek, NEVERC_MLKEM1024_EK_SIZE);
 }
 
 int neverc_mlkem1024_new_ek(neverc_mlkem1024_ek_t *ek,
                             const uint8_t *encoded, size_t len) {
-    if (len != NEVERC_MLKEM1024_EK_SIZE) return -1;
+    if (!ek || !encoded || len != NEVERC_MLKEM1024_EK_SIZE) return -1;
     ntt_elem t_hat[4];
     for (int i = 0; i < 4; i++)
         if (poly_byte_decode12(t_hat[i], encoded + i * ENC12) != 0)
@@ -637,23 +729,40 @@ int neverc_mlkem1024_new_ek(neverc_mlkem1024_ek_t *ek,
 int neverc_mlkem1024_encapsulate(const neverc_mlkem1024_ek_t *ek,
                                  uint8_t shared_key[32],
                                  uint8_t ciphertext[NEVERC_MLKEM1024_CT_SIZE]) {
-    return mlkem_encaps(4, ek->ek, NEVERC_MLKEM1024_EK_SIZE,
-                        shared_key, ciphertext);
+    if (!ek || !shared_key || !ciphertext) return -1;
+    mlkem_lock();
+    int result = mlkem_encaps(4, ek->ek, NEVERC_MLKEM1024_EK_SIZE,
+                              shared_key, ciphertext);
+    wipe_mlkem_scratch();
+    mlkem_unlock();
+    if (result != 0) {
+        neverc_platform_secure_zero(shared_key, 32);
+        neverc_platform_secure_zero(ciphertext, NEVERC_MLKEM1024_CT_SIZE);
+    }
+    return result;
 }
 
 int neverc_mlkem1024_decapsulate(const neverc_mlkem1024_dk_t *dk,
                                  const uint8_t ciphertext[NEVERC_MLKEM1024_CT_SIZE],
                                  uint8_t shared_key[32]) {
-    return mlkem_decaps(4, dk->seed, dk->ek, NEVERC_MLKEM1024_EK_SIZE,
-                        ciphertext, NEVERC_MLKEM1024_CT_SIZE, shared_key);
+    if (!dk || !ciphertext || !shared_key) return -1;
+    mlkem_lock();
+    int result = mlkem_decaps(4, dk->seed, dk->ek, NEVERC_MLKEM1024_EK_SIZE,
+                              ciphertext, NEVERC_MLKEM1024_CT_SIZE, shared_key);
+    wipe_mlkem_scratch();
+    mlkem_unlock();
+    return result;
 }
 
 void neverc_mlkem1024_dk_bytes(const neverc_mlkem1024_dk_t *dk, uint8_t seed[64]) {
+    if (!dk || !seed) return;
     memcpy(seed, dk->seed, 64);
 }
 
 void neverc_mlkem1024_ek_bytes(const neverc_mlkem1024_ek_t *ek,
                                uint8_t *out, size_t *out_len) {
+    if (out_len) *out_len = 0;
+    if (!ek || !out || !out_len) return;
     memcpy(out, ek->ek, NEVERC_MLKEM1024_EK_SIZE);
     *out_len = NEVERC_MLKEM1024_EK_SIZE;
 }

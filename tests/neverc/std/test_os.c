@@ -201,11 +201,27 @@ static void test_temp(void) {
     char tmpdir[1024];
     ASSERT_EQ(neverc_os_temp_dir(tmpdir, sizeof(tmpdir)), 0);
     ASSERT_TRUE(strlen(tmpdir) > 0);
+    char tiny[1];
+    ASSERT_EQ(neverc_os_temp_dir(tiny, sizeof(tiny)), -1);
 
     neverc_os_file_t *f = neverc_os_create_temp(NULL, "neverc_test_");
     ASSERT_TRUE(f != NULL);
     neverc_os_write(f, "tmp", 3);
     neverc_os_close(f);
+
+    char dir_path[4096];
+    ASSERT_EQ(neverc_os_mkdir_temp(
+                  NULL, "neverc_test_dir_", dir_path, sizeof(dir_path)), 0);
+    ASSERT_TRUE(neverc_os_is_dir(dir_path));
+    ASSERT_EQ(neverc_os_remove_all(dir_path), 0);
+    ASSERT_EQ(neverc_os_mkdir_temp(NULL, "x", NULL, 0), -1);
+
+    char long_pattern[4096];
+    memset(long_pattern, 'x', sizeof(long_pattern) - 1);
+    long_pattern[sizeof(long_pattern) - 1] = '\0';
+    ASSERT_EQ(neverc_os_mkdir_temp(
+                  NULL, long_pattern, dir_path, sizeof(dir_path)), -1);
+    ASSERT_TRUE(neverc_os_create_temp(NULL, long_pattern) == NULL);
 }
 
 static void test_std_files(void) {

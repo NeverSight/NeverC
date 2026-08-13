@@ -37,7 +37,11 @@ typedef struct {
     uint8_t ek[NEVERC_MLKEM768_EK_SIZE];
 } neverc_mlkem768_ek_t;
 
-/* Generate a new ML-KEM-768 key pair. Returns 0 on success. */
+/*
+ * Generate a new ML-KEM-768 key pair.
+ * Returns 0 on success or -1 if an argument or the entropy source is invalid.
+ * On entropy failure, dk is securely cleared.
+ */
 int neverc_mlkem768_generate_key(neverc_mlkem768_dk_t *dk);
 
 /* Create decapsulation key from 64-byte seed (d || z). Returns 0 on success. */
@@ -51,7 +55,11 @@ void neverc_mlkem768_dk_encapsulation_key(const neverc_mlkem768_dk_t *dk,
 int neverc_mlkem768_new_ek(neverc_mlkem768_ek_t *ek,
                            const uint8_t *encoded, size_t len);
 
-/* Encapsulate: produce shared key + ciphertext. Returns 0 on success. */
+/*
+ * Encapsulate: produce shared key + ciphertext.
+ * Returns 0 on success or -1 for invalid input or entropy failure. Output
+ * buffers are securely cleared on failure.
+ */
 int neverc_mlkem768_encapsulate(const neverc_mlkem768_ek_t *ek,
                                 uint8_t shared_key[32],
                                 uint8_t ciphertext[NEVERC_MLKEM768_CT_SIZE]);
@@ -80,12 +88,18 @@ typedef struct {
     uint8_t ek[NEVERC_MLKEM1024_EK_SIZE];
 } neverc_mlkem1024_ek_t;
 
+/*
+ * Generate a new ML-KEM-1024 key pair.
+ * Returns 0 on success or -1 if an argument or the entropy source is invalid.
+ * On entropy failure, dk is securely cleared.
+ */
 int neverc_mlkem1024_generate_key(neverc_mlkem1024_dk_t *dk);
 int neverc_mlkem1024_new_dk(neverc_mlkem1024_dk_t *dk, const uint8_t seed[64]);
 void neverc_mlkem1024_dk_encapsulation_key(const neverc_mlkem1024_dk_t *dk,
                                            neverc_mlkem1024_ek_t *ek);
 int neverc_mlkem1024_new_ek(neverc_mlkem1024_ek_t *ek,
                             const uint8_t *encoded, size_t len);
+/* Outputs are securely cleared if validation or entropy acquisition fails. */
 int neverc_mlkem1024_encapsulate(const neverc_mlkem1024_ek_t *ek,
                                  uint8_t shared_key[32],
                                  uint8_t ciphertext[NEVERC_MLKEM1024_CT_SIZE]);

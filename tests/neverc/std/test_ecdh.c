@@ -109,6 +109,12 @@ static void test_x25519_rfc7748_vector(void) {
     neverc_ecdh_key_t alice, bob;
     ASSERT_EQ(neverc_ecdh_new_private_key(NEVERC_ECDH_CURVE_X25519, alice_priv, 32, &alice), 0);
     ASSERT_EQ(neverc_ecdh_new_private_key(NEVERC_ECDH_CURVE_X25519, bob_priv, 32, &bob), 0);
+    unsigned char exported[32];
+    ASSERT_EQ(neverc_ecdh_private_key_bytes(
+                  &alice, exported, SIZE_MAX), 32);
+    ASSERT_TRUE(memcmp(exported, alice_priv, sizeof(exported)) == 0);
+    ASSERT_EQ(neverc_ecdh_public_key_bytes(
+                  &alice, exported, SIZE_MAX), 32);
 
     unsigned char shared_a[32], shared_b[32];
     int len_a = neverc_ecdh_compute(&alice, bob.public_key, 32, shared_a, sizeof(shared_a));
@@ -143,11 +149,21 @@ static void test_import_export(void) {
 static void test_invalid_inputs(void) {
     printf("[invalid inputs]\n");
     neverc_ecdh_key_t key;
+    ASSERT_EQ(neverc_ecdh_generate_key((neverc_ecdh_curve_t)99, &key), -1);
     ASSERT_EQ(neverc_ecdh_new_private_key(NEVERC_ECDH_CURVE_P256, NULL, 32, &key), -1);
     ASSERT_EQ(neverc_ecdh_new_private_key(NEVERC_ECDH_CURVE_X25519, (unsigned char*)"x", 1, &key), -1);
 
     unsigned char zero_priv[32] = {0};
     ASSERT_EQ(neverc_ecdh_new_private_key(NEVERC_ECDH_CURVE_P256, zero_priv, 32, &key), -1);
+
+    unsigned char basepoint[32] = {9};
+    ASSERT_EQ(neverc_ecdh_new_public_key(
+                  NEVERC_ECDH_CURVE_X25519, basepoint,
+                  sizeof(basepoint), &key), 0);
+    unsigned char shared[32];
+    ASSERT_EQ(neverc_ecdh_compute(
+                  &key, basepoint, sizeof(basepoint),
+                  shared, sizeof(shared)), -1);
 }
 
 int main(void) {

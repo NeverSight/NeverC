@@ -1,5 +1,6 @@
 #include "neverc/std/math/rand.h"
 #include "neverc/std/math.h"
+#include "neverc/std/_platform.h"
 #include <string.h>
 
 /*
@@ -12,12 +13,23 @@ static uint64_t s[4] = {
     0x180ec6d33cfd0abaULL, 0xd5a61266f0c9392cULL,
     0xa9582618e03fc9aaULL, 0x39abdc4529b1661cULL
 };
+static int32_t state_lock;
+
+static void lock_state(void) {
+    while (!NEVERC_ATOMIC_CAS32(&state_lock, 0, 1)) {
+    }
+}
+
+static void unlock_state(void) {
+    NEVERC_ATOMIC_STORE32(&state_lock, 0);
+}
 
 static inline uint64_t rotl(uint64_t x, int k) {
     return (x << k) | (x >> ((64 - k) & 63));
 }
 
 static uint64_t next(void) {
+    lock_state();
     uint64_t result = rotl(s[1] * 5, 7) * 9;
     uint64_t t = s[1] << 17;
     s[2] ^= s[0];
@@ -26,6 +38,7 @@ static uint64_t next(void) {
     s[0] ^= s[3];
     s[2] ^= t;
     s[3] = rotl(s[3], 45);
+    unlock_state();
     return result;
 }
 
@@ -38,10 +51,12 @@ static uint64_t splitmix64(uint64_t *state) {
 
 void neverc_rand_seed(uint64_t seed) {
     uint64_t sm = seed;
+    lock_state();
     s[0] = splitmix64(&sm);
     s[1] = splitmix64(&sm);
     s[2] = splitmix64(&sm);
     s[3] = splitmix64(&sm);
+    unlock_state();
 }
 
 uint64_t neverc_rand_uint64(void) { return next(); }
@@ -67,7 +82,7 @@ uint32_t neverc_rand_uint32n(uint32_t n) {
     uint64_t m = (uint64_t)neverc_rand_uint32() * (uint64_t)n;
     uint32_t lo = (uint32_t)m;
     if (lo < n) {
-        uint32_t threshold = (uint32_t)(-(int32_t)n) % n;
+        uint32_t threshold = (uint32_t)(0U - n) % n;
         while (lo < threshold) {
             m = (uint64_t)neverc_rand_uint32() * (uint64_t)n;
             lo = (uint32_t)m;
@@ -82,7 +97,7 @@ uint64_t neverc_rand_uint64n(uint64_t n) {
     __uint128_t m = (__uint128_t)next() * n;
     uint64_t lo = (uint64_t)m;
     if (lo < n) {
-        uint64_t threshold = (uint64_t)(-(int64_t)n) % n;
+        uint64_t threshold = (uint64_t)(0ULL - n) % n;
         while (lo < threshold) {
             m = (__uint128_t)next() * n;
             lo = (uint64_t)m;

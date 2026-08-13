@@ -334,6 +334,12 @@ static void test_uint32n(void) {
         if (v >= 1000) { all_ok = 0; break; }
     }
     check_true("uint32n(1000) in [0,1000)", all_ok);
+    all_ok = 1;
+    for (int i = 0; i < 10000; i++) {
+        uint32_t v = neverc_rand_uint32n(UINT32_C(0x80000000));
+        if (v >= UINT32_C(0x80000000)) { all_ok = 0; break; }
+    }
+    check_true("uint32n(2^31) avoids signed overflow", all_ok);
 }
 
 static void test_uint64n(void) {
@@ -346,6 +352,12 @@ static void test_uint64n(void) {
     }
     check_true("uint64n(999999999) in range", all_ok);
     check_true("uint64n(1) == 0", neverc_rand_uint64n(1) == 0);
+    all_ok = 1;
+    for (int i = 0; i < 10000; i++) {
+        uint64_t v = neverc_rand_uint64n(UINT64_C(1) << 63);
+        if (v >= (UINT64_C(1) << 63)) { all_ok = 0; break; }
+    }
+    check_true("uint64n(2^63) avoids signed overflow", all_ok);
 }
 
 static void test_norm_float64(void) {

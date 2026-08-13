@@ -4,6 +4,10 @@
 #include <string.h>
 #include <stdio.h>
 
+#ifndef NCI_MULTIPART_RANDOM
+#define NCI_MULTIPART_RANDOM neverc_platform_random
+#endif
+
 static int ci_strncmp(const char *a, const char *b, size_t n) {
     for (size_t i = 0; i < n; i++) {
         char ca = a[i], cb = b[i];
@@ -149,7 +153,10 @@ const char *neverc_multipart_part_header(const neverc_multipart_part_t *part,
 int neverc_multipart_generate_boundary(char *buf, size_t cap) {
     if (!buf || cap < 40) return -1;
     unsigned char rnd[16];
-    neverc_platform_random(rnd, sizeof(rnd));
+    if (NCI_MULTIPART_RANDOM(rnd, sizeof(rnd)) != 0) {
+        buf[0] = '\0';
+        return -1;
+    }
     int pos = 0;
     for (int i = 0; i < 16 && (size_t)pos + 2 < cap; i++) {
         static const char hex[] = "0123456789abcdef";

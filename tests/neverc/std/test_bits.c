@@ -200,6 +200,7 @@ static void test_8_16_variants(void) {
     check_int("ctz8(128)", neverc_bits_trailing_zeros8(128), 7);
     check_int("ctz16(1)", neverc_bits_trailing_zeros16(1), 0);
     check_int("ctz16(0)", neverc_bits_trailing_zeros16(0), 16);
+    check_int("ctz16(0x8000)", neverc_bits_trailing_zeros16(0x8000), 15);
 
     check_int("pop8(0)", neverc_bits_ones_count8(0), 0);
     check_int("pop8(0xFF)", neverc_bits_ones_count8(0xFF), 8);

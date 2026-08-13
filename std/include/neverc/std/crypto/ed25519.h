@@ -13,6 +13,10 @@ extern "C" {
 #define NEVERC_ED25519_SIGNATURE_SIZE   64
 #define NEVERC_ED25519_SEED_SIZE        32
 
+/*
+ * Generate a key pair. Returns -1 for invalid arguments or entropy failure;
+ * both output buffers are securely cleared when generation fails.
+ */
 int  neverc_ed25519_generate_key(unsigned char pub[32], unsigned char priv[64]);
 int  neverc_ed25519_new_key_from_seed(const unsigned char seed[32],
                                        unsigned char pub[32],

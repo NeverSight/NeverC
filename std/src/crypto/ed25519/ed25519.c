@@ -443,11 +443,15 @@ static void sc_muladd(unsigned char s[32], const unsigned char a[32],
     neverc_bigint_free(&result);
 }
 
-#define ed_random neverc_platform_random
+#ifndef NCI_ED25519_RANDOM
+#define NCI_ED25519_RANDOM neverc_platform_random
+#endif
 
 int neverc_ed25519_new_key_from_seed(const unsigned char seed[32],
                                       unsigned char pub[32],
                                       unsigned char priv[64]) {
+    if (!seed || !pub || !priv)
+        return -1;
     ensure_init();
     unsigned char h[64];
     neverc_sha512_sum(seed, 32, h);
@@ -464,22 +468,39 @@ int neverc_ed25519_new_key_from_seed(const unsigned char seed[32],
     memcpy(priv, seed, 32);
     memcpy(priv + 32, pub, 32);
     edpt_free(&B); edpt_free(&A);
+    neverc_platform_secure_zero(h, sizeof(h));
     return 0;
 }
 
 int neverc_ed25519_generate_key(unsigned char pub[32], unsigned char priv[64]) {
+    if (!pub || !priv)
+        return -1;
+    memset(pub, 0, 32);
+    memset(priv, 0, 64);
     unsigned char seed[32];
-    ed_random(seed, 32);
-    return neverc_ed25519_new_key_from_seed(seed, pub, priv);
+    if (NCI_ED25519_RANDOM(seed, sizeof(seed)) != 0) {
+        neverc_platform_secure_zero(seed, sizeof(seed));
+        return -1;
+    }
+    int result = neverc_ed25519_new_key_from_seed(seed, pub, priv);
+    neverc_platform_secure_zero(seed, sizeof(seed));
+    if (result != 0) {
+        neverc_platform_secure_zero(pub, 32);
+        neverc_platform_secure_zero(priv, 64);
+    }
+    return result;
 }
 
 void neverc_ed25519_seed(const unsigned char priv[64], unsigned char seed[32]) {
+    if (!priv || !seed) return;
     memcpy(seed, priv, 32);
 }
 
 int neverc_ed25519_sign(const unsigned char priv[64],
                          const unsigned char *msg, size_t msg_len,
                          unsigned char sig[64]) {
+    if (!priv || (!msg && msg_len != 0) || !sig)
+        return -1;
     ensure_init();
     unsigned char h[64];
     neverc_sha512_sum(priv, 32, h);
@@ -515,6 +536,13 @@ int neverc_ed25519_sign(const unsigned char priv[64],
     sc_reduce64(hram_reduced, hram);
 
     sc_muladd(sig + 32, hram_reduced, a, nonce);
+    neverc_platform_secure_zero(h, sizeof(h));
+    neverc_platform_secure_zero(a, sizeof(a));
+    neverc_platform_secure_zero(nonce_hash, sizeof(nonce_hash));
+    neverc_platform_secure_zero(nonce, sizeof(nonce));
+    neverc_platform_secure_zero(hram, sizeof(hram));
+    neverc_platform_secure_zero(hram_reduced, sizeof(hram_reduced));
+    neverc_platform_secure_zero(&ctx, sizeof(ctx));
     return 0;
 }
 

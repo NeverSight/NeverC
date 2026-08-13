@@ -24,7 +24,10 @@ static void test_keygen_sign_verify(void) {
 
     const uint8_t msg[] = "Hello, ML-DSA!";
     uint8_t sig[NEVERC_MLDSA44_SIG_SIZE];
+    neverc_mldsa44_sk_t original_sk = sk;
     ASSERT(neverc_mldsa44_sign(&sk, msg, sizeof(msg)-1, sig) == 0, "sign");
+    ASSERT(memcmp(&sk, &original_sk, sizeof(sk)) == 0,
+           "sign leaves const secret key unchanged");
     ASSERT(neverc_mldsa44_verify(&pk, msg, sizeof(msg)-1, sig) == 0, "verify");
     printf("ok\n");
 }

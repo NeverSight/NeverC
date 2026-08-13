@@ -63,7 +63,7 @@ typedef struct {
  * Create a sending HPKE context. Performs KEM encapsulation.
  * enc:     output encapsulated key (caller must provide buffer of at least
  *          NEVERC_HPKE_MAX_ENC_SIZE bytes)
- * enc_len: output length of enc
+ * enc_len: output length of enc; set to zero on error
  * Returns 0 on success, -1 on error.
  */
 int neverc_hpke_sender_new(neverc_hpke_sender_t *s,
@@ -83,20 +83,24 @@ int neverc_hpke_recipient_new(neverc_hpke_recipient_t *r,
                               const uint8_t *info, size_t info_len);
 
 /* Encrypt with sender context. ciphertext must hold pt_len + 16 bytes.
- * Returns total ciphertext length on success, -1 on error. */
+ * Returns total ciphertext length on success, -1 on error. A context whose
+ * 64-bit sequence counter is exhausted cannot be used again. */
 int neverc_hpke_sender_seal(neverc_hpke_sender_t *s,
                             const uint8_t *aad, size_t aad_len,
                             const uint8_t *plaintext, size_t pt_len,
                             uint8_t *ciphertext);
 
 /* Decrypt with recipient context. plaintext must hold ct_len - 16 bytes.
- * Returns plaintext length on success, -1 on error. */
+ * For an empty plaintext, plaintext may be NULL. Returns plaintext length on
+ * success, -1 on error. A context whose sequence counter is exhausted cannot
+ * be used again. */
 int neverc_hpke_recipient_open(neverc_hpke_recipient_t *r,
                                const uint8_t *aad, size_t aad_len,
                                const uint8_t *ciphertext, size_t ct_len,
                                uint8_t *plaintext);
 
-/* Export a secret from sender/recipient context.
+/* Export a secret from sender/recipient context. out_len must fit uint16_t
+ * and is additionally subject to the selected HKDF's output limit.
  * Returns 0 on success, -1 on error. */
 int neverc_hpke_sender_export(const neverc_hpke_sender_t *s,
                               const uint8_t *exporter_ctx, size_t ctx_len,

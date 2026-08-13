@@ -6,7 +6,26 @@
 #include <string.h>
 #include <stdlib.h>
 
-#define secure_random neverc_platform_random
+#ifndef NCI_RSA_RANDOM
+#define NCI_RSA_RANDOM neverc_platform_random
+#endif
+
+static void rsa_bigint_secure_free(neverc_bigint_t *value) {
+    if (!value) return;
+    if (value->digits)
+        neverc_platform_secure_zero(value->digits,
+                                    value->cap * sizeof(*value->digits));
+    neverc_bigint_free(value);
+}
+
+static void rsa_bigint_secure_reset(neverc_bigint_t *value) {
+    if (!value) return;
+    if (value->digits)
+        neverc_platform_secure_zero(value->digits,
+                                    value->cap * sizeof(*value->digits));
+    value->len = 0;
+    value->neg = 0;
+}
 
 void neverc_rsa_public_key_init(neverc_rsa_public_key_t *k) {
     neverc_bigint_init(&k->n);
@@ -29,31 +48,52 @@ void neverc_rsa_private_key_init(neverc_rsa_private_key_t *k) {
 }
 
 void neverc_rsa_private_key_free(neverc_rsa_private_key_t *k) {
+    if (!k) return;
     neverc_rsa_public_key_free(&k->pub);
-    neverc_bigint_free(&k->d);
-    neverc_bigint_free(&k->p);
-    neverc_bigint_free(&k->q);
-    neverc_bigint_free(&k->dp);
-    neverc_bigint_free(&k->dq);
-    neverc_bigint_free(&k->qinv);
+    rsa_bigint_secure_free(&k->d);
+    rsa_bigint_secure_free(&k->p);
+    rsa_bigint_secure_free(&k->q);
+    rsa_bigint_secure_free(&k->dp);
+    rsa_bigint_secure_free(&k->dq);
+    rsa_bigint_secure_free(&k->qinv);
 }
 
-static void random_bigint(neverc_bigint_t *r, int bits) {
+static int random_bigint(neverc_bigint_t *r, int bits) {
+    if (!r || bits < 2) return -1;
     int bytes = (bits + 7) / 8;
     unsigned char *buf = (unsigned char *)malloc((size_t)bytes);
-    secure_random(buf, (size_t)bytes);
-    buf[0] |= 0x80;
+    if (!buf) return -1;
+    size_t hex_size = (size_t)bytes * 2U + 1U;
+    char *hex = (char *)malloc(hex_size);
+    if (!hex) {
+        neverc_platform_secure_zero(buf, (size_t)bytes);
+        free(buf);
+        return -1;
+    }
+    if (NCI_RSA_RANDOM(buf, (size_t)bytes) != 0) {
+        neverc_platform_secure_zero(buf, (size_t)bytes);
+        neverc_platform_secure_zero(hex, hex_size);
+        free(buf);
+        free(hex);
+        return -1;
+    }
+    unsigned excess_bits = (unsigned)(bytes * 8 - bits);
+    buf[0] &= (unsigned char)(0xffU >> excess_bits);
+    buf[0] |= (unsigned char)(0x80U >> excess_bits);
     buf[bytes - 1] |= 0x01;
 
-    char hex[2048];
     int pos = 0;
-    for (int i = 0; i < bytes && pos < (int)sizeof(hex) - 2; i++) {
+    for (int i = 0; i < bytes; i++) {
         hex[pos++] = "0123456789abcdef"[buf[i] >> 4];
         hex[pos++] = "0123456789abcdef"[buf[i] & 0x0F];
     }
     hex[pos] = '\0';
-    neverc_bigint_set_string(r, hex, 16);
+    int result = neverc_bigint_set_string(r, hex, 16);
+    neverc_platform_secure_zero(buf, (size_t)bytes);
+    neverc_platform_secure_zero(hex, hex_size);
     free(buf);
+    free(hex);
+    return result;
 }
 
 static int miller_rabin(const neverc_bigint_t *n, int rounds) {
@@ -131,9 +171,10 @@ static int has_small_factor(const neverc_bigint_t *p) {
     return 0;
 }
 
-static void gen_prime(neverc_bigint_t *p, int bits) {
-    for (;;) {
-        random_bigint(p, bits);
+static int gen_prime(neverc_bigint_t *p, int bits) {
+    for (int attempt = 0; attempt < 65536; ++attempt) {
+        if (random_bigint(p, bits) != 0)
+            return -1;
         if (neverc_bigint_bit(p, 0) == 0) {
             neverc_bigint_t one;
             neverc_bigint_init(&one);
@@ -142,8 +183,9 @@ static void gen_prime(neverc_bigint_t *p, int bits) {
             neverc_bigint_free(&one);
         }
         if (has_small_factor(p)) continue;   /* cheap pre-screen before Miller-Rabin */
-        if (miller_rabin(p, 12)) return;
+        if (miller_rabin(p, 12)) return 0;
     }
+    return -1;
 }
 
 /* r = a^-1 mod m by the extended Euclidean algorithm. Returns 0 on success and
@@ -199,9 +241,16 @@ static int mod_inverse(neverc_bigint_t *r, const neverc_bigint_t *a, const never
 #endif
 
 int neverc_rsa_generate_key(neverc_rsa_private_key_t *key, int bits) {
-    if (bits < 512) return -1;
+    if (!key || bits < 512) return -1;
     int half = bits / 2;
 
+    rsa_bigint_secure_reset(&key->pub.n);
+    rsa_bigint_secure_reset(&key->d);
+    rsa_bigint_secure_reset(&key->p);
+    rsa_bigint_secure_reset(&key->q);
+    rsa_bigint_secure_reset(&key->dp);
+    rsa_bigint_secure_reset(&key->dq);
+    rsa_bigint_secure_reset(&key->qinv);
     neverc_bigint_set_int64(&key->pub.e, NCI_RSA_PUBLIC_EXPONENT);
 
     neverc_bigint_t one, pm1, qm1, phi;
@@ -214,8 +263,9 @@ int neverc_rsa_generate_key(neverc_rsa_private_key_t *key, int bits) {
      * there; draw a fresh pair rather than emit a key whose d is meaningless. */
     int ok = 0;
     for (int attempt = 0; attempt < RSA_KEYGEN_ATTEMPTS && !ok; attempt++) {
-        gen_prime(&key->p, half);
-        gen_prime(&key->q, half);
+        if (gen_prime(&key->p, half) != 0 ||
+            gen_prime(&key->q, bits - half) != 0)
+            break;
         if (neverc_bigint_cmp(&key->p, &key->q) == 0) continue;
 
         neverc_bigint_sub(&pm1, &key->p, &one);
@@ -231,32 +281,68 @@ int neverc_rsa_generate_key(neverc_rsa_private_key_t *key, int bits) {
         neverc_bigint_mul(&key->pub.n, &key->p, &key->q);
         neverc_bigint_mod(&key->dp, &key->d, &pm1);
         neverc_bigint_mod(&key->dq, &key->d, &qm1);
+    } else {
+        rsa_bigint_secure_reset(&key->pub.n);
+        rsa_bigint_secure_reset(&key->d);
+        rsa_bigint_secure_reset(&key->p);
+        rsa_bigint_secure_reset(&key->q);
+        rsa_bigint_secure_reset(&key->dp);
+        rsa_bigint_secure_reset(&key->dq);
+        rsa_bigint_secure_reset(&key->qinv);
     }
 
-    neverc_bigint_free(&one); neverc_bigint_free(&pm1);
-    neverc_bigint_free(&qm1); neverc_bigint_free(&phi);
+    neverc_bigint_free(&one);
+    rsa_bigint_secure_free(&pm1);
+    rsa_bigint_secure_free(&qm1);
+    rsa_bigint_secure_free(&phi);
     return ok ? 0 : -1;
 }
 
 int neverc_rsa_key_size(const neverc_rsa_public_key_t *pub) {
+    if (!pub) return -1;
     return (neverc_bigint_bit_len(&pub->n) + 7) / 8;
 }
 
-static void bytes_to_bigint(neverc_bigint_t *r, const unsigned char *data, size_t len) {
-    char hex[2048];
-    int pos = 0;
-    for (size_t i = 0; i < len && pos < (int)sizeof(hex) - 2; i++) {
+static int bytes_to_bigint(neverc_bigint_t *r,
+                           const unsigned char *data, size_t len) {
+    if (!r || (!data && len != 0) || len > (SIZE_MAX - 1U) / 2U)
+        return -1;
+    size_t hex_size = len * 2U + 1U;
+    if (hex_size < 2U) hex_size = 2U;
+    char *hex = (char *)malloc(hex_size);
+    if (!hex) return -1;
+    size_t pos = 0;
+    for (size_t i = 0; i < len; i++) {
         hex[pos++] = "0123456789abcdef"[data[i] >> 4];
         hex[pos++] = "0123456789abcdef"[data[i] & 0x0F];
     }
+    if (pos == 0) hex[pos++] = '0';
     hex[pos] = '\0';
-    neverc_bigint_set_string(r, hex, 16);
+    int result = neverc_bigint_set_string(r, hex, 16);
+    neverc_platform_secure_zero(hex, hex_size);
+    free(hex);
+    return result;
 }
 
-static void bigint_to_bytes(const neverc_bigint_t *v, unsigned char *out, int byte_len) {
-    char hex[2048];
-    neverc_bigint_string(v, 16, hex, sizeof(hex));
+static int bigint_to_bytes(const neverc_bigint_t *v,
+                           unsigned char *out, int byte_len) {
+    if (!v || !out || byte_len < 0 || neverc_bigint_sign(v) < 0)
+        return -1;
+    int bit_len = neverc_bigint_bit_len(v);
+    size_t hex_size = (size_t)(bit_len + 3) / 4U + 2U;
+    char *hex = (char *)malloc(hex_size);
+    if (!hex) return -1;
+    if (neverc_bigint_string(v, 16, hex, hex_size) < 0) {
+        neverc_platform_secure_zero(hex, hex_size);
+        free(hex);
+        return -1;
+    }
     size_t hlen = strlen(hex);
+    if (hlen > (size_t)byte_len * 2U) {
+        neverc_platform_secure_zero(hex, hex_size);
+        free(hex);
+        return -1;
+    }
     memset(out, 0, (size_t)byte_len);
     for (size_t i = 0; i < hlen; i++) {
         int d;
@@ -266,35 +352,67 @@ static void bigint_to_bytes(const neverc_bigint_t *v, unsigned char *out, int by
         else d = c - 'A' + 10;
         out[byte_len - 1 - (int)(i / 2)] |= (unsigned char)(d << ((i % 2) * 4));
     }
+    neverc_platform_secure_zero(hex, hex_size);
+    free(hex);
+    return 0;
 }
 
 int neverc_rsa_encrypt_pkcs1v15(const neverc_rsa_public_key_t *pub,
                                  const unsigned char *msg, size_t msg_len,
                                  unsigned char *out, size_t out_cap, size_t *out_len) {
+    if (out_len) *out_len = 0;
+    if (!pub || (!msg && msg_len != 0) || !out || !out_len ||
+        neverc_bigint_sign(&pub->n) <= 0 ||
+        neverc_bigint_sign(&pub->e) <= 0)
+        return -1;
     int k = neverc_rsa_key_size(pub);
-    if ((int)msg_len > k - 11) return -1;
-    if ((int)out_cap < k) return -1;
+    if (k < 11 || msg_len > (size_t)(k - 11) || out_cap < (size_t)k)
+        return -1;
 
     unsigned char *em = (unsigned char *)malloc((size_t)k);
+    if (!em) return -1;
     em[0] = 0x00;
     em[1] = 0x02;
-    int ps_len = k - (int)msg_len - 3;
-    secure_random(em + 2, (size_t)ps_len);
-    for (int i = 0; i < ps_len; i++)
-        if (em[2 + i] == 0) em[2 + i] = 1;
+    size_t ps_len = (size_t)k - msg_len - 3U;
+    if (NCI_RSA_RANDOM(em + 2, ps_len) != 0)
+        goto fail_em;
+    for (size_t i = 0; i < ps_len; i++) {
+        for (int attempt = 0; em[2 + i] == 0 && attempt < 128; ++attempt) {
+            if (NCI_RSA_RANDOM(em + 2 + i, 1) != 0)
+                goto fail_em;
+        }
+        if (em[2 + i] == 0)
+            goto fail_em;
+    }
     em[2 + ps_len] = 0x00;
-    memcpy(em + 3 + ps_len, msg, msg_len);
+    if (msg_len > 0)
+        memcpy(em + 3 + ps_len, msg, msg_len);
 
     neverc_bigint_t m, c;
     neverc_bigint_init(&m); neverc_bigint_init(&c);
-    bytes_to_bigint(&m, em, (size_t)k);
+    if (bytes_to_bigint(&m, em, (size_t)k) != 0) {
+        rsa_bigint_secure_free(&m);
+        neverc_bigint_free(&c);
+        goto fail_em;
+    }
     neverc_bigint_exp(&c, &m, &pub->e, &pub->n);
-    bigint_to_bytes(&c, out, k);
+    if (bigint_to_bytes(&c, out, k) != 0) {
+        rsa_bigint_secure_free(&m);
+        neverc_bigint_free(&c);
+        goto fail_em;
+    }
 
-    if (out_len) *out_len = (size_t)k;
-    neverc_bigint_free(&m); neverc_bigint_free(&c);
+    *out_len = (size_t)k;
+    rsa_bigint_secure_free(&m);
+    neverc_bigint_free(&c);
+    neverc_platform_secure_zero(em, (size_t)k);
     free(em);
     return 0;
+
+fail_em:
+    neverc_platform_secure_zero(em, (size_t)k);
+    free(em);
+    return -1;
 }
 
 /*
@@ -326,52 +444,65 @@ static void rsa_private_exp(neverc_bigint_t *out, const neverc_bigint_t *base,
     neverc_bigint_mul(&t, &h, &priv->q);
     neverc_bigint_add(out, &m2, &t);                     /* m = m2 + h*q, in [0,n) */
 
-    neverc_bigint_free(&m1); neverc_bigint_free(&m2);
-    neverc_bigint_free(&h);  neverc_bigint_free(&t);
+    rsa_bigint_secure_free(&m1); rsa_bigint_secure_free(&m2);
+    rsa_bigint_secure_free(&h);  rsa_bigint_secure_free(&t);
 }
 
 int neverc_rsa_decrypt_pkcs1v15(const neverc_rsa_private_key_t *priv,
                                  const unsigned char *ct, size_t ct_len,
                                  unsigned char *out, size_t out_cap, size_t *out_len) {
+    if (out_len) *out_len = 0;
+    if (!priv || !ct || !out || !out_len ||
+        neverc_bigint_sign(&priv->pub.n) <= 0 ||
+        neverc_bigint_sign(&priv->d) <= 0)
+        return -1;
     int k = neverc_rsa_key_size(&priv->pub);
-    if ((int)ct_len != k) return -1;
+    if (k < 11 || ct_len != (size_t)k) return -1;
 
     neverc_bigint_t c, m;
     neverc_bigint_init(&c); neverc_bigint_init(&m);
-    bytes_to_bigint(&c, ct, ct_len);
+    if (bytes_to_bigint(&c, ct, ct_len) != 0)
+        goto fail_bigints;
+    if (neverc_bigint_cmp(&c, &priv->pub.n) >= 0)
+        goto fail_bigints;
     rsa_private_exp(&m, &c, priv);
 
     unsigned char *em = (unsigned char *)malloc((size_t)k);
-    bigint_to_bytes(&m, em, k);
+    if (!em)
+        goto fail_bigints;
+    if (bigint_to_bytes(&m, em, k) != 0)
+        goto fail_em;
 
-    if (em[0] != 0x00 || em[1] != 0x02) {
-        neverc_bigint_free(&c); neverc_bigint_free(&m);
-        free(em);
-        return -1;
-    }
+    if (em[0] != 0x00 || em[1] != 0x02)
+        goto fail_em;
 
     int i = 2;
     while (i < k && em[i] != 0) i++;
-    if (i >= k) {
-        neverc_bigint_free(&c); neverc_bigint_free(&m);
-        free(em);
-        return -1;
-    }
+    if (i < 10 || i >= k)
+        goto fail_em;
     i++;
 
     size_t msg_len = (size_t)(k - i);
-    if (msg_len > out_cap) {
-        neverc_bigint_free(&c); neverc_bigint_free(&m);
-        free(em);
-        return -1;
-    }
+    if (msg_len > out_cap)
+        goto fail_em;
 
-    memcpy(out, em + i, msg_len);
-    if (out_len) *out_len = msg_len;
+    if (msg_len > 0)
+        memcpy(out, em + i, msg_len);
+    *out_len = msg_len;
 
-    neverc_bigint_free(&c); neverc_bigint_free(&m);
+    neverc_bigint_free(&c);
+    rsa_bigint_secure_free(&m);
+    neverc_platform_secure_zero(em, (size_t)k);
     free(em);
     return 0;
+
+fail_em:
+    neverc_platform_secure_zero(em, (size_t)k);
+    free(em);
+fail_bigints:
+    neverc_bigint_free(&c);
+    rsa_bigint_secure_free(&m);
+    return -1;
 }
 
 static const unsigned char sha256_digest_info[] = {
@@ -393,7 +524,11 @@ static const unsigned char sha512_digest_info[] = {
 int neverc_rsa_sign_pkcs1v15_sha256(const neverc_rsa_private_key_t *priv,
                                      const unsigned char *hash, size_t hash_len,
                                      unsigned char *sig, size_t sig_cap, size_t *sig_len) {
-    if (!priv || !hash || !sig || hash_len != NEVERC_SHA256_DIGEST_SIZE)
+    if (sig_len) *sig_len = 0;
+    if (!priv || !hash || !sig || !sig_len ||
+        hash_len != NEVERC_SHA256_DIGEST_SIZE ||
+        neverc_bigint_sign(&priv->pub.n) <= 0 ||
+        neverc_bigint_sign(&priv->d) <= 0)
         return -1;
     int k = neverc_rsa_key_size(&priv->pub);
     int t_len = (int)sizeof(sha256_digest_info) +
@@ -416,12 +551,25 @@ int neverc_rsa_sign_pkcs1v15_sha256(const neverc_rsa_private_key_t *priv,
 
     neverc_bigint_t m, s;
     neverc_bigint_init(&m); neverc_bigint_init(&s);
-    bytes_to_bigint(&m, em, (size_t)k);
+    if (bytes_to_bigint(&m, em, (size_t)k) != 0) {
+        rsa_bigint_secure_free(&m);
+        rsa_bigint_secure_free(&s);
+        neverc_platform_secure_zero(em, (size_t)k);
+        free(em);
+        return -1;
+    }
     rsa_private_exp(&s, &m, priv);
-    bigint_to_bytes(&s, sig, k);
+    if (bigint_to_bytes(&s, sig, k) != 0) {
+        rsa_bigint_secure_free(&m);
+        rsa_bigint_secure_free(&s);
+        neverc_platform_secure_zero(em, (size_t)k);
+        free(em);
+        return -1;
+    }
 
-    if (sig_len) *sig_len = (size_t)k;
-    neverc_bigint_free(&m); neverc_bigint_free(&s);
+    *sig_len = (size_t)k;
+    rsa_bigint_secure_free(&m); rsa_bigint_secure_free(&s);
+    neverc_platform_secure_zero(em, (size_t)k);
     free(em);
     return 0;
 }
@@ -431,7 +579,9 @@ static int rsa_verify_pkcs1v15(
     const unsigned char *hash, size_t hash_len,
     const unsigned char *sig, size_t sig_len,
     const unsigned char *digest_info, size_t digest_info_len) {
-    if (!pub || !hash || !sig || !digest_info || hash_len == 0)
+    if (!pub || !hash || !sig || !digest_info || hash_len == 0 ||
+        neverc_bigint_sign(&pub->n) <= 0 ||
+        neverc_bigint_sign(&pub->e) <= 0)
         return -1;
     int k = neverc_rsa_key_size(pub);
     if (k <= 0 || sig_len != (size_t)k ||
@@ -442,7 +592,11 @@ static int rsa_verify_pkcs1v15(
 
     neverc_bigint_t s, m;
     neverc_bigint_init(&s); neverc_bigint_init(&m);
-    bytes_to_bigint(&s, sig, sig_len);
+    if (bytes_to_bigint(&s, sig, sig_len) != 0) {
+        neverc_bigint_free(&s);
+        neverc_bigint_free(&m);
+        return -1;
+    }
     if (neverc_bigint_cmp(&s, &pub->n) >= 0) {
         neverc_bigint_free(&s);
         neverc_bigint_free(&m);
@@ -456,7 +610,12 @@ static int rsa_verify_pkcs1v15(
         neverc_bigint_free(&m);
         return -1;
     }
-    bigint_to_bytes(&m, em, k);
+    if (bigint_to_bytes(&m, em, k) != 0) {
+        neverc_bigint_free(&s);
+        neverc_bigint_free(&m);
+        free(em);
+        return -1;
+    }
 
     size_t encoded_tail_len = digest_info_len + hash_len;
     size_t ps_len = (size_t)k - encoded_tail_len - 3;
@@ -602,8 +761,9 @@ static int rsa_verify_pss(const neverc_rsa_public_key_t *pub,
     neverc_bigint_t signature, message;
     neverc_bigint_init(&signature);
     neverc_bigint_init(&message);
-    bytes_to_bigint(&signature, sig, sig_len);
     int result = -1;
+    if (bytes_to_bigint(&signature, sig, sig_len) != 0)
+        goto cleanup_bigints;
     if (neverc_bigint_cmp(&signature, &pub->n) >= 0)
         goto cleanup_bigints;
     neverc_bigint_exp(&message, &signature, &pub->e, &pub->n);
@@ -617,7 +777,8 @@ static int rsa_verify_pss(const neverc_rsa_public_key_t *pub,
         free(database_mask);
         goto cleanup_bigints;
     }
-    bigint_to_bytes(&message, encoded, key_bytes);
+    if (bigint_to_bytes(&message, encoded, key_bytes) != 0)
+        goto cleanup_encoded;
 
     size_t leading_len = (size_t)key_bytes - encoded_len;
     for (size_t i = 0; i < leading_len; ++i) {

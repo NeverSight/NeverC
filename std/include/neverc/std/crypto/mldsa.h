@@ -4,8 +4,8 @@
 /*
  * ML-DSA — Module-Lattice-based Digital Signature Algorithm (NIST FIPS 204).
  *
- * Supports ML-DSA-44 (recommended), ML-DSA-65, and ML-DSA-87 parameter sets.
- * Post-quantum digital signatures with 128/192/256-bit security.
+ * Implements the ML-DSA-44 parameter set with 128-bit security. Size
+ * constants for ML-DSA-65 and ML-DSA-87 are reserved for future APIs.
  */
 
 #include <stdint.h>
@@ -37,6 +37,11 @@ typedef struct {
     uint8_t pk[NEVERC_MLDSA44_PK_SIZE];
 } neverc_mldsa44_pk_t;
 
+/*
+ * Generate a new ML-DSA-44 key pair.
+ * Returns 0 on success or -1 if an argument or the entropy source is invalid.
+ * On entropy failure, sk is securely cleared.
+ */
 int neverc_mldsa44_generate_key(neverc_mldsa44_sk_t *sk);
 int neverc_mldsa44_new_sk(neverc_mldsa44_sk_t *sk, const uint8_t seed[32]);
 

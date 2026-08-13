@@ -168,6 +168,11 @@ jobs:
       run: |
         CC="$CC" neverc/utils/ci/run-network-core-sanitizers.sh "$PWD/neverc"
 
+    - name: Run std core sanitizer gates
+      if: steps.tests.outcome == 'success'
+      run: |
+        CC="$CC" neverc/utils/ci/run-std-core-sanitizers.sh "$PWD/neverc"
+
     - name: Diagnose crashes
       if: steps.tests.outcome == 'failure'
       run: |
