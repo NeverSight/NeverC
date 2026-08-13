@@ -96,11 +96,14 @@ static int reader_finish_entry(neverc_tar_reader_t *r) {
 }
 
 int neverc_tar_reader_next(neverc_tar_reader_t *r, neverc_tar_header_t *hdr) {
-    if (!r || !hdr || (!r->data && r->len != 0) || r->pos > r->len)
+    if (!r || !hdr)
+        return -1;
+    memset(hdr, 0, sizeof(*hdr));
+    if ((!r->data && r->len != 0) || r->pos > r->len)
         return -1;
     if (r->ended) return 0;
     if (reader_finish_entry(r) != 0) return -1;
-    if (r->pos == r->len) return 0;
+    if (r->pos == r->len) return -1;
     if (r->len - r->pos < NEVERC_TAR_BLOCK_SIZE) return -1;
 
     const uint8_t *block = r->data + r->pos;
@@ -112,7 +115,15 @@ int neverc_tar_reader_next(neverc_tar_reader_t *r, neverc_tar_header_t *hdr) {
         }
     }
     if (all_zero) {
-        r->pos += NEVERC_TAR_BLOCK_SIZE;
+        size_t remaining = r->len - r->pos;
+        if (remaining < NEVERC_TAR_BLOCK_SIZE * 2U ||
+            remaining % NEVERC_TAR_BLOCK_SIZE != 0)
+            return -1;
+        for (size_t i = NEVERC_TAR_BLOCK_SIZE; i < remaining; i++) {
+            if (block[i] != 0)
+                return -1;
+        }
+        r->pos = r->len;
         r->ended = 1;
         return 0;
     }

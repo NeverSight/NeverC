@@ -365,6 +365,47 @@ static void test_malformed_headers(void) {
         &reader, archive, NEVERC_TAR_BLOCK_SIZE);
     check_int("reject truncated entry",
               neverc_tar_reader_next(&reader, &decoded), -1);
+
+    memcpy(archive, writer.data, sizeof(archive));
+    neverc_tar_reader_init(
+        &reader, archive, NEVERC_TAR_BLOCK_SIZE);
+    check_int("unterminated entry header",
+              neverc_tar_reader_next(&reader, &decoded), 1);
+    check_int("reject missing end blocks",
+              neverc_tar_reader_next(&reader, &decoded), -1);
+
+    neverc_tar_reader_init(
+        &reader, archive, NEVERC_TAR_BLOCK_SIZE * 2U);
+    check_int("single-zero entry header",
+              neverc_tar_reader_next(&reader, &decoded), 1);
+    check_int("reject single zero end block",
+              neverc_tar_reader_next(&reader, &decoded), -1);
+
+    memcpy(archive, writer.data, sizeof(archive));
+    archive[NEVERC_TAR_BLOCK_SIZE * 2U] = 1;
+    neverc_tar_reader_init(&reader, archive, sizeof(archive));
+    check_int("nonzero terminator entry header",
+              neverc_tar_reader_next(&reader, &decoded), 1);
+    check_int("reject nonzero second end block",
+              neverc_tar_reader_next(&reader, &decoded), -1);
+
+    uint8_t padded_archive[NEVERC_TAR_BLOCK_SIZE * 4U] = {0};
+    memcpy(padded_archive, writer.data, writer.len);
+    neverc_tar_reader_init(
+        &reader, padded_archive, sizeof(padded_archive));
+    check_int("padded archive entry header",
+              neverc_tar_reader_next(&reader, &decoded), 1);
+    check_int("accept zero record padding",
+              neverc_tar_reader_next(&reader, &decoded), 0);
+    check_int("stable archive end",
+              neverc_tar_reader_next(&reader, &decoded), 0);
+    padded_archive[sizeof(padded_archive) - 1U] = 1;
+    neverc_tar_reader_init(
+        &reader, padded_archive, sizeof(padded_archive));
+    check_int("trailing-data entry header",
+              neverc_tar_reader_next(&reader, &decoded), 1);
+    check_int("reject data after end blocks",
+              neverc_tar_reader_next(&reader, &decoded), -1);
     neverc_tar_writer_free(&writer);
 }
 

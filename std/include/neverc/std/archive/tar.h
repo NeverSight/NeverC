@@ -44,7 +44,8 @@ typedef struct {
 } neverc_tar_reader_t;
 
 void neverc_tar_reader_init(neverc_tar_reader_t *r, const uint8_t *data, size_t len);
-/* Returns 1 for an entry, 0 at end of archive, or -1 for malformed input. */
+/* Returns 1 for an entry, 0 after the required two zero end blocks, or -1 for
+ * malformed, unterminated, or non-zero trailing input. */
 int  neverc_tar_reader_next(neverc_tar_reader_t *r, neverc_tar_header_t *hdr);
 /* Reads the current entry incrementally; unread bytes are skipped by next(). */
 int  neverc_tar_reader_read(neverc_tar_reader_t *r, const neverc_tar_header_t *hdr,
