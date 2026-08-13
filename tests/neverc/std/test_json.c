@@ -3,6 +3,7 @@
  * Tests parse, marshal, query, constructors, edge cases.
  */
 #include "neverc/std/encoding/json.h"
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -92,6 +93,10 @@ static void test_parse_number(void) {
     ASSERT_NOT_NULL(v);
     ASSERT_DBL_EQ(neverc_json_number(v), 0.0025, 1e-10);
     neverc_json_free(v);
+
+    /* The DOM stores numbers as double, so values outside that finite range
+     * must fail instead of silently becoming infinity and marshaling as null. */
+    ASSERT_NULL(neverc_json_parse("1e9999", 6));
 }
 
 static void test_parse_string(void) {
@@ -123,6 +128,101 @@ static void test_parse_string(void) {
     ASSERT_NOT_NULL(v);
     ASSERT_STR_EQ(neverc_json_string(v), "");
     neverc_json_free(v);
+
+    static const char raw_newline[] = {'"', 'a', '\n', 'b', '"'};
+    static const char raw_nul[] = {'"', 'a', '\0', 'b', '"'};
+    ASSERT_NULL(neverc_json_parse(raw_newline, sizeof(raw_newline)));
+    ASSERT_NULL(neverc_json_parse(raw_nul, sizeof(raw_nul)));
+    ASSERT_NULL(neverc_json_parse("\"\\uDC00\"", 8));
+
+    static const char overlong[] = {'"', (char)0xC0, (char)0xAF, '"'};
+    static const char bad_cont[] = {
+        '"', (char)0xE2, (char)0x28, (char)0xA1, '"'
+    };
+    static const char utf8_surrogate[] = {
+        '"', (char)0xED, (char)0xA0, (char)0x80, '"'
+    };
+    static const char too_large[] = {
+        '"', (char)0xF4, (char)0x90, (char)0x80, (char)0x80, '"'
+    };
+    static const char truncated[] = {
+        '"', (char)0xF0, (char)0x9F, (char)0x98, '"'
+    };
+    ASSERT_NULL(neverc_json_parse(overlong, sizeof(overlong)));
+    ASSERT_NULL(neverc_json_parse(bad_cont, sizeof(bad_cont)));
+    ASSERT_NULL(neverc_json_parse(utf8_surrogate, sizeof(utf8_surrogate)));
+    ASSERT_NULL(neverc_json_parse(too_large, sizeof(too_large)));
+    ASSERT_NULL(neverc_json_parse(truncated, sizeof(truncated)));
+}
+
+static void test_embedded_nul(void) {
+    printf("[embedded_nul]\n");
+    const char *encoded = "\"a\\u0000b\"";
+    neverc_json_value_t *value =
+        neverc_json_parse(encoded, strlen(encoded));
+    ASSERT_NOT_NULL(value);
+    if (value) {
+        const char *bytes = neverc_json_string(value);
+        ASSERT_INT_EQ((int)neverc_json_string_len(value), 3);
+        ASSERT_TRUE(bytes && bytes[0] == 'a' && bytes[1] == '\0' &&
+                    bytes[2] == 'b');
+        char out[32];
+        int n = neverc_json_marshal(value, out, sizeof(out), NULL);
+        ASSERT_INT_EQ(n, (int)strlen(encoded));
+        ASSERT_TRUE(n > 0 &&
+                    memcmp(out, encoded, (size_t)n) == 0);
+        neverc_json_free(value);
+    }
+
+    static const char raw[] = {'x', '\0', 'y'};
+    value = neverc_json_new_string_n(raw, sizeof(raw));
+    ASSERT_NOT_NULL(value);
+    if (value) {
+        ASSERT_INT_EQ((int)neverc_json_string_len(value), 3);
+        char out[32];
+        int n = neverc_json_marshal(value, out, sizeof(out), NULL);
+        ASSERT_TRUE(n > 0);
+        neverc_json_value_t *roundtrip =
+            n > 0 ? neverc_json_parse(out, (size_t)n) : NULL;
+        ASSERT_NOT_NULL(roundtrip);
+        if (roundtrip) {
+            ASSERT_INT_EQ((int)neverc_json_string_len(roundtrip), 3);
+            ASSERT_TRUE(memcmp(neverc_json_string(roundtrip),
+                               raw, sizeof(raw)) == 0);
+            neverc_json_free(roundtrip);
+        }
+        neverc_json_free(value);
+    }
+
+    const char *object_text = "{\"a\\u0000b\":1,\"a\":2}";
+    neverc_json_value_t *object =
+        neverc_json_parse(object_text, strlen(object_text));
+    ASSERT_NOT_NULL(object);
+    if (object) {
+        static const char nul_key[] = {'a', '\0', 'b'};
+        ASSERT_INT_EQ(neverc_json_object_len(object), 2);
+        ASSERT_DBL_EQ(neverc_json_number(
+                          neverc_json_object_get_n(
+                              object, nul_key, sizeof(nul_key))),
+                      1.0, 1e-10);
+        ASSERT_DBL_EQ(neverc_json_number(
+                          neverc_json_object_get(object, "a")),
+                      2.0, 1e-10);
+        char out[64];
+        int n = neverc_json_marshal(object, out, sizeof(out), NULL);
+        ASSERT_TRUE(n > 0);
+        neverc_json_value_t *roundtrip =
+            n > 0 ? neverc_json_parse(out, (size_t)n) : NULL;
+        ASSERT_NOT_NULL(roundtrip);
+        if (roundtrip) {
+            ASSERT_DBL_EQ(neverc_json_number(
+                              neverc_json_object_get_n(
+                                  roundtrip, nul_key, sizeof(nul_key))),
+                          1.0, 1e-10);
+            neverc_json_free(roundtrip);
+        }
+        neverc_json_free(object);
+    }
 }
 
 static void test_parse_array(void) {
@@ -236,6 +336,10 @@ static void test_marshal_escapes(void) {
     if (n > 0) buf[n] = '\0';
     ASSERT_STR_EQ(buf, "\"\xE4\xBD\xA0\xE5\xA5\xBD\"");
     neverc_json_free(u);
+
+    static const char invalid_utf8[] = {(char)0xC2, 'x'};
+    ASSERT_NULL(neverc_json_new_string_n(
+        invalid_utf8, sizeof(invalid_utf8)));
 
     /* Roundtrip a string containing every escapeworthy + ordinary byte. */
     char all[256]; int k = 0;
@@ -498,6 +602,17 @@ static void test_invalid_api_inputs(void) {
     ASSERT_NULL(neverc_json_parse(NULL, 1));
     ASSERT_NULL(neverc_json_new_string(NULL));
     ASSERT_INT_EQ(neverc_json_marshal(NULL, out, sizeof(out), NULL), -1);
+    neverc_json_value_t *empty = neverc_json_new_null();
+    ASSERT_NOT_NULL(empty);
+    ASSERT_INT_EQ(neverc_json_marshal(
+                      empty, out, sizeof(out), "not-whitespace"), -1);
+    neverc_json_free(empty);
+
+    neverc_json_value_t *nonfinite = neverc_json_new_number(INFINITY);
+    ASSERT_NOT_NULL(nonfinite);
+    ASSERT_INT_EQ(neverc_json_marshal(
+                      nonfinite, out, sizeof(out), NULL), -1);
+    neverc_json_free(nonfinite);
 
     neverc_json_value_t *array = neverc_json_new_array();
     ASSERT_NOT_NULL(array);
@@ -517,12 +632,57 @@ static void test_invalid_api_inputs(void) {
     neverc_json_free(object);
 }
 
+static void test_tree_ownership(void) {
+    printf("[tree_ownership]\n");
+    neverc_json_value_t *root = neverc_json_new_array();
+    neverc_json_value_t *other = neverc_json_new_array();
+    neverc_json_value_t *child = neverc_json_new_object();
+    ASSERT_NOT_NULL(root);
+    ASSERT_NOT_NULL(other);
+    ASSERT_NOT_NULL(child);
+    if (!root || !other || !child) {
+        neverc_json_free(root);
+        neverc_json_free(other);
+        neverc_json_free(child);
+        return;
+    }
+
+    ASSERT_INT_EQ(neverc_json_array_append(root, child), 0);
+    ASSERT_INT_EQ(neverc_json_array_append(root, child), -1);
+    ASSERT_INT_EQ(neverc_json_array_append(other, child), -1);
+    ASSERT_INT_EQ(neverc_json_array_append(root, root), -1);
+    ASSERT_INT_EQ(neverc_json_object_set(child, "cycle", root), -1);
+
+    /* Freeing an owned child is a safe no-op; the parent still owns it. */
+    neverc_json_free(child);
+    ASSERT_INT_EQ(neverc_json_type(
+                      neverc_json_array_get(root, 0)),
+                  NEVERC_JSON_OBJECT);
+    neverc_json_free(other);
+    neverc_json_free(root);
+
+    neverc_json_value_t *object = neverc_json_new_object();
+    neverc_json_value_t *number = neverc_json_new_number(1.0);
+    ASSERT_NOT_NULL(object);
+    ASSERT_NOT_NULL(number);
+    if (!object || !number) {
+        neverc_json_free(object);
+        neverc_json_free(number);
+        return;
+    }
+    ASSERT_INT_EQ(neverc_json_object_set(object, "a", number), 0);
+    ASSERT_INT_EQ(neverc_json_object_set(object, "a", number), 0);
+    ASSERT_INT_EQ(neverc_json_object_set(object, "b", number), -1);
+    neverc_json_free(object);
+}
+
 int main(void) {
     printf("=== NeverC encoding/json Tests ===\n");
     test_parse_null();
     test_parse_bool();
     test_parse_number();
     test_parse_string();
+    test_embedded_nul();
     test_parse_array();
     test_parse_object();
     test_parse_complex();
@@ -537,6 +697,7 @@ int main(void) {
     test_large_and_dup_objects();
     test_keymap_hash_lengths();
     test_invalid_api_inputs();
+    test_tree_ownership();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

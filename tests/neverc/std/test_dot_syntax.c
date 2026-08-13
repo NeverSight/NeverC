@@ -822,6 +822,27 @@ static void test_json_dot_syntax(void) {
     int mlen = encoding.json.marshal(v, buf, sizeof(buf), NULL);
     CHECK("encoding.json.marshal", mlen > 0);
     encoding.json.free(v);
+
+    const char raw_string[3] = {'a', '\0', 'b'};
+    neverc_json_value_t *string_value =
+        encoding.json.new_string_n(raw_string, sizeof(raw_string));
+    CHECK("encoding.json.new_string_n", string_value != NULL);
+    CHECK("encoding.json.string_len",
+          encoding.json.string_len(string_value) == sizeof(raw_string));
+    encoding.json.free(string_value);
+
+    const char raw_key[3] = {'k', '\0', 'y'};
+    neverc_json_value_t *object = encoding.json.new_object();
+    neverc_json_value_t *number = encoding.json.new_number(7);
+    int set_result = encoding.json.object_set_n(
+        object, raw_key, sizeof(raw_key), number);
+    CHECK("encoding.json.object_set_n",
+          set_result == 0);
+    CHECK("encoding.json.object_get_n",
+          encoding.json.number(encoding.json.object_get_n(
+              object, raw_key, sizeof(raw_key))) == 7.0);
+    if (set_result != 0) encoding.json.free(number);
+    encoding.json.free(object);
 }
 
 static void test_binary_dot_syntax(void) {

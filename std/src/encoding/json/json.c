@@ -6,6 +6,7 @@
 #include "neverc/std/encoding/json.h"
 #include "neverc/std/strconv.h"
 #include <limits.h>
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -20,7 +21,10 @@ static neverc_json_value_t *alloc_val(neverc_json_type_t type) {
 static char *dup_str(const char *s, size_t len) {
     if ((!s && len > 0) || len == SIZE_MAX) return NULL;
     char *d = (char *)malloc(len + 1U);
-    if (d) { memcpy(d, s, len); d[len] = '\0'; }
+    if (d) {
+        if (len > 0) memcpy(d, s, len);
+        d[len] = '\0';
+    }
     return d;
 }
 
@@ -113,6 +117,44 @@ static int encode_utf8(uint32_t cp, char *out) {
     return 0;
 }
 
+static int valid_utf8(const char *s, size_t len) {
+    const unsigned char *p = (const unsigned char *)s;
+    size_t i = 0;
+    while (i < len) {
+        unsigned char c0 = p[i++];
+        if (c0 < 0x80U) continue;
+        if (c0 >= 0xC2U && c0 <= 0xDFU) {
+            if (i >= len || (p[i] & 0xC0U) != 0x80U) return 0;
+            i++;
+            continue;
+        }
+        if (c0 >= 0xE0U && c0 <= 0xEFU) {
+            if (len - i < 2U) return 0;
+            unsigned char c1 = p[i], c2 = p[i + 1U];
+            if ((c2 & 0xC0U) != 0x80U ||
+                (c0 == 0xE0U ? (c1 < 0xA0U || c1 > 0xBFU) :
+                 c0 == 0xEDU ? (c1 < 0x80U || c1 > 0x9FU) :
+                               ((c1 & 0xC0U) != 0x80U)))
+                return 0;
+            i += 2U;
+            continue;
+        }
+        if (c0 >= 0xF0U && c0 <= 0xF4U) {
+            if (len - i < 3U) return 0;
+            unsigned char c1 = p[i], c2 = p[i + 1U], c3 = p[i + 2U];
+            if ((c2 & 0xC0U) != 0x80U || (c3 & 0xC0U) != 0x80U ||
+                (c0 == 0xF0U ? (c1 < 0x90U || c1 > 0xBFU) :
+                 c0 == 0xF4U ? (c1 < 0x80U || c1 > 0x8FU) :
+                               ((c1 & 0xC0U) != 0x80U)))
+                return 0;
+            i += 3U;
+            continue;
+        }
+        return 0;
+    }
+    return 1;
+}
+
 /* Growable byte buffer that starts in a caller-provided stack array and spills
  * to the heap only when a string outgrows it. Replaces the old fixed 64 KiB
  * stack buffer, which both rejected any longer string (valid per RFC 8259) and
@@ -163,6 +205,13 @@ static neverc_json_value_t *parse_string(parser_t *p) {
         const char *stop = bs ? bs : q;
         size_t run = (size_t)(stop - base);
         if (run) {
+            for (size_t i = 0; i < run; i++) {
+                if ((unsigned char)base[i] < 0x20U) {
+                    sb_free(&b);
+                    return NULL;
+                }
+            }
+            if (!valid_utf8(base, run)) { sb_free(&b); return NULL; }
             if (sb_reserve(&b, run) < 0) { sb_free(&b); return NULL; }
             memcpy(b.p + b.len, base, run);
             b.len += run;
@@ -204,6 +253,9 @@ static neverc_json_value_t *parse_string(parser_t *p) {
                     }
                     if (lo < 0xDC00 || lo > 0xDFFF) { sb_free(&b); return NULL; }
                     cp = 0x10000 + ((cp - 0xD800) << 10) + (lo - 0xDC00);
+                } else if (cp >= 0xDC00 && cp <= 0xDFFF) {
+                    sb_free(&b);
+                    return NULL;
                 }
                 n = encode_utf8(cp, out);
                 break;
@@ -218,6 +270,7 @@ static neverc_json_value_t *parse_string(parser_t *p) {
     neverc_json_value_t *v = alloc_val(NEVERC_JSON_STRING);
     if (!v) { sb_free(&b); return NULL; }
     v->u.str_val = dup_str(b.p, b.len);
+    v->string_len = b.len;
     sb_free(&b);
     if (!v->u.str_val) { free(v); return NULL; }
     return v;
@@ -276,6 +329,7 @@ static neverc_json_value_t *parse_number(parser_t *p) {
     const char *s = p->src + start;
     size_t slen = p->pos - start;
     char stackbuf[64];
+    if (slen == SIZE_MAX) return NULL;
     char *tok = (slen < sizeof stackbuf) ? stackbuf : (char *)malloc(slen + 1);
     if (!tok) return NULL;
     memcpy(tok, s, slen);
@@ -283,7 +337,7 @@ static neverc_json_value_t *parse_number(parser_t *p) {
     double val;
     int rc = neverc_strconv_parse_float(tok, &val);
     if (tok != stackbuf) free(tok);
-    if (rc != NEVERC_STRCONV_OK && rc != NEVERC_STRCONV_ERR_RANGE) return NULL;
+    if (rc != NEVERC_STRCONV_OK) return NULL;
 
     return neverc_json_new_number(val);
 }
@@ -335,7 +389,7 @@ typedef struct {
  * this index back into the O(n^2) duplicate scan it exists to prevent. wyhash's
  * avalanche scatters keys across the table far better (and folds 8 bytes per
  * step, so long keys hash faster too). The stored hash only pre-filters before
- * the strcmp re-verify in km_lookup, so swapping the function cannot change
+ * the length/memcmp re-verify in km_lookup, so swapping the function cannot change
  * which keys are treated as duplicates — semantics are identical. memcpy reads
  * avoid unaligned-access UB and nci_wymix has a portable 64x64 fallback when
  * __int128 is unavailable, so the result is identical on Windows / Linux /
@@ -367,9 +421,8 @@ static inline uint64_t jkm_wymix(uint64_t a, uint64_t b) {
 #define JKM_WY_S1 0xe7037ed1a0b428dbULL
 #define JKM_WY_S2 0x8ebc6af09c88c6e3ULL
 
-static uint32_t km_hash(const char *s) {
+static uint32_t km_hash(const char *s, size_t len) {
     const uint8_t *p = (const uint8_t *)s;
-    size_t len = strlen(s);             /* same byte range FNV-1a hashed: [0,len) */
     uint64_t seed = JKM_WY_S0;
     uint64_t a, b;
 
@@ -420,12 +473,17 @@ static void km_free(keymap_t *km) { free(km->hashes); free(km->slots); }
 
 /* Returns the existing pair index for key, or -1 if absent. */
 static int km_lookup(const keymap_t *km, const neverc_json_value_t *obj,
-                     const char *key, uint32_t hash) {
+                     const char *key, size_t key_len, uint32_t hash) {
     int mask = km->cap - 1;
     int i = (int)(hash & (uint32_t)mask);
     while (km->slots[i] != -1) {
-        if (km->hashes[i] == hash &&
-            strcmp(obj->u.obj.pairs[km->slots[i]].key, key) == 0)
+        const neverc_json_pair_t *pair =
+            &obj->u.obj.pairs[km->slots[i]];
+        size_t pair_len = pair->key_len;
+        if (pair_len == 0 && pair->key && pair->key[0] != '\0')
+            pair_len = strlen(pair->key);
+        if (km->hashes[i] == hash && pair_len == key_len &&
+            (key_len == 0 || memcmp(pair->key, key, key_len) == 0))
             return km->slots[i];
         i = (i + 1) & mask;
     }
@@ -433,7 +491,11 @@ static int km_lookup(const keymap_t *km, const neverc_json_value_t *obj,
 }
 
 static int km_grow(keymap_t *km) {
+    if (km->cap > INT_MAX / 2) return -1;
     int nc = km->cap * 2, mask = nc - 1;
+    if ((size_t)nc > SIZE_MAX / sizeof(uint32_t) ||
+        (size_t)nc > SIZE_MAX / sizeof(int))
+        return -1;
     uint32_t *nh = (uint32_t *)calloc((size_t)nc, sizeof(uint32_t));
     int *ns = (int *)malloc((size_t)nc * sizeof(int));
     if (!nh || !ns) { free(nh); free(ns); return -1; }
@@ -450,7 +512,8 @@ static int km_grow(keymap_t *km) {
 }
 
 static int km_insert(keymap_t *km, uint32_t hash, int pair_idx) {
-    if ((km->cnt + 1) * 10 >= km->cap * 7) {     /* keep load factor < 0.7 */
+    if ((int64_t)(km->cnt + 1) * 10 >=
+        (int64_t)km->cap * 7) {                  /* keep load factor < 0.7 */
         if (km_grow(km) < 0) return -1;
     }
     int mask = km->cap - 1;
@@ -462,10 +525,13 @@ static int km_insert(keymap_t *km, uint32_t hash, int pair_idx) {
 
 /* Append a pair, taking ownership of key_owned (no extra dup). */
 static int json_obj_append(neverc_json_value_t *obj, char *key_owned,
-                           neverc_json_value_t *val) {
+                           size_t key_len, neverc_json_value_t *val) {
     if (obj->u.obj.len >= obj->u.obj.cap) {
+        if (obj->u.obj.cap > INT_MAX / 2) return -1;
         int nc = obj->u.obj.cap * 2;
         if (nc < 4) nc = 4;
+        if ((size_t)nc > SIZE_MAX / sizeof(neverc_json_pair_t))
+            return -1;
         neverc_json_pair_t *np = (neverc_json_pair_t *)realloc(
             obj->u.obj.pairs, (size_t)nc * sizeof(neverc_json_pair_t));
         if (!np) return -1;
@@ -474,6 +540,8 @@ static int json_obj_append(neverc_json_value_t *obj, char *key_owned,
     }
     obj->u.obj.pairs[obj->u.obj.len].key = key_owned;
     obj->u.obj.pairs[obj->u.obj.len].value = val;
+    obj->u.obj.pairs[obj->u.obj.len].key_len = key_len;
+    val->parent = obj;
     obj->u.obj.len++;
     return 0;
 }
@@ -496,6 +564,7 @@ static neverc_json_value_t *parse_object(parser_t *p) {
         neverc_json_value_t *ks = parse_string(p);
         if (!ks) goto err;
         char *key = ks->u.str_val;
+        size_t key_len = ks->string_len;
         ks->u.str_val = NULL;
         neverc_json_free(ks);
 
@@ -505,14 +574,16 @@ static neverc_json_value_t *parse_object(parser_t *p) {
         if (!val) { free(key); goto err; }
 
         if (have_km) {
-            uint32_t h = km_hash(key);
-            int ex = km_lookup(&km, obj, key, h);
+            uint32_t h = km_hash(key, key_len);
+            int ex = km_lookup(&km, obj, key, key_len, h);
             if (ex >= 0) {                       /* duplicate key: last wins */
+                obj->u.obj.pairs[ex].value->parent = NULL;
                 neverc_json_free(obj->u.obj.pairs[ex].value);
                 obj->u.obj.pairs[ex].value = val;
+                val->parent = obj;
                 free(key);
             } else {
-                if (json_obj_append(obj, key, val) < 0 ||
+                if (json_obj_append(obj, key, key_len, val) < 0 ||
                     km_insert(&km, h, obj->u.obj.len - 1) < 0) {
                     /* on failure the pair (if appended) is owned by obj/free */
                     if (obj->u.obj.len == 0 ||
@@ -523,7 +594,7 @@ static neverc_json_value_t *parse_object(parser_t *p) {
                 }
             }
         } else {                                  /* OOM fallback: correct, O(n^2) */
-            if (neverc_json_object_set(obj, key, val) < 0) {
+            if (neverc_json_object_set_n(obj, key, key_len, val) < 0) {
                 free(key); neverc_json_free(val); goto err;
             }
             free(key);
@@ -576,21 +647,26 @@ neverc_json_value_t *neverc_json_parse(const char *text, size_t len) {
     return v;
 }
 
-void neverc_json_free(neverc_json_value_t *v) {
+static void json_free_owned(neverc_json_value_t *v) {
     if (!v) return;
     switch (v->type) {
         case NEVERC_JSON_STRING:
             free(v->u.str_val);
             break;
         case NEVERC_JSON_ARRAY:
-            for (int i = 0; i < v->u.arr.len; i++)
-                neverc_json_free(v->u.arr.items[i]);
+            for (int i = 0; i < v->u.arr.len; i++) {
+                if (v->u.arr.items[i])
+                    v->u.arr.items[i]->parent = NULL;
+                json_free_owned(v->u.arr.items[i]);
+            }
             free(v->u.arr.items);
             break;
         case NEVERC_JSON_OBJECT:
             for (int i = 0; i < v->u.obj.len; i++) {
                 free(v->u.obj.pairs[i].key);
-                neverc_json_free(v->u.obj.pairs[i].value);
+                if (v->u.obj.pairs[i].value)
+                    v->u.obj.pairs[i].value->parent = NULL;
+                json_free_owned(v->u.obj.pairs[i].value);
             }
             free(v->u.obj.pairs);
             break;
@@ -598,6 +674,11 @@ void neverc_json_free(neverc_json_value_t *v) {
             break;
     }
     free(v);
+}
+
+void neverc_json_free(neverc_json_value_t *v) {
+    if (!v || v->parent) return;
+    json_free_owned(v);
 }
 
 /* ---- marshal ---- */
@@ -636,15 +717,16 @@ static int json_needs_escape(unsigned char c) {
     return c < 0x20 || c == '"' || c == '\\';
 }
 
-static int marshal_string(marshal_t *m, const char *s) {
-    if (!s) return -1;
+static int marshal_string(marshal_t *m, const char *s, size_t len) {
+    if (!s || !valid_utf8(s, len)) return -1;
     if (mw_char(m, '"') < 0) return -1;
     const char *p = s;
-    while (*p) {
+    const char *end = s + len;
+    while (p < end) {
         const char *run = p;
-        while (*p && !json_needs_escape((unsigned char)*p)) p++;
+        while (p < end && !json_needs_escape((unsigned char)*p)) p++;
         if (p > run && mw(m, run, (size_t)(p - run)) < 0) return -1;
-        if (!*p) break;
+        if (p == end) break;
         unsigned char c = (unsigned char)*p++;
         switch (c) {
             case '"':  if (mw(m, "\\\"", 2) < 0) return -1; break;
@@ -667,14 +749,12 @@ static int marshal_string(marshal_t *m, const char *s) {
 }
 
 static int marshal_number(marshal_t *m, double val) {
-    /* NaN and +/-Inf are not valid JSON numbers -> emit null (per the spec). */
-    if (val != val) return mw(m, "null", 4);        /* NaN */
-    if (val - val != 0.0) return mw(m, "null", 4);  /* +/-Inf */
+    if (!isfinite(val)) return -1;
 
     /* Shortest correctly-rounded form (round-trips, matches encoding/json). */
     char tmp[40];
     int n = neverc_strconv_format_float(val, 'g', -1, tmp, sizeof tmp);
-    if (n < 0) return mw(m, "null", 4);
+    if (n < 0) return -1;
     return mw(m, tmp, (size_t)n);
 }
 
@@ -688,8 +768,17 @@ static int marshal_value(marshal_t *m, const neverc_json_value_t *v) {
         case NEVERC_JSON_NUMBER:
             return marshal_number(m, v->u.num_val);
         case NEVERC_JSON_STRING:
-            return marshal_string(m, v->u.str_val);
+            return marshal_string(m, v->u.str_val,
+                                  v->string_len == 0 && v->u.str_val &&
+                                          v->u.str_val[0] != '\0'
+                                      ? strlen(v->u.str_val)
+                                      : v->string_len);
         case NEVERC_JSON_ARRAY: {
+            if (v->u.arr.len < 0 || v->u.arr.cap < 0 ||
+                v->u.arr.len > v->u.arr.cap ||
+                (v->u.arr.len > 0 && !v->u.arr.items) ||
+                m->depth >= NCI_JSON_MAX_DEPTH)
+                return -1;
             if (mw_char(m, '[') < 0) return -1;
             m->depth++;
             for (int i = 0; i < v->u.arr.len; i++) {
@@ -702,12 +791,21 @@ static int marshal_value(marshal_t *m, const neverc_json_value_t *v) {
             return mw_char(m, ']');
         }
         case NEVERC_JSON_OBJECT: {
+            if (v->u.obj.len < 0 || v->u.obj.cap < 0 ||
+                v->u.obj.len > v->u.obj.cap ||
+                (v->u.obj.len > 0 && !v->u.obj.pairs) ||
+                m->depth >= NCI_JSON_MAX_DEPTH)
+                return -1;
             if (mw_char(m, '{') < 0) return -1;
             m->depth++;
             for (int i = 0; i < v->u.obj.len; i++) {
                 if (i > 0) { if (mw_char(m, ',') < 0) return -1; }
                 if (m->indent) { if (mw_indent(m) < 0) return -1; }
-                if (marshal_string(m, v->u.obj.pairs[i].key) < 0) return -1;
+                const neverc_json_pair_t *pair = &v->u.obj.pairs[i];
+                size_t key_len = pair->key_len;
+                if (key_len == 0 && pair->key && pair->key[0] != '\0')
+                    key_len = strlen(pair->key);
+                if (marshal_string(m, pair->key, key_len) < 0) return -1;
                 if (mw_char(m, ':') < 0) return -1;
                 if (m->indent) { if (mw_char(m, ' ') < 0) return -1; }
                 if (marshal_value(m, v->u.obj.pairs[i].value) < 0) return -1;
@@ -724,6 +822,13 @@ int neverc_json_marshal(const neverc_json_value_t *v,
                         char *dst, size_t dst_len,
                         const char *indent) {
     if (!v || (!dst && dst_len > 0)) return -1;
+    if (indent) {
+        for (const unsigned char *p = (const unsigned char *)indent;
+             *p; p++) {
+            if (*p != ' ' && *p != '\t' && *p != '\r' && *p != '\n')
+                return -1;
+        }
+    }
     marshal_t m = { .buf = dst, .cap = dst_len, .pos = 0,
                     .indent = indent, .depth = 0 };
     if (marshal_value(&m, v) < 0) return -1;
@@ -748,6 +853,13 @@ const char *neverc_json_string(const neverc_json_value_t *v) {
     return (v && v->type == NEVERC_JSON_STRING) ? v->u.str_val : "";
 }
 
+size_t neverc_json_string_len(const neverc_json_value_t *v) {
+    if (!v || v->type != NEVERC_JSON_STRING || !v->u.str_val) return 0;
+    if (v->string_len == 0 && v->u.str_val[0] != '\0')
+        return strlen(v->u.str_val);
+    return v->string_len;
+}
+
 int neverc_json_array_len(const neverc_json_value_t *v) {
     return (v && v->type == NEVERC_JSON_ARRAY) ? v->u.arr.len : 0;
 }
@@ -762,13 +874,25 @@ int neverc_json_object_len(const neverc_json_value_t *v) {
     return (v && v->type == NEVERC_JSON_OBJECT) ? v->u.obj.len : 0;
 }
 
-neverc_json_value_t *neverc_json_object_get(const neverc_json_value_t *v, const char *key) {
-    if (!v || v->type != NEVERC_JSON_OBJECT || !key) return NULL;
-    for (int i = 0; i < v->u.obj.len; i++)
-        if (v->u.obj.pairs[i].key &&
-            strcmp(v->u.obj.pairs[i].key, key) == 0)
-            return v->u.obj.pairs[i].value;
+neverc_json_value_t *neverc_json_object_get_n(
+    const neverc_json_value_t *v, const char *key, size_t key_len) {
+    if (!v || v->type != NEVERC_JSON_OBJECT ||
+        (!key && key_len > 0)) return NULL;
+    for (int i = 0; i < v->u.obj.len; i++) {
+        const neverc_json_pair_t *pair = &v->u.obj.pairs[i];
+        size_t pair_len = pair->key_len;
+        if (pair_len == 0 && pair->key && pair->key[0] != '\0')
+            pair_len = strlen(pair->key);
+        if (pair->key && pair_len == key_len &&
+            (key_len == 0 || memcmp(pair->key, key, key_len) == 0))
+            return pair->value;
+    }
     return NULL;
+}
+
+neverc_json_value_t *neverc_json_object_get(
+    const neverc_json_value_t *v, const char *key) {
+    return key ? neverc_json_object_get_n(v, key, strlen(key)) : NULL;
 }
 
 /* ---- constructors ---- */
@@ -787,14 +911,19 @@ neverc_json_value_t *neverc_json_new_number(double val) {
     return v;
 }
 
-neverc_json_value_t *neverc_json_new_string(const char *s) {
-    if (!s) return NULL;
+neverc_json_value_t *neverc_json_new_string_n(const char *s, size_t len) {
+    if ((!s && len > 0) || len == SIZE_MAX || !valid_utf8(s, len)) return NULL;
     neverc_json_value_t *v = alloc_val(NEVERC_JSON_STRING);
     if (v) {
-        v->u.str_val = dup_str(s, strlen(s));
+        v->u.str_val = dup_str(s, len);
         if (!v->u.str_val) { free(v); return NULL; }
+        v->string_len = len;
     }
     return v;
+}
+
+neverc_json_value_t *neverc_json_new_string(const char *s) {
+    return s ? neverc_json_new_string_n(s, strlen(s)) : NULL;
 }
 
 neverc_json_value_t *neverc_json_new_array(void) {
@@ -817,51 +946,86 @@ neverc_json_value_t *neverc_json_new_object(void) {
     return v;
 }
 
+static int json_would_create_cycle(const neverc_json_value_t *container,
+                                   const neverc_json_value_t *child) {
+    for (const neverc_json_value_t *p = container; p; p = p->parent)
+        if (p == child) return 1;
+    return 0;
+}
+
 int neverc_json_array_append(neverc_json_value_t *arr, neverc_json_value_t *val) {
     if (!arr || arr->type != NEVERC_JSON_ARRAY || !val ||
+        val->parent || json_would_create_cycle(arr, val) ||
         arr->u.arr.len < 0 || arr->u.arr.cap < 0 ||
         arr->u.arr.len > arr->u.arr.cap ||
         (arr->u.arr.cap > 0 && !arr->u.arr.items)) return -1;
     if (arr->u.arr.len >= arr->u.arr.cap) {
         if (arr->u.arr.cap > INT_MAX / 2) return -1;
         int nc = arr->u.arr.cap == 0 ? 8 : arr->u.arr.cap * 2;
+        if ((size_t)nc > SIZE_MAX / sizeof(neverc_json_value_t *))
+            return -1;
         neverc_json_value_t **ni = (neverc_json_value_t **)realloc(arr->u.arr.items, (size_t)nc * sizeof(neverc_json_value_t *));
         if (!ni) return -1;
         arr->u.arr.items = ni;
         arr->u.arr.cap = nc;
     }
     arr->u.arr.items[arr->u.arr.len++] = val;
+    val->parent = arr;
     return 0;
 }
 
-int neverc_json_object_set(neverc_json_value_t *obj, const char *key, neverc_json_value_t *val) {
-    if (!obj || obj->type != NEVERC_JSON_OBJECT || !key || !val ||
+int neverc_json_object_set_n(neverc_json_value_t *obj,
+                             const char *key, size_t key_len,
+                             neverc_json_value_t *val) {
+    if (!obj || obj->type != NEVERC_JSON_OBJECT ||
+        (!key && key_len > 0) || key_len == SIZE_MAX || !val ||
+        !valid_utf8(key, key_len) ||
         obj->u.obj.len < 0 || obj->u.obj.cap < 0 ||
         obj->u.obj.len > obj->u.obj.cap ||
         (obj->u.obj.cap > 0 && !obj->u.obj.pairs)) return -1;
     /* overwrite existing key */
     for (int i = 0; i < obj->u.obj.len; i++) {
-        if (obj->u.obj.pairs[i].key &&
-            strcmp(obj->u.obj.pairs[i].key, key) == 0) {
-            if (obj->u.obj.pairs[i].value == val) return 0;
-            neverc_json_free(obj->u.obj.pairs[i].value);
-            obj->u.obj.pairs[i].value = val;
+        neverc_json_pair_t *pair = &obj->u.obj.pairs[i];
+        size_t pair_len = pair->key_len;
+        if (pair_len == 0 && pair->key && pair->key[0] != '\0')
+            pair_len = strlen(pair->key);
+        if (pair->key && pair_len == key_len &&
+            (key_len == 0 || memcmp(pair->key, key, key_len) == 0)) {
+            if (pair->value == val) return 0;
+            if (val->parent || json_would_create_cycle(obj, val)) return -1;
+            if (pair->value) {
+                pair->value->parent = NULL;
+                neverc_json_free(pair->value);
+            }
+            pair->value = val;
+            val->parent = obj;
             return 0;
         }
     }
+    if (val->parent || json_would_create_cycle(obj, val)) return -1;
     if (obj->u.obj.len >= obj->u.obj.cap) {
         if (obj->u.obj.cap > INT_MAX / 2) return -1;
         int nc = obj->u.obj.cap == 0 ? 8 : obj->u.obj.cap * 2;
+        if ((size_t)nc > SIZE_MAX / sizeof(neverc_json_pair_t))
+            return -1;
         neverc_json_pair_t *np = (neverc_json_pair_t *)realloc(obj->u.obj.pairs, (size_t)nc * sizeof(neverc_json_pair_t));
         if (!np) return -1;
         obj->u.obj.pairs = np;
         obj->u.obj.cap = nc;
     }
-    obj->u.obj.pairs[obj->u.obj.len].key = dup_str(key, strlen(key));
+    char *owned_key = dup_str(key, key_len);
+    if (!owned_key) return -1;
+    obj->u.obj.pairs[obj->u.obj.len].key = owned_key;
     obj->u.obj.pairs[obj->u.obj.len].value = val;
-    if (!obj->u.obj.pairs[obj->u.obj.len].key) return -1;
+    obj->u.obj.pairs[obj->u.obj.len].key_len = key_len;
     obj->u.obj.len++;
+    val->parent = obj;
     return 0;
+}
+
+int neverc_json_object_set(neverc_json_value_t *obj, const char *key,
+                           neverc_json_value_t *val) {
+    return key ? neverc_json_object_set_n(obj, key, strlen(key), val) : -1;
 }
 
 int neverc_json_valid(const char *text, size_t len) {

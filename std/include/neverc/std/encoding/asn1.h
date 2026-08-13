@@ -50,7 +50,7 @@ typedef struct {
 int neverc_asn1_decode_element(const uint8_t *data, size_t len,
                                neverc_asn1_element_t *elem);
 
-/* Decode integer (returns bytes needed; sets val for small integers) */
+/* Decode primitive DER values. Returns 0 on success, -1 on invalid input. */
 int neverc_asn1_decode_int64(const neverc_asn1_element_t *elem, int64_t *val);
 int neverc_asn1_decode_bool(const neverc_asn1_element_t *elem, int *val);
 
