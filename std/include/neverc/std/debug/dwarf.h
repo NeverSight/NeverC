@@ -60,10 +60,14 @@ extern "C" {
 
 /* Forms (DW_FORM_*) */
 #define NEVERC_DW_FORM_addr       0x01
+#define NEVERC_DW_FORM_block2     0x03
+#define NEVERC_DW_FORM_block4     0x04
 #define NEVERC_DW_FORM_data2      0x05
 #define NEVERC_DW_FORM_data4      0x06
 #define NEVERC_DW_FORM_data8      0x07
 #define NEVERC_DW_FORM_string     0x08
+#define NEVERC_DW_FORM_block      0x09
+#define NEVERC_DW_FORM_block1     0x0a
 #define NEVERC_DW_FORM_data1      0x0b
 #define NEVERC_DW_FORM_flag       0x0c
 #define NEVERC_DW_FORM_strp       0x0e
@@ -77,10 +81,35 @@ extern "C" {
 #define NEVERC_DW_FORM_ref1       0x11
 #define NEVERC_DW_FORM_ref2       0x12
 #define NEVERC_DW_FORM_ref8       0x14
+#define NEVERC_DW_FORM_ref_udata  0x15
+#define NEVERC_DW_FORM_indirect   0x16
 #define NEVERC_DW_FORM_line_strp  0x1f
 #define NEVERC_DW_FORM_strx       0x1a
 #define NEVERC_DW_FORM_addrx      0x1b
+#define NEVERC_DW_FORM_ref_sup4   0x1c
+#define NEVERC_DW_FORM_strp_sup   0x1d
+#define NEVERC_DW_FORM_data16     0x1e
+#define NEVERC_DW_FORM_ref_sig8   0x20
 #define NEVERC_DW_FORM_implicit_const 0x21
+#define NEVERC_DW_FORM_loclistx   0x22
+#define NEVERC_DW_FORM_rnglistx   0x23
+#define NEVERC_DW_FORM_ref_sup8   0x24
+#define NEVERC_DW_FORM_strx1      0x25
+#define NEVERC_DW_FORM_strx2      0x26
+#define NEVERC_DW_FORM_strx3      0x27
+#define NEVERC_DW_FORM_strx4      0x28
+#define NEVERC_DW_FORM_addrx1     0x29
+#define NEVERC_DW_FORM_addrx2     0x2a
+#define NEVERC_DW_FORM_addrx3     0x2b
+#define NEVERC_DW_FORM_addrx4     0x2c
+
+/* DWARF v5 unit types (DW_UT_*) */
+#define NEVERC_DW_UT_compile       0x01
+#define NEVERC_DW_UT_type          0x02
+#define NEVERC_DW_UT_partial       0x03
+#define NEVERC_DW_UT_skeleton      0x04
+#define NEVERC_DW_UT_split_compile 0x05
+#define NEVERC_DW_UT_split_type    0x06
 
 /* ===== Types ===== */
 
@@ -122,7 +151,12 @@ typedef struct {
     uint16_t version;
     uint64_t abbrev_offset;
     uint8_t  address_size;
+    uint8_t  unit_type;
     int      is_64bit;
+    size_t   header_size;
+    uint64_t type_signature;
+    uint64_t type_offset;
+    uint64_t dwo_id;
 } neverc_dwarf_comp_unit_header_t;
 
 typedef struct {

@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <limits.h>
 
 static int tests_run = 0, tests_passed = 0, tests_failed = 0;
 
@@ -183,6 +184,72 @@ static void test_elf_invalid(void) {
     neverc_elf_file_t f;
     CHECK("open_fails_garbage", neverc_elf_open(&f, garbage, sizeof(garbage)) < 0);
     CHECK("open_fails_null", neverc_elf_open(&f, NULL, 0) < 0);
+    CHECK("is_valid_rejects_null",
+          !neverc_elf_is_valid(NULL, 16));
+    CHECK("open_rejects_null_output",
+          neverc_elf_open(NULL, garbage, sizeof(garbage)) < 0);
+
+    uint8_t bad_encoding[64] = {0};
+    bad_encoding[0] = 0x7f;
+    bad_encoding[1] = 'E';
+    bad_encoding[2] = 'L';
+    bad_encoding[3] = 'F';
+    bad_encoding[4] = NEVERC_ELFCLASS64;
+    bad_encoding[5] = 3;
+    bad_encoding[6] = 1;
+    CHECK("unknown data encoding rejected",
+          neverc_elf_open(&f, bad_encoding, sizeof(bad_encoding)) < 0);
+
+    uint8_t elf32[52] = {0};
+    elf32[0] = 0x7f;
+    elf32[1] = 'E';
+    elf32[2] = 'L';
+    elf32[3] = 'F';
+    elf32[4] = NEVERC_ELFCLASS32;
+    elf32[5] = NEVERC_ELFDATA2LSB;
+    elf32[6] = 1;
+    elf32[16] = NEVERC_ET_REL;
+    elf32[20] = 1;
+    elf32[40] = 52;
+    CHECK("minimal ELF32 header accepted",
+          neverc_elf_open(&f, elf32, sizeof(elf32)) == 0);
+    neverc_elf_close(&f);
+
+    uint8_t *out = (uint8_t *)1;
+    size_t out_len = 123;
+    CHECK("section data validates outputs",
+          neverc_elf_section_data(&f, NULL, NULL, &out_len) < 0);
+    CHECK("empty section data succeeds",
+          neverc_elf_section_data(&f, NULL, &out, &out_len) == 0 &&
+          out == NULL && out_len == 0);
+}
+
+static void test_elf_symbol_count_overflow(void) {
+    uint8_t placeholder = 0;
+    neverc_elf_section_t sections[2];
+    memset(sections, 0, sizeof(sections));
+    sections[0].type = NEVERC_SHT_SYMTAB;
+    sections[0].link = 1;
+    sections[0].size = ((uint64_t)INT_MAX + 2) * 24;
+    sections[0].entsize = 24;
+    sections[1].type = NEVERC_SHT_STRTAB;
+    sections[1].size = 1;
+
+    neverc_elf_file_t f;
+    memset(&f, 0, sizeof(f));
+    f.data = &placeholder;
+    f.data_len = SIZE_MAX;
+    f.header.class_ = NEVERC_ELFCLASS64;
+    f.header.data = NEVERC_ELFDATA2LSB;
+    f.sections = sections;
+    f.section_count = 2;
+
+    neverc_elf_symbol_t *symbols = (neverc_elf_symbol_t *)1;
+    int count = 123;
+    CHECK("oversized symbol count rejected",
+          neverc_elf_symbols(&f, &symbols, &count) < 0);
+    CHECK("symbol outputs cleared",
+          symbols == NULL && count == 0);
 }
 
 static void test_elf_self_binary(void) {
@@ -201,6 +268,7 @@ int main(void) {
 
     test_elf64_parse();
     test_elf_invalid();
+    test_elf_symbol_count_overflow();
     test_elf_self_binary();
 
     printf("\n%d/%d tests passed", tests_passed, tests_run);

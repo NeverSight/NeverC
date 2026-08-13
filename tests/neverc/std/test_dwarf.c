@@ -176,6 +176,8 @@ typedef struct {
     uint64_t cu_low_pc;
     uint64_t cu_high_pc;
     int cu_high_pc_is_offset;
+    uint64_t cu_byte_size;
+    uint64_t cu_encoding;
     const char *func_name;
     uint64_t func_low_pc;
 } walk_ctx_t;
@@ -190,10 +192,18 @@ static int walk_cb(const neverc_dwarf_entry_t *e, void *user) {
         ctx->cu_low_pc = e->low_pc;
         ctx->cu_high_pc = e->high_pc;
         ctx->cu_high_pc_is_offset = e->high_pc_is_offset;
+        ctx->cu_byte_size = e->byte_size;
+        ctx->cu_encoding = e->encoding;
     } else if (e->tag == NEVERC_DW_TAG_subprogram) {
         ctx->func_name = e->name;
         ctx->func_low_pc = e->low_pc;
     }
+    return 0;
+}
+
+static int ignore_entry_cb(const neverc_dwarf_entry_t *e, void *user) {
+    (void)e;
+    (void)user;
     return 0;
 }
 
@@ -253,7 +263,8 @@ static void test_dwarf_parse(void) {
 
 static void test_dwarf_empty(void) {
     neverc_dwarf_data_t d;
-    neverc_dwarf_init(&d, NULL, 0, NULL, 0, NULL, 0);
+    CHECK("empty_init_ok",
+          neverc_dwarf_init(&d, NULL, 0, NULL, 0, NULL, 0) == 0);
 
     walk_ctx_t ctx;
     memset(&ctx, 0, sizeof(ctx));
@@ -264,11 +275,197 @@ static void test_dwarf_empty(void) {
     neverc_dwarf_free(&d);
 }
 
+static void build_v4_header(uint8_t *buf, uint32_t unit_length) {
+    put32(buf, unit_length);
+    put16(buf + 4, 4);
+    put32(buf + 6, 0);
+    buf[10] = 8;
+}
+
+static void build_v5_compile_header(uint8_t *buf, uint32_t unit_length) {
+    put32(buf, unit_length);
+    put16(buf + 4, 5);
+    buf[6] = NEVERC_DW_UT_compile;
+    buf[7] = 8;
+    put32(buf + 8, 0);
+}
+
+static void test_dwarf_implicit_const(void) {
+    printf("[implicit_const]\n");
+    static const uint8_t abbrev[] = {
+        1, NEVERC_DW_TAG_compile_unit, 0,
+        NEVERC_DW_AT_byte_size, NEVERC_DW_FORM_implicit_const, 7,
+        NEVERC_DW_AT_encoding, NEVERC_DW_FORM_implicit_const, 5,
+        NEVERC_DW_AT_high_pc, NEVERC_DW_FORM_implicit_const, 0x20,
+        0, 0, 0
+    };
+    uint8_t info[13] = {0};
+    build_v5_compile_header(info, 9);
+    info[12] = 1;
+
+    neverc_dwarf_data_t d;
+    walk_ctx_t ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    CHECK("implicit const init",
+          neverc_dwarf_init(&d, info, sizeof(info),
+                            abbrev, sizeof(abbrev), NULL, 0) == 0);
+    CHECK("implicit const walk",
+          neverc_dwarf_walk_entries(&d, walk_cb, &ctx) == 0);
+    CHECK("implicit byte size", ctx.cu_byte_size == 7);
+    CHECK("implicit encoding", ctx.cu_encoding == 5);
+    CHECK("implicit high pc", ctx.cu_high_pc == 0x20);
+    CHECK("implicit high pc is offset", ctx.cu_high_pc_is_offset == 1);
+
+    uint8_t v4_info[12] = {0};
+    build_v4_header(v4_info, 8);
+    v4_info[11] = 1;
+    CHECK("implicit const rejected before DWARF v5",
+          neverc_dwarf_init(&d, v4_info, sizeof(v4_info),
+                            abbrev, sizeof(abbrev), NULL, 0) == 0 &&
+          neverc_dwarf_walk_entries(&d, ignore_entry_cb, NULL) < 0);
+}
+
+static void test_dwarf_malformed(void) {
+    printf("[malformed]\n");
+    neverc_dwarf_data_t d;
+    neverc_dwarf_comp_unit_header_t hdr;
+    uint8_t short_info[16] = {0};
+
+    CHECK("init rejects NULL destination",
+          neverc_dwarf_init(NULL, NULL, 0, NULL, 0, NULL, 0) < 0);
+    CHECK("init rejects missing nonempty section",
+          neverc_dwarf_init(&d, NULL, 1, NULL, 0, NULL, 0) < 0);
+    CHECK("parse rejects NULL data",
+          neverc_dwarf_parse_comp_unit(NULL, 0, &hdr) < 0);
+    CHECK("parse rejects NULL output",
+          neverc_dwarf_parse_comp_unit(&d, 0, NULL) < 0);
+
+    for (size_t len = 0; len < 11; len++) {
+        CHECK("truncated CU header rejected",
+              neverc_dwarf_init(&d, short_info, len, NULL, 0, NULL, 0) == 0 &&
+              neverc_dwarf_parse_comp_unit(&d, 0, &hdr) < 0);
+    }
+
+    uint8_t oversized[11] = {0};
+    build_v4_header(oversized, 100);
+    CHECK("declared CU beyond section rejected",
+          neverc_dwarf_init(&d, oversized, sizeof(oversized),
+                            NULL, 0, NULL, 0) == 0 &&
+          neverc_dwarf_parse_comp_unit(&d, 0, &hdr) < 0);
+
+    uint8_t dwarf64_truncated[11] = {0xff, 0xff, 0xff, 0xff};
+    CHECK("truncated DWARF64 length rejected",
+          neverc_dwarf_init(&d, dwarf64_truncated,
+                            sizeof(dwarf64_truncated),
+                            NULL, 0, NULL, 0) == 0 &&
+          neverc_dwarf_parse_comp_unit(&d, 0, &hdr) < 0);
+
+    uint8_t info_buf[512];
+    int info_len = build_debug_info(info_buf);
+    uint8_t valid_abbrev[256];
+    int valid_abbrev_len = build_debug_abbrev(valid_abbrev);
+    uint8_t overlong_uleb[10];
+    memset(overlong_uleb, 0x80, sizeof(overlong_uleb));
+    CHECK("overlong abbrev ULEB128 rejected",
+          neverc_dwarf_init(&d, info_buf, (size_t)info_len,
+                            overlong_uleb, sizeof(overlong_uleb),
+                            NULL, 0) == 0 &&
+          neverc_dwarf_walk_entries(&d, ignore_entry_cb, NULL) < 0);
+
+    static const uint8_t strp_abbrev[] = {
+        1, NEVERC_DW_TAG_compile_unit, 0,
+        NEVERC_DW_AT_name, NEVERC_DW_FORM_strp,
+        0, 0, 0
+    };
+    uint8_t truncated_strp[14] = {0};
+    build_v4_header(truncated_strp, 10);
+    truncated_strp[11] = 1;
+    truncated_strp[12] = 0;
+    truncated_strp[13] = 0;
+    CHECK("truncated fixed-width form rejected",
+          neverc_dwarf_init(&d, truncated_strp, sizeof(truncated_strp),
+                            strp_abbrev, sizeof(strp_abbrev),
+                            NULL, 0) == 0 &&
+          neverc_dwarf_walk_entries(&d, ignore_entry_cb, NULL) < 0);
+
+    static const uint8_t exprloc_abbrev[] = {
+        1, NEVERC_DW_TAG_compile_unit, 0,
+        NEVERC_DW_AT_location, NEVERC_DW_FORM_exprloc,
+        0, 0, 0
+    };
+    uint8_t oversized_exprloc[13] = {0};
+    build_v4_header(oversized_exprloc, 9);
+    oversized_exprloc[11] = 1;
+    oversized_exprloc[12] = 0x7f;
+    CHECK("oversized exprloc rejected",
+          neverc_dwarf_init(&d, oversized_exprloc,
+                            sizeof(oversized_exprloc),
+                            exprloc_abbrev, sizeof(exprloc_abbrev),
+                            NULL, 0) == 0 &&
+          neverc_dwarf_walk_entries(&d, ignore_entry_cb, NULL) < 0);
+
+    static const uint8_t inline_string_abbrev[] = {
+        1, NEVERC_DW_TAG_compile_unit, 0,
+        NEVERC_DW_AT_name, NEVERC_DW_FORM_string,
+        0, 0, 0
+    };
+    uint8_t unterminated_string[14] = {0};
+    build_v4_header(unterminated_string, 10);
+    unterminated_string[11] = 1;
+    unterminated_string[12] = 'a';
+    unterminated_string[13] = 'b';
+    CHECK("unterminated inline string rejected",
+          neverc_dwarf_init(&d, unterminated_string,
+                            sizeof(unterminated_string),
+                            inline_string_abbrev,
+                            sizeof(inline_string_abbrev),
+                            NULL, 0) == 0 &&
+          neverc_dwarf_walk_entries(&d, ignore_entry_cb, NULL) < 0);
+
+    uint8_t missing_child_end[512];
+    memcpy(missing_child_end, info_buf, (size_t)info_len);
+    put32(missing_child_end, (uint32_t)(info_len - 5));
+    CHECK("unterminated DIE children rejected",
+          neverc_dwarf_init(&d, missing_child_end, (size_t)info_len,
+                            valid_abbrev, (size_t)valid_abbrev_len,
+                            NULL, 0) == 0 &&
+          neverc_dwarf_walk_entries(&d, ignore_entry_cb, NULL) < 0);
+}
+
+static void test_dwarf_v5_type_header(void) {
+    printf("[v5_type_header]\n");
+    uint8_t info[25] = {0};
+    put32(info, 21);
+    put16(info + 4, 5);
+    info[6] = NEVERC_DW_UT_type;
+    info[7] = 8;
+    put32(info + 8, 0x1234);
+    put64(info + 12, UINT64_C(0x1122334455667788));
+    put32(info + 20, 0x18);
+    info[24] = 0;
+
+    neverc_dwarf_data_t d;
+    neverc_dwarf_comp_unit_header_t hdr;
+    CHECK("v5 type init",
+          neverc_dwarf_init(&d, info, sizeof(info), NULL, 0, NULL, 0) == 0);
+    CHECK("v5 type header parse",
+          neverc_dwarf_parse_comp_unit(&d, 0, &hdr) == 0);
+    CHECK("v5 unit type", hdr.unit_type == NEVERC_DW_UT_type);
+    CHECK("v5 header size", hdr.header_size == 24);
+    CHECK("v5 abbrev offset", hdr.abbrev_offset == 0x1234);
+    CHECK("v5 type signature",
+          hdr.type_signature == UINT64_C(0x1122334455667788));
+    CHECK("v5 type offset", hdr.type_offset == 0x18);
+}
+
 int main(void) {
     printf("=== NeverC debug/dwarf Tests ===\n\n");
 
     test_dwarf_parse();
     test_dwarf_empty();
+    test_dwarf_implicit_const();
+    test_dwarf_malformed();
+    test_dwarf_v5_type_header();
 
     printf("\n%d/%d tests passed", tests_passed, tests_run);
     if (tests_failed > 0)
