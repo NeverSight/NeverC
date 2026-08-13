@@ -9,6 +9,8 @@
 
 static int tests_run = 0, tests_passed = 0, tests_failed = 0;
 
+enum { BIDIRECTIONAL_BYTES = 256 * 1024 };
+
 #define ASSERT_INT_EQ(expr, expected) do { \
     int _v = (int)(expr); int _e = (int)(expected); tests_run++; \
     if (_v == _e) { tests_passed++; } \
@@ -112,6 +114,62 @@ static void test_command_stdin(void) {
 }
 #endif
 
+static int run_bidirectional_child(void) {
+    unsigned char block[4096];
+    memset(block, 'O', sizeof(block));
+    size_t remaining = BIDIRECTIONAL_BYTES;
+    while (remaining > 0) {
+        size_t chunk = remaining < sizeof(block) ? remaining : sizeof(block);
+        if (fwrite(block, 1, chunk, stdout) != chunk)
+            return 1;
+        remaining -= chunk;
+    }
+    if (fflush(stdout) != 0)
+        return 1;
+
+    size_t input_length = 0;
+    for (;;) {
+        size_t count = fread(block, 1, sizeof(block), stdin);
+        input_length += count;
+        if (count < sizeof(block)) {
+            if (ferror(stdin))
+                return 1;
+            break;
+        }
+    }
+    return printf("\nstdin=%zu\n", input_length) < 0 ? 1 : 0;
+}
+
+static void test_bidirectional_pipes(const char *executable) {
+    printf("[bidirectional_pipes]\n");
+    const char *args[] = {"--bidirectional-child"};
+    neverc_exec_cmd_t *cmd =
+        neverc_exec_command(executable, args, 1);
+    ASSERT_TRUE(cmd != NULL);
+    if (!cmd) return;
+
+    unsigned char *input = (unsigned char *)malloc(BIDIRECTIONAL_BYTES);
+    ASSERT_TRUE(input != NULL);
+    if (!input) {
+        neverc_exec_cmd_free(cmd);
+        return;
+    }
+    memset(input, 'I', BIDIRECTIONAL_BYTES);
+    neverc_exec_cmd_set_stdin(cmd, input, BIDIRECTIONAL_BYTES);
+
+    neverc_exec_output_t out = {0};
+    neverc_exec_exit_status_t st = {0};
+    ASSERT_INT_EQ(neverc_exec_cmd_output(cmd, &out, &st), 0);
+    ASSERT_INT_EQ(st.exit_code, 0);
+    ASSERT_TRUE(out.len >= BIDIRECTIONAL_BYTES);
+    ASSERT_TRUE(memmem(out.data, out.len,
+                       "stdin=262144", 12) != NULL);
+
+    neverc_exec_output_free(&out);
+    neverc_exec_cmd_free(cmd);
+    free(input);
+}
+
 static void test_look_path(void) {
     printf("[look_path]\n");
     char buf[4096];
@@ -185,7 +243,11 @@ static void test_set_dir(void) {
 }
 #endif
 
-int main(void) {
+int main(int argc, char **argv) {
+    if (argc == 2 &&
+        strcmp(argv[1], "--bidirectional-child") == 0)
+        return run_bidirectional_child();
+
     printf("=== NeverC os/exec Tests ===\n");
     ASSERT_TRUE(neverc_exec_command(NULL, NULL, 0) == NULL);
     ASSERT_TRUE(neverc_exec_command("echo", NULL, -1) == NULL);
@@ -196,6 +258,7 @@ int main(void) {
 #if !defined(_WIN32)
     test_command_stdin();
 #endif
+    test_bidirectional_pipes(argv[0]);
     test_look_path();
     test_combined_output();
 #if !defined(_WIN32)

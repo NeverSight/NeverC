@@ -35,6 +35,8 @@ void               neverc_exec_cmd_set_stdin(neverc_exec_cmd_t *cmd, const void 
 
 int  neverc_exec_cmd_run(neverc_exec_cmd_t *cmd, neverc_exec_exit_status_t *st);
 
+/* Captured output is drained concurrently with configured stdin, so children
+ * may safely produce output before consuming all input. */
 int  neverc_exec_cmd_output(neverc_exec_cmd_t *cmd, neverc_exec_output_t *out,
                              neverc_exec_exit_status_t *st);
 

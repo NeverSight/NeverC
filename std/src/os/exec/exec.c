@@ -160,6 +160,34 @@ static char *exec_windows_environment(const neverc_exec_cmd_t *cmd) {
     return block;
 }
 
+typedef struct {
+    HANDLE pipe;
+    const unsigned char *data;
+    size_t length;
+    int failed;
+} exec_windows_stdin_writer_t;
+
+static DWORD WINAPI exec_windows_write_stdin(LPVOID argument) {
+    exec_windows_stdin_writer_t *writer =
+        (exec_windows_stdin_writer_t *)argument;
+    size_t offset = 0;
+    while (offset < writer->length) {
+        size_t remaining = writer->length - offset;
+        DWORD chunk = remaining > 65536U ? 65536U : (DWORD)remaining;
+        DWORD written = 0;
+        if (!WriteFile(writer->pipe, writer->data + offset,
+                       chunk, &written, NULL) ||
+            written == 0) {
+            writer->failed = 1;
+            break;
+        }
+        offset += written;
+    }
+    CloseHandle(writer->pipe);
+    writer->pipe = NULL;
+    return 0;
+}
+
 static int exec_run_windows(neverc_exec_cmd_t *cmd, int capture_stdout, int capture_stderr,
                             neverc_exec_output_t *out, neverc_exec_exit_status_t *st) {
     if (exec_prepare(cmd, capture_stdout || capture_stderr, out, st) != 0) return -1;
@@ -235,21 +263,20 @@ static int exec_run_windows(neverc_exec_cmd_t *cmd, int capture_stdout, int capt
     if (hStdinRd) CloseHandle(hStdinRd);
 
     int run_error = 0;
+    HANDLE hStdinThread = NULL;
+    exec_windows_stdin_writer_t stdin_writer = {
+        hStdinWr, (const unsigned char *)cmd->stdin_data,
+        cmd->stdin_len, 0
+    };
     if (hStdinWr && cmd->stdin_data) {
-        size_t offset = 0;
-        while (offset < cmd->stdin_len) {
-            size_t remaining = cmd->stdin_len - offset;
-            DWORD chunk = remaining > MAXDWORD ? MAXDWORD : (DWORD)remaining;
-            DWORD written = 0;
-            if (!WriteFile(hStdinWr, (const char *)cmd->stdin_data + offset,
-                           chunk, &written, NULL) || written == 0) {
-                run_error = 1;
-                break;
-            }
-            offset += written;
+        hStdinThread = CreateThread(
+            NULL, 0, exec_windows_write_stdin, &stdin_writer, 0, NULL);
+        if (!hStdinThread) {
+            run_error = 1;
+            CloseHandle(hStdinWr);
+        } else {
+            hStdinWr = NULL; /* The writer thread owns the pipe handle. */
         }
-        CloseHandle(hStdinWr);
-        hStdinWr = NULL;
     }
 
     if (hStdoutRd && out) {
@@ -275,6 +302,12 @@ static int exec_run_windows(neverc_exec_cmd_t *cmd, int capture_stdout, int capt
         hStdoutRd = NULL;
     }
 
+    if (hStdinThread) {
+        if (WaitForSingleObject(hStdinThread, INFINITE) != WAIT_OBJECT_0 ||
+            stdin_writer.failed)
+            run_error = 1;
+        CloseHandle(hStdinThread);
+    }
     if (WaitForSingleObject(pi.hProcess, INFINITE) != WAIT_OBJECT_0) run_error = 1;
     DWORD exitCode = (DWORD)-1;
     if (!GetExitCodeProcess(pi.hProcess, &exitCode)) run_error = 1;
@@ -372,14 +405,34 @@ static int exec_run_posix(neverc_exec_cmd_t *cmd, int capture_stdout, int captur
     if (stdin_pipe[0] >= 0) close(stdin_pipe[0]);
 
     int run_error = 0;
+    pid_t stdin_writer = -1;
     if (stdin_pipe[1] >= 0 && cmd->stdin_data) {
-        size_t off = 0;
-        while (off < cmd->stdin_len) {
-            ssize_t n = write(stdin_pipe[1], (const char *)cmd->stdin_data + off,
-                              cmd->stdin_len - off);
-            if (n < 0 && errno == EINTR) continue;
-            if (n <= 0) { run_error = 1; break; }
-            off += (size_t)n;
+        stdin_writer = fork();
+        if (stdin_writer == 0) {
+            if (stdout_pipe[0] >= 0)
+                close(stdout_pipe[0]);
+            size_t offset = 0;
+            while (offset < cmd->stdin_len) {
+                size_t remaining = cmd->stdin_len - offset;
+                size_t chunk =
+                    remaining > (size_t)INT_MAX ?
+                    (size_t)INT_MAX : remaining;
+                ssize_t written = write(
+                    stdin_pipe[1],
+                    (const char *)cmd->stdin_data + offset, chunk);
+                if (written < 0 && errno == EINTR)
+                    continue;
+                if (written <= 0) {
+                    close(stdin_pipe[1]);
+                    _exit(125);
+                }
+                offset += (size_t)written;
+            }
+            close(stdin_pipe[1]);
+            _exit(0);
+        }
+        if (stdin_writer < 0) {
+            run_error = 1;
         }
         close(stdin_pipe[1]);
         stdin_pipe[1] = -1;
@@ -411,6 +464,16 @@ static int exec_run_posix(neverc_exec_cmd_t *cmd, int capture_stdout, int captur
     pid_t waited;
     do { waited = waitpid(pid, &wstatus, 0); } while (waited < 0 && errno == EINTR);
     if (waited < 0) run_error = 1;
+    if (stdin_writer > 0) {
+        int writer_status = 0;
+        pid_t writer_waited;
+        do {
+            writer_waited = waitpid(stdin_writer, &writer_status, 0);
+        } while (writer_waited < 0 && errno == EINTR);
+        if (writer_waited < 0 || !WIFEXITED(writer_status) ||
+            WEXITSTATUS(writer_status) != 0)
+            run_error = 1;
+    }
     if (st && waited > 0) {
         if (WIFEXITED(wstatus)) {
             st->exit_code = WEXITSTATUS(wstatus);
