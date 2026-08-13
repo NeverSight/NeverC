@@ -3,6 +3,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define NCI_BUFIO_MAX_EMPTY_READS 100
+
 /* --- Scanner --- */
 
 static void bufio_scanner_fail(neverc_bufio_scanner_t *s, int err) {
@@ -46,6 +48,7 @@ int neverc_bufio_scanner_scan(neverc_bufio_scanner_t *s) {
      * keeps each byte examined once (O(n)). memchr does the newline search with
      * a single SIMD scan instead of a byte-at-a-time loop. */
     size_t scan_pos = s->start;
+    unsigned empty_reads = 0;
 
     for (;;) {
         if (scan_pos < s->buf_len) {
@@ -119,8 +122,12 @@ int neverc_bufio_scanner_scan(neverc_bufio_scanner_t *s) {
             s->err = err;
             s->done = 1;
         } else if (nr == 0) {
-            /* A successful zero-byte read cannot make progress. */
-            s->done = 1;
+            if (++empty_reads >= NCI_BUFIO_MAX_EMPTY_READS) {
+                bufio_scanner_fail(s, NEVERC_IO_ERR_UNEXP);
+                return 0;
+            }
+        } else {
+            empty_reads = 0;
         }
     }
 }
@@ -185,23 +192,29 @@ static size_t bufio_fill(neverc_bufio_reader_t *br) {
     }
     if (br->w >= br->buf_cap) return 0;
     size_t available = br->buf_cap - br->w;
-    size_t nr = 0;
-    int err = br->reader.read(br->reader.ctx, br->buf + br->w,
-                              available, &nr);
-    if (nr > available) {
-        br->eof = 1;
-        br->err = NEVERC_IO_ERR_UNEXP;
-        return 0;
+    for (unsigned empty_reads = 0;
+         empty_reads < NCI_BUFIO_MAX_EMPTY_READS;
+         empty_reads++) {
+        size_t nr = 0;
+        int err = br->reader.read(br->reader.ctx, br->buf + br->w,
+                                  available, &nr);
+        if (nr > available) {
+            br->eof = 1;
+            br->err = NEVERC_IO_ERR_UNEXP;
+            return 0;
+        }
+        br->w += nr;
+        if (err != 0) {
+            br->eof = 1;
+            br->err = err;
+            return nr;
+        }
+        if (nr != 0)
+            return nr;
     }
-    br->w += nr;
-    if (err != 0) {
-        br->eof = 1;
-        br->err = err;
-    } else if (nr == 0) {
-        br->eof = 1;
-        br->err = NEVERC_IO_EOF;
-    }
-    return nr;
+    br->eof = 1;
+    br->err = NEVERC_IO_ERR_UNEXP;
+    return 0;
 }
 
 static int bufio_reader_terminal_error(const neverc_bufio_reader_t *br) {

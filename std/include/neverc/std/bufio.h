@@ -7,6 +7,8 @@
  * Scanner: line-by-line or token-by-token reading from a reader.
  * Reader: buffered wrapper around neverc_io_reader_t.
  * Writer: buffered wrapper around neverc_io_writer_t.
+ * Transient zero-byte successful reads are retried; persistent no-progress
+ * readers terminate with NEVERC_IO_ERR_UNEXP rather than being mistaken for EOF.
  */
 
 #include "neverc/std/io.h"

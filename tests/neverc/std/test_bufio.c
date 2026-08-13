@@ -88,12 +88,14 @@ static void test_scanner_crlf(void) {
 
     check_int("scan 1", neverc_bufio_scanner_scan(&sc), 1);
     size_t len;
-    check_bytes("crlf 1", neverc_bufio_scanner_bytes(&sc, &len), len, "line1");
+    const uint8_t *line = neverc_bufio_scanner_bytes(&sc, &len);
+    check_bytes("crlf 1", line, len, "line1");
     check_int("crlf text is terminated",
               strcmp(neverc_bufio_scanner_text(&sc), "line1") == 0, 1);
 
     check_int("scan 2", neverc_bufio_scanner_scan(&sc), 1);
-    check_bytes("crlf 2", neverc_bufio_scanner_bytes(&sc, &len), len, "line2");
+    line = neverc_bufio_scanner_bytes(&sc, &len);
+    check_bytes("crlf 2", line, len, "line2");
 
     neverc_bufio_scanner_free(&sc);
 }
@@ -167,11 +169,11 @@ static void test_scanner_data_with_terminal_error(void) {
 
     size_t len = 0;
     check_int("data eof first scan", neverc_bufio_scanner_scan(&sc), 1);
-    check_bytes("data eof first token",
-                neverc_bufio_scanner_bytes(&sc, &len), len, "first");
+    const uint8_t *token = neverc_bufio_scanner_bytes(&sc, &len);
+    check_bytes("data eof first token", token, len, "first");
     check_int("data eof second scan", neverc_bufio_scanner_scan(&sc), 1);
-    check_bytes("data eof second token",
-                neverc_bufio_scanner_bytes(&sc, &len), len, "second");
+    token = neverc_bufio_scanner_bytes(&sc, &len);
+    check_bytes("data eof second token", token, len, "second");
     check_int("data eof stops", neverc_bufio_scanner_scan(&sc), 0);
     check_int("eof is not scanner error", neverc_bufio_scanner_err(&sc), 0);
     neverc_bufio_scanner_free(&sc);
@@ -183,8 +185,8 @@ static void test_scanner_data_with_terminal_error(void) {
     neverc_io_reader_t error_io = { &error_reader, data_error_reader_read };
     neverc_bufio_scanner_init(&sc, error_io);
     check_int("data error scan", neverc_bufio_scanner_scan(&sc), 1);
-    check_bytes("data error token",
-                neverc_bufio_scanner_bytes(&sc, &len), len, "tail");
+    token = neverc_bufio_scanner_bytes(&sc, &len);
+    check_bytes("data error token", token, len, "tail");
     check_int("data error stops", neverc_bufio_scanner_scan(&sc), 0);
     check_int("data error is retained", neverc_bufio_scanner_err(&sc),
               NEVERC_IO_ERR_UNEXP);
@@ -388,6 +390,30 @@ static int no_progress_read(void *ctx, uint8_t *buf, size_t len, size_t *n) {
     return 0;
 }
 
+typedef struct {
+    const uint8_t *data;
+    size_t len;
+    size_t position;
+    unsigned empty_reads;
+} transient_empty_reader_t;
+
+static int transient_empty_read(void *ctx, uint8_t *buf, size_t len,
+                                size_t *n) {
+    transient_empty_reader_t *reader = (transient_empty_reader_t *)ctx;
+    if (reader->empty_reads > 0) {
+        reader->empty_reads--;
+        *n = 0;
+        return 0;
+    }
+    size_t remaining = reader->len - reader->position;
+    size_t take = remaining < len ? remaining : len;
+    if (take > 0)
+        memcpy(buf, reader->data + reader->position, take);
+    reader->position += take;
+    *n = take;
+    return reader->position == reader->len ? NEVERC_IO_EOF : 0;
+}
+
 static int overreporting_read(void *ctx, uint8_t *buf, size_t len, size_t *n) {
     (void)ctx;
     (void)buf;
@@ -419,9 +445,52 @@ static void test_reader_no_progress(void) {
     uint8_t byte = 0;
     check_int("no progress peek",
               neverc_bufio_reader_peek(&br, &byte, 1), 0);
-    check_int("no progress becomes EOF",
-              neverc_bufio_reader_read_byte(&br, &byte), NEVERC_IO_EOF);
+    check_int("persistent no progress becomes error",
+              neverc_bufio_reader_read_byte(&br, &byte),
+              NEVERC_IO_ERR_UNEXP);
     neverc_bufio_reader_free(&br);
+
+    neverc_bufio_scanner_t scanner;
+    neverc_bufio_scanner_init(&scanner, r);
+    check_int("scanner persistent no progress stops",
+              neverc_bufio_scanner_scan(&scanner), 0);
+    check_int("scanner persistent no progress reports error",
+              neverc_bufio_scanner_err(&scanner), NEVERC_IO_ERR_UNEXP);
+    neverc_bufio_scanner_free(&scanner);
+}
+
+static void test_reader_transient_no_progress(void) {
+    printf("[reader transient no progress]\n");
+
+    static const uint8_t byte_data[] = "z";
+    transient_empty_reader_t byte_reader = {
+        byte_data, sizeof(byte_data) - 1, 0, 1
+    };
+    neverc_io_reader_t r = { &byte_reader, transient_empty_read };
+    neverc_bufio_reader_t br;
+    neverc_bufio_reader_init_size(&br, r, 8);
+    uint8_t byte = 0;
+    check_int("reader retries transient empty read",
+              neverc_bufio_reader_read_byte(&br, &byte), 0);
+    check_int("reader gets data after transient empty read", byte, 'z');
+    neverc_bufio_reader_free(&br);
+
+    static const uint8_t line_data[] = "line\n";
+    transient_empty_reader_t line_reader = {
+        line_data, sizeof(line_data) - 1, 0, 1
+    };
+    r.ctx = &line_reader;
+    neverc_bufio_scanner_t scanner;
+    neverc_bufio_scanner_init(&scanner, r);
+    check_int("scanner retries transient empty read",
+              neverc_bufio_scanner_scan(&scanner), 1);
+    size_t len = 0;
+    const uint8_t *token = neverc_bufio_scanner_bytes(&scanner, &len);
+    check_bytes("scanner data after transient empty read",
+                token, len, "line");
+    check_int("scanner transient read has no error",
+              neverc_bufio_scanner_err(&scanner), 0);
+    neverc_bufio_scanner_free(&scanner);
 }
 
 static void test_reader_peek_larger_than_buffer(void) {
@@ -535,6 +604,7 @@ int main(void) {
     test_partial_write_without_error();
     test_zero_size_buffers();
     test_reader_no_progress();
+    test_reader_transient_no_progress();
     test_reader_peek_larger_than_buffer();
     test_reader_rejects_invalid_count();
     test_scanner_missing_reader();
