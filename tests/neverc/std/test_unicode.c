@@ -169,6 +169,10 @@ static void test_unicode_conformance_edges(void) {
               neverc_unicode_is_mark(0x0900), 1);
     check_int("Hiragana voiced mark is print",
               neverc_unicode_is_print(0x3099), 1);
+    check_int("Hiragana voiced sound mark is print",
+              neverc_unicode_is_print(0x309B), 1);
+    check_int("Katakana-Hiragana double hyphen is print",
+              neverc_unicode_is_print(0x30A0), 1);
     check_int("Katakana middle dot is print",
               neverc_unicode_is_print(0x30FB), 1);
     check_int("Thai character MAI HAN-AKAT is print",
@@ -178,6 +182,9 @@ static void test_unicode_conformance_edges(void) {
     check_int("titlecase DZ is letter and print",
               neverc_unicode_is_letter(0x01C5) &&
               neverc_unicode_is_print(0x01C5), 1);
+    check_int("Greek titlecase is letter and print",
+              neverc_unicode_is_letter(0x1F88) &&
+              neverc_unicode_is_print(0x1F88), 1);
 
     check_u32("micro sign uppercase",
               neverc_unicode_to_upper(0x00B5), 0x039C);

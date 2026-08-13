@@ -96,6 +96,7 @@ int neverc_unicode_is_letter(uint32_t r) {
     if (r < 0x80)
         return (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z');
     if (neverc_unicode_is_upper(r) || neverc_unicode_is_lower(r)) return 1;
+    if (neverc_unicode_is_title(r)) return 1;
     if (r == 0x00AA || r == 0x00BA) return 1;
     if ((r >= 0x01C4 && r <= 0x01CC) ||
         (r >= 0x01F1 && r <= 0x01F3)) return 1;
@@ -164,7 +165,7 @@ int neverc_unicode_is_punct(uint32_t r) {
     /* CJK punctuation */
     if (r >= 0x3001 && r <= 0x3003) return 1;
     if (r == 0x3008 || r == 0x3009 || r == 0x300A || r == 0x300B) return 1;
-    if (r == 0x30FB) return 1;
+    if (r == 0x30A0 || r == 0x30FB) return 1;
     if (r >= 0xFF01 && r <= 0xFF0F) return 1;
     return 0;
 }
@@ -267,6 +268,7 @@ int neverc_unicode_is_symbol(uint32_t r) {
     if (r >= 0x2600 && r <= 0x26FF) return 1;
     if (r >= 0x2700 && r <= 0x27BF) return 1;
     if (r >= 0x20A0 && r <= 0x20CF) return 1;
+    if (r >= 0x309B && r <= 0x309C) return 1;
     return 0;
 }
 
