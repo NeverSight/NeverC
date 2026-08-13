@@ -1,4 +1,5 @@
 #include "neverc/std/arena.h"
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -117,6 +118,30 @@ static void test_aligned_alloc(void) {
     neverc_arena_free(a);
 }
 
+static void test_default_max_alignment(void) {
+    printf("[default_max_alignment]\n");
+    neverc_arena_t *a = neverc_arena_new();
+    ASSERT_TRUE(a != NULL);
+    if (!a) return;
+
+    const size_t alignment = _Alignof(max_align_t);
+    void *allocated = neverc_arena_alloc(a, sizeof(max_align_t));
+    void *zeroed = neverc_arena_calloc(a, 1, sizeof(max_align_t));
+    unsigned char source[sizeof(max_align_t)] = {0};
+    void *copied = neverc_arena_memdup(a, source, sizeof(source));
+
+    ASSERT_TRUE(allocated != NULL);
+    ASSERT_TRUE(zeroed != NULL);
+    ASSERT_TRUE(copied != NULL);
+    if (allocated)
+        ASSERT_INT_EQ((uintptr_t)allocated % alignment, 0);
+    if (zeroed)
+        ASSERT_INT_EQ((uintptr_t)zeroed % alignment, 0);
+    if (copied)
+        ASSERT_INT_EQ((uintptr_t)copied % alignment, 0);
+    neverc_arena_free(a);
+}
+
 static void test_invalid_and_overflow_requests(void) {
     printf("[invalid_and_overflow_requests]\n");
 
@@ -155,6 +180,7 @@ int main(void) {
     test_many_small_allocs();
     test_reset();
     test_aligned_alloc();
+    test_default_max_alignment();
     test_invalid_and_overflow_requests();
     printf("\narena: %d/%d passed", tests_passed, tests_run);
     if (tests_failed) printf(", %d FAILED", tests_failed);

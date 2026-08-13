@@ -56,10 +56,12 @@ int neverc_sort_search_doubles(const double *arr, size_t n, double target) {
     size_t lo = 0, hi = n;
     while (lo < hi) {
         size_t mid = lo + (hi - lo) / 2;
-        if (arr[mid] < target) lo = mid + 1;
+        if (nci_double_less(arr[mid], target)) lo = mid + 1;
         else hi = mid;
     }
-    if (lo < n && arr[lo] == target) return (int)lo;
+    if (lo < n && !nci_double_less(arr[lo], target) &&
+        !nci_double_less(target, arr[lo]))
+        return (int)lo;
     return -1;
 }
 
@@ -103,13 +105,14 @@ int neverc_sort_ints_are_sorted(const int *arr, size_t n) {
 
 int neverc_sort_doubles_are_sorted(const double *arr, size_t n) {
     for (size_t i = 1; i < n; i++)
-        if (arr[i-1] > arr[i]) return 0;
+        if (nci_double_less(arr[i], arr[i - 1])) return 0;
     return 1;
 }
 
 /* ─── Find (Go sort.Find) ─── */
 
 size_t neverc_sort_find(size_t n, int (*cmp)(size_t i), int *found) {
+    if (found) *found = 0;
     size_t lo = 0, hi = n;
     while (lo < hi) {
         size_t mid = lo + (hi - lo) / 2;

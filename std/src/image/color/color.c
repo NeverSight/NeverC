@@ -142,32 +142,33 @@ static int hchar(char c) {
 }
 
 int neverc_color_parse_hex(const char *s, neverc_color_rgba_t *c) {
-    if (!s) return -1;
+    if (!s || !c) return -1;
     if (*s == '#') s++;
     size_t len = strlen(s);
+    if (len != 3 && len != 6 && len != 8) return -1;
 
-    if (len == 6) {
-        c->r = (uint8_t)((hchar(s[0]) << 4) | hchar(s[1]));
-        c->g = (uint8_t)((hchar(s[2]) << 4) | hchar(s[3]));
-        c->b = (uint8_t)((hchar(s[4]) << 4) | hchar(s[5]));
-        c->a = 255;
-        return 0;
+    int digit[8];
+    for (size_t i = 0; i < len; i++) {
+        digit[i] = hchar(s[i]);
+        if (digit[i] < 0) return -1;
     }
-    if (len == 8) {
-        c->r = (uint8_t)((hchar(s[0]) << 4) | hchar(s[1]));
-        c->g = (uint8_t)((hchar(s[2]) << 4) | hchar(s[3]));
-        c->b = (uint8_t)((hchar(s[4]) << 4) | hchar(s[5]));
-        c->a = (uint8_t)((hchar(s[6]) << 4) | hchar(s[7]));
-        return 0;
-    }
+
+    neverc_color_rgba_t parsed;
     if (len == 3) {
-        c->r = (uint8_t)(hchar(s[0]) * 17);
-        c->g = (uint8_t)(hchar(s[1]) * 17);
-        c->b = (uint8_t)(hchar(s[2]) * 17);
-        c->a = 255;
-        return 0;
+        parsed.r = (uint8_t)(digit[0] * 17);
+        parsed.g = (uint8_t)(digit[1] * 17);
+        parsed.b = (uint8_t)(digit[2] * 17);
+        parsed.a = 255;
+    } else {
+        parsed.r = (uint8_t)((digit[0] << 4) | digit[1]);
+        parsed.g = (uint8_t)((digit[2] << 4) | digit[3]);
+        parsed.b = (uint8_t)((digit[4] << 4) | digit[5]);
+        parsed.a = len == 8
+            ? (uint8_t)((digit[6] << 4) | digit[7])
+            : 255;
     }
-    return -1;
+    *c = parsed;
+    return 0;
 }
 
 neverc_color_rgba_t neverc_color_lerp(neverc_color_rgba_t a, neverc_color_rgba_t b, float t) {

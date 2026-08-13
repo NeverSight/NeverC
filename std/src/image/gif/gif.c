@@ -193,8 +193,19 @@ int neverc_gif_encode(const neverc_gif_frame_t *frame,
     *out_len = 0;
     if (!frame || !frame->indices) return -1;
     if (frame->width == 0 || frame->height == 0) return -1;
-    if (frame->width > UINT16_MAX || frame->height > UINT16_MAX) return -1;
+    uint64_t screen_width = (uint64_t)frame->left + frame->width;
+    uint64_t screen_height = (uint64_t)frame->top + frame->height;
+    if (screen_width == 0 || screen_width > UINT16_MAX ||
+        screen_height == 0 || screen_height > UINT16_MAX)
+        return -1;
     if (frame->palette_size < 2 || frame->palette_size > 256) return -1;
+    if (frame->delay_centiseconds < 0 ||
+        frame->delay_centiseconds > UINT16_MAX ||
+        frame->disposal_method < 0 || frame->disposal_method > 3)
+        return -1;
+    if (frame->has_transparency &&
+        (int)frame->transparent_index >= frame->palette_size)
+        return -1;
     if ((uint64_t)frame->width * frame->height > GIF_MAX_PIXELS) return -1;
     size_t pixel_count = (size_t)frame->width * frame->height;
     if (pixel_count > SIZE_MAX - 1024) return -1;
@@ -211,8 +222,8 @@ int neverc_gif_encode(const neverc_gif_frame_t *frame,
     gw_bytes(&w, (const uint8_t *)"GIF89a", 6);
 
     /* Logical Screen Descriptor */
-    gw_u16le(&w, (uint16_t)frame->width);
-    gw_u16le(&w, (uint16_t)frame->height);
+    gw_u16le(&w, (uint16_t)screen_width);
+    gw_u16le(&w, (uint16_t)screen_height);
     uint8_t packed = (uint8_t)(0x80 | ((color_bits - 1) << 4) | (color_bits - 1));
     gw_byte(&w, packed);
     gw_byte(&w, 0); /* background color index */
@@ -230,11 +241,14 @@ int neverc_gif_encode(const neverc_gif_frame_t *frame,
     }
 
     /* Graphic Control Extension (for transparency) */
-    if (frame->has_transparency || frame->delay_centiseconds > 0) {
+    if (frame->has_transparency || frame->delay_centiseconds > 0 ||
+        frame->disposal_method != 0) {
         gw_byte(&w, 0x21); /* extension introducer */
         gw_byte(&w, 0xF9); /* graphic control */
         gw_byte(&w, 4);    /* block size */
-        uint8_t gce_packed = frame->has_transparency ? 0x01 : 0x00;
+        uint8_t gce_packed =
+            (uint8_t)((frame->disposal_method << 2) |
+                      (frame->has_transparency ? 0x01 : 0x00));
         gw_byte(&w, gce_packed);
         gw_u16le(&w, (uint16_t)frame->delay_centiseconds);
         gw_byte(&w, frame->has_transparency ? frame->transparent_index : 0);
@@ -243,8 +257,8 @@ int neverc_gif_encode(const neverc_gif_frame_t *frame,
 
     /* Image Descriptor */
     gw_byte(&w, 0x2C);
-    gw_u16le(&w, 0); /* left */
-    gw_u16le(&w, 0); /* top */
+    gw_u16le(&w, (uint16_t)frame->left);
+    gw_u16le(&w, (uint16_t)frame->top);
     gw_u16le(&w, (uint16_t)frame->width);
     gw_u16le(&w, (uint16_t)frame->height);
     gw_byte(&w, 0); /* packed (no local color table) */
@@ -285,6 +299,7 @@ int neverc_gif_decode(const uint8_t *data, size_t len, neverc_gif_image_t *img) 
     uint8_t packed = data[pos++];
     uint8_t bg_index = data[pos++];
     pos++; /* pixel aspect ratio */
+    if (img->width == 0 || img->height == 0) return -1;
 
     int has_gct = (packed >> 7) & 1;
     int gct_size = has_gct ? (1 << ((packed & 7) + 1)) : 0;
@@ -311,6 +326,7 @@ int neverc_gif_decode(const uint8_t *data, size_t len, neverc_gif_image_t *img) 
 
     int pending_delay = 0;
     int pending_transparent = -1;
+    int pending_disposal = 0;
     int saw_trailer = 0;
 
     while (pos < len) {
@@ -326,7 +342,8 @@ int neverc_gif_decode(const uint8_t *data, size_t len, neverc_gif_image_t *img) 
                 uint8_t gce_packed = data[pos++];
                 pending_delay = (int)data[pos] | ((int)data[pos+1] << 8); pos += 2;
                 uint8_t trans_idx = data[pos++];
-                if (gce_packed & 1) pending_transparent = trans_idx;
+                pending_transparent = (gce_packed & 1) ? trans_idx : -1;
+                pending_disposal = (gce_packed >> 2) & 7;
                 if (data[pos++] != 0) goto decode_failed;
             } else {
                 int terminated = 0;
@@ -348,7 +365,9 @@ int neverc_gif_decode(const uint8_t *data, size_t len, neverc_gif_image_t *img) 
             uint16_t fw   = (uint16_t)data[pos] | ((uint16_t)data[pos+1] << 8); pos += 2;
             uint16_t fh   = (uint16_t)data[pos] | ((uint16_t)data[pos+1] << 8); pos += 2;
             uint8_t img_packed = data[pos++];
-            (void)left; (void)top;
+            if ((uint64_t)left + fw > img->width ||
+                (uint64_t)top + fh > img->height)
+                goto decode_failed;
 
             int has_lct = (img_packed >> 7) & 1;
             int interlaced = (img_packed >> 6) & 1;
@@ -368,6 +387,7 @@ int neverc_gif_decode(const uint8_t *data, size_t len, neverc_gif_image_t *img) 
                 palette = lct;
                 pal_size = lct_size;
             }
+            if (pending_transparent >= pal_size) goto decode_failed;
             uint64_t frame_pixels = (uint64_t)fw * fh;
             if (fw == 0 || fh == 0 || pal_size < 2 ||
                 frame_pixels > GIF_MAX_PIXELS ||
@@ -589,18 +609,22 @@ int neverc_gif_decode(const uint8_t *data, size_t len, neverc_gif_image_t *img) 
             }
             neverc_gif_frame_t *f = &img->frames[img->num_frames++];
             memset(f, 0, sizeof(*f));
+            f->left = left;
+            f->top = top;
             f->width = fw;
             f->height = fh;
             f->indices = indices;
             f->palette_size = pal_size;
             memcpy(f->palette, palette, sizeof(neverc_gif_color_t) * (size_t)(pal_size < 256 ? pal_size : 256));
             f->delay_centiseconds = pending_delay;
+            f->disposal_method = pending_disposal;
             if (pending_transparent >= 0) {
                 f->has_transparency = 1;
                 f->transparent_index = (uint8_t)pending_transparent;
             }
             pending_delay = 0;
             pending_transparent = -1;
+            pending_disposal = 0;
             continue;
         }
 

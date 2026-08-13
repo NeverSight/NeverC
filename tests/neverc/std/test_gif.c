@@ -22,8 +22,12 @@ static void test_encode_decode(void) {
     printf("[encode_decode]\n");
     neverc_gif_frame_t frame;
     memset(&frame, 0, sizeof(frame));
+    frame.left = 2;
+    frame.top = 3;
     frame.width = 4;
     frame.height = 4;
+    frame.delay_centiseconds = 5;
+    frame.disposal_method = 2;
     frame.palette_size = 4;
     frame.palette[0] = (neverc_gif_color_t){255, 0, 0};   /* red */
     frame.palette[1] = (neverc_gif_color_t){0, 255, 0};   /* green */
@@ -49,13 +53,17 @@ static void test_encode_decode(void) {
     neverc_gif_image_t img;
     rc = neverc_gif_decode(gif_data, gif_len, &img);
     ASSERT_EQ(rc, 0);
-    ASSERT_EQ(img.width, 4);
-    ASSERT_EQ(img.height, 4);
+    ASSERT_EQ(img.width, 6);
+    ASSERT_EQ(img.height, 7);
     ASSERT_EQ(img.num_frames, 1);
 
     neverc_gif_frame_t *f = &img.frames[0];
+    ASSERT_EQ(f->left, 2);
+    ASSERT_EQ(f->top, 3);
     ASSERT_EQ(f->width, 4);
     ASSERT_EQ(f->height, 4);
+    ASSERT_EQ(f->delay_centiseconds, 5);
+    ASSERT_EQ(f->disposal_method, 2);
 
     /* Verify first 4 pixels map to correct colors */
     ASSERT_EQ(f->indices[0], 0);
@@ -67,6 +75,42 @@ static void test_encode_decode(void) {
 
     ASSERT_EQ(f->indices[2], 2);
     ASSERT_EQ(f->palette[2].b, 255);
+
+    /* A later GCE replaces the complete pending control state. In particular,
+     * a transparency flag of zero must clear an earlier transparent index. */
+    size_t gce_pos = 0;
+    while (gce_pos + 2 < gif_len &&
+           !(gif_data[gce_pos] == 0x21 &&
+             gif_data[gce_pos + 1] == 0xf9 &&
+             gif_data[gce_pos + 2] == 0x04))
+        gce_pos++;
+    ASSERT_TRUE(gce_pos + 2 < gif_len);
+    if (gce_pos + 2 < gif_len) {
+        static const uint8_t transparent_gce[] = {
+            0x21, 0xf9, 0x04, 0x01, 0x00, 0x00, 0x01, 0x00
+        };
+        uint8_t *double_gce =
+            (uint8_t *)malloc(gif_len + sizeof(transparent_gce));
+        ASSERT_TRUE(double_gce != NULL);
+        if (double_gce) {
+            memcpy(double_gce, gif_data, gce_pos);
+            memcpy(double_gce + gce_pos, transparent_gce,
+                   sizeof(transparent_gce));
+            memcpy(double_gce + gce_pos + sizeof(transparent_gce),
+                   gif_data + gce_pos, gif_len - gce_pos);
+            neverc_gif_image_t replaced;
+            ASSERT_EQ(neverc_gif_decode(
+                          double_gce,
+                          gif_len + sizeof(transparent_gce),
+                          &replaced), 0);
+            if (replaced.num_frames == 1) {
+                ASSERT_EQ(replaced.frames[0].has_transparency, 0);
+                ASSERT_EQ(replaced.frames[0].disposal_method, 2);
+            }
+            neverc_gif_free(&replaced);
+            free(double_gce);
+        }
+    }
 
     free(gif_data);
     neverc_gif_free(&img);
@@ -124,6 +168,13 @@ static void test_invalid_data(void) {
     frame.palette_size = 2;
     uint8_t *output = NULL;
     size_t output_length = 0;
+    ASSERT_EQ(neverc_gif_encode(&frame, &output, &output_length), -1);
+
+    frame.width = 1;
+    frame.left = UINT16_MAX;
+    ASSERT_EQ(neverc_gif_encode(&frame, &output, &output_length), -1);
+    frame.left = 0;
+    frame.disposal_method = 4;
     ASSERT_EQ(neverc_gif_encode(&frame, &output, &output_length), -1);
 }
 

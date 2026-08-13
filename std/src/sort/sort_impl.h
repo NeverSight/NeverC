@@ -762,7 +762,11 @@ static void nci_tim_merge_force(char *base, size_t es, nci_cmp_fn cmp,
 /* --- Public Timsort entry --- */
 
 static void nci_timsort(void *base_, size_t n, size_t es, nci_cmp_fn cmp) {
-    if (n <= 1 || es == 0) return;
+    if (n <= 1 || es == 0 || !base_ || !cmp) return;
+    /* Every element address and the merge-buffer size must be representable.
+     * Since floor(n/2)+1 <= n for n >= 2, this single span check protects both
+     * the input pointer arithmetic and the scratch allocation below. */
+    if (n > SIZE_MAX / es) return;
 
     char *base = (char *)base_;
 
@@ -978,7 +982,11 @@ static void NAME(TYPE *a, size_t n) {                                        \
 }
 
 #define NCI_INT_LESS(a, b) ((a) < (b))
-#define NCI_DBL_LESS(a, b) ((a) < (b))
+static int nci_double_less(double a, double b) {
+    /* Match Go's Float64 ordering: every NaN sorts before every non-NaN. */
+    return (a != a) ? (b == b) : (a < b);
+}
+#define NCI_DBL_LESS(a, b) nci_double_less((a), (b))
 
 NCI_DEFINE_TYPED_SORT(nci_pdqsort_int,    int,    NCI_INT_LESS)
 NCI_DEFINE_TYPED_SORT(nci_pdqsort_double, double, NCI_DBL_LESS)

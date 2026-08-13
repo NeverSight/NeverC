@@ -15,12 +15,15 @@ typedef struct {
 } neverc_gif_color_t;
 
 typedef struct {
+    uint32_t left;              /* frame origin in the logical screen */
+    uint32_t top;
     uint32_t width;
     uint32_t height;
     uint8_t *indices;           /* palette indices, width*height */
     neverc_gif_color_t palette[NEVERC_GIF_MAX_PALETTE];
     int palette_size;
     int delay_centiseconds;     /* frame delay in 1/100s */
+    int disposal_method;        /* GIF disposal method (0-3 are defined) */
     uint8_t transparent_index;
     int has_transparency;
 } neverc_gif_frame_t;

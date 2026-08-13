@@ -15,6 +15,15 @@ static void check_str(const char *name, const char *got, const char *expected) {
     }
 }
 
+static void check_true(const char *name, int condition) {
+    tests_run++;
+    if (condition) tests_passed++;
+    else {
+        tests_failed++;
+        printf("  FAIL: %s\n", name);
+    }
+}
+
 static void test_escape(void) {
     printf("[escape]\n");
     size_t outlen;
@@ -42,6 +51,13 @@ static void test_escape(void) {
     char *r6 = neverc_html_escape_string("a < b && c > d", &outlen);
     check_str("operators", r6, "a &lt; b &amp;&amp; c &gt; d");
     free(r6);
+
+    outlen = 123;
+    check_true("escape rejects NULL input",
+               neverc_html_escape_string(NULL, &outlen) == NULL);
+    check_true("escape clears length on failure", outlen == 0);
+    check_true("escape rejects NULL length",
+               neverc_html_escape_string("text", NULL) == NULL);
 }
 
 static void test_unescape(void) {
@@ -71,6 +87,13 @@ static void test_unescape(void) {
     char *r6 = neverc_html_unescape_string("&quot;hi&quot;", &outlen);
     check_str("quot entity", r6, "\"hi\"");
     free(r6);
+
+    outlen = 123;
+    check_true("unescape rejects NULL input",
+               neverc_html_unescape_string(NULL, &outlen) == NULL);
+    check_true("unescape clears length on failure", outlen == 0);
+    check_true("unescape rejects NULL length",
+               neverc_html_unescape_string("text", NULL) == NULL);
 }
 
 static void test_roundtrip(void) {

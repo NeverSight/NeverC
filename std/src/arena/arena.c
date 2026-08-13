@@ -111,7 +111,7 @@ void *neverc_arena_alloc_aligned(neverc_arena_t *a, size_t size, size_t al) {
 }
 
 void *neverc_arena_alloc(neverc_arena_t *a, size_t size) {
-    return neverc_arena_alloc_aligned(a, size, sizeof(void *));
+    return neverc_arena_alloc_aligned(a, size, _Alignof(max_align_t));
 }
 
 void *neverc_arena_calloc(neverc_arena_t *a, size_t count, size_t size) {

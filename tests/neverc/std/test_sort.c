@@ -1,4 +1,6 @@
 #include "neverc/std/sort.h"
+#include <math.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -42,6 +44,14 @@ static void test_sort_doubles(void) {
     check_true("d[1]<=d[2]", arr[1] <= arr[2]);
     check_true("d[2]<=d[3]", arr[2] <= arr[3]);
     check_true("d[3]<=d[4]", arr[3] <= arr[4]);
+
+    double with_nan[] = {3.0, NAN, -1.0, NAN, 2.0};
+    neverc_sort_doubles(with_nan, 5);
+    check_true("NaNs sort first",
+               isnan(with_nan[0]) && isnan(with_nan[1]));
+    check_true("finite doubles remain ordered",
+               with_nan[2] == -1.0 && with_nan[3] == 2.0 &&
+               with_nan[4] == 3.0);
 }
 
 static int cmp_str(const void *a, const void *b) {
@@ -94,6 +104,10 @@ static void test_search_doubles(void) {
     check_int("find 1.0", neverc_sort_search_doubles(arr, 5, 1.0), 0);
     check_int("find 5.0", neverc_sort_search_doubles(arr, 5, 5.0), 4);
     check_int("find 2.5", neverc_sort_search_doubles(arr, 5, 2.5), -1);
+
+    double with_nan[] = {NAN, NAN, 1.0, 2.0};
+    check_int("find NaN", neverc_sort_search_doubles(
+                                  with_nan, 4, NAN), 0);
 }
 
 static const int *search_target_arr;
@@ -137,6 +151,25 @@ static void test_stable_sort(void) {
     check_true("stable sorted", data[0].key == 1 && data[1].key == 1 && data[2].key == 2);
     check_true("stable order preserved", data[0].order == 1 && data[1].order == 4);
     check_true("stable 3s order", data[3].order == 0 && data[4].order == 2);
+}
+
+static int invalid_span_comparisons;
+static int count_invalid_span_comparison(const void *a, const void *b) {
+    (void)a;
+    (void)b;
+    invalid_span_comparisons++;
+    return 0;
+}
+
+static void test_stable_sort_rejects_overflowing_span(void) {
+    printf("[stable_sort_rejects_overflowing_span]\n");
+    unsigned char data = 0x5a;
+    invalid_span_comparisons = 0;
+    neverc_sort_stable(
+        &data, 33, SIZE_MAX / 32 + 1, count_invalid_span_comparison);
+    check_int("overflowing span performs no comparisons",
+              invalid_span_comparisons, 0);
+    check_int("overflowing span leaves input unchanged", data, 0x5a);
 }
 
 /*
@@ -226,6 +259,13 @@ static void test_doubles_are_sorted(void) {
 
     double unsorted[] = {3.3, 1.1, 2.2};
     check_int("doubles_sorted_no", neverc_sort_doubles_are_sorted(unsorted, 3), 0);
+
+    double sorted_nan[] = {NAN, NAN, 1.0, 2.0};
+    check_int("doubles_sorted_nan_first",
+              neverc_sort_doubles_are_sorted(sorted_nan, 4), 1);
+    double unsorted_nan[] = {1.0, NAN, 2.0};
+    check_int("doubles_sorted_nan_after_number",
+              neverc_sort_doubles_are_sorted(unsorted_nan, 3), 0);
 }
 
 static int find_arr[5] = {10, 20, 30, 40, 50};
@@ -248,7 +288,7 @@ static void test_find(void) {
     check_int("find_30_index", (int)idx, 2);
     check_int("find_30_found", found, 1);
 
-    found = 0;
+    found = 1;
     idx = neverc_sort_find(5, find_cmp_missing, &found);
     check_int("find_25_not_found", found, 0);
     check_int("find_25_insert_pos", (int)idx, 2);
@@ -286,6 +326,7 @@ int main(void) {
     test_search_doubles();
     test_search_generic();
     test_stable_sort();
+    test_stable_sort_rejects_overflowing_span();
     test_stable_many_runs();
     test_sort_strings();
     test_reverse();

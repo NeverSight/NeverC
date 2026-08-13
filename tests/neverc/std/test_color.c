@@ -107,6 +107,15 @@ static void test_parse_hex(void) {
     ASSERT_INT_EQ(c.r, 0xFF);
     ASSERT_INT_EQ(c.g, 0x00);
     ASSERT_INT_EQ(c.b, 0x00);
+
+    c = neverc_color_rgba(1, 2, 3, 4);
+    ASSERT_INT_EQ(neverc_color_parse_hex("#GGGGGG", &c), -1);
+    ASSERT_TRUE(neverc_color_equal(c, neverc_color_rgba(1, 2, 3, 4)));
+    ASSERT_INT_EQ(neverc_color_parse_hex("#FF00GG", &c), -1);
+    ASSERT_TRUE(neverc_color_equal(c, neverc_color_rgba(1, 2, 3, 4)));
+    ASSERT_INT_EQ(neverc_color_parse_hex("#xyz", &c), -1);
+    ASSERT_TRUE(neverc_color_equal(c, neverc_color_rgba(1, 2, 3, 4)));
+    ASSERT_INT_EQ(neverc_color_parse_hex("#FF8000", NULL), -1);
 }
 
 static void test_lerp(void) {

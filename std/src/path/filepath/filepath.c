@@ -4,6 +4,8 @@
  */
 
 #include "neverc/std/path/filepath.h"
+#include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 static int is_sep(char c) {
@@ -75,6 +77,7 @@ const char *neverc_filepath_dir(const char *path, char *buf, size_t buf_len) {
 }
 
 const char *neverc_filepath_ext(const char *path) {
+    if (!path) return "";
     size_t len = strlen(path);
     size_t i = len;
     while (i > 0) {
@@ -86,6 +89,7 @@ const char *neverc_filepath_ext(const char *path) {
 }
 
 int neverc_filepath_isabs(const char *path) {
+    if (!path) return 0;
 #ifdef _WIN32
     size_t vol = volume_name_len(path);
     return vol > 0 && strlen(path) > vol && is_sep(path[vol]);
@@ -95,25 +99,31 @@ int neverc_filepath_isabs(const char *path) {
 }
 
 const char *neverc_filepath_clean(const char *path, char *buf, size_t buf_len) {
+    if (!buf || buf_len == 0) return NULL;
     if (!path || *path == '\0') {
-        if (buf_len >= 2) { buf[0] = '.'; buf[1] = '\0'; }
+        if (buf_len < 2) return NULL;
+        buf[0] = '.';
+        buf[1] = '\0';
         return buf;
     }
     size_t len = strlen(path);
     size_t vol = volume_name_len(path);
     int rooted = (len > vol && is_sep(path[vol]));
 
-    char out[4096];
+    if (len == SIZE_MAX) return NULL;
+    char *out = (char *)malloc(len + 1);
+    if (!out) return NULL;
     size_t opos = 0;
 
     /* copy volume name */
-    for (size_t i = 0; i < vol; i++) out[opos++] = path[i];
+    memcpy(out, path, vol);
+    opos = vol;
 
     if (rooted) out[opos++] = NEVERC_FILEPATH_SEP;
 
     size_t r = vol;
     if (rooted) r++;
-    int dotdot = (int)opos;
+    size_t dotdot = opos;
 
     while (r < len) {
         if (is_sep(path[r])) {
@@ -123,44 +133,64 @@ const char *neverc_filepath_clean(const char *path, char *buf, size_t buf_len) {
         } else if (path[r] == '.' && r + 1 < len && path[r + 1] == '.' &&
                    (r + 2 >= len || is_sep(path[r + 2]))) {
             r += 2;
-            if ((int)opos > dotdot) {
+            if (opos > dotdot) {
                 opos--;
-                while ((int)opos > dotdot && !is_sep(out[opos]))
+                while (opos > dotdot && !is_sep(out[opos]))
                     opos--;
             } else if (!rooted) {
-                if (opos > 0) out[opos++] = NEVERC_FILEPATH_SEP;
+                if (opos > 0) {
+                    if (opos >= len) goto clean_failed;
+                    out[opos++] = NEVERC_FILEPATH_SEP;
+                }
+                if (len - opos < 2) goto clean_failed;
                 out[opos++] = '.'; out[opos++] = '.';
-                dotdot = (int)opos;
+                dotdot = opos;
             }
         } else {
-            if ((rooted && opos != vol + 1) || (!rooted && opos > 0))
+            if ((rooted && opos != vol + 1) || (!rooted && opos > 0)) {
+                if (opos >= len) goto clean_failed;
                 out[opos++] = NEVERC_FILEPATH_SEP;
-            while (r < len && !is_sep(path[r]))
+            }
+            while (r < len && !is_sep(path[r])) {
+                if (opos >= len) goto clean_failed;
                 out[opos++] = path[r++];
+            }
         }
     }
 
-    if (opos == 0) { out[opos++] = '.'; }
+    if (opos == 0) {
+        if (len == 0) goto clean_failed;
+        out[opos++] = '.';
+    }
 
-    if (opos + 1 > buf_len) return NULL;
+    if (opos >= buf_len) goto clean_failed;
     memcpy(buf, out, opos);
     buf[opos] = '\0';
+    free(out);
     return buf;
+
+clean_failed:
+    free(out);
+    return NULL;
 }
 
 const char *neverc_filepath_join(const char *a, const char *b, char *buf, size_t buf_len) {
     if (!a || *a == '\0') return neverc_filepath_clean(b, buf, buf_len);
     if (!b || *b == '\0') return neverc_filepath_clean(a, buf, buf_len);
 
-    char tmp[4096];
     size_t alen = strlen(a), blen = strlen(b);
-    if (alen + 1 + blen + 1 > sizeof(tmp)) return NULL;
+    if (blen > SIZE_MAX - 2 || alen > SIZE_MAX - blen - 2) return NULL;
+    size_t joined_len = alen + 1 + blen;
+    char *tmp = (char *)malloc(joined_len + 1);
+    if (!tmp) return NULL;
     memcpy(tmp, a, alen);
     tmp[alen] = NEVERC_FILEPATH_SEP;
     memcpy(tmp + alen + 1, b, blen);
-    tmp[alen + 1 + blen] = '\0';
+    tmp[joined_len] = '\0';
 
-    return neverc_filepath_clean(tmp, buf, buf_len);
+    const char *result = neverc_filepath_clean(tmp, buf, buf_len);
+    free(tmp);
+    return result;
 }
 
 void neverc_filepath_split(const char *path, const char **dir, size_t *dir_len,

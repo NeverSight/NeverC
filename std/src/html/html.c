@@ -14,17 +14,25 @@ static const uint8_t html_esc_extra[256] = {
 };
 
 char *neverc_html_escape_string(const char *s, size_t *outlen) {
+    if (!outlen) return NULL;
+    *outlen = 0;
+    if (!s) return NULL;
     size_t slen = strlen(s);
 
-    /* Pass 1: branchless sum of the extra bytes escaping will add. With no early
-     * exit this pipelines well, so the common "nothing to escape" check is cheap
-     * and the result lets us allocate the output exactly (no realloc, no slack). */
+    /* Pass 1 computes the exact expansion with checked arithmetic so an
+     * attacker-controlled escape-dense string cannot wrap the allocation size. */
     size_t extra = 0;
-    for (size_t i = 0; i < slen; i++)
-        extra += html_esc_extra[(unsigned char)s[i]];
+    for (size_t i = 0; i < slen; i++) {
+        size_t added = html_esc_extra[(unsigned char)s[i]];
+        if (added > SIZE_MAX - extra) return NULL;
+        extra += added;
+    }
+    if (slen > SIZE_MAX - extra) return NULL;
+    size_t escaped_len = slen + extra;
+    if (escaped_len == SIZE_MAX) return NULL;
 
-    char *r = (char *)malloc(slen + extra + 1);
-    if (!r) { *outlen = 0; return NULL; }
+    char *r = (char *)malloc(escaped_len + 1);
+    if (!r) return NULL;
 
     /* Fast path: nothing needs escaping, copy the whole string in one go. */
     if (extra == 0) {
@@ -64,9 +72,13 @@ static int starts_with(const char *s, const char *prefix) {
 }
 
 char *neverc_html_unescape_string(const char *s, size_t *outlen) {
+    if (!outlen) return NULL;
+    *outlen = 0;
+    if (!s) return NULL;
     size_t slen = strlen(s);
+    if (slen == SIZE_MAX) return NULL;
     char *r = (char *)malloc(slen + 1);
-    if (!r) { *outlen = 0; return NULL; }
+    if (!r) return NULL;
 
     /* Entities only begin at '&'. Bulk-copy the clean prefix up to the first
      * one (and short-circuit entirely when there is none); the byte-at-a-time

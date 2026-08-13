@@ -3,6 +3,7 @@
  */
 #include "neverc/std/path/filepath.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static int tests_run = 0, tests_passed = 0, tests_failed = 0;
@@ -101,6 +102,51 @@ static void test_clean(void) {
     );
 }
 
+static void test_long_and_invalid_paths(void) {
+    printf("[long_and_invalid_paths]\n");
+    const size_t component_len = 6000;
+    char *path = (char *)malloc(component_len + 1);
+    char *buf = (char *)malloc(component_len + 2);
+    ASSERT_TRUE(path != NULL);
+    ASSERT_TRUE(buf != NULL);
+    if (path && buf) {
+        memset(path, 'a', component_len);
+        path[component_len] = '\0';
+        ASSERT_TRUE(neverc_filepath_clean(
+                        path, buf, component_len + 2) == buf);
+        ASSERT_TRUE(strlen(buf) == component_len);
+        ASSERT_TRUE(memcmp(buf, path, component_len + 1) == 0);
+    }
+    free(path);
+    free(buf);
+
+    const size_t left_len = 3000;
+    const size_t right_len = 2000;
+    char *left = (char *)malloc(left_len + 1);
+    char *right = (char *)malloc(right_len + 1);
+    char *joined = (char *)malloc(left_len + right_len + 2);
+    ASSERT_TRUE(left != NULL && right != NULL && joined != NULL);
+    if (left && right && joined) {
+        memset(left, 'l', left_len);
+        left[left_len] = '\0';
+        memset(right, 'r', right_len);
+        right[right_len] = '\0';
+        ASSERT_TRUE(neverc_filepath_join(
+                        left, right, joined, left_len + right_len + 2) ==
+                    joined);
+        ASSERT_TRUE(strlen(joined) == left_len + right_len + 1);
+        ASSERT_INT_EQ(joined[left_len], NEVERC_FILEPATH_SEP);
+    }
+    free(left);
+    free(right);
+    free(joined);
+
+    char tiny[1] = {'x'};
+    ASSERT_TRUE(neverc_filepath_clean("", tiny, sizeof(tiny)) == NULL);
+    ASSERT_STR_EQ(neverc_filepath_ext(NULL), "");
+    ASSERT_FALSE(neverc_filepath_isabs(NULL));
+}
+
 static void test_join(void) {
     printf("[join]\n");
     char buf[256];
@@ -166,6 +212,7 @@ int main(void) {
     test_ext();
     test_isabs();
     test_clean();
+    test_long_and_invalid_paths();
     test_join();
     test_split();
     test_match();
