@@ -180,7 +180,26 @@ static void test_invalid_input(void) {
     printf("[base32 invalid input]\n");
     uint8_t dec[64];
 
+    int n = neverc_base32_decode(
+        dec, "MZXW6YTB\r\nOI======", 18);
+    check_int("decode ignores CRLF length", n, 6);
+    if (n == 6)
+        check_bytes("decode ignores CRLF value", dec, (size_t)n,
+                    (const uint8_t *)"foobar", 6);
+    n = neverc_base32_decode(dec, "MY===\n===", 9);
+    check_int("decode split padding length", n, 1);
+    if (n == 1)
+        check_int("decode split padding value", dec[0], 'f');
+    n = neverc_base32_hex_decode(
+        dec, "CPNMUOJ1\r\nE8======", 18);
+    check_int("hex decode ignores CRLF length", n, 6);
+    if (n == 6)
+        check_bytes("hex decode ignores CRLF value", dec, (size_t)n,
+                    (const uint8_t *)"foobar", 6);
+
     check_int("decode invalid char", neverc_base32_decode(dec, "1AAAAAAA", 8), -1);
+    check_int("decode rejects non-newline whitespace",
+              neverc_base32_decode(dec, "M ======", 8), -1);
     check_int("decode bad length 1", neverc_base32_decode(dec, "A", 1), -1);
     check_int("decode bad length 3", neverc_base32_decode(dec, "AAA", 3), -1);
     check_int("decode bad length 6", neverc_base32_decode(dec, "AAAAAA", 6), -1);
@@ -195,7 +214,7 @@ static void test_invalid_input(void) {
     check_int("hex decode rejects noncanonical raw tail",
               neverc_base32_hex_decode(dec, "CP", 2), -1);
 
-    int n = neverc_base32_decode(dec, "MY", 2);
+    n = neverc_base32_decode(dec, "MY", 2);
     check_int("decode canonical raw length", n, 1);
     check_int("decode canonical raw value", dec[0], 'f');
     n = neverc_base32_hex_decode(dec, "CO", 2);

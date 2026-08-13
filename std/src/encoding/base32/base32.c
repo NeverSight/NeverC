@@ -148,84 +148,122 @@ static int decode_impl(uint8_t *dst, const char *src, size_t src_len,
         ((!dst || !src) && src_len != 0))
         return -1;
 
-    size_t padded_len = src_len;
-    size_t padding = 0;
-    while (padding < src_len && src[src_len - 1 - padding] == '=')
-        padding++;
-    src_len -= padding;
+    size_t clean_len = 0;
+    for (size_t i = 0; i < src_len; i++) {
+        if (src[i] != '\r' && src[i] != '\n')
+            clean_len++;
+    }
+    if (clean_len == 0)
+        return 0;
 
-    size_t remain = src_len % 8;
+    size_t padding = 0;
+    for (size_t i = src_len; i > 0; ) {
+        unsigned char c = (unsigned char)src[--i];
+        if (c == '\r' || c == '\n')
+            continue;
+        if (c != '=')
+            break;
+        padding++;
+    }
+
+    size_t encoded_len = clean_len - padding;
+    size_t remain = encoded_len % 8;
     size_t tail_bytes;
     size_t expected_padding;
+    uint8_t unused_mask;
     switch (remain) {
-    case 0: tail_bytes = 0; expected_padding = 0; break;
-    case 2: tail_bytes = 1; expected_padding = 6; break;
-    case 4: tail_bytes = 2; expected_padding = 4; break;
-    case 5: tail_bytes = 3; expected_padding = 3; break;
-    case 7: tail_bytes = 4; expected_padding = 1; break;
+    case 0:
+        tail_bytes = 0;
+        expected_padding = 0;
+        unused_mask = 0;
+        break;
+    case 2:
+        tail_bytes = 1;
+        expected_padding = 6;
+        unused_mask = 0x03;
+        break;
+    case 4:
+        tail_bytes = 2;
+        expected_padding = 4;
+        unused_mask = 0x0f;
+        break;
+    case 5:
+        tail_bytes = 3;
+        expected_padding = 3;
+        unused_mask = 0x01;
+        break;
+    case 7:
+        tail_bytes = 4;
+        expected_padding = 1;
+        unused_mask = 0x07;
+        break;
     default: return -1;
     }
     if (padding != 0 &&
-        (padded_len % 8 != 0 || padding != expected_padding))
+        (clean_len % 8 != 0 || padding != expected_padding))
         return -1;
 
-    size_t decoded_len = (src_len / 8) * 5 + tail_bytes;
+    size_t logical = 0;
+    uint8_t last_value = 0;
+    for (size_t i = 0; i < src_len; i++) {
+        unsigned char c = (unsigned char)src[i];
+        if (c == '\r' || c == '\n')
+            continue;
+        if (logical < encoded_len) {
+            uint8_t value = dec_table[c];
+            if (value & B32_INV)
+                return -1;
+            if (logical + 1 == encoded_len)
+                last_value = value;
+        } else if (c != '=') {
+            return -1;
+        }
+        logical++;
+    }
+    if (logical != clean_len || (last_value & unused_mask) != 0)
+        return -1;
+
+    size_t decoded_len = (encoded_len / 8) * 5 + tail_bytes;
     if (decoded_len > INT_MAX)
         return -1;
 
     size_t di = 0;
-    size_t si = 0;
-
-    size_t n = (src_len / 8) * 8;
-    while (si < n) {
-        uint8_t a = dec_table[(uint8_t)src[si]];
-        uint8_t b = dec_table[(uint8_t)src[si+1]];
-        uint8_t c = dec_table[(uint8_t)src[si+2]];
-        uint8_t d = dec_table[(uint8_t)src[si+3]];
-        uint8_t e = dec_table[(uint8_t)src[si+4]];
-        uint8_t f = dec_table[(uint8_t)src[si+5]];
-        uint8_t g = dec_table[(uint8_t)src[si+6]];
-        uint8_t h = dec_table[(uint8_t)src[si+7]];
-        if ((a | b | c | d | e | f | g | h) & B32_INV) return -1;
-        uint64_t val = ((uint64_t)a << 35) | ((uint64_t)b << 30) |
-                       ((uint64_t)c << 25) | ((uint64_t)d << 20) |
-                       ((uint64_t)e << 15) | ((uint64_t)f << 10) |
-                       ((uint64_t)g << 5)  | (uint64_t)h;
-        dst[di]   = (uint8_t)(val >> 32);
-        dst[di+1] = (uint8_t)(val >> 24);
-        dst[di+2] = (uint8_t)(val >> 16);
-        dst[di+3] = (uint8_t)(val >> 8);
-        dst[di+4] = (uint8_t)val;
-        si += 8;
-        di += 5;
+    uint8_t values[8];
+    size_t value_count = 0;
+    size_t data_seen = 0;
+    for (size_t i = 0; i < src_len && data_seen < encoded_len; i++) {
+        unsigned char c = (unsigned char)src[i];
+        if (c == '\r' || c == '\n')
+            continue;
+        values[value_count++] = dec_table[c];
+        data_seen++;
+        if (value_count == 8) {
+            uint64_t val = ((uint64_t)values[0] << 35) |
+                           ((uint64_t)values[1] << 30) |
+                           ((uint64_t)values[2] << 25) |
+                           ((uint64_t)values[3] << 20) |
+                           ((uint64_t)values[4] << 15) |
+                           ((uint64_t)values[5] << 10) |
+                           ((uint64_t)values[6] << 5) |
+                           (uint64_t)values[7];
+            dst[di] = (uint8_t)(val >> 32);
+            dst[di + 1] = (uint8_t)(val >> 24);
+            dst[di + 2] = (uint8_t)(val >> 16);
+            dst[di + 3] = (uint8_t)(val >> 8);
+            dst[di + 4] = (uint8_t)val;
+            di += 5;
+            value_count = 0;
+        }
     }
 
-    if (remain > 0) {
+    if (value_count > 0) {
         uint64_t val = 0;
-        uint8_t check = 0;
-        uint8_t last = 0;
-        for (size_t k = 0; k < remain; k++) {
-            uint8_t v = dec_table[(uint8_t)src[si + k]];
-            check |= v;
-            last = v;
-            val |= (uint64_t)v << (35 - k * 5);
-        }
-        if (check & B32_INV) return -1;
-
-        int out_bytes;
-        uint8_t unused_mask;
-        switch (remain) {
-        case 2: out_bytes = 1; unused_mask = 0x03; break;
-        case 4: out_bytes = 2; unused_mask = 0x0f; break;
-        case 5: out_bytes = 3; unused_mask = 0x01; break;
-        case 7: out_bytes = 4; unused_mask = 0x07; break;
-        default: return -1;
-        }
-        if ((last & unused_mask) != 0) return -1;
-        if (out_bytes > 0) dst[di++] = (uint8_t)(val >> 32);
-        if (out_bytes > 1) dst[di++] = (uint8_t)(val >> 24);
-        if (out_bytes > 2) dst[di++] = (uint8_t)(val >> 16);
-        if (out_bytes > 3) dst[di++] = (uint8_t)(val >> 8);
+        for (size_t k = 0; k < value_count; k++)
+            val |= (uint64_t)values[k] << (35 - k * 5);
+        if (tail_bytes > 0) dst[di++] = (uint8_t)(val >> 32);
+        if (tail_bytes > 1) dst[di++] = (uint8_t)(val >> 24);
+        if (tail_bytes > 2) dst[di++] = (uint8_t)(val >> 16);
+        if (tail_bytes > 3) dst[di++] = (uint8_t)(val >> 8);
     }
 
     return (int)di;
