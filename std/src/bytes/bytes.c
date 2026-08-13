@@ -9,6 +9,76 @@ static int bytes_span_valid(const void *data, size_t len) {
     return data != NULL || len == 0;
 }
 
+static size_t bytes_decode_rune(const uint8_t *data, size_t len,
+                                uint32_t *rune) {
+    size_t width = utf8_decode(data, len, rune);
+    if (width == 0) {
+        *rune = 0xfffd;
+        return 1;
+    }
+    return width;
+}
+
+static size_t bytes_decode_last_rune(const uint8_t *data, size_t len,
+                                     uint32_t *rune) {
+    if (len == 0) {
+        *rune = 0;
+        return 0;
+    }
+    if (data[len - 1] < 0x80) {
+        *rune = data[len - 1];
+        return 1;
+    }
+
+    size_t start = len - 1;
+    size_t lower = len > 4 ? len - 4 : 0;
+    while (start > lower && (data[start] & 0xc0U) == 0x80U)
+        start--;
+    size_t width = utf8_decode(data + start, len - start, rune);
+    if (width != 0 && start + width == len)
+        return width;
+    *rune = 0xfffd;
+    return 1;
+}
+
+static int bytes_cutset_contains_rune(const char *cutset, size_t cutset_len,
+                                      uint32_t target) {
+    size_t position = 0;
+    while (position < cutset_len) {
+        uint32_t rune;
+        size_t width = bytes_decode_rune(
+            (const uint8_t *)cutset + position, cutset_len - position, &rune);
+        if (rune == target)
+            return 1;
+        position += width;
+    }
+    return 0;
+}
+
+static int bytes_unicode_is_space(uint32_t rune) {
+    if (rune >= 0x2000 && rune <= 0x200a)
+        return 1;
+    switch (rune) {
+    case '\t':
+    case '\n':
+    case '\v':
+    case '\f':
+    case '\r':
+    case ' ':
+    case 0x0085:
+    case 0x00a0:
+    case 0x1680:
+    case 0x2028:
+    case 0x2029:
+    case 0x202f:
+    case 0x205f:
+    case 0x3000:
+        return 1;
+    default:
+        return 0;
+    }
+}
+
 static const uint8_t *bytes_offset(const uint8_t *data, size_t offset) {
     return data ? data + offset : NULL;
 }
@@ -197,11 +267,16 @@ size_t neverc_bytes_last_index(const uint8_t *s, size_t slen,
     return nci_ss_last_index(s, slen, sep, seplen);
 }
 
-static void build_ascii_set(const char *chars, uint32_t set[8]) {
+static int build_ascii_set(const char *chars, uint32_t set[8]) {
     memset(set, 0, 8 * sizeof(uint32_t));
-    if (!chars) return;
-    for (const char *c = chars; *c; c++)
-        set[((uint8_t)*c) >> 5] |= 1u << (((uint8_t)*c) & 31);
+    if (!chars) return 0;
+    for (const char *c = chars; *c; c++) {
+        uint8_t value = (uint8_t)*c;
+        if (value >= 0x80)
+            return 0;
+        set[value >> 5] |= 1u << (value & 31);
+    }
+    return 1;
 }
 
 #define ASCII_SET_HAS(set, c) ((set)[(c) >> 5] & (1u << ((c) & 31)))
@@ -209,12 +284,23 @@ static void build_ascii_set(const char *chars, uint32_t set[8]) {
 size_t neverc_bytes_index_any(const uint8_t *s, size_t slen, const char *chars) {
     if (!bytes_span_valid(s, slen) || !chars) return (size_t)-1;
     if (!chars[0]) return (size_t)-1;
-    if (!chars[1])   /* single-byte cutset: SIMD memchr beats the bitmap loop */
+    if ((uint8_t)chars[0] < 0x80 && !chars[1])
         return neverc_bytes_index_byte(s, slen, (uint8_t)chars[0]);
     uint32_t set[8];
-    build_ascii_set(chars, set);
-    for (size_t i = 0; i < slen; i++)
-        if (ASCII_SET_HAS(set, s[i])) return i;
+    if (build_ascii_set(chars, set)) {
+        for (size_t i = 0; i < slen; i++)
+            if (ASCII_SET_HAS(set, s[i])) return i;
+        return (size_t)-1;
+    }
+
+    size_t chars_len = strlen(chars);
+    for (size_t i = 0; i < slen; ) {
+        uint32_t rune;
+        size_t width = bytes_decode_rune(s + i, slen - i, &rune);
+        if (bytes_cutset_contains_rune(chars, chars_len, rune))
+            return i;
+        i += width;
+    }
     return (size_t)-1;
 }
 
@@ -222,13 +308,25 @@ size_t neverc_bytes_last_index_any(const uint8_t *s, size_t slen,
                                    const char *chars) {
     if (!bytes_span_valid(s, slen) || !chars) return (size_t)-1;
     if (!chars[0]) return (size_t)-1;
-    if (!chars[1])   /* single-byte cutset: word-at-a-time reverse scan */
+    if ((uint8_t)chars[0] < 0x80 && !chars[1])
         return neverc_bytes_last_index_byte(s, slen, (uint8_t)chars[0]);
     uint32_t set[8];
-    build_ascii_set(chars, set);
-    for (size_t i = slen; i > 0; i--)
-        if (ASCII_SET_HAS(set, s[i - 1])) return i - 1;
-    return (size_t)-1;
+    if (build_ascii_set(chars, set)) {
+        for (size_t i = slen; i > 0; i--)
+            if (ASCII_SET_HAS(set, s[i - 1])) return i - 1;
+        return (size_t)-1;
+    }
+
+    size_t chars_len = strlen(chars);
+    size_t result = (size_t)-1;
+    for (size_t i = 0; i < slen; ) {
+        uint32_t rune;
+        size_t width = bytes_decode_rune(s + i, slen - i, &rune);
+        if (bytes_cutset_contains_rune(chars, chars_len, rune))
+            result = i;
+        i += width;
+    }
+    return result;
 }
 
 int neverc_bytes_contains(const uint8_t *b, size_t blen,
@@ -350,7 +448,9 @@ uint8_t *neverc_bytes_repeat(const uint8_t *b, size_t blen,
                              int count, size_t *outlen) {
     if (!outlen || !bytes_span_valid(b, blen)) return NULL;
     *outlen = 0;
-    if (count <= 0 || blen == 0) {
+    if (count < 0)
+        return NULL;
+    if (count == 0 || blen == 0) {
         return bytes_alloc(0);
     }
     if ((size_t)count > SIZE_MAX / blen) return NULL;
@@ -489,19 +589,25 @@ static int in_cutset(uint8_t c, const uint32_t set[8]) {
     return (set[c >> 5] & (1u << (c & 31))) != 0;
 }
 
-static int is_space(uint8_t c) {
-    return c == ' ' || c == '\t' || c == '\n' || c == '\r' ||
-           c == '\v' || c == '\f';
-}
-
 uint8_t *neverc_bytes_trim_left(const uint8_t *s, size_t slen,
                                 const char *cutset, size_t *outlen) {
     if (!outlen || !bytes_span_valid(s, slen) || !cutset) return NULL;
     *outlen = 0;
     uint32_t set[8];
-    build_ascii_set(cutset, set);
     size_t start = 0;
-    while (start < slen && in_cutset(s[start], set)) start++;
+    if (build_ascii_set(cutset, set)) {
+        while (start < slen && in_cutset(s[start], set))
+            start++;
+    } else {
+        size_t cutset_len = strlen(cutset);
+        while (start < slen) {
+            uint32_t rune;
+            size_t width = bytes_decode_rune(s + start, slen - start, &rune);
+            if (!bytes_cutset_contains_rune(cutset, cutset_len, rune))
+                break;
+            start += width;
+        }
+    }
     return bytes_copy(bytes_offset(s, start), slen - start, outlen);
 }
 
@@ -510,9 +616,20 @@ uint8_t *neverc_bytes_trim_right(const uint8_t *s, size_t slen,
     if (!outlen || !bytes_span_valid(s, slen) || !cutset) return NULL;
     *outlen = 0;
     uint32_t set[8];
-    build_ascii_set(cutset, set);
     size_t end = slen;
-    while (end > 0 && in_cutset(s[end - 1], set)) end--;
+    if (build_ascii_set(cutset, set)) {
+        while (end > 0 && in_cutset(s[end - 1], set))
+            end--;
+    } else {
+        size_t cutset_len = strlen(cutset);
+        while (end > 0) {
+            uint32_t rune;
+            size_t width = bytes_decode_last_rune(s, end, &rune);
+            if (!bytes_cutset_contains_rune(cutset, cutset_len, rune))
+                break;
+            end -= width;
+        }
+    }
     return bytes_copy(s, end, outlen);
 }
 
@@ -521,10 +638,29 @@ uint8_t *neverc_bytes_trim(const uint8_t *s, size_t slen,
     if (!outlen || !bytes_span_valid(s, slen) || !cutset) return NULL;
     *outlen = 0;
     uint32_t set[8];
-    build_ascii_set(cutset, set);
     size_t start = 0, end = slen;
-    while (start < end && in_cutset(s[start], set)) start++;
-    while (end > start && in_cutset(s[end - 1], set)) end--;
+    if (build_ascii_set(cutset, set)) {
+        while (start < end && in_cutset(s[start], set))
+            start++;
+        while (end > start && in_cutset(s[end - 1], set))
+            end--;
+    } else {
+        size_t cutset_len = strlen(cutset);
+        while (start < end) {
+            uint32_t rune;
+            size_t width = bytes_decode_rune(s + start, end - start, &rune);
+            if (!bytes_cutset_contains_rune(cutset, cutset_len, rune))
+                break;
+            start += width;
+        }
+        while (end > start) {
+            uint32_t rune;
+            size_t width = bytes_decode_last_rune(s + start, end - start, &rune);
+            if (!bytes_cutset_contains_rune(cutset, cutset_len, rune))
+                break;
+            end -= width;
+        }
+    }
     return bytes_copy(bytes_offset(s, start), end - start, outlen);
 }
 
@@ -532,8 +668,20 @@ uint8_t *neverc_bytes_trim_space(const uint8_t *s, size_t slen, size_t *outlen) 
     if (!outlen || !bytes_span_valid(s, slen)) return NULL;
     *outlen = 0;
     size_t start = 0, end = slen;
-    while (start < end && is_space(s[start])) start++;
-    while (end > start && is_space(s[end - 1])) end--;
+    while (start < end) {
+        uint32_t rune;
+        size_t width = bytes_decode_rune(s + start, end - start, &rune);
+        if (!bytes_unicode_is_space(rune))
+            break;
+        start += width;
+    }
+    while (end > start) {
+        uint32_t rune;
+        size_t width = bytes_decode_last_rune(s + start, end - start, &rune);
+        if (!bytes_unicode_is_space(rune))
+            break;
+        end -= width;
+    }
     return bytes_copy(bytes_offset(s, start), end - start, outlen);
 }
 
@@ -582,6 +730,8 @@ neverc_bytes_slice_t *neverc_bytes_split_n(const uint8_t *s, size_t slen,
 
     while (pos <= slen) {
         const uint8_t *current = s ? s + pos : NULL;
+        if (seplen == 0 && pos >= slen)
+            break;
         if (n > 0 && *count >= (size_t)(n - 1)) {
             if (!bytes_slices_append(&result, &cap, count, current,
                                      slen - pos)) goto fail;
@@ -589,7 +739,6 @@ neverc_bytes_slice_t *neverc_bytes_split_n(const uint8_t *s, size_t slen,
         }
         size_t idx;
         if (seplen == 0) {
-            if (pos >= slen) break;
             uint32_t rune;
             size_t width = utf8_decode(current, slen - pos, &rune);
             if (width == 0) width = 1;
@@ -639,10 +788,22 @@ neverc_bytes_slice_t *neverc_bytes_fields(const uint8_t *s, size_t slen,
     if (!result) return NULL;
     size_t i = 0;
     while (i < slen) {
-        while (i < slen && is_space(s[i])) i++;
+        while (i < slen) {
+            uint32_t rune;
+            size_t width = bytes_decode_rune(s + i, slen - i, &rune);
+            if (!bytes_unicode_is_space(rune))
+                break;
+            i += width;
+        }
         if (i >= slen) break;
         size_t start = i;
-        while (i < slen && !is_space(s[i])) i++;
+        while (i < slen) {
+            uint32_t rune;
+            size_t width = bytes_decode_rune(s + i, slen - i, &rune);
+            if (bytes_unicode_is_space(rune))
+                break;
+            i += width;
+        }
         if (!bytes_slices_append(&result, &cap, count, s + start,
                                  i - start)) {
             free(result);

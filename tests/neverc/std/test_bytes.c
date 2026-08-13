@@ -47,6 +47,10 @@ static void test_compare(void) {
 
     check_bool("equalfold yes", neverc_bytes_equal_fold(B("Hello"), B("hELLO")), 1);
     check_bool("equalfold no", neverc_bytes_equal_fold(B("Hello"), B("world")), 0);
+    check_bool("equalfold word path", neverc_bytes_equal_fold(
+                   B("ABCDEFGH"), B("abcdefgh")), 1);
+    check_bool("equalfold punctuation is not case", neverc_bytes_equal_fold(
+                   B("@@@@@@@@"), B("````````")), 0);
 }
 
 static void test_search(void) {
@@ -70,6 +74,29 @@ static void test_search(void) {
     check_bool("contains byte", neverc_bytes_contains_byte(B("hello"), 'e'), 1);
     check_bool("contains any", neverc_bytes_contains_any(B("hello"), "aeiou"), 1);
     check_bool("contains any no", neverc_bytes_contains_any(B("crwth"), "aeiou"), 0);
+
+    static const uint8_t unicode[] = {
+        'a', 0xc3, 0xa9, 0xe4, 0xb8, 0x96, 0xe7, 0x95, 0x8c
+    };
+    check_size("index any Unicode rune",
+               neverc_bytes_index_any(
+                   unicode, sizeof(unicode), "\xe7\x95\x8c\xe4\xb8\x96"),
+               3);
+    check_size("last index any Unicode rune",
+               neverc_bytes_last_index_any(
+                   unicode, sizeof(unicode), "\xe7\x95\x8c\xe4\xb8\x96"),
+               6);
+    static const uint8_t shared_utf8_byte[] = {0xc4, 0x96};
+    check_size("index any does not match UTF-8 fragments",
+               neverc_bytes_index_any(
+                   shared_utf8_byte, sizeof(shared_utf8_byte),
+                   "\xe4\xb8\x96"),
+               NOT_FOUND);
+    static const uint8_t invalid_rune[] = {0xff};
+    check_size("index any matches malformed UTF-8 as RuneError",
+               neverc_bytes_index_any(
+                   invalid_rune, sizeof(invalid_rune), "\xfe"),
+               0);
 
     check_size("count", neverc_bytes_count(B("cheese"), B("e")), 3);
     check_size("count none", neverc_bytes_count(B("five"), B("x")), 0);
@@ -109,6 +136,11 @@ static void test_transform(void) {
     uint8_t *rep0 = neverc_bytes_repeat(B("ab"), 0, &outlen);
     check_size("repeat 0 len", outlen, 0);
     free(rep0);
+
+    outlen = 99;
+    uint8_t *rep_negative = neverc_bytes_repeat(B("ab"), -1, &outlen);
+    check_bool("repeat negative rejected", rep_negative == NULL, 1);
+    check_size("repeat negative length", outlen, 0);
 
     uint8_t *repl = neverc_bytes_replace(B("oink oink oink"),
                                          B("oink"), B("moo"), 2, &outlen);
@@ -179,6 +211,41 @@ static void test_trim(void) {
     uint8_t *tsuf = neverc_bytes_trim_suffix(B("Hello, World"), B(", World"), &outlen);
     check_bytes("trim_suffix", tsuf, outlen, "Hello");
     free(tsuf);
+
+    static const uint8_t unicode_trim[] = {
+        0xe4, 0xb8, 0x96, 'h', 'e', 'l', 'l', 'o', 0xe4, 0xb8, 0x96
+    };
+    t = neverc_bytes_trim(
+        unicode_trim, sizeof(unicode_trim), "\xe4\xb8\x96", &outlen);
+    check_bytes("trim Unicode cutset", t, outlen, "hello");
+    free(t);
+
+    static const uint8_t shared_utf8_byte[] = {0xc4, 0x96};
+    t = neverc_bytes_trim(
+        shared_utf8_byte, sizeof(shared_utf8_byte), "\xe4\xb8\x96", &outlen);
+    check_bool("trim does not split UTF-8 runes",
+               outlen == sizeof(shared_utf8_byte) &&
+                   memcmp(t, shared_utf8_byte, sizeof(shared_utf8_byte)) == 0,
+               1);
+    free(t);
+
+    static const uint8_t unicode_space[] = {
+        0xc2, 0xa0, 'h', 'e', 'l', 'l', 'o', 0xe3, 0x80, 0x80
+    };
+    t = neverc_bytes_trim_space(
+        unicode_space, sizeof(unicode_space), &outlen);
+    check_bytes("trim Unicode White_Space", t, outlen, "hello");
+    free(t);
+
+    static const uint8_t bom_wrapped[] = {
+        0xef, 0xbb, 0xbf, 'x', 0xef, 0xbb, 0xbf
+    };
+    t = neverc_bytes_trim_space(bom_wrapped, sizeof(bom_wrapped), &outlen);
+    check_bool("trim_space preserves non-White_Space BOM",
+               outlen == sizeof(bom_wrapped) &&
+                   memcmp(t, bom_wrapped, sizeof(bom_wrapped)) == 0,
+               1);
+    free(t);
 }
 
 static void test_split(void) {
@@ -223,6 +290,27 @@ static void test_split(void) {
     neverc_bytes_slice_t *fempty = neverc_bytes_fields(B("   "), &count);
     check_size("fields empty", count, 0);
     free(fempty);
+
+    static const uint8_t unicode_fields[] = {
+        'a', 0xc2, 0xa0, 'b', 0xe3, 0x80, 0x80, 'c'
+    };
+    neverc_bytes_slice_t *ufields = neverc_bytes_fields(
+        unicode_fields, sizeof(unicode_fields), &count);
+    check_size("fields Unicode White_Space count", count, 3);
+    if (count >= 3) {
+        check_bytes("fields Unicode[0]",
+                    ufields[0].data, ufields[0].len, "a");
+        check_bytes("fields Unicode[1]",
+                    ufields[1].data, ufields[1].len, "b");
+        check_bytes("fields Unicode[2]",
+                    ufields[2].data, ufields[2].len, "c");
+    }
+    free(ufields);
+
+    neverc_bytes_slice_t *empty_runes = neverc_bytes_split_n(
+        NULL, 0, NULL, 0, 1, &count);
+    check_size("split_n empty input and separator", count, 0);
+    free(empty_runes);
 
     static const uint8_t utf8[] = {
         'A', 0xE4, 0xB8, 0x96, 0xF0, 0x9F, 0x98, 0x80, 0xFF, 'B'

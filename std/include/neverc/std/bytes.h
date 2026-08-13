@@ -27,6 +27,7 @@ int  neverc_bytes_equal_fold(const uint8_t *s, size_t slen,
 int    neverc_bytes_contains(const uint8_t *b, size_t blen,
                              const uint8_t *sub, size_t sublen);
 int    neverc_bytes_contains_byte(const uint8_t *b, size_t blen, uint8_t c);
+/* chars is a NUL-terminated UTF-8 set of Unicode code points. */
 int    neverc_bytes_contains_any(const uint8_t *b, size_t blen,
                                 const char *chars);
 size_t neverc_bytes_count(const uint8_t *s, size_t slen,
@@ -53,6 +54,7 @@ int  neverc_bytes_has_suffix(const uint8_t *s, size_t slen,
 uint8_t *neverc_bytes_to_upper(const uint8_t *s, size_t slen, size_t *outlen);
 uint8_t *neverc_bytes_to_lower(const uint8_t *s, size_t slen, size_t *outlen);
 uint8_t *neverc_bytes_to_title(const uint8_t *s, size_t slen, size_t *outlen);
+/* A negative count is invalid and returns NULL with *outlen set to zero. */
 uint8_t *neverc_bytes_repeat(const uint8_t *b, size_t blen,
                              int count, size_t *outlen);
 uint8_t *neverc_bytes_replace(const uint8_t *s, size_t slen,
@@ -70,7 +72,7 @@ uint8_t *neverc_bytes_join(const uint8_t **slices, const size_t *lens,
                            const uint8_t *sep, size_t seplen,
                            size_t *outlen);
 
-/* --- Trim --- */
+/* --- Trim (cutset is NUL-terminated UTF-8; trim_space uses Unicode White_Space) --- */
 uint8_t *neverc_bytes_trim(const uint8_t *s, size_t slen,
                            const char *cutset, size_t *outlen);
 uint8_t *neverc_bytes_trim_left(const uint8_t *s, size_t slen,
@@ -97,6 +99,7 @@ neverc_bytes_slice_t *neverc_bytes_split(const uint8_t *s, size_t slen,
 neverc_bytes_slice_t *neverc_bytes_split_n(const uint8_t *s, size_t slen,
                                            const uint8_t *sep, size_t seplen,
                                            int n, size_t *count);
+/* Fields splits around one or more Unicode White_Space code points. */
 neverc_bytes_slice_t *neverc_bytes_fields(const uint8_t *s, size_t slen,
                                           size_t *count);
 
