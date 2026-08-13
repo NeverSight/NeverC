@@ -159,6 +159,15 @@ static void test_encoded_decoded_len(void) {
 
 static void test_encode_contract(void) {
     printf("[base32 encode contract]\n");
+    uint8_t byte = 0;
+    check_true("encode rejects overflowing length",
+               neverc_base32_encode((char *)&byte, &byte, SIZE_MAX) ==
+                   SIZE_MAX);
+    check_true("encode rejects NULL source",
+               neverc_base32_encode((char *)&byte, NULL, 1) == SIZE_MAX);
+    check_true("encode rejects NULL destination",
+               neverc_base32_encode(NULL, &byte, 1) == SIZE_MAX);
+
     char exact[9] = {'?', '?', '?', '?', '?', '?', '?', '?', 'X'};
     size_t n = neverc_base32_encode(
         exact, (const uint8_t *)"f", 1);
@@ -233,8 +242,8 @@ static void test_empty(void) {
     char enc[8] = "XXXXXXX";
     size_t encoded_len =
         neverc_base32_encode(enc, (const uint8_t *)"", 0);
-    enc[encoded_len] = '\0';
-    check_str("encode empty", enc, "");
+    check_int("encode empty length", (int)encoded_len, 0);
+    check_int("encode empty preserves output", enc[0], 'X');
     check_true("encoded len of empty is 0", neverc_base32_encoded_len(0) == 0);
 }
 

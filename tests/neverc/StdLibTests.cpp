@@ -307,6 +307,11 @@ TEST_F(StdLibTest, XmlAllocationFailure) {
   EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
 }
 STD_TEST(asn1, "src/encoding/asn1/asn1.c")
+TEST_F(StdLibTest, Asn1AllocationFailure) {
+  auto r = compileAndRunStdTest("asn1_oom", {}, {"-fno-builtin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
 
 // ===== Hash =====
 STD_TEST(fnv, "src/hash/fnv/fnv.c")
@@ -531,6 +536,12 @@ TEST_F(StdLibTest, TextTemplateAllocationFailure) {
 }
 STD_TEST(scanner, "src/text/scanner/scanner.c")
 STD_TEST(tabwriter, "src/text/tabwriter/tabwriter.c")
+TEST_F(StdLibTest, TabwriterAllocationFailure) {
+  auto r = compileAndRunStdTest("tabwriter_oom", {},
+                                {"-fno-builtin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
 
 // ===== Index =====
 STD_TEST(suffixarray, "src/index/suffixarray/suffixarray.c")
@@ -763,6 +774,11 @@ TEST_F(StdLibTest, JpegAllocationFailure) {
 STD_TEST(gif, "src/image/gif/gif.c", "src/image/image/image.c", "src/image/color/color.c", "src/compress/lzw/lzw.c")
 TEST_F(StdLibTest, GifAllocationFailure) {
   auto r = compileAndRunStdTest("gif_oom", {}, {"-fno-builtin-std"});
+  ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
+  EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
+}
+TEST_F(StdLibTest, GifResourceBounds) {
+  auto r = compileAndRunStdTest("gif_bounds", {}, {"-fno-builtin-std"});
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
   EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
 }

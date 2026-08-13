@@ -84,6 +84,11 @@ size_t neverc_base32_decoded_len(size_t n) {
 
 static size_t encode_with_table(char *dst, const uint8_t *src, size_t src_len,
                                 const char *table) {
+    if (src_len == 0)
+        return 0;
+    if (!dst || !src || neverc_base32_encoded_len(src_len) == SIZE_MAX)
+        return SIZE_MAX;
+
     size_t di = 0;
     size_t si = 0;
 
@@ -137,9 +142,9 @@ static size_t encode_with_table(char *dst, const uint8_t *src, size_t src_len,
 
 static int decode_impl(uint8_t *dst, const char *src, size_t src_len,
                        const uint8_t *dec_table) {
-    const size_t max_encoded_for_int =
-        ((size_t)INT_MAX / 5 + ((size_t)INT_MAX % 5 != 0)) * 8;
-    if (src_len > max_encoded_for_int ||
+    const uintmax_t max_encoded_for_int =
+        ((uintmax_t)INT_MAX / 5 + ((uintmax_t)INT_MAX % 5 != 0)) * 8;
+    if ((uintmax_t)src_len > max_encoded_for_int ||
         ((!dst || !src) && src_len != 0))
         return -1;
 

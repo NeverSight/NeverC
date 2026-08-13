@@ -12,6 +12,7 @@
 #define GRPC_MAX_STATUS_MESSAGE_SIZE 1024U
 #define GRPC_MAX_CLIENT_METADATA 60U
 #define GRPC_MAX_METADATA_VALUE_SIZE 8192U
+#define GRPC_MAX_ENCODED_METADATA_VALUE_SIZE 16384U
 
 struct neverc_grpc_server_stream {
     const neverc_grpc_method_t *method;
@@ -677,17 +678,21 @@ static int grpc_client_header_block_build(
         size_t length;
         if (grpc_binary_key(metadata[i].key)) {
             capacity = neverc_base64_encoded_len(metadata[i].value_length);
-            if (capacity > 16384) return -1;
+            if (capacity == SIZE_MAX ||
+                capacity > GRPC_MAX_ENCODED_METADATA_VALUE_SIZE)
+                return -1;
             block->owned_values[i] = (char *)malloc(capacity + 1);
             if (!block->owned_values[i]) return -1;
             length = neverc_base64_encode(
                 block->owned_values[i], metadata[i].value,
                 metadata[i].value_length);
+            if (length != capacity) return -1;
         } else {
             capacity = metadata[i].value_length;
             block->owned_values[i] = (char *)malloc(capacity + 1);
             if (!block->owned_values[i]) return -1;
-            memcpy(block->owned_values[i], metadata[i].value, capacity);
+            if (capacity != 0)
+                memcpy(block->owned_values[i], metadata[i].value, capacity);
             length = capacity;
             for (size_t j = 0; j < length; j++) {
                 unsigned char c = (unsigned char)block->owned_values[i][j];
@@ -1117,6 +1122,11 @@ neverc_grpc_result_t *neverc_grpc_client_call(
         if (grpc_binary_key(metadata[i].key)) {
             value_capacity = neverc_base64_encoded_len(
                 metadata[i].value_length);
+            if (value_capacity == SIZE_MAX ||
+                value_capacity > GRPC_MAX_ENCODED_METADATA_VALUE_SIZE) {
+                metadata_valid = 0;
+                break;
+            }
             owned_values[i] = (char *)malloc(value_capacity + 1);
             if (!owned_values[i]) {
                 metadata_valid = 0;
@@ -1125,6 +1135,10 @@ neverc_grpc_result_t *neverc_grpc_client_call(
             value_length = neverc_base64_encode(
                 owned_values[i], metadata[i].value,
                 metadata[i].value_length);
+            if (value_length != value_capacity) {
+                metadata_valid = 0;
+                break;
+            }
         } else {
             value_capacity = metadata[i].value_length;
             owned_values[i] = (char *)malloc(value_capacity + 1);
@@ -1132,7 +1146,8 @@ neverc_grpc_result_t *neverc_grpc_client_call(
                 metadata_valid = 0;
                 break;
             }
-            memcpy(owned_values[i], metadata[i].value, value_capacity);
+            if (value_capacity != 0)
+                memcpy(owned_values[i], metadata[i].value, value_capacity);
             value_length = value_capacity;
             for (size_t j = 0; j < value_length; j++)
                 if ((unsigned char)owned_values[i][j] < 0x20 ||

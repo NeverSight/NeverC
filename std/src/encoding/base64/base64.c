@@ -29,6 +29,11 @@ size_t neverc_base64_decoded_len(size_t n) {
 
 static size_t encode_with_table(char *dst, const uint8_t *src, size_t src_len,
                                 const char *table) {
+    if (src_len == 0)
+        return 0;
+    if (!dst || !src || neverc_base64_encoded_len(src_len) == SIZE_MAX)
+        return SIZE_MAX;
+
     size_t di = 0;
     size_t si = 0;
 

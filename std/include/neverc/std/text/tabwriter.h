@@ -47,6 +47,7 @@ typedef struct {
     int     lines_start[4096];
     int     lines_ncells[4096];
     int     nlines;
+    int     failed;       /* sticky allocation/input error; output() returns NULL */
 } neverc_tabwriter_t;
 
 void neverc_tabwriter_init(neverc_tabwriter_t *w, int minwidth, int tabwidth,

@@ -169,7 +169,9 @@ static void test_decode_errors(void) {
         const unsigned char spaced[] = "9j qo ^";
         unsigned char dec[32];
         neverc_ascii85_result_t r = neverc_ascii85_decode(dec, sizeof(dec), spaced, 7, 0);
-        check_true("whitespace skip: ndst >= 0", r.error == 0);
+        check_true("whitespace skip",
+                   r.error == 0 && r.ndst == 4 &&
+                   memcmp(dec, "Man ", 4) == 0);
     }
 }
 

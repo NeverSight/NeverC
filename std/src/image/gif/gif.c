@@ -3,6 +3,9 @@
 #include <string.h>
 #include <limits.h>
 
+#define GIF_MAX_PIXELS (UINT64_C(1) << 28)
+#define GIF_MAX_FRAMES 1024
+
 /* =========================================================================
  * GIF Encoder/Decoder
  * Implements GIF87a/89a with LZW compression
@@ -192,6 +195,7 @@ int neverc_gif_encode(const neverc_gif_frame_t *frame,
     if (frame->width == 0 || frame->height == 0) return -1;
     if (frame->width > UINT16_MAX || frame->height > UINT16_MAX) return -1;
     if (frame->palette_size < 2 || frame->palette_size > 256) return -1;
+    if ((uint64_t)frame->width * frame->height > GIF_MAX_PIXELS) return -1;
     size_t pixel_count = (size_t)frame->width * frame->height;
     if (pixel_count > SIZE_MAX - 1024) return -1;
 
@@ -303,6 +307,7 @@ int neverc_gif_decode(const uint8_t *data, size_t len, neverc_gif_image_t *img) 
     img->frames = (neverc_gif_frame_t *)calloc((size_t)frame_cap, sizeof(neverc_gif_frame_t));
     img->num_frames = 0;
     if (!img->frames) return -1;
+    uint64_t decoded_pixels = 0;
 
     int pending_delay = 0;
     int pending_transparent = -1;
@@ -363,7 +368,13 @@ int neverc_gif_decode(const uint8_t *data, size_t len, neverc_gif_image_t *img) 
                 palette = lct;
                 pal_size = lct_size;
             }
-            if (fw == 0 || fh == 0 || pal_size < 2) goto decode_failed;
+            uint64_t frame_pixels = (uint64_t)fw * fh;
+            if (fw == 0 || fh == 0 || pal_size < 2 ||
+                frame_pixels > GIF_MAX_PIXELS ||
+                decoded_pixels > GIF_MAX_PIXELS - frame_pixels ||
+                img->num_frames >= GIF_MAX_FRAMES)
+                goto decode_failed;
+            decoded_pixels += frame_pixels;
 
             /* LZW decode */
             if (pos >= len) goto decode_failed;
@@ -407,7 +418,7 @@ int neverc_gif_decode(const uint8_t *data, size_t len, neverc_gif_image_t *img) 
             int eoi_code = clear_code + 1;
             int code_size = min_code_size + 1;
 
-            size_t pixel_count = (size_t)fw * fh;
+            size_t pixel_count = (size_t)frame_pixels;
             uint8_t *indices = (uint8_t *)calloc(1, pixel_count);
             if (!indices) { free(lzw_data); goto decode_failed; }
             size_t pix_pos = 0;
@@ -823,7 +834,10 @@ static int gif_quantize_uniform(const uint8_t *rgba, size_t npixels,
 
 int neverc_gif_from_rgba(const uint8_t *rgba, uint32_t width, uint32_t height,
                          neverc_gif_frame_t *frame) {
-    if (!rgba || !frame || width == 0 || height == 0) return -1;
+    if (!rgba || !frame || width == 0 || height == 0 ||
+        width > UINT16_MAX || height > UINT16_MAX ||
+        (uint64_t)width * height > GIF_MAX_PIXELS)
+        return -1;
     memset(frame, 0, sizeof(*frame));
     frame->width = width;
     frame->height = height;

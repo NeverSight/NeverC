@@ -55,6 +55,14 @@ static void test_encode(void) {
     char dst[64];
     size_t n;
 
+    uint8_t byte = 0;
+    check_size("encode rejects overflowing length",
+               neverc_base64_encode(dst, &byte, SIZE_MAX), SIZE_MAX);
+    check_size("encode rejects NULL source",
+               neverc_base64_encode(dst, NULL, 1), SIZE_MAX);
+    check_size("encode rejects NULL destination",
+               neverc_base64_encode(NULL, &byte, 1), SIZE_MAX);
+
     char exact[5] = {'?', '?', '?', '?', 'X'};
     n = neverc_base64_encode(
         exact, (const uint8_t *)"f", 1);

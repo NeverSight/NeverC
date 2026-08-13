@@ -11,8 +11,9 @@ extern "C" {
 /*
  * Base64 encoding/decoding (mirrors Go encoding/base64 package).
  * Supports standard (RFC 4648) and URL-safe alphabets.
- * encoded_len returns SIZE_MAX when the result is not representable. Encode
- * writes exactly the returned payload bytes and does not append a NUL byte.
+ * encoded_len and encode return SIZE_MAX when the result is not representable;
+ * encode also returns SIZE_MAX for NULL non-empty input/output. On success,
+ * encode writes exactly the returned payload bytes and does not append a NUL.
  */
 
 size_t neverc_base64_encoded_len(size_t n);

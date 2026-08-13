@@ -6,6 +6,7 @@
 #include <string.h>
 
 static const uint8_t PNG_SIGNATURE[8] = {137, 80, 78, 71, 13, 10, 26, 10};
+#define PNG_MAX_PIXELS (UINT64_C(1) << 28)
 
 static uint32_t read_u32be(const uint8_t *p) {
     return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) |
@@ -114,61 +115,117 @@ int neverc_png_decode(const uint8_t *data, size_t len, neverc_png_image_t *img) 
 
     size_t pos = 8;
     int ihdr_found = 0;
+    int idat_seen = 0;
+    int idat_ended = 0;
+    int iend_found = 0;
     uint8_t *idat_buf = NULL;
     size_t idat_len = 0, idat_cap = 0;
 
-    while (pos + 12 <= len) {
+    while (pos <= len && len - pos >= 12) {
         uint32_t chunk_len = read_u32be(data + pos);
         const uint8_t *chunk_type = data + pos + 4;
         const uint8_t *chunk_data = data + pos + 8;
 
-        if (pos + 12 + chunk_len > len) break;
+        if ((size_t)chunk_len > len - pos - 12) break;
+        if (read_u32be(chunk_data + chunk_len) !=
+            png_chunk_crc(chunk_type, (size_t)chunk_len + 4U)) {
+            free(idat_buf);
+            return -1;
+        }
+        if (!ihdr_found && memcmp(chunk_type, "IHDR", 4) != 0) {
+            free(idat_buf);
+            return -1;
+        }
 
-        if (memcmp(chunk_type, "IHDR", 4) == 0 && chunk_len >= 13) {
+        if (memcmp(chunk_type, "IHDR", 4) == 0) {
+            if (ihdr_found || chunk_len != 13 ||
+                chunk_data[10] != 0 || chunk_data[11] != 0 ||
+                chunk_data[12] != 0) {
+                free(idat_buf);
+                return -1;
+            }
             img->width = read_u32be(chunk_data);
             img->height = read_u32be(chunk_data + 4);
             img->bit_depth = chunk_data[8];
             img->color_type = chunk_data[9];
             if (img->bit_depth != 8) { free(idat_buf); return -1; }
             img->channels = (uint8_t)channels_for_color_type(img->color_type);
-            if (img->channels == 0) { free(idat_buf); return -1; }
+            if (img->channels == 0 ||
+                img->color_type == NEVERC_PNG_COLOR_INDEXED) {
+                free(idat_buf);
+                return -1;
+            }
+            if (img->width == 0 || img->height == 0 ||
+                (uint64_t)img->width * (uint64_t)img->height >
+                    PNG_MAX_PIXELS) {
+                free(idat_buf);
+                return -1;
+            }
             img->stride = (size_t)img->width * img->channels;
             ihdr_found = 1;
+        } else if (memcmp(chunk_type, "PLTE", 4) == 0) {
+            if (idat_seen || chunk_len == 0 || chunk_len > 768 ||
+                chunk_len % 3 != 0) {
+                free(idat_buf);
+                return -1;
+            }
         } else if (memcmp(chunk_type, "IDAT", 4) == 0) {
+            if (idat_ended) { free(idat_buf); return -1; }
+            idat_seen = 1;
             /* Skip empty IDAT chunks: a zero-length chunk is legal, but with no
              * data accumulated yet idat_buf is still NULL and `idat_buf + 0`
              * (and the zero-length memcpy onto it) is undefined behavior. */
             if (chunk_len) {
+                if ((size_t)chunk_len > SIZE_MAX - idat_len) {
+                    free(idat_buf);
+                    return -1;
+                }
                 size_t need = idat_len + chunk_len;
                 if (need > idat_cap) {
-                    idat_cap = need * 2;
-                    uint8_t *nb = (uint8_t *)realloc(idat_buf, idat_cap);
+                    size_t new_cap =
+                        need > SIZE_MAX / 2 ? need : need * 2;
+                    uint8_t *nb = (uint8_t *)realloc(idat_buf, new_cap);
                     if (!nb) { free(idat_buf); return -1; }
                     idat_buf = nb;
+                    idat_cap = new_cap;
                 }
                 memcpy(idat_buf + idat_len, chunk_data, chunk_len);
                 idat_len += chunk_len;
             }
         } else if (memcmp(chunk_type, "IEND", 4) == 0) {
+            if (chunk_len != 0) { free(idat_buf); return -1; }
+            iend_found = 1;
             break;
+        } else {
+            if ((chunk_type[0] & 0x20U) == 0) {
+                free(idat_buf);
+                return -1;
+            }
+            if (idat_seen) idat_ended = 1;
         }
 
-        pos += 12 + chunk_len;
+        pos += 12U + (size_t)chunk_len;
     }
 
-    if (!ihdr_found || idat_len < 6) { free(idat_buf); return -1; }
-
-    /* Reject implausible geometry before sizing the raster. A crafted IHDR can
-     * claim ~2^32 x 2^32, overflowing (stride+1)*height — a small allocation
-     * followed by a huge write (heap overflow) on 32-bit, an astronomic malloc
-     * elsewhere (DoS). 2^28 px is far above any real PNG yet keeps
-     * (width*channels+1)*height well within size_t on every target. */
-    if (img->width == 0 || img->height == 0 ||
-        (uint64_t)img->width * (uint64_t)img->height > (1u << 28)) {
-        free(idat_buf); return -1;
+    if (!ihdr_found || !idat_seen || !iend_found || idat_len < 6) {
+        free(idat_buf);
+        return -1;
     }
 
-    /* Skip zlib header (2 bytes) and checksum (4 bytes at end) */
+    /* Validate the zlib wrapper before passing the raw DEFLATE payload down.
+     * Preset dictionaries are unsupported and the Adler-32 trailer is checked
+     * after decompression below. */
+    uint8_t cmf = idat_buf[0];
+    uint8_t flg = idat_buf[1];
+    if ((cmf & 0x0fU) != 8U || (cmf >> 4) > 7U ||
+        (((unsigned)cmf << 8) | flg) % 31U != 0U ||
+        (flg & 0x20U) != 0U) {
+        free(idat_buf);
+        return -1;
+    }
+    uint32_t expected_adler = read_u32be(idat_buf + idat_len - 4U);
+
+    /* Skip zlib header (2 bytes) and checksum (4 bytes at end). */
     size_t raw_size = (img->stride + 1) * img->height;
     uint8_t *raw = (uint8_t *)malloc(raw_size);
     if (!raw) { free(idat_buf); return -1; }
@@ -177,7 +234,11 @@ int neverc_png_decode(const uint8_t *data, size_t len, neverc_png_image_t *img) 
     int rc = neverc_flate_decompress(idat_buf + 2, idat_len - 6, raw, &decompressed_len);
     free(idat_buf);
 
-    if (rc != 0 || decompressed_len != raw_size) { free(raw); return -1; }
+    if (rc != 0 || decompressed_len != raw_size ||
+        neverc_adler32_checksum(raw, raw_size) != expected_adler) {
+        free(raw);
+        return -1;
+    }
 
     /* Reverse filters */
     img->pixels = (uint8_t *)calloc(1, img->height * img->stride);
@@ -217,7 +278,7 @@ static void png_filter_row(const uint8_t *cur, const uint8_t *prev,
                            size_t stride, size_t bpp,
                            uint8_t *out_filter, uint8_t *out_row,
                            uint8_t *scratch) {
-    unsigned long best_score = ~0UL;
+    uint64_t best_score = UINT64_MAX;
     int best = 0;
     size_t x;
 
@@ -226,7 +287,7 @@ static void png_filter_row(const uint8_t *cur, const uint8_t *prev,
      * `bpp`-byte prefix handles the missing left neighbour, then a branch-free
      * main loop the compiler can vectorize. Arithmetic per byte is unchanged. */
     for (int f = 0; f < 5; f++) {
-        unsigned long score = 0;
+        uint64_t score = 0;
         switch (f) {
         case 0:                                   /* None */
             for (x = 0; x < stride; x++) { uint8_t v = cur[x]; scratch[x] = v; PNG_SCORE_BYTE(v); }
@@ -269,12 +330,30 @@ static void png_filter_row(const uint8_t *cur, const uint8_t *prev,
 #undef PNG_SCORE_BYTE
 
 int neverc_png_encode(const neverc_png_image_t *img, uint8_t **out_data, size_t *out_len) {
-    if (!img || !img->pixels || !out_data || !out_len) return -1;
-    if (img->width == 0 || img->height == 0) return -1;
+    if (!out_data || !out_len) return -1;
+    *out_data = NULL;
+    *out_len = 0;
+    if (!img || !img->pixels) return -1;
 
-    size_t raw_size = (img->stride + 1) * img->height;
+    int expected_channels = channels_for_color_type(img->color_type);
+    if (img->width == 0 || img->height == 0 ||
+        (img->bit_depth != 0 && img->bit_depth != 8) ||
+        expected_channels == 0 ||
+        img->color_type == NEVERC_PNG_COLOR_INDEXED ||
+        img->channels != (uint8_t)expected_channels ||
+        (uint64_t)img->width * (uint64_t)img->height > PNG_MAX_PIXELS)
+        return -1;
+
+    size_t row_bytes = (size_t)img->width * img->channels;
+    if (img->stride < row_bytes ||
+        (img->stride != 0 && img->height > SIZE_MAX / img->stride) ||
+        row_bytes == SIZE_MAX ||
+        img->height > SIZE_MAX / (row_bytes + 1U))
+        return -1;
+
+    size_t raw_size = (row_bytes + 1U) * img->height;
     uint8_t *raw = (uint8_t *)malloc(raw_size);
-    uint8_t *scratch = (uint8_t *)malloc(img->stride ? img->stride : 1);
+    uint8_t *scratch = (uint8_t *)malloc(row_bytes);
     if (!raw || !scratch) { free(raw); free(scratch); return -1; }
 
     /* Adaptive per-scanline filtering (decoder reverses all five types). */
@@ -283,8 +362,9 @@ int neverc_png_encode(const neverc_png_image_t *img, uint8_t **out_data, size_t 
         const uint8_t *cur = img->pixels + (size_t)y * img->stride;
         const uint8_t *prev = (y > 0)
             ? img->pixels + (size_t)(y - 1) * img->stride : NULL;
-        uint8_t *row = raw + (size_t)y * (img->stride + 1);
-        png_filter_row(cur, prev, img->stride, bpp, &row[0], &row[1], scratch);
+        uint8_t *row = raw + (size_t)y * (row_bytes + 1U);
+        png_filter_row(cur, prev, row_bytes, bpp,
+                       &row[0], &row[1], scratch);
     }
     free(scratch);
 
@@ -293,7 +373,12 @@ int neverc_png_encode(const neverc_png_image_t *img, uint8_t **out_data, size_t 
     uint32_t adler = neverc_adler32_checksum(raw, raw_size);
 
     /* DEFLATE compress */
-    size_t comp_cap = raw_size + raw_size / 100 + 64;
+    size_t overhead = raw_size / 100U + 64U;
+    if (overhead < 64U || overhead > SIZE_MAX - raw_size) {
+        free(raw);
+        return -1;
+    }
+    size_t comp_cap = raw_size + overhead;
     uint8_t *comp = (uint8_t *)malloc(comp_cap);
     if (!comp) { free(raw); return -1; }
 
@@ -302,7 +387,8 @@ int neverc_png_encode(const neverc_png_image_t *img, uint8_t **out_data, size_t 
     free(raw);
     if (rc != 0) { free(comp); return -1; }
 
-    size_t zlib_len = 2 + comp_len + 4;
+    if (comp_len > UINT32_MAX - 6U) { free(comp); return -1; }
+    size_t zlib_len = 2U + comp_len + 4U;
     uint8_t *zlib_data = (uint8_t *)malloc(zlib_len);
     if (!zlib_data) { free(comp); return -1; }
     zlib_data[0] = 0x78; /* CMF: CM=8 (deflate), CINFO=7 (32K window) */

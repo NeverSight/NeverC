@@ -41,6 +41,11 @@ size_t neverc_hex_encoded_len(size_t n) {
 }
 
 size_t neverc_hex_encode(char *dst, const uint8_t *src, size_t src_len) {
+    if (src_len == 0)
+        return 0;
+    if (!dst || !src || src_len > SIZE_MAX / 2)
+        return SIZE_MAX;
+
     size_t i = 0, j = 0;
     size_t n4 = src_len & ~(size_t)3;
     while (i < n4) {

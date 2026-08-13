@@ -1,39 +1,54 @@
 #include "neverc/std/text/tabwriter.h"
+#include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
 
-static void out_append(neverc_tabwriter_t *w, const char *data, size_t len) {
-    while (w->out_len + len >= w->out_cap) {
-        size_t newcap = w->out_cap ? w->out_cap * 2 : 1024;
-        char *nb = (char *)malloc(newcap);
-        if (w->out_buf) {
-            memcpy(nb, w->out_buf, w->out_len);
-            free(w->out_buf);
+static int out_reserve(neverc_tabwriter_t *w, size_t extra) {
+    if (w->failed) return -1;
+    if (w->out_len == SIZE_MAX ||
+        extra > SIZE_MAX - w->out_len - 1U) {
+        w->failed = 1;
+        return -1;
+    }
+    size_t needed = w->out_len + extra + 1U;
+    if (needed <= w->out_cap) return 0;
+
+    size_t newcap = w->out_cap ? w->out_cap : 1024U;
+    while (newcap < needed) {
+        if (newcap > SIZE_MAX / 2U) {
+            newcap = needed;
+            break;
         }
-        w->out_buf = nb;
-        w->out_cap = newcap;
+        newcap *= 2U;
+    }
+
+    char *nb = (char *)realloc(w->out_buf, newcap);
+    if (!nb) {
+        w->failed = 1;
+        return -1;
+    }
+    w->out_buf = nb;
+    w->out_cap = newcap;
+    return 0;
+}
+
+static int out_append(neverc_tabwriter_t *w, const char *data, size_t len) {
+    if (len == 0) return w->failed ? -1 : 0;
+    if (!data || out_reserve(w, len) != 0) {
+        w->failed = 1;
+        return -1;
     }
     memcpy(w->out_buf + w->out_len, data, len);
     w->out_len += len;
+    return 0;
 }
 
-static void out_pad(neverc_tabwriter_t *w, int count, char ch) {
-    if (count <= 0) return;
-    size_t n = (size_t)count;
-    /* Reserve once (mirrors out_append's doubling) then fill in bulk, instead
-     * of appending one byte at a time — the emitted bytes are identical. */
-    while (w->out_len + n >= w->out_cap) {
-        size_t newcap = w->out_cap ? w->out_cap * 2 : 1024;
-        char *nb = (char *)malloc(newcap);
-        if (w->out_buf) {
-            memcpy(nb, w->out_buf, w->out_len);
-            free(w->out_buf);
-        }
-        w->out_buf = nb;
-        w->out_cap = newcap;
-    }
-    memset(w->out_buf + w->out_len, ch, n);
-    w->out_len += n;
+static int out_pad(neverc_tabwriter_t *w, size_t count, char ch) {
+    if (count == 0) return w->failed ? -1 : 0;
+    if (out_reserve(w, count) != 0) return -1;
+    memset(w->out_buf + w->out_len, ch, count);
+    w->out_len += count;
+    return 0;
 }
 
 static int rune_width(const char *s, size_t len) {
@@ -72,7 +87,7 @@ static void end_cell(neverc_tabwriter_t *w, int htab) {
     }
 }
 
-static void flush_lines(neverc_tabwriter_t *w) {
+static int flush_lines(neverc_tabwriter_t *w) {
     memset(w->col_widths, 0, sizeof(w->col_widths));
     w->ncols = 0;
 
@@ -94,54 +109,68 @@ static void flush_lines(neverc_tabwriter_t *w) {
         }
     }
 
-    int buf_pos = 0;
+    size_t buf_pos = 0;
     for (int ln = 0; ln <= last_line; ln++) {
         int start = w->lines_start[ln];
         int nc = w->lines_ncells[ln];
         for (int c = 0; c < nc; c++) {
             neverc_tabwriter_cell_t *cell = &w->cells[start + c];
-            out_append(w, w->buf + buf_pos, (size_t)cell->size);
+            if (cell->size < 0 ||
+                out_append(w, w->buf + buf_pos,
+                           (size_t)cell->size) != 0)
+                return -1;
 
             if (c < nc - 1) {
                 int col = c;
-                int pad_needed = 0;
-                if (col < w->ncols)
-                    pad_needed = w->col_widths[col] - cell->width + w->padding;
-                else
-                    pad_needed = w->padding;
-                if (pad_needed < w->padding) pad_needed = w->padding;
+                size_t minimum_padding =
+                    w->padding > 0 ? (size_t)w->padding : 0U;
+                size_t pad_needed = minimum_padding;
+                if (col < w->ncols &&
+                    w->col_widths[col] > cell->width) {
+                    pad_needed +=
+                        (size_t)(w->col_widths[col] - cell->width);
+                }
 
                 if (cell->htab && w->tabwidth > 0) {
-                    int tw = w->tabwidth;
-                    int total = cell->width + pad_needed;
-                    int aligned = ((total + tw - 1) / tw) * tw;
-                    pad_needed = aligned - cell->width;
-                    if (pad_needed < w->padding) pad_needed = w->padding;
+                    size_t width =
+                        cell->width > 0 ? (size_t)cell->width : 0U;
+                    size_t tabwidth = (size_t)w->tabwidth;
+                    if (pad_needed > SIZE_MAX - width) return -1;
+                    size_t total = width + pad_needed;
+                    size_t remainder = total % tabwidth;
+                    if (remainder != 0) {
+                        size_t extra = tabwidth - remainder;
+                        if (pad_needed > SIZE_MAX - extra) return -1;
+                        pad_needed += extra;
+                    }
                 }
 
                 if (w->flags & NEVERC_TABWRITER_ALIGN_RIGHT) {
-                    char tmp[4096];
-                    int cell_start_in_out = (int)w->out_len - cell->size;
-                    if (cell_start_in_out >= 0 && cell->size <= (int)sizeof(tmp)) {
-                        memcpy(tmp, w->out_buf + cell_start_in_out, (size_t)cell->size);
-                        out_pad(w, pad_needed, w->padchar);
-                        w->out_len = (size_t)cell_start_in_out;
-                        out_pad(w, pad_needed, w->padchar);
-                        out_append(w, tmp, (size_t)cell->size);
-                    }
+                    size_t cell_size = (size_t)cell->size;
+                    if (cell_size > w->out_len ||
+                        out_reserve(w, pad_needed) != 0)
+                        return -1;
+                    size_t cell_start = w->out_len - cell_size;
+                    memmove(w->out_buf + cell_start + pad_needed,
+                            w->out_buf + cell_start, cell_size);
+                    memset(w->out_buf + cell_start, w->padchar, pad_needed);
+                    w->out_len += pad_needed;
                 } else {
-                    out_pad(w, pad_needed, w->padchar);
+                    if (out_pad(w, pad_needed, w->padchar) != 0)
+                        return -1;
                 }
             }
-            buf_pos += cell->size;
+            buf_pos += (size_t)cell->size;
         }
-        if (ln < w->nlines)
-            out_append(w, "\n", 1);
+        if (ln < w->nlines && out_append(w, "\n", 1) != 0)
+            return -1;
     }
+    return 0;
 }
 
 void neverc_tabwriter_init(neverc_tabwriter_t *w, int minwidth, int tabwidth,
                            int padding, char padchar, unsigned flags) {
+    if (!w) return;
     memset(w, 0, sizeof(*w));
     w->minwidth = minwidth;
     w->tabwidth = tabwidth;
@@ -153,6 +182,11 @@ void neverc_tabwriter_init(neverc_tabwriter_t *w, int minwidth, int tabwidth,
 }
 
 void neverc_tabwriter_write(neverc_tabwriter_t *w, const char *data, size_t len) {
+    if (!w) return;
+    if ((!data && len != 0) || w->failed) {
+        w->failed = 1;
+        return;
+    }
     /* Scan a line at a time (memchr to the '\n'), then carve tab-separated
      * cells inside it (memchr to each '\t'), bulk-copying every plain run into
      * w->buf. This replaces the byte-at-a-time classify/store loop; the cell
@@ -197,26 +231,24 @@ void neverc_tabwriter_write(neverc_tabwriter_t *w, const char *data, size_t len)
 }
 
 void neverc_tabwriter_flush(neverc_tabwriter_t *w) {
+    if (!w || w->failed) return;
     end_cell(w, 0);
-    flush_lines(w);
-    if (w->out_len + 1 >= w->out_cap) {
-        size_t newcap = w->out_cap ? w->out_cap * 2 : 1024;
-        char *nb = (char *)realloc(w->out_buf, newcap);
-        if (nb) {
-            w->out_buf = nb;
-            w->out_cap = newcap;
-        }
+    if (flush_lines(w) != 0) {
+        w->failed = 1;
+        return;
     }
-    if (w->out_buf)
-        w->out_buf[w->out_len] = '\0';
+    if (out_reserve(w, 0) != 0)
+        return;
+    w->out_buf[w->out_len] = '\0';
 }
 
 const char *neverc_tabwriter_output(const neverc_tabwriter_t *w, size_t *len) {
-    if (len) *len = w->out_len;
-    return w->out_buf;
+    if (len) *len = (!w || w->failed) ? 0 : w->out_len;
+    return (!w || w->failed) ? NULL : w->out_buf;
 }
 
 void neverc_tabwriter_reset(neverc_tabwriter_t *w) {
+    if (!w) return;
     int mw = w->minwidth, tw = w->tabwidth, p = w->padding;
     char pc = w->padchar;
     unsigned f = w->flags;

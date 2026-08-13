@@ -130,6 +130,19 @@ static void test_multiple_lines(void) {
     else { tests_failed++; printf("  FAIL: expected padded output\n"); }
 }
 
+static void test_invalid_input(void) {
+    printf("[invalid_input]\n");
+    neverc_tabwriter_t w;
+    neverc_tabwriter_init(&w, 1, 8, 1, ' ', 0);
+    neverc_tabwriter_write(&w, NULL, 1);
+    neverc_tabwriter_flush(&w);
+    size_t len = 123;
+    const char *out = neverc_tabwriter_output(&w, &len);
+    ASSERT_INT_EQ(out == NULL, 1);
+    ASSERT_INT_EQ((int)len, 0);
+    neverc_tabwriter_reset(&w);
+}
+
 int main(void) {
     printf("=== NeverC text/tabwriter Tests ===\n");
     test_basic_alignment();
@@ -139,6 +152,7 @@ int main(void) {
     test_reset();
     test_no_tabs();
     test_multiple_lines();
+    test_invalid_input();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

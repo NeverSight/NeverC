@@ -55,7 +55,10 @@ int neverc_tar_reader_next(neverc_tar_reader_t *r, neverc_tar_header_t *hdr) {
 
         size_t link_len = 0;
         while (link_len < 100 && block[157 + link_len]) link_len++;
+        if (link_len >= sizeof(hdr->linkname))
+            link_len = sizeof(hdr->linkname) - 1U;
         memcpy(hdr->linkname, block + 157, link_len);
+        hdr->linkname[link_len] = '\0';
 
         /* ustar prefix: full path is prefix + '/' + name. POSIX allows
          * prefix[155] + name[100] = up to 256 chars, which together with the

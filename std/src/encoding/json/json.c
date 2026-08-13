@@ -120,9 +120,18 @@ static int encode_utf8(uint32_t cp, char *out) {
 typedef struct { char *p; size_t len, cap; char *stack; } sbuf_t;
 
 static int sb_reserve(sbuf_t *b, size_t extra) {
-    if (b->len + extra <= b->cap) return 0;
-    size_t ncap = b->cap * 2;
-    while (ncap < b->len + extra) ncap *= 2;
+    if (b->len > b->cap || extra > SIZE_MAX - b->len)
+        return -1;
+    size_t needed = b->len + extra;
+    if (needed <= b->cap) return 0;
+    size_t ncap = b->cap ? b->cap : 256;
+    while (ncap < needed) {
+        if (ncap > SIZE_MAX / 2) {
+            ncap = needed;
+            break;
+        }
+        ncap *= 2;
+    }
     char *nb = (b->p == b->stack) ? (char *)malloc(ncap)
                                   : (char *)realloc(b->p, ncap);
     if (!nb) return -1;

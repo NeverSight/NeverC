@@ -118,11 +118,27 @@ static void test_invalid_lengths(void) {
     neverc_tar_writer_free(&w);
 }
 
+static void test_full_width_linkname(void) {
+    printf("[full-width linkname]\n");
+    uint8_t block[NEVERC_TAR_BLOCK_SIZE] = {0};
+    block[156] = NEVERC_TAR_SYM;
+    memset(block + 157, 'A', 100);
+
+    neverc_tar_reader_t reader;
+    neverc_tar_reader_init(&reader, block, sizeof(block));
+    neverc_tar_header_t header;
+    check_int("read full-width link", neverc_tar_reader_next(
+                  &reader, &header), 1);
+    check_size("truncate full-width link safely", strlen(header.linkname), 99);
+    check_int("terminate full-width link", header.linkname[99], '\0');
+}
+
 int main(void) {
     printf("=== NeverC Archive/Tar Module Tests ===\n\n");
     test_write_read_roundtrip();
     test_empty_tar();
     test_invalid_lengths();
+    test_full_width_linkname();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

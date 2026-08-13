@@ -28,6 +28,8 @@ typedef struct {
 
 /*
  * Decode a PNG from a memory buffer.
+ * Supports non-interlaced 8-bit grayscale, grayscale-alpha, truecolor, and
+ * truecolor-alpha images. Indexed-color images are rejected.
  * Returns 0 on success, -1 on error.
  * On success, img->pixels is heap-allocated; caller must call neverc_png_free().
  */
@@ -35,7 +37,11 @@ int neverc_png_decode(const uint8_t *data, size_t len, neverc_png_image_t *img);
 
 /*
  * Encode an image to PNG format.
+ * Supports 8-bit grayscale, grayscale-alpha, truecolor, and truecolor-alpha.
+ * channels must match color_type; stride may include row padding but must be
+ * at least width * channels. Indexed-color encoding is not supported.
  * Returns 0 on success. *out_data is heap-allocated; caller must free().
+ * On error, *out_data is NULL and *out_len is zero.
  */
 int neverc_png_encode(const neverc_png_image_t *img, uint8_t **out_data, size_t *out_len);
 

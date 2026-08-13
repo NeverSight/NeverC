@@ -1152,7 +1152,8 @@ static int ws_valid_utf8_prefix(const uint8_t *data, size_t len) {
         if (c >= 0xe0 && c <= 0xef) {
             if (i >= len) return 1;
             uint8_t c1 = data[i++];
-            if ((c == 0xe0 && c1 < 0xa0) ||
+            if ((c1 & 0xc0) != 0x80 ||
+                (c == 0xe0 && c1 < 0xa0) ||
                 (c == 0xed && c1 >= 0xa0))
                 return 0;
             if (i >= len) return 1;
@@ -1164,14 +1165,16 @@ static int ws_valid_utf8_prefix(const uint8_t *data, size_t len) {
         if (c >= 0xf0 && c <= 0xf4) {
             if (i >= len) return 1;
             uint8_t c1 = data[i++];
-            if ((c == 0xf0 && c1 < 0x90) ||
+            if ((c1 & 0xc0) != 0x80 ||
+                (c == 0xf0 && c1 < 0x90) ||
                 (c == 0xf4 && c1 >= 0x90))
                 return 0;
             if (i >= len) return 1;
             uint8_t c2 = data[i++];
+            if ((c2 & 0xc0) != 0x80) return 0;
             if (i >= len) return 1;
             uint8_t c3 = data[i++];
-            if ((c2 & 0xc0) != 0x80 || (c3 & 0xc0) != 0x80)
+            if ((c3 & 0xc0) != 0x80)
                 return 0;
             continue;
         }

@@ -205,7 +205,18 @@ static void grpc_test_metadata_limits(void) {
         "/test.Echo/Unary", NEVERC_GRPC_UNARY, &metadata, 1U,
         &request, 1U, 1024U);
     CHECK(result != NULL);
-    CHECK(result && result->error != NULL);
+    CHECK(result && result->error &&
+          strcmp(result->error, "invalid gRPC metadata") == 0);
+    neverc_grpc_result_free(result);
+
+    metadata.value_length = 8193U;
+    result = neverc_grpc_client_call(
+        (neverc_h2_client_t *)(void *)&client_storage, NULL,
+        "/test.Echo/Unary", NEVERC_GRPC_UNARY, &metadata, 1U,
+        &request, 1U, 1024U);
+    CHECK(result != NULL);
+    CHECK(result && result->error &&
+          strcmp(result->error, "invalid gRPC metadata") == 0);
     neverc_grpc_result_free(result);
 }
 

@@ -60,6 +60,30 @@ static void test_null_safety(void) {
     tests_passed++; tests_run++;
 }
 
+static void test_utf8_prefix_validation(void) {
+    printf("[utf8_prefix_validation]\n");
+    static const uint8_t incomplete_three[] = {0xe2, 0x82};
+    static const uint8_t bad_three[] = {0xe2, 0x28};
+    static const uint8_t bad_four_first[] = {0xf1, 0x20};
+    static const uint8_t bad_four_second[] = {0xf1, 0x80, 0x20};
+    static const uint8_t complete_four[] = {0xf0, 0x9f, 0x98, 0x80};
+
+    check_int("incomplete three-byte prefix",
+              neverc_ws_valid_utf8_prefix(
+                  incomplete_three, sizeof(incomplete_three)), 1);
+    check_int("reject bad first continuation",
+              neverc_ws_valid_utf8_prefix(bad_three, sizeof(bad_three)), 0);
+    check_int("reject bad four-byte first continuation",
+              neverc_ws_valid_utf8_prefix(
+                  bad_four_first, sizeof(bad_four_first)), 0);
+    check_int("reject bad four-byte second continuation",
+              neverc_ws_valid_utf8_prefix(
+                  bad_four_second, sizeof(bad_four_second)), 0);
+    check_int("accept complete four-byte character",
+              neverc_ws_valid_utf8_prefix(
+                  complete_four, sizeof(complete_four)), 1);
+}
+
 #ifndef _WIN32
 
 static int tcp_read_exact(neverc_tcp_conn_t *conn, void *buf, size_t len) {
@@ -498,6 +522,7 @@ static void test_http_ws_upgrade(void) {
 int main(void) {
     test_compute_accept();
     test_null_safety();
+    test_utf8_prefix_validation();
 #ifndef _WIN32
     test_client_dial_and_masking();
     test_handshake_and_echo();

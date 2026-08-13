@@ -69,6 +69,14 @@ static void test_encode(void) {
     char dst[64];
     size_t n;
 
+    uint8_t byte = 0;
+    check_size("encode rejects overflowing length",
+               neverc_hex_encode(dst, &byte, SIZE_MAX / 2 + 1), SIZE_MAX);
+    check_size("encode rejects NULL source",
+               neverc_hex_encode(dst, NULL, 1), SIZE_MAX);
+    check_size("encode rejects NULL destination",
+               neverc_hex_encode(NULL, &byte, 1), SIZE_MAX);
+
     uint8_t one[] = {0xab};
     char exact[3] = {'?', '?', 'X'};
     n = neverc_hex_encode(exact, one, 1);

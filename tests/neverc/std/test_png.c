@@ -18,6 +18,36 @@ static int tests_run = 0, tests_passed = 0, tests_failed = 0;
     else { tests_failed++; printf("  FAIL [%d]: %s = %d, expected %d\n", __LINE__, #a, _a, _b); } \
 } while(0)
 
+static uint32_t rd_be32(const uint8_t *p) {
+    return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) |
+           ((uint32_t)p[2] << 8) | p[3];
+}
+
+static void wr_be32(uint8_t *p, uint32_t value) {
+    p[0] = (uint8_t)(value >> 24);
+    p[1] = (uint8_t)(value >> 16);
+    p[2] = (uint8_t)(value >> 8);
+    p[3] = (uint8_t)value;
+}
+
+static uint8_t *insert_empty_chunk(const uint8_t *png, size_t png_len,
+                                   size_t offset, const char type[4],
+                                   size_t *result_len) {
+    if (!png || !result_len || offset > png_len ||
+        png_len > SIZE_MAX - 12U)
+        return NULL;
+    uint8_t *result = (uint8_t *)malloc(png_len + 12U);
+    if (!result) return NULL;
+    memcpy(result, png, offset);
+    memset(result + offset, 0, 4);
+    memcpy(result + offset + 4U, type, 4);
+    wr_be32(result + offset + 8U,
+            neverc_crc32_ieee(result + offset + 4U, 4));
+    memcpy(result + offset + 12U, png + offset, png_len - offset);
+    *result_len = png_len + 12U;
+    return result;
+}
+
 static void test_encode_decode_rgba(void) {
     printf("[encode_decode_rgba]\n");
     neverc_png_image_t img;
@@ -184,6 +214,129 @@ static void test_invalid_data(void) {
 
     uint8_t short_data[] = {137, 80, 78, 71, 13, 10, 26, 10};
     ASSERT_EQ(neverc_png_decode(short_data, 8, &img), -1);
+
+    uint8_t huge_chunk[] = {
+        137, 80, 78, 71, 13, 10, 26, 10,
+        0xff, 0xff, 0xff, 0xff, 'I', 'D', 'A', 'T', 0, 0, 0, 0
+    };
+    ASSERT_EQ(neverc_png_decode(
+                  huge_chunk, sizeof(huge_chunk), &img), -1);
+}
+
+static void test_encode_rejects_unsafe_geometry(void) {
+    printf("[encode_rejects_unsafe_geometry]\n");
+    uint8_t pixel = 0;
+    uint8_t *out = (uint8_t *)(uintptr_t)1;
+    size_t out_len = 123;
+    neverc_png_image_t img;
+    memset(&img, 0, sizeof(img));
+    img.width = UINT32_MAX;
+    img.height = UINT32_MAX;
+    img.bit_depth = 8;
+    img.color_type = NEVERC_PNG_COLOR_GRAYSCALE;
+    img.channels = 1;
+    img.stride = SIZE_MAX;
+    img.pixels = &pixel;
+    ASSERT_EQ(neverc_png_encode(&img, &out, &out_len), -1);
+    ASSERT_TRUE(out == NULL);
+    ASSERT_TRUE(out_len == 0);
+
+    img.width = 2;
+    img.height = 1;
+    img.stride = 1;
+    ASSERT_EQ(neverc_png_encode(&img, &out, &out_len), -1);
+
+    img.stride = 2;
+    img.channels = 4;
+    ASSERT_EQ(neverc_png_encode(&img, &out, &out_len), -1);
+
+    out = (uint8_t *)(uintptr_t)1;
+    out_len = 123;
+    ASSERT_EQ(neverc_png_encode(NULL, &out, &out_len), -1);
+    ASSERT_TRUE(out == NULL);
+    ASSERT_TRUE(out_len == 0);
+
+    img.pixels = NULL;
+    out = (uint8_t *)(uintptr_t)1;
+    out_len = 123;
+    ASSERT_EQ(neverc_png_encode(&img, &out, &out_len), -1);
+    ASSERT_TRUE(out == NULL);
+    ASSERT_TRUE(out_len == 0);
+}
+
+static void test_padded_stride_and_crc_rejection(void) {
+    printf("[padded_stride_and_crc_rejection]\n");
+    uint8_t pixels[16] = {
+        255, 0, 0, 0, 255, 0, 0xaa, 0xbb,
+        0, 0, 255, 255, 255, 255, 0xcc, 0xdd
+    };
+    static const uint8_t expected[12] = {
+        255, 0, 0, 0, 255, 0,
+        0, 0, 255, 255, 255, 255
+    };
+    neverc_png_image_t img;
+    memset(&img, 0, sizeof(img));
+    img.width = 2;
+    img.height = 2;
+    img.bit_depth = 8;
+    img.color_type = NEVERC_PNG_COLOR_TRUECOLOR;
+    img.channels = 3;
+    img.stride = sizeof(pixels);
+    img.pixels = pixels;
+
+    uint8_t *png = NULL;
+    size_t png_len = 0;
+    int rc = neverc_png_encode(&img, &png, &png_len);
+    ASSERT_EQ(rc, 0);
+    if (rc != 0 || !png) return;
+
+    neverc_png_image_t decoded;
+    rc = neverc_png_decode(png, png_len, &decoded);
+    ASSERT_EQ(rc, 0);
+    if (rc != 0) { free(png); return; }
+    ASSERT_TRUE(decoded.stride == 6);
+    ASSERT_TRUE(memcmp(decoded.pixels, expected, sizeof(expected)) == 0);
+    neverc_png_free(&decoded);
+
+    size_t mutated_len = 0;
+    uint8_t *mutated = insert_empty_chunk(
+        png, png_len, 8, "aBCD", &mutated_len);
+    ASSERT_TRUE(mutated != NULL);
+    if (mutated) {
+        ASSERT_EQ(neverc_png_decode(mutated, mutated_len, &decoded), -1);
+        free(mutated);
+    }
+    mutated = insert_empty_chunk(
+        png, png_len, 33, "ABCD", &mutated_len);
+    ASSERT_TRUE(mutated != NULL);
+    if (mutated) {
+        ASSERT_EQ(neverc_png_decode(mutated, mutated_len, &decoded), -1);
+        free(mutated);
+    }
+
+    png[16] ^= 1U; /* corrupt IHDR width without updating its CRC */
+    ASSERT_EQ(neverc_png_decode(png, png_len, &decoded), -1);
+
+    png[16] ^= 1U;
+    size_t pos = 8;
+    int corrupted_adler = 0;
+    while (pos + 12U <= png_len) {
+        uint32_t chunk_len = rd_be32(png + pos);
+        if ((size_t)chunk_len > png_len - pos - 12U) break;
+        if (memcmp(png + pos + 4U, "IDAT", 4) == 0 && chunk_len >= 6U) {
+            png[pos + 8U + chunk_len - 1U] ^= 1U;
+            uint32_t crc = neverc_crc32_ieee(
+                png + pos + 4U, (size_t)chunk_len + 4U);
+            wr_be32(png + pos + 8U + chunk_len, crc);
+            corrupted_adler = 1;
+            break;
+        }
+        pos += 12U + chunk_len;
+    }
+    ASSERT_TRUE(corrupted_adler);
+    if (!corrupted_adler) { free(png); return; }
+    ASSERT_EQ(neverc_png_decode(png, png_len, &decoded), -1);
+    free(png);
 }
 
 static void test_large_image(void) {
@@ -235,11 +388,6 @@ static void test_large_image(void) {
  * conformant decoder (libpng, browsers) rejects the file. Walk the chunks and
  * recompute. The IEND CRC is the universal constant 0xAE426082, a strong canary
  * for the checksum being correct end to end. */
-static uint32_t rd_be32(const uint8_t *p) {
-    return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) |
-           ((uint32_t)p[2] << 8) | p[3];
-}
-
 static void test_chunk_crc_valid(void) {
     printf("[chunk_crc_valid]\n");
     neverc_png_image_t img;
@@ -317,6 +465,8 @@ int main(void) {
     test_encode_decode_grayscale();
     test_pixel_at_bounds();
     test_invalid_data();
+    test_encode_rejects_unsafe_geometry();
+    test_padded_stride_and_crc_rejection();
     test_large_image();
     test_chunk_crc_valid();
     test_zlib_fcheck_valid();
