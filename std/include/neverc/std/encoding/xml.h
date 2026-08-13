@@ -38,7 +38,9 @@ typedef struct {
     int              self_closing;
 } neverc_xml_token_t;
 
-/* SAX-style tokenizer */
+/* SAX-style tokenizer. Character data and attribute values decode predefined
+ * and numeric entities; CDATA is emitted as character data. DTD/entity
+ * declarations are rejected rather than externally resolved. */
 typedef struct {
     const char *src;
     size_t      len;
@@ -60,6 +62,8 @@ typedef struct neverc_xml_node {
     int                      cap_children;
 } neverc_xml_node_t;
 
+/* Parses one well-formed document element, with optional surrounding
+ * whitespace, comments, and processing instructions. */
 neverc_xml_node_t *neverc_xml_parse(const char *data, size_t len);
 void               neverc_xml_node_free(neverc_xml_node_t *node);
 const char        *neverc_xml_node_attr(const neverc_xml_node_t *node,

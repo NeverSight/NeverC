@@ -7,7 +7,10 @@ void neverc_xml_decoder_init(neverc_xml_decoder_t *d, const char *data, size_t l
     if (!d) return;
     d->src = data;
     d->len = data || len == 0 ? len : 0;
-    d->pos = 0;
+    d->pos = d->len >= 3 &&
+             (unsigned char)d->src[0] == 0xef &&
+             (unsigned char)d->src[1] == 0xbb &&
+             (unsigned char)d->src[2] == 0xbf ? 3 : 0;
 }
 
 static char *dup_range(const char *s, size_t n) {
@@ -17,6 +20,261 @@ static char *dup_range(const char *s, size_t n) {
     if (n > 0) memcpy(r, s, n);
     r[n] = '\0';
     return r;
+}
+
+static int xml_char_is_valid(uint32_t codepoint) {
+    return codepoint == 0x09 || codepoint == 0x0a ||
+           codepoint == 0x0d ||
+           (codepoint >= 0x20 && codepoint <= 0xd7ff) ||
+           (codepoint >= 0xe000 && codepoint <= 0xfffd) ||
+           (codepoint >= 0x10000 && codepoint <= 0x10ffff);
+}
+
+static int xml_decode_utf8(const char *data, size_t length,
+                           size_t *consumed, uint32_t *codepoint) {
+    if (!data || length == 0 || !consumed || !codepoint)
+        return -1;
+    const unsigned char *bytes = (const unsigned char *)data;
+    uint32_t value;
+    size_t count;
+    if (bytes[0] < 0x80) {
+        value = bytes[0];
+        count = 1;
+    } else if (bytes[0] >= 0xc2 && bytes[0] <= 0xdf) {
+        value = bytes[0] & 0x1fU;
+        count = 2;
+    } else if (bytes[0] >= 0xe0 && bytes[0] <= 0xef) {
+        value = bytes[0] & 0x0fU;
+        count = 3;
+    } else if (bytes[0] >= 0xf0 && bytes[0] <= 0xf4) {
+        value = bytes[0] & 0x07U;
+        count = 4;
+    } else {
+        return -1;
+    }
+    if (count > length)
+        return -1;
+    for (size_t i = 1; i < count; i++) {
+        if ((bytes[i] & 0xc0U) != 0x80U)
+            return -1;
+        value = (value << 6U) | (bytes[i] & 0x3fU);
+    }
+    if ((count == 3 && value < 0x800) ||
+        (count == 4 && value < 0x10000) ||
+        !xml_char_is_valid(value))
+        return -1;
+    *consumed = count;
+    *codepoint = value;
+    return 0;
+}
+
+static size_t xml_encode_utf8(uint32_t codepoint, char output[4]) {
+    if (codepoint <= 0x7f) {
+        output[0] = (char)codepoint;
+        return 1;
+    }
+    if (codepoint <= 0x7ff) {
+        output[0] = (char)(0xc0U | (codepoint >> 6U));
+        output[1] = (char)(0x80U | (codepoint & 0x3fU));
+        return 2;
+    }
+    if (codepoint <= 0xffff) {
+        output[0] = (char)(0xe0U | (codepoint >> 12U));
+        output[1] = (char)(0x80U | ((codepoint >> 6U) & 0x3fU));
+        output[2] = (char)(0x80U | (codepoint & 0x3fU));
+        return 3;
+    }
+    output[0] = (char)(0xf0U | (codepoint >> 18U));
+    output[1] = (char)(0x80U | ((codepoint >> 12U) & 0x3fU));
+    output[2] = (char)(0x80U | ((codepoint >> 6U) & 0x3fU));
+    output[3] = (char)(0x80U | (codepoint & 0x3fU));
+    return 4;
+}
+
+static int xml_name_start(uint32_t codepoint) {
+    return codepoint == ':' || codepoint == '_' ||
+           (codepoint >= 'A' && codepoint <= 'Z') ||
+           (codepoint >= 'a' && codepoint <= 'z') ||
+           (codepoint >= 0x00c0 && codepoint <= 0x00d6) ||
+           (codepoint >= 0x00d8 && codepoint <= 0x00f6) ||
+           (codepoint >= 0x00f8 && codepoint <= 0x02ff) ||
+           (codepoint >= 0x0370 && codepoint <= 0x037d) ||
+           (codepoint >= 0x037f && codepoint <= 0x1fff) ||
+           (codepoint >= 0x200c && codepoint <= 0x200d) ||
+           (codepoint >= 0x2070 && codepoint <= 0x218f) ||
+           (codepoint >= 0x2c00 && codepoint <= 0x2fef) ||
+           (codepoint >= 0x3001 && codepoint <= 0xd7ff) ||
+           (codepoint >= 0xf900 && codepoint <= 0xfdcf) ||
+           (codepoint >= 0xfdf0 && codepoint <= 0xfffd) ||
+           (codepoint >= 0x10000 && codepoint <= 0xeffff);
+}
+
+static int xml_name_continue(uint32_t codepoint) {
+    return xml_name_start(codepoint) || codepoint == '-' ||
+           codepoint == '.' ||
+           (codepoint >= '0' && codepoint <= '9') ||
+           codepoint == 0x00b7 ||
+           (codepoint >= 0x0300 && codepoint <= 0x036f) ||
+           (codepoint >= 0x203f && codepoint <= 0x2040);
+}
+
+static int xml_parse_name(neverc_xml_decoder_t *decoder,
+                          size_t *start, size_t *length) {
+    if (!decoder || !start || !length || decoder->pos >= decoder->len)
+        return -1;
+    *start = decoder->pos;
+    int first = 1;
+    while (decoder->pos < decoder->len) {
+        size_t consumed = 0;
+        uint32_t codepoint = 0;
+        if (xml_decode_utf8(
+                decoder->src + decoder->pos,
+                decoder->len - decoder->pos,
+                &consumed, &codepoint) != 0)
+            return -1;
+        if ((first && !xml_name_start(codepoint)) ||
+            (!first && !xml_name_continue(codepoint)))
+            break;
+        decoder->pos += consumed;
+        first = 0;
+    }
+    *length = decoder->pos - *start;
+    return first ? -1 : 0;
+}
+
+static char *xml_decode_text(const char *data, size_t length,
+                             int attribute, size_t *decoded_length) {
+    if (!decoded_length || (!data && length != 0) || length == SIZE_MAX)
+        return NULL;
+    *decoded_length = 0;
+    char *decoded = (char *)malloc(length + 1);
+    if (!decoded)
+        return NULL;
+    size_t input = 0;
+    size_t output = 0;
+    while (input < length) {
+        if (data[input] == '&') {
+            size_t end = input + 1;
+            while (end < length && data[end] != ';')
+                end++;
+            if (end >= length || end == input + 1)
+                goto invalid;
+            const char *entity = data + input + 1;
+            size_t entity_length = end - input - 1;
+            uint32_t codepoint = 0;
+            if (entity_length == 2 && memcmp(entity, "lt", 2) == 0)
+                codepoint = '<';
+            else if (entity_length == 2 && memcmp(entity, "gt", 2) == 0)
+                codepoint = '>';
+            else if (entity_length == 3 && memcmp(entity, "amp", 3) == 0)
+                codepoint = '&';
+            else if (entity_length == 4 &&
+                     memcmp(entity, "apos", 4) == 0)
+                codepoint = '\'';
+            else if (entity_length == 4 &&
+                     memcmp(entity, "quot", 4) == 0)
+                codepoint = '"';
+            else if (entity[0] == '#') {
+                size_t digit = 1;
+                unsigned base = 10;
+                if (digit < entity_length &&
+                    entity[digit] == 'x') {
+                    base = 16;
+                    digit++;
+                }
+                if (digit == entity_length)
+                    goto invalid;
+                for (; digit < entity_length; digit++) {
+                    unsigned value;
+                    unsigned char c = (unsigned char)entity[digit];
+                    if (c >= '0' && c <= '9')
+                        value = c - '0';
+                    else if (base == 16 && c >= 'a' && c <= 'f')
+                        value = c - 'a' + 10U;
+                    else if (base == 16 && c >= 'A' && c <= 'F')
+                        value = c - 'A' + 10U;
+                    else
+                        goto invalid;
+                    if (codepoint > (UINT32_MAX - value) / base)
+                        goto invalid;
+                    codepoint = codepoint * base + value;
+                }
+            } else {
+                goto invalid;
+            }
+            if (!xml_char_is_valid(codepoint))
+                goto invalid;
+            char encoded[4];
+            size_t encoded_length = xml_encode_utf8(codepoint, encoded);
+            memcpy(decoded + output, encoded, encoded_length);
+            output += encoded_length;
+            input = end + 1;
+            continue;
+        }
+
+        size_t consumed = 0;
+        uint32_t codepoint = 0;
+        if (xml_decode_utf8(data + input, length - input,
+                            &consumed, &codepoint) != 0 ||
+            (attribute && codepoint == '<'))
+            goto invalid;
+        if (codepoint == '\r') {
+            input += consumed;
+            if (input < length && data[input] == '\n')
+                input++;
+            decoded[output++] = attribute ? ' ' : '\n';
+            continue;
+        }
+        if (attribute && (codepoint == '\n' || codepoint == '\t')) {
+            decoded[output++] = ' ';
+            input += consumed;
+            continue;
+        }
+        memcpy(decoded + output, data + input, consumed);
+        output += consumed;
+        input += consumed;
+    }
+    decoded[output] = '\0';
+    *decoded_length = output;
+    return decoded;
+
+invalid:
+    free(decoded);
+    return NULL;
+}
+
+static char *xml_copy_valid_text(const char *data, size_t length,
+                                 size_t *copied_length) {
+    if (!copied_length || (!data && length != 0) || length == SIZE_MAX)
+        return NULL;
+    *copied_length = 0;
+    char *copy = (char *)malloc(length + 1);
+    if (!copy)
+        return NULL;
+    size_t position = 0;
+    size_t output = 0;
+    while (position < length) {
+        size_t consumed = 0;
+        uint32_t codepoint = 0;
+        if (xml_decode_utf8(data + position, length - position,
+                            &consumed, &codepoint) != 0) {
+            free(copy);
+            return NULL;
+        }
+        if (codepoint == '\r') {
+            position += consumed;
+            if (position < length && data[position] == '\n')
+                position++;
+            copy[output++] = '\n';
+            continue;
+        }
+        memcpy(copy + output, data + position, consumed);
+        output += consumed;
+        position += consumed;
+    }
+    copy[output] = '\0';
+    *copied_length = output;
+    return copy;
 }
 
 static void skip_ws(neverc_xml_decoder_t *d) {
@@ -45,20 +303,25 @@ static neverc_xml_attr_t *parse_attrs(neverc_xml_decoder_t *d, int *count) {
     *count = 0;
 
     while (d->pos < d->len) {
+        size_t before_whitespace = d->pos;
         skip_ws(d);
         if (d->pos >= d->len || d->src[d->pos] == '>' ||
             d->src[d->pos] == '/' || d->src[d->pos] == '?')
             break;
+        if (d->pos == before_whitespace)
+            goto error;
 
-        size_t ns = d->pos;
-        while (d->pos < d->len && d->src[d->pos] != '=' &&
-               d->src[d->pos] != ' ' && d->src[d->pos] != '\t' &&
-               d->src[d->pos] != '\n' && d->src[d->pos] != '\r' &&
-               d->src[d->pos] != '>' && d->src[d->pos] != '/')
-            d->pos++;
-        if (d->pos == ns) goto error;
-        char *name = dup_range(d->src + ns, d->pos - ns);
+        size_t ns = 0, name_length = 0;
+        if (xml_parse_name(d, &ns, &name_length) != 0)
+            goto error;
+        char *name = dup_range(d->src + ns, name_length);
         if (!name) goto error;
+        for (int i = 0; i < *count; i++) {
+            if (strcmp(attrs[i].name, name) == 0) {
+                free(name);
+                goto error;
+            }
+        }
 
         skip_ws(d);
         if (d->pos >= d->len || d->src[d->pos] != '=') {
@@ -79,7 +342,9 @@ static neverc_xml_attr_t *parse_attrs(neverc_xml_decoder_t *d, int *count) {
             free(name);
             goto error;
         }
-        char *value = dup_range(d->src + vs, d->pos - vs);
+        size_t value_length = 0;
+        char *value = xml_decode_text(
+            d->src + vs, d->pos - vs, 1, &value_length);
         d->pos++;
         if (!value) {
             free(name);
@@ -131,72 +396,111 @@ int neverc_xml_decode_token(neverc_xml_decoder_t *d, neverc_xml_token_t *tok) {
          * instead of byte-by-byte (text content dominates most documents). */
         const char *lt = (const char *)memchr(d->src + d->pos, '<', d->len - d->pos);
         d->pos = lt ? (size_t)(lt - d->src) : d->len;
+        for (size_t i = start; d->pos - i >= 3; i++) {
+            if (d->src[i] == ']' && d->src[i + 1] == ']' &&
+                d->src[i + 2] == '>')
+                goto error;
+        }
         tok->type = NEVERC_XML_CHAR_DATA;
-        tok->data = dup_range(d->src + start, d->pos - start);
+        tok->data = xml_decode_text(
+            d->src + start, d->pos - start, 0, &tok->data_len);
         if (!tok->data) goto error;
-        tok->data_len = d->pos - start;
         return 1;
     }
 
     d->pos++;
-    if (d->pos >= d->len) return -1;
+    if (d->pos >= d->len) goto error;
 
     if (d->src[d->pos] == '/') {
         d->pos++;
-        size_t ns = d->pos;
-        while (d->pos < d->len && d->src[d->pos] != '>') d->pos++;
-        size_t ne = d->pos;
-        while (ne > ns && (d->src[ne - 1] == ' ' || d->src[ne - 1] == '\t' ||
-                           d->src[ne - 1] == '\n' || d->src[ne - 1] == '\r'))
-            ne--;
+        size_t ns = 0, name_length = 0;
+        if (xml_parse_name(d, &ns, &name_length) != 0)
+            goto error;
+        skip_ws(d);
+        if (d->pos >= d->len || d->src[d->pos] != '>')
+            goto error;
         tok->type = NEVERC_XML_END_ELEMENT;
-        if (ne == ns) goto error;
-        tok->name = dup_range(d->src + ns, ne - ns);
-        if (!tok->name || d->pos >= d->len) goto error;
+        tok->name = dup_range(d->src + ns, name_length);
+        if (!tok->name) goto error;
         d->pos++;
         return 1;
     }
 
-    if (d->src[d->pos] == '!' && d->pos + 2 < d->len &&
-        d->src[d->pos + 1] == '-' && d->src[d->pos + 2] == '-') {
-        d->pos += 3;
-        size_t cs = d->pos;
-        while (d->pos + 2 < d->len &&
-               !(d->src[d->pos] == '-' && d->src[d->pos+1] == '-' && d->src[d->pos+2] == '>'))
+    if (d->src[d->pos] == '!' && d->len - d->pos >= 9 &&
+        memcmp(d->src + d->pos, "![CDATA[", 9) == 0) {
+        d->pos += 9;
+        size_t start = d->pos;
+        while (d->len - d->pos >= 3 &&
+               !(d->src[d->pos] == ']' &&
+                 d->src[d->pos + 1] == ']' &&
+                 d->src[d->pos + 2] == '>'))
             d->pos++;
-        if (d->pos + 2 >= d->len) goto error;
-        tok->type = NEVERC_XML_COMMENT;
-        tok->data = dup_range(d->src + cs, d->pos - cs);
-        if (!tok->data) goto error;
-        tok->data_len = d->pos - cs;
+        if (d->len - d->pos < 3)
+            goto error;
+        tok->type = NEVERC_XML_CHAR_DATA;
+        tok->data = xml_copy_valid_text(
+            d->src + start, d->pos - start, &tok->data_len);
+        if (!tok->data)
+            goto error;
         d->pos += 3;
         return 1;
     }
+
+    if (d->src[d->pos] == '!' && d->len - d->pos >= 3 &&
+        d->src[d->pos + 1] == '-' && d->src[d->pos + 2] == '-') {
+        d->pos += 3;
+        size_t cs = d->pos;
+        while (d->len - d->pos >= 3 &&
+               !(d->src[d->pos] == '-' &&
+                 d->src[d->pos + 1] == '-' &&
+                 d->src[d->pos + 2] == '>')) {
+            if (d->src[d->pos] == '-' &&
+                d->src[d->pos + 1] == '-')
+                goto error;
+            d->pos++;
+        }
+        if (d->len - d->pos < 3) goto error;
+        tok->type = NEVERC_XML_COMMENT;
+        tok->data = xml_copy_valid_text(
+            d->src + cs, d->pos - cs, &tok->data_len);
+        if (!tok->data) goto error;
+        d->pos += 3;
+        return 1;
+    }
+
+    /* DTD/entity declarations are intentionally unsupported: treating them
+     * as elements is incorrect and resolving them would enable XXE. */
+    if (d->src[d->pos] == '!')
+        goto error;
 
     if (d->src[d->pos] == '?') {
         d->pos++;
         size_t ps = d->pos;
-        while (d->pos + 1 < d->len &&
+        size_t target_start = 0, target_length = 0;
+        if (xml_parse_name(
+                d, &target_start, &target_length) != 0)
+            goto error;
+        if (d->pos < d->len && d->src[d->pos] != '?' &&
+            d->src[d->pos] != ' ' && d->src[d->pos] != '\t' &&
+            d->src[d->pos] != '\n' && d->src[d->pos] != '\r')
+            goto error;
+        while (d->len - d->pos >= 2 &&
                !(d->src[d->pos] == '?' && d->src[d->pos+1] == '>'))
             d->pos++;
-        if (d->pos + 1 >= d->len) goto error;
+        if (d->len - d->pos < 2) goto error;
         tok->type = NEVERC_XML_PROC_INST;
-        tok->data = dup_range(d->src + ps, d->pos - ps);
+        tok->data = xml_copy_valid_text(
+            d->src + ps, d->pos - ps, &tok->data_len);
         if (!tok->data) goto error;
-        tok->data_len = d->pos - ps;
         d->pos += 2;
         return 1;
     }
 
-    size_t ns = d->pos;
-    while (d->pos < d->len && d->src[d->pos] != ' ' &&
-           d->src[d->pos] != '\t' && d->src[d->pos] != '\n' &&
-           d->src[d->pos] != '\r' && d->src[d->pos] != '>' &&
-           d->src[d->pos] != '/')
-        d->pos++;
-    if (d->pos == ns) goto error;
+    size_t ns = 0, name_length = 0;
+    if (xml_parse_name(d, &ns, &name_length) != 0)
+        goto error;
     tok->type = NEVERC_XML_START_ELEMENT;
-    tok->name = dup_range(d->src + ns, d->pos - ns);
+    tok->name = dup_range(d->src + ns, name_length);
     if (!tok->name) goto error;
     tok->attrs = parse_attrs(d, &tok->nattrs);
     if (tok->nattrs < 0) goto error;
@@ -323,6 +627,7 @@ neverc_xml_node_t *neverc_xml_parse(const char *data, size_t len) {
     tlen[stack_top] = 0;
     tcap[stack_top] = 0;
     stack_top++;
+    int document_elements = 0;
 
     neverc_xml_token_t tok;
     int decode_result;
@@ -331,6 +636,10 @@ neverc_xml_node_t *neverc_xml_parse(const char *data, size_t len) {
         switch (tok.type) {
         case NEVERC_XML_START_ELEMENT: {
             if (!tok.name) {
+                failed = 1;
+                break;
+            }
+            if (stack_top == 1 && ++document_elements != 1) {
                 failed = 1;
                 break;
             }
@@ -376,6 +685,17 @@ neverc_xml_node_t *neverc_xml_parse(const char *data, size_t len) {
             break;
         case NEVERC_XML_CHAR_DATA: {
             int si = stack_top - 1;
+            if (si == 0) {
+                for (size_t i = 0; i < tok.data_len; i++) {
+                    char c = tok.data[i];
+                    if (c != ' ' && c != '\t' &&
+                        c != '\n' && c != '\r') {
+                        failed = 1;
+                        break;
+                    }
+                }
+                break;
+            }
             neverc_xml_node_t *cur = stack[si];
             size_t nlen = tok.data_len;
             if (!cur->text) {
@@ -416,7 +736,8 @@ neverc_xml_node_t *neverc_xml_parse(const char *data, size_t len) {
         if (failed) goto parse_fail;
     }
 
-    if (decode_result < 0 || stack_top != 1) goto parse_fail;
+    if (decode_result < 0 || stack_top != 1 || document_elements != 1)
+        goto parse_fail;
 
     free(stack);
     free(tlen);
@@ -480,6 +801,16 @@ char *neverc_xml_escape(const char *s, size_t *outlen) {
     if (!s) return NULL;
     size_t slen = strlen(s);
 
+    for (size_t position = 0; position < slen;) {
+        size_t consumed = 0;
+        uint32_t codepoint = 0;
+        if (xml_decode_utf8(
+                s + position, slen - position,
+                &consumed, &codepoint) != 0)
+            return NULL;
+        position += consumed;
+    }
+
     /* Branchless pass to size the output exactly (no realloc, no slack). */
     size_t extra = 0;
     for (size_t i = 0; i < slen; i++) {
@@ -517,4 +848,13 @@ char *neverc_xml_escape(const char *s, size_t *outlen) {
     r[wi] = '\0';
     *outlen = wi;
     return r;
+}
+
+char *neverc_xml_unescape(const char *s, size_t len, size_t *outlen) {
+    if (!outlen)
+        return NULL;
+    *outlen = 0;
+    if (!s)
+        return NULL;
+    return xml_decode_text(s, len, 0, outlen);
 }

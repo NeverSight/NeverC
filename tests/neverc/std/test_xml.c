@@ -121,6 +121,96 @@ static void test_escape(void) {
     char *r = neverc_xml_escape("a < b & c > d", &outlen);
     check_str("escape", r, "a &lt; b &amp; c &gt; d");
     free(r);
+    outlen = 99;
+    check_bool("escape rejects invalid XML characters",
+               neverc_xml_escape("\x01", &outlen) == NULL, 1);
+    check_int("invalid escape clears length", (int)outlen, 0);
+}
+
+static void test_entities_cdata_and_well_formedness(void) {
+    printf("[entities/cdata/well-formedness]\n");
+    const char *xml =
+        "<root value=\"a &amp; &#65;\">"
+        "x &lt; y<![CDATA[<&]]>z"
+        "</root>";
+    neverc_xml_decoder_t decoder;
+    neverc_xml_token_t token;
+    neverc_xml_decoder_init(&decoder, xml, strlen(xml));
+    check_int("entity start token",
+              neverc_xml_decode_token(&decoder, &token), 1);
+    check_bool("entity attribute present",
+               token.nattrs == 1 && token.attrs != NULL, 1);
+    if (token.nattrs == 1 && token.attrs)
+        check_str("decoded attribute", token.attrs[0].value, "a & A");
+    neverc_xml_token_free(&token);
+    check_int("entity text token",
+              neverc_xml_decode_token(&decoder, &token), 1);
+    check_str("decoded text entity", token.data, "x < y");
+    neverc_xml_token_free(&token);
+    check_int("CDATA token",
+              neverc_xml_decode_token(&decoder, &token), 1);
+    check_int("CDATA is character data",
+              token.type, NEVERC_XML_CHAR_DATA);
+    check_str("CDATA preserves markup", token.data, "<&");
+    neverc_xml_token_free(&token);
+
+    neverc_xml_node_t *tree = neverc_xml_parse(xml, strlen(xml));
+    neverc_xml_node_t *root =
+        tree ? neverc_xml_node_child(tree, "root") : NULL;
+    check_bool("entity/CDATA DOM parses", root != NULL, 1);
+    if (root) {
+        check_str("entity/CDATA text concatenates", root->text, "x < y<&z");
+        check_str("DOM attribute is decoded",
+                  neverc_xml_node_attr(root, "value"), "a & A");
+    }
+    neverc_xml_node_free(tree);
+
+    static const char unicode_names[] =
+        "\xef\xbb\xbf<r\xc2\xb7x><\xcd\xbf/></r\xc2\xb7x>";
+    tree = neverc_xml_parse(unicode_names, sizeof(unicode_names) - 1);
+    check_bool("BOM and XML Name ranges parse", tree != NULL, 1);
+    neverc_xml_node_free(tree);
+
+    static const char *invalid_documents[] = {
+        "<root>&unknown;</root>",
+        "<root>&#xD800;</root>",
+        "<root>&#X41;</root>",
+        "<root>&amp</root>",
+        "<root a=\"<\"/>",
+        "<root a=\"1\" a=\"2\"/>",
+        "<root a=\"1\"b=\"2\"/>",
+        "<1root/>",
+        "<\xc2\xb7root/>",
+        "<\xcd\xberoot/>",
+        "<\xf3\xb0\x80\x80/>",
+        "<root><![CDATA[unterminated</root>",
+        "<root>bad]]></root>",
+        "<!DOCTYPE root><root/>",
+        "<first/><second/>",
+        "text<root/>",
+        "<root/><!-- bad--comment -->"
+    };
+    for (size_t i = 0;
+         i < sizeof(invalid_documents) / sizeof(invalid_documents[0]);
+         i++) {
+        check_bool("reject malformed XML",
+                   neverc_xml_parse(
+                       invalid_documents[i],
+                       strlen(invalid_documents[i])) == NULL,
+                   1);
+    }
+    static const char invalid_utf8[] = "<root>\xc0\x80</root>";
+    check_bool("reject invalid UTF-8",
+               neverc_xml_parse(
+                   invalid_utf8, sizeof(invalid_utf8) - 1) == NULL,
+               1);
+    static const char bom_document[] = "\xef\xbb\xbf<root/>";
+    tree = neverc_xml_parse(
+        bom_document, sizeof(bom_document) - 1);
+    check_bool("accept UTF-8 BOM", tree != NULL, 1);
+    neverc_xml_node_free(tree);
+    check_bool("reject empty document",
+               neverc_xml_parse("", 0) == NULL, 1);
 }
 
 static void test_nested(void) {
@@ -218,6 +308,7 @@ int main(void) {
     test_comment();
     test_proc_inst();
     test_escape();
+    test_entities_cdata_and_well_formedness();
     test_nested();
     test_self_closing_and_errors();
     test_mixed_content();
