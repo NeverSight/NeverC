@@ -110,11 +110,40 @@ static void test_various_lengths(void) {
     }
 }
 
+static void test_invalid_inputs(void) {
+    printf("[PBKDF2-SHA256 invalid inputs]\n");
+    uint8_t byte = 0;
+    uint8_t dk[32];
+
+    check_true("null output rejected",
+               neverc_pbkdf2_sha256(
+                   NULL, sizeof(dk), NULL, 0, NULL, 0, 1) == -1);
+    check_true("invalid password span rejected",
+               neverc_pbkdf2_sha256(
+                   dk, sizeof(dk), NULL, 1, &byte, 1, 1) == -1);
+    check_true("invalid salt span rejected",
+               neverc_pbkdf2_sha256(
+                   dk, sizeof(dk), &byte, 1, NULL, 1, 1) == -1);
+    check_true("empty null spans accepted",
+               neverc_pbkdf2_sha256(
+                   dk, sizeof(dk), NULL, 0, NULL, 0, 1) == 0);
+    check_true("oversized salt rejected",
+               neverc_pbkdf2_sha256(
+                   dk, sizeof(dk), &byte, 1, &byte, 257, 1) == -1);
+#if SIZE_MAX > UINT32_MAX
+    check_true("RFC derived-key limit enforced",
+               neverc_pbkdf2_sha256(
+                   dk, (size_t)UINT32_MAX * 32U + 1U,
+                   &byte, 1, &byte, 1, 1) == -1);
+#endif
+}
+
 int main(void) {
     printf("=== NeverC PBKDF2 Tests ===\n\n");
     test_rfc7914_vectors();
     test_basic();
     test_various_lengths();
+    test_invalid_inputs();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");

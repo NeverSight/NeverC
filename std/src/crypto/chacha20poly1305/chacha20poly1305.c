@@ -5,9 +5,13 @@
 #include "neverc/std/crypto/chacha20poly1305.h"
 #include "neverc/std/crypto/chacha20.h"
 #include "neverc/std/crypto/poly1305.h"
+#include "neverc/std/_platform.h"
 #include <limits.h>
 #include <stdlib.h>
 #include <string.h>
+
+#define NEVERC_CHACHA20POLY1305_MAX_TEXT \
+    ((UINT64_C(1) << 38) - 64)
 
 static void put_le64(uint8_t *p, uint64_t v) {
     p[0] = (uint8_t)(v);       p[1] = (uint8_t)(v >> 8);
@@ -78,6 +82,10 @@ size_t neverc_chacha20poly1305_seal(
     const uint8_t *plaintext, size_t plaintext_len,
     const uint8_t *aad, size_t aad_len)
 {
+    if (!dst || !key || !nonce ||
+        (!plaintext && plaintext_len != 0) || (!aad && aad_len != 0) ||
+        (uint64_t)plaintext_len > NEVERC_CHACHA20POLY1305_MAX_TEXT)
+        return 0;
     uint8_t mac_buf_stack[512];
     uint8_t *mac_buf = mac_buf_stack;
     size_t mac_buf_size;
@@ -91,26 +99,25 @@ size_t neverc_chacha20poly1305_seal(
 
     /* Generate Poly1305 one-time key from block 0 */
     uint8_t poly_key[32];
-    {
-        neverc_chacha20_ctx ctx;
-        neverc_chacha20_init(&ctx, key, nonce, 0);
-        uint8_t block0[64];
-        memset(block0, 0, 64);
-        neverc_chacha20_xor(&ctx, block0, block0, 64);
-        memcpy(poly_key, block0, 32);
-    }
+    neverc_chacha20_ctx ctx;
+    neverc_chacha20_init(&ctx, key, nonce, 0);
+    uint8_t block0[64] = {0};
+    neverc_chacha20_xor(&ctx, block0, block0, 64);
+    memcpy(poly_key, block0, 32);
+    neverc_platform_secure_zero(block0, sizeof(block0));
+    neverc_platform_secure_zero(&ctx, sizeof(ctx));
 
     /* Encrypt plaintext using ChaCha20 starting at counter=1 */
-    {
-        neverc_chacha20_ctx ctx;
-        neverc_chacha20_init(&ctx, key, nonce, 1);
-        neverc_chacha20_xor(&ctx, dst, plaintext, plaintext_len);
-    }
+    neverc_chacha20_init(&ctx, key, nonce, 1);
+    neverc_chacha20_xor(&ctx, dst, plaintext, plaintext_len);
+    neverc_platform_secure_zero(&ctx, sizeof(ctx));
 
     /* Build MAC input and compute tag. */
     size_t mac_len = build_mac_data(mac_buf, aad, aad_len,
                                     dst, plaintext_len);
     neverc_poly1305_auth(dst + plaintext_len, mac_buf, mac_len, poly_key);
+    neverc_platform_secure_zero(poly_key, sizeof(poly_key));
+    neverc_platform_secure_zero(mac_buf, mac_buf_size);
     if (mac_buf != mac_buf_stack)
         free(mac_buf);
 
@@ -124,9 +131,13 @@ int neverc_chacha20poly1305_open(
     const uint8_t *ciphertext, size_t ciphertext_len,
     const uint8_t *aad, size_t aad_len)
 {
-    if (ciphertext_len < 16) return -1;
+    if (!key || !nonce || !ciphertext || (!aad && aad_len != 0) ||
+        ciphertext_len < 16)
+        return -1;
     size_t ct_len = ciphertext_len - 16;
-    if (ct_len > INT_MAX) return -1;
+    if ((!dst && ct_len != 0) || ct_len > INT_MAX ||
+        (uint64_t)ct_len > NEVERC_CHACHA20POLY1305_MAX_TEXT)
+        return -1;
     const uint8_t *tag = ciphertext + ct_len;
 
     uint8_t mac_buf_stack[512];
@@ -142,20 +153,21 @@ int neverc_chacha20poly1305_open(
 
     /* Generate Poly1305 one-time key */
     uint8_t poly_key[32];
-    {
-        neverc_chacha20_ctx ctx;
-        neverc_chacha20_init(&ctx, key, nonce, 0);
-        uint8_t block0[64];
-        memset(block0, 0, 64);
-        neverc_chacha20_xor(&ctx, block0, block0, 64);
-        memcpy(poly_key, block0, 32);
-    }
+    neverc_chacha20_ctx ctx;
+    neverc_chacha20_init(&ctx, key, nonce, 0);
+    uint8_t block0[64] = {0};
+    neverc_chacha20_xor(&ctx, block0, block0, 64);
+    memcpy(poly_key, block0, 32);
+    neverc_platform_secure_zero(block0, sizeof(block0));
+    neverc_platform_secure_zero(&ctx, sizeof(ctx));
 
     /* Verify tag before decrypting. */
     size_t mac_len = build_mac_data(mac_buf, aad, aad_len,
                                     ciphertext, ct_len);
     uint8_t computed_tag[16];
     neverc_poly1305_auth(computed_tag, mac_buf, mac_len, poly_key);
+    neverc_platform_secure_zero(poly_key, sizeof(poly_key));
+    neverc_platform_secure_zero(mac_buf, mac_buf_size);
     if (mac_buf != mac_buf_stack)
         free(mac_buf);
 
@@ -163,16 +175,15 @@ int neverc_chacha20poly1305_open(
     uint8_t diff = 0;
     for (int i = 0; i < 16; i++)
         diff |= computed_tag[i] ^ tag[i];
+    neverc_platform_secure_zero(computed_tag, sizeof(computed_tag));
     if (diff != 0) {
         return -1;
     }
 
     /* Decrypt */
-    {
-        neverc_chacha20_ctx ctx;
-        neverc_chacha20_init(&ctx, key, nonce, 1);
-        neverc_chacha20_xor(&ctx, dst, ciphertext, ct_len);
-    }
+    neverc_chacha20_init(&ctx, key, nonce, 1);
+    neverc_chacha20_xor(&ctx, dst, ciphertext, ct_len);
+    neverc_platform_secure_zero(&ctx, sizeof(ctx));
 
     return (int)ct_len;
 }

@@ -11,6 +11,7 @@
 #include "neverc/std/crypto/hmac.h"
 #include "neverc/std/crypto/sha256.h"
 #include "neverc/std/crypto/sha512.h"
+#include "neverc/std/_platform.h"
 #include <string.h>
 
 /* ---- HMAC-SHA256 with precomputed key midstates ---- */
@@ -25,7 +26,7 @@ static void hmac256_pre_init(hmac256_pre *p, const uint8_t *key, size_t key_len)
     memset(k, 0, sizeof(k));
     if (key_len > 64)
         neverc_sha256_sum(key, key_len, k);
-    else
+    else if (key_len > 0)
         memcpy(k, key, key_len);
 
     uint8_t pad[64];
@@ -36,6 +37,8 @@ static void hmac256_pre_init(hmac256_pre *p, const uint8_t *key, size_t key_len)
     for (int i = 0; i < 64; i++) pad[i] = k[i] ^ 0x5c;
     neverc_sha256_init(&p->opad);
     neverc_sha256_update(&p->opad, pad, 64);
+    neverc_platform_secure_zero(k, sizeof(k));
+    neverc_platform_secure_zero(pad, sizeof(pad));
 }
 
 static void hmac256_pre_compute(const hmac256_pre *p,
@@ -55,6 +58,8 @@ static void hmac256_pre_compute(const hmac256_pre *p,
     c = p->opad;
     neverc_sha256_update(&c, inner, 32);
     neverc_sha256_final(&c, out);
+    neverc_platform_secure_zero(inner, sizeof(inner));
+    neverc_platform_secure_zero(&c, sizeof(c));
 }
 
 /* ---- HMAC-SHA512 with precomputed key midstates ---- */
@@ -69,7 +74,7 @@ static void hmac512_pre_init(hmac512_pre *p, const uint8_t *key, size_t key_len)
     memset(k, 0, sizeof(k));
     if (key_len > 128)
         neverc_sha512_sum(key, key_len, k);
-    else
+    else if (key_len > 0)
         memcpy(k, key, key_len);
 
     uint8_t pad[128];
@@ -80,6 +85,8 @@ static void hmac512_pre_init(hmac512_pre *p, const uint8_t *key, size_t key_len)
     for (int i = 0; i < 128; i++) pad[i] = k[i] ^ 0x5c;
     neverc_sha512_init(&p->opad);
     neverc_sha512_update(&p->opad, pad, 128);
+    neverc_platform_secure_zero(k, sizeof(k));
+    neverc_platform_secure_zero(pad, sizeof(pad));
 }
 
 static void hmac512_pre_compute(const hmac512_pre *p,
@@ -99,6 +106,8 @@ static void hmac512_pre_compute(const hmac512_pre *p,
     c = p->opad;
     neverc_sha512_update(&c, inner, 64);
     neverc_sha512_final(&c, out);
+    neverc_platform_secure_zero(inner, sizeof(inner));
+    neverc_platform_secure_zero(&c, sizeof(c));
 }
 
 /* ---- HKDF-SHA256 ---- */
@@ -106,6 +115,8 @@ static void hmac512_pre_compute(const hmac512_pre *p,
 int neverc_hkdf_extract_sha256(uint8_t prk[32],
                                const uint8_t *salt, size_t salt_len,
                                const uint8_t *ikm, size_t ikm_len) {
+    if (!prk || (!salt && salt_len != 0) || (!ikm && ikm_len != 0))
+        return -1;
     uint8_t default_salt[32];
     if (salt == NULL || salt_len == 0) {
         memset(default_salt, 0, 32);
@@ -113,13 +124,16 @@ int neverc_hkdf_extract_sha256(uint8_t prk[32],
         salt_len = 32;
     }
     neverc_hmac_sha256(salt, salt_len, ikm, ikm_len, prk);
+    neverc_platform_secure_zero(default_salt, sizeof(default_salt));
     return 0;
 }
 
 int neverc_hkdf_expand_sha256(uint8_t *okm, size_t okm_len,
                               const uint8_t prk[32],
                               const uint8_t *info, size_t info_len) {
-    if (okm_len > 255 * 32) return -1;
+    if (!prk || (!okm && okm_len != 0) || (!info && info_len != 0) ||
+        okm_len > 255 * 32)
+        return -1;
 
     hmac256_pre pre;
     hmac256_pre_init(&pre, prk, 32);
@@ -140,6 +154,8 @@ int neverc_hkdf_expand_sha256(uint8_t *okm, size_t okm_len,
         counter++;
     }
 
+    neverc_platform_secure_zero(t, sizeof(t));
+    neverc_platform_secure_zero(&pre, sizeof(pre));
     return 0;
 }
 
@@ -148,8 +164,13 @@ int neverc_hkdf_sha256(uint8_t *okm, size_t okm_len,
                        const uint8_t *salt, size_t salt_len,
                        const uint8_t *info, size_t info_len) {
     uint8_t prk[32];
-    neverc_hkdf_extract_sha256(prk, salt, salt_len, ikm, ikm_len);
-    return neverc_hkdf_expand_sha256(okm, okm_len, prk, info, info_len);
+    int result =
+        neverc_hkdf_extract_sha256(prk, salt, salt_len, ikm, ikm_len);
+    if (result == 0)
+        result =
+            neverc_hkdf_expand_sha256(okm, okm_len, prk, info, info_len);
+    neverc_platform_secure_zero(prk, sizeof(prk));
+    return result;
 }
 
 /* ---- HKDF-SHA512 ---- */
@@ -157,6 +178,8 @@ int neverc_hkdf_sha256(uint8_t *okm, size_t okm_len,
 int neverc_hkdf_extract_sha512(uint8_t prk[64],
                                const uint8_t *salt, size_t salt_len,
                                const uint8_t *ikm, size_t ikm_len) {
+    if (!prk || (!salt && salt_len != 0) || (!ikm && ikm_len != 0))
+        return -1;
     uint8_t default_salt[64];
     if (salt == NULL || salt_len == 0) {
         memset(default_salt, 0, 64);
@@ -164,13 +187,16 @@ int neverc_hkdf_extract_sha512(uint8_t prk[64],
         salt_len = 64;
     }
     neverc_hmac_sha512(salt, salt_len, ikm, ikm_len, prk);
+    neverc_platform_secure_zero(default_salt, sizeof(default_salt));
     return 0;
 }
 
 int neverc_hkdf_expand_sha512(uint8_t *okm, size_t okm_len,
                               const uint8_t prk[64],
                               const uint8_t *info, size_t info_len) {
-    if (okm_len > 255 * 64) return -1;
+    if (!prk || (!okm && okm_len != 0) || (!info && info_len != 0) ||
+        okm_len > 255 * 64)
+        return -1;
 
     hmac512_pre pre;
     hmac512_pre_init(&pre, prk, 64);
@@ -191,6 +217,8 @@ int neverc_hkdf_expand_sha512(uint8_t *okm, size_t okm_len,
         counter++;
     }
 
+    neverc_platform_secure_zero(t, sizeof(t));
+    neverc_platform_secure_zero(&pre, sizeof(pre));
     return 0;
 }
 
@@ -199,6 +227,11 @@ int neverc_hkdf_sha512(uint8_t *okm, size_t okm_len,
                        const uint8_t *salt, size_t salt_len,
                        const uint8_t *info, size_t info_len) {
     uint8_t prk[64];
-    neverc_hkdf_extract_sha512(prk, salt, salt_len, ikm, ikm_len);
-    return neverc_hkdf_expand_sha512(okm, okm_len, prk, info, info_len);
+    int result =
+        neverc_hkdf_extract_sha512(prk, salt, salt_len, ikm, ikm_len);
+    if (result == 0)
+        result =
+            neverc_hkdf_expand_sha512(okm, okm_len, prk, info, info_len);
+    neverc_platform_secure_zero(prk, sizeof(prk));
+    return result;
 }

@@ -156,6 +156,27 @@ static void test_invalid_inputs(void) {
     unsigned char zero_priv[32] = {0};
     ASSERT_EQ(neverc_ecdh_new_private_key(NEVERC_ECDH_CURVE_P256, zero_priv, 32, &key), -1);
 
+    unsigned char p256_infinity[NEVERC_ECDH_P256_PUBKEY_SIZE] = {0x04};
+    ASSERT_EQ(neverc_ecdh_new_public_key(
+                  NEVERC_ECDH_CURVE_P256, p256_infinity,
+                  sizeof(p256_infinity), &key),
+              -1);
+    memset(&key, 0, sizeof(key));
+    key.curve = NEVERC_ECDH_CURVE_P256;
+    key.privkey_len = NEVERC_ECDH_P256_PRIVKEY_SIZE;
+    key.private_key[NEVERC_ECDH_P256_PRIVKEY_SIZE - 1] = 1;
+    unsigned char nist_shared[NEVERC_ECDH_P256_SHARED_SIZE];
+    ASSERT_EQ(neverc_ecdh_compute(
+                  &key, p256_infinity, sizeof(p256_infinity),
+                  nist_shared, sizeof(nist_shared)),
+              -1);
+
+    unsigned char p384_infinity[NEVERC_ECDH_P384_PUBKEY_SIZE] = {0x04};
+    ASSERT_EQ(neverc_ecdh_new_public_key(
+                  NEVERC_ECDH_CURVE_P384, p384_infinity,
+                  sizeof(p384_infinity), &key),
+              -1);
+
     unsigned char basepoint[32] = {9};
     ASSERT_EQ(neverc_ecdh_new_public_key(
                   NEVERC_ECDH_CURVE_X25519, basepoint,

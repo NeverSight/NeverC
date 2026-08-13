@@ -8,6 +8,8 @@
 extern "C" {
 #endif
 
+/* NULL input pointers are accepted only for zero-length spans. Extract and
+ * expand return -1 for invalid spans or an RFC 5869 output-length violation. */
 int neverc_hkdf_sha256(uint8_t *okm, size_t okm_len,
                        const uint8_t *ikm, size_t ikm_len,
                        const uint8_t *salt, size_t salt_len,

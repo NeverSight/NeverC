@@ -17,11 +17,13 @@ extern "C" {
  *
  * Seal: encrypts plaintext and produces authentication tag.
  *   dst must have room for plaintext_len + 16 bytes.
- *   Returns total output length (plaintext_len + 16).
+ *   NULL plaintext/AAD pointers are valid only for zero-length spans.
+ *   Returns total output length (plaintext_len + 16), or 0 on error.
  *
  * Open: authenticates and decrypts ciphertext.
  *   ciphertext_len includes the 16-byte tag (minimum 16).
  *   dst receives the decrypted plaintext (ciphertext_len - 16 bytes).
+ *   Messages are limited to 2^38-64 bytes by RFC 8439.
  *   Returns plaintext length on success, -1 on authentication failure.
  */
 size_t neverc_chacha20poly1305_seal(

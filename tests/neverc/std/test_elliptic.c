@@ -200,6 +200,29 @@ static void test_marshal_unmarshal(void) {
     neverc_elliptic_point_free(&decoded);
 }
 
+static void test_invalid_affine_points(void) {
+    printf("[invalid_affine_points]\n");
+    const neverc_elliptic_curve_t *c = neverc_elliptic_p256();
+    neverc_elliptic_point_t point;
+    neverc_elliptic_point_init(&point);
+
+    ASSERT_TRUE(!neverc_elliptic_is_on_curve(c, &point));
+    unsigned char encoded[65] = {0x04};
+    size_t length = 123;
+    ASSERT_INT_EQ(neverc_elliptic_marshal(
+                      c, &point, encoded, sizeof(encoded), &length),
+                  -1);
+    ASSERT_INT_EQ((int)length, 0);
+    ASSERT_INT_EQ(neverc_elliptic_unmarshal(
+                      c, &point, encoded, sizeof(encoded)),
+                  -1);
+
+    neverc_bigint_set(&point.x, &c->p);
+    neverc_bigint_set_int64(&point.y, 1);
+    ASSERT_TRUE(!neverc_elliptic_is_on_curve(c, &point));
+    neverc_elliptic_point_free(&point);
+}
+
 static void test_identity(void) {
     printf("[identity]\n");
     const neverc_elliptic_curve_t *c = neverc_elliptic_p256();
@@ -242,6 +265,7 @@ int main(void) {
     test_add();
     test_scalar_mult();
     test_marshal_unmarshal();
+    test_invalid_affine_points();
     test_identity();
     test_p384();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);

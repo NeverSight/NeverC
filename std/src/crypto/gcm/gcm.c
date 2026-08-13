@@ -3,7 +3,11 @@
  * Pure C implementation with GHASH (GF(2^128) multiplication).
  */
 #include "neverc/std/crypto/gcm.h"
+#include "neverc/std/_platform.h"
 #include <string.h>
+
+#define NEVERC_GCM_MAX_TEXT_BYTES ((UINT64_C(1) << 36) - 32)
+#define NEVERC_GCM_MAX_AAD_BYTES  ((UINT64_C(1) << 61) - 1)
 
 static void xor_block(uint8_t *dst, const uint8_t *a, const uint8_t *b, size_t len) {
     for (size_t i = 0; i < len; i++) dst[i] = a[i] ^ b[i];
@@ -135,8 +139,12 @@ static void ghash_init_tables(neverc_gcm_ctx *ctx) {
 }
 
 int neverc_gcm_init(neverc_gcm_ctx *ctx, const uint8_t *key, int key_len) {
-    if (neverc_aes_init(&ctx->aes, key, key_len) != 0)
+    if (!ctx || !key) return -1;
+    memset(ctx, 0, sizeof(*ctx));
+    if (neverc_aes_init(&ctx->aes, key, key_len) != 0) {
+        neverc_platform_secure_zero(ctx, sizeof(*ctx));
         return -1;
+    }
     uint8_t zero[16] = {0};
     neverc_aes_encrypt_block(&ctx->aes, ctx->h, zero);
     ghash_init_tables(ctx);
@@ -171,6 +179,11 @@ static void gcm_compute_tag(const neverc_gcm_ctx *ctx,
     uint8_t ej0[16];
     neverc_aes_encrypt_block(&ctx->aes, ej0, j0);
     xor_block(tag, ghash_val, ej0, 16);
+    neverc_platform_secure_zero(ghash_val, sizeof(ghash_val));
+    neverc_platform_secure_zero(len_block, sizeof(len_block));
+    neverc_platform_secure_zero(tmp, sizeof(tmp));
+    neverc_platform_secure_zero(j0, sizeof(j0));
+    neverc_platform_secure_zero(ej0, sizeof(ej0));
 }
 
 static void gcm_ctr_encrypt(const neverc_gcm_ctx *ctx,
@@ -189,6 +202,8 @@ static void gcm_ctr_encrypt(const neverc_gcm_ctx *ctx,
         offset += block_len;
         ctr++;
     }
+    neverc_platform_secure_zero(counter_block, sizeof(counter_block));
+    neverc_platform_secure_zero(keystream, sizeof(keystream));
 }
 
 int neverc_gcm_seal(const neverc_gcm_ctx *ctx,
@@ -197,7 +212,12 @@ int neverc_gcm_seal(const neverc_gcm_ctx *ctx,
                     const uint8_t *aad, size_t aad_len,
                     uint8_t *ciphertext,
                     uint8_t tag[16]) {
-    if (!ctx || !nonce || !tag) return -1;
+    if (!ctx || !nonce || !tag ||
+        (!plaintext && pt_len != 0) || (!ciphertext && pt_len != 0) ||
+        (!aad && aad_len != 0) ||
+        (uint64_t)pt_len > NEVERC_GCM_MAX_TEXT_BYTES ||
+        (uint64_t)aad_len > NEVERC_GCM_MAX_AAD_BYTES)
+        return -1;
     if (pt_len > 0)
         gcm_ctr_encrypt(ctx, nonce, plaintext, pt_len, ciphertext);
     gcm_compute_tag(ctx, nonce, ciphertext, pt_len, aad, aad_len, tag);
@@ -210,13 +230,19 @@ int neverc_gcm_open(const neverc_gcm_ctx *ctx,
                     const uint8_t *aad, size_t aad_len,
                     const uint8_t tag[16],
                     uint8_t *plaintext) {
-    if (!ctx || !nonce || !tag) return -1;
+    if (!ctx || !nonce || !tag ||
+        (!ciphertext && ct_len != 0) || (!plaintext && ct_len != 0) ||
+        (!aad && aad_len != 0) ||
+        (uint64_t)ct_len > NEVERC_GCM_MAX_TEXT_BYTES ||
+        (uint64_t)aad_len > NEVERC_GCM_MAX_AAD_BYTES)
+        return -1;
 
     uint8_t computed_tag[16];
     gcm_compute_tag(ctx, nonce, ciphertext, ct_len, aad, aad_len, computed_tag);
 
     uint8_t diff = 0;
     for (int i = 0; i < 16; i++) diff |= computed_tag[i] ^ tag[i];
+    neverc_platform_secure_zero(computed_tag, sizeof(computed_tag));
     if (diff != 0) return -1;
 
     if (ct_len > 0)

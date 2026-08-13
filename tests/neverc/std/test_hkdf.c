@@ -211,6 +211,45 @@ static void test_sha512_extract_and_full(void) {
                memcmp(okm, expected_okm, sizeof(okm)) == 0);
 }
 
+static void test_invalid_spans_and_lengths(void) {
+    printf("[HKDF invalid spans and lengths]\n");
+    uint8_t byte = 0;
+    uint8_t prk256[32] = {0}, prk512[64] = {0};
+    uint8_t okm[64];
+
+    check_true("SHA-256 rejects null PRK output",
+               neverc_hkdf_extract_sha256(
+                   NULL, NULL, 0, NULL, 0) == -1);
+    check_true("SHA-256 rejects invalid salt span",
+               neverc_hkdf_extract_sha256(
+                   prk256, NULL, 1, &byte, 1) == -1);
+    check_true("SHA-256 rejects invalid IKM span",
+               neverc_hkdf_extract_sha256(
+                   prk256, &byte, 1, NULL, 1) == -1);
+    check_true("SHA-256 rejects invalid info span",
+               neverc_hkdf_expand_sha256(
+                   okm, sizeof(okm), prk256, NULL, 1) == -1);
+    check_true("SHA-256 rejects invalid output span",
+               neverc_hkdf_expand_sha256(
+                   NULL, 1, prk256, NULL, 0) == -1);
+    check_true("SHA-256 accepts empty output span",
+               neverc_hkdf_expand_sha256(
+                   NULL, 0, prk256, NULL, 0) == 0);
+    check_true("SHA-256 enforces RFC output limit",
+               neverc_hkdf_expand_sha256(
+                   okm, 255U * 32U + 1U, prk256, NULL, 0) == -1);
+
+    check_true("SHA-512 rejects invalid salt span",
+               neverc_hkdf_extract_sha512(
+                   prk512, NULL, 1, &byte, 1) == -1);
+    check_true("SHA-512 rejects invalid info span",
+               neverc_hkdf_expand_sha512(
+                   okm, sizeof(okm), prk512, NULL, 1) == -1);
+    check_true("SHA-512 enforces RFC output limit",
+               neverc_hkdf_expand_sha512(
+                   okm, 255U * 64U + 1U, prk512, NULL, 0) == -1);
+}
+
 int main(void) {
     printf("=== NeverC HKDF Tests ===\n\n");
     test_rfc5869_case1();
@@ -220,6 +259,7 @@ int main(void) {
     test_rfc8448_tls13_early_secret();
     test_large_info_sha256_sha512();
     test_sha512_extract_and_full();
+    test_invalid_spans_and_lengths();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");

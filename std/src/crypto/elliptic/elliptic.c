@@ -127,8 +127,14 @@ void neverc_elliptic_point_free(neverc_elliptic_point_t *pt) {
 
 int neverc_elliptic_is_on_curve(const neverc_elliptic_curve_t *curve,
                                  const neverc_elliptic_point_t *pt) {
+    if (!curve || !pt || pt->x.neg || pt->y.neg ||
+        neverc_bigint_cmp(&pt->x, &curve->p) >= 0 ||
+        neverc_bigint_cmp(&pt->y, &curve->p) >= 0)
+        return 0;
+    /* (0,0) is this implementation's internal infinity sentinel, not an
+     * encodable affine point. Public-key validation must reject it. */
     if (neverc_bigint_is_zero(&pt->x) && neverc_bigint_is_zero(&pt->y))
-        return 1;
+        return 0;
 
     neverc_bigint_t y2, x3, ax, rhs, three;
     neverc_bigint_init(&y2); neverc_bigint_init(&x3);
@@ -454,6 +460,9 @@ void neverc_elliptic_scalar_base_mult(const neverc_elliptic_curve_t *curve,
 int neverc_elliptic_marshal(const neverc_elliptic_curve_t *curve,
                              const neverc_elliptic_point_t *pt,
                              unsigned char *out, size_t out_cap, size_t *out_len) {
+    if (out_len) *out_len = 0;
+    if (!curve || !pt || !out || !neverc_elliptic_is_on_curve(curve, pt))
+        return -1;
     int byte_len = (curve->bit_size + 7) / 8;
     size_t needed = 1 + (size_t)byte_len * 2;
     if (out_cap < needed) return -1;
@@ -491,6 +500,7 @@ int neverc_elliptic_marshal(const neverc_elliptic_curve_t *curve,
 int neverc_elliptic_unmarshal(const neverc_elliptic_curve_t *curve,
                                neverc_elliptic_point_t *pt,
                                const unsigned char *data, size_t data_len) {
+    if (!curve || !pt || !data) return -1;
     int byte_len = (curve->bit_size + 7) / 8;
     size_t expected = 1 + (size_t)byte_len * 2;
     if (data_len != expected || data[0] != 0x04) return -1;

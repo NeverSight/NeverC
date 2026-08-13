@@ -8,6 +8,7 @@
 extern "C" {
 #endif
 
+/* NULL password/salt pointers are accepted only for zero-length spans. */
 int neverc_pbkdf2_sha256(uint8_t *dk, size_t dk_len,
                          const uint8_t *password, size_t password_len,
                          const uint8_t *salt, size_t salt_len,

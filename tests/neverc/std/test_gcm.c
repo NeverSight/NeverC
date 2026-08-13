@@ -210,6 +210,47 @@ static void test_roundtrip_sizes(void) {
     }
 }
 
+static void test_invalid_inputs_and_limits(void) {
+    printf("[invalid inputs and limits]\n");
+    uint8_t key[16] = {0};
+    uint8_t nonce[12] = {0};
+    uint8_t byte = 0;
+    uint8_t tag[16] = {0};
+    neverc_gcm_ctx ctx;
+
+    check_true("init rejects null context",
+               neverc_gcm_init(NULL, key, sizeof(key)) == -1);
+    check_true("init rejects null key",
+               neverc_gcm_init(&ctx, NULL, sizeof(key)) == -1);
+    check_true("valid init",
+               neverc_gcm_init(&ctx, key, sizeof(key)) == 0);
+    check_true("seal rejects invalid plaintext span",
+               neverc_gcm_seal(
+                   &ctx, nonce, NULL, 1, NULL, 0, &byte, tag) == -1);
+    check_true("seal rejects invalid ciphertext span",
+               neverc_gcm_seal(
+                   &ctx, nonce, &byte, 1, NULL, 0, NULL, tag) == -1);
+    check_true("seal rejects invalid AAD span",
+               neverc_gcm_seal(
+                   &ctx, nonce, NULL, 0, NULL, 1, NULL, tag) == -1);
+    check_true("open rejects invalid ciphertext span",
+               neverc_gcm_open(
+                   &ctx, nonce, NULL, 1, NULL, 0, tag, &byte) == -1);
+    check_true("open rejects invalid plaintext span",
+               neverc_gcm_open(
+                   &ctx, nonce, &byte, 1, NULL, 0, tag, NULL) == -1);
+#if SIZE_MAX > UINT32_MAX
+    check_true("seal rejects counter-wrap length",
+               neverc_gcm_seal(
+                   &ctx, nonce, &byte,
+                   ((size_t)1 << 36) - 31, NULL, 0, &byte, tag) == -1);
+    check_true("seal rejects overflowing AAD bit length",
+               neverc_gcm_seal(
+                   &ctx, nonce, NULL, 0, &byte,
+                   (size_t)1 << 61, NULL, tag) == -1);
+#endif
+}
+
 int main(void) {
     printf("=== NeverC AES-GCM Tests ===\n\n");
     test_case_1();
@@ -219,6 +260,7 @@ int main(void) {
     test_aes256_gcm();
     test_tamper();
     test_roundtrip_sizes();
+    test_invalid_inputs_and_limits();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");

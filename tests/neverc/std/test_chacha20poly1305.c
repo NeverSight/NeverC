@@ -213,12 +213,63 @@ static void test_large_message_roundtrip(void) {
     free(decrypted);
 }
 
+static void test_invalid_inputs_and_limits(void) {
+    printf("[invalid inputs and limits]\n");
+    uint8_t key[32] = {0};
+    uint8_t nonce[12] = {0};
+    uint8_t byte = 0;
+    uint8_t sealed[16];
+
+    check_int("seal rejects null output",
+              (int)neverc_chacha20poly1305_seal(
+                  NULL, key, nonce, NULL, 0, NULL, 0),
+              0);
+    check_int("seal rejects invalid plaintext span",
+              (int)neverc_chacha20poly1305_seal(
+                  sealed, key, nonce, NULL, 1, NULL, 0),
+              0);
+    check_int("seal rejects invalid AAD span",
+              (int)neverc_chacha20poly1305_seal(
+                  sealed, key, nonce, NULL, 0, NULL, 1),
+              0);
+    check_int("empty seal succeeds",
+              (int)neverc_chacha20poly1305_seal(
+                  sealed, key, nonce, NULL, 0, NULL, 0),
+              16);
+    check_int("empty open accepts null output",
+              neverc_chacha20poly1305_open(
+                  NULL, key, nonce, sealed, sizeof(sealed), &byte, 0),
+              0);
+    uint8_t nonempty_ciphertext[17] = {0};
+    check_int("nonempty open rejects null output",
+              neverc_chacha20poly1305_open(
+                  NULL, key, nonce, nonempty_ciphertext,
+                  sizeof(nonempty_ciphertext), NULL, 0),
+              -1);
+    check_int("open rejects null ciphertext",
+              neverc_chacha20poly1305_open(
+                  &byte, key, nonce, NULL, sizeof(sealed), NULL, 0),
+              -1);
+    check_int("open rejects invalid AAD span",
+              neverc_chacha20poly1305_open(
+                  &byte, key, nonce, sealed, sizeof(sealed), NULL, 1),
+              -1);
+#if SIZE_MAX > UINT32_MAX
+    check_int("seal rejects counter-wrap length",
+              (int)neverc_chacha20poly1305_seal(
+                  sealed, key, nonce, &byte,
+                  ((size_t)1 << 38) - 63, NULL, 0),
+              0);
+#endif
+}
+
 int main(void) {
     printf("=== NeverC ChaCha20-Poly1305 AEAD Tests ===\n");
     test_rfc8439();
     test_roundtrip();
     test_auth_failure();
     test_large_message_roundtrip();
+    test_invalid_inputs_and_limits();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");

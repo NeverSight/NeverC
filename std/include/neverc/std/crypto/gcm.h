@@ -25,6 +25,8 @@ int neverc_gcm_init(neverc_gcm_ctx *ctx, const uint8_t *key, int key_len);
 
 /*
  * Seal: encrypt plaintext and produce ciphertext + 16-byte authentication tag.
+ * NULL plaintext/AAD pointers are accepted only for zero-length spans.
+ * Plaintext is limited to 2^36-32 bytes by SP 800-38D.
  * Returns 0 on success, -1 on error.
  */
 int neverc_gcm_seal(const neverc_gcm_ctx *ctx,
@@ -36,6 +38,7 @@ int neverc_gcm_seal(const neverc_gcm_ctx *ctx,
 
 /*
  * Open: decrypt ciphertext and verify authentication tag.
+ * NULL ciphertext/AAD pointers are accepted only for zero-length spans.
  * Returns 0 on success (tag valid), -1 on authentication failure.
  */
 int neverc_gcm_open(const neverc_gcm_ctx *ctx,
