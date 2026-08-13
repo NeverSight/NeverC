@@ -43,6 +43,7 @@ int main(void) {
         neverc_sha1_ctx ctx;
         neverc_sha1_init(&ctx);
         neverc_sha1_update(&ctx, (const uint8_t *)"hello", 5);
+        neverc_sha1_update(&ctx, NULL, 0);
         neverc_sha1_update(&ctx, (const uint8_t *)" ", 1);
         neverc_sha1_update(&ctx, (const uint8_t *)"world", 5);
         uint8_t digest[20]; char got[41];

@@ -89,6 +89,7 @@ void neverc_sha512_init(neverc_sha512_ctx *ctx) {
 }
 
 void neverc_sha512_update(neverc_sha512_ctx *ctx, const uint8_t *data, size_t len) {
+    if (len == 0) return;
     size_t buffered = (size_t)(ctx->count & 127);
     ctx->count += len;
     if (buffered > 0) {

@@ -9,9 +9,11 @@ extern "C" {
 #endif
 
 int neverc_subtle_constant_time_compare(const uint8_t *x, const uint8_t *y, size_t len);
+/* v must be either 0 or 1. */
 int neverc_subtle_constant_time_select(int v, int x, int y);
 int neverc_subtle_constant_time_byte_eq(uint8_t x, uint8_t y);
 int neverc_subtle_constant_time_eq(int32_t x, int32_t y);
+/* v must be either 0 or 1. */
 void neverc_subtle_constant_time_copy(int v, uint8_t *x, const uint8_t *y, size_t len);
 int neverc_subtle_constant_time_less_or_eq(int x, int y);
 

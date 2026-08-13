@@ -207,6 +207,41 @@ static void test_hmac_equal(void) {
     check_int("equal macs", neverc_hmac_equal(a, b, 4), 1);
     check_int("different macs", neverc_hmac_equal(a, c, 4), 0);
     check_int("zero-length equal", neverc_hmac_equal(a, c, 0), 1);
+    check_int("null zero-length equal", neverc_hmac_equal(NULL, NULL, 0), 1);
+}
+
+static void test_empty_and_invalid_inputs(void) {
+    printf("[empty and invalid inputs]\n");
+    uint8_t byte = 0;
+    uint8_t a[64], b[64], zeros[64] = {0};
+
+    neverc_hmac_sha256(NULL, 0, NULL, 0, a);
+    neverc_hmac_sha256(&byte, 0, &byte, 0, b);
+    check_int("sha256 accepts null empty spans", memcmp(a, b, 32) == 0, 1);
+
+    neverc_hmac_sha512(NULL, 0, NULL, 0, a);
+    neverc_hmac_sha512(&byte, 0, &byte, 0, b);
+    check_int("sha512 accepts null empty spans", memcmp(a, b, 64) == 0, 1);
+
+    neverc_hmac_sha1(NULL, 0, NULL, 0, a);
+    neverc_hmac_sha1(&byte, 0, &byte, 0, b);
+    check_int("sha1 accepts null empty spans", memcmp(a, b, 20) == 0, 1);
+
+    neverc_hmac_md5(NULL, 0, NULL, 0, a);
+    neverc_hmac_md5(&byte, 0, &byte, 0, b);
+    check_int("md5 accepts null empty spans", memcmp(a, b, 16) == 0, 1);
+
+    memset(a, 0xa5, sizeof(a));
+    neverc_hmac_sha256(NULL, 1, &byte, 0, a);
+    check_int("invalid key span clears output",
+              memcmp(a, zeros, 32) == 0, 1);
+    memset(a, 0xa5, sizeof(a));
+    neverc_hmac_sha512(&byte, 0, NULL, 1, a);
+    check_int("invalid data span clears output",
+              memcmp(a, zeros, 64) == 0, 1);
+
+    neverc_hmac_sha256(NULL, 0, NULL, 0, NULL);
+    check_int("null output is ignored", 1, 1);
 }
 
 int main(void) {
@@ -218,6 +253,7 @@ int main(void) {
     test_hmac_sha1_rfc2202();
     test_hmac_sha512_rfc4231();
     test_hmac_equal();
+    test_empty_and_invalid_inputs();
 
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);

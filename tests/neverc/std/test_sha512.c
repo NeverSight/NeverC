@@ -51,6 +51,7 @@ int main(void) {
         neverc_sha512_ctx ctx;
         neverc_sha512_init(&ctx);
         neverc_sha512_update(&ctx, (const uint8_t *)"hello", 5);
+        neverc_sha512_update(&ctx, NULL, 0);
         neverc_sha512_update(&ctx, (const uint8_t *)" ", 1);
         neverc_sha512_update(&ctx, (const uint8_t *)"world", 5);
         uint8_t digest[64]; char got[129];

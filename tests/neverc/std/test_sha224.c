@@ -59,8 +59,10 @@ int main(void) {
         const uint8_t *msg = (const uint8_t *)"abc";
         neverc_sha224_ctx ctx;
         neverc_sha224_init(&ctx);
-        for (size_t i = 0; i < 3; i++)
+        for (size_t i = 0; i < 3; i++) {
             neverc_sha224_update(&ctx, msg + i, 1);
+            neverc_sha224_update(&ctx, NULL, 0);
+        }
         neverc_sha224_final(&ctx, digest);
         hex_to_bytes("23097d223405d8228642a477bda255b32aadbce4bda0b3f7e36c9da7", expected, 28);
         check_digest("SHA-224(\"abc\") incremental", digest, expected, 28);

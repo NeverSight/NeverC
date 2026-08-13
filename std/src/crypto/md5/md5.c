@@ -86,6 +86,7 @@ void neverc_md5_init(neverc_md5_ctx *ctx) {
 }
 
 void neverc_md5_update(neverc_md5_ctx *ctx, const uint8_t *data, size_t len) {
+    if (len == 0) return;
     size_t buffered = (size_t)(ctx->count & 63);
     ctx->count += len;
 

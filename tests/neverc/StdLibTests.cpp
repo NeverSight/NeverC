@@ -351,6 +351,7 @@ STD_TEST(subtle, "src/crypto/subtle/subtle.c")
 STD_TEST(hkdf, "src/crypto/hkdf/hkdf.c", "src/crypto/hmac/hmac.c", "src/crypto/sha256/sha256.c", "src/crypto/sha512/sha512.c", "src/crypto/sha1/sha1.c", "src/crypto/md5/md5.c", "src/crypto/subtle/subtle.c")
 STD_TEST(pbkdf2, "src/crypto/pbkdf2/pbkdf2.c", "src/crypto/hmac/hmac.c", "src/crypto/sha256/sha256.c", "src/crypto/sha512/sha512.c", "src/crypto/sha1/sha1.c", "src/crypto/md5/md5.c", "src/crypto/subtle/subtle.c")
 STD_TEST(crypto_rand, "src/crypto/rand/rand.c")
+STD_TEST(crypto_rand_internal)
 STD_TEST(elliptic, "src/crypto/elliptic/elliptic.c", "src/math/big/big.c")
 STD_TEST(rsa, "src/crypto/rsa/rsa.c", "src/math/big/big.c", "src/crypto/rand/rand.c", "src/crypto/sha256/sha256.c", "src/crypto/sha384/sha384.c", "src/crypto/sha512/sha512.c")
 STD_TEST(rsa_entropy_failure, "src/math/big/big.c",

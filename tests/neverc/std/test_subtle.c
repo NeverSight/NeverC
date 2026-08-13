@@ -128,6 +128,17 @@ static void test_constant_time_less_or_eq(void) {
     check_int("1<=1", neverc_subtle_constant_time_less_or_eq(1, 1), 1);
     check_int("100<=200", neverc_subtle_constant_time_less_or_eq(100, 200), 1);
     check_int("200<=100", neverc_subtle_constant_time_less_or_eq(200, 100), 0);
+    check_int("-2<=-1", neverc_subtle_constant_time_less_or_eq(-2, -1), 1);
+    check_int("-1<=-2", neverc_subtle_constant_time_less_or_eq(-1, -2), 0);
+    check_int("INT32_MIN<=INT32_MAX",
+              neverc_subtle_constant_time_less_or_eq(
+                  -2147483647 - 1, 2147483647), 1);
+    check_int("INT32_MAX<=INT32_MIN",
+              neverc_subtle_constant_time_less_or_eq(
+                  2147483647, -2147483647 - 1), 0);
+    check_int("INT32_MIN<=INT32_MIN",
+              neverc_subtle_constant_time_less_or_eq(
+                  -2147483647 - 1, -2147483647 - 1), 1);
 }
 
 int main(void) {

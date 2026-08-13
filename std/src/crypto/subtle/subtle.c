@@ -1,4 +1,5 @@
 #include "neverc/std/crypto/subtle.h"
+#include <limits.h>
 
 /*
  * Constant-time cryptographic operations.
@@ -14,7 +15,9 @@ int neverc_subtle_constant_time_compare(const uint8_t *x, const uint8_t *y, size
 }
 
 int neverc_subtle_constant_time_select(int v, int x, int y) {
-    return (~(v - 1) & x) | ((v - 1) & y);
+    unsigned int mask = 0U - (unsigned int)v;
+    return (int)((mask & (unsigned int)x) |
+                 (~mask & (unsigned int)y));
 }
 
 int neverc_subtle_constant_time_byte_eq(uint8_t x, uint8_t y) {
@@ -34,7 +37,12 @@ void neverc_subtle_constant_time_copy(int v, uint8_t *x, const uint8_t *y, size_
 }
 
 int neverc_subtle_constant_time_less_or_eq(int x, int y) {
-    int32_t x32 = (int32_t)x;
-    int32_t y32 = (int32_t)y;
-    return (int)(((uint32_t)(x32 - y32 - 1)) >> 31);
+    const unsigned int sign_shift =
+        (unsigned int)(sizeof(unsigned int) * CHAR_BIT - 1);
+    unsigned int ux = (unsigned int)x;
+    unsigned int uy = (unsigned int)y;
+    unsigned int signs_differ = (ux ^ uy) >> sign_shift;
+    unsigned int same_sign_le = (ux - uy - 1U) >> sign_shift;
+    return (int)((signs_differ & (ux >> sign_shift)) |
+                 ((signs_differ ^ 1U) & same_sign_le));
 }

@@ -64,6 +64,7 @@ static void test_incremental(void) {
     neverc_sha384_ctx ctx;
     neverc_sha384_init(&ctx);
     neverc_sha384_update(&ctx, (const uint8_t *)"abc", 3);
+    neverc_sha384_update(&ctx, NULL, 0);
     neverc_sha384_update(&ctx, (const uint8_t *)"def", 3);
     neverc_sha384_final(&ctx, d2);
 

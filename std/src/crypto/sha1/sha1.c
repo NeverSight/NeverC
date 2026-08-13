@@ -85,6 +85,7 @@ void neverc_sha1_init(neverc_sha1_ctx *ctx) {
 }
 
 void neverc_sha1_update(neverc_sha1_ctx *ctx, const uint8_t *data, size_t len) {
+    if (len == 0) return;
     size_t buffered = (size_t)(ctx->count & 63);
     ctx->count += len;
     if (buffered > 0) {

@@ -4,6 +4,7 @@
 #include "neverc/std/crypto/sha1.h"
 #include "neverc/std/crypto/md5.h"
 #include "neverc/std/crypto/subtle.h"
+#include "neverc/std/_platform.h"
 #include <string.h>
 
 /*
@@ -19,13 +20,18 @@ void neverc_hmac_sha256(const uint8_t *key, size_t key_len,
                         const uint8_t *data, size_t data_len,
                         uint8_t out[32])
 {
+    if (!out) return;
+    if ((!key && key_len != 0) || (!data && data_len != 0)) {
+        memset(out, 0, 32);
+        return;
+    }
     const size_t block_size = 64;
     uint8_t k_prime[64];
     memset(k_prime, 0, block_size);
 
     if (key_len > block_size) {
         neverc_sha256_sum(key, key_len, k_prime);
-    } else {
+    } else if (key_len > 0) {
         memcpy(k_prime, key, key_len);
     }
 
@@ -38,7 +44,8 @@ void neverc_hmac_sha256(const uint8_t *key, size_t key_len,
     neverc_sha256_ctx inner;
     neverc_sha256_init(&inner);
     neverc_sha256_update(&inner, ipad, block_size);
-    neverc_sha256_update(&inner, data, data_len);
+    if (data_len > 0)
+        neverc_sha256_update(&inner, data, data_len);
     uint8_t inner_hash[32];
     neverc_sha256_final(&inner, inner_hash);
 
@@ -47,19 +54,30 @@ void neverc_hmac_sha256(const uint8_t *key, size_t key_len,
     neverc_sha256_update(&outer, opad, block_size);
     neverc_sha256_update(&outer, inner_hash, 32);
     neverc_sha256_final(&outer, out);
+    neverc_platform_secure_zero(k_prime, sizeof(k_prime));
+    neverc_platform_secure_zero(ipad, sizeof(ipad));
+    neverc_platform_secure_zero(opad, sizeof(opad));
+    neverc_platform_secure_zero(inner_hash, sizeof(inner_hash));
+    neverc_platform_secure_zero(&inner, sizeof(inner));
+    neverc_platform_secure_zero(&outer, sizeof(outer));
 }
 
 void neverc_hmac_sha512(const uint8_t *key, size_t key_len,
                         const uint8_t *data, size_t data_len,
                         uint8_t out[64])
 {
+    if (!out) return;
+    if ((!key && key_len != 0) || (!data && data_len != 0)) {
+        memset(out, 0, 64);
+        return;
+    }
     const size_t block_size = 128;
     uint8_t k_prime[128];
     memset(k_prime, 0, block_size);
 
     if (key_len > block_size) {
         neverc_sha512_sum(key, key_len, k_prime);
-    } else {
+    } else if (key_len > 0) {
         memcpy(k_prime, key, key_len);
     }
 
@@ -72,7 +90,8 @@ void neverc_hmac_sha512(const uint8_t *key, size_t key_len,
     neverc_sha512_ctx inner;
     neverc_sha512_init(&inner);
     neverc_sha512_update(&inner, ipad, block_size);
-    neverc_sha512_update(&inner, data, data_len);
+    if (data_len > 0)
+        neverc_sha512_update(&inner, data, data_len);
     uint8_t inner_hash[64];
     neverc_sha512_final(&inner, inner_hash);
 
@@ -81,19 +100,30 @@ void neverc_hmac_sha512(const uint8_t *key, size_t key_len,
     neverc_sha512_update(&outer, opad, block_size);
     neverc_sha512_update(&outer, inner_hash, 64);
     neverc_sha512_final(&outer, out);
+    neverc_platform_secure_zero(k_prime, sizeof(k_prime));
+    neverc_platform_secure_zero(ipad, sizeof(ipad));
+    neverc_platform_secure_zero(opad, sizeof(opad));
+    neverc_platform_secure_zero(inner_hash, sizeof(inner_hash));
+    neverc_platform_secure_zero(&inner, sizeof(inner));
+    neverc_platform_secure_zero(&outer, sizeof(outer));
 }
 
 void neverc_hmac_sha1(const uint8_t *key, size_t key_len,
                       const uint8_t *data, size_t data_len,
                       uint8_t out[20])
 {
+    if (!out) return;
+    if ((!key && key_len != 0) || (!data && data_len != 0)) {
+        memset(out, 0, 20);
+        return;
+    }
     const size_t block_size = 64;
     uint8_t k_prime[64];
     memset(k_prime, 0, block_size);
 
     if (key_len > block_size) {
         neverc_sha1_sum(key, key_len, k_prime);
-    } else {
+    } else if (key_len > 0) {
         memcpy(k_prime, key, key_len);
     }
 
@@ -106,7 +136,8 @@ void neverc_hmac_sha1(const uint8_t *key, size_t key_len,
     neverc_sha1_ctx inner;
     neverc_sha1_init(&inner);
     neverc_sha1_update(&inner, ipad, block_size);
-    neverc_sha1_update(&inner, data, data_len);
+    if (data_len > 0)
+        neverc_sha1_update(&inner, data, data_len);
     uint8_t inner_hash[20];
     neverc_sha1_final(&inner, inner_hash);
 
@@ -115,19 +146,30 @@ void neverc_hmac_sha1(const uint8_t *key, size_t key_len,
     neverc_sha1_update(&outer, opad, block_size);
     neverc_sha1_update(&outer, inner_hash, 20);
     neverc_sha1_final(&outer, out);
+    neverc_platform_secure_zero(k_prime, sizeof(k_prime));
+    neverc_platform_secure_zero(ipad, sizeof(ipad));
+    neverc_platform_secure_zero(opad, sizeof(opad));
+    neverc_platform_secure_zero(inner_hash, sizeof(inner_hash));
+    neverc_platform_secure_zero(&inner, sizeof(inner));
+    neverc_platform_secure_zero(&outer, sizeof(outer));
 }
 
 void neverc_hmac_md5(const uint8_t *key, size_t key_len,
                      const uint8_t *data, size_t data_len,
                      uint8_t out[16])
 {
+    if (!out) return;
+    if ((!key && key_len != 0) || (!data && data_len != 0)) {
+        memset(out, 0, 16);
+        return;
+    }
     const size_t block_size = 64;
     uint8_t k_prime[64];
     memset(k_prime, 0, block_size);
 
     if (key_len > block_size) {
         neverc_md5_sum(key, key_len, k_prime);
-    } else {
+    } else if (key_len > 0) {
         memcpy(k_prime, key, key_len);
     }
 
@@ -140,7 +182,8 @@ void neverc_hmac_md5(const uint8_t *key, size_t key_len,
     neverc_md5_ctx inner;
     neverc_md5_init(&inner);
     neverc_md5_update(&inner, ipad, block_size);
-    neverc_md5_update(&inner, data, data_len);
+    if (data_len > 0)
+        neverc_md5_update(&inner, data, data_len);
     uint8_t inner_hash[16];
     neverc_md5_final(&inner, inner_hash);
 
@@ -149,6 +192,12 @@ void neverc_hmac_md5(const uint8_t *key, size_t key_len,
     neverc_md5_update(&outer, opad, block_size);
     neverc_md5_update(&outer, inner_hash, 16);
     neverc_md5_final(&outer, out);
+    neverc_platform_secure_zero(k_prime, sizeof(k_prime));
+    neverc_platform_secure_zero(ipad, sizeof(ipad));
+    neverc_platform_secure_zero(opad, sizeof(opad));
+    neverc_platform_secure_zero(inner_hash, sizeof(inner_hash));
+    neverc_platform_secure_zero(&inner, sizeof(inner));
+    neverc_platform_secure_zero(&outer, sizeof(outer));
 }
 
 int neverc_hmac_equal(const uint8_t *mac1, const uint8_t *mac2, size_t len) {

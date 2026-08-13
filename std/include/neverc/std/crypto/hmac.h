@@ -18,6 +18,9 @@ extern "C" {
  *   HMAC-SHA512: 64 bytes
  *   HMAC-SHA1:   20 bytes
  *   HMAC-MD5:    16 bytes
+ * NULL key/data pointers are accepted only for zero-length spans. An invalid
+ * non-empty span clears `out`; a NULL output pointer is ignored. SHA-1 and MD5
+ * are provided for protocol compatibility, not new cryptographic designs.
  */
 
 void neverc_hmac_sha256(const uint8_t *key, size_t key_len,

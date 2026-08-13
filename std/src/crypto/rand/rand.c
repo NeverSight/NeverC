@@ -1,6 +1,5 @@
 #include "neverc/std/crypto/rand.h"
 #include "neverc/std/_platform.h"
-#include <string.h>
 
 int neverc_crypto_rand_read(uint8_t *buf, size_t len) {
     return neverc_platform_random(buf, len);
@@ -21,12 +20,14 @@ int neverc_crypto_rand_int(uint64_t *out, uint64_t max) {
 }
 
 static uint64_t mulmod64(uint64_t a, uint64_t b, uint64_t m) {
-#if defined(_WIN32)
+#if !defined(__SIZEOF_INT128__)
     uint64_t result = 0;
     a %= m;
     while (b > 0) {
-        if (b & 1) { result = result > m - a ? result - (m - a) : result + a; }
-        a = a > m - a ? a - (m - a) : a + a;
+        if (b & 1) {
+            result = result >= m - a ? result - (m - a) : result + a;
+        }
+        a = a >= m - a ? a - (m - a) : a + a;
         b >>= 1;
     }
     return result;
@@ -66,9 +67,12 @@ static int is_probably_prime(uint64_t n) {
     if (n == 2 || n == 3 || n == 5) return 1;
     if (n % 2 == 0 || n % 3 == 0 || n % 5 == 0) return 0;
 
-    uint64_t witnesses[] = {2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37};
-    for (int i = 0; i < 12; i++) {
-        if (witnesses[i] >= n) continue;
+    /* This seven-base set is deterministic for every unsigned 64-bit input. */
+    static const uint64_t witnesses[] = {
+        2, 325, 9375, 28178, 450775, 9780504, 1795265022
+    };
+    for (size_t i = 0; i < sizeof(witnesses) / sizeof(witnesses[0]); i++) {
+        if (witnesses[i] % n == 0) continue;
         if (!miller_rabin_small(n, witnesses[i])) return 0;
     }
     return 1;
@@ -80,7 +84,15 @@ int neverc_crypto_rand_prime(uint8_t *out, size_t bits) {
 
     for (int attempts = 0; attempts < 10000; attempts++) {
         uint64_t val = 0;
-        if (neverc_crypto_rand_read((uint8_t *)&val, bytes) != 0) return -1;
+        uint8_t random_bytes[8] = {0};
+        if (neverc_crypto_rand_read(random_bytes, bytes) != 0) {
+            neverc_platform_secure_zero(
+                random_bytes, sizeof(random_bytes));
+            return -1;
+        }
+        for (size_t i = 0; i < bytes; i++)
+            val |= (uint64_t)random_bytes[i] << (8 * i);
+        neverc_platform_secure_zero(random_bytes, sizeof(random_bytes));
 
         val |= (1ULL << (bits - 1));
         val |= 1;
@@ -89,8 +101,10 @@ int neverc_crypto_rand_prime(uint8_t *out, size_t bits) {
         if (is_probably_prime(val)) {
             for (size_t i = 0; i < bytes; i++)
                 out[i] = (uint8_t)(val >> (i * 8));
+            neverc_platform_secure_zero(&val, sizeof(val));
             return 0;
         }
+        neverc_platform_secure_zero(&val, sizeof(val));
     }
     return -1;
 }

@@ -56,6 +56,7 @@ int main(void) {
         neverc_md5_ctx ctx;
         neverc_md5_init(&ctx);
         neverc_md5_update(&ctx, (const uint8_t *)"hello", 5);
+        neverc_md5_update(&ctx, NULL, 0);
         neverc_md5_update(&ctx, (const uint8_t *)" ", 1);
         neverc_md5_update(&ctx, (const uint8_t *)"world", 5);
         uint8_t digest[16];
