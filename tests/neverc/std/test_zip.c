@@ -234,6 +234,23 @@ static void test_invalid_args(void) {
     neverc_zip_writer_free(&w);
 }
 
+static void test_reject_unsafe_paths(void) {
+    printf("[reject_unsafe_paths]\n");
+    neverc_zip_writer_t w;
+    neverc_zip_writer_init(&w);
+    const uint8_t payload[] = "x";
+    check_int("writer accepts unsafe name for now",
+              neverc_zip_writer_add(
+                  &w, "../etc/passwd", payload, sizeof(payload) - 1), 0);
+    check_int("writer close", neverc_zip_writer_close(&w), 0);
+
+    neverc_zip_reader_t r;
+    check_int("reader rejects unsafe path",
+              neverc_zip_reader_init(&r, w.data, w.len), -1);
+    neverc_zip_reader_free(&r);
+    neverc_zip_writer_free(&w);
+}
+
 int main(void) {
     printf("=== NeverC Archive/ZIP Module Tests ===\n\n");
     test_roundtrip();
@@ -241,6 +258,7 @@ int main(void) {
     test_truncated_entry();
     test_central_directory_and_writer_state();
     test_invalid_args();
+    test_reject_unsafe_paths();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

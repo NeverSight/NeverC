@@ -27,6 +27,8 @@ static void test_valid_path(void) {
     check("dot_element", neverc_fs_valid_path("foo/./bar") == 0);
     check("dotdot_element", neverc_fs_valid_path("foo/../bar") == 0);
     check("double_slash", neverc_fs_valid_path("foo//bar") == 0);
+    check("backslash", neverc_fs_valid_path("foo\\bar") == 0);
+    check("dotdot_backslash", neverc_fs_valid_path("..\\etc\\passwd") == 0);
 }
 
 #if defined(_WIN32)

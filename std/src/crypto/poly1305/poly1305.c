@@ -8,6 +8,7 @@
  * which is kept as a fallback for platforms without __int128.
  */
 #include "neverc/std/crypto/poly1305.h"
+#include "neverc/std/crypto/subtle.h"
 #include <string.h>
 
 #if defined(__SIZEOF_INT128__)
@@ -248,7 +249,5 @@ int neverc_poly1305_verify(const uint8_t tag[16], const uint8_t *msg, size_t msg
                            const uint8_t key[32]) {
     uint8_t computed[16];
     neverc_poly1305_auth(computed, msg, msg_len, key);
-    uint8_t diff = 0;
-    for (int i = 0; i < 16; i++) diff |= computed[i] ^ tag[i];
-    return diff == 0;
+    return neverc_subtle_constant_time_compare(computed, tag, 16);
 }

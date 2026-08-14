@@ -1,5 +1,6 @@
 #include "neverc/std/archive/zip.h"
 #include "neverc/std/hash/crc32.h"
+#include "neverc/std/io/fs.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -145,6 +146,8 @@ int neverc_zip_reader_init(neverc_zip_reader_t *r, const uint8_t *data, size_t l
         memset(file, 0, sizeof(*file));
         memcpy(file->name, central + 46U, name_length);
         file->name[name_length] = '\0';
+        if (!neverc_fs_valid_path(file->name))
+            return zip_reader_error(r);
         file->method = method;
         file->crc32 = crc;
         file->compressed_size = compressed_size;

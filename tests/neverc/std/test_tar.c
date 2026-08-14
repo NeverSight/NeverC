@@ -409,6 +409,19 @@ static void test_malformed_headers(void) {
     neverc_tar_writer_free(&writer);
 }
 
+static void test_reject_unsafe_paths(void) {
+    printf("[reject_unsafe_paths]\n");
+    uint8_t block[NEVERC_TAR_BLOCK_SIZE] = {0};
+    memcpy(block, "../etc/passwd", 13);
+    test_finish_header(block);
+
+    neverc_tar_reader_t reader;
+    neverc_tar_reader_init(&reader, block, sizeof(block));
+    neverc_tar_header_t header = {0};
+    check_int("reject parent traversal",
+              neverc_tar_reader_next(&reader, &header), -1);
+}
+
 int main(void) {
     printf("=== NeverC Archive/Tar Module Tests ===\n\n");
     test_write_read_roundtrip();
@@ -418,6 +431,7 @@ int main(void) {
     test_incremental_io_and_state();
     test_ustar_metadata_and_long_name();
     test_malformed_headers();
+    test_reject_unsafe_paths();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

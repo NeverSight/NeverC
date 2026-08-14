@@ -1,4 +1,5 @@
 #include "neverc/std/archive/tar.h"
+#include "neverc/std/io/fs.h"
 #include <limits.h>
 #include <stdlib.h>
 #include <string.h>
@@ -166,12 +167,19 @@ int neverc_tar_reader_next(neverc_tar_reader_t *r, neverc_tar_header_t *hdr) {
     }
     memcpy(hdr->name + offset, block, name_length);
     hdr->name[full_length] = '\0';
+    if (!neverc_fs_valid_path(hdr->name))
+        return -1;
     hdr->mode = (uint32_t)mode;
     hdr->size = (int64_t)size;
     hdr->mtime = (int64_t)mtime;
     hdr->typeflag = block[156] ? block[156] : NEVERC_TAR_REG;
     copy_tar_field(hdr->linkname, sizeof(hdr->linkname),
                    block + 157, 100);
+    if ((hdr->typeflag == NEVERC_TAR_SYM ||
+         hdr->typeflag == NEVERC_TAR_LINK) &&
+        hdr->linkname[0] != '\0' &&
+        !neverc_fs_valid_path(hdr->linkname))
+        return -1;
     copy_tar_field(hdr->uname, sizeof(hdr->uname), block + 265, 32);
     copy_tar_field(hdr->gname, sizeof(hdr->gname), block + 297, 32);
 

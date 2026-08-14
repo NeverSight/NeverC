@@ -127,9 +127,17 @@ static void test_invalid_inputs(void) {
     check_true("empty null spans accepted",
                neverc_pbkdf2_sha256(
                    dk, sizeof(dk), NULL, 0, NULL, 0, 1) == 0);
-    check_true("oversized salt rejected",
-               neverc_pbkdf2_sha256(
-                   dk, sizeof(dk), &byte, 1, &byte, 257, 1) == -1);
+    {
+        uint8_t long_salt[300];
+        uint8_t dk_long[32];
+        for (size_t i = 0; i < sizeof(long_salt); i++)
+            long_salt[i] = (uint8_t)(i + 1);
+        check_true("long salt accepted",
+                   neverc_pbkdf2_sha256(
+                       dk_long, sizeof(dk_long),
+                       (const uint8_t *)"pw", 2,
+                       long_salt, sizeof(long_salt), 2) == 0);
+    }
 #if SIZE_MAX > UINT32_MAX
     check_true("RFC derived-key limit enforced",
                neverc_pbkdf2_sha256(

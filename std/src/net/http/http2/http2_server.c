@@ -1255,6 +1255,15 @@ static void h2_window_wait_tick(h2_conn_t *conn) {
 #endif
 }
 
+static void h2_mark_local_end_stream(h2_conn_t *conn, h2_stream_t *stream) {
+    nc_mutex_lock(&conn->state_lock);
+    if (stream->state == H2_STREAM_OPEN)
+        stream->state = H2_STREAM_HALF_CLOSED_LOCAL;
+    else if (stream->state == H2_STREAM_HALF_CLOSED_REMOTE)
+        stream->state = H2_STREAM_CLOSED;
+    nc_mutex_unlock(&conn->state_lock);
+}
+
 static int h2_send_header_block(h2_conn_t *conn, h2_stream_t *stream,
                                 const neverc_hpack_header_t *headers,
                                 int header_count, int end_stream) {
@@ -1283,6 +1292,8 @@ static int h2_send_header_block(h2_conn_t *conn, h2_stream_t *stream,
     }
     nc_mutex_unlock(&conn->write_lock);
     if (result != 0) h2_connection_write_failed(conn);
+    else if (end_stream)
+        h2_mark_local_end_stream(conn, stream);
     return result;
 }
 
@@ -1290,12 +1301,18 @@ static int h2_send_response_data(h2_conn_t *conn, h2_stream_t *stream,
                                  const uint8_t *body, size_t length,
                                  int end_stream) {
     size_t offset = 0;
-    if (length == 0)
-        return end_stream
-            ? h2_conn_write_frame(conn, NC_H2_FRAME_DATA,
-                                  NC_H2_FLAG_END_STREAM, stream->id,
-                                  NULL, 0)
-            : 0;
+    if (length == 0) {
+        if (!end_stream)
+            return 0;
+        if (h2_conn_write_frame(conn, NC_H2_FRAME_DATA,
+                                NC_H2_FLAG_END_STREAM, stream->id,
+                                NULL, 0) != 0) {
+            h2_connection_write_failed(conn);
+            return -1;
+        }
+        h2_mark_local_end_stream(conn, stream);
+        return 0;
+    }
     while (offset < length) {
         nc_mutex_lock(&conn->state_lock);
         while (nc_atomic_load(&conn->running) && !stream->reset &&
@@ -1325,6 +1342,8 @@ static int h2_send_response_data(h2_conn_t *conn, h2_stream_t *stream,
             return -1;
         }
         offset += chunk;
+        if (flags & NC_H2_FLAG_END_STREAM)
+            h2_mark_local_end_stream(conn, stream);
     }
     return 0;
 }
@@ -1807,9 +1826,10 @@ static int h2_serve_io(neverc_h2_server_t *srv, h2_io_t *io) {
             h2_stream_t *stream = h2_find_stream(&conn, fhdr.stream_id);
             if (stream && stream->state == H2_STREAM_CLOSED &&
                 !nc_atomic_load(&stream->reset)) {
-                (void)h2_conn_write_goaway(&conn, NC_H2_STREAM_CLOSED);
+                (void)h2_conn_write_rst(&conn, fhdr.stream_id,
+                                        NC_H2_STREAM_CLOSED);
                 free(payload);
-                goto cleanup;
+                break;
             }
             if (stream &&
                 (stream->state == H2_STREAM_HALF_CLOSED_REMOTE ||

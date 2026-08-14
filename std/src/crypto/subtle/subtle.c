@@ -8,6 +8,8 @@
  */
 
 int neverc_subtle_constant_time_compare(const uint8_t *x, const uint8_t *y, size_t len) {
+    if (len > 0 && (!x || !y))
+        return 0;
     uint8_t v = 0;
     for (size_t i = 0; i < len; i++)
         v |= x[i] ^ y[i];

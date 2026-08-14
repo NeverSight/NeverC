@@ -28,6 +28,10 @@ static void test_constant_time_compare(void) {
     check_int("diff last byte", neverc_subtle_constant_time_compare(a, c, 5), 0);
     check_int("all different", neverc_subtle_constant_time_compare(a, d, 5), 0);
     check_int("zero length", neverc_subtle_constant_time_compare(a, c, 0), 1);
+    check_int("null with zero length",
+              neverc_subtle_constant_time_compare(NULL, NULL, 0), 1);
+    check_int("null pointer non-zero length",
+              neverc_subtle_constant_time_compare(a, NULL, 5), 0);
     check_int("single byte eq", neverc_subtle_constant_time_compare(a, b, 1), 1);
     check_int("single byte neq", neverc_subtle_constant_time_compare(a, d, 1), 0);
 

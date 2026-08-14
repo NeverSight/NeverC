@@ -76,6 +76,8 @@ int neverc_fs_valid_path(const char *name) {
 
     const char *p = name;
     while (*p) {
+        if (*p == '\\')
+            return 0;
         const char *slash = strchr(p, '/');
         size_t elen = slash ? (size_t)(slash - p) : strlen(p);
         if (elen == 0) return 0;
