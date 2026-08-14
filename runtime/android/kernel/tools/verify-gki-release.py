@@ -19,7 +19,19 @@ from elftools.elf.elffile import ELFFile
 from elftools.elf.sections import SymbolTableSection
 
 
-EXPECTED_PROFILES = ("510", "515", "601", "606", "612", "618")
+REQUIRED_PROFILES = (
+    "510",
+    "51013",
+    "515",
+    "51514",
+    "601",
+    "606",
+    "612",
+    "618",
+)
+OPTIONAL_PROFILES = ()
+ALLOWED_PROFILES = REQUIRED_PROFILES + OPTIONAL_PROFILES
+EXPECTED_PROFILES = ALLOWED_PROFILES
 MAX_ARCHIVE_MEMBERS = 10_000
 MAX_ARCHIVE_FILE_SIZE = 1024 * 1024 * 1024
 MAX_ARCHIVE_TOTAL_SIZE = 2 * 1024 * 1024 * 1024
@@ -104,9 +116,21 @@ def validate_lock(lock):
         raise ValidationError("release lock tag must be a non-empty string")
 
     profiles = lock.get("profiles")
-    if not isinstance(profiles, dict) or set(profiles) != set(EXPECTED_PROFILES):
+    if not isinstance(profiles, dict):
+        raise ValidationError("release lock profiles must be an object")
+    keys = set(profiles)
+    missing = [profile for profile in REQUIRED_PROFILES if profile not in keys]
+    unknown = sorted(keys - set(ALLOWED_PROFILES))
+    if missing or unknown:
+        extra = (
+            " and may add " + ", ".join(OPTIONAL_PROFILES)
+            if OPTIONAL_PROFILES
+            else ""
+        )
         raise ValidationError(
-            "release lock profiles must be exactly " + ", ".join(EXPECTED_PROFILES)
+            "release lock profiles must include "
+            + ", ".join(REQUIRED_PROFILES)
+            + extra
         )
     assets = set()
     identities = set()
@@ -120,7 +144,9 @@ def validate_lock(lock):
         "size",
         "vermagic",
     }
-    for profile in EXPECTED_PROFILES:
+    for profile in ALLOWED_PROFILES:
+        if profile not in profiles:
+            continue
         entry = profiles[profile]
         if not isinstance(entry, dict) or set(entry) != required:
             raise ValidationError(
@@ -861,6 +887,10 @@ def main(argv=None):
     args = parse_args(argv)
     try:
         lock = load_lock(args.lock)
+        if args.profile not in lock["profiles"]:
+            raise ValidationError(
+                f"release lock does not pin profile {args.profile}"
+            )
         entry = lock["profiles"][args.profile]
         print(
             f"[release] repository={lock['repository']['name']} "

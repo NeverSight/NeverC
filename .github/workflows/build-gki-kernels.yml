@@ -1,6 +1,7 @@
-# Build every supported GKI kernel (5.10/5.15/6.1/6.6/6.12/6.18), verify that the
-# struct module offsets baked into runtime/android/kernel/include/nvkmod_version.h
-# still match the freshly built kernels, then publish the artifacts.
+# Build every supported GKI kernel, including same-series Android-generation
+# splits (android12-5.10 / android13-5.10 and android13-5.15 / android14-5.15),
+# verify struct module offsets against the checked profile catalog, then
+# publish the artifacts.
 #
 # Manual only: heavy (repo sync ~10-20GB + build ~10-20GB per version), so it
 # never runs automatically.
@@ -15,7 +16,9 @@ on:
         options:
           - all
           - "510"
+          - "51013"
           - "515"
+          - "51514"
           - "601"
           - "606"
           - "612"
@@ -42,7 +45,9 @@ jobs:
           set -euo pipefail
           all='[
             {"key":"510","android":"android12","kernel":"5.10","branch":"common-android12-5.10","build_system":"make","verify_mode":"compare"},
+            {"key":"51013","android":"android13","kernel":"5.10","branch":"common-android13-5.10","build_system":"make","verify_mode":"compare"},
             {"key":"515","android":"android13","kernel":"5.15","branch":"common-android13-5.15","build_system":"make","verify_mode":"compare"},
+            {"key":"51514","android":"android14","kernel":"5.15","branch":"common-android14-5.15","build_system":"bazel","verify_mode":"compare"},
             {"key":"601","android":"android14","kernel":"6.1","branch":"common-android14-6.1","build_system":"bazel","verify_mode":"compare"},
             {"key":"606","android":"android15","kernel":"6.6","branch":"common-android15-6.6","build_system":"bazel","verify_mode":"compare"},
             {"key":"612","android":"android16","kernel":"6.12","branch":"common-android16-6.12","build_system":"bazel","verify_mode":"compare"},
@@ -380,7 +385,7 @@ jobs:
           fi
           tag="gki-build-$(date -u +%Y%m%d)"
           title="GKI prebuilt kernels $(date -u +%Y-%m-%d)"
-          notes="Automated GKI builds (5.10/5.15/6.1/6.6/6.12/6.18) with struct module offset verification against nvkmod_version.h for every profile."
+          notes="Automated GKI builds (android12-5.10, android13-5.10, android13-5.15, android14-5.15, 6.1, 6.6, 6.12, 6.18) with struct module offset verification against the checked profile catalog for every family."
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" "${files[@]}" --clobber
           else

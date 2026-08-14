@@ -21,14 +21,16 @@ verify = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(verify)
 
 
-PROFILES = ("510", "515", "601", "606", "612", "618")
+PROFILES = ("510", "51013", "515", "51514", "601", "606", "612", "618")
 
 
 def profile_entry(profile):
     return {
         "kernel_name": {
             "510": "android12-5.10",
+            "51013": "android13-5.10",
             "515": "android13-5.15",
+            "51514": "android14-5.15",
             "601": "android14-6.1",
             "606": "android15-6.6",
             "612": "android16-6.12",
@@ -37,7 +39,7 @@ def profile_entry(profile):
         "asset": f"gki-{profile}.tar.gz",
         "kcfi_typeids": (
             None
-            if profile in ("510", "515")
+            if profile in ("510", "51013", "515", "51514")
             else {
                 "cleanup_module": "0xe5c47d60",
                 "init_module": "0x6fbb3035",
@@ -67,6 +69,19 @@ class LockTests(unittest.TestCase):
     def test_missing_profile_is_rejected(self):
         lock = valid_lock()
         del lock["profiles"]["618"]
+        with self.assertRaisesRegex(verify.ValidationError, "profiles"):
+            verify.validate_lock(lock)
+
+    def test_missing_android_generation_family_is_rejected(self):
+        lock = valid_lock()
+        del lock["profiles"]["51013"]
+        with self.assertRaisesRegex(verify.ValidationError, "profiles"):
+            verify.validate_lock(lock)
+
+    def test_unknown_profile_is_rejected(self):
+        lock = valid_lock()
+        lock["profiles"]["999"] = profile_entry("618")
+        lock["profiles"]["999"]["asset"] = "gki-999.tar.gz"
         with self.assertRaisesRegex(verify.ValidationError, "profiles"):
             verify.validate_lock(lock)
 

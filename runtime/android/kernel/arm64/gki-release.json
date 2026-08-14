@@ -9,6 +9,15 @@
       "size": 264618963,
       "vermagic": "5.10.257-android12-9-gc6284a493b89 SMP preempt mod_unload modversions aarch64"
     },
+    "51013": {
+      "asset": "gki-android13-5.10-build.tar.gz",
+      "kcfi_typeids": null,
+      "kernel_name": "android13-5.10",
+      "offset_module": "neverc_probe.ko",
+      "sha256": "4cf5b745b562679e2b18c3275f5cff8a363b9d49315f25596c2921817fe63a29",
+      "size": 266856190,
+      "vermagic": "5.10.223-android13-4-00011-ga33040a671e2-dirty SMP preempt mod_unload modversions aarch64"
+    },
     "515": {
       "asset": "gki-android13-5.15-build.tar.gz",
       "kcfi_typeids": null,
@@ -17,6 +26,15 @@
       "sha256": "544eb73ade57b6612da5ee8d7a515c34b015226bed3f0739a5f6dfb48fcd820e",
       "size": 305322501,
       "vermagic": "5.15.208-android13-8-gc33e1c033f09 SMP preempt mod_unload modversions aarch64"
+    },
+    "51514": {
+      "asset": "gki-android14-5.15-build.tar.gz",
+      "kcfi_typeids": null,
+      "kernel_name": "android14-5.15",
+      "offset_module": "dist/zsmalloc.ko",
+      "sha256": "7e6bec36642b37f319b3d8d8aa53faccf8d5f44469287e552257d43648037999",
+      "size": 270134015,
+      "vermagic": "5.15.164-android14-11-maybe-dirty SMP preempt mod_unload modversions aarch64"
     },
     "601": {
       "asset": "gki-android14-6.1-build.tar.gz",
