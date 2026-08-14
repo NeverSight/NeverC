@@ -408,6 +408,16 @@ static void test_errors(void) {
 
     n = neverc_regexp_syntax_parse("a{3", 0, &err);
     check_null("bad repeat", n);
+
+    char deep[902];
+    for (int i = 0; i < 450; i++) deep[i] = '(';
+    deep[450] = 'a';
+    for (int i = 0; i < 450; i++) deep[451 + i] = ')';
+    deep[901] = '\0';
+    err = NULL;
+    n = neverc_regexp_syntax_parse(deep, 0, &err);
+    check_null("nested too deeply", n);
+    check_not_null("nested too deeply err", (void *)(size_t)(err != NULL));
 }
 
 /* ===== Complex patterns ===== */

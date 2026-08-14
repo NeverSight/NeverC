@@ -163,7 +163,7 @@ int neverc_dsa_verify(const neverc_dsa_public_key_t *key,
                        const neverc_dsa_signature_t *sig) {
     if (!key || !hash || hash_len == 0 || !sig)
         return -1;
-    if (neverc_bigint_is_zero(&sig->r) || neverc_bigint_is_zero(&sig->s))
+    if (neverc_bigint_sign(&sig->r) <= 0 || neverc_bigint_sign(&sig->s) <= 0)
         return -1;
     if (neverc_bigint_cmp(&sig->r, &key->q) >= 0 ||
         neverc_bigint_cmp(&sig->s, &key->q) >= 0)

@@ -152,6 +152,12 @@ static void test_constants(void) {
 
 #endif
 
+static void test_wait_null(void) {
+    printf("[wait_null]\n");
+    ASSERT_INT_EQ(neverc_signal_wait(NULL, 1), -1);
+    ASSERT_INT_EQ(neverc_signal_wait(NULL, 0), -1);
+}
+
 int main(void) {
     printf("=== NeverC os/signal Tests ===\n");
     test_notify_and_raise();
@@ -159,6 +165,7 @@ int main(void) {
     test_reset();
     test_multiple_signals();
     test_constants();
+    test_wait_null();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");

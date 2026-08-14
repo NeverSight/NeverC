@@ -68,6 +68,12 @@ static void test_split_host_port(void) {
               neverc_net_split_host_port("192.168.1.1:80", tiny_host,
                                          sizeof(tiny_host), tiny_port,
                                          sizeof(tiny_port)), -1);
+    check_int("non-numeric port rejected",
+              neverc_net_split_host_port("localhost:abc", host, sizeof(host),
+                                         port, sizeof(port)), -1);
+    check_int("port overflow rejected",
+              neverc_net_split_host_port("localhost:65536", host, sizeof(host),
+                                         port, sizeof(port)), -1);
 }
 
 /* ===== JoinHostPort ===== */

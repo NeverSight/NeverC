@@ -736,7 +736,20 @@ void neverc_os_clearenv(void) {
     FreeEnvironmentStringsA(env);
 #else
     extern char **environ;
-    if (environ) environ[0] = NULL;
+    while (environ && environ[0]) {
+        char *eq = strchr(environ[0], '=');
+        if (!eq) break;
+        size_t nlen = (size_t)(eq - environ[0]);
+        char stack_name[256];
+        char *name = nlen < sizeof(stack_name)
+                         ? stack_name
+                         : (char *)malloc(nlen + 1);
+        if (!name) break;
+        memcpy(name, environ[0], nlen);
+        name[nlen] = '\0';
+        unsetenv(name);
+        if (name != stack_name) free(name);
+    }
 #endif
 }
 

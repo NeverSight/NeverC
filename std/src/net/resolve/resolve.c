@@ -449,6 +449,17 @@ int neverc_net_lookup_srv(const char *service, const char *proto,
  * SplitHostPort / JoinHostPort — like Go net.SplitHostPort
  * ====================================================================== */
 
+static int port_text_valid(const char *port) {
+    if (!port || !port[0]) return 0;
+    unsigned long value = 0;
+    for (const unsigned char *p = (const unsigned char *)port; *p; p++) {
+        if (*p < '0' || *p > '9') return 0;
+        value = value * 10UL + (unsigned long)(*p - '0');
+        if (value > 65535UL) return 0;
+    }
+    return 1;
+}
+
 int neverc_net_split_host_port(const char *hostport,
                                  char *host, size_t hostlen,
                                  char *port, size_t portlen) {
@@ -475,6 +486,7 @@ int neverc_net_split_host_port(const char *hostport,
             if (plen >= portlen) return -1;
             memcpy(port, end + 2, plen);
             port[plen] = '\0';
+            if (!port_text_valid(port)) return -1;
         } else if (end[1] != '\0') {
             return -1;
         }
@@ -504,6 +516,7 @@ int neverc_net_split_host_port(const char *hostport,
     if (plen >= portlen) return -1;
     memcpy(port, last_colon + 1, plen);
     port[plen] = '\0';
+    if (!port_text_valid(port)) return -1;
 
     return 0;
 }

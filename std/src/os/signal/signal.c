@@ -54,6 +54,7 @@ void neverc_signal_ignore(int signum) {
 }
 
 int neverc_signal_wait(const int *sigs, int nsigs) {
+    if (!sigs || nsigs <= 0) return -1;
     (void)sigs; (void)nsigs;
     SleepEx(INFINITE, TRUE);
     return 0;
@@ -112,6 +113,7 @@ void neverc_signal_ignore(int signum) {
 }
 
 int neverc_signal_wait(const int *sigs, int nsigs) {
+    if (!sigs || nsigs <= 0) return -1;
     sigset_t set;
     sigemptyset(&set);
     for (int i = 0; i < nsigs; i++)

@@ -129,6 +129,22 @@ int main(void) {
     test_roundtrip("mixed", data, sizeof(data), 1);
     test_optional_headers_and_invalid_inputs();
 
+    {
+        uint8_t comp[256], output[4096];
+        size_t comp_len = sizeof(comp);
+        ASSERT_INT_EQ(neverc_gzip_compress(
+                          (const uint8_t *)"hello", 5, comp, &comp_len, 1),
+                      0);
+        comp[comp_len - 4] = 1;
+        comp[comp_len - 3] = 0;
+        comp[comp_len - 2] = 0;
+        comp[comp_len - 1] = 0;
+        size_t output_len = sizeof(output);
+        ASSERT_INT_EQ(neverc_gzip_decompress(
+                          comp, comp_len, output, &output_len),
+                      -1);
+    }
+
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

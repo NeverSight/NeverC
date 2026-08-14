@@ -104,7 +104,8 @@ int neverc_gzip_decompress(const uint8_t *src, size_t src_len,
                            | ((uint32_t)src[src_len - 1] << 24);
 
     size_t payload_len = src_len - pos - 8;
-    size_t out_len = *dst_len;
+    if ((size_t)expected_size > *dst_len) return -1;
+    size_t out_len = (size_t)expected_size;
     if (neverc_flate_decompress(src + pos, payload_len, dst, &out_len) < 0)
         return -1;
 

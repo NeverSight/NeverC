@@ -128,12 +128,32 @@ static void test_verify_zero_sig(void) {
     neverc_dsa_private_key_free(&key);
 }
 
+static void test_verify_negative_sig(void) {
+    printf("[negative_signature]\n");
+    neverc_dsa_private_key_t key;
+    neverc_dsa_private_key_init(&key);
+    setup_go_dsa_key(&key);
+
+    uint8_t hash[32];
+    neverc_sha256_sum((const uint8_t *)"test", 4, hash);
+
+    neverc_dsa_signature_t sig;
+    neverc_dsa_signature_init(&sig);
+    neverc_bigint_set_int64(&sig.r, -1);
+    neverc_bigint_set_int64(&sig.s, 1);
+    ASSERT_TRUE(neverc_dsa_verify(&key.pub, hash, 32, &sig) != 0);
+
+    neverc_dsa_signature_free(&sig);
+    neverc_dsa_private_key_free(&key);
+}
+
 int main(void) {
     printf("=== NeverC DSA Tests ===\n");
     test_init_free();
     test_sign_verify();
     test_verify_tampered();
     test_verify_zero_sig();
+    test_verify_negative_sig();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");

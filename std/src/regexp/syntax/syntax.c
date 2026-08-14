@@ -18,12 +18,17 @@ static void nc_mcpy(void *dst, const void *src, size_t n) {
     for (size_t i = 0; i < n; i++) d[i] = s[i];
 }
 
+#ifndef NCI_REGEXP_SYNTAX_MAX_DEPTH
+#define NCI_REGEXP_SYNTAX_MAX_DEPTH 400
+#endif
+
 typedef struct {
     const char *src;
     int         pos;
     int         len;
     int         flags;
     int         ncap;
+    int         depth;
     const char *err;
 } parser_t;
 
@@ -267,12 +272,23 @@ static neverc_regexp_syntax_node_t *parse_char_class(parser_t *p) {
 }
 
 static neverc_regexp_syntax_node_t *parse_group(parser_t *p) {
+    if (++p->depth > NCI_REGEXP_SYNTAX_MAX_DEPTH) {
+        p->err = "expression nested too deeply";
+        p->depth--;
+        return NULL;
+    }
+    neverc_regexp_syntax_node_t *result = NULL;
     if (p->pos + 1 < p->len && p->src[p->pos] == '?' && p->src[p->pos + 1] == ':') {
         p->pos += 2;
         neverc_regexp_syntax_node_t *inner = parse_alternation(p);
-        if (!inner) return NULL;
-        if (next(p) != ')') { p->err = "unclosed group"; neverc_regexp_syntax_free(inner); return NULL; }
-        return inner;
+        if (!inner) goto done;
+        if (next(p) != ')') {
+            p->err = "unclosed group";
+            neverc_regexp_syntax_free(inner);
+            goto done;
+        }
+        result = inner;
+        goto done;
     }
 
     if (p->pos + 2 < p->len && p->src[p->pos] == '?' &&
@@ -285,47 +301,59 @@ static neverc_regexp_syntax_node_t *parse_group(parser_t *p) {
         while (p->pos < p->len && p->src[p->pos] != close_ch) p->pos++;
         if (p->pos >= p->len) {
             p->err = "unclosed capture name";
-            return NULL;
+            goto done;
         }
         int name_len = p->pos - name_start;
         p->pos++; /* skip > or ' */
 
         neverc_regexp_syntax_node_t *cap = mk_node(p, NC_RE_OP_CAPTURE);
-        if (!cap) return NULL;
+        if (!cap) goto done;
         cap->cap = ++p->ncap;
         cap->name = (char *)malloc((size_t)name_len + 1);
         if (!cap->name) {
             p->err = "out of memory";
             neverc_regexp_syntax_free(cap);
-            return NULL;
+            goto done;
         }
         nc_mcpy(cap->name, p->src + name_start, (size_t)name_len);
         cap->name[name_len] = '\0';
 
         neverc_regexp_syntax_node_t *inner = parse_alternation(p);
-        if (!inner) { neverc_regexp_syntax_free(cap); return NULL; }
+        if (!inner) { neverc_regexp_syntax_free(cap); goto done; }
         if (!add_sub(p, cap, inner)) {
             neverc_regexp_syntax_free(inner);
             neverc_regexp_syntax_free(cap);
-            return NULL;
+            goto done;
         }
-        if (next(p) != ')') { p->err = "unclosed group"; neverc_regexp_syntax_free(cap); return NULL; }
-        return cap;
+        if (next(p) != ')') {
+            p->err = "unclosed group";
+            neverc_regexp_syntax_free(cap);
+            goto done;
+        }
+        result = cap;
+        goto done;
     }
 
     /* Regular capturing group */
     neverc_regexp_syntax_node_t *cap = mk_node(p, NC_RE_OP_CAPTURE);
-    if (!cap) return NULL;
+    if (!cap) goto done;
     cap->cap = ++p->ncap;
     neverc_regexp_syntax_node_t *inner = parse_alternation(p);
-    if (!inner) { neverc_regexp_syntax_free(cap); return NULL; }
+    if (!inner) { neverc_regexp_syntax_free(cap); goto done; }
     if (!add_sub(p, cap, inner)) {
         neverc_regexp_syntax_free(inner);
         neverc_regexp_syntax_free(cap);
-        return NULL;
+        goto done;
     }
-    if (next(p) != ')') { p->err = "unclosed group"; neverc_regexp_syntax_free(cap); return NULL; }
-    return cap;
+    if (next(p) != ')') {
+        p->err = "unclosed group";
+        neverc_regexp_syntax_free(cap);
+        goto done;
+    }
+    result = cap;
+done:
+    p->depth--;
+    return result;
 }
 
 static neverc_regexp_syntax_node_t *parse_atom(parser_t *p) {
@@ -526,6 +554,7 @@ neverc_regexp_syntax_node_t *neverc_regexp_syntax_parse(
     p.len = (int)pattern_len;
     p.flags = flags;
     p.ncap = 0;
+    p.depth = 0;
     p.err = NULL;
 
     neverc_regexp_syntax_node_t *tree = parse_alternation(&p);
