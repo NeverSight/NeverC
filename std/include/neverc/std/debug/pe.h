@@ -87,7 +87,7 @@ typedef struct {
 } neverc_pe_optional_header_t;
 
 typedef struct {
-    char     name[9];
+    char     name[256];
     uint32_t virtual_size;
     uint32_t virtual_address;
     uint32_t size_of_raw_data;

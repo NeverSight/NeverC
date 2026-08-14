@@ -405,11 +405,22 @@ static size_t mime_qp_decoded_size(const char *src, size_t src_len) {
         } else if (src[si] == '=' && remaining >= 2 &&
                    src[si + 1] == '\n') {
             si += 2;
+        } else if (src[si] == '=' && remaining >= 2 &&
+                   src[si + 1] == '\r') {
+            si += 2;
+            if (si < src_len && src[si] == '\n')
+                si++;
+        } else if (src[si] == '=' && remaining == 1) {
+            si += 1;
         } else if (src[si] == '=' && remaining >= 3 &&
                    mime_qp_hex[(unsigned char)src[si + 1]] >= 0 &&
                    mime_qp_hex[(unsigned char)src[si + 2]] >= 0) {
             si += 3;
             size++;
+        } else if (src[si] == '=') {
+            /* Invalid / truncated escape: decode will fail. Overestimate. */
+            size += remaining;
+            break;
         } else {
             si++;
             size++;
@@ -434,6 +445,13 @@ int neverc_mime_qp_decode(const char *src, size_t src_len,
         } else if (src[si] == '=' && remaining >= 2 &&
                    src[si + 1] == '\n') {
             si += 2;
+        } else if (src[si] == '=' && remaining >= 2 &&
+                   src[si + 1] == '\r') {
+            si += 2;
+            if (si < src_len && src[si] == '\n')
+                si++;
+        } else if (src[si] == '=' && remaining == 1) {
+            si += 1;
         } else if (src[si] == '=' && remaining >= 3) {
             int high = mime_qp_hex[(unsigned char)src[si + 1]];
             int low = mime_qp_hex[(unsigned char)src[si + 2]];
@@ -443,6 +461,8 @@ int neverc_mime_qp_decode(const char *src, size_t src_len,
             } else {
                 return -1;
             }
+        } else if (src[si] == '=') {
+            return -1;
         } else {
             dst[di++] = src[si++];
         }

@@ -310,7 +310,7 @@ const neverc_tzdata_zone_t *neverc_tzdata_local(void) {
 #if defined(_MSC_VER)
     char *dup = NULL;
     size_t len = 0;
-    if (_dupenv_s(&dup, &len, "TZ") == 0)
+    if (_dupenv_s(&dup, &len, "TZ") == 0 && dup && dup[0])
         tz = dup;
 #else
     tz = getenv("TZ");
@@ -335,7 +335,8 @@ const neverc_tzdata_zone_t *neverc_tzdata_local(void) {
 }
 
 int neverc_tzdata_offset_for_month(const neverc_tzdata_zone_t *zone, int month) {
-    if (!zone || !zone->has_dst) return zone ? zone->utc_offset : 0;
+    if (!zone) return 0;
+    if (!zone->has_dst || month < 1 || month > 12) return zone->utc_offset;
 
     /* Look up hemisphere from original table data */
     int hemi = 0;

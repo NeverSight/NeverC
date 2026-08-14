@@ -23,6 +23,8 @@ static char *dup_range(const char *s, size_t n) {
 }
 
 static int xml_char_is_valid(uint32_t codepoint) {
+    if (codepoint >= 0xfdd0 && codepoint <= 0xfdef) return 0;
+    if ((codepoint & 0xfffeU) == 0xfffeU) return 0;
     return codepoint == 0x09 || codepoint == 0x0a ||
            codepoint == 0x0d ||
            (codepoint >= 0x20 && codepoint <= 0xd7ff) ||

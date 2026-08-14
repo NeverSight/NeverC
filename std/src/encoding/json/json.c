@@ -428,9 +428,14 @@ static uint32_t km_hash(const char *s, size_t len) {
 
     if (len <= 16) {
         if (len >= 4) {
-            a = (jkm_read4(p) << 32) | jkm_read4(p + ((len >> 3) << 2));
-            b = (jkm_read4(p + len - 4) << 32)
-              | jkm_read4(p + len - 4 - ((len >> 3) << 2));
+            /* wyhash-style 4..16 mix can index before p for len 9..11.
+             * Hash a 16-byte zero-padded copy so every read stays in-bounds. */
+            uint8_t tmp[16];
+            memset(tmp, 0, sizeof(tmp));
+            memcpy(tmp, p, len);
+            a = (jkm_read4(tmp) << 32) | jkm_read4(tmp + ((len >> 3) << 2));
+            b = (jkm_read4(tmp + len - 4) << 32)
+              | jkm_read4(tmp + len - 4 - ((len >> 3) << 2));
         } else if (len > 0) {
             a = ((uint64_t)p[0] << 16) | ((uint64_t)p[len >> 1] << 8) | p[len - 1];
             b = 0;

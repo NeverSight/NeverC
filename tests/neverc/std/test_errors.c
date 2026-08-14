@@ -87,6 +87,8 @@ static void test_join(void) {
     check_bool("join is e1", neverc_errors_is(joined, e1), 1);
     check_bool("join is e2", neverc_errors_is(joined, e2), 1);
     check_bool("join is e3", neverc_errors_is(joined, e3), 1);
+    check_str("join unwrap first",
+              neverc_errors_message(neverc_errors_unwrap(joined)), "err1");
     neverc_error_t *other = neverc_errors_new("timeout");
     check_bool("join is other", neverc_errors_is(joined, other), 0);
     neverc_errors_free(other);

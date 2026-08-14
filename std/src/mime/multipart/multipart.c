@@ -129,6 +129,30 @@ static int parse_headers(const unsigned char *data, size_t len,
             return 0;
         }
 
+        /* RFC 5322 folded header: a line that starts with WSP continues the
+         * previous field. Reject a leading fold with no header to attach to. */
+        if (data[i] == ' ' || data[i] == '\t') {
+            if (part->header_count == 0)
+                return -1;
+            neverc_multipart_header_t *prev =
+                &part->headers[part->header_count - 1];
+            size_t vstart = i;
+            while (vstart < line_end &&
+                   (data[vstart] == ' ' || data[vstart] == '\t'))
+                vstart++;
+            size_t add = line_end - vstart;
+            size_t cur = strlen(prev->value);
+            if (add > 0) {
+                if (cur + 1 + add >= sizeof(prev->value))
+                    return -1;
+                prev->value[cur] = ' ';
+                memcpy(prev->value + cur + 1, data + vstart, add);
+                prev->value[cur + 1 + add] = '\0';
+            }
+            i = line_feed + 1;
+            continue;
+        }
+
         size_t colon = i;
         while (colon < line_end && data[colon] != ':') colon++;
         if (colon == i || colon == line_end ||
@@ -284,8 +308,23 @@ int neverc_multipart_write(const neverc_multipart_part_t *parts, int count,
         if (out_cap - pos <= 2) return -1;
         out[pos++] = '\r'; out[pos++] = '\n';
 
-        /* Write body */
+        /* Write body. Reject a body that would inject a new boundary line
+         * after the header CRLF (start-of-body "--bnd" or "\n--bnd"). */
         if (part->body_len > 0) {
+            size_t blen = multipart_boundary_length(boundary);
+            unsigned char delim[72];
+            delim[0] = '-';
+            delim[1] = '-';
+            memcpy(delim + 2, boundary, blen);
+            size_t dlen = blen + 2;
+            if (part->body_len >= dlen &&
+                memcmp(part->body, delim, dlen) == 0)
+                return -1;
+            for (size_t bi = 0; bi + 1 + dlen <= part->body_len; bi++) {
+                if (part->body[bi] == '\n' &&
+                    memcmp(part->body + bi + 1, delim, dlen) == 0)
+                    return -1;
+            }
             if (part->body_len >= out_cap - pos) return -1;
             memcpy(out + pos, part->body, part->body_len);
             pos += part->body_len;

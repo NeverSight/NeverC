@@ -1,4 +1,5 @@
 #include "neverc/std/image/jpeg.h"
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -145,7 +146,7 @@ static void bw_write_raw(bitwriter_t *bw, const uint8_t *data, size_t len) {
 }
 
 static void bw_write_bits(bitwriter_t *bw, uint16_t code, int len) {
-    bw->bit_buf = (bw->bit_buf << len) | (code & ((1 << len) - 1));
+    bw->bit_buf = (bw->bit_buf << len) | (code & ((1u << len) - 1u));
     bw->bit_cnt += len;
     while (bw->bit_cnt >= 8) {
         bw->bit_cnt -= 8;
@@ -273,7 +274,7 @@ static void encode_block(bitwriter_t *bw, int *block, const double *recip,
     bw_write_bits(bw, dc_table[dc_bits].code, dc_table[dc_bits].length);
     if (dc_bits > 0) {
         int dc_val = dc_diff < 0 ? dc_diff - 1 : dc_diff;
-        bw_write_bits(bw, (uint16_t)(dc_val & ((1 << dc_bits) - 1)), dc_bits);
+        bw_write_bits(bw, (uint16_t)(dc_val & ((1u << dc_bits) - 1u)), dc_bits);
     }
 
     /* AC coefficients */
@@ -290,7 +291,7 @@ static void encode_block(bitwriter_t *bw, int *block, const double *recip,
             int symbol = (zero_count << 4) | ac_bits;
             bw_write_bits(bw, ac_table[symbol].code, ac_table[symbol].length);
             int ac_val = quantized[i] < 0 ? quantized[i] - 1 : quantized[i];
-            bw_write_bits(bw, (uint16_t)(ac_val & ((1 << ac_bits) - 1)), ac_bits);
+            bw_write_bits(bw, (uint16_t)(ac_val & ((1u << ac_bits) - 1u)), ac_bits);
             zero_count = 0;
         }
     }
@@ -665,7 +666,7 @@ static int build_decode_table(huff_decode_table_t *t, const uint8_t *bits, const
             t->mincode[len] = -1;
             t->maxcode[len] = -1;
         }
-        if (code > (1 << len)) return -1;   /* over-subscribed → invalid table */
+        if (code > (int)(1u << len)) return -1;   /* over-subscribed → invalid table */
         idx += bits[len];
         code <<= 1;
     }
@@ -1052,7 +1053,17 @@ int neverc_jpeg_decode(const uint8_t *data, size_t len, neverc_jpeg_image_t *img
     for (int c = 0; c < ncomp; c++) {
         plane_w[c] = mcus_x * (uint32_t)comp_h[c] * 8;
         plane_h[c] = mcus_y * (uint32_t)comp_v[c] * 8;
-        plane[c] = (uint8_t *)malloc((size_t)plane_w[c] * plane_h[c]);
+        if (plane_w[c] == 0 || plane_h[c] > SIZE_MAX / plane_w[c]) {
+            for (int k = 0; k < c; k++) free(plane[k]);
+            goto fail;
+        }
+        uint64_t plane_bytes = (uint64_t)plane_w[c] * (uint64_t)plane_h[c];
+        uint64_t pixel_bytes = 4ull * (uint64_t)width * (uint64_t)height;
+        if (plane_bytes > pixel_bytes) {
+            for (int k = 0; k < c; k++) free(plane[k]);
+            goto fail;
+        }
+        plane[c] = (uint8_t *)malloc((size_t)plane_bytes);
         if (!plane[c]) { for (int k = 0; k < c; k++) free(plane[k]); goto fail; }
     }
 

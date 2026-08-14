@@ -122,6 +122,9 @@ int neverc_csv_read_line(const char *line, size_t line_len,
         }
 
         if (wpos >= work_buf_len) return -1;
+        if ((size_t)((work_buf + wpos) - fields[nfields]) >
+            NEVERC_CSV_MAX_FIELD_LEN)
+            return -1;
         work_buf[wpos++] = '\0';
         nfields++;
 

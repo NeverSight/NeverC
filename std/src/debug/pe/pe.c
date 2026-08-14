@@ -144,6 +144,58 @@ int neverc_pe_open(neverc_pe_file_t *f, const uint8_t *data, size_t len) {
             return pe_open_fail(f);
     }
 
+    /* COFF long names are stored as "/<decimal offset>" into the string table
+     * after the symbol table. Short 8-byte names stay as-is. */
+    int need_strtab = 0;
+    for (uint16_t i = 0; i < nsec; i++) {
+        if (f->sections[i].name[0] == '/') {
+            need_strtab = 1;
+            break;
+        }
+    }
+    if (need_strtab) {
+        uint32_t sym_off = f->file_header.pointer_to_symbol_table;
+        uint32_t nsym = f->file_header.number_of_symbols;
+        if (sym_off == 0)
+            return pe_open_fail(f);
+        uint64_t strtab_pos = (uint64_t)sym_off + (uint64_t)nsym * 18U;
+        if (strtab_pos > len || len - (size_t)strtab_pos < 4)
+            return pe_open_fail(f);
+        uint32_t strtab_size = rd32(data + (size_t)strtab_pos);
+        if (strtab_size < 4 || strtab_size > len - (size_t)strtab_pos)
+            return pe_open_fail(f);
+        const uint8_t *strtab = data + (size_t)strtab_pos;
+        for (uint16_t i = 0; i < nsec; i++) {
+            if (f->sections[i].name[0] != '/')
+                continue;
+            uint32_t off = 0;
+            const char *p = f->sections[i].name + 1;
+            if (*p == '\0')
+                return pe_open_fail(f);
+            while (*p) {
+                if (*p < '0' || *p > '9')
+                    return pe_open_fail(f);
+                uint32_t digit = (uint32_t)(*p - '0');
+                if (off > (UINT32_MAX - digit) / 10U)
+                    return pe_open_fail(f);
+                off = off * 10U + digit;
+                p++;
+            }
+            if (off < 4 || off >= strtab_size)
+                return pe_open_fail(f);
+            const char *str = (const char *)(strtab + off);
+            size_t maxn = strtab_size - off;
+            const char *nul = (const char *)memchr(str, 0, maxn);
+            if (!nul)
+                return pe_open_fail(f);
+            size_t slen = (size_t)(nul - str);
+            if (slen >= sizeof(f->sections[i].name))
+                slen = sizeof(f->sections[i].name) - 1;
+            memcpy(f->sections[i].name, str, slen);
+            f->sections[i].name[slen] = '\0';
+        }
+    }
+
     return 0;
 }
 

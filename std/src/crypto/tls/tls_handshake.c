@@ -3279,7 +3279,7 @@ int nci_tls_handle_post_handshake(
 
 int nci_tls_handle_peer_alert(
     neverc_tls_conn_t *conn, const uint8_t *data, size_t data_len) {
-    if (data_len != 2 || (data[0] != 1 && data[0] != 2))
+    if (!data || data_len != 2 || (data[0] != 1 && data[0] != 2))
         return nci_tls_protocol_error(
             conn, TLS_ALERT_DECODE_ERROR,
             "malformed TLS alert");
@@ -3294,3 +3294,67 @@ int nci_tls_handle_peer_alert(
     conn->failure_reason = "TLS peer sent a fatal alert";
     return -1;
 }
+
+#if defined(NEVERC_TLS_TESTING)
+int neverc_tls_test_encrypted_extensions_forbidden(void) {
+    neverc_tls_conn_t conn;
+    memset(&conn, 0, sizeof(conn));
+    neverc_tls_config_t *cfg = neverc_tls_config_new();
+    if (!cfg)
+        return -1;
+    const char *protos[] = {"h2"};
+    neverc_tls_config_set_alpn(cfg, protos, 1);
+
+    static const uint8_t empty_ee[] = { 0x00, 0x00 };
+    uint8_t alert = 0;
+    if (tls_parse_encrypted_extensions(
+            &conn, cfg, empty_ee, sizeof(empty_ee), &alert) != 0) {
+        neverc_tls_config_free(cfg);
+        return -1;
+    }
+
+    static const uint8_t key_share_ee[] = {
+        0x00, 0x08,
+        0x00, 0x33, 0x00, 0x04,
+        0x00, 0x1d, 0x00, 0x00
+    };
+    alert = 0;
+    if (tls_parse_encrypted_extensions(
+            &conn, cfg, key_share_ee, sizeof(key_share_ee),
+            &alert) == 0 ||
+        alert != TLS_ALERT_ILLEGAL_PARAMETER) {
+        neverc_tls_config_free(cfg);
+        return -1;
+    }
+
+    static const uint8_t early_data_ee[] = {
+        0x00, 0x04,
+        0x00, 0x2a, 0x00, 0x00
+    };
+    alert = 0;
+    if (tls_parse_encrypted_extensions(
+            &conn, cfg, early_data_ee, sizeof(early_data_ee),
+            &alert) == 0 ||
+        alert != TLS_ALERT_ILLEGAL_PARAMETER) {
+        neverc_tls_config_free(cfg);
+        return -1;
+    }
+
+    static const uint8_t nonempty_sni_ee[] = {
+        0x00, 0x09,
+        0x00, 0x00, 0x00, 0x05,
+        0x00, 0x03, 0x00, 0x00, 0x00
+    };
+    alert = 0;
+    if (tls_parse_encrypted_extensions(
+            &conn, cfg, nonempty_sni_ee, sizeof(nonempty_sni_ee),
+            &alert) == 0 ||
+        alert != TLS_ALERT_ILLEGAL_PARAMETER) {
+        neverc_tls_config_free(cfg);
+        return -1;
+    }
+
+    neverc_tls_config_free(cfg);
+    return 0;
+}
+#endif

@@ -178,8 +178,9 @@ static void test_template_url_and_script(void) {
         neverc_html_template_data_set(&data, "Link", spaced);
         out = neverc_html_template_render("<a href=\"{{.Link}}\">x</a>", &data);
         check("tab in javascript scheme neutralized",
-              out && strstr(out, "javascript") == NULL &&
-              strstr(out, "href=\"#\"") != NULL);
+              out && strstr(out, "href=\"#\"") != NULL);
+        check("tab scheme not passed through",
+              out && strstr(out, "script:") == NULL);
         free(out);
     }
     {

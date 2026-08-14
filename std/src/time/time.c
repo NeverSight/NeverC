@@ -337,7 +337,8 @@ int neverc_time_parse_rfc3339(const char *s, neverc_time_t *out) {
         int sign = (*p == '-') ? -1 : 1;
         p++;
         int tzh = parse_digits(&p, 2);
-        if (tzh < 0 || tzh > 14 || *p++ != ':') return -1;
+        if (tzh < 0 || tzh > 14) return -1;
+        if (*p == ':') p++;
         int tzm = parse_digits(&p, 2);
         if (tzm < 0 || tzm > 59) return -1;
         if (tzh == 14 && tzm > 0) return -1;

@@ -31,6 +31,8 @@ int neverc_tls_test_config_set_handshake_fragment_size(
 int neverc_tls_test_handshake_reassembly(void);
 int neverc_tls_test_key_schedule_failures(void);
 int neverc_tls_test_record_write_failure(void);
+int neverc_tls_test_reject_ccs_after_handshake(void);
+int neverc_tls_test_encrypted_extensions_forbidden(void);
 int neverc_tls_test_did_resume(neverc_tls_conn_t *conn);
 int neverc_tls_test_corrupt_client_session(
     neverc_tls_config_t *cfg);
@@ -104,6 +106,10 @@ static void test_config(void) {
               neverc_tls_test_key_schedule_failures(), 0);
     check_int("record_write_failure_closes_without_advancing_sequence",
               neverc_tls_test_record_write_failure(), 0);
+    check_int("reject_ccs_after_handshake",
+              neverc_tls_test_reject_ccs_after_handshake(), 0);
+    check_int("reject_forbidden_encrypted_extensions",
+              neverc_tls_test_encrypted_extensions_forbidden(), 0);
     check_int("reject_oversized_test_fragment",
               neverc_tls_test_config_set_handshake_fragment_size(
                   cfg, 16385) != 0,
@@ -977,7 +983,7 @@ static void *fake_server_thread(void *arg) {
                 (void)neverc_tcp_write(
                     ctx->tcp, oversized_server_hello,
                     sizeof(oversized_server_hello));
-            } else {
+            } else if (ctx->response_mode == 3) {
                 static const uint8_t wrong_version_record[] = {
                     22, 0x03, 0x02, 0x00, 0x04,
                     2, 0x00, 0x00, 0x00
@@ -985,6 +991,27 @@ static void *fake_server_thread(void *arg) {
                 (void)neverc_tcp_write(
                     ctx->tcp, wrong_version_record,
                     sizeof(wrong_version_record));
+            } else {
+                /* HelloRetryRequest magic in ServerHello.random. */
+                uint8_t hello_retry[5 + 4 + 2 + 32];
+                memset(hello_retry, 0, sizeof(hello_retry));
+                hello_retry[0] = 22;
+                hello_retry[1] = 0x03;
+                hello_retry[2] = 0x03;
+                hello_retry[4] = 38;
+                hello_retry[5] = 2;
+                hello_retry[8] = 34;
+                hello_retry[9] = 0x03;
+                hello_retry[10] = 0x03;
+                static const uint8_t hrr_random[32] = {
+                    0xCF, 0x21, 0xAD, 0x74, 0xE5, 0x9A, 0x61, 0x11,
+                    0xBE, 0x1D, 0x8C, 0x02, 0x1E, 0x65, 0xB8, 0x91,
+                    0xC2, 0xA2, 0x11, 0x16, 0x7A, 0xBB, 0x8C, 0x5E,
+                    0x07, 0x9E, 0x09, 0xE2, 0xC8, 0xA8, 0x33, 0x9C
+                };
+                memcpy(hello_retry + 11, hrr_random, sizeof(hrr_random));
+                (void)neverc_tcp_write(
+                    ctx->tcp, hello_retry, sizeof(hello_retry));
             }
 
             if (tcp_read_exact(
@@ -1167,6 +1194,60 @@ static void test_plaintext_record_version_ignored(void) {
               ctx.saw_client_hello, 1);
     check_int("ignore_plaintext_version_and_send_decode_error",
               ctx.alert_description, 50);
+    neverc_tls_config_free(config);
+}
+
+static void test_hello_retry_request_alert(void) {
+    printf("[hello_retry_request_alert]\n");
+    neverc_tcp_conn_t *client_tcp = NULL;
+    neverc_tcp_conn_t *server_tcp = NULL;
+    check_int("create_hrr_pipe",
+              neverc_tcp_pipe(&client_tcp, &server_tcp), 0);
+    if (!client_tcp || !server_tcp) {
+        neverc_tcp_close(client_tcp);
+        neverc_tcp_close(server_tcp);
+        return;
+    }
+
+    fake_server_ctx_t ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.tcp = server_tcp;
+    ctx.response_mode = 4;
+    ctx.alert_description = -1;
+#ifdef _WIN32
+    HANDLE thread = CreateThread(
+        NULL, 0, fake_server_thread, &ctx, 0, NULL);
+    int thread_started = thread != NULL;
+#else
+    pthread_t thread;
+    int thread_started =
+        pthread_create(&thread, NULL, fake_server_thread, &ctx) == 0;
+#endif
+    check_int("start_hrr_thread", thread_started, 1);
+    if (!thread_started) {
+        neverc_tcp_close(client_tcp);
+        neverc_tcp_close(server_tcp);
+        return;
+    }
+
+    neverc_tls_config_t *config = neverc_tls_config_new();
+    neverc_tls_config_insecure_skip_verify(config);
+    const char *err = NULL;
+    neverc_tls_conn_t *client =
+        neverc_tls_client(client_tcp, config, &err);
+    check_null("reject_hello_retry_request", client);
+    neverc_tls_close(client);
+    neverc_tcp_close(client_tcp);
+#ifdef _WIN32
+    WaitForSingleObject(thread, INFINITE);
+    CloseHandle(thread);
+#else
+    pthread_join(thread, NULL);
+#endif
+    check_int("hrr_server_saw_client_hello",
+              ctx.saw_client_hello, 1);
+    check_int("send_handshake_failure_for_hrr",
+              ctx.alert_description, 40);
     neverc_tls_config_free(config);
 }
 
@@ -1474,7 +1555,7 @@ static void test_client_server(void) {
 #if defined(NEVERC_TLS_TESTING)
     check_int("fragment_server_handshake_records",
               neverc_tls_test_config_set_handshake_fragment_size(
-                  server_config, 7),
+                  server_config, 3),
               0);
     check_int("fragment_client_handshake_records",
               neverc_tls_test_config_set_handshake_fragment_size(
@@ -2405,6 +2486,7 @@ int main(void) {
     test_unexpected_server_record_alert();
     test_malformed_server_hello_alert();
     test_plaintext_record_version_ignored();
+    test_hello_retry_request_alert();
     test_oversized_server_handshake_alert();
     test_malformed_client_hello_alert();
     test_oversized_client_handshake_alert();

@@ -34,6 +34,12 @@ static void test_env(void) {
     ASSERT_TRUE(strcmp(v, "hello") == 0);
     ASSERT_EQ(neverc_os_unsetenv("NEVERC_TEST_KEY"), 0);
     ASSERT_TRUE(neverc_os_getenv("NEVERC_TEST_KEY") == NULL);
+#if defined(_WIN32)
+    ASSERT_EQ(neverc_os_setenv("NEVERC_EMPTY_VAR", ""), 0);
+    v = neverc_os_getenv("NEVERC_EMPTY_VAR");
+    ASSERT_TRUE(v != NULL && v[0] == '\0');
+    neverc_os_unsetenv("NEVERC_EMPTY_VAR");
+#endif
 }
 
 static void test_getwd(void) {

@@ -236,6 +236,7 @@ int neverc_suffixarray_new(neverc_suffixarray_t *idx, const unsigned char *data,
 }
 
 void neverc_suffixarray_free(neverc_suffixarray_t *idx) {
+    if (!idx) return;
     if (idx->sa)   { free(idx->sa);   idx->sa   = NULL; }
     if (idx->llcp) { free(idx->llcp); idx->llcp = NULL; }
     if (idx->rlcp) { free(idx->rlcp); idx->rlcp = NULL; }
@@ -340,10 +341,11 @@ int neverc_suffixarray_lookup(const neverc_suffixarray_t *idx,
                                const unsigned char *pattern, size_t pat_len,
                                int32_t *results, size_t max_results,
                                size_t *nresults) {
-    if (!idx->sa || idx->sa_len == 0 || pat_len == 0) {
+    if (!idx || !idx->sa || idx->sa_len == 0 || pat_len == 0) {
         if (nresults) *nresults = 0;
         return 0;
     }
+    if (!pattern) return -1;
 
     int32_t lo = sa_bound(idx, pattern, pat_len, 0);
     int32_t hi = sa_bound(idx, pattern, pat_len, 1);
@@ -360,13 +362,14 @@ int neverc_suffixarray_lookup(const neverc_suffixarray_t *idx,
 
 size_t neverc_suffixarray_count(const neverc_suffixarray_t *idx,
                                 const unsigned char *pattern, size_t pat_len) {
-    if (!idx->sa || idx->sa_len == 0 || pat_len == 0) return 0;
+    if (!idx || !idx->sa || idx->sa_len == 0 || pat_len == 0 || !pattern)
+        return 0;
     int32_t lo = sa_bound(idx, pattern, pat_len, 0);
     int32_t hi = sa_bound(idx, pattern, pat_len, 1);
     return (size_t)(hi - lo);
 }
 
 int neverc_suffixarray_at(const neverc_suffixarray_t *idx, size_t i) {
-    if (i >= idx->sa_len) return -1;
+    if (!idx || !idx->sa || i >= idx->sa_len) return -1;
     return idx->sa[i];
 }

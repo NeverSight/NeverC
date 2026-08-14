@@ -162,7 +162,7 @@ int nci_tls_send_encrypted_unlocked(
     neverc_tls_conn_t *conn, uint8_t inner_type,
     const uint8_t *data, size_t len) {
     if (!conn || !conn->tcp || (!data && len != 0) ||
-        len > TLS_MAX_PLAINTEXT || conn->write_closed)
+        len >= TLS_MAX_PLAINTEXT || conn->write_closed)
         return -1;
     tls_traffic_keys_t *keys = &conn->write_keys;
     if (keys->seq == UINT64_MAX) {
@@ -433,6 +433,48 @@ int neverc_tls_test_fuzz_handshake_reassembly(
         }
     }
     nci_tls_clear_handshake_buffer(&conn);
+    return 0;
+}
+
+int neverc_tls_test_reject_ccs_after_handshake(void) {
+    neverc_tcp_conn_t *reader = NULL;
+    neverc_tcp_conn_t *writer = NULL;
+    if (neverc_tcp_pipe(&reader, &writer) != 0 || !reader || !writer) {
+        neverc_tcp_close(reader);
+        neverc_tcp_close(writer);
+        return -1;
+    }
+
+    neverc_tls_conn_t *conn = nci_tls_conn_new(reader, 1);
+    if (!conn) {
+        neverc_tcp_close(reader);
+        neverc_tcp_close(writer);
+        return -1;
+    }
+    conn->application_keys_active = 1;
+
+    static const uint8_t ccs_record[] = {
+        TLS_CT_CHANGE_CIPHER_SPEC, 0x03, 0x03, 0x00, 0x01, 0x01
+    };
+    if (neverc_tcp_write(writer, ccs_record, sizeof(ccs_record)) !=
+        (int)sizeof(ccs_record)) {
+        neverc_tls_close(conn);
+        neverc_tcp_close(writer);
+        return -1;
+    }
+
+    uint8_t inner_type = 0;
+    uint8_t data[TLS_MAX_PLAINTEXT];
+    size_t data_len = 0;
+    int result = nci_tls_recv_decrypt(conn, &inner_type, data, &data_len);
+    const char *reason = conn->failure_reason;
+    neverc_tls_close(conn);
+    neverc_tcp_close(writer);
+    if (result == 0)
+        return -1;
+    if (!reason ||
+        strstr(reason, "change_cipher_spec after handshake") == NULL)
+        return -1;
     return 0;
 }
 
@@ -782,9 +824,15 @@ int nci_tls_recv_decrypt(neverc_tls_conn_t *conn,
             "TLS inner plaintext has no content type");
     }
 
+    if (ct_body_len > TLS_MAX_PLAINTEXT) {
+        nci_tls_secure_free(plaintext, rec_len - TLS_AEAD_TAG_SIZE);
+        return nci_tls_protocol_error(
+            conn, TLS_ALERT_RECORD_OVERFLOW,
+            "TLS inner plaintext exceeds the configured limit");
+    }
     *out_inner_type = plaintext[ct_body_len - 1];
     ct_body_len--;
-    if (ct_body_len > TLS_MAX_PLAINTEXT) {
+    if (0) {
         nci_tls_secure_free(plaintext, rec_len - TLS_AEAD_TAG_SIZE);
         return nci_tls_protocol_error(
             conn, TLS_ALERT_RECORD_OVERFLOW,
