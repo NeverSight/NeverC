@@ -1,6 +1,13 @@
 #include "neverc/std/errors.h"
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+
+static int errors_size_add(size_t left, size_t right, size_t *out) {
+    if (right > SIZE_MAX - left) return 0;
+    *out = left + right;
+    return 1;
+}
 
 static char *dup_string(const char *s) {
     if (!s) return NULL;
@@ -53,7 +60,10 @@ neverc_error_t *neverc_errors_wrap(const char *text, neverc_error_t *cause) {
     if (cause && cause->msg) {
         size_t tlen = strlen(text);
         size_t clen = strlen(cause->msg);
-        char *combined = (char *)malloc(tlen + 2 + clen + 1);
+        size_t total;
+        char *combined = NULL;
+        if (errors_size_add(tlen, 3, &total) && errors_size_add(total, clen, &total))
+            combined = (char *)malloc(total);
         if (combined) {
             for (size_t i = 0; i < tlen; i++) combined[i] = text[i];
             combined[tlen] = ':';
@@ -81,31 +91,52 @@ neverc_error_t *neverc_errors_join(neverc_error_t **errs, size_t count) {
     size_t total_len = 0;
     for (size_t i = 0; i < count; i++) {
         if (errs[i] && errs[i]->msg) {
-            if (valid > 0) total_len += 1;
-            total_len += strlen(errs[i]->msg);
+            size_t mlen = strlen(errs[i]->msg);
+            if (valid > 0 && !errors_size_add(total_len, 1, &total_len))
+                return NULL;
+            if (!errors_size_add(total_len, mlen, &total_len))
+                return NULL;
             valid++;
         }
     }
     if (valid == 0) return NULL;
 
-    char *combined = (char *)malloc(total_len + 1);
+    size_t alloc_len;
+    if (!errors_size_add(total_len, 1, &alloc_len)) return NULL;
+    char *combined = (char *)malloc(alloc_len);
     if (!combined) return NULL;
     size_t pos = 0;
     int first = 1;
+    neverc_error_t *chain = NULL;
+    neverc_error_t *tail = NULL;
     for (size_t i = 0; i < count; i++) {
         if (errs[i] && errs[i]->msg) {
             if (!first) combined[pos++] = '\n';
             size_t mlen = strlen(errs[i]->msg);
             for (size_t j = 0; j < mlen; j++) combined[pos++] = errs[i]->msg[j];
             first = 0;
+
+            neverc_error_t *node = neverc_errors_new(errs[i]->msg);
+            if (!node) {
+                neverc_errors_free(chain);
+                free(combined);
+                return NULL;
+            }
+            if (!chain) chain = node;
+            else tail->wrapped = node;
+            tail = node;
         }
     }
     combined[pos] = '\0';
 
     neverc_error_t *e = (neverc_error_t *)malloc(sizeof(neverc_error_t));
-    if (!e) { free(combined); return NULL; }
+    if (!e) {
+        neverc_errors_free(chain);
+        free(combined);
+        return NULL;
+    }
     e->msg = combined;
-    e->wrapped = NULL;
+    e->wrapped = chain;
     e->owned = 1;
     return e;
 }

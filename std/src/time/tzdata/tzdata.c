@@ -281,9 +281,7 @@ static const char *iana_from_tz_string(const char *tz) {
     if (!tz[0]) return NULL;
     const char *iana = tz;
     for (const char *p = tz; *p; p++) {
-        if (p[0] == 'z' && p[1] == 'o' && p[2] == 'n' && p[3] == 'e' &&
-            p[4] == 'i' && p[5] == 'n' && p[6] == 'f' && p[7] == 'o' &&
-            p[8] == '/')
+        if (nc_strpfx(p, "zoneinfo/"))
             iana = p + 9;
     }
     return iana[0] ? iana : NULL;

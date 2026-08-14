@@ -6,6 +6,10 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#if !defined(_WIN32)
+#include <unistd.h>
+#include <sys/stat.h>
+#endif
 
 static int tests_run = 0, tests_passed = 0, tests_failed = 0;
 
@@ -184,6 +188,43 @@ static void test_look_path(void) {
 
     p = neverc_exec_look_path("this_command_does_not_exist_xyz", buf, sizeof(buf));
     ASSERT_TRUE(p == NULL);
+
+#if !defined(_WIN32)
+    p = neverc_exec_look_path("bin", buf, sizeof(buf));
+    if (p) {
+        struct stat st;
+        ASSERT_TRUE(stat(p, &st) == 0 && S_ISREG(st.st_mode));
+    } else {
+        tests_run++;
+        tests_passed++;
+    }
+    ASSERT_TRUE(neverc_exec_look_path("/usr/bin", buf, sizeof(buf)) == NULL);
+
+    const char *old_path = getenv("PATH");
+    char *saved = old_path ? strdup(old_path) : NULL;
+    char cwd[1024], script[1200], name[64];
+    ASSERT_TRUE(getcwd(cwd, sizeof(cwd)) != NULL);
+    snprintf(name, sizeof(name), "neverc_lookpath_%d", (int)getpid());
+    snprintf(script, sizeof(script), "%s/%s", cwd, name);
+    FILE *sf = fopen(script, "w");
+    ASSERT_TRUE(sf != NULL);
+    if (sf) {
+        fputs("#!/bin/sh\nexit 0\n", sf);
+        fclose(sf);
+    }
+    chmod(script, 0755);
+    setenv("PATH", ":", 1);
+    p = neverc_exec_look_path(name, buf, sizeof(buf));
+    ASSERT_TRUE(p != NULL && strcmp(p, "./") != 0);
+    ASSERT_TRUE(p != NULL && p[0] == '.' && p[1] == '/');
+    unlink(script);
+    if (saved) {
+        setenv("PATH", saved, 1);
+        free(saved);
+    } else {
+        unsetenv("PATH");
+    }
+#endif
 }
 
 static void test_combined_output(void) {
@@ -211,6 +252,18 @@ static void test_combined_output(void) {
 }
 
 #if !defined(_WIN32)
+static void test_env_still_searches_path(void) {
+    printf("[env_path_search]\n");
+    const char *env[] = { "PATH=/usr/bin:/bin", "HOME=/" };
+    neverc_exec_cmd_t *cmd = neverc_exec_command("true", NULL, 0);
+    ASSERT_TRUE(cmd != NULL);
+    neverc_exec_cmd_set_env(cmd, env, 2);
+    neverc_exec_exit_status_t st = {0};
+    ASSERT_INT_EQ(neverc_exec_cmd_run(cmd, &st), 0);
+    ASSERT_INT_EQ(st.exit_code, 0);
+    neverc_exec_cmd_free(cmd);
+}
+
 static void test_set_dir(void) {
     printf("[set_dir]\n");
     const char *args[] = {"-c", "pwd"};
@@ -262,6 +315,7 @@ int main(int argc, char **argv) {
     test_look_path();
     test_combined_output();
 #if !defined(_WIN32)
+    test_env_still_searches_path();
     test_set_dir();
 #endif
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);

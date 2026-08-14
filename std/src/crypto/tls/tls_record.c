@@ -694,6 +694,12 @@ int nci_tls_recv_decrypt(neverc_tls_conn_t *conn,
             return nci_tls_protocol_error(
                 conn, TLS_ALERT_DECODE_ERROR,
                 "malformed TLS change_cipher_spec record");
+        /* RFC 8446 D.4: CCS is only a middlebox dummy before application
+         * traffic keys. After that point it is unexpected_message. */
+        if (conn->application_keys_active)
+            return nci_tls_protocol_error(
+                conn, TLS_ALERT_UNEXPECTED_MESSAGE,
+                "TLS change_cipher_spec after handshake completion");
         if (++conn->non_advancing_records >
             TLS_MAX_NON_ADVANCING_RECORDS)
             return nci_tls_protocol_error(

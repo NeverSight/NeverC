@@ -19,7 +19,7 @@ int neverc_path_dir(const char *path, char *buf, size_t bufsize) {
     if (i == 0) {
         tmp[0] = '\0';
     } else {
-        if (i >= sizeof(tmp)) i = sizeof(tmp) - 1;
+        if (i >= sizeof(tmp)) return -1;
         memcpy(tmp, path, i);
         tmp[i] = '\0';
     }

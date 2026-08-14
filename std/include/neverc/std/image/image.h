@@ -27,6 +27,7 @@ neverc_point_t neverc_pt(int x, int y);
 neverc_point_t neverc_point_add(neverc_point_t p, neverc_point_t q);
 neverc_point_t neverc_point_sub(neverc_point_t p, neverc_point_t q);
 neverc_point_t neverc_point_mul(neverc_point_t p, int k);
+/* k == 0 returns p; INT_MIN / -1 saturates at INT_MIN. */
 neverc_point_t neverc_point_div(neverc_point_t p, int k);
 int            neverc_point_eq(neverc_point_t p, neverc_point_t q);
 int            neverc_point_in(neverc_point_t p, neverc_rect_t r);
@@ -34,6 +35,7 @@ int            neverc_point_in(neverc_point_t p, neverc_rect_t r);
 neverc_point_t neverc_point_mod(neverc_point_t p, neverc_rect_t r);
 
 neverc_rect_t neverc_rect(int x0, int y0, int x1, int y1);
+/* Saturates at INT_MAX/INT_MIN if max-min does not fit in int. */
 int           neverc_rect_dx(neverc_rect_t r);
 int           neverc_rect_dy(neverc_rect_t r);
 neverc_rect_t neverc_rect_add(neverc_rect_t r, neverc_point_t p);

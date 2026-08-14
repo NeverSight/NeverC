@@ -409,6 +409,10 @@ static void test_errors(void) {
     n = neverc_regexp_syntax_parse("a{3", 0, &err);
     check_null("bad repeat", n);
 
+    n = neverc_regexp_syntax_parse("[z-a]", 0, &err);
+    check_null("inverted class range", n);
+    check_not_null("inverted class range err", (void *)(size_t)(err != NULL));
+
     char deep[902];
     for (int i = 0; i < 450; i++) deep[i] = '(';
     deep[450] = 'a';

@@ -842,9 +842,8 @@ static int route_parse_pattern(route_t *r, const char *pattern) {
         while ((cursor = strchr(cursor, '{')) != NULL) {
             const char *close = strchr(cursor, '}');
             if (!close) break;
-            size_t namelen = (size_t)(close - cursor - 1);
-            if (namelen >= 3 && close[-3] == '.' && close[-2] == '.' &&
-                close[-1] == '.' && close[1] != '\0') {
+            if ((size_t)(close - cursor) >= 4 && close[-3] == '.' &&
+                close[-2] == '.' && close[-1] == '.' && close[1] != '\0') {
                 free(path_pattern);
                 free(method);
                 free(pattern_copy);

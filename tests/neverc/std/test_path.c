@@ -1,5 +1,6 @@
 #include "neverc/std/path.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static int tests_run = 0;
@@ -59,6 +60,16 @@ static void test_dir(void) {
 
     neverc_path_dir("", buf, sizeof(buf));
     check_str("dir empty", buf, ".");
+
+    char *longpath = (char *)malloc(5003);
+    if (longpath) {
+        memset(longpath, 'a', 5000);
+        longpath[5000] = '/';
+        longpath[5001] = 'b';
+        longpath[5002] = '\0';
+        check_int("dir overflow", neverc_path_dir(longpath, buf, sizeof(buf)), -1);
+        free(longpath);
+    }
 }
 
 /* ===== Test: Ext ===== */

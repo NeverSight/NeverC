@@ -22,7 +22,12 @@ neverc_point_t neverc_point_mul(neverc_point_t p, int k) {
 }
 
 neverc_point_t neverc_point_div(neverc_point_t p, int k) {
-    return (neverc_point_t){p.x / k, p.y / k};
+    if (k == 0) return p;
+    /* INT_MIN / -1 overflows a two's-complement int. */
+    return (neverc_point_t){
+        (k == -1 && p.x == INT_MIN) ? INT_MIN : p.x / k,
+        (k == -1 && p.y == INT_MIN) ? INT_MIN : p.y / k
+    };
 }
 
 int neverc_point_eq(neverc_point_t p, neverc_point_t q) {
@@ -58,8 +63,15 @@ neverc_rect_t neverc_rect(int x0, int y0, int x1, int y1) {
     return (neverc_rect_t){{x0, y0}, {x1, y1}};
 }
 
-int neverc_rect_dx(neverc_rect_t r) { return r.max.x - r.min.x; }
-int neverc_rect_dy(neverc_rect_t r) { return r.max.y - r.min.y; }
+static int rect_delta(int min, int max) {
+    int64_t d = (int64_t)max - (int64_t)min;
+    if (d > INT_MAX) return INT_MAX;
+    if (d < INT_MIN) return INT_MIN;
+    return (int)d;
+}
+
+int neverc_rect_dx(neverc_rect_t r) { return rect_delta(r.min.x, r.max.x); }
+int neverc_rect_dy(neverc_rect_t r) { return rect_delta(r.min.y, r.max.y); }
 
 neverc_rect_t neverc_rect_add(neverc_rect_t r, neverc_point_t p) {
     return (neverc_rect_t){

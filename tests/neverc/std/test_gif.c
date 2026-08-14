@@ -176,6 +176,12 @@ static void test_invalid_data(void) {
     frame.left = 0;
     frame.disposal_method = 4;
     ASSERT_EQ(neverc_gif_encode(&frame, &output, &output_length), -1);
+    frame.disposal_method = 0;
+    frame.width = 1;
+    frame.height = 1;
+    frame.palette_size = 2;
+    pixel = 2; /* index outside the 2-color palette */
+    ASSERT_EQ(neverc_gif_encode(&frame, &output, &output_length), -1);
 }
 
 static void test_single_color(void) {
@@ -324,6 +330,55 @@ static void test_interlaced_decode(void) {
     free(gif);
 }
 
+static void test_netscape_loop_count(void) {
+    printf("[netscape_loop_count]\n");
+    neverc_gif_frame_t frame;
+    memset(&frame, 0, sizeof(frame));
+    frame.width = 2;
+    frame.height = 2;
+    frame.palette_size = 2;
+    frame.palette[0] = (neverc_gif_color_t){0, 0, 0};
+    frame.palette[1] = (neverc_gif_color_t){255, 255, 255};
+    frame.indices = (uint8_t *)calloc(1, 4);
+    ASSERT_TRUE(frame.indices != NULL);
+    if (!frame.indices) return;
+
+    uint8_t *gif = NULL;
+    size_t glen = 0;
+    ASSERT_EQ(neverc_gif_encode(&frame, &gif, &glen), 0);
+    ASSERT_TRUE(gif != NULL && glen > 13);
+    if (!gif) { free(frame.indices); return; }
+
+    neverc_gif_image_t plain;
+    ASSERT_EQ(neverc_gif_decode(gif, glen, &plain), 0);
+    ASSERT_EQ(plain.loop_count, 0);
+    neverc_gif_free(&plain);
+
+    uint8_t packed = gif[10];
+    int gct = (packed & 0x80) ? (1 << ((packed & 7) + 1)) : 0;
+    size_t insert = 13 + (size_t)gct * 3;
+    ASSERT_TRUE(insert <= glen);
+    static const uint8_t netscape[] = {
+        0x21, 0xFF, 0x0B,
+        'N','E','T','S','C','A','P','E','2','.','0',
+        0x03, 0x01, 0x04, 0x00, 0x00
+    };
+    uint8_t *looped = (uint8_t *)malloc(glen + sizeof(netscape));
+    ASSERT_TRUE(looped != NULL);
+    if (looped) {
+        memcpy(looped, gif, insert);
+        memcpy(looped + insert, netscape, sizeof(netscape));
+        memcpy(looped + insert + sizeof(netscape), gif + insert, glen - insert);
+        neverc_gif_image_t img;
+        ASSERT_EQ(neverc_gif_decode(looped, glen + sizeof(netscape), &img), 0);
+        ASSERT_EQ(img.loop_count, 4);
+        neverc_gif_free(&img);
+        free(looped);
+    }
+    free(gif);
+    free(frame.indices);
+}
+
 int main(void) {
     printf("NeverC image/gif tests\n");
     test_encode_decode();
@@ -332,6 +387,7 @@ int main(void) {
     test_single_color();
     test_large_roundtrip();
     test_interlaced_decode();
+    test_netscape_loop_count();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

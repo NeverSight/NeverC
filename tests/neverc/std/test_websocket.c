@@ -632,6 +632,35 @@ static void test_http_ws_upgrade(void) {
     check_str("echo body", body, "http+ws:via-http");
 
     neverc_tcp_close(c);
+
+    c = neverc_tcp_dial(addr, &err);
+    check_not_null("dial http reject", c);
+    if (c) {
+        neverc_tcp_set_timeout(c, 5000);
+        const char *bad =
+            "GET /ws HTTP/1.1\r\n"
+            "Host: localhost\r\n"
+            "Upgrade: websocket\r\n"
+            "Connection: Upgrade\r\n"
+            "Sec-WebSocket-Version: 130\r\n"
+            "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+            "\r\n";
+        neverc_tcp_write(c, bad, strlen(bad));
+        total = 0;
+        memset(resp, 0, sizeof(resp));
+        while (total < (int)sizeof(resp) - 1) {
+            int n = neverc_tcp_read(c, resp + total,
+                                    sizeof(resp) - 1 - (size_t)total);
+            if (n <= 0) break;
+            total += n;
+            resp[total] = '\0';
+            if (strstr(resp, "\r\n\r\n")) break;
+        }
+        check_int("reject version 130 upgrade",
+                  strstr(resp, "101") == NULL, 1);
+        neverc_tcp_close(c);
+    }
+
     kill(server_pid, SIGTERM);
     waitpid(server_pid, NULL, 0);
 }

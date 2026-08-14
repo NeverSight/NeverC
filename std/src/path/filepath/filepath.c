@@ -190,7 +190,22 @@ clean_failed:
 const char *neverc_filepath_join(const char *a, const char *b, char *buf, size_t buf_len) {
     if (!a || *a == '\0') return neverc_filepath_clean(b, buf, buf_len);
     if (!b || *b == '\0') return neverc_filepath_clean(a, buf, buf_len);
-    if (neverc_filepath_isabs(b)) return neverc_filepath_clean(b, buf, buf_len);
+    if (neverc_filepath_isabs(b) || volume_name_len(b) > 0)
+        return neverc_filepath_clean(b, buf, buf_len);
+#ifdef _WIN32
+    if (is_sep(b[0])) {
+        size_t avol = volume_name_len(a);
+        size_t blen = strlen(b);
+        if (avol > SIZE_MAX - blen - 1) return NULL;
+        char *rooted = (char *)malloc(avol + blen + 1);
+        if (!rooted) return NULL;
+        memcpy(rooted, a, avol);
+        memcpy(rooted + avol, b, blen + 1);
+        const char *result = neverc_filepath_clean(rooted, buf, buf_len);
+        free(rooted);
+        return result;
+    }
+#endif
 
     size_t alen = strlen(a), blen = strlen(b);
     if (blen > SIZE_MAX - 2 || alen > SIZE_MAX - blen - 2) return NULL;

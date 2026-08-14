@@ -1,6 +1,7 @@
 #include "neverc/std/encoding/base64.h"
 #include "neverc/std/net/smtp.h"
 #include "neverc/std/net/tcp.h"
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

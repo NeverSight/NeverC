@@ -31,7 +31,7 @@ typedef struct {
 typedef struct {
     uint32_t width;
     uint32_t height;
-    int loop_count;             /* 0 = infinite loop */
+    int loop_count;             /* Netscape 2.0 loop count; 0 = infinite */
     neverc_gif_frame_t *frames;
     int num_frames;
     neverc_gif_color_t background;

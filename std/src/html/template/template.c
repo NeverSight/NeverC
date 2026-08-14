@@ -554,6 +554,7 @@ static int html_in_url_attr(const char *buf, size_t len) {
     const char *name = NULL;
     size_t nlen = 0;
     if (html_trailing_attr(buf, len, &quoted, &name, &nlen)) {
+        (void)quoted;
         static const char *urls[] = {
             "href", "src", "action", "formaction", "cite", "poster",
             "background", "data", "srcset", "ping", "xlink:href", NULL
@@ -571,6 +572,7 @@ static int html_in_event_attr(const char *buf, size_t len) {
     const char *name = NULL;
     size_t nlen = 0;
     if (!html_trailing_attr(buf, len, &quoted, &name, &nlen)) return 0;
+    (void)quoted;
     return nlen > 2 && html_ci_eq_n(name, "on", 2);
 }
 
@@ -579,6 +581,7 @@ static int html_in_style_attr(const char *buf, size_t len) {
     const char *name = NULL;
     size_t nlen = 0;
     if (!html_trailing_attr(buf, len, &quoted, &name, &nlen)) return 0;
+    (void)quoted;
     return html_attr_name_eq(name, nlen, "style");
 }
 

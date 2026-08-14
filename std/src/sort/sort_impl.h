@@ -445,7 +445,7 @@ static void nci_pdqsort_loop(char *base, size_t n, size_t es,
 /* --- Public PDQSort entry --- */
 
 static void nci_pdqsort(void *base, size_t n, size_t es, nci_cmp_fn cmp) {
-    if (n <= 1 || es == 0) return;
+    if (!base || !cmp || n <= 1 || es == 0 || n > SIZE_MAX / es) return;
     char stack_tmp[256];
     char *tmp = es <= sizeof(stack_tmp) ? stack_tmp : (char *)malloc(es);
     if (!tmp) {
@@ -511,7 +511,8 @@ static void nci_nth_element_loop(char *base, size_t n, size_t es,
 
 static void nci_nth_element(void *base, size_t n, size_t es,
                             nci_cmp_fn cmp, size_t nth) {
-    if (n <= 1 || es == 0 || nth >= n) return;
+    if (!base || !cmp || n <= 1 || es == 0 || nth >= n || n > SIZE_MAX / es)
+        return;
     char stack_tmp[256];
     char *tmp = es <= sizeof(stack_tmp) ? stack_tmp : (char *)malloc(es);
     if (!tmp) {
@@ -977,7 +978,7 @@ static void NAME##_loop_(TYPE *a, size_t n, int limit) {                     \
     }                                                                        \
 }                                                                            \
 static void NAME(TYPE *a, size_t n) {                                        \
-    if (n <= 1) return;                                                      \
+    if (!a || n <= 1) return;                                                \
     NAME##_loop_(a, n, nci_log2(n)+1);                                       \
 }
 
@@ -1085,7 +1086,7 @@ static void nci_sort_strings_rec(const char **a, size_t lo, size_t hi,
 }
 
 static void nci_sort_strings(const char **a, size_t n) {
-    if (n <= 1) return;
+    if (!a || n <= 1) return;
     nci_sort_strings_rec(a, 0, n - 1, 0, 2 * nci_log2(n) + 3);
 }
 

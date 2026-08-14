@@ -345,6 +345,53 @@ static void test_verify_pss_sha384_sha512(void) {
     neverc_rsa_public_key_free(&public_key);
 }
 
+static void test_reject_weak_public_exponent(void) {
+    printf("[reject_weak_public_exponent]\n");
+    /* 1024-bit n from the PSS vector; e=1 makes verify the identity map. */
+    static const char modulus[] =
+        "E46058153C0023B64C659D555395C044D1DDCA1D823FB43047305775E3C8E5F1"
+        "A414F555E50EE5CD2DC1B21C5F3FBA992FBD4F6592981DFD2D08BE9E514496B"
+        "B16D8A6C4841561D3027780119E392601D7E662EBE2B60E2A8663E7A70BE4AE1"
+        "0DF3BF095200C86CD61BFF253627CC0A0EF20A91219A737A323FB3110B061BC4B";
+    static const unsigned char digest_info[] = {
+        0x30, 0x31, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86,
+        0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01, 0x05,
+        0x00, 0x04, 0x20
+    };
+    neverc_rsa_public_key_t pub;
+    neverc_rsa_public_key_init(&pub);
+    ASSERT_INT_EQ(neverc_bigint_set_string(&pub.n, modulus, 16), 0);
+    neverc_bigint_set_int64(&pub.e, 1);
+
+    unsigned char hash[NEVERC_SHA256_DIGEST_SIZE];
+    neverc_sha256_sum((const unsigned char *)"e=1", 3, hash);
+
+    unsigned char em[128];
+    em[0] = 0x00;
+    em[1] = 0x01;
+    memset(em + 2, 0xff, 74);
+    em[76] = 0x00;
+    memcpy(em + 77, digest_info, sizeof(digest_info));
+    memcpy(em + 96, hash, sizeof(hash));
+
+    ASSERT_TRUE(neverc_rsa_verify_pkcs1v15_sha256(
+                    &pub, hash, sizeof(hash), em, sizeof(em)) != 0);
+    ASSERT_TRUE(neverc_rsa_verify_pss_sha256(
+                    &pub, hash, sizeof(hash), em, sizeof(em)) != 0);
+
+    unsigned char out[128];
+    size_t out_len = 99;
+    ASSERT_INT_EQ(neverc_rsa_encrypt_pkcs1v15(
+                      &pub, hash, 8, out, sizeof(out), &out_len), -1);
+    ASSERT_TRUE(out_len == 0);
+
+    neverc_bigint_set_int64(&pub.e, 2);
+    ASSERT_TRUE(neverc_rsa_verify_pkcs1v15_sha256(
+                    &pub, hash, sizeof(hash), em, sizeof(em)) != 0);
+
+    neverc_rsa_public_key_free(&pub);
+}
+
 static void test_init_free(void) {
     printf("[init_free]\n");
     neverc_rsa_public_key_t pub;
@@ -366,6 +413,7 @@ int main(void) {
     test_verify_pkcs1v15_sha384_sha512();
     test_verify_pss_sha256();
     test_verify_pss_sha384_sha512();
+    test_reject_weak_public_exponent();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

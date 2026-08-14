@@ -64,6 +64,22 @@ static void test_character_classes(void) {
     check_bool("\\d no", neverc_regexp_match_string("\\d+", "abc"), 0);
     check_bool("\\w", neverc_regexp_match_string("\\w+", "hello_123"), 1);
     check_bool("\\s", neverc_regexp_match_string("\\s+", "  \t"), 1);
+    check_bool("\\s formfeed", neverc_regexp_match_string("\\s", "\f"), 1);
+    check_bool("\\s vtab", neverc_regexp_match_string("\\s", "\v"), 1);
+    check_bool("[\\s] formfeed", neverc_regexp_match_string("[\\s]", "\f"), 1);
+    check_bool("[\\s] vtab", neverc_regexp_match_string("[\\s]", "\v"), 1);
+    check_bool("\\n newline", neverc_regexp_match_string("\\n", "\n"), 1);
+    check_bool("[\\n] newline", neverc_regexp_match_string("[\\n]", "\n"), 1);
+    check_bool("\\n not letter n", neverc_regexp_match_string("\\n", "n"), 0);
+    check_bool("[]] literal bracket", neverc_regexp_match_string("[]]", "]"), 1);
+    check_bool("[]a] a", neverc_regexp_match_string("[]a]", "a"), 1);
+    check_bool("[]a] bracket", neverc_regexp_match_string("[]a]", "]"), 1);
+    check_bool("[\\D] letter", neverc_regexp_match_string("[\\D]", "a"), 1);
+    check_bool("[\\D] digit", neverc_regexp_match_string("[\\D]", "0"), 0);
+    check_bool("{ literal", neverc_regexp_match_string("{", "{"), 1);
+    check_bool("{3} literal braces", neverc_regexp_match_string("{3}", "{3}"), 1);
+    check_bool("] literal", neverc_regexp_match_string("]", "]"), 1);
+    check_bool("a] literal", neverc_regexp_match_string("a]", "a]"), 1);
 }
 
 static void test_find(void) {
@@ -296,7 +312,7 @@ static void test_invalid_inputs(void) {
     check_bool("null pattern rejected", re == NULL && err != NULL, 1);
 
     static const char *invalid[] = {
-        "[abc", "[]", "[z-a]", "a)", "a]", "\\", "a**", "a+?"
+        "[abc", "[]", "[z-a]", "a)", "\\", "a**", "a+?"
     };
     for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
         err = NULL;

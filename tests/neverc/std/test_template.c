@@ -175,6 +175,34 @@ static void test_range_subset(void) {
     neverc_template_data_free(&data);
 }
 
+static void test_action_whitespace(void) {
+    printf("[action whitespace]\n");
+    neverc_template_data_t data;
+    neverc_template_data_init(&data);
+    neverc_template_data_set(&data, "Show", "1");
+    neverc_template_data_set(&data, "Present", "value");
+    neverc_template_data_set(&data, "Name", "Ada");
+    size_t outlen = 0;
+
+    char *r = neverc_template_render("{{if\n.Show}}yes{{end}}", &data, &outlen);
+    check_str("if newline", r, "yes");
+    free(r);
+
+    r = neverc_template_render("{{if\t.Show}}yes{{end}}", &data, &outlen);
+    check_str("if tab", r, "yes");
+    free(r);
+
+    r = neverc_template_render("A{{range\t.Present}}B{{end}}C", &data, &outlen);
+    check_str("range tab", r, "ABC");
+    free(r);
+
+    r = neverc_template_render("Hi {{.Name\n}}!", &data, &outlen);
+    check_str("var trailing newline", r, "Hi Ada!");
+    free(r);
+
+    neverc_template_data_free(&data);
+}
+
 static void test_parse_errors(void) {
     printf("[parse errors]\n");
     const char *bad[] = {
@@ -233,6 +261,7 @@ int main(void) {
     test_complex();
     test_falsy_values();
     test_range_subset();
+    test_action_whitespace();
     test_parse_errors();
     test_null_safety();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);

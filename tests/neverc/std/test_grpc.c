@@ -218,6 +218,42 @@ static void grpc_test_metadata_limits(void) {
     CHECK(result && result->error &&
           strcmp(result->error, "invalid gRPC metadata") == 0);
     neverc_grpc_result_free(result);
+
+    neverc_grpc_metadata_t reserved = {
+        "grpc-status", &byte, 1U};
+    result = neverc_grpc_client_call(
+        (neverc_h2_client_t *)(void *)&client_storage, NULL,
+        "/test.Echo/Unary", NEVERC_GRPC_UNARY, &reserved, 1U,
+        &request, 1U, 1024U);
+    CHECK(result != NULL);
+    CHECK(result && result->error &&
+          strcmp(result->error, "invalid gRPC metadata") == 0);
+    neverc_grpc_result_free(result);
+
+    result = neverc_grpc_client_call(
+        (neverc_h2_client_t *)(void *)&client_storage, NULL,
+        "/evil\r\n:status", NEVERC_GRPC_UNARY, NULL, 0U,
+        &request, 1U, 1024U);
+    CHECK(result != NULL);
+    CHECK(result && result->error &&
+          strcmp(result->error, "invalid gRPC call") == 0);
+    neverc_grpc_result_free(result);
+
+    result = neverc_grpc_client_call(
+        (neverc_h2_client_t *)(void *)&client_storage, NULL,
+        "/noservice", NEVERC_GRPC_UNARY, NULL, 0U,
+        &request, 1U, 1024U);
+    CHECK(result != NULL);
+    CHECK(result && result->error &&
+          strcmp(result->error, "invalid gRPC call") == 0);
+    neverc_grpc_result_free(result);
+
+    const char *error = NULL;
+    CHECK(neverc_grpc_client_stream_open(
+              (neverc_h2_client_t *)(void *)&client_storage, NULL,
+              "/evil\r\nfoo", NEVERC_GRPC_UNARY, NULL, 0U, 1024U,
+              &error) == NULL);
+    CHECK(error && strcmp(error, "invalid gRPC stream") == 0);
 }
 
 static void grpc_test_unary(neverc_h2_client_t *client) {

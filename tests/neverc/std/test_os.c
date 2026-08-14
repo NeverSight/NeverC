@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <errno.h>
 
 static int tests_run = 0, tests_passed = 0, tests_failed = 0;
 
@@ -47,6 +48,16 @@ static void test_hostname(void) {
     char buf[256];
     ASSERT_EQ(neverc_os_hostname(buf, sizeof(buf)), 0);
     ASSERT_TRUE(strlen(buf) > 0);
+
+    char tiny[1];
+    int rc = neverc_os_hostname(tiny, sizeof(tiny));
+    if (rc == 0) {
+        ASSERT_EQ((int)tiny[0], 0);
+    } else {
+        ASSERT_EQ(rc, -1);
+    }
+    ASSERT_EQ(neverc_os_hostname(NULL, 16), -1);
+    ASSERT_EQ(neverc_os_hostname(buf, 0), -1);
 }
 
 static void test_file_ops(void) {
@@ -268,6 +279,13 @@ static void test_temp(void) {
     ASSERT_EQ(neverc_os_remove_all(dir_path), 0);
     ASSERT_EQ(neverc_os_mkdir_temp(NULL, "x", NULL, 0), -1);
 
+    ASSERT_TRUE(neverc_os_create_temp(tmpdir, "../neverc_trav_") == NULL);
+    ASSERT_TRUE(neverc_os_create_temp(tmpdir, "foo/bar_") == NULL);
+    ASSERT_EQ(neverc_os_mkdir_temp(tmpdir, "../neverc_trav_", dir_path,
+                                  sizeof(dir_path)), -1);
+    ASSERT_EQ(neverc_os_mkdir_temp(tmpdir, "a\\b_", dir_path, sizeof(dir_path)),
+              -1);
+
     char long_pattern[4096];
     memset(long_pattern, 'x', sizeof(long_pattern) - 1);
     long_pattern[sizeof(long_pattern) - 1] = '\0';
@@ -338,6 +356,19 @@ static void test_read_dir(void) {
 
     ASSERT_EQ(neverc_os_read_dir(NULL, &entries, &count), -1);
     ASSERT_EQ(neverc_os_readlink("unused", (char *)&count, 0), -1);
+
+#if !defined(_WIN32)
+    char target[80], linkpath[1024], small[8], big[128];
+    memset(target, 't', 70);
+    target[70] = '\0';
+    make_test_path(linkpath, sizeof(linkpath), "neverc_readlink_long");
+    neverc_os_remove(linkpath);
+    ASSERT_EQ(neverc_os_symlink(target, linkpath), 0);
+    ASSERT_EQ(neverc_os_readlink(linkpath, small, sizeof(small)), -1);
+    ASSERT_EQ(neverc_os_readlink(linkpath, big, sizeof(big)), 0);
+    ASSERT_TRUE(strcmp(big, target) == 0);
+    neverc_os_remove(linkpath);
+#endif
 }
 
 static void test_user_dirs(void) {
@@ -354,6 +385,13 @@ static void test_user_dirs(void) {
     rc = neverc_os_user_config_dir(buf, sizeof(buf));
     ASSERT_TRUE(rc == 0);
     ASSERT_TRUE(strlen(buf) > 0);
+
+    ASSERT_EQ(neverc_os_user_home_dir(NULL, 16), -1);
+    ASSERT_EQ(neverc_os_user_home_dir(buf, 0), -1);
+    char one[1];
+    ASSERT_EQ(neverc_os_user_home_dir(one, 1), -1);
+    ASSERT_EQ(neverc_os_user_cache_dir(NULL, 16), -1);
+    ASSERT_EQ(neverc_os_user_config_dir(NULL, 16), -1);
 }
 
 static void test_executable(void) {
@@ -410,6 +448,10 @@ static void test_error_classification_and_ownership(void) {
     printf("[error classification/ownership]\n");
     ASSERT_TRUE(neverc_os_is_permission(13));
     ASSERT_TRUE(!neverc_os_is_permission(12));
+    ASSERT_TRUE(neverc_os_is_permission(EACCES));
+    ASSERT_TRUE(neverc_os_is_permission(EPERM));
+    ASSERT_TRUE(neverc_os_is_exist(EEXIST));
+    ASSERT_TRUE(neverc_os_is_not_exist(ENOENT));
 
     char path[1024];
     make_test_path(path, sizeof(path), "neverc_missing_chown_target");

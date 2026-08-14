@@ -187,6 +187,9 @@ static void test_parse_float(void) {
     check_int("float max finite ok",
               neverc_strconv_parse_float("1.7976931348623157e+308", &v), 0);
     check_true("float max finite value", v > 1e308);
+    check_int("float min subnormal ok",
+              neverc_strconv_parse_float("4.9406564584124654e-324", &v), 0);
+    check_true("float min subnormal nonzero", v != 0.0);
 }
 
 /* ===== Itoa ===== */

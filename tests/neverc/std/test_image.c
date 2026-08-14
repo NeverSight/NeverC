@@ -23,6 +23,10 @@ static void test_point(void) {
     check("mul", q.x == 9 && q.y == 12);
     q = neverc_point_div(neverc_pt(10, 6), 2);
     check("div", q.x == 5 && q.y == 3);
+    q = neverc_point_div(neverc_pt(10, 6), 0);
+    check("div by zero", q.x == 10 && q.y == 6);
+    q = neverc_point_div(neverc_pt(INT_MIN, INT_MIN), -1);
+    check("div INT_MIN / -1", q.x == INT_MIN && q.y == INT_MIN);
     check("eq_true", neverc_point_eq(neverc_pt(1,2), neverc_pt(1,2)));
     check("eq_false", !neverc_point_eq(neverc_pt(1,2), neverc_pt(1,3)));
     check("in_true", neverc_point_in(neverc_pt(5,5), neverc_rect(0,0,10,10)));
@@ -130,6 +134,10 @@ static void test_invalid_image_sizes(void) {
     printf("[invalid image sizes]\n");
 
     neverc_rect_t huge = {{INT_MIN, 0}, {INT_MAX, 1}};
+    check("dx saturates overflowing width",
+          neverc_rect_dx(huge) == INT_MAX);
+    check("dy of inverted extremes saturates",
+          neverc_rect_dy((neverc_rect_t){{0, INT_MAX}, {1, INT_MIN}}) == INT_MIN);
     neverc_image_rgba_t rgba;
     check("rgba rejects overflowing width",
           neverc_image_rgba_init(&rgba, huge) == -1);

@@ -125,6 +125,77 @@ static void test_template_url_and_script(void) {
     check("onclick uses js escape", out && strstr(out, "\\'") != NULL);
     check("onclick no html entity quote", out && strstr(out, "&#39;") == NULL);
     free(out);
+
+    neverc_html_template_data_set(&data, "Link", "javascript:alert(1)");
+    out = neverc_html_template_render("<a href = \"{{.Link}}\">x</a>", &data);
+    check("spaced href neutralized", out && strstr(out, "javascript:") == NULL);
+    check("spaced href becomes hash", out && strstr(out, "href = \"#\"") != NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "Name", "');alert(1);//");
+    out = neverc_html_template_render("<img onclick = \"{{.Name}}\">", &data);
+    check("spaced onclick uses js escape", out && strstr(out, "\\'") != NULL);
+    check("spaced onclick no html entity", out && strstr(out, "&#39;") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "Link", "javascript:alert(1)");
+    out = neverc_html_template_render("<script src=\"{{.Link}}\"></script>", &data);
+    check("script src js url neutralized", out && strstr(out, "javascript:") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "Link", "data:text/javascript,alert(1)");
+    out = neverc_html_template_render("<script src={{.Link}}></script>", &data);
+    check("script src data url neutralized", out && strstr(out, "data:") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "Cls", "x onmouseover=alert(1)");
+    out = neverc_html_template_render("<div class={{.Cls}}>", &data);
+    check_str("unquoted attr wrapped", out,
+              "<div class=\"x onmouseover=alert(1)\">");
+    free(out);
+
+    neverc_html_template_data_set(&data, "Name", "alert(1)");
+    out = neverc_html_template_render("<img onclick={{.Name}}>", &data);
+    check("unquoted onclick quoted", out && strstr(out, "onclick=\"") != NULL);
+    check("unquoted onclick is js string",
+          out && strstr(out, "&#39;alert(1)&#39;") != NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "Color", "!B");
+    out = neverc_html_template_render("<div style=\"{{.Color}}\">", &data);
+    check_str("style uses css escape", out, "<div style=\"\\21 B\">");
+    free(out);
+
+    neverc_html_template_data_set(&data, "Link", "javascript:alert(1)");
+    out = neverc_html_template_render(
+        "<div style=\"background:url({{.Link}})\">", &data);
+    check("css url() neutralized", out && strstr(out, "javascript:") == NULL);
+    free(out);
+
+    {
+        char spaced[] = { 'j','a','v','a','\t','s','c','r','i','p','t',
+                          ':','a','l','e','r','t','(','1',')',0 };
+        neverc_html_template_data_set(&data, "Link", spaced);
+        out = neverc_html_template_render("<a href=\"{{.Link}}\">x</a>", &data);
+        check("tab in javascript scheme neutralized",
+              out && strstr(out, "javascript") == NULL &&
+              strstr(out, "href=\"#\"") != NULL);
+        free(out);
+    }
+    {
+        char ff[] = { '\x0c','j','a','v','a','s','c','r','i','p','t',
+                      ':','a','l','e','r','t','(','1',')',0 };
+        neverc_html_template_data_set(&data, "Link", ff);
+        out = neverc_html_template_render("<a href=\"{{.Link}}\">x</a>", &data);
+        check("formfeed before javascript neutralized",
+              out && strstr(out, "javascript") == NULL);
+        free(out);
+    }
+
+    neverc_html_template_data_set(&data, "Link", "javascript:alert(1)");
+    out = neverc_html_template_render("<img srcset=\"{{.Link}}\">", &data);
+    check("srcset js url neutralized", out && strstr(out, "javascript:") == NULL);
+    free(out);
     neverc_html_template_data_free(&data);
 }
 

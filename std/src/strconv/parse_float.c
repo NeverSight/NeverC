@@ -150,7 +150,7 @@ static uint64_t dec_rounded_integer(const nc_decimal *a) {
 static const int dec_powtab[] = {1, 3, 6, 9, 13, 16, 19, 23, 26};
 
 /* Convert decimal -> binary64 bit pattern. Sets *overflow if it rounds to
- * infinity. Always returns a correctly-rounded result. */
+ * infinity or underflows to zero. Always returns a correctly-rounded result. */
 static uint64_t dec_to_bits(nc_decimal *d, int *overflow) {
     int exp;
     uint64_t mant;

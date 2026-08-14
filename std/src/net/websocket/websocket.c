@@ -689,12 +689,14 @@ int neverc_ws_handshake_server(neverc_tcp_conn_t *conn, const char *raw_request,
 
     if (strncmp(raw_request, "GET ", 4) != 0) return -1;
     {
+        const char *req_crlf = memchr(raw_request, '\r',
+                                      (size_t)(hdr_end - raw_request));
+        if (!req_crlf || req_crlf[1] != '\n') return -1;
         const char *target = raw_request + 4;
-        const char *line_end = hdr_end;
-        if (target >= line_end || *target == ' ') return -1;
-        const char *sp = memchr(target, ' ', (size_t)(line_end - target));
-        if (!sp || (size_t)(line_end - sp) < 10 ||
-            memcmp(sp, " HTTP/1.1\r", 10) != 0)
+        if (target >= req_crlf || *target == ' ') return -1;
+        const char *sp = memchr(target, ' ', (size_t)(req_crlf - target));
+        if (!sp || (size_t)(req_crlf - sp) != 9 ||
+            memcmp(sp, " HTTP/1.1", 9) != 0)
             return -1;
     }
 

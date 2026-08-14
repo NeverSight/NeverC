@@ -619,7 +619,7 @@ int nci_tls_client_handshake(neverc_tls_conn_t *conn,
     if (neverc_ecdh_compute(&ecdh_key, server_pubkey, 32,
                              shared_secret, 32) < 0) {
         nci_tls_clear_client_psk_offer(&psk_offer);
-        return -1;
+        return nci_tls_fail(conn, TLS_ALERT_ILLEGAL_PARAMETER);
     }
 
     /* Derive handshake secrets */
@@ -855,10 +855,11 @@ int nci_tls_client_handshake(neverc_tls_conn_t *conn,
             neverc_sha256_final(&copy, transcript_hash);
 
             uint8_t finished_key[32];
-            nci_tls_hkdf_expand_label(
-                server_hs_traffic_secret, 32,
-                "finished", 8, NULL, 0,
-                finished_key, sizeof(finished_key));
+            if (nci_tls_hkdf_expand_label(
+                    server_hs_traffic_secret, 32,
+                    "finished", 8, NULL, 0,
+                    finished_key, sizeof(finished_key)) != 0)
+                return nci_tls_fail(conn, TLS_ALERT_INTERNAL_ERROR);
             uint8_t expected_verify[32];
             neverc_hmac_sha256(
                 finished_key, sizeof(finished_key),
@@ -918,8 +919,9 @@ int nci_tls_client_handshake(neverc_tls_conn_t *conn,
         neverc_sha256_final(&copy, transcript_hash);
 
         uint8_t finished_key[32];
-        nci_tls_hkdf_expand_label(client_hs_traffic_secret, 32,
-                           "finished", 8, NULL, 0, finished_key, 32);
+        if (nci_tls_hkdf_expand_label(client_hs_traffic_secret, 32,
+                           "finished", 8, NULL, 0, finished_key, 32) != 0)
+            return nci_tls_fail(conn, TLS_ALERT_INTERNAL_ERROR);
 
         uint8_t verify_data[32];
         neverc_hmac_sha256(finished_key, 32,
@@ -1342,6 +1344,23 @@ static int tls_parse_encrypted_extensions(
             }
             selected_alpn = protocols[0].data;
             selected_alpn_len = protocols[0].len;
+        } else if (extension_type == TLS_EXT_SERVER_NAME) {
+            /* RFC 6066: EncryptedExtensions server_name is empty. */
+            if (extension_data.len != 0) {
+                *alert = TLS_ALERT_ILLEGAL_PARAMETER;
+                return -1;
+            }
+        } else if (extension_type == TLS_EXT_SUPPORTED_GROUPS) {
+            /* Allowed in EncryptedExtensions; contents unused. */
+        } else if (extension_type == TLS_EXT_EARLY_DATA ||
+                   extension_type == TLS_EXT_KEY_SHARE ||
+                   extension_type == TLS_EXT_PRE_SHARED_KEY ||
+                   extension_type == TLS_EXT_SUPPORTED_VERSIONS ||
+                   extension_type == TLS_EXT_SIGNATURE_ALGORITHMS ||
+                   extension_type == TLS_EXT_PSK_KEY_EXCHANGE_MODES) {
+            /* Recognized but not legal here, or early_data without an offer. */
+            *alert = TLS_ALERT_ILLEGAL_PARAMETER;
+            return -1;
         } else {
             /* Ignore unrecognized EncryptedExtensions. */
         }
@@ -1396,9 +1415,19 @@ static int tls_parse_server_hello(
     if (tls_cursor_read_u16(&body, &legacy_version) != 0 ||
         tls_cursor_read_bytes(&body, 32, &random) != 0)
         return -1;
-    (void)random;
     if (legacy_version != TLS_LEGACY_VERSION) {
         *alert = TLS_ALERT_ILLEGAL_PARAMETER;
+        return -1;
+    }
+    /* RFC 8446 §4.1.3: this random means HelloRetryRequest, not ServerHello. */
+    static const uint8_t hello_retry_request_random[32] = {
+        0xCF, 0x21, 0xAD, 0x74, 0xE5, 0x9A, 0x61, 0x11,
+        0xBE, 0x1D, 0x8C, 0x02, 0x1E, 0x65, 0xB8, 0x91,
+        0xC2, 0xA2, 0x11, 0x16, 0x7A, 0xBB, 0x8C, 0x5E,
+        0x07, 0x9E, 0x09, 0xE2, 0xC8, 0xA8, 0x33, 0x9C
+    };
+    if (memcmp(random, hello_retry_request_random, 32) == 0) {
+        *alert = TLS_ALERT_HANDSHAKE_FAILURE;
         return -1;
     }
 
@@ -1997,14 +2026,16 @@ int nci_tls_server_handshake(neverc_tls_conn_t *conn,
     /* Send Change Cipher Spec (compatibility) */
     {
         uint8_t ccs = 1;
-        nci_tls_send_record(conn->tcp, TLS_CT_CHANGE_CIPHER_SPEC, &ccs, 1);
+        if (nci_tls_send_record(
+                conn->tcp, TLS_CT_CHANGE_CIPHER_SPEC, &ccs, 1) != 0)
+            return -1;
     }
 
     /* Compute shared secret */
     uint8_t shared_secret[32];
     if (neverc_ecdh_compute(&ecdh_key, client_pubkey, 32,
                              shared_secret, 32) < 0)
-        return -1;
+        return nci_tls_fail(conn, TLS_ALERT_ILLEGAL_PARAMETER);
 
     /* Key schedule */
     uint8_t handshake_secret[32];
@@ -2118,8 +2149,9 @@ int nci_tls_server_handshake(neverc_tls_conn_t *conn,
         }
 
         uint8_t finished_key[32];
-        nci_tls_hkdf_expand_label(server_hs_traffic_secret, 32,
-                           "finished", 8, NULL, 0, finished_key, 32);
+        if (nci_tls_hkdf_expand_label(server_hs_traffic_secret, 32,
+                           "finished", 8, NULL, 0, finished_key, 32) != 0)
+            return nci_tls_fail(conn, TLS_ALERT_INTERNAL_ERROR);
 
         uint8_t verify_data[32];
         neverc_hmac_sha256(finished_key, 32,
@@ -2147,8 +2179,9 @@ int nci_tls_server_handshake(neverc_tls_conn_t *conn,
     /* Receive optional client authentication flight and client Finished. */
     int got_client_finished = 0;
     uint8_t expected_client_handshake =
-        cfg->client_auth ==
-            NEVERC_TLS_CLIENT_AUTH_REQUIRE_AND_VERIFY ?
+        (!conn->did_resume &&
+         cfg->client_auth ==
+             NEVERC_TLS_CLIENT_AUTH_REQUIRE_AND_VERIFY) ?
         TLS_HS_CERTIFICATE : TLS_HS_FINISHED;
     while (!got_client_finished) {
         const uint8_t *handshake_message = NULL;
@@ -3172,11 +3205,6 @@ int nci_tls_handle_post_handshake(
         return nci_tls_protocol_error(
             conn, TLS_ALERT_UNEXPECTED_MESSAGE,
             "received an empty TLS post-handshake record");
-    if (++conn->non_advancing_records >
-        TLS_MAX_NON_ADVANCING_RECORDS)
-        return nci_tls_protocol_error(
-            conn, TLS_ALERT_UNEXPECTED_MESSAGE,
-            "too many non-advancing TLS records");
     if (nci_tls_append_post_handshake(conn, data, data_len) != 0)
         return -1;
 

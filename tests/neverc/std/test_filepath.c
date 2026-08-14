@@ -163,6 +163,8 @@ static void test_join(void) {
     ASSERT_STR_EQ(neverc_filepath_join("a", "b\\c", buf, sizeof(buf)), "a\\b\\c");
     ASSERT_STR_EQ(neverc_filepath_join("C:\\foo", "D:\\bar", buf, sizeof(buf)), "D:\\bar");
     ASSERT_STR_EQ(neverc_filepath_join("safe", "C:\\Windows", buf, sizeof(buf)), "C:\\Windows");
+    ASSERT_STR_EQ(neverc_filepath_join("C:\\foo", "\\bar", buf, sizeof(buf)), "C:\\bar");
+    ASSERT_STR_EQ(neverc_filepath_join("a", "C:b", buf, sizeof(buf)), "C:b");
 #else
     ASSERT_STR_EQ(neverc_filepath_join("/foo", "bar", buf, sizeof(buf)), "/foo/bar");
     ASSERT_STR_EQ(neverc_filepath_join("a", "b/c", buf, sizeof(buf)), "a/b/c");

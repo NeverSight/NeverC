@@ -292,13 +292,13 @@ int neverc_smtp_auth(neverc_smtp_client_t *c,
     }
 
     if (method == NEVERC_SMTP_AUTH_LOGIN) {
-        int code = smtp_cmd(c, "AUTH LOGIN");
-        if (code != 334) return -1;
-
         char encoded[512];
         if (smtp_b64_encode(username, strlen(username), encoded,
-                            sizeof(encoded)) != 0)
+                            sizeof(encoded)) != 0 ||
+            neverc_base64_encoded_len(strlen(password)) >= sizeof(encoded))
             return -1;
+        int code = smtp_cmd(c, "AUTH LOGIN");
+        if (code != 334) return -1;
         code = smtp_cmd(c, encoded);
         if (code != 334) return -1;
 

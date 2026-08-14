@@ -8,8 +8,8 @@
  * implementation of Go regexp or RE2. Matching APIs require the whole string;
  * find/replace/split use leftmost-longest non-empty matches.
  * No backtracking is used.
- * Supported syntax: . * + ? | () [] [^] \d \w \s ^ $ {n} {n,m}
- * Character classes: [a-z] [^abc] \d (digit) \w (word) \s (space)
+ * Supported syntax: . * + ? | () [] [^] \d \D \w \W \s \S \n \t \r \f \v ^ $ {n} {n,m}
+ * Character classes: [a-z] [^abc] []] \d \D \w \W \s \S; \s includes VT/FF.
  */
 
 #include <stddef.h>

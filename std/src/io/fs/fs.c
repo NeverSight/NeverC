@@ -264,7 +264,17 @@ int neverc_fs_read_dir(const char *path, neverc_fs_dir_entry_t **entries,
         neverc_fs_dir_entry_t *e = &result[*count];
         memset(e, 0, sizeof(*e));
         strncpy(e->name, de->d_name, sizeof(e->name) - 1);
-        e->is_dir = (de->d_type == DT_DIR) ? 1 : 0;
+        if (de->d_type == DT_DIR) {
+            e->is_dir = 1;
+        } else if (de->d_type == DT_UNKNOWN) {
+            char *full = fs_join_path(path, de->d_name);
+            if (full) {
+                struct stat st;
+                if (lstat(full, &st) == 0 && S_ISDIR(st.st_mode))
+                    e->is_dir = 1;
+                free(full);
+            }
+        }
         (*count)++;
     }
     closedir(d);
@@ -334,8 +344,19 @@ static int walk_recursive(const char *path,
         if (rc != 0) { free(full); neverc_fs_free_entries(entries); return rc; }
 
         if (entries[i].is_dir) {
-            rc = walk_recursive(full, fn, userdata);
-            if (rc != 0) { free(full); neverc_fs_free_entries(entries); return rc; }
+#if defined(NEVERC_PLATFORM_WINDOWS)
+            DWORD attr = GetFileAttributesA(full);
+            int real_dir = attr != INVALID_FILE_ATTRIBUTES &&
+                (attr & FILE_ATTRIBUTE_DIRECTORY) &&
+                !(attr & FILE_ATTRIBUTE_REPARSE_POINT);
+#else
+            struct stat st;
+            int real_dir = lstat(full, &st) == 0 && S_ISDIR(st.st_mode);
+#endif
+            if (real_dir) {
+                rc = walk_recursive(full, fn, userdata);
+                if (rc != 0) { free(full); neverc_fs_free_entries(entries); return rc; }
+            }
         }
         free(full);
     }
@@ -352,6 +373,10 @@ int neverc_fs_walk_dir(const char *root,
     neverc_fs_dir_entry_t root_entry;
     memset(&root_entry, 0, sizeof(root_entry));
     const char *base = strrchr(root, '/');
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    const char *base2 = strrchr(root, '\\');
+    if (base2 && (!base || base2 > base)) base = base2;
+#endif
     base = base ? base + 1 : root;
     strncpy(root_entry.name, base, sizeof(root_entry.name) - 1);
     root_entry.is_dir = 1;
