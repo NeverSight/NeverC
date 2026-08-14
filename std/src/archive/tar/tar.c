@@ -310,6 +310,11 @@ int neverc_tar_writer_write_header(neverc_tar_writer_t *w,
         bounded_string_length(
             hdr->gname, sizeof(hdr->gname), &gname_length) != 0)
         return -1;
+    if (!tar_path_is_safe(hdr->name))
+        return -1;
+    if ((hdr->typeflag == NEVERC_TAR_SYM || hdr->typeflag == NEVERC_TAR_LINK) &&
+        (link_length == 0 || !tar_path_is_safe(hdr->linkname)))
+        return -1;
 
     uint8_t block[NEVERC_TAR_BLOCK_SIZE] = {0};
     if (split_ustar_name(

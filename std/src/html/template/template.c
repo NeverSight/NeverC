@@ -478,6 +478,61 @@ void neverc_html_template_free(neverc_html_template_t *t) {
     free(t);
 }
 
+static int html_ci_eq_n(const char *a, const char *b, size_t n) {
+    for (size_t i = 0; i < n; i++) {
+        char ca = a[i], cb = b[i];
+        if (ca >= 'A' && ca <= 'Z') ca = (char)(ca + 32);
+        if (cb >= 'A' && cb <= 'Z') cb = (char)(cb + 32);
+        if (ca != cb) return 0;
+    }
+    return 1;
+}
+
+static int html_in_script(const char *buf, size_t len) {
+    if (!buf || len == 0) return 0;
+    int in = 0;
+    for (size_t i = 0; i < len; i++) {
+        if (buf[i] != '<') continue;
+        if (i + 8 <= len && html_ci_eq_n(buf + i, "</script", 8))
+            in = 0;
+        else if (i + 7 <= len && html_ci_eq_n(buf + i, "<script", 7) &&
+                 (i + 7 == len || !nc_isalnum((unsigned char)buf[i + 7])))
+            in = 1;
+    }
+    return in;
+}
+
+static int html_ends_ci(const char *buf, size_t len, const char *suf) {
+    size_t sl = strlen(suf);
+    if (len < sl) return 0;
+    return html_ci_eq_n(buf + len - sl, suf, sl);
+}
+
+static int html_in_url_attr(const char *buf, size_t len) {
+    if (!buf || len == 0) return 0;
+    static const char *sufs[] = {
+        "href=\"", "href='", "src=\"", "src='",
+        "action=\"", "action='", "formaction=\"", "formaction='",
+        "cite=\"", "cite='", "poster=\"", "poster='",
+        "background=\"", "background='", NULL
+    };
+    for (int i = 0; sufs[i]; i++) {
+        if (html_ends_ci(buf, len, sufs[i])) return 1;
+    }
+    return 0;
+}
+
+static int html_dangerous_url(const char *s) {
+    if (!s) return 0;
+    while (*s == ' ' || *s == '\t' || *s == '\n' || *s == '\r') s++;
+    static const char *bad[] = { "javascript:", "vbscript:", "data:", NULL };
+    for (int i = 0; bad[i]; i++) {
+        size_t n = strlen(bad[i]);
+        if (strlen(s) >= n && html_ci_eq_n(s, bad[i], n)) return 1;
+    }
+    return 0;
+}
+
 static int execute_nodes(const node_t *n,
                          const neverc_html_template_data_t *data,
                          char **buf, size_t *len, size_t *cap) {
@@ -490,7 +545,13 @@ static int execute_nodes(const node_t *n,
         case NODE_VAR: {
             const char *val = neverc_html_template_data_get(data, n->text);
             if (val) {
-                char *escaped = neverc_html_escape(val);
+                char *escaped;
+                if (html_in_script(*buf, *len))
+                    escaped = neverc_html_js_escape(val);
+                else if (html_in_url_attr(*buf, *len) && html_dangerous_url(val))
+                    escaped = neverc_html_escape("#");
+                else
+                    escaped = neverc_html_escape(val);
                 if (!escaped ||
                     buf_append(buf, len, cap, escaped, strlen(escaped)) != 0) {
                     free(escaped);

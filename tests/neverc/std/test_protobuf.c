@@ -115,6 +115,25 @@ static void test_malformed_inputs(void) {
     CHECK(neverc_protobuf_reader_next(&reader, &field) == -1);
 }
 
+static void test_int32_range(void) {
+    typedef struct { int32_t n; } int32_msg_t;
+    static const neverc_protobuf_field_descriptor_t fields[] = {
+        {1U, NEVERC_PROTOBUF_TYPE_INT32,
+         offsetof(int32_msg_t, n), SIZE_MAX},
+    };
+    static const neverc_protobuf_message_descriptor_t desc = {
+        sizeof(int32_msg_t), fields, 1U};
+    int32_msg_t msg;
+    static const uint8_t overflow[] = {
+        0x08U, 0x80U, 0x80U, 0x80U, 0x80U, 0x10U}; /* 4294967296 */
+    CHECK(neverc_protobuf_message_decode(&desc, overflow, sizeof(overflow),
+                                         64U, &msg, sizeof(msg)) == -1);
+    static const uint8_t ok[] = {0x08U, 0x2aU}; /* 42 */
+    CHECK(neverc_protobuf_message_decode(&desc, ok, sizeof(ok),
+                                         64U, &msg, sizeof(msg)) == 0);
+    CHECK(msg.n == 42);
+}
+
 static void test_utf8_and_bounds(void) {
     static const uint8_t valid[] = {'h', 0xc3U, 0xa9U};
     static const uint8_t invalid[] = {0xc0U, 0xafU};
@@ -132,6 +151,7 @@ int main(void) {
     test_wire_golden();
     test_descriptor_roundtrip();
     test_malformed_inputs();
+    test_int32_range();
     test_utf8_and_bounds();
     printf("protobuf: %d checks, %d failed\n", tests_run, tests_failed);
     if (tests_failed == 0) puts("passed");

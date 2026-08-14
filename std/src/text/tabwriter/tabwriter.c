@@ -130,6 +130,14 @@ static int flush_lines(neverc_tabwriter_t *w) {
                     pad_needed +=
                         (size_t)(w->col_widths[col] - cell->width);
                 }
+                if (w->minwidth > 0) {
+                    size_t cell_w = cell->width > 0 ? (size_t)cell->width : 0U;
+                    size_t minw = (size_t)w->minwidth;
+                    if (cell_w < minw) {
+                        size_t want = minw - cell_w;
+                        if (want > pad_needed) pad_needed = want;
+                    }
+                }
 
                 if (cell->htab && w->tabwidth > 0) {
                     size_t width =

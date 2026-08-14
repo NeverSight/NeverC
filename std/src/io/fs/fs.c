@@ -14,6 +14,21 @@
   #include <fnmatch.h>
 #endif
 
+#if defined(NEVERC_PLATFORM_WINDOWS)
+static int fs_glob_match(const char *pat, const char *name) {
+    if (!pat || !name) return 0;
+    if (pat[0] == '\0') return name[0] == '\0';
+    if (pat[0] == '*') {
+        if (fs_glob_match(pat + 1, name)) return 1;
+        if (name[0] != '\0' && fs_glob_match(pat, name + 1)) return 1;
+        return 0;
+    }
+    if (name[0] != '\0' && (pat[0] == '?' || pat[0] == name[0]))
+        return fs_glob_match(pat + 1, name + 1);
+    return 0;
+}
+#endif
+
 static int fs_entries_reserve(neverc_fs_dir_entry_t **entries, size_t *cap,
                               size_t needed) {
     if (needed <= *cap) return 1;
@@ -74,6 +89,12 @@ int neverc_fs_valid_path(const char *name) {
     if (name[len-1] == '/') return 0;
     if (strcmp(name, ".") == 0) return 1;
     if (strchr(name, '\\') != NULL) return 0;
+#if defined(NEVERC_PLATFORM_WINDOWS)
+    if (((name[0] >= 'A' && name[0] <= 'Z') ||
+         (name[0] >= 'a' && name[0] <= 'z')) && name[1] == ':')
+        return 0;
+    if (strchr(name, ':') != NULL) return 0;
+#endif
 
     const char *p = name;
     while (*p) {
@@ -135,7 +156,8 @@ int neverc_fs_read_file(const char *path, uint8_t **data, size_t *size) {
     if (!f) return -1;
     if (fseek(f, 0, SEEK_END) != 0) { fclose(f); return -1; }
     long len = ftell(f);
-    if (len < 0 || fseek(f, 0, SEEK_SET) != 0) { fclose(f); return -1; }
+    if (len < 0 || (unsigned long)len > (unsigned long)SIZE_MAX - 1U ||
+        fseek(f, 0, SEEK_SET) != 0) { fclose(f); return -1; }
     *data = (uint8_t *)malloc((size_t)len + 1);
     if (!*data) { fclose(f); return -1; }
     *size = fread(*data, 1, (size_t)len, f);
@@ -232,15 +254,7 @@ int neverc_fs_glob(const char *dir, const char *pattern,
 
     for (size_t i = 0; i < nentries; i++) {
 #if defined(NEVERC_PLATFORM_WINDOWS)
-        /* simple wildcard: only support * */
-        int matched = 1;
-        const char *p = pattern, *n = entries[i].name;
-        while (*p && *n) {
-            if (*p == '*') { matched = 1; break; }
-            if (*p != *n && *p != '?') { matched = 0; break; }
-            p++; n++;
-        }
-        if (*p == '\0' && *n != '\0') matched = 0;
+        int matched = fs_glob_match(pattern, entries[i].name);
 #else
         int matched = (fnmatch(pattern, entries[i].name, 0) == 0);
 #endif

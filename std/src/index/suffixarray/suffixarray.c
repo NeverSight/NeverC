@@ -349,6 +349,7 @@ int neverc_suffixarray_lookup(const neverc_suffixarray_t *idx,
     int32_t hi = sa_bound(idx, pattern, pat_len, 1);
     size_t count = (size_t)(hi - lo);
     size_t copy = count < max_results ? count : max_results;
+    if (copy > 0 && !results) return -1;
 
     for (size_t i = 0; i < copy; i++)
         results[i] = idx->sa[lo + (int32_t)i];

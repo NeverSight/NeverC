@@ -198,6 +198,9 @@ int neverc_textproto_read_mime_header(const char *data, size_t len,
     if (!data || !h) return -1;
     size_t pos = 0;
     char line[4096];
+    char name[256];
+    char value[4096];
+    int have = 0;
 
     while (pos < len) {
         size_t ate = 0;
@@ -206,15 +209,45 @@ int neverc_textproto_read_mime_header(const char *data, size_t len,
         pos += ate;
         if (line[0] == '\0') break;
 
+        if (line[0] == ' ' || line[0] == '\t') {
+            if (!have) continue;
+            const char *cont = line;
+            while (*cont == ' ' || *cont == '\t') cont++;
+            size_t used = strlen(value);
+            size_t add = strlen(cont);
+            if (used + 1 + add >= sizeof(value)) {
+                if (consumed) *consumed = pos;
+                return -1;
+            }
+            value[used] = ' ';
+            memcpy(value + used + 1, cont, add + 1);
+            continue;
+        }
+
+        if (have) {
+            if (mime_header_add_checked(h, name, value) != 0) {
+                if (consumed) *consumed = pos;
+                return -1;
+            }
+            have = 0;
+        }
+
         char *colon = strchr(line, ':');
         if (!colon) continue;
         *colon = '\0';
         const char *val = colon + 1;
         while (*val == ' ' || *val == '\t') val++;
-        if (mime_header_add_checked(h, line, val) != 0) {
+        if (strlen(line) >= sizeof(name) || strlen(val) >= sizeof(value)) {
             if (consumed) *consumed = pos;
             return -1;
         }
+        memcpy(name, line, strlen(line) + 1);
+        memcpy(value, val, strlen(val) + 1);
+        have = 1;
+    }
+    if (have && mime_header_add_checked(h, name, value) != 0) {
+        if (consumed) *consumed = pos;
+        return -1;
     }
     if (consumed) *consumed = pos;
     return 0;

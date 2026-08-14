@@ -334,6 +334,8 @@ static void test_strict_rfc3339(void) {
         "2024-01-15T12:30:45.Z",
         "2024-01-15T12:30:60Z",
         "2024-01-15T12:30:45+24:00",
+        "2024-01-15T12:30:45+23:59",
+        "2024-01-15T12:30:45+14:01",
         "2024-01-15T12:30:45+08:60",
         "2024-01-15 12:30:45Z",
         "2024-01-15t12:30:45z"
@@ -347,6 +349,8 @@ static void test_strict_rfc3339(void) {
     }
 
     neverc_time_t out;
+    check_int("accept +14:00",
+              neverc_time_parse_rfc3339("2024-01-15T12:00:00+14:00", &out), 0);
     check_int("null rfc3339 input", neverc_time_parse_rfc3339(NULL, &out), -1);
     check_int("null rfc3339 output",
               neverc_time_parse_rfc3339("1970-01-01T00:00:00Z", NULL), -1);

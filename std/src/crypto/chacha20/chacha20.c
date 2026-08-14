@@ -144,6 +144,7 @@ static void xor_keystream(uint8_t *dst, const uint8_t *src,
 void neverc_chacha20_xor(neverc_chacha20_ctx *ctx,
                          uint8_t *dst, const uint8_t *src, size_t len) {
     size_t off = 0;
+    if (!ctx || ctx->buf_used < 0) return;
 
     /* Consume any keystream left over from a previous partial block. */
     if (ctx->buf_used < 64) {
@@ -155,13 +156,20 @@ void neverc_chacha20_xor(neverc_chacha20_ctx *ctx,
     }
 
 #ifdef NCI_CHACHA_SIMD
-    /* Bulk path: 4 blocks (256 bytes) per SIMD pass. */
-    while (len - off >= 256) {
+    /* Bulk path: 4 blocks (256 bytes) per SIMD pass.
+     * Stay scalar when the counter cannot advance by 4 without wrapping,
+     * so we never emit a reused counter-0 block inside the 4-block kernel. */
+    while (len - off >= 256 && ctx->state[12] <= 0xFFFFFFFCu) {
         uint8_t ks[256];
+        uint32_t before = ctx->state[12];
         chacha20_4block(ctx->state, ks);
         ctx->state[12] += 4;
         xor_keystream(dst + off, src + off, ks, 256);
         off += 256;
+        if (ctx->state[12] < before) {
+            ctx->buf_used = -1;
+            return;
+        }
     }
 #endif
 
@@ -169,18 +177,24 @@ void neverc_chacha20_xor(neverc_chacha20_ctx *ctx,
      * skipping the per-byte loop and the intermediate-buffer round trip. */
     while (len - off >= 64) {
         uint8_t ks[64];
+        uint32_t before = ctx->state[12];
         neverc_chacha20_block(ctx->state, ks);
         ctx->state[12]++;
         xor_keystream(dst + off, src + off, ks, 64);
         off += 64;
+        if (ctx->state[12] < before) {
+            ctx->buf_used = -1;
+            return;
+        }
     }
 
     /* Final partial block: keep the unused keystream in ctx for next call. */
     if (off < len) {
+        uint32_t before = ctx->state[12];
         neverc_chacha20_block(ctx->state, ctx->buf);
         ctx->state[12]++;
         size_t n = len - off;
         xor_keystream(dst + off, src + off, ctx->buf, n);
-        ctx->buf_used = (int)n;
+        ctx->buf_used = (ctx->state[12] < before) ? -1 : (int)n;
     }
 }

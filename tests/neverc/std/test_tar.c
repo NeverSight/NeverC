@@ -420,6 +420,20 @@ static void test_reject_unsafe_paths(void) {
     neverc_tar_header_t header = {0};
     check_int("reject parent traversal",
               neverc_tar_reader_next(&reader, &header), -1);
+
+    neverc_tar_writer_t writer;
+    neverc_tar_writer_init(&writer);
+    neverc_tar_header_t unsafe = {0};
+    memcpy(unsafe.name, "../etc/passwd", 14);
+    unsafe.typeflag = NEVERC_TAR_REG;
+    check_int("writer rejects traversal",
+              neverc_tar_writer_write_header(&writer, &unsafe), -1);
+    memcpy(unsafe.name, "link", 5);
+    memcpy(unsafe.linkname, "../../etc/passwd", 17);
+    unsafe.typeflag = NEVERC_TAR_SYM;
+    check_int("writer rejects unsafe link",
+              neverc_tar_writer_write_header(&writer, &unsafe), -1);
+    neverc_tar_writer_free(&writer);
 }
 
 int main(void) {

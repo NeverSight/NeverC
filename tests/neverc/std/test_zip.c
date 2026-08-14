@@ -239,15 +239,12 @@ static void test_reject_unsafe_paths(void) {
     neverc_zip_writer_t w;
     neverc_zip_writer_init(&w);
     const uint8_t payload[] = "x";
-    check_int("writer accepts unsafe name for now",
+    check_int("writer rejects traversal",
               neverc_zip_writer_add(
-                  &w, "../etc/passwd", payload, sizeof(payload) - 1), 0);
-    check_int("writer close", neverc_zip_writer_close(&w), 0);
-
-    neverc_zip_reader_t r;
-    check_int("reader rejects unsafe path",
-              neverc_zip_reader_init(&r, w.data, w.len), -1);
-    neverc_zip_reader_free(&r);
+                  &w, "../etc/passwd", payload, sizeof(payload) - 1), -1);
+    check_int("writer rejects absolute",
+              neverc_zip_writer_add(
+                  &w, "/etc/passwd", payload, sizeof(payload) - 1), -1);
     neverc_zip_writer_free(&w);
 }
 

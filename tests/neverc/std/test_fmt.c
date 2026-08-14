@@ -117,6 +117,12 @@ static void test_width_padding(void) {
     r = neverc_fmt_sprintf("% d", 42);
     check_str("space sign", r, " 42"); free(r);
 
+    r = neverc_fmt_sprintf("%*s", -5, "hi");
+    check_str("negative star width", r, "hi   "); free(r);
+
+    r = neverc_fmt_sprintf("%*d", -8, 42);
+    check_str("negative star int", r, "42      "); free(r);
+
     r = neverc_fmt_sprintf("%*d", 8, 42);
     check_str("star width", r, "      42"); free(r);
 }

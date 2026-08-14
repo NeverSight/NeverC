@@ -79,6 +79,16 @@ static int smtp_read_response(neverc_smtp_client_t *c) {
     return code;
 }
 
+/* Reject SMTP atoms that could inject extra commands or break path syntax. */
+static int smtp_safe_atom(const char *s) {
+    if (!s || !s[0]) return 0;
+    for (const unsigned char *p = (const unsigned char *)s; *p; p++) {
+        if (*p <= 32 || *p >= 127 || *p == '<' || *p == '>')
+            return 0;
+    }
+    return 1;
+}
+
 /* Send a command and read the response. Returns status code. */
 static int smtp_cmd(neverc_smtp_client_t *c, const char *cmd) {
     size_t len = strlen(cmd);
@@ -194,6 +204,7 @@ void neverc_smtp_close(neverc_smtp_client_t *c) {
 int neverc_smtp_hello(neverc_smtp_client_t *c, const char *local_name) {
     if (!c) return -1;
     if (!local_name) local_name = "localhost";
+    if (!smtp_safe_atom(local_name)) return -1;
 
     /* Try EHLO first */
     int code = smtp_cmdf(c, "EHLO %s", local_name);
@@ -276,14 +287,14 @@ int neverc_smtp_auth(neverc_smtp_client_t *c,
 }
 
 int neverc_smtp_mail(neverc_smtp_client_t *c, const char *from) {
-    if (!c || !from) return -1;
+    if (!c || !from || !smtp_safe_atom(from)) return -1;
     if (ensure_hello(c) != 0) return -1;
     int code = smtp_cmdf(c, "MAIL FROM:<%s>", from);
     return (code == 250) ? 0 : -1;
 }
 
 int neverc_smtp_rcpt(neverc_smtp_client_t *c, const char *to) {
-    if (!c || !to) return -1;
+    if (!c || !to || !smtp_safe_atom(to)) return -1;
     int code = smtp_cmdf(c, "RCPT TO:<%s>", to);
     return (code == 250) ? 0 : -1;
 }
@@ -360,6 +371,12 @@ int neverc_smtp_send_mail(const char *addr,
                             const char **to, int nto,
                             const void *msg, size_t msg_len,
                             const char **errp) {
+    if (!from || !smtp_safe_atom(from) || nto < 0 || (nto > 0 && !to))
+        return -1;
+    for (int i = 0; i < nto; i++) {
+        if (!smtp_safe_atom(to[i])) return -1;
+    }
+
     neverc_smtp_client_t *c = neverc_smtp_dial(addr, errp);
     if (!c) return -1;
 

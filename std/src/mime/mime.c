@@ -441,7 +441,7 @@ int neverc_mime_qp_decode(const char *src, size_t src_len,
                 dst[di++] = (char)((high << 4) | low);
                 si += 3;
             } else {
-                dst[di++] = src[si++];
+                return -1;
             }
         } else {
             dst[di++] = src[si++];

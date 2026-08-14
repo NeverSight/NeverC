@@ -95,6 +95,24 @@ static void test_template_auto_escape(void) {
     neverc_html_template_data_free(&data);
 }
 
+static void test_template_url_and_script(void) {
+    printf("[template_url_and_script]\n");
+    neverc_html_template_data_t data;
+    neverc_html_template_data_init(&data);
+    neverc_html_template_data_set(&data, "Link", "javascript:alert(1)");
+    char *out = neverc_html_template_render("<a href=\"{{.Link}}\">x</a>", &data);
+    check("js url neutralized", out && strstr(out, "javascript:") == NULL);
+    check("js url becomes hash", out && strstr(out, "href=\"#\"") != NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "Name", "\";alert(1);//");
+    out = neverc_html_template_render("<script>var x=\"{{.Name}}\";</script>", &data);
+    check("script uses js escape", out && strstr(out, "\\\"") != NULL);
+    check("script no html entity quote", out && strstr(out, "&#34;") == NULL);
+    free(out);
+    neverc_html_template_data_free(&data);
+}
+
 static void test_template_missing_var(void) {
     printf("[template_missing_var]\n");
     neverc_html_template_data_t data;
@@ -198,6 +216,7 @@ int main(void) {
     test_url_escape();
     test_template_basic();
     test_template_auto_escape();
+    test_template_url_and_script();
     test_template_missing_var();
     test_template_if();
     test_template_if_else();

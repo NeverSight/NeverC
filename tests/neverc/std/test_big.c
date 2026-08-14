@@ -192,6 +192,13 @@ static void test_div(void) {
     ASSERT_INT_EQ(neverc_bigint_int64(&q), 1000);
     ASSERT_TRUE(neverc_bigint_is_zero(&r));
 
+    neverc_bigint_set_int64(&q, 999);
+    neverc_bigint_set_int64(&r, 999);
+    neverc_bigint_set_int64(&b, 0);
+    neverc_bigint_div(&q, &r, &a, &b);
+    ASSERT_TRUE(neverc_bigint_is_zero(&q));
+    ASSERT_TRUE(neverc_bigint_is_zero(&r));
+
     neverc_bigint_free(&a); neverc_bigint_free(&b);
     neverc_bigint_free(&q); neverc_bigint_free(&r);
 }

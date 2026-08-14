@@ -117,7 +117,7 @@ neverc_list_element_t *neverc_list_push_back(neverc_list_t *l, void *value) {
 
 void *neverc_list_remove(neverc_list_t *l, neverc_list_element_t *e) {
     if (!l || !e) return NULL;
-    if (e->list != l) return e->value;
+    if (e->list != l) return NULL;
     void *v = e->value;
     remove_elem(l, e);
     free(e);

@@ -243,6 +243,19 @@ static void test_zero_value_and_invalid_input(void) {
     neverc_list_free(&zero);
 }
 
+static void test_remove_foreign_list(void) {
+    printf("[remove_foreign_list]\n");
+    neverc_list_t *a = neverc_list_new();
+    neverc_list_t *b = neverc_list_new();
+    neverc_list_element_t *e = neverc_list_push_back(a, INT_VAL(42));
+    ASSERT_NULL(neverc_list_remove(b, e));
+    ASSERT_INT_EQ(neverc_list_len(a), 1);
+    ASSERT_PTR_EQ(neverc_list_front(a), e);
+    ASSERT_INT_EQ(TO_INT(neverc_list_remove(a, e)), 42);
+    neverc_list_free(a);
+    neverc_list_free(b);
+}
+
 int main(void) {
     printf("=== NeverC container/list Tests ===\n");
     test_basic();
@@ -254,6 +267,7 @@ int main(void) {
     test_move_before_after();
     test_remove_all();
     test_zero_value_and_invalid_input();
+    test_remove_foreign_list();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

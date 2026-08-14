@@ -66,6 +66,16 @@ static void test_lookup_basic(void) {
     neverc_suffixarray_free(&idx);
 }
 
+static void test_lookup_null_results(void) {
+    printf("[lookup_null_results]\n");
+    neverc_suffixarray_t idx;
+    neverc_suffixarray_new(&idx, (const unsigned char *)"banana", 6);
+    size_t n = 0;
+    ASSERT_INT_EQ(neverc_suffixarray_lookup(&idx, (const unsigned char *)"an", 2,
+                                            NULL, 10, &n), -1);
+    neverc_suffixarray_free(&idx);
+}
+
 static void test_lookup_positions(void) {
     printf("[lookup_positions]\n");
     neverc_suffixarray_t idx;
@@ -314,6 +324,7 @@ int main(void) {
     test_empty();
     test_invalid_input();
     test_lookup_basic();
+    test_lookup_null_results();
     test_lookup_positions();
     test_single_char();
     test_suffix_order();

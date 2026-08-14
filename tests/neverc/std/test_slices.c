@@ -219,6 +219,16 @@ static void test_func_ops(void) {
     ASSERT_INT_EQ(arr2[2], 5);
 }
 
+static void test_null_guards(void) {
+    printf("[null_guards]\n");
+    int arr[] = {1, 2, 3};
+    int v = 1;
+    ASSERT_TRUE(neverc_slices_compare(NULL, 3, arr, 3, sizeof(int), cmp_int) != 0);
+    ASSERT_INT_EQ(neverc_slices_index(NULL, 3, &v, sizeof(int), eq_int), -1);
+    ASSERT_TRUE(!neverc_slices_contains(NULL, 3, &v, sizeof(int), eq_int));
+    ASSERT_INT_EQ((int)neverc_slices_delete(NULL, 5, sizeof(int), 0, 1), 5);
+}
+
 int main(void) {
     printf("=== NeverC slices Tests ===\n");
     test_equal();
@@ -241,6 +251,7 @@ int main(void) {
     test_concat();
     test_concat_size_overflow_rejected();
     test_func_ops();
+    test_null_guards();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");

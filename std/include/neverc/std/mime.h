@@ -40,6 +40,9 @@ int neverc_mime_qp_encode(const char *src, size_t src_len,
 }
 #endif
 
+#include "mime/quotedprintable.h"
+#include "mime/multipart.h"
+
 #ifdef __neverc__
 struct __neverc_std_quotedprintable_t { char __tag; };
 struct __neverc_std_multipart_t { char __tag; };

@@ -225,6 +225,11 @@ char *neverc_fmt_vsprintf(const char *format, va_list args) {
                 i++;
             }
         }
+        if (has_width && width < 0) {
+            flag_minus = 1;
+            if (width == INT_MIN) width = INT_MAX;
+            else width = -width;
+        }
 
         /* Parse precision */
         int prec = -1;

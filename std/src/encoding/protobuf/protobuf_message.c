@@ -1,5 +1,6 @@
 #include "neverc/std/encoding/protobuf.h"
 
+#include <limits.h>
 #include <string.h>
 
 static size_t protobuf_scalar_size(neverc_protobuf_scalar_type_t type) {
@@ -303,7 +304,9 @@ static int protobuf_decode_field(
     }
     case NEVERC_PROTOBUF_TYPE_INT32:
     case NEVERC_PROTOBUF_TYPE_ENUM: {
-        int32_t scalar = (int32_t)(uint32_t)field->value.varint;
+        int64_t wide = (int64_t)field->value.varint;
+        if (wide < INT32_MIN || wide > INT32_MAX) return -1;
+        int32_t scalar = (int32_t)wide;
         memcpy(value, &scalar, sizeof(scalar));
         break;
     }

@@ -112,10 +112,29 @@ int neverc_mail_parse_address_list(const char *s,
 }
 
 int neverc_mail_format_address(const neverc_mail_address_t *addr, char *buf, size_t cap) {
-    if (!addr || !buf) return -1;
-    if (addr->name[0])
+    if (!addr || !buf || cap == 0) return -1;
+    if (!addr->name[0])
+        return snprintf(buf, cap, "%s", addr->address);
+
+    int need_quote = 0;
+    for (const unsigned char *p = (const unsigned char *)addr->name; *p; p++) {
+        if (*p < 33 || *p == 127 || *p == '"' || *p == '\\' ||
+            *p == ',' || *p == '<' || *p == '>' || *p == '@' || *p == ';')
+            need_quote = 1;
+    }
+    if (!need_quote)
         return snprintf(buf, cap, "%s <%s>", addr->name, addr->address);
-    return snprintf(buf, cap, "%s", addr->address);
+
+    char quoted[sizeof(addr->name) * 2 + 3];
+    size_t qi = 0;
+    quoted[qi++] = '"';
+    for (const char *p = addr->name; *p && qi + 2 < sizeof(quoted); p++) {
+        if (*p == '"' || *p == '\\') quoted[qi++] = '\\';
+        quoted[qi++] = *p;
+    }
+    quoted[qi++] = '"';
+    quoted[qi] = '\0';
+    return snprintf(buf, cap, "%s <%s>", quoted, addr->address);
 }
 
 int neverc_mail_parse_message(const char *data, size_t len, neverc_mail_message_t *out) {

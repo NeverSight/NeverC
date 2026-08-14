@@ -141,12 +141,27 @@ static void test_incremental(void) {
     check_true("byte-by-byte == one-shot", memcmp(out1, out2, 100) == 0);
 }
 
+static void test_counter_wrap(void) {
+    printf("[ChaCha20 counter wrap]\n");
+    uint8_t key[32] = {0}, nonce[12] = {0}, in[128] = {0}, out[128];
+    memset(out, 0xAA, sizeof(out));
+    neverc_chacha20_ctx ctx;
+    neverc_chacha20_init(&ctx, key, nonce, 0xFFFFFFFFu);
+    neverc_chacha20_xor(&ctx, out, in, 64);
+    neverc_chacha20_xor(&ctx, out + 64, in + 64, 64);
+    uint8_t aa[64];
+    memset(aa, 0xAA, sizeof(aa));
+    check_true("wrap does not reuse keystream", memcmp(out + 64, aa, 64) == 0);
+    check_true("last block still emitted", memcmp(out, aa, 64) != 0);
+}
+
 int main(void) {
     printf("=== NeverC ChaCha20 Tests ===\n\n");
     test_rfc7539_block();
     test_rfc7539_encrypt();
     test_round_trip();
     test_incremental();
+    test_counter_wrap();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");

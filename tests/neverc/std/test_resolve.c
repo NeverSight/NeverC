@@ -61,6 +61,13 @@ static void test_split_host_port(void) {
     check_int("split :8080", neverc_net_split_host_port(":8080", host, sizeof(host), port, sizeof(port)), 0);
     check_str("empty host", host, "");
     check_str("port only", port, "8080");
+
+    char tiny_host[4];
+    char tiny_port[16];
+    check_int("host overflow rejected",
+              neverc_net_split_host_port("192.168.1.1:80", tiny_host,
+                                         sizeof(tiny_host), tiny_port,
+                                         sizeof(tiny_port)), -1);
 }
 
 /* ===== JoinHostPort ===== */

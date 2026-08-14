@@ -1157,7 +1157,11 @@ static void bz_divmod(neverc_bigint_t *q, neverc_bigint_t *r,
 
 void neverc_bigint_div(neverc_bigint_t *q, neverc_bigint_t *r,
                        const neverc_bigint_t *x, const neverc_bigint_t *y) {
-    if (y->len == 0) return;
+    if (y->len == 0) {
+        if (q) { q->len = 0; q->neg = 0; }
+        if (r) { r->len = 0; r->neg = 0; }
+        return;
+    }
 
     int c = abs_cmp(x, y);
     if (c < 0) {

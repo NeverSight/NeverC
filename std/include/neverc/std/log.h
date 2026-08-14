@@ -70,6 +70,9 @@ void neverc_log_default_panicf(const char *fmt, ...);
 }
 #endif
 
+#include "log/slog.h"
+#include "log/syslog.h"
+
 #ifdef __neverc__
 struct __neverc_std_slog_t { char __tag; };
 struct __neverc_std_syslog_t { char __tag; };

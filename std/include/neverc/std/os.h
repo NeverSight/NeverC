@@ -142,6 +142,10 @@ int         neverc_os_is_permission(int err);
 }
 #endif
 
+#include "os/exec.h"
+#include "os/signal.h"
+#include "os/user.h"
+
 #ifdef __neverc__
 struct __neverc_std_exec_t { char __tag; };
 struct __neverc_std_signal_t { char __tag; };

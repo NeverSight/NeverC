@@ -143,6 +143,15 @@ static void test_invalid_input(void) {
     neverc_tabwriter_reset(&w);
 }
 
+static void test_minwidth(void) {
+    printf("[minwidth]\n");
+    neverc_tabwriter_t w;
+    neverc_tabwriter_init(&w, 5, 0, 0, '.', 0);
+    neverc_tabwriter_write(&w, "a\tb\n", 4);
+    neverc_tabwriter_flush(&w);
+    ASSERT_STR_EQ(neverc_tabwriter_output(&w, NULL), "a....b\n");
+}
+
 int main(void) {
     printf("=== NeverC text/tabwriter Tests ===\n");
     test_basic_alignment();
@@ -153,6 +162,7 @@ int main(void) {
     test_no_tabs();
     test_multiple_lines();
     test_invalid_input();
+    test_minwidth();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

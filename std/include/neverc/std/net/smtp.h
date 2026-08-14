@@ -97,4 +97,8 @@ int neverc_smtp_send_mail(const char *addr,
 }
 #endif
 
+#ifdef __neverc__
+#include <neverc/std/net.h>
+#endif
+
 #endif /* NEVERC_NET_SMTP_H */

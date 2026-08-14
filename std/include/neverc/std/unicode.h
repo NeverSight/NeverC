@@ -35,6 +35,8 @@ uint32_t neverc_unicode_simple_fold(uint32_t r);
 }
 #endif
 
+#include "unicode/utf8.h"
+#include "unicode/utf16.h"
 
 /* ===== Std Module Dot-Syntax Support ===== */
 

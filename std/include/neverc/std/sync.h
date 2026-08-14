@@ -157,6 +157,8 @@ int    neverc_sync_map_compare_and_delete(neverc_sync_map_t *m, const char *key,
 }
 #endif
 
+#include "sync/atomic.h"
+
 #ifdef __neverc__
 struct __neverc_std_atomic_t { char __tag; };
 

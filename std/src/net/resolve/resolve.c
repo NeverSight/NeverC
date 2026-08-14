@@ -466,13 +466,13 @@ int neverc_net_split_host_port(const char *hostport,
         if (!end) return -1;
 
         size_t hlen = (size_t)(end - s - 1);
-        if (hlen >= hostlen) hlen = hostlen - 1;
+        if (hlen >= hostlen) return -1;
         memcpy(host, s + 1, hlen);
         host[hlen] = '\0';
 
         if (end[1] == ':') {
             size_t plen = strlen(end + 2);
-            if (plen >= portlen) plen = portlen - 1;
+            if (plen >= portlen) return -1;
             memcpy(port, end + 2, plen);
             port[plen] = '\0';
         } else if (end[1] != '\0') {
@@ -496,12 +496,12 @@ int neverc_net_split_host_port(const char *hostport,
     }
 
     size_t hlen = (size_t)(last_colon - s);
-    if (hlen >= hostlen) hlen = hostlen - 1;
+    if (hlen >= hostlen) return -1;
     memcpy(host, s, hlen);
     host[hlen] = '\0';
 
     size_t plen = strlen(last_colon + 1);
-    if (plen >= portlen) plen = portlen - 1;
+    if (plen >= portlen) return -1;
     memcpy(port, last_colon + 1, plen);
     port[plen] = '\0';
 

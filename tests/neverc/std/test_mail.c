@@ -66,6 +66,13 @@ static void test_format_address(void) {
     addr.name[0] = '\0';
     neverc_mail_format_address(&addr, buf, sizeof(buf));
     ASSERT_STREQ(buf, "john@example.com");
+
+    strcpy(addr.name, "Doe, John");
+    strcpy(addr.address, "j@x.com");
+    neverc_mail_format_address(&addr, buf, sizeof(buf));
+    ASSERT_STREQ(buf, "\"Doe, John\" <j@x.com>");
+    neverc_mail_address_t parsed[4];
+    ASSERT_EQ(neverc_mail_parse_address_list(buf, parsed, 4), 1);
 }
 
 static void test_parse_message(void) {

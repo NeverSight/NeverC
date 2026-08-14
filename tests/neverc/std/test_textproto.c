@@ -78,6 +78,14 @@ static void test_read_mime_header(void) {
     check("header_count", neverc_mime_header_len(&h) == 3);
     check("consumed_before_body", consumed < strlen(data));
     neverc_mime_header_free(&h);
+
+    const char *folded = "X-Long: part1\r\n part2\r\n\r\n";
+    neverc_mime_header_init(&h);
+    consumed = 0;
+    rc = neverc_textproto_read_mime_header(folded, strlen(folded), &h, &consumed);
+    check("folded_ok", rc == 0);
+    check_str("folded_value", neverc_mime_header_get(&h, "X-Long"), "part1 part2");
+    neverc_mime_header_free(&h);
 }
 
 static void test_read_line(void) {

@@ -156,6 +156,11 @@ double   neverc_math_float64frombits(uint64_t bits);
 uint32_t neverc_math_float32bits(float f);
 float    neverc_math_float32frombits(uint32_t bits);
 
+#include "math/rand.h"
+#include "math/bits.h"
+#include "math/cmplx.h"
+#include "math/big.h"
+
 /* ===== Std Module Dot-Syntax Support ===== */
 
 #ifdef __neverc__

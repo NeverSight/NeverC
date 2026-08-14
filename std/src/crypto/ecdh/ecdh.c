@@ -470,6 +470,13 @@ int neverc_ecdh_compute(const neverc_ecdh_key_t *local_private,
     neverc_elliptic_scalar_mult(ec, &result, &remote, &scalar);
 
     bigint_to_bytes(&result.x, out, shared_size);
+    if (is_all_zero(out, (size_t)shared_size)) {
+        neverc_elliptic_point_free(&result);
+        neverc_elliptic_point_free(&remote);
+        secure_bigint_free(&scalar);
+        neverc_platform_secure_zero(out, (size_t)shared_size);
+        return -1;
+    }
 
     neverc_elliptic_point_free(&result);
     neverc_elliptic_point_free(&remote);

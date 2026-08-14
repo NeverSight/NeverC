@@ -252,6 +252,7 @@ static void test_qp_decode(void) {
     ASSERT_INT_EQ(neverc_mime_qp_decode(NULL, 1, out,
                                         sizeof(out), &out_len), -1);
     ASSERT_INT_EQ(neverc_mime_qp_decode("x", 1, NULL, 1, &out_len), -1);
+    ASSERT_INT_EQ(neverc_mime_qp_decode("a=ZZ", 4, out, sizeof(out), &out_len), -1);
 }
 
 static void test_qp_encode(void) {

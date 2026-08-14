@@ -29,6 +29,11 @@ static void test_valid_path(void) {
     check("double_slash", neverc_fs_valid_path("foo//bar") == 0);
     check("backslash", neverc_fs_valid_path("foo\\bar") == 0);
     check("dotdot_backslash", neverc_fs_valid_path("..\\etc\\passwd") == 0);
+#if defined(_WIN32)
+    check("drive relative", neverc_fs_valid_path("C:../evil") == 0);
+    check("drive prefix", neverc_fs_valid_path("C:foo") == 0);
+    check("ads colon", neverc_fs_valid_path("file:stream") == 0);
+#endif
 }
 
 #if defined(_WIN32)

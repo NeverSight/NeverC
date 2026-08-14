@@ -271,6 +271,33 @@ static void test_dot_stuffing(void) {
     neverc_smtp_close(c);
 }
 
+static void test_smtp_reject_injection(void) {
+    printf("[smtp_reject_injection]\n");
+
+    char addr[32];
+    snprintf(addr, sizeof(addr), "127.0.0.1:%d", g_smtp_port);
+    const char *err = NULL;
+    neverc_smtp_client_t *c = neverc_smtp_dial(addr, &err);
+    check_true("dial for injection tests", c != NULL);
+    if (!c) return;
+
+    check_true("hello crlf rejected",
+               neverc_smtp_hello(c, "host\r\nMAIL FROM:<x>") == -1);
+    check_true("mail crlf rejected",
+               neverc_smtp_mail(c, "a@b.com\r\nRCPT TO:<x@y>") == -1);
+    check_true("mail angle rejected",
+               neverc_smtp_mail(c, "a@b.com>") == -1);
+    check_true("rcpt crlf rejected",
+               neverc_smtp_rcpt(c, "victim@x.com\r\nMAIL FROM:<evil>") == -1);
+    neverc_smtp_close(c);
+
+    const char *to[] = {"ok@example.com"};
+    check_true("send_mail rejects injected from",
+               neverc_smtp_send_mail(addr, NEVERC_SMTP_AUTH_NONE, NULL, NULL,
+                                     "from@x.com\r\nRSET", to, 1,
+                                     "x", 1, &err) == -1);
+}
+
 int main(void) {
     printf("=== NeverC SMTP tests ===\n");
 
@@ -306,6 +333,7 @@ int main(void) {
     test_smtp_auth_login();
     test_send_mail();
     test_dot_stuffing();
+    test_smtp_reject_injection();
 
     g_smtp_running = 0;
 

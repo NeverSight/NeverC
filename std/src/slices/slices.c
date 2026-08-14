@@ -34,6 +34,9 @@ int neverc_slices_equal(const void *s1, size_t len1, const void *s2, size_t len2
 
 int neverc_slices_compare(const void *s1, size_t len1, const void *s2, size_t len2,
                            size_t elem_size, neverc_cmp_func_t cmp) {
+    if (!cmp || elem_size == 0) return 0;
+    if (len1 > 0 && !s1) len1 = 0;
+    if (len2 > 0 && !s2) len2 = 0;
     size_t minlen = len1 < len2 ? len1 : len2;
     const char *p1 = (const char *)s1;
     const char *p2 = (const char *)s2;
@@ -53,6 +56,7 @@ int neverc_slices_contains(const void *slice, size_t len, const void *elem,
 
 int neverc_slices_index(const void *slice, size_t len, const void *elem,
                          size_t elem_size, neverc_eq_func_t eq) {
+    if (len == 0 || !slice || !elem || elem_size == 0 || !eq) return -1;
     const char *p = (const char *)slice;
     for (size_t i = 0; i < len; i++) {
         if (eq(p + i * elem_size, elem)) return (int)i;
@@ -61,7 +65,7 @@ int neverc_slices_index(const void *slice, size_t len, const void *elem,
 }
 
 void neverc_slices_reverse(void *slice, size_t len, size_t elem_size) {
-    if (len <= 1) return;
+    if (!slice || len <= 1 || elem_size == 0) return;
     char *p = (char *)slice;
     char stack_buf[256];
     char *tmp = elem_size <= sizeof(stack_buf) ? stack_buf : (char *)malloc(elem_size);
@@ -233,7 +237,7 @@ void neverc_slices_sort_stable(void *slice, size_t len, size_t elem_size, neverc
 }
 
 size_t neverc_slices_delete(void *slice, size_t len, size_t elem_size, size_t i, size_t j) {
-    if (i >= j || j > len) return len;
+    if (!slice || elem_size == 0 || i >= j || j > len) return len;
     char *p = (char *)slice;
     size_t tail = len - j;
     if (tail > 0) memmove(p + i * elem_size, p + j * elem_size, tail * elem_size);
