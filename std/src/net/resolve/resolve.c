@@ -1,4 +1,5 @@
 #include "neverc/std/net/resolve.h"
+#include <limits.h>
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -106,15 +107,39 @@ int neverc_net_lookup_ip(const char *network, const char *host,
  * LookupPort — service name to port number
  * ====================================================================== */
 
+static int parse_port_text(const char *port, unsigned *out) {
+    if (!port || !port[0]) return -1;
+    unsigned long value = 0;
+    for (const unsigned char *p = (const unsigned char *)port; *p; p++) {
+        if (*p < '0' || *p > '9') return -1;
+        value = value * 10UL + (unsigned long)(*p - '0');
+        if (value > 65535UL) return -1;
+    }
+    if (out) *out = (unsigned)value;
+    return 0;
+}
+
+static int port_text_valid(const char *port) {
+    return parse_port_text(port, NULL) == 0;
+}
+
 int neverc_net_lookup_port(const char *network, const char *service) {
-    if (!service) return -1;
+    if (!service || !service[0]) return -1;
     ensure_wsa_init();
 
-    /* Try numeric first */
-    char *end;
-    long p = strtol(service, &end, 10);
-    if (*end == '\0' && p >= 0 && p <= 65535)
-        return (int)p;
+    unsigned port_value;
+    if (parse_port_text(service, &port_value) == 0)
+        return (int)port_value;
+
+    /* Overflowed digit strings and signed/whitespace numerics are not names. */
+    unsigned char lead = (unsigned char)service[0];
+    if (lead == '+' || lead == '-' || lead == ' ' || lead == '\t')
+        return -1;
+    int digits = 1;
+    for (const unsigned char *p = (const unsigned char *)service; *p; p++) {
+        if (*p < '0' || *p > '9') { digits = 0; break; }
+    }
+    if (digits) return -1;
 
     struct addrinfo hints, *result;
     memset(&hints, 0, sizeof(hints));
@@ -265,6 +290,8 @@ int neverc_net_lookup_mx(const char *name, neverc_net_mx_list_t *out) {
         if (ns_rr_type(rr) != T_MX) continue;
 
         const unsigned char *rdata = ns_rr_rdata(rr);
+        int rdlen = ns_rr_rdlen(rr);
+        if (rdlen < 2) continue;
         out->records[out->count].pref =
             (uint16_t)((rdata[0] << 8) | rdata[1]);
 
@@ -389,10 +416,12 @@ int neverc_net_lookup_srv(const char *service, const char *proto,
     memset(out, 0, sizeof(*out));
 
     char qname[512];
+    int qn;
     if (service && proto)
-        snprintf(qname, sizeof(qname), "_%s._%s.%s", service, proto, name);
+        qn = snprintf(qname, sizeof(qname), "_%s._%s.%s", service, proto, name);
     else
-        snprintf(qname, sizeof(qname), "%s", name);
+        qn = snprintf(qname, sizeof(qname), "%s", name);
+    if (qn < 0 || (size_t)qn >= sizeof(qname)) return -1;
 
 #ifdef _WIN32
     DNS_RECORD *rec = NULL;
@@ -427,6 +456,8 @@ int neverc_net_lookup_srv(const char *service, const char *proto,
         if (ns_rr_type(rr) != T_SRV) continue;
 
         const unsigned char *rdata = ns_rr_rdata(rr);
+        int rdlen = ns_rr_rdlen(rr);
+        if (rdlen < 6) continue;
         out->records[out->count].priority =
             (uint16_t)((rdata[0] << 8) | rdata[1]);
         out->records[out->count].weight =
@@ -449,17 +480,6 @@ int neverc_net_lookup_srv(const char *service, const char *proto,
  * SplitHostPort / JoinHostPort — like Go net.SplitHostPort
  * ====================================================================== */
 
-static int port_text_valid(const char *port) {
-    if (!port || !port[0]) return 0;
-    unsigned long value = 0;
-    for (const unsigned char *p = (const unsigned char *)port; *p; p++) {
-        if (*p < '0' || *p > '9') return 0;
-        value = value * 10UL + (unsigned long)(*p - '0');
-        if (value > 65535UL) return 0;
-    }
-    return 1;
-}
-
 int neverc_net_split_host_port(const char *hostport,
                                  char *host, size_t hostlen,
                                  char *port, size_t portlen) {
@@ -481,15 +501,12 @@ int neverc_net_split_host_port(const char *hostport,
         memcpy(host, s + 1, hlen);
         host[hlen] = '\0';
 
-        if (end[1] == ':') {
-            size_t plen = strlen(end + 2);
-            if (plen >= portlen) return -1;
-            memcpy(port, end + 2, plen);
-            port[plen] = '\0';
-            if (!port_text_valid(port)) return -1;
-        } else if (end[1] != '\0') {
-            return -1;
-        }
+        if (end[1] != ':') return -1;
+        size_t plen = strlen(end + 2);
+        if (plen >= portlen) return -1;
+        memcpy(port, end + 2, plen);
+        port[plen] = '\0';
+        if (!port_text_valid(port)) return -1;
         return 0;
     }
 
@@ -631,7 +648,8 @@ int neverc_net_pipe(neverc_net_pipe_t **end1, neverc_net_pipe_t **end2) {
 }
 
 int neverc_net_pipe_read(neverc_net_pipe_t *p, void *buf, size_t len) {
-    if (!p || !buf || len == 0) return -1;
+    if (!p || (!buf && len > 0) || len > (size_t)INT_MAX) return -1;
+    if (len == 0) return 0;
 
     pipe_ring_t *r = p->read_ring;
     pipe_mutex_lock(&r->lock);
@@ -663,7 +681,8 @@ int neverc_net_pipe_read(neverc_net_pipe_t *p, void *buf, size_t len) {
 }
 
 int neverc_net_pipe_write(neverc_net_pipe_t *p, const void *data, size_t len) {
-    if (!p || !data || len == 0) return -1;
+    if (!p || (!data && len > 0) || len == 0 || len > (size_t)INT_MAX)
+        return -1;
 
     pipe_ring_t *r = p->write_ring;
     size_t written = 0;

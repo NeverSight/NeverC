@@ -83,6 +83,26 @@ static void test_empty(void) {
     neverc_poly1305_auth(tag, (const uint8_t *)"", 0, key);
     check_true("empty msg verify", neverc_poly1305_verify(tag, (const uint8_t *)"", 0, key));
 
+    /* RFC 7539: no blocks => h = 0, tag = s (the second half of the key). */
+    check_true("empty msg tag is the pad",
+               memcmp(tag, key + 16, 16) == 0);
+
+    uint8_t rfc_key[32];
+    hex_to_bytes(
+        "85d6be7857556d337f4452fe42d506a8"
+        "0103808afb0db2fd4abff6af4149f51b", rfc_key, 32);
+    uint8_t rfc_tag[16];
+    neverc_poly1305_auth(rfc_tag, NULL, 0, rfc_key);
+    uint8_t rfc_expected[16];
+    hex_to_bytes("0103808afb0db2fd4abff6af4149f51b", rfc_expected, 16);
+    check_true("empty msg RFC 7539 key tag",
+               memcmp(rfc_tag, rfc_expected, 16) == 0);
+    check_true("empty msg RFC 7539 key verify",
+               neverc_poly1305_verify(rfc_expected, NULL, 0, rfc_key));
+    rfc_expected[0] ^= 1;
+    check_true("empty msg rejects wrong tag",
+               !neverc_poly1305_verify(rfc_expected, NULL, 0, rfc_key));
+
     uint8_t zero_key[32];
     memset(zero_key, 0, sizeof(zero_key));
     uint8_t zero_tag[16];
@@ -91,8 +111,6 @@ static void test_empty(void) {
     memset(expected_zero, 0, sizeof(expected_zero));
     check_true("empty msg all-zero key tag",
                memcmp(zero_tag, expected_zero, 16) == 0);
-    check_true("empty msg not pad-only",
-               memcmp(tag, key + 16, 16) != 0);
 }
 
 static void test_various_lengths(void) {

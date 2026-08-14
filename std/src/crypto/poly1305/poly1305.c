@@ -41,8 +41,8 @@ void neverc_poly1305_auth(uint8_t tag[16], const uint8_t *msg, size_t msg_len,
     uint64_t c;
 
     size_t off = 0;
-    do {
-        size_t blen = msg_len > off ? msg_len - off : 0;
+    while (off < msg_len) {
+        size_t blen = msg_len - off;
         uint64_t m0, m1, hibit;
         if (blen >= 16) {
             blen = 16;
@@ -52,8 +52,7 @@ void neverc_poly1305_auth(uint8_t tag[16], const uint8_t *msg, size_t msg_len,
         } else {
             uint8_t buf[16];
             memset(buf, 0, sizeof(buf));
-            if (blen > 0)
-                memcpy(buf, msg + off, blen);
+            memcpy(buf, msg + off, blen);
             buf[blen] = 1; /* high bit for final partial block */
             m0 = get_u64le(buf);
             m1 = get_u64le(buf + 8);
@@ -79,7 +78,7 @@ void neverc_poly1305_auth(uint8_t tag[16], const uint8_t *msg, size_t msg_len,
         h1 += c;
 
         off += (blen >= 16) ? 16 : msg_len;
-    } while (off < msg_len);
+    }
 
     /* fully carry h */
                  c = (h1 >> 44); h1 &= 0xfffffffffffULL;
@@ -160,10 +159,10 @@ void neverc_poly1305_auth(uint8_t tag[16], const uint8_t *msg, size_t msg_len,
     uint32_t s1_5 = rr1 * 5, s2_5 = rr2 * 5, s3_5 = rr3 * 5, s4_5 = rr4 * 5;
 
     size_t off = 0;
-    do {
+    while (off < msg_len) {
         /* Load 16-byte block */
         uint8_t block[17];
-        size_t blen = msg_len > off ? msg_len - off : 0;
+        size_t blen = msg_len - off;
         if (blen > 16) blen = 16;
         memcpy(block, msg + off, blen);
         block[blen] = 1; /* hibit */
@@ -197,7 +196,7 @@ void neverc_poly1305_auth(uint8_t tag[16], const uint8_t *msg, size_t msg_len,
         c = h0 >> 26;             h0 &= 0x3ffffff; h1 += c;
 
         off += (blen >= 16) ? 16 : msg_len;
-    } while (off < msg_len);
+    }
 
     /* Final reduction: fully carry h */
     uint32_t c = h1 >> 26; h1 &= 0x3ffffff; h2 += c;

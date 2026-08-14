@@ -335,6 +335,100 @@ static void test_handshake_done_frame(void) {
  * MAX_DATA / MAX_STREAM_DATA
  * ====================================================================== */
 
+static size_t write_new_conn_id(uint8_t *buf, size_t cap, uint64_t sequence,
+                                uint64_t retire_prior_to, uint8_t cid_len,
+                                const uint8_t *cid, const uint8_t *token) {
+    size_t pos = 0, w;
+    if (neverc_quic_varint_encode(0x18, buf + pos, cap - pos, &w) != 0)
+        return 0;
+    pos += w;
+    if (neverc_quic_varint_encode(sequence, buf + pos, cap - pos, &w) != 0)
+        return 0;
+    pos += w;
+    if (neverc_quic_varint_encode(retire_prior_to, buf + pos, cap - pos,
+                                  &w) != 0)
+        return 0;
+    pos += w;
+    if (pos >= cap) return 0;
+    buf[pos++] = cid_len;
+    if (cid_len) {
+        if (pos + cid_len > cap) return 0;
+        memcpy(buf + pos, cid, cid_len);
+        pos += cid_len;
+    }
+    if (pos + 16 > cap) return 0;
+    memcpy(buf + pos, token, 16);
+    return pos + 16;
+}
+
+static void test_new_conn_id_valid(void) {
+    uint8_t cid[8] = { 1, 2, 3, 4, 5, 6, 7, 8 };
+    uint8_t token[16];
+    memset(token, 0xA5, sizeof(token));
+    uint8_t buf[64];
+    size_t written = write_new_conn_id(buf, sizeof(buf), 1, 1, 8, cid, token);
+    ASSERT_TRUE(written > 0);
+
+    quic_frame_new_conn_id_t out;
+    size_t consumed;
+    ASSERT_EQ(neverc_quic_parse_new_conn_id(buf, written, &out, &consumed), 0);
+    ASSERT_EQ(consumed, written);
+    ASSERT_EQ(out.sequence, 1);
+    ASSERT_EQ(out.retire_prior_to, 1);
+    ASSERT_EQ(out.conn_id_len, 8);
+    ASSERT_TRUE(memcmp(out.conn_id, cid, 8) == 0);
+    ASSERT_TRUE(memcmp(out.stateless_reset_token, token, 16) == 0);
+}
+
+static void test_new_conn_id_rejects_zero_length(void) {
+    uint8_t token[16];
+    memset(token, 0x11, sizeof(token));
+    uint8_t buf[64];
+    size_t written = write_new_conn_id(buf, sizeof(buf), 1, 0, 0, NULL, token);
+    ASSERT_TRUE(written > 0);
+
+    quic_frame_new_conn_id_t out;
+    size_t consumed;
+    ASSERT_EQ(neverc_quic_parse_new_conn_id(buf, written, &out, &consumed), -1);
+}
+
+static void test_new_conn_id_rejects_retire_after_sequence(void) {
+    uint8_t cid[8] = { 9, 8, 7, 6, 5, 4, 3, 2 };
+    uint8_t token[16];
+    memset(token, 0x22, sizeof(token));
+    uint8_t buf[64];
+    size_t written = write_new_conn_id(buf, sizeof(buf), 1, 2, 8, cid, token);
+    ASSERT_TRUE(written > 0);
+
+    quic_frame_new_conn_id_t out;
+    size_t consumed;
+    ASSERT_EQ(neverc_quic_parse_new_conn_id(buf, written, &out, &consumed), -1);
+}
+
+static void test_frame_allowed_encryption_levels(void) {
+    /* RFC 9000 §12.4: STREAM / MAX_DATA / NEW_CONNECTION_ID are 0-RTT/1-RTT
+     * only. CRYPTO and transport CONNECTION_CLOSE may appear in Initial. */
+    ASSERT_EQ(neverc_quic_frame_allowed(0x08, QUIC_ENC_INITIAL), 0);
+    ASSERT_EQ(neverc_quic_frame_allowed(0x08, QUIC_ENC_HANDSHAKE), 0);
+    ASSERT_EQ(neverc_quic_frame_allowed(0x08, QUIC_ENC_APPLICATION), 1);
+    ASSERT_EQ(neverc_quic_frame_allowed(0x10, QUIC_ENC_INITIAL), 0);
+    ASSERT_EQ(neverc_quic_frame_allowed(0x10, QUIC_ENC_APPLICATION), 1);
+    ASSERT_EQ(neverc_quic_frame_allowed(0x18, QUIC_ENC_INITIAL), 0);
+    ASSERT_EQ(neverc_quic_frame_allowed(0x18, QUIC_ENC_APPLICATION), 1);
+    ASSERT_EQ(neverc_quic_frame_allowed(0x04, QUIC_ENC_INITIAL), 0);
+    ASSERT_EQ(neverc_quic_frame_allowed(0x06, QUIC_ENC_INITIAL), 1);
+    ASSERT_EQ(neverc_quic_frame_allowed(0x06, QUIC_ENC_EARLY_DATA), 0);
+    ASSERT_EQ(neverc_quic_frame_allowed(0x06, QUIC_ENC_APPLICATION), 1);
+    ASSERT_EQ(neverc_quic_frame_allowed(0x1c, QUIC_ENC_INITIAL), 1);
+    ASSERT_EQ(neverc_quic_frame_allowed(0x1d, QUIC_ENC_INITIAL), 0);
+    ASSERT_EQ(neverc_quic_frame_allowed(0x1d, QUIC_ENC_EARLY_DATA), 1);
+    ASSERT_EQ(neverc_quic_frame_allowed(0x1d, QUIC_ENC_APPLICATION), 1);
+    ASSERT_EQ(neverc_quic_frame_allowed(0x1e, QUIC_ENC_HANDSHAKE), 0);
+    ASSERT_EQ(neverc_quic_frame_allowed(0x1e, QUIC_ENC_APPLICATION), 1);
+    ASSERT_EQ(neverc_quic_frame_allowed(0x02, QUIC_ENC_INITIAL), 1);
+    ASSERT_EQ(neverc_quic_frame_allowed(0x02, QUIC_ENC_EARLY_DATA), 0);
+}
+
 static void test_max_data_frame(void) {
     uint8_t buf[64];
     size_t written;
@@ -369,6 +463,10 @@ int main(void) {
     test_transport_params_defaults();
     test_ping_frame();
     test_handshake_done_frame();
+    test_new_conn_id_valid();
+    test_new_conn_id_rejects_zero_length();
+    test_new_conn_id_rejects_retire_after_sequence();
+    test_frame_allowed_encryption_levels();
     test_max_data_frame();
 
     printf("\n%d passed, %d failed (of %d)\n", tests_passed, tests_failed, tests_run);

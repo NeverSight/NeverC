@@ -308,6 +308,8 @@ static int qt_handle_frames(struct neverc_quic_conn *conn,
                                       payload_len - position,
                                       &frame_type, &type_len) != 0)
             return -1;
+        if (!neverc_quic_frame_allowed(frame_type, level))
+            return -1;
         size_t consumed = type_len;
         if (frame_type == QUIC_FRAME_PADDING) {
             position++;
@@ -331,8 +333,7 @@ static int qt_handle_frames(struct neverc_quic_conn *conn,
             free(ack.ranges);
         } else if (frame_type == QUIC_FRAME_CRYPTO) {
             quic_frame_crypto_t crypto;
-            if (level == QUIC_ENC_APPLICATION || level == QUIC_ENC_EARLY_DATA ||
-                neverc_quic_parse_crypto_frame(payload + position,
+            if (neverc_quic_parse_crypto_frame(payload + position,
                                                payload_len - position,
                                                &crypto, &consumed) != 0 ||
                 neverc_quic_tls_receive_crypto(conn->tls, level,
@@ -344,8 +345,7 @@ static int qt_handle_frames(struct neverc_quic_conn *conn,
         } else if (frame_type >= QUIC_FRAME_STREAM_BASE &&
                    frame_type <= QUIC_FRAME_STREAM_BASE + 7U) {
             quic_frame_stream_t stream;
-            if (level != QUIC_ENC_APPLICATION ||
-                neverc_quic_parse_stream_frame(payload + position,
+            if (neverc_quic_parse_stream_frame(payload + position,
                                                payload_len - position,
                                                &stream, &consumed) != 0 ||
                 neverc_quic_stream_receive_locked(conn, &stream) != 0)
@@ -480,8 +480,7 @@ static int qt_handle_frames(struct neverc_quic_conn *conn,
             nc_cond_broadcast(&conn->stream_avail_cond);
             nc_cond_broadcast(&conn->datagram_cond);
         } else if (frame_type == QUIC_FRAME_HANDSHAKE_DONE) {
-            if (conn->side != QUIC_SIDE_CLIENT ||
-                level != QUIC_ENC_APPLICATION)
+            if (conn->side != QUIC_SIDE_CLIENT)
                 return -1;
             conn->handshake_confirmed = 1;
             conn->peer_completed_address_validation = 1;

@@ -123,6 +123,28 @@ static void test_settings_encode_decode_roundtrip(void) {
     ASSERT_EQ(decoded.qpack_blocked_streams, orig.qpack_blocked_streams);
 }
 
+static void test_settings_reserved_http2_ids_rejected(void) {
+    /* RFC 9114 §11.2.2: HTTP/2 setting identifiers 0x02..0x05 MUST be
+     * treated as H3_SETTINGS_ERROR. */
+    static const uint8_t reserved_ids[] = { 0x02, 0x03, 0x04, 0x05 };
+    h3_settings_t decoded;
+    for (size_t i = 0; i < sizeof(reserved_ids); i++) {
+        uint8_t payload[] = { reserved_ids[i], 0x00 };
+        ASSERT_EQ(neverc_h3_settings_decode(payload, sizeof(payload),
+                                            &decoded), -1);
+    }
+}
+
+static void test_settings_grease_ignored(void) {
+    /* RFC 9114 §7.2.4.1: identifiers 0x1f * N + 0x21 MUST be ignored. */
+    uint8_t payload[] = { 0x21, 0x00 };
+    h3_settings_t decoded;
+    ASSERT_EQ(neverc_h3_settings_decode(payload, sizeof(payload),
+                                        &decoded), 0);
+    ASSERT_EQ(decoded.qpack_max_table_capacity, 0);
+    ASSERT_EQ(decoded.qpack_blocked_streams, 0);
+}
+
 static void test_settings_zero_values(void) {
     h3_settings_t s = { 0, UINT64_MAX, 0 };
     uint8_t buf[256];
@@ -470,6 +492,8 @@ int main(void) {
     test_frame_header_empty_buf();
     test_settings_default();
     test_settings_encode_decode_roundtrip();
+    test_settings_reserved_http2_ids_rejected();
+    test_settings_grease_ignored();
     test_settings_zero_values();
     test_data_frame_write();
     test_data_frame_empty();

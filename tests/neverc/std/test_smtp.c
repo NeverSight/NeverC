@@ -296,6 +296,19 @@ static void test_smtp_reject_injection(void) {
                neverc_smtp_send_mail(addr, NEVERC_SMTP_AUTH_NONE, NULL, NULL,
                                      "from@x.com\r\nRSET", to, 1,
                                      "x", 1, &err) == -1);
+
+    neverc_smtp_client_t *auth = neverc_smtp_dial(addr, &err);
+    check_true("dial for auth overflow", auth != NULL);
+    if (auth) {
+        char huge[600];
+        memset(huge, 'u', sizeof(huge) - 1);
+        huge[sizeof(huge) - 1] = '\0';
+        check_true("AUTH PLAIN rejects oversized username",
+                   neverc_smtp_auth(auth, NEVERC_SMTP_AUTH_PLAIN, huge, "pw") == -1);
+        check_true("AUTH LOGIN rejects oversized username",
+                   neverc_smtp_auth(auth, NEVERC_SMTP_AUTH_LOGIN, huge, "pw") == -1);
+        neverc_smtp_close(auth);
+    }
 }
 
 int main(void) {

@@ -574,7 +574,8 @@ static int h3_read_request(h3_conn_t *connection,
                    type == NC_H3_FRAME_CANCEL_PUSH ||
                    type == NC_H3_FRAME_PUSH_PROMISE) {
             return -1;
-        } else if (h3_skip_exact(stream, length) != 0) {
+        } else if (length > H3_MAX_HEADER_SECTION ||
+                   h3_skip_exact(stream, length) != 0) {
             return -1;
         }
     }
@@ -908,8 +909,11 @@ static int h3_parse_control_buffer(h3_conn_t *connection) {
             h3_settings_t settings;
             if (neverc_h3_settings_decode(
                     connection->control_buffer + position, (size_t)length,
-                    &settings) != 0)
-                goto invalid;
+                    &settings) != 0) {
+                h3_protocol_error(connection, NC_H3_SETTINGS_ERROR,
+                                  "invalid HTTP/3 SETTINGS");
+                return -1;
+            }
             nc_mutex_lock(&connection->lock);
             connection->peer_settings = settings;
             connection->peer_settings_received = 1;
@@ -1625,9 +1629,11 @@ static int h3_client_read_response(h3_conn_t *connection,
         } else if (type == NC_H3_FRAME_SETTINGS ||
                    type == NC_H3_FRAME_GOAWAY ||
                    type == NC_H3_FRAME_MAX_PUSH_ID ||
-                   type == NC_H3_FRAME_CANCEL_PUSH) {
+                   type == NC_H3_FRAME_CANCEL_PUSH ||
+                   type == NC_H3_FRAME_PUSH_PROMISE) {
             return -1;
-        } else if (h3_skip_exact(stream, length) != 0) {
+        } else if (length > H3_MAX_HEADER_SECTION ||
+                   h3_skip_exact(stream, length) != 0) {
             return -1;
         }
     }

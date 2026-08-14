@@ -29,6 +29,15 @@ static void test_valid_path(void) {
     check("double_slash", neverc_fs_valid_path("foo//bar") == 0);
     check("backslash", neverc_fs_valid_path("foo\\bar") == 0);
     check("dotdot_backslash", neverc_fs_valid_path("..\\etc\\passwd") == 0);
+    check("reserved_con", neverc_fs_valid_path("CON") == 0);
+    check("reserved_con_txt", neverc_fs_valid_path("CON.txt") == 0);
+    check("reserved_nul", neverc_fs_valid_path("nul") == 0);
+    check("reserved_com1", neverc_fs_valid_path("dir/COM1") == 0);
+    check("reserved_lpt9", neverc_fs_valid_path("LPT9.log") == 0);
+    check("trailing_dot", neverc_fs_valid_path("foo.") == 0);
+    check("trailing_space", neverc_fs_valid_path("foo ") == 0);
+    check("conlike", neverc_fs_valid_path("console.txt") == 1);
+    check("com10", neverc_fs_valid_path("COM10") == 1);
 #if defined(_WIN32)
     check("drive relative", neverc_fs_valid_path("C:../evil") == 0);
     check("drive prefix", neverc_fs_valid_path("C:foo") == 0);

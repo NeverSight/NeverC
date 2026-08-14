@@ -49,6 +49,51 @@
 #define QUIC_MAX_ACK_RANGES 256
 
 /* ======================================================================
+ * Encryption-level permission (RFC 9000 §12.4)
+ * ====================================================================== */
+
+int neverc_quic_frame_allowed(uint64_t frame_type, quic_enc_level_t level) {
+    int initial_or_handshake = level == QUIC_ENC_INITIAL ||
+                               level == QUIC_ENC_HANDSHAKE;
+    int application = level == QUIC_ENC_APPLICATION;
+    int early_or_app = application || level == QUIC_ENC_EARLY_DATA;
+
+    if (frame_type == QUIC_FRAME_PADDING || frame_type == QUIC_FRAME_PING)
+        return 1;
+    if (frame_type == QUIC_FRAME_ACK || frame_type == QUIC_FRAME_ACK_ECN ||
+        frame_type == QUIC_FRAME_CRYPTO)
+        return initial_or_handshake || application;
+    if (frame_type == QUIC_FRAME_CONNECTION_CLOSE)
+        return 1;
+    if (frame_type == QUIC_FRAME_CONNECTION_CLOSE_APP)
+        return early_or_app;
+    if (frame_type == QUIC_FRAME_HANDSHAKE_DONE ||
+        frame_type == QUIC_FRAME_NEW_TOKEN)
+        return application;
+    if (frame_type == QUIC_FRAME_RESET_STREAM ||
+        frame_type == QUIC_FRAME_STOP_SENDING ||
+        frame_type == QUIC_FRAME_MAX_DATA ||
+        frame_type == QUIC_FRAME_MAX_STREAM_DATA ||
+        frame_type == QUIC_FRAME_MAX_STREAMS_BIDI ||
+        frame_type == QUIC_FRAME_MAX_STREAMS_UNI ||
+        frame_type == QUIC_FRAME_DATA_BLOCKED ||
+        frame_type == QUIC_FRAME_STREAM_DATA_BLOCKED ||
+        frame_type == QUIC_FRAME_STREAMS_BLOCKED_BIDI ||
+        frame_type == QUIC_FRAME_STREAMS_BLOCKED_UNI ||
+        frame_type == QUIC_FRAME_NEW_CONNECTION_ID ||
+        frame_type == QUIC_FRAME_RETIRE_CONNECTION_ID ||
+        frame_type == QUIC_FRAME_PATH_CHALLENGE ||
+        frame_type == QUIC_FRAME_PATH_RESPONSE ||
+        frame_type == QUIC_FRAME_DATAGRAM ||
+        frame_type == QUIC_FRAME_DATAGRAM_LEN)
+        return early_or_app;
+    if (frame_type >= QUIC_FRAME_STREAM_BASE &&
+        frame_type <= QUIC_FRAME_STREAM_BASE + 7U)
+        return early_or_app;
+    return 0;
+}
+
+/* ======================================================================
  * Frame Parsing
  * ====================================================================== */
 
@@ -258,7 +303,12 @@ int neverc_quic_parse_new_conn_id(const uint8_t *buf, size_t len,
     out->conn_id_len = *p++;
     rem--;
 
-    if (out->conn_id_len > 20 || rem < out->conn_id_len + 16) return -1;
+    /* RFC 9000 §19.15: Retire Prior To MUST NOT exceed Sequence Number,
+     * and Connection ID Length MUST be 1..20. */
+    if (out->retire_prior_to > out->sequence) return -1;
+    if (out->conn_id_len < 1 || out->conn_id_len > 20 ||
+        rem < out->conn_id_len + 16)
+        return -1;
     memcpy(out->conn_id, p, out->conn_id_len);
     p += out->conn_id_len;
     rem -= out->conn_id_len;

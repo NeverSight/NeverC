@@ -532,6 +532,9 @@ int neverc_quic_remove_header_protection(const uint8_t *hp_key,
                                          uint8_t *packet, size_t packet_len,
                                          size_t packet_number_offset);
 
+/* RFC 9000 §12.4: which frames may appear at each encryption level. */
+int neverc_quic_frame_allowed(uint64_t frame_type, quic_enc_level_t level);
+
 int neverc_quic_parse_crypto_frame(const uint8_t *buf, size_t len,
                                    quic_frame_crypto_t *output,
                                    size_t *consumed);

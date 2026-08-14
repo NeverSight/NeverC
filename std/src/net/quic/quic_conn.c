@@ -108,8 +108,8 @@ static quic_stream_t *stream_create(struct neverc_quic_conn *conn,
         receive_limit = conn->local_params.initial_max_stream_data_bidi_local;
         send_limit = conn->peer_params.initial_max_stream_data_bidi_remote;
     }
-    if (receive_limit == 0) receive_limit = 1024U * 1024U;
-    if (send_limit == 0) send_limit = 1024U * 1024U;
+    /* RFC 9000 §4.1: a missing or zero transport parameter is a zero
+     * limit. Substituting a default would violate flow control. */
     stream->recv_max_data = receive_limit;
     stream->send_max_data = send_limit;
 

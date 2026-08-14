@@ -174,6 +174,13 @@ int neverc_h3_settings_decode(const uint8_t *payload, size_t len,
             seen |= 4U;
             s->qpack_blocked_streams = val;
             break;
+        case 0x02: /* HTTP/2 SETTINGS_ENABLE_PUSH */
+        case 0x03: /* HTTP/2 SETTINGS_MAX_CONCURRENT_STREAMS */
+        case 0x04: /* HTTP/2 SETTINGS_INITIAL_WINDOW_SIZE */
+        case 0x05: /* HTTP/2 SETTINGS_MAX_FRAME_SIZE */
+            /* RFC 9114 §7.2.4.1 / §11.2.2: reserved HTTP/2 identifiers
+             * MUST be treated as a connection error of H3_SETTINGS_ERROR. */
+            return -1;
         default:
             /* Unknown settings MUST be ignored (RFC 9114 §7.2.4) */
             break;

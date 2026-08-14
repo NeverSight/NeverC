@@ -236,6 +236,20 @@ static void test_null_guards(void) {
     ASSERT_INT_EQ(neverc_slices_index_func(NULL, 3, sizeof(int), is_even), -1);
     ASSERT_INT_EQ((int)neverc_slices_delete_func(NULL, 5, sizeof(int), is_even), 5);
     ASSERT_INT_EQ((int)neverc_slices_compact(NULL, 4, sizeof(int), eq_int), 4);
+    ASSERT_INT_EQ(neverc_slices_min(NULL, 3, sizeof(int), cmp_int), -1);
+    ASSERT_INT_EQ(neverc_slices_max(NULL, 3, sizeof(int), cmp_int), -1);
+    ASSERT_INT_EQ(neverc_slices_min(arr, 3, sizeof(int), NULL), -1);
+    ASSERT_INT_EQ(neverc_slices_max(arr, 3, 0, cmp_int), -1);
+    ASSERT_INT_EQ(neverc_slices_index_int(NULL, 3, 1), -1);
+    ASSERT_TRUE(!neverc_slices_contains_int(NULL, 3, 1));
+    neverc_slices_reverse_ints(NULL, 3);
+    neverc_slices_sort_ints(NULL, 3);
+    ASSERT_INT_EQ(neverc_slices_min_int(NULL, 3), -1);
+    ASSERT_INT_EQ(neverc_slices_max_int(NULL, 3), -1);
+    ASSERT_INT_EQ(neverc_slices_is_sorted_ints(NULL, 3), 0);
+    found = 1;
+    ASSERT_INT_EQ(neverc_slices_binary_search_int(NULL, 3, 1, &found), 0);
+    ASSERT_INT_EQ(found, 0);
 }
 
 int main(void) {

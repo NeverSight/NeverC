@@ -1,9 +1,11 @@
 #include "neverc/std/net/smtp.h"
 #include "neverc/std/net/tcp.h"
+#include "neverc/std/encoding/base64.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 #include <stdarg.h>
+#include <stdint.h>
 
 #ifdef _WIN32
 #include <winsock2.h>
@@ -22,6 +24,8 @@ struct neverc_smtp_client {
     neverc_tcp_conn_t *conn;
     char server_name[256];
     char last_response[SMTP_BUF_SIZE];
+    char pending[SMTP_BUF_SIZE];
+    size_t pending_len;
     int  did_hello;
     int  supports_auth_plain;
     int  supports_auth_login;
@@ -30,60 +34,90 @@ struct neverc_smtp_client {
     int  data_at_line_start;
 };
 
+static int smtp_write_all(neverc_tcp_conn_t *conn, const void *data, size_t len) {
+    const char *p = (const char *)data;
+    size_t sent = 0;
+    while (sent < len) {
+        int n = neverc_tcp_write(conn, p + sent, len - sent);
+        if (n <= 0) return -1;
+        sent += (size_t)n;
+    }
+    return 0;
+}
+
+static int smtp_is_status_code(const char *line, size_t line_len) {
+    return line_len >= 3 &&
+           line[0] >= '1' && line[0] <= '5' &&
+           line[1] >= '0' && line[1] <= '9' &&
+           line[2] >= '0' && line[2] <= '9';
+}
+
+/* RFC 5321 §4.2: the final reply-line is "DDD" or "DDD text". */
+static int smtp_line_is_final(const char *line, size_t line_len) {
+    if (!smtp_is_status_code(line, line_len)) return 0;
+    return line_len == 3 || line[3] == ' ';
+}
+
 /* Read a complete SMTP response (multi-line aware, RFC 5321 §4.2).
- * Multi-line: "DDD-text\r\n" (dash), Final: "DDD text\r\n" (space).
- * Returns the 3-digit status code, or -1 on error. */
+ * Bytes after the terminating final line stay in pending[] so a later
+ * response that arrived in the same TCP read is not discarded. */
 static int smtp_read_response(neverc_smtp_client_t *c) {
-    c->last_response[0] = '\0';
     size_t total = 0;
+    if (c->pending_len > 0) {
+        memcpy(c->last_response, c->pending, c->pending_len);
+        total = c->pending_len;
+        c->pending_len = 0;
+        c->last_response[total] = '\0';
+    } else {
+        c->last_response[0] = '\0';
+    }
 
+    size_t consumed = 0;
     for (;;) {
-        if (total >= SMTP_BUF_SIZE - 1) return -1;
+        int complete = 0;
+        const char *line_start = c->last_response;
+        while (1) {
+            const char *crlf = strstr(line_start, "\r\n");
+            if (!crlf) break;
+            size_t line_len = (size_t)(crlf - line_start);
+            if (smtp_line_is_final(line_start, line_len)) {
+                complete = 1;
+                consumed = (size_t)(crlf + 2 - c->last_response);
+                break;
+            }
+            line_start = crlf + 2;
+        }
+        if (complete) break;
 
+        if (total >= SMTP_BUF_SIZE - 1) return -1;
         int n = neverc_tcp_read(c->conn,
                                  c->last_response + total,
                                  SMTP_BUF_SIZE - total - 1);
         if (n <= 0) return -1;
         total += (size_t)n;
         c->last_response[total] = '\0';
-
-        /* Scan all complete lines to check if the final line is present.
-         * A final line has "DDD " (space at pos 3) instead of "DDD-". */
-        int complete = 0;
-        const char *line_start = c->last_response;
-        while (1) {
-            const char *crlf = strstr(line_start, "\r\n");
-            if (!crlf) break;
-
-            size_t line_len = (size_t)(crlf - line_start);
-            /* Final line: at least 4 chars, digit-digit-digit-space */
-            if (line_len >= 4 &&
-                line_start[0] >= '1' && line_start[0] <= '5' &&
-                line_start[1] >= '0' && line_start[1] <= '9' &&
-                line_start[2] >= '0' && line_start[2] <= '9' &&
-                line_start[3] == ' ') {
-                complete = 1;
-                break;
-            }
-            line_start = crlf + 2;
-        }
-        if (complete) break;
     }
 
-    int code = 0;
-    if (total >= 3 &&
-        c->last_response[0] >= '1' && c->last_response[0] <= '5')
-        code = (c->last_response[0] - '0') * 100 +
-               (c->last_response[1] - '0') * 10 +
-               (c->last_response[2] - '0');
-    return code;
+    if (consumed < total) {
+        size_t leftover = total - consumed;
+        if (leftover >= sizeof(c->pending)) return -1;
+        memcpy(c->pending, c->last_response + consumed, leftover);
+        c->pending_len = leftover;
+    }
+    c->last_response[consumed] = '\0';
+
+    if (!smtp_is_status_code(c->last_response, consumed)) return -1;
+    return (c->last_response[0] - '0') * 100 +
+           (c->last_response[1] - '0') * 10 +
+           (c->last_response[2] - '0');
 }
 
 /* Reject SMTP atoms that could inject extra commands or break path syntax. */
 static int smtp_safe_atom(const char *s) {
     if (!s || !s[0]) return 0;
-    for (const unsigned char *p = (const unsigned char *)s; *p; p++) {
-        if (*p <= 32 || *p >= 127 || *p == '<' || *p == '>')
+    size_t n = 0;
+    for (const unsigned char *p = (const unsigned char *)s; *p; p++, n++) {
+        if (n >= 255 || *p <= 32 || *p >= 127 || *p == '<' || *p == '>')
             return 0;
     }
     return 1;
@@ -101,7 +135,7 @@ static int smtp_cmd(neverc_smtp_client_t *c, const char *cmd) {
         sendbuf[len+1] = '\n';
         len += 2;
     }
-    if (neverc_tcp_write(c->conn, sendbuf, len) <= 0)
+    if (smtp_write_all(c->conn, sendbuf, len) != 0)
         return -1;
     return smtp_read_response(c);
 }
@@ -112,33 +146,18 @@ static int smtp_cmdf(neverc_smtp_client_t *c, const char *fmt, ...) {
     va_start(ap, fmt);
     int n = vsnprintf(buf, sizeof(buf) - 3, fmt, ap);
     va_end(ap);
-    if (n <= 0) return -1;
+    if (n <= 0 || (size_t)n >= sizeof(buf) - 3) return -1;
     return smtp_cmd(c, buf);
 }
 
-/* Base64 encode (minimal implementation for SMTP AUTH) */
-static const char b64_table[] =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
-static size_t b64_encode(const void *src, size_t srclen,
-                          char *dst, size_t dstlen) {
-    const unsigned char *s = (const unsigned char *)src;
-    size_t di = 0;
-    size_t i = 0;
-
-    while (i < srclen && di + 4 < dstlen) {
-        uint32_t a = s[i++];
-        uint32_t b = (i < srclen) ? s[i++] : 0;
-        uint32_t c = (i < srclen) ? s[i++] : 0;
-        uint32_t triple = (a << 16) | (b << 8) | c;
-
-        dst[di++] = b64_table[(triple >> 18) & 0x3F];
-        dst[di++] = b64_table[(triple >> 12) & 0x3F];
-        dst[di++] = (i > srclen + 1) ? '=' : b64_table[(triple >> 6) & 0x3F];
-        dst[di++] = (i > srclen) ? '=' : b64_table[triple & 0x3F];
-    }
-    dst[di] = '\0';
-    return di;
+static int smtp_b64_encode(const void *src, size_t srclen,
+                           char *dst, size_t dstlen) {
+    size_t need = neverc_base64_encoded_len(srclen);
+    if (need == SIZE_MAX || need >= dstlen) return -1;
+    if (neverc_base64_encode(dst, (const uint8_t *)src, srclen) != need)
+        return -1;
+    dst[need] = '\0';
+    return 0;
 }
 
 /* ======================================================================
@@ -252,18 +271,20 @@ int neverc_smtp_auth(neverc_smtp_client_t *c,
 
     if (method == NEVERC_SMTP_AUTH_PLAIN) {
         /* AUTH PLAIN: base64("\0username\0password") */
+        size_t ulen = strlen(username);
+        size_t pwlen = strlen(password);
+        if (ulen > SIZE_MAX - pwlen - 2) return -1;
+        size_t plen = ulen + pwlen + 2;
         char plain[512];
-        int plen = snprintf(plain + 1, sizeof(plain) - 2, "%s", username);
+        if (plen > sizeof(plain)) return -1;
         plain[0] = '\0';
-        plen++; /* include leading NUL */
-        plain[plen] = '\0';
-        plen++;
-        int pwlen = snprintf(plain + plen, sizeof(plain) - (size_t)plen,
-                              "%s", password);
-        plen += pwlen;
+        memcpy(plain + 1, username, ulen);
+        plain[1 + ulen] = '\0';
+        memcpy(plain + 2 + ulen, password, pwlen);
 
         char encoded[1024];
-        b64_encode(plain, (size_t)plen, encoded, sizeof(encoded));
+        if (smtp_b64_encode(plain, plen, encoded, sizeof(encoded)) != 0)
+            return -1;
 
         int code = smtp_cmdf(c, "AUTH PLAIN %s", encoded);
         return (code == 235) ? 0 : -1;
@@ -274,11 +295,15 @@ int neverc_smtp_auth(neverc_smtp_client_t *c,
         if (code != 334) return -1;
 
         char encoded[512];
-        b64_encode(username, strlen(username), encoded, sizeof(encoded));
+        if (smtp_b64_encode(username, strlen(username), encoded,
+                            sizeof(encoded)) != 0)
+            return -1;
         code = smtp_cmd(c, encoded);
         if (code != 334) return -1;
 
-        b64_encode(password, strlen(password), encoded, sizeof(encoded));
+        if (smtp_b64_encode(password, strlen(password), encoded,
+                            sizeof(encoded)) != 0)
+            return -1;
         code = smtp_cmd(c, encoded);
         return (code == 235) ? 0 : -1;
     }
@@ -313,10 +338,10 @@ static int smtp_write_data_stuffed(neverc_smtp_client_t *c,
     for (size_t i = 0; i < len; i++) {
         uint8_t ch = bytes[i];
         if (c->data_at_line_start && ch == '.') {
-            if (neverc_tcp_write(c->conn, ".", 1) <= 0)
+            if (smtp_write_all(c->conn, ".", 1) != 0)
                 return -1;
         }
-        if (neverc_tcp_write(c->conn, &ch, 1) <= 0)
+        if (smtp_write_all(c->conn, &ch, 1) != 0)
             return -1;
         if (ch == '\n')
             c->data_at_line_start = 1;
@@ -328,14 +353,15 @@ static int smtp_write_data_stuffed(neverc_smtp_client_t *c,
 
 int neverc_smtp_write_data(neverc_smtp_client_t *c,
                              const void *data, size_t len) {
-    if (!c || !data || len == 0) return 0;
+    if (!c) return -1;
+    if (!data || len == 0) return 0;
     return smtp_write_data_stuffed(c, data, len);
 }
 
 int neverc_smtp_data_close(neverc_smtp_client_t *c) {
     if (!c) return -1;
-    /* Send the terminating ".\r\n" */
-    if (neverc_tcp_write(c->conn, "\r\n.\r\n", 5) <= 0)
+    const char *term = c->data_at_line_start ? ".\r\n" : "\r\n.\r\n";
+    if (smtp_write_all(c->conn, term, strlen(term)) != 0)
         return -1;
     int code = smtp_read_response(c);
     return (code == 250) ? 0 : -1;

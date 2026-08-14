@@ -82,6 +82,36 @@ static char *fs_join_path(const char *dir, const char *name) {
     return full;
 }
 
+static int fs_ci_eq(const char *a, size_t alen, const char *b) {
+    size_t i;
+    for (i = 0; b[i] != '\0'; i++) {
+        unsigned char ca, cb;
+        if (i >= alen) return 0;
+        ca = (unsigned char)a[i];
+        cb = (unsigned char)b[i];
+        if (ca >= 'A' && ca <= 'Z') ca = (unsigned char)(ca - 'A' + 'a');
+        if (cb >= 'A' && cb <= 'Z') cb = (unsigned char)(cb - 'A' + 'a');
+        if (ca != cb) return 0;
+    }
+    return i == alen;
+}
+
+static int fs_win_reserved_component(const char *p, size_t elen) {
+    static const char *const reserved[] = {
+        "con", "prn", "aux", "nul",
+        "com0", "com1", "com2", "com3", "com4",
+        "com5", "com6", "com7", "com8", "com9",
+        "lpt0", "lpt1", "lpt2", "lpt3", "lpt4",
+        "lpt5", "lpt6", "lpt7", "lpt8", "lpt9",
+    };
+    size_t stem = 0, i;
+    while (stem < elen && p[stem] != '.') stem++;
+    for (i = 0; i < sizeof(reserved) / sizeof(reserved[0]); i++) {
+        if (fs_ci_eq(p, stem, reserved[i])) return 1;
+    }
+    return 0;
+}
+
 int neverc_fs_valid_path(const char *name) {
     if (!name || name[0] == '\0') return 0;
     if (name[0] == '/') return 0;
@@ -103,6 +133,8 @@ int neverc_fs_valid_path(const char *name) {
         if (elen == 0) return 0;
         if (elen == 1 && p[0] == '.') return 0;
         if (elen == 2 && p[0] == '.' && p[1] == '.') return 0;
+        if (p[elen - 1] == '.' || p[elen - 1] == ' ') return 0;
+        if (fs_win_reserved_component(p, elen)) return 0;
         p += elen;
         if (*p == '/') p++;
     }
@@ -201,8 +233,13 @@ int neverc_fs_read_dir(const char *path, neverc_fs_dir_entry_t **entries,
         neverc_fs_dir_entry_t *e = &result[*count];
         memset(e, 0, sizeof(*e));
         strncpy(e->name, fd.cFileName, sizeof(e->name) - 1);
-        e->is_dir = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) ? 1 : 0;
-        e->mode = e->is_dir ? NEVERC_FS_MODE_DIR | 0755 : 0644;
+        {
+            int reparse = (fd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
+            e->is_dir = !reparse &&
+                        (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+            e->mode = e->is_dir ? NEVERC_FS_MODE_DIR | 0755 : 0644;
+            if (reparse) e->mode |= NEVERC_FS_MODE_LINK;
+        }
         (*count)++;
     } while (FindNextFileA(h, &fd));
     FindClose(h);

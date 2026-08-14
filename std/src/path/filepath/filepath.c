@@ -22,6 +22,17 @@ static size_t volume_name_len(const char *path) {
     if (len >= 2 && path[1] == ':' &&
         ((path[0] >= 'a' && path[0] <= 'z') || (path[0] >= 'A' && path[0] <= 'Z')))
         return 2;
+    /* UNC: \\host\share  or  //host/share */
+    if (len >= 2 && is_sep(path[0]) && is_sep(path[1])) {
+        size_t i = 2;
+        while (i < len && !is_sep(path[i])) i++;
+        if (i < len) {
+            i++;
+            size_t share = i;
+            while (i < len && !is_sep(path[i])) i++;
+            if (i > share) return i;
+        }
+    }
 #endif
     (void)path;
     return 0;
@@ -91,8 +102,10 @@ const char *neverc_filepath_ext(const char *path) {
 int neverc_filepath_isabs(const char *path) {
     if (!path) return 0;
 #ifdef _WIN32
+    if (is_sep(path[0]) && is_sep(path[1]))
+        return 1;
     size_t vol = volume_name_len(path);
-    return vol > 0 && strlen(path) > vol && is_sep(path[vol]);
+    return vol > 0 && path[vol] != '\0' && is_sep(path[vol]);
 #else
     return path[0] == '/';
 #endif
@@ -177,6 +190,7 @@ clean_failed:
 const char *neverc_filepath_join(const char *a, const char *b, char *buf, size_t buf_len) {
     if (!a || *a == '\0') return neverc_filepath_clean(b, buf, buf_len);
     if (!b || *b == '\0') return neverc_filepath_clean(a, buf, buf_len);
+    if (neverc_filepath_isabs(b)) return neverc_filepath_clean(b, buf, buf_len);
 
     size_t alen = strlen(a), blen = strlen(b);
     if (blen > SIZE_MAX - 2 || alen > SIZE_MAX - blen - 2) return NULL;
