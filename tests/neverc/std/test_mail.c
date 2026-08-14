@@ -31,6 +31,15 @@ static void test_parse_address(void) {
     ASSERT_EQ(neverc_mail_parse_address("\"Doe, John\" <john@example.com>", &addr), 0);
     ASSERT_STREQ(addr.address, "john@example.com");
     ASSERT_STREQ(addr.name, "Doe, John");
+
+    ASSERT_EQ(neverc_mail_parse_address("user@x.com\r\nBcc: evil@x.com", &addr),
+              -1);
+    ASSERT_EQ(neverc_mail_parse_address("Name <user@x.com>\r\nBcc: evil", &addr),
+              -1);
+    ASSERT_EQ(neverc_mail_parse_address("John <a@b.com> <evil@x.com>", &addr),
+              -1);
+    ASSERT_EQ(neverc_mail_parse_address("John <a@b.com> trailing", &addr), -1);
+    ASSERT_EQ(neverc_mail_parse_address("<>", &addr), -1);
 }
 
 static void test_parse_address_list(void) {
@@ -73,6 +82,10 @@ static void test_format_address(void) {
     ASSERT_STREQ(buf, "\"Doe, John\" <j@x.com>");
     neverc_mail_address_t parsed[4];
     ASSERT_EQ(neverc_mail_parse_address_list(buf, parsed, 4), 1);
+
+    strcpy(addr.name, "Eve");
+    strcpy(addr.address, "eve@x.com\r\nBcc: hidden@x.com");
+    ASSERT_EQ(neverc_mail_format_address(&addr, buf, sizeof(buf)), -1);
 }
 
 static void test_parse_message(void) {

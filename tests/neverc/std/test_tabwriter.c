@@ -143,6 +143,32 @@ static void test_invalid_input(void) {
     neverc_tabwriter_reset(&w);
 }
 
+static void test_many_cells(void) {
+    printf("[many_cells]\n");
+    neverc_tabwriter_t w;
+    neverc_tabwriter_init(&w, 1, 8, 1, ' ', 0);
+
+    /* 100 lines x 3 cells used to overflow the 256-cell array and drop rows. */
+    char line[32];
+    for (int i = 0; i < 100; i++) {
+        int n = snprintf(line, sizeof(line), "c%d\tv%d\tw%d\n", i, i, i);
+        neverc_tabwriter_write(&w, line, (size_t)n);
+    }
+    neverc_tabwriter_flush(&w);
+
+    size_t len = 0;
+    const char *out = neverc_tabwriter_output(&w, &len);
+    tests_run++;
+    if (out && strstr(out, "c0") && strstr(out, "c99") && strstr(out, "w99"))
+        tests_passed++;
+    else {
+        tests_failed++;
+        printf("  FAIL: 300-cell table missing rows (out=%s)\n",
+               out ? "truncated" : "(null)");
+    }
+    neverc_tabwriter_reset(&w);
+}
+
 static void test_minwidth(void) {
     printf("[minwidth]\n");
     neverc_tabwriter_t w;
@@ -162,6 +188,7 @@ int main(void) {
     test_no_tabs();
     test_multiple_lines();
     test_invalid_input();
+    test_many_cells();
     test_minwidth();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;

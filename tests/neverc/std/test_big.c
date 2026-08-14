@@ -86,6 +86,20 @@ static void test_set_string(void) {
     ASSERT_INT_EQ(neverc_bigint_set_string(&a, "0xff", 0), 0);
     ASSERT_INT_EQ(neverc_bigint_int64(&a), 255);
 
+    ASSERT_INT_EQ(neverc_bigint_set_string(&a, "0", 0), 0);
+    ASSERT_TRUE(neverc_bigint_is_zero(&a));
+    ASSERT_INT_EQ(neverc_bigint_set_string(&a, "0x", 0), -1);
+    ASSERT_INT_EQ(neverc_bigint_set_string(&a, "0b", 0), -1);
+    ASSERT_INT_EQ(neverc_bigint_set_string(&a, "0o", 0), -1);
+    ASSERT_INT_EQ(neverc_bigint_set_string(&a, "+", 10), -1);
+    ASSERT_INT_EQ(neverc_bigint_set_string(&a, "-", 10), -1);
+    ASSERT_INT_EQ(neverc_bigint_set_string(&a, "_1", 0), -1);
+    ASSERT_INT_EQ(neverc_bigint_set_string(&a, "1_", 0), -1);
+    ASSERT_INT_EQ(neverc_bigint_set_string(&a, "1__2", 0), -1);
+    ASSERT_INT_EQ(neverc_bigint_set_string(&a, "1_000", 0), 0);
+    ASSERT_INT_EQ(neverc_bigint_int64(&a), 1000);
+    ASSERT_INT_EQ(neverc_bigint_set_string(&a, "1_000", 10), -1);
+
     neverc_bigint_set_string(&a, "999999999999999999", 10);
     neverc_bigint_string(&a, 10, buf, sizeof(buf));
     ASSERT_STR_EQ(buf, "999999999999999999");
@@ -316,6 +330,27 @@ static void test_exp_mod(void) {
     neverc_bigint_set_int64(&mod, 5);
     neverc_bigint_exp(&result, &base, &exp, &mod);
     ASSERT_INT_EQ(neverc_bigint_int64(&result), 1);
+
+    neverc_bigint_set_int64(&base, 2);
+    neverc_bigint_set_int64(&exp, -3);
+    neverc_bigint_exp(&result, &base, &exp, NULL);
+    ASSERT_INT_EQ(neverc_bigint_int64(&result), 1);
+
+    neverc_bigint_t x, m, z;
+    neverc_bigint_init(&x); neverc_bigint_init(&m); neverc_bigint_init(&z);
+    neverc_bigint_set_int64(&x, -7);
+    neverc_bigint_set_int64(&m, 3);
+    neverc_bigint_mod(&z, &x, &m);
+    ASSERT_INT_EQ(neverc_bigint_int64(&z), 2);
+    neverc_bigint_set_int64(&x, -7);
+    neverc_bigint_set_int64(&m, -3);
+    neverc_bigint_mod(&z, &x, &m);
+    ASSERT_INT_EQ(neverc_bigint_int64(&z), 2);
+    neverc_bigint_set_int64(&x, 7);
+    neverc_bigint_set_int64(&m, -3);
+    neverc_bigint_mod(&z, &x, &m);
+    ASSERT_INT_EQ(neverc_bigint_int64(&z), 1);
+    neverc_bigint_free(&x); neverc_bigint_free(&m); neverc_bigint_free(&z);
 
     neverc_bigint_free(&base); neverc_bigint_free(&exp);
     neverc_bigint_free(&mod); neverc_bigint_free(&result);

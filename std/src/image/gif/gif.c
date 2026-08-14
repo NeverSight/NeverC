@@ -209,6 +209,12 @@ int neverc_gif_encode(const neverc_gif_frame_t *frame,
     if ((uint64_t)frame->width * frame->height > GIF_MAX_PIXELS) return -1;
     size_t pixel_count = (size_t)frame->width * frame->height;
     if (pixel_count > SIZE_MAX - 1024) return -1;
+    /* Indices outside the palette encode as illegal LZW codes (or decode as
+     * a clamped 0). Reject them so a successful encode always round-trips. */
+    for (size_t i = 0; i < pixel_count; i++) {
+        if ((int)frame->indices[i] >= frame->palette_size)
+            return -1;
+    }
 
     int color_bits = 1;
     while ((1 << color_bits) < frame->palette_size) color_bits++;
@@ -347,11 +353,25 @@ int neverc_gif_decode(const uint8_t *data, size_t len, neverc_gif_image_t *img) 
                 if (data[pos++] != 0) goto decode_failed;
             } else {
                 int terminated = 0;
+                int app_idx = 0;
+                int is_netscape = 0;
                 while (pos < len) {
                     uint8_t bs = data[pos++];
                     if (bs == 0) { terminated = 1; break; }
                     if ((size_t)bs > len - pos) goto decode_failed;
+                    /* Netscape 2.0 / ANIMEXTS 1.0 loop count lives in the
+                     * application extension; the public loop_count field was
+                     * never filled, so every animated GIF reported "infinite". */
+                    if (label == 0xFF && app_idx == 0 && bs == 11 &&
+                        (memcmp(data + pos, "NETSCAPE2.0", 11) == 0 ||
+                         memcmp(data + pos, "ANIMEXTS1.0", 11) == 0))
+                        is_netscape = 1;
+                    else if (is_netscape && app_idx >= 1 && bs >= 3 &&
+                             data[pos] == 1)
+                        img->loop_count = (int)data[pos + 1] |
+                                          ((int)data[pos + 2] << 8);
                     pos += bs;
+                    app_idx++;
                 }
                 if (!terminated) goto decode_failed;
             }

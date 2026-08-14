@@ -1234,6 +1234,6 @@ int neverc_os_lchown(const char *name, int uid, int gid) {
 #endif
 }
 
-int neverc_os_is_exist(int err) { return err == 17; /* EEXIST */ }
-int neverc_os_is_not_exist(int err) { return err == 2; /* ENOENT */ }
-int neverc_os_is_permission(int err) { return err == 13; /* EACCES */ }
+int neverc_os_is_exist(int err) { return err == EEXIST; }
+int neverc_os_is_not_exist(int err) { return err == ENOENT; }
+int neverc_os_is_permission(int err) { return err == EACCES || err == EPERM; }

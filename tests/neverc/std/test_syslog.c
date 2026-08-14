@@ -50,8 +50,13 @@ static void test_priority_filter(void) {
 
 static void test_null_safety(void) {
     printf("[null safety]\n");
-    ASSERT_TRUE(neverc_syslog_open(NULL, NEVERC_SYSLOG_USER, NEVERC_SYSLOG_DEBUG) != NULL);
+    neverc_syslog_t *log = neverc_syslog_open(NULL, NEVERC_SYSLOG_USER,
+                                              NEVERC_SYSLOG_DEBUG);
+    ASSERT_TRUE(log != NULL);
     ASSERT_EQ(neverc_syslog_write(NULL, NEVERC_SYSLOG_INFO, "test"), -1);
+    ASSERT_EQ(neverc_syslog_write(log, (neverc_syslog_priority_t)(-1), "x"), -1);
+    ASSERT_EQ(neverc_syslog_write(log, (neverc_syslog_priority_t)8, "x"), -1);
+    neverc_syslog_close(log);
 }
 
 int main(void) {

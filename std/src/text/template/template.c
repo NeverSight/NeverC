@@ -201,6 +201,11 @@ static int parse_action(const char **p, const char *end,
             free(node.key);
             node.key = nk;
         }
+        if (node.key[0] == '\0') {
+            free(action);
+            free_node_contents(&node);
+            return -1;
+        }
         if (depth >= 128) {
             free(action);
             free_node_contents(&node);

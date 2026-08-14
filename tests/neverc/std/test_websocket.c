@@ -84,6 +84,125 @@ static void test_utf8_prefix_validation(void) {
                   complete_four, sizeof(complete_four)), 1);
 }
 
+static void test_handshake_rejects(void) {
+    printf("[handshake_rejects]\n");
+    const char *err = NULL;
+    neverc_tcp_listener_t *ln = neverc_tcp_listen("127.0.0.1:0", &err);
+    check_not_null("reject listen", ln);
+    if (!ln) return;
+
+    neverc_tcp_addr_t laddr;
+    neverc_tcp_listener_addr(ln, &laddr);
+    char addr[64];
+    snprintf(addr, sizeof(addr), "127.0.0.1:%u", (unsigned)laddr.port);
+    neverc_tcp_conn_t *client = neverc_tcp_dial(addr, &err);
+    neverc_tcp_conn_t *server = neverc_tcp_accept(ln, &err);
+    check_not_null("reject client", client);
+    check_not_null("reject server", server);
+    if (!client || !server) {
+        if (client) neverc_tcp_close(client);
+        if (server) neverc_tcp_close(server);
+        neverc_tcp_listener_close(ln);
+        return;
+    }
+
+    size_t consumed = 0;
+    const char *version_130 =
+        "GET /ws HTTP/1.1\r\n"
+        "Host: localhost\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        "Sec-WebSocket-Version: 130\r\n"
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+        "\r\n";
+    check_int("reject version 130",
+              neverc_ws_handshake_server(server, version_130,
+                                         strlen(version_130), &consumed),
+              -1);
+
+    const char *upgrade_suffix =
+        "GET /ws HTTP/1.1\r\n"
+        "Host: localhost\r\n"
+        "Upgrade: websocketfoo\r\n"
+        "Connection: Upgrade\r\n"
+        "Sec-WebSocket-Version: 13\r\n"
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+        "\r\n";
+    check_int("reject Upgrade suffix",
+              neverc_ws_handshake_server(server, upgrade_suffix,
+                                         strlen(upgrade_suffix), &consumed),
+              -1);
+
+    const char *http10 =
+        "GET /ws HTTP/1.0\r\n"
+        "Host: localhost\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        "Sec-WebSocket-Version: 13\r\n"
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+        "\r\n";
+    check_int("reject HTTP/1.0",
+              neverc_ws_handshake_server(server, http10, strlen(http10),
+                                         &consumed),
+              -1);
+
+    const char *no_host =
+        "GET /ws HTTP/1.1\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        "Sec-WebSocket-Version: 13\r\n"
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+        "\r\n";
+    check_int("reject missing Host",
+              neverc_ws_handshake_server(server, no_host, strlen(no_host),
+                                         &consumed),
+              -1);
+
+    const char *short_key =
+        "GET /ws HTTP/1.1\r\n"
+        "Host: localhost\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        "Sec-WebSocket-Version: 13\r\n"
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ=\r\n"
+        "\r\n";
+    check_int("reject short key",
+              neverc_ws_handshake_server(server, short_key, strlen(short_key),
+                                         &consumed),
+              -1);
+
+    const char *dup_upgrade =
+        "GET /ws HTTP/1.1\r\n"
+        "Host: localhost\r\n"
+        "Upgrade: websocket\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        "Sec-WebSocket-Version: 13\r\n"
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+        "\r\n";
+    check_int("reject duplicate Upgrade",
+              neverc_ws_handshake_server(server, dup_upgrade,
+                                         strlen(dup_upgrade), &consumed),
+              -1);
+
+    const char *good =
+        "GET /ws HTTP/1.1\r\n"
+        "Host: localhost\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        "Sec-WebSocket-Version: 13\r\n"
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+        "\r\n";
+    check_int("accept exact handshake",
+              neverc_ws_handshake_server(server, good, strlen(good),
+                                         &consumed),
+              0);
+
+    neverc_tcp_close(client);
+    neverc_tcp_close(server);
+    neverc_tcp_listener_close(ln);
+}
+
 #ifndef _WIN32
 
 static int tcp_read_exact(neverc_tcp_conn_t *conn, void *buf, size_t len) {
@@ -523,6 +642,7 @@ int main(void) {
     test_compute_accept();
     test_null_safety();
     test_utf8_prefix_validation();
+    test_handshake_rejects();
 #ifndef _WIN32
     test_client_dial_and_masking();
     test_handshake_and_echo();

@@ -124,6 +124,7 @@ int neverc_slices_binary_search(const void *slice, size_t len, const void *targe
 size_t neverc_slices_compact(void *slice, size_t len, size_t elem_size, neverc_eq_func_t eq) {
     if (!slice || !eq || elem_size == 0) return len;
     if (len <= 1) return len;
+    if (len > SIZE_MAX / elem_size) return len;
     char *p = (char *)slice;
     size_t w = 1;
     size_t r = 1;
@@ -252,7 +253,9 @@ void neverc_slices_sort_stable(void *slice, size_t len, size_t elem_size, neverc
 }
 
 size_t neverc_slices_delete(void *slice, size_t len, size_t elem_size, size_t i, size_t j) {
-    if (!slice || elem_size == 0 || i >= j || j > len) return len;
+    if (!slice || elem_size == 0 || i >= j || j > len ||
+        len > SIZE_MAX / elem_size)
+        return len;
     char *p = (char *)slice;
     size_t tail = len - j;
     if (tail > 0) memmove(p + i * elem_size, p + j * elem_size, tail * elem_size);
@@ -354,6 +357,7 @@ int neverc_slices_index_func(const void *slice, size_t len, size_t elem_size,
 size_t neverc_slices_delete_func(void *slice, size_t len, size_t elem_size,
                                   neverc_slices_pred_func_t f) {
     if (!slice || !f || elem_size == 0) return len;
+    if (len > 0 && len > SIZE_MAX / elem_size) return len;
     char *p = (char *)slice;
     size_t w = 0, r = 0;
     while (r < len) {

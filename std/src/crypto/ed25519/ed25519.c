@@ -283,6 +283,14 @@ static int edpt_decode(edpt *r, const unsigned char s[32]) {
     fmul(&v, &y2, &g_d);
     fadd(&v, &v, &one);
 
+    if (neverc_bigint_is_zero(&v)) {
+        neverc_bigint_free(&y2); neverc_bigint_free(&u);
+        neverc_bigint_free(&v); neverc_bigint_free(&vinv);
+        neverc_bigint_free(&x2); neverc_bigint_free(&x);
+        neverc_bigint_free(&two); neverc_bigint_free(&rem);
+        neverc_bigint_free(&one);
+        return -1;
+    }
     finv(&vinv, &v);
     fmul(&x2, &u, &vinv);
 
@@ -386,6 +394,14 @@ static void get_basepoint(edpt *B) {
     fmul(&B->t, &B->x, &B->y);
 }
 
+static void ed_bigint_secure_free(neverc_bigint_t *value) {
+    if (!value) return;
+    if (value->digits)
+        neverc_platform_secure_zero(
+            value->digits, value->cap * sizeof(*value->digits));
+    neverc_bigint_free(value);
+}
+
 static void bytes_to_scalar_le(neverc_bigint_t *r, const unsigned char *data, size_t len) {
     char hex[256];
     int pos = 0;
@@ -395,6 +411,7 @@ static void bytes_to_scalar_le(neverc_bigint_t *r, const unsigned char *data, si
     }
     hex[pos] = '\0';
     neverc_bigint_set_string(r, hex, 16);
+    neverc_platform_secure_zero(hex, sizeof(hex));
 }
 
 static void scalar_to_bytes_le(const neverc_bigint_t *v, unsigned char *out, int len) {
@@ -410,6 +427,7 @@ static void scalar_to_bytes_le(const neverc_bigint_t *v, unsigned char *out, int
         else d = c - 'A' + 10;
         out[i / 2] |= (unsigned char)(d << ((i % 2) * 4));
     }
+    neverc_platform_secure_zero(hex, sizeof(hex));
 }
 
 static void sc_reduce64(unsigned char out[32], const unsigned char in[64]) {
@@ -418,7 +436,8 @@ static void sc_reduce64(unsigned char out[32], const unsigned char in[64]) {
     bytes_to_scalar_le(&val, in, 64);
     neverc_bigint_mod(&r, &val, &g_L);
     scalar_to_bytes_le(&r, out, 32);
-    neverc_bigint_free(&val); neverc_bigint_free(&r);
+    ed_bigint_secure_free(&val);
+    ed_bigint_secure_free(&r);
 }
 
 static void sc_muladd(unsigned char s[32], const unsigned char a[32],
@@ -438,9 +457,11 @@ static void sc_muladd(unsigned char s[32], const unsigned char a[32],
 
     scalar_to_bytes_le(&result, s, 32);
 
-    neverc_bigint_free(&av); neverc_bigint_free(&bv);
-    neverc_bigint_free(&cv); neverc_bigint_free(&prod);
-    neverc_bigint_free(&result);
+    ed_bigint_secure_free(&av);
+    ed_bigint_secure_free(&bv);
+    ed_bigint_secure_free(&cv);
+    ed_bigint_secure_free(&prod);
+    ed_bigint_secure_free(&result);
 }
 
 #ifndef NCI_ED25519_RANDOM

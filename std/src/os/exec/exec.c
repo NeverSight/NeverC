@@ -349,8 +349,60 @@ const char *neverc_exec_look_path(const char *file, char *buf, size_t cap) {
 
 #include <unistd.h>
 #include <sys/wait.h>
+#include <sys/stat.h>
 #include <fcntl.h>
 #include <errno.h>
+
+static int exec_is_exe_file(const char *path) {
+    if (access(path, X_OK) != 0) return 0;
+    struct stat st;
+    return stat(path, &st) == 0 && S_ISREG(st.st_mode);
+}
+
+static const char *exec_look_in_path(const char *file, const char *path_env,
+                                     char *buf, size_t cap) {
+    if (!file || !buf || cap == 0) return NULL;
+    if (strchr(file, '/')) {
+        if (exec_is_exe_file(file)) {
+            size_t flen = strlen(file);
+            if (flen < cap) { memcpy(buf, file, flen + 1); return buf; }
+        }
+        return NULL;
+    }
+    if (!path_env) return NULL;
+
+    const char *p = path_env;
+    size_t flen = strlen(file);
+    for (;;) {
+        const char *colon = strchr(p, ':');
+        size_t dlen = colon ? (size_t)(colon - p) : strlen(p);
+        if (dlen == 0) {
+            if (2 + flen + 1 <= cap) {
+                buf[0] = '.';
+                buf[1] = '/';
+                memcpy(buf + 2, file, flen + 1);
+                if (exec_is_exe_file(buf)) return buf;
+            }
+        } else if (dlen + 1 + flen + 1 <= cap) {
+            memcpy(buf, p, dlen);
+            buf[dlen] = '/';
+            memcpy(buf + dlen + 1, file, flen + 1);
+            if (exec_is_exe_file(buf)) return buf;
+        }
+        if (!colon) break;
+        p = colon + 1;
+    }
+    return NULL;
+}
+
+static const char *exec_env_path(char **env, int env_count) {
+    if (!env) return NULL;
+    for (int i = 0; i < env_count; i++) {
+        if (env[i] && strncmp(env[i], "PATH=", 5) == 0)
+            return env[i] + 5;
+    }
+    return NULL;
+}
 
 static int exec_run_posix(neverc_exec_cmd_t *cmd, int capture_stdout, int capture_stderr,
                           neverc_exec_output_t *out, neverc_exec_exit_status_t *st) {
@@ -393,10 +445,19 @@ static int exec_run_posix(neverc_exec_cmd_t *cmd, int capture_stdout, int captur
             close(stdin_pipe[1]);
         }
 
-        if (cmd->env)
-            execve(cmd->name, cmd->argv, cmd->env);
-        else
+        if (cmd->env) {
+            if (strchr(cmd->name, '/')) {
+                execve(cmd->name, cmd->argv, cmd->env);
+            } else {
+                char resolved[4096];
+                const char *path = exec_env_path(cmd->env, cmd->env_count);
+                if (!path) path = getenv("PATH");
+                if (exec_look_in_path(cmd->name, path, resolved, sizeof(resolved)))
+                    execve(resolved, cmd->argv, cmd->env);
+            }
+        } else {
             execvp(cmd->name, cmd->argv);
+        }
         _exit(127);
     }
 
@@ -503,36 +564,7 @@ int neverc_exec_cmd_combined_output(neverc_exec_cmd_t *cmd, neverc_exec_output_t
 }
 
 const char *neverc_exec_look_path(const char *file, char *buf, size_t cap) {
-    if (!file || !buf || cap == 0) return NULL;
-    if (strchr(file, '/')) {
-        if (access(file, X_OK) == 0) {
-            size_t flen = strlen(file);
-            if (flen < cap) { memcpy(buf, file, flen + 1); return buf; }
-        }
-        return NULL;
-    }
-    const char *path_env = getenv("PATH");
-    if (!path_env) return NULL;
-
-    char path_copy[8192];
-    size_t plen = strlen(path_env);
-    if (plen >= sizeof(path_copy)) return NULL;
-    memcpy(path_copy, path_env, plen + 1);
-
-    char *saveptr = NULL;
-    char *dir = strtok_r(path_copy, ":", &saveptr);
-    while (dir) {
-        size_t dlen = strlen(dir);
-        size_t flen = strlen(file);
-        if (dlen + 1 + flen + 1 <= cap) {
-            memcpy(buf, dir, dlen);
-            buf[dlen] = '/';
-            memcpy(buf + dlen + 1, file, flen + 1);
-            if (access(buf, X_OK) == 0) return buf;
-        }
-        dir = strtok_r(NULL, ":", &saveptr);
-    }
-    return NULL;
+    return exec_look_in_path(file, getenv("PATH"), buf, cap);
 }
 
 #endif /* POSIX */

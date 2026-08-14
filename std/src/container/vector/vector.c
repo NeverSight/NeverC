@@ -467,8 +467,10 @@ bool neverc_vector_assign(neverc_vector_t *v, const void *values,
 }
 
 bool neverc_vector_append(neverc_vector_t *v, const neverc_vector_t *other) {
-    if (!v || !other || other->size == 0)
-        return v != NULL;
+    if (!v || !other)
+        return false;
+    if (other->size == 0)
+        return true;
     if (v->elem_size != other->elem_size)
         return false;
     if (other->size > other->capacity ||
@@ -1484,8 +1486,11 @@ bool neverc_vector_equal(const neverc_vector_t *a, const neverc_vector_t *b,
         return false;
     if (a->size != b->size || a->elem_size != b->elem_size)
         return false;
+    if (a->size == 0)
+        return true;
     if (!cmp)
-        return memcmp(a->data, b->data, a->size * a->elem_size) == 0;
+        return a->data && b->data &&
+               memcmp(a->data, b->data, a->size * a->elem_size) == 0;
     for (size_t i = 0; i < a->size; i++) {
         if (cmp(vec_elem_ptr(a, i), vec_elem_ptr(b, i)) != 0)
             return false;
