@@ -417,7 +417,10 @@ int neverc_krt_wd_register(struct neverc_krt_interpose *h)
 			if (neverc_krt_mem_read(&insn, &h->trampoline[tlen], 4))
 				break;
 			tlen++;
-			if (insn == NEVERC_KRT_A64_RET_X17 || insn == NEVERC_KRT_A64_RET_X16)
+			if (insn == NEVERC_KRT_A64_RET_X17 ||
+			    insn == NEVERC_KRT_A64_RET_X16 ||
+			    insn == NEVERC_KRT_A64_BR_X17 ||
+			    insn == NEVERC_KRT_A64_BR_X16)
 				break;
 		}
 		_neverc_krt_wd.entries[idx].tramp_len = tlen * 4;
