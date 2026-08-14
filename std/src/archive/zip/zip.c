@@ -9,6 +9,18 @@ static uint32_t read32(const uint8_t *p) { return p[0] | (p[1]<<8) | (p[2]<<16) 
 static void write16(uint8_t *p, uint16_t v) { p[0] = v; p[1] = v >> 8; }
 static void write32(uint8_t *p, uint32_t v) { p[0] = v; p[1] = v>>8; p[2] = v>>16; p[3] = v>>24; }
 
+static int zip_path_is_safe(const char *name) {
+    if (!name || !name[0]) return 0;
+    size_t len = strlen(name);
+    if (len >= sizeof(((neverc_zip_file_header_t *)0)->name)) return 0;
+    char trimmed[sizeof(((neverc_zip_file_header_t *)0)->name)];
+    memcpy(trimmed, name, len + 1);
+    while (len > 0 && trimmed[len - 1] == '/')
+        trimmed[--len] = '\0';
+    if (len == 0) return 0;
+    return neverc_fs_valid_path(trimmed);
+}
+
 static int zip_reader_error(neverc_zip_reader_t *r) {
     free(r->files);
     free(r->file_data);
@@ -146,7 +158,7 @@ int neverc_zip_reader_init(neverc_zip_reader_t *r, const uint8_t *data, size_t l
         memset(file, 0, sizeof(*file));
         memcpy(file->name, central + 46U, name_length);
         file->name[name_length] = '\0';
-        if (!neverc_fs_valid_path(file->name))
+        if (!zip_path_is_safe(file->name))
             return zip_reader_error(r);
         file->method = method;
         file->crc32 = crc;

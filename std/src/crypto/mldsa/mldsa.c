@@ -786,7 +786,7 @@ static int mldsa44_verify_internal(const uint8_t *pk, size_t pk_len,
     }
     neverc_shake256_squeeze(&hctx, c_tilde2, 32);
 
-    if (neverc_subtle_constant_time_compare(c_tilde, c_tilde2, LAMBDA / 4) != 0)
+    if (neverc_subtle_constant_time_compare(c_tilde, c_tilde2, LAMBDA / 4) == 0)
         return -1;
     return 0;
 }
