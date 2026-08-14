@@ -165,6 +165,35 @@ static void test_invalid_data(void) {
     ASSERT_EQ(neverc_jpeg_encode(&short_stride, 90, &output, &output_length), -1);
 }
 
+static void test_rejects_trailing_bytes(void) {
+    printf("[rejects_trailing_bytes]\n");
+    neverc_jpeg_image_t img;
+    memset(&img, 0, sizeof(img));
+    img.width = 8;
+    img.height = 8;
+    img.channels = 3;
+    img.stride = 24;
+    img.pixels = (uint8_t *)calloc(1, img.height * img.stride);
+    ASSERT_TRUE(img.pixels != NULL);
+
+    uint8_t *jpeg_data = NULL;
+    size_t jpeg_len = 0;
+    ASSERT_EQ(neverc_jpeg_encode(&img, 90, &jpeg_data, &jpeg_len), 0);
+    ASSERT_TRUE(jpeg_data != NULL);
+
+    uint8_t *padded = (uint8_t *)malloc(jpeg_len + 1);
+    ASSERT_TRUE(padded != NULL);
+    memcpy(padded, jpeg_data, jpeg_len);
+    padded[jpeg_len] = 0x00;
+    neverc_jpeg_image_t decoded;
+    memset(&decoded, 0, sizeof(decoded));
+    ASSERT_EQ(neverc_jpeg_decode(padded, jpeg_len + 1, &decoded), -1);
+
+    free(padded);
+    free(jpeg_data);
+    free(img.pixels);
+}
+
 static size_t find_marker(const uint8_t *data, size_t length, uint8_t marker) {
     for (size_t i = 0; i + 1 < length; i++)
         if (data[i] == 0xFF && data[i + 1] == marker)
@@ -307,6 +336,7 @@ int main(void) {
     test_encode_decode_grayscale();
     test_gradient();
     test_invalid_data();
+    test_rejects_trailing_bytes();
     test_rejects_malformed_streams();
     test_quality_levels();
     test_sof_chroma_420();

@@ -174,11 +174,12 @@ int neverc_h3_settings_decode(const uint8_t *payload, size_t len,
             seen |= 4U;
             s->qpack_blocked_streams = val;
             break;
+        case 0x00: /* RFC 9114 §11.2.1 reserved identifier */
         case 0x02: /* HTTP/2 SETTINGS_ENABLE_PUSH */
         case 0x03: /* HTTP/2 SETTINGS_MAX_CONCURRENT_STREAMS */
         case 0x04: /* HTTP/2 SETTINGS_INITIAL_WINDOW_SIZE */
         case 0x05: /* HTTP/2 SETTINGS_MAX_FRAME_SIZE */
-            /* RFC 9114 §7.2.4.1 / §11.2.2: reserved HTTP/2 identifiers
+            /* RFC 9114 §7.2.4.1 / §11.2.1 / §11.2.2: reserved identifiers
              * MUST be treated as a connection error of H3_SETTINGS_ERROR. */
             return -1;
         default:
@@ -616,8 +617,11 @@ int neverc_qpack_decode(neverc_qpack_decoder_t *dec,
     if (qpack_decode_integer(data, len, &pos, 8, &ric) != 0 || ric != 0)
         return -1;
 
-    /* Skip Delta Base (varint prefix 7, with S bit) */
+    /* Skip Delta Base (varint prefix 7, with S bit). RFC 9204 §4.5.1.2:
+     * S=1 with RIC=0 yields Base = -1 and MUST fail. */
     if (pos >= len) return -1;
+    if ((data[pos] & 0x80U) != 0)
+        return -1;
     uint64_t delta_base;
     if (qpack_decode_integer(data, len, &pos, 7, &delta_base) != 0 ||
         delta_base != 0)
@@ -636,8 +640,9 @@ int neverc_qpack_decode(neverc_qpack_decoder_t *dec,
             headers[count].value = strdup(QPACK_STATIC_TABLE[idx].value);
             if (!headers[count].name || !headers[count].value) goto failed;
             count++;
-        } else if ((first & 0xF0) == 0x50) {
-            /* Literal with name reference (static, N=0): 0101NNNN */
+        } else if ((first & 0xD0) == 0x50) {
+            /* Literal with name reference (static): 01N1NNNN.
+             * N=1 ("never index") is legal and must still decode. */
             uint64_t name_idx;
             if (qpack_decode_integer(data, len, &pos, 4, &name_idx) != 0 ||
                 name_idx >= QPACK_STATIC_TABLE_SIZE)

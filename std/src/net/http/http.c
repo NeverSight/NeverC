@@ -1730,6 +1730,8 @@ static int parse_request_mode(const char *raw, size_t raw_length,
         cursor = line_end + 2;
     }
 
+    if (is_http_11 && !host_seen)
+        goto invalid;
     if ((content_length_seen && transfer_encoding_seen) ||
         (is_http_10 && transfer_encoding_seen))
         goto invalid;

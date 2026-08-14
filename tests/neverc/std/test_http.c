@@ -1187,13 +1187,13 @@ static void test_malformed_request(void) {
         check_int("incomplete line handled", n >= 0, 1);
     }
 
-    /* No Host header (HTTP/1.1 technically requires it but server should handle) */
+    /* RFC 9112: HTTP/1.1 without Host is 400. */
     {
         int n = do_http_request(port,
             "GET /hello HTTP/1.1\r\nConnection: close\r\n\r\n",
             buf, sizeof(buf));
         check_int("no host resp", n > 0, 1);
-        check_int("no host 200", strstr(buf, "200 OK") != NULL, 1);
+        check_int("no host 400", strstr(buf, "400 Bad Request") != NULL, 1);
     }
 
     /* Very long URL */

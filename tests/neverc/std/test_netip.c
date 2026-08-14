@@ -125,6 +125,13 @@ static void test_properties(void) {
     ASSERT_TRUE(neverc_netip_addr_is_loopback(&addr));
     ASSERT_EQ(neverc_netip_addr_bit_len(&addr), 128);
 
+    neverc_netip_parse_addr("::ffff:127.0.0.1", &addr);
+    ASSERT_TRUE(neverc_netip_addr_is_loopback(&addr));
+    ASSERT_TRUE(!neverc_netip_addr_is_global_unicast(&addr));
+    neverc_netip_parse_addr("::ffff:10.0.0.1", &addr);
+    ASSERT_TRUE(neverc_netip_addr_is_private(&addr));
+    ASSERT_TRUE(!neverc_netip_addr_is_global_unicast(&addr));
+
     neverc_netip_parse_addr("fe80::1", &addr);
     ASSERT_TRUE(neverc_netip_addr_is_link_local_unicast(&addr));
 

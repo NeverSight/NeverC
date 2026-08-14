@@ -199,6 +199,13 @@ static void test_dot_lines(void) {
         lines, 10, &nlines, &consumed);
     check("dot block without terminator rejected", rc == -1);
     check("failed dot parse clears lines", nlines == 0);
+
+    rc = neverc_textproto_read_dot_lines(
+        ".foo\r\n.\r\n", strlen(".foo\r\n.\r\n"),
+        lines, 10, &nlines, &consumed);
+    check("leading-dot destuff", rc == 0 && nlines == 1);
+    if (nlines >= 1) check_str("destuffed .foo", lines[0], "foo");
+    for (size_t i = 0; i < nlines; i++) free(lines[i]);
 }
 
 static void test_trim(void) {

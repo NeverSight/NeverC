@@ -207,6 +207,8 @@ static void test_match(void) {
     ASSERT_TRUE(neverc_filepath_match("f?o", "foo"));
     ASSERT_FALSE(neverc_filepath_match("f?o", "fooo"));
     ASSERT_TRUE(neverc_filepath_match("*", "anything"));
+    ASSERT_FALSE(neverc_filepath_match("*", "foo/bar"));
+    ASSERT_FALSE(neverc_filepath_match("foo*", "foo/bar"));
     ASSERT_TRUE(neverc_filepath_match("hello", "hello"));
     ASSERT_FALSE(neverc_filepath_match("hello", "world"));
     ASSERT_FALSE(neverc_filepath_match("*.txt", "dir/file.txt"));

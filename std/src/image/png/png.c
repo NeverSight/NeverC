@@ -202,6 +202,8 @@ int neverc_png_decode(const uint8_t *data, size_t len, neverc_png_image_t *img) 
         } else if (memcmp(chunk_type, "IEND", 4) == 0) {
             if (chunk_len != 0) { free(idat_buf); return -1; }
             iend_found = 1;
+            pos += 12U;
+            if (pos != len) { free(idat_buf); return -1; }
             break;
         } else {
             if ((chunk_type[0] & 0x20U) == 0) {

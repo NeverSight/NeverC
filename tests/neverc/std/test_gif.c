@@ -184,6 +184,36 @@ static void test_invalid_data(void) {
     ASSERT_EQ(neverc_gif_encode(&frame, &output, &output_length), -1);
 }
 
+static void test_rejects_trailing_bytes(void) {
+    printf("[rejects_trailing_bytes]\n");
+    neverc_gif_frame_t frame;
+    memset(&frame, 0, sizeof(frame));
+    frame.width = 2;
+    frame.height = 2;
+    frame.palette_size = 2;
+    frame.palette[0] = (neverc_gif_color_t){0, 0, 0};
+    frame.palette[1] = (neverc_gif_color_t){255, 255, 255};
+    frame.indices = (uint8_t *)calloc(1, 4);
+    ASSERT_TRUE(frame.indices != NULL);
+
+    uint8_t *gif_data = NULL;
+    size_t gif_len = 0;
+    ASSERT_EQ(neverc_gif_encode(&frame, &gif_data, &gif_len), 0);
+    ASSERT_TRUE(gif_data != NULL);
+
+    uint8_t *padded = (uint8_t *)malloc(gif_len + 1);
+    ASSERT_TRUE(padded != NULL);
+    memcpy(padded, gif_data, gif_len);
+    padded[gif_len] = 0x00;
+    neverc_gif_image_t decoded;
+    memset(&decoded, 0, sizeof(decoded));
+    ASSERT_EQ(neverc_gif_decode(padded, gif_len + 1, &decoded), -1);
+
+    free(padded);
+    free(gif_data);
+    free(frame.indices);
+}
+
 static void test_single_color(void) {
     printf("[single_color]\n");
     neverc_gif_frame_t frame;
@@ -384,6 +414,7 @@ int main(void) {
     test_encode_decode();
     test_from_rgba();
     test_invalid_data();
+    test_rejects_trailing_bytes();
     test_single_color();
     test_large_roundtrip();
     test_interlaced_decode();

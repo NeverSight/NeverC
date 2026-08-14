@@ -113,6 +113,12 @@ static void test_unlink(void) {
 
     neverc_ring_free(r);
     neverc_ring_free(removed);
+
+    r = neverc_ring_new(5);
+    ASSERT_NULL(neverc_ring_unlink(r, 5));
+    ASSERT_NULL(neverc_ring_unlink(r, 10));
+    ASSERT_INT_EQ(neverc_ring_len(r), 5);
+    neverc_ring_free(r);
 }
 
 static void test_unlink_zero(void) {

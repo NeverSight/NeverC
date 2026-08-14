@@ -168,9 +168,8 @@ static const uint8_t OID_EKU_TIME_STAMPING[] =
     {0x2B, 0x06, 0x01, 0x05, 0x05, 0x07, 0x03, 0x08};
 static const uint8_t OID_EKU_OCSP_SIGNING[] =
     {0x2B, 0x06, 0x01, 0x05, 0x05, 0x07, 0x03, 0x09};
-/* id-ce-extKeyUsage anyExtendedKeyUsage is 1.3.6.1.5.5.7.3.0, not 2.5.29.37.0 */
-static const uint8_t OID_EKU_ANY[] =
-    {0x2B, 0x06, 0x01, 0x05, 0x05, 0x07, 0x03, 0x00};
+/* RFC 5280: anyExtendedKeyUsage ::= { id-ce-extKeyUsage 0 } = 2.5.29.37.0 */
+static const uint8_t OID_EKU_ANY[] = {0x55, 0x1D, 0x25, 0x00};
 
 static int identify_sig_algorithm(const uint8_t *oid, size_t len) {
     if (oid_equals(oid, len, OID_SHA256_RSA, sizeof(OID_SHA256_RSA)))
@@ -767,6 +766,8 @@ int neverc_x509_parse_certificate(neverc_x509_cert_t *cert,
             return -1;
         cert->raw_issuer = tbs.data + name_start;
         cert->raw_issuer_len = tbs.pos - name_start;
+        if (vlen == 0)
+            return -1;
         asn1_reader_t name_r = {val, vlen, 0};
         if (parse_name(&name_r, &cert->issuer) != 0)
             return -1;
@@ -791,6 +792,8 @@ int neverc_x509_parse_certificate(neverc_x509_cert_t *cert,
               (tag == ASN1_TAG_GENERALTIME &&
                parse_generaltime(val, vlen, &cert->not_after) == 0)) ||
             val_seq.pos != val_seq.len)
+            return -1;
+        if (neverc_x509_time_compare(&cert->not_before, &cert->not_after) > 0)
             return -1;
     }
 

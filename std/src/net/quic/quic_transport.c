@@ -506,6 +506,46 @@ static int qt_handle_frames(struct neverc_quic_conn *conn,
             cursor += datagram_len;
             consumed = cursor - position;
             *ack_eliciting = 1;
+        } else if (frame_type == QUIC_FRAME_NEW_TOKEN) {
+            /* RFC 9000 §19.7: clients receive NEW_TOKEN; servers MUST NOT. */
+            if (conn->side != QUIC_SIDE_CLIENT)
+                return -1;
+            size_t cursor = position + type_len;
+            uint64_t token_len;
+            if (qt_decode_varint_at(payload, payload_len, &cursor,
+                                    &token_len) != 0 ||
+                token_len > payload_len - cursor)
+                return -1;
+            cursor += (size_t)token_len;
+            consumed = cursor - position;
+            *ack_eliciting = 1;
+        } else if (frame_type == QUIC_FRAME_DATA_BLOCKED) {
+            size_t cursor = position + type_len;
+            uint64_t maximum;
+            if (qt_decode_varint_at(payload, payload_len, &cursor,
+                                    &maximum) != 0)
+                return -1;
+            consumed = cursor - position;
+            *ack_eliciting = 1;
+        } else if (frame_type == QUIC_FRAME_STREAM_DATA_BLOCKED) {
+            size_t cursor = position + type_len;
+            uint64_t stream_id, maximum;
+            if (qt_decode_varint_at(payload, payload_len, &cursor,
+                                    &stream_id) != 0 ||
+                qt_decode_varint_at(payload, payload_len, &cursor,
+                                    &maximum) != 0)
+                return -1;
+            consumed = cursor - position;
+            *ack_eliciting = 1;
+        } else if (frame_type == QUIC_FRAME_STREAMS_BLOCKED_BIDI ||
+                   frame_type == QUIC_FRAME_STREAMS_BLOCKED_UNI) {
+            size_t cursor = position + type_len;
+            uint64_t maximum;
+            if (qt_decode_varint_at(payload, payload_len, &cursor,
+                                    &maximum) != 0)
+                return -1;
+            consumed = cursor - position;
+            *ack_eliciting = 1;
         } else {
             return -1;
         }

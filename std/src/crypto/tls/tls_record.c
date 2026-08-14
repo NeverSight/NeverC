@@ -478,6 +478,47 @@ int neverc_tls_test_reject_ccs_after_handshake(void) {
     return 0;
 }
 
+int neverc_tls_test_discard_ccs_before_handshake(void) {
+    neverc_tcp_conn_t *reader = NULL;
+    neverc_tcp_conn_t *writer = NULL;
+    if (neverc_tcp_pipe(&reader, &writer) != 0 || !reader || !writer) {
+        neverc_tcp_close(reader);
+        neverc_tcp_close(writer);
+        return -1;
+    }
+
+    neverc_tls_conn_t *conn = nci_tls_conn_new(reader, 1);
+    if (!conn) {
+        neverc_tcp_close(reader);
+        neverc_tcp_close(writer);
+        return -1;
+    }
+
+    static const uint8_t ccs_then_handshake[] = {
+        TLS_CT_CHANGE_CIPHER_SPEC, 0x03, 0x03, 0x00, 0x01, 0x01,
+        TLS_CT_HANDSHAKE, 0x03, 0x03, 0x00, 0x06,
+        TLS_HS_ENCRYPTED_EXT, 0, 0, 2, 0, 0
+    };
+    if (neverc_tcp_write(writer, ccs_then_handshake,
+                         sizeof(ccs_then_handshake)) !=
+        (int)sizeof(ccs_then_handshake)) {
+        neverc_tls_close(conn);
+        neverc_tcp_close(writer);
+        return -1;
+    }
+
+    const uint8_t *message = NULL;
+    size_t message_len = 0;
+    int result = nci_tls_recv_plain_handshake_message(
+        conn, TLS_HS_ENCRYPTED_EXT, &message, &message_len);
+    neverc_tls_close(conn);
+    neverc_tcp_close(writer);
+    if (result != 0 || message_len != 6 || !message ||
+        message[0] != TLS_HS_ENCRYPTED_EXT)
+        return -1;
+    return 0;
+}
+
 int neverc_tls_test_handshake_reassembly(void) {
     static const uint8_t messages[] = {
         TLS_HS_ENCRYPTED_EXT, 0, 0, 2, 0, 0,
@@ -676,11 +717,7 @@ int nci_tls_recv_record(neverc_tls_conn_t *conn, uint8_t *out_type,
     int is_ciphertext =
         conn->write_keys_active &&
         *out_type == TLS_CT_APPLICATION_DATA;
-    if (is_ciphertext &&
-        record_version != TLS_LEGACY_VERSION)
-        return nci_tls_protocol_error(
-            conn, TLS_ALERT_PROTOCOL_VERSION,
-            "invalid TLS record version");
+    (void)record_version;
     uint16_t rec_len = tls_get_u16(conn->read_buf + 3);
     size_t record_limit = is_ciphertext ?
                           TLS_MAX_CIPHERTEXT :
@@ -824,7 +861,8 @@ int nci_tls_recv_decrypt(neverc_tls_conn_t *conn,
             "TLS inner plaintext has no content type");
     }
 
-    if (ct_body_len > TLS_MAX_PLAINTEXT) {
+    /* RFC 8446 §5.4: inner plaintext is content + content-type, so 2^14+1. */
+    if (ct_body_len > TLS_MAX_PLAINTEXT + 1) {
         nci_tls_secure_free(plaintext, rec_len - TLS_AEAD_TAG_SIZE);
         return nci_tls_protocol_error(
             conn, TLS_ALERT_RECORD_OVERFLOW,
@@ -877,6 +915,24 @@ int nci_tls_recv_plain_handshake_message(
         if (record_type == TLS_CT_ALERT)
             return nci_tls_error(
                 conn, "peer sent an alert during TLS handshake");
+        if (record_type == TLS_CT_CHANGE_CIPHER_SPEC) {
+            /* RFC 8446 D.4: a 1-byte 0x01 CCS MUST be discarded after the
+             * first ClientHello and before the peer Finished. */
+            if (record_len != 1 || record_data[0] != 1)
+                return nci_tls_protocol_error(
+                    conn, TLS_ALERT_DECODE_ERROR,
+                    "malformed TLS change_cipher_spec record");
+            if (conn->application_keys_active)
+                return nci_tls_protocol_error(
+                    conn, TLS_ALERT_UNEXPECTED_MESSAGE,
+                    "TLS change_cipher_spec after handshake completion");
+            if (++conn->non_advancing_records >
+                TLS_MAX_NON_ADVANCING_RECORDS)
+                return nci_tls_protocol_error(
+                    conn, TLS_ALERT_UNEXPECTED_MESSAGE,
+                    "too many non-advancing TLS records");
+            continue;
+        }
         if (record_type != TLS_CT_HANDSHAKE)
             return nci_tls_protocol_error(
                 conn, TLS_ALERT_UNEXPECTED_MESSAGE,

@@ -97,6 +97,11 @@ static void test_parse_number(void) {
     /* The DOM stores numbers as double, so values outside that finite range
      * must fail instead of silently becoming infinity and marshaling as null. */
     ASSERT_NULL(neverc_json_parse("1e9999", 6));
+    /* Underflow is a legal JSON number and must become 0, not a parse error. */
+    v = neverc_json_parse("1e-400", 6);
+    ASSERT_NOT_NULL(v);
+    ASSERT_DBL_EQ(neverc_json_number(v), 0.0, 1e-10);
+    neverc_json_free(v);
 }
 
 static void test_parse_string(void) {

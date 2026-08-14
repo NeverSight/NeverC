@@ -167,7 +167,10 @@ double neverc_math_fma(double x, double y, double z) {
     }
     if (pe < 0) {
         unsigned n = (unsigned)(-pe);
-        m = (m >> n) | nonzero(m & ((1ULL << n) - 1));
+        if (n >= 64)
+            m = nonzero(m);
+        else
+            m = (m >> n) | nonzero(m & ((1ULL << n) - 1));
         pe = 0;
     }
     m = ((m + (1ULL << 9)) >> 10) & ~zero_fn((m & ((1ULL << 10) - 1)) ^ (1ULL << 9));

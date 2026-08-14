@@ -244,7 +244,13 @@ int neverc_filepath_match(const char *pattern, const char *name) {
     while (*pattern && *name) {
         if (*pattern == '*') {
             pattern++;
-            if (*pattern == '\0') return 1;
+            if (*pattern == '\0') {
+                while (*name) {
+                    if (is_sep(*name)) return 0;
+                    name++;
+                }
+                return 1;
+            }
             while (*name) {
                 if (neverc_filepath_match(pattern, name)) return 1;
                 if (is_sep(*name)) return 0;

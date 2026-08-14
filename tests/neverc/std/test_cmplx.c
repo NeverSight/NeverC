@@ -322,6 +322,8 @@ static void test_inv_trig(void) {
 
     /* atan(0) = 0 */
     check_cmplx("atan(0)", neverc_cmplx_atan(C(0.0, 0.0)), 0.0, 0.0);
+    /* C99/Go: atan(-i) is 0 - i∞, not NaN. */
+    check_cmplx("atan(-i)", neverc_cmplx_atan(C(0.0, -1.0)), 0.0, -NC_INF);
 
     /* Real-valued consistency: asin(0.5+0i) should have re = asin(0.5) */
     double as_real = neverc_cmplx_asin(C(0.5, 0.0)).re;

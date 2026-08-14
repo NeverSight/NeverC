@@ -874,6 +874,8 @@ static void test_fma(void) {
 
     /* Cancellation: p == -z should return +0 */
     check_double("fma(2,3,-6)=+0", neverc_math_fma(2.0, 3.0, -6.0), 0.0);
+    check_double("fma(min_subnormal,1,-min_subnormal)=+0",
+                 neverc_math_fma(0x1p-1074, 1.0, -0x1p-1074), 0.0);
 
     /* Subnormal results */
     check_true("fma subnormal not zero",

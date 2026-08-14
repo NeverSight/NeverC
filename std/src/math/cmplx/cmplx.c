@@ -242,7 +242,8 @@ neverc_cmplx_t neverc_cmplx_atan(neverc_cmplx_t z) {
     neverc_cmplx_t den = MK(1.0 + b, -a);
     double d2 = RE(den) * RE(den) + IM(den) * IM(den);
     if (d2 == 0.0)
-        return MK(neverc_math_nan(), neverc_math_nan());
+        return MK(neverc_math_copysign(0.0, a),
+                  neverc_math_copysign(neverc_math_inf(1), b));
     neverc_cmplx_t quot = MK(
         (RE(num)*RE(den) + IM(num)*IM(den)) / d2,
         (IM(num)*RE(den) - RE(num)*IM(den)) / d2

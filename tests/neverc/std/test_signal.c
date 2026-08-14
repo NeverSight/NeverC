@@ -145,9 +145,11 @@ static void test_multiple_signals(void) {
 
 static void test_constants(void) {
     printf("[constants]\n");
-    ASSERT_INT_EQ(NEVERC_SIGINT, 2);
-    ASSERT_INT_EQ(NEVERC_SIGTERM, 15);
-    ASSERT_INT_EQ(NEVERC_SIGHUP, 1);
+    ASSERT_INT_EQ(NEVERC_SIGINT, SIGINT);
+    ASSERT_INT_EQ(NEVERC_SIGTERM, SIGTERM);
+    ASSERT_INT_EQ(NEVERC_SIGHUP, SIGHUP);
+    ASSERT_INT_EQ(NEVERC_SIGUSR1, SIGUSR1);
+    ASSERT_INT_EQ(NEVERC_SIGUSR2, SIGUSR2);
 }
 
 #endif

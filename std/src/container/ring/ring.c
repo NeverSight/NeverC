@@ -101,6 +101,7 @@ neverc_ring_t *neverc_ring_unlink(neverc_ring_t *r, int n) {
     if (!r || n <= 0) return NULL;
     if (!r->next) ring_init(r);
     int count = n % neverc_ring_len(r);
+    if (count == 0) return NULL;
     return neverc_ring_link(r, neverc_ring_move(r, count + 1));
 }
 

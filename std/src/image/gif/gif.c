@@ -660,6 +660,7 @@ int neverc_gif_decode(const uint8_t *data, size_t len, neverc_gif_image_t *img) 
     }
 
     if (!saw_trailer || img->num_frames == 0) goto decode_failed;
+    if (pos != len) goto decode_failed;
 
     return 0;
 

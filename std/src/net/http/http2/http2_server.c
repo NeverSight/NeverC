@@ -777,6 +777,39 @@ static int h2_header_fragment(const neverc_h2_frame_header_t *header,
     return 0;
 }
 
+static int h2_discard_headers_block(h2_conn_t *conn,
+                                    const neverc_h2_frame_header_t *header,
+                                    const uint8_t *payload) {
+    const uint8_t *fragment = NULL;
+    size_t fragment_length = 0;
+    if (h2_header_fragment(header, payload, &fragment, &fragment_length) != 0)
+        return -1;
+    if ((header->flags & NC_H2_FLAG_END_HEADERS) == 0)
+        return -1;
+    neverc_hpack_header_t headers[64];
+    memset(headers, 0, sizeof(headers));
+    int count = 0;
+    int rc = neverc_hpack_decode(conn->hpack_dec, fragment, fragment_length,
+                                 headers, 64, &count);
+    for (int i = 0; i < count; i++) {
+        free(headers[i].name);
+        free(headers[i].value);
+    }
+    return rc;
+}
+
+static int h2_reject_headers_keep_hpack(h2_conn_t *conn,
+                                        const neverc_h2_frame_header_t *header,
+                                        const uint8_t *payload,
+                                        uint32_t rst_code) {
+    if (h2_discard_headers_block(conn, header, payload) != 0) {
+        (void)h2_conn_write_goaway(conn, NC_H2_COMPRESSION_ERROR);
+        return -1;
+    }
+    (void)h2_conn_write_rst(conn, header->stream_id, rst_code);
+    return 0;
+}
+
 static int h2_data_fragment(const neverc_h2_frame_header_t *header,
                             const uint8_t *payload, const uint8_t **data,
                             size_t *data_length) {
@@ -953,6 +986,8 @@ static int h2_validate_request_headers(h2_conn_t *conn,
                     strcmp(scheme, "https") != 0) ||
         !path || (path[0] != '/' && strcmp(path, "*") != 0) ||
         strchr(path, '#') != NULL)
+        return -1;
+    if (!authority && !host)
         return -1;
     if (authority && host && !h2_ascii_ieq(authority, host))
         return -1;
@@ -1847,23 +1882,32 @@ static int h2_serve_io(neverc_h2_server_t *srv, h2_io_t *io) {
             h2_stream_t *stream = h2_find_stream(&conn, fhdr.stream_id);
             if (stream && stream->state == H2_STREAM_CLOSED &&
                 !nc_atomic_load(&stream->reset)) {
-                (void)h2_conn_write_rst(&conn, fhdr.stream_id,
-                                        NC_H2_STREAM_CLOSED);
-                free(payload);
+                if (h2_reject_headers_keep_hpack(
+                        &conn, &fhdr, payload, NC_H2_STREAM_CLOSED) != 0) {
+                    free(payload);
+                    goto cleanup;
+                }
                 break;
             }
             if (stream &&
                 (stream->state == H2_STREAM_HALF_CLOSED_REMOTE ||
                  stream->state == H2_STREAM_CLOSED ||
                  nc_atomic_load(&stream->reset))) {
-                (void)h2_conn_write_rst(&conn, fhdr.stream_id,
-                                        NC_H2_STREAM_CLOSED);
+                if (h2_reject_headers_keep_hpack(
+                        &conn, &fhdr, payload, NC_H2_STREAM_CLOSED) != 0) {
+                    free(payload);
+                    goto cleanup;
+                }
                 break;
             }
             if (!stream) {
                 if (nc_atomic_load(&conn.goaway_sent)) {
-                    (void)h2_conn_write_rst(&conn, fhdr.stream_id,
-                                            NC_H2_REFUSED_STREAM);
+                    if (h2_reject_headers_keep_hpack(
+                            &conn, &fhdr, payload,
+                            NC_H2_REFUSED_STREAM) != 0) {
+                        free(payload);
+                        goto cleanup;
+                    }
                     break;
                 }
                 if ((fhdr.stream_id & 1U) == 0) {
@@ -1877,8 +1921,12 @@ static int h2_serve_io(neverc_h2_server_t *srv, h2_io_t *io) {
                     int reset = h2_closed_stream_was_reset(
                         &conn, fhdr.stream_id, &found);
                     if (found && reset) {
-                        (void)h2_conn_write_rst(&conn, fhdr.stream_id,
-                                                NC_H2_STREAM_CLOSED);
+                        if (h2_reject_headers_keep_hpack(
+                                &conn, &fhdr, payload,
+                                NC_H2_STREAM_CLOSED) != 0) {
+                            free(payload);
+                            goto cleanup;
+                        }
                         break;
                     }
                     (void)h2_conn_write_goaway(
@@ -1889,13 +1937,24 @@ static int h2_serve_io(neverc_h2_server_t *srv, h2_io_t *io) {
                 }
                 if (nc_atomic_load(&conn.active_streams) >=
                     (int)conn.local_settings.max_concurrent_streams) {
-                    (void)h2_conn_write_rst(&conn, fhdr.stream_id,
-                                            NC_H2_REFUSED_STREAM);
+                    if (h2_reject_headers_keep_hpack(
+                            &conn, &fhdr, payload,
+                            NC_H2_REFUSED_STREAM) != 0) {
+                        free(payload);
+                        goto cleanup;
+                    }
                     break;
                 }
                 stream = h2_create_stream(&conn, fhdr.stream_id);
-                if (!stream)
+                if (!stream) {
+                    if (h2_reject_headers_keep_hpack(
+                            &conn, &fhdr, payload,
+                            NC_H2_REFUSED_STREAM) != 0) {
+                        free(payload);
+                        goto cleanup;
+                    }
                     break;
+                }
                 conn.max_stream_id = fhdr.stream_id;
             }
 

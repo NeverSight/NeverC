@@ -13,12 +13,22 @@
 extern "C" {
 #endif
 
+#ifdef _WIN32
 #define NEVERC_SIGINT   2
 #define NEVERC_SIGTERM  15
 #define NEVERC_SIGHUP   1
 #define NEVERC_SIGUSR1  10
 #define NEVERC_SIGUSR2  12
 #define NEVERC_SIGPIPE  13
+#else
+#include <signal.h>
+#define NEVERC_SIGINT   SIGINT
+#define NEVERC_SIGTERM  SIGTERM
+#define NEVERC_SIGHUP   SIGHUP
+#define NEVERC_SIGUSR1  SIGUSR1
+#define NEVERC_SIGUSR2  SIGUSR2
+#define NEVERC_SIGPIPE  SIGPIPE
+#endif
 
 typedef void (*neverc_signal_handler_t)(int signum);
 

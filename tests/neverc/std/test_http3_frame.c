@@ -126,7 +126,7 @@ static void test_settings_encode_decode_roundtrip(void) {
 static void test_settings_reserved_http2_ids_rejected(void) {
     /* RFC 9114 §11.2.2: HTTP/2 setting identifiers 0x02..0x05 MUST be
      * treated as H3_SETTINGS_ERROR. */
-    static const uint8_t reserved_ids[] = { 0x02, 0x03, 0x04, 0x05 };
+    static const uint8_t reserved_ids[] = { 0x00, 0x02, 0x03, 0x04, 0x05 };
     h3_settings_t decoded;
     for (size_t i = 0; i < sizeof(reserved_ids); i++) {
         uint8_t payload[] = { reserved_ids[i], 0x00 };
@@ -471,6 +471,36 @@ static void test_qpack_empty_headers(void) {
  * QPACK Encoder/Decoder lifecycle
  * ====================================================================== */
 
+static void test_qpack_literal_name_ref_never_index(void) {
+    /* RFC 9204 §4.5.4: N=1 (never index) is 01N1NNNN = 0x50|0x20|idx.
+     * Static cookie is index 5 → 0x75. */
+    neverc_qpack_decoder_t *dec = neverc_qpack_decoder_create(4096);
+    static const uint8_t block[] = {
+        0x00, 0x00, 0x75, 0x09,
+        's', 'e', 's', 's', 'i', 'o', 'n', '=', '1'
+    };
+    neverc_qpack_header_t decoded[4];
+    int nheaders = 0;
+    ASSERT_EQ(neverc_qpack_decode(dec, block, sizeof(block),
+                                  decoded, 4, &nheaders), 0);
+    ASSERT_EQ(nheaders, 1);
+    ASSERT_STR_EQ(decoded[0].name, "cookie");
+    ASSERT_STR_EQ(decoded[0].value, "session=1");
+    free(decoded[0].name);
+    free(decoded[0].value);
+    neverc_qpack_decoder_destroy(dec);
+}
+
+static void test_qpack_rejects_s_bit_with_zero_ric(void) {
+    neverc_qpack_decoder_t *dec = neverc_qpack_decoder_create(4096);
+    static const uint8_t block[] = { 0x00, 0x80, 0xC1 };
+    neverc_qpack_header_t decoded[4];
+    int nheaders = 0;
+    ASSERT_EQ(neverc_qpack_decode(dec, block, sizeof(block),
+                                  decoded, 4, &nheaders), -1);
+    neverc_qpack_decoder_destroy(dec);
+}
+
 static void test_qpack_encoder_create_destroy(void) {
     neverc_qpack_encoder_t *enc = neverc_qpack_encoder_create(8192);
     ASSERT_NOT_NULL(enc);
@@ -513,6 +543,8 @@ int main(void) {
     test_qpack_roundtrip_literal();
     test_qpack_roundtrip_mixed();
     test_qpack_empty_headers();
+    test_qpack_literal_name_ref_never_index();
+    test_qpack_rejects_s_bit_with_zero_ric();
     test_qpack_encoder_create_destroy();
 
     printf("\n%d passed, %d failed (of %d)\n", tests_passed, tests_failed, tests_run);

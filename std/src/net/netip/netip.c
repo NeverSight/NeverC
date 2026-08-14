@@ -358,9 +358,23 @@ int neverc_netip_addr_bit_len(const neverc_netip_addr_t *addr) {
     return addr->is_v4 ? 32 : 128;
 }
 
+static int addr_v4_octets(const neverc_netip_addr_t *addr, uint8_t out[4]) {
+    if (addr->is_v4) {
+        memcpy(out, addr->addr + 12, 4);
+        return 1;
+    }
+    for (int i = 0; i < 10; i++)
+        if (addr->addr[i] != 0) return 0;
+    if (addr->addr[10] != 0xff || addr->addr[11] != 0xff)
+        return 0;
+    memcpy(out, addr->addr + 12, 4);
+    return 1;
+}
+
 int neverc_netip_addr_is_loopback(const neverc_netip_addr_t *addr) {
     if (!addr || !addr->valid) return 0;
-    if (addr->is_v4) return addr->addr[12] == 127;
+    uint8_t v4[4];
+    if (addr_v4_octets(addr, v4)) return v4[0] == 127;
     /* ::1 */
     for (int i = 0; i < 15; i++) if (addr->addr[i] != 0) return 0;
     return addr->addr[15] == 1;
@@ -368,14 +382,16 @@ int neverc_netip_addr_is_loopback(const neverc_netip_addr_t *addr) {
 
 int neverc_netip_addr_is_multicast(const neverc_netip_addr_t *addr) {
     if (!addr || !addr->valid) return 0;
-    if (addr->is_v4) return (addr->addr[12] & 0xf0) == 0xe0;
+    uint8_t v4[4];
+    if (addr_v4_octets(addr, v4)) return (v4[0] & 0xf0) == 0xe0;
     return addr->addr[0] == 0xff;
 }
 
 int neverc_netip_addr_is_private(const neverc_netip_addr_t *addr) {
     if (!addr || !addr->valid) return 0;
-    if (addr->is_v4) {
-        uint8_t a = addr->addr[12], b = addr->addr[13];
+    uint8_t v4[4];
+    if (addr_v4_octets(addr, v4)) {
+        uint8_t a = v4[0], b = v4[1];
         return a == 10 || (a == 172 && (b & 0xf0) == 16) || (a == 192 && b == 168);
     }
     return (addr->addr[0] & 0xfe) == 0xfc;
@@ -383,13 +399,16 @@ int neverc_netip_addr_is_private(const neverc_netip_addr_t *addr) {
 
 int neverc_netip_addr_is_link_local_unicast(const neverc_netip_addr_t *addr) {
     if (!addr || !addr->valid) return 0;
-    if (addr->is_v4) return addr->addr[12] == 169 && addr->addr[13] == 254;
+    uint8_t v4[4];
+    if (addr_v4_octets(addr, v4)) return v4[0] == 169 && v4[1] == 254;
     return addr->addr[0] == 0xfe && (addr->addr[1] & 0xc0) == 0x80;
 }
 
 int neverc_netip_addr_is_link_local_multicast(const neverc_netip_addr_t *addr) {
     if (!addr || !addr->valid) return 0;
-    if (addr->is_v4) return addr->addr[12] == 224 && addr->addr[13] == 0 && addr->addr[14] == 0;
+    uint8_t v4[4];
+    if (addr_v4_octets(addr, v4))
+        return v4[0] == 224 && v4[1] == 0 && v4[2] == 0;
     return addr->addr[0] == 0xff && (addr->addr[1] & 0x0f) == 0x02;
 }
 
@@ -404,10 +423,9 @@ int neverc_netip_addr_is_global_unicast(const neverc_netip_addr_t *addr) {
 
 int neverc_netip_addr_is_unspecified(const neverc_netip_addr_t *addr) {
     if (!addr || !addr->valid) return 0;
-    if (addr->is_v4) {
-        return addr->addr[12] == 0 && addr->addr[13] == 0 &&
-               addr->addr[14] == 0 && addr->addr[15] == 0;
-    }
+    uint8_t v4[4];
+    if (addr_v4_octets(addr, v4))
+        return v4[0] == 0 && v4[1] == 0 && v4[2] == 0 && v4[3] == 0;
     for (int i = 0; i < 16; i++) if (addr->addr[i] != 0) return 0;
     return 1;
 }

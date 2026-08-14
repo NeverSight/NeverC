@@ -333,8 +333,18 @@ int neverc_net_lookup_txt(const char *name, neverc_net_txt_list_t *out) {
 
     for (DNS_RECORD *r = rec; r && out->count < NEVERC_NET_MAX_RECORDS; r = r->pNext) {
         if (r->wType == DNS_TYPE_TEXT && r->Data.TXT.dwStringCount > 0) {
-            copy_cstr_term(out->records[out->count], 512,
-                           r->Data.TXT.pStringArray[0]);
+            size_t assembled = 0;
+            DWORD nstr = r->Data.TXT.dwStringCount;
+            for (DWORD i = 0; i < nstr && assembled < 511; i++) {
+                const char *chunk = r->Data.TXT.pStringArray[i];
+                if (!chunk) continue;
+                size_t clen = strlen(chunk);
+                size_t room = 511 - assembled;
+                size_t copy = clen < room ? clen : room;
+                memcpy(out->records[out->count] + assembled, chunk, copy);
+                assembled += copy;
+            }
+            out->records[out->count][assembled] = '\0';
             out->count++;
         }
     }
@@ -358,12 +368,22 @@ int neverc_net_lookup_txt(const char *name, neverc_net_txt_list_t *out) {
         int rdlen = ns_rr_rdlen(rr);
         if (rdlen < 1) continue;
 
-        int txtlen = rdata[0];
-        if (txtlen > rdlen - 1) txtlen = rdlen - 1;
-        if (txtlen > 511) txtlen = 511;
-
-        memcpy(out->records[out->count], rdata + 1, (size_t)txtlen);
-        out->records[out->count][txtlen] = '\0';
+        size_t assembled = 0;
+        int offset = 0;
+        while (offset < rdlen) {
+            int chunk = rdata[offset];
+            if (offset + 1 + chunk > rdlen)
+                break;
+            size_t room = 511 - assembled;
+            size_t copy = (size_t)chunk < room ? (size_t)chunk : room;
+            memcpy(out->records[out->count] + assembled,
+                   rdata + offset + 1, copy);
+            assembled += copy;
+            offset += 1 + chunk;
+            if (assembled >= 511)
+                break;
+        }
+        out->records[out->count][assembled] = '\0';
         out->count++;
     }
     return out->count > 0 ? 0 : -1;

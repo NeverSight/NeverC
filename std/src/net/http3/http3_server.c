@@ -921,9 +921,10 @@ static int h3_parse_control_buffer(h3_conn_t *connection) {
             nc_mutex_unlock(&connection->lock);
             h3_consume_control_buffer(connection, position + (size_t)length);
         } else if (type == NC_H3_FRAME_GOAWAY) {
-            if (length == 0 || length > 8U ||
-                length > connection->control_buffer_length - position)
+            if (length == 0 || length > 8U)
                 goto invalid;
+            if (length > connection->control_buffer_length - position)
+                return 0;
             size_t consumed = 0;
             uint64_t identifier;
             if (neverc_quic_varint_decode(

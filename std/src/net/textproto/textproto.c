@@ -298,7 +298,7 @@ int neverc_textproto_read_dot_lines(const char *data, size_t len,
             break;
         }
         const char *src = line;
-        if (src[0] == '.' && src[1] == '.') src++;
+        if (src[0] == '.') src++;
         lines[*nlines] = textproto_dup(src);
         if (!lines[*nlines]) {
             for (size_t i = 0; i < *nlines; i++) free(lines[i]);

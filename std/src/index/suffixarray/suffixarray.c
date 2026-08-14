@@ -356,7 +356,7 @@ int neverc_suffixarray_lookup(const neverc_suffixarray_t *idx,
     for (size_t i = 0; i < copy; i++)
         results[i] = idx->sa[lo + (int32_t)i];
 
-    if (nresults) *nresults = count;
+    if (nresults) *nresults = copy;
     return 0;
 }
 

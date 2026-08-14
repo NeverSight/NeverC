@@ -1159,6 +1159,8 @@ int neverc_jpeg_decode(const uint8_t *data, size_t len, neverc_jpeg_image_t *img
         marker_pos++;
     if (marker_pos >= br.len || br.data[marker_pos] != 0xD9)
         goto decode_fail;
+    if (marker_pos + 1 != br.len)
+        goto decode_fail;
 
     /* Compose the output: box-upsample each component to full resolution (sample
      * c at px*comp_h[c]/Hmax, py*comp_v[c]/Vmax), then YCbCr->RGB. The row index

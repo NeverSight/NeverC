@@ -223,6 +223,36 @@ static void test_invalid_data(void) {
                   huge_chunk, sizeof(huge_chunk), &img), -1);
 }
 
+static void test_rejects_trailing_bytes(void) {
+    printf("[rejects_trailing_bytes]\n");
+    neverc_png_image_t img;
+    memset(&img, 0, sizeof(img));
+    img.width = 1;
+    img.height = 1;
+    img.bit_depth = 8;
+    img.color_type = NEVERC_PNG_COLOR_TRUECOLOR_ALPHA;
+    img.channels = 4;
+    img.stride = 4;
+    img.pixels = (uint8_t *)calloc(1, 4);
+    ASSERT_TRUE(img.pixels != NULL);
+
+    uint8_t *png_data = NULL;
+    size_t png_len = 0;
+    ASSERT_EQ(neverc_png_encode(&img, &png_data, &png_len), 0);
+    ASSERT_TRUE(png_data != NULL);
+
+    uint8_t *padded = (uint8_t *)malloc(png_len + 1);
+    ASSERT_TRUE(padded != NULL);
+    memcpy(padded, png_data, png_len);
+    padded[png_len] = 0x00;
+    neverc_png_image_t decoded;
+    ASSERT_EQ(neverc_png_decode(padded, png_len + 1, &decoded), -1);
+
+    free(padded);
+    free(png_data);
+    free(img.pixels);
+}
+
 static void test_encode_rejects_unsafe_geometry(void) {
     printf("[encode_rejects_unsafe_geometry]\n");
     uint8_t pixel = 0;
@@ -465,6 +495,7 @@ int main(void) {
     test_encode_decode_grayscale();
     test_pixel_at_bounds();
     test_invalid_data();
+    test_rejects_trailing_bytes();
     test_encode_rejects_unsafe_geometry();
     test_padded_stride_and_crc_rejection();
     test_large_image();

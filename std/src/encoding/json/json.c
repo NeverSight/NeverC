@@ -337,7 +337,11 @@ static neverc_json_value_t *parse_number(parser_t *p) {
     double val;
     int rc = neverc_strconv_parse_float(tok, &val);
     if (tok != stackbuf) free(tok);
-    if (rc != NEVERC_STRCONV_OK) return NULL;
+    if (rc != NEVERC_STRCONV_OK) {
+        if (rc == NEVERC_STRCONV_ERR_RANGE && val == 0.0)
+            return neverc_json_new_number(val);
+        return NULL;
+    }
 
     return neverc_json_new_number(val);
 }

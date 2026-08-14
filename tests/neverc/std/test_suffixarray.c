@@ -150,7 +150,8 @@ static void test_max_results(void) {
     size_t nresults;
     neverc_suffixarray_lookup(&idx, (const unsigned char *)"ab", 2,
                               results, 2, &nresults);
-    ASSERT_TRUE(nresults >= 2);
+    ASSERT_INT_EQ(nresults, 2);
+    ASSERT_TRUE(results[0] >= 0 && results[1] >= 0);
 
     neverc_suffixarray_free(&idx);
 }
