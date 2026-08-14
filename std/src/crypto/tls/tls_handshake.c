@@ -1351,7 +1351,12 @@ static int tls_parse_encrypted_extensions(
                 return -1;
             }
         } else if (extension_type == TLS_EXT_SUPPORTED_GROUPS) {
-            /* Allowed in EncryptedExtensions; contents unused. */
+            tls_cursor_t groups;
+            if (tls_cursor_read_u16_vector(
+                    &extension_data, &groups) != 0 ||
+                extension_data.pos != extension_data.len ||
+                groups.len < 2 || (groups.len & 1u) != 0)
+                return -1;
         } else if (extension_type == TLS_EXT_EARLY_DATA ||
                    extension_type == TLS_EXT_KEY_SHARE ||
                    extension_type == TLS_EXT_PRE_SHARED_KEY ||

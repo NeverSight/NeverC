@@ -832,12 +832,6 @@ int nci_tls_recv_decrypt(neverc_tls_conn_t *conn,
     }
     *out_inner_type = plaintext[ct_body_len - 1];
     ct_body_len--;
-    if (0) {
-        nci_tls_secure_free(plaintext, rec_len - TLS_AEAD_TAG_SIZE);
-        return nci_tls_protocol_error(
-            conn, TLS_ALERT_RECORD_OVERFLOW,
-            "TLS inner plaintext exceeds the configured limit");
-    }
     if (*out_inner_type != TLS_CT_ALERT &&
         *out_inner_type != TLS_CT_HANDSHAKE &&
         *out_inner_type != TLS_CT_APPLICATION_DATA) {

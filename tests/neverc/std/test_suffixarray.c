@@ -76,8 +76,8 @@ static void test_lookup_null_results(void) {
     size_t n = 0;
     ASSERT_INT_EQ(neverc_suffixarray_lookup(&idx, (const unsigned char *)"an", 2,
                                             NULL, 10, &n), -1);
-    ASSERT_INT_EQ(neverc_suffixarray_lookup(&idx, NULL, 2, results_unused, 1, &n),
-                  -1);
+    int32_t dummy[1];
+    ASSERT_INT_EQ(neverc_suffixarray_lookup(&idx, NULL, 2, dummy, 1, &n), -1);
     neverc_suffixarray_free(&idx);
 }
 

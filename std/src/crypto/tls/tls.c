@@ -422,7 +422,7 @@ neverc_tls_io_result_t neverc_tls_try_write(
         return tls_io_result(NEVERC_TLS_IO_ERROR, 0);
     }
     size_t accepted = length;
-    if (accepted > TLS_MAX_PLAINTEXT) accepted = TLS_MAX_PLAINTEXT;
+    if (accepted > TLS_MAX_PLAINTEXT - 1) accepted = TLS_MAX_PLAINTEXT - 1;
     if (nci_tls_send_encrypted_unlocked(
             conn, TLS_CT_APPLICATION_DATA,
             (const uint8_t *)data, accepted) != 0) {
@@ -519,8 +519,8 @@ static int nci_tls_write_unlocked(neverc_tls_conn_t *conn,
     size_t remaining = len;
 
     while (remaining > 0) {
-        size_t chunk = remaining < TLS_MAX_PLAINTEXT
-                     ? remaining : TLS_MAX_PLAINTEXT;
+        size_t chunk = remaining < (TLS_MAX_PLAINTEXT - 1)
+                     ? remaining : (TLS_MAX_PLAINTEXT - 1);
         if (nci_tls_send_encrypted_unlocked(
                 conn, TLS_CT_APPLICATION_DATA, p, chunk) != 0) {
             conn->closed = 1;

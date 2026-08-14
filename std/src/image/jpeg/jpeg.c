@@ -1058,8 +1058,7 @@ int neverc_jpeg_decode(const uint8_t *data, size_t len, neverc_jpeg_image_t *img
             goto fail;
         }
         uint64_t plane_bytes = (uint64_t)plane_w[c] * (uint64_t)plane_h[c];
-        uint64_t pixel_bytes = 4ull * (uint64_t)width * (uint64_t)height;
-        if (plane_bytes > pixel_bytes) {
+        if (plane_bytes > (UINT64_C(1) << 30)) {
             for (int k = 0; k < c; k++) free(plane[k]);
             goto fail;
         }
