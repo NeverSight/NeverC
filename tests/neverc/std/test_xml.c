@@ -214,6 +214,11 @@ static void test_entities_cdata_and_well_formedness(void) {
                neverc_xml_parse(
                    invalid_utf8, sizeof(invalid_utf8) - 1) == NULL,
                1);
+    static const char noncharacter[] = "<root>\xef\xb7\x90</root>"; /* U+FDD0 */
+    check_bool("reject XML noncharacter U+FDD0",
+               neverc_xml_parse(
+                   noncharacter, sizeof(noncharacter) - 1) == NULL,
+               1);
     static const char bom_document[] = "\xef\xbb\xbf<root/>";
     tree = neverc_xml_parse(
         bom_document, sizeof(bom_document) - 1);

@@ -365,6 +365,12 @@ static void test_strict_rfc3339(void) {
     neverc_time_t out;
     check_int("accept +14:00",
               neverc_time_parse_rfc3339("2024-01-15T12:00:00+14:00", &out), 0);
+    check_int("accept -14:00",
+              neverc_time_parse_rfc3339("2024-01-15T12:00:00-14:00", &out), 0);
+    check_int("accept compact +0800",
+              neverc_time_parse_rfc3339("2024-01-15T12:30:45+0800", &out), 0);
+    check_int("reject -14:01",
+              neverc_time_parse_rfc3339("2024-01-15T12:00:00-14:01", &out), -1);
     check_int("null rfc3339 input", neverc_time_parse_rfc3339(NULL, &out), -1);
     check_int("null rfc3339 output",
               neverc_time_parse_rfc3339("1970-01-01T00:00:00Z", NULL), -1);

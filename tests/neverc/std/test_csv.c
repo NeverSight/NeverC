@@ -3,6 +3,7 @@
  */
 #include "neverc/std/encoding/csv.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static int tests_run = 0, tests_passed = 0, tests_failed = 0;
@@ -248,6 +249,22 @@ static void test_invalid_inputs(void) {
     ASSERT_INT_EQ(neverc_csv_write_record(
                       null_field, 2, dst, sizeof(dst), NULL),
                   -1);
+
+    {
+        size_t n = (size_t)NEVERC_CSV_MAX_FIELD_LEN + 1u;
+        char *line = (char *)malloc(n);
+        char *work = (char *)malloc(n + 8u);
+        const char *big_fields[2];
+        ASSERT_INT_EQ(line != NULL && work != NULL, 1);
+        if (line && work) {
+            memset(line, 'x', n);
+            ASSERT_INT_EQ(neverc_csv_read_line(
+                              line, n, big_fields, 2, work, n + 8u, NULL),
+                          -1);
+        }
+        free(line);
+        free(work);
+    }
 }
 
 int main(void) {

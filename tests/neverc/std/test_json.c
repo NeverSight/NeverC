@@ -559,6 +559,9 @@ static void test_keymap_hash_lengths(void) {
     jkey_put(buf, &off, sizeof buf, 'd', 3,   4);
     jkey_put(buf, &off, sizeof buf, 'e', 4,   5);    /* len 4   (4-16 path)    */
     jkey_put(buf, &off, sizeof buf, 'f', 8,   6);
+    jkey_put(buf, &off, sizeof buf, 'o', 9,  15);    /* len 9-11 under-read   */
+    jkey_put(buf, &off, sizeof buf, 'p', 10, 16);
+    jkey_put(buf, &off, sizeof buf, 'q', 11, 17);
     jkey_put(buf, &off, sizeof buf, 'g', 15,  7);
     jkey_put(buf, &off, sizeof buf, 'h', 16,  8);
     jkey_put(buf, &off, sizeof buf, 'i', 17,  9);    /* len 17  (17-48 path)   */
@@ -577,11 +580,12 @@ static void test_keymap_hash_lengths(void) {
     neverc_json_value_t *v = neverc_json_parse(buf, off);
     ASSERT_NOT_NULL(v);
     if (!v) return;
-    ASSERT_INT_EQ(neverc_json_object_len(v), 14);    /* duplicates collapsed   */
+    ASSERT_INT_EQ(neverc_json_object_len(v), 17);    /* duplicates collapsed   */
 
     struct { char c; int klen; int want; } exp[] = {
         {'a',0,100}, {'b',1,2}, {'c',2,3}, {'d',3,4}, {'e',4,105},
-        {'f',8,6}, {'g',15,7}, {'h',16,8}, {'i',17,9}, {'j',32,10},
+        {'f',8,6}, {'o',9,15}, {'p',10,16}, {'q',11,17},
+        {'g',15,7}, {'h',16,8}, {'i',17,9}, {'j',32,10},
         {'k',47,11}, {'l',48,12}, {'m',49,113}, {'n',100,114},
     };
     char key[128];

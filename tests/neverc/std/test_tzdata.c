@@ -183,6 +183,10 @@ static void test_dst_offset(void) {
     check_int("Syd Jan (dst)", neverc_tzdata_offset_for_month(syd, 1), syd->dst_offset);
     check_int("Syd Jul (std)", neverc_tzdata_offset_for_month(syd, 7), syd->utc_offset);
     check_int("Syd Nov (dst)", neverc_tzdata_offset_for_month(syd, 11), syd->dst_offset);
+    check_int("Syd invalid month 0",
+              neverc_tzdata_offset_for_month(syd, 0), syd->utc_offset);
+    check_int("Syd invalid month 13",
+              neverc_tzdata_offset_for_month(syd, 13), syd->utc_offset);
 
     const neverc_tzdata_zone_t *utc = neverc_tzdata_utc();
     check_int("UTC no dst any month", neverc_tzdata_offset_for_month(utc, 6), 0);
