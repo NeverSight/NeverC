@@ -610,6 +610,15 @@ static int validate_encapsulation_key(
     int k, const uint8_t *encoded, size_t encoded_size) {
     if (!encoded || encoded_size != (size_t)k * ENC12 + 32)
         return -1;
+    int all_zero = 1;
+    for (size_t i = 0; i < encoded_size; i++) {
+        if (encoded[i] != 0) {
+            all_zero = 0;
+            break;
+        }
+    }
+    if (all_zero)
+        return -1;
     ntt_elem decoded;
     for (int i = 0; i < k; i++) {
         if (poly_byte_decode12(decoded, encoded + i * ENC12) != 0) {

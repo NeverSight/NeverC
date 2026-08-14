@@ -352,15 +352,23 @@ static void test_sha3_lifecycle(void) {
     check_true("SHA3-256 update after final ignored",
                memcmp(d1, d2, 32) == 0);
 
-    neverc_shake128_init(&ctx);
-    neverc_shake128_update(&ctx, (const uint8_t *)"abc", 3);
-    neverc_shake128_squeeze(&ctx, shake, 32);
-    neverc_shake128_update(&ctx, (const uint8_t *)"oops", 4);
     {
-        uint8_t after[32];
-        neverc_shake128_squeeze(&ctx, after, 32);
-        check_true("SHAKE128 update after squeeze ignored",
-                   memcmp(shake, after, 32) == 0);
+        uint8_t expected[64];
+        neverc_shake128_init(&ctx);
+        neverc_shake128_update(&ctx, (const uint8_t *)"abc", 3);
+        neverc_shake128_squeeze(&ctx, expected, 64);
+
+        neverc_shake128_init(&ctx);
+        neverc_shake128_update(&ctx, (const uint8_t *)"abc", 3);
+        neverc_shake128_squeeze(&ctx, shake, 32);
+        neverc_shake128_update(&ctx, (const uint8_t *)"oops", 4);
+        {
+            uint8_t after[32];
+            neverc_shake128_squeeze(&ctx, after, 32);
+            check_true("SHAKE128 update after squeeze ignored",
+                       memcmp(shake, expected, 32) == 0 &&
+                       memcmp(after, expected + 32, 32) == 0);
+        }
     }
 }
 

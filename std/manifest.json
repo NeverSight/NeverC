@@ -874,6 +874,7 @@
     "crypto/poly1305": {
       "header": "include/neverc/std/crypto/poly1305.h",
       "description": "Poly1305 MAC (RFC 7539, pairs with ChaCha20 for AEAD)",
+      "deps": ["crypto/subtle"],
       "symbols": {
         "neverc_poly1305_auth": "src/crypto/poly1305/poly1305.c",
         "neverc_poly1305_verify": "src/crypto/poly1305/poly1305.c"
@@ -2063,6 +2064,7 @@
     "archive/tar": {
       "header": "include/neverc/std/archive/tar.h",
       "description": "POSIX tar archive format reader/writer (mirrors Go archive/tar package)",
+      "deps": ["io/fs"],
       "symbols": {
         "neverc_tar_reader_init": "src/archive/tar/tar.c",
         "neverc_tar_reader_next": "src/archive/tar/tar.c",
@@ -2087,6 +2089,7 @@
     "archive/zip": {
       "header": "include/neverc/std/archive/zip.h",
       "description": "ZIP archive format reader/writer (stored mode, mirrors Go archive/zip package)",
+      "deps": ["io/fs"],
       "symbols": {
         "neverc_zip_reader_init": "src/archive/zip/zip.c",
         "neverc_zip_reader_count": "src/archive/zip/zip.c",
@@ -5136,6 +5139,7 @@
     "crypto/mldsa": {
       "header": "include/neverc/std/crypto/mldsa.h",
       "description": "ML-DSA post-quantum digital signatures (NIST FIPS 204) — ML-DSA-44",
+      "deps": ["crypto/subtle"],
       "symbols": {
         "neverc_mldsa44_generate_key": "src/crypto/mldsa/mldsa.c",
         "neverc_mldsa44_new_sk": "src/crypto/mldsa/mldsa.c",

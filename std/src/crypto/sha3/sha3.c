@@ -129,8 +129,13 @@ static void sha3_update(neverc_sha3_ctx *ctx, const uint8_t *data, size_t len) {
 }
 
 static void sha3_pad_and_squeeze(neverc_sha3_ctx *ctx, uint8_t *out, size_t outlen) {
-    if (!ctx || ctx->squeezed || ctx->finalized)
+    if (!ctx || ctx->squeezed)
         return;
+    if (ctx->finalized) {
+        if (out && outlen <= ctx->digest_len)
+            memcpy(out, ctx->digest, outlen);
+        return;
+    }
     /* Apply domain separation suffix and multi-rate padding */
     ctx->buf[ctx->buf_len] = ctx->suffix;
     memset(ctx->buf + ctx->buf_len + 1, 0, ctx->rate - ctx->buf_len - 1);
@@ -151,6 +156,10 @@ static void sha3_pad_and_squeeze(neverc_sha3_ctx *ctx, uint8_t *out, size_t outl
         offset += block;
         if (offset < outlen)
             keccak_f1600(ctx->state);
+    }
+    if (outlen <= sizeof(ctx->digest)) {
+        memcpy(ctx->digest, out, outlen);
+        ctx->digest_len = outlen;
     }
     ctx->finalized = 1;
 }

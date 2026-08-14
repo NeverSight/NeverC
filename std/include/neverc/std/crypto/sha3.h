@@ -22,6 +22,8 @@ typedef struct {
     int      squeezed;
     int      finalized;
     size_t   squeeze_pos;
+    uint8_t  digest[64];
+    size_t   digest_len;
 } neverc_sha3_ctx;
 
 /* SHA3-224: 28-byte digest, 144-byte rate */

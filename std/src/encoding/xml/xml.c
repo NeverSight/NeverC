@@ -426,9 +426,9 @@ int neverc_xml_decode_token(neverc_xml_decoder_t *d, neverc_xml_token_t *tok) {
         return 1;
     }
 
-    if (d->src[d->pos] == '!' && d->len - d->pos >= 9 &&
-        memcmp(d->src + d->pos, "![CDATA[", 9) == 0) {
-        d->pos += 9;
+    if (d->src[d->pos] == '!' && d->len - d->pos >= 8 &&
+        memcmp(d->src + d->pos, "![CDATA[", 8) == 0) {
+        d->pos += 8;
         size_t start = d->pos;
         while (d->len - d->pos >= 3 &&
                !(d->src[d->pos] == ']' &&

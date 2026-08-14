@@ -98,7 +98,7 @@ typedef struct {
     atomic_int references;
 } tcp_resolver_job_t;
 
-static atomic_int tcp_resolver_workers = ATOMIC_VAR_INIT(0);
+static atomic_int tcp_resolver_workers = 0;
 
 static void tcp_resolver_job_release(tcp_resolver_job_t *job) {
     if (!job) return;
