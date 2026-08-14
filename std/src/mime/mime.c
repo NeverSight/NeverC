@@ -481,8 +481,12 @@ int neverc_mime_qp_encode(const char *src, size_t src_len,
     size_t required = 0;
     for (size_t i = 0; i < src_len; i++) {
         unsigned char c = (unsigned char)src[i];
+        int trailing_ws = (c == ' ' || c == '\t') &&
+                          (i + 1 == src_len ||
+                           src[i + 1] == '\r' || src[i + 1] == '\n');
         size_t amount = ((c >= 33 && c <= 126 && c != '=') ||
-                         c == '\t' || c == ' ' || c == '\r' || c == '\n')
+                         ((c == '\t' || c == ' ') && !trailing_ws) ||
+                         c == '\r' || c == '\n')
                             ? 1U : 3U;
         if (amount > SIZE_MAX - required) return -1;
         required += amount;
@@ -492,8 +496,12 @@ int neverc_mime_qp_encode(const char *src, size_t src_len,
     size_t di = 0;
     for (size_t si = 0; si < src_len; si++) {
         unsigned char c = (unsigned char)src[si];
+        int trailing_ws = (c == ' ' || c == '\t') &&
+                          (si + 1 == src_len ||
+                           src[si + 1] == '\r' || src[si + 1] == '\n');
         if ((c >= 33 && c <= 126 && c != '=') ||
-            c == '\t' || c == ' ' || c == '\r' || c == '\n') {
+            ((c == '\t' || c == ' ') && !trailing_ws) ||
+            c == '\r' || c == '\n') {
             dst[di++] = (char)c;
         } else {
             dst[di++] = '=';

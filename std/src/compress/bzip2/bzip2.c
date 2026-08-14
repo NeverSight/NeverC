@@ -479,6 +479,12 @@ int neverc_bzip2_decompress(const uint8_t *src, size_t src_len,
         combined_crc ^= actual_block_crc;
     }
 
+    /* Rewind unused prefetched whole bytes. Leftover bits in the last
+     * used byte are padding; extra whole bytes after the footer are junk. */
+    size_t unused_bytes = (size_t)(br.nbits / 8);
+    if (unused_bytes > br.pos) goto err;
+    if (br.pos - unused_bytes != br.len) goto err;
+
     free(tt);
     free(fast_pool);
     *dst_len = out_pos;

@@ -224,14 +224,20 @@ const char *neverc_filepath_join(const char *a, const char *b, char *buf, size_t
 
 void neverc_filepath_split(const char *path, const char **dir, size_t *dir_len,
                             const char **file) {
+    if (!path) {
+        if (dir) *dir = "";
+        if (dir_len) *dir_len = 0;
+        if (file) *file = "";
+        return;
+    }
     size_t len = strlen(path);
     size_t vol = volume_name_len(path);
     size_t i = len;
     while (i > vol && !is_sep(path[i - 1]))
         i--;
-    *dir = path;
-    *dir_len = i;
-    *file = path + i;
+    if (dir) *dir = path;
+    if (dir_len) *dir_len = i;
+    if (file) *file = path + i;
 }
 
 int neverc_filepath_match(const char *pattern, const char *name) {

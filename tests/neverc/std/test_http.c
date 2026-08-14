@@ -1259,6 +1259,26 @@ static void test_post_no_content_length_keepalive(void) {
     stop_test_server(server_pid);
 }
 
+static void test_post_http10_keepalive_no_cl(void) {
+    printf("[post_http10_keepalive_no_cl]\n");
+
+    int port = get_free_port();
+    if (port < 0) { printf("  SKIP: cannot find free port\n"); return; }
+
+    pid_t server_pid = start_test_server(port);
+    char buf[4096];
+
+    int n = do_http_request(port,
+        "POST /post HTTP/1.0\r\nHost: localhost\r\n"
+        "Connection: keep-alive\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("http10 ka post resp", n > 0, 1);
+    check_int("http10 ka post rejected",
+              strstr(buf, "400 Bad Request") != NULL, 1);
+
+    stop_test_server(server_pid);
+}
+
 /* ===== Edge case: multiple headers with same name ===== */
 
 static void test_duplicate_headers(void) {
@@ -2564,6 +2584,29 @@ static void test_not_found_handler(void) {
     neverc_http_memory_writer_free(w);
 }
 
+static void test_redirect_html_escape(void) {
+    printf("[redirect_html_escape]\n");
+
+    neverc_http_response_writer_t *w = neverc_http_memory_writer_new();
+    check_not_null("redirect writer", w);
+    if (!w) return;
+
+    neverc_http_redirect(w, "\"><svg/onload=1>", 302);
+    char *data = NULL;
+    size_t data_len = 0;
+    int status = neverc_http_memory_writer_result(w, &data, &data_len);
+    check_int("redirect status", status, 302);
+    check_int("redirect body present", data != NULL, 1);
+    if (data) {
+        check_int("redirect escapes quote", strstr(data, "&quot;") != NULL, 1);
+        check_int("redirect escapes lt", strstr(data, "&lt;svg") != NULL, 1);
+        check_int("redirect no raw breakout",
+                  strstr(data, "\"><svg") == NULL, 1);
+    }
+    free(data);
+    neverc_http_memory_writer_free(w);
+}
+
 #ifndef _WIN32
 /* ===== ServeFile test ===== */
 
@@ -3009,6 +3052,7 @@ int main(void) {
     test_detect_content_type();
     test_canonical_header_key();
     test_not_found_handler();
+    test_redirect_html_escape();
     test_response_header();
 #ifndef _WIN32
     test_http_server();
@@ -3025,6 +3069,7 @@ int main(void) {
     test_malformed_request();
     test_post_no_content_length();
     test_post_no_content_length_keepalive();
+    test_post_http10_keepalive_no_cl();
     test_duplicate_headers();
     test_heavy_stress();
     test_pipelining();

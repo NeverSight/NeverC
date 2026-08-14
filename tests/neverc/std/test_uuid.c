@@ -48,11 +48,16 @@ static void test_parse(void) {
     printf("[parse]\n");
     neverc_uuid_t u;
 
-    int err = neverc_uuid_parse("550e8400-e29b-41d4-a716-446655440000", &u);
+    char out[37];
+    int     err = neverc_uuid_parse("550e8400-e29b-41d4-a716-446655440000", &u);
     check_int("parse valid", err, 0);
     check_int("version", neverc_uuid_version(u), 4);
 
-    char out[37];
+    err = neverc_uuid_parse("550E8400-E29B-41D4-A716-446655440000", &u);
+    check_int("parse uppercase", err, 0);
+    neverc_uuid_to_string(u, out);
+    check_str("uppercase normalizes", out, "550e8400-e29b-41d4-a716-446655440000");
+
     neverc_uuid_to_string(u, out);
     check_str("format", out, "550e8400-e29b-41d4-a716-446655440000");
 

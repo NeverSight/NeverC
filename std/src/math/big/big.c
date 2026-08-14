@@ -1177,80 +1177,80 @@ static void bz_divmod(neverc_bigint_t *q, neverc_bigint_t *r,
 
 void neverc_bigint_div(neverc_bigint_t *q, neverc_bigint_t *r,
                        const neverc_bigint_t *x, const neverc_bigint_t *y) {
-    if (y->len == 0) {
-        if (q) { q->len = 0; q->neg = 0; }
-        if (r) { r->len = 0; r->neg = 0; }
-        return;
-    }
-
-    int c = abs_cmp(x, y);
-    if (c < 0) {
-        if (r) neverc_bigint_set(r, x);
-        if (q) { q->len = 0; q->neg = 0; }
-        return;
-    }
-    if (c == 0) {
-        if (q) neverc_bigint_set_int64(q, 1);
-        if (r) { r->len = 0; r->neg = 0; }
-        if (q) q->neg = (x->neg != y->neg);
-        return;
-    }
-
-    if (y->len == 1) {
-        uint32_t d = y->digits[0];
-        neverc_bigint_t quot;
-        neverc_bigint_init(&quot);
-        if (!ensure_cap(&quot, x->len)) return;
-        quot.len = x->len;
-        uint64_t rem = 0;
-        for (size_t i = x->len; i > 0; i--) {
-            uint64_t cur = (rem << 32) | x->digits[i-1];
-            quot.digits[i-1] = (uint32_t)(cur / d);
-            rem = cur % d;
-        }
-        trim(&quot);
-        quot.neg = (x->neg != y->neg);
-        if (q) { neverc_bigint_free(q); *q = quot; }
-        else { neverc_bigint_free(&quot); }
-        if (r) {
-            neverc_bigint_set_uint64(r, rem);
-            r->neg = x->neg && rem > 0;
-        }
-        return;
-    }
-
     neverc_bigint_t quot, rem;
     neverc_bigint_init(&quot);
     neverc_bigint_init(&rem);
-    if (y->len >= NCI_BZ_DIV_MIN)
-        bz_divmod(&quot, &rem, x, y);     /* subquadratic for large divisors */
-    else
-        nat_divmod(&quot, &rem, x, y);    /* Knuth: lower constant when small */
+    int xneg = x->neg;
+    int yneg = y->neg;
+
+    if (y->len == 0) {
+        /* both stay zero */
+    } else {
+        int c = abs_cmp(x, y);
+        if (c < 0) {
+            neverc_bigint_set(&rem, x);
+        } else if (c == 0) {
+            neverc_bigint_set_int64(&quot, 1);
+            quot.neg = (xneg != yneg);
+        } else if (y->len == 1) {
+            uint32_t d = y->digits[0];
+            if (!ensure_cap(&quot, x->len)) {
+                neverc_bigint_free(&quot);
+                neverc_bigint_free(&rem);
+                return;
+            }
+            quot.len = x->len;
+            uint64_t remv = 0;
+            for (size_t i = x->len; i > 0; i--) {
+                uint64_t cur = (remv << 32) | x->digits[i - 1];
+                quot.digits[i - 1] = (uint32_t)(cur / d);
+                remv = cur % d;
+            }
+            trim(&quot);
+            quot.neg = (xneg != yneg) && quot.len > 0;
+            neverc_bigint_set_uint64(&rem, remv);
+            rem.neg = xneg && remv > 0;
+        } else {
+            if (y->len >= NCI_BZ_DIV_MIN)
+                bz_divmod(&quot, &rem, x, y);
+            else
+                nat_divmod(&quot, &rem, x, y);
+            quot.neg = (xneg != yneg) && quot.len > 0;
+            rem.neg = xneg && rem.len > 0;
+        }
+    }
 
     if (q) {
-        quot.neg = (x->neg != y->neg) && quot.len > 0;
-        neverc_bigint_free(q); *q = quot;
-    } else {
-        neverc_bigint_free(&quot);
+        neverc_bigint_free(q);
+        *q = quot;
+        neverc_bigint_init(&quot);
     }
-    if (r) {
-        rem.neg = x->neg && rem.len > 0;
-        neverc_bigint_free(r); *r = rem;
-    } else {
-        neverc_bigint_free(&rem);
+    if (r && r != q) {
+        neverc_bigint_free(r);
+        *r = rem;
+        neverc_bigint_init(&rem);
     }
+    neverc_bigint_free(&quot);
+    neverc_bigint_free(&rem);
 }
 
 void neverc_bigint_mod(neverc_bigint_t *z, const neverc_bigint_t *x, const neverc_bigint_t *m) {
-    neverc_bigint_div(NULL, z, x, m);
+    neverc_bigint_t rem, modulus;
+    neverc_bigint_init(&rem);
+    neverc_bigint_init(&modulus);
+    neverc_bigint_set(&modulus, m);
+    neverc_bigint_div(NULL, &rem, x, &modulus);
     /* Euclidean remainder is in [0, |m|). Adding m when m is negative
      * makes a negative remainder more negative; add |m| instead. */
-    if (z->neg && z->len > 0) {
-        if (m->neg)
-            neverc_bigint_sub(z, z, m);
+    if (rem.neg && rem.len > 0) {
+        if (modulus.neg)
+            neverc_bigint_sub(&rem, &rem, &modulus);
         else
-            neverc_bigint_add(z, z, m);
+            neverc_bigint_add(&rem, &rem, &modulus);
     }
+    neverc_bigint_free(z);
+    *z = rem;
+    neverc_bigint_free(&modulus);
 }
 
 void neverc_bigint_neg(neverc_bigint_t *z, const neverc_bigint_t *x) {
@@ -1599,11 +1599,29 @@ void neverc_bigint_exp(neverc_bigint_t *z, const neverc_bigint_t *base,
             neverc_bigint_set_int64(z, 1);
         return;
     }
+    int base_neg = base->neg && base->len > 0;
+    int exp_odd = exp->len > 0 && (exp->digits[0] & 1u);
     /* Odd modulus -> Montgomery (division-free); otherwise window method. */
     if (m && m->len > 0 && (m->digits[0] & 1u)) {
-        if (exp_montgomery(z, base, exp, m) == 0) return;
+        if (exp_montgomery(z, base, exp, m) != 0)
+            exp_window(z, base, exp, m);
+    } else {
+        exp_window(z, base, exp, m);
     }
-    exp_window(z, base, exp, m);
+    if (!(base_neg && exp_odd))
+        return;
+    if (m && m->len > 0) {
+        if (z->len > 0) {
+            neverc_bigint_t mm;
+            neverc_bigint_init(&mm);
+            neverc_bigint_set(&mm, m);
+            mm.neg = 0;
+            neverc_bigint_sub(z, &mm, z);
+            neverc_bigint_free(&mm);
+        }
+    } else if (z->len > 0) {
+        z->neg = 1;
+    }
 }
 
 static int nlz32(uint32_t x) { return x ? __builtin_clz(x) : 32; }

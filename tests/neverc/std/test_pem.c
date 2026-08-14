@@ -237,13 +237,46 @@ static void test_invalid_pem(void) {
                             &bytes_written, NULL);
     check_int("noncanonical base64 tail bits", rc, -1);
 
+    const char *unpadded_one =
+        "-----BEGIN FOO-----\nZg\n-----END FOO-----\n";
+    bytes_written = 0;
+    rc = neverc_pem_decode(unpadded_one, strlen(unpadded_one),
+                            type_buf, sizeof(type_buf),
+                            out_buf, sizeof(out_buf),
+                            &bytes_written, NULL);
+    check_int("unpadded 2-char decode", rc, 0);
+    check_int("unpadded 2-char len", (int)bytes_written, 1);
+    check_mem("unpadded 2-char", out_buf, (const uint8_t *)"f", 1);
+
+    const char *unpadded_two =
+        "-----BEGIN FOO-----\nZm8\n-----END FOO-----\n";
+    bytes_written = 0;
+    rc = neverc_pem_decode(unpadded_two, strlen(unpadded_two),
+                            type_buf, sizeof(type_buf),
+                            out_buf, sizeof(out_buf),
+                            &bytes_written, NULL);
+    check_int("unpadded 3-char decode", rc, 0);
+    check_int("unpadded 3-char len", (int)bytes_written, 2);
+    check_mem("unpadded 3-char", out_buf, (const uint8_t *)"fo", 2);
+
+    const char *unpadded_mixed =
+        "-----BEGIN FOO-----\nZm9vYg\n-----END FOO-----\n";
+    bytes_written = 0;
+    rc = neverc_pem_decode(unpadded_mixed, strlen(unpadded_mixed),
+                            type_buf, sizeof(type_buf),
+                            out_buf, sizeof(out_buf),
+                            &bytes_written, NULL);
+    check_int("unpadded 6-char decode", rc, 0);
+    check_int("unpadded 6-char len", (int)bytes_written, 4);
+    check_mem("unpadded 6-char", out_buf, (const uint8_t *)"foob", 4);
+
     const char *incomplete_quad =
-        "-----BEGIN FOO-----\nYWI\n-----END FOO-----\n";
+        "-----BEGIN FOO-----\nY\n-----END FOO-----\n";
     rc = neverc_pem_decode(incomplete_quad, strlen(incomplete_quad),
                             type_buf, sizeof(type_buf),
                             out_buf, sizeof(out_buf),
                             &bytes_written, NULL);
-    check_int("incomplete base64 quartet", rc, -1);
+    check_int("incomplete base64 singleton", rc, -1);
 
     const char *header_without_newline =
         "-----BEGIN FOO-----YWJj\n-----END FOO-----\n";

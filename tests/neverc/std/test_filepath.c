@@ -192,6 +192,11 @@ static void test_split(void) {
     neverc_filepath_split("bar.txt", &dir, &dir_len, &file);
     ASSERT_INT_EQ((int)dir_len, 0);
     ASSERT_STR_EQ(file, "bar.txt");
+
+    neverc_filepath_split(NULL, &dir, &dir_len, &file);
+    ASSERT_INT_EQ((int)dir_len, 0);
+    ASSERT_STR_EQ(file, "");
+    neverc_filepath_split("bar.txt", NULL, NULL, NULL);
 }
 
 static void test_match(void) {

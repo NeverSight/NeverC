@@ -168,7 +168,9 @@ static const uint8_t OID_EKU_TIME_STAMPING[] =
     {0x2B, 0x06, 0x01, 0x05, 0x05, 0x07, 0x03, 0x08};
 static const uint8_t OID_EKU_OCSP_SIGNING[] =
     {0x2B, 0x06, 0x01, 0x05, 0x05, 0x07, 0x03, 0x09};
-static const uint8_t OID_EKU_ANY[] = {0x55, 0x1D, 0x25, 0x00};
+/* id-ce-extKeyUsage anyExtendedKeyUsage is 1.3.6.1.5.5.7.3.0, not 2.5.29.37.0 */
+static const uint8_t OID_EKU_ANY[] =
+    {0x2B, 0x06, 0x01, 0x05, 0x05, 0x07, 0x03, 0x00};
 
 static int identify_sig_algorithm(const uint8_t *oid, size_t len) {
     if (oid_equals(oid, len, OID_SHA256_RSA, sizeof(OID_SHA256_RSA)))

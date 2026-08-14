@@ -1737,6 +1737,9 @@ static int parse_request_mode(const char *raw, size_t raw_length,
     if (is_http_11 && !content_length_seen && !transfer_encoding_seen &&
         http_method_implies_body(request->method))
         goto invalid;
+    if (is_http_10 && !content_length_seen && !transfer_encoding_seen &&
+        http_method_implies_body(request->method) && request->keep_alive)
+        goto invalid;
 
     size_t header_size = (size_t)(header_end + 4 - raw);
     if (headers_only) {
@@ -4202,6 +4205,34 @@ void neverc_http_memory_writer_free(neverc_http_response_writer_t *w) {
  * Go-style convenience APIs
  * ====================================================================== */
 
+static void http_write_html_escaped(neverc_http_response_writer_t *w,
+                                    const char *s) {
+    for (; *s; s++) {
+        switch (*s) {
+        case '&':
+            neverc_http_write_string(w, "&amp;");
+            break;
+        case '<':
+            neverc_http_write_string(w, "&lt;");
+            break;
+        case '>':
+            neverc_http_write_string(w, "&gt;");
+            break;
+        case '"':
+            neverc_http_write_string(w, "&quot;");
+            break;
+        case '\'':
+            neverc_http_write_string(w, "&#39;");
+            break;
+        default: {
+            char ch[2] = { *s, 0 };
+            neverc_http_write_string(w, ch);
+            break;
+        }
+        }
+    }
+}
+
 void neverc_http_redirect(neverc_http_response_writer_t *w,
                             const char *url, int code) {
     if (!w || !url) return;
@@ -4209,8 +4240,11 @@ void neverc_http_redirect(neverc_http_response_writer_t *w,
     neverc_http_set_status(w, code);
     neverc_http_set_header(w, "Location", url);
     neverc_http_set_header(w, "Content-Type", "text/html; charset=utf-8");
-    neverc_http_writef(w, "<a href=\"%s\">%s</a>.\n",
-                        url, neverc_http_status_text(code));
+    neverc_http_write_string(w, "<a href=\"");
+    http_write_html_escaped(w, url);
+    neverc_http_write_string(w, "\">");
+    neverc_http_write_string(w, neverc_http_status_text(code));
+    neverc_http_write_string(w, "</a>.\n");
 }
 
 void neverc_http_error(neverc_http_response_writer_t *w,

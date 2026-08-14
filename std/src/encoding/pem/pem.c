@@ -267,8 +267,23 @@ int neverc_pem_decode(const char *pem_data, size_t pem_len,
         }
         quartet_len = 0;
     }
-    if (quartet_len != 0)
+    if (quartet_len == 2) {
+        if (quartet[0] < 0 || quartet[1] < 0 || (quartet[1] & 0x0f) != 0 ||
+            1 > out_cap - decoded_len)
+            return -1;
+        out_buf[decoded_len++] =
+            (uint8_t)((quartet[0] << 2) | (quartet[1] >> 4));
+    } else if (quartet_len == 3) {
+        if (quartet[0] < 0 || quartet[1] < 0 || quartet[2] < 0 ||
+            (quartet[2] & 0x03) != 0 || 2 > out_cap - decoded_len)
+            return -1;
+        out_buf[decoded_len++] =
+            (uint8_t)((quartet[0] << 2) | (quartet[1] >> 4));
+        out_buf[decoded_len++] =
+            (uint8_t)((quartet[1] << 4) | (quartet[2] >> 2));
+    } else if (quartet_len != 0) {
         return -1;
+    }
 
     if (bytes_written)
         *bytes_written = decoded_len;

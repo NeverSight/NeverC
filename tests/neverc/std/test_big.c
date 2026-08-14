@@ -206,6 +206,11 @@ static void test_div(void) {
     ASSERT_INT_EQ(neverc_bigint_int64(&q), 1000);
     ASSERT_TRUE(neverc_bigint_is_zero(&r));
 
+    neverc_bigint_set_int64(&a, 100);
+    neverc_bigint_set_int64(&b, 7);
+    neverc_bigint_div(&q, &q, &a, &b);
+    ASSERT_INT_EQ(neverc_bigint_int64(&q), 14);
+
     neverc_bigint_set_int64(&q, 999);
     neverc_bigint_set_int64(&r, 999);
     neverc_bigint_set_int64(&b, 0);
@@ -350,6 +355,26 @@ static void test_exp_mod(void) {
     neverc_bigint_set_int64(&m, -3);
     neverc_bigint_mod(&z, &x, &m);
     ASSERT_INT_EQ(neverc_bigint_int64(&z), 1);
+
+    neverc_bigint_set_int64(&x, -7);
+    neverc_bigint_set_int64(&m, -3);
+    neverc_bigint_mod(&m, &x, &m);
+    ASSERT_INT_EQ(neverc_bigint_int64(&m), 2);
+    neverc_bigint_set_int64(&x, -7);
+    neverc_bigint_set_int64(&m, 3);
+    neverc_bigint_mod(&x, &x, &m);
+    ASSERT_INT_EQ(neverc_bigint_int64(&x), 2);
+
+    neverc_bigint_set_int64(&base, -2);
+    neverc_bigint_set_int64(&exp, 3);
+    neverc_bigint_exp(&result, &base, &exp, NULL);
+    ASSERT_INT_EQ(neverc_bigint_int64(&result), -8);
+    neverc_bigint_set_int64(&base, -2);
+    neverc_bigint_set_int64(&exp, 3);
+    neverc_bigint_set_int64(&mod, 5);
+    neverc_bigint_exp(&result, &base, &exp, &mod);
+    ASSERT_INT_EQ(neverc_bigint_int64(&result), 2);
+
     neverc_bigint_free(&x); neverc_bigint_free(&m); neverc_bigint_free(&z);
 
     neverc_bigint_free(&base); neverc_bigint_free(&exp);

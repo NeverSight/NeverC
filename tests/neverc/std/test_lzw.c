@@ -129,6 +129,25 @@ static void test_invalid_params(void) {
     ASSERT_TRUE(empty_out == 0);
 }
 
+static void test_leftover_bytes(void) {
+    printf("[leftover_bytes]\n");
+    const uint8_t data[] = "Hello, World!";
+    uint8_t comp[256];
+    uint8_t junk[257];
+    uint8_t decomp[64];
+    int orders[] = { NEVERC_LZW_LSB, NEVERC_LZW_MSB };
+    for (int i = 0; i < 2; i++) {
+        size_t comp_len = sizeof(comp);
+        ASSERT_INT_EQ(neverc_lzw_compress(data, 13, comp, &comp_len,
+                                          orders[i], 8), 0);
+        memcpy(junk, comp, comp_len);
+        junk[comp_len] = 0x5A;
+        size_t decomp_len = sizeof(decomp);
+        ASSERT_TRUE(neverc_lzw_decompress(junk, comp_len + 1, decomp,
+                                          &decomp_len, orders[i], 8) != 0);
+    }
+}
+
 int main(void) {
     printf("=== NeverC compress/lzw Tests ===\n");
     test_empty();
@@ -138,6 +157,7 @@ int main(void) {
     test_lit_width();
     test_large();
     test_invalid_params();
+    test_leftover_bytes();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

@@ -111,6 +111,17 @@ static void test_invalid_spans(void) {
                     NULL, sizeof(bz2_hello), out, &out_len) != 0);
 }
 
+static void test_leftover_bytes(void) {
+    printf("[leftover_bytes]\n");
+    uint8_t extra[sizeof(bz2_hello) + 1];
+    memcpy(extra, bz2_hello, sizeof(bz2_hello));
+    extra[sizeof(bz2_hello)] = 0x00;
+    uint8_t out[64];
+    size_t out_len = sizeof(out);
+    ASSERT_TRUE(neverc_bzip2_decompress(
+                    extra, sizeof(extra), out, &out_len) != 0);
+}
+
 int main(void) {
     printf("=== NeverC bzip2 Tests ===\n");
     test_hello_decompress();
@@ -120,6 +131,7 @@ int main(void) {
     test_empty_output();
     test_crc_mismatch();
     test_invalid_spans();
+    test_leftover_bytes();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");

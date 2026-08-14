@@ -271,6 +271,10 @@ static void test_qp_encode(void) {
     out[out_len] = '\0';
     ASSERT_STR_EQ(out, "Hello World");
 
+    neverc_mime_qp_encode("hello \nworld", 12, out, sizeof(out), &out_len);
+    out[out_len] = '\0';
+    ASSERT_STR_EQ(out, "hello=20\nworld");
+
     neverc_mime_qp_encode("\x80\xFF", 2, out, sizeof(out), &out_len);
     out[out_len] = '\0';
     ASSERT_STR_EQ(out, "=80=FF");

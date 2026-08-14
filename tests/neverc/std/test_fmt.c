@@ -449,6 +449,12 @@ static void test_invalid_formats(void) {
     free(result);
 
     check_int("scan null dest", neverc_fmt_scan(NULL), 0);
+
+    result = neverc_fmt_sprintf("hello%");
+    check_str("trailing percent kept", result, "hello%");
+    free(result);
+
+    check_int("fprintf null file", neverc_fmt_fprintf(NULL, "x"), -1);
 }
 
 static void test_sscanln(void) {

@@ -325,6 +325,12 @@ int neverc_lzw_decompress(const uint8_t *src, size_t src_len,
         }
     }
 
+    /* Unused bits in the last consumed byte are padding; extra whole
+     * bytes after EOF are junk (same class as leftover flate bytes). */
+    unsigned unused_bytes = br.nbits / 8;
+    if (unused_bytes > br.pos) return -1;
+    if (br.pos - unused_bytes != br.len) return -1;
+
     *dst_len = out_pos;
     return 0;
 }

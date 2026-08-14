@@ -256,7 +256,10 @@ char *neverc_fmt_vsprintf(const char *format, va_list args) {
         }
         (void)is_long;
 
-        if (i >= flen) break;
+        if (i >= flen) {
+            buf_putc(&buf, '%');
+            break;
+        }
         char verb = format[i];
         char tmp[512];   /* large enough for %f of values up to ~1e308 */
         int tlen = 0;
@@ -416,6 +419,10 @@ int neverc_fmt_fprintf(FILE *f, const char *format, ...) {
     char *s = neverc_fmt_vsprintf(format, args);
     va_end(args);
     if (!s) return -1;
+    if (!f) {
+        free(s);
+        return -1;
+    }
     size_t len = my_strlen(s);
     fwrite(s, 1, len, f);
     free(s);

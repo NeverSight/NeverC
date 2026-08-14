@@ -45,6 +45,18 @@
   static void ensure_wsa_init(void) { /* no-op on POSIX */ }
 #endif
 
+static void copy_cstr_term(char *dst, size_t dstsz, const char *src) {
+    if (!dst || dstsz == 0) return;
+    if (!src) {
+        dst[0] = '\0';
+        return;
+    }
+    size_t n = strlen(src);
+    if (n >= dstsz) n = dstsz - 1;
+    memcpy(dst, src, n);
+    dst[n] = '\0';
+}
+
 /* ======================================================================
  * DNS Lookup — LookupHost / LookupIP
  * Uses getaddrinfo for cross-platform portability.
@@ -94,7 +106,7 @@ int neverc_net_lookup_ip(const char *network, const char *host,
             if (strcmp(out->addrs[i], buf) == 0) { dup = 1; break; }
         }
         if (!dup) {
-            strncpy(out->addrs[out->count], buf, 63);
+            copy_cstr_term(out->addrs[out->count], 64, buf);
             out->count++;
         }
     }
@@ -199,7 +211,7 @@ int neverc_net_lookup_addr(const char *addr, neverc_net_addrs_t *out) {
                           host, sizeof(host), NULL, 0, NI_NAMEREQD);
     if (rc != 0) return -1;
 
-    strncpy(out->addrs[0], host, 63);
+    copy_cstr_term(out->addrs[0], 64, host);
     out->count = 1;
     return 0;
 }
@@ -267,8 +279,8 @@ int neverc_net_lookup_mx(const char *name, neverc_net_mx_list_t *out) {
 
     for (DNS_RECORD *r = rec; r && out->count < NEVERC_NET_MAX_RECORDS; r = r->pNext) {
         if (r->wType == DNS_TYPE_MX) {
-            strncpy(out->records[out->count].host,
-                    r->Data.MX.pNameExchange, 255);
+            copy_cstr_term(out->records[out->count].host, 256,
+                           r->Data.MX.pNameExchange);
             out->records[out->count].pref = r->Data.MX.wPreference;
             out->count++;
         }
@@ -298,7 +310,7 @@ int neverc_net_lookup_mx(const char *name, neverc_net_mx_list_t *out) {
         char mxhost[256];
         if (dn_expand(answer, answer + len, rdata + 2, mxhost, sizeof(mxhost)) < 0)
             continue;
-        strncpy(out->records[out->count].host, mxhost, 255);
+        copy_cstr_term(out->records[out->count].host, 256, mxhost);
         out->count++;
     }
     return out->count > 0 ? 0 : -1;
@@ -321,8 +333,8 @@ int neverc_net_lookup_txt(const char *name, neverc_net_txt_list_t *out) {
 
     for (DNS_RECORD *r = rec; r && out->count < NEVERC_NET_MAX_RECORDS; r = r->pNext) {
         if (r->wType == DNS_TYPE_TEXT && r->Data.TXT.dwStringCount > 0) {
-            strncpy(out->records[out->count],
-                    r->Data.TXT.pStringArray[0], 511);
+            copy_cstr_term(out->records[out->count], 512,
+                           r->Data.TXT.pStringArray[0]);
             out->count++;
         }
     }
@@ -374,8 +386,8 @@ int neverc_net_lookup_ns(const char *name, neverc_net_ns_list_t *out) {
 
     for (DNS_RECORD *r = rec; r && out->count < NEVERC_NET_MAX_RECORDS; r = r->pNext) {
         if (r->wType == DNS_TYPE_NS) {
-            strncpy(out->records[out->count],
-                    r->Data.NS.pNameHost, 255);
+            copy_cstr_term(out->records[out->count], 256,
+                           r->Data.NS.pNameHost);
             out->count++;
         }
     }
@@ -399,7 +411,7 @@ int neverc_net_lookup_ns(const char *name, neverc_net_ns_list_t *out) {
         if (dn_expand(answer, answer + len, ns_rr_rdata(rr),
                        nshost, sizeof(nshost)) < 0)
             continue;
-        strncpy(out->records[out->count], nshost, 255);
+        copy_cstr_term(out->records[out->count], 256, nshost);
         out->count++;
     }
     return out->count > 0 ? 0 : -1;
@@ -431,8 +443,8 @@ int neverc_net_lookup_srv(const char *service, const char *proto,
 
     for (DNS_RECORD *r = rec; r && out->count < NEVERC_NET_MAX_RECORDS; r = r->pNext) {
         if (r->wType == DNS_TYPE_SRV) {
-            strncpy(out->records[out->count].target,
-                    r->Data.SRV.pNameTarget, 255);
+            copy_cstr_term(out->records[out->count].target, 256,
+                           r->Data.SRV.pNameTarget);
             out->records[out->count].port = r->Data.SRV.wPort;
             out->records[out->count].priority = r->Data.SRV.wPriority;
             out->records[out->count].weight = r->Data.SRV.wWeight;
@@ -469,7 +481,7 @@ int neverc_net_lookup_srv(const char *service, const char *proto,
         if (dn_expand(answer, answer + len, rdata + 6,
                        target, sizeof(target)) < 0)
             continue;
-        strncpy(out->records[out->count].target, target, 255);
+        copy_cstr_term(out->records[out->count].target, 256, target);
         out->count++;
     }
     return out->count > 0 ? 0 : -1;

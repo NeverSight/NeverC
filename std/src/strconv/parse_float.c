@@ -32,8 +32,9 @@ static double nc_make_inf(int neg) {
     uint64_t b = neg ? 0xFFF0000000000000ULL : 0x7FF0000000000000ULL;
     double f; memcpy(&f, &b, 8); return f;
 }
-static double nc_make_nan(void) {
+static double nc_make_nan(int neg) {
     uint64_t b = 0x7FF8000000000001ULL;
+    if (neg) b |= 0x8000000000000000ULL;
     double f; memcpy(&f, &b, 8); return f;
 }
 static double nc_from_bits(uint64_t b) { double f; memcpy(&f, &b, 8); return f; }
@@ -275,7 +276,7 @@ int neverc_strconv_parse_float(const char *s, double *result) {
         s += 3;
         while (is_space(*s)) s++;
         if (*s != '\0') return NEVERC_STRCONV_ERR_SYNTAX;
-        *result = nc_make_nan();
+        *result = nc_make_nan(sign < 0);
         return NEVERC_STRCONV_OK;
     }
 

@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <limits.h>
+#include <math.h>
 
 static int tests_run = 0;
 static int tests_passed = 0;
@@ -161,6 +162,10 @@ static void test_parse_float(void) {
     check_int("float Infinity",  neverc_strconv_parse_float("Infinity", &v), 0);
     check_int("float NaN",       neverc_strconv_parse_float("NaN", &v), 0);
     check_int("float nan",       neverc_strconv_parse_float("nan", &v), 0);
+    check_int("float -NaN",      neverc_strconv_parse_float("-NaN", &v), 0);
+    check_true("float -NaN sign", signbit(v) != 0);
+    check_int("float +NaN",      neverc_strconv_parse_float("+NaN", &v), 0);
+    check_true("float +NaN unsigned", signbit(v) == 0);
     check_int("float info=ERR",  neverc_strconv_parse_float("info", &v), NEVERC_STRCONV_ERR_SYNTAX);
     check_int("float nan123=ERR",neverc_strconv_parse_float("nan123", &v), NEVERC_STRCONV_ERR_SYNTAX);
     check_int("float infix=ERR", neverc_strconv_parse_float("infix", &v), NEVERC_STRCONV_ERR_SYNTAX);
@@ -388,6 +393,12 @@ static void test_unquote(void) {
     n = neverc_strconv_unquote("\"\\x41\"", buf, sizeof(buf));
     check_int("unquote hex len", n, 1);
     check_str("unquote hex val", buf, "A");
+
+    n = neverc_strconv_unquote("\"\\007\"", buf, sizeof(buf));
+    check_int("unquote octal len", n, 1);
+    check_int("unquote octal value", (unsigned char)buf[0], 7);
+    check_int("reject short octal",
+              neverc_strconv_unquote("\"\\7\"", buf, sizeof(buf)), -1);
 
     n = neverc_strconv_unquote("\"\\xff\"", buf, sizeof(buf));
     check_int("unquote byte escape len", n, 1);

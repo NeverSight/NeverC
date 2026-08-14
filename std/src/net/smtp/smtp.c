@@ -33,6 +33,7 @@ struct neverc_smtp_client {
     int  supports_8bitmime;
     int  supports_starttls;
     int  data_at_line_start;
+    int  in_data;
 };
 
 static int smtp_write_all(neverc_tcp_conn_t *conn, const void *data, size_t len) {
@@ -321,15 +322,19 @@ int neverc_smtp_mail(neverc_smtp_client_t *c, const char *from) {
 
 int neverc_smtp_rcpt(neverc_smtp_client_t *c, const char *to) {
     if (!c || !to || !smtp_safe_atom(to)) return -1;
+    if (ensure_hello(c) != 0) return -1;
     int code = smtp_cmdf(c, "RCPT TO:<%s>", to);
     return (code == 250) ? 0 : -1;
 }
 
 int neverc_smtp_data(neverc_smtp_client_t *c) {
     if (!c) return -1;
+    if (ensure_hello(c) != 0) return -1;
     int code = smtp_cmd(c, "DATA");
-    if (code == 354)
+    if (code == 354) {
         c->data_at_line_start = 1;
+        c->in_data = 1;
+    }
     return (code == 354) ? 0 : -1;
 }
 
@@ -354,22 +359,24 @@ static int smtp_write_data_stuffed(neverc_smtp_client_t *c,
 
 int neverc_smtp_write_data(neverc_smtp_client_t *c,
                              const void *data, size_t len) {
-    if (!c) return -1;
+    if (!c || !c->in_data) return -1;
     if (!data || len == 0) return 0;
     return smtp_write_data_stuffed(c, data, len);
 }
 
 int neverc_smtp_data_close(neverc_smtp_client_t *c) {
-    if (!c) return -1;
+    if (!c || !c->in_data) return -1;
     const char *term = c->data_at_line_start ? ".\r\n" : "\r\n.\r\n";
     if (smtp_write_all(c->conn, term, strlen(term)) != 0)
         return -1;
     int code = smtp_read_response(c);
+    c->in_data = 0;
     return (code == 250) ? 0 : -1;
 }
 
 int neverc_smtp_reset(neverc_smtp_client_t *c) {
     if (!c) return -1;
+    c->in_data = 0;
     int code = smtp_cmd(c, "RSET");
     return (code == 250) ? 0 : -1;
 }

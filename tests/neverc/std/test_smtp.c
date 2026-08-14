@@ -349,6 +349,16 @@ static void test_smtp_reject_injection(void) {
 
     check_true("write_data null client",
                neverc_smtp_write_data(NULL, "x", 1) == -1);
+
+    neverc_smtp_client_t *idle = neverc_smtp_dial(addr, &err);
+    check_true("dial for data-state", idle != NULL);
+    if (idle) {
+        check_true("write_data before DATA",
+                   neverc_smtp_write_data(idle, "x", 1) == -1);
+        check_true("data_close before DATA",
+                   neverc_smtp_data_close(idle) == -1);
+        neverc_smtp_close(idle);
+    }
 }
 
 static void test_smtp_response_leftover(void) {
