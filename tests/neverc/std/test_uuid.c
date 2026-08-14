@@ -77,6 +77,34 @@ static void test_parse(void) {
     check_int("format null output is safe", 1, 1);
 }
 
+static void test_version_variant(void) {
+    printf("[version variant]\n");
+    neverc_uuid_t u;
+
+    check_int("parse v1",
+              neverc_uuid_parse("6ba7b810-9dad-11d1-80b4-00c04fd430c8", &u), 0);
+    check_int("dns namespace version", neverc_uuid_version(u), 1);
+    check_int("dns namespace variant", neverc_uuid_variant(u), 1);
+
+    check_int("parse v5",
+              neverc_uuid_parse("886313e1-3b8a-5372-9b90-0c9aee199e5d", &u), 0);
+    check_int("sha1 name version", neverc_uuid_version(u), 5);
+    check_int("sha1 name variant", neverc_uuid_variant(u), 1);
+
+    check_int("parse nil",
+              neverc_uuid_parse("00000000-0000-0000-0000-000000000000", &u), 0);
+    check_int("nil version", neverc_uuid_version(u), 0);
+    check_int("ncs variant", neverc_uuid_variant(u), 0);
+
+    check_int("parse microsoft",
+              neverc_uuid_parse("00000000-0000-0000-c000-000000000000", &u), 0);
+    check_int("microsoft variant", neverc_uuid_variant(u), 2);
+
+    check_int("parse reserved",
+              neverc_uuid_parse("00000000-0000-0000-e000-000000000000", &u), 0);
+    check_int("reserved variant", neverc_uuid_variant(u), 3);
+}
+
 static void test_nil(void) {
     printf("[nil]\n");
     neverc_uuid_t nil = neverc_uuid_nil();
@@ -107,6 +135,7 @@ int main(void) {
     test_new();
     test_string_roundtrip();
     test_parse();
+    test_version_variant();
     test_nil();
     test_uniqueness();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);

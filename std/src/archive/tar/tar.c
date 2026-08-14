@@ -12,7 +12,7 @@ static int tar_path_is_safe(const char *name) {
     memcpy(trimmed, name, len + 1);
     while (len > 0 && trimmed[len - 1] == '/')
         trimmed[--len] = '\0';
-    if (len == 0) return 0;
+    if (len == 0 || strcmp(trimmed, ".") == 0) return 0;
     return neverc_fs_valid_path(trimmed);
 }
 
@@ -189,8 +189,8 @@ int neverc_tar_reader_next(neverc_tar_reader_t *r, neverc_tar_header_t *hdr) {
                    block + 157, 100);
     if ((hdr->typeflag == NEVERC_TAR_SYM ||
          hdr->typeflag == NEVERC_TAR_LINK) &&
-        hdr->linkname[0] != '\0' &&
-        !tar_path_is_safe(hdr->linkname))
+        (hdr->linkname[0] == '\0' ||
+         !tar_path_is_safe(hdr->linkname)))
         return -1;
     copy_tar_field(hdr->uname, sizeof(hdr->uname), block + 265, 32);
     copy_tar_field(hdr->gname, sizeof(hdr->gname), block + 297, 32);

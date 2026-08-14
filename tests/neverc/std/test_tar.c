@@ -433,7 +433,27 @@ static void test_reject_unsafe_paths(void) {
     unsafe.typeflag = NEVERC_TAR_SYM;
     check_int("writer rejects unsafe link",
               neverc_tar_writer_write_header(&writer, &unsafe), -1);
+    memcpy(unsafe.name, ".", 2);
+    memset(unsafe.linkname, 0, sizeof(unsafe.linkname));
+    unsafe.typeflag = NEVERC_TAR_REG;
+    check_int("writer rejects dot name",
+              neverc_tar_writer_write_header(&writer, &unsafe), -1);
     neverc_tar_writer_free(&writer);
+
+    memset(block, 0, sizeof(block));
+    memcpy(block, "link", 4);
+    block[156] = NEVERC_TAR_SYM;
+    test_finish_header(block);
+    neverc_tar_reader_init(&reader, block, sizeof(block));
+    check_int("reject empty symlink",
+              neverc_tar_reader_next(&reader, &header), -1);
+
+    memset(block, 0, sizeof(block));
+    memcpy(block, ".", 1);
+    test_finish_header(block);
+    neverc_tar_reader_init(&reader, block, sizeof(block));
+    check_int("reject dot name",
+              neverc_tar_reader_next(&reader, &header), -1);
 }
 
 int main(void) {

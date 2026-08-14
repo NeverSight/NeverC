@@ -17,7 +17,7 @@ static int zip_path_is_safe(const char *name) {
     memcpy(trimmed, name, len + 1);
     while (len > 0 && trimmed[len - 1] == '/')
         trimmed[--len] = '\0';
-    if (len == 0) return 0;
+    if (len == 0 || strcmp(trimmed, ".") == 0) return 0;
     return neverc_fs_valid_path(trimmed);
 }
 

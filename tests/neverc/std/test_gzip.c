@@ -113,6 +113,15 @@ static void test_optional_headers_and_invalid_inputs(void) {
     ASSERT_INT_EQ(neverc_gzip_compress(
                       NULL, 1, base, &base_len, 1),
                   -1);
+
+    uint8_t junk_before_trailer[320];
+    memcpy(junk_before_trailer, base, base_len - 8);
+    junk_before_trailer[base_len - 8] = 0xaa;
+    memcpy(junk_before_trailer + base_len - 7, base + base_len - 8, 8);
+    output_len = sizeof(output);
+    ASSERT_INT_EQ(neverc_gzip_decompress(
+                      junk_before_trailer, base_len + 1, output, &output_len),
+                  -1);
 }
 
 int main(void) {

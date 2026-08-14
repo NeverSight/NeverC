@@ -125,7 +125,8 @@ static int br_read_code(bit_reader_t *r, unsigned width, uint16_t *out) {
 int neverc_lzw_compress(const uint8_t *src, size_t src_len,
                         uint8_t *dst, size_t *dst_len,
                         int order, int lit_width) {
-    if (!dst_len || !dst || (!src && src_len != 0)) return -1;
+    if (!dst_len || (!src && src_len != 0) ||
+        (!dst && *dst_len != 0)) return -1;
     if (lit_width < 2 || lit_width > 8) return -1;
     if (order != NEVERC_LZW_LSB && order != NEVERC_LZW_MSB) return -1;
 
@@ -210,7 +211,8 @@ int neverc_lzw_compress(const uint8_t *src, size_t src_len,
 int neverc_lzw_decompress(const uint8_t *src, size_t src_len,
                           uint8_t *dst, size_t *dst_len,
                           int order, int lit_width) {
-    if (!src || !dst || !dst_len) return -1;
+    if (!dst_len || (!src && src_len != 0) ||
+        (!dst && *dst_len != 0)) return -1;
     if (lit_width < 2 || lit_width > 8) return -1;
     if (order != NEVERC_LZW_LSB && order != NEVERC_LZW_MSB) return -1;
 

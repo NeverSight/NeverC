@@ -245,6 +245,12 @@ static void test_reject_unsafe_paths(void) {
     check_int("writer rejects absolute",
               neverc_zip_writer_add(
                   &w, "/etc/passwd", payload, sizeof(payload) - 1), -1);
+    check_int("writer rejects dot",
+              neverc_zip_writer_add(
+                  &w, ".", payload, sizeof(payload) - 1), -1);
+    check_int("writer rejects dot slash",
+              neverc_zip_writer_add(
+                  &w, "./", payload, sizeof(payload) - 1), -1);
     neverc_zip_writer_free(&w);
 }
 

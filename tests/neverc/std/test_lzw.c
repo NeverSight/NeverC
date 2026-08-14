@@ -118,6 +118,15 @@ static void test_invalid_params(void) {
     len = sizeof(buf);
     ASSERT_INT_EQ(neverc_lzw_decompress(buf, 1, NULL, &len,
                                        NEVERC_LZW_LSB, 8), -1);
+
+    uint8_t empty_comp[64];
+    size_t empty_comp_len = sizeof(empty_comp);
+    ASSERT_INT_EQ(neverc_lzw_compress((const uint8_t *)"", 0, empty_comp,
+                                     &empty_comp_len, NEVERC_LZW_LSB, 8), 0);
+    size_t empty_out = 0;
+    ASSERT_INT_EQ(neverc_lzw_decompress(empty_comp, empty_comp_len, NULL,
+                                       &empty_out, NEVERC_LZW_LSB, 8), 0);
+    ASSERT_TRUE(empty_out == 0);
 }
 
 int main(void) {

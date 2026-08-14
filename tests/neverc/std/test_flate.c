@@ -235,6 +235,19 @@ static void test_invalid_streams(void) {
                       stored, &stored_len, 1),
                   -1);
 #endif
+
+    stored_len = sizeof(stored);
+    ASSERT_INT_EQ(neverc_flate_compress(
+                      (const uint8_t *)"abc", 3U,
+                      stored, &stored_len, 0),
+                  0);
+    uint8_t padded[64];
+    memcpy(padded, stored, stored_len);
+    padded[stored_len] = 0;
+    output_len = sizeof(output);
+    ASSERT_INT_EQ(neverc_flate_decompress(
+                      padded, stored_len + 1U, output, &output_len),
+                  -1);
 }
 
 int main(void) {

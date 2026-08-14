@@ -1142,6 +1142,15 @@ int neverc_flate_decompress(const uint8_t *src, size_t src_len,
         if (bfinal) break;
     }
 
+    /* Rewind unused prefetched bytes, then require the stream to end at
+     * src_len. Leftover bits in the last used byte are padding; extra
+     * whole bytes after that are junk (e.g. before a gzip/zlib trailer). */
+    if ((br.nbits >> 3) > br.pos)
+        goto err;
+    fbr_align(&br);
+    if (br.pos != src_len)
+        goto err;
+
     free(lit_ht);
     free(dist_ht);
     *dst_len = out_pos;
