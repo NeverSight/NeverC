@@ -342,7 +342,7 @@ STD_TEST(aes, "src/crypto/aes/aes.c")
 STD_TEST(des, "src/crypto/des/des.c")
 STD_TEST(rc4, "src/crypto/rc4/rc4.c")
 STD_TEST(chacha20, "src/crypto/chacha20/chacha20.c")
-STD_TEST(poly1305, "src/crypto/poly1305/poly1305.c")
+STD_TEST(poly1305, "src/crypto/poly1305/poly1305.c", "src/crypto/subtle/subtle.c")
 STD_TEST(chacha20poly1305, "src/crypto/chacha20poly1305/chacha20poly1305.c", "src/crypto/chacha20/chacha20.c", "src/crypto/poly1305/poly1305.c")
 STD_TEST(gcm, "src/crypto/gcm/gcm.c", "src/crypto/aes/aes.c")
 STD_TEST(cipher, "src/crypto/cipher/cipher.c", "src/crypto/aes/aes.c")
@@ -415,7 +415,7 @@ STD_TEST(mlkem, "src/crypto/mlkem/mlkem.c", "src/crypto/sha3/sha3.c",
     "src/crypto/rand/rand.c")
 STD_TEST(mlkem_entropy_failure, "src/crypto/sha3/sha3.c")
 STD_TEST(mldsa, "src/crypto/mldsa/mldsa.c", "src/crypto/sha3/sha3.c",
-    "src/crypto/rand/rand.c")
+    "src/crypto/rand/rand.c", "src/crypto/subtle/subtle.c")
 STD_TEST(mldsa_entropy_failure, "src/crypto/sha3/sha3.c")
 
 // ===== Unicode =====
@@ -536,16 +536,16 @@ STD_TEST(zlib, "src/compress/zlib/zlib.c", "src/compress/flate/flate.c", "src/ha
 STD_TEST(bzip2, "src/compress/bzip2/bzip2.c")
 
 // ===== Archive =====
-STD_TEST(tar, "src/archive/tar/tar.c")
+STD_TEST(tar, "src/archive/tar/tar.c", "src/io/fs/fs.c")
 TEST_F(StdLibTest, TarAllocationFailure) {
   auto r = compileAndRunStdTest("tar_oom", {}, {"-fno-builtin-std"});
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
   EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
 }
-STD_TEST(zip, "src/archive/zip/zip.c", "src/hash/crc32/crc32.c")
+STD_TEST(zip, "src/archive/zip/zip.c", "src/hash/crc32/crc32.c", "src/io/fs/fs.c")
 TEST_F(StdLibTest, ZipAllocationFailure) {
   auto r = compileAndRunStdTest(
-      "zip_oom", {"src/hash/crc32/crc32.c"}, {"-fno-builtin-std"});
+      "zip_oom", {"src/hash/crc32/crc32.c", "src/io/fs/fs.c"}, {"-fno-builtin-std"});
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
   EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
 }

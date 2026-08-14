@@ -312,8 +312,8 @@ static void test_x509_subject_alt_name(void) {
 static void test_wildcard_rejects_single_label_suffix(void) {
     neverc_x509_cert_t cert;
     memset(&cert, 0, sizeof(cert));
-    char pattern[] = "*.com";
-    cert.dns_names = &pattern;
+    char *names[] = {"*.com"};
+    cert.dns_names = names;
     cert.dns_name_count = 1;
 
     CHECK("wildcard_com_rejects_evil",
