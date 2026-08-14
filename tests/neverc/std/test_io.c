@@ -263,6 +263,44 @@ static void test_no_progress_guards(void) {
     check_int("multi_reader data remains after zero-length read",
               neverc_io_multi_reader_read(&multi, &byte, 1, &n), 0);
     check_int("multi_reader retained content", byte, 'z');
+
+    delayed_reader_t delayed_copy = {0};
+    neverc_io_reader_t delayed_src = { &delayed_copy, delayed_read };
+    neverc_io_writer_t discard;
+    neverc_io_discard_init(&discard);
+    check_size("copy retries transient empty read",
+               (size_t)neverc_io_copy(&discard, &delayed_src), 1);
+
+    delayed_copy.calls = 0;
+    size_t outlen = 0;
+    uint8_t *all = neverc_io_read_all(&delayed_src, &outlen);
+    check_size("read_all retries transient empty read", outlen, 1);
+    check_int("read_all delayed byte", all && all[0] == 'x', 1);
+    free(all);
+
+    delayed_copy.calls = 0;
+    byte = 0;
+    check_int("read_full retries transient empty read",
+              neverc_io_read_full(&delayed_src, &byte, 1), 0);
+    check_int("read_full delayed byte", byte, 'x');
+
+    delayed_copy.calls = 0;
+    check_size("copy_n retries transient empty read",
+               (size_t)neverc_io_copy_n(&discard, &delayed_src, 1), 1);
+
+    delayed_copy.calls = 0;
+    uint8_t scratch = 0;
+    check_size("copy_buffer retries transient empty read",
+               (size_t)neverc_io_copy_buffer(&discard, &delayed_src, &scratch, 1),
+               1);
+
+    delayed_copy.calls = 0;
+    n = 0;
+    byte = 0;
+    check_int("read_at_least retries transient empty read",
+              neverc_io_read_at_least(&delayed_src, &byte, 1, 1, &n), 0);
+    check_size("read_at_least delayed count", n, 1);
+    check_int("read_at_least delayed byte", byte, 'x');
 }
 
 #if SIZE_MAX > INT64_MAX

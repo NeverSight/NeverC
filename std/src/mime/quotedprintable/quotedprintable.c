@@ -1,4 +1,5 @@
 #include "neverc/std/mime/quotedprintable.h"
+#include <stdint.h>
 #include <string.h>
 
 /* Hex value per byte, -1 for non-hex, so the =XX hot loop avoids the branchy
@@ -49,24 +50,26 @@ int neverc_qp_decode(const char *src, size_t src_len,
                     } while (hi >= 0 && lo >= 0);
                     continue;
                 }
+                return -1;
             }
-            if (si + 2 >= src_len) return -1;
-            /* Soft line break: =\r\n or =\n */
-            if (src[si+1] == '\r' && si + 2 < src_len && src[si+2] == '\n') {
-                si += 3; continue;
+            /* Soft line break: =\r\n, =\n, =\r, or a lone '=' at EOF.
+             * The previous `si + 2 >= src_len` reject treated "hello=\n" and a
+             * trailing '=' as errors; both are valid soft breaks. */
+            if (si + 1 >= src_len) {
+                si += 1;
+                continue;
             }
-            if (src[si+1] == '\n') {
-                si += 2; continue;
+            if (src[si + 1] == '\n') {
+                si += 2;
+                continue;
             }
-            {
-                int hi = qp_hex_val[(unsigned char)src[si+1]];
-                int lo = qp_hex_val[(unsigned char)src[si+2]];
-                if (hi < 0 || lo < 0) return -1;
-                if (di >= out_cap) return -1;
-                out[di++] = (unsigned char)((hi << 4) | lo);
-                si += 3;
+            if (src[si + 1] == '\r') {
+                si += 2;
+                if (si < src_len && src[si] == '\n')
+                    si++;
+                continue;
             }
-            continue;
+            return -1;
         }
 
         /* Literal run up to the next '=' (or end). */
@@ -120,9 +123,12 @@ static const unsigned char qp_literal_tab[256] = {
 int neverc_qp_encode(const unsigned char *src, size_t src_len,
                      char *out, size_t out_cap, int max_line) {
     if (!src || !out) return -1;
-    if (max_line <= 0) max_line = 76;
+    /* max_line < 0 → RFC default 76; 0 → no wrapping (documented). */
+    int wrap = 1;
+    if (max_line < 0) max_line = 76;
+    if (max_line == 0) wrap = 0;
     size_t di = 0, line_len = 0;
-    const size_t line_cap = (size_t)(max_line - 1);  /* literal chars per line */
+    const size_t line_cap = wrap ? (size_t)(max_line - 1) : SIZE_MAX;
 
     size_t i = 0;
     while (i < src_len) {
@@ -145,7 +151,7 @@ int neverc_qp_encode(const unsigned char *src, size_t src_len,
         }
 
         if (need_encode) {                 /* c is never '\r'/'\n' here */
-            if ((int)(line_len + 3) > max_line - 1) {
+            if (wrap && (int)(line_len + 3) > max_line - 1) {
                 if (di + 3 > out_cap) return -1;
                 out[di++] = '='; out[di++] = '\r'; out[di++] = '\n';
                 line_len = 0;
@@ -183,7 +189,7 @@ int neverc_qp_encode(const unsigned char *src, size_t src_len,
                 end--;
             size_t run = end - i;                 /* >= 1: src[i] is literal */
             while (run > 0) {
-                if (line_len >= line_cap) {        /* full line -> soft break */
+                if (wrap && line_len >= line_cap) { /* full line -> soft break */
                     if (di + 3 > out_cap) return -1;
                     out[di++] = '='; out[di++] = '\r'; out[di++] = '\n';
                     line_len = 0;
@@ -203,7 +209,7 @@ int neverc_qp_encode(const unsigned char *src, size_t src_len,
         }
 
         /* Single literal byte. */
-        if ((int)(line_len + 1) > max_line - 1) {
+        if (wrap && (int)(line_len + 1) > max_line - 1) {
             if (di + 3 > out_cap) return -1;
             out[di++] = '='; out[di++] = '\r'; out[di++] = '\n';
             line_len = 0;

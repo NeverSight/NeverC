@@ -242,6 +242,48 @@ static void test_identity(void) {
     neverc_elliptic_point_free(&r);
 }
 
+static void test_unreduced_coordinates(void) {
+    printf("[unreduced_coordinates]\n");
+    const neverc_elliptic_curve_t *c = neverc_elliptic_p256();
+    neverc_elliptic_point_t g, g_unred, doubled, sum, scaled;
+    neverc_elliptic_point_init(&g);
+    neverc_elliptic_point_init(&g_unred);
+    neverc_elliptic_point_init(&doubled);
+    neverc_elliptic_point_init(&sum);
+    neverc_elliptic_point_init(&scaled);
+    neverc_bigint_set(&g.x, &c->gx);
+    neverc_bigint_set(&g.y, &c->gy);
+    neverc_elliptic_double(c, &doubled, &g);
+
+    neverc_bigint_add(&g_unred.x, &c->gx, &c->p);
+    neverc_bigint_set(&g_unred.y, &c->gy);
+    neverc_elliptic_add(c, &sum, &g_unred, &g);
+    ASSERT_TRUE(neverc_bigint_cmp(&sum.x, &doubled.x) == 0);
+    ASSERT_TRUE(neverc_bigint_cmp(&sum.y, &doubled.y) == 0);
+
+    neverc_bigint_set(&g_unred.x, &c->gx);
+    neverc_bigint_add(&g_unred.y, &c->gy, &c->p);
+    neverc_elliptic_double(c, &sum, &g_unred);
+    ASSERT_TRUE(neverc_bigint_cmp(&sum.x, &doubled.x) == 0);
+    ASSERT_TRUE(neverc_bigint_cmp(&sum.y, &doubled.y) == 0);
+
+    neverc_bigint_t one;
+    neverc_bigint_init(&one);
+    neverc_bigint_set_int64(&one, 1);
+    neverc_bigint_add(&g_unred.x, &c->gx, &c->p);
+    neverc_bigint_set(&g_unred.y, &c->gy);
+    neverc_elliptic_scalar_mult(c, &scaled, &g_unred, &one);
+    ASSERT_TRUE(neverc_bigint_cmp(&scaled.x, &c->gx) == 0);
+    ASSERT_TRUE(neverc_bigint_cmp(&scaled.y, &c->gy) == 0);
+
+    neverc_bigint_free(&one);
+    neverc_elliptic_point_free(&g);
+    neverc_elliptic_point_free(&g_unred);
+    neverc_elliptic_point_free(&doubled);
+    neverc_elliptic_point_free(&sum);
+    neverc_elliptic_point_free(&scaled);
+}
+
 static void test_p384(void) {
     printf("[p384]\n");
     const neverc_elliptic_curve_t *c = neverc_elliptic_p384();
@@ -267,6 +309,7 @@ int main(void) {
     test_marshal_unmarshal();
     test_invalid_affine_points();
     test_identity();
+    test_unreduced_coordinates();
     test_p384();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;

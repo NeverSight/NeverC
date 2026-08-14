@@ -648,7 +648,10 @@ neverc_tls_listener_t *neverc_tls_listen(const char *addr,
                                           neverc_tls_config_t *cfg,
                                           const char **errp) {
 #if defined(NEVERC_TLS_ENABLE_EXPERIMENTAL_TRANSPORT)
-    if (!addr || !cfg || !cfg->cert_der || !cfg->key_der) {
+    if (!addr || !cfg || !cfg->cert_der || !cfg->key_der ||
+        (cfg->client_auth ==
+             NEVERC_TLS_CLIENT_AUTH_REQUIRE_AND_VERIFY &&
+         !cfg->root_certificates)) {
         if (errp)
             *errp = k_tls_invalid_argument;
         return NULL;

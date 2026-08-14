@@ -2293,10 +2293,11 @@ int nci_tls_server_handshake(neverc_tls_conn_t *conn,
             neverc_sha256_ctx copy = transcript;
             neverc_sha256_final(&copy, transcript_hash);
             uint8_t finished_key[32];
-            nci_tls_hkdf_expand_label(
-                client_hs_traffic_secret, 32,
-                "finished", 8, NULL, 0,
-                finished_key, sizeof(finished_key));
+            if (nci_tls_hkdf_expand_label(
+                    client_hs_traffic_secret, 32,
+                    "finished", 8, NULL, 0,
+                    finished_key, sizeof(finished_key)) != 0)
+                return nci_tls_fail(conn, TLS_ALERT_INTERNAL_ERROR);
             uint8_t expected[32];
             neverc_hmac_sha256(
                 finished_key, sizeof(finished_key),
@@ -2589,8 +2590,10 @@ static int tls_async_prepare_server_flight(
 
     if (neverc_ecdh_compute(
             &ecdh_key, client_hello.client_public_key, 32,
-            shared_secret, sizeof(shared_secret)) != 32)
+            shared_secret, sizeof(shared_secret)) != 32) {
+        (void)nci_tls_fail(conn, TLS_ALERT_ILLEGAL_PARAMETER);
         goto cleanup;
+    }
     if (nci_tls_derive_handshake_secret(
             shared_secret,
             selected_psk_index >= 0 ? selected_psk : NULL,
@@ -2709,8 +2712,9 @@ static int tls_async_prepare_server_flight(
         &transcript_copy,
         async->transcript_hash_server_finished);
     async->expected_client_handshake =
-        cfg->client_auth ==
-            NEVERC_TLS_CLIENT_AUTH_REQUIRE_AND_VERIFY
+        (!conn->did_resume &&
+         cfg->client_auth ==
+             NEVERC_TLS_CLIENT_AUTH_REQUIRE_AND_VERIFY)
         ? TLS_HS_CERTIFICATE : TLS_HS_FINISHED;
     async->phase = TLS_ASYNC_SERVER_WAIT_CLIENT_FLIGHT;
     result = 0;
@@ -3275,7 +3279,7 @@ int nci_tls_handle_post_handshake(
 
 int nci_tls_handle_peer_alert(
     neverc_tls_conn_t *conn, const uint8_t *data, size_t data_len) {
-    if (data_len != 2)
+    if (data_len != 2 || (data[0] != 1 && data[0] != 2))
         return nci_tls_protocol_error(
             conn, TLS_ALERT_DECODE_ERROR,
             "malformed TLS alert");

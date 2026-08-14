@@ -85,6 +85,13 @@ static void test_different_messages(void) {
 
 static void test_init_free(void) {
     printf("[init_free]\n");
+    neverc_ecdsa_public_key_init(NULL);
+    neverc_ecdsa_public_key_free(NULL);
+    neverc_ecdsa_private_key_init(NULL);
+    neverc_ecdsa_private_key_free(NULL);
+    neverc_ecdsa_signature_init(NULL);
+    neverc_ecdsa_signature_free(NULL);
+
     neverc_ecdsa_public_key_t pub;
     neverc_ecdsa_public_key_init(&pub);
     neverc_ecdsa_public_key_free(&pub);
@@ -122,6 +129,43 @@ static void test_invalid_inputs(void) {
     neverc_ecdsa_private_key_free(&key);
 }
 
+static void test_sign_clears_sig_on_failure(void) {
+    printf("[sign_clears_sig_on_failure]\n");
+    neverc_ecdsa_private_key_t key;
+    neverc_ecdsa_private_key_init(&key);
+    neverc_ecdsa_signature_t sig;
+    neverc_ecdsa_signature_init(&sig);
+    neverc_bigint_set_int64(&sig.r, 99);
+    neverc_bigint_set_int64(&sig.s, 99);
+    unsigned char hash[32] = {1};
+
+    ASSERT_INT_EQ(neverc_ecdsa_sign(&key, hash, sizeof(hash), &sig), -1);
+    ASSERT_TRUE(neverc_bigint_is_zero(&sig.r));
+    ASSERT_TRUE(neverc_bigint_is_zero(&sig.s));
+
+    neverc_ecdsa_signature_free(&sig);
+    neverc_ecdsa_private_key_free(&key);
+}
+
+static void test_verify_rejects_identity(void) {
+    printf("[verify_rejects_identity]\n");
+    neverc_ecdsa_private_key_t key;
+    neverc_ecdsa_private_key_init(&key);
+    ASSERT_INT_EQ(neverc_ecdsa_generate_key(&key, neverc_elliptic_p256()), 0);
+
+    unsigned char hash[32] = {1};
+    neverc_ecdsa_signature_t sig;
+    neverc_ecdsa_signature_init(&sig);
+    ASSERT_INT_EQ(neverc_ecdsa_sign(&key, hash, sizeof(hash), &sig), 0);
+
+    neverc_bigint_set_int64(&key.pub.pub.x, 0);
+    neverc_bigint_set_int64(&key.pub.pub.y, 0);
+    ASSERT_TRUE(neverc_ecdsa_verify(&key.pub, hash, sizeof(hash), &sig) != 0);
+
+    neverc_ecdsa_signature_free(&sig);
+    neverc_ecdsa_private_key_free(&key);
+}
+
 int main(void) {
     printf("=== NeverC crypto/ecdsa Tests ===\n");
     test_init_free();
@@ -129,6 +173,8 @@ int main(void) {
     test_sign_verify();
     test_different_messages();
     test_invalid_inputs();
+    test_sign_clears_sig_on_failure();
+    test_verify_rejects_identity();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

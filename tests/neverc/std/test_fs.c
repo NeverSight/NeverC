@@ -142,9 +142,16 @@ static void test_glob(void) {
 }
 
 static int walk_count;
+static int walk_saw_secret;
 static int walk_cb(const char *path, const neverc_fs_dir_entry_t *entry, void *ud) {
     (void)path; (void)entry; (void)ud;
     walk_count++;
+    return 0;
+}
+
+static int walk_secret_cb(const char *path, const neverc_fs_dir_entry_t *entry, void *ud) {
+    (void)entry; (void)ud;
+    if (path && strstr(path, "outside_secret")) walk_saw_secret = 1;
     return 0;
 }
 
@@ -188,6 +195,29 @@ static void test_walk_dir(void) {
 #else
     rmdir(subdir);
     rmdir(walkdir);
+#endif
+
+#if !defined(_WIN32)
+    {
+        char outside[2048], secret[2048], linkpath[2048];
+        snprintf(outside, sizeof(outside), "%s/neverc_walk_outside", tmpdir);
+        snprintf(secret, sizeof(secret), "%s/outside_secret", outside);
+        snprintf(walkdir, sizeof(walkdir), "%s/neverc_walk_nosym", tmpdir);
+        snprintf(linkpath, sizeof(linkpath), "%s/link", walkdir);
+        mkdir(outside, 0755);
+        mkdir(walkdir, 0755);
+        FILE *fs = fopen(secret, "w");
+        if (fs) { fprintf(fs, "x"); fclose(fs); }
+        symlink(outside, linkpath);
+        walk_saw_secret = 0;
+        rc = neverc_fs_walk_dir(walkdir, walk_secret_cb, NULL);
+        check("walk_symlink_ok", rc == 0);
+        check("walk_skips_symlink_dir", walk_saw_secret == 0);
+        unlink(secret);
+        unlink(linkpath);
+        rmdir(outside);
+        rmdir(walkdir);
+    }
 #endif
 }
 

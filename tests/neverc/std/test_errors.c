@@ -84,6 +84,12 @@ static void test_join(void) {
 
     neverc_error_t *joined = neverc_errors_join(errs, 4);
     check_str("join", neverc_errors_message(joined), "err1\nerr2\nerr3");
+    check_bool("join is e1", neverc_errors_is(joined, e1), 1);
+    check_bool("join is e2", neverc_errors_is(joined, e2), 1);
+    check_bool("join is e3", neverc_errors_is(joined, e3), 1);
+    neverc_error_t *other = neverc_errors_new("timeout");
+    check_bool("join is other", neverc_errors_is(joined, other), 0);
+    neverc_errors_free(other);
     neverc_errors_free(joined);
 
     neverc_error_t *nulls[] = {NULL, NULL};

@@ -141,8 +141,11 @@ static void test_verify_identity_public_key(void) {
     neverc_bigint_t z;
     neverc_bigint_init(&z);
     char hex[41];
-    for (int i = 0; i < 20; i++)
-        sprintf(hex + 2 * i, "%02x", hash[i]);
+    for (int i = 0; i < 20; i++) {
+        hex[2 * i] = "0123456789abcdef"[hash[i] >> 4];
+        hex[2 * i + 1] = "0123456789abcdef"[hash[i] & 0x0F];
+    }
+    hex[40] = '\0';
     neverc_bigint_set_string(&z, hex, 16);
     if (neverc_bigint_cmp(&z, &key.pub.q) >= 0)
         neverc_bigint_mod(&z, &z, &key.pub.q);

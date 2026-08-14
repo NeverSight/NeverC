@@ -82,6 +82,13 @@ static void test_is_sorted(void) {
     check_true("unsorted", !neverc_sort_is_sorted(unsorted, 5, sizeof(int), cmp_int_fn));
     check_true("empty", neverc_sort_is_sorted(sorted, 0, sizeof(int), cmp_int_fn));
     check_true("single", neverc_sort_is_sorted(sorted, 1, sizeof(int), cmp_int_fn));
+    check_true("null base", !neverc_sort_is_sorted(NULL, 3, sizeof(int), cmp_int_fn));
+    check_true("null cmp", !neverc_sort_is_sorted(sorted, 3, sizeof(int), NULL));
+    neverc_sort_custom(NULL, 3, sizeof(int), cmp_int_fn);
+    neverc_sort_ints(NULL, 3);
+    neverc_sort_reverse(NULL, 3, sizeof(int));
+    check_int("search null", neverc_sort_search_ints(NULL, 3, 1), -1);
+    check_int("search null fn", (int)neverc_sort_search(3, NULL), 0);
 }
 
 static void test_search_ints(void) {
@@ -170,6 +177,13 @@ static void test_stable_sort_rejects_overflowing_span(void) {
     check_int("overflowing span performs no comparisons",
               invalid_span_comparisons, 0);
     check_int("overflowing span leaves input unchanged", data, 0x5a);
+
+    invalid_span_comparisons = 0;
+    neverc_sort_custom(
+        &data, 33, SIZE_MAX / 32 + 1, count_invalid_span_comparison);
+    check_int("unstable overflowing span performs no comparisons",
+              invalid_span_comparisons, 0);
+    check_int("unstable overflowing span leaves input unchanged", data, 0x5a);
 }
 
 /*

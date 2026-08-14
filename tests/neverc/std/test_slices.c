@@ -217,6 +217,15 @@ static void test_func_ops(void) {
     ASSERT_INT_EQ(arr2[0], 1);
     ASSERT_INT_EQ(arr2[1], 3);
     ASSERT_INT_EQ(arr2[2], 5);
+
+    unsigned char byte = 1;
+    size_t overflowing_len = SIZE_MAX / 2 + 1;
+    ASSERT_TRUE(neverc_slices_delete(&byte, overflowing_len, 2, 0, 1) ==
+                overflowing_len);
+    ASSERT_TRUE(neverc_slices_compact(&byte, overflowing_len, 2, eq_int) ==
+                overflowing_len);
+    ASSERT_TRUE(neverc_slices_delete_func(&byte, overflowing_len, 2, is_even) ==
+                overflowing_len);
 }
 
 static void test_null_guards(void) {

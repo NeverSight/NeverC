@@ -238,6 +238,8 @@ static neverc_regexp_syntax_node_t *parse_char_class(parser_t *p) {
             case 'n': c = '\n'; break;
             case 't': c = '\t'; break;
             case 'r': c = '\r'; break;
+            case 'f': c = '\f'; break;
+            case 'v': c = '\v'; break;
             default:  c = esc; break;
             }
         } else {
@@ -253,6 +255,8 @@ static neverc_regexp_syntax_node_t *parse_char_class(parser_t *p) {
                 if (hi == 'n') hi = '\n';
                 else if (hi == 't') hi = '\t';
                 else if (hi == 'r') hi = '\r';
+                else if (hi == 'f') hi = '\f';
+                else if (hi == 'v') hi = '\v';
             } else {
                 hi = next(p);
             }

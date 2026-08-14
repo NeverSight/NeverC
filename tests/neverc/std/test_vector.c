@@ -339,6 +339,13 @@ static void test_assign_append(void) {
     ASSERT(*(int *)neverc_vector_at(v, 5) == 5, "self append copies first");
     ASSERT(*(int *)neverc_vector_at(v, 9) == 9, "self append copies last");
 
+    ASSERT(!neverc_vector_append(v, NULL), "append NULL other fails");
+    ASSERT(neverc_vector_size(v) == 10, "failed append leaves size unchanged");
+    neverc_vector_t *empty = neverc_vector_new(sizeof(int));
+    ASSERT(neverc_vector_append(v, empty), "append empty other succeeds");
+    ASSERT(neverc_vector_size(v) == 10, "append empty is a no-op");
+
+    neverc_vector_free(empty);
     neverc_vector_free(other);
     neverc_vector_free(v);
 }
@@ -585,6 +592,15 @@ static void test_equal(void) {
     ASSERT(neverc_vector_equal(va, va, cmp_int), "a == a (self)");
     ASSERT(neverc_vector_equal(va, vb, NULL), "memcmp equality");
 
+    neverc_vector_t *empty_a = neverc_vector_new(sizeof(int));
+    neverc_vector_t *empty_b = neverc_vector_new(sizeof(int));
+    ASSERT(neverc_vector_equal(empty_a, empty_b, cmp_int), "empty == empty");
+    ASSERT(neverc_vector_equal(empty_a, empty_b, NULL),
+           "empty memcmp equality does not read NULL data");
+    ASSERT(!neverc_vector_equal(empty_a, va, NULL), "empty != non-empty");
+
+    neverc_vector_free(empty_a);
+    neverc_vector_free(empty_b);
     neverc_vector_free(va);
     neverc_vector_free(vb);
     neverc_vector_free(vc);
