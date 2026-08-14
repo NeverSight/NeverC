@@ -791,6 +791,13 @@ static void test_fill(void) {
     for (size_t i = 0; i < 5; i++)
         ASSERT(*(int *)neverc_vector_at(v, i) == 77, "filled with 77");
     neverc_vector_free(v);
+
+    int arr[] = {1, 2, 3, 4, 5};
+    v = neverc_vector_from_array(arr, 5, sizeof(int));
+    neverc_vector_fill(v, neverc_vector_at(v, 2));
+    for (size_t i = 0; i < 5; i++)
+        ASSERT(*(int *)neverc_vector_at(v, i) == 3, "fill from in-vector element");
+    neverc_vector_free(v);
 }
 
 /* ========== Swap Elements ========== */

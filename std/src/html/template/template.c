@@ -171,10 +171,10 @@ char *neverc_html_attr_escape(const char *s) {
     return neverc_html_escape(s);
 }
 
-/* \ ' " \n \r escape to 2 chars (extra 1); < > & escape to \u00XX (extra 5). */
+/* \ ' " \n \r escape to 2 chars (extra 1); < > & ` $ escape to \u00XX (extra 5). */
 static const uint8_t js_esc_extra[256] = {
     ['\\'] = 1, ['\''] = 1, ['"'] = 1, ['\n'] = 1, ['\r'] = 1,
-    ['<'] = 5, ['>'] = 5, ['&'] = 5,
+    ['<'] = 5, ['>'] = 5, ['&'] = 5, ['`'] = 5, ['$'] = 5,
 };
 
 char *neverc_html_js_escape(const char *s) {
@@ -204,6 +204,8 @@ char *neverc_html_js_escape(const char *s) {
             case '<':  memcpy(r + wi, "\\u003c", 6); wi += 6; break;
             case '>':  memcpy(r + wi, "\\u003e", 6); wi += 6; break;
             case '&':  memcpy(r + wi, "\\u0026", 6); wi += 6; break;
+            case '`':  memcpy(r + wi, "\\u0060", 6); wi += 6; break;
+            case '$':  memcpy(r + wi, "\\u0024", 6); wi += 6; break;
         }
     }
     r[wi] = '\0';
@@ -511,15 +513,32 @@ static int html_ends_ci(const char *buf, size_t len, const char *suf) {
 static int html_in_url_attr(const char *buf, size_t len) {
     if (!buf || len == 0) return 0;
     static const char *sufs[] = {
-        "href=\"", "href='", "src=\"", "src='",
-        "action=\"", "action='", "formaction=\"", "formaction='",
-        "cite=\"", "cite='", "poster=\"", "poster='",
-        "background=\"", "background='", NULL
+        "href=\"", "href='", "href=",
+        "src=\"", "src='", "src=",
+        "action=\"", "action='", "action=",
+        "formaction=\"", "formaction='", "formaction=",
+        "cite=\"", "cite='", "cite=",
+        "poster=\"", "poster='", "poster=",
+        "background=\"", "background='", "background=",
+        "data=\"", "data='", "data=",
+        NULL
     };
     for (int i = 0; sufs[i]; i++) {
         if (html_ends_ci(buf, len, sufs[i])) return 1;
     }
     return 0;
+}
+
+static int html_in_event_attr(const char *buf, size_t len) {
+    if (!buf || len < 4) return 0;
+    size_t end = len;
+    if (buf[end - 1] == '"' || buf[end - 1] == '\'') end--;
+    if (end == 0 || buf[end - 1] != '=') return 0;
+    size_t i = end - 1;
+    while (i > 0 && (nc_isalnum((unsigned char)buf[i - 1]) || buf[i - 1] == '-'))
+        i--;
+    size_t nlen = (end - 1) - i;
+    return nlen > 2 && html_ci_eq_n(buf + i, "on", 2);
 }
 
 static int html_dangerous_url(const char *s) {
@@ -546,7 +565,7 @@ static int execute_nodes(const node_t *n,
             const char *val = neverc_html_template_data_get(data, n->text);
             if (val) {
                 char *escaped;
-                if (html_in_script(*buf, *len))
+                if (html_in_script(*buf, *len) || html_in_event_attr(*buf, *len))
                     escaped = neverc_html_js_escape(val);
                 else if (html_in_url_attr(*buf, *len) && html_dangerous_url(val))
                     escaped = neverc_html_escape("#");

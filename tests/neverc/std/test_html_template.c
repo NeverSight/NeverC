@@ -45,6 +45,10 @@ static void test_js_escape(void) {
     e = neverc_html_js_escape("line1\nline2");
     check_str("newline", e, "line1\\nline2");
     free(e);
+
+    e = neverc_html_js_escape("`+$");
+    check_str("template literal", e, "\\u0060+\\u0024");
+    free(e);
 }
 
 static void test_css_escape(void) {
@@ -109,6 +113,17 @@ static void test_template_url_and_script(void) {
     out = neverc_html_template_render("<script>var x=\"{{.Name}}\";</script>", &data);
     check("script uses js escape", out && strstr(out, "\\\"") != NULL);
     check("script no html entity quote", out && strstr(out, "&#34;") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "Link", "javascript:alert(1)");
+    out = neverc_html_template_render("<a href={{.Link}}>x</a>", &data);
+    check("unquoted js url neutralized", out && strstr(out, "javascript:") == NULL);
+    free(out);
+
+    neverc_html_template_data_set(&data, "Name", "');alert(1);//");
+    out = neverc_html_template_render("<img onclick=\"{{.Name}}\">", &data);
+    check("onclick uses js escape", out && strstr(out, "\\'") != NULL);
+    check("onclick no html entity quote", out && strstr(out, "&#39;") == NULL);
     free(out);
     neverc_html_template_data_free(&data);
 }

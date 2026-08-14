@@ -426,6 +426,8 @@ static void test_invalid_formats(void) {
     result = neverc_fmt_sprintf("%.*e", INT_MAX, 1.0);
     check_true("dynamic float precision rejected", result == NULL);
     free(result);
+
+    check_int("scan null dest", neverc_fmt_scan(NULL), 0);
 }
 
 static void test_sscanln(void) {

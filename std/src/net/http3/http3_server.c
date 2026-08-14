@@ -1018,7 +1018,7 @@ static int h3_install_peer_stream(h3_conn_t *connection,
     else if (stream_type == H3_STREAM_TYPE_PUSH)
         return -1;
     else {
-        (void)neverc_quic_stream_stop_sending(stream, NC_H3_NO_ERROR);
+        (void)neverc_quic_stream_stop_sending(stream, NC_H3_STREAM_CREATION_ERROR);
         neverc_quic_stream_free(stream);
     }
     return 0;

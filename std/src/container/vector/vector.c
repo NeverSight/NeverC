@@ -682,18 +682,24 @@ size_t neverc_vector_erase_if(neverc_vector_t *v,
 void neverc_vector_fill(neverc_vector_t *v, const void *value) {
     if (!v || !value || v->size == 0)
         return;
+    const void *stable = value;
+    void *copy = NULL;
+    if (!vec_prepare_input(v, value, v->elem_size, &stable, &copy))
+        return;
     size_t sz = v->elem_size;
     if (sz == 1) {
-        memset(v->data, *(const unsigned char *)value, v->size);
+        memset(v->data, *(const unsigned char *)stable, v->size);
+        free(copy);
         return;
     }
-    memcpy(v->data, value, sz);
+    memcpy(v->data, stable, sz);
     for (size_t copied = 1; copied < v->size; ) {
         size_t chunk = v->size - copied;
         if (chunk > copied) chunk = copied;
         memcpy((char *)v->data + copied * sz, v->data, chunk * sz);
         copied += chunk;
     }
+    free(copy);
 }
 
 void neverc_vector_swap_elements(neverc_vector_t *v, size_t i, size_t j) {

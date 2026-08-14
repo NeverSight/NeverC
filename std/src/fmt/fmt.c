@@ -842,6 +842,7 @@ int neverc_fmt_scanf(const char *format, ...) {
 }
 
 int neverc_fmt_scan(int *out_int) {
+    if (!out_int) return 0;
     char line[256];
     if (!fgets(line, sizeof(line), stdin)) return 0;
     const char *p = line;
