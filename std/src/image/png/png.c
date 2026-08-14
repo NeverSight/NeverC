@@ -181,6 +181,13 @@ int neverc_png_decode(const uint8_t *data, size_t len, neverc_png_image_t *img) 
                     return -1;
                 }
                 size_t need = idat_len + chunk_len;
+                size_t raw_need = (img->stride + 1u) * (size_t)img->height;
+                size_t idat_limit = raw_need * 2u + 64u;
+                if (idat_limit < raw_need) idat_limit = SIZE_MAX;
+                if (need > idat_limit) {
+                    free(idat_buf);
+                    return -1;
+                }
                 if (need > idat_cap) {
                     size_t new_cap =
                         need > SIZE_MAX / 2 ? need : need * 2;

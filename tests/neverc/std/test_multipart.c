@@ -164,6 +164,32 @@ static void test_rejects_malformed_input(void) {
     ASSERT_EQ(neverc_multipart_write(
                   &part, 1, long_boundary, output, sizeof(output)),
               -1);
+
+    const char *folded =
+        "--b\r\n"
+        "Content-Type: text/plain;\r\n"
+        " charset=utf-8\r\n"
+        "\r\n"
+        "hi\r\n"
+        "--b--\r\n";
+    ASSERT_EQ(neverc_multipart_parse(
+                  (const unsigned char *)folded, strlen(folded), "b",
+                  &reader),
+              0);
+    ASSERT_EQ(reader.part_count, 1);
+    ASSERT_STREQ(neverc_multipart_part_header(&reader.parts[0], "Content-Type"),
+                 "text/plain; charset=utf-8");
+
+    neverc_multipart_part_t inject;
+    memset(&inject, 0, sizeof(inject));
+    inject.body = (const unsigned char *)"--inj\r\nowned";
+    inject.body_len = 12;
+    ASSERT_EQ(neverc_multipart_write(&inject, 1, "inj", output, sizeof(output)),
+              -1);
+    inject.body = (const unsigned char *)"ok\r\n--inj\r\n";
+    inject.body_len = 11;
+    ASSERT_EQ(neverc_multipart_write(&inject, 1, "inj", output, sizeof(output)),
+              -1);
 }
 
 int main(void) {

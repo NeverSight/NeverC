@@ -433,6 +433,14 @@ int neverc_gif_decode(const uint8_t *data, size_t len, neverc_gif_image_t *img) 
                     goto decode_failed;
                 }
                 size_t required = lzw_len + bs;
+                size_t lzw_limit = (size_t)frame_pixels * 4u;
+                if (lzw_limit < 4096u) lzw_limit = 4096u;
+                if (lzw_limit > 8u * 1024u * 1024u)
+                    lzw_limit = 8u * 1024u * 1024u;
+                if (required > lzw_limit) {
+                    free(lzw_data);
+                    goto decode_failed;
+                }
                 if (required > lzw_cap) {
                     size_t capacity = lzw_cap ? lzw_cap : 256;
                     while (capacity < required) {

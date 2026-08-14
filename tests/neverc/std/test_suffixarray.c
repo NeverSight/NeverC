@@ -33,6 +33,9 @@ static void test_empty(void) {
     ASSERT_INT_EQ(neverc_suffixarray_new(&idx, NULL, 0), 0);
     ASSERT_INT_EQ(neverc_suffixarray_count(&idx, (const unsigned char *)"a", 1), 0);
     neverc_suffixarray_free(&idx);
+    neverc_suffixarray_free(NULL);
+    ASSERT_INT_EQ(neverc_suffixarray_at(NULL, 0), -1);
+    ASSERT_INT_EQ(neverc_suffixarray_count(NULL, (const unsigned char *)"a", 1), 0);
 }
 
 static void test_invalid_input(void) {
@@ -73,6 +76,8 @@ static void test_lookup_null_results(void) {
     size_t n = 0;
     ASSERT_INT_EQ(neverc_suffixarray_lookup(&idx, (const unsigned char *)"an", 2,
                                             NULL, 10, &n), -1);
+    ASSERT_INT_EQ(neverc_suffixarray_lookup(&idx, NULL, 2, results_unused, 1, &n),
+                  -1);
     neverc_suffixarray_free(&idx);
 }
 

@@ -243,6 +243,35 @@ static void test_symbols(void) {
     free(data);
 }
 
+static void test_long_section_names(void) {
+    size_t len = 0;
+    uint8_t *data = build_minimal_pe64(&len);
+    CHECK("build long-name PE", data != NULL);
+    if (!data) return;
+
+    memcpy(data + 328, "/4\0\0\0\0\0\0", 8);
+    put32(data + 68 + 8, 600);
+    put32(data + 68 + 12, 0);
+    put32(data + 600, 16);
+    memcpy(data + 604, ".debug_info", 12);
+
+    neverc_pe_file_t f;
+    CHECK("open long-name PE", neverc_pe_open(&f, data, len) == 0);
+    const neverc_pe_section_t *debug = neverc_pe_section(&f, ".debug_info");
+    CHECK("resolved /4 to .debug_info", debug != NULL);
+    CHECK("short name still absent", neverc_pe_section(&f, "/4") == NULL);
+    neverc_pe_close(&f);
+
+    put32(data + 68 + 8, 0);
+    CHECK("reject long name without string table",
+          neverc_pe_open(&f, data, len) == -1);
+    put32(data + 68 + 8, 600);
+    memcpy(data + 328, "/99\0\0\0\0\0", 8);
+    CHECK("reject long name past string table",
+          neverc_pe_open(&f, data, len) == -1);
+    free(data);
+}
+
 static void test_pe_invalid(void) {
     uint8_t garbage[] = {0x00, 0x01, 0x02, 0x03};
     CHECK("invalid_too_short", !neverc_pe_is_valid(garbage, sizeof(garbage)));
@@ -297,6 +326,7 @@ int main(void) {
     test_pe64_parse();
     test_imports();
     test_symbols();
+    test_long_section_names();
     test_pe_invalid();
 
     printf("\n%d/%d tests passed", tests_passed, tests_run);

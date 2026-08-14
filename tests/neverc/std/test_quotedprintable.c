@@ -44,6 +44,21 @@ static void test_decode_soft_break(void) {
     n = neverc_qp_decode("abc=\ndef", 8, out, sizeof(out));
     ASSERT_EQ(n, 6);
     ASSERT_MEMEQ(out, "abcdef", 6);
+
+    n = neverc_qp_decode("hello=\n", 7, out, sizeof(out));
+    ASSERT_EQ(n, 5);
+    ASSERT_MEMEQ(out, "hello", 5);
+
+    n = neverc_qp_decode("hello=", 6, out, sizeof(out));
+    ASSERT_EQ(n, 5);
+    ASSERT_MEMEQ(out, "hello", 5);
+
+    n = neverc_qp_decode("hello=\r", 7, out, sizeof(out));
+    ASSERT_EQ(n, 5);
+    ASSERT_MEMEQ(out, "hello", 5);
+
+    n = neverc_qp_decode("=A", 2, out, sizeof(out));
+    ASSERT_EQ(n, -1);
 }
 
 static void test_encode_basic(void) {
@@ -60,6 +75,14 @@ static void test_encode_basic(void) {
     ASSERT_EQ(n, 9); /* =00=01=FF */
     out[n] = '\0';
     ASSERT_MEMEQ(out, "=00=01=FF", 9);
+
+    char long_src[80];
+    memset(long_src, 'A', sizeof(long_src));
+    n = neverc_qp_encode((const unsigned char *)long_src, sizeof(long_src),
+                         out, sizeof(out), 0);
+    ASSERT_EQ(n, (int)sizeof(long_src));
+    ASSERT_MEMEQ(out, long_src, sizeof(long_src));
+    ASSERT_EQ(memchr(out, '=', (size_t)n) == NULL, 1);
 }
 
 static void test_roundtrip(void) {
