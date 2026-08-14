@@ -1205,7 +1205,8 @@ static void h3_server_send_goaway(h3_conn_t *connection) {
         nc_mutex_unlock(&connection->lock);
         return;
     }
-    uint64_t identifier = connection->last_request_stream_id + 4U;
+    /* RFC 9114 §7.2.6: last processed client bidi stream, or 0 if none. */
+    uint64_t identifier = connection->last_request_stream_id;
     connection->goaway_sent = 1;
     nc_mutex_unlock(&connection->lock);
     uint8_t frame[32];

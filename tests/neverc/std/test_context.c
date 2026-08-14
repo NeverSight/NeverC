@@ -98,6 +98,20 @@ static void test_timeout_bounds_and_deadline_precedence(void) {
     ASSERT_TRUE(neverc_context_cause(past_cause) != NULL);
     ASSERT_TRUE(strcmp(neverc_context_cause(past_cause), "already late") == 0);
 
+    neverc_context_t *past_deadline =
+        neverc_context_with_deadline(bg, 0, NULL);
+    ASSERT_TRUE(past_deadline != NULL);
+    ASSERT_INT_EQ(neverc_context_done(past_deadline), 1);
+    ASSERT_TRUE(neverc_context_err(past_deadline) != NULL);
+    ASSERT_TRUE(strcmp(neverc_context_err(past_deadline),
+                       "context deadline exceeded") == 0);
+    neverc_context_t *neg_deadline =
+        neverc_context_with_deadline(bg, -1, NULL);
+    ASSERT_TRUE(neg_deadline != NULL);
+    ASSERT_INT_EQ(neverc_context_done(neg_deadline), 1);
+    neverc_context_free(neg_deadline);
+    neverc_context_free(past_deadline);
+
     neverc_context_t *parent =
         neverc_context_with_deadline(bg, INT64_MAX - 100, NULL);
     neverc_context_t *child =

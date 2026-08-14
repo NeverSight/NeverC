@@ -190,9 +190,13 @@ int neverc_textproto_read_line(const char *data, size_t len,
         if (consumed) *consumed = 0;
         return -1;
     }
+    if (!nl) {
+        if (consumed) *consumed = 0;
+        return -1;
+    }
     memcpy(line, data, line_len);
     line[line_len] = '\0';
-    if (consumed) *consumed = nl ? i + 1 : i;
+    if (consumed) *consumed = i + 1;
     return 0;
 }
 
@@ -204,6 +208,7 @@ int neverc_textproto_read_mime_header(const char *data, size_t len,
     char name[256];
     char value[4096];
     int have = 0;
+    int saw_blank = 0;
 
     while (pos < len) {
         size_t ate = 0;
@@ -212,10 +217,16 @@ int neverc_textproto_read_mime_header(const char *data, size_t len,
             return -1;
         }
         pos += ate;
-        if (line[0] == '\0') break;
+        if (line[0] == '\0') {
+            saw_blank = 1;
+            break;
+        }
 
         if (line[0] == ' ' || line[0] == '\t') {
-            if (!have) continue;
+            if (!have) {
+                if (consumed) *consumed = pos;
+                return -1;
+            }
             const char *cont = line;
             while (*cont == ' ' || *cont == '\t') cont++;
             size_t used = strlen(value);
@@ -238,7 +249,10 @@ int neverc_textproto_read_mime_header(const char *data, size_t len,
         }
 
         char *colon = strchr(line, ':');
-        if (!colon) continue;
+        if (!colon) {
+            if (consumed) *consumed = pos;
+            return -1;
+        }
         if (colon == line) {
             if (consumed) *consumed = pos;
             return -1;
@@ -259,6 +273,7 @@ int neverc_textproto_read_mime_header(const char *data, size_t len,
         return -1;
     }
     if (consumed) *consumed = pos;
+    if (!saw_blank) return -1;
     return 0;
 }
 
@@ -269,6 +284,7 @@ int neverc_textproto_read_dot_lines(const char *data, size_t len,
     *nlines = 0;
     size_t pos = 0;
     char line[4096];
+    int saw_dot = 0;
 
     while (pos < len && *nlines < max_lines) {
         size_t ate = 0;
@@ -277,17 +293,27 @@ int neverc_textproto_read_dot_lines(const char *data, size_t len,
             return -1;
         }
         pos += ate;
-        if (strcmp(line, ".") == 0) break;
+        if (strcmp(line, ".") == 0) {
+            saw_dot = 1;
+            break;
+        }
         const char *src = line;
         if (src[0] == '.' && src[1] == '.') src++;
         lines[*nlines] = textproto_dup(src);
         if (!lines[*nlines]) {
+            for (size_t i = 0; i < *nlines; i++) free(lines[i]);
+            *nlines = 0;
             if (consumed) *consumed = pos;
             return -1;
         }
         (*nlines)++;
     }
     if (consumed) *consumed = pos;
+    if (!saw_dot) {
+        for (size_t i = 0; i < *nlines; i++) free(lines[i]);
+        *nlines = 0;
+        return -1;
+    }
     return 0;
 }
 

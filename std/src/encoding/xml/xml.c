@@ -206,6 +206,9 @@ static char *xml_decode_text(const char *data, size_t length,
             }
             if (!xml_char_is_valid(codepoint))
                 goto invalid;
+            if (attribute && (codepoint == '\r' || codepoint == '\n' ||
+                              codepoint == '\t'))
+                codepoint = ' ';
             char encoded[4];
             size_t encoded_length = xml_encode_utf8(codepoint, encoded);
             memcpy(decoded + output, encoded, encoded_length);

@@ -245,7 +245,8 @@ neverc_context_t *neverc_context_with_timeout_handle(
 neverc_context_t *neverc_context_with_deadline_handle(
     neverc_context_t *parent, int64_t deadline_ms,
     neverc_context_cancel_handle_t **cancel_out) {
-    return ctx_with_cancel_handle(CTX_TIMEOUT, parent, deadline_ms,
+    return ctx_with_cancel_handle(CTX_TIMEOUT, parent,
+                                  deadline_ms <= 0 ? 1 : deadline_ms,
                                   cancel_out);
 }
 
@@ -289,7 +290,9 @@ neverc_context_t *neverc_context_with_deadline(neverc_context_t *parent,
         if (cancel_out) *cancel_out = NULL;
         return NULL;
     }
-    ctx->deadline_ms = deadline_ms;
+    /* A non-positive absolute deadline is already in the past. Store 1 so
+     * done/err/cause treat it as expired (same as with_timeout(INT64_MIN)). */
+    ctx->deadline_ms = deadline_ms <= 0 ? 1 : deadline_ms;
     if (bind_cancel_func(ctx, cancel_out) != 0) {
         neverc_context_free(ctx);
         return NULL;

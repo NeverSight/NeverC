@@ -213,7 +213,10 @@ static void test_headers_frame_write(void) {
 static void test_goaway_frame_write(void) {
     uint8_t buf[64];
     size_t written;
-    int rc = neverc_h3_write_goaway_frame(buf, sizeof(buf), 4, &written);
+    /* RFC 9114 §7.2.6: identifier 0 means no request streams processed. */
+    int rc = neverc_h3_write_goaway_frame(buf, sizeof(buf), 0, &written);
+    ASSERT_EQ(rc, 0);
+    rc = neverc_h3_write_goaway_frame(buf, sizeof(buf), 4, &written);
     ASSERT_EQ(rc, 0);
 
     h3_frame_header_t hdr;

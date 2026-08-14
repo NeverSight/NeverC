@@ -516,7 +516,7 @@ static char **gen_split(const char *s, const char *sep,
     if (seplen == 0) {
         size_t cnt = slen;
         if (n > 0 && cnt > (size_t)n) cnt = (size_t)n;
-        if (cnt == 0) return NULL;
+        if (cnt == 0) cnt = 1;
         char **arr = alloc_string_array(cnt);
         if (!arr) return NULL;
         size_t made = 0;

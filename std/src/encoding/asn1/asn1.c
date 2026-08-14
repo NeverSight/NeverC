@@ -1,5 +1,6 @@
 #include "neverc/std/encoding/asn1.h"
 #include <limits.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -54,8 +55,10 @@ int neverc_asn1_decode_element(const uint8_t *data, size_t len,
             return -1;
         if (data[pos] == 0) return -1;
         value_len = 0;
-        for (int i = 0; i < nbytes; i++)
+        for (int i = 0; i < nbytes; i++) {
+            if (value_len > (SIZE_MAX >> 8)) return -1;
             value_len = (value_len << 8) | data[pos++];
+        }
         if (value_len < 0x80) return -1;
     }
 

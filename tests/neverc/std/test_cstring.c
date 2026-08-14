@@ -496,6 +496,11 @@ static void test_split(void) {
         check_str("split ms[2]", arr[2], "c");
     }
     neverc_cstring_free_split(arr, count);
+
+    arr = neverc_cstring_split("", "", &count);
+    check_size("split empty+empty count", count, 1);
+    if (count == 1) check_str("split empty+empty[0]", arr[0], "");
+    neverc_cstring_free_split(arr, count);
 }
 
 static void test_split_n(void) {
@@ -509,6 +514,11 @@ static void test_split_n(void) {
         check_str("split_n[0]", arr[0], "a");
         check_str("split_n[1]", arr[1], "b,c,d");
     }
+    neverc_cstring_free_split(arr, count);
+
+    arr = neverc_cstring_split_n("", "", 1, &count);
+    check_size("split_n empty+empty count", count, 1);
+    if (count == 1) check_str("split_n empty+empty[0]", arr[0], "");
     neverc_cstring_free_split(arr, count);
 
     arr = neverc_cstring_split_n("a,b,c", ",", 10, &count);

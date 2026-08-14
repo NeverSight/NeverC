@@ -251,6 +251,12 @@ static void test_reject_unsafe_paths(void) {
     check_int("writer rejects dot slash",
               neverc_zip_writer_add(
                   &w, "./", payload, sizeof(payload) - 1), -1);
+    check_int("writer rejects colon ads",
+              neverc_zip_writer_add(
+                  &w, "file:stream", payload, sizeof(payload) - 1), -1);
+    check_int("writer rejects drive prefix",
+              neverc_zip_writer_add(
+                  &w, "C:foo", payload, sizeof(payload) - 1), -1);
     neverc_zip_writer_free(&w);
 }
 

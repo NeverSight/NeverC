@@ -244,7 +244,16 @@ static frag_t parse_atom(parser_t *par) {
             }
             if (*par->p == '-' && par->p[1] && par->p[1] != ']') {
                 par->p++;
-                int hi = (uint8_t)*par->p++;
+                int hi;
+                if (*par->p == '\\' && par->p[1]) {
+                    par->p++;
+                    char esc = *par->p++;
+                    int decoded;
+                    if (decode_char_esc(esc, &decoded)) hi = decoded;
+                    else hi = (uint8_t)esc;
+                } else {
+                    hi = (uint8_t)*par->p++;
+                }
                 if (hi < lo) {
                     par->err = "invalid character class range";
                     return frag(NULL, NULL);

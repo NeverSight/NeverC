@@ -152,6 +152,21 @@ static void test_entities_cdata_and_well_formedness(void) {
                token.nattrs == 1 && token.attrs != NULL, 1);
     if (token.nattrs == 1 && token.attrs)
         check_str("decoded attribute", token.attrs[0].value, "a & A");
+
+    {
+        const char *ws_attr = "<r a=\"x&#10;y&#9;z\"/>";
+        neverc_xml_decoder_t d;
+        neverc_xml_token_t t;
+        neverc_xml_decoder_init(&d, ws_attr, strlen(ws_attr));
+        check_int("ws entity start token",
+                  neverc_xml_decode_token(&d, &t), 1);
+        check_bool("ws entity attr present",
+                   t.nattrs == 1 && t.attrs != NULL, 1);
+        if (t.nattrs == 1 && t.attrs)
+            check_str("attr entity whitespace normalized",
+                      t.attrs[0].value, "x y z");
+        neverc_xml_token_free(&t);
+    }
     neverc_xml_token_free(&token);
     check_int("entity text token",
               neverc_xml_decode_token(&decoder, &token), 1);

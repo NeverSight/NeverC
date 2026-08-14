@@ -111,6 +111,24 @@ static void test_read_mime_header(void) {
         neverc_mime_header_free(&h);
         free(huge);
     }
+
+    neverc_mime_header_init(&h);
+    rc = neverc_textproto_read_mime_header(
+        "Foo: bar\r\n", strlen("Foo: bar\r\n"), &h, &consumed);
+    check("header without blank line rejected", rc == -1);
+    neverc_mime_header_free(&h);
+
+    neverc_mime_header_init(&h);
+    rc = neverc_textproto_read_mime_header(
+        " folded\r\n\r\n", strlen(" folded\r\n\r\n"), &h, &consumed);
+    check("orphan fold rejected", rc == -1);
+    neverc_mime_header_free(&h);
+
+    neverc_mime_header_init(&h);
+    rc = neverc_textproto_read_mime_header(
+        "NotAHeader\r\n\r\n", strlen("NotAHeader\r\n\r\n"), &h, &consumed);
+    check("line without colon rejected", rc == -1);
+    neverc_mime_header_free(&h);
 }
 
 static void test_read_line(void) {
@@ -138,6 +156,10 @@ static void test_read_line(void) {
     rc = neverc_textproto_read_line(
         "hello world\r\n", 13, tiny, sizeof(tiny), &consumed);
     check("oversize line rejected", rc == -1);
+
+    rc = neverc_textproto_read_line("no newline", 10, line, sizeof(line),
+                                     &consumed);
+    check("incomplete line rejected", rc == -1);
 }
 
 static void test_read_code_line(void) {
@@ -171,6 +193,12 @@ static void test_dot_lines(void) {
     if (nlines >= 2) check_str("dot_line2", lines[1], "line2");
     if (nlines >= 3) check_str("dot_escaped", lines[2], ".escaped");
     for (size_t i = 0; i < nlines; i++) free(lines[i]);
+
+    rc = neverc_textproto_read_dot_lines(
+        "line1\r\nline2\r\n", strlen("line1\r\nline2\r\n"),
+        lines, 10, &nlines, &consumed);
+    check("dot block without terminator rejected", rc == -1);
+    check("failed dot parse clears lines", nlines == 0);
 }
 
 static void test_trim(void) {

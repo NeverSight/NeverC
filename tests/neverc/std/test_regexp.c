@@ -70,6 +70,10 @@ static void test_character_classes(void) {
     check_bool("[\\s] vtab", neverc_regexp_match_string("[\\s]", "\v"), 1);
     check_bool("\\n newline", neverc_regexp_match_string("\\n", "\n"), 1);
     check_bool("[\\n] newline", neverc_regexp_match_string("[\\n]", "\n"), 1);
+    check_bool("[\\t-\\n] tab", neverc_regexp_match_string("[\\t-\\n]", "\t"), 1);
+    check_bool("[\\t-\\n] newline", neverc_regexp_match_string("[\\t-\\n]", "\n"), 1);
+    check_bool("[\\t-\\n] not backslash",
+               neverc_regexp_match_string("[\\t-\\n]", "\\"), 0);
     check_bool("\\n not letter n", neverc_regexp_match_string("\\n", "n"), 0);
     check_bool("[]] literal bracket", neverc_regexp_match_string("[]]", "]"), 1);
     check_bool("[]a] a", neverc_regexp_match_string("[]a]", "a"), 1);
