@@ -8,6 +8,11 @@
 extern "C" {
 #endif
 
+/*
+ * Constant-time byte sequence comparison.
+ * Returns 1 if x and y are equal, 0 otherwise.
+ * This is NOT memcmp semantics (memcmp returns 0 when equal).
+ */
 int neverc_subtle_constant_time_compare(const uint8_t *x, const uint8_t *y, size_t len);
 /* v must be either 0 or 1. */
 int neverc_subtle_constant_time_select(int v, int x, int y);
