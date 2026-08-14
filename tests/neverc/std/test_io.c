@@ -266,10 +266,10 @@ static void test_no_progress_guards(void) {
 
     delayed_reader_t delayed_copy = {0};
     neverc_io_reader_t delayed_src = { &delayed_copy, delayed_read };
-    neverc_io_writer_t discard;
-    neverc_io_discard_init(&discard);
+    neverc_io_writer_t discard_copy;
+    neverc_io_discard_init(&discard_copy);
     check_size("copy retries transient empty read",
-               (size_t)neverc_io_copy(&discard, &delayed_src), 1);
+               (size_t)neverc_io_copy(&discard_copy, &delayed_src), 1);
 
     delayed_copy.calls = 0;
     size_t outlen = 0;

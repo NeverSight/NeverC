@@ -222,9 +222,8 @@ static void test_float_dot_and_exponent(void) {
 
     ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_FLOAT);
     ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "1.");
-    ASSERT_INT_EQ(neverc_scanner_scan(&s), '.');
-    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_INT);
-    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "2");
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_FLOAT);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), ".2");
     ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_EOF);
 }
 

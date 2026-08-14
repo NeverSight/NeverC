@@ -44,6 +44,7 @@ protected:
 #ifndef _WIN32
     args.push_back("-lm");
     args.push_back("-lpthread");
+    args.push_back("-lresolv");
 #else
     args.push_back("-Wno-deprecated-declarations");
 #endif
@@ -538,7 +539,8 @@ STD_TEST(bzip2, "src/compress/bzip2/bzip2.c")
 // ===== Archive =====
 STD_TEST(tar, "src/archive/tar/tar.c", "src/io/fs/fs.c")
 TEST_F(StdLibTest, TarAllocationFailure) {
-  auto r = compileAndRunStdTest("tar_oom", {}, {"-fno-builtin-std"});
+  auto r = compileAndRunStdTest(
+      "tar_oom", {"src/io/fs/fs.c"}, {"-fno-builtin-std"});
   ASSERT_TRUE(r.ok()) << "stdout: " << r.out << "\nstderr: " << r.err;
   EXPECT_TRUE(r.contains("passed")) << "stdout: " << r.out;
 }

@@ -675,7 +675,8 @@ static void test_string_large_roundtrip(void) {
     }
     big[p] = '\0'; gib[g] = '\0';
     neverc_bigint_set_string(&a, big, 10);
-    neverc_bigint_set_string(&b, gib, 10);
+    /* Underscores are accepted only with base 0, matching Go big.Int.SetString. */
+    neverc_bigint_set_string(&b, gib, 0);
     ASSERT_TRUE(neverc_bigint_cmp(&a, &b) == 0);
     free(big); free(gib);
     neverc_bigint_free(&b);
