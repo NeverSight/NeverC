@@ -109,6 +109,8 @@ static void sha3_init(neverc_sha3_ctx *ctx, size_t capacity_bits, uint8_t suffix
 }
 
 static void sha3_update(neverc_sha3_ctx *ctx, const uint8_t *data, size_t len) {
+    if (!ctx || ctx->squeezed || ctx->finalized)
+        return;
     size_t i = 0;
     while (i < len) {
         size_t room = ctx->rate - ctx->buf_len;
@@ -127,6 +129,8 @@ static void sha3_update(neverc_sha3_ctx *ctx, const uint8_t *data, size_t len) {
 }
 
 static void sha3_pad_and_squeeze(neverc_sha3_ctx *ctx, uint8_t *out, size_t outlen) {
+    if (!ctx || ctx->squeezed || ctx->finalized)
+        return;
     /* Apply domain separation suffix and multi-rate padding */
     ctx->buf[ctx->buf_len] = ctx->suffix;
     memset(ctx->buf + ctx->buf_len + 1, 0, ctx->rate - ctx->buf_len - 1);
@@ -148,10 +152,13 @@ static void sha3_pad_and_squeeze(neverc_sha3_ctx *ctx, uint8_t *out, size_t outl
         if (offset < outlen)
             keccak_f1600(ctx->state);
     }
+    ctx->finalized = 1;
 }
 
 static void shake_squeeze(neverc_sha3_ctx *ctx, uint8_t *out, size_t outlen) {
     if (!ctx || (!out && outlen != 0)) return;
+    if (ctx->finalized)
+        return;
     if (!ctx->squeezed) {
         ctx->buf[ctx->buf_len] = ctx->suffix;
         memset(

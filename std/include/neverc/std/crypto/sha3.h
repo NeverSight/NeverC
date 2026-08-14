@@ -20,6 +20,7 @@ typedef struct {
     size_t   buf_len;
     uint8_t  suffix;
     int      squeezed;
+    int      finalized;
     size_t   squeeze_pos;
 } neverc_sha3_ctx;
 

@@ -309,6 +309,19 @@ static void test_x509_subject_alt_name(void) {
     }
 }
 
+static void test_wildcard_rejects_single_label_suffix(void) {
+    neverc_x509_cert_t cert;
+    memset(&cert, 0, sizeof(cert));
+    char pattern[] = "*.com";
+    cert.dns_names = &pattern;
+    cert.dns_name_count = 1;
+
+    CHECK("wildcard_com_rejects_evil",
+          neverc_x509_verify_hostname(&cert, "evil.com") != 0);
+    CHECK("wildcard_com_rejects_bank",
+          neverc_x509_verify_hostname(&cert, "bank.com") != 0);
+}
+
 static void test_x509_strings(void) {
     CHECK("sig_sha256_rsa", strcmp(neverc_x509_sig_algorithm_string(NEVERC_X509_SIG_SHA256_RSA),
                                    "SHA256-RSA") == 0);
@@ -548,6 +561,7 @@ int main(void) {
     test_x509_parse();
     test_x509_signature_verification();
     test_x509_subject_alt_name();
+    test_wildcard_rejects_single_label_suffix();
     test_x509_strings();
     test_x509_time_compare();
     test_x509_format_name();

@@ -1579,6 +1579,13 @@ invalid:
     return -2;
 }
 
+static int http_method_implies_body(const char *method) {
+    return method &&
+           (strcmp(method, "POST") == 0 ||
+            strcmp(method, "PUT") == 0 ||
+            strcmp(method, "PATCH") == 0);
+}
+
 /* Returns 0 on success, -1 if incomplete, -2 on invalid or ambiguous input. */
 static int parse_request_mode(const char *raw, size_t raw_length,
                               parsed_request_t *request, size_t *consumed,
@@ -1707,6 +1714,10 @@ static int parse_request_mode(const char *raw, size_t raw_length,
 
     if ((content_length_seen && transfer_encoding_seen) ||
         (is_http_10 && transfer_encoding_seen))
+        goto invalid;
+
+    if (is_http_11 && !content_length_seen && !transfer_encoding_seen &&
+        http_method_implies_body(request->method))
         goto invalid;
 
     size_t header_size = (size_t)(header_end + 4 - raw);

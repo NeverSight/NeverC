@@ -339,6 +339,31 @@ static void test_block_boundaries(void) {
     }
 }
 
+static void test_sha3_lifecycle(void) {
+    printf("[SHA3 lifecycle]\n");
+    neverc_sha3_ctx ctx;
+    uint8_t d1[32], d2[32], shake[32];
+
+    neverc_sha3_256_init(&ctx);
+    neverc_sha3_256_update(&ctx, (const uint8_t *)"abc", 3);
+    neverc_sha3_256_final(&ctx, d1);
+    neverc_sha3_256_update(&ctx, (const uint8_t *)"x", 1);
+    neverc_sha3_256_final(&ctx, d2);
+    check_true("SHA3-256 update after final ignored",
+               memcmp(d1, d2, 32) == 0);
+
+    neverc_shake128_init(&ctx);
+    neverc_shake128_update(&ctx, (const uint8_t *)"abc", 3);
+    neverc_shake128_squeeze(&ctx, shake, 32);
+    neverc_shake128_update(&ctx, (const uint8_t *)"oops", 4);
+    {
+        uint8_t after[32];
+        neverc_shake128_squeeze(&ctx, after, 32);
+        check_true("SHAKE128 update after squeeze ignored",
+                   memcmp(shake, after, 32) == 0);
+    }
+}
+
 int main(void) {
     printf("=== NeverC SHA-3 (Keccak) Tests ===\n\n");
     test_sha3_256();
@@ -350,6 +375,7 @@ int main(void) {
     test_sha3_256_1m();
     test_sha3_vs_sha2();
     test_block_boundaries();
+    test_sha3_lifecycle();
     printf("\n=== Results: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);
     printf(" ===\n");

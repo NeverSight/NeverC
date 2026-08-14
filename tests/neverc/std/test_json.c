@@ -676,6 +676,15 @@ static void test_tree_ownership(void) {
     neverc_json_free(object);
 }
 
+static void test_utf8_bom(void) {
+    printf("[utf8_bom]\n");
+    static const char bom_json[] = "\xEF\xBB\xBF{}";
+    neverc_json_value_t *v = neverc_json_parse(bom_json, sizeof(bom_json) - 1);
+    ASSERT_NOT_NULL(v);
+    ASSERT_INT_EQ(v->type, NEVERC_JSON_OBJECT);
+    neverc_json_free(v);
+}
+
 int main(void) {
     printf("=== NeverC encoding/json Tests ===\n");
     test_parse_null();
@@ -698,6 +707,7 @@ int main(void) {
     test_keymap_hash_lengths();
     test_invalid_api_inputs();
     test_tree_ownership();
+    test_utf8_bom();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }

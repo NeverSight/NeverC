@@ -343,6 +343,22 @@ static void test_assign_append(void) {
     neverc_vector_free(v);
 }
 
+static void test_append_invalid_source(void) {
+    printf("test_append_invalid_source:\n");
+    neverc_vector_t dst;
+    neverc_vector_init(&dst, sizeof(int));
+    int data[3] = {1, 2, 3};
+    neverc_vector_t bad = {
+        .data = data,
+        .size = 100,
+        .capacity = 3,
+        .elem_size = sizeof(int),
+    };
+    ASSERT(!neverc_vector_append(&dst, &bad),
+           "append rejects size > capacity");
+    neverc_vector_destroy(&dst);
+}
+
 static void test_self_aliased_modifiers(void) {
     printf("test_self_aliased_modifiers:\n");
     int initial[] = {0, 1, 2, 3, 4, 5, 6, 7};
@@ -2101,6 +2117,7 @@ int main(void) {
     test_resize_clear();
     test_swap();
     test_assign_append();
+    test_append_invalid_source();
     test_self_aliased_modifiers();
     test_sort();
     test_reverse();

@@ -1235,7 +1235,26 @@ static void test_post_no_content_length(void) {
         "POST /post HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
         buf, sizeof(buf));
     check_int("post no cl resp", n > 0, 1);
-    check_int("post no cl body", strstr(buf, "no body") != NULL, 1);
+    check_int("post no cl rejected", strstr(buf, "400 Bad Request") != NULL, 1);
+
+    stop_test_server(server_pid);
+}
+
+static void test_post_no_content_length_keepalive(void) {
+    printf("[post_no_content_length_keepalive]\n");
+
+    int port = get_free_port();
+    if (port < 0) { printf("  SKIP: cannot find free port\n"); return; }
+
+    pid_t server_pid = start_test_server(port);
+    char buf[4096];
+
+    int n = do_http_request(port,
+        "POST /post HTTP/1.1\r\nHost: localhost\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("post keepalive no cl resp", n > 0, 1);
+    check_int("post keepalive no cl rejected",
+              strstr(buf, "400 Bad Request") != NULL, 1);
 
     stop_test_server(server_pid);
 }
@@ -2973,6 +2992,7 @@ int main(void) {
     test_http_client_methods();
     test_malformed_request();
     test_post_no_content_length();
+    test_post_no_content_length_keepalive();
     test_duplicate_headers();
     test_heavy_stress();
     test_pipelining();

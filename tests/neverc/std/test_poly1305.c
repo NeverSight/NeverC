@@ -82,6 +82,17 @@ static void test_empty(void) {
     uint8_t tag[16];
     neverc_poly1305_auth(tag, (const uint8_t *)"", 0, key);
     check_true("empty msg verify", neverc_poly1305_verify(tag, (const uint8_t *)"", 0, key));
+
+    uint8_t zero_key[32];
+    memset(zero_key, 0, sizeof(zero_key));
+    uint8_t zero_tag[16];
+    neverc_poly1305_auth(zero_tag, (const uint8_t *)"", 0, zero_key);
+    uint8_t expected_zero[16];
+    memset(expected_zero, 0, sizeof(expected_zero));
+    check_true("empty msg all-zero key tag",
+               memcmp(zero_tag, expected_zero, 16) == 0);
+    check_true("empty msg not pad-only",
+               memcmp(tag, key + 16, 16) != 0);
 }
 
 static void test_various_lengths(void) {

@@ -7,6 +7,7 @@
 #include "neverc/std/crypto/mldsa.h"
 #include "neverc/std/crypto/sha3.h"
 #include "neverc/std/crypto/rand.h"
+#include "neverc/std/crypto/subtle.h"
 #include "neverc/std/_platform.h"
 #include <string.h>
 #include <stdlib.h>
@@ -785,7 +786,8 @@ static int mldsa44_verify_internal(const uint8_t *pk, size_t pk_len,
     }
     neverc_shake256_squeeze(&hctx, c_tilde2, 32);
 
-    if (memcmp(c_tilde, c_tilde2, LAMBDA / 4) != 0) return -1;
+    if (neverc_subtle_constant_time_compare(c_tilde, c_tilde2, LAMBDA / 4) != 0)
+        return -1;
     return 0;
 }
 

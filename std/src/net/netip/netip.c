@@ -398,6 +398,7 @@ int neverc_netip_addr_is_global_unicast(const neverc_netip_addr_t *addr) {
     return !neverc_netip_addr_is_loopback(addr) &&
            !neverc_netip_addr_is_multicast(addr) &&
            !neverc_netip_addr_is_link_local_unicast(addr) &&
+           !neverc_netip_addr_is_private(addr) &&
            !neverc_netip_addr_is_unspecified(addr);
 }
 
@@ -412,7 +413,9 @@ int neverc_netip_addr_is_unspecified(const neverc_netip_addr_t *addr) {
 }
 
 int neverc_netip_addr_compare(const neverc_netip_addr_t *a, const neverc_netip_addr_t *b) {
-    if (!a || !b) return 0;
+    if (!a && !b) return 0;
+    if (!a) return -1;
+    if (!b) return 1;
     if (a->is_v4 != b->is_v4) return a->is_v4 ? -1 : 1;
     int start = a->is_v4 ? 12 : 0;
     return memcmp(a->addr + start, b->addr + start, a->is_v4 ? 4 : 16);

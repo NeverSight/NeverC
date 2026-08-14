@@ -639,6 +639,13 @@ static neverc_json_value_t *parse_value(parser_t *p) {
 
 neverc_json_value_t *neverc_json_parse(const char *text, size_t len) {
     if (!text && len > 0) return NULL;
+    if (text && len >= 3 &&
+        (unsigned char)text[0] == 0xEF &&
+        (unsigned char)text[1] == 0xBB &&
+        (unsigned char)text[2] == 0xBF) {
+        text += 3;
+        len -= 3;
+    }
     parser_t p = { .src = text, .len = len, .pos = 0, .depth = 0 };
     neverc_json_value_t *v = parse_value(&p);
     if (!v) return NULL;

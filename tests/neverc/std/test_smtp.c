@@ -243,6 +243,34 @@ static void test_send_mail(void) {
     check_true("send_mail success", rc == 0);
 }
 
+static void test_dot_stuffing(void) {
+    printf("[dot_stuffing]\n");
+
+    char addr[32];
+    snprintf(addr, sizeof(addr), "127.0.0.1:%d", g_smtp_port);
+
+    const char *err = NULL;
+    neverc_smtp_client_t *c = neverc_smtp_dial(addr, &err);
+    check_true("dial for dot stuffing", c != NULL);
+    if (!c) return;
+
+    check_true("EHLO", neverc_smtp_hello(c, "test.client") == 0);
+    check_true("MAIL FROM", neverc_smtp_mail(c, "sender@example.com") == 0);
+    check_true("RCPT TO", neverc_smtp_rcpt(c, "recipient@example.com") == 0);
+    check_true("DATA", neverc_smtp_data(c) == 0);
+
+    const char *msg =
+        "Subject: dot test\r\n"
+        "\r\n"
+        ".\r\n"
+        "..second line\r\n";
+    check_true("write dotted body", neverc_smtp_write_data(c, msg, strlen(msg)) == 0);
+    check_true("DATA close after dot stuffing",
+               neverc_smtp_data_close(c) == 0);
+
+    neverc_smtp_close(c);
+}
+
 int main(void) {
     printf("=== NeverC SMTP tests ===\n");
 
@@ -277,6 +305,7 @@ int main(void) {
     test_smtp_session();
     test_smtp_auth_login();
     test_send_mail();
+    test_dot_stuffing();
 
     g_smtp_running = 0;
 

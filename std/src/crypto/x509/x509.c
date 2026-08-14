@@ -1107,6 +1107,11 @@ static int dns_pattern_matches(const char *pattern, const char *hostname) {
     if (!valid_dns_labels(validated_pattern, validated_len) ||
         !valid_dns_labels(hostname, hostname_len))
         return 0;
+    if (wildcard) {
+        if (validated_len == 0 ||
+            !memchr(validated_pattern, '.', validated_len))
+            return 0;
+    }
     if (!wildcard)
         return pattern_len == hostname_len &&
                ascii_equal(pattern, hostname, pattern_len);

@@ -27,6 +27,7 @@ struct neverc_smtp_client {
     int  supports_auth_login;
     int  supports_8bitmime;
     int  supports_starttls;
+    int  data_at_line_start;
 };
 
 /* Read a complete SMTP response (multi-line aware, RFC 5321 §4.2).
@@ -290,13 +291,34 @@ int neverc_smtp_rcpt(neverc_smtp_client_t *c, const char *to) {
 int neverc_smtp_data(neverc_smtp_client_t *c) {
     if (!c) return -1;
     int code = smtp_cmd(c, "DATA");
+    if (code == 354)
+        c->data_at_line_start = 1;
     return (code == 354) ? 0 : -1;
+}
+
+static int smtp_write_data_stuffed(neverc_smtp_client_t *c,
+                                   const void *data, size_t len) {
+    const uint8_t *bytes = (const uint8_t *)data;
+    for (size_t i = 0; i < len; i++) {
+        uint8_t ch = bytes[i];
+        if (c->data_at_line_start && ch == '.') {
+            if (neverc_tcp_write(c->conn, ".", 1) <= 0)
+                return -1;
+        }
+        if (neverc_tcp_write(c->conn, &ch, 1) <= 0)
+            return -1;
+        if (ch == '\n')
+            c->data_at_line_start = 1;
+        else if (ch != '\r')
+            c->data_at_line_start = 0;
+    }
+    return 0;
 }
 
 int neverc_smtp_write_data(neverc_smtp_client_t *c,
                              const void *data, size_t len) {
     if (!c || !data || len == 0) return 0;
-    return (neverc_tcp_write(c->conn, data, len) > 0) ? 0 : -1;
+    return smtp_write_data_stuffed(c, data, len);
 }
 
 int neverc_smtp_data_close(neverc_smtp_client_t *c) {

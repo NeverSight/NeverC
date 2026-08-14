@@ -94,7 +94,7 @@ static void test_properties(void) {
 
     neverc_netip_parse_addr("10.0.0.1", &addr);
     ASSERT_TRUE(neverc_netip_addr_is_private(&addr));
-    ASSERT_TRUE(!neverc_netip_addr_is_loopback(&addr));
+    ASSERT_TRUE(!neverc_netip_addr_is_global_unicast(&addr));
 
     neverc_netip_parse_addr("172.16.0.1", &addr);
     ASSERT_TRUE(neverc_netip_addr_is_private(&addr));
@@ -127,6 +127,7 @@ static void test_properties(void) {
 
     neverc_netip_parse_addr("fc00::1", &addr);
     ASSERT_TRUE(neverc_netip_addr_is_private(&addr));
+    ASSERT_TRUE(!neverc_netip_addr_is_global_unicast(&addr));
 
     neverc_netip_parse_addr("::", &addr);
     ASSERT_TRUE(neverc_netip_addr_is_unspecified(&addr));
@@ -141,6 +142,10 @@ static void test_compare(void) {
     ASSERT_TRUE(neverc_netip_addr_compare(&b, &a) > 0);
     ASSERT_TRUE(neverc_netip_addr_equal(&a, &a));
     ASSERT_TRUE(!neverc_netip_addr_equal(&a, &b));
+    ASSERT_EQ(neverc_netip_addr_compare(NULL, NULL), 0);
+    ASSERT_TRUE(neverc_netip_addr_compare(&a, NULL) > 0);
+    ASSERT_TRUE(neverc_netip_addr_compare(NULL, &a) < 0);
+    ASSERT_TRUE(!neverc_netip_addr_equal(&a, NULL));
 }
 
 static void test_prefix(void) {

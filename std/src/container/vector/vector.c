@@ -471,6 +471,9 @@ bool neverc_vector_append(neverc_vector_t *v, const neverc_vector_t *other) {
         return v != NULL;
     if (v->elem_size != other->elem_size)
         return false;
+    if (other->size > other->capacity ||
+        (other->size > 0 && !other->data))
+        return false;
     if (v == other) {
         size_t old_size = v->size;
         if (old_size > SIZE_MAX - old_size ||
