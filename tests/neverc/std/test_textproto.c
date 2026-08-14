@@ -86,6 +86,31 @@ static void test_read_mime_header(void) {
     check("folded_ok", rc == 0);
     check_str("folded_value", neverc_mime_header_get(&h, "X-Long"), "part1 part2");
     neverc_mime_header_free(&h);
+
+    const char *empty_name = ": nosuch\r\n\r\n";
+    neverc_mime_header_init(&h);
+    consumed = 0;
+    rc = neverc_textproto_read_mime_header(
+        empty_name, strlen(empty_name), &h, &consumed);
+    check("empty header name rejected", rc == -1);
+    neverc_mime_header_free(&h);
+
+    char *huge = (char *)malloc(5000);
+    if (huge) {
+        memset(huge, 'A', 4200);
+        memcpy(huge, "X-Long: ", 8);
+        huge[4200] = '\r';
+        huge[4201] = '\n';
+        huge[4202] = '\r';
+        huge[4203] = '\n';
+        huge[4204] = '\0';
+        neverc_mime_header_init(&h);
+        consumed = 0;
+        rc = neverc_textproto_read_mime_header(huge, 4204, &h, &consumed);
+        check("oversize header line rejected", rc == -1);
+        neverc_mime_header_free(&h);
+        free(huge);
+    }
 }
 
 static void test_read_line(void) {
@@ -108,6 +133,11 @@ static void test_read_line(void) {
     rc = neverc_textproto_read_line(
         data, strlen(data), NULL, sizeof(line), &consumed);
     check("NULL line buffer rejected", rc == -1);
+
+    char tiny[4];
+    rc = neverc_textproto_read_line(
+        "hello world\r\n", 13, tiny, sizeof(tiny), &consumed);
+    check("oversize line rejected", rc == -1);
 }
 
 static void test_read_code_line(void) {

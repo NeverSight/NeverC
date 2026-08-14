@@ -133,6 +133,7 @@ static int add_escape_class(parser_t *p, neverc_regexp_syntax_node_t *n,
     case 's':
         return add_rune(p, n, '\t') && add_rune(p, n, '\t') &&
                add_rune(p, n, '\n') && add_rune(p, n, '\n') &&
+               add_rune(p, n, '\v') && add_rune(p, n, '\v') &&
                add_rune(p, n, '\f') && add_rune(p, n, '\f') &&
                add_rune(p, n, '\r') && add_rune(p, n, '\r') &&
                add_rune(p, n, ' ') && add_rune(p, n, ' ');
@@ -254,6 +255,11 @@ static neverc_regexp_syntax_node_t *parse_char_class(parser_t *p) {
                 else if (hi == 'r') hi = '\r';
             } else {
                 hi = next(p);
+            }
+            if (hi < 0 || hi < c) {
+                p->err = "invalid character class range";
+                neverc_regexp_syntax_free(n);
+                return NULL;
             }
             if (!add_rune(p, n, c) || !add_rune(p, n, hi)) {
                 neverc_regexp_syntax_free(n);

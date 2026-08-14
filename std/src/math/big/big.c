@@ -165,14 +165,17 @@ int neverc_bigint_set_string(neverc_bigint_t *z, const char *s, int base) {
     if (*p == '-') { neg = 1; p++; }
     else if (*p == '+') { p++; }
 
+    int allow_underscores = (base == 0);
+    int zero_is_digit = 0;
+    int after_prefix = 0;
     if (base == 0) {
         base = 10;
         if (*p == '0') {
             p++;
-            if (*p == 'x' || *p == 'X') { base = 16; p++; }
-            else if (*p == 'b' || *p == 'B') { base = 2; p++; }
-            else if (*p == 'o' || *p == 'O') { base = 8; p++; }
-            else { base = 8; }
+            if (*p == 'x' || *p == 'X') { base = 16; p++; after_prefix = 1; }
+            else if (*p == 'b' || *p == 'B') { base = 2; p++; after_prefix = 1; }
+            else if (*p == 'o' || *p == 'O') { base = 8; p++; after_prefix = 1; }
+            else { base = 8; zero_is_digit = 1; after_prefix = 1; }
         }
     }
     if (base < 2 || base > 36) return -1;
@@ -187,22 +190,39 @@ int neverc_bigint_set_string(neverc_bigint_t *z, const char *s, int base) {
     }
 
     /* Validate every character once and count the significant digits so the
-     * right strategy (and exact limb count) is known up front. */
+     * right strategy (and exact limb count) is known up front. Underscores
+     * are accepted only with base 0, and only between digits (or after a
+     * 0x/0b/0o prefix) — matching strconv and Go big.Int.SetString. */
     size_t ndigits = 0;
+    int prev_us = 0;
+    int saw_digit = zero_is_digit;
     for (const char *q = p; *q; q++) {
+        if (*q == '_') {
+            if (!allow_underscores || prev_us || !(saw_digit || after_prefix))
+                return -1;
+            prev_us = 1;
+            after_prefix = 0;
+            continue;
+        }
         int d;
         if (*q >= '0' && *q <= '9') d = *q - '0';
         else if (*q >= 'a' && *q <= 'z') d = *q - 'a' + 10;
         else if (*q >= 'A' && *q <= 'Z') d = *q - 'A' + 10;
-        else if (*q == '_') continue;
         else return -1;
         if (d >= base) return -1;
         ndigits++;
+        saw_digit = 1;
+        prev_us = 0;
+        after_prefix = 0;
     }
+    if (prev_us) return -1;
 
     if (!ensure_cap(z, 1)) return -1;
     z->len = 0;
-    if (ndigits == 0) { z->neg = 0; return 0; }   /* e.g. "0x" with no digits */
+    if (ndigits == 0) {
+        if (zero_is_digit) { z->neg = 0; return 0; }
+        return -1;
+    }
 
     if (k <= 0) return -1;
     size_t m = (ndigits - 1U) / (size_t)k + 1U; /* word-chunks */
@@ -1223,8 +1243,13 @@ void neverc_bigint_div(neverc_bigint_t *q, neverc_bigint_t *r,
 
 void neverc_bigint_mod(neverc_bigint_t *z, const neverc_bigint_t *x, const neverc_bigint_t *m) {
     neverc_bigint_div(NULL, z, x, m);
+    /* Euclidean remainder is in [0, |m|). Adding m when m is negative
+     * makes a negative remainder more negative; add |m| instead. */
     if (z->neg && z->len > 0) {
-        neverc_bigint_add(z, z, m);
+        if (m->neg)
+            neverc_bigint_sub(z, z, m);
+        else
+            neverc_bigint_add(z, z, m);
     }
 }
 
@@ -1567,6 +1592,13 @@ static int exp_montgomery(neverc_bigint_t *z, const neverc_bigint_t *base,
 
 void neverc_bigint_exp(neverc_bigint_t *z, const neverc_bigint_t *base,
                        const neverc_bigint_t *exp, const neverc_bigint_t *m) {
+    /* Go Int.Exp: y < 0 and m == nil (or 0) yields 1, not x^|y|.
+     * y < 0 with a modulus needs a modular inverse; leave z unchanged. */
+    if (exp->neg) {
+        if (!m || m->len == 0)
+            neverc_bigint_set_int64(z, 1);
+        return;
+    }
     /* Odd modulus -> Montgomery (division-free); otherwise window method. */
     if (m && m->len > 0 && (m->digits[0] & 1u)) {
         if (exp_montgomery(z, base, exp, m) == 0) return;

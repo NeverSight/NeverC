@@ -154,11 +154,12 @@ static const int dec_powtab[] = {1, 3, 6, 9, 13, 16, 19, 23, 26};
 static uint64_t dec_to_bits(nc_decimal *d, int *overflow) {
     int exp;
     uint64_t mant;
+    int nonzero_in = d->nd != 0;
     *overflow = 0;
 
     if (d->nd == 0) { mant = 0; exp = NC_EXP_BIAS; goto out; }
     if (d->dp > 310) goto ovf;
-    if (d->dp < -330) { mant = 0; exp = NC_EXP_BIAS; goto out; }
+    if (d->dp < -330) { mant = 0; exp = NC_EXP_BIAS; *overflow = 1; goto out; }
 
     exp = 0;
     while (d->dp > 0) {
@@ -192,6 +193,8 @@ static uint64_t dec_to_bits(nc_decimal *d, int *overflow) {
         if (exp - NC_EXP_BIAS >= (1 << NC_EXP_BITS) - 1) goto ovf;
     }
     if ((mant & ((uint64_t)1 << NC_MANT_BITS)) == 0) exp = NC_EXP_BIAS; /* subnormal */
+    /* Nonzero input that rounded to zero is underflow (Go ErrRange). */
+    if (mant == 0 && nonzero_in) *overflow = 1;
     goto out;
 
 ovf:

@@ -6,6 +6,9 @@
  *
  * Provides Reader/Writer interfaces as function-pointer structs,
  * plus utility functions: ReadAll, Copy, ReadFull, etc.
+ * Transient zero-byte successful reads are retried; persistent no-progress
+ * is not treated as EOF (Copy/ReadAll stop after a retry limit; ReadFull
+ * and ReadAtLeast surface NEVERC_IO_ERR_UNEXP / SHORT).
  */
 
 #include <stddef.h>

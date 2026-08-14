@@ -503,6 +503,35 @@ static void test_secure_origin(void) {
     neverc_cookiejar_free(jar);
 }
 
+static void test_secure_shadowing(void) {
+    printf("[secure_shadowing]\n");
+
+    neverc_cookiejar_t *jar = neverc_cookiejar_new();
+    neverc_cookiejar_set_cookie_header(
+        jar, "https://www.example.com/", "token=secret; Secure; Path=/");
+    neverc_cookiejar_set_cookie_header(
+        jar, "http://example.com/",
+        "token=attacker; Domain=example.com; Path=/");
+
+    neverc_cookiejar_entry_t out[2];
+    int n = neverc_cookiejar_cookies(
+        jar, "https://www.example.com/", out, 2);
+    check_int("insecure parent domain cannot shadow Secure host cookie", n, 1);
+    if (n == 1) check_str("Secure host value preserved", out[0].value, "secret");
+    neverc_cookiejar_free(jar);
+
+    jar = neverc_cookiejar_new();
+    neverc_cookiejar_set_cookie_header(
+        jar, "https://example.com/admin", "sid=secure; Secure; Path=/admin");
+    neverc_cookiejar_set_cookie_header(
+        jar, "http://example.com/", "sid=attacker; Path=/");
+    n = neverc_cookiejar_cookies(
+        jar, "https://example.com/admin", out, 2);
+    check_int("insecure root path cannot shadow Secure path cookie", n, 1);
+    if (n == 1) check_str("Secure path value preserved", out[0].value, "secure");
+    neverc_cookiejar_free(jar);
+}
+
 /* ===== Null safety ===== */
 
 static void test_null_safety(void) {
@@ -568,6 +597,7 @@ int main(void) {
     test_update();
     test_clear();
     test_secure_origin();
+    test_secure_shadowing();
     test_null_safety();
     test_batch();
 

@@ -45,6 +45,27 @@ static void test_integers(void) {
     r = neverc_fmt_sprintf("%b", 10);
     check_str("binary 1010", r, "1010"); free(r);
 
+    r = neverc_fmt_sprintf("%#x", 255);
+    check_str("alt hex", r, "0xff"); free(r);
+
+    r = neverc_fmt_sprintf("%#X", 255);
+    check_str("alt HEX", r, "0XFF"); free(r);
+
+    r = neverc_fmt_sprintf("%#x", 0);
+    check_str("alt hex zero", r, "0x0"); free(r);
+
+    r = neverc_fmt_sprintf("%#08x", 255);
+    check_str("alt hex padded", r, "0x0000ff"); free(r);
+
+    r = neverc_fmt_sprintf("%#o", 8);
+    check_str("alt octal", r, "010"); free(r);
+
+    r = neverc_fmt_sprintf("%#o", 0);
+    check_str("alt octal zero", r, "0"); free(r);
+
+    r = neverc_fmt_sprintf("%#b", 10);
+    check_str("alt binary", r, "0b1010"); free(r);
+
     r = neverc_fmt_sprintf("%lld", (long long)1234567890123LL);
     check_str("long long", r, "1234567890123"); free(r);
 }

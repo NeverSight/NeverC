@@ -116,6 +116,20 @@ static void test_invalid_addr(void) {
 
     ln = neverc_tcp_listen("no_colon", &err);
     check_null("no colon", ln);
+
+    ln = neverc_tcp_listen("127.0.0.1:65536", &err);
+    check_null("listen port overflow", ln);
+
+    ln = neverc_tcp_listen("127.0.0.1:abc", &err);
+    check_null("listen nonnumeric port", ln);
+
+    neverc_tcp_conn_t *conn = neverc_tcp_dial(":80", &err);
+    check_null("dial empty host", conn);
+    if (conn) neverc_tcp_close(conn);
+
+    conn = neverc_tcp_dial("127.0.0.1:65536", &err);
+    check_null("dial port overflow", conn);
+    if (conn) neverc_tcp_close(conn);
 }
 
 /* ===== dial fail ===== */

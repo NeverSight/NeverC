@@ -1,5 +1,8 @@
 #include "neverc/std/time_tzdata.h"
 #include <stdlib.h>
+#if !defined(_WIN32)
+#include <unistd.h>
+#endif
 
 /* ======================================================================
  * Internal helpers
@@ -71,7 +74,7 @@ static const tz_entry_t tz_table[] = {
     {"America/Santiago",        "CLT",  "CLST", -14400, -10800, S},
     {"America/Sao_Paulo",       "BRT",  "BRST", -10800, -7200,  S},
     {"America/Argentina/Buenos_Aires","ART",NULL,-10800, 0,      0},
-    {"America/Caracas",         "VET",  NULL,   -16200, 0,      0},
+    {"America/Caracas",         "VET",  NULL,   -14400, 0,      0},
 
     /* Europe */
     {"Europe/London",           "GMT",  "BST",  0,      3600,   N},
@@ -204,6 +207,7 @@ static void init_zones(void) {
 }
 
 const neverc_tzdata_zone_t *neverc_tzdata_lookup(const char *name) {
+    if (!name) return NULL;
     init_zones();
     for (int i = 0; i < tz_count; i++) {
         if (nc_streq(tz_table[i].name, name))
@@ -213,6 +217,7 @@ const neverc_tzdata_zone_t *neverc_tzdata_lookup(const char *name) {
 }
 
 const neverc_tzdata_zone_t *neverc_tzdata_lookup_abbrev(const char *abbrev) {
+    if (!abbrev) return NULL;
     init_zones();
     for (int i = 0; i < tz_count; i++) {
         if (nc_streq_ci(tz_table[i].abbr, abbrev))
@@ -224,10 +229,15 @@ const neverc_tzdata_zone_t *neverc_tzdata_lookup_abbrev(const char *abbrev) {
 }
 
 neverc_tzdata_zone_t *neverc_tzdata_fixed_zone(const char *name, int offset_sec) {
+    if (!name) name = "";
     neverc_tzdata_zone_t *z = (neverc_tzdata_zone_t *)calloc(1, sizeof(*z));
     if (!z) return NULL;
     size_t nlen = nc_slen(name);
     char *n = (char *)malloc(nlen + 1);
+    if (!n) {
+        free(z);
+        return NULL;
+    }
     for (size_t i = 0; i < nlen; i++) n[i] = name[i];
     n[nlen] = '\0';
     z->name = n;
@@ -250,6 +260,7 @@ const neverc_tzdata_zone_t *neverc_tzdata_at(int index) {
 }
 
 int neverc_tzdata_list(const char *prefix, const char **names, int max_names) {
+    if (!names || max_names <= 0) return 0;
     int count = 0;
     for (int i = 0; i < tz_count && count < max_names; i++) {
         if (!prefix || !prefix[0] || nc_strpfx(tz_table[i].name, prefix)) {
@@ -263,23 +274,65 @@ const neverc_tzdata_zone_t *neverc_tzdata_utc(void) {
     return neverc_tzdata_lookup("UTC");
 }
 
+/* POSIX TZ may be ":America/New_York" or a zoneinfo path. */
+static const char *iana_from_tz_string(const char *tz) {
+    if (!tz || !tz[0]) return NULL;
+    if (tz[0] == ':') tz++;
+    if (!tz[0]) return NULL;
+    const char *iana = tz;
+    for (const char *p = tz; *p; p++) {
+        if (p[0] == 'z' && p[1] == 'o' && p[2] == 'n' && p[3] == 'e' &&
+            p[4] == 'i' && p[5] == 'n' && p[6] == 'f' && p[7] == 'o' &&
+            p[8] == '/')
+            iana = p + 9;
+    }
+    return iana[0] ? iana : NULL;
+}
+
+static const neverc_tzdata_zone_t *lookup_tz_string(const char *tz) {
+    const char *iana = iana_from_tz_string(tz);
+    if (!iana) return NULL;
+    const neverc_tzdata_zone_t *z = neverc_tzdata_lookup(iana);
+    if (z) return z;
+    return neverc_tzdata_lookup_abbrev(iana);
+}
+
+#if !defined(_WIN32)
+static const neverc_tzdata_zone_t *lookup_tz_symlink(const char *path) {
+    char link[256];
+    ssize_t n = readlink(path, link, sizeof(link) - 1);
+    if (n <= 0) return NULL;
+    link[n] = '\0';
+    return lookup_tz_string(link);
+}
+#endif
+
 const neverc_tzdata_zone_t *neverc_tzdata_local(void) {
-    /* Try TZ environment variable first */
     const char *tz = NULL;
 #if defined(_MSC_VER)
-    char buf[128];
-    size_t len;
-    if (_dupenv_s(&buf[0], &len, "TZ") == 0 && len > 0)
-        tz = buf;
+    char *dup = NULL;
+    size_t len = 0;
+    if (_dupenv_s(&dup, &len, "TZ") == 0)
+        tz = dup;
 #else
     tz = getenv("TZ");
 #endif
-    if (tz && tz[0]) {
-        const neverc_tzdata_zone_t *z = neverc_tzdata_lookup(tz);
-        if (z) return z;
-        z = neverc_tzdata_lookup_abbrev(tz);
-        if (z) return z;
+    const neverc_tzdata_zone_t *z = lookup_tz_string(tz);
+#if !defined(_WIN32)
+    if (!z && tz && tz[0]) {
+        const char *path = (tz[0] == ':') ? tz + 1 : tz;
+        if (path[0] == '/')
+            z = lookup_tz_symlink(path);
     }
+#endif
+#if defined(_MSC_VER)
+    free(dup);
+#endif
+    if (z) return z;
+#if !defined(_WIN32)
+    z = lookup_tz_symlink("/etc/localtime");
+    if (z) return z;
+#endif
     return neverc_tzdata_utc();
 }
 

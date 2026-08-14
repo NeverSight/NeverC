@@ -508,8 +508,9 @@ int neverc_strconv_quoted_prefix(const char *s, size_t *prefix_len) {
 
 int neverc_strconv_format_complex(double re, double im, char fmt, int prec,
                                    char *buf, size_t bufsize) {
-    if (!buf || bufsize < 8) return -1;
-    char re_buf[64], im_buf[64];
+    if (!buf || bufsize == 0) return -1;
+    /* 'f' of ~1e308 with modest precision is ~310 digits; 64 was too small. */
+    char re_buf[512], im_buf[512];
     int re_len = neverc_strconv_format_float(re, fmt, prec, re_buf, sizeof(re_buf));
     int im_len = neverc_strconv_format_float(im, fmt, prec, im_buf, sizeof(im_buf));
     if (re_len < 0 || im_len < 0) return -1;
@@ -530,39 +531,77 @@ int neverc_strconv_format_complex(double re, double im, char fmt, int prec,
     return (int)pos;
 }
 
+static int parse_float_span(const char *s, size_t n, double *out) {
+    if (n == 0) return NEVERC_STRCONV_ERR_SYNTAX;
+    char stack[512];
+    char *tmp = (n < sizeof stack) ? stack : (char *)malloc(n + 1);
+    if (!tmp) return NEVERC_STRCONV_ERR_SYNTAX;
+    memcpy(tmp, s, n);
+    tmp[n] = '\0';
+    int rc = neverc_strconv_parse_float(tmp, out);
+    if (tmp != stack) free(tmp);
+    return rc;
+}
+
 int neverc_strconv_parse_complex(const char *s, double *re, double *im) {
     if (!s || !re || !im) return NEVERC_STRCONV_ERR_SYNTAX;
     size_t slen = strlen(s);
-    if (slen < 3) return NEVERC_STRCONV_ERR_SYNTAX;
+    if (slen == 0) return NEVERC_STRCONV_ERR_SYNTAX;
 
     const char *start = s;
     const char *end = s + slen;
-    if (*start == '(' && *(end - 1) == ')') { start++; end--; slen -= 2; }
-    if (slen == 0 || *(end - 1) != 'i') return NEVERC_STRCONV_ERR_SYNTAX;
-    end--;
+    if (slen >= 2 && *start == '(' && *(end - 1) == ')') {
+        start++;
+        end--;
+    }
+    if (start >= end) return NEVERC_STRCONV_ERR_SYNTAX;
+
+    int has_i = (*(end - 1) == 'i');
+    if (has_i) end--;
 
     const char *split = NULL;
-    for (const char *p = end - 1; p > start; p--) {
-        if (*p == '+' || *p == '-') {
-            if (p > start && (*(p-1) == 'e' || *(p-1) == 'E')) continue;
-            split = p;
-            break;
-        }
+    for (const char *p = end; p > start; p--) {
+        const char *q = p - 1;
+        if (*q != '+' && *q != '-') continue;
+        if (q > start && (q[-1] == 'e' || q[-1] == 'E')) continue;
+        /* A leading sign is not a real/imag split. */
+        if (q == start) continue;
+        split = q;
+        break;
     }
-    if (!split) return NEVERC_STRCONV_ERR_SYNTAX;
 
-    char re_str[128], im_str[128];
-    size_t re_len = (size_t)(split - start);
-    size_t im_len = (size_t)(end - split);
-    if (re_len >= sizeof(re_str) || im_len >= sizeof(im_str))
-        return NEVERC_STRCONV_ERR_SYNTAX;
+    if (has_i && split) {
+        size_t re_len = (size_t)(split - start);
+        size_t im_len = (size_t)(end - split);
+        int r1 = parse_float_span(start, re_len, re);
+        if (r1 != NEVERC_STRCONV_OK && r1 != NEVERC_STRCONV_ERR_RANGE)
+            return r1;
+        if (im_len == 1 && (*split == '+' || *split == '-')) {
+            *im = (*split == '-') ? -1.0 : 1.0;
+            return r1;
+        }
+        int r2 = parse_float_span(split, im_len, im);
+        if (r2 != NEVERC_STRCONV_OK && r2 != NEVERC_STRCONV_ERR_RANGE)
+            return r2;
+        return (r1 == NEVERC_STRCONV_ERR_RANGE || r2 == NEVERC_STRCONV_ERR_RANGE)
+                   ? NEVERC_STRCONV_ERR_RANGE : NEVERC_STRCONV_OK;
+    }
 
-    memcpy(re_str, start, re_len); re_str[re_len] = '\0';
-    memcpy(im_str, split, im_len); im_str[im_len] = '\0';
+    if (has_i) {
+        *re = 0.0;
+        size_t im_len = (size_t)(end - start);
+        if (im_len == 0) {
+            *im = 1.0;
+            return NEVERC_STRCONV_OK;
+        }
+        if (im_len == 1 && (*start == '+' || *start == '-')) {
+            *im = (*start == '-') ? -1.0 : 1.0;
+            return NEVERC_STRCONV_OK;
+        }
+        return parse_float_span(start, im_len, im);
+    }
 
-    int r1 = neverc_strconv_parse_float(re_str, re);
-    int r2 = neverc_strconv_parse_float(im_str, im);
-    if (r1 != 0) return r1;
-    if (r2 != 0) return r2;
-    return 0;
+    if (split) return NEVERC_STRCONV_ERR_SYNTAX;
+    *im = 0.0;
+    return parse_float_span(start, (size_t)(end - start), re);
 }

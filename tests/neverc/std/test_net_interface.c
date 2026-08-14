@@ -80,6 +80,8 @@ static void test_interface_by_name(void) {
 
     /* Non-existent */
     check_int("nonexistent iface", neverc_net_interface_by_name("xyz999", &iface), -1);
+    check_int("null name", neverc_net_interface_by_name(NULL, &iface), -1);
+    check_int("null list", neverc_net_interfaces(NULL), -1);
 }
 
 /* ===== InterfaceByIndex ===== */

@@ -167,6 +167,26 @@ static void test_parse_float(void) {
     check_int("float nanny=ERR", neverc_strconv_parse_float("nanny", &v), NEVERC_STRCONV_ERR_SYNTAX);
     check_int("float +inf",     neverc_strconv_parse_float("+inf", &v), 0);
     check_int("float +Infinity",neverc_strconv_parse_float("+Infinity", &v), 0);
+
+    /* Overflow / underflow must report RANGE (Go ParseFloat ErrRange). */
+    check_int("float 1e309 overflow",
+              neverc_strconv_parse_float("1e309", &v), NEVERC_STRCONV_ERR_RANGE);
+    check_true("float 1e309 is +Inf", v > 1e308 && v == v && v + v == v);
+    check_int("float -1e309 overflow",
+              neverc_strconv_parse_float("-1e309", &v), NEVERC_STRCONV_ERR_RANGE);
+    check_true("float -1e309 is -Inf", v < -1e308 && v + v == v);
+    check_int("float 1e-400 underflow",
+              neverc_strconv_parse_float("1e-400", &v), NEVERC_STRCONV_ERR_RANGE);
+    check_true("float 1e-400 is 0", v == 0.0);
+    check_int("float -1e-400 underflow",
+              neverc_strconv_parse_float("-1e-400", &v), NEVERC_STRCONV_ERR_RANGE);
+    check_true("float -1e-400 is -0", v == 0.0);
+    check_int("float 0e999 is exact zero",
+              neverc_strconv_parse_float("0e999", &v), 0);
+    check_true("float 0e999 value", v == 0.0);
+    check_int("float max finite ok",
+              neverc_strconv_parse_float("1.7976931348623157e+308", &v), 0);
+    check_true("float max finite value", v > 1e308);
 }
 
 /* ===== Itoa ===== */
@@ -549,6 +569,39 @@ static void test_complex(void) {
 
     check_int("parse_complex bad", neverc_strconv_parse_complex("abc", &re, &im),
               NEVERC_STRCONV_ERR_SYNTAX);
+
+    check_int("parse_complex pure imag 1i",
+              neverc_strconv_parse_complex("1i", &re, &im), 0);
+    check_double_approx("1i re", re, 0.0, 1e-15);
+    check_double_approx("1i im", im, 1.0, 1e-15);
+    check_int("parse_complex bare i",
+              neverc_strconv_parse_complex("i", &re, &im), 0);
+    check_double_approx("i re", re, 0.0, 1e-15);
+    check_double_approx("i im", im, 1.0, 1e-15);
+    check_int("parse_complex -i",
+              neverc_strconv_parse_complex("-i", &re, &im), 0);
+    check_double_approx("-i re", re, 0.0, 1e-15);
+    check_double_approx("-i im", im, -1.0, 1e-15);
+    check_int("parse_complex 1+i",
+              neverc_strconv_parse_complex("1+i", &re, &im), 0);
+    check_double_approx("1+i re", re, 1.0, 1e-15);
+    check_double_approx("1+i im", im, 1.0, 1e-15);
+    check_int("parse_complex pure real",
+              neverc_strconv_parse_complex("1.5", &re, &im), 0);
+    check_double_approx("pure real re", re, 1.5, 1e-15);
+    check_double_approx("pure real im", im, 0.0, 1e-15);
+    check_int("parse_complex exp imag",
+              neverc_strconv_parse_complex("1e+10i", &re, &im), 0);
+    check_double_approx("1e+10i re", re, 0.0, 1e-15);
+    check_double_approx("1e+10i im", im, 1e10, 1.0);
+
+    /* 'f' of 1e100 is ~104 chars; the old 64-byte scratch buffers failed. */
+    char large[512];
+    n = neverc_strconv_format_complex(1e100, 2e100, 'f', 1, large, sizeof(large));
+    check_true("format_complex 1e100 fits", n > 0);
+    check_true("format_complex 1e100 paren", large[0] == '(');
+    check_true("format_complex 1e100 starts 1", large[1] == '1');
+    check_true("format_complex 1e100 has +2", strstr(large, "+2") != NULL);
 }
 
 int main(void) {

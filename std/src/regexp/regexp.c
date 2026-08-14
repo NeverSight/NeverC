@@ -149,7 +149,34 @@ static frag_t parse_atom(parser_t *par);
 
 static int is_meta(char c) {
     return c == '|' || c == '*' || c == '+' || c == '?' ||
-           c == '(' || c == ')' || c == '[' || c == '{';
+           c == '(' || c == ')' || c == '[';
+}
+
+static int decode_char_esc(char esc, int *out) {
+    switch (esc) {
+    case 'n': *out = '\n'; return 1;
+    case 't': *out = '\t'; return 1;
+    case 'r': *out = '\r'; return 1;
+    case 'f': *out = '\f'; return 1;
+    case 'v': *out = '\v'; return 1;
+    default: return 0;
+    }
+}
+
+static void cc_set_ws(charclass_t *cc) {
+    cc_set(cc, ' ');
+    cc_set(cc, '\t');
+    cc_set(cc, '\n');
+    cc_set(cc, '\r');
+    cc_set(cc, '\f');
+    cc_set(cc, '\v');
+}
+
+static void cc_set_word(charclass_t *cc) {
+    for (int i = 'a'; i <= 'z'; i++) cc_set(cc, i);
+    for (int i = 'A'; i <= 'Z'; i++) cc_set(cc, i);
+    for (int i = '0'; i <= '9'; i++) cc_set(cc, i);
+    cc_set(cc, '_');
 }
 
 static frag_t parse_atom(parser_t *par) {
@@ -176,19 +203,44 @@ static frag_t parse_atom(parser_t *par) {
         charclass_t *cc = new_class(par->re);
         if (*par->p == '^') { cc->negated = 1; par->p++; }
         int entries = 0;
-        while (*par->p && *par->p != ']') {
+        int first = 1;
+        /* ']' is literal as the first class byte (or first after '^'), matching
+         * POSIX/Go: []] and [^]] are valid. */
+        while (*par->p && (*par->p != ']' || first)) {
+            first = 0;
             int lo = (uint8_t)*par->p++;
             if (lo == '\\' && *par->p) {
                 char esc = *par->p++;
-                if (esc == 'd') { for (int i = '0'; i <= '9'; i++) cc_set(cc, i); entries++; continue; }
-                if (esc == 'w') {
-                    for (int i = 'a'; i <= 'z'; i++) cc_set(cc, i);
-                    for (int i = 'A'; i <= 'Z'; i++) cc_set(cc, i);
+                if (esc == 'd') {
                     for (int i = '0'; i <= '9'; i++) cc_set(cc, i);
-                    cc_set(cc, '_'); entries++; continue;
+                    entries++; continue;
                 }
-                if (esc == 's') { cc_set(cc, ' '); cc_set(cc, '\t'); cc_set(cc, '\n'); cc_set(cc, '\r'); entries++; continue; }
-                lo = (uint8_t)esc;
+                if (esc == 'D') {
+                    for (int i = 0; i < 256; i++)
+                        if (i < '0' || i > '9') cc_set(cc, i);
+                    entries++; continue;
+                }
+                if (esc == 'w') { cc_set_word(cc); entries++; continue; }
+                if (esc == 'W') {
+                    charclass_t word;
+                    memset(&word, 0, sizeof(word));
+                    cc_set_word(&word);
+                    for (int i = 0; i < 256; i++)
+                        if (!cc_test(&word, i)) cc_set(cc, i);
+                    entries++; continue;
+                }
+                if (esc == 's') { cc_set_ws(cc); entries++; continue; }
+                if (esc == 'S') {
+                    charclass_t ws;
+                    memset(&ws, 0, sizeof(ws));
+                    cc_set_ws(&ws);
+                    for (int i = 0; i < 256; i++)
+                        if (!cc_test(&ws, i)) cc_set(cc, i);
+                    entries++; continue;
+                }
+                int decoded;
+                if (decode_char_esc(esc, &decoded)) lo = decoded;
+                else lo = (uint8_t)esc;
             }
             if (*par->p == '-' && par->p[1] && par->p[1] != ']') {
                 par->p++;
@@ -249,23 +301,14 @@ static frag_t parse_atom(parser_t *par) {
         charclass_t *cc = new_class(par->re);
         if (esc == 'd') { for (int i = '0'; i <= '9'; i++) cc_set(cc, i); }
         else if (esc == 'D') { for (int i = '0'; i <= '9'; i++) cc_set(cc, i); cc->negated = 1; }
-        else if (esc == 'w') {
-            for (int i = 'a'; i <= 'z'; i++) cc_set(cc, i);
-            for (int i = 'A'; i <= 'Z'; i++) cc_set(cc, i);
-            for (int i = '0'; i <= '9'; i++) cc_set(cc, i);
-            cc_set(cc, '_');
-        }
-        else if (esc == 'W') {
-            for (int i = 'a'; i <= 'z'; i++) cc_set(cc, i);
-            for (int i = 'A'; i <= 'Z'; i++) cc_set(cc, i);
-            for (int i = '0'; i <= '9'; i++) cc_set(cc, i);
-            cc_set(cc, '_'); cc->negated = 1;
-        }
-        else if (esc == 's') { cc_set(cc, ' '); cc_set(cc, '\t'); cc_set(cc, '\n'); cc_set(cc, '\r'); cc_set(cc, '\f'); cc_set(cc, '\v'); }
-        else if (esc == 'S') { cc_set(cc, ' '); cc_set(cc, '\t'); cc_set(cc, '\n'); cc_set(cc, '\r'); cc_set(cc, '\f'); cc_set(cc, '\v'); cc->negated = 1; }
+        else if (esc == 'w') { cc_set_word(cc); }
+        else if (esc == 'W') { cc_set_word(cc); cc->negated = 1; }
+        else if (esc == 's') { cc_set_ws(cc); }
+        else if (esc == 'S') { cc_set_ws(cc); cc->negated = 1; }
         else {
+            int decoded;
             nfa_state_t *s = new_state(par->re, NFA_CHAR);
-            s->ch = (uint8_t)esc;
+            s->ch = decode_char_esc(esc, &decoded) ? decoded : (uint8_t)esc;
             nfa_state_t *e = new_state(par->re, NFA_MATCH);
             s->out1 = e;
             return frag(s, e);
@@ -282,7 +325,7 @@ static frag_t parse_atom(parser_t *par) {
         return frag(NULL, NULL);
     }
 
-    if (c && !is_meta(c) && c != ')' && c != ']') {
+    if (c && !is_meta(c) && c != ')') {
         par->p++;
         nfa_state_t *s = new_state(par->re, NFA_CHAR);
         s->ch = (uint8_t)c;

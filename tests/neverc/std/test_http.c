@@ -2101,6 +2101,15 @@ static void cookie_handler(neverc_http_request_t *req,
     large.path = "/long-cookie-tail";
     neverc_http_set_cookie(w, &large);
 
+    neverc_http_cookie_t injected = {0};
+    injected.name = "inject";
+    injected.value = "x; Domain=evil.com";
+    neverc_http_set_cookie(w, &injected);
+    injected.name = "ok";
+    injected.value = "safe";
+    injected.path = "/; Domain=evil.com";
+    neverc_http_set_cookie(w, &injected);
+
     /* Check incoming cookie */
     char buf[128];
     const char *v = neverc_http_get_cookie(req, "test_cookie", buf, sizeof(buf));
@@ -2190,6 +2199,10 @@ static void test_cookies(void) {
                      strstr(resp, "SameSite=Lax") != NULL, 1);
         check_int("long Set-Cookie remains complete",
                      strstr(resp, "; Path=/long-cookie-tail") != NULL, 1);
+        check_int("Set-Cookie rejects value attribute injection",
+                     strstr(resp, "Domain=evil.com") == NULL, 1);
+        check_int("Set-Cookie rejects path attribute injection",
+                     strstr(resp, "inject=") == NULL, 1);
         check_int("body has cookie value",
                      strstr(resp, "cookie=hello_world") != NULL, 1);
     }
@@ -2687,8 +2700,10 @@ static void path_param_handler(neverc_http_request_t *req,
                                  neverc_http_response_writer_t *w) {
     const char *id = neverc_http_path_value(req, "id");
     const char *action = neverc_http_path_value(req, "action");
-    neverc_http_writef(w, "id=%s,action=%s",
-                        id ? id : "NULL", action ? action : "NULL");
+    const char *rest = neverc_http_path_value(req, "path");
+    neverc_http_writef(w, "id=%s,action=%s,path=%s",
+                        id ? id : "NULL", action ? action : "NULL",
+                        rest ? rest : "NULL");
 }
 
 static void test_path_params(void) {
@@ -2702,6 +2717,10 @@ static void test_path_params(void) {
         neverc_http_mux_t *mux = neverc_http_new_mux();
         neverc_http_mux_handle(mux, "GET /users/{id}", path_param_handler);
         neverc_http_mux_handle(mux, "GET /items/{id}/{action}",
+                                path_param_handler);
+        neverc_http_mux_handle(mux, "GET /files/{path...}",
+                                path_param_handler);
+        neverc_http_mux_handle(mux, "GET /wild/{path...}/x",
                                 path_param_handler);
         char addr[32];
         snprintf(addr, sizeof(addr), "127.0.0.1:%d", port);
@@ -2737,6 +2756,19 @@ static void test_path_params(void) {
     check_int("path_params 404 resp", n > 0, 1);
     check_int("path_params 404",
                strstr(buf, "404") != NULL, 1);
+
+    n = do_http_request(port,
+        "GET /files/a/b/c HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("wildcard resp", n > 0, 1);
+    check_int("wildcard captures remainder",
+               strstr(buf, "path=a/b/c") != NULL, 1);
+
+    n = do_http_request(port,
+        "GET /wild/foo/x HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        buf, sizeof(buf));
+    check_int("mid-pattern wildcard rejected",
+               n > 0 && strstr(buf, "404") != NULL, 1);
 
     /* neverc_http_path_value null safety */
     check_int("path_value null req",

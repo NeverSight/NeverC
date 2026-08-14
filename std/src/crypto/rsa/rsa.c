@@ -314,6 +314,24 @@ int neverc_rsa_key_size(const neverc_rsa_public_key_t *pub) {
     return (neverc_bigint_bit_len(&pub->n) + 7) / 8;
 }
 
+/* e=1 makes RSA the identity map: PKCS#1 verify then accepts the encoded
+ * message as a "signature", and encrypt is a no-op. e=2 is even, which no
+ * RSA standard allows. n must be odd and strictly larger than e. */
+static int rsa_public_ok(const neverc_rsa_public_key_t *pub) {
+    if (!pub || neverc_bigint_sign(&pub->n) <= 0 ||
+        neverc_bigint_sign(&pub->e) <= 0)
+        return 0;
+    if (neverc_bigint_bit_len(&pub->e) < 2)
+        return 0;
+    if (neverc_bigint_bit(&pub->e, 0) == 0)
+        return 0;
+    if (neverc_bigint_bit(&pub->n, 0) == 0)
+        return 0;
+    if (neverc_bigint_cmp(&pub->e, &pub->n) >= 0)
+        return 0;
+    return 1;
+}
+
 static int bytes_to_bigint(neverc_bigint_t *r,
                            const unsigned char *data, size_t len) {
     if (!r || (!data && len != 0) || len > (SIZE_MAX - 1U) / 2U)
@@ -373,8 +391,7 @@ int neverc_rsa_encrypt_pkcs1v15(const neverc_rsa_public_key_t *pub,
                                  unsigned char *out, size_t out_cap, size_t *out_len) {
     if (out_len) *out_len = 0;
     if (!pub || (!msg && msg_len != 0) || !out || !out_len ||
-        neverc_bigint_sign(&pub->n) <= 0 ||
-        neverc_bigint_sign(&pub->e) <= 0)
+        !rsa_public_ok(pub))
         return -1;
     int k = neverc_rsa_key_size(pub);
     if (k < 11 || msg_len > (size_t)(k - 11) || out_cap < (size_t)k)
@@ -461,7 +478,7 @@ static void rsa_private_exp_raw(neverc_bigint_t *out,
 static int rsa_private_exp(neverc_bigint_t *out, const neverc_bigint_t *base,
                            const neverc_rsa_private_key_t *priv) {
     int key_bytes = neverc_rsa_key_size(&priv->pub);
-    if (key_bytes <= 0 || neverc_bigint_sign(&priv->pub.e) <= 0)
+    if (key_bytes <= 0 || !rsa_public_ok(&priv->pub))
         return -1;
 
     unsigned char *random_bytes =
@@ -536,7 +553,7 @@ int neverc_rsa_decrypt_pkcs1v15(const neverc_rsa_private_key_t *priv,
                                  unsigned char *out, size_t out_cap, size_t *out_len) {
     if (out_len) *out_len = 0;
     if (!priv || !ct || !out || !out_len ||
-        neverc_bigint_sign(&priv->pub.n) <= 0 ||
+        !rsa_public_ok(&priv->pub) ||
         neverc_bigint_sign(&priv->d) <= 0)
         return -1;
     int k = neverc_rsa_key_size(&priv->pub);
@@ -619,7 +636,7 @@ int neverc_rsa_sign_pkcs1v15_sha256(const neverc_rsa_private_key_t *priv,
     if (sig_len) *sig_len = 0;
     if (!priv || !hash || !sig || !sig_len ||
         hash_len != NEVERC_SHA256_DIGEST_SIZE ||
-        neverc_bigint_sign(&priv->pub.n) <= 0 ||
+        !rsa_public_ok(&priv->pub) ||
         neverc_bigint_sign(&priv->d) <= 0)
         return -1;
     int k = neverc_rsa_key_size(&priv->pub);
@@ -678,8 +695,7 @@ static int rsa_verify_pkcs1v15(
     const unsigned char *sig, size_t sig_len,
     const unsigned char *digest_info, size_t digest_info_len) {
     if (!pub || !hash || !sig || !digest_info || hash_len == 0 ||
-        neverc_bigint_sign(&pub->n) <= 0 ||
-        neverc_bigint_sign(&pub->e) <= 0)
+        !rsa_public_ok(pub))
         return -1;
     int k = neverc_rsa_key_size(pub);
     if (k <= 0 || sig_len != (size_t)k ||
@@ -839,9 +855,7 @@ static int rsa_verify_pss(const neverc_rsa_public_key_t *pub,
     const size_t digest_len = rsa_hash_size(hash_kind);
     const size_t salt_len = digest_len;
     if (!pub || !hash || !sig || hash_len != digest_len ||
-        digest_len == 0 ||
-        neverc_bigint_sign(&pub->n) <= 0 ||
-        neverc_bigint_sign(&pub->e) <= 0)
+        digest_len == 0 || !rsa_public_ok(pub))
         return -1;
 
     int modulus_bits = neverc_bigint_bit_len(&pub->n);

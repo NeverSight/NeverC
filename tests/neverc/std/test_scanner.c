@@ -198,6 +198,83 @@ static void test_raw_strings(void) {
     ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_EOF);
 }
 
+static void test_float_dot_and_exponent(void) {
+    printf("[float_dot_and_exponent]\n");
+    neverc_scanner_t s;
+    const char *src = "1. 1.e10 1.foo 1if 1..2";
+    neverc_scanner_init(&s, src, strlen(src));
+
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_FLOAT);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "1.");
+
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_FLOAT);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "1.e10");
+
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_FLOAT);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "1.");
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_IDENT);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "foo");
+
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_INT);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "1");
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_IDENT);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "if");
+
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_FLOAT);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "1.");
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), '.');
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_INT);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "2");
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_EOF);
+}
+
+static void test_ints_do_not_consume_fraction(void) {
+    printf("[ints_do_not_consume_fraction]\n");
+    neverc_scanner_t s;
+    const char *src = "3.14 1e10";
+    neverc_scanner_init(&s, src, strlen(src));
+    neverc_scanner_set_mode(&s, NEVERC_SCAN_INTS | NEVERC_SCAN_IDENTS);
+
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_INT);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "3");
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), '.');
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_INT);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "14");
+
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_INT);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "1");
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_IDENT);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "e10");
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_EOF);
+}
+
+static void test_block_comments_are_not_nested(void) {
+    printf("[block_comments_are_not_nested]\n");
+    neverc_scanner_t s;
+    const char *src = "a /* /* */ b";
+    neverc_scanner_init(&s, src, strlen(src));
+    neverc_scanner_set_mode(&s, NEVERC_SCAN_GO_TOKENS & ~NEVERC_SCAN_SKIP_COMMENTS);
+
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_IDENT);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "a");
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_COMMENT);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "/* /* */");
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_IDENT);
+    ASSERT_STR_EQ(neverc_scanner_token_text(&s, NULL), "b");
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_EOF);
+}
+
+static void test_null_source(void) {
+    printf("[null_source]\n");
+    neverc_scanner_t s;
+    neverc_scanner_init(&s, NULL, 8);
+    ASSERT_INT_EQ(neverc_scanner_scan(&s), NEVERC_SCANNER_EOF);
+    ASSERT_INT_EQ(neverc_scanner_peek(&s), NEVERC_SCANNER_EOF);
+    neverc_scanner_init(NULL, "x", 1);
+    neverc_scanner_set_mode(NULL, 0);
+    ASSERT_INT_EQ(neverc_scanner_scan(NULL), NEVERC_SCANNER_EOF);
+}
+
 static void test_mixed(void) {
     printf("[mixed]\n");
     neverc_scanner_t s;
@@ -228,6 +305,10 @@ int main(void) {
     test_peek();
     test_token_name();
     test_raw_strings();
+    test_float_dot_and_exponent();
+    test_ints_do_not_consume_fraction();
+    test_block_comments_are_not_nested();
+    test_null_source();
     test_mixed();
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;

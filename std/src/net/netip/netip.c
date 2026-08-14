@@ -224,18 +224,18 @@ done_parse:
         return -1;
     }
 
+    if (zone_start) {
+        size_t zlen = slen - (size_t)(zone_start - s);
+        if (zlen == 0 || zlen >= sizeof(out->zone)) return -1;
+        memcpy(out->zone, zone_start, zlen);
+        out->zone[zlen] = '\0';
+    }
     for (int i = 0; i < 8; i++) {
         out->addr[i*2]   = (uint8_t)(groups[i] >> 8);
         out->addr[i*2+1] = (uint8_t)(groups[i] & 0xff);
     }
     out->is_v4 = 0;
     out->valid = 1;
-    if (zone_start) {
-        size_t zlen = slen - (size_t)(zone_start - s);
-        if (zlen >= sizeof(out->zone)) zlen = sizeof(out->zone) - 1;
-        memcpy(out->zone, zone_start, zlen);
-        out->zone[zlen] = '\0';
-    }
     return 0;
 }
 
@@ -418,7 +418,9 @@ int neverc_netip_addr_compare(const neverc_netip_addr_t *a, const neverc_netip_a
     if (!b) return 1;
     if (a->is_v4 != b->is_v4) return a->is_v4 ? -1 : 1;
     int start = a->is_v4 ? 12 : 0;
-    return memcmp(a->addr + start, b->addr + start, a->is_v4 ? 4 : 16);
+    int cmp = memcmp(a->addr + start, b->addr + start, a->is_v4 ? 4 : 16);
+    if (cmp != 0) return cmp;
+    return strcmp(a->zone, b->zone);
 }
 
 int neverc_netip_addr_equal(const neverc_netip_addr_t *a, const neverc_netip_addr_t *b) {

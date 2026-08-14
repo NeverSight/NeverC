@@ -321,7 +321,8 @@ neverc_tcp_conn_t *neverc_tcp_dial(const char *addr, const char **errp) {
 
     char host[256] = {0};
     uint16_t port = 0;
-    if (nc_parse_addr(addr, host, sizeof(host), &port) != 0) {
+    if (nc_parse_addr(addr, host, sizeof(host), &port) != 0 ||
+        host[0] == '\0') {
         if (errp) *errp = "invalid address format";
         return NULL;
     }

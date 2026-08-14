@@ -120,6 +120,49 @@ static void test_binary_data(void) {
     check_mem("binary data", out_buf, binary, binary_len);
 }
 
+static void test_rfc1421_headers(void) {
+    printf("[pem RFC 1421 encapsulated headers]\n");
+
+    /* Encrypted OpenSSL-style PEM: headers, blank line, then payload. */
+    const char *with_blank =
+        "-----BEGIN RSA PRIVATE KEY-----\n"
+        "Proc-Type: 4,ENCRYPTED\n"
+        "DEK-Info: AES-256-CBC,0123456789ABCDEF0123456789ABCDEF\n"
+        "\n"
+        "SGVsbG8gV29ybGQ=\n"
+        "-----END RSA PRIVATE KEY-----\n";
+
+    char type_buf[64];
+    uint8_t out_buf[256];
+    size_t bytes_written = 0;
+    int rc = neverc_pem_decode(with_blank, strlen(with_blank),
+                                type_buf, sizeof(type_buf),
+                                out_buf, sizeof(out_buf),
+                                &bytes_written, NULL);
+    check_int("headers+blank decode", rc, 0);
+    check_str("headers+blank type", type_buf, "RSA PRIVATE KEY");
+    check_int("headers+blank len", (int)bytes_written, 11);
+    check_mem("headers+blank data", out_buf,
+              (const uint8_t *)"Hello World", 11);
+
+    /* Header then body with no intervening blank line (Go pem.Decode). */
+    const char *no_blank =
+        "-----BEGIN FOO-----\n"
+        "X-Custom: yes\n"
+        "SGVsbG8gV29ybGQ=\n"
+        "-----END FOO-----\n";
+    bytes_written = 0;
+    rc = neverc_pem_decode(no_blank, strlen(no_blank),
+                            type_buf, sizeof(type_buf),
+                            out_buf, sizeof(out_buf),
+                            &bytes_written, NULL);
+    check_int("header no-blank decode", rc, 0);
+    check_str("header no-blank type", type_buf, "FOO");
+    check_int("header no-blank len", (int)bytes_written, 11);
+    check_mem("header no-blank data", out_buf,
+              (const uint8_t *)"Hello World", 11);
+}
+
 static void test_invalid_pem(void) {
     printf("[pem invalid input]\n");
 
@@ -268,6 +311,7 @@ int main(void) {
     test_known_pem();
     test_empty_data();
     test_binary_data();
+    test_rfc1421_headers();
     test_invalid_pem();
     test_large_data();
 

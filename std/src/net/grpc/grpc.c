@@ -170,15 +170,22 @@ static int grpc_cardinality_valid(neverc_grpc_cardinality_t cardinality) {
            cardinality <= NEVERC_GRPC_BIDI_STREAMING;
 }
 
-static int grpc_method_valid(const neverc_grpc_method_t *method) {
-    if (!method || !method->full_method || method->full_method[0] != '/' ||
-        !method->handler || !grpc_cardinality_valid(method->cardinality))
+static int grpc_method_path_valid(const char *full_method) {
+    if (!full_method || full_method[0] != '/') return 0;
+    const char *separator = strchr(full_method + 1, '/');
+    if (!separator || !separator[1] || strchr(separator + 1, '/'))
         return 0;
-    const char *separator = strchr(method->full_method + 1, '/');
-    return separator && separator[1] && !strchr(separator + 1, '/') &&
-           !strchr(method->full_method, ' ') &&
-           !strchr(method->full_method, '\r') &&
-           !strchr(method->full_method, '\n');
+    for (const unsigned char *cursor = (const unsigned char *)full_method;
+         *cursor; cursor++)
+        if (*cursor <= 0x20 || *cursor >= 0x7f)
+            return 0;
+    return 1;
+}
+
+static int grpc_method_valid(const neverc_grpc_method_t *method) {
+    return method && method->handler &&
+           grpc_cardinality_valid(method->cardinality) &&
+           grpc_method_path_valid(method->full_method);
 }
 
 static neverc_grpc_status_t grpc_context_status(neverc_context_t *context) {
@@ -541,10 +548,9 @@ static int grpc_metadata_key_valid(const char *key) {
               (*cursor >= '0' && *cursor <= '9')) &&
             *cursor != '-' && *cursor != '_' && *cursor != '.')
             return 0;
+    if (strncmp(key, "grpc-", 5) == 0) return 0;
     return strcmp(key, "content-type") != 0 &&
-           strcmp(key, "te") != 0 &&
-           strcmp(key, "grpc-timeout") != 0 &&
-           strcmp(key, "grpc-encoding") != 0;
+           strcmp(key, "te") != 0;
 }
 
 static int grpc_binary_key(const char *key) {
@@ -730,7 +736,7 @@ neverc_grpc_client_stream_t *neverc_grpc_client_stream_open(
     const neverc_grpc_metadata_t *metadata, size_t metadata_count,
     size_t max_response_message_size, const char **error) {
     if (error) *error = NULL;
-    if (!client || !full_method || full_method[0] != '/' ||
+    if (!client || !grpc_method_path_valid(full_method) ||
         !grpc_cardinality_valid(cardinality)) {
         if (error) *error = "invalid gRPC stream";
         return NULL;
@@ -926,7 +932,7 @@ int neverc_grpc_client_stream_receive(
                 stream->error = "gRPC response receive cancelled";
             else if (!stream->receive_closed)
                 stream->error = "gRPC response closed without END";
-            return received < 0 ? -1 : 0;
+            return -1;
         }
         int result = 0;
         if (event->type == NEVERC_H2_CLIENT_EVENT_HEADERS) {
@@ -1059,7 +1065,7 @@ neverc_grpc_result_t *neverc_grpc_client_call(
         (neverc_grpc_result_t *)calloc(1, sizeof(*result));
     if (!result) return NULL;
     result->status = NEVERC_GRPC_UNKNOWN;
-    if (!client || !full_method || full_method[0] != '/' ||
+    if (!client || !grpc_method_path_valid(full_method) ||
         !grpc_cardinality_valid(cardinality) ||
         metadata_count > GRPC_MAX_CLIENT_METADATA ||
         (metadata_count && !metadata) || (request_count && !requests) ||

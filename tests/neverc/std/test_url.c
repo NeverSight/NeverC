@@ -101,6 +101,8 @@ static void test_parse_edges(void) {
     ASSERT_INT_EQ(neverc_url_parse(&u, "https://[2001:db8::1/api"), -1);
     ASSERT_INT_EQ(neverc_url_parse(&u, "https://host:abc/api"), -1);
     ASSERT_INT_EQ(neverc_url_parse(&u, "https://host:65536/api"), -1);
+    ASSERT_INT_EQ(neverc_url_parse(&u, "https://host:/api"), -1);
+    ASSERT_INT_EQ(neverc_url_parse(&u, "https://host:+80/api"), -1);
     ASSERT_INT_EQ(neverc_url_parse(&u, "1nvalid://host/api"), -1);
 
     char long_url[400];

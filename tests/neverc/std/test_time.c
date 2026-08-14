@@ -225,6 +225,20 @@ static void test_format_duration(void) {
     free(s);
 }
 
+static void test_format_unix_date(void) {
+    printf("[format unix date]\n");
+    /* 2024-01-05 00:00:00 UTC — Go UnixDate space-pads the day. */
+    neverc_time_t t = neverc_time_unix(1704412800, 0);
+    char *s = neverc_time_format_unix_date(t);
+    check_str("unix date space-padded day", s, "Fri Jan  5 00:00:00 UTC 2024");
+    free(s);
+
+    t = neverc_time_unix(1705321845, 0);
+    s = neverc_time_format_unix_date(t);
+    check_str("unix date two-digit day", s, "Mon Jan 15 12:30:45 UTC 2024");
+    free(s);
+}
+
 static void test_format_layout(void) {
     printf("[format layout]\n");
     neverc_time_t t = neverc_time_date(2024, 3, 15, 14, 30, 45, 0);
@@ -505,6 +519,7 @@ int main(void) {
     test_unix_micro();
     test_parse_duration();
     test_format_duration();
+    test_format_unix_date();
     test_format_layout();
     test_parse_layout();
     test_truncate_round();

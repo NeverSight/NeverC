@@ -455,6 +455,14 @@ static int path_match(const char *cookie_path, const char *request_path) {
     return 0;
 }
 
+static int domains_overlap(const char *left, const char *right) {
+    return domain_match(left, right) || domain_match(right, left);
+}
+
+static int paths_overlap(const char *left, const char *right) {
+    return path_match(left, right) || path_match(right, left);
+}
+
 static int64_t now_unix(void) {
     return (int64_t)time(NULL);
 }
@@ -582,8 +590,8 @@ void neverc_cookiejar_set_cookies(neverc_cookiejar_t *jar,
             for (jar_entry_t *entry = jar->entries; entry;
                  entry = entry->next) {
                 if (entry->secure && strcmp(entry->name, c->name) == 0 &&
-                    domain_match(entry->domain, domain) &&
-                    path_match(entry->path, cpath)) {
+                    domains_overlap(entry->domain, domain) &&
+                    paths_overlap(entry->path, cpath)) {
                     overlays_secure = 1;
                     break;
                 }

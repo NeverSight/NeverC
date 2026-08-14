@@ -1,3 +1,4 @@
+#include "neverc/std/encoding/base64.h"
 #include "neverc/std/net/smtp.h"
 #include "neverc/std/net/tcp.h"
 #include <stdio.h>
@@ -67,31 +68,66 @@ static void *mock_smtp_server(void *arg) {
             buf[n] = '\0';
 
             if (strncmp(buf, "EHLO", 4) == 0) {
+                /* Final line is "250" with no SP-text (RFC 5321 §4.2). */
                 const char *resp =
                     "250-mock.smtp.test\r\n"
                     "250-8BITMIME\r\n"
                     "250-AUTH PLAIN LOGIN\r\n"
-                    "250 OK\r\n";
+                    "250\r\n";
                 neverc_tcp_write(conn, resp, strlen(resp));
             } else if (strncmp(buf, "HELO", 4) == 0) {
                 const char *resp = "250 Hello\r\n";
                 neverc_tcp_write(conn, resp, strlen(resp));
-            } else if (strncmp(buf, "AUTH PLAIN", 10) == 0) {
-                const char *resp = "235 Authentication successful\r\n";
+            } else if (strncmp(buf, "AUTH PLAIN ", 11) == 0) {
+                uint8_t raw[10];
+                raw[0] = 0;
+                memcpy(raw + 1, "user", 4);
+                raw[5] = 0;
+                memcpy(raw + 6, "pass", 4);
+                char expected[32];
+                size_t elen = neverc_base64_encode(expected, raw, sizeof(raw));
+                const char *got = buf + 11;
+                const char *cr = strstr(got, "\r\n");
+                size_t glen = cr ? (size_t)(cr - got) : strlen(got);
+                const char *resp = (elen != (size_t)-1 && elen == glen &&
+                                    memcmp(got, expected, glen) == 0)
+                    ? "235 Authentication successful\r\n"
+                    : "535 invalid credentials\r\n";
                 neverc_tcp_write(conn, resp, strlen(resp));
             } else if (strncmp(buf, "AUTH LOGIN", 10) == 0) {
                 const char *resp = "334 VXNlcm5hbWU6\r\n";
                 neverc_tcp_write(conn, resp, strlen(resp));
                 n = neverc_tcp_read(conn, buf, sizeof(buf) - 1);
                 if (n <= 0) break;
+                buf[n] = '\0';
+                char user_b64[16];
+                size_t ulen = neverc_base64_encode(
+                    user_b64, (const uint8_t *)"user", 4);
+                const char *cr = strstr(buf, "\r\n");
+                size_t glen = cr ? (size_t)(cr - buf) : strlen(buf);
+                if (ulen != glen || memcmp(buf, user_b64, glen) != 0) {
+                    resp = "535 invalid credentials\r\n";
+                    neverc_tcp_write(conn, resp, strlen(resp));
+                    continue;
+                }
                 resp = "334 UGFzc3dvcmQ6\r\n";
                 neverc_tcp_write(conn, resp, strlen(resp));
                 n = neverc_tcp_read(conn, buf, sizeof(buf) - 1);
                 if (n <= 0) break;
-                resp = "235 Authentication successful\r\n";
+                buf[n] = '\0';
+                char pass_b64[16];
+                size_t plen = neverc_base64_encode(
+                    pass_b64, (const uint8_t *)"pass", 4);
+                cr = strstr(buf, "\r\n");
+                glen = cr ? (size_t)(cr - buf) : strlen(buf);
+                resp = (plen == glen && memcmp(buf, pass_b64, glen) == 0)
+                    ? "235 Authentication successful\r\n"
+                    : "535 invalid credentials\r\n";
                 neverc_tcp_write(conn, resp, strlen(resp));
             } else if (strncmp(buf, "MAIL FROM:", 10) == 0) {
-                const char *resp = "250 OK\r\n";
+                const char *resp = strstr(buf, "leftover@")
+                    ? "250 OK\r\n500 leftover-injected\r\n"
+                    : "250 OK\r\n";
                 neverc_tcp_write(conn, resp, strlen(resp));
             } else if (strncmp(buf, "RCPT TO:", 8) == 0) {
                 const char *resp = "250 OK\r\n";
@@ -309,6 +345,28 @@ static void test_smtp_reject_injection(void) {
                    neverc_smtp_auth(auth, NEVERC_SMTP_AUTH_LOGIN, huge, "pw") == -1);
         neverc_smtp_close(auth);
     }
+
+    check_true("write_data null client",
+               neverc_smtp_write_data(NULL, "x", 1) == -1);
+}
+
+static void test_smtp_response_leftover(void) {
+    printf("[smtp_response_leftover]\n");
+
+    char addr[32];
+    snprintf(addr, sizeof(addr), "127.0.0.1:%d", g_smtp_port);
+    const char *err = NULL;
+    neverc_smtp_client_t *c = neverc_smtp_dial(addr, &err);
+    check_true("dial for leftover", c != NULL);
+    if (!c) return;
+
+    check_true("EHLO before leftover",
+               neverc_smtp_hello(c, "test.client") == 0);
+    check_true("MAIL leftover accepted",
+               neverc_smtp_mail(c, "leftover@example.com") == 0);
+    check_true("RCPT consumes leftover 500",
+               neverc_smtp_rcpt(c, "victim@example.com") == -1);
+    neverc_smtp_close(c);
 }
 
 int main(void) {
@@ -347,6 +405,7 @@ int main(void) {
     test_send_mail();
     test_dot_stuffing();
     test_smtp_reject_injection();
+    test_smtp_response_leftover();
 
     g_smtp_running = 0;
 

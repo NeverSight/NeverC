@@ -50,7 +50,9 @@ void neverc_syslog_close(neverc_syslog_t *log) {
 int neverc_syslog_write(neverc_syslog_t *log,
                         neverc_syslog_priority_t priority,
                         const char *msg) {
-    if (!log || !msg || priority > log->min_priority) return -1;
+    if (!log || !msg || (int)priority < 0 ||
+        (int)priority > NEVERC_SYSLOG_DEBUG ||
+        priority > log->min_priority) return -1;
     if (!log->event_log)
         return neverc_syslog_write_fallback(log, priority, msg);
     WORD etype = EVENTLOG_INFORMATION_TYPE;
@@ -90,7 +92,9 @@ void neverc_syslog_close(neverc_syslog_t *log) {
 int neverc_syslog_write(neverc_syslog_t *log,
                         neverc_syslog_priority_t priority,
                         const char *msg) {
-    if (!log || !msg || priority > log->min_priority) return -1;
+    if (!log || !msg || (int)priority < 0 ||
+        (int)priority > NEVERC_SYSLOG_DEBUG ||
+        priority > log->min_priority) return -1;
     syslog((int)priority, "%s", msg);
     return 0;
 }
@@ -114,7 +118,9 @@ void neverc_syslog_close(neverc_syslog_t *log) { free(log); }
 int neverc_syslog_write(neverc_syslog_t *log,
                         neverc_syslog_priority_t priority,
                         const char *msg) {
-    if (!log || !msg || priority > log->min_priority) return -1;
+    if (!log || !msg || (int)priority < 0 ||
+        (int)priority > NEVERC_SYSLOG_DEBUG ||
+        priority > log->min_priority) return -1;
     static const char *pnames[] = {"EMERG","ALERT","CRIT","ERR","WARN","NOTICE","INFO","DEBUG"};
     fprintf(stderr, "%s: [%s] %s\n", log->tag, pnames[priority], msg);
     return 0;

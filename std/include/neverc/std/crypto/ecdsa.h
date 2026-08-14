@@ -33,6 +33,7 @@ void neverc_ecdsa_signature_free(neverc_ecdsa_signature_t *sig);
 int  neverc_ecdsa_generate_key(neverc_ecdsa_private_key_t *key,
                                 const neverc_elliptic_curve_t *curve);
 
+/* sig is set to zero on every failure, including invalid keys. */
 int  neverc_ecdsa_sign(const neverc_ecdsa_private_key_t *key,
                         const unsigned char *hash, size_t hash_len,
                         neverc_ecdsa_signature_t *sig);

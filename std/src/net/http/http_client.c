@@ -2062,9 +2062,54 @@ void neverc_http_response_free(neverc_http_response_t *resp) {
  * Cookie API
  * ====================================================================== */
 
+static int http_cookie_name_ok(const char *name) {
+    static const char separators[] = "()<>@,;:\\\"/[]?={} \t";
+    if (!name || !name[0]) return 0;
+    for (const unsigned char *p = (const unsigned char *)name; *p; p++) {
+        if (*p <= 0x20 || *p >= 0x7f || strchr(separators, *p))
+            return 0;
+    }
+    return 1;
+}
+
+static int http_cookie_value_ok(const char *value) {
+    if (!value) return 0;
+    for (const unsigned char *p = (const unsigned char *)value; *p; p++) {
+        if (*p != 0x21 && !(*p >= 0x23 && *p <= 0x2b) &&
+            !(*p >= 0x2d && *p <= 0x3a) &&
+            !(*p >= 0x3c && *p <= 0x5b) &&
+            !(*p >= 0x5d && *p <= 0x7e))
+            return 0;
+    }
+    return 1;
+}
+
+static int http_cookie_path_ok(const char *path) {
+    if (!path || path[0] != '/') return 0;
+    for (const unsigned char *p = (const unsigned char *)path; *p; p++) {
+        if (*p < 0x20 || *p == 0x7f || *p == ';') return 0;
+    }
+    return 1;
+}
+
+static int http_cookie_domain_ok(const char *domain) {
+    if (!domain || !domain[0]) return 0;
+    for (const unsigned char *p = (const unsigned char *)domain; *p; p++) {
+        if (*p <= 0x20 || *p >= 0x7f || *p == '/' || *p == '\\' ||
+            *p == ':' || *p == ';')
+            return 0;
+    }
+    return 1;
+}
+
 void neverc_http_set_cookie(neverc_http_response_writer_t *w,
                               const neverc_http_cookie_t *c) {
-    if (!w || !c || !c->name || !c->value) return;
+    if (!w || !c || !c->name || !c->value ||
+        !http_cookie_name_ok(c->name) || !http_cookie_value_ok(c->value))
+        return;
+    if (c->path && c->path[0] && !http_cookie_path_ok(c->path)) return;
+    if (c->domain && c->domain[0] && !http_cookie_domain_ok(c->domain))
+        return;
 
     nc_buf_t value;
     nc_buf_init(&value);

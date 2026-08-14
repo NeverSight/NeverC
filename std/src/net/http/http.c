@@ -836,6 +836,24 @@ static int route_parse_pattern(route_t *r, const char *pattern) {
         }
     }
 
+    /* Go-style: a {name...} wildcard may appear only at the end. */
+    {
+        const char *cursor = path_pattern;
+        while ((cursor = strchr(cursor, '{')) != NULL) {
+            const char *close = strchr(cursor, '}');
+            if (!close) break;
+            size_t namelen = (size_t)(close - cursor - 1);
+            if (namelen >= 3 && close[-3] == '.' && close[-2] == '.' &&
+                close[-1] == '.' && close[1] != '\0') {
+                free(path_pattern);
+                free(method);
+                free(pattern_copy);
+                return -1;
+            }
+            cursor = close + 1;
+        }
+    }
+
     r->pattern = pattern_copy;
     r->pattern_len = strlen(pattern);
     r->method = method;
@@ -977,6 +995,7 @@ static int pattern_match(const char *pattern, const char *path,
             if (wildcard) namelen -= 3;
 
             if (wildcard) {
+                if (close[1] != '\0') return 0;
                 /* Capture the rest of the path */
                 if (params && params->len + (int)namelen + 1 + (int)strlen(rp) + 1
                     < (int)sizeof(params->buf)) {

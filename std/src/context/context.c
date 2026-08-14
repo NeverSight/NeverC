@@ -27,11 +27,12 @@
 #endif
 
 static int64_t deadline_after(int64_t timeout_ms) {
+    /* Negative timeouts are already expired; INT64_MIN cannot be added. */
+    if (timeout_ms < 0)
+        return 1;
     int64_t now = now_ms();
     if (timeout_ms > 0 && now > INT64_MAX - timeout_ms)
         return INT64_MAX;
-    if (timeout_ms < 0 && now < INT64_MIN - timeout_ms)
-        return 1;
     int64_t deadline = now + timeout_ms;
     return deadline > 0 ? deadline : 1;
 }

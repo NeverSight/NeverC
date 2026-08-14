@@ -69,8 +69,11 @@ int neverc_net_interfaces(neverc_net_interface_list_t *out) {
         iface->index = (int)a->IfIndex;
         iface->mtu = (int)a->Mtu;
 
-        WideCharToMultiByte(CP_UTF8, 0, a->FriendlyName, -1,
-                             iface->name, sizeof(iface->name), NULL, NULL);
+        if (WideCharToMultiByte(CP_UTF8, 0, a->FriendlyName, -1,
+                                 iface->name, (int)sizeof(iface->name),
+                                 NULL, NULL) <= 0)
+            iface->name[0] = '\0';
+        iface->name[sizeof(iface->name) - 1] = '\0';
 
         if (a->PhysicalAddressLength >= 6)
             format_mac(a->PhysicalAddress, (int)a->PhysicalAddressLength,

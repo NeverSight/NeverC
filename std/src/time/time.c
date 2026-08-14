@@ -256,6 +256,7 @@ char *neverc_time_format_unix_date(neverc_time_t t) {
     const char *mo = months[m.tm_mon];
     while (*mo) buf[p++] = *mo++;
     buf[p++] = ' ';
+    if (m.tm_mday < 10) buf[p++] = ' ';
     write_int(buf, &p, m.tm_mday, 1); buf[p++] = ' ';
     write_int(buf, &p, m.tm_hour, 2); buf[p++] = ':';
     write_int(buf, &p, m.tm_min, 2);  buf[p++] = ':';

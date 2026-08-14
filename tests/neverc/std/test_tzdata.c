@@ -217,6 +217,9 @@ static void test_offsets(void) {
 
     z = neverc_tzdata_lookup("Pacific/Chatham");
     check_int("Chatham offset +12:45", z ? z->utc_offset : 0, 45900);
+
+    z = neverc_tzdata_lookup("America/Caracas");
+    check_int("Caracas offset -4h", z ? z->utc_offset : 0, -14400);
 }
 
 /* ===== Edge cases ===== */
@@ -244,6 +247,51 @@ static void test_edge_cases(void) {
         if (!z || !z->name || !z->abbrev) { all_valid = 0; break; }
     }
     check_int("all entries valid", all_valid, 1);
+
+    check_null("lookup NULL", neverc_tzdata_lookup(NULL));
+    check_null("lookup_abbrev NULL", neverc_tzdata_lookup_abbrev(NULL));
+    check_int("list NULL names", neverc_tzdata_list("America/", NULL, 10), 0);
+
+    neverc_tzdata_zone_t *fixed = neverc_tzdata_fixed_zone(NULL, 3600);
+    check_not_null("fixed NULL name", fixed);
+    check_int("fixed NULL name offset", fixed ? fixed->utc_offset : 0, 3600);
+    if (fixed) { free((void *)fixed->name); free(fixed); }
+}
+
+static void tzdata_set_tz(const char *value) {
+#if defined(_WIN32)
+    _putenv_s("TZ", value ? value : "");
+#else
+    if (value) setenv("TZ", value, 1);
+    else unsetenv("TZ");
+#endif
+}
+
+static void test_local_tz(void) {
+    printf("[local_tz]\n");
+    const char *old = getenv("TZ");
+    char saved[256];
+    int had = 0;
+    if (old) {
+        size_t n = strlen(old);
+        if (n >= sizeof(saved)) n = sizeof(saved) - 1;
+        memcpy(saved, old, n);
+        saved[n] = '\0';
+        had = 1;
+    }
+
+    tzdata_set_tz(":America/New_York");
+    const neverc_tzdata_zone_t *z = neverc_tzdata_local();
+    check_not_null("colon TZ", z);
+    check_str("colon TZ name", z ? z->name : NULL, "America/New_York");
+
+    tzdata_set_tz("/usr/share/zoneinfo/Asia/Tokyo");
+    z = neverc_tzdata_local();
+    check_not_null("zoneinfo path TZ", z);
+    check_str("zoneinfo path name", z ? z->name : NULL, "Asia/Tokyo");
+
+    if (had) tzdata_set_tz(saved);
+    else tzdata_set_tz(NULL);
 }
 
 /* ===== Main ===== */
@@ -258,6 +306,7 @@ int main(void) {
     test_dst_offset();
     test_offsets();
     test_edge_cases();
+    test_local_tz();
 
     printf("\n--- time/tzdata: %d/%d passed", tests_passed, tests_run);
     if (tests_failed > 0) printf(", %d FAILED", tests_failed);

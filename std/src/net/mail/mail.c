@@ -22,6 +22,24 @@ static size_t scan_first2(const char *base, size_t n, char lead, char bound) {
     return lim;
 }
 
+static int mail_field_has_ctl(const char *s, size_t len) {
+    for (size_t i = 0; i < len; i++) {
+        unsigned char c = (unsigned char)s[i];
+        if (c < 0x20 || c == 0x7f) return 1;
+    }
+    return 0;
+}
+
+static int mail_address_safe(const char *s) {
+    if (!s || !s[0]) return 0;
+    for (const unsigned char *p = (const unsigned char *)s; *p; p++) {
+        if (*p < 0x21 || *p == 0x7f || *p == '<' || *p == '>' ||
+            *p == '"' || *p == '\\' || *p == ',' || *p == ';')
+            return 0;
+    }
+    return 1;
+}
+
 int neverc_mail_parse_address(const char *s, neverc_mail_address_t *out) {
     if (!s || !out) return -1;
     memset(out, 0, sizeof(*out));
@@ -29,38 +47,49 @@ int neverc_mail_parse_address(const char *s, neverc_mail_address_t *out) {
     const char *start = NULL;
     size_t slen = 0;
     trim(s, strlen(s), &start, &slen);
-    if (slen == 0) return -1;
+    if (slen == 0 || mail_field_has_ctl(start, slen)) return -1;
 
     const char *lt = NULL, *gt = NULL;
     for (size_t i = 0; i < slen; i++) {
-        if (start[i] == '<') lt = start + i;
-        if (start[i] == '>') gt = start + i;
+        if (start[i] == '<') {
+            if (lt) return -1;
+            lt = start + i;
+        }
+        if (start[i] == '>') {
+            if (gt) return -1;
+            gt = start + i;
+        }
     }
 
-    if (lt && gt && gt > lt) {
-        /* "Name <address>" format */
+    if (lt || gt) {
+        if (!lt || !gt || gt < lt + 2) return -1;
+        const char *after = gt + 1;
+        while (after < start + slen && (*after == ' ' || *after == '\t'))
+            after++;
+        if (after != start + slen) return -1;
+
         size_t addr_len = (size_t)(gt - lt - 1);
-        if (addr_len >= sizeof(out->address)) addr_len = sizeof(out->address) - 1;
+        if (addr_len == 0 || addr_len >= sizeof(out->address)) return -1;
         memcpy(out->address, lt + 1, addr_len);
         out->address[addr_len] = '\0';
+        if (!mail_address_safe(out->address)) return -1;
 
-        /* Name part */
         size_t name_len = (size_t)(lt - start);
         const char *nstart;
         size_t nlen;
         trim(start, name_len, &nstart, &nlen);
-        /* Strip surrounding quotes */
         if (nlen >= 2 && nstart[0] == '"' && nstart[nlen-1] == '"') {
             nstart++; nlen -= 2;
         }
-        if (nlen >= sizeof(out->name)) nlen = sizeof(out->name) - 1;
+        if (mail_field_has_ctl(nstart, nlen)) return -1;
+        if (nlen >= sizeof(out->name)) return -1;
         memcpy(out->name, nstart, nlen);
         out->name[nlen] = '\0';
     } else {
-        /* Plain address */
-        if (slen >= sizeof(out->address)) slen = sizeof(out->address) - 1;
+        if (slen >= sizeof(out->address)) return -1;
         memcpy(out->address, start, slen);
         out->address[slen] = '\0';
+        if (!mail_address_safe(out->address)) return -1;
     }
     return 0;
 }
@@ -112,7 +141,9 @@ int neverc_mail_parse_address_list(const char *s,
 }
 
 int neverc_mail_format_address(const neverc_mail_address_t *addr, char *buf, size_t cap) {
-    if (!addr || !buf || cap == 0) return -1;
+    if (!addr || !buf || cap == 0 || !mail_address_safe(addr->address))
+        return -1;
+    if (mail_field_has_ctl(addr->name, strlen(addr->name))) return -1;
     if (!addr->name[0])
         return snprintf(buf, cap, "%s", addr->address);
 

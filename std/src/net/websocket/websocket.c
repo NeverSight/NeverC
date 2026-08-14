@@ -88,7 +88,7 @@ static int ws_contains_ctl(const char *s) {
     if (!s) return 0;
     for (; *s; s++) {
         unsigned char c = (unsigned char)*s;
-        if (c == '\r' || c == '\n' || c == 0x7f) return 1;
+        if (c < 0x20 || c == 0x7f) return 1;
     }
     return 0;
 }
@@ -260,41 +260,6 @@ static int ws_parse_url(const char *url, ws_url_t *parsed,
         memcpy(parsed->target + prefix, target, target_len + 1);
     }
     return 0;
-}
-
-static const char *find_header_value(const char *raw, const char *hdr_end,
-                                      const char *name) {
-    size_t nlen = strlen(name);
-    const char *p = raw;
-    const char *end = hdr_end;
-
-    /* Skip request line */
-    while (p + 1 < end && !(p[0] == '\r' && p[1] == '\n')) p++;
-    if (p + 1 >= end) return NULL;
-    p += 2;
-
-    while (p < end) {
-        const char *hline_end = p;
-        while (hline_end + 1 < end &&
-               !(hline_end[0] == '\r' && hline_end[1] == '\n'))
-            hline_end++;
-        if (hline_end + 1 >= end) break;
-
-        const char *colon = NULL;
-        for (const char *q = p; q < hline_end; q++) {
-            if (*q == ':') { colon = q; break; }
-        }
-        if (colon) {
-            size_t hlen = (size_t)(colon - p);
-            if (hlen == nlen && strcasecmp_n(p, name, nlen) == 0) {
-                const char *val = colon + 1;
-                while (val < hline_end && *val == ' ') val++;
-                return val;
-            }
-        }
-        p = hline_end + 2;
-    }
-    return NULL;
 }
 
 static int copy_unique_header_value(const char *raw, const char *hdr_end,
@@ -723,56 +688,51 @@ int neverc_ws_handshake_server(neverc_tcp_conn_t *conn, const char *raw_request,
     if (!hdr_end) return -1;
 
     if (strncmp(raw_request, "GET ", 4) != 0) return -1;
+    {
+        const char *target = raw_request + 4;
+        const char *line_end = hdr_end;
+        if (target >= line_end || *target == ' ') return -1;
+        const char *sp = memchr(target, ' ', (size_t)(line_end - target));
+        if (!sp || (size_t)(line_end - sp) < 10 ||
+            memcmp(sp, " HTTP/1.1\r", 10) != 0)
+            return -1;
+    }
 
     /* hdr_end points at the first \r of the terminating \r\n\r\n, which is
      * also the last header line's trailing \r. Include its \n for parsing. */
     const char *hdr_scan_end = hdr_end + 2;
 
-    const char *upgrade = find_header_value(raw_request, hdr_scan_end, "Upgrade");
-    if (!upgrade) return -1;
-    {
-        char uval[32];
-        size_t ui = 0;
-        while (upgrade[ui] && upgrade[ui] != '\r' && ui < sizeof(uval) - 1) {
-            uval[ui] = upgrade[ui];
-            ui++;
-        }
-        uval[ui] = '\0';
-        if (strcasecmp_n(uval, "websocket", 9) != 0) return -1;
-    }
-
-    const char *conn_hdr = find_header_value(raw_request, hdr_scan_end, "Connection");
-    if (!conn_hdr) return -1;
-    int has_upgrade = 0;
-    {
-        size_t i = 0;
-        while (conn_hdr[i] && conn_hdr[i] != '\r') {
-            size_t start = i;
-            while (conn_hdr[i] && conn_hdr[i] != ',' && conn_hdr[i] != '\r') i++;
-            size_t toklen = i - start;
-            while (toklen > 0 && conn_hdr[start] == ' ') { start++; toklen--; }
-            if (toklen == 7 && strcasecmp_n(conn_hdr + start, "upgrade", 7) == 0)
-                has_upgrade = 1;
-            if (conn_hdr[i] == ',') i++;
-        }
-    }
-    if (!has_upgrade) return -1;
-
-    const char *version = find_header_value(raw_request, hdr_scan_end,
-                                            "Sec-WebSocket-Version");
-    if (!version || strncmp(version, "13", 2) != 0) return -1;
-
-    const char *ws_key = find_header_value(raw_request, hdr_scan_end,
-                                            "Sec-WebSocket-Key");
-    if (!ws_key) return -1;
-
+    char host[256];
+    char upgrade[32];
+    char connection[128];
+    char version[16];
     char key_buf[64];
-    size_t ki = 0;
-    while (ws_key[ki] && ws_key[ki] != '\r' && ki < sizeof(key_buf) - 1) {
-        key_buf[ki] = ws_key[ki];
-        ki++;
+    if (copy_unique_header_value(raw_request, hdr_scan_end, "Host",
+                                 host, sizeof(host)) != 1 || !host[0])
+        return -1;
+    if (copy_unique_header_value(raw_request, hdr_scan_end, "Upgrade",
+                                 upgrade, sizeof(upgrade)) != 1 ||
+        strcasecmp(upgrade, "websocket") != 0)
+        return -1;
+    if (copy_unique_header_value(raw_request, hdr_scan_end, "Connection",
+                                 connection, sizeof(connection)) != 1 ||
+        !ws_value_has_token(connection, "upgrade"))
+        return -1;
+    if (copy_unique_header_value(raw_request, hdr_scan_end,
+                                 "Sec-WebSocket-Version", version,
+                                 sizeof(version)) != 1 ||
+        strcmp(version, "13") != 0)
+        return -1;
+    if (copy_unique_header_value(raw_request, hdr_scan_end,
+                                 "Sec-WebSocket-Key", key_buf,
+                                 sizeof(key_buf)) != 1 ||
+        strlen(key_buf) != 24)
+        return -1;
+    {
+        uint8_t decoded_key[16];
+        if (neverc_base64_decode(decoded_key, key_buf, 24) != 16)
+            return -1;
     }
-    key_buf[ki] = '\0';
 
     char accept[64];
     if (neverc_ws_compute_accept(key_buf, accept, sizeof(accept)) != 0)
@@ -816,7 +776,7 @@ static int ws_validate_http_upgrade(const neverc_http_request_t *req,
     if (!has_upgrade) return -1;
 
     const char *version = neverc_http_request_header(req, "Sec-WebSocket-Version");
-    if (!version || strncmp(version, "13", 2) != 0) return -1;
+    if (!version || strcmp(version, "13") != 0) return -1;
 
     const char *ws_key = neverc_http_request_header(req, "Sec-WebSocket-Key");
     if (!ws_key || strlen(ws_key) != 24) return -1;

@@ -93,6 +93,20 @@ static void test_invalid_addr(void) {
 
     c = neverc_udp_listen("no_colon", &err);
     check_null("no colon", c);
+
+    c = neverc_udp_listen("127.0.0.1:65536", &err);
+    check_null("listen port overflow", c);
+
+    c = neverc_udp_listen("127.0.0.1:abc", &err);
+    check_null("listen nonnumeric port", c);
+
+    c = neverc_udp_dial(":80", &err);
+    check_null("dial empty host", c);
+    if (c) neverc_udp_close(c);
+
+    neverc_udp_addr_t addr;
+    check_int("resolve port overflow",
+              neverc_udp_resolve_addr("127.0.0.1:65536", &addr), -1);
 }
 
 /* ===== null safety ===== */

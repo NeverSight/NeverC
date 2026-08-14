@@ -15,6 +15,8 @@ extern "C" {
 #define NEVERC_TABWRITER_DEBUG              (1 << 5)
 
 #define NEVERC_TABWRITER_MAX_COLS 256
+#define NEVERC_TABWRITER_MAX_CELLS 4096
+#define NEVERC_TABWRITER_MAX_LINES 4096
 #define NEVERC_TABWRITER_MAX_BUF  (64 * 1024)
 
 typedef struct {
@@ -38,14 +40,14 @@ typedef struct {
     size_t  buf_len;
     int     buf_carved;   /* running total of carved cell sizes (= next cell start) */
 
-    neverc_tabwriter_cell_t cells[NEVERC_TABWRITER_MAX_COLS];
+    neverc_tabwriter_cell_t cells[NEVERC_TABWRITER_MAX_CELLS];
     int     ncells;
 
     int     col_widths[NEVERC_TABWRITER_MAX_COLS];
     int     ncols;
 
-    int     lines_start[4096];
-    int     lines_ncells[4096];
+    int     lines_start[NEVERC_TABWRITER_MAX_LINES];
+    int     lines_ncells[NEVERC_TABWRITER_MAX_LINES];
     int     nlines;
     int     failed;       /* sticky allocation/input error; output() returns NULL */
 } neverc_tabwriter_t;

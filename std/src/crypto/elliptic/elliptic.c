@@ -116,13 +116,26 @@ const neverc_elliptic_curve_t *neverc_elliptic_p384(void) {
 }
 
 void neverc_elliptic_point_init(neverc_elliptic_point_t *pt) {
+    if (!pt) return;
     neverc_bigint_init(&pt->x);
     neverc_bigint_init(&pt->y);
 }
 
 void neverc_elliptic_point_free(neverc_elliptic_point_t *pt) {
+    if (!pt) return;
     neverc_bigint_free(&pt->x);
     neverc_bigint_free(&pt->y);
+}
+
+static void point_reduce(neverc_elliptic_point_t *out,
+                         const neverc_elliptic_point_t *in,
+                         const neverc_bigint_t *p) {
+    neverc_bigint_mod(&out->x, &in->x, p);
+    neverc_bigint_mod(&out->y, &in->y, p);
+}
+
+static int point_is_infinity(const neverc_elliptic_point_t *pt) {
+    return neverc_bigint_is_zero(&pt->x) && neverc_bigint_is_zero(&pt->y);
 }
 
 int neverc_elliptic_is_on_curve(const neverc_elliptic_curve_t *curve,
@@ -168,24 +181,41 @@ void neverc_elliptic_add(const neverc_elliptic_curve_t *curve,
                           neverc_elliptic_point_t *r,
                           const neverc_elliptic_point_t *p1,
                           const neverc_elliptic_point_t *p2) {
-    if (neverc_bigint_is_zero(&p1->x) && neverc_bigint_is_zero(&p1->y)) {
-        neverc_bigint_set(&r->x, &p2->x);
-        neverc_bigint_set(&r->y, &p2->y);
+    if (!curve || !r || !p1 || !p2)
+        return;
+
+    neverc_elliptic_point_t a, b;
+    neverc_elliptic_point_init(&a);
+    neverc_elliptic_point_init(&b);
+    point_reduce(&a, p1, &curve->p);
+    point_reduce(&b, p2, &curve->p);
+
+    if (point_is_infinity(&a)) {
+        neverc_bigint_set(&r->x, &b.x);
+        neverc_bigint_set(&r->y, &b.y);
+        neverc_elliptic_point_free(&a);
+        neverc_elliptic_point_free(&b);
         return;
     }
-    if (neverc_bigint_is_zero(&p2->x) && neverc_bigint_is_zero(&p2->y)) {
-        neverc_bigint_set(&r->x, &p1->x);
-        neverc_bigint_set(&r->y, &p1->y);
+    if (point_is_infinity(&b)) {
+        neverc_bigint_set(&r->x, &a.x);
+        neverc_bigint_set(&r->y, &a.y);
+        neverc_elliptic_point_free(&a);
+        neverc_elliptic_point_free(&b);
         return;
     }
-    if (neverc_bigint_cmp(&p1->x, &p2->x) == 0 &&
-        neverc_bigint_cmp(&p1->y, &p2->y) == 0) {
-        neverc_elliptic_double(curve, r, p1);
+    if (neverc_bigint_cmp(&a.x, &b.x) == 0 &&
+        neverc_bigint_cmp(&a.y, &b.y) == 0) {
+        neverc_elliptic_double(curve, r, &a);
+        neverc_elliptic_point_free(&a);
+        neverc_elliptic_point_free(&b);
         return;
     }
-    if (neverc_bigint_cmp(&p1->x, &p2->x) == 0) {
+    if (neverc_bigint_cmp(&a.x, &b.x) == 0) {
         neverc_bigint_set_int64(&r->x, 0);
         neverc_bigint_set_int64(&r->y, 0);
+        neverc_elliptic_point_free(&a);
+        neverc_elliptic_point_free(&b);
         return;
     }
 
@@ -194,9 +224,9 @@ void neverc_elliptic_add(const neverc_elliptic_curve_t *curve,
     neverc_bigint_init(&lam); neverc_bigint_init(&lam2);
     neverc_bigint_init(&rx); neverc_bigint_init(&ry);
 
-    neverc_bigint_sub(&dx, &p2->x, &p1->x);
+    neverc_bigint_sub(&dx, &b.x, &a.x);
     neverc_bigint_mod(&dx, &dx, &curve->p);
-    neverc_bigint_sub(&dy, &p2->y, &p1->y);
+    neverc_bigint_sub(&dy, &b.y, &a.y);
     neverc_bigint_mod(&dy, &dy, &curve->p);
 
     neverc_bigint_t inv;
@@ -208,13 +238,13 @@ void neverc_elliptic_add(const neverc_elliptic_curve_t *curve,
     neverc_bigint_mul(&lam2, &lam, &lam);
     neverc_bigint_mod(&lam2, &lam2, &curve->p);
 
-    neverc_bigint_sub(&rx, &lam2, &p1->x);
-    neverc_bigint_sub(&rx, &rx, &p2->x);
+    neverc_bigint_sub(&rx, &lam2, &a.x);
+    neverc_bigint_sub(&rx, &rx, &b.x);
     neverc_bigint_mod(&rx, &rx, &curve->p);
 
-    neverc_bigint_sub(&ry, &p1->x, &rx);
+    neverc_bigint_sub(&ry, &a.x, &rx);
     neverc_bigint_mul(&ry, &lam, &ry);
-    neverc_bigint_sub(&ry, &ry, &p1->y);
+    neverc_bigint_sub(&ry, &ry, &a.y);
     neverc_bigint_mod(&ry, &ry, &curve->p);
 
     neverc_bigint_set(&r->x, &rx);
@@ -224,14 +254,23 @@ void neverc_elliptic_add(const neverc_elliptic_curve_t *curve,
     neverc_bigint_free(&lam); neverc_bigint_free(&lam2);
     neverc_bigint_free(&rx); neverc_bigint_free(&ry);
     neverc_bigint_free(&inv);
+    neverc_elliptic_point_free(&a);
+    neverc_elliptic_point_free(&b);
 }
 
 void neverc_elliptic_double(const neverc_elliptic_curve_t *curve,
                              neverc_elliptic_point_t *r,
                              const neverc_elliptic_point_t *p) {
-    if (neverc_bigint_is_zero(&p->y)) {
+    if (!curve || !r || !p)
+        return;
+
+    neverc_elliptic_point_t a;
+    neverc_elliptic_point_init(&a);
+    point_reduce(&a, p, &curve->p);
+    if (neverc_bigint_is_zero(&a.y)) {
         neverc_bigint_set_int64(&r->x, 0);
         neverc_bigint_set_int64(&r->y, 0);
+        neverc_elliptic_point_free(&a);
         return;
     }
 
@@ -245,13 +284,13 @@ void neverc_elliptic_double(const neverc_elliptic_curve_t *curve,
     neverc_bigint_set_int64(&two, 2);
     neverc_bigint_set_int64(&three, 3);
 
-    neverc_bigint_mul(&x2, &p->x, &p->x);
+    neverc_bigint_mul(&x2, &a.x, &a.x);
     neverc_bigint_mod(&x2, &x2, &curve->p);
     neverc_bigint_mul(&num, &three, &x2);
     neverc_bigint_sub(&num, &num, &three);
     neverc_bigint_mod(&num, &num, &curve->p);
 
-    neverc_bigint_mul(&den, &two, &p->y);
+    neverc_bigint_mul(&den, &two, &a.y);
     neverc_bigint_mod(&den, &den, &curve->p);
     mod_inv(&inv, &den, &curve->p);
     neverc_bigint_mul(&lam, &num, &inv);
@@ -260,13 +299,13 @@ void neverc_elliptic_double(const neverc_elliptic_curve_t *curve,
     neverc_bigint_mul(&lam2, &lam, &lam);
     neverc_bigint_mod(&lam2, &lam2, &curve->p);
 
-    neverc_bigint_mul(&rx, &two, &p->x);
+    neverc_bigint_mul(&rx, &two, &a.x);
     neverc_bigint_sub(&rx, &lam2, &rx);
     neverc_bigint_mod(&rx, &rx, &curve->p);
 
-    neverc_bigint_sub(&ry, &p->x, &rx);
+    neverc_bigint_sub(&ry, &a.x, &rx);
     neverc_bigint_mul(&ry, &lam, &ry);
-    neverc_bigint_sub(&ry, &ry, &p->y);
+    neverc_bigint_sub(&ry, &ry, &a.y);
     neverc_bigint_mod(&ry, &ry, &curve->p);
 
     neverc_bigint_set(&r->x, &rx);
@@ -277,6 +316,7 @@ void neverc_elliptic_double(const neverc_elliptic_curve_t *curve,
     neverc_bigint_free(&lam2); neverc_bigint_free(&rx);
     neverc_bigint_free(&ry); neverc_bigint_free(&two);
     neverc_bigint_free(&three); neverc_bigint_free(&inv);
+    neverc_elliptic_point_free(&a);
 }
 
 /* ------------------------------------------------------------------ *
@@ -405,11 +445,20 @@ void neverc_elliptic_scalar_mult(const neverc_elliptic_curve_t *curve,
                                   neverc_elliptic_point_t *r,
                                   const neverc_elliptic_point_t *p,
                                   const neverc_bigint_t *k) {
-    /* k == 0 or P == infinity -> result is the point at infinity (0,0). */
-    if (neverc_bigint_is_zero(k) ||
-        (neverc_bigint_is_zero(&p->x) && neverc_bigint_is_zero(&p->y))) {
+    if (!curve || !r || !p || !k)
+        return;
+
+    neverc_elliptic_point_t base;
+    neverc_elliptic_point_init(&base);
+    point_reduce(&base, p, &curve->p);
+    /* k == 0, P == infinity, or P off-curve -> infinity. Jacobian field
+     * helpers assume reduced on-curve inputs; unreduced (x+p, y) must
+     * still compute k*P rather than garbage. */
+    if (neverc_bigint_is_zero(k) || point_is_infinity(&base) ||
+        !neverc_elliptic_is_on_curve(curve, &base)) {
         neverc_bigint_set_int64(&r->x, 0);
         neverc_bigint_set_int64(&r->y, 0);
+        neverc_elliptic_point_free(&base);
         return;
     }
 
@@ -423,7 +472,7 @@ void neverc_elliptic_scalar_mult(const neverc_elliptic_curve_t *curve,
     for (int i = bits - 1; i >= 0; i--) {         /* left-to-right double-and-add */
         jac_double(curve, &acc, &acc);
         if (neverc_bigint_bit(k, (unsigned)i))
-            jac_add_affine(curve, &acc, &acc, &p->x, &p->y);
+            jac_add_affine(curve, &acc, &acc, &base.x, &base.y);
     }
 
     if (neverc_bigint_is_zero(&acc.Z)) {          /* result is infinity */
@@ -444,11 +493,14 @@ void neverc_elliptic_scalar_mult(const neverc_elliptic_curve_t *curve,
         neverc_bigint_free(&x); neverc_bigint_free(&y);
     }
     jac_free(&acc);
+    neverc_elliptic_point_free(&base);
 }
 
 void neverc_elliptic_scalar_base_mult(const neverc_elliptic_curve_t *curve,
                                        neverc_elliptic_point_t *r,
                                        const neverc_bigint_t *k) {
+    if (!curve || !r || !k)
+        return;
     neverc_elliptic_point_t g;
     neverc_elliptic_point_init(&g);
     neverc_bigint_set(&g.x, &curve->gx);

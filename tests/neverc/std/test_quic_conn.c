@@ -318,6 +318,32 @@ static void test_stream_read_fin(void) {
     neverc_quic_conn_destroy(conn);
 }
 
+static void test_stream_zero_flow_control_limit(void) {
+    struct neverc_quic_conn *conn = neverc_quic_conn_create(QUIC_SIDE_CLIENT, -1);
+    conn->state = QUIC_CONN_ESTABLISHED;
+    conn->peer_params.initial_max_stream_data_bidi_remote = 0;
+    conn->local_params.initial_max_stream_data_bidi_local = 0;
+
+    quic_stream_t *stream = neverc_quic_conn_open_stream(conn);
+    ASSERT_NOT_NULL(stream);
+    ASSERT_EQ(stream->send_max_data, 0);
+    ASSERT_EQ(stream->recv_max_data, 0);
+
+    uint8_t byte = 'x';
+    quic_frame_stream_t frame;
+    memset(&frame, 0, sizeof(frame));
+    frame.stream_id = stream->id;
+    frame.data = &byte;
+    frame.data_len = 1;
+    ASSERT_EQ(neverc_quic_stream_receive(conn, &frame), -1);
+
+    frame.data_len = 0;
+    frame.fin = 1;
+    ASSERT_EQ(neverc_quic_stream_receive(conn, &frame), 0);
+
+    neverc_quic_conn_destroy(conn);
+}
+
 static void test_stream_write_after_close(void) {
     struct neverc_quic_conn *conn = neverc_quic_conn_create(QUIC_SIDE_CLIENT, -1);
     conn->state = QUIC_CONN_ESTABLISHED;
@@ -504,6 +530,7 @@ int main(void) {
     test_stream_write_read();
     test_stream_write_grow_buffer();
     test_stream_read_fin();
+    test_stream_zero_flow_control_limit();
     test_stream_write_after_close();
     test_conn_close();
     test_conn_close_wakes_streams();

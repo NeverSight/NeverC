@@ -108,6 +108,38 @@ static int pem_is_space(unsigned char c) {
     return c == ' ' || c == '\t' || c == '\r' || c == '\n';
 }
 
+/*
+ * RFC 1421 encapsulated headers are `Name: value` lines, terminated by a
+ * blank line or by the first line that is not a header (the base64 body).
+ * Standard base64 has no ':', so a body line is never mistaken for a header.
+ */
+static const char *pem_skip_headers(const char *start, const char *end) {
+    const char *p = start;
+    while (p < end) {
+        const char *nl = (const char *)memchr(p, '\n', (size_t)(end - p));
+        const char *eol = nl ? nl : end;
+        const char *content_end = eol;
+        if (content_end > p && content_end[-1] == '\r')
+            --content_end;
+        while (content_end > p &&
+               (content_end[-1] == ' ' || content_end[-1] == '\t'))
+            --content_end;
+        if (content_end == p)
+            return nl ? nl + 1 : end;
+        int has_colon = 0;
+        for (const char *c = p; c < content_end; ++c) {
+            if (*c == ':') {
+                has_colon = 1;
+                break;
+            }
+        }
+        if (!has_colon)
+            return p;
+        p = nl ? nl + 1 : end;
+    }
+    return p;
+}
+
 int neverc_pem_decode(const char *pem_data, size_t pem_len,
                       char *type_buf, size_t type_cap,
                       uint8_t *out_buf, size_t out_cap,
@@ -186,6 +218,8 @@ int neverc_pem_decode(const char *pem_data, size_t pem_len,
             return -1;
         ++after_end;
     }
+
+    body_start = pem_skip_headers(body_start, end);
 
     int quartet[4];
     size_t quartet_len = 0;

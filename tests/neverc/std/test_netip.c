@@ -71,6 +71,13 @@ static void test_parse_ipv6(void) {
     ASSERT_EQ(neverc_netip_parse_addr("::1:2:3:4:5:6:7:8", &addr), -1);
     ASSERT_EQ(neverc_netip_parse_addr("1:2:3:4:5:6:7:8::", &addr), -1);
     ASSERT_EQ(neverc_netip_parse_addr("1:2:3:4:5:6:7:8:", &addr), -1);
+    ASSERT_EQ(neverc_netip_parse_addr("fe80::1%", &addr), -1);
+
+    char long_zone[80];
+    memcpy(long_zone, "fe80::1%", 8);
+    memset(long_zone + 8, 'z', 64);
+    long_zone[72] = '\0';
+    ASSERT_EQ(neverc_netip_parse_addr(long_zone, &addr), -1);
 }
 
 static void test_addr_from4(void) {
@@ -146,6 +153,12 @@ static void test_compare(void) {
     ASSERT_TRUE(neverc_netip_addr_compare(&a, NULL) > 0);
     ASSERT_TRUE(neverc_netip_addr_compare(NULL, &a) < 0);
     ASSERT_TRUE(!neverc_netip_addr_equal(&a, NULL));
+
+    neverc_netip_parse_addr("fe80::1%eth0", &a);
+    neverc_netip_parse_addr("fe80::1%eth1", &b);
+    ASSERT_TRUE(!neverc_netip_addr_equal(&a, &b));
+    ASSERT_TRUE(neverc_netip_addr_compare(&a, &b) != 0);
+    ASSERT_TRUE(neverc_netip_addr_equal(&a, &a));
 }
 
 static void test_prefix(void) {
@@ -178,6 +191,8 @@ static void test_prefix(void) {
     ASSERT_TRUE(!neverc_netip_prefix_contains(&pfx, &addr));
 
     ASSERT_EQ(neverc_netip_parse_prefix("1.2.3.4/33", &pfx), -1);
+    ASSERT_EQ(neverc_netip_parse_prefix("1.2.3.4/", &pfx), -1);
+    ASSERT_EQ(neverc_netip_parse_prefix("2001:db8::/129", &pfx), -1);
 }
 
 static void test_addrport(void) {
@@ -196,6 +211,9 @@ static void test_addrport(void) {
     ASSERT_STREQ(buf, "[::1]:443");
 
     ASSERT_EQ(neverc_netip_parse_addrport("::1:8080", &ap), -1);
+    ASSERT_EQ(neverc_netip_parse_addrport("192.168.1.1:65536", &ap), -1);
+    ASSERT_EQ(neverc_netip_parse_addrport("[::1]:65536", &ap), -1);
+    ASSERT_EQ(neverc_netip_parse_addrport("192.168.1.1:", &ap), -1);
 }
 
 static void test_wellknown(void) {

@@ -1,4 +1,5 @@
 #include "neverc/std/net/resolve.h"
+#include <limits.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -74,6 +75,18 @@ static void test_split_host_port(void) {
     check_int("port overflow rejected",
               neverc_net_split_host_port("localhost:65536", host, sizeof(host),
                                          port, sizeof(port)), -1);
+    check_int("ipv6 missing port rejected",
+              neverc_net_split_host_port("[::1]", host, sizeof(host),
+                                         port, sizeof(port)), -1);
+    check_int("ipv6 empty port rejected",
+              neverc_net_split_host_port("[::1]:", host, sizeof(host),
+                                         port, sizeof(port)), -1);
+    check_int("ipv6 port overflow rejected",
+              neverc_net_split_host_port("[::1]:65536", host, sizeof(host),
+                                         port, sizeof(port)), -1);
+    check_int("signed port rejected",
+              neverc_net_split_host_port("localhost:+80", host, sizeof(host),
+                                         port, sizeof(port)), -1);
 }
 
 /* ===== JoinHostPort ===== */
@@ -142,8 +155,24 @@ static void test_lookup_port(void) {
     check_int("http port", neverc_net_lookup_port("tcp", "http"), 80);
     check_int("https port", neverc_net_lookup_port("tcp", "https"), 443);
     check_int("numeric port", neverc_net_lookup_port("tcp", "8080"), 8080);
+    check_int("port zero", neverc_net_lookup_port("tcp", "0"), 0);
     check_int("ssh port", neverc_net_lookup_port("tcp", "ssh"), 22);
     check_int("dns port", neverc_net_lookup_port("udp", "domain"), 53);
+    check_int("empty service rejected", neverc_net_lookup_port("tcp", ""), -1);
+    check_int("null service rejected", neverc_net_lookup_port("tcp", NULL), -1);
+    check_int("overflow service rejected",
+              neverc_net_lookup_port("tcp", "65536"), -1);
+    check_int("signed numeric rejected",
+              neverc_net_lookup_port("tcp", "+80"), -1);
+    check_int("whitespace numeric rejected",
+              neverc_net_lookup_port("tcp", " 80"), -1);
+
+    neverc_net_srv_list_t srv;
+    char long_name[600];
+    memset(long_name, 'a', 599);
+    long_name[599] = '\0';
+    check_int("srv qname overflow",
+              neverc_net_lookup_srv("xmpp-client", "tcp", long_name, &srv), -1);
 }
 
 /* ===== LookupCNAME ===== */
@@ -181,6 +210,14 @@ static void test_pipe(void) {
 
     neverc_net_pipe_t *end1, *end2;
     check_int("pipe create", neverc_net_pipe(&end1, &end2), 0);
+
+    char byte = 0;
+    check_int("pipe rejects oversized write",
+              neverc_net_pipe_write(end1, &byte, (size_t)INT_MAX + 1), -1);
+    check_int("pipe rejects oversized read",
+              neverc_net_pipe_read(end1, &byte, (size_t)INT_MAX + 1), -1);
+    check_int("pipe zero-length read",
+              neverc_net_pipe_read(end1, &byte, 0), 0);
 
     /* Test basic write+read */
     const char *msg = "Hello, Pipe!";

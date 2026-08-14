@@ -207,7 +207,6 @@ char *neverc_fmt_vsprintf(const char *format, va_list args) {
             else if (format[i] == '#') { flag_hash  = 1; i++; }
             else break;
         }
-        (void)flag_hash;
 
         /* Parse width */
         int width = 0;
@@ -373,12 +372,22 @@ char *neverc_fmt_vsprintf(const char *format, va_list args) {
               memcmp(tmp + body_offset, "Inf", 3) == 0) ||
              (body_len == 3 &&
               memcmp(tmp + body_offset, "NaN", 3) == 0));
+        int is_zero = (tlen == 1 && tmp[0] == '0');
+        const char *alt_prefix = NULL;
+        int alt_len = 0;
+        if (flag_hash && !is_float_verb) {
+            if (verb == 'x') { alt_prefix = "0x"; alt_len = 2; }
+            else if (verb == 'X') { alt_prefix = "0X"; alt_len = 2; }
+            else if (verb == 'b') { alt_prefix = "0b"; alt_len = 2; }
+            else if (verb == 'o' && !is_zero) { alt_prefix = "0"; alt_len = 1; }
+        }
         int use_zero_padding = flag_zero && !formatted_is_special;
-        int total = body_len + (sign_prefix ? 1 : 0);
+        int total = body_len + (sign_prefix ? 1 : 0) + alt_len;
         int pad = (has_width && width > total) ? width - total : 0;
 
         if (!flag_minus && !use_zero_padding) buf_pad(&buf, ' ', pad);
         if (sign_prefix) buf_putc(&buf, sign_prefix);
+        if (alt_prefix) buf_puts(&buf, alt_prefix, (size_t)alt_len);
         if (!flag_minus && use_zero_padding) buf_pad(&buf, '0', pad);
         buf_puts(&buf, tmp + body_offset, (size_t)body_len);
         if (flag_minus) buf_pad(&buf, ' ', pad);

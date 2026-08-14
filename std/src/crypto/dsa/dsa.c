@@ -92,9 +92,46 @@ void neverc_dsa_signature_free(neverc_dsa_signature_t *sig) {
     neverc_bigint_free(&sig->r); neverc_bigint_free(&sig->s);
 }
 
-static void hash_to_int_dsa(neverc_bigint_t *r, const unsigned char *hash,
-                             size_t hash_len, const neverc_bigint_t *q) {
+static int dsa_group_valid(const neverc_dsa_public_key_t *key) {
+    if (!key || neverc_bigint_sign(&key->p) <= 0 ||
+        neverc_bigint_sign(&key->q) <= 0 ||
+        neverc_bigint_sign(&key->g) <= 0)
+        return 0;
+    /* q must be an odd prime-sized modulus (>= 3); p must be a larger odd
+     * prime-sized modulus. g=1 makes every (r=1,s) verify when y=1. */
+    if (neverc_bigint_bit_len(&key->q) < 2 ||
+        neverc_bigint_bit(&key->q, 0) == 0 ||
+        neverc_bigint_bit(&key->p, 0) == 0 ||
+        neverc_bigint_cmp(&key->q, &key->p) >= 0 ||
+        neverc_bigint_cmp(&key->g, &key->p) >= 0)
+        return 0;
+    neverc_bigint_t one;
+    neverc_bigint_init(&one);
+    neverc_bigint_set_int64(&one, 1);
+    int ok = neverc_bigint_cmp(&key->g, &one) > 0;
+    neverc_bigint_free(&one);
+    return ok;
+}
+
+static int dsa_public_valid(const neverc_dsa_public_key_t *key) {
+    if (!dsa_group_valid(key) || neverc_bigint_sign(&key->y) <= 0 ||
+        neverc_bigint_cmp(&key->y, &key->p) >= 0)
+        return 0;
+    neverc_bigint_t one;
+    neverc_bigint_init(&one);
+    neverc_bigint_set_int64(&one, 1);
+    int ok = neverc_bigint_cmp(&key->y, &one) > 0;
+    neverc_bigint_free(&one);
+    return ok;
+}
+
+static int hash_to_int_dsa(neverc_bigint_t *r, const unsigned char *hash,
+                            size_t hash_len, const neverc_bigint_t *q) {
+    if (!r || !hash || hash_len == 0 || !q)
+        return -1;
     int q_bytes = (neverc_bigint_bit_len(q) + 7) / 8;
+    if (q_bytes <= 0)
+        return -1;
     size_t use = hash_len < (size_t)q_bytes ? hash_len : (size_t)q_bytes;
     char hex[256];
     int pos = 0;
@@ -103,9 +140,11 @@ static void hash_to_int_dsa(neverc_bigint_t *r, const unsigned char *hash,
         hex[pos++] = "0123456789abcdef"[hash[i] & 0x0F];
     }
     hex[pos] = '\0';
-    neverc_bigint_set_string(r, hex, 16);
+    if (neverc_bigint_set_string(r, hex, 16) != 0)
+        return -1;
     if (neverc_bigint_cmp(r, q) >= 0)
         neverc_bigint_mod(r, r, q);
+    return 0;
 }
 
 int neverc_dsa_sign(const neverc_dsa_private_key_t *key,
@@ -113,14 +152,22 @@ int neverc_dsa_sign(const neverc_dsa_private_key_t *key,
                      neverc_dsa_signature_t *sig) {
     if (!key || !hash || hash_len == 0 || !sig)
         return -1;
+    neverc_bigint_set_int64(&sig->r, 0);
+    neverc_bigint_set_int64(&sig->s, 0);
+    if (!dsa_group_valid(&key->pub) ||
+        neverc_bigint_sign(&key->x) <= 0 ||
+        neverc_bigint_cmp(&key->x, &key->pub.q) >= 0)
+        return -1;
 
     neverc_bigint_t k, kinv, z, tmp;
     neverc_bigint_init(&k); neverc_bigint_init(&kinv);
     neverc_bigint_init(&z); neverc_bigint_init(&tmp);
-    neverc_bigint_set_int64(&sig->r, 0);
-    neverc_bigint_set_int64(&sig->s, 0);
 
-    hash_to_int_dsa(&z, hash, hash_len, &key->pub.q);
+    if (hash_to_int_dsa(&z, hash, hash_len, &key->pub.q) != 0) {
+        neverc_bigint_free(&k); neverc_bigint_free(&kinv);
+        neverc_bigint_free(&z); neverc_bigint_free(&tmp);
+        return -1;
+    }
 
     int result = -1;
     for (int attempt = 0; attempt < 128; ++attempt) {
@@ -161,7 +208,7 @@ int neverc_dsa_sign(const neverc_dsa_private_key_t *key,
 int neverc_dsa_verify(const neverc_dsa_public_key_t *key,
                        const unsigned char *hash, size_t hash_len,
                        const neverc_dsa_signature_t *sig) {
-    if (!key || !hash || hash_len == 0 || !sig)
+    if (!key || !hash || hash_len == 0 || !sig || !dsa_public_valid(key))
         return -1;
     if (neverc_bigint_sign(&sig->r) <= 0 || neverc_bigint_sign(&sig->s) <= 0)
         return -1;
@@ -176,7 +223,13 @@ int neverc_dsa_verify(const neverc_dsa_public_key_t *key,
     neverc_bigint_init(&v);
 
     mod_inv_dsa(&w, &sig->s, &key->q);
-    hash_to_int_dsa(&z, hash, hash_len, &key->q);
+    if (hash_to_int_dsa(&z, hash, hash_len, &key->q) != 0) {
+        neverc_bigint_free(&w); neverc_bigint_free(&z);
+        neverc_bigint_free(&u1); neverc_bigint_free(&u2);
+        neverc_bigint_free(&v1); neverc_bigint_free(&v2);
+        neverc_bigint_free(&v);
+        return -1;
+    }
 
     neverc_bigint_mul(&u1, &z, &w);
     neverc_bigint_mod(&u1, &u1, &key->q);

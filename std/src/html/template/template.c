@@ -490,6 +490,11 @@ static int html_ci_eq_n(const char *a, const char *b, size_t n) {
     return 1;
 }
 
+static int html_is_ascii_ws(unsigned char c) {
+    return c == ' ' || c == '\t' || c == '\n' || c == '\r' ||
+           c == '\f' || c == '\v';
+}
+
 static int html_in_script(const char *buf, size_t len) {
     if (!buf || len == 0) return 0;
     int in = 0;
@@ -510,46 +515,121 @@ static int html_ends_ci(const char *buf, size_t len, const char *suf) {
     return html_ci_eq_n(buf + len - sl, suf, sl);
 }
 
-static int html_in_url_attr(const char *buf, size_t len) {
+static int html_attr_name_eq(const char *name, size_t nlen, const char *want) {
+    size_t wlen = strlen(want);
+    return nlen == wlen && html_ci_eq_n(name, want, nlen);
+}
+
+/*
+ * HTML allows whitespace around '='. The previous suffix table only matched
+ * `name="` / `name='` / `name=` glued together, so `href = "{{.X}}"` and
+ * `onclick = "{{.X}}"` fell through to HTML escaping — which leaves
+ * javascript: and event-handler text intact.
+ */
+static int html_trailing_attr(const char *buf, size_t len, int *quoted,
+                              const char **name, size_t *nlen) {
     if (!buf || len == 0) return 0;
-    static const char *sufs[] = {
-        "href=\"", "href='", "href=",
-        "src=\"", "src='", "src=",
-        "action=\"", "action='", "action=",
-        "formaction=\"", "formaction='", "formaction=",
-        "cite=\"", "cite='", "cite=",
-        "poster=\"", "poster='", "poster=",
-        "background=\"", "background='", "background=",
-        "data=\"", "data='", "data=",
-        NULL
-    };
-    for (int i = 0; sufs[i]; i++) {
-        if (html_ends_ci(buf, len, sufs[i])) return 1;
+    size_t end = len;
+    *quoted = 0;
+    if (buf[end - 1] == '"' || buf[end - 1] == '\'') {
+        *quoted = 1;
+        end--;
     }
-    return 0;
+    while (end > 0 && html_is_ascii_ws((unsigned char)buf[end - 1])) end--;
+    if (end == 0 || buf[end - 1] != '=') return 0;
+    end--;
+    while (end > 0 && html_is_ascii_ws((unsigned char)buf[end - 1])) end--;
+    size_t i = end;
+    while (i > 0 && (nc_isalnum((unsigned char)buf[i - 1]) ||
+                     buf[i - 1] == '-' || buf[i - 1] == ':'))
+        i--;
+    if (i == end) return 0;
+    *name = buf + i;
+    *nlen = end - i;
+    return 1;
+}
+
+static int html_in_url_attr(const char *buf, size_t len) {
+    int quoted = 0;
+    const char *name = NULL;
+    size_t nlen = 0;
+    if (html_trailing_attr(buf, len, &quoted, &name, &nlen)) {
+        static const char *urls[] = {
+            "href", "src", "action", "formaction", "cite", "poster",
+            "background", "data", "srcset", "ping", "xlink:href", NULL
+        };
+        for (int i = 0; urls[i]; i++)
+            if (html_attr_name_eq(name, nlen, urls[i])) return 1;
+    }
+    return html_ends_ci(buf, len, "url(") ||
+           html_ends_ci(buf, len, "url(\"") ||
+           html_ends_ci(buf, len, "url('");
 }
 
 static int html_in_event_attr(const char *buf, size_t len) {
-    if (!buf || len < 4) return 0;
-    size_t end = len;
-    if (buf[end - 1] == '"' || buf[end - 1] == '\'') end--;
-    if (end == 0 || buf[end - 1] != '=') return 0;
-    size_t i = end - 1;
-    while (i > 0 && (nc_isalnum((unsigned char)buf[i - 1]) || buf[i - 1] == '-'))
-        i--;
-    size_t nlen = (end - 1) - i;
-    return nlen > 2 && html_ci_eq_n(buf + i, "on", 2);
+    int quoted = 0;
+    const char *name = NULL;
+    size_t nlen = 0;
+    if (!html_trailing_attr(buf, len, &quoted, &name, &nlen)) return 0;
+    return nlen > 2 && html_ci_eq_n(name, "on", 2);
+}
+
+static int html_in_style_attr(const char *buf, size_t len) {
+    int quoted = 0;
+    const char *name = NULL;
+    size_t nlen = 0;
+    if (!html_trailing_attr(buf, len, &quoted, &name, &nlen)) return 0;
+    return html_attr_name_eq(name, nlen, "style");
+}
+
+static int html_attr_unquoted(const char *buf, size_t len) {
+    int quoted = 0;
+    const char *name = NULL;
+    size_t nlen = 0;
+    return html_trailing_attr(buf, len, &quoted, &name, &nlen) && !quoted;
+}
+
+/* Match a scheme even when ASCII whitespace is sprinkled through it
+ * (`java\tscript:`, `\x0cjavascript:`, `javascript :`). */
+static int html_scheme_is(const char *s, const char *scheme) {
+    if (!s || !scheme) return 0;
+    while (*s && html_is_ascii_ws((unsigned char)*s)) s++;
+    while (*scheme) {
+        while (*s && html_is_ascii_ws((unsigned char)*s)) s++;
+        if (!*s) return 0;
+        char a = *s++, b = *scheme++;
+        if (a >= 'A' && a <= 'Z') a = (char)(a + 32);
+        if (b >= 'A' && b <= 'Z') b = (char)(b + 32);
+        if (a != b) return 0;
+    }
+    while (*s && html_is_ascii_ws((unsigned char)*s)) s++;
+    return *s == ':';
 }
 
 static int html_dangerous_url(const char *s) {
     if (!s) return 0;
-    while (*s == ' ' || *s == '\t' || *s == '\n' || *s == '\r') s++;
-    static const char *bad[] = { "javascript:", "vbscript:", "data:", NULL };
-    for (int i = 0; bad[i]; i++) {
-        size_t n = strlen(bad[i]);
-        if (strlen(s) >= n && html_ci_eq_n(s, bad[i], n)) return 1;
-    }
-    return 0;
+    return html_scheme_is(s, "javascript") ||
+           html_scheme_is(s, "vbscript") ||
+           html_scheme_is(s, "data");
+}
+
+/* Unquoted event handlers: wrap as a JS string inside a quoted HTML attr so
+ * `onclick={{.X}}` with X=alert(1) cannot run. */
+static char *html_escape_unquoted_event(const char *s) {
+    char *js = neverc_html_js_escape(s);
+    if (!js) return NULL;
+    size_t n = strlen(js);
+    if (n > SIZE_MAX - 3U) { free(js); return NULL; }
+    char *lit = (char *)NC_HTML_TEMPLATE_MALLOC(n + 3U);
+    if (!lit) { free(js); return NULL; }
+    lit[0] = '\'';
+    memcpy(lit + 1, js, n);
+    lit[n + 1] = '\'';
+    lit[n + 2] = '\0';
+    free(js);
+    char *escaped = neverc_html_escape(lit);
+    free(lit);
+    return escaped;
 }
 
 static int execute_nodes(const node_t *n,
@@ -564,19 +644,39 @@ static int execute_nodes(const node_t *n,
         case NODE_VAR: {
             const char *val = neverc_html_template_data_get(data, n->text);
             if (val) {
+                int in_url = html_in_url_attr(*buf, *len);
+                int in_event = html_in_event_attr(*buf, *len);
+                int in_style = html_in_style_attr(*buf, *len);
+                int unquoted = html_attr_unquoted(*buf, *len);
                 char *escaped;
-                if (html_in_script(*buf, *len) || html_in_event_attr(*buf, *len))
-                    escaped = neverc_html_js_escape(val);
-                else if (html_in_url_attr(*buf, *len) && html_dangerous_url(val))
+                /* URL context wins over <script src="..."> so javascript:/data:
+                 * are neutralized instead of JS-escaped (a no-op for those). */
+                if (in_url && html_dangerous_url(val))
                     escaped = neverc_html_escape("#");
+                else if (in_event && unquoted)
+                    escaped = html_escape_unquoted_event(val);
+                else if (html_in_script(*buf, *len) || in_event)
+                    escaped = neverc_html_js_escape(val);
+                else if (in_style)
+                    escaped = neverc_html_css_escape(val);
                 else
                     escaped = neverc_html_escape(val);
-                if (!escaped ||
-                    buf_append(buf, len, cap, escaped, strlen(escaped)) != 0) {
+                if (!escaped) return -1;
+                /* Quote previously-unquoted attrs so spaces cannot start a new
+                 * attribute (`class={{.X}}` with X=`x onmouseover=alert(1)`). */
+                if (unquoted &&
+                    buf_append(buf, len, cap, "\"", 1) != 0) {
+                    free(escaped);
+                    return -1;
+                }
+                if (buf_append(buf, len, cap, escaped, strlen(escaped)) != 0) {
                     free(escaped);
                     return -1;
                 }
                 free(escaped);
+                if (unquoted &&
+                    buf_append(buf, len, cap, "\"", 1) != 0)
+                    return -1;
             }
             break;
         }

@@ -186,7 +186,10 @@ int neverc_textproto_read_line(const char *data, size_t len,
     size_t i = nl ? (size_t)(nl - data) : len;
     size_t line_len = i;
     if (line_len > 0 && data[line_len - 1] == '\r') line_len--;
-    if (line_len >= line_cap) line_len = line_cap - 1;
+    if (line_len >= line_cap) {
+        if (consumed) *consumed = 0;
+        return -1;
+    }
     memcpy(line, data, line_len);
     line[line_len] = '\0';
     if (consumed) *consumed = nl ? i + 1 : i;
@@ -204,8 +207,10 @@ int neverc_textproto_read_mime_header(const char *data, size_t len,
 
     while (pos < len) {
         size_t ate = 0;
-        if (neverc_textproto_read_line(data + pos, len - pos, line, sizeof(line), &ate) != 0)
-            break;
+        if (neverc_textproto_read_line(data + pos, len - pos, line, sizeof(line), &ate) != 0) {
+            if (consumed) *consumed = pos;
+            return -1;
+        }
         pos += ate;
         if (line[0] == '\0') break;
 
@@ -234,6 +239,10 @@ int neverc_textproto_read_mime_header(const char *data, size_t len,
 
         char *colon = strchr(line, ':');
         if (!colon) continue;
+        if (colon == line) {
+            if (consumed) *consumed = pos;
+            return -1;
+        }
         *colon = '\0';
         const char *val = colon + 1;
         while (*val == ' ' || *val == '\t') val++;
@@ -263,8 +272,10 @@ int neverc_textproto_read_dot_lines(const char *data, size_t len,
 
     while (pos < len && *nlines < max_lines) {
         size_t ate = 0;
-        if (neverc_textproto_read_line(data + pos, len - pos, line, sizeof(line), &ate) != 0)
-            break;
+        if (neverc_textproto_read_line(data + pos, len - pos, line, sizeof(line), &ate) != 0) {
+            if (consumed) *consumed = pos;
+            return -1;
+        }
         pos += ate;
         if (strcmp(line, ".") == 0) break;
         const char *src = line;

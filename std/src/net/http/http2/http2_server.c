@@ -862,6 +862,18 @@ static int h2_value_valid(const char *value) {
     return 1;
 }
 
+static int h2_ascii_ieq(const char *left, const char *right) {
+    if (!left || !right) return 0;
+    while (*left && *right) {
+        unsigned char a = (unsigned char)*left++;
+        unsigned char b = (unsigned char)*right++;
+        if (a >= 'A' && a <= 'Z') a = (unsigned char)(a + ('a' - 'A'));
+        if (b >= 'A' && b <= 'Z') b = (unsigned char)(b + ('a' - 'A'));
+        if (a != b) return 0;
+    }
+    return *left == *right;
+}
+
 static int h2_parse_content_length(const char *value, int64_t *result) {
     if (!value || !*value) return -1;
     uint64_t parsed = 0;
@@ -882,6 +894,7 @@ static int h2_validate_request_headers(h2_conn_t *conn,
     const char *path = NULL;
     const char *scheme = NULL;
     const char *authority = NULL;
+    const char *host = NULL;
     int regular_seen = 0;
     int content_length_seen = 0;
     size_t list_size = 0;
@@ -924,6 +937,10 @@ static int h2_validate_request_headers(h2_conn_t *conn,
             return -1;
         if (strcmp(name, "te") == 0 && strcasecmp(value, "trailers") != 0)
             return -1;
+        if (strcmp(name, "host") == 0) {
+            if (host) return -1;
+            host = value;
+        }
         if (strcmp(name, "content-length") == 0) {
             if (content_length_seen ||
                 h2_parse_content_length(value, &stream->content_length) != 0)
@@ -934,9 +951,11 @@ static int h2_validate_request_headers(h2_conn_t *conn,
     if (!method || !*method || strcmp(method, "CONNECT") == 0 ||
         !scheme || (strcmp(scheme, "http") != 0 &&
                     strcmp(scheme, "https") != 0) ||
-        !path || (path[0] != '/' && strcmp(path, "*") != 0))
+        !path || (path[0] != '/' && strcmp(path, "*") != 0) ||
+        strchr(path, '#') != NULL)
         return -1;
-    (void)authority;
+    if (authority && host && !h2_ascii_ieq(authority, host))
+        return -1;
     return 0;
 }
 
@@ -1491,7 +1510,7 @@ static int h2_response_flush(void *context,
 
 static void h2_dispatch_request(h2_conn_t *conn, h2_stream_t *stream) {
     const char *method = NULL, *path = NULL, *authority = NULL;
-    const char *content_type = NULL;
+    const char *host = NULL, *content_type = NULL;
     nc_buf_t raw_headers;
     nc_buf_init(&raw_headers);
     int regular_headers = 0;
@@ -1503,6 +1522,8 @@ static void h2_dispatch_request(h2_conn_t *conn, h2_stream_t *stream) {
         else if (strcmp(stream->headers[i].name, ":authority") == 0)
             authority = stream->headers[i].value;
         else if (stream->headers[i].name[0] != ':') {
+            if (strcmp(stream->headers[i].name, "host") == 0)
+                host = stream->headers[i].value;
             if (strcmp(stream->headers[i].name, "content-type") == 0)
                 content_type = stream->headers[i].value;
             if (nc_buf_append(&raw_headers, stream->headers[i].name,
@@ -1541,7 +1562,7 @@ static void h2_dispatch_request(h2_conn_t *conn, h2_stream_t *stream) {
     request.path = path_copy;
     request.query = query;
     request.http_version = "HTTP/2.0";
-    request.host = authority;
+    request.host = authority ? authority : host;
     request.content_type = content_type;
     request.body = stream->streaming_request
         ? NULL : (const char *)stream->body;
@@ -1982,11 +2003,20 @@ static int h2_serve_io(neverc_h2_server_t *srv, h2_io_t *io) {
                 conn.conn_recv_window += increment;
             }
             if (data_length > 0) {
-                if (data_length > conn.srv->max_body_size ||
+                int length_error = stream->content_length >= 0 &&
+                    ((uint64_t)stream->body_len >
+                         (uint64_t)stream->content_length ||
+                     (uint64_t)data_length >
+                         (uint64_t)stream->content_length -
+                             (uint64_t)stream->body_len);
+                if (length_error ||
+                    data_length > conn.srv->max_body_size ||
                     stream->body_len > conn.srv->max_body_size - data_length) {
                     nc_atomic_store(&stream->reset, 1);
                     (void)h2_conn_write_rst(&conn, stream->id,
-                                            NC_H2_ENHANCE_YOUR_CALM);
+                                            length_error
+                                                ? NC_H2_PROTOCOL_ERROR
+                                                : NC_H2_ENHANCE_YOUR_CALM);
                     if (stream->streaming_request) {
                         nc_atomic_store(&stream->reset, 1);
                         neverc_context_cancel_handle_cancel(stream->cancel);

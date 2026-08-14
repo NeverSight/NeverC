@@ -60,13 +60,16 @@ static void mod_inv_ec(neverc_bigint_t *r, const neverc_bigint_t *a, const never
 }
 
 void neverc_ecdsa_public_key_init(neverc_ecdsa_public_key_t *k) {
+    if (!k) return;
     k->curve = NULL;
     neverc_elliptic_point_init(&k->pub);
 }
 void neverc_ecdsa_public_key_free(neverc_ecdsa_public_key_t *k) {
+    if (!k) return;
     neverc_elliptic_point_free(&k->pub);
 }
 void neverc_ecdsa_private_key_init(neverc_ecdsa_private_key_t *k) {
+    if (!k) return;
     neverc_ecdsa_public_key_init(&k->pub);
     neverc_bigint_init(&k->d);
 }
@@ -76,22 +79,29 @@ void neverc_ecdsa_private_key_free(neverc_ecdsa_private_key_t *k) {
     bigint_secure_free(&k->d);
 }
 void neverc_ecdsa_signature_init(neverc_ecdsa_signature_t *sig) {
+    if (!sig) return;
     neverc_bigint_init(&sig->r);
     neverc_bigint_init(&sig->s);
 }
 void neverc_ecdsa_signature_free(neverc_ecdsa_signature_t *sig) {
+    if (!sig) return;
     neverc_bigint_free(&sig->r);
     neverc_bigint_free(&sig->s);
 }
 
 int neverc_ecdsa_generate_key(neverc_ecdsa_private_key_t *key,
                                const neverc_elliptic_curve_t *curve) {
-    if (!key || !curve || neverc_bigint_sign(&curve->n) <= 0)
+    if (!key)
+        return -1;
+    if (!curve || neverc_bigint_sign(&curve->n) <= 0)
         return -1;
     key->pub.curve = curve;
     neverc_bigint_set_uint64(&key->d, 0);
     if (random_mod_n(&key->d, &curve->n) != 0) {
+        key->pub.curve = NULL;
         neverc_bigint_set_uint64(&key->d, 0);
+        neverc_bigint_set_int64(&key->pub.pub.x, 0);
+        neverc_bigint_set_int64(&key->pub.pub.y, 0);
         return -1;
     }
     neverc_elliptic_scalar_base_mult(curve, &key->pub.pub, &key->d);
@@ -123,13 +133,15 @@ static int hash_to_int(neverc_bigint_t *r, const unsigned char *hash,
 int neverc_ecdsa_sign(const neverc_ecdsa_private_key_t *key,
                        const unsigned char *hash, size_t hash_len,
                        neverc_ecdsa_signature_t *sig) {
-    if (!key || !key->pub.curve || !hash || hash_len == 0 || !sig ||
+    if (!sig)
+        return -1;
+    neverc_bigint_set_uint64(&sig->r, 0);
+    neverc_bigint_set_uint64(&sig->s, 0);
+    if (!key || !key->pub.curve || !hash || hash_len == 0 ||
         neverc_bigint_sign(&key->d) <= 0 ||
         neverc_bigint_cmp(&key->d, &key->pub.curve->n) >= 0)
         return -1;
     const neverc_elliptic_curve_t *curve = key->pub.curve;
-    neverc_bigint_set_uint64(&sig->r, 0);
-    neverc_bigint_set_uint64(&sig->s, 0);
     neverc_bigint_t k, e, kinv, tmp;
     neverc_bigint_init(&k); neverc_bigint_init(&e);
     neverc_bigint_init(&kinv); neverc_bigint_init(&tmp);
@@ -165,6 +177,10 @@ int neverc_ecdsa_sign(const neverc_ecdsa_private_key_t *key,
     }
 
 cleanup:
+    if (result != 0) {
+        neverc_bigint_set_uint64(&sig->r, 0);
+        neverc_bigint_set_uint64(&sig->s, 0);
+    }
     bigint_secure_free(&k); neverc_bigint_free(&e);
     bigint_secure_free(&kinv); bigint_secure_free(&tmp);
     return result;

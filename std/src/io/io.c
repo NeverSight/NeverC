@@ -3,6 +3,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define NCI_IO_MAX_EMPTY_READS 100
+
 static int ensure_capacity(uint8_t **data, size_t *cap, size_t required) {
     if (required == 0 || (*data && *cap >= required)) return 0;
 
@@ -40,6 +42,7 @@ uint8_t *neverc_io_read_all(neverc_io_reader_t *r, size_t *outlen) {
     size_t cap = 4096, total = 0;
     uint8_t *buf = (uint8_t *)malloc(cap);
     if (!buf) return NULL;
+    unsigned empty_reads = 0;
 
     for (;;) {
         if (total >= cap) {
@@ -64,8 +67,13 @@ uint8_t *neverc_io_read_all(neverc_io_reader_t *r, size_t *outlen) {
             return NULL;
         }
         total += n;
-        if (err == NEVERC_IO_EOF || n == 0) break;
+        if (err == NEVERC_IO_EOF) break;
         if (err != 0) break;
+        if (n == 0) {
+            if (++empty_reads >= NCI_IO_MAX_EMPTY_READS) break;
+            continue;
+        }
+        empty_reads = 0;
     }
     *outlen = total;
     return buf;
@@ -76,6 +84,7 @@ int neverc_io_read_full(neverc_io_reader_t *r, uint8_t *buf, size_t len) {
     if (!r || !r->read || !buf) return NEVERC_IO_ERR_UNEXP;
 
     size_t total = 0;
+    unsigned empty_reads = 0;
     while (total < len) {
         size_t available = len - total;
         size_t n = 0;
@@ -87,7 +96,12 @@ int neverc_io_read_full(neverc_io_reader_t *r, uint8_t *buf, size_t len) {
             return NEVERC_IO_ERR_UNEXP;
         }
         if (err != 0) return err;
-        if (n == 0) return NEVERC_IO_ERR_UNEXP;
+        if (n == 0) {
+            if (++empty_reads >= NCI_IO_MAX_EMPTY_READS)
+                return NEVERC_IO_ERR_UNEXP;
+            continue;
+        }
+        empty_reads = 0;
     }
     return 0;
 }
@@ -97,11 +111,13 @@ int64_t neverc_io_copy(neverc_io_writer_t *dst, neverc_io_reader_t *src) {
 
     uint8_t buf[32768];
     int64_t total = 0;
+    unsigned empty_reads = 0;
     for (;;) {
         size_t nr = 0;
         int err = src->read(src->ctx, buf, sizeof(buf), &nr);
         if (nr > sizeof(buf)) return total;
         if (nr > 0) {
+            empty_reads = 0;
             size_t nw = 0;
             int werr = dst->write(dst->ctx, buf, nr, &nw);
             if (nw > nr) return total;
@@ -109,8 +125,11 @@ int64_t neverc_io_copy(neverc_io_writer_t *dst, neverc_io_reader_t *src) {
             if (werr != 0) return total;
             if (nw != nr) return total;
         }
-        if (err == NEVERC_IO_EOF || nr == 0) break;
+        if (err == NEVERC_IO_EOF) break;
         if (err != 0) break;
+        if (nr == 0) {
+            if (++empty_reads >= NCI_IO_MAX_EMPTY_READS) break;
+        }
     }
     return total;
 }
@@ -121,6 +140,7 @@ int64_t neverc_io_copy_n(neverc_io_writer_t *dst, neverc_io_reader_t *src,
 
     uint8_t buf[32768];
     int64_t total = 0;
+    unsigned empty_reads = 0;
     while (total < n) {
         size_t want = sizeof(buf);
         if ((int64_t)want > n - total) want = (size_t)(n - total);
@@ -128,14 +148,18 @@ int64_t neverc_io_copy_n(neverc_io_writer_t *dst, neverc_io_reader_t *src,
         int err = src->read(src->ctx, buf, want, &nr);
         if (nr > want) return total;
         if (nr > 0) {
+            empty_reads = 0;
             size_t nw = 0;
             int werr = dst->write(dst->ctx, buf, nr, &nw);
             if (nw > nr) return total;
             if (add_copy_count(&total, nw)) return total;
             if (werr != 0 || nw != nr) return total;
         }
-        if (err == NEVERC_IO_EOF || nr == 0) break;
+        if (err == NEVERC_IO_EOF) break;
         if (err != 0) break;
+        if (nr == 0) {
+            if (++empty_reads >= NCI_IO_MAX_EMPTY_READS) break;
+        }
     }
     return total;
 }
@@ -235,6 +259,7 @@ int neverc_io_read_at_least(neverc_io_reader_t *r, uint8_t *buf,
     if (!r || !r->read || !buf) return NEVERC_IO_ERR_UNEXP;
 
     size_t total = 0;
+    unsigned empty_reads = 0;
     while (total < min) {
         size_t available = len - total;
         size_t got = 0;
@@ -253,7 +278,11 @@ int neverc_io_read_at_least(neverc_io_reader_t *r, uint8_t *buf,
             return NEVERC_IO_ERR_UNEXP;
         }
         if (rc != 0) { if (n) *n = total; return rc; }
-        if (got == 0) break;
+        if (got == 0) {
+            if (++empty_reads >= NCI_IO_MAX_EMPTY_READS) break;
+            continue;
+        }
+        empty_reads = 0;
     }
     if (n) *n = total;
     return (total < min) ? NEVERC_IO_ERR_SHORT : 0;
@@ -264,11 +293,13 @@ int64_t neverc_io_copy_buffer(neverc_io_writer_t *dst, neverc_io_reader_t *src,
     if (!dst || !dst->write || !src || !src->read || !buf || buflen == 0)
         return 0;
     int64_t written = 0;
+    unsigned empty_reads = 0;
     while (1) {
         size_t nr = 0;
         int rc = src->read(src->ctx, buf, buflen, &nr);
         if (nr > buflen) return written;
         if (nr > 0) {
+            empty_reads = 0;
             size_t nw = 0;
             int wc = dst->write(dst->ctx, buf, nr, &nw);
             if (nw > nr) return written;
@@ -278,7 +309,9 @@ int64_t neverc_io_copy_buffer(neverc_io_writer_t *dst, neverc_io_reader_t *src,
         }
         if (rc == NEVERC_IO_EOF) break;
         if (rc != 0) return written;
-        if (nr == 0) break;
+        if (nr == 0) {
+            if (++empty_reads >= NCI_IO_MAX_EMPTY_READS) break;
+        }
     }
     return written;
 }

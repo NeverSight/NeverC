@@ -4010,7 +4010,7 @@
     "smtp": {
       "header": "include/neverc/std/net/smtp.h",
       "description": "SMTP client \u2014 send email (mirrors Go net/smtp, RFC 5321)",
-      "deps": ["net/tcp"],
+      "deps": ["net/tcp", "encoding/base64"],
       "symbols": {
         "neverc_smtp_dial": "src/net/smtp/smtp.c",
         "neverc_smtp_close": "src/net/smtp/smtp.c",

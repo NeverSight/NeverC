@@ -80,6 +80,23 @@ static void test_timeout_bounds_and_deadline_precedence(void) {
     ASSERT_TRUE(past != NULL);
     ASSERT_TRUE(neverc_context_deadline(past) > 0);
     ASSERT_INT_EQ(neverc_context_done(past), 1);
+    ASSERT_TRUE(neverc_context_err(past) != NULL);
+    ASSERT_TRUE(strcmp(neverc_context_err(past),
+                       "context deadline exceeded") == 0);
+
+    neverc_context_cancel_handle_t *past_handle = NULL;
+    neverc_context_t *past_handled =
+        neverc_context_with_timeout_handle(bg, INT64_MIN, &past_handle);
+    ASSERT_TRUE(past_handled != NULL && past_handle != NULL);
+    ASSERT_TRUE(neverc_context_deadline(past_handled) > 0);
+    ASSERT_INT_EQ(neverc_context_done(past_handled), 1);
+
+    neverc_context_t *past_cause =
+        neverc_context_with_timeout_cause(bg, INT64_MIN, NULL, "already late");
+    ASSERT_TRUE(past_cause != NULL);
+    ASSERT_INT_EQ(neverc_context_done(past_cause), 1);
+    ASSERT_TRUE(neverc_context_cause(past_cause) != NULL);
+    ASSERT_TRUE(strcmp(neverc_context_cause(past_cause), "already late") == 0);
 
     neverc_context_t *parent =
         neverc_context_with_deadline(bg, INT64_MAX - 100, NULL);
@@ -98,6 +115,9 @@ static void test_timeout_bounds_and_deadline_precedence(void) {
     neverc_context_free(handled);
     neverc_context_free(child);
     neverc_context_free(parent);
+    neverc_context_free(past_cause);
+    neverc_context_cancel_handle_free(past_handle);
+    neverc_context_free(past_handled);
     neverc_context_free(past);
     neverc_context_free(future);
     neverc_context_free(bg);

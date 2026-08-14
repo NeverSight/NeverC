@@ -150,20 +150,18 @@ static int scan_number(neverc_scanner_t *s, int first) {
     while (s->pos < s->src_len && is_digit(peek_ch(s)))
         emit(s, next_ch(s));
 
-    if (s->pos < s->src_len && peek_ch(s) == '.') {
-        int next_pos = (int)(s->pos + 1);
-        if ((size_t)next_pos < s->src_len && is_digit(s->src[next_pos])) {
-            is_float = 1;
+    /* Go text/scanner: a '.' after digits starts a float whenever ScanFloats
+     * is set, even with no fractional digits ("1.", "1.e10", "1.foo"). */
+    if ((s->mode & NEVERC_SCAN_FLOATS) && s->pos < s->src_len &&
+        peek_ch(s) == '.') {
+        is_float = 1;
+        emit(s, next_ch(s));
+        while (s->pos < s->src_len && is_digit(peek_ch(s)))
             emit(s, next_ch(s));
-            while (s->pos < s->src_len && is_digit(peek_ch(s)))
-                emit(s, next_ch(s));
-        } else if ((size_t)next_pos >= s->src_len) {
-            is_float = 1;
-            emit(s, next_ch(s));
-        }
     }
 
-    if (s->pos < s->src_len && (peek_ch(s) == 'e' || peek_ch(s) == 'E')) {
+    if ((s->mode & NEVERC_SCAN_FLOATS) && s->pos < s->src_len &&
+        (peek_ch(s) == 'e' || peek_ch(s) == 'E')) {
         is_float = 1;
         emit(s, next_ch(s));
         if (s->pos < s->src_len && (peek_ch(s) == '+' || peek_ch(s) == '-'))
@@ -172,13 +170,6 @@ static int scan_number(neverc_scanner_t *s, int first) {
             emit(s, next_ch(s));
     }
 
-    if (s->pos < s->src_len && (peek_ch(s) == 'i'))
-        emit(s, next_ch(s));
-
-    if (is_float && (s->mode & NEVERC_SCAN_FLOATS))
-        return NEVERC_SCANNER_FLOAT;
-    if (is_float && (s->mode & NEVERC_SCAN_INTS))
-        return NEVERC_SCANNER_FLOAT;
     return is_float ? NEVERC_SCANNER_FLOAT : NEVERC_SCANNER_INT;
 }
 
@@ -246,16 +237,13 @@ static int scan_comment(neverc_scanner_t *s, int second) {
         s->pos = end;
         s->col += (int)run;
     } else {
-        int depth = 1;
-        while (s->pos < s->src_len && depth > 0) {
+        /* C/Go block comments are not nested: the first * / ends the comment. */
+        while (s->pos < s->src_len) {
             int ch = next_ch(s);
             emit(s, ch);
             if (ch == '*' && s->pos < s->src_len && peek_ch(s) == '/') {
                 emit(s, next_ch(s));
-                depth--;
-            } else if (ch == '/' && s->pos < s->src_len && peek_ch(s) == '*') {
-                emit(s, next_ch(s));
-                depth++;
+                break;
             }
         }
     }
@@ -263,7 +251,12 @@ static int scan_comment(neverc_scanner_t *s, int second) {
 }
 
 void neverc_scanner_init(neverc_scanner_t *s, const char *src, size_t len) {
+    if (!s) return;
     memset(s, 0, sizeof(*s));
+    if (!src) {
+        src = "";
+        len = 0;
+    }
     s->src = src;
     s->src_len = len;
     s->mode = NEVERC_SCAN_GO_TOKENS;
@@ -272,10 +265,12 @@ void neverc_scanner_init(neverc_scanner_t *s, const char *src, size_t len) {
 }
 
 void neverc_scanner_set_mode(neverc_scanner_t *s, unsigned mode) {
+    if (!s) return;
     s->mode = mode;
 }
 
 int neverc_scanner_scan(neverc_scanner_t *s) {
+    if (!s) return NEVERC_SCANNER_EOF;
     s->tok_len = 0;
 
 again:
@@ -330,16 +325,21 @@ again:
 }
 
 const char *neverc_scanner_token_text(const neverc_scanner_t *s, size_t *len) {
+    if (!s) {
+        if (len) *len = 0;
+        return "";
+    }
     if (len) *len = s->tok_len;
     return s->tok_buf;
 }
 
 neverc_scanner_pos_t neverc_scanner_position(const neverc_scanner_t *s) {
-    return s->tok_pos;
+    neverc_scanner_pos_t empty = {0, 0, 0};
+    return s ? s->tok_pos : empty;
 }
 
 int neverc_scanner_peek(neverc_scanner_t *s) {
-    if (s->pos >= s->src_len) return NEVERC_SCANNER_EOF;
+    if (!s || s->pos >= s->src_len) return NEVERC_SCANNER_EOF;
     size_t saved_pos = s->pos;
     int saved_line = s->line, saved_col = s->col;
     skip_whitespace(s);

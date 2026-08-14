@@ -750,7 +750,7 @@ TEST_F(StdLibTest, CookieJarAllocationFailure) {
 }
 
 // ===== SMTP =====
-STD_TEST(smtp, "src/net/smtp/smtp.c", TCP_DEPS)
+STD_TEST(smtp, "src/net/smtp/smtp.c", "src/encoding/base64/base64.c", TCP_DEPS)
 
 // ===== Net Core (DNS, Pipe, SplitHostPort) =====
 STD_TEST(resolve, "src/net/resolve/resolve.c")

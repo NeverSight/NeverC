@@ -65,14 +65,19 @@ static int rune_width(const char *s, size_t len) {
 }
 
 static void begin_line(neverc_tabwriter_t *w) {
-    if (w->nlines < 4096) {
+    if (w->nlines < NEVERC_TABWRITER_MAX_LINES) {
         w->lines_start[w->nlines] = w->ncells;
         w->lines_ncells[w->nlines] = 0;
     }
 }
 
 static void end_cell(neverc_tabwriter_t *w, int htab) {
-    if (w->nlines < 4096 && w->ncells < NEVERC_TABWRITER_MAX_COLS) {
+    if (w->failed) return;
+    if (w->ncells >= NEVERC_TABWRITER_MAX_CELLS) {
+        w->failed = 1;
+        return;
+    }
+    if (w->nlines < NEVERC_TABWRITER_MAX_LINES) {
         neverc_tabwriter_cell_t *cell = &w->cells[w->ncells];
         /* Cells partition w->buf contiguously, so the start of this cell is the
          * sum of all previously carved cell sizes. Track that running total in
@@ -91,10 +96,10 @@ static int flush_lines(neverc_tabwriter_t *w) {
     memset(w->col_widths, 0, sizeof(w->col_widths));
     w->ncols = 0;
 
-    /* lines_start/lines_ncells hold at most 4096 entries; write() lets nlines
-     * grow past that (cells/lines beyond the cap are simply dropped), so clamp
-     * the render to the tracked range to avoid reading past the arrays. */
-    int last_line = (w->nlines < 4096) ? w->nlines : 4095;
+    /* lines_start/lines_ncells hold at most MAX_LINES entries; write() lets
+     * nlines grow past that, so clamp the render to the tracked range. */
+    int last_line = (w->nlines < NEVERC_TABWRITER_MAX_LINES)
+        ? w->nlines : NEVERC_TABWRITER_MAX_LINES - 1;
 
     for (int ln = 0; ln <= last_line; ln++) {
         int start = w->lines_start[ln];
@@ -229,7 +234,7 @@ void neverc_tabwriter_write(neverc_tabwriter_t *w, const char *data, size_t len)
         if (nl) {
             end_cell(w, 0);
             w->nlines++;
-            if (w->nlines < 4096)
+            if (w->nlines < NEVERC_TABWRITER_MAX_LINES)
                 begin_line(w);
             i = line_end + 1;
         } else {
