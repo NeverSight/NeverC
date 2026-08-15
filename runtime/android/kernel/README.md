@@ -472,9 +472,11 @@ OEM kernels with `CONFIG_LOCALVERSION` (for example `"-4k"`) may share a
 `struct module` layout with stock GKI. Selecting the matching series/profile at
 build time permits the same-page OEM identity as `COMPAT`; exact certification
 still requires its own evidence-backed profile. That compatibility path
-starts after a successful load. The `.modinfo` vermagic baked at compile
-time must still match the running kernel, or the loader rejects the
-module before init.
+starts after a successful load. On GKI `CONFIG_MODVERSIONS`, the loader
+compares vermagic **flags** only (`SMP preempt mod_unload modversions aarch64`);
+the compile-time first token does not have to equal the running
+`UTS_RELEASE`. A different Android generation or page size still fail-closes
+after load, because `struct module` and the family field table would be wrong.
 
 ## Source-level debugging
 
