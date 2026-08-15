@@ -461,14 +461,15 @@ _neverc_krt_activate_observed(
 				&_neverc_krt_active_effective_layout);
 
 		/*
-		 * Same Linux series, different Android/KMI than the selected
-		 * compile family: every private layout field must come from a
-		 * variant certificate.  A partial certificate would overlay
-		 * one structure and leave the rest on the wrong-generation
-		 * family table.  Same-generation COMPAT still uses the family
-		 * layout without a certificate.
+		 * 6.x: same Linux series, different Android/KMI than the
+		 * selected compile family — every private layout field must
+		 * come from a leftover certificate.  5.x COMPAT only checks
+		 * series + Android generation + page (match_profile already
+		 * rejected a wrong 12/13/14); KMI/patch/token differences
+		 * keep the family layout without a certificate.
 		 */
-		if (identity->has_android_identity &&
+		if (profile->linux_major >= 6U &&
+		    identity->has_android_identity &&
 		    (identity->android_release != profile->android_release ||
 		     identity->kmi_generation != profile->kmi_generation) &&
 		    (certificate_bits & NEVERC_KRT_LAYOUT_CERT_PRIVATE_FIELDS) !=

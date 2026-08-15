@@ -80,12 +80,13 @@
  * Android/KMI identity, and runtime page size all match.  When the build has
  * explicitly selected a profile, an observed OEM release in the same Linux
  * major.minor series and with the same page size may activate as
- * NEVERC_KRT_VER_COMPAT.  A different Android generation on that series
- * overlays a layout certificate.  A different Android generation that
- * also changes loader-visible struct module / vermagic is a separate
- * compile-time family.
+ * NEVERC_KRT_VER_COMPAT.  On 5.x the Android generation must also match
+ * when the banner names one; patch, KMI, and token are ignored.  On 6.x
+ * a different Android/KMI still overlays a leftover layout certificate.
+ * A different Android generation that also changes loader-visible struct
+ * module / vermagic is a separate compile-time family.
  * Unobservable, cross-series, page-size-mismatched, and uncertified
- * cross-generation identities fail closed.
+ * 6.x cross-generation identities fail closed.
  */
 
 #endif /* NVKMOD_VERSION_H */

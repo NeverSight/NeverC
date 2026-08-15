@@ -213,9 +213,11 @@ exact identity is certified by this gate; an explicitly selected profile may
 also activate on an observed OEM kernel with the same Linux `major.minor` and
 page size, but it is reported as `NEVERC_KRT_VER_COMPAT`, not certified as
 exact. A missing/unparseable banner, a different series, or a different page
-size remains fail-closed. A live banner that names a different Android
-release or KMI on that same series activates only when that variant has no
-dedicated compile family and a leftover certificate covers it. A different
+size remains fail-closed. On 5.x the selected family also requires the
+Android generation named in the handle (`510`/`51013`/`515`/`51514`);
+Linux patch, KMI, and release token are ignored. On 6.x a live banner that
+names a different Android release or KMI on that same series activates only
+when a leftover certificate covers every private layout field. A different
 Android generation that also changes loader-visible `struct module` /
 vermagic is its own compile-time family (`51013`, `51514`) and fail-closes
 on the older compile handle.
@@ -339,11 +341,13 @@ docker run --rm -v <repo>/local_docs:/work -v <repo>/runtime/android/kernel/tool
 
 At runtime, bootstrap first tries the full release token, Android/KMI identity,
 and page size. Without an explicitly selected profile, activation remains
-exact-only. With the build-selected profile, a full match reports `EXACT`; a
-same Linux `major.minor` plus same page size reports `COMPAT`. The observed OEM
-patch/Android/KMI fields remain visible and are never overwritten with pinned
-values. There is no cross-series, unknown-banner, nearest-version, or
-maximum-layout fallback.
+exact-only. With the build-selected profile, a full match reports `EXACT`.
+5.x `COMPAT` is the same Linux `major.minor`, the same Android generation
+(12/13/14), and the same page size; patch, KMI, and token are ignored.
+6.x `COMPAT` is still series plus page; a different Android/KMI then needs
+a leftover certificate. The observed OEM patch/Android/KMI fields remain
+visible and are never overwritten with pinned values. There is no
+cross-series, unknown-banner, nearest-version, or maximum-layout fallback.
 
 ## Same Linux series, different Android generation
 
@@ -404,14 +408,17 @@ prefixes start at the 601 family.
 Activation with the selected compile family:
 
 1. Exact token + Android/KMI + page → `EXACT`, that family's layout.
-2. Same Android/KMI as the selected family, different patch/token → `COMPAT`,
-   family layout (a same-generation certificate may overlay).
-3. Same Linux series + page, **different** Android release or KMI → fail
-   closed when that Android/KMI already has its own compile family
-   (`51013`, `51514`). A leftover certificate is only allowed when no
-   dedicated family exists (for example 612 on a later KMI of the same
-   Android 16 series). It does not fix vermagic / `this_module`.
-4. OEM banner with no `-androidN-KMI` → `COMPAT` on the selected series
+2. 5.x: same `major.minor` + same Android generation + page → `COMPAT`,
+   family layout. Patch, KMI, and release token are ignored (a certificate
+   may overlay; it is not required).
+3. 5.x: different Android generation (`510` on android13, `51013` on
+   android12, `515` on android14, `51514` on android13) → fail closed.
+   That generation is its own compile family.
+4. 6.x: same series + page, **different** Android release or KMI → fail
+   closed unless a leftover certificate covers every private layout field
+   (for example 612 on a later KMI of the same Android 16 series). It does
+   not fix vermagic / `this_module`.
+5. OEM banner with no `-androidN-KMI` → `COMPAT` on the selected series
    (historical path).
 
 Certificates match a live identity by series + Android + KMI + page first, and

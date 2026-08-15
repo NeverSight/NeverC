@@ -101,20 +101,30 @@ static void check_selected_profile_compatibility(void) {
   profile = neverc_krt_find_profile(510);
   assert(profile != NULL);
   assert(neverc_krt_parse_banner_identity(
+             "Linux version 5.10.205-android12-9-dirty SMP", &identity) == 0);
+  identity.page_shift = 12;
+  assert(neverc_krt_match_profile(profile, &identity) ==
+         NEVERC_KRT_PROFILE_MATCH_COMPATIBLE);
+  assert(neverc_krt_parse_banner_identity(
              "Linux version 5.10.223-android13-4-00011-ga33040a671e2-dirty SMP",
              &identity) == 0);
   identity.page_shift = 12;
   assert(neverc_krt_match_profile(profile, &identity) ==
-         NEVERC_KRT_PROFILE_MATCH_COMPATIBLE);
+         NEVERC_KRT_PROFILE_MATCH_NONE);
 
   profile = neverc_krt_find_profile(515);
   assert(profile != NULL);
+  assert(neverc_krt_parse_banner_identity(
+             "Linux version 5.15.153-android13-8-oem SMP", &identity) == 0);
+  identity.page_shift = 12;
+  assert(neverc_krt_match_profile(profile, &identity) ==
+         NEVERC_KRT_PROFILE_MATCH_COMPATIBLE);
   assert(neverc_krt_parse_banner_identity(
              "Linux version 5.15.164-android14-11-maybe-dirty SMP",
              &identity) == 0);
   identity.page_shift = 12;
   assert(neverc_krt_match_profile(profile, &identity) ==
-         NEVERC_KRT_PROFILE_MATCH_COMPATIBLE);
+         NEVERC_KRT_PROFILE_MATCH_NONE);
 
   profile = neverc_krt_find_profile(51013);
   assert(profile != NULL);
@@ -125,7 +135,19 @@ static void check_selected_profile_compatibility(void) {
   assert(neverc_krt_match_profile(profile, &identity) ==
          NEVERC_KRT_PROFILE_MATCH_EXACT);
   assert(neverc_krt_parse_banner_identity(
+             "Linux version 5.10.200-android13-9-oem-special SMP",
+             &identity) == 0);
+  identity.page_shift = 12;
+  assert(neverc_krt_match_profile(profile, &identity) ==
+         NEVERC_KRT_PROFILE_MATCH_COMPATIBLE);
+  assert(neverc_krt_parse_banner_identity(
              "Linux version 5.10.205-android12-9-dirty SMP", &identity) == 0);
+  identity.page_shift = 12;
+  assert(neverc_krt_match_profile(profile, &identity) ==
+         NEVERC_KRT_PROFILE_MATCH_NONE);
+  assert(neverc_krt_parse_banner_identity(
+             "Linux version 5.10.223-oem-special SMP", &identity) == 0);
+  assert(identity.has_android_identity == 0);
   identity.page_shift = 12;
   assert(neverc_krt_match_profile(profile, &identity) ==
          NEVERC_KRT_PROFILE_MATCH_COMPATIBLE);
@@ -138,6 +160,17 @@ static void check_selected_profile_compatibility(void) {
   identity.page_shift = 12;
   assert(neverc_krt_match_profile(profile, &identity) ==
          NEVERC_KRT_PROFILE_MATCH_EXACT);
+  assert(neverc_krt_parse_banner_identity(
+             "Linux version 5.15.100-android14-8-oem-special SMP",
+             &identity) == 0);
+  identity.page_shift = 12;
+  assert(neverc_krt_match_profile(profile, &identity) ==
+         NEVERC_KRT_PROFILE_MATCH_COMPATIBLE);
+  assert(neverc_krt_parse_banner_identity(
+             "Linux version 5.15.153-android13-8-oem SMP", &identity) == 0);
+  identity.page_shift = 12;
+  assert(neverc_krt_match_profile(profile, &identity) ==
+         NEVERC_KRT_PROFILE_MATCH_NONE);
 }
 
 static void check_lookup_does_not_depend_on_order(void) {

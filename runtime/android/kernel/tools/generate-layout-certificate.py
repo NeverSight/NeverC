@@ -6,8 +6,8 @@ Certificates overlay measured offsets for a live identity, including a later
 patch of the same Android/KMI.  A different Android generation that also
 changes loader-visible struct module / vermagic is its own compile-time
 family (51013, 51514) and must not be certified as a leftover overlay on
-510/515.  Same-generation COMPAT still uses the family layout without a
-certificate.
+510/515.  5.x COMPAT uses the family layout from series + Android
+generation + page; 6.x leftover Android/KMI still needs a full certificate.
 """
 
 import argparse
