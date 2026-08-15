@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Watch official AOSP GKI branch tips and KMI generation changes.
+"""Watch official AOSP GKI branch tips, KMI generation, and NeverC-read fields.
 
 Reads the NeverC profile catalog, fetches each family's `kernel/common`
 branch head (linux VERSION/PATCHLEVEL/SUBLEVEL plus KMI_GENERATION), and
-optionally the matching `-kminext` branch. Compares the live tip to a
+optionally the matching `-kminext` branch. Also fingerprints the headers
+that define structs the runtime reads. Compares the live tip to a
 previous snapshot (or to the catalog on the first run) and can post a
-Discord webhook when something moved.
+Discord webhook when a version, KMI, or used-field layout moved.
 
 The webhook URL is taken only from GKI_WATCH_DISCORD_WEBHOOK_URL. Never print it.
 """
@@ -14,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -42,6 +44,20 @@ LS_REMOTE_REF_RE = re.compile(r"^[0-9a-f]+\s+refs/heads/(.+)$")
 WEBHOOK_ENV = "GKI_WATCH_DISCORD_WEBHOOK_URL"
 FETCH_RETRIES = 3
 FETCH_TIMEOUT_SEC = 30
+
+
+def _load_layouts():
+    spec = importlib.util.spec_from_file_location(
+        "watch_gki_layouts", TOOLS_ROOT / "watch-gki-layouts.py"
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError("cannot load watch-gki-layouts.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+LAYOUTS = _load_layouts()
 
 
 class WatchError(RuntimeError):
@@ -177,6 +193,34 @@ def probe_optional_branch(branch, opener=None):
         raise
 
 
+def fetch_header_text(branch, path, opener=None, cache=None):
+    key = (branch, path)
+    if cache is not None and key in cache:
+        return cache[key]
+    try:
+        text = fetch_googlesource_text(branch, path, opener=opener)
+    except urllib.error.HTTPError as error:
+        if error.code in (404, 410):
+            text = None
+        else:
+            raise
+    if cache is not None:
+        cache[key] = text
+    return text
+
+
+def probe_layouts(branch, opener=None, cache=None):
+    texts = {}
+    for path in LAYOUTS.unique_header_paths():
+        text = fetch_header_text(branch, path, opener=opener, cache=cache)
+        if text:
+            texts[path] = text
+    structs = LAYOUTS.fingerprint_headers(texts)
+    if not structs:
+        return None
+    return LAYOUTS.compact_fingerprint(structs)
+
+
 def linux_tuple(record):
     return (
         int(record["linux_major"]),
@@ -233,9 +277,14 @@ def family_identity(family):
     }
 
 
-def probe_family(family, opener=None):
+def probe_family(family, opener=None, header_cache=None):
     live = probe_branch(family["kernel_name"], opener=opener)
     kminext = probe_optional_branch(f"{family['kernel_name']}-kminext", opener=opener)
+    cache = {} if header_cache is None else header_cache
+    live_layout = probe_layouts(family["kernel_name"], opener=opener, cache=cache)
+    kminext_layout = None
+    if kminext is not None:
+        kminext_layout = probe_layouts(kminext["branch"], opener=opener, cache=cache)
     record = {
         **family_identity(family),
         "live": {
@@ -255,6 +304,8 @@ def probe_family(family, opener=None):
             "kmi_generation": kminext["kmi_generation"],
             "kmi_source": kminext["kmi_source"],
         },
+        "layout": live_layout,
+        "kminext_layout": kminext_layout,
     }
     return record
 
@@ -272,6 +323,8 @@ def snapshot_family(record):
         "kminext_kmi_generation": None
         if kminext is None
         else kminext["kmi_generation"],
+        "layout": record.get("layout"),
+        "kminext_layout": record.get("kminext_layout"),
     }
 
 
@@ -376,6 +429,31 @@ def collect_changes(records, snapshot, known_branches):
                         "branch": kminext["branch"],
                     }
                 )
+        live_layout = record.get("layout")
+        previous_layout = previous.get("layout")
+        if previous_layout and live_layout:
+            for change in LAYOUTS.diff_compact(
+                previous_layout, live_layout, against="snapshot"
+            ):
+                change["kernel_name"] = name
+                change["legacy_id"] = record["legacy_id"]
+                changes.append(change)
+        kminext_layout = record.get("kminext_layout")
+        previous_kminext_layout = previous.get("kminext_layout")
+        if live_layout and kminext_layout:
+            kminext_diffs = LAYOUTS.diff_compact(
+                live_layout, kminext_layout, against="kminext"
+            )
+            kminext_moved = previous_kminext_layout is None or (
+                previous_kminext_layout.get("digest") != kminext_layout.get("digest")
+            )
+            if kminext_diffs and kminext_moved:
+                for change in kminext_diffs:
+                    change["kernel_name"] = name
+                    change["legacy_id"] = record["legacy_id"]
+                    if kminext is not None:
+                        change["branch"] = kminext["branch"]
+                    changes.append(change)
     catalog_names = {record["kernel_name"] for record in records}
     for branch in known_branches:
         if not GKI_BRANCH_RE.match(branch):
@@ -451,6 +529,16 @@ def _change_lines(changes, kind, formatter):
     return [formatter(change) for change in changes if change["kind"] == kind]
 
 
+def _layout_was_probed(report):
+    return any(record.get("layout") for record in report.get("families") or [])
+
+
+def _has_identity_updates(changes):
+    return any(
+        change["kind"] in {"gki_version", "kmi", "kmi_next"} for change in changes
+    )
+
+
 def format_markdown_report(report):
     lines = [
         "## GKI / KMI upstream watch",
@@ -505,6 +593,25 @@ def format_markdown_report(report):
             lines.extend(["### GKI linux version changed", *ver, ""])
         if new:
             lines.extend(["### New official GKI branch", *new, ""])
+        layout = _change_lines(
+            report["changes"],
+            "layout",
+            lambda change: (
+                f"- `{change.get('branch', change['kernel_name'])}` "
+                f"({change['legacy_id']}) {change['severity']} "
+                f"{change['struct']}.{change['field']}: {change['detail']}"
+            ),
+        )
+        if layout:
+            lines.extend(["### NeverC-read fields changed", *layout, ""])
+        elif _has_identity_updates(report["changes"]) and _layout_was_probed(report):
+            lines.extend(
+                [
+                    "### NeverC-read fields",
+                    "- No used-field index/type change on the compared tips.",
+                    "",
+                ]
+            )
     if report["catalog_drift"]:
         lines.append("### Catalog still behind live tip")
         for item in report["catalog_drift"]:
@@ -532,10 +639,20 @@ def build_discord_payload(report):
     changes = report["changes"]
     title = "GKI / KMI upstream update" if report["has_updates"] else "GKI / KMI watch snapshot"
     color = 0x2ECC71
-    if any(change["kind"] == "kmi" for change in changes):
+    if any(
+        change["kind"] == "layout" and change.get("severity") == "offset_risk"
+        for change in changes
+    ):
+        color = 0xC0392B
+    elif any(change["kind"] == "kmi" for change in changes):
         color = 0xE74C3C
     elif any(change["kind"] == "kmi_next" for change in changes):
         color = 0xE67E22
+    elif any(
+        change["kind"] == "layout" and change.get("severity") == "sizeof_risk"
+        for change in changes
+    ):
+        color = 0xD35400
     elif any(change["kind"] == "new_branch" for change in changes):
         color = 0x9B59B6
     elif any(change["kind"] == "gki_version" for change in changes):
@@ -581,6 +698,23 @@ def build_discord_payload(report):
         sections.append("**GKI version updated**\n" + "\n".join(ver))
     if new:
         sections.append("**New official GKI branch**\n" + "\n".join(new))
+    layout = _change_lines(
+        changes,
+        "layout",
+        lambda change: (
+            f"`{change.get('branch', change['kernel_name'])}` "
+            f"{change['struct']}.{change['field']}: {change['detail']}"
+        ),
+    )
+    if layout:
+        if len(layout) > 12:
+            layout = layout[:12] + [f"... +{len(layout) - 12} more"]
+        sections.append("**NeverC-read fields changed**\n" + "\n".join(layout))
+    elif _has_identity_updates(changes) and _layout_was_probed(report):
+        sections.append(
+            "**NeverC-read fields**\n"
+            "No used-field index/type change on the compared tips."
+        )
     if report["catalog_drift"]:
         drift_lines = [
             f"`{item['kernel_name']}` catalog "
@@ -658,9 +792,12 @@ def should_notify(report, force_notify):
 def probe_all(families, opener=None, ls_remote=None):
     records = []
     errors = []
+    header_cache = {}
     for family in families:
         try:
-            records.append(probe_family(family, opener=opener))
+            records.append(
+                probe_family(family, opener=opener, header_cache=header_cache)
+            )
         except Exception as error:  # noqa: BLE001 — keep other families
             errors.append(
                 {

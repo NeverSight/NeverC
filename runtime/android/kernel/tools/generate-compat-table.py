@@ -413,6 +413,59 @@ LAYOUT_FIELDS = (
     ("dentry_inode_size", "dentry", ("member_size", "d_inode")),
 )
 
+# Loader / inode facts compile_layout_contract reads that are not LAYOUT_FIELDS rows.
+LOADER_LAYOUT_MEMBERS = (
+    ("module", "init"),
+    ("module", "exit"),
+    ("file", "f_path"),
+    ("thread_info", "preempt_count"),
+    ("thread_info", "cpu"),
+)
+SIZEONLY_LAYOUT_STRUCTS = ("file_operations",)
+INODE_TIME_SOURCE_FIELDS = frozenset({
+    "i_atime",
+    "i_mtime",
+    "i_atime_sec",
+    "i_mtime_sec",
+    "i_atime_nsec",
+    "i_mtime_nsec",
+})
+TIMESPEC64_MEMBER_KEYS = frozenset({"tv_sec", "tv_nsec"})
+
+
+def _add_read_member(members, structure, field):
+    if not isinstance(structure, str) or not isinstance(field, str) or not field:
+        return
+    members.setdefault(structure, set()).add(field)
+
+
+def neverc_read_members_by_struct():
+    """Struct -> members the profile contract and layout certificates read."""
+    members = {}
+    for _name, structure, field in LAYOUT_FIELDS:
+        if isinstance(structure, tuple):
+            for nested_structure, nested_field in structure:
+                _add_read_member(members, nested_structure, nested_field)
+            continue
+        if isinstance(field, tuple) and field and field[0] == "member_size":
+            _add_read_member(members, structure, field[1])
+            continue
+        if field is None:
+            members.setdefault(structure, set())
+            continue
+        _add_read_member(members, structure, field)
+    for structure, field in LOADER_LAYOUT_MEMBERS:
+        _add_read_member(members, structure, field)
+    for field in INODE_TIME_SOURCE_FIELDS:
+        _add_read_member(members, "inode", field)
+    for field in TIMESPEC64_MEMBER_KEYS:
+        _add_read_member(members, "timespec64", field)
+    for structure in SIZEONLY_LAYOUT_STRUCTS:
+        members.setdefault(structure, set())
+    return {
+        structure: frozenset(fields) for structure, fields in sorted(members.items())
+    }
+
 
 def member(layouts, structure, field):
     try:

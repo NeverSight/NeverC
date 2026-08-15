@@ -176,9 +176,9 @@ The two GKI workflows have deliberately different jobs:
   six official GKI series plus android13-5.10 / android14-5.15). QEMU and
   smoke therefore cover `51013` and `51514` as well as the original six.
 - `.github/workflows/watch-gki-updates.yml` polls AOSP `kernel/common` daily
-  for a newer linux sublevel, a KMI generation bump, a `-kminext` preview, or
-  a new `androidN-M.m` branch, and posts Discord via
-  `GKI_WATCH_DISCORD_WEBHOOK_URL`.
+  for a newer linux sublevel, a KMI generation bump, a `-kminext` preview, a
+  NeverC-read struct-field shift, or a new `androidN-M.m` branch, and posts
+  Discord via `GKI_WATCH_DISCORD_WEBHOOK_URL`.
 
 The consumer checks each asset's name, byte size, and SHA-256 before safe
 extraction; regenerates all 55 checked BTF/DWARF layouts from `vmlinux`; checks

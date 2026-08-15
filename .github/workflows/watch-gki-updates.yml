@@ -2,9 +2,10 @@
 #
 # Each run fetches kernel/common HEAD for the eight catalog families
 # (Makefile VERSION/PATCHLEVEL/SUBLEVEL + KMI_GENERATION) and the matching
-# `-kminext` branch when it exists. Discord is notified only when the live
-# tip moves, a KMI generation changes, `-kminext` steps ahead of stable, or
-# a new androidN-M.m branch appears.
+# `-kminext` branch when it exists. It also fingerprints NeverC-read struct
+# fields from official headers. Discord is notified when the live tip moves,
+# a KMI generation changes, `-kminext` steps ahead of stable, a used-field
+# index/type shifts, or a new androidN-M.m branch appears.
 #
 # Set repository secret GKI_WATCH_DISCORD_WEBHOOK_URL. The workflow never writes the
 # URL into logs or the tree. An unset secret still completes the watch.
@@ -46,7 +47,9 @@ jobs:
           fi
 
       - name: Unit-test the watcher
-        run: python3 runtime/android/kernel/tools/test-watch-gki-upstream.py -v
+        run: |
+          python3 runtime/android/kernel/tools/test-watch-gki-layouts.py -v
+          python3 runtime/android/kernel/tools/test-watch-gki-upstream.py -v
 
       - name: Restore previous snapshot
         uses: actions/cache/restore@v4

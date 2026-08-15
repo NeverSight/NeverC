@@ -98,7 +98,7 @@ def family(name="android16-6.12", legacy_id=612, android=16, major=6, minor=12, 
 
 
 def live_record(name="android16-6.12", legacy_id=612, android=16, catalog_patch=89, catalog_kmi=6,
-                live_patch=90, live_kmi=6, kminext_kmi=None):
+                live_patch=90, live_kmi=6, kminext_kmi=None, layout=None, kminext_layout=None):
     major, minor = (int(part) for part in name.split("-")[1].split("."))
     record = {
         "legacy_id": legacy_id,
@@ -126,6 +126,8 @@ def live_record(name="android16-6.12", legacy_id=612, android=16, catalog_patch=
             "kmi_generation": kminext_kmi,
             "kmi_source": "build.config.constants",
         },
+        "layout": layout,
+        "kminext_layout": kminext_layout,
     }
     return record
 
@@ -270,11 +272,88 @@ class DiffTests(unittest.TestCase):
         }
         self.assertEqual(watch.collect_changes(records, snapshot, ["android16-6.12"]), [])
 
+    def test_kminext_used_field_shift_is_a_layout_change(self):
+        stable = {
+            "digest": "aaa",
+            "member_counts": {"task_struct": 10},
+            "missing": [],
+            "used": {"task_struct.comm": {"index": 4, "decl": "char comm[16]"}},
+        }
+        nxt = {
+            "digest": "bbb",
+            "member_counts": {"task_struct": 11},
+            "missing": [],
+            "used": {"task_struct.comm": {"index": 5, "decl": "char comm[16]"}},
+        }
+        records = [
+            live_record(
+                live_patch=90,
+                live_kmi=6,
+                kminext_kmi=7,
+                layout=stable,
+                kminext_layout=nxt,
+            )
+        ]
+        snapshot = watch.baseline_from_catalog([family()])
+        changes = watch.collect_changes(records, snapshot, ["android16-6.12"])
+        layout = [change for change in changes if change["kind"] == "layout"]
+        self.assertEqual(layout[0]["severity"], "offset_risk")
+        self.assertEqual(layout[0]["field"], "comm")
+        self.assertEqual(layout[0]["against"], "kminext")
+        self.assertIn("index 4 -> 5", layout[0]["detail"])
+
+    def test_matching_kminext_layout_stays_quiet_after_snapshot(self):
+        layout = {
+            "digest": "same",
+            "member_counts": {"module": 8},
+            "missing": [],
+            "used": {"module.init": {"index": 3, "decl": "int (*init)(void)"}},
+        }
+        records = [
+            live_record(
+                live_patch=90,
+                live_kmi=6,
+                kminext_kmi=7,
+                layout=layout,
+                kminext_layout=layout,
+            )
+        ]
+        snapshot = {
+            "source": "live",
+            "families": {
+                "android16-6.12": {
+                    "linux_major": 6,
+                    "linux_minor": 12,
+                    "linux_patch": 90,
+                    "kmi_generation": 6,
+                    "kminext_kmi_generation": 7,
+                    "layout": layout,
+                    "kminext_layout": layout,
+                }
+            },
+            "known_gki_branches": ["android16-6.12"],
+        }
+        self.assertEqual(watch.collect_changes(records, snapshot, ["android16-6.12"]), [])
+
 
 class DiscordTests(unittest.TestCase):
     def test_payload_uses_english_sections_and_kmi_color(self):
+        layout = {
+            "digest": "same",
+            "member_counts": {"module": 1},
+            "missing": [],
+            "used": {"module.init": {"index": 1, "decl": "int (*init)(void)"}},
+        }
         report = watch.build_report(
-            [live_record(live_patch=90, live_kmi=7, kminext_kmi=8)],
+            [
+                live_record(
+                    live_patch=90,
+                    live_kmi=7,
+                    kminext_kmi=8,
+                    layout=layout,
+                    kminext_layout=layout,
+                )
+            ],
             [],
             watch.baseline_from_catalog([family()]),
             ["android16-6.12"],
@@ -286,8 +365,56 @@ class DiscordTests(unittest.TestCase):
         self.assertIn("GKI version updated", description)
         self.assertIn("Upcoming KMI", description)
         self.assertEqual(payload["embeds"][0]["color"], 0xE74C3C)
+        self.assertIn("NeverC-read fields", description)
+        self.assertIn("No used-field index/type change", description)
         dumped = json.dumps(payload)
         self.assertNotIn("discord.com/api/webhooks", dumped)
+
+    def test_payload_does_not_claim_unchanged_fields_without_a_probe(self):
+        report = watch.build_report(
+            [live_record(live_patch=90, live_kmi=7, kminext_kmi=8)],
+            [],
+            watch.baseline_from_catalog([family()]),
+            ["android16-6.12"],
+            False,
+        )
+        payload = watch.build_discord_payload(report)
+        description = payload["embeds"][0]["description"]
+        self.assertNotIn("No used-field index/type change", description)
+
+    def test_payload_flags_offset_risk_in_red(self):
+        stable = {
+            "digest": "aaa",
+            "member_counts": {"task_struct": 10},
+            "missing": [],
+            "used": {"task_struct.comm": {"index": 4, "decl": "char comm[16]"}},
+        }
+        nxt = {
+            "digest": "bbb",
+            "member_counts": {"task_struct": 11},
+            "missing": [],
+            "used": {"task_struct.comm": {"index": 5, "decl": "char comm[16]"}},
+        }
+        report = watch.build_report(
+            [
+                live_record(
+                    live_patch=89,
+                    live_kmi=6,
+                    kminext_kmi=7,
+                    layout=stable,
+                    kminext_layout=nxt,
+                )
+            ],
+            [],
+            watch.baseline_from_catalog([family()]),
+            ["android16-6.12"],
+            False,
+        )
+        payload = watch.build_discord_payload(report)
+        description = payload["embeds"][0]["description"]
+        self.assertIn("NeverC-read fields changed", description)
+        self.assertIn("task_struct.comm", description)
+        self.assertEqual(payload["embeds"][0]["color"], 0xC0392B)
 
     def test_notify_skips_when_secret_missing(self):
         mapping = {
