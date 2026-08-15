@@ -73,7 +73,7 @@ struct fixture_mm {
 };
 
 struct fixture_private_page {
-	unsigned long pfn;
+	neverc_krt_user_ptmap_test_pfn_t pfn;
 	unsigned char bytes[FIXTURE_PAGE_SIZE];
 	int allocated;
 	int freed;
@@ -117,7 +117,7 @@ static int fixture_fail_mm_count_grab;
 static void *fixture_current_mm;
 static int fixture_original_gets;
 static int fixture_original_puts;
-static unsigned long fixture_original_actual_pfn;
+static neverc_krt_user_ptmap_test_pfn_t fixture_original_actual_pfn;
 static int fixture_private_allocs;
 static int fixture_private_frees;
 static int fixture_rcu_depth;
@@ -132,7 +132,7 @@ static int fixture_fail_pte_write_n;
 static int fixture_fail_pte_write_from;
 static int fixture_nofault_reads;
 static int fixture_nofault_writes;
-static unsigned long fixture_private_pfn_base;
+static neverc_krt_user_ptmap_test_pfn_t fixture_private_pfn_base;
 static struct neverc_krt_user_ptmap *fixture_reentrant_map;
 static int fixture_reenter_on_write;
 static int fixture_reentrant_result;
@@ -164,16 +164,16 @@ static const struct neverc_krt_user_ptmap_test_geometry fixture_geometry = {
 	.pstate_user_mode = 0,
 };
 
-static uint64_t fixture_make_pte(unsigned long pfn, uint64_t attributes)
+static uint64_t fixture_make_pte(neverc_krt_user_ptmap_test_pfn_t pfn,
+				 uint64_t attributes)
 {
 	return ((uint64_t)pfn << FIXTURE_PAGE_SHIFT) |
 		(attributes & ~FIXTURE_DESCRIPTOR_ADDRESS_MASK);
 }
 
-static unsigned long fixture_pte_pfn(uint64_t pte)
+static neverc_krt_user_ptmap_test_pfn_t fixture_pte_pfn(uint64_t pte)
 {
-	return (unsigned long)((pte & FIXTURE_DESCRIPTOR_ADDRESS_MASK) >>
-			       FIXTURE_PAGE_SHIFT);
+	return (pte & FIXTURE_DESCRIPTOR_ADDRESS_MASK) >> FIXTURE_PAGE_SHIFT;
 }
 
 static uint64_t fixture_original_attributes(int contiguous)
@@ -358,8 +358,9 @@ static void fixture_assert_mm_lease_preserved(void)
 	assert(fixture_mm_count_drops == 0);
 }
 
-static int fixture_original_page_get(unsigned long expected_pfn,
-				     unsigned long *actual_pfn,
+static int fixture_original_page_get(
+	neverc_krt_user_ptmap_test_pfn_t expected_pfn,
+	neverc_krt_user_ptmap_test_pfn_t *actual_pfn,
 				     void **page_address)
 {
 	assert(fixture_atomic_depth == 0);
@@ -376,7 +377,8 @@ static int fixture_original_page_get(unsigned long expected_pfn,
 	return 0;
 }
 
-static void fixture_original_page_put(unsigned long pfn, void *page_address)
+static void fixture_original_page_put(
+	neverc_krt_user_ptmap_test_pfn_t pfn, void *page_address)
 {
 	assert(fixture_atomic_depth == 0);
 	assert(fixture_mmap_read_depth == 0 || fixture_mmap_read_depth == 1);
@@ -385,7 +387,8 @@ static void fixture_original_page_put(unsigned long pfn, void *page_address)
 	fixture_original_puts++;
 }
 
-static int fixture_private_page_alloc(unsigned long *pfn, void **page_address)
+static int fixture_private_page_alloc(
+	neverc_krt_user_ptmap_test_pfn_t *pfn, void **page_address)
 {
 	size_t i;
 
@@ -408,7 +411,8 @@ static int fixture_private_page_alloc(unsigned long *pfn, void **page_address)
 	return -ENOMEM;
 }
 
-static void fixture_private_page_free(unsigned long pfn, void *page_address)
+static void fixture_private_page_free(
+	neverc_krt_user_ptmap_test_pfn_t pfn, void *page_address)
 {
 	size_t i;
 
@@ -596,7 +600,7 @@ static void fixture_read_slot(struct neverc_krt_user_ptmap *map,
 }
 
 static struct fixture_private_page *fixture_private_page_by_pfn(
-	unsigned long pfn)
+	neverc_krt_user_ptmap_test_pfn_t pfn)
 {
 	size_t i;
 
@@ -609,7 +613,7 @@ static struct fixture_private_page *fixture_private_page_by_pfn(
 }
 
 static void fixture_assert_exec_descriptor(uint64_t pte,
-				   unsigned long expected_pfn)
+				   neverc_krt_user_ptmap_test_pfn_t expected_pfn)
 {
 	assert(fixture_pte_pfn(pte) == expected_pfn);
 	assert(pte & FIXTURE_PTE_VALID);
@@ -630,7 +634,7 @@ static void fixture_assert_exec_descriptor(uint64_t pte,
 }
 
 static void fixture_assert_rw_nx_descriptor(uint64_t pte,
-				    unsigned long expected_pfn)
+				    neverc_krt_user_ptmap_test_pfn_t expected_pfn)
 {
 	assert(fixture_pte_pfn(pte) == expected_pfn);
 	assert(pte & FIXTURE_PTE_VALID);
@@ -768,8 +772,8 @@ static void check_active_hook_views_copy_bbm_and_ownership(void)
 	unsigned char page_copy[FIXTURE_PAGE_SIZE];
 	unsigned char bytes[sizeof(patch)];
 	uint64_t target;
-	unsigned long exec_pfn;
-	unsigned long rw_pfn;
+	neverc_krt_user_ptmap_test_pfn_t exec_pfn;
+	neverc_krt_user_ptmap_test_pfn_t rw_pfn;
 	int pte_locks_before_sync;
 	int sleep_calls_after_install;
 
@@ -934,7 +938,7 @@ static void check_exec_only_uses_original_exec_and_private_data(void)
 	struct neverc_krt_user_ptmap *map;
 	struct neverc_krt_user_ptmap_status status;
 	uint64_t target;
-	unsigned long rw_pfn;
+	neverc_krt_user_ptmap_test_pfn_t rw_pfn;
 	unsigned char readback[sizeof(fake)];
 
 	fixture_reset(0);
@@ -1055,7 +1059,7 @@ static void check_restore_failure_keeps_mapped_private_page_owned(void)
 {
 	struct neverc_krt_user_ptmap *map;
 	struct neverc_krt_user_ptmap_status status;
-	unsigned long private_pfn;
+	neverc_krt_user_ptmap_test_pfn_t private_pfn;
 
 	fixture_reset(0);
 	map = fixture_install_map(NEVERC_KRT_USER_PTMAP_PRIVATE_ALL);
@@ -1115,7 +1119,7 @@ static void check_partial_pte_mutation_rolls_back_or_blocks_destroy(void)
 {
 	struct neverc_krt_user_ptmap *map;
 	struct neverc_krt_user_ptmap_status status;
-	unsigned long private_pfn;
+	neverc_krt_user_ptmap_test_pfn_t private_pfn;
 	uint64_t exec_descriptor;
 
 	fixture_reset(0);
@@ -1396,8 +1400,7 @@ static void check_private_page_must_fit_physical_address_width(void)
 	fixture_reset(0);
 	/* Encodable by the descriptor mask (bit 48), forbidden by PA48. */
 	fixture_private_pfn_base =
-		(unsigned long)(FIXTURE_PHYSICAL_PAGE_MASK >>
-			      FIXTURE_PAGE_SHIFT) + 1UL;
+		(FIXTURE_PHYSICAL_PAGE_MASK >> FIXTURE_PAGE_SHIFT) + 1ULL;
 	assert(neverc_krt_user_ptmap_install(&request, &map) == -EFAULT);
 	assert(map == NULL);
 	assert(neverc_krt_user_ptmap_busy() == 0);

@@ -24,6 +24,7 @@ void free(void *pointer);
 #endif
 
 typedef uint64_t _neverc_krt_ptmap_pte_t;
+typedef neverc_krt_user_ptmap_test_pfn_t _neverc_krt_ptmap_pfn_t;
 
 static void *_neverc_krt_ptmap_zalloc(size_t size)
 {
@@ -51,6 +52,7 @@ static void _neverc_krt_ptmap_free(const void *pointer)
 #endif
 
 typedef u64 _neverc_krt_ptmap_pte_t;
+typedef unsigned long _neverc_krt_ptmap_pfn_t;
 
 /* Exact private ABI wrappers.  These names and one-word representations match
  * arm64 GKI, but remain confined to the runtime backend. */
@@ -308,16 +310,19 @@ struct _neverc_krt_ptmap_backend {
 	void (*mm_count_drop)(void *mm);
 	int (*matches_current_mm)(void *mm);
 	int (*original_page_pin)(void *mm, unsigned long address,
-				 unsigned long expected_pfn,
+				 _neverc_krt_ptmap_pfn_t expected_pfn,
 				 _neverc_krt_ptmap_pte_t expected_descriptor,
 				 void **pin_token);
 	int (*original_page_snapshot)(void *mm, unsigned long address,
 				      void *pin_token, void **page_address);
 	void (*original_page_unpin)(void *mm, unsigned long address,
-				    unsigned long expected_pfn, void *pin_token,
+				    _neverc_krt_ptmap_pfn_t expected_pfn,
+				    void *pin_token,
 				    void *page_address);
-	int (*private_page_alloc)(unsigned long *pfn, void **page_address);
-	void (*private_page_free)(unsigned long pfn, void *page_address);
+	int (*private_page_alloc)(_neverc_krt_ptmap_pfn_t *pfn,
+				  void **page_address);
+	void (*private_page_free)(_neverc_krt_ptmap_pfn_t pfn,
+				  void *page_address);
 	int (*rcu_read_begin)(void);
 	void (*rcu_read_end)(void);
 	int (*pte_lock)(void *mm, unsigned long address,
@@ -336,7 +341,7 @@ typedef struct _neverc_krt_ptmap_backend _neverc_krt_ptmap_backend_t;
 #define _NEVERC_KRT_PTMAP_MAGIC 0x4e5650544d415031ULL
 
 struct _neverc_krt_ptmap_backing {
-	unsigned long pfn;
+	_neverc_krt_ptmap_pfn_t pfn;
 	void *address;
 	void *pin_token;
 	int referenced;
@@ -430,10 +435,10 @@ int neverc_krt_user_ptmap_test_runtime_gate(
 }
 
 static int _neverc_krt_ptmap_host_original_pin(
-	void *mm, unsigned long address, unsigned long expected_pfn,
+	void *mm, unsigned long address, _neverc_krt_ptmap_pfn_t expected_pfn,
 	_neverc_krt_ptmap_pte_t expected_descriptor, void **pin_token)
 {
-	unsigned long actual_pfn = 0;
+	_neverc_krt_ptmap_pfn_t actual_pfn = 0;
 	void *page_address = (void *)0;
 	int result;
 
@@ -468,7 +473,7 @@ static int _neverc_krt_ptmap_host_original_snapshot(
 }
 
 static void _neverc_krt_ptmap_host_original_unpin(
-	void *mm, unsigned long address, unsigned long expected_pfn,
+	void *mm, unsigned long address, _neverc_krt_ptmap_pfn_t expected_pfn,
 	void *pin_token, void *page_address)
 {
 	(void)mm;
@@ -715,7 +720,8 @@ static int _neverc_krt_ptmap_lock(struct neverc_krt_user_ptmap *map,
 }
 
 static int _neverc_krt_ptmap_pfn_encodable(
-	const _neverc_krt_ptmap_geometry_t *geometry, unsigned long pfn)
+	const _neverc_krt_ptmap_geometry_t *geometry,
+	_neverc_krt_ptmap_pfn_t pfn)
 {
 	_neverc_krt_ptmap_pte_t encoded;
 	_neverc_krt_ptmap_pte_t maximum_pfn;
@@ -730,12 +736,13 @@ static int _neverc_krt_ptmap_pfn_encodable(
 		(encoded & geometry->descriptor_address_mask) == encoded;
 }
 
-static unsigned long _neverc_krt_ptmap_descriptor_pfn(
+static _neverc_krt_ptmap_pfn_t _neverc_krt_ptmap_descriptor_pfn(
 	const _neverc_krt_ptmap_geometry_t *geometry,
 	_neverc_krt_ptmap_pte_t descriptor)
 {
-	return (unsigned long)((descriptor & geometry->descriptor_address_mask) >>
-			       geometry->page_shift);
+	return (_neverc_krt_ptmap_pfn_t)(
+		(descriptor & geometry->descriptor_address_mask) >>
+		geometry->page_shift);
 }
 
 static _neverc_krt_ptmap_pte_t _neverc_krt_ptmap_descriptor_for(
@@ -745,7 +752,7 @@ static _neverc_krt_ptmap_pte_t _neverc_krt_ptmap_descriptor_for(
 	const _neverc_krt_ptmap_geometry_t *geometry = map->backend->geometry;
 	_neverc_krt_ptmap_pte_t descriptor = map->original_normalized;
 	_neverc_krt_ptmap_pte_t mutable_masks;
-	unsigned long pfn;
+	_neverc_krt_ptmap_pfn_t pfn;
 
 	if (view == NEVERC_KRT_USER_PTMAP_ORIGINAL)
 		return map->original_normalized;
@@ -797,7 +804,7 @@ static int _neverc_krt_ptmap_private_pfn_mapped(
 	_neverc_krt_ptmap_pte_t descriptor)
 {
 	const _neverc_krt_ptmap_geometry_t *geometry = map->backend->geometry;
-	unsigned long pfn;
+	_neverc_krt_ptmap_pfn_t pfn;
 
 	if (!(descriptor & geometry->valid_mask))
 		return 0;
@@ -871,8 +878,8 @@ typedef void *(*_neverc_krt_ptmap_heap_alloc_fn)(size_t size, gfp_t flags);
 
 struct _neverc_krt_ptmap_original_pin {
 	struct page *page;
-	unsigned long pinned_pfn;
-	unsigned long snapshot_pfn;
+	_neverc_krt_ptmap_pfn_t pinned_pfn;
+	_neverc_krt_ptmap_pfn_t snapshot_pfn;
 	void *snapshot_address;
 };
 
@@ -1098,7 +1105,7 @@ static int _neverc_krt_ptmap_production_matches_current_mm(void *opaque_mm)
 }
 
 static int _neverc_krt_ptmap_production_private_page_alloc(
-	unsigned long *pfn, void **page_address)
+	_neverc_krt_ptmap_pfn_t *pfn, void **page_address)
 {
 	struct _neverc_krt_ptmap_production_state *state =
 		&_neverc_krt_ptmap_production;
@@ -1124,7 +1131,7 @@ static int _neverc_krt_ptmap_production_private_page_alloc(
 }
 
 static void _neverc_krt_ptmap_production_private_page_free(
-	unsigned long pfn, void *page_address)
+	_neverc_krt_ptmap_pfn_t pfn, void *page_address)
 {
 	(void)pfn;
 	if (page_address)
@@ -1133,7 +1140,8 @@ static void _neverc_krt_ptmap_production_private_page_free(
 }
 
 static int _neverc_krt_ptmap_production_original_page_pin(
-	void *opaque_mm, unsigned long address, unsigned long expected_pfn,
+	void *opaque_mm, unsigned long address,
+	_neverc_krt_ptmap_pfn_t expected_pfn,
 	_neverc_krt_ptmap_pte_t expected_descriptor, void **pin_token)
 {
 	struct _neverc_krt_ptmap_production_state *state =
@@ -1236,7 +1244,8 @@ static int _neverc_krt_ptmap_production_original_page_snapshot(
 }
 
 static void _neverc_krt_ptmap_production_original_page_unpin(
-	void *opaque_mm, unsigned long address, unsigned long expected_pfn,
+	void *opaque_mm, unsigned long address,
+	_neverc_krt_ptmap_pfn_t expected_pfn,
 	void *pin_token, void *page_address)
 {
 	struct _neverc_krt_ptmap_original_pin *token =
@@ -1973,8 +1982,8 @@ static int _neverc_krt_ptmap_capture_original(
 	if (descriptor & geometry->contiguous_mask) {
 		_neverc_krt_ptmap_pte_t target_attributes =
 			descriptor & ~geometry->descriptor_address_mask;
-		unsigned long target_pfn = map->original.pfn;
-		unsigned long first_pfn;
+		_neverc_krt_ptmap_pfn_t target_pfn = map->original.pfn;
+		_neverc_krt_ptmap_pfn_t first_pfn;
 		unsigned long group_size;
 		size_t i;
 

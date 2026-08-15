@@ -7,6 +7,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/* Model the ARM64 kernel's PFN width even on LLP64 host compilers. */
+typedef uint64_t neverc_krt_user_ptmap_test_pfn_t;
+
 struct neverc_krt_user_ptmap_test_geometry {
 	size_t page_size;
 	unsigned int page_shift;
@@ -59,12 +62,15 @@ struct neverc_krt_user_ptmap_test_backend {
 	int (*matches_current_mm)(void *mm);
 
 	/* Original pages are referenced; private pages are allocated/freed. */
-	int (*original_page_get)(unsigned long expected_pfn,
-				  unsigned long *actual_pfn,
+	int (*original_page_get)(neverc_krt_user_ptmap_test_pfn_t expected_pfn,
+				  neverc_krt_user_ptmap_test_pfn_t *actual_pfn,
 				  void **page_address);
-	void (*original_page_put)(unsigned long pfn, void *page_address);
-	int (*private_page_alloc)(unsigned long *pfn, void **page_address);
-	void (*private_page_free)(unsigned long pfn, void *page_address);
+	void (*original_page_put)(neverc_krt_user_ptmap_test_pfn_t pfn,
+				  void *page_address);
+	int (*private_page_alloc)(neverc_krt_user_ptmap_test_pfn_t *pfn,
+				  void **page_address);
+	void (*private_page_free)(neverc_krt_user_ptmap_test_pfn_t pfn,
+				  void *page_address);
 
 	/* Atomic-safe PTE, TLB, cache, and nofault register-memory boundary. */
 	int (*rcu_read_begin)(void);
