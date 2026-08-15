@@ -87,6 +87,7 @@ struct _neverc_krt_ptmap_geometry {
 	_neverc_krt_ptmap_pte_t contiguous_mask;
 	size_t pt_regs_size;
 	size_t pt_regs_x;
+	size_t pt_regs_x_size;
 	size_t pt_regs_sp;
 	size_t pt_regs_pc;
 	size_t pt_regs_pstate;
@@ -526,7 +527,7 @@ static int _neverc_krt_ptmap_geometry_valid(
 	const _neverc_krt_ptmap_geometry_t *geometry)
 {
 	const size_t scalar_size = sizeof(u64);
-	const size_t x_size = sizeof(u64) * 31U;
+	const size_t x_size = geometry->pt_regs_x_size;
 	_neverc_krt_ptmap_pte_t attribute_masks[9];
 	size_t i;
 	size_t j;
@@ -1686,6 +1687,7 @@ static int _neverc_krt_ptmap_production_initialize(void)
 		1ULL << layout->user_contiguous_bit;
 	state->geometry.pt_regs_size = layout->pt_regs_size;
 	state->geometry.pt_regs_x = layout->pt_regs_regs;
+	state->geometry.pt_regs_x_size = layout->pt_regs_regs_size;
 	state->geometry.pt_regs_sp = layout->pt_regs_sp;
 	state->geometry.pt_regs_pc = layout->pt_regs_pc;
 	state->geometry.pt_regs_pstate = layout->pt_regs_pstate;
@@ -1871,6 +1873,7 @@ int neverc_krt_user_ptmap_test_bind_backend(
 		geometry->contiguous_mask;
 	_neverc_krt_ptmap_host_geometry.pt_regs_size = geometry->pt_regs_size;
 	_neverc_krt_ptmap_host_geometry.pt_regs_x = geometry->pt_regs_x;
+	_neverc_krt_ptmap_host_geometry.pt_regs_x_size = geometry->pt_regs_x_size;
 	_neverc_krt_ptmap_host_geometry.pt_regs_sp = geometry->pt_regs_sp;
 	_neverc_krt_ptmap_host_geometry.pt_regs_pc = geometry->pt_regs_pc;
 	_neverc_krt_ptmap_host_geometry.pt_regs_pstate = geometry->pt_regs_pstate;

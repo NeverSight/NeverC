@@ -7,7 +7,7 @@
         "do_mmap_abi": "without_vm_flags",
         "filldir_abi": "returns_int",
         "ftrace_callback_abi": "pt_regs",
-        "ftrace_registration_api": true,
+        "ftrace_registration_api": false,
         "kallsyms_iter_abi": "with_module"
       },
       "kcfi_mode": "disabled",
@@ -51,7 +51,7 @@
         "do_mmap_abi": "without_vm_flags",
         "filldir_abi": "returns_int",
         "ftrace_callback_abi": "ftrace_regs",
-        "ftrace_registration_api": true,
+        "ftrace_registration_api": false,
         "kallsyms_iter_abi": "with_module"
       },
       "kcfi_mode": "disabled",
@@ -94,7 +94,7 @@
         "do_mmap_abi": "without_vm_flags",
         "filldir_abi": "returns_bool",
         "ftrace_callback_abi": "ftrace_regs",
-        "ftrace_registration_api": true,
+        "ftrace_registration_api": false,
         "kallsyms_iter_abi": "with_module"
       },
       "kcfi_mode": "classic",
@@ -115,7 +115,7 @@
         "do_mmap_abi": "with_vm_flags",
         "filldir_abi": "returns_bool",
         "ftrace_callback_abi": "ftrace_regs",
-        "ftrace_registration_api": true,
+        "ftrace_registration_api": false,
         "kallsyms_iter_abi": "address_only"
       },
       "kcfi_mode": "classic",
@@ -136,7 +136,7 @@
         "do_mmap_abi": "with_vm_flags",
         "filldir_abi": "returns_bool",
         "ftrace_callback_abi": "ftrace_regs",
-        "ftrace_registration_api": true,
+        "ftrace_registration_api": false,
         "kallsyms_iter_abi": "address_only"
       },
       "kcfi_mode": "normalized",

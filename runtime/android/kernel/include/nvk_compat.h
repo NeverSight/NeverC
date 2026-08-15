@@ -45,7 +45,7 @@ void *neverc_krt_lookup_module_free(void);
 int neverc_krt_has_cfi(void);
 
 enum neverc_krt_version_match {
-	/* Complete certified release identity and page size matched. */
+	/* Certified KMI identity and page size matched (token suffix ignored). */
 	NEVERC_KRT_VER_EXACT   =  0,
 	/*
 	 * Explicitly selected profile; same Linux major.minor, Android
@@ -60,21 +60,7 @@ int neverc_krt_check_kernel_match(void);
 int neverc_krt_should_abort_on_mismatch(void);
 int neverc_krt_verify_module_offsets(struct neverc_krt_this_module *mod,
 				     const char *expected_name);
-int neverc_krt_probe_module_offsets(struct neverc_krt_this_module *mod,
-				    void *expected_init,
-				    void *expected_exit);
 unsigned long neverc_krt_rt_off_init(void);
 unsigned long neverc_krt_rt_off_exit(void);
-int neverc_krt_validate_runtime(struct neverc_krt_this_module *mod,
-				const char *name,
-				void *init_fn, void *exit_fn);
-/*
- * Rewrite a "vermagic=" blob inside this_module after identity accept.
- * This is not a loader bypass: insmod already compared .modinfo.
- */
-int neverc_krt_patch_vermagic(struct neverc_krt_this_module *mod);
-int neverc_krt_fixup_runtime(struct neverc_krt_this_module *mod,
-			     const char *name,
-			     void *init_fn, void *exit_fn);
 
 #endif /* NEVERC_KRT_COMPAT_H */

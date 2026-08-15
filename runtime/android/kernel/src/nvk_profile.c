@@ -12,15 +12,14 @@ neverc_krt_find_profile(unsigned int legacy_id) {
 static int neverc_krt_release_token_equal(
     const char *expected, const char *observed,
     unsigned long observed_length) {
-  unsigned long i;
+  unsigned long expected_length = 0;
 
-  if (!expected || !observed || !observed_length)
+  if (!expected)
     return 0;
-  for (i = 0; i < observed_length; i++) {
-    if (expected[i] == '\0' || expected[i] != observed[i])
-      return 0;
-  }
-  return expected[observed_length] == '\0';
+  while (expected[expected_length])
+    expected_length++;
+  return neverc_krt_release_token_bytes_equal(
+      expected, expected_length, observed, observed_length);
 }
 
 enum neverc_krt_profile_match neverc_krt_match_profile(
@@ -36,6 +35,11 @@ enum neverc_krt_profile_match neverc_krt_match_profile(
    * COMPAT is series + Android generation + page.  Patch, KMI, and
    * release token are ignored.  A certificate may overlay measured
    * offsets; it is not required to activate.
+   *
+   * EXACT is the certified KMI identity: same patch + Android + KMI +
+   * page.  The catalog token is measurement evidence (often a local
+   * -dirty / git suffix); it is not part of EXACT.  Auto-select still
+   * requires a byte-for-byte token via neverc_krt_find_profile_by_identity.
    */
   if (identity->has_android_identity &&
       profile->android_release != identity->android_release)
@@ -44,10 +48,7 @@ enum neverc_krt_profile_match neverc_krt_match_profile(
   if (identity->has_android_identity &&
       profile->linux_patch == identity->linux_patch &&
       profile->android_release == identity->android_release &&
-      profile->kmi_generation == identity->kmi_generation &&
-      neverc_krt_release_token_equal(profile->release_token,
-                                     identity->release_token,
-                                     identity->release_token_length))
+      profile->kmi_generation == identity->kmi_generation)
     return NEVERC_KRT_PROFILE_MATCH_EXACT;
 
   return NEVERC_KRT_PROFILE_MATCH_COMPATIBLE;
@@ -77,7 +78,9 @@ const struct neverc_krt_profile *neverc_krt_find_profile_by_identity(
     const struct neverc_krt_profile *profile = &_neverc_krt_profiles[i];
 
     if (neverc_krt_match_profile(profile, &identity) ==
-        NEVERC_KRT_PROFILE_MATCH_EXACT)
+            NEVERC_KRT_PROFILE_MATCH_EXACT &&
+        neverc_krt_release_token_equal(profile->release_token, release_token,
+                                       release_token_length))
       return profile;
   }
   return (const struct neverc_krt_profile *)0;

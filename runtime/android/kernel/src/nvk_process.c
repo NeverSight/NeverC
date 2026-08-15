@@ -506,13 +506,19 @@ int neverc_krt_task_match_group_ancestry(
 	for (depth = 0; depth < max_depth; depth++) {
 		struct task_struct *parent = (void *)0;
 		struct task_struct *leader = (void *)0;
-		char comm[16] = { 0 };
+		char comm[32] = { 0 };
+		unsigned long comm_size = layout->task_comm_size;
 		int match;
 
-		if (neverc_krt_mem_read(comm,
-				(const char *)walk + layout->task_comm, 15))
+		if (!comm_size || comm_size > sizeof(comm) ||
+		    !layout->task_size ||
+		    layout->task_comm + comm_size > layout->task_size)
 			goto out_unlock;
-		comm[15] = '\0';
+		if (neverc_krt_mem_read(comm,
+				(const char *)walk + layout->task_comm,
+				comm_size - 1))
+			goto out_unlock;
+		comm[comm_size - 1] = '\0';
 		match = predicate(comm, data);
 		if (match < 0)
 			goto out_unlock;
@@ -711,13 +717,22 @@ static int _neverc_krt_find_by_name_cb(struct task_struct *task, void *data)
 	struct _neverc_krt_find_ctx *ctx = (struct _neverc_krt_find_ctx *)data;
 	unsigned long off = __atomic_load_n(&_neverc_krt_off_comm,
 					    __ATOMIC_ACQUIRE);
+	const struct neverc_krt_gki_layout *layout;
+	char buf[32];
+	unsigned long comm_size;
+
 	if (!off)
 		return 0;
-
-	char buf[16];
-	if (neverc_krt_mem_read(buf, (const char *)task + off, 16))
+	layout = _neverc_krt_get_gki_layout();
+	if (!layout || !layout->task_comm_size || !layout->task_size ||
+	    off + layout->task_comm_size > layout->task_size)
 		return 0;
-	buf[15] = '\0';
+	comm_size = layout->task_comm_size;
+	if (comm_size > sizeof(buf))
+		return 0;
+	if (neverc_krt_mem_read(buf, (const char *)task + off, comm_size - 1))
+		return 0;
+	buf[comm_size - 1] = '\0';
 
 	const char *a = buf;
 	const char *b = ctx->target;
@@ -786,9 +801,19 @@ int neverc_krt_task_comm_safe(struct task_struct *task, char *buf, int bufsz)
 
 	unsigned long off = __atomic_load_n(&_neverc_krt_off_comm,
 					    __ATOMIC_ACQUIRE);
-	if (!off) return -1;
+	const struct neverc_krt_gki_layout *layout;
+	int n;
+	int max;
 
-	int n = bufsz < 16 ? bufsz - 1 : 15;
+	if (!off) return -1;
+	layout = _neverc_krt_get_gki_layout();
+	if (!layout || !layout->task_comm_size || !layout->task_size ||
+	    off + layout->task_comm_size > layout->task_size)
+		return -1;
+	max = (int)layout->task_comm_size;
+	n = bufsz < max ? bufsz - 1 : max - 1;
+	if (n < 0)
+		return -1;
 	if (neverc_krt_mem_read(buf, (const char *)task + off, n)) {
 		buf[0] = '\0';
 		return -1;

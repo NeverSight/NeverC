@@ -73,14 +73,17 @@ struct neverc_krt_observed_identity {
 };
 
 /*
- * Exact means the certified GKI release token matches byte-for-byte.
+ * Exact means the certified KMI identity matches: Linux patch, Android
+ * generation, KMI, and page size.  The catalog release token is
+ * measurement evidence and is not part of Exact; git / -dirty suffixes
+ * therefore do not demote a same-KMI kernel to Compatible.
  * Compatible is available only to an explicitly selected build profile and
  * always requires the same Linux major.minor series and page size.
  * Compatible also requires the Android generation when the banner names
  * one; Linux patch, KMI, and release token are ignored.  A certificate
  * may overlay measured offsets but is not required to activate.
  * A dedicated compile family is not a leftover overlay.  Callers without
- * an explicit profile must continue to require an exact identity.
+ * an explicit profile must continue to require a token-exact identity.
  */
 enum neverc_krt_profile_match {
   NEVERC_KRT_PROFILE_MATCH_NONE = 0,
@@ -119,5 +122,74 @@ int neverc_krt_parse_banner_identity(
  */
 int neverc_krt_format_vermagic_from_banner(const char *banner, char *out,
                                            unsigned long out_size);
+
+/*
+ * Certificate overlay identity.  A leftover Android/KMI record may share
+ * series + Android + KMI + page with a later patch; overlay still requires
+ * a byte-for-byte release token.
+ */
+struct neverc_krt_certificate_identity {
+  unsigned int profile_id;
+  unsigned int linux_major;
+  unsigned int linux_minor;
+  unsigned int android_release;
+  unsigned int kmi_generation;
+  unsigned int page_shift;
+  const char *release_token;
+  unsigned long release_token_length;
+};
+
+static inline int neverc_krt_release_token_bytes_equal(
+    const char *expected, unsigned long expected_length,
+    const char *observed, unsigned long observed_length) {
+  unsigned long i;
+
+  if (!expected || !observed || !expected_length || !observed_length ||
+      expected_length != observed_length)
+    return 0;
+  for (i = 0; i < observed_length; i++) {
+    if (expected[i] != observed[i])
+      return 0;
+  }
+  return 1;
+}
+
+static inline int neverc_krt_certificate_identity_on_variant(
+    const struct neverc_krt_certificate_identity *certificate,
+    const struct neverc_krt_profile *profile,
+    const struct neverc_krt_observed_identity *identity) {
+  if (!certificate || !profile || !identity)
+    return 0;
+  return certificate->profile_id == profile->legacy_id &&
+         certificate->linux_major == identity->linux_major &&
+         certificate->linux_minor == identity->linux_minor &&
+         certificate->android_release == identity->android_release &&
+         certificate->kmi_generation == identity->kmi_generation &&
+         certificate->page_shift == identity->page_shift;
+}
+
+static inline const struct neverc_krt_certificate_identity *
+neverc_krt_select_certificate_identity(
+    const struct neverc_krt_certificate_identity *certificates,
+    unsigned long count, const struct neverc_krt_profile *profile,
+    const struct neverc_krt_observed_identity *identity) {
+  unsigned long i;
+
+  if (!certificates || !profile || !identity)
+    return (const struct neverc_krt_certificate_identity *)0;
+  for (i = 0; i < count; i++) {
+    const struct neverc_krt_certificate_identity *certificate =
+        &certificates[i];
+
+    if (!neverc_krt_certificate_identity_on_variant(certificate, profile,
+                                                    identity))
+      continue;
+    if (neverc_krt_release_token_bytes_equal(
+            certificate->release_token, certificate->release_token_length,
+            identity->release_token, identity->release_token_length))
+      return certificate;
+  }
+  return (const struct neverc_krt_certificate_identity *)0;
+}
 
 #endif /* NEVERC_KRT_PROFILE_H */

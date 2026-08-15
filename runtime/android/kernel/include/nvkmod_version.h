@@ -76,9 +76,10 @@
 /*
  * The embedded runtime bitcode consumes generated descriptors and named ABI
  * capabilities; it never compares these compatibility handles numerically.
- * Bootstrap reports an exact match only when the pinned release token,
- * Android/KMI identity, and runtime page size all match.  When the build has
- * explicitly selected a profile, an observed OEM release in the same Linux
+ * Bootstrap reports an exact match when Linux patch, Android/KMI identity,
+ * and runtime page size match.  The catalog release token is measurement
+ * evidence and is not part of Exact.  When the build has explicitly
+ * selected a profile, an observed OEM release in the same Linux
  * major.minor series and with the same page size may activate as
  * NEVERC_KRT_VER_COMPAT.  The Android generation must also match when
  * the banner names one; patch, KMI, and token are ignored.  A different

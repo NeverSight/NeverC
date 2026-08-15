@@ -231,39 +231,63 @@ void neverc_krt_mem_flush_tlb_all(void)
 
 static int _neverc_krt_pte_walk_set(unsigned long addr, int writable)
 {
-	unsigned long tcr, t1sz, levels, pgsz;
+	unsigned long tcr, t1sz, levels;
 	unsigned long ttbr1, table_pa, table, idx, desc;
+	unsigned long page_mask;
 	int va_bits, bits_per_level;
+	int page_shift;
+	unsigned long level;
 
 	__asm__ __volatile__("mrs %0, tcr_el1" : "=r"(tcr));
 	t1sz = (tcr >> 16) & 0x3F;
 	va_bits = 64 - (int)t1sz;
 
-	pgsz = _neverc_krt_mem_get_page_size();
-	if (pgsz == 4096)
-		bits_per_level = 9;
-	else if (pgsz == 16384)
+	/* TCR_EL1.TG1: 0b01=16K, 0b10=4K, 0b11=64K; 0b00 is reserved. */
+	switch ((tcr >> 30) & 3UL) {
+	case 1:
+		page_shift = 14;
 		bits_per_level = 11;
-	else
+		break;
+	case 2:
+		page_shift = 12;
+		bits_per_level = 9;
+		break;
+	case 3:
+		page_shift = 16;
 		bits_per_level = 13;
-
-	levels = (va_bits - 12 + bits_per_level - 1) / bits_per_level;
-	if (levels < 2) levels = 2;
-	if (levels > 4) levels = 4;
+		break;
+	default:
+		return -1;
+	}
+	page_mask = _neverc_krt_physical_page_mask_for_shift(
+		_neverc_krt_get_gki_layout(), page_shift);
+	if (!page_mask)
+		return -1;
+	levels = (va_bits - page_shift + bits_per_level - 1) /
+		 bits_per_level;
+	if (levels < 2)
+		levels = 2;
+	if (levels > 4)
+		levels = 4;
 
 	__asm__ __volatile__("mrs %0, ttbr1_el1" : "=r"(ttbr1));
-	table_pa = ttbr1 & 0x0000FFFFFFFFFFFF & ~(pgsz - 1);
-	if (!table_pa) return -1;
+	table_pa = ttbr1 & page_mask;
+	if (!table_pa)
+		return -1;
 
 	table = _neverc_krt_pa_to_lm(table_pa, va_bits);
-	if (!table) return -1;
+	if (!table)
+		return -1;
 
-	unsigned long level;
 	for (level = 4 - levels; level < 3; level++) {
-		int shift = (3 - level) * bits_per_level + 12;
+		int shift = (3 - (int)level) * bits_per_level + page_shift;
 		unsigned long mask = (1UL << bits_per_level) - 1;
+		unsigned long entry_addr;
+		unsigned long next_pa;
+		unsigned long new_desc;
+
 		idx = (addr >> shift) & mask;
-		unsigned long entry_addr = table + idx * 8;
+		entry_addr = table + idx * 8;
 
 		if (neverc_krt_mem_read(&desc, (void *)entry_addr, 8))
 			return -2;
@@ -276,41 +300,47 @@ static int _neverc_krt_pte_walk_set(unsigned long addr, int writable)
 		 * same.  A full TLB flush ensures coherence.
 		 */
 		if ((desc & 3) == 1) {
-			unsigned long new_desc;
 			if (writable)
 				new_desc = desc & ~_NEVERC_KRT_PTE_RDONLY;
 			else
 				new_desc = desc | _NEVERC_KRT_PTE_RDONLY;
-			if (new_desc == desc) return 0;
+			if (new_desc == desc)
+				return 0;
 			*(volatile unsigned long *)entry_addr = new_desc;
 			neverc_krt_mem_flush_tlb_all();
 			return 0;
 		}
 
-		if ((desc & 3) != 3) return -3;
-		unsigned long next_pa = desc & ~0xFFFUL & ~(0xFFFFUL << 48);
+		if ((desc & 3) != 3)
+			return -3;
+		next_pa = desc & page_mask;
 		table = _neverc_krt_pa_to_lm(next_pa, va_bits);
-		if (!table) return -2;
+		if (!table)
+			return -2;
 	}
 
 	{
-		int shift = 12;
+		int shift = page_shift;
 		unsigned long mask = (1UL << bits_per_level) - 1;
+		unsigned long pte_addr;
+		unsigned long new_desc;
+
 		idx = (addr >> shift) & mask;
-		unsigned long pte_addr = table + idx * 8;
+		pte_addr = table + idx * 8;
 
 		if (neverc_krt_mem_read(&desc, (void *)pte_addr, 8))
 			return -4;
 
-		if ((desc & 1) == 0) return -5;
+		if ((desc & 1) == 0)
+			return -5;
 
-		unsigned long new_desc;
 		if (writable)
 			new_desc = desc & ~_NEVERC_KRT_PTE_RDONLY;
 		else
 			new_desc = desc | _NEVERC_KRT_PTE_RDONLY;
 
-		if (new_desc == desc) return 0;
+		if (new_desc == desc)
+			return 0;
 
 		*(volatile unsigned long *)pte_addr = new_desc;
 		neverc_krt_mem_flush_tlb_all();

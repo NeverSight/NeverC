@@ -156,6 +156,7 @@ static const struct neverc_krt_user_ptmap_test_geometry fixture_geometry = {
 	.contiguous_mask = FIXTURE_PTE_CONT,
 	.pt_regs_size = sizeof(struct fixture_pt_regs),
 	.pt_regs_x = offsetof(struct fixture_pt_regs, x),
+	.pt_regs_x_size = sizeof(((struct fixture_pt_regs *)0)->x),
 	.pt_regs_sp = offsetof(struct fixture_pt_regs, sp),
 	.pt_regs_pc = offsetof(struct fixture_pt_regs, pc),
 	.pt_regs_pstate = offsetof(struct fixture_pt_regs, pstate),

@@ -37,33 +37,22 @@ _neverc_krt_find_layout(unsigned int profile_id)
 	return (const struct neverc_krt_layout_entry *)0;
 }
 
-static __always_inline int _neverc_krt_release_token_equal(
-	const struct neverc_krt_layout_certificate_entry *certificate,
-	const struct neverc_krt_observed_identity *identity)
+static __always_inline struct neverc_krt_certificate_identity
+_neverc_krt_certificate_identity(
+	const struct neverc_krt_layout_certificate_entry *certificate)
 {
-	unsigned long i;
+	struct neverc_krt_certificate_identity identity = {
+		.profile_id = certificate->profile_id,
+		.linux_major = certificate->linux_major,
+		.linux_minor = certificate->linux_minor,
+		.android_release = certificate->android_release,
+		.kmi_generation = certificate->kmi_generation,
+		.page_shift = certificate->page_shift,
+		.release_token = certificate->release_token,
+		.release_token_length = certificate->release_token_length,
+	};
 
-	if (!certificate->release_token || !identity->release_token ||
-	    certificate->release_token_length != identity->release_token_length)
-		return 0;
-	for (i = 0; i < certificate->release_token_length; i++) {
-		if (certificate->release_token[i] != identity->release_token[i])
-			return 0;
-	}
-	return 1;
-}
-
-static __always_inline int _neverc_krt_certificate_on_variant(
-	const struct neverc_krt_layout_certificate_entry *certificate,
-	const struct neverc_krt_profile *profile,
-	const struct neverc_krt_observed_identity *identity)
-{
-	return certificate->profile_id == profile->legacy_id &&
-	       certificate->linux_major == identity->linux_major &&
-	       certificate->linux_minor == identity->linux_minor &&
-	       certificate->android_release == identity->android_release &&
-	       certificate->kmi_generation == identity->kmi_generation &&
-	       certificate->page_shift == identity->page_shift;
+	return identity;
 }
 
 static __always_inline const struct neverc_krt_layout_certificate_entry *
@@ -71,22 +60,24 @@ _neverc_krt_select_layout_certificate(
 	const struct neverc_krt_profile *profile,
 	const struct neverc_krt_observed_identity *identity)
 {
-	const struct neverc_krt_layout_certificate_entry *variant = 0;
 	unsigned long i;
 
 	for (i = 0; i < NEVERC_KRT_LAYOUT_CERTIFICATE_COUNT; i++) {
 		const struct neverc_krt_layout_certificate_entry *certificate =
 			&_neverc_krt_layout_certificates[i];
+		struct neverc_krt_certificate_identity cert_id =
+			_neverc_krt_certificate_identity(certificate);
 
-		if (!_neverc_krt_certificate_on_variant(certificate, profile,
-							identity))
+		if (!neverc_krt_certificate_identity_on_variant(
+			    &cert_id, profile, identity))
 			continue;
-		if (_neverc_krt_release_token_equal(certificate, identity))
+		if (neverc_krt_release_token_bytes_equal(
+			    cert_id.release_token, cert_id.release_token_length,
+			    identity->release_token,
+			    identity->release_token_length))
 			return certificate;
-		if (!variant)
-			variant = certificate;
 	}
-	return variant;
+	return (const struct neverc_krt_layout_certificate_entry *)0;
 }
 
 static __always_inline unsigned long _neverc_krt_match_layout_certificates(
@@ -102,10 +93,9 @@ static __always_inline unsigned long _neverc_krt_match_layout_certificates(
 	if (!profile || !layout || !identity || !identity->has_android_identity)
 		return 0;
 	/*
-	 * Prefer a byte-for-byte release token.  Otherwise accept any
-	 * certificate for this selected series plus the live Android/KMI
-	 * pair so a selected family can overlay another Android
-	 * generation on the same Linux series.
+	 * Overlay only a byte-for-byte release token.  A leftover
+	 * Android/KMI certificate for another patch must not paint a
+	 * different live token; COMPAT then keeps the family layout.
 	 */
 	certificate = _neverc_krt_select_layout_certificate(profile, identity);
 	if (!certificate)
@@ -291,6 +281,8 @@ static __always_inline unsigned long _neverc_krt_match_layout_certificates(
 		effective_layout->user_tlbi_all_asid =
 			certificate->user_tlbi_all_asid;
 	}
+	if (matched_bits & NEVERC_KRT_LAYOUT_CERT_FILE_DENTRY)
+		effective_layout->file_dentry = certificate->file_dentry;
 	field_bits |= matched_bits & NEVERC_KRT_LAYOUT_CERT_PRIVATE_FIELDS;
 	return field_bits;
 }
@@ -352,8 +344,8 @@ int _neverc_krt_current_profile_id(void)
 
 unsigned long _neverc_krt_get_module_size(void)
 {
-	const struct neverc_krt_layout_entry *layout =
-		_neverc_krt_current_layout();
+	const struct neverc_krt_gki_layout *layout =
+		_neverc_krt_get_gki_layout();
 
 	return layout ? layout->module_size : 0;
 }
@@ -374,10 +366,10 @@ const struct neverc_krt_gki_layout *_neverc_krt_get_gki_layout(void)
 
 unsigned long _neverc_krt_get_file_dentry_off(void)
 {
-	const struct neverc_krt_layout_entry *layout =
-		_neverc_krt_current_layout();
+	const struct neverc_krt_gki_layout *layout =
+		_neverc_krt_get_gki_layout();
 
-	return layout ? layout->file_dentry_off : 0;
+	return layout ? layout->file_dentry : 0;
 }
 
 /* ---- internal variables ---- */
@@ -391,8 +383,6 @@ typedef int (*neverc_krt_fmt_read_fn)(const char *buf, const char *fmt,
 static neverc_krt_fmt_write_fn _neverc_krt_fmt_slot_0;
 static neverc_krt_fmt_read_fn  _neverc_krt_fmt_slot_1;
 
-static unsigned long _neverc_krt_rt_off_init;
-static unsigned long _neverc_krt_rt_off_exit;
 
 static __always_inline unsigned int _neverc_krt_runtime_page_shift(void)
 {
@@ -645,126 +635,6 @@ int neverc_krt_verify_module_offsets(struct neverc_krt_this_module *mod,
 	return 0;
 }
 
-int neverc_krt_probe_module_offsets(struct neverc_krt_this_module *mod,
-				    void *expected_init,
-				    void *expected_exit)
-{
-	if (!mod || !expected_init) return -1;
-
-	const unsigned char *base = (const unsigned char *)mod;
-	unsigned long i;
-
-	for (i = 64; i < _neverc_krt_get_module_size(); i += 8) {
-		unsigned long v;
-		if (neverc_krt_mem_read(&v, base + i, 8)) continue;
-		if (v == (unsigned long)expected_init) {
-			_neverc_krt_rt_off_init = i;
-			break;
-		}
-	}
-
-	if (expected_exit && _neverc_krt_rt_off_init) {
-		for (i = _neverc_krt_rt_off_init + 8; i < _neverc_krt_get_module_size(); i += 8) {
-			unsigned long v;
-			if (neverc_krt_mem_read(&v, base + i, 8)) continue;
-			if (v == (unsigned long)expected_exit) {
-				_neverc_krt_rt_off_exit = i;
-				break;
-			}
-		}
-	}
-
-	return _neverc_krt_rt_off_init ? 0 : -1;
-}
-
-int neverc_krt_validate_runtime(struct neverc_krt_this_module *mod,
-				const char *name,
-				void *init_fn, void *exit_fn)
-{
-	int ret;
-
-	ret = neverc_krt_check_kernel_match();
-	if (ret < 0)
-		return ret;
-	(void)init_fn;
-	(void)exit_fn;
-	return neverc_krt_verify_module_offsets(mod, name);
-}
-
-int neverc_krt_patch_vermagic(struct neverc_krt_this_module *mod)
-{
-	const char *banner;
-	char ban_raw[128];
-	char ver_buf[128];
-	unsigned char *base;
-	unsigned long modsz;
-	unsigned long written;
-	unsigned long scan;
-	int match = neverc_krt_check_kernel_match();
-	int formatted;
-
-	if (match < 0)
-		return match;
-
-	/*
-	 * This rewrites a "vermagic=" blob inside this_module after the
-	 * selected identity has already been accepted.  The loader compared
-	 * .modinfo before init, so this cannot make insmod accept another
-	 * kernel.
-	 */
-	banner = (const char *)NEVERC_KRT_LOOKUP("linux_banner");
-	if (!banner)
-		banner = (const char *)NEVERC_KRT_LOOKUP("linux_proc_banner");
-	if (!banner)
-		return -1;
-
-	if (neverc_krt_mem_read(ban_raw, banner, sizeof(ban_raw)))
-		return -1;
-	ban_raw[sizeof(ban_raw) - 1] = '\0';
-	formatted = neverc_krt_format_vermagic_from_banner(
-		ban_raw, ver_buf, sizeof(ver_buf));
-	if (formatted)
-		return formatted;
-
-	written = 0;
-	while (ver_buf[written])
-		written++;
-
-	base = (unsigned char *)mod;
-	modsz = _neverc_krt_get_module_size();
-	for (scan = 0; scan + 9 < modsz; scan++) {
-		unsigned char sw[9];
-
-		if (neverc_krt_mem_read(sw, base + scan, 9))
-			continue;
-		if (sw[0] == 'v' && sw[1] == 'e' &&
-		    sw[2] == 'r' && sw[3] == 'm' &&
-		    sw[4] == 'a' && sw[5] == 'g' &&
-		    sw[6] == 'i' && sw[7] == 'c' && sw[8] == '=') {
-			neverc_krt_mem_write_protected(
-				(unsigned long)(base + scan + 9),
-				ver_buf, written + 1);
-			return 0;
-		}
-	}
-
-	return -3;
-}
-
-int neverc_krt_fixup_runtime(struct neverc_krt_this_module *mod,
-			     const char *name,
-			     void *init_fn, void *exit_fn)
-{
-	int ret;
-
-	ret = neverc_krt_check_kernel_match();
-	if (ret < 0)
-		return ret;
-	(void)init_fn;
-	(void)exit_fn;
-	return neverc_krt_verify_module_offsets(mod, name);
-}
-
 void *neverc_krt_lookup_printk(void)
 {
 	void *sym = NEVERC_KRT_LOOKUP("_printk");
@@ -846,18 +716,16 @@ int neverc_krt_should_abort_on_mismatch(void)
 
 unsigned long neverc_krt_rt_off_init(void)
 {
-	const struct neverc_krt_layout_entry *layout;
+	const struct neverc_krt_gki_layout *layout =
+		_neverc_krt_get_gki_layout();
 
-	if (_neverc_krt_rt_off_init) return _neverc_krt_rt_off_init;
-	layout = _neverc_krt_current_layout();
-	return layout ? layout->off_init : 0;
+	return layout ? layout->module_init : 0;
 }
 
 unsigned long neverc_krt_rt_off_exit(void)
 {
-	const struct neverc_krt_layout_entry *layout;
+	const struct neverc_krt_gki_layout *layout =
+		_neverc_krt_get_gki_layout();
 
-	if (_neverc_krt_rt_off_exit) return _neverc_krt_rt_off_exit;
-	layout = _neverc_krt_current_layout();
-	return layout ? layout->off_exit : 0;
+	return layout ? layout->module_exit : 0;
 }

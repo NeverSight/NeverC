@@ -56,6 +56,11 @@ def fixture_layouts():
             "members": {"d_inode": 48},
             "member_sizes": {"d_inode": 8},
         },
+        "file": {
+            "size": 256,
+            "members": {"f_path": 64},
+            "member_sizes": {"f_path": 16},
+        },
         "task_struct": {
             "size": 4608,
             "members": {
@@ -206,6 +211,7 @@ class GenerateLayoutCertificateTests(unittest.TestCase):
 
         self.assertEqual(certificate["profile_id"], 515)
         self.assertEqual(certificate["filldir_abi"], "returns_int")
+        self.assertEqual(certificate["file_dentry"], 72)
         self.assertEqual(
             certificate["inode_times"]["members"],
             {

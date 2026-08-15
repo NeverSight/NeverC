@@ -144,13 +144,25 @@ static bool _neverc_krt_pid_filldir_returns_bool(struct dir_context *ctx,
 static void _neverc_krt_pid_readdir_ctx(neverc_krt_reg_ctx *ctx)
 {
 	unsigned long dir_ctx_ptr = ctx->regs[1];
-	if (!dir_ctx_ptr) return;
-
+	const struct neverc_krt_gki_layout *layout;
 	void *actor;
 	void *wrap;
 	const struct neverc_krt_runtime_caps *caps;
 
-	if (neverc_krt_mem_read(&actor, (void *)dir_ctx_ptr, 8))
+	if (!dir_ctx_ptr) return;
+	layout = _neverc_krt_get_gki_layout();
+	if (!layout ||
+	    !_neverc_krt_layout_fields_proven(
+		    NEVERC_KRT_LAYOUT_CERT_DIR_CONTEXT) ||
+	    layout->dir_context_actor_size != sizeof(void *) ||
+	    !layout->dir_context_size ||
+	    layout->dir_context_actor + layout->dir_context_actor_size >
+		    layout->dir_context_size)
+		return;
+
+	if (neverc_krt_mem_read(&actor,
+				(char *)dir_ctx_ptr + layout->dir_context_actor,
+				layout->dir_context_actor_size))
 		return;
 	if (!actor) return;
 
@@ -173,7 +185,8 @@ static void _neverc_krt_pid_readdir_ctx(neverc_krt_reg_ctx *ctx)
 	if (_neverc_krt_pid_actor_acquire(actor) < 0)
 		return;
 
-	neverc_krt_mem_write((void *)dir_ctx_ptr, &wrap, 8);
+	neverc_krt_mem_write((char *)dir_ctx_ptr + layout->dir_context_actor,
+			     &wrap, layout->dir_context_actor_size);
 }
 
 /* ---- public API ---- */

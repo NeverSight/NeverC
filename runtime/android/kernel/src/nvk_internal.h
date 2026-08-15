@@ -80,6 +80,7 @@ struct neverc_krt_gki_layout {
 	unsigned long task_real_cred;
 	unsigned long task_cred;
 	unsigned long task_comm;
+	unsigned long task_comm_size;
 	unsigned long task_nsproxy;
 	unsigned long task_seccomp;
 	unsigned long signal_size;
@@ -150,6 +151,12 @@ struct neverc_krt_gki_layout {
 	unsigned long kstat_gid;
 	unsigned long kstat_file_size;
 	unsigned long dentry_name;
+	unsigned long file_dentry;
+	unsigned long module_size;
+	unsigned long module_init;
+	unsigned long module_exit;
+	unsigned long ftrace_ops_func;
+	unsigned long ftrace_ops_flags;
 	unsigned long filename_size;
 	unsigned long filename_name;
 	unsigned long filename_name_size;
@@ -184,6 +191,15 @@ struct neverc_krt_gki_layout {
 	unsigned long user_tlbi_all_asid;
 };
 
+/*
+ * Page-aligned physical address mask for the live TCR granule.
+ * PA width comes from the active layout when present; the mask itself
+ * is always computed from that width plus the live shift so a 4K
+ * catalog cannot paint a 16K walk.
+ */
+unsigned long _neverc_krt_physical_page_mask_for_shift(
+	const struct neverc_krt_gki_layout *layout, int page_shift);
+
 /* Exact per-field evidence published only for a certified live identity. */
 #define NEVERC_KRT_LAYOUT_CERT_DIR_CONTEXT (1UL << 0)
 #define NEVERC_KRT_LAYOUT_CERT_INODE_TIMES (1UL << 1)
@@ -194,6 +210,7 @@ struct neverc_krt_gki_layout {
 #define NEVERC_KRT_LAYOUT_CERT_TASK_REF (1UL << 6)
 #define NEVERC_KRT_LAYOUT_CERT_TASK_USER_STATE (1UL << 7)
 #define NEVERC_KRT_LAYOUT_CERT_USER_PTMAP (1UL << 8)
+#define NEVERC_KRT_LAYOUT_CERT_FILE_DENTRY (1UL << 9)
 #define NEVERC_KRT_LAYOUT_CERT_PRIVATE_FIELDS \
 	(NEVERC_KRT_LAYOUT_CERT_DIR_CONTEXT | \
 	 NEVERC_KRT_LAYOUT_CERT_INODE_TIMES | \
@@ -203,7 +220,8 @@ struct neverc_krt_gki_layout {
 	 NEVERC_KRT_LAYOUT_CERT_TASK_WALK | \
 	 NEVERC_KRT_LAYOUT_CERT_TASK_REF | \
 	 NEVERC_KRT_LAYOUT_CERT_TASK_USER_STATE | \
-	 NEVERC_KRT_LAYOUT_CERT_USER_PTMAP)
+	 NEVERC_KRT_LAYOUT_CERT_USER_PTMAP | \
+	 NEVERC_KRT_LAYOUT_CERT_FILE_DENTRY)
 
 /* ---- nvk_ksyms.c (shared with nvkmod.c) ---- */
 

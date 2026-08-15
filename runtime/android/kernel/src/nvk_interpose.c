@@ -252,10 +252,15 @@ static __always_inline void _neverc_krt_icache_inval(unsigned long addr,
 static __always_inline void _neverc_krt_tlbi_range(unsigned long start,
 					    unsigned long end)
 {
+	unsigned long pgsz = neverc_krt_page_size();
 	unsigned long addr;
-	for (addr = start & ~0xFFFUL; addr < end; addr += 0x1000)
+
+	if (!pgsz)
+		pgsz = 0x1000UL;
+	for (addr = start & ~(pgsz - 1); addr < end; addr += pgsz)
 		__asm__ __volatile__("tlbi vale1is, %0"
-				     :: "r"(addr >> 12) : "memory");
+				     :: "r"((addr >> 12) & ((1UL << 44) - 1))
+				     : "memory");
 	__asm__ __volatile__("dsb ish" ::: "memory");
 	__asm__ __volatile__("isb" ::: "memory");
 }
@@ -2800,10 +2805,15 @@ static void _neverc_krt_ftrace_thunk_common(unsigned long ip,
 	if (!ops || !regs) return;
 	struct neverc_krt_ftrace_interpose *h = (struct neverc_krt_ftrace_interpose *)(
 		(char *)ops - __builtin_offsetof(struct neverc_krt_ftrace_interpose, _ops_storage));
+	const struct neverc_krt_gki_layout *layout;
 	if (!h->replace) return;
 
-	unsigned long *r = (unsigned long *)regs;
-	r[32] = (unsigned long)h->replace;
+	layout = _neverc_krt_get_gki_layout();
+	if (!layout || !layout->pt_regs_pc ||
+	    layout->pt_regs_pc + sizeof(unsigned long) > layout->pt_regs_size)
+		return;
+	*(unsigned long *)((char *)regs + layout->pt_regs_pc) =
+		(unsigned long)h->replace;
 }
 
 /* The embedded runtime is compiled once, so retain both source-level KCFI types. */
@@ -2835,42 +2845,52 @@ static int _neverc_krt_ftrace_interpose_install_impl(
 	if (!caps || !caps->has_ftrace_registration_api ||
 	    !_neverc_krt_ftrace_avail)
 		return -1;
-	if (!h || !target || !replace) return -2;
-	if (h->active) return NEVERC_KRT_INTERPOSE_E_CONFLICT;
+	{
+		const struct neverc_krt_gki_layout *layout =
+			_neverc_krt_get_gki_layout();
+		unsigned char *ops_bytes;
+		unsigned long thunk;
+		unsigned long i;
 
-	h->target = target;
-	h->replace = replace;
-	h->orig = target;
-	h->active = 0;
-	h->registered = 0;
-	h->filtered = 0;
+		if (!layout || !layout->ftrace_ops_flags ||
+		    layout->ftrace_ops_func + sizeof(unsigned long) >
+			    sizeof(h->_ops_storage) ||
+		    layout->ftrace_ops_flags + sizeof(unsigned long) >
+			    sizeof(h->_ops_storage))
+			return -1;
+		if (!h || !target || !replace) return -2;
+		if (h->active) return NEVERC_KRT_INTERPOSE_E_CONFLICT;
 
-	unsigned char *p = (unsigned char *)h->_ops_storage;
-	unsigned long i;
-	for (i = 0; i < sizeof(h->_ops_storage); i++) p[i] = 0;
-	ops = (struct ftrace_ops *)h->_ops_storage;
+		h->target = target;
+		h->replace = replace;
+		h->orig = target;
+		h->active = 0;
+		h->registered = 0;
+		h->filtered = 0;
 
-	/*
-	 * Kernel's struct ftrace_ops layout:
-	 *   [0]  func   (ftrace_func_t)
-	 *   [8]  next   (kernel-managed, leave zero)
-	 *   [16] flags  (unsigned long)
-	 */
-	switch (caps->ftrace_callback_abi) {
-	case NEVERC_KRT_FTRACE_ABI_FTRACE_REGS:
-		h->_ops_storage[0] =
-			(unsigned long)_neverc_krt_ftrace_thunk_ftrace_regs;
-		break;
-	case NEVERC_KRT_FTRACE_ABI_PT_REGS:
-		h->_ops_storage[0] =
-			(unsigned long)_neverc_krt_ftrace_thunk_pt_regs;
-		break;
-	default:
-		return -3;
+		ops_bytes = (unsigned char *)h->_ops_storage;
+		for (i = 0; i < sizeof(h->_ops_storage); i++)
+			ops_bytes[i] = 0;
+		ops = (struct ftrace_ops *)h->_ops_storage;
+
+		switch (caps->ftrace_callback_abi) {
+		case NEVERC_KRT_FTRACE_ABI_FTRACE_REGS:
+			thunk = (unsigned long)
+				_neverc_krt_ftrace_thunk_ftrace_regs;
+			break;
+		case NEVERC_KRT_FTRACE_ABI_PT_REGS:
+			thunk = (unsigned long)
+				_neverc_krt_ftrace_thunk_pt_regs;
+			break;
+		default:
+			return -3;
+		}
+		*(unsigned long *)(ops_bytes + layout->ftrace_ops_func) = thunk;
+		*(unsigned long *)(ops_bytes + layout->ftrace_ops_flags) =
+			NEVERC_KRT_FTRACE_FL_SAVE_REGS
+			| NEVERC_KRT_FTRACE_FL_IPMODIFY
+			| NEVERC_KRT_FTRACE_FL_RECURSION;
 	}
-	h->_ops_storage[2] = NEVERC_KRT_FTRACE_FL_SAVE_REGS
-			    | NEVERC_KRT_FTRACE_FL_IPMODIFY
-			    | NEVERC_KRT_FTRACE_FL_RECURSION;
 
 	ret = _neverc_krt_ftrace_set_filter(ops,
 				     (unsigned long)target, 0, 1);

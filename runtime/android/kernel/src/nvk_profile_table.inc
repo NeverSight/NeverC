@@ -32,7 +32,7 @@ _neverc_krt_profiles[NEVERC_KRT_PROFILE_COUNT] = {
 			.filldir_abi = NEVERC_KRT_FILLDIR_ABI_RETURNS_INT,
 			.kallsyms_iter_abi = NEVERC_KRT_KALLSYMS_ABI_WITH_MODULE,
 			.do_mmap_abi = NEVERC_KRT_DO_MMAP_ABI_WITHOUT_VM_FLAGS,
-			.has_ftrace_registration_api = 1,
+			.has_ftrace_registration_api = 0,
 		},
 	},
 	{
@@ -51,7 +51,7 @@ _neverc_krt_profiles[NEVERC_KRT_PROFILE_COUNT] = {
 			.filldir_abi = NEVERC_KRT_FILLDIR_ABI_RETURNS_INT,
 			.kallsyms_iter_abi = NEVERC_KRT_KALLSYMS_ABI_WITH_MODULE,
 			.do_mmap_abi = NEVERC_KRT_DO_MMAP_ABI_WITHOUT_VM_FLAGS,
-			.has_ftrace_registration_api = 1,
+			.has_ftrace_registration_api = 0,
 		},
 	},
 	{
@@ -70,7 +70,7 @@ _neverc_krt_profiles[NEVERC_KRT_PROFILE_COUNT] = {
 			.filldir_abi = NEVERC_KRT_FILLDIR_ABI_RETURNS_BOOL,
 			.kallsyms_iter_abi = NEVERC_KRT_KALLSYMS_ABI_WITH_MODULE,
 			.do_mmap_abi = NEVERC_KRT_DO_MMAP_ABI_WITHOUT_VM_FLAGS,
-			.has_ftrace_registration_api = 1,
+			.has_ftrace_registration_api = 0,
 		},
 	},
 	{
@@ -89,7 +89,7 @@ _neverc_krt_profiles[NEVERC_KRT_PROFILE_COUNT] = {
 			.filldir_abi = NEVERC_KRT_FILLDIR_ABI_RETURNS_BOOL,
 			.kallsyms_iter_abi = NEVERC_KRT_KALLSYMS_ABI_ADDRESS_ONLY,
 			.do_mmap_abi = NEVERC_KRT_DO_MMAP_ABI_WITH_VM_FLAGS,
-			.has_ftrace_registration_api = 1,
+			.has_ftrace_registration_api = 0,
 		},
 	},
 	{
@@ -108,7 +108,7 @@ _neverc_krt_profiles[NEVERC_KRT_PROFILE_COUNT] = {
 			.filldir_abi = NEVERC_KRT_FILLDIR_ABI_RETURNS_BOOL,
 			.kallsyms_iter_abi = NEVERC_KRT_KALLSYMS_ABI_ADDRESS_ONLY,
 			.do_mmap_abi = NEVERC_KRT_DO_MMAP_ABI_WITH_VM_FLAGS,
-			.has_ftrace_registration_api = 1,
+			.has_ftrace_registration_api = 0,
 		},
 	},
 	{

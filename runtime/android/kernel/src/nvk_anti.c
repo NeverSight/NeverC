@@ -95,8 +95,14 @@ int neverc_krt_anti_is_uid0(void)
 
 int neverc_krt_anti_check_caller_comm(const char *expected)
 {
+	const struct neverc_krt_gki_layout *layout;
 	unsigned long off = __atomic_load_n(&_neverc_krt_off_comm,
 					    __ATOMIC_ACQUIRE);
+	char buf[32];
+	unsigned long comm_size;
+	const char *a;
+	const char *b;
+
 	if (!off) {
 		neverc_krt_task_comm(current);
 		off = __atomic_load_n(&_neverc_krt_off_comm,
@@ -104,13 +110,20 @@ int neverc_krt_anti_check_caller_comm(const char *expected)
 		if (!off) return 0;
 	}
 
-	char buf[16];
-	if (neverc_krt_mem_read(buf, (const char *)current + off, 16))
+	layout = _neverc_krt_get_gki_layout();
+	if (!layout || !layout->task_comm_size || !layout->task_size ||
+	    off + layout->task_comm_size > layout->task_size)
 		return 0;
-	buf[15] = '\0';
+	comm_size = layout->task_comm_size;
+	if (comm_size > sizeof(buf))
+		return 0;
+	if (neverc_krt_mem_read(buf, (const char *)current + off,
+				comm_size - 1))
+		return 0;
+	buf[comm_size - 1] = '\0';
 
-	const char *a = buf;
-	const char *b = expected;
+	a = buf;
+	b = expected;
 	while (*a && *b) {
 		if (*a != *b) return 0;
 		a++; b++;

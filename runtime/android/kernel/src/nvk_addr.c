@@ -19,7 +19,6 @@
 #define _NEVERC_KRT_TCR_DS          (1UL << 59)
 #define _NEVERC_KRT_MAIR_DEVICE_NGNRE 0x04UL
 #define _NEVERC_KRT_MAIR_ATTRS      8U
-#define _NEVERC_KRT_PHYS_ADDR_BITS  48
 
 /*
  * arm64 ioremap() is inline, not a callable KMI symbol.  GKI 5.10/5.15 use
@@ -75,6 +74,24 @@ static int _neverc_krt_decode_page_shift(unsigned long tcr)
 	}
 }
 
+unsigned long _neverc_krt_physical_page_mask_for_shift(
+	const struct neverc_krt_gki_layout *layout, int page_shift)
+{
+	unsigned long offset_mask;
+	unsigned long pa_bits;
+
+	if (page_shift != 12 && page_shift != 14 && page_shift != 16)
+		return 0;
+	offset_mask = (1UL << page_shift) - 1;
+	pa_bits = 48;
+	if (layout && layout->user_pa_bits >= 36 &&
+	    layout->user_pa_bits <= 52)
+		pa_bits = layout->user_pa_bits;
+	if (pa_bits >= sizeof(unsigned long) * 8)
+		return 0;
+	return ((1UL << pa_bits) - 1) & ~offset_mask;
+}
+
 static unsigned long _neverc_krt_page_offset_mask(int page_shift)
 {
 	if (page_shift != 12 && page_shift != 14 && page_shift != 16)
@@ -84,12 +101,20 @@ static unsigned long _neverc_krt_page_offset_mask(int page_shift)
 
 static unsigned long _neverc_krt_pte_addr_mask(int page_shift)
 {
-	unsigned long offset_mask =
-		_neverc_krt_page_offset_mask(page_shift);
+	return _neverc_krt_physical_page_mask_for_shift(
+		_neverc_krt_get_gki_layout(), page_shift);
+}
 
-	if (!offset_mask)
+static unsigned long _neverc_krt_par_to_phys(unsigned long par,
+					     unsigned long vaddr)
+{
+	int shift = neverc_krt_page_shift();
+	unsigned long page_mask = _neverc_krt_pte_addr_mask(shift);
+	unsigned long offset_mask = _neverc_krt_page_offset_mask(shift);
+
+	if (!page_mask || !offset_mask)
 		return 0;
-	return ((1UL << _NEVERC_KRT_PHYS_ADDR_BITS) - 1) & ~offset_mask;
+	return (par & page_mask) | (vaddr & offset_mask);
 }
 
 static __always_inline void _neverc_krt_flush_tlb_va(unsigned long vaddr)
@@ -282,7 +307,7 @@ unsigned long neverc_krt_virt_to_phys(unsigned long vaddr)
 	if (par & 1)
 		return 0;
 
-	return (par & 0x0000FFFFFFFFF000UL) | (vaddr & 0xFFF);
+	return _neverc_krt_par_to_phys(par, vaddr);
 }
 
 unsigned long neverc_krt_phys_to_virt(unsigned long paddr)
@@ -357,8 +382,7 @@ int neverc_krt_addr_init(void)
 				: "=r"(par) : "r"(test_sym) : "memory");
 			if (!(par & 1)) {
 				unsigned long phys =
-					(par & 0x0000FFFFFFFFF000UL)
-					| (test_sym & 0xFFF);
+					_neverc_krt_par_to_phys(par, test_sym);
 				_neverc_krt_derived_voffset = test_sym - phys;
 				_neverc_krt_voffset_derived = 1;
 			}
@@ -403,7 +427,7 @@ unsigned long neverc_krt_translate_user(unsigned long uaddr)
 	if (par & 1)
 		return 0;
 
-	return (par & 0x0000FFFFFFFFF000UL) | (uaddr & 0xFFF);
+	return _neverc_krt_par_to_phys(par, uaddr);
 }
 
 int neverc_krt_walk_pgtable(unsigned long vaddr, struct neverc_krt_pte_info *info)

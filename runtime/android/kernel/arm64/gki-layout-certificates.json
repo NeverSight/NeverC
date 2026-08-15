@@ -1005,6 +1005,7 @@
         },
         "size": 32
       },
+      "file_dentry": 72,
       "filldir_abi": "returns_bool",
       "identity": {
         "android_release": 16,
@@ -1245,6 +1246,7 @@
         },
         "size": 32
       },
+      "file_dentry": 72,
       "filldir_abi": "returns_bool",
       "identity": {
         "android_release": 16,

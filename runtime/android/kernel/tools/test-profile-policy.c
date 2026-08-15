@@ -69,6 +69,12 @@ static void check_selected_profile_compatibility(void) {
   identity.page_shift = 12;
   assert(neverc_krt_match_profile(profile, &identity) ==
          NEVERC_KRT_PROFILE_MATCH_EXACT);
+  assert(neverc_krt_parse_banner_identity(
+             "Linux version 6.12.89-android16-6-oem SMP",
+             &identity) == 0);
+  identity.page_shift = 12;
+  assert(neverc_krt_match_profile(profile, &identity) ==
+         NEVERC_KRT_PROFILE_MATCH_EXACT);
 
   assert(neverc_krt_parse_banner_identity(
              "Linux version 6.12.38-android16-5-oem-4k SMP",
@@ -136,6 +142,12 @@ static void check_selected_profile_compatibility(void) {
   assert(profile != NULL);
   assert(neverc_krt_parse_banner_identity(
              "Linux version 5.10.223-android13-4-00011-ga33040a671e2-dirty SMP",
+             &identity) == 0);
+  identity.page_shift = 12;
+  assert(neverc_krt_match_profile(profile, &identity) ==
+         NEVERC_KRT_PROFILE_MATCH_EXACT);
+  assert(neverc_krt_parse_banner_identity(
+             "Linux version 5.10.223-android13-4-gdeadbeef SMP",
              &identity) == 0);
   identity.page_shift = 12;
   assert(neverc_krt_match_profile(profile, &identity) ==
@@ -211,7 +223,7 @@ static void check_capability_contracts(void) {
   assert(profile->caps.kallsyms_iter_abi ==
          NEVERC_KRT_KALLSYMS_ABI_WITH_MODULE);
   assert(profile->caps.do_mmap_abi == NEVERC_KRT_DO_MMAP_ABI_WITHOUT_VM_FLAGS);
-  assert(profile->caps.has_ftrace_registration_api == 1);
+  assert(profile->caps.has_ftrace_registration_api == 0);
 
   profile = neverc_krt_find_profile(51013);
   assert(profile->kcfi_mode == 0);
@@ -241,7 +253,7 @@ static void check_capability_contracts(void) {
   assert(profile->kcfi_mode == 2);
   assert(profile->caps.ftrace_callback_abi ==
          NEVERC_KRT_FTRACE_ABI_FTRACE_REGS);
-  assert(profile->caps.has_ftrace_registration_api == 1);
+  assert(profile->caps.has_ftrace_registration_api == 0);
 
   profile = neverc_krt_find_profile(618);
   assert(profile->kcfi_mode == 2);
@@ -317,6 +329,46 @@ static void check_vermagic_format_keeps_long_tokens(void) {
                                                 sizeof(buf)) == -2);
 }
 
+static void check_certificate_select_is_token_exact(void) {
+  static const char leftover_token[] =
+      "6.12.38-android16-5-g8c67d4274c0a-ab14275539-4k";
+  static const struct neverc_krt_certificate_identity leftover[] = {
+      {
+          .profile_id = 612,
+          .linux_major = 6,
+          .linux_minor = 12,
+          .android_release = 16,
+          .kmi_generation = 5,
+          .page_shift = 12,
+          .release_token = leftover_token,
+          .release_token_length = sizeof(leftover_token) - 1,
+      },
+  };
+  const struct neverc_krt_profile *profile = neverc_krt_find_profile(612);
+  struct neverc_krt_observed_identity identity;
+
+  assert(profile != NULL);
+  assert(neverc_krt_parse_banner_identity(
+             "Linux version 6.12.38-android16-5-g8c67d4274c0a-ab14275539-4k SMP",
+             &identity) == 0);
+  identity.page_shift = 12;
+  assert(neverc_krt_select_certificate_identity(leftover, 1, profile,
+                                                &identity) == &leftover[0]);
+
+  assert(neverc_krt_parse_banner_identity(
+             "Linux version 6.12.50-android16-5-oem-4k SMP", &identity) == 0);
+  identity.page_shift = 12;
+  assert(neverc_krt_select_certificate_identity(leftover, 1, profile,
+                                                &identity) == NULL);
+
+  assert(neverc_krt_parse_banner_identity(
+             "Linux version 6.12.89-android16-6-maybe-dirty-4k SMP",
+             &identity) == 0);
+  identity.page_shift = 12;
+  assert(neverc_krt_select_certificate_identity(leftover, 1, profile,
+                                                &identity) == NULL);
+}
+
 int main(void) {
   check_exact_lookup();
   check_identity_lookup();
@@ -326,5 +378,6 @@ int main(void) {
   check_capability_contracts();
   check_banner_identity_parsing();
   check_vermagic_format_keeps_long_tokens();
+  check_certificate_select_is_token_exact();
   return 0;
 }

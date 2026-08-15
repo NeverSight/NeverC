@@ -28,6 +28,7 @@ CERTIFICATE_STRUCTURES = (
     "cred",
     "dentry",
     "dir_context",
+    "file",
     "filename",
     "inode",
     "mm_struct",
@@ -218,6 +219,10 @@ def build_certificate(profile, manifest, release_token, layouts, evidence_name,
             ),
         },
         "user_ptmap": user_ptmap,
+        "file_dentry": (
+            COMPAT.member(layouts, "file", "f_path")
+            + COMPAT.member(layouts, "path", "dentry")
+        ),
     }
     return certificate
 

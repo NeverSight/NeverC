@@ -343,13 +343,15 @@ docker run --rm -v <repo>/local_docs:/work -v <repo>/runtime/android/kernel/tool
 
 At runtime, bootstrap first tries the full release token, Android/KMI identity,
 and page size. Without an explicitly selected profile, activation remains
-exact-only. With the build-selected profile, a full match reports `EXACT`.
-`COMPAT` is the same Linux `major.minor`, the same Android generation,
-and the same page size; patch, KMI, and token are ignored. A certificate
-may overlay measured offsets; it is not required. The observed OEM
-patch/Android/KMI fields remain visible and are never overwritten with
-pinned values. There is no cross-series, unknown-banner, nearest-version,
-or maximum-layout fallback.
+token-exact. With the build-selected profile, the same Linux patch + Android
+generation + KMI + page reports `EXACT`; the catalog token is measurement
+evidence and is ignored. `COMPAT` is the same Linux `major.minor`, the same
+Android generation, and the same page size; patch, KMI, and token are
+ignored. A certificate overlays measured offsets only on a byte-for-byte
+release token; it is not required. The observed OEM patch/Android/KMI
+fields remain visible and are never overwritten with pinned values. There
+is no cross-series, unknown-banner, nearest-version, or maximum-layout
+fallback.
 
 ## Same Linux series, different Android generation
 
@@ -402,12 +404,10 @@ token. Sublevel, `-dirty`, and git suffix therefore do **not** block
 `5.10.*-android13-*` GKI whose `struct module` matches this family
 (size 1024, `init` 400, `exit` 936), including the local dirty tree and
 other official/OEM tokens. The same rule applies to `51514` on
-`5.15.*-android14-*`. `neverc_krt_patch_vermagic()` still cannot help
-the loader: it only rewrites a post-load `vermagic=` blob inside
-`this_module` after the selected identity has been accepted, and it
-refuses to emit a truncated string. Same-generation `COMPAT` is the
-post-load layout policy (patch / KMI / token ignored; a certificate may
-overlay fields). Ship the compile family that matches the Android
+`5.15.*-android14-*`. Same-generation `COMPAT` is the post-load layout
+policy (patch / KMI / token ignored). A certificate overlays fields only
+when the live release token matches byte-for-byte; it is not required
+to activate. Ship the compile family that matches the Android
 generation; do not mix `510`/`51013` or `515`/`51514`.
 
 `CONFIG_CFI_CLANG` on 5.10/5.15 is classic Clang CFI (`__cfi_check` /
@@ -417,21 +417,23 @@ prefixes start at the 601 family.
 
 Activation with the selected compile family:
 
-1. Exact token + Android/KMI + page → `EXACT`, that family's layout.
+1. Same Linux patch + Android generation + KMI + page → `EXACT`, that
+   family's layout. The catalog token (often a local `-dirty` / git
+   suffix) is ignored.
 2. Same `major.minor` + same Android generation + page → `COMPAT`, family
-   layout. Patch, KMI, and release token are ignored (a certificate may
-   overlay; it is not required). `612` on `android16-5` therefore uses
-   the same table as `android16-6`.
+   layout. Patch, KMI, and release token are ignored. `612` on
+   `android16-5` therefore uses the same table as `android16-6`.
 3. Different Android generation (`510` on android13, `51013` on
    android12, `515` on android14, `51514` on android13) → fail closed.
    That generation is its own compile family.
 4. OEM banner with no `-androidN-KMI` → `COMPAT` on the selected series
    (historical path).
 
-Certificates match a live identity by series + Android + KMI + page first, and
-prefer a byte-for-byte release token when one is present. A later
-`5.15.170-android14-11-…` therefore reuses the android14-5.15 certificate
-on the `51514` family without a new compile handle.
+Certificates overlay only a byte-for-byte live release token. A leftover
+`6.12.38-android16-5-…` certificate therefore does not paint a later
+`6.12.50` or `6.12.89` kernel; those keep the family table. A later
+`5.15.170-android14-11-…` without its own certificate likewise keeps the
+`51514` family layout.
 
 Inspect any generated module before deployment with:
 

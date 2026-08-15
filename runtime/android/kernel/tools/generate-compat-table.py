@@ -135,6 +135,7 @@ LAYOUT_CERTIFICATE_BASE_KEYS = frozenset({
 LAYOUT_CERTIFICATE_EVIDENCE_KEYS = frozenset({"raw_btf", "raw_dwarf"})
 LAYOUT_CERTIFICATE_FIELD_KEYS = frozenset({
     "dir_context",
+    "file_dentry",
     "filldir_abi",
     "filename_name",
     "inode_times",
@@ -332,6 +333,7 @@ LAYOUT_FIELDS = (
     ("task_real_cred", "task_struct", "real_cred"),
     ("task_cred", "task_struct", "cred"),
     ("task_comm", "task_struct", "comm"),
+    ("task_comm_size", "task_struct", ("member_size", "comm")),
     ("task_nsproxy", "task_struct", "nsproxy"),
     ("task_seccomp", "task_struct", "seccomp"),
     ("signal_size", "signal_struct", None),
@@ -402,6 +404,10 @@ LAYOUT_FIELDS = (
     ("kstat_gid", "kstat", "gid"),
     ("kstat_file_size", "kstat", "size"),
     ("dentry_name", (("dentry", "d_name"), ("qstr", "name")), None),
+    ("file_dentry", (("file", "f_path"), ("path", "dentry")), None),
+    ("module_size", "module", None),
+    ("module_init", "module", "init"),
+    ("module_exit", "module", "exit"),
     ("filename_size", "filename", None),
     ("filename_name", "filename", "name"),
     ("filename_name_size", "filename", ("member_size", "name")),
@@ -1474,6 +1480,7 @@ def load_layout_certificates(path, profile_evidence):
                 "task_user_state",
                 "task_walk",
                 "user_ptmap",
+                "file_dentry",
             })
             or (("dir_context" in keys) != ("filldir_abi" in keys))
         ):
@@ -1617,6 +1624,15 @@ def load_layout_certificates(path, profile_evidence):
                 context,
                 expected_user_ptmap["geometry"],
             )
+        if "file_dentry" in certificate:
+            file_dentry = certificate["file_dentry"]
+            if (
+                not isinstance(file_dentry, int)
+                or isinstance(file_dentry, bool)
+                or file_dentry < 0
+                or file_dentry > UINT64_MAX
+            ):
+                raise ValueError(f"{context}: file_dentry must be a uint64")
 
         task_sizes = {
             certificate[field]["task_struct"]["size"]
@@ -2054,6 +2070,10 @@ def render_compat_table(profile_evidence, layout_certificates):
             f"0x{user_geometry['physical_page_mask']:016x}UL,",
             f"\t\t\t.user_tlbi_all_asid = "
             f"{user_geometry['tlbi_all_asid']},",
+            # GKI BTF omits struct ftrace_ops. Catalog kit headers keep
+            # the prefix func, next, flags at 0 / 8 / 16.
+            "\t\t\t.ftrace_ops_func = 0,",
+            "\t\t\t.ftrace_ops_flags = 16,",
         ])
         inode_values = {
             "inode_size": 0,
@@ -2196,6 +2216,7 @@ def render_compat_table(profile_evidence, layout_certificates):
         "\tunsigned long task_thread_node;",
         "\tunsigned long signal_size;",
         "\tunsigned long signal_thread_head;",
+        "\tunsigned long file_dentry;",
         "};",
         "",
         f"#define NEVERC_KRT_LAYOUT_CERTIFICATE_COUNT "
@@ -2231,6 +2252,8 @@ def render_compat_table(profile_evidence, layout_certificates):
             field_bits.append("NEVERC_KRT_LAYOUT_CERT_TASK_THREADS")
         if "user_ptmap" in certificate:
             field_bits.append("NEVERC_KRT_LAYOUT_CERT_USER_PTMAP")
+        if "file_dentry" in certificate:
+            field_bits.append("NEVERC_KRT_LAYOUT_CERT_FILE_DENTRY")
         lines.extend([
             f"\t/* {evidence_kind} SHA-256 {evidence['sha256']}; "
             f"{evidence['size']} bytes. */",
@@ -2430,6 +2453,10 @@ def render_compat_table(profile_evidence, layout_certificates):
                     f"\t\t.pt_regs_pc = {regs['members']['pc']},",
                     f"\t\t.pt_regs_pstate = {regs['members']['pstate']},",
                 ])
+        if "file_dentry" in certificate:
+            lines.append(
+                f"\t\t.file_dentry = {certificate['file_dentry']},"
+            )
         lines.append("\t},")
     lines.extend(["};", ""])
     return "\n".join(lines)

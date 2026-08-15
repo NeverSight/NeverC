@@ -25,6 +25,7 @@ struct neverc_krt_user_ptmap_test_geometry {
 	uint64_t contiguous_mask;
 	size_t pt_regs_size;
 	size_t pt_regs_x;
+	size_t pt_regs_x_size;
 	size_t pt_regs_sp;
 	size_t pt_regs_pc;
 	size_t pt_regs_pstate;
