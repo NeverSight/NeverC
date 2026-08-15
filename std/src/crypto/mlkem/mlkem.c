@@ -343,7 +343,7 @@ static ring_elem g_enc_v;
 
 /* K-PKE.Encrypt (FIPS 203, Algorithm 14) */
 static void kpke_encrypt(int k,
-                          const uint8_t *ek, size_t ek_len,
+                          const uint8_t *ek,
                           const uint8_t m[32],
                           const uint8_t *r, size_t r_len,
                           uint8_t *ct_out) {
@@ -513,7 +513,7 @@ static int mlkem_encaps(int k, const uint8_t *ek, size_t ek_size,
     neverc_sha3_512_final(&g, kr);
 
     memcpy(shared_key, kr, 32);
-    kpke_encrypt(k, ek, ek_size, m, kr + 32, 32, ct_out);
+    kpke_encrypt(k, ek, m, kr + 32, 32, ct_out);
     neverc_platform_secure_zero(m, sizeof(m));
     neverc_platform_secure_zero(kr, sizeof(kr));
     neverc_platform_secure_zero(&g, sizeof(g));
@@ -576,7 +576,7 @@ static int mlkem_decaps(int k, const uint8_t *seed,
     neverc_sha3_512_update(&g, ek_hash, 32);
     neverc_sha3_512_final(&g, kr);
 
-    kpke_encrypt(k, ek, ek_size, m_prime, kr + 32, 32, g_ct_prime);
+    kpke_encrypt(k, ek, m_prime, kr + 32, 32, g_ct_prime);
 
     uint8_t difference = 0;
     for (size_t i = 0; i < ct_size; i++)

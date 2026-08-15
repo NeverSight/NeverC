@@ -101,6 +101,7 @@ TSAN_OPTIONS=${TSAN_OPTIONS:-halt_on_error=1} \
   "$std_root/src/crypto/mldsa/mldsa.c" \
   "$std_root/src/crypto/sha3/sha3.c" \
   "$std_root/src/crypto/rand/rand.c" \
+  "$std_root/src/crypto/subtle/subtle.c" \
   -pthread \
   -o "$work_dir/mldsa-tsan"
 
