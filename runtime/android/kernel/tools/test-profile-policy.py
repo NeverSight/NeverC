@@ -286,6 +286,27 @@ def main():
             or local_51514_query["module_size"] != 1024
         ):
             raise RuntimeError("51514 profile query returned the wrong contract")
+        workflow = (
+            RUNTIME_ROOT.parents[2] / ".github/workflows/build-gki-kernels.yml"
+        ).read_text(encoding="utf-8")
+        catalog_ids = {
+            str(profile["legacy_id"])
+            for profile in json.loads(
+                (RUNTIME_ROOT / "arm64/gki-profiles.json").read_text(
+                    encoding="utf-8"
+                )
+            )["profiles"]
+        }
+        missing_matrix = [
+            profile_id
+            for profile_id in sorted(catalog_ids, key=int)
+            if f'"key":"{profile_id}"' not in workflow
+        ]
+        if missing_matrix:
+            raise RuntimeError(
+                "build-gki-kernels matrix is missing catalog profiles: "
+                + ", ".join(missing_matrix)
+            )
         unknown_query = subprocess.run(
             [sys.executable, str(generator), "--query-profile", "999"],
             capture_output=True,

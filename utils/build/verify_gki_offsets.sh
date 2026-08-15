@@ -123,10 +123,13 @@ import sys
 generator, profile = sys.argv[1:]
 query = subprocess.run(
     [sys.executable, generator, "--query-profile", profile],
-    check=True,
     stdout=subprocess.PIPE,
+    stderr=subprocess.PIPE,
     text=True,
 )
+if query.returncode != 0:
+    sys.stderr.write(query.stderr)
+    raise SystemExit(query.returncode)
 contract = json.loads(query.stdout)
 print(
     f"{contract['module_init_offset']}|"

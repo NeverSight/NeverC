@@ -62,9 +62,56 @@ jobs:
           echo "Selected matrix: $inc"
           echo "matrix={\"include\":$inc}" >> "$GITHUB_OUTPUT"
 
+  preflight:
+    name: Check profile catalog
+    needs: setup
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout neverc repo
+        uses: actions/checkout@v4
+      - name: Catalog, lock, and matrix must query
+        env:
+          MATRIX: ${{ needs.setup.outputs.matrix }}
+        run: |
+          set -euo pipefail
+          python3 runtime/android/kernel/tools/generate-compat-table.py --check
+          python3 - <<'PY'
+          import json
+          import os
+          import subprocess
+          import sys
+
+          matrix = json.loads(os.environ["MATRIX"])
+          keys = [item["key"] for item in matrix["include"]]
+          if not keys:
+              raise SystemExit("preflight: empty build matrix")
+          for key in keys:
+              query = subprocess.run(
+                  [
+                      sys.executable,
+                      "runtime/android/kernel/tools/generate-compat-table.py",
+                      "--query-profile",
+                      key,
+                  ],
+                  capture_output=True,
+                  text=True,
+              )
+              if query.returncode != 0:
+                  sys.stderr.write(query.stderr)
+                  raise SystemExit(f"preflight: --query-profile {key} failed")
+              contract = json.loads(query.stdout)
+              print(
+                  f"{key}: init={contract['module_init_offset']} "
+                  f"exit={contract['module_exit_offset']} "
+                  f"size={contract['module_size']}"
+              )
+          PY
+
   build:
     name: GKI ${{ matrix.android }}-${{ matrix.kernel }}
-    needs: setup
+    needs:
+      - setup
+      - preflight
     runs-on: ubuntu-22.04
     strategy:
       fail-fast: false
