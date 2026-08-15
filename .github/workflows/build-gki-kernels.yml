@@ -215,9 +215,11 @@ jobs:
             export KCFLAGS="-Wl,--thinlto-jobs=1"
             LTO=thin BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh
           else
-            # Bazel/KLEAF picks up its own toolchain from prebuilts/ and defaults
-            # to host-core parallelism.
-            tools/bazel run //common:kernel_aarch64_dist -- --destdir="$PWD/dist"
+            # Bazel/KLEAF picks up its own toolchain from prebuilts/.
+            # --lto must come before `--`. android14-6.1+ gki_defconfig already
+            # defaults to LTO=none; android14-5.15 still has
+            # CONFIG_LTO_CLANG_FULL=y, and lto=default;trim OOMs the 7GB runner.
+            tools/bazel run --lto=none //common:kernel_aarch64_dist -- --destdir="$PWD/dist"
           fi
           df -h /
 
