@@ -76,10 +76,9 @@ struct neverc_krt_observed_identity {
  * Exact means the certified GKI release token matches byte-for-byte.
  * Compatible is available only to an explicitly selected build profile and
  * always requires the same Linux major.minor series and page size.
- * 5.x also requires the Android generation when the banner names one;
- * Linux patch, KMI, and release token are ignored.  6.x still reports
- * Compatible on series+page alone; activation then needs a leftover
- * certificate if Android/KMI differ.
+ * Compatible also requires the Android generation when the banner names
+ * one; Linux patch, KMI, and release token are ignored.  A certificate
+ * may overlay measured offsets but is not required to activate.
  * A dedicated compile family is not a leftover overlay.  Callers without
  * an explicit profile must continue to require an exact identity.
  */

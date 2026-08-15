@@ -454,28 +454,10 @@ _neverc_krt_activate_observed(
 			 sizeof(_neverc_krt_active_effective_layout));
 	version_match = profile_match == NEVERC_KRT_PROFILE_MATCH_EXACT ?
 		NEVERC_KRT_VER_EXACT : NEVERC_KRT_VER_COMPAT;
-	if (version_match == NEVERC_KRT_VER_COMPAT) {
-		unsigned long certificate_bits =
-			_neverc_krt_match_layout_certificates(
-				profile, layout, identity,
-				&_neverc_krt_active_effective_layout);
-
-		/*
-		 * 6.x: same Linux series, different Android/KMI than the
-		 * selected compile family — every private layout field must
-		 * come from a leftover certificate.  5.x COMPAT only checks
-		 * series + Android generation + page (match_profile already
-		 * rejected a wrong 12/13/14); KMI/patch/token differences
-		 * keep the family layout without a certificate.
-		 */
-		if (profile->linux_major >= 6U &&
-		    identity->has_android_identity &&
-		    (identity->android_release != profile->android_release ||
-		     identity->kmi_generation != profile->kmi_generation) &&
-		    (certificate_bits & NEVERC_KRT_LAYOUT_CERT_PRIVATE_FIELDS) !=
-			    NEVERC_KRT_LAYOUT_CERT_PRIVATE_FIELDS)
-			return -1;
-	}
+	if (version_match == NEVERC_KRT_VER_COMPAT)
+		(void)_neverc_krt_match_layout_certificates(
+			profile, layout, identity,
+			&_neverc_krt_active_effective_layout);
 
 	_neverc_krt_kinfo = *observed;
 	__atomic_store_n(&_neverc_krt_active_layout, layout, __ATOMIC_RELEASE);

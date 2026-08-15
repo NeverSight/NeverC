@@ -76,6 +76,12 @@ static void check_selected_profile_compatibility(void) {
   identity.page_shift = 12;
   assert(neverc_krt_match_profile(profile, &identity) ==
          NEVERC_KRT_PROFILE_MATCH_COMPATIBLE);
+  assert(neverc_krt_parse_banner_identity(
+             "Linux version 6.12.50-android15-8-oem-4k SMP",
+             &identity) == 0);
+  identity.page_shift = 12;
+  assert(neverc_krt_match_profile(profile, &identity) ==
+         NEVERC_KRT_PROFILE_MATCH_NONE);
 
   identity.page_shift = 14;
   assert(neverc_krt_match_profile(profile, &identity) ==

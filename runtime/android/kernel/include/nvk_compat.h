@@ -48,8 +48,8 @@ enum neverc_krt_version_match {
 	/* Complete certified release identity and page size matched. */
 	NEVERC_KRT_VER_EXACT   =  0,
 	/*
-	 * Explicitly selected profile; same Linux major.minor and page size.
-	 * Private fields still require their own exact compatibility certificate.
+	 * Explicitly selected profile; same Linux major.minor, Android
+	 * generation, and page size.  A certificate may overlay offsets.
 	 */
 	NEVERC_KRT_VER_COMPAT  =  1,
 	NEVERC_KRT_VER_MISMATCH = -1,

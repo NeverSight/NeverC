@@ -33,12 +33,11 @@ enum neverc_krt_profile_match neverc_krt_match_profile(
     return NEVERC_KRT_PROFILE_MATCH_NONE;
 
   /*
-   * 5.x COMPAT is series + Android generation + page.  Patch, KMI, and
-   * release token are ignored.  6.x stays series + page here; activate()
-   * still fail-closes a different Android/KMI without a leftover
-   * certificate.
+   * COMPAT is series + Android generation + page.  Patch, KMI, and
+   * release token are ignored.  A certificate may overlay measured
+   * offsets; it is not required to activate.
    */
-  if (profile->linux_major < 6U && identity->has_android_identity &&
+  if (identity->has_android_identity &&
       profile->android_release != identity->android_release)
     return NEVERC_KRT_PROFILE_MATCH_NONE;
 
