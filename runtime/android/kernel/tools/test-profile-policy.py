@@ -307,6 +307,17 @@ def main():
                 "build-gki-kernels matrix is missing catalog profiles: "
                 + ", ".join(missing_matrix)
             )
+        watch_workflow = (
+            RUNTIME_ROOT.parents[2] / ".github/workflows/watch-gki-updates.yml"
+        ).read_text(encoding="utf-8")
+        if "GKI_WATCH_DISCORD_WEBHOOK_URL" not in watch_workflow:
+            raise RuntimeError(
+                "watch-gki-updates must read GKI_WATCH_DISCORD_WEBHOOK_URL"
+            )
+        if "gki-profiles.json" not in watch_workflow:
+            raise RuntimeError(
+                "watch-gki-updates must probe the profile catalog"
+            )
         unknown_query = subprocess.run(
             [sys.executable, str(generator), "--query-profile", "999"],
             capture_output=True,

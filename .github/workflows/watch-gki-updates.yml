@@ -1,0 +1,102 @@
+# Watch official AOSP GKI branch tips and KMI generation changes.
+#
+# Each run fetches kernel/common HEAD for the eight catalog families
+# (Makefile VERSION/PATCHLEVEL/SUBLEVEL + KMI_GENERATION) and the matching
+# `-kminext` branch when it exists. Discord is notified only when the live
+# tip moves, a KMI generation changes, `-kminext` steps ahead of stable, or
+# a new androidN-M.m branch appears.
+#
+# Set repository secret GKI_WATCH_DISCORD_WEBHOOK_URL. The workflow never writes the
+# URL into logs or the tree. An unset secret still completes the watch.
+name: watch-gki-updates
+
+on:
+  schedule:
+    - cron: "15 6 * * *"
+  workflow_dispatch:
+    inputs:
+      force_notify:
+        description: Post to Discord even if nothing changed
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: watch-gki-updates
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    name: Probe AOSP GKI tips
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout neverc repo
+        uses: actions/checkout@v4
+
+      - name: Mask Discord webhook
+        env:
+          GKI_WATCH_DISCORD_WEBHOOK_URL: ${{ secrets.GKI_WATCH_DISCORD_WEBHOOK_URL }}
+        run: |
+          set -euo pipefail
+          if [ -n "${GKI_WATCH_DISCORD_WEBHOOK_URL}" ]; then
+            echo "::add-mask::${GKI_WATCH_DISCORD_WEBHOOK_URL}"
+          fi
+
+      - name: Unit-test the watcher
+        run: python3 runtime/android/kernel/tools/test-watch-gki-upstream.py -v
+
+      - name: Restore previous snapshot
+        uses: actions/cache/restore@v4
+        with:
+          path: /tmp/gki-upstream-snapshot.json
+          key: gki-upstream-snapshot-${{ github.run_id }}
+          restore-keys: |
+            gki-upstream-snapshot-
+
+      - name: Probe official GKI / KMI tips
+        id: watch
+        env:
+          GKI_WATCH_DISCORD_WEBHOOK_URL: ${{ secrets.GKI_WATCH_DISCORD_WEBHOOK_URL }}
+          FORCE_NOTIFY: ${{ github.event_name == 'workflow_dispatch' && inputs.force_notify || false }}
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/gki-watch"
+          args=(
+            --catalog runtime/android/kernel/arm64/gki-profiles.json
+            --snapshot-out "${RUNNER_TEMP}/gki-watch/snapshot.json"
+            --report-out "${RUNNER_TEMP}/gki-watch/report.json"
+            --summary-out "${RUNNER_TEMP}/gki-watch/summary.md"
+            --notify
+          )
+          if [ -f /tmp/gki-upstream-snapshot.json ]; then
+            args+=(--snapshot-in /tmp/gki-upstream-snapshot.json)
+          fi
+          if [ "${FORCE_NOTIFY}" = "true" ]; then
+            args+=(--force-notify)
+          fi
+          python3 runtime/android/kernel/tools/watch-gki-upstream.py "${args[@]}"
+          cp "${RUNNER_TEMP}/gki-watch/snapshot.json" /tmp/gki-upstream-snapshot.json
+          if [ -f "${GITHUB_STEP_SUMMARY}" ]; then
+            cat "${RUNNER_TEMP}/gki-watch/summary.md" >> "${GITHUB_STEP_SUMMARY}"
+          fi
+
+      - name: Save snapshot for the next run
+        if: success()
+        uses: actions/cache/save@v4
+        with:
+          path: /tmp/gki-upstream-snapshot.json
+          key: gki-upstream-snapshot-${{ github.run_id }}
+
+      - name: Upload watch report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gki-upstream-watch
+          path: |
+            ${{ runner.temp }}/gki-watch/snapshot.json
+            ${{ runner.temp }}/gki-watch/report.json
+            ${{ runner.temp }}/gki-watch/summary.md
+          if-no-files-found: warn
