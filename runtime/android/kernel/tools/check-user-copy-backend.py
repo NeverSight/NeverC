@@ -56,6 +56,7 @@ ARTIFACT_FORBIDDEN_SYMBOLS = frozenset(
     }
 )
 RUNTIME_LOCAL_PREFIX = "__neverc_nvk_local."
+PARALLEL_CODEGEN_SUFFIX = re.compile(r"\.__pcg[0-9]+$")
 
 
 def line_number(text, offset):
@@ -73,7 +74,8 @@ def add_matches(violations, path, text, pattern, message):
 
 def normalize_artifact_symbol(symbol):
     if symbol.startswith(RUNTIME_LOCAL_PREFIX):
-        return symbol[len(RUNTIME_LOCAL_PREFIX):]
+        runtime_local = symbol[len(RUNTIME_LOCAL_PREFIX):]
+        return PARALLEL_CODEGEN_SUFFIX.sub("", runtime_local)
     return symbol
 
 

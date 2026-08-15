@@ -32,10 +32,11 @@ def nm_output(
     defined: set[str] | frozenset[str],
     *,
     prefix: str = "",
+    suffix: str = "",
     undefined: set[str] | frozenset[str] = frozenset(),
 ) -> str:
     lines = [
-        f"{index:016x} t {prefix}{symbol}"
+        f"{index:016x} t {prefix}{symbol}{suffix}"
         for index, symbol in enumerate(sorted(defined), 1)
     ]
     lines.extend(f"                 U {symbol}" for symbol in sorted(undefined))
@@ -86,11 +87,41 @@ class ArtifactSymbolPolicyTest(unittest.TestCase):
             [],
         )
 
+    def test_parallel_codegen_runtime_local_suffix_is_normalized(self) -> None:
+        runtime_locals = frozenset(
+            {
+                "_neverc_krt_simple_read_from_buffer",
+                "_neverc_krt_simple_write_to_buffer",
+            }
+        )
+        symbols = CHECKER.parse_defined_symbols(
+            nm_output(SAFE_SYMBOLS - runtime_locals)
+            + nm_output(
+                runtime_locals,
+                prefix="__neverc_nvk_local.",
+                suffix=".__pcg3298071600",
+            )
+        )
+        self.assertEqual(CHECKER.artifact_symbol_violations(symbols), [])
+
     def test_prefixed_legacy_state_still_fails(self) -> None:
         legacy = "_neverc_krt_copy_from_user"
         violations = self.violations(
             SAFE_SYMBOLS | {legacy}, prefix="__neverc_nvk_local."
         )
+        self.assertTrue(any(legacy in item for item in violations))
+
+    def test_parallel_codegen_legacy_state_still_fails(self) -> None:
+        legacy = "_neverc_krt_copy_from_user"
+        symbols = CHECKER.parse_defined_symbols(
+            nm_output(SAFE_SYMBOLS)
+            + nm_output(
+                {legacy},
+                prefix="__neverc_nvk_local.",
+                suffix=".__pcg3298071600",
+            )
+        )
+        violations = CHECKER.artifact_symbol_violations(symbols)
         self.assertTrue(any(legacy in item for item in violations))
 
 
