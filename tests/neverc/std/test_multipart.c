@@ -110,18 +110,21 @@ static void test_generate_boundary(void) {
 
 static void test_rejects_malformed_input(void) {
     printf("[rejects malformed input]\n");
-    neverc_multipart_reader_t reader;
+    neverc_multipart_reader_t *reader =
+        (neverc_multipart_reader_t *)malloc(sizeof(*reader));
+    ASSERT_TRUE(reader != NULL);
+    if (!reader) return;
 
     const char *truncated =
         "--b\r\n"
         "\r\n"
         "body\r\n";
-    memset(&reader, 0xa5, sizeof(reader));
+    memset(reader, 0xa5, sizeof(*reader));
     ASSERT_EQ(neverc_multipart_parse(
                   (const unsigned char *)truncated, strlen(truncated),
-                  "b", &reader),
+                  "b", reader),
               -1);
-    ASSERT_EQ(reader.part_count, 0);
+    ASSERT_EQ(reader->part_count, 0);
 
     const char *boundary_prefix =
         "--b\r\n"
@@ -130,20 +133,20 @@ static void test_rejects_malformed_input(void) {
         "--b--\r\n";
     ASSERT_EQ(neverc_multipart_parse(
                   (const unsigned char *)boundary_prefix,
-                  strlen(boundary_prefix), "b", &reader),
+                  strlen(boundary_prefix), "b", reader),
               0);
-    ASSERT_EQ(reader.part_count, 1);
-    ASSERT_TRUE(reader.parts[0].body_len ==
+    ASSERT_EQ(reader->part_count, 1);
+    ASSERT_TRUE(reader->parts[0].body_len ==
                 strlen("alpha\r\n--bX\r\nomega"));
-    ASSERT_TRUE(memcmp(reader.parts[0].body, "alpha\r\n--bX\r\nomega",
-                       reader.parts[0].body_len) == 0);
+    ASSERT_TRUE(memcmp(reader->parts[0].body, "alpha\r\n--bX\r\nomega",
+                       reader->parts[0].body_len) == 0);
 
     char long_boundary[72];
     memset(long_boundary, 'a', sizeof(long_boundary) - 1);
     long_boundary[sizeof(long_boundary) - 1] = '\0';
     ASSERT_EQ(neverc_multipart_parse(
                   (const unsigned char *)boundary_prefix,
-                  strlen(boundary_prefix), long_boundary, &reader),
+                  strlen(boundary_prefix), long_boundary, reader),
               -1);
 
     neverc_multipart_part_t part;
@@ -174,10 +177,10 @@ static void test_rejects_malformed_input(void) {
         "--b--\r\n";
     ASSERT_EQ(neverc_multipart_parse(
                   (const unsigned char *)folded, strlen(folded), "b",
-                  &reader),
+                  reader),
               0);
-    ASSERT_EQ(reader.part_count, 1);
-    ASSERT_STREQ(neverc_multipart_part_header(&reader.parts[0], "Content-Type"),
+    ASSERT_EQ(reader->part_count, 1);
+    ASSERT_STREQ(neverc_multipart_part_header(&reader->parts[0], "Content-Type"),
                  "text/plain; charset=utf-8");
 
     neverc_multipart_part_t inject;
@@ -190,6 +193,7 @@ static void test_rejects_malformed_input(void) {
     inject.body_len = 11;
     ASSERT_EQ(neverc_multipart_write(&inject, 1, "inj", output, sizeof(output)),
               -1);
+    free(reader);
 }
 
 int main(void) {

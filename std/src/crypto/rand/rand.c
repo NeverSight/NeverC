@@ -20,7 +20,7 @@ int neverc_crypto_rand_int(uint64_t *out, uint64_t max) {
 }
 
 static uint64_t mulmod64(uint64_t a, uint64_t b, uint64_t m) {
-#if !defined(__SIZEOF_INT128__)
+#if defined(NEVERC_PLATFORM_WINDOWS) || !defined(__SIZEOF_INT128__)
     uint64_t result = 0;
     a %= m;
     while (b > 0) {

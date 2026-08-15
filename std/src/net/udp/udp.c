@@ -18,6 +18,10 @@ typedef INT(WSAAPI *nc_udp_recv_msg_fn)(
     SOCKET, LPWSAMSG, LPDWORD, LPWSAOVERLAPPED,
     LPWSAOVERLAPPED_COMPLETION_ROUTINE);
 
+#ifndef SIO_UDP_CONNRESET
+#define SIO_UDP_CONNRESET _WSAIOW(IOC_VENDOR, 12)
+#endif
+
 static const GUID nc_udp_recv_msg_guid = {
     0xf689d7c8, 0x6f1f, 0x436b,
     {0x8a, 0x53, 0xe5, 0x4f, 0xe3, 0x51, 0xc3, 0x22}};
@@ -152,6 +156,14 @@ static nc_udp_recv_msg_fn udp_load_recv_msg(nc_sock_t fd) {
                       &recv_msg, sizeof(recv_msg),
                       &bytes, NULL, NULL);
     return rc == 0 ? recv_msg : NULL;
+}
+
+static void udp_disable_connection_reset(nc_sock_t fd) {
+    BOOL enabled = FALSE;
+    DWORD bytes = 0;
+    (void)WSAIoctl(fd, SIO_UDP_CONNRESET,
+                   &enabled, sizeof(enabled),
+                   NULL, 0, &bytes, NULL, NULL);
 }
 
 static void udp_parse_windows_packet_control(
@@ -350,6 +362,10 @@ neverc_udp_conn_t *neverc_udp_listen(const char *addr, const char **errp) {
         if (errp) *errp = "no address could be bound";
         return NULL;
     }
+
+#ifdef _WIN32
+    udp_disable_connection_reset(fd);
+#endif
 
     neverc_udp_conn_t *conn = (neverc_udp_conn_t *)calloc(1, sizeof(*conn));
     if (!conn) {

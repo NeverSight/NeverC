@@ -14,9 +14,12 @@ public:
     if (const char *Existing = std::getenv(NameValue))
       Previous = Existing;
 #ifdef _WIN32
-    _putenv_s(NameValue, Value);
+    _putenv_s(NameValue, Value ? Value : "");
 #else
-    setenv(NameValue, Value, 1);
+    if (Value)
+      setenv(NameValue, Value, 1);
+    else
+      unsetenv(NameValue);
 #endif
   }
 
@@ -110,6 +113,7 @@ TEST_F(PluginLTOIRPassTest,
   const fs::path Source = tmpFile("lto_plugin_final_fallback.c");
   const fs::path Output = tmpFile("lto_plugin_final_fallback");
   writeFile(Source, ltoProgram());
+  ScopedPluginTestEnv NoStrict("NEVERC_PCG_STRICT", nullptr);
   ScopedPluginTestEnv ForceMergeFailure("NEVERC_PCG_FORCE_MERGE_FAIL", "1");
 
   CmdResult Result =

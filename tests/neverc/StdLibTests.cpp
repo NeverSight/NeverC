@@ -344,7 +344,7 @@ STD_TEST(des, "src/crypto/des/des.c")
 STD_TEST(rc4, "src/crypto/rc4/rc4.c")
 STD_TEST(chacha20, "src/crypto/chacha20/chacha20.c")
 STD_TEST(poly1305, "src/crypto/poly1305/poly1305.c", "src/crypto/subtle/subtle.c")
-STD_TEST(chacha20poly1305, "src/crypto/chacha20poly1305/chacha20poly1305.c", "src/crypto/chacha20/chacha20.c", "src/crypto/poly1305/poly1305.c")
+STD_TEST(chacha20poly1305, "src/crypto/chacha20poly1305/chacha20poly1305.c", "src/crypto/chacha20/chacha20.c", "src/crypto/poly1305/poly1305.c", "src/crypto/subtle/subtle.c")
 STD_TEST(gcm, "src/crypto/gcm/gcm.c", "src/crypto/aes/aes.c")
 STD_TEST(cipher, "src/crypto/cipher/cipher.c", "src/crypto/aes/aes.c")
 STD_TEST(hmac, "src/crypto/hmac/hmac.c", "src/crypto/sha256/sha256.c", "src/crypto/sha512/sha512.c", "src/crypto/sha1/sha1.c", "src/crypto/md5/md5.c", "src/crypto/subtle/subtle.c")
@@ -417,7 +417,7 @@ STD_TEST(mlkem, "src/crypto/mlkem/mlkem.c", "src/crypto/sha3/sha3.c",
 STD_TEST(mlkem_entropy_failure, "src/crypto/sha3/sha3.c")
 STD_TEST(mldsa, "src/crypto/mldsa/mldsa.c", "src/crypto/sha3/sha3.c",
     "src/crypto/rand/rand.c", "src/crypto/subtle/subtle.c")
-STD_TEST(mldsa_entropy_failure, "src/crypto/sha3/sha3.c")
+STD_TEST(mldsa_entropy_failure, "src/crypto/sha3/sha3.c", "src/crypto/subtle/subtle.c")
 
 // ===== Unicode =====
 STD_TEST(unicode, "src/unicode/unicode.c")

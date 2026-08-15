@@ -511,12 +511,11 @@ int neverc_tls_test_discard_ccs_before_handshake(void) {
     size_t message_len = 0;
     int result = nci_tls_recv_plain_handshake_message(
         conn, TLS_HS_ENCRYPTED_EXT, &message, &message_len);
+    int valid = result == 0 && message_len == 6 && message &&
+                message[0] == TLS_HS_ENCRYPTED_EXT;
     neverc_tls_close(conn);
     neverc_tcp_close(writer);
-    if (result != 0 || message_len != 6 || !message ||
-        message[0] != TLS_HS_ENCRYPTED_EXT)
-        return -1;
-    return 0;
+    return valid ? 0 : -1;
 }
 
 int neverc_tls_test_handshake_reassembly(void) {

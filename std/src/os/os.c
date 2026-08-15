@@ -68,6 +68,7 @@ static char neverc_os_getenv_buf[32768];
 const char *neverc_os_getenv(const char *key) {
     if (!key) return NULL;
 #if defined(NEVERC_PLATFORM_WINDOWS)
+    SetLastError(ERROR_SUCCESS);
     DWORD n = GetEnvironmentVariableA(key, neverc_os_getenv_buf,
                                     (DWORD)sizeof(neverc_os_getenv_buf));
     if (n >= sizeof(neverc_os_getenv_buf)) return NULL;

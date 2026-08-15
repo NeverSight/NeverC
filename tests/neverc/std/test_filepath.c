@@ -90,6 +90,8 @@ static void test_clean(void) {
 #ifdef _WIN32
     ASSERT_STR_EQ(neverc_filepath_clean("C:\\foo\\bar\\..\\baz", buf, sizeof(buf)), "C:\\foo\\baz");
     ASSERT_STR_EQ(neverc_filepath_clean("C:\\foo\\.\\bar", buf, sizeof(buf)), "C:\\foo\\bar");
+    ASSERT_STR_EQ(neverc_filepath_clean("C:foo", buf, sizeof(buf)), "C:foo");
+    ASSERT_STR_EQ(neverc_filepath_clean("C:..", buf, sizeof(buf)), "C:..");
     ASSERT_STR_EQ(neverc_filepath_clean("\\\\server\\share\\foo\\..\\bar", buf, sizeof(buf)),
                   "\\\\server\\share\\bar");
 #else

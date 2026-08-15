@@ -689,11 +689,14 @@ TEST(h2c_serve_conn_roundtrip) {
     ASSERT_EQ(h2_client_handshake(client_fd), 0);
 
     uint8_t req_hdr_frame[9] = {
-        0, 0, 3, NC_H2_FRAME_HEADERS,
+        0, 0, 14, NC_H2_FRAME_HEADERS,
         (uint8_t)(NC_H2_FLAG_END_HEADERS | NC_H2_FLAG_END_STREAM),
         0, 0, 0, 1
     };
-    uint8_t req_hpack[] = { 0x82, 0x84, 0x86 };
+    uint8_t req_hpack[] = {
+        0x82, 0x84, 0x86,
+        0x01, 0x09, 'l', 'o', 'c', 'a', 'l', 'h', 'o', 's', 't'
+    };
     ASSERT_EQ(sock_write_all(client_fd, req_hdr_frame, sizeof(req_hdr_frame)), 0);
     ASSERT_EQ(sock_write_all(client_fd, req_hpack, sizeof(req_hpack)), 0);
 
@@ -748,9 +751,12 @@ TEST(h2c_continuation_headers) {
     uint8_t hdr1[9] = { 0, 0, 1, NC_H2_FRAME_HEADERS, NC_H2_FLAG_END_STREAM,
                         0, 0, 0, 1 };
     uint8_t hpack1[] = { 0x82 };
-    uint8_t cont[9] = { 0, 0, 2, NC_H2_FRAME_CONTINUATION,
+    uint8_t cont[9] = { 0, 0, 13, NC_H2_FRAME_CONTINUATION,
                         (uint8_t)NC_H2_FLAG_END_HEADERS, 0, 0, 0, 1 };
-    uint8_t hpack2[] = { 0x84, 0x86 };
+    uint8_t hpack2[] = {
+        0x84, 0x86,
+        0x01, 0x09, 'l', 'o', 'c', 'a', 'l', 'h', 'o', 's', 't'
+    };
 
     ASSERT_EQ(sock_write_all(client_fd, hdr1, sizeof(hdr1)), 0);
     ASSERT_EQ(sock_write_all(client_fd, hpack1, sizeof(hpack1)), 0);

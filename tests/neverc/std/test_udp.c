@@ -3,7 +3,13 @@
 #include <stdlib.h>
 #include <string.h>
 
-#ifndef _WIN32
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <winsock2.h>
+#include <windows.h>
+#else
 #include <unistd.h>
 #include <sys/wait.h>
 #endif
@@ -615,6 +621,65 @@ static void test_controlled_io(void) {
 
 #endif /* _WIN32 */
 
+#ifdef _WIN32
+/* A send to a recently closed UDP peer produces an ICMP Port Unreachable.
+ * Winsock reports that asynchronous error as WSAECONNRESET on the shared
+ * listening socket unless SIO_UDP_CONNRESET is disabled.  The error must not
+ * hide a subsequent datagram from a healthy peer. */
+static void test_icmp_reset_does_not_poison_listener(void) {
+    printf("[icmp_reset_does_not_poison_listener]\n");
+    const char *err = NULL;
+    neverc_udp_conn_t *server =
+        neverc_udp_listen("127.0.0.1:0", &err);
+    check_not_null("ICMP reset server", server);
+    if (!server) return;
+
+    neverc_udp_addr_t server_addr;
+    check_int("ICMP reset server address",
+              neverc_udp_local_addr(server, &server_addr), 0);
+    char address[64];
+    snprintf(address, sizeof(address), "127.0.0.1:%d", server_addr.port);
+    neverc_udp_conn_t *stale = neverc_udp_dial(address, &err);
+    neverc_udp_conn_t *healthy = neverc_udp_dial(address, &err);
+    check_not_null("stale UDP peer", stale);
+    check_not_null("healthy UDP peer", healthy);
+    if (!stale || !healthy) {
+        neverc_udp_close(stale);
+        neverc_udp_close(healthy);
+        neverc_udp_close(server);
+        return;
+    }
+
+    check_int("stale peer seed send", neverc_udp_write(stale, "seed", 4), 4);
+    neverc_udp_packet_info_t seed_info;
+    char buffer[16];
+    check_int("stale peer seed receive",
+              neverc_udp_read_packet(server, buffer, sizeof(buffer),
+                                     &seed_info),
+              4);
+    neverc_udp_addr_t stale_addr = seed_info.source;
+    neverc_udp_close(stale);
+
+    check_int("send to closed UDP peer",
+              neverc_udp_write_to(server, "probe", 5, &stale_addr), 5);
+    Sleep(100);
+    check_int("healthy peer send",
+              neverc_udp_write(healthy, "valid", 5), 5);
+    neverc_udp_packet_info_t packet_info;
+    int received = neverc_udp_read_packet(server, buffer, sizeof(buffer),
+                                          &packet_info);
+    if (received < 0)
+        printf("  listener socket error after ICMP: %d\n",
+               WSAGetLastError());
+    check_int("listener survives ICMP reset", received, 5);
+    check_int("listener receives healthy payload",
+              received == 5 && memcmp(buffer, "valid", 5) == 0, 1);
+
+    neverc_udp_close(healthy);
+    neverc_udp_close(server);
+}
+#endif
+
 int main(void) {
     test_listen_close();
     test_listen_ipv6();
@@ -631,6 +696,8 @@ int main(void) {
     test_batch_io();
     test_bounded_queue();
     test_controlled_io();
+#else
+    test_icmp_reset_does_not_poison_listener();
 #endif
 
     printf("\n--- net/udp: %d/%d passed", tests_passed, tests_run);

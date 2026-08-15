@@ -195,7 +195,10 @@ char *neverc_fmt_vsprintf(const char *format, va_list args) {
             continue;
         }
         i++;
-        if (i >= flen) break;
+        if (i >= flen) {
+            buf_putc(&buf, '%');
+            break;
+        }
 
         /* Parse flags */
         int flag_minus = 0, flag_plus = 0, flag_zero = 0, flag_space = 0, flag_hash = 0;

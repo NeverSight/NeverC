@@ -151,7 +151,7 @@ const char *neverc_filepath_clean(const char *path, char *buf, size_t buf_len) {
                 while (opos > dotdot && !is_sep(out[opos]))
                     opos--;
             } else if (!rooted) {
-                if (opos > 0) {
+                if (opos > vol) {
                     if (opos >= len) goto clean_failed;
                     out[opos++] = NEVERC_FILEPATH_SEP;
                 }
@@ -160,7 +160,7 @@ const char *neverc_filepath_clean(const char *path, char *buf, size_t buf_len) {
                 dotdot = opos;
             }
         } else {
-            if ((rooted && opos != vol + 1) || (!rooted && opos > 0)) {
+            if ((rooted && opos != vol + 1) || (!rooted && opos > vol)) {
                 if (opos >= len) goto clean_failed;
                 out[opos++] = NEVERC_FILEPATH_SEP;
             }

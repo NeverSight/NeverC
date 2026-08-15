@@ -1,5 +1,6 @@
 #include "neverc/std/text/tabwriter.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static int tests_run = 0, tests_passed = 0, tests_failed = 0;
@@ -19,145 +20,136 @@ static int tests_run = 0, tests_passed = 0, tests_failed = 0;
            printf("  FAIL: %s = %d, expected %d (line %d)\n", #expr, _v, _e, __LINE__); } \
 } while(0)
 
-static void test_basic_alignment(void) {
+static void test_basic_alignment(neverc_tabwriter_t *w) {
     printf("[basic_alignment]\n");
-    neverc_tabwriter_t w;
-    neverc_tabwriter_init(&w, 1, 8, 1, ' ', 0);
+    neverc_tabwriter_init(w, 1, 8, 1, ' ', 0);
 
     const char *input = "a\tb\tc\naa\tbb\tcc\naaa\tbbb\tccc";
-    neverc_tabwriter_write(&w, input, strlen(input));
-    neverc_tabwriter_flush(&w);
+    neverc_tabwriter_write(w, input, strlen(input));
+    neverc_tabwriter_flush(w);
 
     size_t len;
-    const char *out = neverc_tabwriter_output(&w, &len);
+    const char *out = neverc_tabwriter_output(w, &len);
     tests_run++;
     if (out && len > 0) tests_passed++;
     else { tests_failed++; printf("  FAIL: no output\n"); }
 }
 
-static void test_single_column(void) {
+static void test_single_column(neverc_tabwriter_t *w) {
     printf("[single_column]\n");
-    neverc_tabwriter_t w;
-    neverc_tabwriter_init(&w, 1, 8, 1, ' ', 0);
+    neverc_tabwriter_init(w, 1, 8, 1, ' ', 0);
 
     const char *input = "hello\nworld";
-    neverc_tabwriter_write(&w, input, strlen(input));
-    neverc_tabwriter_flush(&w);
+    neverc_tabwriter_write(w, input, strlen(input));
+    neverc_tabwriter_flush(w);
 
     size_t len;
-    const char *out = neverc_tabwriter_output(&w, &len);
+    const char *out = neverc_tabwriter_output(w, &len);
     ASSERT_STR_EQ(out, "hello\nworld");
 }
 
-static void test_empty(void) {
+static void test_empty(neverc_tabwriter_t *w) {
     printf("[empty]\n");
-    neverc_tabwriter_t w;
-    neverc_tabwriter_init(&w, 1, 8, 1, ' ', 0);
-    neverc_tabwriter_flush(&w);
+    neverc_tabwriter_init(w, 1, 8, 1, ' ', 0);
+    neverc_tabwriter_flush(w);
 
     size_t len;
-    const char *out = neverc_tabwriter_output(&w, &len);
+    const char *out = neverc_tabwriter_output(w, &len);
     tests_run++;
     if (len == 0 || (out && out[0] == '\0')) tests_passed++;
     else { tests_failed++; printf("  FAIL: expected empty output\n"); }
 }
 
-static void test_padding_char(void) {
+static void test_padding_char(neverc_tabwriter_t *w) {
     printf("[padding_char]\n");
-    neverc_tabwriter_t w;
-    neverc_tabwriter_init(&w, 1, 8, 1, '.', 0);
+    neverc_tabwriter_init(w, 1, 8, 1, '.', 0);
 
     const char *input = "a\tb\naa\tbb";
-    neverc_tabwriter_write(&w, input, strlen(input));
-    neverc_tabwriter_flush(&w);
+    neverc_tabwriter_write(w, input, strlen(input));
+    neverc_tabwriter_flush(w);
 
     size_t len;
-    const char *out = neverc_tabwriter_output(&w, &len);
+    const char *out = neverc_tabwriter_output(w, &len);
     tests_run++;
     if (out && strchr(out, '.')) tests_passed++;
     else { tests_failed++; printf("  FAIL: expected dots in output, got: [%s]\n", out ? out : "(null)"); }
 }
 
-static void test_reset(void) {
+static void test_reset(neverc_tabwriter_t *w) {
     printf("[reset]\n");
-    neverc_tabwriter_t w;
-    neverc_tabwriter_init(&w, 1, 8, 1, ' ', 0);
+    neverc_tabwriter_init(w, 1, 8, 1, ' ', 0);
 
     const char *input = "hello\tworld";
-    neverc_tabwriter_write(&w, input, strlen(input));
-    neverc_tabwriter_flush(&w);
+    neverc_tabwriter_write(w, input, strlen(input));
+    neverc_tabwriter_flush(w);
 
-    neverc_tabwriter_reset(&w);
+    neverc_tabwriter_reset(w);
 
     const char *input2 = "foo\tbar";
-    neverc_tabwriter_write(&w, input2, strlen(input2));
-    neverc_tabwriter_flush(&w);
+    neverc_tabwriter_write(w, input2, strlen(input2));
+    neverc_tabwriter_flush(w);
 
     size_t len;
-    const char *out = neverc_tabwriter_output(&w, &len);
+    const char *out = neverc_tabwriter_output(w, &len);
     tests_run++;
     if (out && len > 0) tests_passed++;
     else { tests_failed++; printf("  FAIL: no output after reset\n"); }
 }
 
-static void test_no_tabs(void) {
+static void test_no_tabs(neverc_tabwriter_t *w) {
     printf("[no_tabs]\n");
-    neverc_tabwriter_t w;
-    neverc_tabwriter_init(&w, 1, 8, 1, ' ', 0);
+    neverc_tabwriter_init(w, 1, 8, 1, ' ', 0);
 
     const char *input = "just plain text";
-    neverc_tabwriter_write(&w, input, strlen(input));
-    neverc_tabwriter_flush(&w);
+    neverc_tabwriter_write(w, input, strlen(input));
+    neverc_tabwriter_flush(w);
 
     size_t len;
-    const char *out = neverc_tabwriter_output(&w, &len);
+    const char *out = neverc_tabwriter_output(w, &len);
     ASSERT_STR_EQ(out, "just plain text");
 }
 
-static void test_multiple_lines(void) {
+static void test_multiple_lines(neverc_tabwriter_t *w) {
     printf("[multiple_lines]\n");
-    neverc_tabwriter_t w;
-    neverc_tabwriter_init(&w, 1, 8, 2, ' ', 0);
+    neverc_tabwriter_init(w, 1, 8, 2, ' ', 0);
 
     const char *input = "name\tage\tcity\nalice\t30\tNY\nbob\t25\tLA";
-    neverc_tabwriter_write(&w, input, strlen(input));
-    neverc_tabwriter_flush(&w);
+    neverc_tabwriter_write(w, input, strlen(input));
+    neverc_tabwriter_flush(w);
 
     size_t len;
-    const char *out = neverc_tabwriter_output(&w, &len);
+    const char *out = neverc_tabwriter_output(w, &len);
     tests_run++;
     if (out && len > (size_t)strlen(input)) tests_passed++;
     else { tests_failed++; printf("  FAIL: expected padded output\n"); }
 }
 
-static void test_invalid_input(void) {
+static void test_invalid_input(neverc_tabwriter_t *w) {
     printf("[invalid_input]\n");
-    neverc_tabwriter_t w;
-    neverc_tabwriter_init(&w, 1, 8, 1, ' ', 0);
-    neverc_tabwriter_write(&w, NULL, 1);
-    neverc_tabwriter_flush(&w);
+    neverc_tabwriter_init(w, 1, 8, 1, ' ', 0);
+    neverc_tabwriter_write(w, NULL, 1);
+    neverc_tabwriter_flush(w);
     size_t len = 123;
-    const char *out = neverc_tabwriter_output(&w, &len);
+    const char *out = neverc_tabwriter_output(w, &len);
     ASSERT_INT_EQ(out == NULL, 1);
     ASSERT_INT_EQ((int)len, 0);
-    neverc_tabwriter_reset(&w);
+    neverc_tabwriter_reset(w);
 }
 
-static void test_many_cells(void) {
+static void test_many_cells(neverc_tabwriter_t *w) {
     printf("[many_cells]\n");
-    neverc_tabwriter_t w;
-    neverc_tabwriter_init(&w, 1, 8, 1, ' ', 0);
+    neverc_tabwriter_init(w, 1, 8, 1, ' ', 0);
 
     /* 100 lines x 3 cells used to overflow the 256-cell array and drop rows. */
     char line[32];
     for (int i = 0; i < 100; i++) {
         int n = snprintf(line, sizeof(line), "c%d\tv%d\tw%d\n", i, i, i);
-        neverc_tabwriter_write(&w, line, (size_t)n);
+        neverc_tabwriter_write(w, line, (size_t)n);
     }
-    neverc_tabwriter_flush(&w);
+    neverc_tabwriter_flush(w);
 
     size_t len = 0;
-    const char *out = neverc_tabwriter_output(&w, &len);
+    const char *out = neverc_tabwriter_output(w, &len);
     tests_run++;
     if (out && strstr(out, "c0") && strstr(out, "c99") && strstr(out, "w99"))
         tests_passed++;
@@ -166,30 +158,46 @@ static void test_many_cells(void) {
         printf("  FAIL: 300-cell table missing rows (out=%s)\n",
                out ? "truncated" : "(null)");
     }
-    neverc_tabwriter_reset(&w);
+    neverc_tabwriter_reset(w);
 }
 
-static void test_minwidth(void) {
+static void test_minwidth(neverc_tabwriter_t *w) {
     printf("[minwidth]\n");
-    neverc_tabwriter_t w;
-    neverc_tabwriter_init(&w, 5, 0, 0, '.', 0);
-    neverc_tabwriter_write(&w, "a\tb\n", 4);
-    neverc_tabwriter_flush(&w);
-    ASSERT_STR_EQ(neverc_tabwriter_output(&w, NULL), "a....b\n");
+    neverc_tabwriter_init(w, 5, 0, 0, '.', 0);
+    neverc_tabwriter_write(w, "a\tb\n", 4);
+    neverc_tabwriter_flush(w);
+    ASSERT_STR_EQ(neverc_tabwriter_output(w, NULL), "a....b\n");
 }
 
 int main(void) {
     printf("=== NeverC text/tabwriter Tests ===\n");
-    test_basic_alignment();
-    test_single_column();
-    test_empty();
-    test_padding_char();
-    test_reset();
-    test_no_tabs();
-    test_multiple_lines();
-    test_invalid_input();
-    test_many_cells();
-    test_minwidth();
+    neverc_tabwriter_t *w =
+        (neverc_tabwriter_t *)malloc(sizeof(*w));
+    if (!w) {
+        printf("  FAIL: tabwriter allocation failed\n");
+        return 1;
+    }
+    test_basic_alignment(w);
+    neverc_tabwriter_reset(w);
+    test_single_column(w);
+    neverc_tabwriter_reset(w);
+    test_empty(w);
+    neverc_tabwriter_reset(w);
+    test_padding_char(w);
+    neverc_tabwriter_reset(w);
+    test_reset(w);
+    neverc_tabwriter_reset(w);
+    test_no_tabs(w);
+    neverc_tabwriter_reset(w);
+    test_multiple_lines(w);
+    neverc_tabwriter_reset(w);
+    test_invalid_input(w);
+    neverc_tabwriter_reset(w);
+    test_many_cells(w);
+    neverc_tabwriter_reset(w);
+    test_minwidth(w);
+    neverc_tabwriter_reset(w);
+    free(w);
     printf("\n=== Results: %d/%d passed ===\n", tests_passed, tests_run);
     return tests_failed > 0 ? 1 : 0;
 }
