@@ -356,6 +356,36 @@ def baseline_from_catalog(families):
     }
 
 
+def _catalog_identity(record):
+    return {
+        "linux_major": record["linux_major"],
+        "linux_minor": record["linux_minor"],
+        "linux_patch": record["linux_patch"],
+        "kmi_generation": record["kmi_generation"],
+        "kminext_kmi_generation": None,
+    }
+
+
+def _previous_family_state(previous, record):
+    """Use catalog identity when a retained snapshot row lacks version fields."""
+    fallback = _catalog_identity(record)
+    if not isinstance(previous, dict):
+        return fallback
+    try:
+        state = {
+            "linux_major": int(previous["linux_major"]),
+            "linux_minor": int(previous["linux_minor"]),
+            "linux_patch": int(previous["linux_patch"]),
+            "kmi_generation": int(previous["kmi_generation"]),
+        }
+    except (KeyError, TypeError, ValueError):
+        state = fallback
+    state["kminext_kmi_generation"] = previous.get("kminext_kmi_generation")
+    state["layout"] = previous.get("layout")
+    state["kminext_layout"] = previous.get("kminext_layout")
+    return state
+
+
 def collect_changes(records, snapshot, known_branches):
     previous_families = {} if snapshot is None else snapshot.get("families", {})
     previous_branches = set()
@@ -365,19 +395,11 @@ def collect_changes(records, snapshot, known_branches):
     for record in records:
         name = record["kernel_name"]
         live = record["live"]
-        previous = previous_families.get(name)
+        previous = _previous_family_state(previous_families.get(name), record)
         catalog_release = (
             f"{record['linux_major']}.{record['linux_minor']}."
             f"{record['linux_patch']}"
         )
-        if previous is None:
-            previous = {
-                "linux_major": record["linux_major"],
-                "linux_minor": record["linux_minor"],
-                "linux_patch": record["linux_patch"],
-                "kmi_generation": record["kmi_generation"],
-                "kminext_kmi_generation": None,
-            }
         prev_release = (
             f"{previous['linux_major']}.{previous['linux_minor']}."
             f"{previous['linux_patch']}"
@@ -510,9 +532,15 @@ def build_report(records, errors, snapshot, known_branches, force_notify):
 
 def write_snapshot(path, records, known_branches, previous_snapshot=None):
     previous_families = {}
+    previous_branches = []
     if previous_snapshot is not None:
         previous_families = previous_snapshot.get("families") or {}
-    families = {}
+        previous_branches = list(previous_snapshot.get("known_gki_branches") or [])
+    families = {
+        name: dict(previous)
+        for name, previous in previous_families.items()
+        if isinstance(previous, dict)
+    }
     for record in records:
         snap = snapshot_family(record)
         previous = previous_families.get(record["kernel_name"]) or {}
@@ -522,12 +550,14 @@ def write_snapshot(path, records, known_branches, previous_snapshot=None):
         snap["kminext_layout"] = LAYOUTS.merge_compact(
             previous.get("kminext_layout"), snap.get("kminext_layout")
         )
+        if snap.get("kminext_kmi_generation") is None:
+            snap["kminext_kmi_generation"] = previous.get("kminext_kmi_generation")
         families[record["kernel_name"]] = snap
     payload = {
         "schema": 1,
         "source": "live",
         "families": families,
-        "known_gki_branches": known_branches,
+        "known_gki_branches": sorted(set(previous_branches) | set(known_branches)),
     }
     Path(path).write_text(
         json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"

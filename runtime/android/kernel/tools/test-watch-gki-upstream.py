@@ -431,6 +431,71 @@ class DiffTests(unittest.TestCase):
         self.assertIn("path", kept["member_counts"])
         self.assertIn("path.dentry", kept["used"])
 
+    def test_snapshot_keeps_kminext_generation_when_optional_probe_fails(self):
+        previous = {
+            "source": "live",
+            "families": {
+                "android16-6.12": {
+                    "kminext_kmi_generation": 7,
+                }
+            },
+            "known_gki_branches": ["android16-6.12", "android16-6.12-kminext"],
+        }
+        record = live_record(live_patch=90, live_kmi=6, kminext_kmi=None)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "snap.json"
+            written = watch.write_snapshot(
+                path, [record], ["android16-6.12"], previous_snapshot=previous
+            )
+        self.assertEqual(
+            written["families"]["android16-6.12"]["kminext_kmi_generation"], 7
+        )
+        self.assertIn("android16-6.12-kminext", written["known_gki_branches"])
+
+    def test_snapshot_keeps_unprobed_family(self):
+        previous = {
+            "source": "live",
+            "families": {
+                "android16-6.12": {
+                    "linux_major": 6,
+                    "linux_minor": 12,
+                    "linux_patch": 90,
+                    "kmi_generation": 6,
+                },
+                "android15-6.6": {
+                    "linux_major": 6,
+                    "linux_minor": 6,
+                    "linux_patch": 142,
+                    "kmi_generation": 8,
+                },
+            },
+        }
+        record = live_record(live_patch=90, live_kmi=6)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "snap.json"
+            written = watch.write_snapshot(
+                path, [record], ["android16-6.12"], previous_snapshot=previous
+            )
+        self.assertEqual(
+            written["families"]["android15-6.6"]["linux_patch"], 142
+        )
+
+    def test_collect_changes_tolerates_incomplete_previous_family(self):
+        records = [live_record(live_patch=90, live_kmi=6, kminext_kmi=7)]
+        snapshot = {
+            "source": "live",
+            "families": {
+                "android16-6.12": {
+                    "kminext_kmi_generation": 7,
+                }
+            },
+            "known_gki_branches": ["android16-6.12"],
+        }
+        changes = watch.collect_changes(records, snapshot, ["android16-6.12"])
+        kinds = {change["kind"] for change in changes}
+        self.assertIn("gki_version", kinds)
+        self.assertNotIn("kmi_next", kinds)
+
 
 class DiscordTests(unittest.TestCase):
     def test_payload_uses_english_sections_and_kmi_color(self):
