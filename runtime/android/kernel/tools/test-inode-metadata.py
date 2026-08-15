@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Build and run the host fixture for opaque filename/path/inode access."""
 
-import os
 from pathlib import Path
 import json
-import shlex
 import subprocess
 import sys
 import tempfile
+
+from host_test_compiler import host_compiler_command
 
 
 TOOLS_ROOT = Path(__file__).resolve().parent
@@ -240,9 +240,7 @@ def main():
         check=True,
     )
     check_profile_evidence()
-    compiler = shlex.split(os.environ.get("CC", "cc"))
-    if not compiler:
-        raise RuntimeError("CC does not name a compiler")
+    compiler = host_compiler_command()
 
     with tempfile.TemporaryDirectory(prefix="neverc-inode-metadata-") as tmp:
         output = Path(tmp) / "test-inode-metadata"

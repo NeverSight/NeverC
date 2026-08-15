@@ -2,12 +2,12 @@
 """Build and run the host fixture for the opaque dir_context filter."""
 
 import json
-import os
 from pathlib import Path
-import shlex
 import subprocess
 import sys
 import tempfile
+
+from host_test_compiler import host_compiler_command
 
 
 TOOLS_ROOT = Path(__file__).resolve().parent
@@ -175,9 +175,7 @@ def check_profile_evidence():
 
 def main():
     check_profile_evidence()
-    compiler = shlex.split(os.environ.get("CC", "cc"))
-    if not compiler:
-        raise RuntimeError("CC does not name a compiler")
+    compiler = host_compiler_command()
 
     with tempfile.TemporaryDirectory(prefix="neverc-dir-filter-") as tmp:
         output = Path(tmp) / "test-dir-filter"

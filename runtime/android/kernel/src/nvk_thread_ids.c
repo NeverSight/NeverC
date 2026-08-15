@@ -117,9 +117,10 @@ int neverc_krt_task_thread_ids(struct task_struct *task, int *tids,
 		goto out_fail;
 	if (!NEVERC_KRT_THREAD_POINTER_VALID(signal))
 		goto out_fail;
-	if ((unsigned long)signal > ~0UL - layout->signal_thread_head)
+	if ((uintptr_t)signal >
+	    (uintptr_t)-1 - layout->signal_thread_head)
 		goto out_fail;
-	head = (struct list_head *)((unsigned long)signal +
+	head = (struct list_head *)((uintptr_t)signal +
 					 layout->signal_thread_head);
 	if (!NEVERC_KRT_THREAD_POINTER_VALID(head))
 		goto out_fail;
@@ -140,9 +141,9 @@ int neverc_krt_task_thread_ids(struct task_struct *task, int *tids,
 			goto out_fail;
 		}
 		if (!NEVERC_KRT_THREAD_POINTER_VALID(node) ||
-		    (unsigned long)node < layout->task_thread_node)
+		    (uintptr_t)node < layout->task_thread_node)
 			goto out_fail;
-		thread = (struct task_struct *)((unsigned long)node -
+		thread = (struct task_struct *)((uintptr_t)node -
 					       layout->task_thread_node);
 		if (!NEVERC_KRT_THREAD_POINTER_VALID(thread))
 			goto out_fail;

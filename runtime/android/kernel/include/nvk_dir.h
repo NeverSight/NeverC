@@ -12,8 +12,13 @@ struct dir_context;
  */
 #define NEVERC_KRT_DIR_FILTER_SCOPE_WORDS 16U
 struct neverc_krt_dir_filter_scope {
-	unsigned long opaque[NEVERC_KRT_DIR_FILTER_SCOPE_WORDS];
+	u64 opaque[NEVERC_KRT_DIR_FILTER_SCOPE_WORDS];
 };
+
+_Static_assert(sizeof(struct neverc_krt_dir_filter_scope) == 128,
+	       "opaque directory-filter scope must be 128 bytes");
+_Static_assert(__alignof__(struct neverc_krt_dir_filter_scope) == 8,
+	       "opaque directory-filter scope must be 8-byte aligned");
 
 typedef bool (*neverc_krt_dir_should_hide_fn)(const char *name, int namelen,
 					       loff_t offset, u64 ino,

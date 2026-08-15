@@ -8,7 +8,7 @@
 #endif
 
 #define _NEVERC_KRT_DIR_CONTEXT_MAX 64UL
-#define _NEVERC_KRT_DIR_SCOPE_MAGIC 0x4E564B4449525343UL
+#define _NEVERC_KRT_DIR_SCOPE_MAGIC 0x4E564B4449525343ULL
 
 struct dir_context;
 
@@ -28,7 +28,7 @@ struct _neverc_krt_dir_filter_scope {
 	neverc_krt_dir_should_hide_fn should_hide;
 	void *opaque;
 	unsigned long pos_offset;
-	unsigned long magic;
+	u64 magic;
 	unsigned int filldir_abi;
 	unsigned int active;
 	int sync_error;

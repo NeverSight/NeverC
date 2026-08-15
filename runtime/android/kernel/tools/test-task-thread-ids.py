@@ -2,12 +2,12 @@
 """Build and run the host fixture for task thread-group TID snapshots."""
 
 import json
-import os
 from pathlib import Path
-import shlex
 import subprocess
 import sys
 import tempfile
+
+from host_test_compiler import host_compiler_command
 
 
 TOOLS_ROOT = Path(__file__).resolve().parent
@@ -320,9 +320,7 @@ def main():
     )
     check_profile_evidence()
     check_compatibility_certificate()
-    compiler = shlex.split(os.environ.get("CC", "cc"))
-    if not compiler:
-        raise RuntimeError("CC does not name a compiler")
+    compiler = host_compiler_command()
 
     with tempfile.TemporaryDirectory(prefix="neverc-task-thread-ids-") as tmp:
         fixtures = (

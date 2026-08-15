@@ -141,9 +141,9 @@ int neverc_krt_for_each_task(neverc_krt_task_callback_t callback, void *data)
 		return -EOPNOTSUPP;
 	init = NEVERC_KRT_TASK_WALK_INIT_TASK();
 	if (!NEVERC_KRT_TASK_WALK_POINTER_VALID(init) ||
-	    (unsigned long)init > ~0UL - layout->task_tasks)
+	    (uintptr_t)init > (uintptr_t)-1 - layout->task_tasks)
 		return -EFAULT;
-	head = (struct list_head *)((unsigned long)init + layout->task_tasks);
+	head = (struct list_head *)((uintptr_t)init + layout->task_tasks);
 	if (!NEVERC_KRT_TASK_WALK_POINTER_VALID(head))
 		return -EFAULT;
 
@@ -168,9 +168,9 @@ int neverc_krt_for_each_task(neverc_krt_task_callback_t callback, void *data)
 			goto out_unlock;
 		}
 		if (!NEVERC_KRT_TASK_WALK_POINTER_VALID(node) ||
-		    (unsigned long)node < layout->task_tasks)
+		    (uintptr_t)node < layout->task_tasks)
 			goto out_unlock;
-		task = (struct task_struct *)((unsigned long)node -
+		task = (struct task_struct *)((uintptr_t)node -
 					    layout->task_tasks);
 		if (!NEVERC_KRT_TASK_WALK_POINTER_VALID(task))
 			goto out_unlock;

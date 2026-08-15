@@ -9,13 +9,12 @@ the same fixture against production in an injected host-kernel boundary.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
-import shlex
-import shutil
 import subprocess
 import sys
 import tempfile
+
+from host_test_compiler import host_compiler_command
 
 
 TOOLS_ROOT = Path(__file__).resolve().parent
@@ -23,20 +22,6 @@ RUNTIME_ROOT = TOOLS_ROOT.parent
 CONTRACT_SOURCE = TOOLS_ROOT / "test-user-ptmap-contract.c"
 PUBLIC_HEADER = RUNTIME_ROOT / "include/nvk_user_ptmap.h"
 RUNTIME_SOURCE = RUNTIME_ROOT / "src/nvk_user_ptmap.c"
-
-
-def find_compiler() -> list[str]:
-    configured = os.environ.get("CC")
-    if configured:
-        compiler = shlex.split(configured)
-        if compiler:
-            return compiler
-        raise RuntimeError("CC does not name a compiler")
-    for candidate in ("clang", "cc"):
-        compiler = shutil.which(candidate)
-        if compiler:
-            return [compiler]
-    raise RuntimeError("no host C compiler found (set CC)")
 
 
 def common_flags() -> list[str]:
@@ -113,7 +98,7 @@ def build_and_run_real_contract(compiler: list[str]) -> None:
 
 
 def main() -> int:
-    compiler = find_compiler()
+    compiler = host_compiler_command()
     syntax_check_frozen_contract(compiler)
     print("test-user-ptmap-contract: contract fixture syntax OK")
 

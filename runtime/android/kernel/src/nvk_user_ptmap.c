@@ -20,7 +20,7 @@ void *calloc(size_t count, size_t size);
 void free(void *pointer);
 
 #ifndef EOPNOTSUPP
-#define EOPNOTSUPP ENOTSUP
+#define EOPNOTSUPP 95
 #endif
 
 typedef uint64_t _neverc_krt_ptmap_pte_t;

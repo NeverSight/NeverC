@@ -23,7 +23,7 @@
 #include <string.h>
 
 #ifndef EOPNOTSUPP
-#define EOPNOTSUPP ENOTSUP
+#define EOPNOTSUPP 95
 #endif
 
 #define FIXTURE_PAGE_SHIFT 12U

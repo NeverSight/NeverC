@@ -5,32 +5,28 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-import shlex
-import shutil
 import subprocess
 import tempfile
+
+from host_test_compiler import host_compiler_command
 
 
 KERNEL_ROOT = Path(__file__).resolve().parents[1]
 TEST_SOURCE = KERNEL_ROOT / "tools" / "test-interpose-remove-ctx-many.c"
 
 
-def find_compiler() -> list[str]:
-    configured = os.environ.get("CC")
-    if configured:
-        return shlex.split(configured)
-    for candidate in ("clang", "cc"):
-        compiler = shutil.which(candidate)
-        if compiler:
-            return [compiler]
-    raise SystemExit("error: no host C compiler found (set CC)")
-
-
 def main() -> int:
+    if os.name == "nt":
+        print(
+            "interpose teardown and batch rollback policy tests skipped "
+            "(requires POSIX pthreads)"
+        )
+        return 0
+
     with tempfile.TemporaryDirectory(prefix="neverc-interpose-remove-") as temp:
         executable = Path(temp) / "test-interpose-remove-ctx-many"
         command = [
-            *find_compiler(),
+            *host_compiler_command(),
             "-std=c11",
             "-Wall",
             "-Wextra",

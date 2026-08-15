@@ -34,10 +34,16 @@ typedef _Bool bool;
 #define false 0
 #endif
 
-typedef long ssize_t;
-typedef long ptrdiff_t_compat;
-typedef unsigned long uintptr_t;
-typedef long intptr_t;
+/*
+ * Keep pointer-sized aliases correct when host fixtures are compiled on an
+ * LLP64 machine.  The production ARM64 target still resolves these builtins
+ * to long/unsigned long, while Windows resolves them to 64-bit long long and
+ * remains compatible with the CRT typedefs.
+ */
+typedef __PTRDIFF_TYPE__ ssize_t;
+typedef __PTRDIFF_TYPE__ ptrdiff_t_compat;
+typedef __UINTPTR_TYPE__ uintptr_t;
+typedef __INTPTR_TYPE__ intptr_t;
 
 typedef long long loff_t;
 typedef unsigned int gfp_t;

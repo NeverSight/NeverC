@@ -32,6 +32,7 @@
 #define ENOSYS 38
 #define ENODATA 61
 #define EOVERFLOW 75
+#define EOPNOTSUPP 95
 #define ETIMEDOUT 110
 #define EUCLEAN 117
 #define ENOTSUPP 524
